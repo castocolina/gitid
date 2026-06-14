@@ -14,7 +14,9 @@
 - [x] **Phase 3: Full Identity CRUD + Multi-Identity** — List, update, delete identities; reconstruct from managed blocks (no sidecar DB); multiple identities on one provider via distinct aliases (completed 2026-06-10)
 - [x] **Phase 3.1: Baseline Global Git Config + Global Gitignore** *(INSERTED)* — Seed and manage a shared baseline git config (core/push/pull/fetch/color toggles + aliases, `ignorecase=false`) and a curated global gitignore via `core.excludesfile`, in idempotent managed blocks with backup→preview→confirm; optional HTTPS→SSH `insteadOf` rewrites; baseline readable back from disk (completed 2026-06-11)
 - [x] **Phase 4: Doctor** — Deep health checks (deps, permissions, coherence/drift, orphans, signing wiring, agent) with severity + fix; `gitid doctor` CLI command (completed 2026-06-12 — 5 plans + 2 gap-closure plans 04-06/04-07; initial verification found 3 critical wiring gaps DOC-GAP-01/02/03, all closed and re-verified passed, see 04-VERIFICATION.md)
-- [x] **Phase 5: CLI Surface + TUI** — Full Cobra command surface with shell completion; Bubble Tea TUI launching to doctor dashboard with identity/account navigation (completed 2026-06-13)
+- [x] **Phase 5: CLI Surface + TUI** — Full Cobra command surface with shell completion; Bubble Tea TUI launching to doctor dashboard with identity/account navigation (built 2026-06-13 — ⚠️ guided UAT found core + UX gaps, see VERIFICATION-PLAYBOOK.md; superseded by Phase 5.5 reconciliation + Phase 5.6 TUI rebuild)
+- [ ] **Phase 5.5: Core & CLI Reconciliation** *(INSERTED — 2026-06-13)* — Fix the core/CLI defects the playbook surfaced: auth-gated create-flow (generate→upload→loop-test until PASS→persist-only-after-PASS, with skip escape), correct provider reconstruction, install PATH feedback, per-URL (`hasconfig`) matching alongside `gitdir`, and a doctor check for overlapping/ambiguous matches. CLI/core only — no TUI cosmetics.
+- [ ] **Phase 5.6: Integrated TUI App** *(INSERTED — 2026-06-13)* — Replace the thin doctor-dashboard TUI with one integrated terminal app (Bubble Tea v2): persistent header + identity sidebar + master-detail pane + bold footer; view switcher (Identities · Health · Global Options); in-app create/add wizard with live feedback (the proven create-flow); per-site + global options editable in-pane; delete/rotate in-app; copy = public key only. Ergonomics modeled on `../tools-installer`.
 - [ ] **Phase 6: Linux Cross-Platform Validation** *(DEFERRED — post-v1)* — Validate the whole tool end-to-end on Linux (developed on macOS only): clipboard dispatch, per-OS install hints, file permissions, config-path resolution, the make/pre-commit toolchain, and the two-phase ssh test flow
 
 ---
@@ -221,6 +223,88 @@ Plans:
 
 - [x] 05-04-PLAN.md — TUI forms slice: identity detail + Create/Update/Add-account forms + inline Copy action + shared Prove-Before-Write screen (two-phase async test, confirm gate, write via identity.Deps) (TUI-02, D-02/D-03/D-04/D-06)
 
+### Phase 5.5: Core & CLI Reconciliation (INSERTED)
+
+**Goal**: The defects the guided UAT surfaced in the CLI/core are fixed so the
+engine is trustworthy before the TUI is rebuilt on top of it. Create no longer
+persists artifacts for an un-authenticated key; reconstruction reports the correct
+provider; install tells the user where the binary went and whether it is on PATH;
+identities can match by repository URL (`hasconfig:remote.*.url`) as well as by
+folder (`gitdir`); and doctor detects ambiguous/overlapping matches.
+**Mode:** mvp (reconciliation — derived from VERIFICATION-PLAYBOOK.md findings)
+**Depends on**: Phase 5 (built surface)
+**Source**: `.planning/phases/05-cli-surface-tui/VERIFICATION-PLAYBOOK.md` (G-05, F-1, F-2, F-3, F-5, F-6, F-7)
+**Requirements**: FIX-CREATE-01, FIX-RECON-01, FIX-INSTALL-01, MATCH-URL-01, DOC-08 (new, UAT-derived)
+**Success Criteria** (what must be TRUE):
+
+  1. Creating a new identity with an un-uploaded key does NOT persist any artifact; after the key is uploaded and the connectivity test authenticates (PASS), it persists; the flow loops test → retry / skip / quit, and a skip escape persists only on an explicit confirm (G-05/F-2)
+  2. `gitid identity add` prompts for a match strategy — folder (`gitdir`), repository URL (`hasconfig:remote.*.url`), or both — and writes the chosen condition(s); the prompt labels the field "Host alias" (F-5/F-6)
+  3. `gitid identity list` reconstructs and displays the correct `provider` (e.g. `github`) even when the host-alias does not follow `name.provider` (F-3)
+  4. `make install` reports the install path and whether it is on `PATH`, with a hint when it is not (F-1)
+  5. `gitid doctor` reports an error/warning when two identities' match conditions overlap (e.g. both match the same `gitdir`), with guidance; the detection is shared so `add`/`update` can warn at write time (F-7)
+
+**Plans**: 7 plans (7 waves)
+**UI hint**: no (CLI/core only; TUI cosmetics deferred to Phase 5.6)
+
+Plans:
+
+**Wave 1**
+
+- [ ] 05.5-01-PLAN.md — Wave-0 test infra: hermetic E2E harness (fake-ssh on PATH + sandbox HOME), RED E2E shells for all 5 reqs, A4 marker-stability test, `make test-e2e` (D-18/D-20)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 05.5-02-PLAN.md — Provider marker write/read + reconstruction: `# gitid: provider=` marker, hostname-map fallback, remove TrimPrefix derivation (FIX-RECON-01, D-11/D-12/D-13)
+
+**Wave 3** *(blocked on Wave 2 — needs RenderHostBlock provider arg)*
+
+- [ ] 05.5-03-PLAN.md — Auth-gated create-flow: generate key to ~/.ssh first, loop test→PASS→persist (retry/skip/quit), PersistAll split, drop Confirmed (FIX-CREATE-01, D-01..D-06)
+
+**Wave 4** *(blocked on Wave 3 — shares cmd/gitid/add.go)*
+
+- [ ] 05.5-04-PLAN.md — Match-strategy picker (gitdir/url/both) on add+update + `--name/--gitdir/--url/--provider` flags + "Host alias" label (MATCH-URL-01, D-07..D-10)
+
+**Wave 5** *(blocked on Wave 4 — shares cmd/gitid/add.go+update.go)*
+
+- [ ] 05.5-05-PLAN.md — Shared overlap detector (DetectOverlaps/CheckOverlap) + FamilyOverlap doctor wiring + add/update write-time warn+y/N (DOC-08, D-14..D-16)
+
+**Wave 6** *(blocked on Waves 1+5 — shares Makefile + cmd/gitid/doctor.go)*
+
+- [ ] 05.5-06-PLAN.md — Install path + PATH feedback: `platform.BinaryInstallInfo` self-report via doctor + Makefile install echo (FIX-INSTALL-01, D-17)
+
+**Wave 7** *(blocked on Waves 1-6)*
+
+- [ ] 05.5-07-PLAN.md — E2E green across all 5 reqs (D-18 completion gate) + agent-driven experience evaluation report (D-19, advisory → Phase 5.6)
+
+### Phase 5.6: Integrated TUI App (INSERTED)
+
+**Goal**: One integrated terminal application (Bubble Tea v2 + Lipgloss v2 + Bubbles
+v2) replaces the thin doctor-dashboard TUI. It presents a persistent layout — header
++ left identity sidebar + master-detail main pane + bold footer — with a view switcher
+across Identities, Health (doctor), and Global Options (baseline). Creating/adding an
+identity, editing per-site and global options, copying the public key, and deleting or
+rotating are all done in-app with live feedback; nothing hands off to the CLI.
+Ergonomics are modeled on `../tools-installer` (a Textual app). Runs over SSH.
+**Mode:** mvp (vertical: build the app shell first, then fold each capability in)
+**Depends on**: Phase 5.5 (reuses the proven create-flow, provider/match reconstruction, and doctor overlap detection)
+**Source**: `.planning/phases/05-cli-surface-tui/VERIFICATION-PLAYBOOK.md` (Target TUI App; G-01, G-02, G-03, G-04, F-4, F-8)
+**Requirements**: TUI-03, TUI-04, TUI-05, TUI-06 (new, UAT-derived); supersedes the Phase 5 TUI-01/TUI-02 surface
+**Success Criteria** (what must be TRUE):
+
+  1. Launching `gitid` shows identities in a sidebar (each row labeled name · provider · alias/site count — closes F-4); selecting one fills a detail pane (fields, aliases/sites, match conditions, signing, health badges) without the list disappearing
+  2. A view switcher (command palette + `1..N` keys) moves between Identities, Health (doctor findings as badges + actionable fixes), and Global Options (baseline)
+  3. The in-app create/add wizard runs keygen → copy public key + upload instructions → live connectivity test → PASS/fail → retry / skip / quit, persisting only after PASS (the Phase 5.5 flow, surfaced in the UI)
+  4. Per-site options (match strategy gitdir/URL/both, signing, port, hostname) and global baseline options are editable in-pane
+  5. Delete and rotate are performed in-app (no CLI handoff); copy copies the public key only (never the private key)
+  6. The footer shows bold, comma-separated key hints; empty-state and list rows render correctly (closes G-01/G-02/G-04/F-4); `?` opens an in-app help overlay (closes G-03)
+
+**Plans**: TBD — run `/gsd-plan-phase 5.6`
+**UI hint**: yes
+
+Plans:
+
+- [ ] TBD (run /gsd-ui-phase 5.6 then /gsd-discuss-phase 5.6 then /gsd-plan-phase 5.6)
+
 ### Phase 6: Linux Cross-Platform Validation
 
 **Status:** DEFERRED (post-v1) — do not plan or execute until Phases 1–5 are complete on macOS and a Linux environment is available.
@@ -261,5 +345,7 @@ Plans:
 | 3. Full Identity CRUD + Multi-Identity | 4/4 | Complete    | 2026-06-10 |
 | 3.1. Baseline Global Git Config + Global Gitignore | 4/4 | Complete    | 2026-06-11 |
 | 4. Doctor | 7/7 | Complete   | 2026-06-12 |
-| 5. CLI Surface + TUI | 4/4 | Complete   | 2026-06-13 |
+| 5. CLI Surface + TUI | 4/4 | Built (UAT found gaps → 5.5 + 5.6) | 2026-06-13 |
+| 5.5. Core & CLI Reconciliation | 0/7 | Planned (next) | - |
+| 5.6. Integrated TUI App | 0/? | Planned | - |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |
