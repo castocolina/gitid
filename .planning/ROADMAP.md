@@ -9,11 +9,12 @@
 
 ## Phases
 
-- [ ] **Phase 1: Bootstrap** — Makefile, go.mod, golangci-lint v2, gosec, pre-commit hooks wired to make targets, TDD harness green
+- [x] **Phase 1: Bootstrap** — Makefile, go.mod, golangci-lint v2, gosec, pre-commit hooks wired to make targets, TDD harness green (completed 2026-06-09)
 - [ ] **Phase 2: First Identity End-to-End** — Create one identity (ed25519 auth+signing), produce all four coordinated artifacts with backup + idempotent managed blocks + confirmation, prove authentication and config resolution with the two-phase test flow, clipboard copy, upload instructions
 - [ ] **Phase 3: Full Identity CRUD + Multi-Identity** — List, update, delete identities; reconstruct from managed blocks (no sidecar DB); multiple identities on one provider via distinct aliases
 - [ ] **Phase 4: Doctor** — Deep health checks (deps, permissions, coherence/drift, orphans, signing wiring, agent) with severity + fix; `gitid doctor` CLI command
 - [ ] **Phase 5: CLI Surface + TUI** — Full Cobra command surface with shell completion; Bubble Tea TUI launching to doctor dashboard with identity/account navigation
+- [ ] **Phase 6: Linux Cross-Platform Validation** *(DEFERRED — post-v1)* — Validate the whole tool end-to-end on Linux (developed on macOS only): clipboard dispatch, per-OS install hints, file permissions, config-path resolution, the make/pre-commit toolchain, and the two-phase ssh test flow
 
 ---
 
@@ -43,7 +44,7 @@
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-03-PLAN.md — repo:local pre-commit (fast fmt+lint) + pre-push (full test) hooks wired to make targets; complete setup-env hook install; no CI
+- [x] 01-03-PLAN.md — repo:local pre-commit (fast fmt+lint) + pre-push (full test) hooks wired to make targets; complete setup-env hook install; no CI
 
 ### Phase 2: First Identity End-to-End
 
@@ -109,14 +110,44 @@
 **Plans**: TBD
 **UI hint**: yes
 
+### Phase 6: Linux Cross-Platform Validation
+
+**Status:** DEFERRED (post-v1) — do not plan or execute until Phases 1–5 are complete on macOS and a Linux environment is available.
+**Goal**: The entire gitid tool is proven to work end-to-end on Linux. The product is developed and tested exclusively on macOS/darwin; this phase exercises every platform-specific surface on at least one mainstream Linux distribution (e.g. Ubuntu/Debian + one of Fedora/Arch) and fixes any portability gaps found.
+**Mode:** validation/hardening (no new product requirements — re-verifies existing ones on Linux)
+**Depends on**: Phase 5
+**Requirements**: none new — cross-platform re-verification of TOOL-01..04, KEY-*, SSH-*, GIT-*, SIGN-*, TEST-*, CLIP-*, DOC-* on Linux
+**Scope** (platform-specific surfaces to validate on Linux):
+
+  1. Clipboard dispatch resolves to `wl-copy`/`xclip` (Wayland/X11) instead of `pbcopy`; copy-on-generate and copy-on-demand both work
+  2. `gitid doctor` per-OS dependency install hints render the correct package manager (`apt` / `dnf` / `pacman`) and missing-dep detection works
+  3. File-permission handling on `~/.ssh`, private keys, `.pub`, and config files behaves correctly under Linux defaults/umask; doctor permission checks and fixes are accurate
+  4. SSH/git config path resolution (`~/.ssh/config`, `~/.gitconfig`, `includeIf`, `allowed_signers`) works with Linux home/XDG conventions
+  5. The toolchain bootstraps on Linux: `make setup-env` installs golangci-lint, gosec, and pre-commit; `make build/test/lint/fmt` and the git hooks all run
+  6. The two-phase ssh test flow (`ssh -i`, `ssh -T`, `ssh -G`) produces correct real output on Linux
+
+**Success Criteria** (what must be TRUE):
+
+  1. `make setup-env` + `make test` + `make lint` + the pre-commit/pre-push hooks all succeed on a fresh Linux clone
+  2. Creating, listing, testing, and deleting an identity works end-to-end on Linux with all four artifacts written/backed-up correctly
+  3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
+  4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
+
+**Plans:** 3/3 plans complete
+
+Plans:
+
+- [ ] TBD (deferred — run /gsd-plan-phase 6 to break down once Phases 1–5 are done)
+
 ---
 
 ## Progress Table
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Bootstrap | 2/3 | In Progress|  |
+| 1. Bootstrap | 3/3 | Complete   | 2026-06-09 |
 | 2. First Identity End-to-End | 0/? | Not started | - |
 | 3. Full Identity CRUD + Multi-Identity | 0/? | Not started | - |
 | 4. Doctor | 0/? | Not started | - |
 | 5. CLI Surface + TUI | 0/? | Not started | - |
+| 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |

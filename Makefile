@@ -45,17 +45,20 @@ setup-env:
 	curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b "$(GOPATH_BIN)" $(GOLANGCI_LINT_VERSION)
 	@echo "==> Installing gosec (standalone binary)"
 	go install github.com/securego/gosec/v2/cmd/gosec@latest
-	@echo "==> Installing pre-commit"
-	pip install --quiet pre-commit
+	@echo "==> Installing pre-commit (via uv; bootstrap uv with the Astral installer if missing — not a system package manager)"
+	command -v uv >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR="$$HOME/.local/bin" sh
+	PATH="$$HOME/.local/bin:$$PATH"; uv tool install pre-commit
 	@echo "==> Wiring git hooks"
 	$(MAKE) install-hooks
 	@echo "==> setup-env complete"
 
 ## install-hooks: wire pre-commit and pre-push git hooks.
-## Placeholder — completed and fully defined in plan 01-03.
-## Called by setup-env so the full bootstrap path is correct after 01-03.
+## Installs the pre-commit hook (runs make fmt + make lint on git commit)
+## and the pre-push hook (runs make test before push).
+## Called by setup-env — run `make setup-env` on a fresh clone to bootstrap fully.
 install-hooks:
-	@echo "==> install-hooks: placeholder (completed in plan 01-03)"
+	pre-commit install
+	pre-commit install --hook-type pre-push
 
 ## fmt: format all Go source files.
 ## Runs goimports (manages import blocks) then gofmt (canonical formatting).

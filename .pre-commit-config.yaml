@@ -1,0 +1,32 @@
+# Pre-commit hook configuration for gitid.
+#
+# Hooks use `repo: local` so the Makefile remains the single source of truth
+# shared with future CI (D-07). No upstream hook repos — all hooks invoke make targets directly.
+#
+# Stages:
+#   pre-commit (fast) — gofmt/goimports + golangci-lint + gosec via make fmt + make lint (D-05)
+#   pre-push (full)   — go test -race + coverage via make test (D-06)
+
+repos:
+  - repo: local
+    hooks:
+      - id: go-fmt
+        name: Go format (goimports + gofmt)
+        entry: make fmt
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: go-lint
+        name: Go lint (golangci-lint + gosec)
+        entry: make lint
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: go-test
+        name: Go test (race + coverage)
+        entry: make test
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
