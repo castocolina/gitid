@@ -91,7 +91,7 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 
 ### Global Baseline Config (GLOBAL / URLRW / GITIGNORE)
 
-- [ ] **GLOBAL-01**: Global/shared git config toggles (`push.autoSetupRemote`, `core.ignorecase`, `pull.rebase`, `fetch.prune`, aliases, color) are seeded with sensible defaults and managed idempotently in a sentinel-delimited block, content outside the block preserved verbatim
+- [x] **GLOBAL-01**: Global/shared git config toggles (`push.autoSetupRemote`, `core.ignorecase`, `pull.rebase`, `fetch.prune`, aliases, color) are seeded with sensible defaults and managed idempotently in a sentinel-delimited block, content outside the block preserved verbatim
 - [ ] **URLRW-01**: When an SSH host/alias is added, suggest the HTTPS equivalent and let the user edit it before generating the `insteadOf` rewrite
 - [ ] **GITIGNORE-01**: gitid manages a global gitignore — it sets `core.excludesfile` to a gitid-managed `~/.gitignore_global` seeded with curated OS/editor/build excludes (`.DS_Store`, `Thumbs.db`, `*.log`, `*.bak`, `*.tmp`, `*.swp`, …); the file is written through the safe-write chokepoint (backup + atomic + idempotent managed block) with content outside the block preserved
 
@@ -183,7 +183,7 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 | IDENT-04 | Phase 3 | Complete |
 | IDENT-05 | Phase 3 | Complete |
 | IDENT-07 | Phase 3 | Complete |
-| GLOBAL-01 | Phase 3.1 | Pending |
+| GLOBAL-01 | Phase 3.1 | Complete |
 | URLRW-01 | Phase 3.1 | Pending |
 | GITIGNORE-01 | Phase 3.1 | Pending |
 | DOC-01 | Phase 4 | Pending |

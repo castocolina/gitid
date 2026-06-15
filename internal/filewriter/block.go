@@ -107,6 +107,60 @@ const (
 	EndPrefix   = "# END gitid managed: "
 )
 
+// PrependBlockIfNotFound returns existing with the gitid managed block for name
+// set to blockBody, placing the block at the TOP of the file when no block for
+// name currently exists (floor model — D-10). This ensures that the managed
+// [include] block is evaluated first by git so that subsequent user keys and
+// per-identity includeIf blocks can override the baseline (RESEARCH C1). When a
+// block for name already exists, the call delegates to ReplaceBlock so the block
+// is updated in place and its floor position is preserved.
+//
+// Calling PrependBlockIfNotFound twice with the same name and body yields
+// byte-identical output (SC-1 idempotency).
+func PrependBlockIfNotFound(existing []byte, name, blockBody string) []byte {
+	beginMarker := BeginPrefix + name
+	endMarker := EndPrefix + name
+
+	// Canonical block form: markers wrapping the trimmed body, each line newline
+	// terminated. Trimming trailing newlines keeps repeated writes stable.
+	body := strings.TrimRight(blockBody, "\n")
+	block := beginMarker + "\n" + body + "\n" + endMarker + "\n"
+
+	lines := strings.SplitAfter(string(existing), "\n")
+
+	beginIdx, endIdx := -1, -1
+	for i, line := range lines {
+		// Trim trailing \r as well as \n so CRLF-encoded markers (Windows-synced
+		// configs) still match — mirrors the CRLF tolerance in ReplaceBlock.
+		trimmed := strings.TrimRight(line, "\n\r")
+		switch {
+		case beginIdx == -1 && trimmed == beginMarker:
+			beginIdx = i
+		case beginIdx != -1 && trimmed == endMarker:
+			endIdx = i
+		}
+		if beginIdx != -1 && endIdx != -1 {
+			break
+		}
+	}
+
+	// Block already exists — update in-place via ReplaceBlock, which preserves
+	// the block's current position (floor position is not disturbed).
+	if beginIdx != -1 && endIdx != -1 {
+		return ReplaceBlock(existing, name, blockBody)
+	}
+
+	// First write with no existing content — return just the canonical block.
+	if len(existing) == 0 {
+		return []byte(block)
+	}
+
+	// First write with existing content — prepend so the block is a floor, not
+	// a ceiling. The canonical block already ends with "\n" so no separator is
+	// injected between the block and the existing content.
+	return append([]byte(block), existing...)
+}
+
 // ReplaceBlock returns existing with the gitid managed block for name set to
 // blockBody, using a bounded line-range splice that never touches foreign
 // content.
