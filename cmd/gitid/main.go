@@ -53,5 +53,7 @@ func newRootCmd() *cobra.Command {
 	baseline.AddCommand(newBaselineShowCmd())
 	root.AddCommand(baseline)
 
+	root.AddCommand(newDoctorCmd())
+
 	return root
 }

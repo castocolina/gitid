@@ -62,12 +62,12 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 ### Doctor (DOC)
 
 - [ ] **DOC-01**: `gitid doctor` checks dependencies (`ssh`, `ssh-keygen`, `ssh-add`, `git`, clipboard tool) with per-OS install hints (brew / apt / dnf / pacman)
-- [ ] **DOC-02**: Doctor checks permissions on `~/.ssh`, keys, `.pub`, and `config`
+- [x] **DOC-02**: Doctor checks permissions on `~/.ssh`, keys, `.pub`, and `config`
 - [ ] **DOC-03**: Doctor checks coherence/drift — every `IdentityFile` resolves, every `includeIf` points to an existing fragment, `IdentitiesOnly yes` is present, signing identities have an `allowed_signers` line
 - [ ] **DOC-04**: Doctor detects orphans — unused keys, non-included fragments, aliases without a matching `includeIf`
 - [ ] **DOC-05**: Doctor checks signing wiring (`gpg.format=ssh`, `allowed_signers` path) and `ssh-agent` status (running, keys loaded), and warns if `git < 2.36` when `hasconfig:` is used
-- [ ] **DOC-06**: Each finding has severity + explanation + suggested fix (auto-fix offered with confirmation)
-- [ ] **DOC-07**: Doctor runs first when the TUI launches, and is available as `gitid doctor` on the CLI
+- [x] **DOC-06**: Each finding has severity + explanation + suggested fix (auto-fix offered with confirmation)
+- [x] **DOC-07**: Doctor runs first when the TUI launches, and is available as `gitid doctor` on the CLI
 
 ### Clipboard (CLIP)
 
@@ -187,12 +187,12 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 | URLRW-01 | Phase 3.1 | Complete |
 | GITIGNORE-01 | Phase 3.1 | Complete |
 | DOC-01 | Phase 4 | Pending |
-| DOC-02 | Phase 4 | Pending |
+| DOC-02 | Phase 4 | Complete |
 | DOC-03 | Phase 4 | Pending |
 | DOC-04 | Phase 4 | Pending |
 | DOC-05 | Phase 4 | Pending |
-| DOC-06 | Phase 4 | Pending |
-| DOC-07 | Phase 4 | Pending |
+| DOC-06 | Phase 4 | Complete |
+| DOC-07 | Phase 4 | Complete |
 | CLI-01 | Phase 5 | Pending |
 | CLI-02 | Phase 5 | Pending |
 | TUI-01 | Phase 5 | Pending |
