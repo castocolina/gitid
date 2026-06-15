@@ -170,22 +170,32 @@ func TestRemoveBlock_Idempotent(t *testing.T) {
 	}
 }
 
-// TestRemoveBlock_NoBlankAccumulation verifies that the trailing blank line
-// after the END marker is consumed (Pitfall B: no blank-line accumulation on
-// repeated add→delete cycles).
-func TestRemoveBlock_NoBlankAccumulation(t *testing.T) {
-	// Simulate the content a ReplaceBlock produces: block followed by a blank line.
-	base := []byte("top\n")
-	withBlock := ReplaceBlock(base, "work", "body")
-	// The block is appended; add a blank line as separator (typical file shape).
-	withBlock = append(withBlock, '\n')
+// TestRemoveBlock_PreservesForeignTrailingBlankLine verifies that RemoveBlock
+// removes ONLY the block's own lines (BEGIN..END inclusive) and leaves a
+// trailing blank line — which may be a deliberate user separator before the
+// following foreign content — byte-for-byte (WR-04: byte-for-byte foreign
+// content preservation; RemoveBlock must not eat a user blank line). Spacing
+// normalization is owned by ReplaceBlock/create, not RemoveBlock.
+func TestRemoveBlock_PreservesForeignTrailingBlankLine(t *testing.T) {
+	// A managed block followed by a user blank-line separator and a foreign
+	// Host stanza.
+	content := []byte(
+		BeginPrefix + "work\n" + "work body\n" + EndPrefix + "work\n" +
+			"\n" +
+			"Host foreign.example.com\n" +
+			"\tHostname foreign.example.com\n",
+	)
+	got := string(RemoveBlock(content, "work"))
 
-	removed := RemoveBlock(withBlock, "work")
-	// The blank line that followed the END marker should be consumed.
-	// The only blank line remaining should be from "top\n" → no double blank.
-	count := strings.Count(string(removed), "\n\n")
-	if count > 0 {
-		t.Errorf("trailing blank line accumulated after remove: %d double-newlines in %q", count, string(removed))
+	// The block must be gone.
+	if strings.Contains(got, "work body") {
+		t.Errorf("work block not removed:\n%q", got)
+	}
+	// The user's blank-line separator before the foreign stanza must survive —
+	// the foreign content stays byte-for-byte, including its leading blank line.
+	want := "\nHost foreign.example.com\n\tHostname foreign.example.com\n"
+	if got != want {
+		t.Errorf("foreign trailing blank line was consumed (WR-04):\n got %q\nwant %q", got, want)
 	}
 }
 

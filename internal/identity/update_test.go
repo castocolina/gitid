@@ -1,11 +1,39 @@
 package identity
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/tester"
 )
+
+// TestReadPubLine_ExpandsTilde verifies that readPubLine expands a leading "~/"
+// in the pub path to the user home before reading, so a reconstructed tilde
+// path (verbatim from ~/.ssh/config) does not fail the signing-on update path
+// (WR-02).
+func TestReadPubLine_ExpandsTilde(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatalf("mkdir ssh: %v", err)
+	}
+	pubContent := "ssh-ed25519 AAAAREALPUBKEY work@example.com\n"
+	if err := os.WriteFile(filepath.Join(sshDir, "id_ed25519_work.pub"), []byte(pubContent), 0o600); err != nil {
+		t.Fatalf("write pub: %v", err)
+	}
+
+	got, err := readPubLine("~/.ssh/id_ed25519_work.pub")
+	if err != nil {
+		t.Fatalf("readPubLine on tilde path returned error: %v", err)
+	}
+	if got != "ssh-ed25519 AAAAREALPUBKEY work@example.com" {
+		t.Errorf("readPubLine = %q, want trimmed pub line", got)
+	}
+}
 
 // updateCallLog records which UpdateDeps fields were called.
 type updateCallLog struct {

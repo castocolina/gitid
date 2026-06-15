@@ -207,6 +207,39 @@ func TestRemoveAllowedSignersLine_PreservesNonGitNamespace(t *testing.T) {
 	}
 }
 
+// TestRemoveAllowedSignersLine_SuperstringPrincipalPreserved verifies that
+// removing the line for `alice@corp.com` does NOT also remove a different
+// identity whose principal is a superstring (`alice@corp.com.attacker.example`).
+// The principal is the first whitespace-delimited field and must match exactly
+// (CR-01: substring matching deletes the wrong identity's signing trust).
+func TestRemoveAllowedSignersLine_SuperstringPrincipalPreserved(t *testing.T) {
+	dir := t.TempDir()
+	allowedPath := filepath.Join(dir, "allowed_signers")
+
+	content := "alice@corp.com namespaces=\"git\" ssh-ed25519 AAAA1234\n" +
+		"alice@corp.com.attacker.example namespaces=\"git\" ssh-ed25519 BBBB5678\n"
+	if err := os.WriteFile(allowedPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("seeding allowed_signers: %v", err)
+	}
+
+	if _, err := RemoveAllowedSignersLine(allowedPath, "alice@corp.com"); err != nil {
+		t.Fatalf("RemoveAllowedSignersLine returned error: %v", err)
+	}
+
+	got, err := os.ReadFile(allowedPath) //nolint:gosec // test reads back the file under test
+	if err != nil {
+		t.Fatalf("reading result: %v", err)
+	}
+	// The exact-principal line must be gone.
+	if strings.Contains(string(got), "AAAA1234") {
+		t.Errorf("alice@corp.com line not removed:\n%s", got)
+	}
+	// The superstring-principal line must be preserved.
+	if !strings.Contains(string(got), "alice@corp.com.attacker.example") {
+		t.Errorf("superstring principal line was incorrectly removed (CR-01):\n%s", got)
+	}
+}
+
 // TestRemoveAllowedSignersLine_Idempotent verifies that calling
 // RemoveAllowedSignersLine when no matching line exists returns "", nil (no
 // change, no error).

@@ -155,7 +155,13 @@ func runIdentityDelete(in io.Reader, out io.Writer, name string, dryRun bool, de
 	if keepKey {
 		fp(out, "  Private key files:      kept (not deleted)\n")
 	} else {
-		fp(out, "  Private key files:      deleted (irreversible)\n")
+		fp(out, "  Private key files:      removed (backed up)\n")
+		if res.KeyBackup != "" {
+			fp(out, fmt.Sprintf("  private key backup:     %s\n", res.KeyBackup))
+		}
+		if res.PubBackup != "" {
+			fp(out, fmt.Sprintf("  public key backup:      %s\n", res.PubBackup))
+		}
 	}
 
 	return nil
@@ -193,14 +199,19 @@ func buildDeleteDeps(_ io.Writer) identity.DeleteDeps {
 		RemoveAllowedSigners: func(path, email string) (string, error) {
 			return gitconfig.RemoveAllowedSignersLine(path, email)
 		},
-		RemoveKeyFiles: func(keyPath, pubPath string) error {
-			if kerr := os.Remove(keyPath); kerr != nil && !os.IsNotExist(kerr) {
-				return fmt.Errorf("removing private key %s: %w", keyPath, kerr)
+		// Route key removal through filewriter.BackupAndRemove so the private
+		// material is preserved as a timestamped .bak.<ts> (mode 0600) and the
+		// removal is atomic per file (CR-02). A missing file is a no-op.
+		RemoveKeyFiles: func(keyPath, pubPath string) (string, string, error) {
+			keyBak, kerr := filewriter.BackupAndRemove(keyPath)
+			if kerr != nil {
+				return "", "", fmt.Errorf("removing private key %s: %w", keyPath, kerr)
 			}
-			if kerr := os.Remove(pubPath); kerr != nil && !os.IsNotExist(kerr) {
-				return fmt.Errorf("removing public key %s: %w", pubPath, kerr)
+			pubBak, perr := filewriter.BackupAndRemove(pubPath)
+			if perr != nil {
+				return keyBak, "", fmt.Errorf("removing public key %s: %w", pubPath, perr)
 			}
-			return nil
+			return keyBak, pubBak, nil
 		},
 	}
 }

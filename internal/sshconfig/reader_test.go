@@ -110,9 +110,11 @@ func TestParseManagedHosts_ImplicitHostStar(t *testing.T) {
 	}
 }
 
-// TestParseManagedHosts_PortDefaultsTo22 verifies that when Port is absent in
-// the block body, SSHHostInfo.Port defaults to 22.
-func TestParseManagedHosts_PortDefaultsTo22(t *testing.T) {
+// TestParseManagedHosts_PortUnsetWhenAbsent verifies that when no Port directive
+// is present in the block body, SSHHostInfo.Port is 0 ("unset") rather than a
+// fabricated 22 (WR-06). gitid alt-ssh endpoints use 443, so guessing 22 would
+// mislead reconstruction/list; the display/use layer applies the real default.
+func TestParseManagedHosts_PortUnsetWhenAbsent(t *testing.T) {
 	body := "Host work.github.com\n\tHostname ssh.github.com\n\tIdentityFile ~/.ssh/id_ed25519_work\n"
 	content := []byte(filewriter.BeginPrefix + "work\n" + body + filewriter.EndPrefix + "work\n")
 
@@ -120,7 +122,7 @@ func TestParseManagedHosts_PortDefaultsTo22(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseManagedHosts returned error: %v", err)
 	}
-	if got["work"].Port != 22 {
-		t.Errorf("Port: got %d want 22", got["work"].Port)
+	if got["work"].Port != 0 {
+		t.Errorf("Port: got %d want 0 (unset, not fabricated 22)", got["work"].Port)
 	}
 }

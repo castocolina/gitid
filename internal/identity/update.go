@@ -3,6 +3,7 @@ package identity
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/castocolina/gitid/internal/gitconfig"
@@ -107,10 +108,38 @@ func Update(existing Account, edited Account, deps UpdateDeps, signing bool) (Up
 // readPubLine reads the public key line from a .pub file path. It returns the
 // raw file content (the authorized-key line) trimmed of surrounding whitespace.
 // The path is a gitid-managed path supplied in-process (trusted, not user input).
+//
+// A leading "~/" is expanded to the user home first (WR-02): reconstruction
+// copies IdentityFile verbatim from ~/.ssh/config, which commonly carries a
+// literal tilde that os.ReadFile cannot resolve — without expansion the
+// signing-on update path would half-apply (SSH + gitconfig already rewritten)
+// then hard-fail here.
 func readPubLine(pubPath string) (string, error) {
-	data, err := os.ReadFile(pubPath) //nolint:gosec // pubPath is a gitid-managed .pub path (G304)
+	resolved, err := expandTilde(pubPath)
 	if err != nil {
-		return "", fmt.Errorf("reading pub key %s: %w", pubPath, err)
+		return "", fmt.Errorf("resolving pub key path %s: %w", pubPath, err)
+	}
+	data, err := os.ReadFile(resolved) //nolint:gosec // resolved from a gitid-managed .pub path (G304)
+	if err != nil {
+		return "", fmt.Errorf("reading pub key %s: %w", resolved, err)
 	}
 	return strings.TrimRight(string(data), "\n"), nil
+}
+
+// expandTilde expands a leading "~/" (or a bare "~") in path to the user home
+// directory. Paths without a leading tilde are returned unchanged. It is used
+// wherever a reconstructed path (copied verbatim from a user config that may use
+// "~") is opened on disk (WR-02).
+func expandTilde(path string) (string, error) {
+	if path != "~" && !strings.HasPrefix(path, "~/") {
+		return path, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	if path == "~" {
+		return home, nil
+	}
+	return filepath.Join(home, path[len("~/"):]), nil
 }

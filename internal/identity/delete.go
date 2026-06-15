@@ -23,9 +23,13 @@ type DeleteDeps struct {
 	// RemoveAllowedSigners removes the identity's line from the allowed_signers
 	// file (matched by email + namespaces="git"). Returns backup path.
 	RemoveAllowedSigners func(path, email string) (backupPath string, err error)
-	// RemoveKeyFiles removes the private and public key files. Called only when
-	// keepKey is false (irreversible — D-07).
-	RemoveKeyFiles func(keyPath, pubPath string) error
+	// RemoveKeyFiles removes the private and public key files via a recoverable
+	// backup-then-remove (the real wiring routes through filewriter.BackupAndRemove),
+	// returning the private and public key backup paths. Called only when keepKey
+	// is false (irreversible block/file removals above are backed up; the key path
+	// is backed up too — CR-02 — so it is recoverable). A missing key file is a
+	// no-op (empty backup path, no error).
+	RemoveKeyFiles func(keyPath, pubPath string) (keyBackup, pubBackup string, err error)
 }
 
 // DeleteResult holds the backup paths produced by Delete.
@@ -34,6 +38,8 @@ type DeleteResult struct {
 	GitconfigBackup      string
 	FragmentBackup       string
 	AllowedSignersBackup string
+	KeyBackup            string
+	PubBackup            string
 }
 
 // Delete removes the four per-identity artifacts (SSH Host block, includeIf
@@ -85,10 +91,14 @@ func Delete(acct Account, keepKey bool, deps DeleteDeps) (DeleteResult, error) {
 	}
 	res.AllowedSignersBackup = signBak
 
-	// Key deletion is intentionally gated behind keepKey=false (D-07).
-	// Block/file removals above are reversible (backups exist); key deletion is not.
+	// Key deletion is gated behind keepKey=false (D-07). The key files are routed
+	// through a backup-then-remove (CR-02), so the backup paths are surfaced in
+	// the result the same way every other artifact's backup is.
 	if !keepKey {
-		if kerr := deps.RemoveKeyFiles(acct.KeyPath, acct.PubPath); kerr != nil {
+		keyBak, pubBak, kerr := deps.RemoveKeyFiles(acct.KeyPath, acct.PubPath)
+		res.KeyBackup = keyBak
+		res.PubBackup = pubBak
+		if kerr != nil {
 			return res, fmt.Errorf("identity: removing key files: %w", kerr)
 		}
 	}

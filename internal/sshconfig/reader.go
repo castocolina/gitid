@@ -14,7 +14,7 @@ import (
 type SSHHostInfo struct {
 	Alias          string
 	Hostname       string
-	Port           int // default 22 when absent
+	Port           int // 0 ("unset") when the block has no explicit Port directive (WR-06)
 	IdentityFile   string
 	IdentitiesOnly bool
 }
@@ -64,7 +64,11 @@ func parseHostBlockBody(body string) (SSHHostInfo, error) {
 		alias := host.Patterns[0].String()
 		hostname, _ := cfg.Get(alias, "Hostname")
 		portStr, _ := cfg.Get(alias, "Port")
-		port := 22
+		// Port 0 means "unset": when the block has no explicit Port directive we
+		// must NOT fabricate 22, because gitid alt-ssh endpoints use 443 (WR-06).
+		// The display/use layer applies the real provider-aware default and treats
+		// 0 as absent (list.go only prints port when != 0).
+		port := 0
 		if n, atoiErr := strconv.Atoi(portStr); atoiErr == nil {
 			port = n
 		}

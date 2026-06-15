@@ -61,11 +61,11 @@ func newFakeDeleteDeps(log *deleteCallLog, sshFixture, gcFixture []byte) DeleteD
 			log.lastAllowedSignEmail = email
 			return "sign.bak", nil
 		},
-		RemoveKeyFiles: func(keyPath, pubPath string) error {
+		RemoveKeyFiles: func(keyPath, pubPath string) (string, string, error) {
 			log.removeKeyFiles++
 			log.lastKeyPath = keyPath
 			log.lastPubPath = pubPath
-			return nil
+			return "key.bak", "pub.bak", nil
 		},
 	}
 }
@@ -226,7 +226,7 @@ func TestDelete_GlobalAndForeignPreserved(t *testing.T) {
 		},
 		RemoveFragment:       func(_ string) (string, error) { return "", nil },
 		RemoveAllowedSigners: func(_, _ string) (string, error) { return "", nil },
-		RemoveKeyFiles:       func(_, _ string) error { return nil },
+		RemoveKeyFiles:       func(_, _ string) (string, string, error) { return "", "", nil },
 	}
 
 	_, err := Delete(acct, true, deps)
@@ -278,7 +278,7 @@ func TestDelete_RemoveBlockUsedForSSHAndGitconfig(t *testing.T) {
 		WriteGitconfig:       func(c []byte) (string, error) { capturedGC = c; return "", nil },
 		RemoveFragment:       func(_ string) (string, error) { return "", nil },
 		RemoveAllowedSigners: func(_, _ string) (string, error) { return "", nil },
-		RemoveKeyFiles:       func(_, _ string) error { return nil },
+		RemoveKeyFiles:       func(_, _ string) (string, string, error) { return "", "", nil },
 	}
 
 	_, err := Delete(acct, true, deps)
@@ -345,7 +345,7 @@ func TestDelete_ReadSSHError(t *testing.T) {
 		WriteGitconfig:       func(_ []byte) (string, error) { return "", nil },
 		RemoveFragment:       func(_ string) (string, error) { return "", nil },
 		RemoveAllowedSigners: func(_, _ string) (string, error) { return "", nil },
-		RemoveKeyFiles:       func(_, _ string) error { return nil },
+		RemoveKeyFiles:       func(_, _ string) (string, string, error) { return "", "", nil },
 	}
 
 	_, err := Delete(acct, true, deps)

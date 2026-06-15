@@ -102,9 +102,14 @@ func ReadFragment(fragPath string) (FragmentInfo, error) {
 }
 
 // RemoveAllowedSignersLine rewrites path with the line for identityEmail
-// removed (matched by BOTH identityEmail AND namespaces="git"). Backs up via
-// filewriter.Write at mode 0600 (T-03-05: private material). Idempotent when
-// no matching line exists. Missing file returns ("", nil).
+// removed. A line matches only when its FIRST whitespace-delimited field (the
+// allowed_signers PRINCIPAL) equals identityEmail EXACTLY — substring matching
+// is unsafe because emails can share a common prefix (e.g. removing
+// "alice@corp.com" must not strip "alice@corp.com.attacker.example", CR-01) —
+// AND the line still carries namespaces="git" (T-03-01, Pitfall D). Blank lines
+// and comments are preserved untouched. Backs up via filewriter.Write at mode
+// 0600 (T-03-05: private material). Idempotent when no matching line exists.
+// Missing file returns ("", nil).
 func RemoveAllowedSignersLine(path, identityEmail string) (backupPath string, err error) {
 	existing, readErr := os.ReadFile(path) //nolint:gosec // path is a trusted gitid-managed allowed_signers path
 	if os.IsNotExist(readErr) {
@@ -115,9 +120,12 @@ func RemoveAllowedSignersLine(path, identityEmail string) (backupPath string, er
 	}
 	var kept []string
 	for _, line := range strings.Split(string(existing), "\n") {
-		// Require BOTH the email AND namespaces="git" to match (T-03-01, Pitfall D).
-		if strings.Contains(line, identityEmail) && strings.Contains(line, `namespaces="git"`) {
-			continue // remove this line
+		// Exact first-field principal match: split on whitespace and compare the
+		// PRINCIPAL token exactly, AND require namespaces="git" on the same line.
+		// Blank/comment lines have no matching first field and are preserved.
+		fields := strings.Fields(line)
+		if len(fields) >= 1 && fields[0] == identityEmail && strings.Contains(line, `namespaces="git"`) {
+			continue // remove this exact-principal line
 		}
 		kept = append(kept, line)
 	}

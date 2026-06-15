@@ -50,9 +50,12 @@ func ListBlocks(content []byte) []NamedBlock {
 }
 
 // RemoveBlock returns content with the gitid managed block for name removed.
-// If no such block exists the input is returned unchanged (idempotent). A single
-// blank line immediately following the END marker is also consumed to avoid
-// blank-line accumulation on repeated delete+recreate cycles.
+// If no such block exists the input is returned unchanged (idempotent). Only the
+// block's own lines (BEGIN..END inclusive) are removed; all surrounding content
+// — including any blank line the user placed after the END marker as a separator
+// — is preserved byte-for-byte (WR-04). Spacing normalization on re-create is
+// owned by ReplaceBlock, not RemoveBlock, so removing a block never mutates
+// foreign formatting.
 func RemoveBlock(content []byte, name string) []byte {
 	beginMarker := BeginPrefix + name
 	endMarker := EndPrefix + name
@@ -78,15 +81,10 @@ func RemoveBlock(content []byte, name string) []byte {
 		return content
 	}
 
-	// Determine the slice boundary after the END line.
+	// Slice boundary is exactly the line after END — foreign lines (including a
+	// trailing blank-line separator the user placed) are preserved byte-for-byte
+	// (WR-04). RemoveBlock never consumes a line it does not own.
 	afterEnd := endIdx + 1
-	// Consume one trailing blank line to avoid accumulating blank lines after
-	// repeated delete+recreate. Only remove it if it is genuinely empty.
-	if afterEnd < len(lines) {
-		if strings.TrimRight(lines[afterEnd], "\n\r") == "" {
-			afterEnd++
-		}
-	}
 
 	var b strings.Builder
 	b.WriteString(strings.Join(lines[:beginIdx], ""))

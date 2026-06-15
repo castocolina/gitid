@@ -20,7 +20,7 @@ func fakeDeleteDeps(_ io.Writer) identity.DeleteDeps {
 		WriteGitconfig:       func(_ []byte) (string, error) { return "gc.bak", nil },
 		RemoveFragment:       func(_ string) (string, error) { return "frag.bak", nil },
 		RemoveAllowedSigners: func(_, _ string) (string, error) { return "sign.bak", nil },
-		RemoveKeyFiles:       func(_, _ string) error { return nil },
+		RemoveKeyFiles:       func(_, _ string) (string, string, error) { return "", "", nil },
 	}
 }
 
@@ -156,7 +156,8 @@ func TestRunIdentityDelete_ConfirmKeepKey(t *testing.T) {
 }
 
 // TestRunIdentityDelete_ConfirmDeleteKey asserts that confirming both prompts
-// ("y" then "y") completes successfully and reports key deletion.
+// ("y" then "y") completes successfully and reports the key removal as backed
+// up (CR-02: key files are recoverable, not irreversibly removed).
 func TestRunIdentityDelete_ConfirmDeleteKey(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -173,8 +174,8 @@ func TestRunIdentityDelete_ConfirmDeleteKey(t *testing.T) {
 	if !strings.Contains(out.String(), "Identity deleted.") {
 		t.Errorf("expected 'Identity deleted.', got:\n%s", out.String())
 	}
-	if !strings.Contains(out.String(), "deleted (irreversible)") {
-		t.Errorf("expected 'deleted (irreversible)' in output, got:\n%s", out.String())
+	if !strings.Contains(out.String(), "removed (backed up)") {
+		t.Errorf("expected 'removed (backed up)' in output, got:\n%s", out.String())
 	}
 }
 
@@ -221,6 +222,78 @@ func TestRunIdentityDelete_TwoConfirmCalls(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "kept (not deleted)") {
 		t.Errorf("expected 'kept (not deleted)' after declining key-delete prompt, got:\n%s", out.String())
+	}
+}
+
+// TestBuildDeleteDeps_KeyFilesBackedUpNotRawRemoved asserts that the real
+// RemoveKeyFiles wiring routes BOTH the private key and the .pub through
+// filewriter.BackupAndRemove: the originals are gone, timestamped .bak.<ts>
+// copies remain on disk, and the backup paths are returned (CR-02).
+func TestBuildDeleteDeps_KeyFilesBackedUpNotRawRemoved(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatalf("mkdir ssh: %v", err)
+	}
+	keyPath := filepath.Join(sshDir, "id_ed25519_work")
+	pubPath := keyPath + ".pub"
+	if err := os.WriteFile(keyPath, []byte("PRIVATE-KEY-BYTES"), 0o600); err != nil {
+		t.Fatalf("write key: %v", err)
+	}
+	if err := os.WriteFile(pubPath, []byte("ssh-ed25519 AAAA work\n"), 0o600); err != nil {
+		t.Fatalf("write pub: %v", err)
+	}
+
+	deps := buildDeleteDeps(io.Discard)
+	keyBak, pubBak, err := deps.RemoveKeyFiles(keyPath, pubPath)
+	if err != nil {
+		t.Fatalf("RemoveKeyFiles error: %v", err)
+	}
+
+	// Originals must be gone.
+	if _, statErr := os.Stat(keyPath); !os.IsNotExist(statErr) {
+		t.Errorf("private key still present at %s (expected removed)", keyPath)
+	}
+	if _, statErr := os.Stat(pubPath); !os.IsNotExist(statErr) {
+		t.Errorf("public key still present at %s (expected removed)", pubPath)
+	}
+
+	// Backups must exist and be reported (recoverable, CR-02).
+	if keyBak == "" {
+		t.Fatal("expected a non-empty private key backup path (CR-02)")
+	}
+	if _, statErr := os.Stat(keyBak); statErr != nil {
+		t.Errorf("private key backup missing at %s: %v", keyBak, statErr)
+	}
+	if pubBak == "" {
+		t.Fatal("expected a non-empty public key backup path (CR-02)")
+	}
+	if _, statErr := os.Stat(pubBak); statErr != nil {
+		t.Errorf("public key backup missing at %s: %v", pubBak, statErr)
+	}
+	if got, _ := os.ReadFile(keyBak); string(got) != "PRIVATE-KEY-BYTES" { //nolint:gosec // test reads its own backup
+		t.Errorf("private key backup content = %q, want preserved original", string(got))
+	}
+}
+
+// TestBuildDeleteDeps_RemoveKeyFilesMissingIsNoOp asserts that removing a key
+// pair that does not exist is a no-op (no error, empty backup paths) — CR-02
+// missing-file handling matches BackupAndRemove idempotency.
+func TestBuildDeleteDeps_RemoveKeyFilesMissingIsNoOp(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	deps := buildDeleteDeps(io.Discard)
+	keyBak, pubBak, err := deps.RemoveKeyFiles(
+		filepath.Join(home, ".ssh", "absent"),
+		filepath.Join(home, ".ssh", "absent.pub"),
+	)
+	if err != nil {
+		t.Fatalf("RemoveKeyFiles on missing files returned error: %v", err)
+	}
+	if keyBak != "" || pubBak != "" {
+		t.Errorf("expected empty backup paths for missing files, got %q, %q", keyBak, pubBak)
 	}
 }
 
