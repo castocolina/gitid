@@ -80,7 +80,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 02-06-PLAN.md — identity.Create orchestration + `gitid identity add` Cobra command (create-new end-to-end vertical slice, upload steps, dry-run); adds cobra
+- [x] 02-06-PLAN.md — identity.Create orchestration + `gitid identity add` Cobra command (create-new end-to-end vertical slice, upload steps, dry-run); adds cobra
 
 **Wave 5** *(blocked on Wave 4)*
 
@@ -157,7 +157,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 5/7 plans executed
+**Plans:** 6/7 plans executed
 
 Plans:
 
@@ -170,7 +170,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Bootstrap | 3/3 | Complete   | 2026-06-09 |
-| 2. First Identity End-to-End | 5/7 | In Progress|  |
+| 2. First Identity End-to-End | 6/7 | In Progress|  |
 | 3. Full Identity CRUD + Multi-Identity | 0/? | Not started | - |
 | 4. Doctor | 0/? | Not started | - |
 | 5. CLI Surface + TUI | 0/? | Not started | - |
