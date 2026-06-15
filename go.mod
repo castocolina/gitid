@@ -3,6 +3,9 @@ module github.com/castocolina/gitid
 go 1.26
 
 require (
+	charm.land/bubbles/v2 v2.1.0
+	charm.land/bubbletea/v2 v2.0.7
+	charm.land/lipgloss/v2 v2.0.3
 	github.com/atotto/clipboard v0.1.4
 	github.com/kevinburke/ssh_config v1.6.0
 	github.com/spf13/cobra v1.10.2
@@ -11,9 +14,6 @@ require (
 )
 
 require (
-	charm.land/bubbles/v2 v2.1.0 // indirect
-	charm.land/bubbletea/v2 v2.0.7 // indirect
-	charm.land/lipgloss/v2 v2.0.3 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260525132238-948f4557a654 // indirect
 	github.com/charmbracelet/x/ansi v0.11.7 // indirect

@@ -82,7 +82,7 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 ### CLI (CLI)
 
 - [x] **CLI-01**: A Cobra CLI exposes the Phase-1 surface: `doctor`, `identity add/list/test`, `host add`
-- [ ] **CLI-02**: The CLI generates shell completion for bash, zsh, and fish
+- [x] **CLI-02**: The CLI generates shell completion for bash, zsh, and fish
 
 ### TUI (TUI)
 
@@ -194,6 +194,6 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 | DOC-06 | Phase 4 | Complete |
 | DOC-07 | Phase 4 | Complete |
 | CLI-01 | Phase 5 | Complete |
-| CLI-02 | Phase 5 | Pending |
+| CLI-02 | Phase 5 | Complete |
 | TUI-01 | Phase 5 | Complete |
 | TUI-02 | Phase 5 | Complete |
