@@ -9,12 +9,14 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 ## v1 Requirements
 
 ### Project Tooling & Standards (TOOL)
+
 - [ ] **TOOL-01**: A `Makefile` exposes `setup-env`, `build`, `install`, `uninstall`, `test`, `lint`, `fmt` targets
 - [ ] **TOOL-02**: `make setup-env` bootstraps the dev environment (installs golangci-lint, gosec, pre-commit, and the git hooks)
 - [ ] **TOOL-03**: pre-commit hooks run format, lint, security, and tests by invoking the same `make` targets CI uses
 - [ ] **TOOL-04**: Core logic is built test-first (TDD); config parse→render→parse is round-trip stable (proven by tests)
 
 ### Identity & Account CRUD (IDENT)
+
 - [ ] **IDENT-01**: User can create an identity (name, git name, git email) that generates an ed25519 key used for both authentication and signing
 - [ ] **IDENT-02**: User can create an identity that reuses an existing key instead of generating a new one
 - [ ] **IDENT-03**: User can list identities and accounts with their wiring (key path, alias, provider, port, match strategy)
@@ -24,34 +26,41 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 - [ ] **IDENT-07**: On startup the tool reconstructs the identity/account list by parsing its managed blocks (no sidecar database)
 
 ### Key Management (KEY)
+
 - [ ] **KEY-01**: User can rotate/replace the key for an existing identity; artifacts re-point to the new key and the test flow re-runs
-- [ ] **KEY-02**: Generated keys and files receive correct permissions (`~/.ssh` 700, private key 600, `.pub` 644, `config` 600)
+- [x] **KEY-02**: Generated keys and files receive correct permissions (`~/.ssh` 700, private key 600, `.pub` 644, `config` 600)
 
 ### SSH Config Artifact (SSH)
+
 - [ ] **SSH-01**: Creating an account writes a managed `Host <alias>` block with `Hostname`, `Port`, `User git`, `IdentityFile`, and `IdentitiesOnly yes`
 - [ ] **SSH-02**: A provider's default identity may use the real host (`github.com`); additional identities use aliases (`work.github.com`)
 - [ ] **SSH-03**: On macOS a `Host *` block emits `UseKeychain yes` + `AddKeysToAgent yes` guarded by `IgnoreUnknown UseKeychain`; this block is ordered after specific hosts
 
 ### Git Config Artifact (GIT)
+
 - [ ] **GIT-01**: Creating an account writes a managed `[includeIf "<match>"]` block in `~/.gitconfig` pointing to the identity's fragment
 - [ ] **GIT-02**: The match strategy supports `gitdir:` (default suggestion, with trailing slash) and `hasconfig:remote.*.url`, combinable per account
 - [ ] **GIT-03**: A per-identity fragment (`~/.gitconfig.d/<identity>`) sets `user.name`/`user.email`, `gpg.format=ssh`, `user.signingkey`, `commit.gpgsign true`
 
 ### Signing (SIGN)
+
 - [ ] **SIGN-01**: A signing identity gets an `~/.ssh/allowed_signers` line in the form `<email> namespaces="git" ssh-ed25519 AAAA…` (email byte-identical to `user.email`)
 - [ ] **SIGN-02**: `user.signingkey` references the public-key file path, never an inline key literal (survives rotation)
 
 ### Two-Phase Test Flow (TEST)
+
 - [ ] **TEST-01**: Before writing, an explicit test runs `ssh -i <key> -o IdentitiesOnly=yes -T git@<host>`, proving the key authenticates
 - [ ] **TEST-02**: After writing, a resolved test runs `ssh -T git@<alias>` plus `ssh -G <alias>` to prove which `IdentityFile` the config actually resolved
 - [ ] **TEST-03**: Every test prints both the command run (input) and its real output
 
 ### Safe Writes (SAFE)
-- [ ] **SAFE-01**: Every mutation creates a timestamped backup before writing (e.g. `~/.ssh/config.bak.<ts>`)
-- [ ] **SAFE-02**: Writes use an idempotent whole-block rewrite of sentinel-delimited blocks (never blind append); content outside managed blocks is preserved verbatim
-- [ ] **SAFE-03**: Writes are atomic (write-to-temp → rename → chmod) and no write path proceeds without explicit confirmation
+
+- [x] **SAFE-01**: Every mutation creates a timestamped backup before writing (e.g. `~/.ssh/config.bak.<ts>`)
+- [x] **SAFE-02**: Writes use an idempotent whole-block rewrite of sentinel-delimited blocks (never blind append); content outside managed blocks is preserved verbatim
+- [x] **SAFE-03**: Writes are atomic (write-to-temp → rename → chmod) and no write path proceeds without explicit confirmation
 
 ### Doctor (DOC)
+
 - [ ] **DOC-01**: `gitid doctor` checks dependencies (`ssh`, `ssh-keygen`, `ssh-add`, `git`, clipboard tool) with per-OS install hints (brew / apt / dnf / pacman)
 - [ ] **DOC-02**: Doctor checks permissions on `~/.ssh`, keys, `.pub`, and `config`
 - [ ] **DOC-03**: Doctor checks coherence/drift — every `IdentityFile` resolves, every `includeIf` points to an existing fragment, `IdentitiesOnly yes` is present, signing identities have an `allowed_signers` line
@@ -61,18 +70,22 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 - [ ] **DOC-07**: Doctor runs first when the TUI launches, and is available as `gitid doctor` on the CLI
 
 ### Clipboard (CLIP)
+
 - [ ] **CLIP-01**: The public key is copied to the clipboard when generated and on demand when reusing an identity
 - [ ] **CLIP-02**: Clipboard support is cross-platform (`pbcopy` macOS; `wl-copy`/`xclip` Linux) and fails gracefully when no tool is found
 
 ### Upload Instructions (UP)
+
 - [ ] **UP-01**: For GitHub/GitLab, the tool shows concrete steps to add the public key for **authentication**
 - [ ] **UP-02**: For GitHub/GitLab, the tool shows concrete steps to add the public key for **signing**
 
 ### CLI (CLI)
+
 - [ ] **CLI-01**: A Cobra CLI exposes the Phase-1 surface: `doctor`, `identity add/list/test`, `host add`
 - [ ] **CLI-02**: The CLI generates shell completion for bash, zsh, and fish
 
 ### TUI (TUI)
+
 - [ ] **TUI-01**: A Bubble Tea TUI launches into the doctor dashboard
 - [ ] **TUI-02**: From the dashboard the user can navigate to the identity/account managers
 
@@ -103,6 +116,7 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 ## Acceptance Criteria
 
 ### Functional
+
 - [ ] Create an identity end-to-end; the four artifacts are written with backup + confirmation; both test phases pass and show input + output
 - [ ] Two identities on the same provider coexist via distinct aliases and each resolves to its own key (`ssh -G` proof)
 - [ ] Rotate a key: artifacts re-point to the new key and the resolved test passes
@@ -111,12 +125,14 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 - [ ] `gitid doctor` reports deps, permissions, drift, orphans, signing, and agent status, each with a suggested fix; runs first in the TUI
 
 ### Quality
+
 - [ ] Core has unit tests written test-first; config parse/render is round-trip safe
 - [ ] No write path lacks a backup + confirmation
 - [ ] All generated content is in English
 - [ ] `make lint` (golangci-lint + gosec) and `make test` pass; pre-commit hooks enforce them
 
 ### User acceptance
+
 - [ ] Existing hand-written config outside managed blocks is preserved
 - [ ] Upload steps are clear enough to add a key without external docs
 
@@ -140,7 +156,7 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 | IDENT-02 | Phase 2 | Pending |
 | IDENT-06 | Phase 2 | Pending |
 | KEY-01 | Phase 2 | Pending |
-| KEY-02 | Phase 2 | Pending |
+| KEY-02 | Phase 2 | Complete |
 | SSH-01 | Phase 2 | Pending |
 | SSH-02 | Phase 2 | Pending |
 | SSH-03 | Phase 2 | Pending |
@@ -152,9 +168,9 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 | TEST-01 | Phase 2 | Pending |
 | TEST-02 | Phase 2 | Pending |
 | TEST-03 | Phase 2 | Pending |
-| SAFE-01 | Phase 2 | Pending |
-| SAFE-02 | Phase 2 | Pending |
-| SAFE-03 | Phase 2 | Pending |
+| SAFE-01 | Phase 2 | Complete |
+| SAFE-02 | Phase 2 | Complete |
+| SAFE-03 | Phase 2 | Complete |
 | CLIP-01 | Phase 2 | Pending |
 | CLIP-02 | Phase 2 | Pending |
 | UP-01 | Phase 2 | Pending |

@@ -6,5 +6,7 @@
 // gitconfig key/value mutations instead go through `git config`, which owns
 // ~/.gitconfig directly.
 //
-// Implementation lands in a later phase (Phase 2+).
+// Write performs the backup/temp/fsync/chmod/rename safe-write; EnsureDir
+// enforces directory modes (e.g. ~/.ssh 0700); ReplaceBlock performs the
+// idempotent sentinel managed-block scan/replace.
 package filewriter
