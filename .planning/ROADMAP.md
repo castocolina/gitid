@@ -215,7 +215,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 — 05-02 and 05-03 run in parallel; cmd/gitid vs tui/ have zero file overlap)*
 
 - [x] 05-02-PLAN.md — CLI surface: no-args TTY→TUI branch + top-level rotate/copy/host-add aliases + identity copy; copy command (clipboard + upload instructions); bash/zsh/fish completion tests (CLI-01, CLI-02)
-- [ ] 05-03-PLAN.md — TUI dashboard slice: async per-family doctor streaming (runID stale-guard) + lipgloss finding render; Enter→Identity list (bubbles list) → Esc pop (TUI-01, TUI-02)
+- [x] 05-03-PLAN.md — TUI dashboard slice: async per-family doctor streaming (runID stale-guard) + lipgloss finding render; Enter→Identity list (bubbles list) → Esc pop (TUI-01, TUI-02)
 
 **Wave 3** *(blocked on Wave 2 — shares tui/model.go + tui/identitylist.go with 05-03)*
 
@@ -244,7 +244,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
 
 Plans:
 
@@ -261,5 +261,5 @@ Plans:
 | 3. Full Identity CRUD + Multi-Identity | 4/4 | Complete    | 2026-06-10 |
 | 3.1. Baseline Global Git Config + Global Gitignore | 4/4 | Complete    | 2026-06-11 |
 | 4. Doctor | 7/7 | Complete   | 2026-06-12 |
-| 5. CLI Surface + TUI | 2/4 | In Progress|  |
+| 5. CLI Surface + TUI | 3/4 | In Progress|  |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |

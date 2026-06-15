@@ -33,29 +33,28 @@ type tuiDeps struct {
 	identity identity.Deps
 }
 
-// newRootModel constructs the root model with the home screen (a placeholder
-// dashboard stub) pre-pushed onto the stack. Downstream plans replace the
-// placeholder with real screen models.
+// newRootModel constructs the root model with the doctor dashboard as the
+// home screen pre-pushed onto the stack (TUI-01). The dashboard's async
+// family cmds are started by Init().
 func newRootModel(docDeps doctor.Deps, idDeps identity.Deps) rootModel {
 	d := tuiDeps{doctor: docDeps, identity: idDeps}
-	home := &homeStubScreen{}
+	home := newDashboardModel(docDeps)
 	return rootModel{
 		stack: []screenModel{home},
 		deps:  d,
 	}
 }
 
-// homeStubScreen is a placeholder home screen. It is replaced by the real
-// dashboard in 05-03. It implements screenModel with identity-returning stubs
-// (RED-stub-under-strict-lint convention).
-type homeStubScreen struct{}
-
-func (h *homeStubScreen) update(_ tea.Msg) (screenModel, tea.Cmd) { return h, nil }
-func (h *homeStubScreen) view() string                            { return "" }
-
-// Init satisfies the tea.Model interface. It returns nil because the home stub
-// screen has no async initialization. The real dashboard (05-03) replaces this.
+// Init satisfies the tea.Model interface. It delegates to the dashboard's
+// init() to start the Batch of 7 async per-family tea.Cmds (D-09, TUI-01).
 func (m rootModel) Init() tea.Cmd {
+	if len(m.stack) == 0 {
+		return nil
+	}
+	if dash, ok := m.stack[0].(dashboardModel); ok {
+		_, cmd := dash.init()
+		return cmd
+	}
 	return nil
 }
 
