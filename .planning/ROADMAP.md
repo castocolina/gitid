@@ -134,13 +134,27 @@ Plans:
   4. HTTPS→SSH `insteadOf` rewrites are offered with the suggested mapping shown and editable before they are written (URLRW-01)
   5. gitid reads back and displays the current managed baseline state from disk with no sidecar database, consistent with the identity-reconstruction model (IDENT-07)
 
-**Plans**: TBD
+**Plans**: 4 plans
 **UI hint**: yes
 **Canonical refs**: samples/gist-60f2f1d-gitconfig, samples/gist-2c98cff-ssh-config
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 03.1 to break down)
+**Wave 1**
+
+- [ ] 03.1-01-PLAN.md — `PrependBlockIfNotFound` floor-placement primitive in internal/filewriter (TDD foundation)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 03.1-02-PLAN.md — baseline/url-rewrites/gitignore byte-stable renderers + writers via filewriter chokepoint (GLOBAL-01, URLRW-01, GITIGNORE-01)
+
+**Wave 3** *(blocked on Wave 2 — shares internal/gitconfig/baseline.go)*
+
+- [ ] 03.1-03-PLAN.md — `ScanConflicts` (block-stripped) + `ReadBaselineState` sidecar-free read-back + independent url-rewrites removal
+
+**Wave 4** *(blocked on Waves 2-3 — shares cmd/gitid/main.go)*
+
+- [ ] 03.1-04-PLAN.md — `gitid baseline setup`/`show` Cobra commands (preview→confirm→write, --dry-run, idempotency)
 
 ### Phase 4: Doctor
 
@@ -213,7 +227,7 @@ Plans:
 | 1. Bootstrap | 3/3 | Complete   | 2026-06-09 |
 | 2. First Identity End-to-End | 7/7 | Complete   | 2026-06-09 |
 | 3. Full Identity CRUD + Multi-Identity | 4/4 | Complete    | 2026-06-10 |
-| 3.1. Baseline Global Git Config + Global Gitignore | 0/? | Not started | - |
+| 3.1. Baseline Global Git Config + Global Gitignore | 0/4 | Planned | - |
 | 4. Doctor | 0/? | Not started | - |
 | 5. CLI Surface + TUI | 0/? | Not started | - |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |
