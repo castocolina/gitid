@@ -60,7 +60,31 @@
   4. The public key is in the clipboard on generate and on demand; upload instructions for GitHub/GitLab (auth + signing) are shown without consulting external docs
   5. `git log --show-signature` on a test commit inside the matched directory shows "Good signature" (signing wired end-to-end)
 
-**Plans**: TBD
+**Plans**: 7 plans
+
+Plans:
+
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — internal/filewriter safe-write chokepoint (backup, atomic temp→rename→chmod, idempotent sentinel managed-block)
+- [ ] 02-02-PLAN.md — internal/platform + internal/deps (ssh -Q key probe, ed25519→rsa→ecdsa fallback, D-14 install hints, tool detection)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 02-03-PLAN.md — internal/keygen (ed25519 + allowed_signers) + internal/clipboard (copy .pub, graceful failure); adds x/crypto + atotto
+- [ ] 02-05-PLAN.md — internal/gitconfig (includeIf + fragment + signing wiring) + internal/tester (two-phase output-substring classifier + ssh -G parse)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 02-04-PLAN.md — internal/sshconfig render/parse/write (Host block, macOS Host * ordered last, idempotent round-trip); adds kevinburke/ssh_config
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 02-06-PLAN.md — identity.Create orchestration + `gitid identity add` Cobra command (create-new end-to-end vertical slice, upload steps, dry-run); adds cobra
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 02-07-PLAN.md — fast-follow modes: reuse-existing-key (IDENT-02), add-account/alias (IDENT-06), key rotation (KEY-01)
 
 ### Phase 3: Full Identity CRUD + Multi-Identity
 
@@ -146,7 +170,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Bootstrap | 3/3 | Complete   | 2026-06-09 |
-| 2. First Identity End-to-End | 0/? | Not started | - |
+| 2. First Identity End-to-End | 0/7 | Planned | - |
 | 3. Full Identity CRUD + Multi-Identity | 0/? | Not started | - |
 | 4. Doctor | 0/? | Not started | - |
 | 5. CLI Surface + TUI | 0/? | Not started | - |
