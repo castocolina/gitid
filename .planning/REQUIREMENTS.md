@@ -92,8 +92,8 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 ### Global Baseline Config (GLOBAL / URLRW / GITIGNORE)
 
 - [x] **GLOBAL-01**: Global/shared git config toggles (`push.autoSetupRemote`, `core.ignorecase`, `pull.rebase`, `fetch.prune`, aliases, color) are seeded with sensible defaults and managed idempotently in a sentinel-delimited block, content outside the block preserved verbatim
-- [ ] **URLRW-01**: When an SSH host/alias is added, suggest the HTTPS equivalent and let the user edit it before generating the `insteadOf` rewrite
-- [ ] **GITIGNORE-01**: gitid manages a global gitignore — it sets `core.excludesfile` to a gitid-managed `~/.gitignore_global` seeded with curated OS/editor/build excludes (`.DS_Store`, `Thumbs.db`, `*.log`, `*.bak`, `*.tmp`, `*.swp`, …); the file is written through the safe-write chokepoint (backup + atomic + idempotent managed block) with content outside the block preserved
+- [x] **URLRW-01**: When an SSH host/alias is added, suggest the HTTPS equivalent and let the user edit it before generating the `insteadOf` rewrite
+- [x] **GITIGNORE-01**: gitid manages a global gitignore — it sets `core.excludesfile` to a gitid-managed `~/.gitignore_global` seeded with curated OS/editor/build excludes (`.DS_Store`, `Thumbs.db`, `*.log`, `*.bak`, `*.tmp`, `*.swp`, …); the file is written through the safe-write chokepoint (backup + atomic + idempotent managed block) with content outside the block preserved
 
 ## v2 Requirements (deferred)
 
@@ -184,8 +184,8 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 | IDENT-05 | Phase 3 | Complete |
 | IDENT-07 | Phase 3 | Complete |
 | GLOBAL-01 | Phase 3.1 | Complete |
-| URLRW-01 | Phase 3.1 | Pending |
-| GITIGNORE-01 | Phase 3.1 | Pending |
+| URLRW-01 | Phase 3.1 | Complete |
+| GITIGNORE-01 | Phase 3.1 | Complete |
 | DOC-01 | Phase 4 | Pending |
 | DOC-02 | Phase 4 | Pending |
 | DOC-03 | Phase 4 | Pending |

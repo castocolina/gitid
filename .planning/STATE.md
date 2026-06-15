@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 3.1 UI-SPEC approved
-last_updated: "2026-06-11T10:44:19.694Z"
+last_updated: "2026-06-11T10:51:24.311Z"
 last_activity: 2026-06-11 -- Phase 03.1 execution started
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 18
-  completed_plans: 15
+  completed_plans: 16
   percent: 43
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-08)
 ## Current Position
 
 Phase: 03.1 (baseline-global-git-config-global-gitignore) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-06-11 -- Phase 03.1 execution started
 
@@ -57,6 +57,7 @@ Progress: [██████████] 100%
 | Phase 02 P05 | 6min | 2 tasks | 8 files |
 | Phase 02 P04 | 4min | 2 tasks | 7 files |
 | Phase 03.1 P01 | 2min | 2 tasks | 2 files |
+| Phase 03.1 P02 | 3 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,8 @@ Recent decisions affecting current work:
 - [Phase 3]: 03-01: Reconstruct joins SSH+gitconfig by sentinel identity name (D-01); Incomplete csv marks missing artifacts (D-02)
 - [Phase 3]: 03-01: RemoveAllowedSignersLine requires BOTH email AND namespaces="git" match (T-03-01/Pitfall D)
 - [Phase 3]: 03-04: Delete passes ONLY acct.Name to RemoveBlock — never "_global"; keepKey=!confirm (D-07/D-08)
+- [Phase ?]: 03.1-02: validateValue panics used in renderers — matches renderBlockBody precedent; newline in render input is programming error not user data
+- [Phase ?]: 03.1-02: WriteBaselineInclude hardcodes literal ~ path per RESEARCH Q2 (git expands ~ at runtime)
 
 ### Roadmap Evolution
 
@@ -106,6 +109,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-11T10:44:19.684Z
+Last session: 2026-06-11T10:51:16.880Z
 Stopped at: Phase 3.1 UI-SPEC approved
 Resume file: .planning/phases/03.1-baseline-global-git-config-global-gitignore/03.1-UI-SPEC.md
