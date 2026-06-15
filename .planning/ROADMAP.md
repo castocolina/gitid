@@ -67,7 +67,7 @@ Plans:
 **Wave 1**
 
 - [x] 02-01-PLAN.md — internal/filewriter safe-write chokepoint (backup, atomic temp→rename→chmod, idempotent sentinel managed-block)
-- [ ] 02-02-PLAN.md — internal/platform + internal/deps (ssh -Q key probe, ed25519→rsa→ecdsa fallback, D-14 install hints, tool detection)
+- [x] 02-02-PLAN.md — internal/platform + internal/deps (ssh -Q key probe, ed25519→rsa→ecdsa fallback, D-14 install hints, tool detection)
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -157,7 +157,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 1/7 plans executed
+**Plans:** 2/7 plans executed
 
 Plans:
 
@@ -170,7 +170,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Bootstrap | 3/3 | Complete   | 2026-06-09 |
-| 2. First Identity End-to-End | 1/7 | In Progress|  |
+| 2. First Identity End-to-End | 2/7 | In Progress|  |
 | 3. Full Identity CRUD + Multi-Identity | 0/? | Not started | - |
 | 4. Doctor | 0/? | Not started | - |
 | 5. CLI Surface + TUI | 0/? | Not started | - |
