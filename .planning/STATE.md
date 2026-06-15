@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Phase 5 UI-SPEC approved
-last_updated: "2026-06-13T01:09:01.536Z"
-last_activity: 2026-06-12 -- Completed quick task 260612-dtm (depguard D-01 gate; SECURITY WARNING-01 closed)
+status: executing
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-06-13T02:09:27.203Z"
+last_activity: 2026-06-13 -- Phase 05 execution started
 progress:
   total_phases: 7
   completed_phases: 5
-  total_plans: 25
-  completed_plans: 25
+  total_plans: 29
+  completed_plans: 26
   percent: 71
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-08)
 
 **Core value:** Managing a Git identity produces coordinated, coherent SSH + Git artifacts that are proven to authenticate and resolve correctly before any file is written, and existing hand-written config is never corrupted.
-**Current focus:** Phase 05 — CLI Surface + TUI (next)
+**Current focus:** Phase 05 — CLI Surface + TUI
 
 ## Current Position
 
-Phase: 05 (CLI Surface + TUI) — not started
-Plan: Not started
-Status: Phase 04 (doctor) COMPLETE — verification passed after gap closure (DOC-GAP-01/02/03 closed by 04-06/04-07). Phase 06 (Linux validation) is deferred post-v1, so Phase 05 is next. Next: /gsd-discuss-phase 05 or /gsd-plan-phase 05
-Last activity: 2026-06-12 -- Completed quick task 260612-dtm (depguard D-01 gate; SECURITY WARNING-01 closed)
+Phase: 05 (CLI Surface + TUI) — EXECUTING
+Plan: 2 of 4
+Status: Ready to execute
+Last activity: 2026-06-13 -- Phase 05 execution started
 
 Progress: [██████████] Phase 04 complete (7/7 plans incl. gap closure)
 
@@ -67,6 +67,7 @@ Progress: [██████████] Phase 04 complete (7/7 plans incl. ga
 | Phase 04-doctor P05 | 25 | 2 tasks | 1 files |
 | Phase 04-doctor P06 | 90 | 2 tasks | 8 files |
 | Phase 04 P07 | 45 | 2 tasks | 5 files |
+| Phase 05 P01 | 13 | 2 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -108,6 +109,8 @@ Recent decisions affecting current work:
 - [Phase ?]: DOC-GAP-03: isTerminalInput TTY guard gates applyFixes; non-interactive doctor skips Apply prompt
 - [Phase ?]: IN-03: doctorExitCode pkg-level var bridges RunE tiered code to main os.Exit
 - [Phase ?]: WR-03: checkGitconfigPath warns only on group/world-write bits (0o022 mask); default 0644 gitconfig not flagged
+- [Phase ?]: 05-01: bubbletea v2 alt-screen via View.AltScreen=true (not WithAltScreen — v1 only)
+- [Phase ?]: 05-01: doctor-deps wiring duplicated in tui/deps.go (not extracted to internal/) per RESEARCH assumption A3
 
 ### Roadmap Evolution
 
@@ -134,6 +137,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-13T00:03:05.862Z
-Stopped at: Phase 5 UI-SPEC approved
-Resume file: .planning/phases/05-cli-surface-tui/05-UI-SPEC.md
+Last session: 2026-06-13T02:09:27.194Z
+Stopped at: Completed 05-01-PLAN.md
+Resume file: None

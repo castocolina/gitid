@@ -81,13 +81,13 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 
 ### CLI (CLI)
 
-- [ ] **CLI-01**: A Cobra CLI exposes the Phase-1 surface: `doctor`, `identity add/list/test`, `host add`
+- [x] **CLI-01**: A Cobra CLI exposes the Phase-1 surface: `doctor`, `identity add/list/test`, `host add`
 - [ ] **CLI-02**: The CLI generates shell completion for bash, zsh, and fish
 
 ### TUI (TUI)
 
-- [ ] **TUI-01**: A Bubble Tea TUI launches into the doctor dashboard
-- [ ] **TUI-02**: From the dashboard the user can navigate to the identity/account managers
+- [x] **TUI-01**: A Bubble Tea TUI launches into the doctor dashboard
+- [x] **TUI-02**: From the dashboard the user can navigate to the identity/account managers
 
 ### Global Baseline Config (GLOBAL / URLRW / GITIGNORE)
 
@@ -193,7 +193,7 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 | DOC-05 | Phase 4 | Complete |
 | DOC-06 | Phase 4 | Complete |
 | DOC-07 | Phase 4 | Complete |
-| CLI-01 | Phase 5 | Pending |
+| CLI-01 | Phase 5 | Complete |
 | CLI-02 | Phase 5 | Pending |
-| TUI-01 | Phase 5 | Pending |
-| TUI-02 | Phase 5 | Pending |
+| TUI-01 | Phase 5 | Complete |
+| TUI-02 | Phase 5 | Complete |
