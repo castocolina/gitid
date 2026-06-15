@@ -73,6 +73,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1)*
 
 - [x] 02-03-PLAN.md — internal/keygen (ed25519 + allowed_signers) + internal/clipboard (copy .pub, graceful failure); adds x/crypto + atotto
+
 - [x] 02-05-PLAN.md — internal/gitconfig (includeIf + fragment + signing wiring) + internal/tester (two-phase output-substring classifier + ssh -G parse)
 
 **Wave 3** *(blocked on Wave 2)*
@@ -202,8 +203,23 @@ Plans:
   3. `gitid completion bash`, `gitid completion zsh`, and `gitid completion fish` each produce valid shell completion scripts
   4. Every Phase 2–4 capability (`doctor`, `identity add/list/test`, `host add`, `rotate`, `copy`) is reachable as a `gitid` subcommand
 
-**Plans**: TBD
+**Plans**: 4 plans
 **UI hint**: yes
+
+Plans:
+
+**Wave 1**
+
+- [ ] 05-01-PLAN.md — Foundation: add charm.land/*/v2 deps; extract internal/upload.Instructions + identity.ValidateName; TUI skeleton (tui.Run, root view-stack model, keymap, lipgloss v2 styles, messages, deps builder)
+
+**Wave 2** *(blocked on Wave 1 — 05-02 and 05-03 run in parallel; cmd/gitid vs tui/ have zero file overlap)*
+
+- [ ] 05-02-PLAN.md — CLI surface: no-args TTY→TUI branch + top-level rotate/copy/host-add aliases + identity copy; copy command (clipboard + upload instructions); bash/zsh/fish completion tests (CLI-01, CLI-02)
+- [ ] 05-03-PLAN.md — TUI dashboard slice: async per-family doctor streaming (runID stale-guard) + lipgloss finding render; Enter→Identity list (bubbles list) → Esc pop (TUI-01, TUI-02)
+
+**Wave 3** *(blocked on Wave 2 — shares tui/model.go + tui/identitylist.go with 05-03)*
+
+- [ ] 05-04-PLAN.md — TUI forms slice: identity detail + Create/Update/Add-account forms + inline Copy action + shared Prove-Before-Write screen (two-phase async test, confirm gate, write via identity.Deps) (TUI-02, D-02/D-03/D-04/D-06)
 
 ### Phase 6: Linux Cross-Platform Validation
 
@@ -245,5 +261,5 @@ Plans:
 | 3. Full Identity CRUD + Multi-Identity | 4/4 | Complete    | 2026-06-10 |
 | 3.1. Baseline Global Git Config + Global Gitignore | 4/4 | Complete    | 2026-06-11 |
 | 4. Doctor | 7/7 | Complete   | 2026-06-12 |
-| 5. CLI Surface + TUI | 0/? | Not started | - |
+| 5. CLI Surface + TUI | 0/4 | Planned | - |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |
