@@ -15,7 +15,7 @@
 - [x] **Phase 3.1: Baseline Global Git Config + Global Gitignore** *(INSERTED)* — Seed and manage a shared baseline git config (core/push/pull/fetch/color toggles + aliases, `ignorecase=false`) and a curated global gitignore via `core.excludesfile`, in idempotent managed blocks with backup→preview→confirm; optional HTTPS→SSH `insteadOf` rewrites; baseline readable back from disk (completed 2026-06-11)
 - [x] **Phase 4: Doctor** — Deep health checks (deps, permissions, coherence/drift, orphans, signing wiring, agent) with severity + fix; `gitid doctor` CLI command (completed 2026-06-12 — 5 plans + 2 gap-closure plans 04-06/04-07; initial verification found 3 critical wiring gaps DOC-GAP-01/02/03, all closed and re-verified passed, see 04-VERIFICATION.md)
 - [x] **Phase 5: CLI Surface + TUI** — Full Cobra command surface with shell completion; Bubble Tea TUI launching to doctor dashboard with identity/account navigation (built 2026-06-13 — ⚠️ guided UAT found core + UX gaps, see VERIFICATION-PLAYBOOK.md; superseded by Phase 5.5 reconciliation + Phase 5.6 TUI rebuild)
-- [ ] **Phase 5.5: Core & CLI Reconciliation** *(INSERTED — 2026-06-13)* — Fix the core/CLI defects the playbook surfaced: auth-gated create-flow (generate→upload→loop-test until PASS→persist-only-after-PASS, with skip escape), correct provider reconstruction, install PATH feedback, per-URL (`hasconfig`) matching alongside `gitdir`, and a doctor check for overlapping/ambiguous matches. CLI/core only — no TUI cosmetics.
+- [x] **Phase 5.5: Core & CLI Reconciliation** *(INSERTED — 2026-06-13)* — Fix the core/CLI defects the playbook surfaced: auth-gated create-flow (generate→upload→loop-test until PASS→persist-only-after-PASS, with skip escape), correct provider reconstruction, install PATH feedback, per-URL (`hasconfig`) matching alongside `gitdir`, and a doctor check for overlapping/ambiguous matches. CLI/core only — no TUI cosmetics. (completed 2026-06-14)
 - [ ] **Phase 5.6: Integrated TUI App** *(INSERTED — 2026-06-13)* — Replace the thin doctor-dashboard TUI with one integrated terminal app (Bubble Tea v2): persistent header + identity sidebar + master-detail pane + bold footer; view switcher (Identities · Health · Global Options); in-app create/add wizard with live feedback (the proven create-flow); per-site + global options editable in-pane; delete/rotate in-app; copy = public key only. Ergonomics modeled on `../tools-installer`.
 - [ ] **Phase 6: Linux Cross-Platform Validation** *(DEFERRED — post-v1)* — Validate the whole tool end-to-end on Linux (developed on macOS only): clipboard dispatch, per-OS install hints, file permissions, config-path resolution, the make/pre-commit toolchain, and the two-phase ssh test flow
 
@@ -250,37 +250,39 @@ Plans:
 
 **Wave 1**
 
-- [ ] 05.5-01-PLAN.md — Wave-0 test infra: hermetic E2E harness (fake-ssh on PATH + sandbox HOME), RED E2E shells for all 5 reqs, A4 marker-stability test, `make test-e2e` (D-18/D-20)
+- [x] 05.5-01-PLAN.md — Wave-0 test infra: hermetic E2E harness (fake-ssh on PATH + sandbox HOME), RED E2E shells for all 5 reqs, A4 marker-stability test, `make test-e2e` (D-18/D-20)
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 05.5-02-PLAN.md — Provider marker write/read + reconstruction: `# gitid: provider=` marker, hostname-map fallback, remove TrimPrefix derivation (FIX-RECON-01, D-11/D-12/D-13)
+- [x] 05.5-02-PLAN.md — Provider marker write/read + reconstruction: `# gitid: provider=` marker, hostname-map fallback, remove TrimPrefix derivation (FIX-RECON-01, D-11/D-12/D-13)
 
 **Wave 3** *(blocked on Wave 2 — needs RenderHostBlock provider arg)*
 
-- [ ] 05.5-03-PLAN.md — Auth-gated create-flow: generate key to ~/.ssh first, loop test→PASS→persist (retry/skip/quit), PersistAll split, drop Confirmed (FIX-CREATE-01, D-01..D-06)
+- [x] 05.5-03-PLAN.md — Auth-gated create-flow: generate key to ~/.ssh first, loop test→PASS→persist (retry/skip/quit), PersistAll split, drop Confirmed (FIX-CREATE-01, D-01..D-06)
 
 **Wave 4** *(blocked on Wave 3 — shares cmd/gitid/add.go)*
 
-- [ ] 05.5-04-PLAN.md — Match-strategy picker (gitdir/url/both) on add+update + `--name/--gitdir/--url/--provider` flags + "Host alias" label (MATCH-URL-01, D-07..D-10)
+- [x] 05.5-04-PLAN.md — Match-strategy picker (gitdir/url/both) on add+update + `--name/--gitdir/--url/--provider` flags + "Host alias" label (MATCH-URL-01, D-07..D-10)
 
 **Wave 5** *(blocked on Wave 4 — shares cmd/gitid/add.go+update.go)*
 
-- [ ] 05.5-05-PLAN.md — Shared overlap detector (DetectOverlaps/CheckOverlap) + FamilyOverlap doctor wiring + add/update write-time warn+y/N (DOC-08, D-14..D-16)
+- [x] 05.5-05-PLAN.md — Shared overlap detector (DetectOverlaps/CheckOverlap) + FamilyOverlap doctor wiring + add/update write-time warn+y/N (DOC-08, D-14..D-16)
 
 **Wave 6** *(blocked on Waves 1+5 — shares Makefile + cmd/gitid/doctor.go)*
 
-- [ ] 05.5-06-PLAN.md — Install path + PATH feedback: `platform.BinaryInstallInfo` self-report via doctor + Makefile install echo (FIX-INSTALL-01, D-17)
+- [x] 05.5-06-PLAN.md — Install path + PATH feedback: `platform.BinaryInstallInfo` self-report via doctor + Makefile install echo (FIX-INSTALL-01, D-17)
 
 **Wave 7** *(blocked on Waves 1-6)*
 
-- [ ] 05.5-07-PLAN.md — E2E green across all 5 reqs (D-18 completion gate) + agent-driven experience evaluation report (D-19, advisory → Phase 5.6)
+- [x] 05.5-07-PLAN.md — E2E green across all 5 reqs (D-18 completion gate) + agent-driven experience evaluation report (D-19, advisory → Phase 5.6)
 
 ### Phase 5.6: Integrated TUI App (INSERTED)
 
 **Goal**: One integrated terminal application (Bubble Tea v2 + Lipgloss v2 + Bubbles
 v2) replaces the thin doctor-dashboard TUI. It presents a persistent layout — header
+
 + left identity sidebar + master-detail main pane + bold footer — with a view switcher
+
 across Identities, Health (doctor), and Global Options (baseline). Creating/adding an
 identity, editing per-site and global options, copying the public key, and deleting or
 rotating are all done in-app with live feedback; nothing hands off to the CLI.
@@ -328,7 +330,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 4/4 plans complete
+**Plans:** 7/7 plans complete
 
 Plans:
 
@@ -346,6 +348,6 @@ Plans:
 | 3.1. Baseline Global Git Config + Global Gitignore | 4/4 | Complete    | 2026-06-11 |
 | 4. Doctor | 7/7 | Complete   | 2026-06-12 |
 | 5. CLI Surface + TUI | 4/4 | Built (UAT found gaps → 5.5 + 5.6) | 2026-06-13 |
-| 5.5. Core & CLI Reconciliation | 0/7 | Planned (next) | - |
+| 5.5. Core & CLI Reconciliation | 7/7 | Complete    | 2026-06-14 |
 | 5.6. Integrated TUI App | 0/? | Planned | - |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |

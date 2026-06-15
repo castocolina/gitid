@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Phase 5.5 context gathered
-last_updated: "2026-06-14T15:10:16.012Z"
-last_activity: 2026-06-13 -- Phase 05 execution started
+status: verifying
+stopped_at: Completed 05.5-03-PLAN.md
+last_updated: "2026-06-14T21:34:00.965Z"
+last_activity: 2026-06-14
 progress:
   total_phases: 9
-  completed_phases: 6
-  total_plans: 29
-  completed_plans: 29
-  percent: 67
+  completed_phases: 7
+  total_plans: 36
+  completed_plans: 36
+  percent: 78
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-08)
 
 **Core value:** Managing a Git identity produces coordinated, coherent SSH + Git artifacts that are proven to authenticate and resolve correctly before any file is written, and existing hand-written config is never corrupted.
-**Current focus:** Phase 05 — CLI Surface + TUI
+**Current focus:** Phase 05.5 — core-cli-reconciliation-inserted
 
 ## Current Position
 
-Phase: 05 (CLI Surface + TUI) — EXECUTING
-Plan: 4 of 4
-Status: Ready to execute
-Last activity: 2026-06-13 -- Phase 05 execution started
+Phase: 06
+Plan: Not started
+Status: Phase complete — ready for verification
+Last activity: 2026-06-14
 
 Progress: [██████████] Phase 04 complete (7/7 plans incl. gap closure)
 
@@ -36,7 +36,7 @@ Progress: [██████████] Phase 04 complete (7/7 plans incl. ga
 
 **Velocity:**
 
-- Total plans completed: 15
+- Total plans completed: 22
 - Average duration: — min
 - Total execution time: 0 hours
 
@@ -52,6 +52,7 @@ Progress: [██████████] Phase 04 complete (7/7 plans incl. ga
 | 03 | 4 | - | - |
 | 03.1 | 4 | - | - |
 | 04 | 7 | - | - |
+| 05.5 | 7 | - | - |
 
 *Updated after each plan completion*
 | Phase 02 P01 | 18 | 2 tasks | 5 files |
@@ -71,6 +72,13 @@ Progress: [██████████] Phase 04 complete (7/7 plans incl. ga
 | Phase 05 P02 | 18 | 2 tasks | 7 files |
 | Phase 05 P03 | 35 | 2 tasks | 7 files |
 | Phase 05-cli-surface-tui P04 | 13 min | 2 tasks | 9 files |
+| Phase 05.5 P01 | 5 | 2 tasks | 7 files |
+| Phase 05.5 P02 | 20 | 2 tasks | 14 files |
+| Phase 05.5 P03 | 32 | 2 tasks | 9 files |
+| Phase 05.5 P04 | 45 | 2 tasks | 6 files |
+| Phase 05.5 P05 | 7 | 2 tasks | 8 files |
+| Phase 05.5 P06 | 10 | 2 tasks | 4 files |
+| Phase 05.5 P07 | 15 | 1 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -120,6 +128,17 @@ Recent decisions affecting current work:
 - [Phase ?]: proveModel confirm gate: T-05-15 - open only after both SSH phases pass
 - [Phase ?]: Write path via identity.Create(deps): no direct filewriter in tui/prove.go (T-05-14)
 - [Phase ?]: Shift+Tab in bubbletea v2: msg.String() == shift+tab checked before msg.Code == tea.KeyTab
+- [Phase ?]: 05.5-01: A4 proved — kevinburke/ssh_config preserves # gitid: provider= comment inside Host stanza across parse→String()→parse; provider marker design safe for Plan 02
+- [Phase ?]: 05.5-01: E2E harness uses fake-ssh via os.WriteFile 0o700 static literal + PATH prepend via cmd.Env (D-20); never exec.Command(sh,-c)
+- [Phase ?]: 05.5-02: marker-prefer+hostname-map replaces TrimPrefix(ssh.Alias) for provider derivation (F-3 fix); RenderHostBlock panics on newline in provider (T-05.5-04)
+- [Phase ?]: 05.5-03: PersistAll/RenderPreviews factored out; Confirmed removed; persist gate is auth-loop (D-03/D-05/D-06)
+- [Phase ?]: 05.5-03: buildDeps Generate writes key to final ~/.ssh path immediately (D-01); TempPrivatePath==FinalPrivatePath; Cleanup unconditional no-op
+- [Phase ?]: 05.5-03: runCreateLoop in cmd/gitid: PASS auto-persists (D-03); [s]+confirm persists with warning (D-05); [q] keeps key no config (D-04); ReachableNotUploaded never auto-persists (D-06)
+- [Phase ?]: 05.5-04: strategyNumFromKind(matchKinds(existing.Matches)) drives update picker pre-fill; prevents Pitfall 6 (hasconfig → gitdir collapse on update)
+- [Phase ?]: 05.5-04: buildMatches stores remote.*.url: prefix internally; callers pass bare URL pattern; conditionToMatch round-trip proved via TestHasconfigRoundTrip (T-05.5-14)
+- [Phase ?]: 05.5-04: promptMatchStrategy variadic strategyDefault; add passes nothing (default "1"), update passes strategyNumFromKind result
+- [Phase ?]: 05.5-04: addFlags{name,gitdir,url,provider} on add; updateFlags{gitdir,url,provider} on update (NO --name per Q2); provider flag-only on update per Q3
+- [Phase ?]: 05.5-06: BinaryInstallInfo uses os.Executable + EvalSymlinks (tolerates evalErr A1) + pure binaryOnPath helper; SeverityInfo finding under FamilyDeps with export hint when off-PATH (D-17)
 
 ### Roadmap Evolution
 
@@ -146,6 +165,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-14T00:03:20.220Z
-Stopped at: Phase 5.5 context gathered
-Resume file: .planning/phases/05.5-core-cli-reconciliation-inserted/05.5-CONTEXT.md
+Last session: 2026-06-14T17:48:37.977Z
+Stopped at: Completed 05.5-03-PLAN.md
+Resume file: None
