@@ -15,7 +15,8 @@ const (
 	modeSSHDir    os.FileMode = 0o700 // ~/.ssh directory
 	modePrivKey   os.FileMode = 0o600 // private key
 	modePubKey    os.FileMode = 0o644 // .pub file
-	modeSSHConfig os.FileMode = 0o600 // ~/.ssh/config and ~/.gitconfig
+	modeSSHConfig os.FileMode = 0o600 // ~/.ssh/config (must be 0600)
+	modeGitconfig os.FileMode = 0o644 // ~/.gitconfig (git writes 0644 by default; WR-03)
 )
 
 // CheckPermissions checks that gitid-managed paths have the KEY-02 target
@@ -46,9 +47,12 @@ func CheckPermissions(deps doctor.Deps) []doctor.Finding {
 		findings = append(findings, checkPath(deps, deps.SSHConfigPath, modeSSHConfig, doctor.SeverityError)...)
 	}
 
-	// Check gitconfig (error severity if wrong).
+	// Check gitconfig: only flag when group- or world-writable (WR-03).
+	// git itself writes ~/.gitconfig with mode 0644 — flagging that as an error
+	// produces a false positive on virtually every machine. We only warn when
+	// the file is writable by group or world (real risk is write, not read).
 	if deps.GitconfigPath != "" {
-		findings = append(findings, checkPath(deps, deps.GitconfigPath, modeSSHConfig, doctor.SeverityError)...)
+		findings = append(findings, checkGitconfigPath(deps, deps.GitconfigPath)...)
 	}
 
 	return findings
@@ -88,6 +92,46 @@ func checkPath(deps doctor.Deps, path string, want os.FileMode, sev doctor.Sever
 				Summary: fix,
 				Fn: func() error {
 					return deps.FixPerm(p, m) // D-01: injected, never os.Chmod directly
+				},
+			},
+		},
+	}
+}
+
+// checkGitconfigPath checks ~/.gitconfig for the write-access risk only (WR-03).
+// git writes ~/.gitconfig with 0644 by default; that is acceptable. We only
+// warn when the file is writable by group or world — the real exposure risk.
+func checkGitconfigPath(deps doctor.Deps, path string) []doctor.Finding {
+	info, err := deps.Stat(path) //nolint:gosec // path is a trusted gitid-managed path (G304)
+	if err != nil {
+		return nil // missing or unreadable — not a perms concern
+	}
+
+	got := info.Mode().Perm()
+	// Only flag group-write (0o020) or world-write (0o002) — not the read bits.
+	const writeMask = os.FileMode(0o022)
+	if (got & writeMask) == 0 {
+		return nil // no writable bits by group/world — acceptable
+	}
+
+	explanation := fmt.Sprintf(
+		"~/.gitconfig has mode %04o — group or world write access may allow tampering with git identity,\n"+
+			"signing key, or URL rewrite settings. Remove the write bits: chmod %04o %s",
+		got, modeGitconfig, path,
+	)
+	fix := fmt.Sprintf("chmod %04o %s", modeGitconfig, path)
+	p := path
+	return []doctor.Finding{
+		{
+			Family:       doctor.FamilyPerms,
+			Severity:     doctor.SeverityWarning, // write risk is warning, not error
+			Title:        fmt.Sprintf("%s: %04o (expected %04o)", path, got, modeGitconfig),
+			Explanation:  explanation,
+			SuggestedFix: fix,
+			Fix: &doctor.FixDescriptor{
+				Summary: fix,
+				Fn: func() error {
+					return deps.FixPerm(p, modeGitconfig) //nolint:gosec // D-01: injected, never os.Chmod directly
 				},
 			},
 		},

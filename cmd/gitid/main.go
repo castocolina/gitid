@@ -11,7 +11,15 @@ const version = "0.0.0-dev"
 
 func main() {
 	if err := Execute(); err != nil {
-		os.Exit(1)
+		// IN-03: propagate the tiered doctor exit code (0/1/2/3) instead of
+		// collapsing to a flat 1. doctorExitCode is set by the doctor RunE
+		// before it returns a non-nil error; all other commands leave it 0,
+		// so we fall back to 1 for non-doctor errors (no regression).
+		code := doctorExitCode
+		if code == 0 {
+			code = 1
+		}
+		os.Exit(code)
 	}
 }
 

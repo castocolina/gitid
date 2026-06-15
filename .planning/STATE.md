@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: verifying
-stopped_at: Completed 04-06-PLAN.md
-last_updated: "2026-06-12T12:20:38.651Z"
+stopped_at: Completed 04-07-PLAN.md
+last_updated: "2026-06-12T12:35:30.019Z"
 last_activity: 2026-06-12 -- Phase 04 executed; verification gaps_found
 progress:
   total_phases: 6
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 25
-  completed_plans: 24
-  percent: 67
+  completed_plans: 25
+  percent: 83
 ---
 
 # Project State
@@ -65,6 +65,7 @@ Progress: [█████████░] 5/5 plans executed — phase blocked 
 | Phase 04-doctor P03 | 10 | 2 tasks | 8 files |
 | Phase 04-doctor P05 | 25 | 2 tasks | 1 files |
 | Phase 04-doctor P06 | 90 | 2 tasks | 8 files |
+| Phase 04 P07 | 45 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -102,6 +103,10 @@ Recent decisions affecting current work:
 - [Phase ?]: 04-05: applyFixes injectable *bufio.Reader enables gate/confirm/batching tests without real stdin; FamilyPerms batched, others individual (D-04)
 - [Phase ?]: 04-06: incompleteNames guard removed from orphan Classes 1+2 — single-sided managed block is both Incomplete (Coherence) and Orphan; guard was preventing any orphan finding from triggering
 - [Phase ?]: 04-06: WR-01 findSignerLine all-candidate scan: exact match anywhere wins over earlier case-fold match; WR-02: RemoveBlock mode derived from path (0644 for allowed_signers, 0600 for config files)
+- [Phase ?]: DOC-GAP-02: RunSSHAdd+RunSSHKeygenFingerprint wired in buildDoctorDeps
+- [Phase ?]: DOC-GAP-03: isTerminalInput TTY guard gates applyFixes; non-interactive doctor skips Apply prompt
+- [Phase ?]: IN-03: doctorExitCode pkg-level var bridges RunE tiered code to main os.Exit
+- [Phase ?]: WR-03: checkGitconfigPath warns only on group/world-write bits (0o022 mask); default 0644 gitconfig not flagged
 
 ### Roadmap Evolution
 
@@ -126,6 +131,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-12T12:20:38.645Z
-Stopped at: Completed 04-06-PLAN.md
+Last session: 2026-06-12T12:35:30.010Z
+Stopped at: Completed 04-07-PLAN.md
 Resume file: None

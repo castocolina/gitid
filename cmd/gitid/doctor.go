@@ -2,13 +2,16 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/castocolina/gitid/internal/deps"
 	"github.com/castocolina/gitid/internal/doctor"
@@ -20,6 +23,11 @@ import (
 	"github.com/castocolina/gitid/internal/platform"
 	"github.com/castocolina/gitid/internal/sshconfig"
 )
+
+// doctorExitCode holds the tiered exit code (0/1/2/3) set by the doctor RunE
+// so that main() can propagate it to os.Exit instead of collapsing to a flat 1
+// (IN-03). Zero is the safe default for all other commands.
+var doctorExitCode int
 
 // newDoctorCmd builds `gitid doctor`. The handler runs the full health
 // check suite and renders a grouped-by-family report. --fix and --yes flags
@@ -34,6 +42,8 @@ func newDoctorCmd() *cobra.Command {
 				return fmt.Errorf("doctor: --yes requires --fix")
 			}
 			code := runDoctor(cmd.OutOrStdout(), fix, yes)
+			// Store tiered exit code for main() to pass to os.Exit (IN-03).
+			doctorExitCode = code
 			if code != 0 {
 				// Use SilenceErrors pattern: return a non-nil error so Cobra
 				// propagates the non-zero exit, but suppress duplicate printing
@@ -99,13 +109,51 @@ func runDoctor(out io.Writer, fix, yes bool) int {
 		}
 	}
 
-	if len(fixable) > 0 {
+	// DOC-GAP-03: only enter the interactive fix gate when stdin is a TTY or
+	// when --fix/--yes was explicitly passed. A bare `gitid doctor` in a
+	// pipe or CI context skips the gate entirely — the exit code is the
+	// machine-readable signal. --fix and --yes preserve their existing semantics.
+	if len(fixable) > 0 && (fix || isTerminalInput(os.Stdin)) {
 		in := bufio.NewReader(os.Stdin)
 		applyFixes(in, out, fixable, fix, yes)
 	}
 
 	// Return the PRE-fix severity state unconditionally (D-07).
 	return pre
+}
+
+// runSSHAdd runs `ssh-add -l` via arg-slice exec (no shell, G204-clean) and
+// returns the combined output and the exit code. On a non-ExitError exec
+// failure (binary not found, permission error) it returns ("", 2) so
+// classifyAgentState treats it as unreachable — consistent with the semantics
+// of an inaccessible agent. (DOC-GAP-02 runner; mitigates T-04-22.)
+func runSSHAdd() (string, int) {
+	cmd := exec.Command("ssh-add", "-l") //nolint:gosec // arg-slice form, no shell; fixed args (G204)
+	out, err := cmd.CombinedOutput()
+	output := string(out)
+	if err == nil {
+		return output, 0
+	}
+	var exitErr *exec.ExitError
+	if ok := errors.As(err, &exitErr); ok {
+		return output, exitErr.ExitCode()
+	}
+	// Non-ExitError (e.g. binary not found) → treat as unreachable.
+	return "", 2
+}
+
+// runSSHKeygenFingerprint runs `ssh-keygen -lf <path>` via arg-slice exec
+// (no shell, G204-clean) and returns the first output line and any error.
+// path is a gitid-managed .pub path (G304-annotated). (DOC-GAP-02 runner;
+// mitigates T-04-22.)
+func runSSHKeygenFingerprint(path string) (string, error) {
+	cmd := exec.Command("ssh-keygen", "-lf", path) //nolint:gosec // arg-slice form, no shell; path is trusted gitid-managed .pub (G204/G304)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	line := strings.SplitN(string(out), "\n", 2)[0]
+	return line, nil
 }
 
 // buildDoctorDeps wires real packages into doctor.Deps. The FixPerm field
@@ -162,6 +210,11 @@ func buildDoctorDeps(home string, sshBytes, gcBytes []byte) doctor.Deps {
 		},
 
 		// Process fields.
+		// DOC-GAP-02: wire real ssh-add -l and ssh-keygen -lf runners so
+		// CheckAgent and CheckSigning can probe the running ssh-agent.
+		// Both use arg-slice exec (no shell) for G204 compliance (T-04-22).
+		RunSSHAdd:               runSSHAdd,
+		RunSSHKeygenFingerprint: runSSHKeygenFingerprint,
 		RunGitConfigGet: func(file, key string) (string, error) {
 			return gitconfig.RunGitConfigGet(file, key)
 		},
@@ -538,4 +591,14 @@ func isTerminalOutput(f *os.File) bool {
 		return false
 	}
 	return (stat.Mode() & os.ModeCharDevice) != 0
+}
+
+// isTerminalInput reports whether the given file descriptor is an interactive
+// terminal. Used by the fix gate (DOC-GAP-03) to suppress the Apply prompt
+// when stdin is piped or redirected (CI/scripted use). We use golang.org/x/term
+// for a reliable cross-platform IsTerminal check (same approach as
+// isTerminalOutput's ModeCharDevice, but term.IsTerminal is more portable on
+// Windows and avoids the NO_COLOR semantics which apply only to output).
+func isTerminalInput(f *os.File) bool {
+	return term.IsTerminal(int(f.Fd()))
 }
