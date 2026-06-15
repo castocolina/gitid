@@ -17,7 +17,7 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 
 ### Identity & Account CRUD (IDENT)
 
-- [ ] **IDENT-01**: User can create an identity (name, git name, git email) that generates an ed25519 key used for both authentication and signing
+- [x] **IDENT-01**: User can create an identity (name, git name, git email) that generates an ed25519 key used for both authentication and signing
 - [ ] **IDENT-02**: User can create an identity that reuses an existing key instead of generating a new one
 - [ ] **IDENT-03**: User can list identities and accounts with their wiring (key path, alias, provider, port, match strategy)
 - [ ] **IDENT-04**: User can update an identity's name/email, signing on/off, provider/alias/port, and match strategy
@@ -44,7 +44,7 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 
 ### Signing (SIGN)
 
-- [ ] **SIGN-01**: A signing identity gets an `~/.ssh/allowed_signers` line in the form `<email> namespaces="git" ssh-ed25519 AAAA…` (email byte-identical to `user.email`)
+- [x] **SIGN-01**: A signing identity gets an `~/.ssh/allowed_signers` line in the form `<email> namespaces="git" ssh-ed25519 AAAA…` (email byte-identical to `user.email`)
 - [ ] **SIGN-02**: `user.signingkey` references the public-key file path, never an inline key literal (survives rotation)
 
 ### Two-Phase Test Flow (TEST)
@@ -71,8 +71,8 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 
 ### Clipboard (CLIP)
 
-- [ ] **CLIP-01**: The public key is copied to the clipboard when generated and on demand when reusing an identity
-- [ ] **CLIP-02**: Clipboard support is cross-platform (`pbcopy` macOS; `wl-copy`/`xclip` Linux) and fails gracefully when no tool is found
+- [x] **CLIP-01**: The public key is copied to the clipboard when generated and on demand when reusing an identity
+- [x] **CLIP-02**: Clipboard support is cross-platform (`pbcopy` macOS; `wl-copy`/`xclip` Linux) and fails gracefully when no tool is found
 
 ### Upload Instructions (UP)
 
@@ -152,7 +152,7 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 | TOOL-02 | Phase 1 | Pending |
 | TOOL-03 | Phase 1 | Pending |
 | TOOL-04 | Phase 1 | Pending |
-| IDENT-01 | Phase 2 | Pending |
+| IDENT-01 | Phase 2 | Complete |
 | IDENT-02 | Phase 2 | Pending |
 | IDENT-06 | Phase 2 | Pending |
 | KEY-01 | Phase 2 | Pending |
@@ -163,7 +163,7 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 | GIT-01 | Phase 2 | Pending |
 | GIT-02 | Phase 2 | Pending |
 | GIT-03 | Phase 2 | Pending |
-| SIGN-01 | Phase 2 | Pending |
+| SIGN-01 | Phase 2 | Complete |
 | SIGN-02 | Phase 2 | Pending |
 | TEST-01 | Phase 2 | Pending |
 | TEST-02 | Phase 2 | Pending |
@@ -171,8 +171,8 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 | SAFE-01 | Phase 2 | Complete |
 | SAFE-02 | Phase 2 | Complete |
 | SAFE-03 | Phase 2 | Complete |
-| CLIP-01 | Phase 2 | Pending |
-| CLIP-02 | Phase 2 | Pending |
+| CLIP-01 | Phase 2 | Complete |
+| CLIP-02 | Phase 2 | Complete |
 | UP-01 | Phase 2 | Pending |
 | UP-02 | Phase 2 | Pending |
 | IDENT-03 | Phase 3 | Pending |
