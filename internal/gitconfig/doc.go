@@ -6,5 +6,10 @@
 // writes for those raw managed-block and fragment files are delegated to the
 // filewriter package.
 //
-// Implementation lands in a later phase (Phase 2+).
+// WriteFragment sets the per-identity fragment keys (user.name, user.email,
+// gpg.format=ssh, user.signingkey as a .pub PATH, commit.gpgsign) via
+// `git config --file`, rejecting any [remote] section (Pitfall 9). RenderIncludeIf
+// / WriteIncludeIf build and idempotently install the includeIf managed block
+// (gitdir with mandatory trailing slash, and/or hasconfig). SetAllowedSignersFile
+// wires the global gpg.ssh.allowedSignersFile for SSH-signed-commit verification.
 package gitconfig

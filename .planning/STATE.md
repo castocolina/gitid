@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 2 context gathered
-last_updated: "2026-06-09T18:11:45.145Z"
+last_updated: "2026-06-09T18:20:33.521Z"
 last_activity: 2026-06-09 -- Phase 02 execution started
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 10
-  completed_plans: 6
+  completed_plans: 7
   percent: 17
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-08)
 ## Current Position
 
 Phase: 02 (First Identity End-to-End) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 Status: Ready to execute
 Last activity: 2026-06-09 -- Phase 02 execution started
 
@@ -53,6 +53,7 @@ Progress: [░░░░░░░░░░] 0%
 *Updated after each plan completion*
 | Phase 02 P01 | 18 | 2 tasks | 5 files |
 | Phase 02 P03 | 7min | 2 tasks | 10 files |
+| Phase 02 P05 | 6min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,8 @@ Recent decisions affecting current work:
 - [Phase ?]: 02-01: filewriter is the single safe-write chokepoint (backup+atomic+chmod); no os.WriteFile elsewhere
 - [Phase ?]: 02-03: RED stubs return zero+sentinel (not panic) to satisfy lint-gated pre-commit hook while failing genuinely
 - [Phase ?]: 02-03: clipboard no-tool detection keys on atotto clipboard.Unsupported bool (v0.1.4 has no exported sentinel error)
+- [Phase ?]: 02-05: RenderIncludeIf returns full sentinel-wrapped block; WriteIncludeIf renders body-only for ReplaceBlock to avoid double-wrap
+- [Phase ?]: 02-05: tester unexported runner seam + preWriteWith unit-tests 3-way classifier with fixtures (no live SSH)
 
 ### Pending Todos
 
@@ -80,6 +83,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-09T18:11:32.278Z
+Last session: 2026-06-09T18:20:20.346Z
 Stopped at: Phase 2 context gathered
 Resume file: .planning/phases/02-first-identity-end-to-end/02-CONTEXT.md

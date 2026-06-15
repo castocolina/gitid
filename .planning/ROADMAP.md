@@ -72,7 +72,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1)*
 
 - [x] 02-03-PLAN.md — internal/keygen (ed25519 + allowed_signers) + internal/clipboard (copy .pub, graceful failure); adds x/crypto + atotto
-- [ ] 02-05-PLAN.md — internal/gitconfig (includeIf + fragment + signing wiring) + internal/tester (two-phase output-substring classifier + ssh -G parse)
+- [x] 02-05-PLAN.md — internal/gitconfig (includeIf + fragment + signing wiring) + internal/tester (two-phase output-substring classifier + ssh -G parse)
 
 **Wave 3** *(blocked on Wave 2)*
 
@@ -157,7 +157,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 3/7 plans executed
+**Plans:** 4/7 plans executed
 
 Plans:
 
@@ -170,7 +170,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Bootstrap | 3/3 | Complete   | 2026-06-09 |
-| 2. First Identity End-to-End | 3/7 | In Progress|  |
+| 2. First Identity End-to-End | 4/7 | In Progress|  |
 | 3. Full Identity CRUD + Multi-Identity | 0/? | Not started | - |
 | 4. Doctor | 0/? | Not started | - |
 | 5. CLI Surface + TUI | 0/? | Not started | - |

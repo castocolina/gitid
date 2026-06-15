@@ -38,20 +38,20 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 
 ### Git Config Artifact (GIT)
 
-- [ ] **GIT-01**: Creating an account writes a managed `[includeIf "<match>"]` block in `~/.gitconfig` pointing to the identity's fragment
-- [ ] **GIT-02**: The match strategy supports `gitdir:` (default suggestion, with trailing slash) and `hasconfig:remote.*.url`, combinable per account
-- [ ] **GIT-03**: A per-identity fragment (`~/.gitconfig.d/<identity>`) sets `user.name`/`user.email`, `gpg.format=ssh`, `user.signingkey`, `commit.gpgsign true`
+- [x] **GIT-01**: Creating an account writes a managed `[includeIf "<match>"]` block in `~/.gitconfig` pointing to the identity's fragment
+- [x] **GIT-02**: The match strategy supports `gitdir:` (default suggestion, with trailing slash) and `hasconfig:remote.*.url`, combinable per account
+- [x] **GIT-03**: A per-identity fragment (`~/.gitconfig.d/<identity>`) sets `user.name`/`user.email`, `gpg.format=ssh`, `user.signingkey`, `commit.gpgsign true`
 
 ### Signing (SIGN)
 
 - [x] **SIGN-01**: A signing identity gets an `~/.ssh/allowed_signers` line in the form `<email> namespaces="git" ssh-ed25519 AAAA…` (email byte-identical to `user.email`)
-- [ ] **SIGN-02**: `user.signingkey` references the public-key file path, never an inline key literal (survives rotation)
+- [x] **SIGN-02**: `user.signingkey` references the public-key file path, never an inline key literal (survives rotation)
 
 ### Two-Phase Test Flow (TEST)
 
-- [ ] **TEST-01**: Before writing, an explicit test runs `ssh -i <key> -o IdentitiesOnly=yes -T git@<host>`, proving the key authenticates
-- [ ] **TEST-02**: After writing, a resolved test runs `ssh -T git@<alias>` plus `ssh -G <alias>` to prove which `IdentityFile` the config actually resolved
-- [ ] **TEST-03**: Every test prints both the command run (input) and its real output
+- [x] **TEST-01**: Before writing, an explicit test runs `ssh -i <key> -o IdentitiesOnly=yes -T git@<host>`, proving the key authenticates
+- [x] **TEST-02**: After writing, a resolved test runs `ssh -T git@<alias>` plus `ssh -G <alias>` to prove which `IdentityFile` the config actually resolved
+- [x] **TEST-03**: Every test prints both the command run (input) and its real output
 
 ### Safe Writes (SAFE)
 
@@ -160,14 +160,14 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 | SSH-01 | Phase 2 | Pending |
 | SSH-02 | Phase 2 | Pending |
 | SSH-03 | Phase 2 | Pending |
-| GIT-01 | Phase 2 | Pending |
-| GIT-02 | Phase 2 | Pending |
-| GIT-03 | Phase 2 | Pending |
+| GIT-01 | Phase 2 | Complete |
+| GIT-02 | Phase 2 | Complete |
+| GIT-03 | Phase 2 | Complete |
 | SIGN-01 | Phase 2 | Complete |
-| SIGN-02 | Phase 2 | Pending |
-| TEST-01 | Phase 2 | Pending |
-| TEST-02 | Phase 2 | Pending |
-| TEST-03 | Phase 2 | Pending |
+| SIGN-02 | Phase 2 | Complete |
+| TEST-01 | Phase 2 | Complete |
+| TEST-02 | Phase 2 | Complete |
+| TEST-03 | Phase 2 | Complete |
 | SAFE-01 | Phase 2 | Complete |
 | SAFE-02 | Phase 2 | Complete |
 | SAFE-03 | Phase 2 | Complete |
