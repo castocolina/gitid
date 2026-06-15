@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 05-03-PLAN.md
-last_updated: "2026-06-13T02:35:41.764Z"
+status: verifying
+stopped_at: Completed 05-cli-surface-tui 05-04-PLAN.md
+last_updated: "2026-06-13T02:56:18.353Z"
 last_activity: 2026-06-13 -- Phase 05 execution started
 progress:
   total_phases: 7
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 29
-  completed_plans: 28
-  percent: 71
+  completed_plans: 29
+  percent: 86
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-08)
 
 Phase: 05 (CLI Surface + TUI) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-13 -- Phase 05 execution started
 
 Progress: [██████████] Phase 04 complete (7/7 plans incl. gap closure)
@@ -70,6 +70,7 @@ Progress: [██████████] Phase 04 complete (7/7 plans incl. ga
 | Phase 05 P01 | 13 | 2 tasks | 15 files |
 | Phase 05 P02 | 18 | 2 tasks | 7 files |
 | Phase 05 P03 | 35 | 2 tasks | 7 files |
+| Phase 05-cli-surface-tui P04 | 13 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -116,6 +117,9 @@ Recent decisions affecting current work:
 - [Phase ?]: 05-03: dashboardModel seeds rootModel stack; Init() returns tea.Batch of 7 per-family doctor cmds (D-09 async streaming)
 - [Phase ?]: 05-03: identity.Reconstruct via ReadFile seam in newIdentityListScreen; fallback to d.Identities for test mode
 - [Phase ?]: 05-03: newCreateFormScreen/newIdentityDetailScreen are stable-name placeholder stubs for 05-04
+- [Phase ?]: proveModel confirm gate: T-05-15 - open only after both SSH phases pass
+- [Phase ?]: Write path via identity.Create(deps): no direct filewriter in tui/prove.go (T-05-14)
+- [Phase ?]: Shift+Tab in bubbletea v2: msg.String() == shift+tab checked before msg.Code == tea.KeyTab
 
 ### Roadmap Evolution
 
@@ -142,6 +146,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-13T02:35:41.755Z
-Stopped at: Completed 05-03-PLAN.md
+Last session: 2026-06-13T02:56:18.338Z
+Stopped at: Completed 05-cli-surface-tui 05-04-PLAN.md
 Resume file: None

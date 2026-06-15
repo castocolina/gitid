@@ -14,7 +14,7 @@
 - [x] **Phase 3: Full Identity CRUD + Multi-Identity** — List, update, delete identities; reconstruct from managed blocks (no sidecar DB); multiple identities on one provider via distinct aliases (completed 2026-06-10)
 - [x] **Phase 3.1: Baseline Global Git Config + Global Gitignore** *(INSERTED)* — Seed and manage a shared baseline git config (core/push/pull/fetch/color toggles + aliases, `ignorecase=false`) and a curated global gitignore via `core.excludesfile`, in idempotent managed blocks with backup→preview→confirm; optional HTTPS→SSH `insteadOf` rewrites; baseline readable back from disk (completed 2026-06-11)
 - [x] **Phase 4: Doctor** — Deep health checks (deps, permissions, coherence/drift, orphans, signing wiring, agent) with severity + fix; `gitid doctor` CLI command (completed 2026-06-12 — 5 plans + 2 gap-closure plans 04-06/04-07; initial verification found 3 critical wiring gaps DOC-GAP-01/02/03, all closed and re-verified passed, see 04-VERIFICATION.md)
-- [ ] **Phase 5: CLI Surface + TUI** — Full Cobra command surface with shell completion; Bubble Tea TUI launching to doctor dashboard with identity/account navigation
+- [x] **Phase 5: CLI Surface + TUI** — Full Cobra command surface with shell completion; Bubble Tea TUI launching to doctor dashboard with identity/account navigation (completed 2026-06-13)
 - [ ] **Phase 6: Linux Cross-Platform Validation** *(DEFERRED — post-v1)* — Validate the whole tool end-to-end on Linux (developed on macOS only): clipboard dispatch, per-OS install hints, file permissions, config-path resolution, the make/pre-commit toolchain, and the two-phase ssh test flow
 
 ---
@@ -219,7 +219,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 — shares tui/model.go + tui/identitylist.go with 05-03)*
 
-- [ ] 05-04-PLAN.md — TUI forms slice: identity detail + Create/Update/Add-account forms + inline Copy action + shared Prove-Before-Write screen (two-phase async test, confirm gate, write via identity.Deps) (TUI-02, D-02/D-03/D-04/D-06)
+- [x] 05-04-PLAN.md — TUI forms slice: identity detail + Create/Update/Add-account forms + inline Copy action + shared Prove-Before-Write screen (two-phase async test, confirm gate, write via identity.Deps) (TUI-02, D-02/D-03/D-04/D-06)
 
 ### Phase 6: Linux Cross-Platform Validation
 
@@ -244,7 +244,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 Plans:
 
@@ -261,5 +261,5 @@ Plans:
 | 3. Full Identity CRUD + Multi-Identity | 4/4 | Complete    | 2026-06-10 |
 | 3.1. Baseline Global Git Config + Global Gitignore | 4/4 | Complete    | 2026-06-11 |
 | 4. Doctor | 7/7 | Complete   | 2026-06-12 |
-| 5. CLI Surface + TUI | 3/4 | In Progress|  |
+| 5. CLI Surface + TUI | 4/4 | Complete   | 2026-06-13 |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |

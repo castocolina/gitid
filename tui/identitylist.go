@@ -109,28 +109,5 @@ func (m identityListModel) view() string {
 	return StyleTitle.Render("gitid — Identities") + "\n\n" + m.list.View()
 }
 
-// newCreateFormScreen returns a placeholder create-form screenModel.
-// The real implementation is provided in 05-04; this stub keeps the factory
-// name stable so 05-04 can swap the implementation without breaking callers.
-func newCreateFormScreen() screenModel {
-	return &createFormStub{}
-}
-
-// newIdentityDetailScreen returns a placeholder identity-detail screenModel.
-// The real implementation is provided in 05-04; this stub keeps the factory
-// name stable so 05-04 can swap the implementation without breaking callers.
-func newIdentityDetailScreen(_ identity.Account) screenModel {
-	return &identityDetailStub{}
-}
-
-// createFormStub is a minimal placeholder for the Create Identity form (05-04).
-type createFormStub struct{}
-
-func (s *createFormStub) update(_ tea.Msg) (screenModel, tea.Cmd) { return s, nil }
-func (s *createFormStub) view() string                            { return "Create Identity (05-04)" }
-
-// identityDetailStub is a minimal placeholder for Identity Detail (05-04).
-type identityDetailStub struct{}
-
-func (s *identityDetailStub) update(_ tea.Msg) (screenModel, tea.Cmd) { return s, nil }
-func (s *identityDetailStub) view() string                            { return "Identity Detail (05-04)" }
+// newCreateFormScreen is provided in tui/createform.go (05-04).
+// newIdentityDetailScreen is provided in tui/identitydetail.go (05-04).
