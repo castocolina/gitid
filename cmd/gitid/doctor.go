@@ -102,6 +102,9 @@ func buildDoctorDeps(home string, sshBytes, gcBytes []byte) doctor.Deps {
 		}
 	}
 
+	baselineFilePath := filepath.Join(home, ".gitconfig.d", "00-baseline")
+	gitignorePath := filepath.Join(home, ".gitignore_global")
+
 	return doctor.Deps{
 		// Read fields.
 		ReadFile: func(path string) ([]byte, error) {
@@ -114,16 +117,17 @@ func buildDoctorDeps(home string, sshBytes, gcBytes []byte) doctor.Deps {
 		// Injected data and seams.
 		GitVersionAtLeast: deps.GitVersionAtLeast,
 		CurrentOS:         platform.CurrentOS,
-		InstallHint: func(tool, os string) string {
-			_ = tool // Phase 4: per-tool hints are Plan 02; reuse existing InstallHint for now
-			return platform.InstallHint(os)
-		},
+		InstallHint:       platform.InstallHint,
+		DetectTools:       deps.Detect,
+		ReadBaselineState: gitconfig.ReadBaselineState,
 
 		// Path fields.
 		SSHDir:             sshDir,
 		SSHConfigPath:      sshConfigPath,
 		GitconfigPath:      gitconfigPath,
 		AllowedSignersPath: allowedSignersPath,
+		BaselineFilePath:   baselineFilePath,
+		GitignorePath:      gitignorePath,
 
 		// Key path lists for perms check.
 		KeyPaths:    keyPaths,

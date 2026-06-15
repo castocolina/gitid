@@ -93,7 +93,7 @@ func TestSelectAlgorithm(t *testing.T) {
 					t.Fatalf("SelectAlgorithm(%v): expected error, got nil (algo=%q)", tt.supported, algo)
 				}
 				// D-14: error must carry actionable per-OS install guidance.
-				hint := InstallHint(CurrentOS())
+				hint := InstallHint("openssh", CurrentOS())
 				if !strings.Contains(err.Error(), strings.Split(hint, "\n")[0]) {
 					t.Errorf("SelectAlgorithm error %q does not carry install hint %q", err.Error(), hint)
 				}
@@ -113,22 +113,64 @@ func TestSelectAlgorithm(t *testing.T) {
 }
 
 func TestInstallHint(t *testing.T) {
-	darwin := InstallHint("darwin")
-	if !strings.Contains(darwin, "brew install openssh") {
-		t.Errorf("InstallHint(darwin) = %q, want it to contain %q", darwin, "brew install openssh")
+	// OpenSSH tool on darwin — must contain brew and openssh.
+	darwin := InstallHint("openssh", "darwin")
+	if !strings.Contains(darwin, "brew") {
+		t.Errorf("InstallHint(openssh, darwin) = %q, want it to contain %q", darwin, "brew")
+	}
+	if !strings.Contains(darwin, "openssh") {
+		t.Errorf("InstallHint(openssh, darwin) = %q, want it to contain %q", darwin, "openssh")
 	}
 
-	linux := InstallHint("linux")
+	// OpenSSH tool on linux — must contain all three package managers.
+	linux := InstallHint("openssh", "linux")
 	for _, want := range []string{"apt", "dnf", "pacman"} {
 		if !strings.Contains(linux, want) {
-			t.Errorf("InstallHint(linux) = %q, want it to contain %q", linux, want)
+			t.Errorf("InstallHint(openssh, linux) = %q, want it to contain %q", linux, want)
 		}
 	}
 
 	// Unknown OS must still return non-empty guidance (the OpenSSH project link).
-	other := InstallHint("plan9")
+	other := InstallHint("openssh", "plan9")
 	if strings.TrimSpace(other) == "" {
-		t.Errorf("InstallHint(unknown) returned empty guidance")
+		t.Errorf("InstallHint(openssh, unknown) returned empty guidance")
+	}
+
+	// git tool on darwin — must contain brew and git.
+	gitDarwin := InstallHint("git", "darwin")
+	if !strings.Contains(gitDarwin, "brew") {
+		t.Errorf("InstallHint(git, darwin) = %q, want it to contain %q", gitDarwin, "brew")
+	}
+	if !strings.Contains(gitDarwin, "git") {
+		t.Errorf("InstallHint(git, darwin) = %q, want it to contain %q", gitDarwin, "git")
+	}
+
+	// git tool on linux — must contain apt, dnf, and pacman lines.
+	gitLinux := InstallHint("git", "linux")
+	for _, want := range []string{"apt", "dnf", "pacman"} {
+		if !strings.Contains(gitLinux, want) {
+			t.Errorf("InstallHint(git, linux) = %q, want it to contain %q", gitLinux, want)
+		}
+	}
+
+	// clipboard tool on linux — must contain xclip (Linux clipboard default).
+	clipLinux := InstallHint("clipboard", "linux")
+	if !strings.Contains(clipLinux, "xclip") {
+		t.Errorf("InstallHint(clipboard, linux) = %q, want it to contain %q", clipLinux, "xclip")
+	}
+
+	// clipboard tool on darwin — must contain brew.
+	clipDarwin := InstallHint("clipboard", "darwin")
+	if !strings.Contains(clipDarwin, "brew") {
+		t.Errorf("InstallHint(clipboard, darwin) = %q, want it to contain %q", clipDarwin, "brew")
+	}
+
+	// unknown OS shows all four package manager lines.
+	unknownOS := InstallHint("git", "unknown-os")
+	for _, want := range []string{"brew", "apt", "dnf", "pacman"} {
+		if !strings.Contains(unknownOS, want) {
+			t.Errorf("InstallHint(git, unknown-os) = %q, want it to contain %q", unknownOS, want)
+		}
 	}
 }
 

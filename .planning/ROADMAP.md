@@ -181,7 +181,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 — each adds only its own checks/*.go, no shared-file edits)*
 
-- [ ] 04-02-PLAN.md — Dependencies + Baseline families: deps.Detect compose + extended platform.InstallHint (git/clipboard), ReadBaselineState fold-in (DOC-01, D-16)
+- [x] 04-02-PLAN.md — Dependencies + Baseline families: deps.Detect compose + extended platform.InstallHint (git/clipboard), ReadBaselineState fold-in (DOC-01, D-16)
 - [ ] 04-03-PLAN.md — Coherence + Orphans families: existence/resolution + locked-value carve-outs; block-vs-disk orphans + unused-key (DOC-03, DOC-04)
 - [ ] 04-04-PLAN.md — Signing + Agent families: ssh-add probe + fingerprint match + git<2.36 hasconfig: gate (DOC-05)
 
@@ -228,7 +228,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 1/5 plans executed
+**Plans:** 2/5 plans executed
 
 Plans:
 
@@ -244,6 +244,6 @@ Plans:
 | 2. First Identity End-to-End | 7/7 | Complete   | 2026-06-09 |
 | 3. Full Identity CRUD + Multi-Identity | 4/4 | Complete    | 2026-06-10 |
 | 3.1. Baseline Global Git Config + Global Gitignore | 4/4 | Complete    | 2026-06-11 |
-| 4. Doctor | 1/5 | In Progress|  |
+| 4. Doctor | 2/5 | In Progress|  |
 | 5. CLI Surface + TUI | 0/? | Not started | - |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 4 UI-SPEC approved
-last_updated: "2026-06-11T23:18:12.283Z"
+stopped_at: Completed 04-02-PLAN.md
+last_updated: "2026-06-11T23:34:35.818Z"
 last_activity: 2026-06-11 -- Phase 04 execution started
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 23
-  completed_plans: 19
+  completed_plans: 20
   percent: 57
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-08)
 ## Current Position
 
 Phase: 04 (doctor) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-06-11 -- Phase 04 execution started
 
@@ -61,6 +61,7 @@ Progress: [██████████] 100%
 | Phase 03.1 P02 | 3 | 2 tasks | 2 files |
 | Phase 03.1 P04 | 8 | 2 tasks | 5 files |
 | Phase 04 P01 | 40 | 3 tasks | 12 files |
+| Phase 04-doctor P02 | 50 | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -91,6 +92,7 @@ Recent decisions affecting current work:
 - [Phase ?]: 03.1-03: ScanConflicts block-stripped algorithm (RESEARCH C2)
 - [Phase ?]: 03.1-03: ReadBaselineState sidecar-free ListBlocks across three files (SC-5/IDENT-07); BaselineKeySet = authoritative Tier-1 source
 - [Phase ?]: 03.1-04: GitVersionAtLeast seam in internal/deps for zdiff3 gate; idempotency skip in baseline writers (bytes.Equal before Write)
+- [Phase ?]: InstallHint(tool,os) signature; doctor.Deps DetectTools+ReadBaselineState seams; Baseline Fix descriptors set for Plan 05 wiring
 
 ### Roadmap Evolution
 
@@ -115,6 +117,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-11T23:18:12.274Z
-Stopped at: Phase 4 UI-SPEC approved
-Resume file: .planning/phases/04-doctor/04-UI-SPEC.md
+Last session: 2026-06-11T23:34:35.807Z
+Stopped at: Completed 04-02-PLAN.md
+Resume file: None

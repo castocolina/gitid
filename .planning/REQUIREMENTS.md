@@ -61,7 +61,7 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 
 ### Doctor (DOC)
 
-- [ ] **DOC-01**: `gitid doctor` checks dependencies (`ssh`, `ssh-keygen`, `ssh-add`, `git`, clipboard tool) with per-OS install hints (brew / apt / dnf / pacman)
+- [x] **DOC-01**: `gitid doctor` checks dependencies (`ssh`, `ssh-keygen`, `ssh-add`, `git`, clipboard tool) with per-OS install hints (brew / apt / dnf / pacman)
 - [x] **DOC-02**: Doctor checks permissions on `~/.ssh`, keys, `.pub`, and `config`
 - [ ] **DOC-03**: Doctor checks coherence/drift — every `IdentityFile` resolves, every `includeIf` points to an existing fragment, `IdentitiesOnly yes` is present, signing identities have an `allowed_signers` line
 - [ ] **DOC-04**: Doctor detects orphans — unused keys, non-included fragments, aliases without a matching `includeIf`
@@ -186,7 +186,7 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 | GLOBAL-01 | Phase 3.1 | Complete |
 | URLRW-01 | Phase 3.1 | Complete |
 | GITIGNORE-01 | Phase 3.1 | Complete |
-| DOC-01 | Phase 4 | Pending |
+| DOC-01 | Phase 4 | Complete |
 | DOC-02 | Phase 4 | Complete |
 | DOC-03 | Phase 4 | Pending |
 | DOC-04 | Phase 4 | Pending |

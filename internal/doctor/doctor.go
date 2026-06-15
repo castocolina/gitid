@@ -7,7 +7,12 @@
 // filewriter (D-01).
 package doctor
 
-import "os"
+import (
+	"os"
+
+	"github.com/castocolina/gitid/internal/deps"
+	"github.com/castocolina/gitid/internal/gitconfig"
+)
 
 // Severity classifies the urgency of a finding. The four levels map directly
 // to the D-05 bands and the tiered exit code (D-07).
@@ -138,12 +143,22 @@ type Deps struct {
 	GitVersionAtLeast func(major, minor int) bool
 	CurrentOS         func() string
 	InstallHint       func(tool, os string) string
+	// DetectTools probes PATH for required and optional tools. The cmd layer
+	// wires deps.Detect; tests inject a fake returning a controlled deps.Report.
+	DetectTools func() deps.Report
+	// ReadBaselineState reconstructs the managed baseline state from disk.
+	// The cmd layer wires gitconfig.ReadBaselineState; tests inject a fake.
+	ReadBaselineState func(gitconfigPath, baselineFilePath, gitignorePath string) (gitconfig.BaselineState, error)
 
 	// Path fields.
 	SSHDir             string
 	SSHConfigPath      string
 	GitconfigPath      string
 	AllowedSignersPath string
+	// BaselineFilePath is the absolute path to ~/.gitconfig.d/00-baseline.
+	BaselineFilePath string
+	// GitignorePath is the absolute path to ~/.gitignore_global.
+	GitignorePath string
 
 	// Key and pub-key paths to check. These are the gitid-managed private key
 	// paths (0600 targets) and their .pub counterparts (0644 targets). The cmd

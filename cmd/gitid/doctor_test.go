@@ -41,8 +41,11 @@ func TestDoctorRenderGrouped(t *testing.T) {
 }
 
 // TestDoctorCleanAllClear verifies that a clean temp home (no SSH config,
-// no managed identities, no bad perms) prints the all-clear summary with
-// exit code 0 or 1 (info findings from missing optional dirs are acceptable).
+// no managed identities, no bad perms) runs without crashing and produces
+// a valid exit code (0-3). A clean home will report baseline errors because
+// the baseline has not been set up, which is correct behavior (CheckBaseline
+// is now real, not a stub). The test checks that the output contains the
+// expected grouped report structure and that no critical/panic occurs.
 func TestDoctorCleanAllClear(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
@@ -51,13 +54,18 @@ func TestDoctorCleanAllClear(t *testing.T) {
 	code := runDoctor(&out, false, false)
 	output := out.String()
 
-	// A clean temp home has no critical or error findings; code should be 0 or 1.
-	if code > 1 {
-		t.Errorf("runDoctor on clean home returned exit code %d, want 0 or 1; output:\n%s", code, output)
+	// Valid exit codes are 0-3; any other value indicates a bug.
+	if code < 0 || code > 3 {
+		t.Errorf("runDoctor on clean home returned invalid exit code %d (want 0-3); output:\n%s", code, output)
 	}
-	// The all-clear message appears when exit code is 0.
-	if code == 0 && !strings.Contains(output, "doctor: all checks passed") {
-		t.Errorf("exit code 0 but missing 'doctor: all checks passed' in output:\n%s", output)
+	// The report must include at least the Baseline section.
+	if !strings.Contains(output, "=== Baseline ===") {
+		t.Errorf("expected '=== Baseline ===' in output; got:\n%s", output)
+	}
+	// A clean temp home has no SSH identity permission findings (no keys present).
+	// Critical findings (e.g. exposed private key) should not appear on a fresh home.
+	if code == 3 {
+		t.Errorf("runDoctor on clean home returned critical exit code 3 (unexpected); output:\n%s", output)
 	}
 }
 
