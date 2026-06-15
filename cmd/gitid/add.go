@@ -214,9 +214,12 @@ func runAddAccount(reader *bufio.Reader, out io.Writer, dryRun bool, depsFor fun
 
 // gatherAddAccount collects the existing identity's details and the new alias.
 func gatherAddAccount(r *bufio.Reader, out io.Writer) (identity.Account, string, string, error) {
-	name := prompt(r, out, "Existing identity name", "")
+	name := sanitizeName(prompt(r, out, "Existing identity name", ""))
 	if name == "" {
 		return identity.Account{}, "", "", fmt.Errorf("identity add: existing identity name is required")
+	}
+	if !identityNameRe.MatchString(name) {
+		return identity.Account{}, "", "", fmt.Errorf("identity add: invalid identity name %q (allowed: letters, digits, '.', '_', '-')", name)
 	}
 	gitName := prompt(r, out, "Git user.name", "")
 	gitEmail := prompt(r, out, "Git user.email", "")
@@ -263,9 +266,12 @@ func fp(out io.Writer, s string) {
 // <identity>.<provider> (D-12) and the match defaults to gitdir:~/git/<id>/
 // (D-13). Confirmed is the single explicit y/N consent, skipped under dryRun.
 func gatherCreateInput(r *bufio.Reader, out io.Writer, algo string, dryRun bool) (identity.CreateInput, error) {
-	name := prompt(r, out, "Identity name", "")
+	name := sanitizeName(prompt(r, out, "Identity name", ""))
 	if name == "" {
 		return identity.CreateInput{}, fmt.Errorf("identity add: identity name is required")
+	}
+	if !identityNameRe.MatchString(name) {
+		return identity.CreateInput{}, fmt.Errorf("identity add: invalid identity name %q (allowed: letters, digits, '.', '_', '-')", name)
 	}
 	gitName := prompt(r, out, "Git user.name", "")
 	gitEmail := prompt(r, out, "Git user.email", "")

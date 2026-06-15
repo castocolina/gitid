@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-08)
 Phase: 02 (First Identity End-to-End) — EXECUTING
 Plan: 5 of 7
 Status: Ready to execute
-Last activity: 2026-06-09 -- Phase 02 execution started
+Last activity: 2026-06-09 -- Completed quick task 260609-qd6: T-02-23 name-validation fix
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -83,6 +83,12 @@ None yet.
 ### Blockers/Concerns
 
 None yet.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260609-qd6 | Fix security gap T-02-23: apply identityNameRe charset validation to add.go create-new and add-account name inputs | 2026-06-09 | 6711bb1 | [260609-qd6-fix-security-gap-t-02-23-apply-identityn](./quick/260609-qd6-fix-security-gap-t-02-23-apply-identityn/) |
 
 ## Session Continuity
 

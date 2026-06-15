@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"io"
 	"strings"
@@ -148,6 +149,106 @@ func TestRunIdentityAddReuseDryRun(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "--dry-run: no files were written.") {
 		t.Errorf("expected dry-run notice, got:\n%s", out.String())
+	}
+}
+
+// TestGatherCreateInputRejectsUnsafeName is a table-driven RED test asserting that
+// gatherCreateInput rejects unsafe identity names before the name flows into
+// filepath.Join or key paths (T-02-23 mitigation).
+func TestGatherCreateInputRejectsUnsafeName(t *testing.T) {
+	cases := []struct {
+		name    string
+		wantErr bool
+	}{
+		{name: "../evil", wantErr: true},
+		{name: "a/b", wantErr: true},
+		{name: "foo bar", wantErr: true},
+		{name: "name;rm", wantErr: true},
+		{name: "work", wantErr: false},
+		{name: "personal.gh", wantErr: false},
+		{name: "my-id_2", wantErr: false},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			// Scripted answers: identity name, then valid defaults for the
+			// remaining prompts (gitName, gitEmail, provider, alias, hostname,
+			// port, match, passphrase). dryRun=true so no confirm prompt.
+			answers := strings.Join([]string{
+				tc.name,         // Identity name
+				"Test User",     // Git user.name
+				"t@example.com", // Git user.email
+				"github",        // Provider
+				"",              // alias (default)
+				"",              // hostname (default)
+				"",              // port (default)
+				"",              // match (default)
+				"",              // passphrase (empty)
+			}, "\n") + "\n"
+			r := strings.NewReader(answers)
+			var out bytes.Buffer
+			_, err := gatherCreateInput(bufio.NewReader(r), &out, "ed25519", true)
+			if tc.wantErr && err == nil {
+				t.Errorf("gatherCreateInput(%q): expected error, got nil", tc.name)
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("gatherCreateInput(%q): unexpected error: %v", tc.name, err)
+			}
+			if tc.wantErr && err != nil && !strings.Contains(err.Error(), "invalid identity name") {
+				t.Errorf("gatherCreateInput(%q): error %q does not mention \"invalid identity name\"", tc.name, err.Error())
+			}
+		})
+	}
+}
+
+// TestGatherAddAccountRejectsUnsafeName is a table-driven RED test asserting that
+// gatherAddAccount rejects unsafe existing identity names before the name flows
+// into filepath.Join (T-02-23 mitigation).
+func TestGatherAddAccountRejectsUnsafeName(t *testing.T) {
+	cases := []struct {
+		name    string
+		wantErr bool
+	}{
+		{name: "../evil", wantErr: true},
+		{name: "a/b", wantErr: true},
+		{name: "foo bar", wantErr: true},
+		{name: "name;rm", wantErr: true},
+		{name: "work", wantErr: false},
+		{name: "personal.gh", wantErr: false},
+		{name: "my-id_2", wantErr: false},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			// For accept cases: supply all required answers so the function
+			// runs to completion. For reject cases only the first answer
+			// (name) matters; the function returns early on name rejection.
+			answers := strings.Join([]string{
+				tc.name,                     // Existing identity name
+				"Work User",                 // Git user.name
+				"work@example.com",          // Git user.email
+				"/tmp/.ssh/id_ed25519_work", // Existing private key path
+				"gitlab",                    // New provider
+				"",                          // New host alias (default)
+				"",                          // Hostname (default)
+				"",                          // Port (default)
+				"",                          // Match gitdir (default)
+			}, "\n") + "\n"
+			r := strings.NewReader(answers)
+			var out bytes.Buffer
+			_, _, _, err := gatherAddAccount(bufio.NewReader(r), &out)
+			if tc.wantErr && err == nil {
+				t.Errorf("gatherAddAccount(%q): expected error, got nil", tc.name)
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("gatherAddAccount(%q): unexpected error: %v", tc.name, err)
+			}
+			if tc.wantErr && err != nil && !strings.Contains(err.Error(), "invalid identity name") {
+				t.Errorf("gatherAddAccount(%q): error %q does not mention \"invalid identity name\"", tc.name, err.Error())
+			}
+		})
 	}
 }
 
