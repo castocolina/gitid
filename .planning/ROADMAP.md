@@ -76,7 +76,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 02-04-PLAN.md — internal/sshconfig render/parse/write (Host block, macOS Host * ordered last, idempotent round-trip); adds kevinburke/ssh_config
+- [x] 02-04-PLAN.md — internal/sshconfig render/parse/write (Host block, macOS Host * ordered last, idempotent round-trip); adds kevinburke/ssh_config
 
 **Wave 4** *(blocked on Wave 3)*
 
@@ -157,7 +157,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 4/7 plans executed
+**Plans:** 5/7 plans executed
 
 Plans:
 
@@ -170,7 +170,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Bootstrap | 3/3 | Complete   | 2026-06-09 |
-| 2. First Identity End-to-End | 4/7 | In Progress|  |
+| 2. First Identity End-to-End | 5/7 | In Progress|  |
 | 3. Full Identity CRUD + Multi-Identity | 0/? | Not started | - |
 | 4. Doctor | 0/? | Not started | - |
 | 5. CLI Surface + TUI | 0/? | Not started | - |

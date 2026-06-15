@@ -32,9 +32,9 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 
 ### SSH Config Artifact (SSH)
 
-- [ ] **SSH-01**: Creating an account writes a managed `Host <alias>` block with `Hostname`, `Port`, `User git`, `IdentityFile`, and `IdentitiesOnly yes`
-- [ ] **SSH-02**: A provider's default identity may use the real host (`github.com`); additional identities use aliases (`work.github.com`)
-- [ ] **SSH-03**: On macOS a `Host *` block emits `UseKeychain yes` + `AddKeysToAgent yes` guarded by `IgnoreUnknown UseKeychain`; this block is ordered after specific hosts
+- [x] **SSH-01**: Creating an account writes a managed `Host <alias>` block with `Hostname`, `Port`, `User git`, `IdentityFile`, and `IdentitiesOnly yes`
+- [x] **SSH-02**: A provider's default identity may use the real host (`github.com`); additional identities use aliases (`work.github.com`)
+- [x] **SSH-03**: On macOS a `Host *` block emits `UseKeychain yes` + `AddKeysToAgent yes` guarded by `IgnoreUnknown UseKeychain`; this block is ordered after specific hosts
 
 ### Git Config Artifact (GIT)
 
@@ -157,9 +157,9 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 | IDENT-06 | Phase 2 | Pending |
 | KEY-01 | Phase 2 | Pending |
 | KEY-02 | Phase 2 | Complete |
-| SSH-01 | Phase 2 | Pending |
-| SSH-02 | Phase 2 | Pending |
-| SSH-03 | Phase 2 | Pending |
+| SSH-01 | Phase 2 | Complete |
+| SSH-02 | Phase 2 | Complete |
+| SSH-03 | Phase 2 | Complete |
 | GIT-01 | Phase 2 | Complete |
 | GIT-02 | Phase 2 | Complete |
 | GIT-03 | Phase 2 | Complete |
