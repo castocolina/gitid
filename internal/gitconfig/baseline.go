@@ -3,11 +3,301 @@ package gitconfig
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/castocolina/gitid/internal/filewriter"
 )
+
+// Conflict records one overlap between a user-set gitconfig key and the
+// baseline key set. Winner is always "user" under floor ordering (D-10).
+type Conflict struct {
+	Key           string
+	UserValue     string
+	BaselineValue string
+	Winner        string // always "user" (floor ordering — user keys win)
+}
+
+// BaselineState holds the reconstructed managed baseline across all three
+// managed surfaces. It is a value type (no pointer), following the FragmentInfo
+// / IncludeIfInfo precedent in reader.go.
+type BaselineState struct {
+	// Installed is true when both the include block in ~/.gitconfig AND the
+	// baseline block in ~/.gitconfig.d/00-baseline exist.
+	Installed bool
+	// Incomplete is true when some-but-not-all required artifacts are present.
+	Incomplete bool
+	// Missing lists the artifact description(s) that are absent (for show output).
+	Missing []string
+	// BaselineKeys maps lowercased section.key to the value found in the
+	// managed baseline block body (e.g. "core.ignorecase" → "false").
+	BaselineKeys map[string]string
+	// URLRewrites is the list of active HTTPS→SSH mappings from the
+	// url-rewrites managed block, in file order.
+	URLRewrites []URLRewrite
+	// GitignorePatterns is the list of non-empty pattern lines from the
+	// managed gitignore block, in file order.
+	GitignorePatterns []string
+}
+
+// BaselineKeySet returns the canonical set of lowercase section.key → value
+// pairs that the baseline block manages. This is the authoritative source used
+// by ScanConflicts so the two never drift (C2 algorithm requirement). The map
+// contains ONLY Tier-1 unconditional keys; Tier-2 keys (autocrlf, pager, …)
+// could be absent depending on cfg — the scan is conservative (reports only
+// certain conflicts). Callers that need the full Tier-2 set should call
+// BaselineKeySet and augment before passing to ScanConflicts.
+func BaselineKeySet() map[string]string {
+	return map[string]string{
+		"core.ignorecase":      "false",
+		"core.excludesfile":    "~/.gitignore_global",
+		"push.autosetupremote": "true", // git lower-cases keys in --list output
+		"pull.rebase":          "true",
+		"fetch.prune":          "true",
+		"color.ui":             "auto",
+	}
+}
+
+// ScanConflicts detects overlaps between user-owned keys in gitconfigPath and
+// the provided baselineKeys map. It strips ALL gitid managed blocks first
+// (RESEARCH C2 / Pitfall C) so that baseline-written keys are never reported
+// as user conflicts. The user-owned portion is written to a temp file and
+// parsed via `git config --file --list` (WITHOUT --includes per C6). Each
+// overlap is returned as a Conflict with Winner="user" (floor ordering).
+// Missing file returns (nil, nil) for the first-run case.
+func ScanConflicts(gitconfigPath string, baselineKeys map[string]string) ([]Conflict, error) {
+	content, err := os.ReadFile(gitconfigPath) //nolint:gosec // gitconfigPath is a trusted gitid-managed path (G304)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil // first-run case: no gitconfig yet
+		}
+		return nil, fmt.Errorf("scanning conflicts: reading %s: %w", gitconfigPath, err)
+	}
+
+	// Strip ALL gitid managed blocks from the content to isolate user-owned
+	// keys (RESEARCH C2 / Pitfall C): managed-block keys must never appear
+	// as user conflicts.
+	userPortion := content
+	for _, b := range filewriter.ListBlocks(content) {
+		userPortion = filewriter.RemoveBlock(userPortion, b.Name)
+	}
+
+	// Write the user-owned portion to a temp file so git can parse it.
+	tmp, err := os.CreateTemp("", "gitid-conflict-*.gitconfig")
+	if err != nil {
+		return nil, fmt.Errorf("scanning conflicts: creating temp file: %w", err)
+	}
+	if _, err = tmp.Write(userPortion); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return nil, fmt.Errorf("scanning conflicts: writing temp file: %w", err)
+	}
+	if err = tmp.Close(); err != nil {
+		_ = os.Remove(tmp.Name())
+		return nil, fmt.Errorf("scanning conflicts: closing temp file: %w", err)
+	}
+	defer os.Remove(tmp.Name()) //nolint:errcheck // best-effort cleanup of short-lived temp
+
+	// Parse user-owned keys: arg-slice form (no shell), WITHOUT --includes (C6),
+	// so we only see keys physically in this file.
+	cmd := exec.Command("git", "config", "--file", tmp.Name(), "--list") //nolint:gosec // arg-slice form, no shell; trusted temp path (G204)
+	out, err := cmd.Output()
+	if err != nil {
+		// An empty or comment-only file is not an error from git's perspective,
+		// but a parse failure on a malformed user gitconfig should be surfaced.
+		return nil, fmt.Errorf("scanning conflicts: %w", err)
+	}
+
+	// Build a lowercase key→value map from the user-owned portion.
+	userKeys := make(map[string]string)
+	for _, line := range strings.Split(string(out), "\n") {
+		kv := strings.SplitN(line, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		userKeys[strings.ToLower(kv[0])] = kv[1]
+	}
+
+	// Intersect user keys with the baseline key set; emit a Conflict per overlap.
+	var conflicts []Conflict
+	for baseKey, baseVal := range baselineKeys {
+		if userVal, ok := userKeys[baseKey]; ok {
+			conflicts = append(conflicts, Conflict{
+				Key:           baseKey,
+				UserValue:     userVal,
+				BaselineValue: baseVal,
+				Winner:        "user", // floor ordering: user keys always win (D-10)
+			})
+		}
+	}
+	return conflicts, nil
+}
+
+// RemoveURLRewritesBlock removes the "url-rewrites" managed block from
+// baselineFilePath independently, leaving all other content (including the
+// "baseline" block and any foreign content) intact (D-07). Idempotent when the
+// block is absent. Returns the backup path from filewriter.Write.
+func RemoveURLRewritesBlock(baselineFilePath string) (backupPath string, err error) {
+	existing, readErr := os.ReadFile(baselineFilePath) //nolint:gosec // baselineFilePath is a trusted gitid-managed path (G304)
+	if os.IsNotExist(readErr) {
+		return "", nil // nothing to remove — idempotent no-op
+	}
+	if readErr != nil {
+		return "", fmt.Errorf("reading %s: %w", baselineFilePath, readErr)
+	}
+
+	composed := filewriter.RemoveBlock(existing, "url-rewrites")
+	bp, writeErr := filewriter.Write(baselineFilePath, composed, gitconfigMode)
+	if writeErr != nil {
+		return "", fmt.Errorf("writing %s after url-rewrites removal: %w", baselineFilePath, writeErr)
+	}
+	return bp, nil
+}
+
+// ReadBaselineState reconstructs the managed baseline state from the three
+// disk files with no sidecar DB (IDENT-07 model, SC-5). Missing files are
+// treated as empty (no error). It checks:
+//   - gitconfigPath for the "baseline-include" block
+//   - baselineFilePath for the "baseline" and "url-rewrites" blocks
+//   - gitignorePath for the "gitignore" block
+//
+// Installed=true only when both the include block and the baseline block exist.
+// Incomplete=true when some-but-not-all artifacts are present.
+func ReadBaselineState(gitconfigPath, baselineFilePath, gitignorePath string) (BaselineState, error) {
+	// Read each file; missing files are treated as empty bytes (not an error).
+	gitconfigContent := readFileSilent(gitconfigPath)
+	baselineContent := readFileSilent(baselineFilePath)
+	gitignoreContent := readFileSilent(gitignorePath)
+
+	// Extract managed blocks from each file.
+	gitconfigBlocks := indexBlocks(filewriter.ListBlocks(gitconfigContent))
+	baselineBlocks := indexBlocks(filewriter.ListBlocks(baselineContent))
+	gitignoreBlocks := indexBlocks(filewriter.ListBlocks(gitignoreContent))
+
+	_, includeBlockExists := gitconfigBlocks["baseline-include"]
+	_, baselineBlockExists := baselineBlocks["baseline"]
+
+	var state BaselineState
+
+	// Determine installed / incomplete state.
+	switch {
+	case includeBlockExists && baselineBlockExists:
+		state.Installed = true
+	case !includeBlockExists && !baselineBlockExists:
+		// Not installed — return zero state.
+		return state, nil
+	default:
+		// Some-but-not-all artifacts are present.
+		state.Incomplete = true
+		if !includeBlockExists {
+			state.Missing = append(state.Missing, "include block in "+gitconfigPath)
+		}
+		if !baselineBlockExists {
+			state.Missing = append(state.Missing, baselineFilePath)
+		}
+		return state, nil
+	}
+
+	// Parse baseline keys from the baseline block body.
+	if b, ok := baselineBlocks["baseline"]; ok {
+		state.BaselineKeys = parseGitconfigBlockBody(b.Body)
+	}
+
+	// Parse url-rewrites from the url-rewrites block body.
+	if b, ok := baselineBlocks["url-rewrites"]; ok {
+		state.URLRewrites = parseURLRewritesBlockBody(b.Body)
+	}
+
+	// Parse gitignore patterns from the gitignore block body.
+	if b, ok := gitignoreBlocks["gitignore"]; ok {
+		state.GitignorePatterns = parseGitignoreBlockBody(b.Body)
+	}
+
+	return state, nil
+}
+
+// readFileSilent reads a file, returning nil bytes (not an error) when the
+// file does not exist. Other errors are silently treated as empty too — the
+// caller checks block presence to determine state.
+func readFileSilent(path string) []byte {
+	content, err := os.ReadFile(path) //nolint:gosec // path is a trusted gitid-managed path (G304)
+	if err != nil {
+		return nil
+	}
+	return content
+}
+
+// indexBlocks converts a NamedBlock slice into a map keyed by block name.
+func indexBlocks(blocks []filewriter.NamedBlock) map[string]filewriter.NamedBlock {
+	m := make(map[string]filewriter.NamedBlock, len(blocks))
+	for _, b := range blocks {
+		m[b.Name] = b
+	}
+	return m
+}
+
+// parseGitconfigBlockBody parses a baseline block body (tab-indented gitconfig
+// format) into a lowercase section.key→value map using a simple line scanner.
+// The section header tracks current context; key=value pairs are accumulated
+// under "section.key".
+func parseGitconfigBlockBody(body string) map[string]string {
+	result := make(map[string]string)
+	var section string
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			// Section header: [core] → "core", [alias] → "alias"
+			section = strings.ToLower(trimmed[1 : len(trimmed)-1])
+			continue
+		}
+		kv := strings.SplitN(trimmed, " = ", 2)
+		if len(kv) == 2 && section != "" {
+			key := strings.ToLower(section + "." + strings.TrimSpace(kv[0]))
+			result[key] = strings.TrimSpace(kv[1])
+		}
+	}
+	return result
+}
+
+// parseURLRewritesBlockBody parses a url-rewrites block body into a slice of
+// URLRewrite pairs. It looks for [url "git@..."] section headers followed by
+// `insteadOf = https://...` key lines.
+func parseURLRewritesBlockBody(body string) []URLRewrite {
+	var rewrites []URLRewrite
+	var currentSSH string
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		// [url "git@github.com:"] — extract the SSH prefix
+		if strings.HasPrefix(trimmed, `[url "`) && strings.HasSuffix(trimmed, `"]`) {
+			currentSSH = trimmed[len(`[url "`) : len(trimmed)-len(`"]`)]
+			continue
+		}
+		// \tinsteadOf = https://github.com/
+		kv := strings.SplitN(trimmed, " = ", 2)
+		if len(kv) == 2 && strings.ToLower(kv[0]) == "insteadof" && currentSSH != "" {
+			rewrites = append(rewrites, URLRewrite{
+				HTTPSPrefix: strings.TrimSpace(kv[1]),
+				SSHPrefix:   currentSSH,
+			})
+			currentSSH = ""
+		}
+	}
+	return rewrites
+}
+
+// parseGitignoreBlockBody parses a gitignore block body into a slice of
+// non-empty, non-comment pattern lines.
+func parseGitignoreBlockBody(body string) []string {
+	var patterns []string
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+			patterns = append(patterns, trimmed)
+		}
+	}
+	return patterns
+}
 
 // BaselineConfig holds the Tier-2 (optional) fields for the baseline block.
 // Tier-1 keys (ignorecase, excludesfile, push.autoSetupRemote, pull.rebase,

@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 3.1 UI-SPEC approved
-last_updated: "2026-06-11T10:51:24.311Z"
+last_updated: "2026-06-11T10:59:55.065Z"
 last_activity: 2026-06-11 -- Phase 03.1 execution started
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 18
-  completed_plans: 16
+  completed_plans: 17
   percent: 43
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-08)
 ## Current Position
 
 Phase: 03.1 (baseline-global-git-config-global-gitignore) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-06-11 -- Phase 03.1 execution started
 
@@ -85,6 +85,8 @@ Recent decisions affecting current work:
 - [Phase 3]: 03-04: Delete passes ONLY acct.Name to RemoveBlock — never "_global"; keepKey=!confirm (D-07/D-08)
 - [Phase ?]: 03.1-02: validateValue panics used in renderers — matches renderBlockBody precedent; newline in render input is programming error not user data
 - [Phase ?]: 03.1-02: WriteBaselineInclude hardcodes literal ~ path per RESEARCH Q2 (git expands ~ at runtime)
+- [Phase ?]: 03.1-03: ScanConflicts block-stripped algorithm (RESEARCH C2)
+- [Phase ?]: 03.1-03: ReadBaselineState sidecar-free ListBlocks across three files (SC-5/IDENT-07); BaselineKeySet = authoritative Tier-1 source
 
 ### Roadmap Evolution
 
@@ -109,6 +111,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-11T10:51:16.880Z
+Last session: 2026-06-11T10:59:35.287Z
 Stopped at: Phase 3.1 UI-SPEC approved
 Resume file: .planning/phases/03.1-baseline-global-git-config-global-gitignore/03.1-UI-SPEC.md
