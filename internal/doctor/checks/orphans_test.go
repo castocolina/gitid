@@ -54,6 +54,9 @@ func TestOrphanFragment(t *testing.T) {
 		// AllSSHHostIdentityFiles has no reference to the stale key.
 		AllSSHHostIdentityFiles: []string{},
 		KeyPaths:                []string{},
+		// RemoveBlock and SSHConfigPath wired so Fix descriptor is non-nil (D-11).
+		SSHConfigPath: "/home/u/.ssh/config",
+		RemoveBlock:   func(_, _ string) error { return nil },
 	}
 
 	findings := checks.CheckOrphans(d)
@@ -89,6 +92,9 @@ func TestOrphanAliasHostNoInclude(t *testing.T) {
 		GitconfigManagedBlockNames: []string{},
 		AllSSHHostIdentityFiles:    []string{},
 		KeyPaths:                   []string{},
+		// RemoveBlock and SSHConfigPath wired so Fix descriptor is non-nil (D-11).
+		SSHConfigPath: "/home/u/.ssh/config",
+		RemoveBlock:   func(_, _ string) error { return nil },
 	}
 
 	findings := checks.CheckOrphans(d)

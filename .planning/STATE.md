@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: gaps_found
-stopped_at: Phase 04 verification — gaps_found (3 critical wiring gaps)
-last_updated: "2026-06-12T00:00:00.000Z"
-last_activity: 2026-06-12 -- Phase 04 plans executed; verification gaps_found
+status: verifying
+stopped_at: Completed 04-06-PLAN.md
+last_updated: "2026-06-12T12:20:38.651Z"
+last_activity: 2026-06-12 -- Phase 04 executed; verification gaps_found
 progress:
-  total_phases: 7
+  total_phases: 6
   completed_phases: 4
-  total_plans: 23
-  completed_plans: 23
-  percent: 57
+  total_plans: 25
+  completed_plans: 24
+  percent: 67
 ---
 
 # Project State
@@ -64,6 +64,7 @@ Progress: [█████████░] 5/5 plans executed — phase blocked 
 | Phase 04-doctor P02 | 50 | 2 tasks | 9 files |
 | Phase 04-doctor P03 | 10 | 2 tasks | 8 files |
 | Phase 04-doctor P05 | 25 | 2 tasks | 1 files |
+| Phase 04-doctor P06 | 90 | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -99,6 +100,8 @@ Recent decisions affecting current work:
 - [Phase ?]: 04-05: D-07 pre-fix exit code captured before applyFixes, returned unconditionally (WARNING 5)
 - [Phase ?]: 04-05: AddWiring dispatcher uses line-prefix encoding (ssh-host:/signers:/baseline-include:) — no new internal/sshconfig or internal/gitconfig function (BLOCKER 2 resolved)
 - [Phase ?]: 04-05: applyFixes injectable *bufio.Reader enables gate/confirm/batching tests without real stdin; FamilyPerms batched, others individual (D-04)
+- [Phase ?]: 04-06: incompleteNames guard removed from orphan Classes 1+2 — single-sided managed block is both Incomplete (Coherence) and Orphan; guard was preventing any orphan finding from triggering
+- [Phase ?]: 04-06: WR-01 findSignerLine all-candidate scan: exact match anywhere wins over earlier case-fold match; WR-02: RemoveBlock mode derived from path (0644 for allowed_signers, 0600 for config files)
 
 ### Roadmap Evolution
 
@@ -123,6 +126,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-12T10:47:03.571Z
-Stopped at: Completed 04-03-PLAN.md
+Last session: 2026-06-12T12:20:38.645Z
+Stopped at: Completed 04-06-PLAN.md
 Resume file: None

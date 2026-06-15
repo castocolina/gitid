@@ -205,13 +205,21 @@ func buildDoctorDeps(home string, sshBytes, gcBytes []byte) doctor.Deps {
 		// outside the block is preserved byte-for-byte, and a timestamped backup is
 		// created before every mutation. A second call with the same name is idempotent
 		// (filewriter.RemoveBlock returns input unchanged when the block is absent).
+		//
+		// WR-02: the file mode is derived from the target path. ~/.ssh/allowed_signers
+		// is a public file and must remain 0644 after removal of an orphaned signer block.
+		// All other gitid-managed config files (~/.ssh/config, ~/.gitconfig) are 0600.
 		RemoveBlock: func(path, name string) error {
 			content, err := os.ReadFile(path) //nolint:gosec // path is a gitid-managed trusted path (G304)
 			if err != nil && !os.IsNotExist(err) {
 				return fmt.Errorf("doctor: reading %s for block removal: %w", path, err)
 			}
 			removed := filewriter.RemoveBlock(content, name)
-			mode := os.FileMode(0o600) // config files are always 0600 (KEY-02 / T-04-19)
+			// Path-derived mode: allowed_signers is 0644 (public); all others 0600 (KEY-02 / T-04-19).
+			mode := os.FileMode(0o600)
+			if path == allowedSignersPath {
+				mode = 0o644
+			}
 			if _, werr := filewriter.Write(path, removed, mode); werr != nil {
 				return fmt.Errorf("doctor: removing block %q from %s: %w", name, path, werr)
 			}

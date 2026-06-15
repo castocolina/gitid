@@ -51,17 +51,29 @@ func CheckBaseline(d doctor.Deps) []doctor.Finding {
 	// If the baseline is not installed (Installed=false) AND not incomplete, the
 	// entire baseline has never been set up. Report as one error with fix.
 	if !state.Installed {
+		// Wire the real fixer: restore the baseline [include] block via
+		// deps.AddWiring(GitconfigPath, "baseline-include", "baseline-include:<baselineFilePath>").
+		// The AddWiring dispatcher in the cmd layer calls gitconfig.WriteBaselineInclude.
+		var fix *doctor.FixDescriptor
+		if d.AddWiring != nil && d.GitconfigPath != "" && d.BaselineFilePath != "" {
+			gitconfigPath := d.GitconfigPath
+			baselineFilePath := d.BaselineFilePath
+			addWiring := d.AddWiring
+			fix = &doctor.FixDescriptor{
+				Summary: "restore baseline [include] block in ~/.gitconfig",
+				Fn: func() error {
+					return addWiring(gitconfigPath, "baseline-include",
+						"baseline-include:"+baselineFilePath)
+				},
+			}
+		}
 		findings = append(findings, doctor.Finding{
 			Family:       doctor.FamilyBaseline,
 			Severity:     doctor.SeverityError,
 			Title:        "baseline [include] block missing from ~/.gitconfig",
 			Explanation:  "The managed baseline include block is gone. Baseline settings have no effect.",
 			SuggestedFix: "run 'gitid baseline setup'",
-			Fix: &doctor.FixDescriptor{
-				Summary: "run 'gitid baseline setup'",
-				// The actual fixer is wired by Plan 05; here we mark it fixable.
-				Fn: func() error { return nil },
-			},
+			Fix:          fix,
 		})
 		// When the baseline is not installed, the other checks cannot be meaningful
 		// (there are no keys to read). Return early with just this finding.
@@ -108,17 +120,18 @@ func CheckBaseline(d doctor.Deps) []doctor.Finding {
 		}
 	}
 	if len(missing) > 0 {
+		// The gitignore restore requires passing the full curated patterns list through
+		// the AddWiring dispatcher, which is not supported by the current string-based
+		// payload protocol. Fix=nil is correct here (report-only, D-03) — the user
+		// must run 'gitid baseline setup' to restore the managed gitignore block.
+		// A no-op func() error { return nil } stub is explicitly NOT used (plan advisory).
 		findings = append(findings, doctor.Finding{
 			Family:       doctor.FamilyBaseline,
 			Severity:     doctor.SeverityWarning,
 			Title:        "~/.gitignore_global: curated entries missing",
 			Explanation:  "One or more gitid-managed gitignore patterns are absent. OS/editor artifacts may be committed.",
 			SuggestedFix: "run 'gitid baseline setup' to restore the managed gitignore block",
-			Fix: &doctor.FixDescriptor{
-				Summary: "run 'gitid baseline setup' to restore the managed gitignore block",
-				// The actual fixer is wired by Plan 05; here we mark it fixable.
-				Fn: func() error { return nil },
-			},
+			Fix:          nil, // report-only: no safe single-call restore via AddWiring (D-03)
 		})
 	}
 

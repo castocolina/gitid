@@ -15,11 +15,13 @@ import (
 //
 //  1. SSH Host block name in SSHManagedBlockNames with no matching name in
 //     GitconfigManagedBlockNames → orphaned SSH managed block → warning + Fix
-//     (managed-block orphan removal, D-11).
+//     (managed-block orphan removal, D-11). Fix.Fn calls deps.RemoveBlock with
+//     deps.SSHConfigPath and the block name.
 //
-//  2. Gitconfig includeIf block name in GitconfigManagedBlockNames with no matching
+//  2. Gitconfig managed block name in GitconfigManagedBlockNames with no matching
 //     name in SSHManagedBlockNames → orphaned gitconfig fragment block → warning + Fix
-//     (managed-block orphan removal, D-11).
+//     (managed-block orphan removal, D-11). Fix.Fn calls deps.RemoveBlock with
+//     deps.GitconfigPath and the block name.
 //
 //  3. A key file in KeyPaths that exists on disk (Stat→OK) but whose path does NOT
 //     appear in AllSSHHostIdentityFiles (the union of every IdentityFile from every Host
@@ -27,21 +29,15 @@ import (
 //     (D-03/D-13 report-only, honest wording). Guarded against missing pub files
 //     (Pitfall 7).
 //
-// Accounts with Incomplete != "" are NEVER flagged here — they belong to Coherence
-// (Pitfall 5). The function never reads known_hosts (D-14) and never imports
-// internal/filewriter (D-01).
+// Note: Classes 1 and 2 intentionally include accounts that Reconstruct marks as
+// Incomplete (one-sided managed blocks). When an SSH block exists with no gitconfig
+// counterpart — whether the gitconfig block was never created or was deleted — the
+// SSH block is an orphan that should be removed. Coherence reports the missing-wiring
+// angle; Orphans reports the removable-block angle. Both can apply to the same identity.
+//
+// The function never reads known_hosts (D-14) and never imports internal/filewriter (D-01).
 func CheckOrphans(deps doctor.Deps) []doctor.Finding {
 	var findings []doctor.Finding
-
-	// Build a set of identity names that are "Incomplete" (managed block exists but
-	// artifacts missing). These accounts must be classified as Coherence, not Orphans
-	// (Pitfall 5, D-09).
-	incompleteNames := make(map[string]bool, len(deps.Identities))
-	for _, acct := range deps.Identities {
-		if acct.Incomplete != "" {
-			incompleteNames[acct.Name] = true
-		}
-	}
 
 	// --- Class 1 + 2: cross-reference SSH managed block names vs gitconfig block names.
 	// An SSH block with no gitconfig counterpart, or vice-versa, is an orphaned block.
@@ -49,14 +45,24 @@ func CheckOrphans(deps doctor.Deps) []doctor.Finding {
 	gcNames := sliceToSet(deps.GitconfigManagedBlockNames)
 	sshNames := sliceToSet(deps.SSHManagedBlockNames)
 
-	// Class 1: SSH block names that have no matching gitconfig includeIf block.
+	// Class 1: SSH block names that have no matching gitconfig managed block.
+	// Fix.Fn calls deps.RemoveBlock on SSHConfigPath with the block name (when wired).
 	for _, name := range deps.SSHManagedBlockNames {
-		if incompleteNames[name] {
-			continue // belongs to Coherence (Pitfall 5)
-		}
 		if !gcNames[name] {
 			// This SSH Host block has no gitconfig partner — orphaned block.
-			n := name // capture for closure
+			n := name // capture for closure (avoid loop-variable aliasing)
+			sshConfigPath := deps.SSHConfigPath
+			removeBlock := deps.RemoveBlock
+			// Build Fix only when RemoveBlock is wired; otherwise report-only.
+			var fix *doctor.FixDescriptor
+			if removeBlock != nil && sshConfigPath != "" {
+				fix = &doctor.FixDescriptor{
+					Summary: fmt.Sprintf("remove orphaned SSH Host block %q", n),
+					Fn: func() error {
+						return removeBlock(sshConfigPath, n)
+					},
+				}
+			}
 			findings = append(findings, doctor.Finding{
 				Family:      doctor.FamilyOrphans,
 				Severity:    doctor.SeverityWarning,
@@ -64,33 +70,37 @@ func CheckOrphans(deps doctor.Deps) []doctor.Finding {
 				Explanation: fmt.Sprintf("A gitid-managed SSH Host block %q exists but no gitconfig includeIf block claims it.", n),
 				SuggestedFix: fmt.Sprintf(
 					"remove the orphaned SSH Host block %q  (gitid will confirm before removing)", n),
-				Fix: &doctor.FixDescriptor{
-					Summary: fmt.Sprintf("remove orphaned SSH Host block %q", n),
-					Fn:      func() error { return nil }, // Plan 05 wires actual RemoveBlock fixer
-				},
+				Fix: fix,
 			})
 		}
 	}
 
 	// Class 2: gitconfig block names that have no matching SSH Host block.
+	// Fix.Fn calls deps.RemoveBlock on GitconfigPath with the block name (when wired).
 	for _, name := range deps.GitconfigManagedBlockNames {
-		if incompleteNames[name] {
-			continue // belongs to Coherence (Pitfall 5)
-		}
 		if !sshNames[name] {
 			// This gitconfig block has no SSH Host partner — orphaned gitconfig block.
 			n := name // capture for closure
+			gitconfigPath := deps.GitconfigPath
+			removeBlock := deps.RemoveBlock
+			// Build Fix only when RemoveBlock is wired; otherwise report-only.
+			var fix *doctor.FixDescriptor
+			if removeBlock != nil && gitconfigPath != "" {
+				fix = &doctor.FixDescriptor{
+					Summary: fmt.Sprintf("remove orphaned gitconfig block %q", n),
+					Fn: func() error {
+						return removeBlock(gitconfigPath, n)
+					},
+				}
+			}
 			findings = append(findings, doctor.Finding{
 				Family:      doctor.FamilyOrphans,
 				Severity:    doctor.SeverityWarning,
 				Title:       fmt.Sprintf("gitconfig block %q: no SSH Host block", n),
-				Explanation: fmt.Sprintf("A gitconfig includeIf managed block %q exists but no SSH Host block claims it.", n),
+				Explanation: fmt.Sprintf("A gitconfig managed block %q exists but no SSH Host block claims it.", n),
 				SuggestedFix: fmt.Sprintf(
 					"remove the orphaned gitconfig block %q  (gitid will confirm before removing)", n),
-				Fix: &doctor.FixDescriptor{
-					Summary: fmt.Sprintf("remove orphaned gitconfig block %q", n),
-					Fn:      func() error { return nil }, // Plan 05 wires actual RemoveBlock fixer
-				},
+				Fix: fix,
 			})
 		}
 	}

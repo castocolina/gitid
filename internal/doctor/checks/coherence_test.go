@@ -134,8 +134,9 @@ func TestCoherenceIdentitiesOnly(t *testing.T) {
 	acct := makeAccount("work", "work.github.com", "work@example.com",
 		"/home/u/.ssh/gitid_work", "/home/u/.gitconfig.d/work", "")
 	d := doctor.Deps{
-		Stat:       cohStat("/home/u/.ssh/gitid_work", "/home/u/.gitconfig.d/work"),
-		Identities: []identity.Account{acct},
+		Stat:          cohStat("/home/u/.ssh/gitid_work", "/home/u/.gitconfig.d/work"),
+		SSHConfigPath: "/home/u/.ssh/config", // required for Fix.Fn wiring
+		Identities:    []identity.Account{acct},
 		ManagedHosts: map[string]sshconfig.SSHHostInfo{
 			"work": {Alias: "work.github.com", IdentitiesOnly: false}, // missing
 		},
@@ -146,6 +147,8 @@ func TestCoherenceIdentitiesOnly(t *testing.T) {
 			return "ssh", nil
 		},
 		AllowedSignersPath: "/home/u/.ssh/allowed_signers",
+		// AddWiring required so Fix.Fn is non-nil (real coherence wiring).
+		AddWiring: func(_, _, _ string) error { return nil },
 	}
 
 	findings := checks.CheckCoherence(d)
@@ -175,6 +178,7 @@ func TestCoherenceSignersLine(t *testing.T) {
 			"personal": {Alias: "personal.github.com", IdentitiesOnly: true},
 		},
 		// allowed_signers exists but has NO entry for personal@example.com.
+		// ReadFile returns fake content for both allowed_signers and pub key paths.
 		ReadFile: func(_ string) ([]byte, error) {
 			return []byte(`other@example.com namespaces="git" ssh-ed25519 AAAAC3FakeKey` + "\n"), nil
 		},
@@ -182,6 +186,8 @@ func TestCoherenceSignersLine(t *testing.T) {
 			return "ssh", nil // gpg.format = ssh → is a signing identity
 		},
 		AllowedSignersPath: "/home/u/.ssh/allowed_signers",
+		// AddWiring required so buildSignersFix returns a non-nil Fix.
+		AddWiring: func(_, _, _ string) error { return nil },
 	}
 
 	findings := checks.CheckCoherence(d)
@@ -251,6 +257,8 @@ func TestCoherenceEmailMismatch(t *testing.T) {
 		ManagedHosts: map[string]sshconfig.SSHHostInfo{
 			"personal": {Alias: "personal.github.com", IdentitiesOnly: true},
 		},
+		// ReadFile returns the mismatch line for allowed_signers and the same fake
+		// bytes for the pub key path (non-empty so buildSignersFix can proceed).
 		ReadFile: func(_ string) ([]byte, error) {
 			return mismatchLine, nil
 		},
@@ -258,6 +266,8 @@ func TestCoherenceEmailMismatch(t *testing.T) {
 			return "ssh", nil
 		},
 		AllowedSignersPath: "/home/u/.ssh/allowed_signers",
+		// AddWiring required so buildSignersFix returns a non-nil Fix.
+		AddWiring: func(_, _, _ string) error { return nil },
 	}
 
 	findings := checks.CheckCoherence(d)

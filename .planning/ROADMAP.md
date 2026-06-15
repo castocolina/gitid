@@ -19,5 +19,5 @@ Plans:
 
 **Gap closure** *(verification gaps_found 2026-06-12 — DOC-GAP-01/02/03; run `/gsd-execute-phase 04 --gaps-only`)*
 
-- [ ] 04-06-PLAN.md — DOC-GAP-01: plumb real RemoveBlock/AddWiring through check Fix.Fn (orphan/coherence/baseline auto-fix was a silent no-op) + WR-02 path-aware mode + WR-01 all-candidate signer scan; real-wiring integration tests (DOC-04, DOC-06)
+- [x] 04-06-PLAN.md — DOC-GAP-01: plumb real RemoveBlock/AddWiring through check Fix.Fn (orphan/coherence/baseline auto-fix was a silent no-op) + WR-02 path-aware mode + WR-01 all-candidate signer scan; real-wiring integration tests (DOC-04, DOC-06)
 - [ ] 04-07-PLAN.md — DOC-GAP-02 + DOC-GAP-03: wire RunSSHAdd/RunSSHKeygenFingerprint (dead Agent check) + TTY-guard the fix gate + IN-03 tiered exit-code propagation + WR-03 gitconfig 0644 perms (DOC-05, DOC-06)

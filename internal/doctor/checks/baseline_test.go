@@ -9,12 +9,19 @@ import (
 )
 
 // fakeBaselineDeps returns a doctor.Deps with the provided ReadBaselineState
-// and path fields for baseline testing.
+// and path fields for baseline testing. AddWiring is wired with a recording fake
+// so that Fix.Fn assertions work correctly in tests that check the [fix] marker.
 func fakeBaselineDeps(readFn func(gc, bf, gi string) (gitconfig.BaselineState, error)) doctor.Deps {
 	return doctor.Deps{
-		GitconfigPath:     "/home/test/.gitconfig",
-		BaselineFilePath:  "/home/test/.gitconfig.d/00-baseline",
-		GitignorePath:     "/home/test/.gitignore_global",
+		GitconfigPath:    "/home/test/.gitconfig",
+		BaselineFilePath: "/home/test/.gitconfig.d/00-baseline",
+		GitignorePath:    "/home/test/.gitignore_global",
+		// AddWiring is wired so that baseline-include Fix.Fn is non-nil.
+		// The no-op return is safe here because fakeBaselineDeps is only used
+		// to verify the finding shape, not to exercise actual file mutations.
+		AddWiring: func(_, _, _ string) error {
+			return nil
+		},
 		ReadBaselineState: readFn,
 	}
 }
@@ -169,9 +176,12 @@ func TestBaselineCuratedExcludes(t *testing.T) {
 	if cF.Family != doctor.FamilyBaseline {
 		t.Errorf("curated excludes finding.Family = %q, want %q", cF.Family, doctor.FamilyBaseline)
 	}
-	// Curated excludes finding is auto-fixable ([fix] marker), D-02.
-	if cF.Fix == nil {
-		t.Error("curated excludes finding.Fix should be non-nil ([fix] marker)")
+	// Curated excludes finding is report-only (Fix=nil) because restoring the gitignore
+	// block requires the full curated patterns list, which cannot be safely encoded in
+	// the AddWiring string protocol. The user must run 'gitid baseline setup' to restore.
+	// A no-op func() error { return nil } stub is explicitly NOT used (plan advisory).
+	if cF.Fix != nil {
+		t.Error("curated excludes finding.Fix should be nil (report-only — no safe single-call restore)")
 	}
 	if !strings.Contains(cF.SuggestedFix, "gitid baseline setup") {
 		t.Errorf("curated excludes finding.SuggestedFix = %q, want it to mention 'gitid baseline setup'", cF.SuggestedFix)

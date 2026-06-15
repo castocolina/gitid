@@ -105,6 +105,36 @@ func coherenceForAccount(deps doctor.Deps, acct identity.Account) []doctor.Findi
 				if hostInfo.Alias != "" {
 					alias = hostInfo.Alias
 				}
+				// Wire the real fixer: re-add the SSH Host block (with IdentitiesOnly yes)
+				// via deps.AddWiring(SSHConfigPath, acct.Name, "ssh-host:<alias>:<hostname>:<port>:<keyPath>").
+				// The AddWiring dispatcher in the cmd layer calls sshconfig.Write which
+				// ReplaceBlocks the managed block — idempotent and preserves foreign content.
+				hostname := hostInfo.Hostname
+				if hostname == "" {
+					hostname = acct.Hostname
+				}
+				port := hostInfo.Port
+				if port == 0 {
+					port = acct.Port
+				}
+				keyPath := hostInfo.IdentityFile
+				if keyPath == "" {
+					keyPath = acct.KeyPath
+				}
+				sshLine := fmt.Sprintf("ssh-host:%s:%s:%d:%s", alias, hostname, port, keyPath)
+				sshConfigPath := deps.SSHConfigPath
+				acctName := acct.Name
+				addWiring := deps.AddWiring
+				// Build Fix only when AddWiring is wired; otherwise report-only.
+				var fix *doctor.FixDescriptor
+				if addWiring != nil && sshConfigPath != "" {
+					fix = &doctor.FixDescriptor{
+						Summary: fmt.Sprintf("re-add IdentitiesOnly yes to Host block for %q", alias),
+						Fn: func() error {
+							return addWiring(sshConfigPath, acctName, sshLine)
+						},
+					}
+				}
 				findings = append(findings, doctor.Finding{
 					Family:      doctor.FamilyCoherence,
 					Severity:    doctor.SeverityError,
@@ -112,11 +142,7 @@ func coherenceForAccount(deps doctor.Deps, acct identity.Account) []doctor.Findi
 					Explanation: "Without IdentitiesOnly, SSH may use an unintended key for this host.",
 					SuggestedFix: fmt.Sprintf(
 						"re-run 'gitid identity add --name %s' (will repair the Host block)", acct.Name),
-					Fix: &doctor.FixDescriptor{
-						Summary: fmt.Sprintf("re-add IdentitiesOnly yes to Host block for %q", alias),
-						// Fn is nil here; Plan 05 wires the actual AddWiring fixer.
-						Fn: func() error { return nil },
-					},
+					Fix: fix,
 				})
 			}
 		}
@@ -162,7 +188,7 @@ func coherenceForAccount(deps doctor.Deps, acct identity.Account) []doctor.Findi
 	if err != nil {
 		if os.IsNotExist(err) {
 			// No allowed_signers file at all → missing entry for this identity.
-			findings = append(findings, allowedSignersMissingFinding(acct))
+			findings = append(findings, allowedSignersMissingFindingWithFix(deps, acct))
 		}
 		// Other errors: skip — cannot determine state; the system check (SignerFile
 		// existence) will report it if needed.
@@ -170,14 +196,19 @@ func coherenceForAccount(deps doctor.Deps, acct identity.Account) []doctor.Findi
 	}
 
 	// Scan lines for a matching entry (exact first-field == email, Pitfall 6).
+	// WR-01: findSignerLine scans ALL candidates — an exact match anywhere in the
+	// file wins over a case-fold match earlier in the file (see findSignerLine).
 	foundLine, linePrincipal := findSignerLine(string(signerBytes), acct.GitEmail)
 	switch {
 	case !foundLine && linePrincipal == "":
 		// No line at all with namespaces="git" whose first field equals email (byte-exact).
-		findings = append(findings, allowedSignersMissingFinding(acct))
+		findings = append(findings, allowedSignersMissingFindingWithFix(deps, acct))
 	case foundLine && linePrincipal != acct.GitEmail:
 		// A namespaces="git" line was found but the principal does not byte-match
 		// (case-differing). Pitfall 6: byte-exact == required.
+		// Wire the fixer: re-add the signers entry with the correct email.
+		fix := buildSignersFix(deps, acct, fmt.Sprintf(
+			"correct allowed_signers email to match '%s'", acct.GitEmail))
 		findings = append(findings, doctor.Finding{
 			Family:   doctor.FamilyCoherence,
 			Severity: doctor.SeverityError,
@@ -186,19 +217,18 @@ func coherenceForAccount(deps doctor.Deps, acct identity.Account) []doctor.Findi
 			Explanation: "The signing line email does not byte-match user.email. Signature verification will fail.",
 			SuggestedFix: fmt.Sprintf(
 				"correct the email in ~/.ssh/allowed_signers to exactly match '%s'", acct.GitEmail),
-			Fix: &doctor.FixDescriptor{
-				Summary: fmt.Sprintf(
-					"correct allowed_signers email to match '%s'", acct.GitEmail),
-				Fn: func() error { return nil }, // Plan 05 wires actual fixer
-			},
+			Fix: fix,
 		})
 	}
 
 	return findings
 }
 
-// allowedSignersMissingFinding returns the "no entry for <email>" Coherence finding.
-func allowedSignersMissingFinding(acct identity.Account) doctor.Finding {
+// allowedSignersMissingFindingWithFix returns the "no entry for <email>" Coherence
+// finding with a real Fix.Fn that calls deps.AddWiring to re-add the signer line.
+// If the public key cannot be read, Fix is nil (cannot safely reconstruct the line).
+func allowedSignersMissingFindingWithFix(deps doctor.Deps, acct identity.Account) doctor.Finding {
+	fix := buildSignersFix(deps, acct, fmt.Sprintf("add allowed_signers entry for '%s'", acct.GitEmail))
 	return doctor.Finding{
 		Family:   doctor.FamilyCoherence,
 		Severity: doctor.SeverityError,
@@ -207,9 +237,32 @@ func allowedSignersMissingFinding(acct identity.Account) doctor.Finding {
 			"Signing identity %q has no line in ~/.ssh/allowed_signers. Commit signature verification will fail.",
 			acct.Name),
 		SuggestedFix: "add the line manually or re-run 'gitid identity add'",
-		Fix: &doctor.FixDescriptor{
-			Summary: fmt.Sprintf("add allowed_signers entry for '%s'", acct.GitEmail),
-			Fn:      func() error { return nil }, // Plan 05 wires actual fixer
+		Fix:          fix,
+	}
+}
+
+// buildSignersFix builds a FixDescriptor for re-adding or correcting an allowed_signers
+// entry for the given account. It reads the public key via deps.ReadFile(acct.PubPath).
+// Returns nil if no public key path is available or the read fails — in that case the
+// finding is report-only (cannot safely reconstruct the signers line).
+func buildSignersFix(deps doctor.Deps, acct identity.Account, summary string) *doctor.FixDescriptor {
+	if acct.PubPath == "" || deps.ReadFile == nil || deps.AddWiring == nil || deps.AllowedSignersPath == "" {
+		return nil // cannot build a signers line without the public key (D-03)
+	}
+	pubBytes, err := deps.ReadFile(acct.PubPath) //nolint:gosec // acct.PubPath is a trusted gitid-managed path (G304)
+	if err != nil {
+		return nil // public key unreadable — report-only (D-03)
+	}
+	pubLine := strings.TrimRight(string(pubBytes), "\n")
+	email := acct.GitEmail
+	allowedSignersPath := deps.AllowedSignersPath
+	acctName := acct.Name
+	addWiring := deps.AddWiring
+	signerLine := fmt.Sprintf("signers:%s:%s", email, pubLine)
+	return &doctor.FixDescriptor{
+		Summary: summary,
+		Fn: func() error {
+			return addWiring(allowedSignersPath, acctName, signerLine)
 		},
 	}
 }
@@ -223,8 +276,22 @@ func allowedSignersMissingFinding(acct identity.Account) doctor.Finding {
 //     finding, Pitfall 6).
 //   - found=false, firstField="" → no entry at all (missing-entry finding).
 //
-// Byte-exact == is used for the email comparison (Pitfall 6).
+// WR-01 all-candidate scan: the function scans ALL qualifying lines before
+// returning. An exact byte-match anywhere in the file wins over a case-fold
+// match earlier in the file. This prevents a case-differing line before the
+// correct line from masking the exact match and emitting a spurious mismatch.
+//
+// Algorithm:
+//  1. On exact match (principal == email) → return (true, principal) immediately.
+//  2. On case-fold match → remember the first case-fold principal but CONTINUE
+//     scanning (do not return yet — an exact match may follow).
+//  3. After exhausting all lines → if an exact match was found, it was already
+//     returned; if only a case-fold match was found, return (true, caseFoldPrincipal);
+//     if neither → return (false, "").
+//
+// Byte-exact == is used for the final email comparison (Pitfall 6).
 func findSignerLine(content, email string) (found bool, firstField string) {
+	var caseFoldPrincipal string // first case-fold match; empty if none seen yet
 	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -240,13 +307,17 @@ func findSignerLine(content, email string) (found bool, firstField string) {
 		principal := fields[0]
 		// Byte-exact check (Pitfall 6 — must not use EqualFold).
 		if principal == email {
+			// Exact match found — return immediately; this is the authoritative result.
 			return true, principal
 		}
-		// Case-insensitive match → email mismatch (different bytes). Return the
-		// mismatched principal so the caller can report the exact value.
-		if strings.EqualFold(principal, email) {
-			return true, principal
+		// Case-insensitive match → remember first occurrence and keep scanning.
+		// An exact match later in the file must win (WR-01).
+		if caseFoldPrincipal == "" && strings.EqualFold(principal, email) {
+			caseFoldPrincipal = principal
 		}
+	}
+	if caseFoldPrincipal != "" {
+		return true, caseFoldPrincipal
 	}
 	return false, ""
 }
