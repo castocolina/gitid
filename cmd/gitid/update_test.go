@@ -122,9 +122,9 @@ func TestRunIdentityUpdate_DryRun(t *testing.T) {
 	t.Setenv("HOME", home)
 	writeHermeticHome(t, home)
 
-	// Scripted answers: 8 prompts all defaults (press Enter on each field).
-	// dry-run: no confirm prompt, so 8 newlines.
-	answers := strings.Repeat("\n", 8)
+	// Scripted answers: 7 prompts all defaults (press Enter on each field).
+	// dry-run: no confirm prompt, so 7 newlines.
+	answers := strings.Repeat("\n", 7)
 	var out bytes.Buffer
 	err := runIdentityUpdate(strings.NewReader(answers), &out, "work", true, fakeUpdateDeps)
 	if err != nil {
@@ -142,8 +142,8 @@ func TestRunIdentityUpdate_CancelledOnDecline(t *testing.T) {
 	t.Setenv("HOME", home)
 	writeHermeticHome(t, home)
 
-	// Scripted answers: 8 defaults then "n" to decline confirm.
-	answers := strings.Repeat("\n", 8) + "n\n"
+	// Scripted answers: 7 defaults then "n" to decline confirm.
+	answers := strings.Repeat("\n", 7) + "n\n"
 	var out bytes.Buffer
 	err := runIdentityUpdate(strings.NewReader(answers), &out, "work", false, fakeUpdateDeps)
 	if err != nil {
@@ -161,8 +161,8 @@ func TestRunIdentityUpdate_Confirm(t *testing.T) {
 	t.Setenv("HOME", home)
 	writeHermeticHome(t, home)
 
-	// Scripted answers: 8 defaults then "y" to confirm.
-	answers := strings.Repeat("\n", 8) + "y\n"
+	// Scripted answers: 7 defaults then "y" to confirm.
+	answers := strings.Repeat("\n", 7) + "y\n"
 	var out bytes.Buffer
 	err := runIdentityUpdate(strings.NewReader(answers), &out, "work", false, fakeUpdateDeps)
 	if err != nil {
@@ -170,6 +170,35 @@ func TestRunIdentityUpdate_Confirm(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Identity updated.") {
 		t.Errorf("expected success message, got:\n%s", out.String())
+	}
+}
+
+// TestRunIdentityUpdate_NoProviderPrompt asserts finding #4: the standalone
+// "Provider" prompt and its preview line are removed. Provider is purely
+// alias-derived (loader.Reconstruct derives Account.Provider from the alias;
+// it is never persisted as an independent artifact and Update never writes it),
+// so a standalone Provider edit could not round-trip. The UI must not imply an
+// edit that cannot persist — the alias prompt is the real lever.
+func TestRunIdentityUpdate_NoProviderPrompt(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeHermeticHome(t, home)
+
+	// Without the Provider prompt there are now 7 editable prompts; press Enter
+	// on each, then dry-run (no confirm).
+	answers := strings.Repeat("\n", 7)
+	var out bytes.Buffer
+	if err := runIdentityUpdate(strings.NewReader(answers), &out, "work", true, fakeUpdateDeps); err != nil {
+		t.Fatalf("runIdentityUpdate error: %v\noutput: %s", err, out.String())
+	}
+
+	s := out.String()
+	if strings.Contains(s, "Provider") {
+		t.Errorf("Provider prompt/preview must be removed (finding #4 — provider cannot round-trip standalone):\n%s", s)
+	}
+	// The alias prompt — the real lever for provider — must still be present.
+	if !strings.Contains(s, "Host alias") {
+		t.Errorf("Host alias prompt missing:\n%s", s)
 	}
 }
 

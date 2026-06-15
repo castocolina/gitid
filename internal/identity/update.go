@@ -16,11 +16,16 @@ import (
 // fields so Update is testable with fakes and reusable by the TUI. It mirrors the
 // Deps convention from identity.go.
 type UpdateDeps struct {
-	WriteSSH             func(accountName, hostBlock, globalBlock string) (string, error)
-	WriteGitconfig       func(identity, fragmentPath, allowedSignersPath string, matches []gitconfig.Match) (string, error)
-	WriteFragment        func(fragPath, name, email, signingKeyPath string, signing bool) error
-	WriteAllowedSigners  func(path, identity, line string) (string, error)
-	RemoveAllowedSigners func(path, identityEmail string) (string, error)
+	WriteSSH            func(accountName, hostBlock, globalBlock string) (string, error)
+	WriteGitconfig      func(identity, fragmentPath, allowedSignersPath string, matches []gitconfig.Match) (string, error)
+	WriteFragment       func(fragPath, name, email, signingKeyPath string, signing bool) error
+	WriteAllowedSigners func(path, identity, line string) (string, error)
+	// RemoveAllowedSigners removes the identity's managed block from the
+	// allowed_signers file, keyed by identity NAME (symmetric with the
+	// block-keyed WriteAllowedSigners). Keying by name rather than email avoids
+	// leaving an orphan sentinel and works even when GitEmail is empty
+	// (findings #2/#3).
+	RemoveAllowedSigners func(path, name string) (string, error)
 	Resolved             func(alias string) (tester.Result, tester.ResolvedConfig)
 	// ReadPub reads the public key line from a .pub file for building the
 	// allowed_signers line when signing is on. When nil, the default implementation
@@ -82,9 +87,12 @@ func Update(existing Account, edited Account, deps UpdateDeps, signing bool) (Up
 			return UpdateResult{}, fmt.Errorf("identity: writing allowed_signers: %w", werr)
 		}
 	} else {
-		// Signing off: remove the allowed_signers line for the existing identity email.
-		if _, werr := deps.RemoveAllowedSigners(edited.AllowedSignersPath, existing.GitEmail); werr != nil {
-			return UpdateResult{}, fmt.Errorf("identity: removing allowed_signers line: %w", werr)
+		// Signing off: remove the allowed_signers managed block keyed by identity
+		// NAME (findings #2/#3). The name is immutable and always known, so this
+		// works even when GitEmail is empty, and it removes the whole block (no
+		// orphan sentinel) symmetric with the block-keyed writer.
+		if _, werr := deps.RemoveAllowedSigners(edited.AllowedSignersPath, existing.Name); werr != nil {
+			return UpdateResult{}, fmt.Errorf("identity: removing allowed_signers block: %w", werr)
 		}
 	}
 

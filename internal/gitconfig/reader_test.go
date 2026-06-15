@@ -148,6 +148,116 @@ func TestReadFragment_Full(t *testing.T) {
 	}
 }
 
+// signingBlock builds an allowed_signers managed block for identity name, the
+// same shape keygen.WriteAllowedSigners produces via filewriter.ReplaceBlock.
+func signingBlock(name, line string) string {
+	return filewriter.BeginPrefix + name + "\n" + line + "\n" + filewriter.EndPrefix + name + "\n"
+}
+
+// TestRemoveAllowedSignersBlock_NoOrphanSentinel verifies that removal is
+// block-keyed (symmetric with the block-keyed writer): after removing identity
+// "work", NO "# BEGIN gitid managed: work" sentinel survives in the file
+// (finding #2 — the old line-keyed removal left an orphan empty block).
+func TestRemoveAllowedSignersBlock_NoOrphanSentinel(t *testing.T) {
+	dir := t.TempDir()
+	allowedPath := filepath.Join(dir, "allowed_signers")
+
+	content := signingBlock("work", "work@example.com namespaces=\"git\" ssh-ed25519 AAAA1234")
+	if err := os.WriteFile(allowedPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("seeding allowed_signers: %v", err)
+	}
+
+	backupPath, err := RemoveAllowedSignersBlock(allowedPath, "work")
+	if err != nil {
+		t.Fatalf("RemoveAllowedSignersBlock returned error: %v", err)
+	}
+	if backupPath == "" {
+		t.Error("expected non-empty backupPath for existing file")
+	}
+
+	got, err := os.ReadFile(allowedPath) //nolint:gosec // test reads back the file under test
+	if err != nil {
+		t.Fatalf("reading result: %v", err)
+	}
+	if strings.Contains(string(got), filewriter.BeginPrefix+"work") {
+		t.Errorf("orphan BEGIN sentinel survived removal (finding #2):\n%q", string(got))
+	}
+	if strings.Contains(string(got), filewriter.EndPrefix+"work") {
+		t.Errorf("orphan END sentinel survived removal (finding #2):\n%q", string(got))
+	}
+	if strings.Contains(string(got), "AAAA1234") {
+		t.Errorf("signing line not removed:\n%q", string(got))
+	}
+}
+
+// TestRemoveAllowedSignersBlock_SecondIdentityUntouched verifies that removing
+// one identity's block leaves a second (same-provider) identity's block
+// byte-for-byte intact.
+func TestRemoveAllowedSignersBlock_SecondIdentityUntouched(t *testing.T) {
+	dir := t.TempDir()
+	allowedPath := filepath.Join(dir, "allowed_signers")
+
+	workBlock := signingBlock("work", "work@github.com namespaces=\"git\" ssh-ed25519 AAAA1234")
+	personalBlock := signingBlock("personal", "me@github.com namespaces=\"git\" ssh-ed25519 BBBB5678")
+	if err := os.WriteFile(allowedPath, []byte(workBlock+personalBlock), 0o600); err != nil {
+		t.Fatalf("seeding allowed_signers: %v", err)
+	}
+
+	if _, err := RemoveAllowedSignersBlock(allowedPath, "work"); err != nil {
+		t.Fatalf("RemoveAllowedSignersBlock returned error: %v", err)
+	}
+
+	got, err := os.ReadFile(allowedPath) //nolint:gosec // test reads back the file under test
+	if err != nil {
+		t.Fatalf("reading result: %v", err)
+	}
+	if strings.Contains(string(got), "AAAA1234") {
+		t.Errorf("work block not removed:\n%q", string(got))
+	}
+	if string(got) != personalBlock {
+		t.Errorf("second identity block was disturbed:\n got %q\nwant %q", string(got), personalBlock)
+	}
+}
+
+// TestRemoveAllowedSignersBlock_Idempotent verifies that removing an absent
+// identity leaves the file unchanged and returns no error.
+func TestRemoveAllowedSignersBlock_Idempotent(t *testing.T) {
+	dir := t.TempDir()
+	allowedPath := filepath.Join(dir, "allowed_signers")
+
+	content := signingBlock("personal", "me@github.com namespaces=\"git\" ssh-ed25519 BBBB5678")
+	if err := os.WriteFile(allowedPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("seeding: %v", err)
+	}
+
+	if _, err := RemoveAllowedSignersBlock(allowedPath, "work"); err != nil {
+		t.Fatalf("RemoveAllowedSignersBlock returned unexpected error: %v", err)
+	}
+
+	got, err := os.ReadFile(allowedPath) //nolint:gosec // test reads back the file under test
+	if err != nil {
+		t.Fatalf("reading result: %v", err)
+	}
+	if string(got) != content {
+		t.Errorf("idempotent removal changed the file:\n got %q\nwant %q", string(got), content)
+	}
+}
+
+// TestRemoveAllowedSignersBlock_MissingFile verifies that a missing file is a
+// no-op returning ("", nil).
+func TestRemoveAllowedSignersBlock_MissingFile(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "allowed_signers")
+
+	backupPath, err := RemoveAllowedSignersBlock(missing, "work")
+	if err != nil {
+		t.Fatalf("RemoveAllowedSignersBlock on missing file returned error: %v", err)
+	}
+	if backupPath != "" {
+		t.Errorf("expected empty backupPath on missing file, got %q", backupPath)
+	}
+}
+
 // TestRemoveAllowedSignersLine_RemovesMatchingLine verifies that the line
 // containing BOTH the email AND namespaces="git" is removed.
 func TestRemoveAllowedSignersLine_RemovesMatchingLine(t *testing.T) {

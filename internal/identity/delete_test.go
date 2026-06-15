@@ -22,7 +22,7 @@ type deleteCallLog struct {
 	lastGitconfigContent []byte
 	lastFragPath         string
 	lastAllowedSignPath  string
-	lastAllowedSignEmail string
+	lastAllowedSignName  string
 	lastKeyPath          string
 	lastPubPath          string
 }
@@ -55,10 +55,10 @@ func newFakeDeleteDeps(log *deleteCallLog, sshFixture, gcFixture []byte) DeleteD
 			log.lastFragPath = fragPath
 			return "frag.bak", nil
 		},
-		RemoveAllowedSigners: func(path, email string) (string, error) {
+		RemoveAllowedSigners: func(path, name string) (string, error) {
 			log.removeAllowedSigns++
 			log.lastAllowedSignPath = path
-			log.lastAllowedSignEmail = email
+			log.lastAllowedSignName = name
 			return "sign.bak", nil
 		},
 		RemoveKeyFiles: func(keyPath, pubPath string) (string, string, error) {
@@ -298,7 +298,8 @@ func TestDelete_RemoveBlockUsedForSSHAndGitconfig(t *testing.T) {
 }
 
 // TestDelete_AllowedSignersArgs verifies that RemoveAllowedSigners receives the
-// correct path and email from the account.
+// correct path and the identity NAME (not the email) — the removal is
+// block-keyed, symmetric with the block-keyed writer (findings #2/#3).
 func TestDelete_AllowedSignersArgs(t *testing.T) {
 	acct := baseDeleteAccount()
 	var log deleteCallLog
@@ -312,8 +313,34 @@ func TestDelete_AllowedSignersArgs(t *testing.T) {
 	if log.lastAllowedSignPath != acct.AllowedSignersPath {
 		t.Errorf("RemoveAllowedSigners path = %q, want %q", log.lastAllowedSignPath, acct.AllowedSignersPath)
 	}
-	if log.lastAllowedSignEmail != acct.GitEmail {
-		t.Errorf("RemoveAllowedSigners email = %q, want %q", log.lastAllowedSignEmail, acct.GitEmail)
+	if log.lastAllowedSignName != acct.Name {
+		t.Errorf("RemoveAllowedSigners name = %q, want %q (block-keyed by name)", log.lastAllowedSignName, acct.Name)
+	}
+}
+
+// TestDelete_IncompleteIdentityRemovesAllowedSigners verifies finding #3: an
+// Incomplete identity whose fragment is missing has GitEmail == "", yet its
+// allowed_signers block must still be removed. Because removal is keyed by the
+// (always-known) identity NAME, RemoveAllowedSigners is invoked with the name
+// even when GitEmail is empty — the old email-keyed path would have passed ""
+// and removed nothing.
+func TestDelete_IncompleteIdentityRemovesAllowedSigners(t *testing.T) {
+	acct := baseDeleteAccount()
+	acct.GitEmail = "" // fragment missing — Incomplete identity
+	acct.Incomplete = "fragment-file"
+
+	var log deleteCallLog
+	deps := newFakeDeleteDeps(&log, sshFixtureWithBlocks(), gcFixtureWithBlocks())
+
+	if _, err := Delete(acct, true, deps); err != nil {
+		t.Fatalf("Delete(Incomplete) error: %v", err)
+	}
+
+	if log.removeAllowedSigns != 1 {
+		t.Errorf("RemoveAllowedSigners called %d times for Incomplete identity, want 1", log.removeAllowedSigns)
+	}
+	if log.lastAllowedSignName != acct.Name {
+		t.Errorf("RemoveAllowedSigners name = %q, want %q (must use name, not empty email)", log.lastAllowedSignName, acct.Name)
 	}
 }
 

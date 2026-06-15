@@ -64,7 +64,11 @@ func RemoveBlock(content []byte, name string) []byte {
 
 	beginIdx, endIdx := -1, -1
 	for i, line := range lines {
-		trimmed := strings.TrimRight(line, "\n")
+		// Trim trailing \r as well as \n so CRLF-encoded markers (Windows-synced
+		// configs) still match. The splice below joins the ORIGINAL lines, so the
+		// file's line endings are preserved byte-for-byte — only this comparison
+		// tolerates \r (finding #1).
+		trimmed := strings.TrimRight(line, "\n\r")
 		switch {
 		case beginIdx == -1 && trimmed == beginMarker:
 			beginIdx = i
@@ -129,7 +133,12 @@ func ReplaceBlock(existing []byte, name, blockBody string) []byte {
 
 	beginIdx, endIdx := -1, -1
 	for i, line := range lines {
-		trimmed := strings.TrimRight(line, "\n")
+		// Trim trailing \r as well as \n so CRLF-encoded markers (Windows-synced
+		// configs) still match an existing block — otherwise ReplaceBlock would
+		// fail to find it and append a duplicate. The splice joins the ORIGINAL
+		// lines, so foreign line endings are preserved byte-for-byte; only this
+		// comparison tolerates \r (finding #1).
+		trimmed := strings.TrimRight(line, "\n\r")
 		switch {
 		case beginIdx == -1 && trimmed == beginMarker:
 			beginIdx = i

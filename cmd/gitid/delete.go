@@ -196,8 +196,8 @@ func buildDeleteDeps(_ io.Writer) identity.DeleteDeps {
 			return filewriter.Write(gitconfigPath, content, 0o600)
 		},
 		RemoveFragment: filewriter.BackupAndRemove,
-		RemoveAllowedSigners: func(path, email string) (string, error) {
-			return gitconfig.RemoveAllowedSignersLine(path, email)
+		RemoveAllowedSigners: func(path, name string) (string, error) {
+			return gitconfig.RemoveAllowedSignersBlock(path, name)
 		},
 		// Route key removal through filewriter.BackupAndRemove so the private
 		// material is preserved as a timestamped .bak.<ts> (mode 0600) and the

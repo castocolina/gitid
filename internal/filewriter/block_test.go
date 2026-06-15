@@ -96,6 +96,36 @@ func TestReplaceBlockPreservesForeignContent(t *testing.T) {
 	}
 }
 
+// TestReplaceBlock_CRLF verifies that ReplaceBlock matches an EXISTING block's
+// BEGIN/END markers even when the file uses CRLF line endings, so the block is
+// replaced in place rather than a duplicate being appended. The foreign CRLF
+// content surrounding the block is preserved byte-for-byte.
+func TestReplaceBlock_CRLF(t *testing.T) {
+	existing := []byte(
+		"top line\r\n" +
+			BeginPrefix + "work\r\n" +
+			"old body\r\n" +
+			EndPrefix + "work\r\n" +
+			"bottom line\r\n",
+	)
+	out := string(ReplaceBlock(existing, "work", "new body"))
+
+	// Exactly one BEGIN marker — the existing block was replaced, not duplicated.
+	if got := strings.Count(out, BeginPrefix+"work"); got != 1 {
+		t.Fatalf("expected exactly 1 work BEGIN marker (no duplicate), got %d:\n%q", got, out)
+	}
+	if strings.Contains(out, "old body") {
+		t.Errorf("old body still present after CRLF replace:\n%q", out)
+	}
+	if !strings.Contains(out, "new body") {
+		t.Errorf("new body missing after CRLF replace:\n%q", out)
+	}
+	// Foreign CRLF lines must survive byte-for-byte.
+	if !strings.Contains(out, "top line\r\n") || !strings.Contains(out, "bottom line\r\n") {
+		t.Errorf("foreign CRLF content not preserved byte-for-byte:\n%q", out)
+	}
+}
+
 // TestReplaceBlockAddsSecondDistinctBlock verifies that a different name adds a
 // second distinct block without disturbing the first.
 func TestReplaceBlockAddsSecondDistinctBlock(t *testing.T) {

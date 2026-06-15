@@ -101,6 +101,35 @@ func ReadFragment(fragPath string) (FragmentInfo, error) {
 	return info, nil
 }
 
+// RemoveAllowedSignersBlock rewrites path with the gitid managed block for
+// identity name removed, symmetric with keygen.WriteAllowedSigners (which
+// stores each identity's signing line INSIDE a "# BEGIN/END gitid managed:
+// <name>" block via filewriter.ReplaceBlock). Keying removal by NAME — not by
+// email — fixes findings #2 and #3:
+//
+//   - #2: line-keyed removal left an orphan empty sentinel block behind;
+//     removing the whole block leaves no sentinel.
+//   - #3: email-keyed removal matched on acct.GitEmail, which is empty for an
+//     Incomplete identity whose fragment is missing, so deleting such an
+//     identity removed nothing; the name is always known.
+//
+// The whole file is read, filewriter.RemoveBlock(content, name) drops only that
+// identity's block (foreign content and other identities' blocks are preserved
+// byte-for-byte), and the result is written through filewriter.Write at mode
+// 0600 (private material). Idempotent when the block is absent; a missing file
+// is a no-op returning ("", nil).
+func RemoveAllowedSignersBlock(path, name string) (backupPath string, err error) {
+	existing, readErr := os.ReadFile(path) //nolint:gosec // path is a trusted gitid-managed allowed_signers path
+	if os.IsNotExist(readErr) {
+		return "", nil // missing file — idempotent no-op
+	}
+	if readErr != nil {
+		return "", readErr
+	}
+	updated := filewriter.RemoveBlock(existing, name)
+	return filewriter.Write(path, updated, 0o600)
+}
+
 // RemoveAllowedSignersLine rewrites path with the line for identityEmail
 // removed. A line matches only when its FIRST whitespace-delimited field (the
 // allowed_signers PRINCIPAL) equals identityEmail EXACTLY — substring matching

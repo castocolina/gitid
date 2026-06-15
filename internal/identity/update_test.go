@@ -48,8 +48,8 @@ type updateCallLog struct {
 	lastSigningFlag bool
 	// Capture alias passed to Resolved.
 	lastResolvedAlias string
-	// Capture email passed to RemoveAllowedSigners.
-	lastRemovedEmail string
+	// Capture identity name passed to RemoveAllowedSigners (block-keyed).
+	lastRemovedName string
 }
 
 // newFakeUpdateDeps builds an UpdateDeps with all fakes recording into log.
@@ -72,9 +72,9 @@ func newFakeUpdateDeps(log *updateCallLog) UpdateDeps {
 			log.writeAllowedSigners++
 			return "", nil
 		},
-		RemoveAllowedSigners: func(_, email string) (string, error) {
+		RemoveAllowedSigners: func(_, name string) (string, error) {
 			log.removeAllowedSigners++
-			log.lastRemovedEmail = email
+			log.lastRemovedName = name
 			return "", nil
 		},
 		Resolved: func(alias string) (tester.Result, tester.ResolvedConfig) {
@@ -231,7 +231,8 @@ func TestUpdate_NameImmutable(t *testing.T) {
 }
 
 // TestUpdate_SigningOffCallsRemoveAllowedSigners asserts that when signing is
-// toggled off, deps.RemoveAllowedSigners is called with the existing email.
+// toggled off, deps.RemoveAllowedSigners is called with the existing identity
+// NAME (block-keyed removal, findings #2/#3).
 func TestUpdate_SigningOffCallsRemoveAllowedSigners(t *testing.T) {
 	existing := baseAccount()
 	edited := baseAccount()
@@ -244,8 +245,8 @@ func TestUpdate_SigningOffCallsRemoveAllowedSigners(t *testing.T) {
 	if log.removeAllowedSigners != 1 {
 		t.Errorf("RemoveAllowedSigners called %d times on signing-off, want 1", log.removeAllowedSigners)
 	}
-	if log.lastRemovedEmail != existing.GitEmail {
-		t.Errorf("RemoveAllowedSigners called with email %q, want %q", log.lastRemovedEmail, existing.GitEmail)
+	if log.lastRemovedName != existing.Name {
+		t.Errorf("RemoveAllowedSigners called with name %q, want %q (block-keyed by name)", log.lastRemovedName, existing.Name)
 	}
 	// WriteAllowedSigners must NOT be called when signing is off.
 	if log.writeAllowedSigners != 0 {

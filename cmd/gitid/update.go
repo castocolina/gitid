@@ -121,16 +121,12 @@ func runIdentityUpdate(in io.Reader, out io.Writer, name string, dryRun bool, de
 	edited.GitName = prompt(reader, out, "Git user.name", existing.GitName)
 	edited.GitEmail = prompt(reader, out, "Git user.email", existing.GitEmail)
 
-	// Provider is derived from alias — prompt for alias directly.
-	providerDefault := existing.Provider
-	if providerDefault == "" && existing.Hostname != "" {
-		// A1: derive from hostname if provider was not set.
-		parts := strings.Split(existing.Hostname, ".")
-		if len(parts) >= 2 {
-			providerDefault = parts[len(parts)-2]
-		}
-	}
-	newProvider := prompt(reader, out, "Provider (github/gitlab)", providerDefault)
+	// Provider is NOT prompted: loader.Reconstruct DERIVES Account.Provider from
+	// the alias (TrimPrefix(alias, name+".") with a hostname fallback) — it is
+	// never persisted as an independent artifact, and Update writes no provider
+	// field. A standalone Provider edit therefore could not round-trip, so the
+	// prompt is omitted to avoid implying an edit that cannot persist (finding
+	// #4). The alias prompt below is the real lever for changing the provider.
 	edited.Alias = prompt(reader, out, "Host alias", existing.Alias)
 	edited.Hostname = prompt(reader, out, "Hostname", existing.Hostname)
 	edited.Port = promptPort(reader, out, "Port", existing.Port)
@@ -156,9 +152,6 @@ func runIdentityUpdate(in io.Reader, out io.Writer, name string, dryRun bool, de
 	fp(out, "\n=== Preview: updated identity ===\n")
 	fp(out, fmt.Sprintf("  name:     %s  (unchanged)\n", name))
 	fp(out, fmt.Sprintf("  git:      %s <%s>\n", edited.GitName, edited.GitEmail))
-	if newProvider != "" {
-		fp(out, fmt.Sprintf("  provider: %s\n", newProvider))
-	}
 	fp(out, fmt.Sprintf("  alias:    %s\n", edited.Alias))
 	fp(out, fmt.Sprintf("  hostname: %s\n", edited.Hostname))
 	fp(out, fmt.Sprintf("  port:     %d\n", edited.Port))
@@ -230,8 +223,8 @@ func buildUpdateDeps(_ io.Writer) identity.UpdateDeps {
 			return gitconfig.WriteFragment(fragPath, name, email, signingKeyPath, signing)
 		},
 		WriteAllowedSigners: keygen.WriteAllowedSigners,
-		RemoveAllowedSigners: func(path, email string) (string, error) {
-			return gitconfig.RemoveAllowedSignersLine(path, email)
+		RemoveAllowedSigners: func(path, name string) (string, error) {
+			return gitconfig.RemoveAllowedSignersBlock(path, name)
 		},
 		Resolved: tester.Resolved,
 		ReadPub: func(pubPath string) (string, error) {

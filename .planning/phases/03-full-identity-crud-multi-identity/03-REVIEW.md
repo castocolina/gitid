@@ -38,6 +38,28 @@ status: issues_fixed
 >
 > Remaining WR-01/03/05/07 and IN-01..05 were reviewed and deferred (not in the approved fix scope). Full suite (`go test -race ./...`) + `golangci-lint` green after fixes.
 
+> **Second review round (independent reviewer, post-completion) 2026-06-10** — a fresh
+> independent reviewer (superpowers:requesting-code-review) caught **3 Critical bugs +
+> 1 Important this first GSD pass and the verifier both missed** — same blind spot:
+> they trusted that removal paths were symmetric with their write-side counterparts.
+> All confirmed against code and fixed (TDD RED→GREEN, atomic commits on `main`):
+> - **#1 Critical** `41b86a7` — `RemoveBlock`/`ReplaceBlock` matched markers with
+>   `TrimRight(line,"\n")`, leaving `\r` on CRLF configs → `delete` silently no-op'd
+>   (while `list` showed the identity, since `ListBlocks` normalised CRLF). Now all
+>   three trim `"\n\r"` for comparison while preserving foreign line-endings byte-for-byte.
+> - **#2 + #3 Critical** `2386b6e` — `WriteAllowedSigners` writes a *block* but removal
+>   was line-keyed by `GitEmail` → orphan empty sentinels accreted, and deleting an
+>   Incomplete identity (no fragment ⇒ `GitEmail==""`) left its signer line on disk.
+>   New `RemoveAllowedSignersBlock(path, name)` removes the whole block by identity
+>   name (symmetric with the writer; no `GitEmail` dependency).
+> - **#4 Important** `7f1bf98` — `update`'s Provider prompt was previewed but never
+>   applied; since `Provider` is alias-derived at reconstruction (not independently
+>   persisted), the misleading standalone prompt was removed (alias is the real lever).
+>
+> Lesson recorded: the GSD reviewer + verifier shared a blind spot that an *independent*
+> reviewer surfaced — write/remove symmetry and CRLF tolerance are worth an explicit check.
+> Full `go test -race ./...` + `golangci-lint` green after fixes.
+
 **Reviewed:** 2026-06-10
 **Depth:** standard
 **Files Reviewed:** 14

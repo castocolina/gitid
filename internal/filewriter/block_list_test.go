@@ -218,6 +218,37 @@ func TestRemoveBlock_ForeignBlockPreserved(t *testing.T) {
 	}
 }
 
+// TestRemoveBlock_CRLF verifies that RemoveBlock matches BEGIN/END markers even
+// when the file uses CRLF line endings (Windows-synced configs), and that the
+// foreign CRLF content surrounding the block is preserved byte-for-byte (the
+// splice joins the ORIGINAL lines — only the marker comparison tolerates \r).
+func TestRemoveBlock_CRLF(t *testing.T) {
+	content := []byte(
+		"top line\r\n" +
+			BeginPrefix + "work\r\n" +
+			"work body\r\n" +
+			EndPrefix + "work\r\n" +
+			"bottom line\r\n",
+	)
+	got := string(RemoveBlock(content, "work"))
+
+	// The block must actually be removed (not a silent no-op).
+	if strings.Contains(got, BeginPrefix+"work") {
+		t.Errorf("BEGIN marker still present after CRLF remove:\n%q", got)
+	}
+	if strings.Contains(got, EndPrefix+"work") {
+		t.Errorf("END marker still present after CRLF remove:\n%q", got)
+	}
+	if strings.Contains(got, "work body") {
+		t.Errorf("block body still present after CRLF remove:\n%q", got)
+	}
+	// Foreign CRLF lines must survive byte-for-byte (CRLF preserved, not rewritten).
+	want := "top line\r\nbottom line\r\n"
+	if got != want {
+		t.Errorf("foreign CRLF content not preserved byte-for-byte:\n got %q\nwant %q", got, want)
+	}
+}
+
 // TestRoundTrip_ReplaceRemoveReplace verifies that the composition of
 // ReplaceBlock → RemoveBlock → ReplaceBlock is stable: the block can be
 // removed and re-inserted without corrupting the file.
