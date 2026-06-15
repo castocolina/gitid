@@ -84,6 +84,23 @@ func Write(targetPath string, content []byte, mode os.FileMode) (backupPath stri
 	return backupPath, nil
 }
 
+// BackupAndRemove creates a timestamped backup of path (same naming convention
+// as Write) and removes the original via atomic rename. Used for whole-file
+// deletion where content replacement does not apply (fragment file delete,
+// IDENT-05 D-08). If path does not exist, returns ("", nil) — idempotent.
+func BackupAndRemove(path string) (backupPath string, err error) {
+	if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
+		return "", nil
+	} else if statErr != nil {
+		return "", fmt.Errorf("filewriter: stat %s: %w", path, statErr)
+	}
+	backupPath = path + ".bak." + time.Now().Format("20060102-150405")
+	if renErr := os.Rename(path, backupPath); renErr != nil {
+		return "", fmt.Errorf("filewriter: backing up %s before remove: %w", path, renErr)
+	}
+	return backupPath, nil
+}
+
 // EnsureDir creates dirPath (and any missing parents) and sets its mode
 // explicitly, then chmods an already-existing directory to the same mode. It is
 // used to enforce the ~/.ssh 0700 contract without relying on the umask.

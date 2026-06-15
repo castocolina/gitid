@@ -1,0 +1,126 @@
+package sshconfig
+
+import (
+	"testing"
+
+	"github.com/castocolina/gitid/internal/filewriter"
+)
+
+// TestParseManagedHosts_Empty verifies that empty content returns an empty map
+// with no error.
+func TestParseManagedHosts_Empty(t *testing.T) {
+	got, err := ParseManagedHosts([]byte(""))
+	if err != nil {
+		t.Fatalf("ParseManagedHosts on empty content returned error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty map for empty content, got %d entries", len(got))
+	}
+}
+
+// TestParseManagedHosts_TwoBlocks verifies that two managed Host blocks are
+// parsed into two SSHHostInfo entries with correct fields.
+func TestParseManagedHosts_TwoBlocks(t *testing.T) {
+	personalBody := "Host personal.github.com\n\tHostname ssh.github.com\n\tPort 443\n\tIdentityFile ~/.ssh/id_ed25519_personal\n\tIdentitiesOnly yes\n"
+	workBody := "Host work.github.com\n\tHostname ssh.github.com\n\tPort 22\n\tIdentityFile ~/.ssh/id_ed25519_work\n\tIdentitiesOnly yes\n"
+
+	content := []byte(
+		filewriter.BeginPrefix + "personal\n" + personalBody + filewriter.EndPrefix + "personal\n" +
+			filewriter.BeginPrefix + "work\n" + workBody + filewriter.EndPrefix + "work\n",
+	)
+
+	got, err := ParseManagedHosts(content)
+	if err != nil {
+		t.Fatalf("ParseManagedHosts returned error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 entries, got %d: %v", len(got), got)
+	}
+
+	personal, ok := got["personal"]
+	if !ok {
+		t.Fatal("missing 'personal' entry in result")
+	}
+	if personal.Alias != "personal.github.com" {
+		t.Errorf("personal Alias: got %q want %q", personal.Alias, "personal.github.com")
+	}
+	if personal.Hostname != "ssh.github.com" {
+		t.Errorf("personal Hostname: got %q want %q", personal.Hostname, "ssh.github.com")
+	}
+	if personal.Port != 443 {
+		t.Errorf("personal Port: got %d want 443", personal.Port)
+	}
+	if personal.IdentityFile != "~/.ssh/id_ed25519_personal" {
+		t.Errorf("personal IdentityFile: got %q want ~/.ssh/id_ed25519_personal", personal.IdentityFile)
+	}
+	if !personal.IdentitiesOnly {
+		t.Error("personal IdentitiesOnly: expected true")
+	}
+
+	work, ok := got["work"]
+	if !ok {
+		t.Fatal("missing 'work' entry in result")
+	}
+	if work.Port != 22 {
+		t.Errorf("work Port: got %d want 22", work.Port)
+	}
+}
+
+// TestParseManagedHosts_GlobalSkipped verifies that the _global block is
+// skipped and not included in the result map.
+func TestParseManagedHosts_GlobalSkipped(t *testing.T) {
+	globalBody := "Host *\n\tAddKeysToAgent yes\n"
+	workBody := "Host work.github.com\n\tHostname ssh.github.com\n\tPort 22\n\tIdentityFile ~/.ssh/id_ed25519_work\n\tIdentitiesOnly yes\n"
+
+	content := []byte(
+		filewriter.BeginPrefix + "work\n" + workBody + filewriter.EndPrefix + "work\n" +
+			filewriter.BeginPrefix + "_global\n" + globalBody + filewriter.EndPrefix + "_global\n",
+	)
+
+	got, err := ParseManagedHosts(content)
+	if err != nil {
+		t.Fatalf("ParseManagedHosts returned error: %v", err)
+	}
+	if _, ok := got["_global"]; ok {
+		t.Error("_global block must be skipped, but found in result")
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 entry (only 'work'), got %d: %v", len(got), got)
+	}
+}
+
+// TestParseManagedHosts_ImplicitHostStar verifies that the implicit Host *
+// inserted by the kevinburke parser is skipped (Pitfall A guard).
+func TestParseManagedHosts_ImplicitHostStar(t *testing.T) {
+	// A block body that starts with a real Host stanza; the parser inserts
+	// an implicit Host * as cfg.Hosts[0].
+	body := "Host work.github.com\n\tHostname ssh.github.com\n\tPort 22\n\tIdentityFile ~/.ssh/id_ed25519_work\n\tIdentitiesOnly yes\n"
+	content := []byte(filewriter.BeginPrefix + "work\n" + body + filewriter.EndPrefix + "work\n")
+
+	got, err := ParseManagedHosts(content)
+	if err != nil {
+		t.Fatalf("ParseManagedHosts returned error: %v", err)
+	}
+	// Should return exactly one entry — the real work block.
+	if len(got) != 1 {
+		t.Fatalf("expected 1 entry (work), got %d", len(got))
+	}
+	if got["work"].Alias != "work.github.com" {
+		t.Errorf("work Alias: got %q want %q", got["work"].Alias, "work.github.com")
+	}
+}
+
+// TestParseManagedHosts_PortDefaultsTo22 verifies that when Port is absent in
+// the block body, SSHHostInfo.Port defaults to 22.
+func TestParseManagedHosts_PortDefaultsTo22(t *testing.T) {
+	body := "Host work.github.com\n\tHostname ssh.github.com\n\tIdentityFile ~/.ssh/id_ed25519_work\n"
+	content := []byte(filewriter.BeginPrefix + "work\n" + body + filewriter.EndPrefix + "work\n")
+
+	got, err := ParseManagedHosts(content)
+	if err != nil {
+		t.Fatalf("ParseManagedHosts returned error: %v", err)
+	}
+	if got["work"].Port != 22 {
+		t.Errorf("Port: got %d want 22", got["work"].Port)
+	}
+}

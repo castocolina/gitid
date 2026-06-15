@@ -1,6 +1,98 @@
 package filewriter
 
-import "strings"
+import (
+	"bytes"
+	"strings"
+)
+
+// NamedBlock is one sentinel-delimited block extracted from a file.
+type NamedBlock struct {
+	Name string // the <name> token from "# BEGIN gitid managed: <name>"
+	Body string // lines between (exclusive of) the sentinel markers, as written
+}
+
+// ListBlocks scans content for all complete gitid managed blocks and returns
+// them in file order. Incomplete blocks (BEGIN with no matching END) are
+// silently skipped. CRLF is normalised to LF before scanning so Windows-synced
+// configs parse correctly.
+func ListBlocks(content []byte) []NamedBlock {
+	// Normalise CRLF → LF so Windows-synced configs parse correctly.
+	normalised := bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n"))
+	lines := strings.SplitAfter(string(normalised), "\n")
+
+	var result []NamedBlock
+	beginIdx := -1
+	currentName := ""
+	for i, line := range lines {
+		trimmed := strings.TrimRight(line, "\n\r")
+		if strings.HasPrefix(trimmed, BeginPrefix) {
+			// Ignore nested or duplicate begins — only the outermost matters.
+			if beginIdx == -1 {
+				beginIdx = i
+				currentName = strings.TrimPrefix(trimmed, BeginPrefix)
+			}
+			continue
+		}
+		if beginIdx != -1 && strings.HasPrefix(trimmed, EndPrefix) {
+			endName := strings.TrimPrefix(trimmed, EndPrefix)
+			if endName == currentName {
+				// Collect body lines between markers (exclusive).
+				body := strings.Join(lines[beginIdx+1:i], "")
+				body = strings.TrimRight(body, "\n")
+				result = append(result, NamedBlock{Name: currentName, Body: body})
+				beginIdx = -1
+				currentName = ""
+			}
+			// Mismatched END name: skip silently (orphan sentinel; doctor handles).
+		}
+	}
+	return result
+}
+
+// RemoveBlock returns content with the gitid managed block for name removed.
+// If no such block exists the input is returned unchanged (idempotent). A single
+// blank line immediately following the END marker is also consumed to avoid
+// blank-line accumulation on repeated delete+recreate cycles.
+func RemoveBlock(content []byte, name string) []byte {
+	beginMarker := BeginPrefix + name
+	endMarker := EndPrefix + name
+
+	lines := strings.SplitAfter(string(content), "\n")
+
+	beginIdx, endIdx := -1, -1
+	for i, line := range lines {
+		trimmed := strings.TrimRight(line, "\n")
+		switch {
+		case beginIdx == -1 && trimmed == beginMarker:
+			beginIdx = i
+		case beginIdx != -1 && trimmed == endMarker:
+			endIdx = i
+		}
+		if beginIdx != -1 && endIdx != -1 {
+			break
+		}
+	}
+
+	// Block absent — return input unchanged (idempotent).
+	if beginIdx == -1 || endIdx == -1 {
+		return content
+	}
+
+	// Determine the slice boundary after the END line.
+	afterEnd := endIdx + 1
+	// Consume one trailing blank line to avoid accumulating blank lines after
+	// repeated delete+recreate. Only remove it if it is genuinely empty.
+	if afterEnd < len(lines) {
+		if strings.TrimRight(lines[afterEnd], "\n\r") == "" {
+			afterEnd++
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString(strings.Join(lines[:beginIdx], ""))
+	b.WriteString(strings.Join(lines[afterEnd:], ""))
+	return []byte(b.String())
+}
 
 // BeginPrefix and EndPrefix are the sentinel line prefixes that delimit a gitid
 // managed block. A block for identity <name> spans:

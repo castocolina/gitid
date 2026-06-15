@@ -106,7 +106,7 @@ Plans:
 
 **Wave 1**
 
-- [ ] 03-01-PLAN.md — Read-side primitives (ListBlocks/RemoveBlock/BackupAndRemove) + SSH/gitconfig reconstruction readers + identity.Reconstruct join (IDENT-07, foundation)
+- [x] 03-01-PLAN.md — Read-side primitives (ListBlocks/RemoveBlock/BackupAndRemove) + SSH/gitconfig reconstruction readers + identity.Reconstruct join (IDENT-07, foundation)
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -198,7 +198,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 7/7 plans complete
+**Plans:** 1/4 plans executed
 
 Plans:
 
@@ -212,7 +212,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Bootstrap | 3/3 | Complete   | 2026-06-09 |
 | 2. First Identity End-to-End | 7/7 | Complete   | 2026-06-09 |
-| 3. Full Identity CRUD + Multi-Identity | 0/4 | Planned | - |
+| 3. Full Identity CRUD + Multi-Identity | 1/4 | In Progress|  |
 | 3.1. Baseline Global Git Config + Global Gitignore | 0/? | Not started | - |
 | 4. Doctor | 0/? | Not started | - |
 | 5. CLI Surface + TUI | 0/? | Not started | - |

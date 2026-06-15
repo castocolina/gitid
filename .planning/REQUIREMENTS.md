@@ -23,7 +23,7 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 - [ ] **IDENT-04**: User can update an identity's name/email, signing on/off, provider/alias/port, and match strategy
 - [ ] **IDENT-05**: User can delete an identity/account — its managed blocks are removed (key optional) with confirmation and backup
 - [ ] **IDENT-06**: An account maps an identity to a provider via a host alias, so several identities can share one provider
-- [ ] **IDENT-07**: On startup the tool reconstructs the identity/account list by parsing its managed blocks (no sidecar database)
+- [x] **IDENT-07**: On startup the tool reconstructs the identity/account list by parsing its managed blocks (no sidecar database)
 
 ### Key Management (KEY)
 
@@ -182,7 +182,7 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 | IDENT-03 | Phase 3 | Pending |
 | IDENT-04 | Phase 3 | Pending |
 | IDENT-05 | Phase 3 | Pending |
-| IDENT-07 | Phase 3 | Pending |
+| IDENT-07 | Phase 3 | Complete |
 | GLOBAL-01 | Phase 3.1 | Pending |
 | URLRW-01 | Phase 3.1 | Pending |
 | GITIGNORE-01 | Phase 3.1 | Pending |

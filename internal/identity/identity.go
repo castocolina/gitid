@@ -41,6 +41,12 @@ type Account struct {
 	GitconfigPath      string
 	SSHConfigPath      string
 	AllowedSignersPath string
+
+	// Incomplete is non-empty when reconstruction found this identity name in
+	// some but not all four artifacts (D-02). It names the missing pieces
+	// (comma-separated) for display in `gitid identity list`. Deep diagnosis
+	// stays in Phase 4 doctor.
+	Incomplete string
 }
 
 // CreateInput carries the user-gathered inputs plus the resolved gitid-managed
