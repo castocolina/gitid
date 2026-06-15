@@ -62,7 +62,7 @@ func TestIncludeIfGitdir_ResolvesViaRealGit(t *testing.T) {
 	fragPath := filepath.Join(fragDir, "work")
 
 	wantEmail := "work@example.com"
-	if err := WriteFragment(fragPath, "Work User", wantEmail, "~/.ssh/id_ed25519_work.pub"); err != nil {
+	if err := WriteFragment(fragPath, "Work User", wantEmail, "~/.ssh/id_ed25519_work.pub", true); err != nil {
 		t.Fatalf("WriteFragment: %v", err)
 	}
 

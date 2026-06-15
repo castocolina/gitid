@@ -20,7 +20,7 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 - [x] **IDENT-01**: User can create an identity (name, git name, git email) that generates an ed25519 key used for both authentication and signing
 - [ ] **IDENT-02**: User can create an identity that reuses an existing key instead of generating a new one
 - [x] **IDENT-03**: User can list identities and accounts with their wiring (key path, alias, provider, port, match strategy)
-- [ ] **IDENT-04**: User can update an identity's name/email, signing on/off, provider/alias/port, and match strategy
+- [x] **IDENT-04**: User can update an identity's name/email, signing on/off, provider/alias/port, and match strategy
 - [ ] **IDENT-05**: User can delete an identity/account — its managed blocks are removed (key optional) with confirmation and backup
 - [ ] **IDENT-06**: An account maps an identity to a provider via a host alias, so several identities can share one provider
 - [x] **IDENT-07**: On startup the tool reconstructs the identity/account list by parsing its managed blocks (no sidecar database)
@@ -180,7 +180,7 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 | UP-01 | Phase 2 | Pending |
 | UP-02 | Phase 2 | Pending |
 | IDENT-03 | Phase 3 | Complete |
-| IDENT-04 | Phase 3 | Pending |
+| IDENT-04 | Phase 3 | Complete |
 | IDENT-05 | Phase 3 | Pending |
 | IDENT-07 | Phase 3 | Complete |
 | GLOBAL-01 | Phase 3.1 | Pending |

@@ -75,7 +75,7 @@ func newFakeDeps(log *callLog, preOutcome tester.Outcome) Deps {
 			log.writeGitconfig++
 			return "", nil
 		},
-		WriteFragment: func(_, _, _, _ string) error {
+		WriteFragment: func(_, _, _, _ string, _ bool) error {
 			log.writeFragment++
 			return nil
 		},

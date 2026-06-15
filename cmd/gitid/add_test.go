@@ -39,7 +39,7 @@ func fakeDeps(_ io.Writer) identity.Deps {
 		},
 		WriteSSH:            func(_, _, _ string) (string, error) { return "", nil },
 		WriteGitconfig:      func(_, _, _ string, _ []gitconfig.Match) (string, error) { return "", nil },
-		WriteFragment:       func(_, _, _, _ string) error { return nil },
+		WriteFragment:       func(_, _, _, _ string, _ bool) error { return nil },
 		WriteAllowedSigners: func(_, _, _ string) (string, error) { return "", nil },
 		Resolved: func(alias string) (tester.Result, tester.ResolvedConfig) {
 			return tester.Result{Command: "ssh -T git@" + alias, Output: "ok"}, tester.ResolvedConfig{User: "git"}

@@ -114,7 +114,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 — shares cmd/gitid/main.go)*
 
-- [ ] 03-03-PLAN.md — `gitid identity update` slice: edit fields (name immutable), WriteFragment signing toggle, structural-change re-test gate (IDENT-04)
+- [x] 03-03-PLAN.md — `gitid identity update` slice: edit fields (name immutable), WriteFragment signing toggle, structural-change re-test gate (IDENT-04)
 
 **Wave 4** *(blocked on Wave 3 — shares cmd/gitid/main.go)*
 
@@ -198,7 +198,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
 
 Plans:
 
@@ -212,7 +212,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Bootstrap | 3/3 | Complete   | 2026-06-09 |
 | 2. First Identity End-to-End | 7/7 | Complete   | 2026-06-09 |
-| 3. Full Identity CRUD + Multi-Identity | 2/4 | In Progress|  |
+| 3. Full Identity CRUD + Multi-Identity | 3/4 | In Progress|  |
 | 3.1. Baseline Global Git Config + Global Gitignore | 0/? | Not started | - |
 | 4. Doctor | 0/? | Not started | - |
 | 5. CLI Surface + TUI | 0/? | Not started | - |

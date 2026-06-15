@@ -405,7 +405,9 @@ func buildDeps(_ io.Writer) identity.Deps {
 			}
 			return backup, nil
 		},
-		WriteFragment:       gitconfig.WriteFragment,
+		WriteFragment: func(fragPath, name, email, signingKeyPath string, signing bool) error {
+			return gitconfig.WriteFragment(fragPath, name, email, signingKeyPath, signing)
+		},
 		WriteAllowedSigners: keygen.WriteAllowedSigners,
 		Resolved:            tester.Resolved,
 		PubExists: func(pubPath string) bool {

@@ -133,7 +133,7 @@ type Deps struct {
 	PreWrite            func(keyPath, hostname string, port int) tester.Result
 	WriteSSH            func(accountName, hostBlock, globalBlock string) (backupPath string, err error)
 	WriteGitconfig      func(identity, fragmentPath, allowedSignersPath string, matches []gitconfig.Match) (backupPath string, err error)
-	WriteFragment       func(fragmentPath, name, email, signingKeyPath string) error
+	WriteFragment       func(fragmentPath, name, email, signingKeyPath string, signing bool) error
 	WriteAllowedSigners func(path, identity, line string) (backupPath string, err error)
 	Resolved            func(alias string) (tester.Result, tester.ResolvedConfig)
 
@@ -270,7 +270,7 @@ func runPipeline(in CreateInput, staged StagedKey, deps Deps) (CreateResult, err
 	if _, werr := deps.WriteGitconfig(in.Name, in.FragmentPath, in.AllowedSignersPath, in.Matches); werr != nil {
 		return res, fmt.Errorf("identity: writing gitconfig includeIf: %w", werr)
 	}
-	if werr := deps.WriteFragment(in.FragmentPath, in.GitName, in.GitEmail, final.PubPath); werr != nil {
+	if werr := deps.WriteFragment(in.FragmentPath, in.GitName, in.GitEmail, final.PubPath, true); werr != nil {
 		return res, fmt.Errorf("identity: writing gitconfig fragment: %w", werr)
 	}
 	if _, werr := deps.WriteAllowedSigners(in.AllowedSignersPath, in.Name, signersLine); werr != nil {

@@ -13,8 +13,9 @@ import (
 // `git config --file` (git is the authoritative parser of its own format, so the
 // writes are idempotent and comment-safe). It creates the fragment's parent
 // directory (mode 0700) if it does not already exist, so the write succeeds on
-// a fresh machine where ~/.gitconfig.d/ has not yet been created. It sets exactly
-// the identity-only keys:
+// a fresh machine where ~/.gitconfig.d/ has not yet been created.
+//
+// When signing is true, it sets exactly the five identity keys:
 //
 //	user.name       = <name>
 //	user.email      = <email>
@@ -22,32 +23,54 @@ import (
 //	user.signingkey = <signingKeyPath>   (a .pub PATH, never an inline key — SIGN-02)
 //	commit.gpgsign  = true
 //
+// When signing is false, only user.name and user.email are written; any signing
+// keys previously present are removed via --unset-all (exit code 5 = key absent
+// is treated as success — Pitfall C).
+//
 // The fragment must NOT contain a [remote] section: a remote URL in a fragment
 // included via `hasconfig:` is a hard git circular error (Pitfall 9), so any
 // value that would introduce one is rejected before any write occurs. All values
 // are arg-slice arguments to exec.Command (no shell), keeping it gosec G204-clean
 // and free of OS-command-injection risk (threat T-02-18).
-func WriteFragment(fragmentPath, name, email, signingKeyPath string) error {
+func WriteFragment(fragmentPath, name, email, signingKeyPath string, signing bool) error {
 	if err := validateValue("user.name", name); err != nil {
 		return err
 	}
 	if err := validateEmail(email); err != nil {
 		return err
 	}
-	if err := validateValue("user.signingkey", signingKeyPath); err != nil {
-		return err
+	if signing {
+		if err := validateValue("user.signingkey", signingKeyPath); err != nil {
+			return err
+		}
 	}
 
 	if err := filewriter.EnsureDir(filepath.Dir(fragmentPath), 0o700); err != nil {
 		return fmt.Errorf("ensuring fragment dir: %w", err)
 	}
 
+	// When signing is disabled, remove any stale signing keys that a prior
+	// signing=true write may have left. This makes signing=false an authoritative
+	// rewrite — the end state reflects the desired state (Pitfall C: exit code 5
+	// means key absent, treated as success).
+	if !signing {
+		for _, key := range []string{"gpg.format", "user.signingkey", "commit.gpgsign"} {
+			if err := gitConfigUnsetAll(fragmentPath, key); err != nil {
+				return err
+			}
+		}
+	}
+
 	settings := [][2]string{
 		{"user.name", name},
 		{"user.email", email},
-		{"gpg.format", "ssh"},
-		{"user.signingkey", signingKeyPath},
-		{"commit.gpgsign", "true"},
+	}
+	if signing {
+		settings = append(settings,
+			[2]string{"gpg.format", "ssh"},
+			[2]string{"user.signingkey", signingKeyPath},
+			[2]string{"commit.gpgsign", "true"},
+		)
 	}
 	for _, kv := range settings {
 		if err := gitConfigSet(fragmentPath, kv[0], kv[1]); err != nil {
@@ -75,6 +98,22 @@ func gitConfigSet(path, key, value string) error {
 	cmd := exec.Command("git", "config", "--file", path, key, value) //nolint:gosec // arg-slice form, no shell; values validated above (G204)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git config --file %s %s: %w: %s", path, key, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// gitConfigUnsetAll runs `git config --file <path> --unset-all <key>` to remove
+// all occurrences of key. Exit code 5 means the key was not present — this is
+// treated as success (idempotent, Pitfall C).
+func gitConfigUnsetAll(path, key string) error {
+	cmd := exec.Command("git", "config", "--file", path, "--unset-all", key) //nolint:gosec // arg-slice form, no shell; key is a compile-time constant (G204)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 5 {
+			// Exit code 5 = key not present; treat as success (Pitfall C).
+			return nil
+		}
+		return fmt.Errorf("git config --file %s --unset-all %s: %w: %s", path, key, err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

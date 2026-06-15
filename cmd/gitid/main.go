@@ -41,6 +41,7 @@ func newRootCmd() *cobra.Command {
 	identity.AddCommand(newListCmd())
 	identity.AddCommand(newTestCmd())
 	identity.AddCommand(newRotateCmd())
+	identity.AddCommand(newUpdateCmd())
 	root.AddCommand(identity)
 
 	return root

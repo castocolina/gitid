@@ -259,7 +259,7 @@ func TestReconstruct_RoundTrip(t *testing.T) {
 	if _, err := gitconfig.WriteIncludeIf(gitconfigPath, "personal", personalFrag, personalMatches); err != nil {
 		t.Fatalf("gitconfig.WriteIncludeIf personal: %v", err)
 	}
-	if err := gitconfig.WriteFragment(personalFrag, "Personal User", "personal@example.com", personalPub); err != nil {
+	if err := gitconfig.WriteFragment(personalFrag, "Personal User", "personal@example.com", personalPub, true); err != nil {
 		t.Fatalf("gitconfig.WriteFragment personal: %v", err)
 	}
 
@@ -277,7 +277,7 @@ func TestReconstruct_RoundTrip(t *testing.T) {
 	if _, err := gitconfig.WriteIncludeIf(gitconfigPath, "work", workFrag, workMatches); err != nil {
 		t.Fatalf("gitconfig.WriteIncludeIf work: %v", err)
 	}
-	if err := gitconfig.WriteFragment(workFrag, "Work User", "work@example.com", workPub); err != nil {
+	if err := gitconfig.WriteFragment(workFrag, "Work User", "work@example.com", workPub, true); err != nil {
 		t.Fatalf("gitconfig.WriteFragment work: %v", err)
 	}
 

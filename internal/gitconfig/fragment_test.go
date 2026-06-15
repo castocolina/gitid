@@ -23,7 +23,7 @@ func TestWriteFragment_RoundTrips(t *testing.T) {
 	fragPath := filepath.Join(dir, "work")
 	pubKeyPath := "~/.ssh/id_ed25519_work.pub"
 
-	if err := WriteFragment(fragPath, "Work User", "work@example.com", pubKeyPath); err != nil {
+	if err := WriteFragment(fragPath, "Work User", "work@example.com", pubKeyPath, true); err != nil {
 		t.Fatalf("WriteFragment: %v", err)
 	}
 
@@ -49,7 +49,7 @@ func TestWriteFragment_SigningKeyIsPathNotInline(t *testing.T) {
 	fragPath := filepath.Join(dir, "work")
 	pubKeyPath := "~/.ssh/id_ed25519_work.pub"
 
-	if err := WriteFragment(fragPath, "Work User", "work@example.com", pubKeyPath); err != nil {
+	if err := WriteFragment(fragPath, "Work User", "work@example.com", pubKeyPath, true); err != nil {
 		t.Fatalf("WriteFragment: %v", err)
 	}
 
@@ -68,7 +68,7 @@ func TestWriteFragment_RejectsRemoteSection(t *testing.T) {
 	dir := t.TempDir()
 	fragPath := filepath.Join(dir, "work")
 
-	err := WriteFragment(fragPath, "Work User", "work@example.com", "[remote \"origin\"]\n\turl = x")
+	err := WriteFragment(fragPath, "Work User", "work@example.com", "[remote \"origin\"]\n\turl = x", true)
 	if err == nil {
 		t.Errorf("expected WriteFragment to reject a [remote] section, got nil error")
 	}
@@ -78,7 +78,7 @@ func TestWriteFragment_RejectsInvalidEmail(t *testing.T) {
 	dir := t.TempDir()
 	fragPath := filepath.Join(dir, "work")
 
-	if err := WriteFragment(fragPath, "Work User", "not\nan@email", "~/.ssh/k.pub"); err == nil {
+	if err := WriteFragment(fragPath, "Work User", "not\nan@email", "~/.ssh/k.pub", true); err == nil {
 		t.Errorf("expected WriteFragment to reject a newline-bearing email")
 	}
 }
@@ -88,7 +88,7 @@ func TestWriteFragment_CreatesParentDir(t *testing.T) {
 	// WriteFragment must ensure the parent dir before calling git config.
 	fragPath := filepath.Join(t.TempDir(), "gitconfig.d", "work")
 
-	if err := WriteFragment(fragPath, "Work User", "work@example.com", "~/.ssh/id_ed25519_work.pub"); err != nil {
+	if err := WriteFragment(fragPath, "Work User", "work@example.com", "~/.ssh/id_ed25519_work.pub", true); err != nil {
 		t.Fatalf("WriteFragment: %v", err)
 	}
 

@@ -120,7 +120,7 @@ func TestReadFragment_Full(t *testing.T) {
 	}
 
 	// Write a minimal fragment using WriteFragment.
-	if err := WriteFragment(fragPath, "Test User", "test@example.com", pubKeyPath); err != nil {
+	if err := WriteFragment(fragPath, "Test User", "test@example.com", pubKeyPath, true); err != nil {
 		t.Fatalf("WriteFragment: %v", err)
 	}
 
