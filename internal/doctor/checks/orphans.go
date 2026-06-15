@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/castocolina/gitid/internal/doctor"
+	"github.com/castocolina/gitid/internal/gitconfig"
 )
 
 // CheckOrphans detects artifacts on disk that no owning managed block claims —
@@ -78,6 +79,13 @@ func CheckOrphans(deps doctor.Deps) []doctor.Finding {
 	// Class 2: gitconfig block names that have no matching SSH Host block.
 	// Fix.Fn calls deps.RemoveBlock on GitconfigPath with the block name (when wired).
 	for _, name := range deps.GitconfigManagedBlockNames {
+		// Reserved non-identity wiring (e.g. baseline-include) has no SSH Host
+		// block by design — it is NOT an orphan. Skip it, or its removal fix
+		// would delete the legitimate baseline include and fight the Baseline
+		// check's restore in an endless loop.
+		if gitconfig.IsReservedBlockName(name) {
+			continue
+		}
 		if !sshNames[name] {
 			// This gitconfig block has no SSH Host partner — orphaned gitconfig block.
 			n := name // capture for closure

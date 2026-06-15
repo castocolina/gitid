@@ -27,7 +27,7 @@ func TestBaselineSetup_DryRun(t *testing.T) {
 	var in strings.Reader
 	var out bytes.Buffer
 
-	err := runBaselineSetup(&in, &out, true /* dryRun */)
+	err := runBaselineSetup(&in, &out, true /* dryRun */, false /* assumeYes */)
 	if err != nil {
 		t.Fatalf("runBaselineSetup --dry-run returned error: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestBaselineSetup_DryRun_NoConflictsNote(t *testing.T) {
 	var in strings.Reader
 	var out bytes.Buffer
 
-	err := runBaselineSetup(&in, &out, true)
+	err := runBaselineSetup(&in, &out, true, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -549,7 +549,7 @@ func TestBaselineSetup_IncludePathIsTildeForm(t *testing.T) {
 	// Drive runBaselineSetup with confirmed "y" answers to reach the write step.
 	in := strings.NewReader("y\ny\ny\ny\ny\n")
 	var out bytes.Buffer
-	err := runBaselineSetup(in, &out, false)
+	err := runBaselineSetup(in, &out, false, false)
 	if err != nil {
 		t.Fatalf("runBaselineSetup: %v", err)
 	}

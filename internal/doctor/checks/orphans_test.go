@@ -116,6 +116,35 @@ func TestOrphanAliasHostNoInclude(t *testing.T) {
 	}
 }
 
+// TestOrphanReservedBaselineNotFlagged: the reserved baseline-include gitconfig
+// block has no SSH Host block by design and MUST NOT be reported as an orphan.
+// Flagging it produces a removal [fix] that deletes the legitimate baseline
+// include, fighting the Baseline check's restore in an endless loop.
+func TestOrphanReservedBaselineNotFlagged(t *testing.T) {
+	d := doctor.Deps{
+		Stat:       orphStat(),
+		Identities: []identity.Account{},
+		// Only the reserved baseline-include block is present in gitconfig; no SSH side.
+		SSHManagedBlockNames:       []string{},
+		GitconfigManagedBlockNames: []string{"baseline-include"},
+		AllSSHHostIdentityFiles:    []string{},
+		KeyPaths:                   []string{},
+		GitconfigPath:              "/home/u/.gitconfig",
+		RemoveBlock:                func(_, _ string) error { return nil },
+	}
+
+	findings := checks.CheckOrphans(d)
+
+	for _, f := range findings {
+		if orphContains(f.Title, "baseline-include") {
+			t.Errorf("reserved baseline-include must not be reported as an orphan, got: %q", f.Title)
+		}
+	}
+	if len(findings) != 0 {
+		t.Errorf("expected no orphan findings for a lone reserved block, got: %v", orphTitles(findings))
+	}
+}
+
 // TestOrphanKey: a gitid key file exists on disk but is referenced by NO Host block
 // (managed or hand-written) → warning, no [fix], honest wording.
 func TestOrphanKey(t *testing.T) {

@@ -4,6 +4,7 @@
 package checks
 
 import (
+	"io"
 	"strings"
 
 	"github.com/castocolina/gitid/internal/doctor"
@@ -62,9 +63,24 @@ func CheckBaseline(d doctor.Deps) []doctor.Finding {
 			fix = &doctor.FixDescriptor{
 				Summary: "restore baseline [include] block in ~/.gitconfig",
 				Fn: func() error {
-					return addWiring(gitconfigPath, "baseline-include",
-						"baseline-include:"+baselineFilePath)
+					return addWiring(gitconfigPath, gitconfig.BaselineIncludeBlockName,
+						gitconfig.BaselineIncludeBlockName+":"+baselineFilePath)
 				},
+			}
+		}
+		// Fix A: prefer the COMPLETE baseline setup (fragment + gitignore + include,
+		// atomically) over the include-only restore above — restoring just the
+		// include leaves a dangling pointer to a missing fragment, which can never
+		// satisfy this check. When SetupBaseline is wired, run the full
+		// `gitid baseline setup` flow interactively (or with defaults under --yes).
+		if d.SetupBaseline != nil {
+			setup := d.SetupBaseline
+			if fix == nil {
+				fix = &doctor.FixDescriptor{}
+			}
+			fix.Summary = "run 'gitid baseline setup' (restores the baseline fragment + include)"
+			fix.Interactive = func(in io.Reader, out io.Writer, assumeYes bool) error {
+				return setup(in, out, assumeYes)
 			}
 		}
 		findings = append(findings, doctor.Finding{

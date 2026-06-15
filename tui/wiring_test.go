@@ -207,7 +207,10 @@ func TestRunWriteCmdDispatchesUpdate(t *testing.T) {
 	}
 	in := identity.CreateInput{Name: acct.Name, Alias: acct.Alias, Provider: acct.Provider}
 
-	cmd := runWriteCmd("update", in, acct, deps)
+	// FIX-2: runWriteCmd now takes a distinct original vs edited account plus the
+	// preserved signing flag. Here original == edited (no structural change) and
+	// signing is preserved as true for this email-bearing identity.
+	cmd := runWriteCmd("update", in, acct, acct, true, deps)
 	msg := cmd()
 	wr, ok := msg.(writeResultMsg)
 	if !ok {
@@ -248,7 +251,8 @@ func TestRunWriteCmdDispatchesAddAccount(t *testing.T) {
 	}
 	in := identity.CreateInput{Name: acct.Name, Provider: "gitlab.com", Alias: "work.gitlab.com"}
 
-	cmd := runWriteCmd("add-account", in, acct, deps)
+	// add-account ignores original/signing; pass the edited account as both.
+	cmd := runWriteCmd("add-account", in, acct, acct, false, deps)
 	msg := cmd()
 	wr, ok := msg.(writeResultMsg)
 	if !ok {

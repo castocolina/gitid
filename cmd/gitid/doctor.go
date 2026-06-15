@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -41,15 +42,13 @@ func newDoctorCmd() *cobra.Command {
 			if yes && !fix {
 				return fmt.Errorf("doctor: --yes requires --fix")
 			}
-			code := runDoctor(cmd.OutOrStdout(), fix, yes)
-			// Store tiered exit code for main() to pass to os.Exit (IN-03).
-			doctorExitCode = code
-			if code != 0 {
-				// Use SilenceErrors pattern: return a non-nil error so Cobra
-				// propagates the non-zero exit, but suppress duplicate printing
-				// (the report already shows everything).
-				return fmt.Errorf("exit code %d", code)
-			}
+			// Store the tiered exit code (0/1/2/3) for main() to propagate via
+			// os.Exit (IN-03). We deliberately do NOT return it as an error:
+			// doing so made Cobra print a spurious "Error: exit code N" line even
+			// after --fix had repaired everything (Bug B). main() reads
+			// doctorExitCode directly, so real errors (e.g. "--yes requires
+			// --fix") still print while the tiered code stays silent.
+			doctorExitCode = runDoctor(cmd.OutOrStdout(), fix, yes)
 			return nil
 		},
 	}
@@ -65,11 +64,15 @@ func newDoctorCmd() *cobra.Command {
 // report, and returns the D-07 tiered exit code (0/1/2/3). The caller
 // (RunE / tests) translates the return value.
 //
-// D-07/WARNING 5: the exit code reflects the PRE-fix severity state. Even
-// when --fix --yes repairs every finding, the process exits with the highest
-// pre-fix severity so CI is never misled into thinking the env was already
-// healthy. `pre` is captured immediately after doctor.Run and returned
-// unconditionally regardless of how many fixes succeed.
+// Exit-code semantics (Bug B):
+//   - A plain `gitid doctor` (no fix gate entered) returns the PRE-fix severity
+//     so a diagnosing/CI caller is never misled into thinking the env was healthy.
+//   - A fix run (--fix, --fix --yes, or an accepted interactive gate) APPLIES
+//     fixes, RE-EVALUATES from disk, and returns the POST-fix severity. The
+//     caller asked to fix; the honest answer is the state after fixing. The
+//     fix→re-check loop repeats until nothing fixable remains or a pass makes no
+//     progress (convergeFixes), so a single `--fix --yes` heals what it can in
+//     one invocation instead of requiring the user to re-run it.
 func runDoctor(out io.Writer, fix, yes bool) int {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -77,49 +80,127 @@ func runDoctor(out io.Writer, fix, yes bool) int {
 		return 2
 	}
 
-	sshConfigPath := filepath.Join(home, ".ssh", "config")
-	gitconfigPath := filepath.Join(home, ".gitconfig")
-
-	sshBytes, err := os.ReadFile(sshConfigPath) //nolint:gosec // sshConfigPath is a gitid-managed path (G304)
-	if err != nil && !os.IsNotExist(err) {
-		fp(out, fmt.Sprintf("doctor: reading %s: %v\n", sshConfigPath, err))
-		return 2
+	sshBytes, gcBytes, rerr := readManagedConfigs(out, home)
+	if rerr != 0 {
+		return rerr
 	}
 
-	gcBytes, err := os.ReadFile(gitconfigPath) //nolint:gosec // gitconfigPath is a gitid-managed path (G304)
-	if err != nil && !os.IsNotExist(err) {
-		fp(out, fmt.Sprintf("doctor: reading %s: %v\n", gitconfigPath, err))
-		return 2
-	}
-
-	d := buildDoctorDeps(home, sshBytes, gcBytes)
-	findings := doctor.Run(d)
-
-	// D-07: capture pre-fix exit code BEFORE any fix is applied (WARNING 5).
+	findings := doctor.Run(buildDoctorDeps(home, sshBytes, gcBytes))
 	pre := doctor.ExitCode(findings)
 
 	colorEnabled := isTerminalOutput(os.Stdout)
 	renderReport(out, findings, colorEnabled)
 
-	// Collect fixable findings (Fix != nil) in report order.
+	// DOC-GAP-03: only enter the fix flow when --fix/--yes was passed or stdin is
+	// a TTY. A bare `gitid doctor` in a pipe/CI skips it — the pre-fix exit code
+	// is the machine-readable signal.
+	inFixMode := fix || isTerminalInput(os.Stdin)
+	if len(collectFixable(findings)) == 0 || !inFixMode {
+		return pre
+	}
+
+	// Fix + re-evaluate until clean or stuck. Re-reading disk and re-running every
+	// check after each pass is the single source of truth for "is it fixed yet?".
+	in := bufio.NewReader(os.Stdin)
+	const maxPasses = 10
+	final := convergeFixes(
+		findings,
+		func(fixable []doctor.Finding) int {
+			applied, _ := applyFixes(in, out, fixable, fix, yes)
+			return applied
+		},
+		func() []doctor.Finding {
+			sb, gb, code := readManagedConfigs(out, home)
+			if code != 0 {
+				return nil
+			}
+			return doctor.Run(buildDoctorDeps(home, sb, gb))
+		},
+		maxPasses,
+	)
+
+	// Re-render only when the state actually changed (avoids a duplicate report
+	// when the user declined every fix). Return the POST-fix severity.
+	if findingsSignature(final) != findingsSignature(findings) {
+		fp(out, "\n")
+		renderReport(out, final, colorEnabled)
+	}
+	return doctor.ExitCode(final)
+}
+
+// readManagedConfigs reads the two gitid-managed config files for a home dir.
+// A missing file is not an error (returns empty bytes); any other read error
+// prints to out and returns errCode 2 so the caller can abort.
+func readManagedConfigs(out io.Writer, home string) (sshBytes, gcBytes []byte, errCode int) {
+	sshConfigPath := filepath.Join(home, ".ssh", "config")
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+
+	sb, err := os.ReadFile(sshConfigPath) //nolint:gosec // gitid-managed path (G304)
+	if err != nil && !os.IsNotExist(err) {
+		fp(out, fmt.Sprintf("doctor: reading %s: %v\n", sshConfigPath, err))
+		return nil, nil, 2
+	}
+	gb, err := os.ReadFile(gitconfigPath) //nolint:gosec // gitid-managed path (G304)
+	if err != nil && !os.IsNotExist(err) {
+		fp(out, fmt.Sprintf("doctor: reading %s: %v\n", gitconfigPath, err))
+		return nil, nil, 2
+	}
+	return sb, gb, 0
+}
+
+// collectFixable returns the findings that carry a Fix descriptor, in order.
+func collectFixable(findings []doctor.Finding) []doctor.Finding {
 	var fixable []doctor.Finding
 	for _, f := range findings {
 		if f.Fix != nil {
 			fixable = append(fixable, f)
 		}
 	}
+	return fixable
+}
 
-	// DOC-GAP-03: only enter the interactive fix gate when stdin is a TTY or
-	// when --fix/--yes was explicitly passed. A bare `gitid doctor` in a
-	// pipe or CI context skips the gate entirely — the exit code is the
-	// machine-readable signal. --fix and --yes preserve their existing semantics.
-	if len(fixable) > 0 && (fix || isTerminalInput(os.Stdin)) {
-		in := bufio.NewReader(os.Stdin)
-		applyFixes(in, out, fixable, fix, yes)
+// findingsSignature returns a stable, order-independent signature of a finding
+// set (sorted family|title pairs). The convergence loop uses it to detect a pass
+// that changed nothing observable, so it stops instead of spinning.
+func findingsSignature(findings []doctor.Finding) string {
+	parts := make([]string, 0, len(findings))
+	for _, f := range findings {
+		parts = append(parts, string(f.Family)+"|"+f.Title)
 	}
+	sort.Strings(parts)
+	return strings.Join(parts, "\n")
+}
 
-	// Return the PRE-fix severity state unconditionally (D-07).
-	return pre
+// convergeFixes repeatedly applies fixable findings and re-evaluates until no
+// fixable findings remain, a pass makes no observable progress (identical
+// signature), or maxPasses is reached (a hard backstop guaranteeing termination
+// even if two checks ever disagree about the same artifact). It returns the
+// final, re-evaluated findings. apply applies the supplied fixable findings and
+// returns how many were applied; runChecks re-reads disk and re-runs every check.
+func convergeFixes(
+	initial []doctor.Finding,
+	apply func(fixable []doctor.Finding) int,
+	runChecks func() []doctor.Finding,
+	maxPasses int,
+) []doctor.Finding {
+	findings := initial
+	prevSig := findingsSignature(findings)
+	for pass := 0; pass < maxPasses; pass++ {
+		fixable := collectFixable(findings)
+		if len(fixable) == 0 {
+			break
+		}
+		if apply(fixable) == 0 {
+			break // nothing applied (declined / all failed) — no progress possible
+		}
+		findings = runChecks()
+		sig := findingsSignature(findings)
+		if sig == prevSig {
+			break // pass changed nothing observable — stop instead of spinning
+		}
+		prevSig = sig
+	}
+	return findings
 }
 
 // runSSHAdd runs `ssh-add -l` via arg-slice exec (no shell, G204-clean) and
@@ -339,6 +420,14 @@ func buildDoctorDeps(home string, sshBytes, gcBytes []byte) doctor.Deps {
 			return nil
 		},
 
+		// SetupBaseline runs the full interactive baseline setup so the
+		// baseline-missing fix restores a COMPLETE baseline (fragment + gitignore +
+		// include), not a dangling include pointer (Fix A). assumeYes (--fix --yes)
+		// writes defaults without prompts.
+		SetupBaseline: func(in io.Reader, out io.Writer, assumeYes bool) error {
+			return runBaselineSetup(in, out, false /* dryRun */, assumeYes)
+		},
+
 		// Check function fields wired from internal/doctor/checks.
 		// Wave 2 plans replace these in place (same paths, same signatures).
 		CheckPerms:     checks.CheckPermissions,
@@ -552,27 +641,32 @@ func applyFixes(r *bufio.Reader, out io.Writer, findings []doctor.Finding, fix, 
 	// are never batched — each gets its own confirm due to higher blast radius).
 	for _, f := range otherFindings {
 		if yes {
-			// --fix --yes: apply silently.
-			if err := f.Fix.Fn(); err != nil {
-				fp(out, fmt.Sprintf("doctor: fix failed: %s: %v\n", f.Fix.Summary, err))
+			// --fix --yes: apply silently (Interactive fixes run with defaults).
+			if applyOneFix(r, out, f, true) {
+				applied++
+			}
+			continue
+		}
+		// An Interactive fix (e.g. the full baseline setup) runs its own preview
+		// and confirm, so we announce and delegate — no second "Apply?" prompt.
+		if f.Fix.Interactive != nil {
+			fp(out, fmt.Sprintf("Fix: %s\n", f.Fix.Summary))
+			if applyOneFix(r, out, f, false) {
+				applied++
 			} else {
-				fp(out, fmt.Sprintf("  fixed: %s\n", f.Fix.Summary))
+				skipped++
+			}
+			continue
+		}
+		// Plain fix: per-finding confirm.
+		fp(out, fmt.Sprintf("Fix: %s\n", f.Fix.Summary))
+		if confirm(r, out, "Apply?") {
+			if applyOneFix(r, out, f, false) {
 				applied++
 			}
 		} else {
-			// Per-finding confirm.
-			fp(out, fmt.Sprintf("Fix: %s\n", f.Fix.Summary))
-			if confirm(r, out, "Apply?") {
-				if err := f.Fix.Fn(); err != nil {
-					fp(out, fmt.Sprintf("doctor: fix failed: %s: %v\n", f.Fix.Summary, err))
-				} else {
-					fp(out, fmt.Sprintf("  fixed: %s\n", f.Fix.Summary))
-					applied++
-				}
-			} else {
-				fp(out, fmt.Sprintf("  skipped: %s\n", f.Fix.Summary))
-				skipped++
-			}
+			fp(out, fmt.Sprintf("  skipped: %s\n", f.Fix.Summary))
+			skipped++
 		}
 	}
 
@@ -580,6 +674,27 @@ func applyFixes(r *bufio.Reader, out io.Writer, findings []doctor.Finding, fix, 
 	fp(out, fmt.Sprintf("doctor: %d fix(es) applied, %d skipped.\n", applied, skipped))
 
 	return applied, skipped
+}
+
+// applyOneFix runs a single finding's fix, preferring the Interactive variant
+// (which may prompt and prints its own progress) over the plain Fn. assumeYes is
+// forwarded to Interactive fixes (true under --fix --yes → apply defaults, no
+// prompts). Returns true when the fix ran without error. On error it prints the
+// failure and returns false so the caller continues to the next finding.
+func applyOneFix(r *bufio.Reader, out io.Writer, f doctor.Finding, assumeYes bool) bool {
+	if f.Fix.Interactive != nil {
+		if err := f.Fix.Interactive(r, out, assumeYes); err != nil {
+			fp(out, fmt.Sprintf("doctor: fix failed: %s: %v\n", f.Fix.Summary, err))
+			return false
+		}
+		return true // the interactive flow prints its own outcome (e.g. "Baseline written.")
+	}
+	if err := f.Fix.Fn(); err != nil {
+		fp(out, fmt.Sprintf("doctor: fix failed: %s: %v\n", f.Fix.Summary, err))
+		return false
+	}
+	fp(out, fmt.Sprintf("  fixed: %s\n", f.Fix.Summary))
+	return true
 }
 
 // isTerminalOutput reports whether stdout is an interactive terminal. It

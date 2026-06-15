@@ -338,7 +338,7 @@ func TestDoctorOrphanNotBatched(t *testing.T) {
 // create a real key file with 0644 mode in a temp home, so CheckPermissions fires
 // with SeverityCritical. Then --fix --yes calls the real FixPerm (os.Chmod) which
 // succeeds. The return value must still be 3.
-func TestDoctorFixYesExitCodePreFix(t *testing.T) {
+func TestDoctorFixYesExitCodePostFix(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
 
@@ -368,13 +368,107 @@ func TestDoctorFixYesExitCodePreFix(t *testing.T) {
 		t.Fatalf("writing fake ssh config: %v", err)
 	}
 
-	// runDoctor with fix=true, yes=true should: run checks (critical perm found),
-	// capture pre-fix code (3), apply fix (chmod succeeds), return 3.
+	// runDoctor with fix=true, yes=true: run checks (critical perm = pre-fix code
+	// 3), apply the chmod, RE-EVALUATE, and return the POST-fix exit code (Bug B).
+	// The chmod resolves the critical, so the post-fix severity is strictly below
+	// the pre-fix 3 — proving runDoctor re-evaluated rather than returning the stale
+	// pre-fix code. (Plain `gitid doctor`/CI runs still return the pre-fix code via
+	// runDoctor's non-fix early return.)
 	var out bytes.Buffer
 	code := runDoctor(&out, true /* fix */, true /* yes */)
 
-	if code != 3 {
-		t.Errorf("expected pre-fix exit code 3 even after --fix --yes succeeds; got %d\noutput:\n%s", code, out.String())
+	if code >= 3 {
+		t.Errorf("expected re-evaluated post-fix code below the pre-fix critical (3); got %d\noutput:\n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "fixed: chmod") {
+		t.Errorf("expected the chmod fix to be applied; output:\n%s", out.String())
+	}
+}
+
+// TestDoctorFixYesHealsMissingBaselineFromScratch verifies Fix A + Fix B together:
+// on a pristine home with no baseline, `doctor --fix --yes` runs the FULL baseline
+// setup (creating the fragment AND the include — not a dangling pointer), then
+// re-evaluates to a clean state and exits 0. No manual `gitid baseline setup`.
+func TestDoctorFixYesHealsMissingBaselineFromScratch(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	var out bytes.Buffer
+	code := runDoctor(&out, true /* fix */, true /* yes */)
+
+	if code != 0 {
+		t.Errorf("expected --fix --yes to fully heal a missing baseline and exit 0; got %d\noutput:\n%s",
+			code, out.String())
+	}
+	// The fixer must have created the fragment, not just a dangling include.
+	frag := filepath.Join(home, ".gitconfig.d", "00-baseline")
+	if _, err := os.Stat(frag); err != nil {
+		t.Errorf("baseline fragment %s must exist after the full-setup fix; stat err: %v", frag, err)
+	}
+	gc, _ := os.ReadFile(filepath.Join(home, ".gitconfig")) //nolint:gosec // test reads a gitid-managed path in a temp home (G304)
+	if !strings.Contains(string(gc), "baseline-include") {
+		t.Errorf("~/.gitconfig must contain the baseline-include block after the fix; got:\n%s", string(gc))
+	}
+}
+
+// TestConvergeFixes_ReachesCleanAndReturnsPostFix verifies the convergence loop
+// re-evaluates after applying and returns the POST-fix findings (Bug B): once a
+// pass resolves the only finding, runChecks returns clean and the loop stops with
+// an empty (exit-code-0) finding set.
+func TestConvergeFixes_ReachesCleanAndReturnsPostFix(t *testing.T) {
+	initial := []doctor.Finding{{
+		Family: doctor.FamilyPerms, Severity: doctor.SeverityCritical, Title: "key: bad perms",
+		Fix: &doctor.FixDescriptor{Summary: "chmod", Fn: func() error { return nil }},
+	}}
+	passes := 0
+	final := convergeFixes(
+		initial,
+		func(fixable []doctor.Finding) int { return len(fixable) }, // "apply" succeeds
+		func() []doctor.Finding { passes++; return nil },           // re-check: now clean
+		10,
+	)
+	if len(final) != 0 {
+		t.Errorf("expected clean post-fix findings, got %d: %v", len(final), final)
+	}
+	if doctor.ExitCode(final) != 0 {
+		t.Errorf("expected post-fix exit code 0, got %d", doctor.ExitCode(final))
+	}
+	if passes != 1 {
+		t.Errorf("expected exactly one re-check pass, got %d", passes)
+	}
+}
+
+// TestConvergeFixes_TerminatesOnPingPong verifies the maxPasses backstop: even if
+// two checks ever disagree about the same artifact (a fix that re-creates another
+// finding forever), the loop terminates instead of spinning. Defense in depth on
+// top of the reserved-block exclusion (Fix C) that removed the real ping-pong.
+func TestConvergeFixes_TerminatesOnPingPong(t *testing.T) {
+	mkFinding := func(title string) []doctor.Finding {
+		return []doctor.Finding{{
+			Family: doctor.FamilyOrphans, Severity: doctor.SeverityWarning, Title: title,
+			Fix: &doctor.FixDescriptor{Summary: "toggle", Fn: func() error { return nil }},
+		}}
+	}
+	toggle := false
+	passes := 0
+	convergeFixes(
+		mkFinding("A"),
+		func(_ []doctor.Finding) int { return 1 },
+		func() []doctor.Finding {
+			passes++
+			toggle = !toggle
+			if toggle {
+				return mkFinding("B")
+			}
+			return mkFinding("A")
+		},
+		10,
+	)
+	if passes > 10 {
+		t.Errorf("convergeFixes did not respect maxPasses backstop: ran %d passes", passes)
+	}
+	if passes == 0 {
+		t.Error("expected the loop to run at least one re-check pass")
 	}
 }
 

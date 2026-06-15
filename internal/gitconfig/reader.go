@@ -24,12 +24,33 @@ type FragmentInfo struct {
 	Missing    bool   // true when the fragment file does not exist
 }
 
+// BaselineIncludeBlockName is the sentinel name of the reserved gitid-managed
+// [include] block that wires ~/.gitconfig to the baseline fragment. It is NOT a
+// managed identity: it intentionally has no SSH Host block and no per-identity
+// fragment. Identity discovery (ParseManagedIncludeIf) and the doctor Orphans
+// check MUST exclude it — otherwise it is misread as an incomplete identity
+// (Coherence) and an orphaned gitconfig block (Orphans), whose auto-fix deletes
+// it, fighting the Baseline check's restore in an endless loop.
+const BaselineIncludeBlockName = "baseline-include"
+
+// IsReservedBlockName reports whether a gitid-managed gitconfig block name is a
+// reserved, non-identity block (currently only the baseline include). Callers
+// performing identity discovery or orphan detection must skip reserved blocks.
+func IsReservedBlockName(name string) bool {
+	return name == BaselineIncludeBlockName
+}
+
 // ParseManagedIncludeIf extracts all gitid-managed includeIf blocks from the
-// bytes of ~/.gitconfig, keyed by identity name (D-01).
+// bytes of ~/.gitconfig, keyed by identity name (D-01). Reserved non-identity
+// blocks (see IsReservedBlockName) are excluded: they are managed wiring, not
+// identities.
 func ParseManagedIncludeIf(content []byte) map[string]IncludeIfInfo {
 	blocks := filewriter.ListBlocks(content)
 	result := make(map[string]IncludeIfInfo, len(blocks))
 	for _, b := range blocks {
+		if IsReservedBlockName(b.Name) {
+			continue // reserved wiring (e.g. baseline-include) is not an identity
+		}
 		result[b.Name] = parseIncludeIfBody(b.Body)
 	}
 	return result

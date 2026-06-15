@@ -8,6 +8,7 @@
 package doctor
 
 import (
+	"io"
 	"os"
 
 	"github.com/castocolina/gitid/internal/deps"
@@ -72,6 +73,13 @@ type FixDescriptor struct {
 	Summary string
 	// Fn is the injected function that performs the fix when invoked.
 	Fn func() error
+	// Interactive, when non-nil, performs a richer fix that may prompt the user
+	// (e.g. the baseline-missing fix runs the full `gitid baseline setup` flow so
+	// it restores the fragment AND the include — not just a dangling pointer).
+	// The cmd-layer apply gate prefers Interactive over Fn when set, threading the
+	// shared stdin reader and out writer; assumeYes is true under --fix --yes
+	// (apply with defaults, no prompts).
+	Interactive func(in io.Reader, out io.Writer, assumeYes bool) error
 }
 
 // Finding is a single diagnostic result from one check family. Fix is nil for
@@ -193,6 +201,12 @@ type Deps struct {
 	FixPerm     func(path string, mode os.FileMode) error
 	RemoveBlock func(path, name string) error
 	AddWiring   func(path, name, line string) error
+	// SetupBaseline runs the full `gitid baseline setup` flow (fragment + gitignore
+	// + include, atomically, with prompts unless assumeYes). Wired by the cmd layer
+	// so the baseline-missing finding's Interactive fix restores a COMPLETE baseline
+	// rather than a dangling include pointer (Fix A). Nil in unit tests that do not
+	// exercise the baseline fix.
+	SetupBaseline func(in io.Reader, out io.Writer, assumeYes bool) error
 
 	// Check function fields — wired by cmd layer from internal/doctor/checks so
 	// doctor.Run dispatches without importing checks (avoids import cycle).

@@ -23,7 +23,7 @@ func newBaselineSetupCmd() *cobra.Command {
 		Use:   "setup",
 		Short: "Seed the global baseline git config (toggles, aliases, URL rewrites, gitignore)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runBaselineSetup(cmd.InOrStdin(), cmd.OutOrStdout(), dryRun)
+			return runBaselineSetup(cmd.InOrStdin(), cmd.OutOrStdout(), dryRun, false /* assumeYes */)
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview changes without writing anything (SAFE-03)")
@@ -49,7 +49,7 @@ func newBaselineShowCmd() *cobra.Command {
 // unified preview; (5) prompts for Tier-2 and rewrite selections; (6) short-circuits
 // under --dry-run; (7) confirms once; (8) writes the three surfaces; (9) prints the
 // write summary.
-func runBaselineSetup(in io.Reader, out io.Writer, dryRun bool) error {
+func runBaselineSetup(in io.Reader, out io.Writer, dryRun, assumeYes bool) error {
 	// Step 1: resolve home and build absolute paths.
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -80,9 +80,17 @@ func runBaselineSetup(in io.Reader, out io.Writer, dryRun bool) error {
 		return fmt.Errorf("baseline setup: printing preview: %w", err)
 	}
 
-	// Step 5: interactive editing (skip under --dry-run).
-	reader := bufio.NewReader(in)
-	if !dryRun {
+	// Step 5: interactive editing (skip under --dry-run or --assume-yes). Reuse an
+	// existing *bufio.Reader (e.g. the doctor fix loop's shared stdin reader) so we
+	// never double-buffer and steal bytes from a subsequent prompt.
+	reader, ok := in.(*bufio.Reader)
+	if !ok {
+		reader = bufio.NewReader(in)
+	}
+	// assumeYes (doctor --fix --yes): keep every default (Tier-2 on, all rewrites)
+	// and skip the prompts AND the final write confirm — the caller already
+	// consented to apply fixes non-interactively.
+	if !dryRun && !assumeYes {
 		// Tier-2 opt-out prompt (default Y).
 		if !promptYN(reader, out, "Include Tier-2 defaults? (autocrlf, pager, branch/diff/status color, zdiff3, main branch, aliases)") {
 			cfg.AutoCRLF = false
@@ -112,8 +120,9 @@ func runBaselineSetup(in io.Reader, out io.Writer, dryRun bool) error {
 		return nil
 	}
 
-	// Step 7: single confirm gate (SAFE-03, default N per UI-SPEC).
-	if !confirm(reader, out, "Write baseline now?") {
+	// Step 7: single confirm gate (SAFE-03, default N per UI-SPEC). Skipped under
+	// --assume-yes (doctor --fix --yes already consented).
+	if !assumeYes && !confirm(reader, out, "Write baseline now?") {
 		fp(out, "Baseline setup cancelled; no files were written.\n")
 		return nil
 	}

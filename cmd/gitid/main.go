@@ -42,15 +42,20 @@ func main() {
 		os.Exit(code)
 	}
 	if err := Execute(); err != nil {
-		// IN-03: propagate the tiered doctor exit code (0/1/2/3) instead of
-		// collapsing to a flat 1. doctorExitCode is set by the doctor RunE
-		// before it returns a non-nil error; all other commands leave it 0,
-		// so we fall back to 1 for non-doctor errors (no regression).
+		// A real command error (e.g. "doctor: --yes requires --fix", or any other
+		// command's failure). Cobra has already printed it. Exit non-zero,
+		// preferring the tiered doctor code when one was set.
 		code := doctorExitCode
 		if code == 0 {
 			code = 1
 		}
 		os.Exit(code)
+	}
+	// IN-03: propagate the tiered doctor exit code (0/1/2/3) on a clean Execute.
+	// doctor RunE stores it in doctorExitCode and returns nil (so Cobra prints no
+	// spurious "Error: exit code N"); all other commands leave it 0.
+	if doctorExitCode != 0 {
+		os.Exit(doctorExitCode)
 	}
 }
 

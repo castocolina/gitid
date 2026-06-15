@@ -169,7 +169,7 @@ func TestDoctorTieredExitCode(t *testing.T) {
 		}
 	})
 
-	t.Run("RunE embeds tiered code in error string", func(t *testing.T) {
+	t.Run("RunE stores tiered code in doctorExitCode (returns nil, no spurious error)", func(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
 
@@ -188,17 +188,17 @@ func TestDoctorTieredExitCode(t *testing.T) {
 		cmd.SetOut(&buf)
 		cmd.SetErr(&buf)
 
-		// RunE must return a non-nil error whose text embeds the tiered code (2),
-		// not a flat 1. This seam is what main() reads to call os.Exit(code).
+		// Bug B: RunE must NOT return the tiered code as an error (that printed a
+		// spurious "Error: exit code N"). It returns nil and records the tiered
+		// code in doctorExitCode, which main() reads to call os.Exit(code).
+		doctorExitCode = 0
 		runE := cmd.RunE
 		err := runE(cmd, nil)
-		if err == nil {
-			t.Fatal("IN-03: RunE returned nil error for error-severity home; expected non-nil")
+		if err != nil {
+			t.Fatalf("IN-03/Bug B: RunE should return nil (no spurious error); got %v", err)
 		}
-		// The error string must embed the correct tiered code, not flat 1.
-		if !strings.Contains(err.Error(), "2") {
-			t.Errorf("IN-03: RunE error %q does not contain tiered exit code 2; "+
-				"main() cannot propagate the correct exit code", err.Error())
+		if doctorExitCode != 2 {
+			t.Errorf("IN-03: expected doctorExitCode 2 for error-severity home; got %d", doctorExitCode)
 		}
 	})
 }

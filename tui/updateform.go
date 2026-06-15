@@ -9,6 +9,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/identity"
 )
 
@@ -123,8 +124,29 @@ func (m updateFormModel) trySubmit() (screenModel, tea.Cmd) {
 		AllowedSignersPath: updated.AllowedSignersPath,
 		Confirmed:          false,
 	}
+	// FIX-1: PRESERVE the existing signing state instead of inferring it from the
+	// presence of an email. Mirror cmd/gitid/update.go currentSigning: read the
+	// existing fragment and treat gpg.format=ssh as signing-on. A missing or
+	// unreadable fragment means signing-off. The readFragment seam defaults to
+	// gitconfig.ReadFragment (wired in newRootModel); the tui package may import
+	// internal/gitconfig directly (one-directional rule allows it — it must NOT
+	// import package main).
+	signing := false
+	readFragment := m.deps.readFragment
+	if readFragment == nil {
+		readFragment = gitconfig.ReadFragment
+	}
+	if frag, ferr := readFragment(m.account.FragmentPath); ferr == nil && !frag.Missing {
+		signing = frag.GPGFormat == "ssh"
+	}
+
+	// FIX-2: thread the PRE-EDIT original (m.account) distinct from the edited
+	// account (updated) so identity.Update detects alias/hostname/port changes and
+	// runs the D-05 resolved re-test. The prove screen's account field carries the
+	// EDITED identity (used for the write); the original is recorded separately.
 	// CR-04: phase 1 gates on the existing PRIVATE-KEY path, not the ssh config.
-	proveScreen := newProveScreen("update", in, updated, updated.KeyPath, m.deps)
+	proveScreen := newProveScreen("update", in, updated, updated.KeyPath, m.deps).
+		withUpdateContext(m.account, signing)
 	return m, pushCmd(proveScreen)
 }
 

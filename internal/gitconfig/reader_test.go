@@ -86,6 +86,33 @@ func TestParseManagedIncludeIf_Empty(t *testing.T) {
 	}
 }
 
+// TestParseManagedIncludeIf_ExcludesReservedBaseline verifies that the reserved
+// baseline-include block is NOT returned as an identity. It is the baseline
+// [include] wiring, not a managed identity; including it makes doctor treat it
+// as an incomplete/orphaned identity, producing the destructive fix loop.
+func TestParseManagedIncludeIf_ExcludesReservedBaseline(t *testing.T) {
+	includeBody := "[include]\n\tpath = ~/.gitconfig.d/00-baseline"
+	workBody := "[includeIf \"gitdir:~/git/work/\"]\n\tpath = ~/.gitconfig.d/work"
+
+	content := []byte(
+		filewriter.BeginPrefix + BaselineIncludeBlockName + "\n" + includeBody + "\n" +
+			filewriter.EndPrefix + BaselineIncludeBlockName + "\n" +
+			filewriter.BeginPrefix + "work\n" + workBody + "\n" + filewriter.EndPrefix + "work\n",
+	)
+
+	got := ParseManagedIncludeIf(content)
+	if _, ok := got[BaselineIncludeBlockName]; ok {
+		t.Errorf("reserved %q block must be excluded from identity discovery, but it was present",
+			BaselineIncludeBlockName)
+	}
+	if _, ok := got["work"]; !ok {
+		t.Error("real identity 'work' should still be present")
+	}
+	if len(got) != 1 {
+		t.Errorf("expected exactly 1 identity (work), got %d: %v", len(got), got)
+	}
+}
+
 // TestReadFragment_Missing verifies that ReadFragment returns FragmentInfo with
 // Missing=true and no error when the file does not exist.
 func TestReadFragment_Missing(t *testing.T) {

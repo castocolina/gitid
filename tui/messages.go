@@ -4,7 +4,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/castocolina/gitid/internal/doctor"
-	"github.com/castocolina/gitid/internal/identity"
 	"github.com/castocolina/gitid/internal/tester"
 )
 
@@ -33,12 +32,6 @@ type familyResultMsg struct {
 	runID    int
 	family   doctor.Family
 	findings []doctor.Finding
-	err      error
-}
-
-// identityListResultMsg carries the reconstructed identity list.
-type identityListResultMsg struct {
-	accounts []identity.Account
 	err      error
 }
 

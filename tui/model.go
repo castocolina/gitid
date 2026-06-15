@@ -4,6 +4,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/castocolina/gitid/internal/doctor"
+	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/identity"
 )
 
@@ -44,6 +45,11 @@ type tuiDeps struct {
 	doctor   doctor.Deps
 	identity identity.Deps
 	update   identity.UpdateDeps
+	// readFragment reads a per-identity gitconfig fragment so the update path can
+	// PRESERVE the existing signing state instead of inferring it from the
+	// presence of an email (FIX-1, mirrors cmd/gitid/update.go currentSigning).
+	// Defaults to gitconfig.ReadFragment; injectable for tests.
+	readFragment func(fragPath string) (gitconfig.FragmentInfo, error)
 }
 
 // newRootModel constructs the root model with the doctor dashboard as the
@@ -51,7 +57,12 @@ type tuiDeps struct {
 // family cmds are started by Init(). The full tuiDeps (doctor + identity +
 // update) is threaded from here through every screen that performs a write.
 func newRootModel(docDeps doctor.Deps, idDeps identity.Deps, upDeps identity.UpdateDeps) rootModel {
-	d := tuiDeps{doctor: docDeps, identity: idDeps, update: upDeps}
+	d := tuiDeps{
+		doctor:       docDeps,
+		identity:     idDeps,
+		update:       upDeps,
+		readFragment: gitconfig.ReadFragment,
+	}
 	home := newDashboardModel(d)
 	return rootModel{
 		stack: []screenModel{home},
@@ -75,7 +86,7 @@ func (m rootModel) Init() tea.Cmd {
 
 // Update handles root-level messages (WindowSizeMsg, pushScreenMsg,
 // popScreenMsg) and delegates all other messages to the top of the stack.
-// familyResultMsg, identityListResultMsg, preWriteResultMsg, resolvedResultMsg,
+// familyResultMsg, preWriteResultMsg, resolvedResultMsg,
 // writeResultMsg, and clipboardResultMsg are delegated to the active screen;
 // they are listed here as documentation and to ensure the type-switch is
 // exhaustive when sub-screens are added in subsequent plans.
@@ -104,9 +115,6 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case familyResultMsg:
 		// Handled by the active screen (dashboard). Delegate below.
 		_, _, _, _ = msg.runID, msg.family, msg.findings, msg.err
-	case identityListResultMsg:
-		// Handled by identity list screen. Delegate below.
-		_, _ = msg.accounts, msg.err
 	case preWriteResultMsg:
 		// Handled by prove screen. Delegate below.
 		_, _ = msg.result, msg.err
