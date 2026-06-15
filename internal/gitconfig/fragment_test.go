@@ -1,6 +1,7 @@
 package gitconfig
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -79,6 +80,23 @@ func TestWriteFragment_RejectsInvalidEmail(t *testing.T) {
 
 	if err := WriteFragment(fragPath, "Work User", "not\nan@email", "~/.ssh/k.pub"); err == nil {
 		t.Errorf("expected WriteFragment to reject a newline-bearing email")
+	}
+}
+
+func TestWriteFragment_CreatesParentDir(t *testing.T) {
+	// fragPath is one level deeper than a directory that does NOT exist yet.
+	// WriteFragment must ensure the parent dir before calling git config.
+	fragPath := filepath.Join(t.TempDir(), "gitconfig.d", "work")
+
+	if err := WriteFragment(fragPath, "Work User", "work@example.com", "~/.ssh/id_ed25519_work.pub"); err != nil {
+		t.Fatalf("WriteFragment: %v", err)
+	}
+
+	if _, err := os.Stat(fragPath); err != nil {
+		t.Errorf("fragment file not created: %v", err)
+	}
+	if got := gitGet(t, fragPath, "user.email"); got != "work@example.com" {
+		t.Errorf("user.email = %q, want %q", got, "work@example.com")
 	}
 }
 

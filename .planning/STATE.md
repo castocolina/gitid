@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-08)
 Phase: 02 (First Identity End-to-End) — EXECUTING
 Plan: 5 of 7
 Status: Ready to execute
-Last activity: 2026-06-09 -- Completed quick task 260609-s0m: pre-write gate hostname/port fix (E2E bugs 1-3)
+Last activity: 2026-06-09 -- Completed quick task 260609-s8j: WriteFragment parent-dir fix (E2E bug 5)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -90,6 +90,7 @@ None yet.
 |---|-------------|------|--------|-----------|
 | 260609-qd6 | Fix security gap T-02-23: apply identityNameRe charset validation to add.go create-new and add-account name inputs | 2026-06-09 | 6711bb1 | [260609-qd6-fix-security-gap-t-02-23-apply-identityn](./quick/260609-qd6-fix-security-gap-t-02-23-apply-identityn/) |
 | 260609-s0m | Fix create-new pre-write gate (E2E bugs 1-3): dial real hostname+port with accept-new, not the unwritten SSH alias | 2026-06-09 | cb88a10 | [260609-s0m-fix-create-new-pre-write-connectivity-ga](./quick/260609-s0m-fix-create-new-pre-write-connectivity-ga/) |
+| 260609-s8j | Fix WriteFragment: ensure parent ~/.gitconfig.d dir exists before git config (E2E bug 5) | 2026-06-09 | 5532352 | [260609-s8j-fix-writefragment-ensure-parent-gitconfi](./quick/260609-s8j-fix-writefragment-ensure-parent-gitconfi/) |
 
 ## Session Continuity
 

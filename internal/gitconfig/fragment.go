@@ -3,12 +3,18 @@ package gitconfig
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
+
+	"github.com/castocolina/gitid/internal/filewriter"
 )
 
 // WriteFragment writes the per-identity gitconfig fragment at fragmentPath using
 // `git config --file` (git is the authoritative parser of its own format, so the
-// writes are idempotent and comment-safe). It sets exactly the identity-only keys:
+// writes are idempotent and comment-safe). It creates the fragment's parent
+// directory (mode 0700) if it does not already exist, so the write succeeds on
+// a fresh machine where ~/.gitconfig.d/ has not yet been created. It sets exactly
+// the identity-only keys:
 //
 //	user.name       = <name>
 //	user.email      = <email>
@@ -30,6 +36,10 @@ func WriteFragment(fragmentPath, name, email, signingKeyPath string) error {
 	}
 	if err := validateValue("user.signingkey", signingKeyPath); err != nil {
 		return err
+	}
+
+	if err := filewriter.EnsureDir(filepath.Dir(fragmentPath), 0o700); err != nil {
+		return fmt.Errorf("ensuring fragment dir: %w", err)
 	}
 
 	settings := [][2]string{
