@@ -598,14 +598,15 @@ func WriteGlobalGitignore(gitignorePath string, patterns []string) (string, erro
 
 // WriteBaselineInclude prepends a managed [include] block pointing at
 // baselineFilePath into gitconfigPath, placing the block at the TOP of the
-// file (floor model — D-10, RESEARCH C1). The include path is written as a
-// fixed literal string with a literal ~ so git expands it at runtime (RESEARCH
-// Open Q2). The sentinel name is "baseline-include" (distinct from "baseline").
+// file (floor model — D-10, RESEARCH C1). The include path value is written
+// verbatim from baselineFilePath — the caller is responsible for passing the
+// tilde form (`~/.gitconfig.d/00-baseline`) so that git expands it at runtime.
+// The sentinel name is "baseline-include" (distinct from "baseline").
 //
 // On first write the block is prepended before all existing content. On
 // subsequent writes (re-runs) the block is updated in-place via ReplaceBlock so
 // its floor position is preserved. It returns the backup path (empty when the
-// file is new).
+// file is new or when the content is unchanged — idempotent skip).
 func WriteBaselineInclude(gitconfigPath, baselineFilePath string) (string, error) {
 	// Build the include body from the caller-supplied path so that non-default
 	// locations are honoured (WR-01: the parameter must not be silently discarded).

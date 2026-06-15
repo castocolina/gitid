@@ -283,47 +283,60 @@ func TestPromptYN_WR06(t *testing.T) {
 	})
 }
 
-// TestRestoreBackup_CR01 verifies the restoreBackup helper used by the CR-01
-// rollback path. Covers the new-file case (backupPath="") and the pre-existing-
-// file case (backupPath = path to a backup copy).
-func TestRestoreBackup_CR01(t *testing.T) {
-	t.Run("empty backupPath removes the newly-created file", func(t *testing.T) {
+// TestRestoreSnapshot_Rollback verifies the snapshotFile / restoreSnapshot
+// helpers used by the CR-01 snapshot-based rollback path. Covers: new-file
+// rollback (snapshot.existed=false → remove), pre-existing file rollback
+// (snapshot.existed=true → restore bytes), and absent-target no-op.
+func TestRestoreSnapshot_Rollback(t *testing.T) {
+	t.Run("existed=false removes the newly-created file", func(t *testing.T) {
 		dir := t.TempDir()
 		target := filepath.Join(dir, "newfile.txt")
 
-		// Create a new file (simulating a successful write of a previously-absent file).
+		// Snapshot BEFORE the file exists.
+		snap, err := snapshotFile(target)
+		if err != nil {
+			t.Fatalf("snapshotFile: %v", err)
+		}
+		if snap.existed {
+			t.Fatal("snapshotFile: existed=true for absent file")
+		}
+
+		// Simulate: write created the file.
 		if err := os.WriteFile(target, []byte("new content"), 0o644); err != nil { //nolint:gosec // test path
 			t.Fatalf("creating target: %v", err)
 		}
 
-		if err := restoreBackup(target, ""); err != nil {
-			t.Fatalf("restoreBackup with empty backup: %v", err)
+		if err := restoreSnapshot(target, snap); err != nil {
+			t.Fatalf("restoreSnapshot: %v", err)
 		}
 
 		// The file must be gone after rollback.
-		if _, err := os.Stat(target); err == nil {
-			t.Error("CR-01: newly-created file still exists after restoreBackup with empty backupPath")
+		if _, statErr := os.Stat(target); statErr == nil {
+			t.Error("CR-01: newly-created file still exists after restoreSnapshot (existed=false)")
 		}
 	})
 
-	t.Run("non-empty backupPath restores original content", func(t *testing.T) {
+	t.Run("existed=true restores original content", func(t *testing.T) {
 		dir := t.TempDir()
 		target := filepath.Join(dir, "existing.txt")
-		backup := filepath.Join(dir, "existing.txt.bak.20260101-120000")
 
 		originalContent := []byte("original content")
-		newContent := []byte("new content after write")
-
-		// Seed the backup with the original content and the target with new content.
-		if err := os.WriteFile(backup, originalContent, 0o600); err != nil { //nolint:gosec // test path
-			t.Fatalf("creating backup: %v", err)
-		}
-		if err := os.WriteFile(target, newContent, 0o644); err != nil { //nolint:gosec // test path
+		if err := os.WriteFile(target, originalContent, 0o644); err != nil { //nolint:gosec // test path
 			t.Fatalf("creating target: %v", err)
 		}
 
-		if err := restoreBackup(target, backup); err != nil {
-			t.Fatalf("restoreBackup: %v", err)
+		snap, err := snapshotFile(target)
+		if err != nil {
+			t.Fatalf("snapshotFile: %v", err)
+		}
+
+		// Simulate: write overwrote the file.
+		if err := os.WriteFile(target, []byte("new content after write"), 0o644); err != nil { //nolint:gosec // test path
+			t.Fatalf("overwriting target: %v", err)
+		}
+
+		if err := restoreSnapshot(target, snap); err != nil {
+			t.Fatalf("restoreSnapshot: %v", err)
 		}
 
 		// Target must contain the original content.
@@ -332,19 +345,234 @@ func TestRestoreBackup_CR01(t *testing.T) {
 			t.Fatalf("reading target after restore: %v", err)
 		}
 		if string(got) != string(originalContent) {
-			t.Errorf("CR-01: after restoreBackup, target contains %q, want %q", got, originalContent)
+			t.Errorf("CR-01: after restoreSnapshot, target contains %q, want %q", got, originalContent)
 		}
 	})
 
-	t.Run("empty backupPath is no-op when target does not exist", func(t *testing.T) {
+	t.Run("existed=false is no-op when target does not exist", func(t *testing.T) {
 		dir := t.TempDir()
 		missing := filepath.Join(dir, "absent.txt")
 
-		// File does not exist — restoreBackup must not error.
-		if err := restoreBackup(missing, ""); err != nil {
-			t.Fatalf("restoreBackup on absent file with empty backup: %v", err)
+		snap, err := snapshotFile(missing)
+		if err != nil {
+			t.Fatalf("snapshotFile on absent path: %v", err)
+		}
+		// File does not exist and was never written — restoreSnapshot must not error.
+		if err := restoreSnapshot(missing, snap); err != nil {
+			t.Fatalf("restoreSnapshot on absent file with existed=false: %v", err)
 		}
 	})
+}
+
+// TestSnapshotRollback_PreservesPreExistingFiles is the CR-01 regression test
+// for the data-loss bug in snapshot-based rollback. It verifies that
+// restoreSnapshot never removes a file that pre-existed the write sequence,
+// even when the write for that file was skipped (idempotent — no backup was
+// taken). This covers the scenario: 00-baseline and ~/.gitignore_global already
+// exist with correct content → WriteGlobalGitignore / WriteBaselineFile are
+// idempotent (backupPath="") → WriteBaselineInclude fails → rollback must NOT
+// delete the two pre-existing files.
+func TestSnapshotRollback_PreservesPreExistingFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	// Simulate two files that pre-exist with content (they represent
+	// ~/.gitignore_global and 00-baseline after a first-run setup).
+	gitignorePath := filepath.Join(dir, ".gitignore_global")
+	baselinePath := filepath.Join(dir, "00-baseline")
+
+	origGitignore := []byte("# existing gitignore content\n")
+	origBaseline := []byte("# existing baseline content\n")
+
+	if err := os.WriteFile(gitignorePath, origGitignore, 0o644); err != nil { //nolint:gosec // test path
+		t.Fatalf("seeding gitignore: %v", err)
+	}
+	if err := os.WriteFile(baselinePath, origBaseline, 0o644); err != nil { //nolint:gosec // test path
+		t.Fatalf("seeding baseline: %v", err)
+	}
+
+	// Take snapshots of both files — this is what the fixed runBaselineSetup
+	// does before writing any of the three surfaces (snapshot-before-write).
+	snapGitignore, err := snapshotFile(gitignorePath)
+	if err != nil {
+		t.Fatalf("snapshotFile gitignore: %v", err)
+	}
+	snapBaseline, err := snapshotFile(baselinePath)
+	if err != nil {
+		t.Fatalf("snapshotFile baseline: %v", err)
+	}
+
+	// Simulate: both writes are idempotent (content unchanged), so neither
+	// file is mutated. Then the third write (include) fails. Rollback all.
+	//
+	// Key assertion: a file that existed before and was NOT modified during
+	// the write sequence must still exist and have the same bytes after rollback.
+	if err := restoreSnapshot(gitignorePath, snapGitignore); err != nil {
+		t.Fatalf("restoreSnapshot gitignore: %v", err)
+	}
+	if err := restoreSnapshot(baselinePath, snapBaseline); err != nil {
+		t.Fatalf("restoreSnapshot baseline: %v", err)
+	}
+
+	// Both files must still exist with their original bytes.
+	if _, statErr := os.Stat(gitignorePath); os.IsNotExist(statErr) {
+		t.Error("CR-01 regression: gitignore was DELETED by restoreSnapshot; pre-existing file must be preserved")
+	} else if !bytes.Equal(readFileBytes(t, gitignorePath), origGitignore) {
+		t.Errorf("CR-01 regression: gitignore bytes changed after restoreSnapshot; want %q got %q",
+			origGitignore, readFileBytes(t, gitignorePath))
+	}
+
+	if _, statErr := os.Stat(baselinePath); os.IsNotExist(statErr) {
+		t.Error("CR-01 regression: baseline was DELETED by restoreSnapshot; pre-existing file must be preserved")
+	} else if !bytes.Equal(readFileBytes(t, baselinePath), origBaseline) {
+		t.Errorf("CR-01 regression: baseline bytes changed after restoreSnapshot; want %q got %q",
+			origBaseline, readFileBytes(t, baselinePath))
+	}
+}
+
+// TestSnapshotRollback_NewFilesAreRemoved verifies that restoreSnapshot removes
+// a file that did NOT exist before the write (the "new file" rollback case).
+func TestSnapshotRollback_NewFilesAreRemoved(t *testing.T) {
+	dir := t.TempDir()
+	newPath := filepath.Join(dir, "newfile.txt")
+
+	// Snapshot before the file exists.
+	snap, err := snapshotFile(newPath)
+	if err != nil {
+		t.Fatalf("snapshotFile on absent path: %v", err)
+	}
+	if snap.existed {
+		t.Fatal("snapshotFile: reported existed=true for absent file")
+	}
+
+	// Simulate: write succeeded (file now exists).
+	if err := os.WriteFile(newPath, []byte("written content"), 0o644); err != nil { //nolint:gosec // test path
+		t.Fatalf("creating new file: %v", err)
+	}
+
+	// Rollback: the file must be removed (it was new).
+	if err := restoreSnapshot(newPath, snap); err != nil {
+		t.Fatalf("restoreSnapshot new file: %v", err)
+	}
+
+	if _, statErr := os.Stat(newPath); statErr == nil {
+		t.Error("restoreSnapshot: newly-created file still exists after rollback; expected removal")
+	}
+}
+
+// TestSnapshotRollback_ModifiedFileIsRestored verifies that restoreSnapshot
+// restores the original content when a file existed before and was modified.
+func TestSnapshotRollback_ModifiedFileIsRestored(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.txt")
+
+	orig := []byte("original content\n")
+	if err := os.WriteFile(path, orig, 0o644); err != nil { //nolint:gosec // test path
+		t.Fatalf("seeding file: %v", err)
+	}
+
+	snap, err := snapshotFile(path)
+	if err != nil {
+		t.Fatalf("snapshotFile: %v", err)
+	}
+	if !snap.existed {
+		t.Fatal("snapshotFile: reported existed=false for existing file")
+	}
+
+	// Simulate: write modifies the file.
+	if err := os.WriteFile(path, []byte("new content after write\n"), 0o644); err != nil { //nolint:gosec // test path
+		t.Fatalf("overwriting file: %v", err)
+	}
+
+	// Rollback: original content must be restored.
+	if err := restoreSnapshot(path, snap); err != nil {
+		t.Fatalf("restoreSnapshot: %v", err)
+	}
+
+	got := readFileBytes(t, path)
+	if !bytes.Equal(got, orig) {
+		t.Errorf("restoreSnapshot: got %q, want %q", got, orig)
+	}
+}
+
+// TestSnapshotRollback_PreservesFileMode verifies that restoreSnapshot restores
+// the original file mode (Minor #4: mode must not be hardcoded to 0o644).
+func TestSnapshotRollback_PreservesFileMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.txt")
+
+	orig := []byte("content\n")
+	origMode := os.FileMode(0o600)
+	if err := os.WriteFile(path, orig, origMode); err != nil { //nolint:gosec // test path
+		t.Fatalf("seeding file: %v", err)
+	}
+	// Explicitly set mode (WriteFile applies umask).
+	if err := os.Chmod(path, origMode); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+
+	snap, err := snapshotFile(path)
+	if err != nil {
+		t.Fatalf("snapshotFile: %v", err)
+	}
+
+	// Simulate: write changes mode to 0o644.
+	if err := os.WriteFile(path, orig, 0o644); err != nil { //nolint:gosec // test path
+		t.Fatalf("overwrite: %v", err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil { //nolint:gosec // G302: test path simulating a 0644 gitconfig write
+		t.Fatalf("chmod 644: %v", err)
+	}
+
+	if err := restoreSnapshot(path, snap); err != nil {
+		t.Fatalf("restoreSnapshot: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat after restore: %v", err)
+	}
+	gotMode := info.Mode().Perm()
+	if gotMode != origMode {
+		t.Errorf("Minor #4: restoreSnapshot restored mode %04o, want %04o", gotMode, origMode)
+	}
+}
+
+// TestBaselineSetup_IncludePathIsTildeForm verifies that runBaselineSetup writes
+// `path = ~/.gitconfig.d/00-baseline` (tilde form) in ~/.gitconfig, not the
+// absolute /Users/... path. Covers defect #2 (absolute path written vs. tilde).
+func TestBaselineSetup_IncludePathIsTildeForm(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	absGitconfig := filepath.Join(tmpHome, ".gitconfig")
+
+	// Drive runBaselineSetup with confirmed "y" answers to reach the write step.
+	in := strings.NewReader("y\ny\ny\ny\ny\n")
+	var out bytes.Buffer
+	err := runBaselineSetup(in, &out, false)
+	if err != nil {
+		t.Fatalf("runBaselineSetup: %v", err)
+	}
+
+	// Read back ~/.gitconfig and check the include path.
+	gitconfigBytes := readFileBytes(t, absGitconfig)
+	gitconfigContent := string(gitconfigBytes)
+
+	// The include path must use the tilde form, not the absolute tmp path.
+	wantLine := "path = ~/.gitconfig.d/00-baseline"
+	if !strings.Contains(gitconfigContent, wantLine) {
+		t.Errorf("include path is not in tilde form; want %q in ~/.gitconfig, got content:\n%s",
+			wantLine, gitconfigContent)
+	}
+
+	// Defensive: make sure the absolute temp-dir path is NOT in the include line.
+	// tmpHome looks like /var/folders/... or /tmp/... — if it appears in an include
+	// path = line that's the bug.
+	for _, line := range strings.Split(gitconfigContent, "\n") {
+		if strings.Contains(line, "path =") && strings.Contains(line, tmpHome) {
+			t.Errorf("include path contains absolute tmp path %q; want tilde form. line: %q", tmpHome, line)
+		}
+	}
 }
 
 // readFileBytes is a test helper that reads a file and fails the test on error.

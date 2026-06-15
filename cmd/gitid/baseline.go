@@ -118,13 +118,25 @@ func runBaselineSetup(in io.Reader, out io.Writer, dryRun bool) error {
 		return nil
 	}
 
-	// Step 8: write the three managed surfaces with rollback on partial failure
-	// (CR-01). The activation [include] line is written LAST so a failure on any
-	// earlier surface leaves git's state unchanged (the baseline file is present
-	// but not yet wired into ~/.gitconfig — the idempotent repair path handles this).
-	// If the baseline file write succeeds but the [include] write fails, the
-	// gitignore and baseline file changes are rolled back and the user receives a
-	// clear partial-failure error with the backup paths for manual recovery.
+	// Step 8: write the three managed surfaces with snapshot-based rollback on
+	// partial failure (CR-01). Snapshots are captured BEFORE any write so that
+	// rollback is always correct — whether the write was a mutation (backup
+	// exists) or an idempotent no-op (backup empty). An empty backupPath from an
+	// idempotent skip no longer signals "file was new"; the snapshot's existed
+	// field carries that information reliably.
+	//
+	// The activation [include] line is written LAST so a failure on any earlier
+	// surface leaves git's state unchanged (the baseline file is present but not
+	// yet wired into ~/.gitconfig — the idempotent repair path handles this).
+
+	snapGitignore, err := snapshotFile(absGitignore)
+	if err != nil {
+		return fmt.Errorf("baseline setup: snapshotting %s: %w", absGitignore, err)
+	}
+	snapBaseline, err := snapshotFile(absBaseline)
+	if err != nil {
+		return fmt.Errorf("baseline setup: snapshotting %s: %w", absBaseline, err)
+	}
 
 	gitignoreBackup, err := gitconfig.WriteGlobalGitignore(absGitignore, patterns)
 	if err != nil {
@@ -134,7 +146,7 @@ func runBaselineSetup(in io.Reader, out io.Writer, dryRun bool) error {
 	baselineBackup, err := gitconfig.WriteBaselineFile(absBaseline, cfg, rewrites)
 	if err != nil {
 		// Roll back the already-written gitignore before surfacing the error.
-		if rollbackErr := restoreBackup(absGitignore, gitignoreBackup); rollbackErr != nil {
+		if rollbackErr := restoreSnapshot(absGitignore, snapGitignore); rollbackErr != nil {
 			return fmt.Errorf(
 				"baseline setup: writing %s failed (%v) AND rollback of %s failed: %w",
 				absBaseline, err, absGitignore, rollbackErr)
@@ -142,14 +154,19 @@ func runBaselineSetup(in io.Reader, out io.Writer, dryRun bool) error {
 		return fmt.Errorf("baseline setup: writing %s failed (gitignore rolled back): %w", absBaseline, err)
 	}
 
-	gitconfigBackup, err := gitconfig.WriteBaselineInclude(absGitconfig, absBaseline)
+	// Pass the tilde form of the baseline path as the include VALUE so that
+	// ~/.gitconfig gets `path = ~/.gitconfig.d/00-baseline` (portable, matches
+	// the preview). The first argument (gitconfigPath) remains the real FS path
+	// because WriteBaselineInclude uses it to read the existing file.
+	tildeBaseline := tildePath(absBaseline)
+	gitconfigBackup, err := gitconfig.WriteBaselineInclude(absGitconfig, tildeBaseline)
 	if err != nil {
 		// Roll back both prior surfaces before surfacing the error.
 		var rollbackErrors []string
-		if rerr := restoreBackup(absGitignore, gitignoreBackup); rerr != nil {
+		if rerr := restoreSnapshot(absGitignore, snapGitignore); rerr != nil {
 			rollbackErrors = append(rollbackErrors, tildePath(absGitignore)+": "+rerr.Error())
 		}
-		if rerr := restoreBackup(absBaseline, baselineBackup); rerr != nil {
+		if rerr := restoreSnapshot(absBaseline, snapBaseline); rerr != nil {
 			rollbackErrors = append(rollbackErrors, tildePath(absBaseline)+": "+rerr.Error())
 		}
 		if len(rollbackErrors) > 0 {
@@ -166,25 +183,52 @@ func runBaselineSetup(in io.Reader, out io.Writer, dryRun bool) error {
 	return nil
 }
 
-// restoreBackup restores a file from its backup path. When backupPath is empty,
-// the file did not exist before the write — remove the newly-created file to
-// restore the original absent state. Returns nil if the file did not exist and
-// backupPath is empty (no-op on already-clean state).
-func restoreBackup(targetPath, backupPath string) error {
-	if backupPath == "" {
-		// File was new (no prior backup) — remove it to undo the write.
-		if err := os.Remove(targetPath); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("removing newly-created %s during rollback: %w", targetPath, err)
+// fileSnapshot captures the state of a file before a write sequence begins,
+// enabling in-memory rollback without relying on the filewriter backup path.
+// Using a snapshot rather than the filewriter backupPath avoids the data-loss
+// bug where an empty backupPath (idempotent skip — file unchanged) was
+// previously misinterpreted as "file was new → delete on rollback" (CR-01).
+type fileSnapshot struct {
+	existed bool
+	data    []byte
+	mode    os.FileMode
+}
+
+// snapshotFile captures the current state of path into a fileSnapshot. When
+// path does not exist, existed is false and data/mode are zero. Never fails on
+// a not-exist error.
+func snapshotFile(path string) (fileSnapshot, error) {
+	info, err := os.Stat(path) //nolint:gosec // path is a trusted gitid-managed path
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fileSnapshot{existed: false}, nil
+		}
+		return fileSnapshot{}, fmt.Errorf("snapshot stat %s: %w", path, err)
+	}
+	data, err := os.ReadFile(path) //nolint:gosec // path is a trusted gitid-managed path
+	if err != nil {
+		return fileSnapshot{}, fmt.Errorf("snapshot read %s: %w", path, err)
+	}
+	return fileSnapshot{existed: true, data: data, mode: info.Mode().Perm()}, nil
+}
+
+// restoreSnapshot restores path to the state captured by snap. When the file
+// did not exist before (snap.existed == false), any newly-created file at path
+// is removed. When the file existed before, the original bytes and mode are
+// written back. Restoring a file to its unchanged state is a safe no-op.
+func restoreSnapshot(path string, snap fileSnapshot) error {
+	if !snap.existed {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("removing newly-created %s during rollback: %w", path, err)
 		}
 		return nil
 	}
-	// File existed before — copy backup back over the target.
-	backupData, err := os.ReadFile(backupPath) //nolint:gosec // backupPath is a gitid-managed backup path
-	if err != nil {
-		return fmt.Errorf("reading backup %s for rollback: %w", backupPath, err)
+	// File existed before — write original bytes back with original mode.
+	if err := os.WriteFile(path, snap.data, snap.mode); err != nil { //nolint:gosec // path is a trusted gitid-managed path
+		return fmt.Errorf("restoring %s during rollback: %w", path, err)
 	}
-	if err := os.WriteFile(targetPath, backupData, 0o644); err != nil { //nolint:gosec // targetPath is a gitid-managed path
-		return fmt.Errorf("restoring %s from backup during rollback: %w", targetPath, err)
+	if err := os.Chmod(path, snap.mode); err != nil {
+		return fmt.Errorf("restoring mode on %s during rollback: %w", path, err)
 	}
 	return nil
 }
