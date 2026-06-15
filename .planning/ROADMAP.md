@@ -3,7 +3,7 @@
 **Milestone:** v1 MVP
 **Granularity:** standard
 **Mode:** mvp (Vertical MVP)
-**Coverage:** 42/42 v1 requirements mapped
+**Coverage:** 45/45 v1 requirements mapped
 
 ---
 
@@ -12,6 +12,7 @@
 - [x] **Phase 1: Bootstrap** — Makefile, go.mod, golangci-lint v2, gosec, pre-commit hooks wired to make targets, TDD harness green (completed 2026-06-09)
 - [x] **Phase 2: First Identity End-to-End** — Create one identity (ed25519 auth+signing), produce all four coordinated artifacts with backup + idempotent managed blocks + confirmation, prove authentication and config resolution with the two-phase test flow, clipboard copy, upload instructions (completed 2026-06-09)
 - [ ] **Phase 3: Full Identity CRUD + Multi-Identity** — List, update, delete identities; reconstruct from managed blocks (no sidecar DB); multiple identities on one provider via distinct aliases
+- [ ] **Phase 3.1: Baseline Global Git Config + Global Gitignore** *(INSERTED)* — Seed and manage a shared baseline git config (core/push/pull/fetch/color toggles + aliases, `ignorecase=false`) and a curated global gitignore via `core.excludesfile`, in idempotent managed blocks with backup→preview→confirm; optional HTTPS→SSH `insteadOf` rewrites; baseline readable back from disk
 - [ ] **Phase 4: Doctor** — Deep health checks (deps, permissions, coherence/drift, orphans, signing wiring, agent) with severity + fix; `gitid doctor` CLI command
 - [ ] **Phase 5: CLI Surface + TUI** — Full Cobra command surface with shell completion; Bubble Tea TUI launching to doctor dashboard with identity/account navigation
 - [ ] **Phase 6: Linux Cross-Platform Validation** *(DEFERRED — post-v1)* — Validate the whole tool end-to-end on Linux (developed on macOS only): clipboard dispatch, per-OS install hints, file permissions, config-path resolution, the make/pre-commit toolchain, and the two-phase ssh test flow
@@ -101,6 +102,28 @@ Plans:
 
 **Plans**: TBD
 
+### Phase 03.1: Baseline Global Git Config + Global Gitignore (INSERTED)
+
+**Goal**: gitid manages a coherent global baseline — a shared git-config layer (sensible `core`/`push`/`pull`/`fetch`/`color` toggles and curated aliases, `core.ignorecase=false`) and a curated global gitignore wired via `core.excludesfile` — all in idempotent managed blocks written with the same backup → preview → confirm safety as identity artifacts, plus optional HTTPS→SSH `insteadOf` rewrites; the baseline is viewable and re-derivable from disk (no sidecar DB).
+**Mode:** mvp
+**Depends on**: Phase 3
+**Requirements**: GLOBAL-01, URLRW-01, GITIGNORE-01
+**Success Criteria** (what must be TRUE):
+
+  1. Running the baseline setup writes a managed shared-config block with `core.ignorecase=false`, `push.autoSetupRemote=true`, `pull.rebase=true`, `fetch.prune=true`, `color.ui=auto`, and a curated alias set — idempotent (a second run produces no diff) and all content outside the managed block preserved verbatim
+  2. `core.excludesfile` points to a gitid-managed `~/.gitignore_global` containing curated OS/editor/build excludes (`.DS_Store`, `Thumbs.db`, `*.log`, `*.bak`, `*.tmp`, `*.swp`); re-running is idempotent
+  3. The user previews the full baseline before it is written and confirms once; a timestamped backup of `~/.gitconfig` (and any other mutated file) exists before any change (SAFE-01/02/03)
+  4. HTTPS→SSH `insteadOf` rewrites are offered with the suggested mapping shown and editable before they are written (URLRW-01)
+  5. gitid reads back and displays the current managed baseline state from disk with no sidecar database, consistent with the identity-reconstruction model (IDENT-07)
+
+**Plans**: TBD
+**UI hint**: yes
+**Canonical refs**: samples/gist-60f2f1d-gitconfig, samples/gist-2c98cff-ssh-config
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 03.1 to break down)
+
 ### Phase 4: Doctor
 
 **Goal**: Users can run `gitid doctor` and receive a complete, actionable health report covering dependencies, permissions, coherence/drift, orphans, signing wiring, and ssh-agent state — each finding with severity and a suggested fix.
@@ -172,6 +195,7 @@ Plans:
 | 1. Bootstrap | 3/3 | Complete   | 2026-06-09 |
 | 2. First Identity End-to-End | 7/7 | Complete   | 2026-06-09 |
 | 3. Full Identity CRUD + Multi-Identity | 0/? | Not started | - |
+| 3.1. Baseline Global Git Config + Global Gitignore | 0/? | Not started | - |
 | 4. Doctor | 0/? | Not started | - |
 | 5. CLI Surface + TUI | 0/? | Not started | - |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |

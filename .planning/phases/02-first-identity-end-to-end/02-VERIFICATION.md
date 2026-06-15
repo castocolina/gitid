@@ -2,7 +2,8 @@
 phase: 02-first-identity-end-to-end
 verified: 2026-06-09T19:27:36Z
 status: passed
-score: 5/5 success criteria verified (automated scope); 4 manual proofs pending
+score: 5/5 success criteria verified (automated scope); 4 manual proofs CONFIRMED LIVE 2026-06-10 (see Live E2E Verification)
+live_e2e: passed 2026-06-10 — auth + Good-signature + push/pull proven against GitHub; 5 bugs found and fixed (quick 260609-s0m, 260609-s8j, 260610-a54)
 mode: mvp
 automated_scope_note: >
   The network/upload-dependent end-to-end proofs (real `ssh -T` auth success,
@@ -175,5 +176,43 @@ The only outstanding items are the four inherently-manual proofs (live auth, "Go
 
 ---
 
-_Verified: 2026-06-09T19:27:36Z_
-_Verifier: Claude (gsd-verifier)_
+## Live E2E Verification — 2026-06-10
+
+The four deferred Manual-Only proofs were executed **live against GitHub** (real
+account `castocolina`, throwaway identity `ramon` → alias `ramon.github` →
+`ssh.github.com:443`, additive on a backed-up machine, fully reverted after).
+All four now **PASS**:
+
+| # | Manual proof | Result |
+|---|--------------|--------|
+| 1 | Live auth: `ssh -T git@ramon.github` | ✅ `Hi castocolina! You've successfully authenticated` |
+| 2 | Resolved config: `ssh -G ramon.github` | ✅ `user=git hostname=ssh.github.com port=443 identitiesonly=yes` |
+| 3 | `git log --show-signature` in `~/git/ramon/` | ✅ `Good "git" signature for castocolina@gmail.com` (status `G`) |
+| 4 | Clipboard copy + upload-step clarity | ✅ `.pub` on clipboard; GitHub auth-key upload via `gh` followed the printed steps |
+| + | Push + pull over the new identity | ✅ `main -> main` push; fresh clone over the alias, signed commit verified after round-trip |
+
+### Bugs found by the live E2E and fixed (post-verification hardening)
+
+The automated suite stubs the network boundary, so the live run exposed real
+defects that would have shipped the create-new path **non-functional against any
+provider**. All fixed TDD with the create path re-run green end-to-end:
+
+| Bug | Severity | Fix | Quick task |
+|-----|----------|-----|------------|
+| Pre-write gate dialed the unwritten SSH alias (unresolvable) | Critical | dial real hostname | [260609-s0m](../../quick/260609-s0m-fix-create-new-pre-write-connectivity-ga/) (`cb88a10`) |
+| Pre-write gate missing `-p <port>` (443/altssh) | Critical | add port | 260609-s0m (`cb88a10`) |
+| Pre-write gate missing `StrictHostKeyChecking=accept-new` | Important | add accept-new | 260609-s0m (`cb88a10`) |
+| `WriteFragment` didn't create `~/.gitconfig.d` | Critical (partial-write) | `EnsureDir` | [260609-s8j](../../quick/260609-s8j-fix-writefragment-ensure-parent-gitconfi/) (`5532352`) |
+| Key persisted before gate+confirm → orphan on abort, `--dry-run` wrote a key | Important (SAFE-03) | temp-then-promote | [260610-a54](../../quick/260610-a54-fix-bug-4-temp-then-promote-generate-the/) (`f085e5d`) |
+
+Post-fix the create-new path is functional and SAFE-03-compliant: dry-run and
+gate-failure leave `~/.ssh` byte-for-byte untouched; the key persists only after
+the gate passes AND the user confirms.
+
+**Phase 2 is now verified end-to-end — automated scope green AND all manual
+proofs confirmed live.**
+
+---
+
+_Verified: 2026-06-09T19:27:36Z (automated); 2026-06-10 (live E2E)_
+_Verifier: Claude (gsd-verifier) + live E2E run_

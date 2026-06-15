@@ -89,10 +89,14 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 - [ ] **TUI-01**: A Bubble Tea TUI launches into the doctor dashboard
 - [ ] **TUI-02**: From the dashboard the user can navigate to the identity/account managers
 
+### Global Baseline Config (GLOBAL / URLRW / GITIGNORE)
+
+- [ ] **GLOBAL-01**: Global/shared git config toggles (`push.autoSetupRemote`, `core.ignorecase`, `pull.rebase`, `fetch.prune`, aliases, color) are seeded with sensible defaults and managed idempotently in a sentinel-delimited block, content outside the block preserved verbatim
+- [ ] **URLRW-01**: When an SSH host/alias is added, suggest the HTTPS equivalent and let the user edit it before generating the `insteadOf` rewrite
+- [ ] **GITIGNORE-01**: gitid manages a global gitignore — it sets `core.excludesfile` to a gitid-managed `~/.gitignore_global` seeded with curated OS/editor/build excludes (`.DS_Store`, `Thumbs.db`, `*.log`, `*.bak`, `*.tmp`, `*.swp`, …); the file is written through the safe-write chokepoint (backup + atomic + idempotent managed block) with content outside the block preserved
+
 ## v2 Requirements (deferred)
 
-- [ ] **GLOBAL-01**: Global/shared git config toggles (`push.autoSetupRemote`, `core.ignorecase`, `pull.rebase`, `fetch.prune`, aliases, color)
-- [ ] **URLRW-01**: When an SSH host/alias is added, suggest the HTTPS equivalent and let the user edit it before generating the `insteadOf` rewrite
 - [ ] **ADOPT-01**: Detect plain-style fragments (`~/.gitconfig_personal`, etc.) and offer to reference or migrate them into `~/.gitconfig.d/`
 - [ ] **REPO-01**: `gitid add repo <url>` detects the provider, asks personal/client (candidates from `~/git/<client>` folders and existing accounts), rewrites the clone URL to the alias, clones into `~/git/<client>`, and verifies with a `git -C <dest> pull` (output shown)
 - [ ] **AUTOUP-01** (Phase 3): Automatic key upload via `gh`/`glab` when present
@@ -179,6 +183,9 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 | IDENT-04 | Phase 3 | Pending |
 | IDENT-05 | Phase 3 | Pending |
 | IDENT-07 | Phase 3 | Pending |
+| GLOBAL-01 | Phase 3.1 | Pending |
+| URLRW-01 | Phase 3.1 | Pending |
+| GITIGNORE-01 | Phase 3.1 | Pending |
 | DOC-01 | Phase 4 | Pending |
 | DOC-02 | Phase 4 | Pending |
 | DOC-03 | Phase 4 | Pending |
