@@ -110,7 +110,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 03-02-PLAN.md — `gitid identity list` slice: reconstruct-from-disk + render key path/alias/provider/port/match + light incomplete marker; multi-identity coexistence proof (IDENT-03, SC-2)
+- [x] 03-02-PLAN.md — `gitid identity list` slice: reconstruct-from-disk + render key path/alias/provider/port/match + light incomplete marker; multi-identity coexistence proof (IDENT-03, SC-2)
 
 **Wave 3** *(blocked on Wave 2 — shares cmd/gitid/main.go)*
 
@@ -198,7 +198,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 1/4 plans executed
+**Plans:** 2/4 plans executed
 
 Plans:
 
@@ -212,7 +212,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Bootstrap | 3/3 | Complete   | 2026-06-09 |
 | 2. First Identity End-to-End | 7/7 | Complete   | 2026-06-09 |
-| 3. Full Identity CRUD + Multi-Identity | 1/4 | In Progress|  |
+| 3. Full Identity CRUD + Multi-Identity | 2/4 | In Progress|  |
 | 3.1. Baseline Global Git Config + Global Gitignore | 0/? | Not started | - |
 | 4. Doctor | 0/? | Not started | - |
 | 5. CLI Surface + TUI | 0/? | Not started | - |

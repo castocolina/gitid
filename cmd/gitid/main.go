@@ -38,6 +38,7 @@ func newRootCmd() *cobra.Command {
 		Short: "Create and verify Git identities",
 	}
 	identity.AddCommand(newAddCmd())
+	identity.AddCommand(newListCmd())
 	identity.AddCommand(newTestCmd())
 	identity.AddCommand(newRotateCmd())
 	root.AddCommand(identity)
