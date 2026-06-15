@@ -12,7 +12,7 @@ func TestVersionNonEmpty(t *testing.T) {
 }
 
 // TestRunDoesNotPanic confirms the run function completes without panicking.
-func TestRunDoesNotPanic(t *testing.T) {
+func TestRunDoesNotPanic(_ *testing.T) {
 	// run() writes to stdout and returns; no panic expected.
 	run()
 }

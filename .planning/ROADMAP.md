@@ -39,7 +39,7 @@
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-02-PLAN.md — Makefile target surface (setup-env/build/install/uninstall/test/lint/fmt) + golangci-lint v2 curated config with hard-fail
+- [x] 01-02-PLAN.md — Makefile target surface (setup-env/build/install/uninstall/test/lint/fmt) + golangci-lint v2 curated config with hard-fail
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -115,7 +115,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Bootstrap | 1/3 | In Progress|  |
+| 1. Bootstrap | 2/3 | In Progress|  |
 | 2. First Identity End-to-End | 0/? | Not started | - |
 | 3. Full Identity CRUD + Multi-Identity | 0/? | Not started | - |
 | 4. Doctor | 0/? | Not started | - |

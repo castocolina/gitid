@@ -1,0 +1,38 @@
+version: "2"
+
+# Linter configuration for gitid.
+# This file uses golangci-lint v2 format (version: "2" key is mandatory).
+# Hard-fail on any finding: no max-issues-per-linter or max-same-issues suppression.
+# Curated linter set (D-03): govet, errcheck, staticcheck, gosec, unused, revive, misspell, ineffassign.
+# goimports is registered as a formatter (v2 separates linters from formatters).
+
+linters:
+  default: none
+  enable:
+    - govet        # correctness: misuse of sync, printf format, shadowed vars, etc.
+    - errcheck     # unchecked errors — critical for file I/O in ~/.ssh and ~/.gitconfig mutations
+    - staticcheck  # advanced static analysis (SA, S, ST rules)
+    - gosec        # security: file permissions (G304/G306), exec injection (G204)
+    - unused       # dead-code detection
+    - revive       # style linter, drop-in replacement for golint
+    - misspell     # typos in comments and strings
+    - ineffassign  # assignments whose value is never read
+
+  settings:
+    gosec:
+      # No exclusions — the curated gosec rules (G304 file-path injection, G306 weak
+      # file permissions, G204 exec injection) are exactly the guards needed for a tool
+      # that writes to ~/.ssh and shells out to git.  Add G115 suppression here only
+      # if uint-conversion false positives actually appear.
+      config:
+        global:
+          audit: false
+
+# In golangci-lint v2, formatters are declared separately from linters.
+# goimports enforces canonical import-block formatting across all packages.
+formatters:
+  enable:
+    - goimports
+
+run:
+  timeout: 5m
