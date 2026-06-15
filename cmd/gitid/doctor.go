@@ -11,9 +11,11 @@ import (
 	"github.com/castocolina/gitid/internal/deps"
 	"github.com/castocolina/gitid/internal/doctor"
 	"github.com/castocolina/gitid/internal/doctor/checks"
+	"github.com/castocolina/gitid/internal/filewriter"
 	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/identity"
 	"github.com/castocolina/gitid/internal/platform"
+	"github.com/castocolina/gitid/internal/sshconfig"
 )
 
 // newDoctorCmd builds `gitid doctor`. The handler runs the full health
@@ -90,7 +92,7 @@ func buildDoctorDeps(home string, sshBytes, gcBytes []byte) doctor.Deps {
 	allowedSignersPath := filepath.Join(home, ".ssh", "allowed_signers")
 	sshDir := filepath.Join(home, ".ssh")
 
-	// Reconstruct identity list to extract key paths for the perms check.
+	// Reconstruct identity list — used by Coherence, Orphans, and Perms checks.
 	accounts, _ := identity.Reconstruct(sshBytes, gcBytes, gitconfig.ReadFragment)
 	var keyPaths, pubKeyPaths []string
 	for _, a := range accounts {
@@ -102,6 +104,24 @@ func buildDoctorDeps(home string, sshBytes, gcBytes []byte) doctor.Deps {
 		}
 	}
 
+	// Build ManagedHosts and SSHManagedBlockNames for the Coherence/Orphans checks.
+	managedHosts, _ := sshconfig.ParseManagedHosts(sshBytes)
+	sshBlockNames := make([]string, 0, len(managedHosts))
+	for name := range managedHosts {
+		sshBlockNames = append(sshBlockNames, name)
+	}
+
+	// Build GitconfigManagedBlockNames from the raw gitconfig blocks.
+	gcBlocks := filewriter.ListBlocks(gcBytes)
+	gcBlockNames := make([]string, 0, len(gcBlocks))
+	for _, b := range gcBlocks {
+		gcBlockNames = append(gcBlockNames, b.Name)
+	}
+
+	// Build AllSSHHostIdentityFiles — every IdentityFile from every Host block
+	// (managed + hand-written) for the D-12 unused-key cross-reference.
+	allSSHHostIDFiles := sshconfig.ParseAllHostIdentityFiles(sshBytes)
+
 	baselineFilePath := filepath.Join(home, ".gitconfig.d", "00-baseline")
 	gitignorePath := filepath.Join(home, ".gitignore_global")
 
@@ -112,6 +132,11 @@ func buildDoctorDeps(home string, sshBytes, gcBytes []byte) doctor.Deps {
 		},
 		Stat: func(path string) (os.FileInfo, error) {
 			return os.Stat(path) //nolint:gosec // path is a trusted gitid-managed path (G304)
+		},
+
+		// Process fields.
+		RunGitConfigGet: func(file, key string) (string, error) {
+			return gitconfig.RunGitConfigGet(file, key)
 		},
 
 		// Injected data and seams.
@@ -133,6 +158,13 @@ func buildDoctorDeps(home string, sshBytes, gcBytes []byte) doctor.Deps {
 		KeyPaths:    keyPaths,
 		PubKeyPaths: pubKeyPaths,
 
+		// Coherence + Orphans data (Plan 03 wave-2 fields).
+		Identities:                 accounts,
+		ManagedHosts:               managedHosts,
+		SSHManagedBlockNames:       sshBlockNames,
+		GitconfigManagedBlockNames: gcBlockNames,
+		AllSSHHostIdentityFiles:    allSSHHostIDFiles,
+
 		// Fix fields (D-01: cmd layer owns chmod, doctor core does not).
 		FixPerm: func(path string, mode os.FileMode) error {
 			return os.Chmod(path, mode) //nolint:gosec // chmod to KEY-02 target modes (G306)
@@ -140,8 +172,7 @@ func buildDoctorDeps(home string, sshBytes, gcBytes []byte) doctor.Deps {
 
 		// Check function fields wired from internal/doctor/checks.
 		// Wave 2 plans replace these in place (same paths, same signatures).
-		CheckPerms: checks.CheckPermissions,
-		// Remaining six families are stubs returning nil until Wave 2:
+		CheckPerms:     checks.CheckPermissions,
 		CheckDeps:      checks.CheckDeps,
 		CheckCoherence: checks.CheckCoherence,
 		CheckOrphans:   checks.CheckOrphans,

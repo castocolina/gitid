@@ -101,6 +101,20 @@ func ReadFragment(fragPath string) (FragmentInfo, error) {
 	return info, nil
 }
 
+// RunGitConfigGet runs `git config --file <file> <key>` and returns the trimmed
+// value. It returns an error when the key is absent or the file cannot be read
+// (exit code 1 from git config). This is the injectable seam for reading a single
+// git config key from a trusted gitid-managed fragment (D-17 locked-value checks).
+// The arg-slice form avoids shell injection (gosec G204).
+func RunGitConfigGet(file, key string) (string, error) {
+	cmd := exec.Command("git", "config", "--file", file, key) //nolint:gosec // arg-slice form, no shell; file and key are trusted gitid-managed paths/keys (G204)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // RemoveAllowedSignersBlock rewrites path with the gitid managed block for
 // identity name removed, symmetric with keygen.WriteAllowedSigners (which
 // stores each identity's signing line INSIDE a "# BEGIN/END gitid managed:

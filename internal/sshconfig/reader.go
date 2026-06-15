@@ -42,6 +42,38 @@ func ParseManagedHosts(content []byte) (map[string]SSHHostInfo, error) {
 	return result, nil
 }
 
+// ParseAllHostIdentityFiles parses the full ~/.ssh/config content (all Host
+// blocks, gitid-managed AND hand-written) and returns every unique IdentityFile
+// path found. This is the D-12 data source for the unused-key cross-reference
+// in CheckOrphans — a key referenced by any Host block (not just managed ones)
+// must not be flagged as unused.
+func ParseAllHostIdentityFiles(content []byte) []string {
+	cfg, err := ssh_config.Decode(strings.NewReader(string(content)))
+	if err != nil {
+		return nil
+	}
+	seen := make(map[string]bool)
+	var result []string
+	for _, host := range cfg.Hosts {
+		// Skip the implicit Host * (Pitfall A guard).
+		if len(host.Patterns) == 1 && host.Patterns[0].String() == "*" {
+			continue
+		}
+		for _, p := range host.Patterns {
+			alias := p.String()
+			idFile, getErr := cfg.Get(alias, "IdentityFile")
+			if getErr != nil || idFile == "" {
+				continue
+			}
+			if !seen[idFile] {
+				seen[idFile] = true
+				result = append(result, idFile)
+			}
+		}
+	}
+	return result
+}
+
 // parseHostBlockBody parses a single SSH host block body string into an
 // SSHHostInfo. It skips the implicit Host * inserted by the kevinburke parser
 // (Pitfall A guard: len(host.Patterns)==1 && host.Patterns[0].String()=="*").

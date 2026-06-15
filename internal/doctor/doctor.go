@@ -12,6 +12,8 @@ import (
 
 	"github.com/castocolina/gitid/internal/deps"
 	"github.com/castocolina/gitid/internal/gitconfig"
+	"github.com/castocolina/gitid/internal/identity"
+	"github.com/castocolina/gitid/internal/sshconfig"
 )
 
 // Severity classifies the urgency of a finding. The four levels map directly
@@ -165,6 +167,27 @@ type Deps struct {
 	// layer fills them from the reconstructed identity list before calling Run.
 	KeyPaths    []string
 	PubKeyPaths []string
+
+	// Identities is the pre-reconstructed identity list used by Coherence and
+	// Orphans checks. The cmd layer wires identity.Reconstruct before calling Run
+	// so the checks remain fake-testable (Plan 03 wave-2 fields).
+	Identities []identity.Account
+	// ManagedHosts is a map from identity name to SSHHostInfo for every
+	// gitid-managed SSH Host block. Used by CheckCoherence for IdentitiesOnly
+	// checks. The cmd layer wires sshconfig.ParseManagedHosts (Plan 03).
+	ManagedHosts map[string]sshconfig.SSHHostInfo
+	// GitconfigManagedBlockNames is the ordered list of identity names from all
+	// gitid-managed includeIf blocks in ~/.gitconfig. Used by CheckOrphans to
+	// detect fragment files on disk with no owning block (Plan 03).
+	GitconfigManagedBlockNames []string
+	// SSHManagedBlockNames is the ordered list of identity names from all
+	// gitid-managed Host blocks in ~/.ssh/config. Used by CheckOrphans to detect
+	// SSH Host blocks with no matching gitconfig includeIf (Plan 03).
+	SSHManagedBlockNames []string
+	// AllSSHHostIdentityFiles is every IdentityFile path from every Host block in
+	// ~/.ssh/config — gitid-managed AND hand-written. Used by CheckOrphans for
+	// the D-12 unused-key cross-reference (Plan 03).
+	AllSSHHostIdentityFiles []string
 
 	// Fix fields (cmd layer injects; doctor core never calls directly, D-01).
 	FixPerm     func(path string, mode os.FileMode) error
