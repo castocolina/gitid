@@ -13,7 +13,7 @@
 - [x] **Phase 2: First Identity End-to-End** — Create one identity (ed25519 auth+signing), produce all four coordinated artifacts with backup + idempotent managed blocks + confirmation, prove authentication and config resolution with the two-phase test flow, clipboard copy, upload instructions (completed 2026-06-09)
 - [x] **Phase 3: Full Identity CRUD + Multi-Identity** — List, update, delete identities; reconstruct from managed blocks (no sidecar DB); multiple identities on one provider via distinct aliases (completed 2026-06-10)
 - [x] **Phase 3.1: Baseline Global Git Config + Global Gitignore** *(INSERTED)* — Seed and manage a shared baseline git config (core/push/pull/fetch/color toggles + aliases, `ignorecase=false`) and a curated global gitignore via `core.excludesfile`, in idempotent managed blocks with backup→preview→confirm; optional HTTPS→SSH `insteadOf` rewrites; baseline readable back from disk (completed 2026-06-11)
-- [ ] **Phase 4: Doctor** — Deep health checks (deps, permissions, coherence/drift, orphans, signing wiring, agent) with severity + fix; `gitid doctor` CLI command
+- [x] **Phase 4: Doctor** — Deep health checks (deps, permissions, coherence/drift, orphans, signing wiring, agent) with severity + fix; `gitid doctor` CLI command (completed 2026-06-12)
 - [ ] **Phase 5: CLI Surface + TUI** — Full Cobra command surface with shell completion; Bubble Tea TUI launching to doctor dashboard with identity/account navigation
 - [ ] **Phase 6: Linux Cross-Platform Validation** *(DEFERRED — post-v1)* — Validate the whole tool end-to-end on Linux (developed on macOS only): clipboard dispatch, per-OS install hints, file permissions, config-path resolution, the make/pre-commit toolchain, and the two-phase ssh test flow
 
@@ -187,7 +187,7 @@ Plans:
 
 **Wave 3** *(blocked on Waves 1-2 — shares cmd/gitid/doctor.go)*
 
-- [ ] 04-05-PLAN.md — Auto-fix slice: D-04 gate/per-finding-confirm/--yes flow + permission batching; fixes routed through filewriter chokepoint (DOC-06)
+- [x] 04-05-PLAN.md — Auto-fix slice: D-04 gate/per-finding-confirm/--yes flow + permission batching; fixes routed through filewriter chokepoint (DOC-06)
 
 ### Phase 5: CLI Surface + TUI
 
@@ -228,7 +228,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 4/5 plans executed
+**Plans:** 5/5 plans complete
 
 Plans:
 
@@ -244,6 +244,6 @@ Plans:
 | 2. First Identity End-to-End | 7/7 | Complete   | 2026-06-09 |
 | 3. Full Identity CRUD + Multi-Identity | 4/4 | Complete    | 2026-06-10 |
 | 3.1. Baseline Global Git Config + Global Gitignore | 4/4 | Complete    | 2026-06-11 |
-| 4. Doctor | 4/5 | In Progress|  |
+| 4. Doctor | 5/5 | Complete   | 2026-06-12 |
 | 5. CLI Surface + TUI | 0/? | Not started | - |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |

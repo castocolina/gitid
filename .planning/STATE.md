@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
+status: verifying
 stopped_at: Completed 04-03-PLAN.md
-last_updated: "2026-06-11T23:56:12.851Z"
+last_updated: "2026-06-12T10:47:26.785Z"
 last_activity: 2026-06-11 -- Phase 04 execution started
 progress:
   total_phases: 7
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 23
-  completed_plans: 22
-  percent: 57
+  completed_plans: 23
+  percent: 71
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-08)
 
 Phase: 04 (doctor) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-11 -- Phase 04 execution started
 
 Progress: [██████████] 100%
@@ -63,6 +63,7 @@ Progress: [██████████] 100%
 | Phase 04 P01 | 40 | 3 tasks | 12 files |
 | Phase 04-doctor P02 | 50 | 2 tasks | 9 files |
 | Phase 04-doctor P03 | 10 | 2 tasks | 8 files |
+| Phase 04-doctor P05 | 25 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,9 @@ Recent decisions affecting current work:
 - [Phase ?]: 03.1-04: GitVersionAtLeast seam in internal/deps for zdiff3 gate; idempotency skip in baseline writers (bytes.Equal before Write)
 - [Phase ?]: InstallHint(tool,os) signature; doctor.Deps DetectTools+ReadBaselineState seams; Baseline Fix descriptors set for Plan 05 wiring
 - [Phase ?]: CheckCoherence byte-exact email check (Pitfall 6); Incomplete→Coherence not Orphans (D-09/Pitfall 5); Orphan class 1/2 cross-ref SSH vs gitconfig block names; class 3 key cross-ref AllSSHHostIdentityFiles (D-12)
+- [Phase ?]: 04-05: D-07 pre-fix exit code captured before applyFixes, returned unconditionally (WARNING 5)
+- [Phase ?]: 04-05: AddWiring dispatcher uses line-prefix encoding (ssh-host:/signers:/baseline-include:) — no new internal/sshconfig or internal/gitconfig function (BLOCKER 2 resolved)
+- [Phase ?]: 04-05: applyFixes injectable *bufio.Reader enables gate/confirm/batching tests without real stdin; FamilyPerms batched, others individual (D-04)
 
 ### Roadmap Evolution
 
@@ -119,6 +123,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-11T23:56:12.844Z
+Last session: 2026-06-12T10:47:03.571Z
 Stopped at: Completed 04-03-PLAN.md
 Resume file: None

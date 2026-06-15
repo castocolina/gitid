@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/castocolina/gitid/internal/filewriter"
 	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/identity"
+	"github.com/castocolina/gitid/internal/keygen"
 	"github.com/castocolina/gitid/internal/platform"
 	"github.com/castocolina/gitid/internal/sshconfig"
 )
@@ -51,7 +54,13 @@ func newDoctorCmd() *cobra.Command {
 // two managed config files, builds doctor.Deps, runs all checks, renders the
 // report, and returns the D-07 tiered exit code (0/1/2/3). The caller
 // (RunE / tests) translates the return value.
-func runDoctor(out io.Writer, _, _ bool) int {
+//
+// D-07/WARNING 5: the exit code reflects the PRE-fix severity state. Even
+// when --fix --yes repairs every finding, the process exits with the highest
+// pre-fix severity so CI is never misled into thinking the env was already
+// healthy. `pre` is captured immediately after doctor.Run and returned
+// unconditionally regardless of how many fixes succeed.
+func runDoctor(out io.Writer, fix, yes bool) int {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		fp(out, fmt.Sprintf("doctor: resolving home dir: %v\n", err))
@@ -75,10 +84,28 @@ func runDoctor(out io.Writer, _, _ bool) int {
 
 	d := buildDoctorDeps(home, sshBytes, gcBytes)
 	findings := doctor.Run(d)
-	code := doctor.ExitCode(findings)
+
+	// D-07: capture pre-fix exit code BEFORE any fix is applied (WARNING 5).
+	pre := doctor.ExitCode(findings)
+
 	colorEnabled := isTerminalOutput(os.Stdout)
 	renderReport(out, findings, colorEnabled)
-	return code
+
+	// Collect fixable findings (Fix != nil) in report order.
+	var fixable []doctor.Finding
+	for _, f := range findings {
+		if f.Fix != nil {
+			fixable = append(fixable, f)
+		}
+	}
+
+	if len(fixable) > 0 {
+		in := bufio.NewReader(os.Stdin)
+		applyFixes(in, out, fixable, fix, yes)
+	}
+
+	// Return the PRE-fix severity state unconditionally (D-07).
+	return pre
 }
 
 // buildDoctorDeps wires real packages into doctor.Deps. The FixPerm field
@@ -165,9 +192,87 @@ func buildDoctorDeps(home string, sshBytes, gcBytes []byte) doctor.Deps {
 		GitconfigManagedBlockNames: gcBlockNames,
 		AllSSHHostIdentityFiles:    allSSHHostIDFiles,
 
-		// Fix fields (D-01: cmd layer owns chmod, doctor core does not).
+		// Fix fields (D-01: cmd layer owns chmod/write, doctor core does not import filewriter).
+
+		// FixPerm tightens a file to the KEY-02 target mode via os.Chmod (never widens).
 		FixPerm: func(path string, mode os.FileMode) error {
 			return os.Chmod(path, mode) //nolint:gosec // chmod to KEY-02 target modes (G306)
+		},
+
+		// RemoveBlock removes a sentinel-delimited managed block from a file using
+		// filewriter.RemoveBlock (idempotent splice) + filewriter.Write (atomic + backup).
+		// Mitigates T-04-16/T-04-17: only the targeted block is removed, content
+		// outside the block is preserved byte-for-byte, and a timestamped backup is
+		// created before every mutation. A second call with the same name is idempotent
+		// (filewriter.RemoveBlock returns input unchanged when the block is absent).
+		RemoveBlock: func(path, name string) error {
+			content, err := os.ReadFile(path) //nolint:gosec // path is a gitid-managed trusted path (G304)
+			if err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("doctor: reading %s for block removal: %w", path, err)
+			}
+			removed := filewriter.RemoveBlock(content, name)
+			mode := os.FileMode(0o600) // config files are always 0600 (KEY-02 / T-04-19)
+			if _, werr := filewriter.Write(path, removed, mode); werr != nil {
+				return fmt.Errorf("doctor: removing block %q from %s: %w", name, path, werr)
+			}
+			return nil
+		},
+
+		// AddWiring dispatches to the correct existing writer for the finding being
+		// fixed. The `path` and `name` parameters identify the target file and identity;
+		// `line` carries the family-specific payload:
+		//   - SSH config IdentitiesOnly re-add: line == "ssh-host:<alias>:<hostname>:<port>:<keyPath>"
+		//   - allowed_signers entry re-add:     line == "signers:<email>:<pubLine>"
+		//   - baseline [include] restore:       line == "baseline-include:<baselineFilePath>"
+		// Each sub-path delegates entirely to an existing writer (sshconfig.Write,
+		// keygen.WriteAllowedSigners, gitconfig.WriteBaselineInclude) that routes
+		// through filewriter (backup + atomic + idempotent) — no direct os.WriteFile (CLAUDE.md).
+		AddWiring: func(path, name, line string) error {
+			switch {
+			case strings.HasPrefix(line, "ssh-host:"):
+				// Re-add a complete SSH Host block (with IdentitiesOnly yes) via sshconfig.Write.
+				// Format: "ssh-host:<alias>:<hostname>:<port>:<keyPath>"
+				rest := strings.TrimPrefix(line, "ssh-host:")
+				parts := strings.SplitN(rest, ":", 4)
+				if len(parts) != 4 {
+					return fmt.Errorf("doctor: AddWiring ssh-host: malformed line %q", line)
+				}
+				alias, hostname, portStr, identityFile := parts[0], parts[1], parts[2], parts[3]
+				port := 22
+				if portStr != "" {
+					if _, err := fmt.Sscanf(portStr, "%d", &port); err != nil {
+						port = 22
+					}
+				}
+				hostBlock := sshconfig.RenderHostBlock(alias, hostname, port, identityFile)
+				globalBlock := sshconfig.RenderGlobalBlock(platform.CurrentOS())
+				if _, err := sshconfig.Write(path, name, hostBlock, globalBlock); err != nil {
+					return fmt.Errorf("doctor: AddWiring ssh-host for %q: %w", name, err)
+				}
+			case strings.HasPrefix(line, "signers:"):
+				// Re-add a missing allowed_signers line via keygen.WriteAllowedSigners.
+				// Format: "signers:<email>:<pubLine>"
+				rest := strings.TrimPrefix(line, "signers:")
+				parts := strings.SplitN(rest, ":", 2)
+				if len(parts) != 2 {
+					return fmt.Errorf("doctor: AddWiring signers: malformed line %q", line)
+				}
+				email, pubLine := parts[0], parts[1]
+				signerLine := keygen.AllowedSignersLine(email, pubLine)
+				if _, err := keygen.WriteAllowedSigners(path, name, signerLine); err != nil {
+					return fmt.Errorf("doctor: AddWiring signers for %q: %w", name, err)
+				}
+			case strings.HasPrefix(line, "baseline-include:"):
+				// Restore a missing baseline [include] block via gitconfig.WriteBaselineInclude.
+				// Format: "baseline-include:<baselineFilePath>"
+				baselineFilePath := strings.TrimPrefix(line, "baseline-include:")
+				if _, err := gitconfig.WriteBaselineInclude(path, baselineFilePath); err != nil {
+					return fmt.Errorf("doctor: AddWiring baseline-include: %w", err)
+				}
+			default:
+				return fmt.Errorf("doctor: AddWiring: unknown wiring type in line %q", line)
+			}
+			return nil
 		},
 
 		// Check function fields wired from internal/doctor/checks.
@@ -299,6 +404,118 @@ func severityCode(s doctor.Severity) string {
 	default: // info
 		return "36" // cyan
 	}
+}
+
+// applyFixes implements the D-04 consent flow for the auto-fixable findings.
+//
+// fix=false: present a top-level gate ("Apply N fix(es)?" default N); on y
+// proceed to per-finding confirm. fix=true: skip the gate, go straight to
+// per-finding confirm. fix+yes: apply every fixable finding silently.
+//
+// Batching rule (D-04 hard rule):
+//   - FamilyPerms findings MAY be batched under one "Fix N permission(s):" confirm.
+//   - FamilyOrphans and any other family (Coherence/Baseline) are NEVER batched;
+//     each gets its own individual confirm (higher blast radius).
+//
+// Returns (applied, skipped) counts. On Fix.Fn error, prints the error and
+// continues to the next finding (does not abort the whole run). After all
+// findings are processed, prints the tally line.
+func applyFixes(r *bufio.Reader, out io.Writer, findings []doctor.Finding, fix, yes bool) (applied, skipped int) {
+	if len(findings) == 0 {
+		return 0, 0
+	}
+
+	// Top-level gate: bare `gitid doctor` (fix==false) presents a single gate.
+	// On decline, print "No fixes applied." and return immediately.
+	if !fix {
+		label := fmt.Sprintf("Apply %d fix(es)?", len(findings))
+		if !confirm(r, out, label) {
+			fp(out, "No fixes applied.\n")
+			return 0, 0
+		}
+	}
+
+	// Separate permission findings from non-permission findings (in report order).
+	var permFindings []doctor.Finding
+	var otherFindings []doctor.Finding
+	for _, f := range findings {
+		if f.Family == doctor.FamilyPerms {
+			permFindings = append(permFindings, f)
+		} else {
+			otherFindings = append(otherFindings, f)
+		}
+	}
+
+	// Process permission findings as a batch (D-04 batching rule).
+	if len(permFindings) > 0 {
+		if yes {
+			// --fix --yes: apply all silently.
+			for _, f := range permFindings {
+				if err := f.Fix.Fn(); err != nil {
+					fp(out, fmt.Sprintf("doctor: fix failed: %s: %v\n", f.Fix.Summary, err))
+				} else {
+					fp(out, fmt.Sprintf("  fixed: %s\n", f.Fix.Summary))
+					applied++
+				}
+			}
+		} else {
+			// Per-finding confirm (--fix or gate-accepted): present as a single batch.
+			fp(out, fmt.Sprintf("Fix %d permission(s):\n", len(permFindings)))
+			for _, f := range permFindings {
+				fp(out, fmt.Sprintf("  - %s\n", f.Fix.Summary))
+			}
+			if confirm(r, out, "Apply all?") {
+				for _, f := range permFindings {
+					if err := f.Fix.Fn(); err != nil {
+						fp(out, fmt.Sprintf("doctor: fix failed: %s: %v\n", f.Fix.Summary, err))
+					} else {
+						fp(out, fmt.Sprintf("  fixed: %s\n", f.Fix.Summary))
+						applied++
+					}
+				}
+			} else {
+				for range permFindings {
+					skipped++
+				}
+				for _, f := range permFindings {
+					fp(out, fmt.Sprintf("  skipped: %s\n", f.Fix.Summary))
+				}
+			}
+		}
+	}
+
+	// Process non-permission findings individually (D-04 hard rule: orphans/wiring
+	// are never batched — each gets its own confirm due to higher blast radius).
+	for _, f := range otherFindings {
+		if yes {
+			// --fix --yes: apply silently.
+			if err := f.Fix.Fn(); err != nil {
+				fp(out, fmt.Sprintf("doctor: fix failed: %s: %v\n", f.Fix.Summary, err))
+			} else {
+				fp(out, fmt.Sprintf("  fixed: %s\n", f.Fix.Summary))
+				applied++
+			}
+		} else {
+			// Per-finding confirm.
+			fp(out, fmt.Sprintf("Fix: %s\n", f.Fix.Summary))
+			if confirm(r, out, "Apply?") {
+				if err := f.Fix.Fn(); err != nil {
+					fp(out, fmt.Sprintf("doctor: fix failed: %s: %v\n", f.Fix.Summary, err))
+				} else {
+					fp(out, fmt.Sprintf("  fixed: %s\n", f.Fix.Summary))
+					applied++
+				}
+			} else {
+				fp(out, fmt.Sprintf("  skipped: %s\n", f.Fix.Summary))
+				skipped++
+			}
+		}
+	}
+
+	// Print tally line (always, even when all were skipped).
+	fp(out, fmt.Sprintf("doctor: %d fix(es) applied, %d skipped.\n", applied, skipped))
+
+	return applied, skipped
 }
 
 // isTerminalOutput reports whether stdout is an interactive terminal. It
