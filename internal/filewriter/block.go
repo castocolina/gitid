@@ -150,14 +150,12 @@ func PrependBlockIfNotFound(existing []byte, name, blockBody string) []byte {
 		return ReplaceBlock(existing, name, blockBody)
 	}
 
-	// First write with no existing content — return just the canonical block.
-	if len(existing) == 0 {
-		return []byte(block)
-	}
-
-	// First write with existing content — prepend so the block is a floor, not
-	// a ceiling. The canonical block already ends with "\n" so no separator is
-	// injected between the block and the existing content.
+	// First write (empty or non-empty existing content) — prepend so the block
+	// is a floor, not a ceiling. When existing is nil/empty,
+	// append([]byte(block), existing...) is byte-identical to []byte(block), so
+	// no special-case branch is needed (WR-07: remove redundant empty-input branch).
+	// The canonical block already ends with "\n" so no separator is injected
+	// between the block and the existing content.
 	return append([]byte(block), existing...)
 }
 

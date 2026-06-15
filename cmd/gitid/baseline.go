@@ -76,7 +76,9 @@ func runBaselineSetup(in io.Reader, out io.Writer, dryRun bool) error {
 	}
 
 	// Step 4: print the unified preview (UI-SPEC §"Preview Layout Contract").
-	printBaselinePreview(out, cfg, rewrites, patterns, conflicts)
+	if err := printBaselinePreview(out, cfg, rewrites, patterns, conflicts); err != nil {
+		return fmt.Errorf("baseline setup: printing preview: %w", err)
+	}
 
 	// Step 5: interactive editing (skip under --dry-run).
 	reader := bufio.NewReader(in)
@@ -116,24 +118,74 @@ func runBaselineSetup(in io.Reader, out io.Writer, dryRun bool) error {
 		return nil
 	}
 
-	// Step 8: write the three managed surfaces in the RESEARCH diagram order.
-	// WriteGlobalGitignore first, then WriteBaselineFile, then WriteBaselineInclude.
+	// Step 8: write the three managed surfaces with rollback on partial failure
+	// (CR-01). The activation [include] line is written LAST so a failure on any
+	// earlier surface leaves git's state unchanged (the baseline file is present
+	// but not yet wired into ~/.gitconfig — the idempotent repair path handles this).
+	// If the baseline file write succeeds but the [include] write fails, the
+	// gitignore and baseline file changes are rolled back and the user receives a
+	// clear partial-failure error with the backup paths for manual recovery.
+
 	gitignoreBackup, err := gitconfig.WriteGlobalGitignore(absGitignore, patterns)
 	if err != nil {
 		return fmt.Errorf("baseline setup: writing %s: %w", absGitignore, err)
 	}
+
 	baselineBackup, err := gitconfig.WriteBaselineFile(absBaseline, cfg, rewrites)
 	if err != nil {
-		return fmt.Errorf("baseline setup: writing %s: %w", absBaseline, err)
+		// Roll back the already-written gitignore before surfacing the error.
+		if rollbackErr := restoreBackup(absGitignore, gitignoreBackup); rollbackErr != nil {
+			return fmt.Errorf(
+				"baseline setup: writing %s failed (%v) AND rollback of %s failed: %w",
+				absBaseline, err, absGitignore, rollbackErr)
+		}
+		return fmt.Errorf("baseline setup: writing %s failed (gitignore rolled back): %w", absBaseline, err)
 	}
+
 	gitconfigBackup, err := gitconfig.WriteBaselineInclude(absGitconfig, absBaseline)
 	if err != nil {
-		return fmt.Errorf("baseline setup: writing %s: %w", absGitconfig, err)
+		// Roll back both prior surfaces before surfacing the error.
+		var rollbackErrors []string
+		if rerr := restoreBackup(absGitignore, gitignoreBackup); rerr != nil {
+			rollbackErrors = append(rollbackErrors, tildePath(absGitignore)+": "+rerr.Error())
+		}
+		if rerr := restoreBackup(absBaseline, baselineBackup); rerr != nil {
+			rollbackErrors = append(rollbackErrors, tildePath(absBaseline)+": "+rerr.Error())
+		}
+		if len(rollbackErrors) > 0 {
+			return fmt.Errorf(
+				"baseline setup: writing %s failed (%v) AND rollback failed: %s",
+				absGitconfig, err, strings.Join(rollbackErrors, "; "))
+		}
+		return fmt.Errorf("baseline setup: writing %s failed (gitignore + baseline rolled back): %w", absGitconfig, err)
 	}
 
 	// Step 9: print write summary (UI-SPEC §"Write Summary Contract").
 	fp(out, "Baseline written.\n")
 	printBaselineWriteSummary(out, absGitconfig, gitconfigBackup, absBaseline, baselineBackup, absGitignore, gitignoreBackup)
+	return nil
+}
+
+// restoreBackup restores a file from its backup path. When backupPath is empty,
+// the file did not exist before the write — remove the newly-created file to
+// restore the original absent state. Returns nil if the file did not exist and
+// backupPath is empty (no-op on already-clean state).
+func restoreBackup(targetPath, backupPath string) error {
+	if backupPath == "" {
+		// File was new (no prior backup) — remove it to undo the write.
+		if err := os.Remove(targetPath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("removing newly-created %s during rollback: %w", targetPath, err)
+		}
+		return nil
+	}
+	// File existed before — copy backup back over the target.
+	backupData, err := os.ReadFile(backupPath) //nolint:gosec // backupPath is a gitid-managed backup path
+	if err != nil {
+		return fmt.Errorf("reading backup %s for rollback: %w", backupPath, err)
+	}
+	if err := os.WriteFile(targetPath, backupData, 0o644); err != nil { //nolint:gosec // targetPath is a gitid-managed path
+		return fmt.Errorf("restoring %s from backup during rollback: %w", targetPath, err)
+	}
 	return nil
 }
 
@@ -160,16 +212,25 @@ func runBaselineShow(_ io.Reader, out io.Writer) error {
 
 // printBaselinePreview prints the unified preview (UI-SPEC §"Preview Layout
 // Contract") for setup. It is called before interactive editing and the confirm.
-func printBaselinePreview(out io.Writer, cfg gitconfig.BaselineConfig, rewrites []gitconfig.URLRewrite, patterns []string, conflicts []gitconfig.Conflict) {
+// Returns an error when a renderer validation fails (WR-03: no panics on invalid input).
+func printBaselinePreview(out io.Writer, cfg gitconfig.BaselineConfig, rewrites []gitconfig.URLRewrite, patterns []string, conflicts []gitconfig.Conflict) error {
 	fp(out, "\n=== Preview: baseline setup ===\n")
 
 	// Sub-section 1: Baseline git-config block.
 	fp(out, "--- ~/.gitconfig.d/00-baseline (baseline block) ---\n")
-	fp(out, gitconfig.RenderBaselineBlock(cfg)+"\n")
+	baselineBlock, err := gitconfig.RenderBaselineBlock(cfg)
+	if err != nil {
+		return fmt.Errorf("rendering baseline block for preview: %w", err)
+	}
+	fp(out, baselineBlock+"\n")
 
 	// Sub-section 2: URL rewrites block + blast-radius warning.
 	fp(out, "--- ~/.gitconfig.d/00-baseline (url-rewrites block) ---\n")
-	fp(out, gitconfig.RenderURLRewritesBlock(rewrites)+"\n")
+	rewritesBlock, err := gitconfig.RenderURLRewritesBlock(rewrites)
+	if err != nil {
+		return fmt.Errorf("rendering url-rewrites block for preview: %w", err)
+	}
+	fp(out, rewritesBlock+"\n")
 	fp(out, "  ! insteadOf rewrites affect ALL HTTPS operations for each host —\n")
 	fp(out, "  ! including go get, npm install, cargo fetch, and CI pipelines\n")
 	fp(out, "  ! using token-based HTTPS auth. SSH agent must be running.\n")
@@ -189,6 +250,7 @@ func printBaselinePreview(out io.Writer, cfg gitconfig.BaselineConfig, rewrites 
 
 	// Sub-section 5: Conflict warnings (conditional).
 	printConflictSection(out, conflicts)
+	return nil
 }
 
 // printConflictSection prints the conflict sub-section (UI-SPEC §"Sub-section 5").
@@ -332,11 +394,19 @@ func printBaselineKeys(out io.Writer, keys map[string]string) {
 
 // promptYN reads a Y/n prompt (uppercase Y = default YES per D-04/D-06 opt-out
 // model). Returns true when user accepts the default or types y/yes.
+//
+// On a non-EOF read error (e.g. broken pipe, closed stdin) promptYN returns
+// false (safe direction) rather than silently treating the error as acceptance
+// of an opt-out default that mutates ~/.gitconfig (WR-06).
 func promptYN(r *bufio.Reader, out io.Writer, label string) bool {
 	fp(out, fmt.Sprintf("%s [Y/n]: ", label))
-	line, _ := r.ReadString('\n')
+	line, err := r.ReadString('\n')
+	if err != nil && err != io.EOF {
+		// Non-EOF read error — fail safe: do not accept opt-out defaults (WR-06).
+		return false
+	}
 	line = strings.ToLower(strings.TrimSpace(line))
-	// Default is Y: empty input → accept.
+	// Default is Y: empty input or clean EOF → accept.
 	return line == "" || line == "y" || line == "yes"
 }
 

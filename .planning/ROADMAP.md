@@ -227,7 +227,7 @@ Plans:
 | 1. Bootstrap | 3/3 | Complete   | 2026-06-09 |
 | 2. First Identity End-to-End | 7/7 | Complete   | 2026-06-09 |
 | 3. Full Identity CRUD + Multi-Identity | 4/4 | Complete    | 2026-06-10 |
-| 3.1. Baseline Global Git Config + Global Gitignore | 4/4 | Complete   | 2026-06-11 |
+| 3.1. Baseline Global Git Config + Global Gitignore | 4/4 | Complete    | 2026-06-11 |
 | 4. Doctor | 0/? | Not started | - |
 | 5. CLI Surface + TUI | 0/? | Not started | - |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |

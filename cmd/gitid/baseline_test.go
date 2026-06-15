@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -249,6 +251,100 @@ func TestBaselineSetup_Idempotency(t *testing.T) {
 		t.Errorf("SC-1/SC-2: second run created %d new backup(s) — idempotent run should create none",
 			backupsAfterSecond-backupsAfterFirst)
 	}
+}
+
+// TestPromptYN_WR06 verifies that promptYN returns false (safe direction) on a
+// non-EOF read error, not true (which would silently accept an opt-out default).
+func TestPromptYN_WR06(t *testing.T) {
+	t.Run("read error returns false (safe decline)", func(t *testing.T) {
+		// Construct a reader that immediately returns an error on ReadString.
+		pr, pw := io.Pipe()
+		_ = pw.CloseWithError(io.ErrUnexpectedEOF) // non-EOF error
+
+		r := bufio.NewReader(pr)
+		var out bytes.Buffer
+		result := promptYN(r, &out, "Keep rewrite?")
+		if result {
+			t.Error("WR-06: promptYN returned true on read error; expected false (safe direction)")
+		}
+	})
+
+	t.Run("clean EOF with empty line returns true (default Y)", func(t *testing.T) {
+		// Clean EOF immediately — simulates pressing Enter with no input.
+		pr, pw := io.Pipe()
+		_ = pw.Close() // clean EOF
+
+		r := bufio.NewReader(pr)
+		var out bytes.Buffer
+		result := promptYN(r, &out, "Include Tier-2?")
+		if !result {
+			t.Error("WR-06: promptYN returned false on clean EOF; expected true (default Y)")
+		}
+	})
+}
+
+// TestRestoreBackup_CR01 verifies the restoreBackup helper used by the CR-01
+// rollback path. Covers the new-file case (backupPath="") and the pre-existing-
+// file case (backupPath = path to a backup copy).
+func TestRestoreBackup_CR01(t *testing.T) {
+	t.Run("empty backupPath removes the newly-created file", func(t *testing.T) {
+		dir := t.TempDir()
+		target := filepath.Join(dir, "newfile.txt")
+
+		// Create a new file (simulating a successful write of a previously-absent file).
+		if err := os.WriteFile(target, []byte("new content"), 0o644); err != nil { //nolint:gosec // test path
+			t.Fatalf("creating target: %v", err)
+		}
+
+		if err := restoreBackup(target, ""); err != nil {
+			t.Fatalf("restoreBackup with empty backup: %v", err)
+		}
+
+		// The file must be gone after rollback.
+		if _, err := os.Stat(target); err == nil {
+			t.Error("CR-01: newly-created file still exists after restoreBackup with empty backupPath")
+		}
+	})
+
+	t.Run("non-empty backupPath restores original content", func(t *testing.T) {
+		dir := t.TempDir()
+		target := filepath.Join(dir, "existing.txt")
+		backup := filepath.Join(dir, "existing.txt.bak.20260101-120000")
+
+		originalContent := []byte("original content")
+		newContent := []byte("new content after write")
+
+		// Seed the backup with the original content and the target with new content.
+		if err := os.WriteFile(backup, originalContent, 0o600); err != nil { //nolint:gosec // test path
+			t.Fatalf("creating backup: %v", err)
+		}
+		if err := os.WriteFile(target, newContent, 0o644); err != nil { //nolint:gosec // test path
+			t.Fatalf("creating target: %v", err)
+		}
+
+		if err := restoreBackup(target, backup); err != nil {
+			t.Fatalf("restoreBackup: %v", err)
+		}
+
+		// Target must contain the original content.
+		got, err := os.ReadFile(target) //nolint:gosec // test path
+		if err != nil {
+			t.Fatalf("reading target after restore: %v", err)
+		}
+		if string(got) != string(originalContent) {
+			t.Errorf("CR-01: after restoreBackup, target contains %q, want %q", got, originalContent)
+		}
+	})
+
+	t.Run("empty backupPath is no-op when target does not exist", func(t *testing.T) {
+		dir := t.TempDir()
+		missing := filepath.Join(dir, "absent.txt")
+
+		// File does not exist — restoreBackup must not error.
+		if err := restoreBackup(missing, ""); err != nil {
+			t.Fatalf("restoreBackup on absent file with empty backup: %v", err)
+		}
+	})
 }
 
 // readFileBytes is a test helper that reads a file and fails the test on error.

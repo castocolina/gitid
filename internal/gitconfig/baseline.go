@@ -105,9 +105,10 @@ func ScanConflicts(gitconfigPath string, baselineKeys map[string]string) ([]Conf
 	cmd := exec.Command("git", "config", "--file", tmp.Name(), "--list") //nolint:gosec // arg-slice form, no shell; trusted temp path (G204)
 	out, err := cmd.Output()
 	if err != nil {
-		// An empty or comment-only file is not an error from git's perspective,
-		// but a parse failure on a malformed user gitconfig should be surfaced.
-		return nil, fmt.Errorf("scanning conflicts: %w", err)
+		// A pre-existing malformed ~/.gitconfig must not block baseline setup —
+		// the user's parse error is unrelated to gitid's managed blocks. Degrade
+		// gracefully: skip conflict detection and let setup proceed (WR-05).
+		return nil, nil //nolint:nilerr // intentional: malformed config → no conflicts, not a fatal error
 	}
 
 	// Build a lowercase key→value map from the user-owned portion.
@@ -120,10 +121,12 @@ func ScanConflicts(gitconfigPath string, baselineKeys map[string]string) ([]Conf
 		userKeys[strings.ToLower(kv[0])] = kv[1]
 	}
 
-	// Intersect user keys with the baseline key set; emit a Conflict per overlap.
+	// Intersect user keys with the baseline key set; emit a Conflict only when the
+	// user's value differs from the baseline value (WR-02: identical values are not
+	// conflicts under the floor model — the user's setting is already what we'd set).
 	var conflicts []Conflict
 	for baseKey, baseVal := range baselineKeys {
-		if userVal, ok := userKeys[baseKey]; ok {
+		if userVal, ok := userKeys[baseKey]; ok && userVal != baseVal {
 			conflicts = append(conflicts, Conflict{
 				Key:           baseKey,
 				UserValue:     userVal,
@@ -242,20 +245,27 @@ func indexBlocks(blocks []filewriter.NamedBlock) map[string]filewriter.NamedBloc
 // format) into a lowercase section.key→value map using a simple line scanner.
 // The section header tracks current context; key=value pairs are accumulated
 // under "section.key".
+//
+// Section headers are only recognised at indent level zero (no leading tab) so
+// that an alias value like `!f() { x = y; }; f` is never mis-parsed as a
+// section. Key–value splitting uses the first "=" only (strings.Index) so
+// values that contain " = " (e.g. complex aliases) are preserved verbatim.
 func parseGitconfigBlockBody(body string) map[string]string {
 	result := make(map[string]string)
 	var section string
 	for _, line := range strings.Split(body, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-			// Section header: [core] → "core", [alias] → "alias"
+		// Section header: must NOT start with a tab (not an indented key line)
+		// and must be bracketed, e.g. [core] or [alias].
+		if !strings.HasPrefix(line, "\t") && strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
 			section = strings.ToLower(trimmed[1 : len(trimmed)-1])
 			continue
 		}
-		kv := strings.SplitN(trimmed, " = ", 2)
-		if len(kv) == 2 && section != "" {
-			key := strings.ToLower(section + "." + strings.TrimSpace(kv[0]))
-			result[key] = strings.TrimSpace(kv[1])
+		// Key–value: split on the first "=" only so values containing " = " are
+		// preserved (e.g. alias.lg with a complex format string).
+		if eq := strings.Index(trimmed, "="); eq != -1 && section != "" {
+			key := strings.ToLower(section + "." + strings.TrimSpace(trimmed[:eq]))
+			result[key] = strings.TrimSpace(trimmed[eq+1:])
 		}
 	}
 	return result
@@ -386,22 +396,23 @@ func DefaultGitignorePatterns() []string {
 // seeded (D-12).
 //
 // Any user-supplied string in cfg (Pager, MergeConflictStyle, InitDefaultBranch)
-// is validated with validateValue before render.
-func RenderBaselineBlock(cfg BaselineConfig) string {
+// is validated with validateValue before render; an invalid value returns an error
+// so callers can surface it cleanly instead of crashing on panic (WR-03).
+func RenderBaselineBlock(cfg BaselineConfig) (string, error) {
 	// Validate user-supplied Tier-2 strings before rendering (V5 injection guard).
 	if cfg.Pager != "" {
 		if err := validateValue("core.pager", cfg.Pager); err != nil {
-			panic(fmt.Sprintf("gitconfig: RenderBaselineBlock: %v", err))
+			return "", fmt.Errorf("gitconfig: RenderBaselineBlock: %w", err)
 		}
 	}
 	if cfg.MergeConflictStyle != "" {
 		if err := validateValue("merge.conflictstyle", cfg.MergeConflictStyle); err != nil {
-			panic(fmt.Sprintf("gitconfig: RenderBaselineBlock: %v", err))
+			return "", fmt.Errorf("gitconfig: RenderBaselineBlock: %w", err)
 		}
 	}
 	if cfg.InitDefaultBranch != "" {
 		if err := validateValue("init.defaultBranch", cfg.InitDefaultBranch); err != nil {
-			panic(fmt.Sprintf("gitconfig: RenderBaselineBlock: %v", err))
+			return "", fmt.Errorf("gitconfig: RenderBaselineBlock: %w", err)
 		}
 	}
 
@@ -470,32 +481,33 @@ func RenderBaselineBlock(cfg BaselineConfig) string {
 		fmt.Fprintf(&b, "\tlast = log -1 HEAD\n")
 	}
 
-	return strings.TrimRight(b.String(), "\n")
+	return strings.TrimRight(b.String(), "\n"), nil
 }
 
 // RenderURLRewritesBlock renders the url-rewrites block body for the given
 // insteadOf mappings. The section order matches the input slice order (callers
 // use DefaultURLRewrites for the canonical big-three order). Each URL/SSH prefix
 // pair is validated with validateValue before render to guard against newline
-// injection. An empty rewrites slice returns an empty string.
-func RenderURLRewritesBlock(rewrites []URLRewrite) string {
+// injection. An empty rewrites slice returns ("", nil). An invalid value returns
+// ("", error) so callers can surface it cleanly instead of crashing on panic (WR-03).
+func RenderURLRewritesBlock(rewrites []URLRewrite) (string, error) {
 	if len(rewrites) == 0 {
-		return ""
+		return "", nil
 	}
 
 	var b strings.Builder
 	for _, r := range rewrites {
 		// Validate user-supplied URL strings (V5 injection guard).
 		if err := validateValue("url.insteadOf.httpsPrefix", r.HTTPSPrefix); err != nil {
-			panic(fmt.Sprintf("gitconfig: RenderURLRewritesBlock: %v", err))
+			return "", fmt.Errorf("gitconfig: RenderURLRewritesBlock: %w", err)
 		}
 		if err := validateValue("url.insteadOf.sshPrefix", r.SSHPrefix); err != nil {
-			panic(fmt.Sprintf("gitconfig: RenderURLRewritesBlock: %v", err))
+			return "", fmt.Errorf("gitconfig: RenderURLRewritesBlock: %w", err)
 		}
 		fmt.Fprintf(&b, "[url %q]\n", r.SSHPrefix)
 		fmt.Fprintf(&b, "\tinsteadOf = %s\n", r.HTTPSPrefix)
 	}
-	return strings.TrimRight(b.String(), "\n")
+	return strings.TrimRight(b.String(), "\n"), nil
 }
 
 // RenderGitignoreBlock renders the gitignore block body — one pattern per line
@@ -532,9 +544,17 @@ func WriteBaselineFile(baselineFilePath string, cfg BaselineConfig, rewrites []U
 		return "", fmt.Errorf("reading %s: %w", baselineFilePath, err)
 	}
 
-	composed := filewriter.ReplaceBlock(existing, "baseline", RenderBaselineBlock(cfg))
+	baselineBlock, err := RenderBaselineBlock(cfg)
+	if err != nil {
+		return "", fmt.Errorf("rendering baseline block: %w", err)
+	}
+	composed := filewriter.ReplaceBlock(existing, "baseline", baselineBlock)
 	if len(rewrites) > 0 {
-		composed = filewriter.ReplaceBlock(composed, "url-rewrites", RenderURLRewritesBlock(rewrites))
+		rewritesBlock, rerr := RenderURLRewritesBlock(rewrites)
+		if rerr != nil {
+			return "", fmt.Errorf("rendering url-rewrites block: %w", rerr)
+		}
+		composed = filewriter.ReplaceBlock(composed, "url-rewrites", rewritesBlock)
 	} else {
 		composed = filewriter.RemoveBlock(composed, "url-rewrites")
 	}
@@ -587,11 +607,11 @@ func WriteGlobalGitignore(gitignorePath string, patterns []string) (string, erro
 // its floor position is preserved. It returns the backup path (empty when the
 // file is new).
 func WriteBaselineInclude(gitconfigPath, baselineFilePath string) (string, error) {
-	// The include body is a fixed constant; baselineFilePath is an in-process
-	// constant (never user input), so T-03.1-03 is satisfied — no user string
-	// is interpolated into the include body.
-	_ = baselineFilePath // used as documentation; literal path written below
-	const includeBody = "[include]\n\tpath = ~/.gitconfig.d/00-baseline"
+	// Build the include body from the caller-supplied path so that non-default
+	// locations are honoured (WR-01: the parameter must not be silently discarded).
+	// baselineFilePath is a gitid-controlled path (never free-form user input), so
+	// interpolation here does not introduce injection risk — T-03.1-03 is satisfied.
+	includeBody := "[include]\n\tpath = " + baselineFilePath
 
 	existing, err := os.ReadFile(gitconfigPath) //nolint:gosec // gitconfigPath is a trusted gitid-managed path
 	if err != nil && !os.IsNotExist(err) {

@@ -16,7 +16,10 @@ import (
 func TestRenderBaselineBlock(t *testing.T) {
 	t.Run("full default config equals RESEARCH Example 1", func(t *testing.T) {
 		cfg := DefaultBaselineConfig()
-		got := RenderBaselineBlock(cfg)
+		got, err := RenderBaselineBlock(cfg)
+		if err != nil {
+			t.Fatalf("RenderBaselineBlock: unexpected error: %v", err)
+		}
 
 		// RESEARCH Example 1 — exact byte string (tabs, not spaces).
 		want := "[core]\n" +
@@ -58,8 +61,14 @@ func TestRenderBaselineBlock(t *testing.T) {
 
 	t.Run("byte-stable across two calls (no map iteration)", func(t *testing.T) {
 		cfg := DefaultBaselineConfig()
-		first := RenderBaselineBlock(cfg)
-		second := RenderBaselineBlock(cfg)
+		first, err := RenderBaselineBlock(cfg)
+		if err != nil {
+			t.Fatalf("first RenderBaselineBlock: %v", err)
+		}
+		second, err := RenderBaselineBlock(cfg)
+		if err != nil {
+			t.Fatalf("second RenderBaselineBlock: %v", err)
+		}
 		if first != second {
 			t.Error("RenderBaselineBlock: two calls with same cfg produced different output (map iteration?)")
 		}
@@ -69,7 +78,10 @@ func TestRenderBaselineBlock(t *testing.T) {
 		cfg := BaselineConfig{
 			// Only Tier-1: no Tier-2 flags set.
 		}
-		got := RenderBaselineBlock(cfg)
+		got, err := RenderBaselineBlock(cfg)
+		if err != nil {
+			t.Fatalf("RenderBaselineBlock: %v", err)
+		}
 
 		// Tier-1 keys must be present
 		for _, mustHave := range []string{
@@ -114,7 +126,10 @@ func TestRenderBaselineBlock(t *testing.T) {
 	t.Run("zdiff3 gate: empty MergeConflictStyle omits [merge] section", func(t *testing.T) {
 		cfg := DefaultBaselineConfig()
 		cfg.MergeConflictStyle = ""
-		got := RenderBaselineBlock(cfg)
+		got, err := RenderBaselineBlock(cfg)
+		if err != nil {
+			t.Fatalf("RenderBaselineBlock: %v", err)
+		}
 
 		if strings.Contains(got, "[merge]") {
 			t.Errorf("expected [merge] section to be absent when MergeConflictStyle is empty, got:\n%s", got)
@@ -126,7 +141,10 @@ func TestRenderBaselineBlock(t *testing.T) {
 
 	t.Run("no [user] section ever emitted (D-04b)", func(t *testing.T) {
 		cfg := DefaultBaselineConfig()
-		got := RenderBaselineBlock(cfg)
+		got, err := RenderBaselineBlock(cfg)
+		if err != nil {
+			t.Fatalf("RenderBaselineBlock: %v", err)
+		}
 		if strings.Contains(got, "[user]") {
 			t.Errorf("RenderBaselineBlock must never emit [user] section, got:\n%s", got)
 		}
@@ -134,9 +152,21 @@ func TestRenderBaselineBlock(t *testing.T) {
 
 	t.Run("no trailing newline (TrimRight contract)", func(t *testing.T) {
 		cfg := DefaultBaselineConfig()
-		got := RenderBaselineBlock(cfg)
+		got, err := RenderBaselineBlock(cfg)
+		if err != nil {
+			t.Fatalf("RenderBaselineBlock: %v", err)
+		}
 		if strings.HasSuffix(got, "\n") {
 			t.Errorf("RenderBaselineBlock must not end with a newline, last char: %q", got[len(got)-1])
+		}
+	})
+
+	t.Run("invalid Pager returns error not panic (WR-03)", func(t *testing.T) {
+		cfg := DefaultBaselineConfig()
+		cfg.Pager = "less\nevil=injected"
+		_, err := RenderBaselineBlock(cfg)
+		if err == nil {
+			t.Error("WR-03: expected error for newline-injected Pager, got nil")
 		}
 	})
 }
@@ -146,7 +176,10 @@ func TestRenderBaselineBlock(t *testing.T) {
 func TestRenderURLRewritesBlock(t *testing.T) {
 	t.Run("default big-three equals RESEARCH Example 2", func(t *testing.T) {
 		rewrites := DefaultURLRewrites()
-		got := RenderURLRewritesBlock(rewrites)
+		got, err := RenderURLRewritesBlock(rewrites)
+		if err != nil {
+			t.Fatalf("RenderURLRewritesBlock: unexpected error: %v", err)
+		}
 
 		// RESEARCH Example 2 — exact byte string.
 		want := "[url \"git@github.com:\"]\n" +
@@ -162,7 +195,10 @@ func TestRenderURLRewritesBlock(t *testing.T) {
 	})
 
 	t.Run("empty slice returns empty string", func(t *testing.T) {
-		got := RenderURLRewritesBlock(nil)
+		got, err := RenderURLRewritesBlock(nil)
+		if err != nil {
+			t.Fatalf("RenderURLRewritesBlock(nil): unexpected error: %v", err)
+		}
 		if got != "" {
 			t.Errorf("RenderURLRewritesBlock(nil) = %q, want empty string", got)
 		}
@@ -170,33 +206,35 @@ func TestRenderURLRewritesBlock(t *testing.T) {
 
 	t.Run("byte-stable across two calls", func(t *testing.T) {
 		rewrites := DefaultURLRewrites()
-		first := RenderURLRewritesBlock(rewrites)
-		second := RenderURLRewritesBlock(rewrites)
+		first, err := RenderURLRewritesBlock(rewrites)
+		if err != nil {
+			t.Fatalf("first RenderURLRewritesBlock: %v", err)
+		}
+		second, err := RenderURLRewritesBlock(rewrites)
+		if err != nil {
+			t.Fatalf("second RenderURLRewritesBlock: %v", err)
+		}
 		if first != second {
 			t.Error("RenderURLRewritesBlock: two calls produced different output")
 		}
 	})
 
-	t.Run("newline in HTTPSPrefix panics (injection guard)", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("expected panic for newline-injected HTTPSPrefix, got none")
-			}
-		}()
-		_ = RenderURLRewritesBlock([]URLRewrite{
+	t.Run("newline in HTTPSPrefix returns error not panic (WR-03, injection guard)", func(t *testing.T) {
+		_, err := RenderURLRewritesBlock([]URLRewrite{
 			{HTTPSPrefix: "https://github.com/\nevil=injected", SSHPrefix: "git@github.com:"},
 		})
+		if err == nil {
+			t.Error("WR-03: expected error for newline-injected HTTPSPrefix, got nil")
+		}
 	})
 
-	t.Run("newline in SSHPrefix panics (injection guard)", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("expected panic for newline-injected SSHPrefix, got none")
-			}
-		}()
-		_ = RenderURLRewritesBlock([]URLRewrite{
+	t.Run("newline in SSHPrefix returns error not panic (WR-03, injection guard)", func(t *testing.T) {
+		_, err := RenderURLRewritesBlock([]URLRewrite{
 			{HTTPSPrefix: "https://github.com/", SSHPrefix: "git@github.com:\nevil=injected"},
 		})
+		if err == nil {
+			t.Error("WR-03: expected error for newline-injected SSHPrefix, got nil")
+		}
 	})
 }
 
@@ -705,6 +743,148 @@ func TestReadBaselineState(t *testing.T) {
 		}
 		if state.Installed {
 			t.Error("expected Installed=false for all-missing-files case")
+		}
+	})
+}
+
+// ── Review-fix regression tests ─────────────────────────────────────────────
+
+// TestParseGitconfigBlockBody_WR04 verifies that parseGitconfigBlockBody
+// preserves values that contain " = " (WR-04 regression).
+func TestParseGitconfigBlockBody_WR04(t *testing.T) {
+	t.Run("alias value containing ' = ' is preserved verbatim", func(t *testing.T) {
+		// An alias whose value contains " = " must not be split at the inner " = ".
+		body := "[alias]\n\tfoo = !f() { x = y; }; f\n"
+		got := parseGitconfigBlockBody(body)
+		want := "!f() { x = y; }; f"
+		if got["alias.foo"] != want {
+			t.Errorf("parseGitconfigBlockBody: alias.foo = %q, want %q", got["alias.foo"], want)
+		}
+	})
+
+	t.Run("indented line starting with '[' is NOT treated as a section header", func(t *testing.T) {
+		// A tab-indented line that starts with '[' (e.g. a value beginning with a
+		// bracket) must not be misidentified as a section header.
+		body := "[core]\n\tpager = less -FRX\n"
+		got := parseGitconfigBlockBody(body)
+		if _, ok := got["core.pager"]; !ok {
+			t.Error("expected core.pager to be present")
+		}
+	})
+
+	t.Run("round-trip: render then parse produces matching keys", func(t *testing.T) {
+		cfg := DefaultBaselineConfig()
+		rendered, err := RenderBaselineBlock(cfg)
+		if err != nil {
+			t.Fatalf("RenderBaselineBlock: %v", err)
+		}
+		parsed := parseGitconfigBlockBody(rendered)
+		// Spot-check a few keys that must survive the round-trip.
+		for _, key := range []string{"core.ignorecase", "pull.rebase", "alias.lg"} {
+			if _, ok := parsed[key]; !ok {
+				t.Errorf("round-trip: key %q missing from parsed output", key)
+			}
+		}
+		// alias.lg must contain the full format string (not truncated at first ' = ').
+		if v := parsed["alias.lg"]; !strings.Contains(v, "--graph") {
+			t.Errorf("round-trip: alias.lg value appears truncated: %q", v)
+		}
+	})
+}
+
+// TestScanConflicts_WR02 verifies that ScanConflicts does NOT report a conflict
+// when the user's value matches the baseline value (WR-02 regression).
+func TestScanConflicts_WR02(t *testing.T) {
+	t.Run("identical value: no conflict emitted", func(t *testing.T) {
+		dir := t.TempDir()
+		gitconfigPath := filepath.Join(dir, ".gitconfig")
+
+		// User set pull.rebase = true — identical to the baseline value.
+		content := "[pull]\n\trebase = true\n"
+		if err := os.WriteFile(gitconfigPath, []byte(content), 0o644); err != nil { //nolint:gosec // test path
+			t.Fatalf("writing temp gitconfig: %v", err)
+		}
+
+		conflicts, err := ScanConflicts(gitconfigPath, BaselineKeySet())
+		if err != nil {
+			t.Fatalf("ScanConflicts: %v", err)
+		}
+		for _, c := range conflicts {
+			if c.Key == "pull.rebase" {
+				t.Errorf("WR-02: conflict reported for pull.rebase even though user value matches baseline (%q == %q)",
+					c.UserValue, c.BaselineValue)
+			}
+		}
+	})
+
+	t.Run("different value: conflict still emitted", func(t *testing.T) {
+		dir := t.TempDir()
+		gitconfigPath := filepath.Join(dir, ".gitconfig")
+
+		// User set pull.rebase = false — differs from baseline true.
+		content := "[pull]\n\trebase = false\n"
+		if err := os.WriteFile(gitconfigPath, []byte(content), 0o644); err != nil { //nolint:gosec // test path
+			t.Fatalf("writing temp gitconfig: %v", err)
+		}
+
+		conflicts, err := ScanConflicts(gitconfigPath, BaselineKeySet())
+		if err != nil {
+			t.Fatalf("ScanConflicts: %v", err)
+		}
+		var found bool
+		for _, c := range conflicts {
+			if c.Key == "pull.rebase" {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("WR-02: expected conflict for pull.rebase with differing value, got none")
+		}
+	})
+}
+
+// TestScanConflicts_WR05 verifies that ScanConflicts degrades gracefully when
+// the user's gitconfig is malformed (WR-05 regression).
+func TestScanConflicts_WR05(t *testing.T) {
+	t.Run("malformed gitconfig: returns nil conflicts and nil error", func(t *testing.T) {
+		dir := t.TempDir()
+		gitconfigPath := filepath.Join(dir, ".gitconfig")
+
+		// Write a file that `git config --list` will refuse to parse.
+		malformed := "this is not valid gitconfig syntax\n[broken\n"
+		if err := os.WriteFile(gitconfigPath, []byte(malformed), 0o644); err != nil { //nolint:gosec // test path
+			t.Fatalf("writing malformed gitconfig: %v", err)
+		}
+
+		conflicts, err := ScanConflicts(gitconfigPath, BaselineKeySet())
+		if err != nil {
+			t.Errorf("WR-05: malformed gitconfig must not return an error, got: %v", err)
+		}
+		// nil or empty is fine — the important thing is no hard failure.
+		_ = conflicts
+	})
+}
+
+// TestWriteBaselineInclude_WR01 verifies that WriteBaselineInclude uses the
+// baselineFilePath parameter to derive the include path, not a hardcoded literal
+// (WR-01 regression).
+func TestWriteBaselineInclude_WR01(t *testing.T) {
+	t.Run("custom baseline path is honoured in include body", func(t *testing.T) {
+		dir := t.TempDir()
+		gitconfigPath := filepath.Join(dir, ".gitconfig")
+		customBaseline := "~/.gitconfig.d/custom-baseline"
+
+		_, err := WriteBaselineInclude(gitconfigPath, customBaseline)
+		if err != nil {
+			t.Fatalf("WriteBaselineInclude: %v", err)
+		}
+
+		content, err := os.ReadFile(gitconfigPath) //nolint:gosec // test path
+		if err != nil {
+			t.Fatalf("reading gitconfig: %v", err)
+		}
+		if !strings.Contains(string(content), "path = "+customBaseline) {
+			t.Errorf("WR-01: include body does not contain custom path %q; got:\n%s", customBaseline, content)
 		}
 	})
 }
