@@ -30,7 +30,7 @@ func TestMultiIdentityCoexistence(t *testing.T) {
 	// Write identity "personal" with its own key path.
 	personalKey := filepath.Join(home, ".ssh", "id_ed25519_personal")
 	if _, err := Write(configPath, "personal",
-		RenderHostBlock("personal.github.com", "ssh.github.com", 443, personalKey),
+		RenderHostBlock("personal.github.com", "ssh.github.com", 443, personalKey, ""),
 		""); err != nil {
 		t.Fatalf("writing personal identity: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestMultiIdentityCoexistence(t *testing.T) {
 	// Write identity "work" with a distinct key path, same provider.
 	workKey := filepath.Join(home, ".ssh", "id_ed25519_work")
 	if _, err := Write(configPath, "work",
-		RenderHostBlock("work.github.com", "ssh.github.com", 443, workKey),
+		RenderHostBlock("work.github.com", "ssh.github.com", 443, workKey, ""),
 		""); err != nil {
 		t.Fatalf("writing work identity: %v", err)
 	}

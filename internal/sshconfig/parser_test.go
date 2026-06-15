@@ -10,7 +10,7 @@ import (
 // TestParseRoundTripStable asserts CONTEXT D-12/D-13: parse -> String() -> parse
 // again yields an equivalent host definition (round-trip stable).
 func TestParseRoundTripStable(t *testing.T) {
-	src := RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work")
+	src := RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work", "")
 
 	cfg, err := Parse([]byte(src))
 	if err != nil {
@@ -50,7 +50,7 @@ func TestWritePreservesForeignContent(t *testing.T) {
 		t.Fatalf("seeding foreign config: %v", err)
 	}
 
-	host := RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work")
+	host := RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work", "")
 	if _, err := Write(path, "work.github.com", host, ""); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestWriteIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config")
 
-	host := RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work")
+	host := RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work", "")
 	global := RenderGlobalBlock("darwin")
 
 	if _, err := Write(path, "work.github.com", host, global); err != nil {
@@ -103,7 +103,7 @@ func TestWriteGlobalBlockOrderedLast(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config")
 
-	host := RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work")
+	host := RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work", "")
 	global := RenderGlobalBlock("darwin")
 
 	if _, err := Write(path, "work.github.com", host, global); err != nil {
@@ -136,7 +136,7 @@ func TestWriteBackupOnPreexisting(t *testing.T) {
 		t.Fatalf("seeding config: %v", err)
 	}
 
-	host := RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work")
+	host := RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work", "")
 	backupPath, err := Write(path, "work.github.com", host, "")
 	if err != nil {
 		t.Fatalf("Write: %v", err)

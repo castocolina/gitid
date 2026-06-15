@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/castocolina/gitid/internal/clipboard"
+	"github.com/castocolina/gitid/internal/doctor/checks"
 	"github.com/castocolina/gitid/internal/filewriter"
 	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/identity"
@@ -23,20 +24,34 @@ import (
 	"github.com/castocolina/gitid/internal/tester"
 )
 
+// addFlags holds non-interactive flag values for `gitid identity add` (D-09).
+// A non-empty field skips the corresponding prompt.
+type addFlags struct {
+	name     string // --name: identity name
+	gitdir   string // --gitdir: gitdir match value
+	url      string // --url: hasconfig URL pattern (bare; buildMatches prepends "remote.*.url:")
+	provider string // --provider: provider name
+}
+
 // newAddCmd builds `gitid identity add` (create-new mode). The handler is thin:
 // it gathers input, builds identity.Deps from the real internal packages, calls
 // identity.Create, and prints. All orchestration logic lives in
 // internal/identity.Create (no business logic in cmd/).
 func newAddCmd() *cobra.Command {
 	var dryRun bool
+	var flags addFlags
 	cmd := &cobra.Command{
 		Use:   "add",
 		Short: "Create a new Git identity (key, SSH config, gitconfig, allowed_signers)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runIdentityAdd(cmd.InOrStdin(), cmd.OutOrStdout(), dryRun, buildDeps)
+			return runIdentityAdd(cmd.InOrStdin(), cmd.OutOrStdout(), dryRun, flags, buildDeps)
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview the four artifacts without writing anything (SAFE-03)")
+	cmd.Flags().StringVar(&flags.name, "name", "", "identity name (skips name prompt; D-09)")
+	cmd.Flags().StringVar(&flags.gitdir, "gitdir", "", "gitdir match value (skips gitdir prompt; D-09)")
+	cmd.Flags().StringVar(&flags.url, "url", "", "hasconfig URL pattern (skips URL prompt; D-09)")
+	cmd.Flags().StringVar(&flags.provider, "provider", "", "provider name (skips provider prompt; D-09)")
 	return cmd
 }
 
@@ -47,7 +62,7 @@ func newAddCmd() *cobra.Command {
 // command+output (TEST-03) and the unified four-artifact preview, asks one
 // explicit confirmation (skipped under --dry-run, SAFE-03), and on confirm loads
 // the key into the agent (ssh-add, D-08) and prints upload steps.
-func runIdentityAdd(in io.Reader, out io.Writer, dryRun bool, depsFor func(io.Writer) identity.Deps) error {
+func runIdentityAdd(in io.Reader, out io.Writer, dryRun bool, flags addFlags, depsFor func(io.Writer) identity.Deps) error {
 	supported, err := platform.ProbeKeyTypes()
 	if err != nil {
 		return fmt.Errorf("identity add: probing key algorithms: %w", err)
@@ -73,7 +88,7 @@ func runIdentityAdd(in io.Reader, out io.Writer, dryRun bool, depsFor func(io.Wr
 	case modeAddAccount:
 		return runAddAccount(reader, out, dryRun, depsFor)
 	default: // modeCreateNew
-		return runCreateNew(reader, out, algo, dryRun, depsFor)
+		return runCreateNew(reader, out, algo, dryRun, flags, depsFor)
 	}
 }
 
@@ -104,34 +119,80 @@ func selectMode(r *bufio.Reader, out io.Writer) createMode {
 	}
 }
 
-// runCreateNew is the create-new orchestration: gather inputs, call
-// identity.Create, and print results.
-func runCreateNew(reader *bufio.Reader, out io.Writer, algo string, dryRun bool, depsFor func(io.Writer) identity.Deps) error {
-	input, err := gatherCreateInput(reader, out, algo, dryRun)
+// runCreateNew is the create-new orchestration (D-01..D-06):
+//
+//  1. gather inputs (no pre-test confirm prompt — D-02 removed)
+//  2. Generate the key pair directly to ~/.ssh (D-01)
+//  3. copy .pub to clipboard + print upload instructions
+//  4. --dry-run: render previews and return (no key generated under dry-run — Q1)
+//  5. runCreateLoop: auth-gated loop (retry/skip/quit) — D-03..D-06
+//  6. on persist: call identity.PersistAll; print backup paths + resolved result
+func runCreateNew(reader *bufio.Reader, out io.Writer, algo string, dryRun bool, flags addFlags, depsFor func(io.Writer) identity.Deps) error {
+	input, err := gatherCreateInput(reader, out, algo, flags)
 	if err != nil {
 		return err
 	}
 
 	deps := depsFor(out)
-	res, err := identity.Create(input, deps)
-	if err != nil {
-		return err
-	}
 
-	printPreWrite(out, res.PreWrite)
-	printPreview(out, res)
-
+	// Q1: under --dry-run, skip key generation entirely and return previews only.
 	if dryRun {
+		// Build a synthetic staged key for preview rendering (no real key generated).
+		syntheticStaged := identity.StagedKey{
+			FinalPrivatePath: "~/.ssh/id_" + input.Algo + "_" + input.Name,
+			FinalPubPath:     "~/.ssh/id_" + input.Algo + "_" + input.Name + ".pub",
+			PubLine:          "(key will be generated)",
+		}
+		res := identity.RenderPreviews(input, syntheticStaged)
+		printPreview(out, res)
 		fp(out, "\n--dry-run: no files were written.\n")
 		return nil
 	}
 
-	if !res.PreWriteOnly {
-		loadKeyIntoAgent(out, res.Key.PrivatePath)
-		printResolved(out, res)
+	// D-01: Generate the key pair directly to ~/.ssh immediately.
+	staged, err := deps.Generate(input)
+	if err != nil {
+		return fmt.Errorf("identity add: generating key: %w", err)
 	}
+
+	// Copy .pub to clipboard (best-effort; failure is non-fatal).
+	if cerr := deps.CopyPub(staged.PubLine); cerr != nil {
+		_ = cerr
+	}
+	printPubForManualCopy(out, staged.PubLine)
 	fp(out, "\n"+uploadInstructions(input.Provider)+"\n")
-	printPubForManualCopy(out, res.Key.PubLine)
+
+	// D-03..D-06: auth-gated loop; loops until PASS, skip+confirm, or quit.
+	persist, _, err := runCreateLoop(reader, out, input, staged, deps)
+	if err != nil {
+		return err
+	}
+	if !persist {
+		// D-04: quit — key stays in ~/.ssh, no config written.
+		return nil
+	}
+
+	// D-16: check for overlapping match conditions before persisting.
+	// Build a prospective account from the gathered input so DetectOverlaps can
+	// compare it against existing on-disk identities.
+	prospective := identity.Account{
+		Name:    input.Name,
+		Matches: input.Matches,
+	}
+	if !warnOverlapAndConfirm(reader, out, prospective, loadExistingAccounts()) {
+		fp(out, "Add cancelled; no config files were written.\n")
+		return nil
+	}
+
+	// Persist all four config artifacts (D-03/D-05).
+	res, err := identity.PersistAll(input, staged, deps)
+	if err != nil {
+		return err
+	}
+	printPreview(out, res)
+	printBackupPaths(out, res)
+	loadKeyIntoAgent(out, res.Key.PrivatePath)
+	printResolved(out, res)
 	return nil
 }
 
@@ -139,7 +200,7 @@ func runCreateNew(reader *bufio.Reader, out io.Writer, algo string, dryRun bool,
 // the existing private-key path, call identity.Reuse (which derives the .pub when
 // absent), and print results.
 func runReuse(reader *bufio.Reader, out io.Writer, algo string, dryRun bool, depsFor func(io.Writer) identity.Deps) error {
-	input, err := gatherCreateInput(reader, out, algo, dryRun)
+	input, err := gatherCreateInput(reader, out, algo, addFlags{})
 	if err != nil {
 		return err
 	}
@@ -185,7 +246,7 @@ func runAddAccount(reader *bufio.Reader, out io.Writer, dryRun bool, depsFor fun
 	if dryRun {
 		fp(out, "\n=== Preview: add-account alias ===\n")
 		fp(out, "--- ~/.ssh/config (Host block) ---\n")
-		fp(out, sshconfig.RenderHostBlock(newAlias, existing.Hostname, existing.Port, existing.KeyPath))
+		fp(out, sshconfig.RenderHostBlock(newAlias, existing.Hostname, existing.Port, existing.KeyPath, existing.Provider))
 		fp(out, "--- ~/.gitconfig (includeIf) ---\n")
 		fp(out, gitconfig.RenderIncludeIf(existing.Name, existing.FragmentPath, existing.Matches)+"\n")
 		fp(out, "\n--dry-run: no files were written.\n")
@@ -228,6 +289,9 @@ func gatherAddAccount(r *bufio.Reader, out io.Writer) (identity.Account, string,
 		return identity.Account{}, "", "", fmt.Errorf("identity add: existing private key path is required for add-account")
 	}
 	newProvider := prompt(r, out, "New provider (github/gitlab)", "gitlab")
+	if err := identity.ValidateProvider(newProvider); err != nil {
+		return identity.Account{}, "", "", fmt.Errorf("identity add: %w", err)
+	}
 	newAlias := prompt(r, out, "New host alias", identity.DefaultAlias(name, newProvider))
 	hostname := prompt(r, out, "Hostname", defaultHostname(newProvider))
 	port := promptPort(r, out, "Port", 443)
@@ -264,9 +328,23 @@ func fp(out io.Writer, s string) {
 // gatherCreateInput collects the create-new inputs via interactive prompts with
 // sensible defaults shown (D-05). The host alias is pre-selected to
 // <identity>.<provider> (D-12) and the match defaults to gitdir:~/git/<id>/
-// (D-13). Confirmed is the single explicit y/N consent, skipped under dryRun.
-func gatherCreateInput(r *bufio.Reader, out io.Writer, algo string, dryRun bool) (identity.CreateInput, error) {
-	name := sanitizeName(prompt(r, out, "Identity name", ""))
+// (D-13). The old pre-test confirm prompt (D-02) is removed
+// (D-02); the persist decision belongs to runCreateLoop after an authenticated
+// PASS or explicit skip+confirm (D-03/D-05).
+// gatherCreateInput collects the create-new inputs via interactive prompts with
+// sensible defaults shown (D-05). Non-empty flag values skip the corresponding
+// prompt (D-09). The match strategy picker replaces the single gitdir prompt (D-07).
+// The host alias is pre-selected to <identity>.<provider> (D-12).
+// The old pre-test confirm prompt (D-02) is removed; the persist decision belongs
+// to runCreateLoop after an authenticated PASS or explicit skip+confirm (D-03/D-05).
+func gatherCreateInput(r *bufio.Reader, out io.Writer, algo string, flags addFlags) (identity.CreateInput, error) {
+	// Identity name: flag-or-prompt (D-09).
+	var name string
+	if flags.name != "" {
+		name = sanitizeName(flags.name)
+	} else {
+		name = sanitizeName(prompt(r, out, "Identity name", ""))
+	}
 	if name == "" {
 		return identity.CreateInput{}, fmt.Errorf("identity add: identity name is required")
 	}
@@ -275,11 +353,41 @@ func gatherCreateInput(r *bufio.Reader, out io.Writer, algo string, dryRun bool)
 	}
 	gitName := prompt(r, out, "Git user.name", "")
 	gitEmail := prompt(r, out, "Git user.email", "")
-	provider := prompt(r, out, "Provider (github/gitlab)", "github")
+
+	// Provider: flag-or-prompt (D-09).
+	var provider string
+	if flags.provider != "" {
+		provider = flags.provider
+	} else {
+		provider = prompt(r, out, "Provider (github/gitlab)", "github")
+	}
+	if err := identity.ValidateProvider(provider); err != nil {
+		return identity.CreateInput{}, fmt.Errorf("identity add: %w", err)
+	}
+
 	alias := prompt(r, out, "Host alias", identity.DefaultAlias(name, provider))
 	hostname := prompt(r, out, "Hostname", defaultHostname(provider))
 	port := promptPort(r, out, "Port", 443)
-	matchDir := prompt(r, out, "Match gitdir", "~/git/"+name+"/")
+
+	// Match strategy: flag-or-prompt (D-07, D-09).
+	// If both --gitdir and --url are given → both strategy.
+	// If only --gitdir → gitdir strategy.
+	// If only --url → url strategy.
+	// Otherwise → interactive picker.
+	var matches []gitconfig.Match
+	gitdirDefault := "~/git/" + name + "/"
+	urlDefault := defaultURLPattern(hostname, name)
+	switch {
+	case flags.gitdir != "" && flags.url != "":
+		matches = buildMatches("3", flags.gitdir, flags.url)
+	case flags.gitdir != "":
+		matches = buildMatches("1", flags.gitdir, "")
+	case flags.url != "":
+		matches = buildMatches("2", "", flags.url)
+	default:
+		matches = promptMatchStrategy(r, out, gitdirDefault, urlDefault)
+	}
+
 	passphrase := prompt(r, out, "Passphrase (empty for none)", "")
 
 	home, err := os.UserHomeDir()
@@ -287,7 +395,7 @@ func gatherCreateInput(r *bufio.Reader, out io.Writer, algo string, dryRun bool)
 		return identity.CreateInput{}, fmt.Errorf("identity add: resolving home dir: %w", err)
 	}
 
-	in := identity.CreateInput{
+	return identity.CreateInput{
 		Name:               name,
 		GitName:            gitName,
 		GitEmail:           gitEmail,
@@ -297,20 +405,105 @@ func gatherCreateInput(r *bufio.Reader, out io.Writer, algo string, dryRun bool)
 		Hostname:           hostname,
 		Port:               port,
 		Passphrase:         passphrase,
-		Matches:            []gitconfig.Match{{Kind: gitconfig.MatchGitdir, Value: matchDir}},
+		Matches:            matches,
 		FragmentPath:       filepath.Join(home, ".gitconfig.d", name),
 		GitconfigPath:      filepath.Join(home, ".gitconfig"),
 		SSHConfigPath:      filepath.Join(home, ".ssh", "config"),
 		AllowedSignersPath: filepath.Join(home, ".ssh", "allowed_signers"),
 		GlobalBlock:        sshconfig.RenderGlobalBlock(platform.CurrentOS()),
-	}
+	}, nil
+}
 
-	if dryRun {
-		in.Confirmed = false
-		return in, nil
+// runCreateLoop drives the auth-gated retry/skip/quit loop (D-03..D-06).
+// It calls deps.PreWrite on each iteration; on tester.PASS it returns
+// (persist=true, skipConfirmed=false) immediately (D-03 auto-persist, no extra
+// prompt). On [s] skip+confirm it returns (true, true) after the explicit typed
+// confirm and "not yet authenticated" warning (D-05). On [q] quit it prints the
+// key-kept-at-path + doctor-orphan note and returns (false, false, nil) (D-04).
+// Default ([r] or empty) loops.
+func runCreateLoop(r *bufio.Reader, out io.Writer, in identity.CreateInput, staged identity.StagedKey, deps identity.Deps) (persist bool, skipConfirmed bool, err error) {
+	for {
+		pre := deps.PreWrite(staged.FinalPrivatePath, in.Hostname, in.Port)
+		printPreWrite(out, pre)
+		if pre.Outcome == tester.PASS {
+			// D-03: authenticated PASS → auto-persist, no extra prompt.
+			return true, false, nil
+		}
+		fp(out, "\n[r] retry  [s] skip-&-write (offline/upload-later)  [q] quit\n")
+		choice := strings.ToLower(strings.TrimSpace(prompt(r, out, "Choice", "r")))
+		switch choice {
+		case "s", "skip":
+			// D-05: require explicit typed confirm before persisting without PASS.
+			fp(out, "Warning: key is not yet authenticated. You must upload the key and verify authentication before using this identity.\n")
+			if confirm(r, out, "Write config artifacts without authenticated PASS?") {
+				return true, true, nil
+			}
+			// Declined → loop continues.
+		case "q", "quit":
+			// D-04: keep key in ~/.ssh, no config write.
+			fp(out, fmt.Sprintf("Quit. Key kept at %s. Run 'gitid doctor' when ready to write config.\n", staged.FinalPrivatePath))
+			return false, false, nil
+		default:
+			// "r" or empty → retry (loop continues).
+		}
 	}
-	in.Confirmed = confirm(r, out, "Write all four artifacts now?")
-	return in, nil
+}
+
+// warnOverlapAndConfirm checks whether adding prospective to the existing identity
+// list would create overlapping match conditions (D-16). If overlaps are detected,
+// it prints a warning naming the conflicting identities and the last-wins note, then
+// asks the user to explicitly confirm before proceeding. Returns true when safe to
+// proceed (no overlaps, or user confirmed), false when the user declined.
+// Called by add's runCreateNew (before PersistAll) and update's runIdentityUpdate
+// (before Update) so both write paths share the same detector.
+func warnOverlapAndConfirm(r *bufio.Reader, out io.Writer, prospective identity.Account, existing []identity.Account) bool {
+	// Drop any on-disk account that shares the prospective's name: re-creating or
+	// rewriting the same identity is not a real overlap, and including it would
+	// emit a confusing self-referential "X and X overlap" warning. (The update
+	// path already pre-excludes by name; doing it here covers the add path too.)
+	all := make([]identity.Account, 0, len(existing)+1)
+	for _, a := range existing {
+		if a.Name != prospective.Name {
+			all = append(all, a)
+		}
+	}
+	all = append(all, prospective)
+	pairs := checks.DetectOverlaps(all)
+	// Filter to only pairs that involve the prospective identity.
+	var relevant []checks.OverlapPair
+	for _, p := range pairs {
+		if p.A == prospective.Name || p.B == prospective.Name {
+			relevant = append(relevant, p)
+		}
+	}
+	if len(relevant) == 0 {
+		return true // no overlap — safe to proceed
+	}
+	fp(out, "\nWarning: overlapping match conditions detected:\n")
+	for _, p := range relevant {
+		other := p.B
+		if p.B == prospective.Name {
+			other = p.A
+		}
+		fp(out, fmt.Sprintf("  %q and %q: %s — git will use last-written-wins for conflicting keys.\n",
+			prospective.Name, other, p.Kind))
+		fp(out, fmt.Sprintf("  Detail: %s\n", p.Detail))
+	}
+	fp(out, "  Tip: narrow one of the match conditions (gitdir path or URL pattern) to avoid ambiguity.\n")
+	return confirm(r, out, "Proceed with overlapping match conditions?")
+}
+
+// loadExistingAccounts reads and reconstructs all identities from disk.
+// Returns an empty slice (not an error) when no config files exist yet.
+func loadExistingAccounts() []identity.Account {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	sshBytes, _ := os.ReadFile(filepath.Join(home, ".ssh", "config")) //nolint:gosec // gitid-managed path (G304)
+	gcBytes, _ := os.ReadFile(filepath.Join(home, ".gitconfig"))      //nolint:gosec // gitid-managed path (G304)
+	accounts, _ := identity.Reconstruct(sshBytes, gcBytes, gitconfig.ReadFragment)
+	return accounts
 }
 
 // buildDeps wires identity.Deps from the real internal packages, including the
@@ -318,12 +511,21 @@ func gatherCreateInput(r *bufio.Reader, out io.Writer, algo string, dryRun bool)
 // gitconfig.SetAllowedSignersFile inside the gitconfig writer.
 func buildDeps(_ io.Writer) identity.Deps {
 	return identity.Deps{
+		// D-01: Generate writes the key pair directly to ~/.ssh immediately.
+		// TempPrivatePath == FinalPrivatePath (no temp staging); Cleanup is a
+		// guaranteed no-op. This replaces the old temp-stage→promote behavior
+		// (BUG-4 fix: the key is now on disk and uploadable before the gate runs).
 		Generate: func(in identity.CreateInput) (identity.StagedKey, error) {
 			home, herr := os.UserHomeDir()
 			if herr != nil {
 				return identity.StagedKey{}, herr
 			}
 			sshDir := filepath.Join(home, ".ssh")
+			// Ensure ~/.ssh exists and has the correct permission (0700) before
+			// writing any key material. filewriter.EnsureDir is idempotent.
+			if eerr := filewriter.EnsureDir(sshDir, 0o700); eerr != nil { //nolint:gosec // creating gitid-managed ~/.ssh dir (G301)
+				return identity.StagedKey{}, fmt.Errorf("identity add: ensuring ~/.ssh exists: %w", eerr)
+			}
 			finalPriv, finalPub := keygen.KeyPaths(sshDir, in.Algo, in.Name)
 			mat, gerr := keygen.GenerateMaterial(keygen.Params{
 				Algo:       in.Algo,
@@ -334,17 +536,17 @@ func buildDeps(_ io.Writer) identity.Deps {
 			if gerr != nil {
 				return identity.StagedKey{}, gerr
 			}
-			tempDir, terr := os.MkdirTemp("", "gitid-key-*")
-			if terr != nil {
-				return identity.StagedKey{}, fmt.Errorf("identity add: creating staging dir: %w", terr)
+			// Write private key directly to final ~/.ssh path (D-01, T-05.5-08:
+			// 0600 via filewriter chokepoint — never os.WriteFile directly).
+			if _, werr := filewriter.Write(finalPriv, mat.PrivPEM, 0o600); werr != nil { //nolint:gosec // gitid-managed final path (G306)
+				return identity.StagedKey{}, fmt.Errorf("identity add: writing private key to ~/.ssh: %w", werr)
 			}
-			tempPriv := filepath.Join(tempDir, "key")
-			if _, werr := filewriter.Write(tempPriv, mat.PrivPEM, 0o600); werr != nil { //nolint:gosec // gitid-managed staging path (G306)
-				_ = os.RemoveAll(tempDir)
-				return identity.StagedKey{}, fmt.Errorf("identity add: staging private key: %w", werr)
+			// Write public key (0644).
+			if _, werr := filewriter.Write(finalPub, []byte(mat.PubLine), 0o644); werr != nil {
+				return identity.StagedKey{}, fmt.Errorf("identity add: writing public key to ~/.ssh: %w", werr)
 			}
 			return identity.StagedKey{
-				TempPrivatePath:  tempPriv,
+				TempPrivatePath:  finalPriv, // == FinalPrivatePath (D-01: no temp staging)
 				FinalPrivatePath: finalPriv,
 				FinalPubPath:     finalPub,
 				PubLine:          mat.PubLine,
@@ -352,6 +554,8 @@ func buildDeps(_ io.Writer) identity.Deps {
 			}, nil
 		},
 		PersistKey: func(staged identity.StagedKey) (identity.KeyResult, error) {
+			// D-01: key was already written by Generate; PersistKey is a no-op
+			// for the create-new flow. Still called for Rotate which uses runPipeline.
 			if staged.PrivPEM == nil {
 				return identity.KeyResult{
 					PrivatePath: staged.FinalPrivatePath,
@@ -371,12 +575,8 @@ func buildDeps(_ io.Writer) identity.Deps {
 				PubLine:     staged.PubLine,
 			}, nil
 		},
-		Cleanup: func(staged identity.StagedKey) {
-			// No-op for existing-key paths (PrivPEM nil or temp == final).
-			if staged.PrivPEM == nil || staged.TempPrivatePath == staged.FinalPrivatePath {
-				return
-			}
-			_ = os.RemoveAll(filepath.Dir(staged.TempPrivatePath))
+		Cleanup: func(_ identity.StagedKey) {
+			// D-01: no temp dir; Cleanup is an unconditional no-op.
 		},
 		CopyPub: clipboard.Copy,
 		PreWrite: func(keyPath, hostname string, port int) tester.Result {
@@ -483,6 +683,20 @@ func printResolved(out io.Writer, res identity.CreateResult) {
 func printPubForManualCopy(out io.Writer, pubLine string) {
 	fp(out, "Public key (also copied to your clipboard):\n")
 	fp(out, strings.TrimRight(pubLine, "\n")+"\n")
+}
+
+// printBackupPaths prints the backup file paths returned by the four writers
+// after a confirmed write (CLAUDE.md safe-write invariant, WR-05).
+func printBackupPaths(out io.Writer, res identity.CreateResult) {
+	if res.SSHBackup != "" {
+		fp(out, fmt.Sprintf("  SSH config backup:      %s\n", res.SSHBackup))
+	}
+	if res.GitconfigBackup != "" {
+		fp(out, fmt.Sprintf("  gitconfig backup:       %s\n", res.GitconfigBackup))
+	}
+	if res.AllowedSignersBackup != "" {
+		fp(out, fmt.Sprintf("  allowed_signers backup: %s\n", res.AllowedSignersBackup))
+	}
 }
 
 // prompt reads a single line, showing def as the default when the user enters

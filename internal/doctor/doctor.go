@@ -63,6 +63,9 @@ const (
 	FamilySigning   Family = "Signing"
 	FamilyAgent     Family = "Agent"
 	FamilyBaseline  Family = "Baseline"
+	// FamilyOverlap surfaces ambiguous/overlapping includeIf match conditions
+	// across identities (DOC-08 / F-7). Severity is always warning (D-15).
+	FamilyOverlap Family = "Overlap"
 )
 
 // FixDescriptor carries metadata and the callable for an auto-fixable finding.
@@ -100,10 +103,10 @@ type Finding struct {
 // (which itself imports doctor for Finding/Deps types — avoiding a cycle).
 type CheckFn func(Deps) []Finding
 
-// Deps holds every external read, injected-fix function field, and the seven
-// per-family check functions that doctor.Run dispatches. The field set is the
-// Wave-2 contract: Plans 02/03/04/05 wire against these exact names. Any
-// change after 04-01-SUMMARY is published requires notifying all Wave-2 plans.
+// Deps holds every external read, injected-fix function field, and the per-family
+// check functions that doctor.Run dispatches. The field set is the Wave-2 contract:
+// Plans 02/03/04/05 wire against these exact names. Any change after 04-01-SUMMARY
+// is published requires notifying all Wave-2 plans.
 //
 // Read fields:
 //
@@ -138,7 +141,8 @@ type CheckFn func(Deps) []Finding
 // Check function fields (wired by cmd layer from internal/doctor/checks):
 //
 //	CheckDeps, CheckPerms, CheckCoherence, CheckOrphans,
-//	CheckSigning, CheckAgent, CheckBaseline — the seven per-family functions
+//	CheckSigning, CheckAgent, CheckBaseline — the seven original per-family functions
+//	CheckOverlap — the eighth check (DOC-08 / F-7); FamilyOverlap, SeverityWarning
 type Deps struct {
 	// Read fields.
 	ReadFile func(path string) ([]byte, error)
@@ -218,12 +222,16 @@ type Deps struct {
 	CheckSigning   CheckFn
 	CheckAgent     CheckFn
 	CheckBaseline  CheckFn
+	// CheckOverlap detects ambiguous/overlapping includeIf match conditions across
+	// identities (DOC-08 / F-7). Called after CheckOrphans; SeverityWarning only.
+	CheckOverlap CheckFn
 }
 
-// Run calls all seven check families in the fixed UI-SPEC order and returns
-// the aggregated findings slice. Each check function is called only when its
-// Deps field is non-nil (nil == stub not yet wired). Run never imports
-// filewriter or os.Chmod — fix capabilities are injected via deps (D-01).
+// Run calls all check families in the fixed UI-SPEC order and returns the
+// aggregated findings slice. Each check function is called only when its Deps
+// field is non-nil (nil == stub not yet wired). Run never imports filewriter or
+// os.Chmod — fix capabilities are injected via deps (D-01).
+// Order: Dependencies, Permissions, Coherence, Orphans, Signing, Agent, Baseline, Overlap.
 func Run(deps Deps) []Finding {
 	var all []Finding
 	for _, fn := range []CheckFn{
@@ -234,6 +242,7 @@ func Run(deps Deps) []Finding {
 		deps.CheckSigning,
 		deps.CheckAgent,
 		deps.CheckBaseline,
+		deps.CheckOverlap,
 	} {
 		if fn != nil {
 			all = append(all, fn(deps)...)
@@ -279,8 +288,10 @@ func severityToCode(s Severity) int {
 	}
 }
 
-// Families returns the seven family constants in the fixed UI-SPEC display
-// order: Dependencies, Permissions, Coherence, Orphans, Signing, Agent, Baseline.
+// Families returns all family constants in the fixed UI-SPEC display order:
+// Dependencies, Permissions, Coherence, Orphans, Signing, Agent, Baseline, Overlap.
+// FamilyOverlap is listed last so it renders as an advisory section after the
+// structural/integrity checks (D-15 — severity warning, not blocking).
 func Families() []Family {
 	return []Family{
 		FamilyDeps,
@@ -290,5 +301,6 @@ func Families() []Family {
 		FamilySigning,
 		FamilyAgent,
 		FamilyBaseline,
+		FamilyOverlap,
 	}
 }

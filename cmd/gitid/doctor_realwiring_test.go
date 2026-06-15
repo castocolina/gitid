@@ -38,7 +38,7 @@ func seedOrphanSSHConfig(t *testing.T, home string) (sshConfigPath string) {
 	// buildDoctorDeps reads this via sshconfig.ParseManagedHosts → SSHManagedBlockNames,
 	// but the gitconfig managed block list will be empty → orphan detected.
 	managedBlock := filewriter.BeginPrefix + "orphanid\n" +
-		sshconfig.RenderHostBlock("github.com", "github.com", 22, filepath.Join(home, ".ssh", "id_orphanid")) +
+		sshconfig.RenderHostBlock("github.com", "github.com", 22, filepath.Join(home, ".ssh", "id_orphanid"), "") +
 		filewriter.EndPrefix + "orphanid\n"
 	if err := os.WriteFile(sshConfigPath, []byte(managedBlock), 0o600); err != nil {
 		t.Fatalf("seedOrphanSSHConfig: WriteFile config: %v", err)
@@ -133,7 +133,7 @@ func TestDoctorRealWiring2_AllowedSignersModeAfterReAdd(t *testing.T) {
 
 	// Seed ~/.ssh/config with a gitid-managed Host block for identityName.
 	sshConfigContent := filewriter.BeginPrefix + identityName + "\n" +
-		sshconfig.RenderHostBlock("github.com", "github.com", 22, keyPath) +
+		sshconfig.RenderHostBlock("github.com", "github.com", 22, keyPath, "") +
 		filewriter.EndPrefix + identityName + "\n"
 	sshConfigPath := filepath.Join(sshDir, "config")
 	if err := os.WriteFile(sshConfigPath, []byte(sshConfigContent), 0o600); err != nil {
@@ -244,7 +244,7 @@ func TestDoctorRealWiring3_ReportOnlyStaysUnfixable(t *testing.T) {
 	// (non-existent) key path, so the unused key above is never referenced.
 	missingKeyPath := filepath.Join(sshDir, "id_ed25519_missing")
 	sshConfigContent := filewriter.BeginPrefix + identityName + "\n" +
-		sshconfig.RenderHostBlock("github.com", "github.com", 22, missingKeyPath) +
+		sshconfig.RenderHostBlock("github.com", "github.com", 22, missingKeyPath, "") +
 		filewriter.EndPrefix + identityName + "\n"
 	sshConfigPath := filepath.Join(sshDir, "config")
 	if err := os.WriteFile(sshConfigPath, []byte(sshConfigContent), 0o600); err != nil {
@@ -377,7 +377,7 @@ func TestDoctorRealWiring4_WR01EmailMismatchFalsePositive(t *testing.T) {
 
 	// Seed ~/.ssh/config with a managed Host block.
 	sshConfigContent := filewriter.BeginPrefix + identityName + "\n" +
-		sshconfig.RenderHostBlock("github.com", "github.com", 22, keyPath) +
+		sshconfig.RenderHostBlock("github.com", "github.com", 22, keyPath, "") +
 		filewriter.EndPrefix + identityName + "\n"
 	sshConfigPath := filepath.Join(sshDir, "config")
 	if err := os.WriteFile(sshConfigPath, []byte(sshConfigContent), 0o600); err != nil {

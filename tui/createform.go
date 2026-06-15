@@ -177,7 +177,6 @@ func (m createFormModel) trySubmit() (screenModel, tea.Cmd) {
 		GitconfigPath:      filepath.Join(home, ".gitconfig"),
 		SSHConfigPath:      filepath.Join(sshDir, "config"),
 		AllowedSignersPath: filepath.Join(sshDir, "allowed_signers"),
-		Confirmed:          false, // prove screen gates the confirm
 	}
 	_ = pubPath // pub path is derived by the Generate dep; retained for symmetry.
 

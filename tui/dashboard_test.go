@@ -161,3 +161,41 @@ func TestDashboardStaleResult(t *testing.T) {
 		t.Errorf("stale result: findings[FamilyDeps] should be empty; got %d", len(dm.findings[doctor.FamilyDeps]))
 	}
 }
+
+// TestMakeFamilyCmdDispatchesEveryFamily is the CR-02 regression guard: every
+// family advertised by doctor.Families() must have a real dispatch case in
+// makeFamilyCmd AND a wired Deps field. A missing case (the bug that hid the
+// Overlap warning behind a false "all checks passed") now surfaces as a
+// familyResultMsg carrying an error, never as a silent empty-findings pass.
+func TestMakeFamilyCmdDispatchesEveryFamily(t *testing.T) {
+	deps := fakeDocDeps() // fully wired, returns no findings for every family
+	for _, fam := range doctor.Families() {
+		cmd := makeFamilyCmd(0, fam, deps)
+		if cmd == nil {
+			t.Errorf("makeFamilyCmd(%q) returned nil cmd", fam)
+			continue
+		}
+		res, ok := cmd().(familyResultMsg)
+		if !ok {
+			t.Errorf("makeFamilyCmd(%q) produced %T; want familyResultMsg", fam, cmd())
+			continue
+		}
+		if res.err != nil {
+			t.Errorf("family %q is not dispatched/wired in the TUI: %v", fam, res.err)
+		}
+	}
+}
+
+// TestMakeFamilyCmdUnwiredFamilyErrors proves the nil-guard: a family whose
+// Deps field is nil must produce an error, not a false "passed".
+func TestMakeFamilyCmdUnwiredFamilyErrors(t *testing.T) {
+	deps := fakeDocDeps()
+	deps.CheckOverlap = nil // simulate a forgotten wiring
+	res, ok := makeFamilyCmd(0, doctor.FamilyOverlap, deps)().(familyResultMsg)
+	if !ok {
+		t.Fatalf("want familyResultMsg")
+	}
+	if res.err == nil {
+		t.Error("unwired family must yield an error, not a silent empty-findings pass")
+	}
+}

@@ -51,8 +51,9 @@ type Account struct {
 
 // CreateInput carries the user-gathered inputs plus the resolved gitid-managed
 // paths the create-new flow writes to. The command layer fills it from
-// interactive prompts and platform defaults; Confirmed gates the actual writes
-// (false == preview/dry-run only, SAFE-03).
+// interactive prompts and platform defaults. For the create-new flow the
+// persist decision is made by the auth-gated loop in cmd/gitid/add.go
+// (runCreateLoop), not by a static field here (D-02/D-05/D-06).
 type CreateInput struct {
 	Name     string
 	GitName  string
@@ -74,10 +75,6 @@ type CreateInput struct {
 
 	// GlobalBlock is the rendered macOS `Host *` block body (empty off darwin).
 	GlobalBlock string
-
-	// Confirmed is the single explicit user consent. When false, Create renders
-	// the previews and returns without performing any write (SAFE-03 / --dry-run).
-	Confirmed bool
 }
 
 // KeyResult is the subset of keygen.Result the orchestration needs, decoupling
@@ -159,7 +156,7 @@ type CreateResult struct {
 	AllowedSignersPreview string
 	AllowedSignersLine    string
 	// PreWriteOnly is true when the run produced previews but performed no write
-	// (Confirmed was false / dry-run).
+	// (dry-run: PreWriteOnly=true).
 	PreWriteOnly bool
 	Resolved     tester.ResolvedConfig
 	ResolvedTest tester.Result
@@ -188,14 +185,16 @@ func DefaultMatch(identity string) gitconfig.Match {
 // Create orchestrates the create-new identity flow with all effects injected:
 //
 //	generate key → copy .pub → build allowed_signers line → pre-write test
-//	→ render the four artifact previews → (Confirmed?) write all four → resolved test
+//	→ render the four artifact previews → write all four → resolved test
 //
 // The pre-write test gates the write (D-01): a Failure outcome aborts with an
-// error and NO writes; PASS or ReachableNotUploaded proceed. When Confirmed is
-// false the previews are returned with PreWriteOnly set and no write or resolved
-// test runs (SAFE-03 / --dry-run). On a confirmed write all FOUR writers run —
-// WriteSSH, WriteGitconfig, WriteFragment, and WriteAllowedSigners — then the
-// resolved test captures the live config.
+// error and NO writes; PASS or ReachableNotUploaded proceed. All FOUR writers
+// run — WriteSSH, WriteGitconfig, WriteFragment, and WriteAllowedSigners — then
+// the resolved test captures the live config.
+//
+// For the create-new flow in the CLI (cmd/gitid/add.go) use the auth-gated loop:
+// Generate + runCreateLoop + PersistAll. This function is retained for the TUI
+// prove-screen path which drives Create through the injected deps seam.
 func Create(in CreateInput, deps Deps) (CreateResult, error) {
 	staged, err := deps.Generate(in)
 	if err != nil {
@@ -205,22 +204,107 @@ func Create(in CreateInput, deps Deps) (CreateResult, error) {
 	return runPipeline(in, staged, deps)
 }
 
-// runPipeline is the single write path shared by Create, Rotate, and the reuse
-// flow: copy the .pub → build the allowed_signers line → pre-write test (gates
-// the write, D-01, runs against staged.TempPrivatePath) → render the four
-// artifact previews from FINAL paths → (Confirmed? persist key FIRST, then)
-// write all four → run the resolved test. Both the create-new, rotate, and
-// reuse-existing modes funnel through here so there is exactly one writer
-// sequence (no parallel write path).
+// RenderPreviews builds the four artifact preview strings from CreateInput and
+// StagedKey using FINAL paths. It is a pure function — it performs NO writes,
+// NO clipboard operations, NO network calls, and NO file reads. Exported so
+// cmd/gitid/add.go can render previews for the --dry-run path without calling
+// the full pipeline. The SSH host block includes the provider marker comment
+// (Plan 02 provider arg, D-11).
+func RenderPreviews(in CreateInput, staged StagedKey) CreateResult {
+	final := KeyResult{
+		PrivatePath: staged.FinalPrivatePath,
+		PubPath:     staged.FinalPubPath,
+		PubLine:     staged.PubLine,
+	}
+	signersLine := keygen.AllowedSignersLine(in.GitEmail, staged.PubLine)
+	hostBlock := sshconfig.RenderHostBlock(in.Alias, in.Hostname, in.Port, final.PrivatePath, in.Provider)
+	gitPreview := gitconfig.RenderIncludeIf(in.Name, in.FragmentPath, in.Matches)
+	return CreateResult{
+		Key:                   final,
+		SSHPreview:            hostBlock,
+		GitconfigPreview:      gitPreview,
+		FragmentPreview:       renderFragmentPreview(in, final.PubPath),
+		AllowedSignersPreview: signersLine,
+		AllowedSignersLine:    signersLine,
+		PreWriteOnly:          true,
+	}
+}
+
+// PersistAll writes the four config artifacts in order: optionally PersistKey
+// (when staged.PrivPEM != nil), then WriteSSH, WriteGitconfig, WriteFragment,
+// WriteAllowedSigners, then Resolved. It is the single exported write sequence
+// for the create-new loop (called after PASS or after explicit skip+confirm —
+// D-03/D-05). Exported so cmd/gitid/add.go's runCreateLoop can call it when the
+// loop resolves.
+func PersistAll(in CreateInput, staged StagedKey, deps Deps) (CreateResult, error) {
+	final := KeyResult{
+		PrivatePath: staged.FinalPrivatePath,
+		PubPath:     staged.FinalPubPath,
+		PubLine:     staged.PubLine,
+	}
+	signersLine := keygen.AllowedSignersLine(in.GitEmail, staged.PubLine)
+	hostBlock := sshconfig.RenderHostBlock(in.Alias, in.Hostname, in.Port, final.PrivatePath, in.Provider)
+	gitPreview := gitconfig.RenderIncludeIf(in.Name, in.FragmentPath, in.Matches)
+
+	res := CreateResult{
+		Key:                   final,
+		SSHPreview:            hostBlock,
+		GitconfigPreview:      gitPreview,
+		FragmentPreview:       renderFragmentPreview(in, final.PubPath),
+		AllowedSignersPreview: signersLine,
+		AllowedSignersLine:    signersLine,
+	}
+
+	// Persist the key BEFORE the four writers so a persist failure aborts
+	// before any config references a non-existent key. Skip when PrivPEM is nil
+	// (existing-key reuse/add-account paths — no new key to write).
+	if staged.PrivPEM != nil {
+		if _, perr := deps.PersistKey(staged); perr != nil {
+			return res, fmt.Errorf("identity: persisting key pair: %w", perr)
+		}
+	}
+
+	sshBak, werr := deps.WriteSSH(in.Name, hostBlock, in.GlobalBlock)
+	if werr != nil {
+		return res, fmt.Errorf("identity: writing ssh config: %w", werr)
+	}
+	res.SSHBackup = sshBak
+	gcBak, werr := deps.WriteGitconfig(in.Name, in.FragmentPath, in.AllowedSignersPath, in.Matches)
+	if werr != nil {
+		return res, fmt.Errorf("identity: writing gitconfig includeIf: %w", werr)
+	}
+	res.GitconfigBackup = gcBak
+	if werr := deps.WriteFragment(in.FragmentPath, in.GitName, in.GitEmail, final.PubPath, true); werr != nil {
+		return res, fmt.Errorf("identity: writing gitconfig fragment: %w", werr)
+	}
+	signBak, werr := deps.WriteAllowedSigners(in.AllowedSignersPath, in.Name, signersLine)
+	if werr != nil {
+		return res, fmt.Errorf("identity: writing allowed_signers: %w", werr)
+	}
+	res.AllowedSignersBackup = signBak
+
+	resolvedTest, resolved := deps.Resolved(in.Alias)
+	res.ResolvedTest = resolvedTest
+	res.Resolved = resolved
+	return res, nil
+}
+
+// runPipeline is the write path for Reuse, AddAccount, and Rotate: copy the
+// .pub → build the allowed_signers line → pre-write test (gates the write,
+// runs against staged.TempPrivatePath) → render the four artifact previews from
+// FINAL paths → persist key (when PrivPEM != nil) → write all four → run the
+// resolved test. These modes always write (they are confirmed write paths) so
+// there is no static consent gate here — these are always-confirmed write paths.
 //
 // The pre-write test gates the write: a Failure outcome aborts with an error and
-// NO writes; PASS or ReachableNotUploaded proceed. When Confirmed is false the
-// previews are returned with PreWriteOnly set and no write or resolved test runs
-// (SAFE-03 / --dry-run). On a confirmed write: if staged.PrivPEM != nil,
+// NO writes; PASS or ReachableNotUploaded proceed. If staged.PrivPEM != nil,
 // PersistKey is called FIRST (before the four writers) so a persist failure
 // aborts before any config references a non-existent key. Then all FOUR writers
 // run — WriteSSH, WriteGitconfig, WriteFragment, WriteAllowedSigners — then the
 // resolved test captures the live config.
+//
+// For the create-new flow, use Generate + RenderPreviews + PersistAll (with the
+// auth-gated loop in runCreateLoop in cmd/gitid/add.go).
 func runPipeline(in CreateInput, staged StagedKey, deps Deps) (CreateResult, error) {
 	if cerr := deps.CopyPub(staged.PubLine); cerr != nil {
 		// Clipboard is best-effort (CLIP-02): a copy failure never aborts the
@@ -246,7 +330,7 @@ func runPipeline(in CreateInput, staged StagedKey, deps Deps) (CreateResult, err
 		PubPath:     staged.FinalPubPath,
 		PubLine:     staged.PubLine,
 	}
-	hostBlock := sshconfig.RenderHostBlock(in.Alias, in.Hostname, in.Port, final.PrivatePath)
+	hostBlock := sshconfig.RenderHostBlock(in.Alias, in.Hostname, in.Port, final.PrivatePath, in.Provider)
 	gitPreview := gitconfig.RenderIncludeIf(in.Name, in.FragmentPath, in.Matches)
 
 	res := CreateResult{
@@ -257,11 +341,6 @@ func runPipeline(in CreateInput, staged StagedKey, deps Deps) (CreateResult, err
 		FragmentPreview:       renderFragmentPreview(in, final.PubPath),
 		AllowedSignersPreview: signersLine,
 		AllowedSignersLine:    signersLine,
-	}
-
-	if !in.Confirmed {
-		res.PreWriteOnly = true
-		return res, nil
 	}
 
 	// Persist the key BEFORE the four writers so a persist failure aborts

@@ -36,3 +36,36 @@ func TestValidateName(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateProvider(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "empty allowed (provider is optional)", input: "", wantErr: false},
+		{name: "github", input: "github", wantErr: false},
+		{name: "gitlab", input: "gitlab", wantErr: false},
+		{name: "self-hosted with dots", input: "git.company.com", wantErr: false},
+		{name: "hyphen ok", input: "my-forge", wantErr: false},
+		{name: "space rejected (breaks hostname/marker)", input: "git hub", wantErr: true},
+		{name: "leading space rejected", input: " github", wantErr: true},
+		{name: "trailing space rejected (breaks marker round-trip)", input: "github ", wantErr: true},
+		{name: "newline rejected (marker injection)", input: "github\nHost evil", wantErr: true},
+		{name: "carriage return rejected", input: "github\r", wantErr: true},
+		{name: "slash rejected", input: "git/hub", wantErr: true},
+		{name: "shell metachar rejected", input: "a;rm -rf", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := identity.ValidateProvider(tc.input)
+			if tc.wantErr && err == nil {
+				t.Errorf("ValidateProvider(%q) expected error, got nil", tc.input)
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("ValidateProvider(%q) expected nil, got %v", tc.input, err)
+			}
+		})
+	}
+}

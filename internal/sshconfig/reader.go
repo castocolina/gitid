@@ -17,6 +17,23 @@ type SSHHostInfo struct {
 	Port           int // 0 ("unset") when the block has no explicit Port directive (WR-06)
 	IdentityFile   string
 	IdentitiesOnly bool
+	Provider       string // from "# gitid: provider=<p>" marker comment (D-11); empty when absent
+}
+
+// extractProviderMarker scans a raw Host block body for a "# gitid: provider=<p>"
+// comment and returns the provider value. Returns "" when no marker is found
+// (D-13 backward-compat: markerless legacy blocks return empty provider).
+// The scan is a pre-pass on the raw body bytes before ssh_config.Decode so the
+// comment (invisible to OpenSSH) does not interfere with directive parsing.
+func extractProviderMarker(body string) string {
+	const prefix = "# gitid: provider="
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, prefix) {
+			return strings.TrimPrefix(line, prefix)
+		}
+	}
+	return ""
 }
 
 // ParseManagedHosts parses content (bytes of ~/.ssh/config), extracts all
@@ -37,6 +54,7 @@ func ParseManagedHosts(content []byte) (map[string]SSHHostInfo, error) {
 			result[b.Name] = SSHHostInfo{}
 			continue
 		}
+		info.Provider = extractProviderMarker(b.Body)
 		result[b.Name] = info
 	}
 	return result, nil

@@ -63,7 +63,7 @@ func Update(existing Account, edited Account, deps UpdateDeps, signing bool) (Up
 		edited.Port != existing.Port
 
 	// Re-render the SSH host block with the (potentially updated) alias/hostname/port/key.
-	hostBlock := sshconfig.RenderHostBlock(edited.Alias, edited.Hostname, edited.Port, edited.KeyPath)
+	hostBlock := sshconfig.RenderHostBlock(edited.Alias, edited.Hostname, edited.Port, edited.KeyPath, edited.Provider)
 	sshBak, werr := deps.WriteSSH(existing.Name, hostBlock, "")
 	if werr != nil {
 		return UpdateResult{}, fmt.Errorf("identity: writing ssh config: %w", werr)

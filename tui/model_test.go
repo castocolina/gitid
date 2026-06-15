@@ -22,6 +22,7 @@ func fakeDocDeps() doctor.Deps {
 		CheckSigning:   noFindings,
 		CheckAgent:     noFindings,
 		CheckBaseline:  noFindings,
+		CheckOverlap:   noFindings,
 	}
 }
 

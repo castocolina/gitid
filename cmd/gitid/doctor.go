@@ -86,6 +86,11 @@ func runDoctor(out io.Writer, fix, yes bool) int {
 	}
 
 	findings := doctor.Run(buildDoctorDeps(home, sshBytes, gcBytes))
+
+	// D-17: append install-info finding (SeverityInfo) so it shows under
+	// Dependencies but never raises the exit tier.
+	findings = append(findings, installInfoFinding())
+
 	pre := doctor.ExitCode(findings)
 
 	colorEnabled := isTerminalOutput(os.Stdout)
@@ -235,6 +240,41 @@ func runSSHKeygenFingerprint(path string) (string, error) {
 	}
 	line := strings.SplitN(string(out), "\n", 2)[0]
 	return line, nil
+}
+
+// installInfoFinding calls platform.BinaryInstallInfo and returns a SeverityInfo
+// finding under FamilyDeps (D-17). It reports the resolved binary path and whether
+// it is on PATH, with an export hint when not found. Info severity means it is
+// advisory only and never changes the exit tier.
+func installInfoFinding() doctor.Finding {
+	binPath, onPATH, err := platform.BinaryInstallInfo()
+	if err != nil {
+		return doctor.Finding{
+			Family:      doctor.FamilyDeps,
+			Severity:    doctor.SeverityInfo,
+			Title:       "binary location: unknown",
+			Explanation: fmt.Sprintf("could not resolve binary path: %v", err),
+		}
+	}
+
+	title := fmt.Sprintf("binary: %s", binPath)
+	var explanation, suggestedFix string
+	if onPATH {
+		explanation = "on PATH: yes"
+	} else {
+		binDir := filepath.Dir(binPath)
+		explanation = "on PATH: no"
+		suggestedFix = fmt.Sprintf(`export PATH="$PATH:%s"`, binDir)
+	}
+
+	return doctor.Finding{
+		Family:       doctor.FamilyDeps,
+		Severity:     doctor.SeverityInfo,
+		Title:        title,
+		Explanation:  explanation,
+		SuggestedFix: suggestedFix,
+		Fix:          nil,
+	}
 }
 
 // buildDoctorDeps wires real packages into doctor.Deps. The FixPerm field
@@ -389,7 +429,7 @@ func buildDoctorDeps(home string, sshBytes, gcBytes []byte) doctor.Deps {
 						port = 22
 					}
 				}
-				hostBlock := sshconfig.RenderHostBlock(alias, hostname, port, identityFile)
+				hostBlock := sshconfig.RenderHostBlock(alias, hostname, port, identityFile, "")
 				globalBlock := sshconfig.RenderGlobalBlock(platform.CurrentOS())
 				if _, err := sshconfig.Write(path, name, hostBlock, globalBlock); err != nil {
 					return fmt.Errorf("doctor: AddWiring ssh-host for %q: %w", name, err)
@@ -437,6 +477,8 @@ func buildDoctorDeps(home string, sshBytes, gcBytes []byte) doctor.Deps {
 		CheckSigning:   checks.CheckSigning,
 		CheckAgent:     checks.CheckAgent,
 		CheckBaseline:  checks.CheckBaseline,
+		// DOC-08 / F-7: overlap detector. Identities is already populated above.
+		CheckOverlap: checks.CheckOverlap,
 	}
 }
 

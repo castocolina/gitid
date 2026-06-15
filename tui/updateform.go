@@ -122,7 +122,6 @@ func (m updateFormModel) trySubmit() (screenModel, tea.Cmd) {
 		GitconfigPath:      updated.GitconfigPath,
 		SSHConfigPath:      updated.SSHConfigPath,
 		AllowedSignersPath: updated.AllowedSignersPath,
-		Confirmed:          false,
 	}
 	// FIX-1: PRESERVE the existing signing state instead of inferring it from the
 	// presence of an email. Mirror cmd/gitid/update.go currentSigning: read the

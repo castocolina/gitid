@@ -9,6 +9,17 @@ import (
 	"github.com/castocolina/gitid/internal/sshconfig"
 )
 
+// hostnameToProvider maps known SSH hostnames to their provider names.
+// Used as fallback when no "# gitid: provider=" marker is present (D-12).
+// Legacy identities without a marker resolve via this map; custom hosts
+// with unknown hostnames get an empty provider (D-13 — honest unknown).
+var hostnameToProvider = map[string]string{
+	"ssh.github.com":    "github",
+	"github.com":        "github",
+	"altssh.gitlab.com": "gitlab",
+	"gitlab.com":        "gitlab",
+}
+
 // Reconstruct assembles []Account from the four managed artifacts.
 // sshBytes and gcBytes are the raw bytes of ~/.ssh/config and ~/.gitconfig.
 // readFrag is injectable for testing (fake reads). The join key is the identity
@@ -43,11 +54,12 @@ func Reconstruct(
 			acct.Port = ssh.Port
 			acct.KeyPath = ssh.IdentityFile
 			acct.PubPath = ssh.IdentityFile + ".pub"
-			// Derive provider from alias (A1): TrimPrefix("work.github.com", "work.").
-			// Leave empty if alias does not carry the <name>.<provider> form.
-			derived := strings.TrimPrefix(ssh.Alias, name+".")
-			if derived != ssh.Alias {
-				acct.Provider = derived
+			// Prefer explicit marker (D-11); fall back to hostname map (D-12).
+			// Custom hosts with unknown hostnames get empty provider (D-13 — honest unknown).
+			if ssh.Provider != "" {
+				acct.Provider = ssh.Provider
+			} else if p, ok := hostnameToProvider[ssh.Hostname]; ok {
+				acct.Provider = p
 			}
 		} else {
 			missing = append(missing, "ssh-host-block")

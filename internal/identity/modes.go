@@ -88,7 +88,6 @@ func AddAccount(existing Account, newProvider, newAlias string, deps Deps) (Crea
 		GitconfigPath:      existing.GitconfigPath,
 		SSHConfigPath:      existing.SSHConfigPath,
 		AllowedSignersPath: existing.AllowedSignersPath,
-		Confirmed:          true,
 		GlobalBlock:        "",
 	}
 
@@ -126,8 +125,7 @@ func AddAccount(existing Account, newProvider, newAlias string, deps Deps) (Crea
 // the write the two-phase resolved test re-runs against the new key.
 //
 // Confirmation (SAFE-03) is gathered by the command layer before Rotate is
-// called; the in-memory CreateInput here is always Confirmed so the rotation is
-// an explicit, consented mutation.
+// called; Rotate uses runPipeline which always writes (consented by the caller).
 func Rotate(existing Account, deps Deps) (CreateResult, error) {
 	in := rotateInput(existing)
 
@@ -158,7 +156,6 @@ func rotateInput(a Account) CreateInput {
 		SSHConfigPath:      a.SSHConfigPath,
 		AllowedSignersPath: a.AllowedSignersPath,
 		GlobalBlock:        "",
-		Confirmed:          true,
 	}
 }
 

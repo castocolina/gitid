@@ -116,7 +116,6 @@ func sampleInput() CreateInput {
 		SSHConfigPath:      "/tmp/.ssh/config",
 		AllowedSignersPath: "/tmp/.ssh/allowed_signers",
 		GlobalBlock:        "Host *\n  UseKeychain yes\n",
-		Confirmed:          true,
 	}
 }
 
@@ -170,29 +169,51 @@ func TestCreateProceedsOnReachableNotUploaded(t *testing.T) {
 	}
 }
 
-func TestCreateDryRunSkipsWrites(t *testing.T) {
+// TestRenderPreviewsZeroWrites asserts RenderPreviews performs zero writes and
+// returns non-empty previews for all four artifact strings (D-02/D-03: dry-run
+// path for create-new uses RenderPreviews, not Create).
+func TestRenderPreviewsZeroWrites(t *testing.T) {
 	var log callLog
 	deps := newFakeDeps(&log, tester.ReachableNotUploaded)
 	in := sampleInput()
-	in.Confirmed = false // dry-run / unconfirmed: preview only
+	staged := sampleStaged(in)
 
-	res, err := Create(in, deps)
-	if err != nil {
-		t.Fatalf("Create() unconfirmed returned error: %v", err)
-	}
+	res := RenderPreviews(in, staged)
+
+	// RenderPreviews must call ZERO writers.
 	if log.writeSSH != 0 || log.writeGitconfig != 0 || log.writeFragment != 0 || log.writeAllowedSigners != 0 {
-		t.Fatalf("Create() unconfirmed must perform NO writes; got ssh=%d gitconfig=%d fragment=%d signers=%d",
+		t.Fatalf("RenderPreviews must perform NO writes; got ssh=%d gitconfig=%d fragment=%d signers=%d",
 			log.writeSSH, log.writeGitconfig, log.writeFragment, log.writeAllowedSigners)
 	}
+	if log.copyPub != 0 {
+		t.Errorf("RenderPreviews must not copy to clipboard; CopyPub called %d times", log.copyPub)
+	}
+	if log.preWrite != 0 {
+		t.Errorf("RenderPreviews must not call PreWrite; called %d times", log.preWrite)
+	}
 	if log.resolved != 0 {
-		t.Errorf("Create() unconfirmed must not run resolved test; ran %d", log.resolved)
+		t.Errorf("RenderPreviews must not run the resolved test; ran %d", log.resolved)
 	}
-	// Previews are still produced for display.
-	if res.SSHPreview == "" || res.GitconfigPreview == "" || res.AllowedSignersPreview == "" {
-		t.Error("Create() unconfirmed must still return artifact previews")
+	// All four previews must be non-empty.
+	if res.SSHPreview == "" || res.GitconfigPreview == "" || res.FragmentPreview == "" || res.AllowedSignersPreview == "" {
+		t.Error("RenderPreviews must return non-empty previews for all four artifacts")
 	}
-	if !res.PreWriteOnly {
-		t.Error("Create() unconfirmed must mark the result as preview-only (no write performed)")
+	// The deps arg is intentionally ignored — unused deps confirms no writes.
+	_ = deps
+}
+
+// TestRenderPreviewsIncludesProvider asserts RenderPreviews passes in.Provider
+// to RenderHostBlock so the SSH preview contains the provider marker comment
+// (Plan 02 RenderHostBlock signature with provider arg, D-11).
+func TestRenderPreviewsIncludesProvider(t *testing.T) {
+	in := sampleInput()
+	in.Provider = "github"
+	staged := sampleStaged(in)
+
+	res := RenderPreviews(in, staged)
+
+	if !strings.Contains(res.SSHPreview, "provider=github") {
+		t.Errorf("RenderPreviews SSHPreview must contain provider marker 'provider=github'; got:\n%s", res.SSHPreview)
 	}
 }
 
@@ -275,35 +296,114 @@ func TestCreatePassesHostnameNotAlias(t *testing.T) {
 
 // --- New behavioral tests (BUG-4 temp-then-promote) ---
 
-// TestCreateDryRun_PersistKeyCountZero asserts that a dry-run (Confirmed=false)
-// Create records PersistKey count 0, Cleanup IS called, and the four artifact
-// previews are all non-empty. PreWriteOnly must be true.
-func TestCreateDryRun_PersistKeyCountZero(t *testing.T) {
+// TestPersistAll_RunsAllFourWritersInOrder asserts PersistAll calls PersistKey
+// (when PrivPEM != nil) then all four writers in order, then Resolved, and
+// returns backup paths (D-03 auto-persist shape).
+func TestPersistAll_RunsAllFourWritersInOrder(t *testing.T) {
 	var log callLog
-	deps := newFakeDeps(&log, tester.ReachableNotUploaded)
-	in := sampleInput()
-	in.Confirmed = false
+	var callOrder []string
 
-	res, err := Create(in, deps)
+	deps := newFakeDeps(&log, tester.PASS)
+	deps.PersistKey = func(s StagedKey) (KeyResult, error) {
+		log.persistKey++
+		callOrder = append(callOrder, "persistKey")
+		return KeyResult{PrivatePath: s.FinalPrivatePath, PubPath: s.FinalPubPath, PubLine: s.PubLine}, nil
+	}
+	deps.WriteSSH = func(_, _, _ string) (string, error) {
+		log.writeSSH++
+		callOrder = append(callOrder, "writeSSH")
+		return "bak-ssh", nil
+	}
+	deps.WriteGitconfig = func(_, _, _ string, _ []gitconfig.Match) (string, error) {
+		log.writeGitconfig++
+		callOrder = append(callOrder, "writeGitconfig")
+		return "bak-gc", nil
+	}
+	deps.WriteFragment = func(_, _, _, _ string, _ bool) error {
+		log.writeFragment++
+		callOrder = append(callOrder, "writeFragment")
+		return nil
+	}
+	deps.WriteAllowedSigners = func(_, _, _ string) (string, error) {
+		log.writeAllowedSigners++
+		callOrder = append(callOrder, "writeAllowedSigners")
+		return "bak-signers", nil
+	}
+	deps.Resolved = func(_ string) (tester.Result, tester.ResolvedConfig) {
+		log.resolved++
+		callOrder = append(callOrder, "resolved")
+		return tester.Result{Outcome: tester.PASS}, tester.ResolvedConfig{User: "git"}
+	}
+
+	in := sampleInput()
+	staged := sampleStaged(in)
+
+	res, err := PersistAll(in, staged, deps)
 	if err != nil {
-		t.Fatalf("Create() dry-run returned error: %v", err)
+		t.Fatalf("PersistAll returned error: %v", err)
+	}
+
+	// PersistKey must fire before the four writers (PrivPEM != nil in sampleStaged).
+	if log.persistKey != 1 {
+		t.Errorf("PersistAll: PersistKey called %d times, want 1", log.persistKey)
+	}
+	if len(callOrder) > 0 && callOrder[0] != "persistKey" {
+		t.Errorf("PersistAll: PersistKey must be called first; order was %v", callOrder)
+	}
+	if log.writeSSH != 1 {
+		t.Errorf("PersistAll: WriteSSH called %d times, want 1", log.writeSSH)
+	}
+	if log.writeGitconfig != 1 {
+		t.Errorf("PersistAll: WriteGitconfig called %d times, want 1", log.writeGitconfig)
+	}
+	if log.writeFragment != 1 {
+		t.Errorf("PersistAll: WriteFragment called %d times, want 1", log.writeFragment)
+	}
+	if log.writeAllowedSigners != 1 {
+		t.Errorf("PersistAll: WriteAllowedSigners called %d times, want 1", log.writeAllowedSigners)
+	}
+	if log.resolved != 1 {
+		t.Errorf("PersistAll: Resolved called %d times, want 1", log.resolved)
+	}
+	// Backup paths returned.
+	if res.SSHBackup != "bak-ssh" {
+		t.Errorf("PersistAll: SSHBackup = %q, want bak-ssh", res.SSHBackup)
+	}
+	if res.GitconfigBackup != "bak-gc" {
+		t.Errorf("PersistAll: GitconfigBackup = %q, want bak-gc", res.GitconfigBackup)
+	}
+	if res.AllowedSignersBackup != "bak-signers" {
+		t.Errorf("PersistAll: AllowedSignersBackup = %q, want bak-signers", res.AllowedSignersBackup)
+	}
+}
+
+// TestPersistAll_SkipsPersistKeyWhenPrivPEMNil asserts PersistAll skips
+// PersistKey when staged.PrivPEM is nil (existing-key reuse path).
+func TestPersistAll_SkipsPersistKeyWhenPrivPEMNil(t *testing.T) {
+	var log callLog
+	deps := newFakeDeps(&log, tester.PASS)
+
+	in := sampleInput()
+	staged := sampleStaged(in)
+	staged.PrivPEM = nil // existing-key path
+
+	_, err := PersistAll(in, staged, deps)
+	if err != nil {
+		t.Fatalf("PersistAll (PrivPEM nil) returned error: %v", err)
 	}
 	if log.persistKey != 0 {
-		t.Errorf("dry-run: PersistKey called %d times, want 0 (must not persist before confirm)", log.persistKey)
+		t.Errorf("PersistAll: PersistKey called %d times with PrivPEM nil, want 0", log.persistKey)
 	}
-	if log.cleanup != 1 {
-		t.Errorf("dry-run: Cleanup called %d times, want 1 (defer must always fire)", log.cleanup)
-	}
-	if res.SSHPreview == "" || res.GitconfigPreview == "" || res.FragmentPreview == "" || res.AllowedSignersPreview == "" {
-		t.Error("dry-run: all four artifact previews must be non-empty")
-	}
-	if !res.PreWriteOnly {
-		t.Error("dry-run: PreWriteOnly must be true")
+	// Four writers still run.
+	if log.writeSSH != 1 || log.writeGitconfig != 1 || log.writeFragment != 1 || log.writeAllowedSigners != 1 {
+		t.Errorf("PersistAll: four writers must all run; ssh=%d gitconfig=%d fragment=%d signers=%d",
+			log.writeSSH, log.writeGitconfig, log.writeFragment, log.writeAllowedSigners)
 	}
 }
 
 // TestCreateGateFailure_PersistKeyCountZero asserts that a pre-write gate Failure
 // records PersistKey count 0 (no orphan key), Cleanup IS called, and no writer ran.
+// (Create/runPipeline is used by Reuse/Rotate paths which still have the gate.)
 func TestCreateGateFailure_PersistKeyCountZero(t *testing.T) {
 	var log callLog
 	deps := newFakeDeps(&log, tester.Failure)
@@ -324,11 +424,11 @@ func TestCreateGateFailure_PersistKeyCountZero(t *testing.T) {
 	}
 }
 
-// TestCreateConfirmed_PersistKeyCountOneAndFinalPaths asserts that a confirmed
-// create-new records PersistKey count exactly 1 (fires BEFORE the four writers),
-// res.Key.PrivatePath equals the FINAL path, and the SSH/fragment previews
-// reference the FINAL path, not the temp staging path.
-func TestCreateConfirmed_PersistKeyCountOneAndFinalPaths(t *testing.T) {
+// TestCreatePersistKeyCountOneAndFinalPaths asserts that Create (which now always
+// writes via runPipeline) records PersistKey count exactly 1 (fires BEFORE the
+// four writers), res.Key.PrivatePath equals the FINAL path, and the SSH/fragment
+// previews reference the FINAL path, not the temp staging path.
+func TestCreatePersistKeyCountOneAndFinalPaths(t *testing.T) {
 	var log callLog
 	// Track write order to confirm PersistKey fires before the four writers.
 	var callOrder []string
@@ -348,19 +448,16 @@ func TestCreateConfirmed_PersistKeyCountOneAndFinalPaths(t *testing.T) {
 		return "", nil
 	}
 
-	in := sampleInput()
-	in.Confirmed = true
-
-	res, err := Create(in, deps)
+	res, err := Create(sampleInput(), deps)
 	if err != nil {
-		t.Fatalf("Create() confirmed returned error: %v", err)
+		t.Fatalf("Create() returned error: %v", err)
 	}
 
 	if log.persistKey != 1 {
-		t.Errorf("confirmed: PersistKey called %d times, want exactly 1", log.persistKey)
+		t.Errorf("PersistKey called %d times, want exactly 1", log.persistKey)
 	}
 	if log.cleanup != 1 {
-		t.Errorf("confirmed: Cleanup called %d times, want 1", log.cleanup)
+		t.Errorf("Cleanup called %d times, want 1", log.cleanup)
 	}
 
 	// PersistKey must fire before WriteSSH.
@@ -387,7 +484,7 @@ func TestCreateConfirmed_PersistKeyCountOneAndFinalPaths(t *testing.T) {
 
 // TestCreateGate_UsesTempPath asserts that PreWrite is invoked with the
 // StagedKey.TempPrivatePath, not the final path (BUG-4: gate must run ssh -i
-// <temp> before any ~/.ssh write).
+// <temp> before any ~/.ssh write; for runPipeline / Reuse/Rotate callers).
 func TestCreateGate_UsesTempPath(t *testing.T) {
 	var log callLog
 	var capturedKeyPath string
@@ -413,6 +510,18 @@ func TestCreateGate_UsesTempPath(t *testing.T) {
 	if capturedKeyPath != tempPath {
 		t.Errorf("PreWrite called with keyPath=%q, want TempPrivatePath=%q (not final %q)",
 			capturedKeyPath, tempPath, finalPath)
+	}
+}
+
+// sampleStaged builds a StagedKey consistent with sampleInput() for unit tests
+// that call PersistAll or RenderPreviews directly.
+func sampleStaged(in CreateInput) StagedKey {
+	return StagedKey{
+		TempPrivatePath:  "/tmp/stage/key",
+		FinalPrivatePath: "/tmp/.ssh/id_ed25519_" + in.Name,
+		FinalPubPath:     "/tmp/.ssh/id_ed25519_" + in.Name + ".pub",
+		PubLine:          "ssh-ed25519 AAAAFAKEKEY comment\n",
+		PrivPEM:          []byte("FAKEPEM"),
 	}
 }
 

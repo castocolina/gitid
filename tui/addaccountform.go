@@ -139,7 +139,6 @@ func (m addAccountFormModel) trySubmit() (screenModel, tea.Cmd) {
 		GitconfigPath:      m.account.GitconfigPath,
 		SSHConfigPath:      m.account.SSHConfigPath,
 		AllowedSignersPath: m.account.AllowedSignersPath,
-		Confirmed:          false,
 	}
 	// CR-04: phase 1 gates on the existing shared PRIVATE-KEY path.
 	proveScreen := newProveScreen("add-account", in, existing, m.account.KeyPath, m.deps)

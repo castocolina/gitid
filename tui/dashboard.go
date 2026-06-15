@@ -20,13 +20,16 @@ const (
 	familyError
 )
 
-// dashboardModel is the TUI home screen. It streams seven doctor check families
+// dashboardModel is the TUI home screen. It streams the doctor check families
 // in independently as tea.Cmd goroutines (D-09) and renders findings via lipgloss.
+// The families/spinners slices are sized from len(doctor.Families()) at
+// construction so the dashboard tracks the live family count (no fixed-size array
+// to drift when a new check family is added).
 // runID provides a stale-result guard (RESEARCH Pitfall 4).
 type dashboardModel struct {
-	families   [7]familyState
+	families   []familyState
 	findings   map[doctor.Family][]doctor.Finding
-	spinners   [7]spinner.Model
+	spinners   []spinner.Model
 	width      int
 	height     int
 	runID      int
@@ -38,13 +41,15 @@ type dashboardModel struct {
 // and spinners initialized. It retains the full tuiDeps so the identity-write
 // chain (list → form → prove) can be threaded the real seams (CR-02).
 func newDashboardModel(d tuiDeps) dashboardModel {
-	var spins [7]spinner.Model
+	n := len(doctor.Families())
+	spins := make([]spinner.Model, n)
 	for i := range spins {
 		s := spinner.New()
 		s.Spinner = spinner.Dot
 		spins[i] = s
 	}
 	return dashboardModel{
+		families:   make([]familyState, n),
 		findings:   make(map[doctor.Family][]doctor.Finding),
 		spinners:   spins,
 		doctorDeps: d.doctor,
@@ -62,7 +67,7 @@ func familyIndex(fam doctor.Family) int {
 	return -1
 }
 
-// init starts one tea.Cmd per doctor family (Batch of 7). Each Cmd calls the
+// init starts one tea.Cmd per doctor family (a Batch sized to len(doctor.Families())). Each Cmd calls the
 // matching Check* field on Deps, producing a familyResultMsg when done. This
 // is the D-09 async per-family streaming pattern; doctor.Run is never called
 // (RESEARCH Pitfall 5). The Batch also seeds one spinner.Tick per family so the
@@ -101,6 +106,8 @@ func makeFamilyCmd(runID int, fam doctor.Family, d doctor.Deps) tea.Cmd {
 		fn = d.CheckAgent
 	case doctor.FamilyBaseline:
 		fn = d.CheckBaseline
+	case doctor.FamilyOverlap:
+		fn = d.CheckOverlap
 	}
 	return func() (msg tea.Msg) {
 		// WR-03: wrap the check call in recover() so a panic inside the goroutine
@@ -116,11 +123,18 @@ func makeFamilyCmd(runID int, fam doctor.Family, d doctor.Deps) tea.Cmd {
 				}
 			}
 		}()
-		var findings []doctor.Finding
-		if fn != nil {
-			findings = fn(d)
+		// A nil fn means this family has no dispatch case or its Deps field was
+		// never wired. Surface that as an error rather than letting the family
+		// render a false "✓ all checks passed" — the silent-pass that hid the
+		// Overlap check (CR-02) and is the recurring injected-seam blindspot.
+		if fn == nil {
+			return familyResultMsg{
+				runID:  runID,
+				family: fam,
+				err:    fmt.Errorf("doctor check %q is not wired in the TUI", string(fam)),
+			}
 		}
-		return familyResultMsg{runID: runID, family: fam, findings: findings}
+		return familyResultMsg{runID: runID, family: fam, findings: fn(d)}
 	}
 }
 

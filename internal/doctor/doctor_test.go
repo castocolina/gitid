@@ -152,9 +152,9 @@ func TestRunCallsAllFamilies(t *testing.T) {
 	}
 }
 
-// TestFamiliesFixedOrder verifies that Families() returns the 7 family
+// TestFamiliesFixedOrder verifies that Families() returns the 8 family
 // constants in the UI-SPEC fixed order: Dependencies, Permissions, Coherence,
-// Orphans, Signing, Agent, Baseline.
+// Orphans, Signing, Agent, Baseline, Overlap.
 func TestFamiliesFixedOrder(t *testing.T) {
 	want := []doctor.Family{
 		doctor.FamilyDeps,
@@ -164,6 +164,7 @@ func TestFamiliesFixedOrder(t *testing.T) {
 		doctor.FamilySigning,
 		doctor.FamilyAgent,
 		doctor.FamilyBaseline,
+		doctor.FamilyOverlap,
 	}
 	got := doctor.Families()
 	if len(got) != len(want) {

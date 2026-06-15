@@ -17,28 +17,41 @@ import (
 	"github.com/castocolina/gitid/internal/tester"
 )
 
+// updateFlags holds non-interactive flag values for `gitid identity update` (D-09).
+// A non-empty field skips the corresponding prompt.  --name is intentionally
+// absent: name stays positional per Q2 (name is immutable; positional arg suffices).
+type updateFlags struct {
+	gitdir   string // --gitdir: new gitdir match value (skips gitdir prompt)
+	url      string // --url: new hasconfig URL pattern (bare; buildMatches prepends "remote.*.url:")
+	provider string // --provider: overwrite the provider marker (flag-only; no interactive prompt — Q3)
+}
+
 // newUpdateCmd builds `gitid identity update <name>` (IDENT-04). The handler is
 // thin: it validates the name, loads the current identity via reconstruction,
 // prompts for edits with pre-filled current values, previews, confirms, and calls
 // identity.Update. All orchestration logic lives in internal/identity.Update.
 func newUpdateCmd() *cobra.Command {
 	var dryRun bool
+	var flags updateFlags
 	cmd := &cobra.Command{
 		Use:   "update <name>",
 		Short: "Update an existing Git identity's fields (email, signing, alias, port, match strategy — name immutable)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runIdentityUpdate(cmd.InOrStdin(), cmd.OutOrStdout(), args[0], dryRun, buildUpdateDeps)
+			return runIdentityUpdate(cmd.InOrStdin(), cmd.OutOrStdout(), args[0], dryRun, flags, buildUpdateDeps)
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview the update without writing anything (SAFE-03)")
+	cmd.Flags().StringVar(&flags.gitdir, "gitdir", "", "new gitdir match value (skips gitdir prompt; D-09)")
+	cmd.Flags().StringVar(&flags.url, "url", "", "new hasconfig URL pattern (skips URL prompt; D-09)")
+	cmd.Flags().StringVar(&flags.provider, "provider", "", "overwrite the provider marker in the SSH Host block (D-11/Q3; flag-only, no interactive prompt)")
 	return cmd
 }
 
 // runIdentityUpdate is the update orchestration handler. It validates name,
 // reconstructs the current identity from disk, prompts for edits pre-filled with
 // current values, previews, confirms (unless --dry-run), and calls identity.Update.
-func runIdentityUpdate(in io.Reader, out io.Writer, name string, dryRun bool, depsFor func(io.Writer) identity.UpdateDeps) error {
+func runIdentityUpdate(in io.Reader, out io.Writer, name string, dryRun bool, flags updateFlags, depsFor func(io.Writer) identity.UpdateDeps) error {
 	name = sanitizeName(name)
 	if name == "" {
 		return fmt.Errorf("identity update: identity name is required")
@@ -121,24 +134,48 @@ func runIdentityUpdate(in io.Reader, out io.Writer, name string, dryRun bool, de
 	edited.GitName = prompt(reader, out, "Git user.name", existing.GitName)
 	edited.GitEmail = prompt(reader, out, "Git user.email", existing.GitEmail)
 
-	// Provider is NOT prompted: loader.Reconstruct DERIVES Account.Provider from
-	// the alias (TrimPrefix(alias, name+".") with a hostname fallback) — it is
-	// never persisted as an independent artifact, and Update writes no provider
-	// field. A standalone Provider edit therefore could not round-trip, so the
-	// prompt is omitted to avoid implying an edit that cannot persist (finding
-	// #4). The alias prompt below is the real lever for changing the provider.
+	// Provider: updated only via --provider flag (Q3 / D-09). No interactive
+	// prompt — the provider marker is persisted (D-11) and the flag is the
+	// explicit opt-in to overwrite it. Without the flag the existing provider
+	// (and its SSH Host block marker) is preserved on rewrite.
+	if flags.provider != "" {
+		if err := identity.ValidateProvider(flags.provider); err != nil {
+			return fmt.Errorf("identity update: %w", err)
+		}
+		edited.Provider = flags.provider
+	}
+
 	edited.Alias = prompt(reader, out, "Host alias", existing.Alias)
 	edited.Hostname = prompt(reader, out, "Hostname", existing.Hostname)
 	edited.Port = promptPort(reader, out, "Port", existing.Port)
 
-	matchDefault := ""
-	if len(existing.Matches) > 0 {
-		matchDefault = renderMatches(existing.Matches)
-	} else {
-		matchDefault = "~/git/" + name + "/"
+	// Match strategy: flag-or-picker (D-07, D-09). Pre-fill the picker from
+	// existing.Matches so a hasconfig identity does NOT silently collapse to
+	// gitdir (Pitfall 6 regression guard).
+	gitdirDefault := "~/git/" + name + "/"
+	urlDefault := defaultURLPattern(existing.Hostname, name)
+	switch {
+	case flags.gitdir != "" && flags.url != "":
+		edited.Matches = buildMatches("3", flags.gitdir, flags.url)
+	case flags.gitdir != "":
+		edited.Matches = buildMatches("1", flags.gitdir, "")
+	case flags.url != "":
+		edited.Matches = buildMatches("2", "", flags.url)
+	default:
+		// Extract current gitdir/url values for pre-fill.
+		currentGitdir := gitdirDefault
+		currentURL := urlDefault
+		for _, m := range existing.Matches {
+			switch m.Kind {
+			case gitconfig.MatchGitdir:
+				currentGitdir = m.Value
+			case gitconfig.MatchHasconfig:
+				// Strip "remote.*.url:" prefix to get the bare URL pattern for the prompt.
+				currentURL = strings.TrimPrefix(m.Value, "remote.*.url:")
+			}
+		}
+		edited.Matches = promptMatchStrategy(reader, out, currentGitdir, currentURL, strategyNumFromKind(matchKinds(existing.Matches)))
 	}
-	newMatchDir := prompt(reader, out, "Match gitdir", matchDefault)
-	edited.Matches = []gitconfig.Match{{Kind: gitconfig.MatchGitdir, Value: newMatchDir}}
 
 	// Signing on/off toggle.
 	signingLabel := "n"
@@ -155,7 +192,7 @@ func runIdentityUpdate(in io.Reader, out io.Writer, name string, dryRun bool, de
 	fp(out, fmt.Sprintf("  alias:    %s\n", edited.Alias))
 	fp(out, fmt.Sprintf("  hostname: %s\n", edited.Hostname))
 	fp(out, fmt.Sprintf("  port:     %d\n", edited.Port))
-	fp(out, fmt.Sprintf("  match:    %s\n", newMatchDir))
+	fp(out, fmt.Sprintf("  match:    %s\n", renderMatches(edited.Matches)))
 	if signing {
 		fp(out, "  signing:  on\n")
 	} else {
@@ -164,6 +201,23 @@ func runIdentityUpdate(in io.Reader, out io.Writer, name string, dryRun bool, de
 
 	if dryRun {
 		fp(out, "\n--dry-run: no files were written.\n")
+		return nil
+	}
+
+	// D-16: check for overlapping match conditions before updating.
+	// Build the "other" identities list: all accounts except the one being updated.
+	var others []identity.Account
+	for _, a := range accounts {
+		if a.Name != name {
+			others = append(others, a)
+		}
+	}
+	prospective := identity.Account{
+		Name:    edited.Name,
+		Matches: edited.Matches,
+	}
+	if !warnOverlapAndConfirm(reader, out, prospective, others) {
+		fp(out, "Update cancelled; no files were written.\n")
 		return nil
 	}
 

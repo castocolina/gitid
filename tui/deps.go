@@ -311,7 +311,7 @@ func buildTUIDoctorDeps(home string, sshBytes, gcBytes []byte) doctor.Deps {
 						port = 22
 					}
 				}
-				hostBlock := sshconfig.RenderHostBlock(alias, hostname, port, identityFile)
+				hostBlock := sshconfig.RenderHostBlock(alias, hostname, port, identityFile, "")
 				globalBlock := sshconfig.RenderGlobalBlock(platform.CurrentOS())
 				if _, err := sshconfig.Write(path, name, hostBlock, globalBlock); err != nil {
 					return fmt.Errorf("tui: AddWiring ssh-host for %q: %w", name, err)
@@ -345,6 +345,7 @@ func buildTUIDoctorDeps(home string, sshBytes, gcBytes []byte) doctor.Deps {
 		CheckSigning:   checks.CheckSigning,
 		CheckAgent:     checks.CheckAgent,
 		CheckBaseline:  checks.CheckBaseline,
+		CheckOverlap:   checks.CheckOverlap,
 	}
 }
 

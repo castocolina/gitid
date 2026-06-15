@@ -13,7 +13,7 @@ import (
 // buildSSHBlock constructs the raw managed-block bytes for a single SSH identity.
 // It wraps sshconfig.RenderHostBlock in the sentinel markers.
 func buildSSHBlock(name, alias, hostname string, port int, identityFile string) string {
-	body := sshconfig.RenderHostBlock(alias, hostname, port, identityFile)
+	body := sshconfig.RenderHostBlock(alias, hostname, port, identityFile, "")
 	return "# BEGIN gitid managed: " + name + "\n" +
 		body + "\n" +
 		"# END gitid managed: " + name + "\n"
@@ -187,13 +187,65 @@ func TestReconstruct_MissingFragment(t *testing.T) {
 	}
 }
 
-// TestReconstruct_ProviderDerived verifies that when the alias is in the
-// <name>.<provider> form, Provider is derived from the alias (A1).
-func TestReconstruct_ProviderDerived(t *testing.T) {
-	// Alias "work.github.com" for identity "work" → provider "github.com".
-	sshContent := buildSSHBlock("work", "work.github.com", "ssh.github.com", 22,
-		"~/.ssh/id_ed25519_work",
+// TestReconstruct_ProviderFromMarker verifies D-11/D-12: when the SSH block
+// contains a "# gitid: provider=github" marker, Provider comes from the marker
+// regardless of the alias shape (F-3 regression guard).
+func TestReconstruct_ProviderFromMarker(t *testing.T) {
+	// Alias shape does NOT match <name>.<provider> — but marker is present.
+	body := sshconfig.RenderHostBlock("userz3r0.personal.github", "ssh.github.com", 443, "~/.ssh/id_ed25519_userz3r0", "github")
+	sshContent := "# BEGIN gitid managed: userz3r0\n" + body + "\n# END gitid managed: userz3r0\n"
+	workFrag := "~/.gitconfig.d/userz3r0"
+	gcContent := buildGCBlock("userz3r0", workFrag, "~/git/personal/")
+	readFrag := func(_ string) (gitconfig.FragmentInfo, error) {
+		return gitconfig.FragmentInfo{GitName: "User Z3r0", GitEmail: "user@example.com"}, nil
+	}
+
+	accounts, err := Reconstruct([]byte(sshContent), []byte(gcContent), readFrag)
+	if err != nil {
+		t.Fatalf("Reconstruct returned error: %v", err)
+	}
+	if len(accounts) != 1 {
+		t.Fatalf("expected 1 account, got %d", len(accounts))
+	}
+	if accounts[0].Provider != "github" {
+		t.Errorf("Provider from marker: got %q want %q", accounts[0].Provider, "github")
+	}
+}
+
+// TestReconstruct_ProviderFromHostnameMap verifies D-12 (the F-3 regression fix):
+// a markerless block whose Hostname is "ssh.github.com" resolves to provider
+// "github" via the hostname map — NOT "ssh.github.com" (the old TrimPrefix bug).
+func TestReconstruct_ProviderFromHostnameMap(t *testing.T) {
+	// Markerless block — uses legacy buildSSHBlock which passes "" as provider.
+	sshContent := buildSSHBlock("userz3r0_gh", "userz3r0.personal.github", "ssh.github.com", 443,
+		"~/.ssh/id_ed25519_userz3r0",
 	)
+	workFrag := "~/.gitconfig.d/userz3r0_gh"
+	gcContent := buildGCBlock("userz3r0_gh", workFrag, "~/git/personal/")
+	readFrag := func(_ string) (gitconfig.FragmentInfo, error) {
+		return gitconfig.FragmentInfo{GitName: "User Z3r0", GitEmail: "user@example.com"}, nil
+	}
+
+	accounts, err := Reconstruct([]byte(sshContent), []byte(gcContent), readFrag)
+	if err != nil {
+		t.Fatalf("Reconstruct returned error: %v", err)
+	}
+	if len(accounts) != 1 {
+		t.Fatalf("expected 1 account, got %d", len(accounts))
+	}
+	// Must be "github" (from hostname map), NOT "ssh.github.com" (F-3 bug)
+	// and NOT "personal.github" (from TrimPrefix of "userz3r0.personal.github").
+	if accounts[0].Provider != "github" {
+		t.Errorf("Provider from hostname map: got %q want %q", accounts[0].Provider, "github")
+	}
+}
+
+// TestReconstruct_ProviderMarkerWinsOverHostnameMap verifies D-12: when both a
+// marker AND a known hostname are present, the marker takes precedence.
+func TestReconstruct_ProviderMarkerWinsOverHostnameMap(t *testing.T) {
+	// Marker says "gitlab" but hostname is ssh.github.com → marker wins.
+	body := sshconfig.RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work", "gitlab")
+	sshContent := "# BEGIN gitid managed: work\n" + body + "\n# END gitid managed: work\n"
 	workFrag := "~/.gitconfig.d/work"
 	gcContent := buildGCBlock("work", workFrag, "~/git/work/")
 	readFrag := func(_ string) (gitconfig.FragmentInfo, error) {
@@ -207,9 +259,33 @@ func TestReconstruct_ProviderDerived(t *testing.T) {
 	if len(accounts) != 1 {
 		t.Fatalf("expected 1 account, got %d", len(accounts))
 	}
-	// TrimPrefix("work.github.com", "work.") = "github.com"
-	if accounts[0].Provider != "github.com" {
-		t.Errorf("Provider: got %q want %q", accounts[0].Provider, "github.com")
+	// Marker "gitlab" must win over hostname map "github".
+	if accounts[0].Provider != "gitlab" {
+		t.Errorf("Provider: marker should win over hostname map; got %q want %q", accounts[0].Provider, "gitlab")
+	}
+}
+
+// TestReconstruct_ProviderUnknownHostname verifies D-13: a markerless block
+// with an unknown hostname leaves Provider empty — no crash, honest unknown.
+func TestReconstruct_ProviderUnknownHostname(t *testing.T) {
+	sshContent := buildSSHBlock("mywork", "mywork.git.example.com", "git.example.com", 22,
+		"~/.ssh/id_ed25519_mywork",
+	)
+	workFrag := "~/.gitconfig.d/mywork"
+	gcContent := buildGCBlock("mywork", workFrag, "~/git/mywork/")
+	readFrag := func(_ string) (gitconfig.FragmentInfo, error) {
+		return gitconfig.FragmentInfo{GitName: "My Work", GitEmail: "mywork@example.com"}, nil
+	}
+
+	accounts, err := Reconstruct([]byte(sshContent), []byte(gcContent), readFrag)
+	if err != nil {
+		t.Fatalf("Reconstruct returned error: %v", err)
+	}
+	if len(accounts) != 1 {
+		t.Fatalf("expected 1 account, got %d", len(accounts))
+	}
+	if accounts[0].Provider != "" {
+		t.Errorf("Provider for unknown hostname: got %q want empty string", accounts[0].Provider)
 	}
 }
 
@@ -248,7 +324,7 @@ func TestReconstruct_RoundTrip(t *testing.T) {
 	// Write personal identity via Phase 2 pipeline.
 	personalKeyPath := filepath.Join(sshDir, "id_ed25519_personal")
 	personalHostBlock := sshconfig.RenderHostBlock(
-		"personal.github.com", "ssh.github.com", 443, personalKeyPath,
+		"personal.github.com", "ssh.github.com", 443, personalKeyPath, "",
 	)
 	if _, err := sshconfig.Write(sshConfigPath, "personal", personalHostBlock, ""); err != nil {
 		t.Fatalf("sshconfig.Write personal: %v", err)
@@ -266,7 +342,7 @@ func TestReconstruct_RoundTrip(t *testing.T) {
 	// Write work identity via Phase 2 pipeline.
 	workKeyPath := filepath.Join(sshDir, "id_ed25519_work")
 	workHostBlock := sshconfig.RenderHostBlock(
-		"work.github.com", "ssh.github.com", 22, workKeyPath,
+		"work.github.com", "ssh.github.com", 22, workKeyPath, "",
 	)
 	if _, err := sshconfig.Write(sshConfigPath, "work", workHostBlock, ""); err != nil {
 		t.Fatalf("sshconfig.Write work: %v", err)

@@ -14,7 +14,7 @@ func indexOf(s, substr string) int {
 // TestRenderHostBlock asserts SSH-01: the rendered Host block contains, in
 // order, the five required directives for an aliased identity.
 func TestRenderHostBlock(t *testing.T) {
-	got := RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work")
+	got := RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work", "")
 
 	// Each required directive must appear, in this exact relative order.
 	wantOrder := []string{
@@ -70,11 +70,54 @@ func TestRenderGlobalBlockLinux(t *testing.T) {
 	}
 }
 
+// TestRenderHostBlock_WithProvider asserts D-11: when a non-empty provider is
+// given, RenderHostBlock appends "# gitid: provider=<p>" as the last line of
+// the Host stanza body (after IdentitiesOnly yes).
+func TestRenderHostBlock_WithProvider(t *testing.T) {
+	got := RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work", "github")
+
+	const marker = "# gitid: provider=github"
+	if !strings.Contains(got, marker) {
+		t.Fatalf("RenderHostBlock with provider missing marker %q; got:\n%s", marker, got)
+	}
+
+	// Marker must come AFTER "IdentitiesOnly yes" (Pitfall 2 / RESEARCH.md).
+	idxIdentities := indexOf(got, "IdentitiesOnly yes")
+	idxMarker := indexOf(got, marker)
+	if idxIdentities == -1 {
+		t.Fatalf("RenderHostBlock missing IdentitiesOnly yes; got:\n%s", got)
+	}
+	if idxMarker <= idxIdentities {
+		t.Fatalf("provider marker must come AFTER IdentitiesOnly yes; got:\n%s", got)
+	}
+}
+
+// TestRenderHostBlock_EmptyProvider asserts D-11: when provider is empty, no
+// marker line is emitted (legacy / no-provider callers unaffected).
+func TestRenderHostBlock_EmptyProvider(t *testing.T) {
+	got := RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work", "")
+	if strings.Contains(got, "# gitid: provider=") {
+		t.Fatalf("RenderHostBlock with empty provider must emit no marker; got:\n%s", got)
+	}
+}
+
+// TestRenderHostBlock_NewlineInProviderPanics asserts RESEARCH Security Domain /
+// T-05.5-04: a newline-bearing provider value panics with a programming-error
+// message (defense-in-depth against comment injection).
+func TestRenderHostBlock_NewlineInProviderPanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("RenderHostBlock with newline in provider must panic, but did not")
+		}
+	}()
+	RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work", "a\nb")
+}
+
 // TestGlobalBlockOrderedLast asserts Pitfall 5 / T-02-15: when a host block and
 // the global block are composed, 'Host *' must come AFTER the specific host so
 // first-match-wins does not let the wildcard override the alias.
 func TestGlobalBlockOrderedLast(t *testing.T) {
-	host := RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work")
+	host := RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work", "")
 	global := RenderGlobalBlock("darwin")
 
 	composed := host + "\n" + global

@@ -172,9 +172,7 @@ func runWriteCmd(action string, input identity.CreateInput, original, edited ide
 			}
 			return writeResultMsg{backupPath: res.SSHBackup}
 		default:
-			in := input
-			in.Confirmed = true
-			res, err := identity.Create(in, deps.identity)
+			res, err := identity.Create(input, deps.identity)
 			if err != nil {
 				return writeResultMsg{err: err}
 			}

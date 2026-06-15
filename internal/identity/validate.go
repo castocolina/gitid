@@ -30,3 +30,22 @@ func ValidateName(name string) error {
 	}
 	return nil
 }
+
+// ValidateProvider validates a provider value against the same safe charset as
+// an identity name. The provider is written verbatim into ~/.ssh/config as a
+// `# gitid: provider=<p>` marker (D-11) and is used to build default hostnames
+// and URL patterns, so it must reject whitespace and newline/metacharacters that
+// would break the marker round-trip or inject into a Host block (CR-01). An empty
+// provider is allowed — it is optional and simply omits the marker.
+func ValidateProvider(provider string) error {
+	if provider == "" {
+		return nil
+	}
+	if strings.TrimSpace(provider) != provider {
+		return fmt.Errorf("invalid provider %q: must not have leading or trailing whitespace", provider)
+	}
+	if !nameRe.MatchString(provider) {
+		return fmt.Errorf("invalid provider %q: only letters, digits, dot, underscore, and hyphen are allowed", provider)
+	}
+	return nil
+}

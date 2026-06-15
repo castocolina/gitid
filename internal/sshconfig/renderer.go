@@ -14,16 +14,24 @@ const hostIndent = "  "
 // RenderHostBlock renders a managed SSH Host stanza for an identity.
 //
 // It emits, in order (SSH-01): the Host line for alias, then Hostname, Port,
-// `User git`, IdentityFile, and `IdentitiesOnly yes`. The alias is the real
-// provider host for a default identity or an `<identity>.<provider>` alias for
-// an additional identity (SSH-02); both forms render identically here.
+// `User git`, IdentityFile, and `IdentitiesOnly yes`. When provider is
+// non-empty, appends a `# gitid: provider=<p>` marker comment as the last line
+// of the stanza body (D-11). provider must not contain a newline or carriage
+// return — RenderHostBlock panics on such input (T-05.5-04).
+//
+// The alias is the real provider host for a default identity or an
+// `<identity>.<provider>` alias for an additional identity (SSH-02); both forms
+// render identically here.
 //
 // `IdentitiesOnly yes` together with the explicit IdentityFile prevents the
 // agent offering the wrong key to the provider (T-02-13).
 //
 // The returned text is the block BODY only (no sentinel markers); the writer
 // wraps it in a gitid managed block keyed by the identity name.
-func RenderHostBlock(alias, hostname string, port int, identityFile string) string {
+func RenderHostBlock(alias, hostname string, port int, identityFile, provider string) string {
+	if strings.ContainsAny(provider, "\n\r") {
+		panic("sshconfig: RenderHostBlock: provider must not contain newline or carriage return (T-05.5-04)")
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Host %s\n", alias)
 	fmt.Fprintf(&b, "%sHostname %s\n", hostIndent, hostname)
@@ -31,6 +39,9 @@ func RenderHostBlock(alias, hostname string, port int, identityFile string) stri
 	fmt.Fprintf(&b, "%sUser git\n", hostIndent)
 	fmt.Fprintf(&b, "%sIdentityFile %s\n", hostIndent, identityFile)
 	fmt.Fprintf(&b, "%sIdentitiesOnly yes\n", hostIndent)
+	if provider != "" {
+		fmt.Fprintf(&b, "# gitid: provider=%s\n", provider)
+	}
 	return b.String()
 }
 
