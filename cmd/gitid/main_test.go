@@ -12,7 +12,11 @@ func TestVersionNonEmpty(t *testing.T) {
 }
 
 // TestRunDoesNotPanic confirms the run function completes without panicking.
-func TestRunDoesNotPanic(_ *testing.T) {
-	// run() writes to stdout and returns; no panic expected.
+func TestRunDoesNotPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("run() panicked: %v", r)
+		}
+	}()
 	run()
 }

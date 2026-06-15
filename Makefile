@@ -24,6 +24,20 @@ GOPATH_BIN := $(shell go env GOPATH)/bin
 # golangci-lint version to install (pinned — do NOT change without updating STACK.md).
 GOLANGCI_LINT_VERSION := v2.12.2
 
+# Resolved tool binaries, referenced by absolute path so recipes run regardless of the
+# caller's PATH. GNU Make 3.81 (macOS) direct-execs a bare command (no shell metacharacters)
+# using its ORIGINAL PATH, ignoring the `export PATH` below — so a bare `golangci-lint` fails
+# when ~/go/bin isn't already on PATH. Absolute paths sidestep that entirely. setup-env
+# installs both binaries into $(GOPATH_BIN).
+GOLANGCI_LINT := $(GOPATH_BIN)/golangci-lint
+GOIMPORTS     := $(GOPATH_BIN)/goimports
+
+# Ensure tool bin dirs are on PATH for EVERY recipe line, the install-hooks sub-make,
+# and make-invoked git hooks — so a fresh clone bootstraps without relying on the
+# caller's interactive PATH (review WR-01). uv installs pre-commit into ~/.local/bin;
+# go install and the golangci-lint installer place binaries in $(GOPATH_BIN).
+export PATH := $(HOME)/.local/bin:$(GOPATH_BIN):$(PATH)
+
 ## setup-env: install all development tools and prepare the git hooks.
 ##
 ## Tools installed:
@@ -47,7 +61,7 @@ setup-env:
 	go install github.com/securego/gosec/v2/cmd/gosec@latest
 	@echo "==> Installing pre-commit (via uv; bootstrap uv with the Astral installer if missing — not a system package manager)"
 	command -v uv >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR="$$HOME/.local/bin" sh
-	PATH="$$HOME/.local/bin:$$PATH"; uv tool install pre-commit
+	uv tool install pre-commit
 	@echo "==> Wiring git hooks"
 	$(MAKE) install-hooks
 	@echo "==> setup-env complete"
@@ -57,22 +71,24 @@ setup-env:
 ## and the pre-push hook (runs make test before push).
 ## Called by setup-env — run `make setup-env` on a fresh clone to bootstrap fully.
 install-hooks:
-	pre-commit install
-	pre-commit install --hook-type pre-push
+	# Chained with && so make runs this through a shell, which resolves `pre-commit`
+	# via the exported PATH. GNU Make 3.81 (macOS) direct-execs bare commands using its
+	# original PATH, bypassing the `export PATH` above — forcing a shell avoids that.
+	pre-commit install && pre-commit install --hook-type pre-push
 
 ## fmt: format all Go source files.
 ## Runs goimports (manages import blocks) then gofmt (canonical formatting).
 ## Neither goimports nor gofmt accept the Go ./... wildcard pattern — use find to enumerate
 ## .go files and pass the repo root to gofmt.
 fmt:
-	find . -name "*.go" -not -path "./.planning/*" -exec goimports -w {} +
-	gofmt -w .
+	find . -name "*.go" -not -path "./.planning/*" -exec $(GOIMPORTS) -w {} +
+	find . -name "*.go" -not -path "./.planning/*" -exec gofmt -w {} +
 
 ## lint: run golangci-lint against all packages.
 ## Hard-fails on any finding — zero tolerance (D-04).
 ## Configuration lives in .golangci.yml.
 lint:
-	golangci-lint run ./...
+	$(GOLANGCI_LINT) run ./...
 
 ## test: run the TDD harness with race detection and a coverage profile.
 ## Coverage is report-only in Phase 1; no hard threshold (D-09 discretion).
