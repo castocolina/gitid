@@ -24,11 +24,33 @@ This applies to the product's own behavior too: config changes are applied as
 log/error messages, commit messages, and documentation. (Conversation with the
 user may be in Spanish; artifacts are not.)
 
+This binds **every agent and subagent** dispatched during the work, not just the
+main session. Each agent's output is English-only: its response/report, any code
+it writes, inline docstrings and comments, and any documentation (`*.md`). Spanish
+is reserved for live conversation with the user; all persisted artifacts and all
+agent outputs are English. When spawning a subagent, state this constraint in its
+prompt.
+
 ## Engineering
 
 - Core logic lives in a UI-free package and is built test-first (TDD).
 - Never write to a user's `~/.ssh/config` or `~/.gitconfig` without a
   timestamped backup, idempotent managed blocks, and explicit confirmation.
+
+## Commits
+
+- Commit in **logical groups, not small per-step chunks.** One coherent change —
+  its implementation, its tests, and its docs — is a single commit. Do not split
+  the `test` / `feat` / `docs` of the same logical change into separate commits;
+  collapse them into one commit with a descriptive body that lists the requirement
+  IDs or findings it folds in.
+- Every commit MUST compile and pass the pre-commit hooks. **Never use
+  `--no-verify`.** The hooks run `make fmt` + `make lint` over the *whole* module
+  (`pass_filenames: false`), so changes that do not compile in isolation must be
+  committed together — let the buildable boundary, not file count, set the commit
+  granularity.
+- TDD still drives *authoring* order (write the failing test first); it does not
+  require shipping the RED and GREEN states as separate commits in final history.
 
 <!-- GSD:stack-start source:research/STACK.md -->
 
