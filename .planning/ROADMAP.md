@@ -170,8 +170,24 @@ Plans:
   4. Doctor detects orphaned artifacts (key file with no managed block, fragment with no `includeIf`) and reports them distinctly from coherence failures
   5. Each finding includes severity, a plain-English explanation, and a suggested fix; auto-fix is offered with confirmation where applicable
 
-**Plans**: TBD
+**Plans**: 5 plans
 **UI hint**: yes
+
+Plans:
+
+**Wave 1**
+
+- [ ] 04-01-PLAN.md — Foundation slice: Finding/Severity/Family model + doctor.Deps + Run/ExitCode + Permissions family + minimal `gitid doctor` grouped renderer end-to-end (DOC-02, DOC-06, DOC-07)
+
+**Wave 2** *(blocked on Wave 1 — each adds only its own checks/*.go, no shared-file edits)*
+
+- [ ] 04-02-PLAN.md — Dependencies + Baseline families: deps.Detect compose + extended platform.InstallHint (git/clipboard), ReadBaselineState fold-in (DOC-01, D-16)
+- [ ] 04-03-PLAN.md — Coherence + Orphans families: existence/resolution + locked-value carve-outs; block-vs-disk orphans + unused-key (DOC-03, DOC-04)
+- [ ] 04-04-PLAN.md — Signing + Agent families: ssh-add probe + fingerprint match + git<2.36 hasconfig: gate (DOC-05)
+
+**Wave 3** *(blocked on Waves 1-2 — shares cmd/gitid/doctor.go)*
+
+- [ ] 04-05-PLAN.md — Auto-fix slice: D-04 gate/per-finding-confirm/--yes flow + permission batching; fixes routed through filewriter chokepoint (DOC-06)
 
 ### Phase 5: CLI Surface + TUI
 
@@ -228,6 +244,6 @@ Plans:
 | 2. First Identity End-to-End | 7/7 | Complete   | 2026-06-09 |
 | 3. Full Identity CRUD + Multi-Identity | 4/4 | Complete    | 2026-06-10 |
 | 3.1. Baseline Global Git Config + Global Gitignore | 4/4 | Complete    | 2026-06-11 |
-| 4. Doctor | 0/? | Not started | - |
+| 4. Doctor | 0/5 | Not started | - |
 | 5. CLI Surface + TUI | 0/? | Not started | - |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |
