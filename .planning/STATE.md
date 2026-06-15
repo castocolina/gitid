@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 2 context gathered
-last_updated: "2026-06-09T18:28:15.103Z"
-last_activity: 2026-06-09 -- Phase 02 execution started
+stopped_at: Phase 3 context gathered
+last_updated: "2026-06-10T16:54:41.626Z"
+last_activity: 2026-06-10 -- Phase 03 execution started
 progress:
-  total_phases: 6
-  completed_phases: 1
-  total_plans: 10
-  completed_plans: 8
-  percent: 17
+  total_phases: 7
+  completed_phases: 2
+  total_plans: 14
+  completed_plans: 10
+  percent: 29
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-08)
 
 **Core value:** Managing a Git identity produces coordinated, coherent SSH + Git artifacts that are proven to authenticate and resolve correctly before any file is written, and existing hand-written config is never corrupted.
-**Current focus:** Phase 02 — First Identity End-to-End
+**Current focus:** Phase 03 — Full Identity CRUD + Multi-Identity
 
 ## Current Position
 
-Phase: 02 (First Identity End-to-End) — EXECUTING
-Plan: 5 of 7
-Status: Ready to execute
-Last activity: 2026-06-10 -- Completed quick task 260610-a54: BUG-4 temp-then-promote fix (validated)
+Phase: 03 (Full Identity CRUD + Multi-Identity) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 03
+Last activity: 2026-06-10 -- Phase 03 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -76,6 +76,10 @@ Recent decisions affecting current work:
 - [Phase ?]: 02-04: macOS Host * emits IgnoreUnknown UseKeychain first (Linux ssh -G safe); _global block ordered last via separate sentinel key
 - [Phase ?]: 02-04: sshconfig render/parse/write commit RED+GREEN combined — lint-gated hook rejects signature-bearing zero-value stubs; RED proven via local test runs
 
+### Roadmap Evolution
+
+- Phase 3.1 (Baseline Global Git Config + Global Gitignore) inserted after Phase 3, before Doctor — scope correction: GLOBAL-01 and URLRW-01 promoted v2→v1, new GITIGNORE-01 added (45/45 v1 coverage). Canonical refs: samples/gist-60f2f1d-gitconfig, samples/gist-2c98cff-ssh-config.
+
 ### Pending Todos
 
 None yet.
@@ -95,6 +99,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-09T18:27:55.874Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-first-identity-end-to-end/02-CONTEXT.md
+Last session: 2026-06-10T16:08:28.505Z
+Stopped at: Phase 3 context gathered
+Resume file: .planning/phases/03-full-identity-crud-multi-identity/03-CONTEXT.md

@@ -100,7 +100,25 @@ Plans:
   3. Deleting an identity removes its managed blocks from all four artifacts while preserving all content outside those blocks verbatim
   4. On a cold start with no running state, the tool reconstructs the exact identity list from the managed blocks in `~/.ssh/config` and `~/.gitconfig`
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+
+**Wave 1**
+
+- [ ] 03-01-PLAN.md — Read-side primitives (ListBlocks/RemoveBlock/BackupAndRemove) + SSH/gitconfig reconstruction readers + identity.Reconstruct join (IDENT-07, foundation)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 03-02-PLAN.md — `gitid identity list` slice: reconstruct-from-disk + render key path/alias/provider/port/match + light incomplete marker; multi-identity coexistence proof (IDENT-03, SC-2)
+
+**Wave 3** *(blocked on Wave 2 — shares cmd/gitid/main.go)*
+
+- [ ] 03-03-PLAN.md — `gitid identity update` slice: edit fields (name immutable), WriteFragment signing toggle, structural-change re-test gate (IDENT-04)
+
+**Wave 4** *(blocked on Wave 3 — shares cmd/gitid/main.go)*
+
+- [ ] 03-04-PLAN.md — `gitid identity delete` slice: per-identity removal manifest + two-step confirm (keep key default), global blocks untouched (IDENT-05)
 
 ### Phase 03.1: Baseline Global Git Config + Global Gitignore (INSERTED)
 
@@ -194,7 +212,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Bootstrap | 3/3 | Complete   | 2026-06-09 |
 | 2. First Identity End-to-End | 7/7 | Complete   | 2026-06-09 |
-| 3. Full Identity CRUD + Multi-Identity | 0/? | Not started | - |
+| 3. Full Identity CRUD + Multi-Identity | 0/4 | Planned | - |
 | 3.1. Baseline Global Git Config + Global Gitignore | 0/? | Not started | - |
 | 4. Doctor | 0/? | Not started | - |
 | 5. CLI Surface + TUI | 0/? | Not started | - |
