@@ -25,10 +25,10 @@ import (
 // packages. The TUI cannot import package main, so it replicates the wiring
 // from cmd/gitid/add.go (buildDeps) and cmd/gitid/doctor.go (buildDoctorDeps)
 // here (RESEARCH.md Pitfall 6, Assumption A3).
-func buildTUIDeps() (doctor.Deps, identity.Deps, error) {
+func buildTUIDeps() (doctor.Deps, identity.Deps, identity.UpdateDeps, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return doctor.Deps{}, identity.Deps{}, fmt.Errorf("tui: resolving home dir: %w", err)
+		return doctor.Deps{}, identity.Deps{}, identity.UpdateDeps{}, fmt.Errorf("tui: resolving home dir: %w", err)
 	}
 
 	sshConfigPath := filepath.Join(home, ".ssh", "config")
@@ -36,17 +36,63 @@ func buildTUIDeps() (doctor.Deps, identity.Deps, error) {
 
 	sshBytes, err := os.ReadFile(sshConfigPath) //nolint:gosec // path is a trusted gitid-managed path (G304)
 	if err != nil && !os.IsNotExist(err) {
-		return doctor.Deps{}, identity.Deps{}, fmt.Errorf("tui: reading ssh config: %w", err)
+		return doctor.Deps{}, identity.Deps{}, identity.UpdateDeps{}, fmt.Errorf("tui: reading ssh config: %w", err)
 	}
 
 	gcBytes, err := os.ReadFile(gitconfigPath) //nolint:gosec // path is a trusted gitid-managed path (G304)
 	if err != nil && !os.IsNotExist(err) {
-		return doctor.Deps{}, identity.Deps{}, fmt.Errorf("tui: reading gitconfig: %w", err)
+		return doctor.Deps{}, identity.Deps{}, identity.UpdateDeps{}, fmt.Errorf("tui: reading gitconfig: %w", err)
 	}
 
 	docDeps := buildTUIDoctorDeps(home, sshBytes, gcBytes)
 	idDeps := buildIdentityDeps()
-	return docDeps, idDeps, nil
+	upDeps := buildTUIUpdateDeps()
+	return docDeps, idDeps, upDeps, nil
+}
+
+// buildTUIUpdateDeps wires identity.UpdateDeps from real internal packages for
+// the in-place edit write path (CR-02/CR-03). Mirrors cmd/gitid/update.go
+// buildUpdateDeps() — the TUI cannot import package main.
+func buildTUIUpdateDeps() identity.UpdateDeps {
+	return identity.UpdateDeps{
+		WriteSSH: func(accountName, hostBlock, globalBlock string) (string, error) {
+			home, herr := os.UserHomeDir()
+			if herr != nil {
+				return "", herr
+			}
+			return sshconfig.Write(filepath.Join(home, ".ssh", "config"), accountName, hostBlock, globalBlock)
+		},
+		WriteGitconfig: func(id, fragmentPath, allowedSignersPath string, matches []gitconfig.Match) (string, error) {
+			home, herr := os.UserHomeDir()
+			if herr != nil {
+				return "", herr
+			}
+			gitconfigPath := filepath.Join(home, ".gitconfig")
+			backup, werr := gitconfig.WriteIncludeIf(gitconfigPath, id, fragmentPath, matches)
+			if werr != nil {
+				return backup, werr
+			}
+			if serr := gitconfig.SetAllowedSignersFile(gitconfigPath, allowedSignersPath); serr != nil {
+				return backup, serr
+			}
+			return backup, nil
+		},
+		WriteFragment: func(fragPath, name, email, signingKeyPath string, signing bool) error {
+			return gitconfig.WriteFragment(fragPath, name, email, signingKeyPath, signing)
+		},
+		WriteAllowedSigners: keygen.WriteAllowedSigners,
+		RemoveAllowedSigners: func(path, name string) (string, error) {
+			return gitconfig.RemoveAllowedSignersBlock(path, name)
+		},
+		Resolved: tester.Resolved,
+		ReadPub: func(pubPath string) (string, error) {
+			data, rerr := os.ReadFile(pubPath) //nolint:gosec // gitid-managed .pub path (G304)
+			if rerr != nil {
+				return "", rerr
+			}
+			return strings.TrimRight(string(data), "\n"), nil
+		},
+	}
 }
 
 // buildIdentityDeps wires identity.Deps from real internal packages.

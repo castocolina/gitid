@@ -87,7 +87,7 @@ func TestProveScreenConfirmGate(t *testing.T) {
 	var called bool
 	deps := fakeWriteTUIDeps(&called)
 
-	m := newProveScreen("create", makeTestInput(), deps)
+	m := newProveScreen("create", makeTestInput(), identity.Account{}, "~/.ssh/gitid_personal", deps)
 
 	// Before either phase: confirm must be inactive.
 	if m.confirmActive {
@@ -135,7 +135,7 @@ func TestProveScreenPhase1Failure(t *testing.T) {
 	var called bool
 	deps := fakeWriteTUIDeps(&called)
 
-	m := newProveScreen("create", makeTestInput(), deps)
+	m := newProveScreen("create", makeTestInput(), identity.Account{}, "~/.ssh/gitid_personal", deps)
 
 	// Send phase 1 failing result.
 	fail1 := makeFailResult()
@@ -231,7 +231,7 @@ func TestProveScreenRunsPhasesAsTeaCmds(t *testing.T) {
 	var called bool
 	deps := fakeWriteTUIDeps(&called)
 
-	m := newProveScreen("create", makeTestInput(), deps)
+	m := newProveScreen("create", makeTestInput(), identity.Account{}, "~/.ssh/gitid_personal", deps)
 
 	// init() must return a non-nil cmd for phase 1.
 	_, initCmd := m.init()
@@ -239,10 +239,25 @@ func TestProveScreenRunsPhasesAsTeaCmds(t *testing.T) {
 		t.Fatal("proveModel.init() must return a non-nil tea.Cmd for phase 1")
 	}
 
-	// The init cmd must produce a preWriteResultMsg.
+	// init() batches the phase-1 pre-write cmd with the spinner tick (WR-01), so
+	// it produces a tea.BatchMsg. Exactly one batched cmd must produce the
+	// preWriteResultMsg (phase 1); the other is the spinner.Tick animation seed.
 	initMsg := initCmd()
-	if _, ok := initMsg.(preWriteResultMsg); !ok {
-		t.Fatalf("init() cmd produced %T; want preWriteResultMsg", initMsg)
+	batch, ok := initMsg.(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("init() cmd produced %T; want tea.BatchMsg (phase-1 cmd + spinner tick)", initMsg)
+	}
+	preWriteSeen := false
+	for _, c := range batch {
+		if c == nil {
+			continue
+		}
+		if _, ok := c().(preWriteResultMsg); ok {
+			preWriteSeen = true
+		}
+	}
+	if !preWriteSeen {
+		t.Fatal("init() Batch must contain a cmd producing preWriteResultMsg (phase 1)")
 	}
 
 	// After phase 1 passes, update must issue the phase 2 cmd.
@@ -269,7 +284,7 @@ func TestProveConfirmWritesViaDeps(t *testing.T) {
 	var called bool
 	deps := fakeWriteTUIDeps(&called)
 
-	m := newProveScreen("create", makeTestInput(), deps)
+	m := newProveScreen("create", makeTestInput(), identity.Account{}, "~/.ssh/gitid_personal", deps)
 
 	// Drive to confirmed state.
 	pass1 := makePassResult()

@@ -9,6 +9,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/identity"
 )
 
@@ -108,17 +109,40 @@ func (m addAccountFormModel) trySubmit() (screenModel, tea.Cmd) {
 		port = 22
 	}
 
-	// Build a CreateInput representing the add-account operation.
+	provider := m.inputs[0].Value()
+	alias := m.inputs[1].Value()
+
+	// WR-04: parse the Match Strategy field (inputs[3]) into the includeIf
+	// matches instead of silently discarding the user's gitdir scoping.
+	matches := []gitconfig.Match{parseMatchStrategy(m.inputs[3].Value(), m.account.Name)}
+
+	// Build the existing-account snapshot AddAccount writes against, overriding
+	// the per-account fields the form edits (provider/alias/port/matches). The
+	// shared key path and managed target paths come from the reconstructed
+	// account (filled by fillAccountPaths, CR-02/CR-03).
+	existing := m.account
+	existing.Port = port
+	existing.Matches = matches
+
+	// CreateInput drives the prove-screen display/gate; the write dispatches via
+	// identity.AddAccount(existing, provider, alias) (CR-03).
 	in := identity.CreateInput{
-		Name:      m.account.Name,
-		GitName:   m.account.GitName,
-		GitEmail:  m.account.GitEmail,
-		Provider:  m.inputs[0].Value(),
-		Port:      port,
-		Alias:     m.inputs[1].Value(),
-		Confirmed: false,
+		Name:               m.account.Name,
+		GitName:            m.account.GitName,
+		GitEmail:           m.account.GitEmail,
+		Provider:           provider,
+		Port:               port,
+		Alias:              alias,
+		Hostname:           m.account.Hostname,
+		Matches:            matches,
+		FragmentPath:       m.account.FragmentPath,
+		GitconfigPath:      m.account.GitconfigPath,
+		SSHConfigPath:      m.account.SSHConfigPath,
+		AllowedSignersPath: m.account.AllowedSignersPath,
+		Confirmed:          false,
 	}
-	proveScreen := newProveScreen("add-account", in, m.deps)
+	// CR-04: phase 1 gates on the existing shared PRIVATE-KEY path.
+	proveScreen := newProveScreen("add-account", in, existing, m.account.KeyPath, m.deps)
 	return m, pushCmd(proveScreen)
 }
 

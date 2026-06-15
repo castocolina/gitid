@@ -30,11 +30,23 @@ func fakeIdentityDeps() identity.Deps {
 	return identity.Deps{}
 }
 
+// fakeTUIDocDeps wraps fakeDocDeps in a tuiDeps for the screens whose
+// constructors now take the full tuiDeps (dashboard, identity list) so the
+// write chain can be threaded the real seams (CR-02).
+func fakeTUIDocDeps() tuiDeps {
+	return tuiDeps{doctor: fakeDocDeps()}
+}
+
+// newFakeRootModel builds a root model with all-fake deps for navigation tests.
+func newFakeRootModel() rootModel {
+	return newRootModel(fakeDocDeps(), fakeIdentityDeps(), identity.UpdateDeps{})
+}
+
 // TestRootModelViewNotPanic verifies that rootModel.View() does not panic
 // on an empty stack and returns a tea.View (not string).
 func TestRootModelViewNotPanic(t *testing.T) {
 	t.Helper()
-	m := newRootModel(fakeDocDeps(), fakeIdentityDeps())
+	m := newFakeRootModel()
 	// should not panic
 	v := m.View()
 	// tea.View is a struct; this just verifies the return type compiles
@@ -45,7 +57,7 @@ func TestRootModelViewNotPanic(t *testing.T) {
 // when stack is empty or has one screen.
 func TestRootModelViewEmptyStack(t *testing.T) {
 	t.Helper()
-	m := newRootModel(fakeDocDeps(), fakeIdentityDeps())
+	m := newFakeRootModel()
 	// Drain the stack to test empty behavior
 	m.stack = nil
 	v := m.View()
@@ -55,7 +67,7 @@ func TestRootModelViewEmptyStack(t *testing.T) {
 
 // TestRootModelPushScreen verifies that a pushScreenMsg appends to the stack.
 func TestRootModelPushScreen(t *testing.T) {
-	m := newRootModel(fakeDocDeps(), fakeIdentityDeps())
+	m := newFakeRootModel()
 	initialLen := len(m.stack)
 
 	stub := &stubScreen{}
@@ -95,7 +107,7 @@ func TestRootModelPopCmdHelper(t *testing.T) {
 // TestRootModelPopScreen verifies that a popScreenMsg removes the top screen
 // but never empties below 1.
 func TestRootModelPopScreen(t *testing.T) {
-	m := newRootModel(fakeDocDeps(), fakeIdentityDeps())
+	m := newFakeRootModel()
 
 	// Push a second screen so we can pop.
 	stub := &stubScreen{}
@@ -115,7 +127,7 @@ func TestRootModelPopScreen(t *testing.T) {
 
 // TestRootModelPopNeverBelowOne verifies pop does not empty the stack below 1.
 func TestRootModelPopNeverBelowOne(t *testing.T) {
-	m := newRootModel(fakeDocDeps(), fakeIdentityDeps())
+	m := newFakeRootModel()
 	// ensure exactly 1 item on stack
 	if len(m.stack) > 1 {
 		m.stack = m.stack[:1]
@@ -130,7 +142,7 @@ func TestRootModelPopNeverBelowOne(t *testing.T) {
 
 // TestRootModelWindowSizeMsg verifies that tea.WindowSizeMsg updates width and height.
 func TestRootModelWindowSizeMsg(t *testing.T) {
-	m := newRootModel(fakeDocDeps(), fakeIdentityDeps())
+	m := newFakeRootModel()
 
 	msg := tea.WindowSizeMsg{Width: 120, Height: 40}
 	updated, _ := m.Update(msg)

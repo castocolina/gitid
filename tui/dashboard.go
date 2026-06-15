@@ -31,11 +31,13 @@ type dashboardModel struct {
 	height     int
 	runID      int
 	doctorDeps doctor.Deps
+	deps       tuiDeps
 }
 
 // newDashboardModel constructs a dashboardModel with all families in familyLoading
-// and spinners initialized.
-func newDashboardModel(d doctor.Deps) dashboardModel {
+// and spinners initialized. It retains the full tuiDeps so the identity-write
+// chain (list → form → prove) can be threaded the real seams (CR-02).
+func newDashboardModel(d tuiDeps) dashboardModel {
 	var spins [7]spinner.Model
 	for i := range spins {
 		s := spinner.New()
@@ -45,7 +47,8 @@ func newDashboardModel(d doctor.Deps) dashboardModel {
 	return dashboardModel{
 		findings:   make(map[doctor.Family][]doctor.Finding),
 		spinners:   spins,
-		doctorDeps: d,
+		doctorDeps: d.doctor,
+		deps:       d,
 	}
 }
 
@@ -62,13 +65,18 @@ func familyIndex(fam doctor.Family) int {
 // init starts one tea.Cmd per doctor family (Batch of 7). Each Cmd calls the
 // matching Check* field on Deps, producing a familyResultMsg when done. This
 // is the D-09 async per-family streaming pattern; doctor.Run is never called
-// (RESEARCH Pitfall 5). Spinner ticks are not included in the Batch — the
-// spinner.Model generates its own ticks when its Update method is called.
+// (RESEARCH Pitfall 5). The Batch also seeds one spinner.Tick per family so the
+// loading spinners actually animate while families load (WR-01): the
+// spinner.TickMsg case only re-arms a tick when one has already arrived, so
+// without an initial tick no spinner ever advances.
 func (m dashboardModel) init() (dashboardModel, tea.Cmd) {
 	fams := doctor.Families()
-	cmds := make([]tea.Cmd, len(fams))
-	for i, fam := range fams {
-		cmds[i] = makeFamilyCmd(m.runID, fam, m.doctorDeps)
+	cmds := make([]tea.Cmd, 0, len(fams)+len(m.spinners))
+	for _, fam := range fams {
+		cmds = append(cmds, makeFamilyCmd(m.runID, fam, m.doctorDeps))
+	}
+	for i := range m.spinners {
+		cmds = append(cmds, m.spinners[i].Tick)
 	}
 	return m, tea.Batch(cmds...)
 }
@@ -94,7 +102,20 @@ func makeFamilyCmd(runID int, fam doctor.Family, d doctor.Deps) tea.Cmd {
 	case doctor.FamilyBaseline:
 		fn = d.CheckBaseline
 	}
-	return func() tea.Msg {
+	return func() (msg tea.Msg) {
+		// WR-03: wrap the check call in recover() so a panic inside the goroutine
+		// surfaces as familyResultMsg{err: ...} (driving the reachable familyError
+		// UI) instead of crashing the whole program. Without this the err field
+		// and the "✗ check failed" panel were dead code.
+		defer func() {
+			if r := recover(); r != nil {
+				msg = familyResultMsg{
+					runID:  runID,
+					family: fam,
+					err:    fmt.Errorf("doctor check %q panicked: %v", string(fam), r),
+				}
+			}
+		}()
 		var findings []doctor.Finding
 		if fn != nil {
 			findings = fn(d)
@@ -137,8 +158,9 @@ func (m dashboardModel) update(msg tea.Msg) (screenModel, tea.Cmd) {
 			_, cmd := m.init()
 			return m, cmd
 		case key.Matches(msg, keys.Select):
-			// Enter drills into the identity list (Task 2 wires newIdentityListScreen).
-			return m, pushCmd(newIdentityListScreen(m.doctorDeps))
+			// Enter drills into the identity list, threading the full tuiDeps so
+			// the downstream form → prove chain receives the real write seams (CR-02).
+			return m, pushCmd(newIdentityListScreen(m.deps))
 		}
 
 	case tea.WindowSizeMsg:

@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -9,6 +11,25 @@ import (
 
 	"github.com/castocolina/gitid/internal/identity"
 )
+
+// expandTildePath expands a leading "~/" (or bare "~") in path to the user home
+// directory. Reconstruction copies IdentityFile/.pub paths verbatim from
+// ~/.ssh/config, which commonly carry a literal tilde that os.ReadFile cannot
+// resolve (mirrors identity.expandTilde, WR-02). Paths without a leading tilde
+// are returned unchanged.
+func expandTildePath(path string) (string, error) {
+	if path != "~" && !strings.HasPrefix(path, "~/") {
+		return path, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	if path == "~" {
+		return home, nil
+	}
+	return filepath.Join(home, path[len("~/"):]), nil
+}
 
 // identityDetailModel is the Identity Detail screen (TUI-02, Screen 3).
 // It displays the full two-column metadata block per UI-SPEC and handles
@@ -21,16 +42,42 @@ type identityDetailModel struct {
 }
 
 // newIdentityDetailModel builds an identity detail model for the given account.
+// It caches the public-key line for the copy action (WR-02) by reading the
+// account's .pub via the injected doctor.ReadFile seam (falling back to the
+// identity ReadPub/os path semantics); an empty or unreadable .pub leaves
+// pubLine empty so the copy action can guard against an empty clipboard write.
 func newIdentityDetailModel(acct identity.Account, deps tuiDeps) identityDetailModel {
 	return identityDetailModel{
 		account: acct,
 		deps:    deps,
+		pubLine: readPubLineForCopy(acct.PubPath, deps),
 	}
 }
 
-// newIdentityDetailScreen returns the identity detail screenModel (replaces stub from 05-03).
-func newIdentityDetailScreen(acct identity.Account) screenModel {
-	return identityDetailModel{account: acct}
+// newIdentityDetailScreen returns the identity detail screenModel, delegating to
+// newIdentityDetailModel with the real deps so the edit/add-host write chain is
+// wired (CR-02) and the copy action has a populated pubLine (WR-02).
+func newIdentityDetailScreen(acct identity.Account, deps tuiDeps) screenModel {
+	return newIdentityDetailModel(acct, deps)
+}
+
+// readPubLineForCopy reads and trims the public-key line at pubPath using the
+// injected doctor.ReadFile seam (trusted gitid-managed .pub path, G304). It
+// returns "" when pubPath is empty, ReadFile is nil (test mode), or the read
+// fails — callers guard the copy action against an empty result (WR-02).
+func readPubLineForCopy(pubPath string, deps tuiDeps) string {
+	if pubPath == "" || deps.doctor.ReadFile == nil {
+		return ""
+	}
+	resolved, err := expandTildePath(pubPath)
+	if err != nil {
+		return ""
+	}
+	data, err := deps.doctor.ReadFile(resolved)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimRight(string(data), "\n")
 }
 
 // update handles key events for the identity detail screen.
@@ -67,6 +114,13 @@ func (m identityDetailModel) update(msg tea.Msg) (screenModel, tea.Cmd) {
 			return m, pushCmd(addForm)
 		case key.Matches(msg, keys.Copy):
 			// 'c' → run clipboard copy cmd (does not push a screen — D-06).
+			// Guard against an empty pubLine: copying "" to the clipboard is
+			// meaningless and the overlay would render a blank key (WR-02).
+			if strings.TrimSpace(m.pubLine) == "" {
+				m.overlay = StyleFinding.Render("  ! no public key available to copy for "+m.account.Name) + "\n" +
+					StyleFaint.Render("Press any key to dismiss") + "\n"
+				return m, nil
+			}
 			return m, runClipboardCopyCmd(m.pubLine)
 		case key.Matches(msg, keys.Delete):
 			// 'd' → show CLI handoff (D-03, no write).

@@ -3,19 +3,22 @@ package tui
 import (
 	"testing"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/castocolina/gitid/internal/doctor"
 )
 
 // TestDashboardInit verifies that dashboardModel.init() returns a tea.Batch
-// producing one cmd per doctor family (seven total), not a single doctor.Run call.
-// This is the RED test — it fails until dashboard.go is implemented.
+// containing one familyResultMsg-producing cmd per doctor family (seven total),
+// not a single doctor.Run call. The batch ALSO contains one spinner.Tick per
+// family so the loading spinners animate (WR-01); those tick cmds are present
+// in addition to the seven family cmds.
 func TestDashboardInit(t *testing.T) {
-	m := newDashboardModel(fakeDocDeps())
+	m := newDashboardModel(fakeTUIDocDeps())
 	_, cmd := m.init()
 	if cmd == nil {
-		t.Fatal("dashboardModel.init() must return a non-nil tea.Cmd (Batch of 7 family cmds)")
+		t.Fatal("dashboardModel.init() must return a non-nil tea.Cmd (Batch of family + spinner-tick cmds)")
 	}
 
 	// Execute the batch and collect messages. Each family must produce a familyResultMsg.
@@ -26,24 +29,31 @@ func TestDashboardInit(t *testing.T) {
 		t.Fatalf("init() cmd must return a tea.BatchMsg; got %T", msg)
 	}
 
-	if len(batchMsg) != len(doctor.Families()) {
-		t.Errorf("expected %d cmds in Batch (one per family), got %d", len(doctor.Families()), len(batchMsg))
+	// The batch must include the family cmds plus one spinner tick per family
+	// (WR-01): 7 family + 7 tick = 14.
+	wantLen := len(doctor.Families()) * 2
+	if len(batchMsg) != wantLen {
+		t.Errorf("expected %d cmds in Batch (family + spinner ticks), got %d", wantLen, len(batchMsg))
 	}
 
-	// Ensure each cmd in the batch produces a familyResultMsg.
+	// Ensure every family is covered by a familyResultMsg-producing cmd, and that
+	// at least one spinner.TickMsg-producing cmd is present (the WR-01 animation
+	// seed). Non-family cmds must be spinner ticks, never something unexpected.
 	familiesSeen := make(map[doctor.Family]bool)
+	tickSeen := false
 	for i, c := range batchMsg {
 		if c == nil {
-			t.Errorf("batchMsg[%d] is nil; want a familyResultMsg-producing cmd", i)
+			t.Errorf("batchMsg[%d] is nil; want a family or spinner-tick cmd", i)
 			continue
 		}
-		result := c()
-		frm, ok := result.(familyResultMsg)
-		if !ok {
-			t.Errorf("batchMsg[%d] produced %T; want familyResultMsg", i, result)
-			continue
+		switch result := c().(type) {
+		case familyResultMsg:
+			familiesSeen[result.family] = true
+		case spinner.TickMsg:
+			tickSeen = true
+		default:
+			t.Errorf("batchMsg[%d] produced %T; want familyResultMsg or spinner.TickMsg", i, result)
 		}
-		familiesSeen[frm.family] = true
 	}
 
 	for _, fam := range doctor.Families() {
@@ -51,13 +61,16 @@ func TestDashboardInit(t *testing.T) {
 			t.Errorf("no cmd produced familyResultMsg for family %q", fam)
 		}
 	}
+	if !tickSeen {
+		t.Error("init() Batch must include at least one spinner.Tick cmd so spinners animate (WR-01)")
+	}
 }
 
 // TestDashboardFamilyResult verifies that receiving a familyResultMsg with the
 // current runID transitions that family's state from familyLoading to familyLoaded
 // and stores its findings.
 func TestDashboardFamilyResult(t *testing.T) {
-	m := newDashboardModel(fakeDocDeps())
+	m := newDashboardModel(fakeTUIDocDeps())
 
 	// Simulate receiving a result for FamilyDeps with the current runID.
 	finding := doctor.Finding{
@@ -89,7 +102,7 @@ func TestDashboardFamilyResult(t *testing.T) {
 // TestDashboardRefresh verifies that a Refresh key press (keys.Refresh / "r")
 // increments runID and resets all families back to familyLoading.
 func TestDashboardRefresh(t *testing.T) {
-	m := newDashboardModel(fakeDocDeps())
+	m := newDashboardModel(fakeTUIDocDeps())
 
 	// First, mark all families as loaded.
 	for i := range m.families {
@@ -122,7 +135,7 @@ func TestDashboardRefresh(t *testing.T) {
 // runID (old runID after a refresh) is silently ignored — the family state
 // must not change.
 func TestDashboardStaleResult(t *testing.T) {
-	m := newDashboardModel(fakeDocDeps())
+	m := newDashboardModel(fakeTUIDocDeps())
 
 	// Advance runID to simulate a refresh having occurred.
 	m.runID = 5

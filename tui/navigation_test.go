@@ -13,7 +13,7 @@ import (
 // the dashboard returns a cmd that produces a pushScreenMsg whose screen is
 // the identity list.
 func TestDashboardEnterNavigates(t *testing.T) {
-	m := newDashboardModel(fakeDocDeps())
+	m := newDashboardModel(fakeTUIDocDeps())
 
 	enterMsg := tea.KeyPressMsg{Code: tea.KeyEnter}
 	updated, cmd := m.update(enterMsg)
@@ -38,7 +38,7 @@ func TestDashboardEnterNavigates(t *testing.T) {
 // TestIdentityListEscPops verifies that pressing Esc (keys.Back) from the
 // identity list screen returns a popCmd producing a popScreenMsg.
 func TestIdentityListEscPops(t *testing.T) {
-	m := newIdentityListScreen(fakeDocDeps())
+	m := newIdentityListScreen(fakeTUIDocDeps())
 
 	escMsg := tea.KeyPressMsg{Code: tea.KeyEscape}
 	updated, cmd := m.update(escMsg)
@@ -57,11 +57,11 @@ func TestIdentityListEscPops(t *testing.T) {
 // level: after Enter from dashboard pushes the identity list, Esc pops back
 // so the stack length returns to 1 (dashboard only).
 func TestIdentityListEscPopsStack(t *testing.T) {
-	root := newRootModel(fakeDocDeps(), fakeIdentityDeps())
+	root := newFakeRootModel()
 	initialLen := len(root.stack)
 
 	// Push the identity list via pushScreenMsg.
-	listScreen := newIdentityListScreen(fakeDocDeps())
+	listScreen := newIdentityListScreen(fakeTUIDocDeps())
 	updated, _ := root.Update(pushScreenMsg{next: listScreen})
 	root = updated.(rootModel)
 	if len(root.stack) != initialLen+1 {
@@ -79,7 +79,7 @@ func TestIdentityListEscPopsStack(t *testing.T) {
 // TestIdentityListAddKey verifies that pressing 'a' (keys.Add) from the
 // identity list returns a pushScreenMsg toward the create form screen.
 func TestIdentityListAddKey(t *testing.T) {
-	m := newIdentityListScreen(fakeDocDeps())
+	m := newIdentityListScreen(fakeTUIDocDeps())
 
 	aMsg := tea.KeyPressMsg{Text: "a"}
 	updated, cmd := m.update(aMsg)
@@ -107,7 +107,7 @@ func TestIdentityListEnterPushesDetail(t *testing.T) {
 	d.Identities = []identity.Account{
 		{Name: "personal", Provider: "github.com"},
 	}
-	m := newIdentityListScreen(d)
+	m := newIdentityListScreen(tuiDeps{doctor: d})
 
 	enterMsg := tea.KeyPressMsg{Code: tea.KeyEnter}
 	updated, cmd := m.update(enterMsg)
@@ -130,7 +130,7 @@ func TestIdentityListEnterPushesDetail(t *testing.T) {
 // to both the dashboard and the identity list screen (dimensions updated).
 func TestWindowSizePropagation(t *testing.T) {
 	// Dashboard propagation.
-	dash := newDashboardModel(fakeDocDeps())
+	dash := newDashboardModel(fakeTUIDocDeps())
 	wsMsg := tea.WindowSizeMsg{Width: 120, Height: 40}
 	updated, _ := dash.update(wsMsg)
 	dm := updated.(dashboardModel)
@@ -139,7 +139,7 @@ func TestWindowSizePropagation(t *testing.T) {
 	}
 
 	// Identity list propagation.
-	il := newIdentityListScreen(fakeDocDeps())
+	il := newIdentityListScreen(fakeTUIDocDeps())
 	updated2, _ := il.update(wsMsg)
 	ilm, ok := updated2.(identityListModel)
 	if !ok {
@@ -156,7 +156,7 @@ func TestQuitFromAnyScreen(t *testing.T) {
 	qMsg := tea.KeyPressMsg{Text: "q"}
 
 	// Dashboard.
-	dash := newDashboardModel(fakeDocDeps())
+	dash := newDashboardModel(fakeTUIDocDeps())
 	_, cmd := dash.update(qMsg)
 	if cmd == nil {
 		t.Fatal("'q' from dashboard must return a non-nil tea.Cmd (tea.Quit)")
@@ -168,7 +168,7 @@ func TestQuitFromAnyScreen(t *testing.T) {
 	}
 
 	// Identity list.
-	il := newIdentityListScreen(fakeDocDeps())
+	il := newIdentityListScreen(fakeTUIDocDeps())
 	_, cmd2 := il.update(qMsg)
 	if cmd2 == nil {
 		t.Fatal("'q' from identity list must return a non-nil tea.Cmd (tea.Quit)")

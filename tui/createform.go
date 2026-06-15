@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -9,8 +11,14 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/identity"
+	"github.com/castocolina/gitid/internal/keygen"
 )
+
+// defaultAlgo is the gitid key algorithm. Ed25519 is the only supported algo
+// (CLAUDE.md crypto stack); the create form does not expose an algo selector.
+const defaultAlgo = "ed25519"
 
 // createFormModel is the TUI form for creating a new identity (D-02, Screen 4).
 // Fields follow the exact order from cmd/gitid/add.go gatherCreateInput():
@@ -78,9 +86,10 @@ func newCreateFormModel(deps tuiDeps) createFormModel {
 	}
 }
 
-// newCreateFormScreen returns the create-form screenModel (replaces stub from 05-03).
-func newCreateFormScreen() screenModel {
-	return newCreateFormModel(tuiDeps{})
+// newCreateFormScreen returns the create-form screenModel threaded with the
+// real write seams so the confirmed create routes through identity.Deps (CR-02).
+func newCreateFormScreen(deps tuiDeps) screenModel {
+	return newCreateFormModel(deps)
 }
 
 // update handles key events for the create form.
@@ -139,18 +148,63 @@ func (m createFormModel) trySubmit() (screenModel, tea.Cmd) {
 		port = 22
 	}
 
-	in := identity.CreateInput{
-		Name:      name,
-		GitName:   m.inputs[1].Value(),
-		GitEmail:  m.inputs[2].Value(),
-		Provider:  m.inputs[3].Value(),
-		Port:      port,
-		Alias:     m.inputs[5].Value(),
-		Confirmed: false, // prove screen gates the confirm
+	provider := m.inputs[3].Value()
+	alias := m.inputs[5].Value()
+	if strings.TrimSpace(alias) == "" {
+		alias = identity.DefaultAlias(name, provider)
 	}
 
-	proveScreen := newProveScreen("create", in, m.deps)
+	// Resolve the gitid-managed target paths so the confirmed write lands in the
+	// real files instead of empty/zero paths (CR-03). Mirrors buildIdentityDeps
+	// path conventions; home failure falls back to relative paths (the prove
+	// screen's pre-write gate will surface any resulting key-path problem).
+	home, _ := os.UserHomeDir()
+	sshDir := filepath.Join(home, ".ssh")
+	keyPath, pubPath := keygen.KeyPaths(sshDir, defaultAlgo, name)
+
+	in := identity.CreateInput{
+		Name:               name,
+		GitName:            m.inputs[1].Value(),
+		GitEmail:           m.inputs[2].Value(),
+		Provider:           provider,
+		Algo:               defaultAlgo,
+		Port:               port,
+		Alias:              alias,
+		Hostname:           provider, // SSH connectivity gate dials the provider host (CR-04)
+		Passphrase:         m.inputs[7].Value(),
+		Matches:            []gitconfig.Match{parseMatchStrategy(m.inputs[6].Value(), name)},
+		FragmentPath:       filepath.Join(home, ".gitconfig.d", name),
+		GitconfigPath:      filepath.Join(home, ".gitconfig"),
+		SSHConfigPath:      filepath.Join(sshDir, "config"),
+		AllowedSignersPath: filepath.Join(sshDir, "allowed_signers"),
+		Confirmed:          false, // prove screen gates the confirm
+	}
+	_ = pubPath // pub path is derived by the Generate dep; retained for symmetry.
+
+	// CR-04: the pre-write gate must run against the STAGED private key path,
+	// not the ssh config path. For create the key does not exist yet; pass the
+	// conventional final key path so the gate exercises the right key once
+	// PersistKey has staged it (the Generate dep gates on the temp staging path).
+	proveScreen := newProveScreen("create", in, identity.Account{}, keyPath, m.deps)
 	return m, pushCmd(proveScreen)
+}
+
+// parseMatchStrategy parses a Match Strategy form value (e.g. "gitdir:~/git/foo/"
+// or "hasconfig:remote.*.url:...") into a gitconfig.Match. A bare/empty value
+// falls back to the D-13 default gitdir:~/git/<name>/. The gitconfig renderer
+// normalizes the trailing slash for gitdir conditions (WR-04 / D-13).
+func parseMatchStrategy(raw, name string) gitconfig.Match {
+	v := strings.TrimSpace(raw)
+	switch {
+	case strings.HasPrefix(v, "hasconfig:"):
+		return gitconfig.Match{Kind: gitconfig.MatchHasconfig, Value: strings.TrimPrefix(v, "hasconfig:")}
+	case strings.HasPrefix(v, "gitdir:"):
+		return gitconfig.Match{Kind: gitconfig.MatchGitdir, Value: strings.TrimPrefix(v, "gitdir:")}
+	case v == "" || v == "gitdir:":
+		return identity.DefaultMatch(name)
+	default:
+		return gitconfig.Match{Kind: gitconfig.MatchGitdir, Value: v}
+	}
 }
 
 // view renders the create form (Screen 4 layout).

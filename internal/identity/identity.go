@@ -163,6 +163,15 @@ type CreateResult struct {
 	PreWriteOnly bool
 	Resolved     tester.ResolvedConfig
 	ResolvedTest tester.Result
+
+	// Backup paths returned by the four filewriter-backed writers on a confirmed
+	// write (empty when no prior file existed or on a preview-only run). Surfaced
+	// to the user so a confirmed write reports where each timestamped backup went
+	// (CLAUDE.md safe-write invariant, WR-05). Mirrors DeleteResult's backup
+	// fields.
+	SSHBackup            string
+	GitconfigBackup      string
+	AllowedSignersBackup string
 }
 
 // DefaultAlias renders the recommended alias form <identity>.<provider> (D-12).
@@ -264,18 +273,24 @@ func runPipeline(in CreateInput, staged StagedKey, deps Deps) (CreateResult, err
 		}
 	}
 
-	if _, werr := deps.WriteSSH(in.Name, hostBlock, in.GlobalBlock); werr != nil {
+	sshBak, werr := deps.WriteSSH(in.Name, hostBlock, in.GlobalBlock)
+	if werr != nil {
 		return res, fmt.Errorf("identity: writing ssh config: %w", werr)
 	}
-	if _, werr := deps.WriteGitconfig(in.Name, in.FragmentPath, in.AllowedSignersPath, in.Matches); werr != nil {
+	res.SSHBackup = sshBak
+	gcBak, werr := deps.WriteGitconfig(in.Name, in.FragmentPath, in.AllowedSignersPath, in.Matches)
+	if werr != nil {
 		return res, fmt.Errorf("identity: writing gitconfig includeIf: %w", werr)
 	}
+	res.GitconfigBackup = gcBak
 	if werr := deps.WriteFragment(in.FragmentPath, in.GitName, in.GitEmail, final.PubPath, true); werr != nil {
 		return res, fmt.Errorf("identity: writing gitconfig fragment: %w", werr)
 	}
-	if _, werr := deps.WriteAllowedSigners(in.AllowedSignersPath, in.Name, signersLine); werr != nil {
+	signBak, werr := deps.WriteAllowedSigners(in.AllowedSignersPath, in.Name, signersLine)
+	if werr != nil {
 		return res, fmt.Errorf("identity: writing allowed_signers: %w", werr)
 	}
+	res.AllowedSignersBackup = signBak
 
 	resolvedTest, resolved := deps.Resolved(in.Alias)
 	res.ResolvedTest = resolvedTest

@@ -16,6 +16,16 @@ type screenModel interface {
 	view() string
 }
 
+// initializer is the optional interface a pushed screen implements when it needs
+// its init() invoked on push (CR-01). The prove screen relies on init() to issue
+// phase 1 (runPreWriteCmd); without this hook a pushed prove screen sits in
+// provePhase1Running forever because nothing in the live program ever calls its
+// init(). The push handler invokes initScreen() when the next screen implements
+// this. initScreen returns the (possibly updated) screen plus its startup cmd.
+type initializer interface {
+	initScreen() (screenModel, tea.Cmd)
+}
+
 // rootModel is the top-level Bubble Tea model. It holds a view-stack of
 // sub-screens and delegates Update to the top of the stack. It handles
 // push/pop navigation messages directly (RESEARCH.md Pattern 4).
@@ -26,19 +36,23 @@ type rootModel struct {
 	deps   tuiDeps
 }
 
-// tuiDeps holds both doctor.Deps and identity.Deps for the TUI. It is built
-// once by buildTUIDeps and threaded through the root model and its screens.
+// tuiDeps holds doctor.Deps, identity.Deps (create/add-account write path), and
+// identity.UpdateDeps (in-place edit write path) for the TUI. It is built once
+// by buildTUIDeps and threaded through the root model and its screens so every
+// write screen receives the real, filewriter-backed seams (CR-02).
 type tuiDeps struct {
 	doctor   doctor.Deps
 	identity identity.Deps
+	update   identity.UpdateDeps
 }
 
 // newRootModel constructs the root model with the doctor dashboard as the
 // home screen pre-pushed onto the stack (TUI-01). The dashboard's async
-// family cmds are started by Init().
-func newRootModel(docDeps doctor.Deps, idDeps identity.Deps) rootModel {
-	d := tuiDeps{doctor: docDeps, identity: idDeps}
-	home := newDashboardModel(docDeps)
+// family cmds are started by Init(). The full tuiDeps (doctor + identity +
+// update) is threaded from here through every screen that performs a write.
+func newRootModel(docDeps doctor.Deps, idDeps identity.Deps, upDeps identity.UpdateDeps) rootModel {
+	d := tuiDeps{doctor: docDeps, identity: idDeps, update: upDeps}
+	home := newDashboardModel(d)
 	return rootModel{
 		stack: []screenModel{home},
 		deps:  d,
@@ -52,7 +66,8 @@ func (m rootModel) Init() tea.Cmd {
 		return nil
 	}
 	if dash, ok := m.stack[0].(dashboardModel); ok {
-		_, cmd := dash.init()
+		updated, cmd := dash.init()
+		m.stack[0] = updated
 		return cmd
 	}
 	return nil
@@ -70,8 +85,17 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
 	case pushScreenMsg:
-		m.stack = append(m.stack, msg.next)
-		return m, nil
+		// CR-01: invoke init() on the pushed screen when it supports it, so the
+		// prove screen's phase 1 (runPreWriteCmd) actually starts. Without this,
+		// a pushed prove screen never leaves provePhase1Running in the live
+		// program (only stack[0]'s init was ever called).
+		next := msg.next
+		var cmd tea.Cmd
+		if in, ok := next.(initializer); ok {
+			next, cmd = in.initScreen()
+		}
+		m.stack = append(m.stack, next)
+		return m, cmd
 	case popScreenMsg:
 		if len(m.stack) > 1 {
 			m.stack = m.stack[:len(m.stack)-1]

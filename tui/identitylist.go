@@ -27,6 +27,7 @@ type identityListModel struct {
 	width      int
 	height     int
 	doctorDeps doctor.Deps
+	deps       tuiDeps
 }
 
 // newIdentityListScreen builds the identity list screen by reconstructing
@@ -36,7 +37,11 @@ type identityListModel struct {
 // (the pre-reconstructed list populated by buildTUIDoctorDeps), ensuring both
 // production and test paths produce a populated list.
 // list.SetShowHelp(false) defers to the shared help footer bar (UI-SPEC).
-func newIdentityListScreen(d doctor.Deps) screenModel {
+// It accepts the full tuiDeps so the downstream create/detail/form/prove chain
+// receives the real identity + update write seams (CR-02); reconstruction uses
+// deps.doctor for the ReadFile/path seams.
+func newIdentityListScreen(deps tuiDeps) screenModel {
+	d := deps.doctor
 	var accounts []identity.Account
 
 	// Prefer a fresh Reconstruct from disk so the list reflects current state.
@@ -66,6 +71,7 @@ func newIdentityListScreen(d doctor.Deps) screenModel {
 	return identityListModel{
 		list:       l,
 		doctorDeps: d,
+		deps:       deps,
 	}
 }
 
@@ -79,10 +85,11 @@ func (m identityListModel) update(msg tea.Msg) (screenModel, tea.Cmd) {
 		case key.Matches(msg, keys.Back):
 			return m, popCmd()
 		case key.Matches(msg, keys.Add):
-			return m, pushCmd(newCreateFormScreen())
+			return m, pushCmd(newCreateFormScreen(m.deps))
 		case key.Matches(msg, keys.Select):
 			if item, ok := m.list.SelectedItem().(identityItem); ok {
-				return m, pushCmd(newIdentityDetailScreen(item.account))
+				acct := fillAccountPaths(item.account, m.doctorDeps)
+				return m, pushCmd(newIdentityDetailScreen(acct, m.deps))
 			}
 			return m, nil
 		case key.Matches(msg, keys.Delete):
@@ -107,6 +114,35 @@ func (m identityListModel) update(msg tea.Msg) (screenModel, tea.Cmd) {
 // view renders the identity list screen with the title and bubbles list.
 func (m identityListModel) view() string {
 	return StyleTitle.Render("gitid — Identities") + "\n\n" + m.list.View()
+}
+
+// fillAccountPaths fills the gitid-managed target paths on a reconstructed
+// Account from the doctor.Deps path seams when they are empty (CR-02/CR-03).
+// Reconstruction populates the per-identity fields (Name, KeyPath, PubPath,
+// Matches, ...) but not the global write-target paths (~/.ssh/config,
+// ~/.gitconfig, allowed_signers, fragment); the update/add-account write modes
+// need these to route ReplaceBlock at the correct managed blocks. Existing
+// non-empty values are preserved.
+func fillAccountPaths(acct identity.Account, d doctor.Deps) identity.Account {
+	if acct.SSHConfigPath == "" {
+		acct.SSHConfigPath = d.SSHConfigPath
+	}
+	if acct.GitconfigPath == "" {
+		acct.GitconfigPath = d.GitconfigPath
+	}
+	if acct.AllowedSignersPath == "" {
+		acct.AllowedSignersPath = d.AllowedSignersPath
+	}
+	if acct.FragmentPath == "" {
+		acct.FragmentPath = fragmentPathDefault(acct.Name)
+	}
+	return acct
+}
+
+// fragmentPathDefault returns the conventional per-identity fragment path
+// ~/.gitconfig.d/<name> keyed by identity name (mirrors identity.fragmentPathFor).
+func fragmentPathDefault(name string) string {
+	return "~/.gitconfig.d/" + name
 }
 
 // newCreateFormScreen is provided in tui/createform.go (05-04).

@@ -106,17 +106,25 @@ func (m updateFormModel) trySubmit() (screenModel, tea.Cmd) {
 	updated.Port = port
 	updated.Alias = m.inputs[4].Value()
 
-	// Build a CreateInput that represents the update operation.
+	// Build a CreateInput for the prove-screen display/gate; the actual write
+	// dispatches through identity.Update with the edited Account (CR-03).
 	in := identity.CreateInput{
-		Name:      updated.Name,
-		GitName:   updated.GitName,
-		GitEmail:  updated.GitEmail,
-		Provider:  updated.Provider,
-		Port:      updated.Port,
-		Alias:     updated.Alias,
-		Confirmed: false,
+		Name:               updated.Name,
+		GitName:            updated.GitName,
+		GitEmail:           updated.GitEmail,
+		Provider:           updated.Provider,
+		Port:               updated.Port,
+		Alias:              updated.Alias,
+		Hostname:           updated.Hostname,
+		Matches:            updated.Matches,
+		FragmentPath:       updated.FragmentPath,
+		GitconfigPath:      updated.GitconfigPath,
+		SSHConfigPath:      updated.SSHConfigPath,
+		AllowedSignersPath: updated.AllowedSignersPath,
+		Confirmed:          false,
 	}
-	proveScreen := newProveScreen("update", in, m.deps)
+	// CR-04: phase 1 gates on the existing PRIVATE-KEY path, not the ssh config.
+	proveScreen := newProveScreen("update", in, updated, updated.KeyPath, m.deps)
 	return m, pushCmd(proveScreen)
 }
 

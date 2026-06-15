@@ -43,6 +43,9 @@ type UpdateResult struct {
 	Structural bool
 	// PreviewOnly is true when no writes were performed (Confirmed was false).
 	PreviewOnly bool
+	// SSHBackup is the timestamped backup path of the rewritten ~/.ssh/config,
+	// surfaced so a confirmed update reports where the backup went (WR-05).
+	SSHBackup string
 }
 
 // Update applies the edited fields to the existing identity, re-renders the four
@@ -61,7 +64,8 @@ func Update(existing Account, edited Account, deps UpdateDeps, signing bool) (Up
 
 	// Re-render the SSH host block with the (potentially updated) alias/hostname/port/key.
 	hostBlock := sshconfig.RenderHostBlock(edited.Alias, edited.Hostname, edited.Port, edited.KeyPath)
-	if _, werr := deps.WriteSSH(existing.Name, hostBlock, ""); werr != nil {
+	sshBak, werr := deps.WriteSSH(existing.Name, hostBlock, "")
+	if werr != nil {
 		return UpdateResult{}, fmt.Errorf("identity: writing ssh config: %w", werr)
 	}
 
@@ -101,7 +105,7 @@ func Update(existing Account, edited Account, deps UpdateDeps, signing bool) (Up
 		return UpdateResult{}, fmt.Errorf("identity: writing gitconfig fragment: %w", werr)
 	}
 
-	res := UpdateResult{Structural: structural}
+	res := UpdateResult{Structural: structural, SSHBackup: sshBak}
 
 	// D-05: re-run the resolved test only when a structural field changed.
 	if structural {
