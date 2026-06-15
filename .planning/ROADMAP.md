@@ -35,7 +35,7 @@
 **Plans**: 3 plansPlans:
 **Wave 1**
 
-- [ ] 01-01-PLAN.md — Initialize go.mod (github.com/castocolina/gitid, go 1.26) + full package skeleton (cmd/gitid + 10 internal packages + tui) with green stub tests; minimal LICENSE/README/.gitignore
+- [x] 01-01-PLAN.md — Initialize go.mod (github.com/castocolina/gitid, go 1.26) + full package skeleton (cmd/gitid + 10 internal packages + tui) with green stub tests; minimal LICENSE/README/.gitignore
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -115,7 +115,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Bootstrap | 0/3 | Planned | - |
+| 1. Bootstrap | 1/3 | In Progress|  |
 | 2. First Identity End-to-End | 0/? | Not started | - |
 | 3. Full Identity CRUD + Multi-Identity | 0/? | Not started | - |
 | 4. Doctor | 0/? | Not started | - |
