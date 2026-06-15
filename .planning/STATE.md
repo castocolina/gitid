@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 04-07-PLAN.md
-last_updated: "2026-06-12T12:35:30.019Z"
-last_activity: 2026-06-12 -- Phase 04 executed; verification gaps_found
+status: executing
+stopped_at: Phase 04 (doctor) complete — verification passed after gap closure
+last_updated: "2026-06-12T12:37:35.556Z"
+last_activity: 2026-06-12 -- Phase 04 complete (gaps DOC-GAP-01/02/03 closed, re-verified passed)
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 5
   total_plans: 25
   completed_plans: 25
-  percent: 83
+  percent: 71
 ---
 
 # Project State
@@ -21,22 +21,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-08)
 
 **Core value:** Managing a Git identity produces coordinated, coherent SSH + Git artifacts that are proven to authenticate and resolve correctly before any file is written, and existing hand-written config is never corrupted.
-**Current focus:** Phase 04 — doctor
+**Current focus:** Phase 05 — CLI Surface + TUI (next)
 
 ## Current Position
 
-Phase: 04 (doctor) — GAPS FOUND (not complete)
-Plan: 5 of 5 executed; gap-closure plans pending
-Status: Verification gaps_found — 3 critical production-wiring gaps (auto-fix silent no-op, dead agent check, no TTY guard). See 04-VERIFICATION.md / 04-REVIEW.md. Next: /gsd-plan-phase 04 --gaps
-Last activity: 2026-06-12 -- Phase 04 executed; verification gaps_found
+Phase: 05 (CLI Surface + TUI) — not started
+Plan: Not started
+Status: Phase 04 (doctor) COMPLETE — verification passed after gap closure (DOC-GAP-01/02/03 closed by 04-06/04-07). Phase 06 (Linux validation) is deferred post-v1, so Phase 05 is next. Next: /gsd-discuss-phase 05 or /gsd-plan-phase 05
+Last activity: 2026-06-12 -- Phase 04 complete
 
-Progress: [█████████░] 5/5 plans executed — phase blocked on gap closure
+Progress: [██████████] Phase 04 complete (7/7 plans incl. gap closure)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 8
+- Total plans completed: 15
 - Average duration: — min
 - Total execution time: 0 hours
 
@@ -51,6 +51,7 @@ Progress: [█████████░] 5/5 plans executed — phase blocked 
 | 5. CLI Surface + TUI | 0 | - | - |
 | 03 | 4 | - | - |
 | 03.1 | 4 | - | - |
+| 04 | 7 | - | - |
 
 *Updated after each plan completion*
 | Phase 02 P01 | 18 | 2 tasks | 5 files |

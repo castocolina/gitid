@@ -1,10 +1,34 @@
 ---
 phase: 04-doctor
 verified: 2026-06-12T00:00:00Z
-status: gaps_found
-score: 4/7 must-haves verified — 3 critical production-wiring gaps block goal achievement
+status: passed
+reverified: 2026-06-12 — all 3 gaps closed by gap-closure plans 04-06 + 04-07; confirmed in production code (not just tests)
+score: 7/7 must-haves verified after gap closure (initial pass found 3 critical production-wiring gaps; now resolved)
 mode: standard
 source: [04-REVIEW.md]
+gap_closure_plans: [04-06, 04-07]
+gaps_resolution:
+  - id: DOC-GAP-01
+    status: resolved
+    by: 04-06
+    evidence: "orphans.go Fix.Fn → deps.RemoveBlock (lines 55,85); coherence.go Fix.Fn → deps.AddWiring (lines 127,260); no surviving `func() error { return nil }` stubs; real-wiring test (cmd/gitid/doctor_realwiring_test.go) drives buildDoctorDeps against temp $HOME and asserts on-disk block removal/addition + 0644 allowed_signers mode"
+  - id: DOC-GAP-02
+    status: resolved
+    by: 04-07
+    evidence: "buildDoctorDeps sets RunSSHAdd + RunSSHKeygenFingerprint (cmd/gitid/doctor.go:216-217), arg-slice exec; wiring assertion test in cmd/gitid/doctor_agent_test.go"
+  - id: DOC-GAP-03
+    status: resolved
+    by: 04-07
+    evidence: "fix gate guarded by `fix || isTerminalInput(os.Stdin)` (cmd/gitid/doctor.go:116); non-interactive stdin skips the prompt"
+  - id: IN-03
+    status: resolved
+    by: 04-07
+    evidence: "main() propagates tiered doctorExitCode via os.Exit (cmd/gitid/main.go:18,22)"
+  - id: WR-03
+    status: resolved
+    by: 04-07
+    evidence: "checkGitconfigPath warns only on group/world-write bits; default 0644 ~/.gitconfig no longer falsely flagged"
+final_gate: "go build ./... OK; go test ./... all 13 packages pass (exit 0); golangci-lint 0 issues"
 method: >
   Code review (gsd-code-reviewer, standard depth, 22 source files) surfaced 3 critical
   findings; each was independently confirmed against the live code by the orchestrator
@@ -109,3 +133,15 @@ check flags a default 0644 ~/.gitconfig as a 0600 error, IN-03 `main()` collapse
 Route through gap closure: `/gsd-plan-phase 04 --gaps` → creates `gap_closure: true` plans for
 DOC-GAP-01..03 (with tests that drive the real wiring) → `/gsd-execute-phase 04 --gaps-only` →
 re-verify. Do not mark the phase complete until DOC-GAP-01 and DOC-GAP-02 are resolved.
+
+## Re-Verification (2026-06-12) — PASSED
+
+Gap-closure plans **04-06** and **04-07** executed (4 commits: `9237a5f`, `43d723e`, `fa8f72f`,
+`2425f9a`). All three gaps confirmed closed in the production `buildDoctorDeps`/`runDoctor`/`main`
+wiring by direct code inspection (see `gaps_resolution` in frontmatter), not merely by green tests —
+and the new RED tests are real-wiring integration tests that drive `buildDoctorDeps` against a temp
+`$HOME` and assert on-disk effects, so the original injected-seam blind spot is now structurally
+covered. Bonus: 04-06 also removed a latent `incompleteNames` guard bug that prevented orphan
+Classes 1+2 from ever firing. Final gate green (build + 13/13 test packages + 0 lint issues).
+
+**Status: passed.** Phase 4 goal achieved.
