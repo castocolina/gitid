@@ -33,6 +33,14 @@ type Account struct {
 	KeyPath  string
 	PubPath  string
 	Matches  []gitconfig.Match
+
+	// Gitid-managed target paths the lifecycle modes (rotate/add-account) write
+	// to. They mirror the CreateInput target fields and are filled by the command
+	// layer from platform defaults when an account is loaded.
+	FragmentPath       string
+	GitconfigPath      string
+	SSHConfigPath      string
+	AllowedSignersPath string
 }
 
 // CreateInput carries the user-gathered inputs plus the resolved gitid-managed
@@ -88,6 +96,15 @@ type Deps struct {
 	WriteFragment       func(fragmentPath, name, email, signingKeyPath string) error
 	WriteAllowedSigners func(path, identity, line string) (backupPath string, err error)
 	Resolved            func(alias string) (tester.Result, tester.ResolvedConfig)
+
+	// PubExists, DerivePub, and WritePub support the reuse-existing-key flow
+	// (IDENT-02): PubExists reports whether the existing key's `.pub` is present,
+	// DerivePub recomputes the authorized-key line from the private key when it is
+	// absent, and WritePub persists the derived line at 0644 via filewriter. They
+	// are nil for the create-new flow, which always generates a fresh `.pub`.
+	PubExists func(pubPath string) bool
+	DerivePub func(privateKeyPath string) (pubLine string, err error)
+	WritePub  func(pubPath, pubLine string) error
 }
 
 // CreateResult reports everything the command layer needs to display: the four
@@ -135,7 +152,22 @@ func Create(in CreateInput, deps Deps) (CreateResult, error) {
 	if err != nil {
 		return CreateResult{}, fmt.Errorf("identity: generating key: %w", err)
 	}
+	return runPipeline(in, key, deps)
+}
 
+// runPipeline is the single write path shared by Create and the reuse flow: copy
+// the .pub → build the allowed_signers line → pre-write test (gates the write,
+// D-01) → render the four artifact previews → (Confirmed?) write all four → run
+// the resolved test. Both the create-new and reuse-existing modes funnel through
+// here so there is exactly one writer sequence (no parallel write path).
+//
+// The pre-write test gates the write: a Failure outcome aborts with an error and
+// NO writes; PASS or ReachableNotUploaded proceed. When Confirmed is false the
+// previews are returned with PreWriteOnly set and no write or resolved test runs
+// (SAFE-03 / --dry-run). On a confirmed write all FOUR writers run — WriteSSH,
+// WriteGitconfig, WriteFragment, WriteAllowedSigners — then the resolved test
+// captures the live config.
+func runPipeline(in CreateInput, key KeyResult, deps Deps) (CreateResult, error) {
 	if cerr := deps.CopyPub(key.PubLine); cerr != nil {
 		// Clipboard is best-effort (CLIP-02): a copy failure never aborts the
 		// flow; the command layer prints the key for manual copy.

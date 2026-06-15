@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/castocolina/gitid/internal/clipboard"
+	"github.com/castocolina/gitid/internal/filewriter"
 	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/identity"
 	"github.com/castocolina/gitid/internal/keygen"
@@ -62,6 +63,50 @@ func runIdentityAdd(in io.Reader, out io.Writer, dryRun bool, depsFor func(io.Wr
 	}
 
 	reader := bufio.NewReader(in)
+
+	// D-10: the user chooses one of three create modes at the start.
+	mode := selectMode(reader, out)
+
+	switch mode {
+	case modeReuse:
+		return runReuse(reader, out, algo, dryRun, depsFor)
+	case modeAddAccount:
+		return runAddAccount(reader, out, dryRun, depsFor)
+	default: // modeCreateNew
+		return runCreateNew(reader, out, algo, dryRun, depsFor)
+	}
+}
+
+// createMode enumerates the three D-10 create modes offered by `identity add`.
+type createMode int
+
+const (
+	modeCreateNew createMode = iota
+	modeReuse
+	modeAddAccount
+)
+
+// selectMode prompts for the create mode (D-10), defaulting to create-new. It
+// accepts a numeric choice (1/2/3) or a keyword (new/reuse/add-account).
+func selectMode(r *bufio.Reader, out io.Writer) createMode {
+	fp(out, "Create mode:\n")
+	fp(out, "  1) new          — generate a fresh key (default)\n")
+	fp(out, "  2) reuse        — reuse an existing private key\n")
+	fp(out, "  3) add-account  — add an alias for an existing identity\n")
+	choice := strings.ToLower(prompt(r, out, "Choose mode", "1"))
+	switch choice {
+	case "2", "reuse", "reuse-existing-key":
+		return modeReuse
+	case "3", "add-account", "add", "alias":
+		return modeAddAccount
+	default:
+		return modeCreateNew
+	}
+}
+
+// runCreateNew is the create-new orchestration: gather inputs, call
+// identity.Create, and print results.
+func runCreateNew(reader *bufio.Reader, out io.Writer, algo string, dryRun bool, depsFor func(io.Writer) identity.Deps) error {
 	input, err := gatherCreateInput(reader, out, algo, dryRun)
 	if err != nil {
 		return err
@@ -88,6 +133,123 @@ func runIdentityAdd(in io.Reader, out io.Writer, dryRun bool, depsFor func(io.Wr
 	fp(out, "\n"+uploadInstructions(input.Provider)+"\n")
 	printPubForManualCopy(out, res.Key.PubLine)
 	return nil
+}
+
+// runReuse is the reuse-existing-key orchestration (IDENT-02): gather inputs plus
+// the existing private-key path, call identity.Reuse (which derives the .pub when
+// absent), and print results.
+func runReuse(reader *bufio.Reader, out io.Writer, algo string, dryRun bool, depsFor func(io.Writer) identity.Deps) error {
+	input, err := gatherCreateInput(reader, out, algo, dryRun)
+	if err != nil {
+		return err
+	}
+	existingKey := prompt(reader, out, "Existing private key path", "")
+	if strings.TrimSpace(existingKey) == "" {
+		return fmt.Errorf("identity add: existing private key path is required for reuse")
+	}
+
+	deps := depsFor(out)
+	res, err := identity.Reuse(input, existingKey, deps)
+	if err != nil {
+		return err
+	}
+
+	printPreWrite(out, res.PreWrite)
+	printPreview(out, res)
+
+	if dryRun {
+		fp(out, "\n--dry-run: no files were written.\n")
+		return nil
+	}
+	if !res.PreWriteOnly {
+		loadKeyIntoAgent(out, res.Key.PrivatePath)
+		printResolved(out, res)
+	}
+	fp(out, "\n"+uploadInstructions(input.Provider)+"\n")
+	printPubForManualCopy(out, res.Key.PubLine)
+	return nil
+}
+
+// runAddAccount is the add-account/alias orchestration (IDENT-06): gather the
+// existing identity's details plus the new provider/alias, call
+// identity.AddAccount (sharing the existing key), and print results.
+func runAddAccount(reader *bufio.Reader, out io.Writer, dryRun bool, depsFor func(io.Writer) identity.Deps) error {
+	existing, newProvider, newAlias, err := gatherAddAccount(reader, out)
+	if err != nil {
+		return err
+	}
+
+	// Under --dry-run we only render the alias preview and perform no write: since
+	// AddAccount is a confirmed write path, we render the SSH/includeIf previews
+	// directly rather than invoking it (SAFE-03 dry-run is strictly read-only).
+	if dryRun {
+		fp(out, "\n=== Preview: add-account alias ===\n")
+		fp(out, "--- ~/.ssh/config (Host block) ---\n")
+		fp(out, sshconfig.RenderHostBlock(newAlias, existing.Hostname, existing.Port, existing.KeyPath))
+		fp(out, "--- ~/.gitconfig (includeIf) ---\n")
+		fp(out, gitconfig.RenderIncludeIf(existing.Name, existing.FragmentPath, existing.Matches)+"\n")
+		fp(out, "\n--dry-run: no files were written.\n")
+		return nil
+	}
+
+	// AddAccount performs a confirmed write; gate it behind one explicit consent
+	// (SAFE-03).
+	if !confirm(reader, out, "Add this account/alias now?") {
+		fp(out, "Add-account cancelled; no files were written.\n")
+		return nil
+	}
+
+	deps := depsFor(out)
+	res, err := identity.AddAccount(existing, newProvider, newAlias, deps)
+	if err != nil {
+		return err
+	}
+
+	printPreWrite(out, res.PreWrite)
+	printPreview(out, res)
+	printResolved(out, res)
+	fp(out, "\n"+uploadInstructions(newProvider)+"\n")
+	return nil
+}
+
+// gatherAddAccount collects the existing identity's details and the new alias.
+func gatherAddAccount(r *bufio.Reader, out io.Writer) (identity.Account, string, string, error) {
+	name := prompt(r, out, "Existing identity name", "")
+	if name == "" {
+		return identity.Account{}, "", "", fmt.Errorf("identity add: existing identity name is required")
+	}
+	gitName := prompt(r, out, "Git user.name", "")
+	gitEmail := prompt(r, out, "Git user.email", "")
+	keyPath := prompt(r, out, "Existing private key path", "")
+	if strings.TrimSpace(keyPath) == "" {
+		return identity.Account{}, "", "", fmt.Errorf("identity add: existing private key path is required for add-account")
+	}
+	newProvider := prompt(r, out, "New provider (github/gitlab)", "gitlab")
+	newAlias := prompt(r, out, "New host alias", identity.DefaultAlias(name, newProvider))
+	hostname := prompt(r, out, "Hostname", defaultHostname(newProvider))
+	port := promptPort(r, out, "Port", 443)
+	matchDir := prompt(r, out, "Match gitdir", "~/git/"+name+"/")
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return identity.Account{}, "", "", fmt.Errorf("identity add: resolving home dir: %w", err)
+	}
+
+	acct := identity.Account{
+		Name:               name,
+		GitName:            gitName,
+		GitEmail:           gitEmail,
+		Hostname:           hostname,
+		Port:               port,
+		KeyPath:            keyPath,
+		PubPath:            keyPath + ".pub",
+		Matches:            []gitconfig.Match{{Kind: gitconfig.MatchGitdir, Value: matchDir}},
+		FragmentPath:       filepath.Join(home, ".gitconfig.d", name),
+		GitconfigPath:      filepath.Join(home, ".gitconfig"),
+		SSHConfigPath:      filepath.Join(home, ".ssh", "config"),
+		AllowedSignersPath: filepath.Join(home, ".ssh", "allowed_signers"),
+	}
+	return acct, newProvider, newAlias, nil
 }
 
 // fp writes s to out, ignoring the write error: out is the command's stdout,
@@ -197,6 +359,17 @@ func buildDeps(_ io.Writer) identity.Deps {
 		WriteFragment:       gitconfig.WriteFragment,
 		WriteAllowedSigners: keygen.WriteAllowedSigners,
 		Resolved:            tester.Resolved,
+		PubExists: func(pubPath string) bool {
+			_, err := os.Stat(pubPath)
+			return err == nil
+		},
+		DerivePub: keygen.DerivePublicKey,
+		WritePub: func(pubPath, pubLine string) error {
+			// Derived .pub is public material, written 0644 via the filewriter
+			// chokepoint (T-02-28).
+			_, werr := filewriter.Write(pubPath, []byte(pubLine), 0o644)
+			return werr
+		},
 	}
 }
 

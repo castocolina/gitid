@@ -10,7 +10,7 @@
 ## Phases
 
 - [x] **Phase 1: Bootstrap** — Makefile, go.mod, golangci-lint v2, gosec, pre-commit hooks wired to make targets, TDD harness green (completed 2026-06-09)
-- [ ] **Phase 2: First Identity End-to-End** — Create one identity (ed25519 auth+signing), produce all four coordinated artifacts with backup + idempotent managed blocks + confirmation, prove authentication and config resolution with the two-phase test flow, clipboard copy, upload instructions
+- [x] **Phase 2: First Identity End-to-End** — Create one identity (ed25519 auth+signing), produce all four coordinated artifacts with backup + idempotent managed blocks + confirmation, prove authentication and config resolution with the two-phase test flow, clipboard copy, upload instructions (completed 2026-06-09)
 - [ ] **Phase 3: Full Identity CRUD + Multi-Identity** — List, update, delete identities; reconstruct from managed blocks (no sidecar DB); multiple identities on one provider via distinct aliases
 - [ ] **Phase 4: Doctor** — Deep health checks (deps, permissions, coherence/drift, orphans, signing wiring, agent) with severity + fix; `gitid doctor` CLI command
 - [ ] **Phase 5: CLI Surface + TUI** — Full Cobra command surface with shell completion; Bubble Tea TUI launching to doctor dashboard with identity/account navigation
@@ -84,7 +84,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4)*
 
-- [ ] 02-07-PLAN.md — fast-follow modes: reuse-existing-key (IDENT-02), add-account/alias (IDENT-06), key rotation (KEY-01)
+- [x] 02-07-PLAN.md — fast-follow modes: reuse-existing-key (IDENT-02), add-account/alias (IDENT-06), key rotation (KEY-01)
 
 ### Phase 3: Full Identity CRUD + Multi-Identity
 
@@ -157,7 +157,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 6/7 plans executed
+**Plans:** 7/7 plans complete
 
 Plans:
 
@@ -170,7 +170,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Bootstrap | 3/3 | Complete   | 2026-06-09 |
-| 2. First Identity End-to-End | 6/7 | In Progress|  |
+| 2. First Identity End-to-End | 7/7 | Complete   | 2026-06-09 |
 | 3. Full Identity CRUD + Multi-Identity | 0/? | Not started | - |
 | 4. Doctor | 0/? | Not started | - |
 | 5. CLI Surface + TUI | 0/? | Not started | - |

@@ -33,6 +33,9 @@ func fakeDeps(_ io.Writer) identity.Deps {
 		Resolved: func(alias string) (tester.Result, tester.ResolvedConfig) {
 			return tester.Result{Command: "ssh -T git@" + alias, Output: "ok"}, tester.ResolvedConfig{User: "git"}
 		},
+		PubExists: func(_ string) bool { return true },
+		DerivePub: func(_ string) (string, error) { return "ssh-ed25519 AAAADERIVED comment\n", nil },
+		WritePub:  func(_, _ string) error { return nil },
 	}
 }
 
@@ -86,9 +89,11 @@ func TestRunIdentityAddDryRunDoesNotPanic(t *testing.T) {
 	// Isolate HOME so no real ~/.ssh or ~/.gitconfig is touched.
 	t.Setenv("HOME", t.TempDir())
 
-	// Scripted answers: name, git name, git email, provider, alias(default),
-	// hostname(default), port(default), match(default), passphrase(empty).
+	// Scripted answers: mode(1=create-new), name, git name, git email, provider,
+	// alias(default), hostname(default), port(default), match(default),
+	// passphrase(empty).
 	in := strings.NewReader(strings.Join([]string{
+		"1", // create-new mode (D-10)
 		"gitidtest",
 		"Test User",
 		"test@example.com",
@@ -110,5 +115,76 @@ func TestRunIdentityAddDryRunDoesNotPanic(t *testing.T) {
 	// The unified preview must show the allowed_signers artifact.
 	if !strings.Contains(out.String(), "allowed_signers") {
 		t.Errorf("dry-run preview must include the allowed_signers artifact, got:\n%s", out.String())
+	}
+}
+
+// TestRunIdentityAddReuseDryRun drives the reuse-existing-key mode (D-10 mode 2)
+// in --dry-run with scripted input, asserting it dispatches to the reuse path
+// (prompting for the existing key) and completes without panic or write.
+func TestRunIdentityAddReuseDryRun(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("runIdentityAdd(reuse) panicked: %v", r)
+		}
+	}()
+
+	t.Setenv("HOME", t.TempDir())
+
+	// mode(2=reuse), name, git name, git email, provider, alias, hostname, port,
+	// match, passphrase, existing-key-path.
+	in := strings.NewReader(strings.Join([]string{
+		"2", // reuse-existing-key mode
+		"reused",
+		"Reuse User",
+		"reuse@example.com",
+		"github",
+		"", "", "", "", "", // alias/hostname/port/match/passphrase defaults
+		"/tmp/.ssh/id_ed25519_reused", // existing key path
+	}, "\n") + "\n")
+
+	var out bytes.Buffer
+	if err := runIdentityAdd(in, &out, true, fakeDeps); err != nil {
+		t.Fatalf("runIdentityAdd(reuse dry-run) error: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "--dry-run: no files were written.") {
+		t.Errorf("expected dry-run notice, got:\n%s", out.String())
+	}
+}
+
+// TestRunIdentityAddAddAccountDryRun drives the add-account mode (D-10 mode 3) in
+// --dry-run, asserting the rendered alias preview reuses the existing key path
+// (IDENT-06) and no write occurs.
+func TestRunIdentityAddAddAccountDryRun(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("runIdentityAdd(add-account) panicked: %v", r)
+		}
+	}()
+
+	t.Setenv("HOME", t.TempDir())
+
+	keyPath := "/tmp/.ssh/id_ed25519_work"
+	// mode(3=add-account), existing name, git name, git email, existing key path,
+	// new provider, new alias, hostname, port, match.
+	in := strings.NewReader(strings.Join([]string{
+		"3", // add-account mode
+		"work",
+		"Work User",
+		"work@example.com",
+		keyPath,
+		"gitlab",
+		"work.gitlab.com",
+		"", "", "", // hostname/port/match defaults
+	}, "\n") + "\n")
+
+	var out bytes.Buffer
+	if err := runIdentityAdd(in, &out, true, fakeDeps); err != nil {
+		t.Fatalf("runIdentityAdd(add-account dry-run) error: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), keyPath) {
+		t.Errorf("add-account preview must reuse the existing key path %q, got:\n%s", keyPath, out.String())
+	}
+	if !strings.Contains(out.String(), "Host work.gitlab.com") {
+		t.Errorf("add-account preview must declare the new alias, got:\n%s", out.String())
 	}
 }
