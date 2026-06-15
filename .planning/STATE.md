@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-08)
 Phase: 05 (CLI Surface + TUI) — not started
 Plan: Not started
 Status: Phase 04 (doctor) COMPLETE — verification passed after gap closure (DOC-GAP-01/02/03 closed by 04-06/04-07). Phase 06 (Linux validation) is deferred post-v1, so Phase 05 is next. Next: /gsd-discuss-phase 05 or /gsd-plan-phase 05
-Last activity: 2026-06-12 -- Completed quick task 260612-dc7 (doctor perms tighten-only fix)
+Last activity: 2026-06-12 -- Completed quick task 260612-dtm (depguard D-01 gate; SECURITY WARNING-01 closed)
 
 Progress: [██████████] Phase 04 complete (7/7 plans incl. gap closure)
 
@@ -130,6 +130,7 @@ None yet.
 | 260609-s8j | Fix WriteFragment: ensure parent ~/.gitconfig.d dir exists before git config (E2E bug 5) | 2026-06-09 | 5532352 | [260609-s8j-fix-writefragment-ensure-parent-gitconfi](./quick/260609-s8j-fix-writefragment-ensure-parent-gitconfi/) |
 | 260610-a54 | Fix BUG-4 (temp-then-promote): key staged to temp, gated, persisted to ~/.ssh only after gate-pass + confirm; dry-run/abort leave ~/.ssh untouched | 2026-06-10 | f085e5d | [260610-a54-fix-bug-4-temp-then-promote-generate-the](./quick/260610-a54-fix-bug-4-temp-then-promote-generate-the/) |
 | 260612-dc7 | Fix doctor perms widening bug (Phase-4 code-review Important): checkPath tighten-only (`got&^want` guard + `got&want` fix mode) — a 0400 key no longer false-flagged/loosened; T-04-02/T-04-19 evidence updated | 2026-06-12 | 34f15c2 | [260612-dc7-fix-doctor-perms-widening-bug-code-revie](./quick/260612-dc7-fix-doctor-perms-widening-bug-code-revie/) |
+| 260612-dtm | Add `depguard` D-01 gate to .golangci.yml (denies internal/filewriter under internal/doctor/**) — automates the write-free-core invariant, fire-tested; closes Phase-4 SECURITY WARNING-01 (T-04-03/T-04-21 CLOSED) | 2026-06-12 | c9924bd | [260612-dtm-add-a-depguard-rule-to-golangci-yml-deny](./quick/260612-dtm-add-a-depguard-rule-to-golangci-yml-deny/) |
 
 ## Session Continuity
 

@@ -7,10 +7,9 @@ threats_total: 24
 threats_closed: 21
 threats_accepted: 3
 threats_open: 0
-warnings: 1
+warnings: 0
 register_authored_at_plan_time: true
 open_blockers: 0
-warning_followup: "WARNING-01 — D-01 (no filewriter import in internal/doctor) holds today but has no automated gate; add a depguard rule in .golangci.yml denying internal/filewriter under internal/doctor/**"
 ---
 
 # SECURITY.md — Phase 04 (doctor) Audit
@@ -25,12 +24,12 @@ warning_followup: "WARNING-01 — D-01 (no filewriter import in internal/doctor)
 
 ## Audit Summary
 
-**Threats Closed:** 21/24
+**Threats Closed:** 21/24 (+ 3 accepted = 24 dispositioned, 0 open, 0 warnings)
 **Threats Open (BLOCKER):** 0
 **Accepted Risks Documented:** 3
 **Unregistered Flags:** 1 (WARNING — new direct dependency golang.org/x/term, plan-disclosed)
 
-The D-01 trust-boundary invariant (internal/doctor imports no filewriter) is **currently true** in the code but the declared "CI grep gate" automation does not exist as an enforceable check in Makefile, .golangci.yml, or pre-commit hooks. This is recorded as a WARNING, not a BLOCKER, because: (a) the property holds today as verified by grep, and (b) the gate is claimed as a mitigation component in T-04-03 and T-04-21.
+The D-01 trust-boundary invariant (internal/doctor imports no filewriter) is **enforced automatically** by a depguard rule in `.golangci.yml` (added in quick task 260612-dtm). The rule denies `github.com/castocolina/gitid/internal/filewriter` under `internal/doctor/**` and was fire-tested: a temporary forbidden import in `internal/doctor/` and `internal/doctor/checks/` was flagged by `make lint`, then removed; the clean tree lints 0. WARNING-01 is RESOLVED. All 21 `mitigate` threats are CLOSED and the 3 `accept` threats are documented (24 dispositioned, 0 open, 0 warnings).
 
 ---
 
@@ -40,7 +39,7 @@ The D-01 trust-boundary invariant (internal/doctor imports no filewriter) is **c
 |-----------|----------|-------------|--------|----------|
 | T-04-01 | InfoDisclosure | mitigate | CLOSED | cmd/gitid/doctor.go:83,89 — `//nolint:gosec // sshConfigPath/gitconfigPath is a gitid-managed path (G304)`; perms.go reads mode via `deps.Stat`, never key content |
 | T-04-02 | Tampering | mitigate | CLOSED | checks/perms.go:15-19 — KEY-02 constants (0700/0600/0644/0600/0644); checkPath uses tighten-only predicate `got &^ want != 0` (flags only when actual mode is looser than target; a 0400 key vs 0600 target is not flagged); fix mode is `got & want` (never adds a bit the file lacked); `deps.FixPerm(p, s)` where s == got&want — closes over-tightened (e.g. 0400 key) edge case found in Phase-4 code review |
-| T-04-03 | Tampering | mitigate | WARNING | Property holds: `grep -rn '"github.com/castocolina/gitid/internal/filewriter"' internal/doctor/` → EMPTY (verified). **But**: no automated CI grep gate exists in Makefile, .golangci.yml, or pre-commit hooks — the declared gate is manual-only. See OPEN_WARNINGS. |
+| T-04-03 | Tampering | mitigate | CLOSED | Property holds: `grep -rn '"github.com/castocolina/gitid/internal/filewriter"' internal/doctor/` → EMPTY. Automated gate: `.golangci.yml` depguard rule `doctor-no-filewriter` denies `internal/filewriter` under `internal/doctor/**` — fire-tested (temp forbidden import flagged by `make lint` in both `internal/doctor/` and `internal/doctor/checks/`; removed; clean tree lints 0). Quick task 260612-dtm. |
 | T-04-04 | Tampering | accept | CLOSED | Accepted risk documented below. ANSI guard: doctor.go:101 `isTerminalOutput(os.Stdout)` checks NO_COLOR env first (line 586-588), then ModeCharDevice |
 | T-04-05 | InfoDisclosure | mitigate | CLOSED | gitconfig/baseline.go:71,146,228 — `//nolint:gosec // ... trusted gitid-managed path (G304)`; ReadBaselineState reads config values (excludesfile path, ignorecase), never private key material |
 | T-04-06 | Tampering | mitigate | CLOSED | internal/deps/deps.go:38 — `exec.LookPath(name)` (no shell); install hints are printed strings in doctor.go via `d.InstallHint(t.name, currentOS)`, never executed (checks/deps.go:47-48) |
@@ -58,7 +57,7 @@ The D-01 trust-boundary invariant (internal/doctor imports no filewriter) is **c
 | T-04-18 | EoP | mitigate | CLOSED | cmd/gitid/doctor.go:41-43 — `--yes` without `--fix` returns error immediately. applyFixes gate (lines 488-494): when `fix==false` and TTY, presents top-level confirm default N. confirm() in add.go:512 — `[y/N]` prompt, only `"y"` or `"yes"` accepted. No path applies fixes without either explicit `--fix` or user confirmation |
 | T-04-19 | Tampering | mitigate | CLOSED | cmd/gitid/doctor.go:251-254 — FixPerm chmods to caller-supplied mode; no-widening guarantee enforced upstream: checks/perms.go checkPath passes `got & want` (tighten-only safe target) so FixPerm never receives a mode wider than the file's original permissions. WR-02: RemoveBlock mode derived from path (0644 for allowed_signers, 0600 for config files) at doctor.go:272-275 — unchanged. Over-tightened (0400 key) edge case closed: 0400 &^ 0600 == 0 → no finding, no chmod |
 | T-04-20 | Tampering | mitigate | CLOSED | Fix closure paths sourced exclusively from buildDoctorDeps computed paths (doctor.go:165-201: `filepath.Join(home, ...)`) — never from free-form user input. AddWiring `path` param in each fix closure captures `sshConfigPath`, `allowedSignersPath`, or `gitconfigPath` (coherence.go:125-134, 264-265; baseline.go:59-65) |
-| T-04-21 | EoP | mitigate | WARNING | Fix closures verified in cmd/gitid/doctor.go `buildDoctorDeps`. No filewriter import in internal/doctor (grep-verified). **But**: "grep gate" is manual, not automated in Makefile/CI/pre-commit. Same gap as T-04-03. See OPEN_WARNINGS |
+| T-04-21 | EoP | mitigate | CLOSED | Fix closures verified in cmd/gitid/doctor.go `buildDoctorDeps`. No filewriter import in internal/doctor (grep-verified). Automated gate: same `.golangci.yml` depguard rule `doctor-no-filewriter` as T-04-03 — denies `internal/filewriter` under `internal/doctor/**`, fire-tested (forbidden import flagged by `make lint` in `internal/doctor/checks/`, removed, clean tree lints 0). Quick task 260612-dtm. |
 | T-04-22 | Tampering | mitigate | CLOSED | cmd/gitid/doctor.go:216-217 — `RunSSHAdd: runSSHAdd` and `RunSSHKeygenFingerprint: runSSHKeygenFingerprint` wired in `buildDoctorDeps`. Both helpers use `exec.Command` arg-slice form (lines 131, 150) with G204 annotations. Not nil (DOC-GAP-02 closed) |
 | T-04-23 | InfoDisclosure | mitigate | CLOSED | cmd/gitid/doctor.go:116 — `if len(fixable) > 0 && (fix || isTerminalInput(os.Stdin))` — fix gate skipped entirely when `fix==false` and stdin is not a TTY. isTerminalInput (line 602-604) uses `term.IsTerminal` |
 | T-04-24 | DoS | accept | CLOSED | Accepted risk documented below |
@@ -76,24 +75,25 @@ The D-01 trust-boundary invariant (internal/doctor imports no filewriter) is **c
 
 ---
 
-## Open Warnings (not BLOCKERs)
+## Resolved Warnings
 
-### WARNING-01: CI Grep Gate for D-01 Is Manual Only (T-04-03, T-04-21)
+### WARNING-01: CI Grep Gate for D-01 — RESOLVED 2026-06-12 (T-04-03, T-04-21)
 
 **Threats affected:** T-04-03, T-04-21
 
-**What is claimed:** Both threats state "CI grep gate asserts no filewriter import in internal/doctor" as a component of the mitigation.
+**Original gap:** Both threats claimed a "CI grep gate asserts no filewriter import in internal/doctor" as a mitigation component. The isolation property held (grep returned empty) but no automated enforcement existed in Makefile, .golangci.yml, or pre-commit.
 
-**What exists:** The isolation property is **currently true** — `grep -rn '"github.com/castocolina/gitid/internal/filewriter"' internal/doctor/` returns empty. However, no automated enforcement exists:
+**Resolution (quick task 260612-dtm):** Added a `depguard` rule `doctor-no-filewriter` to `.golangci.yml` that denies `github.com/castocolina/gitid/internal/filewriter` for files under `internal/doctor/**` (covers both `internal/doctor/` and the `internal/doctor/checks/` sub-package). `make lint` now fails if the import is introduced.
 
-- Makefile: no grep gate target
-- .golangci.yml: no depguard or importcheck rule prohibiting filewriter imports in internal/doctor
-- .pre-commit-config.yaml: no hook for import isolation
-- .github/: does not exist (no CI pipeline)
+**Fire-test evidence:** A temporary used import of `internal/filewriter` was added to `internal/doctor/checks/zz_depguard_firetest.go`; `make lint` reported:
 
-**Risk:** A future contributor could import filewriter into internal/doctor and the violation would not be caught automatically before merge.
+```
+internal/doctor/checks/zz_depguard_firetest.go:3:8: import 'github.com/castocolina/gitid/internal/filewriter' is not allowed from list 'doctor-no-filewriter': D-01: internal/doctor is the write-free core ... (depguard)
+* depguard: 1
+make: *** [lint] Error 1
+```
 
-**Recommended remediation (implementation team, not this audit):** Add a `depguard` rule in `.golangci.yml` denying `github.com/castocolina/gitid/internal/filewriter` in `internal/doctor/**`, or add a `make lint-gate` target with a `grep` assertion.
+The temp file was removed; the clean tree lints 0. The manual grep guarantee is now machine-enforced before merge.
 
 ---
 
@@ -115,6 +115,6 @@ No new threat flags declared. Executor confirmed T-04-16/T-04-17/T-04-19/T-04-21
 
 ## Phase Verdict
 
-**SECURED with warnings.**
+**SECURED.**
 
-All 21 `mitigate` threats are CLOSED (property holds in code). The 3 `accept` threats are documented. The declared "CI grep gate" for D-01 is absent as automation (WARNING-01) but the isolation property it was meant to enforce is currently true. No BLOCKER conditions exist. Phase 04 may ship; WARNING-01 should be addressed before the next phase that extends `internal/doctor`.
+All 21 `mitigate` threats are CLOSED (property holds in code) and the 3 `accept` threats are documented. WARNING-01 (the D-01 grep gate being manual-only) was resolved in quick task 260612-dtm by an automated, fire-tested `depguard` rule. No open warnings, no BLOCKER conditions. Phase 04 is threat-secure.
