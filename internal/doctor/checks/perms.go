@@ -72,15 +72,22 @@ func checkPath(deps doctor.Deps, path string, want os.FileMode, sev doctor.Sever
 	}
 
 	got := info.Mode().Perm()
-	if got == want {
-		return nil // mode is correct
+	// Tighten-only predicate: flag only when the actual mode is looser than the
+	// target (i.e. has bits the target does not). When got &^ want == 0, the file
+	// is at the target or stricter (e.g. 0400 key vs 0600 target) — no action needed.
+	if got&^want == 0 {
+		return nil // mode is at target or already stricter — no loosening bits
 	}
 
+	// Safe fix target: clear only the offending looser bits, never add a bit the
+	// file lacked. 0644 & 0600 == 0600 (correct tighten); 0400 & 0600 == 0400
+	// (identity, though this branch is unreachable for a stricter-mode file).
+	safe := got & want
 	explanation := permExplanation(path, got, want, sev)
-	fix := fmt.Sprintf("chmod %04o %s", want, path)
+	fix := fmt.Sprintf("chmod %04o %s", safe, path)
 
-	// Capture path and want for the closure without loop-variable aliasing.
-	p, m := path, want
+	// Capture path and safe mode for the closure without loop-variable aliasing.
+	p, s := path, safe
 	return []doctor.Finding{
 		{
 			Family:       doctor.FamilyPerms,
@@ -91,7 +98,7 @@ func checkPath(deps doctor.Deps, path string, want os.FileMode, sev doctor.Sever
 			Fix: &doctor.FixDescriptor{
 				Summary: fix,
 				Fn: func() error {
-					return deps.FixPerm(p, m) // D-01: injected, never os.Chmod directly
+					return deps.FixPerm(p, s) // D-01: injected, never os.Chmod directly
 				},
 			},
 		},

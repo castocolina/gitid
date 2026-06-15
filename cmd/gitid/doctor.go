@@ -247,9 +247,12 @@ func buildDoctorDeps(home string, sshBytes, gcBytes []byte) doctor.Deps {
 
 		// Fix fields (D-01: cmd layer owns chmod/write, doctor core does not import filewriter).
 
-		// FixPerm tightens a file to the KEY-02 target mode via os.Chmod (never widens).
+		// FixPerm chmods the file to the caller-supplied mode via os.Chmod. The
+		// tighten-only guarantee is enforced upstream in checks/perms.go: checkPath
+		// flags only when got &^ want != 0 and passes got & want as the mode, so
+		// FixPerm is never called with a mode that adds a bit the file lacked.
 		FixPerm: func(path string, mode os.FileMode) error {
-			return os.Chmod(path, mode) //nolint:gosec // chmod to KEY-02 target modes (G306)
+			return os.Chmod(path, mode) //nolint:gosec // chmod to caller-supplied tighten-only mode (G306)
 		},
 
 		// RemoveBlock removes a sentinel-delimited managed block from a file using

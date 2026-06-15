@@ -155,13 +155,15 @@ func TestCheckPermsDirError(t *testing.T) {
 	}
 }
 
-// TestCheckPermsPubWarning verifies that a .pub file at 0600 (too restrictive)
-// yields a warning-severity finding.
+// TestCheckPermsPubWarning verifies that a .pub file at 0666 (too permissive —
+// has group-write and world-write bits that 0644 lacks) yields a warning-severity finding.
+// Note: 0600 (too restrictive) is NOT flagged under the tighten-only predicate — a .pub
+// file that is stricter than 0644 poses no security risk and is left alone.
 func TestCheckPermsPubWarning(t *testing.T) {
 	const pubPath = "/home/u/.ssh/gitid_work.pub"
 	statFn := func(path string) (os.FileInfo, error) {
 		if path == pubPath {
-			return fakeFileInfo{name: path, mode: 0o600}, nil // wrong: should be 0644
+			return fakeFileInfo{name: path, mode: 0o666}, nil // loose: has group-write + world-write
 		}
 		if path == "/home/u/.ssh" {
 			return fakeFileInfo{name: path, mode: 0o700, isDir: true}, nil
@@ -277,6 +279,119 @@ func TestPermFixerFnCallsInjectedFixPerm(t *testing.T) {
 	// Verify the fixer never widens permissions (target is 0600, not ≥ current 0644).
 	if calledMode > 0o644 {
 		t.Errorf("FixPerm widened permissions: got %04o, current was 0644", calledMode)
+	}
+}
+
+// TestCheckPermsStricterKeyNotFlagged verifies that a private key at 0400
+// (stricter than the 0600 target) produces zero perms findings.
+// 0400 &^ 0600 == 0, so no loosening bit exists — the key should not be flagged.
+func TestCheckPermsStricterKeyNotFlagged(t *testing.T) {
+	const keyPath = "/home/u/.ssh/gitid_work"
+	statFn := func(path string) (os.FileInfo, error) {
+		if path == keyPath {
+			return fakeFileInfo{name: path, mode: 0o400}, nil // 0400 is stricter than 0600
+		}
+		if path == "/home/u/.ssh" {
+			return fakeFileInfo{name: path, mode: 0o700, isDir: true}, nil
+		}
+		if len(path) > 4 && path[len(path)-4:] == ".pub" {
+			return fakeFileInfo{name: path, mode: 0o644}, nil
+		}
+		return fakeFileInfo{name: path, mode: 0o600}, nil
+	}
+	deps := doctor.Deps{
+		Stat:               statFn,
+		FixPerm:            func(_ string, _ os.FileMode) error { return nil },
+		SSHDir:             "/home/u/.ssh",
+		SSHConfigPath:      "/home/u/.ssh/config",
+		GitconfigPath:      "/home/u/.gitconfig",
+		AllowedSignersPath: "/home/u/.ssh/allowed_signers",
+		KeyPaths:           []string{keyPath},
+	}
+	findings := checks.CheckPermissions(deps)
+
+	for _, f := range findings {
+		if f.Family == doctor.FamilyPerms && containsStr(f.Title, keyPath) {
+			t.Errorf("0400 private key (stricter than 0600 target) produced a finding: %+v", f)
+		}
+	}
+}
+
+// TestCheckPermsLooseKeyTightensNotWidens verifies that a private key at 0644
+// (looser than the 0600 target) yields exactly one critical finding, and that
+// invoking Fix.Fn calls FixPerm with mode 0600 (== 0644 & 0600 — never widens).
+func TestCheckPermsLooseKeyTightensNotWidens(t *testing.T) {
+	const keyPath = "/home/u/.ssh/gitid_work"
+	var calledPath string
+	var calledMode os.FileMode
+
+	statFn := func(path string) (os.FileInfo, error) {
+		if path == keyPath {
+			return fakeFileInfo{name: path, mode: 0o644}, nil // loose
+		}
+		if path == "/home/u/.ssh" {
+			return fakeFileInfo{name: path, mode: 0o700, isDir: true}, nil
+		}
+		if len(path) > 4 && path[len(path)-4:] == ".pub" {
+			return fakeFileInfo{name: path, mode: 0o644}, nil
+		}
+		return fakeFileInfo{name: path, mode: 0o600}, nil
+	}
+
+	deps := doctor.Deps{
+		Stat: statFn,
+		FixPerm: func(path string, mode os.FileMode) error {
+			calledPath = path
+			calledMode = mode
+			return nil
+		},
+		SSHDir:             "/home/u/.ssh",
+		SSHConfigPath:      "/home/u/.ssh/config",
+		GitconfigPath:      "/home/u/.gitconfig",
+		AllowedSignersPath: "/home/u/.ssh/allowed_signers",
+		KeyPaths:           []string{keyPath},
+	}
+	findings := checks.CheckPermissions(deps)
+
+	var keyFindings []doctor.Finding
+	for _, f := range findings {
+		if f.Family == doctor.FamilyPerms && containsStr(f.Title, keyPath) {
+			keyFindings = append(keyFindings, f)
+		}
+	}
+
+	if len(keyFindings) != 1 {
+		t.Fatalf("expected exactly 1 perms finding for 0644 key, got %d: %+v", len(keyFindings), findings)
+	}
+	f := keyFindings[0]
+	if f.Severity != doctor.SeverityCritical {
+		t.Errorf("severity = %v, want critical", f.Severity)
+	}
+	if f.Fix == nil {
+		t.Fatal("Fix must be non-nil for an auto-fixable perms finding")
+	}
+
+	// The safe target for 0644 vs 0600 is 0644 & 0600 == 0600.
+	const safeTarget os.FileMode = 0o600
+	if !containsStr(f.SuggestedFix, "chmod 0600") {
+		t.Errorf("SuggestedFix = %q, want to contain 'chmod 0600'", f.SuggestedFix)
+	}
+
+	// Invoke the fixer and verify it never widens permissions.
+	if err := f.Fix.Fn(); err != nil {
+		t.Fatalf("Fix.Fn() returned error: %v", err)
+	}
+	if calledPath != keyPath {
+		t.Errorf("FixPerm called with path %q, want %q", calledPath, keyPath)
+	}
+	if calledMode != safeTarget {
+		t.Errorf("FixPerm called with mode %04o, want %04o (got & want)", calledMode, safeTarget)
+	}
+	// No widening: the fix mode must not set any bit the original file lacked.
+	const originalMode os.FileMode = 0o644
+	if calledMode&^originalMode != 0 {
+		t.Errorf("FixPerm widened permissions: fix mode %04o has bits 0644 lacked (mask %04o)",
+			calledMode, calledMode&^originalMode)
 	}
 }
 
