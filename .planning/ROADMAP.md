@@ -11,7 +11,7 @@
 
 - [x] **Phase 1: Bootstrap** — Makefile, go.mod, golangci-lint v2, gosec, pre-commit hooks wired to make targets, TDD harness green (completed 2026-06-09)
 - [x] **Phase 2: First Identity End-to-End** — Create one identity (ed25519 auth+signing), produce all four coordinated artifacts with backup + idempotent managed blocks + confirmation, prove authentication and config resolution with the two-phase test flow, clipboard copy, upload instructions (completed 2026-06-09)
-- [ ] **Phase 3: Full Identity CRUD + Multi-Identity** — List, update, delete identities; reconstruct from managed blocks (no sidecar DB); multiple identities on one provider via distinct aliases
+- [x] **Phase 3: Full Identity CRUD + Multi-Identity** — List, update, delete identities; reconstruct from managed blocks (no sidecar DB); multiple identities on one provider via distinct aliases (completed 2026-06-10)
 - [ ] **Phase 3.1: Baseline Global Git Config + Global Gitignore** *(INSERTED)* — Seed and manage a shared baseline git config (core/push/pull/fetch/color toggles + aliases, `ignorecase=false`) and a curated global gitignore via `core.excludesfile`, in idempotent managed blocks with backup→preview→confirm; optional HTTPS→SSH `insteadOf` rewrites; baseline readable back from disk
 - [ ] **Phase 4: Doctor** — Deep health checks (deps, permissions, coherence/drift, orphans, signing wiring, agent) with severity + fix; `gitid doctor` CLI command
 - [ ] **Phase 5: CLI Surface + TUI** — Full Cobra command surface with shell completion; Bubble Tea TUI launching to doctor dashboard with identity/account navigation
@@ -118,7 +118,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 — shares cmd/gitid/main.go)*
 
-- [ ] 03-04-PLAN.md — `gitid identity delete` slice: per-identity removal manifest + two-step confirm (keep key default), global blocks untouched (IDENT-05)
+- [x] 03-04-PLAN.md — `gitid identity delete` slice: per-identity removal manifest + two-step confirm (keep key default), global blocks untouched (IDENT-05)
 
 ### Phase 03.1: Baseline Global Git Config + Global Gitignore (INSERTED)
 
@@ -212,7 +212,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Bootstrap | 3/3 | Complete   | 2026-06-09 |
 | 2. First Identity End-to-End | 7/7 | Complete   | 2026-06-09 |
-| 3. Full Identity CRUD + Multi-Identity | 3/4 | In Progress|  |
+| 3. Full Identity CRUD + Multi-Identity | 4/4 | Complete   | 2026-06-10 |
 | 3.1. Baseline Global Git Config + Global Gitignore | 0/? | Not started | - |
 | 4. Doctor | 0/? | Not started | - |
 | 5. CLI Surface + TUI | 0/? | Not started | - |
