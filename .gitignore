@@ -3,3 +3,6 @@ coverage.out
 # Root-level gitid binary from `go build ./cmd/gitid` or `go install`.
 # Anchored with a leading slash so it does NOT match the cmd/gitid/ source directory.
 /gitid
+
+# Local scratch directory (screenshots, notes — not part of the repo).
+/tmp/

@@ -12,7 +12,7 @@
 #   lint        Run golangci-lint (reads .golangci.yml); hard-fails on any finding (D-04).
 #   fmt         Run goimports then gofmt over all packages.
 
-.PHONY: setup-env build install uninstall test lint fmt install-hooks
+.PHONY: setup-env build install uninstall test lint fmt install-hooks test-e2e
 
 # Binary output directory.
 BIN_DIR := bin
@@ -31,6 +31,12 @@ GOLANGCI_LINT_VERSION := v2.12.2
 # installs both binaries into $(GOPATH_BIN).
 GOLANGCI_LINT := $(GOPATH_BIN)/golangci-lint
 GOIMPORTS     := $(GOPATH_BIN)/goimports
+
+# Capture the caller's REAL interactive PATH *before* the export below clobbers it.
+# The `install` target must judge PATH membership against what the user's shell will
+# actually see — not against the make-augmented PATH (which always contains GOPATH_BIN,
+# making the check a guaranteed false "PATH: OK"). FIX-INSTALL-01 / F-1.
+ORIGINAL_PATH := $(PATH)
 
 # Ensure tool bin dirs are on PATH for EVERY recipe line, the install-hooks sub-make,
 # and make-invoked git hooks — so a fresh clone bootstraps without relying on the
@@ -101,10 +107,21 @@ build:
 	@mkdir -p $(BIN_DIR)
 	go build -o $(BINARY) ./cmd/gitid
 
-## install: install gitid to $GOPATH/bin.
+## install: install gitid to $GOPATH/bin and report the install path + PATH status.
 install:
 	go install ./cmd/gitid
+	@INSTALL_PATH="$(GOPATH_BIN)/gitid"; \
+	echo "  installed: $$INSTALL_PATH"; \
+	printf '%s' "$(ORIGINAL_PATH)" | tr ':' '\n' | grep -qxF "$(GOPATH_BIN)" \
+	  && echo "  PATH: OK (gitid is on PATH)" \
+	  || echo "  PATH: $(GOPATH_BIN) is NOT on your PATH — add to shell: export PATH=\"\$$PATH:$(GOPATH_BIN)\""
 
 ## uninstall: remove gitid from $GOPATH/bin.
 uninstall:
 	rm -f "$(GOPATH_BIN)/gitid"
+
+## test-e2e: run end-to-end agent-driven tests (builds binary first).
+## E2E tests use a hermetic sandbox HOME and a fake ssh script injected on PATH.
+## Tests are tagged //go:build e2e and are excluded from the normal make test target.
+test-e2e: build
+	go test -tags e2e -race -timeout 60s ./e2e/...
