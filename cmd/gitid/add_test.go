@@ -24,8 +24,8 @@ func fakeDeps(_ io.Writer) identity.Deps {
 			}, nil
 		},
 		CopyPub: func(_ string) error { return nil },
-		PreWrite: func(_, host string) tester.Result {
-			return tester.Result{Command: "ssh -T git@" + host, Output: "Permission denied (publickey)", Outcome: tester.ReachableNotUploaded}
+		PreWrite: func(_, hostname string, _ int) tester.Result {
+			return tester.Result{Command: "ssh -T git@" + hostname, Output: "Permission denied (publickey)", Outcome: tester.ReachableNotUploaded}
 		},
 		WriteSSH:            func(_, _, _ string) (string, error) { return "", nil },
 		WriteGitconfig:      func(_, _, _ string, _ []gitconfig.Match) (string, error) { return "", nil },

@@ -35,10 +35,10 @@ func newFakeDeps(log *callLog, preOutcome tester.Outcome) Deps {
 			log.copyPub++
 			return nil
 		},
-		PreWrite: func(keyPath, host string) tester.Result {
+		PreWrite: func(keyPath, hostname string, _ int) tester.Result {
 			log.preWrite++
 			return tester.Result{
-				Command: "ssh -i " + keyPath + " -T git@" + host,
+				Command: "ssh -i " + keyPath + " -T git@" + hostname,
 				Output:  "pre-write output",
 				Outcome: preOutcome,
 			}
@@ -201,5 +201,50 @@ func TestDefaultMatch(t *testing.T) {
 	}
 	if m.Value != "~/git/work/" {
 		t.Errorf("DefaultMatch value = %q, want ~/git/work/", m.Value)
+	}
+}
+
+// TestCreatePassesHostnameNotAlias asserts that runPipeline (called from Create)
+// dials in.Hostname + in.Port through PreWrite, NOT the SSH alias (in.Alias).
+// BUG-1: prior to the fix, the call site used in.Alias ("work.github.com") which
+// is unresolvable before the SSH config is written.
+func TestCreatePassesHostnameNotAlias(t *testing.T) {
+	in := sampleInput() // Alias="work.github.com", Hostname="ssh.github.com", Port=443
+
+	var capturedHostname string
+	var capturedPort int
+	var capturedKeyPath string
+
+	var log callLog
+	deps := newFakeDeps(&log, tester.ReachableNotUploaded)
+	// Override the PreWrite fake to capture the args for inspection.
+	deps.PreWrite = func(keyPath, hostname string, port int) tester.Result {
+		log.preWrite++
+		capturedKeyPath = keyPath
+		capturedHostname = hostname
+		capturedPort = port
+		return tester.Result{
+			Command: "ssh -i " + keyPath + " -T git@" + hostname,
+			Output:  "git@ssh.github.com: Permission denied (publickey).",
+			Outcome: tester.ReachableNotUploaded,
+		}
+	}
+
+	if _, err := Create(in, deps); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+
+	// BUG-1: must dial in.Hostname, not in.Alias.
+	if capturedHostname != in.Hostname {
+		t.Errorf("PreWrite called with hostname=%q, want in.Hostname=%q (must NOT use alias %q)",
+			capturedHostname, in.Hostname, in.Alias)
+	}
+	// BUG-2: must pass in.Port so port-443 endpoints are reachable.
+	if capturedPort != in.Port {
+		t.Errorf("PreWrite called with port=%d, want in.Port=%d", capturedPort, in.Port)
+	}
+	// Sanity: the key path from Generate is passed through.
+	if capturedKeyPath == "" {
+		t.Error("PreWrite called with empty keyPath")
 	}
 }

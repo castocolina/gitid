@@ -2,6 +2,7 @@ package tester
 
 import (
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -60,21 +61,23 @@ func ClassifyPreWrite(combinedOutput string) Outcome {
 // preWriteArgs builds the explicit-key pre-write ssh argument slice. Arguments
 // are passed as a slice (never a shell string), keeping the call gosec
 // G204-clean and free of OS-command-injection risk (threat T-02-18).
-func preWriteArgs(keyPath, host string) []string {
+func preWriteArgs(keyPath, hostname string, port int) []string {
 	return []string{
 		"-i", keyPath,
 		"-o", "IdentitiesOnly=yes",
 		"-o", "BatchMode=yes",
 		"-o", "ConnectTimeout=10",
-		"-T", "git@" + host,
+		"-o", "StrictHostKeyChecking=accept-new",
+		"-p", strconv.Itoa(port),
+		"-T", "git@" + hostname,
 	}
 }
 
 // preWriteWith runs the pre-write test through an injected runner and assembles
 // the Result, capturing the exact command string (input) and raw output (TEST-03)
 // and classifying strictly by output substring (exit code ignored).
-func preWriteWith(run runner, keyPath, host string) Result {
-	args := preWriteArgs(keyPath, host)
+func preWriteWith(run runner, keyPath, hostname string, port int) Result {
+	args := preWriteArgs(keyPath, hostname, port)
 	out, _ := run(args)                 // exit code intentionally ignored (Pitfall 2 / D-01)
 	cmd := exec.Command("ssh", args...) //nolint:gosec // arg-slice form for cmd.String() display; not executed here
 	return Result{
@@ -86,13 +89,14 @@ func preWriteWith(run runner, keyPath, host string) Result {
 
 // PreWrite runs the explicit-key pre-write connectivity test:
 //
-//	ssh -i <key> -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10 -T git@<host>
+//	ssh -i <key> -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10 \
+//	    -o StrictHostKeyChecking=accept-new -p <port> -T git@<hostname>
 //
 // It captures combined stdout+stderr, ignores the (unreliable) exit code, and
 // returns a Result with the input command, raw output, and substring-derived
 // outcome. Read-only: it never mutates any file.
-func PreWrite(keyPath, host string) Result {
-	return preWriteWith(execRunner, keyPath, host)
+func PreWrite(keyPath, hostname string, port int) Result {
+	return preWriteWith(execRunner, keyPath, hostname, port)
 }
 
 // execRunner is the production runner: it runs `ssh <args...>` with arguments

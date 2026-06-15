@@ -53,7 +53,7 @@ func TestPreWrite_CapturesCommandAndOutput(t *testing.T) {
 	runner := func(_ []string) (string, error) {
 		return fakeOut, nil
 	}
-	res := preWriteWith(runner, "/home/u/.ssh/id_ed25519_work", "github.com")
+	res := preWriteWith(runner, "/home/u/.ssh/id_ed25519_work", "github.com", 22)
 
 	if res.Command == "" {
 		t.Errorf("Result.Command is empty; expected the ssh invocation string")
@@ -71,6 +71,90 @@ func TestPreWrite_CapturesCommandAndOutput(t *testing.T) {
 	}
 	if res.Outcome != ReachableNotUploaded {
 		t.Errorf("Result.Outcome = %v, want ReachableNotUploaded", res.Outcome)
+	}
+}
+
+func TestPreWriteArgs_ContainsRequiredFlags(t *testing.T) {
+	// Table-driven: verify preWriteArgs produces the correct arg slice with port
+	// and StrictHostKeyChecking=accept-new, while NOT containing any alias-shaped
+	// value (a value with dots but no real TLD like "ramon.github").
+	tests := []struct {
+		name     string
+		keyPath  string
+		hostname string
+		port     int
+		// wantContains is a list of strings that must appear somewhere in the joined args.
+		wantContains []string
+		// wantAbsent is a list of strings that must NOT appear in any element.
+		wantAbsent []string
+	}{
+		{
+			name:     "github port 443",
+			keyPath:  "/tmp/.ssh/id_ed25519_work",
+			hostname: "ssh.github.com",
+			port:     443,
+			wantContains: []string{
+				"-i", "/tmp/.ssh/id_ed25519_work",
+				"IdentitiesOnly=yes",
+				"BatchMode=yes",
+				"ConnectTimeout=10",
+				"StrictHostKeyChecking=accept-new",
+				"-p", "443",
+				"git@ssh.github.com",
+			},
+			wantAbsent: []string{"ramon.github"},
+		},
+		{
+			name:     "gitlab port 443",
+			keyPath:  "/tmp/.ssh/id_ed25519_gitlab",
+			hostname: "altssh.gitlab.com",
+			port:     443,
+			wantContains: []string{
+				"IdentitiesOnly=yes",
+				"StrictHostKeyChecking=accept-new",
+				"-p", "443",
+				"git@altssh.gitlab.com",
+			},
+			wantAbsent: []string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := preWriteArgs(tt.keyPath, tt.hostname, tt.port)
+			joined := strings.Join(args, " ")
+			for _, want := range tt.wantContains {
+				if !strings.Contains(joined, want) {
+					t.Errorf("preWriteArgs args missing %q\nfull args: %v", want, args)
+				}
+			}
+			for _, absent := range tt.wantAbsent {
+				for _, arg := range args {
+					if arg == absent {
+						t.Errorf("preWriteArgs args must not contain alias value %q\nfull args: %v", absent, args)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestPreWriteWith_ClassifiesAndCapturesPortAndAcceptNew(t *testing.T) {
+	// Verify that preWriteWith with a fake runner returning "Permission denied"
+	// produces ReachableNotUploaded and that the Result.Command contains -p, the
+	// port value, StrictHostKeyChecking=accept-new, and the correct target host.
+	fakeOut := "git@ssh.github.com: Permission denied (publickey)."
+	fakeRunner := func(_ []string) (string, error) {
+		return fakeOut, nil
+	}
+	res := preWriteWith(fakeRunner, "/tmp/.ssh/id_ed25519_work", "ssh.github.com", 443)
+
+	if res.Outcome != ReachableNotUploaded {
+		t.Errorf("Outcome = %v, want ReachableNotUploaded", res.Outcome)
+	}
+	for _, want := range []string{"-p", "443", "StrictHostKeyChecking=accept-new", "git@ssh.github.com"} {
+		if !strings.Contains(res.Command, want) {
+			t.Errorf("Result.Command missing %q\ncommand: %s", want, res.Command)
+		}
 	}
 }
 

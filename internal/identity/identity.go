@@ -90,7 +90,7 @@ type KeyResult struct {
 type Deps struct {
 	Generate            func(in CreateInput) (KeyResult, error)
 	CopyPub             func(pubLine string) error
-	PreWrite            func(keyPath, host string) tester.Result
+	PreWrite            func(keyPath, hostname string, port int) tester.Result
 	WriteSSH            func(accountName, hostBlock, globalBlock string) (backupPath string, err error)
 	WriteGitconfig      func(identity, fragmentPath, allowedSignersPath string, matches []gitconfig.Match) (backupPath string, err error)
 	WriteFragment       func(fragmentPath, name, email, signingKeyPath string) error
@@ -176,7 +176,7 @@ func runPipeline(in CreateInput, key KeyResult, deps Deps) (CreateResult, error)
 
 	signersLine := keygen.AllowedSignersLine(in.GitEmail, key.PubLine)
 
-	pre := deps.PreWrite(key.PrivatePath, in.Alias)
+	pre := deps.PreWrite(key.PrivatePath, in.Hostname, in.Port)
 	if pre.Outcome == tester.Failure {
 		return CreateResult{PreWrite: pre}, fmt.Errorf(
 			"identity: pre-write connectivity test failed for %q, aborting before any write:\n%s\n%s",

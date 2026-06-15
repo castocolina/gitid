@@ -336,8 +336,8 @@ func buildDeps(_ io.Writer) identity.Deps {
 			return identity.KeyResult{PrivatePath: r.PrivatePath, PubPath: r.PubPath, PubLine: r.PubLine}, nil
 		},
 		CopyPub: clipboard.Copy,
-		PreWrite: func(keyPath, host string) tester.Result {
-			return tester.PreWrite(keyPath, host)
+		PreWrite: func(keyPath, hostname string, port int) tester.Result {
+			return tester.PreWrite(keyPath, hostname, port)
 		},
 		WriteSSH: func(accountName, hostBlock, globalBlock string) (string, error) {
 			home, herr := os.UserHomeDir()
