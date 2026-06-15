@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Phase 3.1 UI-SPEC approved
-last_updated: "2026-06-11T10:59:55.065Z"
+status: verifying
+stopped_at: Completed 03.1-04-PLAN.md
+last_updated: "2026-06-11T11:12:34.163Z"
 last_activity: 2026-06-11 -- Phase 03.1 execution started
 progress:
   total_phases: 7
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 18
-  completed_plans: 17
-  percent: 43
+  completed_plans: 18
+  percent: 57
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-08)
 
 Phase: 03.1 (baseline-global-git-config-global-gitignore) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-11 -- Phase 03.1 execution started
 
 Progress: [██████████] 100%
@@ -58,6 +58,7 @@ Progress: [██████████] 100%
 | Phase 02 P04 | 4min | 2 tasks | 7 files |
 | Phase 03.1 P01 | 2min | 2 tasks | 2 files |
 | Phase 03.1 P02 | 3 | 2 tasks | 2 files |
+| Phase 03.1 P04 | 8 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,7 @@ Recent decisions affecting current work:
 - [Phase ?]: 03.1-02: WriteBaselineInclude hardcodes literal ~ path per RESEARCH Q2 (git expands ~ at runtime)
 - [Phase ?]: 03.1-03: ScanConflicts block-stripped algorithm (RESEARCH C2)
 - [Phase ?]: 03.1-03: ReadBaselineState sidecar-free ListBlocks across three files (SC-5/IDENT-07); BaselineKeySet = authoritative Tier-1 source
+- [Phase ?]: 03.1-04: GitVersionAtLeast seam in internal/deps for zdiff3 gate; idempotency skip in baseline writers (bytes.Equal before Write)
 
 ### Roadmap Evolution
 
@@ -111,6 +113,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-11T10:59:35.287Z
-Stopped at: Phase 3.1 UI-SPEC approved
-Resume file: .planning/phases/03.1-baseline-global-git-config-global-gitignore/03.1-UI-SPEC.md
+Last session: 2026-06-11T11:12:34.155Z
+Stopped at: Completed 03.1-04-PLAN.md
+Resume file: None

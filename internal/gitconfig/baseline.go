@@ -1,6 +1,7 @@
 package gitconfig
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -519,6 +520,8 @@ func RenderGitignoreBlock(patterns []string) string {
 // url-rewrites block is written when len(rewrites) > 0 and removed otherwise
 // (D-07 independent toggling). Foreign content outside either block is preserved
 // verbatim (D-02). It returns the backup path (empty when the file is new).
+// When the composed content is byte-identical to the existing file, the write is
+// skipped and an empty backup path is returned (SC-1 idempotency).
 func WriteBaselineFile(baselineFilePath string, cfg BaselineConfig, rewrites []URLRewrite) (string, error) {
 	if err := filewriter.EnsureDir(filepath.Dir(baselineFilePath), 0o700); err != nil {
 		return "", fmt.Errorf("ensuring baseline dir: %w", err)
@@ -536,6 +539,11 @@ func WriteBaselineFile(baselineFilePath string, cfg BaselineConfig, rewrites []U
 		composed = filewriter.RemoveBlock(composed, "url-rewrites")
 	}
 
+	// SC-1 idempotency: skip write (and backup) when content is unchanged.
+	if bytes.Equal(composed, existing) {
+		return "", nil
+	}
+
 	backupPath, err := filewriter.Write(baselineFilePath, composed, gitconfigMode)
 	if err != nil {
 		return "", fmt.Errorf("writing baseline block to %s: %w", baselineFilePath, err)
@@ -546,7 +554,8 @@ func WriteBaselineFile(baselineFilePath string, cfg BaselineConfig, rewrites []U
 // WriteGlobalGitignore composes the gitignore managed block into gitignorePath
 // through the filewriter chokepoint. Foreign content outside the managed block
 // is preserved verbatim (D-09). It returns the backup path (empty when the file
-// is new).
+// is new). When the composed content is byte-identical to the existing file, the
+// write is skipped and an empty backup path is returned (SC-2 idempotency).
 func WriteGlobalGitignore(gitignorePath string, patterns []string) (string, error) {
 	existing, err := os.ReadFile(gitignorePath) //nolint:gosec // gitignorePath is a trusted gitid-managed path
 	if err != nil && !os.IsNotExist(err) {
@@ -554,6 +563,12 @@ func WriteGlobalGitignore(gitignorePath string, patterns []string) (string, erro
 	}
 
 	composed := filewriter.ReplaceBlock(existing, "gitignore", RenderGitignoreBlock(patterns))
+
+	// SC-2 idempotency: skip write (and backup) when content is unchanged.
+	if bytes.Equal(composed, existing) {
+		return "", nil
+	}
+
 	backupPath, err := filewriter.Write(gitignorePath, composed, gitconfigMode)
 	if err != nil {
 		return "", fmt.Errorf("writing gitignore block to %s: %w", gitignorePath, err)
@@ -584,6 +599,12 @@ func WriteBaselineInclude(gitconfigPath, baselineFilePath string) (string, error
 	}
 
 	composed := filewriter.PrependBlockIfNotFound(existing, "baseline-include", includeBody)
+
+	// SC-1 idempotency: skip write (and backup) when content is unchanged.
+	if bytes.Equal(composed, existing) {
+		return "", nil
+	}
+
 	backupPath, err := filewriter.Write(gitconfigPath, composed, gitconfigMode)
 	if err != nil {
 		return "", fmt.Errorf("writing baseline-include block to %s: %w", gitconfigPath, err)

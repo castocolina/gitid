@@ -45,5 +45,13 @@ func newRootCmd() *cobra.Command {
 	identity.AddCommand(newDeleteCmd())
 	root.AddCommand(identity)
 
+	baseline := &cobra.Command{
+		Use:   "baseline",
+		Short: "Manage the shared global git baseline (core/push/pull defaults, gitignore, url rewrites)",
+	}
+	baseline.AddCommand(newBaselineSetupCmd())
+	baseline.AddCommand(newBaselineShowCmd())
+	root.AddCommand(baseline)
+
 	return root
 }
