@@ -8,13 +8,6 @@ import (
 	"path/filepath"
 
 	"golang.org/x/crypto/ssh"
-
-	"github.com/castocolina/gitid/internal/filewriter"
-)
-
-const (
-	privKeyMode = 0o600
-	pubKeyMode  = 0o644
 )
 
 // Params configures a key generation request.
@@ -28,36 +21,39 @@ type Params struct {
 	Comment string
 	// Passphrase, when non-empty, encrypts the serialized private key.
 	Passphrase string
-	// Dir is the directory the key pair is written to (normally ~/.ssh). It is a
-	// trusted, gitid-managed path supplied in-process.
+	// Dir is the directory the key pair is written to when using Generate
+	// (normally ~/.ssh). It is a trusted, gitid-managed path supplied
+	// in-process. Unused by GenerateMaterial.
 	Dir string
 }
 
-// Result reports the paths and public-key line produced by Generate.
-type Result struct {
-	// PrivatePath is the absolute path of the written private key (mode 0600).
-	PrivatePath string
-	// PubPath is the absolute path of the written public key (mode 0644).
-	PubPath string
-	// PubLine is the authorized-key line ("ssh-ed25519 AAAA…\n").
+// Material holds the in-memory result of GenerateMaterial: the private key as
+// an OpenSSH PEM block and the authorized-key line for the public key.
+// PrivPEM is private key material and must never be logged or printed.
+type Material struct {
+	// PrivPEM is the OpenSSH private key serialized to a PEM block (type
+	// "OPENSSH PRIVATE KEY"). It is an in-memory only value — never written to
+	// disk by GenerateMaterial itself.
+	PrivPEM []byte
+	// PubLine is the authorized-key line ("ssh-ed25519 AAAA…\n") for the public
+	// key, always ending with a single '\n'.
 	PubLine string
 }
 
-// Generate creates an ed25519 key pair, serializes it to OpenSSH format, and
-// writes the private key (0600) and public key (0644) through filewriter
-// (IDENT-01, KEY-02). The key filename follows the D-06 convention
-// id_<algo>_<identity> with the .pub alongside.
-//
-// Only the ed25519 algorithm is supported in this phase; other values are
-// rejected so callers fail fast rather than silently generating an ed25519 key.
-func Generate(p Params) (Result, error) {
+// GenerateMaterial generates an ed25519 key pair in memory and returns the
+// Material (PrivPEM + PubLine) WITHOUT writing anything to disk. It is the
+// pure in-memory key generation function; the caller is responsible for staging
+// and persisting the key bytes at the appropriate time (BUG-4 temp-then-promote
+// flow). Only "ed25519" is supported; other algorithms return an
+// unsupported-algorithm error.
+func GenerateMaterial(p Params) (Material, error) {
 	if p.Algo != "ed25519" {
-		return Result{}, fmt.Errorf("keygen: unsupported algorithm %q (only ed25519)", p.Algo)
+		return Material{}, fmt.Errorf("keygen: unsupported algorithm %q (only ed25519)", p.Algo)
 	}
 
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		return Result{}, fmt.Errorf("keygen: generating ed25519 key: %w", err)
+		return Material{}, fmt.Errorf("keygen: generating ed25519 key: %w", err)
 	}
 
 	// Pass the value from GenerateKey directly: value works for marshal at
@@ -69,30 +65,26 @@ func Generate(p Params) (Result, error) {
 		block, err = ssh.MarshalPrivateKey(priv, p.Comment)
 	}
 	if err != nil {
-		return Result{}, fmt.Errorf("keygen: serializing private key: %w", err)
+		return Material{}, fmt.Errorf("keygen: serializing private key: %w", err)
 	}
 	privPEM := pem.EncodeToMemory(block)
 
 	sshPub, err := ssh.NewPublicKey(pub)
 	if err != nil {
-		return Result{}, fmt.Errorf("keygen: building public key: %w", err)
+		return Material{}, fmt.Errorf("keygen: building public key: %w", err)
 	}
 	pubLine := ssh.MarshalAuthorizedKey(sshPub) // ends with a single '\n'
 
-	privPath := filepath.Join(p.Dir, fmt.Sprintf("id_%s_%s", p.Algo, p.Identity))
-	pubPath := privPath + ".pub"
-
-	// All writes go through the filewriter chokepoint (never a direct write).
-	if _, err := filewriter.Write(privPath, privPEM, privKeyMode); err != nil {
-		return Result{}, fmt.Errorf("keygen: writing private key: %w", err)
-	}
-	if _, err := filewriter.Write(pubPath, pubLine, pubKeyMode); err != nil {
-		return Result{}, fmt.Errorf("keygen: writing public key: %w", err)
-	}
-
-	return Result{
-		PrivatePath: privPath,
-		PubPath:     pubPath,
-		PubLine:     string(pubLine),
+	return Material{
+		PrivPEM: privPEM,
+		PubLine: string(pubLine),
 	}, nil
+}
+
+// KeyPaths returns the D-06 convention private-key and public-key paths for
+// the given dir, algo, and identity: <dir>/id_<algo>_<identity> and its .pub
+// sibling. No filesystem access is performed.
+func KeyPaths(dir, algo, identity string) (privPath, pubPath string) {
+	privPath = filepath.Join(dir, fmt.Sprintf("id_%s_%s", algo, identity))
+	return privPath, privPath + ".pub"
 }

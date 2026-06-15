@@ -11,6 +11,9 @@ import (
 // funnels into the SAME copy→pre-write→preview→write(four artifacts incl.
 // allowed_signers)→resolved pipeline as Create — there is no parallel write path.
 //
+// For Reuse, TempPrivatePath == FinalPrivatePath (the existing ~/.ssh key) and
+// PrivPEM is nil, so PersistKey and Cleanup are guaranteed no-ops.
+//
 // The derived `.pub` line is the only public material that leaves the private key
 // (T-02-28); the private key body is never copied or printed.
 func Reuse(in CreateInput, existingKeyPath string, deps Deps) (CreateResult, error) {
@@ -21,14 +24,17 @@ func Reuse(in CreateInput, existingKeyPath string, deps Deps) (CreateResult, err
 		return CreateResult{}, err
 	}
 
-	// Best-effort clipboard copy of the (possibly just-derived) public key so the
-	// reuse path matches the create-new CLIP-01 behavior.
-	key := KeyResult{
-		PrivatePath: existingKeyPath,
-		PubPath:     pubPath,
-		PubLine:     pubLine,
+	// Construct a StagedKey for the existing key: TempPrivatePath ==
+	// FinalPrivatePath (gate runs on the real key), PrivPEM nil (no new bytes to
+	// persist), so PersistKey and Cleanup are guaranteed no-ops.
+	staged := StagedKey{
+		TempPrivatePath:  existingKeyPath,
+		FinalPrivatePath: existingKeyPath,
+		FinalPubPath:     pubPath,
+		PubLine:          pubLine,
+		PrivPEM:          nil,
 	}
-	return runPipeline(in, key, deps)
+	return runPipeline(in, staged, deps)
 }
 
 // ensurePub returns the reused identity's public-key line, deriving and writing
@@ -86,12 +92,7 @@ func AddAccount(existing Account, newProvider, newAlias string, deps Deps) (Crea
 		GlobalBlock:        "",
 	}
 
-	key := KeyResult{
-		PrivatePath: existing.KeyPath,
-		PubPath:     existing.PubPath,
-		PubLine:     "", // derived below if needed for the allowed_signers line
-	}
-
+	pubLine := "" // derived below if needed for the allowed_signers line
 	// Derive the public line from the shared key so the allowed_signers line and
 	// previews are populated even though no key is generated.
 	if deps.DerivePub != nil {
@@ -99,10 +100,20 @@ func AddAccount(existing Account, newProvider, newAlias string, deps Deps) (Crea
 		if err != nil {
 			return CreateResult{}, fmt.Errorf("identity: deriving public key for add-account: %w", err)
 		}
-		key.PubLine = line
+		pubLine = line
 	}
 
-	return runPipeline(in, key, deps)
+	// Construct a StagedKey for the existing key: TempPrivatePath ==
+	// FinalPrivatePath (gate runs on the real key), PrivPEM nil (no new bytes to
+	// persist), so PersistKey and Cleanup are guaranteed no-ops.
+	staged := StagedKey{
+		TempPrivatePath:  existing.KeyPath,
+		FinalPrivatePath: existing.KeyPath,
+		FinalPubPath:     existing.PubPath,
+		PubLine:          pubLine,
+		PrivPEM:          nil,
+	}
+	return runPipeline(in, staged, deps)
 }
 
 // Rotate orchestrates replacing the key for an existing identity (KEY-01, D-11
@@ -120,11 +131,12 @@ func AddAccount(existing Account, newProvider, newAlias string, deps Deps) (Crea
 func Rotate(existing Account, deps Deps) (CreateResult, error) {
 	in := rotateInput(existing)
 
-	key, err := deps.Generate(in)
+	staged, err := deps.Generate(in)
 	if err != nil {
 		return CreateResult{}, fmt.Errorf("identity: generating rotation key: %w", err)
 	}
-	return runPipeline(in, key, deps)
+	defer deps.Cleanup(staged)
+	return runPipeline(in, staged, deps)
 }
 
 // rotateInput builds the CreateInput that re-points an existing account's four

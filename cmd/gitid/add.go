@@ -318,22 +318,65 @@ func gatherCreateInput(r *bufio.Reader, out io.Writer, algo string, dryRun bool)
 // gitconfig.SetAllowedSignersFile inside the gitconfig writer.
 func buildDeps(_ io.Writer) identity.Deps {
 	return identity.Deps{
-		Generate: func(in identity.CreateInput) (identity.KeyResult, error) {
+		Generate: func(in identity.CreateInput) (identity.StagedKey, error) {
 			home, herr := os.UserHomeDir()
 			if herr != nil {
-				return identity.KeyResult{}, herr
+				return identity.StagedKey{}, herr
 			}
-			r, gerr := keygen.Generate(keygen.Params{
+			sshDir := filepath.Join(home, ".ssh")
+			finalPriv, finalPub := keygen.KeyPaths(sshDir, in.Algo, in.Name)
+			mat, gerr := keygen.GenerateMaterial(keygen.Params{
 				Algo:       in.Algo,
 				Identity:   in.Name,
 				Comment:    in.Name + "@gitid",
 				Passphrase: in.Passphrase,
-				Dir:        filepath.Join(home, ".ssh"),
 			})
 			if gerr != nil {
-				return identity.KeyResult{}, gerr
+				return identity.StagedKey{}, gerr
 			}
-			return identity.KeyResult{PrivatePath: r.PrivatePath, PubPath: r.PubPath, PubLine: r.PubLine}, nil
+			tempDir, terr := os.MkdirTemp("", "gitid-key-*")
+			if terr != nil {
+				return identity.StagedKey{}, fmt.Errorf("identity add: creating staging dir: %w", terr)
+			}
+			tempPriv := filepath.Join(tempDir, "key")
+			if _, werr := filewriter.Write(tempPriv, mat.PrivPEM, 0o600); werr != nil { //nolint:gosec // gitid-managed staging path (G306)
+				_ = os.RemoveAll(tempDir)
+				return identity.StagedKey{}, fmt.Errorf("identity add: staging private key: %w", werr)
+			}
+			return identity.StagedKey{
+				TempPrivatePath:  tempPriv,
+				FinalPrivatePath: finalPriv,
+				FinalPubPath:     finalPub,
+				PubLine:          mat.PubLine,
+				PrivPEM:          mat.PrivPEM,
+			}, nil
+		},
+		PersistKey: func(staged identity.StagedKey) (identity.KeyResult, error) {
+			if staged.PrivPEM == nil {
+				return identity.KeyResult{
+					PrivatePath: staged.FinalPrivatePath,
+					PubPath:     staged.FinalPubPath,
+					PubLine:     staged.PubLine,
+				}, nil
+			}
+			if _, werr := filewriter.Write(staged.FinalPrivatePath, staged.PrivPEM, 0o600); werr != nil {
+				return identity.KeyResult{}, fmt.Errorf("identity add: writing final private key: %w", werr)
+			}
+			if _, werr := filewriter.Write(staged.FinalPubPath, []byte(staged.PubLine), 0o644); werr != nil {
+				return identity.KeyResult{}, fmt.Errorf("identity add: writing final public key: %w", werr)
+			}
+			return identity.KeyResult{
+				PrivatePath: staged.FinalPrivatePath,
+				PubPath:     staged.FinalPubPath,
+				PubLine:     staged.PubLine,
+			}, nil
+		},
+		Cleanup: func(staged identity.StagedKey) {
+			// No-op for existing-key paths (PrivPEM nil or temp == final).
+			if staged.PrivPEM == nil || staged.TempPrivatePath == staged.FinalPrivatePath {
+				return
+			}
+			_ = os.RemoveAll(filepath.Dir(staged.TempPrivatePath))
 		},
 		CopyPub: clipboard.Copy,
 		PreWrite: func(keyPath, hostname string, port int) tester.Result {

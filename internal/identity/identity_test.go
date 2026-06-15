@@ -2,6 +2,7 @@ package identity
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/castocolina/gitid/internal/gitconfig"
@@ -19,17 +20,40 @@ type callLog struct {
 	writeFragment       int
 	writeAllowedSigners int
 	resolved            int
+	persistKey          int
+	cleanup             int
 }
 
 func newFakeDeps(log *callLog, preOutcome tester.Outcome) Deps {
 	return Deps{
-		Generate: func(in CreateInput) (KeyResult, error) {
+		Generate: func(in CreateInput) (StagedKey, error) {
 			log.generate++
-			return KeyResult{
-				PrivatePath: "/tmp/.ssh/id_ed25519_" + in.Name,
-				PubPath:     "/tmp/.ssh/id_ed25519_" + in.Name + ".pub",
-				PubLine:     "ssh-ed25519 AAAAFAKEKEY comment\n",
+			return StagedKey{
+				TempPrivatePath:  "/tmp/stage/key",
+				FinalPrivatePath: "/tmp/.ssh/id_ed25519_" + in.Name,
+				FinalPubPath:     "/tmp/.ssh/id_ed25519_" + in.Name + ".pub",
+				PubLine:          "ssh-ed25519 AAAAFAKEKEY comment\n",
+				PrivPEM:          []byte("FAKEPEM"),
 			}, nil
+		},
+		PersistKey: func(s StagedKey) (KeyResult, error) {
+			log.persistKey++
+			if s.PrivPEM == nil {
+				// Existing-key path: return current paths without writing.
+				return KeyResult{
+					PrivatePath: s.FinalPrivatePath,
+					PubPath:     s.FinalPubPath,
+					PubLine:     s.PubLine,
+				}, nil
+			}
+			return KeyResult{
+				PrivatePath: s.FinalPrivatePath,
+				PubPath:     s.FinalPubPath,
+				PubLine:     s.PubLine,
+			}, nil
+		},
+		Cleanup: func(_ StagedKey) {
+			log.cleanup++
 		},
 		CopyPub: func(_ string) error {
 			log.copyPub++
@@ -175,9 +199,9 @@ func TestCreateDryRunSkipsWrites(t *testing.T) {
 func TestCreatePropagatesGenerateError(t *testing.T) {
 	var log callLog
 	deps := newFakeDeps(&log, tester.PASS)
-	deps.Generate = func(_ CreateInput) (KeyResult, error) {
+	deps.Generate = func(_ CreateInput) (StagedKey, error) {
 		log.generate++
-		return KeyResult{}, errors.New("boom")
+		return StagedKey{}, errors.New("boom")
 	}
 	_, err := Create(sampleInput(), deps)
 	if err == nil {
@@ -246,5 +270,193 @@ func TestCreatePassesHostnameNotAlias(t *testing.T) {
 	// Sanity: the key path from Generate is passed through.
 	if capturedKeyPath == "" {
 		t.Error("PreWrite called with empty keyPath")
+	}
+}
+
+// --- New behavioral tests (BUG-4 temp-then-promote) ---
+
+// TestCreateDryRun_PersistKeyCountZero asserts that a dry-run (Confirmed=false)
+// Create records PersistKey count 0, Cleanup IS called, and the four artifact
+// previews are all non-empty. PreWriteOnly must be true.
+func TestCreateDryRun_PersistKeyCountZero(t *testing.T) {
+	var log callLog
+	deps := newFakeDeps(&log, tester.ReachableNotUploaded)
+	in := sampleInput()
+	in.Confirmed = false
+
+	res, err := Create(in, deps)
+	if err != nil {
+		t.Fatalf("Create() dry-run returned error: %v", err)
+	}
+	if log.persistKey != 0 {
+		t.Errorf("dry-run: PersistKey called %d times, want 0 (must not persist before confirm)", log.persistKey)
+	}
+	if log.cleanup != 1 {
+		t.Errorf("dry-run: Cleanup called %d times, want 1 (defer must always fire)", log.cleanup)
+	}
+	if res.SSHPreview == "" || res.GitconfigPreview == "" || res.FragmentPreview == "" || res.AllowedSignersPreview == "" {
+		t.Error("dry-run: all four artifact previews must be non-empty")
+	}
+	if !res.PreWriteOnly {
+		t.Error("dry-run: PreWriteOnly must be true")
+	}
+}
+
+// TestCreateGateFailure_PersistKeyCountZero asserts that a pre-write gate Failure
+// records PersistKey count 0 (no orphan key), Cleanup IS called, and no writer ran.
+func TestCreateGateFailure_PersistKeyCountZero(t *testing.T) {
+	var log callLog
+	deps := newFakeDeps(&log, tester.Failure)
+
+	_, err := Create(sampleInput(), deps)
+	if err == nil {
+		t.Fatal("Create() gate-Failure must return an error")
+	}
+	if log.persistKey != 0 {
+		t.Errorf("gate-Failure: PersistKey called %d times, want 0 (no orphan key)", log.persistKey)
+	}
+	if log.cleanup != 1 {
+		t.Errorf("gate-Failure: Cleanup called %d times, want 1 (defer must always fire)", log.cleanup)
+	}
+	if log.writeSSH != 0 || log.writeGitconfig != 0 || log.writeFragment != 0 || log.writeAllowedSigners != 0 {
+		t.Errorf("gate-Failure: no writer must run; got ssh=%d gitconfig=%d fragment=%d signers=%d",
+			log.writeSSH, log.writeGitconfig, log.writeFragment, log.writeAllowedSigners)
+	}
+}
+
+// TestCreateConfirmed_PersistKeyCountOneAndFinalPaths asserts that a confirmed
+// create-new records PersistKey count exactly 1 (fires BEFORE the four writers),
+// res.Key.PrivatePath equals the FINAL path, and the SSH/fragment previews
+// reference the FINAL path, not the temp staging path.
+func TestCreateConfirmed_PersistKeyCountOneAndFinalPaths(t *testing.T) {
+	var log callLog
+	// Track write order to confirm PersistKey fires before the four writers.
+	var callOrder []string
+	deps := newFakeDeps(&log, tester.ReachableNotUploaded)
+
+	const tempPath = "/tmp/stage/key"
+	const finalPath = "/tmp/.ssh/id_ed25519_work"
+
+	deps.PersistKey = func(s StagedKey) (KeyResult, error) {
+		log.persistKey++
+		callOrder = append(callOrder, "persistKey")
+		return KeyResult{PrivatePath: s.FinalPrivatePath, PubPath: s.FinalPubPath, PubLine: s.PubLine}, nil
+	}
+	deps.WriteSSH = func(_, _, _ string) (string, error) {
+		log.writeSSH++
+		callOrder = append(callOrder, "writeSSH")
+		return "", nil
+	}
+
+	in := sampleInput()
+	in.Confirmed = true
+
+	res, err := Create(in, deps)
+	if err != nil {
+		t.Fatalf("Create() confirmed returned error: %v", err)
+	}
+
+	if log.persistKey != 1 {
+		t.Errorf("confirmed: PersistKey called %d times, want exactly 1", log.persistKey)
+	}
+	if log.cleanup != 1 {
+		t.Errorf("confirmed: Cleanup called %d times, want 1", log.cleanup)
+	}
+
+	// PersistKey must fire before WriteSSH.
+	if len(callOrder) >= 2 && callOrder[0] != "persistKey" {
+		t.Errorf("PersistKey must be called before WriteSSH; order was %v", callOrder)
+	}
+
+	// res.Key.PrivatePath must be the FINAL path.
+	if res.Key.PrivatePath != finalPath {
+		t.Errorf("res.Key.PrivatePath = %q, want FINAL path %q", res.Key.PrivatePath, finalPath)
+	}
+
+	// SSHPreview and FragmentPreview must reference FINAL path, never temp.
+	if !strings.Contains(res.SSHPreview, finalPath) {
+		t.Errorf("SSHPreview does not contain FINAL path %q:\n%s", finalPath, res.SSHPreview)
+	}
+	if strings.Contains(res.SSHPreview, tempPath) {
+		t.Errorf("SSHPreview must not contain temp path %q:\n%s", tempPath, res.SSHPreview)
+	}
+	if strings.Contains(res.FragmentPreview, tempPath) {
+		t.Errorf("FragmentPreview must not contain temp path %q:\n%s", tempPath, res.FragmentPreview)
+	}
+}
+
+// TestCreateGate_UsesTempPath asserts that PreWrite is invoked with the
+// StagedKey.TempPrivatePath, not the final path (BUG-4: gate must run ssh -i
+// <temp> before any ~/.ssh write).
+func TestCreateGate_UsesTempPath(t *testing.T) {
+	var log callLog
+	var capturedKeyPath string
+	deps := newFakeDeps(&log, tester.ReachableNotUploaded)
+
+	const tempPath = "/tmp/stage/key"
+	const finalPath = "/tmp/.ssh/id_ed25519_work"
+
+	deps.PreWrite = func(keyPath, _ string, _ int) tester.Result {
+		log.preWrite++
+		capturedKeyPath = keyPath
+		return tester.Result{
+			Command: "ssh -i " + keyPath,
+			Output:  "pre-write output",
+			Outcome: tester.ReachableNotUploaded,
+		}
+	}
+
+	if _, err := Create(sampleInput(), deps); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	if capturedKeyPath != tempPath {
+		t.Errorf("PreWrite called with keyPath=%q, want TempPrivatePath=%q (not final %q)",
+			capturedKeyPath, tempPath, finalPath)
+	}
+}
+
+// TestReuseNoPersistKey asserts that Reuse records PersistKey count 0 (existing
+// key, PrivPEM nil, so the persist call is skipped entirely).
+func TestReuseNoPersistKey(t *testing.T) {
+	var log callLog
+	log2 := modeLog{callLog: log}
+	log2.pubExistsRet = true
+	deps := newFakeModeDeps(&log2, tester.ReachableNotUploaded)
+
+	existingKey := "/tmp/.ssh/id_ed25519_existing"
+	if _, err := Reuse(reuseInput(), existingKey, deps); err != nil {
+		t.Fatalf("Reuse returned error: %v", err)
+	}
+	if log2.persistKey != 0 {
+		t.Errorf("Reuse: PersistKey called %d times, want 0 (existing key, PrivPEM nil)", log2.persistKey)
+	}
+}
+
+// TestAddAccountNoPersistKey asserts that AddAccount records PersistKey count 0
+// (existing key, PrivPEM nil, so the persist call is skipped entirely).
+func TestAddAccountNoPersistKey(t *testing.T) {
+	var log modeLog
+	log.pubExistsRet = true
+	deps := newFakeModeDeps(&log, tester.ReachableNotUploaded)
+
+	existing := Account{
+		Name:     "work",
+		GitName:  "Work User",
+		GitEmail: "work@example.com",
+		Provider: "github",
+		Alias:    "work.github.com",
+		Hostname: "ssh.github.com",
+		Port:     443,
+		KeyPath:  "/tmp/.ssh/id_ed25519_work",
+		PubPath:  "/tmp/.ssh/id_ed25519_work.pub",
+		Matches:  []gitconfig.Match{DefaultMatch("work")},
+	}
+
+	if _, err := AddAccount(existing, "gitlab", "work.gitlab.com", deps); err != nil {
+		t.Fatalf("AddAccount returned error: %v", err)
+	}
+	if log.persistKey != 0 {
+		t.Errorf("AddAccount: PersistKey called %d times, want 0 (existing key, PrivPEM nil)", log.persistKey)
 	}
 }

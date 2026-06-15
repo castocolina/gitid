@@ -16,13 +16,23 @@ import (
 // touches the network, the real keygen, or the filesystem.
 func fakeDeps(_ io.Writer) identity.Deps {
 	return identity.Deps{
-		Generate: func(in identity.CreateInput) (identity.KeyResult, error) {
-			return identity.KeyResult{
-				PrivatePath: "/tmp/.ssh/id_ed25519_" + in.Name,
-				PubPath:     "/tmp/.ssh/id_ed25519_" + in.Name + ".pub",
-				PubLine:     "ssh-ed25519 AAAAFAKE comment\n",
+		Generate: func(in identity.CreateInput) (identity.StagedKey, error) {
+			return identity.StagedKey{
+				TempPrivatePath:  "/tmp/stage/key",
+				FinalPrivatePath: "/tmp/.ssh/id_ed25519_" + in.Name,
+				FinalPubPath:     "/tmp/.ssh/id_ed25519_" + in.Name + ".pub",
+				PubLine:          "ssh-ed25519 AAAAFAKE comment\n",
+				PrivPEM:          []byte("FAKEPEM"),
 			}, nil
 		},
+		PersistKey: func(s identity.StagedKey) (identity.KeyResult, error) {
+			return identity.KeyResult{
+				PrivatePath: s.FinalPrivatePath,
+				PubPath:     s.FinalPubPath,
+				PubLine:     s.PubLine,
+			}, nil
+		},
+		Cleanup: func(_ identity.StagedKey) {},
 		CopyPub: func(_ string) error { return nil },
 		PreWrite: func(_, hostname string, _ int) tester.Result {
 			return tester.Result{Command: "ssh -T git@" + hostname, Output: "Permission denied (publickey)", Outcome: tester.ReachableNotUploaded}

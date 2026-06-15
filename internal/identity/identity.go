@@ -82,13 +82,47 @@ type KeyResult struct {
 	PubLine     string
 }
 
+// StagedKey carries the in-memory state produced by the Generate dep for the
+// GENERATE paths (create-new, Rotate). TempPrivatePath is the hermetic staging
+// path where PrivPEM was written for the pre-write gate; FinalPrivatePath and
+// FinalPubPath are the ~/.ssh destination paths. PrivPEM holds the private-key
+// bytes in memory so PersistKey can write the final file without re-reading the
+// temp (no gosec G304). PrivPEM is private key material — it must never be
+// logged or printed. For existing-key paths (Reuse/AddAccount) PrivPEM is nil,
+// which is the sentinel meaning "existing key, nothing to persist".
+type StagedKey struct {
+	// TempPrivatePath is the hermetic temp path used for the pre-write gate.
+	// For existing-key paths (Reuse/AddAccount) it equals FinalPrivatePath.
+	TempPrivatePath string
+	// FinalPrivatePath is the ~/.ssh destination for the private key.
+	FinalPrivatePath string
+	// FinalPubPath is the ~/.ssh destination for the public key (.pub sibling).
+	FinalPubPath string
+	// PubLine is the authorized-key line ("ssh-ed25519 AAAA…\n").
+	PubLine string
+	// PrivPEM holds the private-key bytes generated in memory. It is nil for
+	// existing-key paths (Reuse/AddAccount). NEVER log or print this field.
+	PrivPEM []byte
+}
+
 // Deps holds every external effect Create performs, injected as function fields
 // so Create is testable with fakes and reusable by the TUI. The FOUR writers —
 // WriteSSH, WriteGitconfig, WriteFragment, WriteAllowedSigners — persist the
 // four coordinated artifacts; WriteAllowedSigners is the fourth writer that
 // makes SIGN-01 real (the signing line is written, not merely generated).
 type Deps struct {
-	Generate            func(in CreateInput) (KeyResult, error)
+	// Generate generates key material AND stages the private key to a hermetic
+	// temp location for the pre-write gate. It returns a StagedKey carrying
+	// PrivPEM, TempPrivatePath (for the gate), and the FINAL ~/.ssh paths.
+	Generate func(in CreateInput) (StagedKey, error)
+	// PersistKey writes staged.PrivPEM to the final private-key and public-key
+	// paths via filewriter (backup+atomic+chmod 0600/0644). When staged.PrivPEM
+	// is nil (existing-key paths) it is a guaranteed no-op.
+	PersistKey func(s StagedKey) (KeyResult, error)
+	// Cleanup removes the hermetic temp staging directory created by Generate.
+	// For existing-key paths (TempPrivatePath == FinalPrivatePath / PrivPEM nil)
+	// it must not delete anything.
+	Cleanup             func(s StagedKey)
 	CopyPub             func(pubLine string) error
 	PreWrite            func(keyPath, hostname string, port int) tester.Result
 	WriteSSH            func(accountName, hostBlock, globalBlock string) (backupPath string, err error)
@@ -148,50 +182,64 @@ func DefaultMatch(identity string) gitconfig.Match {
 // WriteSSH, WriteGitconfig, WriteFragment, and WriteAllowedSigners — then the
 // resolved test captures the live config.
 func Create(in CreateInput, deps Deps) (CreateResult, error) {
-	key, err := deps.Generate(in)
+	staged, err := deps.Generate(in)
 	if err != nil {
 		return CreateResult{}, fmt.Errorf("identity: generating key: %w", err)
 	}
-	return runPipeline(in, key, deps)
+	defer deps.Cleanup(staged)
+	return runPipeline(in, staged, deps)
 }
 
-// runPipeline is the single write path shared by Create and the reuse flow: copy
-// the .pub → build the allowed_signers line → pre-write test (gates the write,
-// D-01) → render the four artifact previews → (Confirmed?) write all four → run
-// the resolved test. Both the create-new and reuse-existing modes funnel through
-// here so there is exactly one writer sequence (no parallel write path).
+// runPipeline is the single write path shared by Create, Rotate, and the reuse
+// flow: copy the .pub → build the allowed_signers line → pre-write test (gates
+// the write, D-01, runs against staged.TempPrivatePath) → render the four
+// artifact previews from FINAL paths → (Confirmed? persist key FIRST, then)
+// write all four → run the resolved test. Both the create-new, rotate, and
+// reuse-existing modes funnel through here so there is exactly one writer
+// sequence (no parallel write path).
 //
 // The pre-write test gates the write: a Failure outcome aborts with an error and
 // NO writes; PASS or ReachableNotUploaded proceed. When Confirmed is false the
 // previews are returned with PreWriteOnly set and no write or resolved test runs
-// (SAFE-03 / --dry-run). On a confirmed write all FOUR writers run — WriteSSH,
-// WriteGitconfig, WriteFragment, WriteAllowedSigners — then the resolved test
-// captures the live config.
-func runPipeline(in CreateInput, key KeyResult, deps Deps) (CreateResult, error) {
-	if cerr := deps.CopyPub(key.PubLine); cerr != nil {
+// (SAFE-03 / --dry-run). On a confirmed write: if staged.PrivPEM != nil,
+// PersistKey is called FIRST (before the four writers) so a persist failure
+// aborts before any config references a non-existent key. Then all FOUR writers
+// run — WriteSSH, WriteGitconfig, WriteFragment, WriteAllowedSigners — then the
+// resolved test captures the live config.
+func runPipeline(in CreateInput, staged StagedKey, deps Deps) (CreateResult, error) {
+	if cerr := deps.CopyPub(staged.PubLine); cerr != nil {
 		// Clipboard is best-effort (CLIP-02): a copy failure never aborts the
 		// flow; the command layer prints the key for manual copy.
 		_ = cerr
 	}
 
-	signersLine := keygen.AllowedSignersLine(in.GitEmail, key.PubLine)
+	signersLine := keygen.AllowedSignersLine(in.GitEmail, staged.PubLine)
 
-	pre := deps.PreWrite(key.PrivatePath, in.Hostname, in.Port)
+	// Gate on the TEMP path (BUG-4: pre-write test must use the staged key so
+	// it runs before any ~/.ssh write; for existing-key paths TempPrivatePath ==
+	// FinalPrivatePath so behavior is unchanged).
+	pre := deps.PreWrite(staged.TempPrivatePath, in.Hostname, in.Port)
 	if pre.Outcome == tester.Failure {
 		return CreateResult{PreWrite: pre}, fmt.Errorf(
 			"identity: pre-write connectivity test failed for %q, aborting before any write:\n%s\n%s",
 			in.Alias, pre.Command, pre.Output)
 	}
 
-	hostBlock := sshconfig.RenderHostBlock(in.Alias, in.Hostname, in.Port, key.PrivatePath)
+	// Render previews using the FINAL paths, never the temp path.
+	final := KeyResult{
+		PrivatePath: staged.FinalPrivatePath,
+		PubPath:     staged.FinalPubPath,
+		PubLine:     staged.PubLine,
+	}
+	hostBlock := sshconfig.RenderHostBlock(in.Alias, in.Hostname, in.Port, final.PrivatePath)
 	gitPreview := gitconfig.RenderIncludeIf(in.Name, in.FragmentPath, in.Matches)
 
 	res := CreateResult{
-		Key:                   key,
+		Key:                   final,
 		PreWrite:              pre,
 		SSHPreview:            hostBlock,
 		GitconfigPreview:      gitPreview,
-		FragmentPreview:       renderFragmentPreview(in, key.PubPath),
+		FragmentPreview:       renderFragmentPreview(in, final.PubPath),
 		AllowedSignersPreview: signersLine,
 		AllowedSignersLine:    signersLine,
 	}
@@ -201,13 +249,22 @@ func runPipeline(in CreateInput, key KeyResult, deps Deps) (CreateResult, error)
 		return res, nil
 	}
 
+	// Persist the key BEFORE the four writers so a persist failure aborts
+	// before any config references a non-existent key. Skip when PrivPEM is nil
+	// (existing-key reuse/add-account paths — no new key to write).
+	if staged.PrivPEM != nil {
+		if _, perr := deps.PersistKey(staged); perr != nil {
+			return res, fmt.Errorf("identity: persisting key pair: %w", perr)
+		}
+	}
+
 	if _, werr := deps.WriteSSH(in.Name, hostBlock, in.GlobalBlock); werr != nil {
 		return res, fmt.Errorf("identity: writing ssh config: %w", werr)
 	}
 	if _, werr := deps.WriteGitconfig(in.Name, in.FragmentPath, in.AllowedSignersPath, in.Matches); werr != nil {
 		return res, fmt.Errorf("identity: writing gitconfig includeIf: %w", werr)
 	}
-	if werr := deps.WriteFragment(in.FragmentPath, in.GitName, in.GitEmail, key.PubPath); werr != nil {
+	if werr := deps.WriteFragment(in.FragmentPath, in.GitName, in.GitEmail, final.PubPath); werr != nil {
 		return res, fmt.Errorf("identity: writing gitconfig fragment: %w", werr)
 	}
 	if _, werr := deps.WriteAllowedSigners(in.AllowedSignersPath, in.Name, signersLine); werr != nil {

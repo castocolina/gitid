@@ -10,7 +10,8 @@ import (
 
 // modeLog records the mode-specific dep invocations so the orchestration tests
 // can assert which effects each mode performed (without touching the network,
-// the real keygen, or the filesystem).
+// the real keygen, or the filesystem). It embeds callLog (which includes the
+// persistKey/cleanup counters) so no extra fields are needed here.
 type modeLog struct {
 	callLog
 	derivePub    int
@@ -207,12 +208,14 @@ func TestRotateGeneratesNewKeyAndRepointsAllFour(t *testing.T) {
 
 	// Generate returns a NEW key path distinct from the existing one.
 	newKey := "/tmp/.ssh/id_ed25519_work_rotated"
-	deps.Generate = func(_ CreateInput) (KeyResult, error) {
+	deps.Generate = func(_ CreateInput) (StagedKey, error) {
 		log.generate++
-		return KeyResult{
-			PrivatePath: newKey,
-			PubPath:     newKey + ".pub",
-			PubLine:     "ssh-ed25519 AAAANEWKEY comment\n",
+		return StagedKey{
+			TempPrivatePath:  "/tmp/stage/newkey",
+			FinalPrivatePath: newKey,
+			FinalPubPath:     newKey + ".pub",
+			PubLine:          "ssh-ed25519 AAAANEWKEY comment\n",
+			PrivPEM:          []byte("NEWPEM"),
 		}, nil
 	}
 
@@ -253,9 +256,15 @@ func TestRotateGeneratesNewKeyAndRepointsAllFour(t *testing.T) {
 func TestRotateAbortsOnPreWriteFailure(t *testing.T) {
 	var log modeLog
 	deps := newFakeModeDeps(&log, tester.Failure)
-	deps.Generate = func(_ CreateInput) (KeyResult, error) {
+	deps.Generate = func(_ CreateInput) (StagedKey, error) {
 		log.generate++
-		return KeyResult{PrivatePath: "/tmp/.ssh/new", PubPath: "/tmp/.ssh/new.pub", PubLine: "ssh-ed25519 AAAANEW c\n"}, nil
+		return StagedKey{
+			TempPrivatePath:  "/tmp/stage/new",
+			FinalPrivatePath: "/tmp/.ssh/new",
+			FinalPubPath:     "/tmp/.ssh/new.pub",
+			PubLine:          "ssh-ed25519 AAAANEW c\n",
+			PrivPEM:          []byte("NEWPEM"),
+		}, nil
 	}
 
 	if _, err := Rotate(rotateAccount(), deps); err == nil {
@@ -265,4 +274,50 @@ func TestRotateAbortsOnPreWriteFailure(t *testing.T) {
 		t.Fatalf("Rotate must perform NO writes on pre-write Failure; got ssh=%d gitconfig=%d fragment=%d signers=%d",
 			log.writeSSH, log.writeGitconfig, log.writeFragment, log.writeAllowedSigners)
 	}
+}
+
+// TestRotatePersistKeyOnConfirm asserts Rotate records PersistKey count 1 on
+// the confirmed (gate-passed) path and 0 on a Failure path.
+func TestRotatePersistKeyOnConfirm(t *testing.T) {
+	t.Run("confirmed", func(t *testing.T) {
+		var log modeLog
+		deps := newFakeModeDeps(&log, tester.ReachableNotUploaded)
+		deps.Generate = func(_ CreateInput) (StagedKey, error) {
+			log.generate++
+			return StagedKey{
+				TempPrivatePath:  "/tmp/stage/rot",
+				FinalPrivatePath: "/tmp/.ssh/id_ed25519_work_rotated",
+				FinalPubPath:     "/tmp/.ssh/id_ed25519_work_rotated.pub",
+				PubLine:          "ssh-ed25519 AAAAROTED c\n",
+				PrivPEM:          []byte("ROTPEM"),
+			}, nil
+		}
+		if _, err := Rotate(rotateAccount(), deps); err != nil {
+			t.Fatalf("Rotate returned error: %v", err)
+		}
+		if log.persistKey != 1 {
+			t.Errorf("Rotate confirmed: PersistKey called %d times, want 1", log.persistKey)
+		}
+	})
+
+	t.Run("gate-failure", func(t *testing.T) {
+		var log modeLog
+		deps := newFakeModeDeps(&log, tester.Failure)
+		deps.Generate = func(_ CreateInput) (StagedKey, error) {
+			log.generate++
+			return StagedKey{
+				TempPrivatePath:  "/tmp/stage/rot",
+				FinalPrivatePath: "/tmp/.ssh/id_ed25519_work_rotated",
+				FinalPubPath:     "/tmp/.ssh/id_ed25519_work_rotated.pub",
+				PubLine:          "ssh-ed25519 AAAAROTED c\n",
+				PrivPEM:          []byte("ROTPEM"),
+			}, nil
+		}
+		if _, err := Rotate(rotateAccount(), deps); err == nil {
+			t.Fatal("Rotate gate-failure must return an error")
+		}
+		if log.persistKey != 0 {
+			t.Errorf("Rotate gate-failure: PersistKey called %d times, want 0", log.persistKey)
+		}
+	})
 }

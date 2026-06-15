@@ -7,19 +7,26 @@ import (
 	"testing"
 )
 
-// TestDerivePublicKeyRoundTrips generates a real key with Generate, then asserts
-// DerivePublicKey reads that private key back and reproduces a byte-identical
-// authorized-key line (IDENT-02, RESEARCH Q3). The derived line must carry
-// exactly one trailing newline, matching the Generate path's PubLine contract.
+// TestDerivePublicKeyRoundTrips generates a real key with GenerateMaterial,
+// writes the private key to a temp file via os.WriteFile (test-controlled path),
+// then asserts DerivePublicKey reads that private key back and reproduces an
+// authorized-key line with the expected prefix and newline contract (IDENT-02,
+// RESEARCH Q3). The derived line must carry exactly one trailing newline,
+// matching the GenerateMaterial path's PubLine contract.
 func TestDerivePublicKeyRoundTrips(t *testing.T) {
 	dir := t.TempDir()
 
-	res, err := Generate(Params{Algo: "ed25519", Identity: "reuse", Comment: "reuse@gitid", Dir: dir})
+	mat, err := GenerateMaterial(Params{Algo: "ed25519", Identity: "reuse", Comment: "reuse@gitid"})
 	if err != nil {
-		t.Fatalf("Generate returned error: %v", err)
+		t.Fatalf("GenerateMaterial returned error: %v", err)
 	}
 
-	got, err := DerivePublicKey(res.PrivatePath)
+	privPath := filepath.Join(dir, "id_ed25519_reuse")
+	if err := os.WriteFile(privPath, mat.PrivPEM, 0o600); err != nil { //nolint:gosec // test-controlled temp path
+		t.Fatalf("writing private key fixture: %v", err)
+	}
+
+	got, err := DerivePublicKey(privPath)
 	if err != nil {
 		t.Fatalf("DerivePublicKey returned error: %v", err)
 	}
@@ -30,14 +37,13 @@ func TestDerivePublicKeyRoundTrips(t *testing.T) {
 	if !strings.HasSuffix(got, "\n") || strings.Count(got, "\n") != 1 {
 		t.Errorf("derived line must end with exactly one newline; got %q", got)
 	}
-	if got != res.PubLine {
-		t.Errorf("derived line mismatch\n got: %q\nwant: %q", got, res.PubLine)
+	if got != mat.PubLine {
+		t.Errorf("derived line mismatch\n got: %q\nwant: %q", got, mat.PubLine)
 	}
 }
 
-// TestDerivePublicKeyFromPassphraselessOnly asserts a plain (unencrypted) key
-// derives cleanly. Encrypted keys are out of scope for the reuse-derive path
-// in this phase, so we only verify the passphraseless contract.
+// TestDerivePublicKeyMissingFile asserts DerivePublicKey returns an error for a
+// non-existent key path.
 func TestDerivePublicKeyMissingFile(t *testing.T) {
 	_, err := DerivePublicKey(filepath.Join(t.TempDir(), "does-not-exist"))
 	if err == nil {
