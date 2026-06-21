@@ -101,9 +101,9 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 
 ## v2 Requirements (deferred)
 
-- [ ] **ADOPT-01**: Detect plain-style fragments (`~/.gitconfig_personal`, etc.) and offer to reference or migrate them into `~/.gitconfig.d/`
-- [ ] **REPO-01**: `gitid add repo <url>` detects the provider, asks personal/client (candidates from `~/git/<client>` folders and existing accounts), rewrites the clone URL to the alias, clones into `~/git/<client>`, and verifies with a `git -C <dest> pull` (output shown)
-- [ ] **AUTOUP-01** (Phase 3): Automatic key upload via `gh`/`glab` when present
+- [x] **ADOPT-01**: Detect plain-style fragments (`~/.gitconfig_personal`, etc.) and offer to reference or migrate them into `~/.gitconfig.d/`
+- [x] **REPO-01**: `gitid add repo <url>` detects the provider, asks personal/client (candidates from `~/git/<client>` folders and existing accounts), rewrites the clone URL to the alias, clones into `~/git/<client>`, and verifies with a `git -C <dest> pull` (output shown)
+- [x] **AUTOUP-01** (Phase 3): Automatic key upload via `gh`/`glab` when present
 
 ## Out of Scope
 

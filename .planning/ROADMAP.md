@@ -360,18 +360,22 @@ CLI-02 are COMPLETE and explicitly NOT replanned (D-01).
      match strategies with a live `includeIf` preview; `hasconfig` auto-derives as
      `git@<alias>:*/**` (recipe form), editable before write; `both` writes two
      OR-applied `includeIf` blocks; `--match gitdir|hasconfig|both` mirrors on the CLI
+
   2. `gitid adopt <path>` and the TUI unmanaged-pane Adopt affordance migrate (default)
      or reference a plain-style fragment; migrate copies into `~/.gitconfig.d/<name>`
      and repoints the managed `includeIf`, never deleting the original (removal is a
      separate explicit confirm)
+
   3. `gitid add repo <url>` (and the TUI Add Repo modal) detect the provider, rewrite
      the URL to the matching alias, clone into `~/git/<client>/<repo>`, and verify with
      `git -C <dest> pull` — both clone and pull output shown; no-match launches inline
      create then resumes the clone (continuous, no abort)
+
   4. When `gh`/`glab` is present and authenticated, the copy modal + wizard step 3 +
      `gitid identity copy --upload-keys` offer per-key (auth + signing) upload with
      explicit confirmation; the shown command equals the command run; absent/unauthenticated
      falls back to manual instructions and never gates create/copy
+
   5. Every feature has unit-TDD coverage AND at least one e2e test that drives the real
      `gitid` binary in a sandbox HOME (clone against a local bare remote; PATH-stubbed
      fake gh/glab) — closing the recurring injected-seam blindspot (D-13/D-16)
@@ -387,7 +391,7 @@ Plans:
 
 **Wave 0**
 
-- [ ] 05.7-01-PLAN.md — Test infra: extend e2e harness (FakeGHDir/FakeGLabDir/FakeGitDir + local bare remote), RED e2e for adopt/addrepo/upload, RED `TestBuildTUIDepsNilGuard_Phase57`, RED unit stubs + new package dirs (D-13/D-16)
+- [x] 05.7-01-PLAN.md — Test infra: extend e2e harness (FakeGHDir/FakeGLabDir/FakeGitDir + local bare remote), RED e2e for adopt/addrepo/upload, RED `TestBuildTUIDepsNilGuard_Phase57`, RED unit stubs + new package dirs (D-13/D-16)
 
 **Wave 1** *(blocked on Wave 0 — three new packages, zero file overlap, parallel)*
 
@@ -431,7 +435,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 5/7 plans complete
+**Plans:** 1/8 plans executed
 
 Plans:
 
@@ -451,5 +455,5 @@ Plans:
 | 5. CLI Surface + TUI | 4/4 | Built (UAT found gaps → 5.5 + 5.6) | 2026-06-13 |
 | 5.5. Core & CLI Reconciliation | 7/7 | Complete    | 2026-06-14 |
 | 5.6. Integrated TUI App | 5/7 | Complete    | 2026-06-21 |
-| 5.7. Complete v1.0 Product Features in TUI | 0/8 | Planned | - |
+| 5.7. Complete v1.0 Product Features in TUI | 1/8 | In Progress|  |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |

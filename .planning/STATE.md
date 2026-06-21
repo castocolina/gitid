@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Product Features in TUI
-status: Not planned yet — run /gsd-plan-phase 05.7
+status: executing
 stopped_at: Completed 05.6-03-PLAN.md
-last_updated: "2026-06-21T11:17:31.523Z"
-last_activity: 2026-06-21
+last_updated: "2026-06-21T12:12:19.411Z"
+last_activity: 2026-06-21 -- Phase 05.7 execution started
 progress:
   total_phases: 10
   completed_phases: 7
   total_plans: 51
-  completed_plans: 41
+  completed_plans: 42
   percent: 70
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-08)
 
 **Core value:** Managing a Git identity produces coordinated, coherent SSH + Git artifacts that are proven to authenticate and resolve correctly before any file is written, and existing hand-written config is never corrupted.
-**Current focus:** Phase 05.7 — plans regenerated via --reviews, all review findings resolved
+**Current focus:** Phase 05.7 — complete-v1-0-product-features-in-tui
 
 ## Current Position
 
-Phase: 05.7
-Plan: Not started
-Status: Not planned yet — run /gsd-plan-phase 05.7
-Last activity: 2026-06-21
+Phase: 05.7 (complete-v1-0-product-features-in-tui) — EXECUTING
+Plan: 2 of 8
+Status: Ready to execute
+Last activity: 2026-06-21 -- Phase 05.7 execution started
 
 Progress: [██████████] Phase 04 complete (7/7 plans incl. gap closure)
 
@@ -85,6 +85,7 @@ Progress: [██████████] Phase 04 complete (7/7 plans incl. ga
 | Phase 05.6 P03 | 9 | 2 tasks | 7 files |
 | Phase 05.6 P04 | 11 | 2 tasks | 8 files |
 | Phase 05.6 P05 | 13 | 2 tasks | 5 files |
+| Phase 05.7 P01 | 6 | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -148,6 +149,8 @@ Recent decisions affecting current work:
 - [Phase ?]: true
 - [Phase ?]: 05.6-03: Finding.IdentityName additive field for badge scoping (D-08); zero value = global finding; all existing struct literals unaffected
 - [Phase ?]: 05.6-03: healthViewModel sub-model (port from dashboardModel); fixConfirmModal = fixConfirm Enter-gated; badgesFromFindings via IdentityName field; healthReady flag seeds init() only on first view-2 press
+- [Phase ?]: 05.7-01 D-01: TestBuildTUIDepsNilGuard_Phase57 uses zero-value Deps form — buildTUIDeps still returns 5 values in Plan 01; Plan 06 rewires to 8-value return
+- [Phase ?]: 05.7-01 D-02: adopter.Deps.WriteIncludeIf is a 3-arg seam (id, fragPath, matches) with gitconfigPath captured by live closure — not a 4-arg pass-through
 
 ### Roadmap Evolution
 
@@ -175,6 +178,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-16T00:29:02.165Z
+Last session: 2026-06-21T12:12:11.168Z
 Stopped at: Completed 05.6-03-PLAN.md
 Resume file: None
