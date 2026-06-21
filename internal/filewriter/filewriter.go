@@ -116,6 +116,20 @@ func EnsureDir(dirPath string, mode os.FileMode) error {
 	return nil
 }
 
+// CopyFile copies src to dst via the safe-write chokepoint: it reads src,
+// then calls Write(dst, content, 0o644) to back up any pre-existing dst,
+// write atomically, and set the exact mode. This inherits the full
+// backup+atomic+chmod guarantees of Write for fragment adoption (ADOPT-01).
+// The returned backupPath is non-empty when dst pre-existed (same semantics
+// as Write). src and dst are trusted gitid-managed paths.
+func CopyFile(src, dst string) (backupPath string, err error) {
+	content, err := os.ReadFile(src) //nolint:gosec // src is a trusted gitid-managed path (G304)
+	if err != nil {
+		return "", fmt.Errorf("filewriter: reading source %s: %w", src, err)
+	}
+	return Write(dst, content, 0o644)
+}
+
 // copyFile copies src to dst at the given mode, fsyncing dst before close so
 // the backup is durable. src and dst are trusted gitid-managed paths.
 func copyFile(src, dst string, mode os.FileMode) error {
