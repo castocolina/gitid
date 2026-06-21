@@ -233,6 +233,55 @@ func TestCreatePropagatesGenerateError(t *testing.T) {
 	}
 }
 
+// TestDefaultHostname pins the recipe alt-SSH endpoints for the three known
+// providers (D-10 parity, T-05.7-09-03). The literal strings must match
+// recipes/ssh-config.recipe Hostname lines exactly:
+//   - github    -> ssh.github.com
+//   - gitlab    -> altssh.gitlab.com
+//   - bitbucket -> altssh.bitbucket.org
+//
+// Unknown providers fall back to the cmd-compatible shape ("<token>.com" when the
+// token has no dot, otherwise the token verbatim) so the CLI's existing
+// defaultHostname parity is preserved.
+func TestDefaultHostname(t *testing.T) {
+	cases := []struct {
+		provider string
+		want     string
+	}{
+		// Known providers — recipe alt-SSH endpoints (SSH-01/SSH-02).
+		{"github", "ssh.github.com"},
+		{"gitlab", "altssh.gitlab.com"},
+		{"bitbucket", "altssh.bitbucket.org"},
+		// Case-insensitive matching.
+		{"GitHub", "ssh.github.com"},
+		{"GitLab", "altssh.gitlab.com"},
+		{"Bitbucket", "altssh.bitbucket.org"},
+		// Token extraction: leading component before the first "." is used for the
+		// keyword lookup (handles "github.com" passed as provider).
+		{"github.com", "ssh.github.com"},
+		{"gitlab.com", "altssh.gitlab.com"},
+		{"bitbucket.org", "altssh.bitbucket.org"},
+		// Unknown provider without a dot → "<provider>.com" fallback (cmd parity).
+		{"custom", "custom.com"},
+		// Unknown provider with a dot → verbatim fallback (cmd parity).
+		{"myhost.internal", "myhost.internal"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.provider, func(t *testing.T) {
+			if got := DefaultHostname(tc.provider); got != tc.want {
+				t.Errorf("DefaultHostname(%q) = %q, want %q", tc.provider, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestDefaultPort pins the single default-port constant (recipe Port 443).
+func TestDefaultPort(t *testing.T) {
+	if got := DefaultPort(); got != 443 {
+		t.Errorf("DefaultPort() = %d, want 443", got)
+	}
+}
+
 func TestDefaultAlias(t *testing.T) {
 	if got := DefaultAlias("work", "github"); got != "work.github" {
 		t.Errorf("DefaultAlias = %q, want work.github", got)
@@ -567,5 +616,293 @@ func TestAddAccountNoPersistKey(t *testing.T) {
 	}
 	if log.persistKey != 0 {
 		t.Errorf("AddAccount: PersistKey called %d times, want 0 (existing key, PrivPEM nil)", log.persistKey)
+	}
+}
+
+// --- PersistSSH + PersistGitconfig split tests (T-05.7-09) ---
+//
+// These tests capture which writers fire per step (anti-blindspot: must test
+// the real split functions via call-log fakes, not just a success bool).
+
+// newSplitDeps builds a Deps with instrumented writers that record each call in
+// a shared callOrder slice and return predictable backup strings. It does NOT
+// wire PreWrite, Generate, CopyPub, Cleanup, or Resolved — those deps are nil
+// because PersistSSH/PersistGitconfig/PersistAll do not invoke them.
+func newSplitDeps(log *callLog, callOrder *[]string) Deps {
+	return Deps{
+		PersistKey: func(s StagedKey) (KeyResult, error) {
+			log.persistKey++
+			*callOrder = append(*callOrder, "persistKey")
+			return KeyResult{
+				PrivatePath: s.FinalPrivatePath,
+				PubPath:     s.FinalPubPath,
+				PubLine:     s.PubLine,
+			}, nil
+		},
+		WriteSSH: func(_, _, _ string) (string, error) {
+			log.writeSSH++
+			*callOrder = append(*callOrder, "writeSSH")
+			return "bak-ssh", nil
+		},
+		WriteGitconfig: func(_, _, _ string, _ []gitconfig.Match) (string, error) {
+			log.writeGitconfig++
+			*callOrder = append(*callOrder, "writeGitconfig")
+			return "bak-gc", nil
+		},
+		WriteFragment: func(_, _, _, _ string, _ bool) error {
+			log.writeFragment++
+			*callOrder = append(*callOrder, "writeFragment")
+			return nil
+		},
+		WriteAllowedSigners: func(_, _, _ string) (string, error) {
+			log.writeAllowedSigners++
+			*callOrder = append(*callOrder, "writeAllowedSigners")
+			return "bak-signers", nil
+		},
+		Resolved: func(_ string) (tester.Result, tester.ResolvedConfig) {
+			log.resolved++
+			*callOrder = append(*callOrder, "resolved")
+			return tester.Result{Outcome: tester.PASS}, tester.ResolvedConfig{User: "git"}
+		},
+	}
+}
+
+// TestPersistSSH_OnlyLEG1Writers asserts PersistSSH fires PersistKey (when
+// PrivPEM != nil) and WriteSSH, and does NOT fire WriteGitconfig, WriteFragment,
+// WriteAllowedSigners, or Resolved (T-05.7-09, anti-blindspot point (a)).
+func TestPersistSSH_OnlyLEG1Writers(t *testing.T) {
+	var log callLog
+	var callOrder []string
+	deps := newSplitDeps(&log, &callOrder)
+
+	in := sampleInput()
+	staged := sampleStaged(in)
+
+	res, err := PersistSSH(in, staged, deps)
+	if err != nil {
+		t.Fatalf("PersistSSH returned error: %v", err)
+	}
+
+	// PersistKey must fire first (PrivPEM != nil in sampleStaged).
+	if log.persistKey != 1 {
+		t.Errorf("PersistSSH: PersistKey called %d times, want 1", log.persistKey)
+	}
+	if len(callOrder) > 0 && callOrder[0] != "persistKey" {
+		t.Errorf("PersistSSH: PersistKey must be called first; order was %v", callOrder)
+	}
+	// WriteSSH must fire.
+	if log.writeSSH != 1 {
+		t.Errorf("PersistSSH: WriteSSH called %d times, want 1", log.writeSSH)
+	}
+	// LEG-2 writers and Resolved must NOT fire.
+	if log.writeGitconfig != 0 {
+		t.Errorf("PersistSSH: WriteGitconfig called %d times, want 0", log.writeGitconfig)
+	}
+	if log.writeFragment != 0 {
+		t.Errorf("PersistSSH: WriteFragment called %d times, want 0", log.writeFragment)
+	}
+	if log.writeAllowedSigners != 0 {
+		t.Errorf("PersistSSH: WriteAllowedSigners called %d times, want 0", log.writeAllowedSigners)
+	}
+	if log.resolved != 0 {
+		t.Errorf("PersistSSH: Resolved called %d times, want 0", log.resolved)
+	}
+	// SSHBackup is set; gitconfig/signers backups are empty.
+	if res.SSHBackup != "bak-ssh" {
+		t.Errorf("PersistSSH: SSHBackup = %q, want bak-ssh", res.SSHBackup)
+	}
+	if res.GitconfigBackup != "" {
+		t.Errorf("PersistSSH: GitconfigBackup = %q, want empty", res.GitconfigBackup)
+	}
+	if res.AllowedSignersBackup != "" {
+		t.Errorf("PersistSSH: AllowedSignersBackup = %q, want empty", res.AllowedSignersBackup)
+	}
+	// SSHPreview must be non-empty; gitconfig/fragment previews empty.
+	if res.SSHPreview == "" {
+		t.Error("PersistSSH: SSHPreview must be non-empty")
+	}
+	if res.GitconfigPreview != "" {
+		t.Errorf("PersistSSH: GitconfigPreview = %q, want empty (not set by LEG 1)", res.GitconfigPreview)
+	}
+}
+
+// TestPersistSSH_SkipsPersistKeyWhenPrivPEMNil asserts PersistSSH skips
+// PersistKey when staged.PrivPEM is nil (existing-key path, T-05.7-09).
+func TestPersistSSH_SkipsPersistKeyWhenPrivPEMNil(t *testing.T) {
+	var log callLog
+	var callOrder []string
+	deps := newSplitDeps(&log, &callOrder)
+
+	in := sampleInput()
+	staged := sampleStaged(in)
+	staged.PrivPEM = nil // existing-key path
+
+	_, err := PersistSSH(in, staged, deps)
+	if err != nil {
+		t.Fatalf("PersistSSH (PrivPEM nil) returned error: %v", err)
+	}
+	if log.persistKey != 0 {
+		t.Errorf("PersistSSH (PrivPEM nil): PersistKey called %d times, want 0", log.persistKey)
+	}
+	// WriteSSH must still fire.
+	if log.writeSSH != 1 {
+		t.Errorf("PersistSSH (PrivPEM nil): WriteSSH called %d times, want 1", log.writeSSH)
+	}
+}
+
+// TestPersistGitconfig_OnlyLEG2Writers asserts PersistGitconfig fires
+// WriteGitconfig, WriteFragment, and WriteAllowedSigners, and does NOT fire
+// PersistKey, WriteSSH, or Resolved (T-05.7-09, anti-blindspot point (b)).
+func TestPersistGitconfig_OnlyLEG2Writers(t *testing.T) {
+	var log callLog
+	var callOrder []string
+	deps := newSplitDeps(&log, &callOrder)
+
+	in := sampleInput()
+	staged := sampleStaged(in)
+
+	res, err := PersistGitconfig(in, staged, deps)
+	if err != nil {
+		t.Fatalf("PersistGitconfig returned error: %v", err)
+	}
+
+	// PersistKey must NOT fire (LEG 2 does not touch the key).
+	if log.persistKey != 0 {
+		t.Errorf("PersistGitconfig: PersistKey called %d times, want 0", log.persistKey)
+	}
+	// WriteSSH must NOT fire.
+	if log.writeSSH != 0 {
+		t.Errorf("PersistGitconfig: WriteSSH called %d times, want 0", log.writeSSH)
+	}
+	// LEG-2 writers must fire.
+	if log.writeGitconfig != 1 {
+		t.Errorf("PersistGitconfig: WriteGitconfig called %d times, want 1", log.writeGitconfig)
+	}
+	if log.writeFragment != 1 {
+		t.Errorf("PersistGitconfig: WriteFragment called %d times, want 1", log.writeFragment)
+	}
+	if log.writeAllowedSigners != 1 {
+		t.Errorf("PersistGitconfig: WriteAllowedSigners called %d times, want 1", log.writeAllowedSigners)
+	}
+	// Resolved must NOT fire.
+	if log.resolved != 0 {
+		t.Errorf("PersistGitconfig: Resolved called %d times, want 0", log.resolved)
+	}
+	// Backup paths for LEG 2.
+	if res.GitconfigBackup != "bak-gc" {
+		t.Errorf("PersistGitconfig: GitconfigBackup = %q, want bak-gc", res.GitconfigBackup)
+	}
+	if res.AllowedSignersBackup != "bak-signers" {
+		t.Errorf("PersistGitconfig: AllowedSignersBackup = %q, want bak-signers", res.AllowedSignersBackup)
+	}
+	// SSHBackup must be empty (LEG 2 does not set it).
+	if res.SSHBackup != "" {
+		t.Errorf("PersistGitconfig: SSHBackup = %q, want empty", res.SSHBackup)
+	}
+	// GitconfigPreview and AllowedSignersPreview must be non-empty.
+	if res.GitconfigPreview == "" {
+		t.Error("PersistGitconfig: GitconfigPreview must be non-empty")
+	}
+	if res.AllowedSignersPreview == "" {
+		t.Error("PersistGitconfig: AllowedSignersPreview must be non-empty")
+	}
+}
+
+// TestPersistAll_CompositionEqualsLEG1PlusLEG2 asserts PersistAll fires all
+// writers in the same order as PersistSSH+PersistGitconfig combined, runs
+// Resolved, and returns a CreateResult field-for-field equivalent to a reference
+// that captures the individual leg outputs (anti-blindspot point (c), T-05.7-09).
+func TestPersistAll_CompositionEqualsLEG1PlusLEG2(t *testing.T) {
+	// Build reference: run PersistSSH then PersistGitconfig separately.
+	var refLog callLog
+	var refOrder []string
+	refDeps := newSplitDeps(&refLog, &refOrder)
+	in := sampleInput()
+	staged := sampleStaged(in)
+
+	res1, err := PersistSSH(in, staged, refDeps)
+	if err != nil {
+		t.Fatalf("reference PersistSSH error: %v", err)
+	}
+	res2, err := PersistGitconfig(in, staged, refDeps)
+	if err != nil {
+		t.Fatalf("reference PersistGitconfig error: %v", err)
+	}
+	// Attach Resolved to the reference result.
+	refResolvedTest, refResolved := refDeps.Resolved(in.Alias)
+	refResult := CreateResult{
+		Key:                   res1.Key,
+		SSHPreview:            res1.SSHPreview,
+		SSHBackup:             res1.SSHBackup,
+		GitconfigPreview:      res2.GitconfigPreview,
+		GitconfigBackup:       res2.GitconfigBackup,
+		FragmentPreview:       res2.FragmentPreview,
+		AllowedSignersPreview: res2.AllowedSignersPreview,
+		AllowedSignersLine:    res2.AllowedSignersLine,
+		AllowedSignersBackup:  res2.AllowedSignersBackup,
+		ResolvedTest:          refResolvedTest,
+		Resolved:              refResolved,
+	}
+
+	// Now run PersistAll and compare.
+	var allLog callLog
+	var allOrder []string
+	allDeps := newSplitDeps(&allLog, &allOrder)
+
+	got, err := PersistAll(in, staged, allDeps)
+	if err != nil {
+		t.Fatalf("PersistAll error: %v", err)
+	}
+
+	// Writer call counts must match LEG1+LEG2 reference.
+	if allLog.persistKey != refLog.persistKey {
+		t.Errorf("PersistAll: persistKey count = %d, want %d (from reference)", allLog.persistKey, refLog.persistKey)
+	}
+	if allLog.writeSSH != 1 {
+		t.Errorf("PersistAll: writeSSH = %d, want 1", allLog.writeSSH)
+	}
+	if allLog.writeGitconfig != 1 {
+		t.Errorf("PersistAll: writeGitconfig = %d, want 1", allLog.writeGitconfig)
+	}
+	if allLog.writeFragment != 1 {
+		t.Errorf("PersistAll: writeFragment = %d, want 1", allLog.writeFragment)
+	}
+	if allLog.writeAllowedSigners != 1 {
+		t.Errorf("PersistAll: writeAllowedSigners = %d, want 1", allLog.writeAllowedSigners)
+	}
+	if allLog.resolved != 1 {
+		t.Errorf("PersistAll: resolved = %d, want 1", allLog.resolved)
+	}
+
+	// Field-for-field equality against the reference composition.
+	if got.SSHBackup != refResult.SSHBackup {
+		t.Errorf("PersistAll: SSHBackup = %q, want %q", got.SSHBackup, refResult.SSHBackup)
+	}
+	if got.GitconfigBackup != refResult.GitconfigBackup {
+		t.Errorf("PersistAll: GitconfigBackup = %q, want %q", got.GitconfigBackup, refResult.GitconfigBackup)
+	}
+	if got.AllowedSignersBackup != refResult.AllowedSignersBackup {
+		t.Errorf("PersistAll: AllowedSignersBackup = %q, want %q", got.AllowedSignersBackup, refResult.AllowedSignersBackup)
+	}
+	if got.SSHPreview != refResult.SSHPreview {
+		t.Errorf("PersistAll: SSHPreview mismatch")
+	}
+	if got.GitconfigPreview != refResult.GitconfigPreview {
+		t.Errorf("PersistAll: GitconfigPreview mismatch")
+	}
+	if got.FragmentPreview != refResult.FragmentPreview {
+		t.Errorf("PersistAll: FragmentPreview mismatch")
+	}
+	if got.AllowedSignersPreview != refResult.AllowedSignersPreview {
+		t.Errorf("PersistAll: AllowedSignersPreview mismatch")
+	}
+	if got.AllowedSignersLine != refResult.AllowedSignersLine {
+		t.Errorf("PersistAll: AllowedSignersLine mismatch")
+	}
+	if got.ResolvedTest.Outcome != refResult.ResolvedTest.Outcome {
+		t.Errorf("PersistAll: ResolvedTest.Outcome = %v, want %v", got.ResolvedTest.Outcome, refResult.ResolvedTest.Outcome)
+	}
+	if got.Resolved.User != refResult.Resolved.User {
+		t.Errorf("PersistAll: Resolved.User = %q, want %q", got.Resolved.User, refResult.Resolved.User)
 	}
 }
