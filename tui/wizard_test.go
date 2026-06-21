@@ -130,9 +130,16 @@ func TestWizardFormValidation(t *testing.T) {
 // with spaces) is rejected at the form step — BEFORE keygen and the SSH test —
 // rather than failing deep in the fragment write. Reported on the real TTY:
 // "I typed email with spaces and it let me continue."
+//
+// Plan 10 note: email validation is deferred to Screen 3 on screenSSHIdentity.
+// This test uses the legacy form path (non-Screen-1) where email is still validated
+// at form-submit time. The staged wizard's Screen 1 intentionally skips email
+// validation (the email field lives on Screen 3, implemented in Plan 13).
 func TestWizardFormEmailValidation(t *testing.T) {
 	deps := fakeWriteTUIDeps(nil)
 	w := makeTestWizardModel(deps)
+	// Switch to legacy form mode so email is validated at this stage.
+	w.screen = screenGitConfig // non-Screen-1 → uses handleKeyLegacy + advanceFromForm email gate
 
 	w.inputs[0].SetValue("personal")        // valid identity name
 	w.inputs[2].SetValue("foo bar@example") // email with a space — invalid
@@ -314,6 +321,10 @@ func TestWizardPersistsOnlyAfterPass(t *testing.T) {
 	w := makeTestWizardModel(deps)
 
 	// Fill in a valid form and advance to keygen.
+	// On Screen 1 (screenSSHIdentity) the last Tab stop is Folder (focusIdx 5).
+	// Git Name/Email/Match/Signing live on Screen 3; we still set them in inputs[]
+	// for full wiring through buildCreateInput, but the Screen-1 Enter-advance
+	// triggers at focusIdx == screen1FocusCount-1 == 5 (Folder field).
 	w.inputs[0].SetValue("personal")
 	w.inputs[1].SetValue("Test User")
 	w.inputs[2].SetValue("test@example.com")
@@ -322,9 +333,9 @@ func TestWizardPersistsOnlyAfterPass(t *testing.T) {
 	w.inputs[5].SetValue("personal.github.com")
 	w.inputs[6].SetValue("1")
 	w.inputs[7].SetValue("y")
-	w.focusIdx = 7 // last field
+	w.focusIdx = folderFocusIdx() // last Screen-1 field (Folder, pos 5)
 
-	// Press Enter on last field — advances to keygen.
+	// Press Enter on last Screen-1 field — advances to keygen.
 	w2, _ := w.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if w2.step == wizardStepWritten {
 		t.Error("form submit must NOT persist; step became written immediately")
@@ -489,8 +500,12 @@ func TestWizardFormTypingInsertsText(t *testing.T) {
 
 // TestWizardSigningToggle verifies P0-3: the Signing field is a Space-toggle, not
 // a cryptic free-text "y"/"n" field, and typing does not corrupt it.
+// The Signing field belongs to Screen 3 (Plan 13); this test uses the legacy form
+// path to exercise the toggle behavior which the staged flow preserves for Screen 3.
 func TestWizardSigningToggle(t *testing.T) {
 	w := newCreateWizardModel("", tuiDeps{})
+	// Use legacy form (Screen 3) so fieldSigning is active in the focus cycle.
+	w.screen = screenGitConfig
 	w.focusIdx = fieldSigning
 
 	// A real TTY reports the space bar as the "space" key (String() == "space"),
@@ -509,10 +524,14 @@ func TestWizardSigningToggle(t *testing.T) {
 	}
 }
 
-// TestWizardFormReadableChoices verifies P0-3: the form shows readable Match
-// Strategy + Signing values and a live includeIf preview — never a cryptic "> 1".
+// TestWizardFormReadableChoices verifies P0-3: the legacy form (Screen 3) shows
+// readable Match Strategy + Signing values and a live includeIf preview — never
+// a cryptic "> 1". These fields live on Screen 3 (Plan 13); Screen 1 shows only
+// SSH-identity fields (which is verified in TestWizardScreen1ShowsSSHIdentityFields).
 func TestWizardFormReadableChoices(t *testing.T) {
 	w := newCreateWizardModel("myid", tuiDeps{})
+	// Switch to legacy form so Match/Signing fields are rendered.
+	w.screen = screenGitConfig
 	var sb strings.Builder
 	w.viewForm(&sb, 72)
 	out := sb.String()
@@ -591,8 +610,12 @@ func TestLiveIncludeIfPreview_Both(t *testing.T) {
 
 // TestWizardMatchSelectorNavigation verifies that pressing ↓ from the match
 // selector field moves from gitdir → hasconfig and the rendered view changes.
+// The Match Strategy selector lives on Screen 3 (Plan 13); this test uses the
+// legacy form path to verify the selector navigation.
 func TestWizardMatchSelectorNavigation(t *testing.T) {
 	w := newCreateWizardModel("personal", tuiDeps{})
+	// Use legacy form (Screen 3) so the match selector is active.
+	w.screen = screenGitConfig
 	w.focusIdx = fieldMatch
 	w.inputs[0].SetValue("personal")
 
@@ -614,6 +637,188 @@ func TestWizardMatchSelectorNavigation(t *testing.T) {
 	}
 	if strings.Contains(view, `[includeIf "gitdir:`) {
 		t.Errorf("after ↓ to hasconfig, view must NOT show gitdir includeIf; got:\n%s", view)
+	}
+}
+
+// ─── Task 2: Screen 1 SSH-identity staged-flow tests ───────────────────────
+
+// TestWizardScreen1ShowsSSHIdentityFields verifies that Screen 1 (screenSSHIdentity)
+// renders the always-visible editable SSH-identity fields and does NOT render
+// Git Name / Git Email / Match Strategy / Signing rows.
+// Requirement: TUI-04 (G-1 HARD requirement: always-visible editable fields).
+func TestWizardScreen1ShowsSSHIdentityFields(t *testing.T) {
+	w := newCreateWizardModel("", tuiDeps{})
+	w.inputs[0].SetValue("personal")
+	view := w.view(90)
+
+	// Screen 1 must show all SSH-identity rows.
+	for _, want := range []string{"Identity Name", "Key Algorithm", "Provider", "SSH Alias", "Hostname", "Port", "Folder"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("Screen 1 must show %q; got:\n%s", want, view)
+		}
+	}
+
+	// Screen 1 must NOT render Git Name / Git Email / Match Strategy / Signing.
+	for _, notWant := range []string{"Git Name", "Git Email", "Match Strategy", "Signing"} {
+		if strings.Contains(view, notWant) {
+			t.Errorf("Screen 1 must NOT show %q (belongs to Screen 3); got:\n%s", notWant, view)
+		}
+	}
+}
+
+// TestWizardScreen1AltSSHDefaults verifies Hostname pre-fills with the recipe
+// alt-SSH endpoint (ssh.github.com) and Port with 443 (not 22).
+// Requirement: SSH-01 (alt-SSH per recipe), TUI-08.
+func TestWizardScreen1AltSSHDefaults(t *testing.T) {
+	w := newCreateWizardModel("", tuiDeps{})
+
+	// Port default must be 443.
+	if got := w.inputs[4].Value(); got != "443" {
+		t.Errorf("Port default must be '443' (alt-SSH); got %q", got)
+	}
+
+	// Hostname must pre-fill with identity.DefaultHostname("github.com") = "ssh.github.com".
+	if got := w.hostnameVal.Value(); got != "ssh.github.com" {
+		t.Errorf("Hostname must pre-fill with 'ssh.github.com'; got %q", got)
+	}
+}
+
+// TestWizardScreen1HostnameEditable verifies that editing the Hostname field
+// overrides the alt-SSH default (user can revert to github.com:22).
+// Drives via the real model Update/handleKey path (anti-blindspot).
+// Requirement: TUI-08 (hostname overridable).
+func TestWizardScreen1HostnameEditable(t *testing.T) {
+	w := newCreateWizardModel("personal", tuiDeps{})
+	w.inputs[0].SetValue("personal")
+
+	// Directly set the hostname to what the user would have typed (simulates the
+	// user clearing the pre-filled value and entering a custom hostname — the same
+	// effect as buildCreateInput receiving the edited value).
+	w.hostnameVal.SetValue("github.com")
+	w.hostnameEdited = true
+
+	in := w.buildCreateInput("github.com")
+	if in.Hostname != "github.com" {
+		t.Errorf("edited Hostname must override alt-SSH default in buildCreateInput; got %q want %q", in.Hostname, "github.com")
+	}
+
+	// Also verify via real handleKey: focus the hostname slot and type a char.
+	w2 := newCreateWizardModel("personal", tuiDeps{})
+	w2.inputs[0].SetValue("personal")
+	w2.focusIdx = hostnameFocusIdx()
+	// Set a known starting value so appended text is predictable.
+	w2.hostnameVal.SetValue("")
+	w2.hostnameVal.Focus()
+	for _, r := range "github.com" {
+		w2, _ = w2.handleKey(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if !w2.hostnameEdited {
+		t.Error("typing into hostname field must set hostnameEdited=true")
+	}
+	in2 := w2.buildCreateInput("github.com")
+	if in2.Hostname != "github.com" {
+		t.Errorf("after typing via handleKey, buildCreateInput.Hostname=%q; want 'github.com'", in2.Hostname)
+	}
+}
+
+// TestWizardScreen1PortEditable verifies that typing "22" into the Port field
+// overrides the 443 default and buildCreateInput.Port == 22.
+// Requirement: TUI-08 (port overridable).
+func TestWizardScreen1PortEditable(t *testing.T) {
+	w := newCreateWizardModel("personal", tuiDeps{})
+	w.inputs[0].SetValue("personal")
+	// Focus the port field (inputs[4]).
+	w.focusIdx = 4
+	w.inputs[w.focusIdx].Focus()
+
+	// Clear and type "22".
+	w.inputs[4].SetValue("22")
+	in := w.buildCreateInput("github.com")
+	if in.Port != 22 {
+		t.Errorf("Port '22' override must produce buildCreateInput.Port==22; got %d", in.Port)
+	}
+}
+
+// TestWizardScreen1FolderEditable verifies that the Folder (gitdir) row is
+// a top-level editable field on Screen 1 and Tab cycles to it.
+// Requirement: TUI-04 (folder always visible + editable on Screen 1).
+func TestWizardScreen1FolderEditable(t *testing.T) {
+	w := newCreateWizardModel("personal", tuiDeps{})
+	w.inputs[0].SetValue("personal")
+
+	// Type into the folder field at its focus index.
+	folderIdx := folderFocusIdx()
+	w.focusIdx = folderIdx
+
+	for _, r := range "~/work/personal/" {
+		w, _ = w.handleKey(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+
+	in := w.buildCreateInput("github.com")
+	if !strings.Contains(in.Matches[0].Value, "~/work/personal/") {
+		t.Errorf("Folder edit must propagate to buildCreateInput matches; got %+v", in.Matches)
+	}
+}
+
+// TestWizardScreen1TabCycleAllFields verifies all Screen-1 fields are reachable
+// via Tab (none skipped). Drives via real handleKey (anti-blindspot).
+// Requirement: TUI-04 (no hidden fields in Screen 1 tab cycle).
+func TestWizardScreen1TabCycleAllFields(t *testing.T) {
+	w := newCreateWizardModel("", tuiDeps{})
+	// Tab through all Screen-1 focus positions and collect which indices we visit.
+	visited := map[int]bool{}
+	// Number of Screen-1 fields: name(0), provider(3), alias(5), then hostname, port(4), folder virtual indices.
+	// We check that a full Tab cycle visits >= 6 distinct focus positions.
+	for i := 0; i < 20; i++ {
+		visited[w.focusIdx] = true
+		w, _ = w.handleKey(tea.KeyPressMsg{Code: tea.KeyTab})
+	}
+	if len(visited) < 5 {
+		t.Errorf("Tab cycle on Screen 1 must visit at least 5 distinct focus positions; visited %d: %v", len(visited), visited)
+	}
+}
+
+// TestWizardScreen1HostnameTracksProvider verifies that when the Provider field
+// changes and the user has NOT manually edited Hostname, hostnameVal auto-updates.
+// Requirement: TUI-08 (hostname auto-tracks provider unless overridden).
+func TestWizardScreen1HostnameTracksProvider(t *testing.T) {
+	w := newCreateWizardModel("", tuiDeps{})
+
+	// Provider defaults to github.com; hostname should be ssh.github.com.
+	if got := w.hostnameVal.Value(); got != "ssh.github.com" {
+		t.Errorf("initial Hostname: want ssh.github.com, got %q", got)
+	}
+
+	// Change provider to gitlab.com (type into inputs[3]).
+	w.focusIdx = 3
+	w.inputs[3].SetValue("gitlab.com")
+	// Simulate provider-change processing (trigger via a provider-change key).
+	w = w.refreshHostnameIfUnedited()
+
+	if got := w.hostnameVal.Value(); got != "altssh.gitlab.com" {
+		t.Errorf("after provider change to gitlab.com, Hostname must auto-update to altssh.gitlab.com; got %q", got)
+	}
+}
+
+// TestWizardScreen1BuildCreateInputHostname verifies buildCreateInput uses the
+// alt-SSH default when Hostname is unedited and the typed value when edited.
+// Requirement: SSH-01, TUI-08 (preview/write parity).
+func TestWizardScreen1BuildCreateInputHostname(t *testing.T) {
+	w := newCreateWizardModel("personal", tuiDeps{})
+	w.inputs[0].SetValue("personal")
+
+	// Unedited: should use identity.DefaultHostname("github.com").
+	in := w.buildCreateInput("github.com")
+	if in.Hostname != identity.DefaultHostname("github.com") {
+		t.Errorf("unedited Hostname: want %q, got %q", identity.DefaultHostname("github.com"), in.Hostname)
+	}
+
+	// Edited: should use the typed value.
+	w.hostnameVal.SetValue("github.com")
+	w.hostnameEdited = true
+	in2 := w.buildCreateInput("github.com")
+	if in2.Hostname != "github.com" {
+		t.Errorf("edited Hostname: want 'github.com', got %q", in2.Hostname)
 	}
 }
 

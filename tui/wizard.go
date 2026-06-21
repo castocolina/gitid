@@ -376,7 +376,23 @@ func liveIncludeIfPreview(strategy matchStrategy, name, _ string, gitdirVal, has
 	}
 }
 
-// ─── Create/Add wizard (Plan 05) ────────────────────────────────────────────
+// ─── Create/Add wizard (Plan 05, extended in Plan 10) ───────────────────────
+
+// wizardScreen identifies the multi-screen staged flow introduced in Plan 10.
+// Each screen corresponds to a distinct user journey phase:
+//
+//   - screenSSHIdentity (Screen 1): LEG-1 SSH identity fields (this plan).
+//   - screenConnectivity (Screen 2): upload + SSH prove loop (wired to existing machinery).
+//   - screenGitConfig (Screen 3): Git Name / Email / Match / Signing (Plan 13 stub).
+//   - screenReview (Screen 4): review before final write (Plan 13 stub).
+type wizardScreen int
+
+const (
+	screenSSHIdentity  wizardScreen = iota // Screen 1: LEG-1 SSH identity (Plan 10)
+	screenConnectivity                     // Screen 2: upload + prove loop
+	screenGitConfig                        // Screen 3: Git config (Plan 13)
+	screenReview                           // Screen 4: review (Plan 13)
+)
 
 // wizardStep tracks the current step of the create/add wizard.
 type wizardStep int
@@ -406,30 +422,52 @@ type wizardCreateResultMsg struct {
 	err    error
 }
 
-// createWizardModel is the 4-step create/add wizard modal:
+// createWizardModel is the staged create/add wizard modal (Plan 05, extended Plan 10):
 //
-//  1. Form (wizardStepForm): 8-field textinput layout.
-//  2. KeyGen (wizardStepKeyGen): async ed25519 key generation.
-//  3. Upload (wizardStepUpload): clipboard copy + upload instructions.
-//  4. TestLoop (wizardStepProve1Running…): embedded prove state machine.
+//	Screen 1 (screenSSHIdentity): LEG-1 SSH-identity form (Plan 10).
+//	Screen 2 (screenConnectivity): keygen + upload + prove (existing machinery).
+//	Screen 3 (screenGitConfig): Git config — stub for Plan 13.
+//	Screen 4 (screenReview): review — stub for Plan 13.
+//
+// Within each screen the wizardStep sub-state tracks the async steps (keygen,
+// prove phases). Screen 2 reuses wizardStepUpload / wizardStepProve* directly.
 //
 // Security invariant (FIX-CREATE-01, T-05.6-15):
 // PersistAll fires ONLY after both prove phases PASS + Enter confirm.
 // The skip-and-write path requires an explicit second confirm and surfaces a
 // warning. 'q' dismisses the modal, keeps the key, shows a header toast.
 type createWizardModel struct {
-	// Form step (Step 1).
+	// Staged-flow screen (Plan 10): which screen is currently displayed.
+	// Defaults to screenSSHIdentity (Screen 1).
+	screen wizardScreen
+
+	// Form step (Step 1 / Screen 1).
 	inputs     []textinput.Model // 8 fields: Name, GitName, GitEmail, Provider, Port, Alias, Match, Signing
 	focusIdx   int
 	err        string
 	nameLocked bool // true for Add Account mode (name pre-filled and read-only)
+
+	// Screen 1 extended fields (Plan 10): Hostname and Folder are first-class
+	// top-level editable rows on Screen 1, promoted from the sub-field / hard-coded
+	// positions they occupied before.
+	//
+	// hostnameVal: the Hostname field pre-filled from identity.DefaultHostname(provider).
+	// hostnameEdited: true once the user has typed into the Hostname field; when false,
+	// the hostname auto-tracks Provider changes via refreshHostnameIfUnedited.
+	hostnameVal    textinput.Model
+	hostnameEdited bool
+
+	// Screen 1 focus mapping (Plan 10):
+	// focusIdx encodes both inputs[] indices and the virtual slots for the new
+	// standalone rows (hostname, folder). See screen1FocusCount and
+	// screen1FocusToField for the mapping.
 
 	// Match-strategy selector state (Phase 5.7, Plan 05). These fields replace
 	// the cryptic "1"/"2"/"3" value in inputs[fieldMatch] for interactive use;
 	// inputs[fieldMatch] still holds the value for backward compatibility with
 	// the build path (buildCreateInput reads inputs[6]).
 	matchSel          matchStrategy   // currently selected strategy (default strategyGitdir)
-	matchGitdirVal    textinput.Model // gitdir path sub-field
+	matchGitdirVal    textinput.Model // gitdir path sub-field (also Screen-1 Folder row)
 	matchHasconfigVal textinput.Model // hasconfig URL pattern sub-field
 
 	// KeyGen step (Step 2).
@@ -480,29 +518,46 @@ func newCreateWizardModel(name string, deps tuiDeps) createWizardModel {
 	}
 
 	// 8-field layout per UI-SPEC § Wizard: Create / Add Account Step 1.
+	// Port default changed from 22 to identity.DefaultPort() (443) per recipe alt-SSH
+	// (Plan 10 Task 2: Hostname/Port pre-filled from alt-SSH helper, never hard-coded).
+	portDefault := fmt.Sprintf("%d", identity.DefaultPort())
 	inputs := []textinput.Model{
 		mkInput("e.g. personal", name, 64),               // 0: Identity Name
-		mkInput("e.g. Pedro Perez", "", 128),             // 1: Git Name (generic example, not the real user)
-		mkInput("e.g. pedro.perez@example.com", "", 200), // 2: Git Email
+		mkInput("e.g. Pedro Perez", "", 128),             // 1: Git Name (Screen 3, Plan 13)
+		mkInput("e.g. pedro.perez@example.com", "", 200), // 2: Git Email (Screen 3, Plan 13)
 		mkInput("github.com", "github.com", 128),         // 3: Provider (default github.com)
-		mkInput("22", "22", 10),                          // 4: Port (default 22)
-		mkInput("leave blank to use provider", "", 200),  // 5: SSH Alias
-		mkInput("1", "1", 10),                            // 6: Match Strategy (numeric — kept for buildCreateInput compat)
-		mkInput("y / n", "y", 4),                         // 7: Signing (default y)
+		mkInput("443", portDefault, 10),                  // 4: Port (default 443, alt-SSH)
+		mkInput("leave blank to use default", "", 200),   // 5: SSH Alias
+		mkInput("1", "1", 10),                            // 6: Match Strategy (Screen 3, Plan 13)
+		mkInput("y / n", "y", 4),                         // 7: Signing (Screen 3, Plan 13)
 	}
 	inputs[0].Focus()
 
+	// Screen 1 Hostname field (Plan 10): pre-filled from identity.DefaultHostname.
+	// The default provider is "github.com"; hostnameVal auto-tracks provider changes
+	// unless the user edits it (hostnameEdited = true).
+	hostnameTI := mkInput("e.g. ssh.github.com", identity.DefaultHostname("github.com"), 256)
+
 	// Match strategy selector sub-fields (Phase 5.7, Plan 05).
-	// Default gitdir path: ~/git/<name>/ (D-02).
+	// matchGitdirVal also serves as the Screen-1 Folder (gitdir) row (Plan 10).
+	// Default gitdir path: ~/git/<name>/ when name is set at construction time.
+	gitdirDefault := ""
+	if name != "" {
+		gitdirDefault = "~/git/" + name + "/"
+	}
 	gitdirTI := textinput.New()
 	gitdirTI.SetWidth(formFieldWidth)
 	gitdirTI.Placeholder = "e.g. ~/git/personal/"
+	if gitdirDefault != "" {
+		gitdirTI.SetValue(gitdirDefault)
+	}
 
 	hasconfigTI := textinput.New()
 	hasconfigTI.SetWidth(formFieldWidth)
 	hasconfigTI.Placeholder = "e.g. git@personal.github.com:*/**"
 
 	return createWizardModel{
+		screen:            screenSSHIdentity,
 		inputs:            inputs,
 		focusIdx:          0,
 		nameLocked:        name != "",
@@ -510,10 +565,56 @@ func newCreateWizardModel(name string, deps tuiDeps) createWizardModel {
 		sp:                sp,
 		deps:              deps,
 		matchSel:          strategyGitdir,
+		hostnameVal:       hostnameTI,
+		hostnameEdited:    false,
 		matchGitdirVal:    gitdirTI,
 		matchHasconfigVal: hasconfigTI,
 	}
 }
+
+// ─── Screen 1 focus mapping (Plan 10) ───────────────────────────────────────
+//
+// Screen 1 (screenSSHIdentity) has its own Tab focus cycle that uses focusIdx
+// in the range [0, screen1FocusCount). The mapping is:
+//
+//	0 → inputs[0]   Identity Name
+//	1 → inputs[3]   Provider
+//	2 → inputs[5]   SSH Alias
+//	3 → hostnameVal Hostname
+//	4 → inputs[4]   Port
+//	5 → matchGitdirVal Folder (gitdir)
+//
+// Key Algorithm (ed25519) is read-only and not Tab-reachable on Screen 1.
+// Git Name (1) / Git Email (2) / Match (6) / Signing (7) are Screen 3 fields;
+// they remain in inputs[] for Plan 13 to reuse but are not rendered on Screen 1.
+
+const screen1FocusCount = 6 // number of Tab stops on Screen 1
+
+// screen1InputIdx maps a Screen-1 focus position to the backing inputs[] index.
+// Returns -1 for virtual slots (hostname, folder) that are not in inputs[].
+func screen1InputIdx(pos int) int {
+	switch pos {
+	case 0:
+		return 0 // Identity Name
+	case 1:
+		return 3 // Provider
+	case 2:
+		return 5 // SSH Alias
+	case 3:
+		return -1 // Hostname (hostnameVal — virtual)
+	case 4:
+		return 4 // Port
+	case 5:
+		return -1 // Folder (matchGitdirVal — virtual)
+	}
+	return -1
+}
+
+// hostnameFocusIdx returns the Screen-1 focus position for the Hostname field.
+func hostnameFocusIdx() int { return 3 }
+
+// folderFocusIdx returns the Screen-1 focus position for the Folder field.
+func folderFocusIdx() int { return 5 }
 
 // handleKey processes key presses in the wizard form step.
 // Returns the updated model and an optional command.
@@ -525,6 +626,68 @@ const (
 	fieldSigning = 7
 )
 
+// refreshHostnameIfUnedited auto-updates hostnameVal to the alt-SSH default for
+// the current provider when the user has not yet manually edited the field
+// (hostnameEdited == false). Called when the Provider field changes.
+func (m createWizardModel) refreshHostnameIfUnedited() createWizardModel {
+	if m.hostnameEdited {
+		return m
+	}
+	provider := m.inputs[3].Value()
+	if provider == "" {
+		provider = "github.com"
+	}
+	m.hostnameVal.SetValue(identity.DefaultHostname(provider))
+	return m
+}
+
+// screen1BlurAll unfocuses every Screen-1 interactive element.
+func (m *createWizardModel) screen1BlurAll() {
+	for i := range m.inputs {
+		m.inputs[i].Blur()
+	}
+	m.hostnameVal.Blur()
+	m.matchGitdirVal.Blur()
+}
+
+// screen1Focus focuses the Screen-1 element at focus position pos.
+func (m *createWizardModel) screen1Focus(pos int) {
+	m.screen1BlurAll()
+	idx := screen1InputIdx(pos)
+	if idx >= 0 {
+		m.inputs[idx].Focus()
+	} else {
+		switch pos {
+		case hostnameFocusIdx():
+			m.hostnameVal.Focus()
+		case folderFocusIdx():
+			m.matchGitdirVal.Focus()
+		}
+	}
+}
+
+// screen1Next advances the Screen-1 focus to the next Tab stop.
+func (m *createWizardModel) screen1Next() {
+	m.screen1BlurAll()
+	m.focusIdx = (m.focusIdx + 1) % screen1FocusCount
+	// Skip locked name field in add-account mode.
+	if m.nameLocked && m.focusIdx == 0 {
+		m.focusIdx = 1
+	}
+	m.screen1Focus(m.focusIdx)
+}
+
+// screen1Prev moves the Screen-1 focus to the previous Tab stop.
+func (m *createWizardModel) screen1Prev() {
+	m.screen1BlurAll()
+	m.focusIdx = (m.focusIdx - 1 + screen1FocusCount) % screen1FocusCount
+	// Skip locked name field in add-account mode.
+	if m.nameLocked && m.focusIdx == 0 {
+		m.focusIdx = screen1FocusCount - 1
+	}
+	m.screen1Focus(m.focusIdx)
+}
+
 func (m createWizardModel) handleKey(msg tea.KeyMsg) (createWizardModel, tea.Cmd) {
 	if m.step != wizardStepForm {
 		// In later steps, use update() for all messages.
@@ -532,6 +695,106 @@ func (m createWizardModel) handleKey(msg tea.KeyMsg) (createWizardModel, tea.Cmd
 	}
 
 	key := msg.String()
+
+	// Screen 1 (screenSSHIdentity) uses its own focus cycle over the SSH-identity
+	// fields. Screen 3 fields (Git Name/Email/Match/Signing) are handled when
+	// screen == screenGitConfig (Plan 13 stub; for now fall through to the legacy
+	// inputs[] cycle to preserve backward compatibility of the test helpers).
+	if m.screen == screenSSHIdentity {
+		return m.handleKeyScreen1(msg, key)
+	}
+
+	// Legacy form handling (Screen 3, Plan 13 placeholder — same behavior as
+	// the pre-Plan-10 full form for backward compatibility).
+	return m.handleKeyLegacy(msg, key)
+}
+
+// handleKeyScreen1 handles key events for Screen 1 (SSH-identity form).
+func (m createWizardModel) handleKeyScreen1(msg tea.KeyMsg, key string) (createWizardModel, tea.Cmd) {
+	switch key {
+	case "esc":
+		return m, clearModalCmd()
+
+	case "tab":
+		m.screen1Next()
+		// Refresh hostname default on every Tab (no-op when hostnameEdited or unchanged).
+		m = m.refreshHostnameIfUnedited()
+		return m, nil
+
+	case "shift+tab":
+		m.screen1Prev()
+		m = m.refreshHostnameIfUnedited()
+		return m, nil
+
+	case "enter":
+		// On the last Screen-1 field (Folder, pos 5), advance to Screen 2 / keygen.
+		if m.focusIdx == screen1FocusCount-1 {
+			return m.advanceFromForm()
+		}
+		// Validate name on the name field.
+		if m.focusIdx == 0 && !m.nameLocked {
+			if err := identity.ValidateName(m.inputs[0].Value()); err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
+			m.err = ""
+		}
+		// Advance to the next field.
+		m.screen1Next()
+		m = m.refreshHostnameIfUnedited()
+		return m, nil
+	}
+
+	// Forward printable keys to the focused Screen-1 element.
+	// Detect user-typed text via KeyPressMsg.Text (the interface does not expose Text).
+	var keyText string
+	if kp, ok := msg.(tea.KeyPressMsg); ok {
+		keyText = kp.Text
+	}
+	switch m.focusIdx {
+	case hostnameFocusIdx():
+		// Mark user has edited hostname so provider changes stop auto-tracking.
+		if keyText != "" {
+			m.hostnameEdited = true
+		}
+		// Ensure hostnameVal is focused before forwarding the key event (the
+		// textinput Update early-returns when !m.focus, so focus must be set
+		// before the first keypress, not only during Tab transitions).
+		if !m.hostnameVal.Focused() {
+			m.hostnameVal.Focus()
+		}
+		var cmd tea.Cmd
+		m.hostnameVal, cmd = m.hostnameVal.Update(msg)
+		return m, cmd
+
+	case folderFocusIdx():
+		// Ensure matchGitdirVal is focused before forwarding the key event.
+		if !m.matchGitdirVal.Focused() {
+			m.matchGitdirVal.Focus()
+		}
+		var cmd tea.Cmd
+		m.matchGitdirVal, cmd = m.matchGitdirVal.Update(msg)
+		return m, cmd
+
+	default:
+		idx := screen1InputIdx(m.focusIdx)
+		if idx >= 0 {
+			// Ensure the target input is focused.
+			if !m.inputs[idx].Focused() {
+				m.inputs[idx].Focus()
+			}
+			var cmd tea.Cmd
+			m.inputs[idx], cmd = m.inputs[idx].Update(msg)
+			return m, cmd
+		}
+	}
+
+	return m, nil
+}
+
+// handleKeyLegacy handles key events for non-Screen-1 screens (backward
+// compatibility with the pre-Plan-10 8-field form; used by Screen 3 in Plan 13).
+func (m createWizardModel) handleKeyLegacy(msg tea.KeyMsg, key string) (createWizardModel, tea.Cmd) {
 	switch key {
 	case "esc":
 		return m, clearModalCmd()
@@ -660,14 +923,17 @@ func (m createWizardModel) advanceFromForm() (createWizardModel, tea.Cmd) {
 		return m, nil
 	}
 
-	// Validate git email EARLY (before keygen + SSH test) so a malformed address —
-	// e.g. one with spaces — is caught at the form, not deep in the fragment write.
-	if err := identity.ValidateEmail(m.inputs[2].Value()); err != nil {
-		m.err = "! " + err.Error()
-		m.inputs[m.focusIdx].Blur()
-		m.focusIdx = 2
-		m.inputs[2].Focus()
-		return m, nil
+	// Email validation: on Screen 1 (screenSSHIdentity) the email field lives on
+	// Screen 3 (Plan 13), so validation is deferred. On other screens (legacy form /
+	// Screen 3) validate early so a malformed address is caught before keygen.
+	if m.screen != screenSSHIdentity {
+		if err := identity.ValidateEmail(m.inputs[2].Value()); err != nil {
+			m.err = "! " + err.Error()
+			m.inputs[m.focusIdx].Blur()
+			m.focusIdx = 2
+			m.inputs[2].Focus()
+			return m, nil
+		}
 	}
 
 	// Validate provider (optional but must be safe charset if set).
@@ -687,6 +953,11 @@ func (m createWizardModel) advanceFromForm() (createWizardModel, tea.Cmd) {
 }
 
 // buildCreateInput constructs the identity.CreateInput from current form values.
+// Plan 10 changes:
+//   - Hostname: from hostnameVal (when user edited it) else identity.DefaultHostname(provider).
+//     The hard-coded `Hostname: provider` literal is removed (T-05.7-10-02 / recipe alignment).
+//   - Port: from inputs[4] parsed as int, fallback to identity.DefaultPort() (443).
+//     The hard-coded `port = 22` default is removed.
 func (m createWizardModel) buildCreateInput(provider string) identity.CreateInput {
 	name := m.inputs[0].Value()
 	gitName := m.inputs[1].Value()
@@ -694,19 +965,39 @@ func (m createWizardModel) buildCreateInput(provider string) identity.CreateInpu
 	if provider == "" {
 		provider = m.inputs[3].Value()
 	}
-	portStr := m.inputs[4].Value()
-	port := 22
-	if _, err := fmt.Sscanf(portStr, "%d", &port); err != nil {
-		port = 22
+	if provider == "" {
+		provider = "github.com"
 	}
+
+	// Port: prefer typed value; fallback to identity.DefaultPort() (443).
+	portStr := m.inputs[4].Value()
+	port := identity.DefaultPort()
+	if portStr != "" {
+		if _, err := fmt.Sscanf(portStr, "%d", &port); err != nil {
+			port = identity.DefaultPort()
+		}
+	}
+
 	alias := m.inputs[5].Value()
 	if alias == "" {
 		alias = identity.DefaultAlias(name, provider)
 	}
+
+	// Hostname: use the user-edited value when hostnameEdited is true; otherwise
+	// derive from the recipe alt-SSH helper (e.g. ssh.github.com for github).
+	// This replaces the former `Hostname: provider` literal (T-05.7-10-02).
+	hostname := identity.DefaultHostname(provider)
+	if m.hostnameEdited {
+		hostname = m.hostnameVal.Value()
+	} else if v := m.hostnameVal.Value(); v != "" {
+		// Pre-filled but not user-edited: still use the pre-filled alt-SSH value.
+		hostname = v
+	}
+
 	signing := strings.ToLower(strings.TrimSpace(m.inputs[7].Value())) != "n"
 
 	// Build match list from the interactive matchSel selector (Phase 5.7, Plan 05).
-	// Sub-field values default to sensible patterns when left blank.
+	// matchGitdirVal doubles as the Screen-1 Folder row (Plan 10).
 	gitdirVal := m.matchGitdirVal.Value()
 	if gitdirVal == "" {
 		gitdirVal = "~/git/" + name + "/"
@@ -731,7 +1022,15 @@ func (m createWizardModel) buildCreateInput(provider string) identity.CreateInpu
 			{Kind: gitconfig.MatchHasconfig, Value: "remote.*.url:" + hasconfigVal},
 		}
 	default: // strategyGitdir — default (D-02)
-		matches = []gitconfig.Match{identity.DefaultMatch(name)}
+		// Use the typed gitdir path from matchGitdirVal for the match (Plan 10:
+		// the Folder row pre-fills with ~/git/<name>/ and the user can override).
+		if gitdirVal != "" {
+			matches = []gitconfig.Match{
+				{Kind: gitconfig.MatchGitdir, Value: gitdirVal},
+			}
+		} else {
+			matches = []gitconfig.Match{identity.DefaultMatch(name)}
+		}
 	}
 
 	_ = signing // signing stored in staged, applied at PersistAll
@@ -743,7 +1042,7 @@ func (m createWizardModel) buildCreateInput(provider string) identity.CreateInpu
 		Provider: provider,
 		Algo:     "ed25519",
 		Alias:    alias,
-		Hostname: provider, // provider IS the hostname for gitid (github.com, gitlab.com)
+		Hostname: hostname,
 		Port:     port,
 		Matches:  matches,
 	}
@@ -963,8 +1262,93 @@ func (m createWizardModel) view(w int) string {
 	return StyleModal.Width(mw).Render(sb.String())
 }
 
+// readOnlyRow renders a label + read-only value row.
+func readOnlyRow(label, value string) string {
+	return lipgloss.JoinHorizontal(
+		lipgloss.Center,
+		StyleLabel.Render(label),
+		" ",
+		StyleReadOnly.Render(value),
+	)
+}
+
 // viewForm renders the form step.
-func (m createWizardModel) viewForm(sb *strings.Builder, _ int) {
+// On Screen 1 (screenSSHIdentity) it renders only the SSH-identity rows (Plan 10).
+// On other screens (Plan 13 stub) it falls back to the full 8-field form.
+func (m createWizardModel) viewForm(sb *strings.Builder, mw int) {
+	if m.screen == screenSSHIdentity {
+		m.viewScreen1(sb, mw)
+		return
+	}
+	m.viewLegacyForm(sb, mw)
+}
+
+// viewScreen1 renders Screen 1: the SSH-identity form with always-visible editable
+// rows for name / key algorithm / provider / SSH alias / hostname / port / folder.
+// Git Name / Git Email / Match Strategy / Signing are NOT rendered here (Plan 10).
+func (m createWizardModel) viewScreen1(sb *strings.Builder, _ int) {
+	title := "Create Identity — SSH Setup"
+	if m.nameLocked {
+		name := m.inputs[0].Value()
+		if name != "" {
+			title = "Add Account: " + name + " — SSH Setup"
+		} else {
+			title = "Add Account — SSH Setup"
+		}
+	}
+	sb.WriteString(StyleModalTitle.Render(title))
+	sb.WriteString("\n\n")
+
+	// Row 0: Identity Name.
+	if m.nameLocked {
+		sb.WriteString(readOnlyRow("Identity Name:  ", m.inputs[0].Value()) + "\n")
+	} else {
+		sb.WriteString(renderFormField("Identity Name:  ", m.inputs[0].View(), m.focusIdx == 0) + "\n")
+	}
+
+	// Row: Key Algorithm (read-only; ed25519 is the only supported algo).
+	sb.WriteString(readOnlyRow("Key Algorithm:  ", "ed25519") + "\n")
+
+	// Row 1: Provider (inputs[3]).
+	sb.WriteString(renderFormField("Provider:       ", m.inputs[3].View(), m.focusIdx == 1) + "\n")
+
+	// Row 2: SSH Alias (inputs[5]); placeholder shows the derived default.
+	name := m.inputs[0].Value()
+	provider := m.inputs[3].Value()
+	if provider == "" {
+		provider = "github.com"
+	}
+	aliasDefault := identity.DefaultAlias(name, provider)
+	aliasView := m.inputs[5].View()
+	if m.inputs[5].Value() == "" && name != "" {
+		// Show derived default in the placeholder slot.
+		_ = aliasDefault // used below in preview
+	}
+	sb.WriteString(renderFormField("SSH Alias:      ", aliasView, m.focusIdx == 2) + "\n")
+
+	// Row 3: Hostname (hostnameVal).
+	sb.WriteString(renderFormField("Hostname:       ", m.hostnameVal.View(), m.focusIdx == hostnameFocusIdx()) + "\n")
+
+	// Row 4: Port (inputs[4]).
+	sb.WriteString(renderFormField("Port:           ", m.inputs[4].View(), m.focusIdx == 4) + "\n")
+
+	// Row 5: Folder / gitdir (matchGitdirVal).
+	folderView := m.matchGitdirVal.View()
+	sb.WriteString(renderFormField("Folder:         ", folderView, m.focusIdx == folderFocusIdx()) + "\n")
+
+	if m.err != "" {
+		sb.WriteString("\n")
+		sb.WriteString(SeverityStyle(doctor.SeverityWarning).Render("! " + m.err))
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("\n")
+	sb.WriteString(StyleFaint.Render("[Tab cycle fields · Enter advance · Esc cancel]"))
+}
+
+// viewLegacyForm renders the full 8-field form for non-Screen-1 screens.
+// Kept for Plan 13 compatibility (Screen 3: Git Name / Email / Match / Signing).
+func (m createWizardModel) viewLegacyForm(sb *strings.Builder, _ int) {
 	title := "Create Identity"
 	if m.nameLocked {
 		name := m.inputs[0].Value()
@@ -988,29 +1372,17 @@ func (m createWizardModel) viewForm(sb *strings.Builder, _ int) {
 		"Signing:        ",
 	}
 
-	readOnlyRow := func(label, value string) string {
-		return lipgloss.JoinHorizontal(
-			lipgloss.Center,
-			StyleLabel.Render(label),
-			" ",
-			StyleReadOnly.Render(value),
-		)
-	}
-
 	for i, inp := range m.inputs {
 		switch {
 		case m.nameLocked && i == 0:
-			// Read-only locked name (add-account mode).
 			sb.WriteString(readOnlyRow(labels[i], inp.Value()) + "\n")
 		case i == fieldSigning:
-			// Readable boolean toggle instead of a cryptic "y"/"n" field (P0-3).
 			state := "[ ] disabled  (space toggles)"
 			if inp.Value() != "n" {
 				state = "[x] enabled   (space toggles)"
 			}
 			sb.WriteString(renderFormField(labels[i], state, i == m.focusIdx) + "\n")
 		case i == fieldMatch:
-			// Expanded match-strategy selector (Phase 5.7, Plan 05, UI-SPEC §1a).
 			sb.WriteString(m.renderMatchSelector(labels[i], i == m.focusIdx))
 		default:
 			sb.WriteString(renderFormField(labels[i], inp.View(), i == m.focusIdx) + "\n")
