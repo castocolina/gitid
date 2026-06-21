@@ -384,7 +384,7 @@ CLI-02 are COMPLETE and explicitly NOT replanned (D-01).
 shipped — D-01); configurable clone base dir beyond `~/git`; interactive gh/glab login;
 Windows, GPG signing, web UI, automatic key rotation, secret-vault (v1 non-goals).
 
-**Plans**: 12 plans (8 feature plans + 4 gap-closure plans 09–12 from 05.7-UAT.md — Wave 0 test infra → 3 parallel core packages → CLI+wiring & match selector → TUI modals → review gates → LEG-1 SSH-config + doctor gap closure → viewport modal)
+**Plans**: 13 plans (8 feature plans + 5 gap-closure plans 09–13 from 05.7-UAT.md — Wave 0 test infra → 3 parallel core packages → CLI+wiring & match selector → TUI modals → review gates → core split + doctor (W5) → staged wizard SCREEN 1 (W6) → SCREEN 2 (W7) → SCREENS 3+4 (W8))
 **UI hint**: yes
 
 Plans:
@@ -412,18 +412,22 @@ Plans:
 
 - [x] 05.7-08-PLAN.md — Review wave: agent-ui-ux-designer critique of the 4 new TUI surfaces (teatest-independent View()-dump frame capture fallback) + requesting-code-review over the phase diff + blocking manual TTY smoke test (D-13)
 
-**Wave 5 (gap closure)** *(from 05.7-UAT.md; 09 + 11 parallel — zero file overlap: 09 = tui/wizard.go, 11 = doctor + cmd + tui/deps/health)*
+**Wave 5 (gap closure)** *(from 05.7-UAT.md; 09 + 11 parallel — zero file overlap: 09 = internal/identity + cmd/gitid/add.go core refactor, 11 = doctor + cmd + tui/deps/health)*
 
-- [ ] 05.7-09-PLAN.md — LEG-1 SSH legibility (G-2 preview half + G-3): pre-gate SSH `Host <alias>` block preview via sshconfig.RenderHostBlock (alias = `<name>.<provider>` per recipe) + SSH test command/path visible on pre-write and on SUCCESS, not only failure; surfaces alt-SSH recipe divergence (ssh.<provider>:443) without silently changing it
-- [ ] 05.7-11-PLAN.md — LEG-1 doctor (G-4): new ADVISORY-ONLY FamilyRedundancy check (CheckRedundancy) for multiple `Host *` stanzas + duplicate UseKeychain/AddKeysToAgent/IgnoreUnknown across pre-existing config and managed `_global`; SeverityWarning + Fix nil (never blocks doctor/write); wired into Run/Families + cmd + tui
+- [ ] 05.7-09-PLAN.md — CORE REFACTOR (UI-free, TDD): centralize the provider→alt-SSH map in identity.DefaultHostname/DefaultPort (one source, CLI+TUI parity, add bitbucket) + SPLIT identity.PersistAll into composable PersistSSH (LEG 1: key + Host block) and PersistGitconfig (LEG 2: fragment + includeIf + allowed_signers); PersistAll kept as a thin composition so the CLI single-shot flow is unchanged; staged-key model preserved (foundation for the staged wizard; G-1/G-2/G-3)
+- [ ] 05.7-11-PLAN.md — LEG-1 doctor (G-4): new ADVISORY-ONLY FamilyRedundancy check (CheckRedundancy) for multiple `Host *` stanzas + duplicate UseKeychain/AddKeysToAgent/IgnoreUnknown across pre-existing config and managed `_global`; SeverityWarning + Fix nil (never blocks doctor/write); wired into Run/Families + cmd + tui *(UNCHANGED by the wizard restructure)*
 
-**Wave 6 (gap closure)** *(blocked on Wave 5 plan 09 — shares tui/wizard.go)*
+**Wave 6 (gap closure)** *(blocked on Wave 5 plan 09 — shares tui/wizard.go; staged wizard SCREEN 1)*
 
-- [ ] 05.7-10-PLAN.md — LEG-1 no-write feedback (G-2 remaining half): clear "nothing written + why + two ways forward" (upload-first via gh/glab AUTOUP-01, or `[s]` skip-&-write-offline); the discoverable `[s]` path writes the `Host <alias>` block (double-confirm + unauth warning preserved) so the alias resolves
+- [ ] 05.7-10-PLAN.md — STAGED WIZARD scaffolding + SCREEN 1 (SSH Identity, LEG 1 inputs) + viewport fix: wizardScreen enum (1 SSH / 2 Test / 3 Git / 4 Review); Screen 1 shows name/algo/provider/alias/Hostname/Port/folder ALL editable + always visible (Hostname/Port pre-filled from the alt-SSH helper, editable back to github.com:22) + a LIVE Host-block preview via RenderHostBlock; viewport-aware modal so tall content never silently clamps (structurally dissolves G-1; G-2 preview half)
 
-**Wave 7 (gap closure)** *(blocked on Wave 6 plan 10 — shares tui/wizard.go)*
+**Wave 7 (gap closure)** *(blocked on Wave 6 plan 10 — shares tui/wizard.go; staged wizard SCREEN 2)*
 
-- [ ] 05.7-12-PLAN.md — Cross-cutting TUI (G-1): viewport-aware modal so the expanded match panel renders completely (no silent placeOverlay clamp) + HARD requirement: SSH Alias AND folder (gitdir) fields ALWAYS visible/editable/Tab-reachable, not buried in the overflowing expanded panel
+- [ ] 05.7-12-PLAN.md — STAGED WIZARD SCREEN 2 (SSH Connectivity Test, LEG 1 write): upload-manually→test (no gh/glab auto-upload in wizard) against the STAGED key; FULL command + key path visible on pre-run, SUCCESS, and failure (G-3); on SUCCESS write LEG 1 via identity.PersistSSH (key + Host block, backup + idempotent) then advance; SECONDARY [s] skip-&-write-offline with clear no-write feedback (double-confirm + unauth warning preserved) (G-2)
+
+**Wave 8 (gap closure)** *(blocked on Wave 7 plan 12 — shares tui/wizard.go; staged wizard SCREENS 3+4)*
+
+- [ ] 05.7-13-PLAN.md — STAGED WIZARD SCREEN 3 (Git Configuration, LEG 2) + SCREEN 4 (Review): Screen 3 collects user.name/email + match selector (gitdir/hasconfig/both, editable sub-fields, match panel ALONE so it never overflows) + signing toggle, live includeIf preview, email-validated; on confirm write LEG 2 via identity.PersistGitconfig (fragment + includeIf + allowed_signers); Screen 4 is a read-only review of the SSH block + includeIf + fragment + allowed_signers + live ssh -G resolution (completes G-1/G-2)
 
 ### Phase 6: Linux Cross-Platform Validation
 
