@@ -31,6 +31,7 @@ type addFlags struct {
 	gitdir   string // --gitdir: gitdir match value
 	url      string // --url: hasconfig URL pattern (bare; buildMatches prepends "remote.*.url:")
 	provider string // --provider: provider name
+	match    string // --match: gitdir|hasconfig|both (non-interactive strategy selector, D-10 parity)
 }
 
 // newAddCmd builds `gitid identity add` (create-new mode). The handler is thin:
@@ -52,6 +53,11 @@ func newAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&flags.gitdir, "gitdir", "", "gitdir match value (skips gitdir prompt; D-09)")
 	cmd.Flags().StringVar(&flags.url, "url", "", "hasconfig URL pattern (skips URL prompt; D-09)")
 	cmd.Flags().StringVar(&flags.provider, "provider", "", "provider name (skips provider prompt; D-09)")
+	cmd.Flags().StringVar(&flags.match, "match", "", "match strategy: gitdir|hasconfig|both (non-interactive parity; D-10)")
+	//nolint:errcheck // completion registration failure is non-fatal (cobra ignores it gracefully)
+	_ = cmd.RegisterFlagCompletionFunc("match", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{"gitdir", "hasconfig", "both"}, cobra.ShellCompDirectiveNoFileComp
+	})
 	return cmd
 }
 
@@ -369,11 +375,13 @@ func gatherCreateInput(r *bufio.Reader, out io.Writer, algo string, flags addFla
 	hostname := prompt(r, out, "Hostname", defaultHostname(provider))
 	port := promptPort(r, out, "Port", 443)
 
-	// Match strategy: flag-or-prompt (D-07, D-09).
-	// If both --gitdir and --url are given → both strategy.
-	// If only --gitdir → gitdir strategy.
-	// If only --url → url strategy.
-	// Otherwise → interactive picker.
+	// Match strategy: flag-or-prompt (D-07, D-09, D-10).
+	// Priority (most-specific wins):
+	//   1. Both --gitdir and --url given → both strategy (explicit flag pair).
+	//   2. Only --gitdir given → gitdir strategy.
+	//   3. Only --url given → url strategy.
+	//   4. --match given (and no --gitdir/--url) → derive defaults from flag.
+	//   5. Otherwise → interactive picker (what the e2e stubs drive).
 	var matches []gitconfig.Match
 	gitdirDefault := "~/git/" + name + "/"
 	urlDefault := defaultURLPattern(hostname, name)
@@ -384,6 +392,15 @@ func gatherCreateInput(r *bufio.Reader, out io.Writer, algo string, flags addFla
 		matches = buildMatches("1", flags.gitdir, "")
 	case flags.url != "":
 		matches = buildMatches("2", "", flags.url)
+	case flags.match != "":
+		// --match flag: non-interactive parity surface (D-10). Derive strategy
+		// number via matchFromFlag, then supply sensible defaults for missing
+		// --gitdir/--url so the caller does not need to provide both.
+		stratNum, ferr := matchFromFlag(flags.match)
+		if ferr != nil {
+			return identity.CreateInput{}, ferr
+		}
+		matches = buildMatches(stratNum, gitdirDefault, urlDefault)
 	default:
 		matches = promptMatchStrategy(r, out, gitdirDefault, urlDefault)
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"strings"
 
@@ -60,6 +61,22 @@ func matchKinds(matches []gitconfig.Match) string {
 // hostname and identity name: git@<hostname>:<name>/** (D-08).
 func defaultURLPattern(hostname, name string) string {
 	return "git@" + hostname + ":" + name + "/**"
+}
+
+// matchFromFlag maps a --match flag value to the strategy number string used
+// by buildMatches. Accepts "gitdir" or "" → "1", "hasconfig" → "2", "both" → "3".
+// Returns an error for any other value (T-05.7-05-02: whitelist enforcement).
+func matchFromFlag(s string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "gitdir", "":
+		return "1", nil
+	case "hasconfig":
+		return "2", nil
+	case "both":
+		return "3", nil
+	default:
+		return "", fmt.Errorf("--match: unknown strategy %q (allowed: gitdir, hasconfig, both)", s)
+	}
 }
 
 // strategyNumFromKind converts a matchKinds string ("gitdir"/"hasconfig"/"both")

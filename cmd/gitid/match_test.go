@@ -223,3 +223,77 @@ func TestPromptMatchStrategy_EmptyDefaultsGitdir(t *testing.T) {
 		t.Errorf("promptMatchStrategy(empty): want default MatchGitdir, got %+v", got)
 	}
 }
+
+// TestMatchFromFlag_Gitdir asserts matchFromFlag("gitdir") returns "1".
+func TestMatchFromFlag_Gitdir(t *testing.T) {
+	got, err := matchFromFlag("gitdir")
+	if err != nil {
+		t.Fatalf("matchFromFlag(gitdir): unexpected error: %v", err)
+	}
+	if got != "1" {
+		t.Errorf("matchFromFlag(gitdir): want %q, got %q", "1", got)
+	}
+}
+
+// TestMatchFromFlag_Empty asserts matchFromFlag("") returns "1" (gitdir default).
+func TestMatchFromFlag_Empty(t *testing.T) {
+	got, err := matchFromFlag("")
+	if err != nil {
+		t.Fatalf("matchFromFlag(empty): unexpected error: %v", err)
+	}
+	if got != "1" {
+		t.Errorf("matchFromFlag(empty): want %q, got %q", "1", got)
+	}
+}
+
+// TestMatchFromFlag_Hasconfig asserts matchFromFlag("hasconfig") returns "2".
+func TestMatchFromFlag_Hasconfig(t *testing.T) {
+	got, err := matchFromFlag("hasconfig")
+	if err != nil {
+		t.Fatalf("matchFromFlag(hasconfig): unexpected error: %v", err)
+	}
+	if got != "2" {
+		t.Errorf("matchFromFlag(hasconfig): want %q, got %q", "2", got)
+	}
+}
+
+// TestMatchFromFlag_Both asserts matchFromFlag("both") returns "3".
+func TestMatchFromFlag_Both(t *testing.T) {
+	got, err := matchFromFlag("both")
+	if err != nil {
+		t.Fatalf("matchFromFlag(both): unexpected error: %v", err)
+	}
+	if got != "3" {
+		t.Errorf("matchFromFlag(both): want %q, got %q", "3", got)
+	}
+}
+
+// TestMatchFromFlag_Unknown asserts matchFromFlag with an unknown value returns error.
+func TestMatchFromFlag_Unknown(t *testing.T) {
+	_, err := matchFromFlag("invalid-strategy")
+	if err == nil {
+		t.Error("matchFromFlag(unknown): expected error, got nil")
+	}
+}
+
+// TestMatchFromFlag_CaseInsensitive asserts matchFromFlag is case-insensitive.
+func TestMatchFromFlag_CaseInsensitive(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"GITDIR", "1"},
+		{"HasConfig", "2"},
+		{"BOTH", "3"},
+	}
+	for _, tc := range tests {
+		got, err := matchFromFlag(tc.in)
+		if err != nil {
+			t.Errorf("matchFromFlag(%q): unexpected error: %v", tc.in, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("matchFromFlag(%q): want %q, got %q", tc.in, tc.want, got)
+		}
+	}
+}

@@ -328,6 +328,54 @@ func runProveWriteCmd(existing, edited identity.Account, signing bool, deps tuiD
 	}
 }
 
+// ─── Match-strategy selector types (Phase 5.7, Plan 05) ────────────────────
+
+// matchStrategy enumerates the three includeIf selection strategies the wizard
+// and create flow support. gitdir is the default per D-02.
+type matchStrategy int
+
+const (
+	strategyGitdir    matchStrategy = iota // strategy 1: gitdir (default, D-02)
+	strategyHasconfig                      // strategy 2: hasconfig repo URL
+	strategyBoth                           // strategy 3: both (OR-applied by git)
+)
+
+// defaultHasconfigPattern derives the suggested hasconfig URL pattern from an
+// SSH alias: git@<alias>:*/** (recipe canonical form, D-03).
+// Returns "" when alias is empty (caller must validate before write).
+func defaultHasconfigPattern(alias string) string {
+	if alias == "" {
+		return ""
+	}
+	return "git@" + alias + ":*/**"
+}
+
+// liveIncludeIfPreview renders the live includeIf preview text for the given
+// match strategy. It calls gitconfig.RenderIncludeIf for ALL conditions so no
+// [includeIf "..."] string is ever hand-built in this package (T-05.7-05-01).
+//
+// name is the identity name; the second parameter (alias) is reserved for
+// future callers that pass the raw alias for derivation — current implementation
+// uses gitdirVal and hasconfigVal directly. hasconfigVal is the bare URL pattern
+// (the "remote.*.url:" prefix is prepended by gitconfig.Match via RenderIncludeIf).
+func liveIncludeIfPreview(strategy matchStrategy, name, _ string, gitdirVal, hasconfigVal string) string {
+	fragPath := "~/.gitconfig.d/" + name
+	switch strategy {
+	case strategyHasconfig:
+		m := gitconfig.Match{Kind: gitconfig.MatchHasconfig, Value: "remote.*.url:" + hasconfigVal}
+		return gitconfig.RenderIncludeIf(name, fragPath, []gitconfig.Match{m})
+	case strategyBoth:
+		matches := []gitconfig.Match{
+			{Kind: gitconfig.MatchGitdir, Value: gitdirVal},
+			{Kind: gitconfig.MatchHasconfig, Value: "remote.*.url:" + hasconfigVal},
+		}
+		return gitconfig.RenderIncludeIf(name, fragPath, matches)
+	default: // strategyGitdir
+		m := gitconfig.Match{Kind: gitconfig.MatchGitdir, Value: gitdirVal}
+		return gitconfig.RenderIncludeIf(name, fragPath, []gitconfig.Match{m})
+	}
+}
+
 // ─── Create/Add wizard (Plan 05) ────────────────────────────────────────────
 
 // wizardStep tracks the current step of the create/add wizard.
@@ -375,6 +423,14 @@ type createWizardModel struct {
 	focusIdx   int
 	err        string
 	nameLocked bool // true for Add Account mode (name pre-filled and read-only)
+
+	// Match-strategy selector state (Phase 5.7, Plan 05). These fields replace
+	// the cryptic "1"/"2"/"3" value in inputs[fieldMatch] for interactive use;
+	// inputs[fieldMatch] still holds the value for backward compatibility with
+	// the build path (buildCreateInput reads inputs[6]).
+	matchSel          matchStrategy   // currently selected strategy (default strategyGitdir)
+	matchGitdirVal    textinput.Model // gitdir path sub-field
+	matchHasconfigVal textinput.Model // hasconfig URL pattern sub-field
 
 	// KeyGen step (Step 2).
 	sp     spinner.Model
@@ -431,26 +487,38 @@ func newCreateWizardModel(name string, deps tuiDeps) createWizardModel {
 		mkInput("github.com", "github.com", 128),         // 3: Provider (default github.com)
 		mkInput("22", "22", 10),                          // 4: Port (default 22)
 		mkInput("leave blank to use provider", "", 200),  // 5: SSH Alias
-		mkInput("1", "1", 10),                            // 6: Match Strategy (default 1 = gitdir)
+		mkInput("1", "1", 10),                            // 6: Match Strategy (numeric — kept for buildCreateInput compat)
 		mkInput("y / n", "y", 4),                         // 7: Signing (default y)
 	}
 	inputs[0].Focus()
 
+	// Match strategy selector sub-fields (Phase 5.7, Plan 05).
+	// Default gitdir path: ~/git/<name>/ (D-02).
+	gitdirTI := textinput.New()
+	gitdirTI.SetWidth(formFieldWidth)
+	gitdirTI.Placeholder = "e.g. ~/git/personal/"
+
+	hasconfigTI := textinput.New()
+	hasconfigTI.SetWidth(formFieldWidth)
+	hasconfigTI.Placeholder = "e.g. git@personal.github.com:*/**"
+
 	return createWizardModel{
-		inputs:     inputs,
-		focusIdx:   0,
-		nameLocked: name != "",
-		step:       wizardStepForm,
-		sp:         sp,
-		deps:       deps,
+		inputs:            inputs,
+		focusIdx:          0,
+		nameLocked:        name != "",
+		step:              wizardStepForm,
+		sp:                sp,
+		deps:              deps,
+		matchSel:          strategyGitdir,
+		matchGitdirVal:    gitdirTI,
+		matchHasconfigVal: hasconfigTI,
 	}
 }
 
 // handleKey processes key presses in the wizard form step.
 // Returns the updated model and an optional command.
 // Form field indices that are NOT free-text inputs:
-//   - fieldMatch is a read-only readable label (the create path builds a gitdir
-//     match; hasconfig/both selection is deferred pending backend support).
+//   - fieldMatch is the match-strategy selector; ↑/↓ move options, space/enter select.
 //   - fieldSigning is a boolean toggled with Space, not typed.
 const (
 	fieldMatch   = 6
@@ -521,9 +589,41 @@ func (m createWizardModel) handleKey(msg tea.KeyMsg) (createWizardModel, tea.Cmd
 		}
 		return m, nil
 	}
-	// Match Strategy is a read-only readable label (gitdir); ignore typing so it
-	// never shows a cryptic raw value.
+	// Match Strategy selector: ↑/↓/j/k cycle options; space/enter selects; typing
+	// goes into the active sub-field (gitdir path or hasconfig URL pattern).
 	if m.focusIdx == fieldMatch {
+		switch key {
+		case "up", "k":
+			if m.matchSel > strategyGitdir {
+				m.matchSel--
+				m.syncMatchInput()
+			}
+		case "down", "j":
+			if m.matchSel < strategyBoth {
+				m.matchSel++
+				m.syncMatchInput()
+			}
+		case "space", " ", "enter":
+			// Selection already tracked in matchSel — no-op: space/enter here just
+			// confirms the current option (nav is ↑/↓). Tab advances to Signing.
+		default:
+			// Forward typing to the active sub-field.
+			switch m.matchSel {
+			case strategyHasconfig:
+				var cmd tea.Cmd
+				m.matchHasconfigVal, cmd = m.matchHasconfigVal.Update(tea.KeyPressMsg{
+					Code: rune(key[0]), Text: key,
+				})
+				return m, cmd
+			case strategyBoth:
+				// Forward to the gitdir sub-field when 'both' is active.
+				var cmd tea.Cmd
+				m.matchGitdirVal, cmd = m.matchGitdirVal.Update(tea.KeyPressMsg{
+					Code: rune(key[0]), Text: key,
+				})
+				return m, cmd
+			}
+		}
 		return m, nil
 	}
 
@@ -533,6 +633,19 @@ func (m createWizardModel) handleKey(msg tea.KeyMsg) (createWizardModel, tea.Cmd
 	var cmd tea.Cmd
 	m.inputs[m.focusIdx], cmd = m.inputs[m.focusIdx].Update(msg)
 	return m, cmd
+}
+
+// syncMatchInput updates the numeric value in inputs[fieldMatch] to match
+// the current matchSel so buildCreateInput always reads a consistent strategy.
+func (m *createWizardModel) syncMatchInput() {
+	switch m.matchSel {
+	case strategyHasconfig:
+		m.inputs[fieldMatch].SetValue("2")
+	case strategyBoth:
+		m.inputs[fieldMatch].SetValue("3")
+	default: // strategyGitdir
+		m.inputs[fieldMatch].SetValue("1")
+	}
 }
 
 // advanceFromForm validates all form fields and, if valid, initiates keygen.
@@ -590,18 +703,34 @@ func (m createWizardModel) buildCreateInput(provider string) identity.CreateInpu
 	if alias == "" {
 		alias = identity.DefaultAlias(name, provider)
 	}
-	matchStr := m.inputs[6].Value()
-	if matchStr == "" {
-		matchStr = "1"
-	}
 	signing := strings.ToLower(strings.TrimSpace(m.inputs[7].Value())) != "n"
 
-	// Build match list based on strategy (1 = gitdir, others deferred).
+	// Build match list from the interactive matchSel selector (Phase 5.7, Plan 05).
+	// Sub-field values default to sensible patterns when left blank.
+	gitdirVal := m.matchGitdirVal.Value()
+	if gitdirVal == "" {
+		gitdirVal = "~/git/" + name + "/"
+	}
+	hasconfigVal := m.matchHasconfigVal.Value()
+	if hasconfigVal == "" {
+		// Auto-derive from alias (D-03: git@<alias>:*/**).
+		hasconfigVal = defaultHasconfigPattern(alias)
+		if hasconfigVal == "" {
+			hasconfigVal = defaultHasconfigPattern(identity.DefaultAlias(name, provider))
+		}
+	}
 	var matches []gitconfig.Match
-	switch matchStr {
-	case "1", "gitdir":
-		matches = []gitconfig.Match{identity.DefaultMatch(name)}
-	default:
+	switch m.matchSel {
+	case strategyHasconfig:
+		matches = []gitconfig.Match{
+			{Kind: gitconfig.MatchHasconfig, Value: "remote.*.url:" + hasconfigVal},
+		}
+	case strategyBoth:
+		matches = []gitconfig.Match{
+			{Kind: gitconfig.MatchGitdir, Value: gitdirVal},
+			{Kind: gitconfig.MatchHasconfig, Value: "remote.*.url:" + hasconfigVal},
+		}
+	default: // strategyGitdir — default (D-02)
 		matches = []gitconfig.Match{identity.DefaultMatch(name)}
 	}
 
@@ -881,21 +1010,11 @@ func (m createWizardModel) viewForm(sb *strings.Builder, _ int) {
 			}
 			sb.WriteString(renderFormField(labels[i], state, i == m.focusIdx) + "\n")
 		case i == fieldMatch:
-			// Readable strategy label instead of a cryptic "1" (P0-3). gitdir is
-			// the wired strategy; the live includeIf preview is shown below.
-			sb.WriteString(readOnlyRow(labels[i], "gitdir — match repos by folder") + "\n")
+			// Expanded match-strategy selector (Phase 5.7, Plan 05, UI-SPEC §1a).
+			sb.WriteString(m.renderMatchSelector(labels[i], i == m.focusIdx))
 		default:
 			sb.WriteString(renderFormField(labels[i], inp.View(), i == m.focusIdx) + "\n")
 		}
-	}
-
-	// Live includeIf preview for the gitdir match strategy (D-06): shows exactly
-	// what will be written to ~/.gitconfig so the strategy is no longer opaque.
-	if name := m.inputs[0].Value(); name != "" {
-		matches := []gitconfig.Match{identity.DefaultMatch(name)}
-		preview := gitconfig.RenderIncludeIf(name, "~/.gitconfig.d/"+name, matches)
-		sb.WriteString("\n" + StyleFaint.Render("includeIf preview:") + "\n")
-		sb.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(StyleFaint.Render(preview)) + "\n")
 	}
 
 	if m.err != "" {
@@ -904,8 +1023,120 @@ func (m createWizardModel) viewForm(sb *strings.Builder, _ int) {
 		sb.WriteString("\n")
 	}
 
+	var footer string
+	if m.focusIdx == fieldMatch {
+		footer = "[↑↓ select  space choose  tab next field  esc cancel]"
+	} else {
+		footer = "[Tab cycle fields · space toggle · Enter advance · Esc cancel]"
+	}
 	sb.WriteString("\n")
-	sb.WriteString(StyleFaint.Render("[Tab cycle fields · space toggle · Enter advance · Esc cancel]"))
+	sb.WriteString(StyleFaint.Render(footer))
+}
+
+// renderMatchSelector renders the expanded match-strategy radio selector block
+// (UI-SPEC §1a). It returns the complete rendered string for the Match Strategy
+// field row including options, active sub-fields, and the live includeIf preview.
+//
+// All includeIf conditions are produced via liveIncludeIfPreview → RenderIncludeIf
+// so no [includeIf "..."] string is hand-built here (T-05.7-05-01).
+func (m createWizardModel) renderMatchSelector(label string, focused bool) string {
+	var sb strings.Builder
+
+	// Header row: label + collapsed summary when not focused, expanded when focused.
+	if !focused {
+		summaries := map[matchStrategy]string{
+			strategyGitdir:    "gitdir (folder)",
+			strategyHasconfig: "hasconfig (repo URL)",
+			strategyBoth:      "both (gitdir + hasconfig)",
+		}
+		row := lipgloss.JoinHorizontal(
+			lipgloss.Center,
+			StyleLabel.Render(label),
+			" ",
+			StyleReadOnly.Render(summaries[m.matchSel]),
+		)
+		sb.WriteString(row + "\n")
+		// Show compact live includeIf preview even when collapsed (D-06: strategy is never opaque).
+		name := m.inputs[0].Value()
+		if name != "" {
+			alias := m.inputs[5].Value()
+			if alias == "" {
+				alias = identity.DefaultAlias(name, m.inputs[3].Value())
+			}
+			gitdirVal := m.matchGitdirVal.Value()
+			if gitdirVal == "" {
+				gitdirVal = "~/git/" + name + "/"
+			}
+			hasconfigVal := m.matchHasconfigVal.Value()
+			if hasconfigVal == "" {
+				hasconfigVal = defaultHasconfigPattern(alias)
+			}
+			preview := liveIncludeIfPreview(m.matchSel, name, alias, gitdirVal, hasconfigVal)
+			sb.WriteString(StyleFaint.Render("includeIf preview:") + "\n")
+			sb.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(StyleFaint.Render(preview)) + "\n")
+		}
+		return sb.String()
+	}
+
+	// Expanded selector (focused) — UI-SPEC §1a layout.
+	sb.WriteString(StyleLabel.Render(label) + "\n\n")
+
+	radio := func(sel matchStrategy, desc string) string {
+		if m.matchSel == sel {
+			return StylePass.Render("[x]") + " " + StyleBody.Render(desc)
+		}
+		return StyleFaint.Render("[ ]") + " " + StyleBody.Render(desc)
+	}
+
+	pad2 := lipgloss.NewStyle().PaddingLeft(2)
+	pad4 := lipgloss.NewStyle().PaddingLeft(4)
+
+	// Option 1: gitdir
+	sb.WriteString(pad2.Render(radio(strategyGitdir, "gitdir (folder)  — matches repos under a directory")) + "\n")
+	if m.matchSel == strategyGitdir || m.matchSel == strategyBoth {
+		sb.WriteString(pad4.Render(StyleFaint.Render("gitdir path:  ")+m.matchGitdirVal.View()) + "\n")
+	}
+	sb.WriteString("\n")
+
+	// Option 2: hasconfig
+	sb.WriteString(pad2.Render(radio(strategyHasconfig, "hasconfig (repo URL) — matches repos by remote URL")) + "\n")
+	if m.matchSel == strategyHasconfig || m.matchSel == strategyBoth {
+		sb.WriteString(pad4.Render(StyleFaint.Render("URL pattern:  ")+m.matchHasconfigVal.View()) + "\n")
+	}
+	sb.WriteString("\n")
+
+	// Option 3: both
+	sb.WriteString(pad2.Render(radio(strategyBoth, "both (gitdir + hasconfig, OR-applied by git)")) + "\n\n")
+
+	// Live includeIf preview — calls RenderIncludeIf exclusively (T-05.7-05-01).
+	name := m.inputs[0].Value()
+	alias := m.inputs[5].Value()
+	if alias == "" {
+		alias = identity.DefaultAlias(name, m.inputs[3].Value())
+	}
+	gitdirVal := m.matchGitdirVal.Value()
+	if gitdirVal == "" {
+		gitdirVal = "~/git/" + name + "/"
+	}
+	hasconfigVal := m.matchHasconfigVal.Value()
+	if hasconfigVal == "" {
+		hasconfigVal = defaultHasconfigPattern(alias)
+	}
+
+	if name != "" {
+		preview := liveIncludeIfPreview(m.matchSel, name, alias, gitdirVal, hasconfigVal)
+		sb.WriteString(StyleHeader.Render("Preview:") + "\n")
+		sb.WriteString(pad4.Render(StyleFaint.Render(preview)) + "\n")
+		if m.matchSel == strategyBoth {
+			sb.WriteString(pad4.Render(StyleFaint.Render("(git applies these as OR — either match activates the fragment)")) + "\n")
+		}
+	}
+
+	// Recipe alignment note (UI-SPEC copywriting).
+	sb.WriteString(StyleFaint.Render("  Recipe: hasconfig is the primary match; gitdir is the alternative.") + "\n")
+	sb.WriteString(StyleFaint.Render("  gitid default for new identities: gitdir.") + "\n")
+
+	return sb.String()
 }
 
 // viewKeygen renders the keygen step.
