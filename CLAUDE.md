@@ -2,6 +2,22 @@
 
 Working agreements for this repository. Read before doing anything.
 
+## Objective / North Star — read `recipes/` first
+
+`gitid` exists to **safely and auditably manage the real configuration files that
+[`recipes/`](./recipes/) represent** — `~/.ssh/config`, `~/.gitconfig`, the
+per-identity `~/.gitconfig.d/*` fragments, `~/.ssh/allowed_signers`, and one
+ed25519 key per identity — **and more**. The recipes (`recipes/ssh-config.recipe`,
+`recipes/gitconfig.recipe`) are annotated reference configs downloaded from the
+maintainer's gists; they define the canonical end state every feature must produce
+and keep coherent (alias per identity, `IdentitiesOnly yes`, `includeIf`
+`hasconfig:`/`gitdir:`, `insteadOf` URL rewriting, port 443 alt-SSH).
+
+**Every agent and subagent MUST read `recipes/` (and `recipes/README.md`) before
+planning or implementing.** Do not invent a config shape — match the recipes; gitid
+uses ed25519 (not the gists' RSA), so take structure, not key type. Surface any
+divergence between current behavior and the recipes explicitly.
+
 ## Working method: hypothesis → test → implementation
 
 Always work in this loop, in order:
