@@ -1,0 +1,24 @@
+gitid  [1 Identities]  2 Health  3 Global Options
+Identities              │
+› personal  github  (1)✗│  personal
+                        │
+                        │  Name:            personal
+                        │  Git Name:
+                        │  Git Email:
+                        │  Provider:        github
+                        │  Port:            22
+                        │
+                        │  Aliases / Sites:
+                        │  • personal.github.com     gitdir:~/git/personal/
+                        │
+                        │  Signing:         disabled
+                        │  Key Path:        ~/.ssh/id_ed25519_personal
+                        │
+                        │
+                        │
+                        │
+                        │
+                        │
+                        │
+                        │
+1·2·3/←→ views  q quit  a add  enter select  e edit  c copy  · more in ?
