@@ -206,3 +206,51 @@ func TestParseResolved_IgnoresCamelCase(t *testing.T) {
 		t.Errorf("User = %q, want %q", rc.User, "git")
 	}
 }
+
+// TestPreWriteCommand_MatchesPreWriteArgShape verifies that PreWriteCommand returns
+// a string that contains the same key flags as preWriteArgs and is byte-identical in
+// arg shape to what PreWrite would run. The helper is read-only (no exec).
+func TestPreWriteCommand_MatchesPreWriteArgShape(t *testing.T) {
+	got := PreWriteCommand("/tmp/id_ed25519_personal", "ssh.github.com", 443)
+
+	// Must contain "ssh" as the program name (exec.Command("ssh", ...).String() may
+	// expand to the full path, e.g. /usr/bin/ssh on macOS).
+	if !strings.Contains(got, "ssh") {
+		t.Errorf("PreWriteCommand must reference ssh command; got %q", got)
+	}
+	// Must contain the same required flags as preWriteArgs.
+	for _, want := range []string{
+		"-i", "/tmp/id_ed25519_personal",
+		"IdentitiesOnly=yes",
+		"BatchMode=yes",
+		"ConnectTimeout=10",
+		"StrictHostKeyChecking=accept-new",
+		"-p", "443",
+		"git@ssh.github.com",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("PreWriteCommand missing %q; full string: %q", want, got)
+		}
+	}
+}
+
+// TestPreWriteCommand_MatchesPreWriteResultCommand verifies that PreWriteCommand
+// produces the same string as the Command field on a Result returned by preWriteWith
+// for the same arguments — ensuring pre-run display is byte-identical to the run.
+func TestPreWriteCommand_MatchesPreWriteResultCommand(t *testing.T) {
+	keyPath := "/home/u/.ssh/staging/id_ed25519_work"
+	hostname := "ssh.github.com"
+	port := 443
+
+	// Produce a result via preWriteWith using a fake no-op runner.
+	fakeRunner := func(_ []string) (string, error) {
+		return "hi", nil
+	}
+	res := preWriteWith(fakeRunner, keyPath, hostname, port)
+
+	got := PreWriteCommand(keyPath, hostname, port)
+	if got != res.Command {
+		t.Errorf("PreWriteCommand(%q, %q, %d) = %q\n  preWriteWith.Command = %q\n  strings must be equal",
+			keyPath, hostname, port, got, res.Command)
+	}
+}

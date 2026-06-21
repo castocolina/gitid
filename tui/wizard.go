@@ -1049,23 +1049,43 @@ func (m createWizardModel) buildCreateInput(provider string) identity.CreateInpu
 	}
 }
 
-// initProve transitions the wizard to the prove step and seeds the prove loop.
-// Called when the user presses Enter on the upload step.
-func (m createWizardModel) initProve() (createWizardModel, tea.Cmd) {
-	m.step = wizardStepProve1Running
-	m.runID++
-	// Use the staged key path for the pre-write test.
-	keyPath := m.staged.TempPrivatePath
+// proveHostnamePort derives the alt-SSH hostname and port for the pre-write test.
+// It uses the same sources as buildCreateInput so the command shown, the test run,
+// and the eventual write all agree on the same endpoint (T-05.7-12-04).
+//
+// Hostname: hostnameVal (edited) else identity.DefaultHostname(provider).
+// Port: inputs[4] parsed as int, fallback to identity.DefaultPort() (443).
+func (m createWizardModel) proveHostnamePort() (hostname string, port int) {
 	provider := m.inputs[3].Value()
 	if provider == "" {
 		provider = "github.com"
 	}
-	port := 22
-	if _, err := fmt.Sscanf(m.inputs[4].Value(), "%d", &port); err != nil {
-		port = 22
+	hostname = identity.DefaultHostname(provider)
+	if m.hostnameEdited {
+		hostname = m.hostnameVal.Value()
+	} else if v := m.hostnameVal.Value(); v != "" {
+		hostname = v
 	}
+	port = identity.DefaultPort()
+	if _, err := fmt.Sscanf(m.inputs[4].Value(), "%d", &port); err != nil {
+		port = identity.DefaultPort()
+	}
+	return hostname, port
+}
+
+// initProve transitions the wizard to the prove step and seeds the prove loop.
+// Called when the user presses Enter on the upload step.
+//
+// The pre-write test runs against the alt-SSH endpoint (hostname/port from
+// proveHostnamePort, not the raw provider hostname) so the command shown, the
+// test executed, and the eventual write all agree (T-05.7-12-04).
+func (m createWizardModel) initProve() (createWizardModel, tea.Cmd) {
+	m.step = wizardStepProve1Running
+	m.runID++
+	keyPath := m.staged.TempPrivatePath
+	hostname, port := m.proveHostnamePort()
 	return m, tea.Batch(
-		runPreWriteCmd(m.deps.identity.PreWrite, keyPath, provider, port),
+		runPreWriteCmd(m.deps.identity.PreWrite, keyPath, hostname, port),
 		m.sp.Tick,
 	)
 }
@@ -1126,11 +1146,16 @@ func (m createWizardModel) update(msg tea.Msg) (createWizardModel, tea.Cmd) {
 		if msg.err != nil {
 			m.result = fmt.Sprintf("write failed: %v", msg.err)
 		} else {
-			m.step = wizardStepWritten
 			if msg.result.SSHBackup != "" {
 				m.backupPath = msg.result.SSHBackup
 			}
-			m.result = "Identity created."
+			// LEG-1 write (PersistSSH from Screen 2) succeeded: advance to Screen 3
+			// (Git config — wired in Plan 13). A mid-exit after this point leaves a
+			// valid SSH-only identity (doctor flags it incomplete; that is the accepted
+			// design per the Screen-2 mandate).
+			m.step = wizardStepForm
+			m.screen = screenGitConfig
+			m.result = ""
 		}
 		return m, nil
 
@@ -1182,12 +1207,13 @@ func (m createWizardModel) handleWizardKey(key string) (createWizardModel, tea.C
 		}
 
 	case wizardStepProve2Done:
-		// Both phases passed — write gate open.
+		// Both phases passed — write gate open. On Enter, write LEG 1 via PersistSSH
+		// (key + Host block), then advance to Screen 3. LEG 2 (gitconfig) is Plan 13.
 		switch key {
 		case "enter":
 			if m.confirmActive {
 				m.confirmActive = false
-				return m, runWizardCreateCmd(m, false)
+				return m, runWizardPersistSSHCmd(m)
 			}
 		case "esc":
 			return m, clearModalCmd()
@@ -1196,42 +1222,45 @@ func (m createWizardModel) handleWizardKey(key string) (createWizardModel, tea.C
 	case wizardStepProve1Failed, wizardStepProve2Failed:
 		switch key {
 		case "r":
-			// Retry: re-run phase 1.
+			// Retry: re-run phase 1 using the alt-SSH endpoint (same as initProve).
 			m.confirmActive = false
 			m.skipConfirmPending = false
 			m.runID++
 			keyPath := m.staged.TempPrivatePath
-			provider := m.inputs[3].Value()
-			if provider == "" {
-				provider = "github.com"
-			}
-			port := 22
-			if _, err := fmt.Sscanf(m.inputs[4].Value(), "%d", &port); err != nil {
-				port = 22
-			}
+			hostname, port := m.proveHostnamePort()
 			m.step = wizardStepProve1Running
 			return m, tea.Batch(
-				runPreWriteCmd(m.deps.identity.PreWrite, keyPath, provider, port),
+				runPreWriteCmd(m.deps.identity.PreWrite, keyPath, hostname, port),
 				m.sp.Tick,
 			)
 		case "s":
-			// Skip test — requires an explicit second confirm.
+			// Skip test — requires an explicit second confirm (double-confirm gate,
+			// FIX-CREATE-01, T-05.7-12-01). The warning is shown after [s] and a
+			// second Enter is required to proceed.
 			if !m.confirmActive {
 				m.skipConfirmPending = true
-				m.skipWarning = "! Key was written without authentication verification. [warning]"
+				m.skipWarning = "! Written without authentication verification. [warning]"
 			}
 		case "q":
-			// Quit: keep key, dismiss modal, show toast.
+			// Quit: nothing has been written yet. Show a recovery toast that
+			// explains the no-write state and how to finish (G-2 no-write clarity).
 			name := m.inputs[0].Value()
-			toast := "Key kept at ~/.ssh/gitid_" + name + " — run 'gitid doctor' when ready."
+			keyPath := m.staged.FinalPrivatePath
+			if keyPath == "" {
+				keyPath = "~/.ssh/id_ed25519_" + name
+			}
+			toast := "Nothing written. Key kept at " + keyPath +
+				". Re-run 'gitid create' and press [s] to write offline, or upload the key then re-run."
 			return m, tea.Batch(clearModalCmd(), setToastCmd(toast, StyleFaint))
 		case "esc":
 			return m, clearModalCmd()
 		case "enter":
 			if m.skipConfirmPending {
-				// Explicit skip confirm: write without auth.
+				// Explicit skip confirm (second Enter): write LEG 1 via PersistSSH
+				// without auth verification. The double-confirm gate is preserved
+				// (T-05.7-12-01 / FIX-CREATE-01).
 				m.skipConfirmPending = false
-				return m, runWizardCreateCmd(m, true)
+				return m, runWizardPersistSSHCmd(m)
 			}
 		}
 
@@ -1639,10 +1668,23 @@ func renderTestDetail(sb *strings.Builder, res tester.Result) {
 }
 
 // viewUpload renders the upload + test screen before the test is started.
+// Shows the FULL pre-run ssh command (G-3: consistent command display on pre-run)
+// derived from tester.PreWriteCommand so the pre-run display is byte-identical to
+// what initProve will run.
 func (m createWizardModel) viewUpload(sb *strings.Builder) {
 	sb.WriteString(StyleModalTitle.Render("Create Identity — Upload & Test"))
 	sb.WriteString("\n\n")
 	m.renderUploadHeader(sb)
+
+	// Pre-run command: show the exact command that WILL run (G-3 pre-run half).
+	// Derives hostname/port from the same sources as initProve (proveHostnamePort).
+	if m.staged.TempPrivatePath != "" {
+		hostname, port := m.proveHostnamePort()
+		preCmd := tester.PreWriteCommand(m.staged.TempPrivatePath, hostname, port)
+		sb.WriteString("\n")
+		sb.WriteString(StyleFaint.Render("Test command that will run:") + "\n")
+		sb.WriteString(StyleFaint.Render("  $ "+preCmd) + "\n")
+	}
 	sb.WriteString("\n")
 	sb.WriteString(StyleFaint.Render("[Enter] paste the key into the page above, then test · [Esc] keep key, write nothing"))
 }
@@ -1650,11 +1692,22 @@ func (m createWizardModel) viewUpload(sb *strings.Builder) {
 // viewProve renders the SAME upload screen with the inline test result below it,
 // so the key, [c] copy, and instructions never disappear while testing (D-16
 // round 3: one screen, no view switch).
+//
+// G-3 (command+path visibility): the exact ssh command is shown in ALL states —
+// pre-run (viewUpload shows it), Phase-1 PASS (renderTestCommandLine after the
+// ✓ line), Phase-2 PASS (renderTestCommandLine), and failure (renderTestDetail,
+// which prints command+output). The tested key path is kept visible via
+// renderUploadHeader on every sub-step.
 func (m createWizardModel) viewProve(sb *strings.Builder) {
 	sb.WriteString(StyleModalTitle.Render("Create Identity — Upload & Test"))
 	sb.WriteString("\n\n")
 	m.renderUploadHeader(sb)
 	sb.WriteString("\n")
+
+	provider := m.inputs[3].Value()
+	if provider == "" {
+		provider = "github.com"
+	}
 
 	// Phase 1.
 	switch m.step {
@@ -1662,9 +1715,12 @@ func (m createWizardModel) viewProve(sb *strings.Builder) {
 		sb.WriteString(m.sp.View() + " Testing SSH authentication...\n")
 	case wizardStepProve1Done, wizardStepProve2Running, wizardStepProve2Done, wizardStepWritten:
 		sb.WriteString(StylePass.Render("✓") + " Phase 1: authenticated\n")
+		// G-3: show the exact command even on PASS (not only failure).
+		renderTestCommandLine(sb, m.phase1Result)
 	case wizardStepProve1Failed:
 		sb.WriteString(SeverityStyle(doctor.SeverityError).Render("✗") + " Phase 1: authentication failed [critical]\n")
 		renderTestDetail(sb, m.phase1Result)
+		renderNoWriteGuidance(sb, m.phase1Result, provider)
 		sb.WriteString("\n")
 		sb.WriteString(renderProveActions(m.skipConfirmPending))
 	}
@@ -1676,9 +1732,12 @@ func (m createWizardModel) viewProve(sb *strings.Builder) {
 			sb.WriteString(m.sp.View() + " Checking resolved config...\n")
 		case wizardStepProve2Done, wizardStepWritten:
 			sb.WriteString(StylePass.Render("✓") + " Phase 2: config resolves correctly\n")
+			// G-3: show phase-2 command on PASS.
+			renderTestCommandLine(sb, m.phase2Result)
 		case wizardStepProve2Failed:
 			sb.WriteString(SeverityStyle(doctor.SeverityError).Render("✗") + " Phase 2: config resolution failed [critical]\n")
 			renderTestDetail(sb, m.phase2Result)
+			renderNoWriteGuidance(sb, m.phase2Result, provider)
 			sb.WriteString(renderProveActions(m.skipConfirmPending))
 		}
 	}
@@ -1686,12 +1745,12 @@ func (m createWizardModel) viewProve(sb *strings.Builder) {
 	// Confirm gate.
 	if m.confirmActive {
 		sb.WriteString("\n")
-		sb.WriteString(StyleBody.Render("Ready to write. Write changes?"))
+		sb.WriteString(StyleBody.Render("Both tests passed. Write SSH config (LEG 1)?"))
 		sb.WriteString("\n")
 		sb.WriteString(StyleFaint.Render("[Enter to write · Esc to cancel]"))
 	}
 
-	// Skip warning.
+	// Skip warning (double-confirm gate, FIX-CREATE-01, T-05.7-12-01).
 	if m.skipWarning != "" {
 		sb.WriteString("\n")
 		sb.WriteString(SeverityStyle(doctor.SeverityWarning).Render(m.skipWarning) + "\n")
@@ -1702,6 +1761,67 @@ func (m createWizardModel) viewProve(sb *strings.Builder) {
 	if m.result != "" {
 		sb.WriteString("\n" + m.result + "\n")
 		sb.WriteString(StyleFaint.Render("[Esc to close]"))
+	}
+}
+
+// renderTestCommandLine renders the `$ <command>` line for a completed test phase
+// when res.Command is non-empty. Called after Phase-1 PASS and Phase-2 PASS to
+// keep the exact tested command visible on success (G-3: consistent command display).
+// Output is NOT printed for failing phases — that is renderTestDetail's job (failure
+// prints both command and output).
+func renderTestCommandLine(sb *strings.Builder, res tester.Result) {
+	if res.Command == "" {
+		return
+	}
+	sb.WriteString(StyleFaint.Render("  $ "+res.Command) + "\n")
+}
+
+// renderNoWriteGuidance writes the no-write state explanation for a failed prove
+// phase. It states that nothing has been written yet, explains WHY (keyed off
+// res.Outcome), and lists the two ways forward — including the discoverable [s]
+// offline escape (G-2: clear no-write feedback + discoverable skip).
+func renderNoWriteGuidance(sb *strings.Builder, res tester.Result, provider string) {
+	if provider == "" {
+		provider = "provider"
+	}
+	sb.WriteString("\n")
+	sb.WriteString(SeverityStyle(doctor.SeverityWarning).Render("Nothing has been written yet.") + "\n")
+
+	// WHY line: keyed off the outcome.
+	switch res.Outcome {
+	case tester.ReachableNotUploaded:
+		sb.WriteString(StyleFaint.Render("Why: the public key is not on "+provider+" yet (authentication key + signing key).") + "\n")
+	default: // tester.Failure
+		sb.WriteString(StyleFaint.Render("Why: could not reach "+provider+" — check network or port.") + "\n")
+	}
+
+	sb.WriteString("\n")
+	sb.WriteString(StyleFaint.Render("How to proceed:") + "\n")
+	sb.WriteString(StyleFaint.Render("  1. Upload the public key to "+provider+" (see instructions above), then [r] retry.") + "\n")
+	sb.WriteString(StyleFaint.Render("  2. [s] skip & write the SSH alias block offline — you can authenticate later.") + "\n")
+}
+
+// runWizardPersistSSHCmd dispatches the async PersistSSH (LEG-1) write: persists
+// the staged keypair to ~/.ssh/ and writes the Host block to ~/.ssh/config via
+// identity.PersistSSH. It does NOT write gitconfig/fragment/allowed_signers (LEG 2
+// is dispatched by Plan 13 on Screen 3).
+//
+// Mirroring runWizardCreateCmd in structure (recover()-guarded goroutine,
+// wizardCreateResultMsg return). T-05.7-12-02: all writes go through PersistSSH →
+// deps.WriteSSH → filewriter (timestamped backup + atomic + idempotent managed
+// block); no os.WriteFile added.
+func runWizardPersistSSHCmd(m createWizardModel) tea.Cmd {
+	in := m.buildCreateInput(m.inputs[3].Value())
+	staged := m.staged
+	deps := m.deps
+	return func() (msg tea.Msg) {
+		defer func() {
+			if r := recover(); r != nil {
+				msg = wizardCreateResultMsg{err: fmt.Errorf("persist-ssh panicked: %v", r)}
+			}
+		}()
+		res, err := identity.PersistSSH(in, staged, deps.identity)
+		return wizardCreateResultMsg{result: res, err: err}
 	}
 }
 
@@ -1720,23 +1840,5 @@ func runGenerateCmd(in identity.CreateInput, deps tuiDeps) tea.Cmd {
 		}
 		staged, err := fn(in)
 		return keygenResultMsg{staged: staged, err: err}
-	}
-}
-
-// runWizardCreateCmd dispatches the PersistAll call after the prove loop resolves.
-// skipped=true means the user explicitly confirmed skipping the auth test;
-// PersistAll is called in both cases (the caller shows a warning on skip).
-func runWizardCreateCmd(m createWizardModel, _ bool) tea.Cmd {
-	in := m.buildCreateInput(m.inputs[3].Value())
-	staged := m.staged
-	deps := m.deps
-	return func() (msg tea.Msg) {
-		defer func() {
-			if r := recover(); r != nil {
-				msg = wizardCreateResultMsg{err: fmt.Errorf("create panicked: %v", r)}
-			}
-		}()
-		res, err := identity.PersistAll(in, staged, deps.identity)
-		return wizardCreateResultMsg{result: res, err: err}
 	}
 }

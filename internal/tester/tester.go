@@ -58,6 +58,17 @@ func ClassifyPreWrite(combinedOutput string) Outcome {
 	}
 }
 
+// PreWriteCommand returns the string representation of the ssh command that
+// PreWrite would run for the given keyPath, hostname, and port. It is a pure
+// read-only helper (no exec) that calls exec.Command("ssh", preWriteArgs(...)).String()
+// so the returned string is byte-identical to Result.Command for the same inputs.
+// Callers use this to display the exact pre-run command before PreWrite executes.
+func PreWriteCommand(keyPath, hostname string, port int) string {
+	args := preWriteArgs(keyPath, hostname, port)
+	cmd := exec.Command("ssh", args...) //nolint:gosec // arg-slice form for cmd.String() display; not executed here
+	return cmd.String()
+}
+
 // preWriteArgs builds the explicit-key pre-write ssh argument slice. Arguments
 // are passed as a slice (never a shell string), keeping the call gosec
 // G204-clean and free of OS-command-injection risk (threat T-02-18).

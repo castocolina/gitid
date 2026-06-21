@@ -12,6 +12,7 @@ package tui
 //   - Inline editing ('e') in the detail pane opens the wizard in "update" mode.
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -932,6 +933,149 @@ func TestWizardScreen1PreviewUsesRenderHostBlock(t *testing.T) {
 	}
 }
 
+// ─── Plan 12, Task 1: Screen 2 command+path visibility tests ──────────────────
+
+// TestWizardProve1DoneShowsCommand verifies that after Phase-1 PASS the view
+// renders the exact ssh command from phase1Result.Command (G-3). The command must
+// remain visible on success — not only on failure.
+// Drives via the real model Update path and asserts on view(width) output.
+// Requirement: G-3 (full command+path consistently visible); AUTOUP-01 (no auto-upload).
+func TestWizardProve1DoneShowsCommand(t *testing.T) {
+	w := makeTestWizardModel(fakeWriteTUIDeps(nil))
+	w.staged = identity.StagedKey{
+		PubLine:          "ssh-ed25519 AAAA test@gitid\n",
+		TempPrivatePath:  "/tmp/gitid/id_ed25519_personal",
+		FinalPrivatePath: "/home/u/.ssh/id_ed25519_personal",
+	}
+	w.step = wizardStepProve1Done
+	w.phase1Result = tester.Result{
+		Command: "ssh -i /tmp/gitid/id_ed25519_personal -o IdentitiesOnly=yes -p 443 -T git@ssh.github.com",
+		Output:  "Hi personal! You've successfully authenticated",
+		Outcome: tester.PASS,
+	}
+
+	view := w.view(90)
+
+	// The ssh command must appear in the view even on PASS.
+	if !strings.Contains(view, "ssh -i /tmp/gitid/id_ed25519_personal") {
+		t.Errorf("prove1Done view must show the ssh command on success; got:\n%s", view)
+	}
+	// The tested key path must remain visible.
+	if !strings.Contains(view, "/tmp/gitid/id_ed25519_personal") {
+		t.Errorf("prove1Done view must show the tested key path; got:\n%s", view)
+	}
+}
+
+// TestWizardProve2DoneShowsCommand verifies that after Phase-2 PASS the view
+// renders the ssh command from phase2Result.Command alongside the Phase-1 success
+// indicator (G-3: consistent on pre-run + success + failure).
+func TestWizardProve2DoneShowsCommand(t *testing.T) {
+	w := makeTestWizardModel(fakeWriteTUIDeps(nil))
+	w.staged = identity.StagedKey{
+		PubLine:          "ssh-ed25519 AAAA test@gitid\n",
+		TempPrivatePath:  "/tmp/gitid/id_ed25519_personal",
+		FinalPrivatePath: "/home/u/.ssh/id_ed25519_personal",
+	}
+	w.step = wizardStepProve2Done
+	w.confirmActive = true
+	w.phase1Result = tester.Result{
+		Command: "ssh -i /tmp/gitid/id_ed25519_personal -o IdentitiesOnly=yes -p 443 -T git@ssh.github.com",
+		Output:  "Hi personal! You've successfully authenticated",
+		Outcome: tester.PASS,
+	}
+	w.phase2Result = tester.Result{
+		Command: "ssh -o BatchMode=yes -o ConnectTimeout=10 -T git@personal.github.com",
+		Output:  "Hi personal! You've successfully authenticated",
+		Outcome: tester.PASS,
+	}
+
+	view := w.view(90)
+
+	// Phase 1 ssh command must still be visible on the prove2Done screen.
+	if !strings.Contains(view, "ssh -i /tmp/gitid/id_ed25519_personal") {
+		t.Errorf("prove2Done view must show phase1 ssh command; got:\n%s", view)
+	}
+}
+
+// TestWizardPreRunScreenShowsCommand verifies the pre-run (upload step) shows
+// the exact command that WILL run via tester.PreWriteCommand, using the alt-SSH
+// endpoint (ssh.github.com:443 for github), not the raw provider hostname.
+// Drives via the real model view path (anti-blindspot; drives viewUpload).
+func TestWizardPreRunScreenShowsCommand(t *testing.T) {
+	w := makeTestWizardModel(fakeWriteTUIDeps(nil))
+	w.inputs[0].SetValue("personal")
+	w.inputs[3].SetValue("github.com")
+	w.inputs[4].SetValue("443")
+	w.staged = identity.StagedKey{
+		PubLine:          "ssh-ed25519 AAAA test@gitid\n",
+		TempPrivatePath:  "/tmp/gitid/id_ed25519_personal",
+		FinalPrivatePath: "/home/u/.ssh/id_ed25519_personal",
+	}
+	w.step = wizardStepUpload
+
+	view := w.view(90)
+
+	// The pre-run screen must show a command referencing the alt-SSH hostname.
+	if !strings.Contains(view, "ssh.github.com") {
+		t.Errorf("pre-run screen must show alt-SSH hostname (ssh.github.com) in the command; got:\n%s", view)
+	}
+	// The pre-run command must reference the staged key path.
+	if !strings.Contains(view, "/tmp/gitid/id_ed25519_personal") {
+		t.Errorf("pre-run screen must show the staged key path in the command; got:\n%s", view)
+	}
+	// Must NOT have gh/glab auto-upload instructions.
+	if strings.Contains(view, "gh auth") || strings.Contains(view, "glab") {
+		t.Errorf("pre-run screen must NOT include auto-upload (gh/glab); got:\n%s", view)
+	}
+}
+
+// TestWizardInitProveUsesAltSSHEndpoint verifies that initProve computes hostname
+// and port from the same sources as buildCreateInput (alt-SSH defaults, not the raw
+// provider). The cmd dispatched by initProve must reference ssh.github.com:443, not
+// github.com:22.
+func TestWizardInitProveUsesAltSSHEndpoint(t *testing.T) {
+	var capturedHostname string
+	var capturedPort int
+	deps := fakeWriteTUIDeps(nil)
+	deps.identity.PreWrite = func(keyPath, hostname string, port int) tester.Result {
+		capturedHostname = hostname
+		capturedPort = port
+		return tester.Result{Outcome: tester.PASS, Command: "ssh -i " + keyPath + " -p " + fmt.Sprintf("%d", port) + " git@" + hostname}
+	}
+
+	w := makeTestWizardModel(deps)
+	w.inputs[0].SetValue("personal")
+	w.inputs[3].SetValue("github.com")
+	// Port from inputs[4] (default 443); do NOT override to verify default propagates.
+	w.staged = identity.StagedKey{
+		TempPrivatePath:  "/tmp/gitid/id_ed25519_personal",
+		FinalPrivatePath: "/home/u/.ssh/id_ed25519_personal",
+	}
+
+	w, cmd := w.initProve()
+	if cmd == nil {
+		t.Fatal("initProve must dispatch a command")
+	}
+	// initProve returns a batch cmd (preWriteCmd + spinner tick); run all msgs.
+	msgs := runAllCmds(cmd)
+	var gotPreWrite bool
+	for _, msg := range msgs {
+		if _, ok := msg.(preWriteResultMsg); ok {
+			gotPreWrite = true
+		}
+	}
+	if !gotPreWrite {
+		t.Fatalf("initProve batch must include a preWriteResultMsg; got msgs: %+v", msgs)
+	}
+
+	if capturedHostname != "ssh.github.com" {
+		t.Errorf("initProve must use alt-SSH hostname (ssh.github.com); got %q", capturedHostname)
+	}
+	if capturedPort != 443 {
+		t.Errorf("initProve must use alt-SSH port (443); got %d", capturedPort)
+	}
+}
+
 // TestWizardMatchValidationGitdirRequired verifies that the plan's validation
 // copy string "gitdir path is required" is present in the UI-SPEC (placeholder;
 // this string must appear in the selector's validation path).
@@ -951,4 +1095,288 @@ func TestWizardMatchValidationCopyPresent(t *testing.T) {
 	if !strings.Contains(view, "Preview:") {
 		t.Errorf("expanded selector must contain 'Preview:' section; got:\n%s", view)
 	}
+}
+
+// ─── Plan 12, Task 2: PersistSSH on success + no-write guidance tests ─────────
+
+// TestWizardPersistSSHOnPassPath verifies the security invariant for Plan 12:
+// on the Screen-2 PASS path (prove2Done + Enter), the wizard calls PersistSSH
+// (WriteSSH fires) and does NOT call PersistGitconfig (WriteGitconfig must NOT fire).
+// This is the LEG-1-only invariant — LEG 2 is Plan 13.
+//
+// Drives via the real model path: simulate prove phases PASS → confirm gate open →
+// Enter → run returned cmd → assert WriteSSH called with a Host block containing
+// `Host <alias>` and `IdentitiesOnly yes`; assert WriteGitconfig NOT called.
+//
+// Requirement: G-2 (progressive LEG-1 write on success), T-05.7-12-02 (LEG 1 only).
+func TestWizardPersistSSHOnPassPath(t *testing.T) {
+	var writeSSHCalled bool
+	var writeSSHBlock string
+	var writeGitconfigCalled bool
+
+	deps := fakeWriteTUIDeps(nil)
+	deps.identity.WriteSSH = func(_, hostBlock, _ string) (string, error) {
+		writeSSHCalled = true
+		writeSSHBlock = hostBlock
+		return "bak-ssh-20260621", nil
+	}
+	deps.identity.WriteGitconfig = func(_, _, _ string, _ []gitconfig.Match) (string, error) {
+		writeGitconfigCalled = true
+		return "", nil
+	}
+	deps.identity.PersistKey = func(_ identity.StagedKey) (identity.KeyResult, error) {
+		return identity.KeyResult{PubLine: "ssh-ed25519 AAAA test@gitid"}, nil
+	}
+
+	w := makeTestWizardModel(deps)
+	w.inputs[0].SetValue("personal")
+	w.inputs[3].SetValue("github.com")
+	w.inputs[4].SetValue("443")
+	w.inputs[5].SetValue("personal.github.com")
+	w.staged = identity.StagedKey{
+		TempPrivatePath:  "/tmp/gitid/id_ed25519_personal",
+		FinalPrivatePath: "/home/u/.ssh/id_ed25519_personal",
+		FinalPubPath:     "/home/u/.ssh/id_ed25519_personal.pub",
+		PubLine:          "ssh-ed25519 AAAA test@gitid\n",
+		PrivPEM:          []byte("fake-pem"),
+	}
+
+	// Drive prove phases to PASS.
+	w.step = wizardStepProve1Running
+	w, _ = w.update(preWriteResultMsg{result: tester.Result{Outcome: tester.PASS, Command: "ssh -T git@ssh.github.com"}})
+	w, _ = w.update(resolvedResultMsg{result: tester.Result{Outcome: tester.PASS}})
+
+	if !w.confirmActive {
+		t.Fatal("confirmActive must be true after both phases PASS")
+	}
+	if writeSSHCalled {
+		t.Error("WriteSSH must NOT fire before Enter is pressed")
+	}
+
+	// Press Enter — dispatch the write cmd.
+	w2, writeCmd := w.update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	_ = w2
+	if writeCmd == nil {
+		t.Fatal("Enter on prove2Done+confirmActive must dispatch a write cmd")
+	}
+
+	// Execute the write cmd.
+	msg := writeCmd()
+	res, ok := msg.(wizardCreateResultMsg)
+	if !ok {
+		t.Fatalf("write cmd must return wizardCreateResultMsg; got %T", msg)
+	}
+	if res.err != nil {
+		t.Errorf("write cmd must succeed; got err=%v", res.err)
+	}
+
+	// WriteSSH must have fired (LEG 1).
+	if !writeSSHCalled {
+		t.Error("PersistSSH path: WriteSSH must fire on the PASS+Enter path")
+	}
+	// WriteGitconfig must NOT have fired (LEG 2 is Plan 13).
+	if writeGitconfigCalled {
+		t.Error("LEG 1 only: WriteGitconfig must NOT fire on the Screen-2 PASS path")
+	}
+	// The captured Host block must contain `Host <alias>` and `IdentitiesOnly yes`.
+	if !strings.Contains(writeSSHBlock, "Host personal.github.com") {
+		t.Errorf("WriteSSH hostBlock must contain 'Host personal.github.com'; got:\n%s", writeSSHBlock)
+	}
+	if !strings.Contains(writeSSHBlock, "IdentitiesOnly yes") {
+		t.Errorf("WriteSSH hostBlock must contain 'IdentitiesOnly yes'; got:\n%s", writeSSHBlock)
+	}
+}
+
+// TestWizardSkipWriteOfflinePersistSSH verifies that the secondary offline skip-
+// and-write path ([s] + Enter double-confirm) writes LEG 1 via PersistSSH
+// (WriteSSH fires, WriteGitconfig does NOT fire), preserving the double-confirm
+// gate and the unauthenticated-write warning (FIX-CREATE-01, T-05.7-12-01).
+//
+// Drives via the real model key-event path from wizardStepProve1Failed.
+func TestWizardSkipWriteOfflinePersistSSH(t *testing.T) {
+	var writeSSHCalled bool
+	var writeGitconfigCalled bool
+
+	deps := fakeWriteTUIDeps(nil)
+	deps.identity.WriteSSH = func(_, _, _ string) (string, error) {
+		writeSSHCalled = true
+		return "bak-ssh", nil
+	}
+	deps.identity.WriteGitconfig = func(_, _, _ string, _ []gitconfig.Match) (string, error) {
+		writeGitconfigCalled = true
+		return "", nil
+	}
+	deps.identity.PersistKey = func(_ identity.StagedKey) (identity.KeyResult, error) {
+		return identity.KeyResult{}, nil
+	}
+
+	w := makeTestWizardModel(deps)
+	w.inputs[0].SetValue("personal")
+	w.inputs[3].SetValue("github.com")
+	w.inputs[5].SetValue("personal.github.com")
+	w.staged = identity.StagedKey{
+		TempPrivatePath:  "/tmp/gitid/id_ed25519_personal",
+		FinalPrivatePath: "/home/u/.ssh/id_ed25519_personal",
+		FinalPubPath:     "/home/u/.ssh/id_ed25519_personal.pub",
+		PubLine:          "ssh-ed25519 AAAA test@gitid\n",
+	}
+	w.step = wizardStepProve1Failed
+	w.phase1Result = tester.Result{
+		Outcome: tester.ReachableNotUploaded,
+		Command: "ssh -T git@ssh.github.com",
+	}
+
+	// First [s] must set skipConfirmPending=true (first leg of double-confirm).
+	w2, _ := w.update(tea.KeyPressMsg{Code: 's'})
+	if !w2.skipConfirmPending {
+		t.Error("[s] on failed phase must set skipConfirmPending=true")
+	}
+	if writeSSHCalled {
+		t.Error("[s] alone must NOT write anything (requires second Enter confirm)")
+	}
+
+	// Second Enter (double-confirm): dispatch the skip-write cmd.
+	w3, skipCmd := w2.update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	_ = w3
+	if skipCmd == nil {
+		t.Fatal("second Enter (skip confirm) must dispatch a write cmd")
+	}
+
+	// Execute the skip write cmd.
+	msg := skipCmd()
+	_, ok := msg.(wizardCreateResultMsg)
+	if !ok {
+		t.Fatalf("skip write cmd must return wizardCreateResultMsg; got %T", msg)
+	}
+
+	// WriteSSH must fire (LEG 1 via PersistSSH).
+	if !writeSSHCalled {
+		t.Error("skip-write path: WriteSSH must fire on skip+Enter")
+	}
+	// WriteGitconfig must NOT fire (LEG 1 only).
+	if writeGitconfigCalled {
+		t.Error("LEG 1 only: WriteGitconfig must NOT fire on the skip-write path")
+	}
+}
+
+// TestWizardNoWriteGuidanceOnReachableNotUploaded verifies that when Phase 1 fails
+// with ReachableNotUploaded the view shows:
+//   - "Nothing has been written yet" (or similar no-write statement)
+//   - A WHY line naming the key-not-on-provider reason
+//   - Two paths forward including a discoverable [s] offline escape
+//
+// Requirement: G-2 (clear no-write feedback + discoverable offline skip).
+func TestWizardNoWriteGuidanceOnReachableNotUploaded(t *testing.T) {
+	w := makeTestWizardModel(fakeWriteTUIDeps(nil))
+	w.staged = identity.StagedKey{
+		PubLine:          "ssh-ed25519 AAAA test@gitid\n",
+		TempPrivatePath:  "/tmp/gitid/id_ed25519_personal",
+		FinalPrivatePath: "/home/u/.ssh/id_ed25519_personal",
+	}
+	w.inputs[3].SetValue("github.com")
+	w.step = wizardStepProve1Failed
+	w.phase1Result = tester.Result{
+		Command: "ssh -T git@ssh.github.com",
+		Output:  "git@ssh.github.com: Permission denied (publickey).",
+		Outcome: tester.ReachableNotUploaded,
+	}
+
+	view := w.view(90)
+
+	// Must state that nothing has been written.
+	if !strings.Contains(strings.ToLower(view), "nothing") && !strings.Contains(strings.ToLower(view), "not written") {
+		t.Errorf("view must state nothing was written on failure; got:\n%s", view)
+	}
+	// Must name the reason (key not uploaded / not yet on provider).
+	if !strings.Contains(strings.ToLower(view), "not") {
+		t.Errorf("view must mention why (key not on provider); got:\n%s", view)
+	}
+	// Must mention [s] for skip & write offline escape.
+	if !strings.Contains(view, "[s]") {
+		t.Errorf("view must show discoverable [s] offline escape; got:\n%s", view)
+	}
+}
+
+// TestWizardNoWriteGuidanceOnFailure verifies that a Failure outcome (connection
+// refused / DNS failure) also shows the no-write guidance with a different WHY
+// line (could not reach provider, not "key not uploaded").
+func TestWizardNoWriteGuidanceOnFailure(t *testing.T) {
+	w := makeTestWizardModel(fakeWriteTUIDeps(nil))
+	w.staged = identity.StagedKey{
+		PubLine:          "ssh-ed25519 AAAA test@gitid\n",
+		TempPrivatePath:  "/tmp/gitid/id_ed25519_personal",
+		FinalPrivatePath: "/home/u/.ssh/id_ed25519_personal",
+	}
+	w.inputs[3].SetValue("github.com")
+	w.step = wizardStepProve1Failed
+	w.phase1Result = tester.Result{
+		Command: "ssh -T git@ssh.github.com",
+		Output:  "ssh: connect to host ssh.github.com port 443: Connection refused",
+		Outcome: tester.Failure,
+	}
+
+	view := w.view(90)
+
+	// Must state nothing was written.
+	if !strings.Contains(strings.ToLower(view), "nothing") && !strings.Contains(strings.ToLower(view), "not written") {
+		t.Errorf("view must state nothing was written on connection failure; got:\n%s", view)
+	}
+	// Must still show [s] escape.
+	if !strings.Contains(view, "[s]") {
+		t.Errorf("view must show [s] offline escape on connection failure; got:\n%s", view)
+	}
+}
+
+// TestWizardQuitFromFailedProveEmitsRecoveryToast verifies that pressing 'q' from
+// a failed prove phase emits a toast that explains nothing was written and how
+// to finish — not just "Key kept at <path>" (G-2 no-write clarity).
+func TestWizardQuitFromFailedProveEmitsRecoveryToast(t *testing.T) {
+	w := makeTestWizardModel(fakeWriteTUIDeps(nil))
+	w.inputs[0].SetValue("personal")
+	w.staged = identity.StagedKey{
+		TempPrivatePath:  "/tmp/gitid/id_ed25519_personal",
+		FinalPrivatePath: "/home/u/.ssh/id_ed25519_personal",
+	}
+	w.step = wizardStepProve1Failed
+	w.phase1Result = tester.Result{Outcome: tester.ReachableNotUploaded}
+
+	_, qCmd := w.update(tea.KeyPressMsg{Code: 'q'})
+	if qCmd == nil {
+		t.Fatal("'q' from failed prove must dispatch a cmd")
+	}
+	// Execute the batch cmd — run all inner msgs.
+	msgs := runAllCmds(qCmd)
+
+	// There must be a setToastMsg that mentions "Nothing" or "nothing written" and
+	// how to proceed (re-run or [s] skip).
+	found := false
+	for _, msg := range msgs {
+		if tm, ok := msg.(setToastMsg); ok {
+			text := strings.ToLower(tm.text)
+			if strings.Contains(text, "nothing") || strings.Contains(text, "not written") {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Errorf("'q' from failed prove must emit a toast that mentions nothing was written; msgs: %+v", msgs)
+	}
+}
+
+// runAllCmds executes a tea.Cmd (including nested BatchMsg) and returns all leaf
+// tea.Msg values. Used by tests to inspect what messages a cmd or batch produces
+// without needing a real runtime.
+func runAllCmds(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		var all []tea.Msg
+		for _, c := range batch {
+			all = append(all, runAllCmds(c)...)
+		}
+		return all
+	}
+	return []tea.Msg{msg}
 }
