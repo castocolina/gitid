@@ -37,6 +37,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -65,11 +66,13 @@ type snapshotReq struct {
 // All emulator access is serialised through the event loop goroutine (started
 // in startPTY) to avoid data races on the vt.Emulator (not goroutine-safe).
 type ptySession struct {
-	ptmx   *os.File         // master PTY file (write keystrokes here)
-	cmd    *exec.Cmd        // the running gitid process
-	reqCh  chan snapshotReq // callers send a request with a reply channel
-	stopCh chan struct{}    // close to stop the event loop
-	done   chan struct{}    // closed when the event loop exits
+	ptmx      *os.File         // master PTY file (write keystrokes here)
+	cmd       *exec.Cmd        // the running gitid process
+	reqCh     chan snapshotReq // callers send a request with a reply channel
+	stopCh    chan struct{}    // close to stop the event loop
+	done      chan struct{}    // closed when the event loop exits
+	drainDone chan struct{}    // closed when the response drainer (goroutine B) exits
+	emuPipe   *io.PipeWriter   // emulator's input pipe writer; closed to unblock the drainer
 }
 
 // startPTY launches cmd under a pseudo-terminal of fixed size ptyTermWidth×ptyTermHeight.
@@ -100,12 +103,24 @@ func startPTY(t *testing.T, cmd *exec.Cmd) *ptySession {
 		t.Fatalf("startPTY: pty.StartWithSize: %v", err)
 	}
 
+	// emu.InputPipe() returns the emulator's internal *io.PipeWriter. Closing it
+	// (CloseWithError) is the io.Pipe-safe way to unblock the drainer's blocking
+	// emu.Read() at shutdown WITHOUT calling emu.Close() — the latter writes the
+	// unsynchronised emu.closed bool that races with the drainer's Read (the pipe
+	// itself is concurrency-safe; the bool is not).
+	emuPipe, ok := emu.InputPipe().(*io.PipeWriter)
+	if !ok {
+		t.Fatalf("startPTY: emu.InputPipe() is %T, want *io.PipeWriter", emu.InputPipe())
+	}
+
 	s := &ptySession{
-		ptmx:   ptmx,
-		cmd:    cmd,
-		reqCh:  make(chan snapshotReq, 4),
-		stopCh: make(chan struct{}),
-		done:   make(chan struct{}),
+		ptmx:      ptmx,
+		cmd:       cmd,
+		reqCh:     make(chan snapshotReq, 4),
+		stopCh:    make(chan struct{}),
+		done:      make(chan struct{}),
+		drainDone: make(chan struct{}),
+		emuPipe:   emuPipe,
 	}
 
 	ptyCh := make(chan []byte, 128) // buffered to decouple blocking Read from event loop
@@ -135,6 +150,7 @@ func startPTY(t *testing.T, cmd *exec.Cmd) *ptySession {
 	// back to the PTY master so the Bubble Tea app receives its terminal-capability
 	// replies (DA, DECRQM, etc.).
 	go func() {
+		defer close(s.drainDone)
 		resp := make([]byte, 256)
 		for {
 			n, rerr := emu.Read(resp)
@@ -142,7 +158,7 @@ func startPTY(t *testing.T, cmd *exec.Cmd) *ptySession {
 				_, _ = ptmx.Write(resp[:n]) //nolint:errcheck // best-effort feed-back
 			}
 			if rerr != nil {
-				return // io.EOF when emu is closed
+				return // io.EOF once emuPipe is CloseWithError'd in close()
 			}
 		}
 	}()
@@ -157,7 +173,10 @@ func startPTY(t *testing.T, cmd *exec.Cmd) *ptySession {
 			case req := <-s.reqCh:
 				req.resp <- emu.String()
 			case <-s.stopCh:
-				_ = emu.Close()
+				// Do NOT call emu.Close() here: it writes the unsynchronised
+				// emu.closed bool concurrently with the drainer's emu.Read().
+				// close() unblocks the drainer via emuPipe.CloseWithError instead,
+				// after this event loop (the sole emu.Write caller) has exited.
 				return
 			}
 		}
@@ -174,9 +193,13 @@ func (s *ptySession) close(t *testing.T) {
 	_, _ = s.ptmx.Write([]byte{0x03}) //nolint:errcheck
 	// Give the process a moment to handle the signal.
 	_ = s.cmd.Wait()
-	// Stop the event loop.
+	// Stop the event loop (sole emu.Write caller) first.
 	close(s.stopCh)
-	<-s.done // wait for event loop to exit
+	<-s.done // wait for event loop to exit — no more emu.Write after this
+	// Now unblock the drainer's blocking emu.Read() via the io.Pipe-safe path.
+	// This avoids emu.Close()'s unsynchronised closed-bool write racing the Read.
+	_ = s.emuPipe.CloseWithError(io.EOF)
+	<-s.drainDone // wait for the drainer to exit
 	s.ptmx.Close()
 }
 
