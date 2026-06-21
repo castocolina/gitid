@@ -423,7 +423,7 @@ Plans:
 
 **Wave 7 (gap closure)** *(blocked on Wave 6 plan 10 — shares tui/wizard.go; staged wizard SCREEN 2)*
 
-- [ ] 05.7-12-PLAN.md — STAGED WIZARD SCREEN 2 (SSH Connectivity Test, LEG 1 write): upload-manually→test (no gh/glab auto-upload in wizard) against the STAGED key; FULL command + key path visible on pre-run, SUCCESS, and failure (G-3); on SUCCESS write LEG 1 via identity.PersistSSH (key + Host block, backup + idempotent) then advance; SECONDARY [s] skip-&-write-offline with clear no-write feedback (double-confirm + unauth warning preserved) (G-2)
+- [x] 05.7-12-PLAN.md — STAGED WIZARD SCREEN 2 (SSH Connectivity Test, LEG 1 write): upload-manually→test (no gh/glab auto-upload in wizard) against the STAGED key; FULL command + key path visible on pre-run, SUCCESS, and failure (G-3); on SUCCESS write LEG 1 via identity.PersistSSH (key + Host block, backup + idempotent) then advance; SECONDARY [s] skip-&-write-offline with clear no-write feedback (double-confirm + unauth warning preserved) (G-2)
 
 **Wave 8 (gap closure)** *(blocked on Wave 7 plan 12 — shares tui/wizard.go; staged wizard SCREENS 3+4)*
 
@@ -452,7 +452,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 11/13 plans executed
+**Plans:** 12/13 plans executed
 
 Plans:
 
@@ -472,5 +472,5 @@ Plans:
 | 5. CLI Surface + TUI | 4/4 | Built (UAT found gaps → 5.5 + 5.6) | 2026-06-13 |
 | 5.5. Core & CLI Reconciliation | 7/7 | Complete    | 2026-06-14 |
 | 5.6. Integrated TUI App | 5/7 | Complete    | 2026-06-21 |
-| 5.7. Complete v1.0 Product Features in TUI | 11/13 | In Progress|  |
+| 5.7. Complete v1.0 Product Features in TUI | 12/13 | In Progress|  |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |
