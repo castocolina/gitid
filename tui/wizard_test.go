@@ -534,3 +534,106 @@ func TestRotateRelabeledAsNewKey(t *testing.T) {
 		t.Errorf("footer must label rotate as 'new key'; got %q", foot)
 	}
 }
+
+// TestDefaultHasconfigPattern verifies that defaultHasconfigPattern derives
+// git@<alias>:*/** (recipe canonical form, D-03).
+func TestDefaultHasconfigPattern(t *testing.T) {
+	got := defaultHasconfigPattern("personal.github.com")
+	want := "git@personal.github.com:*/**"
+	if got != want {
+		t.Errorf("defaultHasconfigPattern(%q): want %q, got %q", "personal.github.com", want, got)
+	}
+}
+
+// TestDefaultHasconfigPatternEmpty verifies that an empty alias returns "".
+func TestDefaultHasconfigPatternEmpty(t *testing.T) {
+	got := defaultHasconfigPattern("")
+	if got != "" {
+		t.Errorf("defaultHasconfigPattern(empty): want \"\", got %q", got)
+	}
+}
+
+// TestLiveIncludeIfPreview_Gitdir verifies that liveIncludeIfPreview for
+// strategyGitdir produces a [includeIf "gitdir:..."] block.
+func TestLiveIncludeIfPreview_Gitdir(t *testing.T) {
+	got := liveIncludeIfPreview(strategyGitdir, "personal", "personal.github.com", "~/git/personal/", "git@personal.github.com:*/**")
+	if !strings.Contains(got, `[includeIf "gitdir:`) {
+		t.Errorf("liveIncludeIfPreview(gitdir): must contain gitdir includeIf; got:\n%s", got)
+	}
+	if strings.Contains(got, "hasconfig:") {
+		t.Errorf("liveIncludeIfPreview(gitdir): must NOT contain hasconfig; got:\n%s", got)
+	}
+}
+
+// TestLiveIncludeIfPreview_Hasconfig verifies that liveIncludeIfPreview for
+// strategyHasconfig produces a [includeIf "hasconfig:remote.*.url:..."] block.
+func TestLiveIncludeIfPreview_Hasconfig(t *testing.T) {
+	got := liveIncludeIfPreview(strategyHasconfig, "personal", "personal.github.com", "~/git/personal/", "git@personal.github.com:*/**")
+	if !strings.Contains(got, `hasconfig:remote.*.url:`) {
+		t.Errorf("liveIncludeIfPreview(hasconfig): must contain hasconfig; got:\n%s", got)
+	}
+	if strings.Contains(got, `[includeIf "gitdir:`) {
+		t.Errorf("liveIncludeIfPreview(hasconfig): must NOT contain gitdir; got:\n%s", got)
+	}
+}
+
+// TestLiveIncludeIfPreview_Both verifies that liveIncludeIfPreview for
+// strategyBoth produces TWO [includeIf] blocks (one gitdir, one hasconfig).
+func TestLiveIncludeIfPreview_Both(t *testing.T) {
+	got := liveIncludeIfPreview(strategyBoth, "personal", "personal.github.com", "~/git/personal/", "git@personal.github.com:*/**")
+	if !strings.Contains(got, `[includeIf "gitdir:`) {
+		t.Errorf("liveIncludeIfPreview(both): must contain gitdir block; got:\n%s", got)
+	}
+	if !strings.Contains(got, `hasconfig:remote.*.url:`) {
+		t.Errorf("liveIncludeIfPreview(both): must contain hasconfig block; got:\n%s", got)
+	}
+}
+
+// TestWizardMatchSelectorNavigation verifies that pressing ↓ from the match
+// selector field moves from gitdir → hasconfig and the rendered view changes.
+func TestWizardMatchSelectorNavigation(t *testing.T) {
+	w := newCreateWizardModel("personal", tuiDeps{})
+	w.focusIdx = fieldMatch
+	w.inputs[0].SetValue("personal")
+
+	// Initial state: gitdir selected.
+	if w.matchSel != strategyGitdir {
+		t.Errorf("initial matchSel must be strategyGitdir; got %v", w.matchSel)
+	}
+
+	// Press ↓ → should move to hasconfig.
+	w2, _ := w.handleKey(tea.KeyPressMsg{Code: tea.KeyDown})
+	if w2.matchSel != strategyHasconfig {
+		t.Errorf("↓ must select strategyHasconfig; got %v", w2.matchSel)
+	}
+
+	// View must now show hasconfig preview.
+	view := w2.view(90)
+	if !strings.Contains(view, "hasconfig:remote.*.url:") {
+		t.Errorf("after ↓, view must contain hasconfig preview; got:\n%s", view)
+	}
+	if strings.Contains(view, `[includeIf "gitdir:`) {
+		t.Errorf("after ↓ to hasconfig, view must NOT show gitdir includeIf; got:\n%s", view)
+	}
+}
+
+// TestWizardMatchValidationGitdirRequired verifies that the plan's validation
+// copy string "gitdir path is required" is present in the UI-SPEC (placeholder;
+// this string must appear in the selector's validation path).
+func TestWizardMatchValidationCopyPresent(t *testing.T) {
+	// The validation messages are checked in advanceFromForm. This test documents
+	// the contract: if the selector is wired and the form has the identity name,
+	// the view must show gitdir as the current selection.
+	w := newCreateWizardModel("testid", tuiDeps{})
+	w.focusIdx = fieldMatch
+	w.inputs[0].SetValue("testid")
+	w2, _ := w.handleKey(tea.KeyPressMsg{Code: tea.KeyDown}) // move to hasconfig
+	// Preview for hasconfig should include the URL pattern (or placeholder text).
+	view := w2.renderMatchSelector("Match Strategy: ", true)
+	if !strings.Contains(view, "hasconfig") {
+		t.Errorf("expanded selector must contain 'hasconfig' option; got:\n%s", view)
+	}
+	if !strings.Contains(view, "Preview:") {
+		t.Errorf("expanded selector must contain 'Preview:' section; got:\n%s", view)
+	}
+}

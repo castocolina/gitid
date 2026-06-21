@@ -24,6 +24,7 @@ type updateFlags struct {
 	gitdir   string // --gitdir: new gitdir match value (skips gitdir prompt)
 	url      string // --url: new hasconfig URL pattern (bare; buildMatches prepends "remote.*.url:")
 	provider string // --provider: overwrite the provider marker (flag-only; no interactive prompt — Q3)
+	match    string // --match: gitdir|hasconfig|both (non-interactive strategy selector, D-10 parity)
 }
 
 // newUpdateCmd builds `gitid identity update <name>` (IDENT-04). The handler is
@@ -45,6 +46,11 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&flags.gitdir, "gitdir", "", "new gitdir match value (skips gitdir prompt; D-09)")
 	cmd.Flags().StringVar(&flags.url, "url", "", "new hasconfig URL pattern (skips URL prompt; D-09)")
 	cmd.Flags().StringVar(&flags.provider, "provider", "", "overwrite the provider marker in the SSH Host block (D-11/Q3; flag-only, no interactive prompt)")
+	cmd.Flags().StringVar(&flags.match, "match", "", "match strategy: gitdir|hasconfig|both (non-interactive parity; D-10)")
+	//nolint:errcheck // completion registration failure is non-fatal (cobra ignores it gracefully)
+	_ = cmd.RegisterFlagCompletionFunc("match", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{"gitdir", "hasconfig", "both"}, cobra.ShellCompDirectiveNoFileComp
+	})
 	return cmd
 }
 
@@ -149,7 +155,7 @@ func runIdentityUpdate(in io.Reader, out io.Writer, name string, dryRun bool, fl
 	edited.Hostname = prompt(reader, out, "Hostname", existing.Hostname)
 	edited.Port = promptPort(reader, out, "Port", existing.Port)
 
-	// Match strategy: flag-or-picker (D-07, D-09). Pre-fill the picker from
+	// Match strategy: flag-or-picker (D-07, D-09, D-10). Pre-fill the picker from
 	// existing.Matches so a hasconfig identity does NOT silently collapse to
 	// gitdir (Pitfall 6 regression guard).
 	gitdirDefault := "~/git/" + name + "/"
@@ -161,6 +167,25 @@ func runIdentityUpdate(in io.Reader, out io.Writer, name string, dryRun bool, fl
 		edited.Matches = buildMatches("1", flags.gitdir, "")
 	case flags.url != "":
 		edited.Matches = buildMatches("2", "", flags.url)
+	case flags.match != "":
+		// --match flag: non-interactive parity surface (D-10). Use current values
+		// as defaults for the strategy-dependent sub-fields so a strategy change
+		// without explicit --gitdir/--url stays in the same directory/URL.
+		currentGitdir := gitdirDefault
+		currentURL := urlDefault
+		for _, m := range existing.Matches {
+			switch m.Kind {
+			case gitconfig.MatchGitdir:
+				currentGitdir = m.Value
+			case gitconfig.MatchHasconfig:
+				currentURL = strings.TrimPrefix(m.Value, "remote.*.url:")
+			}
+		}
+		stratNum, ferr := matchFromFlag(flags.match)
+		if ferr != nil {
+			return ferr
+		}
+		edited.Matches = buildMatches(stratNum, currentGitdir, currentURL)
 	default:
 		// Extract current gitdir/url values for pre-fill.
 		currentGitdir := gitdirDefault
