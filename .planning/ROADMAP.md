@@ -16,7 +16,8 @@
 - [x] **Phase 4: Doctor** — Deep health checks (deps, permissions, coherence/drift, orphans, signing wiring, agent) with severity + fix; `gitid doctor` CLI command (completed 2026-06-12 — 5 plans + 2 gap-closure plans 04-06/04-07; initial verification found 3 critical wiring gaps DOC-GAP-01/02/03, all closed and re-verified passed, see 04-VERIFICATION.md)
 - [x] **Phase 5: CLI Surface + TUI** — Full Cobra command surface with shell completion; Bubble Tea TUI launching to doctor dashboard with identity/account navigation (built 2026-06-13 — ⚠️ guided UAT found core + UX gaps, see VERIFICATION-PLAYBOOK.md; superseded by Phase 5.5 reconciliation + Phase 5.6 TUI rebuild)
 - [x] **Phase 5.5: Core & CLI Reconciliation** *(INSERTED — 2026-06-13)* — Fix the core/CLI defects the playbook surfaced: auth-gated create-flow (generate→upload→loop-test until PASS→persist-only-after-PASS, with skip escape), correct provider reconstruction, install PATH feedback, per-URL (`hasconfig`) matching alongside `gitdir`, and a doctor check for overlapping/ambiguous matches. CLI/core only — no TUI cosmetics. (completed 2026-06-14)
-- [ ] **Phase 5.6: Integrated TUI App** *(INSERTED — 2026-06-13)* — Replace the thin doctor-dashboard TUI with one integrated terminal app (Bubble Tea v2): persistent header + identity sidebar + master-detail pane + bold footer; view switcher (Identities · Health · Global Options); in-app create/add wizard with live feedback (the proven create-flow); per-site + global options editable in-pane; delete/rotate in-app; copy = public key only. Ergonomics modeled on `../tools-installer`.
+- [x] **Phase 5.6: Integrated TUI App** *(INSERTED — 2026-06-13)* — Replace the thin doctor-dashboard TUI with one integrated terminal app (Bubble Tea v2): persistent header + identity sidebar + master-detail pane + bold footer; view switcher (Identities · Health · Global Options); in-app create/add wizard with live feedback (the proven create-flow); per-site + global options editable in-pane; delete/rotate in-app; copy = public key only. Ergonomics modeled on `../tools-installer`. (completed 2026-06-21)
+- [ ] **Phase 5.7: Complete v1.0 Product Features in TUI** *(INSERTED — 2026-06-21)* — Close the four genuinely-unbuilt whole-product v1.0 gaps, reachable from both the integrated TUI and the CLI (D-10 parity): finish the deferred 5.6 D-06 match-strategy selector (gitdir default + hasconfig/both, live includeIf preview), adopt/migrate plain-style `~/.gitconfig_<name>` fragments into `~/.gitconfig.d/` (ADOPT-01), `gitid add repo <url>` clone+verify-pull workflow (REPO-01), and assisted `gh`/`glab` key upload (AUTOUP-01). Global toggles / `insteadOf` / alt-SSH 443 / completions are already shipped (Phase 3.1 + 5) and OUT of scope per D-01. Core stays UI-free + TDD; every feature gets unit-TDD + real-entry e2e; `recipes/` is the canonical end state. (see `docs/prds/ssh-git-identity-manager-v1.0-prd.md`)
 - [ ] **Phase 6: Linux Cross-Platform Validation** *(DEFERRED — post-v1)* — Validate the whole tool end-to-end on Linux (developed on macOS only): clipboard dispatch, per-OS install hints, file permissions, config-path resolution, the make/pre-commit toolchain, and the two-phase ssh test flow
 
 ---
@@ -329,6 +330,84 @@ Plans:
 
 - [ ] 05.6-06-PLAN.md — Delete/rotate slice: wire identity.DeleteDeps + in-app delete/rotate confirms + unmanaged affordances (reveal/copy/open) + TestBuildTUIDepsNilGuard + manual real-entry smoke (TUI-04/06, D-16)
 
+### Phase 5.7: Complete v1.0 Product Features in TUI (INSERTED)
+
+**Goal**: Bring gitid from the shipped identity-lifecycle MVP up to the full
+whole-product v1.0 PRD by closing the FOUR genuinely-unbuilt gaps, each reachable
+from both the integrated two-pane TUI and the CLI (D-10 parity): (1) finish the
+deferred Phase 5.6 D-06 match-strategy selector — keep `gitdir` as the default but
+expose `hasconfig`/`both` with a live `includeIf` preview (D-02/D-03); (2) ADOPT-01
+— migrate/reference plain-style `~/.gitconfig_<name>` fragments into
+`~/.gitconfig.d/`, never destructively (D-04/D-05); (3) REPO-01 — `gitid add repo
+<url>` provider-detect → client picker → alias rewrite → clone → verify-pull
+(D-07/D-08/D-09); (4) AUTOUP-01 — assisted `gh`/`glab` key upload, detect+prompt,
+never auto (D-11/D-12). Global toggles / `insteadOf` / alt-SSH 443 / completions
+are already shipped (Phase 3.1 + 5) and OUT of scope (D-01). Core stays UI-free +
+TDD; every feature gets unit-TDD + real-entry e2e (D-13); `recipes/` is canonical.
+
+**Depends on**: Phase 5.6 (integrated TUI app)
+
+**Source PRD**: `docs/prds/ssh-git-identity-manager-v1.0-prd.md` (§4.6–4.8, §7 Phase 2/3)
+
+**Requirements**: ADOPT-01 (fragment adoption), REPO-01 (`add repo`), AUTOUP-01
+(assisted key upload), plus the deferred 5.6 D-06 match-strategy selector
+completion (mapped to GIT-02 — gitdir/hasconfig combinable). GLOBAL-01 / URLRW-01 /
+CLI-02 are COMPLETE and explicitly NOT replanned (D-01).
+
+**Success Criteria** (what must be TRUE):
+
+  1. The TUI create wizard exposes gitdir (default), hasconfig, and both as selectable
+     match strategies with a live `includeIf` preview; `hasconfig` auto-derives as
+     `git@<alias>:*/**` (recipe form), editable before write; `both` writes two
+     OR-applied `includeIf` blocks; `--match gitdir|hasconfig|both` mirrors on the CLI
+  2. `gitid adopt <path>` and the TUI unmanaged-pane Adopt affordance migrate (default)
+     or reference a plain-style fragment; migrate copies into `~/.gitconfig.d/<name>`
+     and repoints the managed `includeIf`, never deleting the original (removal is a
+     separate explicit confirm)
+  3. `gitid add repo <url>` (and the TUI Add Repo modal) detect the provider, rewrite
+     the URL to the matching alias, clone into `~/git/<client>/<repo>`, and verify with
+     `git -C <dest> pull` — both clone and pull output shown; no-match launches inline
+     create then resumes the clone (continuous, no abort)
+  4. When `gh`/`glab` is present and authenticated, the copy modal + wizard step 3 +
+     `gitid identity copy --upload-keys` offer per-key (auth + signing) upload with
+     explicit confirmation; the shown command equals the command run; absent/unauthenticated
+     falls back to manual instructions and never gates create/copy
+  5. Every feature has unit-TDD coverage AND at least one e2e test that drives the real
+     `gitid` binary in a sandbox HOME (clone against a local bare remote; PATH-stubbed
+     fake gh/glab) — closing the recurring injected-seam blindspot (D-13/D-16)
+
+**Out of scope**: Global toggles / `insteadOf` / alt-SSH 443 / completions (already
+shipped — D-01); configurable clone base dir beyond `~/git`; interactive gh/glab login;
+Windows, GPG signing, web UI, automatic key rotation, secret-vault (v1 non-goals).
+
+**Plans**: 8 plans (Wave 0 test infra → 3 parallel core packages → CLI+wiring & match selector → TUI modals → review gates)
+**UI hint**: yes
+
+Plans:
+
+**Wave 0**
+
+- [ ] 05.7-01-PLAN.md — Test infra: extend e2e harness (FakeGHDir/FakeGLabDir/FakeGitDir + local bare remote), RED e2e for adopt/addrepo/upload, RED `TestBuildTUIDepsNilGuard_Phase57`, RED unit stubs + new package dirs (D-13/D-16)
+
+**Wave 1** *(blocked on Wave 0 — three new packages, zero file overlap, parallel)*
+
+- [ ] 05.7-02-PLAN.md — `internal/adopter` (TDD): Adopt migrate/reference (never-delete); ListCandidates built FROM SCRATCH via filepath.Glob(~/.gitconfig_*) — NOT doctor.CheckOrphans (corrected premise); best-effort name matching (ADOPT-01, D-04/D-05/D-06)
+- [ ] 05.7-03-PLAN.md — `internal/repoclone` (TDD): ProviderFromURL/RewriteToAlias/DestPath + Clone/Pull seam with dest-exists + dest-under-base guard (base = deps.UserHomeDir()+/git), arg-slice exec (REPO-01, D-09)
+- [ ] 05.7-04-PLAN.md — `internal/uploader` (TDD): Detect (gh/glab + auth status) + UploadKey/CommandPreview arg-slice, detect+prompt only (AUTOUP-01, D-11/D-12)
+
+**Wave 2** *(blocked on Wave 1 — 05 and 06 parallel; match-selector files vs adopt/addrepo/copy/deps files, zero overlap)*
+
+- [ ] 05.7-05-PLAN.md — Match-strategy selector: turn the match e2e GREEN via the EXISTING stdin interactive picker (gatherCreateInput already calls promptMatchStrategy) + TUI wizard gitdir/hasconfig/both with live includeIf preview + an ADDITIONAL --match CLI flag for non-interactive parity (GIT-02, D-02/D-03/D-10; completes 5.6 D-06)
+- [ ] 05.7-06-PLAN.md — CLI commands + live deps wiring: `gitid adopt` (root), `gitid add repo` (under a NEW top-level `add` group — none exists today), `gitid identity copy --upload-keys`; add adopt/repoclone/uploader fields to tuiDeps in tui/model.go + widen buildTUIDeps to 8-value + rewire nil-guard GREEN; adopt/addrepo/upload e2e GREEN (ADOPT-01/REPO-01/AUTOUP-01, D-10/D-13/D-16)
+
+**Wave 3** *(blocked on Waves 2 — shares tui/model.go, reuses wizard for inline-create)*
+
+- [ ] 05.7-07-PLAN.md — TUI surfaces: sidebar unmanagedEntry gains a fragment `kind` discriminator + populates ~/.gitconfig_* rows from deps.adopt.ListCandidates FIRST, then the Adopt modal/affordance dispatches on fragment rows; Add Repo modal (detect→picker→rewrite→stream→result + inline-create resume); copy/wizard gh/glab upload-assist (ADOPT-01/REPO-01/AUTOUP-01, D-04..D-12)
+
+**Wave 4** *(blocked on Waves 2-3 — review gates)*
+
+- [ ] 05.7-08-PLAN.md — Review wave: agent-ui-ux-designer critique of the 4 new TUI surfaces (teatest-independent View()-dump frame capture fallback) + requesting-code-review over the phase diff + blocking manual TTY smoke test (D-13)
+
 ### Phase 6: Linux Cross-Platform Validation
 
 **Status:** DEFERRED (post-v1) — do not plan or execute until Phases 1–5 are complete on macOS and a Linux environment is available.
@@ -352,7 +431,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 5/6 plans executed
+**Plans:** 5/7 plans complete
 
 Plans:
 
@@ -371,5 +450,6 @@ Plans:
 | 4. Doctor | 7/7 | Complete   | 2026-06-12 |
 | 5. CLI Surface + TUI | 4/4 | Built (UAT found gaps → 5.5 + 5.6) | 2026-06-13 |
 | 5.5. Core & CLI Reconciliation | 7/7 | Complete    | 2026-06-14 |
-| 5.6. Integrated TUI App | 5/6 | In Progress|  |
+| 5.6. Integrated TUI App | 5/7 | Complete    | 2026-06-21 |
+| 5.7. Complete v1.0 Product Features in TUI | 0/8 | Planned | - |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |

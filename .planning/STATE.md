@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: milestone
-status: executing
+milestone_name: Product Features in TUI
+status: Not planned yet — run /gsd-plan-phase 05.7
 stopped_at: Completed 05.6-03-PLAN.md
-last_updated: "2026-06-16T00:29:02.178Z"
-last_activity: 2026-06-15 -- Phase 05.6 execution started
+last_updated: "2026-06-21T11:17:31.523Z"
+last_activity: 2026-06-21
 progress:
-  total_phases: 9
+  total_phases: 10
   completed_phases: 7
-  total_plans: 42
+  total_plans: 51
   completed_plans: 41
-  percent: 78
+  percent: 70
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-08)
 
 **Core value:** Managing a Git identity produces coordinated, coherent SSH + Git artifacts that are proven to authenticate and resolve correctly before any file is written, and existing hand-written config is never corrupted.
-**Current focus:** Phase 05.6 — integrated-tui-app-inserted
+**Current focus:** Phase 05.7 — plans regenerated via --reviews, all review findings resolved
 
 ## Current Position
 
-Phase: 05.6 (integrated-tui-app-inserted) — EXECUTING
-Plan: 6 of 6
-Status: Ready to execute
-Last activity: 2026-06-15 -- Phase 05.6 execution started
+Phase: 05.7
+Plan: Not started
+Status: Not planned yet — run /gsd-plan-phase 05.7
+Last activity: 2026-06-21
 
 Progress: [██████████] Phase 04 complete (7/7 plans incl. gap closure)
 
@@ -36,7 +36,7 @@ Progress: [██████████] Phase 04 complete (7/7 plans incl. ga
 
 **Velocity:**
 
-- Total plans completed: 22
+- Total plans completed: 32
 - Average duration: — min
 - Total execution time: 0 hours
 
@@ -53,6 +53,7 @@ Progress: [██████████] Phase 04 complete (7/7 plans incl. ga
 | 03.1 | 4 | - | - |
 | 04 | 7 | - | - |
 | 05.5 | 7 | - | - |
+| 5.6 | 5 | - | - |
 
 *Updated after each plan completion*
 | Phase 02 P01 | 18 | 2 tasks | 5 files |
@@ -151,6 +152,7 @@ Recent decisions affecting current work:
 ### Roadmap Evolution
 
 - Phase 3.1 (Baseline Global Git Config + Global Gitignore) inserted after Phase 3, before Doctor — scope correction: GLOBAL-01 and URLRW-01 promoted v2→v1, new GITIGNORE-01 added (45/45 v1 coverage). Canonical refs: samples/gist-60f2f1d-gitconfig, samples/gist-2c98cff-ssh-config.
+- Phase 5.7 (Complete v1.0 Product Features in TUI) inserted after Phase 5.6, before Linux validation (URGENT — 2026-06-21). Closes the gap between the shipped identity-lifecycle MVP and the whole-product v1.0 PRD (`docs/prds/ssh-git-identity-manager-v1.0-prd.md`): global-config toggles, `insteadOf` rewriting, fragment adoption, alt-SSH 443, shell completions, `add repo` workflow. Picks up dangling REQ-IDs ADOPT-01/REPO-01/AUTOUP-01. `recipes/` remains the canonical end state.
 
 ### Pending Todos
 
