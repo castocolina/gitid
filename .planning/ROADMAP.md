@@ -402,7 +402,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 — 05 and 06 parallel; match-selector files vs adopt/addrepo/copy/deps files, zero overlap)*
 
 - [x] 05.7-05-PLAN.md — Match-strategy selector: turn the match e2e GREEN via the EXISTING stdin interactive picker (gatherCreateInput already calls promptMatchStrategy) + TUI wizard gitdir/hasconfig/both with live includeIf preview + an ADDITIONAL --match CLI flag for non-interactive parity (GIT-02, D-02/D-03/D-10; completes 5.6 D-06)
-- [ ] 05.7-06-PLAN.md — CLI commands + live deps wiring: `gitid adopt` (root), `gitid add repo` (under a NEW top-level `add` group — none exists today), `gitid identity copy --upload-keys`; add adopt/repoclone/uploader fields to tuiDeps in tui/model.go + widen buildTUIDeps to 8-value + rewire nil-guard GREEN; adopt/addrepo/upload e2e GREEN (ADOPT-01/REPO-01/AUTOUP-01, D-10/D-13/D-16)
+- [x] 05.7-06-PLAN.md — CLI commands + live deps wiring: `gitid adopt` (root), `gitid add repo` (under a NEW top-level `add` group — none exists today), `gitid identity copy --upload-keys`; add adopt/repoclone/uploader fields to tuiDeps in tui/model.go + widen buildTUIDeps to 8-value + rewire nil-guard GREEN; adopt/addrepo/upload e2e GREEN (ADOPT-01/REPO-01/AUTOUP-01, D-10/D-13/D-16)
 
 **Wave 3** *(blocked on Waves 2 — shares tui/model.go, reuses wizard for inline-create)*
 
@@ -435,7 +435,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 5/8 plans executed
+**Plans:** 6/8 plans executed
 
 Plans:
 
@@ -455,5 +455,5 @@ Plans:
 | 5. CLI Surface + TUI | 4/4 | Built (UAT found gaps → 5.5 + 5.6) | 2026-06-13 |
 | 5.5. Core & CLI Reconciliation | 7/7 | Complete    | 2026-06-14 |
 | 5.6. Integrated TUI App | 5/7 | Complete    | 2026-06-21 |
-| 5.7. Complete v1.0 Product Features in TUI | 5/8 | In Progress|  |
+| 5.7. Complete v1.0 Product Features in TUI | 6/8 | In Progress|  |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |

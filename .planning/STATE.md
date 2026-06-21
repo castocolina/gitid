@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: Product Features in TUI
 status: executing
 stopped_at: Completed 05.6-03-PLAN.md
-last_updated: "2026-06-21T12:12:19.411Z"
+last_updated: "2026-06-21T13:03:34.511Z"
 last_activity: 2026-06-21 -- Phase 05.7 execution started
 progress:
   total_phases: 10
   completed_phases: 7
   total_plans: 51
-  completed_plans: 42
+  completed_plans: 47
   percent: 70
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-08)
 ## Current Position
 
 Phase: 05.7 (complete-v1-0-product-features-in-tui) — EXECUTING
-Plan: 2 of 8
+Plan: 3 of 8
 Status: Ready to execute
 Last activity: 2026-06-21 -- Phase 05.7 execution started
 
@@ -86,6 +86,7 @@ Progress: [██████████] Phase 04 complete (7/7 plans incl. ga
 | Phase 05.6 P04 | 11 | 2 tasks | 8 files |
 | Phase 05.6 P05 | 13 | 2 tasks | 5 files |
 | Phase 05.7 P01 | 6 | 3 tasks | 11 files |
+| Phase 05.7 P06 | 9 | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -151,6 +152,9 @@ Recent decisions affecting current work:
 - [Phase ?]: 05.6-03: healthViewModel sub-model (port from dashboardModel); fixConfirmModal = fixConfirm Enter-gated; badgesFromFindings via IdentityName field; healthReady flag seeds init() only on first view-2 press
 - [Phase ?]: 05.7-01 D-01: TestBuildTUIDepsNilGuard_Phase57 uses zero-value Deps form — buildTUIDeps still returns 5 values in Plan 01; Plan 06 rewires to 8-value return
 - [Phase ?]: 05.7-01 D-02: adopter.Deps.WriteIncludeIf is a 3-arg seam (id, fragPath, matches) with gitconfigPath captured by live closure — not a 4-arg pass-through
+- [Phase ?]: WriteIncludeIf 3-arg closure captures gitconfigPath in buildAdoptDeps; adopter seam kept narrow (Plan 06)
+- [Phase ?]: TestBuildTUIDepsNilGuard_Phase57 drives live buildTUIDeps() 8-value return — D-16 anti-blindspot for adopter/repoclone/uploader seams (Plan 06)
+- [Phase ?]: copy --upload-keys is non-blocking by design (D-11): AuthToolNotFound is silent-skip; upload never gates the key copy (Plan 06)
 
 ### Roadmap Evolution
 
@@ -178,6 +182,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-21T12:12:11.168Z
+Last session: 2026-06-21T13:03:34.502Z
 Stopped at: Completed 05.6-03-PLAN.md
 Resume file: None
