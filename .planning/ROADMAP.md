@@ -425,7 +425,11 @@ Plans:
 
 - [x] 05.7-12-PLAN.md — STAGED WIZARD SCREEN 2 (SSH Connectivity Test, LEG 1 write): upload-manually→test (no gh/glab auto-upload in wizard) against the STAGED key; FULL command + key path visible on pre-run, SUCCESS, and failure (G-3); on SUCCESS write LEG 1 via identity.PersistSSH (key + Host block, backup + idempotent) then advance; SECONDARY [s] skip-&-write-offline with clear no-write feedback (double-confirm + unauth warning preserved) (G-2)
 
-**Wave 8 (gap closure)** *(blocked on Wave 7 plan 12 — shares tui/wizard.go; staged wizard SCREENS 3+4)*
+**Wave 8 (gap closure)** *(blocked on Wave 7 plan 12 — shares tui/wizard.go; leg-1 correction from re-UAT)*
+
+- [ ] 05.7-14-PLAN.md — LEG-1 CORRECTION (UAT G-5, BLOCKER): write the Host <alias> block to ~/.ssh/config (with timestamped backup) BEFORE the resolved/alias test — Phase 1 basic connectivity (explicit -i, real hostname) → PersistSSH write+backup → Phase 2 resolved alias test (now resolves); Phase-2-fail keeps the backed-up block with retry/keep/rollback; alias blank → Host = provider host (github.com), WYSIWYG preview, no invented suffix; test command+path visible on every phase (CLAUDE.md test→backup→re-test)
+
+**Wave 9 (gap closure)** *(blocked on Wave 8 plan 14 — shares tui/wizard.go; staged wizard SCREENS 3+4)*
 
 - [ ] 05.7-13-PLAN.md — STAGED WIZARD SCREEN 3 (Git Configuration, LEG 2) + SCREEN 4 (Review): Screen 3 collects user.name/email + match selector (gitdir/hasconfig/both, editable sub-fields, match panel ALONE so it never overflows) + signing toggle, live includeIf preview, email-validated; on confirm write LEG 2 via identity.PersistGitconfig (fragment + includeIf + allowed_signers); Screen 4 is a read-only review of the SSH block + includeIf + fragment + allowed_signers + live ssh -G resolution (completes G-1/G-2)
 
