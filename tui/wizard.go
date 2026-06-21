@@ -44,6 +44,7 @@ import (
 	"github.com/castocolina/gitid/internal/doctor"
 	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/identity"
+	"github.com/castocolina/gitid/internal/sshconfig"
 	"github.com/castocolina/gitid/internal/tester"
 	"github.com/castocolina/gitid/internal/upload"
 )
@@ -1336,6 +1337,13 @@ func (m createWizardModel) viewScreen1(sb *strings.Builder, _ int) {
 	folderView := m.matchGitdirVal.View()
 	sb.WriteString(renderFormField("Folder:         ", folderView, m.focusIdx == folderFocusIdx()) + "\n")
 
+	// Live Host-block preview (Task 3, G-2 preview half): always shown when name
+	// is non-empty so the user sees the exact alias block before any write.
+	if name != "" {
+		sb.WriteString("\n")
+		m.renderSSHBlockPreview(sb)
+	}
+
 	if m.err != "" {
 		sb.WriteString("\n")
 		sb.WriteString(SeverityStyle(doctor.SeverityWarning).Render("! " + m.err))
@@ -1344,6 +1352,67 @@ func (m createWizardModel) viewScreen1(sb *strings.Builder, _ int) {
 
 	sb.WriteString("\n")
 	sb.WriteString(StyleFaint.Render("[Tab cycle fields · Enter advance · Esc cancel]"))
+}
+
+// renderSSHBlockPreview writes a live preview of the exact `Host <alias>` block
+// that WILL be written to ~/.ssh/config via sshconfig.RenderHostBlock — the same
+// renderer PersistSSH uses (T-05.7-10-02: no preview/write drift).
+//
+// The preview derives alias, hostname, port, and finalKeyPath from the SAME
+// sources buildCreateInput uses, so the preview is byte-faithful to the write.
+// It uses staged.FinalPrivatePath when set; otherwise derives the deterministic
+// key path (~/.ssh/id_<algo>_<name>) as Generate would name it.
+//
+// Guard: caller must ensure name != "" before calling (no preview for empty name).
+func (m createWizardModel) renderSSHBlockPreview(sb *strings.Builder) {
+	name := m.inputs[0].Value()
+	provider := m.inputs[3].Value()
+	if provider == "" {
+		provider = "github.com"
+	}
+
+	// Alias: typed value or derived default.
+	alias := m.inputs[5].Value()
+	if alias == "" {
+		alias = identity.DefaultAlias(name, provider)
+	}
+
+	// Hostname: use the same source as buildCreateInput (T-05.7-10-02 parity).
+	hostname := identity.DefaultHostname(provider)
+	if m.hostnameEdited {
+		hostname = m.hostnameVal.Value()
+	} else if v := m.hostnameVal.Value(); v != "" {
+		hostname = v
+	}
+
+	// Port: prefer typed value, fallback to identity.DefaultPort().
+	port := identity.DefaultPort()
+	if portStr := m.inputs[4].Value(); portStr != "" {
+		var p int
+		if _, err := fmt.Sscanf(portStr, "%d", &p); err == nil {
+			port = p
+		}
+	}
+
+	// IdentityFile path: use staged.FinalPrivatePath when already generated;
+	// otherwise derive the deterministic final path the Generate seam uses.
+	finalKeyPath := m.staged.FinalPrivatePath
+	if finalKeyPath == "" {
+		finalKeyPath = "~/.ssh/id_ed25519_" + name
+	}
+
+	// Render via sshconfig.RenderHostBlock — same call PersistSSH makes.
+	// No hand-built Host block strings (T-05.7-10-02, discipline from T-05.7-05-01).
+	hostBlock := sshconfig.RenderHostBlock(alias, hostname, port, finalKeyPath, provider)
+
+	sb.WriteString(StyleFaint.Render("Will write to ~/.ssh/config:"))
+	sb.WriteString("\n")
+	// Render each line with a 2-space indent via StyleFaint for visual consistency
+	// with the includeIf preview (StyleFaint/StyleBody pattern).
+	for _, line := range strings.Split(strings.TrimRight(hostBlock, "\n"), "\n") {
+		sb.WriteString(StyleFaint.Render("  " + line))
+		sb.WriteString("\n")
+	}
 }
 
 // viewLegacyForm renders the full 8-field form for non-Screen-1 screens.

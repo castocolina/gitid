@@ -822,6 +822,116 @@ func TestWizardScreen1BuildCreateInputHostname(t *testing.T) {
 	}
 }
 
+// ─── Task 3: Live SSH Host-block preview tests ──────────────────────────────
+
+// TestWizardScreen1SSHBlockPreview verifies that Screen 1 renders a live preview
+// of the exact Host block that will be written, using alt-SSH defaults.
+// Drives via the real model view path (anti-blindspot).
+// Requirement: TUI-04 (G-2 preview half), SSH-01.
+func TestWizardScreen1SSHBlockPreview(t *testing.T) {
+	w := newCreateWizardModel("", tuiDeps{})
+	w.inputs[0].SetValue("personal")
+	w.inputs[3].SetValue("github.com")
+
+	view := w.view(90)
+
+	// Preview section header must appear.
+	if !strings.Contains(view, "Will write to") && !strings.Contains(view, "~/.ssh/config") {
+		t.Errorf("Screen 1 must show Host-block preview header; got:\n%s", view)
+	}
+
+	// The preview must contain the exact Host-block lines (alt-SSH defaults).
+	wantLines := []string{
+		"Host personal.github.com",
+		"Hostname ssh.github.com",
+		"Port 443",
+		"User git",
+		"IdentitiesOnly yes",
+	}
+	for _, want := range wantLines {
+		if !strings.Contains(view, want) {
+			t.Errorf("Screen 1 preview must contain %q; got:\n%s", want, view)
+		}
+	}
+
+	// Preview must show IdentityFile line.
+	if !strings.Contains(view, "IdentityFile") {
+		t.Errorf("Screen 1 preview must contain IdentityFile; got:\n%s", view)
+	}
+
+	// No advisory-divergence line.
+	if strings.Contains(view, "advisory") || strings.Contains(view, "diverge") {
+		t.Errorf("Screen 1 preview must NOT contain advisory/divergence text; got:\n%s", view)
+	}
+}
+
+// TestWizardScreen1PreviewGuardedOnEmptyName verifies the Host-block preview
+// is not shown when the identity name is blank.
+func TestWizardScreen1PreviewGuardedOnEmptyName(t *testing.T) {
+	w := newCreateWizardModel("", tuiDeps{})
+	// Name is blank.
+	view := w.view(90)
+
+	if strings.Contains(view, "Will write to") {
+		t.Errorf("preview must not appear when name is blank; got:\n%s", view)
+	}
+}
+
+// TestWizardScreen1PreviewUpdatesOnPortEdit verifies the live preview re-renders
+// when the user overrides the Port field (from 443 to 22).
+// Drives via the real model Update/handleKey path (anti-blindspot).
+func TestWizardScreen1PreviewUpdatesOnPortEdit(t *testing.T) {
+	w := newCreateWizardModel("", tuiDeps{})
+	w.inputs[0].SetValue("personal")
+	w.inputs[3].SetValue("github.com")
+
+	// Override port to 22.
+	w.inputs[4].SetValue("22")
+
+	view := w.view(90)
+
+	if !strings.Contains(view, "Port 22") {
+		t.Errorf("preview must update with edited Port 22; got:\n%s", view)
+	}
+	// Must NOT show advisory text.
+	if strings.Contains(view, "advisory") {
+		t.Errorf("no advisory text expected; got:\n%s", view)
+	}
+}
+
+// TestWizardScreen1PreviewUpdatesOnAliasEdit verifies the live preview re-renders
+// with a custom alias when the user types into the SSH Alias field.
+func TestWizardScreen1PreviewUpdatesOnAliasEdit(t *testing.T) {
+	w := newCreateWizardModel("", tuiDeps{})
+	w.inputs[0].SetValue("personal")
+	w.inputs[3].SetValue("github.com")
+	w.inputs[5].SetValue("mygithub")
+
+	view := w.view(90)
+
+	if !strings.Contains(view, "Host mygithub") {
+		t.Errorf("preview must show typed alias 'mygithub'; got:\n%s", view)
+	}
+}
+
+// TestWizardScreen1PreviewUsesRenderHostBlock verifies the preview goes through
+// sshconfig.RenderHostBlock (no hand-built Host block in tui/).
+// Requirement: T-05.7-10-02 (preview/write parity).
+func TestWizardScreen1PreviewUsesRenderHostBlock(t *testing.T) {
+	w := newCreateWizardModel("", tuiDeps{})
+	w.inputs[0].SetValue("personal")
+	w.inputs[3].SetValue("github.com")
+	// Set a staged key so the preview shows the deterministic final path.
+	w.staged.FinalPrivatePath = "/home/user/.ssh/id_ed25519_personal"
+
+	view := w.view(90)
+
+	// The IdentityFile line must contain the staged FinalPrivatePath.
+	if !strings.Contains(view, "/home/user/.ssh/id_ed25519_personal") {
+		t.Errorf("preview IdentityFile must use staged.FinalPrivatePath; got:\n%s", view)
+	}
+}
+
 // TestWizardMatchValidationGitdirRequired verifies that the plan's validation
 // copy string "gitdir path is required" is present in the UI-SPEC (placeholder;
 // this string must appear in the selector's validation path).
