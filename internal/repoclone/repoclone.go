@@ -7,8 +7,10 @@ package repoclone
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -33,48 +35,171 @@ var ErrDestExists = errors.New("repoclone: destination already exists")
 // hostname from the given URL.
 var ErrUnknownProvider = errors.New("repoclone: unknown provider")
 
-// ProviderFromURL extracts the provider hostname from https:// or git@<host>:
-// URLs. Returns ("", ErrUnknownProvider) when the URL cannot be parsed.
+// ErrDestOutsideBase is returned when the computed destPath does not lie under
+// <home>/git, indicating a path traversal attempt.
+var ErrDestOutsideBase = errors.New("repoclone: destination is outside allowed base directory")
+
+// ProviderFromURL extracts the provider hostname from https://, git@host:, or
+// ssh:// URLs. Returns ("", ErrUnknownProvider) when the URL cannot be parsed.
 //
-// RED stub: returns empty + sentinel. Plan 03 (05.7-03) implements the real body.
-func ProviderFromURL(_ string) (string, error) {
-	return "", errors.New("repoclone: not implemented")
+// Supported forms:
+//   - https://github.com/org/repo.git
+//   - git@github.com:org/repo.git   (SCP-like, no scheme)
+//   - ssh://git@gitlab.example.com:443/org/repo
+func ProviderFromURL(rawURL string) (string, error) {
+	// SCP-like form: git@host:path (no scheme, colon separates host from path)
+	if !strings.Contains(rawURL, "://") {
+		// Must contain "@" and ":" to be a valid SCP-like URL
+		atIdx := strings.Index(rawURL, "@")
+		colonIdx := strings.Index(rawURL, ":")
+		if atIdx >= 0 && colonIdx > atIdx {
+			host := rawURL[atIdx+1 : colonIdx]
+			if host != "" {
+				return host, nil
+			}
+		}
+		return "", ErrUnknownProvider
+	}
+
+	// Scheme-based URL (https://, ssh://, git://, etc.)
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Hostname() == "" {
+		return "", ErrUnknownProvider
+	}
+	return u.Hostname(), nil
 }
 
-// RewriteToAlias rewrites an HTTPS github.com URL to its SSH alias form using
-// the identity's configured SSH alias (e.g. personal.github.com).
+// RewriteToAlias rewrites an HTTPS or SCP-form URL to the SSH alias form:
+// git@<alias>:<org>/<repo>[.git]. The alias is the gitid SSH alias for the
+// provider (e.g. "personal.github.com" from the SSH config Host block).
 //
-// RED stub: returns empty + sentinel. Plan 03 (05.7-03) implements the real body.
-func RewriteToAlias(_, _ string) (string, error) {
-	return "", errors.New("repoclone: not implemented")
+// Recipe form: git@personal.github.com:org/repo.git
+func RewriteToAlias(rawURL, alias string) (string, error) {
+	orgRepo, hasDotGit, err := extractOrgRepo(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("repoclone: rewrite alias: %w", err)
+	}
+	suffix := ""
+	if hasDotGit {
+		suffix = ".git"
+	}
+	return fmt.Sprintf("git@%s:%s%s", alias, orgRepo, suffix), nil
 }
 
-// DestPath computes the local clone destination under ~/git/<client>/<reponame>.
-//
-// RED stub: returns empty + sentinel. Plan 03 (05.7-03) implements the real body.
-func DestPath(_, _, _ string) (string, error) {
-	return "", errors.New("repoclone: not implemented")
+// extractOrgRepo returns the "org/repo" path component (without leading slash,
+// without .git suffix) and whether the original URL had a .git suffix.
+func extractOrgRepo(rawURL string) (orgRepo string, hasDotGit bool, err error) {
+	var pathPart string
+
+	if !strings.Contains(rawURL, "://") {
+		// SCP-like: git@host:org/repo.git
+		colonIdx := strings.Index(rawURL, ":")
+		if colonIdx < 0 {
+			return "", false, ErrUnknownProvider
+		}
+		pathPart = rawURL[colonIdx+1:]
+	} else {
+		u, parseErr := url.Parse(rawURL)
+		if parseErr != nil || u.Hostname() == "" {
+			return "", false, ErrUnknownProvider
+		}
+		pathPart = strings.TrimPrefix(u.Path, "/")
+	}
+
+	hasDotGit = strings.HasSuffix(pathPart, ".git")
+	orgRepo = strings.TrimSuffix(pathPart, ".git")
+	if orgRepo == "" {
+		return "", false, ErrUnknownProvider
+	}
+	return orgRepo, hasDotGit, nil
 }
 
-// Clone clones cloneURL to destPath using deps. Returns ErrDestExists if the
-// destination already exists.
+// DestPath computes the local clone destination under baseDir/client/reponame.
+// baseDir is the expanded ~/git path (caller supplies it, typically
+// filepath.Join(home, "git")). The function is pure: no exec, no filesystem.
 //
-// RED stub: returns nil + sentinel. Plan 03 (05.7-03) implements the real body.
-func Clone(_, _ string, _ Deps) ([]string, error) {
-	return nil, errors.New("repoclone: not implemented")
+// reponame = last path segment of rawURL, with .git suffix stripped.
+func DestPath(baseDir, client, rawURL string) (string, error) {
+	repoName, err := repoNameFromURL(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("repoclone: dest path: %w", err)
+	}
+	return filepath.Join(baseDir, client, repoName), nil
 }
 
-// Pull runs git pull inside destPath.
+// repoNameFromURL extracts the repository name (last path segment, .git stripped).
+func repoNameFromURL(rawURL string) (string, error) {
+	var pathPart string
+
+	if !strings.Contains(rawURL, "://") {
+		// SCP-like: git@host:org/repo.git
+		colonIdx := strings.Index(rawURL, ":")
+		if colonIdx < 0 {
+			return "", ErrUnknownProvider
+		}
+		pathPart = rawURL[colonIdx+1:]
+	} else {
+		u, err := url.Parse(rawURL)
+		if err != nil || u.Hostname() == "" {
+			return "", ErrUnknownProvider
+		}
+		pathPart = u.Path
+	}
+
+	// Strip leading slash and .git suffix, take the last segment
+	pathPart = strings.TrimPrefix(pathPart, "/")
+	pathPart = strings.TrimSuffix(pathPart, ".git")
+	segments := strings.Split(pathPart, "/")
+	name := segments[len(segments)-1]
+	if name == "" {
+		return "", ErrUnknownProvider
+	}
+	return name, nil
+}
+
+// Clone clones cloneURL to destPath using deps.
 //
-// RED stub: returns nil + sentinel. Plan 03 (05.7-03) implements the real body.
-func Pull(_ string, _ Deps) ([]string, error) {
-	return nil, errors.New("repoclone: not implemented")
+// Guards (in order, before any exec):
+//  1. ErrDestOutsideBase — destPath does not lie under <home>/git
+//  2. ErrDestExists — destPath already exists (deps.Stat returns non-error)
+//
+// The allowed base is derived internally: deps.UserHomeDir() + "/git".
+// Clone does NOT accept a base-dir parameter (REVIEWS.md #10).
+func Clone(cloneURL, destPath string, deps Deps) ([]string, error) {
+	// Derive allowed base internally from the injected UserHomeDir seam.
+	home, err := deps.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("repoclone: resolving home dir: %w", err)
+	}
+	base := filepath.Join(home, "git")
+
+	// Guard 1: dest-outside-base — reject path traversal before any I/O.
+	cleanDest := filepath.Clean(destPath)
+	rel, err := filepath.Rel(base, cleanDest)
+	if err != nil || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		return nil, ErrDestOutsideBase
+	}
+
+	// Guard 2: dest-exists — reject if the destination already exists.
+	if _, statErr := deps.Stat(destPath); statErr == nil {
+		return nil, ErrDestExists
+	} else if !os.IsNotExist(statErr) {
+		return nil, fmt.Errorf("repoclone: stat dest: %w", statErr)
+	}
+
+	// Delegate to the injected clone function (liveClone in production).
+	return deps.Clone(cloneURL, destPath)
+}
+
+// Pull runs git pull inside destPath via the injected deps.Pull function.
+func Pull(destPath string, deps Deps) ([]string, error) {
+	return deps.Pull(destPath)
 }
 
 // liveClone is the internal git clone implementation used by buildTUIRepoCloneDeps.
 // Uses arg-slice form (no shell) — G204-clean.
 func liveClone(cloneURL, destPath string) ([]string, error) {
-	cmd := exec.Command("git", "clone", cloneURL, destPath) //nolint:gosec // arg-slice; no shell; URL is gitid-validated (G204)
+	cmd := exec.Command("git", "clone", cloneURL, destPath) //nolint:gosec // arg-slice; no shell; URL/dest validated (G204)
 	out, err := cmd.CombinedOutput()
 	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
 	if err != nil {
