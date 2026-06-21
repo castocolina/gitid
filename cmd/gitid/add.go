@@ -300,7 +300,7 @@ func gatherAddAccount(r *bufio.Reader, out io.Writer) (identity.Account, string,
 	}
 	newAlias := prompt(r, out, "New host alias", identity.DefaultAlias(name, newProvider))
 	hostname := prompt(r, out, "Hostname", defaultHostname(newProvider))
-	port := promptPort(r, out, "Port", 443)
+	port := promptPort(r, out, "Port", identity.DefaultPort())
 	matchDir := prompt(r, out, "Match gitdir", "~/git/"+name+"/")
 
 	home, err := os.UserHomeDir()
@@ -373,7 +373,7 @@ func gatherCreateInput(r *bufio.Reader, out io.Writer, algo string, flags addFla
 
 	alias := prompt(r, out, "Host alias", identity.DefaultAlias(name, provider))
 	hostname := prompt(r, out, "Hostname", defaultHostname(provider))
-	port := promptPort(r, out, "Port", 443)
+	port := promptPort(r, out, "Port", identity.DefaultPort())
 
 	// Match strategy: flag-or-prompt (D-07, D-09, D-10).
 	// Priority (most-specific wins):
@@ -641,17 +641,11 @@ func buildDeps(_ io.Writer) identity.Deps {
 	}
 }
 
-// defaultHostname returns the conventional SSH hostname for the known providers
-// (port 443 alt-ssh endpoints), falling back to a sensible guess otherwise.
+// defaultHostname delegates to identity.DefaultHostname so the recipe alt-SSH
+// mapping lives in exactly one place (UI-free internal/identity) and is shared
+// by both the CLI and the TUI (D-10 parity, T-05.7-09-03). No inline switch here.
 func defaultHostname(provider string) string {
-	switch strings.ToLower(provider) {
-	case "github":
-		return "ssh.github.com"
-	case "gitlab":
-		return "altssh.gitlab.com"
-	default:
-		return provider + ".com"
-	}
+	return identity.DefaultHostname(provider)
 }
 
 // loadKeyIntoAgent runs ssh-add (arg-slice, no shell) to load the new key into

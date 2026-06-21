@@ -12,6 +12,7 @@ package identity
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/keygen"
@@ -171,6 +172,46 @@ type CreateResult struct {
 	AllowedSignersBackup string
 }
 
+// DefaultHostname returns the recipe-canonical alt-SSH hostname for a provider
+// (D-10 parity, T-05.7-09-03). The lookup is case-insensitive and uses the
+// leading token before the first "." so both "github" and "github.com" resolve
+// to the same endpoint. Recipe sources (recipes/ssh-config.recipe):
+//
+//	github    -> ssh.github.com       Port 443
+//	gitlab    -> altssh.gitlab.com    Port 443
+//	bitbucket -> altssh.bitbucket.org Port 443
+//
+// Unknown providers fall back to "<token>.com" when the token contains no dot,
+// or the token verbatim when it already contains a dot, matching the prior cmd
+// defaultHostname fallback shape (D-10 parity). UI-free: no charm/bubbletea import.
+func DefaultHostname(provider string) string {
+	// Extract the leading keyword (the part before the first ".").
+	token := strings.ToLower(provider)
+	if idx := strings.IndexByte(token, '.'); idx >= 0 {
+		token = token[:idx]
+	}
+	switch token {
+	case "github":
+		return "ssh.github.com"
+	case "gitlab":
+		return "altssh.gitlab.com"
+	case "bitbucket":
+		return "altssh.bitbucket.org"
+	default:
+		// For unknown providers: if the original provider string contains a dot,
+		// return it verbatim; otherwise append ".com" (cmd parity).
+		if strings.ContainsRune(strings.ToLower(provider), '.') {
+			return strings.ToLower(provider)
+		}
+		return strings.ToLower(provider) + ".com"
+	}
+}
+
+// DefaultPort returns the recipe-canonical default SSH port (443) shared by
+// all alt-SSH alt-SSH endpoints. The single constant ensures cmd and TUI agree
+// on the default without duplicating the literal (D-10 parity).
+func DefaultPort() int { return 443 }
+
 // DefaultAlias renders the recommended alias form <identity>.<provider> (D-12).
 func DefaultAlias(identity, provider string) string {
 	return identity + "." + provider
@@ -230,34 +271,30 @@ func RenderPreviews(in CreateInput, staged StagedKey) CreateResult {
 	}
 }
 
-// PersistAll writes the four config artifacts in order: optionally PersistKey
-// (when staged.PrivPEM != nil), then WriteSSH, WriteGitconfig, WriteFragment,
-// WriteAllowedSigners, then Resolved. It is the single exported write sequence
-// for the create-new loop (called after PASS or after explicit skip+confirm —
-// D-03/D-05). Exported so cmd/gitid/add.go's runCreateLoop can call it when the
-// loop resolves.
-func PersistAll(in CreateInput, staged StagedKey, deps Deps) (CreateResult, error) {
+// PersistSSH is LEG 1 of the staged write path: it persists the private key
+// (when staged.PrivPEM != nil) to staged.FinalPrivatePath BEFORE writing the
+// SSH Host block, so the block never references a non-existent key
+// (T-05.7-09-04). It does NOT write the gitconfig fragment, includeIf block, or
+// allowed_signers, and does NOT run the Resolved test. The returned CreateResult
+// carries Key, SSHPreview, and SSHBackup; all gitconfig/signers fields are zero.
+//
+// Use PersistSSH for the staged wizard to write LEG 1 at the end of the SSH
+// screens; follow with PersistGitconfig at the end of the git screen.
+func PersistSSH(in CreateInput, staged StagedKey, deps Deps) (CreateResult, error) {
 	final := KeyResult{
 		PrivatePath: staged.FinalPrivatePath,
 		PubPath:     staged.FinalPubPath,
 		PubLine:     staged.PubLine,
 	}
-	signersLine := keygen.AllowedSignersLine(in.GitEmail, staged.PubLine)
 	hostBlock := sshconfig.RenderHostBlock(in.Alias, in.Hostname, in.Port, final.PrivatePath, in.Provider)
-	gitPreview := gitconfig.RenderIncludeIf(in.Name, in.FragmentPath, in.Matches)
-
 	res := CreateResult{
-		Key:                   final,
-		SSHPreview:            hostBlock,
-		GitconfigPreview:      gitPreview,
-		FragmentPreview:       renderFragmentPreview(in, final.PubPath),
-		AllowedSignersPreview: signersLine,
-		AllowedSignersLine:    signersLine,
+		Key:        final,
+		SSHPreview: hostBlock,
 	}
 
-	// Persist the key BEFORE the four writers so a persist failure aborts
-	// before any config references a non-existent key. Skip when PrivPEM is nil
-	// (existing-key reuse/add-account paths — no new key to write).
+	// Persist the key BEFORE WriteSSH so a persist failure aborts before any
+	// config references a non-existent key. Skip when PrivPEM is nil (existing-
+	// key reuse/add-account paths — no new key to write).
 	if staged.PrivPEM != nil {
 		if _, perr := deps.PersistKey(staged); perr != nil {
 			return res, fmt.Errorf("identity: persisting key pair: %w", perr)
@@ -269,6 +306,33 @@ func PersistAll(in CreateInput, staged StagedKey, deps Deps) (CreateResult, erro
 		return res, fmt.Errorf("identity: writing ssh config: %w", werr)
 	}
 	res.SSHBackup = sshBak
+	return res, nil
+}
+
+// PersistGitconfig is LEG 2 of the staged write path: it writes the
+// ~/.gitconfig.d/<name> fragment, the includeIf block in ~/.gitconfig, and the
+// ~/.ssh/allowed_signers entry. It does NOT touch the private key or the SSH
+// Host block, and does NOT run the Resolved test. The returned CreateResult
+// carries GitconfigPreview, FragmentPreview, AllowedSignersPreview,
+// AllowedSignersLine, GitconfigBackup, and AllowedSignersBackup.
+//
+// Use PersistGitconfig for the staged wizard to write LEG 2 at the end of the
+// git-config screen; it is idempotent when called after PersistSSH.
+func PersistGitconfig(in CreateInput, staged StagedKey, deps Deps) (CreateResult, error) {
+	final := KeyResult{
+		PrivatePath: staged.FinalPrivatePath,
+		PubPath:     staged.FinalPubPath,
+		PubLine:     staged.PubLine,
+	}
+	signersLine := keygen.AllowedSignersLine(in.GitEmail, staged.PubLine)
+	gitPreview := gitconfig.RenderIncludeIf(in.Name, in.FragmentPath, in.Matches)
+	res := CreateResult{
+		GitconfigPreview:      gitPreview,
+		FragmentPreview:       renderFragmentPreview(in, final.PubPath),
+		AllowedSignersPreview: signersLine,
+		AllowedSignersLine:    signersLine,
+	}
+
 	gcBak, werr := deps.WriteGitconfig(in.Name, in.FragmentPath, in.AllowedSignersPath, in.Matches)
 	if werr != nil {
 		return res, fmt.Errorf("identity: writing gitconfig includeIf: %w", werr)
@@ -282,11 +346,59 @@ func PersistAll(in CreateInput, staged StagedKey, deps Deps) (CreateResult, erro
 		return res, fmt.Errorf("identity: writing allowed_signers: %w", werr)
 	}
 	res.AllowedSignersBackup = signBak
-
-	resolvedTest, resolved := deps.Resolved(in.Alias)
-	res.ResolvedTest = resolvedTest
-	res.Resolved = resolved
 	return res, nil
+}
+
+// PersistAll writes the four config artifacts in order: PersistSSH (LEG 1 —
+// optionally PersistKey then WriteSSH), then PersistGitconfig (LEG 2 —
+// WriteGitconfig, WriteFragment, WriteAllowedSigners), then Resolved. It is a
+// THIN COMPOSITION of the two leg-steps so the existing CLI single-shot create
+// flow (cmd/gitid/add.go runCreateNew) keeps byte-identical behavior (D-10
+// parity, T-05.7-09-02). The merged CreateResult is field-for-field equivalent
+// to the prior monolith: same previews, same backups, same Resolved fields.
+//
+// Exported so cmd/gitid/add.go's runCreateNew can call it after PASS or after
+// explicit skip+confirm (D-03/D-05).
+func PersistAll(in CreateInput, staged StagedKey, deps Deps) (CreateResult, error) {
+	// LEG 1: persist key + write SSH Host block.
+	res1, err := PersistSSH(in, staged, deps)
+	if err != nil {
+		return res1, err
+	}
+
+	// LEG 2: write gitconfig fragment + includeIf + allowed_signers.
+	res2, err := PersistGitconfig(in, staged, deps)
+	if err != nil {
+		// Return what LEG 1 produced so the caller knows the SSH block was written.
+		return mergeCreateResults(res1, res2), err
+	}
+
+	// Merge both legs into the combined result.
+	merged := mergeCreateResults(res1, res2)
+
+	// Run the Resolved test and attach it to the merged result.
+	resolvedTest, resolved := deps.Resolved(in.Alias)
+	merged.ResolvedTest = resolvedTest
+	merged.Resolved = resolved
+	return merged, nil
+}
+
+// mergeCreateResults combines the fields from LEG 1 (res1) and LEG 2 (res2)
+// into a single CreateResult. Fields are non-overlapping by design: res1 owns
+// Key/SSHPreview/SSHBackup; res2 owns the gitconfig/signers previews/backups.
+// ResolvedTest and Resolved are populated by the caller after both legs succeed.
+func mergeCreateResults(res1, res2 CreateResult) CreateResult {
+	return CreateResult{
+		Key:                   res1.Key,
+		SSHPreview:            res1.SSHPreview,
+		SSHBackup:             res1.SSHBackup,
+		GitconfigPreview:      res2.GitconfigPreview,
+		GitconfigBackup:       res2.GitconfigBackup,
+		FragmentPreview:       res2.FragmentPreview,
+		AllowedSignersPreview: res2.AllowedSignersPreview,
+		AllowedSignersLine:    res2.AllowedSignersLine,
+		AllowedSignersBackup:  res2.AllowedSignersBackup,
+	}
 }
 
 // runPipeline is the write path for Reuse, AddAccount, and Rotate: copy the
