@@ -427,7 +427,7 @@ Plans:
 
 **Wave 8 (gap closure)** *(blocked on Wave 7 plan 12; CORE provisional-block lifecycle — UI-free, no tui/ files)*
 
-- [ ] 05.7-14-PLAN.md — CORE PROVISIONAL-BLOCK LIFECYCLE (UAT G-5, BLOCKER; SUPERSEDES the simpler leg-1-reorder): a transactional PROVISIONAL (test) SSH block with a DISTINCT sentinel `# BEGIN gitid provisional: <name>` (never confused with `# BEGIN gitid managed:`). filewriter: ReplaceProvisionalBlock/RemoveProvisionalBlock/ListProvisionalBlocks (sentinel-parameterized splice, managed behavior byte-identical). sshconfig: WriteProvisional (staged-key IdentityFile, backup) / Promote (atomic provisional→managed, final-key IdentityFile, backup) / DropProvisional (backup) / ListProvisional, all parse-validated through the filewriter chokepoint. identity: EffectiveAlias (blank → provider host, no `<name>.<provider>` suffix) + PersistSSHProvisional / PromoteSSH / DropProvisionalSSH (staged-key model preserved; persist-before-config order) + three injected Deps seams. TDD, recipe-faithful (CLAUDE.md test→confirm+backup→re-test)
+- [x] 05.7-14-PLAN.md — CORE PROVISIONAL-BLOCK LIFECYCLE (UAT G-5, BLOCKER; SUPERSEDES the simpler leg-1-reorder): a transactional PROVISIONAL (test) SSH block with a DISTINCT sentinel `# BEGIN gitid provisional: <name>` (never confused with `# BEGIN gitid managed:`). filewriter: ReplaceProvisionalBlock/RemoveProvisionalBlock/ListProvisionalBlocks (sentinel-parameterized splice, managed behavior byte-identical). sshconfig: WriteProvisional (staged-key IdentityFile, backup) / Promote (atomic provisional→managed, final-key IdentityFile, backup) / DropProvisional (backup) / ListProvisional, all parse-validated through the filewriter chokepoint. identity: EffectiveAlias (blank → provider host, no `<name>.<provider>` suffix) + PersistSSHProvisional / PromoteSSH / DropProvisionalSSH (staged-key model preserved; persist-before-config order) + three injected Deps seams. TDD, recipe-faithful (CLAUDE.md test→confirm+backup→re-test)
 
 **Wave 9 (gap closure)** *(blocked on Wave 8 plan 14 — WIZARD provisional lifecycle; shares tui/wizard.go + tui/deps.go)*
 
@@ -461,7 +461,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 12/13 plans executed
+**Plans:** 13/16 plans executed
 
 Plans:
 
@@ -481,5 +481,5 @@ Plans:
 | 5. CLI Surface + TUI | 4/4 | Built (UAT found gaps → 5.5 + 5.6) | 2026-06-13 |
 | 5.5. Core & CLI Reconciliation | 7/7 | Complete    | 2026-06-14 |
 | 5.6. Integrated TUI App | 5/7 | Complete    | 2026-06-21 |
-| 5.7. Complete v1.0 Product Features in TUI | 12/13 | In Progress|  |
+| 5.7. Complete v1.0 Product Features in TUI | 13/16 | In Progress|  |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |
