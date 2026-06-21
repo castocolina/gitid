@@ -8,9 +8,12 @@ import (
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 
+	"github.com/castocolina/gitid/internal/adopter"
 	"github.com/castocolina/gitid/internal/doctor"
 	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/identity"
+	"github.com/castocolina/gitid/internal/repoclone"
+	"github.com/castocolina/gitid/internal/uploader"
 )
 
 // viewKind identifies the currently active main-pane view.
@@ -54,6 +57,13 @@ type tuiDeps struct {
 	// readFragment reads a per-identity gitconfig fragment so the update path
 	// can preserve the existing signing state (FIX-1).
 	readFragment func(fragPath string) (gitconfig.FragmentInfo, error)
+
+	// Phase 5.7 additions (Plan 06): adopt, repoclone, uploader Deps for the
+	// TUI modals (Plans 07+). Every function field must be non-nil at runtime
+	// (D-13/D-16 anti-blindspot; TestBuildTUIDepsNilGuard_Phase57).
+	adopt     adopter.Deps
+	repoclone repoclone.Deps
+	uploader  uploader.Deps
 }
 
 // rootModel is the top-level Bubble Tea model for the Phase 5.6 two-pane
@@ -118,6 +128,8 @@ type rootModel struct {
 // newRootModel constructs the root model with the full two-pane layout.
 // deleteDeps wires the in-app delete/rotate paths (Plan 06). Pass a zero-value
 // identity.DeleteDeps{} in tests that do not exercise delete/rotate flows.
+// adoptDeps, repoCloneDeps, uploaderDeps wire the Phase 5.7 modal paths (Plan 07+).
+// Pass zero-value structs in tests that do not exercise those paths.
 func newRootModel(docDeps doctor.Deps, idDeps identity.Deps, upDeps identity.UpdateDeps, deleteDeps identity.DeleteDeps) rootModel {
 	d := tuiDeps{
 		doctor:       docDeps,
@@ -125,6 +137,33 @@ func newRootModel(docDeps doctor.Deps, idDeps identity.Deps, upDeps identity.Upd
 		update:       upDeps,
 		delete:       deleteDeps,
 		readFragment: gitconfig.ReadFragment,
+	}
+	return rootModel{
+		activeView: identitiesView,
+		focused:    "sidebar",
+		deps:       d,
+		sidebar:    newSidebarModel(d.doctor),
+		palette:    newPaletteModel(),
+		health:     newHealthModel(d),
+		detail:     newIdentityDetailModel(),
+		globalopts: newGlobalOptionsModel(d),
+	}
+}
+
+// newRootModelFull constructs the root model with all Phase 5.7 Deps populated.
+// Called by tui.Run via buildTUIDeps() so the TUI has non-nil seams for the
+// adopt/repoclone/uploader modals (Plans 07+). Tests that need the full wiring
+// should use this constructor (or buildTUIDeps directly).
+func newRootModelFull(docDeps doctor.Deps, idDeps identity.Deps, upDeps identity.UpdateDeps, deleteDeps identity.DeleteDeps, adoptDeps adopter.Deps, repoCloneDeps repoclone.Deps, uploaderDeps uploader.Deps) rootModel {
+	d := tuiDeps{
+		doctor:       docDeps,
+		identity:     idDeps,
+		update:       upDeps,
+		delete:       deleteDeps,
+		readFragment: gitconfig.ReadFragment,
+		adopt:        adoptDeps,
+		repoclone:    repoCloneDeps,
+		uploader:     uploaderDeps,
 	}
 	return rootModel{
 		activeView: identitiesView,

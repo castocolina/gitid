@@ -17,11 +17,11 @@ import (
 // dependency arrow is preserved: tui imports internal packages; cmd/gitid imports
 // tui; internal packages import nothing from tui or cmd/gitid.
 func Run() error {
-	doctorDeps, identityDeps, updateDeps, deleteDeps, err := buildTUIDeps()
+	doctorDeps, identityDeps, updateDeps, deleteDeps, adoptDeps, repoCloneDeps, uploaderDeps, err := buildTUIDeps()
 	if err != nil {
 		return fmt.Errorf("tui: building deps: %w", err)
 	}
-	m := newRootModel(doctorDeps, identityDeps, updateDeps, deleteDeps)
+	m := newRootModelFull(doctorDeps, identityDeps, updateDeps, deleteDeps, adoptDeps, repoCloneDeps, uploaderDeps)
 	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("tui: program error: %w", err)

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/castocolina/gitid/internal/adopter"
 	"github.com/castocolina/gitid/internal/clipboard"
 	"github.com/castocolina/gitid/internal/deps"
 	"github.com/castocolina/gitid/internal/doctor"
@@ -17,21 +18,29 @@ import (
 	"github.com/castocolina/gitid/internal/identity"
 	"github.com/castocolina/gitid/internal/keygen"
 	"github.com/castocolina/gitid/internal/platform"
+	"github.com/castocolina/gitid/internal/repoclone"
 	"github.com/castocolina/gitid/internal/sshconfig"
 	"github.com/castocolina/gitid/internal/tester"
+	"github.com/castocolina/gitid/internal/uploader"
 )
 
-// buildTUIDeps assembles doctor.Deps, identity.Deps, identity.UpdateDeps, and
-// identity.DeleteDeps from real internal packages. The TUI cannot import package
-// main, so it replicates the wiring from cmd/gitid/add.go (buildDeps) and
-// cmd/gitid/doctor.go (buildDoctorDeps) here (RESEARCH.md Pitfall 6, Assumption A3).
+// buildTUIDeps assembles doctor.Deps, identity.Deps, identity.UpdateDeps,
+// identity.DeleteDeps, adopter.Deps, repoclone.Deps, uploader.Deps from real
+// internal packages. The TUI cannot import package main, so it replicates the
+// wiring from cmd/gitid (RESEARCH.md Pitfall 6, Assumption A3).
 //
-// Returns 5 values: (doctor.Deps, identity.Deps, identity.UpdateDeps, identity.DeleteDeps, error).
-// The fifth return (DeleteDeps) wires the in-app delete/rotate paths (Plan 06, D-16).
-func buildTUIDeps() (doctor.Deps, identity.Deps, identity.UpdateDeps, identity.DeleteDeps, error) {
+// Returns 8 values:
+//
+//	(doctor.Deps, identity.Deps, identity.UpdateDeps, identity.DeleteDeps,
+//	 adopter.Deps, repoclone.Deps, uploader.Deps, error)
+//
+// The Phase 5.7 additions (5–7) wire the adopt/addrepo/upload modal seams
+// (Plans 07+). Every function field in all returned Deps must be non-nil
+// (D-13/D-16 anti-blindspot; TestBuildTUIDepsNilGuard_Phase57).
+func buildTUIDeps() (doctor.Deps, identity.Deps, identity.UpdateDeps, identity.DeleteDeps, adopter.Deps, repoclone.Deps, uploader.Deps, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return doctor.Deps{}, identity.Deps{}, identity.UpdateDeps{}, identity.DeleteDeps{}, fmt.Errorf("tui: resolving home dir: %w", err)
+		return doctor.Deps{}, identity.Deps{}, identity.UpdateDeps{}, identity.DeleteDeps{}, adopter.Deps{}, repoclone.Deps{}, uploader.Deps{}, fmt.Errorf("tui: resolving home dir: %w", err)
 	}
 
 	sshConfigPath := filepath.Join(home, ".ssh", "config")
@@ -39,19 +48,22 @@ func buildTUIDeps() (doctor.Deps, identity.Deps, identity.UpdateDeps, identity.D
 
 	sshBytes, err := os.ReadFile(sshConfigPath) //nolint:gosec // path is a trusted gitid-managed path (G304)
 	if err != nil && !os.IsNotExist(err) {
-		return doctor.Deps{}, identity.Deps{}, identity.UpdateDeps{}, identity.DeleteDeps{}, fmt.Errorf("tui: reading ssh config: %w", err)
+		return doctor.Deps{}, identity.Deps{}, identity.UpdateDeps{}, identity.DeleteDeps{}, adopter.Deps{}, repoclone.Deps{}, uploader.Deps{}, fmt.Errorf("tui: reading ssh config: %w", err)
 	}
 
 	gcBytes, err := os.ReadFile(gitconfigPath) //nolint:gosec // path is a trusted gitid-managed path (G304)
 	if err != nil && !os.IsNotExist(err) {
-		return doctor.Deps{}, identity.Deps{}, identity.UpdateDeps{}, identity.DeleteDeps{}, fmt.Errorf("tui: reading gitconfig: %w", err)
+		return doctor.Deps{}, identity.Deps{}, identity.UpdateDeps{}, identity.DeleteDeps{}, adopter.Deps{}, repoclone.Deps{}, uploader.Deps{}, fmt.Errorf("tui: reading gitconfig: %w", err)
 	}
 
 	docDeps := buildTUIDoctorDeps(home, sshBytes, gcBytes)
 	idDeps := buildIdentityDeps()
 	upDeps := buildTUIUpdateDeps()
 	delDeps := buildTUIDeleteDeps()
-	return docDeps, idDeps, upDeps, delDeps, nil
+	adoptDeps := buildTUIAdopterDeps()
+	repoCloneDeps := buildTUIRepoCloneDeps()
+	uploaderDeps := buildTUIUploaderDeps()
+	return docDeps, idDeps, upDeps, delDeps, adoptDeps, repoCloneDeps, uploaderDeps, nil
 }
 
 // buildTUIDeleteDeps wires identity.DeleteDeps from the real internal packages,
@@ -106,6 +118,77 @@ func buildTUIDeleteDeps() identity.DeleteDeps {
 				return keyBak, "", fmt.Errorf("tui: removing public key %s: %w", pubPath, perr)
 			}
 			return keyBak, pubBak, nil
+		},
+	}
+}
+
+// buildTUIAdopterDeps wires adopter.Deps from real internal packages.
+// Mirrors the pattern of buildTUIDeleteDeps — the TUI cannot import package main.
+//
+// Security invariants:
+//   - CopyFile creates the parent directory first so ~/.gitconfig.d/ exists.
+//   - WriteIncludeIf captures gitconfigPath in a closure (3-arg seam; plan decision D-02).
+//   - ListCandidates uses adopter.ListCandidatesFromHome (single-arg form; caller supplies home).
+func buildTUIAdopterDeps() adopter.Deps {
+	home, _ := os.UserHomeDir()
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+
+	return adopter.Deps{
+		ReadFile: func(path string) ([]byte, error) {
+			return os.ReadFile(path) //nolint:gosec // gitid-managed path (G304)
+		},
+		WriteFile: func(path string, content []byte, mode os.FileMode) (string, error) {
+			return filewriter.Write(path, content, mode)
+		},
+		// filewriter.CopyFile returns (backupPath, error); adaptor drops backupPath.
+		// Parent dir created first: ~/.gitconfig.d/ may not exist on first adopt.
+		CopyFile: func(src, dst string) error {
+			if mkErr := filewriter.EnsureDir(filepath.Dir(dst), 0o700); mkErr != nil {
+				return fmt.Errorf("tui: ensuring dest dir for adopt: %w", mkErr)
+			}
+			_, err := filewriter.CopyFile(src, dst)
+			return err
+		},
+		BackupAndRemove: filewriter.BackupAndRemove,
+		// WriteIncludeIf is a 3-arg seam that captures gitconfigPath (plan D-02).
+		WriteIncludeIf: func(id, fragPath string, matches []gitconfig.Match) (string, error) {
+			return gitconfig.WriteIncludeIf(gitconfigPath, id, fragPath, matches)
+		},
+		ReadFragment:   gitconfig.ReadFragment,
+		ListCandidates: adopter.ListCandidatesFromHome,
+	}
+}
+
+// buildTUIRepoCloneDeps wires repoclone.Deps from real internal packages.
+// Mirrors buildRepoCloneDeps in cmd/gitid/addrepo.go.
+// All exec lives in repoclone.LiveClone / LivePull (arg-slice, no shell, G204-clean).
+func buildTUIRepoCloneDeps() repoclone.Deps {
+	return repoclone.Deps{
+		Stat:        os.Stat,
+		Clone:       repoclone.LiveClone,
+		Pull:        repoclone.LivePull,
+		UserHomeDir: os.UserHomeDir,
+	}
+}
+
+// buildTUIUploaderDeps wires uploader.Deps from real internal packages.
+// Mirrors buildUploaderDeps in cmd/gitid/copy.go.
+// LookPath and RunCmd use arg-slice form — no shell, G204-clean (gosec G204).
+func buildTUIUploaderDeps() uploader.Deps {
+	return uploader.Deps{
+		LookPath: exec.LookPath,
+		RunCmd: func(name string, args ...string) (string, int, error) {
+			cmd := exec.Command(name, args...) //nolint:gosec // arg-slice; no shell; name is a trusted resolved binary path (G204)
+			out, err := cmd.CombinedOutput()
+			output := string(out)
+			if err == nil {
+				return output, 0, nil
+			}
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) {
+				return output, exitErr.ExitCode(), nil
+			}
+			return "", 2, err
 		},
 	}
 }

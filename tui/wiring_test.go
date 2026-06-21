@@ -3,13 +3,10 @@ package tui
 import (
 	"testing"
 
-	"github.com/castocolina/gitid/internal/adopter"
 	"github.com/castocolina/gitid/internal/doctor"
 	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/identity"
-	"github.com/castocolina/gitid/internal/repoclone"
 	"github.com/castocolina/gitid/internal/tester"
-	"github.com/castocolina/gitid/internal/uploader"
 )
 
 // These tests exercise the LIVE program wiring rather than model internals in
@@ -133,7 +130,7 @@ func TestHelpersCompileAndBuildClean(t *testing.T) {
 //   - identity.UpdateDeps.WriteSSH
 //   - All 7 identity.DeleteDeps fields
 func TestBuildTUIDepsNilGuard(t *testing.T) {
-	docDeps, idDeps, upDeps, deleteDeps, err := buildTUIDeps()
+	docDeps, idDeps, upDeps, deleteDeps, _, _, _, err := buildTUIDeps()
 	if err != nil {
 		t.Fatalf("buildTUIDeps returned error: %v", err)
 	}
@@ -210,20 +207,19 @@ func TestBuildTUIDepsNilGuard(t *testing.T) {
 // TestBuildTUIDepsNilGuard_Phase57 extends the D-16 guard to cover the three
 // new Deps structs added in Phase 5.7: adopter.Deps, repoclone.Deps, uploader.Deps.
 //
-// RED (Plan 01): zero-value form. This test constructs zero-value Deps structs of
-// the three new types and asserts each function field is non-nil — every assertion
-// FAILS because the fields are nil in a zero-value struct. This is a genuine
-// non-vacuous RED guard: the types exist (go build ./... exits 0) but the live
-// wiring is not yet done.
+// GREEN (Plan 06 / 05.7-06): this test now drives the LIVE 8-value buildTUIDeps()
+// return. Every function field in the three new Deps structs must be non-nil,
+// proving that the live TUI wiring is complete before any modal runs
+// (D-13/D-16 anti-blindspot — REVIEWS.md D-Doctor injected-seam wiring blindspot).
 //
-// Plan 06 (05.7-06) rewires this to drive the real 8-value buildTUIDeps() return.
+// The test was in RED (zero-value placeholder) in Plan 01; rewired to GREEN here.
 func TestBuildTUIDepsNilGuard_Phase57(t *testing.T) {
-	// Zero-value Deps: all function fields are nil — assertions below will FAIL (RED).
-	var adoptDeps adopter.Deps
-	var repoCloneDeps repoclone.Deps
-	var uploadDeps uploader.Deps
+	_, _, _, _, adoptDeps, repoCloneDeps, uploadDeps, err := buildTUIDeps()
+	if err != nil {
+		t.Fatalf("buildTUIDeps returned error: %v", err)
+	}
 
-	// adopter.Deps fields
+	// adopter.Deps fields — all 7 must be non-nil.
 	if adoptDeps.ReadFile == nil {
 		t.Error("adopter.Deps.ReadFile nil")
 	}
@@ -246,7 +242,7 @@ func TestBuildTUIDepsNilGuard_Phase57(t *testing.T) {
 		t.Error("adopter.Deps.ListCandidates nil")
 	}
 
-	// repoclone.Deps fields
+	// repoclone.Deps fields — all 4 must be non-nil.
 	if repoCloneDeps.Stat == nil {
 		t.Error("repoclone.Deps.Stat nil")
 	}
@@ -260,7 +256,7 @@ func TestBuildTUIDepsNilGuard_Phase57(t *testing.T) {
 		t.Error("repoclone.Deps.UserHomeDir nil")
 	}
 
-	// uploader.Deps fields
+	// uploader.Deps fields — both must be non-nil.
 	if uploadDeps.LookPath == nil {
 		t.Error("uploader.Deps.LookPath nil")
 	}
