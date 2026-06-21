@@ -999,6 +999,24 @@ func (m rootModel) renderContent() string {
 	}
 
 	mw := modalWidth(m.width)
+
+	// Viewport-aware compositing (Task 1, G-1 root cause fix):
+	// Measure the modal height BEFORE calling modalOrigin/placeOverlay so a tall
+	// modal on a small terminal does not produce a negative y (modal off-screen
+	// unrecoverably) and placeOverlay never silently drops rows.
+	//
+	// Reserve 4 rows for the header (1), footer (1), and margin (2) so the modal
+	// origin is never flush with the terminal edge.
+	const verticalMargin = 4
+	available := m.height - verticalMargin
+	if available < 4 {
+		available = 4
+	}
+	// Bound the modal to the available rows. scrollOffset is always 0 here
+	// because the wizard's staged screens are designed to fit; the guard exists
+	// for degenerate tiny terminals (stage 1 safety net).
+	modalContent = boundModalToViewport(modalContent, available, 0)
+
 	mh := lipgloss.Height(modalContent)
 	x, y := modalOrigin(m.width, m.height, mw, mh)
 	return placeOverlay(x, y, modalContent, dimmed)

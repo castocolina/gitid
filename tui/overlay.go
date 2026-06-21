@@ -120,6 +120,71 @@ func modalOrigin(termW, termH, modalW, modalH int) (x, y int) {
 	return x, y
 }
 
+// boundModalToViewport clips a rendered modal to the available terminal rows so
+// overflowing content is never silently dropped. When the modal height exceeds
+// available rows it returns the visible window at the given scroll offset with an
+// explicit "↓ more" or "↑ scrolled" indicator on the last visible row, ensuring
+// all modal lines are reachable across scroll positions.
+//
+// When the modal fits within available rows the function returns modal unchanged.
+//
+// scrollOffset is the number of modal lines to skip from the top (0 = start).
+// available is the number of terminal rows the modal may occupy (must be >= 1).
+func boundModalToViewport(modal string, available, scrollOffset int) string {
+	if available < 1 {
+		available = 1
+	}
+	lines := strings.Split(modal, "\n")
+	total := len(lines)
+
+	// Fits on screen: return unchanged.
+	if total <= available {
+		return modal
+	}
+
+	// Reserve one row for the scroll indicator.
+	bodyRows := available - 1
+	if bodyRows < 1 {
+		bodyRows = 1
+	}
+
+	// Clamp scroll offset so we never skip past the last possible window.
+	// maxOffset uses bodyRows (not available) so the last window shows bodyRows lines.
+	maxOffset := total - bodyRows
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if scrollOffset < 0 {
+		scrollOffset = 0
+	}
+	if scrollOffset > maxOffset {
+		scrollOffset = maxOffset
+	}
+
+	end := scrollOffset + bodyRows
+	if end > total {
+		end = total
+	}
+	window := lines[scrollOffset:end]
+
+	// Build scroll indicator.
+	atTop := scrollOffset == 0
+	atBottom := end >= total
+	var indicator string
+	switch {
+	case atTop && !atBottom:
+		indicator = "  ↓ more"
+	case !atTop && atBottom:
+		indicator = "  ↑ scrolled"
+	case !atTop && !atBottom:
+		indicator = "  ↑↓ scroll"
+	default:
+		indicator = ""
+	}
+
+	return strings.Join(append(window, indicator), "\n")
+}
+
 // modalBox renders a styled modal box with the given title and body text.
 // The box width is clamped to min(width-8, 72) columns per UI-SPEC § Modal box
 // styling. StyleModal (added in styles.go) provides the rounded blue border and

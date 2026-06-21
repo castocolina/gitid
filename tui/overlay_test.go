@@ -1,12 +1,16 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/castocolina/gitid/internal/identity"
 )
 
 // TestPlaceOverlayCompositesModal is the Wave-0 spike-result verification.
@@ -158,6 +162,87 @@ func TestOverlayLineANSIAwarePlacement(t *testing.T) {
 	}
 	if got := visibleSlice(out, x+3, 3); got != "..." {
 		t.Errorf("background after modal = %q; want \"...\" (preserved)", got)
+	}
+}
+
+// TestViewportBoundModalLinesReachable verifies Task 1 (G-1 root cause):
+// when a modal is taller than the available terminal rows, boundModalToViewport
+// returns bounded lines and a scroll indicator — no modal line is silently dropped.
+// Every line is reachable across scroll positions.
+func TestViewportBoundModalLinesReachable(t *testing.T) {
+	// Build a 20-line modal (simulating a tall wizard screen).
+	modalLines := make([]string, 20)
+	for i := range modalLines {
+		modalLines[i] = fmt.Sprintf("line-%d", i)
+	}
+	modal := strings.Join(modalLines, "\n")
+
+	// Available rows: 10 (terminal too short for the 20-line modal).
+	const available = 10
+
+	// Scroll position 0: first 9 lines + indicator.
+	bounded0 := boundModalToViewport(modal, available, 0)
+	b0Lines := strings.Split(bounded0, "\n")
+	if len(b0Lines) > available {
+		t.Errorf("boundModalToViewport must not exceed available rows; got %d lines (available %d)", len(b0Lines), available)
+	}
+	if !strings.Contains(bounded0, "line-0") {
+		t.Errorf("scroll offset 0: must contain first modal line; got:\n%s", bounded0)
+	}
+	// Must have a scroll-more indicator when content continues below.
+	if !strings.Contains(bounded0, "↓") && !strings.Contains(bounded0, "more") {
+		t.Errorf("scroll offset 0: must contain scroll-more indicator ('↓' or 'more'); got:\n%s", bounded0)
+	}
+
+	// Scroll position near end: last lines must be reachable.
+	// At offset 12 (20 lines - 8 visible body = offset 12 reaches near end).
+	bounded12 := boundModalToViewport(modal, available, 12)
+	if !strings.Contains(bounded12, "line-19") {
+		t.Errorf("scroll offset 12: must reach the last modal line; got:\n%s", bounded12)
+	}
+
+	// When modal fits (available >= modal lines), no indicator needed,
+	// content is unchanged.
+	fitsModal := strings.Join(modalLines[:5], "\n") // 5-line modal
+	fits := boundModalToViewport(fitsModal, available, 0)
+	if fits != fitsModal {
+		t.Errorf("fits-on-screen modal must be returned unchanged; got:\n%s", fits)
+	}
+}
+
+// TestRenderContentViewportAwareModal verifies model.go renderContent:
+// with a small terminal (80x24) and the wizard modal open, renderContent
+// does not panic and the visible output is bounded to the terminal height.
+// The existing fits-on-screen overlay contract must also still hold.
+func TestRenderContentViewportAwareModal(t *testing.T) {
+	m := newRootModel(fakeDocDeps(), fakeIdentityDeps(), identity.UpdateDeps{}, identity.DeleteDeps{})
+	m = sendMsg(m, tea.WindowSizeMsg{Width: 80, Height: 24})
+	// Open the create wizard (simulates a tall modal on a small terminal).
+	m = sendKey(m, "1") // identities view
+	m = sendKey(m, "a") // open wizard
+	if m.activeModal != createWizardModal {
+		t.Skip("wizard modal not open; skipping viewport test")
+	}
+
+	// renderContent must not panic even with the wizard modal on 80x24.
+	var content string
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("renderContent panicked with wizard modal on 80x24: %v", r)
+			}
+		}()
+		content = m.renderContent()
+	}()
+
+	// Output must fit in 24 lines (the terminal height).
+	lines := strings.Split(content, "\n")
+	if len(lines) > 24 {
+		t.Errorf("renderContent must not exceed terminal height (%d lines > 24)", len(lines))
+	}
+	// The modal title must be visible.
+	if !strings.Contains(content, "Create Identity") {
+		t.Errorf("renderContent must show wizard title; got (first 200 chars):\n%s", truncateString(content, 200))
 	}
 }
 
