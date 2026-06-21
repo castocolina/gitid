@@ -979,10 +979,9 @@ func (m createWizardModel) buildCreateInput(provider string) identity.CreateInpu
 		}
 	}
 
-	alias := m.inputs[5].Value()
-	if alias == "" {
-		alias = identity.DefaultAlias(name, provider)
-	}
+	// EffectiveAlias: typed alias wins; blank → provider host (e.g. github.com),
+	// never an invented <name>.<provider> suffix (UAT G-5 alias honesty).
+	alias := identity.EffectiveAlias(m.inputs[5].Value(), provider)
 
 	// Hostname: use the user-edited value when hostnameEdited is true; otherwise
 	// derive from the recipe alt-SSH helper (e.g. ssh.github.com for github).
@@ -1005,11 +1004,8 @@ func (m createWizardModel) buildCreateInput(provider string) identity.CreateInpu
 	}
 	hasconfigVal := m.matchHasconfigVal.Value()
 	if hasconfigVal == "" {
-		// Auto-derive from alias (D-03: git@<alias>:*/**).
+		// Auto-derive from the effective alias (D-03: git@<alias>:*/**).
 		hasconfigVal = defaultHasconfigPattern(alias)
-		if hasconfigVal == "" {
-			hasconfigVal = defaultHasconfigPattern(identity.DefaultAlias(name, provider))
-		}
 	}
 	var matches []gitconfig.Match
 	switch m.matchSel {
@@ -1342,19 +1338,10 @@ func (m createWizardModel) viewScreen1(sb *strings.Builder, _ int) {
 	// Row 1: Provider (inputs[3]).
 	sb.WriteString(renderFormField("Provider:       ", m.inputs[3].View(), m.focusIdx == 1) + "\n")
 
-	// Row 2: SSH Alias (inputs[5]); placeholder shows the derived default.
+	// Row 2: SSH Alias (inputs[5]). Blank → provider host (e.g. github.com); the
+	// live preview below reflects the effective value (WYSIWYG, UAT G-5 honesty).
 	name := m.inputs[0].Value()
-	provider := m.inputs[3].Value()
-	if provider == "" {
-		provider = "github.com"
-	}
-	aliasDefault := identity.DefaultAlias(name, provider)
-	aliasView := m.inputs[5].View()
-	if m.inputs[5].Value() == "" && name != "" {
-		// Show derived default in the placeholder slot.
-		_ = aliasDefault // used below in preview
-	}
-	sb.WriteString(renderFormField("SSH Alias:      ", aliasView, m.focusIdx == 2) + "\n")
+	sb.WriteString(renderFormField("SSH Alias:      ", m.inputs[5].View(), m.focusIdx == 2) + "\n")
 
 	// Row 3: Hostname (hostnameVal).
 	sb.WriteString(renderFormField("Hostname:       ", m.hostnameVal.View(), m.focusIdx == hostnameFocusIdx()) + "\n")
@@ -1400,11 +1387,8 @@ func (m createWizardModel) renderSSHBlockPreview(sb *strings.Builder) {
 		provider = "github.com"
 	}
 
-	// Alias: typed value or derived default.
-	alias := m.inputs[5].Value()
-	if alias == "" {
-		alias = identity.DefaultAlias(name, provider)
-	}
+	// Alias: typed value wins; blank → provider host (WYSIWYG, UAT G-5 honesty).
+	alias := identity.EffectiveAlias(m.inputs[5].Value(), provider)
 
 	// Hostname: use the same source as buildCreateInput (T-05.7-10-02 parity).
 	hostname := identity.DefaultHostname(provider)

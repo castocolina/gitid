@@ -833,6 +833,9 @@ func TestWizardScreen1SSHBlockPreview(t *testing.T) {
 	w := newCreateWizardModel("", tuiDeps{})
 	w.inputs[0].SetValue("personal")
 	w.inputs[3].SetValue("github.com")
+	// Explicit alias: a typed alias renders as-is. (Blank-alias→provider-host is
+	// covered by TestWizardAliasBlankYieldsProviderHost, UAT G-5 honesty.)
+	w.inputs[5].SetValue("personal.github.com")
 
 	view := w.view(90)
 
@@ -1379,4 +1382,146 @@ func runAllCmds(cmd tea.Cmd) []tea.Msg {
 		return all
 	}
 	return []tea.Msg{msg}
+}
+
+// ─── Task 1 (Plan 15): EffectiveAlias honesty + command+path on every phase ──
+
+// TestWizardAliasBlankYieldsProviderHost verifies that when the SSH Alias field
+// is blank, the Screen-1 live preview renders `Host github.com` (the provider host)
+// and NOT a <name>.<provider> suffix. The EffectiveAlias function must replace
+// DefaultAlias in the preview render path.
+//
+// Requirement: T-05.7-15-04 (WYSIWYG alias), UAT G-5 alias dishonesty fix.
+func TestWizardAliasBlankYieldsProviderHost(t *testing.T) {
+	w := newCreateWizardModel("personal", fakeWriteTUIDeps(nil))
+	w.inputs[0].SetValue("personal")
+	w.inputs[3].SetValue("github.com")
+	// Leave inputs[5] (SSH Alias) blank — blank alias must yield `Host github.com`.
+	w.inputs[5].SetValue("")
+
+	view := w.view(90)
+
+	// The preview MUST show `Host github.com` — WYSIWYG (blank alias = provider host).
+	if !strings.Contains(view, "Host github.com") {
+		t.Errorf("blank alias must show 'Host github.com' in preview; got:\n%s", view)
+	}
+	// The preview must NOT contain a <name>.<provider> invented suffix.
+	if strings.Contains(view, "personal.github.com") {
+		t.Errorf("blank alias must NOT invent 'personal.github.com' suffix in preview; got:\n%s", view)
+	}
+}
+
+// TestWizardAliasTypedYieldsExactAlias verifies that when the user types an alias
+// the preview shows exactly `Host <typed>` (not <name>.<provider>).
+func TestWizardAliasTypedYieldsExactAlias(t *testing.T) {
+	w := newCreateWizardModel("work", fakeWriteTUIDeps(nil))
+	w.inputs[0].SetValue("work")
+	w.inputs[3].SetValue("github.com")
+	w.inputs[5].SetValue("work.github.com")
+
+	view := w.view(90)
+
+	if !strings.Contains(view, "Host work.github.com") {
+		t.Errorf("typed alias 'work.github.com' must appear as 'Host work.github.com' in preview; got:\n%s", view)
+	}
+}
+
+// TestWizardEffectiveAliasBuildCreateInput verifies that buildCreateInput uses
+// identity.EffectiveAlias so a blank alias produces the provider host (github.com),
+// not an invented <name>.<provider> suffix.
+func TestWizardEffectiveAliasBuildCreateInput(t *testing.T) {
+	w := newCreateWizardModel("personal", fakeWriteTUIDeps(nil))
+	w.inputs[0].SetValue("personal")
+	w.inputs[3].SetValue("github.com")
+	w.inputs[5].SetValue("") // blank alias
+
+	in := w.buildCreateInput("github.com")
+
+	// EffectiveAlias("", "github.com") = "github.com"
+	if in.Alias != "github.com" {
+		t.Errorf("blank alias: buildCreateInput.Alias must be 'github.com' (provider host), got %q", in.Alias)
+	}
+}
+
+// TestWizardPreRunScreenShowsKeyPath verifies the pre-run screen shows both the
+// ssh command AND the key path (G-3: command+path visible on pre-run, Phase-1 PASS,
+// Phase-2). The key path must be co-visible with the command on the upload screen.
+func TestWizardPreRunScreenShowsKeyPath(t *testing.T) {
+	w := makeTestWizardModel(fakeWriteTUIDeps(nil))
+	w.inputs[0].SetValue("personal")
+	w.inputs[3].SetValue("github.com")
+	w.staged = identity.StagedKey{
+		PubLine:          "ssh-ed25519 AAAA test@gitid\n",
+		TempPrivatePath:  "/tmp/gitid-staged/key",
+		FinalPrivatePath: "/home/u/.ssh/id_ed25519_personal",
+	}
+	w.step = wizardStepUpload
+
+	view := w.view(90)
+
+	// The pre-run screen must show the command (already verified by TestWizardPreRunScreenShowsCommand).
+	// In addition it must show the staged key path so the `ssh -i <path>` command is verifiable.
+	if !strings.Contains(view, "/tmp/gitid-staged/key") {
+		t.Errorf("pre-run screen must show the staged key path; got:\n%s", view)
+	}
+}
+
+// TestWizardPhase1PassShowsCommandAndKeyPath verifies Phase-1 PASS (wizardStepProve1Done)
+// shows BOTH the ssh command AND the tested key path (G-3 command+path everywhere).
+func TestWizardPhase1PassShowsCommandAndKeyPath(t *testing.T) {
+	w := makeTestWizardModel(fakeWriteTUIDeps(nil))
+	w.staged = identity.StagedKey{
+		PubLine:          "ssh-ed25519 AAAA test@gitid\n",
+		TempPrivatePath:  "/tmp/gitid-staged/key",
+		FinalPrivatePath: "/home/u/.ssh/id_ed25519_personal",
+	}
+	w.step = wizardStepProve1Done
+	w.phase1Result = tester.Result{
+		Command: "ssh -i /tmp/gitid-staged/key -o IdentitiesOnly=yes -p 443 -T git@ssh.github.com",
+		Output:  "Hi personal!",
+		Outcome: tester.PASS,
+	}
+
+	view := w.view(90)
+
+	// Command must be visible on Phase-1 PASS (not just failure).
+	if !strings.Contains(view, "ssh -i /tmp/gitid-staged/key") {
+		t.Errorf("Phase-1 PASS view must show the ssh command; got:\n%s", view)
+	}
+	// Key path must also be visible (via renderUploadHeader which shows TempPrivatePath).
+	if !strings.Contains(view, "/tmp/gitid-staged/key") {
+		t.Errorf("Phase-1 PASS view must show the staged key path; got:\n%s", view)
+	}
+}
+
+// TestWizardPhase2ShowsCommandAndKeyPath verifies Phase-2 (wizardStepProve2Done)
+// shows the Phase-2 command + the key path.
+func TestWizardPhase2ShowsCommandAndKeyPath(t *testing.T) {
+	w := makeTestWizardModel(fakeWriteTUIDeps(nil))
+	w.staged = identity.StagedKey{
+		PubLine:          "ssh-ed25519 AAAA test@gitid\n",
+		TempPrivatePath:  "/tmp/gitid-staged/key",
+		FinalPrivatePath: "/home/u/.ssh/id_ed25519_personal",
+	}
+	w.step = wizardStepProve2Done
+	w.confirmActive = true
+	w.phase1Result = tester.Result{
+		Command: "ssh -i /tmp/gitid-staged/key -o IdentitiesOnly=yes -p 443 -T git@ssh.github.com",
+		Outcome: tester.PASS,
+	}
+	w.phase2Result = tester.Result{
+		Command: "ssh -T git@github.com",
+		Outcome: tester.PASS,
+	}
+
+	view := w.view(90)
+
+	// Phase-2 command must be visible.
+	if !strings.Contains(view, "ssh -T git@github.com") {
+		t.Errorf("Phase-2 done view must show the phase-2 command; got:\n%s", view)
+	}
+	// Key path still visible via renderUploadHeader.
+	if !strings.Contains(view, "/tmp/gitid-staged/key") {
+		t.Errorf("Phase-2 done view must show the staged key path; got:\n%s", view)
+	}
 }
