@@ -406,7 +406,7 @@ Plans:
 
 **Wave 3** *(blocked on Waves 2 — shares tui/model.go, reuses wizard for inline-create)*
 
-- [ ] 05.7-07-PLAN.md — TUI surfaces: sidebar unmanagedEntry gains a fragment `kind` discriminator + populates ~/.gitconfig_* rows from deps.adopt.ListCandidates FIRST, then the Adopt modal/affordance dispatches on fragment rows; Add Repo modal (detect→picker→rewrite→stream→result + inline-create resume); copy/wizard gh/glab upload-assist (ADOPT-01/REPO-01/AUTOUP-01, D-04..D-12)
+- [x] 05.7-07-PLAN.md — TUI surfaces: sidebar unmanagedEntry gains a fragment `kind` discriminator + populates ~/.gitconfig_* rows from deps.adopt.ListCandidates FIRST, then the Adopt modal/affordance dispatches on fragment rows; Add Repo modal (detect→picker→rewrite→stream→result + inline-create resume); copy/wizard gh/glab upload-assist (ADOPT-01/REPO-01/AUTOUP-01, D-04..D-12)
 
 **Wave 4** *(blocked on Waves 2-3 — review gates)*
 
@@ -435,7 +435,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 6/8 plans executed
+**Plans:** 7/8 plans executed
 
 Plans:
 
@@ -455,5 +455,5 @@ Plans:
 | 5. CLI Surface + TUI | 4/4 | Built (UAT found gaps → 5.5 + 5.6) | 2026-06-13 |
 | 5.5. Core & CLI Reconciliation | 7/7 | Complete    | 2026-06-14 |
 | 5.6. Integrated TUI App | 5/7 | Complete    | 2026-06-21 |
-| 5.7. Complete v1.0 Product Features in TUI | 6/8 | In Progress|  |
+| 5.7. Complete v1.0 Product Features in TUI | 7/8 | In Progress|  |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |

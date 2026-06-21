@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: Product Features in TUI
 status: executing
 stopped_at: Completed 05.6-03-PLAN.md
-last_updated: "2026-06-21T13:03:34.511Z"
+last_updated: "2026-06-21T13:26:49.437Z"
 last_activity: 2026-06-21 -- Phase 05.7 execution started
 progress:
   total_phases: 10
   completed_phases: 7
   total_plans: 51
-  completed_plans: 47
+  completed_plans: 48
   percent: 70
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-08)
 ## Current Position
 
 Phase: 05.7 (complete-v1-0-product-features-in-tui) — EXECUTING
-Plan: 3 of 8
+Plan: 4 of 8
 Status: Ready to execute
 Last activity: 2026-06-21 -- Phase 05.7 execution started
 
@@ -87,6 +87,7 @@ Progress: [██████████] Phase 04 complete (7/7 plans incl. ga
 | Phase 05.6 P05 | 13 | 2 tasks | 5 files |
 | Phase 05.7 P01 | 6 | 3 tasks | 11 files |
 | Phase 05.7 P06 | 9 | 2 tasks | 11 files |
+| Phase 05.7 P07 | 90 | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -155,6 +156,8 @@ Recent decisions affecting current work:
 - [Phase ?]: WriteIncludeIf 3-arg closure captures gitconfigPath in buildAdoptDeps; adopter seam kept narrow (Plan 06)
 - [Phase ?]: TestBuildTUIDepsNilGuard_Phase57 drives live buildTUIDeps() 8-value return — D-16 anti-blindspot for adopter/repoclone/uploader seams (Plan 06)
 - [Phase ?]: copy --upload-keys is non-blocking by design (D-11): AuthToolNotFound is silent-skip; upload never gates the key copy (Plan 06)
+- [Phase ?]: Unified commit for both tasks: CLAUDE.md buildable-boundary rule
+- [Phase ?]: adoptPhaseDone before adoptPhaseOfferRemove: UX + test contract
 
 ### Roadmap Evolution
 
@@ -182,6 +185,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-21T13:03:34.502Z
+Last session: 2026-06-21T13:26:45.711Z
 Stopped at: Completed 05.6-03-PLAN.md
 Resume file: None
