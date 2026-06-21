@@ -414,8 +414,8 @@ Plans:
 
 **Wave 5 (gap closure)** *(from 05.7-UAT.md; 09 + 11 parallel — zero file overlap: 09 = internal/identity + cmd/gitid/add.go core refactor, 11 = doctor + cmd + tui/deps/health)*
 
-- [ ] 05.7-09-PLAN.md — CORE REFACTOR (UI-free, TDD): centralize the provider→alt-SSH map in identity.DefaultHostname/DefaultPort (one source, CLI+TUI parity, add bitbucket) + SPLIT identity.PersistAll into composable PersistSSH (LEG 1: key + Host block) and PersistGitconfig (LEG 2: fragment + includeIf + allowed_signers); PersistAll kept as a thin composition so the CLI single-shot flow is unchanged; staged-key model preserved (foundation for the staged wizard; G-1/G-2/G-3)
-- [ ] 05.7-11-PLAN.md — LEG-1 doctor (G-4): new ADVISORY-ONLY FamilyRedundancy check (CheckRedundancy) for multiple `Host *` stanzas + duplicate UseKeychain/AddKeysToAgent/IgnoreUnknown across pre-existing config and managed `_global`; SeverityWarning + Fix nil (never blocks doctor/write); wired into Run/Families + cmd + tui *(UNCHANGED by the wizard restructure)*
+- [x] 05.7-09-PLAN.md — CORE REFACTOR (UI-free, TDD): centralize the provider→alt-SSH map in identity.DefaultHostname/DefaultPort (one source, CLI+TUI parity, add bitbucket) + SPLIT identity.PersistAll into composable PersistSSH (LEG 1: key + Host block) and PersistGitconfig (LEG 2: fragment + includeIf + allowed_signers); PersistAll kept as a thin composition so the CLI single-shot flow is unchanged; staged-key model preserved (foundation for the staged wizard; G-1/G-2/G-3)
+- [x] 05.7-11-PLAN.md — LEG-1 doctor (G-4): new ADVISORY-ONLY FamilyRedundancy check (CheckRedundancy) for multiple `Host *` stanzas + duplicate UseKeychain/AddKeysToAgent/IgnoreUnknown across pre-existing config and managed `_global`; SeverityWarning + Fix nil (never blocks doctor/write); wired into Run/Families + cmd + tui *(UNCHANGED by the wizard restructure)*
 
 **Wave 6 (gap closure)** *(blocked on Wave 5 plan 09 — shares tui/wizard.go; staged wizard SCREEN 1)*
 
@@ -452,7 +452,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 8/8 plans complete
+**Plans:** 10/13 plans executed
 
 Plans:
 
@@ -472,5 +472,5 @@ Plans:
 | 5. CLI Surface + TUI | 4/4 | Built (UAT found gaps → 5.5 + 5.6) | 2026-06-13 |
 | 5.5. Core & CLI Reconciliation | 7/7 | Complete    | 2026-06-14 |
 | 5.6. Integrated TUI App | 5/7 | Complete    | 2026-06-21 |
-| 5.7. Complete v1.0 Product Features in TUI | 8/8 | Complete   | 2026-06-21 |
+| 5.7. Complete v1.0 Product Features in TUI | 10/13 | In Progress|  |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |
