@@ -123,5 +123,17 @@ func newRootCmd() *cobra.Command {
 	host.AddCommand(newHostAddCmd())
 	root.AddCommand(host)
 
+	// ADOPT-01: adopt command at root level (migrate or reference-in-place).
+	root.AddCommand(newAdoptCmd())
+
+	// REPO-01: NEW top-level add group — separate from identity add (which lives
+	// under identity). This group is the extensible home for repo-level operations.
+	add := &cobra.Command{
+		Use:   "add",
+		Short: "Add resources to gitid management (repositories, …)",
+	}
+	add.AddCommand(newAddRepoCmd())
+	root.AddCommand(add)
+
 	return root
 }

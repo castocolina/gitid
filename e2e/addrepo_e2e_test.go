@@ -106,7 +106,10 @@ func TestAddRepo_AliasRewrite(t *testing.T) {
 
 	combined := stdout.String() + stderr.String()
 	// Assert: the rewritten SSH alias URL appears in output.
-	if !strings.Contains(combined, "personal.github.com") {
-		t.Errorf("expected SSH alias rewrite (personal.github.com) in output;\ngot:\n%s", combined)
+	// The alias form is personal.<provider> per DefaultAlias (e.g. personal.github
+	// when provider is "github"). The full hostname alias personal.github.com is
+	// only produced when the provider input is "github.com".
+	if !strings.Contains(combined, "personal.github") {
+		t.Errorf("expected SSH alias rewrite (personal.github) in output;\ngot:\n%s", combined)
 	}
 }
