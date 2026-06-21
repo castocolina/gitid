@@ -384,7 +384,7 @@ CLI-02 are COMPLETE and explicitly NOT replanned (D-01).
 shipped — D-01); configurable clone base dir beyond `~/git`; interactive gh/glab login;
 Windows, GPG signing, web UI, automatic key rotation, secret-vault (v1 non-goals).
 
-**Plans**: 8 plans (Wave 0 test infra → 3 parallel core packages → CLI+wiring & match selector → TUI modals → review gates)
+**Plans**: 12 plans (8 feature plans + 4 gap-closure plans 09–12 from 05.7-UAT.md — Wave 0 test infra → 3 parallel core packages → CLI+wiring & match selector → TUI modals → review gates → LEG-1 SSH-config + doctor gap closure → viewport modal)
 **UI hint**: yes
 
 Plans:
@@ -411,6 +411,19 @@ Plans:
 **Wave 4** *(blocked on Waves 2-3 — review gates)*
 
 - [x] 05.7-08-PLAN.md — Review wave: agent-ui-ux-designer critique of the 4 new TUI surfaces (teatest-independent View()-dump frame capture fallback) + requesting-code-review over the phase diff + blocking manual TTY smoke test (D-13)
+
+**Wave 5 (gap closure)** *(from 05.7-UAT.md; 09 + 11 parallel — zero file overlap: 09 = tui/wizard.go, 11 = doctor + cmd + tui/deps/health)*
+
+- [ ] 05.7-09-PLAN.md — LEG-1 SSH legibility (G-2 preview half + G-3): pre-gate SSH `Host <alias>` block preview via sshconfig.RenderHostBlock (alias = `<name>.<provider>` per recipe) + SSH test command/path visible on pre-write and on SUCCESS, not only failure; surfaces alt-SSH recipe divergence (ssh.<provider>:443) without silently changing it
+- [ ] 05.7-11-PLAN.md — LEG-1 doctor (G-4): new ADVISORY-ONLY FamilyRedundancy check (CheckRedundancy) for multiple `Host *` stanzas + duplicate UseKeychain/AddKeysToAgent/IgnoreUnknown across pre-existing config and managed `_global`; SeverityWarning + Fix nil (never blocks doctor/write); wired into Run/Families + cmd + tui
+
+**Wave 6 (gap closure)** *(blocked on Wave 5 plan 09 — shares tui/wizard.go)*
+
+- [ ] 05.7-10-PLAN.md — LEG-1 no-write feedback (G-2 remaining half): clear "nothing written + why + two ways forward" (upload-first via gh/glab AUTOUP-01, or `[s]` skip-&-write-offline); the discoverable `[s]` path writes the `Host <alias>` block (double-confirm + unauth warning preserved) so the alias resolves
+
+**Wave 7 (gap closure)** *(blocked on Wave 6 plan 10 — shares tui/wizard.go)*
+
+- [ ] 05.7-12-PLAN.md — Cross-cutting TUI (G-1): viewport-aware modal so the expanded match panel renders completely (no silent placeOverlay clamp) + HARD requirement: SSH Alias AND folder (gitdir) fields ALWAYS visible/editable/Tab-reachable, not buried in the overflowing expanded panel
 
 ### Phase 6: Linux Cross-Platform Validation
 
