@@ -138,6 +138,130 @@ func FakeSSHDir(t *testing.T, mode string) string {
 	return dir
 }
 
+// FakeGHDir writes a mode-switching fake gh script and sets GITID_FAKE_GH_MODE.
+// The caller prepends the returned dir to PATH via cmd.Env.
+//
+// Modes:
+//
+//	ok        — auth status exit 0; ssh-key add prints "Added SSH key." and exits 0
+//	auth-fail — auth status exits 1 (not authenticated)
+//
+// Script is a static literal — never constructed from user input (G204-clean).
+func FakeGHDir(t *testing.T, mode string) string {
+	t.Helper()
+	dir := t.TempDir()
+	const script = "#!/bin/sh\n" +
+		"case \"$1\" in\n" +
+		"  auth)\n" +
+		"    case \"$GITID_FAKE_GH_MODE\" in\n" +
+		"      ok) exit 0 ;;\n" +
+		"      *) echo \"error: not logged into github.com\"; exit 1 ;;\n" +
+		"    esac\n" +
+		"    ;;\n" +
+		"  ssh-key)\n" +
+		"    case \"$GITID_FAKE_GH_MODE\" in\n" +
+		"      ok) echo \"Added SSH key.\"; exit 0 ;;\n" +
+		"      *) echo \"error: not authenticated\"; exit 1 ;;\n" +
+		"    esac\n" +
+		"    ;;\n" +
+		"  *)\n" +
+		"    exit 0\n" +
+		"    ;;\n" +
+		"esac\n"
+	scriptPath := filepath.Join(dir, "gh")
+	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil { //nolint:gosec // test-only static script (G306)
+		t.Fatalf("FakeGHDir: writing fake gh: %v", err)
+	}
+	t.Setenv("GITID_FAKE_GH_MODE", mode)
+	return dir
+}
+
+// FakeGLabDir writes a mode-switching fake glab script and sets GITID_FAKE_GLAB_MODE.
+// The caller prepends the returned dir to PATH via cmd.Env.
+//
+// Modes:
+//
+//	ok        — auth status exit 0; ssh-key add exits 0
+//	auth-fail — auth status exits 1 (not authenticated)
+//
+// Script is a static literal — never constructed from user input (G204-clean).
+func FakeGLabDir(t *testing.T, mode string) string {
+	t.Helper()
+	dir := t.TempDir()
+	const script = "#!/bin/sh\n" +
+		"case \"$1\" in\n" +
+		"  auth)\n" +
+		"    case \"$GITID_FAKE_GLAB_MODE\" in\n" +
+		"      ok) exit 0 ;;\n" +
+		"      *) echo \"error: not authenticated to gitlab.com\"; exit 1 ;;\n" +
+		"    esac\n" +
+		"    ;;\n" +
+		"  ssh-key)\n" +
+		"    case \"$GITID_FAKE_GLAB_MODE\" in\n" +
+		"      ok) echo \"Added SSH key.\"; exit 0 ;;\n" +
+		"      *) echo \"error: not authenticated\"; exit 1 ;;\n" +
+		"    esac\n" +
+		"    ;;\n" +
+		"  *)\n" +
+		"    exit 0\n" +
+		"    ;;\n" +
+		"esac\n"
+	scriptPath := filepath.Join(dir, "glab")
+	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil { //nolint:gosec // test-only static script (G306)
+		t.Fatalf("FakeGLabDir: writing fake glab: %v", err)
+	}
+	t.Setenv("GITID_FAKE_GLAB_MODE", mode)
+	return dir
+}
+
+// FakeGitDir writes a mode-switching fake git script and sets GITID_FAKE_GIT_MODE.
+// The caller prepends the returned dir to PATH via cmd.Env.
+//
+// Modes:
+//
+//	clone-ok   — mkdir dest and exits 0 (simulates a successful clone)
+//	clone-fail — exits 128 (simulates a failed clone)
+//
+// Script is a static literal — never constructed from user input (G204-clean).
+func FakeGitDir(t *testing.T, mode string) string {
+	t.Helper()
+	dir := t.TempDir()
+	const script = "#!/bin/sh\n" +
+		"case \"$GITID_FAKE_GIT_MODE\" in\n" +
+		"  clone-ok)\n" +
+		"    # mkdir the last argument (destination path) to simulate a successful clone\n" +
+		"    dest=\"${@: -1}\"\n" +
+		"    mkdir -p \"$dest\"\n" +
+		"    exit 0\n" +
+		"    ;;\n" +
+		"  clone-fail)\n" +
+		"    echo \"fatal: repository not found\"\n" +
+		"    exit 128\n" +
+		"    ;;\n" +
+		"  *)\n" +
+		"    exit 0\n" +
+		"    ;;\n" +
+		"esac\n"
+	scriptPath := filepath.Join(dir, "git")
+	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil { //nolint:gosec // test-only static script (G306)
+		t.Fatalf("FakeGitDir: writing fake git: %v", err)
+	}
+	t.Setenv("GITID_FAKE_GIT_MODE", mode)
+	return dir
+}
+
+// setupLocalBareRepo initialises a git bare repository in a temp directory and
+// returns its file:// URL and base name. The REAL system git is used here (not a
+// fake) so the network-free clone target is a genuine git repository.
+func setupLocalBareRepo(t *testing.T) (repoURL, repoName string) {
+	t.Helper()
+	bare := t.TempDir()
+	if err := exec.Command("git", "init", "--bare", bare).Run(); err != nil { //nolint:gosec // arg-slice; no shell (G204)
+		t.Fatalf("setupLocalBareRepo: git init --bare: %v", err)
+	}
+	return "file://" + bare, filepath.Base(bare)
+}
+
 // repoRoot walks up from the test working directory until it finds a directory
 // containing go.mod, which marks the repository root.
 func repoRoot(t *testing.T) string {
