@@ -300,12 +300,34 @@ Ergonomics are modeled on `../tools-installer` (a Textual app). Runs over SSH.
   5. Delete and rotate are performed in-app (no CLI handoff); copy copies the public key only (never the private key)
   6. The footer shows bold, comma-separated key hints; empty-state and list rows render correctly (closes G-01/G-02/G-04/F-4); `?` opens an in-app help overlay (closes G-03)
 
-**Plans**: TBD — run `/gsd-plan-phase 5.6`
+**Plans**: 6 plans (6 waves: Wave 0 foundation → vertical slices)
 **UI hint**: yes
 
 Plans:
 
-- [ ] TBD (run /gsd-ui-phase 5.6 then /gsd-discuss-phase 5.6 then /gsd-plan-phase 5.6)
+**Wave 0**
+
+- [x] 05.6-01-PLAN.md — Foundation: PlaceOverlay spike (ABSENT at v2.0.3 → line-merge overlay fallback) + extend styles/keymap/messages + RED test scaffolds
+
+**Wave 1** *(blocked on Wave 0)*
+
+- [x] 05.6-02-PLAN.md — App shell slice: two-pane persistent layout (sidebar managed+unmanaged, always visible) + 1/2/3 + Ctrl+P view switch + footer + help overlay, via the real `gitid` no-args entry (TUI-03/04/06)
+
+**Wave 2** *(blocked on Wave 1 — shares tui/model.go)*
+
+- [x] 05.6-03-PLAN.md — Health view slice: async 8-family streaming (port dashboard) + distinct severity glyphs (warning `!` vs error `✗`) + per-identity badges + in-app fix confirm (TUI-04/06)
+
+**Wave 3** *(blocked on Wave 2 — shares tui/model.go)*
+
+- [x] 05.6-04-PLAN.md — Detail + editing slice: master-detail pane + inline edit + match-strategy live includeIf preview + structural prove-before-write gate + Global Options view (TUI-04/05)
+
+**Wave 4** *(blocked on Wave 3 — shares tui/wizard.go + model.go)*
+
+- [x] 05.6-05-PLAN.md — Create/add wizard slice: form→keygen→upload→test-loop→write (persist only after PASS) + copy-pubkey-only modal (TUI-05/06)
+
+**Wave 5** *(blocked on Wave 4 — shares tui/deps.go + model.go; ends with blocking D-16 manual smoke)*
+
+- [ ] 05.6-06-PLAN.md — Delete/rotate slice: wire identity.DeleteDeps + in-app delete/rotate confirms + unmanaged affordances (reveal/copy/open) + TestBuildTUIDepsNilGuard + manual real-entry smoke (TUI-04/06, D-16)
 
 ### Phase 6: Linux Cross-Platform Validation
 
@@ -330,7 +352,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 7/7 plans complete
+**Plans:** 5/6 plans executed
 
 Plans:
 
@@ -349,5 +371,5 @@ Plans:
 | 4. Doctor | 7/7 | Complete   | 2026-06-12 |
 | 5. CLI Surface + TUI | 4/4 | Built (UAT found gaps → 5.5 + 5.6) | 2026-06-13 |
 | 5.5. Core & CLI Reconciliation | 7/7 | Complete    | 2026-06-14 |
-| 5.6. Integrated TUI App | 0/? | Planned | - |
+| 5.6. Integrated TUI App | 5/6 | In Progress|  |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |

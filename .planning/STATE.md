@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 05.5-03-PLAN.md
-last_updated: "2026-06-14T21:34:00.965Z"
-last_activity: 2026-06-14
+status: executing
+stopped_at: Completed 05.6-03-PLAN.md
+last_updated: "2026-06-16T00:29:02.178Z"
+last_activity: 2026-06-15 -- Phase 05.6 execution started
 progress:
   total_phases: 9
   completed_phases: 7
-  total_plans: 36
-  completed_plans: 36
+  total_plans: 42
+  completed_plans: 41
   percent: 78
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-08)
 
 **Core value:** Managing a Git identity produces coordinated, coherent SSH + Git artifacts that are proven to authenticate and resolve correctly before any file is written, and existing hand-written config is never corrupted.
-**Current focus:** Phase 05.5 — core-cli-reconciliation-inserted
+**Current focus:** Phase 05.6 — integrated-tui-app-inserted
 
 ## Current Position
 
-Phase: 06
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-06-14
+Phase: 05.6 (integrated-tui-app-inserted) — EXECUTING
+Plan: 6 of 6
+Status: Ready to execute
+Last activity: 2026-06-15 -- Phase 05.6 execution started
 
 Progress: [██████████] Phase 04 complete (7/7 plans incl. gap closure)
 
@@ -79,6 +79,11 @@ Progress: [██████████] Phase 04 complete (7/7 plans incl. ga
 | Phase 05.5 P05 | 7 | 2 tasks | 8 files |
 | Phase 05.5 P06 | 10 | 2 tasks | 4 files |
 | Phase 05.5 P07 | 15 | 1 tasks | 6 files |
+| Phase 05.6 P01 | 25 | 3 tasks | 23 files |
+| Phase 05.6 P02 | 40 | 2 tasks | 7 files |
+| Phase 05.6 P03 | 9 | 2 tasks | 7 files |
+| Phase 05.6 P04 | 11 | 2 tasks | 8 files |
+| Phase 05.6 P05 | 13 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -139,6 +144,9 @@ Recent decisions affecting current work:
 - [Phase ?]: 05.5-04: promptMatchStrategy variadic strategyDefault; add passes nothing (default "1"), update passes strategyNumFromKind result
 - [Phase ?]: 05.5-04: addFlags{name,gitdir,url,provider} on add; updateFlags{gitdir,url,provider} on update (NO --name per Q2); provider flag-only on update per Q3
 - [Phase ?]: 05.5-06: BinaryInstallInfo uses os.Executable + EvalSymlinks (tolerates evalErr A1) + pure binaryOnPath helper; SeverityInfo finding under FamilyDeps with export hint when off-PATH (D-17)
+- [Phase ?]: true
+- [Phase ?]: 05.6-03: Finding.IdentityName additive field for badge scoping (D-08); zero value = global finding; all existing struct literals unaffected
+- [Phase ?]: 05.6-03: healthViewModel sub-model (port from dashboardModel); fixConfirmModal = fixConfirm Enter-gated; badgesFromFindings via IdentityName field; healthReady flag seeds init() only on first view-2 press
 
 ### Roadmap Evolution
 
@@ -165,6 +173,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-14T17:48:37.977Z
-Stopped at: Completed 05.5-03-PLAN.md
+Last session: 2026-06-16T00:29:02.165Z
+Stopped at: Completed 05.6-03-PLAN.md
 Resume file: None

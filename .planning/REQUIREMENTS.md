@@ -86,8 +86,12 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 
 ### TUI (TUI)
 
-- [x] **TUI-01**: A Bubble Tea TUI launches into the doctor dashboard
-- [x] **TUI-02**: From the dashboard the user can navigate to the identity/account managers
+- [x] **TUI-01**: A Bubble Tea TUI launches into the doctor dashboard *(superseded by TUI-03..06, Phase 5.6)*
+- [x] **TUI-02**: From the dashboard the user can navigate to the identity/account managers *(superseded by TUI-03..06, Phase 5.6)*
+- [x] **TUI-03**: A single integrated terminal app (Bubble Tea v2) presents a persistent layout — header + always-visible identity sidebar + master-detail main pane + bold footer — that stays composed while focus moves (Tab-cycle); it collapses to a single pane on narrow terminals and runs over SSH *(new, UAT-derived — Phase 5.6)*
+- [x] **TUI-04**: A view switcher (command palette + `1..N` keys) moves between Identities, Health (doctor findings as badges + actionable in-app fixes), and Global Options (baseline); per-identity health badges appear on sidebar rows and the detail pane *(new, UAT-derived — Phase 5.6)*
+- [x] **TUI-05**: Creating/adding an identity runs in-app (keygen → copy public key + upload instructions → live connectivity test → PASS/fail → retry/skip/quit, persisting only after PASS); per-site and global options are editable in-pane, with structural edits gated by the prove-before-write loop *(new, UAT-derived — Phase 5.6)*
+- [x] **TUI-06**: Delete and rotate are performed in-app (no CLI handoff); copy copies the public key only; the footer shows bold comma-separated key hints, empty-state and list rows render correctly, and `?` opens an in-app help overlay; a read-only unmanaged section lists hand-written Host blocks + unlinked keys *(new, UAT-derived — Phase 5.6)*
 
 ### Global Baseline Config (GLOBAL / URLRW / GITIGNORE)
 
@@ -195,5 +199,9 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. v1 = the Phase-1 MVP scope.
 | DOC-07 | Phase 4 | Complete |
 | CLI-01 | Phase 5 | Complete |
 | CLI-02 | Phase 5 | Complete |
-| TUI-01 | Phase 5 | Complete |
-| TUI-02 | Phase 5 | Complete |
+| TUI-01 | Phase 5 | Complete (superseded by 5.6) |
+| TUI-02 | Phase 5 | Complete (superseded by 5.6) |
+| TUI-03 | Phase 5.6 | Planned |
+| TUI-04 | Phase 5.6 | Planned |
+| TUI-05 | Phase 5.6 | Planned |
+| TUI-06 | Phase 5.6 | Planned |
