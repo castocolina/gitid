@@ -152,6 +152,8 @@ func makeFamilyCmd(runID int, fam doctor.Family, d doctor.Deps) tea.Cmd {
 		fn = d.CheckBaseline
 	case doctor.FamilyOverlap:
 		fn = d.CheckOverlap
+	case doctor.FamilyRedundancy:
+		fn = d.CheckRedundancy
 	}
 	return func() (msg tea.Msg) {
 		// recover() wrap: converts any panic inside the doctor check goroutine into

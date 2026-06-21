@@ -20,20 +20,22 @@ import (
 	"github.com/castocolina/gitid/internal/doctor"
 )
 
-// fakeTUIDocDepsForHealth returns a minimal doctor.Deps with all 8 CheckFn
+// fakeTUIDocDepsForHealth returns a minimal doctor.Deps with all 9 CheckFn
 // fields set to non-nil stubs (return empty findings). Used by health tests so
 // nil-guard errors don't bleed into stale-guard / badge tests.
+// Includes CheckRedundancy (UAT G-4 / SSH-03) as the ninth check.
 func fakeTUIDocDepsForHealth() doctor.Deps {
 	noop := func(_ doctor.Deps) []doctor.Finding { return nil }
 	return doctor.Deps{
-		CheckDeps:      noop,
-		CheckPerms:     noop,
-		CheckCoherence: noop,
-		CheckOrphans:   noop,
-		CheckSigning:   noop,
-		CheckAgent:     noop,
-		CheckBaseline:  noop,
-		CheckOverlap:   noop,
+		CheckDeps:       noop,
+		CheckPerms:      noop,
+		CheckCoherence:  noop,
+		CheckOrphans:    noop,
+		CheckSigning:    noop,
+		CheckAgent:      noop,
+		CheckBaseline:   noop,
+		CheckOverlap:    noop,
+		CheckRedundancy: noop,
 	}
 }
 
@@ -43,11 +45,11 @@ func fakeTUIDepsForHealth() tuiDeps {
 }
 
 // TestHealthFamilies verifies that the Health view's init() returns a tea.Batch
-// containing one familyResultMsg-producing cmd for each of the 8 doctor families
+// containing one familyResultMsg-producing cmd for each of the 9 doctor families
 // (TUI-06/D-11: async per-family streaming with runID stale-guard, port of
-// TestDashboardInit from Phase 5).
+// TestDashboardInit from Phase 5). The 9th family is FamilyRedundancy (UAT G-4).
 // Requirement: TUI-06/D-11 (async health streaming).
-// Closes: Plan 03.
+// Closes: Plan 03, Plan 11.
 func TestHealthFamilies(t *testing.T) {
 	m := newHealthModel(fakeTUIDepsForHealth())
 	_, cmd := m.init()
@@ -64,7 +66,7 @@ func TestHealthFamilies(t *testing.T) {
 	// Each family produces one family cmd + one spinner Tick = 2 entries per family.
 	expectedCount := len(doctor.Families()) * 2
 	if len(batchMsg) != expectedCount {
-		t.Errorf("expected %d cmds (8 family + 8 spinner ticks), got %d", expectedCount, len(batchMsg))
+		t.Errorf("expected %d cmds (9 family + 9 spinner ticks), got %d", expectedCount, len(batchMsg))
 	}
 
 	// Collect all families seen from the family cmds.
@@ -231,5 +233,49 @@ func TestHealthBadgesDerived(t *testing.T) {
 	// They are not identity-scoped.
 	if _, ok := badges[""]; ok {
 		t.Error("global findings (empty IdentityName) must not create a badge entry for empty string")
+	}
+}
+
+// TestHealthFamilyRedundancyDispatch verifies that makeFamilyCmd for
+// FamilyRedundancy dispatches d.CheckRedundancy through the real family-run
+// path (anti-blindspot: MEMORY doctor wiring blindspot / UAT G-4).
+// A non-nil CheckRedundancy wired in deps must produce a FamilyRedundancy
+// finding; a nil CheckRedundancy must produce an error (not a silent pass).
+func TestHealthFamilyRedundancyDispatch(t *testing.T) {
+	wantTitle := "fake redundancy warning"
+
+	// Non-nil CheckRedundancy: must be dispatched and produce its finding.
+	docDeps := fakeTUIDocDepsForHealth()
+	docDeps.CheckRedundancy = func(_ doctor.Deps) []doctor.Finding {
+		return []doctor.Finding{{
+			Family:   doctor.FamilyRedundancy,
+			Severity: doctor.SeverityWarning,
+			Title:    wantTitle,
+			Fix:      nil,
+		}}
+	}
+	cmd := makeFamilyCmd(1, doctor.FamilyRedundancy, docDeps)
+	msg := cmd()
+	res, ok := msg.(familyResultMsg)
+	if !ok {
+		t.Fatalf("expected familyResultMsg from FamilyRedundancy cmd; got %T", msg)
+	}
+	if res.err != nil {
+		t.Errorf("non-nil CheckRedundancy must not produce an error; got %v", res.err)
+	}
+	if len(res.findings) != 1 || res.findings[0].Title != wantTitle {
+		t.Errorf("expected finding %q; got %v", wantTitle, res.findings)
+	}
+
+	// Nil CheckRedundancy must produce an error (not a silent pass — anti-blindspot D-16).
+	nilDeps := doctor.Deps{CheckRedundancy: nil}
+	nilCmd := makeFamilyCmd(1, doctor.FamilyRedundancy, nilDeps)
+	nilMsg := nilCmd()
+	nilRes, ok := nilMsg.(familyResultMsg)
+	if !ok {
+		t.Fatalf("expected familyResultMsg from nil-CheckRedundancy cmd; got %T", nilMsg)
+	}
+	if nilRes.err == nil {
+		t.Error("nil CheckRedundancy must surface an error (not a silent pass, D-16)")
 	}
 }

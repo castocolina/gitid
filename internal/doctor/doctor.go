@@ -66,6 +66,12 @@ const (
 	// FamilyOverlap surfaces ambiguous/overlapping includeIf match conditions
 	// across identities (DOC-08 / F-7). Severity is always warning (D-15).
 	FamilyOverlap Family = "Overlap"
+	// FamilyRedundancy surfaces SSH-config structural redundancy: multiple
+	// "Host *" stanzas and duplicate global directives (UseKeychain /
+	// AddKeysToAgent / IgnoreUnknown) across the user's pre-existing config
+	// AND gitid's managed _global block (UAT G-4 / SSH-03 / DOC-08).
+	// Severity is always SeverityWarning; Fix is always nil (advisory-only).
+	FamilyRedundancy Family = "Redundancy"
 )
 
 // FixDescriptor carries metadata and the callable for an auto-fixable finding.
@@ -148,6 +154,7 @@ type CheckFn func(Deps) []Finding
 //	CheckDeps, CheckPerms, CheckCoherence, CheckOrphans,
 //	CheckSigning, CheckAgent, CheckBaseline — the seven original per-family functions
 //	CheckOverlap — the eighth check (DOC-08 / F-7); FamilyOverlap, SeverityWarning
+//	CheckRedundancy — the ninth check (UAT G-4 / SSH-03); FamilyRedundancy, SeverityWarning, Fix nil
 type Deps struct {
 	// Read fields.
 	ReadFile func(path string) ([]byte, error)
@@ -230,13 +237,20 @@ type Deps struct {
 	// CheckOverlap detects ambiguous/overlapping includeIf match conditions across
 	// identities (DOC-08 / F-7). Called after CheckOrphans; SeverityWarning only.
 	CheckOverlap CheckFn
+	// CheckRedundancy detects SSH-config structural redundancy: multiple "Host *"
+	// stanzas and duplicate global directives (UseKeychain / AddKeysToAgent /
+	// IgnoreUnknown) across the whole ~/.ssh/config (UAT G-4 / SSH-03 / DOC-08).
+	// Advisory-only: SeverityWarning, Fix nil, never blocks doctor or any write flow.
+	// Called last in Run — appended after CheckOverlap (nil-guarded).
+	CheckRedundancy CheckFn
 }
 
 // Run calls all check families in the fixed UI-SPEC order and returns the
 // aggregated findings slice. Each check function is called only when its Deps
 // field is non-nil (nil == stub not yet wired). Run never imports filewriter or
 // os.Chmod — fix capabilities are injected via deps (D-01).
-// Order: Dependencies, Permissions, Coherence, Orphans, Signing, Agent, Baseline, Overlap.
+// Order: Dependencies, Permissions, Coherence, Orphans, Signing, Agent, Baseline,
+// Overlap, Redundancy.
 func Run(deps Deps) []Finding {
 	var all []Finding
 	for _, fn := range []CheckFn{
@@ -248,6 +262,7 @@ func Run(deps Deps) []Finding {
 		deps.CheckAgent,
 		deps.CheckBaseline,
 		deps.CheckOverlap,
+		deps.CheckRedundancy,
 	} {
 		if fn != nil {
 			all = append(all, fn(deps)...)
@@ -294,9 +309,11 @@ func severityToCode(s Severity) int {
 }
 
 // Families returns all family constants in the fixed UI-SPEC display order:
-// Dependencies, Permissions, Coherence, Orphans, Signing, Agent, Baseline, Overlap.
-// FamilyOverlap is listed last so it renders as an advisory section after the
-// structural/integrity checks (D-15 — severity warning, not blocking).
+// Dependencies, Permissions, Coherence, Orphans, Signing, Agent, Baseline,
+// Overlap, Redundancy.
+// FamilyOverlap and FamilyRedundancy are listed last so they render as advisory
+// sections after the structural/integrity checks (D-15 — severity warning, not
+// blocking). FamilyRedundancy is appended after FamilyOverlap (UAT G-4 / SSH-03).
 func Families() []Family {
 	return []Family{
 		FamilyDeps,
@@ -307,5 +324,6 @@ func Families() []Family {
 		FamilyAgent,
 		FamilyBaseline,
 		FamilyOverlap,
+		FamilyRedundancy,
 	}
 }
