@@ -143,6 +143,20 @@ type Deps struct {
 	PubExists func(pubPath string) bool
 	DerivePub func(privateKeyPath, comment string) (pubLine string, err error)
 	WritePub  func(pubPath, pubLine string) error
+
+	// WriteProvisionalSSH, PromoteSSH, and DropProvisionalSSH are the three
+	// provisional-block lifecycle seams for the staged create wizard (Plan 14).
+	// They mirror the sshconfig.WriteProvisional/Promote/DropProvisional
+	// signatures so the TUI can wire live implementations without importing
+	// internal/sshconfig directly. Adding these fields is additive; existing
+	// callers that do not use the provisional lifecycle leave them nil.
+	//
+	//   WriteProvisionalSSH — write a provisional Host block (staged key path).
+	//   PromoteSSH          — atomic provisional → managed swap (final key path).
+	//   DropProvisionalSSH  — remove the provisional block on cancel or failure.
+	WriteProvisionalSSH func(name, hostBlock string) (backupPath string, err error)
+	PromoteSSH          func(name, hostBlock string) (backupPath string, err error)
+	DropProvisionalSSH  func(name string) (backupPath string, err error)
 }
 
 // CreateResult reports everything the command layer needs to display: the four
