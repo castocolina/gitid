@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: Product Features in TUI
 status: executing
 stopped_at: Completed 05.6-03-PLAN.md
-last_updated: "2026-06-21T13:53:35.474Z"
+last_updated: "2026-06-21T17:57:39.122Z"
 last_activity: 2026-06-21 -- Phase 05.7 execution started
 progress:
   total_phases: 10
-  completed_phases: 8
-  total_plans: 51
-  completed_plans: 49
-  percent: 80
+  completed_phases: 7
+  total_plans: 56
+  completed_plans: 52
+  percent: 70
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-08)
 ## Current Position
 
 Phase: 05.7 (complete-v1-0-product-features-in-tui) — EXECUTING
-Plan: 5 of 8
+Plan: 6 of 8
 Status: Ready to execute
 Last activity: 2026-06-21 -- Phase 05.7 execution started
 
@@ -89,6 +89,7 @@ Progress: [██████████] Phase 04 complete (7/7 plans incl. ga
 | Phase 05.7 P06 | 9 | 2 tasks | 11 files |
 | Phase 05.7 P07 | 90 | 2 tasks | 11 files |
 | Phase 05.7 P08 | 50m | 3 tasks | 16 files |
+| Phase 05.7 P10 | 15 | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -159,6 +160,9 @@ Recent decisions affecting current work:
 - [Phase ?]: copy --upload-keys is non-blocking by design (D-11): AuthToolNotFound is silent-skip; upload never gates the key copy (Plan 06)
 - [Phase ?]: Unified commit for both tasks: CLAUDE.md buildable-boundary rule
 - [Phase ?]: adoptPhaseDone before adoptPhaseOfferRemove: UX + test contract
+- [Phase ?]: 05.7-10 D-01: boundModalToViewport Option B
+- [Phase ?]: 05.7-10 D-02: Screen-1 virtual slot mapping; fieldMatch=6/fieldSigning=7 stable for Plan 13 reuse
+- [Phase ?]: 05.7-10 D-03: hostnameEdited flag auto-tracks provider; refreshHostnameIfUnedited no-op once edited
 
 ### Roadmap Evolution
 
@@ -186,6 +190,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-21T13:26:45.711Z
+Last session: 2026-06-21T17:56:56.362Z
 Stopped at: Completed 05.6-03-PLAN.md
 Resume file: None
