@@ -3,10 +3,13 @@ package tui
 import (
 	"testing"
 
+	"github.com/castocolina/gitid/internal/adopter"
 	"github.com/castocolina/gitid/internal/doctor"
 	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/identity"
+	"github.com/castocolina/gitid/internal/repoclone"
 	"github.com/castocolina/gitid/internal/tester"
+	"github.com/castocolina/gitid/internal/uploader"
 )
 
 // These tests exercise the LIVE program wiring rather than model internals in
@@ -201,5 +204,67 @@ func TestBuildTUIDepsNilGuard(t *testing.T) {
 	}
 	if deleteDeps.RemoveKeyFiles == nil {
 		t.Error("identity.DeleteDeps.RemoveKeyFiles nil")
+	}
+}
+
+// TestBuildTUIDepsNilGuard_Phase57 extends the D-16 guard to cover the three
+// new Deps structs added in Phase 5.7: adopter.Deps, repoclone.Deps, uploader.Deps.
+//
+// RED (Plan 01): zero-value form. This test constructs zero-value Deps structs of
+// the three new types and asserts each function field is non-nil — every assertion
+// FAILS because the fields are nil in a zero-value struct. This is a genuine
+// non-vacuous RED guard: the types exist (go build ./... exits 0) but the live
+// wiring is not yet done.
+//
+// Plan 06 (05.7-06) rewires this to drive the real 8-value buildTUIDeps() return.
+func TestBuildTUIDepsNilGuard_Phase57(t *testing.T) {
+	// Zero-value Deps: all function fields are nil — assertions below will FAIL (RED).
+	var adoptDeps adopter.Deps
+	var repoCloneDeps repoclone.Deps
+	var uploadDeps uploader.Deps
+
+	// adopter.Deps fields
+	if adoptDeps.ReadFile == nil {
+		t.Error("adopter.Deps.ReadFile nil")
+	}
+	if adoptDeps.WriteFile == nil {
+		t.Error("adopter.Deps.WriteFile nil")
+	}
+	if adoptDeps.CopyFile == nil {
+		t.Error("adopter.Deps.CopyFile nil")
+	}
+	if adoptDeps.BackupAndRemove == nil {
+		t.Error("adopter.Deps.BackupAndRemove nil")
+	}
+	if adoptDeps.WriteIncludeIf == nil {
+		t.Error("adopter.Deps.WriteIncludeIf nil")
+	}
+	if adoptDeps.ReadFragment == nil {
+		t.Error("adopter.Deps.ReadFragment nil")
+	}
+	if adoptDeps.ListCandidates == nil {
+		t.Error("adopter.Deps.ListCandidates nil")
+	}
+
+	// repoclone.Deps fields
+	if repoCloneDeps.Stat == nil {
+		t.Error("repoclone.Deps.Stat nil")
+	}
+	if repoCloneDeps.Clone == nil {
+		t.Error("repoclone.Deps.Clone nil")
+	}
+	if repoCloneDeps.Pull == nil {
+		t.Error("repoclone.Deps.Pull nil")
+	}
+	if repoCloneDeps.UserHomeDir == nil {
+		t.Error("repoclone.Deps.UserHomeDir nil")
+	}
+
+	// uploader.Deps fields
+	if uploadDeps.LookPath == nil {
+		t.Error("uploader.Deps.LookPath nil")
+	}
+	if uploadDeps.RunCmd == nil {
+		t.Error("uploader.Deps.RunCmd nil")
 	}
 }
