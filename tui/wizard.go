@@ -1110,14 +1110,14 @@ func (m createWizardModel) update(msg tea.Msg) (createWizardModel, tea.Cmd) {
 		switch msg.result.Outcome {
 		case tester.PASS:
 			m.step = wizardStepProve1Done
-			alias := m.inputs[5].Value()
-			if alias == "" {
-				provider := m.inputs[3].Value()
-				if provider == "" {
-					provider = "github.com"
-				}
-				alias = identity.DefaultAlias(m.inputs[0].Value(), provider)
+			provider := m.inputs[3].Value()
+			if provider == "" {
+				provider = "github.com"
 			}
+			// EffectiveAlias: blank → provider host (resolvable), never an invented
+			// <name>.<provider> suffix (UAT G-5). The provisional-block reorder (so a
+			// TYPED alias is written before this resolved test) follows separately.
+			alias := identity.EffectiveAlias(m.inputs[5].Value(), provider)
 			return m, runResolvedCmd(m.deps.identity.Resolved, alias)
 		default:
 			m.step = wizardStepProve1Failed
