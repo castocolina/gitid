@@ -94,6 +94,11 @@ type Finding struct {
 	Explanation  string
 	SuggestedFix string
 	Fix          *FixDescriptor
+	// IdentityName is the name of the managed identity this finding belongs to.
+	// Empty string means the finding is global (not scoped to a single identity).
+	// Set by per-family check functions that iterate deps.Identities.
+	// Used by the TUI to derive per-identity sidebar badge severity (D-08).
+	IdentityName string
 }
 
 // CheckFn is the type of a per-family check function. All seven check

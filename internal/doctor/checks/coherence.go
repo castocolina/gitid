@@ -43,6 +43,8 @@ func CheckCoherence(deps doctor.Deps) []doctor.Finding {
 }
 
 // coherenceForAccount runs all coherence checks for a single identity.Account.
+// All returned findings have IdentityName set to acct.Name so the TUI badge
+// derivation can scope them to the correct sidebar row (D-08).
 func coherenceForAccount(deps doctor.Deps, acct identity.Account) []doctor.Finding {
 	var findings []doctor.Finding
 
@@ -60,6 +62,7 @@ func coherenceForAccount(deps doctor.Deps, acct identity.Account) []doctor.Findi
 				acct.Name, acct.Incomplete),
 			SuggestedFix: "run 'gitid identity add' to recreate the missing artifacts",
 			Fix:          nil, // report-only; user must re-run create
+			IdentityName: acct.Name,
 		})
 		// Continue with any checks that can still run (e.g. KeyPath existence if set).
 	}
@@ -76,6 +79,7 @@ func coherenceForAccount(deps doctor.Deps, acct identity.Account) []doctor.Findi
 					"The SSH Host block for %q references a key file that is missing.", acct.Name),
 				SuggestedFix: "run 'gitid identity add' to recreate, or remove the orphaned SSH Host block",
 				Fix:          nil, // report-only (D-03)
+				IdentityName: acct.Name,
 			})
 		}
 	}
@@ -92,6 +96,7 @@ func coherenceForAccount(deps doctor.Deps, acct identity.Account) []doctor.Findi
 					"The gitconfig includeIf for %q points to a missing fragment file.", acct.Name),
 				SuggestedFix: "run 'gitid identity add' to recreate the fragment",
 				Fix:          nil, // report-only (D-03)
+				IdentityName: acct.Name,
 			})
 		}
 	}
@@ -142,7 +147,8 @@ func coherenceForAccount(deps doctor.Deps, acct identity.Account) []doctor.Findi
 					Explanation: "Without IdentitiesOnly, SSH may use an unintended key for this host.",
 					SuggestedFix: fmt.Sprintf(
 						"re-run 'gitid identity add --name %s' (will repair the Host block)", acct.Name),
-					Fix: fix,
+					Fix:          fix,
+					IdentityName: acct.Name,
 				})
 			}
 		}
@@ -170,7 +176,8 @@ func coherenceForAccount(deps doctor.Deps, acct identity.Account) []doctor.Findi
 				Explanation: "Commit signing is misconfigured. Signing with an SSH key requires gpg.format=ssh.",
 				SuggestedFix: fmt.Sprintf(
 					"git config --file %s gpg.format ssh", acct.FragmentPath),
-				Fix: nil, // locked-value override is report-only (D-17)
+				Fix:          nil, // locked-value override is report-only (D-17)
+				IdentityName: acct.Name,
 			})
 			// If gpg.format is wrong, skip allowed_signers check — it isn't a signing
 			// identity in the expected configuration.
@@ -217,7 +224,8 @@ func coherenceForAccount(deps doctor.Deps, acct identity.Account) []doctor.Findi
 			Explanation: "The signing line email does not byte-match user.email. Signature verification will fail.",
 			SuggestedFix: fmt.Sprintf(
 				"correct the email in ~/.ssh/allowed_signers to exactly match '%s'", acct.GitEmail),
-			Fix: fix,
+			Fix:          fix,
+			IdentityName: acct.Name,
 		})
 	}
 
@@ -230,9 +238,10 @@ func coherenceForAccount(deps doctor.Deps, acct identity.Account) []doctor.Findi
 func allowedSignersMissingFindingWithFix(deps doctor.Deps, acct identity.Account) doctor.Finding {
 	fix := buildSignersFix(deps, acct, fmt.Sprintf("add allowed_signers entry for '%s'", acct.GitEmail))
 	return doctor.Finding{
-		Family:   doctor.FamilyCoherence,
-		Severity: doctor.SeverityError,
-		Title:    fmt.Sprintf("allowed_signers: no entry for %s", acct.GitEmail),
+		IdentityName: acct.Name,
+		Family:       doctor.FamilyCoherence,
+		Severity:     doctor.SeverityError,
+		Title:        fmt.Sprintf("allowed_signers: no entry for %s", acct.GitEmail),
 		Explanation: fmt.Sprintf(
 			"Signing identity %q has no line in ~/.ssh/allowed_signers. Commit signature verification will fail.",
 			acct.Name),

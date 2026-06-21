@@ -6,6 +6,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -73,12 +74,26 @@ func GenerateMaterial(p Params) (Material, error) {
 	if err != nil {
 		return Material{}, fmt.Errorf("keygen: building public key: %w", err)
 	}
-	pubLine := ssh.MarshalAuthorizedKey(sshPub) // ends with a single '\n'
 
 	return Material{
 		PrivPEM: privPEM,
-		PubLine: string(pubLine),
+		PubLine: pubLineWithComment(sshPub, p.Comment),
 	}, nil
+}
+
+// pubLineWithComment renders the authorized-key line for pub and appends the
+// comment as the trailing field ("ssh-ed25519 AAAA… <comment>\n").
+// ssh.MarshalAuthorizedKey emits only "<type> <base64>\n" — it never carries a
+// comment — so we splice one in to match the OpenSSH authorized_keys format
+// "<type> <base64> [comment]". GitHub surfaces this comment as the key's default
+// title, restoring the identification convenience RSA keys had via `ssh-keygen -C`.
+// An empty comment yields the bare two-field line unchanged.
+func pubLineWithComment(pub ssh.PublicKey, comment string) string {
+	keyText := strings.TrimRight(string(ssh.MarshalAuthorizedKey(pub)), "\n")
+	if comment != "" {
+		keyText += " " + comment
+	}
+	return keyText + "\n"
 }
 
 // KeyPaths returns the D-06 convention private-key and public-key paths for

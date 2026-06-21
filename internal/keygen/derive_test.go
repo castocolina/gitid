@@ -26,7 +26,7 @@ func TestDerivePublicKeyRoundTrips(t *testing.T) {
 		t.Fatalf("writing private key fixture: %v", err)
 	}
 
-	got, err := DerivePublicKey(privPath)
+	got, err := DerivePublicKey(privPath, "reuse@gitid")
 	if err != nil {
 		t.Fatalf("DerivePublicKey returned error: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestDerivePublicKeyRoundTrips(t *testing.T) {
 // TestDerivePublicKeyMissingFile asserts DerivePublicKey returns an error for a
 // non-existent key path.
 func TestDerivePublicKeyMissingFile(t *testing.T) {
-	_, err := DerivePublicKey(filepath.Join(t.TempDir(), "does-not-exist"))
+	_, err := DerivePublicKey(filepath.Join(t.TempDir(), "does-not-exist"), "x@gitid")
 	if err == nil {
 		t.Fatal("DerivePublicKey on a missing file must return an error")
 	}
@@ -59,7 +59,7 @@ func TestDerivePublicKeyRejectsGarbage(t *testing.T) {
 	if err := os.WriteFile(bad, []byte("this is not a private key\n"), 0o600); err != nil {
 		t.Fatalf("writing fixture: %v", err)
 	}
-	if _, err := DerivePublicKey(bad); err == nil {
+	if _, err := DerivePublicKey(bad, "x@gitid"); err == nil {
 		t.Fatal("DerivePublicKey on garbage input must return an error")
 	}
 }

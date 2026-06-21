@@ -5,6 +5,11 @@ import "charm.land/bubbles/v2/key"
 // keyMap holds all shared key bindings for the TUI (D-13). Screens share
 // these bindings so they appear consistently in the help bar and handle
 // key presses uniformly.
+//
+// Tab routing note (Pitfall 9): Focus (pane cycle) and Next (form field) both
+// bind "tab". The root model routes by activeModal != noModal — when a modal
+// is open, "tab" goes to the active sub-model's Next binding; otherwise it
+// goes to Focus (pane cycle). Plan 02 wires this routing.
 type keyMap struct {
 	Up      key.Binding
 	Down    key.Binding
@@ -21,12 +26,43 @@ type keyMap struct {
 	Delete  key.Binding
 	Rotate  key.Binding
 	AddHost key.Binding
-	Next    key.Binding // Tab
+	Next    key.Binding // Tab — form field navigation; also used for Focus when no modal is open
 	Prev    key.Binding // Shift+Tab
 	Submit  key.Binding
 	Confirm key.Binding
 	Top     key.Binding
 	Bottom  key.Binding
+
+	// --- New bindings added for Phase 5.6 two-pane + modal architecture ---
+	// Source: UI-SPEC § Keymap Contract (D-13).
+
+	// Palette opens the Ctrl+P command palette (D-14).
+	Palette key.Binding
+
+	// View1/View2/View3 switch the active view via numeric keys (D-04/TUI-04).
+	View1 key.Binding
+	View2 key.Binding
+	View3 key.Binding
+
+	// SidebarToggle shows/hides the sidebar in collapsed single-pane mode (D-03).
+	// Bound to backslash (\).
+	SidebarToggle key.Binding
+
+	// Focus cycles forward through panes (Tab). Distinct from Next (form field)
+	// but shares the "tab" key — routing is by activeModal != noModal (Pitfall 9).
+	Focus key.Binding
+
+	// FocusRev cycles backward through panes (Shift+Tab).
+	FocusRev key.Binding
+
+	// Fix triggers an in-app doctor fix on the focused fixable finding (x).
+	Fix key.Binding
+
+	// Retry re-runs the prove-before-write loop from a failure state (r).
+	Retry key.Binding
+
+	// Skip skips the current prove phase and continues (s).
+	Skip key.Binding
 }
 
 // keys is the shared keymap instance used by all screens. Bindings follow
@@ -46,7 +82,7 @@ var keys = keyMap{
 	Edit:    key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
 	Copy:    key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "copy pubkey")),
 	Delete:  key.NewBinding(key.WithKeys("d", "delete"), key.WithHelp("d", "delete (CLI)")),
-	Rotate:  key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "rotate (CLI)")),
+	Rotate:  key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "new key")),
 	AddHost: key.NewBinding(key.WithKeys("H"), key.WithHelp("H", "add host")),
 	Next:    key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next field")),
 	Prev:    key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "prev field")),
@@ -54,4 +90,16 @@ var keys = keyMap{
 	Confirm: key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm write")),
 	Top:     key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "top")),
 	Bottom:  key.NewBinding(key.WithKeys("G"), key.WithHelp("G", "bottom")),
+
+	// Phase 5.6 extended bindings (UI-SPEC § Keymap Contract):
+	Palette:       key.NewBinding(key.WithKeys("ctrl+p"), key.WithHelp("ctrl+p", "palette")),
+	View1:         key.NewBinding(key.WithKeys("1"), key.WithHelp("1", "identities")),
+	View2:         key.NewBinding(key.WithKeys("2"), key.WithHelp("2", "health")),
+	View3:         key.NewBinding(key.WithKeys("3"), key.WithHelp("3", "global options")),
+	SidebarToggle: key.NewBinding(key.WithKeys("\\"), key.WithHelp("\\", "toggle sidebar")),
+	Focus:         key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "focus pane")),
+	FocusRev:      key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "focus prev pane")),
+	Fix:           key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "fix")),
+	Retry:         key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "retry")),
+	Skip:          key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "skip")),
 }

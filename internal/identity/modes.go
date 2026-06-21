@@ -19,7 +19,7 @@ import (
 func Reuse(in CreateInput, existingKeyPath string, deps Deps) (CreateResult, error) {
 	pubPath := existingKeyPath + ".pub"
 
-	pubLine, err := ensurePub(existingKeyPath, pubPath, deps)
+	pubLine, err := ensurePub(existingKeyPath, pubPath, in.Name+"@gitid", deps)
 	if err != nil {
 		return CreateResult{}, err
 	}
@@ -42,19 +42,19 @@ func Reuse(in CreateInput, existingKeyPath string, deps Deps) (CreateResult, err
 // the `.pub` already exists it is read back via DerivePub so the returned line
 // always reflects the on-disk private key, keeping the allowed_signers line and
 // the pipeline's PubLine consistent.
-func ensurePub(privateKeyPath, pubPath string, deps Deps) (string, error) {
+func ensurePub(privateKeyPath, pubPath, comment string, deps Deps) (string, error) {
 	if deps.PubExists != nil && deps.PubExists(pubPath) {
 		// .pub present: derive from the private key so the returned line is
 		// guaranteed to match the key actually in use (the existing .pub may be
 		// stale or for a different key).
-		line, err := deps.DerivePub(privateKeyPath)
+		line, err := deps.DerivePub(privateKeyPath, comment)
 		if err != nil {
 			return "", fmt.Errorf("identity: deriving public key for reuse: %w", err)
 		}
 		return line, nil
 	}
 
-	line, err := deps.DerivePub(privateKeyPath)
+	line, err := deps.DerivePub(privateKeyPath, comment)
 	if err != nil {
 		return "", fmt.Errorf("identity: deriving missing public key for reuse: %w", err)
 	}
@@ -95,7 +95,7 @@ func AddAccount(existing Account, newProvider, newAlias string, deps Deps) (Crea
 	// Derive the public line from the shared key so the allowed_signers line and
 	// previews are populated even though no key is generated.
 	if deps.DerivePub != nil {
-		line, err := deps.DerivePub(existing.KeyPath)
+		line, err := deps.DerivePub(existing.KeyPath, existing.Name+"@gitid")
 		if err != nil {
 			return CreateResult{}, fmt.Errorf("identity: deriving public key for add-account: %w", err)
 		}

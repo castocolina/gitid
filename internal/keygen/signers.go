@@ -13,13 +13,17 @@ import (
 const allowedSignersMode = 0o644
 
 // AllowedSignersLine builds an allowed_signers line for git SSH signing
-// (SIGN-01): `<email> namespaces="git" <pubLine-without-trailing-newline>\n`.
+// (SIGN-01): `<email> namespaces="git" <keytype> <base64-key>\n`.
 //
-// MarshalAuthorizedKey appends a trailing newline; it is stripped here and a
-// single newline re-added so the composed line never carries a double newline.
+// Only the first two fields of the public line (keytype + base64 key) are kept:
+// the pub line may now carry a trailing comment ("ssh-ed25519 AAAA… work@gitid"),
+// which must NOT bleed into the signer line — the principal there is the email.
 // The email is used byte-identically to the supplied value (Pitfall 8).
 func AllowedSignersLine(email, pubLine string) string {
 	keyText := strings.TrimRight(pubLine, "\n")
+	if fields := strings.Fields(keyText); len(fields) >= 2 {
+		keyText = fields[0] + " " + fields[1]
+	}
 	return fmt.Sprintf("%s namespaces=\"git\" %s\n", email, keyText)
 }
 

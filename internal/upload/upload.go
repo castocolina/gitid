@@ -23,9 +23,15 @@ import (
 //     covers both.
 //
 // Unknown providers get a generic instruction so the output is never empty.
+//
+// Matching is by substring on the lowercased value so BOTH the short provider
+// key ("github") and the full hostname ("github.com", "ssh.github.com") resolve
+// to the detailed steps — the create wizard passes the hostname, the copy modal
+// passes the mapped key, and both must show the same detailed instructions.
 func Instructions(provider string) string {
-	switch strings.ToLower(provider) {
-	case "github":
+	lower := strings.ToLower(provider)
+	switch {
+	case strings.Contains(lower, "github"):
 		var b strings.Builder
 		b.WriteString("Upload your public key to GitHub (TWO separate registrations of the SAME key):\n")
 		b.WriteString("  1. Open https://github.com/settings/ssh/new\n")
@@ -34,7 +40,7 @@ func Instructions(provider string) string {
 		b.WriteString("  4. Signing key: paste the SAME .pub, set \"Key type\" = Signing key, Add SSH key.\n")
 		b.WriteString("GitHub requires the key registered twice — once for authentication, once for signing.\n")
 		return b.String()
-	case "gitlab":
+	case strings.Contains(lower, "gitlab"):
 		var b strings.Builder
 		b.WriteString("Upload your public key to GitLab (ONE key covers both roles):\n")
 		b.WriteString("  1. Open https://gitlab.com/-/user_settings/ssh_keys\n")

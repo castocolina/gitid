@@ -69,3 +69,33 @@ func TestValidateProvider(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateEmail(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "plain address", input: "user@example.com", wantErr: false},
+		{name: "plus tag", input: "user+tag@example.com", wantErr: false},
+		{name: "empty rejected (email required)", input: "", wantErr: true},
+		{name: "embedded space rejected", input: "foo bar@example.com", wantErr: true},
+		{name: "leading space rejected", input: " user@example.com", wantErr: true},
+		{name: "trailing space rejected", input: "user@example.com ", wantErr: true},
+		{name: "tab rejected", input: "user\t@example.com", wantErr: true},
+		{name: "missing @ rejected", input: "user.example.com", wantErr: true},
+		{name: "newline rejected (fragment injection)", input: "user@example.com\nHost evil", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := identity.ValidateEmail(tc.input)
+			if tc.wantErr && err == nil {
+				t.Errorf("ValidateEmail(%q) expected error, got nil", tc.input)
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("ValidateEmail(%q) expected nil, got %v", tc.input, err)
+			}
+		})
+	}
+}

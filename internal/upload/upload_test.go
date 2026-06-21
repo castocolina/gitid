@@ -31,6 +31,22 @@ func TestInstructions(t *testing.T) {
 			},
 		},
 		{
+			name:     "github.com hostname resolves to detailed steps",
+			provider: "github.com",
+			contains: []string{
+				"github.com/settings/ssh/new",
+				"Authentication key",
+				"Signing key",
+			},
+		},
+		{
+			name:     "gitlab.com hostname resolves to detailed steps",
+			provider: "gitlab.com",
+			contains: []string{
+				"user_settings/ssh_keys",
+			},
+		},
+		{
 			name:     "gitlab contains user_settings/ssh_keys",
 			provider: "gitlab",
 			contains: []string{

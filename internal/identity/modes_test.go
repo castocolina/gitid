@@ -28,7 +28,7 @@ func newFakeModeDeps(log *modeLog, preOutcome tester.Outcome) Deps {
 		log.pubExists++
 		return log.pubExistsRet
 	}
-	d.DerivePub = func(_ string) (string, error) {
+	d.DerivePub = func(_, _ string) (string, error) {
 		log.derivePub++
 		return "ssh-ed25519 AAAADERIVED comment\n", nil
 	}

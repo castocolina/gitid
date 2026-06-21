@@ -31,6 +31,29 @@ func ValidateName(name string) error {
 	return nil
 }
 
+// ValidateEmail validates a git user.email value at the form/edit boundary so a
+// malformed address is rejected EARLY — before key generation and the SSH test —
+// rather than failing deep inside the fragment write. It mirrors the write-time
+// rule in gitconfig.validateEmail (no newlines, no embedded spaces/tabs, must
+// contain "@"); unlike a name, an email's local part forbids whitespace. Leading
+// or trailing whitespace is rejected explicitly so a stray paste is caught.
+func ValidateEmail(email string) error {
+	trimmed := strings.TrimSpace(email)
+	if trimmed == "" {
+		return fmt.Errorf("git email is required")
+	}
+	if trimmed != email {
+		return fmt.Errorf("invalid email %q: must not have leading or trailing whitespace", email)
+	}
+	if strings.ContainsAny(email, "\n\r") {
+		return fmt.Errorf("invalid email %q: must not contain newlines", email)
+	}
+	if strings.ContainsAny(email, " \t") || !strings.Contains(email, "@") {
+		return fmt.Errorf("invalid email %q: must be a single address containing '@' with no spaces", email)
+	}
+	return nil
+}
+
 // ValidateProvider validates a provider value against the same safe charset as
 // an identity name. The provider is written verbatim into ~/.ssh/config as a
 // `# gitid: provider=<p>` marker (D-11) and is used to build default hostnames

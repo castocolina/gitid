@@ -28,6 +28,22 @@ func TestAllowedSignersLine(t *testing.T) {
 	}
 }
 
+// TestAllowedSignersLine_StripsTrailingComment asserts the pub line's trailing
+// comment (now present on generated keys, e.g. "… work@gitid") never leaks into
+// the signer line — the principal there is the email, and only keytype+key follow.
+func TestAllowedSignersLine_StripsTrailingComment(t *testing.T) {
+	pub := "ssh-ed25519 AAAABASE64KEYDATA work@gitid\n"
+	got := AllowedSignersLine("me@example.com", pub)
+
+	want := "me@example.com namespaces=\"git\" ssh-ed25519 AAAABASE64KEYDATA\n"
+	if got != want {
+		t.Errorf("AllowedSignersLine = %q, want %q", got, want)
+	}
+	if strings.Contains(got, "work@gitid") {
+		t.Errorf("signer line must not carry the pub comment; got %q", got)
+	}
+}
+
 // TestWriteAllowedSignersCreates asserts WriteAllowedSigners creates a missing
 // file at mode 0644 containing the line wrapped in the per-identity managed
 // block (SIGN-01, KEY-02).

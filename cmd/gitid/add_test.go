@@ -45,7 +45,7 @@ func fakeDeps(_ io.Writer) identity.Deps {
 			return tester.Result{Command: "ssh -T git@" + alias, Output: "ok"}, tester.ResolvedConfig{User: "git"}
 		},
 		PubExists: func(_ string) bool { return true },
-		DerivePub: func(_ string) (string, error) { return "ssh-ed25519 AAAADERIVED comment\n", nil },
+		DerivePub: func(_, _ string) (string, error) { return "ssh-ed25519 AAAADERIVED comment\n", nil },
 		WritePub:  func(_, _ string) error { return nil },
 	}
 }

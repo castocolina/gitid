@@ -140,7 +140,7 @@ type Deps struct {
 	// absent, and WritePub persists the derived line at 0644 via filewriter. They
 	// are nil for the create-new flow, which always generates a fresh `.pub`.
 	PubExists func(pubPath string) bool
-	DerivePub func(privateKeyPath string) (pubLine string, err error)
+	DerivePub func(privateKeyPath, comment string) (pubLine string, err error)
 	WritePub  func(pubPath, pubLine string) error
 }
 

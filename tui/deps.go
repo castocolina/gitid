@@ -21,14 +21,17 @@ import (
 	"github.com/castocolina/gitid/internal/tester"
 )
 
-// buildTUIDeps assembles both doctor.Deps and identity.Deps from real internal
-// packages. The TUI cannot import package main, so it replicates the wiring
-// from cmd/gitid/add.go (buildDeps) and cmd/gitid/doctor.go (buildDoctorDeps)
-// here (RESEARCH.md Pitfall 6, Assumption A3).
-func buildTUIDeps() (doctor.Deps, identity.Deps, identity.UpdateDeps, error) {
+// buildTUIDeps assembles doctor.Deps, identity.Deps, identity.UpdateDeps, and
+// identity.DeleteDeps from real internal packages. The TUI cannot import package
+// main, so it replicates the wiring from cmd/gitid/add.go (buildDeps) and
+// cmd/gitid/doctor.go (buildDoctorDeps) here (RESEARCH.md Pitfall 6, Assumption A3).
+//
+// Returns 5 values: (doctor.Deps, identity.Deps, identity.UpdateDeps, identity.DeleteDeps, error).
+// The fifth return (DeleteDeps) wires the in-app delete/rotate paths (Plan 06, D-16).
+func buildTUIDeps() (doctor.Deps, identity.Deps, identity.UpdateDeps, identity.DeleteDeps, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return doctor.Deps{}, identity.Deps{}, identity.UpdateDeps{}, fmt.Errorf("tui: resolving home dir: %w", err)
+		return doctor.Deps{}, identity.Deps{}, identity.UpdateDeps{}, identity.DeleteDeps{}, fmt.Errorf("tui: resolving home dir: %w", err)
 	}
 
 	sshConfigPath := filepath.Join(home, ".ssh", "config")
@@ -36,18 +39,75 @@ func buildTUIDeps() (doctor.Deps, identity.Deps, identity.UpdateDeps, error) {
 
 	sshBytes, err := os.ReadFile(sshConfigPath) //nolint:gosec // path is a trusted gitid-managed path (G304)
 	if err != nil && !os.IsNotExist(err) {
-		return doctor.Deps{}, identity.Deps{}, identity.UpdateDeps{}, fmt.Errorf("tui: reading ssh config: %w", err)
+		return doctor.Deps{}, identity.Deps{}, identity.UpdateDeps{}, identity.DeleteDeps{}, fmt.Errorf("tui: reading ssh config: %w", err)
 	}
 
 	gcBytes, err := os.ReadFile(gitconfigPath) //nolint:gosec // path is a trusted gitid-managed path (G304)
 	if err != nil && !os.IsNotExist(err) {
-		return doctor.Deps{}, identity.Deps{}, identity.UpdateDeps{}, fmt.Errorf("tui: reading gitconfig: %w", err)
+		return doctor.Deps{}, identity.Deps{}, identity.UpdateDeps{}, identity.DeleteDeps{}, fmt.Errorf("tui: reading gitconfig: %w", err)
 	}
 
 	docDeps := buildTUIDoctorDeps(home, sshBytes, gcBytes)
 	idDeps := buildIdentityDeps()
 	upDeps := buildTUIUpdateDeps()
-	return docDeps, idDeps, upDeps, nil
+	delDeps := buildTUIDeleteDeps()
+	return docDeps, idDeps, upDeps, delDeps, nil
+}
+
+// buildTUIDeleteDeps wires identity.DeleteDeps from the real internal packages,
+// mirroring cmd/gitid/delete.go buildDeleteDeps (line 172) — the CANONICAL analog.
+// The TUI cannot import package main, so the wiring is replicated here.
+//
+// Security invariants (SAFE-01, T-05.6-20):
+//   - Every removal routes through filewriter.BackupAndRemove (timestamped backup).
+//   - RemoveKeyFiles routes BOTH key and .pub through filewriter.BackupAndRemove.
+//   - A missing key file is a no-op: BackupAndRemove returns ("", nil) for missing files.
+//   - RemoveAllowedSigners routes through gitconfig.RemoveAllowedSignersBlock.
+func buildTUIDeleteDeps() identity.DeleteDeps {
+	home, _ := os.UserHomeDir()
+	sshConfigPath := filepath.Join(home, ".ssh", "config")
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+
+	return identity.DeleteDeps{
+		ReadSSH: func() ([]byte, error) {
+			data, err := os.ReadFile(sshConfigPath) //nolint:gosec // gitid-managed path (G304)
+			if os.IsNotExist(err) {
+				return []byte{}, nil
+			}
+			return data, err
+		},
+		ReadGitconfig: func() ([]byte, error) {
+			data, err := os.ReadFile(gitconfigPath) //nolint:gosec // gitid-managed path (G304)
+			if os.IsNotExist(err) {
+				return []byte{}, nil
+			}
+			return data, err
+		},
+		WriteSSH: func(content []byte) (string, error) {
+			return filewriter.Write(sshConfigPath, content, 0o600)
+		},
+		WriteGitconfig: func(content []byte) (string, error) {
+			return filewriter.Write(gitconfigPath, content, 0o600)
+		},
+		RemoveFragment: filewriter.BackupAndRemove,
+		RemoveAllowedSigners: func(path, name string) (string, error) {
+			return gitconfig.RemoveAllowedSignersBlock(path, name)
+		},
+		// Route key removal through filewriter.BackupAndRemove so the private
+		// material is preserved as a timestamped .bak.<ts> (mode 0600) and the
+		// removal is atomic per file (CR-02). A missing file is a no-op.
+		RemoveKeyFiles: func(keyPath, pubPath string) (string, string, error) {
+			keyBak, kerr := filewriter.BackupAndRemove(keyPath)
+			if kerr != nil {
+				return "", "", fmt.Errorf("tui: removing private key %s: %w", keyPath, kerr)
+			}
+			pubBak, perr := filewriter.BackupAndRemove(pubPath)
+			if perr != nil {
+				return keyBak, "", fmt.Errorf("tui: removing public key %s: %w", pubPath, perr)
+			}
+			return keyBak, pubBak, nil
+		},
+	}
 }
 
 // buildTUIUpdateDeps wires identity.UpdateDeps from real internal packages for

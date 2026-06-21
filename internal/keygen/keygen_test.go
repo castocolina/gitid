@@ -53,6 +53,35 @@ func TestGenerateMaterial_InMemory(t *testing.T) {
 	// (The function never touches disk so no assertion needed beyond: no panic.)
 }
 
+// TestGenerateMaterial_PubLineCarriesComment asserts the comment is appended as
+// the trailing field of the public line so GitHub can title the key with it
+// (RSA `ssh-keygen -C` parity). MarshalAuthorizedKey alone never emits a comment.
+func TestGenerateMaterial_PubLineCarriesComment(t *testing.T) {
+	mat, err := GenerateMaterial(Params{Algo: "ed25519", Identity: "work", Comment: "work@gitid"})
+	if err != nil {
+		t.Fatalf("GenerateMaterial: %v", err)
+	}
+	if !strings.HasSuffix(mat.PubLine, " work@gitid\n") {
+		t.Errorf("PubLine = %q, want trailing comment ' work@gitid'", mat.PubLine)
+	}
+	fields := strings.Fields(strings.TrimSpace(mat.PubLine))
+	if len(fields) != 3 || fields[0] != "ssh-ed25519" || fields[2] != "work@gitid" {
+		t.Errorf("PubLine fields = %v, want [ssh-ed25519 <base64> work@gitid]", fields)
+	}
+}
+
+// TestGenerateMaterial_PubLineBareWhenNoComment asserts an empty comment yields
+// the bare two-field authorized_keys line (no trailing space, no third field).
+func TestGenerateMaterial_PubLineBareWhenNoComment(t *testing.T) {
+	mat, err := GenerateMaterial(Params{Algo: "ed25519", Identity: "x", Comment: ""})
+	if err != nil {
+		t.Fatalf("GenerateMaterial: %v", err)
+	}
+	if fields := strings.Fields(strings.TrimSpace(mat.PubLine)); len(fields) != 2 {
+		t.Errorf("bare PubLine fields = %v, want exactly 2 (type + key)", fields)
+	}
+}
+
 // TestGenerateMaterial_NoDiskWrite asserts that GenerateMaterial never writes a
 // file even when Dir is set to a temp directory that exists.
 func TestGenerateMaterial_NoDiskWrite(t *testing.T) {

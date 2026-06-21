@@ -1,5 +1,10 @@
 package tui
 
+// prove_test.go — Tests for the shared wizardProveModel (Plan 04 GREEN).
+//
+// These tests verify the prove-before-write state machine for structural edits.
+// Test names are locked by VALIDATION.md.
+
 import (
 	"testing"
 
@@ -10,311 +15,188 @@ import (
 	"github.com/castocolina/gitid/internal/tester"
 )
 
-// fakeWriteTUIDeps returns a tuiDeps where all identity.Deps write fields are
-// no-op stubs. The called pointer is reserved for future extension and is
-// intentionally unused in the current stubs.
-func fakeWriteTUIDeps(_ *bool) tuiDeps {
+// fakeProvePassDeps returns a tuiDeps with identity deps where PreWrite PASS
+// and Resolved PASS.
+func fakeProvePassDeps() tuiDeps {
 	return tuiDeps{
-		identity: identity.Deps{
-			Generate: func(_ identity.CreateInput) (identity.StagedKey, error) {
-				return identity.StagedKey{}, nil
-			},
-			PersistKey: func(_ identity.StagedKey) (identity.KeyResult, error) {
-				return identity.KeyResult{}, nil
-			},
-			Cleanup:             func(_ identity.StagedKey) {},
-			CopyPub:             func(_ string) error { return nil },
-			PreWrite:            func(_, _ string, _ int) tester.Result { return tester.Result{Outcome: tester.PASS} },
-			WriteSSH:            func(_, _, _ string) (string, error) { return "", nil },
+		update: identity.UpdateDeps{
+			WriteSSH:            func(_, _, _ string) (string, error) { return "bak", nil },
 			WriteGitconfig:      func(_, _, _ string, _ []gitconfig.Match) (string, error) { return "", nil },
 			WriteFragment:       func(_, _, _, _ string, _ bool) error { return nil },
 			WriteAllowedSigners: func(_, _, _ string) (string, error) { return "", nil },
-			Resolved:            func(_ string) (tester.Result, tester.ResolvedConfig) { return tester.Result{}, tester.ResolvedConfig{} },
-			PubExists:           func(_ string) bool { return true },
-			DerivePub:           func(_ string) (string, error) { return "", nil },
-			WritePub:            func(_, _ string) error { return nil },
+			RemoveAllowedSigners: func(_, _ string) (string, error) {
+				return "", nil
+			},
+			Resolved: func(_ string) (tester.Result, tester.ResolvedConfig) {
+				return tester.Result{Outcome: tester.PASS}, tester.ResolvedConfig{}
+			},
+			ReadPub: func(_ string) (string, error) { return "ssh-ed25519 AAA...", nil },
+		},
+		identity: identity.Deps{
+			PreWrite: func(_, _ string, _ int) tester.Result {
+				return tester.Result{Outcome: tester.PASS}
+			},
 		},
 	}
 }
 
-// makePassResult returns a tester.Result with outcome PASS.
-func makePassResult() tester.Result {
-	return tester.Result{
-		Command: "ssh -T git@github.com",
-		Output:  "Hi user! You've successfully authenticated",
-		Outcome: tester.PASS,
+// fakeProveFailDeps returns a tuiDeps where PreWrite FAILs.
+func fakeProveFailDeps() tuiDeps {
+	d := fakeProvePassDeps()
+	d.identity.PreWrite = func(_, _ string, _ int) tester.Result {
+		return tester.Result{Outcome: tester.Failure}
 	}
+	return d
 }
 
-// makeFailResult returns a tester.Result with outcome Failure.
-func makeFailResult() tester.Result {
-	return tester.Result{
-		Command: "ssh -T git@github.com",
-		Output:  "Connection refused",
-		Outcome: tester.Failure,
-	}
-}
-
-// makeResolvedResult returns a passing resolved result.
-func makeResolvedResult() (tester.Result, tester.ResolvedConfig) {
-	return tester.Result{
-			Command: "ssh -G personal.github.com",
-			Output:  "identityfile ~/.ssh/gitid_personal",
-			Outcome: tester.PASS,
-		},
-		tester.ResolvedConfig{
-			IdentityFiles: []string{"~/.ssh/gitid_personal"},
-		}
-}
-
-// makeTestInput returns a minimal CreateInput for prove screen testing.
-func makeTestInput() identity.CreateInput {
-	return identity.CreateInput{
+// makeTestProveModel returns a wizardProveModel seeded with test accounts.
+func makeTestProveModel(deps tuiDeps) wizardProveModel {
+	existing := identity.Account{
 		Name:     "personal",
-		Provider: "github.com",
+		Alias:    "personal.github.com",
 		Hostname: "github.com",
 		Port:     22,
-		Alias:    "personal.github.com",
+		KeyPath:  "~/.ssh/gitid_personal",
 	}
+	edited := existing
+	edited.Alias = "personal2.github.com"
+	return newWizardProveModel(existing, edited, false, deps)
 }
 
-// --- TestProveScreenConfirmGate ---
+// TestProveModalPhase1Pass verifies that when PreWrite returns PASS, the prove
+// model advances from phase1Running → phase1Done and then dispatches phase 2
+// (runResolvedCmd). When Resolved also PASS, confirmActive becomes true.
+// Requirement: TUI-05 (prove-before-write, D-07).
+// Closes: Plan 04.
+func TestProveModalPhase1Pass(t *testing.T) {
+	deps := fakeProvePassDeps()
+	m := makeTestProveModel(deps)
+	m, cmd := m.init()
 
-// TestProveScreenConfirmGate verifies that the confirm action (Enter) is inert
-// until BOTH preWriteResultMsg (pass) AND resolvedResultMsg (pass) have arrived;
-// only then does keys.Confirm dispatch the write cmd.
-func TestProveScreenConfirmGate(t *testing.T) {
-	var called bool
-	deps := fakeWriteTUIDeps(&called)
-
-	m := newProveScreen("create", makeTestInput(), identity.Account{}, "~/.ssh/gitid_personal", deps)
-
-	// Before either phase: confirm must be inactive.
-	if m.confirmActive {
-		t.Error("confirmActive must be false before any phase result arrives")
-	}
-
-	// Send phase 1 passing result.
-	pass1 := makePassResult()
-	updated, _ := m.update(preWriteResultMsg{result: pass1})
-	pm, ok := updated.(proveModel)
-	if !ok {
-		t.Fatalf("update(preWriteResultMsg) returned %T; want proveModel", updated)
-	}
-	if pm.confirmActive {
-		t.Error("confirmActive must still be false after only phase 1 passes (phase 2 not yet run)")
-	}
-
-	// Send phase 2 passing result.
-	passR, passResolved := makeResolvedResult()
-	updated2, _ := pm.update(resolvedResultMsg{result: passR, resolved: passResolved})
-	pm2, ok := updated2.(proveModel)
-	if !ok {
-		t.Fatalf("update(resolvedResultMsg) returned %T; want proveModel", updated2)
-	}
-	if !pm2.confirmActive {
-		t.Error("confirmActive must be true after both phases pass")
-	}
-
-	// Now pressing Enter should return a non-nil cmd that invokes the write.
-	enterMsg := tea.KeyPressMsg{Code: tea.KeyEnter}
-	_, cmd := pm2.update(enterMsg)
 	if cmd == nil {
-		t.Fatal("Enter after both phases pass must return a non-nil write cmd")
+		t.Fatal("init() must return a non-nil cmd (preWriteCmd + spinner Tick)")
 	}
-	// Execute the cmd to trigger the write.
-	_ = cmd()
+
+	// Simulate phase-1 PASS result.
+	passResult := preWriteResultMsg{result: tester.Result{Outcome: tester.PASS}}
+	m2, cmd2 := m.update(passResult)
+	if m2.phase != wizardProvePhase1Done {
+		t.Errorf("after phase1 PASS: expected wizardProvePhase1Done, got %v", m2.phase)
+	}
+	if cmd2 == nil {
+		t.Error("after phase1 PASS: must dispatch phase2 cmd (runResolvedCmd)")
+	}
+
+	// Simulate phase-2 PASS result.
+	passResult2 := resolvedResultMsg{result: tester.Result{Outcome: tester.PASS}, resolved: tester.ResolvedConfig{}}
+	m3, _ := m2.update(passResult2)
+	if m3.phase != wizardProvePhase2Done {
+		t.Errorf("after phase2 PASS: expected wizardProvePhase2Done, got %v", m3.phase)
+	}
+	if !m3.confirmActive {
+		t.Error("after both phases PASS: confirmActive must be true (write gate open)")
+	}
 }
 
-// --- TestProveScreenPhase1Failure ---
+// TestProveModalRetryPath verifies that when phase1 FAILs, pressing 'r' re-runs
+// phase1 with an incremented runID; pressing 's' sets skipConfirmPending; pressing
+// 'q' emits clearModalCmd.
+// Requirement: TUI-05 (retry/skip/quit loop, D-07, T-05.6-12).
+// Closes: Plan 04.
+func TestProveModalRetryPath(t *testing.T) {
+	deps := fakeProveFailDeps()
+	m := makeTestProveModel(deps)
+	m, _ = m.init()
+	origRunID := m.runID
 
-// TestProveScreenPhase1Failure verifies that a preWriteResultMsg with a Failure
-// result sets the phase1Failed state, leaves confirm disabled, and the rendered
-// view contains the failure output + "Cannot proceed"; Enter does nothing.
-func TestProveScreenPhase1Failure(t *testing.T) {
-	var called bool
-	deps := fakeWriteTUIDeps(&called)
-
-	m := newProveScreen("create", makeTestInput(), identity.Account{}, "~/.ssh/gitid_personal", deps)
-
-	// Send phase 1 failing result.
-	fail1 := makeFailResult()
-	updated, _ := m.update(preWriteResultMsg{result: fail1})
-	pm, ok := updated.(proveModel)
-	if !ok {
-		t.Fatalf("update(preWriteResultMsg{fail}) returned %T; want proveModel", updated)
+	// Simulate phase-1 FAIL.
+	failResult := preWriteResultMsg{result: tester.Result{Outcome: tester.Failure}}
+	m2, _ := m.update(failResult)
+	if m2.phase != wizardProvePhase1Failed {
+		t.Errorf("phase1 FAIL: expected wizardProvePhase1Failed, got %v", m2.phase)
+	}
+	if m2.confirmActive {
+		t.Error("phase1 FAIL: confirmActive must be false")
 	}
 
-	// confirmActive must remain false.
-	if pm.confirmActive {
-		t.Error("confirmActive must remain false after phase 1 failure")
+	// Press 'r' → re-run phase1 with incremented runID.
+	m3, retryCmd := m2.update(tea.KeyPressMsg{Code: 'r'})
+	if m3.runID <= origRunID {
+		t.Errorf("retry: runID must increase; was %d, now %d", origRunID, m3.runID)
+	}
+	if m3.phase != wizardProvePhase1Running {
+		t.Errorf("retry: expected wizardProvePhase1Running, got %v", m3.phase)
+	}
+	if retryCmd == nil {
+		t.Error("retry: must dispatch a new preWriteCmd")
 	}
 
-	// Rendered view must mention failure output and "Cannot proceed".
-	rendered := pm.view()
-	if rendered == "" {
-		t.Fatal("view() must not be empty after phase 1 failure")
+	// Press 's' → sets skipConfirmPending.
+	m4, _ := m2.update(tea.KeyPressMsg{Code: 's'})
+	if !m4.skipConfirmPending {
+		t.Error("'s' on failed phase must set skipConfirmPending=true")
 	}
-	// The view should convey failure (either via "Cannot proceed", "failed", or the output).
-	hasFail := false
-	for _, needle := range []string{"Cannot proceed", "failed", "Connection refused", "authentication failed"} {
-		if containsCI(rendered, needle) {
-			hasFail = true
-			break
+
+	// Press 'q' → emits clearModalCmd (dismiss without writing).
+	m5, qCmd := m2.update(tea.KeyPressMsg{Code: 'q'})
+	_ = m5
+	if qCmd == nil {
+		t.Error("'q' must emit clearModalCmd")
+	}
+	// Verify it emits clearModalMsg.
+	if qCmd != nil {
+		msg := qCmd()
+		if _, ok := msg.(clearModalMsg); !ok {
+			t.Errorf("'q' cmd must emit clearModalMsg; got %T", msg)
 		}
 	}
-	if !hasFail {
-		t.Errorf("view() after phase 1 failure must mention failure; got:\n%s", rendered)
+}
+
+// TestProveModalWriteGate verifies the security invariant: identity.Update fires
+// ONLY after both phases PASS and the user presses Enter. It must NOT fire when
+// Enter is pressed before confirmActive is set.
+// Requirement: TUI-05 (write gate, D-07, T-05.6-10, T-write-gate).
+// Closes: Plan 04.
+func TestProveModalWriteGate(t *testing.T) {
+	var writeDispatched bool
+	deps := fakeProvePassDeps()
+	// Override WriteSSH to track if write was called.
+	deps.update.WriteSSH = func(_, _, _ string) (string, error) {
+		writeDispatched = true
+		return "bak", nil
 	}
 
-	// Enter with confirmActive=false must NOT issue a write cmd (no-op or only Esc active).
+	m := makeTestProveModel(deps)
+	m, _ = m.init()
+
+	// Press Enter before confirmActive is set — write must NOT be dispatched.
 	enterMsg := tea.KeyPressMsg{Code: tea.KeyEnter}
-	_, cmd := pm.update(enterMsg)
-	if cmd != nil {
-		// It's acceptable to return a cmd that does NOT trigger a write (e.g., nil result).
-		msg := cmd()
-		if _, ok := msg.(writeResultMsg); ok {
-			t.Error("Enter after phase 1 failure must NOT produce a writeResultMsg")
-		}
-		// pushScreenMsg would also be wrong.
-		if _, ok := msg.(pushScreenMsg); ok {
-			t.Error("Enter after phase 1 failure must NOT push a new screen")
+	m2, earlyCmd := m.update(enterMsg)
+	_ = m2
+	if earlyCmd != nil {
+		msg := earlyCmd()
+		if _, isWrite := msg.(writeResultMsg); isWrite {
+			t.Error("write gate violation: write dispatched before confirmActive (both phases must PASS first)")
 		}
 	}
-}
 
-// containsCI reports whether s contains substr (case-insensitive).
-func containsCI(s, substr string) bool {
-	sl := []byte(s)
-	subl := []byte(substr)
-	_ = sl
-	_ = subl
-	// Simple approach: lowercase both.
-	sLow := toLower(s)
-	subLow := toLower(substr)
-	return len(subLow) > 0 && contains(sLow, subLow)
-}
-
-func toLower(s string) string {
-	out := make([]byte, len(s))
-	for i := range s {
-		c := s[i]
-		if c >= 'A' && c <= 'Z' {
-			c += 32
-		}
-		out[i] = c
-	}
-	return string(out)
-}
-
-func contains(s, sub string) bool {
-	if len(sub) == 0 {
-		return true
-	}
-	if len(sub) > len(s) {
-		return false
-	}
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
-}
-
-// --- TestProveScreenRunsPhasesAsTeaCmds ---
-
-// TestProveScreenRunsPhasesAsTeaCmds verifies that entering the prove screen
-// issues runPreWriteCmd as a tea.Cmd (Init), and a passing preWriteResultMsg
-// issues runResolvedCmd — neither tester call happens inside Update directly.
-func TestProveScreenRunsPhasesAsTeaCmds(t *testing.T) {
-	var called bool
-	deps := fakeWriteTUIDeps(&called)
-
-	m := newProveScreen("create", makeTestInput(), identity.Account{}, "~/.ssh/gitid_personal", deps)
-
-	// init() must return a non-nil cmd for phase 1.
-	_, initCmd := m.init()
-	if initCmd == nil {
-		t.Fatal("proveModel.init() must return a non-nil tea.Cmd for phase 1")
+	// Simulate both phases passing → confirmActive = true.
+	m3, _ := m.update(preWriteResultMsg{result: tester.Result{Outcome: tester.PASS}})
+	m4, _ := m3.update(resolvedResultMsg{result: tester.Result{Outcome: tester.PASS}})
+	if !m4.confirmActive {
+		t.Fatal("confirmActive must be true after both phases pass")
 	}
 
-	// init() batches the phase-1 pre-write cmd with the spinner tick (WR-01), so
-	// it produces a tea.BatchMsg. Exactly one batched cmd must produce the
-	// preWriteResultMsg (phase 1); the other is the spinner.Tick animation seed.
-	initMsg := initCmd()
-	batch, ok := initMsg.(tea.BatchMsg)
-	if !ok {
-		t.Fatalf("init() cmd produced %T; want tea.BatchMsg (phase-1 cmd + spinner tick)", initMsg)
-	}
-	preWriteSeen := false
-	for _, c := range batch {
-		if c == nil {
-			continue
-		}
-		if _, ok := c().(preWriteResultMsg); ok {
-			preWriteSeen = true
-		}
-	}
-	if !preWriteSeen {
-		t.Fatal("init() Batch must contain a cmd producing preWriteResultMsg (phase 1)")
-	}
-
-	// After phase 1 passes, update must issue the phase 2 cmd.
-	pass1 := makePassResult()
-	updated, phase2Cmd := m.update(preWriteResultMsg{result: pass1})
-	_ = updated
-	if phase2Cmd == nil {
-		t.Fatal("update(preWriteResultMsg{pass}) must return a non-nil tea.Cmd for phase 2")
-	}
-
-	// The phase 2 cmd must produce a resolvedResultMsg.
-	phase2Msg := phase2Cmd()
-	if _, ok := phase2Msg.(resolvedResultMsg); !ok {
-		t.Fatalf("phase 2 cmd produced %T; want resolvedResultMsg", phase2Msg)
-	}
-}
-
-// --- TestProveConfirmWritesViaDeps ---
-
-// TestProveConfirmWritesViaDeps verifies that after both phases pass,
-// keys.Confirm invokes the injected write function (via identity.Deps), proving
-// the write routes through deps (no direct filewriter call in tui/prove.go).
-func TestProveConfirmWritesViaDeps(t *testing.T) {
-	var called bool
-	deps := fakeWriteTUIDeps(&called)
-
-	m := newProveScreen("create", makeTestInput(), identity.Account{}, "~/.ssh/gitid_personal", deps)
-
-	// Drive to confirmed state.
-	pass1 := makePassResult()
-	updated, _ := m.update(preWriteResultMsg{result: pass1})
-	pm, ok := updated.(proveModel)
-	if !ok {
-		t.Fatalf("proveModel after phase1: got %T", updated)
-	}
-
-	passR, passResolved := makeResolvedResult()
-	updated2, _ := pm.update(resolvedResultMsg{result: passR, resolved: passResolved})
-	pm2, ok := updated2.(proveModel)
-	if !ok {
-		t.Fatalf("proveModel after phase2: got %T", updated2)
-	}
-
-	if !pm2.confirmActive {
-		t.Fatal("confirmActive must be true before testing confirm write")
-	}
-
-	// Press Enter — must return a write cmd.
-	enterMsg := tea.KeyPressMsg{Code: tea.KeyEnter}
-	_, writeCmd := pm2.update(enterMsg)
+	// Now pressing Enter dispatches the write.
+	_, writeCmd := m4.update(enterMsg)
 	if writeCmd == nil {
-		t.Fatal("Enter after both phases pass must return a non-nil write cmd")
+		t.Error("Enter after confirmActive must dispatch a write cmd")
 	}
-
-	// Execute the write cmd — it should call through identity.Deps (the fake).
-	writeMsg := writeCmd()
-	if _, ok := writeMsg.(writeResultMsg); !ok {
-		t.Fatalf("write cmd produced %T; want writeResultMsg", writeMsg)
+	if writeCmd != nil {
+		// Execute the write cmd; it calls identity.Update synchronously in the cmd closure.
+		writeCmd() //nolint:errcheck // result checked via writeDispatched flag
+		if !writeDispatched {
+			t.Error("write gate: Enter after confirmActive must call identity.Update (WriteSSH)")
+		}
 	}
 }
