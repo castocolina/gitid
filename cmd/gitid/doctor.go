@@ -479,6 +479,9 @@ func buildDoctorDeps(home string, sshBytes, gcBytes []byte) doctor.Deps {
 		CheckBaseline:  checks.CheckBaseline,
 		// DOC-08 / F-7: overlap detector. Identities is already populated above.
 		CheckOverlap: checks.CheckOverlap,
+		// UAT G-4 / SSH-03: SSH-config redundancy advisor. Advisory-only
+		// (SeverityWarning, Fix nil) — never blocks doctor or any write flow.
+		CheckRedundancy: checks.CheckRedundancy,
 	}
 }
 

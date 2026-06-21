@@ -152,9 +152,10 @@ func TestRunCallsAllFamilies(t *testing.T) {
 	}
 }
 
-// TestFamiliesFixedOrder verifies that Families() returns the 8 family
+// TestFamiliesFixedOrder verifies that Families() returns the 9 family
 // constants in the UI-SPEC fixed order: Dependencies, Permissions, Coherence,
-// Orphans, Signing, Agent, Baseline, Overlap.
+// Orphans, Signing, Agent, Baseline, Overlap, Redundancy.
+// FamilyRedundancy is LAST (advisory section, DOC-08 / UAT G-4).
 func TestFamiliesFixedOrder(t *testing.T) {
 	want := []doctor.Family{
 		doctor.FamilyDeps,
@@ -165,6 +166,7 @@ func TestFamiliesFixedOrder(t *testing.T) {
 		doctor.FamilyAgent,
 		doctor.FamilyBaseline,
 		doctor.FamilyOverlap,
+		doctor.FamilyRedundancy,
 	}
 	got := doctor.Families()
 	if len(got) != len(want) {
@@ -174,6 +176,66 @@ func TestFamiliesFixedOrder(t *testing.T) {
 		if got[i] != w {
 			t.Errorf("Families()[%d] = %q, want %q", i, got[i], w)
 		}
+	}
+}
+
+// TestFamiliesRedundancyIsLast verifies that FamilyRedundancy is the very last
+// entry in Families() (advisory section, never blocks structural checks).
+func TestFamiliesRedundancyIsLast(t *testing.T) {
+	fams := doctor.Families()
+	if len(fams) == 0 {
+		t.Fatal("Families() must not be empty")
+	}
+	last := fams[len(fams)-1]
+	if last != doctor.FamilyRedundancy {
+		t.Errorf("Families() last entry must be FamilyRedundancy; got %q", last)
+	}
+}
+
+// TestRunDispatchesCheckRedundancy verifies that Run dispatches a non-nil
+// CheckRedundancy field and aggregates its findings, and that a nil
+// CheckRedundancy is safely skipped (nil-guard, mirrors existing Run behaviour).
+func TestRunDispatchesCheckRedundancy(t *testing.T) {
+	wantFinding := doctor.Finding{
+		Family:   doctor.FamilyRedundancy,
+		Severity: doctor.SeverityWarning,
+		Title:    "fake redundancy finding",
+		Fix:      nil,
+	}
+
+	// Non-nil CheckRedundancy: must appear in Run output.
+	deps := doctor.Deps{
+		CheckRedundancy: func(_ doctor.Deps) []doctor.Finding {
+			return []doctor.Finding{wantFinding}
+		},
+	}
+	findings := doctor.Run(deps)
+	found := false
+	for _, f := range findings {
+		if f.Title == wantFinding.Title {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("Run() must include CheckRedundancy findings; got %v", findings)
+	}
+
+	// Nil CheckRedundancy: Run must not panic or error.
+	nilDeps := doctor.Deps{CheckRedundancy: nil}
+	result := doctor.Run(nilDeps)
+	_ = result // no panic expected
+}
+
+// TestCheckRedundancySignature confirms that checks.CheckRedundancy compiles
+// and is callable with a zero-value Deps (best-effort: no panic on empty deps).
+func TestCheckRedundancySignature(t *testing.T) {
+	// ReadFile is nil in zero-value Deps — CheckRedundancy must handle gracefully.
+	var deps doctor.Deps
+	// Must not panic; may return nil.
+	findings := checks.CheckRedundancy(deps)
+	// An empty/nil ReadFile means we cannot read the config → no findings expected.
+	if len(findings) != 0 {
+		t.Errorf("CheckRedundancy with nil ReadFile must return nil/empty findings; got %v", findings)
 	}
 }
 

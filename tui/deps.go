@@ -489,6 +489,9 @@ func buildTUIDoctorDeps(home string, sshBytes, gcBytes []byte) doctor.Deps {
 		CheckAgent:     checks.CheckAgent,
 		CheckBaseline:  checks.CheckBaseline,
 		CheckOverlap:   checks.CheckOverlap,
+		// UAT G-4 / SSH-03: SSH-config redundancy advisor. Advisory-only
+		// (SeverityWarning, Fix nil) — never blocks doctor or any write flow.
+		CheckRedundancy: checks.CheckRedundancy,
 	}
 }
 
