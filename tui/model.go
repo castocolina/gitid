@@ -42,6 +42,8 @@ const (
 	copyPubkeyModal                     // c → copy public key modal (Plan 05)
 	deleteConfirmModal                  // d → delete identity confirm modal (Plan 06)
 	rotateConfirmModal                  // R → rotate key confirm + wizard (Plan 06)
+	adoptModal                          // A on kindFragment → adopt fragment modal (Plan 07)
+	addRepoModal                        // ctrl+r → add repo clone modal (Plan 07)
 )
 
 // tuiDeps holds the injected dependencies for the TUI. Built once by
@@ -121,6 +123,14 @@ type rootModel struct {
 	// copyModal is the copy-public-key modal (Plan 05).
 	// Populated when activeModal == copyPubkeyModal.
 	copyModal copyPubkeyModel
+
+	// adoptM is the Adopt fragment modal sub-model (Plan 07).
+	// Populated when activeModal == adoptModal.
+	adoptM adoptModel
+
+	// addRepoM is the Add Repo clone modal sub-model (Plan 07).
+	// Populated when activeModal == addRepoModal.
+	addRepoM addRepoModel
 
 	deps tuiDeps
 }
@@ -344,6 +354,71 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case uploadKeyResultMsg:
+		// Propagate to the copy modal (Plan 07 upload-assist, AUTOUP-01).
+		if m.activeModal == copyPubkeyModal {
+			var cmd tea.Cmd
+			m.copyModal, cmd = m.copyModal.update(msg)
+			return m, cmd
+		}
+		return m, nil
+
+	case adoptResultMsg:
+		// Propagate to the adopt modal.
+		if m.activeModal == adoptModal {
+			var cmd tea.Cmd
+			m.adoptM, cmd = m.adoptM.update(msg)
+			return m, cmd
+		}
+		return m, nil
+
+	case adoptCancelMsg:
+		// Adopt was cancelled or completed — close the modal and refresh sidebar.
+		m.activeModal = noModal
+		return m, m.sidebar.refresh(m.deps)
+
+	case removeOriginalResultMsg:
+		// Optional remove-original step completed — always close modal and refresh.
+		m.activeModal = noModal
+		return m, tea.Batch(m.sidebar.refresh(m.deps), setToastCmd(func() string {
+			if msg.err != nil {
+				return "remove failed: " + msg.err.Error()
+			}
+			return "original removed (backed up: " + msg.backupPath + ")"
+		}(), func() lipgloss.Style {
+			if msg.err != nil {
+				return SeverityStyle(doctor.SeverityError)
+			}
+			return StylePass
+		}()))
+
+	case detectResultMsg:
+		// Propagate to the add repo modal.
+		if m.activeModal == addRepoModal {
+			var cmd tea.Cmd
+			m.addRepoM, cmd = m.addRepoM.update(msg)
+			return m, cmd
+		}
+		return m, nil
+
+	case cloneResultMsg:
+		// Propagate to the add repo modal.
+		if m.activeModal == addRepoModal {
+			var cmd tea.Cmd
+			m.addRepoM, cmd = m.addRepoM.update(msg)
+			return m, cmd
+		}
+		return m, nil
+
+	case pullResultMsg:
+		// Propagate to the add repo modal.
+		if m.activeModal == addRepoModal {
+			var cmd tea.Cmd
+			m.addRepoM, cmd = m.addRepoM.update(msg)
+			return m, cmd
+		}
+		return m, nil
+
 	case baselineLoadedMsg:
 		// Propagate to the global options sub-model.
 		var cmd tea.Cmd
@@ -448,6 +523,18 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// note — no inline cmd() peek, dismissal via clearModalMsg).
 		var cmd tea.Cmd
 		m.copyModal, cmd = m.copyModal.update(msg)
+		return m, cmd
+
+	case adoptModal:
+		// Route key to the adopt modal (Plan 07, ADOPT-01).
+		var cmd tea.Cmd
+		m.adoptM, cmd = m.adoptM.update(msg)
+		return m, cmd
+
+	case addRepoModal:
+		// Route key to the add repo modal (Plan 07, REPO-01).
+		var cmd tea.Cmd
+		m.addRepoM, cmd = m.addRepoM.update(msg)
 		return m, cmd
 	}
 
@@ -631,6 +718,19 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, setToastCmd("coming next", StyleFaint)
 		}
 
+	case "A":
+		// Open the Adopt modal for the focused kindFragment unmanaged entry (Plan 07, ADOPT-01).
+		// Distinct from lowercase 'a' (add identity wizard).
+		if m.activeView == identitiesView {
+			if ue := m.sidebar.selectedUnmanagedEntry(); ue != nil && ue.kind == kindFragment {
+				m.adoptM = newAdoptModel(ue.fragmentPath, ue.shortName, nil, m.deps)
+				m.activeModal = adoptModal
+				return m, nil
+			}
+			return m, setToastCmd("select a fragment in the Unmanaged section to adopt", StyleFaint)
+		}
+		return m, setToastCmd("coming next", StyleFaint)
+
 	case "a":
 		// Open the create/add wizard modal (Plan 05).
 		if m.activeView == identitiesView {
@@ -733,6 +833,15 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, setToastCmd("coming next", StyleFaint)
+
+	case "ctrl+r":
+		// Open the Add Repo modal from the Identities view (Plan 07, REPO-01).
+		if m.activeView == identitiesView {
+			m.addRepoM = newAddRepoModel(m.deps)
+			m.activeModal = addRepoModal
+			return m, nil
+		}
+		return m, setToastCmd("coming next", StyleFaint)
 	}
 
 	return m, nil
@@ -771,6 +880,22 @@ func (m rootModel) applyPaletteAction(item paletteItem) (tea.Model, tea.Cmd) {
 		return m.switchTo(healthView)
 	case "view:global":
 		return m.switchTo(globalOptionsView)
+
+	case "action:addrepo":
+		// Open the Add Repo modal (Plan 07, REPO-01).
+		m.addRepoM = newAddRepoModel(m.deps)
+		m.activeModal = addRepoModal
+		return m, nil
+
+	case "action:adopt":
+		// Open the Adopt modal for the focused fragment (Plan 07, ADOPT-01).
+		if ue := m.sidebar.selectedUnmanagedEntry(); ue != nil && ue.kind == kindFragment {
+			m.adoptM = newAdoptModel(ue.fragmentPath, ue.shortName, nil, m.deps)
+			m.activeModal = adoptModal
+			return m, nil
+		}
+		return m, setToastCmd("select a fragment in the Unmanaged section first", StyleFaint)
+
 	default:
 		return m, setToastCmd("coming next", StyleFaint)
 	}
@@ -865,6 +990,10 @@ func (m rootModel) renderContent() string {
 		modalContent = m.wizard.view(m.width)
 	case copyPubkeyModal:
 		modalContent = m.copyModal.view(m.width)
+	case adoptModal:
+		modalContent = m.adoptM.view(m.width)
+	case addRepoModal:
+		modalContent = m.addRepoM.view(m.width)
 	default:
 		return dimmed
 	}
@@ -996,7 +1125,12 @@ func (m rootModel) renderFooter() string {
 			if acct := m.sidebar.selectedAccount(); acct != nil && acct.PubPath != "" {
 				hints = append(hints, hint("c", "copy"))
 			}
+			// Adopt hint: only shown when a kindFragment unmanaged row is focused (ADOPT-01).
+			if ue := m.sidebar.selectedUnmanagedEntry(); ue != nil && ue.kind == kindFragment {
+				hints = append(hints, hint("A", "adopt"))
+			}
 			hints = append(hints,
+				hint("ctrl+r", "repo"),
 				hint("↑↓", "move"),
 				hint("d", "delete"),
 				hint("R", "new key"),

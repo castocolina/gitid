@@ -14,14 +14,30 @@ import (
 	"github.com/castocolina/gitid/internal/identity"
 )
 
-// unmanagedEntry represents a hand-written SSH Host block or orphan key that
-// is not tracked by any gitid-managed identity. These are surfaced in the
-// read-only "Unmanaged" sidebar section (D-12, D-13).
+// unmanagedKind discriminates between orphan SSH keys and plain-style gitconfig
+// fragments that are candidates for adoption. Added in Plan 07 (Task 1 critical
+// ordering): fragment rows must exist BEFORE the [Adopt] affordance dispatch runs.
+type unmanagedKind int
+
+const (
+	// kindOrphanKey is an SSH key file not claimed by any managed Host block (D-12).
+	// These are read-only: reveal-path, copy-pubkey, open-location (D-13).
+	kindOrphanKey unmanagedKind = iota
+	// kindFragment is a plain-style gitconfig fragment (~/.gitconfig_<name>) not yet
+	// managed by gitid. These show the [Adopt] affordance when focused (ADOPT-01).
+	kindFragment
+)
+
+// unmanagedEntry represents a hand-written SSH Host block, orphan key, or plain-style
+// gitconfig fragment that is not tracked by any gitid-managed identity. Surfaced in
+// the read-only "Unmanaged" sidebar section (D-12, D-13).
 //
-// Available affordances (read-only, D-13): reveal-path, copy-pubkey, open-location.
-// NO edit/health/management actions are exposed for unmanaged entries.
-// "Adopt into gitid" is explicitly deferred (CONTEXT Deferred Ideas).
+// Available affordances by kind:
+//   - kindOrphanKey (D-13): reveal-path, copy-pubkey, open-location (read-only).
+//   - kindFragment  (ADOPT-01): [Adopt] affordance when focused; A/Enter opens Adopt modal.
 type unmanagedEntry struct {
+	// kind discriminates orphan keys from gitconfig fragments (Plan 07).
+	kind unmanagedKind
 	// shortName is the Host alias or key filename, truncated to 12 chars.
 	shortName string
 	// keyPath is the full path to the private key file (for revealPath and openLocation).
@@ -29,6 +45,9 @@ type unmanagedEntry struct {
 	// pubLine is the SSH public key line from the .pub file (for copyUnmanagedPubkey).
 	// This is the ONLY value passed to clipboard.Copy — the private key is never copied (D-13).
 	pubLine string
+	// fragmentPath is the full path to the gitconfig fragment file. Only set when
+	// kind == kindFragment. Used by the Adopt modal to read and migrate the fragment.
+	fragmentPath string
 }
 
 // sidebarModel is the left-pane sub-model for the persistent two-pane layout.
@@ -180,38 +199,65 @@ func (m sidebarModel) refresh(deps tuiDeps) tea.Cmd {
 	}
 }
 
-// buildUnmanaged extracts orphan/unlinked SSH key entries from the doctor Deps.
-// The doctor.Deps fields SSHManagedBlockNames and GitconfigManagedBlockNames are
-// populated at wiring time (buildTUIDoctorDeps) with the block names from the
-// parsed configs. Cross-referencing the two sets identifies class-1 and class-2
-// orphans (per CheckOrphans logic). Class-3 (unused key files) are identified via
-// KeyPaths vs AllSSHHostIdentityFiles.
+// buildUnmanaged extracts orphan/unlinked SSH key entries from the doctor Deps
+// AND plain-style gitconfig fragment candidates from deps.adopt.ListCandidates.
 //
-// RESEARCH Open Q #3 resolution: the "unlinked SSH key" finding (class 3) uses
-// the doctor.Deps.KeyPaths field and the AllSSHHostIdentityFiles set. We surface
-// class-3 orphans here; class-1/class-2 are managed blocks, not "hand-written",
-// so they are omitted from the unmanaged display.
+// CRITICAL ORDERING (Plan 07, REVIEWS.md #2): fragment rows (kindFragment) are
+// populated FIRST in this function so they exist before any [Adopt] affordance
+// dispatch can act on them. The orphan-key loop runs second; existing behavior
+// for orphan rows is unchanged (kind=kindOrphanKey, no fragmentPath).
+//
+// Fragment population: deps.adopt.ListCandidates returns paths matching
+// ~/.gitconfig_* that are not yet under gitid management. A nil ListCandidates
+// seam (test mode) is guarded: the fragment loop is skipped entirely.
+//
+// Orphan population: class-3 orphans (key files not referenced by any SSH Host
+// block) are identified via KeyPaths vs AllSSHHostIdentityFiles.
 func buildUnmanaged(deps tuiDeps) []unmanagedEntry {
-	d := deps.doctor
-	if len(d.AllSSHHostIdentityFiles) == 0 {
-		return nil
-	}
-
-	// Build a set of referenced key paths.
-	referenced := make(map[string]bool, len(d.AllSSHHostIdentityFiles))
-	for _, p := range d.AllSSHHostIdentityFiles {
-		referenced[p] = true
-	}
-
 	var result []unmanagedEntry
-	for _, kp := range d.KeyPaths {
-		if !referenced[kp] {
-			// Orphan key: not claimed by any Host block.
-			result = append(result, unmanagedEntry{
-				shortName: shortName(kp, 12),
-			})
+
+	// STEP 1: populate plain-style gitconfig fragment rows (kindFragment) FIRST.
+	// This ensures fragment rows exist before any [Adopt] dispatch observes them.
+	if deps.adopt.ListCandidates != nil {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			// Derive managed identity names from the doctor Deps
+			// (AllSSHHostIdentityFiles encodes managed identity paths that tell us
+			// which names are already managed — but for the ListCandidates call,
+			// we pass nil managedNames here; the seam wired in deps.go already
+			// provides ListCandidatesFromHome which calls ListCandidates(home, nil)).
+			candidates, listErr := deps.adopt.ListCandidates(home)
+			if listErr == nil {
+				for _, fragPath := range candidates {
+					result = append(result, unmanagedEntry{
+						kind:         kindFragment,
+						shortName:    shortName(fragPath, 12),
+						fragmentPath: fragPath,
+					})
+				}
+			}
 		}
 	}
+
+	// STEP 2: populate orphan SSH key rows (kindOrphanKey).
+	// An orphan key is a file in KeyPaths that is not in AllSSHHostIdentityFiles.
+	d := deps.doctor
+	if len(d.AllSSHHostIdentityFiles) > 0 {
+		referenced := make(map[string]bool, len(d.AllSSHHostIdentityFiles))
+		for _, p := range d.AllSSHHostIdentityFiles {
+			referenced[p] = true
+		}
+		for _, kp := range d.KeyPaths {
+			if !referenced[kp] {
+				result = append(result, unmanagedEntry{
+					kind:      kindOrphanKey,
+					shortName: shortName(kp, 12),
+					keyPath:   kp,
+				})
+			}
+		}
+	}
+
 	return result
 }
 
@@ -282,8 +328,9 @@ func (m sidebarModel) view(width, height int, focused bool) string {
 		sb.WriteString("\n")
 		sb.WriteString(StyleSidebarSection.Faint(true).Render("Unmanaged"))
 		sb.WriteString("\n")
-		for _, u := range m.unmanaged {
-			row := StyleSidebarUnmanaged.Render("○ " + u.shortName + " ~")
+		for i, u := range m.unmanaged {
+			isFocused := i == m.selectedUnmanaged
+			row := m.renderUnmanagedRow(u, isFocused)
 			sb.WriteString(row)
 			sb.WriteString("\n")
 		}
@@ -307,6 +354,17 @@ func (m sidebarModel) view(width, height int, focused bool) string {
 	// Apply a focused border highlight (subtle: bold the leading column).
 	_ = focused // reserved for Plan 03+ where focus state changes the border color
 	return result
+}
+
+// renderUnmanagedRow renders a single unmanaged entry row.
+// kindFragment rows show [Adopt] (StyleAccent) when focused; orphan-key rows show ~.
+func (m sidebarModel) renderUnmanagedRow(u unmanagedEntry, focused bool) string {
+	if u.kind == kindFragment && focused {
+		// Show [Adopt] affordance in accent color when the fragment row is focused (ADOPT-01).
+		return StyleSidebarUnmanaged.Render("› "+u.shortName+"  ") +
+			StyleAccent.Render("[Adopt]")
+	}
+	return StyleSidebarUnmanaged.Render("○ " + u.shortName + " ~")
 }
 
 // renderAccountRow renders a single managed identity row.

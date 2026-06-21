@@ -34,14 +34,24 @@ var paletteViewItems = []paletteItem{
 	{label: "Global Options — view 3", action: "view:global"},
 }
 
+// paletteActionItems are the always-available identity action items (Plan 07).
+// These are merged into the palette's item list at construction time.
+var paletteActionItems = []paletteItem{
+	{label: "Add Repo — clone a repository (ctrl+r)", action: "action:addrepo"},
+	{label: "Adopt Fragment — import a gitconfig fragment (A)", action: "action:adopt"},
+}
+
 // newPaletteModel constructs a fresh palette model with a seeded filter input.
+// Includes both view-switch items and action items (Plan 07: add repo, adopt).
 func newPaletteModel() paletteModel {
 	ti := textinput.New()
 	ti.Placeholder = "type to filter..."
 	ti.Focus()
 
-	items := make([]paletteItem, len(paletteViewItems))
-	copy(items, paletteViewItems)
+	// Merge view items and action items.
+	items := make([]paletteItem, 0, len(paletteViewItems)+len(paletteActionItems))
+	items = append(items, paletteViewItems...)
+	items = append(items, paletteActionItems...)
 
 	return paletteModel{
 		input:    ti,

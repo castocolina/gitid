@@ -63,6 +63,15 @@ type keyMap struct {
 
 	// Skip skips the current prove phase and continues (s).
 	Skip key.Binding
+
+	// --- Phase 5.7 extended bindings (Plan 07: Adopt modal + Add Repo modal) ---
+	// Source: UI-SPEC § Keymap Contract (Plan 07 extension, ADOPT-01, REPO-01).
+
+	// Adopt opens the Adopt modal for the focused kindFragment unmanaged row (A).
+	Adopt key.Binding
+
+	// AddRepo opens the Add Repo clone modal from the Identities view (ctrl+r).
+	AddRepo key.Binding
 }
 
 // keys is the shared keymap instance used by all screens. Bindings follow
@@ -102,4 +111,8 @@ var keys = keyMap{
 	Fix:           key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "fix")),
 	Retry:         key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "retry")),
 	Skip:          key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "skip")),
+
+	// Phase 5.7 extended bindings (Plan 07, ADOPT-01, REPO-01):
+	Adopt:   key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "adopt fragment")),
+	AddRepo: key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl+r", "add repo")),
 }

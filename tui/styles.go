@@ -101,6 +101,11 @@ var (
 	// StyleSidebarBadge is the base style for per-identity health badges in
 	// sidebar rows. Severity color is applied per-call via SeverityStyle.
 	StyleSidebarBadge = lipgloss.NewStyle()
+
+	// StyleAccent renders text in the accent color (blue, ANSI 4).
+	// Used for the [Adopt] affordance on focused kindFragment sidebar rows and the
+	// Add Repo cloning spinner (UI-SPEC §Color, new accent usages 12+13).
+	StyleAccent = lipgloss.NewStyle().Foreground(lipgloss.Color("4")).Bold(true)
 )
 
 // formFieldWidth is the fixed content width (inside the border) of every
