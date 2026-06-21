@@ -395,13 +395,13 @@ Plans:
 
 **Wave 1** *(blocked on Wave 0 — three new packages, zero file overlap, parallel)*
 
-- [ ] 05.7-02-PLAN.md — `internal/adopter` (TDD): Adopt migrate/reference (never-delete); ListCandidates built FROM SCRATCH via filepath.Glob(~/.gitconfig_*) — NOT doctor.CheckOrphans (corrected premise); best-effort name matching (ADOPT-01, D-04/D-05/D-06)
-- [ ] 05.7-03-PLAN.md — `internal/repoclone` (TDD): ProviderFromURL/RewriteToAlias/DestPath + Clone/Pull seam with dest-exists + dest-under-base guard (base = deps.UserHomeDir()+/git), arg-slice exec (REPO-01, D-09)
-- [ ] 05.7-04-PLAN.md — `internal/uploader` (TDD): Detect (gh/glab + auth status) + UploadKey/CommandPreview arg-slice, detect+prompt only (AUTOUP-01, D-11/D-12)
+- [x] 05.7-02-PLAN.md — `internal/adopter` (TDD): Adopt migrate/reference (never-delete); ListCandidates built FROM SCRATCH via filepath.Glob(~/.gitconfig_*) — NOT doctor.CheckOrphans (corrected premise); best-effort name matching (ADOPT-01, D-04/D-05/D-06)
+- [x] 05.7-03-PLAN.md — `internal/repoclone` (TDD): ProviderFromURL/RewriteToAlias/DestPath + Clone/Pull seam with dest-exists + dest-under-base guard (base = deps.UserHomeDir()+/git), arg-slice exec (REPO-01, D-09)
+- [x] 05.7-04-PLAN.md — `internal/uploader` (TDD): Detect (gh/glab + auth status) + UploadKey/CommandPreview arg-slice, detect+prompt only (AUTOUP-01, D-11/D-12)
 
 **Wave 2** *(blocked on Wave 1 — 05 and 06 parallel; match-selector files vs adopt/addrepo/copy/deps files, zero overlap)*
 
-- [ ] 05.7-05-PLAN.md — Match-strategy selector: turn the match e2e GREEN via the EXISTING stdin interactive picker (gatherCreateInput already calls promptMatchStrategy) + TUI wizard gitdir/hasconfig/both with live includeIf preview + an ADDITIONAL --match CLI flag for non-interactive parity (GIT-02, D-02/D-03/D-10; completes 5.6 D-06)
+- [x] 05.7-05-PLAN.md — Match-strategy selector: turn the match e2e GREEN via the EXISTING stdin interactive picker (gatherCreateInput already calls promptMatchStrategy) + TUI wizard gitdir/hasconfig/both with live includeIf preview + an ADDITIONAL --match CLI flag for non-interactive parity (GIT-02, D-02/D-03/D-10; completes 5.6 D-06)
 - [ ] 05.7-06-PLAN.md — CLI commands + live deps wiring: `gitid adopt` (root), `gitid add repo` (under a NEW top-level `add` group — none exists today), `gitid identity copy --upload-keys`; add adopt/repoclone/uploader fields to tuiDeps in tui/model.go + widen buildTUIDeps to 8-value + rewire nil-guard GREEN; adopt/addrepo/upload e2e GREEN (ADOPT-01/REPO-01/AUTOUP-01, D-10/D-13/D-16)
 
 **Wave 3** *(blocked on Waves 2 — shares tui/model.go, reuses wizard for inline-create)*
@@ -435,7 +435,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 1/8 plans executed
+**Plans:** 5/8 plans executed
 
 Plans:
 
@@ -455,5 +455,5 @@ Plans:
 | 5. CLI Surface + TUI | 4/4 | Built (UAT found gaps → 5.5 + 5.6) | 2026-06-13 |
 | 5.5. Core & CLI Reconciliation | 7/7 | Complete    | 2026-06-14 |
 | 5.6. Integrated TUI App | 5/7 | Complete    | 2026-06-21 |
-| 5.7. Complete v1.0 Product Features in TUI | 1/8 | In Progress|  |
+| 5.7. Complete v1.0 Product Features in TUI | 5/8 | In Progress|  |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |
