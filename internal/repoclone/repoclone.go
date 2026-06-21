@@ -39,6 +39,10 @@ var ErrUnknownProvider = errors.New("repoclone: unknown provider")
 // <home>/git, indicating a path traversal attempt.
 var ErrDestOutsideBase = errors.New("repoclone: destination is outside allowed base directory")
 
+// ErrOptionLikeURL is returned when cloneURL begins with "-", which git would
+// interpret as a command-line flag (argv flag smuggling) even in arg-slice form.
+var ErrOptionLikeURL = errors.New("repoclone: refusing clone URL that begins with '-'")
+
 // ProviderFromURL extracts the provider hostname from https://, git@host:, or
 // ssh:// URLs. Returns ("", ErrUnknownProvider) when the URL cannot be parsed.
 //
@@ -173,6 +177,14 @@ func Clone(cloneURL, destPath string, deps Deps) ([]string, error) {
 	}
 	base := filepath.Join(home, "git")
 
+	// Guard 0: option-like URL — reject a cloneURL that begins with "-" before any
+	// exec. Even in arg-slice (no-shell) form, git treats a leading-"-" argument as
+	// a flag, so a URL like "--upload-pack=..." would smuggle a flag (argv flag
+	// smuggling). liveClone also inserts a "--" separator as defense in depth.
+	if strings.HasPrefix(cloneURL, "-") {
+		return nil, ErrOptionLikeURL
+	}
+
 	// Guard 1: dest-outside-base — reject path traversal before any I/O.
 	cleanDest := filepath.Clean(destPath)
 	rel, err := filepath.Rel(base, cleanDest)
@@ -199,7 +211,9 @@ func Pull(destPath string, deps Deps) ([]string, error) {
 // liveClone is the internal git clone implementation used by buildTUIRepoCloneDeps.
 // Uses arg-slice form (no shell) — G204-clean.
 func liveClone(cloneURL, destPath string) ([]string, error) {
-	cmd := exec.Command("git", "clone", cloneURL, destPath) //nolint:gosec // arg-slice; no shell; URL/dest validated (G204)
+	// "--" terminates option parsing so a leading-"-" URL/dest can never be read as
+	// a git flag (argv flag smuggling), even though Clone already rejects such URLs.
+	cmd := exec.Command("git", "clone", "--", cloneURL, destPath) //nolint:gosec // arg-slice; no shell; "--" guard; URL/dest validated (G204)
 	out, err := cmd.CombinedOutput()
 	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
 	if err != nil {

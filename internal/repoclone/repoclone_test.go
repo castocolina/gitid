@@ -289,6 +289,35 @@ func TestClone_DestExists(t *testing.T) {
 	}
 }
 
+// ---- Clone seam — option-like URL guard (argv flag smuggling) ----
+
+func TestClone_OptionLikeURLRejected(t *testing.T) {
+	t.Parallel()
+	const fakeHome = "/home/testuser"
+	cloneCalled := false
+
+	deps := Deps{
+		UserHomeDir: func() (string, error) { return fakeHome, nil },
+		Stat:        func(_ string) (os.FileInfo, error) { return nil, os.ErrNotExist },
+		Clone: func(_, _ string) ([]string, error) {
+			cloneCalled = true
+			return nil, nil
+		},
+		Pull: func(_ string) ([]string, error) { return nil, nil },
+	}
+
+	destPath := filepath.Join(fakeHome, "git", "personal", "myrepo")
+	for _, badURL := range []string{"--upload-pack=touch /tmp/pwned", "-oProxyCommand=evil"} {
+		_, err := Clone(badURL, destPath, deps)
+		if !errors.Is(err, ErrOptionLikeURL) {
+			t.Errorf("Clone(%q): got err=%v, want ErrOptionLikeURL", badURL, err)
+		}
+	}
+	if cloneCalled {
+		t.Error("Clone func must NOT be called for option-like URLs")
+	}
+}
+
 // ---- Task 2: Clone seam — success path (dest does not exist) ----
 
 func TestClone_Success(t *testing.T) {
