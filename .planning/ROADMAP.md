@@ -384,7 +384,7 @@ CLI-02 are COMPLETE and explicitly NOT replanned (D-01).
 shipped — D-01); configurable clone base dir beyond `~/git`; interactive gh/glab login;
 Windows, GPG signing, web UI, automatic key rotation, secret-vault (v1 non-goals).
 
-**Plans**: 13 plans (8 feature plans + 5 gap-closure plans 09–13 from 05.7-UAT.md — Wave 0 test infra → 3 parallel core packages → CLI+wiring & match selector → TUI modals → review gates → core split + doctor (W5) → staged wizard SCREEN 1 (W6) → SCREEN 2 (W7) → SCREENS 3+4 (W8))
+**Plans**: 15 plans (8 feature plans + 7 gap-closure plans 09–16 from 05.7-UAT.md; plan 14 superseded into the provisional-block lifecycle 14/15/16 — Wave 0 test infra → 3 parallel core packages → CLI+wiring & match selector → TUI modals → review gates → core split + doctor (W5) → staged wizard SCREEN 1 (W6) → SCREEN 2 (W7) → SCREENS 3+4 (W8))
 **UI hint**: yes
 
 Plans:
@@ -425,13 +425,18 @@ Plans:
 
 - [x] 05.7-12-PLAN.md — STAGED WIZARD SCREEN 2 (SSH Connectivity Test, LEG 1 write): upload-manually→test (no gh/glab auto-upload in wizard) against the STAGED key; FULL command + key path visible on pre-run, SUCCESS, and failure (G-3); on SUCCESS write LEG 1 via identity.PersistSSH (key + Host block, backup + idempotent) then advance; SECONDARY [s] skip-&-write-offline with clear no-write feedback (double-confirm + unauth warning preserved) (G-2)
 
-**Wave 8 (gap closure)** *(blocked on Wave 7 plan 12 — shares tui/wizard.go; leg-1 correction from re-UAT)*
+**Wave 8 (gap closure)** *(blocked on Wave 7 plan 12; CORE provisional-block lifecycle — UI-free, no tui/ files)*
 
-- [ ] 05.7-14-PLAN.md — LEG-1 CORRECTION (UAT G-5, BLOCKER): write the Host <alias> block to ~/.ssh/config (with timestamped backup) BEFORE the resolved/alias test — Phase 1 basic connectivity (explicit -i, real hostname) → PersistSSH write+backup → Phase 2 resolved alias test (now resolves); Phase-2-fail keeps the backed-up block with retry/keep/rollback; alias blank → Host = provider host (github.com), WYSIWYG preview, no invented suffix; test command+path visible on every phase (CLAUDE.md test→backup→re-test)
+- [ ] 05.7-14-PLAN.md — CORE PROVISIONAL-BLOCK LIFECYCLE (UAT G-5, BLOCKER; SUPERSEDES the simpler leg-1-reorder): a transactional PROVISIONAL (test) SSH block with a DISTINCT sentinel `# BEGIN gitid provisional: <name>` (never confused with `# BEGIN gitid managed:`). filewriter: ReplaceProvisionalBlock/RemoveProvisionalBlock/ListProvisionalBlocks (sentinel-parameterized splice, managed behavior byte-identical). sshconfig: WriteProvisional (staged-key IdentityFile, backup) / Promote (atomic provisional→managed, final-key IdentityFile, backup) / DropProvisional (backup) / ListProvisional, all parse-validated through the filewriter chokepoint. identity: EffectiveAlias (blank → provider host, no `<name>.<provider>` suffix) + PersistSSHProvisional / PromoteSSH / DropProvisionalSSH (staged-key model preserved; persist-before-config order) + three injected Deps seams. TDD, recipe-faithful (CLAUDE.md test→confirm+backup→re-test)
 
-**Wave 9 (gap closure)** *(blocked on Wave 8 plan 14 — shares tui/wizard.go; staged wizard SCREENS 3+4)*
+**Wave 9 (gap closure)** *(blocked on Wave 8 plan 14 — WIZARD provisional lifecycle; shares tui/wizard.go + tui/deps.go)*
 
-- [ ] 05.7-13-PLAN.md — STAGED WIZARD SCREEN 3 (Git Configuration, LEG 2) + SCREEN 4 (Review): Screen 3 collects user.name/email + match selector (gitdir/hasconfig/both, editable sub-fields, match panel ALONE so it never overflows) + signing toggle, live includeIf preview, email-validated; on confirm write LEG 2 via identity.PersistGitconfig (fragment + includeIf + allowed_signers); Screen 4 is a read-only review of the SSH block + includeIf + fragment + allowed_signers + live ssh -G resolution (completes G-1/G-2)
+- [ ] 05.7-15-PLAN.md — STAGED WIZARD provisional lifecycle (UAT G-5 BLOCKER + tests 10/11/13): Screen 2 writes the PROVISIONAL Host block (staged-key IdentityFile, backup) BEFORE the resolved/alias test so `ssh -T git@<alias>`/`ssh -G <alias>` resolve; on Phase-2 PASS install key + PROMOTE provisional→managed (final key) then advance to Screen 3; on cancel/quit/give-up DROP the provisional block + discard the staged key (never left behind); blank alias → `Host github.com` everywhere via EffectiveAlias (WYSIWYG, no suffix); full command + key path visible on every phase; bootstrap stale-provisional detection with [d] drop / [r] resume. Captures the write-seam ORDER (provisional-write BEFORE resolved-test) as the G-5 regression guard on the REAL model path; wires the three provisional seams in tui/deps.go
+
+**Wave 10 (gap closure)** *(blocked on Wave 9 plan 15; 13 + 16 parallel — disjoint files: 13 = tui/wizard.go, 16 = internal/doctor/* + cmd/gitid/doctor.go + tui/deps.go + tui/health.go)*
+
+- [ ] 05.7-13-PLAN.md — STAGED WIZARD SCREEN 3 (Git Configuration, LEG 2) + SCREEN 4 (Review): Screen 3 collects user.name/email + match selector (gitdir/hasconfig/both, editable sub-fields, match panel ALONE so it never overflows) + signing toggle, live includeIf preview, email-validated; on confirm write LEG 2 via identity.PersistGitconfig (fragment + includeIf + allowed_signers); Screen 4 is a read-only review of the SSH block + includeIf + fragment + allowed_signers + live ssh -G resolution (completes G-1/G-2; LEG 2 after the LEG-1 provisional correction)
+- [ ] 05.7-16-PLAN.md — DOCTOR provisional advisory (project memory: doctor-reserved-block-false-positive-loop): new ADVISORY-ONLY FamilyProvisional check (CheckProvisional) recognizing leftover `gitid provisional:` blocks (SeverityWarning, Fix nil/safe-drop, never blocks doctor/write); the distinct sentinel keeps provisional blocks OUT of the managed-identity set and orphan detection so `--fix` never misclassifies or destructively loops (regression test: co-resident provisional+managed → one provisional advisory, ZERO orphan findings); wired into Run/Families + cmd/gitid/doctor.go + tui/deps.go + tui/health.go (D-10 parity, D-16 nil-guard)
 
 ### Phase 6: Linux Cross-Platform Validation
 
