@@ -17,7 +17,7 @@
 - [x] **Phase 5: CLI Surface + TUI** — Full Cobra command surface with shell completion; Bubble Tea TUI launching to doctor dashboard with identity/account navigation (built 2026-06-13 — ⚠️ guided UAT found core + UX gaps, see VERIFICATION-PLAYBOOK.md; superseded by Phase 5.5 reconciliation + Phase 5.6 TUI rebuild)
 - [x] **Phase 5.5: Core & CLI Reconciliation** *(INSERTED — 2026-06-13)* — Fix the core/CLI defects the playbook surfaced: auth-gated create-flow (generate→upload→loop-test until PASS→persist-only-after-PASS, with skip escape), correct provider reconstruction, install PATH feedback, per-URL (`hasconfig`) matching alongside `gitdir`, and a doctor check for overlapping/ambiguous matches. CLI/core only — no TUI cosmetics. (completed 2026-06-14)
 - [x] **Phase 5.6: Integrated TUI App** *(INSERTED — 2026-06-13)* — Replace the thin doctor-dashboard TUI with one integrated terminal app (Bubble Tea v2): persistent header + identity sidebar + master-detail pane + bold footer; view switcher (Identities · Health · Global Options); in-app create/add wizard with live feedback (the proven create-flow); per-site + global options editable in-pane; delete/rotate in-app; copy = public key only. Ergonomics modeled on `../tools-installer`. (completed 2026-06-21)
-- [ ] **Phase 5.7: Complete v1.0 Product Features in TUI** *(INSERTED — 2026-06-21)* — Close the four genuinely-unbuilt whole-product v1.0 gaps, reachable from both the integrated TUI and the CLI (D-10 parity): finish the deferred 5.6 D-06 match-strategy selector (gitdir default + hasconfig/both, live includeIf preview), adopt/migrate plain-style `~/.gitconfig_<name>` fragments into `~/.gitconfig.d/` (ADOPT-01), `gitid add repo <url>` clone+verify-pull workflow (REPO-01), and assisted `gh`/`glab` key upload (AUTOUP-01). Global toggles / `insteadOf` / alt-SSH 443 / completions are already shipped (Phase 3.1 + 5) and OUT of scope per D-01. Core stays UI-free + TDD; every feature gets unit-TDD + real-entry e2e; `recipes/` is the canonical end state. (see `docs/prds/ssh-git-identity-manager-v1.0-prd.md`)
+- [x] **Phase 5.7: Complete v1.0 Product Features in TUI** *(INSERTED — 2026-06-21)* — Close the four genuinely-unbuilt whole-product v1.0 gaps, reachable from both the integrated TUI and the CLI (D-10 parity): finish the deferred 5.6 D-06 match-strategy selector (gitdir default + hasconfig/both, live includeIf preview), adopt/migrate plain-style `~/.gitconfig_<name>` fragments into `~/.gitconfig.d/` (ADOPT-01), `gitid add repo <url>` clone+verify-pull workflow (REPO-01), and assisted `gh`/`glab` key upload (AUTOUP-01). Global toggles / `insteadOf` / alt-SSH 443 / completions are already shipped (Phase 3.1 + 5) and OUT of scope per D-01. Core stays UI-free + TDD; every feature gets unit-TDD + real-entry e2e; `recipes/` is the canonical end state. (see `docs/prds/ssh-git-identity-manager-v1.0-prd.md`) (completed 2026-06-21)
 - [ ] **Phase 6: Linux Cross-Platform Validation** *(DEFERRED — post-v1)* — Validate the whole tool end-to-end on Linux (developed on macOS only): clipboard dispatch, per-OS install hints, file permissions, config-path resolution, the make/pre-commit toolchain, and the two-phase ssh test flow
 
 ---
@@ -410,7 +410,7 @@ Plans:
 
 **Wave 4** *(blocked on Waves 2-3 — review gates)*
 
-- [ ] 05.7-08-PLAN.md — Review wave: agent-ui-ux-designer critique of the 4 new TUI surfaces (teatest-independent View()-dump frame capture fallback) + requesting-code-review over the phase diff + blocking manual TTY smoke test (D-13)
+- [x] 05.7-08-PLAN.md — Review wave: agent-ui-ux-designer critique of the 4 new TUI surfaces (teatest-independent View()-dump frame capture fallback) + requesting-code-review over the phase diff + blocking manual TTY smoke test (D-13)
 
 ### Phase 6: Linux Cross-Platform Validation
 
@@ -435,7 +435,7 @@ Plans:
   3. Clipboard copy works via the Linux clipboard backend; `gitid doctor` shows correct per-OS install hints and permission findings
   4. Any portability defects found are fixed (or explicitly logged as accepted limitations) and the macOS suite still passes (no regressions)
 
-**Plans:** 7/8 plans executed
+**Plans:** 8/8 plans complete
 
 Plans:
 
@@ -455,5 +455,5 @@ Plans:
 | 5. CLI Surface + TUI | 4/4 | Built (UAT found gaps → 5.5 + 5.6) | 2026-06-13 |
 | 5.5. Core & CLI Reconciliation | 7/7 | Complete    | 2026-06-14 |
 | 5.6. Integrated TUI App | 5/7 | Complete    | 2026-06-21 |
-| 5.7. Complete v1.0 Product Features in TUI | 7/8 | In Progress|  |
+| 5.7. Complete v1.0 Product Features in TUI | 8/8 | Complete   | 2026-06-21 |
 | 6. Linux Cross-Platform Validation | 0/? | Deferred (post-v1) | - |
