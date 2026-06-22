@@ -135,6 +135,19 @@ type Deps struct {
 	WriteAllowedSigners func(path, identity, line string) (backupPath string, err error)
 	Resolved            func(alias string) (tester.Result, tester.ResolvedConfig)
 
+	// StageTestConfig and ResolvedVia implement the temp-config alias test (the
+	// safer alternative to writing a provisional block into the live file). Rather
+	// than mutate ~/.ssh/config for a connectivity test, the wizard stages the
+	// identity's Host block (with the STAGED key as IdentityFile) into a throwaway
+	// config file inside the key staging dir, then tests the alias against it with
+	// `ssh -F <configPath> -i <keyPath>`. The real config is written only once, at
+	// the final confirmed write — satisfying "test → confirm + backup → write."
+	//
+	//   StageTestConfig — render the Host block to a temp file; return its path.
+	//   ResolvedVia     — run `ssh -F <configPath> -i <keyPath> -T git@<alias>`.
+	StageTestConfig func(in CreateInput, staged StagedKey) (configPath string, err error)
+	ResolvedVia     func(configPath, keyPath, alias string) (tester.Result, tester.ResolvedConfig)
+
 	// PubExists, DerivePub, and WritePub support the reuse-existing-key flow
 	// (IDENT-02): PubExists reports whether the existing key's `.pub` is present,
 	// DerivePub recomputes the authorized-key line from the private key when it is

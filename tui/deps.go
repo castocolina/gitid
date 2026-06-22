@@ -305,6 +305,22 @@ func buildIdentityDeps() identity.Deps {
 		PreWrite: func(keyPath, hostname string, port int) tester.Result {
 			return tester.PreWrite(keyPath, hostname, port)
 		},
+		// StageTestConfig renders the identity's Host block (with the STAGED temp
+		// key as IdentityFile) into a throwaway config file inside the key staging
+		// dir. The alias test runs against this file (ssh -F) so the live
+		// ~/.ssh/config is never mutated for a test (UAT G-5, temp-config approach).
+		StageTestConfig: func(in identity.CreateInput, staged identity.StagedKey) (string, error) {
+			if staged.TempPrivatePath == "" {
+				return "", fmt.Errorf("tui: no staged key path for test config")
+			}
+			hostBlock := sshconfig.RenderHostBlock(in.Alias, in.Hostname, in.Port, staged.TempPrivatePath, in.Provider)
+			configPath := filepath.Join(filepath.Dir(staged.TempPrivatePath), "config")
+			if _, werr := filewriter.Write(configPath, []byte(hostBlock), 0o600); werr != nil { //nolint:gosec // gitid-managed staging path (G306)
+				return "", fmt.Errorf("tui: staging test ssh config: %w", werr)
+			}
+			return configPath, nil
+		},
+		ResolvedVia: tester.ResolvedVia,
 		WriteSSH: func(accountName, hostBlock, globalBlock string) (string, error) {
 			home, herr := os.UserHomeDir()
 			if herr != nil {

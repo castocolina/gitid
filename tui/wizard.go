@@ -317,6 +317,35 @@ func runResolvedCmd(resolved func(alias string) (tester.Result, tester.ResolvedC
 	}
 }
 
+// runResolvedViaCmd dispatches the phase-2 alias test against a STAGED temp config.
+// It (1) stages the identity's Host block (with the staged temp key as
+// IdentityFile) into a throwaway config file via StageTestConfig, then (2) runs
+// `ssh -F <tempconfig> -i <key> -T git@<alias>` via ResolvedVia. Neither step
+// touches ~/.ssh/config — the live file is written only at the final confirmed
+// write. This is the safe alternative to writing a provisional block into the
+// live file (UAT G-5: a typed alias is unresolvable until a Host stanza exists).
+func runResolvedViaCmd(m createWizardModel) tea.Cmd {
+	in := m.buildCreateInput(m.inputs[3].Value())
+	staged := m.staged
+	deps := m.deps.identity
+	return func() (msg tea.Msg) {
+		defer func() {
+			if r := recover(); r != nil {
+				msg = resolvedResultMsg{result: tester.Result{Outcome: tester.Failure}, err: fmt.Errorf("alias test panicked: %v", r)}
+			}
+		}()
+		if deps.StageTestConfig == nil || deps.ResolvedVia == nil {
+			return resolvedResultMsg{result: tester.Result{Outcome: tester.Failure}, err: fmt.Errorf("alias-test seams are nil")}
+		}
+		configPath, err := deps.StageTestConfig(in, staged)
+		if err != nil {
+			return resolvedResultMsg{result: tester.Result{Outcome: tester.Failure}, err: fmt.Errorf("staging test config: %w", err)}
+		}
+		result, rc := deps.ResolvedVia(configPath, staged.TempPrivatePath, in.Alias)
+		return resolvedResultMsg{result: result, resolved: rc}
+	}
+}
+
 // runProveWriteCmd dispatches the identity.Update call after the prove loop passes.
 // The write result is returned as writeResultMsg.
 func runProveWriteCmd(existing, edited identity.Account, signing bool, deps tuiDeps) tea.Cmd {
@@ -448,9 +477,9 @@ type createWizardModel struct {
 	err        string
 	nameLocked bool // true for Add Account mode (name pre-filled and read-only)
 
-	// Screen 1 extended fields (Plan 10): Hostname and Folder are first-class
-	// top-level editable rows on Screen 1, promoted from the sub-field / hard-coded
-	// positions they occupied before.
+	// Screen 1 extended field (Plan 10): Hostname is a first-class top-level
+	// editable row on Screen 1. (Folder was also here originally but moved to
+	// Screen 3 — it drives the ~/.gitconfig includeIf match, not the SSH config.)
 	//
 	// hostnameVal: the Hostname field pre-filled from identity.DefaultHostname(provider).
 	// hostnameEdited: true once the user has typed into the Hostname field; when false,
@@ -583,16 +612,17 @@ func newCreateWizardModel(name string, deps tuiDeps) createWizardModel {
 //	2 → inputs[5]   SSH Alias
 //	3 → hostnameVal Hostname
 //	4 → inputs[4]   Port
-//	5 → matchGitdirVal Folder (gitdir)
 //
 // Key Algorithm (ed25519) is read-only and not Tab-reachable on Screen 1.
-// Git Name (1) / Git Email (2) / Match (6) / Signing (7) are Screen 3 fields;
-// they remain in inputs[] for Plan 13 to reuse but are not rendered on Screen 1.
+// Folder (gitdir) belongs to ~/.gitconfig's includeIf match, NOT the SSH config,
+// so it lives on Screen 3 (Git config), not here — matchGitdirVal remains in the
+// model for Screen 3 to bind. Git Name (1) / Git Email (2) / Match (6) /
+// Signing (7) are likewise Screen 3 fields, kept in inputs[] for Plan 13 to reuse.
 
-const screen1FocusCount = 6 // number of Tab stops on Screen 1
+const screen1FocusCount = 5 // number of Tab stops on Screen 1 (SSH-only; no Folder)
 
 // screen1InputIdx maps a Screen-1 focus position to the backing inputs[] index.
-// Returns -1 for virtual slots (hostname, folder) that are not in inputs[].
+// Returns -1 for the virtual hostname slot (hostnameVal, not in inputs[]).
 func screen1InputIdx(pos int) int {
 	switch pos {
 	case 0:
@@ -605,17 +635,12 @@ func screen1InputIdx(pos int) int {
 		return -1 // Hostname (hostnameVal — virtual)
 	case 4:
 		return 4 // Port
-	case 5:
-		return -1 // Folder (matchGitdirVal — virtual)
 	}
 	return -1
 }
 
 // hostnameFocusIdx returns the Screen-1 focus position for the Hostname field.
 func hostnameFocusIdx() int { return 3 }
-
-// folderFocusIdx returns the Screen-1 focus position for the Folder field.
-func folderFocusIdx() int { return 5 }
 
 // handleKey processes key presses in the wizard form step.
 // Returns the updated model and an optional command.
@@ -658,11 +683,8 @@ func (m *createWizardModel) screen1Focus(pos int) {
 	if idx >= 0 {
 		m.inputs[idx].Focus()
 	} else {
-		switch pos {
-		case hostnameFocusIdx():
+		if pos == hostnameFocusIdx() {
 			m.hostnameVal.Focus()
-		case folderFocusIdx():
-			m.matchGitdirVal.Focus()
 		}
 	}
 }
@@ -728,7 +750,7 @@ func (m createWizardModel) handleKeyScreen1(msg tea.KeyMsg, key string) (createW
 		return m, nil
 
 	case "enter":
-		// On the last Screen-1 field (Folder, pos 5), advance to Screen 2 / keygen.
+		// On the last Screen-1 field (Port, pos 4), advance to Screen 2 / keygen.
 		if m.focusIdx == screen1FocusCount-1 {
 			return m.advanceFromForm()
 		}
@@ -766,15 +788,6 @@ func (m createWizardModel) handleKeyScreen1(msg tea.KeyMsg, key string) (createW
 		}
 		var cmd tea.Cmd
 		m.hostnameVal, cmd = m.hostnameVal.Update(msg)
-		return m, cmd
-
-	case folderFocusIdx():
-		// Ensure matchGitdirVal is focused before forwarding the key event.
-		if !m.matchGitdirVal.Focused() {
-			m.matchGitdirVal.Focus()
-		}
-		var cmd tea.Cmd
-		m.matchGitdirVal, cmd = m.matchGitdirVal.Update(msg)
 		return m, cmd
 
 	default:
@@ -1110,15 +1123,14 @@ func (m createWizardModel) update(msg tea.Msg) (createWizardModel, tea.Cmd) {
 		switch msg.result.Outcome {
 		case tester.PASS:
 			m.step = wizardStepProve1Done
-			provider := m.inputs[3].Value()
-			if provider == "" {
-				provider = "github.com"
-			}
-			// EffectiveAlias: blank → provider host (resolvable), never an invented
-			// <name>.<provider> suffix (UAT G-5). The provisional-block reorder (so a
-			// TYPED alias is written before this resolved test) follows separately.
-			alias := identity.EffectiveAlias(m.inputs[5].Value(), provider)
-			return m, runResolvedCmd(m.deps.identity.Resolved, alias)
+			// Phase 2 (resolved alias test): stage the identity's Host block into a
+			// throwaway config file (with the staged key as IdentityFile) and test
+			// the alias against it via `ssh -F <tempconfig> -i <key>`. A typed alias
+			// is not a DNS name, so it can only resolve once a Host stanza exists; we
+			// make it exist in a temp file instead of mutating ~/.ssh/config for a
+			// test (UAT G-5). The real config is written only at the final confirmed
+			// write. See runResolvedViaCmd.
+			return m, runResolvedViaCmd(m)
 		default:
 			m.step = wizardStepProve1Failed
 			m.confirmActive = false
@@ -1128,6 +1140,11 @@ func (m createWizardModel) update(msg tea.Msg) (createWizardModel, tea.Cmd) {
 	case resolvedResultMsg:
 		m.phase2Result = msg.result
 		m.phase2Resolved = msg.resolved
+		if msg.err != nil && msg.result.Output == "" {
+			// Staging the temp config failed before any ssh ran — surface the reason
+			// in the test output so the failure screen explains it.
+			m.phase2Result.Output = msg.err.Error()
+		}
 		switch msg.result.Outcome {
 		case tester.PASS:
 			m.step = wizardStepProve2Done
@@ -1346,12 +1363,10 @@ func (m createWizardModel) viewScreen1(sb *strings.Builder, _ int) {
 	// Row 3: Hostname (hostnameVal).
 	sb.WriteString(renderFormField("Hostname:       ", m.hostnameVal.View(), m.focusIdx == hostnameFocusIdx()) + "\n")
 
-	// Row 4: Port (inputs[4]).
+	// Row 4: Port (inputs[4]) — last Screen-1 field. Folder (gitdir) moved to
+	// Screen 3 (Git config): it drives the ~/.gitconfig includeIf match, not the
+	// SSH config, and is not needed for the alias connectivity test.
 	sb.WriteString(renderFormField("Port:           ", m.inputs[4].View(), m.focusIdx == 4) + "\n")
-
-	// Row 5: Folder / gitdir (matchGitdirVal).
-	folderView := m.matchGitdirVal.View()
-	sb.WriteString(renderFormField("Folder:         ", folderView, m.focusIdx == folderFocusIdx()) + "\n")
 
 	// Live Host-block preview (Task 3, G-2 preview half): always shown when name
 	// is non-empty so the user sees the exact alias block before any write.
@@ -1693,33 +1708,35 @@ func (m createWizardModel) viewProve(sb *strings.Builder) {
 		provider = "github.com"
 	}
 
-	// Phase 1.
+	// Test 1 (general): the key reaches the provider's SSH endpoint directly.
+	// Runs first; Test 2 is only triggered after it passes.
 	switch m.step {
 	case wizardStepProve1Running:
-		sb.WriteString(m.sp.View() + " Testing SSH authentication...\n")
+		sb.WriteString(m.sp.View() + " Test 1/2 (general): checking key & endpoint reachability...\n")
 	case wizardStepProve1Done, wizardStepProve2Running, wizardStepProve2Done, wizardStepWritten:
-		sb.WriteString(StylePass.Render("✓") + " Phase 1: authenticated\n")
+		sb.WriteString(StylePass.Render("✓") + " Test 1/2 (general): key & endpoint reachable\n")
 		// G-3: show the exact command even on PASS (not only failure).
 		renderTestCommandLine(sb, m.phase1Result)
 	case wizardStepProve1Failed:
-		sb.WriteString(SeverityStyle(doctor.SeverityError).Render("✗") + " Phase 1: authentication failed [critical]\n")
+		sb.WriteString(SeverityStyle(doctor.SeverityError).Render("✗") + " Test 1/2 (general): key/endpoint unreachable [critical]\n")
 		renderTestDetail(sb, m.phase1Result)
 		renderNoWriteGuidance(sb, m.phase1Result, provider)
 		sb.WriteString("\n")
 		sb.WriteString(renderProveActions(m.skipConfirmPending))
 	}
 
-	// Phase 2.
+	// Test 2 (alias): the alias resolves through the staged config to the same
+	// endpoint. Only shown/triggered after Test 1 passes.
 	if m.step >= wizardStepProve2Running && m.step != wizardStepProve1Failed {
 		switch m.step {
 		case wizardStepProve2Running:
-			sb.WriteString(m.sp.View() + " Checking resolved config...\n")
+			sb.WriteString(m.sp.View() + " Test 2/2 (alias): checking the alias resolves through your config...\n")
 		case wizardStepProve2Done, wizardStepWritten:
-			sb.WriteString(StylePass.Render("✓") + " Phase 2: config resolves correctly\n")
-			// G-3: show phase-2 command on PASS.
+			sb.WriteString(StylePass.Render("✓") + " Test 2/2 (alias): alias config resolves correctly\n")
+			// G-3: show test-2 command on PASS.
 			renderTestCommandLine(sb, m.phase2Result)
 		case wizardStepProve2Failed:
-			sb.WriteString(SeverityStyle(doctor.SeverityError).Render("✗") + " Phase 2: config resolution failed [critical]\n")
+			sb.WriteString(SeverityStyle(doctor.SeverityError).Render("✗") + " Test 2/2 (alias): alias config resolution failed [critical]\n")
 			renderTestDetail(sb, m.phase2Result)
 			renderNoWriteGuidance(sb, m.phase2Result, provider)
 			sb.WriteString(renderProveActions(m.skipConfirmPending))

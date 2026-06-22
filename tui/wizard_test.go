@@ -13,6 +13,9 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -322,10 +325,10 @@ func TestWizardPersistsOnlyAfterPass(t *testing.T) {
 	w := makeTestWizardModel(deps)
 
 	// Fill in a valid form and advance to keygen.
-	// On Screen 1 (screenSSHIdentity) the last Tab stop is Folder (focusIdx 5).
-	// Git Name/Email/Match/Signing live on Screen 3; we still set them in inputs[]
-	// for full wiring through buildCreateInput, but the Screen-1 Enter-advance
-	// triggers at focusIdx == screen1FocusCount-1 == 5 (Folder field).
+	// On Screen 1 (screenSSHIdentity) the last Tab stop is Port (focusIdx 4).
+	// Folder/Git Name/Email/Match/Signing live on Screen 3; we still set them in
+	// inputs[] for full wiring through buildCreateInput, but the Screen-1
+	// Enter-advance triggers at focusIdx == screen1FocusCount-1 (the Port field).
 	w.inputs[0].SetValue("personal")
 	w.inputs[1].SetValue("Test User")
 	w.inputs[2].SetValue("test@example.com")
@@ -334,7 +337,7 @@ func TestWizardPersistsOnlyAfterPass(t *testing.T) {
 	w.inputs[5].SetValue("personal.github.com")
 	w.inputs[6].SetValue("1")
 	w.inputs[7].SetValue("y")
-	w.focusIdx = folderFocusIdx() // last Screen-1 field (Folder, pos 5)
+	w.focusIdx = screen1FocusCount - 1 // last Screen-1 field (Port, pos 4)
 
 	// Press Enter on last Screen-1 field — advances to keygen.
 	w2, _ := w.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -383,6 +386,161 @@ func TestWizardPersistsOnlyAfterPass(t *testing.T) {
 		if !persistCalled {
 			t.Error("write gate: Enter after confirmActive must call PersistAll (WriteSSH)")
 		}
+	}
+}
+
+// TestWizardAliasTestUsesTempConfigNotRealFile verifies the Phase-2 (resolved)
+// alias test runs against a STAGED temp config file (ssh -F) plus the staged key
+// (ssh -i), and that the live ~/.ssh/config is NOT written during the test. This
+// is the fix for UAT G-5: a typed alias is unresolvable unless its Host block
+// exists at test time, so we make it exist in a throwaway file instead of
+// mutating the user's real config. The bare Resolved seam (`ssh -T git@<alias>`
+// with no config) must NOT be used for the create flow.
+func TestWizardAliasTestUsesTempConfigNotRealFile(t *testing.T) {
+	var stageCalled, resolvedViaCalled, writeSSHCalled bool
+	var gotConfigPath, gotKeyPath, gotAlias string
+
+	var deps tuiDeps
+	deps.identity.PreWrite = func(_, _ string, _ int) tester.Result {
+		return tester.Result{Outcome: tester.PASS}
+	}
+	deps.identity.StageTestConfig = func(_ identity.CreateInput, staged identity.StagedKey) (string, error) {
+		stageCalled = true
+		return staged.TempPrivatePath + ".cfg", nil
+	}
+	deps.identity.ResolvedVia = func(configPath, keyPath, alias string) (tester.Result, tester.ResolvedConfig) {
+		resolvedViaCalled = true
+		gotConfigPath, gotKeyPath, gotAlias = configPath, keyPath, alias
+		return tester.Result{Outcome: tester.PASS, Command: "ssh -F " + configPath + " -i " + keyPath + " -T git@" + alias},
+			tester.ResolvedConfig{Hostname: "ssh.github.com", Port: "443"}
+	}
+	deps.identity.WriteSSH = func(_, _, _ string) (string, error) {
+		writeSSHCalled = true
+		return "bak", nil
+	}
+	deps.identity.Resolved = func(_ string) (tester.Result, tester.ResolvedConfig) {
+		t.Error("bare Resolved (ssh -T, no config) must NOT run in the create flow; use ResolvedVia")
+		return tester.Result{}, tester.ResolvedConfig{}
+	}
+
+	w := makeTestWizardModel(deps)
+	w.inputs[0].SetValue("personal")
+	w.inputs[3].SetValue("github.com")
+	w.inputs[5].SetValue("personal.github.com") // typed alias
+	w.staged = identity.StagedKey{
+		TempPrivatePath:  "/tmp/gitid-key-xyz/key",
+		FinalPrivatePath: "/home/u/.ssh/id_ed25519_personal",
+		FinalPubPath:     "/home/u/.ssh/id_ed25519_personal.pub",
+	}
+
+	// Phase 1 PASS → must dispatch the temp-config alias test (NOT bare Resolved).
+	w2, cmd := w.update(preWriteResultMsg{result: tester.Result{Outcome: tester.PASS}})
+	if cmd == nil {
+		t.Fatal("Phase 1 PASS must dispatch the Phase-2 alias test command")
+	}
+	if w2.step != wizardStepProve1Done {
+		t.Errorf("after Phase 1 PASS, step = %v, want wizardStepProve1Done", w2.step)
+	}
+
+	// Execute the dispatched command — it should stage a temp config and run
+	// ResolvedVia, returning a resolvedResultMsg.
+	msg := cmd()
+	rrm, ok := msg.(resolvedResultMsg)
+	if !ok {
+		t.Fatalf("dispatched cmd returned %T, want resolvedResultMsg", msg)
+	}
+	if !stageCalled {
+		t.Error("alias test must stage a temp config via StageTestConfig")
+	}
+	if !resolvedViaCalled {
+		t.Error("alias test must run ResolvedVia (ssh -F tempconfig -i key)")
+	}
+	if writeSSHCalled {
+		t.Error("alias test must NOT write the live ~/.ssh/config (WriteSSH called)")
+	}
+	if gotConfigPath != "/tmp/gitid-key-xyz/key.cfg" {
+		t.Errorf("ResolvedVia configPath = %q, want the staged temp config", gotConfigPath)
+	}
+	if gotKeyPath != "/tmp/gitid-key-xyz/key" {
+		t.Errorf("ResolvedVia keyPath = %q, want the staged temp key", gotKeyPath)
+	}
+	if gotAlias != "personal.github.com" {
+		t.Errorf("ResolvedVia alias = %q, want the typed alias", gotAlias)
+	}
+	// The resolved-test command shown to the user must reference both the config
+	// (-F) and the key (-i) — the "complete command" the user asked to see.
+	if !strings.Contains(rrm.result.Command, "-F ") || !strings.Contains(rrm.result.Command, "-i ") {
+		t.Errorf("resolved test Command must show -F <config> and -i <key>; got %q", rrm.result.Command)
+	}
+
+	// Feeding the PASS result through update opens the write gate (confirmActive)
+	// without having written anything yet.
+	w3, _ := w2.update(rrm)
+	if !w3.confirmActive {
+		t.Error("Phase 2 PASS via temp config must open the write gate (confirmActive)")
+	}
+	if writeSSHCalled {
+		t.Error("write must not fire until Enter on the confirm gate")
+	}
+}
+
+// TestStageTestConfigRealWiring drives the REAL buildIdentityDeps().StageTestConfig
+// closure (not a stub) and proves the throwaway config it writes actually resolves
+// the alias to the alt-SSH endpoint via `ssh -G -F`. Guards the recurring
+// "injected-seam wiring blindspot": TestWizardAliasTestUsesTempConfigNotRealFile
+// stubs the seam, so this is the only coverage of the production temp-config writer
+// in deps.go. No network is used — `ssh -G` is pure config resolution.
+func TestStageTestConfigRealWiring(t *testing.T) {
+	deps := buildIdentityDeps()
+	if deps.StageTestConfig == nil || deps.ResolvedVia == nil {
+		t.Fatal("buildIdentityDeps must wire StageTestConfig and ResolvedVia")
+	}
+
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "key")
+	if err := os.WriteFile(keyPath, []byte("dummy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	in := identity.CreateInput{
+		Name:     "personal",
+		Provider: "github.com",
+		Alias:    "personal.github.com",
+		Hostname: "ssh.github.com",
+		Port:     443,
+	}
+	staged := identity.StagedKey{TempPrivatePath: keyPath}
+
+	configPath, err := deps.StageTestConfig(in, staged)
+	if err != nil {
+		t.Fatalf("StageTestConfig: %v", err)
+	}
+	content, err := os.ReadFile(configPath) //nolint:gosec // test-controlled temp path
+	if err != nil {
+		t.Fatalf("reading staged config: %v", err)
+	}
+	for _, want := range []string{
+		"Host personal.github.com",
+		"Hostname ssh.github.com",
+		"Port 443",
+		"IdentityFile " + keyPath,
+		"IdentitiesOnly yes",
+	} {
+		if !strings.Contains(string(content), want) {
+			t.Errorf("staged config missing %q; got:\n%s", want, content)
+		}
+	}
+
+	// Prove the alias resolves through the staged file to alt-SSH (offline ssh -G).
+	if _, lookErr := exec.LookPath("ssh"); lookErr != nil {
+		t.Skip("ssh not available; skipping resolution check")
+	}
+	out, _ := exec.Command("ssh", "-F", configPath, "-G", "personal.github.com").Output() //nolint:gosec // test-controlled args
+	rc := tester.ParseResolved(string(out))
+	if rc.Hostname != "ssh.github.com" {
+		t.Errorf("ssh -G via staged config resolved Hostname = %q, want ssh.github.com", rc.Hostname)
+	}
+	if rc.Port != "443" {
+		t.Errorf("ssh -G via staged config resolved Port = %q, want 443", rc.Port)
 	}
 }
 
@@ -652,15 +810,16 @@ func TestWizardScreen1ShowsSSHIdentityFields(t *testing.T) {
 	w.inputs[0].SetValue("personal")
 	view := w.view(90)
 
-	// Screen 1 must show all SSH-identity rows.
-	for _, want := range []string{"Identity Name", "Key Algorithm", "Provider", "SSH Alias", "Hostname", "Port", "Folder"} {
+	// Screen 1 must show all SSH-identity rows (Folder moved to Screen 3).
+	for _, want := range []string{"Identity Name", "Key Algorithm", "Provider", "SSH Alias", "Hostname", "Port"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("Screen 1 must show %q; got:\n%s", want, view)
 		}
 	}
 
-	// Screen 1 must NOT render Git Name / Git Email / Match Strategy / Signing.
-	for _, notWant := range []string{"Git Name", "Git Email", "Match Strategy", "Signing"} {
+	// Screen 1 must NOT render Folder / Git Name / Git Email / Match Strategy /
+	// Signing — those belong to Screen 3 (Git config).
+	for _, notWant := range []string{"Folder", "Git Name", "Git Email", "Match Strategy", "Signing"} {
 		if strings.Contains(view, notWant) {
 			t.Errorf("Screen 1 must NOT show %q (belongs to Screen 3); got:\n%s", notWant, view)
 		}
@@ -740,24 +899,24 @@ func TestWizardScreen1PortEditable(t *testing.T) {
 	}
 }
 
-// TestWizardScreen1FolderEditable verifies that the Folder (gitdir) row is
-// a top-level editable field on Screen 1 and Tab cycles to it.
-// Requirement: TUI-04 (folder always visible + editable on Screen 1).
-func TestWizardScreen1FolderEditable(t *testing.T) {
+// TestWizardScreen1FolderNotOnScreen1 verifies the Folder (gitdir) row is NOT
+// rendered on Screen 1 — it belongs to Screen 3 (Git config) because it drives
+// the ~/.gitconfig includeIf match, not the SSH config. The gitdir default must
+// still flow through buildCreateInput so a default-folder identity is well-formed
+// even before Screen 3 collects an override.
+// Requirement: TUI-04 (Screen 1 is SSH-only; Folder lives on Screen 3).
+func TestWizardScreen1FolderNotOnScreen1(t *testing.T) {
 	w := newCreateWizardModel("personal", tuiDeps{})
 	w.inputs[0].SetValue("personal")
 
-	// Type into the folder field at its focus index.
-	folderIdx := folderFocusIdx()
-	w.focusIdx = folderIdx
-
-	for _, r := range "~/work/personal/" {
-		w, _ = w.handleKey(tea.KeyPressMsg{Code: r, Text: string(r)})
+	if strings.Contains(w.view(90), "Folder") {
+		t.Error("Screen 1 must NOT render the Folder row (moved to Screen 3)")
 	}
 
+	// The gitdir default (~/git/<name>/) still propagates to the match list.
 	in := w.buildCreateInput("github.com")
-	if !strings.Contains(in.Matches[0].Value, "~/work/personal/") {
-		t.Errorf("Folder edit must propagate to buildCreateInput matches; got %+v", in.Matches)
+	if len(in.Matches) == 0 || !strings.Contains(in.Matches[0].Value, "~/git/personal/") {
+		t.Errorf("default gitdir match must still flow through buildCreateInput; got %+v", in.Matches)
 	}
 }
 
@@ -768,8 +927,8 @@ func TestWizardScreen1TabCycleAllFields(t *testing.T) {
 	w := newCreateWizardModel("", tuiDeps{})
 	// Tab through all Screen-1 focus positions and collect which indices we visit.
 	visited := map[int]bool{}
-	// Number of Screen-1 fields: name(0), provider(3), alias(5), then hostname, port(4), folder virtual indices.
-	// We check that a full Tab cycle visits >= 6 distinct focus positions.
+	// Screen-1 fields: name, provider, alias, hostname, port (5 Tab stops; Folder
+	// moved to Screen 3). A full Tab cycle must visit all 5 distinct positions.
 	for i := 0; i < 20; i++ {
 		visited[w.focusIdx] = true
 		w, _ = w.handleKey(tea.KeyPressMsg{Code: tea.KeyTab})

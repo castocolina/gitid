@@ -43,6 +43,7 @@ type preWriteResultMsg struct {
 type resolvedResultMsg struct {
 	result   tester.Result
 	resolved tester.ResolvedConfig
+	err      error
 }
 
 // writeResultMsg carries the outcome of an identity write operation.

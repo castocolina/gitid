@@ -131,6 +131,38 @@ func Resolved(alias string) (Result, ResolvedConfig) {
 	return res, ParseResolved(string(gOut))
 }
 
+// ResolvedVia runs the resolved-config phase against an EXPLICIT ssh config file
+// and key, without touching the user's ~/.ssh/config:
+//
+//	ssh -F <configPath> -i <keyPath> -o IdentitiesOnly=yes -o BatchMode=yes \
+//	    -o ConnectTimeout=10 -T git@<alias>
+//
+// The staged temp config carries the identity's Host block (alt-SSH hostname/port,
+// IdentityFile = the staged key), so the alias resolves through that block — the
+// same way it will once the managed block is written to the real config, but
+// proven first in isolation. This is how the create wizard tests a typed alias
+// BEFORE the block ever lands in the live file (UAT G-5): the alias is not a DNS
+// name, so it can only resolve once a Host stanza exists somewhere ssh reads.
+//
+// Read-only with respect to ~/.ssh/config. The `ssh -G` parse also uses -F so the
+// returned ResolvedConfig reflects the staged block, not the live file.
+func ResolvedVia(configPath, keyPath, alias string) (Result, ResolvedConfig) {
+	args := []string{
+		"-F", configPath,
+		"-i", keyPath,
+		"-o", "IdentitiesOnly=yes",
+		"-o", "BatchMode=yes",
+		"-o", "ConnectTimeout=10",
+		"-T", "git@" + alias,
+	}
+	out, _ := execRunner(args)          // exit code ignored (D-01)
+	cmd := exec.Command("ssh", args...) //nolint:gosec // arg-slice form for cmd.String() display; not executed here
+	res := Result{Command: cmd.String(), Output: out, Outcome: ClassifyPreWrite(out)}
+
+	gOut, _ := exec.Command("ssh", "-F", configPath, "-G", alias).Output() //nolint:gosec // arg-slice form, no shell; paths/alias are validated gitid input (G204)
+	return res, ParseResolved(string(gOut))
+}
+
 // ParseResolved parses `ssh -G` output. Keys are matched on a lowercase
 // `<key> ` prefix, case-sensitive (Pitfall 3): camelCase lines never match.
 // identityfile may appear multiple times and all occurrences are collected (D-03).
