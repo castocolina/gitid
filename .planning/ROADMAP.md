@@ -93,8 +93,34 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. `agent-ui-ux-designer` critiques the HTML ↔ TUI-dummy visual diff, and its findings are resolved before approval. (DLV-02)
   4. **★ The user approves the complete design** (HTML + TUI-dummy screenshots); the approved images become the reference set for every later UI wave, and **no backend logic is written for any surface before this approval**. (DLV-08, DLV-05)
 
-**Plans**: TBD
+**Plans**: 12 plans in 6 waves
 **UI hint**: yes
+
+Plans:
+
+**Wave 1** — foundation (parallel)
+- [ ] 02-01-PLAN.md — MUI v7 terminal-skin mockup workspace + shared app shell + recipe fixtures (DLV-01/02)
+- [ ] 02-02-PLAN.md — Go TUI dummy skeleton + surface registry + no-backend import-graph gate (DLV-05/02)
+
+**Wave 2** — tooling (blocked on Wave 1)
+- [ ] 02-03-PLAN.md — Manifest-driven dual capture driver + dummy-nav PTY e2e + Makefile targets (DLV-01/05/02)
+
+**Wave 3** — pilot (blocked on Wave 2)
+- [ ] 02-04-PLAN.md — PILOT: create-flow (12 states) mockup+dummy+capture+parity, de-risks the pattern (DLV-01/02/05)
+
+**Wave 4** — fan-out, 6 surfaces (parallel, blocked on the pilot)
+- [ ] 02-05-PLAN.md — git-screen (7 states) (DLV-01/02/05)
+- [ ] 02-06-PLAN.md — identity-manager (8 states, modals) (DLV-01/02/05)
+- [ ] 02-07-PLAN.md — global-ssh (6 states) (DLV-01/02/05)
+- [ ] 02-08-PLAN.md — global-git (6 states) (DLV-01/02/05)
+- [ ] 02-09-PLAN.md — health (5 states, read-only) (DLV-01/02/05)
+- [ ] 02-10-PLAN.md — fixer (6 states) (DLV-01/02/05)
+
+**Wave 5** — assembly (blocked on fan-out)
+- [ ] 02-11-PLAN.md — Comprehensive nav-proof e2e + full 50+50 capture + reference-set assembly (DLV-01/05/02)
+
+**Wave 6** — ★ checkpoint (blocked on Wave 5)
+- [ ] 02-12-PLAN.md — ★ DLV-08 single human approval; record **APPROVED:** in APPROVAL.md (DLV-08/02)
 
 ### Phase 3: Create Flow Backend
 
@@ -224,7 +250,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations, Spikes & CI | 0/7 | Not started | - |
-| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 0/TBD | Not started | - |
+| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 0/12 | Not started | - |
 | 3. Create Flow Backend | 0/TBD | Not started | - |
 | 4. Git Configuration Screen | 0/TBD | Not started | - |
 | 5. Identity Manager | 0/TBD | Not started | - |
