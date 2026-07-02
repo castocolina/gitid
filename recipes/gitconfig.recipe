@@ -1,0 +1,226 @@
+Git SSH artificial host to apply different rules
+
+# ============================================
+# Main Git Configuration File (~/.gitconfig)
+# ============================================
+# This file demonstrates how to use conditional includes to automatically
+# apply different Git configurations based on repository context.
+# Perfect for managing multiple identities (work/personal) across different
+# organizations and platforms.
+
+# --------------------------------------------
+# Core Git Behavior
+# --------------------------------------------
+[core]
+    # Global gitignore file - excludes files across all repositories
+    # Useful for OS-specific files (.DS_Store, Thumbs.db), editor configs, etc.
+    excludesfile = ~/.gitignore_global
+    
+    # Case sensitivity for file names (important for cross-platform work)
+    # false = Git treats "File.txt" and "file.txt" as different files
+    # true = Git treats them as the same file (Windows/macOS default behavior)
+    # Set to false for consistency across Linux/macOS/Windows
+    ignorecase = false
+
+# --------------------------------------------
+# Push Behavior
+# --------------------------------------------
+[push]
+    # Automatically set up remote tracking when pushing a new branch
+    # Without this: git push --set-upstream origin feature-branch
+    # With this: git push (automatically sets upstream)
+    autoSetupRemote = true
+
+# --------------------------------------------
+# URL Rewriting - Force SSH over HTTPS
+# --------------------------------------------
+# Automatically convert HTTPS URLs to SSH when cloning/fetching
+# Why? SSH is more secure and doesn't require entering credentials
+# 
+# When you run: git clone https://github.com/user/repo.git
+# Git actually uses: git clone git@github.com:user/repo.git
+[url "git@github.com:"]
+    insteadOf = https://github.com/
+
+# Same for GitHub Enterprise
+[url "git@github.companyname.com:"]
+    insteadOf = https://github.companyname.com/
+
+# Same for GitLab
+[url "git@gitlab.com:"]
+    insteadOf = https://gitlab.com/
+
+[url "git@gitlab.companyname.com:"]
+    insteadOf = https://gitlab.companyname.com/
+
+# Same for Bitbucket
+[url "git@bitbucket.org:"]
+    insteadOf = https://bitbucket.org/
+
+# --------------------------------------------
+# Default/Shared Configuration
+# --------------------------------------------
+# Always include default configuration that applies to all repositories
+# This file should contain common settings like aliases, core preferences,
+# color schemes, and general tools configuration
+[include]
+    path = ~/.gitconfig_default
+
+# --------------------------------------------
+# Company Repositories (SSH Protocol)
+# --------------------------------------------
+# Automatically load company-specific config when working with repos
+# accessed via SSH from your company's GitHub Enterprise instance
+# 
+# Wildcards explanation:
+#   * = matches any single path segment (org name, username, etc.)
+#   ** = matches multiple path segments (nested projects/repos)
+# 
+# Example matches:
+#   - git@github.companyname.com:engineering/backend-api
+#   - git@github.companyname.com:data-team/ml/models
+#   - git@github.companyname.com:yourteam/project/subproject/repo
+[includeIf "hasconfig:remote.*.url:git@github.companyname.com:*/**"]
+    # This file contains: work email, company GPG key, company SSH identity
+    path = ~/.gitconfig_companyname
+
+# --------------------------------------------
+# Company Repositories (HTTPS Protocol)
+# --------------------------------------------
+# Same as above but for repositories cloned via HTTPS
+# Note: With URL rewriting above, this will rarely trigger
+# but it's here for completeness
+[includeIf "hasconfig:remote.*.url:https://github.companyname.com/*/**"]
+    path = ~/.gitconfig_companyname
+
+# --------------------------------------------
+# Personal GitHub Repositories (SSH)
+# --------------------------------------------
+# Load personal configuration when working with your personal projects
+# Uses the custom SSH alias defined in ~/.ssh/config
+# This separates your personal identity from work
+#
+# Example matches:
+#   - git@personal.github.com:yourusername/my-project
+#   - git@personal.github.com:yourusername/side-projects/app
+[includeIf "hasconfig:remote.*.url:git@personal.github.com:*/**"]
+    # This file contains: personal email, personal GPG key, personal SSH identity
+    path = ~/.gitconfig_personal
+
+# --------------------------------------------
+# Personal GitHub Repositories (HTTPS)
+# --------------------------------------------
+# For personal repos cloned via HTTPS (before URL rewriting)
+[includeIf "hasconfig:remote.*.url:https://github.com/yourusername/*/**"]
+    path = ~/.gitconfig_personal
+
+# --------------------------------------------
+# Alternative Company GitLab Instance
+# --------------------------------------------
+# If your company uses GitLab instead of or in addition to GitHub
+[includeIf "hasconfig:remote.*.url:git@gitlab.companyname.com:*/**"]
+    path = ~/.gitconfig_gitlab_work
+
+[includeIf "hasconfig:remote.*.url:https://gitlab.companyname.com/*/**"]
+    path = ~/.gitconfig_gitlab_work
+
+# --------------------------------------------
+# Directory-based Configuration (Alternative)
+# --------------------------------------------
+# Alternative approach: apply config based on repository location
+# Useful when all work repos are in ~/work/ and personal in ~/personal/
+[includeIf "gitdir:~/work/"]
+    path = ~/.gitconfig_work
+
+[includeIf "gitdir:~/personal/"]
+    path = ~/.gitconfig_personal_alt
+
+
+# ============================================
+# Example: ~/.gitconfig_companyname
+# ============================================
+# This file is loaded for all company repositories
+
+# [user]
+#     # Your company email - used for commit author/committer
+#     name = John Doe
+#     email = john.doe@companyname.com
+#     
+#     # GPG key for signing commits (company key)
+#     signingkey = 1234ABCD5678WORK
+#
+# [commit]
+#     # Always sign commits with GPG (company policy)
+#     gpgsign = true
+#     
+#     # Use company commit message template
+#     template = ~/.gitmessage_work
+#
+# [core]
+#     # Use company-specific SSH key for this identity
+#     # This connects to your ~/.ssh/config Host configuration
+#     sshCommand = ssh -i ~/.ssh/id_rsa_company -F /dev/null
+
+
+# ============================================
+# Example: ~/.gitconfig_personal
+# ============================================
+# This file is loaded for all personal repositories
+
+# [user]
+#     # Your personal email - used for commit author/committer
+#     name = John Doe
+#     email = john@personal.com
+#     
+#     # GPG key for signing commits (personal key)
+#     signingkey = 5678EFGH9012PERSONAL
+#
+# [commit]
+#     # Sign personal commits
+#     gpgsign = true
+#     
+#     # Use personal commit message template
+#     template = ~/.gitmessage_personal
+#
+# [core]
+#     # Use personal SSH key for this identity
+#     sshCommand = ssh -i ~/.ssh/id_rsa_personal -F /dev/null
+
+
+# ============================================
+# Example: ~/.gitconfig_default
+# ============================================
+# This file contains shared configuration for ALL repositories
+
+# [core]
+#     editor = vim
+#     autocrlf = input
+#     pager = less -FRX
+#
+# [color]
+#     ui = auto
+#     branch = auto
+#     diff = auto
+#     status = auto
+#
+# [alias]
+#     st = status
+#     co = checkout
+#     br = branch
+#     ci = commit
+#     df = diff
+#     lg = log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit
+#     unstage = reset HEAD --
+#     last = log -1 HEAD
+#
+# [pull]
+#     rebase = true
+#
+# [fetch]
+#     prune = true
+#
+# [diff]
+#     colorMoved = zebra
+#
+# [merge]
+#     conflictstyle = diff3

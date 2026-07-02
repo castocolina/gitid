@@ -1,0 +1,94 @@
+.ssh/config
+
+# ============================================
+# Corresponding SSH Configuration (~/.ssh/config)
+# ============================================
+# This SSH config is to use different SSH keys for different contexts
+
+# # Ignore UseKeychain on systems that don't support it (Linux)
+# IgnoreUnknown UseKeychain
+# 
+# # Global configuration - store passphrases in macOS Keychain
+# Host *
+#     UseKeychain yes
+#     AddKeysToAgent yes
+# 
+# # Standard GitHub - use port 443 to bypass firewalls
+# Host github.com
+#     Hostname ssh.github.com
+#     Port 443
+#     User git
+# 
+# # Company GitHub with custom alias and specific SSH key
+# Host github.companyname.com
+#     Hostname ssh.github.companyname.com
+#     Port 443
+#     User git
+#     IdentityFile ~/.ssh/id_rsa_company
+#     IdentitiesOnly yes
+# 
+# # Personal GitHub with custom alias and specific SSH key
+# # This allows you to use: git@personal.github.com instead of git@github.com
+# Host personal.github.com
+#     Hostname ssh.github.com
+#     Port 443
+#     User git
+#     IdentityFile ~/.ssh/id_rsa_personal
+#     IdentitiesOnly yes
+# 
+# # Company GitLab with specific SSH key
+# Host gitlab.companyname.com
+#     Hostname altssh.gitlab.companyname.com
+#     Port 443
+#     User git
+#     IdentityFile ~/.ssh/id_rsa_company
+#     IdentitiesOnly yes
+# 
+# # Bitbucket using alternative port
+# Host bitbucket.org
+#     Hostname altssh.bitbucket.org
+#     Port 443
+#     User git
+#     IdentityFile ~/.ssh/id_rsa_personal
+#     IdentitiesOnly yes
+
+
+# ============================================
+# How This All Works Together:
+# ============================================
+# 
+# 1. URL REWRITING:
+#    When you clone: git clone https://github.com/user/repo.git
+#    Git rewrites to:  git clone git@github.com:user/repo.git
+#    This forces SSH usage for better security
+#
+# 2. SSH KEY SELECTION:
+#    SSH config matches the host (github.com, personal.github.com, etc.)
+#    and automatically uses the correct SSH key (work or personal)
+#
+# 3. GIT CONFIG LOADING:
+#    Git checks the repository's remote URL
+#    Loads the appropriate .gitconfig_* file
+#    Uses the correct email, GPG key, and commit settings
+#
+# 4. WORKFLOW EXAMPLE - Cloning a work repo:
+#    $ git clone git@github.companyname.com:team/project.git
+#    → SSH uses ~/.ssh/id_rsa_company (from SSH config)
+#    → Git loads ~/.gitconfig_companyname (from includeIf)
+#    → Commits use work@company.com email
+#    → Commits signed with company GPG key
+#
+# 5. WORKFLOW EXAMPLE - Cloning a personal repo:
+#    $ git clone git@personal.github.com:you/side-project.git
+#    → SSH uses ~/.ssh/id_rsa_personal (from SSH config)
+#    → Git loads ~/.gitconfig_personal (from includeIf)
+#    → Commits use personal@email.com
+#    → Commits signed with personal GPG key
+#
+# 6. BENEFITS:
+#    ✓ No manual config switching between work/personal
+#    ✓ Correct identity automatically applied per repository
+#    ✓ Works with port 443 to bypass restrictive firewalls
+#    ✓ Separate SSH keys for better security
+#    ✓ Different GPG signing keys per context
+#    ✓ Can't accidentally commit with wrong email

@@ -1,0 +1,114 @@
+package identity
+
+import (
+	"fmt"
+
+	"github.com/castocolina/gitid/internal/filewriter"
+)
+
+// DeleteDeps holds every external effect Delete performs, injected as function
+// fields so Delete is testable with fakes and reusable by the TUI. It mirrors
+// the Deps convention from identity.go.
+type DeleteDeps struct {
+	// ReadSSH reads the raw bytes of ~/.ssh/config.
+	ReadSSH func() ([]byte, error)
+	// ReadGitconfig reads the raw bytes of ~/.gitconfig.
+	ReadGitconfig func() ([]byte, error)
+	// WriteSSH writes the updated ~/.ssh/config bytes and returns a backup path.
+	WriteSSH func(content []byte) (backupPath string, err error)
+	// WriteGitconfig writes the updated ~/.gitconfig bytes and returns a backup path.
+	WriteGitconfig func(content []byte) (backupPath string, err error)
+	// RemoveFragment removes the whole per-identity fragment file with backup.
+	RemoveFragment func(fragPath string) (backupPath string, err error)
+	// RemoveAllowedSigners removes the identity's managed block from the
+	// allowed_signers file, keyed by identity NAME (symmetric with the
+	// block-keyed writer keygen.WriteAllowedSigners). Keying by name — not email
+	// — ensures an Incomplete identity with a missing fragment (GitEmail == "")
+	// still has its signing block removed (findings #2/#3). Returns backup path.
+	RemoveAllowedSigners func(path, name string) (backupPath string, err error)
+	// RemoveKeyFiles removes the private and public key files via a recoverable
+	// backup-then-remove (the real wiring routes through filewriter.BackupAndRemove),
+	// returning the private and public key backup paths. Called only when keepKey
+	// is false (irreversible block/file removals above are backed up; the key path
+	// is backed up too — CR-02 — so it is recoverable). A missing key file is a
+	// no-op (empty backup path, no error).
+	RemoveKeyFiles func(keyPath, pubPath string) (keyBackup, pubBackup string, err error)
+}
+
+// DeleteResult holds the backup paths produced by Delete.
+type DeleteResult struct {
+	SSHBackup            string
+	GitconfigBackup      string
+	FragmentBackup       string
+	AllowedSignersBackup string
+	KeyBackup            string
+	PubBackup            string
+}
+
+// Delete removes the four per-identity artifacts (SSH Host block, includeIf
+// block, fragment file, allowed_signers block) with backup via the injected
+// DeleteDeps. When keepKey is false, a separate deps.RemoveKeyFiles call
+// removes the private and public key files (irreversible — D-07). Shared /
+// global blocks (e.g. the macOS "_global" SSH block and the global signing
+// wiring) are NEVER touched — only acct.Name is passed to RemoveBlock (D-08).
+// RemoveBlock is idempotent: if the block is already absent the file is
+// returned unchanged (no error).
+func Delete(acct Account, keepKey bool, deps DeleteDeps) (DeleteResult, error) {
+	var res DeleteResult
+
+	// Read the SSH config, remove ONLY the per-identity block, write it back.
+	sshBytes, err := deps.ReadSSH()
+	if err != nil {
+		return res, fmt.Errorf("identity: reading ssh config: %w", err)
+	}
+	updatedSSH := filewriter.RemoveBlock(sshBytes, acct.Name)
+	sshBak, err := deps.WriteSSH(updatedSSH)
+	if err != nil {
+		return res, fmt.Errorf("identity: removing ssh block: %w", err)
+	}
+	res.SSHBackup = sshBak
+
+	// Read the gitconfig, remove ONLY the per-identity includeIf block, write it back.
+	gcBytes, err := deps.ReadGitconfig()
+	if err != nil {
+		return res, fmt.Errorf("identity: reading gitconfig: %w", err)
+	}
+	updatedGC := filewriter.RemoveBlock(gcBytes, acct.Name)
+	gcBak, err := deps.WriteGitconfig(updatedGC)
+	if err != nil {
+		return res, fmt.Errorf("identity: removing gitconfig block: %w", err)
+	}
+	res.GitconfigBackup = gcBak
+
+	// Remove the whole fragment file (whole-file backup+remove).
+	fragBak, err := deps.RemoveFragment(acct.FragmentPath)
+	if err != nil {
+		return res, fmt.Errorf("identity: removing fragment file: %w", err)
+	}
+	res.FragmentBackup = fragBak
+
+	// Remove the allowed_signers managed block keyed by identity NAME (findings
+	// #2/#3): the writer stores the signing line inside a per-identity block, so
+	// removal is block-keyed and symmetric. Using acct.Name (always known) rather
+	// than acct.GitEmail (empty for an Incomplete identity) ensures the block is
+	// actually removed even when the fragment is missing.
+	signBak, err := deps.RemoveAllowedSigners(acct.AllowedSignersPath, acct.Name)
+	if err != nil {
+		return res, fmt.Errorf("identity: removing allowed_signers block: %w", err)
+	}
+	res.AllowedSignersBackup = signBak
+
+	// Key deletion is gated behind keepKey=false (D-07). The key files are routed
+	// through a backup-then-remove (CR-02), so the backup paths are surfaced in
+	// the result the same way every other artifact's backup is.
+	if !keepKey {
+		keyBak, pubBak, kerr := deps.RemoveKeyFiles(acct.KeyPath, acct.PubPath)
+		res.KeyBackup = keyBak
+		res.PubBackup = pubBak
+		if kerr != nil {
+			return res, fmt.Errorf("identity: removing key files: %w", kerr)
+		}
+	}
+
+	return res, nil
+}

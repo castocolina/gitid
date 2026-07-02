@@ -1,0 +1,24 @@
+gitid  [1 Identities]  2 Health  3 Global Options
+Identities              │
+› personal  github  (1)✗│  personal
+                        │
+                        │  Name:            personal
+                        │  Git Name:
+                        │  Git Email:
+    ╭──────────────────────────────────────────────────────────────────────╮
+    │                                                                      │
+    │  Add Repo                                                            │
+    │                                                                      │
+    │  Clone URL:        > h                                               │
+    │                                                                      │
+    │  tab next  esc cancel                                                │
+    │                                                                      │
+    ╰──────────────────────────────────────────────────────────────────────╯
+                        │
+                        │
+                        │
+                        │
+                        │
+                        │
+                        │
+esc close  ? help
