@@ -61,7 +61,14 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. gitid can write SSH config as in-file managed blocks **or** a gitid-owned Include'd file, adopt an existing external Include'd file, and migrate reversibly between the two — each with timestamped backup, proven by round-trip tests and real `ssh -G` resolution. (STORE-01, STORE-02, STORE-03, STORE-04)
   4. The identity state-taxonomy (complete / incomplete / git-only / key-unused / key-used-ssh-only / key-used-both / key-missing / fragment-missing) is computed by the UI-free, TDD core from parsed managed blocks (no sidecar DB). (MGR-02, DLV-07)
   5. GitHub Actions builds gitid for darwin/amd64, darwin/arm64, and linux/amd64, and runs `make test` (race) + `make lint` (golangci-lint + gosec) + `make test-e2e` **green on both macOS and Linux** runners, reproducible from a fresh clone via `make setup-env`. (BUILD-01, BUILD-02, BUILD-04, TOOL-01, TOOL-02, TOOL-03, TOOL-04)
-**Plans**: TBD
+**Plans**: 7 plans in 3 waves
+- [ ] 01-01-PLAN.md — Local capability probing: ssh -V/-Q parse, libfido2/agent/keychain seam (PLAT-01/02, KEY-03)
+- [ ] 01-02-PLAN.md — Multi-algorithm keygen registry + top-5 catalog (KEY-01/02/04)
+- [ ] 01-03-PLAN.md — Dual SSH-config storage: Include'd file, adopt, reversible migrate + reserved-block guard (STORE-01..04, TOOL-04)
+- [ ] 01-04-PLAN.md — Identity 8-state taxonomy core, table-driven (MGR-02, DLV-07)
+- [ ] 01-05-PLAN.md — Screenshot tooling: freeze TUI capture + go-rod HTML capture make targets (TOOL-05, DLV-03, TOOL-02)
+- [ ] 01-06-PLAN.md — Debug/list command surfacing catalog + probe + state; real-wiring e2e (KEY-01, PLAT-01, MGR-02, DLV-07)
+- [ ] 01-07-PLAN.md — Cross-OS GitHub Actions CI (3-runner) + build matrix (BUILD-01/02/04, TOOL-01..04)
 
 ### Phase 2: DESIGN — All Mockups (★ CHECKPOINT #1)
 **Goal**: Every product surface is designed as an HTML/`mui` mockup and a navigable Go TUI dummy, screenshot-captured, and **approved by the user** — establishing the reference design the whole build is verified against.
@@ -178,7 +185,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundations, Spikes & CI | 0/TBD | Not started | - |
+| 1. Foundations, Spikes & CI | 0/7 | Not started | - |
 | 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 0/TBD | Not started | - |
 | 3. Create Flow Backend | 0/TBD | Not started | - |
 | 4. Git Configuration Screen | 0/TBD | Not started | - |
