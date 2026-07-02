@@ -104,9 +104,11 @@ final **ordering/copy** is deferred to the design phase (Phase 2) per REQUIREMEN
   No UI. Proven by table-driven tests over fixture configs.
 
 ### 5. CI matrix + gate depth (BUILD-01/02/04)
-- **D-12 — Runners = 3 native:** `ubuntu-latest` (linux/amd64), `macos-13` (Intel,
-  darwin/amd64), `macos-14` (Apple Silicon, darwin/arm64). ◆ Claude's discretion
-  (recommended).
+- **D-12 — Runners = 3 native:** `ubuntu-latest` (linux/amd64), **`macos-15-intel`**
+  (Intel, darwin/amd64), **`macos-15`/`macos-latest`** (Apple Silicon, darwin/arm64).
+  ◆ Claude's discretion (recommended). **⚠ CORRECTED per 01-RESEARCH.md:** the earlier
+  `macos-13`/`macos-14` pins are stale — `macos-13` is unsupported since Dec 2025 and
+  `macos-14` begins deprecating 2026-07-06. Planner MUST use the macos-15 labels.
 - **D-13 — Gate depth = FULL native gates on all three runners:** `make test` (`-race`)
   + `make lint` (golangci-lint + gosec) + `make test-e2e`. ◆ Claude's discretion
   (recommended). **Rationale:** BUILD-02 exists specifically to catch PLAT-02/03
