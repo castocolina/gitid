@@ -162,3 +162,33 @@ None — single reviewer.
 
 ### Suggested new gate (Codex)
 Add a **"no backend files changed"** assertion before approval: Phase 2 may only touch `.planning/design`, `internal/dummytui`, `cmd/gitid-dummy`, `internal/screenshot` tooling, `e2e`, and the Makefile — a positive-space complement to the import-graph gate.
+
+---
+
+## review-spec (reviewing-specs — clean-context, live-source) — 2026-07-02T22:18:30Z
+
+Independent second-layer review grounded against the LIVE Go/bash source (not just plan structure). All 12 prior Codex findings verified folded in and not re-raised. NEW findings:
+
+### CRITICAL
+- **C1 — 02-01 Task 1 verify cannot pass:** `index.html` module script targets `/src/main.tsx`, a Task-2 file, but Task 1's `<verify>` runs `vite build && test -f dist/index.html`. → defer the `vite build` verify to Task 2, OR declare Tasks 1–2 as one buildable commit.
+- **C2 — 02-02 Task 1 verify cannot pass:** `RenderScreen` delegates to `shell.go` (Task-2 file) yet Task 1's `<verify>` runs `TestRenderScreen`; `internal/dummytui` won't compile after Task 1 alone. → declare Tasks 1–2 one buildable commit, OR Task 1 ships a minimal inline RenderScreen body and Task 2 owns the full-shell composition + its test.
+
+### HIGH
+- **H1 — no-op enforcement bash check:** `CMD && false || true` (02-05/02-06 shared-file gates) always evaluates true by precedence → the fan-out-isolation gate added for Codex MEDIUM-10 can never catch a violation. → use `[ -z "$(git diff --name-only <path>)" ]` (the idiom already correct in 02-11); audit 02-07…02-10 for the same pattern.
+- **H2 — Register empty-ActivationKey undefined:** 02-04 & 02-05 register modal surfaces via plain `Register` (empty ActivationKey) but the dup-key rule has no empty-key exemption → second keyless registration could fail. → 02-02 must exempt empty ActivationKey from uniqueness + add a two-keyless-surfaces registry test.
+
+### MEDIUM
+- **M1 — 02-01 Task 2 edits `package.json` but it's not in `<files>`.** → add `.planning/design/mockup-src/package.json` to Task 2 `<files>`.
+- **M2 — whole-module `make lint` race in wave-4 fan-out** only partially mitigated (pnpm build serialized, lint not). → isolated worktrees, or extend serialize guidance to `make lint`.
+
+---
+
+## review-spec iteration 2 — 2026-07-02T22:41:44Z
+
+Fresh clean-context re-review after the first review-spec fix pass. All 6 prior review-spec findings (C1/C2/H1/H2/M1/M2) verified resolved. TWO new findings:
+
+### CRITICAL
+- **C3 — modal-launch keybinding referenced but never defined.** 02-02's registry supports only number-key (1–5) switching + intra-surface `ScreenDef.Keys`; nothing defines how a keypress launches a KEYLESS modal surface (create-flow/git-screen) from Identities. Result: ~19/50 screens (incl. the pilot) unreachable by `make dummy-nav-e2e`. → define the modal-launch mechanism in 02-02 (key→target-keyless-SurfaceID launch map; route() pushes modal over parent, Esc pops; RenderScreen composites modal over parent); make 02-04/02-05 `keysFromHome` real absolute keystroke sequences; 02-03/02-11 e2e assert reachability.
+
+### HIGH
+- **H3 — `$BASE` undefined in the no-backend-files gate.** 02-11 uses `git diff --name-only $BASE..HEAD` with `$BASE` never bound → the gate errors. → define `$BASE` (e.g. `git merge-base main HEAD`) in both the action and acceptance check.

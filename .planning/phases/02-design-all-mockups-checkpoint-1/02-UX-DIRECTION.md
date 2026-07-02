@@ -133,6 +133,39 @@ single product. Both the MUI mockup and the TUI dummy must implement this identi
   overlay · `/` filter/search in any list · `Enter` activate/confirm · arrows/`j`/`k`
   move. Do **not** reassign these per surface.
 
+**Key-allocation table (SINGLE SOURCE OF TRUTH — every surface MUST allocate its
+`ActivationKey`, its keyless `LaunchKey`, and its intra-surface `ScreenDef.Keys`
+against THIS table, never independently).** All of `1`–`5`, `n`, `g`, `a`, `c`, `d`
+below are pressed while **identity-manager** is the active surface, so they MUST be
+mutually distinct and distinct from the reserved keys.
+
+| Key | Owner | Kind | Meaning |
+|-----|-------|------|---------|
+| `1` | identity-manager | ActivationKey (number-key view) | Identities / home |
+| `2` | global-ssh | ActivationKey | Global SSH options |
+| `3` | global-git | ActivationKey | Global Git options |
+| `4` | health | ActivationKey | Health |
+| `5` | fixer | ActivationKey | Fixer |
+| `n` | create-flow | LaunchKey (LaunchFrom `identity-manager`) | launch the new-identity modal from Identities |
+| `g` | git-screen | LaunchKey (LaunchFrom `identity-manager`) | launch the git-config modal from Identities |
+| `a` | identity-manager | intra-surface `ScreenDef.Keys` | → `action-menu` |
+| `c` | identity-manager | intra-surface `ScreenDef.Keys` | → `clone-name-prompt` |
+| `d` | identity-manager | intra-surface `ScreenDef.Keys` | → `delete-choice` |
+| `Enter` | (all) | reserved | activate / open detail / confirm |
+| `Esc` | (all) | reserved | back / cancel / pop modal |
+| `q` `?` `/` `j` `k` arrows | (all) | reserved | quit / help / filter / move |
+
+- **route() precedence (deterministic):** on a given active surface a key resolves in the
+  order **intra-surface `ScreenDef.Keys` → keyless `LaunchKey` (`LaunchFrom` == active
+  view) → number-key `ActivationKey` view-switch** (a launch key fires only if the active
+  screen's `ScreenDef.Keys` does not claim it). This ordering is a determinism backstop
+  only: the 02-02 **registration guard** rejects (a test-detectable error) any
+  registration that would let two of these claim the SAME key on the SAME source surface,
+  so a collision fails at registration — never silently as an 02-11 e2e failure.
+- **Adding a surface/transition:** claim a free key HERE first, then mirror this table in
+  `internal/dummytui/doc.go`. The three fan-out plans (create-flow 02-04, git-screen
+  02-05, identity-manager 02-06) pick keys against THIS table, not against each other.
+
 **Consistency rules every surface must obey (this is the parity contract):**
 - Same four regions, same order, same keybar grammar.
 - **One color semantics table, applied everywhere** (see below).
