@@ -187,8 +187,14 @@ uninstall:
 ## test-e2e: run end-to-end agent-driven tests (builds binary first).
 ## E2E tests use a hermetic sandbox HOME and a fake ssh script injected on PATH.
 ## Tests are tagged //go:build e2e and are excluded from the normal make test target.
+## Timeout raised 60s -> 180s (02-11): the whole ./e2e/... package now includes the
+## comprehensive dummy-nav-e2e walk (all 50 screens across all 7 Phase-2 surfaces,
+## finalized this plan) alongside the pre-existing real-TUI PTY suite -- observed
+## ~80s under -race locally; 180s gives CI-variance headroom without masking a
+## genuine hang (dummy-nav-e2e/TestUIPTY_* each carry their own inner waitFor
+## timeouts, so a real hang still fails fast well under 180s).
 test-e2e: build
-	go test -tags e2e -race -timeout 60s ./e2e/...
+	go test -tags e2e -race -timeout 180s ./e2e/...
 
 ## screenshot-tui: render the Bubble Tea View()-dump golden to a deterministic PNG
 ## via freeze (TOOL-05, DLV-03). Invokes TestCaptureTUI — the concrete runnable
