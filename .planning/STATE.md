@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-10-PLAN.md (fixer, final fan-out surface)
-last_updated: "2026-07-03T12:09:40.212Z"
+stopped_at: Completed 02-11-PLAN.md
+last_updated: "2026-07-03T12:38:49.196Z"
 last_activity: 2026-07-03 -- Phase 02 execution in progress (02-10 complete)
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 19
-  completed_plans: 17
+  completed_plans: 18
   percent: 10
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 ## Current Position
 
 Phase: 02 (design-all-mockups-checkpoint-1) — EXECUTING
-Plan: 10 of 12
+Plan: 11 of 12
 Status: Executing — 02-10 complete (fixer, the 7th and FINAL fan-out surface: MUI mockup + TUI dummy + capture + 0-unresolved parity, both media, 6 states); all 7 fan-out surfaces (create-flow, git-screen, identity-manager, global-ssh, global-git, health, fixer) now built, DLV-01/DLV-02/DLV-05 marked complete; next is 02-11/02-12
 Last activity: 2026-07-03 -- Phase 02 execution in progress (02-10 complete)
 
@@ -72,6 +72,7 @@ Progress: [█████████░] 89%
 | Phase 02 P08 | ~70min | 3 tasks | 22 files |
 | Phase 02 P09 | 45min | 3 tasks | 22 files |
 | Phase 02 P10 | 70min | 3 tasks | 25 files |
+| Phase 02 P11 | 30min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -126,6 +127,8 @@ Recent decisions affecting current work:
 - [Phase 02, plan 10]: fixer's fixerFindings is a filtered view over health's healthFindings (the ones carrying a suggestedFix), not an independent list -- the fixer only acts on what Health diagnosed (traceable, not re-derived).
 - [Phase 02, plan 10]: fix-preview renders a TRUE before/after -/+ rewrite diff (not additions-only) because §4.7's highest-risk affordance is rewriting an EXISTING directive's value; confirm-destructive escalates to identity-manager's strongest-confirm pattern (default-focused No) for the same reason.
 - [Phase 02, plan 10]: DLV-01/DLV-02/DLV-05 marked complete in REQUIREMENTS.md -- the 7th and final fan-out surface (fixer) completes Phase 2's design-first process across all seven UI surfaces. FIX-01/FIX-02/HLTH-* remain Pending (home: Phase 8, backend wiring).
+- [Phase 02]: 02-11: scoped the manifest-computed PNG-count check to the 7 Phase-2 surfaces (excludes the unrelated Phase-1 _spike dir) and widened the no-backend-files gate allowlist to all of .planning/ (GSD workflow bookkeeping is not backend logic)
+- [Phase 02]: 02-11: raised make test-e2e timeout 60s -> 180s once the full 50-screen dummy-nav walk runs alongside the real-TUI PTY suite in one package
 
 ### Roadmap Evolution
 
@@ -149,6 +152,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-03T12:09:40.202Z
-Stopped at: Completed 02-10-PLAN.md (fixer, final fan-out surface)
+Last session: 2026-07-03T12:38:49.183Z
+Stopped at: Completed 02-11-PLAN.md
 Resume file: None

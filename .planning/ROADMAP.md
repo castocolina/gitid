@@ -122,7 +122,7 @@ Plans:
 
 **Wave 5** — assembly (blocked on fan-out)
 
-- [ ] 02-11-PLAN.md — Comprehensive nav-proof e2e + full 50+50 capture + reference-set assembly (DLV-01/05/02)
+- [x] 02-11-PLAN.md — Comprehensive nav-proof e2e + full 50+50 capture + reference-set assembly (DLV-01/05/02)
 
 **Wave 6** — ★ checkpoint (blocked on Wave 5)
 
@@ -256,7 +256,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations, Spikes & CI | 7/7 | Complete | 2026-07-03 |
-| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 10/12 | In Progress|  |
+| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 11/12 | In Progress|  |
 | 3. Create Flow Backend | 0/TBD | Not started | - |
 | 4. Git Configuration Screen | 0/TBD | Not started | - |
 | 5. Identity Manager | 0/TBD | Not started | - |
