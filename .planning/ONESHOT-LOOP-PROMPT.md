@@ -35,6 +35,21 @@ You are executing the **gitid v1.0 TUI-First Redesign** autonomously as a loop.
   HTML+mockup screenshots). Store screenshots under `.planning/design/<surface>/`.
 - Never write backend logic for a surface before its dummy mockup is approved.
 
+**Reviews (every phase, before advancing — cross-vendor, NOT internal-only):**
+- **Per-plan:** each plan requires a fresh-context `superpowers:requesting-code-review` on its
+  changes, verifying against its `must_haves` + `<acceptance_criteria>`; resolve CRITICAL/HIGH
+  before the plan is done.
+- **Per-phase internal:** `/gsd-code-review` clean, `/gsd-secure-phase` mitigations confirmed;
+  for UI surfaces, `agent-ui-ux-designer` parity + visual-regression review.
+- **Per-phase EXTERNAL (cross-vendor, independent of Claude's model family — this catches the
+  blind spots an internal Claude reviewer shares):** run an independent reviewer on the phase's
+  executed-code diff. Same pattern as `/gsd-review --codex` for plans, repointed at the code:
+  `git diff $(git merge-base main HEAD)..HEAD -- ':!.planning' > /tmp/phase-code.diff`, then pipe
+  the plans' acceptance criteria + that diff to `codex exec --skip-git-repo-check -` (OpenAI — a
+  different vendor than the orchestrator). Fix every CRITICAL/HIGH, re-run the gates, re-run until
+  clean. Fallback `opencode run`; if no external reviewer is available, STOP and ask the user —
+  never silently skip the external layer or substitute another internal Claude agent for it.
+
 **The ONE human checkpoint:**
 1. End of Phase 1: user approves the complete design (all HTML mockups + TUI dummy
    mockup screenshots). Do NOT proceed to any backend before approval. STOP and ask;

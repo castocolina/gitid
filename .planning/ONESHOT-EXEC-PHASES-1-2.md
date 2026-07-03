@@ -90,6 +90,10 @@ Run and require GREEN, showing the command + real output:
     order/safety affordances); every finding resolved before the surface counts as done.
 
 ### Reviews (required before a phase is DONE — "every plan has its reviews")
+- **Per-plan code review (baked into the plans):** every plan's `<success_criteria>` now
+  requires a fresh-context `superpowers:requesting-code-review` on that plan's changes,
+  verifying the work against its `must_haves` + `<acceptance_criteria>`, with all CRITICAL/HIGH
+  resolved before the plan is done. Honor it as you complete each plan — not just at phase end.
 - **Internal code review:** run `/gsd-code-review` for the phase; fix findings (fixer commits
   to a `gsd-reviewfix/*` branch — fast-forward it in). Re-run until clean.
 - **External code review (cross-vendor — NOT an internal Claude agent).** The internal review
