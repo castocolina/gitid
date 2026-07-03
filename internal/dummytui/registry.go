@@ -3,7 +3,6 @@ package dummytui
 import (
 	"fmt"
 	"sort"
-	"strings"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -301,10 +300,12 @@ func routeTopLevel(st navState, k string) navState {
 // (surfaceID, screenID), including the "<surface>/<screen>" breadcrumb
 // screen-ID. It errors for an unknown surface or screen.
 //
-// This is Task 1's SELF-CONTAINED minimal inline composition (review C2) so
-// internal/dummytui compiles and this function's tests pass standalone.
-// Task 2 rewires this body to delegate to shell.go's full four-region
-// composition instead.
+// Delegates to shell.go's renderShell, which composes the full four-region
+// shell (header/body/status/keybar) — review C2: Task 1 shipped a
+// self-contained minimal inline composition here so the package compiled and
+// this function's tests passed standalone before shell.go existed; Task 2
+// rewired this body to shell.go's full composition, which every capture and
+// live model.go View() call now shares.
 func RenderScreen(surfaceID, screenID string) (string, error) {
 	sd, ok := lookupSurface(surfaceID)
 	if !ok {
@@ -315,11 +316,5 @@ func RenderScreen(surfaceID, screenID string) (string, error) {
 		return "", fmt.Errorf("dummytui: RenderScreen: unknown screen %q on surface %q", screenID, surfaceID)
 	}
 
-	breadcrumb := surfaceID + "/" + screenID
-	header := "gitid  " + breadcrumb
-	body := scr.Render()
-	status := ""
-	keybar := "1 Identities  2 Global SSH  3 Global Git  4 Health  5 Fixer  Esc back  q quit  ? help"
-
-	return strings.Join([]string{header, body, status, keybar}, "\n"), nil
+	return renderShell(sd, scr), nil
 }
