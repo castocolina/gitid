@@ -105,7 +105,7 @@ Plans:
 
 **Wave 2** — tooling (blocked on Wave 1)
 
-- [ ] 02-03-PLAN.md — Manifest-driven dual capture driver + dummy-nav PTY e2e + Makefile targets (DLV-01/05/02)
+- [x] 02-03-PLAN.md — Manifest-driven dual capture driver + dummy-nav PTY e2e + Makefile targets (DLV-01/05/02)
 
 **Wave 3** — pilot (blocked on Wave 2)
 
@@ -256,7 +256,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations, Spikes & CI | 7/7 | Complete | 2026-07-03 |
-| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 2/12 | In Progress|  |
+| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 3/12 | In Progress|  |
 | 3. Create Flow Backend | 0/TBD | Not started | - |
 | 4. Git Configuration Screen | 0/TBD | Not started | - |
 | 5. Identity Manager | 0/TBD | Not started | - |

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 02-02-PLAN.md
-last_updated: "2026-07-03T08:32:42.252Z"
-last_activity: 2026-07-03 -- Phase 02 execution in progress
+status: verifying
+stopped_at: Completed 02-03-PLAN.md
+last_updated: "2026-07-03T09:03:11.371Z"
+last_activity: 2026-07-03 -- Phase 02 execution in progress (02-03 complete)
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 19
-  completed_plans: 9
-  percent: 10
+  completed_plans: 10
+  percent: 53
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** Managing a Git identity produces coordinated, coherent SSH + Git artifacts that are proven to authenticate and resolve correctly (`ssh -G`) before any file is written, and existing hand-written config is never corrupted.
-**Current focus:** Phase 01 — foundations-spikes-ci
+**Current focus:** Phase 02 — design-all-mockups-checkpoint-1
 
 ## Current Position
 
-Phase: 01 (foundations-spikes-ci) — EXECUTING
-Plan: 7 of 7
-Status: Ready to execute
-Last activity: 2026-07-03 -- Phase 01 execution started
+Phase: 02 (design-all-mockups-checkpoint-1) — EXECUTING
+Plan: 3 of 12
+Status: 02-03 complete (manifest-driven capture + dummy-nav e2e infrastructure); next is Wave 3 (02-04)
+Last activity: 2026-07-03 -- Phase 02 execution in progress (02-03 complete)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█████░░░░░] 53%
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01-foundations-spikes-ci P06 | 35min | 2 tasks | 4 files |
 | Phase 02 P01 | 40min | 3 tasks | 20 files |
 | Phase 02 P02 | ~15min | 2 tasks | 10 files |
+| Phase 02 P03 | 75min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -98,6 +99,10 @@ Recent decisions affecting current work:
 - [Phase 02, plan 02]: internal/dummytui's Register/RegisterOrReplace panic (not return an error) on a collision — surfaces call them from init(), so a fail-loudly-at-load contract fits better than threading error returns through every init(); collision tests assert via recover()
 - [Phase 02, plan 02]: cmd/gitid-dummy + internal/dummytui import-graph is proven backend-free via an ALLOWLIST (go list -deps fails on any first-party pkg other than exactly those two), strictly stronger than a denylist — catches new/renamed backend packages by construction
 - [Phase 02, plan 02]: DLV-05/DLV-02 NOT marked complete in REQUIREMENTS.md yet — both are phase-spanning; this plan ships only the dummy skeleton (2/12 plans); deferred to the plan that closes out Phase 2 (same precedent as 02-01/DLV-01)
+- [Phase 02, plan 03]: internal/screenshot/html.go extended (additive, backward-compatible) with URLFragment + RequiredText + the allow-file-access-from-files launcher flag -- CaptureHTML's FixturePath had no room for a HashRouter fragment or a pre-save breadcrumb assertion, and Chromium silently blocks a file://-loaded ES-module SPA's own imports without the flag
+- [Phase 02, plan 03]: internal/dummytui/model.go gained q/ctrl+c quit handling in Update() -- doc.go always documented both as reserved but nothing ever implemented tea.Quit, hanging any PTY-driven test of the dummy
+- [Phase 02, plan 03]: Zero manifest.json files shipped: the MUI mockup (02-01, one route) and the TUI dummy (02-02, five placeholder entry screens) have no overlapping screen IDs yet, so any manifest entry now would fail cross-validation by design; verified positively end-to-end via a temporary uncommitted manifest, then removed before committing
+- [Phase 02, plan 03]: DLV-01/DLV-02/DLV-05 NOT marked complete in REQUIREMENTS.md yet -- this plan ships loader/adapter/driver infrastructure only (3/12 plans), no per-surface screens; deferred to the plan that closes out Phase 2 (same precedent as 02-01/02-02)
 
 ### Roadmap Evolution
 
@@ -121,6 +126,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-03T08:32:42.252Z
-Stopped at: Completed 02-02-PLAN.md
+Last session: 2026-07-03T09:03:01.349Z
+Stopped at: Completed 02-03-PLAN.md
 Resume file: None
