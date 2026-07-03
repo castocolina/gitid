@@ -1,4 +1,4 @@
-gitid  global-ssh/option-detail
+gitid  global-ssh/option-detail  8 identities · ! needs action
 IdentitiesOnly
 current: not set globally (set per-Host by gitid)   risk: High   recommended: ye
 

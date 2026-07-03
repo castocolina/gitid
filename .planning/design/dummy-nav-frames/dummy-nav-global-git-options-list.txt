@@ -1,4 +1,4 @@
-gitid  global-git/options-list
+gitid  global-git/options-list  8 identities · ! needs action
 Global Git options
 Recommended, not required -- you can leave any option unchanged. This is advisor
 ! init.defaultBranch   not set (git's built-in default: master) -> main   [main

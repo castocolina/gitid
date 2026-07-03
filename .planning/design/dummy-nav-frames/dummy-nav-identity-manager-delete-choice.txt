@@ -1,23 +1,23 @@
-gitid  identity-manager/delete-choice
+gitid  identity-manager/delete-choice  8 identities · ! needs action
 Identities
 > ✓ complete  personal — SSH Host block and Git fragment both present.
   ! incomplete  work — SSH Host block present; no Git identity configured for th
   ! git-only  opensource — Git identity relies on the global SSH config; no own
   ! key-unused  archived — Key file exists on disk but no identity references it
   ✓ key-used-ssh-only  staging — Key referenced by a Host block; not wired for G
-  ✓ key-used-both  clientA — Key wired for both SSH auth and Git commit signing.
-  ✗ key-missing  clientB — Host block references a key file that is absent from
-  ✗ fragment-path-missing  legacy — includeIf points at a Git fragment file that
+  ✓ ┌──────────────────────────────────────────────────────────────────────┐ing.
+  ✗ │ Delete personal                                                      │rom
+  ✗ │ > Delete Git identity only ✓ default                                 │that
+    │   Removes the Git includeIf block and fragment; the SSH Host block   │
+    │ and key are kept.                                                    │
+    │                                                                      │
+    │   Delete everything (SSH + Git + key)                                │
+    │   Irreversible — never default-focused. Continuing requires the      │
+    │ strongest confirm (§5).                                              │
+    │                                                                      │
+    │ [SIG-IM-DELETE-CHOICE-SAFE-DEFAULT]                                  │
+    └──────────────────────────────────────────────────────────────────────┘
 
-              ┌─────────────────────────────────────────────────────────────────
-              │ Delete personal
-              │ > Delete Git identity only ✓ default
-              │   Removes the Git includeIf block and fragment; the SSH Host blo
-              │
-              │   Delete everything (SSH + Git + key)
-              │   Irreversible — never default-focused. Continuing requires the
-              │
-              │ [SIG-IM-DELETE-CHOICE-SAFE-DEFAULT]
-              └─────────────────────────────────────────────────────────────────
+
 
 

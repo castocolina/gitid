@@ -1,4 +1,4 @@
-gitid  health/finding-detail
+gitid  health/finding-detail  8 identities · ! needs action
 IdentitiesOnly no contradicts an explicit IdentityFile
 Health only diagnoses -- nothing here writes to your files. Open the Fixer (key
 

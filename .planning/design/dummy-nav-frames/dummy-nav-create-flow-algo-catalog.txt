@@ -1,4 +1,4 @@
-gitid  create-flow/algo-catalog
+gitid  create-flow/algo-catalog  8 identities · ! needs action
 Identities
 > ✓ complete  personal — SSH Host block and Git fragment both present.
   ! 1. Choose a key algorithm
@@ -12,7 +12,7 @@ Identities
 Prev  Strong at 4096 bits; widely compatible, larger keys and slower signing tha
   SS  macOS: Native — always available   Linux: Native — always available
   Keecdsa-p256
-  Gi  Compact NIST P-256 curve; smaller than RSA.
+  Gi  Compact NIST P-256 curve; smaller than RSA, though some users distrust NIS
       macOS: Native — always available   Linux: Native — always available
 [SIGecdsa-sk
       Hardware-backed ECDSA variant of ed25519-sk; physical security-key touch r

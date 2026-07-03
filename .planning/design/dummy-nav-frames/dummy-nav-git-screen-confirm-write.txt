@@ -1,4 +1,4 @@
-gitid  git-screen/confirm-write
+gitid  git-screen/confirm-write  8 identities · ! needs action
 Identities
 > ✓ Confirm write
   ! ! Nothing has changed yet — review below, then confirm.               for th

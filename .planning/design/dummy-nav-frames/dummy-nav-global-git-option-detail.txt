@@ -1,4 +1,4 @@
-gitid  global-git/option-detail
+gitid  global-git/option-detail  8 identities · ! needs action
 init.defaultBranch
 current: not set (git's built-in default: master)   recommended: main   [main vs
 

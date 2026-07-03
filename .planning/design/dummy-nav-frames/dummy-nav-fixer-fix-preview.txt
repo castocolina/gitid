@@ -1,4 +1,4 @@
-gitid  fixer/fix-preview
+gitid  fixer/fix-preview  8 identities · ! needs action
 Preview fix -- IdentitiesOnly no contradicts an explicit IdentityFile
 Every fix is previewed, confirmed, and backed up before anything is written -- n
 

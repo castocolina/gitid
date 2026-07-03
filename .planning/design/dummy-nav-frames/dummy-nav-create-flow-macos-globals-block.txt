@@ -1,4 +1,4 @@
-gitid  create-flow/macos-globals-block
+gitid  create-flow/macos-globals-block  8 identities · ! needs action
 Identities
 > ✓ complete  personal — SSH Host block and Git fragment both present.
   ! incomplete  work — SSH Host block present; no Git identity configured for th

@@ -1,4 +1,4 @@
-gitid  identity-manager/detail-ssh-first
+gitid  identity-manager/detail-ssh-first  8 identities · ! needs action
 Identity detail — work
 1. SSH (shown first)
   Host: work.github.com
@@ -6,7 +6,7 @@ Identity detail — work
   IdentitiesOnly: yes
 
 2. Git
-! No Git identity configured for this alias — SSH-only.
+~ No Git identity configured for this alias — SSH-only.
   gitid never renders fabricated Git attributes here (MGR-03/MGR-07).
 
 Per-identity health (MGR-07): ! incomplete

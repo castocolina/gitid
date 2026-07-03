@@ -1,4 +1,4 @@
-gitid  global-ssh/backup-notice
+gitid  global-ssh/backup-notice  8 identities · ! needs action
 Backup created
 ✓ ~/.ssh/config backup: ~/.ssh/config.backup.2026-07-03T03-59-12Z
 

@@ -1,4 +1,4 @@
-gitid  global-git/result-applied
+gitid  global-git/result-applied  8 identities · ! needs action
 ✓ Options applied
 ✓ 10 of 10 baseline options applied to ~/.gitconfig. Global user.email was left
 Written to the managed block in ~/.gitconfig.

@@ -1,4 +1,4 @@
-gitid  global-git/confirm-write
+gitid  global-git/confirm-write  8 identities · ! needs action
 Confirm write
 ! Nothing has changed yet — review below, then confirm.
 ! user.email is intentionally absent -- gitid never writes a global [user] secti

@@ -1,4 +1,4 @@
-gitid  global-ssh/options-list
+gitid  global-ssh/options-list  8 identities · ! needs action
 Global SSH options
 Recommended, not required -- you can leave any option unchanged. This is advisor
 ! StrictHostKeyChecking   not set (OpenSSH default: ask) -> ask   [Medium]

@@ -1,4 +1,4 @@
-gitid  create-flow/test-stage1-direct
+gitid  create-flow/test-stage1-direct  8 identities · ! needs action
 Identities
 > ✓ complete  personal — SSH Host block and Git fragment both present.
   ! incomplete  work — SSH Host block present; no Git identity configured for th

@@ -1,4 +1,4 @@
-gitid  git-screen/review-readonly
+gitid  git-screen/review-readonly  8 identities · ! needs action
 Identities
 > ✓ complete  personal — SSH Host block and Git fragment both present.
   ! Review (read-only)                                                    for th

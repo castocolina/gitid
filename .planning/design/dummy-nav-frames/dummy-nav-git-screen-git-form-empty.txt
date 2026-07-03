@@ -1,4 +1,4 @@
-gitid  git-screen/git-form-empty
+gitid  git-screen/git-form-empty  8 identities · ! needs action
 Identities
 > ✓ complete  personal — SSH Host block and Git fragment both present.
   ! incomplete  work — SSH Host block present; no Git identity configured for th
@@ -9,7 +9,7 @@ Identities
   ✗ user.name:         (empty)
   ✗ user.email:        (empty — must byte-match allowed_signers later, GITUI-04)
     gpg.format:        ssh (fixed)
-Prevuser.signingkey:   (empty — a PATH to the public key)
+Prevuser.signingkey:   (empty — a PATH to the public key, never the key material
   SScommit.gpgsign:    true (default)
   Ke
   GiLive fragment preview: (fill in the fields to see the resulting fragment)

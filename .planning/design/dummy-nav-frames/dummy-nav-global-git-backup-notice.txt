@@ -1,4 +1,4 @@
-gitid  global-git/backup-notice
+gitid  global-git/backup-notice  8 identities · ! needs action
 Backup created
 ✓ ~/.gitconfig backup: ~/.gitconfig.backup.2026-07-03T03-59-12Z
 
