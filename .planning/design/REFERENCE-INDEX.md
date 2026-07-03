@@ -9,6 +9,30 @@ captured in **both** media (HTML mockup + TUI dummy), frame-for-frame — the li
 **These counts are COMPUTED from the 7 surface manifests, not hard-coded** — see
 "Computed counts" below.
 
+## Interactive demo (checkpoint-feedback addition)
+
+The static reference set above proves every screen's LOOK; the **interactive demo**
+proves the WORKFLOWS. The mockup SPA's index route (`/`) is now a keyboard-driven,
+stateful walkthrough with dummy data — no backend, nothing on disk is touched:
+
+- Serve the build: `cd .planning/design/mockup-src && pnpm install && pnpm build &&
+  python3 -m http.server 8747 --directory dist`, then open `http://localhost:8747/`.
+- Keys mirror the TUI dummy exactly: `1` identities (home) · `2` global-ssh ·
+  `3` global-git · `4` health · `5` fixer · `n` new identity · `g` configure Git ·
+  `?` help · `Ctrl+P` command palette · `Esc` back · `q` quit(→home).
+- Workflows to exercise: create identity end-to-end (SSH form → algorithm → two-stage
+  test with a simulate-failure toggle → Git details → match strategy with live
+  includeIf preview → review → confirm + backup + result); the live list with
+  state/git/findings flags; per-identity detail (SSH-first) with action menu, clone,
+  new key, and delete (scope choice → typed destructive confirm); global-ssh/global-git
+  option review with advisory apply ceremony; health scan → finding detail → fixer
+  hand-off; every fix updates the same state the list and header chip render.
+- The `Ctrl+P` palette also opens each of the 50 static reference screens
+  (`ref: <surface>/<screen>` entries — browser Back returns to the demo).
+- Implementation: `mockup-src/src/demo/` (state store seeded from
+  `recipeFixtures.ts`, shared `MutationCeremony` four-beat write component, one
+  screen component per surface). The 50 static reference routes are untouched.
+
 ## Per-surface index
 
 ### create-flow (12 screens)

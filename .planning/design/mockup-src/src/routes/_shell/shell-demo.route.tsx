@@ -38,7 +38,9 @@ function ShellDemoScreen() {
 }
 
 const route: RouteModule = {
-  path: '/',
+  // `/` now belongs to the interactive demo (src/routes/demo/) — this
+  // internal shell showcase keeps its own explicit path.
+  path: '/_shell/shell-demo',
   element: <ShellDemoScreen />,
   title: '_shell/shell-demo',
 };

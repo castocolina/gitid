@@ -3,6 +3,9 @@ import { Box, Stack, Typography } from '@mui/material';
 export interface KeybarEntry {
   key: string;
   label: string;
+  /** Optional click action (interactive demo) — static mockups omit it and
+   * render exactly as before. */
+  onActivate?: () => void;
 }
 
 export interface KeybarProps {
@@ -44,7 +47,12 @@ export function Keybar({ entries = [] }: KeybarProps) {
     >
       <Stack direction="row" spacing={2} flexWrap="wrap">
         {allEntries.map((entry) => (
-          <Typography key={entry.key} component="span" sx={{ color: 'text.secondary' }}>
+          <Typography
+            key={entry.key}
+            component="span"
+            onClick={entry.onActivate}
+            sx={{ color: 'text.secondary', cursor: entry.onActivate ? 'pointer' : 'default' }}
+          >
             <Box component="span" sx={{ color: 'text.primary', fontWeight: 700 }}>
               {entry.key}
             </Box>{' '}
