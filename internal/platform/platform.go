@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"runtime"
@@ -47,15 +48,19 @@ func SupportsUseKeychain(os string) bool {
 // ProbeKeyTypes runs `ssh -Q key` and returns the supported key-type tokens
 // (e.g. "ssh-ed25519", "ecdsa-sha2-nistp256", "ssh-rsa").
 //
-// The probe is the arg-slice form of exec.Command with no shell and no
+// The probe is the arg-slice form of exec.CommandContext with no shell and no
 // user-controlled arguments, keeping it free of OS-command-injection risk
 // (gosec G204, threat T-02-06). It deliberately uses the `ssh` binary's
 // `-Q key` query, NOT the keygen tool's `-Q key` (which is KRL-query mode and
-// always errors) — see RESEARCH Pitfall 1, threat T-02-07.
+// always errors) — see RESEARCH Pitfall 1, threat T-02-07. The probe runs
+// under a bounded timeout (T-01-03: a hung `ssh` binary must never block
+// gitid).
 func ProbeKeyTypes() ([]string, error) {
-	out, err := exec.Command("ssh", "-Q", "key").Output() // #nosec G204 -- fixed args, no user input
+	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "ssh", "-Q", "key").Output() // #nosec G204 -- fixed args, no user input
 	if err != nil {
-		return nil, fmt.Errorf("probing ssh key types via `ssh -Q key`: %w", err)
+		return nil, fmt.Errorf("platform: probing ssh key types via `ssh -Q key`: %w", err)
 	}
 	return parseKeyTypes(string(out)), nil
 }
@@ -123,6 +128,8 @@ func InstallHint(tool, os string) string {
 		return gitInstallHint(os)
 	case "clipboard":
 		return clipboardInstallHint(os)
+	case "libfido2":
+		return libfido2InstallHint(os)
 	default:
 		// openssh, ssh, ssh-keygen, ssh-add, or unknown tool → OpenSSH guidance.
 		return opensshInstallHint(os)
@@ -136,8 +143,36 @@ func normalizeTool(tool string) string {
 		return "git"
 	case "clipboard", "pbcopy", "xclip", "wl-copy", "xsel":
 		return "clipboard"
+	case "libfido2", "ssh-sk-helper":
+		return "libfido2"
 	default:
 		return "openssh"
+	}
+}
+
+// libfido2InstallHint returns per-OS libfido2/FIDO2 hardware-key install
+// guidance (KEY-03).
+// When os is "darwin", only the Homebrew line is returned.
+// When os is "linux", all three Linux package-manager lines are returned.
+// Unknown OS: all four lines are returned.
+func libfido2InstallHint(os string) string {
+	const projectLink = "See https://developers.yubico.com/libfido2/ for source and platform install instructions."
+	switch os {
+	case "darwin":
+		return "brew install libfido2  (macOS)\n" + projectLink
+	case "linux":
+		return "Install libfido2 with your package manager:\n" +
+			"  apt install libfido2-1 libfido2-dev  (Debian/Ubuntu)\n" +
+			"  dnf install libfido2                 (Fedora)\n" +
+			"  pacman -S libfido2                   (Arch)\n" +
+			projectLink
+	default:
+		return "Install libfido2 with your package manager:\n" +
+			"  brew install libfido2                (macOS)\n" +
+			"  apt install libfido2-1 libfido2-dev  (Debian/Ubuntu)\n" +
+			"  dnf install libfido2                 (Fedora)\n" +
+			"  pacman -S libfido2                   (Arch)\n" +
+			projectLink
 	}
 }
 

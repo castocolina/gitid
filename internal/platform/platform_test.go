@@ -182,3 +182,38 @@ func TestSupportsUseKeychain(t *testing.T) {
 		t.Error("SupportsUseKeychain(linux) = true, want false")
 	}
 }
+
+// TestLibfido2Hint proves the InstallHint family (KEY-03) offers per-OS
+// libfido2/FIDO2 hardware-key troubleshooting guidance, mirroring the
+// existing openssh/git/clipboard hint functions in this file.
+func TestLibfido2Hint(t *testing.T) {
+	darwin := InstallHint("libfido2", "darwin")
+	if !strings.Contains(darwin, "brew") {
+		t.Errorf("InstallHint(libfido2, darwin) = %q, want it to contain %q", darwin, "brew")
+	}
+	if !strings.Contains(darwin, "libfido2") {
+		t.Errorf("InstallHint(libfido2, darwin) = %q, want it to contain %q", darwin, "libfido2")
+	}
+
+	linux := InstallHint("libfido2", "linux")
+	for _, want := range []string{"apt", "dnf", "pacman", "libfido2"} {
+		if !strings.Contains(linux, want) {
+			t.Errorf("InstallHint(libfido2, linux) = %q, want it to contain %q", linux, want)
+		}
+	}
+
+	unknownOS := InstallHint("libfido2", "plan9")
+	for _, want := range []string{"brew", "apt", "dnf", "pacman"} {
+		if !strings.Contains(unknownOS, want) {
+			t.Errorf("InstallHint(libfido2, unknown-os) = %q, want it to contain %q", unknownOS, want)
+		}
+	}
+
+	// ssh-sk-helper is a recognized alias for the same tool family.
+	if got := normalizeTool("ssh-sk-helper"); got != "libfido2" {
+		t.Errorf("normalizeTool(ssh-sk-helper) = %q, want %q", got, "libfido2")
+	}
+	if got := normalizeTool("libfido2"); got != "libfido2" {
+		t.Errorf("normalizeTool(libfido2) = %q, want %q", got, "libfido2")
+	}
+}
