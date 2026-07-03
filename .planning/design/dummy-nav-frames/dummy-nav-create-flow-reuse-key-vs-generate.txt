@@ -1,22 +1,22 @@
 gitid  create-flow/reuse-key-vs-generate
-Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
+Identities
+> ✓ complete  personal — SSH Host block and Git fragment both present.
+  ! incomplete  work — SSH Host block present; no Git identity configured for th
+  ! git-only  opensource — Git identity relies on the global SSH config; no own
+  ! key-unused  archived — Key file exists on disk but no identity references it
+  ✓ key-used-ssh-only  staging — Key referenced by a Host block; not wired for G
+  ✓ key-used-both  clientA — Key wired for both SSH auth and Git commit signing.
+  ✗ key-missing  clientB — Host block references a key file that is absent from
+  ✗ 3. Key source
+    Generate a new key — gitid generates a fresh ~/.ssh/id_ed25519_personal usin
+PrevReuse an existing key — point this identity at a key file that already exist
+  SS
+  Ke[SIG-REUSE-KEY-VS-GENERATE]
+  Git fragment: ~/.gitconfig.d/personal
+
+[SIG-IM-LIST-POPULATED-8-LABEL]
 
 Esc back  q quit  ? help
-
-
-
-
-
-    3. Key source
-    Generate a new key — gitid generates a fresh ~/.ssh/id_ed25519_personal usin
-    Reuse an existing key — point this identity at a key file that already exist
-
-    [SIG-REUSE-KEY-VS-GENERATE]
-
-
-
-
-
 
 
 

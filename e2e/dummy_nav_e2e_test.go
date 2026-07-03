@@ -72,7 +72,9 @@ func newDummyPTYCmd(ctx context.Context, bin, home string) *exec.Cmd {
 }
 
 // dummyReady waits for the dummy TUI to render its initial frame (the
-// "gitid" app name plus the seeded identity-manager/entry breadcrumb).
+// "gitid" app name plus the seeded identity-manager/<entry-screen>
+// breadcrumb — a prefix check, since the entry screen's ID is surface-owned,
+// see reHome below).
 func dummyReady(t *testing.T, s *ptySession) {
 	t.Helper()
 	last, ok := s.waitFor(8*time.Second, func(text string) bool {
@@ -89,7 +91,13 @@ func dummyReady(t *testing.T, s *ptySession) {
 // once no modal is open — route()'s top-level Esc handler just resets the
 // active screen to entry), then "1" switches to identity-manager, then a
 // final Esc guarantees its entry screen. Asserts the header breadcrumb
-// shows "identity-manager/entry" before returning.
+// shows "identity-manager/" before returning — a PREFIX check (not the
+// literal "identity-manager/entry"), because the entry screen's ID is
+// surface-owned and not "entry" once a fan-out plan replaces the 02-02
+// placeholder via RegisterOrReplace (identity-manager's own entry screen is
+// "list-populated" as of 02-06) — this deliberately stays agnostic to
+// whichever screen ID the currently-registered identity-manager surface
+// treats as its entry, matching dummyReady's own prefix check above.
 func reHome(t *testing.T, s *ptySession) {
 	t.Helper()
 	for i := 0; i < reHomeMaxEscPops; i++ {
@@ -99,10 +107,10 @@ func reHome(t *testing.T, s *ptySession) {
 	s.sendKey([]byte{0x1b}, dummyNavKeystrokeDelay) // Esc: force the entry screen
 
 	last, ok := s.waitFor(3*time.Second, func(text string) bool {
-		return strings.Contains(text, "identity-manager/entry")
+		return strings.Contains(text, "identity-manager/")
 	})
 	if !ok {
-		t.Fatalf("reHome: did not land on identity-manager/entry. Last frame:\n%s", last)
+		t.Fatalf("reHome: did not land on identity-manager/<entry>. Last frame:\n%s", last)
 	}
 }
 

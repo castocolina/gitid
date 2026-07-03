@@ -1,22 +1,22 @@
 gitid  create-flow/test-fail
-Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
+Identities
+> ✓ complete  personal — SSH Host block and Git fragment both present.
+  ! incomplete  work — SSH Host block present; no Git identity configured for th
+  ! git-only  opensource — Git identity relies on the global SSH config; no own
+  ! key-unused  archived — Key file exists on disk but no identity references it
+  ✓ key-used-ssh-only  staging — Key referenced by a Host block; not wired for G
+  ✓ key-used-both  clientA — Key wired for both SSH auth and Git commit signing.
+  ✗ 4. Test connectivity — failed
+  ✗ $ ssh -T -F /tmp/gitid-test-a1b2c3.config -p 443 -i ~/.ssh/id_ed25519_person
+    ✗ git@ssh.github.com: Permission denied (publickey).
+Prev
+  SSThe key was not accepted. Nothing was written — only the throwaway temp
+  Keconfig was exercised. Go back and check the key, alias, or algorithm.
+  Gi
+    [SIG-TEST-FAIL]
+[SIG-IM-LIST-POPULATED-8-LABEL]
 
 Esc back  q quit  ? help
-
-
-
-
-    4. Test connectivity — failed
-    $ ssh -T -F /tmp/gitid-test-a1b2c3.config -p 443 -i ~/.ssh/id_ed25519_person
-    ✗ git@ssh.github.com: Permission denied (publickey).
-
-    The key was not accepted. Nothing was written — only the throwaway temp
-    config was exercised. Go back and check the key, alias, or algorithm.
-
-    [SIG-TEST-FAIL]
-
-
-
 
 
 

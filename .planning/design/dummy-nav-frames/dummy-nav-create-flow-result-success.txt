@@ -1,22 +1,22 @@
 gitid  create-flow/result-success
-Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
+Identities
+> ✓ complete  personal — SSH Host block and Git fragment both present.
+  ! incomplete  work — SSH Host block present; no Git identity configured for th
+  ! git-only  opensource — Git identity relies on the global SSH config; no own
+  ! key-unused  archived — Key file exists on disk but no identity references it
+  ✓ key-used-ssh-only  staging — Key referenced by a Host block; not wired for G
+  ✓ key-used-both  clientA — Key wired for both SSH auth and Git commit signing.
+  ✗ ✓ Identity created
+  ✗ ✓ Identity "personal" created — personal.github.com now resolves to ~/.ssh/i
+    Written to ~/.ssh/config.
+Prev
+  SSTo restore by hand, the backup is at ~/.ssh/config.backup.2026-07-03T03-59-1
+  Ke
+  Gi[SIG-RESULT-SUCCESS]
+
+[SIG-IM-LIST-POPULATED-8-LABEL]
 
 Esc back  q quit  ? help
-
-
-
-
-    ✓ Identity created
-    ✓ Identity "personal" created — personal.github.com now resolves to ~/.ssh/i
-    Written to ~/.ssh/config.
-
-    To restore by hand, the backup is at ~/.ssh/config.backup.2026-07-03T03-59-1
-
-    [SIG-RESULT-SUCCESS]
-
-
-
-
 
 
 

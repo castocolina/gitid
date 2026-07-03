@@ -1,0 +1,23 @@
+gitid  identity-manager/confirm-destructive
+Identities
+> ✓ complete  personal — SSH Host block and Git fragment both present.
+  ! incomplete  work — SSH Host block present; no Git identity configured for th
+  ! git-only  opensource — Git identity relies on the global SSH config; no own
+  ! key-unused  archived — Key file exists on disk but no identity references it
+  ✓ key-used-ssh-only  staging — Key referenced by a Host block; not wired for G
+  ✓ key-used-both  clientA — Key wired for both SSH auth and Git commit signing.
+  ✗ key-missing  clientB — Host block references a key file that is absent from
+  ✗ fragment-p┌─────────────────────────────────────────────────────────────────
+              │ Confirm: Delete everything (SSH + Git + key)
+              │ ✗ This cannot be undone.
+              │ Removes for personal:
+              │   - SSH Host block (personal.github.com)
+              │   - Git configuration (~/.gitconfig.d/personal)
+              │   - Key file (~/.ssh/id_ed25519_personal)
+              │
+              │ Default-focused: No, cancel. Type the identity name to confirm —
+              │ never default to yes (§5).
+              │
+              │ [SIG-IM-CONFIRM-DESTRUCTIVE-STRONGEST-CONFIRM]
+              └─────────────────────────────────────────────────────────────────
+

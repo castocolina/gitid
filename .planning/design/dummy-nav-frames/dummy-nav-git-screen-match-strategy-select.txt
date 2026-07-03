@@ -1,22 +1,22 @@
 gitid  git-screen/match-strategy-select
-Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
-
-r review-readonly  Esc back  q quit  ? help
-
-    Match strategy
-    gitdir: ✓ default — applies by repository directory path.
-    hasconfig:remote.*.url — applies by matching remote URL, combinable with git
-    both — applies both includeIf blocks together.
-
+Identities
+> ✓ complete  personal — SSH Host block and Git fragment both present.
+  ! incomplete  work — SSH Host block present; no Git identity configured for th
+  ! git-only  opensource — Git identity relies on the global SSH config; no own
+  ! Match strategy
+  ✓ gitdir: ✓ default — applies by repository directory path.
+  ✓ hasconfig:remote.*.url — applies by matching remote URL, combinable with git
+  ✗ both — applies both includeIf blocks together.
+  ✗
     Live includeIf preview (gitdir):
-    [includeIf "gitdir:~/personal/"]
-        path = ~/.gitconfig.d/personal
-
-    hasconfig alternative:
+Prev[includeIf "gitdir:~/personal/"]
+  SS    path = ~/.gitconfig.d/personal
+  Ke
+  Gihasconfig alternative:
     [includeIf "hasconfig:remote.*.url:git@personal.github.com:*/**"]
-        path = ~/.gitconfig.d/personal
+[SIG    path = ~/.gitconfig.d/personal
 
-    [SIG-MATCH-STRATEGY-SELECT-DEFAULT-GITDIR]
+r re[SIG-MATCH-STRATEGY-SELECT-DEFAULT-GITDIR]
 
 
 

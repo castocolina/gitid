@@ -1,0 +1,23 @@
+gitid  identity-manager/backup-notice
+Identities
+> ✓ complete  personal — SSH Host block and Git fragment both present.
+  ! incomplete  work — SSH Host block present; no Git identity configured for th
+  ! git-only  opensource — Git identity relies on the global SSH config; no own
+  ! key-unused  archived — Key file exists on disk but no identity references it
+  ✓ key-used-ssh-only  staging — Key referenced by a Host block; not wired for G
+  ✓ key-used-both  clientA — Key wired for both SSH auth and Git commit signing.
+  ✗ key-missing  clientB — Host block references a key file that is absent from
+  ✗ fragment-path-missing  legacy — includeIf points at a Git fragment file that
+
+              ┌─────────────────────────────────────────────────────────────────
+              │ Backups created
+              │ ✓ ~/.ssh/config backup: ~/.ssh/config.backup.2026-07-03T03-59-12
+              │ ✓ ~/.gitconfig backup: ~/.gitconfig.backup.2026-07-03T03-59-12Z
+              │
+              │ A full copy of each previous file was saved before any change wa
+              │ these backup paths are the undo story.
+              │
+              │ [SIG-IM-BACKUP-NOTICE]
+              └─────────────────────────────────────────────────────────────────
+
+

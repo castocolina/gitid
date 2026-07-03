@@ -1,22 +1,22 @@
 gitid  git-screen/backup-notice
-Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
+Identities
+> ✓ complete  personal — SSH Host block and Git fragment both present.
+  ! incomplete  work — SSH Host block present; no Git identity configured for th
+  ! git-only  opensource — Git identity relies on the global SSH config; no own
+  ! key-unused  archived — Key file exists on disk but no identity references it
+  ✓ key-used-ssh-only  staging — Key referenced by a Host block; not wired for G
+  ✓ key-used-both  clientA — Key wired for both SSH auth and Git commit signing.
+  ✗ Backups created
+  ✗ ✓ ~/.gitconfig backup: ~/.gitconfig.backup.2026-07-03T03-59-12Z
+    ✓ ~/.ssh/allowed_signers backup: ~/.ssh/allowed_signers.backup.2026-07-03T03
+Prev
+  SSA full copy of each previous file was saved before any change was applied —
+  Kethese backup paths are the undo story.
+  Gi
+    [SIG-GIT-BACKUP-NOTICE]
+[SIG-IM-LIST-POPULATED-8-LABEL]
 
 z result-success  Esc back  q quit  ? help
-
-
-
-
-    Backups created
-    ✓ ~/.gitconfig backup: ~/.gitconfig.backup.2026-07-03T03-59-12Z
-    ✓ ~/.ssh/allowed_signers backup: ~/.ssh/allowed_signers.backup.2026-07-03T03
-
-    A full copy of each previous file was saved before any change was applied —
-    these backup paths are the undo story.
-
-    [SIG-GIT-BACKUP-NOTICE]
-
-
-
 
 
 
