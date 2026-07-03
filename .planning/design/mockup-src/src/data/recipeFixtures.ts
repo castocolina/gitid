@@ -1112,3 +1112,90 @@ export const healthParseErrorTarget = {
  * offers to change anything itself. */
 export const healthReadOnlyNote =
   'Health only diagnoses — nothing here writes to your files. Open the Fixer (key 5) to change anything shown.';
+
+// ---------------------------------------------------------------------------
+// fixer surface (02-UX-DIRECTION.md §4(7)/§4.7, Phase 8) — a master-detail
+// surface (number key `5`) presenting SSH and Git problems with severity +
+// explanation + suggested fix (HLTH-01's write-side counterpart), applying
+// fix-in-place ONLY with confirm + backup (§5's four-beat ceremony). Reuses
+// `healthFindings` (unmodified above) for the SAME findings Health
+// diagnosed — traceable, not re-derived (mirrors HLTH-05's per-identity
+// traceability precedent, and Health's own explicit "available on the
+// Fixer screen" hand-off text on every suggestedFix). These are NEW
+// exports; nothing above this section is modified.
+// ---------------------------------------------------------------------------
+
+/** The subset of `healthFindings` that carry a `suggestedFix` — the fixer
+ * only lists ACTIONABLE problems (§4.7's "each problem: severity + plain
+ * explanation + suggested fix"); the one info-only finding
+ * (`git-opensource-no-host-block`) has no suggestedFix and is Health-only,
+ * never listed here. */
+export const fixerFindings: HealthFinding[] = healthFindings.filter(
+  (f) => f.suggestedFix !== undefined,
+);
+
+/**
+ * fix-preview/confirm-destructive/backup-notice/result-applied's single
+ * walk-through target (mirrors global-git's single `globalGitDetailTarget`
+ * precedent) — the SAME `ssh-identitiesonly-contradiction` finding
+ * health/finding-detail deep-dives (traceable HLTH-04 hand-off), chosen
+ * because it is the flagship §4.7 highest-risk affordance: a fix-in-place
+ * REWRITE of an EXISTING directive's value (IdentitiesOnly no -> yes on an
+ * existing Host block), not merely an addition (unlike global-ssh/
+ * global-git's fix-preview, which only ever ADD `+` lines) — the one
+ * finding that needs `confirm-destructive` rather than a plain
+ * `confirm-write`.
+ */
+export const fixerTarget = healthFindings.find(
+  (f) => f.id === 'ssh-identitiesonly-contradiction',
+) as HealthFinding;
+
+export const fixerTargetFile = '~/.ssh/config';
+export const fixerTargetHost = 'clientb.github.com';
+
+/** fix-preview's exact before/after diff (§4.7 "diff of the exact
+ * change") — a true `-`/`+` rewrite diff, not an additions-only `+` list,
+ * because this fix REWRITES an existing directive's value rather than
+ * adding a new one (T-02-FIX). Two-space context lines show the rest of
+ * the existing Host block is untouched. */
+export const fixerFixPreviewLines = [
+  `  Host ${fixerTargetHost}`,
+  '      Hostname ssh.github.com',
+  '      Port 443',
+  '      User git',
+  '      IdentityFile ~/.ssh/id_ed25519_clientB',
+  '-     IdentitiesOnly no',
+  '+     IdentitiesOnly yes',
+];
+
+/** confirm-destructive's copy: this fix rewrites an EXISTING directive's
+ * value, so it uses the strongest confirm this medium offers short of a
+ * typed confirmation (identity-manager's own "delete everything"
+ * precedent) — destructive actions never default-focus "yes" (§5). */
+export const fixerConfirmDestructiveNote =
+  'This rewrites a directive already present in your SSH config. Review the diff above before confirming — this cannot be undone without restoring the backup.';
+
+export const fixerBackupPath = sampleBackupPath;
+
+export const fixerResultMessage = `IdentitiesOnly set to yes on Host ${fixerTargetHost} in ${fixerTargetFile}.`;
+
+/** nothing-to-fix — the healthy empty state (§4.7), the fixer's own
+ * counterpart to health-all-green. Mirrors `healthAllGreenSummary`'s
+ * two-section shape. */
+export const fixerNothingToFixSummary = {
+  ssh: 'SSH — 0 fixable problems. Every Host block is coherent, every key is 0600.',
+  git: 'Git — 0 fixable problems. Every includeIf target exists, every allowed_signers email matches.',
+};
+
+/** Shown on every one of the 6 fixer screens — the explicit safety
+ * affordance statement (§4.7, §5): fixes are always previewed, confirmed,
+ * and backed up before anything is written — never a blind write. */
+export const fixerSafetyNote =
+  'Every fix is previewed, confirmed, and backed up before anything is written — never a blind write.';
+
+/** fixer-list's batch-fix note (§4.7: "Batch-fix (if offered) must still
+ * preview every change; no silent multi-file mutation."). The fixer OFFERS
+ * a batch action, but it walks the SAME preview -> confirm -> backup ->
+ * result ceremony per change — this design does not add a 7th named state
+ * for it, per §4.7's exact 6-state list. */
+export const fixerBatchFixNote = `Apply all ${fixerFindings.length} fixes — each one still previews its own diff and backup path before writing; nothing is applied silently.`;
