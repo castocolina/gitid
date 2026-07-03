@@ -101,7 +101,7 @@ Plans:
 **Wave 1** — foundation (parallel)
 
 - [x] 02-01-PLAN.md — MUI v7 terminal-skin mockup workspace + shared app shell + recipe fixtures (DLV-01/02)
-- [ ] 02-02-PLAN.md — Go TUI dummy skeleton + surface registry + no-backend import-graph gate (DLV-05/02)
+- [x] 02-02-PLAN.md — Go TUI dummy skeleton + surface registry + no-backend import-graph gate (DLV-05/02)
 
 **Wave 2** — tooling (blocked on Wave 1)
 
@@ -256,7 +256,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations, Spikes & CI | 7/7 | Complete | 2026-07-03 |
-| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 1/12 | In Progress|  |
+| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 2/12 | In Progress|  |
 | 3. Create Flow Backend | 0/TBD | Not started | - |
 | 4. Git Configuration Screen | 0/TBD | Not started | - |
 | 5. Identity Manager | 0/TBD | Not started | - |

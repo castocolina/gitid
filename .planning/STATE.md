@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-06-PLAN.md
-last_updated: "2026-07-03T08:14:11.806Z"
-last_activity: 2026-07-03 -- Phase 01 execution started
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-07-03T08:32:42.252Z"
+last_activity: 2026-07-03 -- Phase 02 execution in progress
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 19
-  completed_plans: 8
+  completed_plans: 9
   percent: 10
 ---
 
@@ -63,6 +63,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01-foundations-spikes-ci P05 | 55min | 3 tasks | 17 files |
 | Phase 01-foundations-spikes-ci P06 | 35min | 2 tasks | 4 files |
 | Phase 02 P01 | 40min | 3 tasks | 20 files |
+| Phase 02 P02 | ~15min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,9 @@ Recent decisions affecting current work:
 - [Phase 02]: recipeFixtures.ts's sshIdentityAliasBlockText is a literal (not interpolated) so recipe-critical text (Port 443, IdentitiesOnly yes) is statically greppable
 - [Phase 02]: verify-routes.mjs uses Node 22's built-in fs.globSync instead of adding a glob npm dependency (project's pinned Volta toolchain is Node 22.22.3)
 - [Phase 02]: DLV-01/DLV-02 NOT marked complete in REQUIREMENTS.md yet — both are phase-spanning (every surface, all 12 plans) and this is only Wave 1's foundation plan (1/12); deferred to the plan that closes out Phase 2
+- [Phase 02, plan 02]: internal/dummytui's Register/RegisterOrReplace panic (not return an error) on a collision — surfaces call them from init(), so a fail-loudly-at-load contract fits better than threading error returns through every init(); collision tests assert via recover()
+- [Phase 02, plan 02]: cmd/gitid-dummy + internal/dummytui import-graph is proven backend-free via an ALLOWLIST (go list -deps fails on any first-party pkg other than exactly those two), strictly stronger than a denylist — catches new/renamed backend packages by construction
+- [Phase 02, plan 02]: DLV-05/DLV-02 NOT marked complete in REQUIREMENTS.md yet — both are phase-spanning; this plan ships only the dummy skeleton (2/12 plans); deferred to the plan that closes out Phase 2 (same precedent as 02-01/DLV-01)
 
 ### Roadmap Evolution
 
@@ -117,6 +121,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-03T02:34:07.258Z
-Stopped at: Completed 01-06-PLAN.md
+Last session: 2026-07-03T08:32:42.252Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None
