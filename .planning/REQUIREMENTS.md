@@ -160,17 +160,17 @@ These are first-class, enforced requirements — the user's core process ask.
 
 ## F. SSH Config Storage (STORE) — research-backed
 
-- [ ] **STORE-01** (Dual strategy): gitid manages SSH config as either (a) sentinel
+- [x] **STORE-01** (Dual strategy): gitid manages SSH config as either (a) sentinel
   blocks in `~/.ssh/config` (default, current) or (b) a gitid-owned file
   (`~/.ssh/config.d/gitid.config` or per-identity files) pulled in via a single
   `Include ~/.ssh/config.d/*.config` line placed **near the top** of `~/.ssh/config`.
   Include paths MUST be absolute or `~/.ssh`-relative (verified: relative paths
   resolve against `~/.ssh/` and silently fail otherwise).
 
-- [ ] **STORE-02** (Adopt external): Detect and adopt an existing external Include'd
+- [x] **STORE-02** (Adopt external): Detect and adopt an existing external Include'd
   ssh file so users who already split their config keep that layout.
 
-- [ ] **STORE-03** (Migration): A safe, backed-up, reversible migration between the
+- [x] **STORE-03** (Migration): A safe, backed-up, reversible migration between the
   in-file and Include'd layouts.
 
 - [x] **STORE-04** (Safe writes): every mutation = timestamped backup + idempotent
@@ -448,7 +448,7 @@ row below records each one's **home** phase.
 | TOOL-01 | Phase 1 | Pending |
 | TOOL-02 | Phase 1 | Pending |
 | TOOL-03 | Phase 1 | Pending |
-| TOOL-04 | Phase 1 | Pending |
+| TOOL-04 | Phase 1 | Complete |
 | TOOL-05 | Phase 1 | Pending |
 | KEY-01 | Phase 1 | Complete |
 | KEY-02 | Phase 1 | Complete |
@@ -465,10 +465,10 @@ row below records each one's **home** phase.
 | TEST-01 | Phase 3 | Pending |
 | TEST-02 | Phase 3 | Pending |
 | TEST-03 | Phase 3 | Pending |
-| STORE-01 | Phase 1 | Pending |
-| STORE-02 | Phase 1 | Pending |
-| STORE-03 | Phase 1 | Pending |
-| STORE-04 | Phase 1 | Pending |
+| STORE-01 | Phase 1 | Complete |
+| STORE-02 | Phase 1 | Complete |
+| STORE-03 | Phase 1 | Complete |
+| STORE-04 | Phase 1 | Complete |
 | GITUI-01 | Phase 4 | Pending |
 | GITUI-02 | Phase 4 | Pending |
 | GITUI-03 | Phase 4 | Pending |
