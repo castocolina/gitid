@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<!--
+  Trivial fixture page for the Phase 1 screenshot-html spike (TOOL-05, DLV-03).
+  It exists only to prove the make screenshot-html tooling end-to-end via a
+  local file:// page -- no remote/untrusted content is loaded (threat model:
+  "headless Chromium <- local fixture HTML" trust boundary). Phase 2 replaces
+  this with the real, design-approved HTML mockups.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>gitid screenshot-html spike</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 1280px;
+      height: 800px;
+      background: #0f1117;
+      color: #e6e6e6;
+      font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card {
+      border: 2px solid #4ade80;
+      border-radius: 12px;
+      padding: 48px 64px;
+    }
+    h1 {
+      margin: 0 0 12px 0;
+      color: #4ade80;
+    }
+    p {
+      margin: 0;
+      color: #9ca3af;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>gitid screenshot-html spike</h1>
+    <p>fixed 1280x800 fixture -- TOOL-05 / DLV-03</p>
+  </div>
+</body>
+</html>
