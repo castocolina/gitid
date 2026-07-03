@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 01-06-PLAN.md
-last_updated: "2026-07-03T02:34:07.265Z"
+last_updated: "2026-07-03T08:14:11.806Z"
 last_activity: 2026-07-03 -- Phase 01 execution started
 progress:
   total_phases: 10
-  completed_phases: 0
-  total_plans: 7
-  completed_plans: 6
-  percent: 0
+  completed_phases: 1
+  total_plans: 19
+  completed_plans: 8
+  percent: 10
 ---
 
 # Project State
@@ -62,6 +62,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01-foundations-spikes-ci P04 | 25min | 3 tasks | 4 files |
 | Phase 01-foundations-spikes-ci P05 | 55min | 3 tasks | 17 files |
 | Phase 01-foundations-spikes-ci P06 | 35min | 2 tasks | 4 files |
+| Phase 02 P01 | 40min | 3 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,9 @@ Recent decisions affecting current work:
 - [Phase 01-foundations-spikes-ci]: debug caps prints three sections (Capabilities, Algorithm Catalog, Identities) via dedicated print helpers taking only already-resolved data — no classification logic lives in cmd/gitid
 - [Phase 01-foundations-spikes-ci]: runDebugCapsWithDeps is a testability seam distinct from runDebugCaps (which wires the real EXPORTED platform.BuildProbeDeps/identity.BuildInventoryDeps constructors), so the unit suite can assert the probe-error path propagates instead of being silently swallowed
 - [Phase 01-foundations-spikes-ci]: debug caps e2e test uses a plain exec.Command harness (adopt_e2e_test.go pattern) rather than the raw-keystroke PTY harness — the command is non-interactive (prints and exits), so PTY emulation adds no additional proof of real wiring
+- [Phase 02]: recipeFixtures.ts's sshIdentityAliasBlockText is a literal (not interpolated) so recipe-critical text (Port 443, IdentitiesOnly yes) is statically greppable
+- [Phase 02]: verify-routes.mjs uses Node 22's built-in fs.globSync instead of adding a glob npm dependency (project's pinned Volta toolchain is Node 22.22.3)
+- [Phase 02]: DLV-01/DLV-02 NOT marked complete in REQUIREMENTS.md yet — both are phase-spanning (every surface, all 12 plans) and this is only Wave 1's foundation plan (1/12); deferred to the plan that closes out Phase 2
 
 ### Roadmap Evolution
 
