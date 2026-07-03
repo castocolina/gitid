@@ -37,7 +37,7 @@ These are first-class, enforced requirements — the user's core process ask.
   `/mui` skill are engaged on every UI-related task — during planning, execution,
   AND review. Any plan touching an interface names both in its task list.
 
-- [ ] **DLV-03** (Screenshot pipeline): Every flow/screen of the HTML mockup is
+- [x] **DLV-03** (Screenshot pipeline): Every flow/screen of the HTML mockup is
   captured to image files; every screen of the Go **TUI dummy mockup** is captured;
   both sets are stored as versioned reference artifacts (e.g. under
   `.planning/design/<surface>/{html,tui}/*.png`).
@@ -77,7 +77,7 @@ These are first-class, enforced requirements — the user's core process ask.
   targets CI uses; `--no-verify` is forbidden.
 
 - [x] **TOOL-04**: Core is TDD; parse→render→parse round-trip proven by tests.
-- [ ] **TOOL-05** (Screenshot tooling): A repeatable way to capture TUI screens
+- [x] **TOOL-05** (Screenshot tooling): A repeatable way to capture TUI screens
   (View()-dump / teatest frame capture / PTY snapshot) and HTML screens (headless
   browser) exists as a `make` target or scripted step the loop can call.
 
@@ -439,17 +439,17 @@ row below records each one's **home** phase.
 |-------------|-------|--------|
 | DLV-01 | Phase 2 | Pending |
 | DLV-02 | Phase 2 | Pending |
-| DLV-03 | Phase 1 | Pending |
+| DLV-03 | Phase 1 | Complete |
 | DLV-04 | Phase 3 | Pending |
 | DLV-05 | Phase 2 | Pending |
 | DLV-06 | Phase 3 | Pending |
 | DLV-07 | Phase 1 | Complete |
 | DLV-08 | Phase 2 | Pending |
 | TOOL-01 | Phase 1 | Pending |
-| TOOL-02 | Phase 1 | Pending |
+| TOOL-02 | Phase 1 | Complete |
 | TOOL-03 | Phase 1 | Pending |
 | TOOL-04 | Phase 1 | Complete |
-| TOOL-05 | Phase 1 | Pending |
+| TOOL-05 | Phase 1 | Complete |
 | KEY-01 | Phase 1 | Complete |
 | KEY-02 | Phase 1 | Complete |
 | KEY-03 | Phase 1 | Complete |
