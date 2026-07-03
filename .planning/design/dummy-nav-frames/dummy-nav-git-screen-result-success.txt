@@ -1,0 +1,23 @@
+gitid  git-screen/result-success
+Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
+
+Esc back  q quit  ? help
+
+
+
+
+    ✓ Git identity configured
+    ✓ Git identity "personal" configured — ~/.gitconfig.d/personal now applies v
+    Written to ~/.gitconfig.d/personal, appended to ~/.gitconfig and ~/.ssh/allo
+
+    To restore by hand, the backups are at ~/.gitconfig.backup.2026-07-03T03-59-
+
+    [SIG-GIT-RESULT-SUCCESS]
+
+
+
+
+
+
+
+

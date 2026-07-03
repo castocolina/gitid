@@ -1,0 +1,23 @@
+gitid  git-screen/confirm-write
+Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
+    Confirm write
+y ba! Nothing has changed yet — review below, then confirm.
+    ~/.gitconfig.d/personal (new, sentinels visible):
+    # BEGIN gitid managed: personal
+      user.name=Personal Identity   user.email=you@personal.example
+      gpg.format=ssh   commit.gpgsign=true
+      user.signingkey=~/.ssh/id_ed25519_personal.pub
+    # END gitid managed: personal
+
+    ~/.gitconfig (append, sentinels visible):
+    # BEGIN gitid managed: personal
+    [includeIf "gitdir:~/personal/"]
+        path = ~/.gitconfig.d/personal
+    # END gitid managed: personal
+
+    ~/.ssh/allowed_signers (append):
+    you@personal.example
+      ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDesignMockupFixtureKeyNotReal0
+
+    [SIG-GIT-CONFIRM-WRITE]
+

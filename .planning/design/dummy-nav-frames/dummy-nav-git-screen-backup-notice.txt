@@ -1,0 +1,23 @@
+gitid  git-screen/backup-notice
+Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
+
+z result-success  Esc back  q quit  ? help
+
+
+
+
+    Backups created
+    ✓ ~/.gitconfig backup: ~/.gitconfig.backup.2026-07-03T03-59-12Z
+    ✓ ~/.ssh/allowed_signers backup: ~/.ssh/allowed_signers.backup.2026-07-03T03
+
+    A full copy of each previous file was saved before any change was applied —
+    these backup paths are the undo story.
+
+    [SIG-GIT-BACKUP-NOTICE]
+
+
+
+
+
+
+

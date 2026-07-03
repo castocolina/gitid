@@ -84,11 +84,32 @@ const (
 	gsAllowedSignersBackupPath = "~/.ssh/allowed_signers.backup.2026-07-03T03-59-12Z"
 
 	gsResultMessage = `Git identity "personal" configured — ` + gsFragmentFile + ` now applies via the ` + gsMatchStrategyDefault + ` match strategy.`
+
+	// gsFieldsCompactLine{1,2,3} are a TUI-only condensed field=value
+	// rendering of the fragment (label + value pairs, no INI blank-line
+	// spacers) — used on review-readonly/confirm-write where the fixed
+	// 80x24 PTY viewport (20 available rows, model.go verticalMargin=4)
+	// leaves no room for the full multi-line INI block on top of THREE
+	// targets' previews. §3's parity rubric explicitly allows this ("MAY
+	// differ: exact spacing, pixel layout... provided the terminal skin
+	// keeps them close") — field set/order/labels/values still match the
+	// /mui mockup exactly, only the line-wrapping differs.
+	gsFieldsCompactLine1 = "  user.name=" + gsUserName + "   user.email=" + gsUserEmail
+	gsFieldsCompactLine2 = "  gpg.format=" + gsGpgFormat + "   commit.gpgsign=" + gsCommitGpgSign
+	gsFieldsCompactLine3 = "  user.signingkey=" + gsSigningKey
 )
 
 var (
-	gsManagedFragmentText       = gsSentinelBegin + "\n" + gsFragmentText + "\n" + gsSentinelEnd
 	gsGitconfigIncludeBlockText = gsSentinelBegin + "\n" + gsIncludeIfGitdirLine + "\n" + gsSentinelEnd
+
+	// gsAllowedSignersLineDisplay word-wraps gsAllowedSignersLine onto two
+	// rows (email, then the ssh-ed25519 key material) so it never exceeds
+	// modalWidth (model.go: min(termWidth-8, 72) = 72 on the 80-col PTY) —
+	// the raw single-line gsAllowedSignersLine is 90+ columns wide. The
+	// WRITTEN value is still the single-line gsAllowedSignersLine
+	// (TestGitScreen_AllowedSignersEmailMatchesUserEmail asserts against
+	// that); this is a display-only wrap.
+	gsAllowedSignersLineDisplay = gsUserEmail + "\n  " + gsAllowedSignersKeyMaterial
 )
 
 // Screen-specific signatures — MUST stay byte-identical to
@@ -185,35 +206,48 @@ func renderMatchStrategySelect() string {
 	)
 }
 
+// renderReviewReadonly and renderGitConfirmWrite use the compact
+// gsFieldsCompact* / gsAllowedSignersLineDisplay forms (not the raw
+// multi-line INI blocks renderGitFormFilled uses) — reviewing/confirming
+// THREE files' content on one screen, on the fixed 80x24 PTY viewport
+// (20 available rows, model.go verticalMargin=4), leaves no budget for the
+// full sentineled block per target. §3's parity rubric explicitly allows
+// this ("MAY differ: exact spacing, pixel layout... provided the terminal
+// skin keeps them close") — field set/order/labels/values still match the
+// /mui mockup exactly.
+
 func renderReviewReadonly() string {
 	return gsBody("Review (read-only)", sigReviewReadonly,
-		styleGSDim.Render("Git fragment:"),
-		gsManagedFragmentText,
+		styleGSDim.Render("Fragment ("+gsFragmentFile+"):"),
+		gsFieldsCompactLine1,
+		gsFieldsCompactLine2,
+		gsFieldsCompactLine3,
 		"",
-		styleGSDim.Render("includeIf ("+gsMatchStrategyDefault+"):"),
+		styleGSDim.Render("includeIf ("+gsMatchStrategyDefault+", default):"),
 		gsIncludeIfGitdirLine,
 		"",
 		styleGSDim.Render("~/.ssh/allowed_signers:"),
-		gsAllowedSignersLine,
+		gsAllowedSignersLineDisplay,
 		"user.email:        "+gsUserEmail,
-		styleGSSuccess.Render("✓ Byte-identical — allowed_signers will accept commits signed under this identity."),
+		styleGSSuccess.Render("✓ Byte-identical — trusted for this identity's signatures."),
 	)
 }
 
 func renderGitConfirmWrite() string {
 	return gsBody("Confirm write", sigGitConfirmWrite,
 		styleGSWarning.Render("! Nothing has changed yet — review below, then confirm."),
+		gsFragmentFile+" (new, sentinels visible):",
+		gsSentinelBegin,
+		gsFieldsCompactLine1,
+		gsFieldsCompactLine2,
+		gsFieldsCompactLine3,
+		gsSentinelEnd,
 		"",
-		"Will write to "+gsFragmentFile+":",
-		gsManagedFragmentText,
-		"",
-		"Will append to "+gsGitconfigFile+":",
+		gsGitconfigFile+" (append, sentinels visible):",
 		gsGitconfigIncludeBlockText,
 		"",
-		"Will append to "+gsAllowedSignersFile+":",
-		gsAllowedSignersLine,
-		"",
-		styleGSDim.Render("gitid only owns the block between the sentinels in each file — everything else is preserved verbatim."),
+		gsAllowedSignersFile+" (append):",
+		gsAllowedSignersLineDisplay,
 	)
 }
 

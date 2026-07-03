@@ -1,7 +1,7 @@
 gitid  identity-manager/entry
 Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
 
-n Create Identity  1-5 switch view  Esc back  q quit  ? help
+n Create Identity  g Git Configuration  1-5 switch view  Esc back  q quit  ? hel
 
 
 

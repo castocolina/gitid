@@ -1,65 +1,65 @@
 [
   {
     "dimension": "field-set-and-order",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "user.name -> user.email -> gpg.format (fixed, ssh) -> user.signingkey (path) -> commit.gpgsign appears in identical order in both media (FIELDS.md; git-form-empty/-filled HTML TextField stacks top-to-bottom, TUI aligned label:value lines top-to-bottom). match-strategy-select's gitdir -> hasconfig -> both order and review-readonly's fragment -> includeIf -> allowed_signers order also match. Verified via html/*.png and tui/*.png side-by-side review."
   },
   {
     "dimension": "labels-and-helper-copy-verbatim",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "Labels and helper copy (user.email's GITUI-04 helper note, gpg.format's 'Fixed' note, user.signingkey's path note, the three match-strategy option descriptions, the ceremony-beat copy on confirm-write/backup-notice/result-success) match verbatim: the /mui route files read from src/data/recipeFixtures.ts's git-screen-only exports, and internal/dummytui/surface_gitscreen.go mirrors the same literal strings as Go gs* constants. Spot-checked git-form-empty, match-strategy-select, review-readonly, confirm-write, backup-notice, result-success html/tui screenshot pairs."
   },
   {
     "dimension": "option-sets-enumerations",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "The 3-entry match-strategy set (gitdir default, hasconfig:remote.*.url, both) appears in the same order with the same per-option copy in both media (match-strategy-select.png html/tui pair) — gitdir highlighted green with a '✓ default' marker in both."
   },
   {
     "dimension": "defaults-recipe-accurate",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "gpg.format=ssh (fixed, non-editable), commit.gpgsign=true (default), and the gitdir default match strategy are recipe/requirements-accurate (REQUIREMENTS.md GITUI-02/03) and byte-identical across recipeFixtures.ts's git-screen exports and surface_gitscreen.go's gs* constants (grep-verified: gpg.format / allowed_signers / gitdir / hasconfig present in both surface_gitscreen.go and the git-screen route files). The fragment target ~/.gitconfig.d/personal (the already-built GITUI-02 convention) is used consistently everywhere in this surface, distinct from — and not conflated with — create-flow's own recipe-literal ~/.gitconfig_personal naming."
   },
   {
     "dimension": "flow-order-and-named-states",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "All 7 named states from UX-DIRECTION.md §4(2) exist as distinct, navigable screens in both media (manifest.json screen list == surface_gitscreen.go ScreenDef IDs == route file titles), in the same git-form-empty -> git-form-filled -> match-strategy-select -> review-readonly -> confirm-write -> backup-notice -> result-success order. Verified by TestGitScreen_KeysFormAConnectedPathReachingEveryScreen (Go) and manual html/tui screenshot review, plus the surface-scoped dummy-nav e2e (TestDummyNavReachesAllScreens/git-screen) reaching every screen through the g LaunchKey from Identities."
   },
   {
     "dimension": "safety-affordances-presence",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "The four-beat mutation ceremony (review-readonly as the read-only preview, confirm-write's explicit 'Nothing has changed yet' confirm step with sentineled previews for all three write targets, backup-notice's two timestamped backup paths, result-success's green checkmark result) appears on the same steps in both media (review-readonly.png, confirm-write.png, backup-notice.png, result-success.png pairs reviewed). Managed-block containment (T-02-CONT) is shown via visible '# BEGIN/END gitid managed: personal' sentinels around both the fragment file and the ~/.gitconfig includeIf append on confirm-write, in both media."
   },
   {
     "dimension": "keybindings-surfaced",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "Every intra-flow key (f/m/r/w/y/z) is shown in the keybar/footer of the screen where it applies in BOTH media (Keybar.tsx entries vs renderShellKeybar output); the git-screen launch key (g, from Identities) and reserved keys (Esc/q/?//) are consistent across every screenshot pair reviewed, matching the UX-DIRECTION.md §2 key-allocation table."
   },
   {
     "dimension": "allowed-signers-byte-identity",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": "git-screen's §4(2) highest-risk affordance (GITUI-04): the allowed_signers line's email MUST be byte-identical to user.email, shown side by side on review-readonly in both media."
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "git-screen's §4(2) highest-risk affordance (GITUI-04): review-readonly shows the allowed_signers line directly above 'user.email: you@personal.example' in both media, with a green '✓ Byte-identical — trusted for this identity's signatures.' confirmation. Machine-checkable: TestGitScreen_AllowedSignersEmailMatchesUserEmail (Go, asserts gsAllowedSignersLine has the gsUserEmail+' ' prefix) and the HTML route's emailsMatch check (which also drives a red-bordered mismatch Alert if the fixture ever diverges) both encode the same invariant recipeFixtures.ts's allowedSignersLine/personalIdentityGitFragment.userEmail values satisfy."
   },
   {
     "dimension": "match-strategy-default-gitdir",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": "match-strategy-select defaults to gitdir (02-UX-DIRECTION.md §3/§6, GITUI-03) in both media, with hasconfig and both also present as options and a live includeIf preview."
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "match-strategy-select defaults to gitdir (02-UX-DIRECTION.md §3/§6, GITUI-03) in both media — the gitdir option is green-bordered/highlighted with a '✓ default' marker, hasconfig:remote.*.url and both are also present as options, and a live includeIf preview reflects the selected (default gitdir) strategy in both media. The TUI additionally shows the hasconfig alternative preview inline (an additive, not a divergent, difference — §3 only requires the default's preview to be present in both)."
   }
 ]

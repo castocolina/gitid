@@ -1,0 +1,23 @@
+gitid  git-screen/git-form-filled
+Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
+    Git identity (per-identity)
+m mauser.name:         Personal Identity
+    user.email:        you@personal.example
+    gpg.format:        ssh (fixed)
+    user.signingkey:   ~/.ssh/id_ed25519_personal.pub
+    commit.gpgsign:    true
+
+    Live fragment preview:
+    [user]
+        name = Personal Identity
+        email = you@personal.example
+        signingkey = ~/.ssh/id_ed25519_personal.pub
+
+    [gpg]
+        format = ssh
+
+    [commit]
+        gpgsign = true
+
+    [SIG-GIT-FORM-FILLED]
+

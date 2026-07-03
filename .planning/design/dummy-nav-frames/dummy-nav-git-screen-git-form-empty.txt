@@ -1,0 +1,23 @@
+gitid  git-screen/git-form-empty
+Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
+
+f git-form-filled  Esc back  q quit  ? help
+
+
+
+    Git identity (per-identity)
+    user.name:         (empty)
+    user.email:        (empty — must byte-match allowed_signers later, GITUI-04)
+    gpg.format:        ssh (fixed)
+    user.signingkey:   (empty — a PATH to the public key)
+    commit.gpgsign:    true (default)
+
+    Live fragment preview: (fill in the fields to see the resulting fragment)
+
+    [SIG-GIT-FORM-EMPTY]
+
+
+
+
+
+
