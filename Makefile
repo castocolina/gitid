@@ -7,6 +7,11 @@
 #                  freeze) and provision the pinned Chromium revision; wire git hooks via
 #                  install-hooks (completed in plan 01-03; screenshot tooling in 01-05).
 #   build          Compile the gitid binary to bin/gitid.
+#   build-cross    Cross-compile the release build matrix (darwin/amd64, darwin/arm64,
+#                  linux/amd64, linux/arm64 [build-only]) to bin/gitid-<os>-<arch>
+#                  (BUILD-01). Cross-compilation via GOOS/GOARCH is OS-independent, so
+#                  CI runs this ONCE on ubuntu-latest rather than on every matrix runner.
+#                  No release/tag/checksum packaging here — that is BUILD-03, Phase 10.
 #   install        Install gitid to $GOPATH/bin via go install.
 #   uninstall      Remove gitid from $GOPATH/bin.
 #   test           Run the race-enabled test harness with a coverage profile (TDD harness, D-06).
@@ -17,7 +22,7 @@
 #   screenshot-html Render the fixture HTML page to a deterministic PNG via headless
 #                   Chromium (go-rod, pinned revision; TOOL-05, DLV-03).
 
-.PHONY: setup-env build install uninstall test lint fmt install-hooks test-e2e screenshot-tui screenshot-html
+.PHONY: setup-env build build-cross install uninstall test lint fmt install-hooks test-e2e screenshot-tui screenshot-html
 
 # Binary output directory.
 BIN_DIR := bin
@@ -137,6 +142,20 @@ test:
 build:
 	@mkdir -p $(BIN_DIR)
 	go build -o $(BINARY) ./cmd/gitid
+
+## build-cross: cross-compile the release build matrix reproducibly (BUILD-01).
+## darwin/amd64, darwin/arm64, and linux/amd64 are the gated matrix targets; linux/arm64
+## is included build-only ("if cheap" per D-14) and is NOT part of any CI gate. GOOS/GOARCH
+## cross-compilation is OS-independent (no cgo in this module), so this target is invoked
+## ONCE on a single Linux runner in CI rather than redundantly on every matrix OS. Output
+## binaries are named bin/gitid-<os>-<arch> — no release/tag/checksum packaging here
+## (BUILD-03 is Phase 10, out of scope).
+build-cross:
+	@mkdir -p $(BIN_DIR)
+	GOOS=darwin  GOARCH=amd64 go build -o $(BIN_DIR)/gitid-darwin-amd64 ./cmd/gitid
+	GOOS=darwin  GOARCH=arm64 go build -o $(BIN_DIR)/gitid-darwin-arm64 ./cmd/gitid
+	GOOS=linux   GOARCH=amd64 go build -o $(BIN_DIR)/gitid-linux-amd64  ./cmd/gitid
+	GOOS=linux   GOARCH=arm64 go build -o $(BIN_DIR)/gitid-linux-arm64  ./cmd/gitid
 
 ## install: install gitid to $GOPATH/bin and report the install path + PATH status.
 install:
