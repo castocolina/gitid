@@ -939,3 +939,176 @@ export const globalGitFixPreviewLines = [
 
 export const globalGitResultMessage =
   '10 of 10 baseline options applied to ~/.gitconfig. Global user.email was left alone, as always — each identity’s commits use their own includeIf fragment.';
+
+// ---------------------------------------------------------------------------
+// health surface (02-UX-DIRECTION.md §4(6), Phase 8) — a master-detail
+// surface (number key `4`) with an SSH section AND a Git section (HLTH-01),
+// each finding carrying the FOUR-LEVEL doctor severity model
+// (internal/doctor/doctor.go's Severity: info / warning / error / critical)
+// under the LOCKED glyph contract: healthy = ✓ green, info = ~ cyan,
+// warning = ! yellow, error/critical = ✗ red — NEVER ✗ for warning.
+// Read-only integrity (§4.6, §5) is this surface's highest-risk affordance:
+// Health diagnoses, it never mutates — there is no confirm/backup/apply
+// write-ceremony beat anywhere on this surface; every finding hands off to
+// the Fixer (view 5) instead. `healthFindings` deliberately reuses the
+// `legacy`/`clientB`/`opensource` identities from `identityManagerRows`
+// (unmodified above) so the per-identity slice this surface computes is
+// traceably the SAME data MGR-07's Identity Manager row badges derive
+// from. These are NEW exports; nothing above this section is modified.
+// ---------------------------------------------------------------------------
+
+/** The four doctor severity levels (internal/doctor/doctor.go's Severity),
+ * byte-identical lowercase labels. */
+export type HealthSeverity = 'info' | 'warning' | 'error' | 'critical';
+
+/** LOCKED glyph contract: warning is ALWAYS `!` (yellow), error AND
+ * critical both use `✗` (red) — distinguished by the WORD, never by a
+ * different glyph — info is `~` (cyan). Never reuse `✗` for warning. */
+export const healthSeverityGlyph: Record<HealthSeverity, string> = {
+  info: '~',
+  warning: '!',
+  error: '✗',
+  critical: '✗',
+};
+
+/** Cyan is not part of theme.ts's semanticColors table (healthy/warning/
+ * error/dim/focus only) — health is the first surface to need a 4th
+ * (info) hue, defined locally here rather than editing the shared theme
+ * file (fan-out isolation, review MEDIUM-10). */
+export const healthInfoColor = '#3aa6a6';
+
+export const healthSeverityWord: Record<HealthSeverity, string> = {
+  info: 'info',
+  warning: 'warning',
+  error: 'error',
+  critical: 'critical',
+};
+
+export interface HealthFinding {
+  id: string;
+  section: 'SSH' | 'Git';
+  severity: HealthSeverity;
+  /** Mirrors internal/doctor/doctor.go's Family (Permissions, Coherence,
+   * Orphans, Redundancy, Overlap, ...) for copy coherence with the real
+   * doctor substrate (HLTH-06). */
+  family: string;
+  title: string;
+  explanation: string;
+  /** Present on every actionable finding; absent on info-only findings.
+   * Never a write ceremony itself — always points AT the Fixer screen. */
+  suggestedFix?: string;
+}
+
+/**
+ * health-with-findings' 5 findings — one per HLTH-01 section (3 SSH, 2
+ * Git), severity-sorted critical -> error -> warning -> info (the same
+ * urgency order internal/doctor/doctor.go's highestSeverity/ExitCode use).
+ * Covers HLTH-03 (redundancy: duplicate `Host *`), HLTH-04 (contradictions:
+ * `IdentitiesOnly no` + an explicit `IdentityFile`; an `includeIf`
+ * targeting a missing fragment), and all four severities at once.
+ */
+export const healthFindings: HealthFinding[] = [
+  {
+    id: 'ssh-key-perms-archived',
+    section: 'SSH',
+    severity: 'critical',
+    family: 'Permissions',
+    title: 'Private key is world-readable',
+    explanation:
+      '~/.ssh/id_ed25519_archived is mode 0644 — gitid-managed keys must be 0600. Any other account on this machine can read the key material.',
+    suggestedFix: 'chmod 0600 ~/.ssh/id_ed25519_archived — available on the Fixer screen.',
+  },
+  {
+    id: 'ssh-identitiesonly-contradiction',
+    section: 'SSH',
+    severity: 'error',
+    family: 'Coherence',
+    title: 'IdentitiesOnly no contradicts an explicit IdentityFile',
+    explanation:
+      'Host clientb.github.com sets IdentitiesOnly no while also naming IdentityFile ~/.ssh/id_ed25519_clientB — ssh may still offer every other key it knows before falling back to the one explicitly configured (HLTH-04).',
+    suggestedFix: 'Set IdentitiesOnly yes on the clientb.github.com Host block — available on the Fixer screen.',
+  },
+  {
+    id: 'git-includeif-missing-fragment',
+    section: 'Git',
+    severity: 'error',
+    family: 'Orphans',
+    title: 'includeIf targets a missing fragment',
+    explanation:
+      '[includeIf "gitdir:~/legacy/"] in ~/.gitconfig points at ~/.gitconfig.d/legacy, which does not exist on disk — commits made under ~/legacy/ silently fall back to your global git identity instead of "legacy" (HLTH-04).',
+    suggestedFix: 'Restore ~/.gitconfig.d/legacy, or repoint the includeIf — available on the Fixer screen.',
+  },
+  {
+    id: 'ssh-duplicate-host-star',
+    section: 'SSH',
+    severity: 'warning',
+    family: 'Redundancy',
+    title: 'Duplicate Host * stanza',
+    explanation:
+      '~/.ssh/config defines Host * twice — line 4 and line 41. The second stanza silently overrides directives set by the first (HLTH-03).',
+    suggestedFix: 'Merge the two Host * stanzas into one — available on the Fixer screen.',
+  },
+  {
+    id: 'git-opensource-no-host-block',
+    section: 'Git',
+    severity: 'info',
+    family: 'Overlap',
+    title: 'opensource has no dedicated SSH Host block',
+    explanation:
+      'The "opensource" Git identity resolves correctly via its includeIf, but relies entirely on the global SSH config — there is no gitid-managed Host block scoping which key ssh offers for it. Informational only.',
+  },
+];
+
+/** finding-detail's target — the IdentitiesOnly/IdentityFile contradiction,
+ * the most illustrative HLTH-04 example (mirrors global-ssh's own
+ * IdentitiesOnly deep-dive precedent). */
+export const healthFindingDetailTarget = healthFindings.find(
+  (f) => f.id === 'ssh-identitiesonly-contradiction',
+) as HealthFinding;
+
+/** health-all-green's zero-findings summary for both sections. */
+export const healthAllGreenSummary = {
+  ssh: 'SSH — 3 identities, 3 Host blocks, 3 keys checked. All present, all mode 0600, no redundant Host * stanzas, no contradictions.',
+  git: 'Git — 3 includeIf blocks checked. Every fragment file exists, every allowed_signers email matches its identity’s user.email.',
+};
+
+/**
+ * per-identity-health's target (HLTH-05) — the "legacy" identity
+ * (`identityManagerRows`, state `fragment-path-missing`), the SAME row
+ * MGR-07's Identity Manager detail screen badges from this exact
+ * computation: SSH is healthy (Host block + key present), Git is broken
+ * (its includeIf targets the missing fragment — the SAME finding as
+ * `git-includeif-missing-fragment` above, scoped to one identity).
+ */
+export const healthPerIdentityTarget = identityManagerRows.find(
+  (r) => r.name === 'legacy',
+) as IdentityManagerRow;
+
+export const healthPerIdentitySSHNote =
+  'Host block present (legacy.github.com), IdentityFile present, IdentitiesOnly yes. No SSH findings for this identity.';
+
+export const healthPerIdentityGitFinding = healthFindings.find(
+  (f) => f.id === 'git-includeif-missing-fragment',
+) as HealthFinding;
+
+/**
+ * parse-error's target — a Git fragment with a syntax error (HLTH-02: files
+ * must exist AND parse). A parse error is the one condition Health can
+ * ONLY report — there is no text to diff or fix-preview until the file is
+ * syntactically valid again, reinforcing the read-only-integrity affordance
+ * concretely rather than only by absence of a write-ceremony beat.
+ */
+export const healthParseErrorTarget = {
+  file: '~/.gitconfig.d/work',
+  line: 4,
+  snippet: '    signingkey = "~/.ssh/id_ed25519_work.pub',
+  rawError: 'error: bad config line 4 in file ~/.gitconfig.d/work',
+  explanation:
+    'A signingkey value is missing its closing quote — git cannot parse this file at all, so no Git identity check can run for "work" until it parses again.',
+};
+
+/** Shown on every one of the 5 health screens — the explicit, negatively-
+ * checkable read-only statement (§4.6, §5, review LOW-11): Health never
+ * offers to change anything itself. */
+export const healthReadOnlyNote =
+  'Health only diagnoses — nothing here writes to your files. Open the Fixer (key 5) to change anything shown.';
