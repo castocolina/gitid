@@ -321,3 +321,69 @@ ${sshIdentityAliasBlockText}
 ${createFlowManagedBlockSentinels.end}`;
 
 export const resultSuccessMessage = `Identity "${sshIdentityAlias.identityName}" created — ${sshIdentityAlias.host} now resolves to ${sshIdentityAlias.identityFile}.`;
+
+// ---------------------------------------------------------------------------
+// git-screen surface (02-UX-DIRECTION.md §4(2), Phase 4) — the
+// per-identity Git configuration screen. REQUIREMENTS.md GITUI-02 (already
+// built) fixes the fragment target at `~/.gitconfig.d/<identity>` — the
+// PROJECT'S OWN established convention, distinct from
+// `recipes/gitconfig.recipe`'s own `~/.gitconfig_<identity>` naming that the
+// create-flow pilot's `includeIf*Line` literals above reuse verbatim
+// (CLAUDE.md "Surface any divergence between current behavior and the
+// recipes explicitly" — the divergence is the fragment PATH convention, not
+// structure). These are NEW exports; nothing above this section is modified.
+// ---------------------------------------------------------------------------
+
+/** GITUI-02: the per-identity Git fragment file gitid actually writes to. */
+export const gitScreenFragmentPath = `~/.gitconfig.d/${sshIdentityAlias.identityName}`;
+
+export const gitScreenIncludeIfGitdirLine = `[includeIf "gitdir:~/${sshIdentityAlias.identityName}/"]
+    path = ${gitScreenFragmentPath}`;
+
+export const gitScreenIncludeIfHasconfigLine = `[includeIf "hasconfig:remote.*.url:git@${sshIdentityAlias.host}:*/**"]
+    path = ${gitScreenFragmentPath}`;
+
+export const gitScreenIncludeIfBothLines = `${gitScreenIncludeIfGitdirLine}
+
+${gitScreenIncludeIfHasconfigLine}`;
+
+/**
+ * The live `includeIf` preview shown on `match-strategy-select`, keyed by
+ * the same `MatchStrategy` union create-flow's `defaultMatchStrategy` uses.
+ * `gitdir` is the default (02-UX-DIRECTION.md §3, §6; GITUI-03).
+ */
+export const gitScreenMatchStrategyPreview: Record<MatchStrategy, string> = {
+  gitdir: gitScreenIncludeIfGitdirLine,
+  hasconfig: gitScreenIncludeIfHasconfigLine,
+  both: gitScreenIncludeIfBothLines,
+};
+
+export const gitScreenManagedBlockSentinels = managedBlockSentinels(
+  sshIdentityAlias.identityName,
+);
+
+/** The exact fragment-file contents gitid writes to `gitScreenFragmentPath`. */
+export const gitScreenManagedFragmentText = `${gitScreenManagedBlockSentinels.begin}
+${personalIdentityGitFragmentText}
+${gitScreenManagedBlockSentinels.end}`;
+
+/**
+ * The block appended to `~/.gitconfig` itself (the default `gitdir`
+ * strategy's `includeIf`, sentineled the same way as every other managed
+ * block so the live preview shows containment, §2/§5).
+ */
+export const gitScreenGitconfigIncludeBlockText = `${gitScreenManagedBlockSentinels.begin}
+${gitScreenIncludeIfGitdirLine}
+${gitScreenManagedBlockSentinels.end}`;
+
+/** GITUI-05: confirm-write shows all three targets this screen mutates. */
+export const gitScreenConfirmTargets = {
+  fragmentFile: gitScreenFragmentPath,
+  gitconfigFile: '~/.gitconfig',
+  allowedSignersFile: '~/.ssh/allowed_signers',
+} as const;
+
+export const gitScreenAllowedSignersBackupPath =
+  '~/.ssh/allowed_signers.backup.2026-07-03T03-59-12Z';
+
+export const gitScreenResultSuccessMessage = `Git identity "${sshIdentityAlias.identityName}" configured — ${gitScreenFragmentPath} now applies via the ${defaultMatchStrategy} match strategy.`;

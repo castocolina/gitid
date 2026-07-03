@@ -1,0 +1,51 @@
+[
+  {
+    "surface": "git-screen",
+    "screen": "git-form-empty",
+    "htmlRoute": "/git-screen/git-form-empty",
+    "keysFromHome": ["1", "g"],
+    "signature": "SIG-GIT-FORM-EMPTY"
+  },
+  {
+    "surface": "git-screen",
+    "screen": "git-form-filled",
+    "htmlRoute": "/git-screen/git-form-filled",
+    "keysFromHome": ["1", "g", "f"],
+    "signature": "SIG-GIT-FORM-FILLED"
+  },
+  {
+    "surface": "git-screen",
+    "screen": "match-strategy-select",
+    "htmlRoute": "/git-screen/match-strategy-select",
+    "keysFromHome": ["1", "g", "f", "m"],
+    "signature": "SIG-MATCH-STRATEGY-SELECT-DEFAULT-GITDIR"
+  },
+  {
+    "surface": "git-screen",
+    "screen": "review-readonly",
+    "htmlRoute": "/git-screen/review-readonly",
+    "keysFromHome": ["1", "g", "f", "m", "r"],
+    "signature": "SIG-REVIEW-READONLY-ALLOWED-SIGNERS"
+  },
+  {
+    "surface": "git-screen",
+    "screen": "confirm-write",
+    "htmlRoute": "/git-screen/confirm-write",
+    "keysFromHome": ["1", "g", "f", "m", "r", "w"],
+    "signature": "SIG-GIT-CONFIRM-WRITE"
+  },
+  {
+    "surface": "git-screen",
+    "screen": "backup-notice",
+    "htmlRoute": "/git-screen/backup-notice",
+    "keysFromHome": ["1", "g", "f", "m", "r", "w", "y"],
+    "signature": "SIG-GIT-BACKUP-NOTICE"
+  },
+  {
+    "surface": "git-screen",
+    "screen": "result-success",
+    "htmlRoute": "/git-screen/result-success",
+    "keysFromHome": ["1", "g", "f", "m", "r", "w", "y", "z"],
+    "signature": "SIG-GIT-RESULT-SUCCESS"
+  }
+]

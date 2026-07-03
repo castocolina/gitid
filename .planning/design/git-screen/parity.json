@@ -1,0 +1,65 @@
+[
+  {
+    "dimension": "field-set-and-order",
+    "html_present": false,
+    "tui_present": false,
+    "status": "pending",
+    "resolution": ""
+  },
+  {
+    "dimension": "labels-and-helper-copy-verbatim",
+    "html_present": false,
+    "tui_present": false,
+    "status": "pending",
+    "resolution": ""
+  },
+  {
+    "dimension": "option-sets-enumerations",
+    "html_present": false,
+    "tui_present": false,
+    "status": "pending",
+    "resolution": ""
+  },
+  {
+    "dimension": "defaults-recipe-accurate",
+    "html_present": false,
+    "tui_present": false,
+    "status": "pending",
+    "resolution": ""
+  },
+  {
+    "dimension": "flow-order-and-named-states",
+    "html_present": false,
+    "tui_present": false,
+    "status": "pending",
+    "resolution": ""
+  },
+  {
+    "dimension": "safety-affordances-presence",
+    "html_present": false,
+    "tui_present": false,
+    "status": "pending",
+    "resolution": ""
+  },
+  {
+    "dimension": "keybindings-surfaced",
+    "html_present": false,
+    "tui_present": false,
+    "status": "pending",
+    "resolution": ""
+  },
+  {
+    "dimension": "allowed-signers-byte-identity",
+    "html_present": false,
+    "tui_present": false,
+    "status": "pending",
+    "resolution": "git-screen's §4(2) highest-risk affordance (GITUI-04): the allowed_signers line's email MUST be byte-identical to user.email, shown side by side on review-readonly in both media."
+  },
+  {
+    "dimension": "match-strategy-default-gitdir",
+    "html_present": false,
+    "tui_present": false,
+    "status": "pending",
+    "resolution": "match-strategy-select defaults to gitdir (02-UX-DIRECTION.md §3/§6, GITUI-03) in both media, with hasconfig and both also present as options and a live includeIf preview."
+  }
+]
