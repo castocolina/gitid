@@ -28,3 +28,20 @@ new `screenshot`-tagged files are clean).
 e2e]` to `.golangci.yml` so `make lint` actually covers these files going forward, and
 (b) fix the 11 findings above. Not addressed here — out of 02-03's declared file scope
 and none of the findings are new regressions this plan introduced.
+
+## From 02-11 (2026-07-03)
+
+`make test` (`go test -race -coverprofile=coverage.out ./...`) fails with `go: no
+such tool "covdata"` specifically on `github.com/castocolina/gitid/cmd/gitid-dummy`
+— a package with zero `_test.go` files (only `main.go`, added in 02-02). This is a
+pre-existing local-toolchain gap (the `covdata` binary is missing from this
+machine's `GOROOT/bin` — coverage merging for a no-test-file package under `-race
+-coverprofile` invokes it), present since `cmd/gitid-dummy/main.go` was added in
+02-02 and unrelated to any file this plan (02-11) touches
+(`internal/dummytui/keyowners_test.go`, `.planning/design/REFERENCE-INDEX.md`,
+`.planning/design/APPROVAL.md`). `go test -race ./...` (without `-coverprofile`)
+passes cleanly across every package, including `internal/dummytui` with this
+plan's new `keyowners_test.go`. Not addressed here — a Makefile/toolchain
+provisioning fix (installing `covdata` via `go install
+golang.org/x/tools/...` or reworking the `test` target's coverage flags) is out of
+this plan's declared file scope and not a regression this plan introduced.
