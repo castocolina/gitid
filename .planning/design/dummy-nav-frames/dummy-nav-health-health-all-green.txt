@@ -1,0 +1,23 @@
+gitid  health/health-all-green
+Health
+Health only diagnoses -- nothing here writes to your files. Open the Fixer (key
+
+SSH
+✓ SSH -- 3 identities, 3 Host blocks, 3 keys checked. All present, all mode 0600
+
+Git
+✓ Git -- 3 includeIf blocks checked. Every fragment file exists, every allowed_s
+
+[SIG-HLTH-ALL-GREEN]
+
+1-5 switch view  Esc back  q quit  ? help
+
+
+
+
+
+
+
+
+
+

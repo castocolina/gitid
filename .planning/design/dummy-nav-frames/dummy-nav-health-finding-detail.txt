@@ -1,0 +1,23 @@
+gitid  health/finding-detail
+IdentitiesOnly no contradicts an explicit IdentityFile
+Health only diagnoses -- nothing here writes to your files. Open the Fixer (key
+
+✗ error   SSH / Coherence
+
+Host clientb.github.com sets IdentitiesOnly no while also naming IdentityFile ~/
+
+! Set IdentitiesOnly yes on the clientb.github.com Host block -- available on th
+
+[SIG-HLTH-FINDING-DETAIL-IDENTITIESONLY-CONTRADICTION]
+
+1-5 switch view  Esc back  q quit  ? help
+
+
+
+
+
+
+
+
+
+
