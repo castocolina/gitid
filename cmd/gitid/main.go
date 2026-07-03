@@ -101,6 +101,9 @@ func newRootCmd() *cobra.Command {
 
 	root.AddCommand(newDoctorCmd())
 
+	// D-08: debug/list command surface (KEY-01/PLAT-01/MGR-02 diagnostic readout).
+	root.AddCommand(newDebugCmd())
+
 	// D-05: top-level rotate alias — delegates to same handler as identity rotate.
 	rotateTL := &cobra.Command{
 		Use:   "rotate <name>",
