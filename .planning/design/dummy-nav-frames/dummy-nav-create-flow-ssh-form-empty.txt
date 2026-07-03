@@ -1,0 +1,23 @@
+gitid  create-flow/ssh-form-empty
+Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
+
+b ssh-form-blank-prefix  f ssh-form-filled  Esc back  q quit  ? help
+
+
+
+    2. SSH connection details
+    Alias prefix:   (empty)
+    SSH Host:       (empty — auto-joins once Alias prefix is set)
+    Real hostname:  (empty)
+    Port:           443 (default)
+
+    Live Host block preview: (fill in the fields to see the resulting Host block
+
+    [SIG-SSH-FORM-EMPTY]
+
+
+
+
+
+
+

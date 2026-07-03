@@ -1,6 +1,8 @@
 package dummytui
 
 import (
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 )
@@ -133,16 +135,36 @@ func (m Model) renderContent() string {
 	}
 
 	dimmed := styleShellDimmed.Render(baseLayout)
+
+	// Pad the dimmed background to the ACTUAL terminal height (m.height)
+	// before compositing, mirroring tui/model.go's renderPersistentLayout —
+	// the real product always renders its body to exactly `m.height - 2`
+	// rows (see contentH there), so its background never runs out of rows
+	// for placeOverlay to draw into. The dummy's renderShell (shell.go) is
+	// NOT height-aware — it renders exactly as many rows as a screen's
+	// natural content needs, which was indistinguishable from "pad to
+	// m.height" while every registered screen was a short single-line
+	// placeholder (02-02/02-03), but silently truncates any modal taller
+	// than the PARENT surface's current natural height once a real
+	// surface (e.g. create-flow, 02-04) is registered: placeOverlay can
+	// only write into rows that already exist in bg (see placeOverlay's
+	// `bgRow >= len(bgLines)` clamp in overlay.go), so a background with
+	// fewer physical rows than the terminal silently ate the tail of any
+	// taller modal (and, when the background was shorter than the modal
+	// height even after boundModalToViewport, pushed the visible origin up
+	// to row 0, overwriting the header instead of the body). padToHeight is
+	// the minimal, additive fix: it does not change baseLayout's own
+	// rendering, only pads copies used for the modal-compositing path.
+	dimmed = padToHeight(dimmed, m.height)
+
 	modalContent := modalScr.Render()
 
-	// Center the modal within the ACTUAL rendered content height (not the
-	// window's full m.height): the dummy's shell renders exactly as many
-	// rows as its four regions need, so centering against m.height (the
-	// terminal's total rows) would push a short modal below the visible
-	// content and placeOverlay would clamp it away entirely (rows out of
-	// bounds are skipped, never negative-index panics — see overlay.go).
-	baseHeight := lipgloss.Height(dimmed)
-	available := baseHeight - 1
+	// Reserve a vertical margin (mirroring tui/model.go's verticalMargin=4
+	// for header+footer+margin) so the modal origin is never flush with the
+	// terminal edge, and measure against the REAL terminal height — not the
+	// parent surface's natural (possibly much shorter) content height.
+	const verticalMargin = 4
+	available := m.height - verticalMargin
 	if available < 1 {
 		available = 1
 	}
@@ -150,8 +172,20 @@ func (m Model) renderContent() string {
 
 	mw := modalWidth(m.width)
 	mh := lipgloss.Height(modalContent)
-	x, y := modalOrigin(m.width, baseHeight, mw, mh)
+	x, y := modalOrigin(m.width, m.height, mw, mh)
 	return placeOverlay(x, y, modalContent, dimmed)
+}
+
+// padToHeight appends blank lines to s until it has at least height rows
+// (split on "\n"), leaving s unchanged if it already has enough. Rows are
+// not padded to a fixed WIDTH — overlayLine (overlay.go) already handles
+// per-row width padding when compositing at a given column.
+func padToHeight(s string, height int) string {
+	lines := strings.Split(s, "\n")
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
 }
 
 // modalWidth returns the clamped modal width: min(width-8, 72), floored at

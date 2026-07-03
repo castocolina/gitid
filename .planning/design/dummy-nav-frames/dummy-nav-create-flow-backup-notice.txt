@@ -1,0 +1,23 @@
+gitid  create-flow/backup-notice
+Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
+
+z result-success  Esc back  q quit  ? help
+
+
+
+
+    6. Backup created
+    ✓ ~/.ssh/config.backup.2026-07-03T03-59-12Z
+
+    A full copy of your previous config was saved before any change was applied
+    this backup path is the undo story.
+
+    [SIG-BACKUP-NOTICE]
+
+
+
+
+
+
+
+

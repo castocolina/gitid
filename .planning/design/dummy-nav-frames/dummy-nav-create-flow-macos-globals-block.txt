@@ -1,0 +1,23 @@
+gitid  create-flow/macos-globals-block
+Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
+
+Esc back  q quit  ? help
+
+
+    macOS Keychain globals
+    A one-time global Host * block stores key passphrases in the macOS Keychain
+    auto-adds new keys to the agent. IgnoreUnknown UseKeychain makes this a docu
+    no-op on Linux.
+
+    IgnoreUnknown UseKeychain
+
+    Host *
+        UseKeychain yes
+        AddKeysToAgent yes
+
+    [SIG-MACOS-GLOBALS-BLOCK]
+
+
+
+
+

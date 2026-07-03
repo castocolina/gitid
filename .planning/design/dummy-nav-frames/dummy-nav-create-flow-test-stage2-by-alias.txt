@@ -1,0 +1,23 @@
+gitid  create-flow/test-stage2-by-alias
+Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
+
+w confirm-write  x test-fail  Esc back  q quit  ? help
+
+
+
+
+    4. Test connectivity — stage 2: by alias (ssh -G proof)
+    $ ssh -G personal.github.com -F /tmp/gitid-test-a1b2c3.config | grep identit
+    ✓ identityfile ~/.ssh/id_ed25519_personal
+
+    ssh -G resolves the effective config for the alias, proving IdentitiesOnly y
+    and this key are what will actually be used — still against the temp config.
+
+    [SIG-TEST-STAGE2-BY-ALIAS]
+
+
+
+
+
+
+

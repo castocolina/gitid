@@ -1,0 +1,23 @@
+gitid  create-flow/ssh-form-blank-prefix
+Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
+
+Esc back  q quit  ? help
+
+
+
+
+    2. SSH connection details — blank prefix (WYSIWYG)
+    Alias prefix:   (blank)
+    SSH Host:       github.com (provider host verbatim, no invented suffix)
+
+    Resulting Host line: Host github.com
+
+    [SIG-SSH-FORM-BLANK-PREFIX-WYSIWYG]
+
+
+
+
+
+
+
+

@@ -1,0 +1,23 @@
+gitid  create-flow/test-stage1-direct
+Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
+
+a test-stage2-by-alias  Esc back  q quit  ? help
+
+
+
+
+    4. Test connectivity — stage 1: direct (provider URL, no alias)
+    $ ssh -T -F /tmp/gitid-test-a1b2c3.config -p 443 -i ~/.ssh/id_ed25519_person
+    ✓ Hi personal! You've successfully authenticated, but GitHub does not provid
+
+    Runs against a throwaway temp config — live ~/.ssh/config is untouched.
+
+    [SIG-TEST-STAGE1-DIRECT]
+
+
+
+
+
+
+
+

@@ -1,58 +1,58 @@
 [
   {
     "dimension": "field-set-and-order",
-    "html_present": false,
-    "tui_present": false,
-    "status": "open",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "Alias prefix -> SSH Host -> Real hostname -> Port appears in identical order in both media (FIELDS.md, ssh-form-empty/-filled/-blank-prefix screens): HTML TextField stack top-to-bottom, TUI aligned label:value lines top-to-bottom. Verified via html/*.png and tui/*.png side-by-side review."
   },
   {
     "dimension": "labels-and-helper-copy-verbatim",
-    "html_present": false,
-    "tui_present": false,
-    "status": "open",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "Labels and helper copy (macOS/Linux availability notes, WYSIWYG blank-prefix explainer, test-fail guidance, all four ceremony-beat copy) match verbatim: the /mui route files read from src/data/recipeFixtures.ts, and internal/dummytui/surface_createflow.go mirrors the same literal strings as Go constants (cf* consts). Spot-checked confirm-write, backup-notice, result-success, test-fail html/tui screenshot pairs."
   },
   {
     "dimension": "option-sets-enumerations",
-    "html_present": false,
-    "tui_present": false,
-    "status": "open",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "The 5-entry algorithm catalog (ed25519 best/default, ed25519-sk, rsa-4096, ecdsa-p256, ecdsa-sk) and the reuse-vs-generate choice appear in the same order with the same per-option security/availability copy in both media (algo-catalog.png, reuse-key-vs-generate.png pairs)."
   },
   {
     "dimension": "defaults-recipe-accurate",
-    "html_present": false,
-    "tui_present": false,
-    "status": "open",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "Port 443, IdentitiesOnly yes, ed25519-as-default, and the  sentinels are recipe-accurate (recipes/ssh-config.recipe) and byte-identical across recipeFixtures.ts, the route files, and surface_createflow.go (grep-verified: IdentitiesOnly yes / Port 443 / ssh -G present in both the mockup-src create-flow routes and internal/dummytui/surface_createflow.go)."
   },
   {
     "dimension": "flow-order-and-named-states",
-    "html_present": false,
-    "tui_present": false,
-    "status": "open",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "All 12 named states from UX-DIRECTION Section 4.1 exist as distinct, navigable screens in both media (manifest.json screen list == surface_createflow.go ScreenDef IDs == route file titles), in the same catalog -> ssh-form -> test -> confirm -> backup -> result order with the same branch detours (ssh-form-blank-prefix, reuse-key-vs-generate, macos-globals-block, test-fail). Verified by TestCreateFlow_KeysFormAConnectedPathReachingEveryScreen (Go) and manual html/tui screenshot review."
   },
   {
     "dimension": "safety-affordances-presence",
-    "html_present": false,
-    "tui_present": false,
-    "status": "open",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "Live preview (ssh-form-filled), confirm (confirm-write, \"Nothing has changed yet\"), backup notice (backup-notice, timestamped path), error state (test-fail, red glyph+word), and the four-beat mutation ceremony all appear on the same steps in both media (confirm-write.png, backup-notice.png, test-fail.png pairs reviewed)."
   },
   {
     "dimension": "keybindings-surfaced",
-    "html_present": false,
-    "tui_present": false,
-    "status": "open",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "Every intra-flow key (c/f/b/r/m/t/a/w/x/y/z) is shown in the keybar/footer of the screen where it applies in BOTH media (Keybar.tsx entries vs renderShellKeybar output); the create-flow launch key (n, from Identities) and reserved keys (Esc/q/?//) are consistent across every screenshot pair reviewed."
   },
   {
     "dimension": "test-confirm-backup-boundary",
-    "html_present": false,
-    "tui_present": false,
-    "status": "open",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "The test-then-confirm-then-backup boundary is unmistakable in both media: test-stage1-direct/test-stage2-by-alias explicitly state the run is against a throwaway temp config with the live ~/.ssh/config untouched; confirm-write explicitly states \"Nothing has changed yet\" before naming the target file and showing the sentinel-wrapped block; backup-notice shows the timestamped backup path before result-success. Verified via html/tui screenshot pairs for all six screens plus make dummy-nav-e2e (zero writes under a sandboxed HOME)."
   }
 ]

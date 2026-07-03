@@ -1,0 +1,23 @@
+gitid  create-flow/reuse-key-vs-generate
+Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
+
+Esc back  q quit  ? help
+
+
+
+
+
+    3. Key source
+    Generate a new key — gitid generates a fresh ~/.ssh/id_ed25519_personal usin
+    Reuse an existing key — point this identity at a key file that already exist
+
+    [SIG-REUSE-KEY-VS-GENERATE]
+
+
+
+
+
+
+
+
+

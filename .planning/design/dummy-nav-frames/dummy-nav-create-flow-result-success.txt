@@ -1,0 +1,23 @@
+gitid  create-flow/result-success
+Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
+
+Esc back  q quit  ? help
+
+
+
+
+    ✓ Identity created
+    ✓ Identity "personal" created — personal.github.com now resolves to ~/.ssh/i
+    Written to ~/.ssh/config.
+
+    To restore by hand, the backup is at ~/.ssh/config.backup.2026-07-03T03-59-1
+
+    [SIG-RESULT-SUCCESS]
+
+
+
+
+
+
+
+

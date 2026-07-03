@@ -1,0 +1,23 @@
+gitid  create-flow/confirm-write
+Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
+
+y backup-notice  Esc back  q quit  ? help
+    5. Confirm write
+    ! Nothing has changed yet — review below, then confirm.
+
+    Will write to ~/.ssh/config:
+    # BEGIN gitid managed: personal
+    Host personal.github.com
+        Hostname ssh.github.com
+        Port 443
+        User git
+        IdentityFile ~/.ssh/id_ed25519_personal
+        IdentitiesOnly yes
+    # END gitid managed: personal
+
+    gitid only owns the block between the sentinels — everything else is preserv
+
+    [SIG-CONFIRM-WRITE]
+
+
+

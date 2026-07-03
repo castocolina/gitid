@@ -1,0 +1,23 @@
+gitid  create-flow/ssh-form-filled
+Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
+
+m macos-globals-block  r reuse-key-vs-generate  t test-stage1-direct  Esc back
+    2. SSH connection details
+    Alias prefix:   personal
+    SSH Host:       personal.github.com (auto-joined, editable)
+    Real hostname:  ssh.github.com
+    Port:           443
+
+    Live Host block preview:
+    Host personal.github.com
+        Hostname ssh.github.com
+        Port 443
+        User git
+        IdentityFile ~/.ssh/id_ed25519_personal
+        IdentitiesOnly yes
+
+    [SIG-SSH-FORM-FILLED-LIVE-PREVIEW]
+
+
+
+

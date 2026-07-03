@@ -1,0 +1,23 @@
+gitid  create-flow/algo-catalog
+Identity Manager — placeholder (replaced in Wave 4 by the real identity-manager
+
+c ss1. Choose a key algorithm
+    ed25519 ✓ best / default
+      Modern EdDSA curve — small keys, fast, constant-time (timing-attack resist
+      macOS: Native (LibreSSL) — always available   Linux: Native (OpenSSL) — al
+    ed25519-sk
+      Hardware-backed: private key material never leaves the security key; requi
+      macOS: Needs libfido2 + a FIDO2 security key   Linux: Needs libfido2 + a F
+    rsa-4096
+      Strong at 4096 bits; widely compatible, larger keys and slower signing tha
+      macOS: Native — always available   Linux: Native — always available
+    ecdsa-p256
+      Compact NIST P-256 curve; smaller than RSA.
+      macOS: Native — always available   Linux: Native — always available
+    ecdsa-sk
+      Hardware-backed ECDSA variant of ed25519-sk; physical security-key touch r
+      macOS: Needs libfido2 + a FIDO2 security key   Linux: Needs libfido2 + a F
+
+    [SIG-ALGO-CATALOG-ED25519-DEFAULT]
+
+
