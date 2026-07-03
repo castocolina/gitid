@@ -1,0 +1,30 @@
+{
+  "name": "gitid-mockup-src",
+  "private": true,
+  "version": "0.0.0",
+  "description": "gitid design-review mockup SPA (living design doc, not a shipped web UI — REQUIREMENTS.md Out of Scope). Terminal-skinned MUI v7 SPA under .planning/design/mockup-src/, built with Vite + React 19 + TypeScript.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@emotion/react": "11.14.0",
+    "@emotion/styled": "11.14.1",
+    "@fontsource/jetbrains-mono": "5.2.8",
+    "@mui/icons-material": "7.3.11",
+    "@mui/material": "7.3.11",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "react-router-dom": "7.18.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.3",
+    "typescript": "6.0.3",
+    "vite": "8.1.3"
+  }
+}
