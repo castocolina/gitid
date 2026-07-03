@@ -43,8 +43,13 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
-// Update satisfies tea.Model: window-size messages resize the shell, key
-// messages are dispatched through route().
+// Update satisfies tea.Model: window-size messages resize the shell; "q"
+// and "ctrl+c" are the globally reserved quit keys (doc.go's key-allocation
+// table: "q ? / j k (arrows) | (all) | reserved | quit / help / filter /
+// move", mirroring tui/model.go's real quit handling) and are intercepted
+// here — BEFORE route() — so they always quit regardless of nav state,
+// including while a modal is open; every other key message is dispatched
+// through route().
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -52,6 +57,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 	case tea.KeyMsg:
+		if k := msg.String(); k == "q" || k == "ctrl+c" {
+			return m, tea.Quit
+		}
 		m.nav = route(m.nav, msg)
 		return m, nil
 	}
