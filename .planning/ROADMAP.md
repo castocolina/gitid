@@ -118,7 +118,7 @@ Plans:
 - [x] 02-07-PLAN.md — global-ssh (6 states) (DLV-01/02/05)
 - [x] 02-08-PLAN.md — global-git (6 states) (DLV-01/02/05)
 - [x] 02-09-PLAN.md — health (5 states, read-only) (DLV-01/02/05)
-- [ ] 02-10-PLAN.md — fixer (6 states) (DLV-01/02/05)
+- [x] 02-10-PLAN.md — fixer (6 states) (DLV-01/02/05)
 
 **Wave 5** — assembly (blocked on fan-out)
 
@@ -256,7 +256,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations, Spikes & CI | 7/7 | Complete | 2026-07-03 |
-| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 9/12 | In Progress|  |
+| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 10/12 | In Progress|  |
 | 3. Create Flow Backend | 0/TBD | Not started | - |
 | 4. Git Configuration Screen | 0/TBD | Not started | - |
 | 5. Identity Manager | 0/TBD | Not started | - |

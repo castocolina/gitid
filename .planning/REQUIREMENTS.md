@@ -29,11 +29,11 @@ strategy (OpenSSH 9.7, absolute-path Include resolves; first-match-wins).
 
 These are first-class, enforced requirements — the user's core process ask.
 
-- [ ] **DLV-01** (Design-first): Every UI-bearing phase produces an **HTML mockup**
+- [x] **DLV-01** (Design-first): Every UI-bearing phase produces an **HTML mockup**
   (React or similar + the `/mui` skill) BEFORE any Go/TUI code is written for that
   surface. The mockup encodes layout, field order, labels, copy, and flow.
 
-- [ ] **DLV-02** (Agents on every UI task): The `agent-ui-ux-designer` agent AND the
+- [x] **DLV-02** (Agents on every UI task): The `agent-ui-ux-designer` agent AND the
   `/mui` skill are engaged on every UI-related task — during planning, execution,
   AND review. Any plan touching an interface names both in its task list.
 
@@ -47,7 +47,7 @@ These are first-class, enforced requirements — the user's core process ask.
   screenshots (appearance, fields, options, labels). Divergence from approved design
   is a review finding.
 
-- [ ] **DLV-05** (Per-surface build order): For each UI surface the order is fixed:
+- [x] **DLV-05** (Per-surface build order): For each UI surface the order is fixed:
   HTML mockup → screenshots → Go TUI **dummy** mockup (full navigation, no backend
   logic) → screenshots → **user approval (checkpoint #1)** → backend logic wiring →
   e2e → visual-regression review. Backend logic is never written before the dummy
@@ -437,11 +437,11 @@ row below records each one's **home** phase.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DLV-01 | Phase 2 | Pending |
-| DLV-02 | Phase 2 | Pending |
+| DLV-01 | Phase 2 | Complete |
+| DLV-02 | Phase 2 | Complete |
 | DLV-03 | Phase 1 | Complete |
 | DLV-04 | Phase 3 | Pending |
-| DLV-05 | Phase 2 | Pending |
+| DLV-05 | Phase 2 | Complete |
 | DLV-06 | Phase 3 | Pending |
 | DLV-07 | Phase 1 | Complete |
 | DLV-08 | Phase 2 | Pending |
