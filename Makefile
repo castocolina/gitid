@@ -99,7 +99,12 @@ setup-env:
 	go install github.com/securego/gosec/v2/cmd/gosec@latest
 	@echo "==> Installing pre-commit (via uv; bootstrap uv with the Astral installer if missing — not a system package manager)"
 	command -v uv >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR="$$HOME/.local/bin" sh
-	uv tool install pre-commit
+	# The Astral installer drops uv in ~/.local/bin, but make exec's the next
+	# metacharacter-free recipe line directly (bypassing the line-69 PATH export),
+	# so a bare `uv` is not found on a runner without a pre-installed uv (seen on
+	# macos-15-intel). Prepend ~/.local/bin inline so the freshly-bootstrapped uv
+	# resolves regardless of whether it pre-existed on PATH.
+	PATH="$$HOME/.local/bin:$$PATH" uv tool install pre-commit
 	@echo "==> Installing freeze $(FREEZE_VERSION) (screenshot-tui rendering; dev/build tool only)"
 	go install github.com/charmbracelet/freeze@v0.2.2
 	@echo "==> Provisioning the pinned Chromium revision for screenshot-html (headless, go-rod)"
