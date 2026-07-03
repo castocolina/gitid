@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-11-PLAN.md
-last_updated: "2026-07-03T12:38:49.196Z"
-last_activity: 2026-07-03 -- Phase 02 execution in progress (02-10 complete)
+stopped_at: Completed 02-review-fixes (consolidated fix pass, 4 reviews) -- ready for 02-12
+last_updated: "2026-07-03T14:00:00.000Z"
+last_activity: 2026-07-03 -- 02-review-fixes: fixed all findings from REVIEW.md (internal), Codex cross-vendor review, agent-ui-ux-designer parity critique, and SECURITY.md; re-captured all 100 reference PNGs (50 html + 50 tui); 63/63 parity.json rows resolved with honest text; gate-no-backend-files Makefile target added
 progress:
   total_phases: 10
   completed_phases: 1
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 ## Current Position
 
 Phase: 02 (design-all-mockups-checkpoint-1) — EXECUTING
-Plan: 11 of 12
-Status: Executing — 02-10 complete (fixer, the 7th and FINAL fan-out surface: MUI mockup + TUI dummy + capture + 0-unresolved parity, both media, 6 states); all 7 fan-out surfaces (create-flow, git-screen, identity-manager, global-ssh, global-git, health, fixer) now built, DLV-01/DLV-02/DLV-05 marked complete; next is 02-11/02-12
-Last activity: 2026-07-03 -- Phase 02 execution in progress (02-10 complete)
+Plan: 11 of 12 (+ consolidated review-fixes pass, see 02-REVIEW-FIXES.md)
+Status: 02-11 complete, then a consolidated fix pass (02-REVIEW-FIXES.md) closed every finding from 4 independent reviews (internal Go review, Codex cross-vendor, agent-ui-ux-designer parity critique, security audit) before the 02-12 human approval checkpoint runs — all 100 reference PNGs re-captured, 63/63 parity.json rows resolved, gate-no-backend-files automated (SECURITY.md Finding 1 closed). Next is 02-12 (the single human design-approval checkpoint).
+Last activity: 2026-07-03 -- 02-review-fixes pass complete, all gates green, ready for 02-12
 
 Progress: [█████████░] 89%
 
@@ -129,6 +129,13 @@ Recent decisions affecting current work:
 - [Phase 02, plan 10]: DLV-01/DLV-02/DLV-05 marked complete in REQUIREMENTS.md -- the 7th and final fan-out surface (fixer) completes Phase 2's design-first process across all seven UI surfaces. FIX-01/FIX-02/HLTH-* remain Pending (home: Phase 8, backend wiring).
 - [Phase 02]: 02-11: scoped the manifest-computed PNG-count check to the 7 Phase-2 surfaces (excludes the unrelated Phase-1 _spike dir) and widened the no-backend-files gate allowlist to all of .planning/ (GSD workflow bookkeeping is not backend logic)
 - [Phase 02]: 02-11: raised make test-e2e timeout 60s -> 180s once the full 50-screen dummy-nav walk runs alongside the real-TUI PTY suite in one package
+- [Phase 02, review-fixes]: internal/dummytui/model.go gained a package-level currentViewport (mirrors m.width/m.height, updated on tea.WindowSizeMsg) so identity-manager's self-composited modal screens (imOverlay) can center against the REAL live terminal instead of the fixed defaultWidth/defaultHeight capture canvas -- fixes HI-01 without changing the static RenderScreen/screenshot-tui-mockups capture geometry (currentViewport defaults to the same 100x30 constants until the first resize, which static callers never send)
+- [Phase 02, review-fixes]: registry_test.go/model_test.go gained a snapshotRegistry(t) helper (snapshot + t.Cleanup restore) called by every test that Register()s a test-scoped surface -- closes a proven go test -shuffle=on -count=10 failure caused by the package-level registry map leaking state across test iterations
+- [Phase 02, review-fixes]: ScreenDef gained an optional, additive KeyLabels map[string]string (shell.go's renderShellKeybar consults it, falling back to the raw target screen ID) so a screen can show a semantic keybar action label ("y Yes, write") without changing what the key routes to -- used by create-flow's confirm-write only this pass
+- [Phase 02, review-fixes]: HTMLOptions gained RequiredTexts []string (additive to RequiredText) and CaptureHTML now polls (25ms) for all required texts until present or Timeout expires, closing both the missing-signature-check gap (Codex B1) and the single-point-in-time-check flakiness risk (Codex B3) in one change
+- [Phase 02, review-fixes]: added .planning/design/mockup-src/src/data/screenSignatures.ts (byte-identical mirror of every manifest.json's signature field, keyed by ScreenID) + wired into Shell.tsx as a rendered [SIG-...] marker -- the HTML mockup previously had no signature marker anywhere in its DOM (signatures were TUI-only), so design_capture_test.go could not require one on the HTML side; zero per-route file edits needed since Shell.tsx already receives the ScreenID as its title prop
+- [Phase 02, review-fixes]: Shell.tsx changed from a fixed height:'100vh' + main's overflow:'auto' to minHeight:'100vh' + natural flow -- the fixed height's inner scroll region clipped any body taller than the 800px viewport INSIDE itself, invisible to go-rod's fullPage screenshot capture (which only sees the outer document's scroll height), causing 3 reference PNGs (global-ssh/global-git options-list, identity-manager list-populated) to be fold-clipped despite the content existing in the DOM
+- [Phase 02, review-fixes]: added a gate-no-backend-files Makefile target (git merge-base main HEAD diff against the Phase-2 allowlist), wired as a dummy-nav-e2e prerequisite -- closes SECURITY.md Finding 1 (T-02-BEGATE had no persisted/automated enforcement, only a one-off plan-file shell line)
 
 ### Roadmap Evolution
 
@@ -152,6 +159,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-03T12:38:49.183Z
-Stopped at: Completed 02-11-PLAN.md
-Resume file: None
+Last session: 2026-07-03T14:00:00.000Z
+Stopped at: Completed 02-review-fixes (see .planning/phases/02-design-all-mockups-checkpoint-1/02-REVIEW-FIXES.md) -- ready for 02-12
+Resume file: .planning/phases/02-design-all-mockups-checkpoint-1/02-12-PLAN.md
