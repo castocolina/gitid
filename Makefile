@@ -21,8 +21,17 @@
 #                   (TOOL-05, DLV-03; build-tag isolated behind `screenshot`).
 #   screenshot-html Render the fixture HTML page to a deterministic PNG via headless
 #                   Chromium (go-rod, pinned revision; TOOL-05, DLV-03).
+#   screenshot-html-mockups Build the Phase 2 MUI mockup SPA (dist/) and capture one PNG
+#                   per .planning/design/*/manifest.json HTML screen (extends Phase 1's
+#                   screenshot-html pipeline via internal/screenshot/design_adapter.go).
+#   screenshot-tui-mockups  Capture one PNG per manifest TUI screen via
+#                   internal/dummytui.RenderScreen (extends Phase 1's screenshot-tui
+#                   pipeline).
+#   dummy-nav-e2e   Drive the real cmd/gitid-dummy binary over a PTY, proving every
+#                   manifest screen is reachable via absolute keystrokes before any
+#                   design-review presentation (DLV-05).
 
-.PHONY: setup-env build build-cross install uninstall test lint fmt install-hooks test-e2e screenshot-tui screenshot-html
+.PHONY: setup-env build build-cross install uninstall test lint fmt install-hooks test-e2e screenshot-tui screenshot-html screenshot-html-mockups screenshot-tui-mockups dummy-nav-e2e
 
 # Binary output directory.
 BIN_DIR := bin
@@ -206,3 +215,39 @@ screenshot-tui:
 ## never enters the shipped binary's dependency graph).
 screenshot-html:
 	go test -tags screenshot ./internal/screenshot/... -run TestCaptureHTML
+
+## screenshot-html-mockups: build the Phase 2 MUI mockup SPA and capture one
+## PNG per .planning/design/*/manifest.json HTML screen (DLV-01, DLV-02,
+## extends Phase 1's screenshot-html pipeline -- 02-03-PLAN.md).
+## `pnpm build` runs scripts/verify-routes.mjs (the route-uniqueness/shape
+## gate) before `vite build` -- a bad or duplicate mockup route fails the
+## build loudly, before any capture step runs. ALWAYS --frozen-lockfile
+## (never an unpinned dependency install, which could pull drifted deps in
+## CI -- T-02-SC3). Invokes TestCaptureAllMockupScreens's "html" subtests --
+## the concrete runnable entry point that actually writes each PNG under
+## .planning/design/<surface>/html/, gated on the "<surface>/<screen>"
+## breadcrumb rendering correctly (never a blank/wrong-route PNG).
+screenshot-html-mockups:
+	cd .planning/design/mockup-src && pnpm i --frozen-lockfile && pnpm build
+	go test -tags screenshot -run 'TestCaptureAllMockupScreens/.*/html' ./internal/screenshot/...
+
+## screenshot-tui-mockups: capture one PNG per .planning/design/*/manifest.json
+## TUI screen via internal/dummytui.RenderScreen (DLV-01, DLV-02, extends
+## Phase 1's screenshot-tui pipeline -- 02-03-PLAN.md). Invokes
+## TestCaptureAllMockupScreens's "tui" subtests -- the concrete runnable
+## entry point that actually writes each PNG under
+## .planning/design/<surface>/tui/, gated on the same breadcrumb assertion
+## as the html-mockups target.
+screenshot-tui-mockups:
+	go test -tags screenshot -run 'TestCaptureAllMockupScreens/.*/tui' ./internal/screenshot/...
+
+## dummy-nav-e2e: run the dummy-tui PTY navigation proof (builds gitid-dummy
+## first). Drives the REAL cmd/gitid-dummy binary via raw PTY keystrokes,
+## re-homing before each manifest entry and asserting the active screen
+## breadcrumb + a screen-specific signature, then asserts zero files were
+## written under a sandboxed HOME (DLV-05). Tests are tagged //go:build e2e
+## and are excluded from the normal make test target (same convention as
+## test-e2e).
+dummy-nav-e2e:
+	go build -o $(BIN_DIR)/gitid-dummy ./cmd/gitid-dummy
+	go test -tags e2e -race -timeout 60s -run TestDummyNav ./e2e/...
