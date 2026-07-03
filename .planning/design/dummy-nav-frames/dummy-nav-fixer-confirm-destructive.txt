@@ -1,0 +1,23 @@
+gitid  fixer/confirm-destructive
+Confirm: IdentitiesOnly no contradicts an explicit IdentityFile
+Every fix is previewed, confirmed, and backed up before anything is written -- n
+
+✗ This rewrites a directive already present in your SSH config. Review the diff
+File: ~/.ssh/config
+Host block: clientb.github.com
+Directive rewritten: IdentitiesOnly no -> yes
+
+Default-focused: No, cancel. Destructive actions never default to yes (§5) --
+a backup is taken before anything is written.
+
+[SIG-FIX-CONFIRM-DESTRUCTIVE-REWRITE]
+
+y backup-notice  1-5 switch view  Esc back  q quit  ? help
+
+
+
+
+
+
+
+

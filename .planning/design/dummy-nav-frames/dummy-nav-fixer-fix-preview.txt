@@ -1,0 +1,23 @@
+gitid  fixer/fix-preview
+Preview fix -- IdentitiesOnly no contradicts an explicit IdentityFile
+Every fix is previewed, confirmed, and backed up before anything is written -- n
+
+! This fix REWRITES a directive already present in ~/.ssh/config -- it is not a
+
+Diff -- ~/.ssh/config:
+  Host clientb.github.com
+      Hostname ssh.github.com
+      Port 443
+      User git
+      IdentityFile ~/.ssh/id_ed25519_clientB
+-     IdentitiesOnly no
++     IdentitiesOnly yes
+
+Only the highlighted line changes -- the rest of the Host block is untouched.
+
+[SIG-FIX-PREVIEW-IDENTITIESONLY-DIFF]
+
+x confirm-destructive  1-5 switch view  Esc back  q quit  ? help
+
+
+

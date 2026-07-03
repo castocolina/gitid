@@ -1,0 +1,23 @@
+gitid  fixer/result-applied
+✓ Fix applied
+Every fix is previewed, confirmed, and backed up before anything is written -- n
+
+✓ IdentitiesOnly set to yes on Host clientb.github.com in ~/.ssh/config.
+Only the rewritten directive changed -- the rest of ~/.ssh/config was preserved
+
+To restore by hand, the backup is at ~/.ssh/config.backup.2026-07-03T03-59-12Z.
+
+[SIG-FIX-RESULT-APPLIED]
+
+1-5 switch view  Esc back  q quit  ? help
+
+
+
+
+
+
+
+
+
+
+

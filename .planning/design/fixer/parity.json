@@ -1,65 +1,65 @@
 [
   {
     "dimension": "field-set-and-order",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "fixer-list's SSH section (3 problems) then Git section (1 problem) appears in the SAME order in both media; fix-preview's rewrite-banner-then-diff-then-context-note order matches; confirm-destructive's warning-then-target-summary-then-default-focus-note order matches; backup-notice's path-then-explainer order matches; result-applied's success-message-then-preserved-note-then-restore-path order matches; nothing-to-fix's SSH-then-Git order matches. Verified via html/*.png and tui/*.png side-by-side review (FIELDS.md) and TestFixer_EveryScreenRendersNonEmptyWithSignatureAndBreadcrumb (Go)."
   },
   {
     "dimension": "labels-and-helper-copy-verbatim",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "Labels and helper copy match verbatim between media wherever both are present: the safety banner (fixerSafetyNote/fixSafetyNote), every problem's title/suggestedFix, the rewrite-diff banner and context note, the confirm-destructive warning/default-focus copy, the backup path and explainer, and the result-applied success/preserved/restore copy are all byte-identical (recipeFixtures.ts's fixer* exports vs surface_fixer.go's fix* Go constants). ONE accepted exception: fixer-list's right-pane master-detail preview (the highlighted problem's full explanation) is TUI-omitted in favor of a one-line keybar hint (viewport compaction, CRITIQUE.md finding #2, the SAME class health/global-git already established) while present in HTML -- logged in FIELDS.md and this row, not a wording mismatch because every value present in the compact form (title, suggestedFix) is byte-identical to its HTML counterpart, only the layout differs."
   },
   {
     "dimension": "option-sets-enumerations",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "The 4-problem fixable set (1 critical + 2 error on SSH, 1 error on Git) appears with the same severity, family, title, and suggestedFix in both media (fixer-list.png html/tui pair; TestFixer_SeverityExplanationSuggestedFixPresent). The LOCKED severity-glyph contract (reused byte-identically from health: warning=! yellow, error/critical=✗ red, never ✗ for warning) matches exactly between media. fixerFindings/fixFindings are both filtered from the SAME healthFindings/hlthFindings set (the ones carrying a suggestedFix) -- traceable, not independently enumerated."
   },
   {
     "dimension": "defaults-recipe-accurate",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "The flagship fix-preview target is recipe-faithful: the rewritten Host block matches recipes/ssh-config.recipe's per-alias convention (Hostname/Port 443/User/IdentityFile/IdentitiesOnly on one Host block), and the SAME contradiction health's own finding-detail already establishes (IdentitiesOnly no alongside an explicit IdentityFile) is the one being fixed here -- consistent, not reinvented. The backup path format (~/.ssh/config.backup.<RFC3339-ish timestamp>) matches every other surface's own backup-path convention (create-flow/git-screen/identity-manager/global-ssh/global-git's sampleBackupPath family) byte-identically via the shared sampleBackupPath fixture."
   },
   {
     "dimension": "flow-order-and-named-states",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "All 6 named states from UX-DIRECTION.md §4.7 exist as distinct, navigable screens in both media (manifest.json screen list == surface_fixer.go ScreenDef IDs == route file titles), reachable via the SAME transitions in both: fixer-list (entry, key 5) -> fix-preview (v) -> confirm-destructive (x) -> backup-notice (y) -> result-applied (z), plus fixer-list -> nothing-to-fix (e). Verified by TestFixer_KeysFormAConnectedPathReachingEveryScreen (Go), manual html/tui screenshot review, and the surface-scoped dummy-nav e2e (TestDummyNavReachesAllScreens/fixer) reaching every screen through the running binary -- all 6 subtests pass."
   },
   {
     "dimension": "safety-affordances-presence",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "The mutation ceremony's all 4 beats (§5) appear on the same steps in both media: fix-preview is beat 1 (read-only before/after diff preview), confirm-destructive is beat 2 (explicit, strongest confirm, default-focused No, never Yes), backup-notice is beat 3 (timestamped ~/.ssh/config backup path named BEFORE applying), result-applied is beat 4 (what changed + how to restore). The fix-in-place safety banner (fixerSafetyNote/fixSafetyNote) additionally appears on ALL 6 screens including fixer-list and nothing-to-fix, not just the ceremony screens -- verified via TestFixer_SafetyNoteOnEveryScreen (Go, positive assertion on all 6 screens) and direct screenshot review (all 12 captured PNGs)."
   },
   {
     "dimension": "keybindings-surfaced",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "Every intra-flow key (v/x/y/z/e) is shown in the keybar/footer of the screen where it applies in BOTH media (Keybar.tsx entries vs renderShellKeybar output); fixer's keys allocate v=fix-preview/x=confirm-destructive/y=backup-notice/z=result-applied/e=nothing-to-fix, all fresh letters, never n/g (create-flow's/git-screen's own LaunchKeys -- TestFixer_IntraSurfaceKeysNeverReuseLaunchKeysNOrG); reserved keys (Esc/q/?//) are consistent across every screenshot pair reviewed. See CRITIQUE.md finding #3 for the one accepted label-WORDING difference (TUI shows the raw target screen ID, HTML shows a semantic action phrase -- the key itself and its destination match), the same class already accepted for every prior fan-out surface."
   },
   {
     "dimension": "fix-in-place-diff-and-backup",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": "§4.7's highest-risk affordance: fix-in-place rewrites of an existing directive show a before/after diff and name the backup path before applying."
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "§4.7's own flagship highest-risk affordance: fix-in-place rewrites of an EXISTING directive show a before/after diff and name the backup path before applying. fix-preview renders a TRUE `-`/`+` rewrite diff of IdentitiesOnly no -> yes on the EXISTING clientb.github.com Host block (not an additions-only + list, unlike global-ssh's/global-git's fix-preview) in both media, byte-identical field values (fixerFixPreviewLines/fixFixPreviewLines); confirm-destructive states the rewrite explicitly, uses the strongest confirm short of a typed confirmation, and is default-focused No, never Yes, in both media; backup-notice names the timestamped ~/.ssh/config backup path (sampleBackupPath/fixBackupPath, byte-identical) BEFORE the fix is applied; result-applied restates what changed (only the one directive) and the restore path again. A batch-fix is offered on fixer-list but explicitly still previews every change (fixerBatchFixNote/fixBatchFixNote, byte-identical) -- no silent multi-file mutation, per §4.7's own batch-fix rule."
   },
   {
     "dimension": "nothing-to-fix-empty-state",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": "§4.7's healthy empty state — both SSH and Git sections report zero fixable problems."
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "§4.7's healthy empty state -- both SSH and Git sections report zero fixable problems, mirroring health's own health-all-green two-section-even-when-empty precedent (and reusing the SAME safety banner every other fixer screen carries, unlike health's read-only banner which is specific to Health). Both media show a green-bordered SSH/Git pair, each with a ✓-prefixed zero-findings summary sentence (fixerNothingToFixSummary/fixNothingToFixSSH+fixNothingToFixGit, byte-identical). Verified via TestFixer_NothingToFixIsTheHealthyEmptyState and TestFixer_ListAndNothingToFixHaveBothSSHAndGitSections (Go), plus direct screenshot-pair review (nothing-to-fix.png html/tui) and the surface-scoped dummy-nav e2e reaching this screen (TestDummyNavReachesAllScreens/fixer/nothing-to-fix)."
   }
 ]
