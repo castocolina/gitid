@@ -92,7 +92,7 @@ a user decline).
 | # | Field | Label | Order | HTML present | TUI present | Notes |
 |---|-------|-------|-------|---------------|--------------|-------|
 | 1 | `fix_summary_banner` | "Applying 10 of 10…" + `user.email` absence explained | 1st | ✓ | ✓ | |
-| 2 | `fix_diff` | `+` diff lines, section by section | 2nd | ✓ | ✓ | the managed block in `~/.gitconfig` |
+| 2 | `fix_diff` | `+` diff lines, section by section | 2nd | ✓ | ✓ (compacted) | HTML shows the full per-section `+ [section]` / `+     key = value` diff; TUI groups the same 10 values onto 5 `key=value` lines (`ggitCompactValueLines`, mirroring git-screen's `gsFieldsCompactLine1/2/3` precedent) — the fixed 80×24 live-PTY viewport with no scroll region overflowed on the first attempt (CRITIQUE.md finding #2); the same field set/values are present in both, only the layout is grouped |
 | 3 | `managed_block_note` | "gitid only owns the block…" | 3rd | ✓ | ✓ | managed-block containment shown, not just asserted (§5) |
 
 ## global-git / confirm-write
@@ -105,7 +105,7 @@ surface's own highest-risk affordance (GGIT-01).
 |---|-------|-------|-------|---------------|--------------|-------|
 | 1 | `confirm_nothing_changed_banner` | "Nothing has changed yet…" | 1st | ✓ | ✓ | |
 | 2 | `confirm_target_file` | `~/.gitconfig` named | within banner/body | ✓ | ✓ | |
-| 3 | `confirm_managed_block_text` | sentinel-visible exact text | 2nd | ✓ | ✓ | `# BEGIN/END gitid managed: global-git` |
+| 3 | `confirm_managed_block_text` | sentinel-visible exact text | 2nd | ✓ | ✓ (compacted) | `# BEGIN/END gitid managed: global-git` sentinel lines are byte-identical in both media; the body between them is the full multi-section text in HTML and the same 5-line compacted `key=value` grouping fix-preview uses in TUI (CRITIQUE.md finding #2) — same values, grouped layout |
 | 4 | `confirm_outside_block_preserved_note` | "everything else…is preserved verbatim" | within banner/body | ✓ | ✓ | names `[user]`/`[includeIf]`/`[url]` explicitly as examples of what is untouched |
 
 ## global-git / backup-notice

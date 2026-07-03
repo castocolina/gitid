@@ -1,0 +1,23 @@
+gitid  global-git/confirm-write
+Confirm write
+! Nothing has changed yet — review below, then confirm.
+! user.email is intentionally absent -- gitid never writes a global [user] secti
+
+~/.gitconfig (append, sentinels visible):
+# BEGIN gitid managed: global-git
+defaultBranch=main  ignorecase=false  autocrlf=input  eol=lf
+autoSetupRemote=true  rebase=true  prune=true
+color: ui=auto branch=auto diff=auto status=auto
+conflictstyle=diff3  colorMoved=zebra
+alias (8): st,co,br,ci,df,lg,unstage,last
+# END gitid managed: global-git
+
+[SIG-GGIT-CONFIRM-WRITE]
+
+y backup-notice  1-5 switch view  Esc back  q quit  ? help
+
+
+
+
+
+

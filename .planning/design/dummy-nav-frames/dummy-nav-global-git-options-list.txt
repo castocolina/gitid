@@ -1,0 +1,23 @@
+gitid  global-git/options-list
+Global Git options
+Recommended, not required -- you can leave any option unchanged. This is advisor
+! init.defaultBranch   not set (git's built-in default: master) -> main   [main
+! core.ignorecase   not set (OS-dependent: true on macOS/Windows, false on Linux
+! core.autocrlf / core.eol   not set (line-ending handling varies by OS) -> inpu
+✓ user.email (global)   whatever `git config --global user.email` already holds,
+! push.autoSetupRemote   not set (git default: false) -> true
+! pull.rebase   not set (git default: false -- merge) -> true
+! fetch.prune   not set (git default: false) -> true
+! alias (8 shortcuts)   not set -> st, co, br, ci, df, lg, unstage, last
+! color (ui/branch/diff/status)   not set (ui defaults to auto in modern git; th
+! merge.conflictstyle   not set (git default: merge) -> diff3
+! diff.colorMoved   not set -> zebra
+v full explanation (init.defaultBranch)   f preview fix
+
+[SIG-GGIT-OPTIONS-LIST-11-BASELINE]
+
+v option-detail  1-5 switch view  Esc back  q quit  ? help
+
+
+
+

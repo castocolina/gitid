@@ -1,0 +1,23 @@
+gitid  global-git/option-detail
+init.defaultBranch
+current: not set (git's built-in default: master)   recommended: main   [main vs
+
+Until Git 2.28 (July 2020), every new repository's default branch was named "mas
+
+Setting init.defaultBranch = main only affects repositories created AFTER this i
+
+This is a naming convention, not a security or correctness fix -- it is included
+
+! Recommended, not required -- you can leave any option unchanged. This is advis
+
+[SIG-GGIT-OPTION-DETAIL-DEFAULTBRANCH]
+
+f fix-preview  1-5 switch view  Esc back  q quit  ? help
+
+
+
+
+
+
+
+
