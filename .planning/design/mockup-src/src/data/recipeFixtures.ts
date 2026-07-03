@@ -699,3 +699,243 @@ export const globalSshBackupPath = '~/.ssh/config.backup.2026-07-03T03-59-12Z';
 
 export const globalSshResultMessage =
   '3 of 4 recommended options applied to Host * in ~/.ssh/config. ForwardAgent was left unchanged, as chosen — advisory, never required.';
+
+// ---------------------------------------------------------------------------
+// global-git surface (02-UX-DIRECTION.md §4(5), Phase 7) — a master-detail
+// surface (number key `3`) managing the shared git config baseline, each
+// option EXPLAINED (GGIT-01). Reuses `globalGitDefaults` /
+// `globalGitDefaultsBlockText` (above, unmodified) directly wherever a
+// value overlaps, rather than duplicating them, so the two stay a single
+// source of truth. Order matches 02-UX-DIRECTION.md §4.5's verbatim list:
+// init.defaultBranch (highlighting main vs master) -> core.ignorecase ->
+// autocrlf/eol -> global user.email -> the recipe defaults
+// (push.autoSetupRemote, pull.rebase, fetch.prune, aliases, color,
+// merge.conflictstyle, diff.colorMoved). Highest-risk affordance (§4.5,
+// §5): writes must preserve content OUTSIDE the managed block verbatim —
+// the confirm-write preview renders the `# BEGIN/END gitid managed:`
+// sentinels. §5 also applies the "Advisory <> blocking" rule to BOTH
+// Global-options surfaces, so global-git reuses the same yellow `!`
+// recommended-not-required visual language as global-ssh. These are NEW
+// exports; nothing above this section is modified.
+// ---------------------------------------------------------------------------
+
+export interface GlobalGitOption {
+  key: string;
+  currentValue: string;
+  recommendedValue: string;
+  needsAction: boolean;
+  oneLiner: string;
+  /** main-vs-master (GGIT-01) — the ONE option with a dedicated visual highlight. */
+  highlight?: boolean;
+}
+
+/** The GGIT-01 baseline + recipe-defaults option set, each with current
+ * value + recommended value + a one-line explanation. Order matches
+ * 02-UX-DIRECTION.md §4.5's verbatim list. `recommendedValue` for the
+ * recipe-default rows is interpolated directly from `globalGitDefaults`
+ * (single source of truth, never duplicated). */
+export const globalGitOptions: GlobalGitOption[] = [
+  {
+    key: 'init.defaultBranch',
+    currentValue: 'not set (git’s built-in default: master)',
+    recommendedValue: globalGitDefaults.initDefaultBranch,
+    needsAction: true,
+    highlight: true,
+    oneLiner:
+      'Distros still default new repos to "master"; main matches the modern GitHub/GitLab default without renaming existing repos.',
+  },
+  {
+    key: 'core.ignorecase',
+    currentValue: 'not set (OS-dependent: true on macOS/Windows, false on Linux)',
+    recommendedValue: String(globalGitDefaults.coreIgnorecase),
+    needsAction: true,
+    oneLiner:
+      'Keeps file-name case always significant, so a case-only rename is never silently ignored on a case-insensitive filesystem.',
+  },
+  {
+    key: 'core.autocrlf / core.eol',
+    currentValue: 'not set (line-ending handling varies by OS)',
+    recommendedValue: 'input / lf',
+    needsAction: true,
+    oneLiner:
+      'Normalizes line endings to LF in the repository and on checkout, avoiding CRLF diff noise across contributors on different platforms.',
+  },
+  {
+    key: 'user.email (global)',
+    currentValue: 'whatever `git config --global user.email` already holds, if anything',
+    recommendedValue: 'left alone — not written here',
+    needsAction: false,
+    oneLiner:
+      'gitid never writes a global [user] section — each identity’s commits come from its own includeIf fragment (recipes/gitconfig.recipe); shown here for awareness only.',
+  },
+  {
+    key: 'push.autoSetupRemote',
+    currentValue: 'not set (git default: false)',
+    recommendedValue: String(globalGitDefaults.pushAutoSetupRemote),
+    needsAction: true,
+    oneLiner:
+      'Lets `git push` on a new branch set its upstream automatically, instead of requiring --set-upstream every time.',
+  },
+  {
+    key: 'pull.rebase',
+    currentValue: 'not set (git default: false — merge)',
+    recommendedValue: String(globalGitDefaults.pullRebase),
+    needsAction: true,
+    oneLiner:
+      'Replays local commits on top of the fetched branch instead of creating a merge commit on every pull.',
+  },
+  {
+    key: 'fetch.prune',
+    currentValue: 'not set (git default: false)',
+    recommendedValue: String(globalGitDefaults.fetchPrune),
+    needsAction: true,
+    oneLiner: 'Removes local references to remote branches that were deleted upstream, every fetch.',
+  },
+  {
+    key: 'alias (8 shortcuts)',
+    currentValue: 'not set',
+    recommendedValue: 'st, co, br, ci, df, lg, unstage, last',
+    needsAction: true,
+    oneLiner:
+      'Short, common-workflow aliases (status, checkout, branch, commit, diff, a graph log, unstage, last commit).',
+  },
+  {
+    key: 'color (ui/branch/diff/status)',
+    currentValue: 'not set (ui defaults to auto in modern git; the rest vary)',
+    recommendedValue: 'auto for all four',
+    needsAction: true,
+    oneLiner:
+      'Colorizes status, branch, diff, and general UI output consistently, even where a specific subcommand’s own default might differ.',
+  },
+  {
+    key: 'merge.conflictstyle',
+    currentValue: 'not set (git default: merge)',
+    recommendedValue: globalGitDefaults.mergeConflictstyle,
+    needsAction: true,
+    oneLiner:
+      'Shows the common ancestor alongside both sides of a conflict, making it easier to tell what each side actually changed.',
+  },
+  {
+    key: 'diff.colorMoved',
+    currentValue: 'not set',
+    recommendedValue: globalGitDefaults.diffColorMoved,
+    needsAction: true,
+    oneLiner:
+      'Highlights moved blocks of code distinctly from genuine additions/deletions in colorized diffs, striping each moved block.',
+  },
+];
+
+/** option-detail's target — the single option with the dedicated
+ * main-vs-master highlight (init.defaultBranch), mirroring global-ssh's
+ * single-target `globalSshDetailTarget` precedent. */
+export const globalGitDetailTarget = globalGitOptions[0] as GlobalGitOption; // init.defaultBranch
+
+export const globalGitDetailExplanation = `Until Git 2.28 (July 2020), every new repository's default branch was named "master" — a name inherited from Git's early conventions. GitHub, GitLab, and Bitbucket now all default new repositories to "main" instead, and many teams have followed suit for their own local defaults.
+
+Setting init.defaultBranch = main only affects repositories created AFTER this is set — it never renames an existing "master" branch in a repository you already have. If you clone or work in a repository whose default branch is still "master" (many older projects have not renamed it), that repository's branch is completely unaffected; this setting only decides what \`git init\` names the FIRST branch of a brand-new repository.
+
+This is a naming convention, not a security or correctness fix — it is included here because it is one of the most visible defaults a new gitid user will notice, and stating it explicitly (rather than relying on git's own compiled-in default, or a value some other tool set) keeps the choice intentional and self-documenting.`;
+
+export const globalGitAdvisoryNote =
+  'Recommended, not required — you can leave any option unchanged. This is advisory, never a compliance gate.';
+
+export const globalGitTargetFile = '~/.gitconfig';
+export const globalGitManagedBlockSentinels = managedBlockSentinels('global-git');
+
+/** The 8 recipe-default aliases (recipes/gitconfig.recipe's `[alias]`
+ * block), in file order. */
+export const globalGitAliases = [
+  { alias: 'st', expansion: 'status' },
+  { alias: 'co', expansion: 'checkout' },
+  { alias: 'br', expansion: 'branch' },
+  { alias: 'ci', expansion: 'commit' },
+  { alias: 'df', expansion: 'diff' },
+  {
+    alias: 'lg',
+    expansion:
+      "log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit",
+  },
+  { alias: 'unstage', expansion: 'reset HEAD --' },
+  { alias: 'last', expansion: 'log -1 HEAD' },
+] as const;
+
+export const globalGitColorSettings = {
+  ui: 'auto',
+  branch: 'auto',
+  diff: 'auto',
+  status: 'auto',
+} as const;
+
+export const globalGitAutocrlf = 'input';
+export const globalGitEol = 'lf';
+
+/** The exact managed-block text gitid writes to ~/.gitconfig — extends
+ * `globalGitDefaultsBlockText`'s own [init]/[core]/[push]/[pull]/[fetch]/
+ * [merge]/[diff] section order (unmodified above) with core.autocrlf/eol,
+ * [color], and [alias]. global user.email is intentionally ABSENT —
+ * gitid never writes a [user] section here (each identity's commits come
+ * from its own includeIf fragment). */
+export const globalGitFullManagedBlockText = `${globalGitManagedBlockSentinels.begin}
+[init]
+    defaultBranch = ${globalGitDefaults.initDefaultBranch}
+
+[core]
+    ignorecase = ${globalGitDefaults.coreIgnorecase}
+    autocrlf = ${globalGitAutocrlf}
+    eol = ${globalGitEol}
+
+[push]
+    autoSetupRemote = ${globalGitDefaults.pushAutoSetupRemote}
+
+[pull]
+    rebase = ${globalGitDefaults.pullRebase}
+
+[fetch]
+    prune = ${globalGitDefaults.fetchPrune}
+
+[color]
+    ui = ${globalGitColorSettings.ui}
+    branch = ${globalGitColorSettings.branch}
+    diff = ${globalGitColorSettings.diff}
+    status = ${globalGitColorSettings.status}
+
+[merge]
+    conflictstyle = ${globalGitDefaults.mergeConflictstyle}
+
+[diff]
+    colorMoved = ${globalGitDefaults.diffColorMoved}
+
+[alias]
+${globalGitAliases.map((a) => `    ${a.alias} = ${a.expansion}`).join('\n')}
+${globalGitManagedBlockSentinels.end}`;
+
+/** fix-preview's diff-style lines: `+` for every newly-written baseline
+ * key, and an explicit note that global user.email is intentionally
+ * absent — not a user decline (unlike global-ssh's ForwardAgent), but a
+ * structural gitid rule (D-04b: no [user] section is ever written here). */
+export const globalGitFixPreviewLines = [
+  '+ [init]',
+  `+     defaultBranch = ${globalGitDefaults.initDefaultBranch}`,
+  '+ [core]',
+  `+     ignorecase = ${globalGitDefaults.coreIgnorecase}`,
+  `+     autocrlf = ${globalGitAutocrlf}`,
+  `+     eol = ${globalGitEol}`,
+  '+ [push]',
+  `+     autoSetupRemote = ${globalGitDefaults.pushAutoSetupRemote}`,
+  '+ [pull]',
+  `+     rebase = ${globalGitDefaults.pullRebase}`,
+  '+ [fetch]',
+  `+     prune = ${globalGitDefaults.fetchPrune}`,
+  '+ [color]',
+  '+     ui = auto, branch = auto, diff = auto, status = auto',
+  '+ [merge]',
+  `+     conflictstyle = ${globalGitDefaults.mergeConflictstyle}`,
+  '+ [diff]',
+  `+     colorMoved = ${globalGitDefaults.diffColorMoved}`,
+  '+ [alias]',
+  '+     st, co, br, ci, df, lg, unstage, last (8 shortcuts)',
+  '  user.email — left alone; gitid never writes [user] here (each identity uses its own includeIf fragment)',
+];
+
+export const globalGitResultMessage =
+  '10 of 10 baseline options applied to ~/.gitconfig. Global user.email was left alone, as always — each identity’s commits use their own includeIf fragment.';

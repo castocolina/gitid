@@ -1,0 +1,44 @@
+[
+  {
+    "surface": "global-git",
+    "screen": "options-list",
+    "htmlRoute": "/global-git/options-list",
+    "keysFromHome": ["3"],
+    "signature": "SIG-GGIT-OPTIONS-LIST-11-BASELINE"
+  },
+  {
+    "surface": "global-git",
+    "screen": "option-detail",
+    "htmlRoute": "/global-git/option-detail",
+    "keysFromHome": ["3", "v"],
+    "signature": "SIG-GGIT-OPTION-DETAIL-DEFAULTBRANCH"
+  },
+  {
+    "surface": "global-git",
+    "screen": "fix-preview",
+    "htmlRoute": "/global-git/fix-preview",
+    "keysFromHome": ["3", "v", "f"],
+    "signature": "SIG-GGIT-FIX-PREVIEW-BASELINE-APPLY"
+  },
+  {
+    "surface": "global-git",
+    "screen": "confirm-write",
+    "htmlRoute": "/global-git/confirm-write",
+    "keysFromHome": ["3", "v", "f", "w"],
+    "signature": "SIG-GGIT-CONFIRM-WRITE"
+  },
+  {
+    "surface": "global-git",
+    "screen": "backup-notice",
+    "htmlRoute": "/global-git/backup-notice",
+    "keysFromHome": ["3", "v", "f", "w", "y"],
+    "signature": "SIG-GGIT-BACKUP-NOTICE"
+  },
+  {
+    "surface": "global-git",
+    "screen": "result-applied",
+    "htmlRoute": "/global-git/result-applied",
+    "keysFromHome": ["3", "v", "f", "w", "y", "z"],
+    "signature": "SIG-GGIT-RESULT-APPLIED"
+  }
+]
