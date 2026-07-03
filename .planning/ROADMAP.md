@@ -75,7 +75,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-06-PLAN.md — Debug/list command surfacing catalog + probe + state; real-wiring e2e (KEY-01, PLAT-01, MGR-02, DLV-07)
+- [x] 01-06-PLAN.md — Debug/list command surfacing catalog + probe + state; real-wiring e2e (KEY-01, PLAT-01, MGR-02, DLV-07)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -223,7 +223,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundations, Spikes & CI | 5/7 | In Progress|  |
+| 1. Foundations, Spikes & CI | 6/7 | In Progress|  |
 | 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 0/TBD | Not started | - |
 | 3. Create Flow Backend | 0/TBD | Not started | - |
 | 4. Git Configuration Screen | 0/TBD | Not started | - |
