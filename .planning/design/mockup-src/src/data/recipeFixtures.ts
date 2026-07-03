@@ -387,3 +387,168 @@ export const gitScreenAllowedSignersBackupPath =
   '~/.ssh/allowed_signers.backup.2026-07-03T03-59-12Z';
 
 export const gitScreenResultSuccessMessage = `Git identity "${sshIdentityAlias.identityName}" configured — ${gitScreenFragmentPath} now applies via the ${defaultMatchStrategy} match strategy.`;
+
+// ---------------------------------------------------------------------------
+// identity-manager surface (02-UX-DIRECTION.md §4(3), Phase 5) — the app's
+// HOME view (number key `1`). One fixture identity per MGR-02 8-label state
+// taxonomy (internal/identity/state.go's LOCKED `State` vocabulary), so
+// `list-populated` demonstrates every label at once, legibly under
+// `NO_COLOR` (glyph + word, never color alone — 02-UX-DIRECTION.md §2). The
+// `personal` row reuses `sshIdentityAlias`/`gitScreenFragmentPath` above so
+// the SAME "personal" alias/copy stays canonical across create-flow,
+// git-screen, and identity-manager. These are NEW exports; nothing above
+// this section is modified.
+// ---------------------------------------------------------------------------
+
+/** The 8 locked MGR-02 state labels — MUST stay byte-identical to
+ * internal/identity/state.go's State constants (the shared vocabulary). */
+export type IdentityManagerState =
+  | 'complete'
+  | 'incomplete'
+  | 'git-only'
+  | 'key-unused'
+  | 'key-used-ssh-only'
+  | 'key-used-both'
+  | 'key-missing'
+  | 'fragment-path-missing';
+
+export interface IdentityManagerRow {
+  name: string;
+  state: IdentityManagerState;
+  sshHost?: string;
+  keyPath?: string;
+  gitFragmentPath?: string;
+  /** Per-row explanation of WHY this identity is in this state — the
+   * legible-under-NO_COLOR word half of the glyph+word pairing. */
+  note: string;
+}
+
+/** Glyph half of the color-semantics table (02-UX-DIRECTION.md §2):
+ * healthy=✓, needs-action/advisory=!, error/destructive/missing=✗. Paired
+ * with `identityManagerStateTone`'s color AND the state's own word (the
+ * label itself) so meaning is never carried by color alone. */
+export const identityManagerStateGlyph: Record<IdentityManagerState, string> = {
+  complete: '✓',
+  incomplete: '!',
+  'git-only': '!',
+  'key-unused': '!',
+  'key-used-ssh-only': '✓',
+  'key-used-both': '✓',
+  'key-missing': '✗',
+  'fragment-path-missing': '✗',
+};
+
+export const identityManagerStateTone: Record<
+  IdentityManagerState,
+  'success' | 'warning' | 'error'
+> = {
+  complete: 'success',
+  incomplete: 'warning',
+  'git-only': 'warning',
+  'key-unused': 'warning',
+  'key-used-ssh-only': 'success',
+  'key-used-both': 'success',
+  'key-missing': 'error',
+  'fragment-path-missing': 'error',
+};
+
+/**
+ * `list-populated`'s 8 rows — exactly one per MGR-02 label, in the label's
+ * own severity order (complete first, the two `error`-tone labels last).
+ */
+export const identityManagerRows: IdentityManagerRow[] = [
+  {
+    name: sshIdentityAlias.identityName, // 'personal'
+    state: 'complete',
+    sshHost: sshIdentityAlias.host,
+    keyPath: sshIdentityAlias.identityFile,
+    gitFragmentPath: gitScreenFragmentPath,
+    note: 'SSH Host block and Git fragment both present.',
+  },
+  {
+    name: 'work',
+    state: 'incomplete',
+    sshHost: 'work.github.com',
+    keyPath: '~/.ssh/id_ed25519_work',
+    note: 'SSH Host block present; no Git identity configured for this alias.',
+  },
+  {
+    name: 'opensource',
+    state: 'git-only',
+    gitFragmentPath: '~/.gitconfig.d/opensource',
+    note: 'Git identity relies on the global SSH config; no own Host block.',
+  },
+  {
+    name: 'archived',
+    state: 'key-unused',
+    keyPath: '~/.ssh/id_ed25519_archived',
+    note: 'Key file exists on disk but no identity references it.',
+  },
+  {
+    name: 'staging',
+    state: 'key-used-ssh-only',
+    sshHost: 'staging.github.com',
+    keyPath: '~/.ssh/id_ed25519_staging',
+    note: 'Key referenced by a Host block; not wired for Git commit signing.',
+  },
+  {
+    name: 'clientA',
+    state: 'key-used-both',
+    sshHost: 'clienta.github.com',
+    keyPath: '~/.ssh/id_ed25519_clientA',
+    gitFragmentPath: '~/.gitconfig.d/clientA',
+    note: 'Key wired for both SSH auth and Git commit signing.',
+  },
+  {
+    name: 'clientB',
+    state: 'key-missing',
+    sshHost: 'clientb.github.com',
+    keyPath: '~/.ssh/id_ed25519_clientB',
+    note: 'Host block references a key file that is absent from disk.',
+  },
+  {
+    name: 'legacy',
+    state: 'fragment-path-missing',
+    sshHost: 'legacy.github.com',
+    gitFragmentPath: '~/.gitconfig.d/legacy',
+    note: 'includeIf points at a Git fragment file that does not exist.',
+  },
+];
+
+/**
+ * `detail-ssh-first`'s target: the `work` identity (state `incomplete`,
+ * SSH-only). Chosen deliberately over the fully-populated `personal` row so
+ * the screen proves MGR-03/07's highest-value case: SSH details shown
+ * first, and the Git section explicitly says "not configured" rather than
+ * ever rendering fabricated Git attributes for an SSH-only identity.
+ */
+export const identityManagerDetailTarget = identityManagerRows[1] as IdentityManagerRow; // 'work'
+
+/**
+ * `action-menu` / `clone-name-prompt` / `delete-choice` / `confirm-
+ * destructive` target the fully-populated `personal` identity — the
+ * richest row, so both the safe clone path and the irreversible delete
+ * path are demonstrated against a complete identity with a Git fragment.
+ */
+export const identityManagerActionTarget = identityManagerRows[0] as IdentityManagerRow; // 'personal'
+
+/** clone-name-prompt (MGR-04): the suggested name is DISTINCT from the
+ * source identity's own name — never a bare duplicate. */
+export const identityManagerCloneSuggestedName = 'personal-clone';
+
+/** delete-choice (MGR-06): two destructive options. The safer one (Git
+ * identity only) is default-focused; the irreversible "everything" option
+ * carries the strongest confirm on the NEXT screen (confirm-destructive,
+ * 02-UX-DIRECTION.md §5). */
+export const identityManagerDeleteChoices = {
+  everything: 'Delete everything (SSH + Git + key)',
+  gitOnly: 'Delete Git identity only',
+} as const;
+
+/** backup-notice (§5 beat 3): both files this delete touches get a
+ * timestamped backup — reusing the SAME timestamp convention as
+ * create-flow/git-screen's own backup paths. */
+export const identityManagerBackupPaths = {
+  sshConfig: sampleBackupPath,
+  gitconfig: sampleGitconfigBackupPath,
+} as const;
