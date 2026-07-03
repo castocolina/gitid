@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-08-PLAN.md
-last_updated: "2026-07-03T11:27:33.165Z"
+stopped_at: Completed 02-09-PLAN.md
+last_updated: "2026-07-03T11:47:29.123Z"
 last_activity: 2026-07-03 -- Phase 02 execution in progress (02-05 complete)
 progress:
   total_phases: 10
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 ## Current Position
 
 Phase: 02 (design-all-mockups-checkpoint-1) — EXECUTING
-Plan: 8 of 12
+Plan: 9 of 12
 Status: Executing — 02-05 complete (git-screen fan-out surface: MUI mockup + TUI dummy + capture + 0-unresolved parity, both media, 7 states); next is Wave 4 fan-out continuation (02-06 identity-manager through 02-10)
 Last activity: 2026-07-03 -- Phase 02 execution in progress (02-05 complete)
 
@@ -70,6 +70,7 @@ Progress: [██████░░░░] 63%
 | Phase 02 P06 | ~90min | 3 tasks | 47 files |
 | Phase 02 P07 | 75min | 3 tasks | 21 files |
 | Phase 02 P08 | ~70min | 3 tasks | 22 files |
+| Phase 02 P09 | 45min | 3 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -118,6 +119,9 @@ Recent decisions affecting current work:
 - [Phase 02]: [Phase 02, plan 07]: global-ssh options-list TUI render compacted to one line per option (git-screen's gsFieldsCompactLine precedent generalized to a full list) after the original 4-line-per-option layout overflowed the real 80x24 live PTY viewport at e2e time
 - [Phase 02]: global-git (02-08): GGIT-01's 11-option baseline set interpolates the existing globalGitDefaults fixture directly (never duplicated); global user.email is modeled as never-written (D-04b), matching the real backend, not a declined recommendation
 - [Phase 02]: global-git (02-08): fix-preview/confirm-write TUI compacted to 5 grouped key=value lines (git-screen's gsFieldsCompactLine precedent) after the full literal managed-block render overflowed the fixed 80x24 live PTY on the first e2e attempt
+- [Phase 02]: health (02-09): 4-level doctor severity model (info/warning/error/critical) with a locked glyph contract (warning=! yellow, error/critical=✗ red, info=~ cyan) as the FIRST surface needing a 4th (cyan) semantic hue not in theme.ts's semanticColors table -- defined locally (healthInfoColor) rather than editing the shared theme file — Fan-out isolation (review MEDIUM-10): a fan-out surface writes only its own files; adding a shared theme role would touch a file every other surface also depends on
+- [Phase 02]: health (02-09): per-identity-health reuses the 'legacy' identity from identityManagerRows byte-identically, tracing HLTH-05's per-identity computation to the SAME finding health-with-findings' Git section shows -- proving the slice that feeds a Manager row (MGR-07) is not re-derived data
+- [Phase 02]: health (02-09): zero write-ceremony screens by design (read-only integrity, §4.6/§5) -- unlike every other primary surface, negatively asserted in Go (no confirm/backup/apply marker string anywhere) rather than only positively documented
 
 ### Roadmap Evolution
 
@@ -141,6 +145,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-03T11:27:33.157Z
-Stopped at: Completed 02-08-PLAN.md
+Last session: 2026-07-03T11:47:29.115Z
+Stopped at: Completed 02-09-PLAN.md
 Resume file: None
