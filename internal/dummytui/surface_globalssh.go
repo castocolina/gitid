@@ -189,26 +189,36 @@ func gsshGlyph(needsAction bool) string {
 	return styleGSSHSuccess.Render("✓")
 }
 
+// gsshOptionLine renders ONE option as a SINGLE compact line: glyph + key +
+// current -> recommended (or "(already set)") + a bracketed risk word. This
+// is a TUI-only compaction (§3 "MAY differ: exact spacing, pixel layout...
+// provided the terminal skin keeps them close") — the live gitid-dummy
+// binary renders inside a REAL, fixed 80x24 PTY (e2e/ui_pty_e2e_test.go's
+// ptyTermWidth/ptyTermHeight) with NO scroll region, unlike the static
+// RenderScreen()->freeze capture path, which has no height limit. The
+// per-option one-liner explanation (present on the /mui mockup's
+// options-list row) is intentionally NOT repeated here to stay inside that
+// budget across all 6 options plus the header/status/keybar chrome — the
+// SAME field set/order/values (key, current, recommended, risk) still
+// match; the full contractual explanation is one keystroke away on
+// option-detail. Mirrors surface_gitscreen.go's gsFieldsCompactLine*
+// precedent (same viewport constraint, same resolution).
+func gsshOptionLine(opt gsshOption) string {
+	glyph := gsshGlyph(opt.needsAction)
+	valueText := opt.current + " -> " + opt.recommended
+	if !opt.needsAction {
+		valueText = opt.current + " (already set)"
+	}
+	return glyph + " " + opt.key + "   " + valueText + "   [" + opt.risk + "]"
+}
+
 func renderGSSHOptionsList() string {
-	lines := []string{styleGSSHWarning.Render("! " + gsshAdvisoryNote)}
+	lines := []string{styleGSSHWarning.Render(gsshAdvisoryNote)}
 	for _, opt := range gsshOptions {
-		status := "recommended"
-		if !opt.needsAction {
-			status = "already set"
-		}
-		lines = append(lines,
-			"",
-			gsshGlyph(opt.needsAction)+" "+opt.key+" ("+opt.risk+" risk — "+status+")",
-			"  current: "+opt.current+"  recommended: "+opt.recommended,
-			"  "+opt.oneLiner,
-		)
+		lines = append(lines, gsshOptionLine(opt))
 	}
 	lines = append(lines,
-		"",
-		styleGSSHDim.Render("Preview — "+gsshDetailTarget.key+":"),
-		"  current: "+gsshDetailTarget.current,
-		"  risk: "+gsshDetailTarget.risk,
-		"  recommended: "+gsshDetailTarget.recommended,
+		styleGSSHDim.Render("v full explanation ("+gsshDetailTarget.key+")   f preview fix"),
 	)
 	return gsshBody("Global SSH options", sigGSSHOptionsList, lines...)
 }

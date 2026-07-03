@@ -1,0 +1,23 @@
+gitid  global-ssh/backup-notice
+Backup created
+✓ ~/.ssh/config backup: ~/.ssh/config.backup.2026-07-03T03-59-12Z
+
+A full copy of the previous file was saved before any change was applied —
+this backup path is the undo story.
+
+[SIG-GSSH-BACKUP-NOTICE]
+
+z result-applied  1-5 switch view  Esc back  q quit  ? help
+
+
+
+
+
+
+
+
+
+
+
+
+

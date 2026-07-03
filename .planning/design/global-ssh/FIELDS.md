@@ -53,9 +53,9 @@ explanation (GSSH-01).
 | 3 | `row_current_value` | "current: …" | within row | ✓ | ✓ | e.g. "not set (OpenSSH default: ask)" |
 | 4 | `row_risk` | Low / Medium / High risk | within row | ✓ | ✓ | severity word, not a blocking color |
 | 5 | `row_recommended_value` | "recommended: …" | within row | ✓ | ✓ | |
-| 6 | `row_one_liner` | per-option explanation | below current/recommended | ✓ | ✓ | GSSH-01 "explains every option" |
+| 6 | `row_one_liner` | per-option explanation | below current/recommended | ✓ | ✗ (options-list only) | GSSH-01 "explains every option" — TUI omits this on options-list ONLY due to the fixed 80x24 live-PTY viewport (6 rows × 4 lines overflowed the terminal, see CRITIQUE.md finding #2); the SAME explanation is fully present, verbatim, on option-detail in both media, and every option's key/current/recommended/risk still appears on the TUI's options-list row |
 | 7 | `advisory_banner` | "Recommended, not required…" | top of body | ✓ | ✓ | the advisory-not-blocking affordance, stated explicitly |
-| 8 | `detail_preview` | highlighted option's current/risk/recommended | right pane (master-detail) | ✓ | ✓ | targets IdentitiesOnly |
+| 8 | `detail_preview` | highlighted option's current/risk/recommended | right pane (master-detail) | ✓ | ✗ (compact keybar hint instead) | HTML shows a full right-pane preview (master-detail archetype, §2); TUI's live-PTY viewport budget replaces it with a one-line "v full explanation (IdentitiesOnly)  f preview fix" hint naming the same target — an accepted §3 "widget mechanics may differ" compaction (CRITIQUE.md finding #2), the target option and the next-step keys are still identical |
 
 ## global-ssh / option-detail
 

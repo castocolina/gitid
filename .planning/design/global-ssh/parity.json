@@ -1,65 +1,65 @@
 [
   {
     "dimension": "field-set-and-order",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "options-list's 6 rows appear in the SAME §4.4-verbatim order (StrictHostKeyChecking -> ForwardAgent -> HashKnownHosts -> IdentitiesOnly -> AddKeysToAgent -> UseKeychain) in both media; option-detail's current/risk/recommended-then-explanation-then-advisory order matches; fix-preview's banner-then-diff-then-managed-block-note order matches; confirm-write's nothing-changed-banner-then-sentinel-text order matches; backup-notice's path-then-explainer order matches; result-applied's success-message-then-declined-restated-then-backup-path order matches. Verified via html/*.png and tui/*.png side-by-side review (FIELDS.md)."
   },
   {
     "dimension": "labels-and-helper-copy-verbatim",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "Labels and helper copy match verbatim between media wherever both are present: the advisory banner text, IdentitiesOnly's full multi-paragraph option-detail explanation, the fix-preview diff lines, the confirm-write sentinel-visible managed block text, the backup path and explainer, and the result-applied success/declined/restore copy are all byte-identical (recipeFixtures.ts's globalSsh* exports vs surface_globalssh.go's gssh* Go constants). ONE accepted exception: options-list's per-option one-liner explanation is TUI-omitted (viewport compaction, CRITIQUE.md finding #2) while present in HTML — logged in FIELDS.md row 6 and parity.json's per-option-explanation-verbatim row below, not a labels-and-helper-copy-verbatim finding because the omission is a live-PTY layout constraint, not a wording mismatch (the same text, where it DOES appear in TUI, is verbatim)."
   },
   {
     "dimension": "option-sets-enumerations",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "The GSSH-01 6-option dangerous-by-default set (StrictHostKeyChecking, ForwardAgent, HashKnownHosts, IdentitiesOnly, AddKeysToAgent, UseKeychain) appears in the same order with the same current/risk/recommended values in both media (options-list.png html/tui pair; TestGlobalSSH_DangerousOptionSetAnchors). The needsAction split (4 recommended, 2 already-set) and the resulting glyph assignment (!/✓) match exactly."
   },
   {
     "dimension": "defaults-recipe-accurate",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "AddKeysToAgent=yes and UseKeychain=yes match recipes/ssh-config.recipe's own Host * block (guarded by IgnoreUnknown UseKeychain) verbatim in both media; confirm-write's managed Host * block extends this recipe shape with the 3 chosen recommendations (StrictHostKeyChecking ask, HashKnownHosts yes, IdentitiesOnly yes) exactly as globalSshHostStarBlockText/gsshHostStarBlockText define, byte-identical across recipeFixtures.ts and surface_globalssh.go. IdentitiesOnly=yes matches the already-built per-Host convention (recipes/ssh-config.recipe's per-alias blocks)."
   },
   {
     "dimension": "flow-order-and-named-states",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "All 6 named states from UX-DIRECTION.md §4.4 exist as distinct, navigable screens in both media (manifest.json screen list == surface_globalssh.go ScreenDef IDs == route file titles), reachable via the SAME transitions in both: options-list -> option-detail (v) -> fix-preview (f) -> confirm-write (w) -> backup-notice (y) -> result-applied (z). Verified by TestGlobalSSH_KeysFormAConnectedPathReachingEveryScreen (Go), manual html/tui screenshot review, and the surface-scoped dummy-nav e2e (TestDummyNavReachesAllScreens/global-ssh) reaching every screen through the running binary."
   },
   {
     "dimension": "safety-affordances-presence",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "The mutation ceremony's all 4 beats (§5) appear on the same steps in both media: fix-preview is beat 1 (read-only diff preview), confirm-write is beats 1+2 (exact sentinel-visible text + explicit confirm keystroke), backup-notice is beat 3 (timestamped ~/.ssh/config backup path), result-applied is beat 4 (what changed + how to restore). Managed-block containment is shown, not just asserted: confirm-write renders the # BEGIN/END gitid managed: global-ssh sentinels around the exact Host * block text, identical in both media. Verified via fix-preview.png/confirm-write.png/backup-notice.png/result-applied.png html/tui pairs."
   },
   {
     "dimension": "keybindings-surfaced",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": ""
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "Every intra-flow key (v/f/w/y/z) is shown in the keybar/footer of the screen where it applies in BOTH media (Keybar.tsx entries vs renderShellKeybar output); the global-ssh keys allocate v=option-detail/f=fix-preview/w=confirm-write/y=backup-notice/z=result-applied from a fresh linear chain (never n/g, create-flow's/git-screen's own LaunchKeys — TestGlobalSSH_IntraSurfaceKeysNeverReuseLaunchKeysNOrG); reserved keys (Esc/q/?//) are consistent across every screenshot pair reviewed. See CRITIQUE.md finding #3 for the one accepted label-WORDING difference (TUI shows the raw target screen ID, HTML shows a semantic action phrase — the key itself and its destination match), the same class already accepted for git-screen/identity-manager."
   },
   {
     "dimension": "per-option-explanation-verbatim",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": "GSSH-01: each of the 6 dangerous-by-default options must carry current value + risk + recommended value + an explanatory one-liner (options-list) and the full contractual explanation (option-detail) verbatim in both media."
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "GSSH-01: each of the 6 dangerous-by-default options carries current value + risk + recommended value on options-list in both media (compacted to one line in TUI, CRITIQUE.md finding #2, but the same 4 values are present for every option). The full contractual explanation for IdentitiesOnly (option-detail's deep-dive target) is byte-identical, word-for-word, between recipeFixtures.ts's globalSshDetailExplanation and surface_globalssh.go's gsshDetailExplanation — verified via direct text diff and the option-detail.png html/tui screenshot pair. The per-row one-liner (the OTHER 5 options' short explanation) is HTML-present/TUI-omitted on options-list specifically due to the fixed 80x24 live-PTY viewport (logged in FIELDS.md and CRITIQUE.md finding #2) — an accepted layout compaction, not a missing-content divergence, since the full underlying risk/recommendation data is present in both media for every option."
   },
   {
     "dimension": "advisory-not-blocking",
-    "html_present": false,
-    "tui_present": false,
-    "status": "pending",
-    "resolution": "§4.4/§5 highest-risk affordance: recommendations render as a yellow ! advisory, NEVER a red compliance gate; the user may leave any option unchanged. globalSshChosenToApply/globalSshDeclinedOption demonstrate this concretely (3 of 4 applied, ForwardAgent left unchanged) in both media."
+    "html_present": true,
+    "tui_present": true,
+    "status": "resolved",
+    "resolution": "SS4.4/S5 highest-risk affordance: recommendations render as a yellow ! advisory (never a red compliance gate) in both media on every screen that surfaces a recommendation (options-list, option-detail, fix-preview, confirm-write) -- verified: no screenshot uses MUI 'error'/red severity for a recommendation, and TestGlobalSSH_AdvisoryNeverBlocking (Go) asserts 'advisory'/'recommended' are present and 'blocked'/'must fix'/'required to proceed' are absent from the combined TUI output. globalSshChosenToApply/globalSshDeclinedOption (recipeFixtures.ts) and gsshChosenSummary/gsshDeclinedOption (surface_globalssh.go) demonstrate this concretely: the user applies 3 of 4 recommendations and deliberately leaves ForwardAgent unchanged, and that choice stays visible -- named explicitly, never silently dropped -- through fix-preview, confirm-write, and result-applied in BOTH media (verified via screenshot review and TestGlobalSSH_AdvisoryNeverBlocking's explicit per-screen ForwardAgent-presence check)."
   }
 ]

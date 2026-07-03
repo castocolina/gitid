@@ -1,0 +1,23 @@
+gitid  global-ssh/fix-preview
+Preview fix
+! Applying 3 of 4 recommended options to Host * in ~/.ssh/config.
+! ForwardAgent was left unchanged — advisory, not required.
+
+Diff — Host * in ~/.ssh/config:
++ StrictHostKeyChecking ask
++ HashKnownHosts yes
++ IdentitiesOnly yes
+  UseKeychain yes (already set)
+  AddKeysToAgent yes (already set)
+  ForwardAgent -- left unchanged (declined; advisory, not required)
+
+gitid only owns the block between its sentinels — everything else in ~/.ssh/conf
+
+[SIG-GSSH-FIX-PREVIEW-PARTIAL-APPLY]
+
+w confirm-write  1-5 switch view  Esc back  q quit  ? help
+
+
+
+
+

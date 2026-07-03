@@ -1,0 +1,23 @@
+gitid  global-ssh/options-list
+Global SSH options
+Recommended, not required -- you can leave any option unchanged. This is advisor
+! StrictHostKeyChecking   not set (OpenSSH default: ask) -> ask   [Medium]
+! ForwardAgent   not set (OpenSSH default: no) -> no   [Medium]
+! HashKnownHosts   not set -> yes   [Low]
+! IdentitiesOnly   not set globally (set per-Host by gitid) -> yes   [High]
+✓ AddKeysToAgent   yes (already set)   [Low]
+✓ UseKeychain   yes (macOS only) (already set)   [Low]
+v full explanation (IdentitiesOnly)   f preview fix
+
+[SIG-GSSH-OPTIONS-LIST-6-DANGEROUS]
+
+v option-detail  1-5 switch view  Esc back  q quit  ? help
+
+
+
+
+
+
+
+
+

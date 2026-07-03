@@ -1,0 +1,23 @@
+gitid  global-ssh/result-applied
+✓ Options applied
+✓ 3 of 4 recommended options applied to Host * in ~/.ssh/config. ForwardAgent wa
+Written to the Host * block in ~/.ssh/config.
+You can revisit ForwardAgent here any time — nothing was ever required.
+
+To restore by hand, the backup is at ~/.ssh/config.backup.2026-07-03T03-59-12Z.
+
+[SIG-GSSH-RESULT-APPLIED]
+
+1-5 switch view  Esc back  q quit  ? help
+
+
+
+
+
+
+
+
+
+
+
+

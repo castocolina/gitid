@@ -1,0 +1,23 @@
+gitid  global-ssh/confirm-write
+Confirm write
+! Nothing has changed yet — review below, then confirm.
+! ForwardAgent is intentionally absent — left unchanged.
+
+~/.ssh/config (append, sentinels visible):
+# BEGIN gitid managed: global-ssh
+IgnoreUnknown UseKeychain
+
+Host *
+    StrictHostKeyChecking ask
+    HashKnownHosts yes
+    IdentitiesOnly yes
+    UseKeychain yes
+    AddKeysToAgent yes
+# END gitid managed: global-ssh
+
+[SIG-GSSH-CONFIRM-WRITE]
+
+y backup-notice  1-5 switch view  Esc back  q quit  ? help
+
+
+
