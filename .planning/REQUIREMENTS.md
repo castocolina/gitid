@@ -331,12 +331,12 @@ These are first-class, enforced requirements — the user's core process ask.
 > Distinct from the "local-use, no CI/CD algorithm fallback" runtime note (KEY): that
 > is about runtime behavior; this is about **building and shipping the binary**.
 
-- [ ] **BUILD-01** (Cross-platform build matrix): CI/CD (GitHub Actions) builds gitid
+- [x] **BUILD-01** (Cross-platform build matrix): CI/CD (GitHub Actions) builds gitid
   binaries for **darwin/amd64** (macOS Intel), **darwin/arm64** (Apple Silicon), and
   **linux/amd64** (plus **linux/arm64** if cheap) — reproducible via `make` targets so
   the same build works locally and in CI.
 
-- [ ] **BUILD-02** (CI gates on both OSes): On PR/push, CI runs `make test` (race) +
+- [x] **BUILD-02** (CI gates on both OSes): On PR/push, CI runs `make test` (race) +
   `make lint` (golangci-lint + gosec) + `make test-e2e` on **macOS and Linux**
   runners; red gates block merge. This is where PLAT-02/PLAT-03 divergences are caught.
 
@@ -344,7 +344,7 @@ These are first-class, enforced requirements — the user's core process ask.
   binaries to GitHub Releases with **SHA-256 checksums**; the binary reports its
   version (`gitid --version`) stamped at build time (ldflags).
 
-- [ ] **BUILD-04** (Reproducible dev bootstrap): `make setup-env` on a fresh macOS or
+- [x] **BUILD-04** (Reproducible dev bootstrap): `make setup-env` on a fresh macOS or
   Linux clone reproduces the CI toolchain (golangci-lint, gosec, pre-commit, hooks).
   *(TOOL-02 substrate; verify on both OSes.)*
 
@@ -501,7 +501,7 @@ row below records each one's **home** phase.
 | PLAT-01 | Phase 1 | Complete |
 | PLAT-02 | Phase 1 | Complete |
 | PLAT-03 | Phase 10 | Pending |
-| BUILD-01 | Phase 1 | Pending |
-| BUILD-02 | Phase 1 | Pending |
+| BUILD-01 | Phase 1 | Complete |
+| BUILD-02 | Phase 1 | Complete |
 | BUILD-03 | Phase 10 | Pending |
-| BUILD-04 | Phase 1 | Pending |
+| BUILD-04 | Phase 1 | Complete |

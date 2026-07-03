@@ -215,6 +215,16 @@ func RealMigrateDeps(configPath, includePath string, aliases []string) MigrateDe
 //
 // Migrate is idempotent: re-running after a crash-induced duplicate (or
 // after a fully-completed migration) converges to the intended final state.
+//
+// PRECONDITION (REVIEW.md WR-01): Migrate snapshots each file's content once at
+// preflight and reuses that snapshot for every subsequent write. It therefore
+// assumes NO concurrent external modification of ~/.ssh/config or the Include
+// file for the duration of the call — a concurrent edit would be silently
+// overwritten and may not be recoverable from the backups. This is safe today
+// (Migrate has no cmd/ caller), but before wiring it into an interactive flow
+// in a later phase, add concurrent-modification detection (re-stat/re-read +
+// validate, or an advisory lock) — this is beyond the crash-only T-01-22
+// threat model.
 func Migrate(direction MigrateDirection, deps MigrateDeps) (MigrateResult, error) {
 	sourcePath, destPath := migratePaths(direction, deps)
 
