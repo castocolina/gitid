@@ -7,6 +7,25 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+// snapshotRegistry saves the current package-level registry state and
+// registers a t.Cleanup that restores it verbatim after the test finishes.
+// EVERY test in this package that calls Register/RegisterOrReplace with a
+// test-scoped surface ID MUST call this first (review MED — Codex proof:
+// `go test -shuffle=on -count=10 ./internal/dummytui` previously failed,
+// because the package-level `registry` map is never reset between test
+// iterations, so a surface registered by one run of a test collides with
+// the SAME test's own registration on the next run under -count=N/-shuffle).
+func snapshotRegistry(t *testing.T) {
+	t.Helper()
+	orig := make(map[string]SurfaceDef, len(registry))
+	for k, v := range registry {
+		orig[k] = v
+	}
+	t.Cleanup(func() {
+		registry = orig
+	})
+}
+
 // key builds a tea.KeyMsg whose String() returns the given text, mirroring
 // how bubbletea decodes a single printable rune or a named key ("esc").
 func key(s string) tea.KeyMsg {
@@ -49,6 +68,7 @@ func TestRoute_UnknownKeyNoop(t *testing.T) {
 }
 
 func TestRoute_IntraSurfaceTransition(t *testing.T) {
+	snapshotRegistry(t)
 	const src = "test-route-intra-src"
 	Register(SurfaceDef{
 		ID:            src,
@@ -67,6 +87,7 @@ func TestRoute_IntraSurfaceTransition(t *testing.T) {
 }
 
 func TestRoute_EscReturnsToEntry(t *testing.T) {
+	snapshotRegistry(t)
 	const src = "test-route-esc-src"
 	Register(SurfaceDef{
 		ID: src,
@@ -84,6 +105,7 @@ func TestRoute_EscReturnsToEntry(t *testing.T) {
 }
 
 func TestRegister_DuplicateActivationKeyRejected(t *testing.T) {
+	snapshotRegistry(t)
 	defer func() {
 		if recover() == nil {
 			t.Fatal("Register: expected panic on duplicate non-empty ActivationKey, got none")
@@ -94,6 +116,7 @@ func TestRegister_DuplicateActivationKeyRejected(t *testing.T) {
 }
 
 func TestRegister_EmptyActivationKeyExemption(t *testing.T) {
+	snapshotRegistry(t)
 	// Two keyless (empty ActivationKey) surfaces registered together must both
 	// succeed — no duplicate-key rejection for empty keys (review H2).
 	Register(SurfaceDef{ID: "test-keyless-a", Screens: []ScreenDef{{ID: "e", Render: func() string { return "" }}}})
@@ -108,6 +131,7 @@ func TestRegister_EmptyActivationKeyExemption(t *testing.T) {
 }
 
 func TestRegisterOrReplace_SingleOwner(t *testing.T) {
+	snapshotRegistry(t)
 	const testKey = "test-replace-key"
 	Register(SurfaceDef{ID: "test-replace-placeholder", ActivationKey: testKey, Screens: []ScreenDef{{ID: "e", Render: func() string { return "placeholder" }}}})
 	RegisterOrReplace(SurfaceDef{ID: "test-replace-real", ActivationKey: testKey, Screens: []ScreenDef{{ID: "e", Render: func() string { return "real" }}}})
@@ -135,6 +159,7 @@ func TestRegisterOrReplace_SingleOwner(t *testing.T) {
 }
 
 func TestModalLaunch_PushPopAndNoNumberKeyReaches(t *testing.T) {
+	snapshotRegistry(t)
 	const (
 		source  = "test-modal-source"
 		keyless = "test-modal-keyless"
@@ -178,6 +203,7 @@ func TestModalLaunch_PushPopAndNoNumberKeyReaches(t *testing.T) {
 }
 
 func TestModalLaunch_NumberKeysIgnoredWhileModalActive(t *testing.T) {
+	snapshotRegistry(t)
 	const source = "test-modal-numnoop-source"
 	const keyless = "test-modal-numnoop-keyless"
 	Register(SurfaceDef{ID: source, Screens: []ScreenDef{{ID: "entry", Render: func() string { return "" }}}})
@@ -195,6 +221,7 @@ func TestModalLaunch_NumberKeysIgnoredWhileModalActive(t *testing.T) {
 
 func TestLaunchKeyCollisionGuard(t *testing.T) {
 	t.Run("keyless LaunchKey colliding with LaunchFrom ScreenDef.Keys is rejected", func(t *testing.T) {
+		snapshotRegistry(t)
 		const source = "test-collision-src-1"
 		Register(SurfaceDef{
 			ID: source,
@@ -213,6 +240,7 @@ func TestLaunchKeyCollisionGuard(t *testing.T) {
 	})
 
 	t.Run("RegisterOrReplace introducing a colliding ScreenDef.Keys is rejected", func(t *testing.T) {
+		snapshotRegistry(t)
 		const source = "test-collision-src-2"
 		Register(SurfaceDef{ID: source, Screens: []ScreenDef{{ID: "entry", Render: func() string { return "" }}}})
 		Register(SurfaceDef{ID: "test-collision-keyless-2", LaunchFrom: source, LaunchKey: "v", Screens: []ScreenDef{{ID: "e", Render: func() string { return "" }}}})
@@ -232,6 +260,7 @@ func TestLaunchKeyCollisionGuard(t *testing.T) {
 	})
 
 	t.Run("non-colliding LaunchKey registers cleanly", func(t *testing.T) {
+		snapshotRegistry(t)
 		const source = "test-collision-src-3"
 		Register(SurfaceDef{ID: source, Screens: []ScreenDef{{ID: "entry", Keys: map[string]string{"w": "next"}, Render: func() string { return "" }}, {ID: "next", Render: func() string { return "" }}}})
 		Register(SurfaceDef{ID: "test-collision-keyless-3", LaunchFrom: source, LaunchKey: "u", Screens: []ScreenDef{{ID: "e", Render: func() string { return "" }}}})
@@ -242,6 +271,7 @@ func TestLaunchKeyCollisionGuard(t *testing.T) {
 	})
 
 	t.Run("LaunchKey equal to a number key is rejected", func(t *testing.T) {
+		snapshotRegistry(t)
 		const source = "test-collision-src-4"
 		Register(SurfaceDef{ID: source, Screens: []ScreenDef{{ID: "entry", Render: func() string { return "" }}}})
 		defer func() {
@@ -253,6 +283,7 @@ func TestLaunchKeyCollisionGuard(t *testing.T) {
 	})
 
 	t.Run("LaunchKey equal to a reserved key is rejected", func(t *testing.T) {
+		snapshotRegistry(t)
 		const source = "test-collision-src-5"
 		Register(SurfaceDef{ID: source, Screens: []ScreenDef{{ID: "entry", Render: func() string { return "" }}}})
 		defer func() {
@@ -265,6 +296,7 @@ func TestLaunchKeyCollisionGuard(t *testing.T) {
 }
 
 func TestRoutePrecedence_ScreenKeysBeforeLaunchKey(t *testing.T) {
+	snapshotRegistry(t)
 	const source = "test-precedence-src"
 	Register(SurfaceDef{
 		ID: source,

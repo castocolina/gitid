@@ -13,9 +13,20 @@ import (
 // function returning the screen's BODY content (not the full shell — the
 // shell wraps it with header/status/keybar, see RenderScreen).
 type ScreenDef struct {
-	ID     string
-	Keys   map[string]string
-	Render func() string
+	ID   string
+	Keys map[string]string
+	// KeyLabels optionally overrides the keybar hint TEXT shown for a key in
+	// Keys (shell.go's renderShellKeybar) — e.g. "y" -> "Yes, write" instead
+	// of the raw target screen ID ("y" -> "backup-notice"). A key absent
+	// from KeyLabels (or a nil KeyLabels map, the default for every existing
+	// screen) falls back to Keys[key] unchanged — purely additive, does not
+	// affect routing (route()/registry.go still resolves Keys[key] as the
+	// navigation target regardless of KeyLabels). Review LOW-A6: the HTML
+	// mockup's Keybar entries always show a semantic action phrase; this
+	// lets a screen match that wording for a specific key without changing
+	// what the key navigates to.
+	KeyLabels map[string]string
+	Render    func() string
 }
 
 // SurfaceDef defines a top-level or modal surface.

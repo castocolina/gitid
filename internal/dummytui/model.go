@@ -26,6 +26,26 @@ type Model struct {
 	nav           navState
 }
 
+// currentViewport is the REAL terminal geometry, mirrored here (in addition
+// to Model.width/height) so surface files that self-composite an
+// INTRA-surface modal (surface_identitymanager.go's imOverlay — the
+// action-menu/clone-name-prompt/delete-choice/confirm-destructive/
+// backup-notice screens) can center/bound against the actual terminal
+// instead of the fixed defaultWidth/defaultHeight capture canvas (review
+// HIGH-1 / HI-01: on a real 80x24 terminal, centering against the 100x30
+// default canvas positions the modal's right edge six columns past the
+// real edge, clipping every line and never closing the border).
+//
+// Update() below sets this on every tea.WindowSizeMsg, exactly mirroring
+// how it sets m.width/m.height. It is seeded at defaultWidth/defaultHeight
+// (model.go's own pre-first-resize default) so every STATIC capture caller
+// that never sends a WindowSizeMsg — RenderScreen (registry.go),
+// screenshot-tui-mockups, design_capture_test.go, manifest_test.go — keeps
+// today's exact deterministic 100x30 capture geometry (D-04) unchanged.
+// Only Model's LIVE navigation path (a real running terminal, cmd/gitid-dummy)
+// ever mutates it.
+var currentViewport = struct{ w, h int }{defaultWidth, defaultHeight}
+
 // NewModel returns a tea.Model seeded from the registry with
 // identity-manager active and an empty modalStack.
 func NewModel() Model {
@@ -57,6 +77,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		currentViewport.w, currentViewport.h = msg.Width, msg.Height
 		return m, nil
 	case tea.KeyMsg:
 		if k := msg.String(); k == "q" || k == "ctrl+c" {

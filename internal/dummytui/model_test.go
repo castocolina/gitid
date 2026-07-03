@@ -42,6 +42,7 @@ func TestModel_UpdateAppliesRouteOnKeyMsg(t *testing.T) {
 }
 
 func TestModel_ModalLaunchThroughModel_BreadcrumbAndEscReverts(t *testing.T) {
+	snapshotRegistry(t)
 	const (
 		source  = "test-model-modal-source"
 		keyless = "test-model-modal-keyless"

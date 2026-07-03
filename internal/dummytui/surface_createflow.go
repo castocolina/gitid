@@ -135,7 +135,7 @@ var cfAlgorithmCatalog = []cfAlgoEntry{
 	},
 	{
 		id:       "ecdsa-p256",
-		security: "Compact NIST P-256 curve; smaller than RSA.",
+		security: "Compact NIST P-256 curve; smaller than RSA, though some users distrust NIST curve provenance versus ed25519.",
 		macos:    "Native — always available",
 		linux:    "Native — always available",
 	},
@@ -163,7 +163,7 @@ func init() {
 			{ID: "test-stage1-direct", Keys: map[string]string{"a": "test-stage2-by-alias"}, Render: renderTestStage1Direct},
 			{ID: "test-stage2-by-alias", Keys: map[string]string{"w": "confirm-write", "x": "test-fail"}, Render: renderTestStage2ByAlias},
 			{ID: "test-fail", Render: renderTestFail},
-			{ID: "confirm-write", Keys: map[string]string{"y": "backup-notice"}, Render: renderConfirmWrite},
+			{ID: "confirm-write", Keys: map[string]string{"y": "backup-notice"}, KeyLabels: map[string]string{"y": "Yes, write"}, Render: renderConfirmWrite},
 			{ID: "backup-notice", Keys: map[string]string{"z": "result-success"}, Render: renderBackupNotice},
 			{ID: "result-success", Render: renderResultSuccess},
 		},

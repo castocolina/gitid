@@ -3,6 +3,10 @@ package dummytui
 import (
 	"strings"
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
+	lipgloss "charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // wantIMScreens is the full 8-screen set from
@@ -218,6 +222,65 @@ func TestIdentityManager_KeysFormAConnectedPathReachingEveryScreen(t *testing.T)
 			}
 		}
 		t.Fatalf("identity-manager: only %d/%d screens reachable from entry %q via ScreenDef.Keys; unreachable: %v", len(visited), len(sd.Screens), entryScreenID(sd), missing)
+	}
+}
+
+// TestIdentityManager_ModalScreensFitReal80x24Viewport is the HI-01
+// regression test (review HIGH-1): identity-manager's own 5 intra-surface
+// "modal" screens previously self-composited via imOverlay's HARDCODED
+// defaultWidth/defaultHeight (100x30, model.go), which on a real 80x24
+// terminal centered the modal SIX columns past the actual right edge,
+// clipping every rendered line and never closing the border (proven live by
+// the reviewer's PTY capture: raw frame widths of 212-214 bytes vs. an
+// 80-86 "fits" range on every other screen). This test drives the exact
+// LIVE-navigation path — a real tea.WindowSizeMsg through Model.Update, not
+// a direct RenderScreen static-capture call — at the documented 80x24
+// minimum terminal.
+//
+// It checks the MODAL BOX specifically (not the dimmed background identity
+// list behind it, which is independently unbounded-width text unrelated to
+// this defect, and — like every other plain, non-modal screen — is simply
+// clipped by the real terminal hardware when live, exactly as it always
+// was): every line carrying a box-border glyph (┌┐└┘│) must have that
+// glyph's ANSI-aware VISIBLE column position (lipgloss.Width, not raw byte
+// length) at or before column 80, and the border must actually close (its
+// corner glyphs must be present at all).
+func TestIdentityManager_ModalScreensFitReal80x24Viewport(t *testing.T) {
+	const termWidth = 80
+
+	savedViewport := currentViewport
+	t.Cleanup(func() { currentViewport = savedViewport })
+
+	m := NewModel()
+	next, _ := m.Update(tea.WindowSizeMsg{Width: termWidth, Height: 24})
+	m, ok := next.(Model)
+	if !ok {
+		t.Fatalf("Update(WindowSizeMsg): returned type %T, want Model", next)
+	}
+
+	modalScreens := []string{"action-menu", "clone-name-prompt", "delete-choice", "confirm-destructive", "backup-notice"}
+	for _, id := range modalScreens {
+		id := id
+		t.Run(id, func(t *testing.T) {
+			m.nav.activeScreen = id
+			view := m.View().Content
+
+			if !strings.Contains(view, "┐") || !strings.Contains(view, "┘") {
+				t.Fatalf("identity-manager/%s: modal border does not close (missing top-right/bottom-right corner glyph) — the box was clipped:\n%s", id, view)
+			}
+
+			for i, line := range strings.Split(view, "\n") {
+				plain := ansi.Strip(line)
+				idx := strings.LastIndexAny(plain, "┌┐└┘│")
+				if idx < 0 {
+					continue // no box-border glyph on this row -- background-only, out of scope
+				}
+				endCol := lipgloss.Width(plain[:idx]) + lipgloss.Width(string([]rune(plain[idx:])[0]))
+				if endCol > termWidth {
+					t.Errorf("identity-manager/%s: line %d's modal border glyph ends at visible column %d, want <= %d (80x24 terminal): %q", id, i, endCol, termWidth, plain)
+				}
+			}
+		})
 	}
 }
 

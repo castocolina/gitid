@@ -160,7 +160,14 @@ var (
 	styleIMSuccess = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true)
 	styleIMWarning = lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true)
 	styleIMError   = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true)
-	styleIMModal   = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1)
+	// styleIMInfo is the LOCKED severity-glyph contract's info tone (cyan
+	// "~", pinned by surface_health.go's styleHLTHInfo / surface_fixer.go's
+	// styleFIXInfo: warning=! yellow, error/critical=✗ red, info=~ cyan) —
+	// used here (not styleIMWarning) for detail-ssh-first's SSH-only note,
+	// which is informational (MGR-03/MGR-07: SSH-only is an expected,
+	// healthy state for some identities, not something needing action).
+	styleIMInfo  = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
+	styleIMModal = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1)
 )
 
 func init() {
@@ -222,24 +229,43 @@ func imListBody() string {
 // the dummy's SAME modal-compositing primitive model.go's live navigation
 // uses for cross-surface keyless-modal launches, called directly here
 // because these are intra-surface screens of identity-manager itself.
-// defaultWidth/defaultHeight (model.go) are used as the fixed capture
-// geometry so RenderScreen's output stays deterministic for screenshot
-// golden reproducibility (D-04), matching how the real Model seeds itself
-// before the first WindowSizeMsg.
+//
+// Two independent fixes for review HIGH-1 / HI-01:
+//
+//  1. Centers/bounds against model.go's currentViewport — NOT the fixed
+//     defaultWidth/defaultHeight constants directly — so a LIVE terminal
+//     narrower/shorter than the 100x30 default (e.g. the documented 80x24
+//     minimum) never has its modal centered against the wrong, larger
+//     canvas and shifted past the real right edge. currentViewport
+//     defaults to (defaultWidth, defaultHeight) until the first
+//     tea.WindowSizeMsg, so every STATIC capture caller (RenderScreen,
+//     screenshot-tui-mockups, design_capture_test.go, manifest_test.go —
+//     none of which ever sends a WindowSizeMsg) keeps today's exact
+//     deterministic 100x30 capture geometry (D-04) unchanged.
+//  2. Applies styleIMModal.Width(mw) at render time — mirroring the REAL
+//     product's own StyleModal.Width(mw).Render(...) convention
+//     (tui/model.go, tui/confirm.go, tui/addrepo.go, etc.) — so lipgloss
+//     actually WRAPS content to the clamped modalWidth budget instead of
+//     silently auto-sizing the border box to whichever content line
+//     happens to be longest. Without this, several of this surface's own
+//     hand-authored lines (e.g. confirm-destructive's "Default-focused..."
+//     sentence) are wider than modalWidth's 72-column cap on ANY terminal
+//     size, so correcting the origin/centering alone (fix 1) is
+//     insufficient — the box itself must also be constrained to wrap.
 func imOverlay(title, sig string, lines ...string) string {
-	modal := styleIMModal.Render(imBody(title, sig, lines...))
-	bg := padToHeight(styleIMDim.Render(imListBody()), defaultHeight)
+	mw := modalWidth(currentViewport.w)
+	modal := styleIMModal.Width(mw).Render(imBody(title, sig, lines...))
+	bg := padToHeight(styleIMDim.Render(imListBody()), currentViewport.h)
 
 	const verticalMargin = 4
-	available := defaultHeight - verticalMargin
+	available := currentViewport.h - verticalMargin
 	if available < 1 {
 		available = 1
 	}
 	bounded := boundModalToViewport(modal, available, 0)
 
-	mw := modalWidth(defaultWidth)
 	mh := lipgloss.Height(bounded)
-	x, y := modalOrigin(defaultWidth, defaultHeight, mw, mh)
+	x, y := modalOrigin(currentViewport.w, currentViewport.h, mw, mh)
 	return placeOverlay(x, y, bounded, bg)
 }
 
@@ -275,7 +301,7 @@ func renderIMDetailSSHFirst() string {
 		"  IdentitiesOnly: yes",
 		"",
 		"2. Git",
-		styleIMWarning.Render("! No Git identity configured for this alias — SSH-only."),
+		styleIMInfo.Render("~ No Git identity configured for this alias — SSH-only."),
 		"  gitid never renders fabricated Git attributes here (MGR-03/MGR-07).",
 		"",
 		"Per-identity health (MGR-07): "+imToneByState[t.state].Render(imGlyphByState[t.state]+" "+t.state),
@@ -299,7 +325,8 @@ func renderIMCloneNamePrompt() string {
 		"Source identity: "+s.name,
 		"New identity name: "+imCloneSuggestedName+" (must differ from the source name — MGR-04)",
 		"",
-		styleIMDim.Render("Cloning copies the SSH Host block and Git fragment shape; a new key is generated."),
+		styleIMDim.Render("Cloning copies the SSH Host block and Git fragment shape under the new name — the key"),
+		styleIMDim.Render("material itself is not copied; a new key is generated for the clone."),
 	)
 }
 
@@ -317,7 +344,7 @@ func renderIMDeleteChoice() string {
 func renderIMConfirmDestructive() string {
 	t := imActionTarget
 	return imOverlay("Confirm: "+imDeleteChoiceEverything, sigIMConfirmDestructive,
-		styleIMError.Render("✗ This cannot be undone."),
+		styleIMError.Render("✗ This action is irreversible."),
 		"Removes for "+t.name+":",
 		"  - SSH Host block ("+t.sshHost+")",
 		"  - Git configuration ("+t.gitFragmentPath+")",
