@@ -205,7 +205,7 @@ These are first-class, enforced requirements — the user's core process ask.
   identity is **complete** (SSH + Git) or **incomplete** (flagged; e.g. SSH-only, no
   git config).
 
-- [ ] **MGR-02** (State taxonomy): Each identity/key is classified and visually
+- [x] **MGR-02** (State taxonomy): Each identity/key is classified and visually
   distinguished across at least: **complete** (ssh+git) · **incomplete** (ssh, no
   git) · **git-only** (git identity relying on global SSH, no own Host block) ·
   **key-unused** (key exists, no identity references it) · **key-used-ssh-only** ·
@@ -443,7 +443,7 @@ row below records each one's **home** phase.
 | DLV-04 | Phase 3 | Pending |
 | DLV-05 | Phase 2 | Pending |
 | DLV-06 | Phase 3 | Pending |
-| DLV-07 | Phase 1 | Pending |
+| DLV-07 | Phase 1 | Complete |
 | DLV-08 | Phase 2 | Pending |
 | TOOL-01 | Phase 1 | Pending |
 | TOOL-02 | Phase 1 | Pending |
@@ -475,7 +475,7 @@ row below records each one's **home** phase.
 | GITUI-04 | Phase 4 | Pending |
 | GITUI-05 | Phase 4 | Pending |
 | MGR-01 | Phase 5 | Pending |
-| MGR-02 | Phase 1 | Pending |
+| MGR-02 | Phase 1 | Complete |
 | MGR-03 | Phase 5 | Pending |
 | MGR-04 | Phase 5 | Pending |
 | MGR-05 | Phase 5 | Pending |

@@ -70,7 +70,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] 01-01-PLAN.md — Local capability probing: ssh -V/-Q parse, libfido2/agent/keychain seam (PLAT-01/02, KEY-03)
 - [x] 01-02-PLAN.md — Multi-algorithm keygen registry + top-5 catalog (KEY-01/02/04)
 - [x] 01-03-PLAN.md — Dual SSH-config storage: Include'd file, adopt, reversible migrate + reserved-block guard (STORE-01..04, TOOL-04)
-- [ ] 01-04-PLAN.md — Identity 8-state taxonomy core, table-driven (MGR-02, DLV-07)
+- [x] 01-04-PLAN.md — Identity 8-state taxonomy core, table-driven (MGR-02, DLV-07)
 - [ ] 01-05-PLAN.md — Screenshot tooling: freeze TUI capture + go-rod HTML capture make targets (TOOL-05, DLV-03, TOOL-02)
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -223,7 +223,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundations, Spikes & CI | 3/7 | In Progress|  |
+| 1. Foundations, Spikes & CI | 4/7 | In Progress|  |
 | 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 0/TBD | Not started | - |
 | 3. Create Flow Backend | 0/TBD | Not started | - |
 | 4. Git Configuration Screen | 0/TBD | Not started | - |
