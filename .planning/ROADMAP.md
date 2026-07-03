@@ -79,7 +79,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-07-PLAN.md — Cross-OS GitHub Actions CI (3-runner) + build matrix (BUILD-01/02/04, TOOL-01..04)
+- [x] 01-07-PLAN.md — Cross-OS GitHub Actions CI (3-runner) + build matrix (BUILD-01/02/04, TOOL-01..04)
 
 ### Phase 2: DESIGN — All Mockups (★ CHECKPOINT #1)
 
@@ -223,7 +223,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundations, Spikes & CI | 6/7 | In Progress|  |
+| 1. Foundations, Spikes & CI | 7/7 | Complete | 2026-07-03 |
 | 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 0/TBD | Not started | - |
 | 3. Create Flow Backend | 0/TBD | Not started | - |
 | 4. Git Configuration Screen | 0/TBD | Not started | - |
