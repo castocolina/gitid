@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-07-PLAN.md
-last_updated: "2026-07-03T11:01:55.542Z"
+stopped_at: Completed 02-08-PLAN.md
+last_updated: "2026-07-03T11:27:33.165Z"
 last_activity: 2026-07-03 -- Phase 02 execution in progress (02-05 complete)
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 19
-  completed_plans: 14
+  completed_plans: 15
   percent: 10
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 ## Current Position
 
 Phase: 02 (design-all-mockups-checkpoint-1) — EXECUTING
-Plan: 7 of 12
+Plan: 8 of 12
 Status: Executing — 02-05 complete (git-screen fan-out surface: MUI mockup + TUI dummy + capture + 0-unresolved parity, both media, 7 states); next is Wave 4 fan-out continuation (02-06 identity-manager through 02-10)
 Last activity: 2026-07-03 -- Phase 02 execution in progress (02-05 complete)
 
@@ -69,6 +69,7 @@ Progress: [██████░░░░] 63%
 | Phase 02 P05 | ~50min | 3 tasks | 34 files |
 | Phase 02 P06 | ~90min | 3 tasks | 47 files |
 | Phase 02 P07 | 75min | 3 tasks | 21 files |
+| Phase 02 P08 | ~70min | 3 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -115,6 +116,8 @@ Recent decisions affecting current work:
 - [Phase 02]: Fixed e2e/dummy_nav_e2e_test.go reHome() to prefix-match "identity-manager/" instead of the literal "identity-manager/entry", since identity-manager's real entry screen is list-populated, not the 02-02 placeholder's entry ID — Rule 3 blocking-issue fix required for this plan's own Task 3 acceptance criteria; will also unblock 02-07..02-10 if they hit the same class of assumption
 - [Phase 02]: [Phase 02, plan 07]: GSSH-01's dangerous-by-default option set pinned to StrictHostKeyChecking/ForwardAgent/HashKnownHosts/IdentitiesOnly/AddKeysToAgent/UseKeychain (mix of already-recommended and needs-action rows); advisory-not-blocking demonstrated concretely via a 3-of-4-applied/ForwardAgent-declined scenario carried end-to-end through both media
 - [Phase 02]: [Phase 02, plan 07]: global-ssh options-list TUI render compacted to one line per option (git-screen's gsFieldsCompactLine precedent generalized to a full list) after the original 4-line-per-option layout overflowed the real 80x24 live PTY viewport at e2e time
+- [Phase 02]: global-git (02-08): GGIT-01's 11-option baseline set interpolates the existing globalGitDefaults fixture directly (never duplicated); global user.email is modeled as never-written (D-04b), matching the real backend, not a declined recommendation
+- [Phase 02]: global-git (02-08): fix-preview/confirm-write TUI compacted to 5 grouped key=value lines (git-screen's gsFieldsCompactLine precedent) after the full literal managed-block render overflowed the fixed 80x24 live PTY on the first e2e attempt
 
 ### Roadmap Evolution
 
@@ -138,6 +141,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-03T11:01:02.983Z
-Stopped at: Completed 02-07-PLAN.md
+Last session: 2026-07-03T11:27:33.157Z
+Stopped at: Completed 02-08-PLAN.md
 Resume file: None
