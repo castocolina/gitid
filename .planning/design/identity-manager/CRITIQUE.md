@@ -51,21 +51,29 @@ this session lacked.
     legible with color entirely removed (the word alone disambiguates all
     8 states; glyph is a redundant, not sole, cue). `delete-choice`'s
     default marker is "✓ default" (glyph+word), and `confirm-destructive`'s
-    warning is "✗ This cannot be undone" (glyph+word). No finding.
+    warning is "✗ This action is irreversible." (glyph+word, updated by
+    02-review-fixes finding A5 — was "✗ This cannot be undone" at the time
+    of this aesthetic pass; see the Structured parity findings log below).
+    No finding.
   - **Distinctive-not-generic typography:** same terminal-skin theme as
     create-flow/git-screen (monospace JetBrains Mono, flat borders, zero
     elevation) — consistent visual language across all three now-built
     surfaces, no surface-specific styling drift. No finding.
-  - **Minor observation (not a parity finding — HTML-only cosmetic):**
-    `list-populated.png`'s 8-row list slightly exceeds the 1280px capture
-    viewport's visible height (the 8th row, `legacy`/fragment-path-missing,
-    is clipped at the fold) — this is explicitly the "Scroll (HTML) vs
-    paginate (TUI)" case §3 lists as MAY-differ, not a finding; all 8 rows
-    ARE present in the rendered DOM (verified via the route source and the
-    TUI screenshot, which fits all 8 in its fixed 100x30 capture geometry).
-    Noted for awareness only, consistent with `create-flow/CRITIQUE.md`'s
-    and `git-screen/CRITIQUE.md`'s own precedent of flagging non-blocking
-    capture-viewport cosmetics.
+  - **RESOLVED by the 02-review-fixes pass (finding C1, Codex cross-vendor
+    review) — previously a "minor observation," now actually fixed:**
+    `list-populated.png`'s 8-row list previously exceeded the 1280px
+    capture viewport's visible height (the 8th row,
+    `legacy`/fragment-path-missing, was clipped at the fold). This WAS
+    correctly logged as non-blocking at the time (all 8 rows were present
+    in the DOM, just not in the captured PNG — the "Scroll (HTML) vs
+    paginate (TUI)" §3 MAY-differ case), but the Codex review flagged it as
+    worth fixing so reference screenshots do not require a human to
+    remember "some content is below the fold." Root cause: `Shell.tsx`'s
+    fixed `height: '100vh'` + `main`'s inner `overflow: 'auto'` clipped any
+    body taller than 800px INSIDE its own scroll region, invisible to a
+    full-page screenshot capture. Fixed by letting the shell grow to its
+    natural height (`minHeight: '100vh'`, no inner scroll) — the
+    re-captured `list-populated.png` now shows all 8 rows in full.
 
 ## B. Structured parity findings log (HTML ↔ TUI, every named state)
 
@@ -77,8 +85,10 @@ rows).
 
 | Finding # | Dimension (parity.json key) | Screen | Description | Status | Resolution |
 |-----------|------------------------------|--------|--------------|--------|------------|
-| 1 | (observation, not a §3 dimension) | all 8 | Same pre-existing 02-02 shell-infrastructure characteristic noted in `create-flow/CRITIQUE.md` finding #1 and `git-screen/CRITIQUE.md` finding #1: the TUI shell header renders only the app name + breadcrumb, not the HTML `Header.tsx`'s "N identities · ✓/!/✗ <word>" context chip text inline (the TUI's own status line differs in wording from the HTML `StatusLine`, e.g. "8 identities — every MGR-02 state label represented." vs the HTML header chip). Not introduced by identity-manager, not fixable within this surface's own files (`shell.go` is shared, out of scope per fan-out isolation), and not one of §3's seven MUST-match dimensions. | resolved (no action required — out of §3 scope) | Logged for awareness; not a `parity.json` row for the same reason `create-flow`'s and `git-screen`'s finding #1 were not rows. |
-| 2 | keybindings-surfaced / label wording only | `action-menu`, `clone-name-prompt`, `delete-choice`, `confirm-destructive` | The TUI keybar renders each intra-flow key's label as the literal TARGET SCREEN ID (`shell.go`'s `renderShellKeybar` uses `scr.Keys[k]` verbatim, e.g. "y backup-notice"), while the HTML `Keybar` entries use a semantic action phrase (e.g. "Yes, delete everything (typed confirm)"). Same shared-infrastructure characteristic as `git-screen`'s `f`/`m`/`r`/`w`/`y`/`z` keybar labels — not introduced by identity-manager, `shell.go` is out of scope for a fan-out surface to edit. | resolved | The KEY itself (the letter) is identical in both media on every screen, and every key's DESTINATION is unambiguous from context (the screen breadcrumb after pressing it). §3 permits "Widget mechanics ... as long as the option set and default match" — the label WORDING differing while the key and destination match is the same class of allowed medium difference. |
+| 1 | (observation, not a §3 dimension) | all 8 | Same pre-existing 02-02 shell-infrastructure characteristic noted in `create-flow/CRITIQUE.md` finding #1 and `git-screen/CRITIQUE.md` finding #1: the TUI shell header renders only the app name + breadcrumb, not the HTML `Header.tsx`'s "N identities · ✓/!/✗ <word>" context chip text inline (the TUI's own status line differs in wording from the HTML `StatusLine`, e.g. "8 identities — every MGR-02 state label represented." vs the HTML header chip). Not introduced by identity-manager, not fixable within this surface's own files (`shell.go` is shared, out of scope per fan-out isolation), and not one of §3's seven MUST-match dimensions. | **FIXED** (02-review-fixes, finding A2) | Logged for awareness; not a `parity.json` row for the same reason `create-flow`'s and `git-screen`'s finding #1 were not rows. **Update:** the 02-review-fixes pass added the missing chip to `renderShellHeader` (shell.go) — a static "8 identities · ! needs action" fixture matching the HTML header's semantic content — rendered on every surface including identity-manager (confirmed via the re-captured identity-manager/tui/*.png set). The TUI's own per-screen status-line wording difference (e.g. "8 identities — every MGR-02 state label represented.") is unaffected and remains a separate, still-open, out-of-§3-scope observation. |
+| 2 | keybindings-surfaced / label wording only | `action-menu`, `clone-name-prompt`, `delete-choice`, `confirm-destructive` | The TUI keybar renders each intra-flow key's label as the literal TARGET SCREEN ID (`shell.go`'s `renderShellKeybar` uses `scr.Keys[k]` verbatim, e.g. "y backup-notice"), while the HTML `Keybar` entries use a semantic action phrase (e.g. "Yes, delete everything (typed confirm)"). Same shared-infrastructure characteristic as `git-screen`'s `f`/`m`/`r`/`w`/`y`/`z` keybar labels — not introduced by identity-manager, `shell.go` is out of scope for a fan-out surface to edit. | resolved | The KEY itself (the letter) is identical in both media on every screen, and every key's DESTINATION is unambiguous from context (the screen breadcrumb after pressing it). §3 permits "Widget mechanics ... as long as the option set and default match" — the label WORDING differing while the key and destination match is the same class of allowed medium difference. Note (02-review-fixes, finding A6): `shell.go` gained an OPT-IN `ScreenDef.KeyLabels` override mechanism, used by create-flow's `confirm-write` to show "y Yes, write" — identity-manager's own screens were left unchanged (out of this fix pass's scope); a future pass could apply the same override here if desired. |
+| 3 | labels-and-helper-copy-verbatim | `clone-name-prompt`, `confirm-destructive` | 02-review-fixes findings A5 (external cross-vendor review): clone-name-prompt.route.tsx's explainer reads "...the key material itself is not copied; a new key is generated for the clone." — `renderIMCloneNamePrompt` dropped that clause entirely. confirm-destructive.route.tsx opens with "This action is irreversible." — `renderIMConfirmDestructive` said "This cannot be undone." instead (same meaning, different words). | **FIXED** | Both TUI screens now carry the HTML's exact wording. Re-verified word-for-word against the route files and the re-captured `clone-name-prompt.png`/`confirm-destructive.png` html/tui pairs. See `parity.json`'s `labels-and-helper-copy-verbatim` row for the full before/after text. |
+| 4 | (color-semantics correction, not a copy divergence) | `detail-ssh-first` | 02-review-fixes finding A7: the SSH-only Git note ("No Git identity configured for this alias — SSH-only.") used the WARNING glyph (`!`, yellow) in the TUI, but this note is informational per MGR-03/MGR-07 (SSH-only is an expected, healthy state for some identities), matching the HTML's `severity="info"` Alert treatment — the LOCKED severity-glyph contract (warning=`!` yellow, error/critical=`✗` red, info=`~` cyan, established by `surface_health.go`/`surface_fixer.go`) was violated. | **FIXED** | `renderIMDetailSSHFirst` now uses the info glyph `~` (cyan, `styleIMInfo`) instead of the warning glyph. The note's WORDS were already verbatim and remain unchanged — this was a glyph/semantic-tone correction only. Re-verified against the re-captured `detail-ssh-first.png` tui/html pair. |
 
 No other divergences found. Every §3 dimension (field set/order,
 labels/copy, option sets, defaults, flow order, safety affordances,
