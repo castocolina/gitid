@@ -1,10 +1,12 @@
 package sshconfig
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 
 	"github.com/castocolina/gitid/internal/filewriter"
 	"github.com/castocolina/gitid/internal/tester"
@@ -44,6 +46,18 @@ const (
 	// before Migrate returns success.
 	StepCommit
 )
+
+// backupSnapshot pairs a file's path and step-2 on-disk backup path with its
+// IN-MEMORY pristine pre-migration bytes, captured once at preflight. Codex
+// HIGH #1: rollback restores from these in-memory bytes via the no-backup
+// RestoreFile seam, so it NEVER re-enters WriteFile's own backup-creation
+// step and can never clobber the on-disk step-2 backup it names for the
+// user's manual recovery.
+type backupSnapshot struct {
+	path       string
+	backupPath string
+	content    []byte
+}
 
 // MigrateResult carries the outcome of a successful Migrate call.
 type MigrateResult struct {
@@ -91,6 +105,17 @@ type MigrateDeps struct {
 	// step would survive an aborted rollback. Wired to os.Remove in
 	// production.
 	RemoveFile func(path string) error
+	// RestoreFile atomically replaces path with content at mode WITHOUT
+	// creating a backup (wired to filewriter.WriteNoBackup in production).
+	// This is the dedicated rollback/restore seam (Codex HIGH #1): rollback
+	// restores a file that DID pre-exist from the IN-MEMORY pristine bytes
+	// captured at preflight through THIS seam, never through WriteFile —
+	// re-entering WriteFile's own backup-creation step during a restore
+	// would create a NEW backup of the failed live file, and that new
+	// backup could clobber a still-live pristine recovery snapshot on a
+	// same-instant collision (the exact STORE-03 crash-safety gap this seam
+	// closes).
+	RestoreFile func(path string, content []byte, mode os.FileMode) error
 
 	// afterStep is an optional test hook invoked after each step; a non-nil
 	// return aborts the transaction as if that step had failed. nil in
@@ -103,6 +128,14 @@ type MigrateDeps struct {
 // potentially key-path-referencing material (0600, never relying on umask).
 const migrateFileMode os.FileMode = 0o600
 
+// migrateResolveTimeout bounds every real `ssh -G` resolution Migrate runs
+// (preflight snapshot + per-step validation) so a pathological config (e.g.
+// a hanging `Match exec`) can never block a migration indefinitely (T-01-03,
+// Codex HIGH #2). It is a var, not a const, so tests can shrink it to
+// exercise real timeout behavior without waiting out the production
+// default — mirrors internal/platform's probeTimeout.
+var migrateResolveTimeout = 3 * time.Second
+
 // RealMigrateDeps returns production MigrateDeps wired to the real
 // filesystem and a real `ssh -G` resolver — the live constructor for
 // cmd-layer callers.
@@ -114,8 +147,17 @@ func RealMigrateDeps(configPath, includePath string, aliases []string) MigrateDe
 		ReadFile:    os.ReadFile,
 		WriteFile:   filewriter.Write,
 		ResolveAlias: func(cfgPath, alias string) ([]string, error) {
-			out, err := exec.Command("ssh", "-G", "-F", cfgPath, alias).Output() //nolint:gosec // arg-slice form, no shell; cfgPath/alias are gitid-managed inputs (G204)
+			// Bounded by migrateResolveTimeout (T-01-03, Codex HIGH #2): a
+			// pathological config (e.g. a hanging `Match exec`) must never
+			// block a migration indefinitely — mirrors internal/platform's
+			// probeTimeout + exec.CommandContext pattern.
+			ctx, cancel := context.WithTimeout(context.Background(), migrateResolveTimeout)
+			defer cancel()
+			out, err := exec.CommandContext(ctx, "ssh", "-G", "-F", cfgPath, alias).Output() //nolint:gosec // arg-slice form, no shell; cfgPath/alias are gitid-managed inputs (G204)
 			if err != nil {
+				if ctx.Err() != nil {
+					return nil, fmt.Errorf("sshconfig: migrate: ssh -G timed out after %s resolving %s: %w", migrateResolveTimeout, alias, ctx.Err())
+				}
 				return nil, err
 			}
 			return tester.ParseResolved(string(out)).IdentityFiles, nil
@@ -126,6 +168,7 @@ func RealMigrateDeps(configPath, includePath string, aliases []string) MigrateDe
 			}
 			return nil
 		},
+		RestoreFile: filewriter.WriteNoBackup,
 	}
 }
 
@@ -199,8 +242,14 @@ func Migrate(direction MigrateDirection, deps MigrateDeps) (MigrateResult, error
 	if err != nil {
 		return MigrateResult{}, fmt.Errorf("sshconfig: migrate: backing up %s: %w", destPath, err)
 	}
+	// sourceSnap/destSnap bundle each file's path + on-disk backup path with
+	// its IN-MEMORY pristine bytes (Codex HIGH #1) — the single source of
+	// truth every rollback call below restores from, never re-reading the
+	// on-disk backup file.
+	sourceSnap := backupSnapshot{path: sourcePath, backupPath: sourceBackup, content: sourceContent}
+	destSnap := backupSnapshot{path: destPath, backupPath: destBackup, content: destContent}
 	if serr := callStep(deps, StepBackup); serr != nil {
-		return rollback(deps, sourcePath, sourceBackup, destPath, destBackup,
+		return rollback(deps, sourceSnap, destSnap,
 			fmt.Errorf("sshconfig: migrate: aborted at backup: %w", serr))
 	}
 
@@ -208,18 +257,18 @@ func Migrate(direction MigrateDirection, deps MigrateDeps) (MigrateResult, error
 	movable := movableBlockNames(sourceContent)
 	destComposed := reorderGlobalLast(composeDestination(destContent, sourceContent, movable))
 	if _, perr := Parse(destComposed); perr != nil {
-		return rollback(deps, sourcePath, sourceBackup, destPath, destBackup,
+		return rollback(deps, sourceSnap, destSnap,
 			fmt.Errorf("sshconfig: migrate: composed %s is not parseable, refusing to write: %w", destPath, perr))
 	}
 	if _, werr := deps.WriteFile(destPath, destComposed, migrateFileMode); werr != nil {
-		return rollback(deps, sourcePath, sourceBackup, destPath, destBackup,
+		return rollback(deps, sourceSnap, destSnap,
 			fmt.Errorf("sshconfig: migrate: writing %s: %w", destPath, werr))
 	}
 	if verr := validateResolution(deps, preSnapshot); verr != nil {
-		return rollback(deps, sourcePath, sourceBackup, destPath, destBackup, verr)
+		return rollback(deps, sourceSnap, destSnap, verr)
 	}
 	if serr := callStep(deps, StepDestinationWritten); serr != nil {
-		return rollback(deps, sourcePath, sourceBackup, destPath, destBackup,
+		return rollback(deps, sourceSnap, destSnap,
 			fmt.Errorf("sshconfig: migrate: aborted after destination write: %w", serr))
 	}
 
@@ -229,18 +278,18 @@ func Migrate(direction MigrateDirection, deps MigrateDeps) (MigrateResult, error
 	// atomically together — never as two separate writes).
 	sourceComposed := reorderGlobalLast(composeSource(direction, sourceContent, movable))
 	if _, perr := Parse(sourceComposed); perr != nil {
-		return rollback(deps, sourcePath, sourceBackup, destPath, destBackup,
+		return rollback(deps, sourceSnap, destSnap,
 			fmt.Errorf("sshconfig: migrate: composed %s is not parseable, refusing to write: %w", sourcePath, perr))
 	}
 	if _, werr := deps.WriteFile(sourcePath, sourceComposed, migrateFileMode); werr != nil {
-		return rollback(deps, sourcePath, sourceBackup, destPath, destBackup,
+		return rollback(deps, sourceSnap, destSnap,
 			fmt.Errorf("sshconfig: migrate: writing %s: %w", sourcePath, werr))
 	}
 	if verr := validateResolution(deps, preSnapshot); verr != nil {
-		return rollback(deps, sourcePath, sourceBackup, destPath, destBackup, verr)
+		return rollback(deps, sourceSnap, destSnap, verr)
 	}
 	if serr := callStep(deps, StepSourceTrimmed); serr != nil {
-		return rollback(deps, sourcePath, sourceBackup, destPath, destBackup,
+		return rollback(deps, sourceSnap, destSnap,
 			fmt.Errorf("sshconfig: migrate: aborted after source trim: %w", serr))
 	}
 
@@ -253,7 +302,7 @@ func Migrate(direction MigrateDirection, deps MigrateDeps) (MigrateResult, error
 			sourceBackup, sourcePath, destBackup, destPath),
 	}
 	if serr := callStep(deps, StepCommit); serr != nil {
-		return rollback(deps, sourcePath, sourceBackup, destPath, destBackup,
+		return rollback(deps, sourceSnap, destSnap,
 			fmt.Errorf("sshconfig: migrate: aborted at commit: %w", serr))
 	}
 	return result, nil
@@ -407,44 +456,54 @@ func reorderGlobalLast(content []byte) []byte {
 	return content
 }
 
-// rollback restores BOTH files from their step-2 backups and returns a
-// wrapped error naming both backup paths (T-01-22 recovery path). It is
-// invoked on any post-write validation failure or afterStep-injected error.
-func rollback(deps MigrateDeps, sourcePath, sourceBackup, destPath, destBackup string, cause error) (MigrateResult, error) {
+// rollback restores BOTH files to their pre-migration state and returns a
+// wrapped error naming both step-2 backup paths as a human recovery
+// reference (T-01-22 recovery path). It is invoked on any post-write
+// validation failure or afterStep-injected error.
+//
+// Restoration itself goes through restoreSnapshot, which uses the
+// IN-MEMORY pristine bytes captured at preflight via the no-backup
+// RestoreFile seam (Codex HIGH #1) — rollback never calls WriteFile to
+// restore a pre-existing file, so it can never create a new backup that
+// clobbers the on-disk step-2 backups named in the error message below.
+func rollback(deps MigrateDeps, sourceSnap, destSnap backupSnapshot, cause error) (MigrateResult, error) {
 	var restoreErrs []error
-	restoreErrs = append(restoreErrs, restoreFromBackup(deps, sourcePath, sourceBackup)...)
-	restoreErrs = append(restoreErrs, restoreFromBackup(deps, destPath, destBackup)...)
+	restoreErrs = append(restoreErrs, restoreSnapshot(deps, sourceSnap)...)
+	restoreErrs = append(restoreErrs, restoreSnapshot(deps, destSnap)...)
 
 	err := fmt.Errorf("sshconfig: migrate: aborted and restored from backups (source: %s, target: %s): %w",
-		sourceBackup, destBackup, cause)
+		sourceSnap.backupPath, destSnap.backupPath, cause)
 	if len(restoreErrs) > 0 {
 		err = fmt.Errorf("%w; additionally, restore encountered errors: %v", err, restoreErrs)
 	}
 	return MigrateResult{}, err
 }
 
-// restoreFromBackup restores path from its backup (a no-op when backupPath
-// is empty — the file did not pre-exist before migration), returning any
-// errors encountered (empty slice on success).
-func restoreFromBackup(deps MigrateDeps, path, backupPath string) []error {
-	if backupPath == "" {
+// restoreSnapshot restores snap.path to its pre-migration state (a no-op
+// finding of "did not pre-exist" when snap.backupPath is empty — the file
+// did not exist before migration), returning any errors encountered (empty
+// slice on success).
+func restoreSnapshot(deps MigrateDeps, snap backupSnapshot) []error {
+	if snap.backupPath == "" {
 		// filewriter.Write's backupPath is non-empty ONLY when the target
 		// pre-existed — an empty backupPath from step 2 means path did NOT
 		// exist before migration. A later step may since have created it
 		// (step 2's own "backup-only" write, or step 3/4's real content
 		// write), so the true pre-migration state must be restored by
 		// REMOVING it, not by a no-op that would leave that content behind.
-		if err := deps.RemoveFile(path); err != nil {
-			return []error{fmt.Errorf("removing %s to restore pre-migration (absent) state: %w", path, err)}
+		if err := deps.RemoveFile(snap.path); err != nil {
+			return []error{fmt.Errorf("removing %s to restore pre-migration (absent) state: %w", snap.path, err)}
 		}
 		return nil
 	}
-	content, rerr := deps.ReadFile(backupPath)
-	if rerr != nil {
-		return []error{fmt.Errorf("reading backup %s: %w", backupPath, rerr)}
-	}
-	if _, werr := deps.WriteFile(path, content, migrateFileMode); werr != nil {
-		return []error{fmt.Errorf("restoring %s from %s: %w", path, backupPath, werr)}
+	// Restore from the IN-MEMORY pristine bytes captured at preflight, via
+	// the no-backup RestoreFile seam — deliberately NEVER deps.WriteFile
+	// (Codex HIGH #1): re-entering WriteFile's own backup-creation step here
+	// would create a NEW backup of the (failed) live file and could clobber
+	// the pristine step-2 backup (snap.backupPath) this restore is standing
+	// in for.
+	if werr := deps.RestoreFile(snap.path, snap.content, migrateFileMode); werr != nil {
+		return []error{fmt.Errorf("restoring %s from in-memory pre-migration snapshot: %w", snap.path, werr)}
 	}
 	return nil
 }

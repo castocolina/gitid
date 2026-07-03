@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/castocolina/gitid/internal/filewriter"
 	"github.com/castocolina/gitid/internal/tester"
@@ -345,5 +346,119 @@ func TestMigrateInjectedFailureAfterSourceTrimmedRollsBack(t *testing.T) {
 				t.Error("Include'd file retains the migrated block after rollback; expected full restoration")
 			}
 		}
+	}
+}
+
+// TestMigrateRollbackDoesNotClobberPristineBackup proves Codex HIGH #1: a
+// migration that fails validation AFTER the source trim must NOT let its
+// own rollback restore-write create a NEW backup of the failed live file —
+// that new backup is exactly what could clobber a PRISTINE backup (a file
+// the Recovery message tells the user to restore from), under the pre-fix
+// second-resolution backup naming (STORE-03 crash-safety gap).
+//
+// Uses RealMigrateDeps (real `ssh -G`, never faked — the CONTEXT.md-locked
+// constraint for this package) and the afterStep MigrateDeps seam to inject
+// the failure exactly at StepSourceTrimmed — the point immediately after
+// the real post-source-trim validateResolution call has already succeeded
+// and the source-trim write has already landed on disk, i.e. "fails
+// [right after validating] the source trim". The test snapshots the
+// backup-file count for ~/.ssh/config at that exact point (capturing the
+// legitimate backup the source-trim WRITE itself creates, via
+// filewriter.Write's normal backup-before-overwrite step) BEFORE the
+// injected failure triggers rollback, then asserts rollback added NO
+// additional backup file and that every backup file present is still
+// byte-for-byte the pristine pre-migration content.
+func TestMigrateRollbackDoesNotClobberPristineBackup(t *testing.T) {
+	skipIfNoSSH(t)
+	home, configPath, includePath := migrateFixture(t)
+	sshDir := filepath.Join(home, ".ssh")
+
+	identityKey := filepath.Join(sshDir, "id_ed25519_personal")
+	hostBlock := RenderHostBlock("personal.github.com", "ssh.github.com", 443, identityKey, "")
+	if _, err := Write(configPath, "personal", hostBlock, ""); err != nil {
+		t.Fatalf("seeding in-line identity: %v", err)
+	}
+
+	// Ground truth: the pristine pre-migration bytes, captured independently
+	// of Migrate's own bookkeeping.
+	preConfig := mustReadFile(t, configPath)
+
+	deps := RealMigrateDeps(configPath, includePath, []string{"personal.github.com"})
+	var backupCountAtSourceTrimmed int
+	deps.afterStep = func(step MigrateStep) error {
+		if step == StepSourceTrimmed {
+			matches, globErr := filepath.Glob(configPath + ".bak.*")
+			if globErr != nil {
+				t.Fatalf("globbing for backup files at StepSourceTrimmed: %v", globErr)
+			}
+			backupCountAtSourceTrimmed = len(matches)
+			return errFakeCrash
+		}
+		return nil
+	}
+
+	_, err := Migrate(MigrateToInclude, deps)
+	if err == nil {
+		t.Fatal("expected Migrate to fail when afterStep injects an error after the source trim")
+	}
+
+	matchesAfter, globErr := filepath.Glob(configPath + ".bak.*")
+	if globErr != nil {
+		t.Fatalf("globbing for backup files after rollback: %v", globErr)
+	}
+	if len(matchesAfter) != backupCountAtSourceTrimmed {
+		t.Fatalf("rollback changed the number of %s backup files (expected no new backup from restoring): before rollback=%d, after rollback=%d, files=%v",
+			configPath, backupCountAtSourceTrimmed, len(matchesAfter), matchesAfter)
+	}
+
+	// Every backup file present must still be byte-for-byte pristine — none
+	// may have been clobbered with the (bad, source-trimmed) live content by
+	// rollback's own restore-write.
+	for _, backupPath := range matchesAfter {
+		backupBytes := mustReadFile(t, backupPath)
+		if !bytes.Equal(backupBytes, preConfig) {
+			t.Errorf("pristine backup %s was NOT byte-for-byte intact after rollback:\nwant:\n%s\ngot:\n%s",
+				backupPath, preConfig, backupBytes)
+		}
+	}
+}
+
+// TestMigrateReturnsTimeoutErrorWhenSSHHangs proves Codex HIGH #2: a hung
+// `ssh -G` resolution during Migrate's preflight/validation (e.g. a
+// pathological config with a hanging `Match exec`) never blocks Migrate
+// indefinitely. RealMigrateDeps' resolver is bounded by
+// migrateResolveTimeout (exec.CommandContext), mirroring internal/platform's
+// probeTimeout pattern (T-01-03). A fake `ssh` binary that sleeps 30s is
+// placed first on PATH; migrateResolveTimeout is shrunk so the test itself
+// stays fast.
+func TestMigrateReturnsTimeoutErrorWhenSSHHangs(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "ssh")
+	// #nosec G306 -- test fixture in a t.TempDir(), not a managed gitid file
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nsleep 30\n"), 0o755); err != nil {
+		t.Fatalf("writing fake hung ssh: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	oldTimeout := migrateResolveTimeout
+	migrateResolveTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { migrateResolveTimeout = oldTimeout })
+
+	_, configPath, includePath := migrateFixture(t)
+	if err := os.WriteFile(configPath, []byte("Host example\n  Hostname example.com\n"), 0o600); err != nil {
+		t.Fatalf("seeding config: %v", err)
+	}
+
+	deps := RealMigrateDeps(configPath, includePath, []string{"example"})
+
+	start := time.Now()
+	_, err := Migrate(MigrateToInclude, deps)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected Migrate to return an error when ssh -G hangs, got nil")
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("Migrate() with a hung ssh took %v, want it bounded by migrateResolveTimeout (did not honor exec.CommandContext timeout)", elapsed)
 	}
 }
