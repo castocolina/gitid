@@ -142,11 +142,16 @@ func TestManifestSchema(t *testing.T) {
 
 // TestManifestCrossValidation asserts every REAL manifest entry currently
 // checked in under .planning/design/*/manifest.json resolves against
-// internal/dummytui.RenderScreen and that the rendered output contains the
-// "<surface>/<screen>" breadcrumb (review HIGH-3d, TUI side — the HTML side
-// is cross-validated at capture time by design_capture_test.go's
-// RequiredText assertion plus the mockup's own App.tsx/verify-routes.mjs
-// route-shape gate). With no manifests checked in yet (this plan ships the
+// internal/dummytui.RenderScreen and that the rendered output contains BOTH
+// the "<surface>/<screen>" breadcrumb AND the entry's own Signature (review
+// HIGH-3d/MED-01, TUI side — the HTML side is cross-validated at capture
+// time by design_capture_test.go's RequiredTexts assertion plus the
+// mockup's own App.tsx/verify-routes.mjs route-shape gate). Checking the
+// Signature too (not just the breadcrumb) closes review MED-01: every
+// surface_*.go file's own doc comment claims this offline/non-e2e test
+// suite verifies the signature (never a same-shaped-but-wrong-state false
+// positive) — before this fix, only e2e/dummy_nav_e2e_test.go's PTY walker
+// actually did. With no manifests checked in yet (this plan ships the
 // loader; surfaces add their own manifest.json files in later plans), this
 // loop body never runs — an intentional no-op, never a silent false pass
 // masquerading as coverage of screens that do not exist yet.
@@ -165,6 +170,9 @@ func TestManifestCrossValidation(t *testing.T) {
 			}
 			if !strings.Contains(view, ScreenID(e)) {
 				t.Errorf("dummytui.RenderScreen(%q, %q) output is missing the %q breadcrumb", e.Surface, e.Screen, ScreenID(e))
+			}
+			if !strings.Contains(view, e.Signature) {
+				t.Errorf("dummytui.RenderScreen(%q, %q) output is missing the %q signature", e.Surface, e.Screen, e.Signature)
 			}
 		})
 	}

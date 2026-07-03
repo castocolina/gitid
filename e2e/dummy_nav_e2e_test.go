@@ -193,7 +193,15 @@ func TestDummyNavReachesAllScreens(t *testing.T) {
 		t.Fatalf("LoadManifests(%q): %v", designDir, err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	// review B2: 180s, matching Makefile's dummy-nav-e2e target AND
+	// test-e2e's own budget. The prior 60s context (and the Makefile's
+	// prior `-timeout 60s`) were already tighter than the full walk's
+	// observed ~47s+ runtime with no CI-variance headroom -- a single
+	// slower run would spuriously fail. 180s mirrors test-e2e's own
+	// documented rationale (Makefile: "observed ~80s under -race locally;
+	// 180s gives CI-variance headroom without masking a genuine hang", since
+	// each inner waitFor already carries its own bounded timeout).
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
 	s := startPTY(t, newDummyPTYCmd(ctx, bin, home))

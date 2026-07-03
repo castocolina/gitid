@@ -104,7 +104,11 @@ func TestCaptureAllMockupScreens(t *testing.T) {
 					t.Run(e.Screen, func(t *testing.T) {
 						url := "file://" + filepath.ToSlash(distIndex) + "#" + e.HTMLRoute
 						out := filepath.Join(htmlDir, e.Screen+".png")
-						if err := CaptureHTMLScreen(url, out, ScreenID(e)); err != nil {
+						// review B1: require BOTH the breadcrumb AND the
+						// manifest entry's own Signature before a PNG is
+						// ever written -- the breadcrumb alone cannot catch
+						// a right-route/wrong-state false positive.
+						if err := CaptureHTMLScreen(url, out, ScreenID(e), e.Signature); err != nil {
 							t.Fatalf("CaptureHTMLScreen(%s): %v", ScreenID(e), err)
 						}
 					})
@@ -124,6 +128,15 @@ func TestCaptureAllMockupScreens(t *testing.T) {
 						}
 						if !strings.Contains(view, ScreenID(e)) {
 							t.Fatalf("dummytui.RenderScreen(%s) output is missing the %q breadcrumb -- refusing to save a wrong-screen PNG", ScreenID(e), ScreenID(e))
+						}
+						// review B1: also require the manifest entry's own
+						// Signature -- the breadcrumb alone cannot catch a
+						// same-shaped-but-wrong-state false positive
+						// (review HIGH-3c, T-02-FP); mirrors the stricter
+						// check e2e/dummy_nav_e2e_test.go's PTY walker
+						// already performs (breadcrumb+Signature).
+						if !strings.Contains(view, e.Signature) {
+							t.Fatalf("dummytui.RenderScreen(%s) output is missing the %q signature -- refusing to save a same-shaped-but-wrong-state PNG", ScreenID(e), e.Signature)
 						}
 						out := filepath.Join(tuiDir, e.Screen+".png")
 						if err := CaptureTUIScreen(view, out); err != nil {

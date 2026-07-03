@@ -64,11 +64,16 @@ func mockupFontFile() string {
 // SAME go-rod navigate/screenshot path Phase 1 built is still the only one
 // ever exercised — no second browser-driving implementation lives here.
 //
-// requiredText, when non-empty, is passed through as
-// HTMLOptions.RequiredText so CaptureHTML asserts the rendered page's body
-// contains it BEFORE ever writing a PNG (review HIGH-3b/d, T-02-FP — never
-// a blank or wrong-route capture silently passing).
-func CaptureHTMLScreen(url, outPath, requiredText string) error {
+// requiredTexts, when non-empty, is passed through as
+// HTMLOptions.RequiredTexts so CaptureHTML asserts the rendered page's body
+// contains EVERY one of them BEFORE ever writing a PNG (review HIGH-3b/d +
+// B1, T-02-FP — never a blank, wrong-route, OR right-route/wrong-state
+// capture silently passing). design_capture_test.go passes BOTH the
+// "<surface>/<screen>" breadcrumb AND the manifest entry's own Signature —
+// breadcrumb alone cannot catch a same-route-different-content false
+// positive, the same gap e2e/dummy_nav_e2e_test.go's PTY walker already
+// closed on its own side by checking breadcrumb+Signature together.
+func CaptureHTMLScreen(url, outPath string, requiredTexts ...string) error {
 	const filePrefix = "file://"
 	if !strings.HasPrefix(url, filePrefix) {
 		return fmt.Errorf("screenshot: CaptureHTMLScreen: url must start with %q (never a remote origin -- T-02-CAP), got %q", filePrefix, url)
@@ -87,7 +92,7 @@ func CaptureHTMLScreen(url, outPath, requiredText string) error {
 	if _, err := CaptureHTML(HTMLOptions{
 		FixturePath:       fixturePath,
 		URLFragment:       fragment,
-		RequiredText:      requiredText,
+		RequiredTexts:     requiredTexts,
 		OutDir:            outDir,
 		Name:              name,
 		ViewportWidth:     mockupViewportWidth,

@@ -30,8 +30,13 @@
 #   dummy-nav-e2e   Drive the real cmd/gitid-dummy binary over a PTY, proving every
 #                   manifest screen is reachable via absolute keystrokes before any
 #                   design-review presentation (DLV-05).
+#   gate-no-backend-files  Fail if any commit on this branch (since it diverged from
+#                   main) touches a file outside the Phase 2 design-only allowlist
+#                   (SECURITY.md Finding 1 / T-02-BEGATE) -- automates what was
+#                   previously only a one-off shell line in a plan file. Runs
+#                   automatically as a dummy-nav-e2e prerequisite.
 
-.PHONY: setup-env build build-cross install uninstall test lint fmt install-hooks test-e2e screenshot-tui screenshot-html screenshot-html-mockups screenshot-tui-mockups dummy-nav-e2e
+.PHONY: setup-env build build-cross install uninstall test lint fmt install-hooks test-e2e screenshot-tui screenshot-html screenshot-html-mockups screenshot-tui-mockups dummy-nav-e2e gate-no-backend-files
 
 # Binary output directory.
 BIN_DIR := bin
@@ -247,13 +252,38 @@ screenshot-html-mockups:
 screenshot-tui-mockups:
 	go test -tags screenshot -run 'TestCaptureAllMockupScreens/.*/tui' ./internal/screenshot/...
 
+## gate-no-backend-files: fail if any file changed on this branch since it
+## diverged from main falls outside the Phase 2 design-only allowlist
+## (SECURITY.md Finding 1 / T-02-BEGATE). Before this target existed, the
+## SAME check ran only as a one-off shell line inside 02-11-PLAN.md's
+## <verify> block -- executed once by the plan executor and never
+## automated, so any commit added to the branch afterward (before the
+## single 02-12 human-approval checkpoint) would only be caught by a human
+## manually re-running that exact command from memory. This target makes
+## the check repeatable and CI-able; it is a prerequisite of dummy-nav-e2e
+## below so it runs automatically on every dummy-nav-e2e invocation.
+gate-no-backend-files:
+	@BASE=$$(git merge-base main HEAD); \
+	OFFENDING=$$(git diff --name-only "$$BASE"..HEAD | grep -v -E '^(\.planning/|internal/dummytui/|cmd/gitid-dummy/|internal/screenshot/|e2e/|Makefile$$)' || true); \
+	if [ -n "$$OFFENDING" ]; then \
+		echo "gate-no-backend-files: FAILED -- file(s) outside the Phase 2 design-only allowlist changed since main ($$BASE):"; \
+		echo "$$OFFENDING"; \
+		exit 1; \
+	fi; \
+	echo "gate-no-backend-files: OK -- no files outside {.planning/, internal/dummytui/, cmd/gitid-dummy/, internal/screenshot/, e2e/, Makefile} changed since main ($$BASE)"
+
 ## dummy-nav-e2e: run the dummy-tui PTY navigation proof (builds gitid-dummy
 ## first). Drives the REAL cmd/gitid-dummy binary via raw PTY keystrokes,
 ## re-homing before each manifest entry and asserting the active screen
 ## breadcrumb + a screen-specific signature, then asserts zero files were
 ## written under a sandboxed HOME (DLV-05). Tests are tagged //go:build e2e
 ## and are excluded from the normal make test target (same convention as
-## test-e2e).
-dummy-nav-e2e:
+## test-e2e). Timeout aligned to 180s (review B2), matching test-e2e's own
+## budget and the test's own internal context.WithTimeout -- the prior 60s
+## had no CI-variance headroom over the walk's observed ~47s+ runtime.
+## Depends on gate-no-backend-files (review B4) so the branch's
+## design-only-file invariant is re-verified automatically on every run,
+## not just once by hand at 02-11.
+dummy-nav-e2e: gate-no-backend-files
 	go build -o $(BIN_DIR)/gitid-dummy ./cmd/gitid-dummy
-	go test -tags e2e -race -timeout 60s -run TestDummyNav ./e2e/...
+	go test -tags e2e -race -timeout 180s -run TestDummyNav ./e2e/...

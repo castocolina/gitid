@@ -92,6 +92,21 @@ type HTMLOptions struct {
 	// owns, rather than a second capture path (Pitfall 7: never
 	// re-instantiate a go-rod launcher elsewhere).
 	RequiredText string
+
+	// RequiredTexts, when non-empty, is checked the SAME way as
+	// RequiredText (every entry must be present in the rendered <body> text
+	// before any screenshot is captured/written), but requires ALL entries,
+	// not just one. Added by the 02-review fix pass (review B1/T-02-FP):
+	// RequiredText alone (the "<surface>/<screen>" breadcrumb) cannot catch
+	// a "right route, wrong STATE" false positive — e.g. a route that
+	// renders the correct breadcrumb but a stale/incorrect body underneath
+	// it. design_capture_test.go passes BOTH the breadcrumb and the
+	// manifest entry's own Signature here, mirroring the stricter check
+	// e2e/dummy_nav_e2e_test.go's PTY walker already performs
+	// (breadcrumb+Signature, not breadcrumb alone). When both RequiredText
+	// and RequiredTexts are set, ALL of them (RequiredText plus every
+	// RequiredTexts entry) must be present — additive, not a replacement.
+	RequiredTexts []string
 }
 
 // CaptureHTML renders a local fixture HTML page to a deterministic PNG via
@@ -203,17 +218,51 @@ func CaptureHTML(opts HTMLOptions) (Result, error) {
 		return Result{}, fmt.Errorf("screenshot: CaptureHTML: waiting for page load: %w", err)
 	}
 
+	required := opts.RequiredTexts
 	if opts.RequiredText != "" {
-		body, err := page.Element("body")
-		if err != nil {
-			return Result{}, fmt.Errorf("screenshot: CaptureHTML: locating <body> to verify RequiredText %q at %s: %w", opts.RequiredText, fileURL, err)
-		}
-		bodyText, err := body.Text()
-		if err != nil {
-			return Result{}, fmt.Errorf("screenshot: CaptureHTML: reading rendered body text to verify RequiredText %q at %s: %w", opts.RequiredText, fileURL, err)
-		}
-		if !strings.Contains(bodyText, opts.RequiredText) {
-			return Result{}, fmt.Errorf("screenshot: CaptureHTML: rendered page at %s does not contain required text %q -- never saving a wrong-route/blank capture (got body text: %.200q)", fileURL, opts.RequiredText, bodyText)
+		required = append([]string{opts.RequiredText}, required...)
+	}
+	if len(required) > 0 {
+		// review B1: poll for ALL required text markers until present or
+		// this capture's own Timeout expires, rather than checking the body
+		// text exactly once immediately after WaitLoad. A React SPA can
+		// commit its route body milliseconds AFTER the "load" event fires
+		// (WaitLoad only proves the initial HTML shell + JS bundle loaded,
+		// not that client-side routing/rendering has committed) -- a
+		// single immediate check risks a flaky false-negative (or, if ever
+		// relaxed to "pass on empty", a false positive) on a slower CI
+		// runner. Deterministic: still bounded by ctx's Timeout, and the
+		// poll interval is short enough not to add meaningful capture
+		// latency on the common case where the text is already present.
+		const pollInterval = 25 * time.Millisecond
+		var bodyText string
+		for {
+			body, elErr := page.Element("body")
+			if elErr != nil {
+				return Result{}, fmt.Errorf("screenshot: CaptureHTML: locating <body> to verify required text %q at %s: %w", required, fileURL, elErr)
+			}
+			text, textErr := body.Text()
+			if textErr != nil {
+				return Result{}, fmt.Errorf("screenshot: CaptureHTML: reading rendered body text to verify required text %q at %s: %w", required, fileURL, textErr)
+			}
+			bodyText = text
+
+			allPresent := true
+			for _, want := range required {
+				if !strings.Contains(bodyText, want) {
+					allPresent = false
+					break
+				}
+			}
+			if allPresent {
+				break
+			}
+
+			select {
+			case <-ctx.Done():
+				return Result{}, fmt.Errorf("screenshot: CaptureHTML: rendered page at %s does not contain all required text markers %q within the capture timeout -- never saving a wrong-route/wrong-state/blank capture (got body text: %.200q): %w", fileURL, required, bodyText, ctx.Err())
+			case <-time.After(pollInterval):
+			}
 		}
 	}
 
