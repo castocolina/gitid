@@ -3,16 +3,26 @@
 # pre-commit hooks and future CI call these same targets — single source of truth.
 #
 # Targets:
-#   setup-env   Install development tools (goimports, golangci-lint, gosec, pre-commit)
-#               and wire git hooks via install-hooks (completed in plan 01-03).
-#   build       Compile the gitid binary to bin/gitid.
-#   install     Install gitid to $GOPATH/bin via go install.
-#   uninstall   Remove gitid from $GOPATH/bin.
-#   test        Run the race-enabled test harness with a coverage profile (TDD harness, D-06).
-#   lint        Run golangci-lint (reads .golangci.yml); hard-fails on any finding (D-04).
-#   fmt         Run goimports then gofmt over all packages.
+#   setup-env      Install development tools (goimports, golangci-lint, gosec, pre-commit,
+#                  freeze) and provision the pinned Chromium revision; wire git hooks via
+#                  install-hooks (completed in plan 01-03; screenshot tooling in 01-05).
+#   build          Compile the gitid binary to bin/gitid.
+#   build-cross    Cross-compile the release build matrix (darwin/amd64, darwin/arm64,
+#                  linux/amd64, linux/arm64 [build-only]) to bin/gitid-<os>-<arch>
+#                  (BUILD-01). Cross-compilation via GOOS/GOARCH is OS-independent, so
+#                  CI runs this ONCE on ubuntu-latest rather than on every matrix runner.
+#                  No release/tag/checksum packaging here — that is BUILD-03, Phase 10.
+#   install        Install gitid to $GOPATH/bin via go install.
+#   uninstall      Remove gitid from $GOPATH/bin.
+#   test           Run the race-enabled test harness with a coverage profile (TDD harness, D-06).
+#   lint           Run golangci-lint (reads .golangci.yml); hard-fails on any finding (D-04).
+#   fmt            Run goimports then gofmt over all packages.
+#   screenshot-tui  Render the TUI View()-dump golden to a deterministic PNG via freeze
+#                   (TOOL-05, DLV-03; build-tag isolated behind `screenshot`).
+#   screenshot-html Render the fixture HTML page to a deterministic PNG via headless
+#                   Chromium (go-rod, pinned revision; TOOL-05, DLV-03).
 
-.PHONY: setup-env build install uninstall test lint fmt install-hooks test-e2e
+.PHONY: setup-env build build-cross install uninstall test lint fmt install-hooks test-e2e screenshot-tui screenshot-html
 
 # Binary output directory.
 BIN_DIR := bin
@@ -23,6 +33,20 @@ GOPATH_BIN := $(shell go env GOPATH)/bin
 
 # golangci-lint version to install (pinned — do NOT change without updating STACK.md).
 GOLANGCI_LINT_VERSION := v2.12.2
+
+# freeze version to install (pinned — dev/build tool only, never a runtime dep of the
+# shipped gitid binary; see internal/screenshot/tui.go, build-tag isolated). Supply-chain
+# provenance recorded in .planning/design/_spike/GOLDENS.md (01-05 Task 1).
+FREEZE_VERSION := v0.2.2
+
+# Vendored monospace font + fixed theme for deterministic screenshot-tui rendering
+# (Pitfall 6 — freeze's default font discovery is not CI-deterministic). These are the
+# same values internal/screenshot/tui_capture_test.go passes to freeze's --font.file /
+# --theme flags at a fixed 100x30 (cols x rows) capture geometry (D-04); recorded here
+# too so a fresh clone can see, without reading Go source, which font/theme/geometry a
+# reproduced golden depends on.
+SCREENSHOT_FONT  := $(CURDIR)/.planning/design/fonts/JetBrainsMono-Regular.ttf
+SCREENSHOT_THEME := dracula
 
 # Resolved tool binaries, referenced by absolute path so recipes run regardless of the
 # caller's PATH. GNU Make 3.81 (macOS) direct-execs a bare command (no shell metacharacters)
@@ -54,6 +78,14 @@ export PATH := $(HOME)/.local/bin:$(GOPATH_BIN):$(PATH)
 ##   gosec         — standalone security linter binary (also embedded in golangci-lint;
 ##                   installed separately for direct invocation if needed).
 ##   pre-commit    — git hook runner; hooks point at make targets.
+##   freeze        — ANSI terminal-output -> PNG renderer for `screenshot-tui`, pinned
+##                   @v0.2.2 (dev/build tool only — never a runtime dep of the shipped
+##                   gitid binary; Pitfall 8: unlike golangci-lint, `go install` is fine
+##                   for freeze).
+##   pinned Chromium revision — headless-Chromium build `screenshot-html` drives via
+##                   go-rod, pre-downloaded into the fixed cache path so a later
+##                   `make screenshot-html` never pays the download cost (or fails
+##                   offline) on a fresh clone (T-01-SC2).
 ##
 ## Git hook wiring (pre-commit install, pre-push install) is completed in plan 01-03
 ## via the install-hooks sub-target below.  setup-env calls install-hooks so that once
@@ -67,7 +99,16 @@ setup-env:
 	go install github.com/securego/gosec/v2/cmd/gosec@latest
 	@echo "==> Installing pre-commit (via uv; bootstrap uv with the Astral installer if missing — not a system package manager)"
 	command -v uv >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR="$$HOME/.local/bin" sh
-	uv tool install pre-commit
+	# The Astral installer drops uv in ~/.local/bin, but make exec's the next
+	# metacharacter-free recipe line directly (bypassing the line-69 PATH export),
+	# so a bare `uv` is not found on a runner without a pre-installed uv (seen on
+	# macos-15-intel). Prepend ~/.local/bin inline so the freshly-bootstrapped uv
+	# resolves regardless of whether it pre-existed on PATH.
+	PATH="$$HOME/.local/bin:$$PATH" uv tool install pre-commit
+	@echo "==> Installing freeze $(FREEZE_VERSION) (screenshot-tui rendering; dev/build tool only)"
+	go install github.com/charmbracelet/freeze@v0.2.2
+	@echo "==> Provisioning the pinned Chromium revision for screenshot-html (headless, go-rod)"
+	go test -tags screenshot -run TestProvisionPinnedChromium ./internal/screenshot/...
 	@echo "==> Wiring git hooks"
 	$(MAKE) install-hooks
 	@echo "==> setup-env complete"
@@ -107,6 +148,20 @@ build:
 	@mkdir -p $(BIN_DIR)
 	go build -o $(BINARY) ./cmd/gitid
 
+## build-cross: cross-compile the release build matrix reproducibly (BUILD-01).
+## darwin/amd64, darwin/arm64, and linux/amd64 are the gated matrix targets; linux/arm64
+## is included build-only ("if cheap" per D-14) and is NOT part of any CI gate. GOOS/GOARCH
+## cross-compilation is OS-independent (no cgo in this module), so this target is invoked
+## ONCE on a single Linux runner in CI rather than redundantly on every matrix OS. Output
+## binaries are named bin/gitid-<os>-<arch> — no release/tag/checksum packaging here
+## (BUILD-03 is Phase 10, out of scope).
+build-cross:
+	@mkdir -p $(BIN_DIR)
+	GOOS=darwin  GOARCH=amd64 go build -o $(BIN_DIR)/gitid-darwin-amd64 ./cmd/gitid
+	GOOS=darwin  GOARCH=arm64 go build -o $(BIN_DIR)/gitid-darwin-arm64 ./cmd/gitid
+	GOOS=linux   GOARCH=amd64 go build -o $(BIN_DIR)/gitid-linux-amd64  ./cmd/gitid
+	GOOS=linux   GOARCH=arm64 go build -o $(BIN_DIR)/gitid-linux-arm64  ./cmd/gitid
+
 ## install: install gitid to $GOPATH/bin and report the install path + PATH status.
 install:
 	go install ./cmd/gitid
@@ -125,3 +180,29 @@ uninstall:
 ## Tests are tagged //go:build e2e and are excluded from the normal make test target.
 test-e2e: build
 	go test -tags e2e -race -timeout 60s ./e2e/...
+
+## screenshot-tui: render the Bubble Tea View()-dump golden to a deterministic PNG
+## via freeze (TOOL-05, DLV-03). Invokes TestCaptureTUI — the concrete runnable
+## entry point under the `screenshot` build tag that actually writes the PNG —
+## which pins the vendored $(SCREENSHOT_FONT) via --font.file, the fixed
+## $(SCREENSHOT_THEME) --theme, and a fixed 100x30 (cols x rows) capture geometry
+## (D-04). Writes to .planning/design/_spike/tui/ and asserts the golden SHA-256
+## recorded in .planning/design/_spike/GOLDENS.md reproduces on re-run.
+## internal/screenshot/tui.go is //go:build screenshot isolated — this target,
+## not `go build ./cmd/gitid`, is the only thing that ever compiles it.
+screenshot-tui:
+	go test -tags screenshot -run TestCaptureTUI ./internal/screenshot/...
+
+## screenshot-html: render the fixture HTML page to a deterministic PNG via
+## headless Chromium (go-rod, PINNED revision — see ChromiumRevision in
+## internal/screenshot/html.go and the provenance note in
+## .planning/design/_spike/GOLDENS.md) at a fixed viewport/scale/color-scheme.
+## Invokes TestCaptureHTML — the concrete runnable entry point under the
+## `screenshot` build tag that actually writes the PNG. Writes to
+## .planning/design/_spike/html/ and asserts the golden SHA-256 recorded in
+## .planning/design/_spike/GOLDENS.md reproduces on re-run.
+## internal/screenshot/html.go is //go:build screenshot isolated — this target,
+## not `go build ./cmd/gitid`, is the only thing that ever compiles it (go-rod
+## never enters the shipped binary's dependency graph).
+screenshot-html:
+	go test -tags screenshot ./internal/screenshot/... -run TestCaptureHTML

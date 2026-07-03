@@ -3,6 +3,7 @@ package keygen
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/rsa"
 	"encoding/pem"
 	"fmt"
 	"path/filepath"
@@ -13,7 +14,11 @@ import (
 
 // Params configures a key generation request.
 type Params struct {
-	// Algo is the key algorithm; only "ed25519" is supported in this phase.
+	// Algo is the key algorithm name, one of the registry's registered keys
+	// (see registry.go). "ed25519" and "rsa-4096" generate real key material;
+	// "ecdsa-p256", "ed25519-sk", and "ecdsa-sk" are registered as
+	// not-yet-implemented and always error. Any other value is an unsupported
+	// algorithm error.
 	Algo string
 	// Identity is the gitid identity name; it forms the key filename
 	// id_<algo>_<identity> (D-06).
@@ -41,17 +46,30 @@ type Material struct {
 	PubLine string
 }
 
-// GenerateMaterial generates an ed25519 key pair in memory and returns the
-// Material (PrivPEM + PubLine) WITHOUT writing anything to disk. It is the
-// pure in-memory key generation function; the caller is responsible for staging
-// and persisting the key bytes at the appropriate time (BUG-4 temp-then-promote
-// flow). Only "ed25519" is supported; other algorithms return an
-// unsupported-algorithm error.
+// GenerateMaterial generates a key pair in memory and returns the Material
+// (PrivPEM + PubLine) WITHOUT writing anything to disk. It is the pure
+// in-memory key generation function; the caller is responsible for staging
+// and persisting the key bytes at the appropriate time (BUG-4
+// temp-then-promote flow).
+//
+// Dispatch is a name-keyed lookup into the package-level registry
+// (registry.go): p.Algo not present in the registry returns a clear
+// unsupported-algorithm error (no panic); an algorithm present but backed by
+// a notYetImplemented stub returns a named "not yet implemented" error and a
+// zero-value Material — registry presence never implies generation support
+// (T-01-21).
 func GenerateMaterial(p Params) (Material, error) {
-	if p.Algo != "ed25519" {
-		return Material{}, fmt.Errorf("keygen: unsupported algorithm %q (only ed25519)", p.Algo)
+	gen, ok := registry[p.Algo]
+	if !ok {
+		return Material{}, fmt.Errorf("keygen: unsupported algorithm %q", p.Algo)
 	}
+	return gen(p)
+}
 
+// generateEd25519 generates an ed25519 key pair in memory. Extracted
+// verbatim from the pre-registry GenerateMaterial body — behavior is
+// unchanged (default algorithm, KEY-02).
+func generateEd25519(p Params) (Material, error) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return Material{}, fmt.Errorf("keygen: generating ed25519 key: %w", err)
@@ -71,6 +89,43 @@ func GenerateMaterial(p Params) (Material, error) {
 	privPEM := pem.EncodeToMemory(block)
 
 	sshPub, err := ssh.NewPublicKey(pub)
+	if err != nil {
+		return Material{}, fmt.Errorf("keygen: building public key: %w", err)
+	}
+
+	return Material{
+		PrivPEM: privPEM,
+		PubLine: pubLineWithComment(sshPub, p.Comment),
+	}, nil
+}
+
+// generateRSA4096 generates a 4096-bit RSA key pair in memory (KEY-02).
+//
+// CRITICAL: rsa.GenerateKey returns *rsa.PrivateKey (a pointer) — it is
+// passed AS THE POINTER to ssh.MarshalPrivateKey(WithPassphrase) and
+// &priv.PublicKey to ssh.NewPublicKey, never dereferenced. Unlike
+// ed25519.GenerateKey (which returns a value type that happens to satisfy
+// the signer interface directly), *rsa.PrivateKey has pointer-receiver
+// methods; passing the dereferenced value fails to satisfy
+// crypto.PrivateKey (RESEARCH Pitfall 7).
+func generateRSA4096(p Params) (Material, error) {
+	priv, err := rsa.GenerateKey(rand.Reader, 4096)
+	if err != nil {
+		return Material{}, fmt.Errorf("keygen: generating rsa-4096 key: %w", err)
+	}
+
+	var block *pem.Block
+	if p.Passphrase != "" {
+		block, err = ssh.MarshalPrivateKeyWithPassphrase(priv, p.Comment, []byte(p.Passphrase))
+	} else {
+		block, err = ssh.MarshalPrivateKey(priv, p.Comment)
+	}
+	if err != nil {
+		return Material{}, fmt.Errorf("keygen: serializing private key: %w", err)
+	}
+	privPEM := pem.EncodeToMemory(block)
+
+	sshPub, err := ssh.NewPublicKey(&priv.PublicKey)
 	if err != nil {
 		return Material{}, fmt.Errorf("keygen: building public key: %w", err)
 	}

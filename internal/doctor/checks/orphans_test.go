@@ -145,6 +145,39 @@ func TestOrphanReservedBaselineNotFlagged(t *testing.T) {
 	}
 }
 
+// TestOrphanReservedSSHIncludeNotFlagged: the reserved ssh-include SSH managed
+// block has no gitconfig includeIf counterpart by design and MUST NOT be
+// reported as an orphan (Pitfall 4 / project memory "Doctor reserved-block
+// false-positive loop" — the SSH-side mirror of
+// TestOrphanReservedBaselineNotFlagged). Flagging it produces a removal [fix]
+// that deletes the legitimate Include line, fighting EnsureIncludeLine's
+// restore in an endless loop.
+func TestOrphanReservedSSHIncludeNotFlagged(t *testing.T) {
+	d := doctor.Deps{
+		Stat:       orphStat(),
+		Identities: []identity.Account{},
+		// Only the reserved ssh-include block is present in ~/.ssh/config; no
+		// gitconfig side.
+		SSHManagedBlockNames:       []string{"ssh-include"},
+		GitconfigManagedBlockNames: []string{},
+		AllSSHHostIdentityFiles:    []string{},
+		KeyPaths:                   []string{},
+		SSHConfigPath:              "/home/u/.ssh/config",
+		RemoveBlock:                func(_, _ string) error { return nil },
+	}
+
+	findings := checks.CheckOrphans(d)
+
+	for _, f := range findings {
+		if orphContains(f.Title, "ssh-include") {
+			t.Errorf("reserved ssh-include must not be reported as an orphan, got: %q", f.Title)
+		}
+	}
+	if len(findings) != 0 {
+		t.Errorf("expected no orphan findings for a lone reserved SSH block, got: %v", orphTitles(findings))
+	}
+}
+
 // TestOrphanKey: a gitid key file exists on disk but is referenced by NO Host block
 // (managed or hand-written) → warning, no [fix], honest wording.
 func TestOrphanKey(t *testing.T) {

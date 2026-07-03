@@ -3,6 +3,7 @@ package filewriter
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -97,14 +98,16 @@ func TestWriteBacksUpExistingTarget(t *testing.T) {
 		t.Fatalf("backup mode mismatch: got %o want 0600", backupInfo.Mode().Perm())
 	}
 
-	// Backup filename must follow the <target>.bak.<timestamp> format.
+	// Backup filename must follow the <target>.bak.<unix-nanoseconds> format
+	// (Codex HIGH #1: nanosecond resolution replaces the collision-prone
+	// second-resolution timestamp).
 	prefix := target + ".bak."
 	if !strings.HasPrefix(backup, prefix) {
 		t.Fatalf("backup name %q does not have prefix %q", backup, prefix)
 	}
 	stamp := strings.TrimPrefix(backup, prefix)
-	if len(stamp) != len("20060102-150405") {
-		t.Fatalf("backup timestamp %q is not in 20060102-150405 format", stamp)
+	if _, convErr := strconv.ParseInt(stamp, 10, 64); convErr != nil {
+		t.Fatalf("backup timestamp %q is not a decimal unix-nanoseconds value: %v", stamp, convErr)
 	}
 
 	// Target must now hold the updated content.
@@ -207,4 +210,88 @@ func TestEnsureDir(t *testing.T) {
 			t.Fatalf("mode mismatch: got %o want 0700", info.Mode().Perm())
 		}
 	})
+}
+
+// TestWriteBackupNamesAreCollisionProof verifies that two Write calls over
+// the same target in immediate succession produce two DISTINCT backup
+// files, each with its own correct content intact — proving the
+// nanosecond-resolution + exclusive-create naming scheme never lets a
+// same-instant backup clobber a still-live recovery snapshot (Codex HIGH #1).
+// Under the pre-fix second-resolution naming, two Write calls this close
+// together reliably collided on the same backup path.
+func TestWriteBackupNamesAreCollisionProof(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "config")
+
+	first := []byte("first-content\n")
+	if err := os.WriteFile(target, first, 0o600); err != nil {
+		t.Fatalf("seeding target: %v", err)
+	}
+
+	second := []byte("second-content\n")
+	backup1, err := Write(target, second, 0o600)
+	if err != nil {
+		t.Fatalf("first Write returned error: %v", err)
+	}
+
+	third := []byte("third-content\n")
+	backup2, err := Write(target, third, 0o600)
+	if err != nil {
+		t.Fatalf("second Write returned error: %v", err)
+	}
+
+	if backup1 == backup2 {
+		t.Fatalf("two immediately successive backups collided on the same path: %q", backup1)
+	}
+
+	b1, err := os.ReadFile(backup1) //nolint:gosec // backup1 is a path returned by Write under test
+	if err != nil {
+		t.Fatalf("reading first backup: %v", err)
+	}
+	if string(b1) != string(first) {
+		t.Errorf("first backup content mismatch: got %q want %q", b1, first)
+	}
+
+	b2, err := os.ReadFile(backup2) //nolint:gosec // backup2 is a path returned by Write under test
+	if err != nil {
+		t.Fatalf("reading second backup: %v", err)
+	}
+	if string(b2) != string(second) {
+		t.Errorf("second backup content mismatch: got %q want %q", b2, second)
+	}
+}
+
+// TestWriteNoBackupDoesNotCreateBackup verifies that WriteNoBackup
+// atomically replaces an existing target's content WITHOUT creating any
+// backup file — the dedicated rollback/restore seam (Codex HIGH #1) that
+// sshconfig.Migrate's rollback uses so recovery never re-enters Write's own
+// backup-creation step.
+func TestWriteNoBackupDoesNotCreateBackup(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "config")
+	original := []byte("original-content\n")
+	if err := os.WriteFile(target, original, 0o600); err != nil {
+		t.Fatalf("seeding target: %v", err)
+	}
+
+	restored := []byte("restored-content\n")
+	if err := WriteNoBackup(target, restored, 0o600); err != nil {
+		t.Fatalf("WriteNoBackup returned error: %v", err)
+	}
+
+	got, err := os.ReadFile(target) //nolint:gosec // test reads back the file it just wrote
+	if err != nil {
+		t.Fatalf("reading target: %v", err)
+	}
+	if string(got) != string(restored) {
+		t.Fatalf("content mismatch: got %q want %q", got, restored)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read dir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected exactly 1 file in dir (no backup created), got %d: %v", len(entries), entries)
+	}
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/castocolina/gitid/internal/doctor"
 	"github.com/castocolina/gitid/internal/gitconfig"
+	"github.com/castocolina/gitid/internal/sshconfig"
 )
 
 // CheckOrphans detects artifacts on disk that no owning managed block claims —
@@ -49,6 +50,15 @@ func CheckOrphans(deps doctor.Deps) []doctor.Finding {
 	// Class 1: SSH block names that have no matching gitconfig managed block.
 	// Fix.Fn calls deps.RemoveBlock on SSHConfigPath with the block name (when wired).
 	for _, name := range deps.SSHManagedBlockNames {
+		// Reserved non-identity wiring (the gitid-owned Include line) has no
+		// gitconfig counterpart by design — it is NOT an orphan. Skip it, or
+		// its removal fix would delete the legitimate Include line and fight
+		// EnsureIncludeLine's restore in an endless loop (Pitfall 4 / project
+		// memory "Doctor reserved-block false-positive loop" — the SSH-side
+		// mirror of the Class 2 gitconfig guard below).
+		if sshconfig.IsReservedBlockName(name) {
+			continue
+		}
 		if !gcNames[name] {
 			// This SSH Host block has no gitconfig partner — orphaned block.
 			n := name // capture for closure (avoid loop-variable aliasing)

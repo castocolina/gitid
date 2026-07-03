@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-07-02T17:04:01.303Z"
-last_activity: 2026-07-02 — v1.0 roadmap created (10 phases, 68/68 requirements mapped, 100% coverage)
+stopped_at: Completed 01-06-PLAN.md
+last_updated: "2026-07-03T02:34:07.265Z"
+last_activity: 2026-07-03 -- Phase 01 execution started
 progress:
   total_phases: 10
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 7
+  completed_plans: 6
   percent: 0
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** Managing a Git identity produces coordinated, coherent SSH + Git artifacts that are proven to authenticate and resolve correctly (`ssh -G`) before any file is written, and existing hand-written config is never corrupted.
-**Current focus:** Phase 1 — Foundations, Spikes & CI
+**Current focus:** Phase 01 — foundations-spikes-ci
 
 ## Current Position
 
-Phase: 1 of 10 (Foundations, Spikes & CI)
-Plan: — (roadmap created; phase not yet planned)
+Phase: 01 (foundations-spikes-ci) — EXECUTING
+Plan: 7 of 7
 Status: Ready to execute
-Last activity: 2026-07-02 — v1.0 roadmap created (10 phases, 68/68 requirements mapped, 100% coverage)
+Last activity: 2026-07-03 -- Phase 01 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -56,6 +56,12 @@ Progress: [░░░░░░░░░░] 0%
 | 10. Linux Validation + Release | 0 | - | - |
 
 *Updated after each plan completion*
+| Phase 01-foundations-spikes-ci P01 | 15 | 2 tasks | 8 files |
+| Phase 01 P02 | 25min | 2 tasks | 6 files |
+| Phase 01-foundations-spikes-ci P03 | 35min | 3 tasks | 8 files |
+| Phase 01-foundations-spikes-ci P04 | 25min | 3 tasks | 4 files |
+| Phase 01-foundations-spikes-ci P05 | 55min | 3 tasks | 17 files |
+| Phase 01-foundations-spikes-ci P06 | 35min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -69,6 +75,21 @@ Recent decisions affecting current work:
 - v1.0 (2026-07-02): Algorithm picker (ed25519 default + rsa-4096), local-use, macOS/Linux variant-aware via local capability probing.
 - v1.0 (2026-07-02): SSH storage dual — in-file blocks / gitid-owned `Include` file / adopt external (verified with real `ssh -G`).
 - v1.0 (2026-07-02): Build CI/CD for macOS Intel/ARM + Linux (GitHub Actions) + CI gates on both OSes.
+- [Phase 01-foundations-spikes-ci]: Injectable exec.CommandContext probe seam with a shrinkable probeTimeout var; EXPORTED BuildProbeDeps() constructor for cross-package real wiring — Closes the project's documented injected-seam wiring blindspot and satisfies the 01-06 e2e cross-package requirement
+- [Phase 01-foundations-spikes-ci, plan 02]: Registry populated via init()+Register() calls rather than a map literal, so Register is a real testable extensibility point
+- [Phase 01-foundations-spikes-ci, plan 02]: generateRSA4096 passes the *rsa.PrivateKey pointer directly (never dereferenced) to ssh.MarshalPrivateKey/NewPublicKey per RESEARCH Pitfall 7
+- [Phase 01-foundations-spikes-ci, plan 02]: Catalog Implemented (build-time) and Available (runtime probe) are orthogonal AlgoInfo facts; Generatable() requires both so a registered-but-stubbed algorithm is never offered as generatable
+- [Phase 01-foundations-spikes-ci]: config.d/*.config glob literal is CANONICAL in sshconfig/include.go, deliberately duplicated (not shared) by 01-04's identity/inventory.go to preserve Wave-1 DAG independence (MEDIUM #4 option b)
+- [Phase 01-foundations-spikes-ci]: Migrate always validates ssh -G against the real ~/.ssh/config entry point; rollback treats an empty filewriter.Write backupPath as 'file did not pre-exist' (RemoveFile), not 'nothing to restore'
+- [Phase 01-foundations-spikes-ci, plan 04]: A key used only for git commit signing (no SSH Host block reference) is bucketed key-used-both, not key-unused — the locked 8-label MGR-02 vocabulary has no dedicated git-signing-only key state
+- [Phase 01-foundations-spikes-ci, plan 04]: ClassifyState precedence is structural-before-key (fragment-path-missing > git-only > incomplete > key-missing > key-unused > key-used-ssh-only > complete), documented as a contract on the function itself
+- [Phase 01-foundations-spikes-ci, plan 04]: BuildInventoryDeps().ReadSSHConfig is Include-aware (globs+merges config.d/*.config), verified end-to-end against 01-03's identical canonical glob literal with no cross-file symbol coupling (D-11, MEDIUM #4 option b)
+- [Phase 01-foundations-spikes-ci]: freeze renders a static View() golden via a bare positional file argument, not --execute 'cat golden' -- confirmed empirically that freeze reads raw ANSI escape codes with correct color from a plain file
+- [Phase 01-foundations-spikes-ci]: D-04's 100x30 screenshot-tui geometry is the Bubble Tea View() terminal size (cols x rows), not a freeze pixel flag -- freeze auto-sizes its PNG to the fixed captured content
+- [Phase 01-foundations-spikes-ci]: screenshot.ChromiumRevision re-pins go-rod's own launcher.RevisionDefault (1321438) as an explicit gitid constant so a future go-rod upgrade can never silently change the downloaded Chromium build
+- [Phase 01-foundations-spikes-ci]: debug caps prints three sections (Capabilities, Algorithm Catalog, Identities) via dedicated print helpers taking only already-resolved data — no classification logic lives in cmd/gitid
+- [Phase 01-foundations-spikes-ci]: runDebugCapsWithDeps is a testability seam distinct from runDebugCaps (which wires the real EXPORTED platform.BuildProbeDeps/identity.BuildInventoryDeps constructors), so the unit suite can assert the probe-error path propagates instead of being silently swallowed
+- [Phase 01-foundations-spikes-ci]: debug caps e2e test uses a plain exec.Command harness (adopt_e2e_test.go pattern) rather than the raw-keystroke PTY harness — the command is non-interactive (prints and exits), so PTY emulation adds no additional proof of real wiring
 
 ### Roadmap Evolution
 
@@ -92,6 +113,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-02T16:21:38.410Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-foundations-spikes-ci/01-CONTEXT.md
+Last session: 2026-07-03T02:34:07.258Z
+Stopped at: Completed 01-06-PLAN.md
+Resume file: None
