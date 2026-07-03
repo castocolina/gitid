@@ -75,7 +75,11 @@ export const includeIfGitdirLine = `[includeIf "gitdir:~/personal/"]
 // Git: URL rewriting — insteadOf (recipes/gitconfig.recipe)
 // ---------------------------------------------------------------------------
 
-export const insteadOfBlockText = `[url "git@${sshIdentityAlias.host}:"]
+// The insteadOf URL rewrite is a PROVIDER-level baseline concern (git@github.com:),
+// NOT keyed to a per-identity alias — matches recipes/README.md and the shipped
+// gitconfig.DefaultURLRewrites(). Keeping it provider-generic prevents the wrong
+// shape from propagating to every later surface that consumes this fixture.
+export const insteadOfBlockText = `[url "git@github.com:"]
     insteadOf = https://github.com/`;
 
 // ---------------------------------------------------------------------------
