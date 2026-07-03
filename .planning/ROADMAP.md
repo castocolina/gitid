@@ -109,7 +109,7 @@ Plans:
 
 **Wave 3** — pilot (blocked on Wave 2)
 
-- [ ] 02-04-PLAN.md — PILOT: create-flow (12 states) mockup+dummy+capture+parity, de-risks the pattern (DLV-01/02/05)
+- [x] 02-04-PLAN.md — PILOT: create-flow (12 states) mockup+dummy+capture+parity, de-risks the pattern (DLV-01/02/05)
 
 **Wave 4** — fan-out, 6 surfaces (parallel, blocked on the pilot)
 
@@ -256,7 +256,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations, Spikes & CI | 7/7 | Complete | 2026-07-03 |
-| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 3/12 | In Progress|  |
+| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 4/12 | In Progress|  |
 | 3. Create Flow Backend | 0/TBD | Not started | - |
 | 4. Git Configuration Screen | 0/TBD | Not started | - |
 | 5. Identity Manager | 0/TBD | Not started | - |

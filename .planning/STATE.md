@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 02-03-PLAN.md
-last_updated: "2026-07-03T09:03:11.371Z"
-last_activity: 2026-07-03 -- Phase 02 execution in progress (02-03 complete)
+status: executing
+stopped_at: Completed 02-04-PLAN.md
+last_updated: "2026-07-03T09:38:31.828Z"
+last_activity: 2026-07-03 -- Phase 02 execution in progress (02-04 complete)
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 19
-  completed_plans: 10
-  percent: 53
+  completed_plans: 11
+  percent: 10
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 ## Current Position
 
 Phase: 02 (design-all-mockups-checkpoint-1) — EXECUTING
-Plan: 3 of 12
-Status: 02-03 complete (manifest-driven capture + dummy-nav e2e infrastructure); next is Wave 3 (02-04)
-Last activity: 2026-07-03 -- Phase 02 execution in progress (02-03 complete)
+Plan: 4 of 12
+Status: Executing — 02-04 complete (create-flow pilot surface: MUI mockup + TUI dummy + capture + 0-unresolved parity, both media, 12 states); next is Wave 4 fan-out (02-05 git-screen through 02-10)
+Last activity: 2026-07-03 -- Phase 02 execution in progress (02-04 complete)
 
-Progress: [█████░░░░░] 53%
+Progress: [██████░░░░] 58%
 
 ## Performance Metrics
 
@@ -65,6 +65,7 @@ Progress: [█████░░░░░] 53%
 | Phase 02 P01 | 40min | 3 tasks | 20 files |
 | Phase 02 P02 | ~15min | 2 tasks | 10 files |
 | Phase 02 P03 | 75min | 3 tasks | 9 files |
+| Phase 02 P04 | 23min | 3 tasks | 40 files |
 
 ## Accumulated Context
 
@@ -103,6 +104,8 @@ Recent decisions affecting current work:
 - [Phase 02, plan 03]: internal/dummytui/model.go gained q/ctrl+c quit handling in Update() -- doc.go always documented both as reserved but nothing ever implemented tea.Quit, hanging any PTY-driven test of the dummy
 - [Phase 02, plan 03]: Zero manifest.json files shipped: the MUI mockup (02-01, one route) and the TUI dummy (02-02, five placeholder entry screens) have no overlapping screen IDs yet, so any manifest entry now would fail cross-validation by design; verified positively end-to-end via a temporary uncommitted manifest, then removed before committing
 - [Phase 02, plan 03]: DLV-01/DLV-02/DLV-05 NOT marked complete in REQUIREMENTS.md yet -- this plan ships loader/adapter/driver infrastructure only (3/12 plans), no per-surface screens; deferred to the plan that closes out Phase 2 (same precedent as 02-01/02-02)
+- [Phase 02]: create-flow (pilot surface) built as 12 named states in both /mui v7 and internal/dummytui, proving the full per-surface pipeline (FIELDS->manifest->parity->mockup->dummy->capture->critique) before the 6-surface fan-out
+- [Phase 02]: Fixed internal/dummytui/model.go's modal-overlay compositing to pad the dimmed background to the real terminal height (was clamping/truncating against the parent surface's own natural content height, invisible until create-flow registered real multi-line screens over the identity-manager placeholder)
 
 ### Roadmap Evolution
 
@@ -126,6 +129,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-03T09:03:01.349Z
-Stopped at: Completed 02-03-PLAN.md
+Last session: 2026-07-03T09:38:31.818Z
+Stopped at: Completed 02-04-PLAN.md
 Resume file: None
