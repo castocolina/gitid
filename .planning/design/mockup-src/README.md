@@ -37,6 +37,12 @@ checkpoint stays reserved for design approval — DLV-08), the 11 npm dependenci
 below are pinned exactly, committed via `pnpm-lock.yaml`, and installed only from
 that frozen lockfile. This adds **no second human checkpoint**.
 
+All 11 verdicts below were re-confirmed live this session via
+`slopcheck scan --pkg npm <name> --json` (all returned `"status": "OK"`, no
+`flags`) — not just carried over from 02-RESEARCH.md's prior audit of the original
+10 (which pre-dates the 11th, `@fontsource/jetbrains-mono`, added by review
+MEDIUM-6).
+
 | Package | Pinned version | Provenance | slopcheck verdict |
 |---|---|---|---|
 | `react` | 19.2.7 | github.com/facebook/react | `[OK]` |
