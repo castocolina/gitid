@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -66,6 +67,31 @@ type HTMLOptions struct {
 	// rather than silently downloading or falling back to a different
 	// browser (T-01-SC2). Set true for normal (online) capture runs.
 	AllowDownload bool
+
+	// URLFragment, when non-empty, is appended to the navigated file:// URL
+	// after FixturePath is resolved and validated to exist (e.g.
+	// "#/create/ssh" for a client-side HashRouter route). This lets ONE
+	// built FixturePath — a single-page app's dist/index.html — serve as
+	// the entry point for many distinct captured screens/routes without
+	// CaptureHTML needing a literal per-route file on disk. The empty
+	// string (the default) preserves the exact pre-existing single-fixture
+	// behavior byte-for-byte. Added by Phase 2 (02-03) to extend, not
+	// rebuild, this function — see 02-RESEARCH.md Pattern 1 and
+	// internal/screenshot/design_adapter.go, which is the only caller that
+	// sets this field.
+	URLFragment string
+
+	// RequiredText, when non-empty, is checked against the rendered page's
+	// <body> text AFTER navigation/load and BEFORE the screenshot is
+	// captured or written to disk. If the text is absent, CaptureHTML fails
+	// fast naming both RequiredText and the navigated URL — so a
+	// wrong-route or blank capture is a hard error, never a silently wrong
+	// image. Added by Phase 2 (02-03) alongside URLFragment: it lets
+	// design_capture_test.go assert the "<surface>/<screen>" breadcrumb
+	// resolved correctly through the SAME go-rod page CaptureHTML already
+	// owns, rather than a second capture path (Pitfall 7: never
+	// re-instantiate a go-rod launcher elsewhere).
+	RequiredText string
 }
 
 // CaptureHTML renders a local fixture HTML page to a deterministic PNG via
@@ -113,7 +139,20 @@ func CaptureHTML(opts HTMLOptions) (Result, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
 	defer cancel()
 
-	l := launcher.New().Bin(binPath).Headless(true).Context(ctx)
+	// allow-file-access-from-files: without it, Chromium refuses to fetch a
+	// file:// page's OWN same-directory ES module imports (a <script
+	// type="module"> served from file:// is treated as cross-origin from a
+	// null origin and the import fetch is blocked), so a built SPA's JS
+	// never executes and the page silently stays at its pre-render HTML
+	// shell (an empty <div id="root">) -- CaptureHTML would otherwise
+	// "succeed" and save a blank PNG with no error. A single trivial
+	// fixture HTML page (Phase 1's own _spike/fixture.html, no <script
+	// type="module">) never hit this, which is why Phase 1 didn't need the
+	// flag; Phase 2 (02-03) needs it for its Vite-built ES module SPA.
+	// Still ONLY ever navigates a local file:// URL (T-02-CAP; never
+	// relaxes cross-origin behavior for a remote origin).
+	l := launcher.New().Bin(binPath).Headless(true).Context(ctx).
+		Set("allow-file-access-from-files")
 	defer l.Cleanup()
 
 	controlURL, err := l.Launch()
@@ -156,12 +195,26 @@ func CaptureHTML(opts HTMLOptions) (Result, error) {
 		return Result{}, fmt.Errorf("screenshot: CaptureHTML: pinning prefers-color-scheme=%s: %w", colorScheme, err)
 	}
 
-	fileURL := "file://" + filepath.ToSlash(absFixture)
+	fileURL := "file://" + filepath.ToSlash(absFixture) + opts.URLFragment
 	if err := page.Navigate(fileURL); err != nil {
 		return Result{}, fmt.Errorf("screenshot: CaptureHTML: navigating to %s: %w", fileURL, err)
 	}
 	if err := page.WaitLoad(); err != nil {
 		return Result{}, fmt.Errorf("screenshot: CaptureHTML: waiting for page load: %w", err)
+	}
+
+	if opts.RequiredText != "" {
+		body, err := page.Element("body")
+		if err != nil {
+			return Result{}, fmt.Errorf("screenshot: CaptureHTML: locating <body> to verify RequiredText %q at %s: %w", opts.RequiredText, fileURL, err)
+		}
+		bodyText, err := body.Text()
+		if err != nil {
+			return Result{}, fmt.Errorf("screenshot: CaptureHTML: reading rendered body text to verify RequiredText %q at %s: %w", opts.RequiredText, fileURL, err)
+		}
+		if !strings.Contains(bodyText, opts.RequiredText) {
+			return Result{}, fmt.Errorf("screenshot: CaptureHTML: rendered page at %s does not contain required text %q -- never saving a wrong-route/blank capture (got body text: %.200q)", fileURL, opts.RequiredText, bodyText)
+		}
 	}
 
 	shot, err := page.Screenshot(true, &proto.PageCaptureScreenshot{Format: proto.PageCaptureScreenshotFormatPng})
