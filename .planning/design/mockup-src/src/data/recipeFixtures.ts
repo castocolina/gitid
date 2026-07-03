@@ -552,3 +552,150 @@ export const identityManagerBackupPaths = {
   sshConfig: sampleBackupPath,
   gitconfig: sampleGitconfigBackupPath,
 } as const;
+
+// ---------------------------------------------------------------------------
+// global-ssh surface (02-UX-DIRECTION.md §4(4), Phase 6) — a master-detail
+// surface (number key `2`) reviewing SSH options that are DANGEROUS BY
+// DEFAULT WHEN UNSET (GSSH-01, REQUIREMENTS.md). Pins the previously-open
+// "GSSH-01 option list" item to the exact 6-option set 02-07-PLAN.md
+// specifies: StrictHostKeyChecking, ForwardAgent, HashKnownHosts,
+// IdentitiesOnly, AddKeysToAgent, UseKeychain. Recommendations are
+// ADVISORY, NEVER BLOCKING (§4.4, §5): a yellow `!`, never a red block, and
+// the user may leave any option unchanged — `globalSshChosenToApply` /
+// `globalSshDeclinedOption` below demonstrate this concretely (the user
+// applies 3 of 4 "needs action" recommendations and deliberately leaves
+// ForwardAgent unchanged). AddKeysToAgent/UseKeychain are already
+// recipe-recommended (recipes/ssh-config.recipe's `Host *` block under
+// `IgnoreUnknown UseKeychain`), so the option set demonstrates BOTH
+// "already fine" (✓) and "needs action" (!) rows, not just a wall of
+// warnings. These are NEW exports; nothing above this section is modified.
+// ---------------------------------------------------------------------------
+
+export type GlobalSSHRiskLevel = 'Low' | 'Medium' | 'High';
+
+export interface GlobalSSHOption {
+  key: string;
+  currentValue: string;
+  risk: GlobalSSHRiskLevel;
+  recommendedValue: string;
+  needsAction: boolean;
+  oneLiner: string;
+}
+
+/** The GSSH-01 dangerous-by-default option set, each with current value +
+ * risk + recommended value + a one-line explanation (§3 "explain each
+ * option"). Order matches 02-UX-DIRECTION.md §4.4's verbatim list. */
+export const globalSshOptions: GlobalSSHOption[] = [
+  {
+    key: 'StrictHostKeyChecking',
+    currentValue: 'not set (OpenSSH default: ask)',
+    risk: 'Medium',
+    recommendedValue: 'ask',
+    needsAction: true,
+    oneLiner:
+      'Stating "ask" explicitly removes ambiguity about how an unknown host key is handled.',
+  },
+  {
+    key: 'ForwardAgent',
+    currentValue: 'not set (OpenSSH default: no)',
+    risk: 'Medium',
+    recommendedValue: 'no',
+    needsAction: true,
+    oneLiner:
+      'Globally forwarding your agent lets any host you connect to authenticate elsewhere as you.',
+  },
+  {
+    key: 'HashKnownHosts',
+    currentValue: 'not set',
+    risk: 'Low',
+    recommendedValue: 'yes',
+    needsAction: true,
+    oneLiner: 'Hashing known_hosts hides which hosts you connect to if the file ever leaks.',
+  },
+  {
+    key: 'IdentitiesOnly',
+    currentValue: 'not set globally (set per-Host by gitid)',
+    risk: 'High',
+    recommendedValue: 'yes',
+    needsAction: true,
+    oneLiner:
+      'Without it, ssh may offer every key it knows about to every host — leaking which OTHER keys you hold.',
+  },
+  {
+    key: 'AddKeysToAgent',
+    currentValue: 'yes',
+    risk: 'Low',
+    recommendedValue: 'yes',
+    needsAction: false,
+    oneLiner:
+      'Already set — keys stay available in the agent for the session (recipes/ssh-config.recipe Host * block).',
+  },
+  {
+    key: 'UseKeychain',
+    currentValue: 'yes (macOS only)',
+    risk: 'Low',
+    recommendedValue: 'yes',
+    needsAction: false,
+    oneLiner:
+      'Already set — stores the key passphrase in the macOS Keychain (guarded by IgnoreUnknown on Linux).',
+  },
+];
+
+/** option-detail's target — the single highest-risk option (IdentitiesOnly)
+ * gets the full explanatory treatment, mirroring identity-manager's
+ * single-target `detail-ssh-first` precedent. */
+export const globalSshDetailTarget = globalSshOptions[3] as GlobalSSHOption; // IdentitiesOnly
+
+export const globalSshDetailExplanation = `When IdentitiesOnly is not set (or set to "no"), ssh may try EVERY key it can find — every file in ~/.ssh matching the default names, plus every key already loaded in your ssh-agent — against any host you connect to. On a machine with multiple identities (personal, work, client keys), this means:
+
+  - the wrong key can be offered first, revealing to a server which OTHER keys you hold;
+  - a host you don't fully trust can trigger authentication attempts meant for a completely different identity.
+
+Setting "IdentitiesOnly yes" on a Host block restricts ssh to ONLY the IdentityFile(s) listed for that host — this is why every gitid-managed Host block (recipes/ssh-config.recipe) already sets it per-identity. This screen recommends also stating it explicitly in the global Host * block, as a safety net for any Host entries gitid does not manage.`;
+
+export const globalSshAdvisoryNote =
+  'Recommended, not required — you can leave any option unchanged. This is advisory, never a compliance gate.';
+
+/** The 3 of 4 "needs action" options the user chose to apply on
+ * fix-preview (ForwardAgent is deliberately LEFT unchanged) — a concrete
+ * demonstration that recommendations are advisory, never blocking
+ * (§4.4, §5). */
+export const globalSshChosenToApply = ['StrictHostKeyChecking', 'HashKnownHosts', 'IdentitiesOnly'];
+export const globalSshDeclinedOption = 'ForwardAgent';
+
+export const globalSshTargetFile = '~/.ssh/config';
+export const globalSshManagedBlockSentinels = managedBlockSentinels('global-ssh');
+
+/** The exact Host * block gitid writes, extending the recipe's own
+ * `IgnoreUnknown UseKeychain` / `Host *` shape (recipes/ssh-config.recipe)
+ * with the 3 chosen recommendations plus the 2 already-recommended
+ * options. ForwardAgent is intentionally absent — declined by the user. */
+export const globalSshHostStarBlockText = `IgnoreUnknown UseKeychain
+
+Host *
+    StrictHostKeyChecking ask
+    HashKnownHosts yes
+    IdentitiesOnly yes
+    UseKeychain yes
+    AddKeysToAgent yes`;
+
+export const globalSshManagedBlockText = `${globalSshManagedBlockSentinels.begin}
+${globalSshHostStarBlockText}
+${globalSshManagedBlockSentinels.end}`;
+
+/** fix-preview's diff-style lines: `+` for newly-applied recommendations,
+ * two spaces for already-set options, and an explicit "declined" line for
+ * the one recommendation the user chose NOT to apply. */
+export const globalSshFixPreviewLines = [
+  '+ StrictHostKeyChecking ask',
+  '+ HashKnownHosts yes',
+  '+ IdentitiesOnly yes',
+  '  UseKeychain yes (already set)',
+  '  AddKeysToAgent yes (already set)',
+  '  ForwardAgent — left unchanged (declined; advisory, not required)',
+];
+
+export const globalSshBackupPath = '~/.ssh/config.backup.2026-07-03T03-59-12Z';
+
+export const globalSshResultMessage =
+  '3 of 4 recommended options applied to Host * in ~/.ssh/config. ForwardAgent was left unchanged, as chosen — advisory, never required.';

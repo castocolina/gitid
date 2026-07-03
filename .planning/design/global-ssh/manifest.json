@@ -1,0 +1,44 @@
+[
+  {
+    "surface": "global-ssh",
+    "screen": "options-list",
+    "htmlRoute": "/global-ssh/options-list",
+    "keysFromHome": ["2"],
+    "signature": "SIG-GSSH-OPTIONS-LIST-6-DANGEROUS"
+  },
+  {
+    "surface": "global-ssh",
+    "screen": "option-detail",
+    "htmlRoute": "/global-ssh/option-detail",
+    "keysFromHome": ["2", "v"],
+    "signature": "SIG-GSSH-OPTION-DETAIL-IDENTITIESONLY"
+  },
+  {
+    "surface": "global-ssh",
+    "screen": "fix-preview",
+    "htmlRoute": "/global-ssh/fix-preview",
+    "keysFromHome": ["2", "v", "f"],
+    "signature": "SIG-GSSH-FIX-PREVIEW-PARTIAL-APPLY"
+  },
+  {
+    "surface": "global-ssh",
+    "screen": "confirm-write",
+    "htmlRoute": "/global-ssh/confirm-write",
+    "keysFromHome": ["2", "v", "f", "w"],
+    "signature": "SIG-GSSH-CONFIRM-WRITE"
+  },
+  {
+    "surface": "global-ssh",
+    "screen": "backup-notice",
+    "htmlRoute": "/global-ssh/backup-notice",
+    "keysFromHome": ["2", "v", "f", "w", "y"],
+    "signature": "SIG-GSSH-BACKUP-NOTICE"
+  },
+  {
+    "surface": "global-ssh",
+    "screen": "result-applied",
+    "htmlRoute": "/global-ssh/result-applied",
+    "keysFromHome": ["2", "v", "f", "w", "y", "z"],
+    "signature": "SIG-GSSH-RESULT-APPLIED"
+  }
+]
