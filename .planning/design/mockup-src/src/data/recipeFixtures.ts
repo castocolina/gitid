@@ -189,3 +189,135 @@ ${personalManagedBlockSentinels.end}`;
 export const sampleBackupPath = '~/.ssh/config.backup.2026-07-03T03-59-12Z';
 export const sampleGitconfigBackupPath =
   '~/.gitconfig.backup.2026-07-03T03-59-12Z';
+
+// ---------------------------------------------------------------------------
+// Create-flow pilot surface (02-UX-DIRECTION.md §4.1) — algorithm catalog,
+// SSH-form field defaults, two-stage test commands/output, and the
+// confirm/backup/result copy every `create-flow/*.route.tsx` screen and the
+// mirrored `internal/dummytui/surface_createflow.go` render byte-identically
+// (REQUIREMENTS.md KEY-01/KEY-03, SSHUI-01/02/03, TEST-01/02).
+// ---------------------------------------------------------------------------
+
+export type AlgorithmAvailability = 'native' | 'requires-libfido2';
+
+export interface AlgorithmCatalogEntry {
+  id: string;
+  label: string;
+  recommended: boolean;
+  security: string;
+  macos: string;
+  macosAvailability: AlgorithmAvailability;
+  linux: string;
+  linuxAvailability: AlgorithmAvailability;
+}
+
+/**
+ * KEY-01's top-5 algorithm catalog. `ed25519` is the best/default
+ * recommendation; the other four are registered-but-not-generatable stubs on
+ * the real backend (01-02-PLAN.md) — the mockup still SHOWS all five with
+ * accurate local-availability notes (macOS LibreSSL / Linux OpenSSL parity;
+ * the two `-sk` hardware variants need `libfido2` + a physical FIDO2 key on
+ * both platforms).
+ */
+export const algorithmCatalog: AlgorithmCatalogEntry[] = [
+  {
+    id: 'ed25519',
+    label: 'ed25519',
+    recommended: true,
+    security:
+      'Modern EdDSA curve — small keys, fast, constant-time (timing-attack resistant). The recommended default for every new identity.',
+    macos: 'Native (LibreSSL) — always available',
+    macosAvailability: 'native',
+    linux: 'Native (OpenSSL) — always available',
+    linuxAvailability: 'native',
+  },
+  {
+    id: 'ed25519-sk',
+    label: 'ed25519-sk',
+    recommended: false,
+    security:
+      'Hardware-backed: private key material never leaves the security key; requires a physical touch to sign. Strongest theft resistance of the five.',
+    macos: 'Needs libfido2 + a FIDO2 security key plugged in',
+    macosAvailability: 'requires-libfido2',
+    linux: 'Needs libfido2 + a FIDO2 security key plugged in',
+    linuxAvailability: 'requires-libfido2',
+  },
+  {
+    id: 'rsa-4096',
+    label: 'rsa-4096',
+    recommended: false,
+    security:
+      'Strong at 4096 bits; widely compatible with legacy servers, but larger keys and slower signing than ed25519.',
+    macos: 'Native — always available',
+    macosAvailability: 'native',
+    linux: 'Native — always available',
+    linuxAvailability: 'native',
+  },
+  {
+    id: 'ecdsa-p256',
+    label: 'ecdsa-p256',
+    recommended: false,
+    security:
+      'Compact NIST P-256 curve; smaller than RSA, though some users distrust NIST curve provenance versus ed25519.',
+    macos: 'Native — always available',
+    macosAvailability: 'native',
+    linux: 'Native — always available',
+    linuxAvailability: 'native',
+  },
+  {
+    id: 'ecdsa-sk',
+    label: 'ecdsa-sk',
+    recommended: false,
+    security:
+      'Hardware-backed ECDSA variant of ed25519-sk; physical security-key touch required to sign.',
+    macos: 'Needs libfido2 + a FIDO2 security key plugged in',
+    macosAvailability: 'requires-libfido2',
+    linux: 'Needs libfido2 + a FIDO2 security key plugged in',
+    linuxAvailability: 'requires-libfido2',
+  },
+];
+
+// SSH-form field defaults (SSHUI-01 field order: Alias prefix -> SSH Host ->
+// Real hostname -> Port, default 443). `sshFormFilled` is the filled state;
+// `sshFormAliasPrefix`/`sshFormBlankPrefixHost` demonstrate the blank-prefix
+// WYSIWYG rule (SSHUI-01: blank prefix -> SSH Host = the provider host
+// itself, no invented suffix).
+export const sshFormFilled = {
+  aliasPrefix: sshIdentityAlias.identityName,
+  sshHost: sshIdentityAlias.host,
+  realHostname: sshIdentityAlias.hostname,
+  port: sshIdentityAlias.port,
+} as const;
+
+export const sshFormBlankPrefixHost = 'github.com';
+
+// Two-stage connectivity test (TEST-01/TEST-02): stage 1 tests the key
+// DIRECT against the bare provider URL (no alias yet); stage 2 tests BY THE
+// ALIAS and proves, via `ssh -G`, which IdentityFile actually resolves for
+// that alias. Both stages run against a throwaway temp config
+// (SSHUI-04) — the live `~/.ssh/config` is untouched until confirm-write.
+export const sshTestTmpConfigPath = '/tmp/gitid-test-a1b2c3.config';
+
+export const sshTestStage1Command = `ssh -T -F ${sshTestTmpConfigPath} -p ${sshIdentityAlias.port} -i ${sshIdentityAlias.identityFile} git@${sshIdentityAlias.hostname}`;
+export const sshTestStage1Output =
+  "Hi personal! You've successfully authenticated, but GitHub does not provide shell access.";
+
+export const sshTestStage2Command = `ssh -G ${sshIdentityAlias.host} -F ${sshTestTmpConfigPath} | grep identityfile`;
+export const sshTestStage2Output = `identityfile ${sshIdentityAlias.identityFile}`;
+
+export const sshTestFailCommand = sshTestStage1Command;
+export const sshTestFailOutput = `git@${sshIdentityAlias.hostname}: Permission denied (publickey).`;
+
+// Mutation-ceremony copy for the create flow's confirm/backup/result states
+// (§5 four-beat ceremony). `confirmWriteTargetFile` names the file that gets
+// the managed block; `sampleBackupPath` (above) is reused for the backup
+// notice so both media show the SAME timestamped path.
+export const confirmWriteTargetFile = '~/.ssh/config';
+export const createFlowManagedBlockSentinels = managedBlockSentinels(
+  sshIdentityAlias.identityName,
+);
+export const createFlowManagedBlockText = `${createFlowManagedBlockSentinels.begin}
+${sshIdentityAliasBlockText}
+${createFlowManagedBlockSentinels.end}`;
+
+export const resultSuccessMessage = `Identity "${sshIdentityAlias.identityName}" created — ${sshIdentityAlias.host} now resolves to ${sshIdentityAlias.identityFile}.`;

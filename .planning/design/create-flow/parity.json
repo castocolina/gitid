@@ -1,0 +1,58 @@
+[
+  {
+    "dimension": "field-set-and-order",
+    "html_present": false,
+    "tui_present": false,
+    "status": "open",
+    "resolution": ""
+  },
+  {
+    "dimension": "labels-and-helper-copy-verbatim",
+    "html_present": false,
+    "tui_present": false,
+    "status": "open",
+    "resolution": ""
+  },
+  {
+    "dimension": "option-sets-enumerations",
+    "html_present": false,
+    "tui_present": false,
+    "status": "open",
+    "resolution": ""
+  },
+  {
+    "dimension": "defaults-recipe-accurate",
+    "html_present": false,
+    "tui_present": false,
+    "status": "open",
+    "resolution": ""
+  },
+  {
+    "dimension": "flow-order-and-named-states",
+    "html_present": false,
+    "tui_present": false,
+    "status": "open",
+    "resolution": ""
+  },
+  {
+    "dimension": "safety-affordances-presence",
+    "html_present": false,
+    "tui_present": false,
+    "status": "open",
+    "resolution": ""
+  },
+  {
+    "dimension": "keybindings-surfaced",
+    "html_present": false,
+    "tui_present": false,
+    "status": "open",
+    "resolution": ""
+  },
+  {
+    "dimension": "test-confirm-backup-boundary",
+    "html_present": false,
+    "tui_present": false,
+    "status": "open",
+    "resolution": ""
+  }
+]
