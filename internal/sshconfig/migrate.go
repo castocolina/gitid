@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/castocolina/gitid/internal/filewriter"
@@ -153,7 +154,25 @@ func RealMigrateDeps(configPath, includePath string, aliases []string) MigrateDe
 			// probeTimeout + exec.CommandContext pattern.
 			ctx, cancel := context.WithTimeout(context.Background(), migrateResolveTimeout)
 			defer cancel()
-			out, err := exec.CommandContext(ctx, "ssh", "-G", "-F", cfgPath, alias).Output() //nolint:gosec // arg-slice form, no shell; cfgPath/alias are gitid-managed inputs (G204)
+			cmd := exec.CommandContext(ctx, "ssh", "-G", "-F", cfgPath, alias) //nolint:gosec // arg-slice form, no shell; cfgPath/alias are gitid-managed inputs (G204)
+			// Run ssh in its own process group and SIGKILL the whole group on
+			// timeout. A pathological `Match exec` (or a shell that forks its
+			// child) can leave a grandchild holding ssh's stdout pipe after the
+			// direct child is killed; on Linux /bin/sh forks rather than exec's
+			// the child, so .Output() would block on that pipe until the
+			// grandchild exits — defeating the context deadline (observed only
+			// on Linux CI, 30s hang). Group-killing reaps the grandchild;
+			// WaitDelay is a belt-and-suspenders bound so Output() can never wait
+			// on held pipes past the deadline even if the kill races (T-01-03).
+			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+			cmd.Cancel = func() error {
+				if cmd.Process != nil {
+					_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) // best-effort group kill
+				}
+				return nil
+			}
+			cmd.WaitDelay = 500 * time.Millisecond
+			out, err := cmd.Output()
 			if err != nil {
 				if ctx.Err() != nil {
 					return nil, fmt.Errorf("sshconfig: migrate: ssh -G timed out after %s resolving %s: %w", migrateResolveTimeout, alias, ctx.Err())

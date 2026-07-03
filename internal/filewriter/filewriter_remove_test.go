@@ -3,6 +3,7 @@ package filewriter
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -45,9 +46,11 @@ func TestBackupAndRemove_ExistingFile(t *testing.T) {
 	if !strings.HasPrefix(backupPath, prefix) {
 		t.Fatalf("backup name %q does not have prefix %q", backupPath, prefix)
 	}
+	// The backup uses the same collision-proof UnixNano suffix as Write
+	// (a decimal nanosecond count), not the old fixed-width date format.
 	stamp := strings.TrimPrefix(backupPath, prefix)
-	if len(stamp) != len("20060102-150405") {
-		t.Fatalf("backup timestamp %q is not in 20060102-150405 format", stamp)
+	if _, convErr := strconv.ParseInt(stamp, 10, 64); convErr != nil {
+		t.Fatalf("backup timestamp %q is not a UnixNano decimal value: %v", stamp, convErr)
 	}
 }
 

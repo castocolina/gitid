@@ -148,19 +148,28 @@ func backupExistingTarget(targetPath string) (backupPath string, err error) {
 	return "", fmt.Errorf("could not create a unique backup for %s after %d attempts", targetPath, maxBackupCollisionAttempts)
 }
 
-// BackupAndRemove creates a timestamped backup of path (same naming convention
-// as Write) and removes the original via atomic rename. Used for whole-file
-// deletion where content replacement does not apply (fragment file delete,
-// IDENT-05 D-08). If path does not exist, returns ("", nil) — idempotent.
+// BackupAndRemove creates a collision-proof backup of path (the SAME
+// UnixNano + exclusive-create strategy as Write) and removes the original.
+// Used for whole-file deletion where content replacement does not apply
+// (fragment file delete, IDENT-05 D-08). If path does not exist, returns
+// ("", nil) — idempotent.
+//
+// It copies-then-removes rather than renaming the original onto the backup
+// path: os.Rename overwrites an existing target, so a delete/recreate/delete
+// cycle within the same instant could otherwise clobber an earlier recovery
+// backup (Codex MEDIUM, same class as HIGH #1).
 func BackupAndRemove(path string) (backupPath string, err error) {
 	if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
 		return "", nil
 	} else if statErr != nil {
 		return "", fmt.Errorf("filewriter: stat %s: %w", path, statErr)
 	}
-	backupPath = path + ".bak." + time.Now().Format("20060102-150405")
-	if renErr := os.Rename(path, backupPath); renErr != nil {
-		return "", fmt.Errorf("filewriter: backing up %s before remove: %w", path, renErr)
+	backupPath, err = backupExistingTarget(path)
+	if err != nil {
+		return "", fmt.Errorf("filewriter: backing up %s before remove: %w", path, err)
+	}
+	if rmErr := os.Remove(path); rmErr != nil {
+		return "", fmt.Errorf("filewriter: removing %s after backup: %w", path, rmErr)
 	}
 	return backupPath, nil
 }

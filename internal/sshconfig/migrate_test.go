@@ -434,8 +434,13 @@ func TestMigrateRollbackDoesNotClobberPristineBackup(t *testing.T) {
 func TestMigrateReturnsTimeoutErrorWhenSSHHangs(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "ssh")
+	// Fork the sleep into the background and `wait`, so a grandchild holds the
+	// stdout pipe after the direct child (the shell) is killed. This reproduces
+	// on every platform the Linux-only hang where .Output() blocked on a
+	// pipe-holding grandchild past the context deadline (Codex HIGH #2 regression
+	// guard) — killing only the direct process is not enough.
 	// #nosec G306 -- test fixture in a t.TempDir(), not a managed gitid file
-	if err := os.WriteFile(script, []byte("#!/bin/sh\nsleep 30\n"), 0o755); err != nil {
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nsleep 30 & wait\n"), 0o755); err != nil {
 		t.Fatalf("writing fake hung ssh: %v", err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
