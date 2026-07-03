@@ -1,12 +1,16 @@
 package keygen
 
 import (
+	"crypto/rsa"
 	"encoding/pem"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/castocolina/gitid/internal/filewriter"
 )
 
 // TestGenerateMaterial_InMemory asserts GenerateMaterial returns valid in-memory
@@ -162,6 +166,113 @@ func TestKeyPaths(t *testing.T) {
 	}
 	if pubPath != wantPub {
 		t.Errorf("KeyPaths pubPath = %q, want %q", pubPath, wantPub)
+	}
+}
+
+// TestGenerateRSA4096 asserts GenerateMaterial(Params{Algo:"rsa-4096"})
+// returns a valid "OPENSSH PRIVATE KEY" PEM whose parsed key is a 4096-bit
+// RSA key, plus a "ssh-rsa " PubLine (RESEARCH Pitfall 7: rsa.GenerateKey
+// returns a pointer; it must be passed as the pointer, never dereferenced).
+func TestGenerateRSA4096(t *testing.T) {
+	mat, err := GenerateMaterial(Params{Algo: "rsa-4096", Identity: "x", Comment: "x@gitid"})
+	if err != nil {
+		t.Fatalf("GenerateMaterial(rsa-4096): %v", err)
+	}
+
+	block, _ := pem.Decode(mat.PrivPEM)
+	if block == nil {
+		t.Fatal("rsa-4096 PrivPEM is not a valid PEM block")
+	}
+	if block.Type != "OPENSSH PRIVATE KEY" {
+		t.Errorf("PrivPEM block type = %q, want OPENSSH PRIVATE KEY", block.Type)
+	}
+
+	signer, err := ssh.ParsePrivateKey(mat.PrivPEM)
+	if err != nil {
+		t.Fatalf("rsa-4096 PrivPEM does not parse as an OpenSSH key: %v", err)
+	}
+	cryptoPub, ok := signer.PublicKey().(ssh.CryptoPublicKey)
+	if !ok {
+		t.Fatal("rsa-4096 signer public key does not implement ssh.CryptoPublicKey")
+	}
+	rsaPub, ok := cryptoPub.CryptoPublicKey().(*rsa.PublicKey)
+	if !ok {
+		t.Fatalf("rsa-4096 parsed public key is %T, want *rsa.PublicKey", cryptoPub.CryptoPublicKey())
+	}
+	if bits := rsaPub.N.BitLen(); bits != 4096 {
+		t.Errorf("rsa-4096 key bit length = %d, want 4096", bits)
+	}
+
+	if !strings.HasPrefix(mat.PubLine, "ssh-rsa ") {
+		t.Errorf("PubLine = %q, want ssh-rsa prefix", mat.PubLine)
+	}
+}
+
+// TestGenerateRSA4096_Passphrase asserts a passphrase-set rsa-4096 request
+// serializes via MarshalPrivateKeyWithPassphrase (encrypted bytes differ from
+// the unencrypted form, same as the ed25519 path).
+func TestGenerateRSA4096_Passphrase(t *testing.T) {
+	noPass, err := GenerateMaterial(Params{Algo: "rsa-4096", Identity: "pp", Comment: "pp@gitid"})
+	if err != nil {
+		t.Fatalf("GenerateMaterial (no passphrase): %v", err)
+	}
+	withPass, err := GenerateMaterial(Params{Algo: "rsa-4096", Identity: "pp", Comment: "pp@gitid", Passphrase: "secret"})
+	if err != nil {
+		t.Fatalf("GenerateMaterial (with passphrase): %v", err)
+	}
+
+	block, _ := pem.Decode(withPass.PrivPEM)
+	if block == nil {
+		t.Fatal("passphrase-encrypted rsa-4096 PrivPEM is not a valid PEM block")
+	}
+	if block.Type != "OPENSSH PRIVATE KEY" {
+		t.Errorf("encrypted PrivPEM block type = %q, want OPENSSH PRIVATE KEY", block.Type)
+	}
+	if string(noPass.PrivPEM) == string(withPass.PrivPEM) {
+		t.Error("passphrase-encrypted rsa-4096 PrivPEM is identical to unencrypted PrivPEM")
+	}
+}
+
+// TestPermissions_KeyFilesAfterRegistryRefactor re-asserts KEY-04: writing
+// GenerateMaterial output through the production filewriter chokepoint (the
+// same pattern cmd/gitid/add.go's buildDeps uses) yields private key 0600 and
+// public key 0644, for every algorithm the registry can actually generate —
+// proving the registry refactor introduced no per-algorithm permission
+// regression.
+func TestPermissions_KeyFilesAfterRegistryRefactor(t *testing.T) {
+	for _, algo := range []string{"ed25519", "rsa-4096"} {
+		algo := algo
+		t.Run(algo, func(t *testing.T) {
+			dir := t.TempDir()
+			mat, err := GenerateMaterial(Params{Algo: algo, Identity: "perm", Comment: "perm@gitid"})
+			if err != nil {
+				t.Fatalf("GenerateMaterial(%q): %v", algo, err)
+			}
+
+			privPath, pubPath := KeyPaths(dir, algo, "perm")
+			if _, err := filewriter.Write(privPath, mat.PrivPEM, 0o600); err != nil {
+				t.Fatalf("filewriter.Write(priv): %v", err)
+			}
+			if _, err := filewriter.Write(pubPath, []byte(mat.PubLine), 0o644); err != nil {
+				t.Fatalf("filewriter.Write(pub): %v", err)
+			}
+
+			privInfo, err := os.Stat(filepath.Clean(privPath))
+			if err != nil {
+				t.Fatalf("stat priv: %v", err)
+			}
+			if got := privInfo.Mode().Perm(); got != 0o600 {
+				t.Errorf("private key mode = %o, want 0600", got)
+			}
+
+			pubInfo, err := os.Stat(filepath.Clean(pubPath))
+			if err != nil {
+				t.Fatalf("stat pub: %v", err)
+			}
+			if got := pubInfo.Mode().Perm(); got != 0o644 {
+				t.Errorf("public key mode = %o, want 0644", got)
+			}
+		})
 	}
 }
 
