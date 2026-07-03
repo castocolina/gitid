@@ -89,14 +89,14 @@ These are first-class, enforced requirements — the user's core process ask.
 > `ssh-keygen`, LibreSSL-on-macOS vs OpenSSL-on-Linux, agent/keychain differences,
 > hardware-backed keys), not server/CI compatibility.
 
-- [ ] **KEY-01** (Algorithm catalog): The create flow shows a **top-5 catalog** of
+- [x] **KEY-01** (Algorithm catalog): The create flow shows a **top-5 catalog** of
   key algorithms with per-algorithm info (security, and **macOS/Linux local
   availability + variant notes**) and a clear "best/default" recommendation.
   Default = **ed25519**. Candidate catalog: `ed25519` (best), `ed25519-sk`
   (hardware/FIDO2 — needs libfido2/security key), `rsa-4096`, `ecdsa-p256`,
   `ecdsa-sk`. Final ordering set during the design phase.
 
-- [ ] **KEY-02** (Real multi-algorithm keygen): gitid generates real keys for at
+- [x] **KEY-02** (Real multi-algorithm keygen): gitid generates real keys for at
   least **ed25519** (default) and **rsa-4096**. Architecture leaves room for
   `ecdsa-p256` and the `-sk` hardware variants without a redesign. Selection is a
   local user preference, not a compatibility workaround.
@@ -450,10 +450,10 @@ row below records each one's **home** phase.
 | TOOL-03 | Phase 1 | Pending |
 | TOOL-04 | Phase 1 | Pending |
 | TOOL-05 | Phase 1 | Pending |
-| KEY-01 | Phase 1 | Pending |
-| KEY-02 | Phase 1 | Pending |
+| KEY-01 | Phase 1 | Complete |
+| KEY-02 | Phase 1 | Complete |
 | KEY-03 | Phase 1 | Complete |
-| KEY-04 | Phase 1 | Pending |
+| KEY-04 | Phase 1 | Complete |
 | KEY-05 | Phase 5 | Pending |
 | KEY-06 | Phase 3 | Pending |
 | KEY-07 | Phase 5 | Pending |
