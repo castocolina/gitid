@@ -90,8 +90,29 @@ Run and require GREEN, showing the command + real output:
     order/safety affordances); every finding resolved before the surface counts as done.
 
 ### Reviews (required before a phase is DONE — "every plan has its reviews")
-- **Code review:** run `/gsd-code-review` for the phase; fix findings (fixer commits to a
-  `gsd-reviewfix/*` branch — fast-forward it in). Re-run until clean.
+- **Internal code review:** run `/gsd-code-review` for the phase; fix findings (fixer commits
+  to a `gsd-reviewfix/*` branch — fast-forward it in). Re-run until clean.
+- **External code review (cross-vendor — NOT an internal Claude agent).** The internal review
+  above shares this model family and can be blind to the same defects, so run an INDEPENDENT
+  external reviewer on the phase's executed-code diff before the phase is DONE. Use the same
+  pattern as the plan review (`/gsd-review --codex`), repointed at the code:
+  ```
+  BASE=$(git merge-base main HEAD)
+  git diff "$BASE"..HEAD -- ':!.planning' > /tmp/phase-<N>-code.diff
+  { echo "You are an independent code reviewer. Review this Go/TUI diff for gitid" \
+        "(a tool that manages ~/.ssh/config, ~/.gitconfig, ed25519 keys). Focus on"\
+        "correctness bugs, race/concurrency, error handling, file-permission/security"\
+        "(0600/0700, backups, atomic write), and whether the code meets each plan's"\
+        "acceptance_criteria. Rank findings CRITICAL/HIGH/MEDIUM/LOW."; \
+    echo; echo "## Plans (acceptance criteria):"; cat .planning/phases/<dir>/*-PLAN.md; \
+    echo; echo "## Diff:"; cat /tmp/phase-<N>-code.diff; } \
+    | codex exec --skip-git-repo-check - > /tmp/phase-<N>-codex-review.md
+  ```
+  Triage the output: fix every CRITICAL/HIGH (via `superpowers:systematic-debugging`), re-run
+  the phase gates, then re-run Codex until no CRITICAL/HIGH remains. Record the review file +
+  verdict. (If `codex` is unavailable in the run environment, fall back to `opencode run` or
+  STOP and ask the user to run `/gsd-review`-style external review manually — do NOT silently
+  skip the external layer and do NOT substitute another internal Claude agent for it.)
 - **Security:** each plan carries a `<threat_model>`; run `/gsd-secure-phase` and confirm each
   listed mitigation exists in code.
 - **UI review (Phase 2):** `agent-ui-ux-designer` parity critique per surface (above) — this
@@ -138,8 +159,9 @@ Do not stop, and do not declare success, until **every** item holds for **both**
       both pass.
 - [ ] **UI checks + comparison** done where required: every `parity.json` has 0 unresolved
       rows; `agent-ui-ux-designer` critique resolved per surface (DLV-02/DLV-03).
-- [ ] **Reviews** complete for every plan: `/gsd-code-review` clean, `/gsd-secure-phase`
-      mitigations confirmed, UI parity review resolved.
+- [ ] **Reviews** complete for every plan: `/gsd-code-review` (internal) clean, an
+      **external cross-vendor code review** (Codex on the phase diff) with no CRITICAL/HIGH
+      remaining, `/gsd-secure-phase` mitigations confirmed, and the UI parity review resolved.
 - [ ] `/gsd-verify-work` → `VERIFICATION.md` `status: passed` for BOTH phases.
 - [ ] Human checkpoints cleared: Phase 1 CI confirmed by the user; Phase 2 design approval
       recorded with a user-supplied approver.
