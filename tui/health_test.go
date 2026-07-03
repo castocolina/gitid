@@ -115,6 +115,10 @@ func TestHealthStaleResultGuard(t *testing.T) {
 // finding contains "!" and not "✗"; a SeverityError finding contains "✗" (D-10 / Eval #2).
 // Closes: Plan 03.
 func TestHealthWarningGlyphDistinct(t *testing.T) {
+	// asciiMode() degrades to ASCII glyphs when $TERM is unset or "dumb"
+	// (correct product behavior). CI runners leave $TERM unset, so pin a
+	// UTF-8-capable terminal to exercise the Unicode glyph contract this test asserts.
+	t.Setenv("TERM", "xterm-256color")
 	warning := doctor.Finding{
 		Family:   doctor.FamilyDeps,
 		Severity: doctor.SeverityWarning,

@@ -29,10 +29,15 @@ type SSHVersion struct {
 }
 
 // sshVersionPattern extracts the OpenSSH version and SSL flavor/version from
-// `ssh -V` output, e.g. "OpenSSH_9.7p1, LibreSSL 3.3.6" (macOS) or
-// "OpenSSH_9.6p1, OpenSSL 3.0.13" (Linux). [VERIFIED: `ssh -V` run directly on
-// the research/dev machine this session, OpenSSH_9.7p1].
-var sshVersionPattern = regexp.MustCompile(`^OpenSSH_([^\s,]+),\s*(\S+)\s+(\S+)`)
+// `ssh -V` output, e.g. "OpenSSH_9.7p1, LibreSSL 3.3.6" (macOS),
+// "OpenSSH_9.6p1, OpenSSL 3.0.13" (plain Linux), or
+// "OpenSSH_9.6p1 Ubuntu-3ubuntu13.16, OpenSSL 3.0.13 30 Jan 2024"
+// (Debian/Ubuntu, where a distro-portable suffix follows the version before the
+// comma). The `[^,]*` after the version group consumes that optional suffix so
+// the OpenSSH version parses on every platform. [VERIFIED: `ssh -V` on the macOS
+// dev machine (OpenSSH_9.7p1) and on the ubuntu-latest CI runner
+// (OpenSSH_9.6p1 Ubuntu-...) this session].
+var sshVersionPattern = regexp.MustCompile(`^OpenSSH_([^\s,]+)[^,]*,\s*(\S+)\s+(\S+)`)
 
 // ProbeSSHVersion runs `ssh -V` and returns the parsed local OpenSSH
 // version, SSL flavor (LibreSSL on macOS, OpenSSL on Linux), and SSL

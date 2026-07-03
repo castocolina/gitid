@@ -31,6 +31,19 @@ func TestParseSSHVersion(t *testing.T) {
 			},
 		},
 		{
+			// [VERIFIED: `ssh -V` on the ubuntu-latest CI runner this session:
+			// Debian/Ubuntu inserts a distro-portable suffix between the version
+			// and the comma, which the original regex failed to skip.]
+			name: "Debian/Ubuntu distro suffix before the comma",
+			in:   "OpenSSH_9.6p1 Ubuntu-3ubuntu13.16, OpenSSL 3.0.13 30 Jan 2024\n",
+			want: SSHVersion{
+				OpenSSHVersion: "9.6p1",
+				SSLFlavor:      "OpenSSL",
+				SSLVersion:     "3.0.13",
+				Raw:            "OpenSSH_9.6p1 Ubuntu-3ubuntu13.16, OpenSSL 3.0.13 30 Jan 2024",
+			},
+		},
+		{
 			name: "malformed input returns zero-value fields with Raw preserved, no panic",
 			in:   "not a version string at all",
 			want: SSHVersion{Raw: "not a version string at all"},

@@ -84,6 +84,9 @@ func TestSidebarEmptyManagedSection(t *testing.T) {
 // TestSidebarBadge verifies per-identity health badges in sidebar rows.
 // Requirement: TUI-06/D-08 (per-identity health badges).
 func TestSidebarBadge(t *testing.T) {
+	// Pin a UTF-8 terminal so asciiMode() does not degrade the Unicode badge
+	// glyphs this test asserts ($TERM is unset on CI runners).
+	t.Setenv("TERM", "xterm-256color")
 	accounts := []identity.Account{
 		{Name: "err-id", Provider: "github.com"},
 		{Name: "warn-id", Provider: "github.com"},
@@ -197,6 +200,9 @@ func TestSidebarRefreshNoZombieFallback(t *testing.T) {
 // This test covers Plan 02's badge slot contract (data populated by Plan 03;
 // slot is present now).
 func TestSidebarBadgeSlot(t *testing.T) {
+	// Pin a UTF-8 terminal so asciiMode() does not degrade the Unicode glyphs
+	// this test asserts ($TERM is unset on CI runners).
+	t.Setenv("TERM", "xterm-256color")
 	accounts := []identity.Account{
 		{Name: "badged", Provider: "github.com"},
 	}

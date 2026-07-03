@@ -396,8 +396,15 @@ func TestDoctorFixYesHealsMissingBaselineFromScratch(t *testing.T) {
 	var out bytes.Buffer
 	code := runDoctor(&out, true /* fix */, true /* yes */)
 
-	if code != 0 {
-		t.Errorf("expected --fix --yes to fully heal a missing baseline and exit 0; got %d\noutput:\n%s",
+	// Assert baseline ERRORS are healed (exit code drops below the error tier, 2),
+	// proving Fix B re-evaluated after applying Fix A. We deliberately do NOT
+	// require exit 0: a headless environment (e.g. CI) legitimately reports
+	// advisory findings that --fix cannot heal and that are unrelated to the
+	// baseline — a missing ssh-agent (warning) or absent clipboard tool (info) —
+	// which would otherwise make this test pass only on a fully provisioned dev
+	// host. severityToCode maps warning/info to exit 1, error to 2, critical to 3.
+	if code >= 2 {
+		t.Errorf("expected --fix --yes to heal all baseline errors (exit < 2); got %d\noutput:\n%s",
 			code, out.String())
 	}
 	// The fixer must have created the fragment, not just a dangling include.
