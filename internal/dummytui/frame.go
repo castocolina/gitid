@@ -257,7 +257,6 @@ func previewBlockClipped(text string, diff bool, width int, maxLines int) string
 		Border(previewDashedBorder).
 		BorderForeground(lipgloss.Color("8")).
 		Padding(0, 1).
-		Width(inner + 2).
 		Render(strings.Join(styled, "\n"))
 	return block
 }

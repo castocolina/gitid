@@ -41,6 +41,8 @@ func pressKey(name string) tea.KeyMsg {
 		return tea.KeyPressMsg{Code: tea.KeySpace}
 	case "ctrl+p":
 		return tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl}
+	case "ctrl+s":
+		return tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}
 	default:
 		runes := []rune(name)
 		return tea.KeyPressMsg{Code: runes[0], Text: name}

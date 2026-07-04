@@ -20,7 +20,16 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	lipgloss "charm.land/lipgloss/v2"
 )
+
+// maxInt returns the larger of a and b.
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
 
 // ceremonyOutcome is what a keystroke did to the ceremony.
 type ceremonyOutcome int
@@ -125,15 +134,17 @@ func (c ceremonyModel) view(width int) string {
 		return b.String()
 	}
 
+	wrap := lipgloss.NewStyle().Width(maxInt(20, width-2))
 	b.WriteString(styleBold.Render(c.cfg.Heading) + "\n")
-	b.WriteString(styleFaint.Render("Touches ") + strings.Join(c.cfg.Targets, styleFaint.Render(" · ")) + "\n")
+	b.WriteString(styleFaint.Render(wrap.Render("Touches "+strings.Join(c.cfg.Targets, " · "))) + "\n")
 	for _, bk := range c.cfg.Backups {
-		b.WriteString(styleFaint.Render("Backup → ") + bk + " " + styleFaint.Render("(written first — restore it to undo)") + "\n")
+		b.WriteString(styleFaint.Render("Backup → ") + bk + "\n")
 	}
+	b.WriteString(styleFaint.Render("  (written first — restore it to undo)") + "\n")
 	b.WriteString(PreviewLabel("Exact change — everything outside the managed block is preserved verbatim") + "\n")
-	b.WriteString(previewBlockClipped(c.cfg.Preview, c.cfg.PreviewDiff, width, 12) + "\n")
+	b.WriteString(previewBlockClipped(c.cfg.Preview, c.cfg.PreviewDiff, width, 10) + "\n")
 	if c.cfg.Destructive != nil {
-		b.WriteString(styleError.Render(c.cfg.Destructive.Warning) + "\n")
+		b.WriteString(styleError.Render(wrap.Render(c.cfg.Destructive.Warning)) + "\n")
 		b.WriteString(styleError.Render("> ") + c.typed.View() + "\n")
 	}
 	// The affirmative action is NEVER default-focused when destructive —

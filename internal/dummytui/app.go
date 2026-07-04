@@ -381,13 +381,11 @@ func padRight(s string, width int) string {
 }
 
 // newScreens wires the four tab child models in header order.
-// NOTE(02-13 Task 1): the surfaces land in this plan's later tasks —
-// Identities in Task 2; Global SSH, Global Git, and Doctor in Task 3.
-// Until then each tab renders a stub so the frame/overlay/ceremony
-// foundation is executable and testable on its own.
+// NOTE(02-13 Task 2): Global SSH, Global Git, and Doctor land in Task 3 of
+// this plan; until then those tabs render a stub.
 func newScreens() [4]screenModel {
 	return [4]screenModel{
-		stubScreen{label: tabLabels[tabIdentities]},
+		newIdentitiesModel(),
 		stubScreen{label: tabLabels[tabGlobalSSH]},
 		stubScreen{label: tabLabels[tabGlobalGit]},
 		stubScreen{label: tabLabels[tabDoctor]},
