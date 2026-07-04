@@ -119,6 +119,96 @@ function BaselineStrip() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Shared SSH form (SSHUI-01 field order) — ONE component for both the create
+// wizard and edit-SSH; "edit" is just data (`lockIdentity`), never a second
+// copy of the fields.
+// ---------------------------------------------------------------------------
+
+interface SshFormValues {
+  provider: string;
+  prefix: string;
+  sshHost: string;
+  hostname: string;
+  port: string;
+}
+
+function SshFormFields({
+  values,
+  onChange,
+  lockIdentity = false,
+  prefixError,
+  hostHelper,
+}: {
+  values: SshFormValues;
+  onChange: (v: SshFormValues) => void;
+  /** Edit mode: identity name/provider never change in place (rename = clone). */
+  lockIdentity?: boolean;
+  prefixError?: string;
+  hostHelper?: string;
+}) {
+  return (
+    <>
+      <Autocomplete
+        freeSolo
+        disablePortal
+        options={PROVIDERS}
+        value={values.provider}
+        disabled={lockIdentity}
+        onInputChange={(_, v) => onChange({ ...values, provider: v })}
+        renderInput={(params) => (
+          <TextField
+            {...params}
+            label="Provider"
+            size="small"
+            helperText={
+              lockIdentity
+                ? 'Locked — the provider comes from the Host alias'
+                : 'github.com · gitlab.com · bitbucket.org — or type any host'
+            }
+          />
+        )}
+      />
+      <TextField
+        label="Alias prefix"
+        size="small"
+        value={values.prefix}
+        disabled={lockIdentity}
+        autoFocus={!lockIdentity}
+        onChange={(e) => onChange({ ...values, prefix: e.target.value })}
+        error={!lockIdentity && prefixError !== undefined}
+        helperText={
+          lockIdentity
+            ? 'Locked — the identity name never changes in place; use Clone to rename'
+            : (prefixError ?? 'Blank prefix → SSH Host = the provider host itself')
+        }
+      />
+      <TextField
+        label="SSH Host (alias)"
+        size="small"
+        value={values.sshHost}
+        onChange={(e) => onChange({ ...values, sshHost: e.target.value })}
+        helperText={hostHelper ?? ''}
+      />
+      <TextField
+        label="Real hostname"
+        size="small"
+        value={values.hostname}
+        onChange={(e) => onChange({ ...values, hostname: e.target.value })}
+        helperText="The true SSH endpoint"
+      />
+      <TextField
+        label="Port"
+        size="small"
+        sx={{ maxWidth: 160 }}
+        value={values.port}
+        error={!/^\d+$/.test(values.port)}
+        onChange={(e) => onChange({ ...values, port: e.target.value })}
+      />
+    </>
+  );
+}
+
 function StepDots({ step, labels }: { step: number; labels: string[] }) {
   return (
     <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1 }}>
@@ -341,54 +431,25 @@ function CreateWizard({ onDone, onCancel }: { onDone: (name: string) => void; on
           {/* One field per row (round-3 feedback): multi-field rows made the
               inputs read as labels — a single column keeps every editable
               box unmistakable. */}
-          <Autocomplete
-            freeSolo
-            disablePortal
-            options={PROVIDERS}
-            value={provider}
-            onInputChange={(_, v) => applyProvider(v)}
-            renderInput={(params) => (
-              <TextField {...params} label="Provider" size="small" helperText="github.com · gitlab.com · bitbucket.org — or type any host" />
-            )}
-          />
-          <TextField
-            label="Alias prefix"
-            size="small"
-            value={prefix}
-            autoFocus
-            onChange={(e) => setPrefix(e.target.value)}
-            error={nameTaken}
-            helperText={nameTaken ? `"${name}" already exists — pick another prefix.` : 'Blank prefix → SSH Host = the provider host itself'}
-          />
-          <TextField
-            label="SSH Host (alias)"
-            size="small"
-            value={sshHost}
-            onChange={(e) => {
-              setHostTouched(true);
-              setHostOverride(e.target.value);
-            }}
-            helperText={hostTouched ? 'Manually edited — auto-join off' : 'Auto-joined: <prefix>.<provider> — editable'}
-          />
-          <TextField
-            label="Real hostname"
-            size="small"
-            value={hostname}
-            onChange={(e) => {
-              setEndpointTouched(true);
-              setHostname(e.target.value);
-            }}
-            helperText="The true SSH endpoint"
-          />
-          <TextField
-            label="Port"
-            size="small"
-            sx={{ maxWidth: 160 }}
-            value={port}
-            error={!/^\d+$/.test(port)}
-            onChange={(e) => {
-              setEndpointTouched(true);
-              setPort(e.target.value);
+          <SshFormFields
+            values={{ provider, prefix, sshHost, hostname, port }}
+            prefixError={nameTaken ? `"${name}" already exists — pick another prefix.` : undefined}
+            hostHelper={hostTouched ? 'Manually edited — auto-join off' : 'Auto-joined: <prefix>.<provider> — editable'}
+            onChange={(v) => {
+              if (v.provider !== provider) applyProvider(v.provider);
+              if (v.prefix !== prefix) setPrefix(v.prefix);
+              if (v.sshHost !== sshHost) {
+                setHostTouched(true);
+                setHostOverride(v.sshHost);
+              }
+              if (v.hostname !== hostname) {
+                setEndpointTouched(true);
+                setHostname(v.hostname);
+              }
+              if (v.port !== port) {
+                setEndpointTouched(true);
+                setPort(v.port);
+              }
             }}
           />
           <TextField
@@ -599,7 +660,13 @@ export function Identities() {
   const [deleteScope, setDeleteScope] = useState<'everything' | 'git-only'>('git-only');
   const [cloneName, setCloneName] = useState('');
   const [git, setGit] = useState<GitFormValues | null>(null);
-  const [editHost, setEditHost] = useState({ sshHost: '', hostname: '', port: '' });
+  const [editHost, setEditHost] = useState<SshFormValues>({
+    provider: '',
+    prefix: '',
+    sshHost: '',
+    hostname: '',
+    port: '',
+  });
 
   const rows = state.identities;
   const selected = rows.find((r) => r.name === selectedName) ?? rows[0];
@@ -620,8 +687,11 @@ export function Identities() {
 
   const openEditSsh = useCallback(() => {
     if (!selected) return;
+    const sshHost = selected.sshHost ?? `${selected.name}.github.com`;
     setEditHost({
-      sshHost: selected.sshHost ?? `${selected.name}.github.com`,
+      provider: sshHost.split('.').slice(-2).join('.') || 'github.com',
+      prefix: selected.name,
+      sshHost,
       hostname: selected.hostname ?? 'ssh.github.com',
       port: String(selected.port ?? 443),
     });
@@ -886,42 +956,12 @@ export function Identities() {
           {pane.kind === 'edit-ssh' && selected && (
             <Stack spacing={1.5} sx={{ maxWidth: 620 }}>
               <Typography variant="h6">Edit SSH — {selected.name}</Typography>
-              {/* Same form as "new identity" (round-3 feedback) — identity
-                  name/provider are locked (rename = clone), the rest edits. */}
-              <TextField
-                label="Provider"
-                size="small"
-                value={editHost.sshHost.split('.').slice(-2).join('.') || 'github.com'}
-                disabled
-                helperText="Locked — the provider comes from the Host alias"
-              />
-              <TextField
-                label="Alias prefix"
-                size="small"
-                value={selected.name}
-                disabled
-                helperText="Locked — the identity name never changes in place; use Clone to rename"
-              />
-              <TextField
-                label="SSH Host (alias)"
-                size="small"
-                value={editHost.sshHost}
-                onChange={(e) => setEditHost({ ...editHost, sshHost: e.target.value })}
-              />
-              <TextField
-                label="Real hostname"
-                size="small"
-                value={editHost.hostname}
-                onChange={(e) => setEditHost({ ...editHost, hostname: e.target.value })}
-                helperText="The true SSH endpoint"
-              />
-              <TextField
-                label="Port"
-                size="small"
-                sx={{ maxWidth: 160 }}
-                value={editHost.port}
-                error={!/^\d+$/.test(editHost.port)}
-                onChange={(e) => setEditHost({ ...editHost, port: e.target.value })}
+              {/* SAME form component as "new identity" — edit is just
+                  lockIdentity=true, never a second copy of the fields. */}
+              <SshFormFields
+                values={editHost}
+                lockIdentity
+                onChange={setEditHost}
               />
               <MutationCeremony
                 heading={`Rewrite the managed Host block for "${selected.name}"`}
