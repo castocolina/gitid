@@ -108,8 +108,11 @@ export type DemoAction =
   | { type: 'set-ssh-storage'; layout: SshStorageLayout; backup: string }
   | { type: 'reset' };
 
-/** State an identity lands in once BOTH its SSH and Git sides exist. */
+/** State an identity lands in once BOTH its SSH and Git sides exist.
+ * A missing key file is NOT healed by configuring Git — the broken state
+ * (and its doctor finding) must survive until the key itself is fixed. */
 function recomputeAfterGit(row: DemoIdentity): IdentityManagerState {
+  if (row.state === 'key-missing') return 'key-missing';
   return row.sshHost ? 'complete' : 'git-only';
 }
 
@@ -124,19 +127,23 @@ export function demoReducer(state: DemoState, action: DemoAction): DemoState {
     case 'configure-git':
       return {
         ...state,
-        identities: state.identities.map((row) =>
-          row.name === action.name
-            ? {
-                ...row,
-                gitFragmentPath: `~/.gitconfig.d/${row.name}`,
-                gitName: action.gitName,
-                gitEmail: action.gitEmail,
-                matchStrategy: action.matchStrategy,
-                state: recomputeAfterGit(row),
-                note: 'SSH Host block and Git fragment both present.',
-              }
-            : row,
-        ),
+        identities: state.identities.map((row) => {
+          if (row.name !== action.name) return row;
+          const nextState = recomputeAfterGit(row);
+          return {
+            ...row,
+            gitFragmentPath: `~/.gitconfig.d/${row.name}`,
+            gitName: action.gitName,
+            gitEmail: action.gitEmail,
+            matchStrategy: action.matchStrategy,
+            state: nextState,
+            // Keep the broken-state note when Git config couldn't heal it.
+            note:
+              nextState === 'key-missing'
+                ? `${row.note} Git fragment now present.`
+                : 'SSH Host block and Git fragment both present.',
+          };
+        }),
         backups: [action.backup, ...state.backups],
       };
     case 'clone-identity': {

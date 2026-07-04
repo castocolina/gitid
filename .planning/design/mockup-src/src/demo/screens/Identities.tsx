@@ -141,6 +141,70 @@ interface GitFormValues {
   strategy: MatchStrategy;
 }
 
+/** The exact fragment-file text a GitFormValues set produces — single source
+ * for the form preview, the raw-text edit mode, and the ceremony preview. */
+function fragmentTextFor(keyPath: string, values: GitFormValues): string {
+  return `[user]\n    name = ${values.gitName}\n    email = ${values.gitEmail}\n    signingkey = ${keyPath}.pub\n\n[gpg]\n    format = ssh\n\n[commit]\n    gpgsign = true`;
+}
+
+function includeIfTextFor(name: string, strategy: MatchStrategy): string {
+  return gitScreenMatchStrategyPreview[strategy].replace(/personal/g, name);
+}
+
+/** Both edit surfaces (form fields ↔ raw config text) write the same data;
+ * raw text is parsed back naively on save — good enough for the demo. */
+function parseFragmentText(text: string): { gitName?: string; gitEmail?: string } {
+  const name = text.match(/^\s*name\s*=\s*(.+)$/m)?.[1]?.trim();
+  const email = text.match(/^\s*email\s*=\s*(.+)$/m)?.[1]?.trim();
+  return { ...(name ? { gitName: name } : {}), ...(email ? { gitEmail: email } : {}) };
+}
+
+function parseHostBlockText(text: string): { sshHost?: string; hostname?: string; port?: string } {
+  const sshHost = text.match(/^\s*Host\s+(\S+)/m)?.[1];
+  const hostname = text.match(/^\s*Hostname\s+(\S+)/m)?.[1];
+  const port = text.match(/^\s*Port\s+(\d+)/m)?.[1];
+  return {
+    ...(sshHost ? { sshHost } : {}),
+    ...(hostname ? { hostname } : {}),
+    ...(port ? { port } : {}),
+  };
+}
+
+/** [Edit in form | Edit as text] toggle — the same flat sub-tab idiom the
+ * Global SSH screen uses for Options/Storage. */
+function EditModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: 'form' | 'text';
+  onChange: (m: 'form' | 'text') => void;
+}) {
+  return (
+    <Stack direction="row" spacing={1}>
+      {(['form', 'text'] as const).map((m) => (
+        <Box
+          key={m}
+          component="button"
+          onClick={() => onChange(m)}
+          sx={{
+            font: 'inherit',
+            fontSize: 13,
+            border: 1,
+            borderColor: mode === m ? semanticColors.focus : 'divider',
+            cursor: 'pointer',
+            px: 1.25,
+            py: 0.25,
+            bgcolor: mode === m ? semanticColors.focus : 'transparent',
+            color: mode === m ? 'background.default' : 'text.secondary',
+          }}
+        >
+          {m === 'form' ? 'Edit in form' : 'Edit as text'}
+        </Box>
+      ))}
+    </Stack>
+  );
+}
+
 function GitFormFields({
   name,
   keyPath,
@@ -152,8 +216,8 @@ function GitFormFields({
   values: GitFormValues;
   onChange: (v: GitFormValues) => void;
 }) {
-  const fragment = `[user]\n    name = ${values.gitName}\n    email = ${values.gitEmail}\n    signingkey = ${keyPath}.pub\n\n[gpg]\n    format = ssh\n\n[commit]\n    gpgsign = true`;
-  const includeIf = gitScreenMatchStrategyPreview[values.strategy].replace(/personal/g, name);
+  const fragment = fragmentTextFor(keyPath, values);
+  const includeIf = includeIfTextFor(name, values.strategy);
 
   return (
     <Stack spacing={1.5}>
@@ -604,6 +668,13 @@ export function Identities() {
   const [cloneName, setCloneName] = useState('');
   const [git, setGit] = useState<GitFormValues | null>(null);
   const [editHost, setEditHost] = useState({ sshHost: '', hostname: '', port: '' });
+  // Edit panes stage like the wizard: edit first, THEN the confirm ceremony
+  // replaces the form (never both stacked). Each supports form ↔ raw-text.
+  const [editStage, setEditStage] = useState<'edit' | 'confirm'>('edit');
+  const [editMode, setEditMode] = useState<'form' | 'text'>('form');
+  const [rawFragment, setRawFragment] = useState('');
+  const [rawInclude, setRawInclude] = useState('');
+  const [rawHostBlock, setRawHostBlock] = useState('');
 
   const rows = state.identities;
   const selected = rows.find((r) => r.name === selectedName) ?? rows[0];
@@ -614,21 +685,33 @@ export function Identities() {
 
   const openGitForm = useCallback(() => {
     if (!selected) return;
-    setGit({
+    const values: GitFormValues = {
       gitName: selected.gitName ?? `${selected.name} identity`,
       gitEmail: selected.gitEmail ?? `you@${selected.name}.example`,
       strategy: selected.matchStrategy ?? defaultMatchStrategy,
-    });
+    };
+    setGit(values);
+    const keyPath = selected.keyPath ?? `~/.ssh/id_ed25519_${selected.name}`;
+    setRawFragment(fragmentTextFor(keyPath, values));
+    setRawInclude(includeIfTextFor(selected.name, values.strategy));
+    setEditStage('edit');
+    setEditMode('form');
     setPane({ kind: 'git' });
   }, [selected]);
 
   const openEditSsh = useCallback(() => {
     if (!selected) return;
-    setEditHost({
+    const host = {
       sshHost: selected.sshHost ?? `${selected.name}.github.com`,
       hostname: selected.hostname ?? 'ssh.github.com',
       port: String(selected.port ?? 443),
-    });
+    };
+    setEditHost(host);
+    setRawHostBlock(
+      `Host ${host.sshHost}\n    Hostname ${host.hostname}\n    Port ${host.port}\n    User git\n    IdentityFile ${selected.keyPath ?? `~/.ssh/id_ed25519_${selected.name}`}\n    IdentitiesOnly yes`,
+    );
+    setEditStage('edit');
+    setEditMode('form');
     setPane({ kind: 'edit-ssh' });
   }, [selected]);
 
@@ -638,6 +721,14 @@ export function Identities() {
         if (pane.kind !== 'detail') {
           if (key === 'Escape') {
             toDetail();
+            return true;
+          }
+          if (
+            key === 'Enter' &&
+            (pane.kind === 'git' || pane.kind === 'edit-ssh') &&
+            editStage === 'edit'
+          ) {
+            setEditStage('confirm');
             return true;
           }
           return false;
@@ -675,7 +766,7 @@ export function Identities() {
         }
         return false;
       },
-      [pane.kind, rows, selectedIdx, selected, toDetail, openEditSsh, openGitForm],
+      [pane.kind, editStage, rows, selectedIdx, selected, toDetail, openEditSsh, openGitForm],
     ),
   );
 
@@ -887,80 +978,197 @@ export function Identities() {
             </Stack>
           )}
 
-          {pane.kind === 'edit-ssh' && selected && (
+          {pane.kind === 'edit-ssh' && selected && editStage === 'edit' && (
             <Stack spacing={1.5}>
-              <Typography variant="h6">Edit SSH — {selected.name}</Typography>
-              <Stack direction="row" spacing={2}>
-                <TextField label="SSH Host (alias)" size="small" sx={{ flex: 1.4 }} value={editHost.sshHost} onChange={(e) => setEditHost({ ...editHost, sshHost: e.target.value })} />
-                <TextField label="Real hostname" size="small" sx={{ flex: 1.2 }} value={editHost.hostname} onChange={(e) => setEditHost({ ...editHost, hostname: e.target.value })} />
-                <TextField label="Port" size="small" sx={{ width: 110 }} value={editHost.port} error={!/^\d+$/.test(editHost.port)} onChange={(e) => setEditHost({ ...editHost, port: e.target.value })} />
+              <Stack direction="row" spacing={2} alignItems="center">
+                <Typography variant="h6" sx={{ flex: 1 }}>
+                  Edit SSH — {selected.name}
+                </Typography>
+                <EditModeToggle
+                  mode={editMode}
+                  onChange={(m) => {
+                    if (m === 'text') {
+                      // form → text: regenerate raw from current field values
+                      setRawHostBlock(
+                        `Host ${editHost.sshHost}\n    Hostname ${editHost.hostname}\n    Port ${editHost.port}\n    User git\n    IdentityFile ${selected.keyPath ?? `~/.ssh/id_ed25519_${selected.name}`}\n    IdentitiesOnly yes`,
+                      );
+                    } else {
+                      // text → form: parse the raw block back into the fields
+                      setEditHost({ ...editHost, ...parseHostBlockText(rawHostBlock) });
+                    }
+                    setEditMode(m);
+                  }}
+                />
               </Stack>
-              <MutationCeremony
-                heading={`Rewrite the managed Host block for "${selected.name}"`}
-                targets={['~/.ssh/config']}
-                preview={
-                  <PreviewBlock
-                    text={`Host ${editHost.sshHost}\n    Hostname ${editHost.hostname}\n    Port ${editHost.port}\n    User git\n    IdentityFile ${selected.keyPath ?? `~/.ssh/id_ed25519_${selected.name}`}\n    IdentitiesOnly yes`}
-                  />
-                }
-                backups={[newBackupPath('~/.ssh/config')]}
-                resultMessage={`Host block for "${selected.name}" rewritten.`}
-                confirmLabel="Save changes"
-                onCancel={toDetail}
-                onDone={() => {
-                  dispatch({
-                    type: 'edit-ssh',
-                    name: selected.name,
-                    sshHost: editHost.sshHost,
-                    hostname: editHost.hostname,
-                    port: Number(editHost.port),
-                    backup: newBackupPath('~/.ssh/config'),
-                  });
-                  notify(`SSH settings of "${selected.name}" updated.`);
-                  toDetail();
-                }}
-              />
+              {editMode === 'form' ? (
+                <Stack direction="row" spacing={2}>
+                  <TextField label="SSH Host (alias)" size="small" sx={{ flex: 1.4 }} value={editHost.sshHost} onChange={(e) => setEditHost({ ...editHost, sshHost: e.target.value })} />
+                  <TextField label="Real hostname" size="small" sx={{ flex: 1.2 }} value={editHost.hostname} onChange={(e) => setEditHost({ ...editHost, hostname: e.target.value })} />
+                  <TextField label="Port" size="small" sx={{ width: 110 }} value={editHost.port} error={!/^\d+$/.test(editHost.port)} onChange={(e) => setEditHost({ ...editHost, port: e.target.value })} />
+                </Stack>
+              ) : (
+                <TextField
+                  multiline
+                  minRows={7}
+                  fullWidth
+                  label={`Managed Host block — edit the config text directly`}
+                  value={rawHostBlock}
+                  onChange={(e) => setRawHostBlock(e.target.value)}
+                  helperText="Only the gitid-managed block is editable here; the rest of ~/.ssh/config is never touched."
+                  slotProps={{ input: { sx: { fontFamily: 'inherit', fontSize: 13 } } }}
+                />
+              )}
+              <Stack direction="row" spacing={2}>
+                <Button variant="outlined" onClick={toDetail}>
+                  Cancel (Esc)
+                </Button>
+                <Button
+                  variant="contained"
+                  onClick={() => {
+                    if (editMode === 'text') setEditHost({ ...editHost, ...parseHostBlockText(rawHostBlock) });
+                    setEditStage('confirm');
+                  }}
+                >
+                  Review & save (Enter)
+                </Button>
+              </Stack>
             </Stack>
           )}
 
-          {pane.kind === 'git' && selected && git && (
+          {pane.kind === 'edit-ssh' && selected && editStage === 'confirm' && (
+            <MutationCeremony
+              heading={`Rewrite the managed Host block for "${selected.name}"`}
+              targets={['~/.ssh/config']}
+              preview={
+                <PreviewBlock
+                  text={
+                    editMode === 'text'
+                      ? rawHostBlock
+                      : `Host ${editHost.sshHost}\n    Hostname ${editHost.hostname}\n    Port ${editHost.port}\n    User git\n    IdentityFile ${selected.keyPath ?? `~/.ssh/id_ed25519_${selected.name}`}\n    IdentitiesOnly yes`
+                  }
+                />
+              }
+              backups={[newBackupPath('~/.ssh/config')]}
+              resultMessage={`Host block for "${selected.name}" rewritten.`}
+              confirmLabel="Save changes"
+              onCancel={() => setEditStage('edit')}
+              onDone={() => {
+                const parsed = editMode === 'text' ? parseHostBlockText(rawHostBlock) : {};
+                dispatch({
+                  type: 'edit-ssh',
+                  name: selected.name,
+                  sshHost: parsed.sshHost ?? editHost.sshHost,
+                  hostname: parsed.hostname ?? editHost.hostname,
+                  port: Number(parsed.port ?? editHost.port),
+                  backup: newBackupPath('~/.ssh/config'),
+                });
+                notify(`SSH settings of "${selected.name}" updated.`);
+                toDetail();
+              }}
+            />
+          )}
+
+          {pane.kind === 'git' && selected && git && editStage === 'edit' && (
             <Stack spacing={1.5}>
-              <Typography variant="h6">
-                Git identity — {selected.name}
-                {selected.gitFragmentPath ? ' (editing existing fragment)' : ' (completes this identity)'}
-              </Typography>
-              <GitFormFields
-                name={selected.name}
-                keyPath={selected.keyPath ?? `~/.ssh/id_ed25519_${selected.name}`}
-                values={git}
-                onChange={setGit}
-              />
-              <MutationCeremony
-                heading={`Write Git identity for "${selected.name}"`}
-                targets={[`~/.gitconfig.d/${selected.name}`, '~/.gitconfig', '~/.ssh/allowed_signers']}
-                preview={
-                  <PreviewBlock
-                    text={gitScreenMatchStrategyPreview[git.strategy].replace(/personal/g, selected.name)}
+              <Stack direction="row" spacing={2} alignItems="center">
+                <Typography variant="h6" sx={{ flex: 1 }}>
+                  Git identity — {selected.name}
+                  {selected.gitFragmentPath ? ' (editing existing fragment)' : ' (completes this identity)'}
+                </Typography>
+                <EditModeToggle
+                  mode={editMode}
+                  onChange={(m) => {
+                    const keyPath = selected.keyPath ?? `~/.ssh/id_ed25519_${selected.name}`;
+                    if (m === 'text') {
+                      setRawFragment(fragmentTextFor(keyPath, git));
+                      setRawInclude(includeIfTextFor(selected.name, git.strategy));
+                    } else {
+                      setGit({ ...git, ...parseFragmentText(rawFragment) });
+                    }
+                    setEditMode(m);
+                  }}
+                />
+              </Stack>
+              {editMode === 'form' ? (
+                <GitFormFields
+                  name={selected.name}
+                  keyPath={selected.keyPath ?? `~/.ssh/id_ed25519_${selected.name}`}
+                  values={git}
+                  onChange={setGit}
+                />
+              ) : (
+                <Stack spacing={1.5}>
+                  <TextField
+                    multiline
+                    minRows={9}
+                    fullWidth
+                    label={`~/.gitconfig.d/${selected.name} — edit the fragment text directly`}
+                    value={rawFragment}
+                    onChange={(e) => setRawFragment(e.target.value)}
+                    slotProps={{ input: { sx: { fontFamily: 'inherit', fontSize: 13 } } }}
                   />
-                }
-                backups={[newBackupPath('~/.gitconfig'), newBackupPath('~/.ssh/allowed_signers')]}
-                resultMessage={`Git identity "${selected.name}" configured — applies via the ${git.strategy} strategy.`}
-                confirmLabel="Write it"
-                onCancel={toDetail}
-                onDone={() => {
-                  dispatch({
-                    type: 'configure-git',
-                    name: selected.name,
-                    gitName: git.gitName,
-                    gitEmail: git.gitEmail,
-                    matchStrategy: git.strategy,
-                    backup: newBackupPath('~/.gitconfig'),
-                  });
-                  notify(`Git identity "${selected.name}" configured.`);
-                  toDetail();
-                }}
-              />
+                  <TextField
+                    multiline
+                    minRows={3}
+                    fullWidth
+                    label="~/.gitconfig includeIf block"
+                    value={rawInclude}
+                    onChange={(e) => setRawInclude(e.target.value)}
+                    helperText="name/email are parsed back from the fragment on save; both blocks stay sentinel-managed."
+                    slotProps={{ input: { sx: { fontFamily: 'inherit', fontSize: 13 } } }}
+                  />
+                  <BaselineStrip />
+                </Stack>
+              )}
+              <Stack direction="row" spacing={2}>
+                <Button variant="outlined" onClick={toDetail}>
+                  Cancel (Esc)
+                </Button>
+                <Button
+                  variant="contained"
+                  disabled={editMode === 'form' && (git.gitName.trim() === '' || !git.gitEmail.includes('@'))}
+                  onClick={() => {
+                    if (editMode === 'text') setGit({ ...git, ...parseFragmentText(rawFragment) });
+                    setEditStage('confirm');
+                  }}
+                >
+                  Review & write (Enter)
+                </Button>
+              </Stack>
             </Stack>
+          )}
+
+          {pane.kind === 'git' && selected && git && editStage === 'confirm' && (
+            <MutationCeremony
+              heading={`Write Git identity for "${selected.name}"`}
+              targets={[`~/.gitconfig.d/${selected.name}`, '~/.gitconfig', '~/.ssh/allowed_signers']}
+              preview={
+                <PreviewBlock
+                  text={
+                    editMode === 'text'
+                      ? `# ~/.gitconfig.d/${selected.name}\n${rawFragment}\n\n# ~/.gitconfig\n${rawInclude}`
+                      : `# ~/.gitconfig.d/${selected.name}\n${fragmentTextFor(selected.keyPath ?? `~/.ssh/id_ed25519_${selected.name}`, git)}\n\n# ~/.gitconfig\n${includeIfTextFor(selected.name, git.strategy)}`
+                  }
+                />
+              }
+              backups={[newBackupPath('~/.gitconfig'), newBackupPath('~/.ssh/allowed_signers')]}
+              resultMessage={`Git identity "${selected.name}" configured — applies via the ${git.strategy} strategy.`}
+              confirmLabel="Write it"
+              onCancel={() => setEditStage('edit')}
+              onDone={() => {
+                const parsed = editMode === 'text' ? parseFragmentText(rawFragment) : {};
+                dispatch({
+                  type: 'configure-git',
+                  name: selected.name,
+                  gitName: parsed.gitName ?? git.gitName,
+                  gitEmail: parsed.gitEmail ?? git.gitEmail,
+                  matchStrategy: git.strategy,
+                  backup: newBackupPath('~/.gitconfig'),
+                });
+                notify(`Git identity "${selected.name}" configured.`);
+                toDetail();
+              }}
+            />
           )}
 
           {pane.kind === 'clone' && selected && (
