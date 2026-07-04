@@ -45,6 +45,9 @@ const (
 // renderers and their click hit-testing.
 func masterListWidth(width int) int { return width * 44 / 100 }
 
+// frameBodyRows is how many body rows RenderFrame gives a view at height.
+func frameBodyRows(height int) int { return height - frameBodyTop - frameChromeBelow }
+
 // tabID indexes the four primary views (SHELL-01 as redesigned: the Fixer
 // is NOT a tab — FIX-02 re-homed it into Doctor).
 type tabID int
@@ -76,6 +79,14 @@ var reservedFooter = []FooterAction{
 	{Key: "q", Label: "quit"},
 }
 
+// reservedFooterInput replaces the reserved keys while a text input is
+// focused — the input swallows `q` and `?`, so advertising them would lie
+// (review batch 2, L1). Esc and Ctrl+P still work from inside any input.
+var reservedFooterInput = []FooterAction{
+	{Key: "Esc", Label: "back"},
+	{Key: "Ctrl+P", Label: "palette"},
+}
+
 // Shared style tokens. lipgloss.NewStyle() per v2 (renderer.NewStyle does
 // not exist); colors are basic ANSI so NO_COLOR/terminal themes degrade
 // legibly — every meaning is also carried by a glyph + word.
@@ -88,7 +99,63 @@ var (
 	styleError    = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 	styleInfo     = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 	styleSelected = lipgloss.NewStyle().Bold(true).Reverse(true)
+	styleSection  = lipgloss.NewStyle().Bold(true).Underline(true)
 )
+
+// sectionHeader renders a detail-pane group heading — the terminal
+// stand-in for the web's outlined Paper section cards (review batch 2,
+// H2): bold + underlined so SSH / Git / Findings read as separate groups.
+func sectionHeader(text string) string {
+	return " " + styleSection.Render(text)
+}
+
+// joinMasterDetail joins a master column and its detail pane with the
+// full-height vertical divider every master-detail screen shares (review
+// batch 2, H2 — the web outlines both panes as Paper cards). The divider
+// occupies the exact one-space gutter column the panes always kept
+// (leftWidth + 1 + detail), so click hit-testing against
+// masterListWidth/sidebarWidth is unchanged. rows is the divider height —
+// the body rows the master-detail region occupies.
+func joinMasterDetail(left string, leftWidth int, detail string, rows int) string {
+	if rows < 1 {
+		rows = 1
+	}
+	leftCol := lipgloss.NewStyle().Width(leftWidth).Height(rows).Render(left)
+	div := make([]string, rows)
+	for i := range div {
+		div[i] = styleFaint.Render("│")
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, leftCol, strings.Join(div, "\n"), detail)
+}
+
+// dimPane re-renders an already-styled block faint, line by line — the ONE
+// dim treatment for a master list while a form/ceremony pane owns the keys
+// (web: opacity 0.75), shared by the Identities sidebar and the Doctor
+// findings list (review batch 2, L3).
+func dimPane(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = styleFaint.Render(ansi.Strip(line))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// fitPane clips a rendered pane to maxLines, replacing the overflow with a
+// visible faint "… (+n more lines)" cue — free prose is never silently cut
+// mid-sentence (review batch 2, H3; preview blocks already carry the same
+// cue via previewBlockClipped).
+func fitPane(pane string, maxLines int) string {
+	if maxLines < 2 {
+		return pane
+	}
+	lines := strings.Split(strings.TrimRight(pane, "\n"), "\n")
+	if len(lines) <= maxLines {
+		return pane
+	}
+	hidden := len(lines) - (maxLines - 1)
+	lines = append(lines[:maxLines-1], " "+styleFaint.Render(fmt.Sprintf("… (+%d more lines)", hidden)))
+	return strings.Join(lines, "\n")
+}
 
 // toneStyle maps an identity health tone (IdentityManagerStateTone) to its
 // color style.
@@ -219,8 +286,9 @@ func statusToneStyle(tone string) lipgloss.Style {
 // RenderFrame composes the full §1 chrome around body at width x height:
 // header row, faint breadcrumb line, the body (clipped/padded to fit), a
 // transient status line, and the two footer keybar lines (contextual
-// actions, then the reserved keys). Pure function — safe to unit test.
-func RenderFrame(width, height int, s DemoState, tab tabID, crumbs []string, status, statusTone string, actions []FooterAction, body string) string {
+// actions, then the reserved keys — the honest input variant while a text
+// input is focused). Pure function — safe to unit test.
+func RenderFrame(width, height int, s DemoState, tab tabID, crumbs []string, status, statusTone string, actions []FooterAction, inputFocused bool, body string) string {
 	if width < minFrameWidth || height < minFrameHeight {
 		return fmt.Sprintf("Terminal too small — resize to at least %dx%d", minFrameWidth, minFrameHeight)
 	}
@@ -229,9 +297,13 @@ func RenderFrame(width, height int, s DemoState, tab tabID, crumbs []string, sta
 	crumbLine := " " + styleFaint.Render(ansi.Truncate(strings.Join(append([]string{tabLabels[tab]}, crumbs...), " › "), width-2, "…"))
 	statusLine := " " + statusToneStyle(statusTone).Render(ansi.Truncate(status, width-2, "…"))
 	footerContextual := renderFooterLine(width, actions)
-	footerReserved := renderFooterLine(width, reservedFooter)
+	reserved := reservedFooter
+	if inputFocused {
+		reserved = reservedFooterInput
+	}
+	footerReserved := renderFooterLine(width, reserved)
 
-	bodyHeight := height - frameBodyTop - frameChromeBelow
+	bodyHeight := frameBodyRows(height)
 	lines := strings.Split(body, "\n")
 	if len(lines) > bodyHeight {
 		lines = lines[:bodyHeight]

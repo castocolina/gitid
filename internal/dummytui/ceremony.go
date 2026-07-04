@@ -82,6 +82,13 @@ func newCeremony(cfg ceremonyConfig) ceremonyModel {
 	return ceremonyModel{cfg: cfg, typed: ti}
 }
 
+// inputFocused reports whether the ceremony's typed-confirm input is
+// focused (destructive ceremonies, state A) — the frame's reserved footer
+// adapts while it swallows plain keys (L1).
+func (c ceremonyModel) inputFocused() bool {
+	return !c.done && c.cfg.Destructive != nil
+}
+
 // confirmEnabled reports whether the confirm action is enabled — always
 // for plain writes, only after the typed word matches exactly for
 // destructive ones.

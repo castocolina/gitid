@@ -27,6 +27,9 @@ type screenView struct {
 	status     string
 	statusTone string
 	actions    []FooterAction
+	// inputFocused: a text input currently swallows plain keys — the frame
+	// renders the honest reserved footer (Esc/Ctrl+P only, L1).
+	inputFocused bool
 }
 
 // keyResult is what a screen's key/message handler returns: the updated
@@ -363,23 +366,27 @@ func (a App) render() string {
 	crumbs := sv.crumbs
 	actions := sv.actions
 	body := sv.body
+	inputFocused := sv.inputFocused
 
 	switch a.overlay {
 	case overlayHelp:
 		body = a.renderHelp()
 		crumbs = []string{"Help"}
 		actions = nil
+		inputFocused = false
 	case overlayQuit:
 		body = a.renderQuitPrompt()
 		crumbs = []string{"Quit"}
 		actions = []FooterAction{{Key: "Enter", Label: "quit"}, {Key: "Esc", Label: "stay"}}
+		inputFocused = false
 	case overlayPalette:
 		body = a.renderPalette()
 		crumbs = []string{"Palette"}
 		actions = []FooterAction{{Key: "Enter", Label: "open first match"}, {Key: "Esc", Label: "close"}}
+		inputFocused = true // the palette filter input swallows q and ?
 	case overlayNone:
 	}
-	return RenderFrame(a.width, a.height, a.state, a.tab, crumbs, status, tone, actions, body)
+	return RenderFrame(a.width, a.height, a.state, a.tab, crumbs, status, tone, actions, inputFocused, body)
 }
 
 // renderHelp renders the `?` overlay: the key map plus the full 8-state

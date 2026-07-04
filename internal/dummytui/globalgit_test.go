@@ -1,6 +1,7 @@
 package dummytui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -48,7 +49,7 @@ func TestGlobalGitMainVsMasterHighlight(t *testing.T) {
 	if !strings.Contains(view, "Until Git 2.28 (July 2020)") {
 		t.Error("init.defaultBranch detail must show GlobalGitDetailExplanation")
 	}
-	if !strings.Contains(regionFlat(ggitApp(t), 44, 100), "This is advisory, never a compliance gate.") {
+	if !strings.Contains(regionFlat(ggitApp(t), 45, 100), "This is advisory, never a compliance gate.") {
 		t.Error("advisory alert missing")
 	}
 }
@@ -113,7 +114,7 @@ func TestGlobalGitBaselineCeremonyAndResult(t *testing.T) {
 	// deep-dive) — core.ignorecase now renders the overlay one-liner. The
 	// keypress also clears the transient note, revealing the new status.
 	a, _ = press(t, a, "down")
-	if !strings.Contains(regionFlat(a, 44, 100), "Applied by gitid — Keeps file-name case always significant") {
+	if !strings.Contains(regionFlat(a, 45, 100), "Applied by gitid — Keeps file-name case always significant") {
 		t.Error("applied rows must render the overlay one-liner")
 	}
 	if !strings.Contains(appView(a), "Baseline applied. user.email stays untouched — identities own their author.") {
@@ -138,5 +139,17 @@ func TestGlobalGitSpaceToggleIsCopyOnWrite(t *testing.T) {
 	}
 	if !orig["pull.rebase"] {
 		t.Error("Elm purity: the toggle mutated the map shared with the pre-update model copy")
+	}
+}
+
+func TestGlobalGitLongExplanationClipsWithVisibleCue(t *testing.T) {
+	// init.defaultBranch (the initial detail) carries the long GGIT-01
+	// explanation — the overflow must be announced, never silently cut (H3).
+	view := appView(ggitApp(t))
+	if !strings.Contains(view, "Until Git 2.28 (July 2020)") {
+		t.Fatal("init.defaultBranch explanation missing")
+	}
+	if !regexp.MustCompile(`… \(\+\d+ more lines\)`).MatchString(view) {
+		t.Error("clipped explanation must render the `… (+n more lines)` cue (H3)")
 	}
 }

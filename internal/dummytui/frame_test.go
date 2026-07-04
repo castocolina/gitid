@@ -41,8 +41,6 @@ func pressKey(name string) tea.KeyMsg {
 		return tea.KeyPressMsg{Code: tea.KeySpace}
 	case "ctrl+p":
 		return tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl}
-	case "ctrl+s":
-		return tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}
 	default:
 		runes := []rune(name)
 		return tea.KeyPressMsg{Code: runes[0], Text: name}
@@ -68,7 +66,7 @@ func regionFlat(a App, from, to int) string {
 }
 
 func renderSeededFrame(crumbs []string, actions []FooterAction) string {
-	return RenderFrame(100, 30, Seed(), tabIdentities, crumbs, "Ready.", "info", actions, "body line")
+	return RenderFrame(100, 30, Seed(), tabIdentities, crumbs, "Ready.", "info", actions, false, "body line")
 }
 
 func TestRenderFrameShowsNumberedTabsAndReservedFooter(t *testing.T) {
@@ -109,7 +107,7 @@ func TestRenderFrameHealthChipCounts(t *testing.T) {
 
 	clean := Seed()
 	clean.Findings = nil
-	plainClean := stripANSI(RenderFrame(100, 30, clean, tabIdentities, nil, "Ready.", "info", nil, ""))
+	plainClean := stripANSI(RenderFrame(100, 30, clean, tabIdentities, nil, "Ready.", "info", nil, false, ""))
 	if !strings.Contains(plainClean, "✓ ok") {
 		t.Error("all-clean chip must show `✓ ok`")
 	}
@@ -119,7 +117,7 @@ func TestRenderFrameHealthChipCounts(t *testing.T) {
 }
 
 func TestRenderFrameActiveTabReverseVideo(t *testing.T) {
-	raw := RenderFrame(100, 30, Seed(), tabGlobalGit, nil, "Ready.", "info", nil, "")
+	raw := RenderFrame(100, 30, Seed(), tabGlobalGit, nil, "Ready.", "info", nil, false, "")
 	if !strings.Contains(raw, "\x1b[7m 3 Global Git ") {
 		t.Error("active tab must render reverse-video (SGR 7 around the active label)")
 	}
@@ -136,7 +134,7 @@ func TestRenderFrameContextualActionsPrecedeReserved(t *testing.T) {
 }
 
 func TestRenderFrameGeometry(t *testing.T) {
-	out := RenderFrame(100, 30, Seed(), tabIdentities, nil, "Ready.", "info", nil, strings.Repeat("line\n", 60))
+	out := RenderFrame(100, 30, Seed(), tabIdentities, nil, "Ready.", "info", nil, false, strings.Repeat("line\n", 60))
 	lines := strings.Split(out, "\n")
 	if len(lines) != 30 {
 		t.Fatalf("frame height = %d lines, want exactly 30", len(lines))
@@ -149,7 +147,7 @@ func TestRenderFrameGeometry(t *testing.T) {
 }
 
 func TestRenderFrameTooSmallGuard(t *testing.T) {
-	out := RenderFrame(80, 24, Seed(), tabIdentities, nil, "", "info", nil, "")
+	out := RenderFrame(80, 24, Seed(), tabIdentities, nil, "", "info", nil, false, "")
 	if !strings.Contains(out, "resize to at least 100x30") {
 		t.Errorf("small-terminal guard missing; got %q", out)
 	}
@@ -183,6 +181,52 @@ func TestPreviewBlockClipsWithTail(t *testing.T) {
 	block := stripANSI(previewBlockClipped(text, false, 40, 5))
 	if !strings.Contains(block, "… (+15 more lines)") {
 		t.Errorf("clipped preview must announce hidden lines; got %q", block)
+	}
+}
+
+func TestRenderFrameInputFocusedReservedFooterIsHonest(t *testing.T) {
+	plain := stripANSI(RenderFrame(100, 30, Seed(), tabIdentities, nil, "Ready.", "info", nil, true, "body"))
+	for _, want := range []string{"Esc back", "Ctrl+P palette"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("input-focused reserved footer missing %q", want)
+		}
+	}
+	// A focused text input swallows q and ? — the footer must not lie (L1).
+	for _, forbidden := range []string{"q quit", "? help", "Enter activate"} {
+		if strings.Contains(plain, forbidden) {
+			t.Errorf("input-focused reserved footer must not advertise %q", forbidden)
+		}
+	}
+}
+
+func TestFitPaneAppendsVisibleCue(t *testing.T) {
+	pane := strings.TrimSuffix(strings.Repeat("prose line\n", 30), "\n")
+	got := stripANSI(fitPane(pane, 10))
+	lines := strings.Split(got, "\n")
+	if len(lines) != 10 {
+		t.Fatalf("fitPane height = %d lines, want 10", len(lines))
+	}
+	if lines[9] != " … (+21 more lines)" {
+		t.Errorf("fitPane cue line = %q, want ` … (+21 more lines)`", lines[9])
+	}
+	if short := fitPane("one\ntwo", 10); stripANSI(short) != "one\ntwo" {
+		t.Errorf("fitPane must pass short panes through; got %q", short)
+	}
+}
+
+func TestJoinMasterDetailDrawsFullHeightDivider(t *testing.T) {
+	out := stripANSI(joinMasterDetail("left", 10, "right\npane", 5))
+	lines := strings.Split(out, "\n")
+	if len(lines) != 5 {
+		t.Fatalf("join height = %d lines, want 5 (divider rows)", len(lines))
+	}
+	for i, line := range lines {
+		if !strings.Contains(line, "│") {
+			t.Errorf("row %d missing the │ divider", i)
+		}
+	}
+	if idx := strings.Index(lines[0], "│"); idx != 10 {
+		t.Errorf("divider column = %d, want exactly the master width (10) so hit-tests hold", idx)
 	}
 }
 

@@ -469,7 +469,6 @@ func truncLine(line string, width int) string {
 
 // view implements screenModel.
 func (m globalSSHModel) view(s DemoState, width, height int) screenView {
-	_ = height
 	options := overlaidOptions(s)
 	pending := pendingOptions(options)
 	chosen := m.applyChosen(options)
@@ -494,7 +493,7 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 		actions = []FooterAction{{Key: "Esc", Label: "cancel"}}
 	case gssBrowse:
 		if m.subTab == gssOptions {
-			body = m.renderOptions(s, options, width)
+			body = m.renderOptions(s, options, width, height)
 			actions = []FooterAction{
 				{Key: "↑↓", Label: "select option"},
 				{Key: "←→", Label: "Options / Storage"},
@@ -504,7 +503,7 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 				actions = append(actions, FooterAction{Key: "a", Label: fmt.Sprintf("apply %d selected", len(chosen))})
 			}
 		} else {
-			body = m.renderStorage(s, width)
+			body = m.renderStorage(s, width, height)
 			actions = []FooterAction{
 				{Key: "←→", Label: "Options / Storage"},
 				{Key: "↑↓", Label: "choose layout"},
@@ -518,16 +517,17 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 }
 
 // renderOptions renders the Options master-detail.
-func (m globalSSHModel) renderOptions(s DemoState, options []appliedOption, width int) string {
+func (m globalSSHModel) renderOptions(s DemoState, options []appliedOption, width, height int) string {
 	listWidth := masterListWidth(width)
 	detailWidth := width - listWidth - 1
+	rows := frameBodyRows(height) - gssOptionsTopLines(s)
 
-	var rows []string
+	var listRows []string
 	selIdx := m.detailIndex(options)
 	for i, o := range options {
-		rows = append(rows, optionRow(o.Key, o.Current, o.Recommended, o.Risk, o.NeedsAction, m.chosen[o.Key], i == selIdx, o.applied, listWidth))
+		listRows = append(listRows, optionRow(o.Key, o.Current, o.Recommended, o.Risk, o.NeedsAction, m.chosen[o.Key], i == selIdx, o.applied, listWidth))
 	}
-	list := strings.Join(rows, "\n")
+	list := strings.Join(listRows, "\n")
 
 	detail := options[selIdx]
 	explanation := detail.OneLiner
@@ -538,21 +538,23 @@ func (m globalSSHModel) renderOptions(s DemoState, options []appliedOption, widt
 	d.WriteString(" " + styleBold.Render(detail.Key) + "\n")
 	d.WriteString(" " + styleInfo.Render("~ "+GlobalSSHAdvisoryNote) + "\n\n")
 	d.WriteString(" " + explanation + "\n")
-	detailPane := lipgloss.NewStyle().Width(detailWidth).Render(d.String())
+	// Wrap to the pane width, then clip with a VISIBLE cue — long option
+	// explanations must never be silently cut mid-sentence (H3).
+	detailPane := fitPane(lipgloss.NewStyle().Width(detailWidth).Render(d.String()), rows)
 
 	banner := findingsBanner(s, "SSH", gssBannerBeyond)
 	body := m.subTabStrip() + "\n"
 	if banner != "" {
 		body += banner + "\n"
 	}
-	return body + lipgloss.JoinHorizontal(lipgloss.Top,
-		lipgloss.NewStyle().Width(listWidth).Render(list), " ", detailPane)
+	return body + joinMasterDetail(list, listWidth, detailPane, rows)
 }
 
 // renderStorage renders the STORE-01 Storage & preview sub-tab.
-func (m globalSSHModel) renderStorage(s DemoState, width int) string {
+func (m globalSSHModel) renderStorage(s DemoState, width, height int) string {
 	leftWidth := masterListWidth(width)
 	rightWidth := width - leftWidth - 1
+	rows := frameBodyRows(height) - 1 // the sub-tab strip line
 
 	current := func(layout SSHStorageLayout) string {
 		if s.SSHStorage == layout {
@@ -574,7 +576,7 @@ func (m globalSSHModel) renderStorage(s DemoState, width int) string {
 	if m.storageChoice != s.SSHStorage {
 		l.WriteString("\n " + styleSelected.Render(" Migrate layout… (Enter) ") + "\n")
 	}
-	left := lipgloss.NewStyle().Width(leftWidth).Render(l.String())
+	left := l.String()
 
 	var r strings.Builder
 	if m.storageChoice == StorageSentinel {
@@ -587,5 +589,5 @@ func (m globalSSHModel) renderStorage(s DemoState, width int) string {
 	}
 	right := lipgloss.NewStyle().Width(rightWidth).Render(r.String())
 
-	return m.subTabStrip() + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
+	return m.subTabStrip() + "\n" + joinMasterDetail(left, leftWidth, right, rows)
 }

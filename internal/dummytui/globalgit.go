@@ -175,7 +175,6 @@ func (m globalGitModel) handleClick(x, y, width int, s DemoState) keyResult {
 
 // view implements screenModel.
 func (m globalGitModel) view(s DemoState, width, height int) screenView {
-	_ = height
 	options := overlaidGitOptions(s)
 	var pending int
 	for _, o := range options {
@@ -245,14 +244,16 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 	d.WriteString(" " + styleBold.Render(detail.Key) + "\n")
 	d.WriteString(" " + styleInfo.Render("~ "+GlobalGitAdvisoryNote) + "\n\n")
 	d.WriteString(" " + explanation + "\n")
-	detailPane := lipgloss.NewStyle().Width(detailWidth).Render(d.String())
+	// Wrap to the pane width, then clip with a VISIBLE cue — long option
+	// explanations must never be silently cut mid-sentence (H3).
+	bodyRows := frameBodyRows(height) - gitTopLines(s)
+	detailPane := fitPane(lipgloss.NewStyle().Width(detailWidth).Render(d.String()), bodyRows)
 
 	body := ""
 	if banner := findingsBanner(s, "Git", gitBannerBeyond); banner != "" {
 		body = banner + "\n"
 	}
-	body += lipgloss.JoinHorizontal(lipgloss.Top,
-		lipgloss.NewStyle().Width(listWidth).Render(list), " ", detailPane)
+	body += joinMasterDetail(list, listWidth, detailPane, bodyRows)
 
 	actions := []FooterAction{{Key: "↑↓", Label: "select option"}, {Key: "space", Label: "choose"}}
 	if chosen := m.gitApplyChosen(options); len(chosen) > 0 {

@@ -425,7 +425,14 @@ func TestWizardStrategySelectShowsAllThreeOptions(t *testing.T) {
 
 func TestWizardSkipCreatesIncompleteIdentity(t *testing.T) {
 	a := wizardThroughTest(t, identitiesApp())
-	a, _ = press(t, a, "ctrl+s") // Skip — SSH only
+	// Tab past name/email/strategy/Back to the Skip button, then Enter (M2 —
+	// Skip is a real focusable control, not a Ctrl+S chord).
+	a = pressSeq(t, a, "tab", "tab", "tab", "tab")
+	m := identModel(t, a)
+	if m.wizard.gitFocus != gitFocusSkip {
+		t.Fatalf("gitFocus = %d after 4 tabs, want the Skip button (%d)", m.wizard.gitFocus, gitFocusSkip)
+	}
+	a, _ = press(t, a, "enter") // activate Skip — SSH only
 	if !strings.Contains(appView(a), `Create identity "acme2"`) {
 		t.Fatal("skip must still walk the review ceremony")
 	}
@@ -646,4 +653,140 @@ func TestEscFromEveryFormPaneReturnsToDetailWithoutDispatch(t *testing.T) {
 func stateEqual(a, b DemoState) bool {
 	return len(a.Identities) == len(b.Identities) && len(a.Findings) == len(b.Findings) &&
 		len(a.Backups) == len(b.Backups) && a.GitBaselineApplied == b.GitBaselineApplied
+}
+
+// --------------------------------------------------------------------------
+// Review batch 2 — visual structure, edit preview, focusable wizard
+// buttons, footer honesty.
+// --------------------------------------------------------------------------
+
+func TestMasterDetailDividerOnEveryScreen(t *testing.T) {
+	// Identities, Global SSH, Global Git, and the Doctor all draw the
+	// full-height master↔detail divider (H2).
+	for _, tab := range []string{"1", "2", "3"} {
+		a, _ := press(t, NewApp(), tab)
+		if n := strings.Count(appView(a), "│"); n < 15 {
+			t.Errorf("tab %s: divider glyph count = %d, want a full-height │ column", tab, n)
+		}
+	}
+	a := doctorApp(t)
+	if n := strings.Count(appView(a), "│"); n < 15 {
+		t.Errorf("doctor: divider glyph count = %d, want a full-height │ column", n)
+	}
+}
+
+func TestIdentityDetailSectionHeadersReadAsGroups(t *testing.T) {
+	a := identitiesApp()
+	raw := a.View().Content
+	// Bold+underline (SGR 1;4) section headers stand in for the web's
+	// outlined Paper cards (H2).
+	if !strings.Contains(raw, "\x1b[1;4") {
+		t.Error("detail pane must render bold+underlined section headers")
+	}
+	plain := appView(a)
+	for _, want := range []string{"SSH — shown first, always", "Git", "Findings (0)"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("detail pane missing section header %q", want)
+		}
+	}
+}
+
+func TestEditSSHShowsLiveHostBlockPreview(t *testing.T) {
+	a := pressSeq(t, identitiesApp(), "e")
+	pane := paneFlat(a)
+	if !strings.Contains(pane, "Live Host-block preview — written exactly like this on confirm") {
+		t.Fatalf("edit-SSH pane must show the same live preview the wizard shows (M1):\n%s", pane)
+	}
+	if !strings.Contains(pane, "Host personal.github.com") || !strings.Contains(pane, "IdentitiesOnly yes") {
+		t.Errorf("live preview must render the current Host block:\n%s", pane)
+	}
+	// The preview rebuilds on every keystroke: type into the Port field.
+	a = pressSeq(t, a, "tab", "tab") // host → hostname → port
+	a = typeText(t, a, "9")
+	if !strings.Contains(paneFlat(a), "Port 4439") {
+		t.Errorf("preview must rebuild live on keystrokes:\n%s", paneFlat(a))
+	}
+}
+
+func TestWizardGitStepButtonsAreFocusable(t *testing.T) {
+	a := wizardThroughTest(t, identitiesApp())
+	pane := paneFlat(a)
+	for _, want := range []string{"Back (Esc)", "Skip — SSH only (identity stays incomplete)", "Continue: review & write (Enter)"} {
+		if !strings.Contains(pane, want) {
+			t.Errorf("Git step missing button %q (M2)", want)
+		}
+	}
+	if strings.Contains(appView(a), "Ctrl+S") {
+		t.Error("Ctrl+S must be gone — it is an XOFF hazard on IXON terminals")
+	}
+
+	// Tab ring: name → email → strategy → Back → Skip → Continue → name.
+	a = pressSeq(t, a, "tab", "tab", "tab")
+	m := identModel(t, a)
+	if m.wizard.gitFocus != gitFocusBack {
+		t.Fatalf("gitFocus = %d after 3 tabs, want Back (%d)", m.wizard.gitFocus, gitFocusBack)
+	}
+	// The focused button renders reverse-video like the ceremony buttons.
+	raw := a.View().Content
+	if !strings.Contains(raw, "\x1b[1;7m Back (Esc) ") && !strings.Contains(raw, "\x1b[7;1m Back (Esc) ") {
+		t.Error("focused Back button must render reverse-video")
+	}
+	a = pressSeq(t, a, "tab", "tab", "tab")
+	if got := identModel(t, a).wizard.gitFocus; got != gitFieldName {
+		t.Errorf("gitFocus = %d after the full ring, want name (%d)", got, gitFieldName)
+	}
+
+	// Enter on Back returns to the test step; ctrl+s does nothing.
+	a = pressSeq(t, a, "tab", "tab", "tab") // → Back
+	a, _ = press(t, a, "enter")
+	if got := identModel(t, a).wizard.step; got != 1 {
+		t.Fatalf("Enter on Back: step = %d, want 1", got)
+	}
+	model, _ := a.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	a = model.(App)
+	if got := identModel(t, a).wizard.step; got != 1 {
+		t.Errorf("ctrl+s must be inert; step = %d", got)
+	}
+}
+
+func TestWizardGitStepEnterOnFieldStillContinues(t *testing.T) {
+	a := wizardThroughTest(t, identitiesApp()) // focus: name field
+	a, _ = press(t, a, "enter")                // Enter on a field = Continue (web parity)
+	if !strings.Contains(appView(a), `Create identity "acme2"`) {
+		t.Error("Enter on a field must fall through to Continue: review & write")
+	}
+}
+
+func TestReservedFooterHonestWhileInputFocused(t *testing.T) {
+	// Detail mode: full reserved footer.
+	a := identitiesApp()
+	if view := appView(a); !strings.Contains(view, "q quit") || !strings.Contains(view, "? help") {
+		t.Fatal("detail mode must keep the full reserved footer")
+	}
+	// A form pane with a focused text input: the honest variant only (L1).
+	a = pressSeq(t, a, "c") // clone — its name input is always focused
+	view := appView(a)
+	for _, forbidden := range []string{"q quit", "? help"} {
+		if strings.Contains(view, forbidden) {
+			t.Errorf("footer must not advertise %q while an input swallows it", forbidden)
+		}
+	}
+	for _, want := range []string{"Esc back", "Ctrl+P palette"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("input-focused footer missing %q", want)
+		}
+	}
+}
+
+func TestWizardGitStepButtonsSurviveExpandedStrategySelect(t *testing.T) {
+	// The expanded strategy select adds two rows; the fragment preview
+	// yields two rows back so the button row never clips out of the frame.
+	a := wizardThroughTest(t, identitiesApp())
+	a = pressSeq(t, a, "tab", "tab") // → strategy focused (3 radio rows)
+	view := appView(a)
+	for _, want := range []string{"both — either condition", "Continue: review & write (Enter)"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("expanded-strategy Git step must keep %q on screen", want)
+		}
+	}
 }

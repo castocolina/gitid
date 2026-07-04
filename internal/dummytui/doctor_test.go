@@ -215,3 +215,23 @@ func TestDoctorAllGreenRendersBothSummaries(t *testing.T) {
 		t.Error("all-green Git summary missing")
 	}
 }
+
+func TestDoctorListDimsDuringFixCeremony(t *testing.T) {
+	// The findings list dims while the fix ceremony owns the pane (L3 —
+	// web: opacity 0.75), the same treatment as the Identities sidebar.
+	a := doctorApp(t)
+	a, _ = press(t, a, "f")
+	if !docModel(t, a).fixing {
+		t.Fatal("f must open the fix ceremony")
+	}
+	raw := a.View().Content
+	// Every list row renders faint (SGR 2) with its own styling stripped.
+	if !strings.Contains(raw, "\x1b[2m") {
+		t.Fatal("dimmed list missing faint rendering")
+	}
+	for _, line := range strings.Split(raw, "\n") {
+		if strings.Contains(stripANSI(line), "SSH · archived") && !strings.Contains(line, "\x1b[2m") {
+			t.Error("group label row must render faint during the ceremony")
+		}
+	}
+}

@@ -270,7 +270,6 @@ func (m doctorModel) handleClick(x, y, width int, s DemoState) keyResult {
 
 // view implements screenModel.
 func (m doctorModel) view(s DemoState, width, height int) screenView {
-	_ = height
 	ordered := orderedFindings(s)
 	sel, selIdx, hasSel := m.selectedFinding(ordered)
 	fixable := fixableFindings(ordered)
@@ -335,7 +334,9 @@ func (m doctorModel) view(s DemoState, width, height int) screenView {
 	}
 	list := strings.Join(rows, "\n")
 	if m.fixing {
-		list = styleFaint.Render(stripStyles(list))
+		// Same dim treatment as the Identities sidebar while a form pane is
+		// open (web: opacity 0.75 during the fix ceremony, L3).
+		list = dimPane(list)
 	}
 
 	var d strings.Builder
@@ -360,11 +361,14 @@ func (m doctorModel) view(s DemoState, width, height int) screenView {
 			d.WriteString(" " + styleInfo.Render("~ Informational only — nothing to fix.") + "\n")
 		}
 	}
-	detailPane := lipgloss.NewStyle().Width(detailWidth).Render(d.String())
+	// Wrap to the pane width, then clip with a VISIBLE cue — finding
+	// explanations must never be silently cut mid-sentence (H3).
+	bodyRows := frameBodyRows(height)
+	detailPane := fitPane(lipgloss.NewStyle().Width(detailWidth).Render(d.String()), bodyRows)
 
-	body := lipgloss.JoinHorizontal(lipgloss.Top,
-		lipgloss.NewStyle().Width(listWidth).Render(list), " ", detailPane)
-	return screenView{body: body, crumbs: crumbs, status: status, statusTone: tone, actions: actions}
+	body := joinMasterDetail(list, listWidth, detailPane, bodyRows)
+	return screenView{body: body, crumbs: crumbs, status: status, statusTone: tone,
+		actions: actions, inputFocused: m.fixing && m.ceremony.inputFocused()}
 }
 
 // pluralS returns "s" for counts other than 1.

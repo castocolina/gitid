@@ -353,6 +353,17 @@ const (
 	gitFieldStrategy
 )
 
+// Wizard Git-step focus ring — the three fields above, then the three REAL
+// focusable controls the web renders as buttons (review batch 2, M2:
+// Back / Skip — SSH only / Continue; Ctrl+S is gone — it collides with
+// XOFF flow control on IXON terminals).
+const (
+	gitFocusBack = iota + gitFieldStrategy + 1
+	gitFocusSkip
+	gitFocusContinue
+	wizardGitFocusSlots // ring size: 3 fields + 3 buttons
+)
+
 // matchStrategies are the includeIf strategies in select order.
 var matchStrategies = []string{"gitdir", "hasconfig", "both"}
 
@@ -471,8 +482,12 @@ func (g gitForm) view(name, keyPath string, focus int, width int, baseline strin
 		b.WriteString("     ● " + strategyCopy(g.strategy(), name) + "  " + styleFaint.Render("(←/→ change)") + "\n")
 	}
 
+	fragLines := 4
+	if focus == gitFieldStrategy {
+		fragLines = 2 // the expanded strategy select claims these two rows
+	}
 	b.WriteString(" " + PreviewLabel("~/.gitconfig.d/"+name+" (fragment file — preview)") + "\n")
-	b.WriteString(previewBlockClipped(g.fragmentPreview(keyPath), false, width, 4) + "\n")
+	b.WriteString(previewBlockClipped(g.fragmentPreview(keyPath), false, width, fragLines) + "\n")
 	b.WriteString(" " + PreviewLabel("~/.gitconfig (includeIf block — preview)") + "\n")
 	b.WriteString(previewBlockClipped(g.includeIfPreview(name), false, width, 2) + "\n")
 	b.WriteString(baseline + "\n")
@@ -546,12 +561,28 @@ func algoDisabled(entry AlgorithmCatalogEntry) bool {
 	return strings.HasPrefix(entry.MacOS, "Needs libfido2")
 }
 
-// hostBlockPreview is the live Host-block preview, rebuilt on every
-// keystroke — written exactly like this on confirm.
-func (w wizardModel) hostBlockPreview() string {
-	return "Host " + w.form.sshHost() + "\n    Hostname " + w.form.hostname.Value() +
-		"\n    Port " + w.form.port.Value() + "\n    User git\n    IdentityFile " + w.keyPath() +
+// hostBlockText renders the managed Host block for the given values — the
+// ONE source of the block shape, shared by the wizard preview/ceremony and
+// the edit-SSH preview/ceremony (M1: reuse, never duplicate).
+func hostBlockText(host, hostname, port, keyPath string) string {
+	return "Host " + host + "\n    Hostname " + hostname +
+		"\n    Port " + port + "\n    User git\n    IdentityFile " + keyPath +
 		"\n    IdentitiesOnly yes"
+}
+
+// renderHostBlockPreview renders the live Host-block preview (label +
+// dashed block), rebuilt on every keystroke — the SAME rendering under the
+// wizard's SSH form and the edit-SSH form (review batch 2, M1; the web
+// shows it simultaneously in both places).
+func renderHostBlockPreview(host, hostname, port, keyPath string, width int) string {
+	return " " + PreviewLabel("Live Host-block preview — written exactly like this on confirm") + "\n" +
+		previewBlockClipped(hostBlockText(host, hostname, port, keyPath), false, width, 6)
+}
+
+// hostBlockPreview is the wizard's live Host-block preview text — written
+// exactly like this on confirm.
+func (w wizardModel) hostBlockPreview() string {
+	return hostBlockText(w.form.sshHost(), w.form.hostname.Value(), w.form.port.Value(), w.keyPath())
 }
 
 // stage1Cmd is the stage-1 direct test command (TEST-01) with the
@@ -869,9 +900,7 @@ func (m identitiesModel) editCeremonyFor(sel DemoIdentity) ceremonyModel {
 	if keyPath == "" {
 		keyPath = "~/.ssh/id_ed25519_" + sel.Name
 	}
-	preview := "Host " + m.editForm.host.Value() + "\n    Hostname " + m.editForm.hostname.Value() +
-		"\n    Port " + m.editForm.port.Value() + "\n    User git\n    IdentityFile " + keyPath +
-		"\n    IdentitiesOnly yes"
+	preview := hostBlockText(m.editForm.host.Value(), m.editForm.hostname.Value(), m.editForm.port.Value(), keyPath)
 	return newCeremony(ceremonyConfig{
 		Heading:       `Rewrite the managed Host block for "` + sel.Name + `"`,
 		Targets:       []string{"~/.ssh/config"},
@@ -1257,29 +1286,33 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			w.step = 1
 			m.wizard = w
 			return keyResult{model: m, handled: true}
-		case "ctrl+s":
-			// Skip — SSH only (identity stays incomplete). Ctrl-chord so
-			// plain `s` still types into the author fields.
-			w.configureGit = false
-			w.step = 3
-			w.ceremony = w.reviewCeremony()
-			m.wizard = w
-			return keyResult{model: m, handled: true}
 		case "enter":
-			if w.git.valid() {
-				w.configureGit = true
+			// Enter activates the focused button; on a FIELD it keeps
+			// meaning Continue (web parity: Enter falls through from
+			// single-line inputs as the primary action).
+			switch w.gitFocus {
+			case gitFocusBack:
+				w.step = 1
+			case gitFocusSkip:
+				w.configureGit = false
 				w.step = 3
 				w.ceremony = w.reviewCeremony()
+			default: // fields + Continue
+				if w.git.valid() {
+					w.configureGit = true
+					w.step = 3
+					w.ceremony = w.reviewCeremony()
+				}
 			}
 			m.wizard = w
 			return keyResult{model: m, handled: true}
 		case "tab", "down":
-			w.gitFocus = (w.gitFocus + 1) % 3
+			w.gitFocus = (w.gitFocus + 1) % wizardGitFocusSlots
 			w.git = w.git.setFocus(w.gitFocus)
 			m.wizard = w
 			return keyResult{model: m, handled: true}
 		case "shift+tab", "up":
-			w.gitFocus = (w.gitFocus + 2) % 3
+			w.gitFocus = (w.gitFocus + wizardGitFocusSlots - 1) % wizardGitFocusSlots
 			w.git = w.git.setFocus(w.gitFocus)
 			m.wizard = w
 			return keyResult{model: m, handled: true}
@@ -1373,16 +1406,9 @@ func (m identitiesModel) renderSidebar(s DemoState, width int, dimmed bool) stri
 		lines = append(lines, ansi.Truncate("    "+styleFaint.Render(row.Note), width, "…"))
 	}
 	if dimmed {
-		for i, line := range lines {
-			lines[i] = styleFaint.Render(stripStyles(line))
-		}
+		return dimPane(strings.Join(lines, "\n"))
 	}
 	return strings.Join(lines, "\n")
-}
-
-// stripStyles drops SGR sequences (used to re-dim an already-styled line).
-func stripStyles(s string) string {
-	return ansi.Strip(s)
 }
 
 // baselineStrip renders the read-only inherited global-baseline strip
@@ -1415,7 +1441,7 @@ func (m identitiesModel) renderDetail(s DemoState, sel DemoIdentity) string {
 	b.WriteString(" " + styleBold.Render(sel.Name) + "  " +
 		tone.Render(IdentityManagerGlyphByState[sel.State]+" "+sel.State) + "\n\n")
 
-	b.WriteString(" " + styleFaint.Render("SSH — shown first, always") + "\n")
+	b.WriteString(sectionHeader("SSH — shown first, always") + "\n")
 	if sel.SSHHost != "" {
 		hostname := sel.Hostname
 		if hostname == "" {
@@ -1437,7 +1463,7 @@ func (m identitiesModel) renderDetail(s DemoState, sel DemoIdentity) string {
 		b.WriteString("   " + styleWarning.Render("! No gitid-managed Host block — relies on the global SSH config.") + "\n")
 	}
 
-	b.WriteString("\n " + styleFaint.Render("Git") + "\n")
+	b.WriteString("\n" + sectionHeader("Git") + "\n")
 	if sel.GitFragmentPath != "" {
 		b.WriteString("   Fragment: " + sel.GitFragmentPath + "\n")
 		b.WriteString("   Author: " + sel.GitName + " <" + sel.GitEmail + ">\n")
@@ -1453,7 +1479,7 @@ func (m identitiesModel) renderDetail(s DemoState, sel DemoIdentity) string {
 	b.WriteString(baselineStrip(s) + "\n")
 
 	findings := FindingsFor(s, sel.Name)
-	b.WriteString("\n " + styleFaint.Render(fmt.Sprintf("Findings (%d) — same data the Doctor shows (4)", len(findings))) + "\n")
+	b.WriteString("\n" + sectionHeader(fmt.Sprintf("Findings (%d) — same data the Doctor shows (4)", len(findings))) + "\n")
 	if len(findings) == 0 {
 		b.WriteString("   " + styleHealthy.Render(`✓ No findings for "`+sel.Name+`".`) + "\n")
 	} else {
@@ -1467,6 +1493,23 @@ func (m identitiesModel) renderDetail(s DemoState, sel DemoIdentity) string {
 		b.WriteString("   " + styleFocusLink.Render("Open the Doctor (4) for the global picture") + "\n")
 	}
 	return b.String()
+}
+
+// wizardButton renders one focusable wizard control: reverse-video when
+// focused (the same focus treatment the ceremony buttons carry), bold when
+// merely enabled, faint + an explicit suffix when disabled (M2).
+func wizardButton(label string, focused, enabled bool) string {
+	text := " " + label + " "
+	switch {
+	case focused && enabled:
+		return styleSelected.Render(text)
+	case focused:
+		return lipgloss.NewStyle().Faint(true).Reverse(true).Render(text + "— disabled")
+	case enabled:
+		return styleBold.Render(text)
+	default:
+		return styleFaint.Render(text + "— disabled")
+	}
 }
 
 // stepDots renders the slim `Step n/4 · <label>` dots line.
@@ -1521,10 +1564,10 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 			}
 		}
 		if w.focus == 5 {
-			b.WriteString(helperLine("gitid probes the local toolchain and disables what this machine cannot generate (KEY-03/PLAT-01). Demo simulates: no FIDO2 key plugged in.", false) + "\n")
+			// Verbatim web helper copy (Identities.tsx) — spec-bearing (L2).
+			b.WriteString(helperLine("gitid probes the local toolchain (ssh-keygen, libfido2, FIDO2 key present?) and disables what this machine cannot generate, with the reason shown per option (KEY-03/PLAT-01). Demo simulates: no FIDO2 key plugged in.", false) + "\n")
 		}
-		b.WriteString(" " + PreviewLabel("Live Host-block preview — written exactly like this on confirm") + "\n")
-		b.WriteString(previewBlockClipped(w.hostBlockPreview(), false, width, 6))
+		b.WriteString(renderHostBlockPreview(w.form.sshHost(), w.form.hostname.Value(), w.form.port.Value(), w.keyPath(), width))
 	case 1:
 		b.WriteString(" " + styleInfo.Render("Key "+w.keyPath()+" generated ("+w.algo()+").") + "\n")
 		b.WriteString(" " + styleInfo.Render("Both stages run against "+CreateFlowTestTmpConfig+" — your live ~/.ssh/config is untouched until the final confirm.") + "\n\n")
@@ -1572,14 +1615,11 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 		}
 	case 2:
 		b.WriteString(w.git.view(w.form.identityName(), w.keyPath(), w.gitFocus, width, baselineStripCompact(s, width)))
-		b.WriteString(" " + styleFaint.Render("Esc back") + " · " + styleBold.Render("Ctrl+S") + " " +
-			styleFaint.Render("Skip — SSH only (identity stays incomplete)") + " · ")
-		cont := " Continue: review & write (Enter) "
-		if w.git.valid() {
-			b.WriteString(styleSelected.Render(cont))
-		} else {
-			b.WriteString(styleFaint.Render(cont + "— disabled"))
-		}
+		// The web's three REAL buttons (M2), reachable via the Tab ring;
+		// Back+Skip share a row so all three fit the 63-col pane.
+		b.WriteString(" " + wizardButton("Back (Esc)", w.gitFocus == gitFocusBack, true) + " " +
+			wizardButton("Skip — SSH only (identity stays incomplete)", w.gitFocus == gitFocusSkip, true) + "\n")
+		b.WriteString(" " + wizardButton("Continue: review & write (Enter)", w.gitFocus == gitFocusContinue, w.git.valid()))
 	default:
 		b.WriteString(w.ceremony.view(width))
 	}
@@ -1626,9 +1666,14 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 		actions = m.wizardFooter(s)
 		status = "Esc returns to the identity detail without writing anything."
 	case paneEditSSH:
+		// The SAME live preview the create wizard renders, rebuilt on every
+		// keystroke (M1) — the confirm ceremony stays the pane's next state.
+		editKeyPath := orDefault(sel.KeyPath, "~/.ssh/id_ed25519_"+sel.Name)
 		pane = " " + styleBold.Render("Edit SSH — "+sel.Name) + "\n" +
 			m.editForm.view(m.editFocus, "", "") +
-			"\n " + styleSelected.Render(" Rewrite Host block… (Enter) ")
+			renderHostBlockPreview(m.editForm.host.Value(), m.editForm.hostname.Value(),
+				m.editForm.port.Value(), editKeyPath, detailWidth) +
+			"\n\n " + styleSelected.Render(" Rewrite Host block… (Enter) ")
 		crumbs = []string{sel.Name, "Edit SSH"}
 		status = "Esc returns to the identity detail without writing anything."
 	case paneEditCeremony:
@@ -1688,13 +1733,41 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 
 	sidebar := m.renderSidebar(s, sbWidth, m.pane != paneDetail)
 	// Word-wrap the pane at the detail width so long spec copy flows to
-	// continuation lines instead of being hard-truncated by the frame.
-	body = lipgloss.JoinHorizontal(lipgloss.Top,
-		lipgloss.NewStyle().Width(sbWidth).Render(sidebar),
-		" ",
-		lipgloss.NewStyle().Width(detailWidth).Render(pane))
-	_ = height
-	return screenView{body: body, crumbs: crumbs, status: status, statusTone: "info", actions: actions}
+	// continuation lines instead of being hard-truncated by the frame; the
+	// shared full-height divider separates master from detail (H2).
+	body = joinMasterDetail(sidebar, sbWidth,
+		lipgloss.NewStyle().Width(detailWidth).Render(pane), frameBodyRows(height))
+	return screenView{body: body, crumbs: crumbs, status: status, statusTone: "info",
+		actions: actions, inputFocused: m.paneInputFocused()}
+}
+
+// paneInputFocused reports whether the active pane currently focuses a
+// text input that swallows plain keys — the frame's reserved footer
+// renders its honest input variant then (review batch 2, L1).
+func (m identitiesModel) paneInputFocused() bool {
+	switch m.pane {
+	case paneCreate:
+		switch m.wizard.step {
+		case 0:
+			return m.wizard.focus <= sshFieldPort // 5 = the algorithm select
+		case 2:
+			return m.wizard.gitFocus <= gitFieldEmail // strategy + buttons are not inputs
+		case 3:
+			return m.wizard.ceremony.inputFocused()
+		}
+		return false // step 1 (test) has no inputs
+	case paneEditSSH, paneClone:
+		return true // every focus slot is a text input
+	case paneGit:
+		return m.gitFocus <= gitFieldEmail
+	case paneDelete:
+		return m.deleteCerem.inputFocused()
+	case paneFix:
+		return m.fixCeremony.inputFocused()
+	case paneDetail, paneEditCeremony, paneGitCeremony, paneDeleteScope:
+		return false // non-destructive ceremonies have no typed input
+	}
+	return false
 }
 
 // wizardFooter renders the wizard's contextual footer hints per pane-state.
@@ -1721,9 +1794,8 @@ func (m identitiesModel) wizardFooter(s DemoState) []FooterAction {
 		return nil
 	case 2:
 		return []FooterAction{
-			{Key: "Enter", Label: "continue: review & write"},
-			{Key: "Ctrl+S", Label: "skip — SSH only"},
-			{Key: "Tab/↑↓", Label: "fields"},
+			{Key: "Enter", Label: "activate focused / continue"},
+			{Key: "Tab/↑↓", Label: "fields & buttons"},
 		}
 	default:
 		return nil

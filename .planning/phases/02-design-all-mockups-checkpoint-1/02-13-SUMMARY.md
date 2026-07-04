@@ -62,7 +62,7 @@ key-files:
 key-decisions:
   - "Bubble Tea v2 retained (charm.land v2 stack per CLAUDE.md); github.com/grindlemire/go-tui evaluated at the user's suggestion and REJECTED as too immature (recorded in the plan objective)"
   - "Edit-SSH and Configure-Git ceremonies open as the pane's NEXT state instead of inline below the form (the web renders both simultaneously; 30 terminal rows cannot) — same §6 two-state semantics, same copy, Esc returns to the form"
-  - "Wizard Skip is Ctrl+S, not plain s: s must type into the user.name/user.email fields; the full 'Skip — SSH only (identity stays incomplete)' copy still renders in-pane"
+  - "Wizard Back/Skip/Continue are REAL focusable controls on the Git step's Tab ring (review batch 2 M2); the original Ctrl+S skip chord was removed — it collides with XOFF flow control on IXON terminals"
   - "Sidebar is 36% at the 100-col minimum (spec ~38/62) so the detail pane keeps 63 usable columns; step-3 dual previews stack vertically for the same reason"
   - "Contract-bearing helpers (locked fields, prefix WYSIWYG/duplicate error, auto-join state) always render; purely descriptive helpers render for the focused field only, keeping every wizard pane inside the 30-row frame"
   - "cmd/gitid-dummy carries a smoke main_test.go: NOT required by the plan for behavior (all behavior is tested in internal/dummytui + the PTY e2e) but required in practice — a buildable no-test package makes `go test -coverprofile` reach for the covdata tool, which the auto-downloaded Go 1.26 toolchain does not ship"
@@ -116,10 +116,11 @@ Run the demo: `go build -o bin/gitid-dummy ./cmd/gitid-dummy && bin/gitid-dummy`
 
 1. **Edit-SSH / Configure-Git ceremonies are the pane's next state** (Enter opens, Esc returns to the form) instead of rendering inline below the form — 30 rows cannot hold both; §6 two-state semantics and all copy preserved.
 2. **Wizard step-3 dual previews stack vertically** (fragment above includeIf) — the 63-col detail pane cannot hold two legible side-by-side blocks.
-3. **Wizard Skip is `Ctrl+S`** — plain `s` must type into the author fields; the full skip copy still renders.
+3. **Wizard Back / Skip / Continue are focusable controls on the Tab ring** (review batch 2 superseded the original `Ctrl+S` chord — an XOFF hazard on IXON terminals); Enter activates the focused button, and Enter on a FIELD still means Continue (web parity: Enter falls through from single-line inputs as the primary action). Back+Skip share a row so all three fit the 63-col pane.
 4. **Sidebar 36% at the 100-col minimum** (spec ~38/62) and the sidebar legend uses single-space separators, so the detail pane keeps 63 columns.
 5. **Descriptive field helpers render focused-only**; contract helpers (locked fields, prefix error/WYSIWYG, auto-join state) always render — keeps every wizard pane inside the 30-row frame.
 6. **Per-identity `Fix…` binds `f` to the first fixable finding** of the selected identity (the web has one button per finding row; identities carry at most one fixable finding in the seed, and the Doctor covers the general case).
+7. **Delete-scope is a pane state, not a modal** — the web renders the scope chooser (`Git identity only` vs `Everything`) as a Dialog overlay (Identities.tsx `scope-modal`); the TUI renders it as `paneDeleteScope` in the detail pane (↑↓ choose · Enter continue · Esc cancel) because the frame has no overlay layering for in-flow choices. Behavior is faithful: safer scope default-focused, Enter walks into the same typed-confirm delete ceremony (review batch 2, M3).
 
 None of these change reducer behavior, action semantics, or the contractual copy the tests pin.
 
@@ -130,6 +131,17 @@ None of these change reducer behavior, action semantics, or the contractual copy
 3. **Init() no longer discards the activated screen** — the initial tab's activation runs in NewApp (model retained), Init just returns the stored command.
 4. **Elm purity for `chosen` maps** — Global SSH/Git toggles are copy-on-write (`withToggled`), so value-copied models never share map storage. Pinned by the two `…SpaceToggleIsCopyOnWrite` tests.
 5. **E2E Doctor assertion strengthened** — the tab-4 check now asserts the Doctor-body status line ("Health only diagnoses") instead of the always-present "Doctor" header label.
+
+### Code-review batch 2 fixes (UI/UX designer review of rendered 100x30 frames)
+
+1. **H2 — visual structure restored**: every master-detail screen (Identities, Global SSH, Global Git, Doctor) now draws a full-height faint `│` divider between master and detail via the shared `joinMasterDetail` — the divider occupies the exact one-space gutter column the panes always kept, so `masterListWidth`/`sidebarWidth` click hit-testing is unchanged. The Identities detail groups (SSH / Git / Findings) render bold+underlined `sectionHeader`s — the terminal stand-in for the web's outlined Paper cards. Pinned by `TestMasterDetailDividerOnEveryScreen`, `TestJoinMasterDetailDrawsFullHeightDivider`, `TestIdentityDetailSectionHeadersReadAsGroups`.
+2. **H3 — no silent prose truncation**: the Global SSH / Global Git / Doctor detail panes wrap their explanation to the pane width and clip through `fitPane`, which replaces overflow with a visible faint `… (+n more lines)` cue (the marker approach was chosen over a scroll viewport — deterministic, no key-ring conflicts). Pinned by `TestGlobalSSHLongExplanationClipsWithVisibleCue`, `TestGlobalGitLongExplanationClipsWithVisibleCue`, `TestFitPaneAppendsVisibleCue`.
+3. **M1 — edit-SSH shows its live preview**: the edit-SSH pane renders the SAME live Host-block preview the create wizard shows (`renderHostBlockPreview` over the shared `hostBlockText` — one source for the block shape, also reused by both ceremonies), rebuilt on every keystroke; the confirm ceremony stays the pane's next state. Pinned by `TestEditSSHShowsLiveHostBlockPreview`. The configure-Git split is unchanged (explicitly ruled justified).
+4. **M2 — wizard Back/Skip/Continue are focusable controls; Ctrl+S removed**: the Git step's Tab ring is now fields → Back → Skip → Continue (reverse-video focus like the ceremony buttons); Enter activates the focused button, Enter on a field still means Continue. The `ctrl+s` binding (an XOFF hazard on IXON terminals) is gone from handler, pane copy, and footer. The expanded strategy select self-balances against the fragment preview so the button row never clips. Pinned by `TestWizardGitStepButtonsAreFocusable`, `TestWizardGitStepEnterOnFieldStillContinues`, `TestWizardSkipCreatesIncompleteIdentity`, `TestWizardGitStepButtonsSurviveExpandedStrategySelect`.
+5. **M3** — the delete-scope modal→pane adaptation is now documented above (terminal-geometry adaptation #7).
+6. **L2 — verbatim algorithm helper restored**: the wizard's key-algorithm helper carries the web's full copy including `(ssh-keygen, libfido2, FIDO2 key present?)` and `with the reason shown per option`, taken verbatim from Identities.tsx.
+7. **L3 — Doctor findings list dims during the fix ceremony** through the same shared `dimPane` path the Identities sidebar uses (web: opacity 0.75). Pinned by `TestDoctorListDimsDuringFixCeremony`.
+8. **L1 — footer honesty (implemented, not just documented)**: screens report `inputFocused` in their `screenView`; while a text input owns the keys (wizard SSH/author fields, edit-SSH, clone, destructive typed-confirm ceremonies, the Ctrl+P palette) the reserved footer renders `Esc back · Ctrl+P palette` only — it no longer advertises `q quit` / `? help` that the input would swallow. Pinned by `TestReservedFooterHonestWhileInputFocused`, `TestRenderFrameInputFocusedReservedFooterIsHonest`.
 
 ## Known Stubs
 

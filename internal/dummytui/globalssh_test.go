@@ -1,6 +1,7 @@
 package dummytui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -51,7 +52,7 @@ func TestGlobalSSHOptionsMasterDetail(t *testing.T) {
 	if !strings.Contains(view, "When IdentitiesOnly is not set") {
 		t.Error("IdentitiesOnly must show the full GSSH-01 explanation")
 	}
-	if !strings.Contains(regionFlat(a, 44, 100), "This is advisory, never a compliance gate.") {
+	if !strings.Contains(regionFlat(a, 45, 100), "This is advisory, never a compliance gate.") {
 		t.Error("advisory note missing (never blocking)")
 	}
 	// Moving the selection updates the detail live.
@@ -102,7 +103,7 @@ func TestGlobalSSHApplySubsetMarksAppliedAndShowsDeclined(t *testing.T) {
 	// gitid — <one-liner>" (IdentitiesOnly always shows the deep-dive, so
 	// move the selection up to HashKnownHosts).
 	a, _ = press(t, a, "up")
-	if !strings.Contains(regionFlat(a, 44, 100), "Applied by gitid — Hashing known_hosts") {
+	if !strings.Contains(regionFlat(a, 45, 100), "Applied by gitid — Hashing known_hosts") {
 		t.Error("applied keys must render the Applied-by-gitid overlay one-liner")
 	}
 	// ForwardAgent is still pending.
@@ -129,7 +130,7 @@ func TestGlobalSSHStoragePreviewsSwitchAndMigrateRoundTrips(t *testing.T) {
 	a := gssApp(t)
 	a, _ = press(t, a, "right") // → Storage & preview
 	view := appView(a)
-	if !strings.Contains(regionFlat(a, 0, 45), "Sentinel blocks in ~/.ssh/config (default) — current") {
+	if !strings.Contains(regionFlat(a, 0, 44), "Sentinel blocks in ~/.ssh/config (default) — current") {
 		t.Error("sentinel radio with current marker missing")
 	}
 	if !strings.Contains(view, "sentinel blocks in place") && !strings.Contains(view, "sentinel-delimited") {
@@ -199,5 +200,24 @@ func TestGlobalSSHSpaceToggleIsCopyOnWrite(t *testing.T) {
 	}
 	if !orig["HashKnownHosts"] {
 		t.Error("Elm purity: the toggle mutated the map shared with the pre-update model copy")
+	}
+}
+
+func TestGlobalSSHLongExplanationClipsWithVisibleCue(t *testing.T) {
+	// IdentitiesOnly (the initial detail) carries the long GSSH-01
+	// explanation — at 100x30 it cannot fully fit, and the overflow must be
+	// announced, never silently cut mid-sentence (H3).
+	a := gssApp(t)
+	view := appView(a)
+	if !strings.Contains(view, "When IdentitiesOnly is not set") {
+		t.Fatal("IdentitiesOnly explanation missing")
+	}
+	if !regexp.MustCompile(`… \(\+\d+ more lines\)`).MatchString(view) {
+		t.Error("clipped explanation must render the `… (+n more lines)` cue (H3)")
+	}
+	// A short one-liner detail shows no cue.
+	a, _ = press(t, a, "up") // → HashKnownHosts
+	if regexp.MustCompile(`… \(\+\d+ more lines\)`).MatchString(appView(a)) {
+		t.Error("short detail must not render a clip cue")
 	}
 }
