@@ -20,6 +20,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Global SSH sub-tabs.
@@ -374,12 +375,20 @@ func gssOptionsTopLines(s DemoState) int {
 	return lines
 }
 
-// handleClick implements mouseTarget (browse mode only — ceremonies stay
-// keyboard-driven): body line 0 is the sub-tab strip, where a click on
-// either label switches sub-tabs; on the Options sub-tab a click on an
-// option row (either of its two lines) selects it.
-func (m globalSSHModel) handleClick(x, y, width int, s DemoState) keyResult {
+// handleClick implements mouseTarget: body line 0 is the sub-tab strip,
+// where a click on either label switches sub-tabs; on the Options sub-tab a
+// click on an option row's checkbox glyph TOGGLES it like space (web
+// Checkbox onClick stopPropagation) while a click elsewhere in the row
+// selects it; on the Storage sub-tab a click on a radio row selects that
+// layout and the Migrate button dispatches Enter. Ceremony buttons click
+// through the shared ceremony zones.
+func (m globalSSHModel) handleClick(x, y, width, height int, s DemoState) keyResult {
 	if m.mode != gssBrowse {
+		body := m.view(s, width, height).body
+		if next, key, ok := ceremonyClickKey(m.ceremony, body, x, y); ok {
+			m.ceremony = next
+			return m.handleKey(key, s)
+		}
 		return keyResult{model: m}
 	}
 	if y == 0 { // the sub-tab strip: " " + options label + " " + storage label
@@ -398,7 +407,10 @@ func (m globalSSHModel) handleClick(x, y, width int, s DemoState) keyResult {
 		}
 		return keyResult{model: m}
 	}
-	if m.subTab != gssOptions || x >= masterListWidth(width) || y < gssOptionsTopLines(s) {
+	if m.subTab == gssStorage {
+		return m.handleStorageClick(x, y, width, height, s)
+	}
+	if x >= masterListWidth(width) || y < gssOptionsTopLines(s) {
 		return keyResult{model: m}
 	}
 	options := overlaidOptions(s)
@@ -406,8 +418,47 @@ func (m globalSSHModel) handleClick(x, y, width int, s DemoState) keyResult {
 	if row >= len(options) {
 		return keyResult{model: m}
 	}
+	if options[row].NeedsAction && m.clickOnCheckbox(x, y, width, height, s) {
+		// The checkbox cell toggles THAT row without moving the selection
+		// (GlobalSsh.tsx:185 — Checkbox onClick stops propagation).
+		m.chosen = withToggled(m.chosen, options[row].Key)
+		return keyResult{model: m, handled: true}
+	}
 	m.detailKey = options[row].Key
 	return keyResult{model: m, handled: true}
+}
+
+// clickOnCheckbox reports whether the click falls on the ☐/☑ checkbox cell
+// of the rendered body line — the glyph span is derived from the drawn row,
+// never from column math.
+func (m globalSSHModel) clickOnCheckbox(x, y, width, height int, s DemoState) bool {
+	body := m.view(s, width, height).body
+	return hitNeedle(body, x, y, "☐") || hitNeedle(body, x, y, "☑")
+}
+
+// handleStorageClick resolves Storage & preview clicks: radio rows select a
+// layout; the Migrate button walks the STORE-03 ceremony via its key.
+func (m globalSSHModel) handleStorageClick(x, y, width, height int, s DemoState) keyResult {
+	body := m.view(s, width, height).body
+	if hitNeedle(body, x, y, " Migrate layout… (Enter) ") {
+		return m.handleKey(mustKey("Enter"), s)
+	}
+	if x >= masterListWidth(width) {
+		return keyResult{model: m}
+	}
+	line, ok := blockLine(body, y)
+	if !ok {
+		return keyResult{model: m}
+	}
+	switch {
+	case strings.Contains(line, "Sentinel blocks in ~/.ssh/config"):
+		m.storageChoice = StorageSentinel
+		return keyResult{model: m, handled: true}
+	case strings.Contains(line, "gitid-owned ~/.ssh/config.d"):
+		m.storageChoice = StorageInclude
+		return keyResult{model: m, handled: true}
+	}
+	return keyResult{model: m}
 }
 
 // findingsBanner renders the "doctor found N findings beyond…" banner for
@@ -462,9 +513,11 @@ func optionRow(key, current, recommended, risk string, needsAction, chosen, sele
 	return truncLine(line1, width) + "\n" + truncLine(line2, width)
 }
 
-// truncLine hard-truncates a styled line to width cells.
+// truncLine truncates a styled line to width cells with a visible `…` cue
+// when it clips — master-list values (the `now: …` lines) must never
+// hard-clip silently (UX re-verification R2).
 func truncLine(line string, width int) string {
-	return lipgloss.NewStyle().MaxWidth(width).Render(line)
+	return ansi.Truncate(line, width, "…")
 }
 
 // view implements screenModel.
@@ -487,10 +540,12 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 
 	var body string
 	var actions []FooterAction
+	capturesKeys := false
 	switch m.mode {
 	case gssApplyCeremony, gssStorageCeremony:
 		body = m.subTabStrip() + "\n" + m.ceremony.view(width-2)
 		actions = []FooterAction{{Key: "Esc", Label: "cancel"}}
+		capturesKeys = true // the ceremony consumes every plain key
 	case gssBrowse:
 		if m.subTab == gssOptions {
 			body = m.renderOptions(s, options, width, height)
@@ -513,13 +568,14 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 			}
 		}
 	}
-	return screenView{body: body, crumbs: []string{crumb}, status: status, statusTone: tone, actions: actions}
+	return screenView{body: body, crumbs: []string{crumb}, status: status, statusTone: tone,
+		actions: actions, capturesKeys: capturesKeys}
 }
 
 // renderOptions renders the Options master-detail.
 func (m globalSSHModel) renderOptions(s DemoState, options []appliedOption, width, height int) string {
 	listWidth := masterListWidth(width)
-	detailWidth := width - listWidth - 1
+	detailWidth := width - listWidth - masterDetailGutter
 	rows := frameBodyRows(height) - gssOptionsTopLines(s)
 
 	var listRows []string
@@ -553,7 +609,7 @@ func (m globalSSHModel) renderOptions(s DemoState, options []appliedOption, widt
 // renderStorage renders the STORE-01 Storage & preview sub-tab.
 func (m globalSSHModel) renderStorage(s DemoState, width, height int) string {
 	leftWidth := masterListWidth(width)
-	rightWidth := width - leftWidth - 1
+	rightWidth := width - leftWidth - masterDetailGutter
 	rows := frameBodyRows(height) - 1 // the sub-tab strip line
 
 	current := func(layout SSHStorageLayout) string {

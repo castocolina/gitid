@@ -27,9 +27,11 @@ type screenView struct {
 	status     string
 	statusTone string
 	actions    []FooterAction
-	// inputFocused: a text input currently swallows plain keys — the frame
-	// renders the honest reserved footer (Esc/Ctrl+P only, L1).
-	inputFocused bool
+	// capturesKeys: the active pane state consumes plain keys (text inputs,
+	// selects, test/ceremony states, choosers) so `q` and `?` never reach
+	// the globals — the frame renders the honest reserved footer
+	// (Esc/Ctrl+P only; review batch 2 L1, batch 3 follow-up).
+	capturesKeys bool
 }
 
 // keyResult is what a screen's key/message handler returns: the updated
@@ -56,10 +58,11 @@ type screenModel interface {
 
 // mouseTarget is the optional click contract a screen implements: the App
 // forwards left clicks with body-relative coordinates (x = frame column,
-// y = 0 at the first body row) plus the frame width, so each screen
-// hit-tests against the same layout its view renders.
+// y = 0 at the first body row) plus the frame geometry, so each screen
+// hit-tests against the same layout its view renders (most re-render their
+// own view and locate the clicked control's span in it — batch-1 pattern).
 type mouseTarget interface {
-	handleClick(x, y, width int, s DemoState) keyResult
+	handleClick(x, y, width, height int, s DemoState) keyResult
 }
 
 // overlayKind is which app-level overlay (if any) owns the keys.
@@ -294,9 +297,10 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleMouse routes left clicks (spec §7 — every action is also a real
 // button): header tab labels switch views, the header health chip opens the
-// Doctor, and body clicks go to the active screen's mouseTarget handler
-// (sidebar/finding/option rows select; Global SSH sub-tab labels switch).
-// Overlays stay keyboard-driven; other buttons/mouse events are ignored.
+// Doctor, contextual footer hints dispatch their advertised key, and body
+// clicks go to the active screen's mouseTarget handler (rows select;
+// buttons/checkboxes/radios dispatch the same path as their key). Overlays
+// stay keyboard-driven; other buttons/mouse events are ignored.
 func (a App) handleMouse(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	if msg.Button != tea.MouseLeft || a.overlay != overlayNone {
 		return a, nil
@@ -313,22 +317,64 @@ func (a App) handleMouse(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	}
+	// The CONTEXTUAL footer line (row height-2: status · contextual ·
+	// reserved): clicking a `<key> <label>` hint dispatches the very key it
+	// advertises (Frame.tsx renders these as buttons with onActivate). The
+	// reserved line stays keyboard-only — its keys are global anyway.
+	if msg.Y == a.height-frameChromeBelow+1 {
+		sv := a.screens[a.tab].view(a.state, a.width, a.height)
+		if action, ok := footerActionAt(sv.actions, msg.X); ok {
+			if key, ok := synthKey(action.Key); ok {
+				return a.handleKey(key)
+			}
+		}
+		return a, nil
+	}
 	bodyY := msg.Y - frameBodyTop
 	if bodyY < 0 || bodyY >= a.height-frameBodyTop-frameChromeBelow {
-		return a, nil // breadcrumb, status, and footer rows are inert
+		return a, nil // breadcrumb, status, and reserved-footer rows are inert
 	}
 	target, ok := a.screens[a.tab].(mouseTarget)
 	if !ok {
 		return a, nil
 	}
 	a.note = ""
-	res := target.handleClick(msg.X, bodyY, a.width, a.state)
+	res := target.handleClick(msg.X, bodyY, a.width, a.height, a.state)
 	a.screens[a.tab] = res.model
 	a.apply(res.actions)
 	if res.note != "" {
 		a.note = res.note
 	}
 	return a, res.cmd
+}
+
+// synthKey converts a footer/button key hint into the tea.KeyMsg a real
+// keypress produces, so a click dispatches the exact same code path. Only
+// single-key hints synthesize; combined navigation hints ("↑↓", "Tab/↑↓",
+// "←→") are not one action and stay inert.
+func synthKey(key string) (tea.KeyMsg, bool) {
+	switch key {
+	case "Enter":
+		return tea.KeyPressMsg{Code: tea.KeyEnter}, true
+	case "Esc":
+		return tea.KeyPressMsg{Code: tea.KeyEscape}, true
+	case "space":
+		return tea.KeyPressMsg{Code: tea.KeySpace}, true
+	}
+	if runes := []rune(key); len(runes) == 1 {
+		return tea.KeyPressMsg{Code: runes[0], Text: key}, true
+	}
+	return nil, false
+}
+
+// mustKey is synthKey for hints the code itself supplies — every button
+// maps to a real key by construction.
+func mustKey(key string) tea.KeyMsg {
+	msg, ok := synthKey(key)
+	if !ok {
+		panic("mustKey: unmappable key hint " + key)
+	}
+	return msg
 }
 
 // paletteMatches filters the palette entries by the typed query.
@@ -366,27 +412,27 @@ func (a App) render() string {
 	crumbs := sv.crumbs
 	actions := sv.actions
 	body := sv.body
-	inputFocused := sv.inputFocused
+	capturesKeys := sv.capturesKeys
 
 	switch a.overlay {
 	case overlayHelp:
 		body = a.renderHelp()
 		crumbs = []string{"Help"}
 		actions = nil
-		inputFocused = false
+		capturesKeys = false
 	case overlayQuit:
 		body = a.renderQuitPrompt()
 		crumbs = []string{"Quit"}
 		actions = []FooterAction{{Key: "Enter", Label: "quit"}, {Key: "Esc", Label: "stay"}}
-		inputFocused = false
+		capturesKeys = false
 	case overlayPalette:
 		body = a.renderPalette()
 		crumbs = []string{"Palette"}
 		actions = []FooterAction{{Key: "Enter", Label: "open first match"}, {Key: "Esc", Label: "close"}}
-		inputFocused = true // the palette filter input swallows q and ?
+		capturesKeys = true // the palette filter input swallows q and ?
 	case overlayNone:
 	}
-	return RenderFrame(a.width, a.height, a.state, a.tab, crumbs, status, tone, actions, inputFocused, body)
+	return RenderFrame(a.width, a.height, a.state, a.tab, crumbs, status, tone, actions, capturesKeys, body)
 }
 
 // renderHelp renders the `?` overlay: the key map plus the full 8-state

@@ -228,6 +228,16 @@ func TestJoinMasterDetailDrawsFullHeightDivider(t *testing.T) {
 	if idx := strings.Index(lines[0], "│"); idx != 10 {
 		t.Errorf("divider column = %d, want exactly the master width (10) so hit-tests hold", idx)
 	}
+	// R1: the divider carries a one-space right gutter so wrapped detail
+	// lines never butt against it — detail starts at leftWidth +
+	// masterDetailGutter (rune-indexed: the │ glyph is multi-byte).
+	runes := []rune(lines[0])
+	if got := string(runes[10+masterDetailGutter : 10+masterDetailGutter+5]); got != "right" {
+		t.Errorf("detail cells = %q, want `right` at column %d (│ + gutter space)", got, 10+masterDetailGutter)
+	}
+	if runes[11] != ' ' {
+		t.Error("the cell right of the divider must be the gutter space (R1)")
+	}
 }
 
 func TestSeverityLabelLockedContract(t *testing.T) {

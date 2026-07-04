@@ -248,10 +248,26 @@ func (m doctorModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 // handleClick implements mouseTarget: a left click on a finding row (either
 // of its two lines) selects that finding. It walks the same groupFindings
 // layout the view renders — one group-label line, then two lines per
-// finding — so hit-testing cannot drift from the drawn list. Group labels,
-// the detail pane, the scanning state, and an open fix ceremony are inert.
-func (m doctorModel) handleClick(x, y, width int, s DemoState) keyResult {
-	if m.scanning || m.fixing || x >= masterListWidth(width) {
+// finding — so hit-testing cannot drift from the drawn list. The detail
+// pane's `f · Fix this…` button dispatches f, and an open fix ceremony's
+// buttons click through the shared ceremony zones. Group labels and the
+// scanning state are inert.
+func (m doctorModel) handleClick(x, y, width, height int, s DemoState) keyResult {
+	if m.scanning {
+		return keyResult{model: m}
+	}
+	if m.fixing {
+		body := m.view(s, width, height).body
+		if next, key, ok := ceremonyClickKey(m.ceremony, body, x, y); ok {
+			m.ceremony = next
+			return m.handleKey(key, s)
+		}
+		return keyResult{model: m}
+	}
+	if x >= masterListWidth(width) {
+		if hitNeedle(m.view(s, width, height).body, x, y, " f · Fix this… ") {
+			return m.handleKey(mustKey("f"), s)
+		}
 		return keyResult{model: m}
 	}
 	line := 0
@@ -312,7 +328,7 @@ func (m doctorModel) view(s DemoState, width, height int) screenView {
 	}
 
 	listWidth := masterListWidth(width)
-	detailWidth := width - listWidth - 1
+	detailWidth := width - listWidth - masterDetailGutter
 
 	var rows []string
 	for _, group := range groupFindings(ordered) {
@@ -368,7 +384,7 @@ func (m doctorModel) view(s DemoState, width, height int) screenView {
 
 	body := joinMasterDetail(list, listWidth, detailPane, bodyRows)
 	return screenView{body: body, crumbs: crumbs, status: status, statusTone: tone,
-		actions: actions, inputFocused: m.fixing && m.ceremony.inputFocused()}
+		actions: actions, capturesKeys: m.fixing}
 }
 
 // pluralS returns "s" for counts other than 1.

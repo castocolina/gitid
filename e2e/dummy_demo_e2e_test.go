@@ -23,6 +23,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -293,4 +294,55 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 	if len(created) > 0 {
 		t.Fatalf("DLV-05 violated — the demo created files under sandbox HOME:\n%s", strings.Join(created, "\n"))
 	}
+}
+
+// TestDummyDemo_MouseAndGitApply covers review batch 3 over the real PTY:
+// (a) one real SGR mouse click on the `4 Doctor` header tab (press+release
+// escape sequences, 1-based coords located in the DECODED frame — never
+// hardcoded columns) switches to the Doctor body, and (b) a Global Git
+// apply walk: tab 3 → space-toggle the selected row → `a` → ceremony
+// heading → Enter → receipt → Enter → applied status.
+func TestDummyDemo_MouseAndGitApply(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildDummyBinary(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, bin) //nolint:gosec // bin from BuildDummyBinary; no user input
+	cmd.Env = append(os.Environ(), "HOME="+home, "TERM=xterm-256color")
+
+	s := startPTYAt(t, cmd, dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	// ---- (a) real mouse click on the `4 Doctor` header tab ----
+	var col, row int // 1-based SGR coordinates of the tab label's `4`
+	last, ok := s.waitFor(8*time.Second, func(text string) bool {
+		for y, line := range strings.Split(text, "\n") {
+			if idx := strings.Index(line, "4 Doctor"); idx >= 0 {
+				col = len([]rune(line[:idx])) + 1
+				row = y + 1
+				return true
+			}
+		}
+		return false
+	})
+	if !ok {
+		t.Fatalf("mouse: `4 Doctor` tab label never rendered. Last frame:\n%s", last)
+	}
+	s.sendKey([]byte(fmt.Sprintf("\x1b[<0;%d;%dM", col, row)), keystrokeDelay) // SGR press
+	s.sendKey([]byte(fmt.Sprintf("\x1b[<0;%d;%dm", col, row)), keystrokeDelay) // SGR release
+	mustSee(t, s, "Health only diagnoses", "mouse: Doctor body after clicking the header tab")
+
+	// ---- (b) Global Git apply walk ----
+	s.sendKey([]byte("3"), keystrokeDelay)
+	mustSee(t, s, "Global Git › Options", "git apply: breadcrumb")
+	s.sendKey([]byte(" "), keystrokeDelay) // space unchooses the selected row
+	mustSee(t, s, "a apply 9 selected", "git apply: space toggled the selected row's checkbox")
+	s.sendKey([]byte("a"), keystrokeDelay)
+	mustSee(t, s, "Write baseline managed block to ~/.gitconfig", "git apply: ceremony heading")
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // confirm
+	mustSee(t, s, "Wrote →", "git apply: receipt")
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // done
+	mustSee(t, s, "Global git baseline applied", "git apply: applied status note")
 }

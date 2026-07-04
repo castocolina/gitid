@@ -45,6 +45,13 @@ const (
 // renderers and their click hit-testing.
 func masterListWidth(width int) int { return width * 44 / 100 }
 
+// masterDetailGutter is how many columns joinMasterDetail spends between the
+// master column and the detail pane: the │ divider plus one space of right
+// gutter so wrapped detail lines never butt against the divider (UX
+// re-verification R1). Every detail-pane width and click hit-test derives
+// from this same constant.
+const masterDetailGutter = 2
+
 // frameBodyRows is how many body rows RenderFrame gives a view at height.
 func frameBodyRows(height int) int { return height - frameBodyTop - frameChromeBelow }
 
@@ -79,9 +86,11 @@ var reservedFooter = []FooterAction{
 	{Key: "q", Label: "quit"},
 }
 
-// reservedFooterInput replaces the reserved keys while a text input is
-// focused — the input swallows `q` and `?`, so advertising them would lie
-// (review batch 2, L1). Esc and Ctrl+P still work from inside any input.
+// reservedFooterInput replaces the reserved keys while the active pane
+// state captures plain keys — text inputs, selects, test/ceremony states,
+// and choosers all swallow `q` and `?`, so advertising them would lie
+// (review batch 2 L1; batch 3 follow-up extends this beyond text inputs).
+// Esc and Ctrl+P still work from inside any of those states.
 var reservedFooterInput = []FooterAction{
 	{Key: "Esc", Label: "back"},
 	{Key: "Ctrl+P", Label: "palette"},
@@ -112,10 +121,11 @@ func sectionHeader(text string) string {
 // joinMasterDetail joins a master column and its detail pane with the
 // full-height vertical divider every master-detail screen shares (review
 // batch 2, H2 — the web outlines both panes as Paper cards). The divider
-// occupies the exact one-space gutter column the panes always kept
-// (leftWidth + 1 + detail), so click hit-testing against
-// masterListWidth/sidebarWidth is unchanged. rows is the divider height —
-// the body rows the master-detail region occupies.
+// column renders `│ ` — divider plus one space of right gutter so wrapped
+// detail continuation lines never butt against the divider (R1); the pair
+// occupies exactly masterDetailGutter columns (leftWidth + 2 + detail), the
+// same budget every detail-width computation and click hit-test uses. rows
+// is the divider height — the body rows the master-detail region occupies.
 func joinMasterDetail(left string, leftWidth int, detail string, rows int) string {
 	if rows < 1 {
 		rows = 1
@@ -123,7 +133,7 @@ func joinMasterDetail(left string, leftWidth int, detail string, rows int) strin
 	leftCol := lipgloss.NewStyle().Width(leftWidth).Height(rows).Render(left)
 	div := make([]string, rows)
 	for i := range div {
-		div[i] = styleFaint.Render("│")
+		div[i] = styleFaint.Render("│") + " "
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftCol, strings.Join(div, "\n"), detail)
 }
@@ -269,6 +279,55 @@ func renderFooterLine(width int, actions []FooterAction) string {
 	return ansi.Truncate(" "+strings.Join(parts, styleFaint.Render(" · ")), width, "…")
 }
 
+// footerActionAt resolves which footer action covers column x on a keybar
+// line, deriving each `<key> <label>` span from the exact strings
+// renderFooterLine renders (spec §7 — footer hints are real buttons in the
+// web demo, Frame.tsx onActivate).
+func footerActionAt(actions []FooterAction, x int) (FooterAction, bool) {
+	cursor := 1 // the leading space
+	for _, a := range actions {
+		w := ansi.StringWidth(a.Key + " " + a.Label)
+		if x >= cursor && x < cursor+w {
+			return a, true
+		}
+		cursor += w + ansi.StringWidth(" · ")
+	}
+	return FooterAction{}, false
+}
+
+// blockLine returns the plain (ANSI-stripped) text of line y inside a
+// rendered block, or false when the block has no such line.
+func blockLine(block string, y int) (string, bool) {
+	lines := strings.Split(block, "\n")
+	if y < 0 || y >= len(lines) {
+		return "", false
+	}
+	return ansi.Strip(lines[y]), true
+}
+
+// needleSpan locates needle inside a plain line and returns its display-cell
+// span [start, start+width). Spans are derived from rendered text so click
+// zones can never drift from what is drawn (batch-1 pattern).
+func needleSpan(plainLine, needle string) (start, width int, ok bool) {
+	idx := strings.Index(plainLine, needle)
+	if idx < 0 {
+		return 0, 0, false
+	}
+	return ansi.StringWidth(plainLine[:idx]), ansi.StringWidth(needle), true
+}
+
+// hitNeedle reports whether cell (x, y) — coordinates relative to the
+// block's top-left — falls on the first occurrence of needle on that line
+// of the rendered (possibly ANSI-styled and Width-wrapped) block.
+func hitNeedle(block string, x, y int, needle string) bool {
+	line, ok := blockLine(block, y)
+	if !ok {
+		return false
+	}
+	start, width, ok := needleSpan(line, needle)
+	return ok && x >= start && x < start+width
+}
+
 // statusToneStyle maps a status tone name to its style.
 func statusToneStyle(tone string) lipgloss.Style {
 	switch tone {
@@ -286,9 +345,9 @@ func statusToneStyle(tone string) lipgloss.Style {
 // RenderFrame composes the full §1 chrome around body at width x height:
 // header row, faint breadcrumb line, the body (clipped/padded to fit), a
 // transient status line, and the two footer keybar lines (contextual
-// actions, then the reserved keys — the honest input variant while a text
-// input is focused). Pure function — safe to unit test.
-func RenderFrame(width, height int, s DemoState, tab tabID, crumbs []string, status, statusTone string, actions []FooterAction, inputFocused bool, body string) string {
+// actions, then the reserved keys — the honest variant while the pane
+// captures plain keys). Pure function — safe to unit test.
+func RenderFrame(width, height int, s DemoState, tab tabID, crumbs []string, status, statusTone string, actions []FooterAction, capturesKeys bool, body string) string {
 	if width < minFrameWidth || height < minFrameHeight {
 		return fmt.Sprintf("Terminal too small — resize to at least %dx%d", minFrameWidth, minFrameHeight)
 	}
@@ -298,7 +357,7 @@ func RenderFrame(width, height int, s DemoState, tab tabID, crumbs []string, sta
 	statusLine := " " + statusToneStyle(statusTone).Render(ansi.Truncate(status, width-2, "…"))
 	footerContextual := renderFooterLine(width, actions)
 	reserved := reservedFooter
-	if inputFocused {
+	if capturesKeys {
 		reserved = reservedFooterInput
 	}
 	footerReserved := renderFooterLine(width, reserved)

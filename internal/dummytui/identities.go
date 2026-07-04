@@ -129,6 +129,15 @@ const (
 	sshFieldPort
 )
 
+// editFocusButton is the edit-SSH pane's extra focus slot: the `Rewrite
+// Host block…` button after the three editable fields (batch 3 — the web's
+// native Tab reaches every button).
+const editFocusButton = sshFieldPort + 1
+
+// editFocusRing is the edit-SSH Tab ring size (host, hostname, port,
+// button).
+const editFocusRing = 4
+
 // sshForm is the shared SSH field set.
 type sshForm struct {
 	provider textinput.Model
@@ -362,6 +371,14 @@ const (
 	gitFocusSkip
 	gitFocusContinue
 	wizardGitFocusSlots // ring size: 3 fields + 3 buttons
+)
+
+// gitPaneFocusButton is the configure-Git pane's extra focus slot: the
+// `Write it…` button after the three fields (batch 3 — Tab reaches every
+// button); its ring size is gitPaneFocusRing.
+const (
+	gitPaneFocusButton = gitFieldStrategy + 1
+	gitPaneFocusRing   = 4
 )
 
 // matchStrategies are the includeIf strategies in select order.
@@ -695,15 +712,18 @@ type identitiesModel struct {
 	editFocus    int
 	editCeremony ceremonyModel
 
-	gitPaneForm  gitForm
-	gitFocus     int
-	gitCeremony  ceremonyModel
-	gitExisting  bool
-	deleteScope  string
-	deleteCerem  ceremonyModel
-	cloneInput   textinput.Model
-	fixFindingID string
-	fixCeremony  ceremonyModel
+	gitPaneForm gitForm
+	gitFocus    int
+	gitCeremony ceremonyModel
+	gitExisting bool
+	deleteScope string
+	deleteCerem ceremonyModel
+	cloneInput  textinput.Model
+	// cloneOnButton: the clone pane's 2-slot focus ring sits on the Clone
+	// button instead of the name input (batch 3 focus-ring parity).
+	cloneOnButton bool
+	fixFindingID  string
+	fixCeremony   ceremonyModel
 }
 
 // newIdentitiesModel starts on the first seeded row's detail.
@@ -828,6 +848,7 @@ func (m identitiesModel) handleDetailKey(msg tea.KeyMsg, s DemoState) keyResult 
 		m.pane = paneClone
 		m.cloneInput = newTextInput(sel.Name + "-clone")
 		m.cloneInput.Focus()
+		m.cloneOnButton = false
 		return keyResult{model: m, handled: true}
 	case "d":
 		if !ok {
@@ -941,18 +962,23 @@ func (m identitiesModel) handleEditKey(msg tea.KeyMsg, s DemoState) keyResult {
 		m.pane = paneDetail
 		return keyResult{model: m, handled: true}
 	case "enter":
+		// Enter on a field falls through to the primary action (web
+		// parity); Enter on the focused Rewrite button activates it — the
+		// same ceremony either way.
 		m.editCeremony = m.editCeremonyFor(sel)
 		m.pane = paneEditCeremony
 		return keyResult{model: m, handled: true}
 	case "tab", "down":
-		m.editFocus = sshFieldHost + (m.editFocus-sshFieldHost+1)%3
+		m.editFocus = sshFieldHost + (m.editFocus-sshFieldHost+1)%editFocusRing
 		m.editForm = m.editForm.setFocus(m.editFocus)
 		return keyResult{model: m, handled: true}
 	case "shift+tab", "up":
-		m.editFocus = sshFieldHost + (m.editFocus-sshFieldHost+2)%3
+		m.editFocus = sshFieldHost + (m.editFocus-sshFieldHost+editFocusRing-1)%editFocusRing
 		m.editForm = m.editForm.setFocus(m.editFocus)
 		return keyResult{model: m, handled: true}
 	default:
+		// ←/→ on the single Rewrite button have no adjacent button to move
+		// to; fields keep them for the input cursor via handleEdit.
 		m.editForm = m.editForm.handleEdit(msg, m.editFocus)
 		return keyResult{model: m, handled: true}
 	}
@@ -1024,17 +1050,19 @@ func (m identitiesModel) handleGitKey(msg tea.KeyMsg, s DemoState) keyResult {
 		m.pane = paneDetail
 		return keyResult{model: m, handled: true}
 	case "enter":
+		// Enter on a field falls through to the primary action; Enter on
+		// the focused Write-it button activates the same path.
 		if m.gitPaneForm.valid() {
 			m.gitCeremony = m.gitCeremonyFor(sel)
 			m.pane = paneGitCeremony
 		}
 		return keyResult{model: m, handled: true}
 	case "tab", "down":
-		m.gitFocus = (m.gitFocus + 1) % 3
+		m.gitFocus = (m.gitFocus + 1) % gitPaneFocusRing
 		m.gitPaneForm = m.gitPaneForm.setFocus(m.gitFocus)
 		return keyResult{model: m, handled: true}
 	case "shift+tab", "up":
-		m.gitFocus = (m.gitFocus + 2) % 3
+		m.gitFocus = (m.gitFocus + gitPaneFocusRing - 1) % gitPaneFocusRing
 		m.gitPaneForm = m.gitPaneForm.setFocus(m.gitFocus)
 		return keyResult{model: m, handled: true}
 	default:
@@ -1044,12 +1072,23 @@ func (m identitiesModel) handleGitKey(msg tea.KeyMsg, s DemoState) keyResult {
 }
 
 // handleCloneKey drives the clone pane (no ceremony, matching the web).
+// The 2-slot focus ring is name input ↔ Clone button; Enter on the input
+// keeps its primary-action fall-through (clone), Enter on the button
+// activates the same path.
 func (m identitiesModel) handleCloneKey(msg tea.KeyMsg, s DemoState) keyResult {
 	sel, _ := m.selectedIdentity(s)
 	name := m.cloneInput.Value()
 	switch msg.String() {
 	case "esc":
 		m.pane = paneDetail
+		return keyResult{model: m, handled: true}
+	case "tab", "shift+tab":
+		m.cloneOnButton = !m.cloneOnButton
+		if m.cloneOnButton {
+			m.cloneInput.Blur()
+		} else {
+			m.cloneInput.Focus()
+		}
 		return keyResult{model: m, handled: true}
 	case "enter":
 		if strings.TrimSpace(name) == "" || hasIdentityNamed(s, name) {
@@ -1061,7 +1100,11 @@ func (m identitiesModel) handleCloneKey(msg tea.KeyMsg, s DemoState) keyResult {
 			note:    `Identity "` + name + `" cloned from "` + sel.Name + `".`,
 			actions: []Action{CloneIdentity{Source: sel.Name, CloneName: name}}}
 	default:
-		m.cloneInput, _ = updateInput(m.cloneInput, msg)
+		// ←/→ on the single Clone button have no adjacent button; typing
+		// only reaches the name input while it is the focused slot.
+		if !m.cloneOnButton {
+			m.cloneInput, _ = updateInput(m.cloneInput, msg)
+		}
 		return keyResult{model: m, handled: true}
 	}
 }
@@ -1119,7 +1162,9 @@ func (m identitiesModel) handleDeleteKey(msg tea.KeyMsg, s DemoState) keyResult 
 		switch key {
 		case "esc":
 			m.pane = paneDetail
-		case "up", "down":
+		case "up", "down", "tab", "shift+tab", "left", "right":
+			// The two scope options ARE the focus ring (batch 3): Tab and
+			// ←/→ move it exactly like ↑/↓.
 			if m.deleteScope == "git-only" {
 				m.deleteScope = "everything"
 			} else {
@@ -1316,6 +1361,20 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			w.git = w.git.setFocus(w.gitFocus)
 			m.wizard = w
 			return keyResult{model: m, handled: true}
+		case "left", "right":
+			// On a button slot ←/→ move between adjacent buttons like
+			// Tab/Shift+Tab (batch 3); fields keep them (strategy select,
+			// input cursors) via handleEdit below.
+			if w.gitFocus >= gitFocusBack {
+				delta := 1
+				if key == "left" {
+					delta = 2 // -1 mod 3 within the button trio
+				}
+				w.gitFocus = gitFocusBack + (w.gitFocus-gitFocusBack+delta)%3
+				m.wizard = w
+				return keyResult{model: m, handled: true}
+			}
+			fallthrough
 		default:
 			w.git = w.git.handleEdit(msg, w.gitFocus)
 			m.wizard = w
@@ -1360,20 +1419,149 @@ const (
 	sidebarRowLines    = 2 // head line + faint note line per identity
 )
 
-// handleClick implements mouseTarget: a left click on a sidebar row (either
+// handleClick implements mouseTarget. A left click on a sidebar row (either
 // of its two lines) selects that identity — detail mode only; while a
 // form/ceremony pane is open the sidebar is dimmed and inert, exactly like
-// the keyboard model. The detail pane's controls stay keyboard-driven.
-func (m identitiesModel) handleClick(x, y, width int, s DemoState) keyResult {
-	if m.pane != paneDetail || x >= sidebarWidth(width) || y < sidebarLegendLines {
+// the keyboard model. Clicks right of the divider hit-test the pane's
+// button controls against the very body this model renders (batch-1
+// pattern: zones derive from rendered strings) and dispatch the same key
+// path the button advertises.
+func (m identitiesModel) handleClick(x, y, width, height int, s DemoState) keyResult {
+	if x < sidebarWidth(width) {
+		if m.pane != paneDetail || y < sidebarLegendLines {
+			return keyResult{model: m}
+		}
+		row := (y - sidebarLegendLines) / sidebarRowLines
+		if row >= len(s.Identities) {
+			return keyResult{model: m}
+		}
+		m.selected = s.Identities[row].Name
+		return keyResult{model: m, handled: true}
+	}
+
+	body := m.view(s, width, height).body
+	switch m.pane {
+	case paneDetail:
+		return m.handleDetailClick(body, x, y, s)
+	case paneCreate:
+		return m.handleWizardClick(body, x, y, s)
+	case paneEditSSH:
+		if hitNeedle(body, x, y, " "+identEditRewriteButton+" ") {
+			return m.handleEditKey(mustKey("Enter"), s)
+		}
+	case paneEditCeremony:
+		if next, key, ok := ceremonyClickKey(m.editCeremony, body, x, y); ok {
+			m.editCeremony = next
+			return m.handleEditKey(key, s)
+		}
+	case paneGit:
+		if hitNeedle(body, x, y, " "+identGitWriteButton+" ") {
+			return m.handleGitKey(mustKey("Enter"), s)
+		}
+	case paneGitCeremony:
+		if next, key, ok := ceremonyClickKey(m.gitCeremony, body, x, y); ok {
+			m.gitCeremony = next
+			return m.handleGitKey(key, s)
+		}
+	case paneClone:
+		if hitNeedle(body, x, y, " "+identCloneButton+" ") {
+			return m.handleCloneKey(mustKey("Enter"), s)
+		}
+	case paneDeleteScope:
+		// Clicking a scope row chooses that scope (radio semantics).
+		if line, ok := blockLine(body, y); ok {
+			if strings.Contains(line, IdentityManagerDeleteChoiceGitOnly) {
+				m.deleteScope = "git-only"
+				return keyResult{model: m, handled: true}
+			}
+			if strings.Contains(line, IdentityManagerDeleteChoiceEverything) {
+				m.deleteScope = "everything"
+				return keyResult{model: m, handled: true}
+			}
+		}
+	case paneDelete:
+		if next, key, ok := ceremonyClickKey(m.deleteCerem, body, x, y); ok {
+			m.deleteCerem = next
+			return m.handleDeleteKey(key, s)
+		}
+	case paneFix:
+		if next, key, ok := ceremonyClickKey(m.fixCeremony, body, x, y); ok {
+			m.fixCeremony = next
+			return m.handleFixKey(key, s)
+		}
+	}
+	return keyResult{model: m}
+}
+
+// handleDetailClick resolves detail-pane clicks: the `[Configure now (g)]`
+// button dispatches g, and a per-finding `Fix…` opens THAT finding's fix
+// ceremony (the row's rendered line carries its title).
+func (m identitiesModel) handleDetailClick(body string, x, y int, s DemoState) keyResult {
+	sel, ok := m.selectedIdentity(s)
+	if !ok {
 		return keyResult{model: m}
 	}
-	row := (y - sidebarLegendLines) / sidebarRowLines
-	if row >= len(s.Identities) {
-		return keyResult{model: m}
+	if hitNeedle(body, x, y, identConfigureNowLabel) {
+		return m.handleDetailKey(mustKey("g"), s)
 	}
-	m.selected = s.Identities[row].Name
-	return keyResult{model: m, handled: true}
+	if hitNeedle(body, x, y, identFixLinkLabel) {
+		line, _ := blockLine(body, y)
+		for _, f := range FindingsFor(s, sel.Name) {
+			if f.SuggestedFix != "" && strings.Contains(line, f.Title) {
+				m.pane = paneFix
+				m.fixFindingID = f.ID
+				m.fixCeremony = fixCeremonyFor(f)
+				return keyResult{model: m, handled: true}
+			}
+		}
+	}
+	return keyResult{model: m}
+}
+
+// handleWizardClick resolves the wizard's per-step button clicks.
+func (m identitiesModel) handleWizardClick(body string, x, y int, s DemoState) keyResult {
+	w := m.wizard
+	switch w.step {
+	case 1:
+		for _, needle := range []string{
+			" Run stage 1 (Enter) ", " Retry (Enter) ",
+			" Run stage 2 (Enter) ", " Next: Git identity (Enter) ",
+		} {
+			if hitNeedle(body, x, y, needle) {
+				return m.handleWizardKey(mustKey("Enter"), s)
+			}
+		}
+		if hitNeedle(body, x, y, "simulate a provider failure") {
+			return m.handleWizardKey(mustKey("space"), s)
+		}
+		if hitNeedle(body, x, y, "Copy public key") {
+			return m.handleWizardKey(mustKey("c"), s)
+		}
+	case 2:
+		buttons := []struct {
+			needle string
+			slot   int
+		}{
+			{" " + wizardBackButton + " ", gitFocusBack},
+			{" " + wizardSkipButton + " ", gitFocusSkip},
+			{" " + wizardContinueButton + " ", gitFocusContinue},
+		}
+		for _, b := range buttons {
+			if hitNeedle(body, x, y, b.needle) {
+				// Click = focus that button, then activate it — the same
+				// Enter path the keyboard uses.
+				m.wizard.gitFocus = b.slot
+				m.wizard.git = m.wizard.git.setFocus(b.slot)
+				return m.handleWizardKey(mustKey("Enter"), s)
+			}
+		}
+	case 3:
+		if next, key, ok := ceremonyClickKey(w.ceremony, body, x, y); ok {
+			m.wizard.ceremony = next
+			return m.handleWizardKey(key, s)
+		}
+	}
+	return keyResult{model: m}
 }
 
 // renderSidebar renders the identity list: inline legend, then one row per
@@ -1474,7 +1662,7 @@ func (m identitiesModel) renderDetail(s DemoState, sel DemoIdentity) string {
 		b.WriteString(signing + "\n")
 	} else {
 		b.WriteString("   " + styleWarning.Render("! Git not configured — no fabricated values shown.") +
-			"  " + styleBold.Render("[Configure now (g)]") + "\n")
+			"  " + styleBold.Render(identConfigureNowLabel) + "\n")
 	}
 	b.WriteString(baselineStrip(s) + "\n")
 
@@ -1486,7 +1674,7 @@ func (m identitiesModel) renderDetail(s DemoState, sel DemoIdentity) string {
 		for _, f := range findings {
 			fix := styleFaint.Render("info only")
 			if f.SuggestedFix != "" {
-				fix = styleBold.Render("f") + " " + styleFaint.Render("Fix…")
+				fix = styleBold.Render("f") + " " + styleFaint.Render(identFixLinkLabel)
 			}
 			b.WriteString("   " + severityLabel(f.Severity) + "  " + f.Title + "  " + fix + "\n")
 		}
@@ -1494,6 +1682,19 @@ func (m identitiesModel) renderDetail(s DemoState, sel DemoIdentity) string {
 	}
 	return b.String()
 }
+
+// Button labels shared by the renderers and the click hit-tests (batch 3 —
+// zones derive from the exact rendered strings, never magic numbers).
+const (
+	identEditRewriteButton = "Rewrite Host block… (Enter)"
+	identGitWriteButton    = "Write it… (Enter)"
+	identCloneButton       = "Clone (Enter)"
+	identConfigureNowLabel = "[Configure now (g)]"
+	identFixLinkLabel      = "Fix…"
+	wizardBackButton       = "Back (Esc)"
+	wizardSkipButton       = "Skip — SSH only (identity stays incomplete)"
+	wizardContinueButton   = "Continue: review & write (Enter)"
+)
 
 // wizardButton renders one focusable wizard control: reverse-video when
 // focused (the same focus treatment the ceremony buttons carry), bold when
@@ -1616,10 +1817,10 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 	case 2:
 		b.WriteString(w.git.view(w.form.identityName(), w.keyPath(), w.gitFocus, width, baselineStripCompact(s, width)))
 		// The web's three REAL buttons (M2), reachable via the Tab ring;
-		// Back+Skip share a row so all three fit the 63-col pane.
-		b.WriteString(" " + wizardButton("Back (Esc)", w.gitFocus == gitFocusBack, true) + " " +
-			wizardButton("Skip — SSH only (identity stays incomplete)", w.gitFocus == gitFocusSkip, true) + "\n")
-		b.WriteString(" " + wizardButton("Continue: review & write (Enter)", w.gitFocus == gitFocusContinue, w.git.valid()))
+		// Back+Skip share a row so all three fit the 62-col pane.
+		b.WriteString(" " + wizardButton(wizardBackButton, w.gitFocus == gitFocusBack, true) + " " +
+			wizardButton(wizardSkipButton, w.gitFocus == gitFocusSkip, true) + "\n")
+		b.WriteString(" " + wizardButton(wizardContinueButton, w.gitFocus == gitFocusContinue, w.git.valid()))
 	default:
 		b.WriteString(w.ceremony.view(width))
 	}
@@ -1637,7 +1838,7 @@ func orDefault(s, fallback string) string {
 func (m identitiesModel) view(s DemoState, width, height int) screenView {
 	sel, _ := m.selectedIdentity(s)
 	sbWidth := sidebarWidth(width)
-	detailWidth := width - sbWidth - 1
+	detailWidth := width - sbWidth - masterDetailGutter
 
 	var body string
 	var crumbs []string
@@ -1667,13 +1868,14 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 		status = "Esc returns to the identity detail without writing anything."
 	case paneEditSSH:
 		// The SAME live preview the create wizard renders, rebuilt on every
-		// keystroke (M1) — the confirm ceremony stays the pane's next state.
+		// keystroke (M1) — the confirm ceremony stays the pane's next state
+		// (deviation #8: designer-arbitrated; the preview is inline).
 		editKeyPath := orDefault(sel.KeyPath, "~/.ssh/id_ed25519_"+sel.Name)
 		pane = " " + styleBold.Render("Edit SSH — "+sel.Name) + "\n" +
 			m.editForm.view(m.editFocus, "", "") +
 			renderHostBlockPreview(m.editForm.host.Value(), m.editForm.hostname.Value(),
 				m.editForm.port.Value(), editKeyPath, detailWidth) +
-			"\n\n " + styleSelected.Render(" Rewrite Host block… (Enter) ")
+			"\n\n " + wizardButton(identEditRewriteButton, m.editFocus == editFocusButton, true)
 		crumbs = []string{sel.Name, "Edit SSH"}
 		status = "Esc returns to the identity detail without writing anything."
 	case paneEditCeremony:
@@ -1687,7 +1889,7 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 		}
 		pane = " " + styleBold.Render("Git identity — "+sel.Name+suffix) + "\n" +
 			m.gitPaneForm.view(sel.Name, orDefault(sel.KeyPath, "~/.ssh/id_ed25519_"+sel.Name), m.gitFocus, detailWidth, baselineStripCompact(s, detailWidth)) +
-			" " + styleSelected.Render(" Write it… (Enter) ")
+			" " + wizardButton(identGitWriteButton, m.gitFocus == gitPaneFocusButton, m.gitPaneForm.valid())
 		crumbs = []string{sel.Name, "Configure Git"}
 		status = "Esc returns to the identity detail without writing anything."
 	case paneGitCeremony:
@@ -1700,25 +1902,30 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 		if taken {
 			helper = "That name already exists."
 		}
+		cloneValid := !taken && strings.TrimSpace(m.cloneInput.Value()) != ""
 		pane = " " + styleBold.Render(`Clone "`+sel.Name+`"`) + "\n" +
 			" " + styleFaint.Render("The clone gets its own new key and Host alias; the Git author is copied (MGR-04).") + "\n\n" +
-			formFieldLine("New identity name", m.cloneInput, true, false) + "\n" +
-			helperLine(helper, taken || strings.TrimSpace(m.cloneInput.Value()) == "") + "\n\n" +
-			" " + styleSelected.Render(" Clone (Enter) ")
+			formFieldLine("New identity name", m.cloneInput, !m.cloneOnButton, false) + "\n" +
+			helperLine(helper, !cloneValid) + "\n\n" +
+			" " + wizardButton(identCloneButton, m.cloneOnButton, cloneValid)
 		crumbs = []string{sel.Name, "Clone"}
 		status = "Esc returns to the identity detail without writing anything."
 	case paneDeleteScope:
-		gitOnly := "○ "
-		everything := "○ "
+		// The chosen scope IS the focused control (the 2-option ring):
+		// reverse-video marks it like every other focused button.
+		gitOnlyText := IdentityManagerDeleteChoiceGitOnly + " (safer — SSH stays)"
+		everythingText := IdentityManagerDeleteChoiceEverything + " — irreversible"
+		gitOnlyLine := "○ " + gitOnlyText
+		everythingLine := "○ " + styleError.Render(everythingText)
 		if m.deleteScope == "git-only" {
-			gitOnly = "● "
+			gitOnlyLine = "● " + styleSelected.Render(gitOnlyText)
 		} else {
-			everything = "● "
+			everythingLine = "● " + styleError.Reverse(true).Render(everythingText)
 		}
 		pane = " " + styleBold.Render(`Delete "`+sel.Name+`" — choose scope`) + "\n\n" +
-			"  " + gitOnly + IdentityManagerDeleteChoiceGitOnly + " (safer — SSH stays)\n" +
-			"  " + everything + styleError.Render(IdentityManagerDeleteChoiceEverything+" — irreversible") + "\n\n" +
-			" " + styleFaint.Render("↑↓ choose · Enter continue · Esc cancel")
+			"  " + gitOnlyLine + "\n" +
+			"  " + everythingLine + "\n\n" +
+			" " + styleFaint.Render("↑↓/Tab choose · Enter continue · Esc cancel")
 		crumbs = []string{sel.Name, "Delete"}
 		status = "Esc returns to the identity detail without writing anything."
 	case paneDelete:
@@ -1738,36 +1945,16 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 	body = joinMasterDetail(sidebar, sbWidth,
 		lipgloss.NewStyle().Width(detailWidth).Render(pane), frameBodyRows(height))
 	return screenView{body: body, crumbs: crumbs, status: status, statusTone: "info",
-		actions: actions, inputFocused: m.paneInputFocused()}
+		actions: actions, capturesKeys: m.paneCapturesKeys()}
 }
 
-// paneInputFocused reports whether the active pane currently focuses a
-// text input that swallows plain keys — the frame's reserved footer
-// renders its honest input variant then (review batch 2, L1).
-func (m identitiesModel) paneInputFocused() bool {
-	switch m.pane {
-	case paneCreate:
-		switch m.wizard.step {
-		case 0:
-			return m.wizard.focus <= sshFieldPort // 5 = the algorithm select
-		case 2:
-			return m.wizard.gitFocus <= gitFieldEmail // strategy + buttons are not inputs
-		case 3:
-			return m.wizard.ceremony.inputFocused()
-		}
-		return false // step 1 (test) has no inputs
-	case paneEditSSH, paneClone:
-		return true // every focus slot is a text input
-	case paneGit:
-		return m.gitFocus <= gitFieldEmail
-	case paneDelete:
-		return m.deleteCerem.inputFocused()
-	case paneFix:
-		return m.fixCeremony.inputFocused()
-	case paneDetail, paneEditCeremony, paneGitCeremony, paneDeleteScope:
-		return false // non-destructive ceremonies have no typed input
-	}
-	return false
+// paneCapturesKeys reports whether the active pane state consumes plain
+// keys, so the frame renders the honest reserved footer (Esc/Ctrl+P only).
+// Every non-detail pane does: forms and typed-confirm inputs swallow text,
+// and the wizard test step, selects, choosers, and ceremonies consume every
+// plain key too (batch 3 follow-up — q/? never reach the globals there).
+func (m identitiesModel) paneCapturesKeys() bool {
+	return m.pane != paneDetail
 }
 
 // wizardFooter renders the wizard's contextual footer hints per pane-state.

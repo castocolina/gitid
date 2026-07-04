@@ -79,7 +79,8 @@ func TestMouseClickBetweenHeaderTargetsIsInert(t *testing.T) {
 	if a.tab != tabIdentities {
 		t.Errorf("tab = %v after clicking header dead space, want Identities", a.tab)
 	}
-	// Breadcrumb / status / footer rows are inert too.
+	// Breadcrumb and RESERVED-footer rows are inert (the contextual footer
+	// line became clickable in batch 3 — covered by its own tests).
 	a, _ = clickAt(t, a, 2, 1)
 	a, _ = clickAt(t, a, 2, a.height-1)
 	if a.tab != tabIdentities {

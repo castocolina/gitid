@@ -121,6 +121,7 @@ Run the demo: `go build -o bin/gitid-dummy ./cmd/gitid-dummy && bin/gitid-dummy`
 5. **Descriptive field helpers render focused-only**; contract helpers (locked fields, prefix error/WYSIWYG, auto-join state) always render — keeps every wizard pane inside the 30-row frame.
 6. **Per-identity `Fix…` binds `f` to the first fixable finding** of the selected identity (the web has one button per finding row; identities carry at most one fixable finding in the seed, and the Doctor covers the general case).
 7. **Delete-scope is a pane state, not a modal** — the web renders the scope chooser (`Git identity only` vs `Everything`) as a Dialog overlay (Identities.tsx `scope-modal`); the TUI renders it as `paneDeleteScope` in the detail pane (↑↓ choose · Enter continue · Esc cancel) because the frame has no overlay layering for in-flow choices. Behavior is faithful: safer scope default-focused, Enter walks into the same typed-confirm delete ceremony (review batch 2, M3).
+8. **Edit-SSH confirm ceremony remains a second pane state** — the web renders MutationCeremony inline below the edit form; the TUI opens it as the pane's next state (Enter opens, Esc returns to the form). This split was EXPLICITLY arbitrated by the UI/UX designer review: *"Keep the confirm as the current second state if you like, but stop hiding the preview."* The preview half was fixed in batch 2 (M1 — the live Host-block preview now renders inline in the form pane, rebuilt on every keystroke), and the designer's re-verification passed the pane as resolved with the two-state ceremony intact. Recorded here so the cross-vendor reviewer's open question ("why is the ceremony not inline like the web?") is answered in writing: designer-arbitrated terminal adaptation, same §6 two-state semantics and copy.
 
 None of these change reducer behavior, action semantics, or the contractual copy the tests pin.
 
@@ -142,6 +143,19 @@ None of these change reducer behavior, action semantics, or the contractual copy
 6. **L2 — verbatim algorithm helper restored**: the wizard's key-algorithm helper carries the web's full copy including `(ssh-keygen, libfido2, FIDO2 key present?)` and `with the reason shown per option`, taken verbatim from Identities.tsx.
 7. **L3 — Doctor findings list dims during the fix ceremony** through the same shared `dimPane` path the Identities sidebar uses (web: opacity 0.75). Pinned by `TestDoctorListDimsDuringFixCeremony`.
 8. **L1 — footer honesty (implemented, not just documented)**: screens report `inputFocused` in their `screenView`; while a text input owns the keys (wizard SSH/author fields, edit-SSH, clone, destructive typed-confirm ceremonies, the Ctrl+P palette) the reserved footer renders `Esc back · Ctrl+P palette` only — it no longer advertises `q quit` / `? help` that the input would swallow. Pinned by `TestReservedFooterHonestWhileInputFocused`, `TestRenderFrameInputFocusedReservedFooterIsHonest`.
+
+### Code-review batch 3 fixes (cross-vendor review — full click-target and focus-ring parity)
+
+1. **Clickable contextual footer hints** — clicking a `<key> label` hint on the contextual footer line dispatches the exact key it advertises (Frame.tsx renders these as buttons with `onActivate`); combined navigation hints (`↑↓`, `←→`, `Tab/↑↓`) and the reserved line stay keyboard-only. Zones derive from the same strings `renderFooterLine` draws (`footerActionAt`).
+2. **Every visible button clicks** — wizard Back/Skip/Continue + test-step buttons and failure toggle, ceremony Cancel/Confirm/Done (shared `ceremonyClickKey`), edit-SSH Rewrite, `[Configure now (g)]`, per-finding `Fix…` (opens THAT finding), clone Clone, delete-scope rows, Storage radio rows + Migrate, Doctor `f · Fix this…`. All hit-test the rendered body (`hitNeedle`/`blockLine`/`needleSpan`) and dispatch the same key path.
+3. **Checkbox/radio click semantics** — clicking the `☐`/`☑` cell of a Global SSH/Git row toggles it like space without moving the selection (web Checkbox stopPropagation); clicking elsewhere selects; Storage radio rows select their layout.
+4. **Focus-ring parity** — edit-SSH (fields → Rewrite), configure-Git (fields → Write it), clone (input → Clone), delete-scope (the 2 options ARE the ring, Tab/←→ move it), ceremony state A (Tab toggles Cancel ↔ Confirm; Enter activates the focused control; Cancel default-focused rendering preserved, affirmative never default; Enter in the primary/typed-input state keeps its confirm fall-through — web `useLocalKeys` parity). ←/→ move button rings (wizard trio cycles).
+5. **R1 — divider right gutter**: `joinMasterDetail` renders `│ ` (masterDetailGutter = 2 columns); every detail width and hit-test rebudgeted (detail panes lose 1 column).
+6. **R2 — master-list `now:` values clip with a visible `…`** (`truncLine` via `ansi.Truncate`).
+7. **Honest reserved footer generalized** — `screenView.capturesKeys` (renamed from `inputFocused`) now covers every plain-key-consuming state: all non-detail Identities panes (wizard test step, algorithm select, button slots, choosers, ceremonies), Global SSH/Git ceremonies, Doctor fixing.
+8. **PTY e2e extended** — one real SGR mouse click on the `4 Doctor` header tab and a Global Git apply walk (tab 3 → space → `a` → ceremony → receipt) in `TestDummyDemo_MouseAndGitApply`.
+
+Pinned by the batch3_test.go suite (footer clicks, per-pane button clicks, checkbox/radio semantics, focus rings, footer honesty, R2) plus the updated frame/mouse tests.
 
 ## Known Stubs
 

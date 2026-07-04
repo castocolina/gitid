@@ -157,17 +157,34 @@ func gitTopLines(s DemoState) int {
 	return 0
 }
 
-// handleClick implements mouseTarget: a left click on an option row (either
-// of its two lines) selects it. The ceremony stays keyboard-driven; the
-// banner and the detail pane are inert.
-func (m globalGitModel) handleClick(x, y, width int, s DemoState) keyResult {
-	if m.ceremonyOpen || x >= masterListWidth(width) || y < gitTopLines(s) {
+// handleClick implements mouseTarget: a click on an option row's checkbox
+// glyph TOGGLES it like space (GlobalGit.tsx:127 — Checkbox onClick stops
+// propagation), a click elsewhere in the row selects it, and the ceremony's
+// buttons click through the shared ceremony zones. The banner and the
+// detail pane are inert.
+func (m globalGitModel) handleClick(x, y, width, height int, s DemoState) keyResult {
+	if m.ceremonyOpen {
+		body := m.view(s, width, height).body
+		if next, key, ok := ceremonyClickKey(m.ceremony, body, x, y); ok {
+			m.ceremony = next
+			return m.handleKey(key, s)
+		}
+		return keyResult{model: m}
+	}
+	if x >= masterListWidth(width) || y < gitTopLines(s) {
 		return keyResult{model: m}
 	}
 	options := overlaidGitOptions(s)
 	row := (y - gitTopLines(s)) / optionRowLines
 	if row >= len(options) {
 		return keyResult{model: m}
+	}
+	if options[row].NeedsAction {
+		body := m.view(s, width, height).body
+		if hitNeedle(body, x, y, "☐") || hitNeedle(body, x, y, "☑") {
+			m.chosen = withToggled(m.chosen, options[row].Key)
+			return keyResult{model: m, handled: true}
+		}
 	}
 	m.detailKey = options[row].Key
 	return keyResult{model: m, handled: true}
@@ -192,15 +209,16 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 
 	if m.ceremonyOpen {
 		return screenView{
-			body:    m.ceremony.view(width - 2),
-			crumbs:  []string{"Options"},
-			status:  status,
-			actions: []FooterAction{{Key: "Esc", Label: "cancel"}},
+			body:         m.ceremony.view(width - 2),
+			crumbs:       []string{"Options"},
+			status:       status,
+			actions:      []FooterAction{{Key: "Esc", Label: "cancel"}},
+			capturesKeys: true, // the ceremony consumes every plain key
 		}
 	}
 
 	listWidth := masterListWidth(width)
-	detailWidth := width - listWidth - 1
+	detailWidth := width - listWidth - masterDetailGutter
 	selIdx := m.gitDetailIndex(options)
 
 	var rows []string
