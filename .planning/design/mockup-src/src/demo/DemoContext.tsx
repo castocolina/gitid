@@ -1,50 +1,38 @@
 /**
- * Demo navigation + state context. The interactive demo is deliberately a
- * TUI-style state machine (a navigation STACK + reducer, no URL routing):
- * the HTML demo and internal/dummytui share the same mental model and the
- * same reserved key map (doc.go key-allocation table), so reviewing one
- * medium teaches the other.
+ * Demo context — 02-REDESIGN-SPEC.md frame model: FOUR top-level views in a
+ * persistent header nav (`1 Identities · 2 Global SSH · 3 Global Git ·
+ * 4 Doctor`); each view owns its internal pane states (wizard steps,
+ * ceremonies) locally. The footer is contextual-only; there is no
+ * navigation stack — tabs are direct, Esc backs out of in-pane states.
  */
 
-import { createContext, useContext, useEffect, type Dispatch, type ReactNode } from 'react';
-import type { KeybarEntry } from '../shell/Keybar';
-import Shell from '../shell/Shell';
-import type { StatusTone } from '../shell/StatusLine';
-import { healthRollup, type DemoAction, type DemoState } from './store';
+import { createContext, useContext, useEffect, type Dispatch } from 'react';
+import type { DemoAction, DemoState } from './store';
 
-export type SurfaceName =
-  | 'home'
-  | 'create'
-  | 'git-screen'
-  | 'identity'
-  | 'global-ssh'
-  | 'global-git'
-  | 'health'
-  | 'fixer';
+export type TabId = 'identities' | 'global-ssh' | 'global-git' | 'doctor';
 
-export interface Dest {
-  surface: SurfaceName;
-  params?: Record<string, string>;
-}
+export const TAB_ORDER: TabId[] = ['identities', 'global-ssh', 'global-git', 'doctor'];
+
+export const TAB_LABEL: Record<TabId, string> = {
+  identities: 'Identities',
+  'global-ssh': 'Global SSH',
+  'global-git': 'Global Git',
+  doctor: 'Doctor',
+};
 
 export type LocalKeyHandler = (key: string, event: KeyboardEvent) => boolean;
 
 export interface DemoContextValue {
   state: DemoState;
   dispatch: Dispatch<DemoAction>;
-  /** Push a destination onto the navigation stack. */
-  go: (dest: Dest) => void;
-  /** Pop the stack (Esc). No-op at the home screen. */
-  back: () => void;
-  /** Reset the stack to home (q). */
-  home: () => void;
+  tab: TabId;
+  setTab: (tab: TabId) => void;
   /** Bottom snackbar feedback ("identity deleted", "3 options applied"…). */
   notify: (message: string) => void;
   /**
-   * Screen-local key handler registration (j/k/Enter/wizard-Esc…).
-   * Handlers stack: the most recently registered (e.g. an open ceremony
-   * panel) sees keys first; returning `false` lets the key fall through to
-   * older handlers and finally the global map. Returns an unregister fn.
+   * Screen-local key handler registration. Handlers stack: the most
+   * recently registered (e.g. an open ceremony) sees keys first; returning
+   * `false` lets the key fall through. Returns an unregister fn.
    */
   registerLocalKeys: (handler: LocalKeyHandler) => () => void;
   openHelp: () => void;
@@ -59,47 +47,7 @@ export function useDemo(): DemoContextValue {
   return value;
 }
 
-/**
- * Register a screen-local key handler for the lifetime of the calling
- * screen. Handlers return `true` when they consumed the key; unconsumed
- * keys fall through to the global map (1..5, n, g, ?, q, Esc).
- */
 export function useLocalKeys(handler: LocalKeyHandler): void {
   const { registerLocalKeys } = useDemo();
   useEffect(() => registerLocalKeys(handler), [registerLocalKeys, handler]);
-}
-
-export interface LiveShellProps {
-  title: string;
-  statusMessage?: string;
-  statusTone?: StatusTone;
-  keybarEntries?: KeybarEntry[];
-  children: ReactNode;
-}
-
-/**
- * Shell wrapper whose header context chip is LIVE: identity count and the
- * health rollup are recomputed from demo state on every render, so every
- * action's effect (create, delete, fix) is immediately visible in the
- * persistent header — the same global-context affordance the TUI shell has.
- */
-export function LiveShell({
-  title,
-  statusMessage,
-  statusTone,
-  keybarEntries,
-  children,
-}: LiveShellProps) {
-  const { state } = useDemo();
-  return (
-    <Shell
-      title={title}
-      headerContext={{ identityCount: state.identities.length, health: healthRollup(state) }}
-      {...(statusMessage !== undefined ? { statusMessage } : {})}
-      {...(statusTone !== undefined ? { statusTone } : {})}
-      {...(keybarEntries !== undefined ? { keybarEntries } : {})}
-    >
-      {children}
-    </Shell>
-  );
 }

@@ -1,9 +1,13 @@
 /**
- * Interactive global-ssh (key 2) — GSSH-01 dangerous-by-default option
- * review. Advisory, never blocking: pick which recommendations to apply
- * (ForwardAgent is deliberately unticked by default, mirroring the
- * reference walkthrough), preview the exact Host * block, then the shared
- * confirm + backup + result ceremony. Applied options flip to ✓ live.
+ * Global SSH view (02-REDESIGN-SPEC.md §4) — sub-tabs:
+ *   [Options]           GSSH-01 master-detail with per-row apply checkboxes;
+ *                       advisory, never blocking; Apply selected → ceremony.
+ *   [Storage & preview] STORE-01 dual strategy: sentinel block in
+ *                       ~/.ssh/config vs gitid-owned ~/.ssh/config.d/gitid.config
+ *                       via ONE `Include` line near the top — with the
+ *                       resulting config rendered per strategy; switching
+ *                       layouts walks the ceremony (STORE-03: migration is a
+ *                       backed-up write).
  */
 
 import { useCallback, useMemo, useState } from 'react';
@@ -16,8 +20,9 @@ import {
   FormControlLabel,
   List,
   ListItemButton,
-  ListItemText,
   Paper,
+  Radio,
+  RadioGroup,
   Stack,
   Typography,
 } from '@mui/material';
@@ -27,19 +32,36 @@ import {
   globalSshOptions,
   managedBlockSentinels,
 } from '../../data/recipeFixtures';
-import { LiveShell, useDemo, useLocalKeys } from '../DemoContext';
+import { semanticColors } from '../../theme';
+import Frame, { type FrameAction } from '../Frame';
+import { useDemo, useLocalKeys } from '../DemoContext';
 import MutationCeremony, { PreviewBlock } from '../MutationCeremony';
-import { newBackupPath } from '../store';
+import { newBackupPath, type SshStorageLayout } from '../store';
 
-type Mode = 'list' | 'fix' | 'ceremony';
+type SubTab = 'options' | 'storage';
+type Mode = 'browse' | 'apply-ceremony' | 'storage-ceremony';
+
+function managedHostStar(applied: string[]): string {
+  const sentinels = managedBlockSentinels('global-ssh');
+  const lines = applied
+    .map((k) => {
+      const o = globalSshOptions.find((x) => x.key === k);
+      return o ? `    ${o.key} ${o.recommendedValue}` : '';
+    })
+    .filter(Boolean)
+    .join('\n');
+  return `${sentinels.begin}\nIgnoreUnknown UseKeychain\n\nHost *\n${lines ? `${lines}\n` : ''}    UseKeychain yes\n    AddKeysToAgent yes\n${sentinels.end}`;
+}
 
 export function GlobalSsh() {
-  const { state, dispatch, go, notify } = useDemo();
-  const [mode, setMode] = useState<Mode>('list');
+  const { state, dispatch, setTab, notify } = useDemo();
+  const [subTab, setSubTab] = useState<SubTab>('options');
+  const [mode, setMode] = useState<Mode>('browse');
   const [detailKey, setDetailKey] = useState('IdentitiesOnly');
   const [chosen, setChosen] = useState<string[]>(
     globalSshOptions.filter((o) => o.needsAction && o.key !== 'ForwardAgent').map((o) => o.key),
   );
+  const [storageChoice, setStorageChoice] = useState<SshStorageLayout>(state.sshStorage);
 
   const options = useMemo(
     () =>
@@ -52,169 +74,258 @@ export function GlobalSsh() {
   );
   const pending = options.filter((o) => o.needsAction);
   const detail = options.find((o) => o.key === detailKey) ?? options[0];
-
+  const detailIdx = options.findIndex((o) => o.key === detail?.key);
+  const applyChosen = chosen.filter((k) => pending.some((o) => o.key === k));
   const sshFindings = state.findings.filter((f) => f.section === 'SSH');
 
   useLocalKeys(
     useCallback(
       (key) => {
-        if (mode === 'ceremony') return false;
-        if (key === 'f' && pending.length > 0) {
-          setMode('fix');
+        if (mode !== 'browse') return false; // ceremony owns keys
+        if (key === 'ArrowDown' || key === 'ArrowUp') {
+          if (subTab !== 'options') return false;
+          const next = options[key === 'ArrowDown' ? Math.min(detailIdx + 1, options.length - 1) : Math.max(detailIdx - 1, 0)];
+          if (next) setDetailKey(next.key);
           return true;
         }
-        if (key === 'Escape' && mode === 'fix') {
-          setMode('list');
+        if (key === 'ArrowLeft' || key === 'ArrowRight') {
+          setSubTab((t) => (t === 'options' ? 'storage' : 'options'));
           return true;
         }
         return false;
       },
-      [mode, pending.length],
+      [mode, subTab, options, detailIdx],
     ),
   );
 
-  const applyChosen = chosen.filter((k) => pending.some((o) => o.key === k));
-  const previewLines = [
-    ...applyChosen.map((k) => {
-      const o = globalSshOptions.find((x) => x.key === k);
-      return `+ ${k} ${o?.recommendedValue ?? ''}`;
-    }),
-    ...options.filter((o) => !o.needsAction).map((o) => `  ${o.key} ${o.recommendedValue} (already set)`),
-    ...pending.filter((o) => !applyChosen.includes(o.key)).map((o) => `  ${o.key} — left unchanged (declined; advisory, not required)`),
-  ].join('\n');
+  const includePreviewMain = `# ~/.ssh/config (top of file)\nInclude ~/.ssh/config.d/gitid.config\n\n# …everything else in your config, untouched…`;
+  const includePreviewOwned = `# ~/.ssh/config.d/gitid.config (gitid-owned file)\nHost personal.github.com\n    Hostname ssh.github.com\n    Port 443\n    User git\n    IdentityFile ~/.ssh/id_ed25519_personal\n    IdentitiesOnly yes\n\n${managedHostStar(state.sshApplied)}`;
+  const sentinelPreview = `# ~/.ssh/config — gitid blocks live in place, sentinel-delimited\n\nHost personal.github.com\n    Hostname ssh.github.com\n    Port 443\n    User git\n    IdentityFile ~/.ssh/id_ed25519_personal\n    IdentitiesOnly yes\n\n${managedHostStar(state.sshApplied)}`;
 
-  const sentinels = managedBlockSentinels('global-ssh');
+  const actions: FrameAction[] =
+    mode !== 'browse'
+      ? [{ key: 'Esc', label: 'cancel' }]
+      : subTab === 'options'
+        ? [
+            { key: '↑↓', label: 'select option' },
+            { key: '←→', label: 'Options / Storage' },
+            ...(applyChosen.length > 0
+              ? [{ key: 'a', label: `apply ${applyChosen.length} selected`, onActivate: () => setMode('apply-ceremony') }]
+              : []),
+          ]
+        : [
+            { key: '←→', label: 'Options / Storage' },
+            ...(storageChoice !== state.sshStorage
+              ? [{ key: 'Enter', label: 'migrate layout…', onActivate: () => setMode('storage-ceremony') }]
+              : []),
+          ];
 
   return (
-    <LiveShell
-      title={mode === 'fix' || mode === 'ceremony' ? 'global-ssh/fix-preview' : 'global-ssh/options-list'}
+    <Frame
+      crumbs={[subTab === 'options' ? 'Options' : 'Storage & preview']}
       statusMessage={
         pending.length > 0
           ? `${pending.length} of ${options.length} options need action — ${globalSshAdvisoryNote}`
           : 'All recommendations applied or already set. Advisory, never a compliance gate.'
       }
       statusTone={pending.length > 0 ? 'warning' : 'info'}
-      keybarEntries={[
-        { key: 'Enter/click', label: 'option detail' },
-        ...(pending.length > 0 ? [{ key: 'f', label: 'fix recommended…', onActivate: () => setMode('fix') }] : []),
-        { key: '4', label: 'health', onActivate: () => go({ surface: 'health' }) },
-      ]}
+      actions={actions}
     >
-      {sshFindings.length > 0 && mode === 'list' && (
+      {/* sub-tab strip */}
+      <Stack direction="row" spacing={1} sx={{ mb: 1.5 }}>
+        {(['options', 'storage'] as SubTab[]).map((t) => (
+          <Box
+            key={t}
+            component="button"
+            onClick={() => setSubTab(t)}
+            sx={{
+              font: 'inherit',
+              border: 1,
+              borderColor: subTab === t ? semanticColors.focus : 'divider',
+              cursor: 'pointer',
+              px: 1.5,
+              py: 0.25,
+              bgcolor: subTab === t ? semanticColors.focus : 'transparent',
+              color: subTab === t ? 'background.default' : 'text.secondary',
+            }}
+          >
+            {t === 'options' ? 'Options' : 'Storage & preview'}
+          </Box>
+        ))}
+      </Stack>
+
+      {sshFindings.length > 0 && mode === 'browse' && (
         <Alert
           severity="warning"
           variant="outlined"
-          sx={{ mb: 2, borderRadius: 0 }}
+          sx={{ mb: 1.5, borderRadius: 0 }}
           action={
-            <Button color="warning" size="small" onClick={() => go({ surface: 'health' })}>
+            <Button color="warning" size="small" onClick={() => setTab('doctor')}>
               4 · Open Doctor
             </Button>
           }
         >
           The doctor found {sshFindings.length} SSH finding{sshFindings.length > 1 ? 's' : ''} beyond
-          these global options — review them in Health.
+          these global options.
         </Alert>
       )}
 
-      {mode === 'list' && (
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
-          <Paper variant="outlined" sx={{ flex: 1.2 }}>
+      {subTab === 'options' && mode === 'browse' && (
+        <Stack direction="row" spacing={2}>
+          <Paper variant="outlined" sx={{ width: '44%', minWidth: 360 }}>
             <List disablePadding>
               {options.map((o) => (
                 <ListItemButton
                   key={o.key}
-                  selected={o.key === detailKey}
+                  selected={o.key === detail?.key}
                   onClick={() => setDetailKey(o.key)}
-                  sx={{ borderBottom: 1, borderColor: 'divider' }}
+                  sx={{ borderBottom: 1, borderColor: 'divider', py: 0.5, display: 'block' }}
                 >
-                  <ListItemText
-                    primary={
-                      <Stack direction="row" spacing={1} alignItems="center">
-                        <Box component="span" sx={{ color: o.needsAction ? '#d4b106' : '#4caf50' }}>
-                          {o.needsAction ? '!' : '✓'}
-                        </Box>
-                        <Box component="span" sx={{ fontWeight: 700 }}>
-                          {o.key}
-                        </Box>
-                        <Chip size="small" variant="outlined" label={`risk ${o.risk}`} sx={{ borderRadius: 0, fontFamily: 'inherit' }} />
-                      </Stack>
-                    }
-                    secondary={`now: ${o.currentValue} → recommended: ${o.recommendedValue}`}
-                  />
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Checkbox
+                      size="small"
+                      sx={{ p: 0 }}
+                      disabled={!o.needsAction}
+                      checked={o.needsAction ? chosen.includes(o.key) : true}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) =>
+                        setChosen((c) => (e.target.checked ? [...c, o.key] : c.filter((k) => k !== o.key)))
+                      }
+                    />
+                    <Box component="span" sx={{ color: o.needsAction ? semanticColors.warning : semanticColors.healthy }}>
+                      {o.needsAction ? '!' : '✓'}
+                    </Box>
+                    <Box component="span" sx={{ fontWeight: 700, flex: 1 }}>
+                      {o.key}
+                    </Box>
+                    <Chip size="small" variant="outlined" label={o.risk} sx={{ borderRadius: 0, fontFamily: 'inherit' }} />
+                  </Stack>
+                  <Typography noWrap sx={{ fontSize: 12, color: 'text.secondary', pl: 4 }}>
+                    now: {o.currentValue} → {o.recommendedValue}
+                  </Typography>
                 </ListItemButton>
               ))}
             </List>
           </Paper>
-          <Paper variant="outlined" sx={{ flex: 1, p: 2 }}>
+          <Paper variant="outlined" sx={{ flex: 1, p: 1.5 }}>
             <Typography variant="subtitle2" sx={{ color: 'text.secondary' }}>
               {detail?.key}
             </Typography>
-            <Typography sx={{ whiteSpace: 'pre-wrap', mt: 1 }}>
+            <Typography sx={{ whiteSpace: 'pre-wrap', mt: 0.5, fontSize: 14 }}>
               {detail?.key === 'IdentitiesOnly' ? globalSshDetailExplanation : detail?.oneLiner}
             </Typography>
-            <Alert severity="info" variant="outlined" sx={{ mt: 2, borderRadius: 0 }}>
+            <Alert severity="info" variant="outlined" sx={{ mt: 1.5, borderRadius: 0 }}>
               {globalSshAdvisoryNote}
             </Alert>
-            {pending.length > 0 && (
-              <Button variant="contained" sx={{ mt: 2 }} onClick={() => setMode('fix')}>
-                f · Fix recommended…
+            {applyChosen.length > 0 && (
+              <Button variant="contained" sx={{ mt: 1.5 }} onClick={() => setMode('apply-ceremony')}>
+                Apply {applyChosen.length} selected…
               </Button>
             )}
           </Paper>
         </Stack>
       )}
 
-      {mode === 'fix' && (
-        <Paper variant="outlined" sx={{ p: 2, maxWidth: 860 }}>
-          <Typography variant="h6" gutterBottom>
-            Choose what to apply — every box is optional
-          </Typography>
-          {pending.map((o) => (
-            <FormControlLabel
-              key={o.key}
-              sx={{ display: 'block' }}
-              control={
-                <Checkbox
-                  checked={chosen.includes(o.key)}
-                  onChange={(e) =>
-                    setChosen((c) => (e.target.checked ? [...c, o.key] : c.filter((k) => k !== o.key)))
-                  }
-                />
-              }
-              label={`${o.key} → ${o.recommendedValue} (risk ${o.risk}) — ${o.oneLiner}`}
-            />
-          ))}
-          <Typography variant="subtitle2" sx={{ color: 'text.secondary', mt: 2 }}>
-            Fix preview
-          </Typography>
-          <PreviewBlock diff text={previewLines} />
-          <Stack direction="row" spacing={2} sx={{ mt: 2 }}>
-            <Button variant="outlined" onClick={() => setMode('list')}>
-              Esc · Back
-            </Button>
-            <Button variant="contained" disabled={applyChosen.length === 0} onClick={() => setMode('ceremony')}>
-              Apply {applyChosen.length} option{applyChosen.length === 1 ? '' : 's'}…
-            </Button>
-          </Stack>
-        </Paper>
-      )}
-
-      {mode === 'ceremony' && (
+      {subTab === 'options' && mode === 'apply-ceremony' && (
         <MutationCeremony
           heading="Write Host * managed block to ~/.ssh/config"
-          targets={['~/.ssh/config']}
-          preview={<PreviewBlock text={`${sentinels.begin}\nIgnoreUnknown UseKeychain\n\nHost *\n${applyChosen.map((k) => `    ${k} ${globalSshOptions.find((o) => o.key === k)?.recommendedValue ?? ''}`).join('\n')}\n    UseKeychain yes\n    AddKeysToAgent yes\n${sentinels.end}`} />}
+          targets={[state.sshStorage === 'include' ? '~/.ssh/config.d/gitid.config' : '~/.ssh/config']}
+          preview={
+            <PreviewBlock
+              diff
+              text={[
+                ...applyChosen.map((k) => `+ ${k} ${globalSshOptions.find((o) => o.key === k)?.recommendedValue ?? ''}`),
+                ...options.filter((o) => !o.needsAction).map((o) => `  ${o.key} ${o.recommendedValue} (already set)`),
+                ...pending.filter((o) => !applyChosen.includes(o.key)).map((o) => `  ${o.key} — left unchanged (declined; advisory)`),
+              ].join('\n')}
+            />
+          }
           backups={[newBackupPath('~/.ssh/config')]}
-          resultMessage={`${applyChosen.length} of ${pending.length} recommended options applied to Host * in ~/.ssh/config. ${pending.length - applyChosen.length > 0 ? 'The rest were left unchanged, as chosen — advisory, never required.' : ''}`}
-          onCancel={() => setMode('fix')}
+          resultMessage={`${applyChosen.length} of ${pending.length} recommended options applied to Host *. ${
+            pending.length - applyChosen.length > 0 ? 'The rest were left unchanged, as chosen.' : ''
+          }`}
+          confirmLabel="Apply selected"
+          onCancel={() => setMode('browse')}
           onDone={() => {
             dispatch({ type: 'apply-ssh', keys: applyChosen, backup: newBackupPath('~/.ssh/config') });
             notify(`${applyChosen.length} global SSH option${applyChosen.length === 1 ? '' : 's'} applied.`);
-            setMode('list');
+            setMode('browse');
           }}
         />
       )}
-    </LiveShell>
+
+      {subTab === 'storage' && mode === 'browse' && (
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+          <Paper variant="outlined" sx={{ p: 1.5, width: { md: '44%' } }}>
+            <Typography variant="subtitle2" sx={{ color: 'text.secondary', mb: 1 }}>
+              STORE-01 — where gitid-managed SSH config lives
+            </Typography>
+            <RadioGroup value={storageChoice} onChange={(e) => setStorageChoice(e.target.value as SshStorageLayout)}>
+              <FormControlLabel
+                value="sentinel"
+                control={<Radio />}
+                label={`Sentinel blocks in ~/.ssh/config (default)${state.sshStorage === 'sentinel' ? ' — current' : ''}`}
+              />
+              <FormControlLabel
+                value="include"
+                control={<Radio />}
+                label={`gitid-owned ~/.ssh/config.d/gitid.config via one Include line${state.sshStorage === 'include' ? ' — current' : ''}`}
+              />
+            </RadioGroup>
+            <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 1 }}>
+              Include paths must be absolute or ~/.ssh-relative; the Include line goes NEAR THE TOP
+              of ~/.ssh/config. Migration between layouts is backed-up and reversible (STORE-03).
+            </Typography>
+            {storageChoice !== state.sshStorage && (
+              <Button variant="contained" sx={{ mt: 1.5 }} onClick={() => setMode('storage-ceremony')}>
+                Migrate layout…
+              </Button>
+            )}
+          </Paper>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="subtitle2" sx={{ color: 'text.secondary' }}>
+              Resulting config — {storageChoice === 'sentinel' ? 'sentinel blocks in place' : 'Include + owned file'}
+            </Typography>
+            {storageChoice === 'sentinel' ? (
+              <PreviewBlock text={sentinelPreview} />
+            ) : (
+              <>
+                <PreviewBlock text={includePreviewMain} />
+                <Box sx={{ mt: 1 }}>
+                  <PreviewBlock text={includePreviewOwned} />
+                </Box>
+              </>
+            )}
+          </Box>
+        </Stack>
+      )}
+
+      {subTab === 'storage' && mode === 'storage-ceremony' && (
+        <MutationCeremony
+          heading={`Migrate SSH storage layout → ${storageChoice === 'include' ? 'Include’d gitid.config' : 'sentinel blocks in ~/.ssh/config'}`}
+          targets={['~/.ssh/config', '~/.ssh/config.d/gitid.config']}
+          preview={
+            <PreviewBlock
+              diff
+              text={
+                storageChoice === 'include'
+                  ? `+ Include ~/.ssh/config.d/gitid.config   (near the top of ~/.ssh/config)\n+ ~/.ssh/config.d/gitid.config (all gitid blocks move here)\n- # BEGIN/END gitid managed blocks removed from ~/.ssh/config\n  everything outside gitid blocks: untouched`
+                  : `+ gitid blocks written back, sentinel-delimited, into ~/.ssh/config\n- Include ~/.ssh/config.d/gitid.config (line removed)\n- ~/.ssh/config.d/gitid.config (file retired)\n  everything outside gitid blocks: untouched`
+              }
+            />
+          }
+          backups={[newBackupPath('~/.ssh/config')]}
+          resultMessage={`SSH storage layout migrated to ${storageChoice === 'include' ? 'the Include’d gitid-owned file' : 'in-place sentinel blocks'} — reversible via this same screen.`}
+          confirmLabel="Migrate"
+          onCancel={() => setMode('browse')}
+          onDone={() => {
+            dispatch({ type: 'set-ssh-storage', layout: storageChoice, backup: newBackupPath('~/.ssh/config') });
+            notify(`SSH storage layout: ${storageChoice}.`);
+            setMode('browse');
+          }}
+        />
+      )}
+    </Frame>
   );
 }
 

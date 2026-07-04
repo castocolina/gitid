@@ -23,7 +23,13 @@ export interface DemoIdentity extends IdentityManagerRow {
   gitName?: string;
   gitEmail?: string;
   matchStrategy?: MatchStrategy;
+  /** Real SSH endpoint + port (SSHUI-01); optional for seeded rows. */
+  hostname?: string;
+  port?: number;
 }
+
+/** STORE-01 dual storage strategy for the SSH config. */
+export type SshStorageLayout = 'sentinel' | 'include';
 
 export interface DemoFinding extends HealthFinding {
   /** Which identity this finding is about (drives per-identity health). */
@@ -39,6 +45,8 @@ export interface DemoState {
   sshApplied: string[];
   /** global-git baseline applied via the fix ceremony. */
   gitBaselineApplied: boolean;
+  /** STORE-01: where gitid-managed SSH config lives. */
+  sshStorage: SshStorageLayout;
   /** Timestamped backup paths "created" by write ceremonies, newest first. */
   backups: string[];
 }
@@ -68,6 +76,7 @@ export const initialDemoState: DemoState = {
   scanned: false,
   sshApplied: [],
   gitBaselineApplied: false,
+  sshStorage: 'sentinel',
   backups: [],
 };
 
@@ -88,6 +97,15 @@ export type DemoAction =
   | { type: 'fix-finding'; id: string; backup: string }
   | { type: 'apply-ssh'; keys: string[]; backup: string }
   | { type: 'apply-git-baseline'; backup: string }
+  | {
+      type: 'edit-ssh';
+      name: string;
+      sshHost: string;
+      hostname: string;
+      port: number;
+      backup: string;
+    }
+  | { type: 'set-ssh-storage'; layout: SshStorageLayout; backup: string }
   | { type: 'reset' };
 
 /** State an identity lands in once BOTH its SSH and Git sides exist. */
@@ -219,6 +237,22 @@ export function demoReducer(state: DemoState, action: DemoAction): DemoState {
         gitBaselineApplied: true,
         backups: [action.backup, ...state.backups],
       };
+    case 'edit-ssh':
+      return {
+        ...state,
+        identities: state.identities.map((row) =>
+          row.name === action.name
+            ? { ...row, sshHost: action.sshHost, hostname: action.hostname, port: action.port }
+            : row,
+        ),
+        backups: [action.backup, ...state.backups],
+      };
+    case 'set-ssh-storage':
+      return {
+        ...state,
+        sshStorage: action.layout,
+        backups: [action.backup, ...state.backups],
+      };
     case 'reset':
       return initialDemoState;
     default:
@@ -233,6 +267,15 @@ export function healthRollup(state: DemoState): 'healthy' | 'warning' | 'error' 
   }
   if (state.findings.some((f) => f.severity === 'warning')) return 'warning';
   return 'healthy';
+}
+
+/** Per-severity counts for the header chip (`N ids · ! w · ✗ e`). */
+export function findingCounts(state: DemoState): { warnings: number; errors: number } {
+  return {
+    warnings: state.findings.filter((f) => f.severity === 'warning').length,
+    errors: state.findings.filter((f) => f.severity === 'error' || f.severity === 'critical')
+      .length,
+  };
 }
 
 /** Fresh timestamped backup path in the same shape as the fixtures'. */

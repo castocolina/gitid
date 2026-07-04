@@ -1,4 +1,45 @@
-# 02-12 Checkpoint Feedback — Round 1 (2026-07-03)
+# 02-12 Checkpoint Feedback
+
+## Round 2 (2026-07-04) — verdict: changes requested (structural)
+
+User feedback: the round-1 demo missed the frame concept — no common header with
+NAVIGATION (Identities / Global SSH / Global Git / Doctor; Fixer is a consequence,
+not a view), footer mixing navigation with screen actions, vim affordances (j/k),
+long state labels instead of icons/badges + legend, detail requiring Enter instead
+of live master-detail, a 7-card create wizard instead of a compact provider-first
+form, sparse split git screens missing the loose-default Git properties, the PRD's
+STORE-01 SSH storage strategy missing entirely, and health visibility not pervasive.
+
+Response: full redesign per 02-REDESIGN-SPEC.md (produced with the ui-ux-designer
+agent + the mui skill, anchored to SHELL-01/SSHUI-01/STORE-01/GITUI-01/FIX-02):
+numbered header nav tabs + clickable per-severity health chip, thin breadcrumb line,
+contextual-only footer (no vim keys), live sidebar↔detail on the Identities view
+(tone glyph + S/G capability pips + inline legend; full legend in ?-help), forms and
+ceremonies render in the detail pane with the sidebar visible, create wizard
+compressed to 4 pane-states (provider autocomplete → joined Host alias → hostname →
+port → algorithm Select + live preview; two-stage test with consistent flag order
+and an explicit no--i-in-stage-2 rationale; merged Git+strategy step with DUAL
+preview; review+confirm inline), Global SSH gains the STORE-01 Storage & preview
+sub-tab with a migratable sentinel↔Include layout, Global Git master-detail with
+apply checkboxes, Doctor absorbs the Fixer (per-identity grouping, inline fix
+ceremony, Fix all with counter and live healing), ceremony compressed to 2 states
+(backup promised in confirm, receipted in result).
+
+Playwright-driven verification fixed 3 more interaction bugs before re-presenting:
+Enter swallowed by focused text fields (now falls through as the pane's primary
+action unless a component consumed it), the `F` fix-all key wired only as a click
+target, and the Doctor status line reusing the frozen fixture copy that still said
+"Fixer (key 5)". Gates: pnpm typecheck clean, pnpm build OK (verify-routes 52
+routes), make test EXIT=0, make lint 0 issues; the 50 static reference routes are
+untouched.
+
+Open research answer recorded in 02-REDESIGN-SPEC.md: git includeIf has no boolean
+AND — same-path multiple sections behave as OR; AND is approximated by nesting
+conditional includes (recursion depth 10).
+
+---
+
+## Round 1 (2026-07-03)
 
 ## Verdict: changes requested (not approved)
 
