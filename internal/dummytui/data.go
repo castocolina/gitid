@@ -241,6 +241,28 @@ const (
 // block appended to ~/.gitconfig.
 var GitScreenGitconfigIncludeBlockText = GitScreenSentinelBegin + "\n" + GitScreenIncludeIfGitdirLine + "\n" + GitScreenSentinelEnd
 
+// GitScreenIncludeIfBothLines is the "both" match strategy's includeIf
+// preview (two blocks = OR semantics) — the Go mirror of recipeFixtures.ts's
+// gitScreenIncludeIfBothLines.
+var GitScreenIncludeIfBothLines = GitScreenIncludeIfGitdirLine + "\n\n" + GitScreenIncludeIfHasconfigLine
+
+// GitScreenMatchStrategyPreview keys the live includeIf preview by match
+// strategy — the Go mirror of recipeFixtures.ts's
+// gitScreenMatchStrategyPreview ("gitdir" is the default, GITUI-03).
+var GitScreenMatchStrategyPreview = map[string]string{
+	"gitdir":    GitScreenIncludeIfGitdirLine,
+	"hasconfig": GitScreenIncludeIfHasconfigLine,
+	"both":      GitScreenIncludeIfBothLines,
+}
+
+// ManagedBlockSentinels returns the BEGIN/END sentinel pair delimiting the
+// managed block gitid owns for identityName — the Go mirror of
+// recipeFixtures.ts's managedBlockSentinels (CLAUDE.md "Engineering":
+// idempotent managed blocks, never a blind append).
+func ManagedBlockSentinels(identityName string) (begin, end string) {
+	return "# BEGIN gitid managed: " + identityName, "# END gitid managed: " + identityName
+}
+
 // ---------------------------------------------------------------------------
 // Identity manager (recipeFixtures.ts identityManager* exports)
 // ---------------------------------------------------------------------------
@@ -299,6 +321,21 @@ var IdentityManagerGlyphByState = map[string]string{
 	"key-used-both":         "✓",
 	"key-missing":           "✗",
 	"fragment-path-missing": "✗",
+}
+
+// IdentityManagerStateTone pairs each MGR-02 label with its health tone
+// (success/warning/error) — the Go mirror of recipeFixtures.ts's
+// identityManagerStateTone. The tone colors the state glyph; the S/G
+// capability pips carry capability separately (02-REDESIGN-SPEC.md §2).
+var IdentityManagerStateTone = map[string]string{
+	"complete":              "success",
+	"incomplete":            "warning",
+	"git-only":              "warning",
+	"key-unused":            "warning",
+	"key-used-ssh-only":     "success",
+	"key-used-both":         "success",
+	"key-missing":           "error",
+	"fragment-path-missing": "error",
 }
 
 // MGR-04/MGR-06 literal copy — byte-identical to recipeFixtures.ts's
@@ -493,6 +530,57 @@ const (
 	GlobalGitResultMessage = "10 of 10 baseline options applied to ~/.gitconfig. Global user.email was left alone, as always -- each identity's commits use their own includeIf fragment."
 )
 
+// GlobalGitBaselineStripText is the read-only inherited global-baseline
+// strip rendered on per-identity Git surfaces (GITUI-01 kept intact) —
+// values interpolated from recipeFixtures.ts's globalGitDefaults.
+const GlobalGitBaselineStripText = "init.defaultBranch=main · core.ignorecase=false · autocrlf=input/lf · push.autoSetupRemote=true · pull.rebase=true · merge=diff3"
+
+// GlobalGitFullManagedBlockText is the exact managed-block text gitid
+// writes to ~/.gitconfig — the Go mirror of recipeFixtures.ts's
+// globalGitFullManagedBlockText. Global user.email is intentionally ABSENT:
+// gitid never writes a [user] section here (each identity's commits come
+// from its own includeIf fragment).
+const GlobalGitFullManagedBlockText = GlobalGitSentinelBegin + `
+[init]
+    defaultBranch = main
+
+[core]
+    ignorecase = false
+    autocrlf = input
+    eol = lf
+
+[push]
+    autoSetupRemote = true
+
+[pull]
+    rebase = true
+
+[fetch]
+    prune = true
+
+[color]
+    ui = auto
+    branch = auto
+    diff = auto
+    status = auto
+
+[merge]
+    conflictstyle = diff3
+
+[diff]
+    colorMoved = zebra
+
+[alias]
+    st = status
+    co = checkout
+    br = branch
+    ci = commit
+    df = diff
+    lg = log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit
+    unstage = reset HEAD --
+    last = log -1 HEAD
+` + GlobalGitSentinelEnd
+
 // ---------------------------------------------------------------------------
 // Health (recipeFixtures.ts health* exports). Health is READ-ONLY: it
 // diagnoses, it never mutates.
@@ -514,6 +602,18 @@ const (
 	// error by the WORD, never the glyph/color alone).
 	SeverityCritical HealthSeverity = "critical"
 )
+
+// HealthSeverityGlyph pairs each severity with its LOCKED glyph — the Go
+// mirror of recipeFixtures.ts's healthSeverityGlyph. warning is ALWAYS `!`
+// (yellow), error AND critical both use `✗` (red) — distinguished by the
+// WORD, never by a different glyph — info is `~` (cyan). Never reuse `✗`
+// for warning.
+var HealthSeverityGlyph = map[HealthSeverity]string{
+	SeverityInfo:     "~",
+	SeverityWarning:  "!",
+	SeverityError:    "✗",
+	SeverityCritical: "✗",
+}
 
 // HealthFinding mirrors recipeFixtures.ts's HealthFinding shape — one
 // concrete health finding, scoped to either the SSH or Git section.
