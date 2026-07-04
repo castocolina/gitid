@@ -152,7 +152,22 @@ export function MutationCeremony({
   );
 }
 
-/** Monospace block for preview text — shared look for config/diff previews. */
+/**
+ * Label for a preview area — deliberately DIMMER than field labels so
+ * read-only previews never read as editable inputs (round-3 feedback).
+ */
+export function PreviewLabel({ children }: { children: ReactNode }) {
+  return (
+    <Typography variant="subtitle2" sx={{ color: 'text.disabled' }}>
+      {children}
+    </Typography>
+  );
+}
+
+/**
+ * Monospace block for config/diff previews — dimmer background + text and a
+ * dashed border, visually distinct from editable fields (round-3 feedback).
+ */
 export function PreviewBlock({ text, diff = false }: { text: string; diff?: boolean }) {
   return (
     <Box
@@ -161,8 +176,11 @@ export function PreviewBlock({ text, diff = false }: { text: string; diff?: bool
         m: 0,
         p: 1.5,
         border: 1,
+        borderStyle: 'dashed',
         borderColor: 'divider',
-        bgcolor: 'background.paper',
+        bgcolor: 'background.default',
+        color: 'text.secondary',
+        opacity: 0.9,
         overflowX: 'auto',
         fontSize: 13,
         lineHeight: 1.6,
