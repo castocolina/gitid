@@ -126,7 +126,7 @@ Plans:
 
 **Wave 6** — live TUI demo (replaces the removed static reference set; blocked on Wave 5)
 
-- [ ] 02-13-PLAN.md — LIVE interactive Go TUI demo (cmd/gitid-dummy, dummy data, no backend) mirroring the web demo (DLV-05/02)
+- [x] 02-13-PLAN.md — LIVE interactive Go TUI demo (cmd/gitid-dummy, dummy data, no backend) mirroring the web demo (DLV-05/02)
 
 **Wave 7** — ★ checkpoint (blocked on Wave 6)
 
@@ -260,7 +260,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations, Spikes & CI | 7/7 | Complete | 2026-07-03 |
-| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 11/13 | In Progress|  |
+| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 12/13 | In Progress|  |
 | 3. Create Flow Backend | 0/TBD | Not started | - |
 | 4. Git Configuration Screen | 0/TBD | Not started | - |
 | 5. Identity Manager | 0/TBD | Not started | - |

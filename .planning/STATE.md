@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Phase 2 checkpoint tail replanned -- 02-13 (live Go TUI demo) authored, 02-12 amended; next execute 02-13
-last_updated: "2026-07-04T00:00:00.000Z"
-last_activity: 2026-07-04 -- checkpoint tail replanned: static 50+50 PNG reference set removed (7453561, rejected at checkpoint); interactive web demo is authoritative; 02-13 authored (LIVE Bubble Tea v2 gitid-dummy demo mirroring the web demo, no backend); 02-12 amended to present both live demos
+status: completed
+stopped_at: Completed 02-13-PLAN.md
+last_updated: "2026-07-04T17:35:18.327Z"
+last_activity: "2026-07-04 -- checkpoint tail replanned: 02-13 authored (live Go TUI demo), 02-12 amended (present live demos); next execute 02-13"
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 20
-  completed_plans: 18
+  completed_plans: 19
   percent: 10
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 ## Current Position
 
 Phase: 02 (design-all-mockups-checkpoint-1) — EXECUTING
-Plan: 11 of 13 (+ consolidated review-fixes pass, see 02-REVIEW-FIXES.md)
+Plan: 12 of 13 (+ consolidated review-fixes pass, see 02-REVIEW-FIXES.md)
 Status: 02-11 + the consolidated review-fixes pass are complete, but the design checkpoint REJECTED the static 50+50 PNG reference paradigm — the static set and static Go dummy were removed (commit 7453561; recoverable from git history) and the checkpoint tail was replanned: the interactive web demo (mockup-src/src/demo/) is the authoritative reference, NEW plan 02-13 rebuilds cmd/gitid-dummy as a LIVE interactive Bubble Tea v2 demo (dummy data, no backend) mirroring it per 02-REDESIGN-SPEC.md, and 02-12 (amended) presents BOTH live demos for the single DLV-08 approval. Next is 02-13, then 02-12.
 Last activity: 2026-07-04 -- checkpoint tail replanned: 02-13 authored (live Go TUI demo), 02-12 amended (present live demos); next execute 02-13
 
@@ -73,6 +73,7 @@ Progress: [█████████░] 89%
 | Phase 02 P09 | 45min | 3 tasks | 22 files |
 | Phase 02 P10 | 70min | 3 tasks | 25 files |
 | Phase 02 P11 | 30min | 2 tasks | 8 files |
+| Phase 02 P13 | 65min | 3 tasks | 24 files |
 
 ## Accumulated Context
 
@@ -136,6 +137,8 @@ Recent decisions affecting current work:
 - [Phase 02, review-fixes]: added .planning/design/mockup-src/src/data/screenSignatures.ts (byte-identical mirror of every manifest.json's signature field, keyed by ScreenID) + wired into Shell.tsx as a rendered [SIG-...] marker -- the HTML mockup previously had no signature marker anywhere in its DOM (signatures were TUI-only), so design_capture_test.go could not require one on the HTML side; zero per-route file edits needed since Shell.tsx already receives the ScreenID as its title prop
 - [Phase 02, review-fixes]: Shell.tsx changed from a fixed height:'100vh' + main's overflow:'auto' to minHeight:'100vh' + natural flow -- the fixed height's inner scroll region clipped any body taller than the 800px viewport INSIDE itself, invisible to go-rod's fullPage screenshot capture (which only sees the outer document's scroll height), causing 3 reference PNGs (global-ssh/global-git options-list, identity-manager list-populated) to be fold-clipped despite the content existing in the DOM
 - [Phase 02, review-fixes]: added a gate-no-backend-files Makefile target (git merge-base main HEAD diff against the Phase-2 allowlist), wired as a dummy-nav-e2e prerequisite -- closes SECURITY.md Finding 1 (T-02-BEGATE had no persisted/automated enforcement, only a one-off plan-file shell line)
+- [Phase ?]: 02-13: Bubble Tea v2 retained for the live gitid-dummy demo; go-tui evaluated and rejected as too immature
+- [Phase ?]: 02-13: terminal 100x30 adaptations (edit/git ceremonies as next pane-state, stacked step-3 previews, Ctrl+S skip, 36% sidebar) keep the web demo's semantics and copy, pinned by tests
 
 ### Roadmap Evolution
 
@@ -159,6 +162,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-03T14:00:00.000Z
-Stopped at: Checkpoint tail replanned (02-13 authored, 02-12 amended) -- ready to execute 02-13, then 02-12
-Resume file: .planning/phases/02-design-all-mockups-checkpoint-1/02-13-PLAN.md
+Last session: 2026-07-04T17:34:45.280Z
+Stopped at: Completed 02-13-PLAN.md
+Resume file: None
