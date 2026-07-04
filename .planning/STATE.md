@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-review-fixes (consolidated fix pass, 4 reviews) -- ready for 02-12
-last_updated: "2026-07-03T14:00:00.000Z"
-last_activity: 2026-07-03 -- 02-review-fixes: fixed all findings from REVIEW.md (internal), Codex cross-vendor review, agent-ui-ux-designer parity critique, and SECURITY.md; re-captured all 100 reference PNGs (50 html + 50 tui); 63/63 parity.json rows resolved with honest text; gate-no-backend-files Makefile target added
+stopped_at: Phase 2 checkpoint tail replanned -- 02-13 (live Go TUI demo) authored, 02-12 amended; next execute 02-13
+last_updated: "2026-07-04T00:00:00.000Z"
+last_activity: 2026-07-04 -- checkpoint tail replanned: static 50+50 PNG reference set removed (7453561, rejected at checkpoint); interactive web demo is authoritative; 02-13 authored (LIVE Bubble Tea v2 gitid-dummy demo mirroring the web demo, no backend); 02-12 amended to present both live demos
 progress:
   total_phases: 10
   completed_phases: 1
-  total_plans: 19
+  total_plans: 20
   completed_plans: 18
   percent: 10
 ---
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 ## Current Position
 
 Phase: 02 (design-all-mockups-checkpoint-1) — EXECUTING
-Plan: 11 of 12 (+ consolidated review-fixes pass, see 02-REVIEW-FIXES.md)
-Status: 02-11 complete, then a consolidated fix pass (02-REVIEW-FIXES.md) closed every finding from 4 independent reviews (internal Go review, Codex cross-vendor, agent-ui-ux-designer parity critique, security audit) before the 02-12 human approval checkpoint runs — all 100 reference PNGs re-captured, 63/63 parity.json rows resolved, gate-no-backend-files automated (SECURITY.md Finding 1 closed). Next is 02-12 (the single human design-approval checkpoint).
-Last activity: 2026-07-03 -- 02-review-fixes pass complete, all gates green, ready for 02-12
+Plan: 11 of 13 (+ consolidated review-fixes pass, see 02-REVIEW-FIXES.md)
+Status: 02-11 + the consolidated review-fixes pass are complete, but the design checkpoint REJECTED the static 50+50 PNG reference paradigm — the static set and static Go dummy were removed (commit 7453561; recoverable from git history) and the checkpoint tail was replanned: the interactive web demo (mockup-src/src/demo/) is the authoritative reference, NEW plan 02-13 rebuilds cmd/gitid-dummy as a LIVE interactive Bubble Tea v2 demo (dummy data, no backend) mirroring it per 02-REDESIGN-SPEC.md, and 02-12 (amended) presents BOTH live demos for the single DLV-08 approval. Next is 02-13, then 02-12.
+Last activity: 2026-07-04 -- checkpoint tail replanned: 02-13 authored (live Go TUI demo), 02-12 amended (present live demos); next execute 02-13
 
 Progress: [█████████░] 89%
 
@@ -160,5 +160,5 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-07-03T14:00:00.000Z
-Stopped at: Completed 02-review-fixes (see .planning/phases/02-design-all-mockups-checkpoint-1/02-REVIEW-FIXES.md) -- ready for 02-12
-Resume file: .planning/phases/02-design-all-mockups-checkpoint-1/02-12-PLAN.md
+Stopped at: Checkpoint tail replanned (02-13 authored, 02-12 amended) -- ready to execute 02-13, then 02-12
+Resume file: .planning/phases/02-design-all-mockups-checkpoint-1/02-13-PLAN.md

@@ -9,9 +9,9 @@ identity, `Port 443` alt-SSH, `IdentitiesOnly yes`, `includeIf` `hasconfig:`/`gi
 tooling, multi-algorithm keygen + local-capability probing, the dual SSH-storage
 strategy (in-file / Include'd / adopt / migrate), the identity state-taxonomy core, and
 a cross-OS GitHub Actions CI. **Phase 2** is the single human checkpoint: every surface
-is designed as an HTML/`mui` mockup and a navigable Go TUI dummy, screenshot-captured,
-and **approved by the user** — those images become the reference set for every later
-wave. **Phases 3–9** wire each surface's backend *behind the approved design* — create
+is designed as an HTML/`mui` mockup presented as an interactive web demo, mirrored by
+a live, executable Go TUI demo, and **approved by the user** — the approved demos
+become the design reference for every later wave. **Phases 3–9** wire each surface's backend *behind the approved design* — create
 flow, git screen, identity manager, global SSH options, global git options,
 health+fixer, and credential upload — each gated by a per-surface UI wave (`/mui` +
 `agent-ui-ux-designer`, PTY e2e on the real binary, visual-regression diff vs the
@@ -40,7 +40,7 @@ under `.planning/archive/0.0.1-poc-product-features-in-tui/`.
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Foundations, Spikes & CI** - Non-UI core (screenshot tooling, multi-algo keygen + probing, dual SSH storage, state taxonomy) + cross-OS CI, no product UI
-- [ ] **Phase 2: DESIGN — All Mockups (★ CHECKPOINT #1)** - HTML/`mui` mockups + Go TUI dummy for every surface, screenshot-captured and user-approved
+- [ ] **Phase 2: DESIGN — All Mockups (★ CHECKPOINT #1)** - HTML/`mui` mockups for every surface + an interactive web demo + a live Go TUI demo, user-approved
 - [ ] **Phase 3: Create Flow Backend** - Algorithm → SSH screen → two-stage test → store, behind the approved design
 - [ ] **Phase 4: Git Configuration Screen** - Per-identity git fragment + `includeIf` + `allowed_signers`, review → confirm → write
 - [ ] **Phase 5: Identity Manager** - State-taxonomy list, SSH-first detail, clone / new-key / rotate / delete-choice, app view set
@@ -83,17 +83,17 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 ### Phase 2: DESIGN — All Mockups (★ CHECKPOINT #1)
 
-**Goal**: Every product surface is designed as an HTML/`mui` mockup and a navigable Go TUI dummy, screenshot-captured, and **approved by the user** — establishing the reference design the whole build is verified against.
+**Goal**: Every product surface is designed as an HTML/`mui` mockup presented as an interactive web demo, mirrored by a live, executable Go TUI demo, and **approved by the user** — establishing the reference design the whole build is verified against.
 **Depends on**: Phase 1 (screenshot tooling + core seams)
 **Requirements**: DLV-01, DLV-02, DLV-05, DLV-08
 **Success Criteria** (what must be TRUE — **gated on user approval**):
 
-  1. Every surface (create flow, git screen, identity manager, global SSH, global git, health, fixer) has an HTML/`mui` mockup produced with the `/mui` skill and `agent-ui-ux-designer`, with every flow/screen screenshot-captured to versioned reference artifacts. (DLV-01, DLV-02)
-  2. A Go TUI **dummy** mockup provides full navigation across all views with **no backend logic**, and every screen is screenshot-captured. (DLV-05)
+  1. Every surface (create flow, git screen, identity manager, global SSH, global git, health, fixer) has an HTML/`mui` mockup produced with the `/mui` skill and `agent-ui-ux-designer`, presented as a live interactive web demo (static per-screen reference routes kept alongside). (DLV-01, DLV-02)
+  2. A LIVE, executable Go TUI **demo** (dummy data, in-memory state, **no backend logic**) provides full navigation and every interactive flow, mirroring the web demo 1:1. (DLV-05)
   3. `agent-ui-ux-designer` critiques the HTML ↔ TUI-dummy visual diff, and its findings are resolved before approval. (DLV-02)
-  4. **★ The user approves the complete design** (HTML + TUI-dummy screenshots); the approved images become the reference set for every later UI wave, and **no backend logic is written for any surface before this approval**. (DLV-08, DLV-05)
+  4. **★ The user approves the complete design** (interactive web demo + live Go TUI demo); the approved demos become the design reference for every later UI wave, and **no backend logic is written for any surface before this approval**. (DLV-08, DLV-05)
 
-**Plans**: 12 plans in 6 waves
+**Plans**: 13 plans in 7 waves
 **UI hint**: yes
 
 Plans:
@@ -124,9 +124,13 @@ Plans:
 
 - [x] 02-11-PLAN.md — Comprehensive nav-proof e2e + full 50+50 capture + reference-set assembly (DLV-01/05/02)
 
-**Wave 6** — ★ checkpoint (blocked on Wave 5)
+**Wave 6** — live TUI demo (replaces the removed static reference set; blocked on Wave 5)
 
-- [ ] 02-12-PLAN.md — ★ DLV-08 single human approval; record **APPROVED:** in APPROVAL.md (DLV-08/02)
+- [ ] 02-13-PLAN.md — LIVE interactive Go TUI demo (cmd/gitid-dummy, dummy data, no backend) mirroring the web demo (DLV-05/02)
+
+**Wave 7** — ★ checkpoint (blocked on Wave 6)
+
+- [ ] 02-12-PLAN.md — ★ DLV-08 single human approval of the live demos; record **APPROVED:** in APPROVAL.md (DLV-08/02)
 
 ### Phase 3: Create Flow Backend
 
@@ -256,7 +260,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations, Spikes & CI | 7/7 | Complete | 2026-07-03 |
-| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 11/12 | In Progress|  |
+| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 11/13 | In Progress|  |
 | 3. Create Flow Backend | 0/TBD | Not started | - |
 | 4. Git Configuration Screen | 0/TBD | Not started | - |
 | 5. Identity Manager | 0/TBD | Not started | - |
