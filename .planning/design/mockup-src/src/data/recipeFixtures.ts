@@ -194,8 +194,9 @@ export const sampleGitconfigBackupPath =
 // Create-flow pilot surface (02-UX-DIRECTION.md §4.1) — algorithm catalog,
 // SSH-form field defaults, two-stage test commands/output, and the
 // confirm/backup/result copy every `create-flow/*.route.tsx` screen and the
-// mirrored `internal/dummytui/surface_createflow.go` render byte-identically
-// (REQUIREMENTS.md KEY-01/KEY-03, SSHUI-01/02/03, TEST-01/02).
+// mirrored Go fixture data in `internal/dummytui/data.go` carry
+// byte-identically (REQUIREMENTS.md KEY-01/KEY-03, SSHUI-01/02/03,
+// TEST-01/02).
 // ---------------------------------------------------------------------------
 
 export type AlgorithmAvailability = 'native' | 'requires-libfido2';

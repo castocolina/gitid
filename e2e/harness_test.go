@@ -26,17 +26,6 @@ var (
 	realHome   = os.Getenv("HOME") // captured at init, before any t.Setenv
 )
 
-// dummyBuildOnce/dummyPackageBin/dummyBuildErr are a SEPARATE
-// sync.Once/binary-path/error trio from buildOnce/packageBin/buildErr
-// above, so BuildDummyBinary's cached `cmd/gitid-dummy` build never
-// collides with BuildBinary's cached `cmd/gitid` build (02-03-PLAN.md
-// Task 2).
-var (
-	dummyBuildOnce  sync.Once
-	dummyPackageBin string
-	dummyBuildErr   error
-)
-
 // SandboxHome creates a hermetic HOME directory and sets HOME to it via
 // t.Setenv so it is automatically restored after the test.
 // All files the binary writes (including ~/.ssh and ~/.gitconfig) land there.
@@ -81,43 +70,6 @@ func BuildBinary(t *testing.T) string {
 		t.Fatal("BuildBinary: binary path is empty after build")
 	}
 	return packageBin
-}
-
-// BuildDummyBinary compiles the cmd/gitid-dummy binary once per test package
-// run and returns its path. It mirrors BuildBinary exactly (sync.Once-cached,
-// os.MkdirTemp so the Go module cache never lands inside a test-managed
-// t.TempDir(), HOME=realHome restored during the build) but targets
-// ./cmd/gitid-dummy and uses its own dummyBuildOnce/dummyPackageBin pair so
-// it never collides with BuildBinary's real-product binary cache.
-func BuildDummyBinary(t *testing.T) string {
-	t.Helper()
-	dummyBuildOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "gitid-dummy-e2e-*")
-		if err != nil {
-			dummyBuildErr = err
-			return
-		}
-		bin := filepath.Join(dir, "gitid-dummy")
-		cmd := exec.Command("go", "build", "-o", bin, "./cmd/gitid-dummy")
-		cmd.Dir = repoRoot(t)
-		// Restore the original HOME so `go build` derives GOPATH from the
-		// real home (not a sandbox), preventing go.mod writes into
-		// t.TempDir() (which would cause cleanup permission errors).
-		cmd.Env = append(os.Environ(), "HOME="+realHome)
-		if combined, berr := cmd.CombinedOutput(); berr != nil {
-			dummyBuildErr = fmt.Errorf("%w\n%s", berr, combined)
-			_ = os.RemoveAll(dir)
-			return
-		}
-		dummyPackageBin = bin
-	})
-	if dummyBuildErr != nil {
-		t.Fatalf("BuildDummyBinary: go build failed: %v", dummyBuildErr)
-	}
-	if dummyPackageBin == "" {
-		t.Fatal("BuildDummyBinary: binary path is empty after build")
-	}
-	return dummyPackageBin
 }
 
 // FakeSSHDir writes a mode-switching fake ssh script to a temp dir and sets

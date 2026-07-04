@@ -1,27 +1,19 @@
 /**
- * screenSignatures.ts — review B1 fix (Codex cross-vendor finding HIGH):
- * `design_capture_test.go` previously gated an HTML capture on ONLY the
- * "<surface>/<screen>" breadcrumb (the route's `title`), never on the
- * manifest's own per-screen `signature` — so a wrong BODY rendered under
- * the right breadcrumb (e.g. a copy-paste bug reusing another screen's
- * content) would have been saved as a valid reference PNG. The TUI side
- * already had an equivalent, screen-specific `[SIG-...]` marker baked into
- * every `internal/dummytui/surface_*.go` render function; the HTML mockup
- * had no equivalent, so it could never be checked the same way.
+ * screenSignatures.ts — one screen-specific `SIG-...` marker per static
+ * reference route, keyed by the SAME "<surface>/<screen>" ScreenID every
+ * route's `Shell` `title` prop already carries. `Shell.tsx` looks up
+ * `screenSignatures[title]` and renders it as a small marker, so any
+ * capture/assertion can require BOTH the breadcrumb and the signature —
+ * a breadcrumb alone cannot catch a "right route, wrong BODY" false
+ * positive (review B1 / Codex cross-vendor finding HIGH; T-02-FP).
  *
- * This map is the byte-identical mirror of every `.planning/design/*
- * /manifest.json`'s `signature` field, keyed by the SAME "<surface>/<screen>"
- * ScreenID every route's `Shell` `title` prop already carries — NOT
- * derived at build time (Vite cannot read outside `mockup-src/`'s root), a
- * static, diff-able contract mirroring the Go dummy's own `sig*` constants
- * precedent (`surface_identitymanager.go` etc.: "byte-identical... not
- * derived, so it stays a static, diff-able contract"). `Shell.tsx` looks up
- * `screenSignatures[title]` and renders it as a small marker, the same way
- * every TUI screen renders its own `[SIG-...]` bracket — so
- * `design_capture_test.go`'s HTML capture path can require BOTH the
- * breadcrumb and the signature before ever writing a PNG, closing the
- * SAME false-positive gap on the HTML side that the signature already
- * closed on the TUI side.
+ * Originally this map mirrored the per-surface capture `manifest.json`
+ * files and the static Go dummy's own `sig*` constants; both were removed
+ * when the static PNG reference set was superseded by the interactive
+ * demo (`src/demo/`). The map stays: it is now the single authority for
+ * the per-screen signatures the 50 static reference routes render, a
+ * static, diff-able contract (NOT derived at build time — Vite cannot
+ * read outside `mockup-src/`'s root).
  */
 export const screenSignatures: Record<string, string> = {
   'create-flow/algo-catalog': 'SIG-ALGO-CATALOG-ED25519-DEFAULT',

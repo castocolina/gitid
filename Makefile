@@ -21,22 +21,13 @@
 #                   (TOOL-05, DLV-03; build-tag isolated behind `screenshot`).
 #   screenshot-html Render the fixture HTML page to a deterministic PNG via headless
 #                   Chromium (go-rod, pinned revision; TOOL-05, DLV-03).
-#   screenshot-html-mockups Build the Phase 2 MUI mockup SPA (dist/) and capture one PNG
-#                   per .planning/design/*/manifest.json HTML screen (extends Phase 1's
-#                   screenshot-html pipeline via internal/screenshot/design_adapter.go).
-#   screenshot-tui-mockups  Capture one PNG per manifest TUI screen via
-#                   internal/dummytui.RenderScreen (extends Phase 1's screenshot-tui
-#                   pipeline).
-#   dummy-nav-e2e   Drive the real cmd/gitid-dummy binary over a PTY, proving every
-#                   manifest screen is reachable via absolute keystrokes before any
-#                   design-review presentation (DLV-05).
 #   gate-no-backend-files  Fail if any commit on this branch (since it diverged from
 #                   main) touches a file outside the Phase 2 design-only allowlist
 #                   (SECURITY.md Finding 1 / T-02-BEGATE) -- automates what was
-#                   previously only a one-off shell line in a plan file. Runs
-#                   automatically as a dummy-nav-e2e prerequisite.
+#                   previously only a one-off shell line in a plan file. Standalone
+#                   target; run it directly on design-only branches.
 
-.PHONY: setup-env build build-cross install uninstall test lint fmt install-hooks test-e2e screenshot-tui screenshot-html screenshot-html-mockups screenshot-tui-mockups dummy-nav-e2e gate-no-backend-files
+.PHONY: setup-env build build-cross install uninstall test lint fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files
 
 # Binary output directory.
 BIN_DIR := bin
@@ -192,12 +183,9 @@ uninstall:
 ## test-e2e: run end-to-end agent-driven tests (builds binary first).
 ## E2E tests use a hermetic sandbox HOME and a fake ssh script injected on PATH.
 ## Tests are tagged //go:build e2e and are excluded from the normal make test target.
-## Timeout raised 60s -> 180s (02-11): the whole ./e2e/... package now includes the
-## comprehensive dummy-nav-e2e walk (all 50 screens across all 7 Phase-2 surfaces,
-## finalized this plan) alongside the pre-existing real-TUI PTY suite -- observed
-## ~80s under -race locally; 180s gives CI-variance headroom without masking a
-## genuine hang (dummy-nav-e2e/TestUIPTY_* each carry their own inner waitFor
-## timeouts, so a real hang still fails fast well under 180s).
+## Timeout 180s: gives the real-TUI PTY suite CI-variance headroom without masking a
+## genuine hang (TestUIPTY_* each carry their own inner waitFor timeouts, so a real
+## hang still fails fast well under 180s).
 test-e2e: build
 	go test -tags e2e -race -timeout 180s ./e2e/...
 
@@ -227,31 +215,6 @@ screenshot-tui:
 screenshot-html:
 	go test -tags screenshot ./internal/screenshot/... -run TestCaptureHTML
 
-## screenshot-html-mockups: build the Phase 2 MUI mockup SPA and capture one
-## PNG per .planning/design/*/manifest.json HTML screen (DLV-01, DLV-02,
-## extends Phase 1's screenshot-html pipeline -- 02-03-PLAN.md).
-## `pnpm build` runs scripts/verify-routes.mjs (the route-uniqueness/shape
-## gate) before `vite build` -- a bad or duplicate mockup route fails the
-## build loudly, before any capture step runs. ALWAYS --frozen-lockfile
-## (never an unpinned dependency install, which could pull drifted deps in
-## CI -- T-02-SC3). Invokes TestCaptureAllMockupScreens's "html" subtests --
-## the concrete runnable entry point that actually writes each PNG under
-## .planning/design/<surface>/html/, gated on the "<surface>/<screen>"
-## breadcrumb rendering correctly (never a blank/wrong-route PNG).
-screenshot-html-mockups:
-	cd .planning/design/mockup-src && pnpm i --frozen-lockfile && pnpm build
-	go test -tags screenshot -run 'TestCaptureAllMockupScreens/.*/html' ./internal/screenshot/...
-
-## screenshot-tui-mockups: capture one PNG per .planning/design/*/manifest.json
-## TUI screen via internal/dummytui.RenderScreen (DLV-01, DLV-02, extends
-## Phase 1's screenshot-tui pipeline -- 02-03-PLAN.md). Invokes
-## TestCaptureAllMockupScreens's "tui" subtests -- the concrete runnable
-## entry point that actually writes each PNG under
-## .planning/design/<surface>/tui/, gated on the same breadcrumb assertion
-## as the html-mockups target.
-screenshot-tui-mockups:
-	go test -tags screenshot -run 'TestCaptureAllMockupScreens/.*/tui' ./internal/screenshot/...
-
 ## gate-no-backend-files: fail if any file changed on this branch since it
 ## diverged from main falls outside the Phase 2 design-only allowlist
 ## (SECURITY.md Finding 1 / T-02-BEGATE). Before this target existed, the
@@ -260,30 +223,19 @@ screenshot-tui-mockups:
 ## automated, so any commit added to the branch afterward (before the
 ## single 02-12 human-approval checkpoint) would only be caught by a human
 ## manually re-running that exact command from memory. This target makes
-## the check repeatable and CI-able; it is a prerequisite of dummy-nav-e2e
-## below so it runs automatically on every dummy-nav-e2e invocation.
+## the check repeatable and CI-able; run it standalone on design-only
+## branches. The allowlist intentionally still names internal/dummytui/ and
+## cmd/gitid-dummy/ (the latter now removed) -- historical Phase 2 commits
+## on this branch legitimately touched them. .gitignore is allowlisted too:
+## commit 13f11c4 (interactive demo, checkpoint-1 feedback) added a local
+## tooling-state ignore rule (.playwright-mcp/) -- ignore-rule hygiene, not
+## backend logic, which is what this gate defends against (T-02-BEGATE).
 gate-no-backend-files:
 	@BASE=$$(git merge-base main HEAD); \
-	OFFENDING=$$(git diff --name-only "$$BASE"..HEAD | grep -v -E '^(\.planning/|internal/dummytui/|cmd/gitid-dummy/|internal/screenshot/|e2e/|Makefile$$)' || true); \
+	OFFENDING=$$(git diff --name-only "$$BASE"..HEAD | grep -v -E '^(\.planning/|internal/dummytui/|cmd/gitid-dummy/|internal/screenshot/|e2e/|Makefile$$|\.gitignore$$)' || true); \
 	if [ -n "$$OFFENDING" ]; then \
 		echo "gate-no-backend-files: FAILED -- file(s) outside the Phase 2 design-only allowlist changed since main ($$BASE):"; \
 		echo "$$OFFENDING"; \
 		exit 1; \
 	fi; \
-	echo "gate-no-backend-files: OK -- no files outside {.planning/, internal/dummytui/, cmd/gitid-dummy/, internal/screenshot/, e2e/, Makefile} changed since main ($$BASE)"
-
-## dummy-nav-e2e: run the dummy-tui PTY navigation proof (builds gitid-dummy
-## first). Drives the REAL cmd/gitid-dummy binary via raw PTY keystrokes,
-## re-homing before each manifest entry and asserting the active screen
-## breadcrumb + a screen-specific signature, then asserts zero files were
-## written under a sandboxed HOME (DLV-05). Tests are tagged //go:build e2e
-## and are excluded from the normal make test target (same convention as
-## test-e2e). Timeout aligned to 180s (review B2), matching test-e2e's own
-## budget and the test's own internal context.WithTimeout -- the prior 60s
-## had no CI-variance headroom over the walk's observed ~47s+ runtime.
-## Depends on gate-no-backend-files (review B4) so the branch's
-## design-only-file invariant is re-verified automatically on every run,
-## not just once by hand at 02-11.
-dummy-nav-e2e: gate-no-backend-files
-	go build -o $(BIN_DIR)/gitid-dummy ./cmd/gitid-dummy
-	go test -tags e2e -race -timeout 180s -run TestDummyNav ./e2e/...
+	echo "gate-no-backend-files: OK -- no files outside {.planning/, internal/dummytui/, cmd/gitid-dummy/, internal/screenshot/, e2e/, Makefile, .gitignore} changed since main ($$BASE)"

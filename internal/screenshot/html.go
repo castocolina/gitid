@@ -76,9 +76,9 @@ type HTMLOptions struct {
 	// CaptureHTML needing a literal per-route file on disk. The empty
 	// string (the default) preserves the exact pre-existing single-fixture
 	// behavior byte-for-byte. Added by Phase 2 (02-03) to extend, not
-	// rebuild, this function — see 02-RESEARCH.md Pattern 1 and
-	// internal/screenshot/design_adapter.go, which is the only caller that
-	// sets this field.
+	// rebuild, this function — see 02-RESEARCH.md Pattern 1. Lets one
+	// SPA build serve every captured route (e.g. re-capturing screens of
+	// the interactive demo, or the future live TUI demo's HTML twin).
 	URLFragment string
 
 	// RequiredText, when non-empty, is checked against the rendered page's
@@ -86,26 +86,23 @@ type HTMLOptions struct {
 	// captured or written to disk. If the text is absent, CaptureHTML fails
 	// fast naming both RequiredText and the navigated URL — so a
 	// wrong-route or blank capture is a hard error, never a silently wrong
-	// image. Added by Phase 2 (02-03) alongside URLFragment: it lets
-	// design_capture_test.go assert the "<surface>/<screen>" breadcrumb
-	// resolved correctly through the SAME go-rod page CaptureHTML already
-	// owns, rather than a second capture path (Pitfall 7: never
-	// re-instantiate a go-rod launcher elsewhere).
+	// image. Added by Phase 2 (02-03) alongside URLFragment: callers assert
+	// a screen-identifying marker resolved correctly through the SAME
+	// go-rod page CaptureHTML already owns, rather than a second capture
+	// path (Pitfall 7: never re-instantiate a go-rod launcher elsewhere).
 	RequiredText string
 
 	// RequiredTexts, when non-empty, is checked the SAME way as
 	// RequiredText (every entry must be present in the rendered <body> text
 	// before any screenshot is captured/written), but requires ALL entries,
 	// not just one. Added by the 02-review fix pass (review B1/T-02-FP):
-	// RequiredText alone (the "<surface>/<screen>" breadcrumb) cannot catch
-	// a "right route, wrong STATE" false positive — e.g. a route that
-	// renders the correct breadcrumb but a stale/incorrect body underneath
-	// it. design_capture_test.go passes BOTH the breadcrumb and the
-	// manifest entry's own Signature here, mirroring the stricter check
-	// e2e/dummy_nav_e2e_test.go's PTY walker already performs
-	// (breadcrumb+Signature, not breadcrumb alone). When both RequiredText
-	// and RequiredTexts are set, ALL of them (RequiredText plus every
-	// RequiredTexts entry) must be present — additive, not a replacement.
+	// RequiredText alone (a single breadcrumb-style marker) cannot catch a
+	// "right route, wrong STATE" false positive — e.g. a route that renders
+	// the correct breadcrumb but a stale/incorrect body underneath it. Pass
+	// both a breadcrumb and a screen-specific signature here. When both
+	// RequiredText and RequiredTexts are set, ALL of them (RequiredText
+	// plus every RequiredTexts entry) must be present — additive, not a
+	// replacement.
 	RequiredTexts []string
 }
 
