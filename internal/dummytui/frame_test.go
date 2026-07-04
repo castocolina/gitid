@@ -49,6 +49,24 @@ func pressKey(name string) tea.KeyMsg {
 	}
 }
 
+// regionFlat extracts the [from,to) column region of the rendered frame
+// and collapses whitespace, so assertions survive column word-wrapping.
+func regionFlat(a App, from, to int) string {
+	var lines []string
+	for _, line := range strings.Split(stripANSI(a.View().Content), "\n") {
+		runes := []rune(line)
+		if len(runes) <= from {
+			continue
+		}
+		end := len(runes)
+		if to < end {
+			end = to
+		}
+		lines = append(lines, strings.TrimSpace(string(runes[from:end])))
+	}
+	return strings.Join(strings.Fields(strings.Join(lines, " ")), " ")
+}
+
 func renderSeededFrame(crumbs []string, actions []FooterAction) string {
 	return RenderFrame(100, 30, Seed(), tabIdentities, crumbs, "Ready.", "info", actions, "body line")
 }

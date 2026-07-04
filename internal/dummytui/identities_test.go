@@ -42,15 +42,7 @@ func identModel(t *testing.T, a App) identitiesModel {
 // rendered frame and collapses whitespace, so assertions survive the
 // pane's word-wrapping of long spec copy.
 func paneFlat(a App) string {
-	cut := sidebarWidth(a.width) + 1
-	var lines []string
-	for _, line := range strings.Split(stripANSI(a.View().Content), "\n") {
-		runes := []rune(line)
-		if len(runes) > cut {
-			lines = append(lines, strings.TrimSpace(string(runes[cut:])))
-		}
-	}
-	return strings.Join(strings.Fields(strings.Join(lines, " ")), " ")
+	return regionFlat(a, sidebarWidth(a.width)+1, a.width)
 }
 
 // --------------------------------------------------------------------------

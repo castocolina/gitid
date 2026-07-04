@@ -381,34 +381,11 @@ func padRight(s string, width int) string {
 }
 
 // newScreens wires the four tab child models in header order.
-// NOTE(02-13 Task 2): Global SSH, Global Git, and Doctor land in Task 3 of
-// this plan; until then those tabs render a stub.
 func newScreens() [4]screenModel {
 	return [4]screenModel{
 		newIdentitiesModel(),
-		stubScreen{label: tabLabels[tabGlobalSSH]},
-		stubScreen{label: tabLabels[tabGlobalGit]},
-		stubScreen{label: tabLabels[tabDoctor]},
+		newGlobalSSHModel(),
+		newGlobalGitModel(),
+		newDoctorModel(),
 	}
 }
-
-// stubScreen is the Task-1 placeholder screen — replaced by the real
-// surfaces in Tasks 2 and 3 of this plan.
-type stubScreen struct{ label string }
-
-func (s stubScreen) handleKey(tea.KeyMsg, DemoState) keyResult {
-	return keyResult{model: s}
-}
-
-func (s stubScreen) handleMsg(tea.Msg, DemoState) keyResult {
-	return keyResult{model: s}
-}
-
-func (s stubScreen) view(DemoState, int, int) screenView {
-	return screenView{
-		body:   " " + styleFaint.Render(s.label+" — surface lands in a later task of this plan."),
-		status: "Ready.",
-	}
-}
-
-func (s stubScreen) activate(DemoState) (screenModel, tea.Cmd) { return s, nil }
