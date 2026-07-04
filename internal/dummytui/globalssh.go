@@ -39,6 +39,35 @@ const (
 	gssStorageCeremony
 )
 
+// Sub-tab strip composition — subTabStrip renders exactly these labels
+// (with a one-space lead and a one-space gap) and handleClick hit-tests
+// against the same strings, so the spans can never drift.
+const (
+	gssTabOptionsLabel = " Options "
+	gssTabStorageLabel = " Storage & preview "
+)
+
+// gssBannerBeyond is the findingsBanner tail used on the Options sub-tab —
+// shared by renderOptions and gssOptionsTopLines.
+const gssBannerBeyond = "these global options"
+
+// optionRowLines is how many lines one master-list option row renders
+// (optionRow here and the inline rows in globalgit.go) — shared with click
+// hit-testing.
+const optionRowLines = 2
+
+// withToggled returns a copy of set with key flipped. Copy-on-write keeps
+// the value-copied models pure: maps are reference types, so toggling in
+// place would mutate every previously returned copy of the model.
+func withToggled(set map[string]bool, key string) map[string]bool {
+	next := make(map[string]bool, len(set)+1)
+	for k, v := range set {
+		next[k] = v
+	}
+	next[key] = !next[key]
+	return next
+}
+
 // globalSSHModel is the Global SSH tab child model.
 type globalSSHModel struct {
 	subTab        gssSubTab
@@ -301,7 +330,7 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		if m.subTab == gssOptions {
 			o := options[m.detailIndex(options)]
 			if o.NeedsAction {
-				m.chosen[o.Key] = !m.chosen[o.Key]
+				m.chosen = withToggled(m.chosen, o.Key)
 			}
 		}
 		return keyResult{model: m, handled: true}
@@ -324,14 +353,61 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 
 // subTabStrip renders the [Options] [Storage & preview] strip.
 func (m globalSSHModel) subTabStrip() string {
-	options := " Options "
-	storage := " Storage & preview "
+	options := gssTabOptionsLabel
+	storage := gssTabStorageLabel
 	if m.subTab == gssOptions {
 		options = styleReverse.Render(options)
 	} else {
 		storage = styleReverse.Render(storage)
 	}
 	return " " + options + " " + storage
+}
+
+// gssOptionsTopLines counts the body lines rendered above the first option
+// row on the Options sub-tab (the sub-tab strip plus the optional findings
+// banner) — shared by renderOptions and handleClick.
+func gssOptionsTopLines(s DemoState) int {
+	lines := 1 // sub-tab strip
+	if findingsBanner(s, "SSH", gssBannerBeyond) != "" {
+		lines++
+	}
+	return lines
+}
+
+// handleClick implements mouseTarget (browse mode only — ceremonies stay
+// keyboard-driven): body line 0 is the sub-tab strip, where a click on
+// either label switches sub-tabs; on the Options sub-tab a click on an
+// option row (either of its two lines) selects it.
+func (m globalSSHModel) handleClick(x, y, width int, s DemoState) keyResult {
+	if m.mode != gssBrowse {
+		return keyResult{model: m}
+	}
+	if y == 0 { // the sub-tab strip: " " + options label + " " + storage label
+		optStart := 1
+		optEnd := optStart + len(gssTabOptionsLabel)
+		stoStart := optEnd + 1
+		stoEnd := stoStart + len(gssTabStorageLabel)
+		switch {
+		case x >= optStart && x < optEnd:
+			m.subTab = gssOptions
+			return keyResult{model: m, handled: true}
+		case x >= stoStart && x < stoEnd:
+			m.subTab = gssStorage
+			m.storageChoice = s.SSHStorage
+			return keyResult{model: m, handled: true}
+		}
+		return keyResult{model: m}
+	}
+	if m.subTab != gssOptions || x >= masterListWidth(width) || y < gssOptionsTopLines(s) {
+		return keyResult{model: m}
+	}
+	options := overlaidOptions(s)
+	row := (y - gssOptionsTopLines(s)) / optionRowLines
+	if row >= len(options) {
+		return keyResult{model: m}
+	}
+	m.detailKey = options[row].Key
+	return keyResult{model: m, handled: true}
 }
 
 // findingsBanner renders the "doctor found N findings beyond…" banner for
@@ -443,7 +519,7 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 
 // renderOptions renders the Options master-detail.
 func (m globalSSHModel) renderOptions(s DemoState, options []appliedOption, width int) string {
-	listWidth := width * 44 / 100
+	listWidth := masterListWidth(width)
 	detailWidth := width - listWidth - 1
 
 	var rows []string
@@ -464,7 +540,7 @@ func (m globalSSHModel) renderOptions(s DemoState, options []appliedOption, widt
 	d.WriteString(" " + explanation + "\n")
 	detailPane := lipgloss.NewStyle().Width(detailWidth).Render(d.String())
 
-	banner := findingsBanner(s, "SSH", "these global options")
+	banner := findingsBanner(s, "SSH", gssBannerBeyond)
 	body := m.subTabStrip() + "\n"
 	if banner != "" {
 		body += banner + "\n"
@@ -475,7 +551,7 @@ func (m globalSSHModel) renderOptions(s DemoState, options []appliedOption, widt
 
 // renderStorage renders the STORE-01 Storage & preview sub-tab.
 func (m globalSSHModel) renderStorage(s DemoState, width int) string {
-	leftWidth := width * 44 / 100
+	leftWidth := masterListWidth(width)
 	rightWidth := width - leftWidth - 1
 
 	current := func(layout SSHStorageLayout) string {

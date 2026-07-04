@@ -196,7 +196,9 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 	mustSee(t, s, "main vs master", "tab 3: highlight chip")
 
 	s.sendKey([]byte("4"), keystrokeDelay)
-	mustSee(t, s, "Doctor", "tab 4: breadcrumb")
+	// Doctor-BODY-specific proof (the "Doctor" header tab label is always
+	// present, so it can never fail): the post-scan status line.
+	mustSee(t, s, "Health only diagnoses", "tab 4: doctor status line after auto-scan")
 	// Auto-scan runs on first entry, then findings render grouped.
 	mustSee(t, s, "Private key is world-readable", "tab 4: finding title after auto-scan")
 

@@ -123,6 +123,14 @@ Run the demo: `go build -o bin/gitid-dummy ./cmd/gitid-dummy && bin/gitid-dummy`
 
 None of these change reducer behavior, action semantics, or the contractual copy the tests pin.
 
+### Code-review batch 1 fixes (post-review, uncontested findings)
+
+1. **Plan-file backup dispatch** — the identity-pane fix ceremony dispatched `FixFinding` with a hardcoded `~/.ssh/config` backup; it now backs up the finding's own `PlanFor(f).File` (e.g. `~/.gitconfig.d/legacy`), matching doctor.go and Identities.tsx. Pinned by `TestFixFromIdentityPaneBacksUpThePlanFile`.
+2. **Real mouse routing** (MouseMode was enabled with zero handling) — left clicks on `tea.MouseClickMsg` now route: header tab labels 1–4 switch tabs, the health chip opens the Doctor, Identities sidebar rows select, Doctor finding rows select, Global SSH/Git option rows select, and the Global SSH sub-tab labels switch sub-tabs. Hit-testing derives from the same strings/constants the renderers use (headerTabText, frameBodyTop/frameChromeBelow, masterListWidth, sidebar/option row-line constants). **Consciously bounded scope:** clicks are select/navigate only — in-pane buttons (e.g. "Fix this…", "Apply baseline"), ceremony controls, form fields, footer hints, and overlays stay keyboard-driven, and wheel/motion/drag/right-click are ignored; the web demo's every-control clickability is not fully mirrored in the terminal.
+3. **Init() no longer discards the activated screen** — the initial tab's activation runs in NewApp (model retained), Init just returns the stored command.
+4. **Elm purity for `chosen` maps** — Global SSH/Git toggles are copy-on-write (`withToggled`), so value-copied models never share map storage. Pinned by the two `…SpaceToggleIsCopyOnWrite` tests.
+5. **E2E Doctor assertion strengthened** — the tab-4 check now asserts the Doctor-body status line ("Health only diagnoses") instead of the always-present "Doctor" header label.
+
 ## Known Stubs
 
 None — every surface is live and mutates the shared reducer state; no placeholder data paths remain. (The demo is itself dummy/in-memory BY DESIGN — that is DLV-05's requirement, not a stub.)

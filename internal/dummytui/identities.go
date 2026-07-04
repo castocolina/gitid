@@ -1141,14 +1141,16 @@ func (m identitiesModel) handleFixKey(msg tea.KeyMsg, s DemoState) keyResult {
 	case ceremonyFinished:
 		id := m.fixFindingID
 		m.pane = paneDetail
-		var result string
+		// The backup targets the finding's OWN plan file (fixplans.go),
+		// exactly like doctor.go's fix dispatch — never a hardcoded path.
+		plan := FixPlan{File: "~/.ssh/config"} // fallback for an already-gone finding
 		for _, f := range s.Findings {
 			if f.ID == id {
-				result = PlanFor(f).Result
+				plan = PlanFor(f)
 			}
 		}
-		return keyResult{model: m, handled: true, note: result,
-			actions: []Action{FixFinding{ID: id, Backup: NewBackupPath("~/.ssh/config")}}}
+		return keyResult{model: m, handled: true, note: plan.Result,
+			actions: []Action{FixFinding{ID: id, Backup: NewBackupPath(plan.File)}}}
 	case ceremonyNone, ceremonyConfirmed:
 	}
 	return keyResult{model: m, handled: true}
@@ -1317,6 +1319,29 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 // sidebarWidth is ~38% of the frame (spec §2 two panes ~38/62; 36% at the
 // 100-col minimum so the detail pane keeps 63 usable columns).
 func sidebarWidth(width int) int { return width * 36 / 100 }
+
+// Sidebar row geometry — renderSidebar draws exactly these line counts and
+// handleClick hit-tests against them, so the two can never drift apart.
+const (
+	sidebarLegendLines = 1 // the inline "S ssh · G git" legend line
+	sidebarRowLines    = 2 // head line + faint note line per identity
+)
+
+// handleClick implements mouseTarget: a left click on a sidebar row (either
+// of its two lines) selects that identity — detail mode only; while a
+// form/ceremony pane is open the sidebar is dimmed and inert, exactly like
+// the keyboard model. The detail pane's controls stay keyboard-driven.
+func (m identitiesModel) handleClick(x, y, width int, s DemoState) keyResult {
+	if m.pane != paneDetail || x >= sidebarWidth(width) || y < sidebarLegendLines {
+		return keyResult{model: m}
+	}
+	row := (y - sidebarLegendLines) / sidebarRowLines
+	if row >= len(s.Identities) {
+		return keyResult{model: m}
+	}
+	m.selected = s.Identities[row].Name
+	return keyResult{model: m, handled: true}
+}
 
 // renderSidebar renders the identity list: inline legend, then one row per
 // identity (tone glyph + bold name + N⚑ + S/G pips) with a faint note.

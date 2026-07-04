@@ -30,6 +30,21 @@ const (
 	minFrameHeight = 30
 )
 
+// Frame chrome geometry — shared by RenderFrame and the mouse hit-testing
+// in app.go so click routing can never drift from what is drawn.
+const (
+	// frameBodyTop is how many rows render above the body (header + crumb).
+	frameBodyTop = 2
+	// frameChromeBelow is how many rows render below the body
+	// (status + contextual footer + reserved footer).
+	frameChromeBelow = 3
+)
+
+// masterListWidth is the master-list column of every 44/56 master-detail
+// screen (Doctor, Global SSH options, Global Git options) — shared by the
+// renderers and their click hit-testing.
+func masterListWidth(width int) int { return width * 44 / 100 }
+
 // tabID indexes the four primary views (SHELL-01 as redesigned: the Fixer
 // is NOT a tab — FIX-02 re-homed it into Doctor).
 type tabID int
@@ -122,25 +137,59 @@ func healthChip(s DemoState) string {
 		styleError.Render(fmt.Sprintf("✗ %d", counts.Errors))
 }
 
+// Header composition shared by renderHeader and the click zones below —
+// hit-testing derives every span from the exact strings the header renders.
+const (
+	headerBrand        = "gitid"
+	headerTabSeparator = "·"
+)
+
+// headerTabText is the exact (unstyled) text of nav tab segment i.
+func headerTabText(i int) string {
+	return fmt.Sprintf(" %d %s ", i+1, tabLabels[i])
+}
+
 // renderHeader renders the single header row: brand · numbered flat tabs
 // (active reverse-video, the number part of the label) · health chip.
 func renderHeader(width int, s DemoState, active tabID) string {
 	segments := make([]string, 0, len(tabLabels))
-	for i, label := range tabLabels {
-		text := fmt.Sprintf(" %d %s ", i+1, label)
+	for i := range tabLabels {
+		text := headerTabText(i)
 		if tabID(i) == active {
 			segments = append(segments, styleReverse.Render(text))
 		} else {
 			segments = append(segments, text)
 		}
 	}
-	left := " " + styleBold.Render("gitid") + "  " + strings.Join(segments, styleFaint.Render("·"))
+	left := " " + styleBold.Render(headerBrand) + "  " + strings.Join(segments, styleFaint.Render(headerTabSeparator))
 	chip := healthChip(s) + " "
 	pad := width - ansi.StringWidth(left) - ansi.StringWidth(chip)
 	if pad < 1 {
 		pad = 1
 	}
 	return ansi.Truncate(left+strings.Repeat(" ", pad)+chip, width, "")
+}
+
+// headerTabAt resolves which nav tab label covers header-row column x,
+// deriving each span from the same segment strings renderHeader renders.
+func headerTabAt(x int) (tabID, bool) {
+	cursor := ansi.StringWidth(" " + headerBrand + "  ")
+	for i := range tabLabels {
+		w := ansi.StringWidth(headerTabText(i))
+		if x >= cursor && x < cursor+w {
+			return tabID(i), true
+		}
+		cursor += w + ansi.StringWidth(headerTabSeparator)
+	}
+	return 0, false
+}
+
+// headerChipAt reports whether header-row column x falls on the health
+// chip — the same right-aligned string (plus trailing space) renderHeader
+// places.
+func headerChipAt(width int, s DemoState, x int) bool {
+	chip := healthChip(s) + " "
+	return x >= width-ansi.StringWidth(chip) && x < width
 }
 
 // renderFooterLine renders one footer keybar line (bold key + faint label
@@ -182,7 +231,7 @@ func RenderFrame(width, height int, s DemoState, tab tabID, crumbs []string, sta
 	footerContextual := renderFooterLine(width, actions)
 	footerReserved := renderFooterLine(width, reservedFooter)
 
-	bodyHeight := height - 5 // header + crumb + status + 2 footer lines
+	bodyHeight := height - frameBodyTop - frameChromeBelow
 	lines := strings.Split(body, "\n")
 	if len(lines) > bodyHeight {
 		lines = lines[:bodyHeight]

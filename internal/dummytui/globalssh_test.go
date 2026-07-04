@@ -181,3 +181,23 @@ func TestGlobalSSHApplyTargetsOwnedFileUnderIncludeLayout(t *testing.T) {
 		t.Error("apply ceremony must target the owned file under the include layout")
 	}
 }
+
+func TestGlobalSSHSpaceToggleIsCopyOnWrite(t *testing.T) {
+	m := newGlobalSSHModel()
+	orig := m.chosen
+	m.detailKey = "HashKnownHosts"
+	if !orig["HashKnownHosts"] {
+		t.Fatal("fixture: HashKnownHosts must start pre-chosen")
+	}
+	res := m.handleKey(pressKey("space"), Seed())
+	next, ok := res.model.(globalSSHModel)
+	if !ok {
+		t.Fatalf("model is %T, want globalSSHModel", res.model)
+	}
+	if next.chosen["HashKnownHosts"] {
+		t.Error("space must un-choose the selected option")
+	}
+	if !orig["HashKnownHosts"] {
+		t.Error("Elm purity: the toggle mutated the map shared with the pre-update model copy")
+	}
+}

@@ -598,6 +598,27 @@ func TestFixLegacyFromDetailHealsAndDecrementsChip(t *testing.T) {
 	}
 }
 
+func TestFixFromIdentityPaneBacksUpThePlanFile(t *testing.T) {
+	a := identitiesApp()
+	// legacy is the last row (index 7); its fixable finding is
+	// git-includeif-missing-fragment, whose fix plan targets
+	// ~/.gitconfig.d/legacy — NOT ~/.ssh/config.
+	for i := 0; i < 7; i++ {
+		a, _ = press(t, a, "down")
+	}
+	if m := identModel(t, a); m.selected != "legacy" {
+		t.Fatalf("selected = %q, want legacy", m.selected)
+	}
+	before := len(a.state.Backups)
+	a = pressSeq(t, a, "f", "enter", "enter") // open fix, confirm, done
+	if len(a.state.Backups) != before+1 {
+		t.Fatalf("backups = %d, want %d — the fix must record exactly one backup", len(a.state.Backups), before+1)
+	}
+	if got := a.state.Backups[0]; !strings.HasPrefix(got, "~/.gitconfig.d/legacy.backup.") {
+		t.Errorf("backup = %q, want the finding's plan file (~/.gitconfig.d/legacy.backup.*), matching doctor.go's dispatch", got)
+	}
+}
+
 // --------------------------------------------------------------------------
 // Esc never destructive.
 // --------------------------------------------------------------------------

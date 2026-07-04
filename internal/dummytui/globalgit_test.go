@@ -120,3 +120,23 @@ func TestGlobalGitBaselineCeremonyAndResult(t *testing.T) {
 		t.Error("post-apply status missing")
 	}
 }
+
+func TestGlobalGitSpaceToggleIsCopyOnWrite(t *testing.T) {
+	m := newGlobalGitModel()
+	orig := m.chosen
+	m.detailKey = "pull.rebase"
+	if !orig["pull.rebase"] {
+		t.Fatal("fixture: pull.rebase must start pre-chosen")
+	}
+	res := m.handleKey(pressKey("space"), Seed())
+	next, ok := res.model.(globalGitModel)
+	if !ok {
+		t.Fatalf("model is %T, want globalGitModel", res.model)
+	}
+	if next.chosen["pull.rebase"] {
+		t.Error("space must un-choose the selected option")
+	}
+	if !orig["pull.rebase"] {
+		t.Error("Elm purity: the toggle mutated the map shared with the pre-update model copy")
+	}
+}

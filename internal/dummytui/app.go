@@ -51,6 +51,14 @@ type screenModel interface {
 	activate(s DemoState) (screenModel, tea.Cmd)
 }
 
+// mouseTarget is the optional click contract a screen implements: the App
+// forwards left clicks with body-relative coordinates (x = frame column,
+// y = 0 at the first body row) plus the frame width, so each screen
+// hit-tests against the same layout its view renders.
+type mouseTarget interface {
+	handleClick(x, y, width int, s DemoState) keyResult
+}
+
 // overlayKind is which app-level overlay (if any) owns the keys.
 type overlayKind int
 
@@ -127,14 +135,19 @@ type App struct {
 	palette textinput.Model
 	note    string
 	screens [4]screenModel
+	// initCmd is the initial tab's activation command — the activation
+	// itself already ran in NewApp (Init's value receiver cannot retain
+	// the activated screen model, so activating there would lose it).
+	initCmd tea.Cmd
 }
 
-// NewApp builds the live demo app seeded from data.go's fixtures.
+// NewApp builds the live demo app seeded from data.go's fixtures and runs
+// the initial tab's activation hook, retaining the activated screen model.
 func NewApp() App {
 	ti := textinput.New()
 	ti.Prompt = "> "
 	ti.Placeholder = "Type to filter — Enter opens the first match"
-	return App{
+	a := App{
 		state:   Seed(),
 		tab:     tabIdentities,
 		width:   minFrameWidth,
@@ -142,13 +155,16 @@ func NewApp() App {
 		palette: ti,
 		screens: newScreens(),
 	}
+	screen, cmd := a.screens[a.tab].activate(a.state)
+	a.screens[a.tab] = screen
+	a.initCmd = cmd
+	return a
 }
 
-// Init satisfies tea.Model — it activates the initial tab.
+// Init satisfies tea.Model — the first activation already happened in
+// NewApp; Init only surfaces its command to the runtime.
 func (a App) Init() tea.Cmd {
-	screen, cmd := a.screens[a.tab].activate(a.state)
-	_ = screen // value receiver: activation state is re-applied on Update's first key/msg
-	return cmd
+	return a.initCmd
 }
 
 // apply reduces every dispatched action into the app state.
@@ -169,6 +185,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case tea.KeyMsg:
 		return a.handleKey(msg)
+	case tea.MouseClickMsg:
+		return a.handleMouse(msg)
 	default:
 		var cmds []tea.Cmd
 		for i := range a.screens {
@@ -269,6 +287,45 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.overlay = overlayQuit
 	}
 	return a, nil
+}
+
+// handleMouse routes left clicks (spec §7 — every action is also a real
+// button): header tab labels switch views, the header health chip opens the
+// Doctor, and body clicks go to the active screen's mouseTarget handler
+// (sidebar/finding/option rows select; Global SSH sub-tab labels switch).
+// Overlays stay keyboard-driven; other buttons/mouse events are ignored.
+func (a App) handleMouse(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
+	if msg.Button != tea.MouseLeft || a.overlay != overlayNone {
+		return a, nil
+	}
+	if a.width < minFrameWidth || a.height < minFrameHeight {
+		return a, nil // the too-small guard screen has no click targets
+	}
+	if msg.Y == 0 { // header row
+		if t, ok := headerTabAt(msg.X); ok {
+			return a.setTab(t)
+		}
+		if headerChipAt(a.width, a.state, msg.X) {
+			return a.setTab(tabDoctor)
+		}
+		return a, nil
+	}
+	bodyY := msg.Y - frameBodyTop
+	if bodyY < 0 || bodyY >= a.height-frameBodyTop-frameChromeBelow {
+		return a, nil // breadcrumb, status, and footer rows are inert
+	}
+	target, ok := a.screens[a.tab].(mouseTarget)
+	if !ok {
+		return a, nil
+	}
+	a.note = ""
+	res := target.handleClick(msg.X, bodyY, a.width, a.state)
+	a.screens[a.tab] = res.model
+	a.apply(res.actions)
+	if res.note != "" {
+		a.note = res.note
+	}
+	return a, res.cmd
 }
 
 // paletteMatches filters the palette entries by the typed query.

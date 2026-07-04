@@ -245,6 +245,29 @@ func (m doctorModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 	return keyResult{model: m}
 }
 
+// handleClick implements mouseTarget: a left click on a finding row (either
+// of its two lines) selects that finding. It walks the same groupFindings
+// layout the view renders — one group-label line, then two lines per
+// finding — so hit-testing cannot drift from the drawn list. Group labels,
+// the detail pane, the scanning state, and an open fix ceremony are inert.
+func (m doctorModel) handleClick(x, y, width int, s DemoState) keyResult {
+	if m.scanning || m.fixing || x >= masterListWidth(width) {
+		return keyResult{model: m}
+	}
+	line := 0
+	for _, group := range groupFindings(orderedFindings(s)) {
+		line++ // the group's faint label line
+		for _, f := range group.findings {
+			if y == line || y == line+1 {
+				m.selectedID = f.ID
+				return keyResult{model: m, handled: true}
+			}
+			line += 2
+		}
+	}
+	return keyResult{model: m}
+}
+
 // view implements screenModel.
 func (m doctorModel) view(s DemoState, width, height int) screenView {
 	_ = height
@@ -289,7 +312,7 @@ func (m doctorModel) view(s DemoState, width, height int) screenView {
 		}
 	}
 
-	listWidth := width * 44 / 100
+	listWidth := masterListWidth(width)
 	detailWidth := width - listWidth - 1
 
 	var rows []string

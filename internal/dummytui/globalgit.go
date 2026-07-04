@@ -131,7 +131,7 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 	case "space":
 		o := options[m.gitDetailIndex(options)]
 		if o.NeedsAction { // the user.email awareness row is never checkable
-			m.chosen[o.Key] = !m.chosen[o.Key]
+			m.chosen = withToggled(m.chosen, o.Key)
 		}
 		return keyResult{model: m, handled: true}
 	case "a":
@@ -142,6 +142,35 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		return keyResult{model: m, handled: true}
 	}
 	return keyResult{model: m}
+}
+
+// gitBannerBeyond is the findingsBanner tail for this screen — shared by
+// view and gitTopLines.
+const gitBannerBeyond = "this baseline"
+
+// gitTopLines counts the body lines rendered above the first option row
+// (the optional findings banner) — shared by view and handleClick.
+func gitTopLines(s DemoState) int {
+	if findingsBanner(s, "Git", gitBannerBeyond) != "" {
+		return 1
+	}
+	return 0
+}
+
+// handleClick implements mouseTarget: a left click on an option row (either
+// of its two lines) selects it. The ceremony stays keyboard-driven; the
+// banner and the detail pane are inert.
+func (m globalGitModel) handleClick(x, y, width int, s DemoState) keyResult {
+	if m.ceremonyOpen || x >= masterListWidth(width) || y < gitTopLines(s) {
+		return keyResult{model: m}
+	}
+	options := overlaidGitOptions(s)
+	row := (y - gitTopLines(s)) / optionRowLines
+	if row >= len(options) {
+		return keyResult{model: m}
+	}
+	m.detailKey = options[row].Key
+	return keyResult{model: m, handled: true}
 }
 
 // view implements screenModel.
@@ -171,7 +200,7 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 		}
 	}
 
-	listWidth := width * 44 / 100
+	listWidth := masterListWidth(width)
 	detailWidth := width - listWidth - 1
 	selIdx := m.gitDetailIndex(options)
 
@@ -219,7 +248,7 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 	detailPane := lipgloss.NewStyle().Width(detailWidth).Render(d.String())
 
 	body := ""
-	if banner := findingsBanner(s, "Git", "this baseline"); banner != "" {
+	if banner := findingsBanner(s, "Git", gitBannerBeyond); banner != "" {
 		body = banner + "\n"
 	}
 	body += lipgloss.JoinHorizontal(lipgloss.Top,
