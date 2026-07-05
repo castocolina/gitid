@@ -45,3 +45,20 @@ plan's new `keyowners_test.go`. Not addressed here — a Makefile/toolchain
 provisioning fix (installing `covdata` via `go install
 golang.org/x/tools/...` or reworking the `test` target's coverage flags) is out of
 this plan's declared file scope and not a regression this plan introduced.
+
+## From 02-13 review convergence (2026-07-04)
+
+Three cosmetic-robustness minors left open by the final three-reviewer convergence
+pass on 0169ae7 (all reviewers verdict: ready to present; none affects behavior today):
+
+- `internal/dummytui/globalssh.go` (`handleStorageClick` radio rows) and
+  `internal/dummytui/identities.go` (`paneDeleteScope` click) match option labels with
+  whole-line `strings.Contains` instead of the `needleSpan`/`hitNeedle` x-range
+  discipline the rest of the mouse layer uses. No colliding strings exist in current
+  copy; route both through `hitNeedle` for robustness.
+- `footerActionAt` maps click spans from the untruncated hint list; if a contextual
+  footer line ever truncated with `…`, a click in the ellipsis region could dispatch a
+  hidden action. All current hint sets fit 100 columns; theoretical.
+- Ceremony primary state renders Cancel with the default-focused (reverse) look while
+  Enter still confirms — a deliberate, test-pinned mirror of the web's ceremony-level
+  Enter handler; noted as a possible visual surprise on non-destructive ceremonies.

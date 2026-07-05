@@ -1,5 +1,31 @@
 # 02-12 Checkpoint Feedback
 
+## Round 3+ / TUI replan (2026-07-04) — user directives between rounds
+
+After the round-3 web-demo fixes, the user redirected the checkpoint tail: remove the
+stale static reference set (100 PNGs, GALLERY, dummy-nav frame dumps, parity/manifest
+files, the static-screen Go dummy — commit 7453561), update the specs (REFERENCE-INDEX
+now names the interactive demo authoritative), and replan the Go deliverable as an
+EXECUTABLE live TUI demo mirroring the web demo (02-13-PLAN.md, commit badee17).
+Framework re-confirmed with the user: Bubble Tea v2 retained; github.com/grindlemire/go-tui
+evaluated and rejected as too immature.
+
+02-13 executed (6ea89a5, 5fb05f8, 3a63249, 53a3514), then hardened through a
+three-reviewer convergence loop with the user-set bar "every interaction and screen
+must match the HTML live demo": superpowers fresh-context code review,
+agent-ui-ux-designer frame inspection at 100x30, and Codex cross-vendor source diff.
+Three fix batches landed (f8f962c mouse routing + backup-path + purity; 250c1b6
+divider/section structure + truncation cues + inline edit preview + focusable wizard
+buttons, Ctrl+S removed; 0169ae7 full click-target + focus-ring parity, checkbox/radio
+click semantics, footer honesty, PTY mouse+apply e2e). Final verdicts: Codex MATCHED
+(zero residuals), UX designer MATCHED, code reviewer ready-to-present (3 cosmetic
+minors logged in deferred-items.md). All gates observed green at 0169ae7: unit -race,
+lint 0 issues, e2e suite incl. TestDummyDemo_LiveWalk + TestDummyDemo_MouseAndGitApply,
+gate-no-backend-files, import allowlist. Checkpoint re-presented with BOTH live demos;
+APPROVAL.md remains unsigned.
+
+---
+
 ## Round 2 (2026-07-04) — verdict: changes requested (structural)
 
 User feedback: the round-1 demo missed the frame concept — no common header with
