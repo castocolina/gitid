@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 Phase: 02 (design-all-mockups-checkpoint-1) — EXECUTING
 Plan: 12 of 13 (+ consolidated review-fixes pass, see 02-REVIEW-FIXES.md)
 Status: 02-11 + the consolidated review-fixes pass are complete, but the design checkpoint REJECTED the static 50+50 PNG reference paradigm — the static set and static Go dummy were removed (commit 7453561; recoverable from git history) and the checkpoint tail was replanned: the interactive web demo (mockup-src/src/demo/) is the authoritative reference, NEW plan 02-13 rebuilds cmd/gitid-dummy as a LIVE interactive Bubble Tea v2 demo (dummy data, no backend) mirroring it per 02-REDESIGN-SPEC.md, and 02-12 (amended) presents BOTH live demos for the single DLV-08 approval. Next is 02-13, then 02-12.
-Last activity: 2026-07-04 -- checkpoint tail replanned: 02-13 authored (live Go TUI demo), 02-12 amended (present live demos); next execute 02-13
+Last activity: 2026-07-05 -- Completed quick task 260705-f9t: `make demo-web` target (relaunch web mockup dev server on port 45173 + open browser)
 
 Progress: [█████████░] 89%
 
@@ -151,6 +151,12 @@ None yet.
 ### Blockers/Concerns
 
 - 3 items intentionally open until their phase (documented in REQUIREMENTS.md "Still Open"): GSSH-01 dangerous-options list, KEY-01 catalog ordering/copy, screenshot-tooling mechanism (Phase 1 spike).
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260705-f9t | Add `make demo-web` target: relaunch the web mockup Vite dev server on dedicated port 45173 and open the browser | 2026-07-05 | 9ecfbb4 | [260705-f9t-add-make-target-to-relaunch-the-web-mock](./quick/260705-f9t-add-make-target-to-relaunch-the-web-mock/) |
 
 ## Deferred Items
 
