@@ -26,8 +26,10 @@
 #                   (SECURITY.md Finding 1 / T-02-BEGATE) -- automates what was
 #                   previously only a one-off shell line in a plan file. Standalone
 #                   target; run it directly on design-only branches.
+#   demo-web       (Re)launch the web design mockup dev server (Vite) on the
+#                   dedicated $(DEMO_WEB_PORT) and open it.
 
-.PHONY: setup-env build build-cross install uninstall test lint fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files
+.PHONY: setup-env build build-cross install uninstall test lint fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files demo-web
 
 # Binary output directory.
 BIN_DIR := bin
@@ -52,6 +54,16 @@ FREEZE_VERSION := v0.2.2
 # reproduced golden depends on.
 SCREENSHOT_FONT  := $(CURDIR)/.planning/design/fonts/JetBrainsMono-Regular.ttf
 SCREENSHOT_THEME := dracula
+
+# demo-web: dedicated NON-standard port for the web design mockup dev server.
+# 45173 is memorable (Vite's default 5173 with a 4-prefix), sits below macOS's
+# ephemeral port range (49152+) so it is stable to bind, and is off 5173 so
+# lsof-kill-by-port can never collide with another Vite project on the default
+# port (T-qw-01). DEMO_WEB_DIR uses $(CURDIR) so the recipe is independent of
+# the caller's working directory (SCREENSHOT_FONT precedent above).
+DEMO_WEB_PORT := 45173
+DEMO_WEB_DIR  := $(CURDIR)/.planning/design/mockup-src
+DEMO_WEB_LOG  := /tmp/gitid-demo-web.log
 
 # Resolved tool binaries, referenced by absolute path so recipes run regardless of the
 # caller's PATH. GNU Make 3.81 (macOS) direct-execs a bare command (no shell metacharacters)
@@ -239,3 +251,44 @@ gate-no-backend-files:
 		exit 1; \
 	fi; \
 	echo "gate-no-backend-files: OK -- no files outside {.planning/, internal/dummytui/, cmd/gitid-dummy/, internal/screenshot/, e2e/, Makefile, .gitignore} changed since main ($$BASE)"
+
+## demo-web: (re)launch the web design mockup dev server (Vite) on the
+## dedicated $(DEMO_WEB_PORT) and open it in the browser.
+## Stops any previous instance already listening on $(DEMO_WEB_PORT) (lsof-ti +
+## kill, with a kill -9 fallback for survivors), starts Vite in the background
+## via nohup (logs -> $(DEMO_WEB_LOG)) so the server survives this `make`
+## invocation returning, waits for the port to accept connections, then opens
+## http://localhost:$(DEMO_WEB_PORT). This is a design-only surface
+## (.planning/design/mockup-src) -- never part of the Go module or any
+## build/test/lint gate.
+demo-web:
+	@echo "==> demo-web: (re)launching the web design mockup dev server"
+	@PREV_PIDS=$$(lsof -ti tcp:$(DEMO_WEB_PORT) 2>/dev/null || true); \
+	if [ -n "$$PREV_PIDS" ]; then \
+		echo "    stopping previous instance on port $(DEMO_WEB_PORT): $$PREV_PIDS"; \
+		kill $$PREV_PIDS 2>/dev/null || true; \
+		sleep 1; \
+		SURVIVORS=$$(lsof -ti tcp:$(DEMO_WEB_PORT) 2>/dev/null || true); \
+		if [ -n "$$SURVIVORS" ]; then \
+			echo "    force-killing survivors: $$SURVIVORS"; \
+			kill -9 $$SURVIVORS 2>/dev/null || true; \
+		fi; \
+	fi; \
+	cd $(DEMO_WEB_DIR); \
+	if [ ! -d node_modules ]; then \
+		echo "    node_modules missing -- running pnpm install --frozen-lockfile"; \
+		pnpm install --frozen-lockfile; \
+	fi; \
+	echo "    starting vite on port $(DEMO_WEB_PORT) (logs -> $(DEMO_WEB_LOG))"; \
+	nohup pnpm exec vite --port $(DEMO_WEB_PORT) --strictPort >$(DEMO_WEB_LOG) 2>&1 & \
+	echo "    waiting for the dev server to accept connections"; \
+	i=0; \
+	while [ $$i -lt 40 ]; do \
+		if [ -n "$$(lsof -ti tcp:$(DEMO_WEB_PORT) 2>/dev/null || true)" ]; then \
+			break; \
+		fi; \
+		sleep 0.25; \
+		i=$$((i + 1)); \
+	done; \
+	echo "    opening http://localhost:$(DEMO_WEB_PORT)"; \
+	open http://localhost:$(DEMO_WEB_PORT)
