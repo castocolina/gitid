@@ -93,7 +93,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. `agent-ui-ux-designer` critiques the HTML ↔ TUI-dummy visual diff, and its findings are resolved before approval. (DLV-02)
   4. **★ The user approves the complete design** (interactive web demo + live Go TUI demo); the approved demos become the design reference for every later UI wave, and **no backend logic is written for any surface before this approval**. (DLV-08, DLV-05)
 
-**Plans**: 13 plans in 7 waves
+**Plans**: 14 plans in 8 waves
 **UI hint**: yes
 
 Plans:
@@ -128,7 +128,11 @@ Plans:
 
 - [x] 02-13-PLAN.md — LIVE interactive Go TUI demo (cmd/gitid-dummy, dummy data, no backend) mirroring the web demo (DLV-05/02)
 
-**Wave 7** — ★ checkpoint (blocked on Wave 6)
+**Wave 7** — checkpoint-feedback polish (round-2 cross-AI consensus; blocked on Wave 6)
+
+- [ ] 02-14-PLAN.md — checkpoint feedback polish: semantic style contract (02-STYLE-SPEC.md + central Go Theme ↔ web theme.ts), ←/→ wizard navigation, first-class TUI stepper, focused/blurred field contours, stable hint zones, bounded previews, dimmed disabled nav, atomic slide-3 copy freeze (DLV-01/02/05)
+
+**Wave 8** — ★ checkpoint (blocked on Wave 7)
 
 - [ ] 02-12-PLAN.md — ★ DLV-08 single human approval of the live demos; record **APPROVED:** in APPROVAL.md (DLV-08/02)
 
