@@ -153,3 +153,8 @@ None - no external service configuration required.
 ---
 *Phase: 02-design-all-mockups-checkpoint-1*
 *Completed: 2026-07-05*
+
+## Self-Check: PASSED
+
+- All key files (02-STYLE-SPEC.md, theme.go/theme_test.go, frame.go, identities.go, e2e/dummy_demo_e2e_test.go, FIELDS.md, theme.ts, DemoApp.tsx, Frame.tsx, MutationCeremony.tsx, screens/Identities.tsx) verified present on disk.
+- Commits f074d8b (Task 1), 02518c7 (Task 2), e320e5d (Task 3), 523cfce (this SUMMARY) verified present in `git log`.
