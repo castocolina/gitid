@@ -36,6 +36,7 @@ import {
   defaultMatchStrategy,
   gitScreenMatchStrategyPreview,
   globalGitDefaults,
+  healthInfoColor,
   healthSeverityGlyph,
   identityManagerDeleteChoices,
   identityManagerStateGlyph,
@@ -48,7 +49,7 @@ import {
 import { roles, semanticColors } from '../../theme';
 import Frame, { type FrameAction } from '../Frame';
 import { useDemo, useLocalKeys } from '../DemoContext';
-import MutationCeremony, { PreviewBlock, PreviewLabel } from '../MutationCeremony';
+import MutationCeremony, { PreviewBlock } from '../MutationCeremony';
 import { planFor } from '../fixplans';
 import { findingsFor, newBackupPath, type DemoIdentity } from '../store';
 
@@ -58,8 +59,11 @@ const toneColor: Record<'success' | 'warning' | 'error', string> = {
   error: semanticColors.error,
 };
 
+// review-findings F11: reference the shared healthInfoColor constant
+// instead of re-hardcoding the same hex value a third time (it also lives
+// in theme.ts's roles.info and recipeFixtures.ts's own definition).
 const severityColor: Record<HealthSeverity, string> = {
-  info: '#3aa6a6',
+  info: healthInfoColor,
   warning: semanticColors.warning,
   error: semanticColors.error,
   critical: semanticColors.error,
@@ -99,10 +103,11 @@ function providerDefaults(provider: string): { hostname: string; port: string } 
 // focused-field role (02-STYLE-SPEC.md role table): the accent-colored
 // contour every text field carries while focused, mirroring the TUI's
 // FieldFocused rounded accent border — one shared sx fragment, merged into
-// every SSH/Git form field below (never a new hue, the shared accent).
+// every SSH/Git form field below. References roles.focusedField (review-
+// findings F8) instead of reaching into semanticColors directly.
 const focusedFieldSx = {
   '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
-    borderColor: semanticColors.accent,
+    borderColor: roles.focusedField.color,
     borderWidth: 2,
   },
 } as const;
@@ -219,18 +224,53 @@ function SshFormFields({
         value={values.port}
         error={!/^\d+$/.test(values.port)}
         onChange={(e) => onChange({ ...values, port: e.target.value })}
+        // review-findings F9: the Port field had no hint on either side.
+        helperText="Default 22; 443 for alt-SSH"
       />
     </>
   );
 }
 
-function StepDots({ step, labels }: { step: number; labels: string[] }) {
+// WIZARD_STEPS are the LONG step labels — breadcrumb/help source only
+// (02-STYLE-SPEC.md §5), surfaced as each stepper segment's hover title
+// below. Declared before StepDots so both the frozen short/long map and its
+// consumer read top-to-bottom.
+const WIZARD_STEPS = ['SSH details', 'Test connection', 'Git identity', 'Review & write'];
+
+// review-findings F3: the previous "Step n/4 · <label> ● ○ ○ ○" line read
+// dimmer (text.secondary) than body text — the opposite of a navigation
+// affordance. Rebuilt to mirror the TUI's renderStepper (identities.go
+// stepShortLabels/renderStepper): `[1] SSH · [2] Test · [3] Git · [4]
+// Review`, with the active segment bold + roles.activeArea accent (NOT
+// dimmer than body text) and completed segments ✓-prefixed. One line.
+const STEP_SHORT_LABELS = ['SSH', 'Test', 'Git', 'Review'];
+
+function StepDots({ step }: { step: number }) {
   return (
-    <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1 }}>
-      Step {step + 1}/{labels.length} · {labels[step]}{'  '}
-      <Box component="span" sx={{ letterSpacing: 2 }}>
-        {labels.map((_, i) => (i === step ? '●' : '○')).join(' ')}
-      </Box>
+    <Typography component="div" sx={{ fontSize: 13, mb: 1 }}>
+      {STEP_SHORT_LABELS.map((label, i) => (
+        <Box
+          key={label}
+          component="span"
+          // WIZARD_STEPS (the long labels) stays the breadcrumb/help source
+          // (02-STYLE-SPEC.md §5 short↔long map) — surfaced here as each
+          // segment's accessible/hover title, never re-derived into the
+          // short label itself.
+          title={WIZARD_STEPS[i]}
+          sx={{
+            fontWeight: i === step ? 700 : 400,
+            color: i === step ? roles.activeArea.color : i < step ? semanticColors.healthy : 'text.secondary',
+          }}
+        >
+          {i < step ? '✓ ' : ''}
+          {`[${i + 1}] ${label}`}
+          {i < STEP_SHORT_LABELS.length - 1 && (
+            <Box component="span" sx={{ color: 'text.secondary', mx: 0.75 }}>
+              ·
+            </Box>
+          )}
+        </Box>
+      ))}
     </Typography>
   );
 }
@@ -303,14 +343,16 @@ function GitFormFields({
         <MenuItem value="hasconfig">hasconfig — repos whose remote uses this alias</MenuItem>
         <MenuItem value="both">both — either condition (two includeIf blocks = OR)</MenuItem>
       </TextField>
+      {/* review-findings F1: PreviewBlock's title/maxHeight props (added in
+          02-14 Task 1) had no call site — routed through here instead of a
+          separate PreviewLabel, mirroring the TUI's title-in-border-top-edge
+          treatment. */}
       <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1.5}>
         <Box sx={{ flex: 1 }}>
-          <PreviewLabel>~/.gitconfig.d/{name} (fragment file — preview)</PreviewLabel>
-          <PreviewBlock text={fragment} />
+          <PreviewBlock title={`~/.gitconfig.d/${name} (fragment file — preview)`} maxHeight={140} text={fragment} />
         </Box>
         <Box sx={{ flex: 1 }}>
-          <PreviewLabel>~/.gitconfig (includeIf block — preview)</PreviewLabel>
-          <PreviewBlock text={includeIf} />
+          <PreviewBlock title="~/.gitconfig (includeIf block — preview)" maxHeight={140} text={includeIf} />
         </Box>
       </Stack>
       <BaselineStrip />
@@ -321,8 +363,6 @@ function GitFormFields({
 // ---------------------------------------------------------------------------
 // Create wizard — 4 pane-states in the detail pane (spec §3).
 // ---------------------------------------------------------------------------
-
-const WIZARD_STEPS = ['SSH details', 'Test connection', 'Git identity', 'Review & write'];
 
 type TestPhase = 'idle' | 'running1' | 'stage1' | 'running2' | 'stage2' | 'failed';
 
@@ -400,11 +440,17 @@ function CreateWizard({ onDone, onCancel }: { onDone: (name: string) => void; on
   const wizardArrowNav = useCallback(
     (key: string, event: KeyboardEvent): boolean => {
       const target = event.target as HTMLElement | null;
+      // review-findings F2: with the MUI Select menu OPEN, focus sits on a
+      // MenuItem (`li[role="option"]`) inside the popup `[role="listbox"]`,
+      // not on the closed-select selectors below -- without this branch,
+      // plain </-/-> fell through to step navigation UNDER the open menu.
+      // `closest()` also covers the option's own descendants (e.g. an icon).
       const isSelectTarget =
         !!target &&
         (target.matches('[role="combobox"]') ||
           target.matches('.MuiSelect-select') ||
-          target.hasAttribute('aria-haspopup'));
+          target.hasAttribute('aria-haspopup') ||
+          !!target.closest('[role="listbox"], [role="option"]'));
       if (isSelectTarget && !event.shiftKey) return false; // clause 1: the open/focused select owns plain arrows
       if (key === 'ArrowLeft') {
         if (step === 0) onCancel();
@@ -484,7 +530,7 @@ function CreateWizard({ onDone, onCancel }: { onDone: (name: string) => void; on
 
   return (
     <Box>
-      <StepDots step={step} labels={WIZARD_STEPS} />
+      <StepDots step={step} />
 
       {step === 0 && (
         <Stack spacing={1.5} sx={{ maxWidth: 620 }}>
@@ -536,9 +582,10 @@ function CreateWizard({ onDone, onCancel }: { onDone: (name: string) => void; on
               </MenuItem>
             ))}
           </TextField>
+          {/* review-findings F1: routed through PreviewBlock's title prop
+              (mirrors the TUI's renderHostBlockPreview). */}
           <Box>
-            <PreviewLabel>Live Host-block preview — written exactly like this on confirm</PreviewLabel>
-            <PreviewBlock text={hostBlock} />
+            <PreviewBlock title="Live Host-block preview — written exactly like this on confirm" maxHeight={170} text={hostBlock} />
           </Box>
           <Stack direction="row" spacing={2}>
             <Button variant="outlined" onClick={onCancel}>
@@ -573,10 +620,10 @@ function CreateWizard({ onDone, onCancel }: { onDone: (name: string) => void; on
               the test has passed — there is nothing left to simulate then.
             </Typography>
           </Box>
-          <Typography variant="subtitle2" sx={{ color: 'text.secondary' }}>
-            Stage 1 — key DIRECT against the provider (TEST-01)
-          </Typography>
-          <PreviewBlock text={`$ ${stage1Cmd}`} />
+          {/* review-findings F1: the "Stage 1 — ..." label moves into
+              PreviewBlock's title prop, mirroring the TUI's border-top-edge
+              treatment. */}
+          <PreviewBlock title="Stage 1 — key DIRECT against the provider (TEST-01)" maxHeight={70} text={`$ ${stage1Cmd}`} />
           {testPhase === 'idle' && (
             <Button variant="contained" onClick={runStage1} sx={{ alignSelf: 'flex-start' }}>
               Run stage 1 (Enter)
@@ -618,11 +665,15 @@ function CreateWizard({ onDone, onCancel }: { onDone: (name: string) => void; on
           )}
           {(testPhase === 'stage1' || testPhase === 'stage2') && (
             <>
+              {/* review-findings F1: the short "Stage 2 — ..." label moves
+                  into PreviewBlock's title prop; the longer no-`-i`-on-
+                  purpose rationale stays as an adjacent hint line, mirroring
+                  the TUI split. */}
               <Typography variant="subtitle2" sx={{ color: 'text.secondary' }}>
-                Stage 2 — resolve BY ALIAS (TEST-02). No -i here on purpose: the config must supply
-                the key; that is exactly what this stage proves.
+                No -i here on purpose: the config must supply the key; that is exactly what this
+                stage proves.
               </Typography>
-              <PreviewBlock text={`$ ${stage2Cmd}`} />
+              <PreviewBlock title="Stage 2 — resolve BY ALIAS (TEST-02)" maxHeight={70} text={`$ ${stage2Cmd}`} />
               {testPhase === 'stage1' && (
                 <Button variant="contained" onClick={runStage2} sx={{ alignSelf: 'flex-start' }}>
                   Run stage 2 (Enter)
@@ -700,7 +751,11 @@ function CreateWizard({ onDone, onCancel }: { onDone: (name: string) => void; on
                 SSH: {sshHost} → {hostname}:{port} · key {keyPath} · Git:{' '}
                 {configureGit ? `${git.gitName} <${git.gitEmail}>, strategy ${git.strategy}` : 'skipped'}
               </Typography>
-              <PreviewBlock text={reviewText} />
+              {/* review-findings F1: bounded (maxHeight), but WITHOUT a
+                  duplicate title — MutationCeremony already renders "Exact
+                  change — ..." directly above this preview node; a second
+                  title here would repeat that heading. */}
+              <PreviewBlock maxHeight={260} text={reviewText} />
             </Stack>
           }
           backups={

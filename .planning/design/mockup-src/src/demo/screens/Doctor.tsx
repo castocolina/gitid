@@ -24,6 +24,7 @@ import {
 } from '@mui/material';
 import {
   fixerNothingToFixSummary,
+  healthInfoColor,
   healthSeverityGlyph,
   type HealthSeverity,
 } from '../../data/recipeFixtures';
@@ -34,8 +35,11 @@ import MutationCeremony, { PreviewBlock } from '../MutationCeremony';
 import { planFor } from '../fixplans';
 import { newBackupPath, type DemoFinding } from '../store';
 
+// review-findings F11: reference the shared healthInfoColor constant
+// instead of re-hardcoding the same hex value (it also lives in theme.ts's
+// roles.info and recipeFixtures.ts's own definition).
 const severityColor: Record<HealthSeverity, string> = {
-  info: '#3aa6a6',
+  info: healthInfoColor,
   warning: semanticColors.warning,
   error: semanticColors.error,
   critical: semanticColors.error,
@@ -158,6 +162,9 @@ export function Doctor() {
       }
       statusTone={ordered.filter((f) => f.severity !== 'info').length > 0 && !scanning ? 'warning' : 'info'}
       actions={actions}
+      // review-findings F4: dim the header nav while the fix ceremony owns
+      // the keys (mirrors the TUI's capturesKeys on all four tabs).
+      capturesKeys={fixing}
     >
       {scanning && (
         <Stack direction="row" spacing={1} alignItems="center" sx={{ p: 3 }}>

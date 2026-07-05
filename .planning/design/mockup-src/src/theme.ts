@@ -1,4 +1,5 @@
 import { createTheme } from '@mui/material/styles';
+import { healthInfoColor } from './data/recipeFixtures';
 
 /**
  * gitid design mockup — terminal-skin MUI v7 theme.
@@ -25,36 +26,58 @@ import { createTheme } from '@mui/material/styles';
 // 02-UX-DIRECTION.md §2 "Color semantics (restricted, ANSI-safe, adaptive)"
 // — every colored state MUST also carry a glyph + a word; this palette only
 // supplies the color half of that contract. Never used alone in the UI.
+//
+// review-findings F7: `accent` below IS a genuinely new color value, added by
+// 02-14 Task 1 for the focused-field contour and the active-area chrome (the
+// TUI's ANSI-4 blue accent had no existing web equivalent). This is the ONE
+// deliberate new color this plan introduces — documented as a deviation in
+// 02-14-SUMMARY.md — every OTHER role below still reuses an existing
+// semanticColors/MUI token.
 export const semanticColors = {
   healthy: '#4caf50', // green + ✓ + word
   warning: '#d4b106', // yellow + ! + word (ANSI-safe, not neon)
   error: '#e05252', // red + ✗ + word
   dim: '#8a8f98', // gray — helper text, disabled keys
   focus: '#e8e8ea', // reverse/bold surface, not a new hue
-  accent: '#5aa9e6', // blue — the ONE accent color for focused-field + active-area
+  accent: '#5aa9e6', // blue — the ONE new accent color, for focused-field + active-area only
 } as const;
 
 /**
  * roles — the semantic style contract's WEB half, mirroring
- * internal/dummytui/theme.go's `Theme` struct 1:1 by role name (see
+ * internal/dummytui/theme.go's `Theme` struct 1:1 BY ROLE NAME (see
  * .planning/phases/02-design-all-mockups-checkpoint-1/02-STYLE-SPEC.md for
- * the full cross-media role table). Every consumer reaches for a NAMED role
- * here instead of reaching into semanticColors/sx ad-hoc, so the TUI and the
- * web demo stay provably in sync role-by-role. No new color values are
- * introduced — every role reuses semanticColors or MUI theme tokens.
+ * the full cross-media role table). Color VALUES are shared with the TUI via
+ * `semanticColors` above (and `healthInfoColor`, imported below rather than
+ * re-hardcoded — review-findings F11).
+ *
+ * review-findings F8 (softened claim): the TUI centralizes EVERY consumer
+ * through its Go `Theme` struct; the web instead routes the MECHANICAL
+ * roles — `hint`, `preview`, `disabledNav`, `focusedField`, `activeArea`,
+ * `label`, `healthy` — through this `roles` export (see focusedFieldSx and
+ * the stepper in screens/Identities.tsx, Frame.tsx, MutationCeremony.tsx, and
+ * the MuiInputLabel/MuiFormLabel override below). The remaining roles
+ * (`info`, `field`, `blurredField`, `warning`, `error`) are NOT yet rewired
+ * through every scattered screen-level usage — those still reach
+ * `semanticColors`/MUI defaults ad-hoc in a few places. This table documents
+ * the INTENDED 1:1 role-name mapping, not a claim that every consumer
+ * already routes through it — do not read "mirrored 1:1" as "every screen
+ * rewritten".
  */
 export const roles = {
-  info: { color: '#3aa6a6' },
+  info: { color: healthInfoColor },
   label: { fontWeight: 700 },
   field: { border: '1px solid #2a2d33' },
-  focusedField: { border: `1px solid ${semanticColors.accent}`, outline: `1px solid ${semanticColors.accent}` },
+  focusedField: { border: `1px solid ${semanticColors.accent}`, outline: `1px solid ${semanticColors.accent}`, color: semanticColors.accent },
   blurredField: { border: '1px solid #2a2d33', opacity: 0.85 },
   hint: { color: semanticColors.dim },
   warning: { color: semanticColors.warning },
   error: { color: semanticColors.error },
   preview: { color: semanticColors.dim, opacity: 0.9 },
   disabledNav: { color: semanticColors.dim, opacity: 0.6 },
-  activeArea: { border: `1px solid ${semanticColors.accent}` },
+  activeArea: { border: `1px solid ${semanticColors.accent}`, color: semanticColors.accent },
+  // review-findings F11: the Go Theme struct carries a Healthy role with no
+  // web counterpart — added here for full 1:1 name parity (cheap, mechanical).
+  healthy: { color: semanticColors.healthy },
 } as const;
 
 // All 25 MUI shadow elevations flattened to 'none' — a terminal cell has no
@@ -121,6 +144,17 @@ export const theme = createTheme({
         disableTouchRipple: true,
       },
     },
+    MuiButton: {
+      styleOverrides: {
+        // review-findings F6: MUI's default Button uppercases its label via
+        // textTransform; the frozen button copy (`[ Skip Git ]`, `[ Continue
+        // ]`, …) must render byte-identical to the TUI, which has no such
+        // transform — disable it globally, terminal-faithful either way.
+        root: {
+          textTransform: 'none',
+        },
+      },
+    },
     MuiPaper: {
       styleOverrides: {
         root: {
@@ -133,6 +167,24 @@ export const theme = createTheme({
       styleOverrides: {
         body: {
           fontFamily: terminalFontFamily,
+        },
+      },
+    },
+    // review-findings F8: the `label` role (fontWeight 700) is now routed
+    // through every MUI field label via a theme-level override — the TUI
+    // bolds field labels (styleBold); the web previously left MUI's default
+    // (non-bold) label weight untouched (designer LOW-2).
+    MuiInputLabel: {
+      styleOverrides: {
+        root: {
+          fontWeight: roles.label.fontWeight,
+        },
+      },
+    },
+    MuiFormLabel: {
+      styleOverrides: {
+        root: {
+          fontWeight: roles.label.fontWeight,
         },
       },
     },

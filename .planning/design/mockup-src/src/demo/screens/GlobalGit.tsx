@@ -89,6 +89,9 @@ export function GlobalGit() {
       }
       statusTone={pending.length > 0 ? 'warning' : 'info'}
       actions={actions}
+      // review-findings F4: dim the header nav while the apply ceremony
+      // owns the keys (mirrors the TUI's capturesKeys on all four tabs).
+      capturesKeys={mode === 'ceremony'}
     >
       {gitFindings.length > 0 && mode === 'browse' && (
         <Alert

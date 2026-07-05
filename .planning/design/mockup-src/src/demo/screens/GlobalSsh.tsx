@@ -130,6 +130,10 @@ export function GlobalSsh() {
       }
       statusTone={pending.length > 0 ? 'warning' : 'info'}
       actions={actions}
+      // review-findings F4: dim the header nav while an apply/storage
+      // ceremony owns the keys (mirrors the TUI's capturesKeys on all four
+      // tabs).
+      capturesKeys={mode !== 'browse'}
     >
       {/* sub-tab strip */}
       <Stack direction="row" spacing={1} sx={{ mb: 1.5 }}>
