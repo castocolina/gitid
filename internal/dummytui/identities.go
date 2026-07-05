@@ -376,6 +376,14 @@ func (f sshForm) view(focus int, prefixError, hostHelper string) string {
 		portLine += "  " + styleError.Render("digits only")
 	}
 	b.WriteString(portLine + "\n")
+	// Port had no hint on either side (review-findings F9) — a short,
+	// focused-only helper (matching the Hostname field's pattern above)
+	// costs no extra row while blurred, and at most +1 while focused, which
+	// the 100x30 budget still absorbs (the field-contour/hint-zone work
+	// left ~2 rows of headroom at this step).
+	if focus == sshFieldPort {
+		b.WriteString(helperLine("Default 22; 443 for alt-SSH", false) + "\n")
+	}
 	return b.String()
 }
 
@@ -538,13 +546,14 @@ func (g gitForm) view(name, keyPath string, focus int, width int, baseline strin
 	}
 
 	// fragLines/includeIf maxLines stay at the tightest previously-used
-	// value (2) regardless of focus — the row-budget trap forced this
+	// value (1) regardless of focus — the row-budget trap forced this
 	// tradeoff to make room for the field-contour box and the frozen hint
-	// lines the button row now always carries.
-	b.WriteString(" " + PreviewLabel("~/.gitconfig.d/"+name+" (fragment file — preview)") + "\n")
-	b.WriteString(previewBlockClipped(g.fragmentPreview(keyPath), false, width, 1) + "\n")
-	b.WriteString(" " + PreviewLabel("~/.gitconfig (includeIf block — preview)") + "\n")
-	b.WriteString(previewBlockClipped(g.includeIfPreview(name), false, width, 1) + "\n")
+	// lines the button row now always carries. Routed through the bounded,
+	// titled PreviewBlock (review-findings F1) — the title is spliced into
+	// the border's top edge instead of a separate PreviewLabel row, saving
+	// one row per preview.
+	b.WriteString(PreviewBlock("~/.gitconfig.d/"+name+" (fragment file — preview)", g.fragmentPreview(keyPath), false, width, 1) + "\n")
+	b.WriteString(PreviewBlock("~/.gitconfig (includeIf block — preview)", g.includeIfPreview(name), false, width, 1) + "\n")
 	b.WriteString(baseline + "\n")
 	return b.String()
 }
@@ -633,13 +642,21 @@ func hostBlockText(host, hostname, port, keyPath string) string {
 		"\n    IdentitiesOnly yes"
 }
 
-// renderHostBlockPreview renders the live Host-block preview (label +
-// dashed block), rebuilt on every keystroke — the SAME rendering under the
-// wizard's SSH form and the edit-SSH form (review batch 2, M1; the web
-// shows it simultaneously in both places).
+// renderHostBlockPreview renders the live Host-block preview through the
+// bounded, titled PreviewBlock — the title is spliced into the border's top
+// edge instead of a separate label row (02-STYLE-SPEC.md "preview-sizing";
+// review-findings F1: PreviewBlock was dead code, every wizard preview still
+// used the untitled previewBlockClipped + a separate PreviewLabel row; this
+// SAVES one row per preview). The title is shortened from the original
+// PreviewLabel wording ("Live Host-block preview — written exactly like
+// this on confirm") to fit the border budget (detailWidth=62 leaves 58
+// columns for the title once the corner/fill chars are reserved). Rebuilt
+// on every keystroke — the SAME rendering under the wizard's SSH form and
+// the edit-SSH form (review batch 2, M1; the web shows it simultaneously in
+// both places).
 func renderHostBlockPreview(host, hostname, port, keyPath string, width int) string {
-	return " " + PreviewLabel("Live Host-block preview — written exactly like this on confirm") + "\n" +
-		previewBlockClipped(hostBlockText(host, hostname, port, keyPath), false, width, 6)
+	return PreviewBlock("Live Host-block preview (written on confirm)",
+		hostBlockText(host, hostname, port, keyPath), false, width, 6)
 }
 
 // hostBlockPreview is the wizard's live Host-block preview text — written
@@ -1909,8 +1926,10 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 		}
 		b.WriteString("\n")
 
-		b.WriteString(" " + styleFaint.Render("Stage 1 — key DIRECT against the provider (TEST-01)") + "\n")
-		b.WriteString(previewBlockClipped("$ "+w.stage1Cmd(), false, width, 2) + "\n")
+		// Routed through the bounded, titled PreviewBlock (review-findings
+		// F1) — the "Stage 1 — ..." description moves into the border's top
+		// edge instead of a separate description row.
+		b.WriteString(PreviewBlock("Stage 1 — key DIRECT against the provider (TEST-01)", "$ "+w.stage1Cmd(), false, width, 2) + "\n")
 		switch w.testPhase {
 		case testIdle:
 			b.WriteString(" " + styleSelected.Render(" Run stage 1 (Enter) ") + "\n")
@@ -1925,9 +1944,13 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 			b.WriteString(" " + styleHealthy.Render("✓ Hi "+w.form.identityName()+"! You've successfully authenticated, but GitHub does not provide shell access.") + "\n")
 		}
 		if w.testPhase == testStage1 || w.testPhase == testStage2 {
-			b.WriteString("\n " + styleFaint.Render("Stage 2 — resolve BY ALIAS (TEST-02). No -i here on purpose: the config must supply") + "\n")
-			b.WriteString(" " + styleFaint.Render("the key; that is exactly what this stage proves.") + "\n")
-			b.WriteString(previewBlockClipped("$ "+w.stage2Cmd(), false, width, 2) + "\n")
+			// The short "Stage 2 — ..." title moves into the border's top
+			// edge (review-findings F1); the longer no-`-i`-on-purpose
+			// rationale stays as an adjacent hint line (regionFlat/paneFlat
+			// normalize whitespace, so the exact wrap point does not matter
+			// for the pinned assertion).
+			b.WriteString("\n " + styleFaint.Render("No -i here on purpose: the config must supply the key; that is exactly what this stage proves.") + "\n")
+			b.WriteString(PreviewBlock("Stage 2 — resolve BY ALIAS (TEST-02)", "$ "+w.stage2Cmd(), false, width, 2) + "\n")
 			if w.testPhase == testStage1 {
 				b.WriteString(" " + styleSelected.Render(" Run stage 2 (Enter) ") + "\n")
 			} else {

@@ -187,8 +187,14 @@ func (c ceremonyModel) view(width int) string {
 		b.WriteString(styleFaint.Render("Backup → ") + bk + "\n")
 	}
 	b.WriteString(styleFaint.Render("  (written first — restore it to undo)") + "\n")
-	b.WriteString(PreviewLabel("Exact change — everything outside the managed block is preserved verbatim") + "\n")
-	b.WriteString(previewBlockClipped(c.cfg.Preview, c.cfg.PreviewDiff, width, 10) + "\n")
+	// Routed through the bounded, titled PreviewBlock (review-findings F1):
+	// the title is spliced into the border's top edge instead of a separate
+	// PreviewLabel row, saving one row per ceremony — this component is
+	// shared by every mutating flow (create, edit, delete, global apply,
+	// fixes), so this change applies everywhere ceremony.view renders. The
+	// wording is shortened from the original PreviewLabel text to fit the
+	// narrowest caller's pane width (identities.go's detailWidth=62).
+	b.WriteString(PreviewBlock("Exact change — everything else preserved verbatim", c.cfg.Preview, c.cfg.PreviewDiff, width, 10) + "\n")
 	if c.cfg.Destructive != nil {
 		b.WriteString(styleError.Render(wrap.Render(c.cfg.Destructive.Warning)) + "\n")
 		b.WriteString(styleError.Render("> ") + c.typed.View() + "\n")

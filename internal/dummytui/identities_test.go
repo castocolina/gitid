@@ -217,7 +217,7 @@ func TestWizardSKAlgorithmsDisabledWithRationale(t *testing.T) {
 			t.Fatalf("algorithm select landed on the disabled entry %q", m.wizard.algo())
 		}
 	}
-	if !strings.Contains(paneFlat(a), "Live Host-block preview — written exactly like this on confirm") {
+	if !strings.Contains(paneFlat(a), "Live Host-block preview (written on confirm)") {
 		t.Error("live preview label missing")
 	}
 }
@@ -701,7 +701,7 @@ func TestIdentityDetailSectionHeadersReadAsGroups(t *testing.T) {
 func TestEditSSHShowsLiveHostBlockPreview(t *testing.T) {
 	a := pressSeq(t, identitiesApp(), "e")
 	pane := paneFlat(a)
-	if !strings.Contains(pane, "Live Host-block preview — written exactly like this on confirm") {
+	if !strings.Contains(pane, "Live Host-block preview (written on confirm)") {
 		t.Fatalf("edit-SSH pane must show the same live preview the wizard shows (M1):\n%s", pane)
 	}
 	if !strings.Contains(pane, "Host personal.github.com") || !strings.Contains(pane, "IdentitiesOnly yes") {
