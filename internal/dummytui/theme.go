@@ -1,0 +1,70 @@
+package dummytui
+
+// theme.go is the central semantic style contract for the live TUI demo,
+// mirrored 1:1 by role name with the web
+// .planning/design/mockup-src/src/theme.ts role tokens — see
+// .planning/phases/02-design-all-mockups-checkpoint-1/02-STYLE-SPEC.md for
+// the full role table and rationale. frame.go's package-level style vars
+// (styleBold/styleFaint/styleHealthy/styleWarning/styleError/styleInfo) are
+// promoted to derive from DefaultTheme below — a behavior-preserving
+// refactor (TestThemePromotionIsBehaviorPreserving pins byte-identical
+// output) so every pre-existing copy-pinning test stays green.
+//
+// ANSI-16 colors are kept deliberately (not truecolor/adaptive light-dark)
+// so NO_COLOR and arbitrary terminal color schemes stay legible — every role
+// also carries a glyph or word, per 02-UX-DIRECTION.md §2, never color
+// alone.
+
+import (
+	"image/color"
+
+	lipgloss "charm.land/lipgloss/v2"
+)
+
+// Theme is the central semantic style contract: one lipgloss.Style per role
+// (02-STYLE-SPEC.md's 11-role table), plus the shared accent color the
+// focused-field contour and the active-area chrome both key from.
+type Theme struct {
+	Info         lipgloss.Style
+	Label        lipgloss.Style
+	Field        lipgloss.Style
+	FieldFocused lipgloss.Style
+	FieldBlurred lipgloss.Style
+	Hint         lipgloss.Style
+	Warning      lipgloss.Style
+	Error        lipgloss.Style
+	Healthy      lipgloss.Style
+	Preview      lipgloss.Style
+	DisabledNav  lipgloss.Style
+	ActiveArea   lipgloss.Style
+
+	// Accent is the ONE shared blue (ANSI 4) accent color — the
+	// focused-field contour's border foreground and the active-area chrome
+	// both key from this single color (02-STYLE-SPEC.md role table).
+	Accent color.Color
+	// FieldBorder is an alias of Accent scoped to the focused-field contour
+	// (the STYLE-SPEC's own role name for it) — same color, kept distinct so
+	// callers can name their intent.
+	FieldBorder color.Color
+}
+
+// DefaultTheme is the ANSI-16 role palette every dummytui renderer draws
+// through.
+var DefaultTheme = Theme{
+	Info:  lipgloss.NewStyle().Foreground(lipgloss.Color("6")),
+	Label: lipgloss.NewStyle().Bold(true),
+	Field: lipgloss.NewStyle(),
+	FieldFocused: lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("4")),
+	FieldBlurred: lipgloss.NewStyle().Faint(true),
+	Hint:         lipgloss.NewStyle().Faint(true),
+	Warning:      lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
+	Error:        lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
+	Healthy:      lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
+	Preview:      lipgloss.NewStyle().Faint(true),
+	DisabledNav:  lipgloss.NewStyle().Faint(true),
+	ActiveArea:   lipgloss.NewStyle().Foreground(lipgloss.Color("4")),
+	Accent:       lipgloss.Color("4"),
+	FieldBorder:  lipgloss.Color("4"),
+}

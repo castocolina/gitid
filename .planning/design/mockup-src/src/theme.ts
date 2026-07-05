@@ -31,6 +31,30 @@ export const semanticColors = {
   error: '#e05252', // red + ✗ + word
   dim: '#8a8f98', // gray — helper text, disabled keys
   focus: '#e8e8ea', // reverse/bold surface, not a new hue
+  accent: '#5aa9e6', // blue — the ONE accent color for focused-field + active-area
+} as const;
+
+/**
+ * roles — the semantic style contract's WEB half, mirroring
+ * internal/dummytui/theme.go's `Theme` struct 1:1 by role name (see
+ * .planning/phases/02-design-all-mockups-checkpoint-1/02-STYLE-SPEC.md for
+ * the full cross-media role table). Every consumer reaches for a NAMED role
+ * here instead of reaching into semanticColors/sx ad-hoc, so the TUI and the
+ * web demo stay provably in sync role-by-role. No new color values are
+ * introduced — every role reuses semanticColors or MUI theme tokens.
+ */
+export const roles = {
+  info: { color: '#3aa6a6' },
+  label: { fontWeight: 700 },
+  field: { border: '1px solid #2a2d33' },
+  focusedField: { border: `1px solid ${semanticColors.accent}`, outline: `1px solid ${semanticColors.accent}` },
+  blurredField: { border: '1px solid #2a2d33', opacity: 0.85 },
+  hint: { color: semanticColors.dim },
+  warning: { color: semanticColors.warning },
+  error: { color: semanticColors.error },
+  preview: { color: semanticColors.dim, opacity: 0.9 },
+  disabledNav: { color: semanticColors.dim, opacity: 0.6 },
+  activeArea: { border: `1px solid ${semanticColors.accent}` },
 } as const;
 
 // All 25 MUI shadow elevations flattened to 'none' — a terminal cell has no

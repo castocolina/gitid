@@ -96,17 +96,20 @@ var reservedFooterInput = []FooterAction{
 	{Key: "Ctrl+P", Label: "palette"},
 }
 
-// Shared style tokens. lipgloss.NewStyle() per v2 (renderer.NewStyle does
-// not exist); colors are basic ANSI so NO_COLOR/terminal themes degrade
-// legibly — every meaning is also carried by a glyph + word.
+// Shared style tokens — PROMOTED from ad-hoc lipgloss styles to derive from
+// DefaultTheme (theme.go); the promotion is behavior-preserving (rendered
+// output is byte-identical, pinned by TestThemePromotionIsBehaviorPreserving)
+// so every pre-existing copy-pinning test in this package stays green.
+// styleReverse/styleSelected/styleSection have no Theme role (they are
+// focus/selection treatments, not semantic roles) and stay ad-hoc.
 var (
-	styleBold     = lipgloss.NewStyle().Bold(true)
-	styleFaint    = lipgloss.NewStyle().Faint(true)
+	styleBold     = DefaultTheme.Label
+	styleFaint    = DefaultTheme.Hint
 	styleReverse  = lipgloss.NewStyle().Reverse(true)
-	styleHealthy  = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
-	styleWarning  = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
-	styleError    = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
-	styleInfo     = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	styleHealthy  = DefaultTheme.Healthy
+	styleWarning  = DefaultTheme.Warning
+	styleError    = DefaultTheme.Error
+	styleInfo     = DefaultTheme.Info
 	styleSelected = lipgloss.NewStyle().Bold(true).Reverse(true)
 	styleSection  = lipgloss.NewStyle().Bold(true).Underline(true)
 )
@@ -227,14 +230,21 @@ func headerTabText(i int) string {
 }
 
 // renderHeader renders the single header row: brand · numbered flat tabs
-// (active reverse-video, the number part of the label) · health chip.
-func renderHeader(width int, s DemoState, active tabID) string {
+// (active reverse-video, the number part of the label) · health chip. When
+// capturesKeys is true (a pane/form/ceremony owns the keys) every INACTIVE
+// tab renders through Theme.DisabledNav (faint) while the active tab keeps
+// its reverse-video — the chrome dims, the current view stays legible
+// (02-STYLE-SPEC.md "dim-states").
+func renderHeader(width int, s DemoState, active tabID, capturesKeys bool) string {
 	segments := make([]string, 0, len(tabLabels))
 	for i := range tabLabels {
 		text := headerTabText(i)
-		if tabID(i) == active {
+		switch {
+		case tabID(i) == active:
 			segments = append(segments, styleReverse.Render(text))
-		} else {
+		case capturesKeys:
+			segments = append(segments, DefaultTheme.DisabledNav.Render(text))
+		default:
 			segments = append(segments, text)
 		}
 	}
@@ -352,8 +362,17 @@ func RenderFrame(width, height int, s DemoState, tab tabID, crumbs []string, sta
 		return fmt.Sprintf("Terminal too small — resize to at least %dx%d", minFrameWidth, minFrameHeight)
 	}
 
-	header := renderHeader(width, s, tab)
-	crumbLine := " " + styleFaint.Render(ansi.Truncate(strings.Join(append([]string{tabLabels[tab]}, crumbs...), " › "), width-2, "…"))
+	header := renderHeader(width, s, tab, capturesKeys)
+	// The breadcrumb line sits directly between the header and the active
+	// pane's body — it is the ActiveArea mechanism (02-STYLE-SPEC.md §3):
+	// while a pane captures keys it carries the accent color instead of the
+	// default faint dim, giving the active region an accent-colored divider
+	// without spending an extra row (the row-budget trap, 02-REVIEWS.md).
+	crumbStyle := styleFaint
+	if capturesKeys {
+		crumbStyle = DefaultTheme.ActiveArea
+	}
+	crumbLine := " " + crumbStyle.Render(ansi.Truncate(strings.Join(append([]string{tabLabels[tab]}, crumbs...), " › "), width-2, "…"))
 	statusLine := " " + statusToneStyle(statusTone).Render(ansi.Truncate(status, width-2, "…"))
 	footerContextual := renderFooterLine(width, actions)
 	reserved := reservedFooter
@@ -401,29 +420,105 @@ var previewDashedBorder = lipgloss.Border{
 	BottomRight: "╯",
 }
 
-// PreviewBlock renders a monospace config/diff preview — faint text plus a
-// dashed dim border, deliberately dimmer than editable fields (round-3
-// feedback; mirror of MutationCeremony.tsx's PreviewBlock). In diff mode
-// leading `+` lines render green and `-` lines red.
-func PreviewBlock(text string, diff bool, width int) string {
-	return previewBlockClipped(text, diff, width, 0)
+// PreviewBlock renders a bounded, optionally-titled monospace config/diff
+// preview — faint text plus a dashed dim border, deliberately dimmer than
+// editable fields (round-3 feedback; mirror of MutationCeremony.tsx's
+// PreviewBlock). In diff mode leading `+` lines render green and `-` lines
+// red. If title is non-empty it is carried in the border's TOP EDGE (never a
+// separate row — round-4 feedback: a preview block always looks like a
+// titled read-only box, never an editable field). If maxLines > 0 the block
+// is CLIPPED (overflow → the `… (+n more lines)` cue) OR PADDED (short
+// content → blank rows) to exactly maxLines content rows, so the box height
+// is STABLE — a preview never auto-shrinks to its content in a way that
+// makes it read as an input (02-STYLE-SPEC.md "preview-sizing").
+func PreviewBlock(title, text string, diff bool, width, maxLines int) string {
+	lines := strings.Split(text, "\n")
+	if maxLines > 0 {
+		switch {
+		case len(lines) > maxLines:
+			hidden := len(lines) - maxLines
+			lines = append(lines[:maxLines], fmt.Sprintf("… (+%d more lines)", hidden))
+		case len(lines) < maxLines:
+			for len(lines) < maxLines {
+				lines = append(lines, "")
+			}
+		}
+	}
+	// PreviewBlock (unlike the shared previewBlockClipped path) fills the
+	// box out to the full pane width — "bounded to the pane" means the
+	// title always has room in the top border, and the box reads as a
+	// stable, fixed-size region rather than shrink-wrapping to content.
+	return renderPreviewBoxFilled(title, lines, diff, width)
 }
 
-// previewBlockClipped is PreviewBlock with an optional maxLines cap
+// previewBlockClipped is the pre-existing (untitled, non-padding) preview
+// renderer every OTHER screen still calls — an optional maxLines cap
 // (0 = unlimited); clipped previews end with a faint "… (+n more lines)".
+// Kept byte-identical to preserve every existing copy-pinning test outside
+// this task's scope (identities.go/globalssh.go/ceremony.go).
 func previewBlockClipped(text string, diff bool, width int, maxLines int) string {
 	lines := strings.Split(text, "\n")
 	if maxLines > 0 && len(lines) > maxLines {
 		hidden := len(lines) - maxLines
 		lines = append(lines[:maxLines], fmt.Sprintf("… (+%d more lines)", hidden))
 	}
+	return renderPreviewBox("", lines, diff, width)
+}
+
+// previewBorderColor is the dim gray (ANSI 8) every preview border/title
+// renders in — shared by the box border and the spliced title.
+var previewBorderColor = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+
+// renderPreviewBox is the pre-existing preview-box renderer (shrink-wraps to
+// its longest content line, never wider than width-4) used by every OTHER
+// screen via previewBlockClipped — unchanged so those call sites' rendered
+// output (and their pinned tests) stay byte-identical.
+func renderPreviewBox(title string, lines []string, diff bool, width int) string {
 	inner := width - 4 // border + one space of padding each side
 	if inner < 10 {
 		inner = 10
 	}
+	styled := stylePreviewLines(lines, diff, inner)
+	block := lipgloss.NewStyle().
+		Border(previewDashedBorder).
+		BorderForeground(lipgloss.Color("8")).
+		Padding(0, 1).
+		Render(strings.Join(styled, "\n"))
+	if title == "" {
+		return block
+	}
+	return spliceTitleIntoTopBorder(block, title)
+}
+
+// renderPreviewBoxFilled is PreviewBlock's own renderer: it additionally
+// pads every content line out to inner width (lipgloss.Width) so the
+// rendered box always fills the full pane width — "bounded to the pane"
+// means both capped AND filled, giving the title-in-border-top-edge room to
+// render regardless of how short the content is.
+func renderPreviewBoxFilled(title string, lines []string, diff bool, width int) string {
+	inner := width - 4 // border + one space of padding each side
+	if inner < 10 {
+		inner = 10
+	}
+	styled := stylePreviewLines(lines, diff, inner)
+	block := lipgloss.NewStyle().
+		Border(previewDashedBorder).
+		BorderForeground(lipgloss.Color("8")).
+		Padding(0, 1).
+		Width(inner).
+		Render(strings.Join(styled, "\n"))
+	if title == "" {
+		return block
+	}
+	return spliceTitleIntoTopBorder(block, title)
+}
+
+// stylePreviewLines truncates each line to innerWidth and applies the
+// diff/faint styling shared by both preview-box renderers.
+func stylePreviewLines(lines []string, diff bool, innerWidth int) []string {
 	styled := make([]string, 0, len(lines))
 	for _, line := range lines {
-		line = ansi.Truncate(line, inner, "…")
+		line = ansi.Truncate(line, innerWidth, "…")
 		switch {
 		case diff && strings.HasPrefix(line, "+"):
 			styled = append(styled, styleHealthy.Render(line))
@@ -433,10 +528,33 @@ func previewBlockClipped(text string, diff bool, width int, maxLines int) string
 			styled = append(styled, styleFaint.Render(line))
 		}
 	}
-	block := lipgloss.NewStyle().
-		Border(previewDashedBorder).
-		BorderForeground(lipgloss.Color("8")).
-		Padding(0, 1).
-		Render(strings.Join(styled, "\n"))
-	return block
+	return styled
+}
+
+// spliceTitleIntoTopBorder rewrites the first (top-border) line of an
+// already-rendered preview block to carry " title " between its corners,
+// bounded to the block's own width — the title-in-border-top-edge affordance
+// (02-STYLE-SPEC.md "preview-sizing"; round-4 feedback).
+func spliceTitleIntoTopBorder(block, title string) string {
+	lines := strings.Split(block, "\n")
+	if len(lines) == 0 {
+		return block
+	}
+	plain := ansi.Strip(lines[0])
+	runes := []rune(plain)
+	total := len(runes)
+	if total < 6 { // corners + at least one dash each side + a 1-char label
+		return block
+	}
+	label := ansi.Truncate(" "+title+" ", total-4, "")
+	labelWidth := ansi.StringWidth(label)
+	inner := total - 2 // width excluding both corners
+	rightDashes := inner - 1 - labelWidth
+	if rightDashes < 1 {
+		rightDashes = 1
+	}
+	newTop := string(runes[0]) + string(runes[1]) + label + strings.Repeat(string(runes[1]), rightDashes) + string(runes[total-1])
+	newTop = ansi.Truncate(newTop, total, "")
+	lines[0] = previewBorderColor.Render(newTop)
+	return strings.Join(lines, "\n")
 }

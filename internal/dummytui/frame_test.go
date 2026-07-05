@@ -161,7 +161,7 @@ func TestPreviewLabelRendersDimmerThanFieldLabels(t *testing.T) {
 }
 
 func TestPreviewBlockDimsAndColorsDiffs(t *testing.T) {
-	block := PreviewBlock("context\n+ added\n- removed", true, 60)
+	block := PreviewBlock("", "context\n+ added\n- removed", true, 60, 0)
 	if !strings.Contains(block, "╌") {
 		t.Error("preview block must carry the dashed border (round-3 feedback)")
 	}
@@ -173,6 +173,50 @@ func TestPreviewBlockDimsAndColorsDiffs(t *testing.T) {
 	}
 	if !strings.Contains(block, "\x1b[31m- removed") {
 		t.Error("diff `-` lines must render red")
+	}
+}
+
+func TestPreviewBlockBoundedWidth(t *testing.T) {
+	block := stripANSI(PreviewBlock("", "short", false, 30, 0))
+	for _, line := range strings.Split(block, "\n") {
+		if w := ansi.StringWidth(line); w > 30 {
+			t.Errorf("preview block line %q width = %d, want <= 30 (bounded to the pane)", line, w)
+		}
+	}
+}
+
+func TestPreviewBlockClipCueAtFixedMaxHeight(t *testing.T) {
+	text := strings.TrimSuffix(strings.Repeat("l\n", 20), "\n")
+	block := stripANSI(PreviewBlock("", text, false, 40, 5))
+	lines := strings.Split(block, "\n")
+	// border top + 5 clipped content rows + 1 cue row + border bottom = 8.
+	if len(lines) != 8 {
+		t.Fatalf("bounded preview height = %d lines, want 8 (border + 5 rows + cue row + border)", len(lines))
+	}
+	if !strings.Contains(block, "… (+15 more lines)") {
+		t.Errorf("clipped preview must announce hidden lines; got %q", block)
+	}
+}
+
+func TestPreviewBlockStableHeightPadsShortContent(t *testing.T) {
+	// A preview SHORTER than maxLines must still render the full box height
+	// (no auto-shrink to content — round-4 feedback: a stable box reads as
+	// read-only, never editable).
+	short := stripANSI(PreviewBlock("", "one line", false, 40, 5))
+	lines := strings.Split(short, "\n")
+	if len(lines) != 7 { // border + 5 rows (padded) + border
+		t.Fatalf("short-content preview height = %d lines, want 7 (padded to maxLines)", len(lines))
+	}
+}
+
+func TestPreviewBlockTitleInBorderTopEdge(t *testing.T) {
+	block := stripANSI(PreviewBlock("Live preview", "Host x", false, 40, 0))
+	top := strings.Split(block, "\n")[0]
+	if !strings.Contains(top, "Live preview") {
+		t.Errorf("title must render inside the border's top edge; got %q", top)
+	}
+	if !strings.HasPrefix(top, "╭") || !strings.HasSuffix(strings.TrimRight(top, " "), "╮") {
+		t.Errorf("titled top border must still start/end with the box corners; got %q", top)
 	}
 }
 
