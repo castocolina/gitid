@@ -12,7 +12,38 @@ findings and the final cross-surface consistency pass (below) is complete, listi
 the complete reference set and the resolved parity findings, ready for the single
 human sign-off that gates Phases 3-9.
 
-## Final cross-surface consistency pass
+## What is presented (current deliverables — live demos)
+
+The static PNG reference set described in the historical pass below was rejected at
+the first checkpoint presentation and removed (commit 7453561). What the 02-12
+checkpoint now presents is LIVE:
+
+- **Interactive web demo** — the mockup SPA's index route
+  (`.planning/design/mockup-src/src/demo/`, MUI v7 terminal skin, built with the
+  `/mui` skill under `agent-ui-ux-designer` direction). Serve per
+  `REFERENCE-INDEX.md` and open http://localhost:8747/.
+- **Live Go TUI demo** — `cmd/gitid-dummy` (02-13), a fully interactive Bubble Tea v2
+  app mirroring the web demo 1:1 per `02-REDESIGN-SPEC.md`, seeded from
+  `internal/dummytui/data.go` (recipe-faithful per `recipes/`). Run
+  `go run ./cmd/gitid-dummy` in a >=100x30 terminal.
+- **The 02-14 checkpoint-feedback polish** — the shared semantic style system
+  (`02-STYLE-SPEC.md`: 12 named roles, Go `Theme` <-> web `theme.ts`, in sync
+  role-by-role), left/right wizard-section navigation under the frozen precedence
+  rule (never steals a focused input's cursor keys; Shift+arrows = focus override
+  only), the first-class stepper `[1] SSH · [2] Test · [3] Git · [4] Review`,
+  focused/blurred field contours within 100x30, a hint zone that never collapses,
+  bounded titled previews, the shortened `[ Skip Git ]` / `[ Continue ]` copy, and
+  dimmed disabled nav with an active-nav accent background.
+- **The record** — `REFERENCE-INDEX.md`, `02-REDESIGN-SPEC.md`, and each surface's
+  `FIELDS.md` + `CRITIQUE.md`.
+
+Proven immediately before this checkpoint (all re-run green at the 02-14 close):
+the no-backend import ALLOWLIST is empty, the 100x30 raw-keystroke PTY e2e writes
+zero files under a sandboxed HOME, `make test` / `make lint` / `make test-e2e` /
+`make gate-no-backend-files` pass, and a fresh `agent-ui-ux-designer` parity
+critique plus a fresh-context code review both ran with all findings resolved.
+
+## Final cross-surface consistency pass (historical — static-set era)
 
 Performed against the complete `.planning/design/mockup-src` (`/mui`) build and the
 `cmd/gitid-dummy` dummy screenshot set, applying `agent-ui-ux-designer`'s documented
@@ -78,10 +109,10 @@ resolve).
 
 ## B. Per-surface completeness (all seven)
 
-- [ ] Every named state in each surface's manifest is present in **both** media
-      (HTML + TUI), frame-for-frame. See `REFERENCE-INDEX.md` — 50/50/50 (manifest
-      count / HTML PNGs / TUI PNGs) across create-flow, git-screen, identity-manager,
-      global-ssh, global-git, health, fixer.
+- [ ] Every surface and flow state is reachable LIVE in **both** demos (web + the
+      gitid-dummy TUI) — 50 screens across the 7 surfaces per `REFERENCE-INDEX.md`
+      (create-flow, git-screen, identity-manager, global-ssh, global-git, health,
+      fixer), including failure states (test-fail path, all-green Doctor).
 - [ ] Empty / first-run states are designed (not just the happy path) — especially
       the Identity Manager `list-empty` landing and the Fixer `nothing-to-fix`.
 
@@ -109,30 +140,56 @@ resolve).
 ## E. Parity & accessibility
 
 - [ ] The HTML<->TUI semantic parity critique is run and all divergence findings are
-      resolved (`REFERENCE-INDEX.md` — 63/63 parity rows resolved across 7 surfaces).
+      resolved (three-reviewer convergence at 02-13 plus the fresh
+      `agent-ui-ux-designer` critique at the 02-14 close — every finding fixed).
 - [ ] Legible under `NO_COLOR`/monochrome; no meaning by color alone; keyboard-only
       operability demonstrated.
 
+## E2. Arrow-key wizard navigation (02-14)
+
+- [ ] In BOTH demos, left/right move between wizard sections when focus is not in a
+      text input or an expanded select (forward gated on step validity, back always
+      allowed); a focused input's left/right still move the cursor (never stolen);
+      Shift+left/right is an unconditional section chord (focus override only, never
+      a validity override).
+- [ ] The stepper `[1] SSH · [2] Test · [3] Git · [4] Review` reads as a navigation
+      affordance in both media: active segment bold + accent (not faint), completed
+      segments check-marked.
+
+## E3. Semantic style system (02-14)
+
+- [ ] Both demos share the `02-STYLE-SPEC.md` roles (info / label / field /
+      focused-field / hint / warning / error / preview / disabled-nav / active-area /
+      active-nav / healthy), in sync role-by-role between the Go `Theme` and the web
+      `theme.ts`.
+- [ ] Focused fields show a contour/accent, blurred fields a dim contour; the hint
+      zone never collapses; previews are bounded with the title in the border; the
+      main nav dims while a pane captures keys and the active nav item keeps its
+      accent background.
+
 ## F. Explicit acknowledgment
 
-- [ ] The user understands and accepts that **the approved screenshots become the
-      frozen reference set** that every later phase (3-9) is visually regression-tested
-      against, and that **no backend logic is written for any surface before this
-      approval** (DLV-05).
+- [ ] The user understands and accepts that **the approved live demos ARE the design
+      reference** every later phase (3-9) builds against (the real TUI grows out of
+      the approved gitid-dummy frame; screenshots may be re-captured from the live
+      demos as development checks), and that **no backend logic is written for any
+      surface before this approval** (DLV-05).
 
 ## Reference set
 
-- Complete index: `.planning/design/REFERENCE-INDEX.md` (all 50 screens x 2 media =
-  100 PNGs, per-surface FIELDS.md/parity.json/CRITIQUE.md links, computed counts,
-  cross-surface gate summary).
+- Complete index: `.planning/design/REFERENCE-INDEX.md` (live-demo serve/run
+  instructions, key map, workflows to exercise, per-surface FIELDS.md/CRITIQUE.md
+  links, removed-vs-kept inventory).
+- The shared design language: `.planning/phases/02-design-all-mockups-checkpoint-1/02-STYLE-SPEC.md`
+  (role table per medium, arrow-key precedence rule, frozen copy).
 - Per-surface detail:
-  - `.planning/design/create-flow/{FIELDS.md,parity.json,CRITIQUE.md}`
-  - `.planning/design/git-screen/{FIELDS.md,parity.json,CRITIQUE.md}`
-  - `.planning/design/identity-manager/{FIELDS.md,parity.json,CRITIQUE.md}`
-  - `.planning/design/global-ssh/{FIELDS.md,parity.json,CRITIQUE.md}`
-  - `.planning/design/global-git/{FIELDS.md,parity.json,CRITIQUE.md}`
-  - `.planning/design/health/{FIELDS.md,parity.json,CRITIQUE.md}`
-  - `.planning/design/fixer/{FIELDS.md,parity.json,CRITIQUE.md}`
+  - `.planning/design/create-flow/{FIELDS.md,CRITIQUE.md}`
+  - `.planning/design/git-screen/{FIELDS.md,CRITIQUE.md}`
+  - `.planning/design/identity-manager/{FIELDS.md,CRITIQUE.md}`
+  - `.planning/design/global-ssh/{FIELDS.md,CRITIQUE.md}`
+  - `.planning/design/global-git/{FIELDS.md,CRITIQUE.md}`
+  - `.planning/design/health/{FIELDS.md,CRITIQUE.md}`
+  - `.planning/design/fixer/{FIELDS.md,CRITIQUE.md}`
 
 ## No backend logic before approval
 
