@@ -23,6 +23,12 @@ import { healthInfoColor } from './data/recipeFixtures';
  *     error/destructive=red, dim=gray, focus=reverse/bold (not a new hue)
  */
 
+// terminalBg is the shared terminal background surface — the one layout
+// color the palette's background.default/paper and the activeNav role's
+// contrasting text both key from (kept as a single constant so the two can
+// never drift).
+const terminalBg = '#0c0d10';
+
 // 02-UX-DIRECTION.md §2 "Color semantics (restricted, ANSI-safe, adaptive)"
 // — every colored state MUST also carry a glyph + a word; this palette only
 // supplies the color half of that contract. Never used alone in the UI.
@@ -39,7 +45,7 @@ export const semanticColors = {
   error: '#e05252', // red + ✗ + word
   dim: '#8a8f98', // gray — helper text, disabled keys
   focus: '#e8e8ea', // reverse/bold surface, not a new hue
-  accent: '#5aa9e6', // blue — the ONE new accent color, for focused-field + active-area only
+  accent: '#5aa9e6', // blue — the ONE new accent color: focused-field, active-area, active-nav
 } as const;
 
 /**
@@ -50,18 +56,19 @@ export const semanticColors = {
  * `semanticColors` above (and `healthInfoColor`, imported below rather than
  * re-hardcoded — review-findings F11).
  *
- * review-findings F8 (softened claim): the TUI centralizes EVERY consumer
- * through its Go `Theme` struct; the web instead routes the MECHANICAL
- * roles — `hint`, `preview`, `disabledNav`, `focusedField`, `activeArea`,
- * `label`, `healthy` — through this `roles` export (see focusedFieldSx and
- * the stepper in screens/Identities.tsx, Frame.tsx, MutationCeremony.tsx, and
- * the MuiInputLabel/MuiFormLabel override below). The remaining roles
- * (`info`, `field`, `blurredField`, `warning`, `error`) are NOT yet rewired
- * through every scattered screen-level usage — those still reach
- * `semanticColors`/MUI defaults ad-hoc in a few places. This table documents
- * the INTENDED 1:1 role-name mapping, not a claim that every consumer
- * already routes through it — do not read "mirrored 1:1" as "every screen
- * rewritten".
+ * Checkpoint feedback U2 (upgrades review-finding F8): the live web demo is
+ * now IN SYNC ROLE-BY-ROLE with the TUI — every semantic color the demo
+ * renders flows through a named role here (or through the MUI palette
+ * entries createTheme builds from `semanticColors` below, e.g. Alert
+ * severities and TextField error states). The deliberate, documented
+ * exceptions — mirroring the TUI's own role-less treatments — are:
+ *   1. `semanticColors.focus` (the reverse/bold focus-and-selection
+ *      surface: sub-tab strips, inline link text). The TUI's counterparts
+ *      (styleReverse/styleSelected) are equally role-less by design —
+ *      02-STYLE-SPEC.md §1 scope note.
+ *   2. Pure LAYOUT grays with no semantic meaning: `#2a2d33` (borders/
+ *      divider), `#5a5a5a` (the "no capability" pip), `#8a8a8a` (the S/G
+ *      pip letter tint). These are chrome, not states.
  */
 export const roles = {
   info: { color: healthInfoColor },
@@ -75,6 +82,16 @@ export const roles = {
   preview: { color: semanticColors.dim, opacity: 0.9 },
   disabledNav: { color: semanticColors.dim, opacity: 0.6 },
   activeArea: { border: `1px solid ${semanticColors.accent}`, color: semanticColors.accent },
+  // Checkpoint feedback U1: the ACTIVE main-nav item carries the shared
+  // accent as a BACKGROUND (mirrors the TUI's Theme.ActiveNav — bold +
+  // bright-white on the ANSI-4 blue), clearly saying "I am at 1/2/3/4"
+  // instead of a flat monochrome invert.
+  activeNav: {
+    background: semanticColors.accent,
+    borderColor: semanticColors.accent,
+    color: terminalBg,
+    fontWeight: 700,
+  },
   // review-findings F11: the Go Theme struct carries a Healthy role with no
   // web counterpart — added here for full 1:1 name parity (cheap, mechanical).
   healthy: { color: semanticColors.healthy },
@@ -94,8 +111,8 @@ export const theme = createTheme({
   palette: {
     mode: 'dark',
     background: {
-      default: '#0c0d10',
-      paper: '#0c0d10',
+      default: terminalBg,
+      paper: terminalBg,
     },
     text: {
       primary: '#e8e8ea',

@@ -22,19 +22,27 @@ One row per semantic role. The TUI column names the `lipgloss` treatment;
 the WEB column names the MUI/theme.ts token. The mapping is 1:1 by role
 NAME — `label ↔ styleBold`, `hint ↔ styleFaint`, `warning ↔ styleWarning`,
 `error ↔ styleError`, `preview ↔ Faint+dashed`, `focused-field ↔ accent
-rounded border`, `disabled-nav ↔ faint tabs`, `active-area ↔ accent`.
+rounded border`, `disabled-nav ↔ faint tabs`, `active-area ↔ accent`,
+`active-nav ↔ accent background`.
 
-> **Scope note (review-findings F8).** "1:1 by role name" describes this
-> TABLE — the Go `Theme` struct and the web `roles` export carry the same
-> role names. It is not a claim that every screen-level consumer already
-> routes through the named role on both sides: the TUI centralizes EVERY
-> renderer through `Theme` (frame.go's promotion made this true byte-for-
-> byte); the web currently routes the MECHANICAL roles — `hint`, `preview`,
-> `disabled-nav`, `focused-field`, `active-area`, `label`, `healthy` —
-> through `roles.*`, while a few scattered screen-level `warning`/`error`/
-> `info` usages still reach `semanticColors`/MUI defaults directly. Color
-> VALUES are shared either way (`theme.ts`'s `semanticColors` is the single
-> source both `roles` and those direct usages read from).
+> **Scope note (checkpoint feedback U2, upgrading review-finding F8).**
+> Both live demos are IN SYNC ROLE-BY-ROLE: the TUI centralizes every
+> renderer through the Go `Theme` (frame.go's promotion made this true
+> byte-for-byte), and the web routes every semantic color the live demo
+> renders through the named `roles.*` tokens — or through the MUI palette
+> entries `createTheme` builds from the same `semanticColors` values (Alert
+> severities, TextField error states). The deliberate, documented
+> exceptions, IDENTICAL in kind on both sides:
+>
+> 1. **The focus/selection surface.** TUI: `styleReverse`/`styleSelected`
+>    (focused buttons, selected rows, sub-tab strips) are deliberately
+>    role-less — they mark focus ownership, not a semantic state. WEB: the
+>    matching `semanticColors.focus` usages (Global SSH sub-tab strip,
+>    inline link text) are equally role-less.
+> 2. **Pure layout grays.** `#2a2d33` (borders/divider), `#5a5a5a` (the
+>    "no capability" pip), `#8a8a8a` (pip letter tint) carry no semantic
+>    meaning — chrome, not states. The TUI equivalent is the terminal's
+>    default fg/bg, which is not themed either.
 
 | Role | TUI (`internal/dummytui/theme.go`) | WEB (`theme.ts` `roles`) |
 |---|---|---|
@@ -49,6 +57,13 @@ rounded border`, `disabled-nav ↔ faint tabs`, `active-area ↔ accent`.
 | `preview` | `Faint(true)` + the dashed border (`previewDashedBorder`) | `roles.preview` — dim, `opacity: 0.9` |
 | `disabled-nav` | `Faint(true)` — header tabs dim while a pane captures keys | `roles.disabledNav` — dim, `opacity: 0.6` |
 | `active-area` | `Foreground(ANSI 4)` — the accent, carried on the breadcrumb/divider line directly above the active pane | `roles.activeArea` — a 1px accent border |
+| `active-nav` | `Bold + Foreground(ANSI 15) + Background(ANSI 4)` — the ACTIVE header tab carries the accent as a BACKGROUND (checkpoint feedback U1: a flat monochrome reverse-video invert did not clearly say "I am at 1/2/3/4") | `roles.activeNav` — accent background + accent border, terminal-background text, `fontWeight: 700` |
+
+Per-medium contrast note for `active-nav`: the TUI pairs bright-white text
+with the dark ANSI-4 blue; the web pairs dark (terminal-background) text
+with its lighter `#5aa9e6` accent — the ROLE (accent-as-background on the
+active nav item) is identical, the contrast pairing adapts to each medium's
+accent luminance.
 
 The TUI stays ANSI-16 (no truecolor, no adaptive light/dark detection) —
 the more portable choice per the round-2 consensus's own "theming question"
@@ -67,8 +82,8 @@ renders, at zero extra row cost:
 - **TUI**: `RenderFrame`'s crumb line renders through `Theme.ActiveArea`
   (accent) instead of the default `Hint` (faint) whenever `capturesKeys` is
   true. The header's INACTIVE nav tabs render through `Theme.DisabledNav`
-  (faint) at the same time; the ACTIVE tab keeps its reverse-video
-  treatment throughout — only the rest of the chrome dims.
+  (faint) at the same time; the ACTIVE tab keeps its `active-nav` accent
+  background throughout — only the rest of the chrome dims.
 - **WEB**: `Frame.tsx`'s nav tabs render through `roles.disabledNav` while a
   modal/edit/ceremony pane owns the keys, and the active pane's outline
   carries `roles.activeArea`.
@@ -120,7 +135,7 @@ two LIVE demos — not a JSON file.
 | `hint-persistence` | A reserved hint row under the focused field never collapses to zero; an expanded select PUSHES rows, never replaces the hint | Same — the strategy-select hint never disappears on focus | `TestWizardHintZone*`; critique |
 | `arrow-nav` | The precedence rule (§2) implemented for the wizard's stepper/fields/selects | Same rule, same precedence order | `TestWizardArrowPrecedence*` (TUI); Identities.tsx `useLocalKeys` + DemoApp.tsx Shift chord (WEB); critique |
 | `preview-sizing` | `PreviewBlock` bounded to pane width, optional fixed max height with the `… (+n more)` clip cue, title in the border top edge | `PreviewBlock`/`PreviewLabel` render through the `preview` role, sized consistently | `TestPreviewBlock*`; critique |
-| `dim-states` | Header nav tabs dim (`DisabledNav`) while a pane captures keys; the active tab stays reverse-video; the active pane carries the `ActiveArea` accent | Nav tabs dim (`disabledNav`) while a modal/ceremony owns the keys; the active pane carries `activeArea` | `TestRenderHeaderDimsInactiveTabs*`, `TestRenderFrameActiveAreaAccent*`; critique |
+| `dim-states` | Header nav tabs dim (`DisabledNav`) while a pane captures keys; the active tab keeps its `ActiveNav` accent background; the active pane carries the `ActiveArea` accent | Nav tabs dim (`disabledNav`) while a modal/ceremony owns the keys; the active tab keeps `activeNav`; the active pane carries `activeArea` | `TestRenderHeaderDimsInactiveTabs*`, `TestRenderFrameActiveAreaAccent*`, `TestRenderFrameActiveTabAccentBackground`; critique |
 
 ## 4. Frozen copy — slide-3 (Git identity step) buttons and hints
 

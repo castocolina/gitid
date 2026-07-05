@@ -24,25 +24,25 @@ import {
 } from '@mui/material';
 import {
   fixerNothingToFixSummary,
-  healthInfoColor,
   healthSeverityGlyph,
   type HealthSeverity,
 } from '../../data/recipeFixtures';
-import { semanticColors } from '../../theme';
+import { roles } from '../../theme';
 import Frame, { type FrameAction } from '../Frame';
 import { useDemo, useLocalKeys } from '../DemoContext';
 import MutationCeremony, { PreviewBlock } from '../MutationCeremony';
 import { planFor } from '../fixplans';
 import { newBackupPath, type DemoFinding } from '../store';
 
-// review-findings F11: reference the shared healthInfoColor constant
-// instead of re-hardcoding the same hex value (it also lives in theme.ts's
-// roles.info and recipeFixtures.ts's own definition).
+// Checkpoint feedback U2 (upgrades review-finding F11): severity colors
+// route through the named theme roles — roles.info itself references the
+// shared healthInfoColor constant, so the value is still defined exactly
+// once (recipeFixtures.ts).
 const severityColor: Record<HealthSeverity, string> = {
-  info: healthInfoColor,
-  warning: semanticColors.warning,
-  error: semanticColors.error,
-  critical: semanticColors.error,
+  info: roles.info.color,
+  warning: roles.warning.color,
+  error: roles.error.color,
+  critical: roles.error.color,
 };
 
 const severityRank: Record<HealthSeverity, number> = { critical: 0, error: 1, warning: 2, info: 3 };
@@ -175,8 +175,8 @@ export function Doctor() {
 
       {!scanning && allGreen && (
         <Paper variant="outlined" sx={{ p: 3, maxWidth: 760 }}>
-          <Typography sx={{ color: semanticColors.healthy, mb: 1 }}>✓ {fixerNothingToFixSummary.ssh}</Typography>
-          <Typography sx={{ color: semanticColors.healthy }}>✓ {fixerNothingToFixSummary.git}</Typography>
+          <Typography sx={{ color: roles.healthy.color, mb: 1 }}>✓ {fixerNothingToFixSummary.ssh}</Typography>
+          <Typography sx={{ color: roles.healthy.color }}>✓ {fixerNothingToFixSummary.git}</Typography>
         </Paper>
       )}
 

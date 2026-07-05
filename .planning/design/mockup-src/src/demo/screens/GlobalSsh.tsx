@@ -32,7 +32,7 @@ import {
   globalSshOptions,
   managedBlockSentinels,
 } from '../../data/recipeFixtures';
-import { semanticColors } from '../../theme';
+import { roles, semanticColors } from '../../theme';
 import Frame, { type FrameAction } from '../Frame';
 import { useDemo, useLocalKeys } from '../DemoContext';
 import MutationCeremony, { PreviewBlock } from '../MutationCeremony';
@@ -145,6 +145,10 @@ export function GlobalSsh() {
             sx={{
               font: 'inherit',
               border: 1,
+              // semanticColors.focus is the role-less focus/selection
+              // surface (sub-tab selection = the TUI's styleReverse at
+              // globalssh.go's subTabStrip) — a documented U2 exception,
+              // deliberately DISTINCT from the main nav's activeNav accent.
               borderColor: subTab === t ? semanticColors.focus : 'divider',
               cursor: 'pointer',
               px: 1.5,
@@ -196,7 +200,7 @@ export function GlobalSsh() {
                         setChosen((c) => (e.target.checked ? [...c, o.key] : c.filter((k) => k !== o.key)))
                       }
                     />
-                    <Box component="span" sx={{ color: o.needsAction ? semanticColors.warning : semanticColors.healthy }}>
+                    <Box component="span" sx={{ color: o.needsAction ? roles.warning.color : roles.healthy.color }}>
                       {o.needsAction ? '!' : '✓'}
                     </Box>
                     <Box component="span" sx={{ fontWeight: 700, flex: 1 }}>

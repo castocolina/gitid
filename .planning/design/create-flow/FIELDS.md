@@ -176,4 +176,4 @@ critique of the two live demos.
 | 3 | `hint-persistence` | ✓ | ✓ | the match-strategy hint is reserved and never disappears when the select expands/focuses |
 | 4 | `arrow-nav` | ✓ | ✓ | the written precedence rule (02-STYLE-SPEC.md §2), identical in both media, incl. the Shift+←/→ focus-override chord |
 | 5 | `preview-sizing` | ✓ | ✓ | bounded width, optional fixed height with a clip cue, title in the border/top edge |
-| 6 | `dim-states` | ✓ | ✓ | disabled-nav dims header chrome while a pane captures keys; the active pane carries the active-area accent |
+| 6 | `dim-states` | ✓ | ✓ | disabled-nav dims header chrome while a pane captures keys; the active nav tab keeps its active-nav accent background (checkpoint feedback U1); the active pane carries the active-area accent |

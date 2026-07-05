@@ -25,7 +25,7 @@ import {
   globalGitOptions,
   globalGitResultMessage,
 } from '../../data/recipeFixtures';
-import { semanticColors } from '../../theme';
+import { roles } from '../../theme';
 import Frame, { type FrameAction } from '../Frame';
 import { useDemo, useLocalKeys } from '../DemoContext';
 import MutationCeremony, { PreviewBlock } from '../MutationCeremony';
@@ -137,7 +137,7 @@ export function GlobalGit() {
                         setChosen((c) => (e.target.checked ? [...c, o.key] : c.filter((k) => k !== o.key)))
                       }
                     />
-                    <Box component="span" sx={{ color: o.needsAction ? semanticColors.warning : semanticColors.healthy }}>
+                    <Box component="span" sx={{ color: o.needsAction ? roles.warning.color : roles.healthy.color }}>
                       {o.needsAction ? '!' : '✓'}
                     </Box>
                     <Box component="span" sx={{ fontWeight: 700, flex: 1 }}>
@@ -148,7 +148,7 @@ export function GlobalGit() {
                         size="small"
                         variant="outlined"
                         label="main vs master"
-                        sx={{ borderRadius: 0, fontFamily: 'inherit', color: semanticColors.warning, borderColor: semanticColors.warning }}
+                        sx={{ borderRadius: 0, fontFamily: 'inherit', color: roles.warning.color, borderColor: roles.warning.color }}
                       />
                     )}
                   </Stack>

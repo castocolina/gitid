@@ -1,5 +1,5 @@
 import { Box, Typography } from '@mui/material';
-import { semanticColors } from '../theme';
+import { roles } from '../theme';
 
 export type StatusTone = 'info' | 'healthy' | 'warning' | 'error';
 
@@ -10,11 +10,14 @@ export interface StatusLineProps {
   tone?: StatusTone;
 }
 
+// Checkpoint feedback U2: tones route through the named theme roles (the
+// info tone renders through the hint/dim role — the TUI's statusToneStyle
+// default is styleFaint, the same role).
 const toneColor: Record<StatusTone, string> = {
-  info: semanticColors.dim,
-  healthy: semanticColors.healthy,
-  warning: semanticColors.warning,
-  error: semanticColors.error,
+  info: roles.hint.color,
+  healthy: roles.healthy.color,
+  warning: roles.warning.color,
+  error: roles.error.color,
 };
 
 const toneGlyph: Record<StatusTone, string> = {

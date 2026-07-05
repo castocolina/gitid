@@ -2,7 +2,7 @@
  * App frame (02-REDESIGN-SPEC.md §1) — the common chrome every view renders
  * inside, k9s/lazygit/Textual style:
  *
- *   header:  brand · numbered nav tabs (1..4, active = reverse video) ·
+ *   header:  brand · numbered nav tabs (1..4, active = accent background) ·
  *            clickable health chip (`N ids · ! w · ✗ e` → jumps to Doctor)
  *   subline: thin dim breadcrumb ("Identities › New identity › Test")
  *   body:    the view's own master-detail content
@@ -13,7 +13,7 @@
 
 import type { ReactNode } from 'react';
 import { Box, Chip, Stack, Typography } from '@mui/material';
-import { roles, semanticColors } from '../theme';
+import { roles } from '../theme';
 import StatusLine, { type StatusTone } from '../shell/StatusLine';
 import { TAB_LABEL, TAB_ORDER, useDemo } from './DemoContext';
 import { findingCounts } from './store';
@@ -109,16 +109,20 @@ export function Frame({
                 sx={{
                   font: 'inherit',
                   border: 1,
-                  borderColor: active ? semanticColors.focus : 'divider',
+                  // active-nav role (checkpoint feedback U1): the ACTIVE tab
+                  // carries the shared accent as a BACKGROUND — clearly
+                  // saying "I am at 1/2/3/4" — mirroring the TUI's
+                  // Theme.ActiveNav (bold on the ANSI-4 blue background).
+                  borderColor: active ? roles.activeNav.borderColor : 'divider',
                   cursor: 'pointer',
                   px: 1.5,
                   py: 0.25,
-                  bgcolor: active ? semanticColors.focus : 'transparent',
-                  color: active ? 'background.default' : 'text.secondary',
-                  fontWeight: active ? 700 : 400,
+                  bgcolor: active ? roles.activeNav.background : 'transparent',
+                  color: active ? roles.activeNav.color : 'text.secondary',
+                  fontWeight: active ? roles.activeNav.fontWeight : 400,
                   // disabled-nav role (02-STYLE-SPEC.md dim-states): dim
                   // every INACTIVE tab while a pane captures keys; the
-                  // active tab stays fully lit throughout.
+                  // active tab keeps its accent background throughout.
                   opacity: !active && capturesKeys ? roles.disabledNav.opacity : 1,
                 }}
               >
@@ -137,11 +141,11 @@ export function Frame({
               <span>{state.identities.length} ids</span>
               <span aria-hidden="true">·</span>
               {counts.warnings + counts.errors === 0 ? (
-                <span style={{ color: semanticColors.healthy }}>✓ ok</span>
+                <span style={{ color: roles.healthy.color }}>✓ ok</span>
               ) : (
                 <>
-                  <span style={{ color: semanticColors.warning }}>! {counts.warnings}</span>
-                  <span style={{ color: semanticColors.error }}>✗ {counts.errors}</span>
+                  <span style={{ color: roles.warning.color }}>! {counts.warnings}</span>
+                  <span style={{ color: roles.error.color }}>✗ {counts.errors}</span>
                 </>
               )}
             </Box>
@@ -163,7 +167,7 @@ export function Frame({
           fontSize: 12,
           color: 'text.disabled',
           borderBottom: 1,
-          borderColor: capturesKeys ? semanticColors.accent : 'divider',
+          borderColor: capturesKeys ? roles.activeArea.color : 'divider',
         }}
       >
         {[TAB_LABEL[tab], ...crumbs].join(' › ')}

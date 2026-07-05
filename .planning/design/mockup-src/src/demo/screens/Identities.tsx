@@ -36,7 +36,6 @@ import {
   defaultMatchStrategy,
   gitScreenMatchStrategyPreview,
   globalGitDefaults,
-  healthInfoColor,
   healthSeverityGlyph,
   identityManagerDeleteChoices,
   identityManagerStateGlyph,
@@ -53,20 +52,23 @@ import MutationCeremony, { PreviewBlock } from '../MutationCeremony';
 import { planFor } from '../fixplans';
 import { findingsFor, newBackupPath, type DemoIdentity } from '../store';
 
+// Checkpoint feedback U2: every semantic color routes through the named
+// theme roles (matching the TUI's toneStyle over DefaultTheme).
 const toneColor: Record<'success' | 'warning' | 'error', string> = {
-  success: semanticColors.healthy,
-  warning: semanticColors.warning,
-  error: semanticColors.error,
+  success: roles.healthy.color,
+  warning: roles.warning.color,
+  error: roles.error.color,
 };
 
-// review-findings F11: reference the shared healthInfoColor constant
-// instead of re-hardcoding the same hex value a third time (it also lives
-// in theme.ts's roles.info and recipeFixtures.ts's own definition).
+// Checkpoint feedback U2 (upgrades review-finding F11): severity colors
+// route through the named theme roles — roles.info itself references the
+// shared healthInfoColor constant, so the value is still defined exactly
+// once (recipeFixtures.ts).
 const severityColor: Record<HealthSeverity, string> = {
-  info: healthInfoColor,
-  warning: semanticColors.warning,
-  error: semanticColors.error,
-  critical: semanticColors.error,
+  info: roles.info.color,
+  warning: roles.warning.color,
+  error: roles.error.color,
+  critical: roles.error.color,
 };
 
 type Pip = '✓' | '–' | '✗';
@@ -78,10 +80,12 @@ function pips(row: DemoIdentity): { s: Pip; g: Pip } {
   return { s, g };
 }
 
+// '#5a5a5a' is a pure LAYOUT gray (the "no capability" pip), not a semantic
+// state — a documented non-role exception (theme.ts roles docstring, U2).
 const pipColor: Record<Pip, string> = {
-  '✓': semanticColors.healthy,
+  '✓': roles.healthy.color,
   '–': '#5a5a5a',
-  '✗': semanticColors.error,
+  '✗': roles.error.color,
 };
 
 type PaneMode =
@@ -126,6 +130,9 @@ function BaselineStrip() {
         <Box
           component="span"
           onClick={() => setTab('global-git')}
+          // semanticColors.focus is the role-less focus/selection surface —
+          // a documented U2 exception mirroring the TUI's styleReverse/
+          // styleSelected (theme.ts roles docstring).
           sx={{ color: semanticColors.focus, cursor: 'pointer', textDecoration: 'underline' }}
         >
           Edit in Global Git (3)
@@ -259,7 +266,7 @@ function StepDots({ step }: { step: number }) {
           title={WIZARD_STEPS[i]}
           sx={{
             fontWeight: i === step ? 700 : 400,
-            color: i === step ? roles.activeArea.color : i < step ? semanticColors.healthy : 'text.secondary',
+            color: i === step ? roles.activeArea.color : i < step ? roles.healthy.color : 'text.secondary',
           }}
         >
           {i < step ? '✓ ' : ''}
@@ -637,7 +644,7 @@ function CreateWizard({ onDone, onCancel }: { onDone: (name: string) => void; on
           )}
           {testPhase === 'failed' && (
             <>
-              <Box sx={{ color: semanticColors.error }}>✗ git@{hostname}: Permission denied (publickey).</Box>
+              <Box sx={{ color: roles.error.color }}>✗ git@{hostname}: Permission denied (publickey).</Box>
               <Alert severity="error" variant="outlined" sx={{ borderRadius: 0 }}>
                 The provider rejected the key — usually it is not registered yet. Copy the public
                 key, add it to your provider account, then retry.
@@ -659,7 +666,7 @@ function CreateWizard({ onDone, onCancel }: { onDone: (name: string) => void; on
             </>
           )}
           {(testPhase === 'stage1' || testPhase === 'stage2') && (
-            <Box sx={{ color: semanticColors.healthy }}>
+            <Box sx={{ color: roles.healthy.color }}>
               ✓ Hi {name}! You've successfully authenticated, but GitHub does not provide shell access.
             </Box>
           )}
@@ -680,7 +687,7 @@ function CreateWizard({ onDone, onCancel }: { onDone: (name: string) => void; on
                 </Button>
               )}
               {testPhase === 'stage2' && (
-                <Box sx={{ color: semanticColors.healthy }}>✓ identityfile {keyPath}</Box>
+                <Box sx={{ color: roles.healthy.color }}>✓ identityfile {keyPath}</Box>
               )}
             </>
           )}
@@ -940,7 +947,7 @@ export function Identities() {
                       {row.name}
                     </Box>
                     {rowFindings.length > 0 && (
-                      <Box component="span" sx={{ color: semanticColors.warning, fontSize: 12 }}>
+                      <Box component="span" sx={{ color: roles.warning.color, fontSize: 12 }}>
                         {rowFindings.length}⚑
                       </Box>
                     )}
@@ -1005,7 +1012,7 @@ export function Identities() {
                     <Typography>IdentitiesOnly: yes</Typography>
                   </Stack>
                 ) : (
-                  <Typography sx={{ color: semanticColors.warning }}>
+                  <Typography sx={{ color: roles.warning.color }}>
                     ! No gitid-managed Host block — relies on the global SSH config.
                   </Typography>
                 )}
@@ -1028,7 +1035,7 @@ export function Identities() {
                   </Stack>
                 ) : (
                   <Stack direction="row" spacing={2} alignItems="center">
-                    <Typography sx={{ color: semanticColors.warning }}>
+                    <Typography sx={{ color: roles.warning.color }}>
                       ! Git not configured — no fabricated values shown.
                     </Typography>
                     <Button size="small" variant="contained" onClick={openGitForm}>
@@ -1041,13 +1048,13 @@ export function Identities() {
 
               <Paper
                 variant="outlined"
-                sx={{ p: 1.5, borderColor: findings.length > 0 ? semanticColors.warning : 'divider' }}
+                sx={{ p: 1.5, borderColor: findings.length > 0 ? roles.warning.color : 'divider' }}
               >
                 <Typography variant="subtitle2" sx={{ color: 'text.secondary', mb: 0.5 }}>
                   Findings ({findings.length}) — same data the Doctor shows (4)
                 </Typography>
                 {findings.length === 0 ? (
-                  <Typography sx={{ color: semanticColors.healthy }}>✓ No findings for “{selected.name}”.</Typography>
+                  <Typography sx={{ color: roles.healthy.color }}>✓ No findings for “{selected.name}”.</Typography>
                 ) : (
                   <Stack spacing={0.75}>
                     {findings.map((f) => (
@@ -1068,6 +1075,8 @@ export function Identities() {
                       </Stack>
                     ))}
                     <Typography
+                      // semanticColors.focus: role-less focus/selection
+                      // surface — documented U2 exception (theme.ts).
                       sx={{ fontSize: 12, color: semanticColors.focus, cursor: 'pointer', textDecoration: 'underline' }}
                       onClick={() => setTab('doctor')}
                     >
@@ -1282,7 +1291,7 @@ export function Identities() {
         <DialogContent>
           <RadioGroup value={deleteScope} onChange={(e) => setDeleteScope(e.target.value as 'everything' | 'git-only')}>
             <FormControlLabel value="git-only" control={<Radio />} label={`${identityManagerDeleteChoices.gitOnly} (safer — SSH stays)`} />
-            <FormControlLabel value="everything" control={<Radio />} label={`${identityManagerDeleteChoices.everything} — irreversible`} sx={{ color: semanticColors.error }} />
+            <FormControlLabel value="everything" control={<Radio />} label={`${identityManagerDeleteChoices.everything} — irreversible`} sx={{ color: roles.error.color }} />
           </RadioGroup>
         </DialogContent>
         <DialogActions>

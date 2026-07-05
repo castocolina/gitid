@@ -99,8 +99,10 @@ export function MutationCeremony({
     );
   }
 
+  // Checkpoint feedback U2: the destructive border routes through the error
+  // role instead of a re-hardcoded hex value.
   return (
-    <Paper variant="outlined" sx={{ p: 2, borderColor: destructive ? '#e05252' : 'divider' }}>
+    <Paper variant="outlined" sx={{ p: 2, borderColor: destructive ? roles.error.color : 'divider' }}>
       <Typography variant="h6" component="h2" gutterBottom>
         {heading}
       </Typography>
@@ -229,10 +231,13 @@ export function PreviewBlock({
                 component="span"
                 sx={{
                   display: 'block',
+                  // Checkpoint feedback U2: diff +/- lines route through the
+                  // healthy/error roles (the TUI's stylePreviewLines does the
+                  // same via styleHealthy/styleError).
                   color: line.startsWith('+')
-                    ? '#4caf50'
+                    ? roles.healthy.color
                     : line.startsWith('-')
-                      ? '#e05252'
+                      ? roles.error.color
                       : 'text.secondary',
                 }}
               >
