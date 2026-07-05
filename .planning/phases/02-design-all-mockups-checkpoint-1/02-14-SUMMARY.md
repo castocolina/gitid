@@ -9,7 +9,7 @@ requires:
   - phase: 02-design-all-mockups-checkpoint-1
     provides: cmd/gitid-dummy + internal/dummytui (the LIVE interactive Go TUI demo, 02-13), the interactive web demo at .planning/design/mockup-src/src/demo/, and 02-REVIEWS.md's round-2/round-3 cross-AI consensus (the eight feedback items and two HIGH implementation traps this plan absorbs)
 provides:
-  - .planning/phases/02-design-all-mockups-checkpoint-1/02-STYLE-SPEC.md — the cross-media semantic style contract (11-role table, numbered arrow-key precedence rule, six new parity dimensions, frozen slide-3 copy, frozen stepper short<->long label map)
+  - .planning/phases/02-design-all-mockups-checkpoint-1/02-STYLE-SPEC.md — the cross-media semantic style contract (role table — 11 roles at plan completion, grown to 12 with `active-nav` in the U1 checkpoint-feedback pass — numbered arrow-key precedence rule, six new parity dimensions, frozen slide-3 copy, frozen stepper short<->long label map)
   - internal/dummytui/theme.go — central Go `Theme` + `DefaultTheme`, promoted behavior-preservingly from frame.go's package-level style vars
   - internal/dummytui/frame.go — bounded/titled/stable-height `PreviewBlock`, header DisabledNav dimming + ActiveArea accent on the breadcrumb divider while a pane captures keys
   - internal/dummytui/identities.go — `renderStepper` (first-class `[1] SSH · [2] Test · [3] Git · [4] Review`), the written arrow-key precedence rule across all three wizard steps (+ Shift focus-override chord), focused/blurred field contours, a persistent match-strategy hint row, and the frozen `[ Skip Git ]`/`[ Continue ]` copy
@@ -172,6 +172,18 @@ After this plan's own tasks completed, the phase-level orchestrator ran two fres
 
 **Verification (this pass):** `go test -race ./internal/dummytui/...`, `make test`, `make lint`, `make gate-no-backend-files`, a forced (`-count=1`) `make test-e2e` (100×30 PTY walk), the repo-wide old-copy grep gate (zero matches), and `pnpm typecheck && pnpm build` in `.planning/design/mockup-src` are all green — see the executor's final report for the raw command output.
 
+### Live checkpoint feedback (U1–U3, second fix batch)
+
+After the F1–F11 pass, the user reviewed the demos live at the 02-12 checkpoint and sent three more items:
+
+| Item | Source | Disposition | Resolution | Commit |
+|---|---|---|---|---|
+| U1 — the TUI main-nav active item rendered as a flat monochrome reverse-video invert; the user asked for a COLORED background accent that clearly says "I am at 1/2/3/4" (and more color in the nav generally) | user checkpoint feedback | Fixed | New named `Theme.ActiveNav` role in theme.go (bold + bright-white ANSI-15 on the shared ANSI-4 blue accent as BACKGROUND — still ANSI-16, number + word always present); `renderHeader` consumes the role instead of a hardcoded style; dim-states intact (inactive tabs DisabledNav, active tab keeps its accent background while a pane captures keys). Mirrored by name as `roles.activeNav` in theme.ts and consumed by the web Frame's main-nav active item (accent background + border, terminal-bg text, weight 700 — replacing the ad-hoc white invert). Role table grows to 12 (`active-nav` row added to 02-STYLE-SPEC.md §1 with a per-medium contrast note); Go tests pin the SGR (`TestRenderFrameActiveTabAccentBackground`, the role-SGR table, the capturesKeys dim test); header still fits width 100 and the e2e text pins are unaffected (forced PTY re-run green). | dd6d4c2 (TUI), 2116bfe (web + spec) |
+| U2 — full color/theme uniformity across BOTH demos is a DoD requirement ("Se debe hacer todo uniforme a colores/temas en ambos antes de dod") — upgrades F8: the softened claim was not an acceptable end state | user checkpoint feedback | Fixed (wiring completed, strong claim restored) | Completed the web role wiring: every semantic color the live demo renders now flows through the named theme.ts roles — Frame.tsx (health chip, breadcrumb accent), Identities.tsx (tone/severity/pip maps, stepper completed-segment, stage success/error lines, findings border, destructive label), Doctor.tsx (severity map, all-green summary), GlobalGit/GlobalSsh (needs-action glyphs, chip), MutationCeremony.tsx (destructive border + diff colors, previously re-hardcoded hex), shell/StatusLine.tsx (tone map; values unchanged so the static routes sharing it render identically). The STRONG "in sync role-by-role" claim is restored in theme.ts's docstring and 02-STYLE-SPEC.md §1, with two precisely-stated non-role exceptions identical in kind on both sides: (1) the focus/selection surface (`semanticColors.focus` == the TUI's role-less `styleReverse`/`styleSelected` — sub-tab strips, inline links), and (2) pure layout grays (`#2a2d33`, `#5a5a5a`, `#8a8a8a` — chrome, not states). | 2116bfe |
+| U3 — web bold field labels (MuiInputLabel/MuiFormLabel fontWeight 700 via roles.label, added under F8) | user checkpoint feedback (approval) | Confirmed kept | The user approved keeping the bold web field labels (requested for the TUI, easy on the web). Verified the theme-level overrides are in place; nothing reverted. | 04a00b8 (unchanged) |
+
+**Verification (U-batch):** the same seven gates re-run green after U1/U2: `go test -race ./internal/dummytui/...`, `make test`, `make lint`, `make gate-no-backend-files`, forced `make test-e2e` (100×30 PTY walk, 161s), the copy-freeze grep (zero matches), and `pnpm typecheck && pnpm build`.
+
 ### Deviations from Plan (review-findings fix pass)
 
 **4. [Rule 1 — documentation accuracy] `semanticColors.accent` is a genuinely new color value, not "no new color values"**
@@ -196,3 +208,9 @@ After this plan's own tasks completed, the phase-level orchestrator ran two fres
 - All files touched by this fix pass (identities.go, ceremony.go, identities_test.go, theme.ts, screens/Identities.tsx, screens/Doctor.tsx, screens/GlobalSsh.tsx, screens/GlobalGit.tsx, create-flow/FIELDS.md, 02-STYLE-SPEC.md) verified present on disk.
 - Commits c2a329b (TUI fix batch, F1/F9), 04a00b8 (web fix batch, F2/F3/F4/F6/F7/F8/F9/F11), 50f890c (docs fix batch, F5/F8/F10) verified present in `git log`.
 - All 7 verification gates re-run green in this session: `go test -race ./internal/dummytui/...`, `make test`, `make lint`, `make gate-no-backend-files`, forced `make test-e2e` (100×30 PTY walk), the repo-wide old-copy grep gate (zero matches), and `pnpm typecheck && pnpm build`.
+
+## Self-Check (checkpoint feedback U1–U3 batch): PASSED
+
+- All files touched by the U-batch (theme.go, frame.go, theme_test.go, frame_test.go, theme.ts, demo/Frame.tsx, demo/MutationCeremony.tsx, demo/screens/{Identities,Doctor,GlobalGit,GlobalSsh}.tsx, shell/StatusLine.tsx, 02-STYLE-SPEC.md, create-flow/FIELDS.md) verified present on disk.
+- Commits dd6d4c2 (U1 TUI: Theme.ActiveNav accent background), 2116bfe (U1 web mirror + U2 full role-by-role uniformity) verified present in `git log`.
+- The same 7 gates re-run green after the U-batch (see "Verification (U-batch)" above).
