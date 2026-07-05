@@ -1,231 +1,203 @@
 ---
 phase: 2
-round: 2 (checkpoint-feedback absorption; round 1 preserved at 02-REVIEWS-2026-07-02-planning-round.md)
+round: 3 (delta review of the 02-14/02-12 replan; round 2 preserved at 02-REVIEWS-2026-07-05-round2.md, round 1 at 02-REVIEWS-2026-07-02-planning-round.md)
 reviewers: [claude, codex]
-reviewed_at: 2026-07-05T15:50:00Z
-plans_reviewed: [02-01-PLAN.md,02-02-PLAN.md,02-03-PLAN.md,02-04-PLAN.md,02-05-PLAN.md,02-06-PLAN.md,02-07-PLAN.md,02-08-PLAN.md,02-09-PLAN.md,02-10-PLAN.md,02-11-PLAN.md,02-12-PLAN.md,02-13-PLAN.md]
+reviewed_at: 2026-07-05T17:40:00Z
+plans_reviewed: [02-14-PLAN.md, 02-12-PLAN.md]
 claude_model: default (claude CLI -p, separate non-interactive session)
 codex_model: default (codex-cli 0.142.5)
-user_feedback_included: true
-verdict: MEDIUM — absorb via new 02-14 polish plan before 02-12 approval
+verdicts: { claude: "MATCHED (fix D1 mandatory, D2, D3 before executing)", codex: "NOT MATCHED as written (same class of fixes)" }
+verdict: AMEND PLAN TEXT BEFORE EXECUTING — no consensus violation, 3 shared + 3 unique plan-authoring defects
 ---
 
-# Cross-AI Plan Review — Phase 2, Round 2 (Checkpoint Feedback)
+# Cross-AI Plan Review — Phase 2, Round 3 (Replan Delta)
 
-> Round 2 reviews the executed Phase 2 plans **against the user's checkpoint 02-12
-> feedback** (arrow navigation, TUI form styling, hint persistence, preview bounding,
-> button copy, semantic style system, dim states, theming). The user's feedback was
-> embedded verbatim in the review prompt. Claude ran as a separate `claude -p`
-> session at the user's explicit request (`--claude`); Codex ran via `codex exec`.
-> Feed back with `/gsd-plan-phase 2 --reviews`.
+> Round 3 verifies that the 02-14/02-12 replan faithfully implements the round-2
+> consensus. Both reviewers received the full round-2 REVIEWS.md, the new 02-14,
+> the amended 02-12, and 02-13 as dependency context. Feed back with
+> `/gsd-plan-phase 2 --reviews`.
 
 ## Claude Review
 
-I've grounded the review in the actual implementation (`internal/dummytui/frame.go`, `identities.go`, the web demo's key handlers, and the bubbles v2.1.0 textinput API). Here is the structured review.
+All verification checks are done — every line number, symbol, script, and make target the plan cites has been confirmed against the working tree, and I found one real gate-breaking omission. Here is the review.
 
-`★ Insight ─────────────────────────────────────`
-- The TUI demo already has a *de-facto* design token set (`frame.go:99-111` — `styleBold/styleFaint/styleHealthy/...` on ANSI colors 1/2/3/6/8), but it was never promoted to a named, documented theme contract shared with the web's `theme.ts`. Most of the user's feedback (labels vs hints vs fields, dim semantics) is a symptom of that missing contract, not of missing capability.
-- `bubbles/v2@v2.1.0` textinput natively supports focus/blur style states (`Styles{Focused, Blurred StyleState}` via `SetStyles`), but it styles *text*, not boxes — a single-line component cannot draw its own 3-row border. Borders must come from a lipgloss wrapper around `input.View()`, which is exactly what the old POC's `StyleModal` (rounded blue border) did at the modal level.
-`─────────────────────────────────────────────────`
+---
 
-# Cross-AI Plan Review — Phase 2 Checkpoint Feedback Absorption
+# Cross-AI Plan Review — Phase 2, Round 3 (Delta Review of the Replan)
+
+**Reviewer:** Claude (Fable 5, this session) · **Reviewed:** 02-14-PLAN.md (new) + 02-12-PLAN.md (amended) against the round-2 consensus · **Date:** 2026-07-05
 
 ## 1. Summary
 
-The 13 plans are a disciplined, well-gated design phase whose executed state (converged web + TUI demos, 63/63 parity, no-backend allowlist, zero-write PTY e2e) is genuinely strong — but the checkpoint feedback lands almost entirely in a layer the plans never modeled: a **cross-media interaction-and-typography contract** (arrow navigation semantics, field affordance/contour, label/hint/field role distinction, dim/active chrome states, a central theme). The parity gate (UX-DIRECTION §3) freezes *fields, labels, copy, options, defaults, and flow order*, and the phase passed it; it never had a dimension for *emphasis roles, focus affordance, or keyboard-nav ergonomics*, which is precisely where the user's items cluster. None of the feedback invalidates the executed architecture — every item is absorbable as one follow-up wave (a new plan, e.g. 02-14, plus a small STYLE-SPEC artifact) sitting between 02-13 and the still-open 02-12 checkpoint. The one real design tension is the input-border ask vs. the 100×30 row budget the TUI demo was carefully compacted into (four separate compaction rounds are recorded in STATE.md); a naive "border every field" implementation will not fit and will regress the e2e frame assertions.
+The replan is a faithful, unusually well-grounded implementation of the round-2 consensus: every one of the 8 feedback items, both HIGH implementation traps, and the copy-freeze atomicity requirement are covered by concrete, testable tasks, and nearly every code citation in the plan checks out against the working tree (I verified `stepDots` at `identities.go:1717`, the button constants at 1695–1696, the copy pins at `identities_test.go:368/714/787` and `batch3_test.go:85`, the web buttons at `Identities.tsx:603/613`, the `step`/`step0Valid`/`testPhase==='stage2'` gating symbols, the `capturesKeys` threading at `app.go:415–435`, the `pnpm typecheck` script, the `gate-no-backend-files`/`test-e2e` make targets, and the `github.com/castocolina/gitid` module path in the allowlist grep). The amended 02-12 correctly adds `depends_on: [02-14]`, the E2/E3 checklist items, and the STYLE-SPEC/02-14-SUMMARY evidence — exactly what the consensus asked the checkpoint to sign. However, the plan has **one gate-breaking omission**: the PTY e2e (`e2e/dummy_demo_e2e_test.go:209/222/231`) pins the literal strings `Step 1/4`/`Step 2/4`/`Step 3/4`, which the mandated stepper replacement removes — and that file is in neither Task 3's `<files>` nor its `read_first`, so the plan's own `make test-e2e` exit gate will fail inside a file the executor is not scoped to touch. Two smaller factual defects (the MUI-Select guard claim and a stepper label-source contradiction) also need pre-execution fixes. All three are plan-authoring bugs, not consensus violations.
 
-## 2. Feedback Coverage Matrix
+## 2. Consensus Compliance Matrix
 
-| # | Feedback item | Coverage | Evidence | Smallest coherent change |
+| # | Consensus item | Compliance | Where | Notes |
 |---|---|---|---|---|
-| 1 | **Web:** ←/→ navigates wizard sections 1–4 | **Gap** | Only `GlobalSsh.tsx:91` handles ArrowLeft/Right (sub-tabs); the wizard has no step-level arrow handler | Amend `mockup-src/src/demo/screens/Identities.tsx` CreateWizard: ArrowLeft/Right switch pane-states when focus is not inside an input/select; forward-nav gated on step validity (can't arrow past an unpassed test) |
-| 2 | **TUI:** same ←/→ across wizard sections; nav items visually distinct (bold numbers, `[1]`, color) | **Gap / partial** | `identities.go:1717` `stepDots` renders `Step n/4 · label ● ○` entirely in `styleFaint` — the current stepper is *dimmer* than body text, the opposite of a nav affordance. ←/→ inside the wizard is already claimed at `identities.go:1165/1261/1364` (field ring, strategy select, button ring) | New plan task: promote `stepDots` to a first-class stepper — `[1] SSH · [2] Test · [3] Git · [4] Review`, active segment bold+accent (reverse-video, matching the header-tab convention), completed segments ✓-marked; wire ←/→ step nav at a defined precedence (see Suggestions) |
-| 3 | **TUI:** text inputs need visible contours (rounded blue borders like the 0.0.1 POC) | **Gap** | `identities.go:102` `newTextInput` is a bare input (`Prompt=""`, `DefaultDarkStyles`); `formFieldLine` (line 290) marks focus with only `▸ ` + bold label. The POC's remembered "rounded blue border" was `tui/overlay.go` `StyleModal`, never per-field | New plan task: focused field rendered inside a `lipgloss.RoundedBorder()` with blue/accent `BorderForeground`; blurred fields get a lighter contour (dim `[ value ]` brackets or underline) — **not** a border on all six fields (row budget, see Concerns). Pair with `textinput.SetStyles` focused/blurred states |
-| 4 | **TUI:** 'Match strategy' hint vanishes on focus; hidden options appear; label/field/hint zones unclear | **Gap (deliberate prior decision to revisit)** | 02-13 key decision: "descriptive helpers render for the focused field only" (row-budget compaction) — the user is reporting exactly that behavior as disorienting; the strategy select expands options on focus (`identities.go:492-499`) while the hint disappears | Amend the form layout contract: helper zone becomes *stable* (reserved line under the focused field that never collapses to zero; expanding selects push content, never replace the hint); codify label=bold / field=contoured / hint=faint in the STYLE-SPEC |
-| 5 | **TUI:** preview area has no clear fitted size | **Partial** | `frame.go:391-438` `previewDashedBorder` + Faint exists (round-3 fix), but the block auto-sizes to content width — no fixed bounding to the pane | Amend `PreviewBlock`: fixed `Width(paneWidth-…)` + optional fixed height with the existing `… (+n more)` clip cue; title embedded in the border top edge |
-| 6 | **Both:** shrink slide-3 "Skip Git"/"Continue w/ Git" buttons; move explanations to a hint line near the buttons | **Gap** | Web + TUI both render long button labels (`Skip — SSH only (identity stays incomplete)` / `Continue: review & write (Enter)`); TUI tests pin this copy | Copy amendment in both media (buttons: `[ Skip Git ]` `[ Continue ]`; explanation as a faint hint line adjacent) + update `FIELDS.md`, the copy-pinning tests, and the parity rows. Legitimate pre-approval change since the freeze (§6.C) has not been signed |
-| 7 | **Both:** consistent typographic/semantic system (info / labels / fields / warnings / hints) | **Partial** | TUI has implicit tokens (`frame.go:99-111`); web has `theme.ts`; UX-DIRECTION §2 defines a *color* semantics table but no *typography/emphasis-role* table, and no parity dimension checks it | New artifact: `02-STYLE-SPEC.md` (or a §2 extension) defining the 5 roles per medium (web: font-size/weight/color; TUI: bold/faint/contour/hue) + a new parity row `typography-emphasis-roles` per surface; implement as a central Go `Theme` struct + matching `theme.ts` tokens |
-| 8 | **Both:** dim-all on modal is good; disabled main nav should also dim; active area needs accent color | **Partial** | `dimPane` dims the sidebar during forms/ceremonies (opacity-0.75 mirror), but header tabs/chrome stay full-brightness even while a capturing pane swallows the 1–4 keys (`capturesKeys` already tracks this state for the footer) | Amend `RenderFrame`: when the active screen `capturesKeys`, render header tabs through `styleFaint`; give the active pane a subtle accent (colored divider/border or accent section headers) so dim-vs-active contrast is legible |
-| 9 | **Question:** is theming possible for Bubble Tea / Lip Gloss? | **Answerable — yes** | Not a plan gap; a knowledge item | Answer in the follow-up plan (see Suggestions): central palette struct + `lipgloss.LightDark`-style adaptive colors + bubbles `SetStyles`; the codebase already half-does this |
+| 1 | Web ←/→ wizard nav (validity-gated fwd, back always) | **Full** | 02-14 Task 2 | Gates on `step0Valid` / `testPhase === 'stage2'` / git name+email — all symbols verified in `Identities.tsx:357/378-383`. One enforcement gap: see Defect D2 |
+| 2 | TUI ←/→ + first-class stepper (not faint) | **Full** | 02-14 Task 3 (1)(2) | Table-driven precedence test + SGR assertion that active ≠ `styleFaint`; correctly identifies the three existing ←/→ claimants (verified at 1165/1261/1364 region) |
+| 3 | TUI field contours (focused-only rounded box, blurred 1-row dim) | **Full** | 02-14 Task 3 (3) | Explicitly forbids the +12-row all-fields border; pairs with `textinput.SetStyles`; height asserted in-test AND via the 100×30 PTY walk |
+| 4 | Stable hint zone (select pushes, never replaces) | **Full** | Task 3 (4) TUI, Task 2 web | Keeps 02-13's focused-only descriptive helpers while reserving a persistent hint row — the right compromise for the row budget |
+| 5 | Bounded previews (fixed width/height, clip cue, title-in-border) | **Full** | Task 1 (`PreviewBlock`) + Task 3 (5) + Task 2 (`MutationCeremony.tsx`) | Reuses the existing `… (+n more lines)` machinery (`frame.go:414-441`) |
+| 6 | Slide-3 copy `[ Skip Git ]` / `[ Continue ]` + hint lines | **Full** | Task 1 freeze → Task 2 web → Task 3 atomic | Frozen strings live in ONE place (STYLE-SPEC §4); Tasks 2/3 explicitly forbidden from re-deriving them |
+| 7 | Semantic style contract (11 roles, Theme ↔ theme.ts, new parity dimensions) | **Full** | Task 1 | Promotes `frame.go:102-112` vars behavior-preservingly; 6 parity dimensions; correctly documents that `parity.json` is gone (verified via REFERENCE-INDEX.md) so the executor won't hunt a ghost artifact |
+| 8 | Dim disabled nav + active-area accent | **Full** | Task 1 (`RenderFrame` via `capturesKeys`) + Task 2 (`Frame.tsx`) | Uses the exact signal round 2 identified; SGR-difference test specified |
+| 9 | Theming question answered | **Full** | Objective + Task 1 | ANSI-16 retained, no adaptive light/dark — matches the consensus's "more portable" ruling and blocks the over-engineering risk |
+| **T1** | HIGH trap: arrow-key precedence written down first | **Full** | Task 1 STYLE-SPEC §2 (5 numbered clauses, verbatim), implemented identically in Tasks 2 & 3 | Text-input cursor keys marked non-negotiable in both media |
+| **T2** | HIGH trap: contours within the 100×30 budget | **Full** | Task 3 (3) + objective trap #1 | ~+2 rows quantified; PTY e2e re-run is the proof — but see Defect D1, which currently breaks that same gate for an unrelated reason |
+| **A** | Copy-freeze atomicity (both demos + FIELDS.md + pins in one change) | **Full** (gate scope slightly narrow) | Task 3 (6) + repo-wide grep gate | Grep gate covers `internal/dummytui` + `mockup-src/src` but NOT `.planning/design` — see Concern C3 |
+| **R** | Re-run everything (gates + fresh designer critique) | **Full** | Task 3 exit gates + 02-12 read_first | All six gates enumerated in order; fresh `agent-ui-ux-designer` critique is a blocking exit gate |
+| **12** | 02-12 checklist updated to sign what was asked | **Full** | 02-12 must_haves + §6 E2/E3 + `depends_on: [02-14]` | APPROVAL.md refresh handles the stale static-PNG wording I confirmed still exists in the scaffold |
 
-**Verdict:** 2 items partially covered by executed work, 6 genuine gaps, 1 question. All are absorbable in **one new plan (02-14, wave 6.5)** amending `mockup-src/src/demo/` + `internal/dummytui/` + a STYLE-SPEC doc, re-running the existing gates, before re-presenting 02-12. No executed plan needs to be reopened.
+## 3. Defects in the New Plan
 
-## 3. Strengths
+**D1 — HIGH: the stepper replacement breaks PTY e2e assertions in a file the plan does not own.**
+`e2e/dummy_demo_e2e_test.go` asserts the literal old stepper copy — `mustSee(t, s, "Step 1/4", …)` at line 209, `"Step 2/4"` at 222, `"Step 3/4"` at 231. Task 3 mandates *replacing* the `Step n/4 · label ● ○` line with `[1] SSH · [2] Test · [3] Git · [4] Review`, and runs `make test-e2e` as a blocking exit gate — but `e2e/dummy_demo_e2e_test.go` appears in neither `files_modified`, nor Task 3's `<files>`, nor its `read_first`. As written, the plan's own gate fails and the fix is out of scope. Unit-side, `identities_test.go:119/131/237/347` pin the same old copy — that file *is* in scope, but the plan's enumeration only cites the button pins, not the stepper pins.
 
-- **The feedback loop is structurally supported.** 02-12 explicitly routes rejections back ("report which plan the loop must route back to"), and the checkpoint has already absorbed one full paradigm rejection (static PNGs → live demos, 02-13) without destabilizing the phase — this second, much smaller round fits the same mechanism.
-- **Single-source copy discipline** (`data.go` ↔ `recipeFixtures.ts`, pinned by tests) means the button-copy change (item 6) is a contained, greppable edit with test coverage telling you every place it touches.
-- **The key-routing precedence stack** (overlays → screen handler → globals, mirrored from `DemoApp.tsx`) gives arrow-key step-nav a principled place to slot in without breaking existing bindings.
-- **Gates are re-runnable as-is**: no-backend allowlist, zero-write PTY e2e, `gate-no-backend-files`, and lint all apply unchanged to the follow-up work — the safety story doesn't need replanning.
-- **`capturesKeys` already exists** (batch-3 footer-honesty fix) — it is exactly the signal item 8's "dim the disabled nav" needs; the state model anticipated the feedback even though the rendering didn't.
+**D2 — MEDIUM: Task 2's guard claim about MUI Select is factually wrong.**
+Task 2 says the wizard arrow handler can "rely on the existing DemoApp.tsx guard (an HTMLInputElement/HTMLTextAreaElement/contentEditable/**MUI Select** target already short-circuits…)". The actual guard (`DemoApp.tsx:102-120`, verified) checks `HTMLInputElement`, `HTMLTextAreaElement`, `isContentEditable`, and radio/checkbox toggles — nothing that matches a MUI Select, whose focusable element is a `div` (role `combobox`), as used by the match-strategy and algorithm `TextField select` at `Identities.tsx:274-281/464`. With a *closed but focused* select, ←/→ would fall through to the new wizard handler and switch steps — violating precedence clause [1] the plan itself freezes into the STYLE-SPEC. The web handler needs an explicit select-target check; "rely on the existing guard" is insufficient as specified.
+
+**D3 — MEDIUM: internal contradiction in the stepper label source.**
+Task 3 says "promote `stepDots` to a first-class `renderStepper` (**keep `wizardSteps` as the label source**)" and simultaneously mandates the segments `SSH · Test · Git · Review`. `wizardSteps` (verified at `identities.go:519`) holds `"SSH details" / "Test connection" / "Git identity" / "Review & write"` — those cannot both be the label source and produce the short segments. The short-label mapping must be pinned (in the plan or the STYLE-SPEC), or the executor will invent it — exactly the class of unfrozen copy this phase exists to eliminate.
+
+**D4 — LOW: the atomicity grep gate's scope is narrower than the must_have truth.**
+The truth says "NO artifact (Go, TSX, **FIELDS.md**) still contains the old long labels", but the gate greps only `internal/dummytui` and `.planning/design/mockup-src/src`. Today `create-flow/FIELDS.md` contains no old copy (verified), so this is latent — but the gate cannot prove the truth as stated. Also note the old copy appears in *comments* the plan doesn't enumerate (`identities.go:367`, `identities_test.go:373/435/756`); the gate will force those updates since the files are in scope, which is fine — just expect more edit sites than the three cited pin lines.
+
+**D5 — LOW: active-area accent mechanism under-specified in Task 1.**
+"The active pane region carries the ActiveArea accent" names no mechanism (accent divider? border? section headers?) and the only test specified covers header-tab dimming, not the accent. Also unstated: whether the active tab keeps its reverse-video while the tab row renders through DisabledNav. Small, but this is a parity-bearing rendering decision — the STYLE-SPEC role table should pin it.
+
+No wave/dependency errors (wave 7/8 vs. the reviews' "6.5" label is cosmetic; the roadmap, `depends_on: [02-13]`, and 02-12's `depends_on: [02-11, 02-13, 02-14]` are all consistent). No allowlist/scope violations — every file in both plans sits inside `.planning/`, `internal/dummytui/`, or `mockup-src/`, except the e2e file that *should* be added (e2e/ is already on the Phase-2 allowlist per 02-13). Threat model is sound and correctly registers the copy-consistency risk (T-02-14-COPY). TDD assignment is appropriate (tasks 1/3 `tdd="true"`; Task 2 has no TS test harness — `package.json` has no test script — so typecheck+build+human-check is the honest verification there).
 
 ## 4. Concerns
 
-- **HIGH — Input borders vs. the 30-row frame.** A rounded border adds 2 rows per field; 6 SSH-form fields × 3 rows ≈ 18 rows of fields alone, plus stepper, preview, helpers, and chrome — it cannot fit 100×30. The demo has been through **four documented viewport-compaction rounds** already. If 02-14 borders every field, the wizard will clip and the PTY e2e signatures will break. The design must be "focused field gets the full rounded-blue box; blurred fields get a 1-row contour" (or the frame's minimum height rises, which changes the e2e geometry and the spec).
-- **HIGH — ←/→ is already a contended key in the TUI.** It currently moves the field/button ring (`identities.go:1165,1261,1364`), changes the strategy select (`(←/→ change)` is rendered UI copy), and switches Global-SSH sub-tabs. Adding wizard-step navigation on the same key without an explicit precedence rule reintroduces exactly the class of collision the 02-02 registration guard existed to prevent — but this layer (in-pane focus semantics) has *no* guard. The precedence must be written down before implementation (see Suggestions).
-- **MEDIUM — No typographic parity dimension exists.** The §3 MUST-match list and all 63 parity rows check *content*; none check *emphasis roles*. The two demos can (and per the feedback, do) drift in visual semantics while "passing parity." Absorbing item 7 without adding a machine-checkable `typography-emphasis-roles` parity row per surface would leave the same blind spot open for Phases 3–9's visual-regression gate (DLV-04).
-- **MEDIUM — Copy freeze vs. item 6.** Shortening button labels changes copy that FIELDS.md and Go/TS tests pin. Fine now (approval unsigned), but the change must flow through FIELDS.md + tests + both media *atomically*, or 02-12's checklist item C ("copy freeze") will be signed against inconsistent artifacts.
-- **MEDIUM — Web/TUI parity re-verification is a hard requirement.** All 8 change items touch both media (or one medium's behavior the other must mirror). The 63/63 pass predates these changes; the follow-up plan must re-run the parity pass (and the ui-ux-designer critique) as an exit gate, not assume additivity.
-- **LOW — Forward arrow-nav can skip gates.** ArrowRight from step 2 must stay disabled until the two-stage test passes (TEST-01/02 is the product's credibility pattern); a generic "←/→ moves sections" implementation that ignores step validity would undermine the flagship safety affordance.
-- **LOW — Scope creep pressure.** The demos are design artifacts. A full theming engine (user-configurable palettes, runtime theme switching) would be over-engineering; a *central palette struct consumed by both demos* is the right size. Answer the user's theming question with the pattern, implement only the tokens.
+- **HIGH (C1 = D1):** `make test-e2e` is simultaneously the plan's proof that the contours fit 100×30 *and* guaranteed to fail on the stale `Step n/4` assertions. If the executor "fixes" this by keeping `Step n/4` text inside the new stepper, item 2's intent survives; if they deviate into e2e/ without the plan saying so, the change is unreviewed. Resolve at plan level, not execution level.
+- **MEDIUM (C2 = D2):** Arrow-precedence enforcement on the web is only as good as the select guard. This was the consensus's #1 HIGH trap; the plan writes the rule down perfectly and then under-specifies the one place the existing code doesn't enforce it.
+- **MEDIUM (C3):** `Shift+←/→` as an *unconditional* chord inside web text inputs collides with native Shift+Arrow text selection (extending a selection in the Provider field will now switch wizard steps). This is consensus-inherited (round 2 proposed it), so the plan is compliant — but the STYLE-SPEC should acknowledge the tradeoff explicitly, since it is the one place the replan deliberately overrides a native text-editing gesture, immediately after declaring cursor keys non-negotiable.
+- **LOW (C4):** Task 1 requires the theme promotion to be "byte-identical … behavior-preserving" while the *same task* changes `RenderFrame` header rendering under `capturesKeys`. Existing frame tests appear to assert ANSI-stripped content (so faint tabs won't break them), but the acceptance criterion "zero edits to their expected strings" should be scoped to the *promotion*, not the whole task, to avoid a false contradiction.
+- **LOW (C5):** 02-12's `read_first` includes `02-14-SUMMARY.md`, which does not exist until 02-14 completes — correct given the dependency, just ensure the checkpoint executor treats a missing file as a blocker (evidence 02-14 actually ran), not as skippable.
 
 ## 5. Suggestions
 
-**Theming in Bubble Tea / Lip Gloss (answer to the user's question): yes, and cheaply.**
-- Define one central theme in Go: `type Theme struct { Accent, Healthy, Warning, Error, Info, Dim, FieldBorder lipgloss.Color; Label, Hint, Field, WarningText, InfoText lipgloss.Style }` and derive every style in `frame.go` from it — the package-level `styleBold/styleFaint/...` vars (frame.go:99-111) are already 80% of this; they just need to be grouped, named by *role*, and documented. Swapping palettes then = swapping one struct literal.
-- Adaptive light/dark: Lip Gloss v2 removed automatic background detection; the v2 pattern is to request the terminal background via Bubble Tea (`tea.BackgroundColorMsg`) and pick colors with the `lipgloss.LightDark(isDark)` helper. For this demo, sticking to the ANSI 16-color palette (as now) is the *more* portable choice — the theme struct still pays off as the single semantic authority.
-- Mirror the same role names in `theme.ts` (which already exists) so the STYLE-SPEC maps 1:1: `label ↔ styleBold`, `hint ↔ styleFaint`, `warning ↔ styleWarning`, etc.
-
-**Focus/blur input styling (item 3), concretely:**
-- Use bubbles v2's native states: `ti.SetStyles(s)` where `Styles.Focused.Text/Prompt` carry the accent and `Styles.Blurred` the dim variant (verified present in `bubbles/v2@v2.1.0/textinput` — `Styles`, `StyleState`, `DefaultDarkStyles`).
-- For the contour: wrap only the *focused* field's `input.View()` in `lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(theme.Accent).Width(fieldWidth)`; render blurred fields as a single row with a dim bracket contour (`[ value ]` in `theme.Dim`). This gives the "clear editable place + clear focus/unfocus distinction" for a net cost of +2 rows total, not +12.
-
-**Arrow-key precedence (items 1–2) — write this rule into the STYLE-SPEC and implement it identically in both media:**
-1. If an *expanded select / option list* owns focus (algorithm, match strategy): ←/→ (or ↑/↓) change the option — unchanged.
-2. Else if focus is inside a *text input*: ←/→ move the cursor — never intercepted (this is the non-negotiable; stealing cursor keys from a text field is a worse defect than the one being fixed).
-3. Else (focus on the stepper, buttons, or a non-editing pane region): ←/→ navigate wizard sections, gated on step validity going forward, always allowed going back.
-4. Sub-tab surfaces (Global SSH) keep their existing ←/→ meaning; no wizard exists there, so no conflict.
-   On the web, the same rule falls out of `document.activeElement` checks (skip when `INPUT`/`SELECT` focused). Optionally add `Shift+←/→` as an *unconditional* section-nav chord so power users can move steps even from inside a field.
-
-**Structural recommendation:** author this as **one new plan `02-14` (wave 6.5, `depends_on: [02-13]`, blocking 02-12)** with three tasks — (1) STYLE-SPEC + central theme tokens in both media + new parity dimension; (2) web demo changes (arrow nav, button copy, hint zones); (3) TUI changes (stepper, input contours, stable hint zone, preview bounding, chrome dimming) + re-run all gates + a fresh ui-ux-designer parity pass — rather than amending seven executed plans. Update 02-12's §6 checklist to add the arrow-nav and style-system items so what the user asked for is what they sign.
+1. **(D1)** Add `e2e/dummy_demo_e2e_test.go` to Task 3's `<files>` and `read_first`, with an explicit instruction: update the three `mustSee` stepper signatures (209/222/231) to the new stepper markers (e.g. `[1] SSH`, `[2] Test`, `[3] Git`) — or, alternatively, mandate the stepper keep a `Step n/4` textual prefix and pin that in the STYLE-SPEC. Either is one line in the plan; pick one now.
+2. **(D2)** Replace "rely on the existing DemoApp.tsx guard" with: the CreateWizard handler must also no-op when `e.target` matches a select (`[role="combobox"]` / `.MuiSelect-select` / `aria-haspopup`), and add this to Task 2's acceptance criteria. Keep the guard-extension in `Identities.tsx`'s local handler (not the global guard) to avoid disturbing Global SSH's existing sub-tab arrows.
+3. **(D3)** Pin the short↔long stepper label mapping in the STYLE-SPEC's frozen-copy section (`SSH ↔ SSH details`, `Test ↔ Test connection`, `Git ↔ Git identity`, `Review ↔ Review & write`) and drop "keep wizardSteps as the label source" or reword it to "derive short segments from a new pinned map; wizardSteps remains for crumbs/help".
+4. **(D4)** Widen the atomicity gate to `! grep -rn '…' internal/dummytui .planning/design/mockup-src/src .planning/design/create-flow` so the gate proves the truth as written.
+5. **(D5/C3)** One STYLE-SPEC paragraph each: (a) the ActiveArea mechanism and the active-tab treatment while chrome is dimmed; (b) the acknowledged Shift+Arrow-vs-text-selection tradeoff for the unconditional chord.
 
 ## 6. Risk Assessment
 
-**Overall: MEDIUM.**
+**Risk: LOW-MEDIUM.** The replan converts every consensus item into a concrete, gated, mostly line-number-accurate task set; the two round-2 HIGH traps are not just mentioned but structurally enforced (precedence table test; focused-only contour + PTY re-run). The residual risk is concentrated in three plan-authoring defects — one of which (D1) will deterministically fail the plan's own exit gate and force an out-of-scope deviation if not fixed before dispatch — plus one enforcement gap (D2) on the exact key-collision the consensus rated HIGH. All three are one-line-to-one-paragraph plan edits; none require re-litigating the consensus or reopening executed plans.
 
-The phase's architecture, gates, and feedback-routing mechanism absorb this cleanly — nothing executed needs to be undone, the changes are localized to the two demo codebases plus design docs, and the checkpoint goal (user-approved design for every surface) remains achievable in one follow-up wave. The risk is not *whether* but *how*: two items carry genuine implementation traps — the input-border ask collides with the 100×30 row budget (HIGH if implemented naively; the demo has already needed four compaction rounds), and ←/→ is a triply-claimed key whose new meaning needs an explicit, both-media precedence rule (HIGH if left implicit). Both are fully de-riskable at plan-authoring time with the rules above. The residual medium risk is process: the copy freeze, FIELDS.md contracts, copy-pinning tests, and the 63/63 parity pass must all be re-synchronized atomically, or the approval will be signed against artifacts that no longer agree with each other.
+**Verdict: MATCHED** — the replan faithfully and completely implements the round-2 consensus (all 8 items, both HIGH traps, the atomicity requirement, the gate re-runs, and the 02-12 checklist/dependency amendments). Fix D1 (mandatory), D2, and D3 in the plan text before executing 02-14; D4/D5 are discretionary hardening.
 
 ---
 
 ## Codex Review
 
-## Summary
+**Summary**
 
-The phase plans are strong on process, isolation, and verification, but the checkpoint feedback exposes a real design-system gap: the plans prove parity and no-backend behavior, yet they do not define a sufficiently precise shared interaction/style contract for wizard navigation, form-field contours, hint persistence, preview sizing, and disabled/dimmed navigation states. Because most plans are already executed and 63/63 parity items currently pass, the cleanest absorption path is a new checkpoint-feedback polish wave before 02-12 approval, not ad hoc edits to old plans. Call it something like `02-14-PLAN.md`, depending on `02-13`, updating both live demos, adding new parity rows, rerunning TUI/web checks, and then returning to 02-12.
+Verdict: the replan is structurally correct and captures almost all round-2 consensus in one new 02-14 wave before 02-12. However, it is **not fully matched as an executable plan yet** because the arrow-key precedence is internally contradictory around `Shift+←/→` and TUI button-ring focus, and the copy-freeze grep gate does not actually cover `FIELDS.md`. These are small edits, but they affect consensus HIGH/MEDIUM items.
 
-## Feedback Coverage Matrix
+**Consensus Compliance Matrix**
 
-| Feedback item | Coverage | Existing plan | Smallest coherent change |
-|---|---:|---|---|
-| Web ←/→ navigate wizard sections 1-4 | Gap | 02-12 says live web demo is keyboard-driven, but no explicit arrow wizard nav | Add to follow-up plan: web wizard stepper handles ←/→ only when focus is not inside text input/select, or when stepper/nav has focus. Add e2e/manual checklist. |
-| TUI ←/→ navigate wizard sections 1-4 | Gap | 02-13 wizard uses Enter/Esc and Global SSH uses ←/→ sub-tabs only | Add to follow-up plan: TUI wizard-level left/right step navigation with focus guards so text-field cursor movement is not stolen. |
-| TUI nav items visually distinct without web-like borders | Partial | 02-13 header active tab reverse-video; 02-02 key allocation | Add explicit TUI stepper style: `[1] SSH`, `[2] Test`, `[3] Git`, `[4] Review`, active number bold/reverse/accent, completed check glyph, disabled dim. |
-| TUI text fields need visible contours like old POC blue outlines | Gap | 02-13 mentions one field per row and dim previews, but not bordered inputs | Add central form-field style: focused blue rounded border, blurred dim border, invalid red border. Use `lipgloss` borders around `bubbles/textinput` values. |
-| Hints disappear on focus; unclear label/input/help | Gap | 02-13 has helpers, but not persistent hierarchy | Add rule: labels always visible and bold; editable area always contoured; help always visible in dim text; focus can add an extra hint but cannot replace the base help. |
-| Preview area lacks fitted size | Partial | 02-13 has `PreviewBlock` dimmer/dashed border | Extend `PreviewBlock` contract with fixed min/max width/height, scroll/clamp behavior, title label, and consistent border. |
-| Slide 3 Skip/Continue buttons too wordy; move explanations to help area | Gap | 02-13 explicitly uses `Skip — SSH only...` and `Continue: review & write...` | Change both web/TUI copy: buttons become `Skip Git` and `Continue`; explanatory copy moves to dim help text immediately before/after actions. |
-| Consistent typographic/style system for info, labels, fields, warnings, help | Partial | 02-01 terminal theme, 02-13 frame/preview helpers | Add a semantic style contract across web + TUI: `Info`, `Label`, `Field`, `Help`, `Warning`, `Error`, `Preview`, `DisabledNav`, `ActiveArea`. Make parity rows assert them. |
-| Dim-all modal treatment good, but disabled main nav should also dim; active area needs color | Partial | 02-13 says sidebar dimmed during forms; overlay dimming exists | Add explicit dim-disabled-nav rule for modal/edit states and active area accent color. Verify in web and TUI screenshots/live demo. |
-| Are Bubble Tea/Lip Gloss theme colors possible? | Not a plan item, but yes | 02-01/02-13 imply theme helpers | Add central `Theme` struct in `internal/dummytui`, with palette + semantic styles. Lip Gloss supports central reusable styles and adaptive colors. |
+| Item | Status | Evidence |
+|---|---:|---|
+| Web ←/→ wizard navigation | Partial | 02-14 Task 2 adds it, but relies on the existing input guard for expanded MUI selects; current guard only clearly protects inputs/textareas/contenteditable. |
+| TUI ←/→ wizard navigation + distinct stepper | Partial | Task 3 adds stepper/tests, but conflicts on whether button focus uses step nav or existing button-ring nav; `Shift+Right` may bypass validity. |
+| TUI focused/blurred field contours | Full | Task 3 explicitly uses focused-only rounded accent contour and blurred one-row dim contour, with 100×30 e2e. |
+| Stable hint zones | Full | Tasks 2/3 require persistent helper rows and expanded selects pushing content. |
+| Bounded previews | Full | Task 1 updates `PreviewBlock`; Tasks 2/3 consume it. |
+| Slide-3 short buttons + hint copy | Partial | Both demos and tests are covered, but old-copy grep excludes `.planning/design/create-flow/FIELDS.md`. |
+| Semantic style contract / Theme ↔ theme.ts | Full | Task 1 creates `02-STYLE-SPEC.md`, Go `Theme`, and web role tokens. |
+| Disabled nav dim + active-area accent | Full | Task 1 frame behavior; Task 2 web chrome; 02-12 checklist E3. |
+| HIGH trap: explicit arrow precedence | Partial | Written down, but execution text contradicts validity gating and button-ring precedence. |
+| HIGH trap: focused-only border within 100×30 | Full | Clearly specified and gated by PTY e2e. |
+| Copy-freeze atomicity | Partial | Atomic cluster exists, but verification misses `FIELDS.md`. |
 
-## Strengths
+**Defects In The New Plan**
 
-- The plans have a strong no-backend boundary: separate `cmd/gitid-dummy`, import allowlist, sandboxed HOME zero-write e2e.
-- The recipe fidelity is well represented: Port 443, `IdentitiesOnly yes`, `includeIf hasconfig/gitdir`, `insteadOf`, `allowed_signers`, and ed25519 structure are carried into fixtures.
-- The move from static screenshots to live web + live TUI demos is directionally correct for the checkpoint.
-- The parity system is better than pixel comparison: semantic `parity.json` rows are the right mechanism.
-- The PTY e2e against the real dummy binary is a strong guard against unreachable screens.
-- The plans correctly keep the web UI as design artifact only, not product scope.
+1. **HIGH:** `Shift+←/→` is underspecified and can be read as bypassing validity gates. 02-14 says normal forward nav is validity-gated, but Task 3 behavior/acceptance says `shift+left`/`shift+right` switch “unconditionally.” That conflicts with the consensus that forward navigation must not skip the two-stage test. Fix: define Shift as an unconditional **focus override**, not a validity override.
 
-## Concerns
+2. **HIGH:** TUI button-focus precedence contradicts itself. Task 3 says button focus switches wizard steps, then later says not to regress existing button-ring `←/→` behavior. Those cannot both be true under the consensus rule. Fix: choose one rule. Per round-2 consensus, button/stepper/non-editing focus should navigate wizard sections.
 
-- **HIGH:** Current parity can pass while the user-visible design still fails. The missing feedback items are mostly style/interaction semantics, not field-presence semantics. Add parity rows for field contour, hint persistence, wizard arrow navigation, preview sizing, and modal/nav dimming.
-- **HIGH:** Arrow-key navigation can conflict with text editing. In both web and TUI, do not globally intercept ←/→ when focus is inside a text input, select, text area, or editable field.
-- **HIGH:** The style system is under-specified. “Terminal skin” and “dim preview” are not enough; labels/help/fields/warnings/previews need named reusable styles in both MUI and Lip Gloss.
-- **MEDIUM:** TUI form polish is lagging behind the earlier POC expectation. The checkpoint explicitly compares it to previous blue-outlined forms, so this is likely approval-blocking.
-- **MEDIUM:** Button-copy changes affect both live demos and parity docs. This should be treated as design freeze work, not cosmetic cleanup.
-- **MEDIUM:** 02-12 should not proceed until the feedback polish has its own verification summary and updated `APPROVAL.md` checklist.
-- **LOW:** “Rounded blue borders” in terminal are approximations. Lip Gloss can draw rounded borders, but terminal/font support varies; the acceptance should be “visible contour and focused blue accent,” not exact pixel parity.
+3. **MEDIUM:** Web expanded-select protection is not verifiably implemented. Task 2 relies on the global active-element guard, but current code clearly guards `HTMLInputElement`, `HTMLTextAreaElement`, and contenteditable, not an opened MUI listbox/popover. Fix: add explicit select-open state or a robust role/listbox guard, plus a manual or automated check for expanded select owning arrows.
 
-## Suggestions
+4. **MEDIUM:** Copy-freeze grep omits `FIELDS.md`. The must-have says no artifact including `FIELDS.md` keeps the old labels, but the grep only scans `internal/dummytui` and `mockup-src/src`. Fix: include `.planning/design/create-flow/FIELDS.md` in the grep gate.
 
-- Add `02-14-PLAN.md — checkpoint feedback polish`, depends on `02-13`, before `02-12`.
-- Update web demo and TUI demo together, then update `parity.json` rows and `REFERENCE-INDEX.md`.
-- Add a shared semantic style contract:
-  - Web: MUI theme tokens/components for label, help, field, warning, preview, disabled nav, active region.
-  - TUI: `internal/dummytui/theme.go` with `Palette` and `Styles`.
-- Bubble Tea / Lip Gloss theming is absolutely possible:
-  - Use a central Go struct, e.g. `type Theme struct { Colors Palette; Label, Help, Field, FieldFocused, FieldBlurred, Warning, Error, Preview, DisabledNav lipgloss.Style }`.
-  - Use `lipgloss.AdaptiveColor{Light: "...", Dark: "..."}` or ANSI-safe colors if needed.
-  - Pass the theme into render helpers, or keep a package-level `DefaultTheme` for the dummy.
-- For TUI text inputs:
-  - `bubbles/v2/textinput` supports focused/blurred styling patterns; wrap the rendered input in Lip Gloss borders.
-  - Focused: blue border + bold label.
-  - Blurred: dim border + normal label.
-  - Invalid: red border + warning/help line.
-- For arrow wizard navigation:
-  - Web: ignore ←/→ when `event.target` is input/textarea/select/contenteditable.
-  - TUI: only treat ←/→ as section nav when focus is on the wizard stepper, action row, preview pane, or non-text field; text inputs keep cursor movement.
-- For slide 3 buttons:
-  - Buttons: `Skip Git`, `Continue`.
-  - Help text: “Skip keeps this identity SSH-only and marks it incomplete.” / “Continue reviews the Git fragment, includeIf, and allowed_signers entries before writing.”
-- For modal dimming:
-  - Dim all inactive navigation and parent panes.
-  - Add an accent border/header to the active modal/edit area so the contrast is obvious.
+5. **LOW:** 02-12 has stale wording: “all implementation… complete (02-01..02-11 + 02-13)” omits 02-14. Fix that sentence so the checkpoint cannot be interpreted as skipping 02-14.
 
-## Risk Assessment
+6. **LOW:** `.planning/STATE.md` still says next is 02-13 then 02-12, missing 02-14. Roadmap is correct, but GSD resume context is stale. Update STATE as part of the replan bookkeeping.
 
-Overall risk: **MEDIUM-HIGH** until the checkpoint feedback is absorbed. The architecture and verification story are strong, but the remaining issues are approval-critical design issues, not implementation details. A focused follow-up polish wave should reduce this to **LOW-MEDIUM**, provided it updates both demos, adds semantic parity rows, verifies arrow-key behavior without text-field conflicts, and reruns the no-backend/e2e gates before returning to 02-12.
+**Concerns**
+
+- **HIGH:** Arrow-key behavior is the approval-critical trap from round 2; ambiguity here can recreate the exact bug the replan exists to prevent.
+- **MEDIUM:** Copy consistency is almost covered, but the verification gate needs to match the stated artifact set.
+- **LOW:** 02-12 route-back text says TUI issues route to 02-13; post-02-14 polish issues should route to 02-14.
+
+**Suggestions**
+
+- Amend `02-STYLE-SPEC.md` wording: “Shift+←/→ ignores focus ownership only; forward movement remains validity-gated.”
+- Change Task 3 acceptance to assert `Shift+Right` is still blocked until stage 2 passes.
+- Remove or rewrite the “Do NOT regress button-ring ←/→” sentence.
+- Extend grep to: `internal/dummytui .planning/design/mockup-src/src .planning/design/create-flow/FIELDS.md`.
+- Update `02-12-PLAN.md` stale implementation sentence and `.planning/STATE.md`.
+
+**Risk Assessment**
+
+Risk: **MEDIUM** after the small amendments; **MEDIUM-HIGH** if executed as written because the arrow-nav ambiguity sits on a round-2 HIGH concern.
+
+Final verdict: **NOT MATCHED** as written. The structure and coverage are very close, but the high-priority arrow precedence rule and copy-freeze verification need the amendments above before this faithfully implements the round-2 consensus.
 
 ---
 
 ## Consensus Summary
 
-Both reviewers independently reached the same structural verdict: **nothing executed
-needs reopening; absorb all feedback as ONE new plan `02-14` (wave 6.5,
-`depends_on: [02-13]`) that must complete before 02-12 approval is re-presented.**
+Split verdict on the label, agreement on the substance: **Claude says MATCHED
+(with 3 mandatory pre-execution plan edits), Codex says NOT MATCHED as written
+(same class of fixes).** Neither found a consensus violation — all 8 feedback
+items, both HIGH traps, and the atomicity requirement are structurally covered.
+Every finding is a plan-text amendment; nothing requires re-litigating round 2
+or reopening executed plans.
 
-### Agreed Strengths
-- The no-backend boundary (separate `cmd/gitid-dummy`, import allowlist, zero-write
-  PTY e2e, `gate-no-backend-files`) is strong and applies unchanged to follow-up work.
-- Semantic `parity.json` rows beat pixel comparison and are the right mechanism to
-  extend for the new style dimensions.
-- The checkpoint's feedback-routing design works: this is the second absorbed
-  rejection round (first was static PNGs → live demos) without destabilizing the phase.
-- Single-source copy discipline (`data.go` ↔ `recipeFixtures.ts`, test-pinned) makes
-  the button-copy change contained and greppable.
+### Agreed Defects (raised by both — fix before executing)
+1. **Copy-freeze grep gate too narrow.** The must_have truth covers FIELDS.md but
+   the gate greps only `internal/dummytui` + `mockup-src/src`. Widen to include
+   `.planning/design/create-flow` (Codex #4 / Claude D4).
+2. **Web MUI-Select guard gap.** Task 2 "rely on the existing DemoApp.tsx guard"
+   is factually insufficient — the guard covers inputs/textareas/contenteditable,
+   not a focused MUI Select (`div[role="combobox"]`). A closed-but-focused select
+   would leak ←/→ into step navigation, violating precedence clause [1]. Add an
+   explicit select-target check in the CreateWizard local handler + acceptance
+   criterion (Codex #3 / Claude D2).
+3. **Shift+←/→ semantics under-specified.** Codex (HIGH): as written it can be
+   read as bypassing the step-validity gate — must be a focus override only,
+   never a validity override; assert `Shift+Right` still blocked until stage-2
+   passes. Claude (C3): the chord also collides with native Shift+Arrow text
+   selection inside web inputs — acknowledge the tradeoff in the STYLE-SPEC.
 
-### Agreed Concerns (highest priority)
-1. **Arrow-key precedence must be written down before implementation (both: HIGH).**
-   ←/→ is already claimed in the TUI (field ring, strategy select, Global-SSH
-   sub-tabs) and must NEVER be stolen from a focused text input in either medium.
-   Agreed rule: expanded select > text-input cursor > wizard-step navigation
-   (validity-gated forward, always allowed back).
-2. **The style system is under-specified (both: HIGH/MEDIUM).** A semantic
-   style contract is needed — named roles (info, label, field, focused-field, hint,
-   warning, error, preview, disabled-nav, active-area) defined per medium (MUI theme
-   tokens ↔ central Go `Theme` struct) — plus new machine-checkable parity rows for
-   emphasis roles, field contour, hint persistence, arrow nav, preview sizing, and
-   dim states. Current 63/63 parity can pass while the visible design fails.
-3. **Field contours: contour + blue focused accent, not literal borders everywhere.**
-   Claude quantified the trap: rounded borders on all 6 fields ≈ +12 rows and cannot
-   fit the 100×30 frame (4 compaction rounds already recorded). Agreed shape: focused
-   field gets the full rounded blue box; blurred fields get a 1-row dim contour.
-4. **Copy freeze atomicity (both: MEDIUM).** Slide-3 button copy (`[ Skip Git ]`
-   `[ Continue ]` + adjacent faint hint line) must flow through FIELDS.md, the
-   copy-pinning Go/TS tests, both demos, and parity docs in one atomic change.
-5. **Re-run everything (both: MEDIUM).** The 63/63 parity pass, ui-ux-designer
-   critique, PTY e2e, and no-backend gates predate these changes and must be re-run
-   as 02-14 exit gates, not assumed additive.
+### Unique Findings
+- **Claude D1 — HIGH, gate-breaking (mandatory):** `e2e/dummy_demo_e2e_test.go`
+  pins the literal `Step 1/4`/`Step 2/4`/`Step 3/4` (lines 209/222/231) that the
+  stepper replacement removes, and the file is in neither Task 3's `<files>` nor
+  `read_first` — the plan's own `make test-e2e` exit gate deterministically fails
+  in a file the executor is not scoped to touch. Add the file + explicit
+  instruction to update the three `mustSee` signatures.
+- **Claude D3:** stepper label-source contradiction — `wizardSteps` holds the long
+  labels but the plan mandates short segments; pin the short↔long mapping in the
+  STYLE-SPEC frozen-copy section.
+- **Codex #2 — HIGH:** TUI button-focus arrow rule contradicts itself (buttons
+  switch steps vs. "do not regress button-ring ←/→"); pick one per the consensus
+  rule (non-editing focus navigates sections).
+- **Codex #5/#6 — LOW:** stale wording — 02-12 "implementation complete
+  (02-01..02-11 + 02-13)" omits 02-14; STATE.md "next is 02-13 then 02-12" is
+  stale; 02-12 route-back text should route polish issues to 02-14.
+- **Claude D5/C4/C5 — LOW:** ActiveArea accent mechanism unpinned; "byte-identical"
+  criterion should scope to the theme promotion only; 02-12 must treat a missing
+  02-14-SUMMARY.md as a blocker.
 
-### Answer to the user's theming question (both reviewers agree)
-Yes — Bubble Tea/Lip Gloss theming is idiomatic and cheap: a central
-`Theme` struct (palette + role-named `lipgloss.Style`s) in `internal/dummytui`;
-`frame.go:99-111`'s existing `styleBold/styleFaint/...` vars are already ~80% of it
-and only need grouping and role names, mirrored 1:1 with the web's `theme.ts`.
-Lip Gloss v2 light/dark adaptation uses `tea.BackgroundColorMsg` +
-`lipgloss.LightDark`; staying on the ANSI-16 palette (as now) remains the most
-portable choice. `bubbles/v2` textinput supports `SetStyles` with
-`Focused`/`Blurred` states; box contours come from a lipgloss wrapper around
-`input.View()` (the POC's remembered blue rounded border was `StyleModal` at the
-modal level).
-
-### Divergent Views
-- **Risk level:** Codex says MEDIUM-HIGH until absorbed (form polish likely
-  approval-blocking); Claude says MEDIUM (mechanism absorbs it cleanly; risk is in
-  two implementation traps, both de-riskable at plan-authoring time). Practical
-  difference: none — both block 02-12 on 02-14.
-- **Emphasis:** Claude grounded findings in current code (`stepDots` renders the
-  stepper *fainter* than body text — the opposite of a nav affordance; `capturesKeys`
-  already exists as the signal for dimming header chrome) and adds `Shift+←/→` as an
-  unconditional section-nav chord; Codex adds an invalid-field red-border state and
-  stresses updating `REFERENCE-INDEX.md` alongside parity rows.
+### Recommendation
+One more `/gsd-plan-phase 2 --reviews` pass (or a targeted plan edit) applying:
+D1 + Codex #2 + Shift-semantics fix (the two HIGHs + the gate-breaker), the
+select-guard and grep-scope fixes, the label mapping, and the stale-wording
+cleanups. Then execute wave 7.
