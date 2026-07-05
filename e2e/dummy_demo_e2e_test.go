@@ -206,7 +206,7 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 	// ---- create wizard: full walk ----
 	s.sendKey([]byte("1"), keystrokeDelay)
 	s.sendKey([]byte("n"), keystrokeDelay)
-	mustSee(t, s, "Step 1/4", "wizard: state 1 opens")
+	mustSee(t, s, "[1] SSH", "wizard: state 1 opens (first-class stepper, 02-STYLE-SPEC.md)")
 
 	// Replace the default "acme" prefix with a fresh one, proving raw
 	// keystrokes reach the focused input (the D-13 class of regression).
@@ -219,7 +219,7 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 	mustSee(t, s, "e2e.github.com", "wizard: auto-joined alias from the typed prefix")
 
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
-	mustSee(t, s, "Step 2/4", "wizard: state 2 (test)")
+	mustSee(t, s, "[2] Test", "wizard: state 2 (test)")
 
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // run stage 1
 	mustSee(t, s, "Hi e2e!", "wizard: stage-1 success banner")
@@ -228,9 +228,9 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 	mustSee(t, s, "identityfile", "wizard: stage-2 ssh -G proof")
 
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
-	mustSee(t, s, "Step 3/4", "wizard: state 3 (Git identity)")
+	mustSee(t, s, "[3] Git", "wizard: state 3 (Git identity)")
 
-	s.sendKey(dummyKeyEnter, keystrokeDelay) // Continue: review & write
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // [ Continue ]
 	mustSee(t, s, `Create identity "e2e"`, "wizard: ceremony heading")
 
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // confirm write

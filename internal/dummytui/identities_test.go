@@ -116,7 +116,7 @@ func TestDetailShowsSSHFirstAndNeverFabricatesGit(t *testing.T) {
 func TestWizardDuplicatePrefixBlocksNext(t *testing.T) {
 	a := pressSeq(t, identitiesApp(), "n")
 	view := appView(a)
-	if !strings.Contains(view, "Step 1/4 · SSH details") {
+	if !strings.Contains(view, "[1] SSH") || !strings.Contains(view, "New identity › SSH details") {
 		t.Fatalf("wizard should open at step 1; view:\n%s", view)
 	}
 	// Type "personal" over the default prefix — a taken name.
@@ -128,7 +128,7 @@ func TestWizardDuplicatePrefixBlocksNext(t *testing.T) {
 	}
 	// Next must be blocked.
 	a, _ = press(t, a, "enter")
-	if !strings.Contains(appView(a), "Step 1/4") {
+	if !strings.Contains(appView(a), "[1] SSH") {
 		t.Error("Enter must not advance while the prefix duplicates an existing identity")
 	}
 }
@@ -234,7 +234,7 @@ func wizardToStep2(t *testing.T, a App) App {
 	a = clearPrefixRaw(t, a)
 	a = typeText(t, a, "acme2")
 	a, _ = press(t, a, "enter")
-	if !strings.Contains(appView(a), "Step 2/4 · Test connection") {
+	if !strings.Contains(appView(a), "[2] Test") || !strings.Contains(appView(a), "New identity › Test connection") {
 		t.Fatalf("wizard did not reach step 2:\n%s", appView(a))
 	}
 	return a
@@ -344,7 +344,7 @@ func wizardThroughTest(t *testing.T, a App) App {
 	a, _ = press(t, a, "enter")
 	a = completeStage(t, a, 2)
 	a, _ = press(t, a, "enter") // → step 3 Git identity
-	if !strings.Contains(appView(a), "Step 3/4 · Git identity") {
+	if !strings.Contains(appView(a), "[3] Git") || !strings.Contains(appView(a), "New identity › Git identity") {
 		t.Fatalf("wizard did not reach step 3:\n%s", appView(a))
 	}
 	return a
@@ -356,8 +356,12 @@ func TestWizardFullFlowCreatesCompleteIdentity(t *testing.T) {
 	if !strings.Contains(pane, "Kept byte-identical to ~/.ssh/allowed_signers (GITUI-04)") {
 		t.Error("email helper missing")
 	}
-	if !strings.Contains(pane, "a PATH, never key material.") {
-		t.Error("fixed signing line missing")
+	// The dedicated "Signing: ... a PATH, never key material" line and the
+	// fragment preview's full body were both trimmed for row budget
+	// (02-STYLE-SPEC.md §7, the field-contour + frozen-hint-lines cost) —
+	// the fragment preview now shows its first line + the clip cue.
+	if !strings.Contains(pane, "[user]") || !strings.Contains(pane, "more lines") {
+		t.Error("fragment preview must still show its opening line + clip cue")
 	}
 	if !strings.Contains(pane, "gitdir (default) — applies inside ~/acme2/") {
 		t.Error("default match-strategy copy missing")
@@ -365,12 +369,15 @@ func TestWizardFullFlowCreatesCompleteIdentity(t *testing.T) {
 	if !strings.Contains(pane, "(fragment file — preview)") || !strings.Contains(pane, "(includeIf block — preview)") {
 		t.Error("dual previews missing")
 	}
-	if !strings.Contains(pane, "Skip — SSH only (identity stays incomplete)") {
+	if !strings.Contains(pane, "[ Skip Git ]") {
 		t.Error("skip button copy missing")
+	}
+	if !strings.Contains(pane, "Skip keeps this identity SSH-only and marks it incomplete.") {
+		t.Error("skip hint copy missing")
 	}
 
 	idsBefore := len(a.state.Identities)
-	a, _ = press(t, a, "enter") // Continue: review & write → ceremony
+	a, _ = press(t, a, "enter") // [ Continue ] → ceremony
 	view := appView(a)
 	if !strings.Contains(view, `Create identity "acme2" — ed25519, test passed ✓`) {
 		t.Fatalf("ceremony heading missing:\n%s", view)
@@ -432,7 +439,7 @@ func TestWizardSkipCreatesIncompleteIdentity(t *testing.T) {
 	if m.wizard.gitFocus != gitFocusSkip {
 		t.Fatalf("gitFocus = %d after 4 tabs, want the Skip button (%d)", m.wizard.gitFocus, gitFocusSkip)
 	}
-	a, _ = press(t, a, "enter") // activate Skip — SSH only
+	a, _ = press(t, a, "enter") // activate [ Skip Git ]
 	if !strings.Contains(appView(a), `Create identity "acme2"`) {
 		t.Fatal("skip must still walk the review ceremony")
 	}
@@ -711,9 +718,14 @@ func TestEditSSHShowsLiveHostBlockPreview(t *testing.T) {
 func TestWizardGitStepButtonsAreFocusable(t *testing.T) {
 	a := wizardThroughTest(t, identitiesApp())
 	pane := paneFlat(a)
-	for _, want := range []string{"Back (Esc)", "Skip — SSH only (identity stays incomplete)", "Continue: review & write (Enter)"} {
+	for _, want := range []string{"Back (Esc)", "[ Skip Git ]", "[ Continue ]"} {
 		if !strings.Contains(pane, want) {
 			t.Errorf("Git step missing button %q (M2)", want)
+		}
+	}
+	for _, want := range []string{"Skip keeps this identity SSH-only and marks it incomplete.", "Continue reviews the Git fragment, includeIf, and allowed_signers entries before writing."} {
+		if !strings.Contains(pane, want) {
+			t.Errorf("Git step missing the frozen adjacent hint %q", want)
 		}
 	}
 	if strings.Contains(appView(a), "Ctrl+S") {
@@ -753,7 +765,7 @@ func TestWizardGitStepEnterOnFieldStillContinues(t *testing.T) {
 	a := wizardThroughTest(t, identitiesApp()) // focus: name field
 	a, _ = press(t, a, "enter")                // Enter on a field = Continue (web parity)
 	if !strings.Contains(appView(a), `Create identity "acme2"`) {
-		t.Error("Enter on a field must fall through to Continue: review & write")
+		t.Error("Enter on a field must fall through to [ Continue ]")
 	}
 }
 
@@ -784,9 +796,153 @@ func TestWizardGitStepButtonsSurviveExpandedStrategySelect(t *testing.T) {
 	a := wizardThroughTest(t, identitiesApp())
 	a = pressSeq(t, a, "tab", "tab") // → strategy focused (3 radio rows)
 	view := appView(a)
-	for _, want := range []string{"both — either condition", "Continue: review & write (Enter)"} {
+	for _, want := range []string{"both — either condition", "[ Continue ]"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("expanded-strategy Git step must keep %q on screen", want)
 		}
+	}
+}
+
+// --------------------------------------------------------------------------
+// 02-14 round-2/round-3 checkpoint-feedback polish: first-class stepper,
+// arrow-key precedence, field contours, hint persistence.
+// --------------------------------------------------------------------------
+
+func TestRenderStepperActiveSegmentIsBoldAccentNotFaint(t *testing.T) {
+	active := renderStepper(1)
+	plain := stripANSI(active)
+	for _, want := range []string{"[1] SSH", "[2] Test", "[3] Git", "[4] Review"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("stepper must render all four segments; missing %q in %q", want, plain)
+		}
+	}
+	if strings.Contains(active, styleFaint.Render("[2] Test")) {
+		t.Error("the ACTIVE segment must NOT render through styleFaint (the old `Step n/4` line read dimmer than body text)")
+	}
+	if !strings.Contains(active, styleStepperActive.Render("[2] Test")) {
+		t.Error("the active segment must render bold + accent (styleStepperActive)")
+	}
+	if !strings.Contains(plain, "✓") {
+		t.Error("a completed segment (step 0, before the active step 1) must carry a ✓ glyph")
+	}
+}
+
+func TestWizardArrowKeyPrecedenceStep0(t *testing.T) {
+	// Clause 1: the algorithm select owns plain arrows (cycles the
+	// catalog), never changing the wizard step.
+	a := pressSeq(t, identitiesApp(), "n", "up", "up") // prefix → provider → algorithm (focus 5)
+	if identModel(t, a).wizard.focus != 5 {
+		t.Fatal("setup: expected algorithm focus")
+	}
+	a, _ = press(t, a, "right")
+	if identModel(t, a).wizard.step != 0 {
+		t.Error("clause 1: the algorithm select must own plain arrows, not change the wizard step")
+	}
+
+	// Clause 2: a focused text field keeps its cursor keys — plain arrows
+	// never change the wizard step from a field focus.
+	a2 := pressSeq(t, identitiesApp(), "n") // focus: Alias prefix (a text field)
+	a2, _ = press(t, a2, "right")
+	if identModel(t, a2).wizard.step != 0 {
+		t.Error("clause 2: a focused text field must not change the wizard step on plain arrows")
+	}
+
+	// Clause 5: Shift+Right is a FOCUS-OVERRIDE reaching step-nav even from
+	// inside the prefix field, still validity-gated forward (advances here
+	// because the seeded defaults pass step0Valid).
+	model, _ := a2.Update(tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift})
+	a2 = model.(App)
+	if identModel(t, a2).wizard.step != 1 {
+		t.Error("clause 5: shift+right must reach step-nav from inside a focused field and advance when valid")
+	}
+	// Shift+Left is always allowed back.
+	model, _ = a2.Update(tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModShift})
+	a2 = model.(App)
+	if identModel(t, a2).wizard.step != 0 {
+		t.Error("clause 5: shift+left must always go back")
+	}
+}
+
+func TestWizardArrowKeyPrecedenceStep1(t *testing.T) {
+	a := wizardToStep2(t, identitiesApp()) // wizard.step == 1 (test connection)
+
+	// Forward is validity-gated on the two-stage test having passed —
+	// blocked for BOTH plain and Shift+Right (never a validity override).
+	a, _ = press(t, a, "right")
+	if identModel(t, a).wizard.step != 1 {
+		t.Error("right must be blocked at the test step until stage 2 passes")
+	}
+	model, _ := a.Update(tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift})
+	a = model.(App)
+	if identModel(t, a).wizard.step != 1 {
+		t.Error("shift+right must ALSO be blocked until stage 2 passes")
+	}
+
+	// Left always goes back.
+	a, _ = press(t, a, "left")
+	if identModel(t, a).wizard.step != 0 {
+		t.Error("left must always go back from the test step")
+	}
+}
+
+func TestWizardArrowKeyPrecedenceStep2(t *testing.T) {
+	// Clause 2: a focused Git field (name) keeps its cursor keys.
+	a := wizardThroughTest(t, identitiesApp()) // focus: git name field
+	a, _ = press(t, a, "right")
+	if identModel(t, a).wizard.step != 2 {
+		t.Error("clause 2: a focused Git field must not change the wizard step on plain arrows")
+	}
+
+	// Clause 1: the strategy select owns plain arrows (cycles the option).
+	a = pressSeq(t, a, "tab", "tab") // name → email → strategy
+	a, _ = press(t, a, "right")
+	m := identModel(t, a)
+	if m.wizard.step != 2 {
+		t.Error("clause 1: the strategy select must own plain arrows, not change the wizard step")
+	}
+	if m.wizard.git.strategy() != "hasconfig" {
+		t.Error("clause 1: plain right on the strategy select must cycle the option")
+	}
+
+	// Clause 3: a button-slot focus (non-editing region) now performs
+	// wizard-step navigation — replacing the old button-ring-arrow
+	// behavior.
+	a = pressSeq(t, a, "tab") // strategy → Back
+	a, _ = press(t, a, "right")
+	if got := identModel(t, a).wizard.step; got != 3 {
+		t.Errorf("clause 3: right from a button slot must advance (validity-gated); step=%d", got)
+	}
+}
+
+func TestWizardFocusedFieldRoundedContourVsBlurredDimBracket(t *testing.T) {
+	a := pressSeq(t, identitiesApp(), "n") // step 0, Alias prefix focused
+	raw := a.View().Content
+	plain := paneFlat(a)
+	if !strings.Contains(raw, "\x1b[34m") {
+		t.Error("the focused field must carry the accent (blue, SGR 34) contour")
+	}
+	if !strings.Contains(plain, "╭─") {
+		t.Error("the focused field must render a ROUNDED solid contour (╭─), distinct from a preview's dashed ╭╌ border")
+	}
+	// The Provider field (blurred at wizard open) renders a single-row dim
+	// bracket contour — never a border on every field (row-budget trap).
+	if !strings.Contains(plain, "[github.com]") {
+		t.Errorf("blurred fields must render a dim bracket contour; pane:\n%s", plain)
+	}
+}
+
+func TestGitFormMatchStrategyHintPersistsWhenExpanded(t *testing.T) {
+	a := wizardThroughTest(t, identitiesApp())
+	collapsed := paneFlat(a)
+	if !strings.Contains(collapsed, "Determines which repos this Git identity applies to.") {
+		t.Fatal("the reserved match-strategy hint must be present when collapsed")
+	}
+	a = pressSeq(t, a, "tab", "tab") // name → email → strategy (expanded)
+	expanded := paneFlat(a)
+	if !strings.Contains(expanded, "Determines which repos this Git identity applies to.") {
+		t.Error("the reserved hint row must remain present when the strategy select expands (pushed, not replaced)")
+	}
+	if !strings.Contains(expanded, "hasconfig — repos whose remote uses this alias") {
+		t.Error("expanding the select must show its option rows")
 	}
 }

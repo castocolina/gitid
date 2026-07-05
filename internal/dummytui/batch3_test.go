@@ -10,6 +10,8 @@ package dummytui
 import (
 	"strings"
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // --------------------------------------------------------------------------
@@ -82,7 +84,7 @@ func TestMouseCeremonyButtonsCancelConfirmDone(t *testing.T) {
 
 func TestMouseWizardGitStepButtonsClick(t *testing.T) {
 	a := wizardThroughTest(t, identitiesApp())
-	a = clickCell(t, a, "Skip — SSH only", 0, frameBodyTop)
+	a = clickCell(t, a, "[ Skip Git ]", 0, frameBodyTop)
 	m := identModel(t, a)
 	if m.wizard.step != 3 || m.wizard.configureGit {
 		t.Fatalf("step = %d configureGit = %v after clicking Skip, want 3/false", m.wizard.step, m.wizard.configureGit)
@@ -332,16 +334,62 @@ func TestCeremonyDestructiveArrowsStayOnTypedInput(t *testing.T) {
 	}
 }
 
-func TestWizardGitButtonsArrowMovement(t *testing.T) {
+// TestWizardGitButtonsArrowNavigatesWizardSteps pins the round-3/02-STYLE-
+// SPEC.md arrow-key precedence rule: a button slot (Back/Skip/Continue) is a
+// NON-EDITING focus region, so <-/-> now perform WIZARD-STEP navigation —
+// this REPLACES the old button-ring-arrow-movement behavior (the ring
+// itself moves via Tab/Shift+Tab/Up/Down only, still true at
+// TestWizardGitStepButtonsAreFocusable).
+func TestWizardGitButtonsArrowNavigatesWizardSteps(t *testing.T) {
 	a := wizardThroughTest(t, identitiesApp())
-	a = pressSeq(t, a, "tab", "tab", "tab") // → Back
+	a = pressSeq(t, a, "tab", "tab", "tab") // → Back button (non-editing focus)
+	if got := identModel(t, a).wizard.gitFocus; got != gitFocusBack {
+		t.Fatalf("gitFocus = %d after 3 tabs, want Back (%d)", got, gitFocusBack)
+	}
+	// Forward is validity-gated (the default git form values are valid) —
+	// never a validity override, even from the Back button's focus.
 	a, _ = press(t, a, "right")
-	if got := identModel(t, a).wizard.gitFocus; got != gitFocusSkip {
-		t.Fatalf("gitFocus = %d after →, want Skip (%d)", got, gitFocusSkip)
+	if got := identModel(t, a).wizard.step; got != 3 {
+		t.Fatalf("step = %d after → from the Back button, want 3 (validity-gated forward)", got)
+	}
+	// Cancel the ceremony back to step 2 — gitFocus is untouched by the
+	// cancel (still the Back button) — then ← always goes back to step 1.
+	a, _ = press(t, a, "esc")
+	m := identModel(t, a)
+	if m.wizard.step != 2 {
+		t.Fatalf("esc from the ceremony must return to step 2, got %d", m.wizard.step)
+	}
+	if m.wizard.gitFocus != gitFocusBack {
+		t.Fatalf("gitFocus = %d after cancelling the ceremony, want it untouched at Back (%d)", m.wizard.gitFocus, gitFocusBack)
 	}
 	a, _ = press(t, a, "left")
-	if got := identModel(t, a).wizard.gitFocus; got != gitFocusBack {
-		t.Errorf("gitFocus = %d after ←, want Back (%d)", got, gitFocusBack)
+	if got := identModel(t, a).wizard.step; got != 1 {
+		t.Errorf("step = %d after ← from the Back button, want 1 (back always allowed)", got)
+	}
+}
+
+// TestWizardShiftArrowIsFocusOverrideNotValidityOverride pins clause 5: the
+// Shift+<-/-> chord reaches wizard step-nav even while focus is on a TEXT
+// FIELD (name), but forward STILL respects the step-2 validity gate.
+func TestWizardShiftArrowIsFocusOverrideNotValidityOverride(t *testing.T) {
+	a := wizardThroughTest(t, identitiesApp()) // focus: git name field
+	// Make the Git form invalid (blank the name) — Shift+Right must NOT
+	// bypass the validity gate.
+	for i := 0; i < 20; i++ {
+		model, _ := a.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
+		a = model.(App)
+	}
+	model, _ := a.Update(tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift})
+	a = model.(App)
+	if got := identModel(t, a).wizard.step; got != 2 {
+		t.Fatalf("step = %d after shift+right with an invalid Git form (focus on a field), want 2 (blocked)", got)
+	}
+	// Shift+Left is a focus override reaching step-nav from the SAME field
+	// focus, and back is always allowed.
+	model, _ = a.Update(tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModShift})
+	a = model.(App)
+	if got := identModel(t, a).wizard.step; got != 1 {
+		t.Errorf("step = %d after shift+left from a focused field, want 1 (focus-override back)", got)
 	}
 }
 

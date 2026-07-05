@@ -142,4 +142,38 @@ suffix (SSHUI-01, SSHUI-03).
 |---|-------|-------|-------|---------------|--------------|-------|
 | 1 | `result_glyph` | green `✓` | 1st | ✓ | ✓ | glyph + word, never color alone |
 | 2 | `result_message` | what changed + which file | 2nd | ✓ | ✓ | names `~/.ssh/config`, the alias, the IdentityFile |
+
+## create-flow / git-form (02-14 atomic copy freeze)
+
+**Goal:** the wizard's Git-identity step-3 buttons and their adjacent hint
+lines — the FROZEN single source of truth is
+`02-STYLE-SPEC.md` §4; this row is the create-flow human-readable companion
+(the machine-checkable proof is the repo-wide old-copy grep gate, §6 below).
+
+| # | Field | Label | Order | HTML present | TUI present | Notes |
+|---|-------|-------|-------|---------------|--------------|-------|
+| 1 | `wizard_back_button` | "Back (Esc)" | 1st | ✓ | ✓ | unchanged, not part of the freeze |
+| 2 | `wizard_skip_button` | `[ Skip Git ]` | 2nd | ✓ | ✓ | frozen (02-14 atomic copy freeze); the explanation moved off the button onto its adjacent hint line |
+| 3 | `wizard_skip_hint` | "Skip keeps this identity SSH-only and marks it incomplete." | adjacent to Skip, always visible | ✓ | ✓ | frozen hint line, `hint`/`Theme.Hint` role |
+| 4 | `wizard_continue_button` | `[ Continue ]` | 3rd | ✓ | ✓ | frozen (02-14 atomic copy freeze); the explanation moved off the button onto its adjacent hint line |
+| 5 | `wizard_continue_hint` | "Continue reviews the Git fragment, includeIf, and allowed_signers entries before writing." | adjacent to Continue, always visible | ✓ | ✓ | frozen hint line, `hint`/`Theme.Hint` role |
+
+## 02-STYLE-SPEC.md emphasis-role parity dimensions (round-2/round-3 feedback)
+
+**Goal:** the six new checkable parity dimensions
+`02-STYLE-SPEC.md` §3 defines — the content parity gate (the rows above)
+never modeled emphasis roles, focus affordance, or keyboard-nav ergonomics;
+these six rows are that missing coverage's human-readable companion. Backed
+by the Go test suite in `internal/dummytui` (see `02-STYLE-SPEC.md` §3 for
+the exact test-name pattern per row) plus a fresh `agent-ui-ux-designer`
+critique of the two live demos.
+
+| # | Dimension | HTML present | TUI present | Notes |
+|---|-----------|---------------|--------------|-------|
+| 1 | `typography-emphasis-roles` | ✓ | ✓ | label bold, hint dim, warning/error/info carry their semantic colors on both sides |
+| 2 | `field-contour` | ✓ | ✓ | focused field carries an accent contour; blurred fields carry a dim contour — never a border on every field |
+| 3 | `hint-persistence` | ✓ | ✓ | the match-strategy hint is reserved and never disappears when the select expands/focuses |
+| 4 | `arrow-nav` | ✓ | ✓ | the written precedence rule (02-STYLE-SPEC.md §2), identical in both media, incl. the Shift+←/→ focus-override chord |
+| 5 | `preview-sizing` | ✓ | ✓ | bounded width, optional fixed height with a clip cue, title in the border/top edge |
+| 6 | `dim-states` | ✓ | ✓ | disabled-nav dims header chrome while a pane captures keys; the active pane carries the active-area accent |
 | 3 | `restore_hint` | backup path again (how to restore) | 3rd | ✓ | ✓ | repeats the backup-notice path |
