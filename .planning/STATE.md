@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 ## Current Position
 
 Phase: 02 (design-all-mockups-checkpoint-1) — EXECUTING
-Plan: 12 of 13 (+ consolidated review-fixes pass, see 02-REVIEW-FIXES.md)
-Status: 02-11 + the consolidated review-fixes pass are complete, but the design checkpoint REJECTED the static 50+50 PNG reference paradigm — the static set and static Go dummy were removed (commit 7453561; recoverable from git history) and the checkpoint tail was replanned: the interactive web demo (mockup-src/src/demo/) is the authoritative reference, NEW plan 02-13 rebuilds cmd/gitid-dummy as a LIVE interactive Bubble Tea v2 demo (dummy data, no backend) mirroring it per 02-REDESIGN-SPEC.md, and 02-12 (amended) presents BOTH live demos for the single DLV-08 approval. Next is 02-13, then 02-12.
+Plan: waves 7–8 remain — 02-14 (checkpoint-feedback polish, wave 7) then 02-12 (DLV-08 approval, wave 8); 02-01..02-11 + 02-13 are done (+ consolidated review-fixes pass, see 02-REVIEW-FIXES.md)
+Status: 02-11 + the consolidated review-fixes pass are complete, but the design checkpoint REJECTED the static 50+50 PNG reference paradigm — the static set and static Go dummy were removed (commit 7453561; recoverable from git history) and the checkpoint tail was replanned: the interactive web demo (mockup-src/src/demo/) is the authoritative reference, NEW plan 02-13 rebuilds cmd/gitid-dummy as a LIVE interactive Bubble Tea v2 demo (dummy data, no backend) mirroring it per 02-REDESIGN-SPEC.md, and 02-12 (amended) presents BOTH live demos for the single DLV-08 approval. 02-13 is complete; the round-2/round-3 cross-AI review then inserted 02-14 (a checkpoint-feedback polish wave) before approval. Next is 02-14 (wave 7), then 02-12 (wave 8, the single DLV-08 approval checkpoint).
 Last activity: 2026-07-05 -- Completed quick task 260705-f9t: `make demo-web` target (relaunch web mockup dev server on port 45173 + open browser)
 
 Progress: [█████████░] 89%
