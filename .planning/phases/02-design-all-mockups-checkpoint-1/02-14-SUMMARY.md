@@ -138,7 +138,7 @@ See `key-decisions` in the frontmatter above (ActiveArea-via-breadcrumb mechanis
 
 ## Issues Encountered
 
-- **The fresh `agent-ui-ux-designer` critique (Task 3's final exit-gate item, DLV-02) and the `superpowers:requesting-code-review` skill (the plan's overall `<success_criteria>` requirement) could not be run** — this executor's toolset does not expose a subagent-spawning or skill-invocation mechanism (Read/Write/Edit/Bash only). Every automatable gate (`go test -race`, the atomicity grep gate, the no-backend import allowlist, `make test`, `make lint`, `make test-e2e` incl. the 100×30 PTY walk, `make gate-no-backend-files`) is green and re-verified in this session. The two agent-mediated reviews are explicitly flagged here as **open items the 02-12 checkpoint (or the phase-level orchestrator, which has agent-spawning access) must close** before the design approval is signed — 02-12's own `read_first` already includes this SUMMARY, so a missing critique/review should read as a blocker there, not as silently satisfied.
+- ~~The fresh `agent-ui-ux-designer` critique (Task 3's final exit-gate item, DLV-02) and the `superpowers:requesting-code-review` skill (the plan's overall `<success_criteria>` requirement) could not be run~~ — **RESOLVED.** The phase-level orchestrator has since run BOTH: a fresh-context code review and a fresh `agent-ui-ux-designer` parity critique of the two live demos. Both surfaced findings (F1–F11, see "Review findings resolution" below); every CRITICAL/HIGH finding is fixed, and every MINOR finding is either fixed or explicitly recorded. This executor's own toolset still does not expose a subagent-spawning mechanism — the reviews themselves were run by the orchestrator, not by this executor — but the findings THEY produced are now resolved in this repo, so this is no longer an open item blocking 02-12.
 
 ## User Setup Required
 
@@ -148,7 +148,39 @@ None - no external service configuration required.
 
 - All eight round-2 consensus items, both HIGH implementation traps (row budget, arrow-key precedence), and the copy-freeze atomicity requirement are implemented and gate-verified in both live demos.
 - 02-12 (wave 8, the single DLV-08 design-approval checkpoint) can now proceed — its own `read_first` already expects this plan's SUMMARY and the amended must_haves/E2/E3 checklist items.
-- **Blocker for 02-12 sign-off:** the fresh `agent-ui-ux-designer` critique of both live demos on the six new emphasis-role dimensions, and the `superpowers:requesting-code-review` pass against this plan's `must_haves`/`<acceptance_criteria>`, are both still outstanding (see "Issues Encountered") and must be run by an agent with the appropriate tool access before the checkpoint is signed.
+- ~~Blocker for 02-12 sign-off: the fresh `agent-ui-ux-designer` critique … and the `superpowers:requesting-code-review` pass … are both still outstanding~~ — **RESOLVED.** Both reviews have now run; see "Review findings resolution (post-plan fix pass)" below for the full F1–F11 disposition and the commits that carry each fix. No outstanding blocker remains for 02-12 sign-off from this plan's side.
+
+## Review findings resolution (post-plan fix pass)
+
+After this plan's own tasks completed, the phase-level orchestrator ran two fresh reviews against the live demos and this plan's `must_haves`/`<acceptance_criteria>`: a fresh-context code review and a fresh `agent-ui-ux-designer` parity critique. Both were required by this plan's `<success_criteria>` and Task 3's DLV-02 exit gate, and both were listed as open blockers above. This section is their resolution.
+
+| Finding | Severity | Disposition | Resolution | Commit |
+|---|---|---|---|---|
+| F1 — `PreviewBlock` (bounded/titled) was dead code; every wizard preview still used untitled `previewBlockClipped` + a separate `PreviewLabel` row; web `PreviewBlock`'s `title`/`maxHeight` props had no call site | Critical | Fixed | TUI: routed the host-block preview, the dual Git fragment/includeIf previews, the stage-1/stage-2 test-command previews, and the shared `ceremony.view` preview through `PreviewBlock`, splicing the label into the border's top edge (saves one row per preview). Two titles that exceeded the 62-column border budget were shortened (kept meaning) and the two identities_test.go pins updated. Web: added `title`/`maxHeight` at the wizard's `PreviewBlock` call sites (host-block, fragment/includeIf, stage 1/2, and — bounded but without a duplicate title — the review-step ceremony preview, since MutationCeremony already renders its own "Exact change …" heading directly above it). | c2a329b (TUI), 04a00b8 (web) |
+| F2 — web `<-/->` guard only matched CLOSED-select selectors; with the menu open, focus is on a MenuItem, so plain arrows leaked into wizard step-nav under the open menu | Critical | Fixed | Extended the LOCAL guard in `Identities.tsx`'s `wizardArrowNav` to also no-op when the event target matches (or is inside, via `closest()`) `[role="option"]`/`[role="listbox"]`; the global `DemoApp.tsx` guard is untouched. | 04a00b8 |
+| F3 — web wizard stepper still rendered "Step n/4 · &lt;label&gt; ● ○ ○ ○" in dim `text.secondary` — the rejected format, dimmer than body text | High | Fixed | Rebuilt `StepDots` to mirror the TUI's `renderStepper`: `[1] SSH · [2] Test · [3] Git · [4] Review`, active segment bold + `roles.activeArea` accent (not dimmer), completed segments ✓-prefixed, one line. `WIZARD_STEPS` (long labels) stays the breadcrumb/help source, now surfaced as each segment's hover title. | 04a00b8 |
+| F4 — `capturesKeys` was only passed from `Identities.tsx`'s `Frame`; the TUI dims chrome on all four tabs | Important | Fixed | Added `capturesKeys` to the Doctor (`fixing`), Global SSH (`mode !== 'browse'`), and Global Git (`mode === 'ceremony'`) `Frame` usages. | 04a00b8 |
+| F5 — FIELDS.md table corruption: a 7-cell `restore_hint` row (belongs to the result-success table) dangled as the last row of the new 5-column parity-dimensions table | Important | Fixed | Moved the row back under `create-flow / result-success` as row 3; removed it from the parity-dimensions table. | 50f890c |
+| F6 — frozen button copy rendered UPPERCASE on the web (MUI default `textTransform`) | Important | Fixed | Added a global `MuiButton` `styleOverrides.root.textTransform: 'none'` in `theme.ts`. | 04a00b8 |
+| F7 — `theme.ts`'s `semanticColors.accent` is a genuinely new color value while an adjacent comment claimed "no new color values are introduced" | Important | Fixed (+ documented deviation) | Corrected the comment to name `accent` as the one deliberate new value (mirroring the TUI's ANSI-4 blue accent, which had no existing web equivalent) — see "Deviations from Plan" addendum below. | 04a00b8 |
+| F8 — only 3 of 11 named web roles (`hint`, `preview`, `disabledNav`) were actually consumed through `roles.*`; the "provably in sync role-by-role" claim overclaimed | Important | Fixed (mechanical roles wired) + softened (remainder) | Wired `focusedFieldSx` through `roles.focusedField`, the stepper's active segment through `roles.activeArea`, and added a theme-level `MuiInputLabel`/`MuiFormLabel` override routing every field label through `roles.label` (also resolves designer LOW-2: TUI bolds labels, web didn't). Softened the `theme.ts` docstring and `02-STYLE-SPEC.md` §1 to state color VALUES are shared, the TUI centralizes every consumer, and the web routes the now-6 mechanical roles (`hint`/`preview`/`disabledNav`/`focusedField`/`activeArea`/`label`) — not a claim every screen is rewritten. | 04a00b8 (roles + docstring), 50f890c (STYLE-SPEC note) |
+| F9 — the Port field had no hint on either side | Minor | Fixed | Added a focused-only "Default 22; 443 for alt-SSH" hint on the TUI (mirrors the Hostname field's pattern, costs 0 rows blurred / +1 focused, confirmed within the 100×30 budget via a forced PTY re-run) and a static `helperText` with the same copy on the web. | c2a329b (TUI), 04a00b8 (web) |
+| F10 — FIELDS.md cross-ref "§6 below" actually lives in `02-STYLE-SPEC.md` | Minor | Fixed | Reworded to "`02-STYLE-SPEC.md` §6". | 50f890c |
+| F11 — Go `Theme` carries `Healthy` with no web `healthy` role; `roles.info` (and two screen-level `severityColor` maps) hardcoded `'#3aa6a6'` four times, duplicating `recipeFixtures.healthInfoColor` | Important | Fixed | `theme.ts` now imports `healthInfoColor` from `recipeFixtures.ts` (data has zero dependencies, so theme depending on data is the correct direction) instead of re-hardcoding it; `Identities.tsx` and `Doctor.tsx`'s `severityColor` maps now reference the same import. Added `roles.healthy` for full 1:1 name parity with the Go `Theme` struct. | 04a00b8 |
+
+**Not in scope (explicitly accepted, per the review's own instruction):** designer LOW-4 (step-0 plain-arrow reachability difference) — cosmetic; both media honor the precedence rule identically, only the exact keystroke that first reaches step-nav from step 0 differs slightly. Accepted as-is, no action taken.
+
+**Verification (this pass):** `go test -race ./internal/dummytui/...`, `make test`, `make lint`, `make gate-no-backend-files`, a forced (`-count=1`) `make test-e2e` (100×30 PTY walk), the repo-wide old-copy grep gate (zero matches), and `pnpm typecheck && pnpm build` in `.planning/design/mockup-src` are all green — see the executor's final report for the raw command output.
+
+### Deviations from Plan (review-findings fix pass)
+
+**4. [Rule 1 — documentation accuracy] `semanticColors.accent` is a genuinely new color value, not "no new color values"**
+- **Found during:** the fresh code review (F7)
+- **Issue:** 02-14 Task 1 added `accent: '#5aa9e6'` to `theme.ts`'s `semanticColors` for the focused-field contour and active-area chrome, but an adjacent comment claimed "No new color values are introduced". The TUI's equivalent (ANSI-4 blue) had no prior web counterpart, so `accent` genuinely is new.
+- **Fix:** corrected the comment on `semanticColors` to explicitly name `accent` as the one deliberate new value this plan introduces, and cross-referenced this deviation note.
+- **Files modified:** `.planning/design/mockup-src/src/theme.ts`
+- **Verification:** `pnpm typecheck` clean; the color value itself is unchanged (no visual/behavioral regression), only the documentation is corrected.
+- **Committed in:** 04a00b8
 
 ---
 *Phase: 02-design-all-mockups-checkpoint-1*
@@ -158,3 +190,9 @@ None - no external service configuration required.
 
 - All key files (02-STYLE-SPEC.md, theme.go/theme_test.go, frame.go, identities.go, e2e/dummy_demo_e2e_test.go, FIELDS.md, theme.ts, DemoApp.tsx, Frame.tsx, MutationCeremony.tsx, screens/Identities.tsx) verified present on disk.
 - Commits f074d8b (Task 1), 02518c7 (Task 2), e320e5d (Task 3), 523cfce (this SUMMARY) verified present in `git log`.
+
+## Self-Check (review findings resolution pass): PASSED
+
+- All files touched by this fix pass (identities.go, ceremony.go, identities_test.go, theme.ts, screens/Identities.tsx, screens/Doctor.tsx, screens/GlobalSsh.tsx, screens/GlobalGit.tsx, create-flow/FIELDS.md, 02-STYLE-SPEC.md) verified present on disk.
+- Commits c2a329b (TUI fix batch, F1/F9), 04a00b8 (web fix batch, F2/F3/F4/F6/F7/F8/F9/F11), 50f890c (docs fix batch, F5/F8/F10) verified present in `git log`.
+- All 7 verification gates re-run green in this session: `go test -race ./internal/dummytui/...`, `make test`, `make lint`, `make gate-no-backend-files`, forced `make test-e2e` (100×30 PTY walk), the repo-wide old-copy grep gate (zero matches), and `pnpm typecheck && pnpm build`.
