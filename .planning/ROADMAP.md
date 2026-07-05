@@ -130,7 +130,7 @@ Plans:
 
 **Wave 7** — checkpoint-feedback polish (round-2 cross-AI consensus; blocked on Wave 6)
 
-- [ ] 02-14-PLAN.md — checkpoint feedback polish: semantic style contract (02-STYLE-SPEC.md + central Go Theme ↔ web theme.ts), ←/→ wizard navigation, first-class TUI stepper, focused/blurred field contours, stable hint zones, bounded previews, dimmed disabled nav, atomic slide-3 copy freeze (DLV-01/02/05)
+- [x] 02-14-PLAN.md — checkpoint feedback polish: semantic style contract (02-STYLE-SPEC.md + central Go Theme ↔ web theme.ts), ←/→ wizard navigation, first-class TUI stepper, focused/blurred field contours, stable hint zones, bounded previews, dimmed disabled nav, atomic slide-3 copy freeze (DLV-01/02/05)
 
 **Wave 8** — ★ checkpoint (blocked on Wave 7)
 
@@ -264,7 +264,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations, Spikes & CI | 7/7 | Complete | 2026-07-03 |
-| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 12/13 | In Progress|  |
+| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 13/14 | In Progress|  |
 | 3. Create Flow Backend | 0/TBD | Not started | - |
 | 4. Git Configuration Screen | 0/TBD | Not started | - |
 | 5. Identity Manager | 0/TBD | Not started | - |

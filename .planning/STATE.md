@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed 02-13-PLAN.md
-last_updated: "2026-07-05T16:15:51.392Z"
+stopped_at: Completed 02-14-PLAN.md
+last_updated: "2026-07-05T18:00:03.764Z"
 last_activity: "2026-07-05 -- Completed quick task 260705-f9t: `make demo-web` target (relaunch web mockup dev server on port 45173 + open browser)"
 progress:
   total_phases: 10
   completed_phases: 1
-  total_plans: 20
-  completed_plans: 19
+  total_plans: 22
+  completed_plans: 20
   percent: 10
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 ## Current Position
 
 Phase: 02 (design-all-mockups-checkpoint-1) — EXECUTING
-Plan: waves 7–8 remain — 02-14 (checkpoint-feedback polish, wave 7) then 02-12 (DLV-08 approval, wave 8); 02-01..02-11 + 02-13 are done (+ consolidated review-fixes pass, see 02-REVIEW-FIXES.md)
-Status: 02-11 + the consolidated review-fixes pass are complete, but the design checkpoint REJECTED the static 50+50 PNG reference paradigm — the static set and static Go dummy were removed (commit 7453561; recoverable from git history) and the checkpoint tail was replanned: the interactive web demo (mockup-src/src/demo/) is the authoritative reference, NEW plan 02-13 rebuilds cmd/gitid-dummy as a LIVE interactive Bubble Tea v2 demo (dummy data, no backend) mirroring it per 02-REDESIGN-SPEC.md, and 02-12 (amended) presents BOTH live demos for the single DLV-08 approval. 02-13 is complete; the round-2/round-3 cross-AI review then inserted 02-14 (a checkpoint-feedback polish wave) before approval. Next is 02-14 (wave 7), then 02-12 (wave 8, the single DLV-08 approval checkpoint).
-Last activity: 2026-07-05 -- Completed quick task 260705-f9t: `make demo-web` target (relaunch web mockup dev server on port 45173 + open browser)
+Plan: wave 8 remains — 02-12 (DLV-08 approval); 02-01..02-11, 02-13, and 02-14 are done (+ consolidated review-fixes pass, see 02-REVIEW-FIXES.md)
+Status: 02-13 rebuilt cmd/gitid-dummy as the LIVE interactive Bubble Tea v2 demo; the round-2/round-3 cross-AI review then inserted 02-14 (a checkpoint-feedback polish wave), now COMPLETE: 02-STYLE-SPEC.md (the cross-media semantic style contract), a central Go Theme mirrored 1:1 with the web theme.ts roles, the written arrow-key precedence rule (incl. a Shift+←/→ focus-override chord) implemented identically in both demos, a first-class `[1] SSH · [2] Test · [3] Git · [4] Review` stepper, focused-accent/blurred-dim field contours that still fit 100×30, a persistent match-strategy hint, and the atomic `[ Skip Git ]`/`[ Continue ]` copy freeze across both demos + FIELDS.md + every Go/TSX pin — all gates green (see 02-14-SUMMARY.md). OUTSTANDING before 02-12 sign-off: a fresh agent-ui-ux-designer critique of both live demos and the superpowers:requesting-code-review pass (02-14's executor had no subagent-spawning access — see STATE.md Blockers/Concerns). Next is 02-12 (wave 8, the single DLV-08 approval checkpoint) — its own read_first must treat the missing critique/review as a blocker, not skip it.
+Last activity: 2026-07-05 -- Completed 02-14-PLAN.md: round-2/round-3 checkpoint-feedback polish wave (style contract, arrow-key precedence, field contours, copy freeze)
 
-Progress: [█████████░] 89%
+Progress: [█████████░] 91%
 
 ## Performance Metrics
 
@@ -74,6 +74,7 @@ Progress: [█████████░] 89%
 | Phase 02 P10 | 70min | 3 tasks | 25 files |
 | Phase 02 P11 | 30min | 2 tasks | 8 files |
 | Phase 02 P13 | 65min | 3 tasks | 24 files |
+| Phase 02 P14 | 100min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -139,6 +140,10 @@ Recent decisions affecting current work:
 - [Phase 02, review-fixes]: added a gate-no-backend-files Makefile target (git merge-base main HEAD diff against the Phase-2 allowlist), wired as a dummy-nav-e2e prerequisite -- closes SECURITY.md Finding 1 (T-02-BEGATE had no persisted/automated enforcement, only a one-off plan-file shell line)
 - [Phase ?]: 02-13: Bubble Tea v2 retained for the live gitid-dummy demo; go-tui evaluated and rejected as too immature
 - [Phase ?]: 02-13: terminal 100x30 adaptations (edit/git ceremonies as next pane-state, stacked step-3 previews, Ctrl+S skip, 36% sidebar) keep the web demo's semantics and copy, pinned by tests
+- [Phase 02]: 02-14: Central Go Theme + web theme.ts roles export mirror each other 1:1 by name; frame.go's promotion to DefaultTheme proven behavior-preserving by a byte-identical render test
+- [Phase 02]: 02-14: ActiveArea accent renders on the breadcrumb/divider line (zero extra rows) rather than a frame-wide border -- the 100x30 budget could not absorb a bordered active-pane region
+- [Phase 02]: 02-14: Arrow-key precedence rule (expanded-select > text-input-cursor > wizard-step-nav validity-gated forward/always-allowed back > Shift+left/right focus-override) is written once in 02-STYLE-SPEC.md and implemented identically in Go and TypeScript
+- [Phase 02]: 02-14: TUI field contour costs stayed within 100x30 by dropping the redundant git-form Signing line and tightening preview maxLines -- a documented row-budget tradeoff, not scope creep
 
 ### Roadmap Evolution
 
@@ -151,6 +156,7 @@ None yet.
 ### Blockers/Concerns
 
 - 3 items intentionally open until their phase (documented in REQUIREMENTS.md "Still Open"): GSSH-01 dangerous-options list, KEY-01 catalog ordering/copy, screenshot-tooling mechanism (Phase 1 spike).
+- 02-14: fresh agent-ui-ux-designer critique of both live demos (DLV-02 exit gate) and the superpowers:requesting-code-review pass are outstanding -- this executor's toolset has no subagent-spawning access; must be run before 02-12 sign-off
 
 ### Quick Tasks Completed
 
@@ -168,6 +174,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-04T17:34:45.280Z
-Stopped at: Completed 02-13-PLAN.md
+Last session: 2026-07-05T18:00:03.753Z
+Stopped at: Completed 02-14-PLAN.md
 Resume file: None
