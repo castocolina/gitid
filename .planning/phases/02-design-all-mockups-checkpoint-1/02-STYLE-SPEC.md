@@ -20,9 +20,21 @@ mirrored 1:1 by role name with the web `theme.ts` role tokens
 
 One row per semantic role. The TUI column names the `lipgloss` treatment;
 the WEB column names the MUI/theme.ts token. The mapping is 1:1 by role
-name — `label ↔ styleBold`, `hint ↔ styleFaint`, `warning ↔ styleWarning`,
+NAME — `label ↔ styleBold`, `hint ↔ styleFaint`, `warning ↔ styleWarning`,
 `error ↔ styleError`, `preview ↔ Faint+dashed`, `focused-field ↔ accent
 rounded border`, `disabled-nav ↔ faint tabs`, `active-area ↔ accent`.
+
+> **Scope note (review-findings F8).** "1:1 by role name" describes this
+> TABLE — the Go `Theme` struct and the web `roles` export carry the same
+> role names. It is not a claim that every screen-level consumer already
+> routes through the named role on both sides: the TUI centralizes EVERY
+> renderer through `Theme` (frame.go's promotion made this true byte-for-
+> byte); the web currently routes the MECHANICAL roles — `hint`, `preview`,
+> `disabled-nav`, `focused-field`, `active-area`, `label`, `healthy` —
+> through `roles.*`, while a few scattered screen-level `warning`/`error`/
+> `info` usages still reach `semanticColors`/MUI defaults directly. Color
+> VALUES are shared either way (`theme.ts`'s `semanticColors` is the single
+> source both `roles` and those direct usages read from).
 
 | Role | TUI (`internal/dummytui/theme.go`) | WEB (`theme.ts` `roles`) |
 |---|---|---|

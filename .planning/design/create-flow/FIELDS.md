@@ -142,13 +142,14 @@ suffix (SSHUI-01, SSHUI-03).
 |---|-------|-------|-------|---------------|--------------|-------|
 | 1 | `result_glyph` | green `✓` | 1st | ✓ | ✓ | glyph + word, never color alone |
 | 2 | `result_message` | what changed + which file | 2nd | ✓ | ✓ | names `~/.ssh/config`, the alias, the IdentityFile |
+| 3 | `restore_hint` | backup path again (how to restore) | 3rd | ✓ | ✓ | repeats the backup-notice path |
 
 ## create-flow / git-form (02-14 atomic copy freeze)
 
 **Goal:** the wizard's Git-identity step-3 buttons and their adjacent hint
 lines — the FROZEN single source of truth is
 `02-STYLE-SPEC.md` §4; this row is the create-flow human-readable companion
-(the machine-checkable proof is the repo-wide old-copy grep gate, §6 below).
+(the machine-checkable proof is the repo-wide old-copy grep gate, `02-STYLE-SPEC.md` §6).
 
 | # | Field | Label | Order | HTML present | TUI present | Notes |
 |---|-------|-------|-------|---------------|--------------|-------|
@@ -176,4 +177,3 @@ critique of the two live demos.
 | 4 | `arrow-nav` | ✓ | ✓ | the written precedence rule (02-STYLE-SPEC.md §2), identical in both media, incl. the Shift+←/→ focus-override chord |
 | 5 | `preview-sizing` | ✓ | ✓ | bounded width, optional fixed height with a clip cue, title in the border/top edge |
 | 6 | `dim-states` | ✓ | ✓ | disabled-nav dims header chrome while a pane captures keys; the active pane carries the active-area accent |
-| 3 | `restore_hint` | backup path again (how to restore) | 3rd | ✓ | ✓ | repeats the backup-notice path |
