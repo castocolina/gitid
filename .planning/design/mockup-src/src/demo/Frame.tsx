@@ -13,7 +13,7 @@
 
 import type { ReactNode } from 'react';
 import { Box, Chip, Stack, Typography } from '@mui/material';
-import { semanticColors } from '../theme';
+import { roles, semanticColors } from '../theme';
 import StatusLine, { type StatusTone } from '../shell/StatusLine';
 import { TAB_LABEL, TAB_ORDER, useDemo } from './DemoContext';
 import { findingCounts } from './store';
@@ -31,6 +31,14 @@ export interface FrameProps {
   statusTone?: StatusTone;
   /** Contextual footer actions for the CURRENT pane state. */
   actions?: FrameAction[];
+  /**
+   * True while a modal/edit/ceremony pane owns the keys — dims the header
+   * nav tabs through the `disabled-nav` role (the active tab stays fully
+   * lit) and carries the `active-area` accent on the breadcrumb divider
+   * directly above the active pane (02-STYLE-SPEC.md §1 "ActiveArea
+   * mechanism" / "dim-states"). Mirrors the TUI's RenderFrame capturesKeys.
+   */
+  capturesKeys?: boolean;
   children: ReactNode;
 }
 
@@ -47,6 +55,7 @@ export function Frame({
   statusMessage = 'Ready.',
   statusTone = 'info',
   actions = [],
+  capturesKeys = false,
   children,
 }: FrameProps) {
   const { state, tab, setTab, openHelp, openPalette } = useDemo();
@@ -107,6 +116,10 @@ export function Frame({
                   bgcolor: active ? semanticColors.focus : 'transparent',
                   color: active ? 'background.default' : 'text.secondary',
                   fontWeight: active ? 700 : 400,
+                  // disabled-nav role (02-STYLE-SPEC.md dim-states): dim
+                  // every INACTIVE tab while a pane captures keys; the
+                  // active tab stays fully lit throughout.
+                  opacity: !active && capturesKeys ? roles.disabledNav.opacity : 1,
                 }}
               >
                 {i + 1} {TAB_LABEL[id]}
@@ -137,11 +150,21 @@ export function Frame({
         />
       </Box>
 
-      {/* thin breadcrumb sub-line */}
+      {/* thin breadcrumb sub-line — the ActiveArea mechanism
+          (02-STYLE-SPEC.md §1): while a pane captures keys this divider
+          carries the accent color instead of the default divider, at zero
+          extra row/pixel cost (mirrors the TUI crumb-line treatment). */}
       <Typography
         component="p"
         data-testid="crumbs"
-        sx={{ px: 2, py: 0.25, fontSize: 12, color: 'text.disabled', borderBottom: 1, borderColor: 'divider' }}
+        sx={{
+          px: 2,
+          py: 0.25,
+          fontSize: 12,
+          color: 'text.disabled',
+          borderBottom: 1,
+          borderColor: capturesKeys ? semanticColors.accent : 'divider',
+        }}
       >
         {[TAB_LABEL[tab], ...crumbs].join(' › ')}
       </Typography>

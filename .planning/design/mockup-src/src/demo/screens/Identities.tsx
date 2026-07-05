@@ -45,7 +45,7 @@ import {
   type HealthSeverity,
   type MatchStrategy,
 } from '../../data/recipeFixtures';
-import { semanticColors } from '../../theme';
+import { roles, semanticColors } from '../../theme';
 import Frame, { type FrameAction } from '../Frame';
 import { useDemo, useLocalKeys } from '../DemoContext';
 import MutationCeremony, { PreviewBlock, PreviewLabel } from '../MutationCeremony';
@@ -95,6 +95,17 @@ function providerDefaults(provider: string): { hostname: string; port: string } 
   if (provider === 'github.com') return { hostname: 'ssh.github.com', port: '443' };
   return { hostname: provider || 'github.com', port: '22' };
 }
+
+// focused-field role (02-STYLE-SPEC.md role table): the accent-colored
+// contour every text field carries while focused, mirroring the TUI's
+// FieldFocused rounded accent border — one shared sx fragment, merged into
+// every SSH/Git form field below (never a new hue, the shared accent).
+const focusedFieldSx = {
+  '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
+    borderColor: semanticColors.accent,
+    borderWidth: 2,
+  },
+} as const;
 
 /** Read-only inherited global baseline strip (GITUI-01 kept intact). */
 function BaselineStrip() {
@@ -161,6 +172,7 @@ function SshFormFields({
             {...params}
             label="Provider"
             size="small"
+            sx={focusedFieldSx}
             helperText={
               lockIdentity
                 ? 'Locked — the provider comes from the Host alias'
@@ -172,6 +184,7 @@ function SshFormFields({
       <TextField
         label="Alias prefix"
         size="small"
+        sx={focusedFieldSx}
         value={values.prefix}
         disabled={lockIdentity}
         autoFocus={!lockIdentity}
@@ -186,6 +199,7 @@ function SshFormFields({
       <TextField
         label="SSH Host (alias)"
         size="small"
+        sx={focusedFieldSx}
         value={values.sshHost}
         onChange={(e) => onChange({ ...values, sshHost: e.target.value })}
         helperText={hostHelper ?? ''}
@@ -193,6 +207,7 @@ function SshFormFields({
       <TextField
         label="Real hostname"
         size="small"
+        sx={focusedFieldSx}
         value={values.hostname}
         onChange={(e) => onChange({ ...values, hostname: e.target.value })}
         helperText="The true SSH endpoint"
@@ -200,7 +215,7 @@ function SshFormFields({
       <TextField
         label="Port"
         size="small"
-        sx={{ maxWidth: 160 }}
+        sx={{ maxWidth: 160, ...focusedFieldSx }}
         value={values.port}
         error={!/^\d+$/.test(values.port)}
         onChange={(e) => onChange({ ...values, port: e.target.value })}
@@ -252,6 +267,7 @@ function GitFormFields({
           label="user.name"
           size="small"
           fullWidth
+          sx={focusedFieldSx}
           value={values.gitName}
           onChange={(e) => onChange({ ...values, gitName: e.target.value })}
         />
@@ -259,6 +275,7 @@ function GitFormFields({
           label="user.email"
           size="small"
           fullWidth
+          sx={focusedFieldSx}
           value={values.gitEmail}
           error={!values.gitEmail.includes('@')}
           helperText="Kept byte-identical to ~/.ssh/allowed_signers (GITUI-04)"
@@ -275,6 +292,12 @@ function GitFormFields({
         value={values.strategy}
         onChange={(e) => onChange({ ...values, strategy: e.target.value as MatchStrategy })}
         sx={{ maxWidth: 520 }}
+        // Hint-persistence (02-STYLE-SPEC.md): this helperText is ALWAYS
+        // rendered — MUI's helperText never collapses to zero on focus, so
+        // opening the select PUSHES its option rows below this line instead
+        // of replacing it (the "hint vanishes on focus" report this fixes).
+        helperText="gitdir matches by working-directory path; hasconfig matches by remote URL; both = either condition (OR)."
+        FormHelperTextProps={{ sx: { color: roles.hint.color } }}
       >
         <MenuItem value="gitdir">gitdir (default) — applies inside ~/{name}/</MenuItem>
         <MenuItem value="hasconfig">hasconfig — repos whose remote uses this alias</MenuItem>
@@ -365,9 +388,45 @@ function CreateWizard({ onDone, onCancel }: { onDone: (name: string) => void; on
     window.setTimeout(() => setTestPhase('stage2'), 700);
   }, []);
 
+  // 02-STYLE-SPEC.md §2 arrow-key precedence rule, implemented identically
+  // to the TUI: [1] an expanded/focused MUI Select owns plain <-/-> (its
+  // combobox target check below) — unchanged unless Shift overrides it;
+  // [2] a focused text input keeps its cursor keys — this handler is never
+  // even invoked for a PLAIN arrow there (DemoApp's global guard short-
+  // circuits first); [3] otherwise <-/-> navigate wizard sections, forward
+  // gated on step validity, back always allowed; [5] Shift+<-/-> is a
+  // FOCUS-OVERRIDE chord (DemoApp bypasses its input/select guard for it)
+  // whose forward move STAYS validity-gated.
+  const wizardArrowNav = useCallback(
+    (key: string, event: KeyboardEvent): boolean => {
+      const target = event.target as HTMLElement | null;
+      const isSelectTarget =
+        !!target &&
+        (target.matches('[role="combobox"]') ||
+          target.matches('.MuiSelect-select') ||
+          target.hasAttribute('aria-haspopup'));
+      if (isSelectTarget && !event.shiftKey) return false; // clause 1: the open/focused select owns plain arrows
+      if (key === 'ArrowLeft') {
+        if (step === 0) onCancel();
+        else setStep((s) => s - 1);
+        return true;
+      }
+      // ArrowRight: validity-gated forward, no-op otherwise (never a
+      // validity override, even under Shift — clause 5).
+      if (step === 0 && step0Valid) setStep(1);
+      else if (step === 1 && testPhase === 'stage2') setStep(2);
+      else if (step === 2 && git.gitName.trim() !== '' && git.gitEmail.includes('@')) {
+        setConfigureGit(true);
+        setStep(3);
+      }
+      return true;
+    },
+    [step, step0Valid, testPhase, git, onCancel],
+  );
+
   useLocalKeys(
     useCallback(
-      (key) => {
+      (key, event) => {
         if (step === 3) return false; // ceremony owns keys
         if (key === 'Escape') {
           if (step === 0) onCancel();
@@ -389,9 +448,10 @@ function CreateWizard({ onDone, onCancel }: { onDone: (name: string) => void; on
           }
           return true;
         }
+        if (key === 'ArrowLeft' || key === 'ArrowRight') return wizardArrowNav(key, event);
         return false;
       },
-      [step, step0Valid, testPhase, configureGit, git, onCancel, runStage1, runStage2],
+      [step, step0Valid, testPhase, configureGit, git, onCancel, runStage1, runStage2, wizardArrowNav],
     ),
   );
 
@@ -589,29 +649,39 @@ function CreateWizard({ onDone, onCancel }: { onDone: (name: string) => void; on
           {/* Round-3 feedback: assume the user wants Git configured — show
               the FULL form immediately; Skip is just a button at the end. */}
           <GitFormFields name={name} keyPath={keyPath} values={git} onChange={setGit} />
-          <Stack direction="row" spacing={2}>
+          <Stack direction="row" spacing={2} alignItems="flex-start">
             <Button variant="outlined" onClick={() => setStep(1)}>
               Back (Esc)
             </Button>
-            <Button
-              variant="outlined"
-              onClick={() => {
-                setConfigureGit(false);
-                setStep(3);
-              }}
-            >
-              Skip — SSH only (identity stays incomplete)
-            </Button>
-            <Button
-              variant="contained"
-              disabled={git.gitName.trim() === '' || !git.gitEmail.includes('@')}
-              onClick={() => {
-                setConfigureGit(true);
-                setStep(3);
-              }}
-            >
-              Continue: review & write (Enter)
-            </Button>
+            <Stack>
+              <Button
+                variant="outlined"
+                onClick={() => {
+                  setConfigureGit(false);
+                  setStep(3);
+                }}
+              >
+                [ Skip Git ]
+              </Button>
+              <Typography sx={{ fontSize: 12, color: roles.hint.color, mt: 0.25 }}>
+                Skip keeps this identity SSH-only and marks it incomplete.
+              </Typography>
+            </Stack>
+            <Stack>
+              <Button
+                variant="contained"
+                disabled={git.gitName.trim() === '' || !git.gitEmail.includes('@')}
+                onClick={() => {
+                  setConfigureGit(true);
+                  setStep(3);
+                }}
+              >
+                [ Continue ]
+              </Button>
+              <Typography sx={{ fontSize: 12, color: roles.hint.color, mt: 0.25 }}>
+                Continue reviews the Git fragment, includeIf, and allowed_signers entries before writing.
+              </Typography>
+            </Stack>
           </Stack>
         </Stack>
       )}
@@ -785,6 +855,7 @@ export function Identities() {
           : 'Esc returns to the identity detail without writing anything.'
       }
       actions={actions}
+      capturesKeys={pane.kind !== 'detail'}
     >
       <Stack direction="row" spacing={2} alignItems="stretch">
         {/* -------- sidebar -------- */}

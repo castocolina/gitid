@@ -15,6 +15,7 @@
 
 import { useCallback, useState, type ReactNode } from 'react';
 import { Alert, Box, Button, Paper, Stack, TextField, Typography } from '@mui/material';
+import { roles } from '../theme';
 import { useLocalKeys } from './DemoContext';
 
 export interface MutationCeremonyProps {
@@ -165,46 +166,81 @@ export function PreviewLabel({ children }: { children: ReactNode }) {
 }
 
 /**
- * Monospace block for config/diff previews — dimmer background + text and a
- * dashed border, visually distinct from editable fields (round-3 feedback).
+ * Monospace block for config/diff previews — the `preview` role (dim
+ * text/background + dashed border), visually distinct from editable fields
+ * (round-3 feedback). `maxHeight` bounds the block to a fixed pixel height
+ * with a scroll region instead of growing unbounded (02-STYLE-SPEC.md
+ * "preview-sizing" — the TUI mirror is the bounded, clip-cued
+ * `internal/dummytui.PreviewBlock`); `title` renders inline in the box's
+ * top edge, matching the TUI's title-in-border-top-edge treatment.
  */
-export function PreviewBlock({ text, diff = false }: { text: string; diff?: boolean }) {
+export function PreviewBlock({
+  text,
+  diff = false,
+  title,
+  maxHeight,
+}: {
+  text: string;
+  diff?: boolean;
+  title?: string;
+  maxHeight?: number;
+}) {
   return (
-    <Box
-      component="pre"
-      sx={{
-        m: 0,
-        p: 1.5,
-        border: 1,
-        borderStyle: 'dashed',
-        borderColor: 'divider',
-        bgcolor: 'background.default',
-        color: 'text.secondary',
-        opacity: 0.9,
-        overflowX: 'auto',
-        fontSize: 13,
-        lineHeight: 1.6,
-      }}
-    >
-      {diff
-        ? text.split('\n').map((line, i) => (
-            <Box
-              // eslint-disable-next-line react/no-array-index-key
-              key={i}
-              component="span"
-              sx={{
-                display: 'block',
-                color: line.startsWith('+')
-                  ? '#4caf50'
-                  : line.startsWith('-')
-                    ? '#e05252'
-                    : 'text.secondary',
-              }}
-            >
-              {line}
-            </Box>
-          ))
-        : text}
+    <Box sx={{ position: 'relative' }}>
+      {title && (
+        <Typography
+          component="span"
+          sx={{
+            position: 'absolute',
+            top: -9,
+            left: 12,
+            px: 0.5,
+            fontSize: 11,
+            bgcolor: 'background.default',
+            color: roles.preview.color,
+          }}
+        >
+          {title}
+        </Typography>
+      )}
+      <Box
+        component="pre"
+        sx={{
+          m: 0,
+          p: 1.5,
+          border: 1,
+          borderStyle: 'dashed',
+          borderColor: 'divider',
+          bgcolor: 'background.default',
+          color: roles.preview.color,
+          opacity: roles.preview.opacity,
+          overflowX: 'auto',
+          overflowY: maxHeight ? 'auto' : undefined,
+          maxHeight,
+          fontSize: 13,
+          lineHeight: 1.6,
+        }}
+      >
+        {diff
+          ? text.split('\n').map((line, i) => (
+              <Box
+                // eslint-disable-next-line react/no-array-index-key
+                key={i}
+                component="span"
+                sx={{
+                  display: 'block',
+                  color: line.startsWith('+')
+                    ? '#4caf50'
+                    : line.startsWith('-')
+                      ? '#e05252'
+                      : 'text.secondary',
+                }}
+              >
+                {line}
+              </Box>
+            ))
+          : text}
+      </Box>
     </Box>
   );
 }

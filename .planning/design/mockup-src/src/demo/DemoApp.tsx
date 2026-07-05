@@ -100,22 +100,33 @@ export function DemoApp() {
       }
       if (helpOpen || paletteOpen || quitOpen) return; // dialogs own their keys
       const target = e.target as HTMLElement | null;
+      // 02-STYLE-SPEC.md §2 clause 5 — Shift+<-/-> is a FOCUS-OVERRIDE chord:
+      // it reaches the screen-local wizard-step-nav handlers even when focus
+      // is inside a text input, a toggle, or an expanded select. It is NEVER
+      // a validity override (forward stays gated on step validity inside the
+      // screen handler itself) — only the FOCUS short-circuit below is
+      // bypassed. This deliberately overrides the browser's native
+      // Shift+Arrow text-selection gesture inside inputs (documented
+      // tradeoff, 02-STYLE-SPEC.md §2 note).
+      const isShiftArrowOverride = e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight');
       const isToggle =
         target instanceof HTMLInputElement && (target.type === 'radio' || target.type === 'checkbox');
-      if (isToggle) {
-        if (e.key === ' ' || e.key.startsWith('Arrow')) return; // native toggle/group nav
-      } else if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        (target && target.isContentEditable)
-      ) {
-        if (e.key === 'Escape') target.blur();
-        // Enter in a single-line input = the pane's primary action (spec §7)
-        // — fall through to the screen handlers UNLESS a component already
-        // consumed it (e.g. Autocomplete selecting a suggestion sets
-        // defaultPrevented). Every other key belongs to the field.
-        if (!(e.key === 'Enter' && target instanceof HTMLInputElement && !e.defaultPrevented)) {
-          return;
+      if (!isShiftArrowOverride) {
+        if (isToggle) {
+          if (e.key === ' ' || e.key.startsWith('Arrow')) return; // native toggle/group nav
+        } else if (
+          target instanceof HTMLInputElement ||
+          target instanceof HTMLTextAreaElement ||
+          (target && target.isContentEditable)
+        ) {
+          if (e.key === 'Escape') target.blur();
+          // Enter in a single-line input = the pane's primary action (spec §7)
+          // — fall through to the screen handlers UNLESS a component already
+          // consumed it (e.g. Autocomplete selecting a suggestion sets
+          // defaultPrevented). Every other key belongs to the field.
+          if (!(e.key === 'Enter' && target instanceof HTMLInputElement && !e.defaultPrevented)) {
+            return;
+          }
         }
       }
       // Screen-local handlers first (newest wins).
