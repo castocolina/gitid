@@ -4,8 +4,9 @@ package dummytui
 // per-role SGR every Theme field must render, the theme-var PROMOTION
 // (frame.go's old package-level vars must stay byte-identical to the new
 // Theme roles), the DisabledNav-vs-full-brightness header-tab dimming while
-// a pane captures keys (with the active tab still reverse-video), and the
-// ActiveArea accent carried on the frame chrome while a pane captures keys.
+// a pane captures keys (with the active tab keeping its ActiveNav accent
+// background — checkpoint feedback U1), and the ActiveArea accent carried
+// on the frame chrome while a pane captures keys.
 
 import (
 	"strings"
@@ -28,6 +29,9 @@ func TestDefaultThemeRolesRenderExpectedSGR(t *testing.T) {
 		{"Preview faint", DefaultTheme.Preview.Render("x"), "\x1b[2m"},
 		{"FieldBlurred faint", DefaultTheme.FieldBlurred.Render("x"), "\x1b[2m"},
 		{"ActiveArea accent (blue)", DefaultTheme.ActiveArea.Render("x"), "\x1b[34m"},
+		// Checkpoint feedback U1: the active nav tab carries the accent as
+		// a BACKGROUND (bold + bright-white ANSI 15 on ANSI-4 blue).
+		{"ActiveNav accent background (bold, bright-white on blue)", DefaultTheme.ActiveNav.Render("x"), "\x1b[1;97;44m"},
 	}
 	for _, tc := range cases {
 		if !strings.Contains(tc.got, tc.want) {
@@ -76,15 +80,15 @@ func TestThemePromotionIsBehaviorPreserving(t *testing.T) {
 	}
 }
 
-func TestRenderHeaderDimsInactiveTabsWhenCapturesKeysButKeepsActiveReverse(t *testing.T) {
+func TestRenderHeaderDimsInactiveTabsWhenCapturesKeysButKeepsActiveNavAccent(t *testing.T) {
 	s := Seed()
 	full := renderHeader(100, s, tabIdentities, false)
 	dimmed := renderHeader(100, s, tabIdentities, true)
 	if full == dimmed {
 		t.Fatal("header rendering must differ between capturesKeys states (DisabledNav dimming)")
 	}
-	if !strings.Contains(dimmed, "\x1b[7m") {
-		t.Error("the ACTIVE tab must stay reverse-video even while the rest of the chrome dims")
+	if !strings.Contains(dimmed, "\x1b[1;97;44m") {
+		t.Error("the ACTIVE tab must keep its ActiveNav accent background even while the rest of the chrome dims (checkpoint feedback U1)")
 	}
 	if !strings.Contains(dimmed, "\x1b[2m") {
 		t.Error("inactive header tabs must render through DisabledNav (faint) while a pane captures keys")

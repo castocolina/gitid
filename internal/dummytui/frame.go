@@ -4,7 +4,7 @@ package dummytui
 // mirror of .planning/design/mockup-src/src/demo/Frame.tsx per
 // 02-REDESIGN-SPEC.md §1 (k9s/lazygit/Textual style):
 //
-//	header:  brand · numbered nav tabs (1..4, active = reverse video) ·
+//	header:  brand · numbered nav tabs (1..4, active = accent background) ·
 //	         right health chip (`N ids · ! w · ✗ e`, `✓ ok` when clean)
 //	subline: thin faint breadcrumb ("Identities › New identity › Test")
 //	body:    the view's own master-detail content
@@ -230,10 +230,12 @@ func headerTabText(i int) string {
 }
 
 // renderHeader renders the single header row: brand · numbered flat tabs
-// (active reverse-video, the number part of the label) · health chip. When
+// (active = Theme.ActiveNav: the shared accent as a BACKGROUND, the number
+// part of the label — checkpoint feedback U1: a flat monochrome reverse-
+// video invert did not clearly say "I am at 1/2/3/4") · health chip. When
 // capturesKeys is true (a pane/form/ceremony owns the keys) every INACTIVE
 // tab renders through Theme.DisabledNav (faint) while the active tab keeps
-// its reverse-video — the chrome dims, the current view stays legible
+// its accent background — the chrome dims, the current view stays legible
 // (02-STYLE-SPEC.md "dim-states").
 func renderHeader(width int, s DemoState, active tabID, capturesKeys bool) string {
 	segments := make([]string, 0, len(tabLabels))
@@ -241,7 +243,7 @@ func renderHeader(width int, s DemoState, active tabID, capturesKeys bool) strin
 		text := headerTabText(i)
 		switch {
 		case tabID(i) == active:
-			segments = append(segments, styleReverse.Render(text))
+			segments = append(segments, DefaultTheme.ActiveNav.Render(text))
 		case capturesKeys:
 			segments = append(segments, DefaultTheme.DisabledNav.Render(text))
 		default:

@@ -116,13 +116,20 @@ func TestRenderFrameHealthChipCounts(t *testing.T) {
 	}
 }
 
-func TestRenderFrameActiveTabReverseVideo(t *testing.T) {
+func TestRenderFrameActiveTabAccentBackground(t *testing.T) {
+	// Checkpoint feedback U1: the ACTIVE nav tab carries the shared accent
+	// as a BACKGROUND (Theme.ActiveNav: bold + bright-white on ANSI-4 blue,
+	// SGR 1;97;44), replacing the old flat monochrome reverse-video invert
+	// that did not clearly say "I am at 1/2/3/4".
 	raw := RenderFrame(100, 30, Seed(), tabGlobalGit, nil, "Ready.", "info", nil, false, "")
-	if !strings.Contains(raw, "\x1b[7m 3 Global Git ") {
-		t.Error("active tab must render reverse-video (SGR 7 around the active label)")
+	if !strings.Contains(raw, "\x1b[1;97;44m 3 Global Git ") {
+		t.Error("active tab must render through Theme.ActiveNav (bold + bright-white on the blue accent background, SGR 1;97;44)")
 	}
-	if strings.Contains(raw, "\x1b[7m 1 Identities ") {
-		t.Error("inactive tabs must not render reverse-video")
+	if strings.Contains(raw, "\x1b[1;97;44m 1 Identities ") {
+		t.Error("inactive tabs must not carry the ActiveNav accent background")
+	}
+	if strings.Contains(raw, "\x1b[7m") {
+		t.Error("the header must no longer use plain reverse-video for the active tab (checkpoint feedback U1)")
 	}
 }
 

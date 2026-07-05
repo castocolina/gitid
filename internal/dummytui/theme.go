@@ -22,7 +22,7 @@ import (
 )
 
 // Theme is the central semantic style contract: one lipgloss.Style per role
-// (02-STYLE-SPEC.md's 11-role table), plus the shared accent color the
+// (02-STYLE-SPEC.md's 12-role table), plus the shared accent color the
 // focused-field contour and the active-area chrome both key from.
 type Theme struct {
 	Info         lipgloss.Style
@@ -37,6 +37,13 @@ type Theme struct {
 	Preview      lipgloss.Style
 	DisabledNav  lipgloss.Style
 	ActiveArea   lipgloss.Style
+	// ActiveNav is the ACTIVE header nav tab: the shared accent as a
+	// BACKGROUND (not a flat monochrome reverse-video invert), so the
+	// current view clearly says "I am at 1/2/3/4" — checkpoint feedback U1.
+	// Bold + bright-white (ANSI 15) foreground for contrast on the ANSI-4
+	// blue background; still ANSI-16, still paired with the tab's number +
+	// word (never color alone).
+	ActiveNav lipgloss.Style
 
 	// Accent is the ONE shared blue (ANSI 4) accent color — the
 	// focused-field contour's border foreground and the active-area chrome
@@ -65,6 +72,10 @@ var DefaultTheme = Theme{
 	Preview:      lipgloss.NewStyle().Faint(true),
 	DisabledNav:  lipgloss.NewStyle().Faint(true),
 	ActiveArea:   lipgloss.NewStyle().Foreground(lipgloss.Color("4")),
-	Accent:       lipgloss.Color("4"),
-	FieldBorder:  lipgloss.Color("4"),
+	ActiveNav: lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("15")).
+		Background(lipgloss.Color("4")),
+	Accent:      lipgloss.Color("4"),
+	FieldBorder: lipgloss.Color("4"),
 }
