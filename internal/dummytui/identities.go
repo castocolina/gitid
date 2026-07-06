@@ -285,52 +285,24 @@ func (f sshForm) setFocus(focus int) sshForm {
 	return f
 }
 
-// formFieldLine renders one "one field per row" line (round-3 feedback:
-// a single column keeps every editable box unmistakable).
-// formFieldLine renders one "one field per row" line. FIELD CONTOUR
-// (02-STYLE-SPEC.md field-contour, the row-budget trap): the FOCUSED field
-// renders inside a full rounded Theme.FieldFocused accent contour (its own
-// label spliced into the box's top border edge, +2 rows net); a BLURRED
-// field renders a single-row Theme.FieldBlurred dim bracket contour — NEVER
-// a border on every field (that would cost ~+12 rows and break 100×30).
+// formFieldLine renders one field as a SINGLE constant-height row in every
+// state (D1, checkpoint-2 contract — supersedes 02-14's renderFocusedFieldBox
+// 3-row contour). The marker gutter is 2 cells in every state (`▸ ` accent
+// when focused, `  ` otherwise); the label is bold + padRight(label,16) in
+// every state; brackets `[…]` are present focused AND blurred (the
+// editable-slot affordance never appears/disappears) — focus is signalled
+// by color + the marker, never a reflowing box. Locked fields render the
+// dim value + faint "(locked)", no brackets.
 func formFieldLine(label string, input textinput.Model, focused, locked bool) string {
-	if focused {
-		return " " + renderFocusedFieldBox(label, input.View())
-	}
-	name := styleBold.Render(padRight(label+":", 18))
-	if locked {
+	name := styleBold.Render(padRight(label, 16))
+	switch {
+	case focused:
+		return " " + styleBold.Render("▸ ") + name + DefaultTheme.FieldFocused.Render("["+input.View()+"]")
+	case locked:
 		return "   " + name + DefaultTheme.FieldBlurred.Render(input.Value()+"  (locked)")
+	default:
+		return "   " + name + DefaultTheme.FieldBlurred.Render("["+input.Value()+"]")
 	}
-	return "   " + name + DefaultTheme.FieldBlurred.Render("["+input.Value()+"]")
-}
-
-// renderFocusedFieldBox wraps a focused field's rendered value in the
-// FieldFocused rounded accent contour, splicing the field's own label into
-// the box's top border edge (the same title-in-border-top-edge technique
-// Task 1's PreviewBlock uses) — one box costs exactly +2 rows over the
-// single-line blurred rendering, never +12 (02-STYLE-SPEC.md §7).
-func renderFocusedFieldBox(label, value string) string {
-	block := DefaultTheme.FieldFocused.Render(value)
-	lines := strings.Split(block, "\n")
-	if len(lines) == 0 {
-		return block
-	}
-	plain := ansi.Strip(lines[0])
-	runes := []rune(plain)
-	total := len(runes)
-	if total < 6 { // corners + at least one fill char each side + a label
-		return block
-	}
-	labelText := ansi.Truncate(" "+label+" ", total-4, "")
-	labelWidth := ansi.StringWidth(labelText)
-	rightFill := total - 2 - 1 - labelWidth
-	if rightFill < 1 {
-		rightFill = 1
-	}
-	newTop := string(runes[0]) + string(runes[1]) + labelText + strings.Repeat(string(runes[1]), rightFill) + string(runes[total-1])
-	newTop = ansi.Truncate(newTop, total, "")
-	lines[0] = DefaultTheme.ActiveArea.Render(newTop)
-	return strings.Join(lines, "\n")
 }
 
 // helperLine renders a field helper (faint) or error (red) line.
@@ -523,26 +495,35 @@ func (g gitForm) view(name, keyPath string, focus int, width int, baseline strin
 	// the fragment preview block below) to make room for the field-contour
 	// box and the frozen hint copy the button row now always carries.
 
+	// D2 (checkpoint-2 contract): the (←/→ change) hint moves onto the
+	// header line, visible in BOTH focus states (it used to show only
+	// while blurred — backwards).
 	marker := "  "
 	if focus == gitFieldStrategy {
 		marker = styleBold.Render("▸ ")
 	}
-	b.WriteString(" " + marker + styleBold.Render("Match strategy — when does this Git identity apply?") + "\n")
+	b.WriteString(" " + marker + styleBold.Render("Match strategy — when does this Git identity apply?") +
+		" " + styleFaint.Render("(←/→ change)") + "\n")
 	// STABLE HINT ZONE (02-STYLE-SPEC.md hint-persistence): this reserved
 	// hint row is ALWAYS drawn — expanding the select below PUSHES the
 	// option rows down, it never replaces this line (the "hint vanishes on
 	// focus" report this fixes).
 	b.WriteString(helperLine("Determines which repos this Git identity applies to.", false) + "\n")
-	if focus == gitFieldStrategy {
-		for i, s := range matchStrategies {
-			dot := "○"
-			if i == g.strategyIdx {
-				dot = "●"
+	// D2: ALL options render ALWAYS — no expand/collapse branch. The
+	// selected ● + label render through FieldFocused (accent) when the
+	// group is focused, plain-bold when blurred.
+	for i, s := range matchStrategies {
+		dot := "○"
+		text := strategyCopy(s, name)
+		if i == g.strategyIdx {
+			dot = "●"
+			if focus == gitFieldStrategy {
+				text = DefaultTheme.FieldFocused.Render(text)
+			} else {
+				text = styleBold.Render(text)
 			}
-			b.WriteString("     " + dot + " " + strategyCopy(s, name) + "\n")
 		}
-	} else {
-		b.WriteString("     ● " + strategyCopy(g.strategy(), name) + " " + styleFaint.Render("(←/→ change)") + "\n")
+		b.WriteString("     " + dot + " " + text + "\n")
 	}
 
 	// fragLines/includeIf maxLines stay at the tightest previously-used
@@ -562,16 +543,13 @@ func (g gitForm) view(name, keyPath string, focus int, width int, baseline strin
 // Create wizard — 4 pane-states in the detail pane (spec §3).
 // ---------------------------------------------------------------------------
 
-// wizardSteps are the LONG step labels — breadcrumb/help source only
-// (02-STYLE-SPEC.md §5). NOT the renderStepper segment source: the frozen
-// short↔long map is pinned in the STYLE-SPEC, and stepShortLabels below is
-// the independent short-segment source renderStepper draws from.
+// wizardSteps are the LONG step labels — the breadcrumb/help source AND
+// (D5, checkpoint-2 contract) the renderStepper segment source. The
+// bracketed short-segment stepper 02-14 shipped (bracket-number + short
+// word per step, joined by middots) is SUPERSEDED: D5 reverts the stepper
+// to `Step n/4 · <label> ● ○ ○ ○` using these long labels, and the bracket
+// format moves onto the MAIN NAV instead (D4).
 var wizardSteps = []string{"SSH details", "Test connection", "Git identity", "Review & write"}
-
-// stepShortLabels are the frozen short stepper segments (02-STYLE-SPEC.md
-// §5 short↔long map: SSH↔SSH details, Test↔Test connection, Git↔Git
-// identity, Review↔Review & write) — NOT derived from wizardSteps.
-var stepShortLabels = []string{"SSH", "Test", "Git", "Review"}
 
 // Test phases (wizard state 2).
 const (
@@ -686,6 +664,64 @@ func (w wizardModel) step0Valid(s DemoState) bool {
 // nameTaken reports whether the produced identity name already exists.
 func (w wizardModel) nameTaken(s DemoState) bool {
 	return hasIdentityNamed(s, w.form.identityName())
+}
+
+// stepBack (D7, checkpoint-2 contract) uniformly decrements the wizard step
+// — the SAME behavior at every step, INCLUDING 3→2 (back from the
+// previously-DEAD review ceremony to the Git step). Step 0 has no lower
+// step; its caller (the hoisted Shift gate) handles leaving the wizard
+// entirely before calling this.
+func (w wizardModel) stepBack() wizardModel {
+	if w.step > 0 {
+		w.step--
+	}
+	return w
+}
+
+// stepForward (D7, checkpoint-2 contract) advances the wizard step ONLY
+// when the current step's own validity gate passes — sharing the EXACT
+// same predicate plain Right/Enter already use, so Shift is a
+// FOCUS-OVERRIDE only, never a validity override. Reports whether it
+// advanced.
+func (w wizardModel) stepForward(s DemoState) (wizardModel, bool) {
+	switch w.step {
+	case 0:
+		if w.step0Valid(s) {
+			w.step = 1
+			w.testPhase = testIdle
+			return w, true
+		}
+	case 1:
+		if w.testPhase == testStage2 {
+			w.step = 2
+			w.gitFocus = gitFieldName
+			w.git = w.git.setFocus(w.gitFocus)
+			return w, true
+		}
+	case 2:
+		if w.git.valid() {
+			w.configureGit = true
+			w.step = 3
+			w.ceremony = w.reviewCeremony()
+			return w, true
+		}
+	}
+	return w, false
+}
+
+// blockedForwardNote is the frozen status note (D7) emitted when
+// Shift+→ is blocked at a step — naming the gate, never a validity
+// override. Step 1 (the test step) has no frozen note: its own stage
+// output already explains what is missing.
+func blockedForwardNote(step int) string {
+	switch step {
+	case 0:
+		return "Can't continue yet — check the alias prefix, hostname, and port."
+	case 2:
+		return "Can't continue yet — add user.name and a valid email."
+	default:
+		return ""
+	}
 }
 
 func hasIdentityNamed(s DemoState, name string) bool {
@@ -1298,6 +1334,31 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 	key := msg.String()
 	w := m.wizard
 
+	// D7 (checkpoint-2 contract): ONE hoisted Shift+←/→ chord gate, ABOVE
+	// the step switch — replaces the four scattered per-step cases (which
+	// left step-3's review ceremony DEAD: its own handleKey's default:
+	// swallowed the chord). Shift is a FOCUS-OVERRIDE reaching wizard
+	// step-nav from EVERY step, including from inside a field, the
+	// expanded strategy select, and now the review ceremony too.
+	if key == "shift+left" {
+		if w.step == 0 {
+			// Step 0 back means leaving the wizard — Esc parity.
+			m.pane = paneDetail
+			return keyResult{model: m, handled: true}
+		}
+		m.wizard = w.stepBack()
+		return keyResult{model: m, handled: true}
+	}
+	if key == "shift+right" {
+		next, ok := w.stepForward(s)
+		m.wizard = next
+		note := ""
+		if !ok {
+			note = blockedForwardNote(w.step)
+		}
+		return keyResult{model: m, handled: true, note: note}
+	}
+
 	switch w.step {
 	case 0:
 		switch key {
@@ -1319,22 +1380,6 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 		case "shift+tab", "up":
 			w.focus = (w.focus + 5) % 6
 			w.form = w.form.setFocus(w.focus)
-			m.wizard = w
-			return keyResult{model: m, handled: true}
-		case "shift+left":
-			// Arrow-key precedence clause 5 (FOCUS-OVERRIDE, 02-STYLE-SPEC.md
-			// §2): reaches wizard step-nav even from inside a field/select.
-			// Back is always allowed — at step 0 that means leaving the
-			// wizard, matching Esc's own step-0 behavior.
-			m.pane = paneDetail
-			return keyResult{model: m, handled: true}
-		case "shift+right":
-			// Focus-override forward — STILL validity-gated (never a
-			// validity override, only a focus override).
-			if w.step0Valid(s) {
-				w.step = 1
-				w.testPhase = testIdle
-			}
 			m.wizard = w
 			return keyResult{model: m, handled: true}
 		case "left", "right":
@@ -1401,16 +1446,18 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			}
 			m.wizard = w
 			return keyResult{model: m, handled: true}
-		case "left", "shift+left":
-			// Arrow-key precedence clause 3/5: the test step has no
-			// field/select focus to contend with, so back always goes to
-			// step 0 (plain and Shift-override behave identically here).
+		case "left":
+			// Arrow-key precedence clause 3: the test step has no
+			// field/select focus to contend with, so plain back always
+			// goes to step 0 (the hoisted Shift gate handles shift+left
+			// identically via stepBack()).
 			w.step = 0
 			m.wizard = w
 			return keyResult{model: m, handled: true}
-		case "right", "shift+right":
+		case "right":
 			// Forward is validity-gated on the two-stage test having passed
-			// — never bypassed, even under the Shift focus-override chord.
+			// — never bypassed (the hoisted Shift gate shares this exact
+			// gate via stepForward()).
 			if w.testPhase == testStage2 {
 				w.step = 2
 				w.gitFocus = gitFieldName
@@ -1455,23 +1502,6 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 		case "shift+tab", "up":
 			w.gitFocus = (w.gitFocus + wizardGitFocusSlots - 1) % wizardGitFocusSlots
 			w.git = w.git.setFocus(w.gitFocus)
-			m.wizard = w
-			return keyResult{model: m, handled: true}
-		case "shift+left":
-			// Focus-override (clause 5): reaches wizard step-nav even from
-			// inside a field or the expanded strategy select. Back is
-			// always allowed.
-			w.step = 1
-			m.wizard = w
-			return keyResult{model: m, handled: true}
-		case "shift+right":
-			// Focus-override forward — STILL validity-gated (mirrors the
-			// Continue path exactly; never a validity override).
-			if w.git.valid() {
-				w.configureGit = true
-				w.step = 3
-				w.ceremony = w.reviewCeremony()
-			}
 			m.wizard = w
 			return keyResult{model: m, handled: true}
 		case "left", "right":
@@ -1564,6 +1594,13 @@ func (m identitiesModel) handleClick(x, y, width, height int, s DemoState) keyRe
 	case paneCreate:
 		return m.handleWizardClick(body, x, y, s)
 	case paneEditSSH:
+		// Only the non-locked fields (Host/Hostname/Port) are focusable —
+		// Provider/Alias prefix stay locked in edit mode.
+		if slot, ok := hitAnyFieldRow(body, x, y, sshFormFieldSlots); ok && slot >= sshFieldHost {
+			m.editFocus = slot
+			m.editForm = m.editForm.setFocus(slot)
+			return keyResult{model: m, handled: true}
+		}
 		if hitNeedle(body, x, y, " "+identEditRewriteButton+" ") {
 			return m.handleEditKey(mustKey("Enter"), s)
 		}
@@ -1573,6 +1610,20 @@ func (m identitiesModel) handleClick(x, y, width, height int, s DemoState) keyRe
 			return m.handleEditKey(key, s)
 		}
 	case paneGit:
+		sel, ok := m.selectedIdentity(s)
+		if ok {
+			if slot, hit := hitAnyFieldRow(body, x, y, gitFormFieldSlots); hit {
+				m.gitFocus = slot
+				m.gitPaneForm = m.gitPaneForm.setFocus(slot)
+				return keyResult{model: m, handled: true}
+			}
+			if idx, hit := hitStrategyRow(body, x, y, sel.Name); hit {
+				m.gitPaneForm.strategyIdx = idx
+				m.gitFocus = gitFieldStrategy
+				m.gitPaneForm = m.gitPaneForm.setFocus(gitFieldStrategy)
+				return keyResult{model: m, handled: true}
+			}
+		}
 		if hitNeedle(body, x, y, " "+identGitWriteButton+" ") {
 			return m.handleGitKey(mustKey("Enter"), s)
 		}
@@ -1582,6 +1633,11 @@ func (m identitiesModel) handleClick(x, y, width, height int, s DemoState) keyRe
 			return m.handleGitKey(key, s)
 		}
 	case paneClone:
+		if hitFieldRow(body, x, y, "New identity name") {
+			m.cloneOnButton = false
+			m.cloneInput.Focus()
+			return keyResult{model: m, handled: true}
+		}
 		if hitNeedle(body, x, y, " "+identCloneButton+" ") {
 			return m.handleCloneKey(mustKey("Enter"), s)
 		}
@@ -1636,10 +1692,94 @@ func (m identitiesModel) handleDetailClick(body string, x, y int, s DemoState) k
 	return keyResult{model: m}
 }
 
-// handleWizardClick resolves the wizard's per-step button clicks.
+// fieldSlot pairs a rendered field label with the focus slot clicking it
+// selects (D8 click-to-focus, checkpoint-2 contract).
+type fieldSlot struct {
+	label string
+	slot  int
+}
+
+// sshFormFieldSlots are the SSH form's field rows, in render order — shared
+// by the wizard step 0 and edit-SSH click handlers.
+var sshFormFieldSlots = []fieldSlot{
+	{"Provider", sshFieldProvider},
+	{"Alias prefix", sshFieldPrefix},
+	{"SSH Host (alias)", sshFieldHost},
+	{"Real hostname", sshFieldHostname},
+	{"Port", sshFieldPort},
+}
+
+// gitFormFieldSlots are the Git form's field rows, in render order — shared
+// by the wizard step 2 and Configure-Git click handlers.
+var gitFormFieldSlots = []fieldSlot{
+	{"user.name", gitFieldName},
+	{"user.email", gitFieldEmail},
+}
+
+// hitFieldRow reports whether (x, y) falls anywhere on the rendered row
+// containing label — D8's "the ENTIRE rendered field row is the hit
+// target" (Fitts's law), not just the label span.
+func hitFieldRow(body string, x, y int, label string) bool {
+	line, ok := blockLine(body, y)
+	if !ok || !strings.Contains(line, label) {
+		return false
+	}
+	return x >= 0 && x < ansi.StringWidth(line)
+}
+
+// hitAnyFieldRow resolves which of the given field rows (x, y) falls on.
+func hitAnyFieldRow(body string, x, y int, fields []fieldSlot) (int, bool) {
+	for _, f := range fields {
+		if hitFieldRow(body, x, y, f.label) {
+			return f.slot, true
+		}
+	}
+	return 0, false
+}
+
+// hitAlgorithmRow resolves which ENABLED algorithm catalog row (x, y) falls
+// on; entries algoDisabled reports as unavailable stay inert (D8).
+func hitAlgorithmRow(body string, x, y int) (int, bool) {
+	for i, entry := range AlgorithmCatalog {
+		if algoDisabled(entry) {
+			continue
+		}
+		if hitFieldRow(body, x, y, entry.ID) {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// hitStrategyRow resolves which match-strategy option row (x, y) falls on
+// (D8 — reused by the wizard Git step and the Configure-Git pane).
+func hitStrategyRow(body string, x, y int, identityName string) (int, bool) {
+	for i, strategyID := range matchStrategies {
+		if hitFieldRow(body, x, y, strategyCopy(strategyID, identityName)) {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// handleWizardClick resolves the wizard's per-step field/radio/button clicks.
 func (m identitiesModel) handleWizardClick(body string, x, y int, s DemoState) keyResult {
 	w := m.wizard
 	switch w.step {
+	case 0:
+		if slot, ok := hitAnyFieldRow(body, x, y, sshFormFieldSlots); ok {
+			w.focus = slot
+			w.form = w.form.setFocus(slot)
+			m.wizard = w
+			return keyResult{model: m, handled: true}
+		}
+		if idx, ok := hitAlgorithmRow(body, x, y); ok {
+			w.focus = 5
+			w.algoIdx = idx
+			w.form = w.form.setFocus(5)
+			m.wizard = w
+			return keyResult{model: m, handled: true}
+		}
 	case 1:
 		for _, needle := range []string{
 			" Run stage 1 (Enter) ", " Retry (Enter) ",
@@ -1656,6 +1796,19 @@ func (m identitiesModel) handleWizardClick(body string, x, y int, s DemoState) k
 			return m.handleWizardKey(mustKey("c"), s)
 		}
 	case 2:
+		if slot, ok := hitAnyFieldRow(body, x, y, gitFormFieldSlots); ok {
+			w.gitFocus = slot
+			w.git = w.git.setFocus(slot)
+			m.wizard = w
+			return keyResult{model: m, handled: true}
+		}
+		if idx, ok := hitStrategyRow(body, x, y, w.form.identityName()); ok {
+			w.git.strategyIdx = idx
+			w.gitFocus = gitFieldStrategy
+			w.git = w.git.setFocus(gitFieldStrategy)
+			m.wizard = w
+			return keyResult{model: m, handled: true}
+		}
 		buttons := []struct {
 			needle string
 			slot   int
@@ -1824,44 +1977,72 @@ const (
 
 // wizardButton renders one focusable wizard control: reverse-video when
 // focused (the same focus treatment the ceremony buttons carry), bold when
-// merely enabled, faint + an explicit suffix when disabled (M2).
-func wizardButton(label string, focused, enabled bool) string {
+// merely enabled, faint + an explicit disabledSuffix when disabled (M2). The
+// suffix is caller-supplied (D7, checkpoint-2 contract) — the generic
+// "— disabled" text is gone from every caller; pass "" for buttons that are
+// always enabled (the suffix branch is then unreachable).
+func wizardButton(label string, focused, enabled bool, disabledSuffix string) string {
 	text := " " + label + " "
 	switch {
 	case focused && enabled:
 		return styleSelected.Render(text)
 	case focused:
-		return lipgloss.NewStyle().Faint(true).Reverse(true).Render(text + "— disabled")
+		return lipgloss.NewStyle().Faint(true).Reverse(true).Render(text + disabledSuffix)
 	case enabled:
 		return styleBold.Render(text)
 	default:
-		return styleFaint.Render(text + "— disabled")
+		return styleFaint.Render(text + disabledSuffix)
 	}
 }
+
+// gitFormDisabledSuffix is the frozen D7 disabled-suffix copy for any
+// button gated on gitForm.valid() (the wizard's [ Continue ] and the
+// Configure-Git pane's Write-it… button share the same validity predicate).
+const gitFormDisabledSuffix = "— needs user.name + a valid email"
+
+// cloneDisabledSuffix is the Clone button's disabled-suffix copy (gated on
+// a unique, non-empty clone name) — not frozen by the copy-freeze grep, but
+// still never the generic "— disabled" text (D7 forbids it everywhere).
+const cloneDisabledSuffix = "— needs a unique, non-empty name"
 
 // styleStepperActive is the active stepper segment's treatment: bold +
 // Theme.Accent (NOT styleFaint — the old `Step n/4` line read dimmer than
 // body text, the opposite of a navigation affordance; 02-STYLE-SPEC.md §5).
 var styleStepperActive = lipgloss.NewStyle().Bold(true).Foreground(DefaultTheme.Accent)
 
-// renderStepper renders the first-class `[1] SSH · [2] Test · [3] Git ·
-// [4] Review` stepper (promoted from the old dimmer `stepDots`): the active
-// segment carries styleStepperActive (bold + accent), completed segments
-// carry a ✓ glyph, upcoming segments render plain.
+// renderStepper renders `Step n/4 · <label> ● ○ ○ ○` (D5, checkpoint-2
+// contract — REVERTS 02-14's bracketed short-segment stepper (bracket-number
+// + short word per step); the bracket format moved onto the MAIN NAV per
+// D4). The counter is bold, the `·` separator is faint, the active LONG label
+// (wizardSteps) carries styleStepperActive (bold + accent — the line is
+// NEVER faint as a whole), and the step dots render `●` accent for indices
+// ≤ step / `○` faint for the rest.
 func renderStepper(step int) string {
-	segs := make([]string, len(stepShortLabels))
-	for i, label := range stepShortLabels {
-		text := fmt.Sprintf("[%d] %s", i+1, label)
-		switch {
-		case i == step:
-			segs[i] = styleStepperActive.Render(text)
-		case i < step:
-			segs[i] = styleHealthy.Render("✓") + " " + text
-		default:
-			segs[i] = text
+	dots := make([]string, len(wizardSteps))
+	for i := range wizardSteps {
+		if i <= step {
+			dots[i] = DefaultTheme.ActiveArea.Render("●")
+		} else {
+			dots[i] = styleFaint.Render("○")
 		}
 	}
-	return " " + strings.Join(segs, styleFaint.Render(" · "))
+	return " " + styleBold.Render(fmt.Sprintf("Step %d/%d", step+1, len(wizardSteps))) +
+		styleFaint.Render(" · ") + styleStepperActive.Render(wizardSteps[step]) +
+		" " + strings.Join(dots, " ")
+}
+
+// wizardChordHint renders the ALWAYS-visible, step-conditional faint line
+// directly under the stepper (D5/D7, checkpoint-2 contract) advertising the
+// hoisted Shift+←/→ chord gate — frozen copy, verbatim.
+func wizardChordHint(step int) string {
+	switch step {
+	case 0:
+		return "Shift+→ next section · Shift+← exits the wizard"
+	case len(wizardSteps) - 1:
+		return "Shift+← back to Git · Enter writes"
+	default:
+		return "Shift+←/→ jump sections · forward needs a valid step"
+	}
 }
 
 // renderWizard renders the active wizard pane-state.
@@ -1869,6 +2050,7 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 	w := m.wizard
 	var b strings.Builder
 	b.WriteString(renderStepper(w.step) + "\n")
+	b.WriteString(" " + styleFaint.Render(wizardChordHint(w.step)) + "\n")
 
 	switch w.step {
 	case 0:
@@ -1960,17 +2142,13 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 		}
 	case 2:
 		b.WriteString(w.git.view(w.form.identityName(), w.keyPath(), w.gitFocus, width, baselineStripCompact(s, width)))
-		// The web's three REAL buttons (M2), reachable via the Tab ring;
-		// Back+Skip share a row so all three fit the 62-col pane. The
-		// frozen `[ Skip Git ]`/`[ Continue ]` copy (02-STYLE-SPEC.md §4)
-		// carries its explanation on its OWN adjacent ALWAYS-VISIBLE hint
-		// row (Theme.Hint), never on the button itself, and never appended
-		// inline (a hyphenated wrap of "SSH-only" mid-word would corrupt
-		// the frozen text when re-flowed at a narrower pane width).
-		b.WriteString(" " + wizardButton(wizardBackButton, w.gitFocus == gitFocusBack, true) + " " +
-			wizardButton(wizardSkipButton, w.gitFocus == gitFocusSkip, true) + "\n")
+		// D6 (checkpoint-2 contract): all THREE real buttons (M2) share ONE
+		// row — Back / Skip / Continue — with both frozen hints ALWAYS
+		// visible BELOW the row (Theme.Hint), never on the button itself.
+		b.WriteString(" " + wizardButton(wizardBackButton, w.gitFocus == gitFocusBack, true, "") + "  " +
+			wizardButton(wizardSkipButton, w.gitFocus == gitFocusSkip, true, "") + "  " +
+			wizardButton(wizardContinueButton, w.gitFocus == gitFocusContinue, w.git.valid(), gitFormDisabledSuffix) + "\n")
 		b.WriteString(" " + styleFaint.Render(wizardSkipHint) + "\n")
-		b.WriteString(" " + wizardButton(wizardContinueButton, w.gitFocus == gitFocusContinue, w.git.valid()) + "\n")
 		b.WriteString(" " + styleFaint.Render(wizardContinueHint))
 	default:
 		b.WriteString(w.ceremony.view(width))
@@ -2029,12 +2207,14 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 			m.editForm.view(m.editFocus, "", "") +
 			renderHostBlockPreview(m.editForm.host.Value(), m.editForm.hostname.Value(),
 				m.editForm.port.Value(), editKeyPath, detailWidth) +
-			"\n\n " + wizardButton(identEditRewriteButton, m.editFocus == editFocusButton, true)
+			"\n\n " + wizardButton(identEditRewriteButton, m.editFocus == editFocusButton, true, "")
 		crumbs = []string{sel.Name, "Edit SSH"}
+		actions = []FooterAction{{Key: "Tab/↑↓", Label: "fields"}, {Key: "Enter", Label: "rewrite Host block"}}
 		status = "Esc returns to the identity detail without writing anything."
 	case paneEditCeremony:
 		pane = m.editCeremony.view(detailWidth)
 		crumbs = []string{sel.Name, "Edit SSH"}
+		actions = ceremonyFooterActions()
 		status = "Esc returns to the identity detail without writing anything."
 	case paneGit:
 		suffix := " (completes this identity)"
@@ -2043,12 +2223,14 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 		}
 		pane = " " + styleBold.Render("Git identity — "+sel.Name+suffix) + "\n" +
 			m.gitPaneForm.view(sel.Name, orDefault(sel.KeyPath, "~/.ssh/id_ed25519_"+sel.Name), m.gitFocus, detailWidth, baselineStripCompact(s, detailWidth)) +
-			" " + wizardButton(identGitWriteButton, m.gitFocus == gitPaneFocusButton, m.gitPaneForm.valid())
+			" " + wizardButton(identGitWriteButton, m.gitFocus == gitPaneFocusButton, m.gitPaneForm.valid(), gitFormDisabledSuffix)
 		crumbs = []string{sel.Name, "Configure Git"}
+		actions = []FooterAction{{Key: "Tab/↑↓", Label: "fields"}, {Key: "Enter", Label: "write Git identity"}}
 		status = "Esc returns to the identity detail without writing anything."
 	case paneGitCeremony:
 		pane = m.gitCeremony.view(detailWidth)
 		crumbs = []string{sel.Name, "Configure Git"}
+		actions = ceremonyFooterActions()
 		status = "Esc returns to the identity detail without writing anything."
 	case paneClone:
 		taken := hasIdentityNamed(s, m.cloneInput.Value())
@@ -2061,8 +2243,9 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 			" " + styleFaint.Render("The clone gets its own new key and Host alias; the Git author is copied (MGR-04).") + "\n\n" +
 			formFieldLine("New identity name", m.cloneInput, !m.cloneOnButton, false) + "\n" +
 			helperLine(helper, !cloneValid) + "\n\n" +
-			" " + wizardButton(identCloneButton, m.cloneOnButton, cloneValid)
+			" " + wizardButton(identCloneButton, m.cloneOnButton, cloneValid, cloneDisabledSuffix)
 		crumbs = []string{sel.Name, "Clone"}
+		actions = []FooterAction{{Key: "Tab", Label: "switch"}, {Key: "Enter", Label: "clone"}}
 		status = "Esc returns to the identity detail without writing anything."
 	case paneDeleteScope:
 		// The chosen scope IS the focused control (the 2-option ring):
@@ -2085,10 +2268,12 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 	case paneDelete:
 		pane = m.deleteCerem.view(detailWidth)
 		crumbs = []string{sel.Name, "Delete"}
+		actions = ceremonyFooterActions()
 		status = "Esc returns to the identity detail without writing anything."
 	case paneFix:
 		pane = m.fixCeremony.view(detailWidth)
 		crumbs = []string{sel.Name, "Fix"}
+		actions = ceremonyFooterActions()
 		status = "Esc returns to the identity detail without writing anything."
 	}
 
@@ -2109,6 +2294,13 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 // plain key too (batch 3 follow-up — q/? never reach the globals there).
 func (m identitiesModel) paneCapturesKeys() bool {
 	return m.pane != paneDetail
+}
+
+// ceremonyFooterActions renders the audit-table contextual footer shared by
+// EVERY write ceremony (frozen copy, verbatim: `Tab/←→ Cancel / Confirm` +
+// `Enter confirm`) — chrome, costs zero body rows.
+func ceremonyFooterActions() []FooterAction {
+	return []FooterAction{{Key: "Tab/←→", Label: "Cancel / Confirm"}, {Key: "Enter", Label: "confirm"}}
 }
 
 // wizardFooter renders the wizard's contextual footer hints per pane-state.
@@ -2138,7 +2330,7 @@ func (m identitiesModel) wizardFooter(s DemoState) []FooterAction {
 			{Key: "Enter", Label: "activate focused / continue"},
 			{Key: "Tab/↑↓", Label: "fields & buttons"},
 		}
-	default:
-		return nil
+	default: // step 3 — the review ceremony owns the keys
+		return ceremonyFooterActions()
 	}
 }

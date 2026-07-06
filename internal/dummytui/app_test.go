@@ -26,7 +26,7 @@ func appView(a App) string {
 func TestNewAppRendersTheFrame(t *testing.T) {
 	a := NewApp()
 	view := appView(a)
-	for _, want := range []string{"gitid", "1 Identities", "2 Global SSH", "3 Global Git", "4 Doctor", "8 ids"} {
+	for _, want := range []string{"gitid", "[1] Identities", "[2] Global SSH", "[3] Global Git", "[4] Doctor", "8 ids"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("initial frame missing %q", want)
 		}

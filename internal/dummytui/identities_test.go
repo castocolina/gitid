@@ -1,6 +1,7 @@
 package dummytui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -116,7 +117,7 @@ func TestDetailShowsSSHFirstAndNeverFabricatesGit(t *testing.T) {
 func TestWizardDuplicatePrefixBlocksNext(t *testing.T) {
 	a := pressSeq(t, identitiesApp(), "n")
 	view := appView(a)
-	if !strings.Contains(view, "[1] SSH") || !strings.Contains(view, "New identity › SSH details") {
+	if !strings.Contains(view, "Step 1/4") || !strings.Contains(view, "New identity › SSH details") {
 		t.Fatalf("wizard should open at step 1; view:\n%s", view)
 	}
 	// Type "personal" over the default prefix — a taken name.
@@ -128,7 +129,7 @@ func TestWizardDuplicatePrefixBlocksNext(t *testing.T) {
 	}
 	// Next must be blocked.
 	a, _ = press(t, a, "enter")
-	if !strings.Contains(appView(a), "[1] SSH") {
+	if !strings.Contains(appView(a), "Step 1/4") {
 		t.Error("Enter must not advance while the prefix duplicates an existing identity")
 	}
 }
@@ -234,7 +235,7 @@ func wizardToStep2(t *testing.T, a App) App {
 	a = clearPrefixRaw(t, a)
 	a = typeText(t, a, "acme2")
 	a, _ = press(t, a, "enter")
-	if !strings.Contains(appView(a), "[2] Test") || !strings.Contains(appView(a), "New identity › Test connection") {
+	if !strings.Contains(appView(a), "Step 2/4") || !strings.Contains(appView(a), "New identity › Test connection") {
 		t.Fatalf("wizard did not reach step 2:\n%s", appView(a))
 	}
 	return a
@@ -344,7 +345,7 @@ func wizardThroughTest(t *testing.T, a App) App {
 	a, _ = press(t, a, "enter")
 	a = completeStage(t, a, 2)
 	a, _ = press(t, a, "enter") // → step 3 Git identity
-	if !strings.Contains(appView(a), "[3] Git") || !strings.Contains(appView(a), "New identity › Git identity") {
+	if !strings.Contains(appView(a), "Step 3/4") || !strings.Contains(appView(a), "New identity › Git identity") {
 		t.Fatalf("wizard did not reach step 3:\n%s", appView(a))
 	}
 	return a
@@ -808,22 +809,57 @@ func TestWizardGitStepButtonsSurviveExpandedStrategySelect(t *testing.T) {
 // arrow-key precedence, field contours, hint persistence.
 // --------------------------------------------------------------------------
 
-func TestRenderStepperActiveSegmentIsBoldAccentNotFaint(t *testing.T) {
+// TestRenderStepperRevertsToStepCounterWithLongLabel pins D5 (checkpoint-2
+// contract): the stepper REVERTS from 02-14's bracketed short-segment
+// stepper (bracket-number + short word per step, joined by middots) to
+// `Step n/4 · <label> ● ○ ○ ○` using the LONG wizardSteps labels — the
+// bracket format moves onto the MAIN NAV instead (D4).
+func TestRenderStepperRevertsToStepCounterWithLongLabel(t *testing.T) {
 	active := renderStepper(1)
 	plain := stripANSI(active)
-	for _, want := range []string{"[1] SSH", "[2] Test", "[3] Git", "[4] Review"} {
-		if !strings.Contains(plain, want) {
-			t.Errorf("stepper must render all four segments; missing %q in %q", want, plain)
+	if !strings.Contains(plain, "Step 2/4") {
+		t.Fatalf("stepper must render the Step n/4 counter; got %q", plain)
+	}
+	if !strings.Contains(plain, "Test connection") {
+		t.Errorf("stepper must render the LONG active label (wizardSteps), not a short segment; got %q", plain)
+	}
+	// Built from parts (never a contiguous literal in this source file) so
+	// this negative assertion itself never trips the repo-wide extended
+	// copy-freeze grep (02-STYLE-SPEC.md §6) that forbids these strings.
+	for i, short := range []string{"SSH", "Test", "Git", "Review"} {
+		forbidden := fmt.Sprintf("[%d]", i+1) + " " + short
+		if strings.Contains(plain, forbidden) {
+			t.Errorf("the superseded bracketed short-segment stepper must be GONE (D5); found %q in %q", forbidden, plain)
 		}
 	}
-	if strings.Contains(active, styleFaint.Render("[2] Test")) {
-		t.Error("the ACTIVE segment must NOT render through styleFaint (the old `Step n/4` line read dimmer than body text)")
+	if strings.Contains(active, styleFaint.Render("Test connection")) {
+		t.Error("the ACTIVE label must NOT render through styleFaint (the old `Step n/4` line read dimmer than body text)")
 	}
-	if !strings.Contains(active, styleStepperActive.Render("[2] Test")) {
-		t.Error("the active segment must render bold + accent (styleStepperActive)")
+	if !strings.Contains(active, styleStepperActive.Render("Test connection")) {
+		t.Error("the active label must render bold + accent (styleStepperActive)")
 	}
-	if !strings.Contains(plain, "✓") {
-		t.Error("a completed segment (step 0, before the active step 1) must carry a ✓ glyph")
+	if !strings.Contains(plain, "●") || !strings.Contains(plain, "○") {
+		t.Error("the stepper must render both a passed/active accent dot (●) and an upcoming faint dot (○)")
+	}
+}
+
+// TestWizardChordHintIsStepConditionalAndAlwaysVisible pins D5/D7: the
+// always-visible faint line directly under the stepper carries the frozen,
+// step-conditional Shift-chord hint.
+func TestWizardChordHintIsStepConditionalAndAlwaysVisible(t *testing.T) {
+	cases := []struct {
+		step int
+		want string
+	}{
+		{0, "Shift+→ next section · Shift+← exits the wizard"},
+		{1, "Shift+←/→ jump sections · forward needs a valid step"},
+		{2, "Shift+←/→ jump sections · forward needs a valid step"},
+		{3, "Shift+← back to Git · Enter writes"},
+	}
+	for _, tc := range cases {
+		if got := wizardChordHint(tc.step); got != tc.want {
+			t.Errorf("wizardChordHint(%d) = %q, want %q", tc.step, got, tc.want)
+		}
 	}
 }
 
@@ -914,35 +950,129 @@ func TestWizardArrowKeyPrecedenceStep2(t *testing.T) {
 	}
 }
 
-func TestWizardFocusedFieldRoundedContourVsBlurredDimBracket(t *testing.T) {
+// TestWizardHoistedShiftGateReachesEveryStepIncludingTheReviewCeremony pins
+// D7 (checkpoint-2 contract): ONE hoisted Shift+←/→ gate works at EVERY
+// step, including the previously-DEAD review ceremony (step 3) where
+// ceremony.handleKey's own default: case used to swallow the chord. A
+// table-driven walk asserts Shift+← always goes back (uniform stepBack)
+// and Shift+→ is blocked at each unpassed step with the frozen status note.
+func TestWizardHoistedShiftGateReachesEveryStepIncludingTheReviewCeremony(t *testing.T) {
+	shiftLeft := tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModShift}
+	shiftRight := tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift}
+
+	// Step 0 → exits the wizard on Shift+Left (Esc parity).
+	a0 := pressSeq(t, identitiesApp(), "n")
+	model, _ := a0.Update(shiftLeft)
+	a0 = model.(App)
+	if got := identModel(t, a0).pane; got != paneDetail {
+		t.Errorf("step 0 shift+left: pane = %v, want paneDetail (exits the wizard)", got)
+	}
+
+	// Step 0 blocked forward: clear the required hostname so step0Valid
+	// fails, then assert Shift+Right is blocked with the frozen note.
+	a0b := pressSeq(t, identitiesApp(), "n", "tab", "tab") // prefix → host → hostname
+	for i := 0; i < 20; i++ {
+		model, _ := a0b.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
+		a0b = model.(App)
+	}
+	model, _ = a0b.Update(shiftRight)
+	a0b = model.(App)
+	if got := identModel(t, a0b).wizard.step; got != 0 {
+		t.Fatalf("step 0 shift+right with an invalid form: step = %d, want blocked at 0", got)
+	}
+	if a0b.note != "Can't continue yet — check the alias prefix, hostname, and port." {
+		t.Errorf("blocked-forward note = %q, want the frozen D7 status note", a0b.note)
+	}
+
+	// Steps 1→0, 2→1, and 3→2 (the previously-DEAD review step) via the
+	// SAME uniform stepBack(), reached from wherever focus happens to be.
+	a3 := wizardThroughTest(t, identitiesApp())
+	a3, _ = press(t, a3, "enter") // [ Continue ] → step 3 review ceremony
+	if got := identModel(t, a3).wizard.step; got != 3 {
+		t.Fatalf("setup: wizard did not reach the step-3 review ceremony; step=%d", got)
+	}
+	model, _ = a3.Update(shiftLeft)
+	a3 = model.(App)
+	if got := identModel(t, a3).wizard.step; got != 2 {
+		t.Errorf("step 3 (review ceremony) shift+left: step = %d, want 2 — the D7 fix for the previously-dead review step", got)
+	}
+
+	// Step 2 blocked forward: blank the Git form's user.name so
+	// gitForm.valid() fails, then assert Shift+Right is blocked with the
+	// frozen note (mirrors TestWizardShiftArrowIsFocusOverrideNotValidityOverride
+	// but via the note assertion, table-style).
+	a2 := wizardThroughTest(t, identitiesApp())
+	for i := 0; i < 20; i++ {
+		model, _ := a2.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
+		a2 = model.(App)
+	}
+	model, _ = a2.Update(shiftRight)
+	a2 = model.(App)
+	if got := identModel(t, a2).wizard.step; got != 2 {
+		t.Fatalf("step 2 shift+right with an invalid Git form: step = %d, want blocked at 2", got)
+	}
+	if a2.note != "Can't continue yet — add user.name and a valid email." {
+		t.Errorf("blocked-forward note = %q, want the frozen D7 status note", a2.note)
+	}
+}
+
+// TestWizardFocusedFieldIsSingleRowColorOnlyNoBox pins D1 (checkpoint-2
+// contract): every field is ONE constant-height row in every state —
+// focus is signalled by accent color + the `▸` marker, NEVER a reflowing
+// box. This SUPERSEDES 02-14's renderFocusedFieldBox 3-row rounded contour.
+func TestWizardFocusedFieldIsSingleRowColorOnlyNoBox(t *testing.T) {
 	a := pressSeq(t, identitiesApp(), "n") // step 0, Alias prefix focused
 	raw := a.View().Content
 	plain := paneFlat(a)
-	if !strings.Contains(raw, "\x1b[34m") {
-		t.Error("the focused field must carry the accent (blue, SGR 34) contour")
+	if !strings.Contains(raw, "\x1b[1;34m") {
+		t.Error("the focused field must carry the accent (blue, bold) SGR")
 	}
-	if !strings.Contains(plain, "╭─") {
-		t.Error("the focused field must render a ROUNDED solid contour (╭─), distinct from a preview's dashed ╭╌ border")
+	if strings.Contains(plain, "╭─") {
+		t.Error("D1: no field may ever render a SOLID rounded box border (renderFocusedFieldBox is deleted) — only dashed PreviewBlock borders (╭╌) may remain on the pane")
+	}
+	if !strings.Contains(plain, "▸") {
+		t.Error("the focused field must carry the redundant non-color `▸` marker cue")
 	}
 	// The Provider field (blurred at wizard open) renders a single-row dim
-	// bracket contour — never a border on every field (row-budget trap).
+	// bracket contour — brackets present in EVERY state (D1).
 	if !strings.Contains(plain, "[github.com]") {
 		t.Errorf("blurred fields must render a dim bracket contour; pane:\n%s", plain)
 	}
 }
 
-func TestGitFormMatchStrategyHintPersistsWhenExpanded(t *testing.T) {
+// TestGitFormStrategyAlwaysExpandedWithHeaderHint pins D2 (checkpoint-2
+// contract): the match-strategy group renders ALL options at constant
+// height in BOTH focus states — no expand/collapse branch — and the
+// `(←/→ change)` hint sits on the group's HEADER line, visible in BOTH
+// states (it used to show only while blurred — backwards).
+func TestGitFormStrategyAlwaysExpandedWithHeaderHint(t *testing.T) {
 	a := wizardThroughTest(t, identitiesApp())
-	collapsed := paneFlat(a)
-	if !strings.Contains(collapsed, "Determines which repos this Git identity applies to.") {
-		t.Fatal("the reserved match-strategy hint must be present when collapsed")
+	blurred := paneFlat(a)
+	if !strings.Contains(blurred, "Determines which repos this Git identity applies to.") {
+		t.Fatal("the reserved match-strategy hint must be present while blurred")
 	}
-	a = pressSeq(t, a, "tab", "tab") // name → email → strategy (expanded)
-	expanded := paneFlat(a)
-	if !strings.Contains(expanded, "Determines which repos this Git identity applies to.") {
-		t.Error("the reserved hint row must remain present when the strategy select expands (pushed, not replaced)")
+	if !strings.Contains(blurred, "(←/→ change)") {
+		t.Error("D2: the (←/→ change) hint must be on the header line even while blurred")
 	}
-	if !strings.Contains(expanded, "hasconfig — repos whose remote uses this alias") {
-		t.Error("expanding the select must show its option rows")
+	for _, want := range []string{
+		"gitdir (default) — applies inside ~/acme2/",
+		"hasconfig — repos whose remote uses this alias",
+		"both — either condition (two includeIf blocks = OR)",
+	} {
+		if !strings.Contains(blurred, want) {
+			t.Errorf("D2: all three strategy options must render even while blurred; missing %q", want)
+		}
+	}
+
+	a = pressSeq(t, a, "tab", "tab") // name → email → strategy (focused)
+	focused := paneFlat(a)
+	if !strings.Contains(focused, "Determines which repos this Git identity applies to.") {
+		t.Error("the reserved hint row must remain present while focused")
+	}
+	if !strings.Contains(focused, "(←/→ change)") {
+		t.Error("D2: the (←/→ change) hint must still be on the header line while focused")
+	}
+	if !strings.Contains(focused, "hasconfig — repos whose remote uses this alias") {
+		t.Error("all three option rows must remain present while focused")
 	}
 }

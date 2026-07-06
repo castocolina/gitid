@@ -4,14 +4,21 @@ package dummytui
 // .planning/design/mockup-src/src/demo/screens/GlobalGit.tsx per
 // 02-REDESIGN-SPEC.md §4 — GGIT-01 baseline master-detail with per-row
 // apply checkboxes, the main-vs-master highlight, and a
-// sentinel-preserving apply ceremony. gitid never writes a [user] section
-// here — identities own their author via includeIf fragments; the
-// user.email row is awareness-only, never checkable, never applied.
+// sentinel-preserving apply ceremony. gitid never writes user.email into
+// the baseline managed block — identities own their author via includeIf
+// fragments. D9 (02-DESIGN-DECISIONS-CHECKPOINT-2.md) promotes the
+// user.email row from awareness-only to a first-class EDITABLE
+// global-fallback field + apply checkbox (unchecked/empty by default —
+// setting it is explicit opt-in), applied through its OWN dedicated
+// ceremony — a DOCUMENTED, CONSCIOUS divergence from recipes/ (which leave
+// it unset), with the includeIf-precedence invariant preserved: identity
+// fragments always override this fallback.
 
 import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 )
@@ -22,18 +29,30 @@ type globalGitModel struct {
 	detailKey    string
 	chosen       map[string]bool
 	ceremony     ceremonyModel
+	// emailInput is the D9 editable global-fallback user.email field —
+	// unset/empty by default (recipes default preserved; setting it is
+	// explicit opt-in).
+	emailInput textinput.Model
+	// emailEditing: Enter on the selected fallback row enters text-edit
+	// mode (D1 focused rendering; every key but Esc/Enter reaches the
+	// input) — this screen's single reserved-letter shortcuts (space, a)
+	// would otherwise collide with typing those same letters into the
+	// field; Esc/Enter exit editing back to row navigation.
+	emailEditing bool
 }
 
 // newGlobalGitModel mirrors GlobalGit.tsx's initial state: the
-// main-vs-master row selected, every needs-action option pre-chosen.
+// main-vs-master row selected, every needs-action option pre-chosen EXCEPT
+// the D9 global-fallback user.email row (opt-in only — recipes leave it
+// unset by default).
 func newGlobalGitModel() globalGitModel {
 	chosen := map[string]bool{}
 	for _, o := range GlobalGitOptions {
-		if o.NeedsAction {
+		if o.NeedsAction && o.Key != GlobalGitEmailFallbackKey {
 			chosen[o.Key] = true
 		}
 	}
-	return globalGitModel{detailKey: "init.defaultBranch", chosen: chosen}
+	return globalGitModel{detailKey: "init.defaultBranch", chosen: chosen, emailInput: newTextInput("")}
 }
 
 func (m globalGitModel) activate(DemoState) (screenModel, tea.Cmd) { return m, nil }
@@ -62,11 +81,13 @@ func overlaidGitOptions(s DemoState) []overlaidGitOption {
 	return out
 }
 
-// gitApplyChosen is the chosen ∩ pending key set, in fixture order.
+// gitApplyChosen is the chosen ∩ pending key set, in fixture order — the
+// D9 global-fallback user.email row is EXCLUDED (it has its own dedicated
+// ceremony, never folded into the baseline managed-block apply).
 func (m globalGitModel) gitApplyChosen(options []overlaidGitOption) []string {
 	var keys []string
 	for _, o := range options {
-		if o.NeedsAction && m.chosen[o.Key] {
+		if o.NeedsAction && o.Key != GlobalGitEmailFallbackKey && m.chosen[o.Key] {
 			keys = append(keys, o.Key)
 		}
 	}
@@ -96,6 +117,21 @@ func baselineCeremony() ceremonyModel {
 	})
 }
 
+// emailCeremonyFor builds the D9 dedicated apply ceremony for the
+// global-fallback user.email — separate from the baseline managed-block
+// ceremony (its own heading/target/annotated diff/result), because gitid
+// NEVER folds a fallback author into the baseline managed block.
+func emailCeremonyFor(email string) ceremonyModel {
+	return newCeremony(ceremonyConfig{
+		Heading:       GlobalGitEmailCeremonyHeading,
+		Targets:       []string{"~/.gitconfig"},
+		Backups:       []string{NewBackupPath("~/.gitconfig")},
+		Preview:       "+ [user]\n+     email = " + email + "  " + GlobalGitEmailDiffAnnotation,
+		ResultMessage: GlobalGitEmailResultMessage,
+		ConfirmLabel:  "Apply",
+	})
+}
+
 // handleKey implements the Global Git key model.
 func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 	key := msg.String()
@@ -108,12 +144,32 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 			m.ceremonyOpen = false
 		case ceremonyFinished:
 			m.ceremonyOpen = false
+			if m.ceremony.cfg.Heading == GlobalGitEmailCeremonyHeading {
+				return keyResult{model: m, handled: true,
+					note:    "Global fallback user.email set — identities override it via includeIf.",
+					actions: []Action{ApplyGitGlobalEmail{Email: m.emailInput.Value(), Backup: NewBackupPath("~/.gitconfig")}}}
+			}
 			return keyResult{model: m, handled: true,
 				note:    "Global git baseline applied — user.email untouched.",
 				actions: []Action{ApplyGitBaseline{Backup: NewBackupPath("~/.gitconfig")}}}
 		case ceremonyNone, ceremonyConfirmed:
 		}
 		return keyResult{model: m, handled: true}
+	}
+
+	// D9: while text-editing the fallback field, every key but Esc/Enter
+	// reaches the input — this screen's single-letter shortcuts (space, a)
+	// would otherwise collide with typing those same letters.
+	if m.emailEditing {
+		switch key {
+		case "esc", "enter":
+			m.emailEditing = false
+			m.emailInput.Blur()
+			return keyResult{model: m, handled: true}
+		default:
+			m.emailInput, _ = updateInput(m.emailInput, msg)
+			return keyResult{model: m, handled: true}
+		}
 	}
 
 	options := overlaidGitOptions(s)
@@ -130,11 +186,26 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		return keyResult{model: m, handled: true}
 	case "space":
 		o := options[m.gitDetailIndex(options)]
-		if o.NeedsAction { // the user.email awareness row is never checkable
+		if o.NeedsAction {
 			m.chosen = withToggled(m.chosen, o.Key)
 		}
 		return keyResult{model: m, handled: true}
+	case "enter":
+		// D9/D8: Enter on the selected fallback row starts text-editing.
+		if m.detailKey == GlobalGitEmailFallbackKey {
+			m.emailEditing = true
+			m.emailInput.Focus()
+			return keyResult{model: m, handled: true}
+		}
+		return keyResult{model: m}
 	case "a":
+		// D9: the global-fallback checkbox, when chosen, applies through
+		// its OWN dedicated ceremony — never folded into the baseline.
+		if m.detailKey == GlobalGitEmailFallbackKey && m.chosen[GlobalGitEmailFallbackKey] {
+			m.ceremony = emailCeremonyFor(m.emailInput.Value())
+			m.ceremonyOpen = true
+			return keyResult{model: m, handled: true}
+		}
 		if len(m.gitApplyChosen(options)) > 0 {
 			m.ceremony = baselineCeremony()
 			m.ceremonyOpen = true
@@ -195,7 +266,10 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 	options := overlaidGitOptions(s)
 	var pending int
 	for _, o := range options {
-		if o.NeedsAction {
+		// D9: the global-fallback user.email row is EXCLUDED from the
+		// generic "baseline options not set" banner — it is a separate,
+		// opt-in concern with its own detail render and ceremony.
+		if o.NeedsAction && o.Key != GlobalGitEmailFallbackKey {
 			pending++
 		}
 	}
@@ -212,7 +286,7 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 			body:         m.ceremony.view(width - 2),
 			crumbs:       []string{"Options"},
 			status:       status,
-			actions:      []FooterAction{{Key: "Esc", Label: "cancel"}},
+			actions:      ceremonyFooterActions(),
 			capturesKeys: true, // the ceremony consumes every plain key
 		}
 	}
@@ -254,14 +328,23 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 	list := strings.Join(rows, "\n")
 
 	detail := options[selIdx]
-	explanation := detail.OneLiner
-	if detail.Key == "init.defaultBranch" {
-		explanation = GlobalGitDetailExplanation
-	}
 	var d strings.Builder
-	d.WriteString(" " + styleBold.Render(detail.Key) + "\n")
-	d.WriteString(" " + styleInfo.Render("~ "+GlobalGitAdvisoryNote) + "\n\n")
-	d.WriteString(" " + explanation + "\n")
+	if detail.Key == GlobalGitEmailFallbackKey {
+		// D9: the promoted, editable global-fallback row — D1 single-row
+		// field template + apply checkbox, its own always-visible
+		// helper/advisory lines (byte-exact, verbatim).
+		d.WriteString(formFieldLine(GlobalGitEmailFallbackKey, m.emailInput, m.emailEditing, false) + "\n")
+		d.WriteString(helperLine(GlobalGitEmailFallbackHelper, false) + "\n")
+		d.WriteString(helperLine(GlobalGitEmailFallbackAdvisory, false) + "\n")
+	} else {
+		explanation := detail.OneLiner
+		if detail.Key == "init.defaultBranch" {
+			explanation = GlobalGitDetailExplanation
+		}
+		d.WriteString(" " + styleBold.Render(detail.Key) + "\n")
+		d.WriteString(" " + styleInfo.Render("~ "+GlobalGitAdvisoryNote) + "\n\n")
+		d.WriteString(" " + explanation + "\n")
+	}
 	// Wrap to the pane width, then clip with a VISIBLE cue — long option
 	// explanations must never be silently cut mid-sentence (H3).
 	bodyRows := frameBodyRows(height) - gitTopLines(s)
@@ -273,9 +356,20 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 	}
 	body += joinMasterDetail(list, listWidth, detailPane, bodyRows)
 
-	actions := []FooterAction{{Key: "↑↓", Label: "select option"}, {Key: "space", Label: "choose"}}
-	if chosen := m.gitApplyChosen(options); len(chosen) > 0 {
-		actions = append(actions, FooterAction{Key: "a", Label: fmt.Sprintf("apply %d selected", len(chosen))})
+	if m.emailEditing {
+		return screenView{body: body, crumbs: []string{"Options"}, status: status, statusTone: tone,
+			actions:      []FooterAction{{Key: "Esc/Enter", Label: "done editing"}},
+			capturesKeys: true}
+	}
+	actions := []FooterAction{{Key: "↑↓", Label: "select option"}, {Key: "space", Label: "toggle"}}
+	if m.detailKey == GlobalGitEmailFallbackKey {
+		actions = append(actions, FooterAction{Key: "Enter", Label: "edit"})
+	}
+	switch {
+	case len(m.gitApplyChosen(options)) > 0:
+		actions = append(actions, FooterAction{Key: "a", Label: fmt.Sprintf("apply %d selected", len(m.gitApplyChosen(options)))})
+	case m.detailKey == GlobalGitEmailFallbackKey && m.chosen[GlobalGitEmailFallbackKey]:
+		actions = append(actions, FooterAction{Key: "a", Label: "set global fallback email"})
 	}
 	return screenView{body: body, crumbs: []string{"Options"}, status: status, statusTone: tone, actions: actions}
 }

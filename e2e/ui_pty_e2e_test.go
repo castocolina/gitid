@@ -191,8 +191,25 @@ func (s *ptySession) close(t *testing.T) {
 	t.Helper()
 	// Send ctrl+c to terminate the TUI gracefully (best-effort).
 	_, _ = s.ptmx.Write([]byte{0x03}) //nolint:errcheck
-	// Give the process a moment to handle the signal.
-	_ = s.cmd.Wait()
+	// Give the process a moment to handle the signal — bounded, so a
+	// process that (for whatever reason: a sandboxed PTY not delivering
+	// the interrupt byte's signal semantics, a hung render loop, …) never
+	// reacts to ctrl+c cannot hang test cleanup forever. Escalates to a
+	// hard kill only after the grace period; a healthy process that
+	// handles ctrl+c exits well within it and this never fires.
+	waitDone := make(chan struct{})
+	go func() {
+		_ = s.cmd.Wait() //nolint:errcheck // best-effort cleanup; the test's own assertions already ran
+		close(waitDone)
+	}()
+	select {
+	case <-waitDone:
+	case <-time.After(5 * time.Second):
+		if s.cmd.Process != nil {
+			_ = s.cmd.Process.Kill() //nolint:errcheck // best-effort — Wait() below still reaps it
+		}
+		<-waitDone
+	}
 	// Stop the event loop (sole emu.Write caller) first.
 	close(s.stopCh)
 	<-s.done // wait for event loop to exit — no more emu.Write after this

@@ -287,6 +287,23 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "1", "2", "3", "4":
 		next, cmd := a.setTab(tabID(int(key[0] - '1')))
 		return next, cmd
+	case "left":
+		// D4 (checkpoint-2 contract): plain ←/→ switch views 1..4 at the
+		// TOP LEVEL ONLY — reached here exactly because the active screen's
+		// own handler returned unhandled (capturing panes and Global SSH's
+		// ←/→ sub-tabs already consumed the key above and never reach this
+		// branch). Clamped at the ends — no wraparound.
+		if a.tab > tabIdentities {
+			next, cmd := a.setTab(a.tab - 1)
+			return next, cmd
+		}
+		return a, nil
+	case "right":
+		if a.tab < tabDoctor {
+			next, cmd := a.setTab(a.tab + 1)
+			return next, cmd
+		}
+		return a, nil
 	case "?":
 		a.overlay = overlayHelp
 	case "q":
@@ -418,7 +435,7 @@ func (a App) render() string {
 	case overlayHelp:
 		body = a.renderHelp()
 		crumbs = []string{"Help"}
-		actions = nil
+		actions = []FooterAction{{Key: "Esc/?", Label: "close"}}
 		capturesKeys = false
 	case overlayQuit:
 		body = a.renderQuitPrompt()
@@ -431,6 +448,13 @@ func (a App) render() string {
 		actions = []FooterAction{{Key: "Enter", Label: "open first match"}, {Key: "Esc", Label: "close"}}
 		capturesKeys = true // the palette filter input swallows q and ?
 	case overlayNone:
+	}
+	// D4 (checkpoint-2 contract): advertise the top-level plain-arrow view
+	// switch on non-capturing states, EXCEPT Global SSH — its own ←/→
+	// already means "Options / Storage" there (that footer hint stays;
+	// top-level arrows never reach the tab switcher from that screen).
+	if a.overlay == overlayNone && !capturesKeys && a.tab != tabGlobalSSH {
+		actions = append(actions, FooterAction{Key: "←→", Label: "switch view"})
 	}
 	return RenderFrame(a.width, a.height, a.state, a.tab, crumbs, status, tone, actions, capturesKeys, body)
 }

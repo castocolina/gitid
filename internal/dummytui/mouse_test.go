@@ -50,15 +50,15 @@ func clickCell(t *testing.T, a App, needle string, maxCols, fromY int) App {
 
 func TestMouseHeaderTabLabelsSwitchTabs(t *testing.T) {
 	a := NewApp()
-	a = clickCell(t, a, "2 Global SSH", 0, 0)
+	a = clickCell(t, a, "[2] Global SSH", 0, 0)
 	if a.tab != tabGlobalSSH {
 		t.Fatalf("tab = %v after clicking the Global SSH label, want Global SSH", a.tab)
 	}
-	a = clickCell(t, a, "3 Global Git", 0, 0)
+	a = clickCell(t, a, "[3] Global Git", 0, 0)
 	if a.tab != tabGlobalGit {
 		t.Fatalf("tab = %v after clicking the Global Git label, want Global Git", a.tab)
 	}
-	a = clickCell(t, a, "1 Identities", 0, 0)
+	a = clickCell(t, a, "[1] Identities", 0, 0)
 	if a.tab != tabIdentities {
 		t.Errorf("tab = %v after clicking the Identities label, want Identities", a.tab)
 	}
@@ -74,8 +74,10 @@ func TestMouseHealthChipOpensDoctor(t *testing.T) {
 
 func TestMouseClickBetweenHeaderTargetsIsInert(t *testing.T) {
 	a := NewApp()
-	// The gap between the last tab label and the right-aligned chip.
-	a, _ = clickAt(t, a, a.width/2+20, 0)
+	// The gap between the last tab label and the right-aligned chip (the
+	// bracketed `[N] Label` format, D4, widened the tab segments — this
+	// column sits past `[4] Doctor` and before the right-aligned chip).
+	a, _ = clickAt(t, a, a.width/2+28, 0)
 	if a.tab != tabIdentities {
 		t.Errorf("tab = %v after clicking header dead space, want Identities", a.tab)
 	}
@@ -163,7 +165,7 @@ func TestMouseRightClickAndOverlayClicksAreIgnored(t *testing.T) {
 		t.Error("right clicks must be ignored")
 	}
 	a, _ = press(t, a, "?")
-	a = clickCell(t, a, "4 Doctor", 0, 0)
+	a = clickCell(t, a, "[4] Doctor", 0, 0)
 	if a.tab != tabIdentities || a.overlay != overlayHelp {
 		t.Error("clicks while an overlay is open must be ignored (overlays are keyboard-driven)")
 	}

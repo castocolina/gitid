@@ -544,7 +544,7 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 	switch m.mode {
 	case gssApplyCeremony, gssStorageCeremony:
 		body = m.subTabStrip() + "\n" + m.ceremony.view(width-2)
-		actions = []FooterAction{{Key: "Esc", Label: "cancel"}}
+		actions = ceremonyFooterActions()
 		capturesKeys = true // the ceremony consumes every plain key
 	case gssBrowse:
 		if m.subTab == gssOptions {
@@ -552,7 +552,7 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 			actions = []FooterAction{
 				{Key: "↑↓", Label: "select option"},
 				{Key: "←→", Label: "Options / Storage"},
-				{Key: "space", Label: "choose"},
+				{Key: "space", Label: "toggle"},
 			}
 			if len(chosen) > 0 {
 				actions = append(actions, FooterAction{Key: "a", Label: fmt.Sprintf("apply %d selected", len(chosen))})
@@ -561,7 +561,7 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 			body = m.renderStorage(s, width, height)
 			actions = []FooterAction{
 				{Key: "←→", Label: "Options / Storage"},
-				{Key: "↑↓", Label: "choose layout"},
+				{Key: "↑↓", Label: "layout"},
 			}
 			if m.storageChoice != s.SSHStorage {
 				actions = append(actions, FooterAction{Key: "Enter", Label: "migrate layout…"})

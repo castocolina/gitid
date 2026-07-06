@@ -64,6 +64,10 @@ type DemoState struct {
 	SSHApplied []string
 	// GitBaselineApplied is whether the global-git baseline was applied.
 	GitBaselineApplied bool
+	// GitGlobalEmail is the D9 global-fallback user.email — empty (unset)
+	// by default (recipes default preserved); set only via its own
+	// dedicated apply ceremony, never folded into the baseline.
+	GitGlobalEmail string
 	// SSHStorage is STORE-01's current layout.
 	SSHStorage SSHStorageLayout
 	// Backups holds timestamped backup paths "created" by write
@@ -176,6 +180,13 @@ type ApplyGitBaseline struct {
 	Backup string
 }
 
+// ApplyGitGlobalEmail applies the D9 global-fallback user.email through its
+// own dedicated ceremony — never folded into the baseline managed block.
+type ApplyGitGlobalEmail struct {
+	Email  string
+	Backup string
+}
+
 // EditSSH rewrites an identity's managed Host block values.
 type EditSSH struct {
 	Name     string
@@ -194,18 +205,19 @@ type SetSSHStorage struct {
 // Reset restores the initial seeded state.
 type Reset struct{}
 
-func (AddIdentity) isAction()      {}
-func (ConfigureGit) isAction()     {}
-func (CloneIdentity) isAction()    {}
-func (DeleteIdentity) isAction()   {}
-func (NewKey) isAction()           {}
-func (MarkScanned) isAction()      {}
-func (FixFinding) isAction()       {}
-func (ApplySSH) isAction()         {}
-func (ApplyGitBaseline) isAction() {}
-func (EditSSH) isAction()          {}
-func (SetSSHStorage) isAction()    {}
-func (Reset) isAction()            {}
+func (AddIdentity) isAction()         {}
+func (ConfigureGit) isAction()        {}
+func (CloneIdentity) isAction()       {}
+func (DeleteIdentity) isAction()      {}
+func (NewKey) isAction()              {}
+func (MarkScanned) isAction()         {}
+func (FixFinding) isAction()          {}
+func (ApplySSH) isAction()            {}
+func (ApplyGitBaseline) isAction()    {}
+func (ApplyGitGlobalEmail) isAction() {}
+func (EditSSH) isAction()             {}
+func (SetSSHStorage) isAction()       {}
+func (Reset) isAction()               {}
 
 // recomputeAfterGit is the state an identity lands in once BOTH its SSH
 // and Git sides exist — the Go mirror of store.ts's recomputeAfterGit.
@@ -369,6 +381,9 @@ func Reduce(state DemoState, action Action) DemoState { //nolint:gocyclo // one 
 		next.Backups = append([]string{a.Backup}, next.Backups...)
 	case ApplyGitBaseline:
 		next.GitBaselineApplied = true
+		next.Backups = append([]string{a.Backup}, next.Backups...)
+	case ApplyGitGlobalEmail:
+		next.GitGlobalEmail = a.Email
 		next.Backups = append([]string{a.Backup}, next.Backups...)
 	case EditSSH:
 		for i, row := range next.Identities {

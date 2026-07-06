@@ -446,3 +446,85 @@ func TestOptionRowNowValueClipsWithEllipsis(t *testing.T) {
 		t.Errorf("an unclipped row must not carry the … cue; got %q", short)
 	}
 }
+
+// --------------------------------------------------------------------------
+// D8 — click-to-focus on TUI form fields (checkpoint-2 contract): the
+// ENTIRE rendered field row is the hit target; radio option rows select on
+// click; disabled algorithm rows are inert.
+// --------------------------------------------------------------------------
+
+func TestMouseWizardStep0FieldRowClickFocuses(t *testing.T) {
+	a := pressSeq(t, identitiesApp(), "n") // step 0, Alias prefix focused
+	a = clickCell(t, a, "Real hostname", 0, frameBodyTop)
+	if got := identModel(t, a).wizard.focus; got != sshFieldHostname {
+		t.Fatalf("focus = %d after clicking Real hostname, want hostname (%d)", got, sshFieldHostname)
+	}
+}
+
+func TestMouseWizardAlgorithmRowClickSelectsEnabledOnly(t *testing.T) {
+	a := pressSeq(t, identitiesApp(), "n")
+	a = clickCell(t, a, "ed25519", 0, frameBodyTop)
+	m := identModel(t, a)
+	if m.wizard.focus != 5 {
+		t.Fatalf("focus = %d after clicking ed25519, want the algorithm slot (5)", m.wizard.focus)
+	}
+	if algoDisabled(AlgorithmCatalog[m.wizard.algoIdx]) {
+		t.Fatal("clicking an enabled algorithm row must select it")
+	}
+	// A disabled (-sk) row is inert — clicking it must not move the
+	// selection onto it.
+	before := m.wizard.algoIdx
+	a = clickCell(t, a, "Disabled: needs libfido2", 0, frameBodyTop)
+	if got := identModel(t, a).wizard.algoIdx; got != before {
+		t.Error("clicking a disabled algorithm row must be inert")
+	}
+}
+
+func TestMouseWizardGitStepFieldAndStrategyRowClick(t *testing.T) {
+	a := wizardThroughTest(t, identitiesApp()) // step 2, name field focused
+	a = clickCell(t, a, "user.email", 0, frameBodyTop)
+	if got := identModel(t, a).wizard.gitFocus; got != gitFieldEmail {
+		t.Fatalf("gitFocus = %d after clicking user.email, want email (%d)", got, gitFieldEmail)
+	}
+	a = clickCell(t, a, "hasconfig — repos whose remote uses this alias", 0, frameBodyTop)
+	m := identModel(t, a)
+	if m.wizard.gitFocus != gitFieldStrategy {
+		t.Fatalf("gitFocus = %d after clicking the hasconfig row, want strategy (%d)", m.wizard.gitFocus, gitFieldStrategy)
+	}
+	if got := m.wizard.git.strategy(); got != "hasconfig" {
+		t.Errorf("strategy = %q after clicking the hasconfig row, want hasconfig", got)
+	}
+}
+
+func TestMouseEditSSHFieldRowClickFocusesNonLockedOnly(t *testing.T) {
+	a := pressSeq(t, NewApp(), "e")
+	a = clickCell(t, a, "Real hostname", 0, frameBodyTop)
+	if got := identModel(t, a).editFocus; got != sshFieldHostname {
+		t.Fatalf("editFocus = %d after clicking Real hostname, want hostname (%d)", got, sshFieldHostname)
+	}
+}
+
+func TestMouseConfigureGitFieldAndStrategyRowClick(t *testing.T) {
+	a := pressSeq(t, NewApp(), "g")
+	a = clickCell(t, a, "user.name", 0, frameBodyTop)
+	m := identModel(t, a)
+	if m.gitFocus != gitFieldName {
+		t.Fatalf("gitFocus = %d after clicking user.name, want name (%d)", m.gitFocus, gitFieldName)
+	}
+	a = clickCell(t, a, "both — either condition", 0, frameBodyTop)
+	m = identModel(t, a)
+	if m.gitFocus != gitFieldStrategy || m.gitPaneForm.strategy() != "both" {
+		t.Fatalf("gitFocus=%d strategy=%q after clicking the `both` row, want strategy/%q", m.gitFocus, m.gitPaneForm.strategy(), "both")
+	}
+}
+
+func TestMouseCloneNameFieldRowClickFocusesInput(t *testing.T) {
+	a := pressSeq(t, NewApp(), "c", "tab") // move focus onto the Clone button
+	if !identModel(t, a).cloneOnButton {
+		t.Fatal("setup: expected the Clone button to be focused")
+	}
+	a = clickCell(t, a, "New identity name", 0, frameBodyTop)
+	if identModel(t, a).cloneOnButton {
+		t.Error("clicking the name field row must move focus off the button")
+	}
+}

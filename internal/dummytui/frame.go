@@ -224,24 +224,29 @@ const (
 	headerTabSeparator = "·"
 )
 
-// headerTabText is the exact (unstyled) text of nav tab segment i.
+// headerTabText is the exact (unstyled) text of nav tab segment i — the
+// bracketed `[N] Label` format (D4, checkpoint-2 contract); the bracket
+// format previously lived on the wizard stepper (superseded by D5's revert).
 func headerTabText(i int) string {
-	return fmt.Sprintf(" %d %s ", i+1, tabLabels[i])
+	return fmt.Sprintf(" [%d] %s ", i+1, tabLabels[i])
 }
 
-// renderHeader renders the single header row: brand · numbered flat tabs
-// (active = Theme.ActiveNav: the shared accent as a BACKGROUND, the number
-// part of the label — checkpoint feedback U1: a flat monochrome reverse-
-// video invert did not clearly say "I am at 1/2/3/4") · health chip. When
-// capturesKeys is true (a pane/form/ceremony owns the keys) every INACTIVE
-// tab renders through Theme.DisabledNav (faint) while the active tab keeps
-// its accent background — the chrome dims, the current view stays legible
+// renderHeader renders the single header row: brand · numbered flat tabs ·
+// health chip. Four nav states (D4): the ACTIVE tab with no pane capturing
+// keys renders Theme.ActiveNav (the shared accent as a BACKGROUND — bold +
+// bright-white — checkpoint feedback U1); the ACTIVE tab while a pane
+// captures keys renders the NEW Theme.ActiveNavDimmed (bold + accent
+// FOREGROUND, no background fill — the current view stays legible without
+// competing with the dimmed chrome); an INACTIVE tab while a pane captures
+// keys renders Theme.DisabledNav (faint); otherwise plain
 // (02-STYLE-SPEC.md "dim-states").
 func renderHeader(width int, s DemoState, active tabID, capturesKeys bool) string {
 	segments := make([]string, 0, len(tabLabels))
 	for i := range tabLabels {
 		text := headerTabText(i)
 		switch {
+		case tabID(i) == active && capturesKeys:
+			segments = append(segments, DefaultTheme.ActiveNavDimmed.Render(text))
 		case tabID(i) == active:
 			segments = append(segments, DefaultTheme.ActiveNav.Render(text))
 		case capturesKeys:

@@ -9,6 +9,7 @@ package dummytui
 // on the frame chrome while a pane captures keys.
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -40,13 +41,30 @@ func TestDefaultThemeRolesRenderExpectedSGR(t *testing.T) {
 	}
 }
 
-func TestThemeFieldFocusedCarriesAccentRoundedBorder(t *testing.T) {
+// TestThemeFieldFocusedIsColorOnlyNoBorder pins D1 (checkpoint-2 contract):
+// FieldFocused is accent foreground + bold, NO border — the rounded-contour
+// treatment 02-14 shipped is deleted (every field is one constant-height
+// row; focus is signalled by color + the redundant `▸` marker, never a box).
+func TestThemeFieldFocusedIsColorOnlyNoBorder(t *testing.T) {
 	out := DefaultTheme.FieldFocused.Render("x")
-	if !strings.Contains(out, "\x1b[34m") {
-		t.Errorf("FieldFocused must carry the blue (ANSI 4) accent border foreground; got %q", out)
+	if !strings.Contains(out, "\x1b[1;34m") {
+		t.Errorf("FieldFocused must carry the blue (ANSI 4) accent + bold; got %q", out)
 	}
-	if !strings.Contains(out, "╭") || !strings.Contains(out, "╯") {
-		t.Errorf("FieldFocused must render a rounded contour (round-3/4 field-contour requirement); got %q", out)
+	if strings.Contains(out, "╭") || strings.Contains(out, "╯") {
+		t.Errorf("FieldFocused must NEVER render a border (D1 kills the box); got %q", out)
+	}
+}
+
+// TestThemeFieldFocusedHasNoRoundedBorderAnywhereInTheme is the acceptance
+// grep, expressed as a Go test: theme.go must contain zero RoundedBorder
+// references (the only prior user was FieldFocused).
+func TestThemeFieldFocusedHasNoRoundedBorderAnywhereInTheme(t *testing.T) {
+	src, err := os.ReadFile("theme.go")
+	if err != nil {
+		t.Fatalf("reading theme.go: %v", err)
+	}
+	if strings.Contains(string(src), "RoundedBorder") {
+		t.Error("theme.go must not reference RoundedBorder — D1 deleted the focused-field box")
 	}
 }
 
@@ -80,15 +98,26 @@ func TestThemePromotionIsBehaviorPreserving(t *testing.T) {
 	}
 }
 
-func TestRenderHeaderDimsInactiveTabsWhenCapturesKeysButKeepsActiveNavAccent(t *testing.T) {
+// TestRenderHeaderActiveTabDimsToForegroundOnlyWhenCapturesKeys pins D4
+// (checkpoint-2 contract): the ACTIVE tab renders the NEW ActiveNavDimmed
+// role while a pane captures keys — bold + accent FOREGROUND, NO
+// background fill — distinct from the full ActiveNav background treatment
+// (superseding the prior "active tab keeps its background" behavior).
+func TestRenderHeaderActiveTabDimsToForegroundOnlyWhenCapturesKeys(t *testing.T) {
 	s := Seed()
 	full := renderHeader(100, s, tabIdentities, false)
 	dimmed := renderHeader(100, s, tabIdentities, true)
 	if full == dimmed {
-		t.Fatal("header rendering must differ between capturesKeys states (DisabledNav dimming)")
+		t.Fatal("header rendering must differ between capturesKeys states")
 	}
-	if !strings.Contains(dimmed, "\x1b[1;97;44m") {
-		t.Error("the ACTIVE tab must keep its ActiveNav accent background even while the rest of the chrome dims (checkpoint feedback U1)")
+	if !strings.Contains(full, "\x1b[1;97;44m") {
+		t.Error("the active tab with NO pane capturing keys must render ActiveNav (bold bright-white on blue background)")
+	}
+	if strings.Contains(dimmed, "\x1b[1;97;44m") {
+		t.Error("the active tab must NOT keep the ActiveNav background while a pane captures keys — it renders ActiveNavDimmed instead (D4)")
+	}
+	if !strings.Contains(dimmed, DefaultTheme.ActiveNavDimmed.Render(headerTabText(int(tabIdentities)))) {
+		t.Error("the active tab while capturesKeys must render through Theme.ActiveNavDimmed")
 	}
 	if !strings.Contains(dimmed, "\x1b[2m") {
 		t.Error("inactive header tabs must render through DisabledNav (faint) while a pane captures keys")

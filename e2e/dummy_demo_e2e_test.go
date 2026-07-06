@@ -132,6 +132,13 @@ var (
 	dummyKeyEsc       = []byte{0x1b}
 	dummyKeyDown      = []byte{0x1b, 0x5b, 0x42} // ESC [ B
 	dummyKeyBackspace = []byte{0x7f}
+	// dummyKeyShiftLeft/dummyKeyShiftRight are the RAW xterm CSI-modifier
+	// byte sequences for Shift+←/→ (D7, checkpoint-2 contract) — proof that
+	// a terminal decode regression of the hoisted chord gate cannot pass
+	// CI silently (a synthetic tea.KeyMsg{Mod: ModShift} test alone would
+	// never catch a real byte-decode break).
+	dummyKeyShiftLeft  = []byte("\x1b[1;2D")
+	dummyKeyShiftRight = []byte("\x1b[1;2C")
 )
 
 // mustSee polls the decoded frame for substr and fails fatally on timeout.
@@ -176,8 +183,8 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 	}()
 
 	// ---- launch: header tabs + breadcrumb + sidebar + legend ----
-	mustSee(t, s, "1 Identities", "launch: header nav tabs")
-	mustSee(t, s, "4 Doctor", "launch: header nav tabs")
+	mustSee(t, s, "[1] Identities", "launch: header nav tabs (D4 bracketed format)")
+	mustSee(t, s, "[4] Doctor", "launch: header nav tabs (D4 bracketed format)")
 	mustSee(t, s, "personal", "launch: seeded sidebar row")
 	mustSee(t, s, "S ssh · G git", "launch: sidebar legend line")
 	mustSee(t, s, "8 ids", "launch: live health chip")
@@ -206,7 +213,7 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 	// ---- create wizard: full walk ----
 	s.sendKey([]byte("1"), keystrokeDelay)
 	s.sendKey([]byte("n"), keystrokeDelay)
-	mustSee(t, s, "[1] SSH", "wizard: state 1 opens (first-class stepper, 02-STYLE-SPEC.md)")
+	mustSee(t, s, "Step 1/4", "wizard: state 1 opens (reverted Step n/4 stepper, D5 checkpoint-2 contract)")
 
 	// Replace the default "acme" prefix with a fresh one, proving raw
 	// keystrokes reach the focused input (the D-13 class of regression).
@@ -219,7 +226,7 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 	mustSee(t, s, "e2e.github.com", "wizard: auto-joined alias from the typed prefix")
 
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
-	mustSee(t, s, "[2] Test", "wizard: state 2 (test)")
+	mustSee(t, s, "Step 2/4", "wizard: state 2 (test)")
 
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // run stage 1
 	mustSee(t, s, "Hi e2e!", "wizard: stage-1 success banner")
@@ -228,7 +235,7 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 	mustSee(t, s, "identityfile", "wizard: stage-2 ssh -G proof")
 
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
-	mustSee(t, s, "[3] Git", "wizard: state 3 (Git identity)")
+	mustSee(t, s, "Step 3/4", "wizard: state 3 (Git identity)")
 
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // [ Continue ]
 	mustSee(t, s, `Create identity "e2e"`, "wizard: ceremony heading")
@@ -315,12 +322,13 @@ func TestDummyDemo_MouseAndGitApply(t *testing.T) {
 	s := startPTYAt(t, cmd, dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
-	// ---- (a) real mouse click on the `4 Doctor` header tab ----
+	// ---- (a) real mouse click on the `[4] Doctor` header tab (D4,
+	// checkpoint-2 contract: the bracketed `[N] Label` nav format) ----
 	var col, row int // 1-based SGR coordinates of the tab label's `4`
 	last, ok := s.waitFor(8*time.Second, func(text string) bool {
 		for y, line := range strings.Split(text, "\n") {
-			if idx := strings.Index(line, "4 Doctor"); idx >= 0 {
-				col = len([]rune(line[:idx])) + 1
+			if idx := strings.Index(line, "[4] Doctor"); idx >= 0 {
+				col = len([]rune(line[:idx])) + 2 // +1 for the `[`, +1 for 1-based
 				row = y + 1
 				return true
 			}
@@ -328,7 +336,7 @@ func TestDummyDemo_MouseAndGitApply(t *testing.T) {
 		return false
 	})
 	if !ok {
-		t.Fatalf("mouse: `4 Doctor` tab label never rendered. Last frame:\n%s", last)
+		t.Fatalf("mouse: `[4] Doctor` tab label never rendered. Last frame:\n%s", last)
 	}
 	s.sendKey([]byte(fmt.Sprintf("\x1b[<0;%d;%dM", col, row)), keystrokeDelay) // SGR press
 	s.sendKey([]byte(fmt.Sprintf("\x1b[<0;%d;%dm", col, row)), keystrokeDelay) // SGR release
@@ -345,4 +353,86 @@ func TestDummyDemo_MouseAndGitApply(t *testing.T) {
 	mustSee(t, s, "Wrote →", "git apply: receipt")
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // done
 	mustSee(t, s, "Global git baseline applied", "git apply: applied status note")
+}
+
+// TestDummyDemo_ShiftChordRawBytes drives the REAL binary over a PTY and
+// injects the RAW xterm CSI-modifier byte sequences for Shift+←/→
+// (`\x1b[1;2D`/`\x1b[1;2C`) at wizard steps 0, 1, and 3 — proof the hoisted
+// D7 chord gate (checkpoint-2 contract) survives real terminal byte
+// decoding, not just a synthetic tea.KeyMsg{Mod: ModShift} unit test. A
+// terminal-decode regression (e.g. a CSI parser change that stops
+// recognizing modifier arrows) would pass every Go unit test in this
+// package silently but would fail HERE.
+func TestDummyDemo_ShiftChordRawBytes(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildDummyBinary(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, bin) //nolint:gosec // bin from BuildDummyBinary; no user input
+	cmd.Env = append(os.Environ(), "HOME="+home, "TERM=xterm-256color")
+
+	s := startPTYAt(t, cmd, dummyTermWidth, dummyTermHeight)
+	closed := false
+	defer func() {
+		if !closed {
+			s.close(t)
+		}
+	}()
+
+	mustSee(t, s, "[1] Identities", "launch: header nav tabs")
+
+	// ---- step 0: Shift+→ advances (the seeded defaults pass step0Valid) ----
+	s.sendKey([]byte("n"), keystrokeDelay)
+	mustSee(t, s, "Step 1/4", "wizard: state 1 opens (SSH details)")
+	s.sendKey(dummyKeyShiftRight, keystrokeDelay)
+	mustSee(t, s, "Step 2/4", "raw-byte shift+right: step 0 → 1 (SSH details valid by default)")
+
+	// ---- step 1 (test): Shift+← always goes back (no field/select
+	// contention at this step) ----
+	s.sendKey(dummyKeyShiftLeft, keystrokeDelay)
+	mustSee(t, s, "Step 1/4", "raw-byte shift+left: step 1 → 0")
+
+	// Re-advance and walk both test stages to reach step 2 (Git identity).
+	s.sendKey(dummyKeyShiftRight, keystrokeDelay)
+	mustSee(t, s, "Step 2/4", "raw-byte shift+right: step 0 → 1 again")
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // run stage 1
+	mustSee(t, s, "Hi acme!", "wizard: stage-1 success banner")
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // run stage 2
+	mustSee(t, s, "identityfile", "wizard: stage-2 ssh -G proof")
+	s.sendKey(dummyKeyShiftRight, keystrokeDelay)
+	mustSee(t, s, "Step 3/4", "raw-byte shift+right: step 1 → 2 once the test has passed")
+
+	// ---- step 2 (Git identity) → step 3 (review) → Shift+← back to Git,
+	// proving the PREVIOUSLY-DEAD review ceremony now honors the chord ----
+	s.sendKey(dummyKeyShiftRight, keystrokeDelay)
+	mustSee(t, s, `Create identity "acme"`, "raw-byte shift+right: step 2 → 3 (default Git form is valid)")
+	s.sendKey(dummyKeyShiftLeft, keystrokeDelay)
+	mustSee(t, s, "Step 3/4", "raw-byte shift+left FROM the review ceremony → step 2 (D7 fix for the previously-dead review step)")
+
+	// ---- quit gracefully (q + Enter really exits, unlike relying on
+	// close()'s best-effort ctrl+c) so cleanup never blocks on cmd.Wait()
+	// for a process that ignores the interrupt byte. THREE SEPARATE Esc
+	// keypresses unwind the wizard (Git step → test step → SSH step →
+	// detail) back to the top-level pane where `q` reaches the global
+	// quit prompt — the wizard itself swallows every key, including `q`. ----
+	s.sendKey(dummyKeyEsc, keystrokeDelay)
+	s.sendKey(dummyKeyEsc, keystrokeDelay)
+	s.sendKey(dummyKeyEsc, keystrokeDelay)
+	mustSee(t, s, "personal", "quit: three Escs unwind the wizard back to the identity detail")
+	waitCh := make(chan error, 1)
+	go func() { waitCh <- s.cmd.Wait() }()
+	s.sendKey([]byte("q"), keystrokeDelay)
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	select {
+	case werr := <-waitCh:
+		if werr != nil {
+			t.Fatalf("quit: process exited with error: %v", werr)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("quit: process did not exit within 10s of q + Enter")
+	}
+	s.close(t) // idempotent for an already-exited process
+	closed = true
 }

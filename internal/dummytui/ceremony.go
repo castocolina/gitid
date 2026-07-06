@@ -212,10 +212,14 @@ func (c ceremonyModel) view(width int) string {
 	confirm := " " + c.confirmText() + " "
 	switch {
 	case !c.confirmEnabled():
-		confirm = styleFaint.Render(confirm + "— disabled until the confirm word matches")
+		// D7 (checkpoint-2 contract) forbids the generic `— disabled`
+		// suffix repo-wide (the extended copy-freeze grep) — this
+		// destructive-confirm suffix keeps its pinned substring ("disabled
+		// until the confirm word matches") but drops the leading em dash.
+		confirm = styleFaint.Render(confirm + "(disabled until the confirm word matches)")
 		if c.focus == ceremonyFocusConfirm {
 			confirm = lipgloss.NewStyle().Faint(true).Reverse(true).
-				Render(" " + c.confirmText() + " — disabled until the confirm word matches ")
+				Render(" " + c.confirmText() + " (disabled until the confirm word matches) ")
 		}
 	case c.focus == ceremonyFocusConfirm:
 		confirm = styleSelected.Render(confirm)

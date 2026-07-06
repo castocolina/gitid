@@ -465,6 +465,32 @@ var GlobalSSHFixPreviewLines = []string{
 // Global Git options (recipeFixtures.ts globalGit* exports)
 // ---------------------------------------------------------------------------
 
+// D9 (checkpoint-2 contract) frozen copy for the promoted, editable
+// global-fallback user.email row — byte-exact; shared by globalgit.go's
+// detail render, apply checkbox, and the dedicated apply ceremony. This is
+// a DOCUMENTED, CONSCIOUS divergence from recipes/ (which leave user.email
+// unset by default) — recorded in FIELDS.md + 02-STYLE-SPEC.md (Task 3).
+const (
+	// GlobalGitEmailFallbackKey is the row label AND the frozen copy the
+	// copy-freeze grep requires present in both demos.
+	GlobalGitEmailFallbackKey = "user.email (global fallback)"
+	// GlobalGitEmailFallbackHelper is the always-visible helper line —
+	// byte-exact, ONE line.
+	GlobalGitEmailFallbackHelper = "Fallback author for repos no identity matches. Identities always override this through their includeIf fragment — setting it never changes an identity's author."
+	// GlobalGitEmailFallbackAdvisory is the always-visible advisory line —
+	// byte-exact, ONE line.
+	GlobalGitEmailFallbackAdvisory = "Recipes leave this unset by default. Set it only if you want a catch-all author for unmatched repos."
+	// GlobalGitEmailCeremonyHeading is the dedicated apply ceremony's
+	// heading (distinct from the baseline managed-block ceremony).
+	GlobalGitEmailCeremonyHeading = "Set global fallback user.email"
+	// GlobalGitEmailDiffAnnotation is spliced onto the ceremony's diff
+	// preview line, pinning the includeIf-precedence invariant.
+	GlobalGitEmailDiffAnnotation = "(global fallback — identities override via includeIf)"
+	// GlobalGitEmailResultMessage is the ceremony's receipt message —
+	// pins the SAME includeIf-precedence invariant.
+	GlobalGitEmailResultMessage = "Global fallback user.email set — used only where no identity matches; identity fragments still win."
+)
+
 // GlobalGitOption mirrors recipeFixtures.ts's GlobalGitOption shape — one
 // entry per GGIT-01 baseline/recipe-default option.
 type GlobalGitOption struct {
@@ -484,7 +510,17 @@ var GlobalGitOptions = []GlobalGitOption{
 	{Key: "init.defaultBranch", Current: "not set (git's built-in default: master)", Recommended: "main", NeedsAction: true, Highlight: true, OneLiner: "Distros still default new repos to \"master\"; main matches the modern GitHub/GitLab default without renaming existing repos."},
 	{Key: "core.ignorecase", Current: "not set (OS-dependent: true on macOS/Windows, false on Linux)", Recommended: "false", NeedsAction: true, OneLiner: "Keeps file-name case always significant, so a case-only rename is never silently ignored on a case-insensitive filesystem."},
 	{Key: "core.autocrlf / core.eol", Current: "not set (line-ending handling varies by OS)", Recommended: "input / lf", NeedsAction: true, OneLiner: "Normalizes line endings to LF in the repository and on checkout, avoiding CRLF diff noise across contributors on different platforms."},
-	{Key: "user.email (global)", Current: "whatever `git config --global user.email` already holds, if anything", Recommended: "left alone -- not written here", NeedsAction: false, OneLiner: "gitid never writes a global [user] section -- each identity's commits come from its own includeIf fragment (recipes/gitconfig.recipe); shown here for awareness only."},
+	// D9 (checkpoint-2 contract): promoted from awareness-only to a
+	// first-class EDITABLE global-fallback field + apply checkbox —
+	// unchecked/empty by default (recipes leave it unset; setting it is
+	// explicit opt-in). NeedsAction:true so the checkbox/click plumbing
+	// (shared with every other row) applies unmodified; newGlobalGitModel
+	// special-cases this ONE key to stay un-chosen by default, and
+	// gitApplyChosen/the "pending" status metric both exclude it from the
+	// generic baseline count — it is a DOCUMENTED divergence from recipes/,
+	// applied through its OWN dedicated ceremony (globalgit.go), never
+	// folded into the baseline managed block.
+	{Key: GlobalGitEmailFallbackKey, Current: "unset (recipes default)", Recommended: "left unset unless explicitly opted in", NeedsAction: true, OneLiner: GlobalGitEmailFallbackHelper},
 	{Key: "push.autoSetupRemote", Current: "not set (git default: false)", Recommended: "true", NeedsAction: true, OneLiner: "Lets `git push` on a new branch set its upstream automatically, instead of requiring --set-upstream every time."},
 	{Key: "pull.rebase", Current: "not set (git default: false -- merge)", Recommended: "true", NeedsAction: true, OneLiner: "Replays local commits on top of the fetched branch instead of creating a merge commit on every pull."},
 	{Key: "fetch.prune", Current: "not set (git default: false)", Recommended: "true", NeedsAction: true, OneLiner: "Removes local references to remote branches that were deleted upstream, every fetch."},

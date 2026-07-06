@@ -44,6 +44,13 @@ type Theme struct {
 	// blue background; still ANSI-16, still paired with the tab's number +
 	// word (never color alone).
 	ActiveNav lipgloss.Style
+	// ActiveNavDimmed is the ACTIVE header nav tab while a pane/form/
+	// ceremony captures keys (D4, checkpoint-2 contract): bold + the
+	// shared accent as a FOREGROUND, NO background fill — distinct from
+	// both the full ActiveNav background treatment (no pane capturing
+	// keys) and DisabledNav (an INACTIVE tab while capturing), so the
+	// current view stays legible without competing with the dimmed chrome.
+	ActiveNavDimmed lipgloss.Style
 
 	// Accent is the ONE shared blue (ANSI 4) accent color — the
 	// focused-field contour's border foreground and the active-area chrome
@@ -61,9 +68,13 @@ var DefaultTheme = Theme{
 	Info:  lipgloss.NewStyle().Foreground(lipgloss.Color("6")),
 	Label: lipgloss.NewStyle().Bold(true),
 	Field: lipgloss.NewStyle(),
+	// FieldFocused (D1, checkpoint-2 contract): accent foreground + bold,
+	// NO border — every field is ONE constant-height row in every state;
+	// focus is signalled by color + the redundant `▸` marker, never a
+	// reflowing box (renderFocusedFieldBox is deleted).
 	FieldFocused: lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("4")),
+		Foreground(lipgloss.Color("4")).
+		Bold(true),
 	FieldBlurred: lipgloss.NewStyle().Faint(true),
 	Hint:         lipgloss.NewStyle().Faint(true),
 	Warning:      lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
@@ -76,6 +87,9 @@ var DefaultTheme = Theme{
 		Bold(true).
 		Foreground(lipgloss.Color("15")).
 		Background(lipgloss.Color("4")),
+	ActiveNavDimmed: lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("4")),
 	Accent:      lipgloss.Color("4"),
 	FieldBorder: lipgloss.Color("4"),
 }

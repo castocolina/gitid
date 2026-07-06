@@ -72,7 +72,7 @@ func renderSeededFrame(crumbs []string, actions []FooterAction) string {
 func TestRenderFrameShowsNumberedTabsAndReservedFooter(t *testing.T) {
 	plain := stripANSI(renderSeededFrame(nil, nil))
 
-	for _, want := range []string{"1 Identities", "2 Global SSH", "3 Global Git", "4 Doctor"} {
+	for _, want := range []string{"[1] Identities", "[2] Global SSH", "[3] Global Git", "[4] Doctor"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("frame missing numbered tab %q", want)
 		}
@@ -122,10 +122,10 @@ func TestRenderFrameActiveTabAccentBackground(t *testing.T) {
 	// SGR 1;97;44), replacing the old flat monochrome reverse-video invert
 	// that did not clearly say "I am at 1/2/3/4".
 	raw := RenderFrame(100, 30, Seed(), tabGlobalGit, nil, "Ready.", "info", nil, false, "")
-	if !strings.Contains(raw, "\x1b[1;97;44m 3 Global Git ") {
+	if !strings.Contains(raw, "\x1b[1;97;44m [3] Global Git ") {
 		t.Error("active tab must render through Theme.ActiveNav (bold + bright-white on the blue accent background, SGR 1;97;44)")
 	}
-	if strings.Contains(raw, "\x1b[1;97;44m 1 Identities ") {
+	if strings.Contains(raw, "\x1b[1;97;44m [1] Identities ") {
 		t.Error("inactive tabs must not carry the ActiveNav accent background")
 	}
 	if strings.Contains(raw, "\x1b[7m") {
