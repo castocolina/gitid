@@ -69,6 +69,13 @@ export function Frame({
         : entry,
   );
 
+  // D4 (checkpoint-2 contract): advertise the top-level plain-arrow view
+  // switch on non-capturing states, EXCEPT Global SSH — its own ←/→
+  // already means "Options / Storage" there (that footer hint stays;
+  // top-level arrows never reach the tab switcher from that screen).
+  const contextualActions =
+    !capturesKeys && tab !== 'global-ssh' ? [...actions, { key: '←→', label: 'switch view' }] : actions;
+
   return (
     <Box
       sx={{
@@ -100,6 +107,13 @@ export function Frame({
         <Stack direction="row" spacing={1} sx={{ flex: 1 }} component="nav" aria-label="primary views">
           {TAB_ORDER.map((id, i) => {
             const active = id === tab;
+            // D4 (checkpoint-2 contract) four nav states: ACTIVE with no
+            // pane capturing keys → activeNav (accent BACKGROUND); ACTIVE
+            // while a pane captures keys → the NEW activeNavDimmed (accent
+            // text/border, TRANSPARENT background — distinct from the full
+            // background treatment); INACTIVE while capturing → disabledNav
+            // (dim); otherwise plain.
+            const activeDimmed = active && capturesKeys;
             return (
               <Box
                 key={id}
@@ -109,24 +123,41 @@ export function Frame({
                 sx={{
                   font: 'inherit',
                   border: 1,
-                  // active-nav role (checkpoint feedback U1): the ACTIVE tab
-                  // carries the shared accent as a BACKGROUND — clearly
-                  // saying "I am at 1/2/3/4" — mirroring the TUI's
-                  // Theme.ActiveNav (bold on the ANSI-4 blue background).
-                  borderColor: active ? roles.activeNav.borderColor : 'divider',
+                  borderColor: active
+                    ? activeDimmed
+                      ? roles.activeNavDimmed.borderColor
+                      : roles.activeNav.borderColor
+                    : 'divider',
                   cursor: 'pointer',
                   px: 1.5,
                   py: 0.25,
-                  bgcolor: active ? roles.activeNav.background : 'transparent',
-                  color: active ? roles.activeNav.color : 'text.secondary',
-                  fontWeight: active ? roles.activeNav.fontWeight : 400,
+                  bgcolor: active
+                    ? activeDimmed
+                      ? roles.activeNavDimmed.background
+                      : roles.activeNav.background
+                    : 'transparent',
+                  color: active
+                    ? activeDimmed
+                      ? roles.activeNavDimmed.color
+                      : roles.activeNav.color
+                    : 'text.secondary',
+                  fontWeight: active
+                    ? activeDimmed
+                      ? roles.activeNavDimmed.fontWeight
+                      : roles.activeNav.fontWeight
+                    : 400,
                   // disabled-nav role (02-STYLE-SPEC.md dim-states): dim
                   // every INACTIVE tab while a pane captures keys; the
-                  // active tab keeps its accent background throughout.
+                  // active tab dims to activeNavDimmed instead (never
+                  // disabledNav — it is still the current view).
                   opacity: !active && capturesKeys ? roles.disabledNav.opacity : 1,
                 }}
               >
-                {i + 1} {TAB_LABEL[id]}
+                {/* D4: the bracketed `[N] Label` nav format — mirrors the
+                    TUI's headerTabText; the wizard stepper's OWN bracketed
+                    short-segment format is superseded and moves HERE
+                    (D5 revert). */}
+                [{i + 1}] {TAB_LABEL[id]}
               </Box>
             );
           })}
@@ -182,7 +213,7 @@ export function Frame({
       {/* footer: contextual actions + reserved keys */}
       <Box component="footer" sx={{ px: 2, py: 0.75, borderTop: 1, borderColor: 'divider', bgcolor: 'background.paper' }}>
         <Stack direction="row" spacing={2} flexWrap="wrap">
-          {[...actions, ...reserved].map((entry) => (
+          {[...contextualActions, ...reserved].map((entry) => (
             <Typography
               key={`${entry.key}-${entry.label}`}
               component="span"

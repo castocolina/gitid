@@ -16,11 +16,18 @@ import {
   ListItemButton,
   Paper,
   Stack,
+  TextField,
   Typography,
 } from '@mui/material';
 import {
   globalGitAdvisoryNote,
   globalGitDetailExplanation,
+  globalGitEmailCeremonyHeading,
+  globalGitEmailDiffAnnotation,
+  globalGitEmailFallbackAdvisory,
+  globalGitEmailFallbackHelper,
+  globalGitEmailFallbackKey,
+  globalGitEmailResultMessage,
   globalGitFullManagedBlockText,
   globalGitOptions,
   globalGitResultMessage,
@@ -33,11 +40,14 @@ import { newBackupPath } from '../store';
 
 export function GlobalGit() {
   const { state, dispatch, setTab, notify } = useDemo();
-  const [mode, setMode] = useState<'browse' | 'ceremony'>('browse');
+  const [mode, setMode] = useState<'browse' | 'ceremony' | 'email-ceremony'>('browse');
   const [detailKey, setDetailKey] = useState('init.defaultBranch');
+  // D9: the global-fallback row defaults UNCHECKED (recipes leave it
+  // unset) — every OTHER needs-action row still defaults chosen.
   const [chosen, setChosen] = useState<string[]>(
-    globalGitOptions.filter((o) => o.needsAction).map((o) => o.key),
+    globalGitOptions.filter((o) => o.needsAction && o.key !== globalGitEmailFallbackKey).map((o) => o.key),
   );
+  const [emailValue, setEmailValue] = useState('');
 
   const options = useMemo(
     () =>
@@ -48,10 +58,14 @@ export function GlobalGit() {
       ),
     [state.gitBaselineApplied],
   );
-  const pending = options.filter((o) => o.needsAction);
+  // D9: the global-fallback row is EXCLUDED from the generic
+  // "pending"/apply-count — it is a separate, opt-in concern with its own
+  // detail render and ceremony, never folded into the baseline.
+  const pending = options.filter((o) => o.needsAction && o.key !== globalGitEmailFallbackKey);
   const detail = options.find((o) => o.key === detailKey) ?? options[0];
   const detailIdx = options.findIndex((o) => o.key === detail?.key);
   const applyChosen = chosen.filter((k) => pending.some((o) => o.key === k));
+  const emailChosen = chosen.includes(globalGitEmailFallbackKey);
   const gitFindings = state.findings.filter((f) => f.section === 'Git');
 
   useLocalKeys(
@@ -70,13 +84,15 @@ export function GlobalGit() {
   );
 
   const actions: FrameAction[] =
-    mode === 'ceremony'
+    mode !== 'browse'
       ? [{ key: 'Esc', label: 'cancel' }]
       : [
           { key: '↑↓', label: 'select option' },
           ...(applyChosen.length > 0
             ? [{ key: 'a', label: `apply ${applyChosen.length} selected`, onActivate: () => setMode('ceremony') }]
-            : []),
+            : detail?.key === globalGitEmailFallbackKey && emailChosen
+              ? [{ key: 'a', label: 'set global fallback email', onActivate: () => setMode('email-ceremony') }]
+              : []),
         ];
 
   return (
@@ -89,9 +105,9 @@ export function GlobalGit() {
       }
       statusTone={pending.length > 0 ? 'warning' : 'info'}
       actions={actions}
-      // review-findings F4: dim the header nav while the apply ceremony
-      // owns the keys (mirrors the TUI's capturesKeys on all four tabs).
-      capturesKeys={mode === 'ceremony'}
+      // review-findings F4: dim the header nav while an apply ceremony owns
+      // the keys (mirrors the TUI's capturesKeys on all four tabs).
+      capturesKeys={mode !== 'browse'}
     >
       {gitFindings.length > 0 && mode === 'browse' && (
         <Alert
@@ -160,19 +176,47 @@ export function GlobalGit() {
             </List>
           </Paper>
           <Paper variant="outlined" sx={{ flex: 1, p: 1.5 }}>
-            <Typography variant="subtitle2" sx={{ color: 'text.secondary' }}>
-              {detail?.key}
-            </Typography>
-            <Typography sx={{ whiteSpace: 'pre-wrap', mt: 0.5, fontSize: 14 }}>
-              {detail?.key === 'init.defaultBranch' ? globalGitDetailExplanation : detail?.oneLiner}
-            </Typography>
-            <Alert severity="info" variant="outlined" sx={{ mt: 1.5, borderRadius: 0 }}>
-              {globalGitAdvisoryNote}
-            </Alert>
-            {applyChosen.length > 0 && (
-              <Button variant="contained" sx={{ mt: 1.5 }} onClick={() => setMode('ceremony')}>
-                Apply {applyChosen.length} selected…
-              </Button>
+            {detail?.key === globalGitEmailFallbackKey ? (
+              // D9 (checkpoint-2 contract): the promoted, editable
+              // global-fallback row — an editable field + apply checkbox
+              // (already wired via the master-list row above), its own
+              // always-visible helper/advisory lines (byte-exact, verbatim).
+              <>
+                <TextField
+                  label={globalGitEmailFallbackKey}
+                  size="small"
+                  fullWidth
+                  value={emailValue}
+                  onChange={(e) => setEmailValue(e.target.value)}
+                  sx={{ mb: 1 }}
+                />
+                <Typography sx={{ fontSize: 13, color: roles.hint.color }}>{globalGitEmailFallbackHelper}</Typography>
+                <Typography sx={{ fontSize: 13, color: roles.hint.color, mt: 0.5 }}>
+                  {globalGitEmailFallbackAdvisory}
+                </Typography>
+                {emailChosen && (
+                  <Button variant="contained" sx={{ mt: 1.5 }} onClick={() => setMode('email-ceremony')}>
+                    Set global fallback email…
+                  </Button>
+                )}
+              </>
+            ) : (
+              <>
+                <Typography variant="subtitle2" sx={{ color: 'text.secondary' }}>
+                  {detail?.key}
+                </Typography>
+                <Typography sx={{ whiteSpace: 'pre-wrap', mt: 0.5, fontSize: 14 }}>
+                  {detail?.key === 'init.defaultBranch' ? globalGitDetailExplanation : detail?.oneLiner}
+                </Typography>
+                <Alert severity="info" variant="outlined" sx={{ mt: 1.5, borderRadius: 0 }}>
+                  {globalGitAdvisoryNote}
+                </Alert>
+                {applyChosen.length > 0 && (
+                  <Button variant="contained" sx={{ mt: 1.5 }} onClick={() => setMode('ceremony')}>
+                    Apply {applyChosen.length} selected…
+                  </Button>
+                )}
+              </>
             )}
           </Paper>
         </Stack>
@@ -190,6 +234,33 @@ export function GlobalGit() {
           onDone={() => {
             dispatch({ type: 'apply-git-baseline', backup: newBackupPath('~/.gitconfig') });
             notify('Global git baseline applied — user.email untouched.');
+            setMode('browse');
+          }}
+        />
+      )}
+
+      {mode === 'email-ceremony' && (
+        // D9: the global-fallback user.email's OWN dedicated ceremony —
+        // separate heading/target/annotated-diff/result from the baseline
+        // managed-block ceremony (gitid never folds a fallback author into
+        // the baseline block).
+        <MutationCeremony
+          heading={globalGitEmailCeremonyHeading}
+          targets={['~/.gitconfig']}
+          preview={
+            <PreviewBlock text={`+ [user]\n+     email = ${emailValue}  ${globalGitEmailDiffAnnotation}`} />
+          }
+          backups={[newBackupPath('~/.gitconfig')]}
+          resultMessage={globalGitEmailResultMessage}
+          confirmLabel="Apply"
+          onCancel={() => setMode('browse')}
+          onDone={() => {
+            dispatch({
+              type: 'apply-git-global-email',
+              email: emailValue,
+              backup: newBackupPath('~/.gitconfig'),
+            });
+            notify('Global fallback user.email set — identities override it via includeIf.');
             setMode('browse');
           }}
         />

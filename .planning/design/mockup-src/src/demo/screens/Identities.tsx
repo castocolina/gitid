@@ -23,7 +23,6 @@ import {
   FormControlLabel,
   List,
   ListItemButton,
-  MenuItem,
   Paper,
   Radio,
   RadioGroup,
@@ -104,15 +103,33 @@ function providerDefaults(provider: string): { hostname: string; port: string } 
   return { hostname: provider || 'github.com', port: '22' };
 }
 
-// focused-field role (02-STYLE-SPEC.md role table): the accent-colored
-// contour every text field carries while focused, mirroring the TUI's
-// FieldFocused rounded accent border — one shared sx fragment, merged into
-// every SSH/Git form field below. References roles.focusedField (review-
-// findings F8) instead of reaching into semanticColors directly.
-const focusedFieldSx = {
+// D1 (checkpoint-2 contract): the MUI outlined TextField never reflows on
+// focus (no box/border-radius change) — the rest state uses roles.blurredField
+// (dim outline, opacity 0.85) and focus tints VALUE + LABEL with
+// roles.focusedField.color plus a 2px accent outline. One shared sx
+// fragment, merged into every SSH/Git form field below; no new layout, no
+// height change (superseding the field-contour box 02-14 shipped — that
+// component never existed on the web, so this is purely a rename +
+// blurred-state addition, not a behavior change).
+const fieldSx = {
+  '& .MuiOutlinedInput-root': {
+    opacity: roles.blurredField.opacity,
+  },
+  '& .MuiOutlinedInput-root .MuiOutlinedInput-notchedOutline': {
+    borderColor: '#2a2d33',
+  },
+  '& .MuiOutlinedInput-root.Mui-focused': {
+    opacity: 1,
+  },
   '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
     borderColor: roles.focusedField.color,
     borderWidth: 2,
+  },
+  '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-input': {
+    color: roles.focusedField.color,
+  },
+  '& .MuiInputLabel-root.Mui-focused': {
+    color: roles.focusedField.color,
   },
 } as const;
 
@@ -184,7 +201,7 @@ function SshFormFields({
             {...params}
             label="Provider"
             size="small"
-            sx={focusedFieldSx}
+            sx={fieldSx}
             helperText={
               lockIdentity
                 ? 'Locked — the provider comes from the Host alias'
@@ -196,7 +213,7 @@ function SshFormFields({
       <TextField
         label="Alias prefix"
         size="small"
-        sx={focusedFieldSx}
+        sx={fieldSx}
         value={values.prefix}
         disabled={lockIdentity}
         autoFocus={!lockIdentity}
@@ -211,7 +228,7 @@ function SshFormFields({
       <TextField
         label="SSH Host (alias)"
         size="small"
-        sx={focusedFieldSx}
+        sx={fieldSx}
         value={values.sshHost}
         onChange={(e) => onChange({ ...values, sshHost: e.target.value })}
         helperText={hostHelper ?? ''}
@@ -219,7 +236,7 @@ function SshFormFields({
       <TextField
         label="Real hostname"
         size="small"
-        sx={focusedFieldSx}
+        sx={fieldSx}
         value={values.hostname}
         onChange={(e) => onChange({ ...values, hostname: e.target.value })}
         helperText="The true SSH endpoint"
@@ -227,7 +244,7 @@ function SshFormFields({
       <TextField
         label="Port"
         size="small"
-        sx={{ maxWidth: 160, ...focusedFieldSx }}
+        sx={{ maxWidth: 160, ...fieldSx }}
         value={values.port}
         error={!/^\d+$/.test(values.port)}
         onChange={(e) => onChange({ ...values, port: e.target.value })}
@@ -238,47 +255,58 @@ function SshFormFields({
   );
 }
 
-// WIZARD_STEPS are the LONG step labels — breadcrumb/help source only
-// (02-STYLE-SPEC.md §5), surfaced as each stepper segment's hover title
-// below. Declared before StepDots so both the frozen short/long map and its
-// consumer read top-to-bottom.
+// WIZARD_STEPS are the LONG step labels — the breadcrumb/help source AND
+// (D5, checkpoint-2 contract) the StepDots render source. The bracketed
+// short-segment stepper 02-14 shipped (bracket-number + short word per
+// step, joined by middots) is SUPERSEDED: D5 reverts to `Step n/4 · <label>
+// ● ○ ○ ○` using these long labels — the bracket format moves onto the
+// MAIN NAV instead (D4).
 const WIZARD_STEPS = ['SSH details', 'Test connection', 'Git identity', 'Review & write'];
 
-// review-findings F3: the previous "Step n/4 · <label> ● ○ ○ ○" line read
-// dimmer (text.secondary) than body text — the opposite of a navigation
-// affordance. Rebuilt to mirror the TUI's renderStepper (identities.go
-// stepShortLabels/renderStepper): `[1] SSH · [2] Test · [3] Git · [4]
-// Review`, with the active segment bold + roles.activeArea accent (NOT
-// dimmer than body text) and completed segments ✓-prefixed. One line.
-const STEP_SHORT_LABELS = ['SSH', 'Test', 'Git', 'Review'];
+// wizardChordHint (D5/D7, checkpoint-2 contract) is the ALWAYS-visible,
+// step-conditional line directly under StepDots advertising the hoisted
+// Shift+←/→ chord gate — frozen copy, verbatim, byte-identical to the TUI's
+// wizardChordHint (identities.go).
+function wizardChordHint(step: number): string {
+  if (step === 0) return 'Shift+→ next section · Shift+← exits the wizard';
+  if (step === WIZARD_STEPS.length - 1) return 'Shift+← back to Git · Enter writes';
+  return 'Shift+←/→ jump sections · forward needs a valid step';
+}
 
+// D5 (checkpoint-2 contract): StepDots REVERTS to `Step n/4 · <label>
+// ● ○ ○ ○` using the LONG WIZARD_STEPS labels — the bracketed short-segment
+// format 02-14 shipped is superseded (it moves onto the MAIN NAV per D4).
+// The counter is bold, the active label carries roles.activeArea accent at
+// weight 700 (never dimmer than body text — review-findings F3's fix
+// still holds), and dots render `●` accent for indices ≤ step / `○` dim.
 function StepDots({ step }: { step: number }) {
   return (
-    <Typography component="div" sx={{ fontSize: 13, mb: 1 }}>
-      {STEP_SHORT_LABELS.map((label, i) => (
-        <Box
-          key={label}
-          component="span"
-          // WIZARD_STEPS (the long labels) stays the breadcrumb/help source
-          // (02-STYLE-SPEC.md §5 short↔long map) — surfaced here as each
-          // segment's accessible/hover title, never re-derived into the
-          // short label itself.
-          title={WIZARD_STEPS[i]}
-          sx={{
-            fontWeight: i === step ? 700 : 400,
-            color: i === step ? roles.activeArea.color : i < step ? roles.healthy.color : 'text.secondary',
-          }}
-        >
-          {i < step ? '✓ ' : ''}
-          {`[${i + 1}] ${label}`}
-          {i < STEP_SHORT_LABELS.length - 1 && (
-            <Box component="span" sx={{ color: 'text.secondary', mx: 0.75 }}>
-              ·
-            </Box>
-          )}
-        </Box>
-      ))}
-    </Typography>
+    <>
+      <Typography component="div" sx={{ fontSize: 13 }}>
+        <Box component="span" sx={{ fontWeight: 700 }}>
+          Step {step + 1}/{WIZARD_STEPS.length}
+        </Box>{' '}
+        <Box component="span" sx={{ color: 'text.secondary' }}>
+          ·
+        </Box>{' '}
+        <Box component="span" sx={{ fontWeight: 700, color: roles.activeArea.color }}>
+          {WIZARD_STEPS[step]}
+        </Box>{' '}
+        {WIZARD_STEPS.map((label, i) => (
+          <Box
+            key={label}
+            component="span"
+            title={label}
+            sx={{ color: i <= step ? roles.activeArea.color : 'text.secondary', mr: 0.5 }}
+          >
+            {i <= step ? '●' : '○'}
+          </Box>
+        ))}
+      </Typography>
+      <Typography component="div" sx={{ fontSize: 12, color: 'text.secondary', mb: 1 }}>
+        {wizardChordHint(step)}
+      </Typography>
+    </>
   );
 }
 
@@ -314,7 +342,7 @@ function GitFormFields({
           label="user.name"
           size="small"
           fullWidth
-          sx={focusedFieldSx}
+          sx={fieldSx}
           value={values.gitName}
           onChange={(e) => onChange({ ...values, gitName: e.target.value })}
         />
@@ -322,7 +350,7 @@ function GitFormFields({
           label="user.email"
           size="small"
           fullWidth
-          sx={focusedFieldSx}
+          sx={fieldSx}
           value={values.gitEmail}
           error={!values.gitEmail.includes('@')}
           helperText="Kept byte-identical to ~/.ssh/allowed_signers (GITUI-04)"
@@ -332,24 +360,44 @@ function GitFormFields({
       <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
         Signing: gpg.format = ssh (fixed) · signingkey = {keyPath}.pub — a PATH, never key material.
       </Typography>
-      <TextField
-        select
-        size="small"
-        label="Match strategy — when does this Git identity apply?"
-        value={values.strategy}
-        onChange={(e) => onChange({ ...values, strategy: e.target.value as MatchStrategy })}
-        sx={{ maxWidth: 520 }}
-        // Hint-persistence (02-STYLE-SPEC.md): this helperText is ALWAYS
-        // rendered — MUI's helperText never collapses to zero on focus, so
-        // opening the select PUSHES its option rows below this line instead
-        // of replacing it (the "hint vanishes on focus" report this fixes).
-        helperText="gitdir matches by working-directory path; hasconfig matches by remote URL; both = either condition (OR)."
-        FormHelperTextProps={{ sx: { color: roles.hint.color } }}
-      >
-        <MenuItem value="gitdir">gitdir (default) — applies inside ~/{name}/</MenuItem>
-        <MenuItem value="hasconfig">hasconfig — repos whose remote uses this alias</MenuItem>
-        <MenuItem value="both">both — either condition (two includeIf blocks = OR)</MenuItem>
-      </TextField>
+      {/* D2 (checkpoint-2 contract): the match-strategy Select becomes a
+          RadioGroup — ALL options render ALWAYS (no expand/collapse), and
+          the (←/→ change) hint moves onto the group's HEADER line, visible
+          regardless of focus (mirrors the delete-scope RadioGroup pattern
+          already established below). */}
+      <Box sx={{ maxWidth: 520 }}>
+        <Typography component="label" sx={{ fontSize: 13, fontWeight: 700, display: 'block' }}>
+          Match strategy — when does this Git identity apply?{' '}
+          <Box component="span" sx={{ color: roles.hint.color, fontWeight: 400 }}>
+            (←/→ change)
+          </Box>
+        </Typography>
+        <RadioGroup
+          value={values.strategy}
+          onChange={(e) => onChange({ ...values, strategy: e.target.value as MatchStrategy })}
+        >
+          <FormControlLabel
+            value="gitdir"
+            control={<Radio size="small" />}
+            label={`gitdir (default) — applies inside ~/${name}/`}
+          />
+          <FormControlLabel
+            value="hasconfig"
+            control={<Radio size="small" />}
+            label="hasconfig — repos whose remote uses this alias"
+          />
+          <FormControlLabel
+            value="both"
+            control={<Radio size="small" />}
+            label="both — either condition (two includeIf blocks = OR)"
+          />
+        </RadioGroup>
+        {/* Hint-persistence (02-STYLE-SPEC.md): ALWAYS rendered — the
+            always-expanded radio group can never push this line away. */}
+        <Typography sx={{ fontSize: 12, color: roles.hint.color }}>
+          gitdir matches by working-directory path; hasconfig matches by remote URL; both = either condition (OR).
+        </Typography>
+      </Box>
       {/* review-findings F1: PreviewBlock's title/maxHeight props (added in
           02-14 Task 1) had no call site — routed through here instead of a
           separate PreviewLabel, mirroring the TUI's title-in-border-top-edge
@@ -435,52 +483,53 @@ function CreateWizard({ onDone, onCancel }: { onDone: (name: string) => void; on
     window.setTimeout(() => setTestPhase('stage2'), 700);
   }, []);
 
-  // 02-STYLE-SPEC.md §2 arrow-key precedence rule, implemented identically
-  // to the TUI: [1] an expanded/focused MUI Select owns plain <-/-> (its
-  // combobox target check below) — unchanged unless Shift overrides it;
-  // [2] a focused text input keeps its cursor keys — this handler is never
-  // even invoked for a PLAIN arrow there (DemoApp's global guard short-
-  // circuits first); [3] otherwise <-/-> navigate wizard sections, forward
-  // gated on step validity, back always allowed; [5] Shift+<-/-> is a
-  // FOCUS-OVERRIDE chord (DemoApp bypasses its input/select guard for it)
-  // whose forward move STAYS validity-gated.
-  const wizardArrowNav = useCallback(
-    (key: string, event: KeyboardEvent): boolean => {
-      const target = event.target as HTMLElement | null;
-      // review-findings F2: with the MUI Select menu OPEN, focus sits on a
-      // MenuItem (`li[role="option"]`) inside the popup `[role="listbox"]`,
-      // not on the closed-select selectors below -- without this branch,
-      // plain </-/-> fell through to step navigation UNDER the open menu.
-      // `closest()` also covers the option's own descendants (e.g. an icon).
-      const isSelectTarget =
-        !!target &&
-        (target.matches('[role="combobox"]') ||
-          target.matches('.MuiSelect-select') ||
-          target.hasAttribute('aria-haspopup') ||
-          !!target.closest('[role="listbox"], [role="option"]'));
-      if (isSelectTarget && !event.shiftKey) return false; // clause 1: the open/focused select owns plain arrows
-      if (key === 'ArrowLeft') {
-        if (step === 0) onCancel();
-        else setStep((s) => s - 1);
-        return true;
-      }
-      // ArrowRight: validity-gated forward, no-op otherwise (never a
-      // validity override, even under Shift — clause 5).
-      if (step === 0 && step0Valid) setStep(1);
-      else if (step === 1 && testPhase === 'stage2') setStep(2);
-      else if (step === 2 && git.gitName.trim() !== '' && git.gitEmail.includes('@')) {
-        setConfigureGit(true);
-        setStep(3);
-      }
+  // D7 (checkpoint-2 contract) blocked-forward status notes — frozen copy,
+  // verbatim, byte-identical to the TUI's blockedForwardNote (identities.go).
+  const blockedForwardNote = (s: number): string => {
+    if (s === 0) return "Can't continue yet — check the alias prefix, hostname, and port.";
+    if (s === 2) return "Can't continue yet — add user.name and a valid email.";
+    return '';
+  };
+
+  // stepForward mirrors the TUI's wizardModel.stepForward: advances ONLY
+  // when the current step's own validity gate passes, reporting whether it
+  // did — shared by BOTH the plain-arrow/Enter path and the Shift chord, so
+  // Shift is a FOCUS-OVERRIDE only, never a validity override.
+  const stepForward = useCallback((): boolean => {
+    if (step === 0 && step0Valid) {
+      setStep(1);
       return true;
-    },
-    [step, step0Valid, testPhase, git, onCancel],
-  );
+    }
+    if (step === 1 && testPhase === 'stage2') {
+      setStep(2);
+      return true;
+    }
+    if (step === 2 && git.gitName.trim() !== '' && git.gitEmail.includes('@')) {
+      setConfigureGit(true);
+      setStep(3);
+      return true;
+    }
+    return false;
+  }, [step, step0Valid, testPhase, git]);
 
   useLocalKeys(
     useCallback(
       (key, event) => {
-        if (step === 3) return false; // ceremony owns keys
+        // D7 (checkpoint-2 contract): ONE hoisted Shift+←/→ chord gate,
+        // checked BEFORE the `step === 3` early-return below — reaches
+        // wizard step-nav from EVERY step, including the PREVIOUSLY-DEAD
+        // review ceremony (step 3), where the ceremony's own local key
+        // handler used to swallow the chord entirely.
+        if (event.shiftKey && (key === 'ArrowLeft' || key === 'ArrowRight')) {
+          if (key === 'ArrowLeft') {
+            if (step === 0) onCancel();
+            else setStep((s) => s - 1);
+            return true;
+          }
+          if (!stepForward()) notify(blockedForwardNote(step));
+          return true;
+        }
+        if (step === 3) return false; // ceremony owns keys (Enter/Esc/Tab)
         if (key === 'Escape') {
           if (step === 0) onCancel();
           else setStep((s) => s - 1);
@@ -501,10 +550,23 @@ function CreateWizard({ onDone, onCancel }: { onDone: (name: string) => void; on
           }
           return true;
         }
-        if (key === 'ArrowLeft' || key === 'ArrowRight') return wizardArrowNav(key, event);
+        // Plain ←/→: back always allowed; forward validity-gated. A
+        // focused native radio input never reaches here (DemoApp's global
+        // `isToggle` guard returns before screen-local handlers run), so no
+        // Select/combobox target check is needed (D2 replaced both the
+        // match-strategy and algorithm Selects with RadioGroups).
+        if (key === 'ArrowLeft') {
+          if (step === 0) onCancel();
+          else setStep((s) => s - 1);
+          return true;
+        }
+        if (key === 'ArrowRight') {
+          stepForward();
+          return true;
+        }
         return false;
       },
-      [step, step0Valid, testPhase, configureGit, git, onCancel, runStage1, runStage2, wizardArrowNav],
+      [step, step0Valid, testPhase, git, onCancel, runStage1, runStage2, stepForward, notify],
     ),
   );
 
@@ -565,30 +627,47 @@ function CreateWizard({ onDone, onCancel }: { onDone: (name: string) => void; on
               }
             }}
           />
-          <TextField
-            select
-            size="small"
-            label="Key algorithm"
-            value={algo}
-            onChange={(e) => setAlgo(e.target.value)}
-            helperText="gitid probes the local toolchain (ssh-keygen, libfido2, FIDO2 key present?) and disables what this machine cannot generate, with the reason shown per option (KEY-03/PLAT-01). Demo simulates: no FIDO2 key plugged in."
-          >
-            {algorithmCatalog.map((entry) => (
-              <MenuItem key={entry.id} value={entry.id} disabled={entry.macosAvailability === 'requires-libfido2'}>
-                <Box>
-                  <Typography component="p">
-                    {entry.label}
-                    {entry.recommended ? ' — ★ recommended' : ''}
-                  </Typography>
-                  <Typography sx={{ fontSize: 12, color: 'text.secondary', whiteSpace: 'normal' }}>
-                    {entry.macosAvailability === 'requires-libfido2'
-                      ? 'Disabled: needs libfido2 + a FIDO2 security key — none detected on this machine'
-                      : entry.macos}
-                  </Typography>
-                </Box>
-              </MenuItem>
-            ))}
-          </TextField>
+          {/* D2 (checkpoint-2 contract): the algorithm Select becomes a
+              RadioGroup too — every option already rendered ALWAYS (no
+              expand/collapse existed here), so this is a glyph/markup
+              change only; per-option availability sub-text + disabled are
+              kept, and the (←/→ change) hint moves onto the header. */}
+          <Box>
+            <Typography component="label" sx={{ fontSize: 13, fontWeight: 700, display: 'block' }}>
+              Key algorithm{' '}
+              <Box component="span" sx={{ color: roles.hint.color, fontWeight: 400 }}>
+                (←/→ change)
+              </Box>
+            </Typography>
+            <RadioGroup value={algo} onChange={(e) => setAlgo(e.target.value)}>
+              {algorithmCatalog.map((entry) => (
+                <FormControlLabel
+                  key={entry.id}
+                  value={entry.id}
+                  disabled={entry.macosAvailability === 'requires-libfido2'}
+                  control={<Radio size="small" />}
+                  label={
+                    <Box>
+                      <Typography component="p">
+                        {entry.label}
+                        {entry.recommended ? ' — ★ recommended' : ''}
+                      </Typography>
+                      <Typography sx={{ fontSize: 12, color: 'text.secondary', whiteSpace: 'normal' }}>
+                        {entry.macosAvailability === 'requires-libfido2'
+                          ? 'Disabled: needs libfido2 + a FIDO2 security key — none detected on this machine'
+                          : entry.macos}
+                      </Typography>
+                    </Box>
+                  }
+                />
+              ))}
+            </RadioGroup>
+            <Typography sx={{ fontSize: 12, color: roles.hint.color }}>
+              gitid probes the local toolchain (ssh-keygen, libfido2, FIDO2 key present?) and disables what this
+              machine cannot generate, with the reason shown per option (KEY-03/PLAT-01). Demo simulates: no FIDO2
+              key plugged in.
+            </Typography>
+          </Box>
           {/* review-findings F1: routed through PreviewBlock's title prop
               (mirrors the TUI's renderHostBlockPreview). */}
           <Box>
@@ -736,6 +815,13 @@ function CreateWizard({ onDone, onCancel }: { onDone: (name: string) => void; on
               >
                 [ Continue ]
               </Button>
+              {/* D7 (checkpoint-2 contract): the disabled reason text —
+                  byte-identical to the TUI's gitFormDisabledSuffix. */}
+              {(git.gitName.trim() === '' || !git.gitEmail.includes('@')) && (
+                <Typography sx={{ fontSize: 12, color: roles.error.color, mt: 0.25 }}>
+                  — needs user.name + a valid email
+                </Typography>
+              )}
               <Typography sx={{ fontSize: 12, color: roles.hint.color, mt: 0.25 }}>
                 Continue reviews the Git fragment, includeIf, and allowed_signers entries before writing.
               </Typography>

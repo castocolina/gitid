@@ -730,6 +730,23 @@ export interface GlobalGitOption {
   highlight?: boolean;
 }
 
+// D9 (checkpoint-2 contract) frozen copy for the promoted, editable
+// global-fallback user.email row — byte-exact; shared by GlobalGit.tsx's
+// detail render, apply checkbox, and the dedicated apply ceremony
+// (MutationCeremony.tsx). Byte-identical to the TUI's globalgit.go
+// constants of the same name. This is a DOCUMENTED, CONSCIOUS divergence
+// from recipes/ (which leave user.email unset by default) — recorded in
+// FIELDS.md + 02-STYLE-SPEC.md (Task 3).
+export const globalGitEmailFallbackKey = 'user.email (global fallback)';
+export const globalGitEmailFallbackHelper =
+  "Fallback author for repos no identity matches. Identities always override this through their includeIf fragment — setting it never changes an identity's author.";
+export const globalGitEmailFallbackAdvisory =
+  'Recipes leave this unset by default. Set it only if you want a catch-all author for unmatched repos.';
+export const globalGitEmailCeremonyHeading = 'Set global fallback user.email';
+export const globalGitEmailDiffAnnotation = '(global fallback — identities override via includeIf)';
+export const globalGitEmailResultMessage =
+  'Global fallback user.email set — used only where no identity matches; identity fragments still win.';
+
 /** The GGIT-01 baseline + recipe-defaults option set, each with current
  * value + recommended value + a one-line explanation. Order matches
  * 02-UX-DIRECTION.md §4.5's verbatim list. `recommendedValue` for the
@@ -761,13 +778,21 @@ export const globalGitOptions: GlobalGitOption[] = [
     oneLiner:
       'Normalizes line endings to LF in the repository and on checkout, avoiding CRLF diff noise across contributors on different platforms.',
   },
+  // D9 (checkpoint-2 contract): promoted from awareness-only to a
+  // first-class EDITABLE global-fallback field + apply checkbox — unset/
+  // unchecked by default (recipes leave it unset; setting it is explicit
+  // opt-in). needsAction:true so the checkbox/apply plumbing shared with
+  // every other row applies unmodified; GlobalGit.tsx special-cases this
+  // ONE key to stay un-chosen by default and excludes it from the generic
+  // baseline "pending"/apply-count — it is applied through its OWN
+  // dedicated ceremony (globalGitEmailCeremonyHeading etc., below), a
+  // DOCUMENTED, CONSCIOUS divergence from recipes/.
   {
-    key: 'user.email (global)',
-    currentValue: 'whatever `git config --global user.email` already holds, if anything',
-    recommendedValue: 'left alone — not written here',
-    needsAction: false,
-    oneLiner:
-      'gitid never writes a global [user] section — each identity’s commits come from its own includeIf fragment (recipes/gitconfig.recipe); shown here for awareness only.',
+    key: globalGitEmailFallbackKey,
+    currentValue: 'unset (recipes default)',
+    recommendedValue: 'left unset unless explicitly opted in',
+    needsAction: true,
+    oneLiner: globalGitEmailFallbackHelper,
   },
   {
     key: 'push.autoSetupRemote',

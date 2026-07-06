@@ -144,6 +144,22 @@ export function DemoApp() {
         if (next) setTab(next);
         return;
       }
+      // D4 (checkpoint-2 contract): plain ←/→ switch views 1..4 at the TOP
+      // LEVEL ONLY — reached here exactly because no screen-local handler
+      // (Global SSH's own Options/Storage sub-tab switch, a wizard step-nav,
+      // an expanded select, …) claimed the key above. Mirrors app.go's
+      // globals-last block; clamped at the ends, no wraparound.
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const idx = TAB_ORDER.indexOf(tab);
+        if (e.key === 'ArrowLeft' && idx > 0) {
+          e.preventDefault();
+          setTab(TAB_ORDER[idx - 1]!);
+        } else if (e.key === 'ArrowRight' && idx < TAB_ORDER.length - 1) {
+          e.preventDefault();
+          setTab(TAB_ORDER[idx + 1]!);
+        }
+        return;
+      }
       if (e.key === '?') {
         e.preventDefault();
         setHelpOpen(true);

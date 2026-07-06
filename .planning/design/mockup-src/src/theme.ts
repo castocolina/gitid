@@ -1,3 +1,4 @@
+import { createElement } from 'react';
 import { createTheme } from '@mui/material/styles';
 import { healthInfoColor } from './data/recipeFixtures';
 
@@ -95,6 +96,18 @@ export const roles = {
   // review-findings F11: the Go Theme struct carries a Healthy role with no
   // web counterpart — added here for full 1:1 name parity (cheap, mechanical).
   healthy: { color: semanticColors.healthy },
+  // activeNavDimmed (D4, checkpoint-2 contract): the ACTIVE main-nav item
+  // while a modal/edit/ceremony pane captures keys — accent text/border,
+  // TRANSPARENT background (fontWeight 700), mirroring the TUI's NEW
+  // Theme.ActiveNavDimmed role. Distinct from BOTH the full activeNav
+  // background treatment (no pane capturing keys) and disabledNav (an
+  // INACTIVE tab while capturing).
+  activeNavDimmed: {
+    background: 'transparent',
+    borderColor: semanticColors.accent,
+    color: semanticColors.accent,
+    fontWeight: 700,
+  },
 } as const;
 
 // All 25 MUI shadow elevations flattened to 'none' — a terminal cell has no
@@ -202,6 +215,33 @@ export const theme = createTheme({
       styleOverrides: {
         root: {
           fontWeight: roles.label.fontWeight,
+        },
+      },
+    },
+    // D3 (checkpoint-2 contract): terminal-glyph checkbox/radio — the
+    // FROZEN glyphs shared with the TUI (checkbox ☐/☑, radio ○/●), routed
+    // through theme-level defaultProps so EVERY MuiCheckbox/MuiRadio in the
+    // app renders them at once, removing the stock Material icons
+    // everywhere in a single change.
+    MuiCheckbox: {
+      defaultProps: {
+        icon: createElement('span', { 'aria-hidden': true }, '☐'),
+        checkedIcon: createElement('span', { 'aria-hidden': true }, '☑'),
+      },
+      styleOverrides: {
+        root: {
+          '&.Mui-disabled': { color: roles.hint.color },
+        },
+      },
+    },
+    MuiRadio: {
+      defaultProps: {
+        icon: createElement('span', { 'aria-hidden': true }, '○'),
+        checkedIcon: createElement('span', { 'aria-hidden': true }, '●'),
+      },
+      styleOverrides: {
+        root: {
+          '&.Mui-disabled': { color: roles.hint.color },
         },
       },
     },

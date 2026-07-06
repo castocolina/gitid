@@ -45,6 +45,9 @@ export interface DemoState {
   sshApplied: string[];
   /** global-git baseline applied via the fix ceremony. */
   gitBaselineApplied: boolean;
+  /** D9: the global-fallback user.email applied via its OWN dedicated
+   * ceremony — empty (unset) by default, recipes default preserved. */
+  gitGlobalEmail: string;
   /** STORE-01: where gitid-managed SSH config lives. */
   sshStorage: SshStorageLayout;
   /** Timestamped backup paths "created" by write ceremonies, newest first. */
@@ -76,6 +79,7 @@ export const initialDemoState: DemoState = {
   scanned: false,
   sshApplied: [],
   gitBaselineApplied: false,
+  gitGlobalEmail: '',
   sshStorage: 'sentinel',
   backups: [],
 };
@@ -97,6 +101,9 @@ export type DemoAction =
   | { type: 'fix-finding'; id: string; backup: string }
   | { type: 'apply-ssh'; keys: string[]; backup: string }
   | { type: 'apply-git-baseline'; backup: string }
+  // D9: applies the global-fallback user.email through its OWN dedicated
+  // ceremony — never folded into the baseline managed block.
+  | { type: 'apply-git-global-email'; email: string; backup: string }
   | {
       type: 'edit-ssh';
       name: string;
@@ -235,6 +242,12 @@ export function demoReducer(state: DemoState, action: DemoAction): DemoState {
       return {
         ...state,
         gitBaselineApplied: true,
+        backups: [action.backup, ...state.backups],
+      };
+    case 'apply-git-global-email':
+      return {
+        ...state,
+        gitGlobalEmail: action.email,
         backups: [action.backup, ...state.backups],
       };
     case 'edit-ssh':
