@@ -62,6 +62,18 @@ type Theme struct {
 	FieldBorder color.Color
 }
 
+// Frozen glyph constants (D3, checkpoint-2 contract) — the ONE source of the
+// checkbox/radio glyphs every dummytui render site draws through
+// (review-findings F5: identities.go/globalssh.go/globalgit.go previously
+// repeated these as inline string literals, risking silent drift between
+// screens).
+const (
+	glyphCheckOn  = "☑"
+	glyphCheckOff = "☐"
+	glyphRadioOn  = "●"
+	glyphRadioOff = "○"
+)
+
 // DefaultTheme is the ANSI-16 role palette every dummytui renderer draws
 // through.
 var DefaultTheme = Theme{

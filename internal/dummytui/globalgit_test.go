@@ -105,6 +105,61 @@ func TestGlobalGitUserEmailFallbackIsEditableAndDefaultsOff(t *testing.T) {
 	}
 }
 
+// TestGlobalGitUserEmailFallbackApplyGatedOnPlausibleEmail pins
+// review-findings F10: an empty (or "@"-less) fallback email must never be
+// applicable — reusing the wizard git-form's own contains-@ check, with the
+// "needs @" inline-error idiom the wizard's own user.email field already
+// carries. The generic baseline is applied FIRST so `gitApplyChosen` is
+// empty — isolating the assertions to the email-ceremony gating itself,
+// rather than "a" falling through to the (separately-gated, still
+// available) baseline apply.
+func TestGlobalGitUserEmailFallbackApplyGatedOnPlausibleEmail(t *testing.T) {
+	a := ggitApp(t)
+	a, _ = press(t, a, "a")     // baseline apply ceremony
+	a, _ = press(t, a, "enter") // confirm
+	a, _ = press(t, a, "enter") // done
+	if !a.state.GitBaselineApplied {
+		t.Fatal("setup: expected the baseline to be applied")
+	}
+
+	a = pressSeq(t, a, "down", "down", "down") // → the fallback row
+	a, _ = press(t, a, "space")                // opt in, email still empty
+	if !strings.Contains(regionFlat(a, 45, 100), "needs @") {
+		t.Errorf("expected the inline 'needs @' error while the fallback email is empty:\n%s", regionFlat(a, 45, 100))
+	}
+	// "a" must be a no-op — nothing plausible to apply yet, and the
+	// baseline's own pending set is now empty (applied above).
+	a, _ = press(t, a, "a")
+	if strings.Contains(appView(a), GlobalGitEmailCeremonyHeading) {
+		t.Error("pressing a with an implausible (empty) fallback email must not open the dedicated ceremony")
+	}
+
+	// Typing a value without "@" still blocks it.
+	a, _ = press(t, a, "enter")
+	a = typeText(t, a, "not-an-email")
+	a, _ = press(t, a, "esc")
+	if !strings.Contains(regionFlat(a, 45, 100), "needs @") {
+		t.Error("expected the inline 'needs @' error for a value missing '@'")
+	}
+	a, _ = press(t, a, "a")
+	if strings.Contains(appView(a), GlobalGitEmailCeremonyHeading) {
+		t.Error("pressing a with an implausible email (no @) must not open the dedicated ceremony")
+	}
+
+	// A plausible email clears the error and unblocks apply.
+	a, _ = press(t, a, "enter")
+	a = clearGitFieldRaw(t, a)
+	a = typeText(t, a, "team@example.com")
+	a, _ = press(t, a, "esc")
+	if strings.Contains(regionFlat(a, 45, 100), "needs @") {
+		t.Error("the inline 'needs @' error must clear once the email is plausible")
+	}
+	a, _ = press(t, a, "a")
+	if !strings.Contains(appView(a), GlobalGitEmailCeremonyHeading) {
+		t.Fatalf("expected the dedicated ceremony to open with a plausible email:\n%s", appView(a))
+	}
+}
+
 // TestGlobalGitUserEmailFallbackDedicatedCeremony pins D9's dedicated apply
 // ceremony — distinct heading/target/annotated-diff/result from the
 // baseline managed-block ceremony, and the includeIf-precedence invariant
@@ -142,6 +197,76 @@ func TestGlobalGitUserEmailFallbackDedicatedCeremony(t *testing.T) {
 	// The baseline itself was never touched by the email-only apply.
 	if a.state.GitBaselineApplied {
 		t.Error("applying the fallback email must not also mark the baseline applied")
+	}
+}
+
+// TestGlobalGitEmailFallbackRowSurvivesBaselineApply pins review-findings F4:
+// the D9 global-fallback user.email row must NEVER be swept into the
+// baseline-applied overlay — it stays NeedsAction=true (so `space` keeps
+// working), never renders the false "Applied by gitid" one-liner, and its
+// Current only changes once the row's OWN dedicated ceremony is actually
+// applied.
+func TestGlobalGitEmailFallbackRowSurvivesBaselineApply(t *testing.T) {
+	a := ggitApp(t)
+	// Apply the generic baseline FIRST.
+	a, _ = press(t, a, "a")
+	a, _ = press(t, a, "enter") // confirm
+	a, _ = press(t, a, "enter") // done
+	if !a.state.GitBaselineApplied {
+		t.Fatal("setup: expected the baseline to be applied")
+	}
+
+	fallbackRow := func(a App) overlaidGitOption {
+		for _, o := range overlaidGitOptions(a.state) {
+			if o.Key == GlobalGitEmailFallbackKey {
+				return o
+			}
+		}
+		t.Fatal("fixture: the email-fallback row must exist")
+		return overlaidGitOption{}
+	}
+
+	row := fallbackRow(a)
+	if !row.NeedsAction {
+		t.Fatal("the email-fallback row must stay NeedsAction=true after a baseline apply (still independent, opt-in)")
+	}
+	if row.applied {
+		t.Error("the email-fallback row must never be marked applied by the generic baseline overlay")
+	}
+	if row.Current != "unset (recipes default)" {
+		t.Errorf("Current = %q, want the recipes default until an email is actually applied", row.Current)
+	}
+
+	a = pressSeq(t, a, "down", "down", "down") // → the fallback row (index 3)
+	if ggitModel(t, a).detailKey != GlobalGitEmailFallbackKey {
+		t.Fatalf("detailKey = %q, want %q", ggitModel(t, a).detailKey, GlobalGitEmailFallbackKey)
+	}
+	if strings.Contains(regionFlat(a, 45, 100), "Applied by gitid") {
+		t.Error("the email-fallback row must never render the false 'Applied by gitid' one-liner")
+	}
+
+	// space still checks it (NOT permanently locked out by the baseline
+	// apply), typing + its OWN ceremony still works, and Current reflects
+	// the applied value afterward.
+	a, _ = press(t, a, "space")
+	if !ggitModel(t, a).chosen[GlobalGitEmailFallbackKey] {
+		t.Fatal("space must still check the fallback row after a baseline apply")
+	}
+	a, _ = press(t, a, "enter") // start editing
+	a = typeText(t, a, "team@example.com")
+	a, _ = press(t, a, "esc") // done editing
+	a, _ = press(t, a, "a")   // open the dedicated ceremony
+	if !strings.Contains(appView(a), GlobalGitEmailCeremonyHeading) {
+		t.Fatalf("expected the dedicated email ceremony after a baseline apply:\n%s", appView(a))
+	}
+	a, _ = press(t, a, "enter") // confirm
+	a, _ = press(t, a, "enter") // done
+	if a.state.GitGlobalEmail != "team@example.com" {
+		t.Fatalf("GitGlobalEmail = %q, want the applied email", a.state.GitGlobalEmail)
+	}
+
+	if got := fallbackRow(a).Current; got != "team@example.com" {
+		t.Errorf("Current = %q after applying, want the applied email", got)
 	}
 }
 

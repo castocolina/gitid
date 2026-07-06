@@ -513,10 +513,10 @@ func (g gitForm) view(name, keyPath string, focus int, width int, baseline strin
 	// selected ● + label render through FieldFocused (accent) when the
 	// group is focused, plain-bold when blurred.
 	for i, s := range matchStrategies {
-		dot := "○"
+		dot := glyphRadioOff
 		text := strategyCopy(s, name)
 		if i == g.strategyIdx {
-			dot = "●"
+			dot = glyphRadioOn
 			if focus == gitFieldStrategy {
 				text = DefaultTheme.FieldFocused.Render(text)
 			} else {
@@ -1610,6 +1610,14 @@ func (m identitiesModel) handleClick(x, y, width, height int, s DemoState) keyRe
 			return m.handleEditKey(key, s)
 		}
 	case paneGit:
+		// review-findings F3: check the button needle FIRST — the
+		// Write-it… button's own row can carry the disabled-suffix prose
+		// ("...needs user.name...") when the form is invalid, and (belt +
+		// suspenders alongside anchoredLabelMatch) a button match must never
+		// be shadowed by a field-row match on the same rendered line.
+		if hitNeedle(body, x, y, " "+identGitWriteButton+" ") {
+			return m.handleGitKey(mustKey("Enter"), s)
+		}
 		sel, ok := m.selectedIdentity(s)
 		if ok {
 			if slot, hit := hitAnyFieldRow(body, x, y, gitFormFieldSlots); hit {
@@ -1623,9 +1631,6 @@ func (m identitiesModel) handleClick(x, y, width, height int, s DemoState) keyRe
 				m.gitPaneForm = m.gitPaneForm.setFocus(gitFieldStrategy)
 				return keyResult{model: m, handled: true}
 			}
-		}
-		if hitNeedle(body, x, y, " "+identGitWriteButton+" ") {
-			return m.handleGitKey(mustKey("Enter"), s)
 		}
 	case paneGitCeremony:
 		if next, key, ok := ceremonyClickKey(m.gitCeremony, body, x, y); ok {
@@ -1716,12 +1721,68 @@ var gitFormFieldSlots = []fieldSlot{
 	{"user.email", gitFieldEmail},
 }
 
+// anchoredLabelMatch reports whether label anchors row line (D8 click-to-
+// focus; review-findings F3): the row must START WITH label — after
+// skipping only the row's OWN leading gutter/marker glyphs (spaces, "▸",
+// and the checkbox/radio glyphs) — either immediately followed by a
+// formFieldLine's "[value]" brackets (the ONLY row shape with brackets
+// adjacent to a padded label) or by a genuine word boundary. A bare
+// strings.Contains previously let THREE things falsely hijack a click:
+// (a) a button row's disabled-suffix prose (e.g. "...needs user.name...")
+// contains "user.name" mid-sentence, but never at the row's own start;
+// (b) a disabled algorithm row like "ed25519-sk" contains the ENABLED
+// "ed25519" as a substring — requiring a word boundary immediately after
+// the label (not '-', not a letter/digit) rejects it; (c) a bordered
+// PreviewBlock/config-preview line (e.g. "Port 443", "id_ed25519_acme")
+// ALWAYS starts with its own border glyph ("┊"), which is never stripped
+// as a gutter char, so preview text can never satisfy the prefix check.
+func anchoredLabelMatch(line, label string) bool {
+	// Every rendered row is actually sidebar-content + "│" divider +
+	// detail-pane content (joinMasterDetail) — a field/radio/checkbox row's
+	// OWN gutter/marker glyphs start right after the divider, not at column
+	// 0 of the full physical row. Slicing at the LAST "│" (the divider is
+	// the only place this glyph is drawn) isolates the detail-pane's own
+	// text before anchoring, so a coincidental label-shaped substring in
+	// the sidebar can never be mistaken for the field row itself.
+	region := line
+	if idx := strings.LastIndex(line, "│"); idx >= 0 {
+		region = line[idx+len("│"):]
+	}
+	trimmed := strings.TrimLeft(region, " ")
+	trimmed = strings.TrimPrefix(trimmed, "▸")
+	for _, marker := range []string{glyphCheckOn, glyphCheckOff, glyphRadioOn, glyphRadioOff} {
+		if strings.HasPrefix(trimmed, marker) {
+			trimmed = strings.TrimPrefix(trimmed, marker)
+			break
+		}
+	}
+	trimmed = strings.TrimLeft(trimmed, " ")
+	if !strings.HasPrefix(trimmed, label) {
+		return false
+	}
+	rest := trimmed[len(label):]
+	if strings.HasPrefix(strings.TrimLeft(rest, " "), "[") {
+		return true // a formFieldLine's padded label + bracketed value
+	}
+	if rest == "" {
+		return true
+	}
+	switch rest[0] {
+	case ' ', '\t':
+		return true
+	default:
+		return false // e.g. "ed25519" would falsely match inside "ed25519-sk"
+	}
+}
+
 // hitFieldRow reports whether (x, y) falls anywhere on the rendered row
-// containing label — D8's "the ENTIRE rendered field row is the hit
-// target" (Fitts's law), not just the label span.
+// ANCHORED by label — D8's "the ENTIRE rendered field row is the hit
+// target" (Fitts's law), not just the label span; anchoredLabelMatch keeps
+// this from matching a label that merely appears somewhere else on the same
+// display row (review-findings F3).
 func hitFieldRow(body string, x, y int, label string) bool {
 	line, ok := blockLine(body, y)
-	if !ok || !strings.Contains(line, label) {
+	if !ok || !anchoredLabelMatch(line, label) {
 		return false
 	}
 	return x >= 0 && x < ansi.StringWidth(line)
@@ -1796,19 +1857,12 @@ func (m identitiesModel) handleWizardClick(body string, x, y int, s DemoState) k
 			return m.handleWizardKey(mustKey("c"), s)
 		}
 	case 2:
-		if slot, ok := hitAnyFieldRow(body, x, y, gitFormFieldSlots); ok {
-			w.gitFocus = slot
-			w.git = w.git.setFocus(slot)
-			m.wizard = w
-			return keyResult{model: m, handled: true}
-		}
-		if idx, ok := hitStrategyRow(body, x, y, w.form.identityName()); ok {
-			w.git.strategyIdx = idx
-			w.gitFocus = gitFieldStrategy
-			w.git = w.git.setFocus(gitFieldStrategy)
-			m.wizard = w
-			return keyResult{model: m, handled: true}
-		}
+		// review-findings F3(a): check the button needles FIRST — Back /
+		// Skip Git / Continue share ONE row, and when the form is invalid
+		// Continue's own disabled-suffix prose ("...needs user.name...")
+		// used to satisfy a bare strings.Contains match against the
+		// user.name FIELD's label, hijacking a click meant for Back/Skip
+		// (belt + suspenders alongside anchoredLabelMatch's anchoring fix).
 		buttons := []struct {
 			needle string
 			slot   int
@@ -1825,6 +1879,19 @@ func (m identitiesModel) handleWizardClick(body string, x, y int, s DemoState) k
 				m.wizard.git = m.wizard.git.setFocus(b.slot)
 				return m.handleWizardKey(mustKey("Enter"), s)
 			}
+		}
+		if slot, ok := hitAnyFieldRow(body, x, y, gitFormFieldSlots); ok {
+			w.gitFocus = slot
+			w.git = w.git.setFocus(slot)
+			m.wizard = w
+			return keyResult{model: m, handled: true}
+		}
+		if idx, ok := hitStrategyRow(body, x, y, w.form.identityName()); ok {
+			w.git.strategyIdx = idx
+			w.gitFocus = gitFieldStrategy
+			w.git = w.git.setFocus(gitFieldStrategy)
+			m.wizard = w
+			return keyResult{model: m, handled: true}
 		}
 	case 3:
 		if next, key, ok := ceremonyClickKey(w.ceremony, body, x, y); ok {
@@ -2021,9 +2088,9 @@ func renderStepper(step int) string {
 	dots := make([]string, len(wizardSteps))
 	for i := range wizardSteps {
 		if i <= step {
-			dots[i] = DefaultTheme.ActiveArea.Render("●")
+			dots[i] = DefaultTheme.ActiveArea.Render(glyphRadioOn)
 		} else {
-			dots[i] = styleFaint.Render("○")
+			dots[i] = styleFaint.Render(glyphRadioOff)
 		}
 	}
 	return " " + styleBold.Render(fmt.Sprintf("Step %d/%d", step+1, len(wizardSteps))) +
@@ -2070,9 +2137,9 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 		}
 		b.WriteString(" " + marker + styleBold.Render("Key algorithm") + " " + styleFaint.Render("(←/→ change)") + "\n")
 		for i, entry := range AlgorithmCatalog {
-			dot := "○"
+			dot := glyphRadioOff
 			if i == w.algoIdx {
-				dot = "●"
+				dot = glyphRadioOn
 			}
 			label := entry.ID
 			if entry.Recommended {
@@ -2093,9 +2160,9 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 		b.WriteString(" " + styleInfo.Render("Key "+w.keyPath()+" generated ("+w.algo()+").") + "\n")
 		b.WriteString(" " + styleInfo.Render("Both stages run against "+CreateFlowTestTmpConfig+" — your live ~/.ssh/config is untouched until the final confirm.") + "\n\n")
 
-		check := "☐"
+		check := glyphCheckOff
 		if w.simulateFail {
-			check = "☑"
+			check = glyphCheckOn
 		}
 		toggle := check + " Demo control — simulate a provider failure (key not registered) to preview the error path"
 		if w.testPhase != testIdle && w.testPhase != testFailed {
@@ -2252,12 +2319,12 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 		// reverse-video marks it like every other focused button.
 		gitOnlyText := IdentityManagerDeleteChoiceGitOnly + " (safer — SSH stays)"
 		everythingText := IdentityManagerDeleteChoiceEverything + " — irreversible"
-		gitOnlyLine := "○ " + gitOnlyText
-		everythingLine := "○ " + styleError.Render(everythingText)
+		gitOnlyLine := glyphRadioOff + " " + gitOnlyText
+		everythingLine := glyphRadioOff + " " + styleError.Render(everythingText)
 		if m.deleteScope == "git-only" {
-			gitOnlyLine = "● " + styleSelected.Render(gitOnlyText)
+			gitOnlyLine = glyphRadioOn + " " + styleSelected.Render(gitOnlyText)
 		} else {
-			everythingLine = "● " + styleError.Reverse(true).Render(everythingText)
+			everythingLine = glyphRadioOn + " " + styleError.Reverse(true).Render(everythingText)
 		}
 		pane = " " + styleBold.Render(`Delete "`+sel.Name+`" — choose scope`) + "\n\n" +
 			"  " + gitOnlyLine + "\n" +

@@ -433,7 +433,7 @@ func (m globalSSHModel) handleClick(x, y, width, height int, s DemoState) keyRes
 // never from column math.
 func (m globalSSHModel) clickOnCheckbox(x, y, width, height int, s DemoState) bool {
 	body := m.view(s, width, height).body
-	return hitNeedle(body, x, y, "☐") || hitNeedle(body, x, y, "☑")
+	return hitNeedle(body, x, y, glyphCheckOff) || hitNeedle(body, x, y, glyphCheckOn)
 }
 
 // handleStorageClick resolves Storage & preview clicks: radio rows select a
@@ -489,9 +489,9 @@ func optionRow(key, current, recommended, risk string, needsAction, chosen, sele
 	}
 	box := "   "
 	if needsAction {
-		box = "☐ "
+		box = glyphCheckOff + " "
 		if chosen {
-			box = "☑ "
+			box = glyphCheckOn + " "
 		}
 	} else if applied {
 		box = "✓ "
@@ -620,9 +620,9 @@ func (m globalSSHModel) renderStorage(s DemoState, width, height int) string {
 	}
 	radio := func(layout SSHStorageLayout) string {
 		if m.storageChoice == layout {
-			return "● "
+			return glyphRadioOn + " "
 		}
-		return "○ "
+		return glyphRadioOff + " "
 	}
 	var l strings.Builder
 	l.WriteString(" " + styleFaint.Render("STORE-01 — where gitid-managed SSH config lives") + "\n")

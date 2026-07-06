@@ -70,7 +70,21 @@ func overlaidGitOptions(s DemoState) []overlaidGitOption {
 	out := make([]overlaidGitOption, 0, len(GlobalGitOptions))
 	for _, o := range GlobalGitOptions {
 		entry := overlaidGitOption{GlobalGitOption: o}
-		if s.GitBaselineApplied && o.NeedsAction {
+		switch {
+		case o.Key == GlobalGitEmailFallbackKey:
+			// review-findings F4: the email-fallback row has its OWN
+			// dedicated apply ceremony and must NEVER join the generic
+			// baseline-applied overlay — sweeping it in here (it also
+			// carries NeedsAction: true) falsely marked it "Applied by
+			// gitid" and, since `space` is gated on NeedsAction, made it
+			// permanently untogglable the instant the baseline was applied.
+			// Its Current instead reflects the ACTUALLY-applied
+			// GitGlobalEmail (still "unset (recipes default)" until set),
+			// and it stays toggleable no matter what the baseline state is.
+			if s.GitGlobalEmail != "" {
+				entry.Current = s.GitGlobalEmail
+			}
+		case s.GitBaselineApplied && o.NeedsAction:
 			entry.Current = o.Recommended
 			entry.NeedsAction = false
 			entry.OneLiner = "Applied by gitid — " + o.OneLiner
@@ -79,6 +93,13 @@ func overlaidGitOptions(s DemoState) []overlaidGitOption {
 		out = append(out, entry)
 	}
 	return out
+}
+
+// emailValid reports whether the D9 global-fallback field holds a plausible
+// email (review-findings F10) — reusing the wizard git-form's own
+// contains-@ check (gitForm.valid()) rather than inventing a second rule.
+func (m globalGitModel) emailValid() bool {
+	return strings.Contains(m.emailInput.Value(), "@")
 }
 
 // gitApplyChosen is the chosen ∩ pending key set, in fixture order — the
@@ -201,7 +222,10 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 	case "a":
 		// D9: the global-fallback checkbox, when chosen, applies through
 		// its OWN dedicated ceremony — never folded into the baseline.
-		if m.detailKey == GlobalGitEmailFallbackKey && m.chosen[GlobalGitEmailFallbackKey] {
+		// review-findings F10: gate the apply on a plausible email (reusing
+		// the wizard's contains-@ check) — an empty/invalid fallback email
+		// must never be applicable.
+		if m.detailKey == GlobalGitEmailFallbackKey && m.chosen[GlobalGitEmailFallbackKey] && m.emailValid() {
 			m.ceremony = emailCeremonyFor(m.emailInput.Value())
 			m.ceremonyOpen = true
 			return keyResult{model: m, handled: true}
@@ -252,7 +276,7 @@ func (m globalGitModel) handleClick(x, y, width, height int, s DemoState) keyRes
 	}
 	if options[row].NeedsAction {
 		body := m.view(s, width, height).body
-		if hitNeedle(body, x, y, "☐") || hitNeedle(body, x, y, "☑") {
+		if hitNeedle(body, x, y, glyphCheckOff) || hitNeedle(body, x, y, glyphCheckOn) {
 			m.chosen = withToggled(m.chosen, options[row].Key)
 			return keyResult{model: m, handled: true}
 		}
@@ -303,9 +327,9 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 		}
 		box := "   "
 		if o.NeedsAction {
-			box = "☐ "
+			box = glyphCheckOff + " "
 			if m.chosen[o.Key] {
-				box = "☑ "
+				box = glyphCheckOn + " "
 			}
 		} else if o.applied {
 			box = "✓ "
@@ -333,7 +357,14 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 		// D9: the promoted, editable global-fallback row — D1 single-row
 		// field template + apply checkbox, its own always-visible
 		// helper/advisory lines (byte-exact, verbatim).
-		d.WriteString(formFieldLine(GlobalGitEmailFallbackKey, m.emailInput, m.emailEditing, false) + "\n")
+		d.WriteString(formFieldLine(GlobalGitEmailFallbackKey, m.emailInput, m.emailEditing, false))
+		// review-findings F10: the same "needs @" inline-error idiom the
+		// wizard's Git-step user.email field already carries (gitForm.view)
+		// — gates the apply action on a plausible email.
+		if !m.emailValid() {
+			d.WriteString("  " + styleError.Render("needs @"))
+		}
+		d.WriteString("\n")
 		d.WriteString(helperLine(GlobalGitEmailFallbackHelper, false) + "\n")
 		d.WriteString(helperLine(GlobalGitEmailFallbackAdvisory, false) + "\n")
 	} else {
@@ -368,7 +399,7 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 	switch {
 	case len(m.gitApplyChosen(options)) > 0:
 		actions = append(actions, FooterAction{Key: "a", Label: fmt.Sprintf("apply %d selected", len(m.gitApplyChosen(options)))})
-	case m.detailKey == GlobalGitEmailFallbackKey && m.chosen[GlobalGitEmailFallbackKey]:
+	case m.detailKey == GlobalGitEmailFallbackKey && m.chosen[GlobalGitEmailFallbackKey] && m.emailValid():
 		actions = append(actions, FooterAction{Key: "a", Label: "set global fallback email"})
 	}
 	return screenView{body: body, crumbs: []string{"Options"}, status: status, statusTone: tone, actions: actions}
