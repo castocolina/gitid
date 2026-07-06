@@ -1,10 +1,8 @@
 # APPROVAL.md — DLV-08 approval record (Phase 2: Design All Mockups)
 
-**Status: SCAFFOLD — awaiting the single human checkpoint (02-12). The closing
-sign-off line below (bold `APPROVED`, a colon, a date, and "by" the approver — see
-"No backend logic before approval" for the exact format) is deliberately absent and
-the approver name is NOT inferred here; it is added by the human at the 02-12
-checkpoint.**
+**Status: APPROVED — the 02-12 human checkpoint was passed on 2026-07-06. The
+sign-off line at the bottom of this file was added with a user-supplied approver
+name (not inferred), per the checkpoint protocol.**
 
 This record is the DLV-08 approval mechanics artifact (`02-RESEARCH.md` § "Approval
 Mechanics (DLV-08)"): written after every surface's `CRITIQUE.md` shows 0 open
@@ -100,76 +98,76 @@ resolve).
 
 ## A. Shell & IA
 
-- [ ] Global frame approved: header/context bar, body archetypes, status line,
+- [x] Global frame approved: header/context bar, body archetypes, status line,
       always-on keybar.
-- [ ] Navigation model approved: five primary views on number keys `1`-`5` + palette;
+- [x] Navigation model approved: five primary views on number keys `1`-`5` + palette;
       reserved keys (`Esc`/`q`/`?`/`/`/`Enter`) consistent across all surfaces.
-- [ ] Terminal skin approved: the MUI mockup reads as a terminal, and it and the TUI
+- [x] Terminal skin approved: the MUI mockup reads as a terminal, and it and the TUI
       dummy read as **one product**.
 
 ## B. Per-surface completeness (all seven)
 
-- [ ] Every surface and flow state is reachable LIVE in **both** demos (web + the
+- [x] Every surface and flow state is reachable LIVE in **both** demos (web + the
       gitid-dummy TUI) — 50 screens across the 7 surfaces per `REFERENCE-INDEX.md`
       (create-flow, git-screen, identity-manager, global-ssh, global-git, health,
       fixer), including failure states (test-fail path, all-green Doctor).
-- [ ] Empty / first-run states are designed (not just the happy path) — especially
+- [x] Empty / first-run states are designed (not just the happy path) — especially
       the Identity Manager `list-empty` landing and the Fixer `nothing-to-fix`.
 
 ## C. Copy, fields, options, defaults FREEZE
 
-- [ ] Field order and labels final on every form.
-- [ ] Helper/explanation copy final (Global SSH & Git per-option explanations
+- [x] Field order and labels final on every form.
+- [x] Helper/explanation copy final (Global SSH & Git per-option explanations
       especially).
-- [ ] Option sets final: algorithm catalog; match strategy (gitdir/hasconfig/both,
+- [x] Option sets final: algorithm catalog; match strategy (gitdir/hasconfig/both,
       default gitdir); delete choices; reuse-vs-generate key.
-- [ ] Defaults recipe-accurate: `Port 443`, `IdentitiesOnly yes`, `gpg.format=ssh`,
+- [x] Defaults recipe-accurate: `Port 443`, `IdentitiesOnly yes`, `gpg.format=ssh`,
       `init.defaultBranch=main`, `core.ignorecase=false`, blank-prefix WYSIWYG.
-- [ ] Recipe fidelity confirmed: alias-per-identity `Host` block, `insteadOf` URL
+- [x] Recipe fidelity confirmed: alias-per-identity `Host` block, `insteadOf` URL
       rewrite, `includeIf hasconfig:`/`gitdir:`, `allowed_signers` line byte-identical
       to `user.email` — all visible in the relevant previews.
 
 ## D. Safety affordances
 
-- [ ] Every mutating surface shows the full four-beat ceremony (preview -> confirm ->
+- [x] Every mutating surface shows the full four-beat ceremony (preview -> confirm ->
       backup path -> result).
-- [ ] Destructive actions do not default to "yes"; the irreversible full-delete
+- [x] Destructive actions do not default to "yes"; the irreversible full-delete
       carries the strongest confirm.
-- [ ] Health is visibly read-only; advisory options are visibly non-blocking.
+- [x] Health is visibly read-only; advisory options are visibly non-blocking.
 
 ## E. Parity & accessibility
 
-- [ ] The HTML<->TUI semantic parity critique is run and all divergence findings are
+- [x] The HTML<->TUI semantic parity critique is run and all divergence findings are
       resolved (three-reviewer convergence at 02-13 plus the fresh
       `agent-ui-ux-designer` critique at the 02-14 close — every finding fixed).
-- [ ] Legible under `NO_COLOR`/monochrome; no meaning by color alone; keyboard-only
+- [x] Legible under `NO_COLOR`/monochrome; no meaning by color alone; keyboard-only
       operability demonstrated.
 
 ## E2. Arrow-key wizard navigation (02-14)
 
-- [ ] In BOTH demos, left/right move between wizard sections when focus is not in a
+- [x] In BOTH demos, left/right move between wizard sections when focus is not in a
       text input or an expanded select (forward gated on step validity, back always
       allowed); a focused input's left/right still move the cursor (never stolen);
       Shift+left/right is an unconditional section chord (focus override only, never
       a validity override).
-- [ ] The stepper `[1] SSH · [2] Test · [3] Git · [4] Review` reads as a navigation
+- [x] The stepper `[1] SSH · [2] Test · [3] Git · [4] Review` reads as a navigation
       affordance in both media: active segment bold + accent (not faint), completed
       segments check-marked.
 
 ## E3. Semantic style system (02-14)
 
-- [ ] Both demos share the `02-STYLE-SPEC.md` roles (info / label / field /
+- [x] Both demos share the `02-STYLE-SPEC.md` roles (info / label / field /
       focused-field / hint / warning / error / preview / disabled-nav / active-area /
       active-nav / healthy), in sync role-by-role between the Go `Theme` and the web
       `theme.ts`.
-- [ ] Focused fields show a contour/accent, blurred fields a dim contour; the hint
+- [x] Focused fields show a contour/accent, blurred fields a dim contour; the hint
       zone never collapses; previews are bounded with the title in the border; the
       main nav dims while a pane captures keys and the active nav item keeps its
       accent background.
 
 ## F. Explicit acknowledgment
 
-- [ ] The user understands and accepts that **the approved live demos ARE the design
+- [x] The user understands and accepts that **the approved live demos ARE the design
       reference** every later phase (3-9) builds against (the real TUI grows out of
       the approved gitid-dummy frame; screenshots may be re-captured from the live
       demos as development checks), and that **no backend logic is written for any
@@ -203,3 +201,5 @@ Phase 3+'s plans `depends_on` this phase's completion (a process/plan-ordering
 guarantee); the phase also carries a runtime-checked complement for the dummy itself
 (DLV-05's no-backend ALLOWLIST, `internal/dummytui/nobackend_test.go`, reconfirmed by
 02-11 Task 1).
+
+**APPROVED:** 2026-07-06 by Pepe
