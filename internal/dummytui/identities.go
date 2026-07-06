@@ -2138,12 +2138,20 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 		b.WriteString(" " + marker + styleBold.Render("Key algorithm") + " " + styleFaint.Render("(←/→ change)") + "\n")
 		for i, entry := range AlgorithmCatalog {
 			dot := glyphRadioOff
-			if i == w.algoIdx {
-				dot = glyphRadioOn
-			}
 			label := entry.ID
 			if entry.Recommended {
 				label += " — ★ recommended"
+			}
+			if i == w.algoIdx {
+				dot = glyphRadioOn
+				// Selected ● + label mirror the match-strategy radio
+				// exactly: FieldFocused accent while the group owns focus,
+				// plain-bold when blurred (D2 one-radio-treatment).
+				if w.focus == 5 {
+					label = DefaultTheme.FieldFocused.Render(label)
+				} else {
+					label = styleBold.Render(label)
+				}
 			}
 			if algoDisabled(entry) {
 				b.WriteString("     " + styleFaint.Render(dot+" "+label+" — Disabled: needs libfido2 + a FIDO2 security key — none detected on this machine") + "\n")

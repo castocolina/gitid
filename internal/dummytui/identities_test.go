@@ -1076,3 +1076,28 @@ func TestGitFormStrategyAlwaysExpandedWithHeaderHint(t *testing.T) {
 		t.Error("all three option rows must remain present while focused")
 	}
 }
+
+func TestWizardAlgorithmSelectionMirrorsStrategyFocusAccent(t *testing.T) {
+	// Checkpoint micro-fix: the Key-algorithm radio (wizard step 0) must
+	// carry the SAME selected-option treatment as the match-strategy radio
+	// (D2 one-radio-treatment): FieldFocused accent while the group owns
+	// focus, plain-bold when blurred — never a plain unstyled label.
+	a := pressSeq(t, identitiesApp(), "n")
+	selected := "ed25519 — ★ recommended"
+	focusedWant := DefaultTheme.FieldFocused.Render(selected)
+	boldWant := styleBold.Render(selected)
+
+	blurred := a.View().Content
+	if !strings.Contains(blurred, boldWant) {
+		t.Error("blurred algorithm radio must render the selected label plain-bold, mirroring the strategy radio")
+	}
+	if strings.Contains(blurred, focusedWant) {
+		t.Error("the FieldFocused accent must not apply while the algorithm group is blurred")
+	}
+
+	a = pressSeq(t, a, "tab", "tab", "tab", "tab") // prefix(1) → host → hostname → port → slot 5 (algorithm)
+	focused := a.View().Content
+	if !strings.Contains(focused, focusedWant) {
+		t.Error("focused algorithm radio must render the selected label through Theme.FieldFocused (accent), mirroring the strategy radio")
+	}
+}
