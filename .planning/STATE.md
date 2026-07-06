@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed 02-15-PLAN.md (checkpoint-2 route-back)
-last_updated: "2026-07-06T02:24:40.389Z"
-last_activity: 2026-07-05 -- Authored 02-15-PLAN.md (checkpoint-2 route-back, wave 8) + amended 02-12 (wave 9, depends_on now includes 02-15) from the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract
+stopped_at: Phase 2 COMPLETE — DLV-08 approval recorded (APPROVED 2026-07-06 by Pepe)
+last_updated: "2026-07-06T00:00:00.000Z"
+last_activity: 2026-07-06 -- Completed 02-12 (★ DLV-08 checkpoint) — user approved both live demos; APPROVAL.md signed off; Phase 2 complete, Phases 3-9 unblocked
 progress:
   total_phases: 10
-  completed_phases: 1
-  total_plans: 23
-  completed_plans: 21
-  percent: 10
+  completed_phases: 2
+  total_plans: 22
+  completed_plans: 22
+  percent: 20
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** Managing a Git identity produces coordinated, coherent SSH + Git artifacts that are proven to authenticate and resolve correctly (`ssh -G`) before any file is written, and existing hand-written config is never corrupted.
-**Current focus:** Phase 02 — design-all-mockups-checkpoint-1
+**Current focus:** Phase 02 COMPLETE (★ CHECKPOINT #1 passed) — next: Phase 03 (create-flow-backend)
 
 ## Current Position
 
-Phase: 02 (design-all-mockups-checkpoint-1) — EXECUTING
-Plan: wave 8 = 02-15 (checkpoint-2 route-back — COMPLETE), wave 9 = 02-12 (DLV-08 approval — next to execute); 02-01..02-11, 02-13, 02-14, and 02-15 are done (+ consolidated review-fixes pass, see 02-REVIEW-FIXES.md)
+Phase: 02 (design-all-mockups-checkpoint-1) — COMPLETE (all 15 plans done; ★ DLV-08 approval recorded)
+Plan: 02-12 (wave 9, the single DLV-08 human checkpoint) — COMPLETE. The user approved both live demos and supplied the approver name; `.planning/design/APPROVAL.md` now carries `**APPROVED:** 2026-07-06 by Pepe` (Status: APPROVED, all §A-F/E2/E3 items ticked). See 02-12-SUMMARY.md for the checkpoint record (first presentation → 11-question feedback round → binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract → 02-15 route-back + F1-F10 review fix pass → micro-fix d6438bd → approval).
 Status: 02-15 (wave 8) operationalized the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract (D1–D9 + affordance audit) in BOTH demos, byte-for-byte: D1 single-row color-only fields (02-14's rounded box deleted), D2 always-expanded match-strategy/algorithm radios, D3 terminal-glyph checkbox/radio on the web, D4 bracketed main-nav format (`[N] Label`, moved off the wizard stepper) + a new ActiveNavDimmed/activeNavDimmed state + a top-level plain-arrow view switch, D5 the wizard stepper reverted to `Step n/4 · <label> ● ○ ○ ○`, D6 one-row git-step buttons, D7 ONE hoisted Shift+←/→ chord gate reaching every step including the previously-dead review ceremony (proven with a new raw-byte PTY e2e injecting real xterm CSI sequences), D8 click-to-focus on every form row, and D9 Global Git's user.email promoted to an editable, opt-in global-fallback field with its own dedicated write ceremony (a documented, scoped recipes/ divergence). 02-STYLE-SPEC.md + both FIELDS.md companions rewritten in lockstep; the full exit-gate battery is green (go test -race, the no-backend allowlist, the extended copy-freeze grep, make test/lint/test-e2e/gate-no-backend-files, pnpm typecheck+build) — see 02-15-SUMMARY.md. The two ORCHESTRATOR-run exit gates (a fresh agent-ui-ux-designer critique of both live demos + a fresh-context code review against 02-15's must_haves/acceptance_criteria) have since RUN and their findings (F1-F10 + one record-only item) are fixed — see 02-15-SUMMARY.md "Review findings resolution (post-plan fix pass)" and commits a335d80/f62c99e. Next is 02-12 (wave 9, the single DLV-08 approval checkpoint), unblocked.
-Last activity: 2026-07-06 -- Completed 02-15-PLAN.md (checkpoint-2 route-back): D1–D9 + affordance audit operationalized in both demos, docs moved in lockstep, full exit-gate battery green
+Last activity: 2026-07-06 -- Completed 02-12 (★ DLV-08): user approval recorded as `**APPROVED:** 2026-07-06 by Pepe`; Phase 2 COMPLETE — the approved live demos + 02-REDESIGN-SPEC.md/02-STYLE-SPEC.md/02-DESIGN-DECISIONS-CHECKPOINT-2.md + per-surface FIELDS.md are the binding design reference; Phases 3-9 backend work is UNBLOCKED
 
-Progress: [█████████░] 91%
+Progress: [██████████] 100% (Phase 2: 15/15 plans — phase complete)
 
 ## Performance Metrics
 
@@ -76,6 +76,7 @@ Progress: [█████████░] 91%
 | Phase 02 P13 | 65min | 3 tasks | 24 files |
 | Phase 02 P14 | 100min | 3 tasks | 14 files |
 | Phase 02 P15 | 180min | 3 tasks | 27 files |
+| Phase 02 P12 | multi-session (checkpoint) | 1 task | 1 file |
 
 ## Accumulated Context
 

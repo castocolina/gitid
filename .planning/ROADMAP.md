@@ -39,8 +39,8 @@ under `.planning/archive/0.0.1-poc-product-features-in-tui/`.
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundations, Spikes & CI** - Non-UI core (screenshot tooling, multi-algo keygen + probing, dual SSH storage, state taxonomy) + cross-OS CI, no product UI
-- [ ] **Phase 2: DESIGN — All Mockups (★ CHECKPOINT #1)** - HTML/`mui` mockups for every surface + an interactive web demo + a live Go TUI demo, user-approved
+- [x] **Phase 1: Foundations, Spikes & CI** - Non-UI core (screenshot tooling, multi-algo keygen + probing, dual SSH storage, state taxonomy) + cross-OS CI, no product UI (completed 2026-07-03)
+- [x] **Phase 2: DESIGN — All Mockups (★ CHECKPOINT #1)** - HTML/`mui` mockups for every surface + an interactive web demo + a live Go TUI demo, user-approved (completed 2026-07-06 — **APPROVED:** 2026-07-06 by Pepe)
 - [ ] **Phase 3: Create Flow Backend** - Algorithm → SSH screen → two-stage test → store, behind the approved design
 - [ ] **Phase 4: Git Configuration Screen** - Per-identity git fragment + `includeIf` + `allowed_signers`, review → confirm → write
 - [ ] **Phase 5: Identity Manager** - State-taxonomy list, SSH-first detail, clone / new-key / rotate / delete-choice, app view set
@@ -138,7 +138,7 @@ Plans:
 
 **Wave 9** — ★ checkpoint (blocked on Wave 8)
 
-- [ ] 02-12-PLAN.md — ★ DLV-08 single human approval of the live demos; record **APPROVED:** in APPROVAL.md (DLV-08/02)
+- [x] 02-12-PLAN.md — ★ DLV-08 single human approval of the live demos; record **APPROVED:** in APPROVAL.md (DLV-08/02) — **APPROVED:** 2026-07-06 by Pepe
 
 ### Phase 3: Create Flow Backend
 
