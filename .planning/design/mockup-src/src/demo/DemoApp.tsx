@@ -98,7 +98,18 @@ export function DemoApp() {
         openPalette();
         return;
       }
-      if (helpOpen || paletteOpen || quitOpen) return; // dialogs own their keys
+      // review-findings F2(h): the help dialog advertises `Esc/? close` —
+      // MUI's Dialog onClose already fires on Escape, but `?` needs its own
+      // handling here since the effect otherwise returns before reaching
+      // the shared `?`/`q` handling below (dialogs own their keys).
+      if (helpOpen) {
+        if (e.key === 'Escape' || e.key === '?') {
+          e.preventDefault();
+          setHelpOpen(false);
+        }
+        return;
+      }
+      if (paletteOpen || quitOpen) return; // dialogs own their keys
       const target = e.target as HTMLElement | null;
       // 02-STYLE-SPEC.md §2 clause 5 — Shift+<-/-> is a FOCUS-OVERRIDE chord:
       // it reaches the screen-local wizard-step-nav handlers even when focus
@@ -170,7 +181,13 @@ export function DemoApp() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [helpOpen, paletteOpen, quitOpen, openPalette]);
+    // review-findings F1 (CRITICAL): `tab` is read inside `onKey` (the D4
+    // top-level ←/→ view switch computes `TAB_ORDER.indexOf(tab)`) but was
+    // missing from this deps array — the effect never re-ran on tab
+    // changes, so `onKey`'s closure kept referencing the STALE `tab` value
+    // from the last time this effect actually re-ran, breaking view
+    // switching after the first ArrowLeft/ArrowRight.
+  }, [tab, helpOpen, paletteOpen, quitOpen, openPalette]);
 
   const contextValue = useMemo<DemoContextValue>(
     () => ({ state, dispatch, tab, setTab, notify, registerLocalKeys, openHelp, openPalette }),
@@ -272,6 +289,14 @@ export function DemoApp() {
               ))}
             </TableBody>
           </Table>
+          {/* review-findings F2(h): the affordance-audit footer for this
+              overlay — frozen copy, verbatim, mirroring the TUI's
+              `{Key: "Esc/?", Label: "close"}` (app.go). */}
+          <Box sx={{ textAlign: 'right', mt: 1 }}>
+            <Typography component="span" sx={{ color: 'text.disabled', fontSize: 12 }}>
+              Esc/? close
+            </Typography>
+          </Box>
         </DialogContent>
       </Dialog>
 

@@ -7,7 +7,7 @@
  * and per-finding fix ceremonies. The sidebar never disappears.
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Autocomplete,
@@ -45,7 +45,7 @@ import {
   type MatchStrategy,
 } from '../../data/recipeFixtures';
 import { roles, semanticColors } from '../../theme';
-import Frame, { type FrameAction } from '../Frame';
+import Frame, { CEREMONY_FOOTER_ACTIONS, type FrameAction } from '../Frame';
 import { useDemo, useLocalKeys } from '../DemoContext';
 import MutationCeremony, { PreviewBlock } from '../MutationCeremony';
 import { planFor } from '../fixplans';
@@ -111,7 +111,7 @@ function providerDefaults(provider: string): { hostname: string; port: string } 
 // height change (superseding the field-contour box 02-14 shipped — that
 // component never existed on the web, so this is purely a rename +
 // blurred-state addition, not a behavior change).
-const fieldSx = {
+export const fieldSx = {
   '& .MuiOutlinedInput-root': {
     opacity: roles.blurredField.opacity,
   },
@@ -421,9 +421,25 @@ function GitFormFields({
 
 type TestPhase = 'idle' | 'running1' | 'stage1' | 'running2' | 'stage2' | 'failed';
 
-function CreateWizard({ onDone, onCancel }: { onDone: (name: string) => void; onCancel: () => void }) {
+function CreateWizard({
+  onDone,
+  onCancel,
+  onStepChange,
+}: {
+  onDone: (name: string) => void;
+  onCancel: () => void;
+  /** review-findings F2: lets the parent mirror the TUI's ceremony footer
+   * once the wizard reaches step 3 (the review ceremony) — the wizard
+   * itself renders inside Frame's children, so its own step lives here and
+   * must be reported up rather than duplicated. */
+  onStepChange?: (step: number) => void;
+}) {
   const { state, dispatch, notify } = useDemo();
   const [step, setStep] = useState(0);
+
+  useEffect(() => {
+    onStepChange?.(step);
+  }, [step, onStepChange]);
 
   const [provider, setProvider] = useState('github.com');
   const [prefix, setPrefix] = useState('acme');
@@ -526,7 +542,14 @@ function CreateWizard({ onDone, onCancel }: { onDone: (name: string) => void; on
             else setStep((s) => s - 1);
             return true;
           }
-          if (!stepForward()) notify(blockedForwardNote(step));
+          // review-findings F7: blockedForwardNote returns '' at steps 1/3
+          // (the test step's own stage output already explains what is
+          // missing) — notify('') opened an EMPTY Snackbar, since DemoApp's
+          // `open={toast !== null}` guard only excludes `null`, not ''.
+          if (!stepForward()) {
+            const note = blockedForwardNote(step);
+            if (note) notify(note);
+          }
           return true;
         }
         if (step === 3) return false; // ceremony owns keys (Enter/Esc/Tab)
@@ -786,46 +809,49 @@ function CreateWizard({ onDone, onCancel }: { onDone: (name: string) => void; on
           {/* Round-3 feedback: assume the user wants Git configured — show
               the FULL form immediately; Skip is just a button at the end. */}
           <GitFormFields name={name} keyPath={keyPath} values={git} onChange={setGit} />
-          <Stack direction="row" spacing={2} alignItems="flex-start">
+          {/* review-findings F8: ONE row Stack of the three buttons + ONE
+              hint Stack below with both frozen hints as full-width lines —
+              mirroring the TUI's single-row button + always-visible-hints
+              rendering (identities.go renderWizard case 2), replacing the
+              per-button nested Stacks this used to split the hints across. */}
+          <Stack direction="row" spacing={2} alignItems="center">
             <Button variant="outlined" onClick={() => setStep(1)}>
               Back (Esc)
             </Button>
-            <Stack>
-              <Button
-                variant="outlined"
-                onClick={() => {
-                  setConfigureGit(false);
-                  setStep(3);
-                }}
-              >
-                [ Skip Git ]
-              </Button>
-              <Typography sx={{ fontSize: 12, color: roles.hint.color, mt: 0.25 }}>
-                Skip keeps this identity SSH-only and marks it incomplete.
+            <Button
+              variant="outlined"
+              onClick={() => {
+                setConfigureGit(false);
+                setStep(3);
+              }}
+            >
+              [ Skip Git ]
+            </Button>
+            <Button
+              variant="contained"
+              disabled={git.gitName.trim() === '' || !git.gitEmail.includes('@')}
+              onClick={() => {
+                setConfigureGit(true);
+                setStep(3);
+              }}
+            >
+              [ Continue ]
+            </Button>
+            {/* D7 (checkpoint-2 contract): the disabled reason text —
+                byte-identical to the TUI's gitFormDisabledSuffix. */}
+            {(git.gitName.trim() === '' || !git.gitEmail.includes('@')) && (
+              <Typography sx={{ fontSize: 12, color: roles.error.color }}>
+                — needs user.name + a valid email
               </Typography>
-            </Stack>
-            <Stack>
-              <Button
-                variant="contained"
-                disabled={git.gitName.trim() === '' || !git.gitEmail.includes('@')}
-                onClick={() => {
-                  setConfigureGit(true);
-                  setStep(3);
-                }}
-              >
-                [ Continue ]
-              </Button>
-              {/* D7 (checkpoint-2 contract): the disabled reason text —
-                  byte-identical to the TUI's gitFormDisabledSuffix. */}
-              {(git.gitName.trim() === '' || !git.gitEmail.includes('@')) && (
-                <Typography sx={{ fontSize: 12, color: roles.error.color, mt: 0.25 }}>
-                  — needs user.name + a valid email
-                </Typography>
-              )}
-              <Typography sx={{ fontSize: 12, color: roles.hint.color, mt: 0.25 }}>
-                Continue reviews the Git fragment, includeIf, and allowed_signers entries before writing.
-              </Typography>
-            </Stack>
+            )}
+          </Stack>
+          <Stack spacing={0.25}>
+            <Typography sx={{ fontSize: 12, color: roles.hint.color }}>
+              Skip keeps this identity SSH-only and marks it incomplete.
+            </Typography>
+            <Typography sx={{ fontSize: 12, color: roles.hint.color }}>
+              Continue reviews the Git fragment, includeIf, and allowed_signers entries before writing.
+            </Typography>
           </Stack>
         </Stack>
       )}
@@ -874,6 +900,11 @@ export function Identities() {
   const { state, dispatch, notify, setTab } = useDemo();
   const [selectedName, setSelectedName] = useState<string>(state.identities[0]?.name ?? '');
   const [pane, setPane] = useState<PaneMode>({ kind: 'detail' });
+  // review-findings F2: the create wizard's OWN step lives inside
+  // CreateWizard (rendered as Frame's children, not a Frame itself) — this
+  // mirrors it up so the footer can show the ceremony affordance only once
+  // the wizard reaches step 3 (the review ceremony).
+  const [wizardStep, setWizardStep] = useState(0);
   const [deleteAsk, setDeleteAsk] = useState(false);
   const [deleteScope, setDeleteScope] = useState<'everything' | 'git-only'>('git-only');
   const [cloneName, setCloneName] = useState('');
@@ -980,6 +1011,11 @@ export function Identities() {
                   ? [selected.name]
                   : [];
 
+  // review-findings F2: EVERY non-detail pane used to pass actions={[]} —
+  // "reserved Esc back already covers leaving a form" was true but
+  // incomplete: it never advertised the audit-table's own contextual
+  // footer (frozen copy, verbatim, byte-identical to the TUI's
+  // ceremonyFooterActions / per-pane FooterAction sets in identities.go).
   const actions: FrameAction[] =
     pane.kind === 'detail'
       ? [
@@ -990,7 +1026,19 @@ export function Identities() {
           { key: 'c', label: 'clone', onActivate: () => selected && (setCloneName(`${selected.name}-clone`), setPane({ kind: 'clone' })) },
           { key: 'd', label: 'delete', onActivate: () => setDeleteAsk(true) },
         ]
-      : []; // reserved "Esc back" already covers leaving a form
+      : pane.kind === 'create'
+        ? wizardStep === 3
+          ? CEREMONY_FOOTER_ACTIONS // the review step IS the create ceremony
+          : []
+        : pane.kind === 'edit-ssh'
+          ? [{ key: 'Tab/↑↓', label: 'fields' }, { key: 'Enter', label: 'rewrite Host block' }]
+          : pane.kind === 'git'
+            ? [{ key: 'Tab/↑↓', label: 'fields' }, { key: 'Enter', label: 'write Git identity' }]
+            : pane.kind === 'clone'
+              ? [{ key: 'Tab', label: 'switch' }, { key: 'Enter', label: 'clone' }]
+              : pane.kind === 'delete' || pane.kind === 'fix'
+                ? CEREMONY_FOOTER_ACTIONS
+                : [];
 
   const fixFinding = pane.kind === 'fix' ? findings.find((f) => f.id === pane.findingId) : undefined;
 
@@ -1062,6 +1110,7 @@ export function Identities() {
                 setSelectedName(name);
                 toDetail();
               }}
+              onStepChange={setWizardStep}
             />
           )}
 
@@ -1262,6 +1311,7 @@ export function Identities() {
                 label="New identity name"
                 size="small"
                 autoFocus
+                sx={fieldSx}
                 value={cloneName}
                 onChange={(e) => setCloneName(e.target.value)}
                 error={rows.some((r) => r.name === cloneName) || cloneName.trim() === ''}

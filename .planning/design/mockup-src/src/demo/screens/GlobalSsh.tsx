@@ -33,7 +33,7 @@ import {
   managedBlockSentinels,
 } from '../../data/recipeFixtures';
 import { roles, semanticColors } from '../../theme';
-import Frame, { type FrameAction } from '../Frame';
+import Frame, { CEREMONY_FOOTER_ACTIONS, type FrameAction } from '../Frame';
 import { useDemo, useLocalKeys } from '../DemoContext';
 import MutationCeremony, { PreviewBlock } from '../MutationCeremony';
 import { newBackupPath, type SshStorageLayout } from '../store';
@@ -83,13 +83,31 @@ export function GlobalSsh() {
       (key) => {
         if (mode !== 'browse') return false; // ceremony owns keys
         if (key === 'ArrowDown' || key === 'ArrowUp') {
-          if (subTab !== 'options') return false;
+          if (subTab !== 'options') {
+            // review-findings F2(f): the Storage sub-tab footer now
+            // advertises `↑↓ layout` (mirroring globalssh.go's storage
+            // `↑↓`) — wire the actual toggle so the advertised affordance
+            // is real, not just copy.
+            setStorageChoice((s) => (s === 'sentinel' ? 'include' : 'sentinel'));
+            return true;
+          }
           const next = options[key === 'ArrowDown' ? Math.min(detailIdx + 1, options.length - 1) : Math.max(detailIdx - 1, 0)];
           if (next) setDetailKey(next.key);
           return true;
         }
         if (key === 'ArrowLeft' || key === 'ArrowRight') {
           setSubTab((t) => (t === 'options' ? 'storage' : 'options'));
+          return true;
+        }
+        if (key === ' ' && subTab === 'options') {
+          // review-findings F2(e): the Options footer now advertises
+          // `space toggle` (mirroring globalssh.go's `space` binding) —
+          // wire the actual toggle on the selected row so the advertised
+          // affordance is real, not just copy.
+          const current = options[detailIdx];
+          if (current?.needsAction) {
+            setChosen((c) => (c.includes(current.key) ? c.filter((k) => k !== current.key) : [...c, current.key]));
+          }
           return true;
         }
         return false;
@@ -102,19 +120,26 @@ export function GlobalSsh() {
   const includePreviewOwned = `# ~/.ssh/config.d/gitid.config (gitid-owned file)\nHost personal.github.com\n    Hostname ssh.github.com\n    Port 443\n    User git\n    IdentityFile ~/.ssh/id_ed25519_personal\n    IdentitiesOnly yes\n\n${managedHostStar(state.sshApplied)}`;
   const sentinelPreview = `# ~/.ssh/config — gitid blocks live in place, sentinel-delimited\n\nHost personal.github.com\n    Hostname ssh.github.com\n    Port 443\n    User git\n    IdentityFile ~/.ssh/id_ed25519_personal\n    IdentitiesOnly yes\n\n${managedHostStar(state.sshApplied)}`;
 
+  // review-findings F2(e)/F2(f): the Options browse footer was missing
+  // `space toggle`, and the Storage sub-tab footer was missing `↑↓ layout`
+  // — both present on the TUI (globalssh.go's renderOptions/renderStorage
+  // FooterAction sets). The ceremony footer now mirrors the TUI's
+  // ceremonyFooterActions (F2(a)) instead of a bare `Esc cancel`.
   const actions: FrameAction[] =
     mode !== 'browse'
-      ? [{ key: 'Esc', label: 'cancel' }]
+      ? CEREMONY_FOOTER_ACTIONS
       : subTab === 'options'
         ? [
             { key: '↑↓', label: 'select option' },
             { key: '←→', label: 'Options / Storage' },
+            { key: 'space', label: 'toggle' },
             ...(applyChosen.length > 0
               ? [{ key: 'a', label: `apply ${applyChosen.length} selected`, onActivate: () => setMode('apply-ceremony') }]
               : []),
           ]
         : [
             { key: '←→', label: 'Options / Storage' },
+            { key: '↑↓', label: 'layout' },
             ...(storageChoice !== state.sshStorage
               ? [{ key: 'Enter', label: 'migrate layout…', onActivate: () => setMode('storage-ceremony') }]
               : []),

@@ -50,6 +50,20 @@ const RESERVED: FrameAction[] = [
   { key: 'q', label: 'quit' },
 ];
 
+/**
+ * The audit-table contextual footer shared by EVERY write ceremony (frozen
+ * copy, verbatim — byte-identical to the TUI's ceremonyFooterActions in
+ * internal/dummytui/identities.go). review-findings F2: this was NEVER
+ * mirrored to the web — every ceremony call site (create-review, edit-ssh,
+ * configure-git, delete, fix, the Global SSH/Git apply ceremonies, and the
+ * Doctor fix ceremony) passed `actions={[]}`, so only the generic reserved
+ * `Esc back` hint ever advertised the Cancel/Confirm affordance.
+ */
+export const CEREMONY_FOOTER_ACTIONS: FrameAction[] = [
+  { key: 'Tab/←→', label: 'Cancel / Confirm' },
+  { key: 'Enter', label: 'confirm' },
+];
+
 export function Frame({
   crumbs = [],
   statusMessage = 'Ready.',

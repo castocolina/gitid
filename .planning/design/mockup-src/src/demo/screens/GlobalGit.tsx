@@ -33,9 +33,10 @@ import {
   globalGitResultMessage,
 } from '../../data/recipeFixtures';
 import { roles } from '../../theme';
-import Frame, { type FrameAction } from '../Frame';
+import Frame, { CEREMONY_FOOTER_ACTIONS, type FrameAction } from '../Frame';
 import { useDemo, useLocalKeys } from '../DemoContext';
 import MutationCeremony, { PreviewBlock } from '../MutationCeremony';
+import { fieldSx } from './Identities';
 import { newBackupPath } from '../store';
 
 export function GlobalGit() {
@@ -51,13 +52,27 @@ export function GlobalGit() {
 
   const options = useMemo(
     () =>
-      globalGitOptions.map((o) =>
-        state.gitBaselineApplied && o.needsAction
+      globalGitOptions.map((o) => {
+        if (o.key === globalGitEmailFallbackKey) {
+          // review-findings F4: the email-fallback row has its OWN
+          // dedicated apply ceremony and must NEVER join the generic
+          // baseline-applied overlay — sweeping it in here (it also
+          // carries needsAction: true) falsely marked it "Applied by
+          // gitid" and made it permanently untogglable the instant the
+          // baseline was applied. Its currentValue instead reflects the
+          // ACTUALLY-applied gitGlobalEmail, and it stays toggleable no
+          // matter what the baseline state is.
+          return state.gitGlobalEmail ? { ...o, currentValue: state.gitGlobalEmail } : o;
+        }
+        return state.gitBaselineApplied && o.needsAction
           ? { ...o, currentValue: o.recommendedValue, needsAction: false, oneLiner: `Applied by gitid — ${o.oneLiner}` }
-          : o,
-      ),
-    [state.gitBaselineApplied],
+          : o;
+      }),
+    [state.gitBaselineApplied, state.gitGlobalEmail],
   );
+  // review-findings F10: gate the fallback apply on a plausible email —
+  // reusing the wizard git-form's own contains-@ check.
+  const emailValid = emailValue.includes('@');
   // D9: the global-fallback row is EXCLUDED from the generic
   // "pending"/apply-count — it is a separate, opt-in concern with its own
   // detail render and ceremony, never folded into the baseline.
@@ -77,21 +92,41 @@ export function GlobalGit() {
           if (next) setDetailKey(next.key);
           return true;
         }
+        if (key === ' ') {
+          // review-findings F2(g): the footer now advertises `space toggle`
+          // (mirroring globalgit.go's `space` binding) — wire the actual
+          // toggle on the selected row so the advertised affordance is
+          // real, not just copy.
+          const current = options[detailIdx];
+          if (current?.needsAction) {
+            setChosen((c) => (c.includes(current.key) ? c.filter((k) => k !== current.key) : [...c, current.key]));
+          }
+          return true;
+        }
         return false;
       },
       [mode, options, detailIdx],
     ),
   );
 
+  // review-findings F9: the TUI (globalgit.go handleKey "a") prioritizes the
+  // dedicated email ceremony FIRST whenever the fallback row is selected AND
+  // chosen — the web used to check applyChosen.length first, so a pending
+  // baseline apply elsewhere would steal "a" away from the fallback row even
+  // while it was the active selection. F10: the email branch additionally
+  // requires emailValid — an implausible email is never applicable.
+  // F2(g): the browse footer now also advertises `space toggle` (mirroring
+  // globalgit.go's `space` FooterAction).
   const actions: FrameAction[] =
     mode !== 'browse'
-      ? [{ key: 'Esc', label: 'cancel' }]
+      ? CEREMONY_FOOTER_ACTIONS
       : [
           { key: '↑↓', label: 'select option' },
-          ...(applyChosen.length > 0
-            ? [{ key: 'a', label: `apply ${applyChosen.length} selected`, onActivate: () => setMode('ceremony') }]
-            : detail?.key === globalGitEmailFallbackKey && emailChosen
-              ? [{ key: 'a', label: 'set global fallback email', onActivate: () => setMode('email-ceremony') }]
+          { key: 'space', label: 'toggle' },
+          ...(detail?.key === globalGitEmailFallbackKey && emailChosen && emailValid
+            ? [{ key: 'a', label: 'set global fallback email', onActivate: () => setMode('email-ceremony') }]
+            : applyChosen.length > 0
+              ? [{ key: 'a', label: `apply ${applyChosen.length} selected`, onActivate: () => setMode('ceremony') }]
               : []),
         ];
 
@@ -186,15 +221,25 @@ export function GlobalGit() {
                   label={globalGitEmailFallbackKey}
                   size="small"
                   fullWidth
+                  // review-findings F6: this field carried NO fieldSx (D1's
+                  // rest/focus tint) — every other editable field in both
+                  // screens does.
+                  sx={{ mb: 1, ...fieldSx }}
                   value={emailValue}
+                  // review-findings F10: reuse the wizard's own inline-error
+                  // idiom (GitFormFields' user.email `error={!includes('@')}`)
+                  // instead of silently allowing an implausible apply.
+                  error={!emailValid}
                   onChange={(e) => setEmailValue(e.target.value)}
-                  sx={{ mb: 1 }}
                 />
+                {!emailValid && (
+                  <Typography sx={{ fontSize: 12, color: roles.error.color, mt: -0.5, mb: 0.5 }}>needs @</Typography>
+                )}
                 <Typography sx={{ fontSize: 13, color: roles.hint.color }}>{globalGitEmailFallbackHelper}</Typography>
                 <Typography sx={{ fontSize: 13, color: roles.hint.color, mt: 0.5 }}>
                   {globalGitEmailFallbackAdvisory}
                 </Typography>
-                {emailChosen && (
+                {emailChosen && emailValid && (
                   <Button variant="contained" sx={{ mt: 1.5 }} onClick={() => setMode('email-ceremony')}>
                     Set global fallback email…
                   </Button>

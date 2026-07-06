@@ -28,7 +28,7 @@ import {
   type HealthSeverity,
 } from '../../data/recipeFixtures';
 import { roles } from '../../theme';
-import Frame, { type FrameAction } from '../Frame';
+import Frame, { CEREMONY_FOOTER_ACTIONS, type FrameAction } from '../Frame';
 import { useDemo, useLocalKeys } from '../DemoContext';
 import MutationCeremony, { PreviewBlock } from '../MutationCeremony';
 import { planFor } from '../fixplans';
@@ -142,8 +142,11 @@ export function Doctor() {
     [dispatch, notify, batch],
   );
 
+  // review-findings F2(a): "all ceremonies" includes the Doctor fix
+  // ceremony — mirror the TUI's ceremonyFooterActions instead of a bare
+  // `Esc cancel fix`.
   const actions: FrameAction[] = fixing
-    ? [{ key: 'Esc', label: 'cancel fix' }]
+    ? CEREMONY_FOOTER_ACTIONS
     : [
         { key: '↑↓', label: 'select finding' },
         ...(selected?.suggestedFix ? [{ key: 'f', label: 'fix this', onActivate: () => setFixing(true) }] : []),
