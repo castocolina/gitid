@@ -93,7 +93,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. `agent-ui-ux-designer` critiques the HTML ↔ TUI-dummy visual diff, and its findings are resolved before approval. (DLV-02)
   4. **★ The user approves the complete design** (interactive web demo + live Go TUI demo); the approved demos become the design reference for every later UI wave, and **no backend logic is written for any surface before this approval**. (DLV-08, DLV-05)
 
-**Plans**: 14 plans in 8 waves
+**Plans**: 15 plans in 9 waves
 **UI hint**: yes
 
 Plans:
@@ -132,7 +132,11 @@ Plans:
 
 - [x] 02-14-PLAN.md — checkpoint feedback polish: semantic style contract (02-STYLE-SPEC.md + central Go Theme ↔ web theme.ts), ←/→ wizard navigation, first-class TUI stepper, focused/blurred field contours, stable hint zones, bounded previews, dimmed disabled nav, atomic slide-3 copy freeze (DLV-01/02/05)
 
-**Wave 8** — ★ checkpoint (blocked on Wave 7)
+**Wave 8** — checkpoint-2 route-back (operationalizes the binding 02-DESIGN-DECISIONS-CHECKPOINT-2 contract; blocked on Wave 7)
+
+- [ ] 02-15-PLAN.md — checkpoint-2 route-back polish: single-row color-only fields (kills the field box), always-expanded radios + header hint, terminal-glyph checkbox/radio, bracketed main nav + ActiveNavDimmed + plain-arrow view switch, reverted `Step n/4` stepper + per-step Shift-chord hints, one-row Git buttons, hoisted chord gate (Shift works at every step), click-to-focus, editable global-fallback user.email, affordance-audit footers (DLV-01/02/05)
+
+**Wave 9** — ★ checkpoint (blocked on Wave 8)
 
 - [ ] 02-12-PLAN.md — ★ DLV-08 single human approval of the live demos; record **APPROVED:** in APPROVAL.md (DLV-08/02)
 
@@ -264,7 +268,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations, Spikes & CI | 7/7 | Complete | 2026-07-03 |
-| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 13/14 | In Progress|  |
+| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 13/15 | In Progress|  |
 | 3. Create Flow Backend | 0/TBD | Not started | - |
 | 4. Git Configuration Screen | 0/TBD | Not started | - |
 | 5. Identity Manager | 0/TBD | Not started | - |

@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed 02-14-PLAN.md
+stopped_at: Planned 02-15-PLAN.md (checkpoint-2 route-back) + amended 02-12-PLAN.md
 last_updated: "2026-07-05T18:00:03.764Z"
 last_activity: "2026-07-05 -- Completed quick task 260705-f9t: `make demo-web` target (relaunch web mockup dev server on port 45173 + open browser)"
 progress:
   total_phases: 10
   completed_phases: 1
-  total_plans: 22
+  total_plans: 23
   completed_plans: 20
   percent: 10
 ---
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 ## Current Position
 
 Phase: 02 (design-all-mockups-checkpoint-1) — EXECUTING
-Plan: wave 8 remains — 02-12 (DLV-08 approval); 02-01..02-11, 02-13, and 02-14 are done (+ consolidated review-fixes pass, see 02-REVIEW-FIXES.md)
-Status: 02-13 rebuilt cmd/gitid-dummy as the LIVE interactive Bubble Tea v2 demo; the round-2/round-3 cross-AI review then inserted 02-14 (a checkpoint-feedback polish wave), now COMPLETE: 02-STYLE-SPEC.md (the cross-media semantic style contract), a central Go Theme mirrored 1:1 with the web theme.ts roles, the written arrow-key precedence rule (incl. a Shift+←/→ focus-override chord) implemented identically in both demos, a first-class `[1] SSH · [2] Test · [3] Git · [4] Review` stepper, focused-accent/blurred-dim field contours that still fit 100×30, a persistent match-strategy hint, and the atomic `[ Skip Git ]`/`[ Continue ]` copy freeze across both demos + FIELDS.md + every Go/TSX pin — all gates green (see 02-14-SUMMARY.md). The orchestrator has since run BOTH the fresh agent-ui-ux-designer critique and the fresh-context code review against 02-14; both surfaced findings (F1-F11), now ALL fixed or explicitly recorded in a follow-up "review findings resolution" pass (see 02-14-SUMMARY.md's "Review findings resolution (post-plan fix pass)" section) — no outstanding blocker remains from 02-14. Next is 02-12 (wave 8, the single DLV-08 approval checkpoint).
-Last activity: 2026-07-05 -- Completed 02-14-PLAN.md: round-2/round-3 checkpoint-feedback polish wave (style contract, arrow-key precedence, field contours, copy freeze)
+Plan: wave 8 = 02-15 (checkpoint-2 route-back — next to execute), wave 9 = 02-12 (DLV-08 approval); 02-01..02-11, 02-13, and 02-14 are done (+ consolidated review-fixes pass, see 02-REVIEW-FIXES.md)
+Status: 02-13 rebuilt cmd/gitid-dummy as the LIVE interactive Bubble Tea v2 demo; the round-2/round-3 cross-AI review then inserted 02-14 (a checkpoint-feedback polish wave), now COMPLETE: 02-STYLE-SPEC.md (the cross-media semantic style contract), a central Go Theme mirrored 1:1 with the web theme.ts roles, the written arrow-key precedence rule (incl. a Shift+←/→ focus-override chord) implemented identically in both demos, a first-class `[1] SSH · [2] Test · [3] Git · [4] Review` stepper, focused-accent/blurred-dim field contours that still fit 100×30, a persistent match-strategy hint, and the atomic `[ Skip Git ]`/`[ Continue ]` copy freeze across both demos + FIELDS.md + every Go/TSX pin — all gates green (see 02-14-SUMMARY.md). The orchestrator has since run BOTH the fresh agent-ui-ux-designer critique and the fresh-context code review against 02-14; both surfaced findings (F1-F11), now ALL fixed or explicitly recorded in a follow-up "review findings resolution" pass (see 02-14-SUMMARY.md's "Review findings resolution (post-plan fix pass)" section) — no outstanding blocker remains from 02-14. The 02-12 human checkpoint returned checkpoint-2 change requests; the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract (D1–D9 + affordance audit) was authored and user-approved, and 02-15 (wave 8) now operationalizes it — reverting the parts of 02-14 the contract overturns (the 3-row field box, the bracketed wizard stepper). Next is 02-15 (wave 8, checkpoint-2 route-back), then 02-12 (wave 9, the single DLV-08 approval checkpoint).
+Last activity: 2026-07-05 -- Authored 02-15-PLAN.md (checkpoint-2 route-back, wave 8) + amended 02-12 (wave 9, depends_on now includes 02-15) from the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract
 
 Progress: [█████████░] 91%
 
