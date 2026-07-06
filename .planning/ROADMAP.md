@@ -134,7 +134,7 @@ Plans:
 
 **Wave 8** — checkpoint-2 route-back (operationalizes the binding 02-DESIGN-DECISIONS-CHECKPOINT-2 contract; blocked on Wave 7)
 
-- [ ] 02-15-PLAN.md — checkpoint-2 route-back polish: single-row color-only fields (kills the field box), always-expanded radios + header hint, terminal-glyph checkbox/radio, bracketed main nav + ActiveNavDimmed + plain-arrow view switch, reverted `Step n/4` stepper + per-step Shift-chord hints, one-row Git buttons, hoisted chord gate (Shift works at every step), click-to-focus, editable global-fallback user.email, affordance-audit footers (DLV-01/02/05)
+- [x] 02-15-PLAN.md — checkpoint-2 route-back polish: single-row color-only fields (kills the field box), always-expanded radios + header hint, terminal-glyph checkbox/radio, bracketed main nav + ActiveNavDimmed + plain-arrow view switch, reverted `Step n/4` stepper + per-step Shift-chord hints, one-row Git buttons, hoisted chord gate (Shift works at every step), click-to-focus, editable global-fallback user.email, affordance-audit footers (DLV-01/02/05)
 
 **Wave 9** — ★ checkpoint (blocked on Wave 8)
 
@@ -268,7 +268,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations, Spikes & CI | 7/7 | Complete | 2026-07-03 |
-| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 13/15 | In Progress|  |
+| 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 14/15 | In Progress|  |
 | 3. Create Flow Backend | 0/TBD | Not started | - |
 | 4. Git Configuration Screen | 0/TBD | Not started | - |
 | 5. Identity Manager | 0/TBD | Not started | - |

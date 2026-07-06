@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Planned 02-15-PLAN.md (checkpoint-2 route-back) + amended 02-12-PLAN.md
-last_updated: "2026-07-05T18:00:03.764Z"
-last_activity: "2026-07-05 -- Completed quick task 260705-f9t: `make demo-web` target (relaunch web mockup dev server on port 45173 + open browser)"
+stopped_at: Completed 02-15-PLAN.md (checkpoint-2 route-back)
+last_updated: "2026-07-06T02:24:40.389Z"
+last_activity: 2026-07-05 -- Authored 02-15-PLAN.md (checkpoint-2 route-back, wave 8) + amended 02-12 (wave 9, depends_on now includes 02-15) from the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 23
-  completed_plans: 20
+  completed_plans: 21
   percent: 10
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 ## Current Position
 
 Phase: 02 (design-all-mockups-checkpoint-1) — EXECUTING
-Plan: wave 8 = 02-15 (checkpoint-2 route-back — next to execute), wave 9 = 02-12 (DLV-08 approval); 02-01..02-11, 02-13, and 02-14 are done (+ consolidated review-fixes pass, see 02-REVIEW-FIXES.md)
-Status: 02-13 rebuilt cmd/gitid-dummy as the LIVE interactive Bubble Tea v2 demo; the round-2/round-3 cross-AI review then inserted 02-14 (a checkpoint-feedback polish wave), now COMPLETE: 02-STYLE-SPEC.md (the cross-media semantic style contract), a central Go Theme mirrored 1:1 with the web theme.ts roles, the written arrow-key precedence rule (incl. a Shift+←/→ focus-override chord) implemented identically in both demos, a first-class `[1] SSH · [2] Test · [3] Git · [4] Review` stepper, focused-accent/blurred-dim field contours that still fit 100×30, a persistent match-strategy hint, and the atomic `[ Skip Git ]`/`[ Continue ]` copy freeze across both demos + FIELDS.md + every Go/TSX pin — all gates green (see 02-14-SUMMARY.md). The orchestrator has since run BOTH the fresh agent-ui-ux-designer critique and the fresh-context code review against 02-14; both surfaced findings (F1-F11), now ALL fixed or explicitly recorded in a follow-up "review findings resolution" pass (see 02-14-SUMMARY.md's "Review findings resolution (post-plan fix pass)" section) — no outstanding blocker remains from 02-14. The 02-12 human checkpoint returned checkpoint-2 change requests; the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract (D1–D9 + affordance audit) was authored and user-approved, and 02-15 (wave 8) now operationalizes it — reverting the parts of 02-14 the contract overturns (the 3-row field box, the bracketed wizard stepper). Next is 02-15 (wave 8, checkpoint-2 route-back), then 02-12 (wave 9, the single DLV-08 approval checkpoint).
-Last activity: 2026-07-05 -- Authored 02-15-PLAN.md (checkpoint-2 route-back, wave 8) + amended 02-12 (wave 9, depends_on now includes 02-15) from the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract
+Plan: wave 8 = 02-15 (checkpoint-2 route-back — COMPLETE), wave 9 = 02-12 (DLV-08 approval — next to execute); 02-01..02-11, 02-13, 02-14, and 02-15 are done (+ consolidated review-fixes pass, see 02-REVIEW-FIXES.md)
+Status: 02-15 (wave 8) operationalized the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract (D1–D9 + affordance audit) in BOTH demos, byte-for-byte: D1 single-row color-only fields (02-14's rounded box deleted), D2 always-expanded match-strategy/algorithm radios, D3 terminal-glyph checkbox/radio on the web, D4 bracketed main-nav format (`[N] Label`, moved off the wizard stepper) + a new ActiveNavDimmed/activeNavDimmed state + a top-level plain-arrow view switch, D5 the wizard stepper reverted to `Step n/4 · <label> ● ○ ○ ○`, D6 one-row git-step buttons, D7 ONE hoisted Shift+←/→ chord gate reaching every step including the previously-dead review ceremony (proven with a new raw-byte PTY e2e injecting real xterm CSI sequences), D8 click-to-focus on every form row, and D9 Global Git's user.email promoted to an editable, opt-in global-fallback field with its own dedicated write ceremony (a documented, scoped recipes/ divergence). 02-STYLE-SPEC.md + both FIELDS.md companions rewritten in lockstep; the full exit-gate battery is green (go test -race, the no-backend allowlist, the extended copy-freeze grep, make test/lint/test-e2e/gate-no-backend-files, pnpm typecheck+build) — see 02-15-SUMMARY.md. Two ORCHESTRATOR-run exit gates remain outstanding before 02-12 can be re-presented: a fresh agent-ui-ux-designer critique of both live demos, and a fresh-context code review against 02-15's must_haves/acceptance_criteria. Next is 02-12 (wave 9, the single DLV-08 approval checkpoint), gated on those two reviews.
+Last activity: 2026-07-06 -- Completed 02-15-PLAN.md (checkpoint-2 route-back): D1–D9 + affordance audit operationalized in both demos, docs moved in lockstep, full exit-gate battery green
 
 Progress: [█████████░] 91%
 
@@ -75,6 +75,7 @@ Progress: [█████████░] 91%
 | Phase 02 P11 | 30min | 2 tasks | 8 files |
 | Phase 02 P13 | 65min | 3 tasks | 24 files |
 | Phase 02 P14 | 100min | 3 tasks | 14 files |
+| Phase 02 P15 | 180min | 3 tasks | 27 files |
 
 ## Accumulated Context
 
@@ -144,6 +145,9 @@ Recent decisions affecting current work:
 - [Phase 02]: 02-14: ActiveArea accent renders on the breadcrumb/divider line (zero extra rows) rather than a frame-wide border -- the 100x30 budget could not absorb a bordered active-pane region
 - [Phase 02]: 02-14: Arrow-key precedence rule (expanded-select > text-input-cursor > wizard-step-nav validity-gated forward/always-allowed back > Shift+left/right focus-override) is written once in 02-STYLE-SPEC.md and implemented identically in Go and TypeScript
 - [Phase 02]: 02-14: TUI field contour costs stayed within 100x30 by dropping the redundant git-form Signing line and tightening preview maxLines -- a documented row-budget tradeoff, not scope creep
+- [Phase 02-15]: D9's global-fallback user.email applies through its own dedicated ceremony, never folded into the baseline managed-block apply
+- [Phase 02-15]: Row-budget number in 02-STYLE-SPEC.md corrected to the measured ~24 of 25 body rows (tightest wizard pane), replacing the plan's original ~21-row estimate
+- [Phase 02-15]: e2e/ui_pty_e2e_test.go's ptySession.close() gained a bounded ctrl+c grace period + SIGKILL fallback -- fixes a real test-hang unrelated to this plan's own feature changes
 
 ### Roadmap Evolution
 
@@ -157,6 +161,7 @@ None yet.
 
 - 3 items intentionally open until their phase (documented in REQUIREMENTS.md "Still Open"): GSSH-01 dangerous-options list, KEY-01 catalog ordering/copy, screenshot-tooling mechanism (Phase 1 spike).
 - ~~02-14: fresh agent-ui-ux-designer critique of both live demos (DLV-02 exit gate) and the superpowers:requesting-code-review pass are outstanding~~ -- RESOLVED 2026-07-05: the orchestrator ran both reviews; findings F1-F11 are fixed/recorded (see 02-14-SUMMARY.md "Review findings resolution (post-plan fix pass)"). No outstanding blocker for 02-12 sign-off from 02-14.
+- 02-15: a fresh agent-ui-ux-designer critique of both live demos (checkpoint-2 dimensions) and a fresh-context superpowers:requesting-code-review pass (against 02-15's must_haves + every task's acceptance_criteria) are OUTSTANDING orchestrator-run exit gates — the executor could not run them. Their CRITICAL/HIGH findings must be resolved before 02-12 (the DLV-08 re-presentation) proceeds. See 02-15-SUMMARY.md.
 
 ### Quick Tasks Completed
 
@@ -174,6 +179,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-05T18:00:03.753Z
-Stopped at: Completed 02-14-PLAN.md
+Last session: 2026-07-06T02:24:40.381Z
+Stopped at: Completed 02-15-PLAN.md (checkpoint-2 route-back)
 Resume file: None
