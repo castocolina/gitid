@@ -144,36 +144,44 @@ suffix (SSHUI-01, SSHUI-03).
 | 2 | `result_message` | what changed + which file | 2nd | ✓ | ✓ | names `~/.ssh/config`, the alias, the IdentityFile |
 | 3 | `restore_hint` | backup path again (how to restore) | 3rd | ✓ | ✓ | repeats the backup-notice path |
 
-## create-flow / git-form (02-14 atomic copy freeze)
+## create-flow / git-form (copy freeze — D6/D7 checkpoint-2 additions)
 
 **Goal:** the wizard's Git-identity step-3 buttons and their adjacent hint
 lines — the FROZEN single source of truth is
 `02-STYLE-SPEC.md` §4; this row is the create-flow human-readable companion
 (the machine-checkable proof is the repo-wide old-copy grep gate, `02-STYLE-SPEC.md` §6).
+D6 (checkpoint-2) collapses all THREE buttons onto ONE row (Back/Skip/
+Continue), never changing their copy; D7 adds the disabled-reason text
+under `[ Continue ]`.
 
 | # | Field | Label | Order | HTML present | TUI present | Notes |
 |---|-------|-------|-------|---------------|--------------|-------|
-| 1 | `wizard_back_button` | "Back (Esc)" | 1st | ✓ | ✓ | unchanged, not part of the freeze |
-| 2 | `wizard_skip_button` | `[ Skip Git ]` | 2nd | ✓ | ✓ | frozen (02-14 atomic copy freeze); the explanation moved off the button onto its adjacent hint line |
-| 3 | `wizard_skip_hint` | "Skip keeps this identity SSH-only and marks it incomplete." | adjacent to Skip, always visible | ✓ | ✓ | frozen hint line, `hint`/`Theme.Hint` role |
-| 4 | `wizard_continue_button` | `[ Continue ]` | 3rd | ✓ | ✓ | frozen (02-14 atomic copy freeze); the explanation moved off the button onto its adjacent hint line |
-| 5 | `wizard_continue_hint` | "Continue reviews the Git fragment, includeIf, and allowed_signers entries before writing." | adjacent to Continue, always visible | ✓ | ✓ | frozen hint line, `hint`/`Theme.Hint` role |
+| 1 | `wizard_back_button` | "Back (Esc)" | 1st (same row as Skip/Continue, D6) | ✓ | ✓ | unchanged, not part of the freeze |
+| 2 | `wizard_skip_button` | `[ Skip Git ]` | 2nd (same row, D6) | ✓ | ✓ | frozen; the explanation moved off the button onto its adjacent hint line |
+| 3 | `wizard_skip_hint` | "Skip keeps this identity SSH-only and marks it incomplete." | below the button row, always visible | ✓ | ✓ | frozen hint line, `hint`/`Theme.Hint` role |
+| 4 | `wizard_continue_button` | `[ Continue ]` | 3rd (same row, D6) | ✓ | ✓ | frozen; the explanation moved off the button onto its adjacent hint line |
+| 5 | `wizard_continue_disabled_reason` | `— needs user.name + a valid email` | directly under the disabled Continue button | ✓ | ✓ | NEW (D7, checkpoint-2) — replaces the generic `— disabled` suffix everywhere; frozen, byte-exact |
+| 6 | `wizard_continue_hint` | "Continue reviews the Git fragment, includeIf, and allowed_signers entries before writing." | below the button row, always visible | ✓ | ✓ | frozen hint line, `hint`/`Theme.Hint` role |
 
-## 02-STYLE-SPEC.md emphasis-role parity dimensions (round-2/round-3 feedback)
+## 02-STYLE-SPEC.md emphasis-role parity dimensions (checkpoint-2 contract, D1–D9)
 
-**Goal:** the six new checkable parity dimensions
-`02-STYLE-SPEC.md` §3 defines — the content parity gate (the rows above)
-never modeled emphasis roles, focus affordance, or keyboard-nav ergonomics;
-these six rows are that missing coverage's human-readable companion. Backed
-by the Go test suite in `internal/dummytui` (see `02-STYLE-SPEC.md` §3 for
-the exact test-name pattern per row) plus a fresh `agent-ui-ux-designer`
+**Goal:** the checkable parity dimensions `02-STYLE-SPEC.md` §3 defines —
+the content parity gate (the rows above) never modeled emphasis roles,
+focus affordance, or keyboard-nav ergonomics; these rows are that missing
+coverage's human-readable companion. Rows 2 and 9 below are REWRITTEN by
+02-15/checkpoint-2 (D1/D4); rows 3, 6, and 8 are NEW (D2/D3/D8). Backed by
+the Go test suite in `internal/dummytui` (see `02-STYLE-SPEC.md` §3 for the
+exact test-name pattern per row) plus a fresh `agent-ui-ux-designer`
 critique of the two live demos.
 
 | # | Dimension | HTML present | TUI present | Notes |
 |---|-----------|---------------|--------------|-------|
 | 1 | `typography-emphasis-roles` | ✓ | ✓ | label bold, hint dim, warning/error/info carry their semantic colors on both sides |
-| 2 | `field-contour` | ✓ | ✓ | focused field carries an accent contour; blurred fields carry a dim contour — never a border on every field |
-| 3 | `hint-persistence` | ✓ | ✓ | the match-strategy hint is reserved and never disappears when the select expands/focuses |
-| 4 | `arrow-nav` | ✓ | ✓ | the written precedence rule (02-STYLE-SPEC.md §2), identical in both media, incl. the Shift+←/→ focus-override chord |
-| 5 | `preview-sizing` | ✓ | ✓ | bounded width, optional fixed height with a clip cue, title in the border/top edge |
-| 6 | `dim-states` | ✓ | ✓ | disabled-nav dims header chrome while a pane captures keys; the active nav tab keeps its active-nav accent background (checkpoint feedback U1); the active pane carries the active-area accent |
+| 2 | `field-contour` | ✓ | ✓ | **REWRITTEN (D1):** every field is ONE constant-height row in every state; focus = accent color + a `▸`/2px-outline redundant cue — NEVER a box (supersedes the 02-14 rounded-contour box) |
+| 3 | `always-expanded-radios` | ✓ | ✓ | NEW (D2): both the match-strategy and algorithm groups render ALL options ALWAYS — no expand/collapse; the `(←/→ change)` hint sits on the group header, visible in both focus states |
+| 4 | `hint-persistence` | ✓ | ✓ | the match-strategy hint is reserved and never disappears when the always-expanded group focuses |
+| 5 | `arrow-nav` | ✓ | ✓ | the written precedence rule (02-STYLE-SPEC.md §2), identical in both media, incl. the Shift+←/→ focus-override chord (now reaching EVERY step incl. the review ceremony, D7) and the D4 top-level plain-arrow view switch |
+| 6 | `glyph-checkbox-radio` | ✓ | ✓ | NEW (D3): the web's `MuiCheckbox`/`MuiRadio` render the SAME frozen glyphs (`☐/☑`, `○/●`) as the TUI via theme-level overrides |
+| 7 | `preview-sizing` | ✓ | ✓ | bounded width, optional fixed height with a clip cue, title in the border/top edge |
+| 8 | `click-to-focus` | ✓ | ✓ | NEW (D8): the entire rendered field/radio/checkbox row is the click target; disabled algorithm rows are inert |
+| 9 | `dim-states` | ✓ | ✓ | **REWRITTEN (D4):** header nav reads `[N] Label` (bracket format moved from the wizard stepper, D5); disabled-nav dims INACTIVE tabs while a pane captures keys; the ACTIVE tab now dims to the NEW active-nav-dimmed role (accent foreground, no background) instead of keeping its accent background; the active pane still carries the active-area accent; a `←→ switch view` footer advertises the D4 top-level arrow switch |

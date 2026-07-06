@@ -62,7 +62,7 @@ each with current value, recommended value, and a one-line explanation
 
 | # | Field | Label | Order | HTML present | TUI present | Notes |
 |---|-------|-------|-------|---------------|--------------|-------|
-| 1 | `option_row` × 11 | one row per GGIT-01 option | top-to-bottom, §4.5 verbatim order | ✓ | ✓ | init.defaultBranch, core.ignorecase, core.autocrlf/eol, user.email (global), push.autoSetupRemote, pull.rebase, fetch.prune, alias, color, merge.conflictstyle, diff.colorMoved |
+| 1 | `option_row` × 11 | one row per GGIT-01 option | top-to-bottom, §4.5 verbatim order | ✓ | ✓ | init.defaultBranch, core.ignorecase, core.autocrlf/eol, `user.email (global fallback)` (D9, checkpoint-2 — see the dedicated section below), push.autoSetupRemote, pull.rebase, fetch.prune, alias, color, merge.conflictstyle, diff.colorMoved |
 | 2 | `row_glyph` | ! / ✓ | leading each row | ✓ | ✓ | glyph + WORD ("recommended" / "informational"), never color alone — yellow `!` is ADVISORY, never red |
 | 3 | `row_current_value` | "current: …" | within row | ✓ | ✓ | e.g. "not set (git's built-in default: master)" |
 | 4 | `row_recommended_value` | "recommended: …" | within row | ✓ | ✓ | |
@@ -125,5 +125,28 @@ how to restore; restates that global `user.email` was left alone.
 | # | Field | Label | Order | HTML present | TUI present | Notes |
 |---|-------|-------|-------|---------------|--------------|-------|
 | 1 | `result_success_message` | "✓ 10 of 10 baseline options applied…" | 1st | ✓ | ✓ | green ✓, never color alone |
-| 2 | `result_user_email_restated` | "Global user.email was left alone…" | 2nd | ✓ | ✓ | the structural-rule affordance reaffirmed at the end of the ceremony |
+| 2 | `result_user_email_restated` | "Global user.email was left alone…" | 2nd | ✓ | ✓ | this restates that the BASELINE ceremony specifically never touches `user.email` — still accurate after D9 (checkpoint-2): D9 promotes the row to editable, but applying it ALWAYS goes through its own dedicated ceremony (below), never this one |
 | 3 | `result_backup_restore_path` | backup path again | 3rd | ✓ | ✓ | |
+
+## global-git / `user.email (global fallback)` — D9 dedicated ceremony (checkpoint-2 contract)
+
+**Goal:** the promoted, editable global-fallback `user.email` row — a
+**DOCUMENTED, CONSCIOUS divergence from `recipes/`** (`recipes/gitconfig.recipe`
+leaves `user.email` unset at the global level; every identity's author
+comes ONLY from its own `includeIf` fragment). D9 turns the row from
+awareness-only into a first-class editable field + apply checkbox — but the
+recipes default is PRESERVED: unchecked/empty by default, explicit opt-in
+only, and the includeIf-precedence invariant (identity fragments always
+win) is stated on screen at every beat. Applied through its OWN dedicated
+ceremony, distinct from the baseline managed-block ceremony above (GGIT-01)
+— gitid NEVER folds a fallback author into that managed block.
+
+| # | Field | Label | Order | HTML present | TUI present | Notes |
+|---|-------|-------|-------|---------------|--------------|-------|
+| 1 | `email_fallback_field` | editable `user.email (global fallback)` field | option-detail (this row selected) | ✓ | ✓ | D1 single-row field template on the TUI; MUI `TextField` on the web; default value empty |
+| 2 | `email_fallback_checkbox` | `☐`/`☑` apply checkbox | same row/detail | ✓ | ✓ | default UNCHECKED (recipes default preserved) — explicit opt-in only |
+| 3 | `email_fallback_helper` | "Fallback author for repos no identity matches. Identities always override this through their includeIf fragment — setting it never changes an identity's author." | always visible below the field | ✓ | ✓ | frozen, byte-exact (02-STYLE-SPEC.md §4 D9 additions) |
+| 4 | `email_fallback_advisory` | "Recipes leave this unset by default. Set it only if you want a catch-all author for unmatched repos." | always visible below the helper | ✓ | ✓ | frozen, byte-exact |
+| 5 | `email_ceremony_heading` | "Set global fallback user.email" | ceremony beat 1 | ✓ | ✓ | frozen, byte-exact; distinct from `Write baseline managed block to ~/.gitconfig` |
+| 6 | `email_ceremony_diff_annotation` | "(global fallback — identities override via includeIf)" | spliced onto the diff preview line | ✓ | ✓ | frozen, byte-exact — pins the includeIf-precedence invariant on the diff itself |
+| 7 | `email_ceremony_result` | "Global fallback user.email set — used only where no identity matches; identity fragments still win." | ceremony beat 4 (result) | ✓ | ✓ | frozen, byte-exact — restates the SAME invariant at the end of the ceremony |
