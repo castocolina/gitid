@@ -225,6 +225,16 @@ where a "+ Phase 4 addition" note names the exact divergence touching it.
 | `backup-notice` | timestamped backup paths | + D-10's "one backup notice lists all paths" framing when combined |
 | `result-success` | success result | unchanged; + sibling NEW state `result-failure` (D-11) for the failure path |
 
+**Focal points (per-screen primary focus, for executor clarity):**
+- `review-readonly` — primary focus: the byte-identity affordance — the
+  `allowed_signers` email paired side-by-side with `user.email`.
+- `confirm-write` — primary focus: the stacked preview blocks in D-10 order
+  (SSH `Host` block → fragment → includeIf + insteadOf → `allowed_signers` →
+  mkdir line), with the confirm action last.
+- `result-failure` — primary focus: the result glyph (`✗` + word) and the
+  message naming the exact target file + exact error, followed by the
+  "everything restored" assurance.
+
 **Highest-risk affordance carried forward unmodified (GITUI-04):** the
 `allowed_signers` email shown byte-identical, side by side with `user.email`,
 in `review-readonly`. D-06's edit-mode invariant extends this: after an edit
