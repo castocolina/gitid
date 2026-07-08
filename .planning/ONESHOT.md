@@ -70,8 +70,13 @@ by Codex, learnings recorded, state committed, and CI green on origin/main.
 
 ## Step 0 — Preflight (abort the run if any check fails)
 
-- **Tools & auth**: `codex --version` works; `gh auth status` authenticated;
-  `glab auth status` authenticated (REQUIRED for Phase 9 real-account e2e —
+- **Tools & auth**: `codex --version` works; `gh auth status` authenticated
+  AND both key scopes probe clean — `gh api user/keys` (admin:public_key)
+  and `gh api user/ssh_signing_keys` (admin:ssh_signing_key) must both
+  return without a scope error; remediation if not:
+  `gh auth refresh -h github.com -s admin:ssh_signing_key`;
+  `glab auth status` authenticated and `glab ssh-key list` returns the
+  inventory (REQUIRED for Phase 9 real-account e2e —
   if glab is missing or unauthenticated, STOP and report: the GitLab side
   would silently degrade to mocks, contradicting a locked run decision);
   `node` available (prefix Volta: `export PATH="$HOME/.volta/bin:$PATH"`);
