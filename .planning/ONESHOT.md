@@ -1,8 +1,10 @@
-# ONESHOT — gitid v1.0 Autonomous Completion Run (Phases 3–10)
+# ONESHOT PLAYBOOK — gitid v1.0 Autonomous Completion Run (Phases 3–10)
 
-Run this prompt in a fresh session (`/clear` first). It drives the remaining
-v1.0 milestone end-to-end with no human in the loop, ending at a validated
-`v1.0.0-rc.1` release-candidate tag.
+This is the **playbook** consumed by `.planning/ONESHOT-LOOP-PROMPT.md`
+(the `/loop` driver — the intended way to run this). The loop re-reads this
+file every iteration; it can also be pasted standalone into a fresh session.
+It drives the remaining v1.0 milestone end-to-end with no human in the loop,
+ending at a validated `v1.0.0-rc.1` release-candidate tag.
 
 ---
 
@@ -21,9 +23,13 @@ by Codex, learnings recorded, state committed, and CI green on origin/main.
 - **Human gates**: Codex acts as the approval gate for design captures and
   phase UAT. Every phase accumulates an evidence bundle for deferred human
   UAT — the run never pauses to wait for a human.
-- **Git policy**: commit to local main (fast-forward from `gsd-reviewfix/*`
-  branches as established); **push origin/main at each verified phase close**
-  and confirm CI green before starting the next phase.
+- **Git policy — branch-per-phase, ff into main**: GSD works each phase on
+  its own `gsd/phase-NN-*` branch (as Phases 1–2 did); review fixes land on
+  `gsd-reviewfix/*` and fast-forward back. Phase close = fast-forward main
+  from the phase branch (`git checkout main && git merge --ff-only
+  gsd/phase-NN-*`), **push origin/main**, and confirm CI green before the
+  next phase branches off the updated main. Never merge-commit; if ff is
+  impossible, something went wrong — stop and reconcile.
 - **Release**: the run creates and pushes tag `v1.0.0-rc.1` and validates the
   release pipeline end-to-end. The final `v1.0.0` tag is a human decision.
 
@@ -38,9 +44,16 @@ by Codex, learnings recorded, state committed, and CI green on origin/main.
    into their prompt does not exist for them.
 2. Never use `--no-verify`. Commits in logical groups; every commit passes
    pre-commit hooks.
-3. E2E tests NEVER touch the real `~/.ssh` or `~/.gitconfig` — always an
-   isolated temp `HOME`. The only sanctioned real-world mutation is the
-   Phase 9 upload e2e (rules below).
+3. E2E tests default to an isolated temp `HOME`. A test MAY touch the real
+   `~/.ssh` / `~/.gitconfig` when the scenario genuinely requires it (gh and
+   glab are live on this machine), under the product's own ethos: timestamped
+   backup BEFORE the mutation, unconditional restore in teardown (runs on
+   failure too), and a post-restore diff proving the files are byte-identical
+   to the backup. This is not a license to damage the machine — anything
+   irreversible outside the test's own scope (deleting keys the test did not
+   create, touching non-config files, machine settings) remains forbidden.
+   The other sanctioned real-world mutation is the Phase 9 upload e2e
+   (rules below).
 4. The orchestrator personally runs `make test`, `make test-e2e`, and
    `make lint` at every wave close and phase close. Do NOT trust executor
    PASS claims — executors have reported PASS without `-race` before.
@@ -68,8 +81,11 @@ by Codex, learnings recorded, state committed, and CI green on origin/main.
   strays at authoring time: `AGENTS.md`, `.planning/intel/`,
   `.planning/phases/05.7-*/`, this file. With push-per-phase, a dirty tree
   leaks into the first phase commit.
-- **CI baseline**: origin/main CI must be green (or its failure understood)
-  before the run starts, so a red run is attributable to run work.
+- **Origin sync + CI baseline**: local main is far ahead of origin/main —
+  Phases 1–2 were never pushed. Push origin/main FIRST and watch that CI
+  run to green: it is the run's baseline. A red baseline is a preflight
+  failure to fix before Phase 3 — never start phase work on top of an
+  unexplained red, or every later failure becomes unattributable.
 
 ## Step 0.5 — Orientation
 
@@ -82,19 +98,37 @@ by Codex, learnings recorded, state committed, and CI green on origin/main.
 
 ## Step 1 — Legacy triage (before executing Phase 3)
 
-The current source tree (`internal/*`, `tui/*`, `cmd/*`) is the archived
-0.0.1 POC. Before Phase 3 execution, produce `.planning/LEGACY-TRIAGE.md`:
+Scope clarity first: Phases 1–2 delivered planning, design mockups, demos,
+and CI/spike work — **no product code**. Therefore EVERY Go package in the
+tree (`internal/*`, `tui/*`, `cmd/*`) is 0.0.1 POC inheritance, and all of
+it is triage scope: what sits on main today is exactly what becomes legacy
+from Phase 3 onward. Before Phase 3 execution, produce
+`.planning/LEGACY-TRIAGE.md`. Concrete procedure:
 
-- Per-package verdict: **keep-as-is / rework / replace / delete**, with
-  evidence (use `codegraph_explore`, not guesswork).
-- Cross-check against what phases 3–10 CONTEXT.md files already assume they
-  will reuse (known: `internal/doctor`, `internal/uploader`,
-  `internal/tester`, parts of `tui/`; known rework obligation: `tui/copy.go`
-  prompt queue in Phase 9).
-- Any divergence between a CONTEXT.md reuse assumption and the triage verdict
-  is a finding — reconcile it in the triage doc, and carry the correction
-  into that phase's planning.
-- Commit the triage doc before Phase 3 execution starts.
+1. **Inventory**: `go list ./...` — one triage row per package (plus
+   `tui/` split by screen file where verdicts differ within the package).
+2. **Evidence per package**: `codegraph_explore` for its role, public
+   surface, and dependents. No verdict without evidence.
+3. **Cross-reference matrix** (package × phase): read every phase 3–10
+   CONTEXT.md and mark which packages each phase already assumes it will
+   reuse (known: `internal/doctor`, `internal/uploader`, `internal/tester`,
+   parts of `tui/`; known rework obligation: `tui/copy.go` prompt queue in
+   Phase 9).
+4. **Verdict per row** — exactly one of:
+   - **keep** — reused as-is; do not touch it now.
+   - **rework** — reused but must change; record the OWNING PHASE and what
+     changes. Not touched in the triage step — the row becomes a binding
+     input to that phase's planning (inject it into the planner's prompt).
+   - **replace** — the redesign supersedes it; record the owning phase.
+     The old code is deleted BY that phase when its replacement lands,
+     never preemptively.
+   - **delete** — dead code no phase references. These ARE removed in the
+     triage commit itself, with all gates green after removal.
+5. **Reconcile divergences**: any CONTEXT.md reuse assumption that the
+   evidence contradicts is a finding — resolve it in the triage doc and
+   carry the correction into the owning phase's planning.
+6. **Commit** the triage doc (plus the `delete` removals) on the Phase 3
+   branch before executing any Phase 3 plan.
 
 ## Step 2 — Learnings ledger
 
@@ -148,22 +182,29 @@ For each phase N:
 2. **UI contract** — phases with a TUI surface (4–9): if no `UI-SPEC.md`,
    run `/gsd-ui-phase N`. Phases 3 and 10 have no UI wave. Phase 4's
    UI-SPEC already exists — do not redo it.
-3. **Plan** — if the phase has no plans: `/gsd-plan-phase N`. Phase 3 is
-   already planned (6 plans) — skip straight to step 4's plan review? No:
-   Phase 3's plans were already checker-verified; go straight to step 5
-   for Phase 3.
+3. **Plan** — if the phase has no plans: `/gsd-plan-phase N`.
+   Phase 3 already has its 6 plans — skip THIS step only.
 4. **Plan review with Codex**: run `/gsd-review --codex N` over the
    PLAN.md files AND the UI-SPEC — it produces `REVIEWS.md`. If it yields
    findings, replan with `/gsd-plan-phase N --reviews` (which consumes
    REVIEWS.md), then re-verify with the plan checker. Max 3 review→replan
    iterations (circuit breaker below).
+   **Phase 3 does NOT skip this step**: its plans were checker-verified but
+   never Codex-reviewed (no REVIEWS.md exists in its directory).
 5. **Execute**: `/gsd-execute-phase N`. Honor wave structure; ground rule 4
-   at every wave close.
-6. **Verify + review** (three distinct gates, all required):
-   a. `gsd-verifier` — goal-backward `VERIFICATION.md` for the phase goal.
-   b. Code review by a FRESH Claude reviewer agent: `/gsd-code-review`
-      over the phase's diff (then `--fix` flow for findings).
-   c. External Codex code review over the phase's full commit range,
+   at every wave close. GSD auto-triggers the goal verifier
+   (`gsd-verifier` → `VERIFICATION.md`) at phase end — if it did not run,
+   run it explicitly before proceeding.
+6. **Post-execution review battery** (four distinct lenses, all required,
+   in this order; every finding joins the same fixer flow):
+   a. **Security review**: `/security-review` (built-in) over the phase's
+      changes — this codebase mutates `~/.ssh` and runs subprocesses, so
+      gosec alone is not enough.
+   b. **Fresh-eyes Claude review**: superpowers `/requesting-code-review`
+      over the phase's diff — a reviewer with no execution context.
+   c. **GSD code review**: `/gsd-code-review` (then its `--fix` flow for
+      findings).
+   d. **External Codex code review** over the phase's full commit range,
       invoked directly via bash. Using the phase-base SHA recorded in
       step 1:
 
@@ -175,12 +216,16 @@ For each phase N:
 
       $(git log --oneline <phase-base>..HEAD)
 
-      $(git diff <phase-base>..HEAD)"
+      $(git diff <phase-base>..HEAD -- ':!.planning')"
       ```
 
       If the diff exceeds a single invocation, split it per commit group
       or per package and merge the findings. Codex findings join the
       Claude review findings in the same fixer flow.
+      If `codex` is unavailable, fall back to `opencode run`; if NO
+      external (non-Claude) reviewer is available, STOP the run and report
+      — never silently skip the cross-vendor layer or substitute another
+      internal Claude agent for it.
    Fix findings via the fixer flow (`gsd-reviewfix/*` → ff into main).
 7. **E2E + visual gate** (phases with TUI surfaces): PTY e2e per screen with
    raw keystrokes, plus screen captures under a DETERMINISTIC terminal
@@ -191,13 +236,14 @@ For each phase N:
    human DLV approval for this run). Store everything under
    `.planning/phases/<phase-dir>/evidence/` for deferred human UAT.
    *Phase 9 exception*: its e2e additionally verifies real autoupload to
-   GitHub/GitLab (rules below). Phase 3 (backend) proves its gate with
-   command-level e2e (input command + real output shown); Phase 10 proves
-   the fedora container job + release dry-run instead of screens.
+   GitHub/GitLab (rules below). *Non-UI phases* (3 backend, 10 release):
+   the evidence Codex evaluates is command-level execution transcripts —
+   the command run and its real output — instead of screenshots.
 8. **Close**: append `LEARNINGS.md`; record session state
-   (`state.record-session`); commit in logical groups; **push origin/main**;
-   watch CI (`gh run watch`) until green. CI red = phase not closed — fix
-   forward before proceeding.
+   (`state.record-session`); commit in logical groups on the phase branch;
+   fast-forward main from it; **push origin/main**; watch CI
+   (`gh run watch`) until green. CI red = phase not closed — fix forward
+   before proceeding.
 
 ### Phase-specific obligations (from the phases' own CONTEXT.md — binding)
 
@@ -213,8 +259,13 @@ For each phase N:
   `gitid: <name> @ <hostname>`.
 - **Phase 10**: explicit `CGO_ENABLED=0 -trimpath` on all release builds;
   `fetch-depth: 0` in workflows; ensure `bin/` is gitignored (dirty-flag
-  guard); create root `PLATFORM-NOTES.md`; refresh README.md via the
-  README-crafting skill, including per-OS checksum verify commands.
+  guard); create root `PLATFORM-NOTES.md`; as the phase's last deliverable,
+  refresh README.md via the `crafting-effective-readmes` skill with two
+  install paths spelled out: (a) the curl|bash `install.sh` one-liner as
+  the primary path, with clear usage (including `GITID_VERSION` pinning and
+  the inspect-first variant), and (b) manual install with explicit per-OS
+  checksum validation — Linux `sha256sum --ignore-missing -c checksums.txt`,
+  macOS `shasum -a 256 --ignore-missing -c checksums.txt`.
 - **Carried warnings**: Phase 2 verification carried W1 (insteadOf) and W2
   (no-backend-test) as open. The phase that lands each area (insteadOf →
   global-git phase; backend tests → Phase 3) must explicitly close its
@@ -234,23 +285,27 @@ For each phase N:
 - If gh/glab auth is missing at runtime, degrade those e2e to the mock path
   and record it in the evidence bundle — do not block the run.
 
-## Step 4 — Milestone close (after Phase 10)
+## Step 4 — Run close + milestone handoff (after Phase 10)
+
+The run does NOT close the milestone — that is the user's, done when they
+validate on a non-macOS machine. The run's closing duties:
 
 1. Cross-phase integration check (`gsd-integration-checker`): the full
    user journeys across all phases.
 2. Full gate sweep: `make test`, `make test-e2e`, `make lint`, fedora
-   container job green in CI. Then the formal GSD closure:
-   `/gsd-audit-milestone` (fix its findings), and `/gsd-complete-milestone`
-   only after the audit passes.
-3. Tag `v1.0.0-rc.1`, push the tag, watch `release.yml` end-to-end. Verify:
-   4 artifacts + `checksums.txt`, checksum verification passes, attestation
-   present, `install.sh` works from the published release, `gitid version`
-   reports the tag truthfully. If the Homebrew tap step fails for a missing
-   PAT, record it as EXPECTED-BLOCKED (human item) — do not fail the run.
+   container job green in CI.
+3. Tag `v1.0.0-rc.1`, push the tag, watch `release.yml` end-to-end (this
+   validates Phase 10's own deliverable). Verify: 4 artifacts +
+   `checksums.txt`, checksum verification passes, attestation present,
+   `install.sh` works from the published release, `gitid version` reports
+   the tag truthfully. If the Homebrew tap step fails for a missing PAT,
+   record it as EXPECTED-BLOCKED (human item) — do not fail the run.
 4. Final report (English, committed as `.planning/RUN-REPORT.md`):
    per-phase outcomes, evidence index, LEARNINGS highlights, and the
-   explicit deferred-human list: Bazzite manual UAT, Homebrew tap PAT,
-   final `v1.0.0` tag, human review of all Codex-approved captures.
+   **milestone handoff checklist for the user**: `/gsd-audit-milestone` →
+   `/gsd-complete-milestone`, Bazzite/non-macOS manual UAT, human review of
+   all Codex-approved captures, Homebrew tap PAT, final `v1.0.0` tag.
+   Then STOP.
 
 ## Circuit breakers
 
@@ -262,7 +317,10 @@ For each phase N:
 
 ## Context management
 
-- Each phase is a resumable unit: state recorded + committed + pushed at
-  every close. If compaction happens mid-phase, re-read `STATE.md`, the
-  phase directory, and `LEARNINGS.md`, and resume from the last recorded
-  position rather than restarting the phase.
+- GSD's subagents (researchers, planners, executors, reviewers) do the
+  heavy lifting in their own contexts — the orchestrator's context stays
+  thin: state, decisions, gate results, learnings.
+- Each phase is nevertheless a resumable unit: state recorded + committed +
+  pushed at every close. If compaction happens mid-phase, re-read
+  `STATE.md`, the phase directory, and `LEARNINGS.md`, and resume from the
+  last recorded position rather than restarting the phase.

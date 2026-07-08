@@ -1,79 +1,60 @@
-# gitid v1.0 Redesign — Oneshot Loop Prompt
+# gitid v1.0 — Phases 3–10 Autonomous Loop Prompt (v2)
 
-Paste the block below into a **fresh** Claude Code session (ideally started with the
-`ralph-loop` plugin, or run via `/gsd-autonomous` — see "How to run" at the bottom).
-It drives the whole redesign as a loop, stopping only at the single design checkpoint.
+Supersedes the pre-execution v1 (see git history) — Phases 1–2 are complete,
+all ten phases have CONTEXT.md, and the run rules now live in the playbook.
+
+**This file is the `/loop` driver. `.planning/ONESHOT.md` is the playbook.**
+Paste the block below into a fresh session with `/loop` (self-paced, no
+interval), or as the task of a `ralph-loop` run.
 
 ---
 
 ## ▼▼▼ COPY FROM HERE ▼▼▼
 
-You are executing the **gitid v1.0 TUI-First Redesign** autonomously as a loop.
+You are executing the **gitid v1.0 TUI-First Redesign, Phases 3–10**,
+autonomously as a loop.
 
-**Read first (authoritative):**
-- `.planning/REQUIREMENTS.md` (REQ ledger, sections A–O)
-- `docs/prds/gitid-tui-redesign-v1.0-prd.md` (narrative + phased roadmap)
-- `recipes/` + `recipes/README.md` (canonical config end state — the North Star)
-- `CLAUDE.md` (working agreements — binding)
+**The playbook is `.planning/ONESHOT.md` and it is BINDING.** At the start
+of EVERY iteration, read in full:
 
-**Hard invariants (never violate):**
-1. English-only for all artifacts, code, comments, commits, docs.
-2. Never `--no-verify`. Every commit compiles and passes hooks (`make fmt`+`lint`+`test`).
-3. UI-free core, TDD (write the failing test first). Every file write to a user's
-   `~/.ssh/*` or `~/.gitconfig*` goes through the `filewriter` chokepoint (timestamped
-   backup + idempotent sentinel block + atomic write + explicit confirm).
-4. Local-use tool, macOS + Linux only. No CI/CD algorithm fallback. No Windows.
-5. Gates each wave: `make test` (race), `make lint`, `make test-e2e` — all green.
+1. `.planning/ONESHOT.md` — ground rules, preflight, legacy triage,
+   per-phase command sequence, review battery, e2e evidence gates,
+   Phase 9 real-account rules, circuit breakers, run close.
+2. `.planning/STATE.md` — where the previous iteration left off.
+3. `.planning/LEARNINGS.md` — if present; inject applicable entries into
+   every subagent you spawn, verbatim.
 
-**Delivery method (enforced every UI surface — DLV-01..06):**
-- Engage the `/mui` skill AND the `agent-ui-ux-designer` agent on EVERY UI task —
-  during planning, execution, AND review.
-- Per-surface build order is FIXED: HTML mockup (mui) → screenshot every flow → Go
-  TUI **dummy** mockup (full nav, no backend) → screenshot every screen → **STOP for
-  user design approval (checkpoint #1)** → backend logic → e2e (PTY, real binary) →
-  visual-regression review (reviewer agent diffs live TUI screens vs the APPROVED
-  HTML+mockup screenshots). Store screenshots under `.planning/design/<surface>/`.
-- Never write backend logic for a surface before its dummy mockup is approved.
+**Each iteration:**
 
-**Reviews (every phase, before advancing — cross-vendor, NOT internal-only):**
-- **Per-plan:** each plan requires a fresh-context `superpowers:requesting-code-review` on its
-  changes, verifying against its `must_haves` + `<acceptance_criteria>`; resolve CRITICAL/HIGH
-  before the plan is done.
-- **Per-phase internal:** `/gsd-code-review` clean, `/gsd-secure-phase` mitigations confirmed;
-  for UI surfaces, `agent-ui-ux-designer` parity + visual-regression review.
-- **Per-phase EXTERNAL (cross-vendor, independent of Claude's model family — this catches the
-  blind spots an internal Claude reviewer shares):** run an independent reviewer on the phase's
-  executed-code diff. Same pattern as `/gsd-review --codex` for plans, repointed at the code:
-  `git diff $(git merge-base main HEAD)..HEAD -- ':!.planning' > /tmp/phase-code.diff`, then pipe
-  the plans' acceptance criteria + that diff to `codex exec --skip-git-repo-check -` (OpenAI — a
-  different vendor than the orchestrator). Fix every CRITICAL/HIGH, re-run the gates, re-run until
-  clean. Fallback `opencode run`; if no external reviewer is available, STOP and ask the user —
-  never silently skip the external layer or substitute another internal Claude agent for it.
+1. Determine your exact position: which phase, which step of the playbook's
+   per-phase sequence (Step 3.1–3.8), or preflight / legacy triage / run
+   close if phase work has not started or has finished.
+2. Advance the NEXT unit of work — one playbook step, or one wave within an
+   execution step. Never skip a step in the sequence; never re-do a step
+   STATE.md records as done.
+3. Record progress exactly as the playbook's close rules dictate
+   (`state.record-session`, logical-group commits, learnings).
+4. Emit a one-line progress note and schedule the next iteration
+   immediately — the work is continuous; there is nothing external to
+   wait for except CI watches, which you run inline.
 
-**The ONE human checkpoint:**
-1. End of Phase 1: user approves the complete design (all HTML mockups + TUI dummy
-   mockup screenshots). Do NOT proceed to any backend before approval. STOP and ask;
-   do not self-approve.
+**Stop the loop only when:**
 
-Credential upload (Phase 8) is **autonomous** when `gh`/`glab` is authenticated AND a
-valid identity exists (shown command == run command); only if that is unavailable does
-it fall back to a manual step. It is NOT a mandatory checkpoint.
+- The playbook's Step 4 run close is complete (`.planning/RUN-REPORT.md`
+  committed, `v1.0.0-rc.1` pipeline validated) → final report, stop.
+- A circuit breaker trips (3 review→fix iterations, 2 replans, destructive
+  anomaly) → blocker report per the playbook, stop.
+- Preflight fails (e.g. `glab` missing/unauthenticated, red CI baseline
+  that resists fixing) → report what is needed from the user, stop.
 
-**Loop procedure:**
-1. If no v1.0 roadmap exists in `.planning/ROADMAP.md`, create it from the PRD's
-   Execution Phases (Phase 0 → Phase 9) via `/gsd-roadmapper` (or `/gsd-new-milestone`
-   naming it `v1.0 TUI-First Redesign`). Confirm the 4 Open Assumptions in
-   REQUIREMENTS.md with the user IF they are online; otherwise proceed on the
-   documented defaults and flag them.
-2. Execute phases in order. For each phase: `/gsd-plan-phase` then
-   `/gsd-execute-phase`, honoring the per-surface UI gate above. Use the configured
-   agents (research, plan_check, verifier, deep code_review, ui_review) — they are ON.
-3. After each phase, run the gates; if red, fix before advancing (systematic-debugging).
-4. At a checkpoint phase, STOP and hand back to the user.
-5. Between phases, emit a one-line progress note and continue the loop until Phase 9
-   completes or a checkpoint is reached.
+**Never:** `--no-verify`; non-English artifacts; silently skipping the
+external cross-vendor review layer (fallback `opencode run`; if no
+non-Claude reviewer exists, stop and report); mutating real HOME config
+without the playbook's backup/restore ceremony; self-approving what the
+playbook routes through Codex gates.
 
-**Start now:** read the four authoritative files, then begin at step 1.
+**Start now:** read the three files above and act from your current
+position.
 
 ## ▲▲▲ COPY TO HERE ▲▲▲
 
@@ -81,18 +62,16 @@ it fall back to a manual step. It is NOT a mandatory checkpoint.
 
 ## How to run
 
-- **Ralph Loop** (recommended for unattended): start `ralph-loop:ralph-loop`, paste
-  the block as the loop task. It will iterate, pausing at the checkpoints.
-- **GSD autonomous**: `/gsd-autonomous` after the roadmap exists — it chains
-  discuss→plan→execute per phase with the configured agents. Paste the invariants +
-  delivery-method sections as the run's guiding context.
-- **Self-paced `/loop`**: `/loop` with the block (no interval) lets the model pace
-  itself between phases.
+- **Self-paced `/loop`** (recommended): `/loop` with the block above, no
+  interval — the model paces itself; iterations are back-to-back since the
+  work is continuous.
+- **Ralph Loop**: start `ralph-loop:ralph-loop`, paste the block as the
+  loop task.
 
-## Notes
-- Config is already tuned for this: model_profile adaptive, TDD on, code_review deep,
-  verifier/ui_review/ui_phase/nyquist on, branching per-phase, worktrees on.
-- Resolved: 1 checkpoint (design), auto-upload when gh+auth, provider catalog, STORE
-  default, CI/CD builds — all in `.planning/REQUIREMENTS.md` "Resolved Decisions".
-- 3 items intentionally open until their phase: GSSH dangerous-options list, KEY-01
-  catalog ordering/copy, screenshot tooling choice (see "Still Open" in REQUIREMENTS).
+## Why loop + playbook are split
+
+The loop prompt is re-sent verbatim every iteration — it must be small and
+position-agnostic. The playbook carries the detail (command sequences,
+review battery, Phase 9 cleanup rules) and is re-READ each iteration, so
+corrections to the playbook take effect on the next iteration without
+touching the running loop.
