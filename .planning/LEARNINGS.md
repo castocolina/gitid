@@ -88,3 +88,35 @@ dated; convert relative dates to absolute.
   `gitid-e2e:` marker, matched by provider inventory ID. Never delete a key the
   test run did not create. Post-suite sweep asserts zero `gitid-e2e:` keys
   remain; any real key touched = destructive-anomaly HALT (ground rule 7).
+
+### L9 — A subagent killed mid-Write corrupts the file it was rewriting (2026-07-08, Phase 3 replan)
+- **Symptom:** the `gsd-planner` replanning Phase 3 died on an API/session-limit
+  error (`403 socket closed`) while rewriting `03-01-PLAN.md` with Write. The
+  file survived with GOOD content but a corrupted tail: stray tool-protocol
+  closing tags and a diff-summary line (`25 -16`) were appended after the real
+  final line.
+- **Root cause:** the agent had no Edit tool available, so it rewrote whole
+  files with Write; when the API connection dropped mid-emission, the partially
+  streamed tool-call scaffolding landed in the file body. Line count alone did
+  NOT reveal it — the file GREW (214 -> 223), so a pure truncation check passes.
+- **Rule:** after ANY agent that writes files, verify BOTH ends: `wc -l`
+  (truncation, L5) AND `tail -5` / last-line structure (corruption). For plan
+  and doc files, assert the final line is the expected closing tag. Prefer
+  giving file-editing agents the Edit tool and instructing surgical edits over
+  whole-file rewrites. On a mid-write agent death, always inspect
+  `git diff` of the touched file before trusting or discarding it — the content
+  may be salvageable with only the tail removed (it was, here).
+
+### L10 — Literal closing-tag sequences in a subagent prompt truncate the prompt (2026-07-08, orchestrator)
+- **Symptom:** an Agent spawn silently received a truncated prompt: the launch
+  succeeded but the instructions were cut off partway, because the prompt text
+  itself contained a literal tool-protocol closing tag sequence while warning
+  the agent not to emit one.
+- **Root cause:** the prompt parameter is delimited by those same tag
+  sequences, so embedding one literally ends the parameter early. The failure
+  is silent — the agent starts work on a partial brief.
+- **Rule:** never write literal tool-protocol tag sequences (closing tags named
+  `content`, `invoke`, `parameter`, `function_calls`) inside a subagent prompt.
+  Describe them by name instead ("a closing tag named content"). If an agent is
+  launched with a suspect prompt, TaskStop it immediately and verify the tree is
+  unchanged before relaunching.
