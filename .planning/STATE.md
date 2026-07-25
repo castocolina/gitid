@@ -189,6 +189,14 @@ Current branch: gsd/phase-03-create-flow-backend
 PHASE-3 BASE SHA: 61d98fa (anchors external code-review range in Step 6d)
 CIRCUIT BREAKER: replans_used=1/2; review_fix_loops=1/3
 
+VERIFICATION ROUND 1 RESULTS (both consumed):
+- Codex re-check: 6/7 RESOLVED, finding #6 PARTIAL, verdict BLOCK on 3 new problems (encrypted-key fingerprint contradiction; mouse-test field-scope mismatch; stale 03-06 Task cross-ref). ALL THREE FIXED in e59d285. Second Codex re-check launched (bg id bev1zm0oc, output scratchpad/codex-recheck2-3.out).
+- gsd-plan-checker: PASS-WITH-CONCERNS. Goal achievable; 11/11 requirement IDs covered; dependency/wave graph correct (03-03 -> [03-01,03-02] confirmed, no file collisions in a wave); 18/18 tasks have read_first + checkable acceptance_criteria; tuikit DTO boundary consistent; 03-03's 4-task size explicitly JUDGED ACCEPTABLE (L4 registration must ship with the code creating the artifacts). Two LOW concerns: (a) run `make test && make build` right after 03-03 before Wave 3 starts — ORCHESTRATOR obligation at wave close (ground rule 4 already covers it); (b) 03-05's "§6 copy-freeze grep gate" was ambiguous — FIXED in e59d285 by naming the real test-based mechanism.
+
+EXECUTION OBLIGATIONS carried into Step 3.5 (from the verification round):
+- Ground rule 4 at EVERY wave close: orchestrator personally runs make test, make test-e2e, make lint (never trust an executor PASS claim). Additionally run `make build` immediately after 03-03 completes, before Wave 3 starts.
+- 03-05 executor must name the frozen-string test function it adds/extends in its SUMMARY (both new frozen strings asserted byte-exactly).
+
 Replan resolution map (52fc7d9):
 - #1 L2 ReadPub seam -> 03-01 nil-guard + fallback test; 03-06 raw-keystroke PTY reuse-key case (encrypted key w/ existing .pub)
 - #2 L4 doctor-reserved -> 03-03 BLOCKING Task 4 (IsReservedPath/ReservedPaths + TestOrphansReservedArtifactsSurviveFix)
