@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: "02-15 (wave 8) operationalized the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract (D1–D9 + affordance audit) in BOTH demos, byte-for-byte: D1 single-row color-only fields (02-14's rounded box deleted), D2 always-expanded match-strategy/algorithm radios, D3 terminal-glyph checkbox/radio on the web, D4 bracketed main-nav format (`[N] Label`, moved off the wizard stepper) + a new ActiveNavDimmed/activeNavDimmed state + a top-level plain-arrow view switch, D5 the wizard stepper reverted to `Step n/4 · <label> ● ○ ○ ○`, D6 one-row git-step buttons, D7 ONE hoisted Shift+←/→ chord gate reaching every step including the previously-dead review ceremony (proven with a new raw-byte PTY e2e injecting real xterm CSI sequences), D8 click-to-focus on every form row, and D9 Global Git's user.email promoted to an editable, opt-in global-fallback field with its own dedicated write ceremony (a documented, scoped recipes/ divergence). 02-STYLE-SPEC.md + both FIELDS.md companions rewritten in lockstep; the full exit-gate battery is green (go test -race, the no-backend allowlist, the extended copy-freeze grep, make test/lint/test-e2e/gate-no-backend-files, pnpm typecheck+build) — see 02-15-SUMMARY.md. The two ORCHESTRATOR-run exit gates (a fresh agent-ui-ux-designer critique of both live demos + a fresh-context code review against 02-15's must_haves/acceptance_criteria) have since RUN and their findings (F1-F10 + one record-only item) are fixed — see 02-15-SUMMARY.md "Review findings resolution (post-plan fix pass)" and commits a335d80/f62c99e. Next is 02-12 (wave 9, the single DLV-08 approval checkpoint), unblocked."
-stopped_at: "ONESHOT run: Steps 0/1/2 DONE. Phase 3 Step 3.4 Codex plan review DONE — 03-REVIEWS.md committed, verdict HIGH risk / replan-required (7 findings: L2 ReadPub PTY gap, L4 doctor-reserved missing, repoclone not dropped, 03-03 depends_on missing 03-01, tuikit backend-free vs 03-04/05 importing backend types, mouse under-tested, STORE-01 doc). NEXT = Step 3.4 replan: /gsd-plan-phase 3 --reviews (REPLAN ITERATION 1 of max 2), then re-verify with plan checker + targeted Codex re-check of the 5 HIGH findings before execute. PHASE-3 BASE SHA = 61d98fa. Circuit breaker: replans_used=0->will be 1; review_fix_loops=1."
-last_updated: "2026-07-08T14:40:00.000Z"
+stopped_at: "ONESHOT run: Steps 0/1/2 DONE. Phase 3 Step 3.4 COMPLETE through replan — Codex plan review (03-REVIEWS.md, HIGH/replan-required, 7 findings) then REPLAN 1/2 committed as 52fc7d9 resolving all 7. Integrity verified on all six plans (L5 no-truncation: every file grew; L9 no-corruption: correct final line, zero leaked scaffolding). NEXT = read the two verification results (Codex re-check + gsd-plan-checker), then Step 3.5 /gsd-execute-phase 3 if clean. PHASE-3 BASE SHA = 61d98fa. Circuit breaker: replans_used=1/2, review_fix_loops=1/3."
+last_updated: "2026-07-08T19:45:00.000Z"
 last_activity: "2026-07-06 -- Completed 02-12 (★ DLV-08): user approval recorded as `**APPROVED:** 2026-07-06 by Pepe`; Phase 2 COMPLETE — the approved live demos + 02-REDESIGN-SPEC.md/02-STYLE-SPEC.md/02-DESIGN-DECISIONS-CHECKPOINT-2.md + per-surface FIELDS.md are the binding design reference; Phases 3-9 backend work is UNBLOCKED"
 progress:
   total_phases: 10
@@ -182,9 +182,18 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-08T14:40:00.000Z
-Stopped at: ONESHOT run — Phase 3 Step 3.4 Codex plan review DONE (03-REVIEWS.md committed; HIGH risk, replan-required). NEXT = replan /gsd-plan-phase 3 --reviews (replan 1/2) then re-verify.
-Resume file: .planning/ONESHOT.md (Step 3.4 replan) + .planning/phases/03-create-flow-backend/03-REVIEWS.md (the 7 findings to resolve)
+Last session: 2026-07-08T19:45:00.000Z
+Stopped at: ONESHOT run — Phase 3 Step 3.4 replan 1/2 COMMITTED (52fc7d9); all 7 Codex findings resolved and integrity-verified. Two verification passes were launched (Codex re-check + gsd-plan-checker). NEXT = consume both results, then Step 3.5 execute.
+Resume file: .planning/ONESHOT.md (Step 3.5) + .planning/phases/03-create-flow-backend/03-REVIEWS.md (the findings the replan resolved)
 Current branch: gsd/phase-03-create-flow-backend
 PHASE-3 BASE SHA: 61d98fa (anchors external code-review range in Step 6d)
-CIRCUIT BREAKER: replans_used=0 (this replan makes 1; cap 2); review_fix_loops=1 (cap 3)
+CIRCUIT BREAKER: replans_used=1/2; review_fix_loops=1/3
+
+Replan resolution map (52fc7d9):
+- #1 L2 ReadPub seam -> 03-01 nil-guard + fallback test; 03-06 raw-keystroke PTY reuse-key case (encrypted key w/ existing .pub)
+- #2 L4 doctor-reserved -> 03-03 BLOCKING Task 4 (IsReservedPath/ReservedPaths + TestOrphansReservedArtifactsSurviveFix)
+- #3 legacy DROP -> 03-03 drops internal/repoclone + addrepo/adopt as ONE build-safe unit; internal/adopter KEPT
+- #4 dep edge -> 03-03 depends_on ["03-01","03-02"]
+- #5 tuikit backend-free -> 03-02 defines views.go DTOs; 03-04/03-05 consume views; conversion only in cmd/gitid/wiring.go; allowlist-widening forbidden
+- #6 mouse -> 03-06 xterm SGR mouse-CSI PTY case + visual gate enumerates reuse picker/manual-path/mouse-focus
+- #7 STORE-01 -> 03-03 updates REQUIREMENTS.md with supersession note
