@@ -3,6 +3,7 @@ package sshconfig
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/castocolina/gitid/internal/filewriter"
 )
@@ -34,13 +35,129 @@ const (
 	includeFileMode os.FileMode = 0o600
 )
 
+// configDirName is the gitid-owned Include'd storage directory under ~/.ssh.
+// It is the directory half of sshIncludeLineBody's glob; the two MUST stay in
+// sync (the Include line is what makes this directory load at all).
+const configDirName = "config.d"
+
+// configFileExt is the extension the gitid-owned Include glob matches. Only
+// `*.config` files inside configDirName are gitid storage — anything else the
+// user drops in that directory is theirs.
+const configFileExt = ".config"
+
 // IsReservedBlockName reports whether a gitid-managed SSH block name is a
-// reserved, non-identity block (currently only the Include line). Mirrors
-// gitconfig.IsReservedBlockName exactly, so identity discovery and the doctor
-// Orphans check can exclude it the same way the gitconfig side already does
+// reserved, non-identity block. Two names are reserved:
+//
+//   - sshIncludeBlockName ("ssh-include") — the gitid-owned Include line, which
+//     has no per-identity Host block and no gitconfig counterpart by design.
+//   - globalBlockName ("_global") — the macOS `Host *` keychain/agent stanza,
+//     which Phase 3 D-08 rewrites on EVERY create. It is wiring, not an
+//     identity: without this registration the doctor Orphans check reports it
+//     as an SSH block with no gitconfig partner and offers a removal fix that
+//     deletes the block the next create immediately re-writes — the project's
+//     documented destructive false-positive loop (L4).
+//
+// Mirrors gitconfig.IsReservedBlockName, so identity discovery and the doctor
+// Orphans check can exclude both the same way the gitconfig side already does
 // (Pitfall 4 / project memory "Doctor reserved-block false-positive loop").
+//
+// Hand-off: renaming `_global` to `global-ssh` is Phase 6's job (LEGACY-TRIAGE
+// P6 D-08). This registration is deliberately ADDITIVE — the constant and its
+// value stay untouched here.
 func IsReservedBlockName(name string) bool {
-	return name == sshIncludeBlockName
+	return name == sshIncludeBlockName || name == globalBlockName
+}
+
+// ReservedPaths returns the gitid-owned Include'd storage locations under
+// sshDir: the `config.d` directory and the `*.config` glob inside it. They are
+// the filesystem artifacts D-06 creates on a fresh machine, and no fix path may
+// propose removing or rewriting them (L4).
+//
+// Hand-off: Phase 8 D-06.2 generalizes this into a cross-cutting reserved-PATH
+// registry; these two entries are the SSH-side seed it consumes.
+func ReservedPaths(sshDir string) []string {
+	dir := filepath.Join(sshDir, configDirName)
+	return []string{dir, filepath.Join(dir, "*"+configFileExt)}
+}
+
+// IsReservedPath reports whether path is one of the gitid-owned Include'd
+// storage locations under sshDir — the `config.d` directory itself, or a
+// `*.config` file directly inside it. Comparison is on filepath.Clean'ed
+// values, so `~/.ssh/config.d/./gitid.config` matches.
+//
+// `~/.ssh/config` itself is NOT reserved (it is the user's file; gitid only
+// owns sentinel-delimited blocks inside it), and a non-`.config` file the user
+// drops into config.d is theirs, not gitid storage.
+//
+// Hand-off: see ReservedPaths — Phase 8 D-06.2 generalizes the registry.
+func IsReservedPath(sshDir, path string) bool {
+	dir := filepath.Clean(filepath.Join(sshDir, configDirName))
+	clean := filepath.Clean(path)
+	if clean == dir {
+		return true
+	}
+	return filepath.Dir(clean) == dir && filepath.Ext(clean) == configFileExt
+}
+
+// ManagedBlockNames returns every gitid-managed block name reachable from
+// configPath: the blocks written directly into it, UNIONED with the blocks of
+// every file its `Include` directives resolve to. Order is main-file blocks
+// first, then Include'd files in directive order; duplicates are collapsed.
+//
+// This is Include-AWARE discovery, and it is mandatory from Phase 3 onward.
+// D-06 makes the Include'd layout the fresh-machine DEFAULT, so on a fresh
+// machine EVERY identity Host block lives in `config.d/gitid.config` and
+// `~/.ssh/config` carries only the reserved wiring. A doctor composition root
+// that reads the main file alone therefore sees ZERO identity blocks, and
+// CheckOrphans Class 2 offers a DESTRUCTIVE removal fix for every legitimate
+// gitconfig block (L4).
+//
+// Only absolute or `~/.ssh`-relative Include paths are followed, matching
+// Adopt's boundary rule. A directive whose glob resolves to nothing is skipped
+// (the Include'd file was never created — the common first-run case). A match
+// that exists but cannot be read is an error: the glob proved the file is
+// there, so silently dropping its blocks would reintroduce exactly the
+// blindness this function exists to remove.
+func ManagedBlockNames(configPath string) ([]string, error) {
+	content, err := os.ReadFile(configPath) //nolint:gosec // configPath is a trusted gitid-managed path supplied in-process
+	if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("sshconfig: reading %s: %w", configPath, err)
+	}
+
+	seen := make(map[string]bool)
+	var names []string
+	appendBlocks := func(b []byte) {
+		for _, block := range filewriter.ListBlocks(b) {
+			if seen[block.Name] {
+				continue
+			}
+			seen[block.Name] = true
+			names = append(names, block.Name)
+		}
+	}
+	appendBlocks(content)
+
+	directives, err := DetectInclude(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("sshconfig: managed block names: %w", err)
+	}
+	for _, d := range directives {
+		if !isAcceptablePathForm(d.Raw) {
+			continue // bare-relative / non-~/.ssh path — outside gitid's boundary
+		}
+		matches, gerr := filepath.Glob(d.Expanded)
+		if gerr != nil {
+			return nil, fmt.Errorf("sshconfig: globbing included %s: %w", d.Expanded, gerr)
+		}
+		for _, m := range matches {
+			b, rerr := os.ReadFile(m) //nolint:gosec // m comes from globbing a trusted gitid-managed Include path (G304)
+			if rerr != nil {
+				return nil, fmt.Errorf("sshconfig: reading included %s: %w", m, rerr)
+			}
+			appendBlocks(b)
+		}
+	}
+	return names, nil
 }
 
 // EnsureIncludeDir creates configDir (~/.ssh/config.d) at mode 0700 via the

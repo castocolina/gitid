@@ -136,14 +136,208 @@ func TestEnsureIncludeDirChmodsExistingBackTo0700(t *testing.T) {
 }
 
 // TestIsReservedBlockName proves the reserved Include block name is
-// recognised, mirroring gitconfig.IsReservedBlockName (Pitfall 4).
+// recognised, mirroring gitconfig.IsReservedBlockName (Pitfall 4), and that
+// the macOS `Host *` globals block (`_global`) is reserved too — Phase 3 D-08
+// writes it on EVERY create, so an unregistered name would let the doctor
+// Orphans fix path delete it in a destructive false-positive loop (L4).
 func TestIsReservedBlockName(t *testing.T) {
 	if !IsReservedBlockName("ssh-include") {
 		t.Error(`IsReservedBlockName("ssh-include") = false, want true`)
 	}
+	if !IsReservedBlockName("_global") {
+		t.Error(`IsReservedBlockName("_global") = false, want true (D-08 macOS globals block, L4)`)
+	}
 	if IsReservedBlockName("personal") {
 		t.Error(`IsReservedBlockName("personal") = true, want false`)
 	}
+}
+
+// TestReservedPaths proves the gitid-owned Include'd storage locations are
+// registered: the config.d directory and its *.config glob (L4; the SSH-side
+// seed of the reserved-PATH registry Phase 8 D-06.2 generalizes).
+func TestReservedPaths(t *testing.T) {
+	sshDir := filepath.Join(t.TempDir(), ".ssh")
+	got := ReservedPaths(sshDir)
+
+	want := []string{
+		filepath.Join(sshDir, "config.d"),
+		filepath.Join(sshDir, "config.d", "*.config"),
+	}
+	if len(got) != len(want) {
+		t.Fatalf("ReservedPaths(%q) = %v, want %v", sshDir, got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("ReservedPaths()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// TestIsReservedPath proves only the gitid-owned Include'd storage is reserved:
+// the config.d directory itself and the `*.config` files inside it. The main
+// config, key material and non-`.config` files inside config.d are NOT gitid
+// storage and must stay outside the registry.
+func TestIsReservedPath(t *testing.T) {
+	sshDir := filepath.Join(t.TempDir(), ".ssh")
+
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{filepath.Join(sshDir, "config.d"), true},
+		{filepath.Join(sshDir, "config.d", "gitid.config"), true},
+		// Uncleaned form must still match (filepath.Clean comparison).
+		{filepath.Join(sshDir, "config.d") + "/./gitid.config", true},
+		{filepath.Join(sshDir, "config"), false},
+		{filepath.Join(sshDir, "id_ed25519"), false},
+		{filepath.Join(sshDir, "config.d", "notes.txt"), false},
+	}
+	for _, tc := range cases {
+		if got := IsReservedPath(sshDir, tc.path); got != tc.want {
+			t.Errorf("IsReservedPath(%q, %q) = %v, want %v", sshDir, tc.path, got, tc.want)
+		}
+	}
+}
+
+// TestManagedBlockNamesIsIncludeAware proves managed-block discovery unions the
+// blocks of ~/.ssh/config with the blocks of every Include'd gitid-owned file.
+//
+// This is the L4 hazard D-06 introduces: on a fresh Include'd machine every
+// identity Host block lives in config.d/gitid.config, so a doctor composition
+// root reading only ~/.ssh/config sees ZERO identity blocks and CheckOrphans
+// offers a DESTRUCTIVE removal fix for every legitimate gitconfig block.
+func TestManagedBlockNamesIsIncludeAware(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	configPath, _ := seedIncludeLayout(t, home)
+
+	names, err := ManagedBlockNames(configPath)
+	if err != nil {
+		t.Fatalf("ManagedBlockNames: %v", err)
+	}
+
+	// The main config alone only carries the reserved wiring blocks; the
+	// identity block is only reachable THROUGH the Include.
+	mainOnly := filewriter.ListBlocks(mustRead(t, configPath))
+	for _, b := range mainOnly {
+		if b.Name == "personal" {
+			t.Fatal("fixture invalid: the identity block must live in config.d, not in ~/.ssh/config")
+		}
+	}
+
+	for _, want := range []string{"ssh-include", "_global", "personal"} {
+		if !containsName(names, want) {
+			t.Errorf("ManagedBlockNames = %v, want it to contain %q", names, want)
+		}
+	}
+}
+
+// TestManagedBlockNamesToleratesMissingIncludedFile proves a glob that resolves
+// to nothing (the Include'd file was never created) is skipped, not an error.
+func TestManagedBlockNamesToleratesMissingIncludedFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatalf("seeding .ssh: %v", err)
+	}
+	configPath := filepath.Join(sshDir, "config")
+	if _, err := EnsureIncludeLine(configPath); err != nil {
+		t.Fatalf("EnsureIncludeLine: %v", err)
+	}
+	// No config.d directory at all — the Include glob matches nothing.
+
+	names, err := ManagedBlockNames(configPath)
+	if err != nil {
+		t.Fatalf("ManagedBlockNames with a missing Include'd file: %v", err)
+	}
+	if !containsName(names, "ssh-include") {
+		t.Errorf("ManagedBlockNames = %v, want it to contain %q", names, "ssh-include")
+	}
+}
+
+// TestManagedBlockNamesUnreadableIncludedFileErrors proves a genuinely
+// unreadable Include'd match is reported, not silently swallowed: the glob
+// matched, so gitid must not pretend the file's blocks do not exist.
+func TestManagedBlockNamesUnreadableIncludedFileErrors(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	sshDir := filepath.Join(home, ".ssh")
+	configDir := filepath.Join(sshDir, "config.d")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatalf("seeding config.d: %v", err)
+	}
+	configPath := filepath.Join(sshDir, "config")
+	if _, err := EnsureIncludeLine(configPath); err != nil {
+		t.Fatalf("EnsureIncludeLine: %v", err)
+	}
+	// A DIRECTORY matching the *.config glob is unreadable as a file on every
+	// platform and for every user (root included) — a deterministic stand-in
+	// for a permission-denied match that needs no privilege assumptions.
+	if err := os.MkdirAll(filepath.Join(configDir, "broken.config"), 0o700); err != nil {
+		t.Fatalf("seeding unreadable match: %v", err)
+	}
+
+	if _, err := ManagedBlockNames(configPath); err == nil {
+		t.Error("ManagedBlockNames with an unreadable Include'd match = nil error, want an error")
+	} else if !strings.Contains(err.Error(), "reading included") {
+		t.Errorf("error = %v, want it to name the unreadable included file", err)
+	}
+}
+
+// seedIncludeLayout writes the D-06 Include'd fresh-machine layout under home:
+// ~/.ssh/config carrying ONLY the reserved wiring (the Include line block and
+// the macOS `_global` block), plus ~/.ssh/config.d/gitid.config carrying the
+// identity Host block. It returns the main config path and the Include'd file
+// path.
+func seedIncludeLayout(t *testing.T, home string) (configPath, includedPath string) {
+	t.Helper()
+	sshDir := filepath.Join(home, ".ssh")
+	configDir := filepath.Join(sshDir, "config.d")
+	if err := EnsureIncludeDir(configDir); err != nil {
+		t.Fatalf("EnsureIncludeDir: %v", err)
+	}
+	configPath = filepath.Join(sshDir, "config")
+	if _, err := EnsureIncludeLine(configPath); err != nil {
+		t.Fatalf("EnsureIncludeLine: %v", err)
+	}
+	// The macOS globals block, written on EVERY create (D-08).
+	globals := filewriter.ReplaceBlock(mustRead(t, configPath), "_global",
+		"Host *\n  IgnoreUnknown UseKeychain\n  UseKeychain yes\n  AddKeysToAgent yes\n")
+	if _, err := filewriter.Write(configPath, globals, 0o600); err != nil {
+		t.Fatalf("writing globals block: %v", err)
+	}
+
+	includedPath = filepath.Join(configDir, "gitid.config")
+	hostBlock := RenderHostBlock("personal.github.com", "ssh.github.com", 443,
+		filepath.Join(sshDir, "id_ed25519_personal"), "github.com")
+	included := filewriter.ReplaceBlock(nil, "personal", hostBlock)
+	if _, err := filewriter.Write(includedPath, included, 0o600); err != nil {
+		t.Fatalf("writing Include'd gitid.config: %v", err)
+	}
+	return configPath, includedPath
+}
+
+// mustRead reads path or fails the test.
+func mustRead(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path) //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	return b
+}
+
+// containsName reports whether names contains want.
+func containsName(names []string, want string) bool {
+	for _, n := range names {
+		if n == want {
+			return true
+		}
+	}
+	return false
 }
 
 // TestIncludeResolution proves real `ssh -G` resolves an alias THROUGH the
