@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: "02-15 (wave 8) operationalized the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract (D1–D9 + affordance audit) in BOTH demos, byte-for-byte: D1 single-row color-only fields (02-14's rounded box deleted), D2 always-expanded match-strategy/algorithm radios, D3 terminal-glyph checkbox/radio on the web, D4 bracketed main-nav format (`[N] Label`, moved off the wizard stepper) + a new ActiveNavDimmed/activeNavDimmed state + a top-level plain-arrow view switch, D5 the wizard stepper reverted to `Step n/4 · <label> ● ○ ○ ○`, D6 one-row git-step buttons, D7 ONE hoisted Shift+←/→ chord gate reaching every step including the previously-dead review ceremony (proven with a new raw-byte PTY e2e injecting real xterm CSI sequences), D8 click-to-focus on every form row, and D9 Global Git's user.email promoted to an editable, opt-in global-fallback field with its own dedicated write ceremony (a documented, scoped recipes/ divergence). 02-STYLE-SPEC.md + both FIELDS.md companions rewritten in lockstep; the full exit-gate battery is green (go test -race, the no-backend allowlist, the extended copy-freeze grep, make test/lint/test-e2e/gate-no-backend-files, pnpm typecheck+build) — see 02-15-SUMMARY.md. The two ORCHESTRATOR-run exit gates (a fresh agent-ui-ux-designer critique of both live demos + a fresh-context code review against 02-15's must_haves/acceptance_criteria) have since RUN and their findings (F1-F10 + one record-only item) are fixed — see 02-15-SUMMARY.md "Review findings resolution (post-plan fix pass)" and commits a335d80/f62c99e. Next is 02-12 (wave 9, the single DLV-08 approval checkpoint), unblocked."
-stopped_at: "ONESHOT run: Steps 0/1/2 DONE. Phase 3 Step 3.4 (plan review + replan) COMPLETE AND EXTERNALLY APPROVED — Codex second re-check returned APPROVE-FOR-EXECUTION at Overall Risk LOW: all 7 original findings resolved, all 3 re-check blockers fixed, no new contradictions; gsd-plan-checker PASS-WITH-CONCERNS with both concerns addressed. NEXT = Step 3.5 /gsd-execute-phase 3 (wave-based; 6 plans, 5 waves). PHASE-3 BASE SHA = 61d98fa. Circuit breaker: replans_used=1/2, review_fix_loops=2/3."
+stopped_at: "ONESHOT run: Phase 3 Step 3.5 EXECUTION — WAVE 1 CLOSED GREEN (03-01 + 03-02 landed; gates orchestrator-verified: build 0, 1122 race tests, lint 0 issues, e2e ok, tuikit import-boundary clean, 929->942 tests with no skips/deletions). NEXT = Wave 2 = plan 03-03, run SEQUENTIALLY (L11). PHASE-3 BASE SHA = 61d98fa. Circuit breaker: replans 1/2, review_fix 2/3."
 last_updated: "2026-07-08T19:45:00.000Z"
 last_activity: "2026-07-06 -- Completed 02-12 (★ DLV-08): user approval recorded as `**APPROVED:** 2026-07-06 by Pepe`; Phase 2 COMPLETE — the approved live demos + 02-REDESIGN-SPEC.md/02-STYLE-SPEC.md/02-DESIGN-DECISIONS-CHECKPOINT-2.md + per-surface FIELDS.md are the binding design reference; Phases 3-9 backend work is UNBLOCKED"
 progress:
@@ -185,7 +185,21 @@ Items acknowledged and carried forward from previous milestone close:
 Last session: 2026-07-08T19:45:00.000Z
 Stopped at: ONESHOT run — Phase 3 Step 3.4 COMPLETE, Codex APPROVE-FOR-EXECUTION (risk LOW). NEXT = Step 3.5 /gsd-execute-phase 3.
 Resume file: .planning/ONESHOT.md (Step 3.5) + the six 03-0N-PLAN.md files (approved, ready to execute)
-Wave structure: W1 = 03-01 + 03-02 (parallel, disjoint files) -> W2 = 03-03 -> W3 = 03-04 -> W4 = 03-05 -> W5 = 03-06
+Wave structure: W1 = 03-01 + 03-02 (DONE) -> W2 = 03-03 -> W3 = 03-04 -> W4 = 03-05 -> W5 = 03-06
+**All remaining waves run SEQUENTIALLY (one executor at a time) per LEARNINGS L11** — the pre-commit hooks lint the whole module, so a parallel executor's mid-refactor tree blocks every other commit. Do NOT run plans in parallel inside this Go module again.
+
+WAVE 1 CLOSED 2026-07-25 — orchestrator-verified gates (NOT executor claims):
+- go build ./... exit 0
+- TERM=dumb SSH_AUTH_SOCK= go test -count=1 -race ./... -> 1122 passed, 21 packages
+- make lint -> 0 issues
+- make test-e2e -> ok 47.3s
+- go list -deps ./internal/tuikit -> NO first-party backend import (boundary holds)
+- test integrity: 929 -> 942 test funcs, no new t.Skip, one rename only
+  (TestReduceReset -> TestReset, verified strictly STRONGER: keeps the original
+  contract at the Backend seam that now owns Reset AND adds a negative
+  assertion that Reduce must leave Reset alone)
+Commits: 3dd4f47 (tuikit extraction behind the Backend seam), 3fd1568 (summaries + L11/L12), 465739c (03-02 Task 3: restored import-graph allowlist test, retired the obsolete Phase-2 path gate).
+Wave-1 cost: 4 agent deaths (1 API/session-limit, 3 watchdog stalls); orchestrator repaired 6 call-site errors inline and closed Task 3 inline.
 Current branch: gsd/phase-03-create-flow-backend
 PHASE-3 BASE SHA: 61d98fa (anchors external code-review range in Step 6d)
 CIRCUIT BREAKER: replans_used=1/2; review_fix_loops=1/3
