@@ -407,6 +407,41 @@ func RenderFrame(width, height int, s DemoState, tab TabID, crumbs []string, sta
 	return strings.Join(rows, "\n")
 }
 
+// demoBannerText is the D-16 notice a tab renders when the injected Backend
+// reports it is not yet wired to live data. FROZEN COPY, byte-exact: it joins
+// the 02-STYLE-SPEC.md §6 copy-freeze grep mechanism (see the
+// `gate-copy-freeze` make target and TestDemoBannerCopyIsFrozen), so it may
+// not be reworded without re-freezing it there.
+//
+// The dummy never shows it (the whole dummy IS demo data, so a banner would be
+// noise); the real binary shows it on every tab whose backend wiring has not
+// landed yet, and each later phase removes it from the ONE view it wires.
+const demoBannerText = "Preview — demo data, not wired to your system yet"
+
+// renderDemoBanner is the one-row D-16 banner (02-UI-SPEC.md "Scoped
+// Divergences → D-16"): the EXISTING Theme.Warning role plus the EXISTING `!`
+// warning glyph plus the word — never color alone, never a new role or glyph.
+// RenderFrame draws it directly under the breadcrumb/ActiveArea line as the
+// first row of the body region, so it costs chrome, not screen content.
+func renderDemoBanner(width int) string {
+	return " " + DefaultTheme.Warning.Render("! "+fitLine(demoBannerText, width-3))
+}
+
+// fitLine clips text to width display columns (the banner is ASCII copy).
+func fitLine(text string, width int) string {
+	if width < 1 {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= width {
+		return text
+	}
+	if width < 2 {
+		return string(runes[:width])
+	}
+	return string(runes[:width-1]) + "…"
+}
+
 // PreviewLabel renders the label of a preview area — deliberately DIMMER
 // (faint) than field labels so read-only previews never read as editable
 // inputs (round-3 feedback; mirror of MutationCeremony.tsx's PreviewLabel).

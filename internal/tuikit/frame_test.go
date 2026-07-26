@@ -90,6 +90,80 @@ func TestRenderFrameShowsNumberedTabsAndReservedFooter(t *testing.T) {
 	}
 }
 
+// --------------------------------------------------------------------------
+// D-16 — the "Preview — demo data" banner on not-yet-wired tabs.
+// --------------------------------------------------------------------------
+
+// demoBannerLine is the D-16 banner exactly as a user reads it: the EXISTING
+// `!` warning glyph, a space, and the frozen copy. Assertions below pin this
+// byte-for-byte — it is the 02-STYLE-SPEC.md §6 copy-freeze contract.
+const demoBannerLine = "! Preview — demo data, not wired to your system yet"
+
+// bannerBackend is a stubBackend that reports every tab EXCEPT Identities as
+// not-yet-wired — exactly what the real composition root does in Phase 3
+// (cmd/gitid/wiring.go DemoBanner), so the render assertions below exercise
+// the shape the real binary produces.
+type bannerBackend struct{ stubBackend }
+
+func (bannerBackend) DemoBanner(tab TabID) bool { return tab != TabIdentities }
+
+// TestDemoBannerCopyIsFrozen pins the D-16 string byte-for-byte and proves the
+// banner is rendered with the EXISTING Theme.Warning role plus the EXISTING
+// `!` glyph plus the word — never color alone, never a new role or glyph
+// (02-UX-DIRECTION.md §2 glyph contract).
+func TestDemoBannerCopyIsFrozen(t *testing.T) {
+	if demoBannerText != "Preview — demo data, not wired to your system yet" {
+		t.Fatalf("frozen D-16 copy changed: %q", demoBannerText)
+	}
+	rendered := renderDemoBanner(100)
+	if got := strings.TrimSpace(stripANSI(rendered)); got != demoBannerLine {
+		t.Errorf("banner line = %q, want %q", got, demoBannerLine)
+	}
+	if !strings.Contains(rendered, DefaultTheme.Warning.Render("! "+demoBannerText)) {
+		t.Error("the banner must render through the EXISTING Theme.Warning role with the `!` glyph")
+	}
+}
+
+// TestDemoBannerOnlyOnNotYetWiredTabs is the D-16 behavior contract: a tab the
+// Backend has not wired shows the banner at the TOP of its body (directly
+// under the breadcrumb/ActiveArea line); the create-flow tab Phase 3 DOES wire
+// (Identities) shows none.
+func TestDemoBannerOnlyOnNotYetWiredTabs(t *testing.T) {
+	a := NewApp(bannerBackend{})
+
+	// Identities is wired in Phase 3 — no banner.
+	if strings.Contains(appView(a), demoBannerLine) {
+		t.Error("the create-flow (Identities) tab must NOT carry the D-16 banner")
+	}
+
+	// Every other tab is still demo data — banner present, first body row.
+	for _, tab := range []string{"2", "3", "4"} {
+		next, _ := press(t, a, tab)
+		lines := strings.Split(appView(next), "\n")
+		if len(lines) <= frameBodyTop {
+			t.Fatalf("tab %s rendered %d lines", tab, len(lines))
+		}
+		if got := strings.TrimSpace(lines[frameBodyTop]); got != demoBannerLine {
+			t.Errorf("tab %s first body row = %q, want the D-16 banner %q", tab, got, demoBannerLine)
+		}
+	}
+}
+
+// TestDemoBannerKeepsTheRowBudget proves the banner is chrome-cost, not a
+// frame resize: the frame is still exactly 30 rows with the banner on screen
+// (02-STYLE-SPEC.md §7 — fit new copy into the existing budget, never grow the
+// geometry).
+func TestDemoBannerKeepsTheRowBudget(t *testing.T) {
+	a, _ := press(t, NewApp(bannerBackend{}), "4") // Doctor — not yet wired
+	view := appView(a)
+	if !strings.Contains(view, demoBannerLine) {
+		t.Fatalf("setup: expected the banner on the Doctor tab:\n%s", view)
+	}
+	if got := len(strings.Split(view, "\n")); got != minFrameHeight {
+		t.Errorf("frame height with the banner = %d rows, want %d", got, minFrameHeight)
+	}
+}
+
 func TestRenderFrameBreadcrumbJoinsWithChevron(t *testing.T) {
 	plain := stripANSI(renderSeededFrame([]string{"work", "Edit SSH"}, nil))
 	if !strings.Contains(plain, "Identities › work › Edit SSH") {

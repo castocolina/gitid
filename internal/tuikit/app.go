@@ -545,28 +545,5 @@ func newScreens(b Backend, initial DemoState) [4]screenModel {
 	}
 }
 
-// demoBannerText is the D-16 notice a tab renders when the injected
-// Backend reports it is not yet wired to live data. The dummy never shows
-// it (the whole dummy is demo data); the real binary shows it per tab
-// until that tab's backend wiring lands.
-const demoBannerText = "Demo data — this view is not wired to your machine yet. Nothing here reflects your real configuration."
-
-// renderDemoBanner is the one-line D-16 banner prepended to a screen body.
-func renderDemoBanner(width int) string {
-	return " " + DefaultTheme.Warning.Render("! "+fitLine(demoBannerText, width-3))
-}
-
-// fitLine clips text to width display columns (the banner is ASCII copy).
-func fitLine(text string, width int) string {
-	if width < 1 {
-		return ""
-	}
-	runes := []rune(text)
-	if len(runes) <= width {
-		return text
-	}
-	if width < 2 {
-		return string(runes[:width])
-	}
-	return string(runes[:width-1]) + "…"
-}
+// The D-16 banner itself lives in frame.go: it is a CHROME line (rendered
+// directly under the header/breadcrumb ActiveArea line), not screen content.

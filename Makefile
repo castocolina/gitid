@@ -157,8 +157,43 @@ lint:
 ## test: run the TDD harness with race detection and a coverage profile.
 ## Coverage is report-only in Phase 1; no hard threshold (D-09 discretion).
 ## This is the same command pre-push hooks and future CI will call (D-06).
-test:
+test: gate-copy-freeze
 	go test -race -coverprofile=coverage.out ./...
+
+## gate-copy-freeze: the 02-STYLE-SPEC.md §6 copy-freeze grep gate.
+## Every string below is FROZEN by an approved design artifact: reword it and
+## the render silently drifts from the contract the mockups were signed off
+## against. A plain presence grep over the render stack is the whole mechanism
+## — cheap, mechanical, and impossible to satisfy by accident.
+##
+## Phase 3 adds the D-16 banner copy (02-UI-SPEC.md "Scoped Divergences").
+## The demo's OWN frozen string (`-- needs user.name + a valid email`, D7) is
+## asserted too: D-19 will add a SECOND, different reason string for the REAL
+## binary in the SAME visual slot, and the executor must never collapse the two
+## into one or delete the demo's original.
+gate-copy-freeze:
+	@echo "==> gate-copy-freeze: 02-STYLE-SPEC.md §6 frozen copy"
+	@fail=0; \
+	for s in \
+		'Preview — demo data, not wired to your system yet' \
+		'[ Skip Git ]' \
+		'[ Continue ]' \
+		'Skip keeps this identity SSH-only and marks it incomplete.' \
+		'Continue reviews the Git fragment, includeIf, and allowed_signers entries before writing.' \
+		'— needs user.name + a valid email' \
+		'Write it' \
+		'Blank prefix → SSH Host = the provider host itself'; \
+	do \
+		if grep -rqF -- "$$s" internal/tuikit; then \
+			echo "    ok   $$s"; \
+		else \
+			echo "    MISSING  $$s"; fail=1; \
+		fi; \
+	done; \
+	if [ $$fail -ne 0 ]; then \
+		echo "gate-copy-freeze: FROZEN COPY MISSING from internal/tuikit (02-STYLE-SPEC.md §6)"; \
+		exit 1; \
+	fi
 
 ## build: compile the gitid binary.
 build:
