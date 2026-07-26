@@ -242,15 +242,31 @@ screenshot-html:
 ## commit 13f11c4 (interactive demo, checkpoint-1 feedback) added a local
 ## tooling-state ignore rule (.playwright-mcp/) -- ignore-rule hygiene, not
 ## backend logic, which is what this gate defends against (T-02-BEGATE).
+##
+## RETIRED AT PHASE 3 (D-17). This target's premise -- "a branch changes only
+## design files" -- is structurally false from Phase 3 onward: Phase 3 is the
+## first BACKEND phase and legitimately changes internal/identity,
+## internal/keygen, internal/tester, internal/tuikit and cmd/gitid. Widening
+## the allowlist cannot rescue it (03-01's backend deliverables would still be
+## "offending"), so the file-path form is retired rather than weakened.
+##
+## Its SUBSTANTIVE property -- the demo/render stack imports no backend
+## package -- is now enforced durably and more strongly by an import-graph
+## ALLOWLIST test that runs in the normal suite:
+##
+##     go test ./internal/dummytui/ -run TestNoBackendAllowlist
+##
+## That test allows exactly {internal/dummytui, cmd/gitid-dummy,
+## internal/tuikit} and fails on ANY other first-party import by
+## construction, so it catches new/renamed backend packages automatically --
+## which a path-diff against main never could.
 gate-no-backend-files:
-	@BASE=$$(git merge-base main HEAD); \
-	OFFENDING=$$(git diff --name-only "$$BASE"..HEAD | grep -v -E '^(\.planning/|internal/dummytui/|cmd/gitid-dummy/|internal/screenshot/|e2e/|Makefile$$|\.gitignore$$)' || true); \
-	if [ -n "$$OFFENDING" ]; then \
-		echo "gate-no-backend-files: FAILED -- file(s) outside the Phase 2 design-only allowlist changed since main ($$BASE):"; \
-		echo "$$OFFENDING"; \
-		exit 1; \
-	fi; \
-	echo "gate-no-backend-files: OK -- no files outside {.planning/, internal/dummytui/, cmd/gitid-dummy/, internal/screenshot/, e2e/, Makefile, .gitignore} changed since main ($$BASE)"
+	@echo "gate-no-backend-files: RETIRED at Phase 3 (D-17)."
+	@echo "  The Phase-2 design-only path allowlist no longer applies: backend"
+	@echo "  phases legitimately change internal/{identity,keygen,tester,tuikit}."
+	@echo "  The durable guard is the import-graph allowlist test:"
+	@echo "    go test ./internal/dummytui/ -run TestNoBackendAllowlist"
+	@go test ./internal/dummytui/ -run TestNoBackendAllowlist
 
 ## demo-web: (re)launch the web design mockup dev server (Vite) on the
 ## dedicated $(DEMO_WEB_PORT) and open it in the browser.
