@@ -160,10 +160,13 @@ These are first-class, enforced requirements — the user's core process ask.
 
 ## F. SSH Config Storage (STORE) — research-backed
 
-- [x] **STORE-01** (Dual strategy): gitid manages SSH config as either (a) sentinel
-  blocks in `~/.ssh/config` (default, current) or (b) a gitid-owned file
-  (`~/.ssh/config.d/gitid.config` or per-identity files) pulled in via a single
-  `Include ~/.ssh/config.d/*.config` line placed **near the top** of `~/.ssh/config`.
+- [x] **STORE-01** (Dual strategy): gitid manages SSH config as either (a) a
+  gitid-owned file (`~/.ssh/config.d/gitid.config` or per-identity files) pulled in
+  via a single `Include ~/.ssh/config.d/*.config` line placed **near the top** of
+  `~/.ssh/config` — the **default for fresh setups** *(default superseded by
+  Phase 3 D-06)* — or (b) sentinel blocks in `~/.ssh/config`, the retained
+  alternative auto-detected on machines already using that layout. The active
+  layout is auto-detected, never chosen in the create flow (D-05).
   Include paths MUST be absolute or `~/.ssh`-relative (verified: relative paths
   resolve against `~/.ssh/` and silently fail otherwise).
 
@@ -465,7 +468,7 @@ row below records each one's **home** phase.
 | TEST-01 | Phase 3 | Pending |
 | TEST-02 | Phase 3 | Pending |
 | TEST-03 | Phase 3 | Pending |
-| STORE-01 | Phase 1 | Complete |
+| STORE-01 | Phase 1, Phase 3 (D-06 default supersession) | Complete |
 | STORE-02 | Phase 1 | Complete |
 | STORE-03 | Phase 1 | Complete |
 | STORE-04 | Phase 1 | Complete |

@@ -6,18 +6,19 @@ import (
 	"io"
 	"os"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/castocolina/gitid/tui"
+	"github.com/castocolina/gitid/internal/tuikit"
 )
 
 const version = "0.0.0-dev"
 
 // noArgsAction handles the no-args case for main(): if isTTY is true, calls
-// run() (e.g. tui.Run) and returns 0 on success or 1 on error; if isTTY is
-// false, writes the usage hint to errw and returns 1 (TUI-01 non-TTY contract,
-// UI-SPEC §"Non-TTY / Piped Behavior Contract").
+// run() (the real app shell) and returns 0 on success or 1 on error; if isTTY
+// is false, writes the usage hint to errw and returns 1 (TUI-01 non-TTY
+// contract, UI-SPEC §"Non-TTY / Piped Behavior Contract").
 //
 // Extracted as a named helper so tests can drive both branches without
 // invoking the real TUI or os.Exit.
@@ -34,28 +35,26 @@ func noArgsAction(isTTY bool, run func() error, out io.Writer, errw io.Writer) i
 	return 0
 }
 
+// runApp launches the real approved app shell: the shared, backend-free
+// tuikit render stack driven by the REAL Backend composition root
+// (cmd/gitid/wiring.go). This is D-15 — bare `gitid` in a TTY opens the
+// approved chrome with live backend state, replacing the retired 0.0.1 POC
+// tui/ package entry point (D-14).
+func runApp() error {
+	_, err := tea.NewProgram(tuikit.NewApp(buildBackend())).Run()
+	return err
+}
+
 func main() {
 	if len(os.Args) == 1 {
-		// No subcommand: branch on TTY — launch TUI or print usage hint.
+		// No subcommand: branch on TTY — launch the app shell or print the hint.
 		isTTY := term.IsTerminal(int(os.Stdout.Fd()))
-		code := noArgsAction(isTTY, tui.Run, os.Stdout, os.Stderr)
+		code := noArgsAction(isTTY, runApp, os.Stdout, os.Stderr)
 		os.Exit(code)
 	}
 	if err := Execute(); err != nil {
-		// A real command error (e.g. "doctor: --yes requires --fix", or any other
-		// command's failure). Cobra has already printed it. Exit non-zero,
-		// preferring the tiered doctor code when one was set.
-		code := doctorExitCode
-		if code == 0 {
-			code = 1
-		}
-		os.Exit(code)
-	}
-	// IN-03: propagate the tiered doctor exit code (0/1/2/3) on a clean Execute.
-	// doctor RunE stores it in doctorExitCode and returns nil (so Cobra prints no
-	// spurious "Error: exit code N"); all other commands leave it 0.
-	if doctorExitCode != 0 {
-		os.Exit(doctorExitCode)
+		// A real command error. Cobra has already printed it; exit non-zero.
+		os.Exit(1)
 	}
 }
 
@@ -65,9 +64,13 @@ func Execute() error {
 	return newRootCmd().Execute()
 }
 
-// newRootCmd assembles the gitid Cobra command tree: the root, the `identity`
-// group, and its subcommands. Cobra auto-registers a `completion` subcommand
-// for bash/zsh/fish/PowerShell (D-08/CLI-02).
+// newRootCmd assembles the gitid Cobra command tree.
+//
+// D-14 archived the 0.0.1 POC command surface (identity add/list/test/rotate/
+// update/delete/copy, baseline, doctor, adopt, host, add repo) — the v1.0 CLI
+// surface is rebuilt deliberately in Phase 5 (SHELL-03). What remains is the
+// root, the Phase 1 `debug` diagnostic readout, and the `completion`
+// subcommand Cobra auto-registers for bash/zsh/fish/PowerShell (D-08/CLI-02).
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "gitid",
@@ -77,66 +80,8 @@ func newRootCmd() *cobra.Command {
 		SilenceErrors: false,
 	}
 
-	identity := &cobra.Command{
-		Use:   "identity",
-		Short: "Create and verify Git identities",
-	}
-	identity.AddCommand(newAddCmd())
-	identity.AddCommand(newListCmd())
-	identity.AddCommand(newTestCmd())
-	identity.AddCommand(newRotateCmd())
-	identity.AddCommand(newUpdateCmd())
-	identity.AddCommand(newDeleteCmd())
-	// D-06: identity copy subcommand (canonical; top-level copy is an alias below)
-	identity.AddCommand(newIdentityCopyCmd())
-	root.AddCommand(identity)
-
-	baseline := &cobra.Command{
-		Use:   "baseline",
-		Short: "Manage the shared global git baseline (core/push/pull defaults, gitignore, url rewrites)",
-	}
-	baseline.AddCommand(newBaselineSetupCmd())
-	baseline.AddCommand(newBaselineShowCmd())
-	root.AddCommand(baseline)
-
-	root.AddCommand(newDoctorCmd())
-
 	// D-08: debug/list command surface (KEY-01/PLAT-01/MGR-02 diagnostic readout).
 	root.AddCommand(newDebugCmd())
-
-	// D-05: top-level rotate alias — delegates to same handler as identity rotate.
-	rotateTL := &cobra.Command{
-		Use:   "rotate <name>",
-		Short: "Rotate the SSH key for an identity and re-test all artifacts",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runIdentityRotate(cmd.InOrStdin(), cmd.OutOrStdout(), args[0], false, buildDeps)
-		},
-	}
-	root.AddCommand(rotateTL)
-
-	// D-06: top-level copy alias
-	root.AddCommand(newCopyCmd())
-
-	// D-07: host group with add subcommand
-	host := &cobra.Command{
-		Use:   "host",
-		Short: "Manage SSH host aliases",
-	}
-	host.AddCommand(newHostAddCmd())
-	root.AddCommand(host)
-
-	// ADOPT-01: adopt command at root level (migrate or reference-in-place).
-	root.AddCommand(newAdoptCmd())
-
-	// REPO-01: NEW top-level add group — separate from identity add (which lives
-	// under identity). This group is the extensible home for repo-level operations.
-	add := &cobra.Command{
-		Use:   "add",
-		Short: "Add resources to gitid management (repositories, …)",
-	}
-	add.AddCommand(newAddRepoCmd())
-	root.AddCommand(add)
 
 	return root
 }

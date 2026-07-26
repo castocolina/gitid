@@ -17,7 +17,7 @@ func TestVersionNonEmpty(t *testing.T) {
 }
 
 // TestNewRootCmdDoesNotPanic confirms building the command tree completes
-// without panicking and registers the expected subcommands.
+// without panicking and keeps the Phase-1 `debug` diagnostic surface.
 func TestNewRootCmdDoesNotPanic(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -30,55 +30,49 @@ func TestNewRootCmdDoesNotPanic(t *testing.T) {
 		t.Fatalf("root.Use = %q, want gitid", root.Use)
 	}
 
-	identity, _, err := root.Find([]string{"identity"})
-	if err != nil || identity.Use != "identity" {
-		t.Fatalf("expected 'identity' subcommand to be registered, err=%v", err)
+	debug, _, err := root.Find([]string{"debug"})
+	if err != nil || debug.Name() != "debug" {
+		t.Fatalf("expected 'debug' subcommand to be registered, err=%v", err)
 	}
-	if add, _, err := root.Find([]string{"identity", "add"}); err != nil || add.Use != "add" {
-		t.Fatalf("expected 'identity add' subcommand, got %v (err=%v)", add, err)
-	}
-	if testCmd, _, err := root.Find([]string{"identity", "test"}); err != nil || testCmd.Name() != "test" {
-		t.Fatalf("expected 'identity test' subcommand, got %v (err=%v)", testCmd, err)
+	if caps, _, err := root.Find([]string{"debug", "caps"}); err != nil || caps.Name() != "caps" {
+		t.Fatalf("expected 'debug caps' subcommand, got %v (err=%v)", caps, err)
 	}
 }
 
-// TestNewRootCmdTopLevelAliases verifies that the three new top-level alias
-// commands are registered: rotate, copy, and host (with host.add) (CLI-01 / D-05..D-07).
-func TestNewRootCmdTopLevelAliases(t *testing.T) {
+// TestNewRootCmdArchivedPOCCommandsAreGone locks in D-14: the 0.0.1 POC Cobra
+// surface is archived, not merely hidden. The v1.0 CLI is rebuilt deliberately
+// in Phase 5 (SHELL-03), so a command silently reappearing here would smuggle
+// the retired POC back into the shipped binary.
+func TestNewRootCmdArchivedPOCCommandsAreGone(t *testing.T) {
 	root := newRootCmd()
-
-	tests := []struct {
-		path []string
-		want string
-	}{
-		{[]string{"rotate"}, "rotate <name>"},
-		{[]string{"copy"}, "copy <name>"},
-		{[]string{"host"}, "host"},
-		{[]string{"host", "add"}, "add"},
+	archived := [][]string{
+		{"identity"}, {"baseline"}, {"doctor"}, {"adopt"},
+		{"rotate"}, {"copy"}, {"host"}, {"add"}, {"match"}, {"upload"},
 	}
-
-	for _, tc := range tests {
-		cmd, _, err := root.Find(tc.path)
-		if err != nil {
-			t.Errorf("root.Find(%v): unexpected error %v", tc.path, err)
-			continue
-		}
-		if cmd.Use != tc.want {
-			t.Errorf("cmd.Use = %q, want %q (path=%v)", cmd.Use, tc.want, tc.path)
+	for _, path := range archived {
+		if _, _, err := root.Find(path); err == nil {
+			t.Errorf("archived POC command %v is still registered (D-14)", path)
 		}
 	}
 }
 
-// TestNewRootCmdIdentityCopyRegistered verifies that identity copy subcommand
-// is registered (CLI-01 / D-06).
-func TestNewRootCmdIdentityCopyRegistered(t *testing.T) {
+// TestNewRootCmdSurfaceIsDebugAndCompletionOnly asserts the WHOLE remaining
+// command surface, so a future addition is a deliberate decision rather than an
+// accident: `debug`, Cobra's auto-registered `completion`, and `help`.
+func TestNewRootCmdSurfaceIsDebugAndCompletionOnly(t *testing.T) {
 	root := newRootCmd()
-	cmd, _, err := root.Find([]string{"identity", "copy"})
-	if err != nil {
-		t.Fatalf("root.Find(['identity','copy']): %v", err)
+	root.InitDefaultCompletionCmd()
+	root.InitDefaultHelpCmd()
+
+	want := map[string]bool{"debug": true, "completion": true, "help": true}
+	for _, cmd := range root.Commands() {
+		if !want[cmd.Name()] {
+			t.Errorf("unexpected subcommand %q registered; the Phase-3 surface is debug + completion only (D-14)", cmd.Name())
+		}
+		delete(want, cmd.Name())
 	}
-	if cmd.Use != "copy <name>" {
-		t.Errorf("identity copy Use = %q, want %q", cmd.Use, "copy <name>")
+	for name := range want {
+		t.Errorf("expected subcommand %q to be registered", name)
 	}
 }
 

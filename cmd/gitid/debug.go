@@ -12,6 +12,14 @@ import (
 	"github.com/castocolina/gitid/internal/platform"
 )
 
+// fp writes s to out, ignoring the write error: out is the command's stdout,
+// where a write failure is neither recoverable nor actionable. It was owned by
+// the archived add.go (D-14); `debug` is its only surviving caller, so it now
+// lives here.
+func fp(out io.Writer, s string) {
+	_, _ = io.WriteString(out, s)
+}
+
 // newDebugCmd builds `gitid debug` (D-08), the Phase-1 diagnostic surface
 // that proves KEY-01 (algorithm catalog + resolved local availability),
 // PLAT-01 (local capability probe), and MGR-02 (per-identity state) via a
