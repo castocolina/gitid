@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: "02-15 (wave 8) operationalized the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract (D1–D9 + affordance audit) in BOTH demos, byte-for-byte: D1 single-row color-only fields (02-14's rounded box deleted), D2 always-expanded match-strategy/algorithm radios, D3 terminal-glyph checkbox/radio on the web, D4 bracketed main-nav format (`[N] Label`, moved off the wizard stepper) + a new ActiveNavDimmed/activeNavDimmed state + a top-level plain-arrow view switch, D5 the wizard stepper reverted to `Step n/4 · <label> ● ○ ○ ○`, D6 one-row git-step buttons, D7 ONE hoisted Shift+←/→ chord gate reaching every step including the previously-dead review ceremony (proven with a new raw-byte PTY e2e injecting real xterm CSI sequences), D8 click-to-focus on every form row, and D9 Global Git's user.email promoted to an editable, opt-in global-fallback field with its own dedicated write ceremony (a documented, scoped recipes/ divergence). 02-STYLE-SPEC.md + both FIELDS.md companions rewritten in lockstep; the full exit-gate battery is green (go test -race, the no-backend allowlist, the extended copy-freeze grep, make test/lint/test-e2e/gate-no-backend-files, pnpm typecheck+build) — see 02-15-SUMMARY.md. The two ORCHESTRATOR-run exit gates (a fresh agent-ui-ux-designer critique of both live demos + a fresh-context code review against 02-15's must_haves/acceptance_criteria) have since RUN and their findings (F1-F10 + one record-only item) are fixed — see 02-15-SUMMARY.md "Review findings resolution (post-plan fix pass)" and commits a335d80/f62c99e. Next is 02-12 (wave 9, the single DLV-08 approval checkpoint), unblocked."
-stopped_at: "ONESHOT run: Phase 3 Step 3.5 EXECUTION — WAVE 1 CLOSED GREEN (03-01 + 03-02 landed; gates orchestrator-verified: build 0, 1122 race tests, lint 0 issues, e2e ok, tuikit import-boundary clean, 929->942 tests with no skips/deletions). NEXT = Wave 2 = plan 03-03, run SEQUENTIALLY (L11). PHASE-3 BASE SHA = 61d98fa. Circuit breaker: replans 1/2, review_fix 2/3."
+stopped_at: "ONESHOT run: Phase 3 Step 3.5 EXECUTION — WAVE 2 CLOSED GREEN (03-03: POC DROP, composition root, persist, BLOCKING L4 doctor-reserved registration with a verified-non-vacuous destructive control). Gates orchestrator-verified: build 0, make build 0, 796 race tests, lint 0, e2e ok, adopter untouched, tuikit boundary clean. Orchestrator restored TestInstall_MakeInstallOutput (a real coverage regression). NEXT = Wave 3 = plan 03-04, SEQUENTIAL. PHASE-3 BASE SHA = 61d98fa. Circuit breaker: replans 1/2, review_fix 2/3."
 last_updated: "2026-07-08T19:45:00.000Z"
 last_activity: "2026-07-06 -- Completed 02-12 (★ DLV-08): user approval recorded as `**APPROVED:** 2026-07-06 by Pepe`; Phase 2 COMPLETE — the approved live demos + 02-REDESIGN-SPEC.md/02-STYLE-SPEC.md/02-DESIGN-DECISIONS-CHECKPOINT-2.md + per-surface FIELDS.md are the binding design reference; Phases 3-9 backend work is UNBLOCKED"
 progress:
@@ -200,6 +200,40 @@ WAVE 1 CLOSED 2026-07-25 — orchestrator-verified gates (NOT executor claims):
   assertion that Reduce must leave Reset alone)
 Commits: 3dd4f47 (tuikit extraction behind the Backend seam), 3fd1568 (summaries + L11/L12), 465739c (03-02 Task 3: restored import-graph allowlist test, retired the obsolete Phase-2 path gate).
 Wave-1 cost: 4 agent deaths (1 API/session-limit, 3 watchdog stalls); orchestrator repaired 6 call-site errors inline and closed Task 3 inline.
+
+WAVE 2 CLOSED 2026-07-25 (plan 03-03) — orchestrator-verified gates:
+- go build exit 0; make build exit 0 (the pre-Wave-3 obligation)
+- TERM=dumb SSH_AUTH_SOCK= go test -count=1 -race ./... -> 796 passed, 19 packages
+- make lint 0 issues; make test-e2e ok 20.9s
+- TestNoBackendAllowlist PASS; go list -deps ./internal/tuikit -> no backend import
+- internal/adopter UNTOUCHED (git diff empty) — the engine survived the DROP
+- L4 BLOCKING guard verified live: TestOrphansReservedArtifactsSurviveFix AND
+  TestOrphansNonIncludeAwareDepsAreDestructive both PASS. The destructive
+  CONTROL proves the guard is not vacuous; the executor also observed real RED
+  (reverting the _global registration made the fix path delete the macOS
+  globals block outright — precisely the destructive loop L4 exists to stop).
+- Real ReadPub wired non-nil in cmd/gitid/wiring.go:257 (L2 real-constructor half)
+Commits: e75e32d (L4 registration + doctor proof), d60a4d7 (POC DROP + D-15 rewire + composition root + persist + REQUIREMENTS STORE-01), 2369750 (03-03-SUMMARY.md), plus the orchestrator's correction below.
+
+Test count moved 1122 -> 796 because the archived POC packages took their own
+tests with them. Verified legitimate, with ONE exception the orchestrator
+caught and fixed: e2e/install_e2e_test.go was archived wholesale, but only its
+TestInstall_PathFeedback half drove an archived Cobra command (`gitid doctor`);
+its TestInstall_MakeInstallOutput half tests the `install` MAKEFILE TARGET,
+which survives Phase 3 untouched (Makefile:183, still echoing the install path
+and PATH hint the test pins). That test was RESTORED — a real coverage
+regression the executor's own justification did not cover.
+
+CARRIED INTO 03-06 (flagged by the 03-03 executor): real-backend values
+legitimately differ from the frozen dummy fixtures and need visual-divergence
+allowlist entries — most notably HostBlockPreview now renders via
+sshconfig.RenderHostBlock (2-space indent + `# gitid: provider=...` marker)
+rather than the dummy's 4-space markerless text, because "written exactly like
+this on confirm" requires the preview to BE the written text. Full table in
+03-03-SUMMARY.md.
+CARRIED INTO 03-05: realBackend.Persist has no error channel; a failed write
+returns the PREVIOUS state and records the cause on persistErr, exposed via
+PersistError() for 03-05 to render. Not a swallow — must be surfaced in the UI.
 Current branch: gsd/phase-03-create-flow-backend
 PHASE-3 BASE SHA: 61d98fa (anchors external code-review range in Step 6d)
 CIRCUIT BREAKER: replans_used=1/2; review_fix_loops=1/3
