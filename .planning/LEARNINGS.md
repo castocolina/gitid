@@ -107,6 +107,42 @@ dated; convert relative dates to absolute.
   `git diff` of the touched file before trusting or discarding it — the content
   may be salvageable with only the tail removed (it was, here).
 
+### L11 — Parallel executors cannot commit independently when hooks lint the whole module (2026-07-25, Phase 3 Wave 1)
+- **Symptom:** Wave 1 ran 03-01 and 03-02 in parallel on disjoint FILES. 03-01
+  finished its code but could not commit: the pre-commit hooks run
+  `make fmt` + `make lint` over the WHOLE module (`pass_filenames: false`), and
+  the parallel 03-02 executor had the module mid-rename (non-compiling). With
+  `--no-verify` forbidden, 03-01 was structurally blocked from committing. It
+  correctly chose to wait — and then the watchdog killed it, so its work
+  survived only as uncommitted working-tree changes.
+- **Root cause:** "disjoint files" is NOT sufficient for parallel execution when
+  the commit gate is module-wide. The true unit of isolation is the BUILD, not
+  the file set.
+- **Rule:** when pre-commit hooks validate the whole module, either (a) run
+  plans that touch the same Go module SEQUENTIALLY, or (b) give each parallel
+  executor its own git worktree, or (c) have parallel executors write code but
+  let the ORCHESTRATOR do a single reconciled commit once the module builds
+  again. Never plan a parallel wave whose members can leave the module
+  non-compiling for each other. Re-examine every later phase's wave plan for
+  this same trap before executing it.
+
+### L12 — A plan can be internally complete and still leave an unbuildable seam for its own tests (2026-07-25, Phase 3 03-02)
+- **Symptom:** plan 03-02 correctly specified `tuikit.NewApp(b Backend)`,
+  `dummytui.FixtureBackend`, and the rewired dummy entry point — but did not
+  address that `internal/tuikit`'s ~48 EXISTING tests are internal
+  (`package tuikit`) and call `NewApp()` with no argument. They cannot import
+  `dummytui` for a fixture Backend because `dummytui` imports `tuikit`
+  (import cycle), and they cannot move to an external test package because they
+  reach unexported symbols.
+- **Root cause:** the plan reasoned about the PRODUCTION import graph and the
+  no-backend gate, but not about the TEST import graph the same refactor
+  implies. Both external review and the plan checker missed it too — they were
+  checking the production boundary.
+- **Rule:** when a plan extracts a package behind a new injected seam, it must
+  state explicitly how the extracted package's OWN tests obtain that seam, and
+  whether that creates an import cycle with the fixture provider. Add this to
+  the plan-review checklist for every later extraction phase.
+
 ### L10 — Literal closing-tag sequences in a subagent prompt truncate the prompt (2026-07-08, orchestrator)
 - **Symptom:** an Agent spawn silently received a truncated prompt: the launch
   succeeded but the instructions were cut off partway, because the prompt text
