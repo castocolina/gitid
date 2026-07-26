@@ -1,4 +1,4 @@
-package dummytui
+package tuikit
 
 import (
 	"strings"
@@ -24,35 +24,35 @@ func appView(a App) string {
 }
 
 func TestNewAppRendersTheFrame(t *testing.T) {
-	a := NewApp()
+	a := NewApp(stubBackend{})
 	view := appView(a)
 	for _, want := range []string{"gitid", "[1] Identities", "[2] Global SSH", "[3] Global Git", "[4] Doctor", "8 ids"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("initial frame missing %q", want)
 		}
 	}
-	if a.tab != tabIdentities {
+	if a.tab != TabIdentities {
 		t.Errorf("initial tab = %v, want Identities", a.tab)
 	}
 }
 
 func TestNumberKeysSwitchTabs(t *testing.T) {
-	a := NewApp()
+	a := NewApp(stubBackend{})
 	a, _ = press(t, a, "3")
-	if a.tab != tabGlobalGit {
+	if a.tab != TabGlobalGit {
 		t.Fatalf("tab = %v after pressing 3, want Global Git", a.tab)
 	}
 	if !strings.Contains(appView(a), "Global Git") {
 		t.Error("breadcrumb should show the active tab label")
 	}
 	a, _ = press(t, a, "1")
-	if a.tab != tabIdentities {
+	if a.tab != TabIdentities {
 		t.Errorf("tab = %v after pressing 1, want Identities", a.tab)
 	}
 }
 
 func TestHelpOverlayShowsFullLegend(t *testing.T) {
-	a := NewApp()
+	a := NewApp(stubBackend{})
 	a, _ = press(t, a, "?")
 	if a.overlay != overlayHelp {
 		t.Fatal("? must open the help overlay")
@@ -86,7 +86,7 @@ func TestHelpOverlayShowsFullLegend(t *testing.T) {
 }
 
 func TestQuitPromptEnterQuitsEscStays(t *testing.T) {
-	a := NewApp()
+	a := NewApp(stubBackend{})
 	a, _ = press(t, a, "q")
 	if a.overlay != overlayQuit {
 		t.Fatal("q must open the quit prompt")
@@ -112,7 +112,7 @@ func TestQuitPromptEnterQuitsEscStays(t *testing.T) {
 }
 
 func TestPaletteFiltersAndOpensFirstMatch(t *testing.T) {
-	a := NewApp()
+	a := NewApp(stubBackend{})
 	a, _ = press(t, a, "ctrl+p")
 	if a.overlay != overlayPalette {
 		t.Fatal("ctrl+p must open the palette")
@@ -125,17 +125,17 @@ func TestPaletteFiltersAndOpensFirstMatch(t *testing.T) {
 		a, _ = press(t, a, string(r))
 	}
 	matches := a.paletteMatches()
-	if len(matches) != 1 || matches[0].tab != tabDoctor {
+	if len(matches) != 1 || matches[0].tab != TabDoctor {
 		t.Fatalf("palette matches for 'doctor' = %v", matches)
 	}
 	a, _ = press(t, a, "enter")
-	if a.overlay != overlayNone || a.tab != tabDoctor {
+	if a.overlay != overlayNone || a.tab != TabDoctor {
 		t.Errorf("enter must open the first match; overlay=%v tab=%v", a.overlay, a.tab)
 	}
 }
 
 func TestWindowSizeGuard(t *testing.T) {
-	a := NewApp()
+	a := NewApp(stubBackend{})
 	model, _ := a.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	a = model.(App)
 	if !strings.Contains(appView(a), "resize to at least 100x30") {

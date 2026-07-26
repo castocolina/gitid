@@ -1,4 +1,4 @@
-package dummytui
+package tuikit
 
 // theme.go is the central semantic style contract for the live TUI demo,
 // mirrored 1:1 by role name with the web

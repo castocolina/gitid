@@ -1,4 +1,4 @@
-package dummytui
+package tuikit
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 )
 
 // identitiesApp returns a fresh App (Identities tab active).
-func identitiesApp() App { return NewApp() }
+func identitiesApp() App { return NewApp(stubBackend{}) }
 
 // pressSeq sends a sequence of keys to the app.
 func pressSeq(t *testing.T, a App, keys ...string) App {
@@ -32,9 +32,9 @@ func typeText(t *testing.T, a App, text string) App {
 // identModel extracts the identities child model from the app.
 func identModel(t *testing.T, a App) identitiesModel {
 	t.Helper()
-	m, ok := a.screens[tabIdentities].(identitiesModel)
+	m, ok := a.screens[TabIdentities].(identitiesModel)
 	if !ok {
-		t.Fatalf("screens[0] is %T, want identitiesModel", a.screens[tabIdentities])
+		t.Fatalf("screens[0] is %T, want identitiesModel", a.screens[TabIdentities])
 	}
 	return m
 }
@@ -241,10 +241,21 @@ func wizardToStep2(t *testing.T, a App) App {
 	return a
 }
 
-// completeStage completes the pending running phase via the tick message.
+// completeStage completes the pending running phase by delivering the
+// WizardStageMsg the injected Backend's TestStage1/TestStage2 command would
+// deliver for the wizard's CURRENT spec — same result, without waiting out
+// the demo's running tick. Building it from the Backend (rather than a
+// hand-made message) keeps the outcome — including the simulate-failure
+// path — decided by the seam, exactly as it is at runtime.
 func completeStage(t *testing.T, a App, stage int) App {
 	t.Helper()
-	model, _ := a.Update(wizardStageMsg{stage: stage})
+	spec := identModel(t, a).wizard.spec()
+	b := stubBackend{}
+	result := b.stage1Result(spec)
+	if stage == 2 {
+		result = b.stage2Result(spec)
+	}
+	model, _ := a.Update(WizardStageMsg{Stage: stage, Result: result})
 	return model.(App)
 }
 
@@ -672,7 +683,7 @@ func TestMasterDetailDividerOnEveryScreen(t *testing.T) {
 	// Identities, Global SSH, Global Git, and the Doctor all draw the
 	// full-height master↔detail divider (H2).
 	for _, tab := range []string{"1", "2", "3"} {
-		a, _ := press(t, NewApp(), tab)
+		a, _ := press(t, NewApp(stubBackend{}), tab)
 		if n := strings.Count(appView(a), "│"); n < 15 {
 			t.Errorf("tab %s: divider glyph count = %d, want a full-height │ column", tab, n)
 		}

@@ -157,6 +157,19 @@ type Deps struct {
 	DerivePub func(privateKeyPath, comment string) (pubLine string, err error)
 	WritePub  func(pubPath, pubLine string) error
 
+	// ReadPub reads an EXISTING `<key>.pub` and returns its authorized-key line
+	// verbatim. It is the seam that makes D-11's "encrypted keys accepted when a
+	// matching .pub exists alongside (no passphrase prompt)" rule work: when the
+	// `.pub` is present, ensurePub returns its content instead of re-deriving the
+	// line from the private key (which requires ssh.ParsePrivateKey and therefore
+	// fails on a passphrase-protected key).
+	//
+	// It is nil-guarded exactly like PubExists: a caller that leaves ReadPub nil
+	// keeps the previous behavior (derive via DerivePub) rather than panicking.
+	// Composition roots MUST wire it — the nil branch exists only for backward
+	// compatibility, not as an acceptable production wiring.
+	ReadPub func(pubPath string) (pubLine string, err error)
+
 	// WriteProvisionalSSH, PromoteSSH, and DropProvisionalSSH are the three
 	// provisional-block lifecycle seams for the staged create wizard (Plan 14).
 	// They mirror the sshconfig.WriteProvisional/Promote/DropProvisional

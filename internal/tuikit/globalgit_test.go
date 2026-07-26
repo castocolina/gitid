@@ -1,4 +1,4 @@
-package dummytui
+package tuikit
 
 import (
 	"regexp"
@@ -9,16 +9,16 @@ import (
 // ggitApp returns an App on the Global Git tab.
 func ggitApp(t *testing.T) App {
 	t.Helper()
-	a, _ := press(t, NewApp(), "3")
+	a, _ := press(t, NewApp(stubBackend{}), "3")
 	return a
 }
 
 // ggitModel extracts the Global Git child model.
 func ggitModel(t *testing.T, a App) globalGitModel {
 	t.Helper()
-	m, ok := a.screens[tabGlobalGit].(globalGitModel)
+	m, ok := a.screens[TabGlobalGit].(globalGitModel)
 	if !ok {
-		t.Fatalf("screens[2] is %T, want globalGitModel", a.screens[tabGlobalGit])
+		t.Fatalf("screens[2] is %T, want globalGitModel", a.screens[TabGlobalGit])
 	}
 	return m
 }

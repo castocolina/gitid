@@ -1,4 +1,4 @@
-package dummytui
+package tuikit
 
 import (
 	"regexp"
@@ -66,7 +66,7 @@ func regionFlat(a App, from, to int) string {
 }
 
 func renderSeededFrame(crumbs []string, actions []FooterAction) string {
-	return RenderFrame(100, 30, Seed(), tabIdentities, crumbs, "Ready.", "info", actions, false, "body line")
+	return RenderFrame(100, 30, Seed(), TabIdentities, crumbs, "Ready.", "info", actions, false, "body line")
 }
 
 func TestRenderFrameShowsNumberedTabsAndReservedFooter(t *testing.T) {
@@ -107,7 +107,7 @@ func TestRenderFrameHealthChipCounts(t *testing.T) {
 
 	clean := Seed()
 	clean.Findings = nil
-	plainClean := stripANSI(RenderFrame(100, 30, clean, tabIdentities, nil, "Ready.", "info", nil, false, ""))
+	plainClean := stripANSI(RenderFrame(100, 30, clean, TabIdentities, nil, "Ready.", "info", nil, false, ""))
 	if !strings.Contains(plainClean, "✓ ok") {
 		t.Error("all-clean chip must show `✓ ok`")
 	}
@@ -121,7 +121,7 @@ func TestRenderFrameActiveTabAccentBackground(t *testing.T) {
 	// as a BACKGROUND (Theme.ActiveNav: bold + bright-white on ANSI-4 blue,
 	// SGR 1;97;44), replacing the old flat monochrome reverse-video invert
 	// that did not clearly say "I am at 1/2/3/4".
-	raw := RenderFrame(100, 30, Seed(), tabGlobalGit, nil, "Ready.", "info", nil, false, "")
+	raw := RenderFrame(100, 30, Seed(), TabGlobalGit, nil, "Ready.", "info", nil, false, "")
 	if !strings.Contains(raw, "\x1b[1;97;44m [3] Global Git ") {
 		t.Error("active tab must render through Theme.ActiveNav (bold + bright-white on the blue accent background, SGR 1;97;44)")
 	}
@@ -141,7 +141,7 @@ func TestRenderFrameContextualActionsPrecedeReserved(t *testing.T) {
 }
 
 func TestRenderFrameGeometry(t *testing.T) {
-	out := RenderFrame(100, 30, Seed(), tabIdentities, nil, "Ready.", "info", nil, false, strings.Repeat("line\n", 60))
+	out := RenderFrame(100, 30, Seed(), TabIdentities, nil, "Ready.", "info", nil, false, strings.Repeat("line\n", 60))
 	lines := strings.Split(out, "\n")
 	if len(lines) != 30 {
 		t.Fatalf("frame height = %d lines, want exactly 30", len(lines))
@@ -154,7 +154,7 @@ func TestRenderFrameGeometry(t *testing.T) {
 }
 
 func TestRenderFrameTooSmallGuard(t *testing.T) {
-	out := RenderFrame(80, 24, Seed(), tabIdentities, nil, "", "info", nil, false, "")
+	out := RenderFrame(80, 24, Seed(), TabIdentities, nil, "", "info", nil, false, "")
 	if !strings.Contains(out, "resize to at least 100x30") {
 		t.Errorf("small-terminal guard missing; got %q", out)
 	}
@@ -236,7 +236,7 @@ func TestPreviewBlockClipsWithTail(t *testing.T) {
 }
 
 func TestRenderFrameInputFocusedReservedFooterIsHonest(t *testing.T) {
-	plain := stripANSI(RenderFrame(100, 30, Seed(), tabIdentities, nil, "Ready.", "info", nil, true, "body"))
+	plain := stripANSI(RenderFrame(100, 30, Seed(), TabIdentities, nil, "Ready.", "info", nil, true, "body"))
 	for _, want := range []string{"Esc back", "Ctrl+P palette"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("input-focused reserved footer missing %q", want)

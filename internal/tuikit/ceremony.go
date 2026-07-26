@@ -1,4 +1,4 @@
-package dummytui
+package tuikit
 
 // ceremony.go is the Go mirror of
 // .planning/design/mockup-src/src/demo/MutationCeremony.tsx — the

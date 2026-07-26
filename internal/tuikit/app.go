@@ -1,4 +1,4 @@
-package dummytui
+package tuikit
 
 // app.go is the root Bubble Tea v2 model of the live gitid-dummy demo —
 // the Go mirror of .planning/design/mockup-src/src/demo/DemoApp.tsx:
@@ -115,26 +115,27 @@ var helpLegend = []legendRow{
 // paletteEntry is one Ctrl+P palette row.
 type paletteEntry struct {
 	label string
-	tab   tabID
+	tab   TabID
 	help  bool
 }
 
 // paletteEntries mirrors DemoApp.tsx's palette views & actions (the static
 // reference-mockup routes do not exist in the terminal demo).
 var paletteEntries = []paletteEntry{
-	{label: "1 · Identities", tab: tabIdentities},
-	{label: "2 · Global SSH options", tab: tabGlobalSSH},
-	{label: "3 · Global Git options", tab: tabGlobalGit},
-	{label: "4 · Doctor", tab: tabDoctor},
+	{label: "1 · Identities", tab: TabIdentities},
+	{label: "2 · Global SSH options", tab: TabGlobalSSH},
+	{label: "3 · Global Git options", tab: TabGlobalGit},
+	{label: "4 · Doctor", tab: TabDoctor},
 	{label: "? · Help / key map / state legend", help: true},
 }
 
-// App is the root tea.Model: it owns DemoState (the single Reduce caller),
-// the active tab, the per-tab child models, the overlays, and a transient
-// status note.
+// App is the root tea.Model: it owns the view state (the single Persist
+// caller), the injected Backend, the active tab, the per-tab child models,
+// the overlays, and a transient status note.
 type App struct {
+	backend Backend
 	state   DemoState
-	tab     tabID
+	tab     TabID
 	width   int
 	height  int
 	overlay overlayKind
@@ -147,19 +148,28 @@ type App struct {
 	initCmd tea.Cmd
 }
 
-// NewApp builds the live demo app seeded from data.go's fixtures and runs
-// the initial tab's activation hook, retaining the activated screen model.
-func NewApp() App {
+// NewApp builds the app around the injected Backend: it seeds the state
+// from b.InitialState(), hands b to every screen that needs an effect, and
+// runs the initial tab's activation hook, retaining the activated screen
+// model. b must not be nil — a nil Backend would leave every effect point
+// silently dead (the project's injected-seam wiring blindspot), so this
+// panics loudly at construction instead.
+func NewApp(b Backend) App {
+	if b == nil {
+		panic("tuikit: NewApp requires a non-nil Backend")
+	}
 	ti := textinput.New()
 	ti.Prompt = "> "
 	ti.Placeholder = "Type to filter — Enter opens the first match"
+	state := b.InitialState()
 	a := App{
-		state:   Seed(),
-		tab:     tabIdentities,
+		backend: b,
+		state:   state,
+		tab:     TabIdentities,
 		width:   minFrameWidth,
 		height:  minFrameHeight,
 		palette: ti,
-		screens: newScreens(),
+		screens: newScreens(b, state),
 	}
 	screen, cmd := a.screens[a.tab].activate(a.state)
 	a.screens[a.tab] = screen
@@ -173,10 +183,12 @@ func (a App) Init() tea.Cmd {
 	return a.initCmd
 }
 
-// apply reduces every dispatched action into the app state.
+// apply commits every dispatched action THROUGH the Backend — the single
+// place a committed mutation leaves the render stack. The dummy reduces in
+// memory; the real binary performs the backed-up write and re-reads.
 func (a *App) apply(actions []Action) {
 	for _, action := range actions {
-		a.state = Reduce(a.state, action)
+		a.state = a.backend.Persist(a.state, action)
 	}
 }
 
@@ -211,7 +223,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // setTab switches the active view and runs its activation hook.
-func (a App) setTab(t tabID) (App, tea.Cmd) {
+func (a App) setTab(t TabID) (App, tea.Cmd) {
 	a.tab = t
 	a.note = ""
 	screen, cmd := a.screens[t].activate(a.state)
@@ -285,7 +297,7 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Globals last.
 	switch key {
 	case "1", "2", "3", "4":
-		next, cmd := a.setTab(tabID(int(key[0] - '1')))
+		next, cmd := a.setTab(TabID(int(key[0] - '1')))
 		return next, cmd
 	case "left":
 		// D4 (checkpoint-2 contract): plain ←/→ switch views 1..4 at the
@@ -293,13 +305,13 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// own handler returned unhandled (capturing panes and Global SSH's
 		// ←/→ sub-tabs already consumed the key above and never reach this
 		// branch). Clamped at the ends — no wraparound.
-		if a.tab > tabIdentities {
+		if a.tab > TabIdentities {
 			next, cmd := a.setTab(a.tab - 1)
 			return next, cmd
 		}
 		return a, nil
 	case "right":
-		if a.tab < tabDoctor {
+		if a.tab < TabDoctor {
 			next, cmd := a.setTab(a.tab + 1)
 			return next, cmd
 		}
@@ -330,7 +342,7 @@ func (a App) handleMouse(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 			return a.setTab(t)
 		}
 		if headerChipAt(a.width, a.state, msg.X) {
-			return a.setTab(tabDoctor)
+			return a.setTab(TabDoctor)
 		}
 		return a, nil
 	}
@@ -431,6 +443,13 @@ func (a App) render() string {
 	body := sv.body
 	capturesKeys := sv.capturesKeys
 
+	// D-16: a tab the injected Backend has not wired to live data yet says
+	// so, above its own body. The dummy returns false for every tab, so
+	// this is a no-op there and the demo renders byte-identically.
+	if a.backend.DemoBanner(a.tab) {
+		body = renderDemoBanner(a.width) + "\n" + body
+	}
+
 	switch a.overlay {
 	case overlayHelp:
 		body = a.renderHelp()
@@ -453,7 +472,7 @@ func (a App) render() string {
 	// switch on non-capturing states, EXCEPT Global SSH — its own ←/→
 	// already means "Options / Storage" there (that footer hint stays;
 	// top-level arrows never reach the tab switcher from that screen).
-	if a.overlay == overlayNone && !capturesKeys && a.tab != tabGlobalSSH {
+	if a.overlay == overlayNone && !capturesKeys && a.tab != TabGlobalSSH {
 		actions = append(actions, FooterAction{Key: "←→", Label: "switch view"})
 	}
 	return RenderFrame(a.width, a.height, a.state, a.tab, crumbs, status, tone, actions, capturesKeys, body)
@@ -514,12 +533,40 @@ func padRight(s string, width int) string {
 	return s
 }
 
-// newScreens wires the four tab child models in header order.
-func newScreens() [4]screenModel {
+// newScreens wires the four tab child models in header order. Only the
+// Identities tab owns create-flow effects, so it is the one screen handed
+// the Backend; the other three are pure DemoState renderers.
+func newScreens(b Backend, initial DemoState) [4]screenModel {
 	return [4]screenModel{
-		newIdentitiesModel(),
+		newIdentitiesModel(b, initial),
 		newGlobalSSHModel(),
 		newGlobalGitModel(),
 		newDoctorModel(),
 	}
+}
+
+// demoBannerText is the D-16 notice a tab renders when the injected
+// Backend reports it is not yet wired to live data. The dummy never shows
+// it (the whole dummy is demo data); the real binary shows it per tab
+// until that tab's backend wiring lands.
+const demoBannerText = "Demo data — this view is not wired to your machine yet. Nothing here reflects your real configuration."
+
+// renderDemoBanner is the one-line D-16 banner prepended to a screen body.
+func renderDemoBanner(width int) string {
+	return " " + DefaultTheme.Warning.Render("! "+fitLine(demoBannerText, width-3))
+}
+
+// fitLine clips text to width display columns (the banner is ASCII copy).
+func fitLine(text string, width int) string {
+	if width < 1 {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= width {
+		return text
+	}
+	if width < 2 {
+		return string(runes[:width])
+	}
+	return string(runes[:width-1]) + "…"
 }

@@ -1,4 +1,4 @@
-package dummytui
+package tuikit
 
 // theme_test.go pins the semantic style contract (02-STYLE-SPEC.md): the
 // per-role SGR every Theme field must render, the theme-var PROMOTION
@@ -105,8 +105,8 @@ func TestThemePromotionIsBehaviorPreserving(t *testing.T) {
 // (superseding the prior "active tab keeps its background" behavior).
 func TestRenderHeaderActiveTabDimsToForegroundOnlyWhenCapturesKeys(t *testing.T) {
 	s := Seed()
-	full := renderHeader(100, s, tabIdentities, false)
-	dimmed := renderHeader(100, s, tabIdentities, true)
+	full := renderHeader(100, s, TabIdentities, false)
+	dimmed := renderHeader(100, s, TabIdentities, true)
 	if full == dimmed {
 		t.Fatal("header rendering must differ between capturesKeys states")
 	}
@@ -116,7 +116,7 @@ func TestRenderHeaderActiveTabDimsToForegroundOnlyWhenCapturesKeys(t *testing.T)
 	if strings.Contains(dimmed, "\x1b[1;97;44m") {
 		t.Error("the active tab must NOT keep the ActiveNav background while a pane captures keys — it renders ActiveNavDimmed instead (D4)")
 	}
-	if !strings.Contains(dimmed, DefaultTheme.ActiveNavDimmed.Render(headerTabText(int(tabIdentities)))) {
+	if !strings.Contains(dimmed, DefaultTheme.ActiveNavDimmed.Render(headerTabText(int(TabIdentities)))) {
 		t.Error("the active tab while capturesKeys must render through Theme.ActiveNavDimmed")
 	}
 	if !strings.Contains(dimmed, "\x1b[2m") {
@@ -139,11 +139,11 @@ func TestRenderHeaderActiveTabDimsToForegroundOnlyWhenCapturesKeys(t *testing.T)
 // via the breadcrumb divider line directly above the body (02-STYLE-SPEC.md
 // §3 "ActiveArea mechanism").
 func TestRenderFrameActiveAreaAccentWhileCapturesKeys(t *testing.T) {
-	active := RenderFrame(100, 30, Seed(), tabIdentities, nil, "Ready.", "info", nil, true, "body")
+	active := RenderFrame(100, 30, Seed(), TabIdentities, nil, "Ready.", "info", nil, true, "body")
 	if !strings.Contains(active, "\x1b[34m") {
 		t.Error("RenderFrame must carry the ActiveArea accent (blue, SGR 34) while a pane captures keys")
 	}
-	quiet := RenderFrame(100, 30, Seed(), tabIdentities, nil, "Ready.", "info", nil, false, "body")
+	quiet := RenderFrame(100, 30, Seed(), TabIdentities, nil, "Ready.", "info", nil, false, "body")
 	if strings.Contains(quiet, "\x1b[34m") {
 		t.Error("RenderFrame must NOT carry the accent while no pane captures keys (detail mode)")
 	}

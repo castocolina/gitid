@@ -1,4 +1,4 @@
-package dummytui
+package tuikit
 
 import (
 	"reflect"
@@ -40,11 +40,11 @@ func hasFinding(s DemoState, id string) bool {
 func TestSeedMirrorsWebStore(t *testing.T) {
 	s := Seed()
 
-	if got := len(s.Identities); got != len(IdentityManagerRows) {
-		t.Fatalf("Seed identities = %d, want %d", got, len(IdentityManagerRows))
+	if got := len(s.Identities); got != len(stubIdentityRows) {
+		t.Fatalf("Seed identities = %d, want %d", got, len(stubIdentityRows))
 	}
-	if got := len(s.Findings); got != len(HealthFindings) {
-		t.Fatalf("Seed findings = %d, want %d", got, len(HealthFindings))
+	if got := len(s.Findings); got != len(stubHealthFindings) {
+		t.Fatalf("Seed findings = %d, want %d", got, len(stubHealthFindings))
 	}
 
 	// Rows WITH a Git fragment get the derived author values (web seed).
@@ -306,11 +306,21 @@ func TestReduceSetSSHStorageRoundTrips(t *testing.T) {
 	}
 }
 
-func TestReduceReset(t *testing.T) {
-	s := Reduce(Seed(), DeleteIdentity{Name: "personal", Scope: "everything", Backup: "b"})
-	next := Reduce(s, Reset{})
-	if !reflect.DeepEqual(next, Seed()) {
-		t.Error("Reset must restore the seeded state")
+// TestReset pins the SAME contract the pre-extraction TestReduceReset did —
+// Reset restores the initial state — at the seam that now owns it. Only the
+// Backend knows what "initial" means (fixtures here, a fresh read of the
+// user's configuration in the real binary), so Reduce deliberately no longer
+// answers Reset and a Backend's Persist MUST (see the Reset doc comment in
+// store.go). Both halves of that contract are asserted.
+func TestReset(t *testing.T) {
+	b := stubBackend{}
+	s := b.Persist(Seed(), DeleteIdentity{Name: "personal", Scope: "everything", Backup: "b"})
+
+	if next := b.Persist(s, Reset{}); !reflect.DeepEqual(next, Seed()) {
+		t.Error("Reset must restore the seeded state through the Backend")
+	}
+	if next := Reduce(s, Reset{}); !reflect.DeepEqual(next, s) {
+		t.Error("Reduce must leave Reset alone — answering it is the Backend's job")
 	}
 }
 

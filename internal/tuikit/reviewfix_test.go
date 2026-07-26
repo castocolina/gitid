@@ -1,4 +1,4 @@
-package dummytui
+package tuikit
 
 // reviewfix_test.go pins the combined review-findings fix pass for plan
 // 02-15 (a fresh agent-ui-ux-designer parity critique + a fresh-context code

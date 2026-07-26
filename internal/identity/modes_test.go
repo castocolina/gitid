@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -14,12 +15,14 @@ import (
 // persistKey/cleanup counters) so no extra fields are needed here.
 type modeLog struct {
 	callLog
-	derivePub    int
-	pubExists    int
-	writePub     int
-	pubExistsRet bool
-	lastPubLine  string
-	lastPubPath  string
+	derivePub       int
+	pubExists       int
+	writePub        int
+	readPub         int
+	pubExistsRet    bool
+	lastPubLine     string
+	lastPubPath     string
+	lastReadPubPath string
 }
 
 func newFakeModeDeps(log *modeLog, preOutcome tester.Outcome) Deps {
@@ -38,7 +41,39 @@ func newFakeModeDeps(log *modeLog, preOutcome tester.Outcome) Deps {
 		log.lastPubLine = pubLine
 		return nil
 	}
+	// ReadPub is deliberately left NIL here: this fake models a caller that has
+	// not wired the new seam, so every test built on it also exercises the L2
+	// nil-guard fallback. Tests that need the seam wire it explicitly (see
+	// withReadPub).
 	return d
+}
+
+// withReadPub wires the ReadPub seam on deps, recording the call and returning
+// the supplied line/error. It models a composition root that HAS wired the new
+// seam (the real wiring lands in cmd/gitid, plan 03-03).
+func withReadPub(deps Deps, log *modeLog, line string, err error) Deps {
+	deps.ReadPub = func(pubPath string) (string, error) {
+		log.readPub++
+		log.lastReadPubPath = pubPath
+		return line, err
+	}
+	return deps
+}
+
+// errEncryptedKey is the shape ssh.ParsePrivateKey (via keygen.DerivePublicKey)
+// returns for a passphrase-protected private key — the exact failure D-11 says
+// must NOT block reuse when a matching .pub sits next to the key.
+var errEncryptedKey = errors.New("keygen: parsing private key: ssh: this private key is passphrase protected")
+
+// failingDerivePub replaces DerivePub with one that always errors, simulating an
+// ENCRYPTED private key (ssh.ParsePrivateKey cannot parse it without a
+// passphrase). Any code path that reaches DerivePub therefore fails loudly.
+func failingDerivePub(deps Deps, log *modeLog) Deps {
+	deps.DerivePub = func(_, _ string) (string, error) {
+		log.derivePub++
+		return "", errEncryptedKey
+	}
+	return deps
 }
 
 func reuseInput() CreateInput {
@@ -125,6 +160,127 @@ func TestReuseAbortsOnPreWriteFailure(t *testing.T) {
 	if log.writeSSH != 0 || log.writeGitconfig != 0 || log.writeFragment != 0 || log.writeAllowedSigners != 0 {
 		t.Fatalf("Reuse must perform NO writes on pre-write Failure; got ssh=%d gitconfig=%d fragment=%d signers=%d",
 			log.writeSSH, log.writeGitconfig, log.writeFragment, log.writeAllowedSigners)
+	}
+}
+
+// TestReuseEncryptedKeyWithExistingPub asserts the D-11 / KEY-06 contract: an
+// ENCRYPTED private key that already has a matching `.pub` sibling is reusable
+// WITHOUT any passphrase prompt. DerivePub is stubbed to fail the way
+// ssh.ParsePrivateKey fails on a passphrase-protected key, so the test passes
+// only when ensurePub reads the existing `.pub` via the ReadPub seam and never
+// touches the private key.
+func TestReuseEncryptedKeyWithExistingPub(t *testing.T) {
+	var log modeLog
+	log.pubExistsRet = true // the .pub sits next to the encrypted private key
+	const existingLine = "ssh-ed25519 AAAAEXISTINGPUB encrypted@gitid\n"
+
+	deps := failingDerivePub(newFakeModeDeps(&log, tester.ReachableNotUploaded), &log)
+	deps = withReadPub(deps, &log, existingLine, nil)
+
+	existingKey := "/tmp/.ssh/id_ed25519_encrypted"
+	res, err := Reuse(reuseInput(), existingKey, deps)
+	if err != nil {
+		t.Fatalf("Reuse of an encrypted key with an existing .pub must succeed; got error: %v", err)
+	}
+	if log.derivePub != 0 {
+		t.Errorf("Reuse must NOT parse the encrypted private key; DerivePub called %d times", log.derivePub)
+	}
+	if log.readPub != 1 {
+		t.Errorf("Reuse must read the existing .pub once; ReadPub called %d times", log.readPub)
+	}
+	if log.lastReadPubPath != existingKey+".pub" {
+		t.Errorf("ReadPub called with %q, want %q", log.lastReadPubPath, existingKey+".pub")
+	}
+	if log.writePub != 0 {
+		t.Errorf("Reuse must not rewrite an existing .pub; wrote %d times", log.writePub)
+	}
+	if res.Key.PubLine != existingLine {
+		t.Errorf("Reuse PubLine = %q, want the existing .pub line %q", res.Key.PubLine, existingLine)
+	}
+	// The allowed_signers line is built from the SAME existing public line, so
+	// the signing artifact stays consistent with the key actually on disk.
+	if !strings.Contains(res.AllowedSignersLine, "AAAAEXISTINGPUB") {
+		t.Errorf("allowed_signers line must carry the existing public key; got %q", res.AllowedSignersLine)
+	}
+}
+
+// TestEnsurePubNilReadPubFallsBackToDerivePub is the L2 nil-guard obligation: a
+// caller that has NOT wired the new ReadPub seam must keep today's behavior
+// (derive from the private key) instead of panicking on a nil function value.
+func TestEnsurePubNilReadPubFallsBackToDerivePub(t *testing.T) {
+	var log modeLog
+	log.pubExistsRet = true
+	deps := newFakeModeDeps(&log, tester.ReachableNotUploaded)
+	if deps.ReadPub != nil {
+		t.Fatal("test setup: this fake must leave ReadPub nil to exercise the nil-guard")
+	}
+
+	line, err := ensurePub("/tmp/.ssh/id_ed25519_x", "/tmp/.ssh/id_ed25519_x.pub", "x@gitid", deps)
+	if err != nil {
+		t.Fatalf("ensurePub with a nil ReadPub must fall back to DerivePub; got error: %v", err)
+	}
+	if log.derivePub != 1 {
+		t.Errorf("nil ReadPub must fall back to DerivePub once; called %d times", log.derivePub)
+	}
+	if log.readPub != 0 {
+		t.Errorf("a nil ReadPub must never be invoked; called %d times", log.readPub)
+	}
+	if log.writePub != 0 {
+		t.Errorf("ensurePub must not write an already-present .pub; wrote %d times", log.writePub)
+	}
+	if !strings.Contains(line, "AAAADERIVED") {
+		t.Errorf("nil-ReadPub fallback returned %q, want the DerivePub line", line)
+	}
+}
+
+// TestEnsurePubReadPubErrorIsWrapped asserts a ReadPub failure propagates with
+// the package-prefixed wrapping convention used throughout modes.go, naming the
+// path that could not be read.
+func TestEnsurePubReadPubErrorIsWrapped(t *testing.T) {
+	var log modeLog
+	log.pubExistsRet = true
+	readErr := errors.New("permission denied")
+	deps := withReadPub(newFakeModeDeps(&log, tester.ReachableNotUploaded), &log, "", readErr)
+
+	pubPath := "/tmp/.ssh/id_ed25519_x.pub"
+	_, err := ensurePub("/tmp/.ssh/id_ed25519_x", pubPath, "x@gitid", deps)
+	if err == nil {
+		t.Fatal("ensurePub must return an error when ReadPub fails")
+	}
+	if !errors.Is(err, readErr) {
+		t.Errorf("ensurePub must wrap the ReadPub error with %%w; got %v", err)
+	}
+	if !strings.Contains(err.Error(), "identity: reading existing public key") ||
+		!strings.Contains(err.Error(), pubPath) {
+		t.Errorf("ensurePub error must follow the identity: <verb> <path> convention; got %q", err.Error())
+	}
+	if log.derivePub != 0 {
+		t.Errorf("a ReadPub failure must not silently fall back to DerivePub; called %d times", log.derivePub)
+	}
+}
+
+// TestEnsurePubMissingPubStillDerives asserts the .pub-ABSENT branch is
+// unchanged by the new seam: ReadPub is never consulted, DerivePub produces the
+// line, and WritePub persists it (only passphraseless keys are supported here,
+// matching the DerivePublicKey doc contract).
+func TestEnsurePubMissingPubStillDerives(t *testing.T) {
+	var log modeLog
+	log.pubExistsRet = false // .pub absent
+	deps := withReadPub(newFakeModeDeps(&log, tester.ReachableNotUploaded), &log, "ssh-ed25519 AAAASTALE x\n", nil)
+
+	pubPath := "/tmp/.ssh/id_ed25519_x.pub"
+	line, err := ensurePub("/tmp/.ssh/id_ed25519_x", pubPath, "x@gitid", deps)
+	if err != nil {
+		t.Fatalf("ensurePub returned error: %v", err)
+	}
+	if log.readPub != 0 {
+		t.Errorf("ReadPub must not be called when the .pub is absent; called %d times", log.readPub)
+	}
+	if log.derivePub != 1 || log.writePub != 1 {
+		t.Errorf("absent .pub must derive+write once; derive=%d write=%d", log.derivePub, log.writePub)
+	}
+	if !strings.Contains(line, "AAAADERIVED") || log.lastPubPath != pubPath {
+		t.Errorf("absent .pub path changed: line=%q pubPath=%q", line, log.lastPubPath)
 	}
 }
 

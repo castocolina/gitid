@@ -1,4 +1,4 @@
-package dummytui
+package tuikit
 
 // fixplans.go is the Go mirror of
 // .planning/design/mockup-src/src/demo/fixplans.ts — the exact target

@@ -1,4 +1,4 @@
-package dummytui
+package tuikit
 
 import (
 	"strings"

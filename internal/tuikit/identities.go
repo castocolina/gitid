@@ -1,4 +1,4 @@
-package dummytui
+package tuikit
 
 // identities.go is the Go mirror of
 // .planning/design/mockup-src/src/demo/screens/Identities.tsx per
@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -55,18 +54,6 @@ const (
 
 // wizardProviders are the create wizard's provider suggestions.
 var wizardProviders = []string{"github.com", "gitlab.com", "bitbucket.org"}
-
-// providerDefaults mirrors Identities.tsx's providerDefaults: github.com
-// gets the port-443 alt-SSH endpoint, anything else defaults to itself:22.
-func providerDefaults(provider string) (hostname, port string) {
-	if provider == "github.com" {
-		return "ssh.github.com", "443"
-	}
-	if provider == "" {
-		return "github.com", "22"
-	}
-	return provider, "22"
-}
 
 // pips computes the S/G capability pips (spec §2): tone carries health,
 // pips carry capability.
@@ -140,6 +127,9 @@ const editFocusRing = 4
 
 // sshForm is the shared SSH field set.
 type sshForm struct {
+	// backend supplies the provider→endpoint defaults (D-20/D-21) the
+	// provider field applies as the user types.
+	backend  Backend
 	provider textinput.Model
 	prefix   textinput.Model
 	host     textinput.Model
@@ -156,8 +146,9 @@ type sshForm struct {
 }
 
 // newSSHForm builds the form with initial values.
-func newSSHForm(provider, prefix, host, hostname, port string, lockIdentity bool) sshForm {
+func newSSHForm(b Backend, provider, prefix, host, hostname, port string, lockIdentity bool) sshForm {
 	return sshForm{
+		backend:      b,
 		provider:     newTextInput(provider),
 		prefix:       newTextInput(prefix),
 		host:         newTextInput(host),
@@ -224,7 +215,7 @@ func (f sshForm) handleEdit(msg tea.KeyMsg, focus int) sshForm {
 		f.provider, changed = updateInput(f.provider, msg)
 		if changed {
 			if !f.endpointTouched {
-				hostname, port := providerDefaults(f.provider.Value())
+				hostname, port := f.backend.ProviderDefaults(f.provider.Value())
 				f.hostname.SetValue(hostname)
 				f.port.SetValue(port)
 			}
@@ -408,20 +399,33 @@ func strategyCopy(strategy, name string) string {
 
 // gitForm is the merged Git identity form.
 type gitForm struct {
+	// backend renders the fragment and includeIf previews.
+	backend     Backend
 	name        textinput.Model
 	email       textinput.Model
 	strategyIdx int
 }
 
 // newGitForm builds the form with initial values.
-func newGitForm(name, email, strategy string) gitForm {
+func newGitForm(b Backend, name, email, strategy string) gitForm {
 	idx := 0
 	for i, s := range matchStrategies {
 		if s == strategy {
 			idx = i
 		}
 	}
-	return gitForm{name: newTextInput(name), email: newTextInput(email), strategyIdx: idx}
+	return gitForm{backend: b, name: newTextInput(name), email: newTextInput(email), strategyIdx: idx}
+}
+
+// spec projects the form's current values into the Backend's GitSpec.
+func (g gitForm) spec(identity, keyPath string) GitSpec {
+	return GitSpec{
+		Identity: identity,
+		Name:     g.name.Value(),
+		Email:    g.email.Value(),
+		Strategy: g.strategy(),
+		KeyPath:  keyPath,
+	}
 }
 
 // strategy is the selected match strategy.
@@ -467,16 +471,16 @@ func (g gitForm) handleEdit(msg tea.KeyMsg, focus int) gitForm {
 	return g
 }
 
-// fragmentPreview is the per-identity fragment file content preview.
+// fragmentPreview is the per-identity fragment file content preview —
+// rendered by the injected Backend, never built inline here.
 func (g gitForm) fragmentPreview(keyPath string) string {
-	return "[user]\n    name = " + g.name.Value() + "\n    email = " + g.email.Value() +
-		"\n    signingkey = " + keyPath + ".pub\n\n[gpg]\n    format = ssh\n\n[commit]\n    gpgsign = true"
+	return g.backend.GitFragmentPreview(g.spec("", keyPath))
 }
 
 // includeIfPreview is the ~/.gitconfig includeIf block preview for the
-// selected strategy, aliased to name.
+// selected strategy, aliased to name — rendered by the injected Backend.
 func (g gitForm) includeIfPreview(name string) string {
-	return strings.ReplaceAll(GitScreenMatchStrategyPreview[g.strategy()], "personal", name)
+	return g.backend.IncludeIfPreview(g.spec(name, ""))
 }
 
 // view renders the merged Git form with the dual dim previews (stacked —
@@ -561,24 +565,23 @@ const (
 	testFailed   = "failed"
 )
 
-// wizardStageMsg completes a "running ssh…" stage after its tick.
-type wizardStageMsg struct{ stage int }
-
-// runStageCmd schedules a stage completion (the brief running state).
-func runStageCmd(stage int) tea.Cmd {
-	return tea.Tick(350*time.Millisecond, func(time.Time) tea.Msg {
-		return wizardStageMsg{stage: stage}
-	})
-}
-
 // wizardModel is the 4-pane-state create wizard.
 type wizardModel struct {
+	// backend owns every create-flow effect the wizard triggers: the live
+	// previews, the provider defaults, the alias-collision check, both
+	// test stages, and the write plan.
+	backend      Backend
 	step         int
 	form         sshForm
 	focus        int // step 0: 0..4 form fields, 5 = algorithm select
 	algoIdx      int
 	testPhase    string
 	simulateFail bool
+	// stage1/stage2 hold each test stage's result once its command has
+	// answered — the rendered output line comes from the Backend, never
+	// from a string this package builds.
+	stage1       TestResultView
+	stage2       TestResultView
 	configureGit bool
 	git          gitForm
 	gitFocus     int
@@ -586,14 +589,15 @@ type wizardModel struct {
 }
 
 // newWizard builds the wizard with the web demo's defaults.
-func newWizard() wizardModel {
-	form := newSSHForm("github.com", "acme", "acme.github.com", "ssh.github.com", "443", false)
+func newWizard(b Backend) wizardModel {
+	form := newSSHForm(b, "github.com", "acme", "acme.github.com", "ssh.github.com", "443", false)
 	form = form.setFocus(sshFieldPrefix) // web: Alias prefix autoFocus
 	return wizardModel{
+		backend:   b,
 		form:      form,
 		focus:     sshFieldPrefix,
 		testPhase: testIdle,
-		git:       newGitForm("Acme Identity", "you@acme.example", GitScreenMatchStrategyDefault).setFocus(gitFieldName),
+		git:       newGitForm(b, "Acme Identity", "you@acme.example", b.DefaultMatchStrategy()).setFocus(gitFieldName),
 	}
 }
 
@@ -602,8 +606,36 @@ func (w wizardModel) keyPath() string {
 	return "~/.ssh/id_ed25519_" + w.form.identityName()
 }
 
+// catalog is the injected key-algorithm catalog (KEY-01).
+func (w wizardModel) catalog() []AlgorithmCatalogEntry { return w.backend.AlgorithmCatalog() }
+
+// spec projects the wizard's current SSH values into the Backend's
+// CreateSpec — the ONE place the effect parameters are assembled.
+func (w wizardModel) spec() CreateSpec {
+	return CreateSpec{
+		Identity:        w.form.identityName(),
+		Alias:           w.form.sshHost(),
+		Hostname:        w.form.hostname.Value(),
+		Port:            w.form.port.Value(),
+		KeyPath:         w.keyPath(),
+		Algorithm:       w.algo(),
+		SimulateFailure: w.simulateFail,
+	}
+}
+
+// gitSpec projects the wizard's Git step values into the Backend's GitSpec.
+func (w wizardModel) gitSpec() GitSpec {
+	return w.git.spec(w.form.identityName(), w.keyPath())
+}
+
 // algo is the selected key algorithm id.
-func (w wizardModel) algo() string { return AlgorithmCatalog[w.algoIdx].ID }
+func (w wizardModel) algo() string {
+	catalog := w.catalog()
+	if w.algoIdx < 0 || w.algoIdx >= len(catalog) {
+		return ""
+	}
+	return catalog[w.algoIdx].ID
+}
 
 // algoDisabled reports whether a catalog entry is unavailable on this
 // machine (the demo simulates: no FIDO2 key plugged in).
@@ -611,13 +643,17 @@ func algoDisabled(entry AlgorithmCatalogEntry) bool {
 	return strings.HasPrefix(entry.MacOS, "Needs libfido2")
 }
 
-// hostBlockText renders the managed Host block for the given values — the
-// ONE source of the block shape, shared by the wizard preview/ceremony and
-// the edit-SSH preview/ceremony (M1: reuse, never duplicate).
-func hostBlockText(host, hostname, port, keyPath string) string {
-	return "Host " + host + "\n    Hostname " + hostname +
-		"\n    Port " + port + "\n    User git\n    IdentityFile " + keyPath +
-		"\n    IdentitiesOnly yes"
+// hostBlockText renders the managed Host block for the given values
+// THROUGH the injected Backend — the ONE source of the block shape,
+// shared by the wizard preview/ceremony and the edit-SSH preview/ceremony
+// (M1: reuse, never duplicate). It is the same text written on confirm.
+func hostBlockText(b Backend, host, hostname, port, keyPath string) string {
+	return b.HostBlockPreview(CreateSpec{
+		Alias:    host,
+		Hostname: hostname,
+		Port:     port,
+		KeyPath:  keyPath,
+	})
 }
 
 // renderHostBlockPreview renders the live Host-block preview through the
@@ -632,27 +668,27 @@ func hostBlockText(host, hostname, port, keyPath string) string {
 // on every keystroke — the SAME rendering under the wizard's SSH form and
 // the edit-SSH form (review batch 2, M1; the web shows it simultaneously in
 // both places).
-func renderHostBlockPreview(host, hostname, port, keyPath string, width int) string {
+func renderHostBlockPreview(b Backend, host, hostname, port, keyPath string, width int) string {
 	return PreviewBlock("Live Host-block preview (written on confirm)",
-		hostBlockText(host, hostname, port, keyPath), false, width, 6)
+		hostBlockText(b, host, hostname, port, keyPath), false, width, 6)
 }
 
 // hostBlockPreview is the wizard's live Host-block preview text — written
-// exactly like this on confirm.
+// exactly like this on confirm (SSHUI-03).
 func (w wizardModel) hostBlockPreview() string {
-	return hostBlockText(w.form.sshHost(), w.form.hostname.Value(), w.form.port.Value(), w.keyPath())
+	return w.backend.HostBlockPreview(w.spec())
 }
 
-// stage1Cmd is the stage-1 direct test command (TEST-01) with the
-// CONSISTENT flag order pinned by data.go's CreateFlowTestStage1Command.
+// stage1Cmd is the stage-1 direct test command (TEST-01) — the SHOWN
+// string comes from the same Backend that RUNS it, so the two can never
+// drift apart.
 func (w wizardModel) stage1Cmd() string {
-	return "ssh -T -F " + CreateFlowTestTmpConfig + " -p " + w.form.port.Value() +
-		" -i " + w.keyPath() + " git@" + w.form.hostname.Value()
+	return w.backend.Stage1Command(w.spec())
 }
 
 // stage2Cmd is the stage-2 by-alias test (TEST-02) — no -i BY DESIGN.
 func (w wizardModel) stage2Cmd() string {
-	return "ssh -G -F " + CreateFlowTestTmpConfig + " " + w.form.sshHost() + " | grep identityfile"
+	return w.backend.Stage2Command(w.spec())
 }
 
 // step0Valid mirrors the web gating for wizard state 1.
@@ -661,9 +697,11 @@ func (w wizardModel) step0Valid(s DemoState) bool {
 		w.form.portValid() && strings.TrimSpace(w.form.sshHost()) != ""
 }
 
-// nameTaken reports whether the produced identity name already exists.
+// nameTaken reports whether the produced identity name already exists —
+// the D-09 alias-collision check, answered by the Backend (fixtures for
+// the dummy, the user's real Host blocks for the product).
 func (w wizardModel) nameTaken(s DemoState) bool {
-	return hasIdentityNamed(s, w.form.identityName())
+	return w.backend.AliasCollision(s, w.form.identityName())
 }
 
 // stepBack (D7, checkpoint-2 contract) uniformly decrements the wizard step
@@ -740,22 +778,25 @@ func (w wizardModel) reviewCeremony() ceremonyModel {
 	begin, end := ManagedBlockSentinels(name)
 	managedBlock := begin + "\n" + w.hostBlockPreview() + "\n" + end
 	review := managedBlock
-	targets := []string{"~/.ssh/config"}
-	backups := []string{NewBackupPath("~/.ssh/config")}
 	summary := "SSH: " + w.form.sshHost() + " → " + w.form.hostname.Value() + ":" + w.form.port.Value() +
 		" · key " + w.keyPath() + " · Git: skipped"
+	var git *GitSpec
 	if w.configureGit {
+		spec := w.gitSpec()
+		git = &spec
 		review = managedBlock + "\n\n# ~/.gitconfig.d/" + name + "\n" + w.git.fragmentPreview(w.keyPath()) +
 			"\n\n# ~/.gitconfig\n" + w.git.includeIfPreview(name)
-		targets = []string{"~/.ssh/config", "~/.gitconfig.d/" + name, "~/.gitconfig", "~/.ssh/allowed_signers"}
-		backups = []string{NewBackupPath("~/.ssh/config"), NewBackupPath("~/.gitconfig")}
 		summary = "SSH: " + w.form.sshHost() + " → " + w.form.hostname.Value() + ":" + w.form.port.Value() +
 			" · key " + w.keyPath() + " · Git: " + w.git.name.Value() + " <" + w.git.email.Value() + ">, strategy " + w.git.strategy()
 	}
+	// The files touched and the backups taken first come from the Backend
+	// (TEST-03/D-05..D-09) — the dummy promises fixture paths, the real
+	// binary the resolved storage target and its real backups.
+	plan := w.backend.CreateWritePlan(w.spec(), git)
 	return newCeremony(ceremonyConfig{
 		Heading:       `Create identity "` + name + `" — ` + w.algo() + ", test passed ✓",
-		Targets:       targets,
-		Backups:       backups,
+		Targets:       plan.Targets,
+		Backups:       plan.Backups,
 		Preview:       summary + "\n" + review,
 		ResultMessage: `Identity "` + name + `" created — ` + w.form.sshHost() + " now resolves to " + w.keyPath() + ".",
 		ConfirmLabel:  "Write it",
@@ -802,6 +843,8 @@ func atoiSafe(s string) int {
 // identitiesModel is the Identities tab: live master-detail plus every
 // in-pane form/ceremony state.
 type identitiesModel struct {
+	// backend is the injected seam every create-flow effect routes through.
+	backend  Backend
 	selected string
 	pane     identPane
 
@@ -825,9 +868,14 @@ type identitiesModel struct {
 	fixCeremony   ceremonyModel
 }
 
-// newIdentitiesModel starts on the first seeded row's detail.
-func newIdentitiesModel() identitiesModel {
-	return identitiesModel{selected: IdentityManagerRows[0].Name, pane: paneDetail, deleteScope: "git-only"}
+// newIdentitiesModel starts on the first row of the Backend's initial
+// state, in detail mode.
+func newIdentitiesModel(b Backend, initial DemoState) identitiesModel {
+	selected := ""
+	if len(initial.Identities) > 0 {
+		selected = initial.Identities[0].Name
+	}
+	return identitiesModel{backend: b, selected: selected, pane: paneDetail, deleteScope: "git-only"}
 }
 
 // activate implements screenModel (no entry hook needed here).
@@ -867,18 +915,25 @@ func firstFixableFinding(s DemoState, name string) (DemoFinding, bool) {
 	return DemoFinding{}, false
 }
 
-// handleMsg completes wizard test stages after their running tick.
+// handleMsg completes wizard test stages once the Backend's command has
+// answered — the OUTCOME decides the next phase, never a local guess.
 func (m identitiesModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
-	if stage, ok := msg.(wizardStageMsg); ok && m.pane == paneCreate {
+	if stage, ok := msg.(WizardStageMsg); ok && m.pane == paneCreate {
 		switch {
-		case stage.stage == 1 && m.wizard.testPhase == testRunning1:
-			if m.wizard.simulateFail {
-				m.wizard.testPhase = testFailed
-			} else {
+		case stage.Stage == 1 && m.wizard.testPhase == testRunning1:
+			m.wizard.stage1 = stage.Result
+			if stage.Result.Outcome == TestOutcomePass {
 				m.wizard.testPhase = testStage1
+			} else {
+				m.wizard.testPhase = testFailed
 			}
-		case stage.stage == 2 && m.wizard.testPhase == testRunning2:
-			m.wizard.testPhase = testStage2
+		case stage.Stage == 2 && m.wizard.testPhase == testRunning2:
+			m.wizard.stage2 = stage.Result
+			if stage.Result.Outcome == TestOutcomePass {
+				m.wizard.testPhase = testStage2
+			} else {
+				m.wizard.testPhase = testFailed
+			}
 		}
 	}
 	return keyResult{model: m}
@@ -926,7 +981,7 @@ func (m identitiesModel) handleDetailKey(msg tea.KeyMsg, s DemoState) keyResult 
 		return keyResult{model: m, handled: true}
 	case "n":
 		m.pane = paneCreate
-		m.wizard = newWizard()
+		m.wizard = newWizard(m.backend)
 		return keyResult{model: m, handled: true}
 	case "e":
 		if !ok {
@@ -1006,7 +1061,7 @@ func (m identitiesModel) openEditSSH(sel DemoIdentity) identitiesModel {
 	if port == 0 {
 		port = 443
 	}
-	m.editForm = newSSHForm(provider, sel.Name, sshHost, hostname, strconv.Itoa(port), true)
+	m.editForm = newSSHForm(m.backend, provider, sel.Name, sshHost, hostname, strconv.Itoa(port), true)
 	m.editFocus = sshFieldHost
 	m.editForm = m.editForm.setFocus(m.editFocus)
 	m.pane = paneEditSSH
@@ -1020,7 +1075,7 @@ func (m identitiesModel) editCeremonyFor(sel DemoIdentity) ceremonyModel {
 	if keyPath == "" {
 		keyPath = "~/.ssh/id_ed25519_" + sel.Name
 	}
-	preview := hostBlockText(m.editForm.host.Value(), m.editForm.hostname.Value(), m.editForm.port.Value(), keyPath)
+	preview := hostBlockText(m.backend, m.editForm.host.Value(), m.editForm.hostname.Value(), m.editForm.port.Value(), keyPath)
 	return newCeremony(ceremonyConfig{
 		Heading:       `Rewrite the managed Host block for "` + sel.Name + `"`,
 		Targets:       []string{"~/.ssh/config"},
@@ -1096,9 +1151,9 @@ func (m identitiesModel) openGitForm(sel DemoIdentity) identitiesModel {
 	}
 	strategy := sel.MatchStrategy
 	if strategy == "" {
-		strategy = GitScreenMatchStrategyDefault
+		strategy = m.backend.DefaultMatchStrategy()
 	}
-	m.gitPaneForm = newGitForm(name, email, strategy)
+	m.gitPaneForm = newGitForm(m.backend, name, email, strategy)
 	m.gitFocus = gitFieldName
 	m.gitPaneForm = m.gitPaneForm.setFocus(m.gitFocus)
 	m.gitExisting = sel.GitFragmentPath != ""
@@ -1384,14 +1439,15 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			return keyResult{model: m, handled: true}
 		case "left", "right":
 			if w.focus == 5 { // algorithm select cycles over ENABLED entries
+				catalog := w.catalog()
 				delta := 1
 				if key == "left" {
-					delta = len(AlgorithmCatalog) - 1
+					delta = len(catalog) - 1
 				}
 				idx := w.algoIdx
 				for {
-					idx = (idx + delta) % len(AlgorithmCatalog)
-					if !algoDisabled(AlgorithmCatalog[idx]) {
+					idx = (idx + delta) % len(catalog)
+					if !algoDisabled(catalog[idx]) {
 						break
 					}
 				}
@@ -1421,8 +1477,16 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			return keyResult{model: m, handled: true}
 		case "c":
 			if w.testPhase == testFailed {
+				// D-03: the failed-test path offers the public key so the
+				// user can register it with the provider and retry. The
+				// copy itself — and its receipt wording — belong to the
+				// Backend (a real clipboard, or the demo's no-op).
+				note, err := w.backend.CopyPublicKey(w.keyPath() + ".pub")
+				if err != nil {
+					note = "Could not copy the public key: " + err.Error()
+				}
 				m.wizard = w
-				return keyResult{model: m, handled: true, note: "Public key copied to clipboard (demo)."}
+				return keyResult{model: m, handled: true, note: note}
 			}
 			m.wizard = w
 			return keyResult{model: m, handled: true}
@@ -1431,11 +1495,11 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			case testIdle:
 				w.testPhase = testRunning1
 				m.wizard = w
-				return keyResult{model: m, handled: true, cmd: runStageCmd(1)}
+				return keyResult{model: m, handled: true, cmd: w.backend.TestStage1(w.spec())}
 			case testStage1:
 				w.testPhase = testRunning2
 				m.wizard = w
-				return keyResult{model: m, handled: true, cmd: runStageCmd(2)}
+				return keyResult{model: m, handled: true, cmd: w.backend.TestStage2(w.spec())}
 			case testFailed:
 				w.simulateFail = false
 				w.testPhase = testIdle
@@ -1800,8 +1864,8 @@ func hitAnyFieldRow(body string, x, y int, fields []fieldSlot) (int, bool) {
 
 // hitAlgorithmRow resolves which ENABLED algorithm catalog row (x, y) falls
 // on; entries algoDisabled reports as unavailable stay inert (D8).
-func hitAlgorithmRow(body string, x, y int) (int, bool) {
-	for i, entry := range AlgorithmCatalog {
+func hitAlgorithmRow(catalog []AlgorithmCatalogEntry, body string, x, y int) (int, bool) {
+	for i, entry := range catalog {
 		if algoDisabled(entry) {
 			continue
 		}
@@ -1834,7 +1898,7 @@ func (m identitiesModel) handleWizardClick(body string, x, y int, s DemoState) k
 			m.wizard = w
 			return keyResult{model: m, handled: true}
 		}
-		if idx, ok := hitAlgorithmRow(body, x, y); ok {
+		if idx, ok := hitAlgorithmRow(w.catalog(), body, x, y); ok {
 			w.focus = 5
 			w.algoIdx = idx
 			w.form = w.form.setFocus(5)
@@ -2163,10 +2227,10 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 			// Verbatim web helper copy (Identities.tsx) — spec-bearing (L2).
 			b.WriteString(helperLine("gitid probes the local toolchain (ssh-keygen, libfido2, FIDO2 key present?) and disables what this machine cannot generate, with the reason shown per option (KEY-03/PLAT-01). Demo simulates: no FIDO2 key plugged in.", false) + "\n")
 		}
-		b.WriteString(renderHostBlockPreview(w.form.sshHost(), w.form.hostname.Value(), w.form.port.Value(), w.keyPath(), width))
+		b.WriteString(renderHostBlockPreview(m.backend, w.form.sshHost(), w.form.hostname.Value(), w.form.port.Value(), w.keyPath(), width))
 	case 1:
 		b.WriteString(" " + styleInfo.Render("Key "+w.keyPath()+" generated ("+w.algo()+").") + "\n")
-		b.WriteString(" " + styleInfo.Render("Both stages run against "+CreateFlowTestTmpConfig+" — your live ~/.ssh/config is untouched until the final confirm.") + "\n\n")
+		b.WriteString(" " + styleInfo.Render("Both stages run against "+m.backend.TestConfigPath()+" — your live ~/.ssh/config is untouched until the final confirm.") + "\n\n")
 
 		check := glyphCheckOff
 		if w.simulateFail {
@@ -2280,7 +2344,7 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 		editKeyPath := orDefault(sel.KeyPath, "~/.ssh/id_ed25519_"+sel.Name)
 		pane = " " + styleBold.Render("Edit SSH — "+sel.Name) + "\n" +
 			m.editForm.view(m.editFocus, "", "") +
-			renderHostBlockPreview(m.editForm.host.Value(), m.editForm.hostname.Value(),
+			renderHostBlockPreview(m.backend, m.editForm.host.Value(), m.editForm.hostname.Value(),
 				m.editForm.port.Value(), editKeyPath, detailWidth) +
 			"\n\n " + wizardButton(identEditRewriteButton, m.editFocus == editFocusButton, true, "")
 		crumbs = []string{sel.Name, "Edit SSH"}

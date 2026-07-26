@@ -1,0 +1,125 @@
+package tuikit
+
+import tea "charm.land/bubbletea/v2"
+
+// backend.go defines the ONE injected seam this package is built around.
+//
+// tuikit renders the approved, frozen gitid design. It never reads or
+// writes a file, never shells out, and never imports a first-party backend
+// package. Everything it needs from the outside world arrives through a
+// Backend value handed to NewApp:
+//
+//	cmd/gitid-dummy  → dummytui.NewFixtureBackend()  (recipe fixtures, in-memory)
+//	cmd/gitid        → the real composition root in cmd/gitid/wiring.go
+//
+// Every method speaks either a plain Go type, a tuikit view state
+// (DemoState/Action), or a view DTO from views.go. No method may ever name
+// a keygen/tester/identity type — that is what views.go exists for.
+
+// Backend is the data + effects contract the shared render stack calls
+// into. Both binaries satisfy it; neither the screens nor the create
+// wizard know which one they are talking to.
+type Backend interface {
+	// ----- Data -------------------------------------------------------
+
+	// InitialState is the state the App starts from: identities, health
+	// findings, storage layout, and known backups. The dummy seeds it from
+	// its fixtures; the real binary reads the user's actual configuration.
+	InitialState() DemoState
+
+	// DemoBanner reports whether tab must render the D-16 "this screen is
+	// still demo data" banner. The dummy returns false for every tab — the
+	// whole dummy IS demo data, so a banner would be noise. The real
+	// binary returns true for tabs not yet wired to live data.
+	DemoBanner(tab TabID) bool
+
+	// Persist applies one committed Action and returns the resulting
+	// state. The dummy reduces it in memory (Reduce); the real binary
+	// performs the backed-up write and re-reads the configuration. It is
+	// the ONLY place a committed mutation leaves the render stack.
+	Persist(state DemoState, action Action) DemoState
+
+	// ----- Create-flow effects ---------------------------------------
+
+	// AlgorithmCatalog is the KEY-01 key-algorithm catalog offered on the
+	// wizard's SSH step, in display order.
+	AlgorithmCatalog() []AlgorithmCatalogEntry
+
+	// ProviderDefaults resolves a provider host to its default endpoint
+	// and port (D-20/D-21: github.com → ssh.github.com:443 alt-SSH).
+	ProviderDefaults(provider string) (hostname, port string)
+
+	// DefaultMatchStrategy is the includeIf match strategy a new identity
+	// starts on (GITUI-03; "gitdir" per recipes/).
+	DefaultMatchStrategy() string
+
+	// HostBlockPreview is the live, WYSIWYG Host block text for spec —
+	// written exactly like this on confirm (SSHUI-03).
+	HostBlockPreview(spec CreateSpec) string
+
+	// GitFragmentPreview is the ~/.gitconfig.d/<identity> fragment text
+	// for spec.
+	GitFragmentPreview(spec GitSpec) string
+
+	// IncludeIfPreview is the ~/.gitconfig includeIf block for spec's
+	// match strategy, aliased to spec.Identity.
+	IncludeIfPreview(spec GitSpec) string
+
+	// AliasCollision reports whether identity already exists — the D-09
+	// collision check the wizard gates step 1 on.
+	AliasCollision(state DemoState, identity string) bool
+
+	// ScanReusableKeys lists the existing keys the D-10 picker offers for
+	// reuse. Unparseable/encrypted keys are surfaced with a note, never
+	// dropped (D-13).
+	ScanReusableKeys() []ReusableKeyView
+
+	// TestConfigPath is the throwaway config both test stages run against,
+	// so the live ~/.ssh/config stays untouched until the final confirm.
+	TestConfigPath() string
+
+	// Stage1Command is the exact stage-1 command string shown to the user
+	// (key DIRECT against the provider, TEST-01).
+	Stage1Command(spec CreateSpec) string
+
+	// Stage2Command is the exact stage-2 command string shown to the user
+	// (resolve BY ALIAS — no -i by design, TEST-02).
+	Stage2Command(spec CreateSpec) string
+
+	// TestStage1 runs the stage-1 test asynchronously. The returned
+	// command MUST eventually deliver a WizardStageMsg with Stage 1 and a
+	// populated Result.
+	TestStage1(spec CreateSpec) tea.Cmd
+
+	// TestStage2 runs the stage-2 test asynchronously. The returned
+	// command MUST eventually deliver a WizardStageMsg with Stage 2 and a
+	// populated Result.
+	TestStage2(spec CreateSpec) tea.Cmd
+
+	// ResolvedStorageTarget is the file gitid's managed blocks actually
+	// land in for state's STORE-01 layout — ~/.ssh/config under the
+	// sentinel layout, the gitid-owned included file otherwise (D-05/D-06).
+	ResolvedStorageTarget(state DemoState) string
+
+	// CreateWritePlan is what a committed create will touch: the target
+	// files and the timestamped backups taken first (TEST-03). git is nil
+	// when the user skipped the Git step.
+	CreateWritePlan(spec CreateSpec, git *GitSpec) WritePlanView
+
+	// CopyPublicKey copies the identity's public key to the system
+	// clipboard (D-03) — offered on the failed-test path so the user can
+	// register it with the provider and retry. It returns the receipt note
+	// to show, because only the Backend knows whether a REAL clipboard was
+	// written (the dummy says so explicitly).
+	CopyPublicKey(pubKeyPath string) (note string, err error)
+}
+
+// WizardStageMsg completes a create-wizard test stage. Backends deliver it
+// from the tea.Cmd returned by TestStage1/TestStage2 — the dummy after a
+// brief tick, the real binary once ssh has actually answered.
+type WizardStageMsg struct {
+	// Stage is 1 or 2.
+	Stage int
+	// Result is that stage's outcome, command, and output line.
+	Result TestResultView
+}

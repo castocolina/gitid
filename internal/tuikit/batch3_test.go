@@ -1,4 +1,4 @@
-package dummytui
+package tuikit
 
 // batch3_test.go pins review batch 3 — full click-target and focus-ring
 // parity with the web demo: clickable contextual footer hints, in-pane
@@ -19,7 +19,7 @@ import (
 // --------------------------------------------------------------------------
 
 func TestMouseFooterContextualHintDispatchesItsKey(t *testing.T) {
-	a := NewApp()
+	a := NewApp(stubBackend{})
 	a = clickCell(t, a, "n new", 0, a.height-2)
 	if got := identModel(t, a).pane; got != paneCreate {
 		t.Fatalf("pane = %v after clicking the `n new` footer hint, want paneCreate", got)
@@ -27,7 +27,7 @@ func TestMouseFooterContextualHintDispatchesItsKey(t *testing.T) {
 }
 
 func TestMouseFooterApplyHintOpensGlobalGitCeremony(t *testing.T) {
-	a, _ := press(t, NewApp(), "3")
+	a, _ := press(t, NewApp(stubBackend{}), "3")
 	a = clickCell(t, a, "a apply 10 selected", 0, a.height-2)
 	if !gitModelOf(t, a).ceremonyOpen {
 		t.Fatal("clicking the `a apply 10 selected` footer hint must open the apply ceremony")
@@ -35,7 +35,7 @@ func TestMouseFooterApplyHintOpensGlobalGitCeremony(t *testing.T) {
 }
 
 func TestMouseFooterMultiKeyHintsAndReservedRowStayInert(t *testing.T) {
-	a := NewApp()
+	a := NewApp(stubBackend{})
 	// Combined navigation hints are not one action — inert.
 	a = clickCell(t, a, "↑↓ select identity", 0, a.height-2)
 	if m := identModel(t, a); m.pane != paneDetail {
@@ -53,7 +53,7 @@ func TestMouseFooterMultiKeyHintsAndReservedRowStayInert(t *testing.T) {
 // --------------------------------------------------------------------------
 
 func TestMouseEditSSHRewriteButtonOpensCeremony(t *testing.T) {
-	a := pressSeq(t, NewApp(), "e")
+	a := pressSeq(t, NewApp(stubBackend{}), "e")
 	a = clickCell(t, a, "Rewrite Host block", 0, frameBodyTop)
 	if got := identModel(t, a).pane; got != paneEditCeremony {
 		t.Fatalf("pane = %v after clicking the Rewrite button, want paneEditCeremony", got)
@@ -62,7 +62,7 @@ func TestMouseEditSSHRewriteButtonOpensCeremony(t *testing.T) {
 
 func TestMouseCeremonyButtonsCancelConfirmDone(t *testing.T) {
 	// Cancel returns to the form without dispatching.
-	a := pressSeq(t, NewApp(), "e", "enter")
+	a := pressSeq(t, NewApp(stubBackend{}), "e", "enter")
 	a = clickCell(t, a, "Cancel (Esc)", 0, frameBodyTop)
 	if got := identModel(t, a).pane; got != paneEditSSH {
 		t.Fatalf("pane = %v after clicking Cancel, want paneEditSSH", got)
@@ -115,7 +115,7 @@ func TestMouseWizardTestStepButtonsClick(t *testing.T) {
 
 func TestMouseConfigureNowAndPerFindingFixClick(t *testing.T) {
 	// `[Configure now (g)]` on an identity without a Git side.
-	a := NewApp()
+	a := NewApp(stubBackend{})
 	a = clickCell(t, a, "work", sidebarWidth(a.width), frameBodyTop)
 	a = clickCell(t, a, "[Configure now (g)]", 0, frameBodyTop)
 	if got := identModel(t, a).pane; got != paneGit {
@@ -123,7 +123,7 @@ func TestMouseConfigureNowAndPerFindingFixClick(t *testing.T) {
 	}
 
 	// A per-finding `Fix…` opens THAT finding's fix ceremony.
-	b := NewApp()
+	b := NewApp(stubBackend{})
 	b = clickCell(t, b, "archived", sidebarWidth(b.width), frameBodyTop)
 	b = clickCell(t, b, "Fix…", 0, frameBodyTop)
 	m := identModel(t, b)
@@ -134,7 +134,7 @@ func TestMouseConfigureNowAndPerFindingFixClick(t *testing.T) {
 }
 
 func TestMouseCloneButtonClones(t *testing.T) {
-	a := pressSeq(t, NewApp(), "c")
+	a := pressSeq(t, NewApp(stubBackend{}), "c")
 	a = clickCell(t, a, "Clone (Enter)", 0, frameBodyTop)
 	if got := identModel(t, a).selected; got != "personal-clone" {
 		t.Fatalf("selected = %q after clicking Clone, want personal-clone", got)
@@ -145,7 +145,7 @@ func TestMouseCloneButtonClones(t *testing.T) {
 }
 
 func TestMouseDeleteScopeRowChoosesThatScope(t *testing.T) {
-	a := pressSeq(t, NewApp(), "d")
+	a := pressSeq(t, NewApp(stubBackend{}), "d")
 	a = clickCell(t, a, "Delete everything (SSH + Git + key)", 0, frameBodyTop)
 	m := identModel(t, a)
 	if m.pane != paneDeleteScope || m.deleteScope != "everything" {
@@ -158,7 +158,7 @@ func TestMouseDeleteScopeRowChoosesThatScope(t *testing.T) {
 }
 
 func TestMouseStorageRadioAndMigrateButton(t *testing.T) {
-	a := pressSeq(t, NewApp(), "2", "right") // → Storage & preview
+	a := pressSeq(t, NewApp(stubBackend{}), "2", "right") // → Storage & preview
 	a = clickCell(t, a, "gitid-owned", masterListWidth(a.width), frameBodyTop)
 	if got := gssModelOf(t, a).storageChoice; got != StorageInclude {
 		t.Fatalf("storageChoice = %q after clicking the include radio row, want include", got)
@@ -192,7 +192,7 @@ func TestMouseDoctorFixThisButtonAndCeremonyCancel(t *testing.T) {
 // --------------------------------------------------------------------------
 
 func TestMouseGlobalSSHCheckboxCellTogglesWithoutSelecting(t *testing.T) {
-	a, _ := press(t, NewApp(), "2")
+	a, _ := press(t, NewApp(stubBackend{}), "2")
 	if !gssModelOf(t, a).chosen["StrictHostKeyChecking"] {
 		t.Fatal("fixture: StrictHostKeyChecking must start chosen")
 	}
@@ -207,7 +207,7 @@ func TestMouseGlobalSSHCheckboxCellTogglesWithoutSelecting(t *testing.T) {
 	}
 	// On a fresh screen the first ☐ is ForwardAgent's (the fixture
 	// decline) — clicking the empty checkbox cell checks it.
-	b, _ := press(t, NewApp(), "2")
+	b, _ := press(t, NewApp(stubBackend{}), "2")
 	b = clickCell(t, b, "☐", masterListWidth(b.width), frameBodyTop)
 	if !gssModelOf(t, b).chosen["ForwardAgent"] {
 		t.Error("clicking the ☐ cell must check the row")
@@ -215,7 +215,7 @@ func TestMouseGlobalSSHCheckboxCellTogglesWithoutSelecting(t *testing.T) {
 }
 
 func TestMouseGlobalGitCheckboxCellToggles(t *testing.T) {
-	a, _ := press(t, NewApp(), "3")
+	a, _ := press(t, NewApp(stubBackend{}), "3")
 	// Skip past init.defaultBranch (row 0) — click core.ignorecase's ☑.
 	a = clickCell(t, a, "☑", masterListWidth(a.width), frameBodyTop+3)
 	m := gitModelOf(t, a)
@@ -232,7 +232,7 @@ func TestMouseGlobalGitCheckboxCellToggles(t *testing.T) {
 // --------------------------------------------------------------------------
 
 func TestEditSSHFocusRingReachesRewriteButton(t *testing.T) {
-	a := pressSeq(t, NewApp(), "e", "tab", "tab", "tab") // host → hostname → port → button
+	a := pressSeq(t, NewApp(stubBackend{}), "e", "tab", "tab", "tab") // host → hostname → port → button
 	m := identModel(t, a)
 	if m.editFocus != editFocusButton {
 		t.Fatalf("editFocus = %d after 3 tabs, want the Rewrite button (%d)", m.editFocus, editFocusButton)
@@ -247,14 +247,14 @@ func TestEditSSHFocusRingReachesRewriteButton(t *testing.T) {
 		t.Errorf("pane = %v after Enter on the focused button, want paneEditCeremony", got)
 	}
 	// The ring wraps back to the first field.
-	b := pressSeq(t, NewApp(), "e", "tab", "tab", "tab", "tab")
+	b := pressSeq(t, NewApp(stubBackend{}), "e", "tab", "tab", "tab", "tab")
 	if got := identModel(t, b).editFocus; got != sshFieldHost {
 		t.Errorf("editFocus = %d after the full ring, want host (%d)", got, sshFieldHost)
 	}
 }
 
 func TestCloneFocusRingInputToButton(t *testing.T) {
-	a := pressSeq(t, NewApp(), "c", "tab")
+	a := pressSeq(t, NewApp(stubBackend{}), "c", "tab")
 	m := identModel(t, a)
 	if !m.cloneOnButton {
 		t.Fatal("Tab must move the clone focus onto the Clone button")
@@ -271,7 +271,7 @@ func TestCloneFocusRingInputToButton(t *testing.T) {
 }
 
 func TestDeleteScopeRingTabAndArrows(t *testing.T) {
-	a := pressSeq(t, NewApp(), "d", "tab")
+	a := pressSeq(t, NewApp(stubBackend{}), "d", "tab")
 	if got := identModel(t, a).deleteScope; got != "everything" {
 		t.Fatalf("scope = %q after Tab, want everything (the 2-option ring)", got)
 	}
@@ -287,7 +287,7 @@ func TestDeleteScopeRingTabAndArrows(t *testing.T) {
 }
 
 func TestCeremonyTabRingAndEnterActivatesFocused(t *testing.T) {
-	a := pressSeq(t, NewApp(), "e", "enter") // edit-SSH ceremony (non-destructive)
+	a := pressSeq(t, NewApp(stubBackend{}), "e", "enter") // edit-SSH ceremony (non-destructive)
 	c := identModel(t, a).editCeremony
 	if c.focus != ceremonyFocusPrimary {
 		t.Fatal("a fresh ceremony must start in the primary focus state")
@@ -313,14 +313,14 @@ func TestCeremonyTabRingAndEnterActivatesFocused(t *testing.T) {
 }
 
 func TestCeremonyArrowsMoveButtonFocusNonDestructive(t *testing.T) {
-	a := pressSeq(t, NewApp(), "e", "enter", "right")
+	a := pressSeq(t, NewApp(stubBackend{}), "e", "enter", "right")
 	if got := identModel(t, a).editCeremony.focus; got != ceremonyFocusConfirm {
 		t.Errorf("focus = %v after →, want the affirmative", got)
 	}
 }
 
 func TestCeremonyDestructiveArrowsStayOnTypedInput(t *testing.T) {
-	a := pressSeq(t, NewApp(), "d", "tab", "enter") // everything → destructive ceremony
+	a := pressSeq(t, NewApp(stubBackend{}), "d", "tab", "enter") // everything → destructive ceremony
 	if got := identModel(t, a).pane; got != paneDelete {
 		t.Fatalf("pane = %v, want paneDelete", got)
 	}
@@ -410,8 +410,8 @@ func TestReservedFooterHonestInKeyConsumingStates(t *testing.T) {
 			return pressSeq(t, wizardThroughTest(t, identitiesApp()), "tab", "tab", "tab")
 		}},
 		{"delete-scope chooser", func(t *testing.T) App { return pressSeq(t, identitiesApp(), "d") }},
-		{"global ssh apply ceremony", func(t *testing.T) App { return pressSeq(t, NewApp(), "2", "a") }},
-		{"global git apply ceremony", func(t *testing.T) App { return pressSeq(t, NewApp(), "3", "a") }},
+		{"global ssh apply ceremony", func(t *testing.T) App { return pressSeq(t, NewApp(stubBackend{}), "2", "a") }},
+		{"global git apply ceremony", func(t *testing.T) App { return pressSeq(t, NewApp(stubBackend{}), "3", "a") }},
 		{"doctor fix ceremony", func(t *testing.T) App { return pressSeq(t, doctorApp(t), "f") }},
 	}
 	for _, tc := range cases {
@@ -497,7 +497,7 @@ func TestMouseWizardGitStepFieldAndStrategyRowClick(t *testing.T) {
 }
 
 func TestMouseEditSSHFieldRowClickFocusesNonLockedOnly(t *testing.T) {
-	a := pressSeq(t, NewApp(), "e")
+	a := pressSeq(t, NewApp(stubBackend{}), "e")
 	a = clickCell(t, a, "Real hostname", 0, frameBodyTop)
 	if got := identModel(t, a).editFocus; got != sshFieldHostname {
 		t.Fatalf("editFocus = %d after clicking Real hostname, want hostname (%d)", got, sshFieldHostname)
@@ -505,7 +505,7 @@ func TestMouseEditSSHFieldRowClickFocusesNonLockedOnly(t *testing.T) {
 }
 
 func TestMouseConfigureGitFieldAndStrategyRowClick(t *testing.T) {
-	a := pressSeq(t, NewApp(), "g")
+	a := pressSeq(t, NewApp(stubBackend{}), "g")
 	a = clickCell(t, a, "user.name", 0, frameBodyTop)
 	m := identModel(t, a)
 	if m.gitFocus != gitFieldName {
@@ -519,7 +519,7 @@ func TestMouseConfigureGitFieldAndStrategyRowClick(t *testing.T) {
 }
 
 func TestMouseCloneNameFieldRowClickFocusesInput(t *testing.T) {
-	a := pressSeq(t, NewApp(), "c", "tab") // move focus onto the Clone button
+	a := pressSeq(t, NewApp(stubBackend{}), "c", "tab") // move focus onto the Clone button
 	if !identModel(t, a).cloneOnButton {
 		t.Fatal("setup: expected the Clone button to be focused")
 	}

@@ -1,4 +1,4 @@
-package dummytui
+package tuikit
 
 // frame.go renders the common chrome every view sits inside — the Go
 // mirror of .planning/design/mockup-src/src/demo/Frame.tsx per
@@ -55,19 +55,19 @@ const masterDetailGutter = 2
 // frameBodyRows is how many body rows RenderFrame gives a view at height.
 func frameBodyRows(height int) int { return height - frameBodyTop - frameChromeBelow }
 
-// tabID indexes the four primary views (SHELL-01 as redesigned: the Fixer
+// TabID indexes the four primary views (SHELL-01 as redesigned: the Fixer
 // is NOT a tab — FIX-02 re-homed it into Doctor).
-type tabID int
+type TabID int
 
 // The four primary views, in header order.
 const (
-	tabIdentities tabID = iota
-	tabGlobalSSH
-	tabGlobalGit
-	tabDoctor
+	TabIdentities TabID = iota
+	TabGlobalSSH
+	TabGlobalGit
+	TabDoctor
 )
 
-// tabLabels are the nav tab labels, indexed by tabID.
+// tabLabels are the nav tab labels, indexed by TabID.
 var tabLabels = [...]string{"Identities", "Global SSH", "Global Git", "Doctor"}
 
 // FooterAction is one contextual footer hint (key + label).
@@ -240,14 +240,14 @@ func headerTabText(i int) string {
 // competing with the dimmed chrome); an INACTIVE tab while a pane captures
 // keys renders Theme.DisabledNav (faint); otherwise plain
 // (02-STYLE-SPEC.md "dim-states").
-func renderHeader(width int, s DemoState, active tabID, capturesKeys bool) string {
+func renderHeader(width int, s DemoState, active TabID, capturesKeys bool) string {
 	segments := make([]string, 0, len(tabLabels))
 	for i := range tabLabels {
 		text := headerTabText(i)
 		switch {
-		case tabID(i) == active && capturesKeys:
+		case TabID(i) == active && capturesKeys:
 			segments = append(segments, DefaultTheme.ActiveNavDimmed.Render(text))
-		case tabID(i) == active:
+		case TabID(i) == active:
 			segments = append(segments, DefaultTheme.ActiveNav.Render(text))
 		case capturesKeys:
 			segments = append(segments, DefaultTheme.DisabledNav.Render(text))
@@ -266,12 +266,12 @@ func renderHeader(width int, s DemoState, active tabID, capturesKeys bool) strin
 
 // headerTabAt resolves which nav tab label covers header-row column x,
 // deriving each span from the same segment strings renderHeader renders.
-func headerTabAt(x int) (tabID, bool) {
+func headerTabAt(x int) (TabID, bool) {
 	cursor := ansi.StringWidth(" " + headerBrand + "  ")
 	for i := range tabLabels {
 		w := ansi.StringWidth(headerTabText(i))
 		if x >= cursor && x < cursor+w {
-			return tabID(i), true
+			return TabID(i), true
 		}
 		cursor += w + ansi.StringWidth(headerTabSeparator)
 	}
@@ -364,7 +364,7 @@ func statusToneStyle(tone string) lipgloss.Style {
 // transient status line, and the two footer keybar lines (contextual
 // actions, then the reserved keys — the honest variant while the pane
 // captures plain keys). Pure function — safe to unit test.
-func RenderFrame(width, height int, s DemoState, tab tabID, crumbs []string, status, statusTone string, actions []FooterAction, capturesKeys bool, body string) string {
+func RenderFrame(width, height int, s DemoState, tab TabID, crumbs []string, status, statusTone string, actions []FooterAction, capturesKeys bool, body string) string {
 	if width < minFrameWidth || height < minFrameHeight {
 		return fmt.Sprintf("Terminal too small — resize to at least %dx%d", minFrameWidth, minFrameHeight)
 	}

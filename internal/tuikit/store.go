@@ -1,13 +1,15 @@
-package dummytui
+package tuikit
 
 // store.go is the Go mirror of
-// .planning/design/mockup-src/src/demo/store.ts — a plain reducer over
-// dummy data seeded from data.go (itself the Go mirror of
-// recipeFixtures.ts, recipe-faithful per recipes/, the North Star).
+// .planning/design/mockup-src/src/demo/store.ts — the view state every
+// screen renders from, plus the pure reducer that transitions it.
 //
-// Everything here is dummy/in-memory: "writes" only mutate this state,
-// mirroring how the real product stages changes before its confirm +
-// backup ceremony. No backend, no persistence, no file I/O.
+// Nothing here performs I/O. Reduce is a pure (state, action) → state
+// function: the INITIAL state and the effect of a COMMITTED action both
+// come from the injected Backend (InitialState / Persist), so the dummy
+// reduces in memory while the real binary performs a backed-up write and
+// re-reads. Screens never call Reduce directly — actions flow back to the
+// App, the single Persist caller.
 
 import (
 	"strings"
@@ -73,50 +75,6 @@ type DemoState struct {
 	// Backups holds timestamped backup paths "created" by write
 	// ceremonies, newest first.
 	Backups []string
-}
-
-// findingIdentityAttribution maps seeded finding ids to the identity each
-// finding is about — the Go mirror of store.ts's findingIdentity map.
-// ssh-duplicate-host-star stays global (no entry).
-var findingIdentityAttribution = map[string]string{
-	"ssh-key-perms-archived":           "archived",
-	"ssh-identitiesonly-contradiction": "clientB",
-	"git-includeif-missing-fragment":   "legacy",
-	"git-opensource-no-host-block":     "opensource",
-}
-
-// Seed builds the initial demo state from data.go's fixtures — the Go
-// mirror of store.ts's initialDemoState. Rows with a Git fragment get the
-// same derived author values the web seed uses.
-func Seed() DemoState {
-	identities := make([]DemoIdentity, 0, len(IdentityManagerRows))
-	for _, row := range IdentityManagerRows {
-		id := DemoIdentity{
-			Name:            row.Name,
-			State:           row.State,
-			SSHHost:         row.SSHHost,
-			KeyPath:         row.KeyPath,
-			GitFragmentPath: row.GitFragmentPath,
-			Note:            row.Note,
-		}
-		if row.GitFragmentPath != "" {
-			id.GitName = row.Name + " identity"
-			id.GitEmail = "you@" + row.Name + ".example"
-		}
-		identities = append(identities, id)
-	}
-	findings := make([]DemoFinding, 0, len(HealthFindings))
-	for _, f := range HealthFindings {
-		findings = append(findings, DemoFinding{
-			HealthFinding: f,
-			Identity:      findingIdentityAttribution[f.ID],
-		})
-	}
-	return DemoState{
-		Identities: identities,
-		Findings:   findings,
-		SSHStorage: StorageSentinel,
-	}
 }
 
 // Action is one typed state transition — the Go mirror of store.ts's
@@ -202,7 +160,10 @@ type SetSSHStorage struct {
 	Backup string
 }
 
-// Reset restores the initial seeded state.
+// Reset restores the initial state. Reduce cannot answer it — only the
+// Backend knows what "initial" means (fixtures for the dummy, a fresh read
+// of the user's configuration for the real binary) — so a Backend's
+// Persist implementation MUST handle Reset by returning InitialState().
 type Reset struct{}
 
 func (AddIdentity) isAction()         {}
@@ -240,7 +201,8 @@ func cloneState(s DemoState) DemoState {
 
 // Reduce applies action to state and returns the next state — a pure
 // function mirroring store.ts's demoReducer transition-for-transition.
-// The input state is never mutated.
+// The input state is never mutated. Reset is deliberately absent: it is
+// the Backend's to answer (see Reset).
 func Reduce(state DemoState, action Action) DemoState { //nolint:gocyclo // one case per action type, mirroring store.ts's switch verbatim
 	next := cloneState(state)
 	switch a := action.(type) {
@@ -400,7 +362,9 @@ func Reduce(state DemoState, action Action) DemoState { //nolint:gocyclo // one 
 		next.SSHStorage = a.Layout
 		next.Backups = append([]string{a.Backup}, next.Backups...)
 	case Reset:
-		return Seed()
+		// Answered by the Backend's Persist (see Reset) — Reduce has no
+		// notion of what the initial state is.
+		return state
 	}
 	return next
 }

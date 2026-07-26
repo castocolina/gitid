@@ -38,15 +38,28 @@ func Reuse(in CreateInput, existingKeyPath string, deps Deps) (CreateResult, err
 }
 
 // ensurePub returns the reused identity's public-key line, deriving and writing
-// it (0644 via the WritePub dep) when the existing `.pub` file is absent. When
-// the `.pub` already exists it is read back via DerivePub so the returned line
-// always reflects the on-disk private key, keeping the allowed_signers line and
-// the pipeline's PubLine consistent.
+// it (0644 via the WritePub dep) when the existing `.pub` file is absent.
+//
+// When the `.pub` ALREADY EXISTS it is read back verbatim via the ReadPub seam
+// and the private key is never parsed. That is what makes D-11 / KEY-06 work:
+// an encrypted private key cannot be parsed without a passphrase, but its public
+// half is right there on disk and is authoritative — so reuse succeeds with no
+// passphrase prompt. ReadPub is nil-guarded like PubExists on the same line: an
+// unwired caller falls back to DerivePub (the previous behavior) instead of
+// panicking.
 func ensurePub(privateKeyPath, pubPath, comment string, deps Deps) (string, error) {
 	if deps.PubExists != nil && deps.PubExists(pubPath) {
-		// .pub present: derive from the private key so the returned line is
-		// guaranteed to match the key actually in use (the existing .pub may be
-		// stale or for a different key).
+		// .pub present: return it verbatim — never re-derive, which would parse
+		// the private key and fail on an encrypted one (D-11).
+		if deps.ReadPub != nil {
+			line, err := deps.ReadPub(pubPath)
+			if err != nil {
+				return "", fmt.Errorf("identity: reading existing public key %s: %w", pubPath, err)
+			}
+			return line, nil
+		}
+		// Nil-guard fallback for callers that have not wired ReadPub: keep the
+		// previous derive-from-private-key behavior rather than nil-panicking.
 		line, err := deps.DerivePub(privateKeyPath, comment)
 		if err != nil {
 			return "", fmt.Errorf("identity: deriving public key for reuse: %w", err)

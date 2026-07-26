@@ -3,6 +3,8 @@ package dummytui
 import (
 	"strings"
 	"testing"
+
+	"github.com/castocolina/gitid/internal/tuikit"
 )
 
 // TestFixtureConsistency asserts the cross-fixture invariants the removed
@@ -23,10 +25,14 @@ func TestFixtureConsistency(t *testing.T) {
 		}
 	})
 
+	// The state→glyph taxonomy moved to internal/tuikit/design.go in the
+	// D-17 extraction (both binaries render through it); the fixture rows
+	// stayed here, so this cross-package invariant is exactly what keeps the
+	// two halves coherent.
 	t.Run("every identity row has a glyph for its state", func(t *testing.T) {
 		for _, r := range IdentityManagerRows {
-			if _, ok := IdentityManagerGlyphByState[r.State]; !ok {
-				t.Errorf("IdentityManagerGlyphByState is missing state %q (row %q)", r.State, r.Name)
+			if _, ok := tuikit.IdentityManagerGlyphByState[r.State]; !ok {
+				t.Errorf("tuikit.IdentityManagerGlyphByState is missing state %q (row %q)", r.State, r.Name)
 			}
 		}
 	})

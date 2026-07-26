@@ -1,4 +1,4 @@
-package dummytui
+package tuikit
 
 import (
 	"regexp"
@@ -9,16 +9,16 @@ import (
 // gssApp returns an App on the Global SSH tab.
 func gssApp(t *testing.T) App {
 	t.Helper()
-	a, _ := press(t, NewApp(), "2")
+	a, _ := press(t, NewApp(stubBackend{}), "2")
 	return a
 }
 
 // gssModel extracts the Global SSH child model.
 func gssModel(t *testing.T, a App) globalSSHModel {
 	t.Helper()
-	m, ok := a.screens[tabGlobalSSH].(globalSSHModel)
+	m, ok := a.screens[TabGlobalSSH].(globalSSHModel)
 	if !ok {
-		t.Fatalf("screens[1] is %T, want globalSSHModel", a.screens[tabGlobalSSH])
+		t.Fatalf("screens[1] is %T, want globalSSHModel", a.screens[TabGlobalSSH])
 	}
 	return m
 }

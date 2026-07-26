@@ -1,4 +1,4 @@
-package dummytui
+package tuikit
 
 import (
 	"strings"
@@ -8,7 +8,7 @@ import (
 // doctorApp returns an App on the Doctor tab with the scan completed.
 func doctorApp(t *testing.T) App {
 	t.Helper()
-	a, cmd := press(t, NewApp(), "4")
+	a, cmd := press(t, NewApp(stubBackend{}), "4")
 	if cmd == nil {
 		t.Fatal("first Doctor entry must schedule the auto-scan tick")
 	}
@@ -22,9 +22,9 @@ func doctorApp(t *testing.T) App {
 // docModel extracts the Doctor child model.
 func docModel(t *testing.T, a App) doctorModel {
 	t.Helper()
-	m, ok := a.screens[tabDoctor].(doctorModel)
+	m, ok := a.screens[TabDoctor].(doctorModel)
 	if !ok {
-		t.Fatalf("screens[3] is %T, want doctorModel", a.screens[tabDoctor])
+		t.Fatalf("screens[3] is %T, want doctorModel", a.screens[TabDoctor])
 	}
 	return m
 }

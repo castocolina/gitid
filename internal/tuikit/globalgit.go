@@ -1,4 +1,4 @@
-package dummytui
+package tuikit
 
 // globalgit.go is the Go mirror of
 // .planning/design/mockup-src/src/demo/screens/GlobalGit.tsx per

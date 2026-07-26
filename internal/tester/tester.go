@@ -84,6 +84,40 @@ func preWriteArgs(keyPath, hostname string, port int) []string {
 	}
 }
 
+// resolvedViaArgs builds the stage-2 CONNECTIVITY ssh argument slice used by
+// ResolvedVia: the alias is resolved through the staged temp config (-F) with
+// the staged key pinned (-i). It is the single source of truth shared by the
+// executing path (ResolvedVia) and the display path (ResolvedViaCommand), so
+// the command shown to the user can never drift from the command run
+// (TEST-01). The `ssh -G` resolution call is deliberately NOT built here — it
+// takes no -i.
+//
+// Arguments are passed as a slice (never a shell string), keeping the call
+// gosec G204-clean and free of OS-command-injection risk (threat T-03-03).
+func resolvedViaArgs(configPath, keyPath, alias string) []string {
+	return []string{
+		"-F", configPath,
+		"-i", keyPath,
+		"-o", "IdentitiesOnly=yes",
+		"-o", "BatchMode=yes",
+		"-o", "ConnectTimeout=10",
+		"-T", "git@" + alias,
+	}
+}
+
+// ResolvedViaCommand returns the string representation of the stage-2
+// connectivity command ResolvedVia would run for the given staged config, key
+// and alias. It is a pure read-only helper (no exec) built from the SAME
+// resolvedViaArgs slice ResolvedVia executes, so the returned string is
+// byte-identical to that call's Result.Command for the same inputs — the
+// stage-2 counterpart of PreWriteCommand, closing the "shown command == run
+// command" contract (TEST-01) for both test stages.
+func ResolvedViaCommand(configPath, keyPath, alias string) string {
+	args := resolvedViaArgs(configPath, keyPath, alias)
+	cmd := exec.Command("ssh", args...) //nolint:gosec // arg-slice form for cmd.String() display; not executed here
+	return cmd.String()
+}
+
 // preWriteWith runs the pre-write test through an injected runner and assembles
 // the Result, capturing the exact command string (input) and raw output (TEST-03)
 // and classifying strictly by output substring (exit code ignored).
@@ -147,14 +181,9 @@ func Resolved(alias string) (Result, ResolvedConfig) {
 // Read-only with respect to ~/.ssh/config. The `ssh -G` parse also uses -F so the
 // returned ResolvedConfig reflects the staged block, not the live file.
 func ResolvedVia(configPath, keyPath, alias string) (Result, ResolvedConfig) {
-	args := []string{
-		"-F", configPath,
-		"-i", keyPath,
-		"-o", "IdentitiesOnly=yes",
-		"-o", "BatchMode=yes",
-		"-o", "ConnectTimeout=10",
-		"-T", "git@" + alias,
-	}
+	// Shared with ResolvedViaCommand so the displayed stage-2 command is exactly
+	// what runs here (TEST-01).
+	args := resolvedViaArgs(configPath, keyPath, alias)
 	out, _ := execRunner(args)          // exit code ignored (D-01)
 	cmd := exec.Command("ssh", args...) //nolint:gosec // arg-slice form for cmd.String() display; not executed here
 	res := Result{Command: cmd.String(), Output: out, Outcome: ClassifyPreWrite(out)}

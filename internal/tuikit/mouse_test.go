@@ -1,4 +1,4 @@
-package dummytui
+package tuikit
 
 // mouse_test.go pins the spec §7 mouse routing ("every action is also a
 // real button"): header tab labels and the health chip switch views, and
@@ -49,49 +49,49 @@ func clickCell(t *testing.T, a App, needle string, maxCols, fromY int) App {
 }
 
 func TestMouseHeaderTabLabelsSwitchTabs(t *testing.T) {
-	a := NewApp()
+	a := NewApp(stubBackend{})
 	a = clickCell(t, a, "[2] Global SSH", 0, 0)
-	if a.tab != tabGlobalSSH {
+	if a.tab != TabGlobalSSH {
 		t.Fatalf("tab = %v after clicking the Global SSH label, want Global SSH", a.tab)
 	}
 	a = clickCell(t, a, "[3] Global Git", 0, 0)
-	if a.tab != tabGlobalGit {
+	if a.tab != TabGlobalGit {
 		t.Fatalf("tab = %v after clicking the Global Git label, want Global Git", a.tab)
 	}
 	a = clickCell(t, a, "[1] Identities", 0, 0)
-	if a.tab != tabIdentities {
+	if a.tab != TabIdentities {
 		t.Errorf("tab = %v after clicking the Identities label, want Identities", a.tab)
 	}
 }
 
 func TestMouseHealthChipOpensDoctor(t *testing.T) {
-	a := NewApp()
+	a := NewApp(stubBackend{})
 	a = clickCell(t, a, "8 ids", 0, 0)
-	if a.tab != tabDoctor {
+	if a.tab != TabDoctor {
 		t.Errorf("tab = %v after clicking the health chip, want Doctor", a.tab)
 	}
 }
 
 func TestMouseClickBetweenHeaderTargetsIsInert(t *testing.T) {
-	a := NewApp()
+	a := NewApp(stubBackend{})
 	// The gap between the last tab label and the right-aligned chip (the
 	// bracketed `[N] Label` format, D4, widened the tab segments — this
 	// column sits past `[4] Doctor` and before the right-aligned chip).
 	a, _ = clickAt(t, a, a.width/2+28, 0)
-	if a.tab != tabIdentities {
+	if a.tab != TabIdentities {
 		t.Errorf("tab = %v after clicking header dead space, want Identities", a.tab)
 	}
 	// Breadcrumb and RESERVED-footer rows are inert (the contextual footer
 	// line became clickable in batch 3 — covered by its own tests).
 	a, _ = clickAt(t, a, 2, 1)
 	a, _ = clickAt(t, a, 2, a.height-1)
-	if a.tab != tabIdentities {
+	if a.tab != TabIdentities {
 		t.Error("chrome rows outside the header must not switch tabs")
 	}
 }
 
 func TestMouseSidebarRowSelectsIdentity(t *testing.T) {
-	a := NewApp()
+	a := NewApp(stubBackend{})
 	a = clickCell(t, a, "opensource", sidebarWidth(a.width), frameBodyTop)
 	if got := identModel(t, a).selected; got != "opensource" {
 		t.Fatalf("selected = %q after clicking the opensource row, want opensource", got)
@@ -102,7 +102,7 @@ func TestMouseSidebarRowSelectsIdentity(t *testing.T) {
 }
 
 func TestMouseSidebarInertWhileFormPaneOpen(t *testing.T) {
-	a := NewApp()
+	a := NewApp(stubBackend{})
 	a = clickCell(t, a, "opensource", sidebarWidth(a.width), frameBodyTop)
 	a, _ = press(t, a, "n") // open the create wizard
 	a = clickCell(t, a, "personal", sidebarWidth(a.width), frameBodyTop)
@@ -129,7 +129,7 @@ func TestMouseDoctorFindingRowSelects(t *testing.T) {
 }
 
 func TestMouseGlobalSSHSubTabsAndOptionRows(t *testing.T) {
-	a, _ := press(t, NewApp(), "2")
+	a, _ := press(t, NewApp(stubBackend{}), "2")
 
 	// Sub-tab labels switch sub-tabs (searched from the body, because the
 	// breadcrumb row repeats the sub-tab name and must stay inert).
@@ -150,7 +150,7 @@ func TestMouseGlobalSSHSubTabsAndOptionRows(t *testing.T) {
 }
 
 func TestMouseGlobalGitOptionRowSelects(t *testing.T) {
-	a, _ := press(t, NewApp(), "3")
+	a, _ := press(t, NewApp(stubBackend{}), "3")
 	a = clickCell(t, a, "pull.rebase", masterListWidth(a.width), frameBodyTop)
 	if got := gitModelOf(t, a).detailKey; got != "pull.rebase" {
 		t.Errorf("detailKey = %q after clicking the pull.rebase row, want pull.rebase", got)
@@ -158,15 +158,15 @@ func TestMouseGlobalGitOptionRowSelects(t *testing.T) {
 }
 
 func TestMouseRightClickAndOverlayClicksAreIgnored(t *testing.T) {
-	a := NewApp()
+	a := NewApp(stubBackend{})
 	model, _ := a.Update(tea.MouseClickMsg{X: 10, Y: 0, Button: tea.MouseRight})
 	a = model.(App)
-	if a.tab != tabIdentities {
+	if a.tab != TabIdentities {
 		t.Error("right clicks must be ignored")
 	}
 	a, _ = press(t, a, "?")
 	a = clickCell(t, a, "[4] Doctor", 0, 0)
-	if a.tab != tabIdentities || a.overlay != overlayHelp {
+	if a.tab != TabIdentities || a.overlay != overlayHelp {
 		t.Error("clicks while an overlay is open must be ignored (overlays are keyboard-driven)")
 	}
 }
@@ -174,9 +174,9 @@ func TestMouseRightClickAndOverlayClicksAreIgnored(t *testing.T) {
 // gssModelOf extracts the Global SSH child model.
 func gssModelOf(t *testing.T, a App) globalSSHModel {
 	t.Helper()
-	m, ok := a.screens[tabGlobalSSH].(globalSSHModel)
+	m, ok := a.screens[TabGlobalSSH].(globalSSHModel)
 	if !ok {
-		t.Fatalf("screens[1] is %T, want globalSSHModel", a.screens[tabGlobalSSH])
+		t.Fatalf("screens[1] is %T, want globalSSHModel", a.screens[TabGlobalSSH])
 	}
 	return m
 }
@@ -184,9 +184,9 @@ func gssModelOf(t *testing.T, a App) globalSSHModel {
 // gitModelOf extracts the Global Git child model.
 func gitModelOf(t *testing.T, a App) globalGitModel {
 	t.Helper()
-	m, ok := a.screens[tabGlobalGit].(globalGitModel)
+	m, ok := a.screens[TabGlobalGit].(globalGitModel)
 	if !ok {
-		t.Fatalf("screens[2] is %T, want globalGitModel", a.screens[tabGlobalGit])
+		t.Fatalf("screens[2] is %T, want globalGitModel", a.screens[TabGlobalGit])
 	}
 	return m
 }
