@@ -160,16 +160,16 @@ Plans:
 
 **Wave 1** — parallel (disjoint files)
 
-- [ ] 03-01-PLAN.md — Backend gap functions: ensurePub encrypted-key fix, ScanReusableKeys, ResolvedViaCommand (KEY-06, TEST-01/02)
-- [ ] 03-02-PLAN.md — D-17 internal/tuikit extraction + Backend seam + FixtureBackend + restored no-backend gate (DLV-04, SSHUI-03)
+- [x] 03-01-PLAN.md — Backend gap functions: ensurePub encrypted-key fix, ScanReusableKeys, ResolvedViaCommand (KEY-06, TEST-01/02)
+- [x] 03-02-PLAN.md — D-17 internal/tuikit extraction + Backend seam + FixtureBackend + restored no-backend gate (DLV-04, SSHUI-03)
 
 **Wave 2** — real app shell (blocked on 03-02)
 
-- [ ] 03-03-PLAN.md — POC + tui/ archival, main rewire, real Backend composition root, storage-auto-detect persist + macOS globals (SSHUI-04/05, TEST-03)
+- [x] 03-03-PLAN.md — POC + tui/ archival, main rewire, real Backend composition root, storage-auto-detect persist + macOS globals (SSHUI-04/05, TEST-03)
 
 **Wave 3** — create-flow form deltas (blocked on 03-03)
 
-- [ ] 03-04-PLAN.md — Provider-reactive autofill, recipe-faithful preview, alias-collision, reuse-key picker, D-16 banner (SSHUI-01/02/03, KEY-06)
+- [x] 03-04-PLAN.md — Provider-reactive autofill, recipe-faithful preview, alias-collision, reuse-key picker, D-16 banner (SSHUI-01/02/03, KEY-06)
 
 **Wave 4** — test-outcome + scoped divergences (blocked on 03-04)
 
@@ -292,7 +292,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Foundations, Spikes & CI | 7/7 | Complete | 2026-07-03 |
 | 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 14/15 | In Progress|  |
-| 3. Create Flow Backend | 0/6 | Not started | - |
+| 3. Create Flow Backend | 4/6 | In Progress|  |
 | 4. Git Configuration Screen | 0/TBD | Not started | - |
 | 5. Identity Manager | 0/TBD | Not started | - |
 | 6. Global SSH Options | 0/TBD | Not started | - |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: "02-15 (wave 8) operationalized the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract (D1–D9 + affordance audit) in BOTH demos, byte-for-byte: D1 single-row color-only fields (02-14's rounded box deleted), D2 always-expanded match-strategy/algorithm radios, D3 terminal-glyph checkbox/radio on the web, D4 bracketed main-nav format (`[N] Label`, moved off the wizard stepper) + a new ActiveNavDimmed/activeNavDimmed state + a top-level plain-arrow view switch, D5 the wizard stepper reverted to `Step n/4 · <label> ● ○ ○ ○`, D6 one-row git-step buttons, D7 ONE hoisted Shift+←/→ chord gate reaching every step including the previously-dead review ceremony (proven with a new raw-byte PTY e2e injecting real xterm CSI sequences), D8 click-to-focus on every form row, and D9 Global Git's user.email promoted to an editable, opt-in global-fallback field with its own dedicated write ceremony (a documented, scoped recipes/ divergence). 02-STYLE-SPEC.md + both FIELDS.md companions rewritten in lockstep; the full exit-gate battery is green (go test -race, the no-backend allowlist, the extended copy-freeze grep, make test/lint/test-e2e/gate-no-backend-files, pnpm typecheck+build) — see 02-15-SUMMARY.md. The two ORCHESTRATOR-run exit gates (a fresh agent-ui-ux-designer critique of both live demos + a fresh-context code review against 02-15's must_haves/acceptance_criteria) have since RUN and their findings (F1-F10 + one record-only item) are fixed — see 02-15-SUMMARY.md "Review findings resolution (post-plan fix pass)" and commits a335d80/f62c99e. Next is 02-12 (wave 9, the single DLV-08 approval checkpoint), unblocked."
-stopped_at: "ONESHOT run: Phase 3 Step 3.5 EXECUTION — WAVE 3 (plan 03-04) IN PROGRESS. Task 1 (D-16 Preview banner) COMMITTED (76fb231). Task 2 (provider-reactive autofill + D-20/D-21 alt-SSH hint, SSHUI-01/03) COMMITTED (cc1f614) — green (go build ./... exit 0; go test ./internal/tuikit/... 174 passed). Task 3 (alias-collision block + reuse-existing-key picker, D-09/KEY-06/D-10/D-12/D-13) NOT STARTED. 2026-08-17 side-quest (does not touch phase work, committed separately as 93343de): validated and configured a cross-AI workflow in .planning/config.json — model_overrides.gsd-planner=opus, review.default_reviewers=[codex] with review.models.codex=gpt-5.6-sol (effort=high/tier=fast via ~/.codex/config.toml, now also pinned explicitly in ONESHOT.md steps 4 and 6d), workflow.cross_ai_execution=true as a supervised canary with workflow.cross_ai_command now pointed at `opencode run --model opencode-go/qwen3.8-max -` (swapped from an OpenRouter impl-be preset after fire-testing both). NEXT = Task 3, then Step 3.6+ (post-execution review battery) for the whole 03-04 plan. Also note: an untracked, unrelated scratch dir `.planning/phases/05.7-complete-v1-0-product-features-in-tui/` (dated 2026-07-25, no phase 5.7 exists in the current 10-phase roadmap) sits in the working tree — never committed or investigated, flagged to the user, not touched. PHASE-3 BASE SHA = 61d98fa. Circuit breaker: replans 1/2, review_fix 2/3."
-last_updated: "2026-07-08T19:45:00.000Z"
+stopped_at: "Plan 03-04 (Wave 3) COMPLETE: Task 3 (D-09 verified + KEY-06 reuse-existing-key picker) committed 5df3e2d; 03-04-SUMMARY.md written; STATE/ROADMAP/REQUIREMENTS updated. NEXT = Wave 4 (plan 03-05)."
+last_updated: "2026-08-17T21:24:17.547Z"
 last_activity: "2026-07-06 -- Completed 02-12 (★ DLV-08): user approval recorded as `**APPROVED:** 2026-07-06 by Pepe`; Phase 2 COMPLETE — the approved live demos + 02-REDESIGN-SPEC.md/02-STYLE-SPEC.md/02-DESIGN-DECISIONS-CHECKPOINT-2.md + per-surface FIELDS.md are the binding design reference; Phases 3-9 backend work is UNBLOCKED"
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 29
-  completed_plans: 22
+  completed_plans: 26
   percent: 10
 ---
 
@@ -21,16 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** Managing a Git identity produces coordinated, coherent SSH + Git artifacts that are proven to authenticate and resolve correctly (`ssh -G`) before any file is written, and existing hand-written config is never corrupted.
-**Current focus:** Phase 02 COMPLETE (★ CHECKPOINT #1 passed) — next: Phase 03 (create-flow-backend)
+**Current focus:** Phase 02 COMPLETE (★ CHECKPOINT #1 passed) — Phase 03 (create-flow-backend) IN PROGRESS: Wave 3 (plan 03-04) CLOSED, next is Wave 4 (plan 03-05)
 
 ## Current Position
+
+Phase: 03 (create-flow-backend) — IN PROGRESS. Wave 1 (03-01+03-02) and Wave 2 (03-03) CLOSED; Wave 3 (plan 03-04) CLOSED this session (all 3 tasks committed: 76fb231, cc1f614, 5df3e2d; see 03-04-SUMMARY.md). Next: Wave 4 (plan 03-05).
+Plan: 03-04 (wave 3) — COMPLETE. Task 1 (D-16 Preview banner), Task 2 (SSHUI-01/03 provider-reactive autofill, D-20/D-21), Task 3 (D-09 alias-collision verified + KEY-06 reuse-existing-key picker, D-10/D-12/D-13) all committed and green (go test -race ./... 826 passed, make lint 0 issues, make test-e2e ok, TestNoBackendAllowlist green). See 03-04-SUMMARY.md for the full record, including a Rule-1 bugfix (sshconfig.ParseManagedHosts was not skipping the reserved "ssh-include" block, surfacing a phantom identity on a fresh D-06 machine's first create).
+Status: Phase 2 (below) is the last COMPLETE phase; Phase 3 is the active phase, Wave 3 of 5 now closed. See "Session Continuity" below for the live wave-by-wave Phase 3 record (WAVE 1/WAVE 2 close notes, replan resolution map, execution obligations).
+Last activity: 2026-08-17 -- Completed plan 03-04 Task 3 (D-09 verified + KEY-06 reuse-existing-key picker): the create wizard's step 0 gained a D-10 generate/reuse toggle + picker rendering []tuikit.ReusableKeyView (filename+algorithm+fingerprint, D-12 in-use label, D-13 non-catalog note, manual-path row with T-03-13 symlink rejection); identity.StageReuse extracted for the staged wizard flow; all three tuikit.Backend implementers (real/dummy/test-stub) kept in lockstep.
+
+### Phase 2 (COMPLETE) — historical record
 
 Phase: 02 (design-all-mockups-checkpoint-1) — COMPLETE (all 15 plans done; ★ DLV-08 approval recorded)
 Plan: 02-12 (wave 9, the single DLV-08 human checkpoint) — COMPLETE. The user approved both live demos and supplied the approver name; `.planning/design/APPROVAL.md` now carries `**APPROVED:** 2026-07-06 by Pepe` (Status: APPROVED, all §A-F/E2/E3 items ticked). See 02-12-SUMMARY.md for the checkpoint record (first presentation → 11-question feedback round → binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract → 02-15 route-back + F1-F10 review fix pass → micro-fix d6438bd → approval).
 Status: 02-15 (wave 8) operationalized the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract (D1–D9 + affordance audit) in BOTH demos, byte-for-byte: D1 single-row color-only fields (02-14's rounded box deleted), D2 always-expanded match-strategy/algorithm radios, D3 terminal-glyph checkbox/radio on the web, D4 bracketed main-nav format (`[N] Label`, moved off the wizard stepper) + a new ActiveNavDimmed/activeNavDimmed state + a top-level plain-arrow view switch, D5 the wizard stepper reverted to `Step n/4 · <label> ● ○ ○ ○`, D6 one-row git-step buttons, D7 ONE hoisted Shift+←/→ chord gate reaching every step including the previously-dead review ceremony (proven with a new raw-byte PTY e2e injecting real xterm CSI sequences), D8 click-to-focus on every form row, and D9 Global Git's user.email promoted to an editable, opt-in global-fallback field with its own dedicated write ceremony (a documented, scoped recipes/ divergence). 02-STYLE-SPEC.md + both FIELDS.md companions rewritten in lockstep; the full exit-gate battery is green (go test -race, the no-backend allowlist, the extended copy-freeze grep, make test/lint/test-e2e/gate-no-backend-files, pnpm typecheck+build) — see 02-15-SUMMARY.md. The two ORCHESTRATOR-run exit gates (a fresh agent-ui-ux-designer critique of both live demos + a fresh-context code review against 02-15's must_haves/acceptance_criteria) have since RUN and their findings (F1-F10 + one record-only item) are fixed — see 02-15-SUMMARY.md "Review findings resolution (post-plan fix pass)" and commits a335d80/f62c99e. Next is 02-12 (wave 9, the single DLV-08 approval checkpoint), unblocked.
 Last activity: 2026-07-06 -- Completed 02-12 (★ DLV-08): user approval recorded as `**APPROVED:** 2026-07-06 by Pepe`; Phase 2 COMPLETE — the approved live demos + 02-REDESIGN-SPEC.md/02-STYLE-SPEC.md/02-DESIGN-DECISIONS-CHECKPOINT-2.md + per-surface FIELDS.md are the binding design reference; Phases 3-9 backend work is UNBLOCKED
 
-Progress: [██████████] 100% (Phase 2: 15/15 plans — phase complete)
+Progress: [█████████░] 90% (26/29 plans complete — Phase 2: 15/15; Phase 3: 4/6 plans, Wave 3 of 5 closed)
 
 ## Performance Metrics
 
@@ -77,6 +84,7 @@ Progress: [██████████] 100% (Phase 2: 15/15 plans — phase 
 | Phase 02 P14 | 100min | 3 tasks | 14 files |
 | Phase 02 P15 | 180min | 3 tasks | 27 files |
 | Phase 02 P12 | multi-session (checkpoint) | 1 task | 1 file |
+| Phase 03-create-flow-backend P04 | ~1 session (Task 3) | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -149,6 +157,9 @@ Recent decisions affecting current work:
 - [Phase 02-15]: D9's global-fallback user.email applies through its own dedicated ceremony, never folded into the baseline managed-block apply
 - [Phase 02-15]: Row-budget number in 02-STYLE-SPEC.md corrected to the measured ~24 of 25 body rows (tightest wizard pane), replacing the plan's original ~21-row estimate
 - [Phase 02-15]: e2e/ui_pty_e2e_test.go's ptySession.close() gained a bounded ctrl+c grace period + SIGKILL fallback -- fixes a real test-hang unrelated to this plan's own feature changes
+- [Phase 03-create-flow-backend]: D-09 alias-collision was already fully wired by 03-03 + this plan's Task 2; Task 3's real scope was the KEY-06 reuse-existing-key picker
+- [Phase 03-create-flow-backend]: identity.Reuse split into StageReuse (ensurePub staging) + the existing write pipeline so the TUI wizard's staged test-then-write flow shares the D-11 encrypted-key logic instead of duplicating it
+- [Phase 03-create-flow-backend]: D-12 in-use-by label reformatted to '<identity> (<provider-host>)' across all three tuikit.Backend implementers (real, dummy, tuikit test stub)
 
 ### Roadmap Evolution
 
@@ -182,13 +193,14 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-17
-Stopped at: ONESHOT run — Phase 3 Step 3.5 EXECUTION, Wave 3 (plan 03-04). Task 1 committed (76fb231). Task 2 done in the working tree but UNCOMMITTED (green: build + `go test ./internal/tuikit/...` 174 passed) — commit it first thing next session. Task 3 not started. NEXT = commit Task 2, then Task 3, then Step 3.6+ (post-execution review battery) for the whole 03-04 plan.
-Resume file: .planning/ONESHOT.md (Step 3.5, task-level position inside plan 03-04) + `.planning/phases/03-create-flow-backend/03-04-PLAN.md` (Task 2/3 acceptance criteria)
+Last session: 2026-08-17T21:24:17.535Z
+Stopped at: Plan 03-04 (Wave 3) COMPLETE: Task 3 (D-09 verified + KEY-06 reuse-existing-key picker) committed 5df3e2d; 03-04-SUMMARY.md written; STATE/ROADMAP/REQUIREMENTS updated. NEXT = Wave 4 (plan 03-05).
+Resume file: .planning/phases/03-create-flow-backend/03-05-PLAN.md
 Wave structure: W1 = 03-01 + 03-02 (DONE) -> W2 = 03-03 -> W3 = 03-04 -> W4 = 03-05 -> W5 = 03-06
 **All remaining waves run SEQUENTIALLY (one executor at a time) per LEARNINGS L11** — the pre-commit hooks lint the whole module, so a parallel executor's mid-refactor tree blocks every other commit. Do NOT run plans in parallel inside this Go module again.
 
 WAVE 1 CLOSED 2026-07-25 — orchestrator-verified gates (NOT executor claims):
+
 - go build ./... exit 0
 - TERM=dumb SSH_AUTH_SOCK= go test -count=1 -race ./... -> 1122 passed, 21 packages
 - make lint -> 0 issues
@@ -202,6 +214,7 @@ Commits: 3dd4f47 (tuikit extraction behind the Backend seam), 3fd1568 (summaries
 Wave-1 cost: 4 agent deaths (1 API/session-limit, 3 watchdog stalls); orchestrator repaired 6 call-site errors inline and closed Task 3 inline.
 
 WAVE 2 CLOSED 2026-07-25 (plan 03-03) — orchestrator-verified gates:
+
 - go build exit 0; make build exit 0 (the pre-Wave-3 obligation)
 - TERM=dumb SSH_AUTH_SOCK= go test -count=1 -race ./... -> 796 passed, 19 packages
 - make lint 0 issues; make test-e2e ok 20.9s
@@ -212,7 +225,9 @@ WAVE 2 CLOSED 2026-07-25 (plan 03-03) — orchestrator-verified gates:
   CONTROL proves the guard is not vacuous; the executor also observed real RED
   (reverting the _global registration made the fix path delete the macOS
   globals block outright — precisely the destructive loop L4 exists to stop).
+
 - Real ReadPub wired non-nil in cmd/gitid/wiring.go:257 (L2 real-constructor half)
+
 Commits: e75e32d (L4 registration + doctor proof), d60a4d7 (POC DROP + D-15 rewire + composition root + persist + REQUIREMENTS STORE-01), 2369750 (03-03-SUMMARY.md), plus the orchestrator's correction below.
 
 Test count moved 1122 -> 796 because the archived POC packages took their own
@@ -234,19 +249,51 @@ this on confirm" requires the preview to BE the written text. Full table in
 CARRIED INTO 03-05: realBackend.Persist has no error channel; a failed write
 returns the PREVIOUS state and records the cause on persistErr, exposed via
 PersistError() for 03-05 to render. Not a swallow — must be surfaced in the UI.
+
+WAVE 3 CLOSED 2026-08-17 (plan 03-04) — executor-run gates (orchestrator
+independent re-verification per ground rule 4 still applies at the wave-close
+review, not yet run by this session):
+- go build ./... exit 0
+- TERM=dumb SSH_AUTH_SOCK= go test -count=1 -race ./... -> 826 passed, 19 packages
+- make lint -> 0 issues
+- make test-e2e -> ok
+- make test (incl. gate-copy-freeze) -> ok
+- go list -deps ./internal/tuikit -> NO first-party backend import (boundary holds)
+- go test ./internal/dummytui/ -run TestNoBackendAllowlist -> PASS
+- grep for a keygen import line in internal/tuikit -> no match
+Commits: 76fb231 (Task 1, D-16 banner), cc1f614 (Task 2, SSHUI-01/03 autofill),
+5df3e2d (Task 3, D-09 verify + KEY-06 reuse picker + the ParseManagedHosts
+reserved-block bugfix). Full record: 03-04-SUMMARY.md.
+
+CARRIED INTO 03-06 (flagged by the 03-04 executor): the D-10 reuse-picker's
+combined "Key" header row + its body (algorithm radios vs the reuse list) is
+a NEW render surface with no dummy-side equivalent yet — the approved Phase 2
+goldens never exercised this picker. 03-06's visual-regression gate will need
+either a divergence allowlist entry or an equivalent dummy-side fixture
+screen; Claude's discretion per 03-04-SUMMARY.md "Next Phase Readiness".
+CARRIED INTO 03-06 (L2 remainder): TestReuseEncryptedKeyWithExistingPubSucceeds
+(cmd/gitid/wiring_test.go) proves the encrypted-key-with-existing-.pub reuse
+path through the REAL constructor and real filesystem, but NOT through a live
+raw-keystroke PTY session — 03-06's case 6 (reuse-existing-key/ReadPub) is
+still the only thing that closes the L2 obligation per project convention (a
+unit/wiring test never substitutes for the PTY proof).
+
 Current branch: gsd/phase-03-create-flow-backend
 PHASE-3 BASE SHA: 61d98fa (anchors external code-review range in Step 6d)
 CIRCUIT BREAKER: replans_used=1/2; review_fix_loops=1/3
 
 VERIFICATION ROUND 1 RESULTS (both consumed):
+
 - Codex re-check: 6/7 RESOLVED, finding #6 PARTIAL, verdict BLOCK on 3 new problems (encrypted-key fingerprint contradiction; mouse-test field-scope mismatch; stale 03-06 Task cross-ref). ALL THREE FIXED in e59d285. Second Codex re-check launched (bg id bev1zm0oc, output scratchpad/codex-recheck2-3.out).
 - gsd-plan-checker: PASS-WITH-CONCERNS. Goal achievable; 11/11 requirement IDs covered; dependency/wave graph correct (03-03 -> [03-01,03-02] confirmed, no file collisions in a wave); 18/18 tasks have read_first + checkable acceptance_criteria; tuikit DTO boundary consistent; 03-03's 4-task size explicitly JUDGED ACCEPTABLE (L4 registration must ship with the code creating the artifacts). Two LOW concerns: (a) run `make test && make build` right after 03-03 before Wave 3 starts — ORCHESTRATOR obligation at wave close (ground rule 4 already covers it); (b) 03-05's "§6 copy-freeze grep gate" was ambiguous — FIXED in e59d285 by naming the real test-based mechanism.
 
 EXECUTION OBLIGATIONS carried into Step 3.5 (from the verification round):
+
 - Ground rule 4 at EVERY wave close: orchestrator personally runs make test, make test-e2e, make lint (never trust an executor PASS claim). Additionally run `make build` immediately after 03-03 completes, before Wave 3 starts.
 - 03-05 executor must name the frozen-string test function it adds/extends in its SUMMARY (both new frozen strings asserted byte-exactly).
 
 Replan resolution map (52fc7d9):
+
 - #1 L2 ReadPub seam -> 03-01 nil-guard + fallback test; 03-06 raw-keystroke PTY reuse-key case (encrypted key w/ existing .pub)
 - #2 L4 doctor-reserved -> 03-03 BLOCKING Task 4 (IsReservedPath/ReservedPaths + TestOrphansReservedArtifactsSurviveFix)
 - #3 legacy DROP -> 03-03 drops internal/repoclone + addrepo/adopt as ONE build-safe unit; internal/adopter KEPT

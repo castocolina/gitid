@@ -123,18 +123,18 @@ These are first-class, enforced requirements — the user's core process ask.
 
 ## D. SSH Identity Screen (SSHUI)
 
-- [ ] **SSHUI-01** (Field model): The SSH screen fields, in order, are —
+- [x] **SSHUI-01** (Field model): The SSH screen fields, in order, are —
   **`Alias prefix`** (e.g. `personal`) → **`SSH Host`** = the recipe `Host`, the full
   `git@…` target, auto-joined as `<prefix>.<provider>` but **editable** →
   **`Real hostname`** = recipe `Hostname`, the true SSH endpoint (provider-linked,
   editable, e.g. `ssh.github.com`) → **`Port`** (default **443**, editable). Blank
   prefix → `SSH Host` = the provider host itself (WYSIWYG, no invented suffix).
 
-- [ ] **SSHUI-02** (Clickable fields): Fields are focusable by mouse click as well as
+- [x] **SSHUI-02** (Clickable fields): Fields are focusable by mouse click as well as
   keyboard (Tab/arrows). All fields always visible; none buried in an overflowing
   panel.
 
-- [ ] **SSHUI-03** (Live preview): A live `Host` block preview reflects the current
+- [x] **SSHUI-03** (Live preview): A live `Host` block preview reflects the current
   field values exactly as it will be written.
 
 - [x] **SSHUI-04** (tmp-file testing): All options are tested against throwaway temp
@@ -458,11 +458,11 @@ row below records each one's **home** phase.
 | KEY-03 | Phase 1 | Complete |
 | KEY-04 | Phase 1 | Complete |
 | KEY-05 | Phase 5 | Pending |
-| KEY-06 | Phase 3 | Pending |
+| KEY-06 | Phase 3 | Complete |
 | KEY-07 | Phase 5 | Pending |
-| SSHUI-01 | Phase 3 | Pending |
-| SSHUI-02 | Phase 3 | Pending |
-| SSHUI-03 | Phase 3 | Pending |
+| SSHUI-01 | Phase 3 | Complete |
+| SSHUI-02 | Phase 3 | Complete |
+| SSHUI-03 | Phase 3 | Complete |
 | SSHUI-04 | Phase 3 | Pending |
 | SSHUI-05 | Phase 3 | Pending |
 | TEST-01 | Phase 3 | Pending |
