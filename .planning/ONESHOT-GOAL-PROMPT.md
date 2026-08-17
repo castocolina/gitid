@@ -18,15 +18,15 @@ below. It references this very file for the detailed working instructions
 everything into the condition — that keeps `ONESHOT.md` corrections
 effective immediately, without ever having to re-issue `/goal`.
 
----
-
-## ▼▼▼ COPY THIS ONE LINE ▼▼▼
-
+▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ COPY FROM HERE ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
 ```
 /goal Read and follow .planning/ONESHOT-GOAL-PROMPT.md (Working Instructions section below) and .planning/ONESHOT.md (the binding playbook) in full before acting, then work until: all of gitid v1.0 Phases 3 through 10 are shipped — ONESHOT.md Step 4's run close is complete for every phase (RUN-REPORT.md committed, v1.0.0-rc.1 tag pushed, gh run watch shows the release pipeline green on origin/main), demonstrated in this transcript by literal git log / git tag / gh run view output rather than a claim — OR a circuit breaker/preflight failure has been reported and the run is paused awaiting the user. Stop after 8 hours of wall time if neither is reached and report the current position instead.
 ```
+▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ COPY TO HERE ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-## ▲▲▲ end of the command to copy ▲▲▲
+Copy the single `/goal ...` line between those two markers (the ``` fence
+marks are just markdown formatting — don't paste those, only the line
+itself). Nothing above `▼▼▼` or below `▲▲▲` is part of it.
 
 ---
 
