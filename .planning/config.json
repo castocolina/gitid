@@ -44,7 +44,10 @@
     "security_block_on": "high",
     "_auto_chain_active": false,
     "ui_review": true,
-    "use_worktrees": true
+    "use_worktrees": true,
+    "cross_ai_command": "opencode run --model opencode-go/qwen3.8-max -",
+    "cross_ai_timeout": 1800,
+    "cross_ai_execution": true
   },
   "ship": {
     "pr_body_sections": [
@@ -92,5 +95,16 @@
   },
   "intel": {
     "enabled": true
+  },
+  "model_overrides": {
+    "gsd-planner": "opus"
+  },
+  "review": {
+    "default_reviewers": [
+      "codex"
+    ],
+    "models": {
+      "codex": "gpt-5.6-sol"
+    }
   }
 }

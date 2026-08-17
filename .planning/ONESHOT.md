@@ -194,9 +194,33 @@ For each phase N:
    findings, replan with `/gsd-plan-phase N --reviews` (which consumes
    REVIEWS.md), then re-verify with the plan checker. Max 3 review→replan
    iterations (circuit breaker below).
+   **Model pin**: reads `review.models.codex` (`.planning/config.json`),
+   currently `gpt-5.6-sol`. Reasoning effort/service tier are NOT
+   per-repo — they come from the machine's `~/.codex/config.toml`
+   (`model_reasoning_effort = "high"`, `service_tier = "fast"`). If a
+   fresh machine runs this loop, verify that file matches before trusting
+   the review depth; `/gsd-review --codex` does not pass effort/tier flags
+   itself.
    **Phase 3 does NOT skip this step**: its plans were checker-verified but
    never Codex-reviewed (no REVIEWS.md exists in its directory).
-5. **Execute**: `/gsd-execute-phase N`. Honor wave structure; ground rule 4
+5. **Execute**: `/gsd-execute-phase N`. Executor engine is governed by
+   `workflow.cross_ai_execution` (`.planning/config.json`) — when `true`,
+   eligible plans run ENTIRELY on the external `workflow.cross_ai_command`
+   (currently `opencode run --model opencode-go/qwen3.8-max -`, the
+   `opencode-go` native provider, no extra opencode.jsonc entry needed)
+   instead of the internal Claude `gsd-executor`. This is a supervised
+   canary (validated 2026-08-17 against the `impl-be` OpenRouter preset;
+   the model was since swapped to Qwen 3.8 — re-validate with a small task
+   before trusting it on a large one if quality seems off). The external
+   tool manages its OWN commits/TDD discipline — GSD's normal atomic
+   commit-per-wave protocol does NOT apply to a cross-AI-executed plan, so
+   step 6 (below) is the only backstop: do not skip or soften it for
+   cross-AI output, and explicitly check for missing/weak tests in 6b/6c
+   since that was cross-AI's one confirmed failure mode in fire-testing
+   (a hardcoded provider list producing a self-contradictory UI hint,
+   caught by both Codex and a separate Claude review — see git history
+   around 2026-08-17 for the fire-test detail). Honor wave structure where
+   it still applies; ground rule 4
    at every wave close. GSD auto-triggers the goal verifier
    (`gsd-verifier` → `VERIFICATION.md`) at phase end — if it did not run,
    run it explicitly before proceeding.
@@ -214,7 +238,9 @@ For each phase N:
       step 1:
 
       ```bash
-      codex exec "External code review of gitid phase <N> (<phase goal>).
+      codex exec --model gpt-5.6-sol \
+        -c model_reasoning_effort="high" -c service_tier="fast" \
+        "External code review of gitid phase <N> (<phase goal>).
       Review the following commit range for bugs, security issues, and
       contract violations against the phase CONTEXT.md. Return
       severity-classified findings (CRITICAL/MAJOR/MINOR) with file:line.
