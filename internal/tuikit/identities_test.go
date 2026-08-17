@@ -224,6 +224,133 @@ func TestWizardSKAlgorithmsDisabledWithRationale(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
+// D-20 / D-21 — the provider is READ OFF the SSH Host suffix and drives the
+// Real hostname + Port autofill through the Backend's known-provider table.
+// --------------------------------------------------------------------------
+
+// clearFieldRaw backspaces n times over the focused input.
+func clearFieldRaw(t *testing.T, a App, n int) App {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		model, _ := a.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
+		a = model.(App)
+	}
+	return a
+}
+
+// wizardOnHostField opens the wizard on a backend answering the FULL provider
+// table and leaves the SSH Host field focused and empty.
+func wizardOnHostField(t *testing.T, b Backend) App {
+	t.Helper()
+	a := pressSeq(t, NewApp(b), "n", "tab") // wizard → SSH Host
+	if identModel(t, a).wizard.focus != sshFieldHost {
+		t.Fatalf("setup: focus = %d, want the SSH Host field", identModel(t, a).wizard.focus)
+	}
+	return clearFieldRaw(t, a, 40)
+}
+
+// TestSSHHostSuffixDrivesEndpointAutofill is D-20: editing the SSH Host suffix
+// consults the known-provider table and autofills Real hostname + Port — the
+// recipe alt-SSH pairing for a known provider, the host itself on 22 for an
+// unknown one (D-21). No new field is involved: the provider is inferred from
+// the alias the user is already typing.
+func TestSSHHostSuffixDrivesEndpointAutofill(t *testing.T) {
+	cases := []struct{ host, hostname, port string }{
+		{"personal.github.com", "ssh.github.com", "443"},
+		{"work.gitlab.com", "altssh.gitlab.com", "443"},
+		{"side.bitbucket.org", "altssh.bitbucket.org", "443"},
+		{"git.internal.example", "internal.example", "22"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.host, func(t *testing.T) {
+			a := typeText(t, wizardOnHostField(t, tableBackend{}), tc.host)
+			form := identModel(t, a).wizard.form
+			if got := form.hostname.Value(); got != tc.hostname {
+				t.Errorf("Real hostname = %q, want %q", got, tc.hostname)
+			}
+			if got := form.port.Value(); got != tc.port {
+				t.Errorf("Port = %q, want %q", got, tc.port)
+			}
+		})
+	}
+}
+
+// TestSSHHostSuffixAutofillStaysEditable proves the autofilled values remain
+// the user's: once Real hostname or Port is hand-edited, endpointTouched
+// suppresses every later re-autofill (the approved behavior, preserved).
+func TestSSHHostSuffixAutofillStaysEditable(t *testing.T) {
+	a := typeText(t, wizardOnHostField(t, tableBackend{}), "work.gitlab.com")
+	// Hand-edit the Real hostname.
+	a = pressSeq(t, a, "tab")
+	a = clearFieldRaw(t, a, 40)
+	a = typeText(t, a, "ssh.corp.example")
+	// Back to the alias, retype a KNOWN provider suffix.
+	a = pressSeq(t, a, "shift+tab")
+	a = clearFieldRaw(t, a, 40)
+	a = typeText(t, a, "personal.github.com")
+
+	form := identModel(t, a).wizard.form
+	if got := form.hostname.Value(); got != "ssh.corp.example" {
+		t.Errorf("a hand-edited Real hostname was clobbered: %q", got)
+	}
+	if !form.endpointTouched {
+		t.Error("endpointTouched must stay set after a manual endpoint edit")
+	}
+}
+
+// TestUnknownProviderShowsAltSSHHint is D-21: an unknown/custom host defaults
+// to port 22 and says WHY on the existing Port row — the warning glyph plus the
+// word, never color alone, and never a new row.
+func TestUnknownProviderShowsAltSSHHint(t *testing.T) {
+	known := typeText(t, wizardOnHostField(t, tableBackend{}), "personal.github.com")
+	if strings.Contains(paneFlat(known), altSSHHint) {
+		t.Error("a KNOWN provider must not carry the unknown-provider hint")
+	}
+	unknown := typeText(t, wizardOnHostField(t, tableBackend{}), "git.internal.example")
+	if !strings.Contains(paneFlat(unknown), altSSHHint) {
+		t.Errorf("an unknown provider must explain the port-22 default (D-21):\n%s", paneFlat(unknown))
+	}
+	if !strings.HasPrefix(altSSHHint, "! ") {
+		t.Errorf("the hint must pair its warning color with the `!` glyph and a word; got %q", altSSHHint)
+	}
+}
+
+// TestLivePreviewIsRecipeFaithful is SSHUI-03: the live Host-block preview is
+// the block that will be written, matching recipes/ssh-config.recipe's shape —
+// alias, alt-SSH Hostname, Port 443, User git, IdentityFile, IdentitiesOnly yes.
+func TestLivePreviewIsRecipeFaithful(t *testing.T) {
+	a := typeText(t, wizardOnHostField(t, tableBackend{}), "work.gitlab.com")
+	pane := paneFlat(a)
+	for _, want := range []string{
+		"Host work.gitlab.com",
+		"Hostname altssh.gitlab.com",
+		"Port 443",
+		"User git",
+		"IdentityFile ~/.ssh/id_ed25519_acme",
+		"IdentitiesOnly yes",
+	} {
+		if !strings.Contains(pane, want) {
+			t.Errorf("live preview missing the recipe-canonical %q:\n%s", want, pane)
+		}
+	}
+}
+
+// TestBlankPrefixPreviewIsWYSIWYG proves the blank-prefix rule survives all the
+// way into the preview: SSH Host is the provider host VERBATIM, with no
+// invented `.`-joined suffix, and the previewed block says exactly that.
+func TestBlankPrefixPreviewIsWYSIWYG(t *testing.T) {
+	a := pressSeq(t, NewApp(tableBackend{}), "n")
+	a = clearPrefixRaw(t, a)
+	pane := paneFlat(a)
+	if !strings.Contains(pane, "Host github.com") {
+		t.Errorf("blank prefix must preview `Host github.com` verbatim:\n%s", pane)
+	}
+	if strings.Contains(pane, "Host .github.com") {
+		t.Error("blank prefix must never invent a leading-dot alias")
+	}
+}
+
+// --------------------------------------------------------------------------
 // Create wizard — state 2 test stages.
 // --------------------------------------------------------------------------
 

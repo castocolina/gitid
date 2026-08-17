@@ -186,6 +186,33 @@ func (stubBackend) ProviderDefaults(provider string) (hostname, port string) {
 	return provider, "22"
 }
 
+// tableBackend is a stubBackend whose ProviderDefaults answers the FULL
+// known-provider table the REAL binary answers with (identity.DefaultHostname /
+// identity.DefaultPort — the recipes/ alt-SSH endpoints on 443, unknown hosts
+// on 22). The dummy deliberately keeps its github-only fixture table, so this
+// is the seam's OTHER shape: tests that exercise D-20/D-21 provider reactivity
+// drive the form through this one.
+//
+// It MIRRORS the real table; the real table itself is pinned by
+// cmd/gitid/wiring_test.go's TestProviderDefaults, which asserts the same four
+// rows against identity.DefaultHostname directly.
+type tableBackend struct{ stubBackend }
+
+func (tableBackend) ProviderDefaults(provider string) (hostname, port string) {
+	switch provider {
+	case "":
+		return "github.com", "22"
+	case "github.com":
+		return "ssh.github.com", "443"
+	case "gitlab.com":
+		return "altssh.gitlab.com", "443"
+	case "bitbucket.org":
+		return "altssh.bitbucket.org", "443"
+	default:
+		return provider, "22"
+	}
+}
+
 func (stubBackend) DefaultMatchStrategy() string { return gitScreenMatchStrategyDefault }
 
 func (stubBackend) HostBlockPreview(spec CreateSpec) string {

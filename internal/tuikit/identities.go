@@ -158,6 +158,12 @@ func newSSHForm(b Backend, provider, prefix, host, hostname, port string, lockId
 	}
 }
 
+// altSSHHint is the D-21 note for an unknown/custom provider: it keeps port 22
+// (nothing invents an alt-SSH endpoint for a host gitid does not know) and says
+// why, inline on the EXISTING Port row — warning color paired with the `!`
+// glyph AND the word, never color alone, and never an extra row.
+const altSSHHint = "! Unknown provider — 22; alt-SSH 443 is provider-specific"
+
 // autoHost is the auto-joined `<prefix>.<provider>` alias; a blank prefix
 // yields the provider host verbatim (WYSIWYG).
 func (f sshForm) autoHost() string {
@@ -166,6 +172,70 @@ func (f sshForm) autoHost() string {
 		return f.provider.Value()
 	}
 	return prefix + "." + f.provider.Value()
+}
+
+// hostSuffix reduces an SSH alias to the PROVIDER HOST it names: the last two
+// labels of `personal.github.com` are `github.com`; a bare `github.com` (or
+// anything shorter) is already the provider. This is D-20's "the provider is
+// inferred from the SSH Host suffix" — the form never asks for it twice.
+func hostSuffix(host string) string {
+	host = strings.TrimSpace(host)
+	parts := strings.Split(host, ".")
+	if len(parts) <= 2 {
+		return host
+	}
+	return strings.Join(parts[len(parts)-2:], ".")
+}
+
+// providerHost is the provider the form's CURRENT values imply. A manually
+// edited alias wins — its suffix is what ssh will actually connect to — and
+// otherwise the provider field (the auto-join source) answers.
+func (f sshForm) providerHost() string {
+	if f.hostTouched {
+		if suffix := hostSuffix(f.host.Value()); suffix != "" {
+			return suffix
+		}
+	}
+	return f.provider.Value()
+}
+
+// applyProviderDefaults autofills Real hostname + Port for provider from the
+// Backend's known-provider table (D-20: github.com → ssh.github.com:443 and
+// the other recipe alt-SSH pairings; D-21: an unknown host keeps itself on 22).
+//
+// The table itself lives BEHIND the seam — the real binary answers from
+// identity.DefaultHostname/DefaultPort, the dummy from its github-only
+// fixtures. This package never re-derives a provider table of its own.
+//
+// endpointTouched is the escape hatch that keeps every autofilled value the
+// user's: once Real hostname or Port has been hand-edited, nothing re-fills it.
+func (f sshForm) applyProviderDefaults(provider string) sshForm {
+	if f.endpointTouched {
+		return f
+	}
+	hostname, port := f.backend.ProviderDefaults(provider)
+	f.hostname.SetValue(hostname)
+	f.port.SetValue(port)
+	// textinput.SetValue only re-homes the caret when the field was EMPTY, so
+	// an autofilled value would otherwise leave it parked at column 0: the
+	// user's first Backspace would delete nothing and their typing would
+	// PREPEND to the value instead of continuing it. Autofilled values are
+	// meant to stay editable (D-20), so park the caret where the eye is.
+	f.hostname.CursorEnd()
+	f.port.CursorEnd()
+	return f
+}
+
+// unknownProvider reports whether the implied provider is one gitid has no
+// alt-SSH pairing for — the Backend answered with the host itself on port 22
+// (D-21). It drives the inline Port-row hint, never a block.
+func (f sshForm) unknownProvider() bool {
+	provider := strings.TrimSpace(f.providerHost())
+	if provider == "" {
+		return false
+	}
+	hostname, port := f.backend.ProviderDefaults(provider)
+	return port == "22" && strings.EqualFold(hostname, provider)
 }
 
 // identityName is the identity name the form values produce.
@@ -214,11 +284,7 @@ func (f sshForm) handleEdit(msg tea.KeyMsg, focus int) sshForm {
 		var changed bool
 		f.provider, changed = updateInput(f.provider, msg)
 		if changed {
-			if !f.endpointTouched {
-				hostname, port := f.backend.ProviderDefaults(f.provider.Value())
-				f.hostname.SetValue(hostname)
-				f.port.SetValue(port)
-			}
+			f = f.applyProviderDefaults(f.provider.Value())
 			if !f.hostTouched {
 				f.host.SetValue(f.autoHost())
 			}
@@ -237,6 +303,11 @@ func (f sshForm) handleEdit(msg tea.KeyMsg, focus int) sshForm {
 		f.host, changed = updateInput(f.host, msg)
 		if changed {
 			f.hostTouched = true
+			// D-20: the alias the user is typing IS the provider statement —
+			// its suffix re-resolves the endpoint on every keystroke, so
+			// `work.gitlab.com` fills in altssh.gitlab.com:443 without a
+			// second field to keep in sync.
+			f = f.applyProviderDefaults(hostSuffix(f.host.Value()))
 		}
 	case sshFieldHostname:
 		var changed bool
@@ -335,8 +406,14 @@ func (f sshForm) view(focus int, prefixError, hostHelper string) string {
 		b.WriteString(helperLine("The true SSH endpoint", false) + "\n")
 	}
 	portLine := formFieldLine("Port", f.port, focus == sshFieldPort, false)
-	if !f.portValid() {
+	switch {
+	case !f.portValid():
 		portLine += "  " + styleError.Render("digits only")
+	case f.unknownProvider():
+		// D-21, inline on the EXISTING row (no new row): gitid keeps an
+		// unknown host on 22 and says why rather than inventing an alt-SSH
+		// endpoint it cannot vouch for.
+		portLine += "  " + DefaultTheme.Warning.Render(altSSHHint)
 	}
 	b.WriteString(portLine + "\n")
 	// Port had no hint on either side (review-findings F9) — a short,
