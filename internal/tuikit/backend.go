@@ -74,6 +74,13 @@ type Backend interface {
 	// dropped (D-13).
 	ScanReusableKeys() []ReusableKeyView
 
+	// ManualReusePath resolves a user-typed path (the picker's manual-path
+	// row, D-10) into a reuse candidate. A symlinked candidate is rejected
+	// before parsing (T-03-13) like every other "path the user points at"
+	// input. A non-nil error means the candidate is unusable; the picker
+	// shows it inline and never blocks the rest of the form.
+	ManualReusePath(path string) (ReusableKeyView, error)
+
 	// TestConfigPath is the throwaway config both test stages run against,
 	// so the live ~/.ssh/config stays untouched until the final confirm.
 	TestConfigPath() string

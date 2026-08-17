@@ -17,24 +17,38 @@ import (
 // The derived `.pub` line is the only public material that leaves the private key
 // (T-02-28); the private key body is never copied or printed.
 func Reuse(in CreateInput, existingKeyPath string, deps Deps) (CreateResult, error) {
-	pubPath := existingKeyPath + ".pub"
-
-	pubLine, err := ensurePub(existingKeyPath, pubPath, in.Name+"@gitid", deps)
+	staged, err := StageReuse(existingKeyPath, in.Name+"@gitid", deps)
 	if err != nil {
 		return CreateResult{}, err
 	}
+	return runPipeline(in, staged, deps)
+}
 
-	// Construct a StagedKey for the existing key: TempPrivatePath ==
-	// FinalPrivatePath (gate runs on the real key), PrivPEM nil (no new bytes to
-	// persist), so PersistKey and Cleanup are guaranteed no-ops.
-	staged := StagedKey{
+// StageReuse builds the StagedKey for an existing-key reuse (IDENT-02, D-10
+// mode 2) WITHOUT running the write pipeline — the staging half of Reuse,
+// extracted so a staged caller (the TUI create wizard, which runs its two
+// connectivity stages against a throwaway temp config BEFORE ever touching
+// ~/.ssh/config) shares exactly the same ensurePub logic Reuse itself uses,
+// rather than a second, divergent copy.
+//
+// TempPrivatePath == FinalPrivatePath (the existing ~/.ssh key) and PrivPEM
+// is nil, so a caller's PersistKey/Cleanup on the returned StagedKey are
+// guaranteed no-ops — identical to Reuse's own contract.
+func StageReuse(existingKeyPath, comment string, deps Deps) (StagedKey, error) {
+	pubPath := existingKeyPath + ".pub"
+
+	pubLine, err := ensurePub(existingKeyPath, pubPath, comment, deps)
+	if err != nil {
+		return StagedKey{}, err
+	}
+
+	return StagedKey{
 		TempPrivatePath:  existingKeyPath,
 		FinalPrivatePath: existingKeyPath,
 		FinalPubPath:     pubPath,
 		PubLine:          pubLine,
 		PrivPEM:          nil,
-	}
-	return runPipeline(in, staged, deps)
+	}, nil
 }
 
 // ensurePub returns the reused identity's public-key line, deriving and writing

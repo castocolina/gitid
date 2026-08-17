@@ -169,3 +169,32 @@ func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
+
+// ScanManualKey inspects EXACTLY the path a user names on the reuse picker's
+// manual-path row (D-10). Unlike ScanReusableKeys' directory scan — which
+// legitimately follows a symlink sitting inside the user's own ~/.ssh — a
+// manually-typed path is untrusted input that can point anywhere on disk, so
+// a symlinked candidate is REJECTED before parsing (os.Lstat, never
+// followed) rather than silently resolved (T-03-13, RESEARCH Security
+// Domain). A non-symlink candidate is otherwise scanned with the same D-11/
+// D-13 tolerance rules ScanReusableKeys applies.
+func ScanManualKey(path string) (ReusableKey, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return ReusableKey{}, fmt.Errorf("keygen: %s: %w", path, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return ReusableKey{}, fmt.Errorf("keygen: %s is a symlink — the manual-path row rejects symlinked keys", path)
+	}
+	if !info.Mode().IsRegular() {
+		return ReusableKey{}, fmt.Errorf("keygen: %s is not a regular file", path)
+	}
+	key, ok := scanKeyCandidate(path)
+	if !ok {
+		if key.ParseError != nil {
+			return ReusableKey{}, key.ParseError
+		}
+		return ReusableKey{}, fmt.Errorf("keygen: %s is not a usable private key", path)
+	}
+	return key, nil
+}

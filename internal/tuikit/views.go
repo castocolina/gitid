@@ -94,6 +94,10 @@ type CreateSpec struct {
 	// the dummy uses it to preview the error path. The real Backend
 	// ignores it — a real test never simulates.
 	SimulateFailure bool
+	// ReuseKeyPath is the D-10 "reuse an existing key" selection: non-empty
+	// means the create must NOT generate a new key pair, it must point the
+	// identity at this existing key instead (KEY-06). Empty means generate.
+	ReuseKeyPath string
 }
 
 // GitSpec is the create wizard's Git-identity values (wizard step 3).

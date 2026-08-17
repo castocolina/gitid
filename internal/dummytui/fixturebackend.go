@@ -17,6 +17,7 @@ package dummytui
 // reviewCeremony). The demo copy is frozen: nothing here may be reworded.
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -172,15 +173,16 @@ func (FixtureBackend) AliasCollision(state tuikit.DemoState, identity string) bo
 
 // ScanReusableKeys lists the keys the D-10 picker offers for reuse. The dummy
 // derives them from the SAME fixture rows the Identity Manager renders, so
-// the picker's "in use by: <identity>" labels (D-12) are traceably the same
-// data — never a second, divergent list. Nothing is read from disk.
+// the picker's "in use by: <identity> (<provider>)" labels (D-12) are
+// traceably the same data — never a second, divergent list. Nothing is read
+// from disk.
 func (FixtureBackend) ScanReusableKeys() []tuikit.ReusableKeyView {
 	var out []tuikit.ReusableKeyView
 	for _, row := range IdentityManagerRows {
 		if row.KeyPath == "" {
 			continue
 		}
-		inUseBy := row.Name
+		inUseBy := row.Name + " (" + providerHostFromAlias(row.SSHHost) + ")"
 		if row.State == "key-unused" {
 			inUseBy = "" // the fixture's deliberately unreferenced key
 		}
@@ -193,6 +195,31 @@ func (FixtureBackend) ScanReusableKeys() []tuikit.ReusableKeyView {
 		})
 	}
 	return out
+}
+
+// providerHostFromAlias mirrors the composition root's D-20 "provider is
+// read off the Host suffix" reduction (personal.github.com -> github.com)
+// so the dummy's InUseBy label matches the real Backend's shape exactly —
+// pure string derivation, not a second provider TABLE.
+func providerHostFromAlias(alias string) string {
+	parts := strings.Split(strings.TrimSpace(alias), ".")
+	if len(parts) <= 2 {
+		return alias
+	}
+	return strings.Join(parts[len(parts)-2:], ".")
+}
+
+// ManualReusePath resolves the D-10 picker's manual-path row against the
+// SAME fixture rows ScanReusableKeys offers, so the demo's manual entry is
+// traceable data too, never a divergent shape. An unrecognized path reports
+// the same "not found" story a real symlink/parse rejection would.
+func (b FixtureBackend) ManualReusePath(path string) (tuikit.ReusableKeyView, error) {
+	for _, v := range b.ScanReusableKeys() {
+		if v.Path == path {
+			return v, nil
+		}
+	}
+	return tuikit.ReusableKeyView{}, fmt.Errorf("no such key: %s", path)
 }
 
 // TestConfigPath is the throwaway config both test stages run against, so

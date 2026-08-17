@@ -33,6 +33,10 @@ type DemoIdentity struct {
 	// Real SSH endpoint + port (SSHUI-01); optional for seeded rows.
 	Hostname string
 	Port     int
+	// ReuseKeyPath carries the D-10 "reuse an existing key" selection through
+	// to the committed write — non-empty means Persist must NOT generate a
+	// new key pair, it must point the identity at this existing key (KEY-06).
+	ReuseKeyPath string
 }
 
 // SSHStorageLayout is STORE-01's dual storage strategy for the SSH config:

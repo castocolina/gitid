@@ -21,6 +21,7 @@ package tuikit
 // FixtureBackend) end to end, so a divergence between the two cannot hide.
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -234,24 +235,52 @@ func (stubBackend) AliasCollision(state DemoState, identity string) bool {
 	return hasIdentityNamed(state, identity)
 }
 
+// stubManualReusePath is the fixture path stubBackend.ManualReusePath
+// resolves — every other path reports the same "not found" story a real
+// symlink/parse rejection would (identities_test.go exercises both).
+const stubManualReusePath = "/manual/id_ed25519_manual"
+
 func (stubBackend) ScanReusableKeys() []ReusableKeyView {
 	var out []ReusableKeyView
 	for _, row := range stubIdentityRows {
 		if row.KeyPath == "" {
 			continue
 		}
-		inUseBy := row.Name
+		inUseBy := row.Name + " (" + hostSuffix(row.SSHHost) + ")"
 		if row.State == "key-unused" {
 			inUseBy = ""
 		}
+		// clientA deliberately carries an algorithm outside the D-13
+		// catalog-token set (backend_stub_test.go's `internal/keygen`-free
+		// mirror of an OpenSSH wire type gitid's own generate path never
+		// produces) so the picker's non-catalog informational note has a
+		// fixture row to render against.
+		algo := "ssh-ed25519"
+		if row.Name == "clientA" {
+			algo = "ssh-dss"
+		}
 		out = append(out, ReusableKeyView{
-			Path:      row.KeyPath,
-			Algorithm: "ed25519",
-			HasPub:    row.State != "key-missing",
-			InUseBy:   inUseBy,
+			Path:        row.KeyPath,
+			Algorithm:   algo,
+			Fingerprint: "SHA256:stub-" + row.Name,
+			HasPub:      row.State != "key-missing",
+			Encrypted:   row.Name == "staging",
+			InUseBy:     inUseBy,
 		})
 	}
 	return out
+}
+
+// ManualReusePath resolves the D-10 picker's manual-path row against the ONE
+// fixture path stubManualReusePath — an unrecognized path errors, mirroring
+// the real Backend's symlink/parse-rejection contract without touching disk.
+func (stubBackend) ManualReusePath(path string) (ReusableKeyView, error) {
+	if path == stubManualReusePath {
+		return ReusableKeyView{
+			Path: path, Algorithm: "ssh-ed25519", Fingerprint: "SHA256:stub-manual",
+		}, nil
+	}
+	return ReusableKeyView{}, fmt.Errorf("no such key: %s", path)
 }
 
 func (stubBackend) TestConfigPath() string { return CreateFlowTestTmpConfig }

@@ -19,6 +19,7 @@ package tuikit
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -124,6 +125,55 @@ const editFocusButton = sshFieldPort + 1
 // editFocusRing is the edit-SSH Tab ring size (host, hostname, port,
 // button).
 const editFocusRing = 4
+
+// D-10 create-wizard key-source choice: generate a fresh key, or reuse one
+// already on disk (KEY-06). wizardFocusKeySource is the "Generate/Reuse"
+// toggle; wizardFocusKeyBody is EITHER the algorithm radios (generate) OR
+// the reuse-key picker (reuse) — the two never render together, so they
+// share one focus slot number. wizardFocusManualPath (the picker's
+// manual-path text input) only joins the Tab ring while reusing.
+const (
+	keySourceGenerate = iota
+	keySourceReuse
+)
+
+const (
+	wizardFocusKeySource  = sshFieldPort + 1
+	wizardFocusKeyBody    = wizardFocusKeySource + 1
+	wizardFocusManualPath = wizardFocusKeyBody + 1
+)
+
+// wizardStep0FocusRing is the step-0 Tab ring size: one slot longer while
+// reusing a key, since the manual-path text input joins the ring only then.
+func wizardStep0FocusRing(keySource int) int {
+	if keySource == keySourceReuse {
+		return wizardFocusManualPath + 1
+	}
+	return wizardFocusKeyBody + 1
+}
+
+// catalogAlgorithmTokens are the OpenSSH wire-type tokens
+// (x/crypto/ssh.PublicKey.Type()) the generate catalog can PRODUCE — the
+// D-13 "is this algorithm one gitid's own generate path could have made"
+// check for the reuse picker's informational note. Display-only: an entry
+// outside this set is still fully reusable (D-13 never blocks); the note
+// only explains that the key predates or falls outside gitid's own catalog.
+var catalogAlgorithmTokens = map[string]bool{
+	"ssh-ed25519":                        true, // ed25519
+	"ssh-rsa":                            true, // rsa-4096
+	"ecdsa-sha2-nistp256":                true, // ecdsa-p256
+	"sk-ssh-ed25519@openssh.com":         true, // ed25519-sk
+	"sk-ecdsa-sha2-nistp256@openssh.com": true, // ecdsa-sk
+}
+
+// nonCatalogAlgorithm reports the D-13 "legacy/foreign algorithm" note
+// condition. Informational only — reuse is never blocked on it.
+func nonCatalogAlgorithm(view ReusableKeyView) bool {
+	if view.Algorithm == "" {
+		return false // encrypted with no readable .pub — nothing to judge yet
+	}
+	return !catalogAlgorithmTokens[view.Algorithm]
+}
 
 // sshForm is the shared SSH field set.
 type sshForm struct {
@@ -650,10 +700,22 @@ type wizardModel struct {
 	backend      Backend
 	step         int
 	form         sshForm
-	focus        int // step 0: 0..4 form fields, 5 = algorithm select
+	focus        int // step 0: 0..4 form fields, 5 key source, 6 algorithm/picker, 7 manual path
 	algoIdx      int
 	testPhase    string
 	simulateFail bool
+	// keySource is the D-10 generate-vs-reuse choice (KEY-06).
+	keySource int
+	// reuseIdx is the picker's current selection: an index into
+	// backend.ScanReusableKeys(), or exactly len(views) for the trailing
+	// manual-path row.
+	reuseIdx int
+	// manualPath/manualView/manualErr hold the picker's manual-path row: the
+	// typed candidate, its resolved view once valid, and the inline error
+	// when it is not (T-03-13 symlink rejection, or an unparseable key).
+	manualPath textinput.Model
+	manualView ReusableKeyView
+	manualErr  string
 	// stage1/stage2 hold each test stage's result once its command has
 	// answered — the rendered output line comes from the Backend, never
 	// from a string this package builds.
@@ -670,17 +732,102 @@ func newWizard(b Backend) wizardModel {
 	form := newSSHForm(b, "github.com", "acme", "acme.github.com", "ssh.github.com", "443", false)
 	form = form.setFocus(sshFieldPrefix) // web: Alias prefix autoFocus
 	return wizardModel{
-		backend:   b,
-		form:      form,
-		focus:     sshFieldPrefix,
-		testPhase: testIdle,
-		git:       newGitForm(b, "Acme Identity", "you@acme.example", b.DefaultMatchStrategy()).setFocus(gitFieldName),
+		backend:    b,
+		form:       form,
+		focus:      sshFieldPrefix,
+		testPhase:  testIdle,
+		manualPath: newTextInput(""),
+		git:        newGitForm(b, "Acme Identity", "you@acme.example", b.DefaultMatchStrategy()).setFocus(gitFieldName),
 	}
 }
 
-// keyPath is the per-identity ed25519 key the wizard will "generate".
+// keyPath is the per-identity key the wizard will use: the reused key's own
+// path when the D-10 picker has a usable selection, otherwise the
+// ed25519 path a generate would produce.
 func (w wizardModel) keyPath() string {
+	if path := w.reuseKeyPath(); path != "" {
+		return path
+	}
 	return "~/.ssh/id_ed25519_" + w.form.identityName()
+}
+
+// reuseKeyPath is the D-10 picker's resolved private-key path — empty when
+// the wizard is generating a fresh key, or when the reuse selection is not
+// yet usable (an empty/invalid manual path).
+func (w wizardModel) reuseKeyPath() string {
+	view, ok := w.selectedReuseView()
+	if !ok {
+		return ""
+	}
+	return view.Path
+}
+
+// selectedReuseView is the D-10 picker's current selection, whichever row it
+// is — a scanned entry or the manual-path row's resolved candidate. ok is
+// false while generating, or while the manual row is highlighted but has no
+// usable candidate yet.
+func (w wizardModel) selectedReuseView() (ReusableKeyView, bool) {
+	if w.keySource != keySourceReuse {
+		return ReusableKeyView{}, false
+	}
+	views := w.backend.ScanReusableKeys()
+	if w.reuseIdx >= 0 && w.reuseIdx < len(views) {
+		return views[w.reuseIdx], true
+	}
+	// The trailing manual-path row.
+	if w.manualErr != "" || strings.TrimSpace(w.manualPath.Value()) == "" {
+		return ReusableKeyView{}, false
+	}
+	return w.manualView, true
+}
+
+// sameProviderReuse reports the D-12 same-provider warning: the selected
+// reuse candidate is already in use by an identity on the SAME provider this
+// form's SSH Host suffix implies. Advisory only, never a block — a plain
+// string containment over the Backend-formatted InUseBy label
+// ("<identity> (<provider-host>)"); tuikit never inspects an identity or
+// keygen type to answer this.
+func (w wizardModel) sameProviderReuse() bool {
+	view, ok := w.selectedReuseView()
+	if !ok || view.InUseBy == "" {
+		return false
+	}
+	provider := strings.TrimSpace(w.form.providerHost())
+	if provider == "" {
+		return false
+	}
+	return strings.Contains(view.InUseBy, provider)
+}
+
+// revalidateManualPath re-resolves the manual-path row's candidate through
+// the Backend's symlink-rejecting seam on every keystroke — mirroring the
+// alias-collision field's own "answered as you type" pattern.
+func (w wizardModel) revalidateManualPath() wizardModel {
+	path := strings.TrimSpace(w.manualPath.Value())
+	if path == "" {
+		w.manualView, w.manualErr = ReusableKeyView{}, ""
+		return w
+	}
+	view, err := w.backend.ManualReusePath(path)
+	if err != nil {
+		w.manualView, w.manualErr = ReusableKeyView{}, err.Error()
+		return w
+	}
+	w.manualView, w.manualErr = view, ""
+	return w
+}
+
+// focusStep0 applies focus to whichever step-0 control focus names — the
+// shared SSH field set, or the wizard's own manual-path text input, which
+// sshForm.setFocus (scoped to its own 5 inputs) cannot reach.
+func (w wizardModel) focusStep0(focus int) wizardModel {
+	w.form = w.form.setFocus(focus)
+	if focus == wizardFocusManualPath {
+		w.manualPath.Focus()
+	} else {
+		w.manualPath.Blur()
+	}
+	return w
 }
 
 // catalog is the injected key-algorithm catalog (KEY-01).
@@ -697,6 +844,7 @@ func (w wizardModel) spec() CreateSpec {
 		KeyPath:         w.keyPath(),
 		Algorithm:       w.algo(),
 		SimulateFailure: w.simulateFail,
+		ReuseKeyPath:    w.reuseKeyPath(),
 	}
 }
 
@@ -768,8 +916,14 @@ func (w wizardModel) stage2Cmd() string {
 	return w.backend.Stage2Command(w.spec())
 }
 
-// step0Valid mirrors the web gating for wizard state 1.
+// step0Valid mirrors the web gating for wizard state 1. Choosing "Reuse an
+// existing key" (D-10) without landing on a usable candidate blocks advance
+// too — otherwise the reuse choice would silently fall back to generating a
+// key under a name the user never asked for.
 func (w wizardModel) step0Valid(s DemoState) bool {
+	if w.keySource == keySourceReuse && w.reuseKeyPath() == "" {
+		return false
+	}
 	return !w.nameTaken(s) && strings.TrimSpace(w.form.hostname.Value()) != "" &&
 		w.form.portValid() && strings.TrimSpace(w.form.sshHost()) != ""
 }
@@ -885,11 +1039,12 @@ func (w wizardModel) reviewCeremony() ceremonyModel {
 func (w wizardModel) finishIdentity() DemoIdentity {
 	name := w.form.identityName()
 	id := DemoIdentity{
-		Name:     name,
-		SSHHost:  w.form.sshHost(),
-		KeyPath:  w.keyPath(),
-		Hostname: w.form.hostname.Value(),
-		Port:     atoiSafe(w.form.port.Value()),
+		Name:         name,
+		SSHHost:      w.form.sshHost(),
+		KeyPath:      w.keyPath(),
+		Hostname:     w.form.hostname.Value(),
+		Port:         atoiSafe(w.form.port.Value()),
+		ReuseKeyPath: w.reuseKeyPath(),
 	}
 	if w.configureGit {
 		id.State = "complete"
@@ -1505,37 +1660,68 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			m.wizard = w
 			return keyResult{model: m, handled: true}
 		case "tab", "down":
-			w.focus = (w.focus + 1) % 6
-			w.form = w.form.setFocus(w.focus)
+			ring := wizardStep0FocusRing(w.keySource)
+			w.focus = (w.focus + 1) % ring
+			w = w.focusStep0(w.focus)
 			m.wizard = w
 			return keyResult{model: m, handled: true}
 		case "shift+tab", "up":
-			w.focus = (w.focus + 5) % 6
-			w.form = w.form.setFocus(w.focus)
+			ring := wizardStep0FocusRing(w.keySource)
+			w.focus = (w.focus + ring - 1) % ring
+			w = w.focusStep0(w.focus)
 			m.wizard = w
 			return keyResult{model: m, handled: true}
 		case "left", "right":
-			if w.focus == 5 { // algorithm select cycles over ENABLED entries
-				catalog := w.catalog()
-				delta := 1
-				if key == "left" {
-					delta = len(catalog) - 1
+			switch w.focus {
+			case wizardFocusKeySource: // D-10: generate ↔ reuse toggle
+				if w.keySource == keySourceGenerate {
+					w.keySource = keySourceReuse
+					w.reuseIdx = 0
+				} else {
+					w.keySource = keySourceGenerate
 				}
-				idx := w.algoIdx
-				for {
-					idx = (idx + delta) % len(catalog)
-					if !algoDisabled(catalog[idx]) {
-						break
+				m.wizard = w
+				return keyResult{model: m, handled: true}
+			case wizardFocusKeyBody:
+				if w.keySource == keySourceGenerate {
+					// Algorithm select cycles over ENABLED entries.
+					catalog := w.catalog()
+					delta := 1
+					if key == "left" {
+						delta = len(catalog) - 1
 					}
+					idx := w.algoIdx
+					for {
+						idx = (idx + delta) % len(catalog)
+						if !algoDisabled(catalog[idx]) {
+							break
+						}
+					}
+					w.algoIdx = idx
+				} else {
+					// D-10 picker: cycle over every scanned key PLUS the
+					// trailing manual-path row.
+					total := len(w.backend.ScanReusableKeys()) + 1
+					delta := 1
+					if key == "left" {
+						delta = total - 1
+					}
+					w.reuseIdx = (w.reuseIdx + delta) % total
 				}
-				w.algoIdx = idx
 				m.wizard = w
 				return keyResult{model: m, handled: true}
 			}
 			fallthrough
 		default:
-			if w.focus <= sshFieldPort {
+			switch {
+			case w.focus <= sshFieldPort:
 				w.form = w.form.handleEdit(msg, w.focus)
+			case w.focus == wizardFocusManualPath && w.keySource == keySourceReuse:
+				var changed bool
+				w.manualPath, changed = updateInput(w.manualPath, msg)
+				if changed {
+					w = w.revalidateManualPath()
+				}
 			}
 			m.wizard = w
 			return keyResult{model: m, handled: true}
@@ -2253,6 +2439,161 @@ func wizardChordHint(step int) string {
 	}
 }
 
+// renderKeyBody renders the D-10 key-source choice and whichever body
+// follows it — the algorithm radios (generate) or the reuse picker (reuse)
+// — under ONE combined header row (row-budget trap, 02-STYLE-SPEC.md §7): a
+// separate "Key source" header row, on top of the existing "Key algorithm"
+// header, would push the live Host-block preview off the wizard step-0
+// pane's fixed 100×30 budget. Both key-source options render always (D2),
+// side by side, on the SAME line the body section already needed a header
+// for — generate mode therefore costs exactly the same rows it always did.
+func (w wizardModel) renderKeyBody() string {
+	var b strings.Builder
+
+	marker := "  "
+	if w.focus == wizardFocusKeySource {
+		marker = styleBold.Render("▸ ")
+	}
+	renderChoice := func(label string, selected bool) string {
+		dot := glyphRadioOff
+		if selected {
+			dot = glyphRadioOn
+			if w.focus == wizardFocusKeySource {
+				label = DefaultTheme.FieldFocused.Render(label)
+			} else {
+				label = styleBold.Render(label)
+			}
+		}
+		return dot + " " + label
+	}
+	gen := renderChoice("Generate a new key", w.keySource == keySourceGenerate)
+	reuse := renderChoice("Reuse an existing key", w.keySource == keySourceReuse)
+	b.WriteString(" " + marker + styleBold.Render("Key") + " " + styleFaint.Render("(←/→ change)") +
+		"  " + gen + "   " + reuse + "\n")
+
+	if w.keySource == keySourceGenerate {
+		b.WriteString(w.renderAlgorithmRows())
+	} else {
+		b.WriteString(w.renderReusePicker())
+	}
+	return b.String()
+}
+
+// renderAlgorithmRows renders the KEY-01 algorithm catalog radios (the body
+// half of renderKeyBody's generate mode) — unchanged from the pre-D-10
+// render, just split out so the combined header above owns the ONE header
+// row both key-source and this list used to render separately.
+func (w wizardModel) renderAlgorithmRows() string {
+	var b strings.Builder
+	for i, entry := range AlgorithmCatalog {
+		dot := glyphRadioOff
+		label := entry.ID
+		if entry.Recommended {
+			label += " — ★ recommended"
+		}
+		if i == w.algoIdx {
+			dot = glyphRadioOn
+			// Selected ● + label mirror the match-strategy radio exactly:
+			// FieldFocused accent while the group owns focus, plain-bold
+			// when blurred (D2 one-radio-treatment).
+			if w.focus == wizardFocusKeyBody {
+				label = DefaultTheme.FieldFocused.Render(label)
+			} else {
+				label = styleBold.Render(label)
+			}
+		}
+		if algoDisabled(entry) {
+			b.WriteString("     " + styleFaint.Render(dot+" "+label+" — Disabled: needs libfido2 + a FIDO2 security key — none detected on this machine") + "\n")
+		} else {
+			b.WriteString("     " + dot + " " + label + "\n")
+		}
+	}
+	if w.focus == wizardFocusKeyBody {
+		// Verbatim web helper copy (Identities.tsx) — spec-bearing (L2).
+		b.WriteString(helperLine("gitid probes the local toolchain (ssh-keygen, libfido2, FIDO2 key present?) and disables what this machine cannot generate, with the reason shown per option (KEY-03/PLAT-01). Demo simulates: no FIDO2 key plugged in.", false) + "\n")
+	}
+	return b.String()
+}
+
+// renderReusePicker renders the D-10 reuse-existing-key picker's body (the
+// key-source header above already announced the section): every scanned
+// candidate as filename + algorithm + fingerprint, an "in use by:" label
+// for the highlighted row when it is referenced (D-12), an informational
+// note for a non-catalog algorithm that never blocks (D-13), and a trailing
+// manual-path row with its own inline validation (D-10, T-03-13 symlink
+// rejection happens on the Backend side).
+func (w wizardModel) renderReusePicker() string {
+	var b strings.Builder
+	views := w.backend.ScanReusableKeys()
+
+	if len(views) == 0 {
+		b.WriteString(helperLine("No parseable keys found in ~/.ssh — use the manual-path row below.", false) + "\n")
+	}
+	for i, v := range views {
+		selected := i == w.reuseIdx
+		dot := glyphRadioOff
+		label := filepath.Base(v.Path) + "  " + v.Algorithm + "  " + v.Fingerprint
+		if v.Encrypted {
+			label += "  (encrypted)"
+		}
+		if selected {
+			dot = glyphRadioOn
+			if w.focus == wizardFocusKeyBody {
+				label = DefaultTheme.FieldFocused.Render(label)
+			} else {
+				label = styleBold.Render(label)
+			}
+		}
+		b.WriteString("     " + dot + " " + label + "\n")
+		if selected {
+			if v.InUseBy != "" {
+				b.WriteString(helperLine("in use by: "+v.InUseBy, false) + "\n")
+			}
+			if nonCatalogAlgorithm(v) {
+				b.WriteString(helperLine("Not one of gitid's generate algorithms — reuse is still allowed (D-13).", false) + "\n")
+			}
+		}
+	}
+
+	manualSelected := w.reuseIdx == len(views)
+	manualDot := glyphRadioOff
+	manualLabel := "Enter a path manually…"
+	if manualSelected {
+		manualDot = glyphRadioOn
+		if w.focus == wizardFocusKeyBody {
+			manualLabel = DefaultTheme.FieldFocused.Render(manualLabel)
+		} else {
+			manualLabel = styleBold.Render(manualLabel)
+		}
+	}
+	b.WriteString("     " + manualDot + " " + manualLabel + "\n")
+	if manualSelected {
+		b.WriteString(formFieldLine("Key path", w.manualPath, w.focus == wizardFocusManualPath, false) + "\n")
+		switch {
+		case w.manualErr != "":
+			b.WriteString(helperLine(w.manualErr, true) + "\n")
+		case w.manualView.Path != "":
+			detail := w.manualView.Algorithm + "  " + w.manualView.Fingerprint
+			if w.manualView.Encrypted {
+				detail += "  (encrypted)"
+			}
+			b.WriteString(helperLine(detail, false) + "\n")
+			if w.manualView.InUseBy != "" {
+				b.WriteString(helperLine("in use by: "+w.manualView.InUseBy, false) + "\n")
+			}
+			if nonCatalogAlgorithm(w.manualView) {
+				b.WriteString(helperLine("Not one of gitid's generate algorithms — reuse is still allowed (D-13).", false) + "\n")
+			}
+		}
+	}
+
+	if w.sameProviderReuse() {
+		// D-12: advisory, never a block.
+		b.WriteString(" " + DefaultTheme.Warning.Render("! Same provider as an existing identity — cross-check before reusing.") + "\n")
+	}
+	return b.String()
+}
+
 // renderWizard renders the active wizard pane-state.
 func (m identitiesModel) renderWizard(s DemoState, width int) string {
 	w := m.wizard
@@ -2271,39 +2612,7 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 			hostHelper = "Manually edited — auto-join off"
 		}
 		b.WriteString(w.form.view(w.focus, prefixError, hostHelper))
-
-		marker := "  "
-		if w.focus == 5 {
-			marker = styleBold.Render("▸ ")
-		}
-		b.WriteString(" " + marker + styleBold.Render("Key algorithm") + " " + styleFaint.Render("(←/→ change)") + "\n")
-		for i, entry := range AlgorithmCatalog {
-			dot := glyphRadioOff
-			label := entry.ID
-			if entry.Recommended {
-				label += " — ★ recommended"
-			}
-			if i == w.algoIdx {
-				dot = glyphRadioOn
-				// Selected ● + label mirror the match-strategy radio
-				// exactly: FieldFocused accent while the group owns focus,
-				// plain-bold when blurred (D2 one-radio-treatment).
-				if w.focus == 5 {
-					label = DefaultTheme.FieldFocused.Render(label)
-				} else {
-					label = styleBold.Render(label)
-				}
-			}
-			if algoDisabled(entry) {
-				b.WriteString("     " + styleFaint.Render(dot+" "+label+" — Disabled: needs libfido2 + a FIDO2 security key — none detected on this machine") + "\n")
-			} else {
-				b.WriteString("     " + dot + " " + label + "\n")
-			}
-		}
-		if w.focus == 5 {
-			// Verbatim web helper copy (Identities.tsx) — spec-bearing (L2).
-			b.WriteString(helperLine("gitid probes the local toolchain (ssh-keygen, libfido2, FIDO2 key present?) and disables what this machine cannot generate, with the reason shown per option (KEY-03/PLAT-01). Demo simulates: no FIDO2 key plugged in.", false) + "\n")
-		}
+		b.WriteString(w.renderKeyBody())
 		b.WriteString(renderHostBlockPreview(m.backend, w.form.sshHost(), w.form.hostname.Value(), w.form.port.Value(), w.keyPath(), width))
 	case 1:
 		b.WriteString(" " + styleInfo.Render("Key "+w.keyPath()+" generated ("+w.algo()+").") + "\n")

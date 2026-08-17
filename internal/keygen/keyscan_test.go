@@ -288,3 +288,65 @@ func keyNames(keys []ReusableKey) []string {
 	}
 	return names
 }
+
+// TestScanManualKeyRejectsSymlink is the T-03-13 guard: the reuse picker's
+// manual-path row must reject a symlinked candidate BEFORE parsing it,
+// os.Lstat rather than os.Stat, unlike the directory scan (which legitimately
+// follows symlinks inside the user's own ~/.ssh).
+func TestScanManualKeyRejectsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	seedEd25519(t, dir, "id_ed25519_real", "", true)
+	link := filepath.Join(dir, "id_ed25519_link")
+	if err := os.Symlink(filepath.Join(dir, "id_ed25519_real"), link); err != nil {
+		t.Fatalf("seeding symlink fixture: %v", err)
+	}
+
+	_, err := ScanManualKey(link)
+	if err == nil {
+		t.Fatal("ScanManualKey on a symlinked candidate = nil error, want a rejection (T-03-13)")
+	}
+	if !strings.Contains(err.Error(), "symlink") {
+		t.Errorf("error = %v, want it to name the symlink rejection", err)
+	}
+}
+
+// TestScanManualKeyAcceptsRegularFile proves a non-symlinked manual candidate
+// is scanned with the SAME D-11/D-13 tolerance as the directory scan.
+func TestScanManualKeyAcceptsRegularFile(t *testing.T) {
+	dir := t.TempDir()
+	pubLine := seedEd25519(t, dir, "id_ed25519_manual", "", true)
+	wantAlgo, wantFP := fingerprintOfPubLine(t, pubLine)
+
+	key, err := ScanManualKey(filepath.Join(dir, "id_ed25519_manual"))
+	if err != nil {
+		t.Fatalf("ScanManualKey: %v", err)
+	}
+	if key.Algorithm != wantAlgo || key.Fingerprint != wantFP {
+		t.Errorf("ScanManualKey = {Algorithm:%q Fingerprint:%q}, want {%q %q}",
+			key.Algorithm, key.Fingerprint, wantAlgo, wantFP)
+	}
+}
+
+// TestScanManualKeyMissingPath proves a non-existent manual path errors
+// (never silently offered) instead of the empty-slice "nothing to reuse"
+// convention ScanReusableKeys uses for a missing directory — a manual pick is
+// a single explicit candidate, so its absence must be reported.
+func TestScanManualKeyMissingPath(t *testing.T) {
+	_, err := ScanManualKey(filepath.Join(t.TempDir(), "does-not-exist"))
+	if err == nil {
+		t.Fatal("ScanManualKey on a missing path = nil error, want an error")
+	}
+}
+
+// TestScanManualKeyRejectsUnparseable proves a garbage manual candidate errors
+// rather than being silently dropped (D-13 applies to what is OFFERED; a
+// manual pick that fails to parse must tell the user why).
+func TestScanManualKeyRejectsUnparseable(t *testing.T) {
+	dir := t.TempDir()
+	path := writeFixture(t, dir, "not-a-key", []byte("definitely not a key\n"), 0o600)
+
+	_, err := ScanManualKey(path)
+	if err == nil {
+		t.Fatal("ScanManualKey on an unparseable candidate = nil error, want an error")
+	}
+}

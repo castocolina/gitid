@@ -206,10 +206,10 @@ func TestWizardSKAlgorithmsDisabledWithRationale(t *testing.T) {
 		t.Error("the -sk entries must render the libfido2 disabled rationale")
 	}
 	// ←/→ on the algorithm select must never land on a disabled entry.
-	a := pressSeq(t, identitiesApp(), "n", "up", "up") // prefix → provider → algorithm (focus 5)
+	a := pressSeq(t, identitiesApp(), "n", "up", "up") // prefix → provider → algorithm (wraps past key source)
 	m := identModel(t, a)
-	if m.wizard.focus != 5 {
-		t.Fatalf("focus = %d, want 5 (algorithm)", m.wizard.focus)
+	if m.wizard.focus != wizardFocusKeyBody {
+		t.Fatalf("focus = %d, want %d (algorithm)", m.wizard.focus, wizardFocusKeyBody)
 	}
 	for i := 0; i < len(AlgorithmCatalog)+2; i++ {
 		a, _ = press(t, a, "right")
@@ -1004,8 +1004,8 @@ func TestWizardChordHintIsStepConditionalAndAlwaysVisible(t *testing.T) {
 func TestWizardArrowKeyPrecedenceStep0(t *testing.T) {
 	// Clause 1: the algorithm select owns plain arrows (cycles the
 	// catalog), never changing the wizard step.
-	a := pressSeq(t, identitiesApp(), "n", "up", "up") // prefix → provider → algorithm (focus 5)
-	if identModel(t, a).wizard.focus != 5 {
+	a := pressSeq(t, identitiesApp(), "n", "up", "up") // prefix → provider → algorithm (wraps past key source)
+	if identModel(t, a).wizard.focus != wizardFocusKeyBody {
 		t.Fatal("setup: expected algorithm focus")
 	}
 	a, _ = press(t, a, "right")
@@ -1233,9 +1233,184 @@ func TestWizardAlgorithmSelectionMirrorsStrategyFocusAccent(t *testing.T) {
 		t.Error("the FieldFocused accent must not apply while the algorithm group is blurred")
 	}
 
-	a = pressSeq(t, a, "tab", "tab", "tab", "tab") // prefix(1) → host → hostname → port → slot 5 (algorithm)
+	a = pressSeq(t, a, "tab", "tab", "tab", "tab", "tab") // prefix(1) → host → hostname → port → key source → algorithm
 	focused := a.View().Content
 	if !strings.Contains(focused, focusedWant) {
 		t.Error("focused algorithm radio must render the selected label through Theme.FieldFocused (accent), mirroring the strategy radio")
+	}
+}
+
+// --------------------------------------------------------------------------
+// D-09/D-10/D-12/D-13 — reuse-existing-key picker (KEY-06).
+// --------------------------------------------------------------------------
+
+// openReusePicker opens the create wizard, toggles to "Reuse an existing
+// key" (D-10), and leaves focus on the picker body with the default
+// selection (reuseIdx 0 — the first scanned key, "personal").
+func openReusePicker(t *testing.T) App {
+	t.Helper()
+	a := pressSeq(t, identitiesApp(), "n", "tab", "tab", "tab", "tab") // prefix→host→hostname→port→key source
+	if identModel(t, a).wizard.focus != wizardFocusKeySource {
+		t.Fatalf("setup: focus = %d, want the key-source toggle", identModel(t, a).wizard.focus)
+	}
+	a, _ = press(t, a, "right") // generate → reuse
+	if identModel(t, a).wizard.keySource != keySourceReuse {
+		t.Fatal("setup: expected keySource == reuse after toggling")
+	}
+	a, _ = press(t, a, "tab") // key source → picker body
+	if identModel(t, a).wizard.focus != wizardFocusKeyBody {
+		t.Fatalf("setup: focus = %d, want the picker body", identModel(t, a).wizard.focus)
+	}
+	return a
+}
+
+// TestReusePickerListsFilenameAlgorithmFingerprintAndInUseBy proves the D-10
+// picker renders every candidate's filename + algorithm + fingerprint, and
+// the D-12 "in use by: <identity> (<provider>)" label for a referenced key.
+func TestReusePickerListsFilenameAlgorithmFingerprintAndInUseBy(t *testing.T) {
+	pane := paneFlat(openReusePicker(t))
+	for _, want := range []string{"id_ed25519_personal", "ssh-ed25519", "SHA256:stub-personal", "in use by: personal (github.com)"} {
+		if !strings.Contains(pane, want) {
+			t.Errorf("picker pane missing %q:\n%s", want, pane)
+		}
+	}
+}
+
+// TestReusePickerHasManualPathRow proves the D-10 manual-path row is always
+// offered alongside the scanned candidates.
+func TestReusePickerHasManualPathRow(t *testing.T) {
+	pane := paneFlat(openReusePicker(t))
+	if !strings.Contains(pane, "Enter a path manually…") {
+		t.Errorf("picker pane missing the manual-path row:\n%s", pane)
+	}
+}
+
+// TestReusePickerSameProviderWarningIsAdvisoryNotBlocking proves D-12: a
+// same-provider reuse selection warns but never blocks advance.
+func TestReusePickerSameProviderWarningIsAdvisoryNotBlocking(t *testing.T) {
+	a := openReusePicker(t) // reuseIdx defaults to 0 = "personal", same provider (github.com)
+	m := identModel(t, a)
+	if !m.wizard.sameProviderReuse() {
+		t.Fatal("setup: expected the default selection to trigger the same-provider warning")
+	}
+	if !strings.Contains(paneFlat(a), "Same provider as an existing identity") {
+		t.Error("same-provider warning must render (D-12, advisory)")
+	}
+	if !m.wizard.step0Valid(m.backend.InitialState()) {
+		t.Error("a same-provider reuse selection must NOT block advance (D-12: warn, allow)")
+	}
+}
+
+// TestReusePickerNonCatalogAlgorithmShowsInfoNoteNotBlocking proves D-13: a
+// legacy/foreign algorithm shows an informational note but is never blocked.
+func TestReusePickerNonCatalogAlgorithmShowsInfoNoteNotBlocking(t *testing.T) {
+	a := openReusePicker(t)
+	// Cycle to clientA (index 4): personal(0) work(1) archived(2) staging(3) clientA(4).
+	for i := 0; i < 4; i++ {
+		a, _ = press(t, a, "right")
+	}
+	m := identModel(t, a)
+	if m.wizard.reuseIdx != 4 {
+		t.Fatalf("setup: reuseIdx = %d, want 4 (clientA)", m.wizard.reuseIdx)
+	}
+	if !strings.Contains(paneFlat(a), "Not one of gitid's generate algorithms") {
+		t.Error("a non-catalog algorithm must show the D-13 informational note")
+	}
+	if !m.wizard.step0Valid(m.backend.InitialState()) {
+		t.Error("a non-catalog algorithm must NOT block advance (D-13)")
+	}
+}
+
+// TestReusePickerEncryptedWithPubKeyIsSelectableAndNotBlocking proves
+// D-11/KEY-06: an encrypted key with an existing .pub is a normal, selectable,
+// non-blocking picker entry.
+func TestReusePickerEncryptedWithPubKeyIsSelectableAndNotBlocking(t *testing.T) {
+	a := openReusePicker(t)
+	// Cycle to staging (index 3): personal(0) work(1) archived(2) staging(3).
+	for i := 0; i < 3; i++ {
+		a, _ = press(t, a, "right")
+	}
+	m := identModel(t, a)
+	if m.wizard.reuseIdx != 3 {
+		t.Fatalf("setup: reuseIdx = %d, want 3 (staging)", m.wizard.reuseIdx)
+	}
+	view, ok := m.wizard.selectedReuseView()
+	if !ok || !view.Encrypted {
+		t.Fatalf("setup: expected the encrypted staging key selected, got %+v (ok=%v)", view, ok)
+	}
+	if !m.wizard.step0Valid(m.backend.InitialState()) {
+		t.Error("an encrypted-with-.pub key selection must NOT block advance (D-11/KEY-06)")
+	}
+	if got := m.wizard.reuseKeyPath(); got != "~/.ssh/id_ed25519_staging" {
+		t.Errorf("reuseKeyPath() = %q, want the selected key's path", got)
+	}
+}
+
+// TestReuseSelectionRoutesCreateThroughNoGenerate proves selecting a reuse
+// candidate routes the create through the reuse path — CreateSpec.KeyPath
+// AND ReuseKeyPath both name the EXISTING key, never a generated one.
+func TestReuseSelectionRoutesCreateThroughNoGenerate(t *testing.T) {
+	a := openReusePicker(t) // defaults to personal (index 0)
+	m := identModel(t, a)
+	want := "~/.ssh/id_ed25519_personal"
+	if got := m.wizard.keyPath(); got != want {
+		t.Errorf("keyPath() = %q, want the reused key's path %q (no generate)", got, want)
+	}
+	if got := m.wizard.spec().ReuseKeyPath; got != want {
+		t.Errorf("spec().ReuseKeyPath = %q, want %q", got, want)
+	}
+}
+
+// TestReusePickerManualPathRow proves the D-10 manual-path row: empty/invalid
+// blocks advance, a resolved candidate unblocks it and supplies the reuse
+// path.
+func TestReusePickerManualPathRow(t *testing.T) {
+	a := openReusePicker(t)
+	// Cycle past every scanned key to the manual row (6 fixture rows carry a
+	// KeyPath, so the manual row sits at index 6).
+	for i := 0; i < 6; i++ {
+		a, _ = press(t, a, "right")
+	}
+	m := identModel(t, a)
+	if m.wizard.reuseIdx != 6 {
+		t.Fatalf("setup: reuseIdx = %d, want 6 (manual row)", m.wizard.reuseIdx)
+	}
+	if m.wizard.step0Valid(m.backend.InitialState()) {
+		t.Error("an empty manual-path row must block advance (D-10)")
+	}
+
+	a, _ = press(t, a, "tab") // picker body → manual path text input
+	a = typeText(t, a, stubManualReusePath)
+	m = identModel(t, a)
+	if m.wizard.manualErr != "" {
+		t.Fatalf("manualErr = %q, want no error for the fixture manual path", m.wizard.manualErr)
+	}
+	if got := m.wizard.reuseKeyPath(); got != stubManualReusePath {
+		t.Errorf("reuseKeyPath() = %q, want the resolved manual path %q", got, stubManualReusePath)
+	}
+	if !m.wizard.step0Valid(m.backend.InitialState()) {
+		t.Error("a resolved manual-path candidate must unblock advance")
+	}
+}
+
+// TestReusePickerManualPathRejectsInvalidCandidate proves an unrecognized
+// manual path shows its rejection inline and blocks advance — the picker's
+// half of the T-03-13 symlink-rejection contract the Backend enforces.
+func TestReusePickerManualPathRejectsInvalidCandidate(t *testing.T) {
+	a := openReusePicker(t)
+	for i := 0; i < 6; i++ {
+		a, _ = press(t, a, "right")
+	}
+	a, _ = press(t, a, "tab")
+	a = typeText(t, a, "/no/such/key")
+	m := identModel(t, a)
+	if m.wizard.manualErr == "" {
+		t.Fatal("an unrecognized manual path must record an inline error")
+	}
+	if !strings.Contains(paneFlat(a), m.wizard.manualErr) {
+		t.Error("the manual-path error must render inline in the picker")
+	}
+	if m.wizard.step0Valid(m.backend.InitialState()) {
+		t.Error("an unresolved manual-path candidate must block advance")
 	}
 }

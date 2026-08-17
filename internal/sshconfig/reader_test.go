@@ -89,6 +89,33 @@ func TestParseManagedHosts_GlobalSkipped(t *testing.T) {
 	}
 }
 
+// TestParseManagedHosts_SSHIncludeSkipped proves the gitid-owned Include line
+// (D-06's reserved "ssh-include" wiring block) never surfaces as a phantom
+// identity: identity.Reconstruct's ONLY exclusion chokepoint for reserved
+// blocks is this function, so a fresh machine's very first create — which
+// writes the Include line via EnsureIncludeLine — must not turn "ssh-include"
+// into an identity row the moment ParseManagedHosts sees it.
+func TestParseManagedHosts_SSHIncludeSkipped(t *testing.T) {
+	includeBody := "Include ~/.ssh/config.d/*.config\n"
+	workBody := "Host work.github.com\n\tHostname ssh.github.com\n\tPort 22\n\tIdentityFile ~/.ssh/id_ed25519_work\n\tIdentitiesOnly yes\n"
+
+	content := []byte(
+		filewriter.BeginPrefix + "ssh-include\n" + includeBody + filewriter.EndPrefix + "ssh-include\n" +
+			filewriter.BeginPrefix + "work\n" + workBody + filewriter.EndPrefix + "work\n",
+	)
+
+	got, err := ParseManagedHosts(content)
+	if err != nil {
+		t.Fatalf("ParseManagedHosts returned error: %v", err)
+	}
+	if _, ok := got["ssh-include"]; ok {
+		t.Error("ssh-include block must be skipped (IsReservedBlockName), but found in result")
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 entry (only 'work'), got %d: %v", len(got), got)
+	}
+}
+
 // TestParseManagedHosts_ImplicitHostStar verifies that the implicit Host *
 // inserted by the kevinburke parser is skipped (Pitfall A guard).
 func TestParseManagedHosts_ImplicitHostStar(t *testing.T) {

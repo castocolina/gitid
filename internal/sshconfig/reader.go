@@ -40,13 +40,19 @@ func extractProviderMarker(body string) string {
 // gitid-managed blocks via filewriter.ListBlocks, and for each block parses the
 // SSH directives into SSHHostInfo. Keyed by identity name (D-01). Blocks that
 // fail to parse return a zero-value SSHHostInfo (reconstruction incomplete
-// marker, D-02). The _global block is skipped.
+// marker, D-02). Every reserved wiring block (IsReservedBlockName — the
+// macOS `_global` stanza AND the gitid-owned `ssh-include` Include line) is
+// skipped: neither is a Host block with identity-shaped directives, and
+// identity.Reconstruct's caller (internal/identity/loader.go) has no other
+// chokepoint to exclude them, so a fresh D-06 machine's very first create
+// would otherwise surface a phantom "ssh-include" row in the Identity
+// Manager the moment the Include line is written.
 func ParseManagedHosts(content []byte) (map[string]SSHHostInfo, error) {
 	blocks := filewriter.ListBlocks(content)
 	result := make(map[string]SSHHostInfo, len(blocks))
 	for _, b := range blocks {
-		if b.Name == "_global" {
-			continue // skip the macOS Host * global block
+		if IsReservedBlockName(b.Name) {
+			continue // skip reserved wiring blocks (macOS globals, the Include line)
 		}
 		info, err := parseHostBlockBody(b.Body)
 		if err != nil {

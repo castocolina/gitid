@@ -559,6 +559,146 @@ func TestAliasCollisionIsIncludeAware(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// D-10/D-11/D-12/D-13 — reuse-existing-key picker
+// ---------------------------------------------------------------------------
+
+// TestScanReusableKeysLabelsInUseByWithProvider proves D-12's "in use by"
+// label is "<identity> (<provider-host>)" — not the bare identity name — so
+// the picker's same-provider check (a plain string comparison in tuikit) has
+// the provider to compare against. Derived Include-aware from the SAME
+// reconstruction the identity list renders, never a second, divergent source.
+func TestScanReusableKeysLabelsInUseByWithProvider(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	included := filepath.Join(home, ".ssh", "config.d", "gitid.config")
+	if err := os.MkdirAll(filepath.Dir(included), 0o700); err != nil {
+		t.Fatalf("seeding config.d: %v", err)
+	}
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_personal")
+	writeFile(t, filepath.Join(home, ".ssh", "config"), managedBlock("ssh-include", "Include ~/.ssh/config.d/*.config"))
+	writeFile(t, included, managedBlock("personal",
+		sshconfig.RenderHostBlock("personal.github.com", "ssh.github.com", 443, keyPath, "")))
+	seedGeneratedKey(t, keyPath, "personal", "")
+
+	views := newBackendForHome(home).ScanReusableKeys()
+	var found bool
+	for _, v := range views {
+		if v.Path == keyPath {
+			found = true
+			if v.InUseBy != "personal (github.com)" {
+				t.Errorf("InUseBy = %q, want %q (D-12)", v.InUseBy, "personal (github.com)")
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("the seeded key was not among the scanned candidates: %+v", views)
+	}
+}
+
+// TestManualReusePathResolvesRegularFile proves the picker's manual-path row
+// (D-10) resolves a plain, non-symlinked candidate the SAME way the
+// directory scan would — same fields, same D-12 label.
+func TestManualReusePathResolvesRegularFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_manual")
+	pubLine := seedGeneratedKey(t, keyPath, "manual", "")
+
+	b := newBackendForHome(home)
+	view, err := b.ManualReusePath(keyPath)
+	if err != nil {
+		t.Fatalf("ManualReusePath: %v", err)
+	}
+	if view.Path != keyPath {
+		t.Errorf("view.Path = %q, want %q", view.Path, keyPath)
+	}
+	if view.Fingerprint == "" || !strings.Contains(pubLine, view.Algorithm) {
+		t.Errorf("view = %+v, want algorithm/fingerprint derived from the real key material", view)
+	}
+}
+
+// TestManualReusePathRejectsSymlink is the T-03-13 guard threaded all the way
+// through the real Backend: a symlinked manual candidate is rejected before
+// parsing, never silently followed.
+func TestManualReusePathRejectsSymlink(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	realKey := filepath.Join(home, ".ssh", "id_ed25519_real")
+	seedGeneratedKey(t, realKey, "real", "")
+	link := filepath.Join(home, ".ssh", "id_ed25519_link")
+	if err := os.Symlink(realKey, link); err != nil {
+		t.Fatalf("seeding symlink fixture: %v", err)
+	}
+
+	b := newBackendForHome(home)
+	if _, err := b.ManualReusePath(link); err == nil {
+		t.Fatal("ManualReusePath on a symlinked candidate = nil error, want a rejection (T-03-13)")
+	}
+}
+
+// TestReuseEncryptedKeyWithExistingPubSucceeds proves KEY-06/D-11 through the
+// REAL constructor end to end: an encrypted private key with an EXISTING
+// sibling .pub reuses successfully — no passphrase prompt. ensurePub reads
+// the .pub verbatim via the real ReadPub seam (plan 03-01's fix, wired for
+// real in plan 03-03) instead of trying to parse the encrypted private key,
+// which is exactly the gap plan 03-06's PTY e2e closes the L2 half of.
+func TestReuseEncryptedKeyWithExistingPubSucceeds(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_locked")
+	seedGeneratedKey(t, keyPath, "locked", "s3cret")
+
+	b := newBackendForHome(home)
+	state := b.Persist(tuikit.DemoState{}, tuikit.AddIdentity{Identity: tuikit.DemoIdentity{
+		Name: "personal", SSHHost: "personal.github.com", Hostname: "ssh.github.com", Port: 443,
+		KeyPath: keyPath, ReuseKeyPath: keyPath,
+	}})
+
+	if err := b.PersistError(); err != nil {
+		t.Fatalf("Persist recorded an error reusing an encrypted key with an existing .pub: %v", err)
+	}
+	if len(state.Identities) != 1 {
+		t.Fatalf("Identities = %v, want exactly the reused identity", state.Identities)
+	}
+	included := readFile(t, filepath.Join(home, ".ssh", "config.d", "gitid.config"))
+	if !strings.Contains(included, "IdentityFile "+keyPath) {
+		t.Errorf("the written Host block does not reference the REUSED key path:\n%s", included)
+	}
+}
+
+// TestReuseDoesNotGenerateANewKey proves the D-10 reuse path never calls the
+// generate seam: the reused key's own bytes on disk are untouched (no new
+// key material written next to it).
+func TestReuseDoesNotGenerateANewKey(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_existing")
+	seedGeneratedKey(t, keyPath, "existing", "")
+	before := readFile(t, keyPath)
+
+	b := newBackendForHome(home)
+	staged, err := b.stagedKeyFor(identity.CreateInput{Name: "existing"}, keyPath)
+	if err != nil {
+		t.Fatalf("stagedKeyFor: %v", err)
+	}
+	if staged.PrivPEM != nil {
+		t.Error("a reused key's StagedKey must carry nil PrivPEM — PersistKey/Cleanup must be no-ops")
+	}
+	if staged.FinalPrivatePath != keyPath || staged.TempPrivatePath != keyPath {
+		t.Errorf("staged paths = {Temp:%q Final:%q}, want both == the reused key path %q",
+			staged.TempPrivatePath, staged.FinalPrivatePath, keyPath)
+	}
+	if got := readFile(t, keyPath); got != before {
+		t.Error("the reused key's own bytes were modified — reuse must never regenerate")
+	}
+}
+
 // TestDemoBannerOnlyIdentitiesIsWired proves D-16: the create-flow tab is live,
 // every other tab still shows demo content and must say so.
 func TestDemoBannerOnlyIdentitiesIsWired(t *testing.T) {
@@ -583,6 +723,23 @@ func seedSSHDir(t *testing.T, home string) {
 	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
 		t.Fatalf("seeding .ssh: %v", err)
 	}
+}
+
+// seedGeneratedKey writes a real ed25519 private key (optionally
+// passphrase-encrypted) plus its `.pub` sibling at keyPath, and returns the
+// generated authorized-key line — the reuse-picker tests' way of seeding a
+// candidate keygen.ScanReusableKeys/ScanManualKey can actually parse.
+func seedGeneratedKey(t *testing.T, keyPath, identityName, passphrase string) string {
+	t.Helper()
+	mat, err := keygen.GenerateMaterial(keygen.Params{
+		Algo: "ed25519", Identity: identityName, Comment: identityName + "@gitid", Passphrase: passphrase,
+	})
+	if err != nil {
+		t.Fatalf("generating key fixture %s: %v", keyPath, err)
+	}
+	writeFile(t, keyPath, string(mat.PrivPEM))
+	writeFile(t, keyPath+".pub", mat.PubLine+"\n")
+	return mat.PubLine
 }
 
 // managedBlock wraps body in gitid managed sentinels for name.

@@ -89,10 +89,13 @@ type realBackend struct {
 	// stageDir is the throwaway directory both test stages run against.
 	stageDir string
 	// staged/stagedFor hold the key material generated for the in-flight
-	// create, keyed by identity name.
-	staged    identity.StagedKey
-	stagedFor string
-	stagedIn  identity.CreateInput
+	// create, keyed by identity name. stagedReuseKeyPath additionally keys
+	// the cache on the D-10 reuse choice so switching between "generate" and
+	// "reuse <path>" mid-flow re-stages instead of serving a stale cache hit.
+	staged             identity.StagedKey
+	stagedFor          string
+	stagedReuseKeyPath string
+	stagedIn           identity.CreateInput
 	// lastOutcome is the most recent connectivity-test outcome, and
 	// outcomeKnown whether any stage has answered yet. Together they are the
 	// D-01 STORE GATE at the backend seam: PASS and ReachableNotUploaded both
@@ -342,7 +345,7 @@ func (b *realBackend) persistCreate(state tuikit.DemoState, a tuikit.AddIdentity
 		return state
 	}
 	in := b.createInput(a.Identity)
-	staged, err := b.stagedKeyFor(in)
+	staged, err := b.stagedKeyFor(in, a.Identity.ReuseKeyPath)
 	if err != nil {
 		b.setPersistErr(err)
 		return state
@@ -494,6 +497,23 @@ func (b *realBackend) ScanReusableKeys() []tuikit.ReusableKeyView {
 	return toReusableKeyViews(keys, b.keyOwners())
 }
 
+// ManualReusePath resolves the picker's manual-path row (D-10) against the
+// user's real filesystem: a symlinked candidate is rejected before parsing
+// (T-03-13, keygen.ScanManualKey's os.Lstat check), and a usable candidate
+// carries the SAME D-12 "in use by" label ScanReusableKeys' rows do.
+func (b *realBackend) ManualReusePath(path string) (tuikit.ReusableKeyView, error) {
+	if b.initErr != nil {
+		return tuikit.ReusableKeyView{}, b.initErr
+	}
+	resolved := b.resolveKeyPath(strings.TrimSpace(path))
+	key, err := keygen.ScanManualKey(resolved)
+	if err != nil {
+		return tuikit.ReusableKeyView{}, err
+	}
+	views := toReusableKeyViews([]keygen.ReusableKey{key}, b.keyOwners())
+	return views[0], nil
+}
+
 // TestConfigPath is the throwaway config both stages run against — the
 // SSHUI-04 guarantee that the live ~/.ssh/config is untouched until confirm.
 func (b *realBackend) TestConfigPath() string {
@@ -524,7 +544,7 @@ func (b *realBackend) Stage2Command(spec tuikit.CreateSpec) string {
 func (b *realBackend) TestStage1(spec tuikit.CreateSpec) tea.Cmd {
 	return func() tea.Msg {
 		in := b.createInputFromSpec(spec)
-		staged, err := b.stagedKeyFor(in)
+		staged, err := b.stagedKeyFor(in, spec.ReuseKeyPath)
 		if err != nil {
 			return b.stageFailure(1, b.Stage1Command(spec), err)
 		}
@@ -541,7 +561,7 @@ func (b *realBackend) TestStage1(spec tuikit.CreateSpec) tea.Cmd {
 func (b *realBackend) TestStage2(spec tuikit.CreateSpec) tea.Cmd {
 	return func() tea.Msg {
 		in := b.createInputFromSpec(spec)
-		staged, err := b.stagedKeyFor(in)
+		staged, err := b.stagedKeyFor(in, spec.ReuseKeyPath)
 		if err != nil {
 			return b.stageFailure(2, b.Stage2Command(spec), err)
 		}
@@ -820,15 +840,24 @@ func (b *realBackend) accounts() []identity.Account {
 	return accounts
 }
 
-// keyOwners maps a key path to the identity that references it — the D-12
-// "in use by" source. It is derived from the SAME reconstruction the identity
-// list renders, so the picker's labels can never disagree with the manager.
+// keyOwners maps a key path to the D-12 "in use by" label — "<identity>
+// (<provider-host>)", e.g. "personal (github.com)" — so the picker's label
+// renders verbatim and the wizard's same-provider check (D-12) can test
+// whether the form's current SSH Host suffix occurs in it via a plain string
+// comparison, without tuikit ever inspecting an identity type. It is derived
+// from the SAME reconstruction the identity list renders, so the picker's
+// labels can never disagree with the manager.
 func (b *realBackend) keyOwners() map[string]string {
 	owners := make(map[string]string)
 	for _, acct := range b.accounts() {
-		if acct.KeyPath != "" {
-			owners[acct.KeyPath] = acct.Name
+		if acct.KeyPath == "" {
+			continue
 		}
+		label := acct.Name
+		if provider := providerFromAlias(acct.Alias); provider != "" {
+			label += " (" + provider + ")"
+		}
+		owners[acct.KeyPath] = label
 	}
 	return owners
 }
@@ -908,25 +937,36 @@ func (b *realBackend) createInputFromSpec(spec tuikit.CreateSpec) identity.Creat
 	}
 }
 
-// stagedKeyFor returns the key material for in's identity, generating it once
-// and reusing it for every later stage and the confirmed write — so the key
-// tested is provably the key written.
-func (b *realBackend) stagedKeyFor(in identity.CreateInput) (identity.StagedKey, error) {
+// stagedKeyFor returns the key material for in's identity, keyed on BOTH the
+// identity name and the D-10 reuse choice so a mid-flow switch between
+// "generate" and "reuse <path>" re-stages instead of serving a stale cache
+// hit. reuseKeyPath empty means generate a fresh key; non-empty stages the
+// existing key at that path via identity.StageReuse (KEY-06/D-11) — the SAME
+// ensurePub logic identity.Reuse itself uses, never a re-derived copy. The
+// staged material is reused for every later stage and the confirmed write,
+// so the key tested is provably the key written.
+func (b *realBackend) stagedKeyFor(in identity.CreateInput, reuseKeyPath string) (identity.StagedKey, error) {
 	b.mu.Lock()
-	if b.stagedFor == in.Name && b.staged.FinalPrivatePath != "" {
+	if b.stagedFor == in.Name && b.stagedReuseKeyPath == reuseKeyPath && b.staged.FinalPrivatePath != "" {
 		staged := b.staged
 		b.mu.Unlock()
 		return staged, nil
 	}
 	b.mu.Unlock()
 
-	staged, err := b.deps.Generate(in)
+	var staged identity.StagedKey
+	var err error
+	if reuseKeyPath != "" {
+		staged, err = identity.StageReuse(b.resolveKeyPath(reuseKeyPath), in.Name+"@gitid", b.deps)
+	} else {
+		staged, err = b.deps.Generate(in)
+	}
 	if err != nil {
 		return identity.StagedKey{}, err
 	}
 
 	b.mu.Lock()
-	b.staged, b.stagedFor, b.stagedIn = staged, in.Name, in
+	b.staged, b.stagedFor, b.stagedReuseKeyPath, b.stagedIn = staged, in.Name, reuseKeyPath, in
 	b.mu.Unlock()
 	return staged, nil
 }
@@ -935,7 +975,7 @@ func (b *realBackend) stagedKeyFor(in identity.CreateInput) (identity.StagedKey,
 // write is committed (the key itself stays on disk — it is the identity's).
 func (b *realBackend) clearStaged() {
 	b.mu.Lock()
-	b.staged, b.stagedFor, b.stagedIn = identity.StagedKey{}, "", identity.CreateInput{}
+	b.staged, b.stagedFor, b.stagedReuseKeyPath, b.stagedIn = identity.StagedKey{}, "", "", identity.CreateInput{}
 	b.mu.Unlock()
 }
 
