@@ -38,7 +38,7 @@ the real goals and the better way to build them).
 - **SSH storage**: in-file blocks / gitid-owned `Include` file / adopt external (feasibility verified with real `ssh -G`).
 - **CI/CD**: cross-platform builds (macOS Intel/ARM, Linux); credential upload auto when `gh`/`glab` authenticated.
 
-**Full ID'd set:** `.planning/REQUIREMENTS.md` (sections A–P). Loop: `.planning/ONESHOT-LOOP-PROMPT.md`.
+**Full ID'd set:** `.planning/REQUIREMENTS.md` (sections A–P). Goal driver: `.planning/ONESHOT-GOAL-PROMPT.md`.
 
 ## Requirements
 

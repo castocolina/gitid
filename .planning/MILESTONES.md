@@ -22,5 +22,5 @@ as **reusable substrate** (not a behavior contract) for the v1.0 redesign.
 **PRD:** `docs/prds/gitid-tui-redesign-v1.0-prd.md`.
 
 The real first release: a design-driven, screenshot-verified terminal app. See
-PROJECT.md → Current Milestone for the feature set and the loop at
-`.planning/ONESHOT-LOOP-PROMPT.md`.
+PROJECT.md → Current Milestone for the feature set and the goal driver at
+`.planning/ONESHOT-GOAL-PROMPT.md`.

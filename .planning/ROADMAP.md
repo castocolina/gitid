@@ -18,7 +18,7 @@ health+fixer, and credential upload — each gated by a per-surface UI wave (`/m
 approved screenshots). **Phase 10** validates the whole app end-to-end on Linux and
 ships tagged, checksummed release binaries.
 
-The autonomous build loop (`.planning/ONESHOT-LOOP-PROMPT.md`) runs unattended except
+The autonomous build run (`.planning/ONESHOT-GOAL-PROMPT.md`, driven via `/goal`) runs unattended except
 for the **one** design-approval checkpoint (Phase 2); credential upload (Phase 9)
 auto-runs when `gh`/`glab` is authenticated and a valid identity exists — it is not a
 checkpoint. Phase numbering is **reset for this milestone**; the prior POC is archived

@@ -1,10 +1,13 @@
 # ONESHOT PLAYBOOK — gitid v1.0 Autonomous Completion Run (Phases 3–10)
 
-This is the **playbook** consumed by `.planning/ONESHOT-LOOP-PROMPT.md`
-(the `/loop` driver — the intended way to run this). The loop re-reads this
-file every iteration; it can also be pasted standalone into a fresh session.
-It drives the remaining v1.0 milestone end-to-end with no human in the loop,
-ending at a validated `v1.0.0-rc.1` release-candidate tag.
+This is the **playbook** consumed by `.planning/ONESHOT-GOAL-PROMPT.md`
+(the `/goal` driver — the intended way to run this; as of 2026-08-17
+superseded from the earlier `/loop`-based driver, see that file's header
+for why). Claude re-reads this file every turn the goal's completion
+condition is not yet met; it can also be pasted standalone into a fresh
+session. It drives the remaining v1.0 milestone end-to-end with minimal
+human involvement, ending at a validated `v1.0.0-rc.1` release-candidate
+tag.
 
 ---
 
@@ -187,8 +190,22 @@ For each phase N:
 2. **UI contract** — phases with a TUI surface (4–9): if no `UI-SPEC.md`,
    run `/gsd-ui-phase N`. Phases 3 and 10 have no UI wave. Phase 4's
    UI-SPEC already exists — do not redo it.
-3. **Plan** — if the phase has no plans: `/gsd-plan-phase N`.
-   Phase 3 already has its 6 plans — skip THIS step only.
+3. **Plan** — if the phase has no plans:
+   `/gsd-plan-phase N --tdd --chain --research`.
+   As of 2026-08-17, phases 4–10 have a `CONTEXT.md` (discussed) but ZERO
+   `PLAN.md` files — every one of them needs this step; only phases 1–3
+   already have plans. `--tdd` bakes the RED-stub convention into every
+   generated task; `--chain` auto-advances plan→execute inside one
+   invocation instead of stopping after PLAN.md; `--research` force-refreshes
+   `RESEARCH.md` rather than trusting stale research. During research and
+   planning, prefer `codegraph_explore` (MCP) over raw `grep`/`Read` for
+   discovering existing patterns/call graphs to reuse — it returns verbatim
+   source plus call/blast-radius context in one call; note that
+   `gsd-phase-researcher`/`gsd-planner` subagents do not have it in their
+   own tool list by default, so when spawning them for this, do the
+   codegraph lookups yourself first and hand the grounded findings to the
+   subagent, or explicitly grant/request the tool if the harness allows it.
+   Phase 3 already has its 6 plans — skip THIS step only for Phase 3.
 4. **Plan review with Codex**: run `/gsd-review --codex N` over the
    PLAN.md files AND the UI-SPEC — it produces `REVIEWS.md`. If it yields
    findings, replan with `/gsd-plan-phase N --reviews` (which consumes
