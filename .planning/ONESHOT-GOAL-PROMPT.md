@@ -4,37 +4,44 @@ Supersedes the `/loop`-based v2 (see git history: `.planning/ONESHOT-LOOP-PROMPT
 up to commit before this file's rename). `/loop` is time/interval-driven —
 each turn fires on a schedule and the SAME agent grades its own "am I done"
 prose. `/goal` (Claude Code ≥2.1.139) is completion-driven — a SEPARATE
-evaluator model reads the condition below against the transcript after every
-turn and only starts another turn on "no." That fits this run better: the
+evaluator model reads the condition against the transcript after every turn
+and only starts another turn on "no." That fits this run better: the
 playbook's own Step 4 run-close criteria already ARE a verifiable completion
 condition; having an independent grader police it is stronger than
 self-policing.
 
 **This file is the `/goal` driver. `.planning/ONESHOT.md` is the playbook.**
-Paste the block below as the argument to `/goal` in a fresh session, or as
-the task of a `ralph-loop` run in goal mode if that's preferred over native
-`/goal`.
+There are TWO separate things to copy below — do not merge them into one
+paste:
+
+1. **The `/goal` command itself** — a literal slash-command invocation.
+   Everything after `/goal ` on that line is the condition the evaluator
+   grades. Nothing else belongs on that line.
+2. **The working instructions** — an ordinary message, sent once, giving
+   Claude the context to act on. This is NOT part of the `/goal` syntax;
+   it's just what you'd normally tell it at the start of a task.
+
+Send them as two separate messages, in either order (the instructions
+first, then `/goal`, is probably the more natural chat flow).
 
 ---
 
-## ▼▼▼ COPY FROM HERE ▼▼▼
+## ▼▼▼ 1. THE `/goal` COMMAND — copy this line as-is ▼▼▼
 
-**Goal condition** (paste as `/goal <this sentence>` — the evaluator only
-reads THIS conversation's transcript, not files independently, so every
-turn must print the actual command output proving its claims, not just
-assert them):
+```
+/goal All of gitid v1.0 Phases 3 through 10 are shipped: ONESHOT.md Step 4's run close is complete for every phase (RUN-REPORT.md committed, v1.0.0-rc.1 tag pushed, gh run watch shows the release pipeline green on origin/main), demonstrated in this transcript by literal git log / git tag / gh run view output rather than a claim — OR a circuit breaker/preflight failure has been reported and the run is paused awaiting the user. Stop after 8 hours of wall time if neither is reached and report the current position instead.
+```
 
-> All of gitid v1.0 Phases 3 through 10 are shipped: `.planning/ONESHOT.md`
-> Step 4's run close is complete for every phase (`.planning/RUN-REPORT.md`
-> committed, `v1.0.0-rc.1` tag pushed, `gh run watch` shows the release
-> pipeline green on `origin/main`) — demonstrated in this transcript by the
-> literal `git log`, `git tag`, and `gh run view` output, not a claim — OR a
-> circuit breaker/preflight failure has been reported per the rules below
-> and the run is paused awaiting the user. Stop after 8 hours of wall time
-> if neither is reached and report the current position instead.
+The evaluator reads ONLY this conversation's transcript, not files
+independently — every turn must print the actual command output proving
+its claims (git log excerpt, test summary, gate results), not just assert
+them, or the evaluator has nothing to grade against.
 
-**Working instructions** (paste along with the condition above — these are
-context, not part of the condition the evaluator grades):
+## ▲▲▲ end of the /goal command ▲▲▲
+
+---
+
+## ▼▼▼ 2. WORKING INSTRUCTIONS — send as a normal message ▼▼▼
 
 You are executing the **gitid v1.0 TUI-First Redesign, Phases 3–10**.
 **The playbook is `.planning/ONESHOT.md` and it is BINDING.** At the start
@@ -62,8 +69,8 @@ of EVERY turn, read in full:
 3. Record progress exactly as the playbook's close rules dictate
    (`state.record-session`, logical-group commits, learnings).
 4. End the turn with a short, verifiable status line AND the actual
-   command output backing it (git log excerpt, test summary, gate results)
-   — the evaluator grades what's IN the transcript, not what you assert.
+   command output backing it — this is what makes the goal condition
+   above checkable at all.
 
 **Never:** `--no-verify`; non-English artifacts; silently skipping the
 external cross-vendor review layer (fallback `opencode run`; if no
@@ -73,8 +80,8 @@ playbook routes through Codex gates; auto-approving a tool permission
 prompt the user's settings don't already cover — `/goal` does not change
 the permission model, it only changes when the next turn starts.
 
-**Report a blocker (goal condition's second branch) and pause, rather than
-retrying blindly, when:**
+**Report a blocker (the goal condition's second branch) and pause, rather
+than retrying blindly, when:**
 
 - A circuit breaker trips (3 review→fix iterations, 2 replans, destructive
   anomaly).
@@ -86,20 +93,21 @@ retrying blindly, when:**
 **Start now:** read the three files above and act from your current
 position.
 
-## ▲▲▲ COPY TO HERE ▲▲▲
+## ▲▲▲ end of working instructions ▲▲▲
 
 ---
 
 ## How to run
 
-- **`/goal`** (recommended): `/goal <condition from above>`, then paste the
-  working instructions as the accompanying message. Re-invoke with a bare
-  `/goal` in a later session to resume — it re-reads its own condition and
-  checks current progress before deciding whether to start a new turn.
+- **`/goal`** (recommended): send the working instructions message, then
+  invoke the `/goal` line above. Re-invoke with a bare `/goal` in a later
+  session to resume — it re-reads its own condition and checks current
+  progress before deciding whether to start a new turn.
 - **Ralph Loop** (fallback if native `/goal` is unavailable): start
-  `ralph-loop:ralph-loop`, paste the whole block as the loop task; this
-  reverts to time-driven self-pacing, so re-derive position from
-  `STATE.md`/git at the top of every iteration as instructed above.
+  `ralph-loop:ralph-loop`, paste the working instructions AND the goal
+  condition together as the loop task; this reverts to time-driven
+  self-pacing, so re-derive position from `STATE.md`/git at the top of
+  every iteration as instructed above.
 
 ## Why playbook and driver are split
 
