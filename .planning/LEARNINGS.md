@@ -143,6 +143,30 @@ dated; convert relative dates to absolute.
   whether that creates an import cycle with the fixture provider. Add this to
   the plan-review checklist for every later extraction phase.
 
+### L13 — `Agent(isolation="worktree")` can provision a worktree from a stale base, not the orchestrator's current HEAD (2026-08-17, Phase 3 Wave 3, 03-04 Task 3)
+- **Symptom:** dispatched a `gsd-executor` with `isolation="worktree"` from
+  `gsd/phase-03-create-flow-backend` at HEAD `e98027d`. The spawned worktree's
+  HEAD was `2478493` — an old commit from 2026-07-08 planning-doc history,
+  unrelated to and not an ancestor of the phase branch. The executor's own
+  `worktree_branch_check` (L48/#2924 guard) correctly caught the mismatch and
+  halted with `exit 42` instead of self-recovering or committing — the guard
+  worked exactly as designed.
+- **Root cause:** unconfirmed — the harness's `isolation="worktree"` worktree
+  provisioning did not honor the orchestrator's current branch/HEAD at dispatch
+  time for this call. Not reproduced a second time (the retry without
+  isolation succeeded cleanly), so treat as a possible one-off harness
+  hiccup rather than a proven systemic bug, but the guard rail earned its keep.
+- **Rule:** when `isolation="worktree"` is used, still budget for a possible
+  base mismatch — the `worktree_branch_check` block is not optional decoration.
+  If a worktree-isolated executor halts with `FATAL: worktree base mismatch`,
+  do NOT retry with isolation again blindly; either (a) inspect
+  `git worktree list` / the worktree's own `git log` to understand what base it
+  actually got, or (b) for a single-plan wave with nothing to parallelize
+  against, simply respawn the SAME task without `isolation="worktree"` — the
+  orchestrator's own working tree is already the correct, current base, and a
+  single-plan wave has no cross-agent conflict to protect against by
+  isolating it.
+
 ### L10 — Literal closing-tag sequences in a subagent prompt truncate the prompt (2026-07-08, orchestrator)
 - **Symptom:** an Agent spawn silently received a truncated prompt: the launch
   succeeded but the instructions were cut off partway, because the prompt text
