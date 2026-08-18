@@ -153,7 +153,7 @@ Plans:
   4. On pass + confirmation, the identity persists to `~/.ssh/config` **or** the gitid-owned Include'd file, with backup. (TEST-03)
   5. **UI-wave gate**: `/mui` + `agent-ui-ux-designer` are engaged in plan/build/review; each create-flow screen has a PTY e2e test driving the **real** built binary; the live TUI passes the visual-regression diff against the approved screenshots. (DLV-04, DLV-06)
 
-**Plans**: 6 plans in 5 waves
+**Plans**: 9 plans in 8 waves
 **UI hint**: yes
 
 Plans:
@@ -178,6 +178,18 @@ Plans:
 **Wave 5** — UI-wave gates (blocked on 03-05) — IN PROGRESS: 2/3 tasks done
 
 - [ ] 03-06-PLAN.md — IN PROGRESS (2/3 tasks done, 1 remaining): Task 1 DLV-06 per-screen PTY e2e on the real binary (DONE, `57bda7b`) + Task 2 DLV-04.1 golden-text visual-regression gate (DONE, `4a9c939`) + Task 3 DLV-04.2 cross-AI review (packet assembled `9ddd102`, review NOT YET RUN — orchestrator-owned, see 03-06-SUMMARY.md "Cross-AI visual-regression review")
+
+**Wave 6** — review-blocker remediation (blocked on 03-06)
+
+- [ ] 03-07-PLAN.md — Safe pre-confirm staging, automatic test chaining, transactional confirmed persistence, truthful failure/result ceremony, and fail-closed config state (SSHUI-04, TEST-01/03, KEY-06, DLV-06)
+
+**Wave 7** — SSH trust-boundary correctness (blocked on 03-07)
+
+- [ ] 03-08-PLAN.md — Four-field D-20 form, strict SSH validation/effective collision checks, consistent algorithm catalog, verified key pairs, and complete unpinned `ssh -G` proof (SSHUI-01/02/03, TEST-01/02, KEY-06, DLV-06)
+
+**Wave 8** — final visual evidence and independent reviews (blocked on 03-08)
+
+- [ ] 03-09-PLAN.md — Deterministic region-scoped visual gate, approval-provenance PNG evidence, and agent-ui-ux-designer plus Codex review closure (DLV-04, DLV-06)
 
 ### Phase 4: Git Configuration Screen
 
