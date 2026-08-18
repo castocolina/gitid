@@ -9,7 +9,7 @@ credentials in this file.
 
 - `gsd-planner` and `gsd-code-reviewer` use OpenAI Sol.
 - `gsd-plan-checker` uses Claude Opus through OmniRoute after planning and before execution.
-- `gsd-executor` uses OpenCode Go Qwen.
+- `gsd-executor` uses OpenCode Go Kimi Code.
 - `/gsd-plan-review-convergence` uses `review.default_reviewers`.
 
 After the Phase 3 closeout below, the orchestrator invokes the
