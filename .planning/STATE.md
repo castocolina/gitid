@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: "Wave 4 (plan 03-05) CLOSED: D-02 ReachableNotUploaded warning render + exact-command shown==run (TEST-01/02) + D-03 copy-.pub hint + D-19 real git-disabled reason + D-18 functional Skip Git, all committed c680fde; go test -race ./... 833 passed, make lint 0 issues, make test-e2e ok, make test (incl. gate-copy-freeze) ok, TestNoBackendAllowlist green, internal/tuikit backend-free boundary holds. Next: Wave 5 (plan 03-06, visual-regression gate)."
-stopped_at: "Plan 03-05 (Wave 4) COMPLETE: all 3 tasks committed c680fde (single coherent commit per CLAUDE.md commit-granularity rule); 03-05-SUMMARY.md written; STATE/ROADMAP/REQUIREMENTS updated. NEXT = Wave 5 (plan 03-06)."
-last_updated: "2026-08-18T03:04:11.672Z"
-last_activity: "2026-08-17 -- Completed plan 03-05 (D-02 ReachableNotUploaded warning + D-03 copy-pub hint + D-19/D-18 real git-step): succeededOutcome() treats PASS and ReachableNotUploaded alike for the D-04 auto-chain and D-01 store gate; renderStageOutcome() replaces the outcome row with the frozen yellow warning line (never red, reserved for real Failure) plus a Theme.Hint key-settings line; stage1Cmd/stage2Cmd prefer the captured TestResultView.Command (shown==run); reviewCeremony's heading/ResultMessage carry the frozen key-unused copy on a warning-derived store; new Backend.GitStepDisabledReason() seam forces the real binary's Git-step Continue permanently disabled with its own honest reason while the dummy stays unchanged; Skip Git proven SSH-only end-to-end through the real seam."
+status: "Wave 5 (plan 03-06) IN PROGRESS — 2 of 3 tasks CLOSED: Task 1 (DLV-06 per-screen PTY e2e on the REAL binary + L2 ReadPub seam closure + SSHUI-02 mouse half, commit 57bda7b) and Task 2 (DLV-04.1 golden-text visual-regression gate + allowlist + D-23 smoke-network-test, commit 4a9c939) both green. Task 3 (DLV-04.2 cross-AI review) PARTIAL: executor assembled the review packet (commit 9ddd102) but could NOT run agent-ui-ux-designer/Codex (no subagent-spawning tools) — that review is an ORCHESTRATOR obligation still OWED before Phase 3 can close. go test -race ./... 836 passed, make lint 0 issues, make test-e2e ok, make gate-visual-regression ok (8/8 screens, fail-path hand-verified), make smoke-network-test ok. See 03-06-SUMMARY.md."
+stopped_at: "Plan 03-06 (Wave 5) Tasks 1+2 COMPLETE + committed; Task 3 PACKET-ASSEMBLY HALF ONLY complete + committed (9ddd102) — the review-EXECUTION half (agent-ui-ux-designer + Codex against .planning/phases/03-create-flow-backend/03-06-review-packet/) is NOT done and must run before Phase 3 is marked complete. 03-06-SUMMARY.md written with an explicit placeholder 'Cross-AI visual-regression review' section for the orchestrator to fill in. NEXT = orchestrator runs the DLV-04.2 review, then Phase 3 close-out."
+last_updated: "2026-08-18T11:30:00.000Z"
+last_activity: "2026-08-18 -- Plan 03-06 (Wave 5) Tasks 1+2 complete, Task 3 partial: 7 new PTY e2e test functions drive the REAL gitid binary (SSH form + alias collision, all 3 connectivity outcomes, git-form-demo'd D-19 + confirm-write invariant, the L2 identity.Deps.ReadPub seam closure via an encrypted-key-with-existing-.pub reuse, and SSHUI-02's mouse-CSI field-focus half); a new in-process (no-PTY) internal/screenshot/createflow.go capture mechanism plus cmd/gitid/gate_visual_regression_test.go close DLV-04.1's automated golden-text gate (byte-exact per screen modulo an explicit allowlist — D-02/D-16/D-19 plus a 4th pre-existing HostBlockPreview-format divergence carried from 03-03/03-04; fail-path hand-verified by removing an allowlist entry and observing the gate go red, then reverting); cmd/gitid/smoke_network_test.go + Makefile add the D-23 skippable real-network smoke check. Task 3's review packet (text diffs + a 4-category divergence manifest) is assembled, but the actual cross-AI review (agent-ui-ux-designer + Codex) has NOT run — no subagent-spawning tools available to this executor, the same class of gap 02-14/02-15/03-05 already hit. Three Rule-1/Rule-2 auto-fixes surfaced by the new tests: a FakeSSHDir harness bug (the -G fixture branch matched only $1, never the real -F...-G stage-2 shape), three real-binary-only row-budget overflows in the wizard's test-connection pane, and the 4th allowlist divergence (without which the new gate would have shipped immediately red)."
 progress:
   total_phases: 10
   completed_phases: 1
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** Managing a Git identity produces coordinated, coherent SSH + Git artifacts that are proven to authenticate and resolve correctly (`ssh -G`) before any file is written, and existing hand-written config is never corrupted.
-**Current focus:** Phase 02 COMPLETE (★ CHECKPOINT #1 passed) — Phase 03 (create-flow-backend) IN PROGRESS: Wave 4 (plan 03-05) CLOSED, next is Wave 5 (plan 03-06)
+**Current focus:** Phase 02 COMPLETE (★ CHECKPOINT #1 passed) — Phase 03 (create-flow-backend) IN PROGRESS: Wave 5 (plan 03-06, the phase's LAST wave) Tasks 1+2 CLOSED, Task 3 PARTIAL — the DLV-04.2 cross-AI review is an ORCHESTRATOR obligation still owed before Phase 3 can close.
 
 ## Current Position
 
-Phase: 03 (create-flow-backend) — IN PROGRESS. Wave 1 (03-01+03-02), Wave 2 (03-03), and Wave 3 (03-04) CLOSED; Wave 4 (plan 03-05) CLOSED this session (all 3 tasks landed in one commit c680fde; see 03-05-SUMMARY.md). Next: Wave 5 (plan 03-06, visual-regression gate).
-Plan: 03-05 (wave 4) — COMPLETE. Task 1 (D-02 ReachableNotUploaded warning + exact-command render, TEST-01/02), Task 2 (D-03 copy-.pub + key-settings hint), Task 3 (D-19 real git-disabled reason + D-18 functional Skip Git) all committed and green (go test -race ./... 833 passed, make lint 0 issues, make test-e2e ok, make test incl. gate-copy-freeze ok, TestNoBackendAllowlist green). See 03-05-SUMMARY.md for the full record, including two Rule-1 bugfixes surfaced by this plan's own new tests (a row-budget overflow that silently clipped the stage-2 prompt, and test-helper region-scoping for wrapped vs. footer content).
-Status: Phase 2 (below) is the last COMPLETE phase; Phase 3 is the active phase, Wave 4 of 5 now closed. See "Session Continuity" below for the live wave-by-wave Phase 3 record (WAVE 1/WAVE 2/WAVE 3 close notes, replan resolution map, execution obligations).
-Last activity: 2026-08-17 -- Completed plan 03-05 (D-02 ReachableNotUploaded warning + D-03 copy-pub hint + D-19/D-18 real git-step): see the frontmatter `last_activity` field above for the full description.
+Phase: 03 (create-flow-backend) — IN PROGRESS. Wave 1 (03-01+03-02), Wave 2 (03-03), Wave 3 (03-04), and Wave 4 (03-05) CLOSED; Wave 5 (plan 03-06, the LAST wave) Tasks 1+2 CLOSED this session, Task 3 PARTIAL (packet assembled, review not run). Next: orchestrator runs the DLV-04.2 cross-AI review, then Phase 3 close-out.
+Plan: 03-06 (wave 5) — IN PROGRESS, 1 task remaining (Task 3's review-execution half, orchestrator-owned). Task 1 (DLV-06 PTY e2e + L2 seam closure + SSHUI-02 mouse) — commit 57bda7b. Task 2 (DLV-04.1 golden-text gate + allowlist + D-23 smoke test) — commit 4a9c939. Task 3 (DLV-04.2 review-packet assembly) — commit 9ddd102, PACKET ONLY; agent-ui-ux-designer + Codex have NOT reviewed anything yet. See 03-06-SUMMARY.md "Cross-AI visual-regression review" for the placeholder section the orchestrator must fill in — DO NOT mark this plan or Phase 3 complete until that section is populated with both reviewers' findings and dispositions.
+Status: Phase 2 (below) is the last COMPLETE phase; Phase 3 is the active phase, Wave 5 of 5 (its last wave) 2/3 tasks closed. See "Session Continuity" below for the live wave-by-wave Phase 3 record (WAVE 1-4 close notes, replan resolution map, execution obligations, and the new WAVE 5 entry).
+Last activity: 2026-08-18 -- Plan 03-06 (Wave 5) Tasks 1+2 complete, Task 3 partial: see the frontmatter `last_activity` field above for the full description.
 
 ### Phase 2 (COMPLETE) — historical record
 
@@ -37,7 +37,7 @@ Plan: 02-12 (wave 9, the single DLV-08 human checkpoint) — COMPLETE. The user 
 Status: 02-15 (wave 8) operationalized the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract (D1–D9 + affordance audit) in BOTH demos, byte-for-byte: D1 single-row color-only fields (02-14's rounded box deleted), D2 always-expanded match-strategy/algorithm radios, D3 terminal-glyph checkbox/radio on the web, D4 bracketed main-nav format (`[N] Label`, moved off the wizard stepper) + a new ActiveNavDimmed/activeNavDimmed state + a top-level plain-arrow view switch, D5 the wizard stepper reverted to `Step n/4 · <label> ● ○ ○ ○`, D6 one-row git-step buttons, D7 ONE hoisted Shift+←/→ chord gate reaching every step including the previously-dead review ceremony (proven with a new raw-byte PTY e2e injecting real xterm CSI sequences), D8 click-to-focus on every form row, and D9 Global Git's user.email promoted to an editable, opt-in global-fallback field with its own dedicated write ceremony (a documented, scoped recipes/ divergence). 02-STYLE-SPEC.md + both FIELDS.md companions rewritten in lockstep; the full exit-gate battery is green (go test -race, the no-backend allowlist, the extended copy-freeze grep, make test/lint/test-e2e/gate-no-backend-files, pnpm typecheck+build) — see 02-15-SUMMARY.md. The two ORCHESTRATOR-run exit gates (a fresh agent-ui-ux-designer critique of both live demos + a fresh-context code review against 02-15's must_haves/acceptance_criteria) have since RUN and their findings (F1-F10 + one record-only item) are fixed — see 02-15-SUMMARY.md "Review findings resolution (post-plan fix pass)" and commits a335d80/f62c99e. Next is 02-12 (wave 9, the single DLV-08 approval checkpoint), unblocked.
 Last activity: 2026-07-06 -- Completed 02-12 (★ DLV-08): user approval recorded as `**APPROVED:** 2026-07-06 by Pepe`; Phase 2 COMPLETE — the approved live demos + 02-REDESIGN-SPEC.md/02-STYLE-SPEC.md/02-DESIGN-DECISIONS-CHECKPOINT-2.md + per-surface FIELDS.md are the binding design reference; Phases 3-9 backend work is UNBLOCKED
 
-Progress: [█████████░] 93% (27/29 plans complete — Phase 2: 15/15; Phase 3: 5/6 plans, Wave 4 of 5 closed)
+Progress: [█████████░] 93% (27/29 plans complete — Phase 2: 15/15; Phase 3: 5/6 plans, Wave 5 of 5 IN PROGRESS — 03-06 not yet counted complete: Task 3's cross-AI review is still owed)
 
 ## Performance Metrics
 
@@ -86,6 +86,7 @@ Progress: [█████████░] 93% (27/29 plans complete — Phase 2
 | Phase 02 P12 | multi-session (checkpoint) | 1 task | 1 file |
 | Phase 03-create-flow-backend P04 | ~1 session (Task 3) | 3 tasks | 14 files |
 | Phase 03-create-flow-backend P05 | 1 session | 3 tasks | 9 files |
+| Phase 03-create-flow-backend P06 | 1 session (2/3 tasks + packet half) | 3 tasks (2 complete, 1 partial) | 10 files |
 
 ## Accumulated Context
 
@@ -162,6 +163,9 @@ Recent decisions affecting current work:
 - [Phase 03-create-flow-backend]: identity.Reuse split into StageReuse (ensurePub staging) + the existing write pipeline so the TUI wizard's staged test-then-write flow shares the D-11 encrypted-key logic instead of duplicating it
 - [Phase 03-create-flow-backend]: D-12 in-use-by label reformatted to '<identity> (<provider-host>)' across all three tuikit.Backend implementers (real, dummy, tuikit test stub)
 - [Phase 03-create-flow-backend, plan 05]: D-03's copy-.pub action is a footer/keybar affordance only (never a second inline body row) to stay inside the fixed 100x30 wizard pane row budget; the D-01 key-unused ceremony copy fully replaces (never appends to) the normal ResultMessage/Heading, and does NOT touch the unrelated 8-state identity taxonomy
+- [Phase 03-create-flow-backend, plan 06]: D-24's "approved dummy golden" is the LIVE cmd/gitid-dummy FixtureBackend's rendered text, computed fresh in-process at gate time (no static per-screen golden files survive Phase 2 — REFERENCE-INDEX.md); the D-24.1 gate is text-only (no PNG/freeze rendering), diffed at SCREEN granularity (byte-exact-or-allowlisted per named screen) rather than line granularity
+- [Phase 03-create-flow-backend, plan 06]: the visual-divergence allowlist carries a 4th entry (T-03-HOSTBLOCK, realBackend.HostBlockPreview's sshconfig.RenderHostBlock format vs. the dummy's unrelated 4-space markerless literal) beyond the plan's stated D-02/D-16/D-19 — a pre-existing divergence carried from 03-03/03-04, discharged as an allowlist entry rather than a code change (the dummy fixture is frozen Phase-2 surface)
+- [Phase 03-create-flow-backend, plan 06]: internal/screenshot/createflow.go drives the shared tuikit render stack IN-PROCESS (tea.Model.Update/.View, no PTY/subprocess) for the visual-regression gate — PTY stays DLV-06's job (raw keystroke/terminal decoding correctness); the in-process technique is reusable by future phases' own dummy-vs-real gates
 
 ### Roadmap Evolution
 
@@ -181,6 +185,8 @@ None yet.
 - ~~03-05: the plan's Task 1 asked the executor to engage `/mui` + `agent-ui-ux-designer` on the new D-02/D-03 warning-state visual and record the input in the SUMMARY — the plan executor has no access to spawn sub-agents or slash commands (Read/Write/Edit/Bash tools only), so this did NOT happen. Flagging as an orchestrator-run exit gate still owed, same class as 02-14/02-15's pattern above. See 03-05-SUMMARY.md "Issues Encountered".~~ -- RESOLVED 2026-08-17: the orchestrator ran the review (`agent-ui-ux-designer:ui-ux-designer` against the D-02/D-03/D-19 render code). 5 findings (F1/F2/F3/F4.2/a11y) fixed directly (commit pending this session); 2 findings (F5/F5b, below) carried forward. See 03-05-SUMMARY.md "DLV-02 retroactive design critique".
 - 03-05 design-review F5 (non-blocking, carried forward): `wizardContinueHint` ("Continue reviews the Git fragment, includeIf, and allowed_signers entries before writing.") contradicts the real binary's always-disabled `[ Continue ]` reason ("Git configuration arrives with the next build") — a user reads both lines together and the copy disagrees with itself. `wizardContinueHint` is a Phase-2 LOCKED design contract (D6, checkpoint-2: "both frozen hints ALWAYS visible below the row"), so it cannot be suppressed/reworded without a documented scoped-divergence decision (the project's own D9 precedent — see 02-DESIGN-DECISIONS-CHECKPOINT-2.md). Candidate owner: Phase 4 (Git Configuration Screen), which is exactly when this hint's promise becomes true.
 - 03-05 design-review F5b (non-blocking, carried forward): the real binary's Git-step form fields stay focusable/editable even though `[ Continue ]` can never submit them at this phase — a user can type `user.name`/email into a form whose only submit path is permanently disabled, and nothing at field level signals the inertness. Medium effort, no frozen-copy conflict. Candidate owner: same as F5 (Phase 4) or a dedicated Phase-3 fix pass if surfaced again before then.
+- **03-06 (BLOCKING for phase close): the DLV-04.2 cross-AI review (`agent-ui-ux-designer` + Codex) has NOT run.** Plan 03-06's Task 3 is explicitly split (orchestrator-run exit gate, DLV-08 unattended-loop convention) — the executor assembled the review packet (`.planning/phases/03-create-flow-backend/03-06-review-packet/` — `text-diffs.txt` + `MANIFEST.md`, commit `9ddd102`) but has no subagent-spawning tools, same class as 02-14/02-15/03-05's own gaps above. The orchestrator must run both reviews against the packet, record findings + disposition in `03-06-SUMMARY.md`'s "Cross-AI visual-regression review" section (currently a placeholder scaffold), and resolve any CRITICAL/HIGH finding before Phase 3 is marked complete.
+- 03-06 (non-blocking, carried forward): `internal/tuikit/identities.go`'s create-wizard SSH form renders an unused "Provider" field row (focus slot 0, reachable via Tab) that FIELDS.md's approved 4-field contract does not include and D-20 explicitly says should not exist ("no new field"). Flagged, not fixed — see 03-06-SUMMARY.md "Issues Encountered". Candidate owner: a dedicated Phase-3 fix pass or a documented scoped-divergence decision, whichever the user prefers.
 
 ### Quick Tasks Completed
 
@@ -198,10 +204,10 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-18T03:04:11.672Z
-Stopped at: Plan 03-05 (Wave 4) COMPLETE: all 3 tasks (D-02/D-03/D-19/D-18) committed c680fde; 03-05-SUMMARY.md written; STATE/ROADMAP/REQUIREMENTS updated. NEXT = Wave 5 (plan 03-06).
-Resume file: .planning/phases/03-create-flow-backend/03-06-PLAN.md
-Wave structure: W1 = 03-01 + 03-02 (DONE) -> W2 = 03-03 (DONE) -> W3 = 03-04 (DONE) -> W4 = 03-05 (DONE) -> W5 = 03-06
+Last session: 2026-08-18T11:30:00.000Z
+Stopped at: Plan 03-06 (Wave 5, LAST wave) Tasks 1+2 COMPLETE (57bda7b, 4a9c939); Task 3 PACKET-ASSEMBLY HALF ONLY complete (9ddd102) — the review-EXECUTION half (agent-ui-ux-designer + Codex) is an ORCHESTRATOR obligation still owed. 03-06-SUMMARY.md written with a placeholder "Cross-AI visual-regression review" section. NEXT = orchestrator runs the DLV-04.2 review, then Phase 3 close-out (this is the phase's LAST wave/plan).
+Resume file: .planning/phases/03-create-flow-backend/03-06-SUMMARY.md ("Cross-AI visual-regression review" section — orchestrator fills in)
+Wave structure: W1 = 03-01 + 03-02 (DONE) -> W2 = 03-03 (DONE) -> W3 = 03-04 (DONE) -> W4 = 03-05 (DONE) -> W5 = 03-06 (Tasks 1+2 DONE, Task 3 PARTIAL — orchestrator review owed)
 **All remaining waves run SEQUENTIALLY (one executor at a time) per LEARNINGS L11** — the pre-commit hooks lint the whole module, so a parallel executor's mid-refactor tree blocks every other commit. Do NOT run plans in parallel inside this Go module again.
 
 WAVE 1 CLOSED 2026-07-25 — orchestrator-verified gates (NOT executor claims):
@@ -320,6 +326,38 @@ CARRIED INTO 03-06: a raw-keystroke PTY proof of the D-02/D-03 warning +
 copy-pub + D-18 Skip paths through the REAL binary is still owed per the L2
 closure contract — 03-05's own tests are internal/tuikit unit tests + one
 cmd/gitid wiring test, never a live PTY session.
+
+WAVE 5 (plan 03-06) — Tasks 1+2 CLOSED 2026-08-18, Task 3 PARTIAL
+(executor-run gates; orchestrator independent re-verification per ground
+rule 4 still applies at the wave-close review, not yet run by this
+session):
+
+- go build ./... exit 0
+- TERM=dumb SSH_AUTH_SOCK= go test -count=1 -race ./... -> 836 passed, 19 packages
+- make lint -> 0 issues
+- make test (incl. gate-copy-freeze) -> ok
+- make test-e2e -> ok (-race; all 7 new PTY cases included)
+- make gate-visual-regression -> ok (8/8 screens; fail-path hand-verified
+  by removing the git-form-demo allowlist entry, observing a red FAIL, then
+  reverting)
+- make smoke-network-test -> ok (real network this session; outcome
+  ReachableNotUploaded)
+- go list -deps ./internal/tuikit -> NO first-party backend import (boundary holds)
+
+Commits: 57bda7b (Task 1 — 7 new PTY e2e cases + 2 Rule-1 auto-fixes: the
+FakeSSHDir -G fixture-script bug, and 3 real-binary-only row-budget
+overflows in the wizard's step-1 pane), 4a9c939 (Task 2 — the golden-text
+gate + allowlist + D-23 smoke test + 1 Rule-2 auto-fix: a 4th,
+pre-existing HostBlockPreview-format allowlist entry the plan's literal
+D-02/D-16/D-19 scope did not anticipate), 9ddd102 (Task 3 — review-packet
+assembly ONLY, docs-only). Full record: 03-06-SUMMARY.md.
+
+Task 3's review-EXECUTION half (agent-ui-ux-designer + Codex against the
+assembled packet) is an ORCHESTRATOR obligation, NOT done this session —
+see Blockers/Concerns above and 03-06-SUMMARY.md "Cross-AI
+visual-regression review" for the placeholder section to fill in.
+Phase 3 is NOT complete until that review lands and any CRITICAL/HIGH
+finding is resolved.
 
 Current branch: gsd/phase-03-create-flow-backend
 PHASE-3 BASE SHA: 61d98fa (anchors external code-review range in Step 6d)

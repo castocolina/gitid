@@ -175,9 +175,9 @@ Plans:
 
 - [x] 03-05-PLAN.md — D-02 ReachableNotUploaded + D-03 copy-pub, exact-command render, D-19 git-disabled reason, D-18 functional skip (TEST-01/02)
 
-**Wave 5** — UI-wave gates (blocked on 03-05)
+**Wave 5** — UI-wave gates (blocked on 03-05) — IN PROGRESS: 2/3 tasks done
 
-- [ ] 03-06-PLAN.md — DLV-06 per-screen PTY e2e on the real binary + DLV-04 golden-text visual-regression gate + cross-AI review (DLV-04, DLV-06)
+- [ ] 03-06-PLAN.md — IN PROGRESS (2/3 tasks done, 1 remaining): Task 1 DLV-06 per-screen PTY e2e on the real binary (DONE, `57bda7b`) + Task 2 DLV-04.1 golden-text visual-regression gate (DONE, `4a9c939`) + Task 3 DLV-04.2 cross-AI review (packet assembled `9ddd102`, review NOT YET RUN — orchestrator-owned, see 03-06-SUMMARY.md "Cross-AI visual-regression review")
 
 ### Phase 4: Git Configuration Screen
 

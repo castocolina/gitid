@@ -45,7 +45,11 @@ These are first-class, enforced requirements — the user's core process ask.
 - [ ] **DLV-04** (Visual-regression gate): In every UI wave's review step, reviewer
   agents diff the **live TUI screens** against the **approved** HTML + TUI-mockup
   screenshots (appearance, fields, options, labels). Divergence from approved design
-  is a review finding.
+  is a review finding. *(Phase 3, 03-06: the AUTOMATED half — DLV-04.1, the
+  golden-text `make gate-visual-regression` gate + divergence allowlist — is
+  DONE, commit 4a9c939. The REVIEWER half — DLV-04.2, agent-ui-ux-designer +
+  Codex against `.planning/phases/03-create-flow-backend/03-06-review-packet/`
+  — is NOT run yet; still owed by the orchestrator before this checkbox ticks.)*
 
 - [x] **DLV-05** (Per-surface build order): For each UI surface the order is fixed:
   HTML mockup → screenshots → Go TUI **dummy** mockup (full navigation, no backend
@@ -53,9 +57,11 @@ These are first-class, enforced requirements — the user's core process ask.
   e2e → visual-regression review. Backend logic is never written before the dummy
   mockup is approved.
 
-- [ ] **DLV-06** (e2e per screen): Every screen has at least one e2e test that drives
+- [x] **DLV-06** (e2e per screen): Every screen has at least one e2e test that drives
   the **real** built binary via raw keystrokes (PTY), not only unit stubs — closes
-  the recurring injected-seam blindspot.
+  the recurring injected-seam blindspot. *(Phase 3: 03-06 Task 1, 7 new PTY e2e
+  test functions incl. the L2 identity.Deps.ReadPub seam closure and SSHUI-02's
+  mouse-CSI half, commit 57bda7b)*
 
 - [x] **DLV-07** (UI-free TDD core): Core logic stays in UI-free packages and is
   built test-first; config parse→render→parse is round-trip stable. *(carried from
@@ -443,9 +449,9 @@ row below records each one's **home** phase.
 | DLV-01 | Phase 2 | Complete |
 | DLV-02 | Phase 2 | Complete |
 | DLV-03 | Phase 1 | Complete |
-| DLV-04 | Phase 3 | Pending |
+| DLV-04 | Phase 3 | Partial (04.1 automated gate done 4a9c939; 04.2 cross-AI review owed) |
 | DLV-05 | Phase 2 | Complete |
-| DLV-06 | Phase 3 | Pending |
+| DLV-06 | Phase 3 | Complete (57bda7b) |
 | DLV-07 | Phase 1 | Complete |
 | DLV-08 | Phase 2 | Pending |
 | TOOL-01 | Phase 1 | Pending |
