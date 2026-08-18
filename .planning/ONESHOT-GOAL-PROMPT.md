@@ -7,7 +7,21 @@ Run `/gsd-autonomous --from 4 --converge` only after the Phase 3 closeout in
 the playbook is complete. The command uses the configured OpenCode runtime and
 the reviewer/model routing in `.planning/config.json`.
 
-## Copy Prompt
+## How To Run
+
+From the repository root, open an OpenCode session:
+
+```sh
+opencode .
+```
+
+Paste the complete block below as the first message. It is intentionally
+self-contained; OpenCode reads the durable detail from `.planning/ONESHOT.md`
+at every resume point.
+
+---
+
+## COPY FROM HERE
 
 You are the OpenCode orchestrator for the remaining gitid v1.0 milestone.
 Follow `.planning/ONESHOT.md` exactly.
@@ -50,3 +64,8 @@ the user's real SSH/Git configuration or external account.
 Every status claim must include the actual command and output that proves it.
 The run ends only after all phases pass their configured verification, the
 release-candidate pipeline is green, and `.planning/RUN-REPORT.md` is committed.
+
+Start now: read the required files, close Phase 3, then continue autonomously
+from Phase 4 as the playbook directs.
+
+## COPY TO HERE
