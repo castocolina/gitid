@@ -138,25 +138,38 @@ func FakeSSHDir(t *testing.T, mode string) string {
 	dir := t.TempDir()
 
 	// Static string literal — not constructed from user input, never exec'd via sh -c.
-	// The -Q branch must come first (ProbeKeyTypes), then -G (Resolved), then
-	// the GITID_FAKE_SSH_MODE-dispatched connection test.
+	// The -Q branch must come first (ProbeKeyTypes: `ssh -Q key`, -Q is
+	// always $1), then -G (stage-2 resolution), then the
+	// GITID_FAKE_SSH_MODE-dispatched connection test.
+	//
+	// -G detection scans ALL positional args, not just $1 (03-06 Task-1
+	// fix): internal/tester.ResolvedVia's REAL stage-2 invocation is
+	// `ssh -F <configPath> -G <alias>` — -G is $3, never $1 — so the
+	// original `case "$1" in -G) ...` branch could never match it. That
+	// left this fixture's -G reply effectively dead code for stage 2's
+	// actual call shape; only `tester.Resolved`'s OTHER, -F-less `ssh -G
+	// <alias>` shape (unused by the create-flow wizard) ever hit it. Found
+	// via the first PTY e2e to drive the real two-stage test through this
+	// fixture end to end (plan 03-06) — exactly the injected-seam-style
+	// blindspot DLV-06 exists to catch, this time in the test harness
+	// itself rather than production code.
 	const script = "#!/bin/sh\n" +
-		"case \"$1\" in\n" +
-		"  -Q)\n" +
-		"    echo \"ssh-ed25519\"\n" +
-		"    echo \"ssh-rsa\"\n" +
-		"    echo \"ecdsa-sha2-nistp256\"\n" +
-		"    exit 0\n" +
-		"    ;;\n" +
-		"  -G)\n" +
+		"if [ \"$1\" = \"-Q\" ]; then\n" +
+		"  echo \"ssh-ed25519\"\n" +
+		"  echo \"ssh-rsa\"\n" +
+		"  echo \"ecdsa-sha2-nistp256\"\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"for arg in \"$@\"; do\n" +
+		"  if [ \"$arg\" = \"-G\" ]; then\n" +
 		"    echo \"user git\"\n" +
 		"    echo \"hostname ssh.github.com\"\n" +
 		"    echo \"port 443\"\n" +
 		"    echo \"identitiesonly yes\"\n" +
 		"    echo \"identityfile /tmp/fake/.ssh/id_ed25519_testid\"\n" +
 		"    exit 0\n" +
-		"    ;;\n" +
-		"esac\n" +
+		"  fi\n" +
+		"done\n" +
 		"case \"$GITID_FAKE_SSH_MODE\" in\n" +
 		"  pass)\n" +
 		"    echo \"Hi user! You've successfully authenticated, but GitHub does not provide shell access.\"\n" +

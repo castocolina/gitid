@@ -2766,6 +2766,24 @@ func (w wizardModel) renderReusePicker() string {
 }
 
 // renderWizard renders the active wizard pane-state.
+// displayKeyPath shortens a long key path for the step-1 info line's
+// single-row budget (03-06 Task-1 fix): a GENERATED key's path is always the
+// short literal "~/.ssh/id_<algo>_<name>", but a D-10 REUSED key carries its
+// own raw filesystem path — an unusually long HOME, or a manual-path
+// candidate the user pointed at somewhere else entirely, can make the full
+// path wrap across several physical rows at the fixed 62-col detail-pane
+// width, pushing the two test-stage boxes below it off the wizard's 30-row
+// budget (found via the L2 reuse-existing-key PTY case). Mirrors
+// renderReusePicker's own existing filepath.Base(...) display convention
+// for reuse candidates — the picker rows already never show the raw path.
+func displayKeyPath(path string) string {
+	const maxLen = 40
+	if len(path) <= maxLen {
+		return path
+	}
+	return ".../" + filepath.Base(path)
+}
+
 func (m identitiesModel) renderWizard(s DemoState, width int) string {
 	w := m.wizard
 	var b strings.Builder
@@ -2786,8 +2804,25 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 		b.WriteString(w.renderKeyBody())
 		b.WriteString(renderHostBlockPreview(m.backend, w.form.sshHost(), w.form.hostname.Value(), w.form.port.Value(), w.keyPath(), width))
 	case 1:
-		b.WriteString(" " + styleInfo.Render("Key "+w.keyPath()+" generated ("+w.algo()+").") + "\n")
-		b.WriteString(" " + styleInfo.Render("Both stages run against "+m.backend.TestConfigPath()+" — your live ~/.ssh/config is untouched until the final confirm.") + "\n\n")
+		b.WriteString(" " + styleInfo.Render("Key "+displayKeyPath(w.keyPath())+" generated ("+w.algo()+").") + "\n")
+		// The staged path itself is dropped from this line deliberately
+		// (03-06 Task-1 fix): the REAL Backend's TestConfigPath() resolves
+		// under the OS temp dir, which on macOS is a long
+		// /var/folders/.../T/... path. At the fixed 62-col detail-pane
+		// width (masterDetailGutter/sidebarWidth arithmetic, 100x30
+		// geometry) any line naming it — or any other line in this pane
+		// long enough to wrap — silently costs an EXTRA physical row,
+		// which the dummy's short fixture strings never triggered. Kept
+		// under ~60 chars here (and at the two other spots this fix
+		// touches below) so this state's total row cost stays within the
+		// wizard's fixed 30-row budget even with the REAL, longer
+		// stage1Cmd()/stage2Cmd() text still shown verbatim in the
+		// bounded PreviewBlock boxes below (TEST-01's shown==run
+		// contract is untouched — only this INFORMATIONAL line's wording
+		// changed). The user-facing guarantee (SSHUI-04: live
+		// ~/.ssh/config untouched until confirm) does not depend on
+		// showing the exact throwaway path.
+		b.WriteString(" " + styleInfo.Render("A throwaway config is used — ~/.ssh/config untouched.") + "\n")
 
 		check := glyphCheckOff
 		if w.simulateFail {
@@ -2797,12 +2832,11 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 		if w.testPhase != testIdle && w.testPhase != testFailed {
 			// Locked (running / passed) — compact single line reclaims rows
 			// for the stage-2 output at the 30-row minimum.
-			b.WriteString(" " + styleFaint.Render(check+" Demo failure control — locked (stage running or test passed)") + "\n")
+			b.WriteString(" " + styleFaint.Render(check+" Demo failure control — locked (nothing left to simulate)") + "\n")
 		} else {
 			b.WriteString(" " + toggle + "  " + styleFaint.Render("(space toggles)") + "\n")
 			b.WriteString(helperLine("Review aid only, not part of the real flow. It locks while a stage is running and once the test has passed — there is nothing left to simulate then.", false) + "\n")
 		}
-		b.WriteString("\n")
 
 		// Routed through the bounded, titled PreviewBlock (review-findings
 		// F1) — the "Stage 1 — ..." description moves into the border's top
