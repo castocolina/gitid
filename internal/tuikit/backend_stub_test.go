@@ -26,6 +26,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/castocolina/gitid/internal/sshconfig"
 )
 
 // ---------------------------------------------------------------------------
@@ -230,6 +232,16 @@ func (tableBackend) ProviderDefaults(provider string) (hostname, port string) {
 
 func (stubBackend) DefaultMatchStrategy() string { return gitScreenMatchStrategyDefault }
 
+func (stubBackend) ValidateHostBlock(alias, hostname, port, identityFile string) *ValidationError {
+	if err := sshconfig.ValidateHostBlock(alias, hostname, port, identityFile); err != nil {
+		if validationErr, ok := err.(*sshconfig.ValidationError); ok {
+			return &ValidationError{Field: validationErr.Field, Message: validationErr.Message}
+		}
+		return &ValidationError{Message: err.Error()}
+	}
+	return nil
+}
+
 func (stubBackend) HostBlockPreview(spec CreateSpec) string {
 	return "Host " + spec.Alias + "\n    Hostname " + spec.Hostname +
 		"\n    Port " + spec.Port + "\n    User git\n    IdentityFile " + spec.KeyPath +
@@ -245,8 +257,13 @@ func (stubBackend) IncludeIfPreview(spec GitSpec) string {
 	return strings.ReplaceAll(gitScreenMatchStrategyPreview[spec.Strategy], "personal", spec.Identity)
 }
 
-func (stubBackend) AliasCollision(state DemoState, identity string) bool {
-	return hasIdentityNamed(state, identity)
+func (stubBackend) AliasCollision(alias string) (bool, error) {
+	for _, row := range stubIdentityRows {
+		if row.SSHHost == alias {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // stubManualReusePath is the fixture path stubBackend.ManualReusePath

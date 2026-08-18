@@ -27,13 +27,13 @@ func TestResolvedViaCommandMatchesResolvedViaArgv(t *testing.T) {
 }
 
 // TestResolvedViaCommandShape asserts the stage-2 command carries the staged
-// config, the explicit key and the alias — the connectivity invocation, NOT the
-// `ssh -G` resolution call (which takes no -i).
+// config and the alias, but NO explicit -i — the connectivity invocation must
+// rely on the config's IdentityFile, which is what the stage-2 proof tests.
+// The `ssh -G` resolution call (which takes no -i) is NOT rendered here.
 func TestResolvedViaCommandShape(t *testing.T) {
 	got := ResolvedViaCommand("/tmp/cfg", "/tmp/key", "work.github.com", "")
 	for _, want := range []string{
 		"-F /tmp/cfg",
-		"-i /tmp/key",
 		"-o IdentitiesOnly=yes",
 		"-o BatchMode=yes",
 		"-T git@work.github.com",
@@ -41,6 +41,9 @@ func TestResolvedViaCommandShape(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("ResolvedViaCommand() = %q, must contain %q", got, want)
 		}
+	}
+	if strings.Contains(got, "-i /tmp/key") {
+		t.Errorf("ResolvedViaCommand must NOT pin -i; the staged config supplies the key; got %q", got)
 	}
 	if strings.Contains(got, " -G ") {
 		t.Errorf("ResolvedViaCommand must render the connectivity call, not the -G call; got %q", got)

@@ -137,6 +137,12 @@ func (FixtureBackend) ProviderDefaults(provider string) (hostname, port string) 
 // on (GITUI-03; "gitdir" per recipes/).
 func (FixtureBackend) DefaultMatchStrategy() string { return GitScreenMatchStrategyDefault }
 
+// ValidateHostBlock validates the four SSH form values before they are
+// interpolated into an OpenSSH Host block.
+func (FixtureBackend) ValidateHostBlock(_, _, _, _ string) *tuikit.ValidationError {
+	return nil
+}
+
 // HostBlockPreview renders the managed Host block for spec — the ONE source
 // of the block shape, shared by the wizard preview/ceremony and the
 // edit-SSH preview/ceremony, and the same text "written" on confirm.
@@ -159,16 +165,17 @@ func (FixtureBackend) IncludeIfPreview(spec tuikit.GitSpec) string {
 	return strings.ReplaceAll(GitScreenMatchStrategyPreview[spec.Strategy], "personal", spec.Identity)
 }
 
-// AliasCollision reports whether identity already exists in state — the D-09
-// collision check the wizard gates step 1 on. The dummy answers from the
-// in-memory rows; the real binary reads the user's actual Host blocks.
-func (FixtureBackend) AliasCollision(state tuikit.DemoState, identity string) bool {
-	for _, row := range state.Identities {
-		if row.Name == identity {
-			return true
+// AliasCollision reports whether alias is already claimed by an existing
+// identity in the demo fixtures — the D-09 collision check the wizard gates
+// step 1 on. The dummy answers from the in-memory rows; the real binary reads
+// the user's actual Host blocks.
+func (FixtureBackend) AliasCollision(alias string) (bool, error) {
+	for _, row := range IdentityManagerRows {
+		if row.SSHHost == alias {
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 // ScanReusableKeys lists the keys the D-10 picker offers for reuse. The dummy

@@ -124,8 +124,8 @@ func TestWizardDuplicatePrefixBlocksNext(t *testing.T) {
 	a = clearPrefixRaw(t, a)
 	a = typeText(t, a, "personal")
 	view = appView(a)
-	if !strings.Contains(view, `"personal" already exists — pick another prefix.`) {
-		t.Error("duplicate prefix must show the exact error copy")
+	if !strings.Contains(view, "SSH Host alias already exists") {
+		t.Error("duplicate alias must show the exact error copy")
 	}
 	// Next must be blocked.
 	a, _ = press(t, a, "enter")
@@ -202,11 +202,11 @@ func TestWizardSKAlgorithmsDisabledWithRationale(t *testing.T) {
 	if !strings.Contains(pane, "ed25519 — ★ recommended") {
 		t.Error("ed25519 must render as the recommended default")
 	}
-	if !strings.Contains(pane, "Disabled: needs libfido2 + a FIDO2 security key — none detected on this machine") {
+	if !strings.Contains(pane, "Disabled: needs libfido2 + FIDO2 key") {
 		t.Error("the -sk entries must render the libfido2 disabled rationale")
 	}
 	// ←/→ on the algorithm select must never land on a disabled entry.
-	a := pressSeq(t, identitiesApp(), "n", "up", "up") // prefix → provider → algorithm (wraps past key source)
+	a := pressSeq(t, identitiesApp(), "n", "up") // prefix → algorithm
 	m := identModel(t, a)
 	if m.wizard.focus != wizardFocusKeyBody {
 		t.Fatalf("focus = %d, want %d (algorithm)", m.wizard.focus, wizardFocusKeyBody)
@@ -559,18 +559,14 @@ func TestReachableHintNamesKeystrokeAndURL(t *testing.T) {
 	}
 }
 
-// TestIdentityNameFollowsEditedHostNotStaleProvider pins design-review
-// finding "Provider field" (03-06 visual-regression gate, DLV-04.2): with a
-// blank Alias prefix, editing the SSH Host field to a DIFFERENT provider
-// must rename the identity after the EDITED provider, not the original one
-// the Provider field was seeded with — identityName() previously read
-// f.provider.Value() directly, which the Host-edit path never updated,
-// silently producing the WRONG persisted identity name (e.g. still "github"
-// after editing SSH Host to gitlab.com). Also asserts the Provider field's
-// own displayed value is kept in sync (the same edit's "stale display" half
-// of the finding).
-func TestIdentityNameFollowsEditedHostNotStaleProvider(t *testing.T) {
-	f := newSSHForm(tableBackend{}, "github.com", "", "", "ssh.github.com", "443", false)
+// TestIdentityNameFollowsEditedHost pins design-review finding D-20/DLV-04.2:
+// with a blank Alias prefix, editing the SSH Host field to a DIFFERENT provider
+// must rename the identity after the EDITED provider suffix, not the original
+// default provider — identityName() previously read a separate Provider field
+// that the Host-edit path never updated, silently producing the WRONG persisted
+// identity name (e.g. still "github" after editing SSH Host to gitlab.com).
+func TestIdentityNameFollowsEditedHost(t *testing.T) {
+	f := newSSHForm(tableBackend{}, "", "", "ssh.github.com", "443", false)
 	if got := f.identityName(); got != "github" {
 		t.Fatalf("identityName() before any edit = %q, want %q", got, "github")
 	}
@@ -582,9 +578,6 @@ func TestIdentityNameFollowsEditedHostNotStaleProvider(t *testing.T) {
 
 	if got := f.identityName(); got != "gitlab" {
 		t.Errorf("identityName() after editing SSH Host to gitlab.com = %q, want %q (D-20 edited-alias-wins)", got, "gitlab")
-	}
-	if got := f.provider.Value(); got != "gitlab.com" {
-		t.Errorf("Provider field after editing SSH Host to gitlab.com = %q, want %q (must not display a value the model already discarded)", got, "gitlab.com")
 	}
 }
 
@@ -928,7 +921,6 @@ func TestEditSSHRendersSameFormWithLockedIdentityFields(t *testing.T) {
 		t.Fatalf("edit pane missing:\n%s", pane)
 	}
 	for _, want := range []string{
-		"Locked — the provider comes from the Host alias",
 		"Locked — the identity name never changes in place; use Clone to rename",
 		"SSH Host (alias)", "Real hostname", "Port",
 	} {
@@ -1325,7 +1317,7 @@ func TestWizardChordHintIsStepConditionalAndAlwaysVisible(t *testing.T) {
 func TestWizardArrowKeyPrecedenceStep0(t *testing.T) {
 	// Clause 1: the algorithm select owns plain arrows (cycles the
 	// catalog), never changing the wizard step.
-	a := pressSeq(t, identitiesApp(), "n", "up", "up") // prefix → provider → algorithm (wraps past key source)
+	a := pressSeq(t, identitiesApp(), "n", "up") // prefix → algorithm
 	if identModel(t, a).wizard.focus != wizardFocusKeyBody {
 		t.Fatal("setup: expected algorithm focus")
 	}
@@ -1492,9 +1484,9 @@ func TestWizardFocusedFieldIsSingleRowColorOnlyNoBox(t *testing.T) {
 	if !strings.Contains(plain, "▸") {
 		t.Error("the focused field must carry the redundant non-color `▸` marker cue")
 	}
-	// The Provider field (blurred at wizard open) renders a single-row dim
-	// bracket contour — brackets present in EVERY state (D1).
-	if !strings.Contains(plain, "[github.com]") {
+	// A blurred field at wizard open (e.g. Real hostname) renders a single-row
+	// dim bracket contour — brackets present in EVERY state (D1).
+	if !strings.Contains(plain, "[ssh.github.com]") {
 		t.Errorf("blurred fields must render a dim bracket contour; pane:\n%s", plain)
 	}
 }
@@ -1617,7 +1609,8 @@ func TestReusePickerSameProviderWarningIsAdvisoryNotBlocking(t *testing.T) {
 	if !strings.Contains(paneFlat(a), "Same provider as an existing identity") {
 		t.Error("same-provider warning must render (D-12, advisory)")
 	}
-	if !m.wizard.step0Valid(m.backend.InitialState()) {
+	valid, _ := m.wizard.step0Valid(m.backend.InitialState())
+	if !valid {
 		t.Error("a same-provider reuse selection must NOT block advance (D-12: warn, allow)")
 	}
 }
@@ -1637,7 +1630,8 @@ func TestReusePickerNonCatalogAlgorithmShowsInfoNoteNotBlocking(t *testing.T) {
 	if !strings.Contains(paneFlat(a), "Not one of gitid's generate algorithms") {
 		t.Error("a non-catalog algorithm must show the D-13 informational note")
 	}
-	if !m.wizard.step0Valid(m.backend.InitialState()) {
+	valid, _ := m.wizard.step0Valid(m.backend.InitialState())
+	if !valid {
 		t.Error("a non-catalog algorithm must NOT block advance (D-13)")
 	}
 }
@@ -1659,7 +1653,8 @@ func TestReusePickerEncryptedWithPubKeyIsSelectableAndNotBlocking(t *testing.T) 
 	if !ok || !view.Encrypted {
 		t.Fatalf("setup: expected the encrypted staging key selected, got %+v (ok=%v)", view, ok)
 	}
-	if !m.wizard.step0Valid(m.backend.InitialState()) {
+	valid, _ := m.wizard.step0Valid(m.backend.InitialState())
+	if !valid {
 		t.Error("an encrypted-with-.pub key selection must NOT block advance (D-11/KEY-06)")
 	}
 	if got := m.wizard.reuseKeyPath(); got != "~/.ssh/id_ed25519_staging" {
@@ -1696,7 +1691,8 @@ func TestReusePickerManualPathRow(t *testing.T) {
 	if m.wizard.reuseIdx != 6 {
 		t.Fatalf("setup: reuseIdx = %d, want 6 (manual row)", m.wizard.reuseIdx)
 	}
-	if m.wizard.step0Valid(m.backend.InitialState()) {
+	valid, _ := m.wizard.step0Valid(m.backend.InitialState())
+	if valid {
 		t.Error("an empty manual-path row must block advance (D-10)")
 	}
 
@@ -1709,7 +1705,8 @@ func TestReusePickerManualPathRow(t *testing.T) {
 	if got := m.wizard.reuseKeyPath(); got != stubManualReusePath {
 		t.Errorf("reuseKeyPath() = %q, want the resolved manual path %q", got, stubManualReusePath)
 	}
-	if !m.wizard.step0Valid(m.backend.InitialState()) {
+	valid, _ = m.wizard.step0Valid(m.backend.InitialState())
+	if !valid {
 		t.Error("a resolved manual-path candidate must unblock advance")
 	}
 }
@@ -1731,7 +1728,8 @@ func TestReusePickerManualPathRejectsInvalidCandidate(t *testing.T) {
 	if !strings.Contains(paneFlat(a), m.wizard.manualErr) {
 		t.Error("the manual-path error must render inline in the picker")
 	}
-	if m.wizard.step0Valid(m.backend.InitialState()) {
+	valid, _ := m.wizard.step0Valid(m.backend.InitialState())
+	if valid {
 		t.Error("an unresolved manual-path candidate must block advance")
 	}
 }

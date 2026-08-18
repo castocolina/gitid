@@ -108,10 +108,9 @@ func updateInput(ti textinput.Model, msg tea.KeyMsg) (textinput.Model, bool) {
 // second copy of the fields (Identities.tsx SshFormFields).
 // ---------------------------------------------------------------------------
 
-// SSH form focus slots (wizard adds focus 5 = algorithm).
+// SSH form focus slots (SSHUI-01 four-field order; wizard adds focus 4 = algorithm).
 const (
-	sshFieldProvider = iota
-	sshFieldPrefix
+	sshFieldPrefix = iota
 	sshFieldHost
 	sshFieldHostname
 	sshFieldPort
@@ -175,12 +174,15 @@ func nonCatalogAlgorithm(view ReusableKeyView) bool {
 	return !catalogAlgorithmTokens[view.Algorithm]
 }
 
+// defaultProvider is the canonical provider used when the user has not yet
+// typed an SSH Host alias. It matches the recipe default for new identities.
+const defaultProvider = "github.com"
+
 // sshForm is the shared SSH field set.
 type sshForm struct {
-	// backend supplies the provider→endpoint defaults (D-20/D-21) the
-	// provider field applies as the user types.
+	// backend supplies the provider→endpoint defaults (D-20/D-21) inferred
+	// from the SSH Host suffix as the user types.
 	backend  Backend
-	provider textinput.Model
 	prefix   textinput.Model
 	host     textinput.Model
 	hostname textinput.Model
@@ -196,10 +198,9 @@ type sshForm struct {
 }
 
 // newSSHForm builds the form with initial values.
-func newSSHForm(b Backend, provider, prefix, host, hostname, port string, lockIdentity bool) sshForm {
+func newSSHForm(b Backend, prefix, host, hostname, port string, lockIdentity bool) sshForm {
 	return sshForm{
 		backend:      b,
-		provider:     newTextInput(provider),
 		prefix:       newTextInput(prefix),
 		host:         newTextInput(host),
 		hostname:     newTextInput(hostname),
@@ -219,9 +220,9 @@ const altSSHHint = "! Unknown provider — 22; alt-SSH 443 is provider-specific"
 func (f sshForm) autoHost() string {
 	prefix := strings.TrimSpace(f.prefix.Value())
 	if prefix == "" {
-		return f.provider.Value()
+		return f.providerHost()
 	}
-	return prefix + "." + f.provider.Value()
+	return prefix + "." + f.providerHost()
 }
 
 // hostSuffix reduces an SSH alias to the PROVIDER HOST it names: the last two
@@ -239,14 +240,14 @@ func hostSuffix(host string) string {
 
 // providerHost is the provider the form's CURRENT values imply. A manually
 // edited alias wins — its suffix is what ssh will actually connect to — and
-// otherwise the provider field (the auto-join source) answers.
+// otherwise the canonical default provider answers.
 func (f sshForm) providerHost() string {
 	if f.hostTouched {
 		if suffix := hostSuffix(f.host.Value()); suffix != "" {
 			return suffix
 		}
 	}
-	return f.provider.Value()
+	return defaultProvider
 }
 
 // applyProviderDefaults autofills Real hostname + Port for provider from the
@@ -336,26 +337,17 @@ func (f sshForm) portValid() bool {
 // auto-join / provider-default logic (Identities.tsx CreateWizard).
 func (f sshForm) handleEdit(msg tea.KeyMsg, focus int) sshForm {
 	switch focus {
-	case sshFieldProvider:
-		if f.lockIdentity {
-			return f
-		}
-		var changed bool
-		f.provider, changed = updateInput(f.provider, msg)
-		if changed {
-			f = f.applyProviderDefaults(f.provider.Value())
-			if !f.hostTouched {
-				f.host.SetValue(f.autoHost())
-			}
-		}
 	case sshFieldPrefix:
 		if f.lockIdentity {
 			return f
 		}
 		var changed bool
 		f.prefix, changed = updateInput(f.prefix, msg)
-		if changed && !f.hostTouched {
-			f.host.SetValue(f.autoHost())
+		if changed {
+			if !f.hostTouched {
+				f.host.SetValue(f.autoHost())
+			}
+			f = f.applyProviderDefaults(f.providerHost())
 		}
 	case sshFieldHost:
 		var changed bool
@@ -366,18 +358,7 @@ func (f sshForm) handleEdit(msg tea.KeyMsg, focus int) sshForm {
 			// its suffix re-resolves the endpoint on every keystroke, so
 			// `work.gitlab.com` fills in altssh.gitlab.com:443 without a
 			// second field to keep in sync.
-			suffix := hostSuffix(f.host.Value())
-			f = f.applyProviderDefaults(suffix)
-			// design-review (03-06 visual-regression gate): mirror the
-			// inferred suffix back into the Provider field itself — without
-			// this, Provider kept displaying its OLD value after a Host
-			// edit (e.g. still "github.com" after typing work.gitlab.com),
-			// a stale-state display bug on top of the row that scans first
-			// in the form (F-pattern), even though providerHost() already
-			// prefers the edited suffix for every WRITE path.
-			if suffix != "" {
-				f.provider.SetValue(suffix)
-			}
+			f = f.applyProviderDefaults(hostSuffix(f.host.Value()))
 		}
 	case sshFieldHostname:
 		var changed bool
@@ -406,7 +387,7 @@ func (f sshForm) handleEdit(msg tea.KeyMsg, focus int) sshForm {
 // setFocus focuses exactly the input at focus (so it receives keys and
 // renders its cursor).
 func (f sshForm) setFocus(focus int) sshForm {
-	inputs := []*textinput.Model{&f.provider, &f.prefix, &f.host, &f.hostname, &f.port}
+	inputs := []*textinput.Model{&f.prefix, &f.host, &f.hostname, &f.port}
 	for i, ti := range inputs {
 		if i == focus {
 			ti.Focus()
@@ -446,37 +427,46 @@ func helperLine(text string, isError bool) string {
 }
 
 // view renders the shared field set. prefixError (if non-empty) replaces
-// the prefix helper; hostHelper is the auto-join state helper. Contract
+// the prefix helper; hostHelper is the auto-join state helper; validation
+// is a field-keyed error surfaced inline on the matching control. Contract
 // helpers (locked fields, prefix WYSIWYG/duplicate, auto-join state)
 // always render; purely descriptive ones render for the focused field
 // only, keeping the pane inside the 30-row frame.
-func (f sshForm) view(focus int, prefixError, hostHelper string) string {
+func (f sshForm) view(focus int, prefixError, hostHelper string, validation *ValidationError) string {
 	var b strings.Builder
-	b.WriteString(formFieldLine("Provider", f.provider, focus == sshFieldProvider, f.lockIdentity) + "\n")
-	if f.lockIdentity {
-		b.WriteString(helperLine("Locked — the provider comes from the Host alias", false) + "\n")
-	} else if focus == sshFieldProvider {
-		b.WriteString(helperLine(strings.Join(wizardProviders, " · ")+" — or type any host", false) + "\n")
-	}
 	b.WriteString(formFieldLine("Alias prefix", f.prefix, focus == sshFieldPrefix, f.lockIdentity) + "\n")
 	switch {
 	case f.lockIdentity:
 		b.WriteString(helperLine("Locked — the identity name never changes in place; use Clone to rename", false) + "\n")
+	case validation != nil && validation.Field == "alias":
+		b.WriteString(helperLine(validation.Message, true) + "\n")
 	case prefixError != "":
 		b.WriteString(helperLine(prefixError, true) + "\n")
 	default:
 		b.WriteString(helperLine("Blank prefix → SSH Host = the provider host itself", false) + "\n")
 	}
 	b.WriteString(formFieldLine("SSH Host (alias)", f.host, focus == sshFieldHost, false) + "\n")
-	if hostHelper != "" {
+	switch {
+	case validation != nil && validation.Field == "alias" && focus == sshFieldHost:
+		// Alias validation is most relevant on the prefix row, but also
+		// mirror it while the Host field is focused so the error is visible
+		// as the user edits the alias itself.
+		b.WriteString(helperLine(validation.Message, true) + "\n")
+	case hostHelper != "":
 		b.WriteString(helperLine(hostHelper, false) + "\n")
+	case focus == sshFieldHost:
+		b.WriteString(helperLine(strings.Join(wizardProviders, " · ")+" — or type any host", false) + "\n")
 	}
 	b.WriteString(formFieldLine("Real hostname", f.hostname, focus == sshFieldHostname, false) + "\n")
-	if focus == sshFieldHostname {
+	if validation != nil && validation.Field == "hostname" {
+		b.WriteString(helperLine(validation.Message, true) + "\n")
+	} else if focus == sshFieldHostname {
 		b.WriteString(helperLine("The true SSH endpoint", false) + "\n")
 	}
 	portLine := formFieldLine("Port", f.port, focus == sshFieldPort, false)
 	switch {
+	case validation != nil && validation.Field == "port":
+		portLine += "  " + styleError.Render(validation.Message)
 	case !f.portValid():
 		portLine += "  " + styleError.Render("digits only")
 	case f.unknownProvider():
@@ -491,7 +481,7 @@ func (f sshForm) view(focus int, prefixError, hostHelper string) string {
 	// costs no extra row while blurred, and at most +1 while focused, which
 	// the 100x30 budget still absorbs (the field-contour/hint-zone work
 	// left ~2 rows of headroom at this step).
-	if focus == sshFieldPort {
+	if focus == sshFieldPort && (validation == nil || validation.Field != "port") {
 		b.WriteString(helperLine("Default 22; 443 for alt-SSH", false) + "\n")
 	}
 	return b.String()
@@ -720,7 +710,7 @@ type wizardModel struct {
 	backend      Backend
 	step         int
 	form         sshForm
-	focus        int // step 0: 0..4 form fields, 5 key source, 6 algorithm/picker, 7 manual path
+	focus        int // step 0: 0..3 form fields, 4 key source, 5 algorithm/picker, 6 manual path
 	algoIdx      int
 	testPhase    string
 	simulateFail bool
@@ -749,7 +739,7 @@ type wizardModel struct {
 
 // newWizard builds the wizard with the web demo's defaults.
 func newWizard(b Backend) wizardModel {
-	form := newSSHForm(b, "github.com", "acme", "acme.github.com", "ssh.github.com", "443", false)
+	form := newSSHForm(b, "acme", "acme.github.com", "ssh.github.com", "443", false)
 	form = form.setFocus(sshFieldPrefix) // web: Alias prefix autoFocus
 	return wizardModel{
 		backend:    b,
@@ -762,13 +752,18 @@ func newWizard(b Backend) wizardModel {
 }
 
 // keyPath is the per-identity key the wizard will use: the reused key's own
-// path when the D-10 picker has a usable selection, otherwise the
-// ed25519 path a generate would produce.
+// path when the D-10 picker has a usable selection, otherwise the generated
+// key path named after the selected algorithm (ed25519 keeps the historical
+// id_ed25519_<identity> form for backward compatibility).
 func (w wizardModel) keyPath() string {
 	if path := w.reuseKeyPath(); path != "" {
 		return path
 	}
-	return "~/.ssh/id_ed25519_" + w.form.identityName()
+	algo := w.algo()
+	if algo == "" || algo == "ed25519" {
+		return "~/.ssh/id_ed25519_" + w.form.identityName()
+	}
+	return "~/.ssh/id_" + algo + "_" + w.form.identityName()
 }
 
 // reuseKeyPath is the D-10 picker's resolved private-key path — empty when
@@ -928,6 +923,7 @@ func (w wizardModel) catalog() []AlgorithmCatalogEntry { return w.backend.Algori
 func (w wizardModel) spec() CreateSpec {
 	return CreateSpec{
 		Identity:        w.form.identityName(),
+		Provider:        w.form.providerHost(),
 		Alias:           w.form.sshHost(),
 		Hostname:        w.form.hostname.Value(),
 		Port:            w.form.port.Value(),
@@ -952,10 +948,11 @@ func (w wizardModel) algo() string {
 	return catalog[w.algoIdx].ID
 }
 
-// algoDisabled reports whether a catalog entry is unavailable on this
-// machine (the demo simulates: no FIDO2 key plugged in).
+// algoDisabled reports whether a catalog entry is unavailable or
+// unimplemented on this machine. Availability is explicit in the catalog
+// so rendering/selection never depend on parsing note text (CR-03).
 func algoDisabled(entry AlgorithmCatalogEntry) bool {
-	return strings.HasPrefix(entry.MacOS, "Needs libfido2")
+	return !entry.Implemented || !entry.Available
 }
 
 // hostBlockText renders the managed Host block for the given values
@@ -964,6 +961,7 @@ func algoDisabled(entry AlgorithmCatalogEntry) bool {
 // (M1: reuse, never duplicate). It is the same text written on confirm.
 func hostBlockText(b Backend, host, hostname, port, keyPath string) string {
 	return b.HostBlockPreview(CreateSpec{
+		Provider: hostSuffix(host),
 		Alias:    host,
 		Hostname: hostname,
 		Port:     port,
@@ -1071,19 +1069,20 @@ func (w wizardModel) stage2Cmd() string {
 // existing key" (D-10) without landing on a usable candidate blocks advance
 // too — otherwise the reuse choice would silently fall back to generating a
 // key under a name the user never asked for.
-func (w wizardModel) step0Valid(s DemoState) bool {
+func (w wizardModel) step0Valid(_ DemoState) (bool, *ValidationError) {
 	if w.keySource == keySourceReuse && w.reuseKeyPath() == "" {
-		return false
+		return false, nil
 	}
-	return !w.nameTaken(s) && strings.TrimSpace(w.form.hostname.Value()) != "" &&
-		w.form.portValid() && strings.TrimSpace(w.form.sshHost()) != ""
-}
-
-// nameTaken reports whether the produced identity name already exists —
-// the D-09 alias-collision check, answered by the Backend (fixtures for
-// the dummy, the user's real Host blocks for the product).
-func (w wizardModel) nameTaken(s DemoState) bool {
-	return w.backend.AliasCollision(s, w.form.identityName())
+	if err := w.backend.ValidateHostBlock(w.form.sshHost(), w.form.hostname.Value(), w.form.port.Value(), w.keyPath()); err != nil {
+		return false, err
+	}
+	if collides, err := w.backend.AliasCollision(w.form.sshHost()); err != nil || collides {
+		if err != nil {
+			return false, &ValidationError{Field: "alias", Message: err.Error()}
+		}
+		return false, &ValidationError{Field: "alias", Message: "SSH Host alias already exists"}
+	}
+	return strings.TrimSpace(w.form.hostname.Value()) != "" && w.form.portValid() && strings.TrimSpace(w.form.sshHost()) != "", nil
 }
 
 // stepBack (D7, checkpoint-2 contract) uniformly decrements the wizard step
@@ -1106,7 +1105,8 @@ func (w wizardModel) stepBack() wizardModel {
 func (w wizardModel) stepForward(s DemoState) (wizardModel, bool) {
 	switch w.step {
 	case 0:
-		if w.step0Valid(s) {
+		valid, _ := w.step0Valid(s)
+		if valid {
 			w.step = 1
 			w.testPhase = testIdle
 			return w, true
@@ -1489,11 +1489,6 @@ func (m identitiesModel) openEditSSH(sel DemoIdentity) identitiesModel {
 	if sshHost == "" {
 		sshHost = sel.Name + ".github.com"
 	}
-	parts := strings.Split(sshHost, ".")
-	provider := "github.com"
-	if len(parts) >= 2 {
-		provider = strings.Join(parts[len(parts)-2:], ".")
-	}
 	hostname := sel.Hostname
 	if hostname == "" {
 		hostname = "ssh.github.com"
@@ -1502,7 +1497,7 @@ func (m identitiesModel) openEditSSH(sel DemoIdentity) identitiesModel {
 	if port == 0 {
 		port = 443
 	}
-	m.editForm = newSSHForm(m.backend, provider, sel.Name, sshHost, hostname, strconv.Itoa(port), true)
+	m.editForm = newSSHForm(m.backend, sel.Name, sshHost, hostname, strconv.Itoa(port), true)
 	m.editFocus = sshFieldHost
 	m.editForm = m.editForm.setFocus(m.editFocus)
 	m.pane = paneEditSSH
@@ -1862,7 +1857,8 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			m.pane = paneDetail
 			return keyResult{model: m, handled: true}
 		case "enter":
-			if w.step0Valid(s) {
+			valid, _ := w.step0Valid(s)
+			if valid {
 				w.step = 1
 				w.testPhase = testIdle
 			}
@@ -2138,7 +2134,7 @@ func (m identitiesModel) handleClick(x, y, width, height int, s DemoState) keyRe
 		return m.handleWizardClick(body, x, y, s)
 	case paneEditSSH:
 		// Only the non-locked fields (Host/Hostname/Port) are focusable —
-		// Provider/Alias prefix stay locked in edit mode.
+		// Alias prefix stays locked in edit mode.
 		if slot, ok := hitAnyFieldRow(body, x, y, sshFormFieldSlots); ok && slot >= sshFieldHost {
 			m.editFocus = slot
 			m.editForm = m.editForm.setFocus(slot)
@@ -2250,7 +2246,6 @@ type fieldSlot struct {
 // sshFormFieldSlots are the SSH form's field rows, in render order — shared
 // by the wizard step 0 and edit-SSH click handlers.
 var sshFormFieldSlots = []fieldSlot{
-	{"Provider", sshFieldProvider},
 	{"Alias prefix", sshFieldPrefix},
 	{"SSH Host (alias)", sshFieldHost},
 	{"Real hostname", sshFieldHostname},
@@ -2701,7 +2696,7 @@ func (w wizardModel) renderKeyBody() string {
 // row both key-source and this list used to render separately.
 func (w wizardModel) renderAlgorithmRows() string {
 	var b strings.Builder
-	for i, entry := range AlgorithmCatalog {
+	for i, entry := range w.catalog() {
 		dot := glyphRadioOff
 		label := entry.ID
 		if entry.Recommended {
@@ -2719,7 +2714,16 @@ func (w wizardModel) renderAlgorithmRows() string {
 			}
 		}
 		if algoDisabled(entry) {
-			b.WriteString("     " + styleFaint.Render(dot+" "+label+" — Disabled: needs libfido2 + a FIDO2 security key — none detected on this machine") + "\n")
+			reason := entry.MacOS
+			if !entry.Implemented {
+				reason = "not yet implemented by gitid"
+				if strings.Contains(entry.MacOS, "libfido2") {
+					// Keep the unavailable hardware-key rationale within the
+					// fixed 100x30 wizard budget so the Host preview remains whole.
+					reason = "needs libfido2 + FIDO2 key"
+				}
+			}
+			b.WriteString("     " + styleFaint.Render(dot+" "+label+" — Disabled: "+reason) + "\n")
 		} else {
 			b.WriteString("     " + dot + " " + label + "\n")
 		}
@@ -2838,14 +2842,15 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 	switch w.step {
 	case 0:
 		prefixError := ""
-		if w.nameTaken(s) {
+		_, valErr := w.step0Valid(s)
+		if valErr != nil && valErr.Field == "alias" && strings.Contains(valErr.Message, "already exists") {
 			prefixError = `"` + w.form.identityName() + `" already exists — pick another prefix.`
 		}
 		hostHelper := "Auto-joined: <prefix>.<provider> — editable"
 		if w.form.hostTouched {
 			hostHelper = "Manually edited — auto-join off"
 		}
-		b.WriteString(w.form.view(w.focus, prefixError, hostHelper))
+		b.WriteString(w.form.view(w.focus, prefixError, hostHelper, valErr))
 		b.WriteString(w.renderKeyBody())
 		b.WriteString(renderHostBlockPreview(m.backend, w.form.sshHost(), w.form.hostname.Value(), w.form.port.Value(), w.keyPath(), width))
 	case 1:
@@ -2995,7 +3000,7 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 		// (deviation #8: designer-arbitrated; the preview is inline).
 		editKeyPath := orDefault(sel.KeyPath, "~/.ssh/id_ed25519_"+sel.Name)
 		pane = " " + styleBold.Render("Edit SSH — "+sel.Name) + "\n" +
-			m.editForm.view(m.editFocus, "", "") +
+			m.editForm.view(m.editFocus, "", "", nil) +
 			renderHostBlockPreview(m.backend, m.editForm.host.Value(), m.editForm.hostname.Value(),
 				m.editForm.port.Value(), editKeyPath, detailWidth) +
 			"\n\n " + wizardButton(identEditRewriteButton, m.editFocus == editFocusButton, true, "")
@@ -3100,7 +3105,8 @@ func (m identitiesModel) wizardFooter(s DemoState) []FooterAction {
 	switch w.step {
 	case 0:
 		next := FooterAction{Key: "Enter", Label: "next: test connection"}
-		if !w.step0Valid(s) {
+		valid, _ := w.step0Valid(s)
+		if !valid {
 			next.Label = "next (fix fields first)"
 		}
 		return []FooterAction{{Key: "Tab/↑↓", Label: "fields"}, next}

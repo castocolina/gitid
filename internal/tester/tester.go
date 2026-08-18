@@ -89,19 +89,20 @@ func preWriteArgs(keyPath, hostname string, port int, knownHostsPath string) []s
 }
 
 // resolvedViaArgs builds the stage-2 CONNECTIVITY ssh argument slice used by
-// ResolvedVia: the alias is resolved through the staged temp config (-F) with
-// the staged key pinned (-i). It is the single source of truth shared by the
-// executing path (ResolvedVia) and the display path (ResolvedViaCommand), so
-// the command shown to the user can never drift from the command run
-// (TEST-01). The `ssh -G` resolution call is deliberately NOT built here — it
-// takes no -i.
+// ResolvedVia: the alias is resolved through the staged temp config (-F) and
+// the config's IdentityFile supplies the key — NO explicit -i. This proves the
+// alias resolves to the right key through the managed block alone (TEST-02).
+// It is the single source of truth shared by the executing path (ResolvedVia)
+// and the display path (ResolvedViaCommand), so the command shown to the user
+// can never drift from the command run (TEST-01). The `ssh -G` resolution call
+// is deliberately NOT built here.
 //
 // Arguments are passed as a slice (never a shell string), keeping the call
 // gosec G204-clean and free of OS-command-injection risk (threat T-03-03).
 func resolvedViaArgs(configPath, keyPath, alias string, knownHostsPath string) []string {
+	_ = keyPath // keyPath is not pinned on the command line; the staged config supplies it.
 	args := []string{
 		"-F", configPath,
-		"-i", keyPath,
 		"-o", "IdentitiesOnly=yes",
 		"-o", "BatchMode=yes",
 		"-o", "ConnectTimeout=10",

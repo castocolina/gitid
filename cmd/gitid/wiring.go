@@ -468,38 +468,32 @@ func (b *realBackend) IncludeIfPreview(spec tuikit.GitSpec) string {
 	return gitconfig.RenderIncludeIf(spec.Identity, fragment, matchesFor(spec))
 }
 
-// AliasCollision reports whether identity is already claimed — the D-09 gate
+// ValidateHostBlock validates the four SSH form values before they are
+// interpolated into an OpenSSH Host block.
+func (b *realBackend) ValidateHostBlock(alias, hostname, port, identityFile string) *tuikit.ValidationError {
+	if err := sshconfig.ValidateHostBlock(alias, hostname, port, identityFile); err != nil {
+		if validationErr, ok := err.(*sshconfig.ValidationError); ok {
+			return &tuikit.ValidationError{Field: validationErr.Field, Message: validationErr.Message}
+		}
+		return &tuikit.ValidationError{Message: err.Error()}
+	}
+	return nil
+}
+
+// AliasCollision reports whether alias is already claimed — the D-09 gate
 // the wizard holds step 1 on. It checks the user's REAL configuration
 // Include-aware (a fresh D-06 machine keeps every identity block in
 // config.d/gitid.config, so reading ~/.ssh/config alone would see none), plus
 // every Host pattern in the file, managed AND hand-written: gitid must never
 // write an ambiguous first-match-wins alias.
-func (b *realBackend) AliasCollision(state tuikit.DemoState, name string) bool {
-	if strings.TrimSpace(name) == "" {
-		return false
-	}
-	for _, row := range state.Identities {
-		if row.Name == name {
-			return true
-		}
+func (b *realBackend) AliasCollision(alias string) (bool, error) {
+	if strings.TrimSpace(alias) == "" {
+		return false, nil
 	}
 	if b.initErr != nil {
-		return false
+		return false, b.initErr
 	}
-	names, err := sshconfig.ManagedBlockNames(b.sshConfigPath)
-	if err == nil {
-		for _, n := range names {
-			if n == name && !sshconfig.IsReservedBlockName(n) {
-				return true
-			}
-		}
-	}
-	for _, host := range b.hostPatterns() {
-		if host == name {
-			return true
-		}
-	}
-	return false
+	return sshconfig.AliasCollision(b.sshConfigPath, alias)
 }
 
 // ScanReusableKeys lists the D-10 reuse candidates found in ~/.ssh. Encrypted
@@ -729,6 +723,8 @@ func toAlgorithmCatalogEntry(a keygen.AlgoInfo) tuikit.AlgorithmCatalogEntry {
 		MacOS:       a.DarwinNote,
 		Linux:       a.LinuxNote,
 		Recommended: a.Default,
+		Implemented: a.Implemented,
+		Available:   a.Available,
 	}
 }
 
@@ -897,27 +893,6 @@ func (b *realBackend) keyOwners() map[string]string {
 	return owners
 }
 
-// hostPatterns is every Host alias in the user's configuration — gitid-managed
-// AND hand-written — for the D-09 collision check.
-func (b *realBackend) hostPatterns() []string {
-	deps := identity.BuildInventoryDeps()
-	sshBytes, err := deps.ReadSSHConfig()
-	if err != nil {
-		return nil
-	}
-	hosts, err := sshconfig.ParseManagedHosts(sshBytes)
-	if err != nil {
-		return nil
-	}
-	out := make([]string, 0, len(hosts))
-	for _, info := range hosts {
-		if info.Alias != "" {
-			out = append(out, info.Alias)
-		}
-	}
-	return out
-}
-
 // ---------------------------------------------------------------------------
 // In-flight create state
 // ---------------------------------------------------------------------------
@@ -965,6 +940,9 @@ func (b *realBackend) createInputFromSpec(spec tuikit.CreateSpec) identity.Creat
 		ReuseKeyPath: spec.ReuseKeyPath,
 	})
 	in.Algo = algo
+	if spec.Provider != "" {
+		in.Provider = spec.Provider
+	}
 	return in
 }
 

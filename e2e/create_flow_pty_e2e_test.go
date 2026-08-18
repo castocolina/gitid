@@ -178,7 +178,7 @@ func TestCreateFlow_SSHFormAliasCollision(t *testing.T) {
 	mustSee(t, s, "Port 443", "step 0: the live Host-block preview shows the default recipe-faithful port")
 	mustSee(t, s, "IdentitiesOnly yes", "step 0: the live Host-block preview shows IdentitiesOnly yes")
 
-	mustSee(t, s, `"acme" already exists`, "step 0: D-09 alias-collision inline error fires against the seeded identity")
+	mustSee(t, s, "SSH Host alias already exists", "step 0: D-09 alias-collision inline error fires against the seeded identity")
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 	mustSee(t, s, "Step 1/4", "step 0: a blocked Enter must not advance past the collision")
 

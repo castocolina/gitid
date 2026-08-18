@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -46,6 +48,22 @@ type ReusableKey struct {
 	// unparseable). It is informational; the entry is usable regardless.
 	ParseError error
 }
+
+// sshKeygenRunner runs `ssh-keygen` with the given args and returns its
+// combined stdout+stderr text. It is injectable so unit tests can drive the
+// encrypted-private fingerprint path without requiring a real ssh-keygen binary.
+type sshKeygenRunner func(args []string) (string, error)
+
+// defaultSSHKeygenRunner is the production runner: ssh-keygen is called with
+// args passed as a slice (no shell).
+func defaultSSHKeygenRunner(args []string) (string, error) {
+	out, err := exec.Command("ssh-keygen", args...).CombinedOutput() //nolint:gosec // arg-slice form, no shell; path derived from caller-supplied ssh dir (G204)
+	return string(out), err
+}
+
+// currentSSHKeygenRunner holds the runner used by scanKeyCandidate for
+// encrypted-key fingerprint extraction. Tests swap this value.
+var currentSSHKeygenRunner sshKeygenRunner = defaultSSHKeygenRunner
 
 // ScanReusableKeys enumerates the private keys in sshDir and returns one
 // ReusableKey per candidate, ordered by path so the picker's rows never
@@ -115,22 +133,48 @@ func scanKeyCandidate(path string) (ReusableKey, bool) {
 	signer, err := ssh.ParsePrivateKey(privBytes)
 	switch {
 	case err == nil:
+		// Unencrypted: derive the canonical public metadata from the private
+		// key itself. If a .pub sibling exists, require the fingerprints to
+		// match so a mismatched sibling cannot mask itself (CR-08).
 		pub := signer.PublicKey()
 		key.Algorithm = pub.Type()
 		key.Fingerprint = ssh.FingerprintSHA256(pub)
+		if key.HasPub {
+			_, pubFP, pubErr := pubMetadata(pubPath)
+			if pubErr != nil {
+				key.ParseError = pubErr
+				return key, false
+			}
+			if pubFP != key.Fingerprint {
+				key.ParseError = fmt.Errorf("keygen: %s public-key sibling does not match private key", path)
+				return key, false
+			}
+		}
 		return key, true
 
 	case isPassphraseMissing(err):
-		// D-11: encrypted keys are accepted, never passphrase-prompted. Take the
-		// display metadata from the public half when it is available on disk.
+		// D-11: encrypted keys are accepted, never passphrase-prompted. The
+		// public half must be verifiable on disk and match the private key.
 		key.Encrypted = true
-		if key.HasPub {
-			algo, fp, pubErr := pubMetadata(pubPath)
-			if pubErr != nil {
-				key.ParseError = pubErr
-			}
-			key.Algorithm, key.Fingerprint = algo, fp
+		if !key.HasPub {
+			key.ParseError = fmt.Errorf("keygen: %s is encrypted and has no verifiable .pub sibling", path)
+			return key, false
 		}
+		algo, pubFP, pubErr := pubMetadata(pubPath)
+		if pubErr != nil {
+			key.ParseError = pubErr
+			return key, false
+		}
+		privFP, privErr := fingerprintFromEncryptedPrivate(path)
+		if privErr != nil {
+			key.ParseError = privErr
+			return key, false
+		}
+		if privFP != pubFP {
+			key.ParseError = fmt.Errorf("keygen: %s encrypted private key does not match .pub sibling", path)
+			return key, false
+		}
+		key.Algorithm, key.Fingerprint = algo, pubFP
 		return key, true
 
 	default:
@@ -139,6 +183,26 @@ func scanKeyCandidate(path string) (ReusableKey, bool) {
 		key.ParseError = fmt.Errorf("keygen: parsing private key %s: %w", path, err)
 		return key, false
 	}
+}
+
+// fingerprintFromEncryptedPrivate runs `ssh-keygen -lf <path>` non-
+// interactively. Modern OpenSSH stores the public key unencrypted in the
+// private-key file header, so this returns the fingerprint without prompting
+// for a passphrase. The returned string is the "SHA256:..." fingerprint.
+func fingerprintFromEncryptedPrivate(path string) (string, error) {
+	out, err := currentSSHKeygenRunner([]string{"-E", "sha256", "-lf", path})
+	if err != nil {
+		return "", fmt.Errorf("keygen: fingerprinting encrypted key %s: %w (output: %s)", path, err, strings.TrimSpace(out))
+	}
+	fields := strings.Fields(out)
+	if len(fields) < 2 {
+		return "", fmt.Errorf("keygen: unexpected ssh-keygen -lf output for %s: %q", path, out)
+	}
+	fp := fields[1]
+	if !strings.HasPrefix(fp, "SHA256:") {
+		return "", fmt.Errorf("keygen: unsupported fingerprint format for %s: %q", path, fp)
+	}
+	return fp, nil
 }
 
 // pubMetadata reads an authorized-key line from pubPath and returns its

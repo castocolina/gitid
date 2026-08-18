@@ -53,6 +53,12 @@ type Backend interface {
 	// starts on (GITUI-03; "gitdir" per recipes/).
 	DefaultMatchStrategy() string
 
+	// ValidateHostBlock validates the four SSH form values before they are
+	// interpolated into an OpenSSH Host block. A non-nil error is a
+	// *ValidationError with Field set to alias|hostname|port|identityFile
+	// so the UI can render it inline.
+	ValidateHostBlock(alias, hostname, port, identityFile string) *ValidationError
+
 	// HostBlockPreview is the live, WYSIWYG Host block text for spec —
 	// written exactly like this on confirm (SSHUI-03).
 	HostBlockPreview(spec CreateSpec) string
@@ -65,9 +71,10 @@ type Backend interface {
 	// match strategy, aliased to spec.Identity.
 	IncludeIfPreview(spec GitSpec) string
 
-	// AliasCollision reports whether identity already exists — the D-09
-	// collision check the wizard gates step 1 on.
-	AliasCollision(state DemoState, identity string) bool
+	// AliasCollision reports whether alias is already claimed by an
+	// existing Host stanza in the target SSH config — the D-09 collision
+	// check the wizard gates step 1 on.
+	AliasCollision(alias string) (bool, error)
 
 	// ScanReusableKeys lists the existing keys the D-10 picker offers for
 	// reuse. Unparseable/encrypted keys are surfaced with a note, never

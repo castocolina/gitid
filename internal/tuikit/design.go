@@ -33,13 +33,27 @@ func ManagedBlockSentinels(identityName string) (begin, end string) {
 // AlgorithmCatalogEntry mirrors recipeFixtures.ts's AlgorithmCatalogEntry
 // shape (KEY-01's top-5 catalog; ed25519 is best/default, KEY-03's
 // macOS/Linux local-availability notes for the other four).
+//
+// Implemented and Available are explicit, orthogonal flags so rendering and
+// selection never have to infer availability from note text (CR-03).
 type AlgorithmCatalogEntry struct {
 	ID          string
 	Security    string
 	MacOS       string
 	Linux       string
 	Recommended bool
+	Implemented bool
+	Available   bool
 }
+
+// ValidationError is a field-keyed error returned by Backend.ValidateHostBlock.
+// The SSH form maps Field to the offending control and renders Message inline.
+type ValidationError struct {
+	Field   string
+	Message string
+}
+
+func (e *ValidationError) Error() string { return e.Message }
 
 // AlgorithmCatalog is the Go mirror of recipeFixtures.ts's
 // algorithmCatalog — the KEY-01 top-5 key-algorithm catalog. It is the
@@ -49,33 +63,43 @@ var AlgorithmCatalog = []AlgorithmCatalogEntry{
 	{
 		ID:          "ed25519",
 		Recommended: true,
+		Implemented: true,
+		Available:   true,
 		Security:    "Modern EdDSA curve — small keys, fast, constant-time (timing-attack resistant). The recommended default.",
 		MacOS:       "Native (LibreSSL) — always available",
 		Linux:       "Native (OpenSSL) — always available",
 	},
 	{
-		ID:       "ed25519-sk",
-		Security: "Hardware-backed: private key material never leaves the security key; requires a physical touch to sign.",
-		MacOS:    "Needs libfido2 + a FIDO2 security key",
-		Linux:    "Needs libfido2 + a FIDO2 security key",
+		ID:          "ed25519-sk",
+		Implemented: false,
+		Available:   true,
+		Security:    "Hardware-backed: private key material never leaves the security key; requires a physical touch to sign.",
+		MacOS:       "Needs libfido2 + a FIDO2 security key",
+		Linux:       "Needs libfido2 + a FIDO2 security key",
 	},
 	{
-		ID:       "rsa-4096",
-		Security: "Strong at 4096 bits; widely compatible, larger keys and slower signing than ed25519.",
-		MacOS:    "Native — always available",
-		Linux:    "Native — always available",
+		ID:          "rsa-4096",
+		Implemented: true,
+		Available:   true,
+		Security:    "Strong at 4096 bits; widely compatible, larger keys and slower signing than ed25519.",
+		MacOS:       "Native — always available",
+		Linux:       "Native — always available",
 	},
 	{
-		ID:       "ecdsa-p256",
-		Security: "Compact NIST P-256 curve; smaller than RSA, though some users distrust NIST curve provenance versus ed25519.",
-		MacOS:    "Native — always available",
-		Linux:    "Native — always available",
+		ID:          "ecdsa-p256",
+		Implemented: false,
+		Available:   true,
+		Security:    "Compact NIST P-256 curve; smaller than RSA, though some users distrust NIST curve provenance versus ed25519.",
+		MacOS:       "Native — always available",
+		Linux:       "Native — always available",
 	},
 	{
-		ID:       "ecdsa-sk",
-		Security: "Hardware-backed ECDSA variant of ed25519-sk; physical security-key touch required.",
-		MacOS:    "Needs libfido2 + a FIDO2 security key",
-		Linux:    "Needs libfido2 + a FIDO2 security key",
+		ID:          "ecdsa-sk",
+		Implemented: false,
+		Available:   true,
+		Security:    "Hardware-backed ECDSA variant of ed25519-sk; physical security-key touch required.",
+		MacOS:       "Needs libfido2 + a FIDO2 security key",
+		Linux:       "Needs libfido2 + a FIDO2 security key",
 	},
 }
 

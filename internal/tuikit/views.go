@@ -80,6 +80,11 @@ type CreateSpec struct {
 	// Identity is the resolved identity name (the alias prefix, or the
 	// provider host when the prefix is left blank).
 	Identity string
+	// Provider is the provider host inferred from the SSH Host alias and
+	// the backend's known-provider table (D-20). It is preserved here so
+	// multi-label/custom providers are not later truncated by a two-label
+	// suffix reconstruction (WR-03).
+	Provider string
 	// Alias is the SSH Host alias the managed block declares.
 	Alias string
 	// Hostname is the real endpoint behind the alias.

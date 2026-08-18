@@ -548,15 +548,27 @@ func TestAliasCollisionIsIncludeAware(t *testing.T) {
 		sshconfig.RenderHostBlock("personal.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_personal", "")))
 
 	b := newBackendForHome(home)
-	if !b.AliasCollision(tuikit.DemoState{}, "personal") {
-		t.Error(`AliasCollision(_, "personal") = false; the Include'd identity block was not seen (D-09)`)
+	collides, err := b.AliasCollision("personal.github.com")
+	if err != nil {
+		t.Fatalf(`AliasCollision("personal.github.com") error: %v`, err)
 	}
-	if b.AliasCollision(tuikit.DemoState{}, "brand-new") {
-		t.Error(`AliasCollision(_, "brand-new") = true, want false`)
+	if !collides {
+		t.Error(`AliasCollision("personal.github.com") = false; the Include'd identity block was not seen (D-09)`)
+	}
+	collides, err = b.AliasCollision("brand-new")
+	if err != nil {
+		t.Fatalf(`AliasCollision("brand-new") error: %v`, err)
+	}
+	if collides {
+		t.Error(`AliasCollision("brand-new") = true, want false`)
 	}
 	// The reserved wiring block names are never identities.
-	if b.AliasCollision(tuikit.DemoState{}, "ssh-include") {
-		t.Error(`AliasCollision(_, "ssh-include") = true; a reserved block name is not an identity`)
+	collides, err = b.AliasCollision("ssh-include")
+	if err != nil {
+		t.Fatalf(`AliasCollision("ssh-include") error: %v`, err)
+	}
+	if collides {
+		t.Error(`AliasCollision("ssh-include") = true; a reserved block name is not an identity`)
 	}
 }
 

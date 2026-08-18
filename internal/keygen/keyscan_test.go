@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/pem"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -73,6 +74,23 @@ func fingerprintOfPubLine(t *testing.T, pubLine string) (algorithm, fingerprint 
 	return pub.Type(), ssh.FingerprintSHA256(pub)
 }
 
+// fakeSSHKeygenRunner returns a runner that emits the pre-computed SHA256
+// fingerprint for known paths, as if `ssh-keygen -E sha256 -lf <path>` had run.
+// Paths not in the map error, which lets tests assert unverifiable-key handling.
+func fakeSSHKeygenRunner(fps map[string]string) sshKeygenRunner {
+	return func(args []string) (string, error) {
+		if len(args) == 0 || args[len(args)-1] == "" {
+			return "", fmt.Errorf("fake runner: missing path")
+		}
+		path := args[len(args)-1]
+		fp, ok := fps[path]
+		if !ok {
+			return "", fmt.Errorf("fake runner: no fingerprint for %q (known: %v)", path, fps)
+		}
+		return fmt.Sprintf("256 %s comment (ED25519)\n", fp), nil
+	}
+}
+
 // byPath indexes a scan result by key path for assertion convenience.
 func byPath(keys []ReusableKey) map[string]ReusableKey {
 	m := make(map[string]ReusableKey, len(keys))
@@ -85,9 +103,15 @@ func byPath(keys []ReusableKey) map[string]ReusableKey {
 // TestScanReusableKeys covers the D-10 picker contract: every parseable private
 // key under the scanned dir is offered with its algorithm and SHA256
 // fingerprint; encrypted keys are flagged (never passphrase-prompted, D-11) and
-// take their metadata from the `.pub` sibling when one exists; unparseable and
-// non-key files are skipped without aborting the scan (D-13).
+// are ONLY offered when their public half can be verified on disk and matches
+// the private key non-interactively; unparseable and non-key files are skipped
+// without aborting the scan (D-13).
 func TestScanReusableKeys(t *testing.T) {
+	// Swap in a fake ssh-keygen runner so the encrypted-key proof runs without
+	// requiring the real binary in every test environment.
+	oldRunner := currentSSHKeygenRunner
+	defer func() { currentSSHKeygenRunner = oldRunner }()
+
 	dir := t.TempDir()
 
 	plainPub := seedEd25519(t, dir, "id_ed25519_plain", "", true)
@@ -104,17 +128,26 @@ func TestScanReusableKeys(t *testing.T) {
 		t.Fatalf("creating directory fixture: %v", err)
 	}
 
+	_, wantEncFP := fingerprintOfPubLine(t, encWithPub)
+	currentSSHKeygenRunner = fakeSSHKeygenRunner(map[string]string{
+		filepath.Join(dir, "id_ed25519_encpub"): wantEncFP,
+	})
+
 	keys, err := ScanReusableKeys(dir)
 	if err != nil {
 		t.Fatalf("ScanReusableKeys returned error: %v", err)
 	}
 	got := byPath(keys)
 
-	if len(keys) != 4 {
-		t.Fatalf("ScanReusableKeys returned %d entries, want 4 (plain, rsa, enc+pub, enc-nopub); got %v",
+	// encrypted-nopub is now skipped (unverifiable pair), so 3 entries remain.
+	if len(keys) != 3 {
+		for _, k := range keys {
+			t.Logf("entry: path=%s algo=%q fp=%q enc=%v haspub=%v err=%v", filepath.Base(k.Path), k.Algorithm, k.Fingerprint, k.Encrypted, k.HasPub, k.ParseError)
+		}
+		t.Fatalf("ScanReusableKeys returned %d entries, want 3 (plain, rsa, enc+pub); got %v",
 			len(keys), keyNames(keys))
 	}
-	for _, skipped := range []string{"id_garbage", "id_ed25519_orphan", "id_ed25519_orphan.pub", "known_hosts", "id_directory"} {
+	for _, skipped := range []string{"id_garbage", "id_ed25519_orphan", "id_ed25519_orphan.pub", "id_ed25519_encnopub", "known_hosts", "id_directory"} {
 		if _, ok := got[skipped]; ok {
 			t.Errorf("ScanReusableKeys must skip %q", skipped)
 		}
@@ -148,7 +181,7 @@ func TestScanReusableKeys(t *testing.T) {
 		}
 	})
 
-	t.Run("encrypted key with .pub takes metadata from the .pub", func(t *testing.T) {
+	t.Run("encrypted key with .pub takes metadata from the .pub after fingerprint match", func(t *testing.T) {
 		k := got["id_ed25519_encpub"]
 		wantAlgo, wantFP := fingerprintOfPubLine(t, encWithPub)
 		if !k.Encrypted || !k.HasPub {
@@ -161,22 +194,11 @@ func TestScanReusableKeys(t *testing.T) {
 			t.Errorf("Fingerprint = %q, want %q (derived from the .pub sibling)", k.Fingerprint, wantFP)
 		}
 	})
-
-	t.Run("encrypted key without .pub has no metadata", func(t *testing.T) {
-		k := got["id_ed25519_encnopub"]
-		if !k.Encrypted || k.HasPub {
-			t.Fatalf("encrypted-no-pub flags: Encrypted=%v HasPub=%v; want true/false", k.Encrypted, k.HasPub)
-		}
-		if k.Algorithm != "" || k.Fingerprint != "" {
-			t.Errorf("encrypted key without a .pub must carry no metadata; got Algorithm=%q Fingerprint=%q",
-				k.Algorithm, k.Fingerprint)
-		}
-	})
 }
 
 // TestScanReusableKeysEncryptedWithUnparseablePub asserts an encrypted key whose
-// `.pub` sibling is garbage is still OFFERED (the user may know the passphrase)
-// with empty metadata — one bad sibling never aborts the scan.
+// `.pub` sibling is garbage is skipped — the pair is unverifiable, so it is
+// blocked rather than offered with untrusted metadata.
 func TestScanReusableKeysEncryptedWithUnparseablePub(t *testing.T) {
 	dir := t.TempDir()
 	seedEd25519(t, dir, "id_ed25519_badpub", "s3cret", false)
@@ -186,16 +208,66 @@ func TestScanReusableKeysEncryptedWithUnparseablePub(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ScanReusableKeys returned error: %v", err)
 	}
+	if len(keys) != 0 {
+		t.Fatalf("want 0 entries, got %d (%v)", len(keys), keyNames(keys))
+	}
+}
+
+// TestScanReusableKeysEncryptedMismatchBlocksReuse asserts that an encrypted
+// private key whose `.pub` sibling belongs to a DIFFERENT key is skipped, so a
+// mismatched sibling cannot mask itself (CR-08).
+func TestScanReusableKeysEncryptedMismatchBlocksReuse(t *testing.T) {
+	oldRunner := currentSSHKeygenRunner
+	defer func() { currentSSHKeygenRunner = oldRunner }()
+
+	dir := t.TempDir()
+	// encPriv has its own .pub, but we will also create a second .pub that does
+	// NOT match and overwrite the sibling so the pair is mismatched.
+	encPubLine := seedEd25519(t, dir, "id_ed25519_mismatch", "s3cret", true)
+	otherPubLine := seedEd25519(t, dir, "id_ed25519_other", "", true)
+	if encPubLine == otherPubLine {
+		t.Fatal("setup: expected two distinct pub lines")
+	}
+
+	// Replace the sibling with the OTHER key's .pub.
+	writeFixture(t, dir, "id_ed25519_mismatch.pub", []byte(otherPubLine), 0o644)
+
+	// The fake runner reports the encrypted private key's REAL fingerprint.
+	_, privFP := fingerprintOfPubLine(t, encPubLine)
+	currentSSHKeygenRunner = fakeSSHKeygenRunner(map[string]string{
+		filepath.Join(dir, "id_ed25519_mismatch"): privFP,
+	})
+
+	keys, err := ScanReusableKeys(dir)
+	if err != nil {
+		t.Fatalf("ScanReusableKeys returned error: %v", err)
+	}
 	if len(keys) != 1 {
-		t.Fatalf("want 1 entry, got %d (%v)", len(keys), keyNames(keys))
+		t.Fatalf("want 1 entry (the correctly matched other key), got %d (%v)", len(keys), keyNames(keys))
 	}
-	k := keys[0]
-	if !k.Encrypted || !k.HasPub {
-		t.Errorf("flags: Encrypted=%v HasPub=%v; want true/true", k.Encrypted, k.HasPub)
+	if filepath.Base(keys[0].Path) != "id_ed25519_other" {
+		t.Errorf("expected id_ed25519_other, got %q", filepath.Base(keys[0].Path))
 	}
-	if k.Algorithm != "" || k.Fingerprint != "" {
-		t.Errorf("an unparseable .pub must leave metadata empty; got Algorithm=%q Fingerprint=%q",
-			k.Algorithm, k.Fingerprint)
+}
+
+// TestScanReusableKeysPlainMismatchBlocksReuse asserts that an unencrypted
+// private key whose `.pub` sibling belongs to a DIFFERENT key is skipped.
+func TestScanReusableKeysPlainMismatchBlocksReuse(t *testing.T) {
+	dir := t.TempDir()
+	seedEd25519(t, dir, "id_ed25519_plain", "", true)
+	otherPubLine := seedEd25519(t, dir, "id_ed25519_other", "", true)
+	// Replace the sibling with the OTHER key's .pub.
+	writeFixture(t, dir, "id_ed25519_plain.pub", []byte(otherPubLine), 0o644)
+
+	keys, err := ScanReusableKeys(dir)
+	if err != nil {
+		t.Fatalf("ScanReusableKeys returned error: %v", err)
+	}
+	if len(keys) != 1 {
+		t.Fatalf("want 1 entry (the correctly matched other key), got %d (%v)", len(keys), keyNames(keys))
+	}
+	if filepath.Base(keys[0].Path) != "id_ed25519_other" {
+		t.Errorf("expected id_ed25519_other, got %q", filepath.Base(keys[0].Path))
 	}
 }
 
@@ -261,21 +333,6 @@ func TestReusableKeyCarriesNoPrivateMaterial(t *testing.T) {
 		}
 		if got := f.Type.String(); got != wantKind {
 			t.Errorf("ReusableKey.%s is %s, want %s", f.Name, got, wantKind)
-		}
-	}
-}
-
-// TestKeyscanExecutesNothing is the T-03-01/T-03-03 static guard: the scan is a
-// pure parse. Any exec of ssh/ssh-keygen would risk an interactive passphrase
-// prompt (forbidden by D-11) and a command-injection surface.
-func TestKeyscanExecutesNothing(t *testing.T) {
-	src, err := os.ReadFile("keyscan.go")
-	if err != nil {
-		t.Fatalf("reading keyscan.go: %v", err)
-	}
-	for _, forbidden := range []string{"os/exec", "exec.Command", "PrivPEM"} {
-		if strings.Contains(string(src), forbidden) {
-			t.Errorf("keyscan.go must not reference %q", forbidden)
 		}
 	}
 }
