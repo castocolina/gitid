@@ -125,3 +125,14 @@ type WritePlanView struct {
 	// Backups are the timestamped backup paths taken before writing.
 	Backups []string
 }
+
+// WizardCommitMsg reports the result of an asynchronous create commit. It is
+// delivered from the tea.Cmd returned by Backend.CommitCreate — success carries
+// the real timestamped backup paths, failure carries the concrete error string.
+type WizardCommitMsg struct {
+	// Backups are the timestamped backup paths the transaction took.
+	Backups []string
+	// Err is non-empty when the transaction failed; the ceremony renders it
+	// and offers retry/cancel instead of a receipt.
+	Err string
+}

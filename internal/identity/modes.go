@@ -21,7 +21,29 @@ func Reuse(in CreateInput, existingKeyPath string, deps Deps) (CreateResult, err
 	if err != nil {
 		return CreateResult{}, err
 	}
+	// The staged path is read-only: if the .pub was missing it was derived in
+	// memory but not written. A confirmed reuse writes the public sibling now
+	// so the persisted identity has a matched key pair on disk.
+	if _, perr := writeReusePub(staged, deps); perr != nil {
+		return CreateResult{}, perr
+	}
 	return runPipeline(in, staged, deps)
+}
+
+// writeReusePub writes staged.FinalPubPath when it does not already exist and
+// the staged key carries a public line. It is idempotent and safe to call from
+// both the single-shot Reuse path and the TUI's confirmed CommitCreate.
+func writeReusePub(staged StagedKey, deps Deps) (string, error) {
+	if staged.PubLine == "" {
+		return "", nil
+	}
+	if deps.PubExists != nil && deps.PubExists(staged.FinalPubPath) {
+		return "", nil
+	}
+	if werr := deps.WritePub(staged.FinalPubPath, staged.PubLine); werr != nil {
+		return "", fmt.Errorf("identity: writing derived public key %s: %w", staged.FinalPubPath, werr)
+	}
+	return staged.FinalPubPath, nil
 }
 
 // StageReuse builds the StagedKey for an existing-key reuse (IDENT-02, D-10
@@ -31,13 +53,18 @@ func Reuse(in CreateInput, existingKeyPath string, deps Deps) (CreateResult, err
 // ~/.ssh/config) shares exactly the same ensurePub logic Reuse itself uses,
 // rather than a second, divergent copy.
 //
+// StageReuse is READ-ONLY with respect to the public sibling: if the .pub is
+// absent it is derived in memory but NOT written to disk. The confirmed write
+// transaction writes/normalizes the .pub later (CR-02). This prevents any
+// mutation of the user's files before consent.
+//
 // TempPrivatePath == FinalPrivatePath (the existing ~/.ssh key) and PrivPEM
 // is nil, so a caller's PersistKey/Cleanup on the returned StagedKey are
 // guaranteed no-ops — identical to Reuse's own contract.
 func StageReuse(existingKeyPath, comment string, deps Deps) (StagedKey, error) {
 	pubPath := existingKeyPath + ".pub"
 
-	pubLine, err := ensurePub(existingKeyPath, pubPath, comment, deps)
+	pubLine, err := ensurePubReadOnly(existingKeyPath, pubPath, comment, deps)
 	if err != nil {
 		return StagedKey{}, err
 	}
@@ -51,8 +78,9 @@ func StageReuse(existingKeyPath, comment string, deps Deps) (StagedKey, error) {
 	}, nil
 }
 
-// ensurePub returns the reused identity's public-key line, deriving and writing
-// it (0644 via the WritePub dep) when the existing `.pub` file is absent.
+// ensurePubReadOnly returns the reused identity's public-key line, reading an
+// existing `.pub` verbatim or deriving it from the private key when absent. It
+// does NOT write the derived line — staging must be read-only (CR-02).
 //
 // When the `.pub` ALREADY EXISTS it is read back verbatim via the ReadPub seam
 // and the private key is never parsed. That is what makes D-11 / KEY-06 work:
@@ -61,7 +89,7 @@ func StageReuse(existingKeyPath, comment string, deps Deps) (StagedKey, error) {
 // passphrase prompt. ReadPub is nil-guarded like PubExists on the same line: an
 // unwired caller falls back to DerivePub (the previous behavior) instead of
 // panicking.
-func ensurePub(privateKeyPath, pubPath, comment string, deps Deps) (string, error) {
+func ensurePubReadOnly(privateKeyPath, pubPath, comment string, deps Deps) (string, error) {
 	if deps.PubExists != nil && deps.PubExists(pubPath) {
 		// .pub present: return it verbatim — never re-derive, which would parse
 		// the private key and fail on an encrypted one (D-11).
@@ -84,9 +112,6 @@ func ensurePub(privateKeyPath, pubPath, comment string, deps Deps) (string, erro
 	line, err := deps.DerivePub(privateKeyPath, comment)
 	if err != nil {
 		return "", fmt.Errorf("identity: deriving missing public key for reuse: %w", err)
-	}
-	if werr := deps.WritePub(pubPath, line); werr != nil {
-		return "", fmt.Errorf("identity: writing derived public key %s: %w", pubPath, werr)
 	}
 	return line, nil
 }

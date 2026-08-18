@@ -165,6 +165,119 @@ func TestCeremonyDestructiveGatesOnTypedWord(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// 03-07 Task 1 — the asynchronous create-commit ceremony (CR-01).
+// ---------------------------------------------------------------------------
+
+// asyncCeremony is the create-flow ceremony shape: Async means confirmation
+// dispatches a backend commit and the receipt is reachable ONLY from that
+// commit's explicit success result.
+func asyncCeremony() ceremonyModel {
+	return newCeremony(ceremonyConfig{
+		Heading:       `Create identity "acme" — ed25519, test passed ✓`,
+		Targets:       []string{"~/.ssh/config.d/gitid.config"},
+		Backups:       []string{"~/.ssh/config.bak.<timestamp>"},
+		Preview:       "+ Host acme.github.com",
+		ResultMessage: `Identity "acme" created.`,
+		ConfirmLabel:  "Write it",
+		Async:         true,
+	})
+}
+
+// TestCeremonyAsyncConfirmShowsNoReceiptUntilSuccess pins CR-01: confirming
+// an Async ceremony enters an in-flight state — it must NOT mark the ceremony
+// done, and no "Wrote →"/result copy may render before the backend's explicit
+// success result arrives.
+func TestCeremonyAsyncConfirmShowsNoReceiptUntilSuccess(t *testing.T) {
+	c, outcome := asyncCeremony().handleKey(pressKey("enter"))
+	if outcome != ceremonyConfirmed {
+		t.Fatalf("confirm outcome = %v, want confirmed (the host dispatches the commit)", outcome)
+	}
+	if c.done {
+		t.Fatal("an Async ceremony must NOT be done on confirmation — the write has not run yet")
+	}
+	pending := stripANSI(c.view(80))
+	for _, banned := range []string{"Wrote →", "Backed up →", `Identity "acme" created.`, "Done (Enter)"} {
+		if strings.Contains(pending, banned) {
+			t.Errorf("the in-flight state renders receipt copy %q before any success result:\n%s", banned, pending)
+		}
+	}
+
+	// Keys are inert while the commit is in flight — no accidental dismiss.
+	c, outcome = c.handleKey(pressKey("enter"))
+	if outcome != ceremonyNone {
+		t.Errorf("enter while the commit is in flight = %v, want none", outcome)
+	}
+
+	// The explicit success result renders the receipt — with the REAL backup
+	// paths the commit reports, replacing the preview placeholders.
+	c = c.commitSucceeded([]string{"~/.ssh/config.bak.1700000000"})
+	receipt := stripANSI(c.view(80))
+	for _, want := range []string{`✓ Identity "acme" created.`, "Wrote → ~/.ssh/config.d/gitid.config", "Backed up → ~/.ssh/config.bak.1700000000", "Done (Enter)"} {
+		if !strings.Contains(receipt, want) {
+			t.Errorf("receipt after the success result missing %q:\n%s", want, receipt)
+		}
+	}
+	if strings.Contains(receipt, "bak.<timestamp>") {
+		t.Errorf("the receipt still shows the backup placeholder after the real backup path arrived:\n%s", receipt)
+	}
+	_, outcome = c.handleKey(pressKey("enter"))
+	if outcome != ceremonyFinished {
+		t.Errorf("enter on the receipt = %v, want finished", outcome)
+	}
+}
+
+// TestCeremonyAsyncFailureIsVisibleAndRetryable pins the failure half of
+// CR-01: a failed commit renders the concrete error with a retry affordance,
+// never a success claim, and Esc backs out.
+func TestCeremonyAsyncFailureIsVisibleAndRetryable(t *testing.T) {
+	c, _ := asyncCeremony().handleKey(pressKey("enter"))
+	c = c.commitFailed("gitid: writing ssh config: permission denied")
+
+	failed := stripANSI(c.view(80))
+	for _, want := range []string{"gitid: writing ssh config: permission denied", "Retry (Enter)", "Cancel (Esc)"} {
+		if !strings.Contains(failed, want) {
+			t.Errorf("failure state missing %q:\n%s", want, failed)
+		}
+	}
+	for _, banned := range []string{"Wrote →", `Identity "acme" created.`, "Done (Enter)"} {
+		if strings.Contains(failed, banned) {
+			t.Errorf("failure state renders success copy %q:\n%s", banned, failed)
+		}
+	}
+
+	// Enter retries: the ceremony re-enters the in-flight state and reports
+	// confirmed so the host re-dispatches the commit.
+	c, outcome := c.handleKey(pressKey("enter"))
+	if outcome != ceremonyConfirmed {
+		t.Fatalf("enter on the failure state = %v, want confirmed (retry)", outcome)
+	}
+	if !c.pending {
+		t.Error("retry must re-enter the in-flight state")
+	}
+
+	// Esc from the failure state cancels back to the host.
+	c2, _ := asyncCeremony().handleKey(pressKey("enter"))
+	c2 = c2.commitFailed("boom")
+	_, outcome = c2.handleKey(pressKey("esc"))
+	if outcome != ceremonyCancelled {
+		t.Errorf("esc on the failure state = %v, want cancelled", outcome)
+	}
+}
+
+// TestCeremonySyncFlowsAreUnchanged proves the Async seam is additive: the
+// existing synchronous ceremonies (plain + destructive) still mark done on
+// confirmation and render the receipt immediately.
+func TestCeremonySyncFlowsAreUnchanged(t *testing.T) {
+	c, outcome := plainCeremony().handleKey(pressKey("enter"))
+	if outcome != ceremonyConfirmed || !c.done {
+		t.Fatalf("sync plain confirm = (%v, done=%v), want (confirmed, true)", outcome, c.done)
+	}
+	if !strings.Contains(stripANSI(c.view(80)), "Wrote →") {
+		t.Error("sync ceremonies keep their immediate receipt")
+	}
+}
+
 func TestCeremonyDestructiveAffirmativeNeverDefaultFocused(t *testing.T) {
 	raw := destructiveCeremony().view(80)
 	// Cancel carries the focused (reverse-video) rendering…

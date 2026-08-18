@@ -820,15 +820,14 @@ func (w wizardModel) sameProviderReuse() bool {
 }
 
 // copyable reports whether the D-03 copy-.pub action is offered right now:
-// ONLY at a ReachableNotUploaded outcome on whichever stage is currently
-// displayed — never at PASS (nothing to register) and never at a hard
-// Failure (the problem is not registration, D-03 is warning-only).
+// when EITHER stage answered ReachableNotUploaded — the key is not yet
+// proven with the provider, so the user may copy the .pub to register it.
+// Never offered at PASS (nothing to register) and never at a hard Failure
+// (the problem is not registration, D-03 is warning-only).
 func (w wizardModel) copyable() bool {
 	switch w.testPhase {
-	case testStage1:
-		return w.stage1.Outcome == TestOutcomeReachableNotUploaded
-	case testStage2:
-		return w.stage2.Outcome == TestOutcomeReachableNotUploaded
+	case testStage1, testStage2:
+		return w.keyUnused()
 	default:
 		return false
 	}
@@ -1217,6 +1216,7 @@ func (w wizardModel) reviewCeremony() ceremonyModel {
 		ResultMessage: resultMessage,
 		ResultHint:    resultHint,
 		ConfirmLabel:  "Write it",
+		Async:         true,
 	})
 }
 
@@ -1336,15 +1336,20 @@ func firstFixableFinding(s DemoState, name string) (DemoFinding, bool) {
 // handleMsg completes wizard test stages once the Backend's command has
 // answered — the OUTCOME decides the next phase, never a local guess.
 func (m identitiesModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
-	if stage, ok := msg.(WizardStageMsg); ok && m.pane == paneCreate {
+	if m.pane != paneCreate {
+		return keyResult{model: m}
+	}
+	if stage, ok := msg.(WizardStageMsg); ok {
 		switch {
 		case stage.Stage == 1 && m.wizard.testPhase == testRunning1:
 			m.wizard.stage1 = stage.Result
 			if succeededOutcome(stage.Result.Outcome) {
-				m.wizard.testPhase = testStage1
-			} else {
-				m.wizard.testPhase = testFailed
+				// D-04 stage auto-chain: stage 1 unlocking immediately
+				// advances to stage 2 without another Enter.
+				m.wizard.testPhase = testRunning2
+				return keyResult{model: m, cmd: m.wizard.backend.TestStage2(m.wizard.spec())}
 			}
+			m.wizard.testPhase = testFailed
 		case stage.Stage == 2 && m.wizard.testPhase == testRunning2:
 			m.wizard.stage2 = stage.Result
 			if succeededOutcome(stage.Result.Outcome) {
@@ -1353,6 +1358,15 @@ func (m identitiesModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 				m.wizard.testPhase = testFailed
 			}
 		}
+		return keyResult{model: m}
+	}
+	if commit, ok := msg.(WizardCommitMsg); ok {
+		if commit.Err != "" {
+			m.wizard.ceremony = m.wizard.ceremony.commitFailed(commit.Err)
+		} else {
+			m.wizard.ceremony = m.wizard.ceremony.commitSucceeded(commit.Backups)
+		}
+		return keyResult{model: m}
 	}
 	return keyResult{model: m}
 }
@@ -2060,6 +2074,11 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 		case ceremonyCancelled:
 			w.step = 2
 			m.wizard = w
+		case ceremonyConfirmed:
+			// CR-01: the real write runs off the update loop; the ceremony
+			// enters its pending state until WizardCommitMsg arrives.
+			identity := w.finishIdentity()
+			return keyResult{model: m, handled: true, cmd: w.backend.CommitCreate(identity)}
 		case ceremonyFinished:
 			identity := w.finishIdentity()
 			note := `Identity "` + identity.Name + `" created — SSH + Git configured (` + w.git.strategy() + `).`
@@ -2070,7 +2089,7 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			m.selected = identity.Name
 			return keyResult{model: m, handled: true, note: note,
 				actions: []Action{AddIdentity{Identity: identity, Backup: NewBackupPath("~/.ssh/config")}}}
-		case ceremonyNone, ceremonyConfirmed:
+		case ceremonyNone:
 		}
 		return keyResult{model: m, handled: true}
 	}

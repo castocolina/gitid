@@ -209,10 +209,8 @@ func TestCreateFlow_TestStagePass(t *testing.T) {
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 	mustSee(t, s, "Step 2/4", "step 0 -> step 1 (defaults are valid)")
 
-	s.sendKey(dummyKeyEnter, keystrokeDelay) // run stage 1
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // run stage 1; stage 2 auto-chains (D-04)
 	mustSee(t, s, "Hi user!", "stage 1: the REAL ssh PASS banner from the fake-ssh PATH shim")
-
-	s.sendKey(dummyKeyEnter, keystrokeDelay) // D-04: stage 2 chains on Enter after a PASS
 	mustSee(t, s, "identityfile", "stage 2: the ssh -G alias-resolution proof")
 
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // -> step 2 (Git, demo'd)
@@ -241,15 +239,14 @@ func TestCreateFlow_TestStageReachableNotUploaded(t *testing.T) {
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 	mustSee(t, s, "Step 2/4", "step 0 -> step 1")
 
-	s.sendKey(dummyKeyEnter, keystrokeDelay) // run stage 1
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // run stage 1; stage 2 auto-chains (D-04)
 	mustSee(t, s, "! Reachable — key not uploaded yet", "D-02: stage 1 renders the yellow warning, never red (Pitfall 6)")
 	// "✗ broken" is part of the ALWAYS-visible sidebar legend, so a bare
 	// mustNotSee(s, "✗", ...) would false-positive on that unrelated
 	// chrome text — assert absence of the hard-Failure-SPECIFIC copy
 	// instead (never shown for a ReachableNotUploaded outcome, Pitfall 6).
 	mustNotSee(t, s, "The connection failed", "\"Permission denied (publickey)\" must never render the hard-failure retry copy")
-
-	s.sendKey(dummyKeyEnter, keystrokeDelay) // D-04: chains on ReachableNotUploaded too
+	mustSee(t, s, "identityfile", "stage 2: the ssh -G alias-resolution proof still runs on the warning path")
 	mustSee(t, s, "! Reachable — key not uploaded yet", "D-02: stage 2 also renders the yellow warning")
 
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // -> step 2 (Git, demo'd)
@@ -326,9 +323,8 @@ func TestCreateFlow_GitStepDisabledReasonAndConfirmWrite(t *testing.T) {
 	openCreateWizard(t, s)
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 	mustSee(t, s, "Step 2/4", "step 0 -> step 1")
-	s.sendKey(dummyKeyEnter, keystrokeDelay) // stage 1
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // stage 1; stage 2 auto-chains (D-04)
 	mustSee(t, s, "Hi user!", "stage 1 PASS")
-	s.sendKey(dummyKeyEnter, keystrokeDelay) // stage 2
 	mustSee(t, s, "identityfile", "stage 2 resolution proof")
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // -> step 2 (Git, demo'd)
 	mustSee(t, s, "Step 3/4", "advanced to the Git step")
@@ -486,9 +482,8 @@ func TestCreateFlow_ReuseExistingEncryptedKeyClosesL2Seam(t *testing.T) {
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // step0Valid resolves via the reuse selection
 	mustSee(t, s, "Step 2/4", "step 0 -> step 1 with the reuse selection already resolved")
 
-	s.sendKey(dummyKeyEnter, keystrokeDelay) // stage 1
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // stage 1; stage 2 auto-chains (D-04)
 	mustSee(t, s, "Hi user!", "stage 1 PASS")
-	s.sendKey(dummyKeyEnter, keystrokeDelay) // stage 2
 	mustSee(t, s, "identityfile", "stage 2 resolution proof")
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // -> step 2 (Git, demo'd)
 	mustSee(t, s, "Step 3/4", "advanced to the Git step")

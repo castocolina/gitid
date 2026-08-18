@@ -6,6 +6,7 @@ package main
 // real ~/.ssh and ~/.gitconfig are never read or written.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -654,10 +655,12 @@ func TestReuseEncryptedKeyWithExistingPubSucceeds(t *testing.T) {
 	seedGeneratedKey(t, keyPath, "locked", "s3cret")
 
 	b := newBackendForHome(home)
-	state := b.Persist(tuikit.DemoState{}, tuikit.AddIdentity{Identity: tuikit.DemoIdentity{
+	id := tuikit.DemoIdentity{
 		Name: "personal", SSHHost: "personal.github.com", Hostname: "ssh.github.com", Port: 443,
 		KeyPath: keyPath, ReuseKeyPath: keyPath,
-	}})
+	}
+	unlockStoreForIdentity(t, b, id)
+	state := b.Persist(tuikit.DemoState{}, tuikit.AddIdentity{Identity: id})
 
 	if err := b.PersistError(); err != nil {
 		t.Fatalf("Persist recorded an error reusing an encrypted key with an existing .pub: %v", err)
@@ -744,12 +747,13 @@ func TestPersistSkipGitWritesSSHOnlyNoGitArtifacts(t *testing.T) {
 	t.Setenv("HOME", home)
 	seedSSHDir(t, home)
 	b := newBackendForHome(home)
-	b.recordOutcome(tuikit.TestOutcomePass)
-
-	state := b.Persist(tuikit.DemoState{}, tuikit.AddIdentity{Identity: tuikit.DemoIdentity{
+	id := tuikit.DemoIdentity{
 		Name: "personal", SSHHost: "personal.github.com", Hostname: "ssh.github.com", Port: 443,
 		State: "complete", GitName: "Acme Identity", GitEmail: "you@acme.example",
-	}})
+	}
+	unlockStoreForIdentity(t, b, id)
+
+	state := b.Persist(tuikit.DemoState{}, tuikit.AddIdentity{Identity: id})
 
 	if err := b.PersistError(); err != nil {
 		t.Fatalf("Persist recorded an error on a Skip-Git create: %v", err)
@@ -769,6 +773,352 @@ func TestPersistSkipGitWritesSSHOnlyNoGitArtifacts(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(home, ".ssh", "allowed_signers")); !os.IsNotExist(err) {
 		t.Errorf("Skip Git must not write allowed_signers (Phase 4's job); stat err = %v", err)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// 03-07 Task 1 — hermetic pre-confirm staging + transactional confirmed write
+// (CR-02: nothing final before consent; CR-09: rollback-capable transaction;
+// CR-01: explicit persistence result, never a premature receipt)
+// ---------------------------------------------------------------------------
+
+// finalArtifactPaths is the set of user-visible paths the create flow may
+// touch, keyed for snapshot assertions: the final key pair, the live SSH
+// config, the Include'd storage target, and known_hosts.
+func finalArtifactPaths(home, identityName string) []string {
+	sshDir := filepath.Join(home, ".ssh")
+	return []string{
+		filepath.Join(sshDir, "id_ed25519_"+identityName),
+		filepath.Join(sshDir, "id_ed25519_"+identityName+".pub"),
+		filepath.Join(sshDir, "config"),
+		filepath.Join(sshDir, "config.d", "gitid.config"),
+		filepath.Join(sshDir, "known_hosts"),
+	}
+}
+
+// fileState is one path's captured existence + bytes + mode.
+type fileState struct {
+	exists bool
+	bytes  []byte
+	mode   os.FileMode
+}
+
+// snapshotPaths captures the state of every path for a later unchanged
+// assertion — the CR-02/CR-09 proof is byte/mode equality, not "looks
+// similar".
+func snapshotPaths(t *testing.T, paths []string) map[string]fileState {
+	t.Helper()
+	out := make(map[string]fileState, len(paths))
+	for _, p := range paths {
+		info, err := os.Stat(p) //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+		if err != nil {
+			out[p] = fileState{}
+			continue
+		}
+		data, rerr := os.ReadFile(p) //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+		if rerr != nil {
+			t.Fatalf("snapshot: reading %s: %v", p, rerr)
+		}
+		out[p] = fileState{exists: true, bytes: data, mode: info.Mode().Perm()}
+	}
+	return out
+}
+
+// assertUnchanged fails naming every path whose state drifted from want.
+func assertUnchanged(t *testing.T, want, got map[string]fileState) {
+	t.Helper()
+	for p, w := range want {
+		g := got[p]
+		if w.exists != g.exists {
+			t.Errorf("%s: existence changed (before=%v after=%v) — no final mutation may happen before consent", p, w.exists, g.exists)
+			continue
+		}
+		if !w.exists {
+			continue
+		}
+		if string(w.bytes) != string(g.bytes) {
+			t.Errorf("%s: bytes changed — before:\n%s\n--- after ---\n%s", p, w.bytes, g.bytes)
+		}
+		if w.mode != g.mode {
+			t.Errorf("%s: mode changed (%o -> %o)", p, w.mode, g.mode)
+		}
+	}
+}
+
+// TestGenerateStagesKeyOutsideFinalPaths proves CR-02's generate half: key
+// generation writes the private test key ONLY under the backend's mode-0700
+// staging directory, carrying the final destinations in StagedKey — the final
+// ~/.ssh paths stay absent until the confirmed transaction.
+func TestGenerateStagesKeyOutsideFinalPaths(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	b := newBackendForHome(home)
+
+	in := b.createInputFromSpec(tuikit.CreateSpec{Identity: "fresh", Alias: "fresh.github.com", Hostname: "ssh.github.com", Port: "443"})
+	staged, err := b.deps.Generate(in)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	if staged.TempPrivatePath == "" || staged.TempPrivatePath == staged.FinalPrivatePath {
+		t.Errorf("staged paths = {Temp:%q Final:%q}; the test key must live at a DISTINCT staging path", staged.TempPrivatePath, staged.FinalPrivatePath)
+	}
+	stageDir, derr := b.stagingDir()
+	if derr != nil {
+		t.Fatalf("stagingDir: %v", derr)
+	}
+	if filepath.Dir(staged.TempPrivatePath) != stageDir {
+		t.Errorf("the staged test key %q must live under the staging dir %q", staged.TempPrivatePath, stageDir)
+	}
+	if info, serr := os.Stat(staged.TempPrivatePath); serr != nil {
+		t.Errorf("the staged test key must exist for the connectivity stages: %v", serr)
+	} else if info.Mode().Perm() != 0o600 {
+		t.Errorf("staged test key mode = %o, want 0600", info.Mode().Perm())
+	}
+	if info, serr := os.Stat(stageDir); serr == nil && info.Mode().Perm() != 0o700 {
+		t.Errorf("staging dir mode = %o, want 0700", info.Mode().Perm())
+	}
+	if _, serr := os.Stat(staged.FinalPrivatePath); !os.IsNotExist(serr) {
+		t.Errorf("the FINAL private key must not exist before confirmation; stat err = %v", serr)
+	}
+	if _, serr := os.Stat(staged.FinalPubPath); !os.IsNotExist(serr) {
+		t.Errorf("the FINAL public key must not exist before confirmation; stat err = %v", serr)
+	}
+	if staged.PubLine == "" || staged.PrivPEM == nil {
+		t.Error("Generate must carry the public line and private bytes in memory for the confirmed transaction")
+	}
+}
+
+// TestPreConfirmStagesAndCancelLeaveHomeUntouched is the CR-02/SSHUI-04
+// tracer: generated-key preparation and BOTH test stages' config staging run
+// against a temp HOME, then the flow is CANCELLED — every final artifact
+// (private/public key, live config, Include target, known_hosts) must be
+// absent or byte-identical to the pre-test snapshot.
+func TestPreConfirmStagesAndCancelLeaveHomeUntouched(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	const foreign = "# hand-written, gitid must never touch this\nHost legacy\n  Hostname example.com\n"
+	writeFile(t, filepath.Join(home, ".ssh", "config"), foreign)
+
+	paths := finalArtifactPaths(home, "cancelme")
+	before := snapshotPaths(t, paths)
+
+	b := newBackendForHome(home)
+	spec := tuikit.CreateSpec{Identity: "cancelme", Alias: "cancelme.github.com", Hostname: "ssh.github.com", Port: "443", KeyPath: "~/.ssh/id_ed25519_cancelme"}
+	in := b.createInputFromSpec(spec)
+	staged, err := b.stagedKeyFor(in, "")
+	if err != nil {
+		t.Fatalf("stagedKeyFor: %v", err)
+	}
+	if _, serr := b.deps.StageTestConfig(in, staged); serr != nil {
+		t.Fatalf("StageTestConfig: %v", serr)
+	}
+	// The user cancels the wizard: no confirmation ever happens.
+
+	assertUnchanged(t, before, snapshotPaths(t, paths))
+	// The staging artifacts live OUTSIDE the sandbox HOME (OS temp dir).
+	if strings.HasPrefix(staged.TempPrivatePath, home) {
+		t.Errorf("the staged test key %q lives inside the user HOME; it must be a throwaway location", staged.TempPrivatePath)
+	}
+}
+
+// TestConfirmedCreateCommitsTheCompleteSSHUnit proves the success half of the
+// transaction: a confirmed create writes the key pair at 0600/0644 PLUS the
+// Include line PLUS the Host block as one unit, preserving foreign bytes.
+func TestConfirmedCreateCommitsTheCompleteSSHUnit(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	const foreign = "# hand-written, gitid must never touch this\nHost legacy\n  Hostname example.com\n"
+	writeFile(t, filepath.Join(home, ".ssh", "config"), foreign)
+
+	b := newBackendForHome(home)
+	id := tuikit.DemoIdentity{Name: "personal", SSHHost: "personal.github.com", Hostname: "ssh.github.com", Port: 443, KeyPath: "~/.ssh/id_ed25519_personal"}
+	unlockStoreForIdentity(t, b, id)
+
+	state := b.Persist(tuikit.DemoState{}, tuikit.AddIdentity{Identity: id})
+	if err := b.PersistError(); err != nil {
+		t.Fatalf("Persist recorded an error on a confirmed create: %v", err)
+	}
+	if len(state.Identities) != 1 {
+		t.Fatalf("Identities = %v, want the created identity re-read from disk", state.Identities)
+	}
+
+	privPath := filepath.Join(home, ".ssh", "id_ed25519_personal")
+	pubPath := privPath + ".pub"
+	if info, err := os.Stat(privPath); err != nil {
+		t.Fatalf("the confirmed create must write the private key: %v", err)
+	} else if info.Mode().Perm() != 0o600 {
+		t.Errorf("private key mode = %o, want 0600", info.Mode().Perm())
+	}
+	if info, err := os.Stat(pubPath); err != nil {
+		t.Fatalf("the confirmed create must write the public key: %v", err)
+	} else if info.Mode().Perm() != 0o644 {
+		t.Errorf("public key mode = %o, want 0644", info.Mode().Perm())
+	}
+
+	mainConfig := readFile(t, filepath.Join(home, ".ssh", "config"))
+	if !strings.Contains(mainConfig, foreign) {
+		t.Error("foreign hand-written content was lost by the confirmed write")
+	}
+	if !strings.Contains(mainConfig, "Include ~/.ssh/config.d/*.config") {
+		t.Errorf("the Include line is missing from the live config:\n%s", mainConfig)
+	}
+	included := readFile(t, filepath.Join(home, ".ssh", "config.d", "gitid.config"))
+	for _, want := range []string{"Host personal.github.com", "Port 443", "IdentitiesOnly yes", "User git", "IdentityFile " + privPath} {
+		if !strings.Contains(included, want) {
+			t.Errorf("the written Host block is missing %q:\n%s", want, included)
+		}
+	}
+}
+
+// TestCommitTransactionRollsBackAfterEveryInjectedFailure is the CR-09 proof:
+// a failure injected BEFORE EACH ordered mutation restores every pre-existing
+// byte/mode and removes every newly-created final artifact — no dangling
+// Include line, no half-written key pair, no unreachable Host block.
+func TestCommitTransactionRollsBackAfterEveryInjectedFailure(t *testing.T) {
+	steps := []string{"private-key", "public-key", "include-line", "host-block"}
+	for _, step := range steps {
+		t.Run(step, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			seedSSHDir(t, home)
+			const foreign = "# hand-written, gitid must never touch this\nHost legacy\n  Hostname example.com\n"
+			writeFile(t, filepath.Join(home, ".ssh", "config"), foreign)
+
+			paths := finalArtifactPaths(home, "personal")
+			before := snapshotPaths(t, paths)
+			configDDir := filepath.Join(home, ".ssh", "config.d")
+			if _, err := os.Stat(configDDir); err == nil {
+				t.Fatal("fixture invalid: config.d must not pre-exist for this rollback proof")
+			}
+
+			b := newBackendForHome(home)
+			id := tuikit.DemoIdentity{Name: "personal", SSHHost: "personal.github.com", Hostname: "ssh.github.com", Port: 443, KeyPath: "~/.ssh/id_ed25519_personal"}
+			unlockStoreForIdentity(t, b, id)
+			b.failCommitAt = func(s string) error {
+				if s == step {
+					return fmt.Errorf("injected failure at %s", s)
+				}
+				return nil
+			}
+
+			state := b.Persist(tuikit.DemoState{}, tuikit.AddIdentity{Identity: id})
+
+			if b.PersistError() == nil {
+				t.Fatal("an injected transaction failure must surface as a recorded persistence error")
+			}
+			if !strings.Contains(b.PersistError().Error(), "injected failure at "+step) {
+				t.Errorf("PersistError = %v, want the injected failure to propagate verbatim", b.PersistError())
+			}
+			if len(state.Identities) != 0 {
+				t.Errorf("a failed create must not report identities: %+v", state.Identities)
+			}
+
+			assertUnchanged(t, before, snapshotPaths(t, paths))
+
+			// The key pair stays a MATCHED pair: both halves absent after a
+			// rollback, never a dangling private or public half.
+			privPath := filepath.Join(home, ".ssh", "id_ed25519_personal")
+			_, privErr := os.Stat(privPath)
+			_, pubErr := os.Stat(privPath + ".pub")
+			if os.IsNotExist(privErr) != os.IsNotExist(pubErr) {
+				t.Errorf("rollback left an unmatched key half (private missing=%v, public missing=%v)",
+					os.IsNotExist(privErr), os.IsNotExist(pubErr))
+			}
+
+			// A transaction-created config.d directory is removed when the
+			// rollback leaves it empty.
+			if entries, err := os.ReadDir(configDDir); err == nil && len(entries) == 0 {
+				t.Error("rollback left an empty transaction-created config.d directory behind")
+			}
+
+			// No stale backup from the failed transaction survive: the
+			// restored live config is byte-identical to its own backup, so
+			// the backup is redundant residue the rollback must clean up.
+			matches, _ := filepath.Glob(filepath.Join(home, ".ssh", "config.bak.*"))
+			if len(matches) != 0 {
+				t.Errorf("rollback left transaction backups behind: %v", matches)
+			}
+		})
+	}
+}
+
+// TestCommitCreateDeliversExplicitResults proves the CR-01 seam: the create
+// ceremony's confirmation dispatches an asynchronous commit whose EXPLICIT
+// result message — never the confirmation itself — decides receipt or
+// failure. Success carries the real timestamped backup paths.
+func TestCommitCreateDeliversExplicitResults(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		seedSSHDir(t, home)
+		writeFile(t, filepath.Join(home, ".ssh", "config"), "Host legacy\n  Hostname example.com\n")
+		b := newBackendForHome(home)
+		id := tuikit.DemoIdentity{Name: "personal", SSHHost: "personal.github.com", Hostname: "ssh.github.com", Port: 443, KeyPath: "~/.ssh/id_ed25519_personal"}
+		unlockStoreForIdentity(t, b, id)
+
+		msg := runCommitCreate(t, b, id)
+		if msg.Err != "" {
+			t.Fatalf("CommitCreate reported a failure on a valid create: %s", msg.Err)
+		}
+		if len(msg.Backups) == 0 {
+			t.Error("a successful commit over a pre-existing config must report the timestamped backup it took")
+		}
+		if _, err := os.Stat(filepath.Join(home, ".ssh", "config.d", "gitid.config")); err != nil {
+			t.Errorf("the commit must have written the storage target: %v", err)
+		}
+	})
+
+	t.Run("failure", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		seedSSHDir(t, home)
+		writeFile(t, filepath.Join(home, ".ssh", "config"), "Host legacy\n  Hostname example.com\n")
+		before := snapshotPaths(t, finalArtifactPaths(home, "personal"))
+
+		b := newBackendForHome(home)
+		id := tuikit.DemoIdentity{Name: "personal", SSHHost: "personal.github.com", Hostname: "ssh.github.com", Port: 443, KeyPath: "~/.ssh/id_ed25519_personal"}
+		unlockStoreForIdentity(t, b, id)
+		b.failCommitAt = func(string) error { return fmt.Errorf("disk on fire") }
+
+		msg := runCommitCreate(t, b, id)
+		if msg.Err == "" {
+			t.Fatal("CommitCreate must report the transaction failure explicitly")
+		}
+		if !strings.Contains(msg.Err, "disk on fire") {
+			t.Errorf("CommitCreate error = %q, want the concrete operation error", msg.Err)
+		}
+		assertUnchanged(t, before, snapshotPaths(t, finalArtifactPaths(home, "personal")))
+	})
+}
+
+// runCommitCreate executes the backend's CommitCreate command synchronously
+// and returns its WizardCommitMsg.
+func runCommitCreate(t *testing.T, b *realBackend, id tuikit.DemoIdentity) tuikit.WizardCommitMsg {
+	t.Helper()
+	cmd := b.CommitCreate(id)
+	if cmd == nil {
+		t.Fatal("CommitCreate returned no command")
+	}
+	msg, ok := cmd().(tuikit.WizardCommitMsg)
+	if !ok {
+		t.Fatalf("CommitCreate delivered %T, want tuikit.WizardCommitMsg", cmd())
+	}
+	return msg
+}
+
+// unlockStoreForIdentity records accepted stage-1 and stage-2 outcomes for
+// id's current spec. Persistence tests that intend to exercise the confirmed
+// write MUST establish this two-stage proof; the production gate is
+// intentionally fail-closed and does not accept a single-stage record or a
+// stale/absent proof.
+func unlockStoreForIdentity(t *testing.T, b *realBackend, id tuikit.DemoIdentity) {
+	t.Helper()
+	in := b.createInput(id)
+	b.recordOutcomeFor(1, tuikit.TestOutcomePass, in)
+	b.recordOutcomeFor(2, tuikit.TestOutcomePass, in)
 }
 
 // ---------------------------------------------------------------------------

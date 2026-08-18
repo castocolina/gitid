@@ -130,6 +130,13 @@ type Backend interface {
 	// validity, with its existing "— needs user.name + a valid email"
 	// reason (owned by internal/tuikit, never re-derived here).
 	GitStepDisabledReason() (reason string, alwaysDisabled bool)
+
+	// CommitCreate dispatches the confirmed create transaction off the
+	// Bubble Tea update loop and returns a command that will eventually
+	// deliver a WizardCommitMsg with the real result. This async seam keeps
+	// the ceremony honest: the receipt renders only after the transaction
+	// succeeds, and a failure is surfaced instead of swallowed.
+	CommitCreate(identity DemoIdentity) tea.Cmd
 }
 
 // WizardStageMsg completes a create-wizard test stage. Backends deliver it

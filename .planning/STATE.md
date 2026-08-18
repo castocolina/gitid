@@ -2,16 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: "Wave 5 (plan 03-06) IN PROGRESS — 2 of 3 tasks CLOSED: Task 1 (DLV-06 per-screen PTY e2e on the REAL binary + L2 ReadPub seam closure + SSHUI-02 mouse half, commit 57bda7b) and Task 2 (DLV-04.1 golden-text visual-regression gate + allowlist + D-23 smoke-network-test, commit 4a9c939) both green. Task 3 (DLV-04.2 cross-AI review) PARTIAL: executor assembled the review packet (commit 9ddd102) but could NOT run agent-ui-ux-designer/Codex (no subagent-spawning tools) — that review is an ORCHESTRATOR obligation still OWED before Phase 3 can close. go test -race ./... 836 passed, make lint 0 issues, make test-e2e ok, make gate-visual-regression ok (8/8 screens, fail-path hand-verified), make smoke-network-test ok. See 03-06-SUMMARY.md."
-stopped_at: "Plan 03-06 (Wave 5) Tasks 1+2 COMPLETE + committed; Task 3 PACKET-ASSEMBLY HALF ONLY complete + committed (9ddd102) — the review-EXECUTION half (agent-ui-ux-designer + Codex against .planning/phases/03-create-flow-backend/03-06-review-packet/) is NOT done and must run before Phase 3 is marked complete. 03-06-SUMMARY.md written with an explicit placeholder 'Cross-AI visual-regression review' section for the orchestrator to fill in. NEXT = orchestrator runs the DLV-04.2 review, then Phase 3 close-out."
-last_updated: "2026-08-18T11:30:00.000Z"
-last_activity: "2026-08-18 -- Plan 03-06 (Wave 5) Tasks 1+2 complete, Task 3 partial: 7 new PTY e2e test functions drive the REAL gitid binary (SSH form + alias collision, all 3 connectivity outcomes, git-form-demo'd D-19 + confirm-write invariant, the L2 identity.Deps.ReadPub seam closure via an encrypted-key-with-existing-.pub reuse, and SSHUI-02's mouse-CSI field-focus half); a new in-process (no-PTY) internal/screenshot/createflow.go capture mechanism plus cmd/gitid/gate_visual_regression_test.go close DLV-04.1's automated golden-text gate (byte-exact per screen modulo an explicit allowlist — D-02/D-16/D-19 plus a 4th pre-existing HostBlockPreview-format divergence carried from 03-03/03-04; fail-path hand-verified by removing an allowlist entry and observing the gate go red, then reverting); cmd/gitid/smoke_network_test.go + Makefile add the D-23 skippable real-network smoke check. Task 3's review packet (text diffs + a 4-category divergence manifest) is assembled, but the actual cross-AI review (agent-ui-ux-designer + Codex) has NOT run — no subagent-spawning tools available to this executor, the same class of gap 02-14/02-15/03-05 already hit. Three Rule-1/Rule-2 auto-fixes surfaced by the new tests: a FakeSSHDir harness bug (the -G fixture branch matched only $1, never the real -F...-G stage-2 shape), three real-binary-only row-budget overflows in the wizard's test-connection pane, and the 4th allowlist divergence (without which the new gate would have shipped immediately red)."
+current_phase: 03
+current_phase_name: "IN PROGRESS. Wave 1  , Wave 2  , Wave 3  , and Wave 4   CLOSED; Wave 5   Tasks 1+2 CLOSED this session; Plan 03-07 (Wave 6) COMPLETE. Plan 03-06 Task 3 PARTIAL  . Next: orchestrator runs the DLV-04.2 cross-AI review, then Phase 3 close-out."
+status: Wave 5 (plan 03-06) IN PROGRESS — 2 of 3 tasks CLOSED; Wave 6 (plan 03-07) COMPLETE. Plan 03-07 delivered hermetic staging, automatic stage-2 chaining, async commit ceremony, rollback-capable confirmed SSH writes, and a fail-closed store gate. go test -race ./... 852 passed, make lint 0 issues, make test-e2e ok. Plan 03-06 Task 3 (DLV-04.2 cross-AI review) remains an ORCHESTRATOR obligation still OWED before Phase 3 can close.
+stopped_at: Completed 03-07-PLAN.md
+last_updated: "2026-08-18T22:11:17.717Z"
+last_activity: 2026-08-18
+last_activity_desc: "Plan 03-07 (Wave 6) complete: hermetic staging, automatic stage-2 chaining, async commit ceremony, rollback transaction, fail-closed store gate. go test -race ./... 852 passed, make lint 0 issues, make test-e2e ok. Plan 03-06 Task 3 (DLV-04.2 cross-AI review) still owed by orchestrator."
 progress:
   total_phases: 10
   completed_phases: 1
-  total_plans: 29
-  completed_plans: 27
-  percent: 10
+  total_plans: 32
+  completed_plans: 29
+  percent: 91
 ---
 
 # Project State
@@ -25,10 +28,11 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 ## Current Position
 
-Phase: 03 (create-flow-backend) — IN PROGRESS. Wave 1 (03-01+03-02), Wave 2 (03-03), Wave 3 (03-04), and Wave 4 (03-05) CLOSED; Wave 5 (plan 03-06, the LAST wave) Tasks 1+2 CLOSED this session, Task 3 PARTIAL (packet assembled, review not run). Next: orchestrator runs the DLV-04.2 cross-AI review, then Phase 3 close-out.
+Phase: 03 (create-flow-backend) — IN PROGRESS. Wave 1 (03-01+03-02), Wave 2 (03-03), Wave 3 (03-04), Wave 4 (03-05), and Wave 6 (03-07) CLOSED; Wave 5 (plan 03-06) Tasks 1+2 CLOSED this session, Task 3 PARTIAL (packet assembled, review not run). Next: orchestrator runs the DLV-04.2 cross-AI review, then Phase 3 close-out.
+Plan: 03-07 (wave 6) — COMPLETE. Hermetic staging, automatic stage-2 chaining, async commit ceremony, rollback-capable confirmed SSH writes, and fail-closed store gate. See 03-07-SUMMARY.md.
 Plan: 03-06 (wave 5) — IN PROGRESS, 1 task remaining (Task 3's review-execution half, orchestrator-owned). Task 1 (DLV-06 PTY e2e + L2 seam closure + SSHUI-02 mouse) — commit 57bda7b. Task 2 (DLV-04.1 golden-text gate + allowlist + D-23 smoke test) — commit 4a9c939. Task 3 (DLV-04.2 review-packet assembly) — commit 9ddd102, PACKET ONLY; agent-ui-ux-designer + Codex have NOT reviewed anything yet. See 03-06-SUMMARY.md "Cross-AI visual-regression review" for the placeholder section the orchestrator must fill in — DO NOT mark this plan or Phase 3 complete until that section is populated with both reviewers' findings and dispositions.
-Status: Phase 2 (below) is the last COMPLETE phase; Phase 3 is the active phase, Wave 5 of 5 (its last wave) 2/3 tasks closed. See "Session Continuity" below for the live wave-by-wave Phase 3 record (WAVE 1-4 close notes, replan resolution map, execution obligations, and the new WAVE 5 entry).
-Last activity: 2026-08-18 -- Plan 03-06 (Wave 5) Tasks 1+2 complete, Task 3 partial: see the frontmatter `last_activity` field above for the full description.
+Status: Phase 2 (below) is the last COMPLETE phase; Phase 3 is the active phase, Wave 5 of 6 (its last wave) 2/3 tasks closed plus Wave 6 complete. See "Session Continuity" below for the live wave-by-wave Phase 3 record (WAVE 1-4 close notes, replan resolution map, execution obligations, and the new WAVE 5/6 entries).
+Last activity: 2026-08-18 -- Plan 03-07 (Wave 6) complete: see the frontmatter `last_activity` field above for the full description.
 
 ### Phase 2 (COMPLETE) — historical record
 
@@ -37,7 +41,7 @@ Plan: 02-12 (wave 9, the single DLV-08 human checkpoint) — COMPLETE. The user 
 Status: 02-15 (wave 8) operationalized the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract (D1–D9 + affordance audit) in BOTH demos, byte-for-byte: D1 single-row color-only fields (02-14's rounded box deleted), D2 always-expanded match-strategy/algorithm radios, D3 terminal-glyph checkbox/radio on the web, D4 bracketed main-nav format (`[N] Label`, moved off the wizard stepper) + a new ActiveNavDimmed/activeNavDimmed state + a top-level plain-arrow view switch, D5 the wizard stepper reverted to `Step n/4 · <label> ● ○ ○ ○`, D6 one-row git-step buttons, D7 ONE hoisted Shift+←/→ chord gate reaching every step including the previously-dead review ceremony (proven with a new raw-byte PTY e2e injecting real xterm CSI sequences), D8 click-to-focus on every form row, and D9 Global Git's user.email promoted to an editable, opt-in global-fallback field with its own dedicated write ceremony (a documented, scoped recipes/ divergence). 02-STYLE-SPEC.md + both FIELDS.md companions rewritten in lockstep; the full exit-gate battery is green (go test -race, the no-backend allowlist, the extended copy-freeze grep, make test/lint/test-e2e/gate-no-backend-files, pnpm typecheck+build) — see 02-15-SUMMARY.md. The two ORCHESTRATOR-run exit gates (a fresh agent-ui-ux-designer critique of both live demos + a fresh-context code review against 02-15's must_haves/acceptance_criteria) have since RUN and their findings (F1-F10 + one record-only item) are fixed — see 02-15-SUMMARY.md "Review findings resolution (post-plan fix pass)" and commits a335d80/f62c99e. Next is 02-12 (wave 9, the single DLV-08 approval checkpoint), unblocked.
 Last activity: 2026-07-06 -- Completed 02-12 (★ DLV-08): user approval recorded as `**APPROVED:** 2026-07-06 by Pepe`; Phase 2 COMPLETE — the approved live demos + 02-REDESIGN-SPEC.md/02-STYLE-SPEC.md/02-DESIGN-DECISIONS-CHECKPOINT-2.md + per-surface FIELDS.md are the binding design reference; Phases 3-9 backend work is UNBLOCKED
 
-Progress: [█████████░] 93% (27/29 plans complete — Phase 2: 15/15; Phase 3: 5/6 plans, Wave 5 of 5 IN PROGRESS — 03-06 not yet counted complete: Task 3's cross-AI review is still owed)
+Progress: [█████████░] 91% (30/32 plans complete — Phase 2: 15/15; Phase 3: 6/9 plans, Wave 5 of 6 IN PROGRESS — 03-06 not yet counted complete: Task 3's cross-AI review is still owed; Wave 6 (03-07) COMPLETE)
 
 ## Performance Metrics
 
@@ -87,6 +91,12 @@ Progress: [█████████░] 93% (27/29 plans complete — Phase 2
 | Phase 03-create-flow-backend P04 | ~1 session (Task 3) | 3 tasks | 14 files |
 | Phase 03-create-flow-backend P05 | 1 session | 3 tasks | 9 files |
 | Phase 03-create-flow-backend P06 | 1 session (2/3 tasks + packet half) | 3 tasks (2 complete, 1 partial) | 10 files |
+| Phase 03-create-flow-backend P07 | 1 session | 3 tasks | 17 files |
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 03-create-flow-backend P07 | 120 | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -120,6 +130,9 @@ Recent decisions affecting current work:
 - [Phase 02]: DLV-01/DLV-02 NOT marked complete in REQUIREMENTS.md yet — both are phase-spanning (every surface, all 12 plans) and this is only Wave 1's foundation plan (1/12); deferred to the plan that closes out Phase 2
 - [Phase 02, plan 02]: internal/dummytui's Register/RegisterOrReplace panic (not return an error) on a collision — surfaces call them from init(), so a fail-loudly-at-load contract fits better than threading error returns through every init(); collision tests assert via recover()
 - [Phase 02, plan 02]: cmd/gitid-dummy + internal/dummytui import-graph is proven backend-free via an ALLOWLIST (go list -deps fails on any first-party pkg other than exactly those two), strictly stronger than a denylist — catches new/renamed backend packages by construction
+- [Phase 03-create-flow-backend, plan 07]: Keep Backend.Persist synchronous while the create path uses async CommitCreate; both share the same rollback-capable commitCreateTransaction
+- [Phase 03-create-flow-backend, plan 07]: Offer the D-03 copy-public-key action whenever keyUnused() is true, because stage-2 auto-chain means the user may only see the final stage
+- [Phase 03-create-flow-backend, plan 07]: Bind stage outcomes to a spec fingerprint and require accepted stage-1 AND stage-2 proofs for the current spec before persistence (fail-closed store gate)
 - [Phase 02, plan 02]: DLV-05/DLV-02 NOT marked complete in REQUIREMENTS.md yet — both are phase-spanning; this plan ships only the dummy skeleton (2/12 plans); deferred to the plan that closes out Phase 2 (same precedent as 02-01/DLV-01)
 - [Phase 02, plan 03]: internal/screenshot/html.go extended (additive, backward-compatible) with URLFragment + RequiredText + the allow-file-access-from-files launcher flag -- CaptureHTML's FixturePath had no room for a HashRouter fragment or a pre-save breadcrumb assertion, and Chromium silently blocks a file://-loaded ES-module SPA's own imports without the flag
 - [Phase 02, plan 03]: internal/dummytui/model.go gained q/ctrl+c quit handling in Update() -- doc.go always documented both as reserved but nothing ever implemented tea.Quit, hanging any PTY-driven test of the dummy
@@ -166,6 +179,8 @@ Recent decisions affecting current work:
 - [Phase 03-create-flow-backend, plan 06]: D-24's "approved dummy golden" is the LIVE cmd/gitid-dummy FixtureBackend's rendered text, computed fresh in-process at gate time (no static per-screen golden files survive Phase 2 — REFERENCE-INDEX.md); the D-24.1 gate is text-only (no PNG/freeze rendering), diffed at SCREEN granularity (byte-exact-or-allowlisted per named screen) rather than line granularity
 - [Phase 03-create-flow-backend, plan 06]: the visual-divergence allowlist carries a 4th entry (T-03-HOSTBLOCK, realBackend.HostBlockPreview's sshconfig.RenderHostBlock format vs. the dummy's unrelated 4-space markerless literal) beyond the plan's stated D-02/D-16/D-19 — a pre-existing divergence carried from 03-03/03-04, discharged as an allowlist entry rather than a code change (the dummy fixture is frozen Phase-2 surface)
 - [Phase 03-create-flow-backend, plan 06]: internal/screenshot/createflow.go drives the shared tuikit render stack IN-PROCESS (tea.Model.Update/.View, no PTY/subprocess) for the visual-regression gate — PTY stays DLV-06's job (raw keystroke/terminal decoding correctness); the in-process technique is reusable by future phases' own dummy-vs-real gates
+- [Phase ?]: Keep Backend.Persist synchronous while create path uses async CommitCreate; both share commitCreateTransaction
+- [Phase ?]: Offer copy-public-key action whenever keyUnused() is true due to stage-2 auto-chain
 
 ### Roadmap Evolution
 
@@ -204,9 +219,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-18T11:30:00.000Z
-Stopped at: Plan 03-06 (Wave 5, LAST wave) Tasks 1+2 COMPLETE (57bda7b, 4a9c939); Task 3 PACKET-ASSEMBLY HALF ONLY complete (9ddd102) — the review-EXECUTION half (agent-ui-ux-designer + Codex) is an ORCHESTRATOR obligation still owed. 03-06-SUMMARY.md written with a placeholder "Cross-AI visual-regression review" section. NEXT = orchestrator runs the DLV-04.2 review, then Phase 3 close-out (this is the phase's LAST wave/plan).
-Resume file: .planning/phases/03-create-flow-backend/03-06-SUMMARY.md ("Cross-AI visual-regression review" section — orchestrator fills in)
+Last session: 2026-08-18T22:09:36.494Z
+Stopped at: Completed 03-07-PLAN.md
+Resume file: None
 Wave structure: W1 = 03-01 + 03-02 (DONE) -> W2 = 03-03 (DONE) -> W3 = 03-04 (DONE) -> W4 = 03-05 (DONE) -> W5 = 03-06 (Tasks 1+2 DONE, Task 3 PARTIAL — orchestrator review owed)
 **All remaining waves run SEQUENTIALLY (one executor at a time) per LEARNINGS L11** — the pre-commit hooks lint the whole module, so a parallel executor's mid-refactor tree blocks every other commit. Do NOT run plans in parallel inside this Go module again.
 
@@ -301,6 +316,7 @@ review, not yet run by this session):
 - make test-e2e -> ok
 - make test (incl. gate-copy-freeze, both new D-02/D-01 strings + the
   cmd/gitid-scoped D-19 real string) -> ok
+
 - go list -deps ./internal/tuikit -> NO first-party backend import (boundary holds)
 - go test ./internal/dummytui/ -run TestNoBackendAllowlist -> PASS
 - grep for a tester import line in internal/tuikit -> no match (only doc comments name tester.Outcome/tester.Result)
@@ -340,8 +356,10 @@ session):
 - make gate-visual-regression -> ok (8/8 screens; fail-path hand-verified
   by removing the git-form-demo allowlist entry, observing a red FAIL, then
   reverting)
+
 - make smoke-network-test -> ok (real network this session; outcome
   ReachableNotUploaded)
+
 - go list -deps ./internal/tuikit -> NO first-party backend import (boundary holds)
 
 Commits: 57bda7b (Task 1 — 7 new PTY e2e cases + 2 Rule-1 auto-fixes: the

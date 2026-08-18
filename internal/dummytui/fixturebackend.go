@@ -314,3 +314,13 @@ func (FixtureBackend) CopyPublicKey(string) (string, error) {
 func (FixtureBackend) GitStepDisabledReason() (string, bool) {
 	return "", false
 }
+
+// CommitCreate confirms a create in the demo. The dummy has no real files to
+// write, so it reports success with the same mock backups CreateWritePlan
+// advertises — keeping the demo's render identical to the pre-extraction flow.
+func (b FixtureBackend) CommitCreate(id tuikit.DemoIdentity) tea.Cmd {
+	plan := b.CreateWritePlan(tuikit.CreateSpec{Identity: id.Name}, nil)
+	return func() tea.Msg {
+		return tuikit.WizardCommitMsg{Backups: plan.Backups}
+	}
+}

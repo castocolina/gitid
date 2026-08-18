@@ -215,9 +215,9 @@ func TestEnsurePubNilReadPubFallsBackToDerivePub(t *testing.T) {
 		t.Fatal("test setup: this fake must leave ReadPub nil to exercise the nil-guard")
 	}
 
-	line, err := ensurePub("/tmp/.ssh/id_ed25519_x", "/tmp/.ssh/id_ed25519_x.pub", "x@gitid", deps)
+	line, err := ensurePubReadOnly("/tmp/.ssh/id_ed25519_x", "/tmp/.ssh/id_ed25519_x.pub", "x@gitid", deps)
 	if err != nil {
-		t.Fatalf("ensurePub with a nil ReadPub must fall back to DerivePub; got error: %v", err)
+		t.Fatalf("ensurePubReadOnly with a nil ReadPub must fall back to DerivePub; got error: %v", err)
 	}
 	if log.derivePub != 1 {
 		t.Errorf("nil ReadPub must fall back to DerivePub once; called %d times", log.derivePub)
@@ -226,7 +226,7 @@ func TestEnsurePubNilReadPubFallsBackToDerivePub(t *testing.T) {
 		t.Errorf("a nil ReadPub must never be invoked; called %d times", log.readPub)
 	}
 	if log.writePub != 0 {
-		t.Errorf("ensurePub must not write an already-present .pub; wrote %d times", log.writePub)
+		t.Errorf("ensurePubReadOnly must not write an already-present .pub; wrote %d times", log.writePub)
 	}
 	if !strings.Contains(line, "AAAADERIVED") {
 		t.Errorf("nil-ReadPub fallback returned %q, want the DerivePub line", line)
@@ -243,16 +243,16 @@ func TestEnsurePubReadPubErrorIsWrapped(t *testing.T) {
 	deps := withReadPub(newFakeModeDeps(&log, tester.ReachableNotUploaded), &log, "", readErr)
 
 	pubPath := "/tmp/.ssh/id_ed25519_x.pub"
-	_, err := ensurePub("/tmp/.ssh/id_ed25519_x", pubPath, "x@gitid", deps)
+	_, err := ensurePubReadOnly("/tmp/.ssh/id_ed25519_x", pubPath, "x@gitid", deps)
 	if err == nil {
-		t.Fatal("ensurePub must return an error when ReadPub fails")
+		t.Fatal("ensurePubReadOnly must return an error when ReadPub fails")
 	}
 	if !errors.Is(err, readErr) {
-		t.Errorf("ensurePub must wrap the ReadPub error with %%w; got %v", err)
+		t.Errorf("ensurePubReadOnly must wrap the ReadPub error with %%w; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "identity: reading existing public key") ||
 		!strings.Contains(err.Error(), pubPath) {
-		t.Errorf("ensurePub error must follow the identity: <verb> <path> convention; got %q", err.Error())
+		t.Errorf("ensurePubReadOnly error must follow the identity: <verb> <path> convention; got %q", err.Error())
 	}
 	if log.derivePub != 0 {
 		t.Errorf("a ReadPub failure must not silently fall back to DerivePub; called %d times", log.derivePub)
@@ -260,27 +260,30 @@ func TestEnsurePubReadPubErrorIsWrapped(t *testing.T) {
 }
 
 // TestEnsurePubMissingPubStillDerives asserts the .pub-ABSENT branch is
-// unchanged by the new seam: ReadPub is never consulted, DerivePub produces the
-// line, and WritePub persists it (only passphraseless keys are supported here,
-// matching the DerivePublicKey doc contract).
+// read-only in staging: ReadPub is never consulted, DerivePub produces the
+// line, but WritePub is NOT called. The confirmed transaction writes the .pub
+// later (CR-02).
 func TestEnsurePubMissingPubStillDerives(t *testing.T) {
 	var log modeLog
 	log.pubExistsRet = false // .pub absent
 	deps := withReadPub(newFakeModeDeps(&log, tester.ReachableNotUploaded), &log, "ssh-ed25519 AAAASTALE x\n", nil)
 
 	pubPath := "/tmp/.ssh/id_ed25519_x.pub"
-	line, err := ensurePub("/tmp/.ssh/id_ed25519_x", pubPath, "x@gitid", deps)
+	line, err := ensurePubReadOnly("/tmp/.ssh/id_ed25519_x", pubPath, "x@gitid", deps)
 	if err != nil {
-		t.Fatalf("ensurePub returned error: %v", err)
+		t.Fatalf("ensurePubReadOnly returned error: %v", err)
 	}
 	if log.readPub != 0 {
 		t.Errorf("ReadPub must not be called when the .pub is absent; called %d times", log.readPub)
 	}
-	if log.derivePub != 1 || log.writePub != 1 {
-		t.Errorf("absent .pub must derive+write once; derive=%d write=%d", log.derivePub, log.writePub)
+	if log.derivePub != 1 {
+		t.Errorf("absent .pub must derive once; derive=%d", log.derivePub)
 	}
-	if !strings.Contains(line, "AAAADERIVED") || log.lastPubPath != pubPath {
-		t.Errorf("absent .pub path changed: line=%q pubPath=%q", line, log.lastPubPath)
+	if log.writePub != 0 {
+		t.Errorf("staging must not write the derived .pub; wrote %d times", log.writePub)
+	}
+	if !strings.Contains(line, "AAAADERIVED") {
+		t.Errorf("absent .pub derivation returned unexpected line: %q", line)
 	}
 }
 

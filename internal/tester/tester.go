@@ -63,8 +63,8 @@ func ClassifyPreWrite(combinedOutput string) Outcome {
 // read-only helper (no exec) that calls exec.Command("ssh", preWriteArgs(...)).String()
 // so the returned string is byte-identical to Result.Command for the same inputs.
 // Callers use this to display the exact pre-run command before PreWrite executes.
-func PreWriteCommand(keyPath, hostname string, port int) string {
-	args := preWriteArgs(keyPath, hostname, port)
+func PreWriteCommand(keyPath, hostname string, port int, knownHostsPath string) string {
+	args := preWriteArgs(keyPath, hostname, port, knownHostsPath)
 	cmd := exec.Command("ssh", args...) //nolint:gosec // arg-slice form for cmd.String() display; not executed here
 	return cmd.String()
 }
@@ -72,8 +72,8 @@ func PreWriteCommand(keyPath, hostname string, port int) string {
 // preWriteArgs builds the explicit-key pre-write ssh argument slice. Arguments
 // are passed as a slice (never a shell string), keeping the call gosec
 // G204-clean and free of OS-command-injection risk (threat T-02-18).
-func preWriteArgs(keyPath, hostname string, port int) []string {
-	return []string{
+func preWriteArgs(keyPath, hostname string, port int, knownHostsPath string) []string {
+	args := []string{
 		"-i", keyPath,
 		"-o", "IdentitiesOnly=yes",
 		"-o", "BatchMode=yes",
@@ -82,6 +82,10 @@ func preWriteArgs(keyPath, hostname string, port int) []string {
 		"-p", strconv.Itoa(port),
 		"-T", "git@" + hostname,
 	}
+	if knownHostsPath != "" {
+		args = append(args, "-o", "UserKnownHostsFile="+knownHostsPath)
+	}
+	return args
 }
 
 // resolvedViaArgs builds the stage-2 CONNECTIVITY ssh argument slice used by
@@ -94,8 +98,8 @@ func preWriteArgs(keyPath, hostname string, port int) []string {
 //
 // Arguments are passed as a slice (never a shell string), keeping the call
 // gosec G204-clean and free of OS-command-injection risk (threat T-03-03).
-func resolvedViaArgs(configPath, keyPath, alias string) []string {
-	return []string{
+func resolvedViaArgs(configPath, keyPath, alias string, knownHostsPath string) []string {
+	args := []string{
 		"-F", configPath,
 		"-i", keyPath,
 		"-o", "IdentitiesOnly=yes",
@@ -103,6 +107,10 @@ func resolvedViaArgs(configPath, keyPath, alias string) []string {
 		"-o", "ConnectTimeout=10",
 		"-T", "git@" + alias,
 	}
+	if knownHostsPath != "" {
+		args = append(args, "-o", "UserKnownHostsFile="+knownHostsPath)
+	}
+	return args
 }
 
 // ResolvedViaCommand returns the string representation of the stage-2
@@ -112,8 +120,8 @@ func resolvedViaArgs(configPath, keyPath, alias string) []string {
 // byte-identical to that call's Result.Command for the same inputs — the
 // stage-2 counterpart of PreWriteCommand, closing the "shown command == run
 // command" contract (TEST-01) for both test stages.
-func ResolvedViaCommand(configPath, keyPath, alias string) string {
-	args := resolvedViaArgs(configPath, keyPath, alias)
+func ResolvedViaCommand(configPath, keyPath, alias string, knownHostsPath string) string {
+	args := resolvedViaArgs(configPath, keyPath, alias, knownHostsPath)
 	cmd := exec.Command("ssh", args...) //nolint:gosec // arg-slice form for cmd.String() display; not executed here
 	return cmd.String()
 }
@@ -121,8 +129,8 @@ func ResolvedViaCommand(configPath, keyPath, alias string) string {
 // preWriteWith runs the pre-write test through an injected runner and assembles
 // the Result, capturing the exact command string (input) and raw output (TEST-03)
 // and classifying strictly by output substring (exit code ignored).
-func preWriteWith(run runner, keyPath, hostname string, port int) Result {
-	args := preWriteArgs(keyPath, hostname, port)
+func preWriteWith(run runner, keyPath, hostname string, port int, knownHostsPath string) Result {
+	args := preWriteArgs(keyPath, hostname, port, knownHostsPath)
 	out, _ := run(args)                 // exit code intentionally ignored (Pitfall 2 / D-01)
 	cmd := exec.Command("ssh", args...) //nolint:gosec // arg-slice form for cmd.String() display; not executed here
 	return Result{
@@ -135,13 +143,14 @@ func preWriteWith(run runner, keyPath, hostname string, port int) Result {
 // PreWrite runs the explicit-key pre-write connectivity test:
 //
 //	ssh -i <key> -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10 \
-//	    -o StrictHostKeyChecking=accept-new -p <port> -T git@<hostname>
+//	    -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=<staging> \
+//	    -p <port> -T git@<hostname>
 //
 // It captures combined stdout+stderr, ignores the (unreliable) exit code, and
 // returns a Result with the input command, raw output, and substring-derived
 // outcome. Read-only: it never mutates any file.
-func PreWrite(keyPath, hostname string, port int) Result {
-	return preWriteWith(execRunner, keyPath, hostname, port)
+func PreWrite(keyPath, hostname string, port int, knownHostsPath string) Result {
+	return preWriteWith(execRunner, keyPath, hostname, port, knownHostsPath)
 }
 
 // execRunner is the production runner: it runs `ssh <args...>` with arguments
@@ -169,7 +178,7 @@ func Resolved(alias string) (Result, ResolvedConfig) {
 // and key, without touching the user's ~/.ssh/config:
 //
 //	ssh -F <configPath> -i <keyPath> -o IdentitiesOnly=yes -o BatchMode=yes \
-//	    -o ConnectTimeout=10 -T git@<alias>
+//	    -o ConnectTimeout=10 -o UserKnownHostsFile=<staging> -T git@<alias>
 //
 // The staged temp config carries the identity's Host block (alt-SSH hostname/port,
 // IdentityFile = the staged key), so the alias resolves through that block — the
@@ -178,12 +187,13 @@ func Resolved(alias string) (Result, ResolvedConfig) {
 // BEFORE the block ever lands in the live file (UAT G-5): the alias is not a DNS
 // name, so it can only resolve once a Host stanza exists somewhere ssh reads.
 //
-// Read-only with respect to ~/.ssh/config. The `ssh -G` parse also uses -F so the
-// returned ResolvedConfig reflects the staged block, not the live file.
-func ResolvedVia(configPath, keyPath, alias string) (Result, ResolvedConfig) {
+// Read-only with respect to ~/.ssh/config and the user's known_hosts: every call
+// is isolated to the provided knownHostsPath. The `ssh -G` parse also uses -F so
+// the returned ResolvedConfig reflects the staged block, not the live file.
+func ResolvedVia(configPath, keyPath, alias string, knownHostsPath string) (Result, ResolvedConfig) {
 	// Shared with ResolvedViaCommand so the displayed stage-2 command is exactly
 	// what runs here (TEST-01).
-	args := resolvedViaArgs(configPath, keyPath, alias)
+	args := resolvedViaArgs(configPath, keyPath, alias, knownHostsPath)
 	out, _ := execRunner(args)          // exit code ignored (D-01)
 	cmd := exec.Command("ssh", args...) //nolint:gosec // arg-slice form for cmd.String() display; not executed here
 	res := Result{Command: cmd.String(), Output: out, Outcome: ClassifyPreWrite(out)}

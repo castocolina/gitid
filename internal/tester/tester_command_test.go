@@ -19,8 +19,8 @@ func TestResolvedViaCommandMatchesResolvedViaArgv(t *testing.T) {
 		alias      = "work.github.com"
 	)
 
-	want := exec.Command("ssh", resolvedViaArgs(configPath, keyPath, alias)...).String() //nolint:gosec // arg-slice form for cmd.String() comparison; not executed
-	got := ResolvedViaCommand(configPath, keyPath, alias)
+	want := exec.Command("ssh", resolvedViaArgs(configPath, keyPath, alias, "")...).String() //nolint:gosec // arg-slice form for cmd.String() comparison; not executed
+	got := ResolvedViaCommand(configPath, keyPath, alias, "")
 	if got != want {
 		t.Errorf("ResolvedViaCommand mismatch\n got: %q\nwant: %q", got, want)
 	}
@@ -30,7 +30,7 @@ func TestResolvedViaCommandMatchesResolvedViaArgv(t *testing.T) {
 // config, the explicit key and the alias — the connectivity invocation, NOT the
 // `ssh -G` resolution call (which takes no -i).
 func TestResolvedViaCommandShape(t *testing.T) {
-	got := ResolvedViaCommand("/tmp/cfg", "/tmp/key", "work.github.com")
+	got := ResolvedViaCommand("/tmp/cfg", "/tmp/key", "work.github.com", "")
 	for _, want := range []string{
 		"-F /tmp/cfg",
 		"-i /tmp/key",

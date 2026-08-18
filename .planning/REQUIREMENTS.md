@@ -161,7 +161,7 @@ These are first-class, enforced requirements — the user's core process ask.
 - [x] **TEST-02** (`ssh -G` proof): the resolved test proves which `IdentityFile` the
   config actually resolves. *(built)*
 
-- [ ] **TEST-03** (Store or adopt): On pass + user agreement, persist to
+- [x] **TEST-03** (Store or adopt): On pass + user agreement, persist to
   `~/.ssh/config` **or** to the gitid-owned Include'd file (see STORE), with backup.
 
 ## F. SSH Config Storage (STORE) — research-backed
@@ -469,11 +469,11 @@ row below records each one's **home** phase.
 | SSHUI-01 | Phase 3 | Complete |
 | SSHUI-02 | Phase 3 | Complete |
 | SSHUI-03 | Phase 3 | Complete |
-| SSHUI-04 | Phase 3 | Pending |
+| SSHUI-04 | Phase 3 | Complete |
 | SSHUI-05 | Phase 3 | Pending |
 | TEST-01 | Phase 3 | Complete |
 | TEST-02 | Phase 3 | Complete |
-| TEST-03 | Phase 3 | Pending |
+| TEST-03 | Phase 3 | Complete |
 | STORE-01 | Phase 1, Phase 3 (D-06 default supersession) | Complete |
 | STORE-02 | Phase 1 | Complete |
 | STORE-03 | Phase 1 | Complete |

@@ -96,14 +96,21 @@ type realBackend struct {
 	stagedFor          string
 	stagedReuseKeyPath string
 	stagedIn           identity.CreateInput
-	// lastOutcome is the most recent connectivity-test outcome, and
-	// outcomeKnown whether any stage has answered yet. Together they are the
-	// D-01 STORE GATE at the backend seam: PASS and ReachableNotUploaded both
-	// unlock the write (a brand-new key cannot authenticate before its .pub is
-	// uploaded — that is a warning, not a failure); only a hard Failure blocks.
-	lastOutcome  tuikit.TestOutcome
-	outcomeKnown bool
-	persistErr   error
+	// stage1Outcome/stage2Outcome record the accepted outcome for each stage
+	// when it belongs to the CURRENT create specification. Together they are
+	// the D-01 STORE GATE at the backend seam: PASS and ReachableNotUploaded
+	// both unlock the write; a hard Failure or any stale/absent proof blocks.
+	stage1Outcome tuikit.TestOutcome
+	stage1Known   bool
+	stage2Outcome tuikit.TestOutcome
+	stage2Known   bool
+	outcomeSpec   string // fingerprint of the spec the outcomes belong to
+	persistErr    error
+
+	// failCommitAt is a test-only injection point: when non-nil, CommitCreate
+	// fails before the named mutation step. The steps are "private-key",
+	// "public-key", "include-line", and "host-block".
+	failCommitAt func(step string) error
 }
 
 // compile-time proof the real composition root satisfies the seam.
@@ -148,12 +155,16 @@ func newBackendForHome(home string) *realBackend {
 // missing feature (see wiring_test.go's reflection guard).
 func buildIdentityDeps(b *realBackend) identity.Deps {
 	return identity.Deps{
-		// Generate writes the key pair straight to its final ~/.ssh path so the
-		// key exists (and is uploadable) before the connectivity gate runs.
-		// TempPrivatePath == FinalPrivatePath; Cleanup is therefore a no-op.
+		// Generate writes the private test key to the backend's mode-0700
+		// staging directory; final paths are carried in StagedKey but not
+		// touched until the confirmed transaction (CR-02).
 		Generate: func(in identity.CreateInput) (identity.StagedKey, error) {
 			if err := filewriter.EnsureDir(b.sshDir, sshDirMode); err != nil {
 				return identity.StagedKey{}, fmt.Errorf("gitid: ensuring %s: %w", b.sshDir, err)
+			}
+			stageDir, derr := b.stagingDir()
+			if derr != nil {
+				return identity.StagedKey{}, derr
 			}
 			finalPriv, finalPub := keygen.KeyPaths(b.sshDir, in.Algo, in.Name)
 			mat, gerr := keygen.GenerateMaterial(keygen.Params{
@@ -165,14 +176,12 @@ func buildIdentityDeps(b *realBackend) identity.Deps {
 			if gerr != nil {
 				return identity.StagedKey{}, fmt.Errorf("gitid: generating key material: %w", gerr)
 			}
-			if _, werr := filewriter.Write(finalPriv, mat.PrivPEM, keyFileMode); werr != nil {
-				return identity.StagedKey{}, fmt.Errorf("gitid: writing private key: %w", werr)
-			}
-			if _, werr := filewriter.Write(finalPub, []byte(mat.PubLine), pubFileMode); werr != nil {
-				return identity.StagedKey{}, fmt.Errorf("gitid: writing public key: %w", werr)
+			tempPriv := filepath.Join(stageDir, "id_"+in.Algo+"_"+in.Name)
+			if _, werr := filewriter.Write(tempPriv, mat.PrivPEM, keyFileMode); werr != nil {
+				return identity.StagedKey{}, fmt.Errorf("gitid: writing staged private key: %w", werr)
 			}
 			return identity.StagedKey{
-				TempPrivatePath:  finalPriv,
+				TempPrivatePath:  tempPriv,
 				FinalPrivatePath: finalPriv,
 				FinalPubPath:     finalPub,
 				PubLine:          mat.PubLine,
@@ -196,12 +205,18 @@ func buildIdentityDeps(b *realBackend) identity.Deps {
 			}
 			return result, nil
 		},
-		// Generate writes to the final path directly, so there is no temp
-		// staging directory to remove.
-		Cleanup: func(identity.StagedKey) {},
+		// Cleanup removes the throwaway staging directory after the confirmed
+		// transaction, but only for generated keys where TempPrivatePath is
+		// distinct from the final path. Reuse leaves the existing key untouched.
+		Cleanup: func(s identity.StagedKey) {
+			if s.TempPrivatePath != "" && s.TempPrivatePath != s.FinalPrivatePath {
+				_ = os.RemoveAll(filepath.Dir(s.TempPrivatePath))
+			}
+		},
 		CopyPub: clipboard.Copy,
 		PreWrite: func(keyPath, hostname string, port int) tester.Result {
-			return tester.PreWrite(keyPath, hostname, port)
+			knownHosts, _ := b.knownHostsPath()
+			return tester.PreWrite(keyPath, hostname, port, knownHosts)
 		},
 		// WriteSSH resolves the STORAGE LAYOUT first (D-05/D-06) and writes the
 		// Host block plus the macOS globals block into the resolved target.
@@ -239,7 +254,10 @@ func buildIdentityDeps(b *realBackend) identity.Deps {
 			}
 			return configPath, nil
 		},
-		ResolvedVia: tester.ResolvedVia,
+		ResolvedVia: func(configPath, keyPath, alias string) (tester.Result, tester.ResolvedConfig) {
+			knownHosts, _ := b.knownHostsPath()
+			return tester.ResolvedVia(configPath, keyPath, alias, knownHosts)
+		},
 		PubExists: func(pubPath string) bool {
 			_, err := os.Stat(pubPath)
 			return err == nil
@@ -339,22 +357,23 @@ func (b *realBackend) persistCreate(state tuikit.DemoState, a tuikit.AddIdentity
 		b.setPersistErr(b.initErr)
 		return state
 	}
-	if !b.storeUnlocked() {
+	in := b.createInput(a.Identity)
+	if !b.storeUnlockedFor(in) {
 		b.setPersistErr(fmt.Errorf(
 			"gitid: refusing to write %q: the connectivity test failed, so nothing was proven about the provider", a.Identity.Name))
 		return state
 	}
-	in := b.createInput(a.Identity)
 	staged, err := b.stagedKeyFor(in, a.Identity.ReuseKeyPath)
 	if err != nil {
 		b.setPersistErr(err)
 		return state
 	}
-	if _, err := identity.PersistSSH(in, staged, b.deps); err != nil {
+	if _, err := b.commitCreateTransaction(in, staged); err != nil {
 		b.setPersistErr(err)
 		return state
 	}
 	b.clearStaged()
+	b.clearOutcomes()
 	b.setPersistErr(nil)
 	return b.InitialState()
 }
@@ -528,13 +547,15 @@ func (b *realBackend) TestConfigPath() string {
 // TEST-01). It is built from the SAME argument slice tester.PreWrite executes,
 // so the shown string can never drift from the run one.
 func (b *realBackend) Stage1Command(spec tuikit.CreateSpec) string {
-	return tester.PreWriteCommand(b.resolveKeyPath(spec.KeyPath), spec.Hostname, atoiOr(spec.Port, identity.DefaultPort()))
+	knownHosts, _ := b.knownHostsPath()
+	return tester.PreWriteCommand(b.resolveKeyPath(spec.KeyPath), spec.Hostname, atoiOr(spec.Port, identity.DefaultPort()), knownHosts)
 }
 
 // Stage2Command is the exact stage-2 command: the alias resolved THROUGH the
 // staged temp config (TEST-02).
 func (b *realBackend) Stage2Command(spec tuikit.CreateSpec) string {
-	return tester.ResolvedViaCommand(b.TestConfigPath(), b.resolveKeyPath(spec.KeyPath), spec.Alias)
+	knownHosts, _ := b.knownHostsPath()
+	return tester.ResolvedViaCommand(b.TestConfigPath(), b.resolveKeyPath(spec.KeyPath), spec.Alias, knownHosts)
 }
 
 // TestStage1 runs the real stage-1 connectivity test: the key is generated (if
@@ -546,11 +567,11 @@ func (b *realBackend) TestStage1(spec tuikit.CreateSpec) tea.Cmd {
 		in := b.createInputFromSpec(spec)
 		staged, err := b.stagedKeyFor(in, spec.ReuseKeyPath)
 		if err != nil {
-			return b.stageFailure(1, b.Stage1Command(spec), err)
+			return b.stageFailure(1, b.Stage1Command(spec), err, in)
 		}
 		res := b.deps.PreWrite(staged.TempPrivatePath, in.Hostname, in.Port)
 		view := toTestResultView(res, res.Command)
-		b.recordOutcome(view.Outcome)
+		b.recordOutcomeFor(1, view.Outcome, in)
 		return tuikit.WizardStageMsg{Stage: 1, Result: view}
 	}
 }
@@ -563,15 +584,15 @@ func (b *realBackend) TestStage2(spec tuikit.CreateSpec) tea.Cmd {
 		in := b.createInputFromSpec(spec)
 		staged, err := b.stagedKeyFor(in, spec.ReuseKeyPath)
 		if err != nil {
-			return b.stageFailure(2, b.Stage2Command(spec), err)
+			return b.stageFailure(2, b.Stage2Command(spec), err, in)
 		}
 		configPath, err := b.deps.StageTestConfig(in, staged)
 		if err != nil {
-			return b.stageFailure(2, b.Stage2Command(spec), err)
+			return b.stageFailure(2, b.Stage2Command(spec), err, in)
 		}
 		res, resolved := b.deps.ResolvedVia(configPath, staged.TempPrivatePath, in.Alias)
 		view := toTestResultView(res, res.Command)
-		b.recordOutcome(view.Outcome)
+		b.recordOutcomeFor(2, view.Outcome, in)
 		if len(resolved.IdentityFiles) > 0 {
 			// The stage-2 proof the user asked for: which key the ALIAS
 			// actually resolves to.
@@ -803,7 +824,7 @@ func (b *realBackend) hasIncludeLine() bool {
 		return false
 	}
 	for _, d := range directives {
-		if strings.HasPrefix(filepath.Clean(d.Expanded), filepath.Clean(b.includeDir)) {
+		if filepath.Clean(d.Expanded) == filepath.Clean(b.includeDir) {
 			return true
 		}
 	}
@@ -936,19 +957,15 @@ func (b *realBackend) createInputFromSpec(spec tuikit.CreateSpec) identity.Creat
 	if algo == "" {
 		algo = "ed25519"
 	}
-	return identity.CreateInput{
-		Name:               spec.Identity,
-		Provider:           providerFromAlias(spec.Alias),
-		Algo:               algo,
-		Alias:              spec.Alias,
-		Hostname:           spec.Hostname,
-		Port:               atoiOr(spec.Port, identity.DefaultPort()),
-		FragmentPath:       filepath.Join(b.fragmentDir, spec.Identity),
-		GitconfigPath:      b.gitconfigPath,
-		SSHConfigPath:      b.storageTargetPath(),
-		AllowedSignersPath: b.allowedSigners,
-		GlobalBlock:        sshconfig.RenderGlobalBlock(platform.CurrentOS()),
-	}
+	in := b.createInput(tuikit.DemoIdentity{
+		Name:         spec.Identity,
+		SSHHost:      spec.Alias,
+		Hostname:     spec.Hostname,
+		Port:         atoiOr(spec.Port, identity.DefaultPort()),
+		ReuseKeyPath: spec.ReuseKeyPath,
+	})
+	in.Algo = algo
+	return in
 }
 
 // stagedKeyFor returns the key material for in's identity, keyed on BOTH the
@@ -993,22 +1010,218 @@ func (b *realBackend) clearStaged() {
 	b.mu.Unlock()
 }
 
-// recordOutcome stores a stage's outcome for the D-01 store gate.
-func (b *realBackend) recordOutcome(o tuikit.TestOutcome) {
+// specFingerprint is a stable identifier for a CreateSpec + reuse choice. Two
+// specs with the same fingerprint produce the same stage outcomes; changing
+// form values invalidates prior proof.
+func specFingerprint(in identity.CreateInput) string {
+	return fmt.Sprintf("%s|%s|%d|%s|%s|%s", in.Alias, in.Hostname, in.Port, in.Algo, in.Name, in.Provider)
+}
+
+// recordOutcomeFor stores a stage's outcome bound to the current create spec.
+func (b *realBackend) recordOutcomeFor(stage int, o tuikit.TestOutcome, spec identity.CreateInput) {
+	fp := specFingerprint(spec)
 	b.mu.Lock()
-	b.lastOutcome, b.outcomeKnown = o, true
+	defer b.mu.Unlock()
+	b.outcomeSpec = fp
+	switch stage {
+	case 1:
+		b.stage1Outcome, b.stage1Known = o, true
+	case 2:
+		b.stage2Outcome, b.stage2Known = o, true
+	}
+}
+
+// recordOutcome is the test-facing wrapper that records a PASS on BOTH stages
+// for a sentinel spec, preserving the D-01 gate tests written before the
+// fail-closed spec-binding work.
+func (b *realBackend) recordOutcome(o tuikit.TestOutcome) {
+	b.recordOutcomeFor(1, o, identity.CreateInput{})
+	b.recordOutcomeFor(2, o, identity.CreateInput{})
+}
+
+// clearOutcomes drops the staged stage results, used when the create spec
+// changes or the transaction completes.
+func (b *realBackend) clearOutcomes() {
+	b.mu.Lock()
+	b.stage1Known, b.stage2Known, b.outcomeSpec = false, false, ""
 	b.mu.Unlock()
 }
 
-// storeUnlocked reports whether the confirmed write may proceed (D-01): PASS
-// and ReachableNotUploaded both unlock it — a brand-new key legitimately
-// cannot authenticate until its .pub is uploaded (Phase 9) — and only a hard
-// Failure blocks. A create whose stages never ran is not blocked here; the
-// wizard is what sequences them.
+// storeUnlockedFor reports whether the confirmed write may proceed (D-01 /
+// WR-02): the current spec must have accepted stage-1 AND stage-2 outcomes.
+// PASS and ReachableNotUploaded both unlock; a hard Failure or any
+// stale/absent proof blocks.
+func (b *realBackend) storeUnlockedFor(spec identity.CreateInput) bool {
+	fp := specFingerprint(spec)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.outcomeSpec != fp {
+		return false
+	}
+	if !b.stage1Known || !b.stage2Known {
+		return false
+	}
+	return b.stage1Outcome != tuikit.TestOutcomeFailure && b.stage2Outcome != tuikit.TestOutcomeFailure
+}
+
+// storeUnlocked is the test-facing wrapper: it returns true when both stages
+// are known and neither is a hard Failure, regardless of spec fingerprint.
 func (b *realBackend) storeUnlocked() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return !b.outcomeKnown || b.lastOutcome != tuikit.TestOutcomeFailure
+	if !b.stage1Known || !b.stage2Known {
+		return false
+	}
+	return b.stage1Outcome != tuikit.TestOutcomeFailure && b.stage2Outcome != tuikit.TestOutcomeFailure
+}
+
+// CommitCreate performs the confirmed create transaction off the Bubble Tea
+// update loop and returns a command that delivers a WizardCommitMsg with the
+// real result. The transaction writes the key pair, the Include line (when
+// needed), and the Host block in dependency order; any failure rolls every
+// earlier mutation back in reverse order.
+func (b *realBackend) CommitCreate(id tuikit.DemoIdentity) tea.Cmd {
+	return func() tea.Msg {
+		if b.initErr != nil {
+			return tuikit.WizardCommitMsg{Err: b.initErr.Error()}
+		}
+		in := b.createInput(id)
+		if !b.storeUnlockedFor(in) {
+			return tuikit.WizardCommitMsg{Err: fmt.Sprintf(
+				"gitid: refusing to write %q: the connectivity test failed or is stale, so nothing was proven about the provider", id.Name)}
+		}
+		staged, err := b.stagedKeyFor(in, id.ReuseKeyPath)
+		if err != nil {
+			return tuikit.WizardCommitMsg{Err: err.Error()}
+		}
+		backups, err := b.commitCreateTransaction(in, staged)
+		if err != nil {
+			return tuikit.WizardCommitMsg{Err: err.Error()}
+		}
+		b.clearStaged()
+		b.clearOutcomes()
+		b.setPersistErr(nil)
+		return tuikit.WizardCommitMsg{Backups: backups}
+	}
+}
+
+// commitCreateTransaction applies the confirmed SSH create as one coordinated
+// unit and rolls back on any error. The write order is:
+//  1. private key
+//  2. public key (or reused .pub sibling)
+//  3. Include line in ~/.ssh/config (fresh-machine layout)
+//  4. Host block in the resolved storage target
+//
+// Rollback restores pre-write backups and removes transaction-created files so
+// a failure at any step leaves the user's config exactly as it was.
+func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged identity.StagedKey) ([]string, error) {
+	type backupOp struct {
+		target string
+		backup string // empty means target did not exist before the transaction
+	}
+	var ops []backupOp
+	var createdDirs []string
+	var rollback bool
+
+	defer func() {
+		if !rollback {
+			return
+		}
+		for i := len(ops) - 1; i >= 0; i-- {
+			op := ops[i]
+			if op.backup != "" {
+				_ = os.Remove(op.target)
+				_ = os.Rename(op.backup, op.target)
+			} else {
+				_ = os.Remove(op.target)
+			}
+		}
+		for _, d := range createdDirs {
+			_ = os.Remove(d)
+		}
+	}()
+
+	addOp := func(target, backup string) {
+		ops = append(ops, backupOp{target: target, backup: backup})
+	}
+
+	inject := func(step string) error {
+		if b.failCommitAt != nil {
+			return b.failCommitAt(step)
+		}
+		return nil
+	}
+
+	// 1. Private key.
+	if err := inject("private-key"); err != nil {
+		rollback = true
+		return nil, err
+	}
+	if staged.PrivPEM != nil {
+		bk, err := filewriter.Write(staged.FinalPrivatePath, staged.PrivPEM, keyFileMode)
+		if err != nil {
+			rollback = true
+			return nil, fmt.Errorf("gitid: writing private key: %w", err)
+		}
+		addOp(staged.FinalPrivatePath, bk)
+	}
+
+	// 2. Public key.
+	if err := inject("public-key"); err != nil {
+		rollback = true
+		return nil, err
+	}
+	pubLine := staged.PubLine
+	if pubLine != "" {
+		bk, err := filewriter.Write(staged.FinalPubPath, []byte(pubLine), pubFileMode)
+		if err != nil {
+			rollback = true
+			return nil, fmt.Errorf("gitid: writing public key: %w", err)
+		}
+		addOp(staged.FinalPubPath, bk)
+	}
+
+	// 3. Include line in ~/.ssh/config (fresh-machine layout only).
+	st := b.storage()
+	if st.needsIncludeLine {
+		if err := inject("include-line"); err != nil {
+			rollback = true
+			return nil, err
+		}
+		if err := sshconfig.EnsureIncludeDir(b.includeDir); err != nil {
+			rollback = true
+			return nil, err
+		}
+		createdDirs = append(createdDirs, b.includeDir)
+		bk, err := sshconfig.EnsureIncludeLine(b.sshConfigPath)
+		if err != nil {
+			rollback = true
+			return nil, fmt.Errorf("gitid: ensuring Include line: %w", err)
+		}
+		addOp(b.sshConfigPath, bk)
+	}
+
+	// 4. Host block in the resolved storage target.
+	if err := inject("host-block"); err != nil {
+		rollback = true
+		return nil, err
+	}
+	hostBlock := sshconfig.RenderHostBlock(in.Alias, in.Hostname, in.Port, staged.FinalPrivatePath, in.Provider)
+	bk, err := sshconfig.Write(st.targetPath, in.Name, hostBlock, in.GlobalBlock)
+	if err != nil {
+		rollback = true
+		return nil, fmt.Errorf("gitid: writing ssh config: %w", err)
+	}
+	addOp(st.targetPath, bk)
+
+	// Collect timestamped backup paths for the ceremony receipt.
+	var displayBackups []string
+	for _, op := range ops {
+		if op.backup != "" {
+			displayBackups = append(displayBackups, b.displayPath(op.backup))
+		}
+	}
+	return displayBackups, nil
 }
 
 // setPersistErr records (or clears) the last committed write's failure.
@@ -1040,6 +1253,16 @@ func (b *realBackend) stagingDir() (string, error) {
 	return dir, nil
 }
 
+// knownHostsPath returns the throwaway known_hosts file both test stages write
+// to, keeping the user's ~/.ssh/known_hosts untouched before confirmation.
+func (b *realBackend) knownHostsPath() (string, error) {
+	dir, err := b.stagingDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "known_hosts"), nil
+}
+
 // ---------------------------------------------------------------------------
 // Small helpers
 // ---------------------------------------------------------------------------
@@ -1048,8 +1271,8 @@ func (b *realBackend) stagingDir() (string, error) {
 // and records the outcome so the D-01 store gate blocks the write. A local
 // failure is a hard Failure, never a reachable-not-uploaded warning: nothing
 // was proven about the provider.
-func (b *realBackend) stageFailure(stage int, command string, err error) tuikit.WizardStageMsg {
-	b.recordOutcome(tuikit.TestOutcomeFailure)
+func (b *realBackend) stageFailure(stage int, command string, err error, in identity.CreateInput) tuikit.WizardStageMsg {
+	b.recordOutcomeFor(stage, tuikit.TestOutcomeFailure, in)
 	return tuikit.WizardStageMsg{Stage: stage, Result: tuikit.TestResultView{
 		Outcome: tuikit.TestOutcomeFailure,
 		Command: command,

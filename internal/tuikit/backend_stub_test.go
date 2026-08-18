@@ -374,3 +374,12 @@ func (stubBackend) CreateWritePlan(spec CreateSpec, git *GitSpec) WritePlanView 
 func (stubBackend) CopyPublicKey(string) (string, error) {
 	return "Public key copied to clipboard (demo).", nil
 }
+
+// CommitCreate implements the async create seam for tests. The stub has no
+// real filesystem effects, so it returns an immediate success with a fixture
+// backup path.
+func (stubBackend) CommitCreate(_ DemoIdentity) tea.Cmd {
+	return func() tea.Msg {
+		return WizardCommitMsg{Backups: []string{NewBackupPath("~/.ssh/config")}}
+	}
+}

@@ -53,7 +53,7 @@ func TestPreWrite_CapturesCommandAndOutput(t *testing.T) {
 	runner := func(_ []string) (string, error) {
 		return fakeOut, nil
 	}
-	res := preWriteWith(runner, "/home/u/.ssh/id_ed25519_work", "github.com", 22)
+	res := preWriteWith(runner, "/home/u/.ssh/id_ed25519_work", "github.com", 22, "")
 
 	if res.Command == "" {
 		t.Errorf("Result.Command is empty; expected the ssh invocation string")
@@ -120,7 +120,7 @@ func TestPreWriteArgs_ContainsRequiredFlags(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			args := preWriteArgs(tt.keyPath, tt.hostname, tt.port)
+			args := preWriteArgs(tt.keyPath, tt.hostname, tt.port, "")
 			joined := strings.Join(args, " ")
 			for _, want := range tt.wantContains {
 				if !strings.Contains(joined, want) {
@@ -146,7 +146,7 @@ func TestPreWriteWith_ClassifiesAndCapturesPortAndAcceptNew(t *testing.T) {
 	fakeRunner := func(_ []string) (string, error) {
 		return fakeOut, nil
 	}
-	res := preWriteWith(fakeRunner, "/tmp/.ssh/id_ed25519_work", "ssh.github.com", 443)
+	res := preWriteWith(fakeRunner, "/tmp/.ssh/id_ed25519_work", "ssh.github.com", 443, "")
 
 	if res.Outcome != ReachableNotUploaded {
 		t.Errorf("Outcome = %v, want ReachableNotUploaded", res.Outcome)
@@ -211,7 +211,7 @@ func TestParseResolved_IgnoresCamelCase(t *testing.T) {
 // a string that contains the same key flags as preWriteArgs and is byte-identical in
 // arg shape to what PreWrite would run. The helper is read-only (no exec).
 func TestPreWriteCommand_MatchesPreWriteArgShape(t *testing.T) {
-	got := PreWriteCommand("/tmp/id_ed25519_personal", "ssh.github.com", 443)
+	got := PreWriteCommand("/tmp/id_ed25519_personal", "ssh.github.com", 443, "")
 
 	// Must contain "ssh" as the program name (exec.Command("ssh", ...).String() may
 	// expand to the full path, e.g. /usr/bin/ssh on macOS).
@@ -246,9 +246,9 @@ func TestPreWriteCommand_MatchesPreWriteResultCommand(t *testing.T) {
 	fakeRunner := func(_ []string) (string, error) {
 		return "hi", nil
 	}
-	res := preWriteWith(fakeRunner, keyPath, hostname, port)
+	res := preWriteWith(fakeRunner, keyPath, hostname, port, "")
 
-	got := PreWriteCommand(keyPath, hostname, port)
+	got := PreWriteCommand(keyPath, hostname, port, "")
 	if got != res.Command {
 		t.Errorf("PreWriteCommand(%q, %q, %d) = %q\n  preWriteWith.Command = %q\n  strings must be equal",
 			keyPath, hostname, port, got, res.Command)

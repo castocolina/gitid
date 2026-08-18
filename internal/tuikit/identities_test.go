@@ -374,6 +374,10 @@ func wizardToStep2(t *testing.T, a App) App {
 // the demo's running tick. Building it from the Backend (rather than a
 // hand-made message) keeps the outcome — including the simulate-failure
 // path — decided by the seam, exactly as it is at runtime.
+//
+// Stage-1 success auto-chains into stage 2 (D-04), so completing stage 1 also
+// drains the returned stage-2 command and feeds its result back in, leaving
+// the wizard in the final answered state.
 func completeStage(t *testing.T, a App, stage int) App {
 	t.Helper()
 	spec := identModel(t, a).wizard.spec()
@@ -382,7 +386,29 @@ func completeStage(t *testing.T, a App, stage int) App {
 	if stage == 2 {
 		result = b.stage2Result(spec)
 	}
-	model, _ := a.Update(WizardStageMsg{Stage: stage, Result: result})
+	model, cmd := a.Update(WizardStageMsg{Stage: stage, Result: result})
+	a = model.(App)
+	if stage == 1 && cmd != nil {
+		if next, ok := cmd().(WizardStageMsg); ok && next.Stage == 2 {
+			return completeStage(t, a, 2)
+		}
+	}
+	return a
+}
+
+// completeCommit confirms an async create ceremony and drains the resulting
+// backend commit command, returning the model with the receipt showing.
+func completeCommit(t *testing.T, a App) App {
+	t.Helper()
+	a, cmd := press(t, a, "enter") // confirm
+	if cmd == nil {
+		return a
+	}
+	msg, ok := cmd().(WizardCommitMsg)
+	if !ok {
+		return a
+	}
+	model, _ := a.Update(msg)
 	return model.(App)
 }
 
@@ -611,10 +637,10 @@ func TestWizardSimulateFailToggleAndRetry(t *testing.T) {
 	if !m.wizard.simulateFail {
 		t.Error("toggle must lock while a stage is running")
 	}
-	a = completeStage(t, a, 1)
+	a = completeStage(t, a, 1) // stage 1 auto-chains into stage 2 (D-04)
 	m = identModel(t, a)
-	if m.wizard.testPhase != testStage1 {
-		t.Fatalf("phase = %q, want stage1 (ReachableNotUploaded still unlocks the D-04 chain)", m.wizard.testPhase)
+	if m.wizard.testPhase != testStage2 {
+		t.Fatalf("phase = %q, want stage2 (stage 1 auto-chained into stage 2)", m.wizard.testPhase)
 	}
 	if m.wizard.stage1.Outcome != TestOutcomeReachableNotUploaded {
 		t.Fatalf("stage1 outcome = %v, want TestOutcomeReachableNotUploaded", m.wizard.stage1.Outcome)
@@ -644,14 +670,6 @@ func TestWizardSimulateFailToggleAndRetry(t *testing.T) {
 		t.Errorf("copy note = %q, want a clipboard receipt", a2.note)
 	}
 
-	// Enter chains straight into stage 2 (D-04) — no retry framing; the
-	// store gate is already unlocked at ReachableNotUploaded (D-01).
-	a, _ = press(t, a, "enter")
-	a = completeStage(t, a, 2)
-	m = identModel(t, a)
-	if m.wizard.testPhase != testStage2 {
-		t.Fatalf("phase = %q, want stage2", m.wizard.testPhase)
-	}
 	if !strings.Contains(paneFlat(a), "✓ identityfile ~/.ssh/id_ed25519_acme2") {
 		t.Errorf("stage-2 identityfile proof missing:\n%s", paneFlat(a))
 	}
@@ -717,10 +735,8 @@ func TestReachableNotUploadedStoresKeyUnusedCopy(t *testing.T) {
 	a := wizardToStep2(t, identitiesApp())
 	a, _ = press(t, a, "space") // preview the D-02 warning path
 	a, _ = press(t, a, "enter")
-	a = completeStage(t, a, 1)
-	a, _ = press(t, a, "enter") // chain into stage 2 (D-04)
-	a = completeStage(t, a, 2)
-	a, _ = press(t, a, "enter")                    // → step 3 Git identity
+	a = completeStage(t, a, 1)                     // stage-1 warning auto-chains into stage 2 (D-04)
+	a, _ = press(t, a, "enter")                    // → step 2 Git identity
 	a = pressSeq(t, a, "tab", "tab", "tab", "tab") // → Skip button
 	a, _ = press(t, a, "enter")                    // activate [ Skip Git ] → ceremony
 
@@ -732,7 +748,7 @@ func TestReachableNotUploadedStoresKeyUnusedCopy(t *testing.T) {
 		t.Error("a ReachableNotUploaded store must never claim \"test passed\"")
 	}
 
-	a, _ = press(t, a, "enter") // confirm → receipt
+	a = completeCommit(t, a) // confirm → async commit → receipt
 	receipt := paneFlat(a)
 	if !strings.Contains(receipt, "Stored — key not uploaded yet; this identity is not proven for Git yet") {
 		t.Errorf("receipt missing the frozen key-unused copy:\n%s", receipt)
@@ -748,10 +764,8 @@ func wizardThroughTest(t *testing.T, a App) App {
 	t.Helper()
 	a = wizardToStep2(t, a)
 	a, _ = press(t, a, "enter")
-	a = completeStage(t, a, 1)
-	a, _ = press(t, a, "enter")
-	a = completeStage(t, a, 2)
-	a, _ = press(t, a, "enter") // → step 3 Git identity
+	a = completeStage(t, a, 1)  // stage-1 success auto-chains into stage 2 (D-04)
+	a, _ = press(t, a, "enter") // → step 2 Git identity
 	if !strings.Contains(appView(a), "Step 3/4") || !strings.Contains(appView(a), "New identity › Git identity") {
 		t.Fatalf("wizard did not reach step 3:\n%s", appView(a))
 	}
@@ -793,7 +807,7 @@ func TestWizardFullFlowCreatesCompleteIdentity(t *testing.T) {
 	if !strings.Contains(view, "~/.ssh/allowed_signers") {
 		t.Error("git-configured ceremony must touch allowed_signers")
 	}
-	a, _ = press(t, a, "enter") // confirm → receipt
+	a = completeCommit(t, a) // confirm → async commit → receipt
 	if !strings.Contains(appView(a), "Wrote →") {
 		t.Error("receipt missing Wrote → lines")
 	}
@@ -851,7 +865,7 @@ func TestWizardSkipCreatesIncompleteIdentity(t *testing.T) {
 	if !strings.Contains(appView(a), `Create identity "acme2"`) {
 		t.Fatal("skip must still walk the review ceremony")
 	}
-	a, _ = press(t, a, "enter") // confirm
+	a = completeCommit(t, a)    // confirm → async commit → receipt
 	a, _ = press(t, a, "enter") // done
 	acme2 := findIdentity(t, a.state, "acme2")
 	if acme2.State != "incomplete" {

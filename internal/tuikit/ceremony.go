@@ -64,6 +64,11 @@ type ceremonyConfig struct {
 	// every existing ceremonyConfig literal is unaffected.
 	ResultHint   string
 	ConfirmLabel string
+	// Async means confirmation dispatches a backend commit and the receipt
+	// is reachable ONLY from that commit's explicit success result. The
+	// ceremony enters an in-flight state on confirmation and remains there
+	// until commitSucceeded or commitFailed is called.
+	Async bool
 }
 
 // ceremonyFocus is which state-A control carries the focus.
@@ -84,12 +89,15 @@ const (
 )
 
 // ceremonyModel is the 2-state ceremony component (state A: confirm,
-// state B: receipt).
+// state B: receipt). Async ceremonies add an in-flight pending state between
+// confirmation and the explicit commit result.
 type ceremonyModel struct {
-	cfg   ceremonyConfig
-	done  bool
-	typed textinput.Model
-	focus ceremonyFocus
+	cfg       ceremonyConfig
+	done      bool
+	pending   bool
+	commitErr string
+	typed     textinput.Model
+	focus     ceremonyFocus
 }
 
 // newCeremony builds a ceremony in state A. For destructive ceremonies the
@@ -134,6 +142,11 @@ func (c ceremonyModel) toggleFocus() ceremonyModel {
 // exactly like the web's ceremony-level Enter handler. `y` confirms
 // non-destructive ceremonies; anything else feeds the typed-confirm input
 // when destructive. Enter on the receipt finishes.
+//
+// Async ceremonies: confirmation enters the in-flight pending state and
+// returns ceremonyConfirmed so the host dispatches the backend commit. While
+// pending, keys are inert. A failed result transitions to a retryable error
+// state where Enter re-enters pending and Esc cancels.
 func (c ceremonyModel) handleKey(msg tea.KeyMsg) (ceremonyModel, ceremonyOutcome) {
 	key := msg.String()
 	if c.done {
@@ -141,6 +154,23 @@ func (c ceremonyModel) handleKey(msg tea.KeyMsg) (ceremonyModel, ceremonyOutcome
 			return c, ceremonyFinished
 		}
 		return c, ceremonyNone
+	}
+	if c.pending {
+		// In flight: ignore all keys until the commit result arrives.
+		return c, ceremonyNone
+	}
+	if c.commitErr != "" {
+		// Retryable failure state.
+		switch key {
+		case "enter":
+			c.pending = true
+			c.commitErr = ""
+			return c, ceremonyConfirmed
+		case "esc":
+			return c, ceremonyCancelled
+		default:
+			return c, ceremonyNone
+		}
 	}
 	switch {
 	case key == "esc":
@@ -159,7 +189,11 @@ func (c ceremonyModel) handleKey(msg tea.KeyMsg) (ceremonyModel, ceremonyOutcome
 		return c, ceremonyCancelled
 	case key == "enter" || (key == "y" && c.cfg.Destructive == nil):
 		if c.confirmEnabled() {
-			c.done = true
+			if c.cfg.Async {
+				c.pending = true
+			} else {
+				c.done = true
+			}
 			return c, ceremonyConfirmed
 		}
 		return c, ceremonyNone
@@ -171,8 +205,30 @@ func (c ceremonyModel) handleKey(msg tea.KeyMsg) (ceremonyModel, ceremonyOutcome
 	}
 }
 
-// view renders the ceremony: state A (preview + backup promise + confirm)
-// or state B (receipt with Wrote → / Backed up → lines).
+// commitSucceeded transitions an async ceremony from pending to the receipt
+// state, replacing the preview backup placeholders with the real backup paths.
+func (c ceremonyModel) commitSucceeded(backups []string) ceremonyModel {
+	c.pending = false
+	c.done = true
+	c.commitErr = ""
+	if len(backups) > 0 {
+		c.cfg.Backups = backups
+	}
+	return c
+}
+
+// commitFailed transitions an async ceremony from pending to a retryable error
+// state that renders the concrete error with Retry / Cancel affordances.
+func (c ceremonyModel) commitFailed(err string) ceremonyModel {
+	c.pending = false
+	c.commitErr = err
+	c.focus = ceremonyFocusPrimary
+	return c
+}
+
+// view renders the ceremony: state A (preview + backup promise + confirm),
+// state B (receipt with Wrote → / Backed up → lines), or for async ceremonies
+// the in-flight pending state and the retryable failure state.
 func (c ceremonyModel) view(width int) string {
 	var b strings.Builder
 	if c.done {
@@ -188,6 +244,27 @@ func (c ceremonyModel) view(width int) string {
 			b.WriteString(styleFaint.Render("Backed up → ") + bk + "\n")
 		}
 		b.WriteString("\n" + styleSelected.Render(" Done (Enter) "))
+		return b.String()
+	}
+	if c.pending {
+		b.WriteString(styleFaint.Render("Writing…") + "\n\n")
+		for _, t := range c.cfg.Targets {
+			b.WriteString(styleFaint.Render("Will write → ") + t + "\n")
+		}
+		return b.String()
+	}
+	if c.commitErr != "" {
+		b.WriteString(styleError.Render("✗ "+c.commitErr) + "\n\n")
+		cancel := " " + c.cancelLabel() + " "
+		retry := " Retry (Enter) "
+		if c.focus == ceremonyFocusConfirm {
+			cancel = styleBold.Render(cancel)
+			retry = styleSelected.Render(retry)
+		} else {
+			cancel = styleSelected.Render(cancel)
+			retry = styleBold.Render(retry)
+		}
+		b.WriteString(cancel + " " + retry)
 		return b.String()
 	}
 

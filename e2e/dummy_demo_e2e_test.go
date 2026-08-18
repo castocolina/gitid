@@ -228,10 +228,8 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 	mustSee(t, s, "Step 2/4", "wizard: state 2 (test)")
 
-	s.sendKey(dummyKeyEnter, keystrokeDelay) // run stage 1
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // run stage 1; stage 2 auto-chains (D-04)
 	mustSee(t, s, "Hi e2e!", "wizard: stage-1 success banner")
-
-	s.sendKey(dummyKeyEnter, keystrokeDelay) // run stage 2
 	mustSee(t, s, "identityfile", "wizard: stage-2 ssh -G proof")
 
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
@@ -397,9 +395,8 @@ func TestDummyDemo_ShiftChordRawBytes(t *testing.T) {
 	// Re-advance and walk both test stages to reach step 2 (Git identity).
 	s.sendKey(dummyKeyShiftRight, keystrokeDelay)
 	mustSee(t, s, "Step 2/4", "raw-byte shift+right: step 0 → 1 again")
-	s.sendKey(dummyKeyEnter, keystrokeDelay) // run stage 1
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // run stage 1; stage 2 auto-chains (D-04)
 	mustSee(t, s, "Hi acme!", "wizard: stage-1 success banner")
-	s.sendKey(dummyKeyEnter, keystrokeDelay) // run stage 2
 	mustSee(t, s, "identityfile", "wizard: stage-2 ssh -G proof")
 	s.sendKey(dummyKeyShiftRight, keystrokeDelay)
 	mustSee(t, s, "Step 3/4", "raw-byte shift+right: step 1 → 2 once the test has passed")
