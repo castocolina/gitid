@@ -130,6 +130,37 @@ See `key-decisions` in frontmatter. In short: the copy-.pub action is footer-onl
 - The plan's Task 3 action asked for a Makefile grep scoped to `internal/dummytui` proving the dummy's original reason string is unchanged. Architecturally, `internal/tuikit`'s `gitFormDisabledSuffix` constant is the SOLE owner of that string (the dummy's `FixtureBackend.GitStepDisabledReason()` returns `("", false)`, letting tuikit fall back to its own constant) — duplicating the literal string into `internal/dummytui` for no functional reason would be decorative, not a real invariant. The existing `gate-copy-freeze` grep against `internal/tuikit` already proves the string is present and unchanged (it is asserted there both before and after this plan); the NEW D-19 real string gets its own grep scoped to `cmd/gitid` (where it actually lives). This is a reasoned, documented divergence from the plan's literal grep-path wording, not a correctness gap.
 - Could not engage `/mui` or `agent-ui-ux-designer` on the new warning-state visual — this executor has no access to spawn sub-agents or slash commands (Read/Write/Edit/Bash tools only). Flagging for the orchestrator, matching the project's established pattern where certain review/design gates are run by the orchestrator rather than the plan executor (e.g. 02-14/02-15's "ORCHESTRATOR-run exit gates").
 
+## DLV-02 retroactive design critique (orchestrator gap closure)
+
+This plan's own executor could not engage `/mui` + `agent-ui-ux-designer` (no
+subagent-spawning tools — see "Issues Encountered" above). The orchestrator
+closed that gap after the plan closed: `agent-ui-ux-designer:ui-ux-designer`
+reviewed the D-02/D-03/D-19 render code directly. Verdict: mental model and
+semantics were sound (yellow-not-red for `Permission denied (publickey)` is
+correct and correctly tested); the weak spot was the "last mile" — the
+warning told the user their key wasn't uploaded but didn't give them enough
+to act on it. Five findings, dispositioned as follows:
+
+| # | Finding | Severity | Disposition |
+|---|---------|----------|-------------|
+| F1 | Warning branch discarded the real `ssh` output (`r.Detail`), unlike the PASS branch | High | **Fixed** — `renderStageOutcome` now renders `r.Detail` as faint evidence below the warning line |
+| F2 | The D-03 hint printed twice (once per stage) in the common case where both stages resolve to ReachableNotUploaded, reading as an error loop | Medium | **Fixed** — `renderStageOutcome` gained a `showHint bool` param; only the final resolved stage shows it |
+| F3 | "GitHub key settings" is a label, not a destination — a terminal user has to go find the URL themselves | Medium (best ROI) | **Fixed** — new `providerKeySettingsURL`/`reachableHint` render `Press c to copy the .pub, then add it at <url>` (keystroke + real URL in one line); this also resolves F4's footer-terminology mismatch, since the hint now names the `c` keystroke directly |
+| F4.2 | The create-flow receipt (ceremony state B) is a dead end at the key-unused outcome — no copy action or URL once the wizard closes | High | **Fixed** — `ceremonyConfig` gained an additive, optional `ResultHint` field (empty for every other of the ~20 existing ceremony call sites); `reviewCeremony` sets it to the same `reachableHint` text only on a key-unused store |
+| A11y | The instruction line used `styleFaint`/`Theme.Hint` — the dimmest style — for the only actionable content in the state | Medium | **Fixed** — the instruction now renders in default body text; `Theme.Hint` is reserved for genuinely secondary text |
+| F5 | `wizardContinueHint` ("Continue reviews the Git fragment...") contradicts the always-disabled `[ Continue ]` reason on the real binary | Medium | **NOT changed** — `wizardContinueHint` is a Phase-2 **locked** design contract (D6, checkpoint-2: "both frozen hints ALWAYS visible below the row"). Suppressing/rewording it needs a documented scoped-divergence decision (the project's own D9 precedent), not a unilateral edit under a retroactive review. Carried forward — see STATE.md Blockers/Concerns. |
+| F5b | The Git-step form fields stay focusable/editable even though `[ Continue ]` can never submit them (real binary) | Medium | **Not addressed this pass** — medium effort, no frozen-copy conflict, but out of this gap-closure's scope; carried forward alongside F5 |
+
+New tests added (`internal/tuikit/identities_test.go`): `TestRenderStageOutcomeShowHint`,
+`TestReachableHintNamesKeystrokeAndURL`, `TestReviewCeremonyKeyUnusedResultHint`.
+All gates personally re-verified by the orchestrator after the fix: `go test
+-race -count=1 ./...` (18 packages green), `make lint` (0 issues).
+
+Full critique text (accessibility/portability section: colors are ANSI
+1/2/3 not truecolor — correct choice for SSH/`TERM` portability; no
+color-only reliance anywhere in these three states; no new glyph risk) is
+preserved in the orchestrator's session transcript, not duplicated here.
+
 ## User Setup Required
 
 None - no external service configuration required.

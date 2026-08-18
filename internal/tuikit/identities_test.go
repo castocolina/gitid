@@ -478,9 +478,85 @@ func TestFrozenReachableWarningAndKeyUnusedCopy(t *testing.T) {
 	// Both strings are actually rendered, not just declared: the render for
 	// TestOutcomeReachableNotUploaded (renderStageOutcome) and the
 	// key-unused store ceremony (reviewCeremony) both use them, byte-exact.
-	rendered := renderStageOutcome(TestResultView{Outcome: TestOutcomeReachableNotUploaded}, "github.com")
+	rendered := renderStageOutcome(TestResultView{Outcome: TestOutcomeReachableNotUploaded}, "github.com", true)
 	if !strings.Contains(rendered, stageWarningLine) {
 		t.Errorf("renderStageOutcome does not render stageWarningLine:\n%s", rendered)
+	}
+}
+
+// TestRenderStageOutcomeShowHint pins design-review finding F2 (post-03-05
+// retroactive DLV-02 critique): the D-03 instruction line is rendered once,
+// controlled by the showHint parameter, not unconditionally repeated on
+// every ReachableNotUploaded stage — the common case is both stages
+// resolving to ReachableNotUploaded for the same key, and repeating the
+// identical instruction twice reads as an error loop rather than one
+// coherent state.
+func TestRenderStageOutcomeShowHint(t *testing.T) {
+	r := TestResultView{Outcome: TestOutcomeReachableNotUploaded, Detail: "git@ssh.github.com: Permission denied (publickey)."}
+
+	withHint := renderStageOutcome(r, "github.com", true)
+	if !strings.Contains(withHint, "Press c to copy the .pub") {
+		t.Errorf("renderStageOutcome(showHint=true) missing the D-03 instruction:\n%s", withHint)
+	}
+	if !strings.Contains(withHint, r.Detail) {
+		t.Errorf("renderStageOutcome(showHint=true) does not surface the real ssh output (F1):\n%s", withHint)
+	}
+
+	withoutHint := renderStageOutcome(r, "github.com", false)
+	if strings.Contains(withoutHint, "Press c to copy the .pub") {
+		t.Errorf("renderStageOutcome(showHint=false) still rendered the instruction line:\n%s", withoutHint)
+	}
+	if !strings.Contains(withoutHint, stageWarningLine) {
+		t.Errorf("renderStageOutcome(showHint=false) dropped the frozen warning line:\n%s", withoutHint)
+	}
+}
+
+// TestReachableHintNamesKeystrokeAndURL pins design-review finding F3: the
+// D-03 hint names the copy keystroke and a directly navigable provider URL
+// (not just a label), and falls back to the existing label for an unknown
+// provider (no URL can be guessed for it).
+func TestReachableHintNamesKeystrokeAndURL(t *testing.T) {
+	cases := map[string]string{
+		"github.com":    "github.com/settings/keys",
+		"gitlab.com":    "gitlab.com/-/user_settings/ssh_keys",
+		"bitbucket.org": "bitbucket.org/account/settings/ssh-keys/",
+		"example.com":   "your provider's key settings",
+	}
+	for provider, want := range cases {
+		hint := reachableHint(provider)
+		if !strings.HasPrefix(hint, "Press c to copy the .pub, then add it at ") {
+			t.Errorf("reachableHint(%q) = %q, want the keystroke+destination framing", provider, hint)
+		}
+		if !strings.Contains(hint, want) {
+			t.Errorf("reachableHint(%q) = %q, want it to contain %q", provider, hint, want)
+		}
+	}
+}
+
+// TestReviewCeremonyKeyUnusedResultHint pins design-review finding F4.2: the
+// create-flow's receipt (state B) for a key-unused (ReachableNotUploaded)
+// store repeats the same keystroke+URL instruction the test-stage warning
+// showed — the receipt is the last screen before the user leaves gitid to
+// open a browser, so the instruction must survive past the wizard closing.
+// A PASS ceremony carries no ResultHint (nothing left to finish).
+func TestReviewCeremonyKeyUnusedResultHint(t *testing.T) {
+	w := newWizard(stubBackend{})
+	w.stage1 = TestResultView{Outcome: TestOutcomeReachableNotUploaded, Detail: "git@ssh.github.com: Permission denied (publickey)."}
+	w.stage2 = w.stage1
+
+	c := w.reviewCeremony()
+	if c.cfg.ResultHint == "" {
+		t.Fatal("reviewCeremony().ResultHint is empty for a key-unused store; want the F4.2 follow-on instruction")
+	}
+	if !strings.Contains(c.cfg.ResultHint, "Press c to copy the .pub") {
+		t.Errorf("ResultHint = %q, want the D-03 keystroke+URL instruction", c.cfg.ResultHint)
+	}
+
+	w.stage1 = TestResultView{Outcome: TestOutcomePass, Detail: "git@ssh.github.com: Hi acme! You've successfully authenticated."}
+	w.stage2 = w.stage1
+	passC := w.reviewCeremony()
+	if passC.cfg.ResultHint != "" {
+		t.Errorf("ResultHint = %q, want empty on a full PASS store", passC.cfg.ResultHint)
 	}
 }
 

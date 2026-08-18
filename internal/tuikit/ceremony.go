@@ -56,7 +56,14 @@ type ceremonyConfig struct {
 	PreviewDiff   bool
 	Destructive   *FixDestructive
 	ResultMessage string
-	ConfirmLabel  string
+	// ResultHint is an OPTIONAL faint follow-on line rendered directly below
+	// ResultMessage on the receipt (state B) — for a ceremony whose result
+	// is not fully "done" (e.g. the create-flow's D-01 key-unused store:
+	// design-review F4.2 found the receipt was a dead end with no pointer to
+	// finish the job once the user leaves the wizard). Empty by default, so
+	// every existing ceremonyConfig literal is unaffected.
+	ResultHint   string
+	ConfirmLabel string
 }
 
 // ceremonyFocus is which state-A control carries the focus.
@@ -169,7 +176,11 @@ func (c ceremonyModel) handleKey(msg tea.KeyMsg) (ceremonyModel, ceremonyOutcome
 func (c ceremonyModel) view(width int) string {
 	var b strings.Builder
 	if c.done {
-		b.WriteString(styleHealthy.Render("✓ "+c.cfg.ResultMessage) + "\n\n")
+		b.WriteString(styleHealthy.Render("✓ "+c.cfg.ResultMessage) + "\n")
+		if c.cfg.ResultHint != "" {
+			b.WriteString(" " + c.cfg.ResultHint + "\n")
+		}
+		b.WriteString("\n")
 		for _, t := range c.cfg.Targets {
 			b.WriteString(styleFaint.Render("Wrote → ") + t + "\n")
 		}

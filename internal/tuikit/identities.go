@@ -842,6 +842,34 @@ func providerKeySettingsLabel(providerHost string) string {
 	}
 }
 
+// providerKeySettingsURL names the provider's SSH-key-settings page as a
+// directly navigable URL (design-review F3: a label alone is a dead end in
+// a terminal — most modern terminal emulators make a bare URL clickable or
+// at least selectable, so a URL is strictly more actionable than a label at
+// the same row cost). Unknown providers fall back to the existing label
+// (providerKeySettingsLabel), since no URL can be guessed for them.
+func providerKeySettingsURL(providerHost string) string {
+	switch providerHost {
+	case "github.com":
+		return "github.com/settings/keys"
+	case "gitlab.com":
+		return "gitlab.com/-/user_settings/ssh_keys"
+	case "bitbucket.org":
+		return "bitbucket.org/account/settings/ssh-keys/"
+	default:
+		return providerKeySettingsLabel(providerHost)
+	}
+}
+
+// reachableHint is the D-03 warning-state instruction: names the copy
+// keystroke and a directly navigable URL in one line (design-review F3/F4),
+// rendered in default body text rather than Theme.Hint/faint — it is the
+// only actionable content in the warning state, so it must not be the
+// dimmest text on screen (design-review a11y finding).
+func reachableHint(providerHost string) string {
+	return "Press c to copy the .pub, then add it at " + providerKeySettingsURL(providerHost)
+}
+
 // revalidateManualPath re-resolves the manual-path row's candidate through
 // the Backend's symlink-rejecting seam on every keystroke — mirroring the
 // alias-collision field's own "answered as you type" pattern.
@@ -960,18 +988,32 @@ const (
 // EXISTING green ✓ + the real ssh output (TestResultView.Detail — never a
 // hand-built string, so the shown text can never drift from what actually
 // ran). ReachableNotUploaded REPLACES that same row with the NEW D-02
-// yellow `!` warning + the D-03 hint naming the provider's key-settings page
-// + the copy-.pub keybinding hint — never red (Pitfall 6). A hard Failure
+// yellow `!` warning, followed by the real ssh output as faint evidence
+// (design-review F1: the warning is a claim about what ssh returned — the
+// user should be able to see the same evidence the PASS branch shows, not
+// just gitid's paraphrase of it) — never red (Pitfall 6). A hard Failure
 // never reaches this helper; the caller's own testFailed branch renders it
 // separately with the retry affordance.
+// showHint controls whether the D-03 instruction line (keystroke + provider
+// URL) is appended: when both test stages resolve to ReachableNotUploaded
+// (the common case — the same key, tested two ways), the instruction is
+// identical for both, so the caller renders it only once (design-review F2)
+// rather than repeating two identical lines that read as an error loop.
 // The copy-.pub action itself is a footer/keybar affordance (wizardFooter),
 // never a second inline body row — the row-budget discipline every wizard
 // pane keeps (02-STYLE-SPEC.md §7).
-func renderStageOutcome(r TestResultView, providerHost string) string {
+func renderStageOutcome(r TestResultView, providerHost string, showHint bool) string {
 	var b strings.Builder
 	if r.Outcome == TestOutcomeReachableNotUploaded {
 		b.WriteString(" " + styleWarning.Render(stageWarningLine) + "\n")
-		b.WriteString(" " + styleFaint.Render("Add the .pub at "+providerKeySettingsLabel(providerHost)+" to finish.") + "\n")
+		if r.Detail != "" {
+			b.WriteString(" " + styleFaint.Render(r.Detail) + "\n")
+		}
+		if showHint {
+			// Default body style, not styleFaint: this is the only actionable
+			// content in the warning state (design-review a11y finding).
+			b.WriteString(" " + reachableHint(providerHost) + "\n")
+		}
 		return b.String()
 	}
 	b.WriteString(" " + styleHealthy.Render("✓ "+r.Detail) + "\n")
@@ -1128,12 +1170,18 @@ func (w wizardModel) reviewCeremony() ceremonyModel {
 	plan := w.backend.CreateWritePlan(w.spec(), git)
 	heading := `Create identity "` + name + `" — ` + w.algo() + ", test passed ✓"
 	resultMessage := `Identity "` + name + `" created — ` + w.form.sshHost() + " now resolves to " + w.keyPath() + "."
+	resultHint := ""
 	if w.keyUnused() {
 		// D-01/D-02: the store gate unlocked on ReachableNotUploaded, not a
 		// full PASS — the ceremony/result copy must say so plainly, never a
 		// silent "success" framing over an unauthenticated key.
 		heading = `Create identity "` + name + `" — ` + w.algo() + ", reachable — key not uploaded yet"
 		resultMessage = keyUnusedResultMessage
+		// design-review F4.2: the receipt is the last screen before the
+		// user leaves gitid to open a browser — it must repeat the same
+		// keystroke+URL instruction the test-stage warning showed, or the
+		// state is unrecoverable once the wizard closes.
+		resultHint = reachableHint(w.form.providerHost())
 	}
 	return newCeremony(ceremonyConfig{
 		Heading:       heading,
@@ -1141,6 +1189,7 @@ func (w wizardModel) reviewCeremony() ceremonyModel {
 		Backups:       plan.Backups,
 		Preview:       summary + "\n" + review,
 		ResultMessage: resultMessage,
+		ResultHint:    resultHint,
 		ConfirmLabel:  "Write it",
 	})
 }
@@ -2777,7 +2826,11 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 			b.WriteString(" " + styleError.Render("The connection failed — check the hostname, port, and network, then retry.") + "\n")
 			b.WriteString(" " + styleSelected.Render(" Retry (Enter) ") + "\n")
 		case testStage1, testStage2:
-			b.WriteString(renderStageOutcome(w.stage1, w.form.providerHost()))
+			// Show the D-03 hint here only while stage 2 has not resolved yet
+			// (design-review F2): once stage 2 lands, its own render is the
+			// final word and carries the hint instead, so the two stages
+			// never repeat the identical instruction line.
+			b.WriteString(renderStageOutcome(w.stage1, w.form.providerHost(), w.testPhase == testStage1))
 		}
 		if w.testPhase == testStage1 || w.testPhase == testStage2 {
 			// The short "Stage 2 — ..." title moves into the border's top
@@ -2790,7 +2843,7 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 			if w.testPhase == testStage1 {
 				b.WriteString(" " + styleSelected.Render(" Run stage 2 (Enter) ") + "\n")
 			} else {
-				b.WriteString(renderStageOutcome(w.stage2, w.form.providerHost()))
+				b.WriteString(renderStageOutcome(w.stage2, w.form.providerHost(), true))
 				b.WriteString(" " + styleSelected.Render(" Next: Git identity (Enter) ") + "\n")
 			}
 		}
