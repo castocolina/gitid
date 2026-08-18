@@ -17,7 +17,7 @@
     "research": true,
     "plan_check": true,
     "plan_review_convergence": true,
-    "verifier": true,
+    "verifier": false,
     "nyquist_validation": true,
     "auto_advance": false,
     "node_repair": true,
@@ -100,7 +100,6 @@
   "model_overrides": {
     "gsd-planner": "openai/gpt-5.6-sol",
     "gsd-plan-checker": "local-llm-env/claude/opus",
-    "gsd-verifier": "local-llm-env/claude/opus",
     "gsd-code-reviewer": "openai/gpt-5.6-sol",
     "gsd-ui-researcher": "openai/gpt-5.6-sol",
     "gsd-ui-checker": "openai/gpt-5.6-sol",

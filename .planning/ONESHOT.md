@@ -8,7 +8,7 @@ Claude Code commands, Codex CLI configuration, model names, or provider
 credentials in this file.
 
 - `gsd-planner` and `gsd-code-reviewer` use OpenAI Sol.
-- `gsd-plan-checker` and `gsd-verifier` use Claude Opus through OmniRoute.
+- `gsd-plan-checker` uses Claude Opus through OmniRoute after planning and before execution.
 - `gsd-executor` uses OpenCode Go Qwen.
 - `/gsd-plan-review-convergence` uses `review.default_reviewers`.
 
@@ -55,13 +55,10 @@ Complete these items in order:
    OpenCode Sol reviewer. Review the full Phase 3 commit range and the
    `03-06-review-packet` evidence. Record all findings and dispositions in
    `03-06-SUMMARY.md`; critical or high findings must be fixed and re-reviewed.
-2. Run the configured Opus verifier against Phase 3 and create
-   `03-VERIFICATION.md`. It must check the phase goal, requirements, review
-   results, and current commit range rather than trusting stale state prose.
-3. Update `STATE.md`, `ROADMAP.md`, and requirement status only after the
-   review and verification pass. Commit the closeout artifacts with their
+2. Update `STATE.md`, `ROADMAP.md`, and requirement status only after the
+   review and independent test, lint, and e2e gates pass. Commit the closeout artifacts with their
    evidence.
-4. Fast-forward or otherwise integrate the verified phase according to the
+3. Fast-forward or otherwise integrate the reviewed phase according to the
    repository's active branch policy, push the intended branch, and confirm CI
    before opening Phase 4 work.
 
@@ -80,10 +77,10 @@ Opus plan checker still guards generated plans. For each phase:
    forced by a command flag; `workflow.cross_ai_execution` alone is not a
    blanket executor override.
 4. Run security review, GSD code review, the configured external OpenCode
-   review lane, UI review/evidence for TUI surfaces, and the configured Opus
-   goal verifier. Resolve critical/high findings; record a fixed or accepted
+   review lane, UI review/evidence for TUI surfaces, and independent test,
+   lint, and e2e gates. Resolve critical/high findings; record a fixed or accepted
    disposition for lower-severity findings.
-5. Commit all implementation, tests, review evidence, summaries, verification,
+5. Commit all implementation, tests, review evidence, summaries, test-gate evidence,
    state, and roadmap changes required to close the phase. Do not leave phase
    closeout artifacts uncommitted.
 
