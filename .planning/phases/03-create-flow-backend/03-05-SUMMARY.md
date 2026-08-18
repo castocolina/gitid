@@ -144,3 +144,11 @@ None - no external service configuration required.
 ---
 *Phase: 03-create-flow-backend*
 *Completed: 2026-08-17*
+
+## Self-Check: PASSED
+
+- `.planning/phases/03-create-flow-backend/03-05-SUMMARY.md` — FOUND
+- commit `c680fde` (Tasks 1+2+3) — FOUND
+- commit `2c4e328` (SUMMARY docs) — FOUND
+- `internal/tuikit/backend.go` contains `GitStepDisabledReason` — FOUND
+- `cmd/gitid/wiring.go` contains `gitStepDisabledReason` const — FOUND

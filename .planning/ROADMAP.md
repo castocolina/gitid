@@ -173,7 +173,7 @@ Plans:
 
 **Wave 4** — test-outcome + scoped divergences (blocked on 03-04)
 
-- [ ] 03-05-PLAN.md — D-02 ReachableNotUploaded + D-03 copy-pub, exact-command render, D-19 git-disabled reason, D-18 functional skip (TEST-01/02)
+- [x] 03-05-PLAN.md — D-02 ReachableNotUploaded + D-03 copy-pub, exact-command render, D-19 git-disabled reason, D-18 functional skip (TEST-01/02)
 
 **Wave 5** — UI-wave gates (blocked on 03-05)
 
@@ -292,7 +292,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Foundations, Spikes & CI | 7/7 | Complete | 2026-07-03 |
 | 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 14/15 | In Progress|  |
-| 3. Create Flow Backend | 4/6 | In Progress|  |
+| 3. Create Flow Backend | 5/6 | In Progress|  |
 | 4. Git Configuration Screen | 0/TBD | Not started | - |
 | 5. Identity Manager | 0/TBD | Not started | - |
 | 6. Global SSH Options | 0/TBD | Not started | - |

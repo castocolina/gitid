@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: "02-15 (wave 8) operationalized the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract (D1–D9 + affordance audit) in BOTH demos, byte-for-byte: D1 single-row color-only fields (02-14's rounded box deleted), D2 always-expanded match-strategy/algorithm radios, D3 terminal-glyph checkbox/radio on the web, D4 bracketed main-nav format (`[N] Label`, moved off the wizard stepper) + a new ActiveNavDimmed/activeNavDimmed state + a top-level plain-arrow view switch, D5 the wizard stepper reverted to `Step n/4 · <label> ● ○ ○ ○`, D6 one-row git-step buttons, D7 ONE hoisted Shift+←/→ chord gate reaching every step including the previously-dead review ceremony (proven with a new raw-byte PTY e2e injecting real xterm CSI sequences), D8 click-to-focus on every form row, and D9 Global Git's user.email promoted to an editable, opt-in global-fallback field with its own dedicated write ceremony (a documented, scoped recipes/ divergence). 02-STYLE-SPEC.md + both FIELDS.md companions rewritten in lockstep; the full exit-gate battery is green (go test -race, the no-backend allowlist, the extended copy-freeze grep, make test/lint/test-e2e/gate-no-backend-files, pnpm typecheck+build) — see 02-15-SUMMARY.md. The two ORCHESTRATOR-run exit gates (a fresh agent-ui-ux-designer critique of both live demos + a fresh-context code review against 02-15's must_haves/acceptance_criteria) have since RUN and their findings (F1-F10 + one record-only item) are fixed — see 02-15-SUMMARY.md "Review findings resolution (post-plan fix pass)" and commits a335d80/f62c99e. Next is 02-12 (wave 9, the single DLV-08 approval checkpoint), unblocked."
-stopped_at: "Plan 03-04 (Wave 3) COMPLETE: Task 3 (D-09 verified + KEY-06 reuse-existing-key picker) committed 5df3e2d; 03-04-SUMMARY.md written; STATE/ROADMAP/REQUIREMENTS updated. NEXT = Wave 4 (plan 03-05)."
-last_updated: "2026-08-17T21:24:17.547Z"
-last_activity: "2026-07-06 -- Completed 02-12 (★ DLV-08): user approval recorded as `**APPROVED:** 2026-07-06 by Pepe`; Phase 2 COMPLETE — the approved live demos + 02-REDESIGN-SPEC.md/02-STYLE-SPEC.md/02-DESIGN-DECISIONS-CHECKPOINT-2.md + per-surface FIELDS.md are the binding design reference; Phases 3-9 backend work is UNBLOCKED"
+status: "Wave 4 (plan 03-05) CLOSED: D-02 ReachableNotUploaded warning render + exact-command shown==run (TEST-01/02) + D-03 copy-.pub hint + D-19 real git-disabled reason + D-18 functional Skip Git, all committed c680fde; go test -race ./... 833 passed, make lint 0 issues, make test-e2e ok, make test (incl. gate-copy-freeze) ok, TestNoBackendAllowlist green, internal/tuikit backend-free boundary holds. Next: Wave 5 (plan 03-06, visual-regression gate)."
+stopped_at: "Plan 03-05 (Wave 4) COMPLETE: all 3 tasks committed c680fde (single coherent commit per CLAUDE.md commit-granularity rule); 03-05-SUMMARY.md written; STATE/ROADMAP/REQUIREMENTS updated. NEXT = Wave 5 (plan 03-06)."
+last_updated: "2026-08-18T03:04:11.672Z"
+last_activity: "2026-08-17 -- Completed plan 03-05 (D-02 ReachableNotUploaded warning + D-03 copy-pub hint + D-19/D-18 real git-step): succeededOutcome() treats PASS and ReachableNotUploaded alike for the D-04 auto-chain and D-01 store gate; renderStageOutcome() replaces the outcome row with the frozen yellow warning line (never red, reserved for real Failure) plus a Theme.Hint key-settings line; stage1Cmd/stage2Cmd prefer the captured TestResultView.Command (shown==run); reviewCeremony's heading/ResultMessage carry the frozen key-unused copy on a warning-derived store; new Backend.GitStepDisabledReason() seam forces the real binary's Git-step Continue permanently disabled with its own honest reason while the dummy stays unchanged; Skip Git proven SSH-only end-to-end through the real seam."
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 29
-  completed_plans: 26
+  completed_plans: 27
   percent: 10
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** Managing a Git identity produces coordinated, coherent SSH + Git artifacts that are proven to authenticate and resolve correctly (`ssh -G`) before any file is written, and existing hand-written config is never corrupted.
-**Current focus:** Phase 02 COMPLETE (★ CHECKPOINT #1 passed) — Phase 03 (create-flow-backend) IN PROGRESS: Wave 3 (plan 03-04) CLOSED, next is Wave 4 (plan 03-05)
+**Current focus:** Phase 02 COMPLETE (★ CHECKPOINT #1 passed) — Phase 03 (create-flow-backend) IN PROGRESS: Wave 4 (plan 03-05) CLOSED, next is Wave 5 (plan 03-06)
 
 ## Current Position
 
-Phase: 03 (create-flow-backend) — IN PROGRESS. Wave 1 (03-01+03-02) and Wave 2 (03-03) CLOSED; Wave 3 (plan 03-04) CLOSED this session (all 3 tasks committed: 76fb231, cc1f614, 5df3e2d; see 03-04-SUMMARY.md). Next: Wave 4 (plan 03-05).
-Plan: 03-04 (wave 3) — COMPLETE. Task 1 (D-16 Preview banner), Task 2 (SSHUI-01/03 provider-reactive autofill, D-20/D-21), Task 3 (D-09 alias-collision verified + KEY-06 reuse-existing-key picker, D-10/D-12/D-13) all committed and green (go test -race ./... 826 passed, make lint 0 issues, make test-e2e ok, TestNoBackendAllowlist green). See 03-04-SUMMARY.md for the full record, including a Rule-1 bugfix (sshconfig.ParseManagedHosts was not skipping the reserved "ssh-include" block, surfacing a phantom identity on a fresh D-06 machine's first create).
-Status: Phase 2 (below) is the last COMPLETE phase; Phase 3 is the active phase, Wave 3 of 5 now closed. See "Session Continuity" below for the live wave-by-wave Phase 3 record (WAVE 1/WAVE 2 close notes, replan resolution map, execution obligations).
-Last activity: 2026-08-17 -- Completed plan 03-04 Task 3 (D-09 verified + KEY-06 reuse-existing-key picker): the create wizard's step 0 gained a D-10 generate/reuse toggle + picker rendering []tuikit.ReusableKeyView (filename+algorithm+fingerprint, D-12 in-use label, D-13 non-catalog note, manual-path row with T-03-13 symlink rejection); identity.StageReuse extracted for the staged wizard flow; all three tuikit.Backend implementers (real/dummy/test-stub) kept in lockstep.
+Phase: 03 (create-flow-backend) — IN PROGRESS. Wave 1 (03-01+03-02), Wave 2 (03-03), and Wave 3 (03-04) CLOSED; Wave 4 (plan 03-05) CLOSED this session (all 3 tasks landed in one commit c680fde; see 03-05-SUMMARY.md). Next: Wave 5 (plan 03-06, visual-regression gate).
+Plan: 03-05 (wave 4) — COMPLETE. Task 1 (D-02 ReachableNotUploaded warning + exact-command render, TEST-01/02), Task 2 (D-03 copy-.pub + key-settings hint), Task 3 (D-19 real git-disabled reason + D-18 functional Skip Git) all committed and green (go test -race ./... 833 passed, make lint 0 issues, make test-e2e ok, make test incl. gate-copy-freeze ok, TestNoBackendAllowlist green). See 03-05-SUMMARY.md for the full record, including two Rule-1 bugfixes surfaced by this plan's own new tests (a row-budget overflow that silently clipped the stage-2 prompt, and test-helper region-scoping for wrapped vs. footer content).
+Status: Phase 2 (below) is the last COMPLETE phase; Phase 3 is the active phase, Wave 4 of 5 now closed. See "Session Continuity" below for the live wave-by-wave Phase 3 record (WAVE 1/WAVE 2/WAVE 3 close notes, replan resolution map, execution obligations).
+Last activity: 2026-08-17 -- Completed plan 03-05 (D-02 ReachableNotUploaded warning + D-03 copy-pub hint + D-19/D-18 real git-step): see the frontmatter `last_activity` field above for the full description.
 
 ### Phase 2 (COMPLETE) — historical record
 
@@ -37,7 +37,7 @@ Plan: 02-12 (wave 9, the single DLV-08 human checkpoint) — COMPLETE. The user 
 Status: 02-15 (wave 8) operationalized the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract (D1–D9 + affordance audit) in BOTH demos, byte-for-byte: D1 single-row color-only fields (02-14's rounded box deleted), D2 always-expanded match-strategy/algorithm radios, D3 terminal-glyph checkbox/radio on the web, D4 bracketed main-nav format (`[N] Label`, moved off the wizard stepper) + a new ActiveNavDimmed/activeNavDimmed state + a top-level plain-arrow view switch, D5 the wizard stepper reverted to `Step n/4 · <label> ● ○ ○ ○`, D6 one-row git-step buttons, D7 ONE hoisted Shift+←/→ chord gate reaching every step including the previously-dead review ceremony (proven with a new raw-byte PTY e2e injecting real xterm CSI sequences), D8 click-to-focus on every form row, and D9 Global Git's user.email promoted to an editable, opt-in global-fallback field with its own dedicated write ceremony (a documented, scoped recipes/ divergence). 02-STYLE-SPEC.md + both FIELDS.md companions rewritten in lockstep; the full exit-gate battery is green (go test -race, the no-backend allowlist, the extended copy-freeze grep, make test/lint/test-e2e/gate-no-backend-files, pnpm typecheck+build) — see 02-15-SUMMARY.md. The two ORCHESTRATOR-run exit gates (a fresh agent-ui-ux-designer critique of both live demos + a fresh-context code review against 02-15's must_haves/acceptance_criteria) have since RUN and their findings (F1-F10 + one record-only item) are fixed — see 02-15-SUMMARY.md "Review findings resolution (post-plan fix pass)" and commits a335d80/f62c99e. Next is 02-12 (wave 9, the single DLV-08 approval checkpoint), unblocked.
 Last activity: 2026-07-06 -- Completed 02-12 (★ DLV-08): user approval recorded as `**APPROVED:** 2026-07-06 by Pepe`; Phase 2 COMPLETE — the approved live demos + 02-REDESIGN-SPEC.md/02-STYLE-SPEC.md/02-DESIGN-DECISIONS-CHECKPOINT-2.md + per-surface FIELDS.md are the binding design reference; Phases 3-9 backend work is UNBLOCKED
 
-Progress: [█████████░] 90% (26/29 plans complete — Phase 2: 15/15; Phase 3: 4/6 plans, Wave 3 of 5 closed)
+Progress: [█████████░] 93% (27/29 plans complete — Phase 2: 15/15; Phase 3: 5/6 plans, Wave 4 of 5 closed)
 
 ## Performance Metrics
 
@@ -85,6 +85,7 @@ Progress: [█████████░] 90% (26/29 plans complete — Phase 2
 | Phase 02 P15 | 180min | 3 tasks | 27 files |
 | Phase 02 P12 | multi-session (checkpoint) | 1 task | 1 file |
 | Phase 03-create-flow-backend P04 | ~1 session (Task 3) | 3 tasks | 14 files |
+| Phase 03-create-flow-backend P05 | 1 session | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -160,6 +161,7 @@ Recent decisions affecting current work:
 - [Phase 03-create-flow-backend]: D-09 alias-collision was already fully wired by 03-03 + this plan's Task 2; Task 3's real scope was the KEY-06 reuse-existing-key picker
 - [Phase 03-create-flow-backend]: identity.Reuse split into StageReuse (ensurePub staging) + the existing write pipeline so the TUI wizard's staged test-then-write flow shares the D-11 encrypted-key logic instead of duplicating it
 - [Phase 03-create-flow-backend]: D-12 in-use-by label reformatted to '<identity> (<provider-host>)' across all three tuikit.Backend implementers (real, dummy, tuikit test stub)
+- [Phase 03-create-flow-backend, plan 05]: D-03's copy-.pub action is a footer/keybar affordance only (never a second inline body row) to stay inside the fixed 100x30 wizard pane row budget; the D-01 key-unused ceremony copy fully replaces (never appends to) the normal ResultMessage/Heading, and does NOT touch the unrelated 8-state identity taxonomy
 
 ### Roadmap Evolution
 
@@ -176,6 +178,7 @@ None yet.
 - Phase 2 VERIFICATION.md W2 (non-blocking): `internal/dummytui/nobackend_test.go` was deleted in 7453561 and never restored — the no-backend truth was re-proven directly (`go list -deps`) and `gate-no-backend-files` holds, but consider restoring an import-graph test before/during Phase 3.
 - ~~02-14: fresh agent-ui-ux-designer critique of both live demos (DLV-02 exit gate) and the superpowers:requesting-code-review pass are outstanding~~ -- RESOLVED 2026-07-05: the orchestrator ran both reviews; findings F1-F11 are fixed/recorded (see 02-14-SUMMARY.md "Review findings resolution (post-plan fix pass)"). No outstanding blocker for 02-12 sign-off from 02-14.
 - ~~02-15: a fresh agent-ui-ux-designer critique of both live demos (checkpoint-2 dimensions) and a fresh-context superpowers:requesting-code-review pass (against 02-15's must_haves + every task's acceptance_criteria) are OUTSTANDING orchestrator-run exit gates — the executor could not run them. Their CRITICAL/HIGH findings must be resolved before 02-12 (the DLV-08 re-presentation) proceeds. See 02-15-SUMMARY.md.~~ -- RESOLVED 2026-07-05: the orchestrator ran both reviews (a fresh agent-ui-ux-designer parity critique + a fresh-context code review). Findings F1-F10 (CRITICAL: F1 stale-tab closure breaking web view-switching; HIGH: F2 web ceremony/pane footers never mirrored; IMPORTANT: F3 TUI click-hijack from whole-line substring matching, F4 D9 email row swept into the baseline overlay in both media, F5 inline glyph literals, F9 web `a`-key precedence; MEDIUM/MINOR: F6/F7/F8/F10) plus one record-only item (re-measure the row budget, don't assume) are all fixed/recorded across two commits — see 02-15-SUMMARY.md "Review findings resolution (post-plan fix pass)". All 7 gates (go test -race, make test/lint/test-e2e/gate-no-backend-files, the copy-freeze greps, pnpm typecheck+build) are green. No outstanding blocker for 02-12 sign-off from 02-15.
+- 03-05: the plan's Task 1 asked the executor to engage `/mui` + `agent-ui-ux-designer` on the new D-02/D-03 warning-state visual and record the input in the SUMMARY — the plan executor has no access to spawn sub-agents or slash commands (Read/Write/Edit/Bash tools only), so this did NOT happen. Flagging as an orchestrator-run exit gate still owed, same class as 02-14/02-15's pattern above. See 03-05-SUMMARY.md "Issues Encountered".
 
 ### Quick Tasks Completed
 
@@ -193,10 +196,10 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-17T21:24:17.535Z
-Stopped at: Plan 03-04 (Wave 3) COMPLETE: Task 3 (D-09 verified + KEY-06 reuse-existing-key picker) committed 5df3e2d; 03-04-SUMMARY.md written; STATE/ROADMAP/REQUIREMENTS updated. NEXT = Wave 4 (plan 03-05).
-Resume file: .planning/phases/03-create-flow-backend/03-05-PLAN.md
-Wave structure: W1 = 03-01 + 03-02 (DONE) -> W2 = 03-03 -> W3 = 03-04 -> W4 = 03-05 -> W5 = 03-06
+Last session: 2026-08-18T03:04:11.672Z
+Stopped at: Plan 03-05 (Wave 4) COMPLETE: all 3 tasks (D-02/D-03/D-19/D-18) committed c680fde; 03-05-SUMMARY.md written; STATE/ROADMAP/REQUIREMENTS updated. NEXT = Wave 5 (plan 03-06).
+Resume file: .planning/phases/03-create-flow-backend/03-06-PLAN.md
+Wave structure: W1 = 03-01 + 03-02 (DONE) -> W2 = 03-03 (DONE) -> W3 = 03-04 (DONE) -> W4 = 03-05 (DONE) -> W5 = 03-06
 **All remaining waves run SEQUENTIALLY (one executor at a time) per LEARNINGS L11** — the pre-commit hooks lint the whole module, so a parallel executor's mid-refactor tree blocks every other commit. Do NOT run plans in parallel inside this Go module again.
 
 WAVE 1 CLOSED 2026-07-25 — orchestrator-verified gates (NOT executor claims):
@@ -253,6 +256,7 @@ PersistError() for 03-05 to render. Not a swallow — must be surfaced in the UI
 WAVE 3 CLOSED 2026-08-17 (plan 03-04) — executor-run gates (orchestrator
 independent re-verification per ground rule 4 still applies at the wave-close
 review, not yet run by this session):
+
 - go build ./... exit 0
 - TERM=dumb SSH_AUTH_SOCK= go test -count=1 -race ./... -> 826 passed, 19 packages
 - make lint -> 0 issues
@@ -261,6 +265,7 @@ review, not yet run by this session):
 - go list -deps ./internal/tuikit -> NO first-party backend import (boundary holds)
 - go test ./internal/dummytui/ -run TestNoBackendAllowlist -> PASS
 - grep for a keygen import line in internal/tuikit -> no match
+
 Commits: 76fb231 (Task 1, D-16 banner), cc1f614 (Task 2, SSHUI-01/03 autofill),
 5df3e2d (Task 3, D-09 verify + KEY-06 reuse picker + the ParseManagedHosts
 reserved-block bugfix). Full record: 03-04-SUMMARY.md.
@@ -277,6 +282,42 @@ path through the REAL constructor and real filesystem, but NOT through a live
 raw-keystroke PTY session — 03-06's case 6 (reuse-existing-key/ReadPub) is
 still the only thing that closes the L2 obligation per project convention (a
 unit/wiring test never substitutes for the PTY proof).
+
+WAVE 4 CLOSED 2026-08-17 (plan 03-05) — executor-run gates (orchestrator
+independent re-verification per ground rule 4 still applies at the wave-close
+review, not yet run by this session):
+
+- go build ./... exit 0
+- TERM=dumb SSH_AUTH_SOCK= go test -count=1 -race ./... -> 833 passed, 19 packages
+- make lint -> 0 issues
+- make test-e2e -> ok
+- make test (incl. gate-copy-freeze, both new D-02/D-01 strings + the
+  cmd/gitid-scoped D-19 real string) -> ok
+- go list -deps ./internal/tuikit -> NO first-party backend import (boundary holds)
+- go test ./internal/dummytui/ -run TestNoBackendAllowlist -> PASS
+- grep for a tester import line in internal/tuikit -> no match (only doc comments name tester.Outcome/tester.Result)
+
+Commits: c680fde (all 3 tasks, one commit per CLAUDE.md's buildable-boundary
+commit-granularity rule — the code for D-02/D-03/D-19/D-18 is tightly
+intermixed inside the same shared functions, e.g. renderStageOutcome and
+gitContinueGate), 2c4e328 (03-05-SUMMARY.md). Full record: 03-05-SUMMARY.md.
+
+CARRIED INTO 03-06 (flagged by the 03-05 executor, same class as 03-04's
+carry-over): the new D-02/D-03 warning-state render (yellow "!" outcome row +
+Theme.Hint key-settings line) and the D-19 real-binary git-step disabled
+reason are NEW render surfaces/text with no approved Phase-2 dummy golden to
+diff against (D-02 is an outcome the demo never had; D-19's real string only
+exists in cmd/gitid's own capture). 03-06's visual-regression gate needs
+either allowlist entries or equivalent dummy-side fixture states.
+CARRIED INTO 03-06 (still open, re-flagged from 03-03/03-04):
+realBackend.PersistError() is exposed but nothing in internal/tuikit reads it
+after a committed write — a real write failure currently shows the SAME
+"created" note as a success. See deferred-items.md. Candidate owner: 03-06 or
+a dedicated fix pass.
+CARRIED INTO 03-06: a raw-keystroke PTY proof of the D-02/D-03 warning +
+copy-pub + D-18 Skip paths through the REAL binary is still owed per the L2
+closure contract — 03-05's own tests are internal/tuikit unit tests + one
+cmd/gitid wiring test, never a live PTY session.
 
 Current branch: gsd/phase-03-create-flow-backend
 PHASE-3 BASE SHA: 61d98fa (anchors external code-review range in Step 6d)

@@ -465,8 +465,8 @@ row below records each one's **home** phase.
 | SSHUI-03 | Phase 3 | Complete |
 | SSHUI-04 | Phase 3 | Pending |
 | SSHUI-05 | Phase 3 | Pending |
-| TEST-01 | Phase 3 | Pending |
-| TEST-02 | Phase 3 | Pending |
+| TEST-01 | Phase 3 | Complete |
+| TEST-02 | Phase 3 | Complete |
 | TEST-03 | Phase 3 | Pending |
 | STORE-01 | Phase 1, Phase 3 (D-06 default supersession) | Complete |
 | STORE-02 | Phase 1 | Complete |
