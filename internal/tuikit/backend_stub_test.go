@@ -138,9 +138,23 @@ func Seed() DemoState { return stubBackend{}.InitialState() }
 // ---------------------------------------------------------------------------
 
 // stubBackend is the test-only Backend: the fixture behavior, in memory.
-type stubBackend struct{}
+//
+// gitStepAlwaysDisabled/gitStepReason drive GitStepDisabledReason() (D-19).
+// The zero value — every existing `stubBackend{}` call site — keeps the
+// UNCHANGED dummy-style form-validity gate; only a test that explicitly sets
+// gitStepAlwaysDisabled simulates the real binary's unconditional disable.
+type stubBackend struct {
+	gitStepAlwaysDisabled bool
+	gitStepReason         string
+}
 
 var _ Backend = stubBackend{}
+
+// GitStepDisabledReason implements the D-19 seam for tests. See the struct
+// doc comment above for the zero-value (dummy-style) default.
+func (b stubBackend) GitStepDisabledReason() (string, bool) {
+	return b.gitStepReason, b.gitStepAlwaysDisabled
+}
 
 func (stubBackend) InitialState() DemoState {
 	identities := make([]DemoIdentity, 0, len(stubIdentityRows))

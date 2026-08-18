@@ -114,11 +114,22 @@ type Backend interface {
 	CreateWritePlan(spec CreateSpec, git *GitSpec) WritePlanView
 
 	// CopyPublicKey copies the identity's public key to the system
-	// clipboard (D-03) — offered on the failed-test path so the user can
-	// register it with the provider and retry. It returns the receipt note
-	// to show, because only the Backend knows whether a REAL clipboard was
-	// written (the dummy says so explicitly).
+	// clipboard (D-03) — offered on the ReachableNotUploaded warning path so
+	// the user can register it with the provider and retry. It returns the
+	// receipt note to show, because only the Backend knows whether a REAL
+	// clipboard was written (the dummy says so explicitly).
 	CopyPublicKey(pubKeyPath string) (note string, err error)
+
+	// GitStepDisabledReason resolves the create wizard's Git-identity step
+	// [ Continue ] gating (D-19). alwaysDisabled=true means Continue never
+	// enables regardless of the form's own validity, and reason is the
+	// suffix to show instead of the form-validity one — the real binary
+	// returns ("— Git configuration arrives with the next build", true)
+	// because there is no Git backend until Phase 4. alwaysDisabled=false
+	// (the dummy, unchanged) means Continue stays gated on the form's own
+	// validity, with its existing "— needs user.name + a valid email"
+	// reason (owned by internal/tuikit, never re-derived here).
+	GitStepDisabledReason() (reason string, alwaysDisabled bool)
 }
 
 // WizardStageMsg completes a create-wizard test stage. Backends deliver it

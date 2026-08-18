@@ -714,6 +714,64 @@ func TestDemoBannerOnlyIdentitiesIsWired(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// D-18/D-19 — real git-disabled reason + functional Skip Git
+// ---------------------------------------------------------------------------
+
+// TestGitStepDisabledReasonIsAlwaysDisabledInRealBinary proves D-19: the real
+// binary's wizard Git-identity step Continue is UNCONDITIONALLY disabled,
+// with its own honest reason — never the dummy's validity-based one, and
+// never reused to lie about capability (there is no Git backend until
+// Phase 4).
+func TestGitStepDisabledReasonIsAlwaysDisabledInRealBinary(t *testing.T) {
+	b := newBackendForHome(t.TempDir())
+	reason, always := b.GitStepDisabledReason()
+	if !always {
+		t.Fatal("the real binary must ALWAYS disable the wizard's Git-step Continue button (D-19)")
+	}
+	if reason != "— Git configuration arrives with the next build" {
+		t.Errorf("GitStepDisabledReason() reason = %q, want the frozen D-19 string", reason)
+	}
+}
+
+// TestPersistSkipGitWritesSSHOnlyNoGitArtifacts proves D-18 through the REAL
+// seam: a create commits ONLY the SSH leg (Host block + key) — no Git
+// fragment, includeIf, or allowed_signers entry, EVEN when the identity
+// carries Git fields (proving the guarantee is structural, from
+// PersistSSH never calling PersistGitconfig in Phase 3 — not merely that
+// the wizard happened not to fill them in).
+func TestPersistSkipGitWritesSSHOnlyNoGitArtifacts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	b := newBackendForHome(home)
+	b.recordOutcome(tuikit.TestOutcomePass)
+
+	state := b.Persist(tuikit.DemoState{}, tuikit.AddIdentity{Identity: tuikit.DemoIdentity{
+		Name: "personal", SSHHost: "personal.github.com", Hostname: "ssh.github.com", Port: 443,
+		State: "complete", GitName: "Acme Identity", GitEmail: "you@acme.example",
+	}})
+
+	if err := b.PersistError(); err != nil {
+		t.Fatalf("Persist recorded an error on a Skip-Git create: %v", err)
+	}
+	if len(state.Identities) != 1 {
+		t.Fatalf("Identities = %v, want exactly the SSH-only identity", state.Identities)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".ssh", "config.d", "gitid.config")); err != nil {
+		t.Errorf("the SSH leg must be written: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".gitconfig.d", "personal")); !os.IsNotExist(err) {
+		t.Errorf("Skip Git must not write a Git fragment (Phase 4's job); stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".gitconfig")); !os.IsNotExist(err) {
+		t.Errorf("Skip Git must not write ~/.gitconfig (Phase 4's job); stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".ssh", "allowed_signers")); !os.IsNotExist(err) {
+		t.Errorf("Skip Git must not write allowed_signers (Phase 4's job); stat err = %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Fixture helpers
 // ---------------------------------------------------------------------------
 

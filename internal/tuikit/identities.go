@@ -799,6 +799,49 @@ func (w wizardModel) sameProviderReuse() bool {
 	return strings.Contains(view.InUseBy, provider)
 }
 
+// copyable reports whether the D-03 copy-.pub action is offered right now:
+// ONLY at a ReachableNotUploaded outcome on whichever stage is currently
+// displayed — never at PASS (nothing to register) and never at a hard
+// Failure (the problem is not registration, D-03 is warning-only).
+func (w wizardModel) copyable() bool {
+	switch w.testPhase {
+	case testStage1:
+		return w.stage1.Outcome == TestOutcomeReachableNotUploaded
+	case testStage2:
+		return w.stage2.Outcome == TestOutcomeReachableNotUploaded
+	default:
+		return false
+	}
+}
+
+// keyUnused reports whether EITHER test stage answered ReachableNotUploaded
+// — the D-01/D-02 signal that this key is not yet proven with the provider,
+// regardless of what the other stage says. The store gate (backend seam)
+// already unlocks on this outcome; this is the WIZARD-side mirror that
+// drives the D-02 "no silent success" ceremony/result copy.
+func (w wizardModel) keyUnused() bool {
+	return w.stage1.Outcome == TestOutcomeReachableNotUploaded || w.stage2.Outcome == TestOutcomeReachableNotUploaded
+}
+
+// providerKeySettingsLabel names the provider's SSH-key-settings page for
+// the D-03 warning-state hint — a short, presentational label table (never a
+// backend lookup), mirroring the existing wizardProviders list. Unknown
+// providers get an honest generic label rather than a guessed URL.
+// Kept deliberately short (row-budget discipline, 02-STYLE-SPEC.md §7): the
+// wizard's fixed 100×30 pane has no spare row for a long provider-menu path.
+func providerKeySettingsLabel(providerHost string) string {
+	switch providerHost {
+	case "github.com":
+		return "GitHub key settings"
+	case "gitlab.com":
+		return "GitLab key settings"
+	case "bitbucket.org":
+		return "Bitbucket key settings"
+	default:
+		return "your provider's key settings"
+	}
+}
+
 // revalidateManualPath re-resolves the manual-path row's candidate through
 // the Backend's symlink-rejecting seam on every keystroke — mirroring the
 // alias-collision field's own "answered as you type" pattern.
@@ -904,15 +947,56 @@ func (w wizardModel) hostBlockPreview() string {
 	return w.backend.HostBlockPreview(w.spec())
 }
 
+// stageWarningLine and keyUnusedResultMessage are the two D-02/D-01 frozen
+// strings this plan registers with the §6 copy-freeze mechanism (draft copy
+// approved during the UI wave, see 03-UI-SPEC.md D-02) — byte-exact,
+// asserted in TestFrozenReachableWarningAndKeyUnusedCopy.
+const (
+	stageWarningLine       = "! Reachable — key not uploaded yet"
+	keyUnusedResultMessage = "Stored — key not uploaded yet; this identity is not proven for Git yet"
+)
+
+// renderStageOutcome renders one test stage's outcome row: PASS is the
+// EXISTING green ✓ + the real ssh output (TestResultView.Detail — never a
+// hand-built string, so the shown text can never drift from what actually
+// ran). ReachableNotUploaded REPLACES that same row with the NEW D-02
+// yellow `!` warning + the D-03 hint naming the provider's key-settings page
+// + the copy-.pub keybinding hint — never red (Pitfall 6). A hard Failure
+// never reaches this helper; the caller's own testFailed branch renders it
+// separately with the retry affordance.
+// The copy-.pub action itself is a footer/keybar affordance (wizardFooter),
+// never a second inline body row — the row-budget discipline every wizard
+// pane keeps (02-STYLE-SPEC.md §7).
+func renderStageOutcome(r TestResultView, providerHost string) string {
+	var b strings.Builder
+	if r.Outcome == TestOutcomeReachableNotUploaded {
+		b.WriteString(" " + styleWarning.Render(stageWarningLine) + "\n")
+		b.WriteString(" " + styleFaint.Render("Add the .pub at "+providerKeySettingsLabel(providerHost)+" to finish.") + "\n")
+		return b.String()
+	}
+	b.WriteString(" " + styleHealthy.Render("✓ "+r.Detail) + "\n")
+	return b.String()
+}
+
 // stage1Cmd is the stage-1 direct test command (TEST-01) — the SHOWN
 // string comes from the same Backend that RUNS it, so the two can never
-// drift apart.
+// drift apart. Once the stage has actually answered, the shown string is
+// the CAPTURED TestResultView.Command (the argv that was actually
+// executed) rather than a freshly recomputed one, closing the shown==run
+// contract byte-for-byte even if the spec were to change after the run.
 func (w wizardModel) stage1Cmd() string {
+	if w.stage1.Command != "" {
+		return w.stage1.Command
+	}
 	return w.backend.Stage1Command(w.spec())
 }
 
-// stage2Cmd is the stage-2 by-alias test (TEST-02) — no -i BY DESIGN.
+// stage2Cmd is the stage-2 by-alias test (TEST-02) — no -i BY DESIGN. Same
+// captured-command precedence as stage1Cmd.
 func (w wizardModel) stage2Cmd() string {
+	if w.stage2.Command != "" {
+		return w.stage2.Command
+	}
 	return w.backend.Stage2Command(w.spec())
 }
 
@@ -968,7 +1052,7 @@ func (w wizardModel) stepForward(s DemoState) (wizardModel, bool) {
 			return w, true
 		}
 	case 2:
-		if w.git.valid() {
+		if enabled, _ := w.gitContinueGate(); enabled {
 			w.configureGit = true
 			w.step = 3
 			w.ceremony = w.reviewCeremony()
@@ -978,15 +1062,33 @@ func (w wizardModel) stepForward(s DemoState) (wizardModel, bool) {
 	return w, false
 }
 
+// gitContinueGate resolves the wizard's Git-identity step [ Continue ]
+// enablement + disabled-suffix reason (D-19). The real binary's Backend
+// returns alwaysDisabled=true with the "arrives with the next build"
+// reason: Continue never enables regardless of what the user typed,
+// because there is no Git backend until Phase 4 — reusing the
+// validity-gated reason there would be a lie about capability. The dummy
+// (and every internal/tuikit test double) returns alwaysDisabled=false,
+// keeping the UNCHANGED form-validity gate and its original reason string.
+func (w wizardModel) gitContinueGate() (enabled bool, reason string) {
+	if r, always := w.backend.GitStepDisabledReason(); always {
+		return false, r
+	}
+	return w.git.valid(), gitFormDisabledSuffix
+}
+
 // blockedForwardNote is the frozen status note (D7) emitted when
 // Shift+→ is blocked at a step — naming the gate, never a validity
 // override. Step 1 (the test step) has no frozen note: its own stage
 // output already explains what is missing.
-func blockedForwardNote(step int) string {
-	switch step {
+func blockedForwardNote(w wizardModel) string {
+	switch w.step {
 	case 0:
 		return "Can't continue yet — check the alias prefix, hostname, and port."
 	case 2:
+		if reason, always := w.backend.GitStepDisabledReason(); always {
+			return "Can't continue yet " + reason + "."
+		}
 		return "Can't continue yet — add user.name and a valid email."
 	default:
 		return ""
@@ -1024,12 +1126,21 @@ func (w wizardModel) reviewCeremony() ceremonyModel {
 	// (TEST-03/D-05..D-09) — the dummy promises fixture paths, the real
 	// binary the resolved storage target and its real backups.
 	plan := w.backend.CreateWritePlan(w.spec(), git)
+	heading := `Create identity "` + name + `" — ` + w.algo() + ", test passed ✓"
+	resultMessage := `Identity "` + name + `" created — ` + w.form.sshHost() + " now resolves to " + w.keyPath() + "."
+	if w.keyUnused() {
+		// D-01/D-02: the store gate unlocked on ReachableNotUploaded, not a
+		// full PASS — the ceremony/result copy must say so plainly, never a
+		// silent "success" framing over an unauthenticated key.
+		heading = `Create identity "` + name + `" — ` + w.algo() + ", reachable — key not uploaded yet"
+		resultMessage = keyUnusedResultMessage
+	}
 	return newCeremony(ceremonyConfig{
-		Heading:       `Create identity "` + name + `" — ` + w.algo() + ", test passed ✓",
+		Heading:       heading,
 		Targets:       plan.Targets,
 		Backups:       plan.Backups,
 		Preview:       summary + "\n" + review,
-		ResultMessage: `Identity "` + name + `" created — ` + w.form.sshHost() + " now resolves to " + w.keyPath() + ".",
+		ResultMessage: resultMessage,
 		ConfirmLabel:  "Write it",
 	})
 }
@@ -1154,14 +1265,14 @@ func (m identitiesModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 		switch {
 		case stage.Stage == 1 && m.wizard.testPhase == testRunning1:
 			m.wizard.stage1 = stage.Result
-			if stage.Result.Outcome == TestOutcomePass {
+			if succeededOutcome(stage.Result.Outcome) {
 				m.wizard.testPhase = testStage1
 			} else {
 				m.wizard.testPhase = testFailed
 			}
 		case stage.Stage == 2 && m.wizard.testPhase == testRunning2:
 			m.wizard.stage2 = stage.Result
-			if stage.Result.Outcome == TestOutcomePass {
+			if succeededOutcome(stage.Result.Outcome) {
 				m.wizard.testPhase = testStage2
 			} else {
 				m.wizard.testPhase = testFailed
@@ -1169,6 +1280,15 @@ func (m identitiesModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 		}
 	}
 	return keyResult{model: m}
+}
+
+// succeededOutcome reports whether o unlocks the D-01 store gate and the
+// D-04 stage auto-chain: PASS and ReachableNotUploaded both do (a brand-new
+// key legitimately cannot authenticate before its .pub is uploaded — that is
+// a warning, never a failure, Pitfall 6); only a hard Failure stops the
+// wizard.
+func succeededOutcome(o TestOutcome) bool {
+	return o == TestOutcomePass || o == TestOutcomeReachableNotUploaded
 }
 
 // handleKey implements the whole Identities key model. Non-detail panes
@@ -1641,7 +1761,7 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 		m.wizard = next
 		note := ""
 		if !ok {
-			note = blockedForwardNote(w.step)
+			note = blockedForwardNote(w)
 		}
 		return keyResult{model: m, handled: true, note: note}
 	}
@@ -1739,11 +1859,13 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			m.wizard = w
 			return keyResult{model: m, handled: true}
 		case "c":
-			if w.testPhase == testFailed {
-				// D-03: the failed-test path offers the public key so the
-				// user can register it with the provider and retry. The
-				// copy itself — and its receipt wording — belong to the
-				// Backend (a real clipboard, or the demo's no-op).
+			if w.copyable() {
+				// D-03: the ReachableNotUploaded warning path offers the
+				// public key so the user can register it with the provider
+				// and retry — a hard Failure never offers this (nothing to
+				// register there). The copy itself — and its receipt
+				// wording — belong to the Backend (a real clipboard, or the
+				// demo's no-op).
 				note, err := w.backend.CopyPublicKey(w.keyPath() + ".pub")
 				if err != nil {
 					note = "Could not copy the public key: " + err.Error()
@@ -1813,7 +1935,7 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 				w.step = 3
 				w.ceremony = w.reviewCeremony()
 			default: // fields + Continue
-				if w.git.valid() {
+				if enabled, _ := w.gitContinueGate(); enabled {
 					w.configureGit = true
 					w.step = 3
 					w.ceremony = w.reviewCeremony()
@@ -1841,7 +1963,7 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			if w.gitFocus >= gitFocusBack {
 				if key == "left" {
 					w.step = 1
-				} else if w.git.valid() {
+				} else if enabled, _ := w.gitContinueGate(); enabled {
 					w.configureGit = true
 					w.step = 3
 					w.ceremony = w.reviewCeremony()
@@ -2643,12 +2765,19 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 		case testRunning1, testRunning2:
 			b.WriteString(" " + styleFaint.Render("… running ssh…") + "\n")
 		case testFailed:
-			b.WriteString(" " + styleError.Render("✗ git@"+w.form.hostname.Value()+": Permission denied (publickey).") + "\n")
-			b.WriteString(" " + styleError.Render("The provider rejected the key — usually it is not registered yet. Copy the public key,") + "\n")
-			b.WriteString(" " + styleError.Render("add it to your provider account, then retry.") + "\n")
-			b.WriteString(" " + styleBold.Render("c") + " " + styleFaint.Render("Copy public key") + "   " + styleSelected.Render(" Retry (Enter) ") + "\n")
+			// A hard Failure — connection refused, DNS, timeout — is the
+			// ONLY outcome that stops the wizard (D-01). "Permission denied
+			// (publickey)" never lands here; that is ReachableNotUploaded,
+			// handled by renderStageOutcome below (Pitfall 6).
+			detail := w.stage1.Detail
+			if detail == "" {
+				detail = "git@" + w.form.hostname.Value() + ": connection failed."
+			}
+			b.WriteString(" " + styleError.Render("✗ "+detail) + "\n")
+			b.WriteString(" " + styleError.Render("The connection failed — check the hostname, port, and network, then retry.") + "\n")
+			b.WriteString(" " + styleSelected.Render(" Retry (Enter) ") + "\n")
 		case testStage1, testStage2:
-			b.WriteString(" " + styleHealthy.Render("✓ Hi "+w.form.identityName()+"! You've successfully authenticated, but GitHub does not provide shell access.") + "\n")
+			b.WriteString(renderStageOutcome(w.stage1, w.form.providerHost()))
 		}
 		if w.testPhase == testStage1 || w.testPhase == testStage2 {
 			// The short "Stage 2 — ..." title moves into the border's top
@@ -2661,7 +2790,7 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 			if w.testPhase == testStage1 {
 				b.WriteString(" " + styleSelected.Render(" Run stage 2 (Enter) ") + "\n")
 			} else {
-				b.WriteString(" " + styleHealthy.Render("✓ identityfile "+w.keyPath()) + "\n")
+				b.WriteString(renderStageOutcome(w.stage2, w.form.providerHost()))
 				b.WriteString(" " + styleSelected.Render(" Next: Git identity (Enter) ") + "\n")
 			}
 		}
@@ -2670,9 +2799,14 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 		// D6 (checkpoint-2 contract): all THREE real buttons (M2) share ONE
 		// row — Back / Skip / Continue — with both frozen hints ALWAYS
 		// visible BELOW the row (Theme.Hint), never on the button itself.
+		// D-19: continueEnabled/continueReason come from the Backend-driven
+		// gate — the REAL binary forces Continue disabled with its OWN
+		// frozen reason (Git backend arrives in Phase 4); the dummy keeps
+		// the unchanged form-validity gate.
+		continueEnabled, continueReason := w.gitContinueGate()
 		b.WriteString(" " + wizardButton(wizardBackButton, w.gitFocus == gitFocusBack, true, "") + "  " +
 			wizardButton(wizardSkipButton, w.gitFocus == gitFocusSkip, true, "") + "  " +
-			wizardButton(wizardContinueButton, w.gitFocus == gitFocusContinue, w.git.valid(), gitFormDisabledSuffix) + "\n")
+			wizardButton(wizardContinueButton, w.gitFocus == gitFocusContinue, continueEnabled, continueReason) + "\n")
 		b.WriteString(" " + styleFaint.Render(wizardSkipHint) + "\n")
 		b.WriteString(" " + styleFaint.Render(wizardContinueHint))
 	default:
@@ -2843,11 +2977,21 @@ func (m identitiesModel) wizardFooter(s DemoState) []FooterAction {
 		case testIdle:
 			return []FooterAction{{Key: "Enter", Label: "run stage 1"}, {Key: "space", Label: "toggle failure demo"}}
 		case testFailed:
-			return []FooterAction{{Key: "Enter", Label: "retry"}, {Key: "c", Label: "copy public key"}}
+			// D-03 is warning-only — a hard Failure never offers copy public
+			// key, only retry.
+			return []FooterAction{{Key: "Enter", Label: "retry"}}
 		case testStage1:
-			return []FooterAction{{Key: "Enter", Label: "run stage 2"}}
+			actions := []FooterAction{{Key: "Enter", Label: "run stage 2"}}
+			if w.copyable() {
+				actions = append(actions, FooterAction{Key: "c", Label: "copy public key"})
+			}
+			return actions
 		case testStage2:
-			return []FooterAction{{Key: "Enter", Label: "next: Git identity"}}
+			actions := []FooterAction{{Key: "Enter", Label: "next: Git identity"}}
+			if w.copyable() {
+				actions = append(actions, FooterAction{Key: "c", Label: "copy public key"})
+			}
+			return actions
 		}
 		return nil
 	case 2:

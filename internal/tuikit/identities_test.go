@@ -417,12 +417,83 @@ func TestWizardTestStageCommandsAndFlagOrder(t *testing.T) {
 	if !strings.Contains(pane, "No -i here on purpose: the config must supply the key; that is exactly what this stage proves.") {
 		t.Error("stage-2 no `-i` rationale missing from the render")
 	}
+
+	// TEST-01 shown==run: once stage 1 has answered, the rendered command
+	// line is the CAPTURED TestResultView.Command — never a freshly
+	// recomputed string that could drift from what actually ran.
+	m = identModel(t, a)
+	if m.wizard.stage1Cmd() != m.wizard.stage1.Command {
+		t.Errorf("stage1Cmd() = %q, want the captured TestResultView.Command %q", m.wizard.stage1Cmd(), m.wizard.stage1.Command)
+	}
+
+	// D-03's copy-.pub action is ABSENT at a plain PASS — it is
+	// warning-only, never offered when the key already authenticated.
+	if strings.Contains(appView(a), "copy public key") {
+		t.Error("a PASS outcome must never offer the copy-public-key footer action (D-03 is warning-only)")
+	}
 }
 
+// recordingCopyBackend wraps stubBackend to capture the exact path
+// CopyPublicKey was called with — proving D-03 never leaks private key
+// material, only the .pub line's path, across the clipboard seam.
+type recordingCopyBackend struct {
+	stubBackend
+	copiedPath string
+}
+
+func (b *recordingCopyBackend) CopyPublicKey(path string) (string, error) {
+	b.copiedPath = path
+	return "Public key copied to clipboard (demo).", nil
+}
+
+// TestCopyPubSeamReceivesOnlyThePubPath proves D-03/T-03-17: pressing "c" at
+// the ReachableNotUploaded warning state calls the Backend's clipboard seam
+// with exactly the .pub path — never the private key path or its material.
+func TestCopyPubSeamReceivesOnlyThePubPath(t *testing.T) {
+	rec := &recordingCopyBackend{}
+	a := wizardToStep2(t, NewApp(rec))
+	a, _ = press(t, a, "space") // preview the D-02 warning path
+	a, _ = press(t, a, "enter")
+	a = completeStage(t, a, 1)
+
+	_, _ = press(t, a, "c")
+	want := "~/.ssh/id_ed25519_acme2.pub"
+	if rec.copiedPath != want {
+		t.Errorf("CopyPublicKey called with %q, want %q (the .pub path, never the private key)", rec.copiedPath, want)
+	}
+}
+
+// TestFrozenReachableWarningAndKeyUnusedCopy pins the two D-02/D-01 frozen
+// strings this plan registers with the §6 copy-freeze mechanism BYTE-EXACT —
+// this is the Go-test half of the copy-freeze gate, alongside the Makefile
+// grep target. If either string drifts, `make test` goes red.
+func TestFrozenReachableWarningAndKeyUnusedCopy(t *testing.T) {
+	if stageWarningLine != "! Reachable — key not uploaded yet" {
+		t.Errorf("stageWarningLine = %q, want the frozen D-02 draft copy", stageWarningLine)
+	}
+	if keyUnusedResultMessage != "Stored — key not uploaded yet; this identity is not proven for Git yet" {
+		t.Errorf("keyUnusedResultMessage = %q, want the frozen D-01 store-copy", keyUnusedResultMessage)
+	}
+
+	// Both strings are actually rendered, not just declared: the render for
+	// TestOutcomeReachableNotUploaded (renderStageOutcome) and the
+	// key-unused store ceremony (reviewCeremony) both use them, byte-exact.
+	rendered := renderStageOutcome(TestResultView{Outcome: TestOutcomeReachableNotUploaded}, "github.com")
+	if !strings.Contains(rendered, stageWarningLine) {
+		t.Errorf("renderStageOutcome does not render stageWarningLine:\n%s", rendered)
+	}
+}
+
+// TestWizardSimulateFailToggleAndRetry proves D-02/D-04 (Pitfall 6): the
+// dummy's demo control previews "Permission denied (publickey)", which is
+// the ReachableNotUploaded WARNING state — never a hard failure. It must
+// render the yellow `!` (never red `✗`), offer the D-03 copy-.pub action,
+// and STILL chain straight into stage 2 on Enter (D-04), because the D-01
+// store gate already unlocked.
 func TestWizardSimulateFailToggleAndRetry(t *testing.T) {
 	a := wizardToStep2(t, identitiesApp())
 
-	// Toggle the demo failure control, run stage 1 → Permission denied path.
+	// Toggle the demo failure control, run stage 1 → the D-02 warning path.
 	a, _ = press(t, a, "space")
 	m := identModel(t, a)
 	if !m.wizard.simulateFail {
@@ -436,37 +507,130 @@ func TestWizardSimulateFailToggleAndRetry(t *testing.T) {
 		t.Error("toggle must lock while a stage is running")
 	}
 	a = completeStage(t, a, 1)
-	view := appView(a)
-	if !strings.Contains(view, "✗ git@ssh.github.com: Permission denied (publickey).") {
-		t.Errorf("failure path output missing:\n%s", view)
-	}
-	if !strings.Contains(view, "Copy public key") {
-		t.Error("failure path must offer Copy public key")
-	}
-
-	// Retry returns to idle and clears the toggle.
-	a, _ = press(t, a, "enter")
 	m = identModel(t, a)
-	if m.wizard.testPhase != testIdle || m.wizard.simulateFail {
-		t.Errorf("retry: phase=%q simulateFail=%v, want idle/false", m.wizard.testPhase, m.wizard.simulateFail)
+	if m.wizard.testPhase != testStage1 {
+		t.Fatalf("phase = %q, want stage1 (ReachableNotUploaded still unlocks the D-04 chain)", m.wizard.testPhase)
+	}
+	if m.wizard.stage1.Outcome != TestOutcomeReachableNotUploaded {
+		t.Fatalf("stage1 outcome = %v, want TestOutcomeReachableNotUploaded", m.wizard.stage1.Outcome)
+	}
+	pane := paneFlat(a)
+	if !strings.Contains(pane, "! Reachable — key not uploaded yet") {
+		t.Errorf("D-02 warning line missing:\n%s", pane)
+	}
+	// The wizard pane itself must never show the red failure line for this
+	// outcome (Pitfall 6). The app-wide header's identity-count chip
+	// legitimately contains a "✗" glyph for unrelated seeded rows, so this
+	// checks the SPECIFIC failure-styled line, not a blanket glyph absence.
+	if strings.Contains(pane, "✗ git@") || strings.Contains(pane, "connection failed") {
+		t.Error("ReachableNotUploaded must NEVER render the red ✗ failure line (Pitfall 6)")
+	}
+	// The copy action is a FOOTER/keybar affordance (never a second inline
+	// body row, D-03), so it is checked against the raw multi-line view —
+	// paneFlat's column slice only covers the two-pane split above the
+	// footer, not the full-width footer row below it.
+	if !strings.Contains(appView(a), "copy public key") {
+		t.Error("warning path must offer the copy-public-key footer action (D-03)")
 	}
 
-	// Pass both stages; the toggle then locks for good.
-	a, _ = press(t, a, "enter")
-	a = completeStage(t, a, 1)
+	// "c" copies the public key at the warning state.
+	a2, _ := press(t, a, "c")
+	if !strings.Contains(a2.note, "Public key copied to clipboard") {
+		t.Errorf("copy note = %q, want a clipboard receipt", a2.note)
+	}
+
+	// Enter chains straight into stage 2 (D-04) — no retry framing; the
+	// store gate is already unlocked at ReachableNotUploaded (D-01).
 	a, _ = press(t, a, "enter")
 	a = completeStage(t, a, 2)
 	m = identModel(t, a)
 	if m.wizard.testPhase != testStage2 {
 		t.Fatalf("phase = %q, want stage2", m.wizard.testPhase)
 	}
-	a, _ = press(t, a, "space")
-	m = identModel(t, a)
-	if m.wizard.simulateFail {
-		t.Error("toggle must be disabled once the test has passed")
+	if !strings.Contains(paneFlat(a), "✓ identityfile ~/.ssh/id_ed25519_acme2") {
+		t.Errorf("stage-2 identityfile proof missing:\n%s", paneFlat(a))
 	}
-	if !strings.Contains(appView(a), "✓ identityfile ~/.ssh/id_ed25519_acme2") {
-		t.Error("stage-2 identityfile proof missing")
+	// Once past, the simulate-failure toggle is LOCKED — space is a no-op —
+	// even though its underlying value (set by the earlier toggle press,
+	// never reset by this success chain) stays true; the render says so.
+	a, _ = press(t, a, "space")
+	if !strings.Contains(paneFlat(a), "Demo failure control — locked") {
+		t.Error("toggle must render as locked once the test has passed")
+	}
+}
+
+// TestWizardHardFailureRendersRedAndRetriesNoCopy proves the OTHER side of
+// D-02/Pitfall 6: a genuine TestOutcomeFailure (connection refused, DNS,
+// timeout — never simulated by the dummy's own demo control) renders red
+// `✗` with a retry affordance, and NEVER offers the D-03 copy-.pub action
+// (that is warning-only).
+func TestWizardHardFailureRendersRedAndRetriesNoCopy(t *testing.T) {
+	a := wizardToStep2(t, identitiesApp())
+	a, _ = press(t, a, "enter") // → testRunning1
+	fail := TestResultView{
+		Outcome: TestOutcomeFailure,
+		Command: identModel(t, a).wizard.stage1Cmd(),
+		Detail:  "ssh: connect to host ssh.github.com port 443: Connection refused",
+	}
+	model, _ := a.Update(WizardStageMsg{Stage: 1, Result: fail})
+	a = model.(App)
+	m := identModel(t, a)
+	if m.wizard.testPhase != testFailed {
+		t.Fatalf("phase = %q, want failed", m.wizard.testPhase)
+	}
+	pane := paneFlat(a)
+	if !strings.Contains(pane, "✗ ssh: connect to host ssh.github.com port 443: Connection refused") {
+		t.Errorf("hard-failure line missing the real ssh output:\n%s", pane)
+	}
+	if strings.Contains(appView(a), "copy public key") {
+		t.Error("a hard Failure must never offer the copy-public-key footer action (D-03 is warning-only)")
+	}
+	if !strings.Contains(pane, "Retry (Enter)") {
+		t.Error("hard-failure retry affordance missing")
+	}
+
+	// "c" is a no-op at a hard failure.
+	a2, _ := press(t, a, "c")
+	if a2.note != "" {
+		t.Errorf("c must be a no-op at a hard failure; note = %q", a2.note)
+	}
+
+	// Enter retries: back to idle, toggle cleared.
+	a, _ = press(t, a, "enter")
+	m = identModel(t, a)
+	if m.wizard.testPhase != testIdle {
+		t.Errorf("retry: phase = %q, want idle", m.wizard.testPhase)
+	}
+}
+
+// TestReachableNotUploadedStoresKeyUnusedCopy proves the D-01/D-02 "no
+// silent success" contract at the ceremony level: once EITHER test stage
+// answered ReachableNotUploaded, the confirm-write heading and the receipt
+// both say so plainly, byte-exact — the frozen key-unused copy this plan
+// registers with the §6 copy-freeze mechanism.
+func TestReachableNotUploadedStoresKeyUnusedCopy(t *testing.T) {
+	a := wizardToStep2(t, identitiesApp())
+	a, _ = press(t, a, "space") // preview the D-02 warning path
+	a, _ = press(t, a, "enter")
+	a = completeStage(t, a, 1)
+	a, _ = press(t, a, "enter") // chain into stage 2 (D-04)
+	a = completeStage(t, a, 2)
+	a, _ = press(t, a, "enter")                    // → step 3 Git identity
+	a = pressSeq(t, a, "tab", "tab", "tab", "tab") // → Skip button
+	a, _ = press(t, a, "enter")                    // activate [ Skip Git ] → ceremony
+
+	pane := paneFlat(a)
+	if !strings.Contains(pane, `Create identity "acme2" — ed25519, reachable — key not uploaded yet`) {
+		t.Fatalf("ceremony heading must name the warning outcome, never a false test-passed framing:\n%s", pane)
+	}
+	if strings.Contains(pane, "test passed ✓") {
+		t.Error("a ReachableNotUploaded store must never claim \"test passed\"")
+	}
+
+	a, _ = press(t, a, "enter") // confirm → receipt
+	receipt := paneFlat(a)
+	if !strings.Contains(receipt, "Stored — key not uploaded yet; this identity is not proven for Git yet") {
+		t.Errorf("receipt missing the frozen key-unused copy:\n%s", receipt)
 	}
 }
 
@@ -593,6 +757,44 @@ func TestWizardSkipCreatesIncompleteIdentity(t *testing.T) {
 	}
 	if a.note == "" || !strings.Contains(a.note, "SSH only (incomplete)") {
 		t.Errorf("status note = %q, want the SSH-only note", a.note)
+	}
+}
+
+// TestWizardGitContinueForcedDisabledByBackend proves D-19's render side: a
+// Backend that reports alwaysDisabled=true (the REAL binary's shape) forces
+// the create wizard's Git-step [ Continue ] disabled with the Backend's OWN
+// reason string, regardless of the form's own validity — the dummy-style
+// validity gate (gitFormDisabledSuffix) never applies here.
+func TestWizardGitContinueForcedDisabledByBackend(t *testing.T) {
+	const realReason = "— Git configuration arrives with the next build"
+	b := stubBackend{gitStepAlwaysDisabled: true, gitStepReason: realReason}
+	// newWizard's own defaults ("Acme Identity" / "you@acme.example") are
+	// already a FULLY VALID Git form — Continue must still stay disabled.
+	a := wizardThroughTest(t, NewApp(b))
+
+	pane := paneFlat(a)
+	if !strings.Contains(pane, realReason) {
+		t.Errorf("real-binary disabled reason missing from the render:\n%s", pane)
+	}
+	if strings.Contains(pane, gitFormDisabledSuffix) {
+		t.Error("the real binary must never show the dummy's validity-based reason (D-19)")
+	}
+
+	// Continue is unreachable — Enter on a filled-valid form does NOT advance.
+	before := identModel(t, a).wizard.step
+	a, _ = press(t, a, "enter")
+	if identModel(t, a).wizard.step != before {
+		t.Error("Continue must never advance the wizard when the Backend forces it disabled (D-19)")
+	}
+
+	// Skip Git remains the ONLY functional path forward (D-18).
+	a = pressSeq(t, a, "tab", "tab", "tab", "tab") // name → email → strategy → Back → Skip
+	if identModel(t, a).wizard.gitFocus != gitFocusSkip {
+		t.Fatalf("gitFocus = %d, want Skip", identModel(t, a).wizard.gitFocus)
+	}
+	a, _ = press(t, a, "enter")
+	if !strings.Contains(appView(a), `Create identity "acme2"`) {
+		t.Error("Skip must still walk the review ceremony even with Continue force-disabled")
 	}
 }
 

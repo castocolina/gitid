@@ -645,6 +645,20 @@ func (b *realBackend) CopyPublicKey(pubKeyPath string) (string, error) {
 	return "Public key copied to clipboard (" + b.displayPath(path) + ").", nil
 }
 
+// gitStepDisabledReason is the D-19 frozen reason string the REAL binary
+// shows under the wizard's Git-identity step [ Continue ] button — the
+// existing form-validity reason ("— needs user.name + a valid email") would
+// be a LIE about capability here: there is no Git backend behind Continue
+// until Phase 4, so it must never enable regardless of what the user typed.
+const gitStepDisabledReason = "— Git configuration arrives with the next build"
+
+// GitStepDisabledReason implements D-19: the real binary ALWAYS disables
+// the wizard's Git-identity step [ Continue ] button, with its own honest
+// reason — never the dummy's validity-based one.
+func (b *realBackend) GitStepDisabledReason() (string, bool) {
+	return gitStepDisabledReason, true
+}
+
 // ---------------------------------------------------------------------------
 // Backend -> view converters (the ONLY conversion site)
 // ---------------------------------------------------------------------------

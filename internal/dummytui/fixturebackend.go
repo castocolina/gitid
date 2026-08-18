@@ -300,9 +300,17 @@ func (FixtureBackend) CreateWritePlan(spec tuikit.CreateSpec, git *tuikit.GitSpe
 	}
 }
 
-// CopyPublicKey is the D-03 clipboard copy offered on the failed-test path.
-// The dummy touches NOTHING — it says so explicitly in the receipt, because
-// only the Backend knows whether a real clipboard was written.
+// CopyPublicKey is the D-03 clipboard copy offered on the ReachableNotUploaded
+// warning path. The dummy touches NOTHING — it says so explicitly in the
+// receipt, because only the Backend knows whether a real clipboard was written.
 func (FixtureBackend) CopyPublicKey(string) (string, error) {
 	return "Public key copied to clipboard (demo).", nil
+}
+
+// GitStepDisabledReason implements D-19: the dummy keeps the UNCHANGED
+// form-validity gate and its own frozen reason ("— needs user.name + a
+// valid email", owned by internal/tuikit) — Phase 3 does not touch the
+// demo's Git-step behavior, only the real binary's (cmd/gitid).
+func (FixtureBackend) GitStepDisabledReason() (string, bool) {
+	return "", false
 }
