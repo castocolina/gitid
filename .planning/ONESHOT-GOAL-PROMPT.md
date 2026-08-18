@@ -3,9 +3,10 @@
 This driver resumes the v1.0 milestone with OpenCode and Open GSD. The binding
 workflow is `.planning/ONESHOT.md`.
 
-Run `/gsd-autonomous --from 4 --converge` only after the Phase 3 closeout in
-the playbook is complete. The command uses the configured OpenCode runtime and
-the reviewer/model routing in `.planning/config.json`.
+This is a single-session driver. After the Phase 3 closeout, the orchestrator
+itself invokes `gsd-autonomous --from 4 --converge` in the same session; the
+user does not send a second message. The command uses the configured OpenCode
+runtime and reviewer/model routing in `.planning/config.json`.
 
 ## How To Run
 
@@ -55,11 +56,13 @@ Use the configured roles instead of hard-coded CLIs or model names:
 - plan convergence: the configured OpenCode reviewer lane
 
 For Phase 3, complete the explicit closeout in the playbook before beginning
-Phase 4. Then run `/gsd-autonomous --from 4 --converge` and keep advancing
-phases in order. Do not stop for ordinary review, test, formatting, commit, or
-planning work. Stop only for a real safety circuit breaker, an unrecoverable
-tool/authentication failure, or explicit confirmation required before mutating
-the user's real SSH/Git configuration or external account.
+Phase 4. Then invoke the `gsd-autonomous` skill with `--from 4 --converge`
+yourself, in this same session, and keep advancing phases in order. Do not ask
+the user to send that command or any ordinary continuation message. Do not stop
+for ordinary review, test, formatting, commit, or planning work. Stop only for
+a real safety circuit breaker, an unrecoverable tool/authentication failure, or
+explicit confirmation required before mutating the user's real SSH/Git
+configuration or external account.
 
 Every status claim must include the actual command and output that proves it.
 The run ends only after all phases pass their configured verification, the

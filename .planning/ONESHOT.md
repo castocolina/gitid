@@ -12,9 +12,10 @@ credentials in this file.
 - `gsd-executor` uses OpenCode Go Qwen.
 - `/gsd-plan-review-convergence` uses `review.default_reviewers`.
 
-Run `/gsd-autonomous --from 4 --converge` after the Phase 3 closeout below.
-It owns the normal discuss, plan, review, execute, and verification sequence
-for every remaining incomplete phase.
+After the Phase 3 closeout below, the orchestrator invokes the
+`gsd-autonomous` skill with `--from 4 --converge` in the same session. It owns
+the normal discuss, plan, review, execute, and verification sequence for every
+remaining incomplete phase; do not ask the user to send a continuation command.
 
 ## Non-Negotiable Rules
 
@@ -66,9 +67,9 @@ Complete these items in order:
 
 ## Remaining Phase Loop: 4 Through 10
 
-Use `/gsd-autonomous --from 4 --converge`. The convergence flag makes Open GSD
-run external plan review before execution; the internal Opus plan checker still
-guards generated plans. For each phase:
+Invoke `gsd-autonomous --from 4 --converge` in this session. The convergence
+flag makes Open GSD run external plan review before execution; the internal
+Opus plan checker still guards generated plans. For each phase:
 
 1. Read the phase context, current design contracts, recipes, applicable
    learnings, and completed phase summaries.
