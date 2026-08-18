@@ -478,7 +478,7 @@ func TestFrozenReachableWarningAndKeyUnusedCopy(t *testing.T) {
 	// Both strings are actually rendered, not just declared: the render for
 	// TestOutcomeReachableNotUploaded (renderStageOutcome) and the
 	// key-unused store ceremony (reviewCeremony) both use them, byte-exact.
-	rendered := renderStageOutcome(TestResultView{Outcome: TestOutcomeReachableNotUploaded}, "github.com", true)
+	rendered := renderStageOutcome(TestResultView{Outcome: TestOutcomeReachableNotUploaded}, "github.com", true, 62)
 	if !strings.Contains(rendered, stageWarningLine) {
 		t.Errorf("renderStageOutcome does not render stageWarningLine:\n%s", rendered)
 	}
@@ -494,7 +494,7 @@ func TestFrozenReachableWarningAndKeyUnusedCopy(t *testing.T) {
 func TestRenderStageOutcomeShowHint(t *testing.T) {
 	r := TestResultView{Outcome: TestOutcomeReachableNotUploaded, Detail: "git@ssh.github.com: Permission denied (publickey)."}
 
-	withHint := renderStageOutcome(r, "github.com", true)
+	withHint := renderStageOutcome(r, "github.com", true, 62)
 	if !strings.Contains(withHint, "Press c to copy the .pub") {
 		t.Errorf("renderStageOutcome(showHint=true) missing the D-03 instruction:\n%s", withHint)
 	}
@@ -502,7 +502,7 @@ func TestRenderStageOutcomeShowHint(t *testing.T) {
 		t.Errorf("renderStageOutcome(showHint=true) does not surface the real ssh output (F1):\n%s", withHint)
 	}
 
-	withoutHint := renderStageOutcome(r, "github.com", false)
+	withoutHint := renderStageOutcome(r, "github.com", false, 62)
 	if strings.Contains(withoutHint, "Press c to copy the .pub") {
 		t.Errorf("renderStageOutcome(showHint=false) still rendered the instruction line:\n%s", withoutHint)
 	}
@@ -530,6 +530,35 @@ func TestReachableHintNamesKeystrokeAndURL(t *testing.T) {
 		if !strings.Contains(hint, want) {
 			t.Errorf("reachableHint(%q) = %q, want it to contain %q", provider, hint, want)
 		}
+	}
+}
+
+// TestIdentityNameFollowsEditedHostNotStaleProvider pins design-review
+// finding "Provider field" (03-06 visual-regression gate, DLV-04.2): with a
+// blank Alias prefix, editing the SSH Host field to a DIFFERENT provider
+// must rename the identity after the EDITED provider, not the original one
+// the Provider field was seeded with — identityName() previously read
+// f.provider.Value() directly, which the Host-edit path never updated,
+// silently producing the WRONG persisted identity name (e.g. still "github"
+// after editing SSH Host to gitlab.com). Also asserts the Provider field's
+// own displayed value is kept in sync (the same edit's "stale display" half
+// of the finding).
+func TestIdentityNameFollowsEditedHostNotStaleProvider(t *testing.T) {
+	f := newSSHForm(tableBackend{}, "github.com", "", "", "ssh.github.com", "443", false)
+	if got := f.identityName(); got != "github" {
+		t.Fatalf("identityName() before any edit = %q, want %q", got, "github")
+	}
+
+	f = f.setFocus(sshFieldHost)
+	for _, r := range "gitlab.com" {
+		f = f.handleEdit(pressKey(string(r)), sshFieldHost)
+	}
+
+	if got := f.identityName(); got != "gitlab" {
+		t.Errorf("identityName() after editing SSH Host to gitlab.com = %q, want %q (D-20 edited-alias-wins)", got, "gitlab")
+	}
+	if got := f.provider.Value(); got != "gitlab.com" {
+		t.Errorf("Provider field after editing SSH Host to gitlab.com = %q, want %q (must not display a value the model already discarded)", got, "gitlab.com")
 	}
 }
 

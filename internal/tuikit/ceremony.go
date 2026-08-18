@@ -194,10 +194,19 @@ func (c ceremonyModel) view(width int) string {
 	wrap := lipgloss.NewStyle().Width(maxInt(20, width-2))
 	b.WriteString(styleBold.Render(c.cfg.Heading) + "\n")
 	b.WriteString(styleFaint.Render(wrap.Render("Touches "+strings.Join(c.cfg.Targets, " · "))) + "\n")
-	for _, bk := range c.cfg.Backups {
-		b.WriteString(styleFaint.Render("Backup → ") + bk + "\n")
+	if len(c.cfg.Backups) > 0 {
+		for _, bk := range c.cfg.Backups {
+			b.WriteString(styleFaint.Render("Backup → ") + bk + "\n")
+		}
+		b.WriteString(styleFaint.Render("  (written first — restore it to undo)") + "\n")
+	} else {
+		// design-review U-1 (03-06 visual-regression gate): the explainer
+		// line was previously unconditional, so a target with nothing to
+		// back up (e.g. no pre-existing ~/.ssh/config) still claimed
+		// "written first — restore it to undo" with no backup line above
+		// it — a false safety claim about the ceremony's own undo story.
+		b.WriteString(styleFaint.Render("  No existing file — nothing to back up.") + "\n")
 	}
-	b.WriteString(styleFaint.Render("  (written first — restore it to undo)") + "\n")
 	// Routed through the bounded, titled PreviewBlock (review-findings F1):
 	// the title is spliced into the border's top edge instead of a separate
 	// PreviewLabel row, saving one row per ceremony — this component is

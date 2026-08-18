@@ -289,12 +289,21 @@ func (f sshForm) unknownProvider() bool {
 }
 
 // identityName is the identity name the form values produce.
+//
+// design-review (03-06 visual-regression gate): this MUST read
+// f.providerHost(), not f.provider.Value() directly — providerHost()
+// prioritizes a manually-edited SSH Host suffix over the (possibly stale)
+// Provider field, per D-20's "edited alias wins" rule. Reading the raw
+// Provider field here let a blank-prefix identity be named after a
+// provider the user had already overridden by editing the Host field
+// (e.g. editing SSH Host to gitlab.com while Provider still displayed
+// "github.com" named the identity "github", not "gitlab").
 func (f sshForm) identityName() string {
 	prefix := strings.TrimSpace(f.prefix.Value())
 	if prefix != "" {
 		return prefix
 	}
-	parts := strings.Split(f.provider.Value(), ".")
+	parts := strings.Split(f.providerHost(), ".")
 	if parts[0] != "" {
 		return parts[0]
 	}
@@ -357,7 +366,18 @@ func (f sshForm) handleEdit(msg tea.KeyMsg, focus int) sshForm {
 			// its suffix re-resolves the endpoint on every keystroke, so
 			// `work.gitlab.com` fills in altssh.gitlab.com:443 without a
 			// second field to keep in sync.
-			f = f.applyProviderDefaults(hostSuffix(f.host.Value()))
+			suffix := hostSuffix(f.host.Value())
+			f = f.applyProviderDefaults(suffix)
+			// design-review (03-06 visual-regression gate): mirror the
+			// inferred suffix back into the Provider field itself — without
+			// this, Provider kept displaying its OLD value after a Host
+			// edit (e.g. still "github.com" after typing work.gitlab.com),
+			// a stale-state display bug on top of the row that scans first
+			// in the form (F-pattern), even though providerHost() already
+			// prefers the edited suffix for every WRITE path.
+			if suffix != "" {
+				f.provider.SetValue(suffix)
+			}
 		}
 	case sshFieldHostname:
 		var changed bool
@@ -1002,21 +1022,27 @@ const (
 // The copy-.pub action itself is a footer/keybar affordance (wizardFooter),
 // never a second inline body row — the row-budget discipline every wizard
 // pane keeps (02-STYLE-SPEC.md §7).
-func renderStageOutcome(r TestResultView, providerHost string, showHint bool) string {
+func renderStageOutcome(r TestResultView, providerHost string, showHint bool, width int) string {
 	var b strings.Builder
 	if r.Outcome == TestOutcomeReachableNotUploaded {
 		b.WriteString(" " + styleWarning.Render(stageWarningLine) + "\n")
 		if r.Detail != "" {
-			b.WriteString(" " + styleFaint.Render(r.Detail) + "\n")
+			// Single line, truncated (never wraps): a long ssh Detail string
+			// (e.g. a long ~/.ssh path in Detail's "identityfile <path>"
+			// form) could otherwise push the fixed 100x30 frame's body past
+			// its row budget and silently clip the D-03 hint below it —
+			// caught by the 03-06 visual-regression gate's own capture.
+			b.WriteString(" " + styleFaint.Render(ansi.Truncate(r.Detail, width-2, "…")) + "\n")
 		}
 		if showHint {
 			// Default body style, not styleFaint: this is the only actionable
 			// content in the warning state (design-review a11y finding).
-			b.WriteString(" " + reachableHint(providerHost) + "\n")
+			// Also single-line/truncated, for the same row-budget reason.
+			b.WriteString(" " + ansi.Truncate(reachableHint(providerHost), width-2, "…") + "\n")
 		}
 		return b.String()
 	}
-	b.WriteString(" " + styleHealthy.Render("✓ "+r.Detail) + "\n")
+	b.WriteString(" " + styleHealthy.Render("✓ "+ansi.Truncate(r.Detail, width-4, "…")) + "\n")
 	return b.String()
 }
 
@@ -2864,7 +2890,7 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 			// (design-review F2): once stage 2 lands, its own render is the
 			// final word and carries the hint instead, so the two stages
 			// never repeat the identical instruction line.
-			b.WriteString(renderStageOutcome(w.stage1, w.form.providerHost(), w.testPhase == testStage1))
+			b.WriteString(renderStageOutcome(w.stage1, w.form.providerHost(), w.testPhase == testStage1, width))
 		}
 		if w.testPhase == testStage1 || w.testPhase == testStage2 {
 			// The short "Stage 2 — ..." title moves into the border's top
@@ -2877,7 +2903,7 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 			if w.testPhase == testStage1 {
 				b.WriteString(" " + styleSelected.Render(" Run stage 2 (Enter) ") + "\n")
 			} else {
-				b.WriteString(renderStageOutcome(w.stage2, w.form.providerHost(), true))
+				b.WriteString(renderStageOutcome(w.stage2, w.form.providerHost(), true, width))
 				b.WriteString(" " + styleSelected.Render(" Next: Git identity (Enter) ") + "\n")
 			}
 		}

@@ -109,7 +109,7 @@
                                             [2m│[m  [1m▸ [m[1mKey[m [2m(←/→ change)[m  ○ Generate a new key   ● [1;34mReuse an[m        
                                             [2m│[m [1;34mexisting key[m                                                  
                                             [2m│[m      ● [1mid_ed25519_gate  ssh-ed25519[m                           
-                                            [2m│[m [1mSHA256:j/zNBamS/vf8BBA9XKLnEtfrDqNlOI4xg2oBYL32mZ8[m            
+                                            [2m│[m [1mSHA256:JEviT9tyU1+p+woOGSU8YeeQYlj57ST1aumsVK/aSrw[m            
                                             [2m│[m      ○ Enter a path manually…                                 
                                             [2m│[m [90m╭╌ Live Host-block preview (written on confirm) ╌╌╌╌╌╌╌╌╌╮[m    
                                             [2m│[m [90m┊[m [2mHost acme.github.com[m                                   [90m┊[m    
@@ -265,17 +265,17 @@
         [2m  ! archived 1⚑               S– G–[m [2m│[m [90m┊[m [2m~/.ss…[m                                                 [90m┊[m    
         [2m    Key file exists on disk but no …[m[2m│[m [90m┊[m [2m[m                                                       [90m┊[m    
         [2m  ✓ staging                   S✓ G–[m [2m│[m [90m╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯[m    
-        [2m    Key referenced by a Host block;…[m[2m│[m  [32m✓ Hi acme! You've successfully authenticated, but GitHub does[m
-        [2m  ✓ clientA                   S✓ G✓[m [2m│[m [32mnot provide shell access.[m                                     
-        [2m    Key wired for both SSH auth and…[m[2m│[m                                                               
-        [2m  ✗ clientB 1⚑                S✗ G–[m [2m│[m  [2mNo -i here on purpose: the config must supply the key; that[m  
-        [2m    Host block references a key fil…[m[2m│[m [2mis exactly what this stage proves.[m                            
-        [2m  ✗ legacy 1⚑                 S✓ G✗[m [2m│[m [90m╭╌ Stage 2 — resolve BY ALIAS (TEST-02) ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮[m    
-        [2m    includeIf points at a Git fragm…[m[2m│[m [90m┊[m [2m$ ssh -G -F /tmp/gitid-test-a1b2c3.config[m              [90m┊[m    
-                                            [2m│[m [90m┊[m [2macme.github.com…[m                                       [90m┊[m    
+        [2m    Key referenced by a Host block;…[m[2m│[m  [32m✓ Hi acme! You've successfully authenticated, but GitHub do…[m 
+        [2m  ✓ clientA                   S✓ G✓[m [2m│[m                                                               
+        [2m    Key wired for both SSH auth and…[m[2m│[m  [2mNo -i here on purpose: the config must supply the key; that[m  
+        [2m  ✗ clientB 1⚑                S✗ G–[m [2m│[m [2mis exactly what this stage proves.[m                            
+        [2m    Host block references a key fil…[m[2m│[m [90m╭╌ Stage 2 — resolve BY ALIAS (TEST-02) ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮[m    
+        [2m  ✗ legacy 1⚑                 S✓ G✗[m [2m│[m [90m┊[m [2m$ ssh -G -F /tmp/gitid-test-a1b2c3.config[m              [90m┊[m    
+        [2m    includeIf points at a Git fragm…[m[2m│[m [90m┊[m [2macme.github.com…[m                                       [90m┊[m    
                                             [2m│[m [90m┊[m [2m[m                                                       [90m┊[m    
                                             [2m│[m [90m╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯[m    
                                             [2m│[m  [1;7m Run stage 2 (Enter) [m                                        
+                                            [2m│[m                                                               
                                             [2m│[m                                                               
                                             [2m│[m                                                               
                                             [2m│[m                                                               
@@ -298,8 +298,7 @@
                                             [2m│[m [90m╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯[m    
                                             [2m│[m  [33m! Reachable — key not uploaded yet[m                           
                                             [2m│[m  [2mgit@ssh.github.com: Permission denied (publickey).[m           
-                                            [2m│[m  Press c to copy the .pub, then add it at                     
-                                            [2m│[m github.com/settings/keys                                      
+                                            [2m│[m  Press c to copy the .pub, then add it at github.com/setting… 
                                             [2m│[m                                                               
                                             [2m│[m  [2mNo -i here on purpose: the config must supply the key; that[m  
                                             [2m│[m [2mis exactly what this stage proves.[m                            
@@ -309,6 +308,7 @@
                                             [2m│[m [90m┊[m [2m[m                                                       [90m┊[m    
                                             [2m│[m [90m╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯[m    
                                             [2m│[m  [1;7m Run stage 2 (Enter) [m                                        
+                                            [2m│[m                                                               
                                             [2m│[m                                                               
                                             [2m│[m                                                               
          [2mEsc returns to the identity detail without writing anything.[m
@@ -328,18 +328,18 @@
         [2m  ! archived 1⚑               S– G–[m [2m│[m [90m┊[m [2m~/.ss…[m                                                 [90m┊[m    
         [2m    Key file exists on disk but no …[m[2m│[m [90m┊[m [2m[m                                                       [90m┊[m    
         [2m  ✓ staging                   S✓ G–[m [2m│[m [90m╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯[m    
-        [2m    Key referenced by a Host block;…[m[2m│[m  [32m✓ Hi acme! You've successfully authenticated, but GitHub does[m
-        [2m  ✓ clientA                   S✓ G✓[m [2m│[m [32mnot provide shell access.[m                                     
-        [2m    Key wired for both SSH auth and…[m[2m│[m                                                               
-        [2m  ✗ clientB 1⚑                S✗ G–[m [2m│[m  [2mNo -i here on purpose: the config must supply the key; that[m  
-        [2m    Host block references a key fil…[m[2m│[m [2mis exactly what this stage proves.[m                            
-        [2m  ✗ legacy 1⚑                 S✓ G✗[m [2m│[m [90m╭╌ Stage 2 — resolve BY ALIAS (TEST-02) ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮[m    
-        [2m    includeIf points at a Git fragm…[m[2m│[m [90m┊[m [2m$ ssh -G -F /tmp/gitid-test-a1b2c3.config[m              [90m┊[m    
-                                            [2m│[m [90m┊[m [2macme.github.com…[m                                       [90m┊[m    
+        [2m    Key referenced by a Host block;…[m[2m│[m  [32m✓ Hi acme! You've successfully authenticated, but GitHub do…[m 
+        [2m  ✓ clientA                   S✓ G✓[m [2m│[m                                                               
+        [2m    Key wired for both SSH auth and…[m[2m│[m  [2mNo -i here on purpose: the config must supply the key; that[m  
+        [2m  ✗ clientB 1⚑                S✗ G–[m [2m│[m [2mis exactly what this stage proves.[m                            
+        [2m    Host block references a key fil…[m[2m│[m [90m╭╌ Stage 2 — resolve BY ALIAS (TEST-02) ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮[m    
+        [2m  ✗ legacy 1⚑                 S✓ G✗[m [2m│[m [90m┊[m [2m$ ssh -G -F /tmp/gitid-test-a1b2c3.config[m              [90m┊[m    
+        [2m    includeIf points at a Git fragm…[m[2m│[m [90m┊[m [2macme.github.com…[m                                       [90m┊[m    
                                             [2m│[m [90m┊[m [2m[m                                                       [90m┊[m    
                                             [2m│[m [90m╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯[m    
                                             [2m│[m  [32m✓ identityfile ~/.ssh/id_ed25519_acme[m                        
                                             [2m│[m  [1;7m Next: Git identity (Enter) [m                                 
+                                            [2m│[m                                                               
                                             [2m│[m                                                               
                                             [2m│[m                                                               
                                             [2m│[m                                                               
@@ -370,10 +370,10 @@
                                             [2m│[m [90m┊[m [2m[m                                                       [90m┊[m    
                                             [2m│[m [90m╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯[m    
                                             [2m│[m  [33m! Reachable — key not uploaded yet[m                           
-                                            [2m│[m  [2midentityfile[m                                                 
-                                            [2m│[m [2m/var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestGateVisua[m
-                                            [2m│[m [2mlRegression1051030826/001/.ssh/id_ed25519_acme[m                
-                                            [2m│[m  Press c to copy the .pub, then add it at                     
+                                            [2m│[m  [2midentityfile /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn…[m 
+                                            [2m│[m  Press c to copy the .pub, then add it at github.com/setting… 
+                                            [2m│[m  [1;7m Next: Git identity (Enter) [m                                 
+                                            [2m│[m                                                               
          [2mEsc returns to the identity detail without writing anything.[m
          [1mEnter[m [2mnext: Git identity[m[2m · [m[1mc[m [2mcopy public key[m
          [1mEsc[m [2mback[m[2m · [m[1mCtrl+P[m [2mpalette[m
@@ -448,7 +448,7 @@
         [2m▸ ✓ personal                  S✓ G✓[m [2m│[m  [2mShift+← back to Git · Enter writes[m                           
         [2m    SSH Host block and Git fragment…[m[2m│[m [1mCreate identity "acme" — ed25519, test passed ✓[m               
         [2m  ! work                      S✓ G–[m [2m│[m [2mTouches ~/.ssh/config                                       [m  
-        [2m    SSH Host block present; no Git …[m[2m│[m [2mBackup → [m~/.ssh/config.backup.2026-08-18T11-33-09Z            
+        [2m    SSH Host block present; no Git …[m[2m│[m [2mBackup → [m~/.ssh/config.backup.2026-08-18T11-54-58Z            
         [2m  ! opensource 1⚑             S– G✓[m [2m│[m [2m  (written first — restore it to undo)[m                        
         [2m    Git identity relies on the glob…[m[2m│[m [90m╭╌ Exact change — everything else preserved verbatim ╌╌╌╌╮[m    
         [2m  ! archived 1⚑               S– G–[m [2m│[m [90m┊[m [2mSSH: acme.github.com → ssh.github.com:443 · key[m        [90m┊[m    
@@ -480,7 +480,7 @@
                                             [2m│[m [1mCreate identity "acme" — ed25519, reachable — key not uploaded[m
                                             [2m│[m [1myet[m                                                           
                                             [2m│[m [2mTouches ~/.ssh/config.d/gitid.config · ~/.ssh/config        [m  
-                                            [2m│[m [2m  (written first — restore it to undo)[m                        
+                                            [2m│[m [2m  No existing file — nothing to back up.[m                      
                                             [2m│[m [90m╭╌ Exact change — everything else preserved verbatim ╌╌╌╌╮[m    
                                             [2m│[m [90m┊[m [2mSSH: acme.github.com → ssh.github.com:443 · key[m        [90m┊[m    
                                             [2m│[m [90m┊[m [2m~/.ssh/id…[m                                             [90m┊[m    
@@ -504,6 +504,6 @@
          [1mTab/←→[m [2mCancel / Confirm[m[2m · [m[1mEnter[m [2mconfirm[m
          [1mEsc[m [2mback[m[2m · [m[1mCtrl+P[m [2mpalette[m
     gate_visual_regression_test.go:127: gate-visual-regression: OK — 8 screens captured, all differences allowlisted or byte-identical
---- PASS: TestGateVisualRegression (3.59s)
+--- PASS: TestGateVisualRegression (3.48s)
 PASS
-ok  	github.com/castocolina/gitid/cmd/gitid	4.062s
+ok  	github.com/castocolina/gitid/cmd/gitid	3.855s

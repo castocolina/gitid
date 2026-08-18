@@ -16,9 +16,9 @@ provides:
   - "SSHUI-02 mouse half CLOSED: TestCreateFlow_MouseFieldFocus injects real xterm SGR mouse CSI sequences against all four approved SSH-form fields"
   - "DLV-04.1 (automated half) CLOSED: make gate-visual-regression diffs the real binary's create-flow screens against the dummy's, byte-exact modulo an explicit per-screen allowlist; fail-path hand-verified"
   - "D-23: make smoke-network-test — a real-network, auto-skipping connectivity smoke check, LOCAL/UAT only, never wired into CI"
-  - "DLV-04.2 (cross-AI review half) — PACKET ASSEMBLED ONLY, NOT RUN. Owed to the orchestrator at wave close — see 'Cross-AI visual-regression review' below."
+  - "DLV-04.2 (cross-AI review half): agent-ui-ux-designer RAN (orchestrator, wave close) — 3 real bugs found and FIXED (ceremony backup-explainer false claim, identityName() stale-provider bug, a row-budget overflow clipping the D-03 hint); 1 flagged finding resolved as a false positive; Codex review pending in this same close pass."
 affects:
-  - "Phase 3 wave close: the orchestrator must run the DLV-04.2 cross-AI review (agent-ui-ux-designer + Codex) against .planning/phases/03-create-flow-backend/03-06-review-packet/ before the phase itself can be marked complete"
+  - "Phase 3 wave close: the orchestrator ran the DLV-04.2 agent-ui-ux-designer review and fixed its HIGH findings directly (see 'Cross-AI visual-regression review' below); Codex review still pending before the phase is marked complete"
   - "Future phases (4+) building their own dummy-vs-real visual-regression gates can reuse internal/screenshot/createflow.go's in-process App.Update()/.View() capture pattern instead of a PTY"
 
 # Tech tracking
@@ -41,6 +41,9 @@ key-files:
   modified:
     - e2e/harness_test.go
     - internal/tuikit/identities.go
+    - internal/tuikit/identities_test.go
+    - internal/tuikit/ceremony.go
+    - internal/tuikit/ceremony_test.go
     - Makefile
 
 key-decisions:
@@ -110,22 +113,46 @@ Per the plan's own frontmatter, this is "an ORCHESTRATOR-RUN exit gate, NOT a hu
 
 ## Cross-AI visual-regression review
 
-**STATUS: NOT RUN — placeholder scaffold for the orchestrator (DLV-04.2/D-25).**
+**STATUS: `agent-ui-ux-designer` RAN 2026-08-18 (orchestrator-run, DLV-04.2/D-25); Codex review pending in this same wave-close pass.**
 
-Review inputs: `.planning/phases/03-create-flow-backend/03-06-review-packet/` (`text-diffs.txt` + `MANIFEST.md`), cross-referenced against `.planning/design/create-flow/visual-divergence-allowlist.txt`.
+Review inputs: `.planning/phases/03-create-flow-backend/03-06-review-packet/` (`text-diffs.txt`, regenerated after the fixes below; `MANIFEST.md`), cross-referenced against `.planning/design/create-flow/visual-divergence-allowlist.txt`.
 
 | Reviewer | Ran? | Findings | Severity | Disposition |
 |----------|------|----------|----------|-------------|
-| `agent-ui-ux-designer` (`/mui`) | ☐ NOT RUN | — | — | — |
-| Codex (cross-AI) | ☐ NOT RUN | — | — | — |
+| `agent-ui-ux-designer` | ✅ RAN | 4 documented divergences confirmed intended (D-02/D-16/D-19/T-03-HOSTBLOCK); 3 undocumented collateral diffs (U-1/U-2/U-3) + the "Provider" field on its own merits; 4 lower-priority observations (O-1..O-4) | See below | See below |
+| Codex (cross-AI) | pending | — | — | — |
 
-Confirmation checklist (fill in once both reviews have run):
-- [ ] D-02's `ReachableNotUploaded` warning reads as intended on both test-stage screens (yellow, never confused with red hard-Failure)
-- [ ] D-19's real-binary Continue-disabled reason reads as an honest capability statement, not a bug
-- [ ] T-03-HOSTBLOCK's HostBlockPreview format divergence reads as "the real thing is more correct than the demo," not an accidental regression
-- [ ] No undocumented (fifth) divergence was found on any of the 8 captured screens
-- [ ] Every CRITICAL/HIGH finding (if any) is resolved
-- [ ] Every MEDIUM/LOW finding (if any) is recorded with a fixed/accepted disposition
+### Findings and dispositions
+
+**D-02 / D-19 / T-03-HOSTBLOCK / D-16 (the 4 documented divergences):** all confirmed to read as intended — D-02 never color-alone and never confused with red hard-Failure; D-19 reads as an honest capability statement; T-03-HOSTBLOCK reads as "the real thing is more correct than the demo"; D-16 correctly does not fire on any of these 8 screens. **No action needed.**
+
+**U-1 — ceremony's backup-explainer line was unconditional, dangling a false safety claim when `Backups` is empty (HIGH).** Confirmed real: `internal/tuikit/ceremony.go`'s state-A view rendered `"  (written first — restore it to undo)"` regardless of whether any backup line preceded it — a pre-existing bug (predates this session and this plan; exposed by this gate's fresh-temp-HOME fixture, which legitimately has nothing to back up). **FIXED**: the explainer now renders only when `len(Backups) > 0`; an empty list renders an explicit `"No existing file — nothing to back up."` instead. New test `TestCeremonyStateAWithNoBackupsNeverClaimsOne`. This is a shared component (`ceremonyModel`, used by every mutating flow — create, edit, delete, global apply, fixes), so the fix benefits all of them, not just create-flow.
+
+**U-2 — stage 2 showing the D-02 warning was flagged as a category error (assumed "ssh -G is local-only, no reachability").** Verified against `internal/tester.ResolvedVia`: stage 2 (`TEST-02`) performs a REAL `ssh -T` connectivity call (via the staged config's implicit `IdentityFile`, no `-i`) in addition to a `-G` config-dump parse — it is not purely local. Its `Outcome` legitimately comes from that live connectivity result, independent of stage 1. **FALSE POSITIVE — no fix.** The reviewer's premise about stage 2's mechanics was incorrect (an easy mistake from the screen title "resolve BY ALIAS" alone); this is expected, correct behavior of the real binary against a fake-ssh fixture that denies both stages.
+
+**U-3 — the git-form's includeIf preview shows only the sentinel comment (`# BEGIN gitid managed: acme`) in its 2-line window, folding the actual `[includeIf "gitdir:...")]` condition into the ellipsis (MEDIUM).** Confirmed real and pre-existing (the shared `PreviewBlock` component's line-selection logic, not something this plan introduced). **NOT fixed this pass** — carried forward in STATE.md Blockers/Concerns as a candidate for whichever phase next touches `PreviewBlock`'s head-selection logic or the git-form preview specifically (skip sentinel lines when choosing the visible head, or widen the window to 4 rows).
+
+**"Provider" field (HIGH — assessed on its own merits, not a dummy-vs-real divergence, since it's identical in both binaries).** Confirmed as a real, structural issue: the field is a fully editable, first-in-tab-order input, contradicting both `FIELDS.md`'s locked 4-field contract and D-20's "provider inferred from Host suffix, no second field to keep in sync." Two concrete bugs found:
+  1. `identityName()` read the raw, possibly-stale `f.provider.Value()` instead of `f.providerHost()` (which correctly prioritizes an edited Host suffix) — with a blank prefix, editing SSH Host to a different provider produced a WRONG persisted identity name. **FIXED**: `identityName()` now calls `f.providerHost()`. New test `TestIdentityNameFollowsEditedHostNotStaleProvider`.
+  2. The Provider field's own DISPLAYED value never updated after a Host edit, showing a value the model had already discarded. **FIXED**: `case sshFieldHost` in `handleEdit` now mirrors the inferred suffix back into `f.provider` on every keystroke (guarded on a non-empty suffix). Same test covers this.
+  Both fixes are minimal (one-line-class, additive) and do not touch the field's continued EXISTENCE — removing the Provider field entirely per D-20's stricter reading is a design decision (which row order, whether it becomes a derived caption vs. a picker, tab-order implications), not a bug fix, and is carried forward to Phase 4 in STATE.md Blockers/Concerns, alongside 03-05's already-carried F5/F5b.
+
+**O-1 (demo-control checkbox rendering in the real binary), O-2 (empty identity-list has no empty-state message), O-3 (command truncation hides the meaningful path segment), O-4 (stage-2 remediation line was clipped) — all MEDIUM/LOW.** O-4 is now moot: fixing the row-budget overflow (below) means the hint line no longer gets clipped. O-1/O-2/O-3 are real but lower-priority; **not fixed this pass**, carried forward in STATE.md Blockers/Concerns.
+
+**Row-budget overflow (found by the orchestrator while re-verifying the packet, not by the design reviewer directly, but exposed by the same evidence): `renderStageOutcome`'s F1 addition (03-05's own design-review fix pass, this same session) rendered `TestResultView.Detail` unbounded.** With a long real value (e.g. a macOS temp-dir-rooted staging path), the line WORD-WRAPPED across 2-3 physical rows at the fixed 62-col detail pane, pushing the fixed 100×30 frame's body past its budget and silently clipping the D-03 hint's URL below it (visible in the FIRST captured packet: `test-stage2-by-alias`'s hint ended mid-sentence, no URL, and the "Next: Git identity" button was pushed entirely off-screen). **FIXED**: `Detail` and the hint line are now `ansi.Truncate`d to a single physical row each (the project's existing truncation convention, matching `PreviewBlock` and other lines in the same function). Re-verified directly: the previously-cut-off screen now shows the full hint (truncated with `…` but never mid-word-dangling) AND the "Next" button, both fully on-screen. The packet's `text-diffs.txt` was regenerated after this fix.
+
+### Confirmation checklist
+
+- [x] D-02's `ReachableNotUploaded` warning reads as intended on both test-stage screens (yellow, never confused with red hard-Failure)
+- [x] D-19's real-binary Continue-disabled reason reads as an honest capability statement, not a bug
+- [x] T-03-HOSTBLOCK's HostBlockPreview format divergence reads as "the real thing is more correct than the demo," not an accidental regression
+- [x] No undocumented (fifth) divergence beyond U-1/U-2/U-3/Provider was found — U-2 was independently verified and resolved as a false positive; U-1 and the Provider `identityName()` bug were CRITICAL/HIGH and are fixed; U-3, the Provider field's continued existence, and O-1/O-2/O-3 are carried forward (non-blocking)
+- [x] Every CRITICAL/HIGH finding is resolved (U-1 fixed; Provider `identityName()`/display-sync fixed; U-2 resolved as false positive)
+- [x] Every MEDIUM/LOW finding is recorded with a fixed/accepted disposition (U-3, O-1/O-2/O-3, Provider-field-removal: carried forward, not blocking)
+
+### Gates re-verified after the fixes above (orchestrator, personally run)
+
+`go test -race -count=1 ./...` (18 packages green) · `make lint` (0 issues) · `make test-e2e` (green) · `make gate-visual-regression` (8/8 screens, still green) — all after the U-1/Provider/row-budget fixes, confirming no regression.
 
 ## Task Commits
 
@@ -189,8 +216,8 @@ See `key-decisions` in frontmatter. In short: the "approved dummy golden" is the
 
 ## Issues Encountered
 
-- **Divergence flagged, not fixed:** `internal/tuikit/identities.go`'s `sshForm.view()` renders a "Provider" field row in the create wizard's step 0 that FIELDS.md's approved 4-field contract (Alias prefix, SSH Host, Real hostname, Port) does not include, and D-20 explicitly states "no new field." This row IS reachable via Tab (focus slot 0, wrapping around from the 4 approved fields). The mouse test (`TestCreateFlow_MouseFieldFocus`) deliberately covers only the four APPROVED fields per the plan's own explicit acceptance criteria wording ("there is no 'user' field"), sidestepping this pre-existing divergence rather than silently normalizing it. Not fixed this session (outside Task 1/2's scope — this is a 03-04-era SSH-form structural question, not a PTY-e2e or visual-gate concern; fixing it would mean either removing a currently-shipped, presumably load-bearing row or reconciling it with D-20's documented intent, which is a design decision, not a bug fix). Flagged here per CLAUDE.md's "surface any divergence... explicitly."
-- Task 3's review-execution half could not run — see "Cross-AI visual-regression review" above; this is the SAME class of gap 02-14/02-15/03-05 already hit (no subagent-spawning tools available to a plan executor), not a new discovery.
+- **Divergence flagged, partially fixed (see "Cross-AI visual-regression review" above):** `internal/tuikit/identities.go`'s `sshForm.view()` renders a "Provider" field row in the create wizard's step 0 that FIELDS.md's approved 4-field contract (Alias prefix, SSH Host, Real hostname, Port) does not include, and D-20 explicitly states "no new field." This row IS reachable via Tab (focus slot 0, wrapping around from the 4 approved fields). The mouse test (`TestCreateFlow_MouseFieldFocus`) deliberately covers only the four APPROVED fields per the plan's own explicit acceptance criteria wording ("there is no 'user' field"), sidestepping this pre-existing divergence rather than silently normalizing it. The orchestrator's DLV-04.2 review found and FIXED the two concrete bugs the field's continued existence was causing (`identityName()` reading a stale value; the field's own display going stale after a Host edit) — see the review section. The field's continued EXISTENCE (removing it entirely per D-20's stricter reading) remains a design decision, carried forward to Phase 4.
+- Task 3's review-execution half could not run — see "Cross-AI visual-regression review" above; this is the SAME class of gap 02-14/02-15/03-05 already hit (no subagent-spawning tools available to a plan executor), not a new discovery. The orchestrator has since closed the `agent-ui-ux-designer` half; Codex is pending in this same wave-close pass.
 
 ## User Setup Required
 

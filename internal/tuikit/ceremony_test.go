@@ -53,6 +53,33 @@ func TestCeremonyStateAShowsBackupPromise(t *testing.T) {
 	}
 }
 
+// TestCeremonyStateAWithNoBackupsNeverClaimsOne pins design-review finding
+// U-1 (03-06 visual-regression gate, DLV-04.2): a target with nothing to
+// back up (empty Backups — e.g. no pre-existing ~/.ssh/config) must NOT
+// render the "(written first — restore it to undo)" line, since there is
+// no backup line above it for that claim to refer to. It renders an
+// explicit "nothing to back up" note instead — the ceremony must never be
+// silent, or misleading, about its own backup state.
+func TestCeremonyStateAWithNoBackupsNeverClaimsOne(t *testing.T) {
+	c := newCeremony(ceremonyConfig{
+		Heading:       `Create identity "acme"`,
+		Targets:       []string{"~/.ssh/config"},
+		Backups:       nil,
+		Preview:       "+ Host acme.github.com",
+		ResultMessage: `Identity "acme" created.`,
+	})
+	view := stripANSI(c.view(80))
+	if strings.Contains(view, "written first — restore it to undo") {
+		t.Errorf("state A with no backups still claims one was written first:\n%s", view)
+	}
+	if strings.Contains(view, "Backup → ") {
+		t.Errorf("state A with no backups rendered a Backup → line:\n%s", view)
+	}
+	if !strings.Contains(view, "nothing to back up") {
+		t.Errorf("state A with no backups is silent about its own backup state:\n%s", view)
+	}
+}
+
 func TestCeremonyPlainConfirmThenReceipt(t *testing.T) {
 	c := plainCeremony()
 	c, outcome := c.handleKey(pressKey("enter"))
