@@ -113,7 +113,7 @@ func seedEncryptedKeyFixture(t *testing.T, keyPath, identityName, passphrase str
 	if err := os.WriteFile(keyPath, mat.PrivPEM, 0o600); err != nil {
 		t.Fatalf("writing private key fixture %s: %v", keyPath, err)
 	}
-	if err := os.WriteFile(keyPath+".pub", []byte(mat.PubLine+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(keyPath+".pub", []byte(mat.PubLine+"\n"), 0o644); err != nil { //nolint:gosec // .pub is public key material by definition; hermetic sandbox HOME (G306)
 		t.Fatalf("writing public key fixture %s.pub: %v", keyPath, err)
 	}
 	return mat.PubLine

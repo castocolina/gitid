@@ -29,7 +29,7 @@
 #   demo-web       (Re)launch the web design mockup dev server (Vite) on the
 #                   dedicated $(DEMO_WEB_PORT) and open it.
 
-.PHONY: setup-env build build-cross install uninstall test lint fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files demo-web
+.PHONY: setup-env build build-cross install uninstall test lint fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files gate-visual-regression smoke-network-test demo-web
 
 # Binary output directory.
 BIN_DIR := bin
@@ -271,6 +271,34 @@ screenshot-tui:
 ## never enters the shipped binary's dependency graph).
 screenshot-html:
 	go test -tags screenshot ./internal/screenshot/... -run TestCaptureHTML
+
+## gate-visual-regression: DLV-04.1/D-24.1 golden-text visual-regression
+## gate (plan 03-06 Task 2). Drives the shared internal/tuikit render stack
+## in-process (no PTY) through a fixed script for BOTH the real cmd/gitid
+## Backend and cmd/gitid-dummy's FixtureBackend, at the SAME 100x30
+## capture geometry screenshot-tui uses (internal/screenshot/createflow.go),
+## and diffs the two capture sets screen by screen — byte-exact except the
+## per-screen divergence allowlist
+## (.planning/design/create-flow/visual-divergence-allowlist.txt). FAILS
+## non-zero on any unallowlisted screen difference, naming the offending
+## screen and both captured texts. Invokes TestGateVisualRegression — the
+## concrete runnable entry point under the `screenshot` build tag (reusing
+## screenshot-tui's own tag, since this gate belongs to the same capture
+## domain even though it does not itself invoke freeze/PNG rendering).
+gate-visual-regression:
+	go test -tags screenshot -run TestGateVisualRegression -v ./cmd/gitid/...
+
+## smoke-network-test: D-23 skippable REAL-network two-stage connectivity
+## smoke check against github.com's real alt-SSH endpoint
+## (ssh.github.com:443). LOCAL/UAT convenience only — NEVER a `make
+## test`/`make test-e2e`/CI prerequisite; CI stays fully deterministic via
+## the FakeSSHDir PTY e2e suite (plan 03-06 Task 1) instead. Auto-skips
+## (not a failure) when the network/provider itself is unreachable, vs. a
+## genuine PASS/ReachableNotUploaded/Failure classification. Invokes
+## TestSmokeNetworkConnectivity under its own `smoke` build tag, isolated
+## from every other gate.
+smoke-network-test:
+	go test -tags smoke -run TestSmokeNetworkConnectivity -v ./cmd/gitid/...
 
 ## gate-no-backend-files: fail if any file changed on this branch since it
 ## diverged from main falls outside the Phase 2 design-only allowlist
