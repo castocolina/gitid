@@ -26,6 +26,8 @@ package screenshot
 // affects PNG pixel rendering, not text content).
 
 import (
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/castocolina/gitid/internal/tuikit"
@@ -164,10 +166,64 @@ func indexOf(s, substr string) int {
 	return -1
 }
 
+// offlineCaptureBackend wraps any tuikit.Backend and replaces TestStage1 and
+// TestStage2 with deterministic, immediately-resolved offline results.
+// This ensures the in-process capture script can advance the wizard through
+// all stages without blocking on a real SSH call (D-22) or waiting for a
+// tick timer (which would never fire inside step()).
+type offlineCaptureBackend struct {
+	tuikit.Backend
+}
+
+func (o offlineCaptureBackend) TestStage1(spec tuikit.CreateSpec) tea.Cmd {
+	return func() tea.Msg {
+		return tuikit.WizardStageMsg{
+			Stage: 1,
+			Result: tuikit.TestResultView{
+				Outcome: tuikit.TestOutcomeReachableNotUploaded,
+				Command: o.Backend.Stage1Command(spec),
+				Detail:  "git@" + spec.Hostname + ": Permission denied (publickey).",
+			},
+		}
+	}
+}
+
+func (o offlineCaptureBackend) TestStage2(spec tuikit.CreateSpec) tea.Cmd {
+	return func() tea.Msg {
+		return tuikit.WizardStageMsg{
+			Stage: 2,
+			Result: tuikit.TestResultView{
+				Outcome: tuikit.TestOutcomeReachableNotUploaded,
+				Command: o.Backend.Stage2Command(spec),
+				Detail:  "identityfile " + spec.KeyPath,
+			},
+		}
+	}
+}
+
+// captureSpec returns a representative CreateSpec for the offline capture —
+// the default form values (acme prefix, github.com provider, standard endpoint).
+// This is used to build the command strings for the injected stage results.
+func captureSpec(backend tuikit.Backend) tuikit.CreateSpec {
+	hostname, port := backend.ProviderDefaults("github.com")
+	return tuikit.CreateSpec{
+		Identity:  "acme",
+		Provider:  "github.com",
+		Alias:     "acme.github.com",
+		Hostname:  hostname,
+		Port:      port,
+		KeyPath:   "~/.ssh/id_ed25519_acme",
+		Algorithm: "ed25519",
+	}
+}
+
 // CaptureCreateFlowScreens drives backend's create-flow wizard through the
 // fixed script above and returns the rendered text at every
 // CreateFlowScreenIDs checkpoint, keyed by screen ID.
+// The backend is wrapped with offlineCaptureBackend to ensure TestStage1 and
+// TestStage2 resolve immediately without network calls or tick timers (D-22).
 func CaptureCreateFlowScreens(backend tuikit.Backend) map[string]string {
+	backend = offlineCaptureBackend{backend}
 	out := make(map[string]string, len(CreateFlowScreenIDs))
 
 	// ssh-form-filled: the wizard's default-filled step 0.
@@ -194,18 +250,48 @@ func CaptureCreateFlowScreens(backend tuikit.Backend) map[string]string {
 	m = clickField(m, "Port")
 	out["mouse-focused-field"] = anyView(m)
 
-	// test-stage1-direct / test-stage2-by-alias: advance to step 1 and run
-	// both stages in sequence, capturing the rendered outcome after each.
+	// test-stage1-direct: capture the stage-1 result view by injecting
+	// the WizardStageMsg directly (bypassing auto-chain) so the screen
+	// shows stage 1's own outcome before stage 2 fires. The model must
+	// be at step 1 (test connection) for the message to render correctly.
+	//
+	// NOTE: with the offline backend, auto-chain means a single keyEnter
+	// would fire both stages synchronously. We inject stage 1 directly
+	// to capture the intermediate state the design specifies.
 	m = freshWizard(backend)
-	m = keyEnter(m) // step 0 -> step 1
-	m = keyEnter(m) // run stage 1 (drains the WizardStageMsg chain via step())
+	m = keyEnter(m) // step 0 -> step 1 (test connection screen shown)
+	// Inject stage-1 result directly (bypassing auto-chain for this capture)
+	spec := captureSpec(backend)
+	stage1Result := tuikit.TestResultView{
+		Outcome: tuikit.TestOutcomeReachableNotUploaded,
+		Command: backend.Stage1Command(spec),
+		Detail:  "git@" + spec.Hostname + ": Permission denied (publickey).",
+	}
+	m = step(m, tuikit.WizardStageMsg{Stage: 1, Result: stage1Result})
 	out["test-stage1-direct"] = anyView(m)
-	m = keyEnter(m) // run stage 2
+
+	// test-stage2-by-alias: inject stage-2 result after stage-1.
+	stage2Result := tuikit.TestResultView{
+		Outcome: tuikit.TestOutcomeReachableNotUploaded,
+		Command: backend.Stage2Command(spec),
+		Detail:  "identityfile " + spec.KeyPath,
+	}
+	m = step(m, tuikit.WizardStageMsg{Stage: 2, Result: stage2Result})
 	out["test-stage2-by-alias"] = anyView(m)
 
-	// git-form-demo: advance to step 2 (only reachable once both stages
-	// have answered — the SAME model instance carries that state forward).
+	// git-form-demo: advance to step 3 (Git identity) from the test screen.
+	// After both stage results are injected, the test screen shows
+	// "Next: Git identity (Enter)". A single Enter advances the wizard.
 	m = keyEnter(m)
+	// If the model is still on the test screen (not yet on the git form),
+	// try one more Enter — the wizard may need two keystrokes to advance
+	// from the test-stage2-result to the git-form step in some backends.
+	{
+		view := anyView(m)
+		if strings.Contains(view, "Stage 2") || strings.Contains(view, "Stage 1") {
+			m = keyEnter(m)
+		}
+	}
 	out["git-form-demo"] = anyView(m)
 
 	// confirm-write: Skip Git (4 Tabs from user.name to the Skip button,

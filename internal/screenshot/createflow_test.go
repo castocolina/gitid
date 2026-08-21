@@ -1,0 +1,214 @@
+//go:build screenshot
+
+package screenshot_test
+
+// createflow_test.go — tests for CaptureCreateFlowScreens, region extraction,
+// and the offline/determinism requirements (plan 03-09 Task 1).
+//
+// These RED tests drive the implementation in:
+//   - internal/screenshot/createflow_regions.go  (ExtractRegion, RegionName constants)
+//   - cmd/gitid/gate_visual_regression_test.go   (strict schema validation, used-entry check)
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/castocolina/gitid/internal/dummytui"
+	"github.com/castocolina/gitid/internal/screenshot"
+)
+
+// TestCaptureCreateFlowScreens_HasAllIDs verifies every enumerated screen ID
+// is present in the output map (no silent omissions).
+func TestCaptureCreateFlowScreens_HasAllIDs(t *testing.T) {
+	backend := dummytui.NewFixtureBackend()
+	captures := screenshot.CaptureCreateFlowScreens(backend)
+	for _, id := range screenshot.CreateFlowScreenIDs {
+		if _, ok := captures[id]; !ok {
+			t.Errorf("CaptureCreateFlowScreens: screen %q missing from output", id)
+		}
+	}
+}
+
+// TestCaptureCreateFlowScreens_NonEmptyContent ensures no captured screen is
+// an empty string (a capture bug that silently passes a byte-exact diff).
+func TestCaptureCreateFlowScreens_NonEmptyContent(t *testing.T) {
+	backend := dummytui.NewFixtureBackend()
+	captures := screenshot.CaptureCreateFlowScreens(backend)
+	for _, id := range screenshot.CreateFlowScreenIDs {
+		if strings.TrimSpace(captures[id]) == "" {
+			t.Errorf("CaptureCreateFlowScreens: screen %q has empty content", id)
+		}
+	}
+}
+
+// TestCaptureCreateFlowScreens_Deterministic verifies that two consecutive
+// captures of the same backend produce byte-identical output per screen.
+// D-22/D-24 determinism contract: the gate must not rely on random ordering.
+func TestCaptureCreateFlowScreens_Deterministic(t *testing.T) {
+	backend := dummytui.NewFixtureBackend()
+	first := screenshot.CaptureCreateFlowScreens(backend)
+	second := screenshot.CaptureCreateFlowScreens(backend)
+	for _, id := range screenshot.CreateFlowScreenIDs {
+		if first[id] != second[id] {
+			t.Errorf("CaptureCreateFlowScreens: screen %q not deterministic: run1 len=%d run2 len=%d",
+				id, len(first[id]), len(second[id]))
+		}
+	}
+}
+
+// TestExtractRegion_Header verifies that the header region (first line,
+// containing the nav tabs) is present and contains "Identities".
+func TestExtractRegion_Header(t *testing.T) {
+	backend := dummytui.NewFixtureBackend()
+	captures := screenshot.CaptureCreateFlowScreens(backend)
+	screen := captures["ssh-form-filled"]
+	header := screenshot.ExtractRegion(screen, screenshot.RegionHeader)
+	if strings.TrimSpace(header) == "" {
+		t.Error("ExtractRegion(RegionHeader): expected non-empty header line, got empty")
+	}
+	if !strings.Contains(header, "Identities") {
+		t.Errorf("ExtractRegion(RegionHeader): expected nav tab text; got %q", header)
+	}
+}
+
+// TestExtractRegion_Breadcrumb verifies the breadcrumb region (line 2)
+// contains the create-wizard navigation path.
+func TestExtractRegion_Breadcrumb(t *testing.T) {
+	backend := dummytui.NewFixtureBackend()
+	captures := screenshot.CaptureCreateFlowScreens(backend)
+	screen := captures["ssh-form-filled"]
+	bc := screenshot.ExtractRegion(screen, screenshot.RegionBreadcrumb)
+	if !strings.Contains(bc, "New identity") {
+		t.Errorf("ExtractRegion(RegionBreadcrumb): expected 'New identity' path; got %q", bc)
+	}
+}
+
+// TestExtractRegion_Keybar verifies the keybar region (last non-empty lines)
+// contains keyboard affordances.
+func TestExtractRegion_Keybar(t *testing.T) {
+	backend := dummytui.NewFixtureBackend()
+	captures := screenshot.CaptureCreateFlowScreens(backend)
+	screen := captures["ssh-form-filled"]
+	kb := screenshot.ExtractRegion(screen, screenshot.RegionKeybar)
+	if !strings.Contains(kb, "Tab") && !strings.Contains(kb, "Enter") {
+		t.Errorf("ExtractRegion(RegionKeybar): expected keyboard hint; got %q", kb)
+	}
+}
+
+// TestExtractRegion_WizardStepper verifies the wizard stepper region contains
+// the "Step 1/4" indicator and SSH details label.
+func TestExtractRegion_WizardStepper(t *testing.T) {
+	backend := dummytui.NewFixtureBackend()
+	captures := screenshot.CaptureCreateFlowScreens(backend)
+	screen := captures["ssh-form-filled"]
+	stepper := screenshot.ExtractRegion(screen, screenshot.RegionWizardStepper)
+	if !strings.Contains(stepper, "Step 1/4") {
+		t.Errorf("ExtractRegion(RegionWizardStepper): expected 'Step 1/4'; got %q", stepper)
+	}
+}
+
+// TestExtractRegion_FormFields verifies the form-fields region contains all
+// four approved SSH form fields per SSHUI-01/FIELDS.md.
+func TestExtractRegion_FormFields(t *testing.T) {
+	backend := dummytui.NewFixtureBackend()
+	captures := screenshot.CaptureCreateFlowScreens(backend)
+	screen := captures["ssh-form-filled"]
+	fields := screenshot.ExtractRegion(screen, screenshot.RegionFormFields)
+	for _, label := range []string{"Alias prefix", "SSH Host", "Real hostname", "Port"} {
+		if !strings.Contains(fields, label) {
+			t.Errorf("ExtractRegion(RegionFormFields): expected field label %q; got:\n%s", label, fields)
+		}
+	}
+}
+
+// TestExtractRegion_HostPreview verifies the host-block preview region
+// contains the recipe-mandatory directives (SSHUI-03, recipes/ssh-config.recipe).
+func TestExtractRegion_HostPreview(t *testing.T) {
+	backend := dummytui.NewFixtureBackend()
+	captures := screenshot.CaptureCreateFlowScreens(backend)
+	screen := captures["ssh-form-filled"]
+	preview := screenshot.ExtractRegion(screen, screenshot.RegionHostPreview)
+	for _, directive := range []string{"Host", "Hostname", "Port", "User git", "IdentityFile", "IdentitiesOnly yes"} {
+		if !strings.Contains(preview, directive) {
+			t.Errorf("ExtractRegion(RegionHostPreview): expected %q directive; got:\n%s", directive, preview)
+		}
+	}
+}
+
+// TestNonDivergentRegionsBetweenTwoDummyCaptures verifies that structural
+// regions (header, breadcrumb, wizard stepper, keybar) are byte-identical
+// between two separate dummy captures — proving the extraction is stable
+// and not affected by capture order.
+func TestNonDivergentRegionsBetweenTwoDummyCaptures(t *testing.T) {
+	cap1 := screenshot.CaptureCreateFlowScreens(dummytui.NewFixtureBackend())
+	cap2 := screenshot.CaptureCreateFlowScreens(dummytui.NewFixtureBackend())
+
+	for _, id := range []string{"ssh-form-filled", "git-form-demo"} {
+		for _, region := range []screenshot.RegionName{
+			screenshot.RegionHeader,
+			screenshot.RegionBreadcrumb,
+			screenshot.RegionWizardStepper,
+			screenshot.RegionKeybar,
+		} {
+			r1 := screenshot.ExtractRegion(cap1[id], region)
+			r2 := screenshot.ExtractRegion(cap2[id], region)
+			if r1 != r2 {
+				t.Errorf("screen %q region %q not identical between captures:\nfirst:  %q\nsecond: %q",
+					id, region, r1, r2)
+			}
+		}
+	}
+}
+
+// TestNegativeControl_UnallowlistedRegionDifferenceFails verifies that a
+// difference in a non-allowlisted region (the breadcrumb) causes the
+// region-scoped comparison to detect a mismatch.
+//
+// This is the CR-10 negative-control proof: the strict gate MUST detect
+// unrelated drift, not exempt it silently. The check is structural — we
+// verify that ExtractRegion returns different text when the test deliberately
+// creates two different captures (the same backend, but with the region
+// text artificially noted as different).
+func TestNegativeControl_UnallowlistedRegionDifferenceFails(t *testing.T) {
+	backend := dummytui.NewFixtureBackend()
+	captures := screenshot.CaptureCreateFlowScreens(backend)
+	screen := captures["ssh-form-filled"]
+
+	// The breadcrumb should contain "New identity" — extract it
+	bc := screenshot.ExtractRegion(screen, screenshot.RegionBreadcrumb)
+	if !strings.Contains(bc, "New identity") {
+		t.Fatalf("TestNegativeControl: breadcrumb does not contain 'New identity'; got %q", bc)
+	}
+
+	// Verify that a modified version (simulating an unallowlisted drift)
+	// produces a different region extraction — proving the gate would catch it.
+	modifiedScreen := strings.ReplaceAll(screen, "New identity", "Changed")
+	modifiedBC := screenshot.ExtractRegion(modifiedScreen, screenshot.RegionBreadcrumb)
+	if bc == modifiedBC {
+		t.Error("TestNegativeControl: ExtractRegion returned identical text after modification — the gate cannot detect unallowlisted drift")
+	}
+	if strings.Contains(modifiedBC, "New identity") {
+		t.Error("TestNegativeControl: modified breadcrumb still contains original text — region extraction is not sensitive to changes")
+	}
+	t.Logf("TestNegativeControl: confirmed — breadcrumb diff detected: %q vs %q", bc, modifiedBC)
+}
+
+// TestOfflineGuard_CaptureDoesNotBlock verifies that CaptureCreateFlowScreens
+// completes without blocking when given the offline FixtureBackend.
+// D-22: capture must never wait for a real SSH connection. A blocked capture
+// (hung goroutine) indicates an unexpected external-binary invocation.
+func TestOfflineGuard_CaptureDoesNotBlock(t *testing.T) {
+	backend := dummytui.NewFixtureBackend()
+	done := make(chan struct{})
+	go func() {
+		screenshot.CaptureCreateFlowScreens(backend)
+		close(done)
+	}()
+	select {
+	case <-done:
+		// returned without blocking — structural offline proof
+	case <-time.After(10 * time.Second):
+		t.Fatal("CaptureCreateFlowScreens blocked (>10s): indicates an unexpected external-binary/network wait; capture must be offline (D-22)")
+	}
+}

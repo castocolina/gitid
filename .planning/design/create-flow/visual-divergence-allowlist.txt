@@ -1,65 +1,127 @@
-# Create-flow visual-divergence allowlist (DLV-04.1/D-24.1, plan 03-06 Task 2)
+# Create-flow visual-divergence allowlist (DLV-04.1/D-24.1, plan 03-09 Task 1/2)
 #
 # Consumed by `make gate-visual-regression`
 # (cmd/gitid/gate_visual_regression_test.go), which diffs the REAL binary's
-# create-flow screen captures against the DUMMY's, screen by screen
-# (internal/screenshot.CaptureCreateFlowScreens, internal/screenshot/createflow.go).
-# A screen listed here is EXEMPT from the byte-exact comparison; any OTHER
-# screen must render BYTE-IDENTICAL text between the two binaries or the
-# gate fails, naming the offending screen and both captured texts.
+# create-flow screen captures against the DUMMY's, REGION by REGION
+# (internal/screenshot.ExtractRegion via createflow_regions.go).
 #
-# Format: one entry per line, "<screen-id>: <reason>". Blank lines and lines
-# starting with # are ignored. <screen-id> must be one of
-# internal/screenshot.CreateFlowScreenIDs.
+# STRICT SCHEMA — each entry must be EXACTLY:
+#   screen-id : region : predicate : decision-ref : reason
 #
+# where:
+#   screen-id     one of screenshot.CreateFlowScreenIDs (8 values)
+#   region        one of screenshot.RegionName constants (10 values)
+#   predicate     "contains:<quoted-text>" | "absent:<quoted-text>" | "differs"
+#                 "differs" = the entire region text may differ without constraint
+#                 "contains:<text>" = region may differ only if it contains <text>
+#                 "absent:<text>" = region may differ only if it lacks <text>
+#   decision-ref  a D-XX or T-XX identifier from 03-CONTEXT.md or 03-03/04-SUMMARY
+#   reason        non-empty human-readable explanation (no colon terminator)
+#
+# VALIDATION RULES (enforced by TestGateVisualRegression):
+#   - No whole-screen entries (region must be a named sub-region, never "*")
+#   - No unknown screen IDs or region names
+#   - No duplicate (screen-id, region) pairs
+#   - No blank reasons
+#   - No missing decision-ref (D-XX or T-XX required)
+#   - Every entry must be USED (a non-differing region in an allowlisted entry fails)
+#   - Every screen must have at least one NON-allowlisted region that is byte-exact
+#
+# Blank lines and lines starting with # are ignored.
 # ---------------------------------------------------------------------------
-# The three Phase-3-scoped design divergences (03-UI-SPEC.md "Scoped
-# Divergences"), each already documented against its EXACT approved slot:
-# ---------------------------------------------------------------------------
-
-# D-02 — ReachableNotUploaded is a THIRD test-outcome state (yellow `!`
-# warning, never red) the approved Phase-2 demo never had; the dummy's own
-# fixture connectivity output and the real fake-ssh PATH-shim output are
-# never byte-identical strings by construction (different identity name,
-# different canned banner text) — the outcome GLYPH/WORD is what D-02
-# actually gates, not the literal ssh output line.
-test-stage1-direct: real vs. dummy connectivity fixture text differs by construction; D-02's yellow-not-red outcome contract is the thing under test, verified separately by the PTY e2e (plan 03-06 Task 1) and internal/tuikit's own render tests (03-05-SUMMARY)
-test-stage2-by-alias: same as test-stage1-direct (D-02)
-
-# D-16 — "Preview — demo data, not wired to your system yet" banner on
-# every NOT-YET-WIRED view (git-screen, identity-manager, global-ssh,
-# global-git, health, fixer). Does NOT apply to any screen in THIS gate's
-# captured set: the create-flow wizard (Identities tab) is the ONE tab
-# Phase 3 wires, so Backend.DemoBanner(TabIdentities) returns false for
-# BOTH the real binary and the dummy (internal/tuikit/app.go's
-# DemoBanner check) — no create-flow screen ever carries this banner.
-# Recorded here for grep-completeness and as the blanket contract a LATER
-# phase's own visual-regression gate (git-screen/identity-manager/etc.)
-# must honor when it wires its own tab and removes its own banner.
-# any-non-wired-tab: * (D-16 — out of this gate's create-flow-only scope; see 03-UI-SPEC.md "D-16")
-
-# D-19 — the REAL binary's Git-identity step [ Continue ] carries its own
-# scoped-divergence disabled reason ("— Git configuration arrives with the
-# next build"), never the dummy's validity-gated one ("— needs user.name +
-# a valid email").
-git-form-demo: D-19 — real-binary Continue-disabled reason differs from the dummy's validity-gated one (both frozen strings, both asserted byte-exactly by gate-copy-freeze)
 
 # ---------------------------------------------------------------------------
-# A fourth, PRE-EXISTING divergence, carried forward (not new to this plan):
-# realBackend.HostBlockPreview renders through the REAL
-# sshconfig.RenderHostBlock (2-space indent + a trailing
-# "# gitid: provider=<p>" marker comment), matching byte-for-byte what a
-# confirmed write actually persists (SSHUI-03's "written exactly like this
-# on confirm" contract) — the dummy's FixtureBackend.HostBlockPreview
-# (internal/dummytui/fixturebackend.go) is a markerless 4-space literal
-# that predates this contract and was never updated to match. First
-# flagged by the 03-03 executor (03-03-SUMMARY "CARRIED INTO 03-06"),
-# re-flagged by 03-04 (03-04-SUMMARY "Next Phase Readiness") — this entry
-# is where that carried obligation is finally discharged. Every screen
-# below renders the live Host-block preview (or a write-plan preview built
-# from it) as part of its body.
-ssh-form-filled: HostBlockPreview format (2-space + provider marker, real) vs. 4-space markerless (dummy) — carried from 03-03-SUMMARY
-reuse-key-vs-generate: HostBlockPreview format (same as ssh-form-filled) + a brand-new D-10 picker render surface with no frozen dummy baseline yet (03-04-SUMMARY "Next Phase Readiness")
-reuse-manual-path: same as reuse-key-vs-generate
-mouse-focused-field: HostBlockPreview format (same as ssh-form-filled — same SSH-form layout, clicked instead of typed into)
-confirm-write: HostBlockPreview format (same as ssh-form-filled — the review ceremony's preview block embeds the same Host-block text)
+# SIDEBAR + HEADER-STATUS divergence: ALL 8 screens.
+# The real backend starts with 0 identities (fresh temp HOME); the dummy's
+# FixtureBackend carries 8 pre-seeded fixture identities. The sidebar content
+# (identity list) and header status line (count · health) are inherently
+# different by construction — this is not a design divergence but a
+# fixture/reality split.
+# Non-divergent regions (header nav-tabs, breadcrumb, wizard-stepper,
+# form-fields right pane, keybar) remain byte-identical and serve as the
+# mandatory non-exempt coverage for every screen.
+# ---------------------------------------------------------------------------
+ssh-form-filled:sidebar:differs:T-03-SIDEBAR:real has 0 ids (fresh HOME); dummy has 8 fixture identities — structurally different by construction
+ssh-form-filled:header-status:differs:T-03-SIDEBAR:header status shows "0 ids · ✓ ok" (real) vs "8 ids · ! 1 ✗ 3" (dummy) — inherent fresh-HOME vs fixture split
+reuse-key-vs-generate:sidebar:differs:T-03-SIDEBAR:real has 0 ids (fresh HOME); dummy has 8 fixture identities — structurally different by construction
+reuse-key-vs-generate:header-status:differs:T-03-SIDEBAR:header status shows "0 ids · ✓ ok" (real) vs "8 ids · ! 1 ✗ 3" (dummy) — inherent fresh-HOME vs fixture split
+reuse-manual-path:sidebar:differs:T-03-SIDEBAR:real has 0 ids (fresh HOME); dummy has 8 fixture identities — structurally different by construction
+reuse-manual-path:header-status:differs:T-03-SIDEBAR:header status shows "0 ids · ✓ ok" (real) vs "8 ids · ! 1 ✗ 3" (dummy) — inherent fresh-HOME vs fixture split
+mouse-focused-field:sidebar:differs:T-03-SIDEBAR:real has 0 ids (fresh HOME); dummy has 8 fixture identities — structurally different by construction
+mouse-focused-field:header-status:differs:T-03-SIDEBAR:header status shows "0 ids · ✓ ok" (real) vs "8 ids · ! 1 ✗ 3" (dummy) — inherent fresh-HOME vs fixture split
+test-stage1-direct:sidebar:differs:T-03-SIDEBAR:real has 0 ids (fresh HOME); dummy has 8 fixture identities — structurally different by construction
+test-stage1-direct:header-status:differs:T-03-SIDEBAR:header status shows "0 ids · ✓ ok" (real) vs "8 ids · ! 1 ✗ 3" (dummy) — inherent fresh-HOME vs fixture split
+test-stage2-by-alias:sidebar:differs:T-03-SIDEBAR:real has 0 ids (fresh HOME); dummy has 8 fixture identities — structurally different by construction
+test-stage2-by-alias:header-status:differs:T-03-SIDEBAR:header status shows "0 ids · ✓ ok" (real) vs "8 ids · ! 1 ✗ 3" (dummy) — inherent fresh-HOME vs fixture split
+git-form-demo:sidebar:differs:T-03-SIDEBAR:real has 0 ids (fresh HOME); dummy has 8 fixture identities — structurally different by construction
+git-form-demo:header-status:differs:T-03-SIDEBAR:header status shows "0 ids · ✓ ok" (real) vs "8 ids · ! 1 ✗ 3" (dummy) — inherent fresh-HOME vs fixture split
+confirm-write:sidebar:differs:T-03-SIDEBAR:real has 0 ids (fresh HOME); dummy has 8 fixture identities — structurally different by construction
+confirm-write:header-status:differs:T-03-SIDEBAR:header status shows "0 ids · ✓ ok" (real) vs "8 ids · ! 1 ✗ 3" (dummy) — inherent fresh-HOME vs fixture split
+
+# ---------------------------------------------------------------------------
+# T-03-HOSTBLOCK — HostBlockPreview format divergence.
+# realBackend.HostBlockPreview renders through sshconfig.RenderHostBlock
+# (2-space indent + "# gitid: provider=<p>" marker), matching byte-for-byte
+# what a confirmed write actually persists (SSHUI-03 WYSIWYG contract).
+# The dummy's FixtureBackend.HostBlockPreview is a markerless 4-space literal
+# (predates the contract; not updated to avoid changing frozen Phase-2 surface).
+# First flagged 03-03-SUMMARY "CARRIED INTO 03-06"; discharged here.
+# On these screens the host-preview BOX region differs; ALL OTHER regions
+# (header, breadcrumb, stepper, form fields, keybar) are byte-exact.
+# ---------------------------------------------------------------------------
+ssh-form-filled:host-preview:contains:"Host acme.github.com":T-03-HOSTBLOCK:real uses 2-space indent + "# gitid: provider=github.com" marker; dummy uses 4-space markerless (03-03-SUMMARY carried obligation)
+reuse-key-vs-generate:host-preview:contains:"Host acme.github.com":T-03-HOSTBLOCK:real uses 2-space indent + "# gitid: provider=github.com" marker; dummy uses 4-space markerless (03-03-SUMMARY carried obligation)
+reuse-manual-path:host-preview:contains:"Host acme.github.com":T-03-HOSTBLOCK:real uses 2-space indent + "# gitid: provider=github.com" marker; dummy uses 4-space markerless (03-03-SUMMARY carried obligation)
+mouse-focused-field:host-preview:contains:"Host acme.github.com":T-03-HOSTBLOCK:real uses 2-space indent + "# gitid: provider=github.com" marker; dummy uses 4-space markerless (03-03-SUMMARY carried obligation)
+# confirm-write: Host-block preview appears as part of the write plan preview
+# but is wrapped in a different box (Exact change preview) not detected as RegionHostPreview.
+# This entry is intentionally NOT in the allowlist — the write plan preview text is
+# identical between real and dummy for the Host-block content shown there.
+# The box is not a "Live Host-block preview" box, so extractHostPreview returns empty.
+# Region is byte-identical (both empty) — no allowlist entry needed.
+
+# ---------------------------------------------------------------------------
+# T-03-KEYSECTION — Key section (generate/reuse toggle + catalog/picker).
+# The key-section region covers the Key toggle row and the algorithm catalog
+# rows (or reuse picker entries below the toggle).
+#
+# For ssh-form-filled, mouse-focused-field, and confirm-write (generate mode):
+#   Algorithm catalog ORDER differs: real = live-probed order (ed25519, rsa-4096,
+#   ecdsa-p256, ed25519-sk, ecdsa-sk); dummy = fixture order (ed25519, ed25519-sk,
+#   rsa-4096, ecdsa-p256, ecdsa-sk). Ordering fixed by 03-08 for the real backend
+#   but the frozen dummy fixture was not updated (Phase-2 locked design surface).
+#
+# For reuse-key-vs-generate and reuse-manual-path (reuse mode):
+#   Picker entries differ: real scans live temp-HOME (1 seeded fixture key);
+#   dummy returns pre-defined fictional fixture list.
+#
+# Non-divergent on all screens: form-field labels (Alias prefix, SSH Host,
+# Real hostname, Port), breadcrumb, wizard stepper, keybar.
+# ---------------------------------------------------------------------------
+ssh-form-filled:key-section:differs:T-03-KEYSECTION:algorithm catalog order differs — real uses live-probed catalog order; dummy fixture has 03-08-era order; both have identical entries, only order differs
+reuse-key-vs-generate:key-section:differs:T-03-KEYSECTION:reuse-mode picker entries differ — real scans 1 seeded temp-HOME key; dummy returns pre-defined fictional fixture list
+reuse-manual-path:key-section:differs:T-03-KEYSECTION:same as reuse-key-vs-generate — manual-path wraps from picker head back to generate mode; key-section shows generate-mode catalog which also differs in order
+mouse-focused-field:key-section:differs:T-03-KEYSECTION:same as ssh-form-filled — catalog order differs in generate mode; Port field clicked via mouse
+
+# ---------------------------------------------------------------------------
+# D-02 — ReachableNotUploaded warning state (TEST-01/02, plan 03-06).
+# The connectivity output region differs: real binary uses fake-ssh PATH-shim
+# fixture output; dummy uses pre-set FixtureBackend.RunStage result strings.
+# The glyph/color contract (yellow "!" never red) is enforced by the PTY e2e
+# suite (plan 03-06 Task 1) and internal/tuikit render tests (03-05-SUMMARY).
+# Non-divergent: header, breadcrumb, stepper, form-fields labels, keybar.
+# ---------------------------------------------------------------------------
+test-stage1-direct:connectivity-output:differs:D-02:connectivity output uses real fake-ssh fixture vs. dummy pre-set strings — text differs by construction; yellow-not-red D-02 contract proven by PTY e2e (03-06 Task 1)
+test-stage2-by-alias:connectivity-output:differs:D-02:same as test-stage1-direct — stage-2 alias connectivity output differs by construction; D-02 yellow-not-red contract proven by PTY e2e (03-06 Task 1)
+
+# ---------------------------------------------------------------------------
+# D-19 — Git-form [ Continue ] disabled reason (03-CONTEXT.md, 03-UI-SPEC.md).
+# Real binary: "— Git configuration arrives with the next build" (honest,
+# capability-limited). Dummy: "— needs user.name + a valid email" (validity-gated).
+# Both are frozen strings asserted byte-exactly by gate-copy-freeze.
+# Non-divergent: header, breadcrumb, stepper, git-form fields, keybar.
+#
+# NOTE: the continue-disabled-reason appears on git-form-demo AND confirm-write
+# (which shows the git form skipped state). Both need entries.
+# ---------------------------------------------------------------------------
+git-form-demo:continue-disabled-reason:contains:"configuration arrives":D-19:real-binary Continue-disabled reason differs from dummy validity-gated one; both frozen strings asserted by gate-copy-freeze
