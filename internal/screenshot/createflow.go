@@ -26,12 +26,27 @@ package screenshot
 // affects PNG pixel rendering, not text content).
 
 import (
+	"regexp"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/castocolina/gitid/internal/tuikit"
 )
+
+// timestampPattern matches ISO-8601-like timestamps embedded in backup file names,
+// covering both colon-separated ("T20:39:15Z") and dash-separated ("T20-39-15Z")
+// formats — tuikit.NewBackupPath replaces colons with dashes for filesystem
+// compatibility. The full patterns matched are:
+//   - YYYY-MM-DDTHH:MM:SSZ (standard ISO 8601)
+//   - YYYY-MM-DDTHH-MM-SSZ (colon-replaced, tuikit.NewBackupPath format)
+var timestampPattern = regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}[:\-]\d{2}[:\-]\d{2}Z`)
+
+// normalizeTimestamps replaces all ISO-8601 timestamps in s with a fixed placeholder
+// so that captures taken at different wall-clock seconds are byte-identical (CR-01).
+func normalizeTimestamps(s string) string {
+	return timestampPattern.ReplaceAllString(s, "<timestamp>")
+}
 
 // CaptureWidth/CaptureHeight are the D-04/D-24 fixed capture geometry —
 // the SAME 100x30 values screenshot-tui (internal/screenshot/tui.go,
@@ -72,6 +87,19 @@ func step(model tea.Model, msg tea.Msg) tea.Model {
 		}
 	}
 	return m
+}
+
+// stepAndPendingCmd drives model with msg and returns the updated model plus
+// the pending tea.Cmd (if any) WITHOUT executing the cmd. This allows callers
+// to capture the model state after one message is processed but BEFORE the
+// auto-chained command fires — enabling capture of intermediate stage states
+// (CR-02: stage-1 state before stage-2 auto-chain fires).
+//
+// Usage: the caller receives (m, pendingCmd); captures anyView(m); then calls
+// step(m, pendingCmd()) to advance to the next stage.
+func stepAndPendingCmd(model tea.Model, msg tea.Msg) (tea.Model, tea.Cmd) {
+	m, cmd := model.Update(msg)
+	return m, cmd
 }
 
 // keyRune sends a single printable-character key press (e.g. "n" to open
@@ -222,65 +250,86 @@ func captureSpec(backend tuikit.Backend) tuikit.CreateSpec {
 // CreateFlowScreenIDs checkpoint, keyed by screen ID.
 // The backend is wrapped with offlineCaptureBackend to ensure TestStage1 and
 // TestStage2 resolve immediately without network calls or tick timers (D-22).
+//
+// All captures are normalized: timestamps in backup file names are replaced
+// with "<timestamp>" so the output is byte-identical across wall-clock seconds
+// (CR-01 determinism contract).
 func CaptureCreateFlowScreens(backend tuikit.Backend) map[string]string {
 	backend = offlineCaptureBackend{backend}
 	out := make(map[string]string, len(CreateFlowScreenIDs))
+	capture := func(m tea.Model) string {
+		return normalizeTimestamps(anyView(m))
+	}
 
 	// ssh-form-filled: the wizard's default-filled step 0.
 	m := freshWizard(backend)
-	out["ssh-form-filled"] = anyView(m)
+	out["ssh-form-filled"] = capture(m)
 
 	// reuse-key-vs-generate: Tab from Alias prefix (focus 1) to the
 	// Generate/Reuse toggle (focus 5) — 4 Tabs — then flip to reuse.
 	m = freshWizard(backend)
 	m = tabN(m, 4)
 	m = keyRight(m)
-	out["reuse-key-vs-generate"] = anyView(m)
+	out["reuse-key-vs-generate"] = capture(m)
 
 	// reuse-manual-path: from reuseIdx=0, a single Left wraps DIRECTLY to
 	// the trailing manual-path row (D-10's own wraparound arithmetic),
 	// regardless of how many candidates the backend's scan returns.
 	m = keyLeft(m)
-	out["reuse-manual-path"] = anyView(m)
+	out["reuse-manual-path"] = capture(m)
 
 	// mouse-focused-field: a REAL synthesized mouse click on the Port row,
 	// from a fresh generate-mode wizard (keeps this screen's SSH-field
 	// layout directly comparable to ssh-form-filled).
 	m = freshWizard(backend)
 	m = clickField(m, "Port")
-	out["mouse-focused-field"] = anyView(m)
+	out["mouse-focused-field"] = capture(m)
 
-	// test-stage1-direct: capture the stage-1 result view by injecting
-	// the WizardStageMsg directly (bypassing auto-chain) so the screen
-	// shows stage 1's own outcome before stage 2 fires. The model must
-	// be at step 1 (test connection) for the message to render correctly.
+	// test-stage1-direct: drive a valid state transition through the real
+	// wizard state machine (CR-02: inject through testRunning1, not directly).
 	//
-	// NOTE: with the offline backend, auto-chain means a single keyEnter
-	// would fire both stages synchronously. We inject stage 1 directly
-	// to capture the intermediate state the design specifies.
+	// Protocol:
+	//   1. keyEnter from step 1 (test-idle) sets testPhase = testRunning1 and
+	//      fires TestStage1 as a tea.Cmd.
+	//   2. We use stepAndPendingCmd to process the Enter and get the pending
+	//      TestStage1 cmd WITHOUT executing it yet.
+	//   3. Execute the stage-1 cmd: it delivers WizardStageMsg{Stage:1}.
+	//      handleMsg sees testPhase=testRunning1, records stage-1 result, sets
+	//      testPhase=testRunning2, and returns TestStage2 cmd.
+	//   4. stepAndPendingCmd stops here — stage-2 cmd is pending but NOT fired.
+	//      The model is in testRunning2 state; anyView shows the stage-1 result.
+	//   5. Capture "test-stage1-direct" at this intermediate state.
+	//   6. Execute the pending TestStage2 cmd to advance to testStage2 state.
+	//   7. Capture "test-stage2-by-alias" with the complete two-stage result.
 	m = freshWizard(backend)
-	m = keyEnter(m) // step 0 -> step 1 (test connection screen shown)
-	// Inject stage-1 result directly (bypassing auto-chain for this capture)
-	spec := captureSpec(backend)
-	stage1Result := tuikit.TestResultView{
-		Outcome: tuikit.TestOutcomeReachableNotUploaded,
-		Command: backend.Stage1Command(spec),
-		Detail:  "git@" + spec.Hostname + ": Permission denied (publickey).",
-	}
-	m = step(m, tuikit.WizardStageMsg{Stage: 1, Result: stage1Result})
-	out["test-stage1-direct"] = anyView(m)
+	m = keyEnter(m) // step 0 -> step 1 (test connection screen shown, testPhase=testIdle)
 
-	// test-stage2-by-alias: inject stage-2 result after stage-1.
-	stage2Result := tuikit.TestResultView{
-		Outcome: tuikit.TestOutcomeReachableNotUploaded,
-		Command: backend.Stage2Command(spec),
-		Detail:  "identityfile " + spec.KeyPath,
+	// Enter from testIdle → testRunning1 + TestStage1 cmd returned.
+	var stage1Cmd tea.Cmd
+	m, stage1Cmd = stepAndPendingCmd(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if stage1Cmd != nil {
+		// Deliver the stage-1 result (fires TestStage2 cmd as side effect).
+		var stage2Cmd tea.Cmd
+		stage1Msg := stage1Cmd()
+		if stage1Msg != nil {
+			m, stage2Cmd = stepAndPendingCmd(m, stage1Msg)
+		}
+		out["test-stage1-direct"] = capture(m)
+		// Deliver the stage-2 result.
+		if stage2Cmd != nil {
+			stage2Msg := stage2Cmd()
+			if stage2Msg != nil {
+				m = step(m, stage2Msg)
+			}
+		}
+	} else {
+		// Fallback (should not happen with offline backend): capture current view.
+		out["test-stage1-direct"] = capture(m)
 	}
-	m = step(m, tuikit.WizardStageMsg{Stage: 2, Result: stage2Result})
-	out["test-stage2-by-alias"] = anyView(m)
+	out["test-stage2-by-alias"] = capture(m)
 
 	// git-form-demo: advance to step 3 (Git identity) from the test screen.
-	// After both stage results are injected, the test screen shows
+	// After both stage results are complete, the test screen shows
 	// "Next: Git identity (Enter)". A single Enter advances the wizard.
 	m = keyEnter(m)
 	// If the model is still on the test screen (not yet on the git form),
@@ -292,13 +341,13 @@ func CaptureCreateFlowScreens(backend tuikit.Backend) map[string]string {
 			m = keyEnter(m)
 		}
 	}
-	out["git-form-demo"] = anyView(m)
+	out["git-form-demo"] = capture(m)
 
 	// confirm-write: Skip Git (4 Tabs from user.name to the Skip button,
 	// then Enter) reaches the review ceremony (state A, unconfirmed).
 	m = tabN(m, 4)
 	m = keyEnter(m)
-	out["confirm-write"] = anyView(m)
+	out["confirm-write"] = capture(m)
 
 	return out
 }

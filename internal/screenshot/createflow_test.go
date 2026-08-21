@@ -212,3 +212,76 @@ func TestOfflineGuard_CaptureDoesNotBlock(t *testing.T) {
 		t.Fatal("CaptureCreateFlowScreens blocked (>10s): indicates an unexpected external-binary/network wait; capture must be offline (D-22)")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// CR-01 — Determinism: two runs must produce byte-identical text/PNG hashes
+// ---------------------------------------------------------------------------
+
+// TestCaptureCreateFlowScreens_DeterministicTwoRuns verifies that two
+// consecutive CaptureCreateFlowScreens calls with fixed inputs (deterministic
+// backend, normalized paths, fixed spec) produce byte-identical per-screen
+// text content (CR-01).
+//
+// Current failure: the confirm-write capture embeds a wall-clock backup path
+// through fixture state, making runs nondeterministic across second boundaries.
+func TestCaptureCreateFlowScreens_DeterministicTwoRuns(t *testing.T) {
+	backend := dummytui.NewFixtureBackend()
+	first := screenshot.CaptureCreateFlowScreens(backend)
+	second := screenshot.CaptureCreateFlowScreens(backend)
+	for _, id := range screenshot.CreateFlowScreenIDs {
+		if first[id] != second[id] {
+			t.Errorf("CaptureCreateFlowScreens: screen %q not byte-identical across two runs (CR-01 nondeterminism):\n  run1 len=%d run2 len=%d",
+				id, len(first[id]), len(second[id]))
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CR-02 — Stage captures must show distinct content from valid running states
+// ---------------------------------------------------------------------------
+
+// TestCaptureCreateFlowScreens_StagesDiffer proves that the stage-1 and
+// stage-2 captures are byte-DIFFERENT (CR-02). If both show the idle screen,
+// the stage injection was silently dropped (wrong testPhase state).
+func TestCaptureCreateFlowScreens_StagesDiffer(t *testing.T) {
+	backend := dummytui.NewFixtureBackend()
+	captures := screenshot.CaptureCreateFlowScreens(backend)
+	s1 := captures["test-stage1-direct"]
+	s2 := captures["test-stage2-by-alias"]
+	if s1 == "" || s2 == "" {
+		t.Fatal("test-stage1-direct or test-stage2-by-alias screen is empty")
+	}
+	if s1 == s2 {
+		t.Error("test-stage1-direct and test-stage2-by-alias captures are IDENTICAL — both show the same (likely idle) state; stage injection is not reaching valid running phases (CR-02)")
+	}
+}
+
+// TestCaptureCreateFlowScreens_Stage1ContainsStageOutput proves stage-1 capture
+// contains stage-specific content (connectivity command or result), not just the
+// idle "Run stage 1 (Enter)" prompt (CR-02 content assertion).
+func TestCaptureCreateFlowScreens_Stage1ContainsStageOutput(t *testing.T) {
+	backend := dummytui.NewFixtureBackend()
+	captures := screenshot.CaptureCreateFlowScreens(backend)
+	s1 := captures["test-stage1-direct"]
+	stripped := screenshot.StripANSIExported(s1)
+	// The stage-1 screen must show a stage outcome, not just the idle prompt.
+	// "Run stage 1 (Enter)" means the model is still in testIdle state.
+	if strings.Contains(stripped, "Run stage 1") && !strings.Contains(stripped, "ssh ") &&
+		!strings.Contains(stripped, "Permission denied") && !strings.Contains(stripped, "authenticated") &&
+		!strings.Contains(stripped, "Reachable") {
+		t.Errorf("test-stage1-direct still shows idle 'Run stage 1' with no stage outcome — stage injection failed (CR-02):\n%s", stripped)
+	}
+}
+
+// TestCaptureCreateFlowScreens_Stage2ContainsResolutionProof proves stage-2
+// capture contains the alias resolution proof (identityfile line), which
+// distinguishes it from stage-1 (CR-02 content assertion).
+func TestCaptureCreateFlowScreens_Stage2ContainsResolutionProof(t *testing.T) {
+	backend := dummytui.NewFixtureBackend()
+	captures := screenshot.CaptureCreateFlowScreens(backend)
+	s2 := captures["test-stage2-by-alias"]
+	stripped := screenshot.StripANSIExported(s2)
+	if !strings.Contains(stripped, "identityfile") && !strings.Contains(stripped, "IdentityFile") {
+		t.Errorf("test-stage2-by-alias does not contain resolution proof (identityfile) — stage-2 injection may have failed (CR-02):\n%s", stripped)
+	}
+}

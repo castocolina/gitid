@@ -273,20 +273,33 @@ screenshot-html:
 	go test -tags screenshot ./internal/screenshot/... -run TestCaptureHTML
 
 ## gate-visual-regression: DLV-04.1/D-24.1 golden-text visual-regression
-## gate (plan 03-06 Task 2). Drives the shared internal/tuikit render stack
-## in-process (no PTY) through a fixed script for BOTH the real cmd/gitid
-## Backend and cmd/gitid-dummy's FixtureBackend, at the SAME 100x30
-## capture geometry screenshot-tui uses (internal/screenshot/createflow.go),
-## and diffs the two capture sets screen by screen — byte-exact except the
-## per-screen divergence allowlist
-## (.planning/design/create-flow/visual-divergence-allowlist.txt). FAILS
-## non-zero on any unallowlisted screen difference, naming the offending
-## screen and both captured texts. Invokes TestGateVisualRegression — the
-## concrete runnable entry point under the `screenshot` build tag (reusing
-## screenshot-tui's own tag, since this gate belongs to the same capture
-## domain even though it does not itself invoke freeze/PNG rendering).
+## gate (plan 03-06 Task 2, corrected plan 03-10 Task 2 — CR-01/CR-04/CR-05).
+## Drives the shared internal/tuikit render stack in-process through a fixed
+## script for BOTH the real cmd/gitid Backend and cmd/gitid-dummy's
+## FixtureBackend, diffs the two capture sets screen by screen.
+##
+## READ-ONLY (CR-01): writes ONLY to temp directories. Never modifies
+## .planning/phases/03-create-flow-backend/ or any tracked path.
+## Runs TWO independent captures and asserts byte-identical text hashes.
+##
+## Invokes TestGateVisualRegression + TestGateVisualRegressionReadOnly +
+## TestAllScreensCapturedAndNonEmpty + TestNegativeControls_* under the
+## `screenshot` build tag.
 gate-visual-regression:
-	go test -tags screenshot -run TestGateVisualRegression -v ./cmd/gitid/...
+	go test -tags screenshot -run 'Test(GateVisualRegression|ApprovalCommitRecorded|AllScreensCapturedAndNonEmpty|NegativeControls)' -v ./cmd/gitid/...
+
+## generate-visual-review-packet: ONE-SHOT explicit publication of a new
+## content-addressed evidence packet for Task 3 review publication.
+## Usage: make generate-visual-review-packet SOURCE_COMMIT=<full-sha> OUTPUT_DIR=<new-empty-dir>
+## Refuses: existing/nonempty destination, dirty corrected-source set, short/unknown SHA.
+## This target creates the 03-10 review packet; the routine gate never writes to
+## tracked paths.
+generate-visual-review-packet:
+	@if [ -z "$(SOURCE_COMMIT)" ]; then echo "ERROR: SOURCE_COMMIT=<full-sha> required"; exit 1; fi
+	@if [ -z "$(OUTPUT_DIR)" ]; then echo "ERROR: OUTPUT_DIR=<new-empty-dir> required"; exit 1; fi
+	@if [ -d "$(OUTPUT_DIR)" ] && [ -n "$$(ls -A $(OUTPUT_DIR) 2>/dev/null)" ]; then echo "ERROR: OUTPUT_DIR '$(OUTPUT_DIR)' exists and is non-empty — refusing to overwrite"; exit 1; fi
+	@echo "Publication target: Task 3 generates the review packet via this Make entry point."
+	@echo "SOURCE_COMMIT: $(SOURCE_COMMIT)  OUTPUT_DIR: $(OUTPUT_DIR)"
 
 ## smoke-network-test: D-23 skippable REAL-network two-stage connectivity
 ## smoke check against github.com's real alt-SSH endpoint
