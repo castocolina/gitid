@@ -3,7 +3,94 @@ package sshconfig
 import (
 	"strings"
 	"testing"
+	"unicode"
 )
+
+// ---------------------------------------------------------------------------
+// CR-08: RenderCheckedHostBlock — authoritative validated render boundary
+// ---------------------------------------------------------------------------
+
+// TestRenderCheckedHostBlockRejectsUnicodeSpace proves that
+// RenderCheckedHostBlock rejects IdentityFile values containing Unicode
+// whitespace characters above the ASCII range (CR-08). The unchecked
+// RenderHostBlock has no such gate; the checked variant must.
+func TestRenderCheckedHostBlockRejectsUnicodeSpace(t *testing.T) {
+	// U+00A0 NO-BREAK SPACE is a valid Unicode whitespace character
+	// (unicode.IsSpace returns true) but passes the C1-control check used
+	// by ValidateHostBlock — this is the gap CR-08 requires closing.
+	unicodeSpacePath := "/home/user/path\u00A0key"
+	_, err := RenderCheckedHostBlock("alias", "hostname", 443, unicodeSpacePath, "")
+	if err == nil {
+		t.Fatalf("RenderCheckedHostBlock must reject IdentityFile with Unicode space U+00A0; path=%q", unicodeSpacePath)
+	}
+	if !strings.Contains(err.Error(), "unicode") && !strings.Contains(err.Error(), "whitespace") && !strings.Contains(err.Error(), "space") {
+		t.Errorf("error should mention unicode/whitespace; got: %v", err)
+	}
+}
+
+// TestRenderCheckedHostBlockRejectsAllUnicodeIsSpaceChars verifies that
+// RenderCheckedHostBlock rejects every character for which unicode.IsSpace
+// returns true in an IdentityFile value (CR-08 full Unicode whitespace gate).
+func TestRenderCheckedHostBlockRejectsAllUnicodeIsSpaceChars(t *testing.T) {
+	// Characters unicode.IsSpace returns true for that are not ASCII
+	unicodeSpaces := []rune{
+		'\u00A0', // NO-BREAK SPACE
+		'\u1680', // OGHAM SPACE MARK
+		'\u2000', // EN QUAD
+		'\u2009', // THIN SPACE
+		'\u200A', // HAIR SPACE
+		'\u202F', // NARROW NO-BREAK SPACE
+		'\u205F', // MEDIUM MATHEMATICAL SPACE
+		'\u3000', // IDEOGRAPHIC SPACE
+	}
+	for _, r := range unicodeSpaces {
+		path := "/home/user/path" + string(r) + "key"
+		if !unicode.IsSpace(r) {
+			t.Skipf("rune U+%04X is not unicode.IsSpace — test fixture needs updating", r)
+		}
+		_, err := RenderCheckedHostBlock("alias", "hostname", 443, path, "")
+		if err == nil {
+			t.Errorf("RenderCheckedHostBlock accepted IdentityFile with unicode.IsSpace rune U+%04X; path=%q", r, path)
+		}
+	}
+}
+
+// TestRenderCheckedHostBlockRejectsUnicodeControlChars verifies that
+// RenderCheckedHostBlock rejects Unicode control characters (CR-08).
+func TestRenderCheckedHostBlockRejectsUnicodeControlChars(t *testing.T) {
+	// U+0085 NEXT LINE — a valid Unicode control character not caught by the C1 range check
+	// (the C1 range is 0x80-0x9F; 0x85 is in that range and IS caught — use U+200B instead)
+	zeroWidthSpace := "/home/user/path\u200Bkey" // U+200B ZERO WIDTH SPACE — unicode.IsSpace is false but unicode.IsControl is false too; use an actual control
+	_ = zeroWidthSpace
+	// Use a known Unicode control: U+0085 NEXT LINE (NEL), which is unicode.IsControl
+	nelPath := "/home/user/path\u0085key"
+	_, err := RenderCheckedHostBlock("alias", "hostname", 443, nelPath, "")
+	if err == nil {
+		t.Errorf("RenderCheckedHostBlock must reject IdentityFile with U+0085 NEL (Unicode control); path=%q", nelPath)
+	}
+}
+
+// TestRenderCheckedHostBlockPassesSafeIdentityFile verifies that a valid path
+// passes the checked renderer and returns the expected block (CR-08 positive).
+func TestRenderCheckedHostBlockPassesSafeIdentityFile(t *testing.T) {
+	block, err := RenderCheckedHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work", "github.com")
+	if err != nil {
+		t.Fatalf("RenderCheckedHostBlock with valid inputs returned error: %v", err)
+	}
+	for _, want := range []string{
+		"Host work.github.com",
+		"Hostname ssh.github.com",
+		"Port 443",
+		"User git",
+		"IdentityFile ~/.ssh/id_ed25519_work",
+		"IdentitiesOnly yes",
+		"# gitid: provider=github.com",
+	} {
+		if !strings.Contains(block, want) {
+			t.Errorf("RenderCheckedHostBlock missing %q; block:\n%s", want, block)
+		}
+	}
+}
 
 // indexOf returns the byte index of substr in s, or -1 when absent. It is a
 // thin helper so ordering assertions read clearly.

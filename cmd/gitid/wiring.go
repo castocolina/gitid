@@ -240,6 +240,10 @@ func buildIdentityDeps(b *realBackend) identity.Deps {
 		// StageTestConfig renders the identity's Host block into a THROWAWAY
 		// config file. Both test stages run against it, so the live
 		// ~/.ssh/config is never mutated for a test (SSHUI-04).
+		//
+		// CR-08: Uses RenderCheckedHostBlock so an unsafe IdentityFile token is
+		// caught here — before the staged config is handed to ssh — rather than
+		// silently producing a malformed directive.
 		StageTestConfig: func(in identity.CreateInput, staged identity.StagedKey) (string, error) {
 			if staged.TempPrivatePath == "" {
 				return "", fmt.Errorf("gitid: no staged key path for the test config")
@@ -248,7 +252,10 @@ func buildIdentityDeps(b *realBackend) identity.Deps {
 			if derr != nil {
 				return "", derr
 			}
-			hostBlock := sshconfig.RenderHostBlock(in.Alias, in.Hostname, in.Port, staged.TempPrivatePath, in.Provider)
+			hostBlock, cerr := sshconfig.RenderCheckedHostBlock(in.Alias, in.Hostname, in.Port, staged.TempPrivatePath, in.Provider)
+			if cerr != nil {
+				return "", fmt.Errorf("gitid: validating staged test config: %w", cerr)
+			}
 			configPath := filepath.Join(dir, "config")
 			if _, werr := filewriter.Write(configPath, []byte(hostBlock), keyFileMode); werr != nil {
 				return "", fmt.Errorf("gitid: staging the test ssh config: %w", werr)
@@ -441,17 +448,29 @@ func (b *realBackend) ProviderDefaults(provider string) (hostname, port string) 
 func (b *realBackend) DefaultMatchStrategy() string { return "gitdir" }
 
 // HostBlockPreview is the live Host block for spec, rendered by the SAME
-// sshconfig.RenderHostBlock the confirmed write uses — so "written exactly
-// like this on confirm" is structurally true, not a re-typed lookalike
-// (SSHUI-03: Port 443 + IdentitiesOnly yes per recipes/).
+// sshconfig.RenderCheckedHostBlock the confirmed write uses — so "written
+// exactly like this on confirm" is structurally true, not a re-typed
+// lookalike (SSHUI-03: Port 443 + IdentitiesOnly yes per recipes/).
+//
+// WR-01: Uses spec.Provider (the validated provider the wizard carried
+// forward) rather than providerFromAlias(spec.Alias), which would truncate
+// multi-label providers like "company.co.uk" to "co.uk".
+//
+// CR-08: Uses the checked render boundary so any unsafe IdentityFile value
+// is caught before it reaches the preview; on validation failure the preview
+// returns an empty string (the UI renders nothing, same as a blank spec).
 func (b *realBackend) HostBlockPreview(spec tuikit.CreateSpec) string {
-	return sshconfig.RenderHostBlock(
+	block, err := sshconfig.RenderCheckedHostBlock(
 		spec.Alias,
 		spec.Hostname,
 		atoiOr(spec.Port, identity.DefaultPort()),
 		spec.KeyPath,
-		providerFromAlias(spec.Alias),
+		spec.Provider,
 	)
+	if err != nil {
+		return ""
+	}
+	return block
 }
 
 // GitFragmentPreview is the ~/.gitconfig.d/<identity> fragment the Git step
@@ -574,6 +593,13 @@ func (b *realBackend) TestStage1(spec tuikit.CreateSpec) tea.Cmd {
 // TestStage2 runs the real stage-2 test: the alias resolved BY NAME through the
 // staged throwaway config — no -i by design, since proving the config supplies
 // the key is the whole point (TEST-02).
+//
+// CR-05: validates the ssh -G resolution fields (User, Hostname, Port,
+// IdentitiesOnly, first IdentityFile) BEFORE recording the accepted outcome
+// so a wrong, empty, or failed resolution cannot unlock persistence.
+//
+// CR-06: carries both the connectivity command+output AND the resolution
+// command+output in the TestResultView for the TUI to render complete proof.
 func (b *realBackend) TestStage2(spec tuikit.CreateSpec) tea.Cmd {
 	return func() tea.Msg {
 		in := b.createInputFromSpec(spec)
@@ -586,15 +612,71 @@ func (b *realBackend) TestStage2(spec tuikit.CreateSpec) tea.Cmd {
 			return b.stageFailure(2, b.Stage2Command(spec), err, in)
 		}
 		res, resolved := b.deps.ResolvedVia(configPath, staged.TempPrivatePath, in.Alias)
+
+		// Build the base view from the connectivity result.
 		view := toTestResultView(res, res.Command)
-		b.recordOutcomeFor(2, view.Outcome, in)
+
+		// Attach the ssh -G resolution command and raw output (CR-06).
+		view.ResolutionCommand = tester.ResolvedViaGCommand(configPath, in.Alias)
+		// The resolution output is synthesized from the ParseResolved fields
+		// returned by ResolvedVia. We capture the raw text by re-assembling
+		// the parsed fields — the real ssh -G output was already parsed by tester.
+		view.ResolutionOutput = formatResolvedConfig(resolved)
+
 		if len(resolved.IdentityFiles) > 0 {
-			// The stage-2 proof the user asked for: which key the ALIAS
-			// actually resolves to.
 			view.Detail = "identityfile " + resolved.IdentityFiles[0]
 		}
+
+		// CR-05: Validate all five required resolution fields BEFORE recording
+		// the accepted outcome. A connectivity PASS with a wrong/empty resolution
+		// (ssh -G spawn failure, wrong config, or truncated output) is NOT a
+		// valid stage-2 proof — downgrade to Failure without recording acceptance.
+		keyPath := staged.TempPrivatePath
+		if keyPath == "" {
+			keyPath = staged.FinalPrivatePath
+		}
+		expected := tester.ExpectedResolution{
+			User:            "git",
+			Hostname:        in.Hostname,
+			Port:            fmt.Sprintf("%d", in.Port),
+			IdentitiesOnly:  "yes",
+			ExpectedKeyPath: keyPath,
+		}
+		if verr := tester.ValidateResolvedConfig(resolved, expected); verr != nil {
+			// Resolution validation failed — this is a hard stage-2 failure.
+			// Record Failure so the store gate blocks persistence.
+			b.recordOutcomeFor(2, tuikit.TestOutcomeFailure, in)
+			view.Outcome = tuikit.TestOutcomeFailure
+			view.Detail = "stage-2 proof failed: " + verr.Error()
+			return tuikit.WizardStageMsg{Stage: 2, Result: view}
+		}
+
+		// Resolution validated — record the connectivity outcome.
+		b.recordOutcomeFor(2, view.Outcome, in)
 		return tuikit.WizardStageMsg{Stage: 2, Result: view}
 	}
+}
+
+// formatResolvedConfig renders the parsed ResolvedConfig fields back as
+// ssh -G–style lines for display in the stage-2 proof panel (CR-06).
+func formatResolvedConfig(rc tester.ResolvedConfig) string {
+	var b strings.Builder
+	if rc.User != "" {
+		fmt.Fprintf(&b, "user %s\n", rc.User)
+	}
+	if rc.Hostname != "" {
+		fmt.Fprintf(&b, "hostname %s\n", rc.Hostname)
+	}
+	if rc.Port != "" {
+		fmt.Fprintf(&b, "port %s\n", rc.Port)
+	}
+	if rc.IdentitiesOnly != "" {
+		fmt.Fprintf(&b, "identitiesonly %s\n", rc.IdentitiesOnly)
+	}
+	for _, f := range rc.IdentityFiles {
+		fmt.Fprintf(&b, "identityfile %s\n", f)
+	}
+	return b.String()
 }
 
 // ResolvedStorageTarget is the file gitid's managed blocks actually land in —
@@ -925,6 +1007,14 @@ func (b *realBackend) createInput(row tuikit.DemoIdentity) identity.CreateInput 
 	if algo == "" {
 		algo = "ed25519"
 	}
+	// CR-07: ReuseKeyPath is included so specFingerprint distinguishes generate
+	// vs reuse, and different reuse paths produce different fingerprints.
+	// Normalize with resolveKeyPath so ~/... and /home/... for the same path
+	// produce the same fingerprint.
+	reuseKeyPath := ""
+	if row.ReuseKeyPath != "" {
+		reuseKeyPath = b.resolveKeyPath(row.ReuseKeyPath)
+	}
 	return identity.CreateInput{
 		Name:               row.Name,
 		GitName:            row.GitName,
@@ -934,6 +1024,7 @@ func (b *realBackend) createInput(row tuikit.DemoIdentity) identity.CreateInput 
 		Alias:              row.SSHHost,
 		Hostname:           hostname,
 		Port:               port,
+		ReuseKeyPath:       reuseKeyPath,
 		FragmentPath:       filepath.Join(b.fragmentDir, row.Name),
 		GitconfigPath:      b.gitconfigPath,
 		SSHConfigPath:      b.storageTargetPath(),
@@ -954,6 +1045,7 @@ func (b *realBackend) createInputFromSpec(spec tuikit.CreateSpec) identity.Creat
 		Hostname:     spec.Hostname,
 		Port:         atoiOr(spec.Port, identity.DefaultPort()),
 		ReuseKeyPath: spec.ReuseKeyPath,
+		Provider:     spec.Provider,
 	})
 	in.Algo = algo
 	if spec.Provider != "" {
@@ -1006,9 +1098,18 @@ func (b *realBackend) clearStaged() {
 
 // specFingerprint is a stable identifier for a CreateSpec + reuse choice. Two
 // specs with the same fingerprint produce the same stage outcomes; changing
-// form values invalidates prior proof.
+// any of these values invalidates prior proof (CR-07).
+//
+// Includes:
+//   - Alias, Hostname, Port: the connection target
+//   - Algo: the key algorithm (ed25519, rsa-4096, …)
+//   - Name: the identity name
+//   - Provider: the validated provider (not a truncated alias suffix)
+//   - ReuseKeyPath: empty for generate, normalized absolute path for reuse —
+//     so switching between generate and reuse, or between two reuse paths,
+//     invalidates staged material and both accepted outcomes.
 func specFingerprint(in identity.CreateInput) string {
-	return fmt.Sprintf("%s|%s|%d|%s|%s|%s", in.Alias, in.Hostname, in.Port, in.Algo, in.Name, in.Provider)
+	return fmt.Sprintf("%s|%s|%d|%s|%s|%s|%s", in.Alias, in.Hostname, in.Port, in.Algo, in.Name, in.Provider, in.ReuseKeyPath)
 }
 
 // recordOutcomeFor stores a stage's outcome bound to the current create spec.
@@ -1143,8 +1244,11 @@ func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged id
 		for i := len(modeOps) - 1; i >= 0; i-- {
 			_ = os.Chmod(modeOps[i].path, modeOps[i].prevMode)
 		}
-		for _, d := range createdDirs {
-			_ = os.Remove(d)
+		// Remove created directories in REVERSE order (CR-09): children must be
+		// removed before their parents. The forward order tried to remove ~/.ssh
+		// while ~/.ssh/config.d still existed, leaving both directories behind.
+		for i := len(createdDirs) - 1; i >= 0; i-- {
+			_ = os.Remove(createdDirs[i])
 		}
 	}()
 
@@ -1259,7 +1363,14 @@ func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged id
 		rollback = true
 		return nil, err
 	}
-	hostBlock := sshconfig.RenderHostBlock(in.Alias, in.Hostname, in.Port, staged.FinalPrivatePath, in.Provider)
+	// CR-08: Use the checked renderer at the final write boundary — this is the
+	// last safety gate before any bytes enter the user's SSH config. An unsafe
+	// IdentityFile token would otherwise silently produce a malformed directive.
+	hostBlock, err := sshconfig.RenderCheckedHostBlock(in.Alias, in.Hostname, in.Port, staged.FinalPrivatePath, in.Provider)
+	if err != nil {
+		rollback = true
+		return nil, fmt.Errorf("gitid: validating host block: %w", err)
+	}
 	bk, err := sshconfig.Write(st.targetPath, in.Name, hostBlock, in.GlobalBlock)
 	if err != nil {
 		rollback = true

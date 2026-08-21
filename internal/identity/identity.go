@@ -68,6 +68,12 @@ type CreateInput struct {
 	Passphrase string
 	Matches    []gitconfig.Match
 
+	// ReuseKeyPath is the resolved absolute path of an existing key the create
+	// flow will reuse instead of generating a new one. Empty means generate.
+	// Included in specFingerprint (CR-07) so a mid-flow switch between generate
+	// and reuse invalidates staged material and both accepted outcomes.
+	ReuseKeyPath string
+
 	// Gitid-managed target paths (supplied in-process, trusted).
 	FragmentPath       string
 	GitconfigPath      string

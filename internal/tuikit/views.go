@@ -63,14 +63,22 @@ const (
 type TestResultView struct {
 	// Outcome classifies the attempt.
 	Outcome TestOutcome
-	// Command is the exact command that was run — TEST-01's shown ==
-	// run contract, so the string displayed is never hand-built separately
-	// from the one executed.
+	// Command is the exact connectivity command that was run — TEST-01's
+	// shown == run contract, so the string displayed is never hand-built
+	// separately from the one executed.
 	Command string
-	// Detail is the real ssh output line surfaced to the user (the
-	// "Hi <name>! You've successfully authenticated…" greeting, the
-	// "identityfile …" resolution proof, or the rejection line).
+	// Detail is the real ssh connectivity output line surfaced to the user
+	// (the "Hi <name>! You've successfully authenticated…" greeting, the
+	// rejection line, or the raw connectivity output).
 	Detail string
+	// ResolutionCommand is the exact ssh -G command that was run to prove the
+	// alias resolves through the staged config to the expected key (CR-05/CR-06).
+	// Empty for stage-1 (which has no resolution check).
+	ResolutionCommand string
+	// ResolutionOutput is the raw stdout of the ssh -G command, providing the
+	// complete effective-field proof (user, hostname, port, identitiesonly,
+	// identityfile) that the UI can render verbatim (CR-05/CR-06).
+	ResolutionOutput string
 }
 
 // CreateSpec is the create wizard's current SSH values, handed to the

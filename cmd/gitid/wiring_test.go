@@ -204,6 +204,10 @@ func TestHostBlockPreviewIsTheWrittenBlock(t *testing.T) {
 	b := newBackendForHome(t.TempDir())
 	spec := tuikit.CreateSpec{
 		Identity: "personal",
+		// WR-01: Provider must be explicitly set so HostBlockPreview (which now
+		// uses spec.Provider directly rather than providerFromAlias) renders the
+		// correct provider comment — matching what the confirmed write produces.
+		Provider: "github.com",
 		Alias:    "personal.github.com",
 		Hostname: "ssh.github.com",
 		Port:     "443",

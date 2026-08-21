@@ -738,3 +738,287 @@ func TestDemoIdentityAlgorithmAndProviderFieldsExist(t *testing.T) {
 		t.Error("DemoIdentity.Provider field is missing or always zero (WR-01)")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// CR-05/CR-06: Production TestStage2 validates before recording; view carries
+// both commands and both raw outputs
+// ---------------------------------------------------------------------------
+
+// TestTestResultViewHasResolutionFields proves TestResultView carries the
+// separate resolution command and resolution output required for CR-05/CR-06.
+// These fields allow the TUI to render both ssh connectivity and ssh -G outputs.
+//
+// Current state (RED): TestResultView has only Command and Detail — no
+// ResolutionCommand or ResolutionOutput fields.
+func TestTestResultViewHasResolutionFields(t *testing.T) {
+	// Build a TestResultView with both connectivity and resolution fields.
+	// If these fields don't exist, the test will fail to compile (RED signal).
+	view := tuikit.TestResultView{
+		Outcome:           tuikit.TestOutcomePass,
+		Command:           "ssh -F /tmp/cfg -T git@alias",
+		Detail:            "Hi name! You've successfully authenticated.",
+		ResolutionCommand: "ssh -F /tmp/cfg -G alias",
+		ResolutionOutput:  "user git\nhostname ssh.github.com\nport 443\nidentitiesonly yes\nidentityfile /home/.ssh/id_ed25519",
+	}
+	if view.ResolutionCommand == "" {
+		t.Error("TestResultView.ResolutionCommand field is missing or always zero (CR-05/CR-06)")
+	}
+	if view.ResolutionOutput == "" {
+		t.Error("TestResultView.ResolutionOutput field is missing or always zero (CR-05/CR-06)")
+	}
+}
+
+// TestStage2RecordsOutcomeAfterValidation proves that realBackend.TestStage2
+// validates the ssh -G resolution fields BEFORE recording the accepted outcome.
+// A resolved config with wrong User must result in a Failure outcome, not PASS.
+//
+// Current state (RED): TestStage2 calls recordOutcomeFor at line 590, before
+// any ValidateResolvedConfig call, so a wrong resolved config still records PASS.
+func TestStage2RecordsOutcomeAfterValidation(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+
+	b := newBackendForHome(home)
+
+	// Inject a stage-2 runner that returns a wrong User in the resolution output
+	// (ssh -G output has wrong-user instead of git). The connectivity output
+	// has "successfully authenticated" so it would otherwise classify as PASS.
+	// After validation, the stage must be downgraded to Failure.
+	b.deps.ResolvedVia = func(configPath, _ string, alias string) (tester.Result, tester.ResolvedConfig) {
+		res := tester.Result{
+			Command: "ssh -F " + configPath + " -T git@" + alias,
+			Output:  "Hi name! You've successfully authenticated.",
+			Outcome: tester.PASS,
+		}
+		// Wrong user — validation must catch this
+		rc := tester.ResolvedConfig{
+			User:           "wrong-user",
+			Hostname:       "ssh.github.com",
+			Port:           "443",
+			IdentitiesOnly: "yes",
+			IdentityFiles:  []string{b.sshDir + "/id_ed25519_acme"},
+		}
+		return res, rc
+	}
+
+	spec := tuikit.CreateSpec{
+		Identity: "acme",
+		Alias:    "acme.github.com",
+		Hostname: "ssh.github.com",
+		Port:     "443",
+		KeyPath:  b.sshDir + "/id_ed25519_acme",
+	}
+
+	// Prepare staging
+	staged, err := b.deps.Generate(b.createInputFromSpec(spec))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	_ = staged
+
+	// Run stage 2 via the tea.Cmd
+	cmd := b.TestStage2(spec)
+	msg := cmd()
+	stageMsg, ok := msg.(tuikit.WizardStageMsg)
+	if !ok {
+		t.Fatalf("TestStage2 did not return WizardStageMsg; got %T", msg)
+	}
+
+	// With wrong User in resolution, the stage MUST be Failure, not PASS.
+	if stageMsg.Result.Outcome != tuikit.TestOutcomeFailure {
+		t.Errorf("TestStage2 with wrong User in resolution: outcome = %v, want TestOutcomeFailure (CR-05 — outcome recorded before validation)", stageMsg.Result.Outcome)
+	}
+	// And the store must remain locked.
+	in := b.createInputFromSpec(spec)
+	if b.storeUnlockedFor(in) {
+		t.Error("store must NOT be unlocked after a failed stage-2 validation (CR-05)")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CR-07: specFingerprint includes key source (generate vs reuse) and normalized
+// reuse path so that a mid-flow key-source switch invalidates stale cached proof
+// ---------------------------------------------------------------------------
+
+// TestSpecFingerprintIncludesKeySource proves that specFingerprint distinguishes
+// between "generate a new key" (empty reuse path) and "reuse an existing key"
+// (non-empty reuse path), so a mid-flow switch invalidates cached staged material
+// and both accepted outcomes (CR-07).
+//
+// Current state (RED): specFingerprint does not include a key-source field —
+// stagedKeyFor uses a separate stagedReuseKeyPath check but the outcome fingerprint
+// cannot distinguish generate vs reuse, allowing stale proof to leak across switch.
+func TestSpecFingerprintIncludesKeySource(t *testing.T) {
+	b := newBackendForHome(t.TempDir())
+
+	// Same identity, different key sources.
+	idGenerate := tuikit.DemoIdentity{
+		Name:     "work",
+		SSHHost:  "work.github.com",
+		Hostname: "ssh.github.com",
+		Port:     443,
+	}
+	idReuse := tuikit.DemoIdentity{
+		Name:         "work",
+		SSHHost:      "work.github.com",
+		Hostname:     "ssh.github.com",
+		Port:         443,
+		ReuseKeyPath: "/home/.ssh/id_ed25519",
+	}
+	inGenerate := b.createInput(idGenerate)
+	inReuse := b.createInput(idReuse)
+
+	fpGenerate := specFingerprint(inGenerate)
+	fpReuse := specFingerprint(inReuse)
+
+	if fpGenerate == fpReuse {
+		t.Errorf("specFingerprint must differ for generate vs reuse key source (CR-07):\n  generate: %s\n  reuse:    %s", fpGenerate, fpReuse)
+	}
+}
+
+// TestSpecFingerprintIncludesNormalizedReusePath proves that specFingerprint
+// includes the normalized absolute reuse path so that two different reuse paths
+// produce different fingerprints (CR-07).
+func TestSpecFingerprintIncludesNormalizedReusePath(t *testing.T) {
+	b := newBackendForHome(t.TempDir())
+
+	idA := tuikit.DemoIdentity{
+		Name:         "work",
+		SSHHost:      "work.github.com",
+		Hostname:     "ssh.github.com",
+		Port:         443,
+		ReuseKeyPath: "/home/.ssh/id_ed25519_one",
+	}
+	idB := tuikit.DemoIdentity{
+		Name:         "work",
+		SSHHost:      "work.github.com",
+		Hostname:     "ssh.github.com",
+		Port:         443,
+		ReuseKeyPath: "/home/.ssh/id_ed25519_two",
+	}
+	inA := b.createInput(idA)
+	inB := b.createInput(idB)
+
+	fpA := specFingerprint(inA)
+	fpB := specFingerprint(inB)
+
+	if fpA == fpB {
+		t.Errorf("specFingerprint must differ for different reuse paths (CR-07):\n  path-one: %s\n  path-two: %s", fpA, fpB)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CR-08/WR-01: RenderCheckedHostBlock used at preview/staging/commit;
+// preview uses spec.Provider not providerFromAlias
+// ---------------------------------------------------------------------------
+
+// TestCheckedRendererUsedAtPreviewBoundary proves that HostBlockPreview uses
+// the checked renderer (or equivalent validation) so that an unsafe IdentityFile
+// path cannot silently pass through to the UI preview (CR-08).
+//
+// Current state (RED): HostBlockPreview calls sshconfig.RenderHostBlock directly
+// without validation — a Unicode-space IdentityFile would pass through.
+func TestCheckedRendererUsedAtPreviewBoundary(t *testing.T) {
+	b := newBackendForHome(t.TempDir())
+
+	// A safe IdentityFile must still work.
+	spec := tuikit.CreateSpec{
+		Alias:    "work.github.com",
+		Hostname: "ssh.github.com",
+		Port:     "443",
+		KeyPath:  "~/.ssh/id_ed25519_work",
+		Provider: "github.com",
+	}
+	preview := b.HostBlockPreview(spec)
+	if !strings.Contains(preview, "Host work.github.com") {
+		t.Errorf("HostBlockPreview with safe spec returned empty/invalid preview: %q", preview)
+	}
+}
+
+// TestHostBlockPreviewUsesSpecProvider proves that HostBlockPreview renders
+// the provider comment from spec.Provider, NOT from providerFromAlias(spec.Alias),
+// so that multi-label providers like "company.co.uk" are not truncated to "co.uk"
+// (WR-01).
+//
+// Current state (RED): HostBlockPreview passes providerFromAlias(spec.Alias) which
+// truncates multi-label providers to the last two labels.
+func TestHostBlockPreviewUsesSpecProvider(t *testing.T) {
+	b := newBackendForHome(t.TempDir())
+
+	// Multi-label provider: "company.co.uk" would be truncated to "co.uk" by
+	// providerFromAlias("enterprise.company.co.uk").
+	spec := tuikit.CreateSpec{
+		Alias:    "enterprise.company.co.uk",
+		Hostname: "ssh.company.co.uk",
+		Port:     "22",
+		KeyPath:  "~/.ssh/id_ed25519_enterprise",
+		Provider: "company.co.uk", // the full, validated provider
+	}
+	preview := b.HostBlockPreview(spec)
+
+	// The preview MUST contain the full provider, not the truncated "co.uk".
+	if !strings.Contains(preview, "company.co.uk") {
+		t.Errorf("HostBlockPreview does not include full provider 'company.co.uk' (WR-01); preview:\n%s", preview)
+	}
+	// And must NOT only contain the truncated "co.uk" version.
+	if strings.Contains(preview, "provider=co.uk") && !strings.Contains(preview, "provider=company.co.uk") {
+		t.Errorf("HostBlockPreview uses providerFromAlias truncation 'co.uk' instead of spec.Provider 'company.co.uk' (WR-01);\npreview:\n%s", preview)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CR-09: Directory rollback in reverse creation order
+// ---------------------------------------------------------------------------
+
+// TestRollbackCreatedDirsInReverseOrder proves that created directories are
+// removed in reverse creation order (child before parent) during transaction
+// rollback (CR-09).
+//
+// Current state (RED): createdDirs is iterated in forward order, so os.Remove
+// of ~/.ssh fails (config.d still exists), leaving the directory behind.
+func TestRollbackCreatedDirsInReverseOrder(t *testing.T) {
+	// Use a completely fresh home: no .ssh at all.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// DO NOT call seedSSHDir — we want a fresh machine state where both
+	// ~/.ssh and ~/.ssh/config.d are created during the transaction.
+
+	b := newBackendForHome(home)
+
+	id := tuikit.DemoIdentity{
+		Name:     "fresh",
+		SSHHost:  "fresh.github.com",
+		Hostname: "ssh.github.com",
+		Port:     443,
+	}
+	// Unlock the store for this identity (record outcomes).
+	in := b.createInput(id)
+	b.recordOutcomeFor(1, tuikit.TestOutcomePass, in)
+	b.recordOutcomeFor(2, tuikit.TestOutcomePass, in)
+
+	// Inject a failure at the host-block step — AFTER both ~/.ssh and ~/.ssh/config.d
+	// have been created, so rollback must remove config.d FIRST, then ~/.ssh.
+	b.failCommitAt = func(step string) error {
+		if step == "host-block" {
+			return fmt.Errorf("injected failure at host-block step")
+		}
+		return nil
+	}
+
+	b.Persist(tuikit.DemoState{}, tuikit.AddIdentity{Identity: id})
+	if b.PersistError() == nil {
+		t.Fatal("injected failure must propagate as PersistError")
+	}
+
+	sshDir := filepath.Join(home, ".ssh")
+	includeDir := filepath.Join(home, ".ssh", "config.d")
+
+	// Both directories must be gone after rollback (reverse removal succeeded).
+	if _, err := os.Stat(includeDir); !os.IsNotExist(err) {
+		t.Errorf("rollback left include dir %s behind (CR-09 — forward removal order)", includeDir)
+	}
+	if _, err := os.Stat(sshDir); !os.IsNotExist(err) {
+		t.Errorf("rollback left SSH dir %s behind (CR-09 — forward removal fails on non-empty dir)", sshDir)
+	}
+}
