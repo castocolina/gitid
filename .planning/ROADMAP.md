@@ -153,10 +153,12 @@ Plans:
   4. On pass + confirmation, the identity persists to `~/.ssh/config` **or** the gitid-owned Include'd file, with backup. (TEST-03)
   5. **UI-wave gate**: `/mui` + `agent-ui-ux-designer` are engaged in plan/build/review; each create-flow screen has a PTY e2e test driving the **real** built binary; the live TUI passes the visual-regression diff against the approved screenshots. (DLV-04, DLV-06)
 
-**Plans**: 10/10 plans executed in 8 waves
+**Plans**: 11/11 plans executed in 8 waves
 **UI hint**: yes
 
 Plans:
+
+- [x] 03-11-PLAN.md
 
 - [x] 03-10-PLAN.md
 
@@ -306,7 +308,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Foundations, Spikes & CI | 7/7 | Complete | 2026-07-03 |
 | 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 14/15 | In Progress|  |
-| 3. Create Flow Backend | 10/10 | In Progress|  |
+| 3. Create Flow Backend | 11/11 | In Progress|  |
 | 4. Git Configuration Screen | 0/TBD | Not started | - |
 | 5. Identity Manager | 0/TBD | Not started | - |
 | 6. Global SSH Options | 0/TBD | Not started | - |

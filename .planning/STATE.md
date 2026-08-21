@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: TUI-First Redesign
 current_phase: 03
-current_phase_name: "BLOCKED. Phase 03 gap closure 03-10 left 10 critical findings open after the single authorized retry."
+current_phase_name: BLOCKED. Phase 03 gap closure 03-10 left 10 critical findings open after the single authorized retry.
 status: BLOCKED — independent code review found the visual packet publisher is a no-op, approved evidence is not captured from the approval commit, stage-2 proof is disconnected from production, and rollback can leave ~/.ssh behind. Do not advance to Phase 4.
-stopped_at: Phase 03 gap-closure review circuit breaker
-last_updated: "2026-08-21T21:41:10Z"
+stopped_at: Completed 03-11 Tasks 1 and 2 — production proof, checked render, fingerprint, rollback, packet publisher
+last_updated: "2026-08-21T23:10:46.403Z"
 last_activity: 2026-08-21
 last_activity_desc: "Plan 03-09 complete: strict region-scoped visual gate + offline capture + live-TUI contact sheet (bcd6e3f) + approved-TUI panels + MANIFEST (6243f07) + UI-REVIEW/CODEX-REVIEW/03-VALIDATION (db5a141). CR-10 closed (96 regions), CR-11 closed (PNG evidence + both reviews), WR-01 closed (offline seam). All gates green."
-state_head: a2b646138c8e57c9e203b1e64c9adfddae47b171
+state_head: ed6d2d04b1f3c919036a94742cfddad12a2ef83c
 progress:
   total_phases: 10
   completed_phases: 0
-  total_plans: 33
-  completed_plans: 32
+  total_plans: 34
+  completed_plans: 33
   percent: 0
 ---
 
@@ -188,6 +188,8 @@ Recent decisions affecting current work:
 - [Phase 03]: CR-09: modeOp rollback for reused private key chmod(0600) in confirmed transaction; failure injection restores prior mode
 - [Phase 03]: CR-10/WR-01: DemoIdentity.Algorithm/Provider fields; finishIdentity populates both; createInput reads directly without reconstruction
 - [Phase 03]: CR-04: 'differs' predicate removed from visual gate allowlist; all entries use contains:/absent: with specific needles
+- [Phase 03]: RenderCheckedHostBlock is the authoritative render boundary for SSH Host blocks — validates unicode.IsSpace and controls — all three production callers route through it (CR-08)
+- [Phase 03]: specFingerprint includes ReuseKeyPath (normalized absolute path) so generate vs reuse and different reuse paths produce distinct fingerprints invalidating staged material (CR-07)
 
 ### Roadmap Evolution
 
@@ -228,9 +230,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-21T21:33:02.514Z
-Stopped at: Completed 03-10-PLAN.md Tasks 1 and 2
-Resume file: None
+Last session: 2026-08-21T23:10:22.318Z
+Stopped at: Completed 03-11 Tasks 1 and 2 — production proof, checked render, fingerprint, rollback, packet publisher
+Resume file: 03-11-PLAN.md Task 3
 Wave structure: W1 = 03-01 + 03-02 (DONE) -> W2 = 03-03 (DONE) -> W3 = 03-04 (DONE) -> W4 = 03-05 (DONE) -> W5 = 03-06 (Tasks 1+2 DONE, Task 3 PARTIAL — orchestrator review owed)
 **All remaining waves run SEQUENTIALLY (one executor at a time) per LEARNINGS L11** — the pre-commit hooks lint the whole module, so a parallel executor's mid-refactor tree blocks every other commit. Do NOT run plans in parallel inside this Go module again.
 
