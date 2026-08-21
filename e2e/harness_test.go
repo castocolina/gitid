@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -160,16 +161,40 @@ func FakeSSHDir(t *testing.T, mode string) string {
 		"  echo \"ecdsa-sha2-nistp256\"\n" +
 		"  exit 0\n" +
 		"fi\n" +
+		"config_path=\"\"\n" +
+		"next_is_config=0\n" +
+		"is_resolution=0\n" +
 		"for arg in \"$@\"; do\n" +
+		"  if [ \"$next_is_config\" = \"1\" ]; then\n" +
+		"    config_path=\"$arg\"\n" +
+		"    next_is_config=0\n" +
+		"    continue\n" +
+		"  fi\n" +
+		"  if [ \"$arg\" = \"-F\" ]; then\n" +
+		"    next_is_config=1\n" +
+		"    continue\n" +
+		"  fi\n" +
 		"  if [ \"$arg\" = \"-G\" ]; then\n" +
-		"    echo \"user git\"\n" +
-		"    echo \"hostname ssh.github.com\"\n" +
-		"    echo \"port 443\"\n" +
-		"    echo \"identitiesonly yes\"\n" +
-		"    echo \"identityfile /tmp/fake/.ssh/id_ed25519_testid\"\n" +
-		"    exit 0\n" +
+		"    is_resolution=1\n" +
 		"  fi\n" +
 		"done\n" +
+		"if [ \"$is_resolution\" = \"1\" ]; then\n" +
+		"  if [ -z \"$config_path\" ] || [ ! -r \"$config_path\" ]; then\n" +
+		"    echo \"fake ssh: ssh -G requires a readable staged -F config\" >&2\n" +
+		"    exit 2\n" +
+		"  fi\n" +
+		"  user=$(awk '$1 == \"User\" { print $2; exit }' \"$config_path\")\n" +
+		"  hostname=$(awk '$1 == \"Hostname\" { print $2; exit }' \"$config_path\")\n" +
+		"  port=$(awk '$1 == \"Port\" { print $2; exit }' \"$config_path\")\n" +
+		"  identitiesonly=$(awk '$1 == \"IdentitiesOnly\" { print $2; exit }' \"$config_path\")\n" +
+		"  identityfile=$(awk '$1 == \"IdentityFile\" { print $2; exit }' \"$config_path\")\n" +
+		"  if [ -z \"$user\" ] || [ -z \"$hostname\" ] || [ -z \"$port\" ] || [ -z \"$identitiesonly\" ] || [ -z \"$identityfile\" ]; then\n" +
+		"    echo \"fake ssh: staged config is missing required Host fields\" >&2\n" +
+		"    exit 2\n" +
+		"  fi\n" +
+		"  printf 'user %s\\nhostname %s\\nport %s\\nidentitiesonly %s\\nidentityfile %s\\n' \"$user\" \"$hostname\" \"$port\" \"$identitiesonly\" \"$identityfile\"\n" +
+		"  exit 0\n" +
+		"fi\n" +
 		"case \"$GITID_FAKE_SSH_MODE\" in\n" +
 		"  pass)\n" +
 		"    echo \"Hi user! You've successfully authenticated, but GitHub does not provide shell access.\"\n" +
@@ -195,6 +220,24 @@ func FakeSSHDir(t *testing.T, mode string) string {
 	}
 	t.Setenv("GITID_FAKE_SSH_MODE", mode)
 	return dir
+}
+
+func TestFakeSSHDirResolvesIdentityFileFromStagedConfig(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config")
+	wantIdentityFile := filepath.Join(t.TempDir(), "id_ed25519_staged")
+	config := "Host acme.github.com\n\tHostname ssh.github.com\n\tPort 443\n\tUser git\n\tIdentityFile " + wantIdentityFile + "\n\tIdentitiesOnly yes\n"
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatalf("writing staged config: %v", err)
+	}
+
+	ssh := filepath.Join(FakeSSHDir(t, "pass"), "ssh")
+	out, err := exec.Command(ssh, "-F", configPath, "-G", "acme.github.com").CombinedOutput() //nolint:gosec // ssh is the test-owned FakeSSHDir script
+	if err != nil {
+		t.Fatalf("running fake ssh -G: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "identityfile "+wantIdentityFile) {
+		t.Fatalf("fake ssh -G identityfile = %q, want staged config path %q", out, wantIdentityFile)
+	}
 }
 
 // FakeGHDir writes a mode-switching fake gh script and sets GITID_FAKE_GH_MODE.

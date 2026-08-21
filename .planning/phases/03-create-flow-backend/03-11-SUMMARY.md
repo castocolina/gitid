@@ -225,6 +225,34 @@ make gate-visual-regression — PASS (8 screens, all differences allowlisted)
 2. **PNG capture** — `freeze` and `chromium` not installed in this environment; publisher will correctly fail when invoked without these tools
 3. **Phase 3 review** — CR-01 through CR-10 and WR-01 production fixes are implemented; the 03-REVIEW.md remains as the blocking review record until Task 3 produces an immutable packet with two fresh authenticated reviews
 
+## Post-Task-2 Raw-PTY Regression Repair
+
+The strict Task-1 stage-two validator correctly compares the first effective
+`ssh -G` `IdentityFile` with the generated temporary staged key. The D-22
+`FakeSSHDir` test executable still emitted a fixed unrelated IdentityFile, so
+it falsely failed every raw-PTY flow that reached stage two.
+
+`FakeSSHDir` now requires the supplied readable `-F` staged config and emits
+its `User`, `Hostname`, `Port`, `IdentitiesOnly`, and first `IdentityFile`.
+It fails closed when any required managed Host field is absent. The new
+`TestFakeSSHDirResolvesIdentityFileFromStagedConfig` regression test was RED
+with the old fixed path and is GREEN with the config-derived fixture.
+
+Verification after the repair:
+
+```
+TERM=dumb SSH_AUTH_SOCK= go test -tags e2e -race -count=1 ./e2e -run '^TestFakeSSHDirResolvesIdentityFileFromStagedConfig$' — PASS
+TERM=dumb SSH_AUTH_SOCK= go test -tags e2e -race -count=1 -timeout 180s ./e2e -run '^(TestCreateFlow_TestStagePass|TestCreateFlow_TestStageReachableNotUploaded|TestCreateFlow_GitStepDisabledReasonAndConfirmWrite|TestCreateFlow_ReuseExistingEncryptedKeyClosesL2Seam)$' — PASS (4/4)
+TERM=dumb SSH_AUTH_SOCK= make test-e2e — PASS (58.884s)
+TERM=dumb SSH_AUTH_SOCK= make test — PASS
+make lint — PASS (0 issues)
+```
+
+The pre-existing dirty 03-09 evidence remained byte-identical:
+
+- `EVIDENCE.json`: `b0801041eb3ce30f1556289a630cf8f9e06f51f4d651891458e6e007f8950ea8`
+- `reuse-key-vs-generate.png`: `378eeaa4db94a3734bcf147b6f89477afc31593a5f84a0ccb958ada7c515f0a4`
+
 ## Known Stubs
 
 None — all implemented behavior is production wiring, not placeholder values.
