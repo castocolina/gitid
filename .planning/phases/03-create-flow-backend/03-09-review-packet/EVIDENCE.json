@@ -1,17 +1,17 @@
 {
   "font": "JetBrainsMono-Regular.ttf",
-  "generated": "2026-08-21T19:59:29Z",
+  "generated": "2026-08-21T20:06:55Z",
   "geometry": "100x30",
   "screens": {
     "confirm-write": "6d44b1fe45628613f72920e69eab4edfeb1936332c48486d84094a378ffd089b",
     "git-form-demo": "93784f704eb9869e0d1b1951eab3d96f971057d95e2893e61df519d8dd8f0969",
     "mouse-focused-field": "4c9c9c5635ad61a12a1db7226e0402a887bfd1ff1c860a4cff47eb0f4d15eb45",
-    "reuse-key-vs-generate": "7754c91902a448ba882aed0599605fabf3110add14f4239c82e2d9b2352c9ba9",
+    "reuse-key-vs-generate": "dc1db50f451cf5bca33980dd8364df3a0b9da746cfa15e5cd92d8bdee6669de1",
     "reuse-manual-path": "2c5b0adfa8c1897a2bd4f093bef4e80a7cde27e6495730ea9bc20042a4f3ba06",
     "ssh-form-filled": "a6fbfde026fe9af4a661717ad0071512a295694c408590d345538dcc30fd3236",
     "test-stage1-direct": "7d90c3557caf9f5b29414446a9e7f5af9ccc98a8d9be31eae7fdae9fe6d6eb7d",
     "test-stage2-by-alias": "7d90c3557caf9f5b29414446a9e7f5af9ccc98a8d9be31eae7fdae9fe6d6eb7d"
   },
-  "source_commit": "bcd6e3f",
+  "source_commit": "6243f07",
   "theme": "dracula"
 }
