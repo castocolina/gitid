@@ -1,20 +1,21 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: milestone
+milestone_name: TUI-First Redesign
 current_phase: 03
 current_phase_name: "Plan 03-09 COMPLETE. All 9 plans complete. Phase 3 verification passed: make test/lint/test-e2e/gate-visual-regression all green; CR-10/CR-11/WR-01 closed; two independent reviews PASS (no Critical/High). Phase 3 is CLOSED pending ONESHOT checklist completion (code review, verify-work, UI review, audit-uat)."
 status: Plan 03-09 COMPLETE — Phase 3 (create-flow-backend) all 9 plans complete. Region-scoped visual gate (96 regions/run), offline capture, approved-TUI panels, UI-REVIEW + CODEX-REVIEW both PASS. make test (863 passed), make lint (0 issues), make test-e2e (ok), make gate-visual-regression (PASS 8 screens).
-stopped_at: Completed 03-09-PLAN.md
-last_updated: "2026-08-21T20:30:00.000Z"
+stopped_at: Completed 03-10-PLAN.md Tasks 1 and 2
+last_updated: "2026-08-21T21:33:02.551Z"
 last_activity: 2026-08-21
 last_activity_desc: "Plan 03-09 complete: strict region-scoped visual gate + offline capture + live-TUI contact sheet (bcd6e3f) + approved-TUI panels + MANIFEST (6243f07) + UI-REVIEW/CODEX-REVIEW/03-VALIDATION (db5a141). CR-10 closed (96 regions), CR-11 closed (PNG evidence + both reviews), WR-01 closed (offline seam). All gates green."
+state_head: a2b646138c8e57c9e203b1e64c9adfddae47b171
 progress:
   total_phases: 10
-  completed_phases: 1
-  total_plans: 32
+  completed_phases: 0
+  total_plans: 33
   completed_plans: 32
-  percent: 100
+  percent: 0
 ---
 
 # Project State
@@ -42,7 +43,7 @@ Plan: 02-12 (wave 9, the single DLV-08 human checkpoint) — COMPLETE. The user 
 Status: 02-15 (wave 8) operationalized the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract (D1–D9 + affordance audit) in BOTH demos, byte-for-byte: D1 single-row color-only fields (02-14's rounded box deleted), D2 always-expanded match-strategy/algorithm radios, D3 terminal-glyph checkbox/radio on the web, D4 bracketed main-nav format (`[N] Label`, moved off the wizard stepper) + a new ActiveNavDimmed/activeNavDimmed state + a top-level plain-arrow view switch, D5 the wizard stepper reverted to `Step n/4 · <label> ● ○ ○ ○`, D6 one-row git-step buttons, D7 ONE hoisted Shift+←/→ chord gate reaching every step including the previously-dead review ceremony (proven with a new raw-byte PTY e2e injecting real xterm CSI sequences), D8 click-to-focus on every form row, and D9 Global Git's user.email promoted to an editable, opt-in global-fallback field with its own dedicated write ceremony (a documented, scoped recipes/ divergence). 02-STYLE-SPEC.md + both FIELDS.md companions rewritten in lockstep; the full exit-gate battery is green (go test -race, the no-backend allowlist, the extended copy-freeze grep, make test/lint/test-e2e/gate-no-backend-files, pnpm typecheck+build) — see 02-15-SUMMARY.md. The two ORCHESTRATOR-run exit gates (a fresh agent-ui-ux-designer critique of both live demos + a fresh-context code review against 02-15's must_haves/acceptance_criteria) have since RUN and their findings (F1-F10 + one record-only item) are fixed — see 02-15-SUMMARY.md "Review findings resolution (post-plan fix pass)" and commits a335d80/f62c99e. Next is 02-12 (wave 9, the single DLV-08 approval checkpoint), unblocked.
 Last activity: 2026-07-06 -- Completed 02-12 (★ DLV-08): user approval recorded as `**APPROVED:** 2026-07-06 by Pepe`; Phase 2 COMPLETE — the approved live demos + 02-REDESIGN-SPEC.md/02-STYLE-SPEC.md/02-DESIGN-DECISIONS-CHECKPOINT-2.md + per-surface FIELDS.md are the binding design reference; Phases 3-9 backend work is UNBLOCKED
 
-Progress: [█████████░] 91% (30/32 plans complete — Phase 2: 15/15; Phase 3: 6/9 plans, Wave 5 of 6 IN PROGRESS — 03-06 not yet counted complete: Task 3's cross-AI review is still owed; Wave 6 (03-07) COMPLETE)
+Progress: [░░░░░░░░░░] 0% (30/32 plans complete — Phase 2: 15/15; Phase 3: 6/9 plans, Wave 5 of 6 IN PROGRESS — 03-06 not yet counted complete: Task 3's cross-AI review is still owed; Wave 6 (03-07) COMPLETE)
 
 ## Performance Metrics
 
@@ -98,6 +99,7 @@ Progress: [█████████░] 91% (30/32 plans complete — Phase 2
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 03-create-flow-backend P07 | 120 | 3 tasks | 17 files |
+| Phase 03 P10 | 53min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -182,6 +184,10 @@ Recent decisions affecting current work:
 - [Phase 03-create-flow-backend, plan 06]: internal/screenshot/createflow.go drives the shared tuikit render stack IN-PROCESS (tea.Model.Update/.View, no PTY/subprocess) for the visual-regression gate — PTY stays DLV-06's job (raw keystroke/terminal decoding correctness); the in-process technique is reusable by future phases' own dummy-vs-real gates
 - [Phase ?]: Keep Backend.Persist synchronous while create path uses async CommitCreate; both share commitCreateTransaction
 - [Phase ?]: Offer copy-public-key action whenever keyUnused() is true due to stage-2 auto-chain
+- [Phase 03]: CR-08: Generate no longer touches sshDir; confirmed transaction creates/chmods ~/.ssh as step 0 with rollback
+- [Phase 03]: CR-09: modeOp rollback for reused private key chmod(0600) in confirmed transaction; failure injection restores prior mode
+- [Phase 03]: CR-10/WR-01: DemoIdentity.Algorithm/Provider fields; finishIdentity populates both; createInput reads directly without reconstruction
+- [Phase 03]: CR-04: 'differs' predicate removed from visual gate allowlist; all entries use contains:/absent: with specific needles
 
 ### Roadmap Evolution
 
@@ -221,8 +227,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-18T22:09:36.494Z
-Stopped at: Completed 03-07-PLAN.md
+Last session: 2026-08-21T21:33:02.514Z
+Stopped at: Completed 03-10-PLAN.md Tasks 1 and 2
 Resume file: None
 Wave structure: W1 = 03-01 + 03-02 (DONE) -> W2 = 03-03 (DONE) -> W3 = 03-04 (DONE) -> W4 = 03-05 (DONE) -> W5 = 03-06 (Tasks 1+2 DONE, Task 3 PARTIAL — orchestrator review owed)
 **All remaining waves run SEQUENTIALLY (one executor at a time) per LEARNINGS L11** — the pre-commit hooks lint the whole module, so a parallel executor's mid-refactor tree blocks every other commit. Do NOT run plans in parallel inside this Go module again.

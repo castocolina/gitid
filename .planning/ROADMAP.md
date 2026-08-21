@@ -153,10 +153,12 @@ Plans:
   4. On pass + confirmation, the identity persists to `~/.ssh/config` **or** the gitid-owned Include'd file, with backup. (TEST-03)
   5. **UI-wave gate**: `/mui` + `agent-ui-ux-designer` are engaged in plan/build/review; each create-flow screen has a PTY e2e test driving the **real** built binary; the live TUI passes the visual-regression diff against the approved screenshots. (DLV-04, DLV-06)
 
-**Plans**: 7/9 plans executed in 8 waves
+**Plans**: 10/10 plans executed in 8 waves
 **UI hint**: yes
 
 Plans:
+
+- [x] 03-10-PLAN.md
 
 **Wave 1** — parallel (disjoint files)
 
@@ -185,11 +187,11 @@ Plans:
 
 **Wave 7** — SSH trust-boundary correctness (blocked on 03-07)
 
-- [ ] 03-08-PLAN.md — Four-field D-20 form, strict SSH validation/effective collision checks, consistent algorithm catalog, verified key pairs, and complete unpinned `ssh -G` proof (SSHUI-01/02/03, TEST-01/02, KEY-06, DLV-06)
+- [x] 03-08-PLAN.md — Four-field D-20 form, strict SSH validation/effective collision checks, consistent algorithm catalog, verified key pairs, and complete unpinned `ssh -G` proof (SSHUI-01/02/03, TEST-01/02, KEY-06, DLV-06)
 
 **Wave 8** — final visual evidence and independent reviews (blocked on 03-08)
 
-- [ ] 03-09-PLAN.md — Deterministic region-scoped visual gate, approval-provenance PNG evidence, and agent-ui-ux-designer plus Codex review closure (DLV-04, DLV-06)
+- [x] 03-09-PLAN.md — Deterministic region-scoped visual gate, approval-provenance PNG evidence, and agent-ui-ux-designer plus Codex review closure (DLV-04, DLV-06)
 
 ### Phase 4: Git Configuration Screen
 
@@ -304,7 +306,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Foundations, Spikes & CI | 7/7 | Complete | 2026-07-03 |
 | 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 14/15 | In Progress|  |
-| 3. Create Flow Backend | 7/9 | In Progress|  |
+| 3. Create Flow Backend | 10/10 | In Progress|  |
 | 4. Git Configuration Screen | 0/TBD | Not started | - |
 | 5. Identity Manager | 0/TBD | Not started | - |
 | 6. Global SSH Options | 0/TBD | Not started | - |

@@ -470,7 +470,7 @@ row below records each one's **home** phase.
 | SSHUI-02 | Phase 3 | Complete |
 | SSHUI-03 | Phase 3 | Complete |
 | SSHUI-04 | Phase 3 | Complete |
-| SSHUI-05 | Phase 3 | Pending |
+| SSHUI-05 | Phase 3 | Complete |
 | TEST-01 | Phase 3 | Complete |
 | TEST-02 | Phase 3 | Complete |
 | TEST-03 | Phase 3 | Complete |
