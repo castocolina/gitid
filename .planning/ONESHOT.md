@@ -1,21 +1,38 @@
-# ONESHOT PLAYBOOK - gitid v1.0 OpenCode Completion Run
+# ONESHOT PLAYBOOK - gitid v1.0 OpenCode Autonomous Run
 
-## Runtime And Model Routing
+## Starting Point
 
-This playbook runs through OpenCode with Open GSD. `.planning/config.json` is
-the single source of truth for runtime and model routing. Do not hard-code
-Claude Code commands, Codex CLI configuration, model names, or provider
-credentials in this file.
+Determine `--from` at invocation time, not from a hardcoded phase number: read
+`ROADMAP.md` and `STATE.md` and use the earliest phase that is not
+`phase_complete`. `gsd-autonomous`'s own resume gates (phase-discovery
+filtering in `autonomous.md`, plan/wave `has_summary` filtering and the
+missing-`VERIFICATION.md` fallback in `execute-phase.md`) already reconcile a
+partially-finished phase — including one whose plans are all summarized but
+never reached verification, or that surfaces `gaps_found` requiring one more
+planning pass. Do not hand-run a phase's closeout procedure; let the same
+Per-Phase Checklist below apply to whichever phase is earliest-incomplete,
+whether that is Phase 3 today or a different phase after a future stall.
 
-- `gsd-planner` and `gsd-code-reviewer` use OpenAI Sol.
-- `gsd-plan-checker` uses Claude Opus through OmniRoute after planning and before execution.
-- `gsd-executor` uses OpenCode Go Kimi Code.
-- `/gsd-plan-review-convergence` uses `review.default_reviewers`.
+## Per-Phase Checklist
 
-After the Phase 3 closeout below, the orchestrator invokes the
-`gsd-autonomous` skill with `--from 4 --converge` in the same session. It owns
-the normal discuss, plan, review, execute, and verification sequence for every
-remaining incomplete phase; do not ask the user to send a continuation command.
+For every phase, confirm all nine of these before moving to the next phase —
+do not assume any of them ran just because the previous one did:
+
+1. Discuss — CONTEXT.md exists and reflects the phase.
+2. UI-phase — UI-SPEC.md exists, only for phases with a TUI surface.
+3. Plan — PLAN.md file(s) exist for every wave.
+4. Plan review convergence — REVIEWS.md shows 0 HIGH concerns.
+5. Execute — every wave's SUMMARY.md exists, tree is clean, tests green.
+6. Code review — REVIEW.md shows clean or all findings fixed.
+7. Verify-work — VERIFICATION.md shows `passed` (or a resolved
+   `human_needed`/`gaps_found` outcome, not left open).
+8. UI review — UI-REVIEW.md exists for phases with a TUI surface (see
+   Non-Negotiable Rules for what "passing" means here — never a browser
+   screenshot).
+9. `/gsd-audit-uat` — run it yourself. Nothing above triggers it
+   automatically; treat it as a required step, not a periodic extra.
+
+Only close a phase and advance once all nine are evidenced.
 
 ## Non-Negotiable Rules
 
@@ -37,52 +54,21 @@ remaining incomplete phase; do not ask the user to send a continuation command.
    and `make test-e2e`. Do not accept an executor's unverified claim.
 7. A newly introduced managed Git or SSH path must be registered in the
    doctor's reserved-path/block registry in the same phase.
-8. Stop only for a destructive anomaly, an unrecoverable tool/authentication
-   failure, a circuit breaker, or a required confirmation for a real user-file
-   or external-account mutation. Record the exact blocker and preserve all
-   green work.
-
-## Current Resume Point: Phase 3 Closeout
-
-Phase 3 implementation is complete: all six plans have summaries, and
-`6fca783` records the completed UI/UX review fixes. State prose predating that
-commit is stale. Do not rerun Phase 3 planning, legacy triage, or completed
-waves.
-
-Complete these items in order:
-
-1. Run the independent Phase 3 code and visual-diff review using the configured
-   OpenCode Sol reviewer. Review the full Phase 3 commit range and the
-   `03-06-review-packet` evidence. Record all findings and dispositions in
-   `03-06-SUMMARY.md`; critical or high findings must be fixed and re-reviewed.
-2. Update `STATE.md`, `ROADMAP.md`, and requirement status only after the
-   review and independent test, lint, and e2e gates pass. Commit the closeout artifacts with their
-   evidence.
-3. Fast-forward or otherwise integrate the reviewed phase according to the
-   repository's active branch policy, push the intended branch, and confirm CI
-   before opening Phase 4 work.
-
-## Remaining Phase Loop: 4 Through 10
-
-Invoke `gsd-autonomous --from 4 --converge` in this session. The convergence
-flag makes Open GSD run external plan review before execution; the internal
-Opus plan checker still guards generated plans. For each phase:
-
-1. Read the phase context, current design contracts, recipes, applicable
-   learnings, and completed phase summaries.
-2. Generate a UI contract when the phase has a TUI surface and none exists.
-   Do not regenerate an approved contract without a concrete gap.
-3. Plan, converge-review, and execute in GSD's declared wave order. Cross-AI
-   execution occurs only for plans explicitly marked `cross_ai: true` or when
-   forced by a command flag; `workflow.cross_ai_execution` alone is not a
-   blanket executor override.
-4. Run security review, GSD code review, the configured external OpenCode
-   review lane, UI review/evidence for TUI surfaces, and independent test,
-   lint, and e2e gates. Resolve critical/high findings; record a fixed or accepted
-   disposition for lower-severity findings.
-5. Commit all implementation, tests, review evidence, summaries, test-gate evidence,
-   state, and roadmap changes required to close the phase. Do not leave phase
-   closeout artifacts uncommitted.
+8. gitid is a terminal TUI, not a web UI — `gsd-browser` (Chrome DevTools
+   Protocol) does not apply. For a TUI-surface phase, "UI review" and
+   Definition-of-Done mean the screens are proven against the approved
+   mockup through a real PTY session on the compiled binary (raw keystrokes,
+   mouse sequences where relevant) — the existing DLV-04/DLV-06 gates. A
+   unit or wiring test never substitutes for this.
+9. Stop only for a destructive anomaly, an unrecoverable tool/authentication
+   failure, a circuit breaker, or a required confirmation for a real
+   user-file or external-account mutation. Record the exact blocker and
+   preserve all green work.
+10. When a phase's post-execution verification returns `gaps_found`, choose
+    "Run gap closure" without waiting for a live response — this is
+    pre-authorized so the run stays unattended. Gap closure is capped at one
+    retry by `gsd-autonomous` itself; if gaps persist after that retry,
+    treat it as a real blocker under rule 9.
 
 ## Phase 9 External Account Policy
 

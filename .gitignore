@@ -9,5 +9,6 @@ coverage.out
 
 # Local agent/tooling state — not repo content.
 .claude/
+.opencode/
 .codegraph/
 .playwright-mcp/
