@@ -28,6 +28,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -61,6 +62,34 @@ type Packet struct {
 	// ManifestSHA256 is the hex-encoded SHA-256 of the MANIFEST.json content
 	// with this field set to the empty string (content-addressing).
 	ManifestSHA256 string `json:"manifest_sha256"`
+	// Capture records the fixed rendering inputs and commands used for a visual
+	// packet. It is empty for the legacy text-only packet format.
+	Capture PacketCapture `json:"capture,omitempty"`
+}
+
+// PacketCapture records the reproducibility inputs for a visual packet.
+type PacketCapture struct {
+	Commands     []string     `json:"commands"`
+	ToolVersions []PacketTool `json:"tool_versions"`
+	Geometry     string       `json:"geometry"`
+	FontSHA256   string       `json:"font_sha256"`
+	Theme        string       `json:"theme"`
+}
+
+// PacketTool identifies one capture tool and its pinned version.
+type PacketTool struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
+
+// VisualPanel is one text-and-PNG panel supplied to GenerateVisualPacket.
+// PNGPath must point to a completed renderer output; the function copies it
+// into the immutable packet after validating that it is non-empty.
+type VisualPanel struct {
+	Surface  string
+	ScreenID string
+	Text     string
+	PNGPath  string
 }
 
 // PacketOptions configures a packet generation run.
@@ -100,6 +129,131 @@ const ValidatePanelCount = 24
 
 // packetVersion is the current manifest schema version.
 const packetVersion = "03-11.1"
+
+const visualPacketVersion = "03-11.2"
+
+// GenerateVisualPacket writes the complete 24-panel evidence packet. Unlike
+// GenerateTextPacket, this API cannot represent a panel without both the text
+// captured from the source binary/page and a non-empty renderer-produced PNG.
+func GenerateVisualPacket(opts PacketOptions, panels []VisualPanel, capture PacketCapture) (PacketResult, error) {
+	if err := validatePacketOptions(opts, "GenerateVisualPacket"); err != nil {
+		return PacketResult{}, err
+	}
+	if len(panels) != ValidatePanelCount {
+		return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: got %d panels, want exactly %d", len(panels), ValidatePanelCount)
+	}
+	if err := os.MkdirAll(opts.OutputDir, 0o750); err != nil {
+		return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: creating output dir %q: %w", opts.OutputDir, err)
+	}
+
+	seen := make(map[string]bool, ValidatePanelCount)
+	members := make([]PacketMember, 0, ValidatePanelCount*2)
+	for _, panel := range panels {
+		if !validPacketSurface(panel.Surface) {
+			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: unknown panel surface %q", panel.Surface)
+		}
+		if !isCreateFlowScreenID(panel.ScreenID) {
+			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: unknown screen %q", panel.ScreenID)
+		}
+		key := panel.Surface + "/" + panel.ScreenID
+		if seen[key] {
+			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: duplicate panel %q", key)
+		}
+		seen[key] = true
+		if strings.TrimSpace(panel.Text) == "" {
+			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: panel %q has empty text", key)
+		}
+		png, err := os.ReadFile(panel.PNGPath) //nolint:gosec // renderer path is created by the publisher
+		if err != nil {
+			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: reading PNG for %q: %w", key, err)
+		}
+		if len(png) == 0 {
+			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: panel %q has empty PNG", key)
+		}
+
+		dir := filepath.Join(opts.OutputDir, panel.Surface)
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: creating panel directory %q: %w", panel.Surface, err)
+		}
+		textRel := filepath.Join(panel.Surface, panel.ScreenID+".txt")
+		pngRel := filepath.Join(panel.Surface, panel.ScreenID+".png")
+		if err := writeAndSync(filepath.Join(opts.OutputDir, textRel), []byte(panel.Text)); err != nil {
+			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: writing text %q: %w", key, err)
+		}
+		if err := writeAndSync(filepath.Join(opts.OutputDir, pngRel), png); err != nil {
+			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: writing PNG %q: %w", key, err)
+		}
+		members = append(members,
+			PacketMember{Path: textRel, SHA256: sha256Hex([]byte(panel.Text)), Kind: "text", ScreenID: panel.ScreenID},
+			PacketMember{Path: pngRel, SHA256: sha256Hex(png), Kind: "png-" + panel.Surface, ScreenID: panel.ScreenID},
+		)
+	}
+	for _, surface := range []string{"live", "approved-tui", "approved-html"} {
+		for _, id := range CreateFlowScreenIDs {
+			if !seen[surface+"/"+id] {
+				return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: missing panel %s/%s", surface, id)
+			}
+		}
+	}
+	sort.Slice(members, func(i, j int) bool { return members[i].Path < members[j].Path })
+
+	now := time.Unix(0, 0).UTC()
+	if opts.Clock != nil {
+		now = opts.Clock().UTC()
+	}
+	pkt := Packet{
+		Version:        visualPacketVersion,
+		SourceCommit:   opts.SourceCommit,
+		ApprovalCommit: opts.ApprovalCommit,
+		CapturedAt:     now.Format(time.RFC3339),
+		LiveBackendRef: opts.LiveBackendRef,
+		Members:        members,
+		Capture:        capture,
+	}
+	manifest, err := marshalPacket(pkt)
+	if err != nil {
+		return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: marshaling manifest: %w", err)
+	}
+	pkt.ManifestSHA256 = sha256Hex(manifest)
+	manifest, err = marshalPacket(pkt)
+	if err != nil {
+		return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: marshaling manifest with hash: %w", err)
+	}
+	manifestPath := filepath.Join(opts.OutputDir, "MANIFEST.json")
+	if err := writeAndSync(manifestPath, manifest); err != nil {
+		return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: writing MANIFEST.json: %w", err)
+	}
+	return PacketResult{ManifestPath: manifestPath, Packet: pkt, MemberCount: len(members)}, nil
+}
+
+func validatePacketOptions(opts PacketOptions, operation string) error {
+	if opts.SourceCommit == "" || len(opts.SourceCommit) != 40 {
+		return fmt.Errorf("screenshot: %s: source commit must be a full 40-hex SHA; got %q", operation, opts.SourceCommit)
+	}
+	if opts.ApprovalCommit == "" || len(opts.ApprovalCommit) != 40 {
+		return fmt.Errorf("screenshot: %s: approval commit must be a full 40-hex SHA; got %q", operation, opts.ApprovalCommit)
+	}
+	if opts.OutputDir == "" {
+		return fmt.Errorf("screenshot: %s: OutputDir is required", operation)
+	}
+	if _, err := os.Stat(opts.OutputDir); err == nil {
+		return fmt.Errorf("screenshot: %s: output directory %q already exists — refusing to overwrite (immutability guarantee)", operation, opts.OutputDir)
+	}
+	return nil
+}
+
+func validPacketSurface(surface string) bool {
+	return surface == "live" || surface == "approved-tui" || surface == "approved-html"
+}
+
+func isCreateFlowScreenID(id string) bool {
+	for _, candidate := range CreateFlowScreenIDs {
+		if candidate == id {
+			return true
+		}
+	}
+	return false
+}
 
 // GenerateTextPacket generates a text-only packet (no PNG capture) from two
 // backend captures. It is the deterministic inner loop used by both the routine
@@ -238,19 +392,97 @@ func ValidatePacket(packetDir string) (Packet, error) {
 	if pkt.ApprovalCommit == "" {
 		return Packet{}, fmt.Errorf("screenshot: ValidatePacket: missing approval_commit in MANIFEST.json")
 	}
+	manifestForHash := pkt
+	manifestForHash.ManifestSHA256 = ""
+	expectedManifest, err := marshalPacket(manifestForHash)
+	if err != nil {
+		return Packet{}, fmt.Errorf("screenshot: ValidatePacket: marshaling manifest for hash: %w", err)
+	}
+	if pkt.ManifestSHA256 != sha256Hex(expectedManifest) {
+		return Packet{}, fmt.Errorf("screenshot: ValidatePacket: manifest hash mismatch: got %s, want %s", pkt.ManifestSHA256, sha256Hex(expectedManifest))
+	}
+	declared := map[string]bool{"MANIFEST.json": true}
 	// Validate every declared member.
 	for _, m := range pkt.Members {
+		if m.Path == "" || filepath.IsAbs(m.Path) || strings.HasPrefix(filepath.Clean(m.Path), "..") {
+			return Packet{}, fmt.Errorf("screenshot: ValidatePacket: invalid member path %q", m.Path)
+		}
+		if declared[m.Path] {
+			return Packet{}, fmt.Errorf("screenshot: ValidatePacket: duplicate member %q", m.Path)
+		}
+		declared[m.Path] = true
 		absPath := filepath.Join(packetDir, m.Path)
 		content, err := os.ReadFile(absPath) //nolint:gosec // absPath is constructed from gitid-controlled packet dir and manifest path (G304)
 		if err != nil {
 			return Packet{}, fmt.Errorf("screenshot: ValidatePacket: reading member %q: %w", m.Path, err)
+		}
+		if pkt.Version == visualPacketVersion && len(content) == 0 {
+			return Packet{}, fmt.Errorf("screenshot: ValidatePacket: visual member %q is empty", m.Path)
 		}
 		got := sha256Hex(content)
 		if got != m.SHA256 {
 			return Packet{}, fmt.Errorf("screenshot: ValidatePacket: member %q hash mismatch: got %s, want %s", m.Path, got, m.SHA256)
 		}
 	}
+	if pkt.Version == visualPacketVersion {
+		if err := validateVisualPacket(pkt); err != nil {
+			return Packet{}, err
+		}
+		if err := filepath.Walk(packetDir, func(path string, info os.FileInfo, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if info.IsDir() {
+				return nil
+			}
+			rel, err := filepath.Rel(packetDir, path)
+			if err != nil {
+				return err
+			}
+			if !declared[rel] {
+				return fmt.Errorf("screenshot: ValidatePacket: undeclared member %q", rel)
+			}
+			return nil
+		}); err != nil {
+			return Packet{}, err
+		}
+	}
 	return pkt, nil
+}
+
+func validateVisualPacket(pkt Packet) error {
+	if len(pkt.Members) != ValidatePanelCount*2 {
+		return fmt.Errorf("screenshot: ValidatePacket: visual packet has %d members, want %d text/PNG members", len(pkt.Members), ValidatePanelCount*2)
+	}
+	if pkt.Capture.Geometry == "" || pkt.Capture.FontSHA256 == "" || pkt.Capture.Theme == "" || len(pkt.Capture.Commands) == 0 || len(pkt.Capture.ToolVersions) == 0 {
+		return fmt.Errorf("screenshot: ValidatePacket: visual packet has incomplete capture provenance")
+	}
+	panels := make(map[string]bool, ValidatePanelCount)
+	for _, m := range pkt.Members {
+		if !strings.HasSuffix(m.Path, ".png") {
+			continue
+		}
+		parts := strings.Split(filepath.ToSlash(m.Path), "/")
+		if len(parts) != 2 || !validPacketSurface(parts[0]) || !isCreateFlowScreenID(m.ScreenID) || m.Kind != "png-"+parts[0] {
+			return fmt.Errorf("screenshot: ValidatePacket: invalid visual panel member %q", m.Path)
+		}
+		key := parts[0] + "/" + m.ScreenID
+		if panels[key] {
+			return fmt.Errorf("screenshot: ValidatePacket: duplicate visual panel %q", key)
+		}
+		panels[key] = true
+	}
+	if len(panels) != ValidatePanelCount {
+		return fmt.Errorf("screenshot: ValidatePacket: got %d PNG panels, want exactly %d", len(panels), ValidatePanelCount)
+	}
+	for _, surface := range []string{"live", "approved-tui", "approved-html"} {
+		for _, id := range CreateFlowScreenIDs {
+			if !panels[surface+"/"+id] {
+				return fmt.Errorf("screenshot: ValidatePacket: missing PNG panel %s/%s", surface, id)
+			}
+		}
+	}
+	return nil
 }
 
 // CompareManifests reports whether two PacketResults have identical canonical

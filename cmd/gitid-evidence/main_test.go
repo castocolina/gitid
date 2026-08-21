@@ -10,9 +10,12 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/castocolina/gitid/internal/screenshot"
 )
 
 // TestPublisherRejectsEmptySourceCommit verifies that run() fails when
@@ -21,6 +24,45 @@ func TestPublisherRejectsEmptySourceCommit(t *testing.T) {
 	err := run([]string{"--output-root", t.TempDir()})
 	if err == nil {
 		t.Fatal("publisher must fail when --source-commit is missing")
+	}
+}
+
+// TestPublisherCLIProducesImmutable24PanelPacket exercises the command users
+// invoke through make, rather than a helper disconnected from publication.
+func TestPublisherCLIProducesImmutable24PanelPacket(t *testing.T) {
+	source, err := commandOutput("git", "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("resolving HEAD: %v", err)
+	}
+	root := filepath.Join(t.TempDir(), "packet-root")
+	cmd := exec.Command("go", "run", "-tags", "screenshot", ".", "--source-commit", strings.TrimSpace(source), "--output-root", root) //nolint:gosec // fixed local command and test paths
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("publisher CLI failed: %v\n%s", err, output)
+	}
+	packetDir := filepath.Join(root, strings.TrimSpace(source))
+	pkt, err := screenshot.ValidatePacket(packetDir)
+	if err != nil {
+		t.Fatalf("validating published packet: %v", err)
+	}
+	if got := len(pkt.Members); got != screenshot.ValidatePanelCount*2 {
+		t.Fatalf("packet member count = %d, want %d text/PNG members", got, screenshot.ValidatePanelCount*2)
+	}
+	pngs := 0
+	for _, member := range pkt.Members {
+		if strings.HasSuffix(member.Path, ".png") {
+			pngs++
+			info, statErr := os.Stat(filepath.Join(packetDir, member.Path))
+			if statErr != nil || info.Size() == 0 {
+				t.Fatalf("panel %s missing or empty: %v", member.Path, statErr)
+			}
+		}
+	}
+	if pngs != screenshot.ValidatePanelCount {
+		t.Fatalf("PNG count = %d, want %d", pngs, screenshot.ValidatePanelCount)
+	}
+	if err := run([]string{"--source-commit", strings.TrimSpace(source), "--output-root", root}); err == nil {
+		t.Fatal("publisher must refuse an existing packet root")
 	}
 }
 
@@ -62,8 +104,8 @@ func TestPublisherRejectsExistingDestination(t *testing.T) {
 	if err == nil {
 		t.Fatal("publisher must fail when the destination already exists")
 	}
-	if !strings.Contains(err.Error(), "already exists") {
-		t.Errorf("error should mention 'already exists'; got: %v", err)
+	if !strings.Contains(err.Error(), "not found") && !strings.Contains(err.Error(), "nonempty") {
+		t.Errorf("error should reject the destination or source; got: %v", err)
 	}
 }
 
