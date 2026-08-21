@@ -194,3 +194,13 @@ dated; convert relative dates to absolute.
   for real user-file/account confirmation, destructive anomaly, unavailable
   required authentication, or demonstrated repeated zero-progress tool
   failure; record the exact evidence before stopping.
+
+### L15 — GitHub E2E keys require exact-ID cleanup (2026-08-21, Phase 9)
+- **Fact:** `gh auth status` confirms account `castocolina` has
+  `admin:public_key` and `admin:ssh_signing_key` scopes. The user authorized
+  disposable GitHub E2E key tests.
+- **Rule:** use only disposable public keys titled
+  `gitid-e2e:<run-id>:<purpose>`. Record the returned ID for each creation and
+  delete only that exact ID after rechecking its exact title prefix. Finish with
+  a prefix-scoped inventory sweep. Never modify a key that the test did not
+  create, and halt on any inventory mismatch.

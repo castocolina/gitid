@@ -76,12 +76,17 @@ Only close a phase and advance once all nine are evidenced.
 
 ## Phase 9 External Account Policy
 
-Phase 9 may interact with real GitHub/GitLab accounts only after explicit user
-confirmation. Before any upload, verify the applicable CLI authentication and
-required scopes. Test uploads use a recognizable test title, upload public keys
-only, and unconditionally remove only keys created by the test. If the required
-provider authentication is unavailable, record the blocked evidence and stop;
-do not silently substitute a mock for the required real-account validation.
+The user has authorized Phase 9 GitHub E2E upload tests. Before every upload,
+verify `gh auth status` and the required scopes. Generate a disposable public
+key only, name every created GitHub key `gitid-e2e:<run-id>:<purpose>`, and
+record the exact returned resource ID. Cleanup must delete only those recorded
+IDs after confirming their title retains the exact run prefix; never select or
+delete by a broad inventory query. Run a final inventory sweep that confirms no
+keys from the current `gitid-e2e:<run-id>:` prefix remain. Existing keys,
+GitLab, and any external-account action outside this protocol still require
+explicit confirmation. If GitHub authentication or scope is unavailable,
+record the blocked evidence and stop; do not silently substitute a mock for the
+required real-account validation.
 
 ## Milestone Close
 
