@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 03
-current_phase_name: "IN PROGRESS. Wave 1  , Wave 2  , Wave 3  , and Wave 4   CLOSED; Wave 5   Tasks 1+2 CLOSED this session; Plan 03-07 (Wave 6) COMPLETE. Plan 03-06 Task 3 PARTIAL  . Next: orchestrator runs the DLV-04.2 cross-AI review, then Phase 3 close-out."
-status: Wave 5 (plan 03-06) IN PROGRESS — 2 of 3 tasks CLOSED; Wave 6 (plan 03-07) COMPLETE. Plan 03-07 delivered hermetic staging, automatic stage-2 chaining, async commit ceremony, rollback-capable confirmed SSH writes, and a fail-closed store gate. go test -race ./... 852 passed, make lint 0 issues, make test-e2e ok. Plan 03-06 Task 3 (DLV-04.2 cross-AI review) remains an ORCHESTRATOR obligation still OWED before Phase 3 can close.
-stopped_at: Completed 03-07-PLAN.md
-last_updated: "2026-08-18T22:11:17.717Z"
-last_activity: 2026-08-18
-last_activity_desc: "Plan 03-07 (Wave 6) complete: hermetic staging, automatic stage-2 chaining, async commit ceremony, rollback transaction, fail-closed store gate. go test -race ./... 852 passed, make lint 0 issues, make test-e2e ok. Plan 03-06 Task 3 (DLV-04.2 cross-AI review) still owed by orchestrator."
+current_phase_name: "Plan 03-09 COMPLETE. All 9 plans complete. Phase 3 verification passed: make test/lint/test-e2e/gate-visual-regression all green; CR-10/CR-11/WR-01 closed; two independent reviews PASS (no Critical/High). Phase 3 is CLOSED pending ONESHOT checklist completion (code review, verify-work, UI review, audit-uat)."
+status: Plan 03-09 COMPLETE — Phase 3 (create-flow-backend) all 9 plans complete. Region-scoped visual gate (96 regions/run), offline capture, approved-TUI panels, UI-REVIEW + CODEX-REVIEW both PASS. make test (863 passed), make lint (0 issues), make test-e2e (ok), make gate-visual-regression (PASS 8 screens).
+stopped_at: Completed 03-09-PLAN.md
+last_updated: "2026-08-21T20:30:00.000Z"
+last_activity: 2026-08-21
+last_activity_desc: "Plan 03-09 complete: strict region-scoped visual gate + offline capture + live-TUI contact sheet (bcd6e3f) + approved-TUI panels + MANIFEST (6243f07) + UI-REVIEW/CODEX-REVIEW/03-VALIDATION (db5a141). CR-10 closed (96 regions), CR-11 closed (PNG evidence + both reviews), WR-01 closed (offline seam). All gates green."
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 32
-  completed_plans: 29
-  percent: 91
+  completed_plans: 32
+  percent: 100
 ---
 
 # Project State
@@ -24,13 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** Managing a Git identity produces coordinated, coherent SSH + Git artifacts that are proven to authenticate and resolve correctly (`ssh -G`) before any file is written, and existing hand-written config is never corrupted.
-**Current focus:** Phase 02 COMPLETE (★ CHECKPOINT #1 passed) — Phase 03 (create-flow-backend) IN PROGRESS: Wave 5 (plan 03-06, the phase's LAST wave) Tasks 1+2 CLOSED, Task 3 PARTIAL — the DLV-04.2 cross-AI review is an ORCHESTRATOR obligation still owed before Phase 3 can close.
+**Current focus:** Phase 02 COMPLETE (★ CHECKPOINT #1 passed) — Phase 03 (create-flow-backend) COMPLETE: all 9 plans done, all gates green (make test/lint/test-e2e/gate-visual-regression), CR-10/CR-11/WR-01 closed, UI-REVIEW + CODEX-REVIEW PASS. Phase 3 pending ONESHOT per-phase checklist (gsd-code-review, verify-work, UI-review, audit-uat) before Phase 4 starts.
 
 ## Current Position
 
 Phase: 03 (create-flow-backend) — IN PROGRESS. Wave 1 (03-01+03-02), Wave 2 (03-03), Wave 3 (03-04), Wave 4 (03-05), and Wave 6 (03-07) CLOSED; Wave 5 (plan 03-06) Tasks 1+2 CLOSED this session, Task 3 PARTIAL (packet assembled, review not run). Next: orchestrator runs the DLV-04.2 cross-AI review, then Phase 3 close-out.
+Plan: 03-09 (wave 8) — COMPLETE. Region-scoped visual gate, offline capture, contact sheets, two independent reviews PASS (no Critical/High). CR-10/CR-11/WR-01 closed. See 03-09-SUMMARY.md.
+Plan: 03-08 (wave 7) — COMPLETE. Four-field SSH form, strict validation, effective collision checks, verified key pairs, complete ssh -G proof. See 03-08-SUMMARY.md.
 Plan: 03-07 (wave 6) — COMPLETE. Hermetic staging, automatic stage-2 chaining, async commit ceremony, rollback-capable confirmed SSH writes, and fail-closed store gate. See 03-07-SUMMARY.md.
-Plan: 03-06 (wave 5) — IN PROGRESS, 1 task remaining (Task 3's review-execution half, orchestrator-owned). Task 1 (DLV-06 PTY e2e + L2 seam closure + SSHUI-02 mouse) — commit 57bda7b. Task 2 (DLV-04.1 golden-text gate + allowlist + D-23 smoke test) — commit 4a9c939. Task 3 (DLV-04.2 review-packet assembly) — commit 9ddd102, PACKET ONLY; agent-ui-ux-designer + Codex have NOT reviewed anything yet. See 03-06-SUMMARY.md "Cross-AI visual-regression review" for the placeholder section the orchestrator must fill in — DO NOT mark this plan or Phase 3 complete until that section is populated with both reviewers' findings and dispositions.
 Status: Phase 2 (below) is the last COMPLETE phase; Phase 3 is the active phase, Wave 5 of 6 (its last wave) 2/3 tasks closed plus Wave 6 complete. See "Session Continuity" below for the live wave-by-wave Phase 3 record (WAVE 1-4 close notes, replan resolution map, execution obligations, and the new WAVE 5/6 entries).
 Last activity: 2026-08-18 -- Plan 03-07 (Wave 6) complete: see the frontmatter `last_activity` field above for the full description.
 
@@ -200,7 +201,8 @@ None yet.
 - ~~03-05: the plan's Task 1 asked the executor to engage `/mui` + `agent-ui-ux-designer` on the new D-02/D-03 warning-state visual and record the input in the SUMMARY — the plan executor has no access to spawn sub-agents or slash commands (Read/Write/Edit/Bash tools only), so this did NOT happen. Flagging as an orchestrator-run exit gate still owed, same class as 02-14/02-15's pattern above. See 03-05-SUMMARY.md "Issues Encountered".~~ -- RESOLVED 2026-08-17: the orchestrator ran the review (`agent-ui-ux-designer:ui-ux-designer` against the D-02/D-03/D-19 render code). 5 findings (F1/F2/F3/F4.2/a11y) fixed directly (commit pending this session); 2 findings (F5/F5b, below) carried forward. See 03-05-SUMMARY.md "DLV-02 retroactive design critique".
 - 03-05 design-review F5 (non-blocking, carried forward): `wizardContinueHint` ("Continue reviews the Git fragment, includeIf, and allowed_signers entries before writing.") contradicts the real binary's always-disabled `[ Continue ]` reason ("Git configuration arrives with the next build") — a user reads both lines together and the copy disagrees with itself. `wizardContinueHint` is a Phase-2 LOCKED design contract (D6, checkpoint-2: "both frozen hints ALWAYS visible below the row"), so it cannot be suppressed/reworded without a documented scoped-divergence decision (the project's own D9 precedent — see 02-DESIGN-DECISIONS-CHECKPOINT-2.md). Candidate owner: Phase 4 (Git Configuration Screen), which is exactly when this hint's promise becomes true.
 - 03-05 design-review F5b (non-blocking, carried forward): the real binary's Git-step form fields stay focusable/editable even though `[ Continue ]` can never submit them at this phase — a user can type `user.name`/email into a form whose only submit path is permanently disabled, and nothing at field level signals the inertness. Medium effort, no frozen-copy conflict. Candidate owner: same as F5 (Phase 4) or a dedicated Phase-3 fix pass if surfaced again before then.
-- **03-06 (BLOCKING for phase close): the DLV-04.2 cross-AI review (`agent-ui-ux-designer` + Codex) has NOT run.** Plan 03-06's Task 3 is explicitly split (orchestrator-run exit gate, DLV-08 unattended-loop convention) — the executor assembled the review packet (`.planning/phases/03-create-flow-backend/03-06-review-packet/` — `text-diffs.txt` + `MANIFEST.md`, commit `9ddd102`) but has no subagent-spawning tools, same class as 02-14/02-15/03-05's own gaps above. The orchestrator must run both reviews against the packet, record findings + disposition in `03-06-SUMMARY.md`'s "Cross-AI visual-regression review" section (currently a placeholder scaffold), and resolve any CRITICAL/HIGH finding before Phase 3 is marked complete.
+- ~~03-06 (was BLOCKING): the DLV-04.2 cross-AI review (`agent-ui-ux-designer` + Codex) has NOT run.~~ **RESOLVED 2026-08-21 by plan 03-09 Task 3**: UI-REVIEW.md + CODEX-REVIEW.md both PASS (no Critical/High). CR-10/CR-11/WR-01 all closed. Phase 3 gates are green.
+- **REMAINING for Phase 3 ONESHOT checklist (steps 6-9):** gsd-code-review (03-REVIEW.md from 2026-08-18 had 14 CRITICAL — these were addressed by 03-07/03-08/03-09; a fresh code review is needed to verify), verify-work (03-VERIFICATION.md needs the passing evidence), UI-review (03-UI-REVIEW.md if required), audit-uat. These are ORCHESTRATOR obligations before Phase 4 starts. Plan 03-06's Task 3 is explicitly split (orchestrator-run exit gate, DLV-08 unattended-loop convention) — the executor assembled the review packet (`.planning/phases/03-create-flow-backend/03-06-review-packet/` — `text-diffs.txt` + `MANIFEST.md`, commit `9ddd102`) but has no subagent-spawning tools, same class as 02-14/02-15/03-05's own gaps above. The orchestrator must run both reviews against the packet, record findings + disposition in `03-06-SUMMARY.md`'s "Cross-AI visual-regression review" section (currently a placeholder scaffold), and resolve any CRITICAL/HIGH finding before Phase 3 is marked complete.
 - 03-06 (non-blocking, carried forward): `internal/tuikit/identities.go`'s create-wizard SSH form renders an unused "Provider" field row (focus slot 0, reachable via Tab) that FIELDS.md's approved 4-field contract does not include and D-20 explicitly says should not exist ("no new field"). Flagged, not fixed — see 03-06-SUMMARY.md "Issues Encountered". Candidate owner: a dedicated Phase-3 fix pass or a documented scoped-divergence decision, whichever the user prefers.
 
 ### Quick Tasks Completed
