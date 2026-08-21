@@ -1,323 +1,170 @@
 ---
 phase: 03-create-flow-backend
-reviewed: 2026-08-18T15:41:08Z
+reviewed: 2026-08-21T21:41:10Z
 depth: deep
-files_reviewed: 133
+files_reviewed: 16
 files_reviewed_list:
   - Makefile
-  - cmd/gitid-dummy/main.go
-  - cmd/gitid-dummy/main_test.go
-  - cmd/gitid/add.go
-  - cmd/gitid/add_test.go
-  - cmd/gitid/addrepo.go
-  - cmd/gitid/addrepo_test.go
-  - cmd/gitid/adopt.go
-  - cmd/gitid/adopt_test.go
-  - cmd/gitid/baseline.go
-  - cmd/gitid/baseline_test.go
-  - cmd/gitid/copy.go
-  - cmd/gitid/copy_test.go
-  - cmd/gitid/debug.go
-  - cmd/gitid/delete.go
-  - cmd/gitid/delete_test.go
-  - cmd/gitid/doctor.go
-  - cmd/gitid/doctor_agent_test.go
-  - cmd/gitid/doctor_realwiring_test.go
-  - cmd/gitid/doctor_test.go
   - cmd/gitid/gate_visual_regression_test.go
-  - cmd/gitid/list.go
-  - cmd/gitid/list_test.go
-  - cmd/gitid/main.go
-  - cmd/gitid/main_test.go
-  - cmd/gitid/match.go
-  - cmd/gitid/match_test.go
-  - cmd/gitid/rotate.go
-  - cmd/gitid/rotate_test.go
-  - cmd/gitid/smoke_network_test.go
-  - cmd/gitid/test.go
-  - cmd/gitid/test_test.go
-  - cmd/gitid/update.go
-  - cmd/gitid/update_test.go
-  - cmd/gitid/upload.go
   - cmd/gitid/wiring.go
-  - cmd/gitid/wiring_test.go
-  - e2e/addrepo_e2e_test.go
-  - e2e/adopt_e2e_test.go
-  - e2e/create_e2e_test.go
+  - cmd/gitid/wiring_cr_test.go
   - e2e/create_flow_pty_e2e_test.go
-  - e2e/harness_test.go
-  - e2e/install_e2e_test.go
-  - e2e/match_e2e_test.go
-  - e2e/overlap_e2e_test.go
-  - e2e/ui_pty_e2e_test.go
-  - e2e/upload_e2e_test.go
-  - internal/doctor/checks/reserved_test.go
-  - internal/dummytui/data.go
-  - internal/dummytui/data_test.go
-  - internal/dummytui/fixturebackend.go
-  - internal/dummytui/nobackend_test.go
-  - internal/identity/identity.go
   - internal/identity/modes.go
-  - internal/identity/modes_test.go
-  - internal/keygen/keyscan.go
-  - internal/keygen/keyscan_test.go
-  - internal/repoclone/repoclone.go
-  - internal/repoclone/repoclone_stub_test.go
-  - internal/repoclone/repoclone_test.go
   - internal/screenshot/createflow.go
-  - internal/sshconfig/include.go
-  - internal/sshconfig/include_test.go
-  - internal/sshconfig/reader.go
-  - internal/sshconfig/reader_test.go
+  - internal/screenshot/createflow_regions.go
+  - internal/screenshot/createflow_test.go
+  - internal/sshconfig/validation.go
   - internal/tester/tester.go
   - internal/tester/tester_command_test.go
-  - internal/tuikit/app.go
-  - internal/tuikit/app_test.go
-  - internal/tuikit/backend.go
-  - internal/tuikit/backend_stub_test.go
-  - internal/tuikit/batch3_test.go
-  - internal/tuikit/ceremony.go
-  - internal/tuikit/ceremony_test.go
-  - internal/tuikit/design.go
-  - internal/tuikit/doc.go
-  - internal/tuikit/doctor.go
-  - internal/tuikit/doctor_test.go
-  - internal/tuikit/fixplans.go
-  - internal/tuikit/fixplans_test.go
-  - internal/tuikit/frame.go
-  - internal/tuikit/frame_test.go
-  - internal/tuikit/globalgit.go
-  - internal/tuikit/globalgit_test.go
-  - internal/tuikit/globalssh.go
-  - internal/tuikit/globalssh_test.go
   - internal/tuikit/identities.go
-  - internal/tuikit/identities_test.go
-  - internal/tuikit/mouse_test.go
-  - internal/tuikit/reviewfix_test.go
   - internal/tuikit/store.go
-  - internal/tuikit/store_test.go
-  - internal/tuikit/theme.go
-  - internal/tuikit/theme_test.go
   - internal/tuikit/views.go
-  - tui/addrepo.go
-  - tui/addrepo_test.go
-  - tui/adopt.go
-  - tui/adopt_test.go
-  - tui/confirm.go
-  - tui/confirm_test.go
-  - tui/copy.go
-  - tui/copy_test.go
-  - tui/deps.go
-  - tui/deps_test.go
-  - tui/detail.go
-  - tui/detail_test.go
-  - tui/doc.go
-  - tui/globalopts.go
-  - tui/globalopts_test.go
-  - tui/health.go
-  - tui/health_test.go
-  - tui/help.go
-  - tui/keymap.go
-  - tui/messages.go
-  - tui/model.go
-  - tui/model_test.go
-  - tui/overlay.go
-  - tui/overlay_test.go
-  - tui/palette.go
-  - tui/prove_test.go
-  - tui/render_bench_test.go
-  - tui/scaffold_test.go
-  - tui/sidebar.go
-  - tui/sidebar_test.go
-  - tui/styles.go
-  - tui/styles_test.go
-  - tui/tui.go
-  - tui/tui_stub_test.go
-  - tui/upload_test.go
-  - tui/wiring_test.go
-  - tui/wizard.go
-  - tui/wizard_test.go
+  - .planning/design/create-flow/visual-divergence-allowlist.txt
 findings:
-  critical: 14
-  warning: 4
+  critical: 10
+  warning: 1
   info: 0
-  total: 18
+  total: 11
 status: issues_found
 ---
 
 # Phase 3: Code Review Report
 
-**Reviewed:** 2026-08-18T15:41:08Z
-**Depth:** deep
-**Files Reviewed:** 133
-**Status:** issues_found — **BLOCK**
+**Reviewed:** 2026-08-21T21:41:10Z  
+**Depth:** deep  
+**Files Reviewed:** 16  
+**Status:** issues_found — **BLOCKED / not clean**
 
 ## Summary
 
-The Phase 3 implementation must not ship. The create ceremony can report success before persistence, mutate user files before confirmation, accept unsafe SSH input, and leave coordinated configuration partially written. Test-stage behavior does not prove the alias resolves through the intended key. The visual gate exempts every captured screen and does not compare against approved screenshot evidence.
+Current HEAD `8dbf1aa` remains blocked after gap-closure commits `4130dcf` and `a2b6461`. The code does remove the generated-key pre-confirm `~/.ssh` directory mutation, propagates algorithm/provider fields into the commit DTO, and adds stricter IdentityFile validation. Those changes do not close the phase, however.
 
-Verification completed during review:
+The explicit packet publisher is a successful no-op, no `03-10-review-packet` exists, no 24-panel packet is produced, and no authenticated independent reviews were run. The routine visual gate compares current-HEAD real and dummy text only; it never captures approved HTML or approved TUI from approval commit `3c3130e`, never produces PNG evidence, and still permits broad region drift. More seriously, the production stage-two path still discards the `ssh -G` error/output, never calls the newly added validator, records the connectivity outcome before checking resolution, and cannot render both proof commands and outputs. Green Make targets therefore do not establish the claimed behavior.
 
-- `go test -race ./...` — 838 tests passed across 19 packages.
-- `go test -tags e2e -race -timeout 180s ./e2e/...` — 13 tests passed.
-- `go test -tags screenshot -run TestGateVisualRegression -v ./cmd/gitid/...` — passed.
-- `go vet ./...` — passed.
+**Verdict: BLOCKED. Phase 3 is not clean and must not advance.**
 
-These results do not clear the review because multiple tests encode the incorrect behavior described below.
+**Commands actually run at current HEAD:**
+
+- `TERM=dumb SSH_AUTH_SOCK= make test` — passed (Go packages reported cached).
+- `make lint` — passed, 0 issues.
+- `TERM=dumb SSH_AUTH_SOCK= make test-e2e` — passed (reported cached).
+- `make gate-visual-regression` — passed, but the gate defects below make this result non-probative.
+- `make generate-visual-review-packet SOURCE_COMMIT=a2b646138c8e57c9e203b1e64c9adfddae47b171 OUTPUT_DIR=<new temp path>` — exited 0 while creating no directory or files (`created=no`).
 
 ## Narrative Findings (AI reviewer)
 
 ## Critical Issues
 
-### CR-01 [BLOCKER]: Success is displayed before persistence occurs
+### CR-01 [BLOCKER]: The required immutable packet publisher is a successful no-op
 
-**Files:** `internal/tuikit/ceremony.go:137-164`, `internal/tuikit/identities.go:2055-2073`, `cmd/gitid/wiring.go:332-369`
+**File:** `Makefile:291-302`
 
-**Issue:** Confirmation only marks the ceremony done. Persistence is delayed until the user dismisses a receipt that already claims files were written. A later persistence failure is stored in `PersistError()` but is not surfaced by the UI.
+**Issue:** `generate-visual-review-packet` validates only that two variables are non-empty and that an existing destination is not non-empty, then prints two lines and exits successfully. It does not validate the source commit, create the destination, capture anything, hash anything, or publish the required 8 live + 8 approved-TUI + 8 approved-HTML panels. A direct run returned exit 0 with `created=no`. There is also no tracked `03-10-review-packet` at HEAD. Consequently original CR-05 and CR-06 remain open: there is no immutable evidence and no evidence-bound independent review.
 
-**Fix:** Dispatch persistence on confirmation, wait for an explicit result message, and show the receipt only after success. Render failure details and keep the ceremony recoverable.
+**Fix:** Implement a real publisher that rejects dirty/unknown/short source commits and existing destinations, captures all three eight-panel sets, writes a canonical manifest and provenance, hashes every member, validates exactly 24 panels, and atomically creates a content-addressed destination. Exit nonzero on every missing tool/input/output or write failure.
 
-### CR-02 [BLOCKER]: Testing mutates user files before confirmation
+### CR-02 [BLOCKER]: Approval commit provenance is asserted as a constant but never consumed
 
-**Files:** `cmd/gitid/wiring.go:151-180`, `cmd/gitid/wiring.go:540-551`, `internal/identity/modes.go:84-90`, `internal/tester/tester.go:75-84`
+**File:** `cmd/gitid/gate_visual_regression_test.go:54-57,326-337,518-542`
 
-**Issue:** Stage 1 generates keys at final paths; reuse can create a missing `.pub`; and `StrictHostKeyChecking=accept-new` can update the user's `known_hosts`. Canceling the wizard can therefore leave persistent state or replace key material without consent.
+**Issue:** The only approval handling is a hardcoded SHA plus a test that checks length/hex syntax. The gate constructs `dummytui.NewFixtureBackend()` from current HEAD. `TestApprovalCommitRecorded` explicitly does not invoke Git and even skips when `.git` is unavailable. No approved HTML or approved TUI source is read from `3c3130e`, and no approved artifact hash is reproduced. Original CR-03 is therefore unchanged in substance.
 
-**Fix:** Generate and derive keys in a mode-0700 temporary directory, use a temporary `UserKnownHostsFile`, and move validated artifacts to final paths only inside the confirmed ceremony.
+**Fix:** Export the approved HTML and TUI source trees from full commit `3c3130e404329cf42baafdf63a6c22758437edc6` into isolated temporary storage, run the pinned capture tools against those files, and record separate approval/live commands, SHAs, panel IDs, and hashes. Fail if either approved surface cannot be reproduced.
 
-### CR-03 [BLOCKER]: Algorithm selection, preview, and persistence disagree
+### CR-03 [BLOCKER]: The visual gate validates only 16 current-HEAD text renders, not the required 24 PNG panels
 
-**Files:** `internal/tuikit/identities.go:764-772`, `internal/tuikit/identities.go:924-953`, `internal/tuikit/identities.go:2683-2707`, `cmd/gitid/wiring.go:379-397`, `cmd/gitid/wiring.go:702-711`, `internal/keygen/catalog.go:53-60`, `internal/keygen/registry.go:37-45`
+**File:** `cmd/gitid/gate_visual_regression_test.go:299-455,545-570`; `internal/screenshot/createflow.go:248-352`
 
-**Issue:** Rendering uses a static catalog while selection indexes the backend-probed catalog. Availability metadata is dropped, disabled detection is note-specific, and the preview path always uses ed25519. Displayed stub algorithms remain selectable and fail later.
+**Issue:** The gate creates two maps of eight rendered text strings (real backend and current dummy backend). It does not invoke Chromium, Freeze, font/theme checks, HTML capture, TUI PNG capture, or packet hash validation. `TestAllScreensCapturedAndNonEmpty` explicitly expects only 8 real + 8 dummy text screens. Thus missing tools, missing approved panels, stale PNGs, and incomplete packet contents cannot make the routine gate fail. This leaves original CR-05 open and does not satisfy DLV-04/DLV-06.
 
-**Fix:** Use one backend catalog for rendering and selection, preserve explicit availability/implementation state, disable unavailable entries, and derive the key path from the selected algorithm.
+**Fix:** Make the routine gate generate two complete candidate bundles in temporary directories, require byte-identical inventories, verify 8 live + 8 approved-TUI + 8 approved-HTML PNGs and all hashes/provenance, and compare against an immutable committed packet without writing tracked files.
 
-### CR-04 [BLOCKER]: Collision checking validates the identity name instead of the SSH alias
+### CR-04 [BLOCKER]: Region policy still permits arbitrary drift and its negative controls do not fail
 
-**Files:** `internal/tuikit/identities.go:1075-1088`, `cmd/gitid/wiring.go:452-483`, `cmd/gitid/wiring.go:879-897`
+**File:** `cmd/gitid/gate_visual_regression_test.go:275-290,388-438,573-640`; `.planning/design/create-flow/visual-divergence-allowlist.txt:53-126`
 
-**Issue:** The UI checks a value such as `acme` while persistence writes `acme.github.com`. The backend also limits host discovery to managed blocks, missing hand-written and wildcard Host patterns. This permits first-match-wins ambiguity.
+**Issue:** There is no explicit per-screen required-region schema. Any region empty on both sides is silently skipped. For a differing broad region, `contains:` and `absent:` inspect only the real region for one token; all other bytes may change arbitrarily. Examples such as `header-status:contains:"ids"`, `connectivity-output:contains:"ssh"`, and `host-preview:contains:"Host acme.github.com"` do not constrain the actual divergence. The purported exhaustive negative control mutates an arbitrary prefix, then either `continue`s or merely `Logf`s when extraction is mutation-insensitive; it never runs the gate against each mutation and requires rejection. Original CR-04 remains open.
 
-**Fix:** Check the complete alias against all effective Host patterns from the main file and included files using OpenSSH pattern semantics. Fail closed when configuration cannot be parsed.
+**Fix:** Define mandatory non-empty regions for each screen, compare exact before/after values except for narrowly specified normalization functions, and table-test every protected subregion by applying a mutation and asserting the real gate rejects it. Mutation-insensitive extraction must be fatal.
 
-### CR-05 [BLOCKER]: SSH form values permit malformed or injected configuration
+### CR-05 [BLOCKER]: Production stage two still accepts incomplete or failed `ssh -G` proof
 
-**Files:** `internal/tuikit/identities.go:321-332`, `internal/tuikit/identities.go:1075-1080`, `internal/sshconfig/renderer.go:31-44`
+**File:** `internal/tester/tester.go:195-204,207-271`; `cmd/gitid/wiring.go:574-597`; `internal/tuikit/views.go:60-74`
 
-**Issue:** Host and hostname checks only require nonempty values, while the port only requires digits. Control characters, whitespace, wildcard patterns, directive-like input, port 0, and ports above 65535 reach direct string interpolation into SSH config.
+**Issue:** `ResolvedVia` still discards the `ssh -G` execution error and returns only parsed stdout. `realBackend.TestStage2` never calls `ValidateResolvedConfig`, never checks nonempty raw output, and records the connectivity outcome at line 590 before doing any resolution validation. The newly added `ResolvedViaGCommand`, `ExpectedResolution`, and `ValidateResolvedConfig` are disconnected helpers used only by tests. `TestResultView` still has room for only one command and one detail string, so the real renderer cannot carry both exact commands and both raw outputs. A wrong, empty, or failed `ssh -G` can still unlock persistence. Original CR-07 remains fully open in the production call chain.
 
-**Fix:** Reject control characters and whitespace in host tokens, validate hostnames and aliases against a strict grammar, constrain ports to 1-65535, validate paths, and make rendering return an error for unsafe values.
+**Fix:** Replace the `ResolvedVia` return contract with an error-bearing stage-two proof containing connectivity command/output/error, resolution command/raw output/error, and parsed fields. In `TestStage2`, validate User, Hostname, Port, IdentitiesOnly, and first effective IdentityFile before recording an accepted outcome. Extend the backend-free view DTO and renderer to show both command/output pairs.
 
-### CR-06 [BLOCKER]: Stage 2 does not prove the configured alias resolves through the expected key
+### CR-06 [BLOCKER]: Visual stage-two evidence is synthetic and omits the complete proof
 
-**Files:** `internal/tester/tester.go:87-105`, `internal/tester/tester.go:168-192`, `cmd/gitid/wiring.go:558-580`, `internal/tuikit/identities.go:2895-2907`
+**File:** `internal/screenshot/createflow.go:197-229,288-329`; `internal/tuikit/identities.go:2901-2938`
 
-**Issue:** Connectivity pins `-i` despite UI copy saying otherwise. The additional `ssh -G` command is not shown, its error is discarded, and incorrect or empty `IdentityFile`, `IdentitiesOnly`, user, hostname, or port values do not fail the stage.
+**Issue:** The capture wrapper fabricates stage two as one connectivity command plus `Detail: "identityfile <path>"`. It does not carry the real `ssh -G` command, raw `ssh -G` output, errors, or the required User/Hostname/Port/IdentitiesOnly fields. The TUI renders only `stage2Cmd()` (the connectivity call) and one truncated detail line. The state-transition bug from original CR-02 was improved, but the resulting panel still cannot prove stage-two correctness and cannot demonstrate the required real backend/render contract.
 
-**Fix:** Display both exact commands. Require a successful `ssh -G` result matching every expected field, and perform alias connectivity without bypassing configuration through `-i`.
+**Fix:** Drive a controllable offline implementation of the same complete stage-two proof type used in production and assert the captured panel contains both exact commands, both raw outputs, and every validated effective field.
 
-### CR-07 [BLOCKER]: Required automatic stage chaining is absent
+### CR-07 [BLOCKER]: Staged-key cache identity still ignores algorithm/provider and permits stale key reuse
 
-**Files:** `internal/tuikit/identities.go:1336-1356`, `internal/tuikit/identities.go:1953-1962`, `e2e/create_flow_pty_e2e_test.go:192-218`
+**File:** `cmd/gitid/wiring.go:91-98,965-996,1007-1012`
 
-**Issue:** A passing/reachable stage 1 stops and requires another Enter, contrary to D-04. The E2E test redefines chaining as a second user action.
+**Issue:** Algorithm/provider now reach `DemoIdentity` and `createInput`, but `stagedKeyFor` reuses cached material based only on identity name and reuse path. If the user stages/tests one algorithm, navigates back, and selects another algorithm for the same identity, the cache can return the old key material while the proof fingerprint and commit input claim the new algorithm. The fingerprint also omits generate-vs-reuse source and reuse path, despite the gap-closure plan requiring both. Existing tests directly manufacture accepted outcomes and do not exercise a raw-PTY RSA flow. Original CR-10 is only partially fixed.
 
-**Fix:** Batch or dispatch stage 2 immediately after the accepted stage-1 outcomes and update tests to assert that no intervening input is needed.
+**Fix:** Key staged material and accepted proof on a canonical fingerprint that includes algorithm, provider, key source, and normalized reuse path. Invalidate staged material and both outcomes whenever any of those fields changes. Add the required real-binary raw-PTY RSA create test through confirmation and persisted Host block.
 
-### CR-08 [BLOCKER]: Existing-key reuse does not verify key pairing or normalize permissions
+### CR-08 [BLOCKER]: IdentityFile validation is not enforced at the final render/execute boundary
 
-**Files:** `internal/keygen/keyscan.go:112-134`, `internal/identity/modes.go:54-91`, `cmd/gitid/wiring.go:182-197`
+**File:** `cmd/gitid/wiring.go:240-255,443-454,472-481,1257-1264`; `internal/sshconfig/validation.go:47-97`
 
-**Issue:** For encrypted private keys, any adjacent `.pub` is trusted and presented for upload without proving it matches. Reused files bypass permission normalization, violating the matching-key and 0600/0644 requirements.
+**Issue:** Character validation is stricter, but it is called only through the UI's earlier `ValidateHostBlock` method. Both the staged test config and confirmed transaction call `sshconfig.RenderHostBlock` directly without authoritative revalidation immediately before render/execution. The preview also renders directly. This does not satisfy the stated CR-11 trust-boundary fix and leaves non-UI/backend callers able to interpolate malformed tokens. Unicode whitespace above the C1 range is also accepted despite the comment claiming all Unicode whitespace is rejected.
 
-**Fix:** Parse and canonicalize the public key, verify pairing through a passphrase-aware mechanism or reject unverifiable pairs, and apply previewed permission changes only during confirmed persistence.
+**Fix:** Introduce a checked render function (or validate immediately before every render) and make staged config, preview, and confirmed persistence use it. Reject `unicode.IsSpace` and all controls, then retain parser plus real `ssh -G` round-trip tests at that checked boundary.
 
-### CR-09 [BLOCKER]: Coordinated writes are not transactional
+### CR-09 [BLOCKER]: Rollback can leave a newly created real `~/.ssh` directory behind
 
-**Files:** `cmd/gitid/wiring.go:813-832`, `cmd/gitid/wiring.go:151-197`, `internal/identity/identity.go:323-349`
+**File:** `cmd/gitid/wiring.go:1124-1148,1169-1185,1237-1249`
 
-**Issue:** Private key, public key, Include line, target config, and Host block writes are separate operations without rollback. A later failure can leave dangling includes, partial identities, or unmatched key files.
+**Issue:** On a fresh HOME, rollback records `~/.ssh` first and `~/.ssh/config.d` later. The rollback loop removes `createdDirs` in creation order. Removing `~/.ssh` first fails because `config.d` still exists; the loop then removes `config.d` but never retries `~/.ssh`. A failure after Include-directory creation can therefore leave the real SSH directory behind, contradicting the all-or-nothing transaction guarantee associated with CR-08/CR-09.
 
-**Fix:** Stage all outputs, capture pre-write state, apply a coordinated transaction, and roll back every earlier mutation when any later step fails.
+**Fix:** Remove created directories in reverse order and treat rollback failures as observable errors. Add failure injection after every mutation and compare the complete pre/post filesystem snapshot, including directory existence and modes.
 
-### CR-10 [BLOCKER]: The visual regression gate exempts every captured screen
+### CR-10 [BLOCKER]: Determinism is limited to one test process and excludes the evidence that matters
 
-**Files:** `cmd/gitid/gate_visual_regression_test.go:105-127`, `.planning/design/create-flow/visual-divergence-allowlist.txt:26-27,45,61-65`, `internal/screenshot/createflow.go:42-57`
+**File:** `cmd/gitid/gate_visual_regression_test.go:236-273,311-349`; `internal/screenshot/createflow.go:37-49`
 
-**Issue:** All eight enumerated screens are allowlisted at whole-screen granularity. Any current or future difference on those screens therefore passes, including unrelated sidebar and header divergence.
+**Issue:** `sync.OnceValue` wraps a fresh cryptographic key generation, so bytes are stable only within one test process, not reproducible across independent invocations or machines. The two-run check compares text only and performs no PNG or packet hash comparison. Temporary path normalization is not general; only timestamp-shaped strings are replaced. Because the publisher is absent, there is no independently repeatable bundle inventory. Original CR-01 remains open despite the ordinary gate now avoiding tracked writes.
 
-**Fix:** Allowlist exact normalized regions or predicates rather than screen IDs. Require meaningful non-allowlisted coverage and reject stale, duplicate, unknown, or unexplained exemptions.
-
-### CR-11 [BLOCKER]: DLV-04 does not compare implementation output with approved screenshots
-
-**Files:** `.planning/REQUIREMENTS.md:45-52`, `.planning/phases/03-create-flow-backend/03-06-PLAN.md:70-76,180-205`, `.planning/phases/03-create-flow-backend/03-06-review-packet/MANIFEST.md:24-45`, `.planning/phases/03-create-flow-backend/03-06-SUMMARY.md:103-123`
-
-**Issue:** The gate compares live real-backend text with freshly generated dummy-backend text, not approved HTML/TUI screenshots. No PNG pairs exist and the required independent Codex review remains pending.
-
-**Fix:** Capture deterministic real-binary PNGs, compare them against the approved reference set, run both required independent reviews, and resolve all blocking visual findings.
-
-### CR-12 [BLOCKER]: The unapproved Provider field remains in the form
-
-**Files:** `.planning/REQUIREMENTS.md:132-137`, `.planning/phases/03-create-flow-backend/03-UI-SPEC.md:148-154`, `internal/tuikit/identities.go:111-118`, `internal/tuikit/identities.go:453-460`
-
-**Issue:** SSHUI-01 and D-20 require provider inference without a second editable field, but Provider is visible and first in tab order. The shared dummy/real implementation prevents the current visual gate from detecting this divergence.
-
-**Fix:** Remove the editable Provider field or obtain explicit scoped design approval and update the requirement before implementation.
-
-### CR-13 [BLOCKER]: Configuration read failures silently become empty healthy state
-
-**Files:** `cmd/gitid/wiring.go:467-483`, `cmd/gitid/wiring.go:838-855`, `cmd/gitid/wiring.go:879-897`
-
-**Issue:** Inventory, managed-block, and Host parse errors are discarded. The UI may show no identities or collisions and then write into a configuration it could not understand.
-
-**Fix:** Propagate initialization and parsing failures into a blocking UI state. Collision and persistence checks must fail closed.
-
-### CR-14 [BLOCKER]: Include detection uses an unsafe path-prefix test
-
-**File:** `cmd/gitid/wiring.go:797-810`
-
-**Issue:** A raw `strings.HasPrefix` treats unrelated paths such as `~/.ssh/config.different/...` as children of `~/.ssh/config.d`. The tool can then omit the real Include line and write an unreachable Host block.
-
-**Fix:** Use exact glob equivalence or path-boundary-aware containment rather than a string prefix.
+**Fix:** Use committed public-only deterministic fixture data or a deterministic DTO, normalize all disposable paths and injected clock/backup values, run two independent complete bundle generations, and require identical text, PNG, manifest, and per-file hashes before publication.
 
 ## Warnings
 
-### WR-01 [WARNING]: The visual gate performs real network operations
+### WR-01 [WARNING]: Multi-label provider metadata still diverges between preview and persisted output
 
-**Files:** `internal/screenshot/createflow.go:59-72,197-204`, `cmd/gitid/gate_visual_regression_test.go:92-103`
+**File:** `cmd/gitid/wiring.go:443-454,901-942,1257-1264`
 
-**Issue:** Capture drains real backend commands without injecting deterministic SSH behavior, making the gate provider/network dependent.
+**Issue:** The commit DTO now preserves `DemoIdentity.Provider`, closing the original truncation in the persistence input. However `HostBlockPreview` still calls `providerFromAlias`, which truncates `enterprise.company.co.uk` to `co.uk`, while confirmed persistence renders `in.Provider` (`company.co.uk`). The UI's “written exactly like this on confirm” claim is false for the exact multi-label case WR-01 targeted.
 
-**Fix:** Inject fake SSH effects or a controlled executable through `PATH` for screenshot capture.
+**Fix:** Render previews from `spec.Provider` after validation, using the same checked render function and provider value as the confirmed transaction. Remove suffix reconstruction from this path.
 
-### WR-02 [WARNING]: The persistence boundary fails open when no test outcome exists
+## Original Finding Disposition
 
-**File:** `cmd/gitid/wiring.go:1003-1012`
-
-**Issue:** `storeUnlocked()` returns true when `outcomeKnown` is false. Current UI ordering masks this, but the backend does not enforce TEST-03 itself.
-
-**Fix:** Require successful stage-1 and stage-2 records tied to the current create specification.
-
-### WR-03 [WARNING]: Provider extraction assumes a two-label public suffix
-
-**File:** `cmd/gitid/wiring.go:1078-1087`
-
-**Issue:** Enterprise and multi-label domains can produce incorrect provider metadata and same-provider warnings.
-
-**Fix:** Preserve the provider selected/inferred earlier rather than reconstructing it from the final two labels.
-
-### WR-04 [WARNING]: Phase governance artifacts contradict completion claims
-
-**Files:** `.planning/phases/03-create-flow-backend/03-UI-SPEC.md:315-324`, `.planning/phases/03-create-flow-backend/03-VALIDATION.md:1-8,37-41`, `.planning/ROADMAP.md:178-180`, `.planning/REQUIREMENTS.md:447-476`
-
-**Issue:** The UI spec and validation ledger remain draft/pending and non-Nyquist while requirement rows are already marked complete.
-
-**Fix:** Correct traceability only after implementation fixes and independent verification are complete.
+| Original finding | Code-level verdict | Remaining evidence |
+|---|---|---|
+| CR-01 | OPEN | CR-10: cross-process/full-bundle determinism absent. |
+| CR-02 | PARTIAL | State transitions differ now, but CR-06 shows incomplete synthetic proof. |
+| CR-03 | OPEN | CR-02: approval commit never loaded or captured. |
+| CR-04 | OPEN | CR-04: broad predicates, skipped regions, ineffective controls. |
+| CR-05 | OPEN | CR-01/CR-03: no publisher, PNG gate, 24-panel count, or packet validation. |
+| CR-06 | OPEN | CR-01: no new packet and no authenticated independent reviews. |
+| CR-07 | OPEN | CR-05: new helpers are disconnected from production and render. |
+| CR-08 | CLOSED for pre-confirm mutation | Generated and reused staging paths reviewed; no real SSH-directory write/chmod found before confirmation. Transaction rollback remains broken under CR-09. |
+| CR-09 | PARTIAL | Reused private-key chmod/restore exists; full filesystem rollback fails under CR-09. |
+| CR-10 | PARTIAL | DTO propagation exists; stale staged cache and missing real-PTY proof remain under CR-07. |
+| CR-11 | PARTIAL | Token checks improved; final render boundary remains unchecked under CR-08. |
+| WR-01 | PARTIAL | Commit uses preserved provider; preview still reconstructs/truncates it. |
 
 ---
 
-_Reviewed: 2026-08-18T15:41:08Z_
-_Reviewer: the agent (gsd-code-reviewer)_
-_Depth: deep_
-_Verdict: BLOCK_
+_Reviewed: 2026-08-21T21:41:10Z_  
+_Reviewer: the agent (gsd-code-reviewer)_  
+_Depth: deep_  
+_Verdict: BLOCKED — issues_found; review is not clean._
