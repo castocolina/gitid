@@ -159,9 +159,10 @@ func buildIdentityDeps(b *realBackend) identity.Deps {
 		// staging directory; final paths are carried in StagedKey but not
 		// touched until the confirmed transaction (CR-02).
 		Generate: func(in identity.CreateInput) (identity.StagedKey, error) {
-			if err := filewriter.EnsureDir(b.sshDir, sshDirMode); err != nil {
-				return identity.StagedKey{}, fmt.Errorf("gitid: ensuring %s: %w", b.sshDir, err)
-			}
+			// CR-08: Do NOT create or chmod the real ~/.ssh directory here.
+			// The final SSH directory is created/chmoded only inside the
+			// confirmed commitCreateTransaction — never before explicit consent.
+			// Key generation runs entirely in the throwaway staging directory.
 			stageDir, derr := b.stagingDir()
 			if derr != nil {
 				return identity.StagedKey{}, derr
@@ -906,15 +907,30 @@ func (b *realBackend) createInput(row tuikit.DemoIdentity) identity.CreateInput 
 		port = identity.DefaultPort()
 	}
 	hostname := row.Hostname
+	// Derive the provider from the DemoIdentity.Provider field when present
+	// (WR-01: the validated provider survives intact rather than being
+	// reconstructed from the alias suffix by providerFromAlias, which
+	// truncates multi-label providers like "company.co.uk" to "co.uk").
+	provider := row.Provider
+	if provider == "" {
+		provider = providerFromAlias(row.SSHHost)
+	}
 	if hostname == "" {
-		hostname = identity.DefaultHostname(providerFromAlias(row.SSHHost))
+		hostname = identity.DefaultHostname(provider)
+	}
+	// CR-10: use the selected algorithm from DemoIdentity.Algorithm; fall back
+	// to "ed25519" only when no algorithm was recorded (e.g. legacy callers
+	// that do not set the field).
+	algo := row.Algorithm
+	if algo == "" {
+		algo = "ed25519"
 	}
 	return identity.CreateInput{
 		Name:               row.Name,
 		GitName:            row.GitName,
 		GitEmail:           row.GitEmail,
-		Provider:           providerFromAlias(row.SSHHost),
-		Algo:               "ed25519",
+		Provider:           provider,
+		Algo:               algo,
 		Alias:              row.SSHHost,
 		Hostname:           hostname,
 		Port:               port,
@@ -1085,19 +1101,28 @@ func (b *realBackend) CommitCreate(id tuikit.DemoIdentity) tea.Cmd {
 
 // commitCreateTransaction applies the confirmed SSH create as one coordinated
 // unit and rolls back on any error. The write order is:
-//  1. private key
-//  2. public key (or reused .pub sibling)
+//  0. Real SSH directory creation/mode (CR-08: only on confirmation, not pre-confirm)
+//  1. Private key (written for generated; chmod 0600 for reused — CR-09)
+//  2. Public key (written for generated; chmod 0644 for reused)
 //  3. Include line in ~/.ssh/config (fresh-machine layout)
 //  4. Host block in the resolved storage target
 //
 // Rollback restores pre-write backups and removes transaction-created files so
-// a failure at any step leaves the user's config exactly as it was.
+// a failure at any step leaves the user's config exactly as it was. For reused
+// keys, rollback restores the original file permissions (CR-09).
 func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged identity.StagedKey) ([]string, error) {
 	type backupOp struct {
 		target string
 		backup string // empty means target did not exist before the transaction
 	}
+	// modeOp records a file whose permission was changed so rollback can
+	// restore it (CR-09: reused-key permission normalization).
+	type modeOp struct {
+		path     string
+		prevMode os.FileMode
+	}
 	var ops []backupOp
+	var modeOps []modeOp
 	var createdDirs []string
 	var rollback bool
 
@@ -1113,6 +1138,10 @@ func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged id
 			} else {
 				_ = os.Remove(op.target)
 			}
+		}
+		// Restore file modes in reverse order (CR-09).
+		for i := len(modeOps) - 1; i >= 0; i-- {
+			_ = os.Chmod(modeOps[i].path, modeOps[i].prevMode)
 		}
 		for _, d := range createdDirs {
 			_ = os.Remove(d)
@@ -1130,18 +1159,64 @@ func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged id
 		return nil
 	}
 
+	// 0. Real SSH directory (CR-08: create and/or chmod only in the confirmed
+	// transaction, never before consent). On a fresh machine, the directory
+	// does not yet exist; on an existing machine, we ensure it is 0700.
+	if err := inject("ssh-dir"); err != nil {
+		rollback = true
+		return nil, err
+	}
+	sshDirInfo, sshDirErr := os.Stat(b.sshDir)
+	if os.IsNotExist(sshDirErr) {
+		// Fresh machine: create ~/.ssh at mode 0700.
+		if merr := os.MkdirAll(b.sshDir, sshDirMode); merr != nil {
+			rollback = true
+			return nil, fmt.Errorf("gitid: creating %s: %w", b.sshDir, merr)
+		}
+		createdDirs = append(createdDirs, b.sshDir)
+	} else if sshDirErr == nil && sshDirInfo.Mode().Perm() != sshDirMode {
+		// Existing directory with wrong mode: chmod it and record the original
+		// mode for rollback.
+		prevMode := sshDirInfo.Mode().Perm()
+		if cerr := os.Chmod(b.sshDir, sshDirMode); cerr != nil {
+			rollback = true
+			return nil, fmt.Errorf("gitid: securing %s: %w", b.sshDir, cerr)
+		}
+		modeOps = append(modeOps, modeOp{path: b.sshDir, prevMode: prevMode})
+	} else if sshDirErr != nil {
+		rollback = true
+		return nil, fmt.Errorf("gitid: checking %s: %w", b.sshDir, sshDirErr)
+	}
+
 	// 1. Private key.
 	if err := inject("private-key"); err != nil {
 		rollback = true
 		return nil, err
 	}
 	if staged.PrivPEM != nil {
+		// Generated key: write the PEM at 0600.
 		bk, err := filewriter.Write(staged.FinalPrivatePath, staged.PrivPEM, keyFileMode)
 		if err != nil {
 			rollback = true
 			return nil, fmt.Errorf("gitid: writing private key: %w", err)
 		}
 		addOp(staged.FinalPrivatePath, bk)
+	} else {
+		// Reused key (nil PrivPEM — CR-09): normalise the private key to 0600.
+		// Record the original mode so it can be restored on rollback.
+		privInfo, serr := os.Stat(staged.FinalPrivatePath)
+		if serr != nil {
+			rollback = true
+			return nil, fmt.Errorf("gitid: checking reused private key %s: %w", staged.FinalPrivatePath, serr)
+		}
+		prevMode := privInfo.Mode().Perm()
+		if prevMode != keyFileMode {
+			if cerr := os.Chmod(staged.FinalPrivatePath, keyFileMode); cerr != nil {
+				rollback = true
+				return nil, fmt.Errorf("gitid: normalising reused private key mode: %w", cerr)
+			}
+			modeOps = append(modeOps, modeOp{path: staged.FinalPrivatePath, prevMode: prevMode})
+		}
 	}
 
 	// 2. Public key.

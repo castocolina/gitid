@@ -37,6 +37,14 @@ type DemoIdentity struct {
 	// to the committed write — non-empty means Persist must NOT generate a
 	// new key pair, it must point the identity at this existing key (KEY-06).
 	ReuseKeyPath string
+	// Algorithm is the selected key algorithm id (ed25519, rsa-4096, …)
+	// carried from CreateSpec through finishIdentity so CommitCreate never
+	// defaults or reconstructs it (CR-10).
+	Algorithm string
+	// Provider is the validated provider host carried from CreateSpec through
+	// finishIdentity so CommitCreate never re-derives it via providerFromAlias
+	// (WR-01). Multi-label providers (e.g. "company.co.uk") survive intact.
+	Provider string
 }
 
 // SSHStorageLayout is STORE-01's dual storage strategy for the SSH config:

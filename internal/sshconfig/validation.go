@@ -64,8 +64,35 @@ func ValidateHostBlock(alias, hostname, portStr, identityFile string) error {
 	if strings.TrimSpace(identityFile) == "" {
 		return &ValidationError{Field: "identityFile", Message: "IdentityFile cannot be empty"}
 	}
-	if strings.ContainsAny(identityFile, "\n\r\x00") {
-		return &ValidationError{Field: "identityFile", Message: "IdentityFile contains control characters"}
+	// CR-11: Reject every character that is unsafe in an unquoted OpenSSH
+	// IdentityFile token. The renderer interpolates this value without quoting,
+	// so any such character would produce a malformed or semantically different
+	// SSH directive.
+	//
+	// Rejected: any ASCII/Unicode whitespace or control character, quotes,
+	// backslash (ambiguous escaping), hash (comment separator), equals
+	// (directive key=value separator), and NUL/DEL.
+	for i, r := range identityFile {
+		switch {
+		case r == 0: // NUL
+			return &ValidationError{Field: "identityFile", Message: "IdentityFile contains NUL character"}
+		case r == '\n' || r == '\r':
+			return &ValidationError{Field: "identityFile", Message: "IdentityFile contains line break"}
+		case r < ' ' || r == 0x7f: // other control characters and DEL
+			return &ValidationError{Field: "identityFile", Message: fmt.Sprintf("IdentityFile contains control character at byte %d", i)}
+		case r == ' ' || r == '\t' || r == '\f' || r == '\v':
+			return &ValidationError{Field: "identityFile", Message: "IdentityFile contains whitespace — unquoted OpenSSH tokens may not contain spaces or tabs"}
+		case r > 0x7e && r <= 0x9f: // C1 control characters
+			return &ValidationError{Field: "identityFile", Message: fmt.Sprintf("IdentityFile contains Unicode control character U+%04X", r)}
+		case r == '"' || r == '\'':
+			return &ValidationError{Field: "identityFile", Message: "IdentityFile contains a quote character — unquoted tokens may not contain quotes"}
+		case r == '\\':
+			return &ValidationError{Field: "identityFile", Message: "IdentityFile contains a backslash — ambiguous escaping in unquoted tokens is not supported"}
+		case r == '#':
+			return &ValidationError{Field: "identityFile", Message: "IdentityFile contains '#' — interpreted as a comment separator in SSH config"}
+		case r == '=':
+			return &ValidationError{Field: "identityFile", Message: "IdentityFile contains '=' — interpreted as a key-value separator in SSH config"}
+		}
 	}
 	return nil
 }

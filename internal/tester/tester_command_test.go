@@ -79,6 +79,91 @@ func TestResolvedViaUsesSharedArgBuilder(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// CR-07 — ResolvedViaGCommand and ValidateResolvedConfig
+// ---------------------------------------------------------------------------
+
+// TestResolvedViaGCommandShape verifies that ResolvedViaGCommand produces the
+// ssh -G probe command — distinct from the connectivity command — using -F for
+// the staged config path and -G for the alias (CR-07).
+func TestResolvedViaGCommandShape(t *testing.T) {
+	got := ResolvedViaGCommand("/tmp/staged-cfg", "work.github.com")
+	for _, want := range []string{
+		"-F /tmp/staged-cfg",
+		"-G work.github.com",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("ResolvedViaGCommand() = %q, must contain %q", got, want)
+		}
+	}
+	// Must not be the connectivity command.
+	if strings.Contains(got, "-T git@") {
+		t.Errorf("ResolvedViaGCommand must produce the -G probe, not the connectivity -T call; got %q", got)
+	}
+	if strings.Contains(got, "-o IdentitiesOnly=yes") {
+		t.Errorf("ResolvedViaGCommand must not carry connectivity options; got %q", got)
+	}
+}
+
+// TestValidateResolvedConfigMismatchedUser proves that a resolved config with
+// the wrong User value is rejected by ValidateResolvedConfig (CR-07).
+func TestValidateResolvedConfigMismatchedUser(t *testing.T) {
+	rc := ResolvedConfig{
+		User: "notgit", Hostname: "ssh.github.com", Port: "443",
+		IdentitiesOnly: "yes", IdentityFiles: []string{"/k"},
+	}
+	if err := ValidateResolvedConfig(rc, ExpectedResolution{
+		User: "git", Hostname: "ssh.github.com", Port: "443",
+		IdentitiesOnly: "yes", ExpectedKeyPath: "/k",
+	}); err == nil {
+		t.Fatal("mismatched User must be rejected (CR-07)")
+	}
+}
+
+// TestValidateResolvedConfigEmptyOutput proves that an all-zero ResolvedConfig
+// (e.g. from empty ssh -G output) is rejected when any expected field is set
+// (CR-07: fail closed on empty/truncated output).
+func TestValidateResolvedConfigEmptyOutput(t *testing.T) {
+	if err := ValidateResolvedConfig(ResolvedConfig{}, ExpectedResolution{
+		User: "git", Hostname: "ssh.github.com", Port: "443",
+		IdentitiesOnly: "yes", ExpectedKeyPath: "/k",
+	}); err == nil {
+		t.Fatal("empty ssh -G output must be rejected (CR-07)")
+	}
+}
+
+// TestValidateResolvedConfigKeyNotFirst proves that when the expected key is
+// listed SECOND (rather than first) in IdentityFiles, the validator rejects the
+// resolution — the earlier key would shadow it (CR-07).
+func TestValidateResolvedConfigKeyNotFirst(t *testing.T) {
+	rc := ResolvedConfig{
+		User: "git", Hostname: "ssh.github.com", Port: "443",
+		IdentitiesOnly: "yes",
+		IdentityFiles:  []string{"/home/.ssh/id_ed25519", "/home/.ssh/id_ed25519_acme"},
+	}
+	if err := ValidateResolvedConfig(rc, ExpectedResolution{
+		User: "git", Hostname: "ssh.github.com", Port: "443",
+		IdentitiesOnly: "yes", ExpectedKeyPath: "/home/.ssh/id_ed25519_acme",
+	}); err == nil {
+		t.Fatal("expected key not first in IdentityFiles must be rejected (CR-07)")
+	}
+}
+
+// TestValidateResolvedConfigAllMatch proves the positive path: a correctly
+// matched resolved config returns nil from the validator (CR-07).
+func TestValidateResolvedConfigAllMatch(t *testing.T) {
+	rc := ResolvedConfig{
+		User: "git", Hostname: "ssh.github.com", Port: "443",
+		IdentitiesOnly: "yes", IdentityFiles: []string{"/home/.ssh/id_ed25519_acme"},
+	}
+	if err := ValidateResolvedConfig(rc, ExpectedResolution{
+		User: "git", Hostname: "ssh.github.com", Port: "443",
+		IdentitiesOnly: "yes", ExpectedKeyPath: "/home/.ssh/id_ed25519_acme",
+	}); err != nil {
+		t.Errorf("all-matching resolved config must return nil: %v", err)
+	}
+}
+
 // functionBody returns the source text from the given func declaration up to the
 // next top-level declaration, so assertions are scoped to one function.
 func functionBody(t *testing.T, src, decl string) string {

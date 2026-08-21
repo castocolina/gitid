@@ -1224,6 +1224,7 @@ func (w wizardModel) reviewCeremony() ceremonyModel {
 // (Identities.tsx finish()).
 func (w wizardModel) finishIdentity() DemoIdentity {
 	name := w.form.identityName()
+	sp := w.spec()
 	id := DemoIdentity{
 		Name:         name,
 		SSHHost:      w.form.sshHost(),
@@ -1231,6 +1232,12 @@ func (w wizardModel) finishIdentity() DemoIdentity {
 		Hostname:     w.form.hostname.Value(),
 		Port:         atoiSafe(w.form.port.Value()),
 		ReuseKeyPath: w.reuseKeyPath(),
+		// CR-10: carry the selected algorithm so CommitCreate never defaults
+		// to ed25519 regardless of what the user selected.
+		Algorithm: sp.Algorithm,
+		// WR-01: carry the validated provider so CommitCreate never reconstructs
+		// it via providerFromAlias (which truncates multi-label providers).
+		Provider: sp.Provider,
 	}
 	if w.configureGit {
 		id.State = "complete"

@@ -1,6 +1,7 @@
 package tester
 
 import (
+	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -201,6 +202,73 @@ func ResolvedVia(configPath, keyPath, alias string, knownHostsPath string) (Resu
 
 	gOut, _ := exec.Command("ssh", "-F", configPath, "-G", alias).Output() //nolint:gosec // arg-slice form, no shell; paths/alias are validated gitid input (G204)
 	return res, ParseResolved(string(gOut))
+}
+
+// ResolvedViaGCommand returns the string representation of the stage-2
+// ssh -G resolution command that ResolvedVia runs to prove the alias resolves
+// through the staged config to the expected key. It is a pure read-only helper
+// (no exec) built from the same config-path and alias arguments as ResolvedVia,
+// so the command shown to the user is byte-identical to what was run (TEST-01).
+//
+// This is deliberately separate from ResolvedViaCommand (the connectivity call)
+// so callers can render BOTH commands and BOTH raw outputs to the user (CR-07).
+func ResolvedViaGCommand(configPath, alias string) string {
+	args := []string{"-F", configPath, "-G", alias}
+	cmd := exec.Command("ssh", args...) //nolint:gosec // arg-slice form for cmd.String() display; not executed here
+	return cmd.String()
+}
+
+// ExpectedResolution holds the field values the stage-2 ssh -G proof must
+// match for the result to be accepted as a valid resolution (CR-07/TEST-02).
+// All fields are compared after lower-casing the parsed output values.
+type ExpectedResolution struct {
+	// User is the expected SSH User directive — always "git" for managed
+	// identities.
+	User string
+	// Hostname is the real endpoint hostname the alias resolves to.
+	Hostname string
+	// Port is the expected port as a decimal string.
+	Port string
+	// IdentitiesOnly is "yes" for every gitid-managed host block.
+	IdentitiesOnly string
+	// ExpectedKeyPath is the path that must appear as the FIRST IdentityFile
+	// in the resolved config's effective key list. A key listed later (after a
+	// default ~/.ssh/id_ed25519) means the config wiring is wrong.
+	ExpectedKeyPath string
+}
+
+// ValidateResolvedConfig validates the parsed ssh -G output against the
+// expected resolution parameters. It returns a descriptive error naming the
+// mismatched field when any field fails, and nil when all fields match (CR-07).
+//
+// Failure cases:
+//   - Any expected field is non-empty but the corresponding resolved value is
+//     empty (the ssh -G output was absent or truncated).
+//   - The resolved User, Hostname, Port, or IdentitiesOnly does not match.
+//   - ExpectedKeyPath is non-empty and does not appear as the FIRST element of
+//     IdentityFiles (the expected key is not the effective key).
+func ValidateResolvedConfig(rc ResolvedConfig, expected ExpectedResolution) error {
+	if expected.User != "" && rc.User != expected.User {
+		return fmt.Errorf("stage-2 proof: user mismatch: got %q, want %q", rc.User, expected.User)
+	}
+	if expected.Hostname != "" && rc.Hostname != expected.Hostname {
+		return fmt.Errorf("stage-2 proof: hostname mismatch: got %q, want %q", rc.Hostname, expected.Hostname)
+	}
+	if expected.Port != "" && rc.Port != expected.Port {
+		return fmt.Errorf("stage-2 proof: port mismatch: got %q, want %q", rc.Port, expected.Port)
+	}
+	if expected.IdentitiesOnly != "" && rc.IdentitiesOnly != expected.IdentitiesOnly {
+		return fmt.Errorf("stage-2 proof: identitiesonly mismatch: got %q, want %q", rc.IdentitiesOnly, expected.IdentitiesOnly)
+	}
+	if expected.ExpectedKeyPath != "" {
+		if len(rc.IdentityFiles) == 0 {
+			return fmt.Errorf("stage-2 proof: no identityfile in ssh -G output (empty or truncated output?)")
+		}
+		if rc.IdentityFiles[0] != expected.ExpectedKeyPath {
+			return fmt.Errorf("stage-2 proof: first effective identityfile = %q, want %q (earlier key shadows the expected one)", rc.IdentityFiles[0], expected.ExpectedKeyPath)
+		}
+	}
+	return nil
 }
 
 // ParseResolved parses `ssh -G` output. Keys are matched on a lowercase
