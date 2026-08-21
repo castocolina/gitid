@@ -64,11 +64,15 @@ Only close a phase and advance once all nine are evidenced.
    failure, a circuit breaker, or a required confirmation for a real
    user-file or external-account mutation. Record the exact blocker and
    preserve all green work.
-10. When a phase's post-execution verification returns `gaps_found`, choose
-    "Run gap closure" without waiting for a live response — this is
-    pre-authorized so the run stays unattended. Gap closure is capped at one
-    retry by `gsd-autonomous` itself; if gaps persist after that retry,
-    treat it as a real blocker under rule 9.
+10. When verification, code review, UI review, UAT audit, or independent
+    evidence review finds a gap, fix it autonomously: create or revise the
+    smallest corrective plan, implement it test-first, rerun every affected
+    gate, and obtain a fresh independent review. Repeat this loop until the
+    relevant reports are clean and the phase checklist is evidenced. A failing
+    test, review finding, incomplete artifact, stale evidence, or an agent's
+    failed attempt is work to fix, not a blocker. Stop only for rule 9 safety
+    conditions, a required real-file/account confirmation, or a demonstrable
+    repeated zero-progress tool failure; record the evidence for that stop.
 
 ## Phase 9 External Account Policy
 

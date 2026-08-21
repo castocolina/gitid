@@ -180,3 +180,17 @@ dated; convert relative dates to absolute.
   Describe them by name instead ("a closing tag named content"). If an agent is
   launched with a suspect prompt, TaskStop it immediately and verify the tree is
   unchanged before relaunching.
+
+### L14 — Verification findings are convergence work, not a terminal state (2026-08-21, Phase 3)
+- **Symptom:** the autonomous run stopped after one gap-closure attempt even
+  though code review still found correctable implementation and evidence
+  defects.
+- **Root cause:** the playbook treated a retry limit as a circuit breaker,
+  conflating ordinary engineering work with a safety or authorization blocker.
+- **Rule:** on any failing test, review finding, divergent artifact, incomplete
+  evidence, or `gaps_found` result, run an autonomous loop of
+  plan/revise -> implement -> test -> independent review until the relevant
+  reports are clean. Never promote a phase on executor claims alone. Stop only
+  for real user-file/account confirmation, destructive anomaly, unavailable
+  required authentication, or demonstrated repeated zero-progress tool
+  failure; record the exact evidence before stopping.

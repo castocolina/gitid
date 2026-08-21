@@ -34,9 +34,15 @@ breaker or a required confirmation before mutating the user's real SSH/Git
 configuration or external account. Do not ask the user to send a
 continuation command at any point between here and milestone close.
 
+Treat verification as an autonomous convergence loop: any failing test,
+review finding, divergent visual artifact, incomplete evidence, or gap report
+must be planned, fixed, re-tested, and independently re-reviewed until clean.
+Do not halt merely because a previous corrective attempt failed; halt only for
+a real safety/authentication/confirmation condition or a demonstrated
+repeated zero-progress tool failure.
+
 If a `gaps_found` verification result appears at any phase, choose "Run gap
-closure" yourself — this is pre-authorized (see `.planning/ONESHOT.md`
-Non-Negotiable Rules, rule 10) so the run does not stall waiting for a live
-answer.
+closure" yourself and continue the convergence loop described in
+`.planning/ONESHOT.md` Non-Negotiable Rules, rule 10.
 
 ▲▲▲ COPY TO HERE ▲▲▲
