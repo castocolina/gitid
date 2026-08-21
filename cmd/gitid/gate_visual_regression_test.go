@@ -447,6 +447,62 @@ func generateLiveTUIContactSheet(t *testing.T, realCaptures map[string]string) {
 	}
 }
 
+// TestGenerateApprovedTUIContactSheet renders the approved Phase-2 TUI
+// design (cmd/gitid-dummy's FixtureBackend) to a labeled contact sheet
+// for the 03-09 review packet. This is the "approved TUI reference"
+// the live gate output is reviewed against.
+//
+// The dummy backend represents the Phase-2 approved design contract
+// (DLV-08, 2026-07-06 by Pepe). Each panel is labeled with its screen ID.
+func TestGenerateApprovedTUIContactSheet(t *testing.T) {
+	fontFile := os.Getenv("SCREENSHOT_FONT")
+	if fontFile == "" {
+		fontFile = "../../.planning/design/fonts/JetBrainsMono-Regular.ttf"
+	}
+	theme := os.Getenv("SCREENSHOT_THEME")
+	if theme == "" {
+		theme = "dracula"
+	}
+	if _, err := os.Stat(fontFile); err != nil {
+		t.Skipf("TestGenerateApprovedTUIContactSheet: font file not found at %s (run make setup-env)", fontFile)
+	}
+
+	dummyBackend := dummytui.NewFixtureBackend()
+	dummyCaptures := screenshot.CaptureCreateFlowScreens(dummyBackend)
+
+	pngDir := filepath.Join(reviewPacketDir, "approved-tui-panels")
+	if err := os.MkdirAll(pngDir, 0o750); err != nil { //nolint:gosec // controlled output dir (G301)
+		t.Fatalf("TestGenerateApprovedTUIContactSheet: creating output dir: %v", err)
+	}
+
+	var rendered int
+	for _, id := range screenshot.CreateFlowScreenIDs {
+		golden, ok := dummyCaptures[id]
+		if !ok {
+			continue
+		}
+		res, err := screenshot.CaptureTUI(golden, screenshot.TUIOptions{
+			FontFile: fontFile,
+			Theme:    theme,
+			OutDir:   pngDir,
+			Name:     "approved-tui-" + id,
+			Width:    screenshot.CaptureWidth,
+			Height:   screenshot.CaptureHeight,
+		})
+		if err != nil {
+			t.Logf("TestGenerateApprovedTUIContactSheet: skipping %q: %v", id, err)
+			continue
+		}
+		rendered++
+		t.Logf("approved-tui: %s → %s (sha256:%s)", id, res.PNGPath, res.SHA256)
+	}
+	if rendered == 0 {
+		t.Error("TestGenerateApprovedTUIContactSheet: no panels rendered")
+	} else {
+		t.Logf("TestGenerateApprovedTUIContactSheet: %d approved-TUI panels rendered to %s", rendered, pngDir)
+	}
+}
+
 // currentGitCommit returns the current HEAD short hash or "unknown".
 func currentGitCommit() string {
 	// best-effort; failure returns placeholder
