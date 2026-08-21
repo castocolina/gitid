@@ -297,9 +297,9 @@ gate-visual-regression:
 generate-visual-review-packet:
 	@if [ -z "$(SOURCE_COMMIT)" ]; then echo "ERROR: SOURCE_COMMIT=<full-sha> required"; exit 1; fi
 	@if [ -z "$(OUTPUT_DIR)" ]; then echo "ERROR: OUTPUT_DIR=<new-empty-dir> required"; exit 1; fi
-	@if [ -d "$(OUTPUT_DIR)" ] && [ -n "$$(ls -A $(OUTPUT_DIR) 2>/dev/null)" ]; then echo "ERROR: OUTPUT_DIR '$(OUTPUT_DIR)' exists and is non-empty — refusing to overwrite"; exit 1; fi
-	@echo "Publication target: Task 3 generates the review packet via this Make entry point."
-	@echo "SOURCE_COMMIT: $(SOURCE_COMMIT)  OUTPUT_DIR: $(OUTPUT_DIR)"
+	go run -tags screenshot ./cmd/gitid-evidence \
+	    --source-commit "$(SOURCE_COMMIT)" \
+	    --output-root   "$(OUTPUT_DIR)"
 
 ## smoke-network-test: D-23 skippable REAL-network two-stage connectivity
 ## smoke check against github.com's real alt-SSH endpoint
