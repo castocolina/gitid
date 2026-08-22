@@ -156,13 +156,9 @@ func prepareOutputRoot(root string) error {
 		if !info.IsDir() {
 			return fmt.Errorf("output root %q is not a directory", root)
 		}
-		entries, err := os.ReadDir(root)
-		if err != nil {
-			return fmt.Errorf("reading output root %q: %w", root, err)
-		}
-		if len(entries) != 0 {
-			return fmt.Errorf("output root %q is nonempty — refusing to publish into it", root)
-		}
+		// Allow the output root to already contain prior publication
+		// directories (previous source SHAs). The caller checks that the
+		// specific source-SHA subdirectory does not yet exist.
 		return nil
 	}
 	if !os.IsNotExist(err) {
