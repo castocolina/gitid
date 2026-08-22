@@ -87,16 +87,7 @@ var CreateFlowScreenIDs = []string{
 //   - git-form-demo: uses the /git-screen/git-form-filled route
 //     (NOT create-flow/backup-notice — git-form-demo is the git-screen surface)
 func ApprovedHTMLRoutes() map[string]string {
-	return map[string]string{
-		"ssh-form-filled":       "/create-flow/ssh-form-filled",
-		"reuse-key-vs-generate": "/create-flow/reuse-key-vs-generate",
-		"reuse-manual-path":     "/create-flow/reuse-key-vs-generate", // manual-path interaction variant
-		"mouse-focused-field":   "/create-flow/ssh-form-filled",       // mouse-focus interaction variant
-		"test-stage1-direct":    "/create-flow/test-stage1-direct",
-		"test-stage2-by-alias":  "/create-flow/test-stage2-by-alias",
-		"git-form-demo":         "/git-screen/git-form-filled", // git-screen surface, not create-flow
-		"confirm-write":         "/create-flow/confirm-write",
-	}
+	return approvedHTMLRoutesInternal()
 }
 
 // step drives model with msg, then synchronously drains any cmd chain the

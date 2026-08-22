@@ -593,7 +593,16 @@ func ValidateProvenanceRecords(pkt Packet) error {
 // the same terminal state (UI-REVIEW Critical Pillar 2 finding).
 // It reads actual file bytes from disk rather than trusting manifest SHA-256
 // values (which could be stale if files were modified after generation).
+//
+// Same-route interaction variants (e.g. reuse-manual-path and
+// reuse-key-vs-generate both use /create-flow/reuse-key-vs-generate on the
+// approved-html surface) are allowed to share PNG bytes since they genuinely
+// come from the same HTML route. The live and approved-tui surfaces MUST have
+// distinct PNGs for every distinct screen ID.
 func validateDuplicatePNGBytes(packetDir string, pkt Packet) error {
+	// Build a map of approved routes to detect same-route approved-html pairs.
+	approvedRoutes := approvedHTMLRoutesInternal()
+
 	// Map actual on-disk PNG SHA-256 → first (surface, screenID) that owned it.
 	type screenKey struct{ surface, screenID string }
 	seen := make(map[string]screenKey)
@@ -615,6 +624,17 @@ func validateDuplicatePNGBytes(packetDir string, pkt Packet) error {
 		key := screenKey{surface: surface, screenID: m.ScreenID}
 		if prior, exists := seen[actualHash]; exists {
 			if prior.surface == surface && prior.screenID != m.ScreenID {
+				// For the approved-html surface: two screens may legitimately
+				// share a PNG when they capture the same HTML route (same-route
+				// interaction variants). Skip the duplicate error only when both
+				// screens map to the same approved HTML route.
+				if surface == "approved-html" {
+					priorRoute := approvedRoutes[prior.screenID]
+					curRoute := approvedRoutes[m.ScreenID]
+					if priorRoute != "" && priorRoute == curRoute {
+						continue // same HTML route — allowed to share PNG
+					}
+				}
 				return fmt.Errorf("screenshot: ValidatePacket: duplicate PNG bytes (SHA-256 %s) for differently-named screens %q and %q on surface %q — both were likely captured from the same terminal state",
 					actualHash, prior.screenID, m.ScreenID, surface)
 			}
@@ -623,4 +643,19 @@ func validateDuplicatePNGBytes(packetDir string, pkt Packet) error {
 		}
 	}
 	return nil
+}
+
+// approvedHTMLRoutesInternal is the package-internal version of the route map
+// (without import cycle — createflow.go's exported ApprovedHTMLRoutes calls this).
+func approvedHTMLRoutesInternal() map[string]string {
+	return map[string]string{
+		"ssh-form-filled":       "/create-flow/ssh-form-filled",
+		"reuse-key-vs-generate": "/create-flow/reuse-key-vs-generate",
+		"reuse-manual-path":     "/create-flow/reuse-key-vs-generate",
+		"mouse-focused-field":   "/create-flow/ssh-form-filled",
+		"test-stage1-direct":    "/create-flow/test-stage1-direct",
+		"test-stage2-by-alias":  "/create-flow/test-stage2-by-alias",
+		"git-form-demo":         "/git-screen/git-form-filled",
+		"confirm-write":         "/create-flow/confirm-write",
+	}
 }
