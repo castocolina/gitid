@@ -170,6 +170,29 @@ func TestExtractRegion_PreservesUTF8AfterPaneSeparator(t *testing.T) {
 	}
 }
 
+func TestExtractRegion_ConfirmationPreviewRequiresCeremony(t *testing.T) {
+	withoutCeremony := strings.Join([]string{
+		"header",
+		"│ # BEGIN gitid managed: acme",
+	}, "\n")
+	if region := screenshot.ExtractRegion(withoutCeremony, screenshot.RegionConfirmationPreview); region != "" {
+		t.Fatalf("confirmation preview must be empty outside the ceremony; got %q", region)
+	}
+
+	withCeremony := strings.Join([]string{
+		"header",
+		"│ Exact change: PgUp/PgDn scroll",
+		"│ # BEGIN gitid managed: acme",
+		"│ # END gitid managed: acme",
+	}, "\n")
+	region := screenshot.ExtractRegion(withCeremony, screenshot.RegionConfirmationPreview)
+	for _, marker := range []string{"Exact change", "# BEGIN gitid managed:", "# END gitid managed:"} {
+		if !strings.Contains(region, marker) {
+			t.Errorf("confirmation preview must contain %q; got %q", marker, region)
+		}
+	}
+}
+
 // TestNonDivergentRegionsBetweenTwoDummyCaptures verifies that structural
 // regions (header, breadcrumb, wizard stepper, keybar) are byte-identical
 // between two separate dummy captures — proving the extraction is stable

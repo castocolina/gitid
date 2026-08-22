@@ -695,6 +695,12 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 	if text == "" {
 		return "", fmt.Errorf("captured empty terminal frame")
 	}
+	// Preserve the raw terminal bytes that produced this exact frame. Stage-two
+	// completion may render path-dependent proof after the barrier is released.
+	*rawOutput = session.transcript()
+	if strings.TrimSpace(*rawOutput) == "" {
+		return "", fmt.Errorf("captured empty raw PTY transcript")
+	}
 	// Release the stage-2 barrier AFTER taking the snapshot, so the stage-2
 	// ssh -G call can complete and the process exits cleanly.
 	if barrierFile != "" {
@@ -704,10 +710,6 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 		}
 		// Give stage-2 time to complete so the process exits cleanly.
 		time.Sleep(500 * time.Millisecond)
-	}
-	*rawOutput = session.transcript()
-	if strings.TrimSpace(*rawOutput) == "" {
-		return "", fmt.Errorf("captured empty raw PTY transcript")
 	}
 	return text + "\n", nil
 }

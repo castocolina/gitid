@@ -124,3 +124,8 @@ test-stage2-by-alias:connectivity-output:contains:"identityfile":D-02:stage-2 re
 # Predicate: real-binary reason must contain "configuration arrives" (its marker).
 # ---------------------------------------------------------------------------
 git-form-demo:continue-disabled-reason:contains:"configuration arrives":D-19:real-binary Continue-disabled reason differs from dummy validity-gated one; both frozen strings asserted by gate-copy-freeze
+
+# D-05/D-06 — real confirmation previews the auto-detected write plan. Unlike
+# the fixed dummy sample, the live viewport is scrollable and may initially show
+# the BEGIN sentinel while the remaining managed block is available on paging.
+confirm-write:confirmation-preview:contains:"# BEGIN gitid managed:":D-05:real confirmation previews the auto-detected write plan through the focusable exact-change viewport

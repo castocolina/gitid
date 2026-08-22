@@ -35,8 +35,13 @@
 BIN_DIR := bin
 BINARY  := $(BIN_DIR)/gitid
 
+# Keep Go commands and golangci-lint's type checker on the documented toolchain.
+# Go 1.27's standard library is newer than this pinned linter supports.
+export GOTOOLCHAIN := go1.26.4
+
 # Go binary locations.
 GOPATH_BIN := $(shell go env GOPATH)/bin
+GOFMT      := $(shell GOTOOLCHAIN=$(GOTOOLCHAIN) go env GOROOT)/bin/gofmt
 
 # golangci-lint version to install (pinned — do NOT change without updating STACK.md).
 GOLANGCI_LINT_VERSION := v2.12.2
@@ -146,7 +151,7 @@ install-hooks:
 ## .go files and pass the repo root to gofmt.
 fmt:
 	find . -name "*.go" -not -path "./.planning/*" -exec $(GOIMPORTS) -w {} +
-	find . -name "*.go" -not -path "./.planning/*" -exec gofmt -w {} +
+	find . -name "*.go" -not -path "./.planning/*" -exec $(GOFMT) -w {} +
 
 ## lint: run golangci-lint against all packages.
 ## Hard-fails on any finding — zero tolerance (D-04).

@@ -147,9 +147,13 @@ func ExtractRegion(screen string, region RegionName) string {
 
 func extractConfirmationPreview(lines []string) string {
 	var out []string
+	inCeremony := false
 	for _, line := range lines {
 		plain := stripANSI(line)
-		if strings.Contains(plain, "Exact change") || strings.Contains(plain, "# BEGIN gitid managed:") || strings.Contains(plain, "# END gitid managed:") || strings.Contains(plain, "SSH:") {
+		if strings.Contains(plain, "Exact change") {
+			inCeremony = true
+		}
+		if inCeremony && (strings.Contains(plain, "Exact change") || strings.Contains(plain, "# BEGIN gitid managed:") || strings.Contains(plain, "# END gitid managed:") || strings.Contains(plain, "SSH:")) {
 			out = append(out, rightPane(line))
 		}
 	}

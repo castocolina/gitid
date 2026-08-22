@@ -211,6 +211,9 @@ func TestCaptureTUIScreenStage1PassStopsBeforeStage2(t *testing.T) {
 	if strings.Contains(text, "Next: Git identity") {
 		t.Fatalf("test-stage1-pass must not capture the completed stage-2 state:\n%s", text)
 	}
+	if strings.Contains(raw, "Next: Git identity") {
+		t.Fatal("test-stage1-pass raw evidence must stop at the captured stage-one state")
+	}
 
 	direct, err := captureTUIScreen(bin, t.TempDir(), fakeSSH, "test-stage1-direct", true, &raw)
 	if err != nil {
