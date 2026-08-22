@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/castocolina/gitid/internal/screenshot"
+	"golang.org/x/crypto/ssh"
 )
 
 // TestPublisherRejectsEmptySourceCommit verifies that run() fails when
@@ -117,29 +118,116 @@ func TestPublisherRejectsUnknownCommit(t *testing.T) {
 	}
 }
 
-func TestSeedManualReuseKeyCreatesOnlySandboxMaterial(t *testing.T) {
-	home := t.TempDir()
-	path, err := seedManualReuseKey(home)
+func TestSeedManualReuseKeyUsesDeterministicSandboxFixture(t *testing.T) {
+	firstHome := t.TempDir()
+	secondHome := t.TempDir()
+	firstPath, err := seedManualReuseKey(firstHome)
 	if err != nil {
-		t.Fatalf("seedManualReuseKey: %v", err)
+		t.Fatalf("seeding first sandbox key: %v", err)
 	}
-	if !strings.HasPrefix(path, home+string(filepath.Separator)) {
-		t.Fatalf("sandbox key path %q escapes HOME %q", path, home)
+	secondPath, err := seedManualReuseKey(secondHome)
+	if err != nil {
+		t.Fatalf("seeding second sandbox key: %v", err)
 	}
-	if _, err := os.Stat(path + ".pub"); err != nil {
-		t.Fatalf("sandbox public key was not created: %v", err)
+	for _, path := range []string{firstPath, secondPath} {
+		if !strings.Contains(path, string(filepath.Separator)+".ssh"+string(filepath.Separator)) {
+			t.Fatalf("sandbox key path %q is not inside an SSH directory", path)
+		}
+	}
+	firstPrivate, err := os.ReadFile(firstPath)
+	if err != nil {
+		t.Fatalf("reading first sandbox private fixture: %v", err)
+	}
+	secondPrivate, err := os.ReadFile(secondPath)
+	if err != nil {
+		t.Fatalf("reading second sandbox private fixture: %v", err)
+	}
+	if string(firstPrivate) != string(secondPrivate) {
+		t.Fatal("sandbox private fixture bytes differ between capture inputs")
+	}
+	privateSigner, err := ssh.ParsePrivateKey(firstPrivate)
+	if err != nil {
+		t.Fatalf("parsing sandbox private fixture: %v", err)
+	}
+	firstPublic, err := os.ReadFile(firstPath + ".pub")
+	if err != nil {
+		t.Fatalf("reading first sandbox public fixture: %v", err)
+	}
+	secondPublic, err := os.ReadFile(secondPath + ".pub")
+	if err != nil {
+		t.Fatalf("reading second sandbox public fixture: %v", err)
+	}
+	if string(firstPublic) != string(secondPublic) {
+		t.Fatal("sandbox public fixture bytes differ between capture inputs")
+	}
+	publicKey, _, _, _, err := ssh.ParseAuthorizedKey(firstPublic)
+	if err != nil {
+		t.Fatalf("parsing sandbox public fixture: %v", err)
+	}
+	if publicKey.Type() != ssh.KeyAlgoED25519 || ssh.FingerprintSHA256(publicKey) != "SHA256:0WDiIzM4Vu8Q/Iut7m4BuXCgGczOJGXVwVirboftrx0" {
+		t.Fatalf("sandbox public fixture = %s %q, want fingerprinted ed25519 key", publicKey.Type(), ssh.FingerprintSHA256(publicKey))
+	}
+	if ssh.FingerprintSHA256(privateSigner.PublicKey()) != ssh.FingerprintSHA256(publicKey) {
+		t.Fatal("sandbox public fixture does not match its private fixture")
 	}
 }
 
-func TestNormalizeCaptureTextRedactsScrolledSandboxPathFragments(t *testing.T) {
-	text := "capture-2068244611/fake-ssh-1252173820/ssh\n" +
-		"tid-stage-4284974533/id_ed25519_acme\n"
+func TestCaptureInputsNormalizeOnlyDisposablePrefixes(t *testing.T) {
+	firstWorkspace := "/var/tmp/gitid-evidence-capture-101"
+	secondWorkspace := "/var/tmp/gitid-evidence-capture-202"
+	firstHome := captureHomePath(firstWorkspace, "reuse-manual-resolved")
+	secondHome := captureHomePath(secondWorkspace, "reuse-manual-resolved")
+	first := strings.Join([]string{
+		"key=" + filepath.Join(firstHome, ".ssh", "id_ed25519_capture_manual"),
+		"helper=" + filepath.Join(firstWorkspace, captureFakeSSHDirName, "ssh"),
+		"actual=/Users/alice/.ssh/id_ed25519",
+		"literal=capture-101",
+		"at=2026-08-21T12:34:56Z",
+	}, "\n")
+	second := strings.Join([]string{
+		"key=" + filepath.Join(secondHome, ".ssh", "id_ed25519_capture_manual"),
+		"helper=" + filepath.Join(secondWorkspace, captureFakeSSHDirName, "ssh"),
+		"actual=/Users/alice/.ssh/id_ed25519",
+		"literal=capture-101",
+		"at=2026-08-21T12:34:56Z",
+	}, "\n")
 
-	got := normalizeCaptureText(text, "/unused/home", "/unused/workspace")
-	for _, fragment := range []string{"capture-2068244611", "fake-ssh-1252173820", "tid-stage-4284974533"} {
-		if strings.Contains(got, fragment) {
-			t.Errorf("normalized capture retains random sandbox fragment %q: %q", fragment, got)
+	gotFirst := normalizeCaptureText(first, firstHome, firstWorkspace)
+	gotSecond := normalizeCaptureText(second, secondHome, secondWorkspace)
+	if gotFirst != gotSecond {
+		t.Fatalf("normalized capture inputs differ:\n--- first ---\n%s\n--- second ---\n%s", gotFirst, gotSecond)
+	}
+	want := strings.Join([]string{
+		"key=<home>/.ssh/id_ed25519_capture_manual",
+		"helper=<workspace>/fake-ssh/ssh",
+		"actual=/Users/alice/.ssh/id_ed25519",
+		"literal=capture-101",
+		"at=<timestamp>",
+	}, "\n")
+	if gotFirst != want {
+		t.Fatalf("normalized capture =\n%s\nwant:\n%s", gotFirst, want)
+	}
+}
+
+func TestCaptureCommandEnvironmentUsesStableSandboxStagePath(t *testing.T) {
+	home := "/var/tmp/gitid-evidence-capture/home-test-stage2-proof-top"
+	env := captureCommandEnvironment(home, "/var/tmp/gitid-evidence-capture/fake-ssh")
+	values := make(map[string]string, len(env))
+	for _, entry := range env {
+		key, value, ok := strings.Cut(entry, "=")
+		if ok {
+			values[key] = value
 		}
+	}
+	if values["HOME"] != home {
+		t.Fatalf("HOME = %q, want %q", values["HOME"], home)
+	}
+	wantStage := filepath.Join(home, captureStageDirName)
+	if values["GITID_STAGE_DIR"] != wantStage {
+		t.Fatalf("GITID_STAGE_DIR = %q, want %q", values["GITID_STAGE_DIR"], wantStage)
+	}
+	if !strings.HasPrefix(values["PATH"], "/var/tmp/gitid-evidence-capture/fake-ssh"+string(filepath.ListSeparator)) {
+		t.Fatalf("PATH = %q, want fake SSH prefix", values["PATH"])
 	}
 }
 

@@ -313,6 +313,8 @@ func TestGateVisualRegression(t *testing.T) {
 	// filesystem state cannot bleed between runs (CR-01 determinism).
 	home1 := t.TempDir()
 	home2 := t.TempDir()
+	stageDir := filepath.Join(t.TempDir(), "stage")
+	t.Setenv("GITID_STAGE_DIR", stageDir)
 
 	// Seed deterministic (path-stable) fixtures in both homes.
 	deterministicReusableKeyFixture(t, home1)

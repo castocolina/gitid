@@ -20,17 +20,32 @@ import (
 	"sync"
 	"time"
 
+	"github.com/castocolina/gitid/internal/screenshot"
 	"github.com/charmbracelet/x/vt"
 	"github.com/creack/pty"
-
-	"github.com/castocolina/gitid/internal/screenshot"
 )
 
 const fixedCaptureTime = "2026-08-21T00:00:00Z"
 
 var captureTimestampPattern = regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}[:\-]\d{2}[:\-]\d{2}Z`)
 
-var captureSandboxPathFragmentPattern = regexp.MustCompile(`(?:gitid-evidence-)?capture-\d+|fake-ssh-\d+|(?:gi)?tid-stage-\d+`)
+const captureFakeSSHDirName = "fake-ssh"
+
+const captureStageDirName = ".gitid-stage"
+
+// captureManualReusePrivateFixture is a synthetic, unencrypted OpenSSH key
+// solely for capture. It is never a user or account key and is written only
+// inside the disposable capture HOME.
+const captureManualReusePrivateFixture = `-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACBGqltrXnIBHpUMIZORe8hgRuyXOPXneb3MgRgsB/+v1wAAAJikcF0YpHBd
+GAAAAAtzc2gtZWQyNTUxOQAAACBGqltrXnIBHpUMIZORe8hgRuyXOPXneb3MgRgsB/+v1w
+AAAECt0dTv0hd6+apv0NY5AjiiypMrXUpmt0F4jnMQMoREfUaqW2tecgEelQwhk5F7yGBG
+7Jc49ed5vcyBGCwH/6/XAAAAFGdpdGlkLWNhcHR1cmUtbWFudWFsAQ==
+-----END OPENSSH PRIVATE KEY-----
+`
+
+const captureManualReusePublicFixture = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEaqW2tecgEelQwhk5F7yGBG7Jc49ed5vcyBGCwH/6/X gitid-capture-manual\n"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -479,21 +494,22 @@ func captureApprovedTUIPanels(approvalDir, workspace, renderDir, freeze, fontFil
 func captureTUIPanels(surface, bin, workspace, renderDir, freeze, fontFile string, fakeSSH bool) ([]screenshot.VisualPanel, error) {
 	specs := screenshot.RequiredScreenSpecs()
 	panels := make([]screenshot.VisualPanel, 0, len(specs))
+	sshDir := ""
+	var err error
+	if fakeSSH {
+		sshDir, err = writeFakeSSH(workspace)
+		if err != nil {
+			return nil, err
+		}
+	}
 	for _, spec := range specs {
 		if !screenshot.ScreenAppliesToSurface(spec, surface) {
 			continue
 		}
 		id := spec.ScreenID
-		home, err := os.MkdirTemp(workspace, "home-")
-		if err != nil {
+		home := captureHomePath(workspace, id)
+		if err := os.MkdirAll(home, 0o700); err != nil {
 			return nil, fmt.Errorf("creating sandbox HOME: %w", err)
-		}
-		var sshDir string
-		if fakeSSH {
-			sshDir, err = writeFakeSSH(workspace)
-			if err != nil {
-				return nil, err
-			}
 		}
 		var raw string
 		text, err := captureTUIScreen(bin, home, sshDir, id, fakeSSH, &raw)
@@ -525,10 +541,11 @@ func captureTUIPanels(surface, bin, workspace, renderDir, freeze, fontFile strin
 func normalizeCaptureText(text, home, workspace string) string {
 	text = strings.ReplaceAll(text, home, "<home>")
 	text = strings.ReplaceAll(text, workspace, "<workspace>")
-	// Horizontally scrolled frames may expose only a random path component, so
-	// the full-workspace replacement above cannot match it.
-	text = captureSandboxPathFragmentPattern.ReplaceAllString(text, "<sandbox>")
 	return captureTimestampPattern.ReplaceAllString(text, "<timestamp>")
+}
+
+func captureHomePath(workspace, screenID string) string {
+	return filepath.Join(workspace, "home-"+screenID)
 }
 
 func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput *string) (string, error) {
@@ -541,7 +558,7 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 		}
 	}
 	cmd := exec.Command(bin) //nolint:gosec // binary is built by this process from a fixed repository path
-	cmd.Env = append(os.Environ(), "HOME="+home, "TERM=xterm-256color")
+	cmd.Env = captureCommandEnvironment(home, fakeSSH)
 	// For stage-1 captures: set GITID_BARRIER_FILE so the fake SSH's -G call
 	// blocks until the capture script signals stage-1 is done.
 	var barrierFile string
@@ -556,7 +573,7 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 		} else if id == "test-hard-failure-retry" {
 			mode = "timeout"
 		}
-		cmd.Env = append(cmd.Env, "PATH="+fakeSSH+":"+os.Getenv("PATH"), "GITID_FAKE_SSH_MODE="+mode)
+		cmd.Env = append(cmd.Env, "GITID_FAKE_SSH_MODE="+mode)
 	}
 	session, err := startCapturePTY(cmd)
 	if err != nil {
@@ -720,6 +737,18 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 	return text + "\n", nil
 }
 
+func captureCommandEnvironment(home, fakeSSH string) []string {
+	env := append(os.Environ(),
+		"HOME="+home,
+		"TERM=xterm-256color",
+		"GITID_STAGE_DIR="+filepath.Join(home, captureStageDirName),
+	)
+	if fakeSSH != "" {
+		env = append(env, "PATH="+fakeSSH+string(filepath.ListSeparator)+os.Getenv("PATH"))
+	}
+	return env
+}
+
 func selectReuse(session *capturePTY, waitForSelectedState bool) error {
 	if err := session.send([]byte("\x1b[C")); err != nil {
 		return err
@@ -762,18 +791,20 @@ func runFailure(session *capturePTY) error {
 	return err
 }
 
-// seedManualReuseKey creates a disposable unencrypted key under the capture
-// HOME. It is only used to prove the resolved-manual-key UI state and never
-// reads an account key or the user's real SSH directory.
+// seedManualReuseKey writes known fixture material under the capture HOME. It
+// only proves the resolved-manual-key UI state and never reads an account key
+// or the user's real SSH directory.
 func seedManualReuseKey(home string) (string, error) {
 	sshDir := filepath.Join(home, ".ssh")
 	if err := os.MkdirAll(sshDir, 0o700); err != nil {
 		return "", fmt.Errorf("creating sandbox SSH directory: %w", err)
 	}
 	path := filepath.Join(sshDir, "id_ed25519_capture_manual")
-	cmd := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", path, "-C", "gitid-capture-manual") //nolint:gosec // fixed keygen arguments and sandbox path
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("creating sandbox manual key: %w\n%s", err, output)
+	if err := os.WriteFile(path, []byte(captureManualReusePrivateFixture), 0o600); err != nil { //nolint:gosec // known fixture material in disposable capture HOME
+		return "", fmt.Errorf("writing sandbox manual private fixture: %w", err)
+	}
+	if err := os.WriteFile(path+".pub", []byte(captureManualReusePublicFixture), 0o644); err != nil { //nolint:gosec // public fixture material in disposable capture HOME
+		return "", fmt.Errorf("writing sandbox manual public fixture: %w", err)
 	}
 	return path, nil
 }
@@ -1178,8 +1209,8 @@ func (s *capturePTY) close() {
 //
 // The semaphore file path is passed via GITID_BARRIER_FILE env var.
 func writeFakeSSH(workspace string) (string, error) {
-	dir, err := os.MkdirTemp(workspace, "fake-ssh-")
-	if err != nil {
+	dir := filepath.Join(workspace, captureFakeSSHDirName)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	const script = `#!/bin/sh

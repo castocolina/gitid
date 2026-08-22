@@ -1406,11 +1406,19 @@ func (b *realBackend) stagingDir() (string, error) {
 	if b.stageDir != "" {
 		return b.stageDir, nil
 	}
-	dir, err := os.MkdirTemp("", "gitid-stage-")
-	if err != nil {
-		return "", fmt.Errorf("gitid: creating the staging directory: %w", err)
+	dir := os.Getenv("GITID_STAGE_DIR")
+	if dir == "" {
+		var err error
+		dir, err = os.MkdirTemp("", "gitid-stage-")
+		if err != nil {
+			return "", fmt.Errorf("gitid: creating the staging directory: %w", err)
+		}
+	} else if !filepath.IsAbs(dir) {
+		return "", fmt.Errorf("gitid: GITID_STAGE_DIR must be an absolute path")
+	} else if err := os.MkdirAll(dir, sshDirMode); err != nil { //nolint:gosec // absolute staging path is explicitly supplied by this invoking user
+		return "", fmt.Errorf("gitid: creating configured staging directory: %w", err)
 	}
-	if cerr := os.Chmod(dir, sshDirMode); cerr != nil {
+	if cerr := os.Chmod(dir, sshDirMode); cerr != nil { //nolint:gosec // absolute staging path is explicitly supplied by this invoking user
 		return "", fmt.Errorf("gitid: securing the staging directory: %w", cerr)
 	}
 	b.stageDir = dir
