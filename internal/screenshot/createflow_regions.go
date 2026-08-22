@@ -357,7 +357,8 @@ func extractConnectivityOutput(lines []string) string {
 			strings.Contains(rpPlain, "Running") ||
 			strings.Contains(rpPlain, "Reachable") ||
 			strings.Contains(rpPlain, "Permission denied") ||
-			strings.Contains(rpPlain, "authenticated")) {
+			strings.Contains(rpPlain, "authenticated") ||
+			strings.Contains(rpPlain, "The connection failed")) {
 			inOutput = true
 		}
 		if inOutput && strings.Contains(plain, "Esc returns") {

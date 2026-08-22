@@ -136,6 +136,24 @@ func TestExtractRegion_HostPreview(t *testing.T) {
 	}
 }
 
+func TestExtractRegion_ConnectivityOutputIncludesHardFailure(t *testing.T) {
+	screen := strings.Join([]string{
+		"header",
+		"breadcrumb",
+		"│ ✗ The connection failed",
+		"│ connect to host ssh.github.com port 443: Operation timed out",
+		"│ Retry (Enter)",
+		"│ Esc returns",
+	}, "\n")
+
+	region := screenshot.ExtractRegion(screen, screenshot.RegionConnectivityOutput)
+	for _, marker := range []string{"The connection failed", "connect to host", "Retry (Enter)"} {
+		if !strings.Contains(region, marker) {
+			t.Errorf("hard-failure connectivity region must contain %q; got:\n%s", marker, region)
+		}
+	}
+}
+
 // TestNonDivergentRegionsBetweenTwoDummyCaptures verifies that structural
 // regions (header, breadcrumb, wizard stepper, keybar) are byte-identical
 // between two separate dummy captures — proving the extraction is stable
