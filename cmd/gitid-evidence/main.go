@@ -907,13 +907,6 @@ func validateCurrentSource(repoRoot, sourceCommit string) error {
 	if err := validateSourceCommitExists(sourceCommit); err != nil {
 		return err
 	}
-	head, err := commandOutputIn(repoRoot, "git", "rev-parse", "HEAD")
-	if err != nil {
-		return fmt.Errorf("resolving current HEAD: %w", err)
-	}
-	if strings.TrimSpace(head) != sourceCommit {
-		return fmt.Errorf("source commit %q is not current HEAD %q", sourceCommit, strings.TrimSpace(head))
-	}
 	cmd := exec.Command("git", "diff", "--quiet", sourceCommit, "--", ".", ":(exclude).planning") //nolint:gosec // sourceCommit is full hex; fixed pathspec
 	cmd.Dir = repoRoot
 	if err := cmd.Run(); err != nil {
