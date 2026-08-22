@@ -545,7 +545,7 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 	}
 	if fakeSSH != "" {
 		mode := "pass"
-		if id == "test-reachable-not-uploaded" {
+		if id == "test-stage1-direct" || id == "test-reachable-not-uploaded" {
 			mode = "denied"
 		} else if id == "test-hard-failure-retry" {
 			mode = "timeout"
