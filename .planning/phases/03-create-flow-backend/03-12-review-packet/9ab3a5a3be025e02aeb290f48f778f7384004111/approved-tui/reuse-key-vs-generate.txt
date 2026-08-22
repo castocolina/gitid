@@ -1,0 +1,30 @@
+gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor              8 ids · ! 1 ✗ 3
+ Identities › New identity › SSH details
+S ssh · G git  ✓ ok ! attn ✗ broken │  Step 1/4 · SSH details ● ○ ○ ○
+▸ ✓ personal                  S✓ G✓ │  Shift+→ next section · Shift+← exits the wizard
+    SSH Host block and Git fragment…│    Provider        [github.com]
+  ! work                      S✓ G– │    Alias prefix    [acme]
+    SSH Host block present; no Git …│      Blank prefix → SSH Host = the provider host itself
+  ! opensource 1⚑             S– G✓ │    SSH Host (alias)[acme.github.com]
+    Git identity relies on the glob…│      Auto-joined: <prefix>.<provider> — editable
+  ! archived 1⚑               S– G– │    Real hostname   [ssh.github.com]
+    Key file exists on disk but no …│    Port            [443]
+  ✓ staging                   S✓ G– │  ▸ Key algorithm (←/→ change)
+    Key referenced by a Host block;…│      ○ ed25519 — ★ recommended
+  ✓ clientA                   S✓ G✓ │      ○ ed25519-sk — Disabled: needs libfido2 + a FIDO2
+    Key wired for both SSH auth and…│ security key — none detected on this machine
+  ✗ clientB 1⚑                S✗ G– │      ● rsa-4096
+    Host block references a key fil…│      ○ ecdsa-p256
+  ✗ legacy 1⚑                 S✓ G✗ │      ○ ecdsa-sk — Disabled: needs libfido2 + a FIDO2 security
+    includeIf points at a Git fragm…│ key — none detected on this machine
+                                    │      gitid probes the local toolchain (ssh-keygen, libfido2,
+                                    │ FIDO2 key present?) and disables what this machine cannot
+                                    │ generate, with the reason shown per option (KEY-03/PLAT-01).
+                                    │ Demo simulates: no FIDO2 key plugged in.
+                                    │ ╭╌ Live Host-block preview (written on confirm) ╌╌╌╌╌╌╌╌╌╮
+                                    │ ┊ Host acme.github.com                                   ┊
+                                    │ ┊     Hostname ssh.github.com                            ┊
+                                    │ ┊     Port 443                                           ┊
+ Esc returns to the identity detail without writing anything.
+ Tab/↑↓ fields · Enter next: test connection
+ Esc back · Ctrl+P palette

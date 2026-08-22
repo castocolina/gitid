@@ -1,0 +1,142 @@
+{
+  "version": "03-12.1",
+  "source_commit": "56c83c47d33068d391184c5c7faddaf3fcb5fe6e",
+  "approval_commit": "3c3130e404329cf42baafdf63a6c22758437edc6",
+  "captured_at": "2026-08-21T00:00:00Z",
+  "commands": [
+    "git archive 3c3130e404329cf42baafdf63a6c22758437edc6",
+    "go build -o \u003clive-gitid\u003e ./cmd/gitid",
+    "\u003clive-gitid\u003e (PTY, HOME=\u003csandbox\u003e, PATH=\u003cfake-ssh\u003e)",
+    "go build -o \u003capproved-gitid-dummy\u003e ./cmd/gitid-dummy",
+    "\u003capproved-gitid-dummy\u003e (PTY)",
+    "pnpm exec vite build --outDir \u003capproval-dist\u003e",
+    "freeze \u003ccapture.txt\u003e -o \u003cpanel.png\u003e --font.file JetBrainsMono-Regular.ttf --theme dracula"
+  ],
+  "tool_versions": [
+    {
+      "name": "freeze",
+      "version": "freeze version v0.2.2"
+    },
+    {
+      "name": "go",
+      "version": "go version go1.26.0 darwin/amd64"
+    },
+    {
+      "name": "pnpm",
+      "version": "11.5.2"
+    },
+    {
+      "name": "chromium-revision",
+      "version": "1321438"
+    }
+  ],
+  "geometry": "TUI=100x30;HTML=1280x800@1/light",
+  "font_sha256": "a0bf60ef0f83c5ed4d7a75d45838548b1f6873372dfac88f71804491898d138f",
+  "theme": "dracula",
+  "screens": [
+    {
+      "screen_id": "ssh-form-filled",
+      "surface": "live"
+    },
+    {
+      "screen_id": "reuse-key-vs-generate",
+      "surface": "live"
+    },
+    {
+      "screen_id": "reuse-manual-path",
+      "surface": "live"
+    },
+    {
+      "screen_id": "mouse-focused-field",
+      "surface": "live"
+    },
+    {
+      "screen_id": "test-stage1-direct",
+      "surface": "live"
+    },
+    {
+      "screen_id": "test-stage2-by-alias",
+      "surface": "live"
+    },
+    {
+      "screen_id": "git-form-demo",
+      "surface": "live"
+    },
+    {
+      "screen_id": "confirm-write",
+      "surface": "live"
+    },
+    {
+      "screen_id": "ssh-form-filled",
+      "surface": "approved-tui"
+    },
+    {
+      "screen_id": "reuse-key-vs-generate",
+      "surface": "approved-tui"
+    },
+    {
+      "screen_id": "reuse-manual-path",
+      "surface": "approved-tui"
+    },
+    {
+      "screen_id": "mouse-focused-field",
+      "surface": "approved-tui"
+    },
+    {
+      "screen_id": "test-stage1-direct",
+      "surface": "approved-tui"
+    },
+    {
+      "screen_id": "test-stage2-by-alias",
+      "surface": "approved-tui"
+    },
+    {
+      "screen_id": "git-form-demo",
+      "surface": "approved-tui"
+    },
+    {
+      "screen_id": "confirm-write",
+      "surface": "approved-tui"
+    },
+    {
+      "screen_id": "ssh-form-filled",
+      "surface": "approved-html",
+      "route": "/create-flow/ssh-form-filled"
+    },
+    {
+      "screen_id": "reuse-key-vs-generate",
+      "surface": "approved-html",
+      "route": "/create-flow/reuse-key-vs-generate"
+    },
+    {
+      "screen_id": "reuse-manual-path",
+      "surface": "approved-html",
+      "route": "/create-flow/reuse-key-vs-generate"
+    },
+    {
+      "screen_id": "mouse-focused-field",
+      "surface": "approved-html",
+      "route": "/create-flow/ssh-form-filled"
+    },
+    {
+      "screen_id": "test-stage1-direct",
+      "surface": "approved-html",
+      "route": "/create-flow/test-stage1-direct"
+    },
+    {
+      "screen_id": "test-stage2-by-alias",
+      "surface": "approved-html",
+      "route": "/create-flow/test-stage2-by-alias"
+    },
+    {
+      "screen_id": "git-form-demo",
+      "surface": "approved-html",
+      "route": "/git-screen/git-form-filled"
+    },
+    {
+      "screen_id": "confirm-write",
+      "surface": "approved-html",
+      "route": "/create-flow/confirm-write"
+    }
+  ]
+}

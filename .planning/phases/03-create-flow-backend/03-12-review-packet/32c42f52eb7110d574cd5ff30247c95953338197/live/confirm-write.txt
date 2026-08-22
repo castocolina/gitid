@@ -1,0 +1,30 @@
+gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Identities › New identity › Review & write
+S ssh · G git  ✓ ok ! attn ✗ broken │  Step 4/4 · Review & write ● ● ● ●
+                                    │  Shift+← back to Git · Enter writes
+                                    │ Create identity "acme" — ed25519, test passed ✓
+                                    │ Touches ~/.ssh/config.d/gitid.config · ~/.ssh/config
+                                    │   No existing file — nothing to back up.
+                                    │ ╭╌ Exact change — everything else preserved verbatim ╌╌╌╌╮
+                                    │ ┊ SSH: acme.github.com → ssh.github.com:443 · key        ┊
+                                    │ ┊ ~/.ssh/id…                                             ┊
+                                    │ ┊ # BEGIN gitid managed: acme                            ┊
+                                    │ ┊ Host acme.github.com                                   ┊
+                                    │ ┊   Hostname ssh.github.com                              ┊
+                                    │ ┊   Port 443                                             ┊
+                                    │ ┊   User git                                             ┊
+                                    │ ┊   IdentityFile ~/.ssh/id_ed25519_acme                  ┊
+                                    │ ┊   IdentitiesOnly yes                                   ┊
+                                    │ ┊ # gitid: provider=github.com                           ┊
+                                    │ ┊                                                        ┊
+                                    │ ┊ … (+1 more lines)                                      ┊
+                                    │ ╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+                                    │
+                                    │  Cancel (Esc)   Write it (Enter)
+                                    │
+                                    │
+                                    │
+                                    │
+ Esc returns to the identity detail without writing anything.
+ Tab/←→ Cancel / Confirm · Enter confirm
+ Esc back · Ctrl+P palette

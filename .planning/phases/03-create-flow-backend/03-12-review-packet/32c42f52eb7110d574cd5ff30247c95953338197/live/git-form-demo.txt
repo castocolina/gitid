@@ -1,0 +1,30 @@
+gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Identities › New identity › Git identity
+S ssh · G git  ✓ ok ! attn ✗ broken │  Step 3/4 · Git identity ● ● ● ○
+                                    │  Shift+←/→ jump sections · forward needs a valid step
+                                    │  ▸ user.name       [Acme Identity ]
+                                    │    user.email      [you@acme.example]
+                                    │      Kept byte-identical to ~/.ssh/allowed_signers (GITUI-04)
+                                    │    Match strategy — when does this Git identity apply? (←/→
+                                    │ change)
+                                    │      Determines which repos this Git identity applies to.
+                                    │      ● gitdir (default) — applies inside ~/acme/
+                                    │      ○ hasconfig — repos whose remote uses this alias
+                                    │      ○ both — either condition (two includeIf blocks = OR)
+                                    │ ╭╌ ~/.gitconfig.d/acme (fragment file — preview) ╌╌╌╌╌╌╌╌╮
+                                    │ ┊ [user]                                                 ┊
+                                    │ ┊ … (+9 more lines)                                      ┊
+                                    │ ╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+                                    │ ╭╌ ~/.gitconfig (includeIf block — preview) ╌╌╌╌╌╌╌╌╌╌╌╌╌╮
+                                    │ ┊ # BEGIN gitid managed: acme                            ┊
+                                    │ ┊ … (+3 more lines)                                      ┊
+                                    │ ╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+                                    │  Global baseline (inherited — not applied yet): init.def… (3)
+                                    │   Back (Esc)    [ Skip Git ]    [ Continue ] — Git
+                                    │ configuration arrives with the next build
+                                    │  Skip keeps this identity SSH-only and marks it incomplete.
+                                    │
+                                    │
+ Esc returns to the identity detail without writing anything.
+ Enter activate focused / continue · Tab/↑↓ fields & buttons
+ Esc back · Ctrl+P palette

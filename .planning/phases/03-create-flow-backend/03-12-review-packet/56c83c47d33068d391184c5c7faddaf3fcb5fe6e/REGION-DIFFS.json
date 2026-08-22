@@ -1,0 +1,6 @@
+{
+  "version": "03-12.1",
+  "source_commit": "56c83c47d33068d391184c5c7faddaf3fcb5fe6e",
+  "note": "SHA-256 comparison of live vs approved-tui panel PNGs. Populated after packet generation.",
+  "screens": []
+}

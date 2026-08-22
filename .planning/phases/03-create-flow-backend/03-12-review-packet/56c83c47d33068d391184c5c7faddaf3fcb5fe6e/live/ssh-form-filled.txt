@@ -1,0 +1,30 @@
+gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Identities › New identity › SSH details
+S ssh · G git  ✓ ok ! attn ✗ broken │  Step 1/4 · SSH details ● ○ ○ ○
+                                    │  Shift+→ next section · Shift+← exits the wizard
+                                    │  ▸ Alias prefix    [acme ]
+                                    │      Blank prefix → SSH Host = the provider host itself
+                                    │    SSH Host (alias)[acme.github.com]
+                                    │      Auto-joined: <prefix>.<provider> — editable
+                                    │    Real hostname   [ssh.github.com]
+                                    │    Port            [443]
+                                    │    Key (←/→ change)  ● Generate a new key   ○ Reuse an
+                                    │ existing key
+                                    │      ● ed25519 — ★ recommended — Disabled: Supported by the
+                                    │ system OpenSSH client …
+                                    │      ○ rsa-4096 — Disabled: Supported by the system OpenSSH
+                                    │ client …
+                                    │      ○ ecdsa-p256 — Disabled: not yet implemented by gitid
+                                    │      ○ ed25519-sk — Disabled: needs libfido2 + FIDO2 key
+                                    │      ○ ecdsa-sk — Disabled: needs libfido2 + FIDO2 key
+                                    │ ╭╌ Live Host-block preview (written on confirm) ╌╌╌╌╌╌╌╌╌╮
+                                    │ ┊ Host acme.github.com                                   ┊
+                                    │ ┊   Hostname ssh.github.com                              ┊
+                                    │ ┊   Port 443                                             ┊
+                                    │ ┊   User git                                             ┊
+                                    │ ┊   IdentityFile ~/.ssh/id_ed25519_acme                  ┊
+                                    │ ┊   IdentitiesOnly yes                                   ┊
+                                    │ ┊ # gitid: provider=github.com                           ┊
+ Esc returns to the identity detail without writing anything.
+ Tab/↑↓ fields · Enter next: test connection
+ Esc back · Ctrl+P palette
