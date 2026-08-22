@@ -812,6 +812,27 @@ func TestApprovedTUIPhase3OnlyStatesHaveDecisionLinkedNonApplicability(t *testin
 	}
 }
 
+func TestBuildRegionDiffsDeclaresFormDefaultsComparator(t *testing.T) {
+	spec := screenshot.ScreenSpec{
+		ScreenID:               "ssh-form-filled",
+		ApplicableLive:         true,
+		ApplicableApprovedTUI:  true,
+		ApplicableApprovedHTML: true,
+		RequiredRegions:        []screenshot.RegionName{screenshot.RegionFormFields},
+	}
+	live := "header\nbreadcrumb\n│ Shift+→\n│ Alias prefix live\n│ Key Generate\n"
+	approved := "header\nbreadcrumb\n│ Shift+→\n│ Alias prefix approved\n│ Key Generate\n"
+
+	diffs, err := screenshot.BuildRegionDiffs("test-commit", map[string]string{spec.ScreenID: live}, map[string]string{spec.ScreenID: approved}, []screenshot.ScreenSpec{spec})
+	if err != nil {
+		t.Fatalf("BuildRegionDiffs rejected the declared form-default comparator: %v", err)
+	}
+	region := diffs[0].Regions[0]
+	if region.Divergence != "form-defaults" || !strings.Contains(region.Justification, "D-16") {
+		t.Fatalf("form defaults comparator must be D-16-linked, got %+v", region)
+	}
+}
+
 func TestValidateRegionDiffsRejectsMissingRequiredRegion(t *testing.T) {
 	source := strings.Repeat("f", 40)
 	var diffs screenshot.RegionDiffs

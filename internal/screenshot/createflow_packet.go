@@ -1160,7 +1160,10 @@ func BuildRegionDiffs(sourceCommit string, liveCaptures, approvedCaptures map[st
 			case "git-form-demo":
 				rec.Divergence = "continue-disabled-reason"
 				rec.Justification = "D-19: real binary shows Phase-4 reason; dummy shows form-validity reason"
-			case "ssh-form-filled", "reuse-key-vs-generate", "reuse-manual-path", "mouse-focused-field":
+			case "ssh-form-filled":
+				rec.Divergence = "form-defaults + sidebar + host-preview"
+				rec.Justification = "D-16 structural fixture: live form defaults and fresh HOME differ from the approved fixture"
+			case "reuse-key-vs-generate", "reuse-manual-path", "mouse-focused-field":
 				rec.Divergence = "sidebar + host-preview"
 				rec.Justification = "structural: real backend has 0 identities and probed catalog; dummy has fixture set"
 			default:
@@ -1174,6 +1177,8 @@ func BuildRegionDiffs(sourceCommit string, liveCaptures, approvedCaptures map[st
 
 func regionDisposition(screenID string, name RegionName) (string, string) {
 	switch {
+	case name == RegionFormFields:
+		return "form-defaults", "D-16 structural fixture: the live backend uses current provider defaults while the approved TUI preserves frozen demo defaults"
 	case name == RegionConnectivityOutput:
 		return "connectivity-output", "D-02: live capture uses the current backend outcome; approved TUI uses a frozen fixture"
 	case name == RegionContinueDisabledReason:
