@@ -9,7 +9,9 @@ package screenshot_test
 // the `cmd/gitid-evidence` publisher uses.
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -546,7 +548,7 @@ func TestSelfHashAlgorithm(t *testing.T) {
 // (with VariantOf + VariantRationale) is ALLOWED by ValidateScreenSpecs
 // while a spec without that metadata is rejected.
 func TestExplicitVariant(t *testing.T) {
-	specs := screenshot.ScreenSpecRegistry()
+	specs := screenshot.ScreenSpecRegistry()[:len(screenshot.CreateFlowScreenIDs)]
 	// The built-in registry must pass validation (variants are declared).
 	if err := screenshot.ValidateScreenSpecRegistry(); err != nil {
 		t.Fatalf("ValidateScreenSpecRegistry failed on built-in registry: %v", err)
@@ -613,8 +615,11 @@ func TestRegionDiffCoverage(t *testing.T) {
 	liveCaptures := screenshot.CaptureCreateFlowScreens(backend)
 	approvedCaptures := screenshot.CaptureCreateFlowScreens(backend)
 
-	specs := screenshot.ScreenSpecRegistry()
-	diffs := screenshot.BuildRegionDiffs("test-commit", liveCaptures, approvedCaptures, specs)
+	specs := screenshot.ScreenSpecRegistry()[:len(screenshot.CreateFlowScreenIDs)]
+	diffs, err := screenshot.BuildRegionDiffs("test-commit", liveCaptures, approvedCaptures, specs)
+	if err != nil {
+		t.Fatalf("BuildRegionDiffs: %v", err)
+	}
 
 	// Must have at least one diff per ScreenSpec.
 	if len(diffs) == 0 {
@@ -653,7 +658,7 @@ func TestCandidateManifestIsReviewableButNotFinal(t *testing.T) {
 		OutputDir:      dir,
 		ProvenanceFiles: map[string][]byte{
 			"EVIDENCE.json":     []byte("evidence"),
-			"REGION-DIFFS.json": []byte("regions"),
+			"REGION-DIFFS.json": validRegionDiffs(t, strings.Repeat("a", 40)),
 		},
 	}, makeMinimalPanels(t, t.TempDir()), screenshot.PacketCapture{
 		Commands: []string{"test"}, ToolVersions: []screenshot.PacketTool{{Name: "go", Version: "test"}},
@@ -670,6 +675,43 @@ func TestCandidateManifestIsReviewableButNotFinal(t *testing.T) {
 	}
 	if _, err := screenshot.ValidatePacket(dir); err == nil {
 		t.Fatal("ValidatePacket accepted a candidate without final review provenance")
+	}
+}
+
+func TestFinalizeCandidateRequiresTwoBoundDistinctZeroBlockerReviews(t *testing.T) {
+	candidateDir := filepath.Join(t.TempDir(), "candidate")
+	source := strings.Repeat("d", 40)
+	result, err := screenshot.GenerateVisualPacket(screenshot.PacketOptions{
+		SourceCommit: source, ApprovalCommit: screenshot.PacketApprovalCommit, OutputDir: candidateDir,
+		ProvenanceFiles: map[string][]byte{"EVIDENCE.json": []byte("evidence"), "REGION-DIFFS.json": validRegionDiffs(t, source)},
+	}, makeMinimalPanels(t, t.TempDir()), screenshot.PacketCapture{
+		Commands: []string{"test"}, ToolVersions: []screenshot.PacketTool{{Name: "go", Version: "test"}}, Geometry: "100x30", FontSHA256: strings.Repeat("a", 64), Theme: "test",
+	})
+	if err != nil {
+		t.Fatalf("GenerateVisualPacket: %v", err)
+	}
+	if err := os.Rename(result.ManifestPath, filepath.Join(candidateDir, "CANDIDATE-MANIFEST.json")); err != nil {
+		t.Fatalf("renaming candidate manifest: %v", err)
+	}
+	boundReview := func(reviewer, stdout string, critical int) screenshot.ReviewInput {
+		verdict, marshalErr := json.Marshal(screenshot.ReviewVerdict{Version: "03-14.1", SourceCommit: source, CandidateManifestSHA256: result.Packet.ManifestSHA256, Reviewer: reviewer, OpenCritical: critical, OpenHigh: 0})
+		if marshalErr != nil {
+			t.Fatalf("marshaling verdict: %v", marshalErr)
+		}
+		return screenshot.ReviewInput{Reviewer: reviewer, Tool: reviewer + "-tool", Provider: reviewer + "-provider", Model: "test-model", Session: reviewer + "-session", StartedAt: "2026-08-22T00:00:00Z", EndedAt: "2026-08-22T00:01:00Z", Prompt: []byte("review " + reviewer), Stdout: []byte(stdout), Stderr: []byte(""), Verdict: verdict}
+	}
+	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "blocked"), []screenshot.ReviewInput{boundReview("ui", "same", 0), boundReview("codex", "same", 0)}); err == nil {
+		t.Fatal("FinalizeCandidate must reject reused raw review output")
+	}
+	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "blocked-critical"), []screenshot.ReviewInput{boundReview("ui", "ui output", 1), boundReview("codex", "codex output", 0)}); err == nil {
+		t.Fatal("FinalizeCandidate must reject an open Critical finding")
+	}
+	finalDir := filepath.Join(t.TempDir(), "final")
+	if _, err := screenshot.FinalizeCandidate(candidateDir, finalDir, []screenshot.ReviewInput{boundReview("ui", "ui output", 0), boundReview("codex", "codex output", 0)}); err != nil {
+		t.Fatalf("FinalizeCandidate: %v", err)
+	}
+	if _, err := screenshot.ValidatePacket(finalDir); err != nil {
+		t.Fatalf("ValidatePacket finalized review-gated packet: %v", err)
 	}
 }
 
@@ -703,6 +745,45 @@ func TestScreenSpecRegistry(t *testing.T) {
 		if !found {
 			t.Errorf("ScreenSpecRegistry missing spec for screen ID %q", id)
 		}
+	}
+}
+
+func TestRequiredSemanticInventoryAndRawEvidence(t *testing.T) {
+	seen := make(map[string]bool)
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		seen[spec.ScreenID] = true
+	}
+	for _, id := range []string{
+		"reuse-manual-resolved", "test-stage1-pass", "test-stage2-proof-top", "test-stage2-proof-bottom", "test-stage2-proof-right",
+		"test-reachable-not-uploaded", "test-hard-failure-retry", "confirm-summary", "confirm-managed-block",
+	} {
+		if !seen[id] {
+			t.Errorf("registry is missing required semantic frame %q", id)
+		}
+	}
+	panels := makeMinimalPanels(t, t.TempDir())
+	panels[0].RawText = ""
+	_, err := screenshot.GenerateVisualPacket(screenshot.PacketOptions{
+		SourceCommit: strings.Repeat("e", 40), ApprovalCommit: screenshot.PacketApprovalCommit, OutputDir: filepath.Join(t.TempDir(), "packet"),
+	}, panels, screenshot.PacketCapture{Commands: []string{"test"}, ToolVersions: []screenshot.PacketTool{{Name: "go", Version: "test"}}, Geometry: "100x30", FontSHA256: strings.Repeat("a", 64), Theme: "test"})
+	if err == nil || !strings.Contains(err.Error(), "raw evidence") {
+		t.Fatalf("packet must reject an absent raw transcript; got %v", err)
+	}
+}
+
+func TestValidateRegionDiffsRejectsMissingRequiredRegion(t *testing.T) {
+	source := strings.Repeat("f", 40)
+	var diffs screenshot.RegionDiffs
+	if err := json.Unmarshal(validRegionDiffs(t, source), &diffs); err != nil {
+		t.Fatalf("unmarshaling region diffs: %v", err)
+	}
+	diffs.Screens[0].Regions = nil
+	data, err := json.Marshal(diffs)
+	if err != nil {
+		t.Fatalf("marshaling malformed region diffs: %v", err)
+	}
+	if err := screenshot.ValidateRegionDiffs(data, source, screenshot.RequiredScreenSpecs()); err == nil {
+		t.Fatal("region validation must reject a missing required region")
 	}
 }
 
@@ -780,14 +861,17 @@ func makeTinyPNG(t *testing.T, dir, name string) string {
 	return path
 }
 
-// makeMinimalPanels returns the exact 24-panel set (one per surface×screen)
-// required by GenerateVisualPacket, each with a unique tiny PNG.
+// makeMinimalPanels returns every registry-required panel with a unique PNG.
 func makeMinimalPanels(t *testing.T, dir string) []screenshot.VisualPanel {
 	t.Helper()
 	surfaces := []string{"live", "approved-tui", "approved-html"}
-	panels := make([]screenshot.VisualPanel, 0, 24)
+	panels := make([]screenshot.VisualPanel, 0, screenshot.RequiredVisualPanelCount())
 	for _, surface := range surfaces {
-		for i, id := range screenshot.CreateFlowScreenIDs {
+		for i, spec := range screenshot.RequiredScreenSpecs() {
+			if !screenshot.ScreenAppliesToSurface(spec, surface) {
+				continue
+			}
+			id := spec.ScreenID
 			// Each panel gets a unique PNG (different byte at index 8).
 			pngBytes := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, byte(len(surfaces)*i + len(surface))}
 			pngPath := filepath.Join(dir, surface+"-"+id+".png")
@@ -798,9 +882,40 @@ func makeMinimalPanels(t *testing.T, dir string) []screenshot.VisualPanel {
 				Surface:  surface,
 				ScreenID: id,
 				Text:     "text content for " + surface + "/" + id,
+				RawText:  "raw terminal transcript for " + surface + "/" + id,
 				PNGPath:  pngPath,
 			})
 		}
 	}
 	return panels
+}
+
+func validRegionDiffs(t *testing.T, source string) []byte {
+	t.Helper()
+	hash := func(value string) string {
+		sum := sha256.Sum256([]byte(value))
+		return fmt.Sprintf("%x", sum)
+	}
+	diffs := screenshot.RegionDiffs{Version: "test", SourceCommit: source, GeneratedAt: "test"}
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		record := screenshot.RegionDiffRecord{ScreenID: spec.ScreenID}
+		for _, name := range spec.RequiredRegions {
+			live := "live " + spec.ScreenID + " " + string(name)
+			approved := ""
+			if spec.ApplicableApprovedTUI {
+				approved = live
+			}
+			record.Regions = append(record.Regions, screenshot.NamedRegionDiff{
+				Name: name, LiveText: live, ApprovedText: approved,
+				ApprovedApplicable: spec.ApplicableApprovedTUI,
+				LiveHash:           hash(live), ApprovedHash: hash(approved), Equal: true,
+			})
+		}
+		diffs.Screens = append(diffs.Screens, record)
+	}
+	data, err := json.Marshal(diffs)
+	if err != nil {
+		t.Fatalf("marshaling region diffs: %v", err)
+	}
+	return data
 }

@@ -2003,7 +2003,7 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 	case 1:
 		if w.proof.Text != "" {
 			switch key {
-			case "tab":
+			case "tab", "v":
 				w.proof.Focused = !w.proof.Focused
 				m.wizard = w
 				return keyResult{model: m, handled: true}

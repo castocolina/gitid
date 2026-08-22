@@ -558,6 +558,17 @@ func TestExactTextViewport_HorizontalOffset_CueWhenHiddenRight(t *testing.T) {
 	}
 }
 
+func TestExactTextViewport_HorizontalOnlyCueKeepsExactRowBudget(t *testing.T) {
+	v := ExactTextViewport{
+		Text:         "0123456789",
+		VisibleLines: 3,
+		Width:        4,
+	}
+	if got := len(strings.Split(v.View(), "\n")); got != 3 {
+		t.Fatalf("horizontal-only viewport rows = %d, want exactly 3", got)
+	}
+}
+
 // TestExactTextViewport_HorizontalScrollRoundTrip proves ScrollRight then
 // ScrollLeft returns to the origin, and source bytes are unchanged.
 func TestExactTextViewport_HorizontalScrollRoundTrip(t *testing.T) {

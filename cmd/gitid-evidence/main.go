@@ -37,6 +37,16 @@ func main() {
 }
 
 func run(args []string) error {
+	if len(args) > 0 && args[0] == "finalize" {
+		return finalize(args[1:])
+	}
+	if len(args) > 0 && args[0] == "--candidate-process" {
+		sourceCommit, outputPath, err := parseArgs(args[1:], true)
+		if err != nil {
+			return err
+		}
+		return generateCandidateOnce(sourceCommit, outputPath)
+	}
 	candidate := false
 	filtered := make([]string, 0, len(args))
 	for _, arg := range args {
@@ -54,6 +64,96 @@ func run(args []string) error {
 		return fmt.Errorf("final publication is review-gated; generate a candidate with --candidate and finalize only after two independent reviews")
 	}
 	return generateCandidate(sourceCommit, outputPath)
+}
+
+func finalize(args []string) error {
+	var sourceCommit, candidateDir, outputRoot string
+	var reviewDirs []string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--source-commit":
+			i++
+			if i < len(args) {
+				sourceCommit = args[i]
+			}
+		case "--candidate-dir":
+			i++
+			if i < len(args) {
+				candidateDir = args[i]
+			}
+		case "--output-root":
+			i++
+			if i < len(args) {
+				outputRoot = args[i]
+			}
+		case "--review-dir":
+			i++
+			if i < len(args) {
+				reviewDirs = append(reviewDirs, args[i])
+			}
+		default:
+			return fmt.Errorf("unknown finalize argument %q", args[i])
+		}
+	}
+	if err := validateSourceCommitFormat(sourceCommit); err != nil || candidateDir == "" || outputRoot == "" || len(reviewDirs) != 2 {
+		return fmt.Errorf("finalize requires --source-commit <full-40-hex-sha> --candidate-dir <dir> --review-dir <dir> --review-dir <dir> --output-root <dir>")
+	}
+	repoRoot, err := repositoryRoot()
+	if err != nil {
+		return err
+	}
+	if err := validateCurrentSource(repoRoot, sourceCommit); err != nil {
+		return err
+	}
+	candidate, err := screenshot.ValidateCandidate(candidateDir)
+	if err != nil {
+		return fmt.Errorf("validating candidate: %w", err)
+	}
+	if candidate.SourceCommit != sourceCommit {
+		return fmt.Errorf("candidate source commit %q does not match requested source %q", candidate.SourceCommit, sourceCommit)
+	}
+	reviews := make([]screenshot.ReviewInput, 0, 2)
+	for _, dir := range reviewDirs {
+		review, err := loadReviewInput(dir)
+		if err != nil {
+			return err
+		}
+		reviews = append(reviews, review)
+	}
+	if err := prepareOutputRoot(outputRoot); err != nil {
+		return err
+	}
+	final, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(outputRoot, sourceCommit), reviews)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("gitid-evidence: finalized immutable packet at %s\n", filepath.Join(outputRoot, sourceCommit))
+	fmt.Printf("gitid-evidence: manifest SHA-256 = %s\n", final.ManifestSHA256)
+	return nil
+}
+
+func loadReviewInput(dir string) (screenshot.ReviewInput, error) {
+	metadata, err := os.ReadFile(filepath.Join(dir, "metadata.json")) //nolint:gosec // explicit local review directory
+	if err != nil {
+		return screenshot.ReviewInput{}, fmt.Errorf("reading review metadata: %w", err)
+	}
+	var review screenshot.ReviewInput
+	decoder := json.NewDecoder(bytes.NewReader(metadata))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&review); err != nil {
+		return screenshot.ReviewInput{}, fmt.Errorf("decoding review metadata: %w", err)
+	}
+	for _, asset := range []struct {
+		name string
+		into *[]byte
+	}{{"prompt.txt", &review.Prompt}, {"raw-stdout.txt", &review.Stdout}, {"raw-stderr.txt", &review.Stderr}, {"verdict.json", &review.Verdict}} {
+		data, err := os.ReadFile(filepath.Join(dir, asset.name)) //nolint:gosec // explicit local review directory
+		if err != nil {
+			return screenshot.ReviewInput{}, fmt.Errorf("reading review %s: %w", asset.name, err)
+		}
+		*asset.into = data
+	}
+	return review, nil
 }
 
 func parseArgs(args []string, candidate bool) (sourceCommit, outputPath string, err error) {
@@ -91,66 +191,6 @@ func parseArgs(args []string, candidate bool) (sourceCommit, outputPath string, 
 	return sourceCommit, outputPath, nil
 }
 
-func publish(sourceCommit, outputRoot string) error {
-	repoRoot, err := repositoryRoot()
-	if err != nil {
-		return err
-	}
-	if err := validateCurrentSource(repoRoot, sourceCommit); err != nil {
-		return err
-	}
-	if err := prepareOutputRoot(outputRoot); err != nil {
-		return err
-	}
-	destDir := filepath.Join(outputRoot, sourceCommit)
-	if _, err := os.Stat(destDir); err == nil {
-		return fmt.Errorf("destination %q already exists — refusing to overwrite", destDir)
-	}
-
-	parent := filepath.Dir(outputRoot)
-	candidateRoots := make([]string, 0, 2)
-	defer func() {
-		for _, root := range candidateRoots {
-			_ = os.RemoveAll(root)
-		}
-	}()
-	for range 2 {
-		root, err := os.MkdirTemp(parent, ".gitid-evidence-candidate-")
-		if err != nil {
-			return fmt.Errorf("creating candidate root: %w", err)
-		}
-		candidateRoots = append(candidateRoots, root)
-	}
-	candidateDirs := []string{
-		filepath.Join(candidateRoots[0], sourceCommit),
-		filepath.Join(candidateRoots[1], sourceCommit),
-	}
-	for _, candidateDir := range candidateDirs {
-		if err := runCandidateProcess(repoRoot, sourceCommit, candidateDir); err != nil {
-			return err
-		}
-		if _, err := screenshot.ValidatePacket(candidateDir); err != nil {
-			return fmt.Errorf("validating candidate %q: %w", candidateDir, err)
-		}
-	}
-	if err := compareInventories(candidateDirs[0], candidateDirs[1]); err != nil {
-		return fmt.Errorf("two-process determinism check failed: %w", err)
-	}
-	if err := os.Rename(candidateDirs[0], destDir); err != nil {
-		return fmt.Errorf("atomically publishing %q: %w", destDir, err)
-	}
-	if err := syncDir(outputRoot); err != nil {
-		return fmt.Errorf("syncing published packet directory: %w", err)
-	}
-	pkt, err := screenshot.ValidatePacket(destDir)
-	if err != nil {
-		return fmt.Errorf("validating published packet: %w", err)
-	}
-	fmt.Printf("gitid-evidence: published %d PNG panels to %s\n", screenshot.ValidatePanelCount, destDir)
-	fmt.Printf("gitid-evidence: manifest SHA-256 = %s\n", pkt.ManifestSHA256)
-	return nil
-}
-
 func prepareOutputRoot(root string) error {
 	info, err := os.Stat(root)
 	if err == nil {
@@ -176,7 +216,7 @@ func runCandidateProcess(repoRoot, sourceCommit, outputDir string) error {
 	if err != nil {
 		return fmt.Errorf("locating evidence executable: %w", err)
 	}
-	cmd := exec.Command(self, "--candidate", "--source-commit", sourceCommit, "--output-dir", outputDir) //nolint:gosec // all args are locally validated paths and full commit SHA
+	cmd := exec.Command(self, "--candidate-process", "--source-commit", sourceCommit, "--output-dir", outputDir) //nolint:gosec // all args are locally validated paths and full commit SHA
 	cmd.Dir = repoRoot
 	cmd.Env = append(os.Environ(), "GITID_EVIDENCE_REPO_ROOT="+repoRoot)
 	output, err := cmd.CombinedOutput()
@@ -187,6 +227,32 @@ func runCandidateProcess(repoRoot, sourceCommit, outputDir string) error {
 }
 
 func generateCandidate(sourceCommit, outputDir string) error {
+	repoRoot, err := repositoryRoot()
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(outputDir); err == nil {
+		return fmt.Errorf("candidate output %q already exists", outputDir)
+	}
+	secondRoot, err := os.MkdirTemp(filepath.Dir(outputDir), ".gitid-evidence-candidate-")
+	if err != nil {
+		return fmt.Errorf("creating second candidate directory: %w", err)
+	}
+	defer os.RemoveAll(secondRoot)
+	second := filepath.Join(secondRoot, "candidate")
+	if err := runCandidateProcess(repoRoot, sourceCommit, outputDir); err != nil {
+		return err
+	}
+	if err := runCandidateProcess(repoRoot, sourceCommit, second); err != nil {
+		return err
+	}
+	if err := compareInventories(outputDir, second); err != nil {
+		return fmt.Errorf("two-process candidate determinism check failed: %w", err)
+	}
+	return nil
+}
+
+func generateCandidateOnce(sourceCommit, outputDir string) error {
 	repoRoot := os.Getenv("GITID_EVIDENCE_REPO_ROOT")
 	if repoRoot == "" {
 		var err error
@@ -279,7 +345,10 @@ func generateCandidate(sourceCommit, outputDir string) error {
 	// The text is already available from the panel captures above.
 	liveTextMap := panelsToTextMap(live)
 	approvedTUITextMap := panelsToTextMap(approvedTUI)
-	regionRecords := screenshot.BuildRegionDiffs(sourceCommit, liveTextMap, approvedTUITextMap, screenshot.ScreenSpecRegistry())
+	regionRecords, err := screenshot.BuildRegionDiffs(sourceCommit, liveTextMap, approvedTUITextMap, screenshot.RequiredScreenSpecs())
+	if err != nil {
+		return err
+	}
 	regionDiffs := screenshot.BuildRegionDiffsJSON(sourceCommit, regionRecords)
 
 	result, err := screenshot.GenerateVisualPacket(screenshot.PacketOptions{
@@ -405,8 +474,13 @@ func captureApprovedTUIPanels(approvalDir, workspace, renderDir, freeze, fontFil
 }
 
 func captureTUIPanels(surface, bin, workspace, renderDir, freeze, fontFile string, fakeSSH bool) ([]screenshot.VisualPanel, error) {
-	panels := make([]screenshot.VisualPanel, 0, len(screenshot.CreateFlowScreenIDs))
-	for _, id := range screenshot.CreateFlowScreenIDs {
+	specs := screenshot.RequiredScreenSpecs()
+	panels := make([]screenshot.VisualPanel, 0, len(specs))
+	for _, spec := range specs {
+		if !screenshot.ScreenAppliesToSurface(spec, surface) {
+			continue
+		}
+		id := spec.ScreenID
 		home, err := os.MkdirTemp(workspace, "home-")
 		if err != nil {
 			return nil, fmt.Errorf("creating sandbox HOME: %w", err)
@@ -418,11 +492,16 @@ func captureTUIPanels(surface, bin, workspace, renderDir, freeze, fontFile strin
 				return nil, err
 			}
 		}
-		text, err := captureTUIScreen(bin, home, sshDir, id, fakeSSH)
+		var raw string
+		text, err := captureTUIScreen(bin, home, sshDir, id, fakeSSH, &raw)
 		if err != nil {
 			return nil, fmt.Errorf("capturing %s/%s: %w", surface, id, err)
 		}
 		text = normalizeCaptureText(text, home, workspace)
+		raw = normalizeCaptureText(raw, home, workspace)
+		if err := screenshot.ValidateCapturedState(spec, text); err != nil {
+			return nil, err
+		}
 		result, err := screenshot.CaptureTUI(text, screenshot.TUIOptions{
 			FreezeBin: freeze,
 			FontFile:  fontFile,
@@ -435,7 +514,7 @@ func captureTUIPanels(surface, bin, workspace, renderDir, freeze, fontFile strin
 		if err != nil {
 			return nil, fmt.Errorf("rendering %s/%s with freeze: %w", surface, id, err)
 		}
-		panels = append(panels, screenshot.VisualPanel{Surface: surface, ScreenID: id, Text: text, PNGPath: result.PNGPath})
+		panels = append(panels, screenshot.VisualPanel{Surface: surface, ScreenID: id, Text: text, RawText: raw, PNGPath: result.PNGPath})
 	}
 	return panels, nil
 }
@@ -446,9 +525,9 @@ func normalizeCaptureText(text, home, workspace string) string {
 	return captureTimestampPattern.ReplaceAllString(text, "<timestamp>")
 }
 
-func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool) (string, error) {
+func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput *string) (string, error) {
 	manualKeyPath := ""
-	if id == "reuse-manual-path" && fakeSSH != "" {
+	if (id == "reuse-manual-path" || id == "reuse-manual-resolved") && fakeSSH != "" {
 		var err error
 		manualKeyPath, err = seedManualReuseKey(home)
 		if err != nil {
@@ -465,7 +544,13 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool) (string, e
 		cmd.Env = append(cmd.Env, "GITID_BARRIER_FILE="+barrierFile)
 	}
 	if fakeSSH != "" {
-		cmd.Env = append(cmd.Env, "PATH="+fakeSSH+":"+os.Getenv("PATH"), "GITID_FAKE_SSH_MODE=pass")
+		mode := "pass"
+		if id == "test-reachable-not-uploaded" {
+			mode = "denied"
+		} else if id == "test-hard-failure-retry" {
+			mode = "timeout"
+		}
+		cmd.Env = append(cmd.Env, "PATH="+fakeSSH+":"+os.Getenv("PATH"), "GITID_FAKE_SSH_MODE="+mode)
 	}
 	session, err := startCapturePTY(cmd)
 	if err != nil {
@@ -490,13 +575,12 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool) (string, e
 		if err := session.send([]byte("\x1b[C")); err != nil {
 			return "", err
 		}
-	case "reuse-manual-path":
+	case "reuse-manual-path", "reuse-manual-resolved":
 		if err := session.tabs(4); err != nil {
 			return "", err
 		}
-		// Select Reuse, then the trailing manual row, focus its input, and
-		// resolve the sandbox key. This must never be a Generate frame with a
-		// reuse label inferred from its capture ID.
+		// Select Reuse, then the trailing manual row and its input. This is a
+		// real resolved-key state, never a Generate frame relabeled by ID.
 		if err := session.send([]byte("\x1b[C")); err != nil {
 			return "", err
 		}
@@ -529,7 +613,7 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool) (string, e
 		if err := session.send([]byte(fmt.Sprintf("\x1b[<0;10;%dM\x1b[<0;10;%dm", row, row))); err != nil {
 			return "", err
 		}
-	case "test-stage1-direct":
+	case "test-stage1-direct", "test-stage1-pass":
 		// Run stage 1 and capture BEFORE stage 2 completes — the genuine
 		// testRunning2 state (stage-1 result visible + "… running ssh…").
 		// The prior runStages() waited for "identityfile" (stage-2 done),
@@ -537,12 +621,38 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool) (string, e
 		if err := runStage1Only(session); err != nil {
 			return "", err
 		}
-	case "test-stage2-by-alias":
+	case "test-stage2-by-alias", "test-stage2-proof-top", "test-stage2-proof-bottom", "test-stage2-proof-right", "test-reachable-not-uploaded":
 		// Run both stages and capture AFTER stage 2 completes (testStage2 state).
 		if err := runStages(session, autoStage2); err != nil {
 			return "", err
 		}
-	case "git-form-demo", "confirm-write":
+		if id == "test-stage2-proof-top" || id == "test-stage2-proof-bottom" || id == "test-stage2-proof-right" {
+			if err := session.send([]byte("v")); err != nil {
+				return "", err
+			}
+			if _, err := session.waitFor("Proof viewport focused", 8*time.Second); err != nil {
+				return "", err
+			}
+		}
+		if id == "test-stage2-proof-bottom" {
+			for range 4 {
+				if err := session.send([]byte("\x1b[6~")); err != nil {
+					return "", err
+				}
+			}
+		}
+		if id == "test-stage2-proof-right" {
+			for range 8 {
+				if err := session.send([]byte("\x1b[C")); err != nil {
+					return "", err
+				}
+			}
+		}
+	case "test-hard-failure-retry":
+		if err := runFailure(session); err != nil {
+			return "", err
+		}
+	case "git-form-demo", "confirm-write", "confirm-summary", "confirm-managed-block":
 		if err := runStages(session, autoStage2); err != nil {
 			return "", err
 		}
@@ -564,6 +674,21 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool) (string, e
 		if _, err := session.waitFor("Create identity", 8*time.Second); err != nil {
 			return "", err
 		}
+		if id == "confirm-summary" || id == "confirm-managed-block" {
+			if err := session.send([]byte("v")); err != nil {
+				return "", err
+			}
+			if _, err := session.waitFor("Exact change focused", 8*time.Second); err != nil {
+				return "", err
+			}
+		}
+		if id == "confirm-managed-block" {
+			for range 4 {
+				if err := session.send([]byte("\x1b[6~")); err != nil {
+					return "", err
+				}
+			}
+		}
 	default:
 		return "", fmt.Errorf("unknown capture screen %q", id)
 	}
@@ -582,7 +707,25 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool) (string, e
 		// Give stage-2 time to complete so the process exits cleanly.
 		time.Sleep(500 * time.Millisecond)
 	}
+	*rawOutput = session.transcript()
+	if strings.TrimSpace(*rawOutput) == "" {
+		return "", fmt.Errorf("captured empty raw PTY transcript")
+	}
 	return text + "\n", nil
+}
+
+func runFailure(session *capturePTY) error {
+	if err := session.send([]byte("\r")); err != nil {
+		return err
+	}
+	if _, err := session.waitFor("Step 2/4", 8*time.Second); err != nil {
+		return err
+	}
+	if err := session.send([]byte("\r")); err != nil {
+		return err
+	}
+	_, err := session.waitFor("Retry (Enter)", 10*time.Second)
+	return err
 }
 
 // seedManualReuseKey creates a disposable unencrypted key under the capture
@@ -776,6 +919,13 @@ func validateCurrentSource(repoRoot, sourceCommit string) error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("source tree differs from %s outside preserved .planning artifacts", sourceCommit)
 	}
+	status, err := commandOutputIn(repoRoot, "git", "status", "--porcelain", "--", ".", ":(exclude).planning")
+	if err != nil {
+		return fmt.Errorf("checking source tree status: %w", err)
+	}
+	if strings.TrimSpace(status) != "" {
+		return fmt.Errorf("source tree has uncommitted or untracked files outside preserved .planning artifacts")
+	}
 	return nil
 }
 
@@ -905,6 +1055,7 @@ type capturePTY struct {
 	cmd  *exec.Cmd
 	emu  *vt.Emulator
 	mu   sync.Mutex
+	raw  bytes.Buffer
 }
 
 func startCapturePTY(cmd *exec.Cmd) (*capturePTY, error) {
@@ -919,6 +1070,7 @@ func startCapturePTY(cmd *exec.Cmd) (*capturePTY, error) {
 			n, readErr := ptmx.Read(buf)
 			if n > 0 {
 				s.mu.Lock()
+				_, _ = s.raw.Write(buf[:n])
 				_, _ = s.emu.Write(buf[:n])
 				s.mu.Unlock()
 			}
@@ -973,6 +1125,12 @@ func (s *capturePTY) snapshot() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.emu.String()
+}
+
+func (s *capturePTY) transcript() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.raw.String()
 }
 
 func (s *capturePTY) close() {
@@ -1034,6 +1192,14 @@ if [ "$is_resolution" = "1" ]; then
   identityfile=$(awk '$1 == "IdentityFile" { print $2; exit }' "$config_path")
   printf 'user %s\nhostname %s\nport %s\nidentitiesonly %s\nidentityfile %s\n' "$user" "$hostname" "$port" "$identitiesonly" "$identityfile"
   exit 0
+fi
+if [ "$GITID_FAKE_SSH_MODE" = "timeout" ]; then
+  echo "connect to host ssh.github.com port 443: Connection timed out" >&2
+  exit 255
+fi
+if [ "$GITID_FAKE_SSH_MODE" = "denied" ]; then
+  echo "git@ssh.github.com: Permission denied (publickey)." >&2
+  exit 1
 fi
 echo "Hi user! You've successfully authenticated, but GitHub does not provide shell access."
 exit 1

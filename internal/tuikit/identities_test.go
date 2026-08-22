@@ -2102,8 +2102,11 @@ func TestCompletedProofViewportRoutesAdvertisedControls(t *testing.T) {
 	if !strings.Contains(stripANSI(appView(a)), "Proof viewport") {
 		t.Fatalf("proof viewport does not advertise its focus and controls:\n%s", stripANSI(appView(a)))
 	}
-	result := m.handleKey(pressKey("tab"), a.state)
+	result := m.handleKey(pressKey("v"), a.state)
 	m = result.model.(identitiesModel)
+	if !m.wizard.proof.Focused {
+		t.Fatal("advertised v key did not focus the proof viewport")
+	}
 	result = m.handleKey(pressKey("pgdown"), a.state)
 	m = result.model.(identitiesModel)
 	result = m.handleKey(pressKey("right"), a.state)

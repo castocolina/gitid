@@ -101,6 +101,10 @@ const (
 	// fresh-HOME real backend and a pre-seeded fixture backend. It is
 	// allowlisted as "sidebar-state" with an explanation.
 	RegionSidebar RegionName = "sidebar"
+
+	// RegionConfirmationPreview is the complete focusable review text in a
+	// create ceremony, including summary, key path, and managed-block sentinels.
+	RegionConfirmationPreview RegionName = "confirmation-preview"
 )
 
 // ExtractRegion returns the sub-string of screen that corresponds to region.
@@ -135,8 +139,21 @@ func ExtractRegion(screen string, region RegionName) string {
 		return extractHeaderStatus(lines)
 	case RegionKeySection:
 		return extractKeySection(lines)
+	case RegionConfirmationPreview:
+		return extractConfirmationPreview(lines)
 	}
 	return ""
+}
+
+func extractConfirmationPreview(lines []string) string {
+	var out []string
+	for _, line := range lines {
+		plain := stripANSI(line)
+		if strings.Contains(plain, "Exact change") || strings.Contains(plain, "# BEGIN gitid managed:") || strings.Contains(plain, "# END gitid managed:") || strings.Contains(plain, "SSH:") {
+			out = append(out, rightPane(line))
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // extractHeader returns the nav-tabs portion of the first rendered line —
@@ -470,6 +487,7 @@ func AllRegionNames() []RegionName {
 		RegionKeybar,
 		RegionReusePickerEntries,
 		RegionSidebar,
+		RegionConfirmationPreview,
 	}
 }
 

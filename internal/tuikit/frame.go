@@ -784,10 +784,15 @@ func (v ExactTextViewport) View() string {
 	}
 
 	out := make([]string, 0, v.VisibleLines)
-	// When there are hidden lines below, reserve the last row for the cue.
+	// Reserve the final row whenever a cue is present. This keeps horizontal-only
+	// navigation from growing the viewport beyond its declared row budget.
 	contentRows := v.VisibleLines
-	if cueLine != "" && hiddenBelow > 0 {
+	if cueLine != "" && v.VisibleLines > 1 {
 		contentRows = v.VisibleLines - 1
+	} else if v.VisibleLines == 1 {
+		// A one-row viewport must remain inspectable; callers with room for a
+		// cue use two or more rows and retain the fixed cue reservation above.
+		cueLine = ""
 	}
 	for i, line := range visible {
 		if i >= contentRows {
@@ -808,6 +813,9 @@ func (v ExactTextViewport) View() string {
 			cueLine = ansi.Truncate(cueLine, v.Width, "")
 		}
 		out = append(out, styleFaint.Render(cueLine))
+	}
+	for len(out) < v.VisibleLines {
+		out = append(out, "")
 	}
 	return strings.Join(out, "\n")
 }

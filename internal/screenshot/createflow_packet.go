@@ -2,14 +2,12 @@
 
 package screenshot
 
-// createflow_packet.go implements the canonical 24-panel evidence packet for
+// createflow_packet.go implements the registry-derived evidence packet for
 // the Phase 3 create-flow visual review (plan 03-11 Task 2, CR-01 through
 // CR-04, CR-10).
 //
 // A packet contains:
-//   - 8 live panels: the real backend captured at current HEAD
-//   - 8 approved-TUI panels: captured from approval commit TUI source
-//   - 8 approved-HTML panels: captured from approval commit HTML source
+//   - every applicable live/approved frame declared by ScreenSpecRegistry
 //   - MANIFEST.json: canonical content-addressed inventory
 //
 // Two-subprocess determinism (CR-10): two complete candidate bundles are
@@ -89,7 +87,11 @@ type VisualPanel struct {
 	Surface  string
 	ScreenID string
 	Text     string
-	PNGPath  string
+	// RawText is the unmodified PTY transcript or browser capture text that
+	// produced the rendered frame. It is separate from Text so clipped terminal
+	// rows cannot impersonate raw evidence.
+	RawText string
+	PNGPath string
 }
 
 // PacketOptions configures a packet generation run.
@@ -127,45 +129,48 @@ type PacketResult struct {
 	MemberCount int
 }
 
-// ValidatePanelCount is the canonical expected number of panels in a review packet.
-// 8 live + 8 approved-TUI + 8 approved-HTML = 24 total panels.
-const ValidatePanelCount = 24
-
 // packetVersion is the current manifest schema version.
 const packetVersion = "03-11.1"
 
 const visualPacketVersion = "03-11.2"
 
-// GenerateVisualPacket writes the complete 24-panel evidence packet. Unlike
+// GenerateVisualPacket writes the complete registry-derived evidence packet. Unlike
 // GenerateTextPacket, this API cannot represent a panel without both the text
 // captured from the source binary/page and a non-empty renderer-produced PNG.
 func GenerateVisualPacket(opts PacketOptions, panels []VisualPanel, capture PacketCapture) (PacketResult, error) {
 	if err := validatePacketOptions(opts, "GenerateVisualPacket"); err != nil {
 		return PacketResult{}, err
 	}
-	if len(panels) != ValidatePanelCount {
-		return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: got %d panels, want exactly %d", len(panels), ValidatePanelCount)
+	if err := ValidateScreenSpecs(RequiredScreenSpecs()); err != nil {
+		return PacketResult{}, err
 	}
 	if err := os.MkdirAll(opts.OutputDir, 0o750); err != nil {
 		return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: creating output dir %q: %w", opts.OutputDir, err)
 	}
 
-	seen := make(map[string]bool, ValidatePanelCount)
-	members := make([]PacketMember, 0, ValidatePanelCount*2+len(opts.ProvenanceFiles))
+	expected := requiredVisualPanels()
+	seen := make(map[string]bool, len(expected))
+	members := make([]PacketMember, 0, len(expected)*3+len(opts.ProvenanceFiles))
 	for _, panel := range panels {
 		if !validPacketSurface(panel.Surface) {
 			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: unknown panel surface %q", panel.Surface)
 		}
-		if !isCreateFlowScreenID(panel.ScreenID) {
+		if _, ok := screenSpec(panel.ScreenID); !ok {
 			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: unknown screen %q", panel.ScreenID)
 		}
 		key := panel.Surface + "/" + panel.ScreenID
+		if !expected[key] {
+			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: panel %q is not applicable according to the registry", key)
+		}
 		if seen[key] {
 			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: duplicate panel %q", key)
 		}
 		seen[key] = true
 		if strings.TrimSpace(panel.Text) == "" {
 			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: panel %q has empty text", key)
+		}
+		if strings.TrimSpace(panel.RawText) == "" {
+			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: panel %q has empty raw evidence", key)
 		}
 		png, err := os.ReadFile(panel.PNGPath) //nolint:gosec // renderer path is created by the publisher
 		if err != nil {
@@ -180,6 +185,7 @@ func GenerateVisualPacket(opts PacketOptions, panels []VisualPanel, capture Pack
 			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: creating panel directory %q: %w", panel.Surface, err)
 		}
 		textRel := filepath.Join(panel.Surface, panel.ScreenID+".txt")
+		rawRel := filepath.Join(panel.Surface, panel.ScreenID+".raw")
 		pngRel := filepath.Join(panel.Surface, panel.ScreenID+".png")
 		if err := writeAndSync(filepath.Join(opts.OutputDir, textRel), []byte(panel.Text)); err != nil {
 			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: writing text %q: %w", key, err)
@@ -187,16 +193,18 @@ func GenerateVisualPacket(opts PacketOptions, panels []VisualPanel, capture Pack
 		if err := writeAndSync(filepath.Join(opts.OutputDir, pngRel), png); err != nil {
 			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: writing PNG %q: %w", key, err)
 		}
+		if err := writeAndSync(filepath.Join(opts.OutputDir, rawRel), []byte(panel.RawText)); err != nil {
+			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: writing raw evidence %q: %w", key, err)
+		}
 		members = append(members,
 			PacketMember{Path: textRel, SHA256: sha256Hex([]byte(panel.Text)), Kind: "text", ScreenID: panel.ScreenID},
+			PacketMember{Path: rawRel, SHA256: sha256Hex([]byte(panel.RawText)), Kind: "raw", ScreenID: panel.ScreenID},
 			PacketMember{Path: pngRel, SHA256: sha256Hex(png), Kind: "png-" + panel.Surface, ScreenID: panel.ScreenID},
 		)
 	}
-	for _, surface := range []string{"live", "approved-tui", "approved-html"} {
-		for _, id := range CreateFlowScreenIDs {
-			if !seen[surface+"/"+id] {
-				return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: missing panel %s/%s", surface, id)
-			}
+	for key := range expected {
+		if !seen[key] {
+			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: missing registry-required panel %s", key)
 		}
 	}
 	// Write optional provenance files (EVIDENCE.json, REGION-DIFFS.json, etc.)
@@ -263,13 +271,34 @@ func validPacketSurface(surface string) bool {
 }
 
 func isCreateFlowScreenID(id string) bool {
-	for _, candidate := range CreateFlowScreenIDs {
-		if candidate == id {
-			return true
+	_, ok := screenSpec(id)
+	return ok
+}
+
+func screenSpec(id string) (ScreenSpec, bool) {
+	for _, spec := range RequiredScreenSpecs() {
+		if spec.ScreenID == id {
+			return spec, true
 		}
 	}
-	return false
+	return ScreenSpec{}, false
 }
+
+func requiredVisualPanels() map[string]bool {
+	expected := make(map[string]bool)
+	for _, spec := range RequiredScreenSpecs() {
+		for _, surface := range []string{"live", "approved-tui", "approved-html"} {
+			if ScreenAppliesToSurface(spec, surface) {
+				expected[surface+"/"+spec.ScreenID] = true
+			}
+		}
+	}
+	return expected
+}
+
+// RequiredVisualPanelCount reports the registry-derived panel count for human
+// progress output. It is intentionally not a validation constant.
+func RequiredVisualPanelCount() int { return len(requiredVisualPanels()) }
 
 // GenerateTextPacket generates a text-only packet (no PNG capture) from two
 // backend captures. It is the deterministic inner loop used by both the routine
@@ -444,7 +473,7 @@ func validatePacketManifest(packetDir, manifestName string, final bool) (Packet,
 		if err != nil {
 			return Packet{}, fmt.Errorf("screenshot: ValidatePacket: reading member %q: %w", m.Path, err)
 		}
-		if pkt.Version == visualPacketVersion && len(content) == 0 {
+		if pkt.Version == visualPacketVersion && len(content) == 0 && m.Kind != "review" {
 			return Packet{}, fmt.Errorf("screenshot: ValidatePacket: visual member %q is empty", m.Path)
 		}
 		got := sha256Hex(content)
@@ -459,6 +488,9 @@ func validatePacketManifest(packetDir, manifestName string, final bool) (Packet,
 		// Detect duplicate PNG bytes across different screen IDs on same surface
 		// (UI-REVIEW Critical: stage-1 and stage-2 had identical PNG hashes).
 		if err := validateDuplicatePNGBytes(packetDir, pkt); err != nil {
+			return Packet{}, err
+		}
+		if err := validateRegionDiffsFile(packetDir, pkt); err != nil {
 			return Packet{}, err
 		}
 		if err := filepath.Walk(packetDir, func(path string, info os.FileInfo, walkErr error) error {
@@ -480,7 +512,7 @@ func validatePacketManifest(packetDir, manifestName string, final bool) (Packet,
 			return Packet{}, err
 		}
 		if final {
-			if err := ValidateProvenanceRecords(pkt); err != nil {
+			if err := ValidateReviewProvenance(packetDir, pkt); err != nil {
 				return Packet{}, err
 			}
 		}
@@ -489,38 +521,39 @@ func validatePacketManifest(packetDir, manifestName string, final bool) (Packet,
 }
 
 func validateVisualPacket(pkt Packet) error {
-	// A visual packet must have at least 48 panel members (24 text + 24 PNG).
-	// Additional provenance members (EVIDENCE.json, REGION-DIFFS.json, etc.)
-	// are allowed beyond that minimum.
-	if len(pkt.Members) < ValidatePanelCount*2 {
-		return fmt.Errorf("screenshot: ValidatePacket: visual packet has %d members, want at least %d text/PNG members", len(pkt.Members), ValidatePanelCount*2)
-	}
 	if pkt.Capture.Geometry == "" || pkt.Capture.FontSHA256 == "" || pkt.Capture.Theme == "" || len(pkt.Capture.Commands) == 0 || len(pkt.Capture.ToolVersions) == 0 {
 		return fmt.Errorf("screenshot: ValidatePacket: visual packet has incomplete capture provenance")
 	}
-	panels := make(map[string]bool, ValidatePanelCount)
+	expected := requiredVisualPanels()
+	panels := make(map[string]bool, len(expected))
+	text := make(map[string]bool, len(expected))
+	raw := make(map[string]bool, len(expected))
 	for _, m := range pkt.Members {
-		if !strings.HasSuffix(m.Path, ".png") {
+		parts := strings.Split(filepath.ToSlash(m.Path), "/")
+		if len(parts) != 2 || !validPacketSurface(parts[0]) || !isCreateFlowScreenID(m.ScreenID) {
 			continue
 		}
-		parts := strings.Split(filepath.ToSlash(m.Path), "/")
-		if len(parts) != 2 || !validPacketSurface(parts[0]) || !isCreateFlowScreenID(m.ScreenID) || m.Kind != "png-"+parts[0] {
-			return fmt.Errorf("screenshot: ValidatePacket: invalid visual panel member %q", m.Path)
-		}
 		key := parts[0] + "/" + m.ScreenID
-		if panels[key] {
-			return fmt.Errorf("screenshot: ValidatePacket: duplicate visual panel %q", key)
+		if !expected[key] {
+			return fmt.Errorf("screenshot: ValidatePacket: non-applicable visual panel %q", key)
 		}
-		panels[key] = true
-	}
-	if len(panels) != ValidatePanelCount {
-		return fmt.Errorf("screenshot: ValidatePacket: got %d PNG panels, want exactly %d", len(panels), ValidatePanelCount)
-	}
-	for _, surface := range []string{"live", "approved-tui", "approved-html"} {
-		for _, id := range CreateFlowScreenIDs {
-			if !panels[surface+"/"+id] {
-				return fmt.Errorf("screenshot: ValidatePacket: missing PNG panel %s/%s", surface, id)
+		switch {
+		case strings.HasSuffix(m.Path, ".png") && m.Kind == "png-"+parts[0]:
+			if panels[key] {
+				return fmt.Errorf("screenshot: ValidatePacket: duplicate PNG panel %q", key)
 			}
+			panels[key] = true
+		case strings.HasSuffix(m.Path, ".txt") && m.Kind == "text":
+			text[key] = true
+		case strings.HasSuffix(m.Path, ".raw") && m.Kind == "raw":
+			raw[key] = true
+		default:
+			return fmt.Errorf("screenshot: ValidatePacket: invalid visual evidence member %q", m.Path)
+		}
+	}
+	for key := range expected {
+		if !panels[key] || !text[key] || !raw[key] {
+			return fmt.Errorf("screenshot: ValidatePacket: missing PNG/rendered/raw evidence for %s", key)
 		}
 	}
 	return nil
@@ -624,6 +657,321 @@ func ValidateProvenanceRecords(pkt Packet) error {
 	return nil
 }
 
+// ReviewVerdict is the machine-readable conclusion emitted alongside an
+// unedited raw review stream. Only zero open Critical and High findings can
+// advance a candidate to final publication.
+type ReviewVerdict struct {
+	Version                 string `json:"version"`
+	SourceCommit            string `json:"source_commit"`
+	CandidateManifestSHA256 string `json:"candidate_manifest_sha256"`
+	Reviewer                string `json:"reviewer"`
+	OpenCritical            int    `json:"open_critical"`
+	OpenHigh                int    `json:"open_high"`
+}
+
+// ReviewInput is one complete independent review supplied to finalization.
+// Raw bytes are copied unchanged into the final packet before their hashes are
+// recorded in REVIEW-PROVENANCE.json.
+type ReviewInput struct {
+	Reviewer  string
+	Tool      string
+	Provider  string
+	Model     string
+	Session   string
+	StartedAt string
+	EndedAt   string
+	ExitCode  int
+	Prompt    []byte
+	Stdout    []byte
+	Stderr    []byte
+	Verdict   []byte
+}
+
+type reviewProvenanceRecord struct {
+	Reviewer      string `json:"reviewer"`
+	Tool          string `json:"tool"`
+	Provider      string `json:"provider"`
+	Model         string `json:"model"`
+	Session       string `json:"session"`
+	StartedAt     string `json:"started_at"`
+	EndedAt       string `json:"ended_at"`
+	ExitCode      int    `json:"exit_code"`
+	PromptPath    string `json:"prompt_path"`
+	PromptSHA256  string `json:"prompt_sha256"`
+	StdoutPath    string `json:"stdout_path"`
+	StdoutSHA256  string `json:"stdout_sha256"`
+	StderrPath    string `json:"stderr_path"`
+	StderrSHA256  string `json:"stderr_sha256"`
+	VerdictPath   string `json:"verdict_path"`
+	VerdictSHA256 string `json:"verdict_sha256"`
+}
+
+type reviewProvenance struct {
+	Version                 string                   `json:"version"`
+	SourceCommit            string                   `json:"source_commit"`
+	CandidateManifestSHA256 string                   `json:"candidate_manifest_sha256"`
+	Reviews                 []reviewProvenanceRecord `json:"reviews"`
+}
+
+// ValidateReviewProvenance binds the final packet to the embedded candidate,
+// both raw independent reviews, and their structured zero-blocker verdicts.
+func ValidateReviewProvenance(packetDir string, pkt Packet) error {
+	if err := ValidateProvenanceRecords(pkt); err != nil {
+		return err
+	}
+	candidateBytes, err := os.ReadFile(filepath.Join(packetDir, "CANDIDATE-MANIFEST.json")) //nolint:gosec // packet-controlled path
+	if err != nil {
+		return fmt.Errorf("screenshot: ValidateReviewProvenance: reading candidate manifest: %w", err)
+	}
+	var candidate Packet
+	if err := json.Unmarshal(candidateBytes, &candidate); err != nil {
+		return fmt.Errorf("screenshot: ValidateReviewProvenance: parsing candidate manifest: %w", err)
+	}
+	if candidate.ManifestSHA256 != CanonicalManifestHash(candidate) || candidate.SourceCommit != pkt.SourceCommit {
+		return fmt.Errorf("screenshot: ValidateReviewProvenance: candidate manifest is not bound to the final source")
+	}
+	data, err := os.ReadFile(filepath.Join(packetDir, "REVIEW-PROVENANCE.json")) //nolint:gosec // packet-controlled path
+	if err != nil {
+		return fmt.Errorf("screenshot: ValidateReviewProvenance: reading provenance: %w", err)
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.DisallowUnknownFields()
+	var provenance reviewProvenance
+	if err := decoder.Decode(&provenance); err != nil {
+		return fmt.Errorf("screenshot: ValidateReviewProvenance: decoding provenance: %w", err)
+	}
+	if provenance.Version != "03-14.1" || provenance.SourceCommit != pkt.SourceCommit || provenance.CandidateManifestSHA256 != candidate.ManifestSHA256 || len(provenance.Reviews) != 2 {
+		return fmt.Errorf("screenshot: ValidateReviewProvenance: invalid source, candidate binding, or review count")
+	}
+	members := make(map[string]PacketMember, len(pkt.Members))
+	for _, member := range pkt.Members {
+		members[member.Path] = member
+	}
+	identities := make(map[string]bool, 2)
+	stdoutHashes := make(map[string]bool, 2)
+	for _, record := range provenance.Reviews {
+		identity := record.Reviewer + "\x00" + record.Tool + "\x00" + record.Provider
+		if record.Reviewer == "" || record.Tool == "" || record.Provider == "" || record.Model == "" || record.Session == "" || identities[identity] {
+			return fmt.Errorf("screenshot: ValidateReviewProvenance: reviewers must have distinct complete identities")
+		}
+		identities[identity] = true
+		if record.ExitCode != 0 {
+			return fmt.Errorf("screenshot: ValidateReviewProvenance: reviewer %q exited %d", record.Reviewer, record.ExitCode)
+		}
+		for _, asset := range []struct{ path, hash string }{
+			{record.PromptPath, record.PromptSHA256}, {record.StdoutPath, record.StdoutSHA256}, {record.StderrPath, record.StderrSHA256}, {record.VerdictPath, record.VerdictSHA256},
+		} {
+			member, ok := members[asset.path]
+			if !ok || member.SHA256 != asset.hash {
+				return fmt.Errorf("screenshot: ValidateReviewProvenance: declared review asset %q is missing or hash-mismatched", asset.path)
+			}
+		}
+		if stdoutHashes[record.StdoutSHA256] {
+			return fmt.Errorf("screenshot: ValidateReviewProvenance: reviews reuse raw stdout")
+		}
+		stdoutHashes[record.StdoutSHA256] = true
+		verdictData, err := os.ReadFile(filepath.Join(packetDir, record.VerdictPath)) //nolint:gosec // declared manifest member
+		if err != nil {
+			return fmt.Errorf("screenshot: ValidateReviewProvenance: reading verdict: %w", err)
+		}
+		verdictDecoder := json.NewDecoder(strings.NewReader(string(verdictData)))
+		verdictDecoder.DisallowUnknownFields()
+		var verdict ReviewVerdict
+		if err := verdictDecoder.Decode(&verdict); err != nil {
+			return fmt.Errorf("screenshot: ValidateReviewProvenance: decoding verdict: %w", err)
+		}
+		if verdict.Version != "03-14.1" || verdict.SourceCommit != pkt.SourceCommit || verdict.CandidateManifestSHA256 != candidate.ManifestSHA256 || verdict.Reviewer != record.Reviewer || verdict.OpenCritical != 0 || verdict.OpenHigh != 0 {
+			return fmt.Errorf("screenshot: ValidateReviewProvenance: verdict for %q is not a bound zero-blocker result", record.Reviewer)
+		}
+	}
+	return nil
+}
+
+// FinalizeCandidate creates a new immutable final packet only after two
+// complete, distinct, zero-blocker reviews bind to the candidate manifest.
+// It never mutates the candidate and refuses an existing destination.
+func FinalizeCandidate(candidateDir, finalDir string, reviews []ReviewInput) (Packet, error) {
+	candidate, err := ValidateCandidate(candidateDir)
+	if err != nil {
+		return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: invalid candidate: %w", err)
+	}
+	if len(reviews) != 2 {
+		return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: exactly two reviews are required")
+	}
+	if _, err := os.Stat(finalDir); err == nil {
+		return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: destination %q already exists", finalDir)
+	} else if !os.IsNotExist(err) {
+		return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: checking destination: %w", err)
+	}
+	parent := filepath.Dir(finalDir)
+	stage, err := os.MkdirTemp(parent, ".gitid-evidence-final-")
+	if err != nil {
+		return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: creating staging directory: %w", err)
+	}
+	defer os.RemoveAll(stage)
+	if err := copyTree(candidateDir, stage); err != nil {
+		return Packet{}, err
+	}
+	records := make([]reviewProvenanceRecord, 0, len(reviews))
+	identities := make(map[string]bool, len(reviews))
+	for _, review := range reviews {
+		identity := review.Reviewer + "\x00" + review.Tool + "\x00" + review.Provider
+		if review.Reviewer == "" || review.Tool == "" || review.Provider == "" || review.Model == "" || review.Session == "" || identities[identity] {
+			return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: reviews must have distinct complete identities")
+		}
+		if review.ExitCode != 0 || len(review.Prompt) == 0 || len(review.Stdout) == 0 || len(review.Verdict) == 0 {
+			return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: review %q has incomplete raw inputs or nonzero exit", review.Reviewer)
+		}
+		identities[identity] = true
+		decoder := json.NewDecoder(strings.NewReader(string(review.Verdict)))
+		decoder.DisallowUnknownFields()
+		var verdict ReviewVerdict
+		if err := decoder.Decode(&verdict); err != nil {
+			return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: decoding review %q verdict: %w", review.Reviewer, err)
+		}
+		if verdict.Version != "03-14.1" || verdict.SourceCommit != candidate.SourceCommit || verdict.CandidateManifestSHA256 != candidate.ManifestSHA256 || verdict.Reviewer != review.Reviewer || verdict.OpenCritical != 0 || verdict.OpenHigh != 0 {
+			return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: review %q verdict is not a bound zero-blocker result", review.Reviewer)
+		}
+		name := strings.ReplaceAll(strings.ReplaceAll(review.Reviewer, "/", "_"), "\\", "_")
+		base := filepath.ToSlash(filepath.Join("reviews", name))
+		assets := []struct {
+			name string
+			data []byte
+		}{{"prompt.txt", review.Prompt}, {"raw-stdout.txt", review.Stdout}, {"raw-stderr.txt", review.Stderr}, {"verdict.json", review.Verdict}}
+		record := reviewProvenanceRecord{Reviewer: review.Reviewer, Tool: review.Tool, Provider: review.Provider, Model: review.Model, Session: review.Session, StartedAt: review.StartedAt, EndedAt: review.EndedAt, ExitCode: review.ExitCode}
+		for _, asset := range assets {
+			path := filepath.Join(stage, filepath.FromSlash(base), asset.name)
+			if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+				return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: creating review directory: %w", err)
+			}
+			if err := writeAndSync(path, asset.data); err != nil {
+				return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: writing review asset: %w", err)
+			}
+			path = filepath.ToSlash(filepath.Join(base, asset.name))
+			switch asset.name {
+			case "prompt.txt":
+				record.PromptPath, record.PromptSHA256 = path, sha256Hex(asset.data)
+			case "raw-stdout.txt":
+				record.StdoutPath, record.StdoutSHA256 = path, sha256Hex(asset.data)
+			case "raw-stderr.txt":
+				record.StderrPath, record.StderrSHA256 = path, sha256Hex(asset.data)
+			case "verdict.json":
+				record.VerdictPath, record.VerdictSHA256 = path, sha256Hex(asset.data)
+			}
+		}
+		records = append(records, record)
+	}
+	provenanceData, err := json.MarshalIndent(reviewProvenance{Version: "03-14.1", SourceCommit: candidate.SourceCommit, CandidateManifestSHA256: candidate.ManifestSHA256, Reviews: records}, "", "  ")
+	if err != nil {
+		return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: marshaling provenance: %w", err)
+	}
+	if err := writeAndSync(filepath.Join(stage, "REVIEW-PROVENANCE.json"), provenanceData); err != nil {
+		return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: writing provenance: %w", err)
+	}
+	files, err := packetInventory(stage)
+	if err != nil {
+		return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: inventory: %w", err)
+	}
+	members := make([]PacketMember, 0, len(files))
+	candidateMembers := make(map[string]PacketMember, len(candidate.Members))
+	for _, member := range candidate.Members {
+		candidateMembers[member.Path] = member
+	}
+	for path, hash := range files {
+		member := PacketMember{Path: path, SHA256: hash, Kind: finalMemberKind(path)}
+		if prior, ok := candidateMembers[path]; ok {
+			member.Kind, member.ScreenID = prior.Kind, prior.ScreenID
+		}
+		members = append(members, member)
+	}
+	sort.Slice(members, func(i, j int) bool { return members[i].Path < members[j].Path })
+	final := candidate
+	final.Members = members
+	final.ManifestSHA256 = ""
+	manifest, err := marshalPacket(final)
+	if err != nil {
+		return Packet{}, err
+	}
+	final.ManifestSHA256 = sha256Hex(manifest)
+	manifest, err = marshalPacket(final)
+	if err != nil {
+		return Packet{}, err
+	}
+	if err := writeAndSync(filepath.Join(stage, "MANIFEST.json"), manifest); err != nil {
+		return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: writing manifest: %w", err)
+	}
+	if _, err := ValidatePacket(stage); err != nil {
+		return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: validating staging packet: %w", err)
+	}
+	if err := os.Rename(stage, finalDir); err != nil {
+		return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: publishing atomically: %w", err)
+	}
+	return final, nil
+}
+
+func finalMemberKind(path string) string {
+	switch {
+	case path == "CANDIDATE-MANIFEST.json":
+		return "candidate-manifest"
+	case path == "REVIEW-PROVENANCE.json":
+		return "provenance"
+	case strings.HasPrefix(path, "reviews/"):
+		return "review"
+	default:
+		return "candidate-member"
+	}
+}
+
+func copyTree(source, destination string) error {
+	return filepath.Walk(source, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		target := filepath.Join(destination, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, 0o750)
+		}
+		data, err := os.ReadFile(path) //nolint:gosec // walked from validated candidate directory
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+			return err
+		}
+		return writeAndSync(target, data)
+	})
+}
+
+func packetInventory(root string) (map[string]string, error) {
+	files := make(map[string]string)
+	err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.IsDir() {
+			return nil
+		}
+		data, err := os.ReadFile(path) //nolint:gosec // walked staging directory
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		files[filepath.ToSlash(rel)] = sha256Hex(data)
+		return nil
+	})
+	return files, err
+}
+
 // validateDuplicatePNGBytes detects differently-named screens on the same
 // surface that share identical PNG bytes — a sign that both were captured from
 // the same terminal state (UI-REVIEW Critical Pillar 2 finding).
@@ -725,14 +1073,18 @@ type RegionDiffRecord struct {
 
 // NamedRegionDiff is one nonempty semantic region comparison within a frame.
 type NamedRegionDiff struct {
-	Name          RegionName `json:"name"`
-	LiveText      string     `json:"live_text"`
-	ApprovedText  string     `json:"approved_tui_text"`
-	LiveHash      string     `json:"live_sha256"`
-	ApprovedHash  string     `json:"approved_tui_sha256"`
-	Equal         bool       `json:"equal"`
-	Divergence    string     `json:"divergence,omitempty"`
-	Justification string     `json:"justification,omitempty"`
+	Name         RegionName `json:"name"`
+	LiveText     string     `json:"live_text"`
+	ApprovedText string     `json:"approved_tui_text"`
+	// ApprovedApplicable records whether the approved TUI has a corresponding
+	// state. A live-only production frame must say so explicitly rather than
+	// silently dropping its comparison.
+	ApprovedApplicable bool   `json:"approved_tui_applicable"`
+	LiveHash           string `json:"live_sha256"`
+	ApprovedHash       string `json:"approved_tui_sha256"`
+	Equal              bool   `json:"equal"`
+	Divergence         string `json:"divergence,omitempty"`
+	Justification      string `json:"justification,omitempty"`
 }
 
 // RegionDiffs is the schema for REGION-DIFFS.json.
@@ -751,11 +1103,20 @@ type RegionDiffs struct {
 //
 // normalizePrefix strips disposable absolute path prefixes (temp dirs,
 // timestamps) before hashing, retaining full commands and output content.
-func BuildRegionDiffs(sourceCommit string, liveCaptures, approvedCaptures map[string]string, specs []ScreenSpec) []RegionDiffRecord {
+func BuildRegionDiffs(sourceCommit string, liveCaptures, approvedCaptures map[string]string, specs []ScreenSpec) ([]RegionDiffRecord, error) {
 	records := make([]RegionDiffRecord, 0, len(specs))
 	for _, spec := range specs {
 		liveText := liveCaptures[spec.ScreenID]
 		approvedText := approvedCaptures[spec.ScreenID]
+		if strings.TrimSpace(liveText) == "" {
+			return nil, fmt.Errorf("screenshot: BuildRegionDiffs: required live frame %q is missing", spec.ScreenID)
+		}
+		if len(spec.RequiredRegions) == 0 {
+			return nil, fmt.Errorf("screenshot: BuildRegionDiffs: frame %q declares no required regions", spec.ScreenID)
+		}
+		if spec.ApplicableApprovedTUI && strings.TrimSpace(approvedText) == "" {
+			return nil, fmt.Errorf("screenshot: BuildRegionDiffs: required approved-tui frame %q is missing", spec.ScreenID)
+		}
 		liveNorm := normalizeForRegion(liveText)
 		approvedNorm := normalizeForRegion(approvedText)
 		rec := RegionDiffRecord{
@@ -764,30 +1125,33 @@ func BuildRegionDiffs(sourceCommit string, liveCaptures, approvedCaptures map[st
 			ApprovedHash: sha256Hex([]byte(approvedNorm)),
 			Equal:        liveNorm == approvedNorm,
 		}
-		for _, name := range AllRegionNames() {
+		for _, name := range spec.RequiredRegions {
 			liveRegion := normalizeForRegion(ExtractRegion(liveText, name))
 			approvedRegion := normalizeForRegion(ExtractRegion(approvedText, name))
-			// A named region is meaningful only when it exists on both surfaces.
-			// Screen variants legitimately omit unrelated regions (for example,
-			// a Git pane has no Host preview), so they are not fabricated as a
-			// whole-screen fallback.
-			if liveRegion == "" || approvedRegion == "" {
-				continue
+			if strings.TrimSpace(liveRegion) == "" {
+				return nil, fmt.Errorf("screenshot: BuildRegionDiffs: frame %q required region %q is empty in live evidence", spec.ScreenID, name)
+			}
+			if spec.ApplicableApprovedTUI && strings.TrimSpace(approvedRegion) == "" {
+				return nil, fmt.Errorf("screenshot: BuildRegionDiffs: frame %q required region %q is empty in approved-tui evidence", spec.ScreenID, name)
 			}
 			region := NamedRegionDiff{
-				Name:         name,
-				LiveText:     liveRegion,
-				ApprovedText: approvedRegion,
-				LiveHash:     sha256Hex([]byte(liveRegion)),
-				ApprovedHash: sha256Hex([]byte(approvedRegion)),
-				Equal:        liveRegion == approvedRegion,
+				Name:               name,
+				LiveText:           liveRegion,
+				ApprovedText:       approvedRegion,
+				ApprovedApplicable: spec.ApplicableApprovedTUI,
+				LiveHash:           sha256Hex([]byte(liveRegion)),
+				ApprovedHash:       sha256Hex([]byte(approvedRegion)),
+				Equal:              !spec.ApplicableApprovedTUI || liveRegion == approvedRegion,
 			}
-			if !region.Equal {
+			if spec.ApplicableApprovedTUI && !region.Equal {
 				region.Divergence, region.Justification = regionDisposition(spec.ScreenID, name)
+				if region.Divergence == "" || !strings.Contains(region.Justification, "D-") {
+					return nil, fmt.Errorf("screenshot: BuildRegionDiffs: frame %q region %q differs without an accepted D-XX justification", spec.ScreenID, name)
+				}
 			}
 			rec.Regions = append(rec.Regions, region)
 		}
-		if !rec.Equal {
+		if spec.ApplicableApprovedTUI && !rec.Equal {
 			// Provide justification for known allowlisted divergences.
 			switch spec.ScreenID {
 			case "test-stage1-direct", "test-stage2-by-alias":
@@ -800,12 +1164,12 @@ func BuildRegionDiffs(sourceCommit string, liveCaptures, approvedCaptures map[st
 				rec.Divergence = "sidebar + host-preview"
 				rec.Justification = "structural: real backend has 0 identities and probed catalog; dummy has fixture set"
 			default:
-				rec.Divergence = "unknown"
+				return nil, fmt.Errorf("screenshot: BuildRegionDiffs: frame %q differs without an accepted whole-frame disposition", spec.ScreenID)
 			}
 		}
 		records = append(records, rec)
 	}
-	return records
+	return records, nil
 }
 
 func regionDisposition(screenID string, name RegionName) (string, string) {
@@ -815,11 +1179,11 @@ func regionDisposition(screenID string, name RegionName) (string, string) {
 	case name == RegionContinueDisabledReason:
 		return "continue-disabled-reason", "D-19: Phase 3 live binary exposes the deferred Git configuration reason"
 	case name == RegionHostPreview:
-		return "host-preview", "structural fixture: live Host block uses the current checked renderer"
+		return "host-preview", "D-16 structural fixture: live Host block uses the current checked renderer"
 	case name == RegionSidebar || name == RegionHeaderStatus:
-		return "sidebar-state", "structural fixture: live disposable HOME starts empty while the approved fixture contains identities"
+		return "sidebar-state", "D-16 structural fixture: live disposable HOME starts empty while the approved fixture contains identities"
 	default:
-		return "unexpected", "No accepted divergence is declared"
+		return "", ""
 	}
 }
 
@@ -840,6 +1204,75 @@ func BuildRegionDiffsJSON(sourceCommit string, records []RegionDiffRecord) []byt
 		panic("BuildRegionDiffsJSON: " + err.Error())
 	}
 	return data
+}
+
+func validateRegionDiffsFile(packetDir string, pkt Packet) error {
+	data, err := os.ReadFile(filepath.Join(packetDir, "REGION-DIFFS.json")) //nolint:gosec // manifest declared path
+	if err != nil {
+		return fmt.Errorf("screenshot: ValidatePacket: reading REGION-DIFFS.json: %w", err)
+	}
+	return ValidateRegionDiffs(data, pkt.SourceCommit, RequiredScreenSpecs())
+}
+
+// ValidateRegionDiffs strictly validates the stored region document. It binds
+// every declared frame to the current source commit and rejects missing regions
+// or differences without an explicit D-XX justification.
+func ValidateRegionDiffs(data []byte, sourceCommit string, specs []ScreenSpec) error {
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.DisallowUnknownFields()
+	var diffs RegionDiffs
+	if err := decoder.Decode(&diffs); err != nil {
+		return fmt.Errorf("screenshot: ValidateRegionDiffs: decoding document: %w", err)
+	}
+	if diffs.SourceCommit != sourceCommit {
+		return fmt.Errorf("screenshot: ValidateRegionDiffs: source commit %q does not match %q", diffs.SourceCommit, sourceCommit)
+	}
+	if len(diffs.Screens) != len(specs) {
+		return fmt.Errorf("screenshot: ValidateRegionDiffs: got %d frame records, want %d", len(diffs.Screens), len(specs))
+	}
+	byID := make(map[string]RegionDiffRecord, len(diffs.Screens))
+	for _, record := range diffs.Screens {
+		if _, exists := byID[record.ScreenID]; exists {
+			return fmt.Errorf("screenshot: ValidateRegionDiffs: duplicate frame %q", record.ScreenID)
+		}
+		byID[record.ScreenID] = record
+	}
+	for _, spec := range specs {
+		record, ok := byID[spec.ScreenID]
+		if !ok {
+			return fmt.Errorf("screenshot: ValidateRegionDiffs: missing frame %q", spec.ScreenID)
+		}
+		regions := make(map[RegionName]NamedRegionDiff, len(record.Regions))
+		for _, region := range record.Regions {
+			if _, exists := regions[region.Name]; exists {
+				return fmt.Errorf("screenshot: ValidateRegionDiffs: duplicate region %q for frame %q", region.Name, spec.ScreenID)
+			}
+			if strings.TrimSpace(region.LiveText) == "" || region.LiveHash != sha256Hex([]byte(region.LiveText)) {
+				return fmt.Errorf("screenshot: ValidateRegionDiffs: invalid live evidence for %q/%q", spec.ScreenID, region.Name)
+			}
+			if region.ApprovedApplicable != spec.ApplicableApprovedTUI {
+				return fmt.Errorf("screenshot: ValidateRegionDiffs: approved applicability mismatch for %q/%q", spec.ScreenID, region.Name)
+			}
+			if region.ApprovedApplicable {
+				if strings.TrimSpace(region.ApprovedText) == "" || region.ApprovedHash != sha256Hex([]byte(region.ApprovedText)) {
+					return fmt.Errorf("screenshot: ValidateRegionDiffs: invalid approved evidence for %q/%q", spec.ScreenID, region.Name)
+				}
+				if region.Equal != (region.LiveText == region.ApprovedText) {
+					return fmt.Errorf("screenshot: ValidateRegionDiffs: equality mismatch for %q/%q", spec.ScreenID, region.Name)
+				}
+				if !region.Equal && (region.Divergence == "" || !strings.Contains(region.Justification, "D-")) {
+					return fmt.Errorf("screenshot: ValidateRegionDiffs: unexplained divergence for %q/%q", spec.ScreenID, region.Name)
+				}
+			}
+			regions[region.Name] = region
+		}
+		for _, required := range spec.RequiredRegions {
+			if _, ok := regions[required]; !ok {
+				return fmt.Errorf("screenshot: ValidateRegionDiffs: missing required region %q for frame %q", required, spec.ScreenID)
+			}
+		}
+	}
+	return nil
 }
 
 // normalizeForRegion strips disposable absolute temp-path prefixes and

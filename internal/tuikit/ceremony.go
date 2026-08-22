@@ -173,7 +173,9 @@ func (c ceremonyModel) handleKey(msg tea.KeyMsg) (ceremonyModel, ceremonyOutcome
 			return c, ceremonyNone
 		}
 	}
-	if key == "v" {
+	// A destructive confirmation owns printable keys. In particular, `v` must
+	// reach a confirm word such as "dev", not toggle the preview viewport.
+	if key == "v" && c.cfg.Destructive == nil && c.preview.Text != "" {
 		c.preview.Focused = !c.preview.Focused
 		return c, ceremonyNone
 	}

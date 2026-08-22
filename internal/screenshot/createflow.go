@@ -57,12 +57,8 @@ const (
 	CaptureHeight = 30
 )
 
-// CreateFlowScreenIDs is the EXPLICIT, enumerated set of create-flow screen
-// checkpoints the D-24.1 gate captures and diffs. A screen absent from this
-// list is silently ungated — per review, the reuse-existing-key picker
-// (populated), the manual-path row, and a mouse-focused field state are
-// deliberately included alongside the wizard's ordinary steps and both
-// connectivity-test stages.
+// CreateFlowScreenIDs is retained only by the text-only legacy capture helper.
+// Visual packet completeness is derived from ScreenSpecRegistry instead.
 var CreateFlowScreenIDs = []string{
 	"ssh-form-filled",       // step 0: the default-filled SSH form + live Host-block preview
 	"reuse-key-vs-generate", // step 0: D-10 picker, populated (backend.ScanReusableKeys())
@@ -113,6 +109,9 @@ type ScreenSpec struct {
 	// NonApplicableReason is the explicit justification when a surface is not applicable.
 	// Must be non-empty when any Applicable* flag is false.
 	NonApplicableReason string
+	// RequiredRegions are the semantic regions that must be present in every
+	// applicable capture. They make missing evidence a validation error.
+	RequiredRegions []RegionName
 }
 
 // ScreenSpecRegistry returns the canonical typed ScreenSpec registry consumed
@@ -129,6 +128,7 @@ func ScreenSpecRegistry() []ScreenSpec {
 			ApplicableLive:         true,
 			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
+			RequiredRegions:        []RegionName{RegionFormFields, RegionHostPreview},
 		},
 		{
 			ScreenID:               "reuse-key-vs-generate",
@@ -138,6 +138,7 @@ func ScreenSpecRegistry() []ScreenSpec {
 			ApplicableLive:         true,
 			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
+			RequiredRegions:        []RegionName{RegionKeySection},
 		},
 		{
 			ScreenID:               "reuse-manual-path",
@@ -147,6 +148,7 @@ func ScreenSpecRegistry() []ScreenSpec {
 			ApplicableLive:         true,
 			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
+			RequiredRegions:        []RegionName{RegionKeySection},
 			VariantOf:              "reuse-key-vs-generate",
 			VariantRationale:       "No separate HTML route exists for the manual-path interaction variant; it shares /create-flow/reuse-key-vs-generate.",
 		},
@@ -158,6 +160,7 @@ func ScreenSpecRegistry() []ScreenSpec {
 			ApplicableLive:         true,
 			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
+			RequiredRegions:        []RegionName{RegionFormFields},
 			VariantOf:              "ssh-form-filled",
 			VariantRationale:       "No separate HTML route exists for mouse-focused-field; it shares /create-flow/ssh-form-filled with a different focus state.",
 		},
@@ -169,6 +172,7 @@ func ScreenSpecRegistry() []ScreenSpec {
 			ApplicableLive:         true,
 			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
+			RequiredRegions:        []RegionName{RegionConnectivityOutput},
 		},
 		{
 			ScreenID:               "test-stage2-by-alias",
@@ -178,6 +182,7 @@ func ScreenSpecRegistry() []ScreenSpec {
 			ApplicableLive:         true,
 			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
+			RequiredRegions:        []RegionName{RegionConnectivityOutput},
 		},
 		{
 			ScreenID:               "git-form-demo",
@@ -187,6 +192,7 @@ func ScreenSpecRegistry() []ScreenSpec {
 			ApplicableLive:         true,
 			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
+			RequiredRegions:        []RegionName{RegionContinueDisabledReason},
 		},
 		{
 			ScreenID:               "confirm-write",
@@ -196,7 +202,99 @@ func ScreenSpecRegistry() []ScreenSpec {
 			ApplicableLive:         true,
 			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
+			RequiredRegions:        []RegionName{RegionConfirmationPreview},
 		},
+		{
+			ScreenID:            "reuse-manual-resolved",
+			Interaction:         "Select Reuse, focus the manual path input, type a sandbox key path, and wait for its algorithm and fingerprint.",
+			StateMarker:         "ssh-ed25519",
+			ApplicableLive:      true,
+			NonApplicableReason: "The approved sources have no resolved sandbox-key state.",
+			RequiredRegions:     []RegionName{RegionKeySection},
+		},
+		{
+			ScreenID:            "test-stage1-pass",
+			Interaction:         "Run stage 1 through the pass fake SSH and capture its completed PASS state while stage 2 is pending.",
+			StateMarker:         "Hi user!",
+			ApplicableLive:      true,
+			NonApplicableReason: "The approved sources do not execute the real external SSH process.",
+			RequiredRegions:     []RegionName{RegionConnectivityOutput},
+		},
+		{
+			ScreenID:            "test-stage2-proof-top",
+			Interaction:         "Complete both pass stages, focus the proof viewport with raw v, and capture the initial proof frame.",
+			StateMarker:         "Proof viewport focused",
+			ApplicableLive:      true,
+			NonApplicableReason: "The approved sources do not execute the real external SSH process.",
+			RequiredRegions:     []RegionName{RegionConnectivityOutput},
+		},
+		{
+			ScreenID:            "test-stage2-proof-bottom",
+			Interaction:         "From the focused proof viewport, send raw PgDn until the ssh -G identityfile output is visible.",
+			StateMarker:         "identityfile",
+			ApplicableLive:      true,
+			NonApplicableReason: "The approved sources do not execute the real external SSH process.",
+			RequiredRegions:     []RegionName{RegionConnectivityOutput},
+		},
+		{
+			ScreenID:            "test-stage2-proof-right",
+			Interaction:         "From the focused proof viewport, send raw Right until a long command suffix is visible.",
+			StateMarker:         "→ cols",
+			ApplicableLive:      true,
+			NonApplicableReason: "The approved sources do not execute the real external SSH process.",
+			RequiredRegions:     []RegionName{RegionConnectivityOutput},
+		},
+		{
+			ScreenID:            "test-reachable-not-uploaded",
+			Interaction:         "Run both stages through the denied fake SSH and capture the completed copy-public-key warning state.",
+			StateMarker:         "copy public key",
+			ApplicableLive:      true,
+			NonApplicableReason: "The approved sources do not execute the real external SSH process.",
+			RequiredRegions:     []RegionName{RegionConnectivityOutput},
+		},
+		{
+			ScreenID:            "test-hard-failure-retry",
+			Interaction:         "Run stage 1 through the timeout fake SSH and capture the completed hard-failure retry state.",
+			StateMarker:         "Retry (Enter)",
+			ApplicableLive:      true,
+			NonApplicableReason: "The approved sources do not execute the real external SSH process.",
+			RequiredRegions:     []RegionName{RegionConnectivityOutput},
+		},
+		{
+			ScreenID:            "confirm-summary",
+			Interaction:         "Navigate to the confirmation ceremony, focus its viewport with raw v, and capture the summary/key-path frame before write.",
+			StateMarker:         "Exact change focused",
+			ApplicableLive:      true,
+			NonApplicableReason: "The approved sources do not expose the production ceremony viewport.",
+			RequiredRegions:     []RegionName{RegionConfirmationPreview},
+		},
+		{
+			ScreenID:            "confirm-managed-block",
+			Interaction:         "From the focused confirmation viewport, send raw PgDn until the managed-block END sentinel is visible before write.",
+			StateMarker:         "# END gitid managed:",
+			ApplicableLive:      true,
+			NonApplicableReason: "The approved sources do not expose the production ceremony viewport.",
+			RequiredRegions:     []RegionName{RegionConfirmationPreview},
+		},
+	}
+}
+
+// RequiredScreenSpecs returns the registry-backed visual packet inventory.
+// No panel count or parallel screen list is authoritative.
+func RequiredScreenSpecs() []ScreenSpec { return ScreenSpecRegistry() }
+
+// ScreenAppliesToSurface reports whether a registry frame is required for a
+// capture surface.
+func ScreenAppliesToSurface(spec ScreenSpec, surface string) bool {
+	switch surface {
+	case "live":
+		return spec.ApplicableLive
+	case "approved-tui":
+		return spec.ApplicableApprovedTUI
+	case "approved-html":
+		return spec.ApplicableApprovedHTML
+	default:
+		return false
 	}
 }
 
@@ -210,9 +308,6 @@ func ValidateCapturedState(spec ScreenSpec, capturedText string) error {
 	if !strings.Contains(capturedText, spec.StateMarker) {
 		return fmt.Errorf("screenshot: ValidateCapturedState: spec %q state marker %q absent from captured text", spec.ScreenID, spec.StateMarker)
 	}
-	// Guard against a marker from another state being present while the correct
-	// marker is absent. (Here we only check the expected marker is present — the
-	// negative check is done at registration time via ValidateScreenSpecs.)
 	return nil
 }
 
@@ -222,9 +317,33 @@ func ValidateCapturedState(spec ScreenSpec, capturedText string) error {
 // - State markers are unique across non-variant specs (variants may share routes)
 func ValidateScreenSpecs(specs []ScreenSpec) error {
 	seenIDs := make(map[string]int) // screen_id → first occurrence index
+	seenMarkers := make(map[string]string)
 	for i, s := range specs {
 		if s.ScreenID == "" {
 			return fmt.Errorf("screenshot: ValidateScreenSpecs: spec[%d] has empty ScreenID", i)
+		}
+		if s.StateMarker == "" {
+			return fmt.Errorf("screenshot: ValidateScreenSpecs: spec %q has empty state marker", s.ScreenID)
+		}
+		if prior, exists := seenMarkers[s.StateMarker]; exists && prior != s.ScreenID {
+			return fmt.Errorf("screenshot: ValidateScreenSpecs: marker %q is shared by %q and %q", s.StateMarker, prior, s.ScreenID)
+		}
+		seenMarkers[s.StateMarker] = s.ScreenID
+		if s.ApplicableApprovedHTML && s.Route == "" {
+			return fmt.Errorf("screenshot: ValidateScreenSpecs: HTML-applicable spec %q has no route", s.ScreenID)
+		}
+		if (!s.ApplicableLive || !s.ApplicableApprovedTUI || !s.ApplicableApprovedHTML) && s.NonApplicableReason == "" {
+			return fmt.Errorf("screenshot: ValidateScreenSpecs: spec %q lacks a non-applicability reason", s.ScreenID)
+		}
+		if len(s.RequiredRegions) == 0 {
+			return fmt.Errorf("screenshot: ValidateScreenSpecs: spec %q has no required regions", s.ScreenID)
+		}
+		regions := make(map[RegionName]bool, len(s.RequiredRegions))
+		for _, region := range s.RequiredRegions {
+			if region == "" || regions[region] {
+				return fmt.Errorf("screenshot: ValidateScreenSpecs: spec %q has invalid required region %q", s.ScreenID, region)
+			}
+			regions[region] = true
 		}
 		if prior, exists := seenIDs[s.ScreenID]; exists {
 			// A duplicate is allowed ONLY when this spec declares a same-route variant.

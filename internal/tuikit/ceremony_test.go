@@ -165,6 +165,24 @@ func TestCeremonyDestructiveGatesOnTypedWord(t *testing.T) {
 	}
 }
 
+func TestCeremonyDestructiveConfirmWordCanContainViewportKey(t *testing.T) {
+	c := newCeremony(ceremonyConfig{
+		Preview:     "a preview that can be focused",
+		Destructive: &FixDestructive{ConfirmWord: "dev", Warning: "destructive"},
+	})
+	c = typeWord(c, "dev")
+	if c.typed.Value() != "dev" {
+		t.Fatalf("typed destructive confirmation = %q, want dev", c.typed.Value())
+	}
+	if c.preview.Focused {
+		t.Fatal("typing v into a destructive confirmation must not focus the viewport")
+	}
+	_, outcome := c.handleKey(pressKey("enter"))
+	if outcome != ceremonyConfirmed {
+		t.Fatalf("enter after exact destructive confirmation = %v, want confirmed", outcome)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // 03-07 Task 1 — the asynchronous create-commit ceremony (CR-01).
 // ---------------------------------------------------------------------------
