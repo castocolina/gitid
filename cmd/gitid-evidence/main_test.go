@@ -130,8 +130,8 @@ func TestSeedManualReuseKeyUsesDeterministicSandboxFixture(t *testing.T) {
 		t.Fatalf("seeding second sandbox key: %v", err)
 	}
 	for _, path := range []string{firstPath, secondPath} {
-		if !strings.Contains(path, string(filepath.Separator)+".ssh"+string(filepath.Separator)) {
-			t.Fatalf("sandbox key path %q is not inside an SSH directory", path)
+		if filepath.Base(path) != captureManualFixtureName {
+			t.Fatalf("sandbox key path %q is not the non-scanned fixture", path)
 		}
 	}
 	firstPrivate, err := os.ReadFile(firstPath)
@@ -446,7 +446,7 @@ func TestCaptureTUIScreenManualReuseStatesAreDistinct(t *testing.T) {
 	if !strings.Contains(manual, "Enter a path manually") || strings.Contains(manual, "id_ed25519_capture_manual") {
 		t.Fatalf("manual-path capture must show the empty manual input, not a resolved key:\n%s", manual)
 	}
-	if !strings.Contains(resolved, "id_ed25519_capture_manual") || !strings.Contains(resolved, "ssh-ed25519") {
+	if !strings.Contains(resolved, "ssh-ed25519") || !strings.Contains(resolved, "SHA256:0WDiIzM4Vu8Q/Iut7m4BuXCgGczOJGXVwVirboftrx0") {
 		t.Fatalf("resolved-manual capture must show its fixture path and metadata:\n%s", resolved)
 	}
 	if manual == resolved || manualRaw == resolvedRaw {

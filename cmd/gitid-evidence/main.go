@@ -33,6 +33,8 @@ const captureFakeSSHDirName = "fake-ssh"
 
 const captureStageDirName = ".gitid-stage"
 
+const captureManualFixtureName = ".k"
+
 // captureManualReusePrivateFixture is a synthetic, unencrypted OpenSSH key
 // solely for capture. It is never a user or account key and is written only
 // inside the disposable capture HOME.
@@ -620,7 +622,7 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 			return "", fmt.Errorf("waiting for manual key-path focus: %w", err)
 		}
 		if id == "reuse-manual-resolved" && manualKeyPath != "" {
-			if err := session.send([]byte("~/.ssh/id_ed25519_capture_manual")); err != nil {
+			if err := session.send([]byte("~/.k")); err != nil {
 				return "", err
 			}
 			if _, err := session.waitFor("ssh-ed25519", 8*time.Second); err != nil {
@@ -806,11 +808,10 @@ func runFailure(session *capturePTY) error {
 // only proves the resolved-manual-key UI state and never reads an account key
 // or the user's real SSH directory.
 func seedManualReuseKey(home string) (string, error) {
-	sshDir := filepath.Join(home, ".ssh")
-	if err := os.MkdirAll(sshDir, 0o700); err != nil {
-		return "", fmt.Errorf("creating sandbox SSH directory: %w", err)
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		return "", fmt.Errorf("creating sandbox HOME: %w", err)
 	}
-	path := filepath.Join(sshDir, "id_ed25519_capture_manual")
+	path := filepath.Join(home, captureManualFixtureName)
 	if err := os.WriteFile(path, []byte(captureManualReusePrivateFixture), 0o600); err != nil { //nolint:gosec // known fixture material in disposable capture HOME
 		return "", fmt.Errorf("writing sandbox manual private fixture: %w", err)
 	}
