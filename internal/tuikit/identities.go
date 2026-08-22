@@ -2730,12 +2730,20 @@ func (w wizardModel) renderAlgorithmRows() string {
 		if algoDisabled(entry) {
 			reason := entry.MacOS
 			if !entry.Implemented {
+				// Unavailable or unimplemented: use a short reason to keep
+				// every algorithm row to ONE physical line in the 100×30
+				// wizard pane (long DarwinNote/LinuxNote text word-wraps at
+				// the 62-col detail pane width and pushes the Host preview
+				// below the frame boundary — UI-REVIEW Critical Pillar 5).
 				reason = "not yet implemented by gitid"
 				if strings.Contains(entry.MacOS, "libfido2") {
-					// Keep the unavailable hardware-key rationale within the
-					// fixed 100x30 wizard budget so the Host preview remains whole.
 					reason = "needs libfido2 + FIDO2 key"
 				}
+			} else {
+				// Available but disabled for another reason: truncate to a
+				// short constant that fits the 62-col pane without wrapping.
+				// The full note is available via the ?/help affordance.
+				reason = fitLine(reason, 40)
 			}
 			b.WriteString("     " + styleFaint.Render(dot+" "+label+" — Disabled: "+reason) + "\n")
 		} else {
