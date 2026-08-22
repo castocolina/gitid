@@ -83,6 +83,14 @@ var CreateFlowScreenIDs = []string{
 // route/state fails even when hashes happen to be unique.
 // ---------------------------------------------------------------------------
 
+// SurfaceNonApplicability records why an approval surface cannot truthfully
+// render a Phase 3 state and the decision that introduced that state.
+type SurfaceNonApplicability struct {
+	Surface  string
+	Decision string
+	Reason   string
+}
+
 // ScreenSpec is the typed capture contract for one create-flow logical screen.
 type ScreenSpec struct {
 	// ScreenID is the logical identifier (one of CreateFlowScreenIDs).
@@ -106,9 +114,9 @@ type ScreenSpec struct {
 	VariantOf string
 	// VariantRationale documents why this variant legitimately shares the same HTML route.
 	VariantRationale string
-	// NonApplicableReason is the explicit justification when a surface is not applicable.
-	// Must be non-empty when any Applicable* flag is false.
-	NonApplicableReason string
+	// NonApplicability declares every surface that cannot truthfully render this
+	// state. Each record must name the governing Phase 3 decision.
+	NonApplicability []SurfaceNonApplicability
 	// RequiredRegions are the semantic regions that must be present in every
 	// applicable capture. They make missing evidence a validation error.
 	RequiredRegions []RegionName
@@ -137,8 +145,11 @@ func ScreenSpecRegistry() []ScreenSpec {
 			StateMarker:            "Reuse an existing key",
 			ApplicableLive:         true,
 			ApplicableApprovedHTML: true,
-			NonApplicableReason:    "The approved TUI predates the Phase 3 reusable-key picker.",
-			RequiredRegions:        []RegionName{RegionKeySection},
+			NonApplicability: []SurfaceNonApplicability{{
+				Surface: "approved-tui", Decision: "D-10",
+				Reason: "The approved TUI predates the Phase 3 reusable-key picker.",
+			}},
+			RequiredRegions: []RegionName{RegionKeySection},
 		},
 		{
 			ScreenID:               "reuse-manual-path",
@@ -150,7 +161,10 @@ func ScreenSpecRegistry() []ScreenSpec {
 			RequiredRegions:        []RegionName{RegionKeySection},
 			VariantOf:              "reuse-key-vs-generate",
 			VariantRationale:       "No separate HTML route exists for the manual-path interaction variant; it shares /create-flow/reuse-key-vs-generate.",
-			NonApplicableReason:    "The approved TUI predates the Phase 3 reusable-key picker.",
+			NonApplicability: []SurfaceNonApplicability{{
+				Surface: "approved-tui", Decision: "D-10",
+				Reason: "The approved TUI predates the Phase 3 reusable-key picker.",
+			}},
 		},
 		{
 			ScreenID:               "mouse-focused-field",
@@ -180,9 +194,12 @@ func ScreenSpecRegistry() []ScreenSpec {
 			Interaction:            "After stage-1 completes (D-04 auto-chain), wait for stage-2 result. Capture at testStage2 (both stages done).",
 			StateMarker:            "Next: Git identity",
 			ApplicableLive:         true,
-			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
-			RequiredRegions:        []RegionName{RegionConnectivityOutput},
+			NonApplicability: []SurfaceNonApplicability{{
+				Surface: "approved-tui", Decision: "D-04",
+				Reason: "The approved TUI predates Phase 3 completed stage-2 auto-chain affordance.",
+			}},
+			RequiredRegions: []RegionName{RegionConnectivityOutput},
 		},
 		{
 			ScreenID:               "git-form-demo",
@@ -205,76 +222,103 @@ func ScreenSpecRegistry() []ScreenSpec {
 			RequiredRegions:        []RegionName{RegionConfirmationPreview},
 		},
 		{
-			ScreenID:            "reuse-manual-resolved",
-			Interaction:         "Select Reuse, focus the manual path input, type a sandbox key path, and wait for its algorithm and fingerprint.",
-			StateMarker:         "ssh-ed25519",
-			ApplicableLive:      true,
-			NonApplicableReason: "The approved sources have no resolved sandbox-key state.",
-			RequiredRegions:     []RegionName{RegionKeySection},
+			ScreenID:       "reuse-manual-resolved",
+			Interaction:    "Select Reuse, focus the manual path input, type a sandbox key path, and wait for its algorithm and fingerprint.",
+			StateMarker:    "ssh-ed25519",
+			ApplicableLive: true,
+			NonApplicability: []SurfaceNonApplicability{
+				{Surface: "approved-tui", Decision: "D-10", Reason: "The approved TUI predates the resolved manual-key state."},
+				{Surface: "approved-html", Decision: "D-10", Reason: "The approved HTML has no resolved manual-key state."},
+			},
+			RequiredRegions: []RegionName{RegionKeySection},
 		},
 		{
-			ScreenID:            "test-stage1-pass",
-			Interaction:         "Run stage 1 through the pass fake SSH and capture its completed PASS state while stage 2 is pending.",
-			StateMarker:         "Hi user!",
-			ApplicableLive:      true,
-			NonApplicableReason: "The approved sources do not execute the real external SSH process.",
-			RequiredRegions:     []RegionName{RegionConnectivityOutput},
+			ScreenID:       "test-stage1-pass",
+			Interaction:    "Run stage 1 through the pass fake SSH and capture its completed PASS state while stage 2 is pending.",
+			StateMarker:    "Hi user!",
+			ApplicableLive: true,
+			NonApplicability: []SurfaceNonApplicability{
+				{Surface: "approved-tui", Decision: "D-04", Reason: "The approved TUI does not execute Phase 3 auto-chained SSH tests."},
+				{Surface: "approved-html", Decision: "D-04", Reason: "The approved HTML has no completed Phase 3 test state."},
+			},
+			RequiredRegions: []RegionName{RegionConnectivityOutput},
 		},
 		{
-			ScreenID:            "test-stage2-proof-top",
-			Interaction:         "Complete both pass stages, focus the proof viewport with raw v, and capture the initial proof frame.",
-			StateMarker:         "Proof viewport focused",
-			ApplicableLive:      true,
-			NonApplicableReason: "The approved sources do not execute the real external SSH process.",
-			RequiredRegions:     []RegionName{RegionConnectivityOutput},
+			ScreenID:       "test-stage2-proof-top",
+			Interaction:    "Complete both pass stages, focus the proof viewport with raw v, and capture the initial proof frame.",
+			StateMarker:    "Proof viewport focused",
+			ApplicableLive: true,
+			NonApplicability: []SurfaceNonApplicability{
+				{Surface: "approved-tui", Decision: "D-04", Reason: "The approved TUI does not expose the Phase 3 proof viewport."},
+				{Surface: "approved-html", Decision: "D-04", Reason: "The approved HTML has no completed Phase 3 test state."},
+			},
+			RequiredRegions: []RegionName{RegionConnectivityOutput},
 		},
 		{
-			ScreenID:            "test-stage2-proof-bottom",
-			Interaction:         "From the focused proof viewport, send raw PgDn until the ssh -G identityfile output is visible.",
-			StateMarker:         "identityfile",
-			ApplicableLive:      true,
-			NonApplicableReason: "The approved sources do not execute the real external SSH process.",
-			RequiredRegions:     []RegionName{RegionConnectivityOutput},
+			ScreenID:       "test-stage2-proof-bottom",
+			Interaction:    "From the focused proof viewport, send raw PgDn until the ssh -G identityfile output is visible.",
+			StateMarker:    "identityfile",
+			ApplicableLive: true,
+			NonApplicability: []SurfaceNonApplicability{
+				{Surface: "approved-tui", Decision: "D-04", Reason: "The approved TUI does not expose the Phase 3 proof viewport."},
+				{Surface: "approved-html", Decision: "D-04", Reason: "The approved HTML has no completed Phase 3 test state."},
+			},
+			RequiredRegions: []RegionName{RegionConnectivityOutput},
 		},
 		{
-			ScreenID:            "test-stage2-proof-right",
-			Interaction:         "From the focused proof viewport, send raw Right until a long command suffix is visible.",
-			StateMarker:         "→ cols",
-			ApplicableLive:      true,
-			NonApplicableReason: "The approved sources do not execute the real external SSH process.",
-			RequiredRegions:     []RegionName{RegionConnectivityOutput},
+			ScreenID:       "test-stage2-proof-right",
+			Interaction:    "From the focused proof viewport, send raw Right until a long command suffix is visible.",
+			StateMarker:    "→ cols",
+			ApplicableLive: true,
+			NonApplicability: []SurfaceNonApplicability{
+				{Surface: "approved-tui", Decision: "D-04", Reason: "The approved TUI does not expose the Phase 3 proof viewport."},
+				{Surface: "approved-html", Decision: "D-04", Reason: "The approved HTML has no completed Phase 3 test state."},
+			},
+			RequiredRegions: []RegionName{RegionConnectivityOutput},
 		},
 		{
-			ScreenID:            "test-reachable-not-uploaded",
-			Interaction:         "Run both stages through the denied fake SSH and capture the completed copy-public-key warning state.",
-			StateMarker:         "copy public key",
-			ApplicableLive:      true,
-			NonApplicableReason: "The approved sources do not execute the real external SSH process.",
-			RequiredRegions:     []RegionName{RegionConnectivityOutput},
+			ScreenID:       "test-reachable-not-uploaded",
+			Interaction:    "Run both stages through the denied fake SSH and capture the completed copy-public-key warning state.",
+			StateMarker:    "copy public key",
+			ApplicableLive: true,
+			NonApplicability: []SurfaceNonApplicability{
+				{Surface: "approved-tui", Decision: "D-02", Reason: "The approved TUI has no Phase 3 reachable-not-uploaded outcome."},
+				{Surface: "approved-html", Decision: "D-02", Reason: "The approved HTML has no Phase 3 reachable-not-uploaded outcome."},
+			},
+			RequiredRegions: []RegionName{RegionConnectivityOutput},
 		},
 		{
-			ScreenID:            "test-hard-failure-retry",
-			Interaction:         "Run stage 1 through the timeout fake SSH and capture the completed hard-failure retry state.",
-			StateMarker:         "Retry (Enter)",
-			ApplicableLive:      true,
-			NonApplicableReason: "The approved sources do not execute the real external SSH process.",
-			RequiredRegions:     []RegionName{RegionConnectivityOutput},
+			ScreenID:       "test-hard-failure-retry",
+			Interaction:    "Run stage 1 through the timeout fake SSH and capture the completed hard-failure retry state.",
+			StateMarker:    "Retry (Enter)",
+			ApplicableLive: true,
+			NonApplicability: []SurfaceNonApplicability{
+				{Surface: "approved-tui", Decision: "D-01", Reason: "The approved TUI has no Phase 3 hard-failure retry state."},
+				{Surface: "approved-html", Decision: "D-01", Reason: "The approved HTML has no Phase 3 hard-failure retry state."},
+			},
+			RequiredRegions: []RegionName{RegionConnectivityOutput},
 		},
 		{
-			ScreenID:            "confirm-summary",
-			Interaction:         "Navigate to the confirmation ceremony, focus its viewport with raw v, and capture the summary/key-path frame before write.",
-			StateMarker:         "Exact change focused",
-			ApplicableLive:      true,
-			NonApplicableReason: "The approved sources do not expose the production ceremony viewport.",
-			RequiredRegions:     []RegionName{RegionConfirmationPreview},
+			ScreenID:       "confirm-summary",
+			Interaction:    "Navigate to the confirmation ceremony, focus its viewport with raw v, and capture the summary/key-path frame before write.",
+			StateMarker:    "Exact change focused",
+			ApplicableLive: true,
+			NonApplicability: []SurfaceNonApplicability{
+				{Surface: "approved-tui", Decision: "D-05", Reason: "The approved TUI does not expose the Phase 3 confirmation viewport."},
+				{Surface: "approved-html", Decision: "D-05", Reason: "The approved HTML has no Phase 3 confirmation viewport."},
+			},
+			RequiredRegions: []RegionName{RegionConfirmationPreview},
 		},
 		{
-			ScreenID:            "confirm-managed-block",
-			Interaction:         "From the focused confirmation viewport, send raw PgDn until the managed-block END sentinel is visible before write.",
-			StateMarker:         "# END gitid managed:",
-			ApplicableLive:      true,
-			NonApplicableReason: "The approved sources do not expose the production ceremony viewport.",
-			RequiredRegions:     []RegionName{RegionConfirmationPreview},
+			ScreenID:       "confirm-managed-block",
+			Interaction:    "From the focused confirmation viewport, send raw PgDn until the managed-block END sentinel is visible before write.",
+			StateMarker:    "# END gitid managed:",
+			ApplicableLive: true,
+			NonApplicability: []SurfaceNonApplicability{
+				{Surface: "approved-tui", Decision: "D-05", Reason: "The approved TUI does not expose the Phase 3 confirmation viewport."},
+				{Surface: "approved-html", Decision: "D-05", Reason: "The approved HTML has no Phase 3 confirmation viewport."},
+			},
+			RequiredRegions: []RegionName{RegionConfirmationPreview},
 		},
 	}
 }
@@ -296,6 +340,17 @@ func ScreenAppliesToSurface(spec ScreenSpec, surface string) bool {
 	default:
 		return false
 	}
+}
+
+// NonApplicabilityForSurface returns the explicit record for a surface that
+// cannot truthfully render a screen's declared state.
+func NonApplicabilityForSurface(spec ScreenSpec, surface string) (SurfaceNonApplicability, bool) {
+	for _, record := range spec.NonApplicability {
+		if record.Surface == surface {
+			return record, true
+		}
+	}
+	return SurfaceNonApplicability{}, false
 }
 
 // ValidateCapturedState reports whether the captured text satisfies the spec's
@@ -344,8 +399,24 @@ func ValidateScreenSpecs(specs []ScreenSpec) error {
 		if s.ApplicableApprovedHTML && s.Route == "" {
 			return fmt.Errorf("screenshot: ValidateScreenSpecs: HTML-applicable spec %q has no route", s.ScreenID)
 		}
-		if (!s.ApplicableLive || !s.ApplicableApprovedTUI || !s.ApplicableApprovedHTML) && s.NonApplicableReason == "" {
-			return fmt.Errorf("screenshot: ValidateScreenSpecs: spec %q lacks a non-applicability reason", s.ScreenID)
+		for _, surface := range []string{"live", "approved-tui", "approved-html"} {
+			record, found := NonApplicabilityForSurface(s, surface)
+			if ScreenAppliesToSurface(s, surface) {
+				if found {
+					return fmt.Errorf("screenshot: ValidateScreenSpecs: applicable %s spec %q has a non-applicability record", surface, s.ScreenID)
+				}
+				continue
+			}
+			if !found || record.Decision == "" || !strings.HasPrefix(record.Decision, "D-") || record.Reason == "" {
+				return fmt.Errorf("screenshot: ValidateScreenSpecs: non-applicable %s spec %q lacks a decision-linked record", surface, s.ScreenID)
+			}
+		}
+		nonApplicableSurfaces := make(map[string]bool, len(s.NonApplicability))
+		for _, record := range s.NonApplicability {
+			if !validPacketSurface(record.Surface) || nonApplicableSurfaces[record.Surface] {
+				return fmt.Errorf("screenshot: ValidateScreenSpecs: spec %q has invalid non-applicability surface %q", s.ScreenID, record.Surface)
+			}
+			nonApplicableSurfaces[record.Surface] = true
 		}
 		if len(s.RequiredRegions) == 0 {
 			return fmt.Errorf("screenshot: ValidateScreenSpecs: spec %q has no required regions", s.ScreenID)

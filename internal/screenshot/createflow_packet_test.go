@@ -771,6 +771,47 @@ func TestRequiredSemanticInventoryAndRawEvidence(t *testing.T) {
 	}
 }
 
+// TestApprovedTUIPhase3OnlyStatesHaveDecisionLinkedNonApplicability proves the
+// approval commit is never asked to impersonate a later Phase 3 state.
+func TestApprovedTUIPhase3OnlyStatesHaveDecisionLinkedNonApplicability(t *testing.T) {
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		for _, surface := range []string{"live", "approved-tui", "approved-html"} {
+			record, found := screenshot.NonApplicabilityForSurface(spec, surface)
+			if screenshot.ScreenAppliesToSurface(spec, surface) {
+				if found {
+					t.Errorf("applicable %s/%s has a non-applicability record", surface, spec.ScreenID)
+				}
+				continue
+			}
+			if !found {
+				t.Errorf("non-applicable %s/%s lacks a registry record", surface, spec.ScreenID)
+				continue
+			}
+			if record.Decision == "" || record.Reason == "" {
+				t.Errorf("non-applicable %s/%s has an incomplete record: %+v", surface, spec.ScreenID, record)
+			}
+		}
+	}
+
+	var stage2 screenshot.ScreenSpec
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		if spec.ScreenID == "test-stage2-by-alias" {
+			stage2 = spec
+			break
+		}
+	}
+	if stage2.ScreenID == "" {
+		t.Fatal("test-stage2-by-alias is missing from the registry")
+	}
+	if stage2.ApplicableApprovedTUI {
+		t.Fatal("approved TUI must not claim the Phase 3 completed stage-2 state")
+	}
+	record, found := screenshot.NonApplicabilityForSurface(stage2, "approved-tui")
+	if !found || record.Decision != "D-04" {
+		t.Fatalf("approved stage-2 state must be linked to D-04, got %+v", record)
+	}
+}
+
 func TestValidateRegionDiffsRejectsMissingRequiredRegion(t *testing.T) {
 	source := strings.Repeat("f", 40)
 	var diffs screenshot.RegionDiffs
@@ -833,9 +874,13 @@ func TestDuplicatePolicyRejectsUnresolved(t *testing.T) {
 	first := specs[0]
 	// A second spec with the same ScreenID but no VariantOf must fail.
 	dup := screenshot.ScreenSpec{
-		ScreenID:    first.ScreenID,
-		Route:       first.Route,
-		StateMarker: first.StateMarker + "-dup",
+		ScreenID:               first.ScreenID,
+		Route:                  first.Route,
+		StateMarker:            first.StateMarker + "-dup",
+		ApplicableLive:         true,
+		ApplicableApprovedTUI:  true,
+		ApplicableApprovedHTML: true,
+		RequiredRegions:        []screenshot.RegionName{screenshot.RegionFormFields},
 	}
 	err := screenshot.ValidateScreenSpecs(append(specs, dup))
 	if err == nil {
