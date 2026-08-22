@@ -2082,6 +2082,10 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			case testFailed:
 				w.simulateFail = false
 				w.testPhase = testIdle
+				// Retry starts a new attempt. Retaining the prior failed transcript
+				// would keep the completed-proof viewport on screen and conceal the
+				// advertised Run stage 1 action.
+				w.proof = ExactTextViewport{}
 			case testStage2:
 				w.step = 2
 				w.gitFocus = gitFieldName
