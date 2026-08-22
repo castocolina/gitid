@@ -202,5 +202,21 @@ dated; convert relative dates to absolute.
 - **Rule:** use only disposable public keys titled
   `gitid-e2e:<run-id>:<purpose>`. Record the returned ID for each creation and
   delete only that exact ID after rechecking its exact title prefix. Finish with
-  a prefix-scoped inventory sweep. Never modify a key that the test did not
+   a prefix-scoped inventory sweep. Never modify a key that the test did not
   create, and halt on any inventory mismatch.
+
+### L16 — Phase-2 Bubble Tea mockup guides later delivery (2026-08-22, user decision)
+- **Symptom:** Phase 3 evidence work treated the historical dummy/HTML capture
+  as a 100% parity gate, spending disproportionate effort on rendering
+  differences instead of shipping the remaining workflow functionality.
+- **Root cause:** the planning loop conflated Phase 2's design-reference role
+  with later phases' functional acceptance criteria and incorrectly included
+  the HTML prototype as a Phase-3+ reference surface.
+- **Rule:** from Phase 3 through Phase 10, `cmd/gitid-dummy` is the approved
+  Bubble Tea mockup and the UI/UX reference. Plan-review convergence is still
+  mandatory. Automatic verification compares the live real TUI to that mockup
+  and accepts no defects: every difference is explicitly classified as a UX
+  improvement or a defect, and unclassified differences fail. Improvements are
+  recorded for the user's one manual review after all phases complete. The HTML
+  prototype is not a parity target and no phase requires 100% byte/pixel or
+  historical-artifact parity.

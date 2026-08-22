@@ -55,24 +55,37 @@ Only close a phase and advance once all nine are evidenced.
 7. A newly introduced managed Git or SSH path must be registered in the
    doctor's reserved-path/block registry in the same phase.
 8. gitid is a terminal TUI, not a web UI — `gsd-browser` (Chrome DevTools
-   Protocol) does not apply. For a TUI-surface phase, "UI review" and
-   Definition-of-Done mean the screens are proven against the approved
-   mockup through a real PTY session on the compiled binary (raw keystrokes,
-   mouse sequences where relevant) — the existing DLV-04/DLV-06 gates. A
-   unit or wiring test never substitutes for this.
+   Protocol) does not apply. From Phase 3 onward, the approved Bubble Tea
+   mockup (`cmd/gitid-dummy`) is the authoritative visual and interaction
+   reference; the Phase-2 HTML prototype is not a parity target. For a
+   TUI-surface phase, "UI review" and Definition-of-Done mean the compiled
+   real binary is exercised through a real PTY session (raw keystrokes and
+   mouse sequences where relevant) against that mockup's workflow, labels,
+   controls, and layout guidance. A unit or wiring test never substitutes for
+   this.
 9. Stop only for a destructive anomaly, an unrecoverable tool/authentication
    failure, a circuit breaker, or a required confirmation for a real
    user-file or external-account mutation. Record the exact blocker and
    preserve all green work.
 10. When verification, code review, UI review, UAT audit, or independent
-    evidence review finds a gap, fix it autonomously: create or revise the
-    smallest corrective plan, implement it test-first, rerun every affected
-    gate, and obtain a fresh independent review. Repeat this loop until the
-    relevant reports are clean and the phase checklist is evidenced. A failing
-    test, review finding, incomplete artifact, stale evidence, or an agent's
-    failed attempt is work to fix, not a blocker. Stop only for rule 9 safety
-    conditions, a required real-file/account confirmation, or a demonstrable
-    repeated zero-progress tool failure; record the evidence for that stop.
+    evidence review finds a functional, workflow, safety, or interaction gap,
+    fix it autonomously: create or revise the smallest corrective plan,
+    implement it test-first, rerun every affected gate, and obtain a fresh
+    independent review. Repeat this loop until the relevant reports are clean
+    and the phase checklist is evidenced. A failing test, review finding,
+    incomplete artifact, stale evidence, or an agent's failed attempt is work
+    to fix, not a blocker. Stop only for rule 9 safety conditions, a required
+    real-file/account confirmation, or a demonstrable repeated zero-progress
+    tool failure; record the evidence for that stop.
+11. Plan-review convergence remains mandatory for every new or revised plan:
+    resolve all functional, workflow, safety, and interaction HIGH findings
+    before execution. Automatic UI verification compares the real compiled TUI
+    with the live `cmd/gitid-dummy` mockup and accepts no visual or interaction
+    defects. Every difference must be explicitly classified as a UX improvement
+    or a defect; an unclassified difference fails review. Improvements remain
+    recorded for the user's one manual review after all phases complete, not at
+    individual phase close. Do not require 100% byte, pixel, or historical-
+    artifact parity for Phases 3–10.
 
 ## Phase 9 External Account Policy
 
