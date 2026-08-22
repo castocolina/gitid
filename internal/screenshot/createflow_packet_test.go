@@ -833,6 +833,27 @@ func TestBuildRegionDiffsDeclaresFormDefaultsComparator(t *testing.T) {
 	}
 }
 
+func TestBuildRegionDiffsDeclaresConfirmationPreviewComparator(t *testing.T) {
+	spec := screenshot.ScreenSpec{
+		ScreenID:               "confirm-write",
+		ApplicableLive:         true,
+		ApplicableApprovedTUI:  true,
+		ApplicableApprovedHTML: true,
+		RequiredRegions:        []screenshot.RegionName{screenshot.RegionConfirmationPreview},
+	}
+	live := "│ Exact change live\n"
+	approved := "│ Exact change approved\n"
+
+	diffs, err := screenshot.BuildRegionDiffs("test-commit", map[string]string{spec.ScreenID: live}, map[string]string{spec.ScreenID: approved}, []screenshot.ScreenSpec{spec})
+	if err != nil {
+		t.Fatalf("BuildRegionDiffs rejected the declared confirmation comparator: %v", err)
+	}
+	region := diffs[0].Regions[0]
+	if region.Divergence != "confirmation-preview" || !strings.Contains(region.Justification, "D-05") {
+		t.Fatalf("confirmation comparator must be D-05-linked, got %+v", region)
+	}
+}
+
 func TestValidateRegionDiffsRejectsMissingRequiredRegion(t *testing.T) {
 	source := strings.Repeat("f", 40)
 	var diffs screenshot.RegionDiffs

@@ -1157,6 +1157,9 @@ func BuildRegionDiffs(sourceCommit string, liveCaptures, approvedCaptures map[st
 			case "test-stage1-direct", "test-stage2-by-alias":
 				rec.Divergence = "connectivity-output"
 				rec.Justification = "D-02: live captures use real backend output; approved-tui uses fixture result"
+			case "confirm-write":
+				rec.Divergence = "confirmation-preview"
+				rec.Justification = "D-05: live capture shows the Phase 3 pre-write ceremony while the approved TUI preserves its fixture preview"
 			case "git-form-demo":
 				rec.Divergence = "continue-disabled-reason"
 				rec.Justification = "D-19: real binary shows Phase-4 reason; dummy shows form-validity reason"
@@ -1177,6 +1180,8 @@ func BuildRegionDiffs(sourceCommit string, liveCaptures, approvedCaptures map[st
 
 func regionDisposition(screenID string, name RegionName) (string, string) {
 	switch {
+	case name == RegionConfirmationPreview:
+		return "confirmation-preview", "D-05: the Phase 3 pre-write ceremony differs from the approved fixture preview"
 	case name == RegionFormFields:
 		return "form-defaults", "D-16 structural fixture: the live backend uses current provider defaults while the approved TUI preserves frozen demo defaults"
 	case name == RegionConnectivityOutput:
