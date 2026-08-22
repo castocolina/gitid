@@ -308,7 +308,7 @@ func generateCandidateOnce(sourceCommit, outputDir string) error {
 		return fmt.Errorf("reading pnpm version: %w", err)
 	}
 
-	workspace, err := os.MkdirTemp("", "gitid-evidence-capture-")
+	workspace, err := captureWorkspace(sourceCommit)
 	if err != nil {
 		return fmt.Errorf("creating capture workspace: %w", err)
 	}
@@ -616,8 +616,11 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 		if err := session.tabs(1); err != nil {
 			return "", err
 		}
+		if _, err := session.waitFor("▸ Key path", 8*time.Second); err != nil {
+			return "", fmt.Errorf("waiting for manual key-path focus: %w", err)
+		}
 		if id == "reuse-manual-resolved" && manualKeyPath != "" {
-			if err := session.send([]byte(manualKeyPath)); err != nil {
+			if err := session.send([]byte("~/.ssh/id_ed25519_capture_manual")); err != nil {
 				return "", err
 			}
 			if _, err := session.waitFor("ssh-ed25519", 8*time.Second); err != nil {
@@ -747,6 +750,14 @@ func captureCommandEnvironment(home, fakeSSH string) []string {
 		env = append(env, "PATH="+fakeSSH+string(filepath.ListSeparator)+os.Getenv("PATH"))
 	}
 	return env
+}
+
+func captureWorkspace(sourceCommit string) (string, error) {
+	workspace := filepath.Join(os.TempDir(), "gitid-evidence-capture-"+sourceCommit)
+	if err := os.Mkdir(workspace, 0o700); err != nil {
+		return "", err
+	}
+	return workspace, nil
 }
 
 func selectReuse(session *capturePTY, waitForSelectedState bool) error {
