@@ -572,7 +572,7 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 		if err := session.tabs(4); err != nil {
 			return "", err
 		}
-		if err := selectReuse(session); err != nil {
+		if err := selectReuse(session, fakeSSH != ""); err != nil {
 			return "", err
 		}
 	case "reuse-manual-path", "reuse-manual-resolved":
@@ -581,7 +581,7 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 		}
 		// Select Reuse, then the trailing manual row and its input. This is a
 		// real resolved-key state, never a Generate frame relabeled by ID.
-		if err := selectReuse(session); err != nil {
+		if err := selectReuse(session, fakeSSH != ""); err != nil {
 			return "", err
 		}
 		if err := session.tabs(1); err != nil {
@@ -712,11 +712,14 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 	return text + "\n", nil
 }
 
-func selectReuse(session *capturePTY) error {
+func selectReuse(session *capturePTY, waitForSelectedState bool) error {
 	if err := session.send([]byte("\x1b[C")); err != nil {
 		return err
 	}
-	if _, err := session.waitFor("Reuse an", 8*time.Second); err != nil {
+	if !waitForSelectedState {
+		return nil
+	}
+	if _, err := session.waitFor("● Reuse an", 8*time.Second); err != nil {
 		return fmt.Errorf("waiting for selected reuse state: %w", err)
 	}
 	return nil
