@@ -134,7 +134,7 @@ func ScreenSpecRegistry() []ScreenSpec {
 			ScreenID:               "reuse-key-vs-generate",
 			Route:                  "/create-flow/reuse-key-vs-generate",
 			Interaction:            "Tab to the key-source toggle (4 Tabs), then press Right to select Reuse.",
-			StateMarker:            "Reuse an existing key",
+			StateMarker:            "● Reuse an existing key",
 			ApplicableLive:         true,
 			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
@@ -305,10 +305,22 @@ func ValidateCapturedState(spec ScreenSpec, capturedText string) error {
 	if spec.StateMarker == "" {
 		return fmt.Errorf("screenshot: ValidateCapturedState: spec %q has no state marker", spec.ScreenID)
 	}
-	if !strings.Contains(capturedText, spec.StateMarker) {
+	if !strings.Contains(normalizeCapturedStateText(capturedText), normalizeCapturedStateText(spec.StateMarker)) {
 		return fmt.Errorf("screenshot: ValidateCapturedState: spec %q state marker %q absent from captured text", spec.ScreenID, spec.StateMarker)
 	}
 	return nil
+}
+
+// normalizeCapturedStateText removes the detail-pane border from wrapped rows
+// and collapses whitespace so semantic markers survive physical PTY wrapping.
+func normalizeCapturedStateText(text string) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if border := strings.IndexRune(line, '│'); border >= 0 && strings.TrimSpace(line[:border]) == "" {
+			lines[i] = line[border+len("│"):]
+		}
+	}
+	return strings.Join(strings.Fields(strings.Join(lines, " ")), " ")
 }
 
 // ValidateScreenSpecs checks the registry for structural correctness:

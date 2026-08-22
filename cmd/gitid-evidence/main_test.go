@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/castocolina/gitid/internal/screenshot"
 )
 
 // TestPublisherRejectsEmptySourceCommit verifies that run() fails when
@@ -120,5 +122,41 @@ func TestSeedManualReuseKeyCreatesOnlySandboxMaterial(t *testing.T) {
 	}
 	if _, err := os.Stat(path + ".pub"); err != nil {
 		t.Fatalf("sandbox public key was not created: %v", err)
+	}
+}
+
+// TestCaptureTUIScreenReuseSelection proves the live raw-PTY script reaches the
+// reuse state required by the registry before evidence is rendered or saved.
+func TestCaptureTUIScreenReuseSelection(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "gitid")
+	build := exec.Command("go", "build", "-o", bin, "../gitid") //nolint:gosec // fixed local package and sandbox output
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("building gitid capture binary: %v\n%s", err, output)
+	}
+
+	var reuseSpec screenshot.ScreenSpec
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		if spec.ScreenID == "reuse-key-vs-generate" {
+			reuseSpec = spec
+			break
+		}
+	}
+	if reuseSpec.ScreenID == "" {
+		t.Fatal("reuse-key-vs-generate spec is missing")
+	}
+
+	var raw string
+	text, err := captureTUIScreen(bin, t.TempDir(), "", reuseSpec.ScreenID, true, &raw)
+	if err != nil {
+		t.Fatalf("capturing reuse-key-vs-generate: %v", err)
+	}
+	if !strings.Contains(text, "● Reuse an") {
+		t.Fatalf("reuse-key-vs-generate must select reuse, not merely render its label:\n%s", text)
+	}
+	if err := screenshot.ValidateCapturedState(reuseSpec, text); err != nil {
+		t.Fatalf("reuse-key-vs-generate must capture the selected reuse state: %v\n%s", err, text)
+	}
+	if strings.TrimSpace(raw) == "" {
+		t.Fatal("reuse-key-vs-generate must retain raw PTY evidence")
 	}
 }
