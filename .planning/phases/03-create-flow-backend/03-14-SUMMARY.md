@@ -2,7 +2,7 @@
 phase: 03-create-flow-backend
 plan: 14
 status: corrective-implementation-complete
-source_commit: cf19f89164bb772737d27a6b9e9176081a79d413
+source_commit: f37431605a1d9ab91dc22ab770794edcab27c7b8
 ---
 
 # Phase 03-14 Summary
@@ -75,13 +75,13 @@ The required semantic frames include `reuse-manual-resolved`, `test-stage1-pass`
 Candidate command, after `freeze`, pinned Chromium, and `pnpm` are available:
 
 ```sh
-TERM=dumb SSH_AUTH_SOCK= go run -tags screenshot ./cmd/gitid-evidence --candidate --source-commit cf19f89164bb772737d27a6b9e9176081a79d413 --output-dir /tmp/gitid-03-14-candidate
+TERM=dumb SSH_AUTH_SOCK= go run -tags screenshot ./cmd/gitid-evidence --candidate --source-commit f37431605a1d9ab91dc22ab770794edcab27c7b8 --output-dir /tmp/gitid-03-14-candidate
 ```
 
 Finalization command, only after two real independent reviews of that exact candidate:
 
 ```sh
-TERM=dumb SSH_AUTH_SOCK= go run -tags screenshot ./cmd/gitid-evidence finalize --source-commit cf19f89164bb772737d27a6b9e9176081a79d413 --candidate-dir /tmp/gitid-03-14-candidate --review-dir /path/to/ui-review --review-dir /path/to/codex-review --output-root .planning/phases/03-create-flow-backend/03-14-review-packet
+TERM=dumb SSH_AUTH_SOCK= go run -tags screenshot ./cmd/gitid-evidence finalize --source-commit f37431605a1d9ab91dc22ab770794edcab27c7b8 --candidate-dir /tmp/gitid-03-14-candidate --review-dir /path/to/ui-review --review-dir /path/to/codex-review --output-root .planning/phases/03-create-flow-backend/03-14-review-packet
 ```
 
 ## Remaining Blocker
