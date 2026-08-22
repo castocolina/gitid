@@ -2917,7 +2917,14 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 		switch w.testPhase {
 		case testIdle:
 			b.WriteString(" " + styleSelected.Render(" Run stage 1 (Enter) ") + "\n")
-		case testRunning1, testRunning2:
+		case testRunning1:
+			b.WriteString(" " + styleFaint.Render("… running ssh…") + "\n")
+		case testRunning2:
+			// Stage-1 result is complete; stage-2 is in flight. Show the
+			// completed stage-1 outcome so the user can read the exact output
+			// while stage-2 completes (TEST-01 shown==run contract). The
+			// "… running ssh…" line below it marks stage-2 as still pending.
+			b.WriteString(renderStageOutcome(w.stage1, w.form.providerHost(), false, width))
 			b.WriteString(" " + styleFaint.Render("… running ssh…") + "\n")
 		case testFailed:
 			// A hard Failure — connection refused, DNS, timeout — is the
@@ -2967,17 +2974,15 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 			wizardButton(wizardSkipButton, w.gitFocus == gitFocusSkip, true, "") + "  " +
 			wizardButton(wizardContinueButton, w.gitFocus == gitFocusContinue, continueEnabled, continueReason) + "\n")
 		b.WriteString(" " + styleFaint.Render(wizardSkipHint) + "\n")
-		// D-19 / UI-REVIEW HIGH Pillar 1: suppress wizardContinueHint when
-		// Continue is permanently disabled by the real backend (always=true).
-		// Showing "Continue reviews the Git fragment…" alongside "Git
-		// configuration arrives with the next build" is a semantic contradiction
-		// — the hint promises an action the button can never perform. The dummy
-		// path (always=false) keeps the hint because Continue genuinely works
-		// once the form is valid. The Phase-2-frozen SkipHint always renders.
-		_, alwaysDisabled := w.backend.GitStepDisabledReason()
-		if !alwaysDisabled {
-			b.WriteString(" " + styleFaint.Render(wizardContinueHint))
-		}
+		// D-19 / 03-13 correction: wizardContinueHint is ALWAYS rendered
+		// alongside the disabled reason — FIELDS.md:159-164 requires both
+		// hint rows to remain visible in ALL states (the frozen design keeps
+		// a reserved row for each). The 03-12 suppression was incorrect: the
+		// hint describes the action Continue WILL perform once the Phase-4
+		// Git backend lands; showing it alongside "arrives with the next build"
+		// is not a contradiction — it is the accurate description of what is
+		// coming. Only the disabled REASON changes per D-19; the hint stays.
+		b.WriteString(" " + styleFaint.Render(wizardContinueHint))
 	default:
 		b.WriteString(w.ceremony.view(width))
 	}

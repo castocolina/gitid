@@ -573,6 +573,157 @@ func stylePreviewLines(lines []string, diff bool, innerWidth int) []string {
 	return styled
 }
 
+// ---------------------------------------------------------------------------
+// ExactTextViewport — byte-preserving, scrollable proof/review viewport.
+//
+// Unlike PreviewBlock (which truncates with ansi.Truncate), ExactTextViewport
+// retains the source string byte-for-byte and computes visible slices without
+// ever mutating the stored text. It is used ONLY for create-flow proof and
+// confirm review — call sites that previously used PreviewBlock are unchanged.
+//
+// State is stored by value (immutable update pattern), so the caller (wizardModel)
+// holds focus and offset as plain fields and replaces them on key events.
+// ---------------------------------------------------------------------------
+
+// ExactTextViewport is a byte-preserving scrollable window over a multi-line
+// text string. It renders exactly visibleLines content rows at the given width
+// (truncating at terminal edge, never with ansi.Truncate's ellipsis). A faint
+// range cue on the last rendered row announces remaining hidden lines when
+// the content exceeds the window. Navigation keys (PageUp/PageDown, Up/Down)
+// are handled externally by the caller; the viewport exposes clamp helpers.
+type ExactTextViewport struct {
+	// Text is the complete source content, stored byte-for-byte.
+	Text string
+	// LineOffset is the first visible line (0-based).
+	LineOffset int
+	// VisibleLines is the number of content rows to render.
+	VisibleLines int
+	// Width is the column budget (used only to truncate at terminal edge, never ellipsis).
+	Width int
+	// Focused is whether this viewport currently owns key input.
+	Focused bool
+}
+
+// lines splits the text into individual lines.
+func (v ExactTextViewport) lines() []string {
+	if v.Text == "" {
+		return nil
+	}
+	return strings.Split(v.Text, "\n")
+}
+
+// TotalLines returns the total number of lines in the source text.
+func (v ExactTextViewport) TotalLines() int { return len(v.lines()) }
+
+// Clamp returns a copy with LineOffset clamped so the viewport never scrolls
+// past the last screenful of content.
+func (v ExactTextViewport) Clamp() ExactTextViewport {
+	total := v.TotalLines()
+	maxOffset := total - v.VisibleLines
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if v.LineOffset > maxOffset {
+		v.LineOffset = maxOffset
+	}
+	if v.LineOffset < 0 {
+		v.LineOffset = 0
+	}
+	return v
+}
+
+// ScrollDown moves the viewport down by n lines (clamped).
+func (v ExactTextViewport) ScrollDown(n int) ExactTextViewport {
+	v.LineOffset += n
+	return v.Clamp()
+}
+
+// ScrollUp moves the viewport up by n lines (clamped).
+func (v ExactTextViewport) ScrollUp(n int) ExactTextViewport {
+	v.LineOffset -= n
+	return v.Clamp()
+}
+
+// AtBottom reports whether the viewport is at or past the last screenful.
+func (v ExactTextViewport) AtBottom() bool {
+	clamped := v.Clamp()
+	return v.LineOffset >= clamped.LineOffset && clamped.LineOffset+clamped.VisibleLines >= v.TotalLines()
+}
+
+// View renders the viewport: exactly VisibleLines rows of content starting at
+// LineOffset, each truncated at Width display columns (hard-truncate, no
+// ellipsis — so every byte of the source remains reachable by scrolling).
+// When more content exists below the window, the final row is replaced by a
+// faint range cue ("↓ lines N–M of Total · PgDn scroll · PgUp scroll").
+// The cue is itself truncated at Width if necessary.
+func (v ExactTextViewport) View() string {
+	lines := v.lines()
+	total := len(lines)
+	if v.VisibleLines < 1 || total == 0 {
+		return ""
+	}
+	v = v.Clamp()
+	start := v.LineOffset
+	end := start + v.VisibleLines
+	if end > total {
+		end = total
+	}
+	visible := lines[start:end]
+	// Determine whether there are hidden lines below.
+	hiddenBelow := total - (start + len(visible))
+	cueLine := ""
+	if hiddenBelow > 0 {
+		firstHidden := start + len(visible) + 1
+		lastLine := total
+		cueLine = fmt.Sprintf("↓ lines %d–%d of %d  PgDn↓ PgUp↑", firstHidden, lastLine, total)
+	} else if start > 0 {
+		// At bottom with hidden above: show an "at bottom" cue.
+		cueLine = "↑ top at line 1  PgUp↑"
+	}
+
+	out := make([]string, 0, v.VisibleLines)
+	// When there are hidden lines below, reserve the last row for the cue.
+	contentRows := v.VisibleLines
+	if cueLine != "" && hiddenBelow > 0 {
+		contentRows = v.VisibleLines - 1
+	}
+	for i, line := range visible {
+		if i >= contentRows {
+			break
+		}
+		if v.Width > 0 {
+			// Hard-truncate at terminal edge: strip trailing bytes, no "…".
+			if ansi.StringWidth(line) > v.Width {
+				// Truncate rune-by-rune to stay within width.
+				runes := []rune(line)
+				w := 0
+				cut := 0
+				for cut < len(runes) && w+ansi.StringWidth(string(runes[cut])) <= v.Width {
+					w += ansi.StringWidth(string(runes[cut]))
+					cut++
+				}
+				line = string(runes[:cut])
+			}
+		}
+		out = append(out, line)
+	}
+	if cueLine != "" {
+		if v.Width > 0 && ansi.StringWidth(cueLine) > v.Width {
+			cueLine = ansi.Truncate(cueLine, v.Width, "")
+		}
+		out = append(out, styleFaint.Render(cueLine))
+	}
+	return strings.Join(out, "\n")
+}
+
+// ViewportControlsHint returns the advertised navigation hint for the footer
+// when this viewport has focus. Callers include it in their FooterAction list.
+func ViewportControlsHint() []FooterAction {
+	return []FooterAction{
+		{Key: "PgDn/PgUp", Label: "scroll proof"},
+	}
+}
+
 // spliceTitleIntoTopBorder rewrites the first (top-border) line of an
 // already-rendered preview block to carry " title " between its corners,
 // bounded to the block's own width — the title-in-border-top-edge affordance

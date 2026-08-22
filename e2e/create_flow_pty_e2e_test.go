@@ -708,6 +708,176 @@ func TestCreateFlow_GitStepDisabledReasonHintSuppressed(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// 03-13. Completed stage proof viewport, semantic states, Git hint.
+// ---------------------------------------------------------------------------
+
+// TestCreateFlow_CompletedStage1ProofViewport proves that after stage-1 completes
+// and stage-2 is still running (testRunning2 state), the exact stage-1 SSH output
+// ("Hi user!") is visible in the 100x30 frame without ellipsis substitution.
+// This covers D-22 (barrier-controlled fake SSH), TEST-01 (exact shown output).
+func TestCreateFlow_CompletedStage1ProofViewport(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	openCreateWizard(t, s)
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // step 0 → step 1
+	mustSee(t, s, "Step 2/4", "step 0 → step 1")
+
+	// Run stage 1; D-04 auto-chains stage-2 immediately.
+	// Stage-1 banner must appear before stage-2 completes.
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+
+	// Stage-1 completed output must be visible (testRunning2 state shows it).
+	mustSee(t, s, "Hi user!", "stage-1: exact SSH banner visible in testRunning2 state (TEST-01)")
+
+	// Must NOT have ellipsis substituting the output.
+	// (We check the snapshot for "Hi user!" without "…" replacing it.)
+	snap := s.snapshot()
+	for _, line := range strings.Split(snap, "\n") {
+		if strings.Contains(line, "Hi user!") && strings.HasSuffix(strings.TrimSpace(line), "…") {
+			t.Errorf("stage-1 output line must not end with ellipsis substitution: %q", line)
+		}
+	}
+
+	saveFrame(t, "create-flow-completed-stage1-proof-viewport", s)
+}
+
+// TestCreateFlow_CompletedStage2ProofViewport proves that after both stages
+// complete (testStage2), the exact stage-2 resolution proof ("identityfile")
+// is visible in the 100x30 frame. This covers TEST-02.
+func TestCreateFlow_CompletedStage2ProofViewport(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	openCreateWizard(t, s)
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // step 0 → step 1
+	mustSee(t, s, "Step 2/4", "step 0 → step 1")
+
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // run both stages (D-04 auto-chain)
+	mustSee(t, s, "Hi user!", "stage-1 pass")
+	mustSee(t, s, "identityfile", "stage-2 resolution proof visible (TEST-02)")
+
+	// No ellipsis on the identityfile line.
+	snap := s.snapshot()
+	for _, line := range strings.Split(snap, "\n") {
+		if strings.Contains(line, "identityfile") && strings.HasSuffix(strings.TrimSpace(line), "…") {
+			t.Errorf("identityfile proof line must not end with ellipsis substitution: %q", line)
+		}
+	}
+
+	saveFrame(t, "create-flow-completed-stage2-proof-viewport", s)
+}
+
+// TestCreateFlow_ReachableNotUploadedEvidence proves D-02 warning state evidence:
+// yellow "!" glyph + warning words, the permission denied output visible, and the
+// copy public key affordance present.
+func TestCreateFlow_ReachableNotUploadedEvidence(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "denied")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	openCreateWizard(t, s)
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Step 2/4", "step 0 → step 1")
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	// Warning copy with glyph and word — never hard-failure.
+	mustSee(t, s, "! Reachable — key not uploaded yet", "D-02: yellow warning state (glyph + word)")
+	// Raw ssh output visible.
+	mustSee(t, s, "identityfile", "stage-2 resolution proof")
+	// Copy affordance present.
+	mustSee(t, s, "copy public key", "D-03: copy .pub affordance present in warning state")
+	// Hard-failure copy absent.
+	mustNotSee(t, s, "The connection failed", "warning state must not show hard-failure copy")
+
+	saveFrame(t, "create-flow-reachable-not-uploaded-evidence", s)
+}
+
+// TestCreateFlow_HardFailureRetryEvidence proves D-01 hard Failure state:
+// red "✗" glyph, real ssh timeout output, retry affordance.
+func TestCreateFlow_HardFailureRetryEvidence(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "timeout")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	openCreateWizard(t, s)
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Step 2/4", "step 0 → step 1")
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	// Hard-failure glyph.
+	mustSee(t, s, "✗", "hard Failure: red '✗' glyph")
+	// Real ssh output (connect timeout).
+	mustSee(t, s, "connect to host", "hard Failure: real timeout output visible")
+	// Failure copy + retry.
+	mustSee(t, s, "The connection failed", "hard Failure: failure copy present")
+	mustSee(t, s, "Retry (Enter)", "hard Failure: retry affordance present")
+	// Copy public key NOT offered on hard failure.
+	mustNotSee(t, s, "copy public key", "hard Failure must not offer copy public key")
+	// Warning copy NOT shown.
+	mustNotSee(t, s, "! Reachable", "hard Failure must not show warning copy")
+
+	saveFrame(t, "create-flow-hard-failure-retry-evidence", s)
+}
+
+// TestCreateFlow_GitStepDisabledReason proves the 03-13 correction: the
+// wizardContinueHint is ALWAYS visible on the Git step alongside the
+// D-19 disabled reason (not suppressed). Covers FIELDS.md:159-164.
+func TestCreateFlow_GitStepDisabledReason(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	openCreateWizard(t, s)
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Step 2/4", "step 0 → step 1")
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Hi user!", "stage 1 PASS")
+	mustSee(t, s, "identityfile", "stage 2 proof")
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Step 3/4", "Git step")
+
+	// D-19 disabled reason must appear.
+	mustSee(t, s, "arrives with the next build", "D-19: Continue disabled reason")
+	// 03-13 correction: wizardContinueHint ALWAYS appears (not suppressed).
+	mustSee(t, s, "Continue reviews the Git fragment", "03-13: wizardContinueHint always visible")
+	// Skip hint also present.
+	mustSee(t, s, "Skip keeps this identity SSH-only", "Skip hint always visible")
+
+	saveFrame(t, "create-flow-git-step-disabled-reason-03-13", s)
+}
+
+// ---------------------------------------------------------------------------
 // 7. Mouse-driven field focus (SSHUI-02 mouse half)
 // ---------------------------------------------------------------------------
 

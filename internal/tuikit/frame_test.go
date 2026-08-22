@@ -365,6 +365,123 @@ func TestJoinMasterDetailDrawsFullHeightDivider(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// ExactTextViewport — Task 1 RED tests (03-13 proof viewport).
+// ---------------------------------------------------------------------------
+
+// TestExactTextViewport_BytePreserving proves the viewport stores its source
+// text byte-for-byte and returns exact content without truncation ellipsis.
+func TestExactTextViewport_BytePreserving(t *testing.T) {
+	// A line that would be ellipsized by ansi.Truncate at width 20.
+	longLine := "ssh -T git@ssh.github.com -p 443 -i ~/.ssh/id_ed25519_acme -o StrictHostKeyChecking=accept-new"
+	v := ExactTextViewport{
+		Text:         longLine,
+		VisibleLines: 1,
+		Width:        20,
+	}
+	rendered := v.View()
+	// The content must be present (truncated at display edge, not replaced with "…").
+	if strings.Contains(rendered, "…") {
+		t.Errorf("ExactTextViewport must not insert ellipsis; got %q", rendered)
+	}
+	// The first N runes must match.
+	plain := stripANSI(rendered)
+	if !strings.HasPrefix(longLine, strings.TrimSpace(plain)) && !strings.HasPrefix(strings.TrimSpace(plain), "ssh") {
+		t.Errorf("ExactTextViewport truncated wrong content: got %q", plain)
+	}
+}
+
+// TestExactTextViewport_ClueCueOnHiddenLines proves a range-cue faint line
+// appears on the last row when the viewport has more content below.
+func TestExactTextViewport_ClueCueOnHiddenLines(t *testing.T) {
+	text := "line1\nline2\nline3\nline4\nline5"
+	v := ExactTextViewport{
+		Text:         text,
+		VisibleLines: 3,
+		Width:        80,
+	}
+	rendered := stripANSI(v.View())
+	lines := strings.Split(rendered, "\n")
+	if len(lines) != 3 {
+		t.Fatalf("viewport rendered %d lines, want 3", len(lines))
+	}
+	// The last row must be a continuation cue when content extends below.
+	if !strings.Contains(lines[2], "PgDn") {
+		t.Errorf("last row must contain scroll cue 'PgDn' when hidden lines exist; got %q", lines[2])
+	}
+}
+
+// TestExactTextViewport_ClampPreventsOverscroll proves ScrollDown and Clamp
+// prevent the offset from going past the last screenful.
+func TestExactTextViewport_ClampPreventsOverscroll(t *testing.T) {
+	v := ExactTextViewport{
+		Text:         "a\nb\nc\nd\ne",
+		VisibleLines: 3,
+		Width:        40,
+	}
+	// Scrolling far past the end must clamp at the last valid offset.
+	v2 := v.ScrollDown(100)
+	if v2.LineOffset < 0 {
+		t.Error("clamped offset must not be negative")
+	}
+	// After clamping, the last visible line must be within bounds.
+	total := v2.TotalLines()
+	if v2.LineOffset+v2.VisibleLines > total+1 {
+		t.Errorf("overscrolled: offset %d + visible %d > total %d", v2.LineOffset, v2.VisibleLines, total)
+	}
+	// ScrollUp from clamped position must reduce offset.
+	v3 := v2.ScrollUp(1)
+	if v3.LineOffset >= v2.LineOffset {
+		t.Error("ScrollUp from clamped position must reduce offset")
+	}
+}
+
+// TestExactTextViewport_TotalLines proves TotalLines returns the correct line count.
+func TestExactTextViewport_TotalLines(t *testing.T) {
+	cases := []struct {
+		text string
+		want int
+	}{
+		{"", 0},
+		{"one", 1},
+		{"one\ntwo\nthree", 3},
+	}
+	for _, tc := range cases {
+		v := ExactTextViewport{Text: tc.text}
+		if got := v.TotalLines(); got != tc.want {
+			t.Errorf("TotalLines(%q) = %d, want %d", tc.text, got, tc.want)
+		}
+	}
+}
+
+// TestExactTextViewport_ScrollRevealsBytesHiddenBelow proves that after
+// scrolling down one page, previously-hidden lines become visible and the
+// earlier lines are no longer rendered — the source text remains intact.
+func TestExactTextViewport_ScrollRevealsBytesHiddenBelow(t *testing.T) {
+	text := "line1\nline2\nline3\nline4\nline5"
+	v := ExactTextViewport{
+		Text:         text,
+		VisibleLines: 3,
+		Width:        80,
+	}
+	// Before scroll: line4 and line5 are hidden.
+	before := stripANSI(v.View())
+	if strings.Contains(before, "line4") {
+		t.Error("line4 must not be visible before scrolling down")
+	}
+	// After one PageDown (VisibleLines rows): line4/line5 become visible.
+	v2 := v.ScrollDown(v.VisibleLines)
+	after := stripANSI(v2.View())
+	if !strings.Contains(after, "line4") && !strings.Contains(after, "line5") {
+		t.Errorf("line4/line5 must be visible after scrolling down; got:\n%s", after)
+	}
+	// line1 must no longer be rendered in the main content (may appear in cue).
+	afterLines := strings.Split(after, "\n")
+	if len(afterLines) > 0 && strings.Contains(afterLines[0], "line1") {
+		t.Error("line1 must not appear in the first content row after scrolling past it")
+	}
+}
+
 func TestSeverityLabelLockedContract(t *testing.T) {
 	cases := []struct {
 		severity HealthSeverity

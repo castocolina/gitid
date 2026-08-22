@@ -1797,38 +1797,30 @@ func TestDistinctStageCapturesHaveDifferentContent(t *testing.T) {
 	}
 }
 
-// TestGitStepDisabledHintSuppressedForRealBackend proves that when the
-// real backend's GitStepDisabledReason() returns always=true, the
-// wizardContinueHint ("Continue reviews the Git fragment…") is NOT shown
-// alongside the disabled Continue button — showing a promise the button
-// can never fulfill is a contradictory copy (UI-REVIEW HIGH Pillar 1
-// finding). The dummy path (always=false) still shows the hint.
+// TestGitStepDisabledHintSuppressedForRealBackend proves that wizardContinueHint
+// is always visible on the Git step regardless of whether the backend reports
+// always-disabled=true. Per FIELDS.md:159-164 and the 03-13 correction, BOTH
+// hint rows (Skip and Continue) are always rendered alongside the disabled
+// reason. The 03-12 suppression was incorrect — the hint describes what
+// Continue will do when Phase-4 lands, not a false promise.
 func TestGitStepDisabledHintSuppressedForRealBackend(t *testing.T) {
 	// disabledBackend returns always=true — simulates the real binary's
 	// Phase-3 state where Git backend is not yet wired.
-	//
-	// Navigate to step 2 by using an offline-stage backend so we can
-	// advance through both test stages without real SSH.
 	a := openWizardAtGitStep(t, disabledGitBackend{stubBackend{}})
 	view := appView(a)
-	// The disabled Continue reason must still appear (it word-wraps in the
-	// fixed 62-col pane, so assert each piece separately).
+	// The disabled Continue reason must still appear.
 	if !strings.Contains(view, "arrives with the next build") {
 		t.Errorf("disabled Continue reason must still appear, got:\n%s", view)
 	}
-	// The contradictory future-promise hint must NOT appear when Continue is
-	// permanently disabled (always=true). The hint is a single-line constant
-	// that starts with "Continue reviews" — check the non-wrapping prefix.
-	if strings.Contains(view, "Continue reviews the Git fragment") {
-		t.Errorf("wizardContinueHint must be suppressed when Continue is always-disabled; got:\n%s", view)
+	// 03-13 correction: the Continue hint must ALWAYS appear (FIELDS.md:159-164).
+	if !strings.Contains(view, "Continue reviews the Git fragment") {
+		t.Errorf("wizardContinueHint must always appear on Git step (03-13 correction); got:\n%s", view)
 	}
-
-	// Prove the dummy path (always=false) still shows the hint.
+	// Prove the dummy path (always=false) also shows the hint.
 	b := openWizardAtGitStep(t, stubBackend{})
 	dummyView := appView(b)
-	// The dummy path (always-disabled=false) must show the continue hint.
 	if !strings.Contains(dummyView, "Continue reviews the Git fragment") {
-		t.Errorf("wizardContinueHint must appear in dummy path (always-disabled=false):\n%s", dummyView)
+		t.Errorf("wizardContinueHint must appear in dummy path:\n%s", dummyView)
 	}
 }
 
@@ -1874,6 +1866,212 @@ func openWizardAtGitStep(t *testing.T, b Backend) App {
 		t.Fatalf("wizard did not reach step 2 (Git step); view:\n%s", appView(a))
 	}
 	return a
+}
+
+// ---------------------------------------------------------------------------
+// 03-13: Completed proof viewport, warning/failure semantics, Git hint.
+// ---------------------------------------------------------------------------
+
+// TestCompletedStage1ProofViewport proves that the completed stage-1 view
+// (testRunning2: stage-1 answered, stage-2 pending) exposes the exact
+// captured output without ansi.Truncate "…" substitution. The stage-1
+// Detail ("Hi user!") must appear verbatim in the rendered body.
+func TestCompletedStage1ProofViewport(t *testing.T) {
+	a := NewApp(stubBackend{})
+	m, _ := a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	a = m.(App)
+	// Open wizard, advance to step 1.
+	a = wizardToStep2(t, a)
+	// Inject Enter (testIdle → testRunning1) then deliver stage-1 result.
+	a, _ = press(t, a, "enter")
+	b := stubBackend{}
+	spec := identModel(t, a).wizard.spec()
+	stage1Result := TestResultView{
+		Outcome: TestOutcomePass,
+		Command: b.Stage1Command(spec),
+		Detail:  "Hi user! You've successfully authenticated.",
+	}
+	m2, _ := a.Update(WizardStageMsg{Stage: 1, Result: stage1Result})
+	a = m2.(App) // testRunning2: stage-1 done, stage-2 pending
+
+	view := stripANSI(appView(a))
+	// The stage-1 Detail must appear verbatim — no ellipsis substitution.
+	if !strings.Contains(view, "Hi user!") {
+		t.Errorf("stage-1 detail 'Hi user!' must be visible in completed stage-1 view; got:\n%s", view)
+	}
+	// The leading part of the command must appear (may be truncated at
+	// terminal edge but never replaced with "…").
+	if !strings.Contains(view, "ssh") {
+		t.Errorf("stage-1 command prefix 'ssh' must be visible; got:\n%s", view)
+	}
+	// Must NOT substitute ellipsis on the output line itself.
+	lines := strings.Split(view, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "Hi user!") && strings.HasSuffix(strings.TrimSpace(line), "…") {
+			t.Errorf("stage-1 detail line must not end with ellipsis substitution: %q", line)
+		}
+	}
+}
+
+// TestCompletedStage2ResolutionProof proves that after both stages complete,
+// the resolved identityfile field is visible in the view (TEST-02). Also
+// proves the "Next: Git identity" affordance confirms testStage2.
+func TestCompletedStage2ResolutionProof(t *testing.T) {
+	a := openWizardAtTestStage2(t, stubBackend{})
+	view := stripANSI(appView(a))
+	// identityfile must appear (stage-2 resolution proof — ssh -G output).
+	if !strings.Contains(view, "identityfile") {
+		t.Errorf("stage-2 resolution proof 'identityfile' must be visible; got:\n%s", view)
+	}
+	// "Next: Git identity" affordance proves we're in testStage2.
+	if !strings.Contains(view, "Next: Git identity") {
+		t.Errorf("testStage2 must show 'Next: Git identity'; got:\n%s", view)
+	}
+	// No ellipsis substitution on the identityfile line.
+	lines := strings.Split(view, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "identityfile") && strings.HasSuffix(strings.TrimSpace(line), "…") {
+			t.Errorf("identityfile line must not end with ellipsis substitution: %q", line)
+		}
+	}
+}
+
+// TestReachableSemanticWarning proves the D-02 ReachableNotUploaded state
+// renders yellow warning glyph ('!'), the frozen copy word, and offers the
+// copy action — never the red hard-failure treatment.
+func TestReachableSemanticWarning(t *testing.T) {
+	a := NewApp(stubBackend{})
+	m, _ := a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	a = m.(App)
+	a = wizardToStep2(t, a)
+	a, _ = press(t, a, "enter")
+	b := stubBackend{}
+	spec := identModel(t, a).wizard.spec()
+	// Inject ReachableNotUploaded stage-1.
+	m2, _ := a.Update(WizardStageMsg{Stage: 1, Result: TestResultView{
+		Outcome: TestOutcomeReachableNotUploaded,
+		Command: b.Stage1Command(spec),
+		Detail:  "git@ssh.github.com: Permission denied (publickey).",
+	}})
+	a = m2.(App)
+	// testRunning2: inject ReachableNotUploaded stage-2.
+	m3, _ := a.Update(WizardStageMsg{Stage: 2, Result: TestResultView{
+		Outcome: TestOutcomeReachableNotUploaded,
+		Command: b.Stage2Command(spec),
+		Detail:  "identityfile " + spec.KeyPath,
+	}})
+	a = m3.(App)
+
+	view := appView(a)
+	plain := stripANSI(view)
+	// Must show yellow warning text (D-02 frozen copy).
+	if !strings.Contains(plain, "! Reachable — key not uploaded yet") {
+		t.Errorf("ReachableNotUploaded must show warning copy; got:\n%s", plain)
+	}
+	// Must NOT show red hard-failure glyph alone in context of warning state.
+	if !strings.Contains(plain, "! Reachable") {
+		t.Errorf("warning state missing '! Reachable' glyph+word; got:\n%s", plain)
+	}
+	// Warning state must show copy affordance.
+	if !strings.Contains(plain, "copy public key") {
+		t.Errorf("ReachableNotUploaded must offer 'copy public key'; got:\n%s", plain)
+	}
+	// Must NOT show hard-failure-specific copy.
+	if strings.Contains(plain, "The connection failed") {
+		t.Errorf("warning state must not show hard-failure copy; got:\n%s", plain)
+	}
+}
+
+// TestFailureSemanticError proves the D-01 hard Failure state renders red
+// glyph ('✗'), the failure copy, and a retry affordance — not the copy action.
+func TestFailureSemanticError(t *testing.T) {
+	a := NewApp(stubBackend{})
+	m, _ := a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	a = m.(App)
+	a = wizardToStep2(t, a)
+	a, _ = press(t, a, "enter")
+	b := stubBackend{}
+	spec := identModel(t, a).wizard.spec()
+	// Inject hard Failure stage-1 (timeout-like output).
+	m2, _ := a.Update(WizardStageMsg{Stage: 1, Result: TestResultView{
+		Outcome: TestOutcomeFailure,
+		Command: b.Stage1Command(spec),
+		Detail:  "connect to host ssh.github.com port 443: Connection timed out",
+	}})
+	a = m2.(App)
+
+	view := appView(a)
+	plain := stripANSI(view)
+	// Must show red failure glyph.
+	if !strings.Contains(plain, "✗") {
+		t.Errorf("hard Failure must show red '✗' glyph; got:\n%s", plain)
+	}
+	// Must show failure copy.
+	if !strings.Contains(plain, "The connection failed") {
+		t.Errorf("hard Failure must show failure copy; got:\n%s", plain)
+	}
+	// Must show retry affordance.
+	if !strings.Contains(plain, "Retry (Enter)") {
+		t.Errorf("hard Failure must offer 'Retry (Enter)'; got:\n%s", plain)
+	}
+	// Must NOT show copy-public-key (only offered on warning path).
+	if strings.Contains(plain, "copy public key") {
+		t.Errorf("hard Failure must not offer 'copy public key'; got:\n%s", plain)
+	}
+	// Must NOT show warning copy.
+	if strings.Contains(plain, "! Reachable") {
+		t.Errorf("hard Failure must not show warning copy; got:\n%s", plain)
+	}
+}
+
+// TestGitContinueHintAlwaysVisible proves the frozen wizardContinueHint is
+// always visible on the Git step (D-19 review correction: the hint is required
+// alongside the disabled reason, not suppressed — FIELDS.md:159-164). The
+// D-19 scoped divergence changes only the disabled REASON, not the hint.
+func TestGitContinueHintAlwaysVisible(t *testing.T) {
+	// Test with always-disabled backend (real binary behavior).
+	aDisabled := openWizardAtGitStep(t, disabledGitBackend{stubBackend{}})
+	viewDisabled := appView(aDisabled)
+	// Continue hint MUST appear even when Continue is always-disabled.
+	if !strings.Contains(viewDisabled, "Continue reviews the Git fragment") {
+		t.Errorf("wizardContinueHint must always appear on Git step (D-19 correction); got:\n%s", stripANSI(viewDisabled))
+	}
+	// The disabled reason must still appear.
+	if !strings.Contains(viewDisabled, "arrives with the next build") {
+		t.Errorf("D-19 disabled reason must appear; got:\n%s", stripANSI(viewDisabled))
+	}
+
+	// Test with dummy (always-disabled=false) — hint also appears.
+	aDummy := openWizardAtGitStep(t, stubBackend{})
+	viewDummy := appView(aDummy)
+	if !strings.Contains(viewDummy, "Continue reviews the Git fragment") {
+		t.Errorf("wizardContinueHint must appear in dummy path; got:\n%s", stripANSI(viewDummy))
+	}
+}
+
+// openWizardAtTestStage2 opens the wizard and navigates to testStage2
+// (both stages complete, pass outcome). Reuses openWizardAtGitStep but
+// stops before pressing Enter to advance to step 2.
+func openWizardAtTestStage2(t *testing.T, b Backend) App {
+	t.Helper()
+	a := NewApp(b)
+	m0, _ := a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	a = m0.(App)
+	a = wizardToStep2(t, a)
+	a, _ = press(t, a, "enter") // testIdle → testRunning1
+	spec := identModel(t, a).wizard.spec()
+	m3, _ := a.Update(WizardStageMsg{Stage: 1, Result: TestResultView{
+		Outcome: TestOutcomePass,
+		Command: b.Stage1Command(spec),
+		Detail:  "Hi user! You've successfully authenticated.",
+	}})
+	a = m3.(App)
+	m4, _ := a.Update(WizardStageMsg{Stage: 2, Result: TestResultView{
+		Outcome: TestOutcomePass,
+		Command: b.Stage2Command(spec),
+		Detail:  "identityfile " + spec.KeyPath,
+	}})
+	return m4.(App)
 }
 
 // TestReusePickerManualPathRejectsInvalidCandidate proves an unrecognized
