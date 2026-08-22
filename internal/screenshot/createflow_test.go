@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/castocolina/gitid/internal/dummytui"
 	"github.com/castocolina/gitid/internal/screenshot"
@@ -151,6 +152,21 @@ func TestExtractRegion_ConnectivityOutputIncludesHardFailure(t *testing.T) {
 		if !strings.Contains(region, marker) {
 			t.Errorf("hard-failure connectivity region must contain %q; got:\n%s", marker, region)
 		}
+	}
+}
+
+func TestExtractRegion_PreservesUTF8AfterPaneSeparator(t *testing.T) {
+	screen := strings.Join([]string{
+		"header",
+		"breadcrumb",
+		"│ Shift+→",
+		"│ Alias prefix [acme]",
+		"│ Key Generate",
+	}, "\n")
+
+	region := screenshot.ExtractRegion(screen, screenshot.RegionFormFields)
+	if !utf8.ValidString(region) {
+		t.Fatalf("ExtractRegion must preserve valid UTF-8 after the pane separator: %q", region)
 	}
 }
 

@@ -228,7 +228,7 @@ func rightPane(line string) string {
 	if rawIdx < 0 || rawIdx >= len(line) {
 		return line
 	}
-	return line[rawIdx+1:] // skip the │ itself
+	return line[rawIdx+len("│"):] // skip the complete UTF-8 pane separator
 }
 
 // ansiOffsetToRaw maps an offset in the ANSI-stripped string to the
