@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -268,6 +269,16 @@ func generateCandidate(sourceCommit, outputDir string) error {
 		FontSHA256: sha256Hex(font),
 		Theme:      "dracula",
 	}
+	// Build provenance content from the capture inputs. EVIDENCE.json records
+	// the exact argv, tool versions, source commit, and per-screen routes.
+	// REGION-DIFFS.json records live-vs-approved-tui PNG SHA comparisons.
+	// Both are declared as manifest members; REVIEW-PROVENANCE.json is added
+	// later by the finalization step after independent reviews complete.
+	evidence := buildEvidenceJSON(sourceCommit, capture, panels)
+	// REGION-DIFFS.json needs panel SHA values from the to-be-generated
+	// manifest. Use a placeholder; it is regenerated in a post-publish pass.
+	regionDiffs := buildRegionDiffsJSONPlaceholder(sourceCommit)
+
 	result, err := screenshot.GenerateVisualPacket(screenshot.PacketOptions{
 		SourceCommit:   sourceCommit,
 		ApprovalCommit: screenshot.PacketApprovalCommit,
@@ -275,6 +286,10 @@ func generateCandidate(sourceCommit, outputDir string) error {
 		OutputDir:      outputDir,
 		Clock: func() time.Time {
 			return mustParseTime(fixedCaptureTime)
+		},
+		ProvenanceFiles: map[string][]byte{
+			"EVIDENCE.json":     evidence,
+			"REGION-DIFFS.json": regionDiffs,
 		},
 	}, panels, capture)
 	if err != nil {
@@ -284,6 +299,84 @@ func generateCandidate(sourceCommit, outputDir string) error {
 		return fmt.Errorf("validating generated candidate: %w", err)
 	}
 	return nil
+}
+
+// buildEvidenceJSON builds the EVIDENCE.json content for a packet.
+// This records the exact argv, tool versions, source hash, approval hash,
+// and per-screen routes used to produce the evidence (D-22, D-24).
+func buildEvidenceJSON(sourceCommit string, capture screenshot.PacketCapture, panels []screenshot.VisualPanel) []byte {
+	type ScreenEvidence struct {
+		ScreenID string `json:"screen_id"`
+		Surface  string `json:"surface"`
+		Route    string `json:"route,omitempty"`
+	}
+	type Evidence struct {
+		Version        string                  `json:"version"`
+		SourceCommit   string                  `json:"source_commit"`
+		ApprovalCommit string                  `json:"approval_commit"`
+		CapturedAt     string                  `json:"captured_at"`
+		Commands       []string                `json:"commands"`
+		ToolVersions   []screenshot.PacketTool `json:"tool_versions"`
+		Geometry       string                  `json:"geometry"`
+		FontSHA256     string                  `json:"font_sha256"`
+		Theme          string                  `json:"theme"`
+		Screens        []ScreenEvidence        `json:"screens"`
+	}
+
+	routes := screenshot.ApprovedHTMLRoutes()
+	screens := make([]ScreenEvidence, 0, len(panels))
+	for _, p := range panels {
+		route := ""
+		if p.Surface == "approved-html" {
+			route = routes[p.ScreenID]
+		}
+		screens = append(screens, ScreenEvidence{
+			ScreenID: p.ScreenID,
+			Surface:  p.Surface,
+			Route:    route,
+		})
+	}
+
+	ev := Evidence{
+		Version:        "03-12.1",
+		SourceCommit:   sourceCommit,
+		ApprovalCommit: screenshot.PacketApprovalCommit,
+		CapturedAt:     fixedCaptureTime,
+		Commands:       capture.Commands,
+		ToolVersions:   capture.ToolVersions,
+		Geometry:       capture.Geometry,
+		FontSHA256:     capture.FontSHA256,
+		Theme:          capture.Theme,
+		Screens:        screens,
+	}
+	data, err := json.MarshalIndent(ev, "", "  ")
+	if err != nil {
+		panic("buildEvidenceJSON: " + err.Error())
+	}
+	return data
+}
+
+// buildRegionDiffsJSONPlaceholder builds a placeholder REGION-DIFFS.json.
+// The real content is populated after the final packet is published, since
+// it references panel SHA-256s that are only known after generation.
+func buildRegionDiffsJSONPlaceholder(sourceCommit string) []byte {
+	type RegionDiffs struct {
+		Version      string        `json:"version"`
+		SourceCommit string        `json:"source_commit"`
+		Note         string        `json:"note"`
+		Screens      []interface{} `json:"screens"`
+	}
+	rd := RegionDiffs{
+		Version:      "03-12.1",
+		SourceCommit: sourceCommit,
+		Note:         "SHA-256 comparison of live vs approved-tui panel PNGs. Populated after packet generation.",
+		Screens:      []interface{}{},
+	}
+	data, err := json.MarshalIndent(rd, "", "  ")
+	if err != nil {
+		panic("buildRegionDiffsJSONPlaceholder: " + err.Error())
+	}
+	return data
 }
 
 func resolveFreeze() (string, error) {

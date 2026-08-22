@@ -111,6 +111,10 @@ type PacketOptions struct {
 	FontFile string
 	// Theme is the freeze theme (e.g. "dracula").
 	Theme string
+	// ProvenanceFiles is an optional map of filename → content for extra
+	// provenance members (e.g. EVIDENCE.json, REGION-DIFFS.json). Each file
+	// is written to the packet root and declared in the manifest.
+	ProvenanceFiles map[string][]byte
 }
 
 // PacketResult is returned by GeneratePacket.
@@ -147,7 +151,7 @@ func GenerateVisualPacket(opts PacketOptions, panels []VisualPanel, capture Pack
 	}
 
 	seen := make(map[string]bool, ValidatePanelCount)
-	members := make([]PacketMember, 0, ValidatePanelCount*2)
+	members := make([]PacketMember, 0, ValidatePanelCount*2+len(opts.ProvenanceFiles))
 	for _, panel := range panels {
 		if !validPacketSurface(panel.Surface) {
 			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: unknown panel surface %q", panel.Surface)
@@ -194,6 +198,18 @@ func GenerateVisualPacket(opts PacketOptions, panels []VisualPanel, capture Pack
 				return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: missing panel %s/%s", surface, id)
 			}
 		}
+	}
+	// Write optional provenance files (EVIDENCE.json, REGION-DIFFS.json, etc.)
+	// These are declared in the manifest and validated by ValidatePacket.
+	for name, content := range opts.ProvenanceFiles {
+		if err := writeAndSync(filepath.Join(opts.OutputDir, name), content); err != nil {
+			return PacketResult{}, fmt.Errorf("screenshot: GenerateVisualPacket: writing provenance %q: %w", name, err)
+		}
+		members = append(members, PacketMember{
+			Path:   name,
+			SHA256: sha256Hex(content),
+			Kind:   "provenance",
+		})
 	}
 	sort.Slice(members, func(i, j int) bool { return members[i].Path < members[j].Path })
 
@@ -456,8 +472,11 @@ func ValidatePacket(packetDir string) (Packet, error) {
 }
 
 func validateVisualPacket(pkt Packet) error {
-	if len(pkt.Members) != ValidatePanelCount*2 {
-		return fmt.Errorf("screenshot: ValidatePacket: visual packet has %d members, want %d text/PNG members", len(pkt.Members), ValidatePanelCount*2)
+	// A visual packet must have at least 48 panel members (24 text + 24 PNG).
+	// Additional provenance members (EVIDENCE.json, REGION-DIFFS.json, etc.)
+	// are allowed beyond that minimum.
+	if len(pkt.Members) < ValidatePanelCount*2 {
+		return fmt.Errorf("screenshot: ValidatePacket: visual packet has %d members, want at least %d text/PNG members", len(pkt.Members), ValidatePanelCount*2)
 	}
 	if pkt.Capture.Geometry == "" || pkt.Capture.FontSHA256 == "" || pkt.Capture.Theme == "" || len(pkt.Capture.Commands) == 0 || len(pkt.Capture.ToolVersions) == 0 {
 		return fmt.Errorf("screenshot: ValidatePacket: visual packet has incomplete capture provenance")
