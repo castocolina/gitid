@@ -1711,6 +1711,171 @@ func TestReusePickerManualPathRow(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// 03-12: Host preview visibility, distinct stage captures, Git copy.
+// ---------------------------------------------------------------------------
+
+// TestHostPreview100x30ShowsIdentitiesOnlyYes proves that the live Host-block
+// preview inside the wizard's step-0 pane at exactly 100×30 shows
+// "IdentitiesOnly yes" without ellipsis replacement (UI-REVIEW Critical/HIGH
+// Pillar 5 finding). The stub backend's block is 6 lines; the real backend
+// adds a provider marker making it 7 — maxLines must accommodate both.
+func TestHostPreview100x30ShowsIdentitiesOnlyYes(t *testing.T) {
+	a := NewApp(stubBackend{})
+	// Resize to exactly the design minimum geometry (100×30).
+	model, _ := a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	a, ok := model.(App)
+	if !ok {
+		t.Fatalf("Update returned %T, want App", model)
+	}
+	// Open wizard (press "n").
+	a, _ = press(t, a, "n")
+	view := appView(a)
+	if !strings.Contains(view, "IdentitiesOnly yes") {
+		t.Errorf("Host preview at 100×30 must show IdentitiesOnly yes without ellipsis (UI-REVIEW Critical Pillar 5)\nview:\n%s", view)
+	}
+	// The preview must also show IdentityFile (proves non-clipping).
+	if !strings.Contains(view, "IdentityFile") {
+		t.Errorf("Host preview at 100×30 must show IdentityFile\nview:\n%s", view)
+	}
+	// The whole frame must still be exactly 30 rows (geometry constraint).
+	lines := strings.Split(a.View().Content, "\n")
+	if len(lines) != 30 {
+		t.Errorf("frame at 100×30 has %d rows, want exactly 30", len(lines))
+	}
+}
+
+// TestDistinctStageCapturesHaveDifferentContent proves that stage-1 and
+// stage-2 states are rendered differently by the wizard. The distinct states
+// are:
+//   - stage-1 evidence: after stage-1 result received, before stage-2 result
+//     (testRunning2 — shows stage-1 outcome + "… running ssh…" for in-progress 2)
+//   - stage-2 evidence: after both results received (testStage2 — shows both
+//     outcomes + "Next: Git identity (Enter)")
+//
+// UI-REVIEW Critical Pillar 2 finding: the prior evidence publisher called
+// runStages() for BOTH stage IDs and waited for "identityfile" in both,
+// meaning both captures reached testStage2 and were byte-identical.
+func TestDistinctStageCapturesHaveDifferentContent(t *testing.T) {
+	// Navigate to step 1 (Test connection screen).
+	a := wizardToStep2(t, identitiesApp())
+	// Enter in testIdle → testRunning1.
+	a, _ = press(t, a, "enter")
+	b := stubBackend{}
+	spec := identModel(t, a).wizard.spec()
+
+	// Deliver stage-1 result — D-04 auto-chain moves to testRunning2 (stage-2
+	// starts immediately). Capture the stage-1 view in testRunning2 state.
+	m3, _ := a.Update(WizardStageMsg{Stage: 1, Result: b.stage1Result(spec)})
+	stage1App := m3.(App)
+	stage1View := appView(stage1App)
+
+	// testRunning2 shows stage-1 outcome line + "… running ssh…" for stage-2.
+	if !strings.Contains(stage1View, "running ssh") {
+		t.Errorf("stage-1 evidence view (testRunning2) must show '… running ssh…'; got:\n%s", stage1View)
+	}
+	// testRunning2 must NOT yet show "Next: Git identity" (stage-2 not resolved).
+	if strings.Contains(stage1View, "Next: Git identity") {
+		t.Error("stage-1 evidence view (testRunning2) must NOT show 'Next: Git identity'")
+	}
+
+	// Deliver stage-2 result → testStage2.
+	m4, _ := stage1App.Update(WizardStageMsg{Stage: 2, Result: b.stage2Result(spec)})
+	stage2App := m4.(App)
+	stage2View := appView(stage2App)
+
+	// testStage2 shows "Next: Git identity (Enter)" and the resolution proof.
+	if !strings.Contains(stage2View, "Next: Git identity") {
+		t.Errorf("stage-2 evidence view (testStage2) must show 'Next: Git identity'; got:\n%s", stage2View)
+	}
+	if !strings.Contains(stage2View, "identityfile") {
+		t.Errorf("stage-2 evidence view must show identityfile proof; got:\n%s", stage2View)
+	}
+	// The two views must be genuinely distinct content.
+	if stage1View == stage2View {
+		t.Error("stage-1 (testRunning2) and stage-2 (testStage2) evidence views must differ")
+	}
+}
+
+// TestGitStepDisabledHintSuppressedForRealBackend proves that when the
+// real backend's GitStepDisabledReason() returns always=true, the
+// wizardContinueHint ("Continue reviews the Git fragment…") is NOT shown
+// alongside the disabled Continue button — showing a promise the button
+// can never fulfill is a contradictory copy (UI-REVIEW HIGH Pillar 1
+// finding). The dummy path (always=false) still shows the hint.
+func TestGitStepDisabledHintSuppressedForRealBackend(t *testing.T) {
+	// disabledBackend returns always=true — simulates the real binary's
+	// Phase-3 state where Git backend is not yet wired.
+	//
+	// Navigate to step 2 by using an offline-stage backend so we can
+	// advance through both test stages without real SSH.
+	a := openWizardAtGitStep(t, disabledGitBackend{stubBackend{}})
+	view := appView(a)
+	// The disabled Continue reason must still appear (it word-wraps in the
+	// fixed 62-col pane, so assert each piece separately).
+	if !strings.Contains(view, "arrives with the next build") {
+		t.Errorf("disabled Continue reason must still appear, got:\n%s", view)
+	}
+	// The contradictory future-promise hint must NOT appear when Continue is
+	// permanently disabled (always=true). The hint is a single-line constant
+	// that starts with "Continue reviews" — check the non-wrapping prefix.
+	if strings.Contains(view, "Continue reviews the Git fragment") {
+		t.Errorf("wizardContinueHint must be suppressed when Continue is always-disabled; got:\n%s", view)
+	}
+
+	// Prove the dummy path (always=false) still shows the hint.
+	b := openWizardAtGitStep(t, stubBackend{})
+	dummyView := appView(b)
+	// The dummy path (always-disabled=false) must show the continue hint.
+	if !strings.Contains(dummyView, "Continue reviews the Git fragment") {
+		t.Errorf("wizardContinueHint must appear in dummy path (always-disabled=false):\n%s", dummyView)
+	}
+}
+
+// disabledGitBackend wraps stubBackend so GitStepDisabledReason reports
+// always=true — the D-19 real-backend behavior (Phase-3: no Git backend yet).
+type disabledGitBackend struct{ stubBackend }
+
+func (disabledGitBackend) GitStepDisabledReason() (string, bool) {
+	return "— Git configuration arrives with the next build", true
+}
+
+// openWizardAtGitStep opens the create wizard with the given backend and
+// navigates to step 2 (Git identity step) by injecting stage results
+// directly (bypassing tea.Tick timers). Works with any Backend.
+func openWizardAtGitStep(t *testing.T, b Backend) App {
+	t.Helper()
+	a := NewApp(b)
+	// Apply design-minimum geometry so layout renders correctly.
+	m0, _ := a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	a = m0.(App)
+	a = wizardToStep2(t, a)     // → step 1 (test-connection screen)
+	a, _ = press(t, a, "enter") // testIdle → testRunning1
+	spec := identModel(t, a).wizard.spec()
+	// Inject stage-1 pass result directly.
+	stage1Msg := WizardStageMsg{Stage: 1, Result: TestResultView{
+		Outcome: TestOutcomePass,
+		Command: b.Stage1Command(spec),
+		Detail:  "Hi acme2! You've successfully authenticated.",
+	}}
+	m3, _ := a.Update(stage1Msg)
+	a = m3.(App)
+	// Inject stage-2 pass result directly (auto-chain already set testRunning2).
+	stage2Msg := WizardStageMsg{Stage: 2, Result: TestResultView{
+		Outcome: TestOutcomePass,
+		Command: b.Stage2Command(spec),
+		Detail:  "identityfile " + spec.KeyPath,
+	}}
+	m4, _ := a.Update(stage2Msg)
+	a = m4.(App)
+	// Advance from testStage2 to step 2 (Git identity step).
+	a, _ = press(t, a, "enter")
+	if !strings.Contains(appView(a), "Step 3/4") {
+		t.Fatalf("wizard did not reach step 2 (Git step); view:\n%s", appView(a))
+	}
+	return a
+}
+
 // TestReusePickerManualPathRejectsInvalidCandidate proves an unrecognized
 // manual path shows its rejection inline and blocks advance — the picker's
 // half of the T-03-13 symlink-rejection contract the Backend enforces.

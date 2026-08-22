@@ -67,10 +67,36 @@ var CreateFlowScreenIDs = []string{
 	"reuse-key-vs-generate", // step 0: D-10 picker, populated (backend.ScanReusableKeys())
 	"reuse-manual-path",     // step 0: D-10 picker's trailing manual-path row selected
 	"mouse-focused-field",   // step 0: a field focused via a REAL synthesized mouse click
-	"test-stage1-direct",    // step 1: stage 1 (TEST-01) outcome rendered
-	"test-stage2-by-alias",  // step 1: stage 2 (TEST-02) outcome rendered
+	"test-stage1-direct",    // step 1: stage 1 (TEST-01) outcome, captured at testRunning2
+	"test-stage2-by-alias",  // step 1: stage 2 (TEST-02) outcome, captured at testStage2
 	"git-form-demo",         // step 2: the demo'd Git-identity step (D-18/D-19)
 	"confirm-write",         // step 3: the review/confirm-write ceremony (state A)
+}
+
+// ApprovedHTMLRoutes returns the canonical map from logical screen ID to the
+// approved reference route in the HTML mockup. Each route is the full
+// fragment path (e.g. "/create-flow/ssh-form-filled") so callers can use it
+// directly in a URLFragment without further transformation.
+//
+// The routes are specified by the plan's interface contract and the approved
+// Phase-2 mockup route registry:
+//   - reuse-manual-path: an interaction variant of /create-flow/reuse-key-vs-generate
+//     (NOT ssh-form-blank-prefix — that is a different form state)
+//   - mouse-focused-field: an interaction variant of /create-flow/ssh-form-filled
+//     (NOT ssh-form-empty — the mouse captures the FILLED form with focus moved)
+//   - git-form-demo: uses the /git-screen/git-form-filled route
+//     (NOT create-flow/backup-notice — git-form-demo is the git-screen surface)
+func ApprovedHTMLRoutes() map[string]string {
+	return map[string]string{
+		"ssh-form-filled":       "/create-flow/ssh-form-filled",
+		"reuse-key-vs-generate": "/create-flow/reuse-key-vs-generate",
+		"reuse-manual-path":     "/create-flow/reuse-key-vs-generate", // manual-path interaction variant
+		"mouse-focused-field":   "/create-flow/ssh-form-filled",       // mouse-focus interaction variant
+		"test-stage1-direct":    "/create-flow/test-stage1-direct",
+		"test-stage2-by-alias":  "/create-flow/test-stage2-by-alias",
+		"git-form-demo":         "/git-screen/git-form-filled", // git-screen surface, not create-flow
+		"confirm-write":         "/create-flow/confirm-write",
+	}
 }
 
 // step drives model with msg, then synchronously drains any cmd chain the

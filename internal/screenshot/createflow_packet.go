@@ -428,6 +428,11 @@ func ValidatePacket(packetDir string) (Packet, error) {
 		if err := validateVisualPacket(pkt); err != nil {
 			return Packet{}, err
 		}
+		// Detect duplicate PNG bytes across different screen IDs on same surface
+		// (UI-REVIEW Critical: stage-1 and stage-2 had identical PNG hashes).
+		if err := validateDuplicatePNGBytes(packetDir, pkt); err != nil {
+			return Packet{}, err
+		}
 		if err := filepath.Walk(packetDir, func(path string, info os.FileInfo, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
@@ -556,3 +561,66 @@ func writeAndSync(path string, data []byte) error {
 // PacketApprovalCommit is the full SHA of the Phase-2 design approval commit.
 // Packet generation must capture from this commit, never from current HEAD.
 const PacketApprovalCommit = "3c3130e404329cf42baafdf63a6c22758437edc6"
+
+// requiredProvenanceFiles are the packet member paths that every final
+// evidence packet must declare and hash. These were absent from the 03-11
+// packet (UI-REVIEW Critical/High: EVIDENCE.json, REGION-DIFFS.json, and
+// REVIEW-PROVENANCE.json each reported exists=False declared=False).
+var requiredProvenanceFiles = []string{
+	"EVIDENCE.json",
+	"REGION-DIFFS.json",
+	"REVIEW-PROVENANCE.json",
+}
+
+// ValidateProvenanceRecords checks that the packet declares all required
+// provenance files (EVIDENCE.json, REGION-DIFFS.json, REVIEW-PROVENANCE.json).
+// Returns an error describing the first missing file.
+func ValidateProvenanceRecords(pkt Packet) error {
+	declared := make(map[string]bool, len(pkt.Members))
+	for _, m := range pkt.Members {
+		declared[m.Path] = true
+	}
+	for _, required := range requiredProvenanceFiles {
+		if !declared[required] {
+			return fmt.Errorf("screenshot: ValidateProvenanceRecords: required provenance file %q is not declared in the packet manifest", required)
+		}
+	}
+	return nil
+}
+
+// validateDuplicatePNGBytes detects differently-named screens on the same
+// surface that share identical PNG bytes — a sign that both were captured from
+// the same terminal state (UI-REVIEW Critical Pillar 2 finding).
+// It reads actual file bytes from disk rather than trusting manifest SHA-256
+// values (which could be stale if files were modified after generation).
+func validateDuplicatePNGBytes(packetDir string, pkt Packet) error {
+	// Map actual on-disk PNG SHA-256 → first (surface, screenID) that owned it.
+	type screenKey struct{ surface, screenID string }
+	seen := make(map[string]screenKey)
+	for _, m := range pkt.Members {
+		if !strings.HasSuffix(m.Path, ".png") {
+			continue
+		}
+		parts := strings.Split(filepath.ToSlash(m.Path), "/")
+		if len(parts) != 2 || !validPacketSurface(parts[0]) {
+			continue
+		}
+		surface := parts[0]
+		absPath := filepath.Join(packetDir, m.Path)
+		data, err := os.ReadFile(absPath) //nolint:gosec // packetDir is gitid-controlled (G304)
+		if err != nil {
+			continue // missing file handled by hash-check above
+		}
+		actualHash := sha256Hex(data)
+		key := screenKey{surface: surface, screenID: m.ScreenID}
+		if prior, exists := seen[actualHash]; exists {
+			if prior.surface == surface && prior.screenID != m.ScreenID {
+				return fmt.Errorf("screenshot: ValidatePacket: duplicate PNG bytes (SHA-256 %s) for differently-named screens %q and %q on surface %q — both were likely captured from the same terminal state",
+					actualHash, prior.screenID, m.ScreenID, surface)
+			}
+		} else {
+			seen[actualHash] = key
+		}
+	}
+	return nil
+}

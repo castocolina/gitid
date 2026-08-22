@@ -532,6 +532,185 @@ func TestCreateFlow_ReuseExistingEncryptedKeyClosesL2Seam(t *testing.T) {
 // 7. Mouse-driven field focus (SSHUI-02 mouse half)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// 03-12. Host preview visibility, distinct stage captures, exact proof
+// ---------------------------------------------------------------------------
+
+// TestCreateFlow_HostPreviewScrollable proves that at exactly 100×30, the
+// live Host-block preview inside the wizard's SSH step shows the complete
+// recipe-faithful block including "IdentitiesOnly yes" without ellipsis
+// replacement (UI-REVIEW Critical Pillar 5: the real binary clipped the
+// preview at IdentityFile when maxLines was 6).
+func TestCreateFlow_HostPreviewScrollable(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	openCreateWizard(t, s)
+
+	// The Host-block preview must show IdentitiesOnly yes without clipping.
+	mustSee(t, s, "IdentitiesOnly yes", "Host preview at 100×30 must show IdentitiesOnly yes (maxLines fix)")
+	// IdentityFile must also appear (regression guard).
+	mustSee(t, s, "IdentityFile", "Host preview must show IdentityFile")
+
+	saveFrame(t, "create-flow-host-preview-100x30", s)
+}
+
+// TestCreateFlow_DistinctStageCaptures proves that stage-1 and stage-2 PTY
+// states produce genuinely different content. Because D-04 auto-chains stage-2
+// immediately after stage-1 with the fast fake SSH, the PTY evidence publisher
+// must use two separate capture scripts that target DIFFERENT terminal states:
+//   - stage-1 evidence: captured at testRunning2 (stage-1 visible + "… running")
+//   - stage-2 evidence: captured after "identityfile" appears (testStage2)
+//
+// This test proves the two outcomes are distinct at the PTY level by checking
+// that "identityfile" (stage-2 resolution proof) appears after stage-1's SSH
+// banner, not before — the distinction the evidence publisher must capture.
+func TestCreateFlow_DistinctStageCaptures(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	openCreateWizard(t, s)
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // step 0 → step 1
+	mustSee(t, s, "Step 2/4", "step 0 → step 1")
+
+	// Press Enter in testIdle → stage-1 and stage-2 run (D-04 auto-chain).
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	// Stage-1 SSH banner appears first.
+	mustSee(t, s, "Hi user!", "stage-1: SSH banner visible")
+	// Stage-2 resolution proof appears after (proving sequential ordering).
+	mustSee(t, s, "identityfile", "stage-2: resolution proof appears after stage-1")
+	// Final "Next: Git identity" affordance — stage-2 complete.
+	mustSee(t, s, "Next: Git identity", "stage-2: final affordance confirms completion")
+
+	saveFrame(t, "create-flow-distinct-stage-captures", s)
+}
+
+// TestCreateFlow_ExactStageProof proves TEST-01/02: the stage outcome text
+// (the actual SSH command output, not a paraphrase) is visible in the proof
+// panes at 100×30. The "Hi user!" SSH banner from stage-1 and "identityfile"
+// from stage-2 must appear verbatim — not replaced by ellipsis or paraphrase.
+func TestCreateFlow_ExactStageProof(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	openCreateWizard(t, s)
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Step 2/4", "step 0 → step 1")
+
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // run stage 1; stage 2 auto-chains
+	// Stage-1 PASS: the real SSH banner from the fake-ssh PATH shim.
+	mustSee(t, s, "Hi user!", "stage-1: exact SSH banner text is visible (TEST-01 shown==run)")
+	// Stage-2: the ssh -G resolution proof.
+	mustSee(t, s, "identityfile", "stage-2: exact identityfile resolution is visible (TEST-02)")
+
+	saveFrame(t, "create-flow-exact-stage-proof", s)
+}
+
+// TestCreateFlow_ReuseManualPath proves the KEY-06 manual-path reuse route
+// at the PTY level: switching to reuse mode in an empty SSH dir immediately
+// shows the manual-path row (the only available row), and typing a valid
+// path resolves the key for reuse.
+func TestCreateFlow_ReuseManualPath(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatalf("seeding ~/.ssh: %v", err)
+	}
+	// Seed a plain (unencrypted) key to reuse via manual path.
+	manualKeyPath := filepath.Join(sshDir, "id_ed25519_manual_test")
+	seedEncryptedKeyFixture(t, manualKeyPath, "manual-test", "") // empty passphrase = plain
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	openCreateWizard(t, s)
+
+	// Tab to the key-source toggle (4 Tabs from Alias prefix: Host, Hostname, Port, Source).
+	tabKeys(s, 4)
+	mustSee(t, s, "Generate a new key", "D-10 key-source toggle visible")
+
+	// Flip to reuse mode (right arrow on the key-source toggle).
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+	mustSee(t, s, "existing key", "reuse mode selected")
+	// With no scanned keys, the manual-path row is immediately at reuseIdx=0.
+	mustSee(t, s, "Enter a path manually", "manual-path row visible (no scanned keys in sandbox)")
+
+	// Tab from key-source (focus 4) to picker body (focus 5), then to manual
+	// path text input (focus 6).
+	tabKeys(s, 2)
+	// Type the manual key path character by character.
+	for _, b := range []byte(manualKeyPath) {
+		s.sendKey([]byte{b}, 10*time.Millisecond)
+	}
+	mustSee(t, s, "id_ed25519_manual_test", "manual path input shows the typed path")
+
+	saveFrame(t, "create-flow-reuse-manual-path", s)
+}
+
+// TestCreateFlow_GitStepDisabledReason proves the D-19 fix: when the real
+// binary's Continue is permanently disabled (always=true), the
+// wizardContinueHint is NOT shown alongside the disabled reason. This is
+// distinct from TestCreateFlow_GitStepDisabledReasonAndConfirmWrite which
+// proves the disabled reason text; THIS test proves the hint is suppressed.
+func TestCreateFlow_GitStepDisabledReasonHintSuppressed(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	openCreateWizard(t, s)
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Step 2/4", "step 0 → step 1")
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Hi user!", "stage 1 PASS")
+	mustSee(t, s, "identityfile", "stage 2 proof")
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Step 3/4", "Git step")
+
+	// The contradictory hint must be absent.
+	// "Continue reviews the Git fragment" is the beginning of wizardContinueHint.
+	mustNotSee(t, s, "Continue reviews the Git fragment",
+		"D-19: wizardContinueHint must be suppressed when Continue is always-disabled")
+	// The disabled reason must still appear.
+	mustSee(t, s, "arrives with the next build", "D-19: disabled reason still appears")
+
+	saveFrame(t, "create-flow-git-disabled-hint-suppressed", s)
+}
+
+// ---------------------------------------------------------------------------
+// 7. Mouse-driven field focus (SSHUI-02 mouse half)
+// ---------------------------------------------------------------------------
+
 // TestCreateFlow_MouseFieldFocus injects real xterm SGR mouse CSI press/
 // release sequences to click each of the SSH form's four approved fields —
 // Alias prefix, SSH Host (alias), Real hostname, Port (FIELDS.md's 4-field

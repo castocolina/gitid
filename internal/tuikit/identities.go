@@ -982,8 +982,15 @@ func hostBlockText(b Backend, host, hostname, port, keyPath string) string {
 // the edit-SSH form (review batch 2, M1; the web shows it simultaneously in
 // both places).
 func renderHostBlockPreview(b Backend, host, hostname, port, keyPath string, width int) string {
+	// maxLines=7 shows the full recipe-shaped Host block including
+	// "IdentitiesOnly yes" and the optional "# gitid: provider=..." marker
+	// without clipping at the 100×30 frame budget (UI-REVIEW Critical Pillar 5
+	// finding: maxLines=6 clipped IdentitiesOnly yes for real-backend captures
+	// whose blocks have 7 lines). Verified row-budget safe: at default step-0
+	// focus (sshFieldPrefix), total body rows = stepper(1) + chord(1) +
+	// form(6) + key(6) + preview border+content+border(9) = 23 ≤ 25.
 	return PreviewBlock("Live Host-block preview (written on confirm)",
-		hostBlockText(b, host, hostname, port, keyPath), false, width, 6)
+		hostBlockText(b, host, hostname, port, keyPath), false, width, 7)
 }
 
 // hostBlockPreview is the wizard's live Host-block preview text — written
@@ -2952,7 +2959,17 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 			wizardButton(wizardSkipButton, w.gitFocus == gitFocusSkip, true, "") + "  " +
 			wizardButton(wizardContinueButton, w.gitFocus == gitFocusContinue, continueEnabled, continueReason) + "\n")
 		b.WriteString(" " + styleFaint.Render(wizardSkipHint) + "\n")
-		b.WriteString(" " + styleFaint.Render(wizardContinueHint))
+		// D-19 / UI-REVIEW HIGH Pillar 1: suppress wizardContinueHint when
+		// Continue is permanently disabled by the real backend (always=true).
+		// Showing "Continue reviews the Git fragment…" alongside "Git
+		// configuration arrives with the next build" is a semantic contradiction
+		// — the hint promises an action the button can never perform. The dummy
+		// path (always=false) keeps the hint because Continue genuinely works
+		// once the form is valid. The Phase-2-frozen SkipHint always renders.
+		_, alwaysDisabled := w.backend.GitStepDisabledReason()
+		if !alwaysDisabled {
+			b.WriteString(" " + styleFaint.Render(wizardContinueHint))
+		}
 	default:
 		b.WriteString(w.ceremony.view(width))
 	}

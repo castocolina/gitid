@@ -273,3 +273,207 @@ func TestPacketApprovalCommitConstant(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// 03-12 Task 2: Strict screen registry and provenance-complete publisher
+// ---------------------------------------------------------------------------
+
+// TestDuplicateNamedScreen proves the publisher rejects two entries on the
+// same surface that share a logical screen name (UI-REVIEW Critical finding:
+// stage-1 and stage-2 had identical PNG hashes because both were advanced to
+// the same terminal state before capture). This test creates exactly 24 panels
+// but with the first and last "live" panels sharing the same screen ID —
+// GenerateVisualPacket must detect the duplicate BEFORE accepting the packet.
+func TestDuplicateNamedScreen(t *testing.T) {
+	dir := t.TempDir()
+	panels := makeMinimalPanels(t, dir)
+	// Replace the last "live" panel (confirm-write) with a second copy of
+	// the first "live" panel (ssh-form-filled) — same surface, same screen ID,
+	// different PNG — so the count stays at 24 but a duplicate exists.
+	lastLiveIdx := len(screenshot.CreateFlowScreenIDs) - 1 // confirm-write
+	dupPNG := makeTinyPNG(t, dir, "dup.png")
+	panels[lastLiveIdx] = screenshot.VisualPanel{
+		Surface:  "live",
+		ScreenID: screenshot.CreateFlowScreenIDs[0], // ssh-form-filled — duplicate
+		Text:     "duplicate text",
+		PNGPath:  dupPNG,
+	}
+
+	outDir := filepath.Join(t.TempDir(), "dup-packet")
+	_, err := screenshot.GenerateVisualPacket(screenshot.PacketOptions{
+		SourceCommit:   strings.Repeat("d", 40),
+		ApprovalCommit: screenshot.PacketApprovalCommit,
+		OutputDir:      outDir,
+	}, panels, screenshot.PacketCapture{
+		Commands: []string{"test"}, ToolVersions: []screenshot.PacketTool{{Name: "go", Version: "test"}},
+		Geometry: "100x30", FontSHA256: strings.Repeat("a", 64), Theme: "test",
+	})
+	if err == nil {
+		t.Fatal("GenerateVisualPacket must reject duplicate named screen on same surface")
+	}
+	if !strings.Contains(err.Error(), "duplicate") {
+		t.Errorf("error must mention 'duplicate'; got: %v", err)
+	}
+}
+
+// TestDuplicatePNGBytes proves ValidatePacket rejects a packet where two
+// differently-named screen IDs on the same surface have identical PNG bytes
+// (UI-REVIEW Critical: stage-1 and stage-2 PNGs had the same SHA-256).
+// This test builds a packet where two live panels share the same PNG bytes
+// by providing identical source PNGs to GenerateVisualPacket.
+func TestDuplicatePNGBytes(t *testing.T) {
+	dir := t.TempDir()
+	panels := makeMinimalPanels(t, dir)
+	// Make live/ssh-form-filled and live/reuse-key-vs-generate share the same
+	// PNG by pointing both at the same source file before packet generation.
+	// GenerateVisualPacket doesn't check for cross-screen duplicate PNG bytes;
+	// ValidatePacket must catch it.
+	sharedPNG := panels[0].PNGPath // live/ssh-form-filled PNG
+	panels[1].PNGPath = sharedPNG  // live/reuse-key-vs-generate now points to same PNG
+
+	outDir := filepath.Join(t.TempDir(), "dedup-packet")
+	_, err := screenshot.GenerateVisualPacket(screenshot.PacketOptions{
+		SourceCommit:   strings.Repeat("e", 40),
+		ApprovalCommit: screenshot.PacketApprovalCommit,
+		OutputDir:      outDir,
+	}, panels, screenshot.PacketCapture{
+		Commands: []string{"test"}, ToolVersions: []screenshot.PacketTool{{Name: "go", Version: "test"}},
+		Geometry: "100x30", FontSHA256: strings.Repeat("b", 64), Theme: "test",
+	})
+	if err != nil {
+		t.Fatalf("setup: GenerateVisualPacket failed: %v", err)
+	}
+
+	// ValidatePacket must reject: two different named screens on the same
+	// surface cannot share identical PNG bytes on disk.
+	_, verr := screenshot.ValidatePacket(outDir)
+	if verr == nil {
+		t.Fatal("ValidatePacket must reject a packet where two different screen IDs share identical PNG bytes")
+	}
+	if !strings.Contains(verr.Error(), "duplicate") && !strings.Contains(verr.Error(), "identical") {
+		t.Errorf("error must mention duplicate/identical PNG bytes; got: %v", verr)
+	}
+}
+
+// TestCorrectReferenceRoutes proves that the HTML capture routes match the
+// approved reference routes per the plan's interface specification:
+//   - reuse-manual-path → /create-flow/reuse-key-vs-generate (not ssh-form-blank-prefix)
+//   - mouse-focused-field → /create-flow/ssh-form-filled (not ssh-form-empty)
+//   - git-form-demo → /git-screen/git-form-filled (not create-flow/backup-notice)
+func TestCorrectReferenceRoutes(t *testing.T) {
+	routes := screenshot.ApprovedHTMLRoutes()
+	cases := []struct {
+		screenID  string
+		wantRoute string
+		badRoute  string
+	}{
+		{"reuse-manual-path", "/create-flow/reuse-key-vs-generate", "/create-flow/ssh-form-blank-prefix"},
+		{"mouse-focused-field", "/create-flow/ssh-form-filled", "/create-flow/ssh-form-empty"},
+		{"git-form-demo", "/git-screen/git-form-filled", "/create-flow/backup-notice"},
+	}
+	for _, tc := range cases {
+		route, ok := routes[tc.screenID]
+		if !ok {
+			t.Errorf("screen %q missing from ApprovedHTMLRoutes", tc.screenID)
+			continue
+		}
+		if !strings.HasSuffix(route, tc.wantRoute) && route != tc.wantRoute {
+			t.Errorf("screen %q: route = %q, want suffix %q", tc.screenID, route, tc.wantRoute)
+		}
+		if strings.HasSuffix(route, tc.badRoute) || route == tc.badRoute {
+			t.Errorf("screen %q: route = %q is the WRONG (old) route %q", tc.screenID, route, tc.badRoute)
+		}
+	}
+}
+
+// TestRequiredProvenance proves that a visual packet missing EVIDENCE.json,
+// REGION-DIFFS.json, or REVIEW-PROVENANCE.json is rejected by ValidatePacket
+// (UI-REVIEW Critical: these three files were absent from the prior packet).
+func TestRequiredProvenance(t *testing.T) {
+	// A visual packet MUST declare and hash all provenance files.
+	// We test that ValidateVisualPacketProvenance rejects a packet that lacks them.
+	// The validation function is exported by the screenshot package.
+	pkt := screenshot.Packet{
+		Version:        "03-12.1",
+		SourceCommit:   strings.Repeat("f", 40),
+		ApprovalCommit: screenshot.PacketApprovalCommit,
+	}
+	// Packet with NO provenance files declared.
+	if err := screenshot.ValidateProvenanceRecords(pkt); err == nil {
+		t.Fatal("ValidateProvenanceRecords must reject a packet without EVIDENCE.json declaration")
+	}
+}
+
+// TestUndeclaredReviewArtifact proves that ValidatePacket rejects a packet
+// directory containing a file not listed in the manifest — preventing an extra
+// review file from being injected after publication (UI-REVIEW Critical).
+func TestUndeclaredReviewArtifact(t *testing.T) {
+	dir := t.TempDir()
+	panels := makeMinimalPanels(t, dir)
+	outDir := filepath.Join(t.TempDir(), "undeclared-packet")
+	_, err := screenshot.GenerateVisualPacket(screenshot.PacketOptions{
+		SourceCommit:   strings.Repeat("g", 40),
+		ApprovalCommit: screenshot.PacketApprovalCommit,
+		OutputDir:      outDir,
+	}, panels, screenshot.PacketCapture{
+		Commands: []string{"test"}, ToolVersions: []screenshot.PacketTool{{Name: "go", Version: "test"}},
+		Geometry: "100x30", FontSHA256: strings.Repeat("c", 64), Theme: "test",
+	})
+	if err != nil {
+		t.Fatalf("setup: GenerateVisualPacket failed: %v", err)
+	}
+
+	// Inject an undeclared file into the packet directory.
+	undeclared := filepath.Join(outDir, "EXTRA-REVIEW.md")
+	if err := os.WriteFile(undeclared, []byte("extra content"), 0o644); err != nil { //nolint:gosec // test fixture
+		t.Fatalf("setup: writing undeclared file: %v", err)
+	}
+
+	_, verr := screenshot.ValidatePacket(outDir)
+	if verr == nil {
+		t.Fatal("ValidatePacket must reject a packet directory containing an undeclared file")
+	}
+	if !strings.Contains(verr.Error(), "undeclared") {
+		t.Errorf("error must mention 'undeclared'; got: %v", verr)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Test helpers
+// ---------------------------------------------------------------------------
+
+// makeTinyPNG writes a minimal 1-byte file that won't fail the "non-empty PNG"
+// check (GenerateVisualPacket only checks len(png) > 0, not PNG magic bytes).
+func makeTinyPNG(t *testing.T, dir, name string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x01}, 0o644); err != nil { //nolint:gosec // test fixture
+		t.Fatalf("makeTinyPNG: %v", err)
+	}
+	return path
+}
+
+// makeMinimalPanels returns the exact 24-panel set (one per surface×screen)
+// required by GenerateVisualPacket, each with a unique tiny PNG.
+func makeMinimalPanels(t *testing.T, dir string) []screenshot.VisualPanel {
+	t.Helper()
+	surfaces := []string{"live", "approved-tui", "approved-html"}
+	panels := make([]screenshot.VisualPanel, 0, 24)
+	for _, surface := range surfaces {
+		for i, id := range screenshot.CreateFlowScreenIDs {
+			// Each panel gets a unique PNG (different byte at index 8).
+			pngBytes := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, byte(len(surfaces)*i + len(surface))}
+			pngPath := filepath.Join(dir, surface+"-"+id+".png")
+			if err := os.WriteFile(pngPath, pngBytes, 0o644); err != nil { //nolint:gosec // test fixture
+				t.Fatalf("makeMinimalPanels: writing PNG %s: %v", pngPath, err)
+			}
+			panels = append(panels, screenshot.VisualPanel{
+				Surface:  surface,
+				ScreenID: id,
+				Text:     "text content for " + surface + "/" + id,
+				PNGPath:  pngPath,
+			})
+		}
+	}
+	return panels
+}

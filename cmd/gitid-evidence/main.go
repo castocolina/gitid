@@ -411,12 +411,22 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool) (string, e
 		if err := session.send([]byte(fmt.Sprintf("\x1b[<0;10;%dM\x1b[<0;10;%dm", row, row))); err != nil {
 			return "", err
 		}
-	case "test-stage1-direct", "test-stage2-by-alias", "git-form-demo", "confirm-write":
+	case "test-stage1-direct":
+		// Run stage 1 and capture BEFORE stage 2 completes — the genuine
+		// testRunning2 state (stage-1 result visible + "… running ssh…").
+		// The prior runStages() waited for "identityfile" (stage-2 done),
+		// making both stage captures byte-identical (UI-REVIEW Critical Pillar 2).
+		if err := runStage1Only(session); err != nil {
+			return "", err
+		}
+	case "test-stage2-by-alias":
+		// Run both stages and capture AFTER stage 2 completes (testStage2 state).
 		if err := runStages(session, autoStage2); err != nil {
 			return "", err
 		}
-		if id == "test-stage1-direct" || id == "test-stage2-by-alias" {
-			break
+	case "git-form-demo", "confirm-write":
+		if err := runStages(session, autoStage2); err != nil {
+			return "", err
 		}
 		if err := session.send([]byte("\r")); err != nil {
 			return "", err
@@ -445,6 +455,35 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool) (string, e
 		return "", fmt.Errorf("captured empty terminal frame")
 	}
 	return text + "\n", nil
+}
+
+// runStage1Only navigates to the test screen, runs stage-1, and returns with
+// the session in testRunning2 state — stage-1 result visible, stage-2 running.
+// This is the genuine stage-1 capture point: it shows stage-1 outcome plus
+// "… running ssh…", distinct from the stage-2 capture (UI-REVIEW Critical:
+// the prior runStages() waited for "identityfile", making both identical).
+func runStage1Only(session *capturePTY) error {
+	// Navigate step 0 → step 1.
+	if err := session.send([]byte("\r")); err != nil {
+		return err
+	}
+	if _, err := session.waitFor("Step 2/4", 8*time.Second); err != nil {
+		return err
+	}
+	// Press Enter to run stage 1 (testIdle → testRunning1 → stage-1 result).
+	if err := session.send([]byte("\r")); err != nil {
+		return err
+	}
+	// Wait for the stage-1 result to appear (D-04 auto-chain fires stage-2).
+	// The "Hi user!" banner (pass) or "! Reachable" warning appears before stage-2 completes.
+	// We must capture BEFORE "identityfile" appears (that indicates stage-2 done).
+	if _, err := session.waitFor("running ssh", 8*time.Second); err != nil {
+		// Fallback: if "running ssh" appears very briefly, try for stage-1 result.
+		if _, err2 := session.waitFor("Hi user!", 4*time.Second); err2 != nil {
+			return fmt.Errorf("runStage1Only: stage-1 result did not appear: %w", err)
+		}
+	}
+	return nil
 }
 
 func runStages(session *capturePTY, autoStage2 bool) error {
@@ -484,20 +523,20 @@ func captureApprovedHTMLPanels(repoRoot, approvalDir, workspace, renderDir strin
 	if err := runCommand(mockup, "pnpm", "exec", "vite", "build", "--outDir", dist); err != nil {
 		return nil, fmt.Errorf("building approved HTML source: %w", err)
 	}
-	routes := map[string]string{
-		"ssh-form-filled":       "ssh-form-filled",
-		"reuse-key-vs-generate": "reuse-key-vs-generate",
-		"reuse-manual-path":     "ssh-form-blank-prefix",
-		"mouse-focused-field":   "ssh-form-empty",
-		"test-stage1-direct":    "test-stage1-direct",
-		"test-stage2-by-alias":  "test-stage2-by-alias",
-		"git-form-demo":         "backup-notice",
-		"confirm-write":         "confirm-write",
-	}
-	panels := make([]screenshot.VisualPanel, 0, len(routes))
+	// Use the canonical approved HTML routes from the screenshot package —
+	// this is the single source of truth for which route corresponds to each
+	// logical screen ID. Prior versions had wrong mappings (UI-REVIEW HIGH:
+	// reuse-manual-path→ssh-form-blank-prefix, mouse-focused-field→ssh-form-empty,
+	// git-form-demo→create-flow/backup-notice).
+	approvedRoutes := screenshot.ApprovedHTMLRoutes()
+	panels := make([]screenshot.VisualPanel, 0, len(approvedRoutes))
 	for _, id := range screenshot.CreateFlowScreenIDs {
-		route := routes[id]
-		required := "create-flow/" + route
+		route, ok := approvedRoutes[id]
+		if !ok {
+			return nil, fmt.Errorf("no approved HTML route for screen %q", id)
+		}
+		// Strip the leading "/" for the URLFragment and RequiredText.
+		routePath := strings.TrimPrefix(route, "/")
 		result, err := screenshot.CaptureHTML(screenshot.HTMLOptions{
 			FixturePath:       filepath.Join(dist, "index.html"),
 			OutDir:            filepath.Join(renderDir, "approved-html"),
@@ -508,8 +547,8 @@ func captureApprovedHTMLPanels(repoRoot, approvalDir, workspace, renderDir strin
 			ColorScheme:       "light",
 			Timeout:           60 * time.Second,
 			AllowDownload:     false,
-			URLFragment:       "#/create-flow/" + route,
-			RequiredText:      required,
+			URLFragment:       "#/" + routePath,
+			RequiredText:      routePath,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("capturing approved HTML %s: %w", id, err)
@@ -517,7 +556,7 @@ func captureApprovedHTMLPanels(repoRoot, approvalDir, workspace, renderDir strin
 		panels = append(panels, screenshot.VisualPanel{
 			Surface:  "approved-html",
 			ScreenID: id,
-			Text:     "approval route: " + required + "\nsource: " + screenshot.PacketApprovalCommit + "\n",
+			Text:     "approval route: " + routePath + "\nsource: " + screenshot.PacketApprovalCommit + "\n",
 			PNGPath:  result.PNGPath,
 		})
 	}
