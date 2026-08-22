@@ -1,0 +1,55 @@
+{
+  "version": "03-13.1",
+  "source_commit": "89f7dcf0c28408d96a8287a760276fafcf36184f",
+  "generated_at": "auto",
+  "screens": [
+    {
+      "screen_id": "ssh-form-filled",
+      "live_sha256": "e7d4ec7ea9d47b11f41bd072bf86fa8c609eaaea6c583798cc382880501dc61e",
+      "approved_tui_sha256": "e7d4ec7ea9d47b11f41bd072bf86fa8c609eaaea6c583798cc382880501dc61e",
+      "equal": true
+    },
+    {
+      "screen_id": "reuse-key-vs-generate",
+      "live_sha256": "7a03a861d5fc97c3f3222e359ecfb9b6fdca51c47ac8c2fe15f7f603e5f13635",
+      "approved_tui_sha256": "7a03a861d5fc97c3f3222e359ecfb9b6fdca51c47ac8c2fe15f7f603e5f13635",
+      "equal": true
+    },
+    {
+      "screen_id": "reuse-manual-path",
+      "live_sha256": "fa88e77e531a4b02554e3b1ca9c09b43728b94280b9b7b9443540d92de6852f5",
+      "approved_tui_sha256": "fa88e77e531a4b02554e3b1ca9c09b43728b94280b9b7b9443540d92de6852f5",
+      "equal": true
+    },
+    {
+      "screen_id": "mouse-focused-field",
+      "live_sha256": "54d880e94a212aca3282ff7a752c5c5d6472888831f0c940517f20c5c54c4810",
+      "approved_tui_sha256": "54d880e94a212aca3282ff7a752c5c5d6472888831f0c940517f20c5c54c4810",
+      "equal": true
+    },
+    {
+      "screen_id": "test-stage1-direct",
+      "live_sha256": "8360a692cd7ebde4fe70dba5453e15c63ea25d385ead891162eaa9164024ccba",
+      "approved_tui_sha256": "8360a692cd7ebde4fe70dba5453e15c63ea25d385ead891162eaa9164024ccba",
+      "equal": true
+    },
+    {
+      "screen_id": "test-stage2-by-alias",
+      "live_sha256": "111831c43a0d260cc65e7d664aab7078a25b8f29451d5788a5662127c6619020",
+      "approved_tui_sha256": "111831c43a0d260cc65e7d664aab7078a25b8f29451d5788a5662127c6619020",
+      "equal": true
+    },
+    {
+      "screen_id": "git-form-demo",
+      "live_sha256": "efeb0aadf8f14dc06cff9adfc5583030b18272376a345ca0400df1e7419fcc6e",
+      "approved_tui_sha256": "efeb0aadf8f14dc06cff9adfc5583030b18272376a345ca0400df1e7419fcc6e",
+      "equal": true
+    },
+    {
+      "screen_id": "confirm-write",
+      "live_sha256": "8fb79fdcdc42672194db3ac3eb864ddc02268a44c2ea0868c67cb81babbafda4",
+      "approved_tui_sha256": "8fb79fdcdc42672194db3ac3eb864ddc02268a44c2ea0868c67cb81babbafda4",
+      "equal": true
+    }
+  ]
+}
