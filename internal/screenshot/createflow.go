@@ -95,6 +95,16 @@ type SurfaceNonApplicability struct {
 	Classification string
 }
 
+// RegionDisposition explicitly authorizes one comparable live/approved-TUI
+// difference on one ScreenSpec. A RegionName alone never grants approval.
+type RegionDisposition struct {
+	Region         RegionName
+	Divergence     string
+	Decision       string
+	Reason         string
+	Classification string
+}
+
 // ScreenSpec is the typed capture contract for one create-flow logical screen.
 type ScreenSpec struct {
 	// ScreenID is the registry's logical identifier.
@@ -127,11 +137,20 @@ type ScreenSpec struct {
 	// RequiredRegions are the semantic regions that must be present in every
 	// applicable capture. They make missing evidence a validation error.
 	RequiredRegions []RegionName
+	// RegionDispositions declares the only comparable region differences this
+	// specific screen accepts. Each entry is tied to a governing decision.
+	RegionDispositions []RegionDisposition
 }
 
 func uxNonComparable(surface, decision, reason string) SurfaceNonApplicability {
 	return SurfaceNonApplicability{
 		Surface: surface, Decision: decision, Reason: reason, Classification: "ux-improvement",
+	}
+}
+
+func uxRegionDifference(region RegionName, divergence, decision, reason string) RegionDisposition {
+	return RegionDisposition{
+		Region: region, Divergence: divergence, Decision: decision, Reason: reason, Classification: "ux-improvement",
 	}
 }
 
@@ -149,6 +168,13 @@ func ScreenSpecRegistry() []ScreenSpec {
 			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
 			RequiredRegions:        []RegionName{RegionFormFields, RegionHostPreview},
+			RegionDispositions: []RegionDisposition{
+				uxRegionDifference(RegionFormFields, "form-defaults", "D-16", "The live backend uses current provider defaults while the approved TUI preserves frozen demo defaults."),
+				uxRegionDifference(RegionKeySection, "key-catalog", "D-16", "The live backend uses its probed key catalog while the approved TUI preserves the frozen fixture order."),
+				uxRegionDifference(RegionHostPreview, "host-preview", "D-16", "The live Host block uses the current checked renderer while the approved TUI preserves the frozen fixture rendering."),
+				uxRegionDifference(RegionHeaderStatus, "fixture-header-status", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),
+				uxRegionDifference(RegionSidebar, "fixture-sidebar", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),
+			},
 		},
 		{
 			ScreenID:               "reuse-key-vs-generate",
@@ -185,8 +211,15 @@ func ScreenSpecRegistry() []ScreenSpec {
 			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
 			RequiredRegions:        []RegionName{RegionFormFields},
-			VariantOf:              "ssh-form-filled",
-			VariantRationale:       "No separate HTML route exists for mouse-focused-field; it shares /create-flow/ssh-form-filled with a different focus state.",
+			RegionDispositions: []RegionDisposition{
+				uxRegionDifference(RegionFormFields, "form-defaults", "D-16", "The live backend uses current provider defaults while the approved TUI preserves frozen demo defaults."),
+				uxRegionDifference(RegionKeySection, "key-catalog", "D-16", "The live backend uses its probed key catalog while the approved TUI preserves the frozen fixture order."),
+				uxRegionDifference(RegionHostPreview, "host-preview", "D-16", "The live Host block uses the current checked renderer while the approved TUI preserves the frozen fixture rendering."),
+				uxRegionDifference(RegionHeaderStatus, "fixture-header-status", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),
+				uxRegionDifference(RegionSidebar, "fixture-sidebar", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),
+			},
+			VariantOf:        "ssh-form-filled",
+			VariantRationale: "No separate HTML route exists for mouse-focused-field; it shares /create-flow/ssh-form-filled with a different focus state.",
 		},
 		{
 			ScreenID:               "test-stage1-direct",
@@ -197,6 +230,11 @@ func ScreenSpecRegistry() []ScreenSpec {
 			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
 			RequiredRegions:        []RegionName{RegionConnectivityOutput},
+			RegionDispositions: []RegionDisposition{
+				uxRegionDifference(RegionConnectivityOutput, "connectivity-output", "D-02", "The live capture uses the current backend outcome while the approved TUI uses a frozen fixture."),
+				uxRegionDifference(RegionHeaderStatus, "fixture-header-status", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),
+				uxRegionDifference(RegionSidebar, "fixture-sidebar", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),
+			},
 		},
 		{
 			ScreenID:               "test-stage2-by-alias",
@@ -219,6 +257,11 @@ func ScreenSpecRegistry() []ScreenSpec {
 			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
 			RequiredRegions:        []RegionName{RegionContinueDisabledReason},
+			RegionDispositions: []RegionDisposition{
+				uxRegionDifference(RegionContinueDisabledReason, "continue-disabled-reason", "D-19", "The live binary exposes the deferred Git configuration reason while the approved TUI preserves its validity-gated copy."),
+				uxRegionDifference(RegionHeaderStatus, "fixture-header-status", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),
+				uxRegionDifference(RegionSidebar, "fixture-sidebar", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),
+			},
 		},
 		{
 			ScreenID:               "confirm-write",
@@ -229,6 +272,11 @@ func ScreenSpecRegistry() []ScreenSpec {
 			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
 			RequiredRegions:        []RegionName{RegionConfirmationPreview},
+			RegionDispositions: []RegionDisposition{
+				uxRegionDifference(RegionConfirmationPreview, "confirmation-preview", "D-05", "The Phase 3 pre-write ceremony differs from the approved fixture preview."),
+				uxRegionDifference(RegionHeaderStatus, "fixture-header-status", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),
+				uxRegionDifference(RegionSidebar, "fixture-sidebar", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),
+			},
 		},
 		{
 			ScreenID:       "reuse-manual-resolved",
@@ -469,6 +517,23 @@ func ValidateScreenSpecs(specs []ScreenSpec) error {
 				return fmt.Errorf("screenshot: ValidateScreenSpecs: spec %q has invalid required region %q", s.ScreenID, region)
 			}
 			regions[region] = true
+		}
+		knownRegions := make(map[RegionName]bool, len(AllRegionNames()))
+		for _, region := range AllRegionNames() {
+			knownRegions[region] = true
+		}
+		dispositions := make(map[RegionName]bool, len(s.RegionDispositions))
+		for _, disposition := range s.RegionDispositions {
+			if !knownRegions[disposition.Region] || dispositions[disposition.Region] {
+				return fmt.Errorf("screenshot: ValidateScreenSpecs: spec %q has invalid region disposition %q", s.ScreenID, disposition.Region)
+			}
+			if strings.TrimSpace(disposition.Divergence) == "" ||
+				!strings.HasPrefix(disposition.Decision, "D-") ||
+				strings.TrimSpace(disposition.Reason) == "" ||
+				!validDifferenceClassification(disposition.Classification) {
+				return fmt.Errorf("screenshot: ValidateScreenSpecs: spec %q region %q lacks a decision-linked disposition", s.ScreenID, disposition.Region)
+			}
+			dispositions[disposition.Region] = true
 		}
 		if prior, exists := seenIDs[s.ScreenID]; exists {
 			// A duplicate is allowed ONLY when this spec declares a same-route variant.

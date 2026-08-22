@@ -1122,8 +1122,10 @@ type RegionDiffs struct {
 
 // BuildRegionDiffs generates a RegionDiffs document comparing live captures
 // against approved-tui captures for every ScreenSpec in specs. Each record
-// carries the live/approved SHA-256 pair, equality result, and divergence
-// justification (for D-02/D-19 allowlisted differences). The result is
+// carries the live/approved SHA-256 pair, equality result, and any explicit
+// screen-specific, decision-linked divergence disposition. RequiredRegions
+// enforces mandatory presence; the comparison inventory is the symmetric
+// nonempty union of every name returned by AllRegionNames. The result is
 // non-empty — every spec must produce at least one record.
 //
 // normalizePrefix strips disposable absolute path prefixes (temp dirs,
@@ -1162,6 +1164,13 @@ func BuildRegionDiffs(sourceCommit string, liveCaptures, approvedCaptures map[st
 			if spec.ApplicableApprovedTUI && strings.TrimSpace(approvedRegion) == "" {
 				return nil, fmt.Errorf("screenshot: BuildRegionDiffs: frame %q required region %q is empty in approved-tui evidence", spec.ScreenID, name)
 			}
+		}
+		for _, name := range AllRegionNames() {
+			liveRegion := normalizeForRegion(ExtractRegion(liveText, name))
+			approvedRegion := normalizeForRegion(ExtractRegion(approvedText, name))
+			if strings.TrimSpace(liveRegion) == "" && strings.TrimSpace(approvedRegion) == "" {
+				continue
+			}
 			region := NamedRegionDiff{
 				Name:               name,
 				LiveText:           liveRegion,
@@ -1184,10 +1193,14 @@ func BuildRegionDiffs(sourceCommit string, liveCaptures, approvedCaptures map[st
 				region.Classification = nonApplicable.Classification
 				region.Justification = nonApplicable.Decision + ": " + nonApplicable.Reason
 			} else if !region.Equal {
-				region.Divergence, region.Justification, region.Classification = regionDisposition(spec.ScreenID, name)
-				if region.Divergence == "" || !strings.Contains(region.Justification, "D-") {
-					return nil, fmt.Errorf("screenshot: BuildRegionDiffs: frame %q region %q differs without an accepted D-XX justification", spec.ScreenID, name)
+				disposition, found := RegionDispositionFor(spec, name)
+				if !found {
+					return nil, fmt.Errorf("screenshot: BuildRegionDiffs: frame %q region %q differs without a screen-specific declared disposition", spec.ScreenID, name)
 				}
+				region.Divergence = disposition.Divergence
+				region.Decision = disposition.Decision
+				region.Justification = disposition.Decision + ": " + disposition.Reason
+				region.Classification = disposition.Classification
 			}
 			rec.Regions = append(rec.Regions, region)
 		}
@@ -1199,23 +1212,15 @@ func BuildRegionDiffs(sourceCommit string, liveCaptures, approvedCaptures map[st
 	return records, nil
 }
 
-func regionDisposition(screenID string, name RegionName) (string, string, string) {
-	switch {
-	case name == RegionConfirmationPreview:
-		return "confirmation-preview", "D-05: the Phase 3 pre-write ceremony differs from the approved fixture preview", "ux-improvement"
-	case name == RegionFormFields:
-		return "form-defaults", "D-16 structural fixture: the live backend uses current provider defaults while the approved TUI preserves frozen demo defaults", "ux-improvement"
-	case name == RegionConnectivityOutput:
-		return "connectivity-output", "D-02: live capture uses the current backend outcome; approved TUI uses a frozen fixture", "ux-improvement"
-	case name == RegionContinueDisabledReason:
-		return "continue-disabled-reason", "D-19: Phase 3 live binary exposes the deferred Git configuration reason", "ux-improvement"
-	case name == RegionHostPreview:
-		return "host-preview", "D-16 structural fixture: live Host block uses the current checked renderer", "ux-improvement"
-	case name == RegionSidebar || name == RegionHeaderStatus:
-		return "sidebar-state", "D-16 structural fixture: live disposable HOME starts empty while the approved fixture contains identities", "ux-improvement"
-	default:
-		return "", "", ""
+// RegionDispositionFor returns the explicit difference declaration attached to
+// this screen. It deliberately has no fallback by region name.
+func RegionDispositionFor(spec ScreenSpec, name RegionName) (RegionDisposition, bool) {
+	for _, disposition := range spec.RegionDispositions {
+		if disposition.Region == name {
+			return disposition, true
+		}
 	}
+	return RegionDisposition{}, false
 }
 
 // BuildRegionDiffsJSON marshals a RegionDiffs document for inclusion in the
@@ -1276,21 +1281,28 @@ func ValidateRegionDiffs(data []byte, sourceCommit string, specs []ScreenSpec) e
 		if !ok {
 			return fmt.Errorf("screenshot: ValidateRegionDiffs: missing frame %q", spec.ScreenID)
 		}
+		knownRegions := make(map[RegionName]bool, len(AllRegionNames()))
+		for _, name := range AllRegionNames() {
+			knownRegions[name] = true
+		}
 		regions := make(map[RegionName]NamedRegionDiff, len(record.Regions))
 		for _, region := range record.Regions {
+			if !knownRegions[region.Name] {
+				return fmt.Errorf("screenshot: ValidateRegionDiffs: unknown region %q for frame %q", region.Name, spec.ScreenID)
+			}
 			if _, exists := regions[region.Name]; exists {
 				return fmt.Errorf("screenshot: ValidateRegionDiffs: duplicate region %q for frame %q", region.Name, spec.ScreenID)
 			}
 			if region.LiveApplicable != spec.ApplicableLive {
 				return fmt.Errorf("screenshot: ValidateRegionDiffs: live applicability mismatch for %q/%q", spec.ScreenID, region.Name)
 			}
-			if region.LiveHash != sha256Hex([]byte(region.LiveText)) || (region.LiveApplicable && strings.TrimSpace(region.LiveText) == "") {
+			if region.LiveHash != sha256Hex([]byte(region.LiveText)) {
 				return fmt.Errorf("screenshot: ValidateRegionDiffs: invalid live evidence for %q/%q", spec.ScreenID, region.Name)
 			}
 			if region.ApprovedApplicable != spec.ApplicableApprovedTUI {
 				return fmt.Errorf("screenshot: ValidateRegionDiffs: approved applicability mismatch for %q/%q", spec.ScreenID, region.Name)
 			}
-			if region.ApprovedHash != sha256Hex([]byte(region.ApprovedText)) || (region.ApprovedApplicable && strings.TrimSpace(region.ApprovedText) == "") {
+			if region.ApprovedHash != sha256Hex([]byte(region.ApprovedText)) {
 				return fmt.Errorf("screenshot: ValidateRegionDiffs: invalid approved evidence for %q/%q", spec.ScreenID, region.Name)
 			}
 			wantComparable := region.LiveApplicable && region.ApprovedApplicable
@@ -1313,17 +1325,24 @@ func ValidateRegionDiffs(data []byte, sourceCommit string, specs []ScreenSpec) e
 					return fmt.Errorf("screenshot: ValidateRegionDiffs: non-comparable evidence lacks decision-linked justification for %q/%q", spec.ScreenID, region.Name)
 				}
 			} else if !region.Equal {
-				if region.Divergence == "" || !strings.Contains(region.Justification, "D-") || !validDifferenceClassification(region.Classification) {
+				disposition, found := RegionDispositionFor(spec, region.Name)
+				if !found || region.Divergence != disposition.Divergence || region.Decision != disposition.Decision ||
+					region.Justification != disposition.Decision+": "+disposition.Reason || region.Classification != disposition.Classification {
 					return fmt.Errorf("screenshot: ValidateRegionDiffs: unexplained or unclassified divergence for %q/%q", spec.ScreenID, region.Name)
 				}
-			} else if region.Classification != "" || region.NonApplicabilityReason != "" || region.Decision != "" {
+			} else if region.Divergence != "" || region.Justification != "" || region.Classification != "" || region.NonApplicabilityReason != "" || region.Decision != "" {
 				return fmt.Errorf("screenshot: ValidateRegionDiffs: equal region %q/%q carries a difference classification", spec.ScreenID, region.Name)
 			}
 			regions[region.Name] = region
 		}
 		for _, required := range spec.RequiredRegions {
-			if _, ok := regions[required]; !ok {
+			region, ok := regions[required]
+			if !ok {
 				return fmt.Errorf("screenshot: ValidateRegionDiffs: missing required region %q for frame %q", required, spec.ScreenID)
+			}
+			if (spec.ApplicableLive && strings.TrimSpace(region.LiveText) == "") ||
+				(spec.ApplicableApprovedTUI && strings.TrimSpace(region.ApprovedText) == "") {
+				return fmt.Errorf("screenshot: ValidateRegionDiffs: required region %q for frame %q has empty applicable evidence", required, spec.ScreenID)
 			}
 		}
 	}

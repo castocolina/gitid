@@ -856,15 +856,19 @@ func TestRegionClassification(t *testing.T) {
 		ApplicableLive:        true,
 		ApplicableApprovedTUI: true,
 		RequiredRegions:       []screenshot.RegionName{screenshot.RegionConnectivityOutput},
-		NonApplicability:      []screenshot.SurfaceNonApplicability{{Surface: "approved-html", Decision: "D-04", Reason: "HTML is not a parity target.", Classification: "ux-improvement"}},
+		RegionDispositions: []screenshot.RegionDisposition{{
+			Region: screenshot.RegionConnectivityOutput, Divergence: "connectivity-output", Decision: "D-02",
+			Reason: "The live outcome differs from the approved fixture.", Classification: "ux-improvement",
+		}},
+		NonApplicability: []screenshot.SurfaceNonApplicability{{Surface: "approved-html", Decision: "D-04", Reason: "HTML is not a parity target.", Classification: "ux-improvement"}},
 	}
-	live := "│ ssh command\n│ authenticated live\n"
-	dummy := "│ ssh command\n│ authenticated dummy\n"
+	live := "shared header\nshared breadcrumb\n│ ssh command\n│ authenticated live\nEsc returns\nshared footer 1\nshared footer 2\n"
+	dummy := "shared header\nshared breadcrumb\n│ ssh command\n│ authenticated dummy\nEsc returns\nshared footer 1\nshared footer 2\n"
 	records, err := screenshot.BuildRegionDiffs("test-commit", map[string]string{spec.ScreenID: live}, map[string]string{spec.ScreenID: dummy}, []screenshot.ScreenSpec{spec})
 	if err != nil {
 		t.Fatalf("BuildRegionDiffs applicable difference: %v", err)
 	}
-	region := records[0].Regions[0]
+	region := regionDiffByName(t, records[0], screenshot.RegionConnectivityOutput)
 	if !region.Comparable || region.Equal || region.Classification == "" {
 		t.Fatalf("applicable unequal region lacks an explicit classification: %+v", region)
 	}
@@ -872,10 +876,70 @@ func TestRegionClassification(t *testing.T) {
 	if err := screenshot.ValidateRegionDiffs(data, "test-commit", []screenshot.ScreenSpec{spec}); err != nil {
 		t.Fatalf("ValidateRegionDiffs rejected classified difference: %v", err)
 	}
-	records[0].Regions[0].Classification = ""
+	for i := range records[0].Regions {
+		if records[0].Regions[i].Name == screenshot.RegionConnectivityOutput {
+			records[0].Regions[i].Classification = ""
+		}
+	}
 	data = screenshot.BuildRegionDiffsJSON("test-commit", records)
 	if err := screenshot.ValidateRegionDiffs(data, "test-commit", []screenshot.ScreenSpec{spec}); err == nil {
 		t.Fatal("ValidateRegionDiffs accepted an unequal region without classification")
+	}
+}
+
+func TestBuildRegionDiffsRejectsUnequalRegionWithoutScreenDisposition(t *testing.T) {
+	spec := screenshot.ScreenSpec{
+		ScreenID:              "undeclared-required-difference",
+		StateMarker:           "ssh command",
+		ApplicableLive:        true,
+		ApplicableApprovedTUI: true,
+		RequiredRegions:       []screenshot.RegionName{screenshot.RegionConnectivityOutput},
+		NonApplicability: []screenshot.SurfaceNonApplicability{{
+			Surface: "approved-html", Decision: "D-04", Reason: "HTML is not a parity target.", Classification: "ux-improvement",
+		}},
+	}
+	live := "shared header\nshared breadcrumb\n│ ssh command\n│ authenticated live\nEsc returns\nshared footer 1\nshared footer 2\n"
+	approved := "shared header\nshared breadcrumb\n│ ssh command\n│ authenticated approved\nEsc returns\nshared footer 1\nshared footer 2\n"
+
+	_, err := screenshot.BuildRegionDiffs(
+		"test-commit",
+		map[string]string{spec.ScreenID: live},
+		map[string]string{spec.ScreenID: approved},
+		[]screenshot.ScreenSpec{spec},
+	)
+	if err == nil {
+		t.Fatal("BuildRegionDiffs accepted an unequal comparable region without a screen-specific declared disposition")
+	}
+	if !strings.Contains(err.Error(), `region "connectivity-output"`) || !strings.Contains(err.Error(), "screen-specific declared disposition") {
+		t.Fatalf("BuildRegionDiffs rejected the wrong condition: %v", err)
+	}
+}
+
+func TestBuildRegionDiffsRejectsUndeclaredVisibleRegionOutsideRequiredRegions(t *testing.T) {
+	spec := screenshot.ScreenSpec{
+		ScreenID:              "unknown-visible-difference",
+		StateMarker:           "shared header",
+		ApplicableLive:        true,
+		ApplicableApprovedTUI: true,
+		RequiredRegions:       []screenshot.RegionName{screenshot.RegionHeader},
+		NonApplicability: []screenshot.SurfaceNonApplicability{{
+			Surface: "approved-html", Decision: "D-04", Reason: "HTML is not a parity target.", Classification: "ux-improvement",
+		}},
+	}
+	live := "shared header\nIdentities › live breadcrumb\n"
+	approved := "shared header\nIdentities › approved breadcrumb\n"
+
+	_, err := screenshot.BuildRegionDiffs(
+		"test-commit",
+		map[string]string{spec.ScreenID: live},
+		map[string]string{spec.ScreenID: approved},
+		[]screenshot.ScreenSpec{spec},
+	)
+	if err == nil {
+		t.Fatal("BuildRegionDiffs ignored an unequal visible named region outside RequiredRegions")
+	}
+	if !strings.Contains(err.Error(), `region "breadcrumb"`) || !strings.Contains(err.Error(), "screen-specific declared disposition") {
+		t.Fatalf("BuildRegionDiffs rejected the wrong condition: %v", err)
 	}
 }
 
@@ -953,18 +1017,22 @@ func TestBuildRegionDiffsDeclaresFormDefaultsComparator(t *testing.T) {
 		ApplicableLive:        true,
 		ApplicableApprovedTUI: true,
 		RequiredRegions:       []screenshot.RegionName{screenshot.RegionFormFields},
+		RegionDispositions: []screenshot.RegionDisposition{{
+			Region: screenshot.RegionFormFields, Divergence: "form-defaults", Decision: "D-16",
+			Reason: "The live defaults differ from the approved fixture.", Classification: "ux-improvement",
+		}},
 		NonApplicability: []screenshot.SurfaceNonApplicability{{
 			Surface: "approved-html", Decision: "D-16", Reason: "HTML is not a parity target.", Classification: "ux-improvement",
 		}},
 	}
-	live := "header\nbreadcrumb\n│ Shift+→\n│ Alias prefix live\n│ Key Generate\n"
-	approved := "header\nbreadcrumb\n│ Shift+→\n│ Alias prefix approved\n│ Key Generate\n"
+	live := "header\nbreadcrumb\n│ Shift+→\n│ Alias prefix live\n│ Key Generate\nfooter 1\nfooter 2\nfooter 3\n"
+	approved := "header\nbreadcrumb\n│ Shift+→\n│ Alias prefix approved\n│ Key Generate\nfooter 1\nfooter 2\nfooter 3\n"
 
 	diffs, err := screenshot.BuildRegionDiffs("test-commit", map[string]string{spec.ScreenID: live}, map[string]string{spec.ScreenID: approved}, []screenshot.ScreenSpec{spec})
 	if err != nil {
 		t.Fatalf("BuildRegionDiffs rejected the declared form-default comparator: %v", err)
 	}
-	region := diffs[0].Regions[0]
+	region := regionDiffByName(t, diffs[0], screenshot.RegionFormFields)
 	if region.Divergence != "form-defaults" || !strings.Contains(region.Justification, "D-16") {
 		t.Fatalf("form defaults comparator must be D-16-linked, got %+v", region)
 	}
@@ -977,18 +1045,22 @@ func TestBuildRegionDiffsDeclaresConfirmationPreviewComparator(t *testing.T) {
 		ApplicableLive:        true,
 		ApplicableApprovedTUI: true,
 		RequiredRegions:       []screenshot.RegionName{screenshot.RegionConfirmationPreview},
+		RegionDispositions: []screenshot.RegionDisposition{{
+			Region: screenshot.RegionConfirmationPreview, Divergence: "confirmation-preview", Decision: "D-05",
+			Reason: "The live ceremony differs from the approved fixture.", Classification: "ux-improvement",
+		}},
 		NonApplicability: []screenshot.SurfaceNonApplicability{{
 			Surface: "approved-html", Decision: "D-05", Reason: "HTML is not a parity target.", Classification: "ux-improvement",
 		}},
 	}
-	live := "│ Exact change live\n"
-	approved := "│ Exact change approved\n"
+	live := "header\nbreadcrumb\n│ Exact change live\nfooter 1\nfooter 2\nfooter 3\n"
+	approved := "header\nbreadcrumb\n│ Exact change approved\nfooter 1\nfooter 2\nfooter 3\n"
 
 	diffs, err := screenshot.BuildRegionDiffs("test-commit", map[string]string{spec.ScreenID: live}, map[string]string{spec.ScreenID: approved}, []screenshot.ScreenSpec{spec})
 	if err != nil {
 		t.Fatalf("BuildRegionDiffs rejected the declared confirmation comparator: %v", err)
 	}
-	region := diffs[0].Regions[0]
+	region := regionDiffByName(t, diffs[0], screenshot.RegionConfirmationPreview)
 	if region.Divergence != "confirmation-preview" || !strings.Contains(region.Justification, "D-05") {
 		t.Fatalf("confirmation comparator must be D-05-linked, got %+v", region)
 	}
@@ -1008,6 +1080,17 @@ func TestValidateRegionDiffsRejectsMissingRequiredRegion(t *testing.T) {
 	if err := screenshot.ValidateRegionDiffs(data, source, screenshot.RequiredScreenSpecs()); err == nil {
 		t.Fatal("region validation must reject a missing required region")
 	}
+}
+
+func regionDiffByName(t *testing.T, record screenshot.RegionDiffRecord, name screenshot.RegionName) screenshot.NamedRegionDiff {
+	t.Helper()
+	for _, region := range record.Regions {
+		if region.Name == name {
+			return region
+		}
+	}
+	t.Fatalf("frame %q has no region %q", record.ScreenID, name)
+	return screenshot.NamedRegionDiff{}
 }
 
 // TestStateMarkerGate proves ValidateCapturedState rejects text that lacks

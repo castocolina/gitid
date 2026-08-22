@@ -296,9 +296,9 @@ func normalizeDisposableHome(captures map[string]string, home string) map[string
 // tracked path. Runs TWO captures per backend, compares text hashes per screen
 // for determinism.
 //
-// CR-04 (applicable regions): regions that extract as empty on BOTH sides are
-// inapplicable to that screen and are skipped. Non-empty required regions must
-// all be gated.
+// CR-04 (applicable regions): every named region that is nonempty on either
+// side is gated. RequiredRegions remains the mandatory-presence subset, not the
+// comparison inventory.
 //
 // CR-05 (fail closed): fatal on any missing screen, failed capture, or
 // schema error.
