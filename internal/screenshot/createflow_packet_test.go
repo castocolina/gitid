@@ -98,8 +98,8 @@ func TestGenerateTextPacket_RejectsExistingDestination(t *testing.T) {
 	}
 }
 
-// TestGenerateTextPacket_AllScreensPresent verifies all 8 CreateFlowScreenIDs
-// are represented in the packet members (required for completeness).
+// TestGenerateTextPacket_AllScreensPresent verifies the registry inventory is
+// represented for every applicable surface.
 func TestGenerateTextPacket_AllScreensPresent(t *testing.T) {
 	outDir := filepath.Join(t.TempDir(), "packet")
 	live, approved := makeTestCaptures()
@@ -114,16 +114,23 @@ func TestGenerateTextPacket_AllScreensPresent(t *testing.T) {
 		t.Fatalf("GenerateTextPacket: %v", err)
 	}
 
-	// Verify each screen ID appears in the members (as both live and approved-tui).
+	// Verify each screen ID appears once for every applicable text surface.
 	screenCount := make(map[string]int)
 	for _, m := range result.Packet.Members {
 		if m.ScreenID != "" {
 			screenCount[m.ScreenID]++
 		}
 	}
-	for _, id := range screenshot.CreateFlowScreenIDs {
-		if screenCount[id] < 2 {
-			t.Errorf("screen %q missing from packet members (need ≥2 — live + approved-tui); got %d", id, screenCount[id])
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		want := 0
+		if spec.ApplicableLive {
+			want++
+		}
+		if spec.ApplicableApprovedTUI {
+			want++
+		}
+		if screenCount[spec.ScreenID] != want {
+			t.Errorf("screen %q has %d packet members, want %d from RequiredScreenSpecs applicability", spec.ScreenID, screenCount[spec.ScreenID], want)
 		}
 	}
 }
@@ -242,7 +249,7 @@ func TestCompareTextCaptures_DifferentReturnError(t *testing.T) {
 		c2[k] = v
 	}
 	// Mutate one screen in c2.
-	firstID := screenshot.CreateFlowScreenIDs[0]
+	firstID := screenshot.RequiredScreenSpecs()[0].ScreenID
 	c2[firstID] = c2[firstID] + "\nMUTATED"
 
 	if err := screenshot.CompareTextCaptures(c1, c2); err == nil {
@@ -258,7 +265,7 @@ func TestGenerateTextPacket_MissingLiveCapture(t *testing.T) {
 	approved := screenshot.CaptureCreateFlowScreens(backend)
 
 	// Remove one screen from live.
-	delete(live, screenshot.CreateFlowScreenIDs[0])
+	delete(live, screenshot.RequiredScreenSpecs()[0].ScreenID)
 
 	_, err := screenshot.GenerateTextPacket(screenshot.PacketOptions{
 		SourceCommit:   strings.Repeat("g", 40),
@@ -301,11 +308,17 @@ func TestDuplicateNamedScreen(t *testing.T) {
 	// Replace the last "live" panel (confirm-write) with a second copy of
 	// the first "live" panel (ssh-form-filled) — same surface, same screen ID,
 	// different PNG — so the count stays at 24 but a duplicate exists.
-	lastLiveIdx := len(screenshot.CreateFlowScreenIDs) - 1 // confirm-write
+	lastLiveIdx := 0
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		if spec.ApplicableLive {
+			lastLiveIdx++
+		}
+	}
+	lastLiveIdx--
 	dupPNG := makeTinyPNG(t, dir, "dup.png")
 	panels[lastLiveIdx] = screenshot.VisualPanel{
 		Surface:  "live",
-		ScreenID: screenshot.CreateFlowScreenIDs[0], // ssh-form-filled — duplicate
+		ScreenID: screenshot.RequiredScreenSpecs()[0].ScreenID, // duplicate first registry frame
 		Text:     "duplicate text",
 		PNGPath:  dupPNG,
 	}
@@ -551,7 +564,7 @@ func TestSelfHashAlgorithm(t *testing.T) {
 // (with VariantOf + VariantRationale) is ALLOWED by ValidateScreenSpecs
 // while a spec without that metadata is rejected.
 func TestExplicitVariant(t *testing.T) {
-	specs := screenshot.ScreenSpecRegistry()[:len(screenshot.CreateFlowScreenIDs)]
+	specs := screenshot.RequiredScreenSpecs()
 	// The built-in registry must pass validation (variants are declared).
 	if err := screenshot.ValidateScreenSpecRegistry(); err != nil {
 		t.Fatalf("ValidateScreenSpecRegistry failed on built-in registry: %v", err)
@@ -618,7 +631,7 @@ func TestRegionDiffCoverage(t *testing.T) {
 	liveCaptures := screenshot.CaptureCreateFlowScreens(backend)
 	approvedCaptures := screenshot.CaptureCreateFlowScreens(backend)
 
-	specs := screenshot.ScreenSpecRegistry()[:len(screenshot.CreateFlowScreenIDs)]
+	specs := screenshot.RequiredScreenSpecs()
 	diffs, err := screenshot.BuildRegionDiffs("test-commit", liveCaptures, approvedCaptures, specs)
 	if err != nil {
 		t.Fatalf("BuildRegionDiffs: %v", err)
@@ -729,24 +742,12 @@ func TestScreenSpecRegistry(t *testing.T) {
 	if len(specs) == 0 {
 		t.Fatal("ScreenSpecRegistry must return non-empty specs")
 	}
-	// Every CreateFlowScreenID must have a spec.
-	for _, id := range screenshot.CreateFlowScreenIDs {
-		found := false
-		for _, s := range specs {
-			if s.ScreenID == id {
-				found = true
-				// Each spec must have a route and state marker.
-				if s.Route == "" {
-					t.Errorf("spec %q has empty route", id)
-				}
-				if s.StateMarker == "" {
-					t.Errorf("spec %q has empty StateMarker", id)
-				}
-				break
-			}
-		}
-		if !found {
-			t.Errorf("ScreenSpecRegistry missing spec for screen ID %q", id)
+	if err := screenshot.ValidateScreenSpecs(specs); err != nil {
+		t.Fatalf("ScreenSpecRegistry is not a complete valid inventory: %v", err)
+	}
+	for _, spec := range specs {
+		if len(spec.RequiredRegions) == 0 {
+			t.Errorf("spec %q has no required regions", spec.ScreenID)
 		}
 	}
 }
@@ -757,8 +758,9 @@ func TestRequiredSemanticInventoryAndRawEvidence(t *testing.T) {
 		seen[spec.ScreenID] = true
 	}
 	for _, id := range []string{
-		"reuse-manual-resolved", "test-stage1-pass", "test-stage2-proof-top", "test-stage2-proof-bottom", "test-stage2-proof-right",
-		"test-reachable-not-uploaded", "test-hard-failure-retry", "confirm-summary", "confirm-managed-block",
+		"reuse-manual-resolved", "test-stage1-pass", "test-stage1-command-output", "test-stage2-command-output",
+		"test-stage2-resolution-user-host-port", "test-stage2-resolution-identities-key",
+		"test-reachable-not-uploaded", "test-hard-failure-retry", "confirm-summary-key-path", "confirm-managed-block",
 	} {
 		if !seen[id] {
 			t.Errorf("registry is missing required semantic frame %q", id)
@@ -771,6 +773,135 @@ func TestRequiredSemanticInventoryAndRawEvidence(t *testing.T) {
 	}, panels, screenshot.PacketCapture{Commands: []string{"test"}, ToolVersions: []screenshot.PacketTool{{Name: "go", Version: "test"}}, Geometry: "100x30", FontSHA256: strings.Repeat("a", 64), Theme: "test"})
 	if err == nil || !strings.Contains(err.Error(), "raw evidence") {
 		t.Fatalf("packet must reject an absent raw transcript; got %v", err)
+	}
+}
+
+func TestRequiredScreenSpecsCoverExactFrames(t *testing.T) {
+	want := map[string][]string{
+		"test-stage1-command-output":            {"Stage 1 output:"},
+		"test-stage2-command-output":            {"Stage 2 output:"},
+		"test-stage2-resolution-user-host-port": {"user git", "hostname ssh.github.com", "port 443"},
+		"test-stage2-resolution-identities-key": {"identitiesonly yes", "identityfile"},
+		"confirm-summary-key-path":              {"~/.ssh/id_ed25519_acme"},
+		"confirm-managed-block":                 {"# BEGIN gitid managed:", "# END gitid managed:"},
+	}
+	seen := make(map[string]screenshot.ScreenSpec)
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		seen[spec.ScreenID] = spec
+	}
+	for id, markers := range want {
+		spec, ok := seen[id]
+		if !ok {
+			t.Errorf("RequiredScreenSpecs is missing exact frame %q", id)
+			continue
+		}
+		if !spec.ApplicableLive {
+			t.Errorf("exact frame %q is not live-applicable", id)
+		}
+		if fmt.Sprint(spec.StateMarkers) != fmt.Sprint(markers) {
+			t.Errorf("exact frame %q markers = %v, want %v", id, spec.StateMarkers, markers)
+		}
+	}
+	for _, obsolete := range []string{"test-stage2-proof-top", "test-stage2-proof-bottom", "test-stage2-proof-right", "confirm-summary"} {
+		if _, ok := seen[obsolete]; ok {
+			t.Errorf("RequiredScreenSpecs still contains generic/clipped frame %q", obsolete)
+		}
+	}
+	if err := screenshot.ValidateCapturedState(seen["test-stage2-command-output"], "Proof viewport focused"); err == nil {
+		t.Fatal("generic proof focus marker must not authorize an exact command/output frame")
+	}
+	if err := screenshot.ValidateCapturedState(seen["confirm-summary-key-path"], "~/.ssh/id_ed25519_ac"); err == nil {
+		t.Fatal("clipped key path must not authorize the complete summary frame")
+	}
+	if err := screenshot.ValidateCapturedState(seen["test-stage2-command-output"], "Stage 1 output:"); err == nil {
+		t.Fatal("another frame's marker must not authorize the stage-two frame")
+	}
+}
+
+func liveOnlyRegionSpec() screenshot.ScreenSpec {
+	return screenshot.ScreenSpec{
+		ScreenID:        "live-only-proof",
+		StateMarker:     "Stage 1 output:",
+		StateMarkers:    []string{"Stage 1 output:"},
+		ApplicableLive:  true,
+		RequiredRegions: []screenshot.RegionName{screenshot.RegionConnectivityOutput},
+		NonApplicability: []screenshot.SurfaceNonApplicability{
+			{Surface: "approved-tui", Decision: "D-04", Reason: "The dummy has no completed proof viewport.", Classification: "ux-improvement"},
+			{Surface: "approved-html", Decision: "D-04", Reason: "HTML is not a parity target.", Classification: "ux-improvement"},
+		},
+	}
+}
+
+func TestRegionNonComparable(t *testing.T) {
+	spec := liveOnlyRegionSpec()
+	live := "│ ssh command\n│ Stage 1 output: exact bytes\n"
+	records, err := screenshot.BuildRegionDiffs("test-commit", map[string]string{spec.ScreenID: live}, nil, []screenshot.ScreenSpec{spec})
+	if err != nil {
+		t.Fatalf("BuildRegionDiffs live-only frame: %v", err)
+	}
+	region := records[0].Regions[0]
+	if region.Comparable || region.Equal {
+		t.Fatalf("live-only region must be explicitly non-comparable and unequal: %+v", region)
+	}
+	if region.NonApplicabilityReason == "" || region.Decision != "D-04" || region.Classification != "ux-improvement" {
+		t.Fatalf("live-only region lacks decision-linked classification: %+v", region)
+	}
+}
+
+func TestRegionClassification(t *testing.T) {
+	spec := screenshot.ScreenSpec{
+		ScreenID:              "applicable-proof",
+		StateMarker:           "ssh command",
+		StateMarkers:          []string{"ssh command"},
+		ApplicableLive:        true,
+		ApplicableApprovedTUI: true,
+		RequiredRegions:       []screenshot.RegionName{screenshot.RegionConnectivityOutput},
+		NonApplicability:      []screenshot.SurfaceNonApplicability{{Surface: "approved-html", Decision: "D-04", Reason: "HTML is not a parity target.", Classification: "ux-improvement"}},
+	}
+	live := "│ ssh command\n│ authenticated live\n"
+	dummy := "│ ssh command\n│ authenticated dummy\n"
+	records, err := screenshot.BuildRegionDiffs("test-commit", map[string]string{spec.ScreenID: live}, map[string]string{spec.ScreenID: dummy}, []screenshot.ScreenSpec{spec})
+	if err != nil {
+		t.Fatalf("BuildRegionDiffs applicable difference: %v", err)
+	}
+	region := records[0].Regions[0]
+	if !region.Comparable || region.Equal || region.Classification == "" {
+		t.Fatalf("applicable unequal region lacks an explicit classification: %+v", region)
+	}
+	data := screenshot.BuildRegionDiffsJSON("test-commit", records)
+	if err := screenshot.ValidateRegionDiffs(data, "test-commit", []screenshot.ScreenSpec{spec}); err != nil {
+		t.Fatalf("ValidateRegionDiffs rejected classified difference: %v", err)
+	}
+	records[0].Regions[0].Classification = ""
+	data = screenshot.BuildRegionDiffsJSON("test-commit", records)
+	if err := screenshot.ValidateRegionDiffs(data, "test-commit", []screenshot.ScreenSpec{spec}); err == nil {
+		t.Fatal("ValidateRegionDiffs accepted an unequal region without classification")
+	}
+}
+
+func TestDummyOnlyFrameClassification(t *testing.T) {
+	spec := screenshot.ScreenSpec{
+		ScreenID:              "dummy-only-state",
+		StateMarker:           "ssh command",
+		StateMarkers:          []string{"ssh command"},
+		ApplicableApprovedTUI: true,
+		RequiredRegions:       []screenshot.RegionName{screenshot.RegionConnectivityOutput},
+		NonApplicability: []screenshot.SurfaceNonApplicability{
+			{Surface: "live", Decision: "D-99", Reason: "The live surface removed this obsolete state.", Classification: "ux-improvement"},
+			{Surface: "approved-html", Decision: "D-99", Reason: "HTML is not a parity target.", Classification: "ux-improvement"},
+		},
+	}
+	dummy := "│ ssh command\n│ authenticated dummy-only state\n"
+	records, err := screenshot.BuildRegionDiffs("test-commit", nil, map[string]string{spec.ScreenID: dummy}, []screenshot.ScreenSpec{spec})
+	if err != nil {
+		t.Fatalf("BuildRegionDiffs dummy-only frame: %v", err)
+	}
+	region := records[0].Regions[0]
+	if region.Comparable || region.Equal || region.LiveApplicable || !region.ApprovedApplicable {
+		t.Fatalf("dummy-only region applicability/equality is contradictory: %+v", region)
+	}
+	if region.Decision != "D-99" || region.Classification != "ux-improvement" || region.NonApplicabilityReason == "" {
+		t.Fatalf("dummy-only region lacks an explicit classified reason: %+v", region)
 	}
 }
 
@@ -817,11 +948,14 @@ func TestApprovedTUIPhase3OnlyStatesHaveDecisionLinkedNonApplicability(t *testin
 
 func TestBuildRegionDiffsDeclaresFormDefaultsComparator(t *testing.T) {
 	spec := screenshot.ScreenSpec{
-		ScreenID:               "ssh-form-filled",
-		ApplicableLive:         true,
-		ApplicableApprovedTUI:  true,
-		ApplicableApprovedHTML: true,
-		RequiredRegions:        []screenshot.RegionName{screenshot.RegionFormFields},
+		ScreenID:              "ssh-form-filled",
+		StateMarker:           "Alias prefix",
+		ApplicableLive:        true,
+		ApplicableApprovedTUI: true,
+		RequiredRegions:       []screenshot.RegionName{screenshot.RegionFormFields},
+		NonApplicability: []screenshot.SurfaceNonApplicability{{
+			Surface: "approved-html", Decision: "D-16", Reason: "HTML is not a parity target.", Classification: "ux-improvement",
+		}},
 	}
 	live := "header\nbreadcrumb\n│ Shift+→\n│ Alias prefix live\n│ Key Generate\n"
 	approved := "header\nbreadcrumb\n│ Shift+→\n│ Alias prefix approved\n│ Key Generate\n"
@@ -838,11 +972,14 @@ func TestBuildRegionDiffsDeclaresFormDefaultsComparator(t *testing.T) {
 
 func TestBuildRegionDiffsDeclaresConfirmationPreviewComparator(t *testing.T) {
 	spec := screenshot.ScreenSpec{
-		ScreenID:               "confirm-write",
-		ApplicableLive:         true,
-		ApplicableApprovedTUI:  true,
-		ApplicableApprovedHTML: true,
-		RequiredRegions:        []screenshot.RegionName{screenshot.RegionConfirmationPreview},
+		ScreenID:              "confirm-write",
+		StateMarker:           "Exact change",
+		ApplicableLive:        true,
+		ApplicableApprovedTUI: true,
+		RequiredRegions:       []screenshot.RegionName{screenshot.RegionConfirmationPreview},
+		NonApplicability: []screenshot.SurfaceNonApplicability{{
+			Surface: "approved-html", Decision: "D-05", Reason: "HTML is not a parity target.", Classification: "ux-improvement",
+		}},
 	}
 	live := "│ Exact change live\n"
 	approved := "│ Exact change approved\n"
@@ -1000,16 +1137,36 @@ func validRegionDiffs(t *testing.T, source string) []byte {
 	for _, spec := range screenshot.RequiredScreenSpecs() {
 		record := screenshot.RegionDiffRecord{ScreenID: spec.ScreenID}
 		for _, name := range spec.RequiredRegions {
-			live := "live " + spec.ScreenID + " " + string(name)
+			live := ""
+			if spec.ApplicableLive {
+				live = "live " + spec.ScreenID + " " + string(name)
+			}
 			approved := ""
 			if spec.ApplicableApprovedTUI {
 				approved = live
 			}
-			record.Regions = append(record.Regions, screenshot.NamedRegionDiff{
+			region := screenshot.NamedRegionDiff{
 				Name: name, LiveText: live, ApprovedText: approved,
+				LiveApplicable:     spec.ApplicableLive,
 				ApprovedApplicable: spec.ApplicableApprovedTUI,
-				LiveHash:           hash(live), ApprovedHash: hash(approved), Equal: true,
-			})
+				Comparable:         spec.ApplicableLive && spec.ApplicableApprovedTUI,
+				LiveHash:           hash(live), ApprovedHash: hash(approved), Equal: spec.ApplicableLive && spec.ApplicableApprovedTUI,
+			}
+			if !region.Comparable {
+				surface := "approved-tui"
+				if !region.LiveApplicable {
+					surface = "live"
+				}
+				record, ok := screenshot.NonApplicabilityForSurface(spec, surface)
+				if !ok {
+					t.Fatalf("missing %s non-applicability for %s", surface, spec.ScreenID)
+				}
+				region.Decision = record.Decision
+				region.NonApplicabilityReason = record.Reason
+				region.Classification = record.Classification
+				region.Justification = record.Decision + ": " + record.Reason
+			}
+			record.Regions = append(record.Regions, region)
 		}
 		diffs.Screens = append(diffs.Screens, record)
 	}

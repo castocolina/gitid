@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -220,6 +221,81 @@ func TestWizardSKAlgorithmsDisabledWithRationale(t *testing.T) {
 	}
 	if !strings.Contains(paneFlat(a), "Live Host-block preview (written on confirm)") {
 		t.Error("live preview label missing")
+	}
+}
+
+type algorithmAvailabilityBackend struct {
+	stubBackend
+	catalog []AlgorithmCatalogEntry
+}
+
+func (b algorithmAvailabilityBackend) AlgorithmCatalog() []AlgorithmCatalogEntry {
+	return b.catalog
+}
+
+// TestAlgorithmAvailability catches accepting a selected algorithm that the
+// runtime probe marked unavailable. The user must remain on SSH details until
+// navigation lands on an implemented, available entry.
+func TestAlgorithmAvailability(t *testing.T) {
+	b := algorithmAvailabilityBackend{catalog: []AlgorithmCatalogEntry{
+		{ID: "ed25519", Implemented: true, Available: false},
+		{ID: "rsa-4096", Implemented: true, Available: true},
+	}}
+	a := NewApp(b)
+	model, _ := a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	a = model.(App)
+	a = pressSeq(t, a, "n")
+
+	w := identModel(t, a).wizard
+	if valid, _ := w.step0Valid(a.state); valid {
+		t.Fatal("an unavailable selected algorithm must block the SSH-details gate")
+	}
+	a, _ = press(t, a, "enter")
+	if got := identModel(t, a).wizard.step; got != 0 {
+		t.Fatalf("unavailable selected algorithm advanced to step %d, want step 0", got)
+	}
+
+	a, _ = press(t, a, "up")
+	a, _ = press(t, a, "right")
+	w = identModel(t, a).wizard
+	if got := w.algo(); got != "rsa-4096" {
+		t.Fatalf("algorithm navigation selected %q, want available rsa-4096", got)
+	}
+	if valid, err := w.step0Valid(a.state); !valid || err != nil {
+		t.Fatalf("available selected algorithm did not unlock SSH details: valid=%v err=%v", valid, err)
+	}
+}
+
+// TestAllAlgorithmsUnavailable catches the former unbounded selection loop:
+// one raw arrow key must return promptly and leave the fail-closed gate closed.
+func TestAllAlgorithmsUnavailable(t *testing.T) {
+	b := algorithmAvailabilityBackend{catalog: []AlgorithmCatalogEntry{
+		{ID: "ed25519", Implemented: true, Available: false},
+		{ID: "rsa-4096", Implemented: false, Available: true},
+	}}
+	a := NewApp(b)
+	model, _ := a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	a = model.(App)
+	a = pressSeq(t, a, "n", "up")
+	before := identModel(t, a).wizard.algoIdx
+
+	done := make(chan App, 1)
+	go func() {
+		updated, _ := a.Update(pressKey("right"))
+		done <- updated.(App)
+	}()
+	select {
+	case a = <-done:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("algorithm navigation did not return when every catalog entry was unavailable")
+	}
+
+	w := identModel(t, a).wizard
+	if w.algoIdx != before {
+		t.Fatalf("all-unavailable navigation moved selection from %d to %d", before, w.algoIdx)
+	}
+	if valid, _ := w.step0Valid(a.state); valid {
+		t.Fatal("all-unavailable catalog must keep the SSH-details gate closed")
 	}
 }
 
@@ -2120,6 +2196,68 @@ func TestCompletedProofViewportRoutesAdvertisedControls(t *testing.T) {
 	}
 }
 
+func TestProofViewport(t *testing.T) {
+	a := openWizardAtTestStage2(t, stubBackend{})
+	m := identModel(t, a)
+	m.wizard.stage1.Command = "ssh -F /tmp/gitid-stage/config -o IdentitiesOnly=yes -i /tmp/gitid-stage/id_ed25519_acme -T git@ssh.github.com -p 443"
+	m.wizard.stage1.Detail = "Hi user! You've successfully authenticated."
+	m.wizard.stage2.Command = "ssh -F /tmp/gitid-stage/config -T git@acme.github.com"
+	m.wizard.stage2.Detail = "Hi alias! You've successfully authenticated."
+	m.wizard.stage2.ResolutionCommand = "ssh -F /tmp/gitid-stage/config -G acme.github.com"
+	m.wizard.stage2.ResolutionOutput = strings.Join([]string{
+		"user git",
+		"hostname ssh.github.com",
+		"port 443",
+		"identitiesonly yes",
+		"identityfile /tmp/gitid-stage/id_ed25519_acme",
+	}, "\n")
+	m.wizard = m.wizard.refreshProof()
+	a.screens[TabIdentities] = m
+
+	a, _ = press(t, a, "v")
+	wanted := map[string]bool{
+		"Stage 1 command:":              false,
+		"Stage 1 output:":               false,
+		"Stage 2 command:":              false,
+		"Stage 2 output:":               false,
+		"user git":                      false,
+		"hostname ssh.github.com":       false,
+		"port 443":                      false,
+		"identitiesonly yes":            false,
+		"identityfile /tmp/gitid-stage": false,
+	}
+	observe := func() {
+		frame := stripANSI(appView(a))
+		for marker := range wanted {
+			wanted[marker] = wanted[marker] || strings.Contains(frame, marker)
+		}
+	}
+	for range 8 {
+		observe()
+		a, _ = press(t, a, "pgdown")
+	}
+	for marker, seen := range wanted {
+		if !seen {
+			t.Errorf("proof viewport never exposed exact marker %q through PgDn navigation", marker)
+		}
+	}
+
+	proof := identModel(t, a).wizard.proof
+	bottom := proof.LineOffset
+	a, _ = press(t, a, "pgup")
+	if got := identModel(t, a).wizard.proof.LineOffset; got >= bottom {
+		t.Fatalf("PgUp did not move the focused proof viewport up: before=%d after=%d", bottom, got)
+	}
+	a, _ = press(t, a, "right")
+	if got := identModel(t, a).wizard.proof.HorizontalOffset; got == 0 {
+		t.Fatal("Right did not move the focused proof viewport horizontally")
+	}
+	a, _ = press(t, a, "left")
+	if got := identModel(t, a).wizard.proof.HorizontalOffset; got != 0 {
+		t.Fatalf("Left did not restore the proof viewport's first columns: offset=%d", got)
+	}
+}
+
 func TestConfirmationViewportRoutesAdvertisedControls(t *testing.T) {
 	a := openWizardAtGitStep(t, stubBackend{})
 	for i := 0; i < 4; i++ {
@@ -2132,6 +2270,64 @@ func TestConfirmationViewportRoutesAdvertisedControls(t *testing.T) {
 	view := stripANSI(appView(a))
 	if !strings.Contains(view, "# END gitid managed:") {
 		t.Fatalf("confirmation viewport did not reveal the END sentinel:\n%s", view)
+	}
+}
+
+func TestConfirmationViewport(t *testing.T) {
+	a := openWizardAtGitStep(t, stubBackend{})
+	for range 4 {
+		a, _ = press(t, a, "tab")
+	}
+	a, _ = press(t, a, "enter")
+
+	m := identModel(t, a)
+	identityName := m.wizard.form.identityName()
+	originalKeyPath := m.wizard.keyPath()
+	const keyPath = "/tmp/gitid-home/.ssh/id_ed25519_acme"
+	m.wizard.ceremony.preview.Text = strings.ReplaceAll(m.wizard.ceremony.preview.Text, originalKeyPath, keyPath)
+	a.screens[TabIdentities] = m
+	a, _ = press(t, a, "v")
+
+	keySeen := false
+	for range 16 {
+		if strings.Contains(stripANSI(appView(a)), keyPath) {
+			keySeen = true
+			break
+		}
+		a, _ = press(t, a, "right")
+	}
+	if !keySeen {
+		t.Fatalf("confirmation viewport never exposed the complete summary key path %q", keyPath)
+	}
+
+	for range 16 {
+		a, _ = press(t, a, "left")
+	}
+	wantedBlockLines := []string{
+		"# BEGIN gitid managed: " + identityName,
+		"Host " + m.wizard.form.sshHost(),
+		"Hostname ssh.github.com",
+		"Port 443",
+		"User git",
+		"IdentityFile " + keyPath,
+		"IdentitiesOnly yes",
+		"# END gitid managed: " + identityName,
+	}
+	blockSeen := false
+	for range 8 {
+		frame := stripANSI(appView(a))
+		all := true
+		for _, line := range wantedBlockLines {
+			all = all && strings.Contains(frame, line)
+		}
+		if all {
+			blockSeen = true
+			break
+		}
+		a, _ = press(t, a, "pgdown")
+	}
+	if !blockSeen {
+		t.Fatalf("confirmation viewport never exposed the complete BEGIN-to-END managed block in one frame:\n%s", stripANSI(appView(a)))
 	}
 }
 

@@ -281,11 +281,14 @@ screenshot-html:
 ## gate (plan 03-06 Task 2, corrected plan 03-10 Task 2 — CR-01/CR-04/CR-05).
 ## Drives the shared internal/tuikit render stack in-process through a fixed
 ## script for BOTH the real cmd/gitid Backend and cmd/gitid-dummy's
-## FixtureBackend, diffs the two capture sets screen by screen.
+## FixtureBackend. RequiredScreenSpecs defines the symmetric inventory; every
+## unequal or one-sided named region needs an explicit ux-improvement/defect
+## classification. HTML, pixel parity, and real/dummy byte parity are excluded.
 ##
 ## READ-ONLY (CR-01): writes ONLY to temp directories. Never modifies
 ## .planning/phases/03-create-flow-backend/ or any tracked path.
-## Runs TWO independent captures and asserts byte-identical text hashes.
+## Runs TWO independent captures per surface and asserts within-surface
+## determinism before validating classified region evidence.
 ##
 ## Invokes TestGateVisualRegression + TestGateVisualRegressionReadOnly +
 ## TestAllScreensCapturedAndNonEmpty + TestNegativeControls_* under the

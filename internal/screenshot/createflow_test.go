@@ -24,9 +24,11 @@ import (
 func TestCaptureCreateFlowScreens_HasAllIDs(t *testing.T) {
 	backend := dummytui.NewFixtureBackend()
 	captures := screenshot.CaptureCreateFlowScreens(backend)
-	for _, id := range screenshot.CreateFlowScreenIDs {
-		if _, ok := captures[id]; !ok {
-			t.Errorf("CaptureCreateFlowScreens: screen %q missing from output", id)
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		if spec.ApplicableLive {
+			if _, ok := captures[spec.ScreenID]; !ok {
+				t.Errorf("CaptureCreateFlowScreens: screen %q missing from output", spec.ScreenID)
+			}
 		}
 	}
 }
@@ -36,9 +38,9 @@ func TestCaptureCreateFlowScreens_HasAllIDs(t *testing.T) {
 func TestCaptureCreateFlowScreens_NonEmptyContent(t *testing.T) {
 	backend := dummytui.NewFixtureBackend()
 	captures := screenshot.CaptureCreateFlowScreens(backend)
-	for _, id := range screenshot.CreateFlowScreenIDs {
-		if strings.TrimSpace(captures[id]) == "" {
-			t.Errorf("CaptureCreateFlowScreens: screen %q has empty content", id)
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		if spec.ApplicableLive && strings.TrimSpace(captures[spec.ScreenID]) == "" {
+			t.Errorf("CaptureCreateFlowScreens: screen %q has empty content", spec.ScreenID)
 		}
 	}
 }
@@ -50,8 +52,9 @@ func TestCaptureCreateFlowScreens_Deterministic(t *testing.T) {
 	backend := dummytui.NewFixtureBackend()
 	first := screenshot.CaptureCreateFlowScreens(backend)
 	second := screenshot.CaptureCreateFlowScreens(backend)
-	for _, id := range screenshot.CreateFlowScreenIDs {
-		if first[id] != second[id] {
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		id := spec.ScreenID
+		if spec.ApplicableLive && first[id] != second[id] {
 			t.Errorf("CaptureCreateFlowScreens: screen %q not deterministic: run1 len=%d run2 len=%d",
 				id, len(first[id]), len(second[id]))
 		}
@@ -285,8 +288,9 @@ func TestCaptureCreateFlowScreens_DeterministicTwoRuns(t *testing.T) {
 	backend := dummytui.NewFixtureBackend()
 	first := screenshot.CaptureCreateFlowScreens(backend)
 	second := screenshot.CaptureCreateFlowScreens(backend)
-	for _, id := range screenshot.CreateFlowScreenIDs {
-		if first[id] != second[id] {
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		id := spec.ScreenID
+		if spec.ApplicableLive && first[id] != second[id] {
 			t.Errorf("CaptureCreateFlowScreens: screen %q not byte-identical across two runs (CR-01 nondeterminism):\n  run1 len=%d run2 len=%d",
 				id, len(first[id]), len(second[id]))
 		}

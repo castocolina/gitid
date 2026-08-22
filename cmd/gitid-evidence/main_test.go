@@ -118,6 +118,22 @@ func TestPublisherRejectsUnknownCommit(t *testing.T) {
 	}
 }
 
+func TestEvidenceFakeSSHAlgorithmAvailability(t *testing.T) {
+	workspace := t.TempDir()
+	dir, err := writeFakeSSH(workspace)
+	if err != nil {
+		t.Fatalf("creating evidence fake SSH: %v", err)
+	}
+	output, err := exec.Command(filepath.Join(dir, "ssh"), "-Q", "key").CombinedOutput() //nolint:gosec // executable is the test-owned static fake
+	if err != nil {
+		t.Fatalf("evidence fake ssh -Q key: %v\n%s", err, output)
+	}
+	want := "ssh-ed25519\nssh-rsa\necdsa-sha2-nistp256\n"
+	if got := string(output); got != want {
+		t.Fatalf("evidence fake ssh -Q key output = %q, want %q", got, want)
+	}
+}
+
 func TestSeedManualReuseKeyUsesDeterministicSandboxFixture(t *testing.T) {
 	firstHome := t.TempDir()
 	secondHome := t.TempDir()
@@ -264,16 +280,37 @@ func makeCandidate(t *testing.T, dir string) string {
 	for _, spec := range screenshot.RequiredScreenSpecs() {
 		record := screenshot.RegionDiffRecord{ScreenID: spec.ScreenID}
 		for _, region := range spec.RequiredRegions {
-			live := "live " + spec.ScreenID + " " + string(region)
+			live := ""
+			if spec.ApplicableLive {
+				live = "live " + spec.ScreenID + " " + string(region)
+			}
 			approved := ""
 			if spec.ApplicableApprovedTUI {
 				approved = live
 			}
-			record.Regions = append(record.Regions, screenshot.NamedRegionDiff{
+			regionRecord := screenshot.NamedRegionDiff{
 				Name: region, LiveText: live, ApprovedText: approved,
+				LiveApplicable:     spec.ApplicableLive,
 				ApprovedApplicable: spec.ApplicableApprovedTUI,
-				LiveHash:           sha256String(live), ApprovedHash: sha256String(approved), Equal: true,
-			})
+				Comparable:         spec.ApplicableLive && spec.ApplicableApprovedTUI,
+				LiveHash:           sha256String(live), ApprovedHash: sha256String(approved),
+				Equal: spec.ApplicableLive && spec.ApplicableApprovedTUI,
+			}
+			if !regionRecord.Comparable {
+				surface := "approved-tui"
+				if !regionRecord.LiveApplicable {
+					surface = "live"
+				}
+				nonApplicable, ok := screenshot.NonApplicabilityForSurface(spec, surface)
+				if !ok {
+					t.Fatalf("missing %s non-applicability for %s", surface, spec.ScreenID)
+				}
+				regionRecord.Decision = nonApplicable.Decision
+				regionRecord.NonApplicabilityReason = nonApplicable.Reason
+				regionRecord.Classification = nonApplicable.Classification
+				regionRecord.Justification = nonApplicable.Decision + ": " + nonApplicable.Reason
+			}
+			record.Regions = append(record.Regions, regionRecord)
 		}
 		regionRecords = append(regionRecords, record)
 		for _, surface := range []string{"live", "approved-tui", "approved-html"} {
@@ -478,6 +515,95 @@ func TestCaptureTUIScreenConfirmationManagedBlock(t *testing.T) {
 	}
 	if strings.TrimSpace(raw) == "" {
 		t.Fatal("confirm-managed-block must retain raw PTY evidence")
+	}
+}
+
+func TestCaptureTUIScreenExactProofFrames(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "gitid")
+	build := exec.Command("go", "build", "-o", bin, "../gitid") //nolint:gosec // fixed local package and sandbox output
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("building gitid capture binary: %v\n%s", err, output)
+	}
+	workspace := t.TempDir()
+	fakeSSH, err := writeFakeSSH(workspace)
+	if err != nil {
+		t.Fatalf("creating fake SSH: %v", err)
+	}
+	cases := map[string][]string{
+		"test-stage1-command-output":            {"Stage 1 command:", "Stage 1 output:", "Hi user!"},
+		"test-stage2-command-output":            {"Stage 2 command:", "Stage 2 output:", "Hi user!"},
+		"test-stage2-resolution-user-host-port": {"user git", "hostname ssh.github.com", "port 443"},
+		"test-stage2-resolution-identities-key": {"identitiesonly yes", "identityfile"},
+	}
+	for id, markers := range cases {
+		t.Run(id, func(t *testing.T) {
+			var raw string
+			text, captureErr := captureTUIScreen(bin, captureHomePath(workspace, id), fakeSSH, id, true, &raw)
+			if captureErr != nil {
+				t.Fatalf("capturing %s: %v", id, captureErr)
+			}
+			for _, marker := range markers {
+				if !strings.Contains(text, marker) {
+					t.Errorf("%s frame does not expose exact marker %q:\n%s", id, marker, text)
+				}
+			}
+			if strings.TrimSpace(raw) == "" {
+				t.Errorf("%s frame has no raw PTY evidence", id)
+			}
+		})
+	}
+}
+
+func TestCaptureTUIScreenConfirmationKeyPathFrame(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "gitid")
+	build := exec.Command("go", "build", "-o", bin, "../gitid") //nolint:gosec // fixed local package and sandbox output
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("building gitid capture binary: %v\n%s", err, output)
+	}
+	workspace := t.TempDir()
+	fakeSSH, err := writeFakeSSH(workspace)
+	if err != nil {
+		t.Fatalf("creating fake SSH: %v", err)
+	}
+	var raw string
+	text, err := captureTUIScreen(bin, captureHomePath(workspace, "confirm-summary-key-path"), fakeSSH, "confirm-summary-key-path", true, &raw)
+	if err != nil {
+		t.Fatalf("capturing confirm-summary-key-path: %v", err)
+	}
+	if !strings.Contains(text, "~/.ssh/id_ed25519_acme") {
+		t.Fatalf("confirmation key-path frame does not expose the complete sandbox key path:\n%s", text)
+	}
+}
+
+func TestCaptureTUIScreenConfirmationManagedBlockFrame(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "gitid")
+	build := exec.Command("go", "build", "-o", bin, "../gitid") //nolint:gosec // fixed local package and sandbox output
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("building gitid capture binary: %v\n%s", err, output)
+	}
+	workspace := t.TempDir()
+	fakeSSH, err := writeFakeSSH(workspace)
+	if err != nil {
+		t.Fatalf("creating fake SSH: %v", err)
+	}
+	var raw string
+	text, err := captureTUIScreen(bin, captureHomePath(workspace, "confirm-managed-block"), fakeSSH, "confirm-managed-block", true, &raw)
+	if err != nil {
+		t.Fatalf("capturing confirm-managed-block: %v", err)
+	}
+	for _, marker := range []string{
+		"# BEGIN gitid managed: acme",
+		"Host acme.github.com",
+		"Hostname ssh.github.com",
+		"Port 443",
+		"User git",
+		"IdentityFile ~/.ssh/id_ed25519_acme",
+		"IdentitiesOnly yes",
+		"# END gitid managed: acme",
+	} {
+		if !strings.Contains(text, marker) {
+			t.Errorf("confirmation managed-block frame does not expose %q:\n%s", marker, text)
+		}
 	}
 }
 

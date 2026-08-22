@@ -627,13 +627,7 @@ func (v ExactTextViewport) TotalLines() int { return len(v.lines()) }
 // past the last screenful of content.
 func (v ExactTextViewport) Clamp() ExactTextViewport {
 	total := v.TotalLines()
-	contentRows := v.VisibleLines
-	// A horizontal-overflow cue occupies the final viewport row, so reserve it
-	// when calculating the bottom offset or the last source line is unreachable.
-	if v.Width > 0 && v.maxLineWidth() > v.Width && contentRows > 1 {
-		contentRows--
-	}
-	maxOffset := total - contentRows
+	maxOffset := total - v.VisibleLines
 	if maxOffset < 0 {
 		maxOffset = 0
 	}
@@ -767,7 +761,8 @@ func (v ExactTextViewport) View() string {
 	}
 
 	cueLine := ""
-	if hiddenBelow > 0 || hiddenRight > 0 || v.HorizontalOffset > 0 {
+	showHorizontalCue := len(visible) < v.VisibleLines && (hiddenRight > 0 || v.HorizontalOffset > 0)
+	if hiddenBelow > 0 || showHorizontalCue {
 		// Build a combined navigation cue.
 		parts := []string{}
 		if hiddenBelow > 0 {
@@ -777,7 +772,7 @@ func (v ExactTextViewport) View() string {
 		} else if start > 0 {
 			parts = append(parts, "↑ top at line 1  PgUp↑")
 		}
-		if hiddenRight > 0 || v.HorizontalOffset > 0 {
+		if showHorizontalCue {
 			colEnd := v.HorizontalOffset + v.Width
 			if colEnd > maxWidth {
 				colEnd = maxWidth

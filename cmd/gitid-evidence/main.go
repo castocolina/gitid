@@ -564,7 +564,7 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 	// For stage-1 captures: set GITID_BARRIER_FILE so the fake SSH's -G call
 	// blocks until the capture script signals stage-1 is done.
 	var barrierFile string
-	if fakeSSH != "" && (id == "test-stage1-direct" || id == "test-stage1-pass") {
+	if fakeSSH != "" && (id == "test-stage1-direct" || id == "test-stage1-pass" || id == "test-stage1-command-output") {
 		barrierFile = filepath.Join(home, ".gitid-stage1-barrier")
 		cmd.Env = append(cmd.Env, "GITID_BARRIER_FILE="+barrierFile)
 	}
@@ -597,7 +597,7 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 		if err := session.tabs(4); err != nil {
 			return "", err
 		}
-		if err := selectReuse(session, fakeSSH != ""); err != nil {
+		if err := selectReuse(session); err != nil {
 			return "", err
 		}
 	case "reuse-manual-path", "reuse-manual-resolved":
@@ -606,7 +606,7 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 		}
 		// Select Reuse, then the trailing manual row and its input. This is a
 		// real resolved-key state, never a Generate frame relabeled by ID.
-		if err := selectReuse(session, fakeSSH != ""); err != nil {
+		if err := selectReuse(session); err != nil {
 			return "", err
 		}
 		if err := session.tabs(1); err != nil {
@@ -641,7 +641,7 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 		if err := session.send([]byte(fmt.Sprintf("\x1b[<0;10;%dM\x1b[<0;10;%dm", row, row))); err != nil {
 			return "", err
 		}
-	case "test-stage1-direct", "test-stage1-pass":
+	case "test-stage1-direct", "test-stage1-pass", "test-stage1-command-output":
 		// Run stage 1 and capture BEFORE stage 2 completes — the genuine
 		// testRunning2 state (stage-1 result visible + "… running ssh…").
 		// The prior runStages() waited for "identityfile" (stage-2 done),
@@ -649,38 +649,31 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 		if err := runStage1Only(session); err != nil {
 			return "", err
 		}
-	case "test-stage2-by-alias", "test-stage2-proof-top", "test-stage2-proof-bottom", "test-stage2-proof-right", "test-reachable-not-uploaded":
+		if id == "test-stage1-command-output" {
+			if err := focusAndNavigateViewport(session, []string{"Stage 1 command:", "Stage 1 output:", "Hi user!"}, false); err != nil {
+				return "", err
+			}
+		}
+	case "test-stage2-by-alias", "test-stage2-command-output", "test-stage2-resolution-user-host-port", "test-stage2-resolution-identities-key", "test-reachable-not-uploaded":
 		// Run both stages and capture AFTER stage 2 completes (testStage2 state).
 		if err := runStages(session, autoStage2); err != nil {
 			return "", err
 		}
-		if id == "test-stage2-proof-top" || id == "test-stage2-proof-bottom" || id == "test-stage2-proof-right" {
-			if err := session.send([]byte("v")); err != nil {
-				return "", err
-			}
-			if _, err := session.waitFor("Proof viewport focused", 8*time.Second); err != nil {
-				return "", err
-			}
+		markers := map[string][]string{
+			"test-stage2-command-output":            {"Stage 2 command:", "Stage 2 output:", "Hi user!"},
+			"test-stage2-resolution-user-host-port": {"user git", "hostname ssh.github.com", "port 443"},
+			"test-stage2-resolution-identities-key": {"identitiesonly yes", "identityfile"},
 		}
-		if id == "test-stage2-proof-bottom" {
-			for range 4 {
-				if err := session.send([]byte("\x1b[6~")); err != nil {
-					return "", err
-				}
-			}
-		}
-		if id == "test-stage2-proof-right" {
-			for range 8 {
-				if err := session.send([]byte("\x1b[C")); err != nil {
-					return "", err
-				}
+		if required := markers[id]; len(required) > 0 {
+			if err := focusAndNavigateViewport(session, required, false); err != nil {
+				return "", err
 			}
 		}
 	case "test-hard-failure-retry":
 		if err := runFailure(session); err != nil {
 			return "", err
 		}
-	case "git-form-demo", "confirm-write", "confirm-summary", "confirm-managed-block":
+	case "git-form-demo", "confirm-write", "confirm-summary-key-path", "confirm-managed-block":
 		if err := runStages(session, autoStage2); err != nil {
 			return "", err
 		}
@@ -702,7 +695,7 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 		if _, err := session.waitFor("Create identity", 8*time.Second); err != nil {
 			return "", err
 		}
-		if id == "confirm-summary" || id == "confirm-managed-block" {
+		if id == "confirm-summary-key-path" || id == "confirm-managed-block" {
 			if err := session.send([]byte("v")); err != nil {
 				return "", err
 			}
@@ -710,8 +703,16 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 				return "", err
 			}
 		}
+		if id == "confirm-summary-key-path" {
+			if err := navigateFocusedViewport(session, []string{"key ~/.ssh/id_ed25519_acme"}, true); err != nil {
+				return "", err
+			}
+		}
 		if id == "confirm-managed-block" {
-			if err := pageUntilVisible(session, "# END gitid managed:"); err != nil {
+			if err := navigateFocusedViewport(session, []string{
+				"# BEGIN gitid managed: acme", "Host acme.github.com", "Hostname ssh.github.com", "Port 443", "User git",
+				"IdentityFile ~/.ssh/id_ed25519_acme", "IdentitiesOnly yes", "# END gitid managed: acme",
+			}, false); err != nil {
 				return "", err
 			}
 		}
@@ -762,12 +763,9 @@ func captureWorkspace(sourceCommit string) (string, error) {
 	return workspace, nil
 }
 
-func selectReuse(session *capturePTY, waitForSelectedState bool) error {
+func selectReuse(session *capturePTY) error {
 	if err := session.send([]byte("\x1b[C")); err != nil {
 		return err
-	}
-	if !waitForSelectedState {
-		return nil
 	}
 	if _, err := session.waitFor("● Reuse an", 8*time.Second); err != nil {
 		return fmt.Errorf("waiting for selected reuse state: %w", err)
@@ -775,19 +773,74 @@ func selectReuse(session *capturePTY, waitForSelectedState bool) error {
 	return nil
 }
 
-func pageUntilVisible(session *capturePTY, marker string) error {
-	for range 12 {
-		if strings.Contains(session.snapshot(), marker) {
+func focusAndNavigateViewport(session *capturePTY, markers []string, allowHorizontal bool) error {
+	if err := session.send([]byte("v")); err != nil {
+		return err
+	}
+	if _, err := session.waitFor("viewport focused", 8*time.Second); err != nil {
+		return fmt.Errorf("focusing proof viewport: %w", err)
+	}
+	return navigateFocusedViewport(session, markers, allowHorizontal)
+}
+
+func navigateFocusedViewport(session *capturePTY, markers []string, allowHorizontal bool) error {
+	containsAll := func(frame string) bool {
+		for _, marker := range markers {
+			if !strings.Contains(frame, marker) {
+				return false
+			}
+		}
+		return true
+	}
+	reset := func(key []byte, count int) error {
+		for range count {
+			if err := session.send(key); err != nil {
+				return err
+			}
+			time.Sleep(15 * time.Millisecond)
+		}
+		return nil
+	}
+
+	// Start from a deterministic origin using the controls advertised by the
+	// focused viewport. This is raw PTY input, not model-internal mutation.
+	if err := session.send([]byte("\x1b[6~")); err != nil { // PgDn
+		return err
+	}
+	if err := reset([]byte("\x1b[5~"), 12); err != nil { // PgUp
+		return err
+	}
+	if err := session.send([]byte("\x1b[C")); err != nil { // Right
+		return err
+	}
+	if err := reset([]byte("\x1b[D"), 32); err != nil { // Left
+		return err
+	}
+	time.Sleep(40 * time.Millisecond)
+	for range 16 {
+		if containsAll(session.snapshot()) {
 			return nil
 		}
-		if err := session.send([]byte("\x1b[B")); err != nil {
+		if allowHorizontal {
+			for range 32 {
+				if err := session.send([]byte("\x1b[C")); err != nil { // Right
+					return err
+				}
+				time.Sleep(10 * time.Millisecond)
+				if containsAll(session.snapshot()) {
+					return nil
+				}
+			}
+			if err := reset([]byte("\x1b[D"), 32); err != nil {
+				return err
+			}
+		}
+		if err := session.send([]byte("\x1b[6~")); err != nil { // PgDn
 			return err
 		}
-		if _, err := session.waitFor(marker, time.Second); err == nil {
-			return nil
-		}
+		time.Sleep(40 * time.Millisecond)
 	}
-	return fmt.Errorf("terminal never displayed %q after paging:\n%s", marker, session.snapshot())
+	return fmt.Errorf("terminal never displayed exact markers %q after viewport navigation:\n%s", markers, session.snapshot())
 }
 
 func runFailure(session *capturePTY) error {
@@ -898,7 +951,11 @@ func captureApprovedHTMLPanels(repoRoot, approvalDir, workspace, renderDir strin
 	// git-form-demo→create-flow/backup-notice).
 	approvedRoutes := screenshot.ApprovedHTMLRoutes()
 	panels := make([]screenshot.VisualPanel, 0, len(approvedRoutes))
-	for _, id := range screenshot.CreateFlowScreenIDs {
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		if !spec.ApplicableApprovedHTML {
+			continue
+		}
+		id := spec.ScreenID
 		route, ok := approvedRoutes[id]
 		if !ok {
 			return nil, fmt.Errorf("no approved HTML route for screen %q", id)
@@ -1226,6 +1283,10 @@ func writeFakeSSH(workspace string) (string, error) {
 		return "", err
 	}
 	const script = `#!/bin/sh
+if [ "$1" = "-Q" ] && [ "$2" = "key" ]; then
+  printf 'ssh-ed25519\nssh-rsa\necdsa-sha2-nistp256\n'
+  exit 0
+fi
 config_path=""
 next_is_config=0
 is_resolution=0

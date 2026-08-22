@@ -60,8 +60,8 @@ const (
 	CaptureHeight = 30
 )
 
-// CreateFlowScreenIDs is retained only by the text-only legacy capture helper.
-// Visual packet completeness is derived from ScreenSpecRegistry instead.
+// CreateFlowScreenIDs is retained for source compatibility only. It is not an
+// inventory or completeness oracle; RequiredScreenSpecs is authoritative.
 var CreateFlowScreenIDs = []string{
 	"ssh-form-filled",       // step 0: the default-filled SSH form + live Host-block preview
 	"reuse-key-vs-generate", // step 0: D-10 picker, populated (backend.ScanReusableKeys())
@@ -89,14 +89,15 @@ var CreateFlowScreenIDs = []string{
 // SurfaceNonApplicability records why an approval surface cannot truthfully
 // render a Phase 3 state and the decision that introduced that state.
 type SurfaceNonApplicability struct {
-	Surface  string
-	Decision string
-	Reason   string
+	Surface        string
+	Decision       string
+	Reason         string
+	Classification string
 }
 
 // ScreenSpec is the typed capture contract for one create-flow logical screen.
 type ScreenSpec struct {
-	// ScreenID is the logical identifier (one of CreateFlowScreenIDs).
+	// ScreenID is the registry's logical identifier.
 	ScreenID string
 	// Route is the canonical HTML route for this screen (e.g. "/create-flow/ssh-form-filled").
 	Route string
@@ -105,6 +106,9 @@ type ScreenSpec struct {
 	// StateMarker is the unique string that MUST appear in the captured text to
 	// confirm the correct state was captured. A route name alone is never sufficient.
 	StateMarker string
+	// StateMarkers lists every exact byte sequence required in the saved frame.
+	// StateMarker remains the compatibility shorthand for single-marker specs.
+	StateMarkers []string
 	// ApplicableLive reports whether this spec applies to the live binary capture.
 	ApplicableLive bool
 	// ApplicableApprovedTUI reports whether this spec applies to the approved-TUI capture.
@@ -125,12 +129,17 @@ type ScreenSpec struct {
 	RequiredRegions []RegionName
 }
 
+func uxNonComparable(surface, decision, reason string) SurfaceNonApplicability {
+	return SurfaceNonApplicability{
+		Surface: surface, Decision: decision, Reason: reason, Classification: "ux-improvement",
+	}
+}
+
 // ScreenSpecRegistry returns the canonical typed ScreenSpec registry consumed
-// by capture, validation, region generation, and publication. Every logical
-// screen ID in CreateFlowScreenIDs has exactly one spec. Same-route interaction
+// by capture, validation, region generation, and publication. Same-route interaction
 // variants carry explicit VariantOf + VariantRationale metadata.
 func ScreenSpecRegistry() []ScreenSpec {
-	return []ScreenSpec{
+	specs := []ScreenSpec{
 		{
 			ScreenID:               "ssh-form-filled",
 			Route:                  "/create-flow/ssh-form-filled",
@@ -148,10 +157,9 @@ func ScreenSpecRegistry() []ScreenSpec {
 			StateMarker:            "Reuse an existing key",
 			ApplicableLive:         true,
 			ApplicableApprovedHTML: true,
-			NonApplicability: []SurfaceNonApplicability{{
-				Surface: "approved-tui", Decision: "D-10",
-				Reason: "The approved TUI predates the Phase 3 reusable-key picker.",
-			}},
+			NonApplicability: []SurfaceNonApplicability{uxNonComparable(
+				"approved-tui", "D-10", "The approved TUI predates the Phase 3 reusable-key picker.",
+			)},
 			RequiredRegions: []RegionName{RegionKeySection},
 		},
 		{
@@ -164,10 +172,9 @@ func ScreenSpecRegistry() []ScreenSpec {
 			RequiredRegions:        []RegionName{RegionKeySection},
 			VariantOf:              "reuse-key-vs-generate",
 			VariantRationale:       "No separate HTML route exists for the manual-path interaction variant; it shares /create-flow/reuse-key-vs-generate.",
-			NonApplicability: []SurfaceNonApplicability{{
-				Surface: "approved-tui", Decision: "D-10",
-				Reason: "The approved TUI predates the Phase 3 reusable-key picker.",
-			}},
+			NonApplicability: []SurfaceNonApplicability{uxNonComparable(
+				"approved-tui", "D-10", "The approved TUI predates the Phase 3 reusable-key picker.",
+			)},
 		},
 		{
 			ScreenID:               "mouse-focused-field",
@@ -198,10 +205,9 @@ func ScreenSpecRegistry() []ScreenSpec {
 			StateMarker:            "Next: Git identity",
 			ApplicableLive:         true,
 			ApplicableApprovedHTML: true,
-			NonApplicability: []SurfaceNonApplicability{{
-				Surface: "approved-tui", Decision: "D-04",
-				Reason: "The approved TUI predates Phase 3 completed stage-2 auto-chain affordance.",
-			}},
+			NonApplicability: []SurfaceNonApplicability{uxNonComparable(
+				"approved-tui", "D-04", "The approved TUI predates Phase 3 completed stage-2 auto-chain affordance.",
+			)},
 			RequiredRegions: []RegionName{RegionConnectivityOutput},
 		},
 		{
@@ -230,8 +236,8 @@ func ScreenSpecRegistry() []ScreenSpec {
 			StateMarker:    "ssh-ed25519",
 			ApplicableLive: true,
 			NonApplicability: []SurfaceNonApplicability{
-				{Surface: "approved-tui", Decision: "D-10", Reason: "The approved TUI predates the resolved manual-key state."},
-				{Surface: "approved-html", Decision: "D-10", Reason: "The approved HTML has no resolved manual-key state."},
+				uxNonComparable("approved-tui", "D-10", "The approved TUI predates the resolved manual-key state."),
+				uxNonComparable("approved-html", "D-10", "The approved HTML has no resolved manual-key state."),
 			},
 			RequiredRegions: []RegionName{RegionKeySection},
 		},
@@ -241,41 +247,56 @@ func ScreenSpecRegistry() []ScreenSpec {
 			StateMarker:    "Hi user!",
 			ApplicableLive: true,
 			NonApplicability: []SurfaceNonApplicability{
-				{Surface: "approved-tui", Decision: "D-04", Reason: "The approved TUI does not execute Phase 3 auto-chained SSH tests."},
-				{Surface: "approved-html", Decision: "D-04", Reason: "The approved HTML has no completed Phase 3 test state."},
+				uxNonComparable("approved-tui", "D-04", "The approved TUI does not execute Phase 3 auto-chained SSH tests."),
+				uxNonComparable("approved-html", "D-04", "The approved HTML has no completed Phase 3 test state."),
 			},
 			RequiredRegions: []RegionName{RegionConnectivityOutput},
 		},
 		{
-			ScreenID:       "test-stage2-proof-top",
-			Interaction:    "Complete both pass stages, focus the proof viewport with raw v, and capture the initial proof frame.",
-			StateMarker:    "Proof viewport focused",
+			ScreenID:       "test-stage1-command-output",
+			Interaction:    "Complete stage one, focus the proof viewport with raw v, and use PgUp/PgDn plus Left/Right until its exact command and output frame is visible.",
+			StateMarker:    "Stage 1 output:",
+			StateMarkers:   []string{"Stage 1 output:"},
 			ApplicableLive: true,
 			NonApplicability: []SurfaceNonApplicability{
-				{Surface: "approved-tui", Decision: "D-04", Reason: "The approved TUI does not expose the Phase 3 proof viewport."},
-				{Surface: "approved-html", Decision: "D-04", Reason: "The approved HTML has no completed Phase 3 test state."},
+				uxNonComparable("approved-tui", "D-04", "The approved TUI does not expose the Phase 3 proof viewport."),
+				uxNonComparable("approved-html", "D-04", "The approved HTML has no completed Phase 3 test state."),
 			},
 			RequiredRegions: []RegionName{RegionConnectivityOutput},
 		},
 		{
-			ScreenID:       "test-stage2-proof-bottom",
-			Interaction:    "From the focused proof viewport, send raw PgDn until the ssh -G identityfile output is visible.",
-			StateMarker:    "identityfile",
+			ScreenID:       "test-stage2-command-output",
+			Interaction:    "Complete both stages, focus the proof viewport with raw v, and use PgUp/PgDn plus Left/Right until the exact stage-two command and output frame is visible.",
+			StateMarker:    "Stage 2 output:",
+			StateMarkers:   []string{"Stage 2 output:"},
 			ApplicableLive: true,
 			NonApplicability: []SurfaceNonApplicability{
-				{Surface: "approved-tui", Decision: "D-04", Reason: "The approved TUI does not expose the Phase 3 proof viewport."},
-				{Surface: "approved-html", Decision: "D-04", Reason: "The approved HTML has no completed Phase 3 test state."},
+				uxNonComparable("approved-tui", "D-04", "The approved TUI does not expose the Phase 3 proof viewport."),
+				uxNonComparable("approved-html", "D-04", "The approved HTML has no completed Phase 3 test state."),
 			},
 			RequiredRegions: []RegionName{RegionConnectivityOutput},
 		},
 		{
-			ScreenID:       "test-stage2-proof-right",
-			Interaction:    "From the focused proof viewport, send raw Right until a long command suffix is visible.",
-			StateMarker:    "→ cols",
+			ScreenID:       "test-stage2-resolution-user-host-port",
+			Interaction:    "From the focused proof viewport, use raw PgUp/PgDn and Left/Right until ssh -G User, Hostname, and Port are visible together.",
+			StateMarker:    "user git",
+			StateMarkers:   []string{"user git", "hostname ssh.github.com", "port 443"},
 			ApplicableLive: true,
 			NonApplicability: []SurfaceNonApplicability{
-				{Surface: "approved-tui", Decision: "D-04", Reason: "The approved TUI does not expose the Phase 3 proof viewport."},
-				{Surface: "approved-html", Decision: "D-04", Reason: "The approved HTML has no completed Phase 3 test state."},
+				uxNonComparable("approved-tui", "D-04", "The approved TUI does not expose the Phase 3 proof viewport."),
+				uxNonComparable("approved-html", "D-04", "The approved HTML has no completed Phase 3 test state."),
+			},
+			RequiredRegions: []RegionName{RegionConnectivityOutput},
+		},
+		{
+			ScreenID:       "test-stage2-resolution-identities-key",
+			Interaction:    "From the focused proof viewport, use raw PgUp/PgDn and Left/Right until ssh -G IdentitiesOnly and the first IdentityFile bytes are visible together.",
+			StateMarker:    "identitiesonly yes",
+			StateMarkers:   []string{"identitiesonly yes", "identityfile"},
+			ApplicableLive: true,
+			NonApplicability: []SurfaceNonApplicability{
+				uxNonComparable("approved-tui", "D-04", "The approved TUI does not expose the Phase 3 proof viewport."),
+				uxNonComparable("approved-html", "D-04", "The approved HTML has no completed Phase 3 test state."),
 			},
 			RequiredRegions: []RegionName{RegionConnectivityOutput},
 		},
@@ -285,8 +306,8 @@ func ScreenSpecRegistry() []ScreenSpec {
 			StateMarker:    "copy public key",
 			ApplicableLive: true,
 			NonApplicability: []SurfaceNonApplicability{
-				{Surface: "approved-tui", Decision: "D-02", Reason: "The approved TUI has no Phase 3 reachable-not-uploaded outcome."},
-				{Surface: "approved-html", Decision: "D-02", Reason: "The approved HTML has no Phase 3 reachable-not-uploaded outcome."},
+				uxNonComparable("approved-tui", "D-02", "The approved TUI has no Phase 3 reachable-not-uploaded outcome."),
+				uxNonComparable("approved-html", "D-02", "The approved HTML has no Phase 3 reachable-not-uploaded outcome."),
 			},
 			RequiredRegions: []RegionName{RegionConnectivityOutput},
 		},
@@ -296,34 +317,37 @@ func ScreenSpecRegistry() []ScreenSpec {
 			StateMarker:    "Retry (Enter)",
 			ApplicableLive: true,
 			NonApplicability: []SurfaceNonApplicability{
-				{Surface: "approved-tui", Decision: "D-01", Reason: "The approved TUI has no Phase 3 hard-failure retry state."},
-				{Surface: "approved-html", Decision: "D-01", Reason: "The approved HTML has no Phase 3 hard-failure retry state."},
+				uxNonComparable("approved-tui", "D-01", "The approved TUI has no Phase 3 hard-failure retry state."),
+				uxNonComparable("approved-html", "D-01", "The approved HTML has no Phase 3 hard-failure retry state."),
 			},
 			RequiredRegions: []RegionName{RegionConnectivityOutput},
 		},
 		{
-			ScreenID:       "confirm-summary",
-			Interaction:    "Navigate to the confirmation ceremony, focus its viewport with raw v, and capture the summary/key-path frame before write.",
-			StateMarker:    "Exact change focused",
+			ScreenID:       "confirm-summary-key-path",
+			Interaction:    "Navigate to the confirmation ceremony, focus its viewport with raw v, then use PgUp/PgDn and Left/Right until the complete sandbox key path is visible before write.",
+			StateMarker:    "~/.ssh/id_ed25519_acme",
+			StateMarkers:   []string{"~/.ssh/id_ed25519_acme"},
 			ApplicableLive: true,
 			NonApplicability: []SurfaceNonApplicability{
-				{Surface: "approved-tui", Decision: "D-05", Reason: "The approved TUI does not expose the Phase 3 confirmation viewport."},
-				{Surface: "approved-html", Decision: "D-05", Reason: "The approved HTML has no Phase 3 confirmation viewport."},
+				uxNonComparable("approved-tui", "D-05", "The approved TUI does not expose the Phase 3 confirmation viewport."),
+				uxNonComparable("approved-html", "D-05", "The approved HTML has no Phase 3 confirmation viewport."),
 			},
 			RequiredRegions: []RegionName{RegionConfirmationPreview},
 		},
 		{
 			ScreenID:       "confirm-managed-block",
-			Interaction:    "From the focused confirmation viewport, send raw PgDn until the managed-block END sentinel is visible before write.",
+			Interaction:    "From the focused confirmation viewport, use raw PgUp/PgDn and Left/Right until the complete BEGIN-to-END managed block is visible before write.",
 			StateMarker:    "# END gitid managed:",
+			StateMarkers:   []string{"# BEGIN gitid managed:", "# END gitid managed:"},
 			ApplicableLive: true,
 			NonApplicability: []SurfaceNonApplicability{
-				{Surface: "approved-tui", Decision: "D-05", Reason: "The approved TUI does not expose the Phase 3 confirmation viewport."},
-				{Surface: "approved-html", Decision: "D-05", Reason: "The approved HTML has no Phase 3 confirmation viewport."},
+				uxNonComparable("approved-tui", "D-05", "The approved TUI does not expose the Phase 3 confirmation viewport."),
+				uxNonComparable("approved-html", "D-05", "The approved HTML has no Phase 3 confirmation viewport."),
 			},
 			RequiredRegions: []RegionName{RegionConfirmationPreview},
 		},
 	}
+	return specs
 }
 
 // RequiredScreenSpecs returns the registry-backed visual packet inventory.
@@ -360,11 +384,17 @@ func NonApplicabilityForSurface(spec ScreenSpec, surface string) (SurfaceNonAppl
 // state marker contract. Returns nil if the marker is present, an error if
 // absent or if the marker belongs to a different screen's spec.
 func ValidateCapturedState(spec ScreenSpec, capturedText string) error {
-	if spec.StateMarker == "" {
+	markers := spec.StateMarkers
+	if len(markers) == 0 && spec.StateMarker != "" {
+		markers = []string{spec.StateMarker}
+	}
+	if len(markers) == 0 {
 		return fmt.Errorf("screenshot: ValidateCapturedState: spec %q has no state marker", spec.ScreenID)
 	}
-	if !strings.Contains(normalizeCapturedStateText(capturedText), normalizeCapturedStateText(spec.StateMarker)) {
-		return fmt.Errorf("screenshot: ValidateCapturedState: spec %q state marker %q absent from captured text", spec.ScreenID, spec.StateMarker)
+	for _, marker := range markers {
+		if !strings.Contains(normalizeCapturedStateText(capturedText), normalizeCapturedStateText(marker)) {
+			return fmt.Errorf("screenshot: ValidateCapturedState: spec %q state marker %q absent from captured text", spec.ScreenID, marker)
+		}
 	}
 	return nil
 }
@@ -392,13 +422,22 @@ func ValidateScreenSpecs(specs []ScreenSpec) error {
 		if s.ScreenID == "" {
 			return fmt.Errorf("screenshot: ValidateScreenSpecs: spec[%d] has empty ScreenID", i)
 		}
-		if s.StateMarker == "" {
+		markers := s.StateMarkers
+		if len(markers) == 0 && s.StateMarker != "" {
+			markers = []string{s.StateMarker}
+		}
+		if len(markers) == 0 {
 			return fmt.Errorf("screenshot: ValidateScreenSpecs: spec %q has empty state marker", s.ScreenID)
 		}
-		if prior, exists := seenMarkers[s.StateMarker]; exists && prior != s.ScreenID {
-			return fmt.Errorf("screenshot: ValidateScreenSpecs: marker %q is shared by %q and %q", s.StateMarker, prior, s.ScreenID)
+		for _, marker := range markers {
+			if strings.TrimSpace(marker) == "" {
+				return fmt.Errorf("screenshot: ValidateScreenSpecs: spec %q has an empty required marker", s.ScreenID)
+			}
+			if prior, exists := seenMarkers[marker]; exists && prior != s.ScreenID {
+				return fmt.Errorf("screenshot: ValidateScreenSpecs: marker %q is shared by %q and %q", marker, prior, s.ScreenID)
+			}
+			seenMarkers[marker] = s.ScreenID
 		}
-		seenMarkers[s.StateMarker] = s.ScreenID
 		if s.ApplicableApprovedHTML && s.Route == "" {
 			return fmt.Errorf("screenshot: ValidateScreenSpecs: HTML-applicable spec %q has no route", s.ScreenID)
 		}
@@ -410,7 +449,7 @@ func ValidateScreenSpecs(specs []ScreenSpec) error {
 				}
 				continue
 			}
-			if !found || record.Decision == "" || !strings.HasPrefix(record.Decision, "D-") || record.Reason == "" {
+			if !found || record.Decision == "" || !strings.HasPrefix(record.Decision, "D-") || record.Reason == "" || !validDifferenceClassification(record.Classification) {
 				return fmt.Errorf("screenshot: ValidateScreenSpecs: non-applicable %s spec %q lacks a decision-linked record", surface, s.ScreenID)
 			}
 		}
@@ -509,6 +548,49 @@ func keyEnter(model tea.Model) tea.Model { return step(model, tea.KeyPressMsg{Co
 func keyTab(model tea.Model) tea.Model   { return step(model, tea.KeyPressMsg{Code: tea.KeyTab}) }
 func keyRight(model tea.Model) tea.Model { return step(model, tea.KeyPressMsg{Code: tea.KeyRight}) }
 func keyLeft(model tea.Model) tea.Model  { return step(model, tea.KeyPressMsg{Code: tea.KeyLeft}) }
+func keyPgDown(model tea.Model) tea.Model {
+	return step(model, tea.KeyPressMsg{Code: tea.KeyPgDown})
+}
+func keyPgUp(model tea.Model) tea.Model { return step(model, tea.KeyPressMsg{Code: tea.KeyPgUp}) }
+
+func captureViewportMarkers(model tea.Model, markers []string, allowHorizontal bool) (tea.Model, bool) {
+	containsAll := func(candidate tea.Model) bool {
+		view := anyView(candidate)
+		for _, marker := range markers {
+			if !strings.Contains(view, marker) {
+				return false
+			}
+		}
+		return true
+	}
+
+	model = keyRune(model, 'v')
+	// Exercise both advertised axes, then establish a deterministic origin.
+	model = keyPgDown(model)
+	model = keyPgUp(model)
+	model = keyRight(model)
+	for range 32 {
+		model = keyLeft(model)
+	}
+	for range 12 {
+		if containsAll(model) {
+			return model, true
+		}
+		if allowHorizontal {
+			for range 32 {
+				model = keyRight(model)
+				if containsAll(model) {
+					return model, true
+				}
+			}
+			for range 32 {
+				model = keyLeft(model)
+			}
+		}
+		model = keyPgDown(model)
+	}
+	return model, false
+}
 
 // tabN sends n Tab keypresses in sequence.
 func tabN(model tea.Model, n int) tea.Model {
@@ -604,9 +686,9 @@ func (o offlineCaptureBackend) TestStage1(spec tuikit.CreateSpec) tea.Cmd {
 		return tuikit.WizardStageMsg{
 			Stage: 1,
 			Result: tuikit.TestResultView{
-				Outcome: tuikit.TestOutcomeReachableNotUploaded,
+				Outcome: tuikit.TestOutcomePass,
 				Command: o.Backend.Stage1Command(spec),
-				Detail:  "git@" + spec.Hostname + ": Permission denied (publickey).",
+				Detail:  "Hi user! You've successfully authenticated, but GitHub does not provide shell access.",
 			},
 		}
 	}
@@ -617,9 +699,17 @@ func (o offlineCaptureBackend) TestStage2(spec tuikit.CreateSpec) tea.Cmd {
 		return tuikit.WizardStageMsg{
 			Stage: 2,
 			Result: tuikit.TestResultView{
-				Outcome: tuikit.TestOutcomeReachableNotUploaded,
-				Command: o.Backend.Stage2Command(spec),
-				Detail:  "identityfile " + spec.KeyPath,
+				Outcome:           tuikit.TestOutcomeReachableNotUploaded,
+				Command:           o.Backend.Stage2Command(spec),
+				Detail:            "identityfile " + spec.KeyPath,
+				ResolutionCommand: "ssh -F /tmp/gitid-stage/config -G " + spec.Alias,
+				ResolutionOutput: strings.Join([]string{
+					"user git",
+					"hostname " + spec.Hostname,
+					"port " + spec.Port,
+					"identitiesonly yes",
+					"identityfile " + spec.KeyPath,
+				}, "\n"),
 			},
 		}
 	}
@@ -642,8 +732,8 @@ func captureSpec(backend tuikit.Backend) tuikit.CreateSpec {
 }
 
 // CaptureCreateFlowScreens drives backend's create-flow wizard through the
-// fixed script above and returns the rendered text at every
-// CreateFlowScreenIDs checkpoint, keyed by screen ID.
+// fixed script above and returns the rendered text for every live-applicable
+// RequiredScreenSpecs checkpoint, keyed by screen ID.
 // The backend is wrapped with offlineCaptureBackend to ensure TestStage1 and
 // TestStage2 resolve immediately without network calls or tick timers (D-22).
 //
@@ -652,7 +742,7 @@ func captureSpec(backend tuikit.Backend) tuikit.CreateSpec {
 // (CR-01 determinism contract).
 func CaptureCreateFlowScreens(backend tuikit.Backend) map[string]string {
 	backend = offlineCaptureBackend{backend}
-	out := make(map[string]string, len(CreateFlowScreenIDs))
+	out := make(map[string]string, len(RequiredScreenSpecs()))
 	capture := func(m tea.Model) string {
 		return normalizeTimestamps(anyView(m))
 	}
@@ -668,11 +758,18 @@ func CaptureCreateFlowScreens(backend tuikit.Backend) map[string]string {
 	m = keyRight(m)
 	out["reuse-key-vs-generate"] = capture(m)
 
-	// reuse-manual-path: from reuseIdx=0, a single Left wraps DIRECTLY to
-	// the trailing manual-path row (D-10's own wraparound arithmetic),
-	// regardless of how many candidates the backend's scan returns.
+	// reuse-manual-path: move from the source toggle into the reuse picker,
+	// then a single Left wraps from its first key to the trailing manual row.
+	m = keyTab(m)
 	m = keyLeft(m)
+	m = keyTab(m)
 	out["reuse-manual-path"] = capture(m)
+	if keys := backend.ScanReusableKeys(); len(keys) > 0 {
+		for _, r := range keys[0].Path {
+			m = keyRune(m, r)
+		}
+		out["reuse-manual-resolved"] = capture(m)
+	}
 
 	// mouse-focused-field: a REAL synthesized mouse click on the Port row,
 	// from a fresh generate-mode wizard (keeps this screen's SSH-field
@@ -711,6 +808,10 @@ func CaptureCreateFlowScreens(backend tuikit.Backend) map[string]string {
 			m, stage2Cmd = stepAndPendingCmd(m, stage1Msg)
 		}
 		out["test-stage1-direct"] = capture(m)
+		out["test-stage1-pass"] = capture(m)
+		if exact, ok := captureViewportMarkers(m, []string{"Stage 1 output:"}, false); ok {
+			out["test-stage1-command-output"] = capture(exact)
+		}
 		// Deliver the stage-2 result.
 		if stage2Cmd != nil {
 			stage2Msg := stage2Cmd()
@@ -723,6 +824,16 @@ func CaptureCreateFlowScreens(backend tuikit.Backend) map[string]string {
 		out["test-stage1-direct"] = capture(m)
 	}
 	out["test-stage2-by-alias"] = capture(m)
+	out["test-reachable-not-uploaded"] = capture(m)
+	for id, markers := range map[string][]string{
+		"test-stage2-command-output":            {"Stage 2 output:"},
+		"test-stage2-resolution-user-host-port": {"user git", "hostname ssh.github.com", "port 443"},
+		"test-stage2-resolution-identities-key": {"identitiesonly yes", "identityfile"},
+	} {
+		if exact, ok := captureViewportMarkers(m, markers, false); ok {
+			out[id] = capture(exact)
+		}
+	}
 
 	// git-form-demo: advance to step 3 (Git identity) from the test screen.
 	// After both stage results are complete, the test screen shows
@@ -744,6 +855,27 @@ func CaptureCreateFlowScreens(backend tuikit.Backend) map[string]string {
 	m = tabN(m, 4)
 	m = keyEnter(m)
 	out["confirm-write"] = capture(m)
+	if exact, ok := captureViewportMarkers(m, []string{"~/.ssh/id_ed25519_acme"}, true); ok {
+		out["confirm-summary-key-path"] = capture(exact)
+	}
+	if exact, ok := captureViewportMarkers(m, []string{"# BEGIN gitid managed:", "# END gitid managed:"}, false); ok {
+		out["confirm-managed-block"] = capture(exact)
+	}
+
+	// Capture the hard-failure retry state through the same exported stage
+	// message path the real backend uses, without invoking SSH.
+	failure := freshWizard(backend)
+	failure = keyEnter(failure)
+	failure, _ = stepAndPendingCmd(failure, tea.KeyPressMsg{Code: tea.KeyEnter})
+	failure = step(failure, tuikit.WizardStageMsg{
+		Stage: 1,
+		Result: tuikit.TestResultView{
+			Outcome: tuikit.TestOutcomeFailure,
+			Command: backend.Stage1Command(captureSpec(backend)),
+			Detail:  "ssh: connect to host ssh.github.com port 443: Operation timed out",
+		},
+	})
+	out["test-hard-failure-retry"] = capture(failure)
 
 	return out
 }

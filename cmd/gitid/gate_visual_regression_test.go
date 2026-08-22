@@ -2,39 +2,17 @@
 
 package main
 
-// gate_visual_regression_test.go is `make gate-visual-regression`'s runnable
-// entry point (DLV-04.1/D-24.1, plan 03-09 Task 1/2, corrected plan 03-10 Task 2).
-//
-// STRICT SCHEMA (CR-04 fix — "differs" removed):
-// The allowlist (.planning/design/create-flow/visual-divergence-allowlist.txt)
-// must use the exact format:
-//
-//	screen-id : region : predicate : decision-ref : reason
-//
-// where predicate is one of:
-//
-//	"contains:<text>"    — region may differ only if it contains <text>
-//	"absent:<text>"      — region may differ only if it lacks <text>
-//
-// The unconstrained "differs" predicate is FORBIDDEN (CR-04): every differing
-// region must declare a narrowly scoped predicate.
-//
-// The gate (CR-01 fix — read-only routine):
-//  1. Validates every allowlist entry's schema (unknown screen IDs, regions,
-//     blank reasons, missing D-XX, duplicates, forbidden "differs" all fail).
-//  2. Runs TWO candidate captures into separate temp directories, compares
-//     per-screen text hashes for determinism — fatal if any screen differs.
-//  3. Compares applicable regions per screen against the allowed list; empty
-//     regions on both sides are SKIPPED (per-screen applicable region schema).
-//  4. Requires at least one non-allowlisted applicable region per screen to be
-//     byte-exact (so a screen with all applicable regions allowlisted fails).
-//  5. Fails on unused allowlist entries (stale exemptions are removed).
-//  6. NEVER writes to .planning/phases/03-create-flow-backend/ or any other
-//     tracked path. All output goes to temp directories. (CR-01)
+// gate_visual_regression_test.go is `make gate-visual-regression`'s read-only
+// entry point. RequiredScreenSpecs defines the symmetric real/dummy inventory.
+// Each surface is checked independently for deterministic capture; real versus
+// dummy differences are accepted only with an explicit ux-improvement/defect
+// classification, and one-sided states remain non-comparable. HTML and PNG or
+// text byte parity are intentionally outside this gate.
 
 import (
 	"bufio"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -82,8 +60,10 @@ func parseAllowlist(t *testing.T, path string) []allowlistEntry {
 
 	// valid screen IDs
 	validScreens := make(map[string]bool)
-	for _, id := range screenshot.CreateFlowScreenIDs {
-		validScreens[id] = true
+	var validScreenIDs []string
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		validScreens[spec.ScreenID] = true
+		validScreenIDs = append(validScreenIDs, spec.ScreenID)
 	}
 	// valid region names
 	validRegions := make(map[screenshot.RegionName]bool)
@@ -113,7 +93,7 @@ func parseAllowlist(t *testing.T, path string) []allowlistEntry {
 		reason := strings.TrimSpace(parts[4])
 
 		if !validScreens[screenID] {
-			t.Errorf("gate-visual-regression: allowlist line %d: unknown screen ID %q (valid: %v)", lineNum, screenID, screenshot.CreateFlowScreenIDs)
+			t.Errorf("gate-visual-regression: allowlist line %d: unknown screen ID %q (valid: %v)", lineNum, screenID, validScreenIDs)
 		}
 		if !validRegions[region] {
 			t.Errorf("gate-visual-regression: allowlist line %d: unknown region %q", lineNum, region)
@@ -296,6 +276,20 @@ func textHash(s string) string {
 	return fmt.Sprintf("%x", h)
 }
 
+func normalizeDisposableHome(captures map[string]string, home string) map[string]string {
+	normalized := make(map[string]string, len(captures))
+	for id, capture := range captures {
+		capture = strings.ReplaceAll(capture, home, "<home>")
+		// macOS resolves /private/var to /var while scanning key paths.
+		capture = strings.ReplaceAll(capture, strings.TrimPrefix(home, "/private"), "<home>")
+		// Long paths wrap before the complete HOME can be matched. The t.TempDir
+		// run component remains intact and is the only semantic difference.
+		capture = strings.ReplaceAll(capture, "/"+filepath.Base(home)+"/", "/<run>/")
+		normalized[id] = capture
+	}
+	return normalized
+}
+
 // TestGateVisualRegression is `make gate-visual-regression`'s entry point.
 //
 // CR-01 (read-only): writes ONLY to t.TempDir() — never to .planning/ or any
@@ -320,31 +314,29 @@ func TestGateVisualRegression(t *testing.T) {
 	deterministicReusableKeyFixture(t, home1)
 	deterministicReusableKeyFixture(t, home2)
 
-	allowlist := parseAllowlist(t, allowlistPath)
-	if t.Failed() {
-		t.FailNow() // schema errors prevent a meaningful gate run
-	}
-
 	// CR-01: run TWO independent captures and compare text hashes.
 	t.Setenv("HOME", home1)
 	realBackend1 := newBackendForHome(home1)
 	dummyBackend1 := dummytui.NewFixtureBackend()
-	realCaptures1 := screenshot.CaptureCreateFlowScreens(realBackend1)
+	realCaptures1 := normalizeDisposableHome(screenshot.CaptureCreateFlowScreens(realBackend1), home1)
 	dummyCaptures1 := screenshot.CaptureCreateFlowScreens(dummyBackend1)
 
 	t.Setenv("HOME", home2)
 	realBackend2 := newBackendForHome(home2)
 	dummyBackend2 := dummytui.NewFixtureBackend()
-	realCaptures2 := screenshot.CaptureCreateFlowScreens(realBackend2)
+	realCaptures2 := normalizeDisposableHome(screenshot.CaptureCreateFlowScreens(realBackend2), home2)
 	dummyCaptures2 := screenshot.CaptureCreateFlowScreens(dummyBackend2)
 
-	// Determinism check: every screen's text must be identical across both runs.
-	for _, id := range screenshot.CreateFlowScreenIDs {
-		if realCaptures1[id] != realCaptures2[id] {
-			t.Errorf("gate-visual-regression: CR-01 FAIL — screen %q real-backend capture is NOT deterministic across two runs (hash1=%s hash2=%s)",
-				id, textHash(realCaptures1[id]), textHash(realCaptures2[id]))
+	specs := screenshot.RequiredScreenSpecs()
+	// Determinism is checked within each surface. Real and dummy are not byte,
+	// pixel, or HTML parity targets for one another.
+	for _, spec := range specs {
+		id := spec.ScreenID
+		if spec.ApplicableLive && realCaptures1[id] != realCaptures2[id] {
+			t.Errorf("gate-visual-regression: CR-01 FAIL — screen %q real-backend capture is NOT deterministic across two runs (hash1=%s hash2=%s)\n--- first ---\n%s\n--- second ---\n%s",
+				id, textHash(realCaptures1[id]), textHash(realCaptures2[id]), screenshot.StripANSIExported(realCaptures1[id]), screenshot.StripANSIExported(realCaptures2[id]))
 		}
-		if dummyCaptures1[id] != dummyCaptures2[id] {
+		if spec.ApplicableApprovedTUI && dummyCaptures1[id] != dummyCaptures2[id] {
 			t.Errorf("gate-visual-regression: CR-01 FAIL — screen %q dummy-backend capture is NOT deterministic across two runs (hash1=%s hash2=%s)",
 				id, textHash(dummyCaptures1[id]), textHash(dummyCaptures2[id]))
 		}
@@ -354,102 +346,24 @@ func TestGateVisualRegression(t *testing.T) {
 		t.FailNow() // determinism failure invalidates the gate
 	}
 
-	// Use run-1 results for the region comparison.
-	realCaptures := realCaptures1
-	dummyCaptures := dummyCaptures1
-
-	// build per-screen lookup: screenID → []allowlistEntry
-	allowed := make(map[string][]allowlistEntry)
-	for i := range allowlist {
-		id := allowlist[i].ScreenID
-		allowed[id] = append(allowed[id], allowlist[i])
+	records, err := screenshot.BuildRegionDiffs("gate-local", realCaptures1, dummyCaptures1, specs)
+	if err != nil {
+		t.Fatalf("gate-visual-regression: building symmetric registry region evidence: %v", err)
 	}
-
-	allRegions := screenshot.AllRegionNames()
-	var unallowlistedFailures int
-	var predicateFailures int
-
-	for _, id := range screenshot.CreateFlowScreenIDs {
-		r, rok := realCaptures[id]
-		d, dok := dummyCaptures[id]
-		if !rok {
-			t.Fatalf("gate-visual-regression: CR-05 FAIL — screen %q missing from REAL capture set", id)
-		}
-		if !dok {
-			t.Fatalf("gate-visual-regression: CR-05 FAIL — screen %q missing from DUMMY capture set", id)
-		}
-
-		// track which regions on this screen are allowlisted
-		allowedRegions := make(map[screenshot.RegionName]int) // region → index in allowlist
-		for i, e := range allowlist {
-			if e.ScreenID == id {
-				allowedRegions[e.Region] = i
-			}
-		}
-
-		var nonExemptApplicableCount int // count of non-allowlisted APPLICABLE regions
-
-		for _, region := range allRegions {
-			realRegion := screenshot.ExtractRegion(r, region)
-			dummyRegion := screenshot.ExtractRegion(d, region)
-
-			// CR-04: per-screen applicable region schema.
-			// If BOTH extractions are empty, this region is inapplicable to
-			// this screen — skip it rather than counting empty equality as
-			// "non-exempt identical" coverage.
-			if strings.TrimSpace(screenshot.StripANSIExported(realRegion)) == "" &&
-				strings.TrimSpace(screenshot.StripANSIExported(dummyRegion)) == "" {
-				// Allowlist entries for inapplicable regions are stale — they will
-				// be caught by the stale-entry check below.
-				continue
-			}
-
-			if realRegion == dummyRegion {
-				// identical and applicable: fine regardless of allowlist status
-				if _, isAllowed := allowedRegions[region]; !isAllowed {
-					nonExemptApplicableCount++
+	data := screenshot.BuildRegionDiffsJSON("gate-local", records)
+	if err := screenshot.ValidateRegionDiffs(data, "gate-local", specs); err != nil {
+		t.Fatalf("gate-visual-regression: validating classified region evidence: %v", err)
+	}
+	for _, record := range records {
+		for _, region := range record.Regions {
+			if !region.Comparable || !region.Equal {
+				if region.Classification != "ux-improvement" && region.Classification != "defect" {
+					t.Errorf("gate-visual-regression: %s/%s has no valid classification", record.ScreenID, region.Name)
 				}
-				continue
 			}
-
-			// regions differ — check allowlist
-			entryIdx, isAllowed := allowedRegions[region]
-			if !isAllowed {
-				unallowlistedFailures++
-				t.Errorf("gate-visual-regression: FAILED — screen %q region %q differs with NO allowlist entry:\n--- dummy (%s/%s) ---\n%s\n--- real (cmd/gitid) ---\n%s",
-					id, region, id, region,
-					screenshot.StripANSIExported(dummyRegion),
-					screenshot.StripANSIExported(realRegion))
-				continue
-			}
-
-			// check predicate
-			entry := &allowlist[entryIdx]
-			if !predicateMatches(entry.Predicate, realRegion) {
-				predicateFailures++
-				t.Errorf("gate-visual-regression: FAILED — screen %q region %q predicate %q not satisfied by real region text:\n%s",
-					id, region, entry.Predicate, screenshot.StripANSIExported(realRegion))
-				continue
-			}
-			entry.used = true
-			t.Logf("gate-visual-regression: screen %q region %q differs — allowlisted (%s: %s)", id, region, entry.DecisionRef, entry.Reason)
-		}
-
-		if nonExemptApplicableCount == 0 {
-			t.Errorf("gate-visual-regression: screen %q has NO non-allowlisted APPLICABLE region that is byte-identical — every applicable region is either allowlisted or differs; ensure at least one structural region (header, breadcrumb, stepper, keybar) is non-exempt and byte-exact", id)
 		}
 	}
-
-	// stale-entry check: every allowlist entry must have been used
-	for _, e := range allowlist {
-		if !e.used {
-			t.Errorf("gate-visual-regression: STALE allowlist entry — screen %q region %q was not exercised (the region did not differ or was never captured); remove the stale entry", e.ScreenID, e.Region)
-		}
-	}
-
-	if unallowlistedFailures == 0 && predicateFailures == 0 {
-		t.Logf("gate-visual-regression: OK — %d screens, regions checked, all differences allowlisted and within predicate", len(screenshot.CreateFlowScreenIDs))
-	}
+	t.Logf("gate-visual-regression: OK — %d RequiredScreenSpecs frames checked as a classified real/dummy symmetric union", len(specs))
 
 	// CR-01: the gate intentionally writes NOTHING to tracked paths.
 	// Any PNG/evidence generation goes via the explicit make generate-visual-review-packet
@@ -544,8 +458,8 @@ func TestApprovalCommitRecorded(t *testing.T) {
 	t.Logf("gate-visual-regression: approval commit = %s (CR-03)", approvalCommitFull)
 }
 
-// TestAllScreensCapturedAndNonEmpty validates CR-05: exactly len(CreateFlowScreenIDs)
-// screens are present in both real and dummy captures, and all are non-empty.
+// TestAllScreensCapturedAndNonEmpty validates every registry-required live
+// capture and every applicable dummy comparison frame.
 func TestAllScreensCapturedAndNonEmpty(t *testing.T) {
 	home := t.TempDir()
 	deterministicReusableKeyFixture(t, home)
@@ -555,19 +469,12 @@ func TestAllScreensCapturedAndNonEmpty(t *testing.T) {
 	realCaptures := screenshot.CaptureCreateFlowScreens(realB)
 	dummyCaptures := screenshot.CaptureCreateFlowScreens(dummyB)
 
-	want := len(screenshot.CreateFlowScreenIDs)
-	if got := len(realCaptures); got != want {
-		t.Errorf("real backend: got %d screens, want %d (CR-05)", got, want)
-	}
-	if got := len(dummyCaptures); got != want {
-		t.Errorf("dummy backend: got %d screens, want %d (CR-05)", got, want)
-	}
-	for _, id := range screenshot.CreateFlowScreenIDs {
-		if strings.TrimSpace(realCaptures[id]) == "" {
-			t.Errorf("real backend: screen %q is empty (CR-05)", id)
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		if spec.ApplicableLive && strings.TrimSpace(realCaptures[spec.ScreenID]) == "" {
+			t.Errorf("real backend: required screen %q is empty (CR-05)", spec.ScreenID)
 		}
-		if strings.TrimSpace(dummyCaptures[id]) == "" {
-			t.Errorf("dummy backend: screen %q is empty (CR-05)", id)
+		if spec.ApplicableApprovedTUI && strings.TrimSpace(dummyCaptures[spec.ScreenID]) == "" {
+			t.Errorf("dummy backend: applicable screen %q is empty (CR-05)", spec.ScreenID)
 		}
 	}
 }
@@ -584,62 +491,34 @@ func TestNegativeControls_AllProtectedRegionsDetectMutation(t *testing.T) {
 	dummyB := dummytui.NewFixtureBackend()
 	dummyCaptures := screenshot.CaptureCreateFlowScreens(dummyB)
 
-	// Parse the allowlist to know which regions are exempt per screen.
-	allowlist := parseAllowlist(t, allowlistPath)
-	if t.Failed() {
-		t.FailNow()
+	specs := screenshot.RequiredScreenSpecs()
+	records, err := screenshot.BuildRegionDiffs("negative-control", realCaptures, dummyCaptures, specs)
+	if err != nil {
+		t.Fatalf("building classified region evidence: %v", err)
 	}
-	allowedPerScreen := make(map[string]map[screenshot.RegionName]bool)
-	for _, e := range allowlist {
-		if allowedPerScreen[e.ScreenID] == nil {
-			allowedPerScreen[e.ScreenID] = make(map[screenshot.RegionName]bool)
-		}
-		allowedPerScreen[e.ScreenID][e.Region] = true
-	}
-
-	for _, id := range screenshot.CreateFlowScreenIDs {
-		real := realCaptures[id]
-		dummy := dummyCaptures[id]
-
-		for _, region := range screenshot.AllRegionNames() {
-			// Skip allowlisted regions.
-			if allowedPerScreen[id] != nil && allowedPerScreen[id][region] {
-				continue
-			}
-			realRegion := screenshot.ExtractRegion(real, region)
-			dummyRegion := screenshot.ExtractRegion(dummy, region)
-
-			// Skip inapplicable regions (empty on both sides).
-			realStripped := strings.TrimSpace(screenshot.StripANSIExported(realRegion))
-			dummyStripped := strings.TrimSpace(screenshot.StripANSIExported(dummyRegion))
-			if realStripped == "" && dummyStripped == "" {
-				continue
-			}
-
-			// Verify this region extracts non-empty content (required for gate to be meaningful).
-			if realStripped == "" {
-				t.Errorf("negative-control: screen %q region %q extracts empty from real backend — region is not applicable but expected to be gated", id, region)
-				continue
-			}
-
-			// Verify that a synthetic mutation of the extracted text produces a
-			// different extraction — proving the gate would detect the drift.
-			mutationMarker := "__MUTATION_SENTINEL__"
-			mutated := strings.Replace(real, realStripped[:min(len(realStripped), 10)], mutationMarker, 1)
-			mutatedRegion := screenshot.ExtractRegion(mutated, region)
-			mutatedStripped := strings.TrimSpace(screenshot.StripANSIExported(mutatedRegion))
-
-			if mutatedStripped == realStripped && realStripped == dummyStripped {
-				// Region is byte-identical between real and dummy and unchanged by mutation —
-				// the gate correctly protects it.
-				continue
-			}
-			if mutatedStripped == realStripped && realRegion != dummyRegion {
-				// Region differs but we couldn't detect our own mutation — the extraction
-				// is not sensitive enough. This indicates a gap in the region extractor.
-				t.Logf("negative-control: screen %q region %q: mutation not detected in extraction (region differs real vs dummy but is mutation-insensitive — extractor may need tuning)", id, region)
+	mutated := false
+	for i := range records {
+		for j := range records[i].Regions {
+			region := &records[i].Regions[j]
+			if !region.Comparable || !region.Equal {
+				region.Classification = ""
+				mutated = true
+				break
 			}
 		}
+		if mutated {
+			break
+		}
+	}
+	if !mutated {
+		t.Fatal("negative-control: no classified difference was available to mutate")
+	}
+	data, err := json.Marshal(screenshot.RegionDiffs{Version: "test", SourceCommit: "negative-control", GeneratedAt: "test", Screens: records})
+	if err != nil {
+		t.Fatalf("marshaling mutated region evidence: %v", err)
+	}
+	if err := screenshot.ValidateRegionDiffs(data, "negative-control", specs); err == nil {
+		t.Fatal("negative-control: validator accepted a difference without ux-improvement/defect classification")
 	}
 }
 

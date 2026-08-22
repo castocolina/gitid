@@ -157,6 +157,23 @@ func tabKeys(s *ptySession, n int) {
 // 1. Algorithm + SSH form (SSHUI-01/03, D-09)
 // ---------------------------------------------------------------------------
 
+func TestCreateFlow_AlgorithmAvailability(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	openCreateWizard(t, s)
+	mustSee(t, s, "ed25519 — ★ recommended", "ssh -Q key keeps ed25519 available in the real catalog")
+	mustNotSee(t, s, "ed25519 — ★ recommended — Disabled", "available ed25519 must not render disabled")
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Step 2/4", "an available selected algorithm unlocks the test step")
+}
+
 // TestCreateFlow_SSHFormAliasCollision proves SSHUI-03's live Host-block
 // preview (Port 443 + IdentitiesOnly yes, recipe-faithful) and D-09's
 // alias-collision block, driven through the REAL binary: seeding an existing
@@ -779,6 +796,118 @@ func TestCreateFlow_CompletedStage2ProofViewport(t *testing.T) {
 	}
 
 	saveFrame(t, "create-flow-completed-stage2-proof-viewport", s)
+}
+
+func TestCreateFlow_CompletedStageExactProofViewport(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	openCreateWizard(t, s)
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Step 2/4", "test step")
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Next: Git identity", "both exact test stages completed")
+	s.sendKey([]byte("v"), keystrokeDelay)
+	mustSee(t, s, "Proof viewport focused", "raw v focuses the proof viewport")
+
+	wanted := map[string]bool{
+		"Stage 1 command:":        false,
+		"Stage 1 output:":         false,
+		"Stage 2 command:":        false,
+		"Stage 2 output:":         false,
+		"user git":                false,
+		"hostname ssh.github.com": false,
+		"port 443":                false,
+		"identitiesonly yes":      false,
+		"identityfile ":           false,
+	}
+	for range 10 {
+		frame := s.snapshot()
+		for marker := range wanted {
+			wanted[marker] = wanted[marker] || strings.Contains(frame, marker)
+		}
+		s.sendKey([]byte("\x1b[6~"), keystrokeDelay)
+	}
+	for marker, seen := range wanted {
+		if !seen {
+			t.Errorf("real 100x30 proof viewport never exposed %q through raw PgDn navigation", marker)
+		}
+	}
+	s.sendKey([]byte("\x1b[5~"), keystrokeDelay)
+	s.sendKey([]byte("\x1b[C"), keystrokeDelay)
+	s.sendKey([]byte("\x1b[D"), keystrokeDelay)
+	saveFrame(t, "create-flow-completed-stage-exact-proof-viewport", s)
+}
+
+func TestCreateFlow_ConfirmationExactViewport(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	openCreateWizard(t, s)
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Step 2/4", "test step")
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Next: Git identity", "both stages complete")
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Step 3/4", "Git step")
+	tabKeys(s, 4)
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Create identity", "pre-write confirmation")
+	s.sendKey([]byte("v"), keystrokeDelay)
+	mustSee(t, s, "Exact change focused", "raw v focuses the confirmation viewport")
+
+	const keyPath = "~/.ssh/id_ed25519_acme"
+	keyPathSeen := false
+	for range 16 {
+		keyPathSeen = keyPathSeen || strings.Contains(s.snapshot(), keyPath)
+		s.sendKey([]byte("\x1b[C"), keystrokeDelay)
+	}
+	if !keyPathSeen {
+		t.Fatalf("confirmation viewport never exposed complete key path %q", keyPath)
+	}
+	for range 16 {
+		s.sendKey([]byte("\x1b[D"), keystrokeDelay)
+	}
+
+	wantedBlock := []string{
+		"# BEGIN gitid managed: acme",
+		"Host acme.github.com",
+		"Hostname ssh.github.com",
+		"Port 443",
+		"User git",
+		"IdentityFile ~/.ssh/id_ed25519_acme",
+		"IdentitiesOnly yes",
+		"# END gitid managed: acme",
+	}
+	blockSeen := false
+	for range 8 {
+		frame := s.snapshot()
+		all := true
+		for _, marker := range wantedBlock {
+			all = all && strings.Contains(frame, marker)
+		}
+		if all {
+			blockSeen = true
+			break
+		}
+		s.sendKey([]byte("\x1b[6~"), keystrokeDelay)
+	}
+	if !blockSeen {
+		t.Fatalf("confirmation viewport never exposed the complete managed block:\n%s", s.snapshot())
+	}
+	saveFrame(t, "create-flow-confirmation-exact-viewport", s)
 }
 
 // TestCreateFlow_ReachableNotUploadedEvidence proves D-02 warning state evidence:

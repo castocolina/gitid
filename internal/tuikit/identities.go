@@ -959,6 +959,22 @@ func algoDisabled(entry AlgorithmCatalogEntry) bool {
 	return !entry.Implemented || !entry.Available
 }
 
+func nextAvailableAlgorithm(catalog []AlgorithmCatalogEntry, current, direction int) (int, bool) {
+	if len(catalog) == 0 {
+		return current, false
+	}
+	for step := 1; step <= len(catalog); step++ {
+		idx := (current + direction*step) % len(catalog)
+		if idx < 0 {
+			idx += len(catalog)
+		}
+		if !algoDisabled(catalog[idx]) {
+			return idx, true
+		}
+	}
+	return current, false
+}
+
 // hostBlockText renders the managed Host block for the given values
 // THROUGH the injected Backend — the ONE source of the block shape,
 // shared by the wizard preview/ceremony and the edit-SSH preview/ceremony
@@ -1132,6 +1148,12 @@ func (w wizardModel) renderProof(width int) string {
 func (w wizardModel) step0Valid(_ DemoState) (bool, *ValidationError) {
 	if w.keySource == keySourceReuse && w.reuseKeyPath() == "" {
 		return false, nil
+	}
+	if w.keySource == keySourceGenerate {
+		catalog := w.catalog()
+		if w.algoIdx < 0 || w.algoIdx >= len(catalog) || algoDisabled(catalog[w.algoIdx]) {
+			return false, nil
+		}
 	}
 	if err := w.backend.ValidateHostBlock(w.form.sshHost(), w.form.hostname.Value(), w.form.port.Value(), w.keyPath()); err != nil {
 		return false, err
@@ -1962,16 +1984,11 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 					catalog := w.catalog()
 					delta := 1
 					if key == "left" {
-						delta = len(catalog) - 1
+						delta = -1
 					}
-					idx := w.algoIdx
-					for {
-						idx = (idx + delta) % len(catalog)
-						if !algoDisabled(catalog[idx]) {
-							break
-						}
+					if idx, ok := nextAvailableAlgorithm(catalog, w.algoIdx, delta); ok {
+						w.algoIdx = idx
 					}
-					w.algoIdx = idx
 				} else {
 					// D-10 picker: cycle over every scanned key PLUS the
 					// trailing manual-path row.
