@@ -262,6 +262,14 @@ func CaptureHTML(opts HTMLOptions) (Result, error) {
 			}
 		}
 	}
+	body, err := page.Element("body")
+	if err != nil {
+		return Result{}, fmt.Errorf("screenshot: CaptureHTML: locating rendered <body>: %w", err)
+	}
+	bodyText, err := body.Text()
+	if err != nil {
+		return Result{}, fmt.Errorf("screenshot: CaptureHTML: reading rendered <body> text: %w", err)
+	}
 
 	shot, err := page.Screenshot(true, &proto.PageCaptureScreenshot{Format: proto.PageCaptureScreenshotFormatPng})
 	if err != nil {
@@ -273,7 +281,12 @@ func CaptureHTML(opts HTMLOptions) (Result, error) {
 		return Result{}, fmt.Errorf("screenshot: CaptureHTML: writing PNG to %q: %w", pngPath, err)
 	}
 
-	return finalizePNG(pngPath)
+	result, err := finalizePNG(pngPath)
+	if err != nil {
+		return Result{}, err
+	}
+	result.BodyText = bodyText
+	return result, nil
 }
 
 // resolveBrowserBinary locates the pinned Chromium revision inside cacheDir.

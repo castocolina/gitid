@@ -13,8 +13,9 @@ import (
 // its deterministic SHA-256 hash, computed after StripPNGMetadata so the
 // hash reflects only the visual pixel content (D-01/D-02/D-04).
 type Result struct {
-	PNGPath string
-	SHA256  string
+	PNGPath  string
+	SHA256   string
+	BodyText string
 }
 
 // TUIOptions configures a single CaptureTUI render. Every field that affects

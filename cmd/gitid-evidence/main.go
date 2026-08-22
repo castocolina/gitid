@@ -873,7 +873,8 @@ func captureApprovedHTMLPanels(repoRoot, approvalDir, workspace, renderDir strin
 		panels = append(panels, screenshot.VisualPanel{
 			Surface:  "approved-html",
 			ScreenID: id,
-			Text:     "approval route: " + routePath + "\nsource: " + screenshot.PacketApprovalCommit + "\n",
+			Text:     result.BodyText,
+			RawText:  result.BodyText,
 			PNGPath:  result.PNGPath,
 		})
 	}

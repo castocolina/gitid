@@ -63,6 +63,9 @@ func TestCaptureHTML(t *testing.T) {
 	if info.Size() == 0 {
 		t.Fatalf("CaptureHTML: rendered PNG at %s is empty", result.PNGPath)
 	}
+	if strings.TrimSpace(result.BodyText) == "" {
+		t.Fatal("CaptureHTML: rendered body text is empty")
+	}
 
 	if result.SHA256 != htmlGoldenSHA256 {
 		t.Errorf("CaptureHTML: golden hash mismatch -- got %s, want %s (recorded in "+
