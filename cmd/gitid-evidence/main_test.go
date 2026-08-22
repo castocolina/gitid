@@ -66,6 +66,23 @@ func TestPublisherCLIProducesImmutable24PanelPacket(t *testing.T) {
 	}
 }
 
+func TestPublisherCLIRejectsNonemptyRootAndUnknownCommit(t *testing.T) {
+	source, err := commandOutput("git", "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("resolving HEAD: %v", err)
+	}
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "existing"), []byte("not empty"), 0o600); err != nil {
+		t.Fatalf("seeding nonempty root: %v", err)
+	}
+	for _, sourceCommit := range []string{strings.TrimSpace(source), strings.Repeat("0", 40)} {
+		cmd := exec.Command("go", "run", "-tags", "screenshot", ".", "--source-commit", sourceCommit, "--output-root", root) //nolint:gosec // fixed local command and test paths
+		if output, runErr := cmd.CombinedOutput(); runErr == nil {
+			t.Fatalf("publisher CLI accepted %q with a nonempty root:\n%s", sourceCommit, output)
+		}
+	}
+}
+
 // TestPublisherRejectsEmptyOutputRoot verifies that run() fails when
 // --output-root is not provided (CR-01 fail-closed).
 func TestPublisherRejectsEmptyOutputRoot(t *testing.T) {
