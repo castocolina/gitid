@@ -771,9 +771,24 @@ func (s *capturePTY) snapshot() string {
 }
 
 func (s *capturePTY) close() {
+	done := make(chan struct{})
+	go func() {
+		_ = s.cmd.Wait()
+		close(done)
+	}()
 	_, _ = s.ptmx.Write([]byte("\x03"))
+	select {
+	case <-done:
+		_ = s.ptmx.Close()
+		return
+	case <-time.After(time.Second):
+		_ = s.cmd.Process.Kill()
+	}
 	_ = s.ptmx.Close()
-	_ = s.cmd.Wait()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+	}
 }
 
 func writeFakeSSH(workspace string) (string, error) {
