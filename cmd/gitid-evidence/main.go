@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +25,8 @@ import (
 )
 
 const fixedCaptureTime = "2026-08-21T00:00:00Z"
+
+var captureTimestampPattern = regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}[:\-]\d{2}[:\-]\d{2}Z`)
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -336,6 +339,7 @@ func captureTUIPanels(surface, bin, workspace, renderDir, freeze, fontFile strin
 		if err != nil {
 			return nil, fmt.Errorf("capturing %s/%s: %w", surface, id, err)
 		}
+		text = normalizeCaptureText(text, home, workspace)
 		result, err := screenshot.CaptureTUI(text, screenshot.TUIOptions{
 			FreezeBin: freeze,
 			FontFile:  fontFile,
@@ -351,6 +355,12 @@ func captureTUIPanels(surface, bin, workspace, renderDir, freeze, fontFile strin
 		panels = append(panels, screenshot.VisualPanel{Surface: surface, ScreenID: id, Text: text, PNGPath: result.PNGPath})
 	}
 	return panels, nil
+}
+
+func normalizeCaptureText(text, home, workspace string) string {
+	text = strings.ReplaceAll(text, home, "<home>")
+	text = strings.ReplaceAll(text, workspace, "<workspace>")
+	return captureTimestampPattern.ReplaceAllString(text, "<timestamp>")
 }
 
 func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool) (string, error) {
