@@ -43,9 +43,12 @@ import (
 //   - YYYY-MM-DDTHH-MM-SSZ (colon-replaced, tuikit.NewBackupPath format)
 var timestampPattern = regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}[:\-]\d{2}[:\-]\d{2}Z`)
 
+var sandboxPathFragmentPattern = regexp.MustCompile(`(?:gitid-evidence-)?capture-\d+|fake-ssh-\d+|(?:gi)?tid-stage-\d+`)
+
 // normalizeTimestamps replaces all ISO-8601 timestamps in s with a fixed placeholder
 // so that captures taken at different wall-clock seconds are byte-identical (CR-01).
 func normalizeTimestamps(s string) string {
+	s = sandboxPathFragmentPattern.ReplaceAllString(s, "<sandbox>")
 	return timestampPattern.ReplaceAllString(s, "<timestamp>")
 }
 

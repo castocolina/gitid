@@ -29,6 +29,8 @@ const fixedCaptureTime = "2026-08-21T00:00:00Z"
 
 var captureTimestampPattern = regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}[:\-]\d{2}[:\-]\d{2}Z`)
 
+var captureSandboxPathFragmentPattern = regexp.MustCompile(`(?:gitid-evidence-)?capture-\d+|fake-ssh-\d+|(?:gi)?tid-stage-\d+`)
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "gitid-evidence: %v\n", err)
@@ -522,6 +524,9 @@ func captureTUIPanels(surface, bin, workspace, renderDir, freeze, fontFile strin
 func normalizeCaptureText(text, home, workspace string) string {
 	text = strings.ReplaceAll(text, home, "<home>")
 	text = strings.ReplaceAll(text, workspace, "<workspace>")
+	// Horizontally scrolled frames may expose only a random path component, so
+	// the full-workspace replacement above cannot match it.
+	text = captureSandboxPathFragmentPattern.ReplaceAllString(text, "<sandbox>")
 	return captureTimestampPattern.ReplaceAllString(text, "<timestamp>")
 }
 

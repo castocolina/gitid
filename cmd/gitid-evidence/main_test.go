@@ -125,6 +125,18 @@ func TestSeedManualReuseKeyCreatesOnlySandboxMaterial(t *testing.T) {
 	}
 }
 
+func TestNormalizeCaptureTextRedactsScrolledSandboxPathFragments(t *testing.T) {
+	text := "capture-2068244611/fake-ssh-1252173820/ssh\n" +
+		"tid-stage-4284974533/id_ed25519_acme\n"
+
+	got := normalizeCaptureText(text, "/unused/home", "/unused/workspace")
+	for _, fragment := range []string{"capture-2068244611", "fake-ssh-1252173820", "tid-stage-4284974533"} {
+		if strings.Contains(got, fragment) {
+			t.Errorf("normalized capture retains random sandbox fragment %q: %q", fragment, got)
+		}
+	}
+}
+
 // TestCaptureTUIScreenReuseSelection proves the live raw-PTY script reaches the
 // reuse state required by the registry before evidence is rendered or saved.
 func TestCaptureTUIScreenReuseSelection(t *testing.T) {
