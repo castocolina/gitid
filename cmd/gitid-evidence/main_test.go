@@ -187,3 +187,28 @@ func TestCaptureTUIScreenConfirmationManagedBlock(t *testing.T) {
 		t.Fatal("confirm-managed-block must retain raw PTY evidence")
 	}
 }
+
+func TestCaptureTUIScreenStage1PassStopsBeforeStage2(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "gitid")
+	build := exec.Command("go", "build", "-o", bin, "../gitid") //nolint:gosec // fixed local package and sandbox output
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("building gitid capture binary: %v\n%s", err, output)
+	}
+
+	workspace := t.TempDir()
+	fakeSSH, err := writeFakeSSH(workspace)
+	if err != nil {
+		t.Fatalf("creating fake SSH: %v", err)
+	}
+	var raw string
+	text, err := captureTUIScreen(bin, t.TempDir(), fakeSSH, "test-stage1-pass", true, &raw)
+	if err != nil {
+		t.Fatalf("capturing test-stage1-pass: %v", err)
+	}
+	if !strings.Contains(text, "running ssh") {
+		t.Fatalf("test-stage1-pass must preserve the in-flight stage-2 state:\n%s", text)
+	}
+	if strings.Contains(text, "Next: Git identity") {
+		t.Fatalf("test-stage1-pass must not capture the completed stage-2 state:\n%s", text)
+	}
+}

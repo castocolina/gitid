@@ -539,7 +539,7 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 	// For stage-1 captures: set GITID_BARRIER_FILE so the fake SSH's -G call
 	// blocks until the capture script signals stage-1 is done.
 	var barrierFile string
-	if fakeSSH != "" && id == "test-stage1-direct" {
+	if fakeSSH != "" && (id == "test-stage1-direct" || id == "test-stage1-pass") {
 		barrierFile = filepath.Join(home, ".gitid-stage1-barrier")
 		cmd.Env = append(cmd.Env, "GITID_BARRIER_FILE="+barrierFile)
 	}
