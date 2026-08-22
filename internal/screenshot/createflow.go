@@ -136,8 +136,8 @@ func ScreenSpecRegistry() []ScreenSpec {
 			Interaction:            "Tab to the key-source toggle (4 Tabs), then press Right to select Reuse.",
 			StateMarker:            "Reuse an existing key",
 			ApplicableLive:         true,
-			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
+			NonApplicableReason:    "The approved TUI predates the Phase 3 reusable-key picker.",
 			RequiredRegions:        []RegionName{RegionKeySection},
 		},
 		{
@@ -146,11 +146,11 @@ func ScreenSpecRegistry() []ScreenSpec {
 			Interaction:            "From reuse mode, press Left to select the manual-path row; the manual-path text input becomes active.",
 			StateMarker:            "Enter a path manually",
 			ApplicableLive:         true,
-			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
 			RequiredRegions:        []RegionName{RegionKeySection},
 			VariantOf:              "reuse-key-vs-generate",
 			VariantRationale:       "No separate HTML route exists for the manual-path interaction variant; it shares /create-flow/reuse-key-vs-generate.",
+			NonApplicableReason:    "The approved TUI predates the Phase 3 reusable-key picker.",
 		},
 		{
 			ScreenID:               "mouse-focused-field",
