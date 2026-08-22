@@ -622,9 +622,9 @@ func TestFinalPacketRequiresReviewProvenance(t *testing.T) {
 	}
 }
 
-// TestRegionDiffCoverage proves that the BuildRegionDiffs function (replacing
-// buildRegionDiffsJSONPlaceholder) produces at least one meaningful region
-// record for each ScreenSpec. An empty screens list is not acceptable.
+// TestRegionDiffCoverage proves that BuildRegionDiffs stores the complete
+// AllRegionNames inventory for each ScreenSpec. Empty extracted evidence is a
+// valid inventory entry; RequiredRegions separately defines what must be nonempty.
 func TestRegionDiffCoverage(t *testing.T) {
 	// Use dummy backend captures as the input (live vs approved-tui text).
 	backend := dummytui.NewFixtureBackend()
@@ -641,19 +641,23 @@ func TestRegionDiffCoverage(t *testing.T) {
 	if len(diffs) == 0 {
 		t.Fatal("BuildRegionDiffs must return non-empty diffs")
 	}
+	allRegionNames := screenshot.AllRegionNames()
 	screensSeen := make(map[string]bool)
 	for _, d := range diffs {
 		screensSeen[d.ScreenID] = true
-		// Each diff must have a non-empty comparison.
 		if d.ScreenID == "" {
 			t.Error("diff has empty ScreenID")
 		}
-		if len(d.Regions) == 0 {
-			t.Errorf("diff %q has no named regions", d.ScreenID)
+		if len(d.Regions) != len(allRegionNames) {
+			t.Errorf("diff %q has %d named regions, want complete inventory of %d", d.ScreenID, len(d.Regions), len(allRegionNames))
 		}
+		regionsSeen := make(map[screenshot.RegionName]bool, len(d.Regions))
 		for _, region := range d.Regions {
-			if region.Name == "" || region.LiveText == "" || region.ApprovedText == "" {
-				t.Errorf("diff %q has an empty named-region comparison: %+v", d.ScreenID, region)
+			regionsSeen[region.Name] = true
+		}
+		for _, name := range allRegionNames {
+			if !regionsSeen[name] {
+				t.Errorf("diff %q is missing named region %q", d.ScreenID, name)
 			}
 		}
 	}
@@ -839,7 +843,7 @@ func TestRegionNonComparable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildRegionDiffs live-only frame: %v", err)
 	}
-	region := records[0].Regions[0]
+	region := regionDiffByName(t, records[0], screenshot.RegionConnectivityOutput)
 	if region.Comparable || region.Equal {
 		t.Fatalf("live-only region must be explicitly non-comparable and unequal: %+v", region)
 	}
@@ -960,7 +964,7 @@ func TestDummyOnlyFrameClassification(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildRegionDiffs dummy-only frame: %v", err)
 	}
-	region := records[0].Regions[0]
+	region := regionDiffByName(t, records[0], screenshot.RegionConnectivityOutput)
 	if region.Comparable || region.Equal || region.LiveApplicable || !region.ApprovedApplicable {
 		t.Fatalf("dummy-only region applicability/equality is contradictory: %+v", region)
 	}
@@ -1079,6 +1083,46 @@ func TestValidateRegionDiffsRejectsMissingRequiredRegion(t *testing.T) {
 	}
 	if err := screenshot.ValidateRegionDiffs(data, source, screenshot.RequiredScreenSpecs()); err == nil {
 		t.Fatal("region validation must reject a missing required region")
+	}
+}
+
+func TestValidateRegionDiffsRejectsMissingVisibleNonRequiredRegion(t *testing.T) {
+	source := strings.Repeat("f", 40)
+	spec := screenshot.ScreenSpec{
+		ScreenID:              "visible-non-required-region",
+		StateMarker:           "shared header",
+		ApplicableLive:        true,
+		ApplicableApprovedTUI: true,
+		RequiredRegions:       []screenshot.RegionName{screenshot.RegionHeader},
+		NonApplicability: []screenshot.SurfaceNonApplicability{{
+			Surface: "approved-html", Decision: "D-04", Reason: "HTML is not a parity target.", Classification: "ux-improvement",
+		}},
+	}
+	capture := "shared header\nIdentities › shared breadcrumb\n"
+	records, err := screenshot.BuildRegionDiffs(
+		source,
+		map[string]string{spec.ScreenID: capture},
+		map[string]string{spec.ScreenID: capture},
+		[]screenshot.ScreenSpec{spec},
+	)
+	if err != nil {
+		t.Fatalf("building valid region evidence: %v", err)
+	}
+	var found bool
+	for i, region := range records[0].Regions {
+		if region.Name == screenshot.RegionBreadcrumb {
+			found = true
+			records[0].Regions = append(records[0].Regions[:i], records[0].Regions[i+1:]...)
+			break
+		}
+	}
+	if !found {
+		t.Fatal("test fixture did not produce the visible non-required breadcrumb region")
+	}
+
+	data := screenshot.BuildRegionDiffsJSON(source, records)
+	if err := screenshot.ValidateRegionDiffs(data, source, []screenshot.ScreenSpec{spec}); err == nil {
+		t.Fatal("ValidateRegionDiffs accepted a document missing a visible non-required named region")
 	}
 }
 
@@ -1219,14 +1263,21 @@ func validRegionDiffs(t *testing.T, source string) []byte {
 	diffs := screenshot.RegionDiffs{Version: "test", SourceCommit: source, GeneratedAt: "test"}
 	for _, spec := range screenshot.RequiredScreenSpecs() {
 		record := screenshot.RegionDiffRecord{ScreenID: spec.ScreenID}
+		requiredRegions := make(map[screenshot.RegionName]bool, len(spec.RequiredRegions))
 		for _, name := range spec.RequiredRegions {
+			requiredRegions[name] = true
+		}
+		for _, name := range screenshot.AllRegionNames() {
 			live := ""
-			if spec.ApplicableLive {
+			if requiredRegions[name] && spec.ApplicableLive {
 				live = "live " + spec.ScreenID + " " + string(name)
 			}
 			approved := ""
-			if spec.ApplicableApprovedTUI {
-				approved = live
+			if requiredRegions[name] && spec.ApplicableApprovedTUI {
+				approved = "approved " + spec.ScreenID + " " + string(name)
+				if spec.ApplicableLive {
+					approved = live
+				}
 			}
 			region := screenshot.NamedRegionDiff{
 				Name: name, LiveText: live, ApprovedText: approved,

@@ -1081,13 +1081,14 @@ type RegionDiffRecord struct {
 	Divergence string `json:"divergence,omitempty"`
 	// Justification is the allowlist entry explaining the divergence (if applicable).
 	Justification string `json:"justification,omitempty"`
-	// Regions is the meaningful semantic comparison inventory for this frame.
+	// Regions is the complete named semantic comparison inventory for this frame.
 	// Whole-screen equality is intentionally only a summary; reviewers inspect
 	// the normalized bytes and hashes of these named regions.
 	Regions []NamedRegionDiff `json:"regions"`
 }
 
-// NamedRegionDiff is one nonempty semantic region comparison within a frame.
+// NamedRegionDiff is one semantic region comparison within a frame. Empty
+// evidence is retained so the stored inventory is complete and omission-safe.
 type NamedRegionDiff struct {
 	Name           RegionName `json:"name"`
 	LiveText       string     `json:"live_text"`
@@ -1124,8 +1125,8 @@ type RegionDiffs struct {
 // against approved-tui captures for every ScreenSpec in specs. Each record
 // carries the live/approved SHA-256 pair, equality result, and any explicit
 // screen-specific, decision-linked divergence disposition. RequiredRegions
-// enforces mandatory presence; the comparison inventory is the symmetric
-// nonempty union of every name returned by AllRegionNames. The result is
+// enforces mandatory nonempty evidence; the stored comparison inventory has
+// exactly one entry for every name returned by AllRegionNames. The result is
 // non-empty — every spec must produce at least one record.
 //
 // normalizePrefix strips disposable absolute path prefixes (temp dirs,
@@ -1168,9 +1169,6 @@ func BuildRegionDiffs(sourceCommit string, liveCaptures, approvedCaptures map[st
 		for _, name := range AllRegionNames() {
 			liveRegion := normalizeForRegion(ExtractRegion(liveText, name))
 			approvedRegion := normalizeForRegion(ExtractRegion(approvedText, name))
-			if strings.TrimSpace(liveRegion) == "" && strings.TrimSpace(approvedRegion) == "" {
-				continue
-			}
 			region := NamedRegionDiff{
 				Name:               name,
 				LiveText:           liveRegion,
@@ -1251,8 +1249,9 @@ func validateRegionDiffsFile(packetDir string, pkt Packet) error {
 }
 
 // ValidateRegionDiffs strictly validates the stored region document. It binds
-// every declared frame to the current source commit and rejects missing regions
-// or differences without an explicit D-XX justification.
+// every declared frame to the current source commit, requires the complete
+// AllRegionNames inventory, and rejects differences without an explicit D-XX
+// justification. RequiredRegions remains the mandatory-nonempty subset.
 func ValidateRegionDiffs(data []byte, sourceCommit string, specs []ScreenSpec) error {
 	if err := ValidateScreenSpecs(specs); err != nil {
 		return fmt.Errorf("screenshot: ValidateRegionDiffs: invalid screen specs: %w", err)
@@ -1334,6 +1333,11 @@ func ValidateRegionDiffs(data []byte, sourceCommit string, specs []ScreenSpec) e
 				return fmt.Errorf("screenshot: ValidateRegionDiffs: equal region %q/%q carries a difference classification", spec.ScreenID, region.Name)
 			}
 			regions[region.Name] = region
+		}
+		for _, name := range AllRegionNames() {
+			if _, ok := regions[name]; !ok {
+				return fmt.Errorf("screenshot: ValidateRegionDiffs: missing named region %q for frame %q", name, spec.ScreenID)
+			}
 		}
 		for _, required := range spec.RequiredRegions {
 			region, ok := regions[required]
