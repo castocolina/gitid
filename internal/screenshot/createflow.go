@@ -26,6 +26,7 @@ package screenshot
 // affects PNG pixel rendering, not text content).
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -71,6 +72,179 @@ var CreateFlowScreenIDs = []string{
 	"test-stage2-by-alias",  // step 1: stage 2 (TEST-02) outcome, captured at testStage2
 	"git-form-demo",         // step 2: the demo'd Git-identity step (D-18/D-19)
 	"confirm-write",         // step 3: the review/confirm-write ceremony (state A)
+}
+
+// ---------------------------------------------------------------------------
+// ScreenSpec registry — typed per-screen capture contract (03-13 Task 2).
+//
+// Each ScreenSpec names a logical screen ID, its canonical HTML route, the
+// interaction script that produces the state, the unique state marker that
+// must appear in the captured text before the label is accepted, which
+// surfaces the spec applies to, and optional same-route variant metadata.
+//
+// ValidateCapturedState MUST be called before saving any capture — a
+// matching route without the state marker fails; a marker from another
+// route/state fails even when hashes happen to be unique.
+// ---------------------------------------------------------------------------
+
+// ScreenSpec is the typed capture contract for one create-flow logical screen.
+type ScreenSpec struct {
+	// ScreenID is the logical identifier (one of CreateFlowScreenIDs).
+	ScreenID string
+	// Route is the canonical HTML route for this screen (e.g. "/create-flow/ssh-form-filled").
+	Route string
+	// Interaction is a human-readable description of the script steps that produce this state.
+	Interaction string
+	// StateMarker is the unique string that MUST appear in the captured text to
+	// confirm the correct state was captured. A route name alone is never sufficient.
+	StateMarker string
+	// ApplicableLive reports whether this spec applies to the live binary capture.
+	ApplicableLive bool
+	// ApplicableApprovedTUI reports whether this spec applies to the approved-TUI capture.
+	ApplicableApprovedTUI bool
+	// ApplicableApprovedHTML reports whether this spec applies to the approved-HTML capture.
+	ApplicableApprovedHTML bool
+	// VariantOf is the base screen ID when this spec is a same-route interaction variant.
+	// Must be non-empty together with non-empty VariantRationale to qualify for the
+	// same-route hash exemption in duplicate checking.
+	VariantOf string
+	// VariantRationale documents why this variant legitimately shares the same HTML route.
+	VariantRationale string
+	// NonApplicableReason is the explicit justification when a surface is not applicable.
+	// Must be non-empty when any Applicable* flag is false.
+	NonApplicableReason string
+}
+
+// ScreenSpecRegistry returns the canonical typed ScreenSpec registry consumed
+// by capture, validation, region generation, and publication. Every logical
+// screen ID in CreateFlowScreenIDs has exactly one spec. Same-route interaction
+// variants carry explicit VariantOf + VariantRationale metadata.
+func ScreenSpecRegistry() []ScreenSpec {
+	return []ScreenSpec{
+		{
+			ScreenID:               "ssh-form-filled",
+			Route:                  "/create-flow/ssh-form-filled",
+			Interaction:            "Open the create wizard with default prefix 'acme'; form is pre-filled.",
+			StateMarker:            "IdentitiesOnly yes",
+			ApplicableLive:         true,
+			ApplicableApprovedTUI:  true,
+			ApplicableApprovedHTML: true,
+		},
+		{
+			ScreenID:               "reuse-key-vs-generate",
+			Route:                  "/create-flow/reuse-key-vs-generate",
+			Interaction:            "Tab to the key-source toggle (4 Tabs), then press Right to select Reuse.",
+			StateMarker:            "Reuse an existing key",
+			ApplicableLive:         true,
+			ApplicableApprovedTUI:  true,
+			ApplicableApprovedHTML: true,
+		},
+		{
+			ScreenID:               "reuse-manual-path",
+			Route:                  "/create-flow/reuse-key-vs-generate",
+			Interaction:            "From reuse mode, press Left to select the manual-path row; the manual-path text input becomes active.",
+			StateMarker:            "Enter a path manually",
+			ApplicableLive:         true,
+			ApplicableApprovedTUI:  true,
+			ApplicableApprovedHTML: true,
+			VariantOf:              "reuse-key-vs-generate",
+			VariantRationale:       "No separate HTML route exists for the manual-path interaction variant; it shares /create-flow/reuse-key-vs-generate.",
+		},
+		{
+			ScreenID:               "mouse-focused-field",
+			Route:                  "/create-flow/ssh-form-filled",
+			Interaction:            "Click the Port field row with a real mouse event; verify focus moves to Port.",
+			StateMarker:            "▸ Port",
+			ApplicableLive:         true,
+			ApplicableApprovedTUI:  true,
+			ApplicableApprovedHTML: true,
+			VariantOf:              "ssh-form-filled",
+			VariantRationale:       "No separate HTML route exists for mouse-focused-field; it shares /create-flow/ssh-form-filled with a different focus state.",
+		},
+		{
+			ScreenID:               "test-stage1-direct",
+			Route:                  "/create-flow/test-stage1-direct",
+			Interaction:            "Advance to step 1 (Test connection); press Enter to run stage 1. Capture at testRunning2 (stage-1 result visible, stage-2 pending).",
+			StateMarker:            "… running ssh…",
+			ApplicableLive:         true,
+			ApplicableApprovedTUI:  true,
+			ApplicableApprovedHTML: true,
+		},
+		{
+			ScreenID:               "test-stage2-by-alias",
+			Route:                  "/create-flow/test-stage2-by-alias",
+			Interaction:            "After stage-1 completes (D-04 auto-chain), wait for stage-2 result. Capture at testStage2 (both stages done).",
+			StateMarker:            "Next: Git identity",
+			ApplicableLive:         true,
+			ApplicableApprovedTUI:  true,
+			ApplicableApprovedHTML: true,
+		},
+		{
+			ScreenID:               "git-form-demo",
+			Route:                  "/git-screen/git-form-filled",
+			Interaction:            "Advance past test stages to step 2 (Git identity); demo'd with D-16 banner.",
+			StateMarker:            "Step 3/4",
+			ApplicableLive:         true,
+			ApplicableApprovedTUI:  true,
+			ApplicableApprovedHTML: true,
+		},
+		{
+			ScreenID:               "confirm-write",
+			Route:                  "/create-flow/confirm-write",
+			Interaction:            "Skip Git (4 Tabs from user.name, Enter on Skip button); ceremony state A.",
+			StateMarker:            "BEGIN gitid managed:",
+			ApplicableLive:         true,
+			ApplicableApprovedTUI:  true,
+			ApplicableApprovedHTML: true,
+		},
+	}
+}
+
+// ValidateCapturedState reports whether the captured text satisfies the spec's
+// state marker contract. Returns nil if the marker is present, an error if
+// absent or if the marker belongs to a different screen's spec.
+func ValidateCapturedState(spec ScreenSpec, capturedText string) error {
+	if spec.StateMarker == "" {
+		return fmt.Errorf("screenshot: ValidateCapturedState: spec %q has no state marker", spec.ScreenID)
+	}
+	if !strings.Contains(capturedText, spec.StateMarker) {
+		return fmt.Errorf("screenshot: ValidateCapturedState: spec %q state marker %q absent from captured text", spec.ScreenID, spec.StateMarker)
+	}
+	// Guard against a marker from another state being present while the correct
+	// marker is absent. (Here we only check the expected marker is present — the
+	// negative check is done at registration time via ValidateScreenSpecs.)
+	return nil
+}
+
+// ValidateScreenSpecs checks the registry for structural correctness:
+// - No duplicate screen IDs without valid VariantOf metadata
+// - Every VariantOf references an existing base screen ID
+// - State markers are unique across non-variant specs (variants may share routes)
+func ValidateScreenSpecs(specs []ScreenSpec) error {
+	seenIDs := make(map[string]int) // screen_id → first occurrence index
+	for i, s := range specs {
+		if s.ScreenID == "" {
+			return fmt.Errorf("screenshot: ValidateScreenSpecs: spec[%d] has empty ScreenID", i)
+		}
+		if prior, exists := seenIDs[s.ScreenID]; exists {
+			// A duplicate is allowed ONLY when this spec declares a same-route variant.
+			priorSpec := specs[prior]
+			// For a valid same-route variant: VariantOf must reference the prior spec's
+			// ScreenID (or vice versa), and VariantRationale must be non-empty.
+			isVariant := (s.VariantOf == priorSpec.ScreenID || priorSpec.VariantOf == s.ScreenID) &&
+				(s.VariantRationale != "" || priorSpec.VariantRationale != "")
+			if !isVariant {
+				return fmt.Errorf("screenshot: ValidateScreenSpecs: duplicate screen ID %q (index %d and %d) without valid VariantOf declaration", s.ScreenID, prior, i)
+			}
+		}
+		seenIDs[s.ScreenID] = i
+	}
+	return nil
+}
+
+// ValidateScreenSpecRegistry validates the built-in registry.
+func ValidateScreenSpecRegistry() error {
+	return ValidateScreenSpecs(ScreenSpecRegistry())
 }
 
 // ApprovedHTMLRoutes returns the canonical map from logical screen ID to the

@@ -439,6 +439,98 @@ func TestUndeclaredReviewArtifact(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// 03-13 Task 2: ScreenSpec registry, state markers, confirm sentinel.
+// ---------------------------------------------------------------------------
+
+// TestScreenSpecRegistry proves that the ScreenSpec registry contains every
+// required logical screen ID with non-empty route, interaction, and state marker.
+func TestScreenSpecRegistry(t *testing.T) {
+	specs := screenshot.ScreenSpecRegistry()
+	if len(specs) == 0 {
+		t.Fatal("ScreenSpecRegistry must return non-empty specs")
+	}
+	// Every CreateFlowScreenID must have a spec.
+	for _, id := range screenshot.CreateFlowScreenIDs {
+		found := false
+		for _, s := range specs {
+			if s.ScreenID == id {
+				found = true
+				// Each spec must have a route and state marker.
+				if s.Route == "" {
+					t.Errorf("spec %q has empty route", id)
+				}
+				if s.StateMarker == "" {
+					t.Errorf("spec %q has empty StateMarker", id)
+				}
+				break
+			}
+		}
+		if !found {
+			t.Errorf("ScreenSpecRegistry missing spec for screen ID %q", id)
+		}
+	}
+}
+
+// TestStateMarkerGate proves ValidateCapturedState rejects text that lacks
+// the spec's state marker — a route alone cannot authorize a label.
+func TestStateMarkerGate(t *testing.T) {
+	specs := screenshot.ScreenSpecRegistry()
+	if len(specs) == 0 {
+		t.Skip("ScreenSpecRegistry not yet implemented")
+	}
+	spec := specs[0]
+	// Text with the route but not the state marker must be rejected.
+	textWithoutMarker := "route: " + spec.Route + "\nsome content but no marker"
+	if err := screenshot.ValidateCapturedState(spec, textWithoutMarker); err == nil {
+		t.Errorf("ValidateCapturedState must reject text lacking the state marker for %q", spec.ScreenID)
+	}
+	// Text with the marker must be accepted.
+	textWithMarker := textWithoutMarker + "\n" + spec.StateMarker
+	if err := screenshot.ValidateCapturedState(spec, textWithMarker); err != nil {
+		t.Errorf("ValidateCapturedState must accept text with state marker %q; got: %v", spec.StateMarker, err)
+	}
+}
+
+// TestRouteMarkerMismatch proves ValidateCapturedState rejects a state marker
+// from another screen's spec (cross-state marker impersonation).
+func TestRouteMarkerMismatch(t *testing.T) {
+	specs := screenshot.ScreenSpecRegistry()
+	if len(specs) < 2 {
+		t.Skip("need at least 2 specs")
+	}
+	spec0 := specs[0]
+	spec1 := specs[1]
+	// Text with spec1's marker but spec0's route is rejected.
+	crossText := "route: " + spec0.Route + "\n" + spec1.StateMarker
+	if err := screenshot.ValidateCapturedState(spec0, crossText); err == nil {
+		t.Errorf("ValidateCapturedState must reject marker from another state; screen=%q marker=%q", spec1.ScreenID, spec1.StateMarker)
+	}
+}
+
+// TestDuplicatePolicyRejectsUnresolved proves the duplicate ID check fails
+// for screens with the same ScreenID and no VariantOf declaration.
+func TestDuplicatePolicyRejectsUnresolved(t *testing.T) {
+	specs := screenshot.ScreenSpecRegistry()
+	if len(specs) == 0 {
+		t.Skip("ScreenSpecRegistry not yet implemented")
+	}
+	first := specs[0]
+	// A second spec with the same ScreenID but no VariantOf must fail.
+	dup := screenshot.ScreenSpec{
+		ScreenID:    first.ScreenID,
+		Route:       first.Route,
+		StateMarker: first.StateMarker + "-dup",
+	}
+	err := screenshot.ValidateScreenSpecs(append(specs, dup))
+	if err == nil {
+		t.Errorf("ValidateScreenSpecs must reject duplicate screen ID %q without VariantOf", first.ScreenID)
+	}
+	if !strings.Contains(err.Error(), "duplicate") {
+		t.Errorf("error must mention 'duplicate'; got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
 

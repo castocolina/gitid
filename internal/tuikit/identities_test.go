@@ -2049,6 +2049,48 @@ func TestGitContinueHintAlwaysVisible(t *testing.T) {
 	}
 }
 
+// TestConfirmSentinelViewportShowsBeginEnd proves that at 100×30, the review
+// ceremony's preview shows both the BEGIN and END sentinels of the managed
+// block without ellipsis replacement. This closes the D-05/D-06/D-08 finding
+// from the UI-REVIEW ("# END gitid managed:" was hidden by PreviewBlock clip).
+func TestConfirmSentinelViewportShowsBeginEnd(t *testing.T) {
+	// Navigate to step 3 (confirm-write ceremony) by skipping Git.
+	a := openWizardAtGitStep(t, stubBackend{})
+	for i := 0; i < 4; i++ { // to Skip button
+		a, _ = press(t, a, "tab")
+	}
+	a, _ = press(t, a, "enter")
+	view := stripANSI(appView(a))
+	// BEGIN sentinel must appear.
+	if !strings.Contains(view, "# BEGIN gitid managed:") {
+		t.Errorf("confirm ceremony must show BEGIN sentinel; got:\n%s", view)
+	}
+	// END sentinel must appear.
+	if !strings.Contains(view, "# END gitid managed:") {
+		t.Errorf("confirm ceremony must show END sentinel; got:\n%s", view)
+	}
+	// The key path must appear (ssh Host block content).
+	if !strings.Contains(view, "acme") {
+		t.Errorf("confirm ceremony must show identity name 'acme' in sentinel block; got:\n%s", view)
+	}
+}
+
+// TestConfirmFullKeyPathVisible proves that the full key path appears in the
+// confirm ceremony preview without truncation to "~/.ssh/id…" (UI-REVIEW
+// Pillar 4 BLOCKER: confirm-write.txt showed "~/.ssh/id…" truncation).
+func TestConfirmFullKeyPathVisible(t *testing.T) {
+	a := openWizardAtGitStep(t, stubBackend{})
+	for i := 0; i < 4; i++ {
+		a, _ = press(t, a, "tab")
+	}
+	a, _ = press(t, a, "enter")
+	view := stripANSI(appView(a))
+	// Full key path must appear (acme identity uses ~/.ssh/id_ed25519_acme).
+	if !strings.Contains(view, "~/.ssh/id_ed25519_acme") {
+		t.Errorf("confirm ceremony must show full key path without truncation; got:\n%s", view)
+	}
+}
+
 // openWizardAtTestStage2 opens the wizard and navigates to testStage2
 // (both stages complete, pass outcome). Reuses openWizardAtGitStep but
 // stops before pressing Enter to advance to step 2.
