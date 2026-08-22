@@ -366,6 +366,13 @@ func normalizeCaptureText(text, home, workspace string) string {
 func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool) (string, error) {
 	cmd := exec.Command(bin) //nolint:gosec // binary is built by this process from a fixed repository path
 	cmd.Env = append(os.Environ(), "HOME="+home, "TERM=xterm-256color")
+	// For stage-1 captures: set GITID_BARRIER_FILE so the fake SSH's -G call
+	// blocks until the capture script signals stage-1 is done.
+	var barrierFile string
+	if fakeSSH != "" && id == "test-stage1-direct" {
+		barrierFile = filepath.Join(home, ".gitid-stage1-barrier")
+		cmd.Env = append(cmd.Env, "GITID_BARRIER_FILE="+barrierFile)
+	}
 	if fakeSSH != "" {
 		cmd.Env = append(cmd.Env, "PATH="+fakeSSH+":"+os.Getenv("PATH"), "GITID_FAKE_SSH_MODE=pass")
 	}
@@ -454,14 +461,25 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool) (string, e
 	if text == "" {
 		return "", fmt.Errorf("captured empty terminal frame")
 	}
+	// Release the stage-2 barrier AFTER taking the snapshot, so the stage-2
+	// ssh -G call can complete and the process exits cleanly.
+	if barrierFile != "" {
+		if err := os.WriteFile(barrierFile, []byte("go"), 0o644); err != nil { //nolint:gosec // barrier semaphore, sandbox path
+			// Non-fatal: the process will eventually time out anyway.
+			_ = err
+		}
+		// Give stage-2 time to complete so the process exits cleanly.
+		time.Sleep(500 * time.Millisecond)
+	}
 	return text + "\n", nil
 }
 
 // runStage1Only navigates to the test screen, runs stage-1, and returns with
-// the session in testRunning2 state — stage-1 result visible, stage-2 running.
-// This is the genuine stage-1 capture point: it shows stage-1 outcome plus
-// "… running ssh…", distinct from the stage-2 capture (UI-REVIEW Critical:
-// the prior runStages() waited for "identityfile", making both identical).
+// the session in testRunning2 state — stage-1 result visible, stage-2 blocked.
+//
+// The D-22 barrier fake SSH blocks stage-2's -G call until a semaphore file is
+// created, giving us a window to capture the stage-1-only state. The semaphore
+// file is created AFTER we capture the snapshot in captureTUIScreen.
 func runStage1Only(session *capturePTY) error {
 	// Navigate step 0 → step 1.
 	if err := session.send([]byte("\r")); err != nil {
@@ -474,13 +492,16 @@ func runStage1Only(session *capturePTY) error {
 	if err := session.send([]byte("\r")); err != nil {
 		return err
 	}
-	// Wait for the stage-1 result to appear (D-04 auto-chain fires stage-2).
-	// The "Hi user!" banner (pass) or "! Reachable" warning appears before stage-2 completes.
-	// We must capture BEFORE "identityfile" appears (that indicates stage-2 done).
-	if _, err := session.waitFor("running ssh", 8*time.Second); err != nil {
-		// Fallback: if "running ssh" appears very briefly, try for stage-1 result.
-		if _, err2 := session.waitFor("Hi user!", 4*time.Second); err2 != nil {
-			return fmt.Errorf("runStage1Only: stage-1 result did not appear: %w", err)
+	// Wait for stage-1 output to appear. With the barrier fake SSH, stage-2's
+	// -G call is blocked so the session stays in testRunning2 state showing
+	// stage-1 outcome + "… running ssh…" indefinitely.
+	if _, err := session.waitFor("running ssh", 10*time.Second); err != nil {
+		// If "running ssh" didn't appear, stage-2 may have already completed.
+		// Check for Hi user! or ! Reachable as a fallback.
+		if _, err2 := session.waitFor("Hi user!", 2*time.Second); err2 != nil {
+			if _, err3 := session.waitFor("Reachable", 2*time.Second); err3 != nil {
+				return fmt.Errorf("runStage1Only: stage-1 result did not appear: %w", err)
+			}
 		}
 	}
 	return nil
@@ -848,6 +869,14 @@ func (s *capturePTY) close() {
 	}
 }
 
+// writeFakeSSH creates a fake SSH binary for evidence capture. The script
+// supports two modes:
+//   - Normal (no semaphore): responds immediately to -T and -G calls.
+//   - Barrier (semaphore env var set): blocks -G (stage-2 resolution) calls
+//     until the semaphore file exists, giving the capture script time to
+//     snapshot the stage-1 intermediate state before stage-2 completes.
+//
+// The semaphore file path is passed via GITID_BARRIER_FILE env var.
 func writeFakeSSH(workspace string) (string, error) {
 	dir, err := os.MkdirTemp(workspace, "fake-ssh-")
 	if err != nil {
@@ -863,6 +892,14 @@ for arg in "$@"; do
   if [ "$arg" = "-G" ]; then is_resolution=1; fi
 done
 if [ "$is_resolution" = "1" ]; then
+  # If a barrier file is configured, block until it exists (max 10s).
+  if [ -n "$GITID_BARRIER_FILE" ]; then
+    i=0
+    while [ ! -f "$GITID_BARRIER_FILE" ] && [ "$i" -lt 100 ]; do
+      sleep 0.1
+      i=$((i+1))
+    done
+  fi
   user=$(awk '$1 == "User" { print $2; exit }' "$config_path")
   hostname=$(awk '$1 == "Hostname" { print $2; exit }' "$config_path")
   port=$(awk '$1 == "Port" { print $2; exit }' "$config_path")
