@@ -160,3 +160,30 @@ func TestCaptureTUIScreenReuseSelection(t *testing.T) {
 		t.Fatal("reuse-key-vs-generate must retain raw PTY evidence")
 	}
 }
+
+// TestCaptureTUIScreenConfirmationManagedBlock proves the raw-PTY capture
+// reaches the complete pre-write managed block rather than a fixed viewport page.
+func TestCaptureTUIScreenConfirmationManagedBlock(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "gitid")
+	build := exec.Command("go", "build", "-o", bin, "../gitid") //nolint:gosec // fixed local package and sandbox output
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("building gitid capture binary: %v\n%s", err, output)
+	}
+
+	workspace := t.TempDir()
+	fakeSSH, err := writeFakeSSH(workspace)
+	if err != nil {
+		t.Fatalf("creating fake SSH: %v", err)
+	}
+	var raw string
+	text, err := captureTUIScreen(bin, t.TempDir(), fakeSSH, "confirm-managed-block", true, &raw)
+	if err != nil {
+		t.Fatalf("capturing confirm-managed-block: %v", err)
+	}
+	if !strings.Contains(text, "# END gitid managed:") {
+		t.Fatalf("confirm-managed-block must expose the END sentinel before writing:\n%s", text)
+	}
+	if strings.TrimSpace(raw) == "" {
+		t.Fatal("confirm-managed-block must retain raw PTY evidence")
+	}
+}

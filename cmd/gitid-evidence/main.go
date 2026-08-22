@@ -683,10 +683,8 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 			}
 		}
 		if id == "confirm-managed-block" {
-			for range 4 {
-				if err := session.send([]byte("\x1b[6~")); err != nil {
-					return "", err
-				}
+			if err := pageUntilVisible(session, "# END gitid managed:"); err != nil {
+				return "", err
 			}
 		}
 	default:
@@ -722,6 +720,21 @@ func selectReuse(session *capturePTY) error {
 		return fmt.Errorf("waiting for selected reuse state: %w", err)
 	}
 	return nil
+}
+
+func pageUntilVisible(session *capturePTY, marker string) error {
+	for range 12 {
+		if strings.Contains(session.snapshot(), marker) {
+			return nil
+		}
+		if err := session.send([]byte("\x1b[B")); err != nil {
+			return err
+		}
+		if _, err := session.waitFor(marker, time.Second); err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("terminal never displayed %q after paging:\n%s", marker, session.snapshot())
 }
 
 func runFailure(session *capturePTY) error {

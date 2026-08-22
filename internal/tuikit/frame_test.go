@@ -569,6 +569,18 @@ func TestExactTextViewport_HorizontalOnlyCueKeepsExactRowBudget(t *testing.T) {
 	}
 }
 
+func TestExactTextViewport_HorizontalCueKeepsFinalLineReachable(t *testing.T) {
+	v := ExactTextViewport{
+		Text:         "one\ntwo\n" + strings.Repeat("wide", 4) + "\nEND",
+		VisibleLines: 3,
+		Width:        8,
+	}
+	rendered := stripANSI(v.ScrollDown(99).View())
+	if !strings.Contains(rendered, "END") {
+		t.Fatalf("horizontal cue must not make the final source line unreachable:\n%s", rendered)
+	}
+}
+
 // TestExactTextViewport_HorizontalScrollRoundTrip proves ScrollRight then
 // ScrollLeft returns to the origin, and source bytes are unchanged.
 func TestExactTextViewport_HorizontalScrollRoundTrip(t *testing.T) {

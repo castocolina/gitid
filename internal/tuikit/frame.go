@@ -627,7 +627,13 @@ func (v ExactTextViewport) TotalLines() int { return len(v.lines()) }
 // past the last screenful of content.
 func (v ExactTextViewport) Clamp() ExactTextViewport {
 	total := v.TotalLines()
-	maxOffset := total - v.VisibleLines
+	contentRows := v.VisibleLines
+	// A horizontal-overflow cue occupies the final viewport row, so reserve it
+	// when calculating the bottom offset or the last source line is unreachable.
+	if v.Width > 0 && v.maxLineWidth() > v.Width && contentRows > 1 {
+		contentRows--
+	}
+	maxOffset := total - contentRows
 	if maxOffset < 0 {
 		maxOffset = 0
 	}
