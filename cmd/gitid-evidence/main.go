@@ -332,7 +332,7 @@ func captureTUIPanels(surface, bin, workspace, renderDir, freeze, fontFile strin
 				return nil, err
 			}
 		}
-		text, err := captureTUIScreen(bin, home, sshDir, id)
+		text, err := captureTUIScreen(bin, home, sshDir, id, fakeSSH)
 		if err != nil {
 			return nil, fmt.Errorf("capturing %s/%s: %w", surface, id, err)
 		}
@@ -353,7 +353,7 @@ func captureTUIPanels(surface, bin, workspace, renderDir, freeze, fontFile strin
 	return panels, nil
 }
 
-func captureTUIScreen(bin, home, fakeSSH, id string) (string, error) {
+func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool) (string, error) {
 	cmd := exec.Command(bin) //nolint:gosec // binary is built by this process from a fixed repository path
 	cmd.Env = append(os.Environ(), "HOME="+home, "TERM=xterm-256color")
 	if fakeSSH != "" {
@@ -402,7 +402,7 @@ func captureTUIScreen(bin, home, fakeSSH, id string) (string, error) {
 			return "", err
 		}
 	case "test-stage1-direct", "test-stage2-by-alias", "git-form-demo", "confirm-write":
-		if err := runStages(session); err != nil {
+		if err := runStages(session, autoStage2); err != nil {
 			return "", err
 		}
 		if id == "test-stage1-direct" || id == "test-stage2-by-alias" {
@@ -437,7 +437,7 @@ func captureTUIScreen(bin, home, fakeSSH, id string) (string, error) {
 	return text + "\n", nil
 }
 
-func runStages(session *capturePTY) error {
+func runStages(session *capturePTY, autoStage2 bool) error {
 	if err := session.send([]byte("\r")); err != nil {
 		return err
 	}
@@ -446,6 +446,14 @@ func runStages(session *capturePTY) error {
 	}
 	if err := session.send([]byte("\r")); err != nil {
 		return err
+	}
+	if !autoStage2 {
+		if _, err := session.waitFor("Run stage 2", 8*time.Second); err != nil {
+			return err
+		}
+		if err := session.send([]byte("\r")); err != nil {
+			return err
+		}
 	}
 	if _, err := session.waitFor("identityfile", 8*time.Second); err != nil {
 		return err
