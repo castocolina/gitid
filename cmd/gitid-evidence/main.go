@@ -207,7 +207,7 @@ func generateCandidate(sourceCommit, outputDir string) error {
 	if err != nil {
 		return fmt.Errorf("reading vendored capture font: %w", err)
 	}
-	freeze, err := exec.LookPath("freeze")
+	freeze, err := resolveFreeze()
 	if err != nil {
 		return fmt.Errorf("freeze is required for evidence capture: %w", err)
 	}
@@ -285,6 +285,21 @@ func generateCandidate(sourceCommit, outputDir string) error {
 		return fmt.Errorf("validating generated candidate: %w", err)
 	}
 	return nil
+}
+
+func resolveFreeze() (string, error) {
+	gopath, err := commandOutput("go", "env", "GOPATH")
+	if err == nil {
+		candidate := filepath.Join(strings.TrimSpace(gopath), "bin", "freeze")
+		if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
+			return candidate, nil
+		}
+	}
+	freeze, lookErr := exec.LookPath("freeze")
+	if lookErr != nil {
+		return "", fmt.Errorf("freeze not found at $(go env GOPATH)/bin/freeze or on PATH: %w", lookErr)
+	}
+	return freeze, nil
 }
 
 func captureLivePanels(repoRoot, workspace, renderDir, freeze, fontFile string) ([]screenshot.VisualPanel, error) {
