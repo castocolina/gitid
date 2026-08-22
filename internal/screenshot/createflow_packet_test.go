@@ -12,6 +12,9 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -937,15 +940,29 @@ func TestDuplicatePolicyRejectsUnresolved(t *testing.T) {
 // Test helpers
 // ---------------------------------------------------------------------------
 
-// makeTinyPNG writes a minimal 1-byte file that won't fail the "non-empty PNG"
-// check (GenerateVisualPacket only checks len(png) > 0, not PNG magic bytes).
+// makeTinyPNG writes a complete valid PNG for packet-validation fixtures.
 func makeTinyPNG(t *testing.T, dir, name string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x01}, 0o644); err != nil { //nolint:gosec // test fixture
-		t.Fatalf("makeTinyPNG: %v", err)
-	}
+	writeTinyPNG(t, path, color.RGBA{A: 0xff})
 	return path
+}
+
+func writeTinyPNG(t *testing.T, path string, pixel color.RGBA) {
+	t.Helper()
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("makeTinyPNG: creating file: %v", err)
+	}
+	image := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	image.SetRGBA(0, 0, pixel)
+	if err := png.Encode(file, image); err != nil {
+		_ = file.Close()
+		t.Fatalf("makeTinyPNG: encoding image: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("makeTinyPNG: closing file: %v", err)
+	}
 }
 
 // makeMinimalPanels returns every registry-required panel with a unique PNG.
@@ -959,12 +976,8 @@ func makeMinimalPanels(t *testing.T, dir string) []screenshot.VisualPanel {
 				continue
 			}
 			id := spec.ScreenID
-			// Each panel gets a unique PNG (different byte at index 8).
-			pngBytes := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, byte(len(surfaces)*i + len(surface))}
 			pngPath := filepath.Join(dir, surface+"-"+id+".png")
-			if err := os.WriteFile(pngPath, pngBytes, 0o644); err != nil { //nolint:gosec // test fixture
-				t.Fatalf("makeMinimalPanels: writing PNG %s: %v", pngPath, err)
-			}
+			writeTinyPNG(t, pngPath, color.RGBA{R: uint8(len(surfaces)*i + len(surface)), A: 0xff})
 			panels = append(panels, screenshot.VisualPanel{
 				Surface:  surface,
 				ScreenID: id,

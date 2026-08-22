@@ -9,6 +9,12 @@ package main
 // valid content-addressed packet on success.
 
 import (
+	"encoding/binary"
+	"encoding/json"
+	"hash/crc32"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -135,6 +141,161 @@ func TestNormalizeCaptureTextRedactsScrolledSandboxPathFragments(t *testing.T) {
 			t.Errorf("normalized capture retains random sandbox fragment %q: %q", fragment, got)
 		}
 	}
+}
+
+func TestCompareInventoriesRequiresSemanticEqualityButIgnoresPNGBytes(t *testing.T) {
+	first := makeCandidate(t, filepath.Join(t.TempDir(), "first"))
+	second := makeCandidate(t, filepath.Join(t.TempDir(), "second"))
+
+	addPNGMetadata(t, second, "live/ssh-form-filled.png")
+	if err := compareInventories(first, second); err != nil {
+		t.Fatalf("renderer-byte-only PNG variation must not fail semantic comparison: %v", err)
+	}
+
+	mutateCandidateMember(t, second, "live/ssh-form-filled.txt", []byte("semantic drift"))
+	if err := compareInventories(first, second); err == nil {
+		t.Fatal("semantic evidence drift must fail candidate comparison")
+	}
+}
+
+func TestCompareInventoriesRejectsInvalidPNG(t *testing.T) {
+	first := makeCandidate(t, filepath.Join(t.TempDir(), "first"))
+	second := makeCandidate(t, filepath.Join(t.TempDir(), "second"))
+	mutateCandidateMember(t, second, "live/ssh-form-filled.png", []byte("not a PNG"))
+
+	if err := compareInventories(first, second); err == nil || !strings.Contains(err.Error(), "complete valid PNG") {
+		t.Fatalf("invalid PNG must reject candidate comparison, got %v", err)
+	}
+}
+
+func makeCandidate(t *testing.T, dir string) string {
+	t.Helper()
+	source := strings.Repeat("a", 40)
+	panels := make([]screenshot.VisualPanel, 0, screenshot.RequiredVisualPanelCount())
+	regionRecords := make([]screenshot.RegionDiffRecord, 0, len(screenshot.RequiredScreenSpecs()))
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		record := screenshot.RegionDiffRecord{ScreenID: spec.ScreenID}
+		for _, region := range spec.RequiredRegions {
+			live := "live " + spec.ScreenID + " " + string(region)
+			approved := ""
+			if spec.ApplicableApprovedTUI {
+				approved = live
+			}
+			record.Regions = append(record.Regions, screenshot.NamedRegionDiff{
+				Name: region, LiveText: live, ApprovedText: approved,
+				ApprovedApplicable: spec.ApplicableApprovedTUI,
+				LiveHash:           sha256String(live), ApprovedHash: sha256String(approved), Equal: true,
+			})
+		}
+		regionRecords = append(regionRecords, record)
+		for _, surface := range []string{"live", "approved-tui", "approved-html"} {
+			if !screenshot.ScreenAppliesToSurface(spec, surface) {
+				continue
+			}
+			pngPath := filepath.Join(t.TempDir(), surface+"-"+spec.ScreenID+".png")
+			writeValidPNG(t, pngPath, color.RGBA{R: uint8(len(panels) + 1), A: 0xff})
+			panels = append(panels, screenshot.VisualPanel{
+				Surface: surface, ScreenID: spec.ScreenID,
+				Text:    "normalized text for " + surface + "/" + spec.ScreenID,
+				RawText: "raw transcript for " + surface + "/" + spec.ScreenID,
+				PNGPath: pngPath,
+			})
+		}
+	}
+	result, err := screenshot.GenerateVisualPacket(screenshot.PacketOptions{
+		SourceCommit: source, ApprovalCommit: screenshot.PacketApprovalCommit, LiveBackendRef: "test", OutputDir: dir,
+		ProvenanceFiles: map[string][]byte{
+			"EVIDENCE.json":     []byte("candidate metadata"),
+			"REGION-DIFFS.json": screenshot.BuildRegionDiffsJSON(source, regionRecords),
+		},
+	}, panels, screenshot.PacketCapture{
+		Commands: []string{"test"}, ToolVersions: []screenshot.PacketTool{{Name: "go", Version: "test"}},
+		Geometry: "100x30", FontSHA256: strings.Repeat("b", 64), Theme: "test",
+	})
+	if err != nil {
+		t.Fatalf("GenerateVisualPacket: %v", err)
+	}
+	if err := os.Rename(result.ManifestPath, filepath.Join(dir, "CANDIDATE-MANIFEST.json")); err != nil {
+		t.Fatalf("renaming candidate manifest: %v", err)
+	}
+	return dir
+}
+
+func writeValidPNG(t *testing.T, path string, pixel color.RGBA) {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.SetRGBA(0, 0, pixel)
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("creating PNG: %v", err)
+	}
+	if err := png.Encode(file, img); err != nil {
+		_ = file.Close()
+		t.Fatalf("encoding PNG: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("closing PNG: %v", err)
+	}
+}
+
+func addPNGMetadata(t *testing.T, dir, memberPath string) {
+	t.Helper()
+	path := filepath.Join(dir, memberPath)
+	pngBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading PNG: %v", err)
+	}
+	const iendLength = 12
+	metadata := pngChunk("tEXt", []byte("Software\x00alternate renderer"))
+	pngBytes = append(append([]byte{}, pngBytes[:len(pngBytes)-iendLength]...), append(metadata, pngBytes[len(pngBytes)-iendLength:]...)...)
+	if err := os.WriteFile(path, pngBytes, 0o600); err != nil {
+		t.Fatalf("writing PNG metadata: %v", err)
+	}
+	mutateCandidateMember(t, dir, memberPath, pngBytes)
+}
+
+func pngChunk(kind string, data []byte) []byte {
+	chunk := make([]byte, 12+len(data))
+	binary.BigEndian.PutUint32(chunk, uint32(len(data)))
+	copy(chunk[4:], kind)
+	copy(chunk[8:], data)
+	binary.BigEndian.PutUint32(chunk[8+len(data):], crc32.ChecksumIEEE(append([]byte(kind), data...)))
+	return chunk
+}
+
+func mutateCandidateMember(t *testing.T, dir, memberPath string, content []byte) {
+	t.Helper()
+	path := filepath.Join(dir, memberPath)
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("writing candidate member: %v", err)
+	}
+	manifestPath := filepath.Join(dir, "CANDIDATE-MANIFEST.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("reading candidate manifest: %v", err)
+	}
+	var manifest screenshot.Packet
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("parsing candidate manifest: %v", err)
+	}
+	for i := range manifest.Members {
+		if manifest.Members[i].Path == memberPath {
+			manifest.Members[i].SHA256 = sha256Hex(content)
+			break
+		}
+	}
+	manifest.ManifestSHA256 = screenshot.CanonicalManifestHash(manifest)
+	data, err = json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatalf("marshaling candidate manifest: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, data, 0o600); err != nil {
+		t.Fatalf("writing candidate manifest: %v", err)
+	}
+}
+
+func sha256String(value string) string {
+	return sha256Hex([]byte(value))
 }
 
 // TestCaptureTUIScreenReuseSelection proves the live raw-PTY script reaches the

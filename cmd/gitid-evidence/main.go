@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -1004,46 +1005,33 @@ func runCommand(dir, command string, args ...string) error {
 }
 
 func compareInventories(first, second string) error {
-	a, err := inventory(first)
+	a, err := screenshot.ValidateCandidate(first)
 	if err != nil {
-		return err
+		return fmt.Errorf("validating first candidate: %w", err)
 	}
-	b, err := inventory(second)
+	b, err := screenshot.ValidateCandidate(second)
 	if err != nil {
-		return err
+		return fmt.Errorf("validating second candidate: %w", err)
 	}
-	if len(a) != len(b) {
-		return fmt.Errorf("member count differs: %d != %d", len(a), len(b))
-	}
-	for path, hash := range a {
-		if b[path] != hash {
-			return fmt.Errorf("member %q differs: %s != %s", path, hash, b[path])
-		}
+	if !reflect.DeepEqual(canonicalSemanticPacket(a), canonicalSemanticPacket(b)) {
+		return fmt.Errorf("canonical semantic evidence differs")
 	}
 	return nil
 }
 
-func inventory(root string) (map[string]string, error) {
-	out := make(map[string]string)
-	err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
+// canonicalSemanticPacket preserves the registry-derived frame inventory,
+// captured text and raw-transcript hashes, region records, and candidate
+// metadata. PNG hashes are intentionally blank: each candidate is separately
+// required to contain complete, valid PNGs, but renderer bytes are not UX
+// semantics under ONESHOT Rule 11 and L16.
+func canonicalSemanticPacket(pkt screenshot.Packet) screenshot.Packet {
+	pkt.ManifestSHA256 = ""
+	for i := range pkt.Members {
+		if strings.HasSuffix(pkt.Members[i].Path, ".png") {
+			pkt.Members[i].SHA256 = ""
 		}
-		if info.IsDir() {
-			return nil
-		}
-		data, err := os.ReadFile(path) //nolint:gosec // path came from a controlled candidate walk
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		out[filepath.ToSlash(rel)] = sha256Hex(data)
-		return nil
-	})
-	return out, err
+	}
+	return pkt
 }
 
 func syncDir(path string) error {

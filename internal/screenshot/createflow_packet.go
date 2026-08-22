@@ -19,10 +19,12 @@ package screenshot
 // descriptive error — the packet is never partially published (fail-closed).
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"image/png"
 	"os"
 	"path/filepath"
 	"sort"
@@ -479,6 +481,11 @@ func validatePacketManifest(packetDir, manifestName string, final bool) (Packet,
 		got := sha256Hex(content)
 		if got != m.SHA256 {
 			return Packet{}, fmt.Errorf("screenshot: ValidatePacket: member %q hash mismatch: got %s, want %s", m.Path, got, m.SHA256)
+		}
+		if strings.HasSuffix(m.Path, ".png") {
+			if _, err := png.Decode(bytes.NewReader(content)); err != nil {
+				return Packet{}, fmt.Errorf("screenshot: ValidatePacket: member %q is not a complete valid PNG: %w", m.Path, err)
+			}
 		}
 	}
 	if pkt.Version == visualPacketVersion {
