@@ -275,9 +275,12 @@ func generateCandidate(sourceCommit, outputDir string) error {
 	// Both are declared as manifest members; REVIEW-PROVENANCE.json is added
 	// later by the finalization step after independent reviews complete.
 	evidence := buildEvidenceJSON(sourceCommit, capture, panels)
-	// REGION-DIFFS.json needs panel SHA values from the to-be-generated
-	// manifest. Use a placeholder; it is regenerated in a post-publish pass.
-	regionDiffs := buildRegionDiffsJSONPlaceholder(sourceCommit)
+	// REGION-DIFFS.json compares live vs approved-tui text captures per ScreenSpec.
+	// The text is already available from the panel captures above.
+	liveTextMap := panelsToTextMap(live)
+	approvedTUITextMap := panelsToTextMap(approvedTUI)
+	regionRecords := screenshot.BuildRegionDiffs(sourceCommit, liveTextMap, approvedTUITextMap, screenshot.ScreenSpecRegistry())
+	regionDiffs := screenshot.BuildRegionDiffsJSON(sourceCommit, regionRecords)
 
 	result, err := screenshot.GenerateVisualPacket(screenshot.PacketOptions{
 		SourceCommit:   sourceCommit,
@@ -356,27 +359,14 @@ func buildEvidenceJSON(sourceCommit string, capture screenshot.PacketCapture, pa
 	return data
 }
 
-// buildRegionDiffsJSONPlaceholder builds a placeholder REGION-DIFFS.json.
-// The real content is populated after the final packet is published, since
-// it references panel SHA-256s that are only known after generation.
-func buildRegionDiffsJSONPlaceholder(sourceCommit string) []byte {
-	type RegionDiffs struct {
-		Version      string        `json:"version"`
-		SourceCommit string        `json:"source_commit"`
-		Note         string        `json:"note"`
-		Screens      []interface{} `json:"screens"`
+// panelsToTextMap converts a slice of VisualPanels to a screen-ID→text map
+// for region diff generation.
+func panelsToTextMap(panels []screenshot.VisualPanel) map[string]string {
+	m := make(map[string]string, len(panels))
+	for _, p := range panels {
+		m[p.ScreenID] = p.Text
 	}
-	rd := RegionDiffs{
-		Version:      "03-12.1",
-		SourceCommit: sourceCommit,
-		Note:         "SHA-256 comparison of live vs approved-tui panel PNGs. Populated after packet generation.",
-		Screens:      []interface{}{},
-	}
-	data, err := json.MarshalIndent(rd, "", "  ")
-	if err != nil {
-		panic("buildRegionDiffsJSONPlaceholder: " + err.Error())
-	}
-	return data
+	return m
 }
 
 func resolveFreeze() (string, error) {

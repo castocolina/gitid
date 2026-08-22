@@ -672,11 +672,11 @@ func TestCreateFlow_ReuseManualPath(t *testing.T) {
 	saveFrame(t, "create-flow-reuse-manual-path", s)
 }
 
-// TestCreateFlow_GitStepDisabledReason proves the D-19 fix: when the real
-// binary's Continue is permanently disabled (always=true), the
-// wizardContinueHint is NOT shown alongside the disabled reason. This is
-// distinct from TestCreateFlow_GitStepDisabledReasonAndConfirmWrite which
-// proves the disabled reason text; THIS test proves the hint is suppressed.
+// TestCreateFlow_GitStepDisabledReasonHintSuppressed proves the 03-13
+// correction: wizardContinueHint is ALWAYS visible on the Git step alongside
+// the D-19 disabled reason (not suppressed). This test was updated from the
+// 03-12 behavior (hint suppressed) to the corrected 03-13 behavior
+// (hint always shown per FIELDS.md:159-164).
 func TestCreateFlow_GitStepDisabledReasonHintSuppressed(t *testing.T) {
 	home := SandboxHome(t)
 	bin := BuildBinary(t)
@@ -697,14 +697,13 @@ func TestCreateFlow_GitStepDisabledReasonHintSuppressed(t *testing.T) {
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 	mustSee(t, s, "Step 3/4", "Git step")
 
-	// The contradictory hint must be absent.
-	// "Continue reviews the Git fragment" is the beginning of wizardContinueHint.
-	mustNotSee(t, s, "Continue reviews the Git fragment",
-		"D-19: wizardContinueHint must be suppressed when Continue is always-disabled")
+	// 03-13 correction: Continue hint MUST appear (FIELDS.md:159-164).
+	mustSee(t, s, "Continue reviews the Git fragment",
+		"03-13: wizardContinueHint must always appear alongside the disabled reason")
 	// The disabled reason must still appear.
 	mustSee(t, s, "arrives with the next build", "D-19: disabled reason still appears")
 
-	saveFrame(t, "create-flow-git-disabled-hint-suppressed", s)
+	saveFrame(t, "create-flow-git-disabled-hint-corrected-03-13", s)
 }
 
 // ---------------------------------------------------------------------------

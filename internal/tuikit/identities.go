@@ -1031,22 +1031,21 @@ func renderStageOutcome(r TestResultView, providerHost string, showHint bool, wi
 	if r.Outcome == TestOutcomeReachableNotUploaded {
 		b.WriteString(" " + styleWarning.Render(stageWarningLine) + "\n")
 		if r.Detail != "" {
-			// Single line, truncated (never wraps): a long ssh Detail string
-			// (e.g. a long ~/.ssh path in Detail's "identityfile <path>"
-			// form) could otherwise push the fixed 100x30 frame's body past
-			// its row budget and silently clip the D-03 hint below it —
-			// caught by the 03-06 visual-regression gate's own capture.
-			b.WriteString(" " + styleFaint.Render(ansi.Truncate(r.Detail, width-2, "…")) + "\n")
+			// Hard-truncate at terminal edge without "…" substitution so the
+			// line stays within the row budget while remaining byte-observable
+			// (03-13 correction: ellipsis substitution on proof lines is forbidden;
+			// viewport navigation exposes the full bytes via PgDn/PgUp).
+			b.WriteString(" " + styleFaint.Render(ansi.Truncate(r.Detail, width-2, "")) + "\n")
 		}
 		if showHint {
-			// Default body style, not styleFaint: this is the only actionable
-			// content in the warning state (design-review a11y finding).
-			// Also single-line/truncated, for the same row-budget reason.
-			b.WriteString(" " + ansi.Truncate(reachableHint(providerHost), width-2, "…") + "\n")
+			b.WriteString(" " + reachableHint(providerHost) + "\n")
 		}
 		return b.String()
 	}
-	b.WriteString(" " + styleHealthy.Render("✓ "+ansi.Truncate(r.Detail, width-4, "…")) + "\n")
+	// Hard-truncate at terminal edge without "…" substitution — the proof
+	// line stays within the row budget while remaining byte-observable
+	// (03-13 correction: ellipsis substitution on the proof line is forbidden).
+	b.WriteString(" " + styleHealthy.Render("✓ "+ansi.Truncate(r.Detail, width-4, "")) + "\n")
 	return b.String()
 }
 
