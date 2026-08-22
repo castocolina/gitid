@@ -98,6 +98,7 @@ type ceremonyModel struct {
 	commitErr string
 	typed     textinput.Model
 	focus     ceremonyFocus
+	preview   ExactTextViewport
 }
 
 // newCeremony builds a ceremony in state A. For destructive ceremonies the
@@ -112,7 +113,7 @@ func newCeremony(cfg ceremonyConfig) ceremonyModel {
 		ti.Placeholder = `Type "` + cfg.Destructive.ConfirmWord + `" to enable the destructive action`
 		ti.Focus()
 	}
-	return ceremonyModel{cfg: cfg, typed: ti}
+	return ceremonyModel{cfg: cfg, typed: ti, preview: ExactTextViewport{Text: cfg.Preview, VisibleLines: 10, Width: 58}}
 }
 
 // confirmEnabled reports whether the confirm action is enabled — always
@@ -169,6 +170,34 @@ func (c ceremonyModel) handleKey(msg tea.KeyMsg) (ceremonyModel, ceremonyOutcome
 		case "esc":
 			return c, ceremonyCancelled
 		default:
+			return c, ceremonyNone
+		}
+	}
+	if key == "v" {
+		c.preview.Focused = !c.preview.Focused
+		return c, ceremonyNone
+	}
+	if key == "pgdown" {
+		c.preview = c.preview.ScrollDown(8)
+		return c, ceremonyNone
+	}
+	if key == "pgup" {
+		c.preview = c.preview.ScrollUp(8)
+		return c, ceremonyNone
+	}
+	if c.preview.Focused {
+		switch key {
+		case "left":
+			c.preview = c.preview.ScrollLeft(8)
+			return c, ceremonyNone
+		case "right":
+			c.preview = c.preview.ScrollRight(8)
+			return c, ceremonyNone
+		case "up":
+			c.preview = c.preview.ScrollUp(1)
+			return c, ceremonyNone
+		case "down":
+			c.preview = c.preview.ScrollDown(1)
 			return c, ceremonyNone
 		}
 	}
@@ -291,7 +320,16 @@ func (c ceremonyModel) view(width int) string {
 	// fixes), so this change applies everywhere ceremony.view renders. The
 	// wording is shortened from the original PreviewLabel text to fit the
 	// narrowest caller's pane width (identities.go's detailWidth=62).
-	b.WriteString(PreviewBlock("Exact change — everything else preserved verbatim", c.cfg.Preview, c.cfg.PreviewDiff, width, 10) + "\n")
+	v := c.preview
+	v.Width = maxInt(20, width-4)
+	v.VisibleLines = 10
+	v = v.Clamp()
+	hint := "Exact change: PgUp/PgDn scroll · v focus · ←/→ columns"
+	if v.Focused {
+		hint = "Exact change focused: PgUp/PgDn and ←/→ scroll"
+	}
+	b.WriteString(styleFaint.Render(hint) + "\n")
+	b.WriteString(PreviewBlock("Exact change — everything else preserved verbatim", v.View(), c.cfg.PreviewDiff, width, 10) + "\n")
 	if c.cfg.Destructive != nil {
 		b.WriteString(styleError.Render(wrap.Render(c.cfg.Destructive.Warning)) + "\n")
 		b.WriteString(styleError.Render("> ") + c.typed.View() + "\n")

@@ -393,7 +393,19 @@ func GenerateTextPacket(opts PacketOptions, liveCaptures map[string]string, appr
 // no undeclared files, MANIFEST.json parseable, and SourceCommit/ApprovalCommit
 // present.
 func ValidatePacket(packetDir string) (Packet, error) {
-	manifestPath := filepath.Join(packetDir, "MANIFEST.json")
+	return validatePacketManifest(packetDir, "MANIFEST.json", true)
+}
+
+// ValidateCandidate validates a reviewable candidate bundle. Candidates carry
+// the same immutable capture inventory as final packets but deliberately omit
+// review provenance: that file can only be created after independent reviews
+// of this exact candidate hash have completed.
+func ValidateCandidate(packetDir string) (Packet, error) {
+	return validatePacketManifest(packetDir, "CANDIDATE-MANIFEST.json", false)
+}
+
+func validatePacketManifest(packetDir, manifestName string, final bool) (Packet, error) {
+	manifestPath := filepath.Join(packetDir, manifestName)
 	data, err := os.ReadFile(manifestPath) //nolint:gosec // packetDir is gitid-controlled (G304)
 	if err != nil {
 		return Packet{}, fmt.Errorf("screenshot: ValidatePacket: reading MANIFEST.json: %w", err)
@@ -417,7 +429,7 @@ func ValidatePacket(packetDir string) (Packet, error) {
 	if pkt.ManifestSHA256 != sha256Hex(expectedManifest) {
 		return Packet{}, fmt.Errorf("screenshot: ValidatePacket: manifest hash mismatch: got %s, want %s", pkt.ManifestSHA256, sha256Hex(expectedManifest))
 	}
-	declared := map[string]bool{"MANIFEST.json": true}
+	declared := map[string]bool{manifestName: true}
 	// Validate every declared member.
 	for _, m := range pkt.Members {
 		if m.Path == "" || filepath.IsAbs(m.Path) || strings.HasPrefix(filepath.Clean(m.Path), "..") {
@@ -466,6 +478,11 @@ func ValidatePacket(packetDir string) (Packet, error) {
 			return nil
 		}); err != nil {
 			return Packet{}, err
+		}
+		if final {
+			if err := ValidateProvenanceRecords(pkt); err != nil {
+				return Packet{}, err
+			}
 		}
 	}
 	return pkt, nil
@@ -700,6 +717,22 @@ type RegionDiffRecord struct {
 	Divergence string `json:"divergence,omitempty"`
 	// Justification is the allowlist entry explaining the divergence (if applicable).
 	Justification string `json:"justification,omitempty"`
+	// Regions is the meaningful semantic comparison inventory for this frame.
+	// Whole-screen equality is intentionally only a summary; reviewers inspect
+	// the normalized bytes and hashes of these named regions.
+	Regions []NamedRegionDiff `json:"regions"`
+}
+
+// NamedRegionDiff is one nonempty semantic region comparison within a frame.
+type NamedRegionDiff struct {
+	Name          RegionName `json:"name"`
+	LiveText      string     `json:"live_text"`
+	ApprovedText  string     `json:"approved_tui_text"`
+	LiveHash      string     `json:"live_sha256"`
+	ApprovedHash  string     `json:"approved_tui_sha256"`
+	Equal         bool       `json:"equal"`
+	Divergence    string     `json:"divergence,omitempty"`
+	Justification string     `json:"justification,omitempty"`
 }
 
 // RegionDiffs is the schema for REGION-DIFFS.json.
@@ -731,6 +764,29 @@ func BuildRegionDiffs(sourceCommit string, liveCaptures, approvedCaptures map[st
 			ApprovedHash: sha256Hex([]byte(approvedNorm)),
 			Equal:        liveNorm == approvedNorm,
 		}
+		for _, name := range AllRegionNames() {
+			liveRegion := normalizeForRegion(ExtractRegion(liveText, name))
+			approvedRegion := normalizeForRegion(ExtractRegion(approvedText, name))
+			// A named region is meaningful only when it exists on both surfaces.
+			// Screen variants legitimately omit unrelated regions (for example,
+			// a Git pane has no Host preview), so they are not fabricated as a
+			// whole-screen fallback.
+			if liveRegion == "" || approvedRegion == "" {
+				continue
+			}
+			region := NamedRegionDiff{
+				Name:         name,
+				LiveText:     liveRegion,
+				ApprovedText: approvedRegion,
+				LiveHash:     sha256Hex([]byte(liveRegion)),
+				ApprovedHash: sha256Hex([]byte(approvedRegion)),
+				Equal:        liveRegion == approvedRegion,
+			}
+			if !region.Equal {
+				region.Divergence, region.Justification = regionDisposition(spec.ScreenID, name)
+			}
+			rec.Regions = append(rec.Regions, region)
+		}
 		if !rec.Equal {
 			// Provide justification for known allowlisted divergences.
 			switch spec.ScreenID {
@@ -750,6 +806,21 @@ func BuildRegionDiffs(sourceCommit string, liveCaptures, approvedCaptures map[st
 		records = append(records, rec)
 	}
 	return records
+}
+
+func regionDisposition(screenID string, name RegionName) (string, string) {
+	switch {
+	case name == RegionConnectivityOutput:
+		return "connectivity-output", "D-02: live capture uses the current backend outcome; approved TUI uses a frozen fixture"
+	case name == RegionContinueDisabledReason:
+		return "continue-disabled-reason", "D-19: Phase 3 live binary exposes the deferred Git configuration reason"
+	case name == RegionHostPreview:
+		return "host-preview", "structural fixture: live Host block uses the current checked renderer"
+	case name == RegionSidebar || name == RegionHeaderStatus:
+		return "sidebar-state", "structural fixture: live disposable HOME starts empty while the approved fixture contains identities"
+	default:
+		return "unexpected", "No accepted divergence is declared"
+	}
 }
 
 // BuildRegionDiffsJSON marshals a RegionDiffs document for inclusion in the

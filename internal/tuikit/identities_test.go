@@ -2091,6 +2091,47 @@ func TestConfirmFullKeyPathVisible(t *testing.T) {
 	}
 }
 
+func TestCompletedProofViewportRoutesAdvertisedControls(t *testing.T) {
+	a := openWizardAtTestStage2(t, stubBackend{})
+	m := identModel(t, a)
+	m.wizard.stage2.ResolutionCommand = "ssh -F /very/long/staged/config -G acme.github.com"
+	m.wizard.stage2.ResolutionOutput = "user git\nhostname ssh.github.com\nport 443\nidentitiesonly yes\nidentityfile /very/" + strings.Repeat("long/", 20) + "id_ed25519_acme"
+	m.wizard = m.wizard.refreshProof()
+	a.screens[TabIdentities] = m
+
+	if !strings.Contains(stripANSI(appView(a)), "Proof viewport") {
+		t.Fatalf("proof viewport does not advertise its focus and controls:\n%s", stripANSI(appView(a)))
+	}
+	result := m.handleKey(pressKey("tab"), a.state)
+	m = result.model.(identitiesModel)
+	result = m.handleKey(pressKey("pgdown"), a.state)
+	m = result.model.(identitiesModel)
+	result = m.handleKey(pressKey("right"), a.state)
+	m = result.model.(identitiesModel)
+	proof := m.wizard.proof
+	if proof.LineOffset == 0 || proof.HorizontalOffset == 0 {
+		t.Fatalf("advertised proof controls did not update viewport offsets: %+v", proof)
+	}
+	if !strings.Contains(proof.Text, "identityfile /very/long/long/") {
+		t.Fatalf("proof text did not retain the captured resolution bytes: %q", proof.Text)
+	}
+}
+
+func TestConfirmationViewportRoutesAdvertisedControls(t *testing.T) {
+	a := openWizardAtGitStep(t, stubBackend{})
+	for i := 0; i < 4; i++ {
+		a, _ = press(t, a, "tab")
+	}
+	a, _ = press(t, a, "enter")
+	for i := 0; i < 3; i++ {
+		a, _ = press(t, a, "pgdown")
+	}
+	view := stripANSI(appView(a))
+	if !strings.Contains(view, "# END gitid managed:") {
+		t.Fatalf("confirmation viewport did not reveal the END sentinel:\n%s", view)
+	}
+}
+
 // openWizardAtTestStage2 opens the wizard and navigates to testStage2
 // (both stages complete, pass outcome). Reuses openWizardAtGitStep but
 // stops before pressing Enter to advance to step 2.

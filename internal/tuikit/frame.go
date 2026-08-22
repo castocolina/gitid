@@ -585,20 +585,28 @@ func stylePreviewLines(lines []string, diff bool, innerWidth int) []string {
 // holds focus and offset as plain fields and replaces them on key events.
 // ---------------------------------------------------------------------------
 
-// ExactTextViewport is a byte-preserving scrollable window over a multi-line
-// text string. It renders exactly visibleLines content rows at the given width
-// (truncating at terminal edge, never with ansi.Truncate's ellipsis). A faint
-// range cue on the last rendered row announces remaining hidden lines when
-// the content exceeds the window. Navigation keys (PageUp/PageDown, Up/Down)
-// are handled externally by the caller; the viewport exposes clamp helpers.
+// ExactTextViewport is a byte-preserving two-axis scrollable window over a
+// multi-line text string. It renders exactly VisibleLines content rows
+// starting at LineOffset, and each line is displayed starting at
+// HorizontalOffset display columns. Truncation is at terminal edge — never
+// ansi.Truncate's ellipsis — so every source byte is reachable by scrolling.
+//
+// A faint range cue on the last rendered row announces remaining hidden lines
+// when the content exceeds the window. A column cue is emitted when hidden
+// columns exist to the right.
+//
+// Navigation keys are handled externally by the caller; the viewport exposes
+// clamp helpers for both axes.
 type ExactTextViewport struct {
 	// Text is the complete source content, stored byte-for-byte.
 	Text string
 	// LineOffset is the first visible line (0-based).
 	LineOffset int
+	// HorizontalOffset is the first visible column (display-width units, 0-based).
+	HorizontalOffset int
 	// VisibleLines is the number of content rows to render.
 	VisibleLines int
-	// Width is the column budget (used only to truncate at terminal edge, never ellipsis).
+	// Width is the column budget for each rendered line.
 	Width int
 	// Focused is whether this viewport currently owns key input.
 	Focused bool
@@ -629,6 +637,17 @@ func (v ExactTextViewport) Clamp() ExactTextViewport {
 	if v.LineOffset < 0 {
 		v.LineOffset = 0
 	}
+	maxColumns := v.maxLineWidth()
+	maxHorizontalOffset := maxColumns - v.Width
+	if maxHorizontalOffset < 0 || v.Width <= 0 {
+		maxHorizontalOffset = 0
+	}
+	if v.HorizontalOffset > maxHorizontalOffset {
+		v.HorizontalOffset = maxHorizontalOffset
+	}
+	if v.HorizontalOffset < 0 {
+		v.HorizontalOffset = 0
+	}
 	return v
 }
 
@@ -644,17 +663,79 @@ func (v ExactTextViewport) ScrollUp(n int) ExactTextViewport {
 	return v.Clamp()
 }
 
+// ScrollRight moves the horizontal offset right by n display columns (clamped
+// to the maximum useful position so the last non-whitespace column is visible).
+func (v ExactTextViewport) ScrollRight(n int) ExactTextViewport {
+	v.HorizontalOffset += n
+	return v.Clamp()
+}
+
+// ScrollLeft moves the horizontal offset left by n display columns (clamped to 0).
+func (v ExactTextViewport) ScrollLeft(n int) ExactTextViewport {
+	v.HorizontalOffset -= n
+	return v.Clamp()
+}
+
 // AtBottom reports whether the viewport is at or past the last screenful.
 func (v ExactTextViewport) AtBottom() bool {
 	clamped := v.Clamp()
 	return v.LineOffset >= clamped.LineOffset && clamped.LineOffset+clamped.VisibleLines >= v.TotalLines()
 }
 
+// maxLineWidth returns the maximum display width of any line in the source text,
+// used to determine whether hidden columns exist to the right.
+func (v ExactTextViewport) maxLineWidth() int {
+	maxWidth := 0
+	for _, line := range v.lines() {
+		if w := ansi.StringWidth(line); w > maxWidth {
+			maxWidth = w
+		}
+	}
+	return maxWidth
+}
+
+// sliceColumns returns the substring of line starting at startCol display
+// columns, up to startCol+maxCols display columns, using rune-by-rune
+// display-width counting. This enables horizontal scrolling without corrupting
+// multi-byte or wide characters.
+func sliceColumns(line string, startCol, maxCols int) string {
+	if maxCols <= 0 {
+		return ""
+	}
+	// The viewport source remains byte-for-byte in Text. Rendering strips SGR
+	// before slicing because selecting a substring of an escape sequence would
+	// corrupt the terminal stream; callers apply presentation styles outside it.
+	runes := []rune(ansi.Strip(line))
+	// Skip startCol display columns.
+	col := 0
+	start := 0
+	for start < len(runes) && col < startCol {
+		col += ansi.StringWidth(string(runes[start]))
+		start++
+	}
+	// Collect up to maxCols display columns.
+	w := 0
+	end := start
+	for end < len(runes) {
+		rw := ansi.StringWidth(string(runes[end]))
+		if w+rw > maxCols {
+			break
+		}
+		w += rw
+		end++
+	}
+	return string(runes[start:end])
+}
+
 // View renders the viewport: exactly VisibleLines rows of content starting at
-// LineOffset, each truncated at Width display columns (hard-truncate, no
-// ellipsis — so every byte of the source remains reachable by scrolling).
+// LineOffset, each sliced from HorizontalOffset and truncated at Width display
+// columns (hard-truncate, no ellipsis — so every source byte is reachable by
+// scrolling both vertically and horizontally).
+//
 // When more content exists below the window, the final row is replaced by a
-// faint range cue ("↓ lines N–M of Total · PgDn scroll · PgUp scroll").
+// faint range cue ("↓ lines N–M of Total  PgDn↓ PgUp↑").
+// When hidden columns exist to the right of the current view, a column
+// position cue is included in the range line ("→ cols C–C+W of Max  ←→scroll").
 // The cue is itself truncated at Width if necessary.
 func (v ExactTextViewport) View() string {
 	lines := v.lines()
@@ -671,14 +752,35 @@ func (v ExactTextViewport) View() string {
 	visible := lines[start:end]
 	// Determine whether there are hidden lines below.
 	hiddenBelow := total - (start + len(visible))
+
+	// Determine hidden columns (for column cue).
+	maxWidth := v.maxLineWidth()
+	hiddenRight := maxWidth - (v.HorizontalOffset + v.Width)
+	if hiddenRight < 0 {
+		hiddenRight = 0
+	}
+
 	cueLine := ""
-	if hiddenBelow > 0 {
-		firstHidden := start + len(visible) + 1
-		lastLine := total
-		cueLine = fmt.Sprintf("↓ lines %d–%d of %d  PgDn↓ PgUp↑", firstHidden, lastLine, total)
-	} else if start > 0 {
-		// At bottom with hidden above: show an "at bottom" cue.
-		cueLine = "↑ top at line 1  PgUp↑"
+	if hiddenBelow > 0 || hiddenRight > 0 || v.HorizontalOffset > 0 {
+		// Build a combined navigation cue.
+		parts := []string{}
+		if hiddenBelow > 0 {
+			firstHidden := start + len(visible) + 1
+			lastLine := total
+			parts = append(parts, fmt.Sprintf("↓ lines %d–%d of %d  PgDn↓ PgUp↑", firstHidden, lastLine, total))
+		} else if start > 0 {
+			parts = append(parts, "↑ top at line 1  PgUp↑")
+		}
+		if hiddenRight > 0 || v.HorizontalOffset > 0 {
+			colEnd := v.HorizontalOffset + v.Width
+			if colEnd > maxWidth {
+				colEnd = maxWidth
+			}
+			parts = append(parts, fmt.Sprintf("→ cols %d–%d of %d  ←→scroll", v.HorizontalOffset+1, colEnd, maxWidth))
+		}
+		if len(parts) > 0 {
+			cueLine = strings.Join(parts, "  ")
+		}
 	}
 
 	out := make([]string, 0, v.VisibleLines)
@@ -691,19 +793,13 @@ func (v ExactTextViewport) View() string {
 		if i >= contentRows {
 			break
 		}
-		if v.Width > 0 {
-			// Hard-truncate at terminal edge: strip trailing bytes, no "…".
-			if ansi.StringWidth(line) > v.Width {
-				// Truncate rune-by-rune to stay within width.
-				runes := []rune(line)
-				w := 0
-				cut := 0
-				for cut < len(runes) && w+ansi.StringWidth(string(runes[cut])) <= v.Width {
-					w += ansi.StringWidth(string(runes[cut]))
-					cut++
-				}
-				line = string(runes[:cut])
+		// Apply horizontal slicing: start at HorizontalOffset, show Width cols.
+		if v.HorizontalOffset > 0 || v.Width > 0 {
+			w := v.Width
+			if w <= 0 {
+				w = 0x7FFFFFFF // unlimited
 			}
+			line = sliceColumns(line, v.HorizontalOffset, w)
 		}
 		out = append(out, line)
 	}

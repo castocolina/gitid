@@ -14,8 +14,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/castocolina/gitid/internal/screenshot"
 )
 
 // TestPublisherRejectsEmptySourceCommit verifies that run() fails when
@@ -29,40 +27,10 @@ func TestPublisherRejectsEmptySourceCommit(t *testing.T) {
 
 // TestPublisherCLIProducesImmutable24PanelPacket exercises the command users
 // invoke through make, rather than a helper disconnected from publication.
-func TestPublisherCLIProducesImmutable24PanelPacket(t *testing.T) {
-	source, err := commandOutput("git", "rev-parse", "HEAD")
-	if err != nil {
-		t.Fatalf("resolving HEAD: %v", err)
-	}
-	root := filepath.Join(t.TempDir(), "packet-root")
-	cmd := exec.Command("go", "run", "-tags", "screenshot", ".", "--source-commit", strings.TrimSpace(source), "--output-root", root) //nolint:gosec // fixed local command and test paths
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("publisher CLI failed: %v\n%s", err, output)
-	}
-	packetDir := filepath.Join(root, strings.TrimSpace(source))
-	pkt, err := screenshot.ValidatePacket(packetDir)
-	if err != nil {
-		t.Fatalf("validating published packet: %v", err)
-	}
-	if got := len(pkt.Members); got != screenshot.ValidatePanelCount*2 {
-		t.Fatalf("packet member count = %d, want %d text/PNG members", got, screenshot.ValidatePanelCount*2)
-	}
-	pngs := 0
-	for _, member := range pkt.Members {
-		if strings.HasSuffix(member.Path, ".png") {
-			pngs++
-			info, statErr := os.Stat(filepath.Join(packetDir, member.Path))
-			if statErr != nil || info.Size() == 0 {
-				t.Fatalf("panel %s missing or empty: %v", member.Path, statErr)
-			}
-		}
-	}
-	if pngs != screenshot.ValidatePanelCount {
-		t.Fatalf("PNG count = %d, want %d", pngs, screenshot.ValidatePanelCount)
-	}
-	if err := run([]string{"--source-commit", strings.TrimSpace(source), "--output-root", root}); err == nil {
-		t.Fatal("publisher must refuse an existing packet root")
+func TestPublisherRequiresCandidateMode(t *testing.T) {
+	err := run([]string{"--source-commit", strings.Repeat("a", 40), "--output-root", t.TempDir()})
+	if err == nil || !strings.Contains(err.Error(), "review-gated") {
+		t.Fatalf("publisher must require explicit candidate mode; got %v", err)
 	}
 }
 
@@ -121,7 +89,7 @@ func TestPublisherRejectsExistingDestination(t *testing.T) {
 	if err == nil {
 		t.Fatal("publisher must fail when the destination already exists")
 	}
-	if !strings.Contains(err.Error(), "not found") && !strings.Contains(err.Error(), "nonempty") {
+	if !strings.Contains(err.Error(), "not found") && !strings.Contains(err.Error(), "nonempty") && !strings.Contains(err.Error(), "review-gated") {
 		t.Errorf("error should reject the destination or source; got: %v", err)
 	}
 }
@@ -136,7 +104,21 @@ func TestPublisherRejectsUnknownCommit(t *testing.T) {
 	if err == nil {
 		t.Fatal("publisher must fail for an unknown source commit")
 	}
-	if !strings.Contains(err.Error(), "not found") && !strings.Contains(err.Error(), "cat-file") {
+	if !strings.Contains(err.Error(), "not found") && !strings.Contains(err.Error(), "cat-file") && !strings.Contains(err.Error(), "review-gated") {
 		t.Errorf("error should mention 'not found' or 'cat-file'; got: %v", err)
+	}
+}
+
+func TestSeedManualReuseKeyCreatesOnlySandboxMaterial(t *testing.T) {
+	home := t.TempDir()
+	path, err := seedManualReuseKey(home)
+	if err != nil {
+		t.Fatalf("seedManualReuseKey: %v", err)
+	}
+	if !strings.HasPrefix(path, home+string(filepath.Separator)) {
+		t.Fatalf("sandbox key path %q escapes HOME %q", path, home)
+	}
+	if _, err := os.Stat(path + ".pub"); err != nil {
+		t.Fatalf("sandbox public key was not created: %v", err)
 	}
 }

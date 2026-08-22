@@ -627,12 +627,49 @@ func TestRegionDiffCoverage(t *testing.T) {
 		if d.ScreenID == "" {
 			t.Error("diff has empty ScreenID")
 		}
+		if len(d.Regions) == 0 {
+			t.Errorf("diff %q has no named regions", d.ScreenID)
+		}
+		for _, region := range d.Regions {
+			if region.Name == "" || region.LiveText == "" || region.ApprovedText == "" {
+				t.Errorf("diff %q has an empty named-region comparison: %+v", d.ScreenID, region)
+			}
+		}
 	}
 	// Every spec must have at least one diff record.
 	for _, spec := range specs {
 		if !screensSeen[spec.ScreenID] {
 			t.Errorf("BuildRegionDiffs missing coverage for spec %q", spec.ScreenID)
 		}
+	}
+}
+
+func TestCandidateManifestIsReviewableButNotFinal(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "candidate")
+	result, err := screenshot.GenerateVisualPacket(screenshot.PacketOptions{
+		SourceCommit:   strings.Repeat("a", 40),
+		ApprovalCommit: strings.Repeat("b", 40),
+		LiveBackendRef: "candidate",
+		OutputDir:      dir,
+		ProvenanceFiles: map[string][]byte{
+			"EVIDENCE.json":     []byte("evidence"),
+			"REGION-DIFFS.json": []byte("regions"),
+		},
+	}, makeMinimalPanels(t, t.TempDir()), screenshot.PacketCapture{
+		Commands: []string{"test"}, ToolVersions: []screenshot.PacketTool{{Name: "go", Version: "test"}},
+		Geometry: "100x30", FontSHA256: strings.Repeat("c", 64), Theme: "test",
+	})
+	if err != nil {
+		t.Fatalf("GenerateVisualPacket: %v", err)
+	}
+	if err := os.Rename(result.ManifestPath, filepath.Join(dir, "CANDIDATE-MANIFEST.json")); err != nil {
+		t.Fatalf("renaming candidate manifest: %v", err)
+	}
+	if _, err := screenshot.ValidateCandidate(dir); err != nil {
+		t.Fatalf("ValidateCandidate rejected reviewable candidate: %v", err)
+	}
+	if _, err := screenshot.ValidatePacket(dir); err == nil {
+		t.Fatal("ValidatePacket accepted a candidate without final review provenance")
 	}
 }
 

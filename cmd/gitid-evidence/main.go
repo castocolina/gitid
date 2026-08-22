@@ -50,10 +50,10 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	if candidate {
-		return generateCandidate(sourceCommit, outputPath)
+	if !candidate {
+		return fmt.Errorf("final publication is review-gated; generate a candidate with --candidate and finalize only after two independent reviews")
 	}
-	return publish(sourceCommit, outputPath)
+	return generateCandidate(sourceCommit, outputPath)
 }
 
 func parseArgs(args []string, candidate bool) (sourceCommit, outputPath string, err error) {
@@ -298,7 +298,11 @@ func generateCandidate(sourceCommit, outputDir string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := screenshot.ValidatePacket(filepath.Dir(result.ManifestPath)); err != nil {
+	candidateManifest := filepath.Join(filepath.Dir(result.ManifestPath), "CANDIDATE-MANIFEST.json")
+	if err := os.Rename(result.ManifestPath, candidateManifest); err != nil {
+		return fmt.Errorf("renaming candidate manifest: %w", err)
+	}
+	if _, err := screenshot.ValidateCandidate(filepath.Dir(candidateManifest)); err != nil {
 		return fmt.Errorf("validating generated candidate: %w", err)
 	}
 	return nil
@@ -443,6 +447,14 @@ func normalizeCaptureText(text, home, workspace string) string {
 }
 
 func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool) (string, error) {
+	manualKeyPath := ""
+	if id == "reuse-manual-path" && fakeSSH != "" {
+		var err error
+		manualKeyPath, err = seedManualReuseKey(home)
+		if err != nil {
+			return "", err
+		}
+	}
 	cmd := exec.Command(bin) //nolint:gosec // binary is built by this process from a fixed repository path
 	cmd.Env = append(os.Environ(), "HOME="+home, "TERM=xterm-256color")
 	// For stage-1 captures: set GITID_BARRIER_FILE so the fake SSH's -G call
@@ -482,8 +494,28 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool) (string, e
 		if err := session.tabs(4); err != nil {
 			return "", err
 		}
-		if err := session.send([]byte("\x1b[C\x1b[D")); err != nil {
+		// Select Reuse, then the trailing manual row, focus its input, and
+		// resolve the sandbox key. This must never be a Generate frame with a
+		// reuse label inferred from its capture ID.
+		if err := session.send([]byte("\x1b[C")); err != nil {
 			return "", err
+		}
+		if err := session.tabs(1); err != nil {
+			return "", err
+		}
+		if err := session.send([]byte("\x1b[C")); err != nil {
+			return "", err
+		}
+		if err := session.tabs(1); err != nil {
+			return "", err
+		}
+		if manualKeyPath != "" {
+			if err := session.send([]byte(manualKeyPath)); err != nil {
+				return "", err
+			}
+			if _, err := session.waitFor("ssh-ed25519", 8*time.Second); err != nil {
+				return "", fmt.Errorf("waiting for resolved manual key marker: %w", err)
+			}
 		}
 	case "mouse-focused-field":
 		if err := session.tabs(3); err != nil {
@@ -551,6 +583,22 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool) (string, e
 		time.Sleep(500 * time.Millisecond)
 	}
 	return text + "\n", nil
+}
+
+// seedManualReuseKey creates a disposable unencrypted key under the capture
+// HOME. It is only used to prove the resolved-manual-key UI state and never
+// reads an account key or the user's real SSH directory.
+func seedManualReuseKey(home string) (string, error) {
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		return "", fmt.Errorf("creating sandbox SSH directory: %w", err)
+	}
+	path := filepath.Join(sshDir, "id_ed25519_capture_manual")
+	cmd := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", path, "-C", "gitid-capture-manual") //nolint:gosec // fixed keygen arguments and sandbox path
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("creating sandbox manual key: %w\n%s", err, output)
+	}
+	return path, nil
 }
 
 // runStage1Only navigates to the test screen, runs stage-1, and returns with

@@ -729,8 +729,12 @@ type wizardModel struct {
 	// stage1/stage2 hold each test stage's result once its command has
 	// answered — the rendered output line comes from the Backend, never
 	// from a string this package builds.
-	stage1       TestResultView
-	stage2       TestResultView
+	stage1 TestResultView
+	stage2 TestResultView
+	// proof is the exact, captured stage transcript. It is intentionally
+	// separate from the compact status rows so 100x30 rendering never loses a
+	// command or ssh -G field to layout truncation.
+	proof        ExactTextViewport
 	configureGit bool
 	git          gitForm
 	gitFocus     int
@@ -1071,6 +1075,56 @@ func (w wizardModel) stage2Cmd() string {
 	return w.backend.Stage2Command(w.spec())
 }
 
+func (w wizardModel) proofText() string {
+	var b strings.Builder
+	appendResult := func(label string, result TestResultView) {
+		if result.Command == "" {
+			return
+		}
+		b.WriteString(label + " command:\n" + result.Command + "\n")
+		b.WriteString(label + " output:\n" + result.Detail + "\n")
+		if result.ResolutionCommand != "" {
+			b.WriteString(label + " resolution command:\n" + result.ResolutionCommand + "\n")
+		}
+		if result.ResolutionOutput != "" {
+			b.WriteString(label + " resolution output:\n" + result.ResolutionOutput + "\n")
+		}
+	}
+	// Put the latest complete stage first so its proof is immediately useful;
+	// the earlier stage remains in the same immutable transcript below it.
+	appendResult("Stage 2", w.stage2)
+	appendResult("Stage 1", w.stage1)
+	return strings.TrimSuffix(b.String(), "\n")
+}
+
+func (w wizardModel) refreshProof() wizardModel {
+	prior := w.proof
+	w.proof = ExactTextViewport{
+		Text:             w.proofText(),
+		LineOffset:       prior.LineOffset,
+		HorizontalOffset: prior.HorizontalOffset,
+		Focused:          prior.Focused,
+		VisibleLines:     8,
+		Width:            58,
+	}
+	return w
+}
+
+func (w wizardModel) renderProof(width int) string {
+	if w.proof.Text == "" {
+		return ""
+	}
+	v := w.proof
+	v.Width = maxInt(20, width-4)
+	v.VisibleLines = 8
+	v = v.Clamp()
+	state := "Proof viewport: PgUp/PgDn scroll · v focus · ←/→ columns"
+	if v.Focused {
+		state = "Proof viewport focused: PgUp/PgDn and ←/→ scroll"
+	}
+	return " " + styleFaint.Render(state) + "\n" + v.View() + "\n"
+}
+
 // step0Valid mirrors the web gating for wizard state 1. Choosing "Reuse an
 // existing key" (D-10) without landing on a usable candidate blocks advance
 // too — otherwise the reuse choice would silently fall back to generating a
@@ -1356,6 +1410,7 @@ func (m identitiesModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 		switch {
 		case stage.Stage == 1 && m.wizard.testPhase == testRunning1:
 			m.wizard.stage1 = stage.Result
+			m.wizard = m.wizard.refreshProof()
 			if succeededOutcome(stage.Result.Outcome) {
 				// D-04 stage auto-chain: stage 1 unlocking immediately
 				// advances to stage 2 without another Enter.
@@ -1365,6 +1420,7 @@ func (m identitiesModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 			m.wizard.testPhase = testFailed
 		case stage.Stage == 2 && m.wizard.testPhase == testRunning2:
 			m.wizard.stage2 = stage.Result
+			m.wizard = m.wizard.refreshProof()
 			if succeededOutcome(stage.Result.Outcome) {
 				m.wizard.testPhase = testStage2
 			} else {
@@ -1945,6 +2001,46 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			return keyResult{model: m, handled: true}
 		}
 	case 1:
+		if w.proof.Text != "" {
+			switch key {
+			case "tab":
+				w.proof.Focused = !w.proof.Focused
+				m.wizard = w
+				return keyResult{model: m, handled: true}
+			case "pgdown":
+				w.proof = w.proof.ScrollDown(6)
+				m.wizard = w
+				return keyResult{model: m, handled: true}
+			case "pgup":
+				w.proof = w.proof.ScrollUp(6)
+				m.wizard = w
+				return keyResult{model: m, handled: true}
+			case "up":
+				if w.proof.Focused {
+					w.proof = w.proof.ScrollUp(1)
+					m.wizard = w
+					return keyResult{model: m, handled: true}
+				}
+			case "down":
+				if w.proof.Focused {
+					w.proof = w.proof.ScrollDown(1)
+					m.wizard = w
+					return keyResult{model: m, handled: true}
+				}
+			case "left":
+				if w.proof.Focused {
+					w.proof = w.proof.ScrollLeft(8)
+					m.wizard = w
+					return keyResult{model: m, handled: true}
+				}
+			case "right":
+				if w.proof.Focused {
+					w.proof = w.proof.ScrollRight(8)
+					m.wizard = w
+					return keyResult{model: m, handled: true}
+				}
+			}
+		}
 		switch key {
 		case "esc":
 			w.step = 0
@@ -2875,6 +2971,33 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 		b.WriteString(w.renderKeyBody())
 		b.WriteString(renderHostBlockPreview(m.backend, w.form.sshHost(), w.form.hostname.Value(), w.form.port.Value(), w.keyPath(), width))
 	case 1:
+		if w.proof.Text != "" {
+			b.WriteString(" " + styleInfo.Render("Completed test stages; exact captured proof follows.") + "\n")
+			b.WriteString(" " + styleFaint.Render("Demo failure control — locked (nothing left to simulate)") + "\n")
+			switch w.testPhase {
+			case testRunning2:
+				b.WriteString(renderStageOutcome(w.stage1, w.form.providerHost(), false, width))
+				b.WriteString(" " + styleFaint.Render("… running ssh…") + "\n")
+			case testFailed:
+				detail := w.stage2.Detail
+				if detail == "" {
+					detail = w.stage1.Detail
+				}
+				b.WriteString(" " + styleError.Render("✗ "+detail) + "\n")
+				b.WriteString(" " + styleError.Render("The connection failed — check the hostname, port, and network, then retry.") + "\n")
+				b.WriteString(" " + styleSelected.Render(" Retry (Enter) ") + "\n")
+			case testStage2:
+				b.WriteString(renderStageOutcome(w.stage1, w.form.providerHost(), false, width))
+				b.WriteString(" " + styleFaint.Render("No -i here on purpose: the config must supply the key; that is exactly what this stage proves.") + "\n")
+				b.WriteString(renderStageOutcome(w.stage2, w.form.providerHost(), w.keyUnused(), width))
+				if w.keyUnused() {
+					b.WriteString(" " + styleWarning.Render(stageWarningLine) + "\n")
+				}
+				b.WriteString(" " + styleSelected.Render(" Next: Git identity (Enter) ") + "\n")
+			}
+			b.WriteString(w.renderProof(width))
+			return b.String()
+		}
 		b.WriteString(" " + styleInfo.Render("Key "+displayKeyPath(w.keyPath())+" generated ("+w.algo()+").") + "\n")
 		// The staged path itself is dropped from this line deliberately
 		// (03-06 Task-1 fix): the REAL Backend's TestConfigPath() resolves

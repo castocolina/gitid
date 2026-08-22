@@ -37,6 +37,10 @@ func pressKey(name string) tea.KeyMsg {
 		return tea.KeyPressMsg{Code: tea.KeyLeft}
 	case "right":
 		return tea.KeyPressMsg{Code: tea.KeyRight}
+	case "pgdown":
+		return tea.KeyPressMsg{Code: tea.KeyPgDown}
+	case "pgup":
+		return tea.KeyPressMsg{Code: tea.KeyPgUp}
 	case "space":
 		return tea.KeyPressMsg{Code: tea.KeySpace}
 	case "ctrl+p":
@@ -479,6 +483,126 @@ func TestExactTextViewport_ScrollRevealsBytesHiddenBelow(t *testing.T) {
 	afterLines := strings.Split(after, "\n")
 	if len(afterLines) > 0 && strings.Contains(afterLines[0], "line1") {
 		t.Error("line1 must not appear in the first content row after scrolling past it")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ExactTextViewport — Task 1 RED tests (03-14 two-axis viewport).
+// ---------------------------------------------------------------------------
+
+// TestExactTextViewport_HorizontalOffset_ScrollRightRevealsHiddenColumns
+// proves that a line wider than Width has hidden columns that become visible
+// after ScrollRight. This is the two-axis (horizontal) extension required by
+// A-03: long command lines (ssh -T ... 95 chars) must be reachable at 62-col
+// pane width by scrolling right, not permanently truncated.
+func TestExactTextViewport_HorizontalOffset_ScrollRightRevealsHiddenColumns(t *testing.T) {
+	// A line wider than the viewport window.
+	longLine := "ssh -T git@ssh.github.com -p 443 -i ~/.ssh/id_ed25519_acme -o StrictHostKeyChecking=accept-new-HIDDEN_SUFFIX"
+	v := ExactTextViewport{
+		Text:         longLine,
+		VisibleLines: 1,
+		Width:        40,
+	}
+	before := stripANSI(v.View())
+	if strings.Contains(before, "HIDDEN_SUFFIX") {
+		t.Error("HIDDEN_SUFFIX must not be visible before scrolling right (width=40)")
+	}
+	// After scrolling right 70 columns, the suffix must become visible.
+	v2 := v.ScrollRight(70)
+	after := stripANSI(v2.View())
+	if !strings.Contains(after, "HIDDEN_SUFFIX") {
+		t.Errorf("HIDDEN_SUFFIX must be visible after ScrollRight(70); got %q", after)
+	}
+}
+
+// TestExactTextViewport_HorizontalOffset_ClampPreventsNegative proves
+// ScrollLeft cannot push HorizontalOffset below 0.
+func TestExactTextViewport_HorizontalOffset_ClampPreventsNegative(t *testing.T) {
+	v := ExactTextViewport{
+		Text:             "short",
+		VisibleLines:     1,
+		Width:            20,
+		HorizontalOffset: 5,
+	}
+	v2 := v.ScrollLeft(100)
+	if v2.HorizontalOffset < 0 {
+		t.Errorf("HorizontalOffset must not go negative after ScrollLeft(100); got %d", v2.HorizontalOffset)
+	}
+}
+
+// TestExactTextViewport_HorizontalOffset_CueWhenHiddenRight proves that when
+// there are hidden columns to the right, the rendered output signals that
+// (e.g. contains a "→" or column hint) so the user knows to scroll.
+func TestExactTextViewport_HorizontalOffset_CueWhenHiddenRight(t *testing.T) {
+	longLine := "A" + strings.Repeat("B", 100) + "END"
+	v := ExactTextViewport{
+		Text:         longLine,
+		VisibleLines: 1,
+		Width:        20,
+	}
+	rendered := stripANSI(v.View())
+	// When content is wider than the viewport, a cue must appear
+	// (either a "→" column hint, or the rightmost line shows it's cut off).
+	// We accept any of: "→", "cols", the scroll hint text.
+	hasCue := strings.Contains(rendered, "→") || strings.Contains(rendered, "cols") ||
+		strings.Contains(rendered, "scroll") || strings.Contains(rendered, "Right")
+	if !hasCue {
+		// At minimum, the viewport must NOT show "END" (which is off screen)
+		// and the visible content must start with "A".
+		if strings.Contains(rendered, "END") {
+			t.Errorf("ExactTextViewport must not show content beyond Width without scrolling; got %q", rendered)
+		}
+		if !strings.HasPrefix(strings.TrimSpace(rendered), "A") {
+			t.Errorf("ExactTextViewport must start at HorizontalOffset=0 with 'A'; got %q", rendered)
+		}
+	}
+}
+
+// TestExactTextViewport_HorizontalScrollRoundTrip proves ScrollRight then
+// ScrollLeft returns to the origin, and source bytes are unchanged.
+func TestExactTextViewport_HorizontalScrollRoundTrip(t *testing.T) {
+	line := "ABCDEF_long_content_here_GHIJKLMNOP"
+	v := ExactTextViewport{
+		Text:         line,
+		VisibleLines: 1,
+		Width:        10,
+	}
+	v2 := v.ScrollRight(15).ScrollLeft(15)
+	if v2.HorizontalOffset != v.HorizontalOffset {
+		t.Errorf("round-trip HorizontalOffset mismatch: got %d, want %d", v2.HorizontalOffset, v.HorizontalOffset)
+	}
+	if v2.Text != v.Text {
+		t.Error("source Text must be unchanged after horizontal scroll round-trip")
+	}
+}
+
+func TestExactTextViewport_ClampKeepsHorizontalOffsetReachableAfterResize(t *testing.T) {
+	v := ExactTextViewport{
+		Text:             strings.Repeat("x", 20),
+		HorizontalOffset: 99,
+		VisibleLines:     1,
+		Width:            8,
+	}.Clamp()
+	if v.HorizontalOffset != 12 {
+		t.Fatalf("HorizontalOffset = %d, want 12 so the final column remains reachable", v.HorizontalOffset)
+	}
+
+	v.Width = 30
+	v = v.Clamp()
+	if v.HorizontalOffset != 0 {
+		t.Fatalf("HorizontalOffset after resize = %d, want 0", v.HorizontalOffset)
+	}
+}
+
+func TestExactTextViewport_HorizontalSliceKeepsANSIEscapesIntact(t *testing.T) {
+	line := "\x1b[31mabcdefghij\x1b[0m"
+	v := ExactTextViewport{Text: line, HorizontalOffset: 4, VisibleLines: 1, Width: 3}
+	got := strings.Split(v.View(), "\n")[0]
+	if strings.Contains(got, "\x1b[") && !strings.Contains(got, "\x1b[31m") {
+		t.Fatalf("horizontal slice contains a partial ANSI escape: %q", got)
+	}
+	if plain := stripANSI(got); !strings.Contains(plain, "efg") {
+		t.Fatalf("horizontal slice = %q, want visible columns efg", plain)
 	}
 }
 
