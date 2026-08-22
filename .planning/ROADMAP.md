@@ -10,13 +10,19 @@ tooling, multi-algorithm keygen + local-capability probing, the dual SSH-storage
 strategy (in-file / Include'd / adopt / migrate), the identity state-taxonomy core, and
 a cross-OS GitHub Actions CI. **Phase 2** is the single human checkpoint: every surface
 is designed as an HTML/`mui` mockup presented as an interactive web demo, mirrored by
-a live, executable Go TUI demo, and **approved by the user** — the approved demos
-become the design reference for every later wave. **Phases 3–9** wire each surface's backend *behind the approved design* — create
-flow, git screen, identity manager, global SSH options, global git options,
-health+fixer, and credential upload — each gated by a per-surface UI wave (`/mui` +
-`agent-ui-ux-designer`, PTY e2e on the real binary, visual-regression diff vs the
-approved screenshots). **Phase 10** validates the whole app end-to-end on Linux and
+a live, executable Go TUI demo, and **approved by the user**. From Phase 3 onward,
+the approved Bubble Tea mockup (`cmd/gitid-dummy`) is the UI/UX reference. **Phases
+3–9** wire each surface's backend behind that reference — create flow, git screen,
+identity manager, global SSH options, global git options, health+fixer, and credential
+upload — each gated by real-binary PTY workflow tests and a semantic comparison with
+the Bubble Tea mockup. **Phase 10** validates the whole app end-to-end on Linux and
 ships tagged, checksummed release binaries.
+
+> **Active UI policy (Phases 3–10):** Historical HTML/MUI artifacts document the
+> Phase-2 design process only. Automated verification compares the real compiled TUI
+> against the live Bubble Tea mockup. Each difference is classified as an improvement
+> or a defect; defects fail, improvements are recorded for the user's final milestone
+> review. Pixel, PNG-byte, and HTML parity are not requirements.
 
 The autonomous build run (`.planning/ONESHOT-GOAL-PROMPT.md`, driven via `/goal`) runs unattended except
 for the **one** design-approval checkpoint (Phase 2); credential upload (Phase 9)
@@ -27,8 +33,9 @@ under `.planning/archive/0.0.1-poc-product-features-in-tui/`.
 > **Granularity note:** config granularity is `coarse`, but this milestone's
 > defining constraint is a **per-surface design-first UI wave** (PRD "Execution
 > Phases" / DLV-01..06). The 10 phases are derived 1:1 from that delivery method, not
-> padded — each of Phases 3–9 is one distinct user-facing surface that must clear its
-> own mockup → dummy → approval → backend → e2e → visual-regression gate.
+> padded — each of Phases 3–9 is one distinct user-facing surface that wires its
+> backend behind the approved Bubble Tea mockup, then clears PTY e2e and semantic
+> UI review.
 
 ## Phases
 
@@ -151,7 +158,10 @@ Plans:
   2. User can reuse an existing key instead of generating one, and the macOS `Host *` globals block (`UseKeychain` + `AddKeysToAgent` guarded by `IgnoreUnknown`) is emitted correctly. (KEY-06, SSHUI-05)
   3. User runs the two-stage connectivity test (direct, then targeted-by-alias), each stage showing the **exact command run** and its real output, with `ssh -G` proving which `IdentityFile` resolves — all against throwaway temp files, never mutating live config until confirm. (TEST-01, TEST-02, SSHUI-04)
   4. On pass + confirmation, the identity persists to `~/.ssh/config` **or** the gitid-owned Include'd file, with backup. (TEST-03)
-  5. **UI-wave gate**: `/mui` + `agent-ui-ux-designer` are engaged in plan/build/review; each create-flow screen has a PTY e2e test driving the **real** built binary; the live TUI passes the visual-regression diff against the approved screenshots. (DLV-04, DLV-06)
+   5. **UI-wave gate**: each create-flow screen has a PTY e2e test driving the
+   **real** built binary; the live TUI is compared semantically with the approved
+   Bubble Tea mockup, and every difference is classified as an improvement or a
+   defect. (DLV-04, DLV-06)
 
 **Plans**: 11/11 plans executed in 8 waves
 **UI hint**: yes
@@ -206,7 +216,9 @@ Plans:
   2. User chooses the match strategy (`gitdir:` and/or `hasconfig:remote.*.url`, default `gitdir`, combinable) with a live `includeIf` preview. (GITUI-03)
   3. The `~/.ssh/allowed_signers` line is written with the email **byte-identical** to `user.email`. (GITUI-04)
   4. A read-only review screen precedes the write; on confirm, fragment + `includeIf` + `allowed_signers` are written with backup and idempotent managed blocks. (GITUI-05)
-  5. **UI-wave gate**: `/mui` + `agent-ui-ux-designer` in plan/build/review; PTY e2e per screen on the real binary; the live TUI passes the visual-regression diff vs the approved screenshots. (DLV-04, DLV-06)
+   5. **UI-wave gate**: PTY e2e drives every screen in the real binary; automated
+   review compares it with `cmd/gitid-dummy` and classifies every difference as an
+   improvement or a defect. (DLV-04, DLV-06)
 
 **Plans**: TBD
 **UI hint**: yes
@@ -222,7 +234,9 @@ Plans:
   2. The detail view shows **SSH details first**, then Git, never rendering nonexistent git attributes for an SSH-only identity, and shows whether **that** identity is healthy (key resolves, fragment exists, signing wired). (MGR-03, MGR-07)
   3. User can clone an identity into a new **distinct** name (reusing the same key **or** generating a new one), generate a new key for an existing identity, and rotate an identity's key (artifacts re-point, the test flow re-runs). (MGR-04, MGR-05, KEY-05, KEY-07)
   4. Delete asks **"delete everything (SSH + Git + key)"** vs **"delete the Git identity only"** (applied with backup); all five primary views (Identities, Global SSH, Global Git, Health, Fixer) are reachable via palette + number keys, and every action is available from both the TUI and the Cobra CLI (completions for bash/zsh/fish). (MGR-06, SHELL-01, SHELL-02, SHELL-03)
-  5. **UI-wave gate**: `/mui` + `agent-ui-ux-designer` in plan/build/review; PTY e2e per screen on the real binary; the live TUI passes the visual-regression diff vs the approved screenshots. (DLV-04, DLV-06)
+   5. **UI-wave gate**: PTY e2e drives every screen in the real binary; automated
+   review compares it with `cmd/gitid-dummy` and classifies every difference as an
+   improvement or a defect. (DLV-04, DLV-06)
 
 **Plans**: TBD
 **UI hint**: yes
@@ -236,7 +250,9 @@ Plans:
 
   1. A global-SSH-options screen surfaces dangerous-by-default options (e.g. `StrictHostKeyChecking`, `ForwardAgent`, `HashKnownHosts`, `IdentitiesOnly`, `AddKeysToAgent`, `UseKeychain`) and **explains each option's risk and recommended value**. (GSSH-01)
   2. Recommendations are advisory and fixable, **never blocking**; applying a change writes through the backup + idempotent managed-block chokepoint with confirmation. (GSSH-01)
-  3. **UI-wave gate**: `/mui` + `agent-ui-ux-designer` in plan/build/review; PTY e2e per screen on the real binary; the live TUI passes the visual-regression diff vs the approved screenshots. (DLV-04, DLV-06)
+   3. **UI-wave gate**: PTY e2e drives every screen in the real binary; automated
+   review compares it with `cmd/gitid-dummy` and classifies every difference as an
+   improvement or a defect. (DLV-04, DLV-06)
 
 **Plans**: TBD
 **UI hint**: yes
@@ -250,7 +266,9 @@ Plans:
 
   1. A global-git-options screen manages `init.defaultBranch` (highlighting **main vs master**), `core.ignorecase` (false), `core.autocrlf`/eol policy, global `user.email`, and recipe defaults (`push.autoSetupRemote`, `pull.rebase`, `fetch.prune`, aliases, color, `merge.conflictstyle`, `diff.colorMoved`) — each explained. (GGIT-01)
   2. Changes write through the backup + idempotent managed-block chokepoint with confirmation; content outside managed blocks is preserved verbatim. (GGIT-01)
-  3. **UI-wave gate**: `/mui` + `agent-ui-ux-designer` in plan/build/review; PTY e2e per screen on the real binary; the live TUI passes the visual-regression diff vs the approved screenshots. (DLV-04, DLV-06)
+   3. **UI-wave gate**: PTY e2e drives every screen in the real binary; automated
+   review compares it with `cmd/gitid-dummy` and classifies every difference as an
+   improvement or a defect. (DLV-04, DLV-06)
 
 **Plans**: TBD
 **UI hint**: yes
@@ -266,7 +284,9 @@ Plans:
   2. It detects repeated/overridden directives and duplicate managed/global blocks (e.g. multiple `Host *`) and contradictory settings where possible (e.g. `IdentitiesOnly no` with a specific `IdentityFile`; an `includeIf` targeting a missing fragment). (HLTH-03, HLTH-04)
   3. Health is computable for a **single identity** (feeding the manager's per-identity health) and globally, reusing the existing doctor families (deps/perms/coherence/orphans/signing/agent). (HLTH-05, HLTH-06)
   4. The Fixer presents SSH and Git problems in the two sections with severity + explanation + suggested fix, applied only with **confirmation and backup**, fixed in place. (FIX-01, FIX-02)
-  5. **UI-wave gate**: `/mui` + `agent-ui-ux-designer` in plan/build/review; PTY e2e per screen on the real binary; the live TUI passes the visual-regression diff vs the approved screenshots. (DLV-04, DLV-06)
+   5. **UI-wave gate**: PTY e2e drives every screen in the real binary; automated
+   review compares it with `cmd/gitid-dummy` and classifies every difference as an
+   improvement or a defect. (DLV-04, DLV-06)
 
 **Plans**: TBD
 **UI hint**: yes
@@ -281,7 +301,9 @@ Plans:
   1. gitid provides concrete steps to register the `.pub` for **authentication and signing** (GitHub = two registrations; GitLab = one). (UP-01)
   2. When `gh`/`glab` is present + **authenticated** and a valid identity exists, credential upload runs **autonomously** (no stop); the shown command equals the run command. (UP-02, UP-03)
   3. When `gh`/`glab` is absent or unauthenticated, upload falls back to a manual step and **never gates** create/copy. (UP-02, UP-03)
-  4. **UI-wave gate**: `/mui` + `agent-ui-ux-designer` in plan/build/review; PTY e2e on the real binary; the live TUI passes the visual-regression diff vs the approved screenshots. (DLV-04, DLV-06)
+   4. **UI-wave gate**: PTY e2e drives the real binary; automated review compares
+   it with `cmd/gitid-dummy` and classifies every difference as an improvement or
+   a defect. (DLV-04, DLV-06)
 
 **Plans**: TBD
 **UI hint**: yes

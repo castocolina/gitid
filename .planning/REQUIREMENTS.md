@@ -27,35 +27,42 @@ strategy (OpenSSH 9.7, absolute-path Include resolves; first-match-wins).
 
 ## A. Delivery Method (DLV) — how every feature is built
 
+> **Active delivery policy (2026-08-22):** DLV-01 through DLV-05 describe the
+> completed Phase-2 design process. For Phases 3–10, the approved Bubble Tea
+> mockup (`cmd/gitid-dummy`) is the only UI/UX parity reference. The real TUI is
+> exercised through PTY interaction; every difference is classified as an
+> improvement or a defect. HTML/MUI, pixel, PNG-byte, and historical-artifact
+> parity are not later-phase acceptance criteria.
+
 These are first-class, enforced requirements — the user's core process ask.
 
-- [x] **DLV-01** (Design-first): Every UI-bearing phase produces an **HTML mockup**
-  (React or similar + the `/mui` skill) BEFORE any Go/TUI code is written for that
-  surface. The mockup encodes layout, field order, labels, copy, and flow.
+- [x] **DLV-01** (Design-first, Phase 2): Phase 2 produced an **HTML mockup**
+  (React or similar + the `/mui` skill) before any Go/TUI backend code was written
+  for each surface. Those artifacts encode the approved layout, field order,
+  labels, copy, and flow.
 
-- [x] **DLV-02** (Agents on every UI task): The `agent-ui-ux-designer` agent AND the
-  `/mui` skill are engaged on every UI-related task — during planning, execution,
-  AND review. Any plan touching an interface names both in its task list.
+- [x] **DLV-02** (Phase-2 design review): The `agent-ui-ux-designer` agent and the
+  `/mui` skill were engaged to create and review the approved design artifacts.
+  Later phases use the Bubble Tea mockup for automatic UI review.
 
-- [x] **DLV-03** (Screenshot pipeline): Every flow/screen of the HTML mockup is
-  captured to image files; every screen of the Go **TUI dummy mockup** is captured;
-  both sets are stored as versioned reference artifacts (e.g. under
-  `.planning/design/<surface>/{html,tui}/*.png`).
+- [x] **DLV-03** (Phase-2 screenshot pipeline): Every flow/screen of the HTML
+  mockup and the Go **TUI dummy mockup** was captured as versioned design history
+  (for example, `.planning/design/<surface>/{html,tui}/*.png`).
 
-- [ ] **DLV-04** (Visual-regression gate): In every UI wave's review step, reviewer
-  agents diff the **live TUI screens** against the **approved** HTML + TUI-mockup
-  screenshots (appearance, fields, options, labels). Divergence from approved design
-  is a review finding. *(Phase 3, 03-06: the AUTOMATED half — DLV-04.1, the
+- [ ] **DLV-04** (Visual-regression gate): In every Phase 3–10 UI wave's review
+  step, automated checks compare the **live TUI** with the approved Bubble Tea
+  mockup for workflow, appearance, fields, options, labels, and controls. Every
+  difference is explicitly classified as an improvement or a defect; a defect or
+  an unclassified difference fails review. *(Phase 3, 03-06: the AUTOMATED half — DLV-04.1, the
   golden-text `make gate-visual-regression` gate + divergence allowlist — is
   DONE, commit 4a9c939. The REVIEWER half — DLV-04.2, agent-ui-ux-designer +
   Codex against `.planning/phases/03-create-flow-backend/03-06-review-packet/`
   — is NOT run yet; still owed by the orchestrator before this checkbox ticks.)*
 
-- [x] **DLV-05** (Per-surface build order): For each UI surface the order is fixed:
-  HTML mockup → screenshots → Go TUI **dummy** mockup (full navigation, no backend
-  logic) → screenshots → **user approval (checkpoint #1)** → backend logic wiring →
-  e2e → visual-regression review. Backend logic is never written before the dummy
-  mockup is approved.
+- [x] **DLV-05** (Phase-2 build order): Each surface completed HTML mockup →
+  screenshots → Go TUI **dummy** mockup → screenshots → **user approval
+  (checkpoint #1)** before backend wiring began. Later backend work remains behind
+  that approved Bubble Tea design and is validated by PTY e2e plus semantic review.
 
 - [x] **DLV-06** (e2e per screen): Every screen has at least one e2e test that drives
   the **real** built binary via raw keystrokes (PTY), not only unit stubs — closes

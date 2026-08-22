@@ -202,7 +202,7 @@ dated; convert relative dates to absolute.
 - **Rule:** use only disposable public keys titled
   `gitid-e2e:<run-id>:<purpose>`. Record the returned ID for each creation and
   delete only that exact ID after rechecking its exact title prefix. Finish with
-   a prefix-scoped inventory sweep. Never modify a key that the test did not
+  a prefix-scoped inventory sweep. Never modify a key that the test did not
   create, and halt on any inventory mismatch.
 
 ### L16 — Phase-2 Bubble Tea mockup guides later delivery (2026-08-22, user decision)

@@ -24,9 +24,10 @@ identities. Redefined from the archived **0.0.1 POC** (never released; it surfac
 the real goals and the better way to build them).
 
 **Target features:**
-- **Design-first delivery** (a first-class requirement): HTML/`mui` mockups →
-  screenshots → Go TUI dummy mockup → **user design approval (the one checkpoint)** →
-  backend → e2e → visual-regression review, with `agent-ui-ux-designer` on every UI task.
+- **Design-first delivery** (a first-class requirement): Phase 2 produced HTML/MUI
+  and Go TUI dummy mockups and received user approval. From Phase 3 onward, the
+  Bubble Tea dummy is the UI/UX reference for real-binary PTY workflow and semantic
+  review; HTML is not a later-phase parity target.
 - **Create flow**: algorithm catalog (ed25519 default + rsa-4096, platform-aware) →
   SSH screen (`Alias prefix` / `SSH Host` / `Real hostname` / `Port`, clickable) →
   two-stage test showing exact commands → Git screen → review.
@@ -53,8 +54,8 @@ prove-before-write, doctor, temp-config testing — which are reused as substrat
 
 <!-- Current scope = v1.0 redesign. Detailed, ID'd set lives in REQUIREMENTS.md (A–P). -->
 
-- [ ] **Delivery method (DLV)**: design-first HTML mockups + screenshot pipeline +
-  visual-regression review gate on every UI wave
+- [ ] **Delivery method (DLV)**: approved Bubble Tea mockup + real-binary PTY
+  workflow and semantic review gate on every Phase 3–10 UI wave
 - [ ] **Key/Algorithm (KEY)**: platform-aware algorithm catalog, ed25519 + rsa-4096 keygen
 - [ ] **Create flow (SSHUI/TEST/STORE/GITUI)**: new SSH field model, two-stage test,
   dual SSH storage, separate git-config screen + review
@@ -119,7 +120,7 @@ prove-before-write, doctor, temp-config testing — which are reused as substrat
 | `Makefile` as single task runner; `pre-commit` hooks call `make` targets | One source of truth for build/test/lint across local + CI; `make setup-env` bootstraps the dev environment | — Pending |
 | Squash/compact commit history after each plan close + user review | Keep history clear; avoid repetitive fix-up commits | — Pending |
 | Prior build reframed as archived **0.0.1 POC**; redesign is the real **v1.0** | Nothing was ever released; POC surfaced the real goals + a better build method. Honest semver (0.x = pre-release) beats "2.0 with no released 1.0" | ✅ 2026-07-02 |
-| **Design-first, screenshot-verified** delivery (HTML `mui` mockup → TUI dummy → visual-regression gate) | UX quality becomes a gate, not an afterthought; `agent-ui-ux-designer` + `/mui` on every UI task | ✅ 2026-07-02 |
+| **Phase-2 design approval; Bubble Tea semantic review afterward** | Phase 2 used HTML/MUI and Bubble Tea to establish the approved design. Phases 3–10 compare the real TUI with `cmd/gitid-dummy`; every difference is an improvement or a defect. | ✅ Updated 2026-08-22 |
 | **One human checkpoint** (design approval); credential upload auto when `gh`/`glab` authenticated | Maximize autonomy of the build loop while keeping the irreversible design decision human-owned | ✅ 2026-07-02 |
 | Algorithm **picker** (ed25519 default + rsa-4096), local-use, **macOS/Linux variant-aware** | Supersedes ed25519-only; probes local `ssh-keygen`; no CI/CD fallback logic | ✅ 2026-07-02 |
 | SSH storage **dual**: in-file blocks / gitid-owned `Include` file / adopt external | Verified with real `ssh -G`: absolute Include paths resolve, first-match-wins ⇒ Include near top | ✅ 2026-07-02 |
