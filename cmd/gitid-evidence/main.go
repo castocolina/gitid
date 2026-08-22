@@ -716,7 +716,7 @@ func selectReuse(session *capturePTY) error {
 	if err := session.send([]byte("\x1b[C")); err != nil {
 		return err
 	}
-	if _, err := session.waitFor("● Reuse an", 8*time.Second); err != nil {
+	if _, err := session.waitFor("Reuse an", 8*time.Second); err != nil {
 		return fmt.Errorf("waiting for selected reuse state: %w", err)
 	}
 	return nil

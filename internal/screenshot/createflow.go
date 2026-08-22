@@ -134,7 +134,7 @@ func ScreenSpecRegistry() []ScreenSpec {
 			ScreenID:               "reuse-key-vs-generate",
 			Route:                  "/create-flow/reuse-key-vs-generate",
 			Interaction:            "Tab to the key-source toggle (4 Tabs), then press Right to select Reuse.",
-			StateMarker:            "● Reuse an existing key",
+			StateMarker:            "Reuse an existing key",
 			ApplicableLive:         true,
 			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
