@@ -422,6 +422,38 @@ func TestCaptureTUIScreenReuseSelection(t *testing.T) {
 	}
 }
 
+func TestCaptureTUIScreenManualReuseStatesAreDistinct(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "gitid")
+	build := exec.Command("go", "build", "-o", bin, "../gitid") //nolint:gosec // fixed local package and sandbox output
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("building gitid capture binary: %v\n%s", err, output)
+	}
+
+	workspace := t.TempDir()
+	fakeSSH, err := writeFakeSSH(workspace)
+	if err != nil {
+		t.Fatalf("creating fake SSH: %v", err)
+	}
+	var manualRaw, resolvedRaw string
+	manual, err := captureTUIScreen(bin, captureHomePath(workspace, "reuse-manual-path"), fakeSSH, "reuse-manual-path", true, &manualRaw)
+	if err != nil {
+		t.Fatalf("capturing manual-path state: %v", err)
+	}
+	resolved, err := captureTUIScreen(bin, captureHomePath(workspace, "reuse-manual-resolved"), fakeSSH, "reuse-manual-resolved", true, &resolvedRaw)
+	if err != nil {
+		t.Fatalf("capturing resolved-manual state: %v", err)
+	}
+	if !strings.Contains(manual, "Enter a path manually") || strings.Contains(manual, "id_ed25519_capture_manual") {
+		t.Fatalf("manual-path capture must show the empty manual input, not a resolved key:\n%s", manual)
+	}
+	if !strings.Contains(resolved, "id_ed25519_capture_manual") || !strings.Contains(resolved, "ssh-ed25519") {
+		t.Fatalf("resolved-manual capture must show its fixture path and metadata:\n%s", resolved)
+	}
+	if manual == resolved || manualRaw == resolvedRaw {
+		t.Fatal("manual-path and resolved-manual captures must remain separate semantic states")
+	}
+}
+
 // TestCaptureTUIScreenConfirmationManagedBlock proves the raw-PTY capture
 // reaches the complete pre-write managed block rather than a fixed viewport page.
 func TestCaptureTUIScreenConfirmationManagedBlock(t *testing.T) {

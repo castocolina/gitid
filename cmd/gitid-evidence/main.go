@@ -550,7 +550,7 @@ func captureHomePath(workspace, screenID string) string {
 
 func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput *string) (string, error) {
 	manualKeyPath := ""
-	if (id == "reuse-manual-path" || id == "reuse-manual-resolved") && fakeSSH != "" {
+	if id == "reuse-manual-resolved" && fakeSSH != "" {
 		var err error
 		manualKeyPath, err = seedManualReuseKey(home)
 		if err != nil {
@@ -616,7 +616,7 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 		if err := session.tabs(1); err != nil {
 			return "", err
 		}
-		if manualKeyPath != "" {
+		if id == "reuse-manual-resolved" && manualKeyPath != "" {
 			if err := session.send([]byte(manualKeyPath)); err != nil {
 				return "", err
 			}
