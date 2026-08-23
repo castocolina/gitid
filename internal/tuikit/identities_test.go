@@ -2098,6 +2098,43 @@ func TestReachableSemanticWarning(t *testing.T) {
 	}
 }
 
+func TestReachableWarningAndActionRenderOnce(t *testing.T) {
+	a := NewApp(stubBackend{})
+	m, _ := a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	a = m.(App)
+	a = wizardToStep2(t, a)
+	a, _ = press(t, a, "enter")
+
+	b := stubBackend{}
+	spec := identModel(t, a).wizard.spec()
+	stage1 := TestResultView{
+		Outcome: TestOutcomeReachableNotUploaded,
+		Command: b.Stage1Command(spec),
+		Detail:  "git@ssh.github.com: Permission denied (publickey).",
+	}
+	m, _ = a.Update(WizardStageMsg{Stage: 1, Result: stage1})
+	a = m.(App)
+	m, _ = a.Update(WizardStageMsg{Stage: 2, Result: TestResultView{
+		Outcome: TestOutcomeReachableNotUploaded,
+		Command: b.Stage2Command(spec),
+		Detail:  "identityfile " + spec.KeyPath,
+	}})
+	a = m.(App)
+
+	view := appView(a)
+	if got := strings.Count(view, stageWarningLine); got != 1 {
+		t.Errorf("D-02 warning count = %d, want 1:\n%s", got, view)
+	}
+	if got := strings.Count(view, "Press c to copy the .pub"); got != 1 {
+		t.Errorf("D-03 instruction count = %d, want 1:\n%s", got, view)
+	}
+	for _, want := range []string{stage1.Detail, "identityfile " + spec.KeyPath, "copy public key"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("completed warning state must retain %q:\n%s", want, view)
+		}
+	}
+}
+
 // TestFailureSemanticError proves the D-01 hard Failure state renders red
 // glyph ('✗'), the failure copy, and a retry affordance — not the copy action.
 func TestFailureSemanticError(t *testing.T) {
