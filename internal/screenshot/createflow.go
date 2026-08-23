@@ -334,7 +334,9 @@ func ScreenSpecRegistry() []ScreenSpec {
 				uxNonComparable("approved-tui", "D-04", "The approved TUI does not expose the Phase 3 proof viewport."),
 				uxNonComparable("approved-html", "D-04", "The approved HTML has no completed Phase 3 test state."),
 			},
-			RequiredRegions: []RegionName{RegionConnectivityOutput},
+			RequiredRegions:  []RegionName{RegionConnectivityOutput},
+			VariantOf:        "test-stage2-by-alias",
+			VariantRationale: "Interaction variant of test-stage2-by-alias; same stage-2 terminal state scrolled to User/Hostname/Port fields.",
 		},
 		{
 			ScreenID:       "test-stage2-resolution-identities-key",
@@ -346,7 +348,9 @@ func ScreenSpecRegistry() []ScreenSpec {
 				uxNonComparable("approved-tui", "D-04", "The approved TUI does not expose the Phase 3 proof viewport."),
 				uxNonComparable("approved-html", "D-04", "The approved HTML has no completed Phase 3 test state."),
 			},
-			RequiredRegions: []RegionName{RegionConnectivityOutput},
+			RequiredRegions:  []RegionName{RegionConnectivityOutput},
+			VariantOf:        "test-stage2-by-alias",
+			VariantRationale: "Interaction variant of test-stage2-by-alias; same stage-2 terminal state scrolled to IdentitiesOnly/IdentityFile fields.",
 		},
 		{
 			ScreenID:       "test-reachable-not-uploaded",

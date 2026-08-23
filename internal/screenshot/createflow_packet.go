@@ -1091,6 +1091,28 @@ func validateDuplicatePNGBytes(packetDir string, pkt Packet) error {
 	// Build a map of approved routes to detect same-route approved-html pairs.
 	approvedRoutes := approvedHTMLRoutesInternal()
 
+	// Build a map of same-surface interaction variants from the registry.
+	// Pairs of (variantScreenID, baseScreenID) are allowed to share PNG bytes
+	// on the live surface when the viewport content maps to the same terminal
+	// layout (proof-viewport frames scrolled to different offsets).
+	sameVariantPairs := make(map[string]string) // screenID → VariantOf base
+	for _, spec := range RequiredScreenSpecs() {
+		if spec.VariantOf != "" {
+			sameVariantPairs[spec.ScreenID] = spec.VariantOf
+		}
+	}
+	isVariantPair := func(a, b string) bool {
+		aBase := sameVariantPairs[a]
+		bBase := sameVariantPairs[b]
+		if aBase == b || bBase == a {
+			return true
+		}
+		if aBase != "" && aBase == bBase {
+			return true
+		}
+		return false
+	}
+
 	// Map actual on-disk PNG SHA-256 → first (surface, screenID) that owned it.
 	type screenKey struct{ surface, screenID string }
 	seen := make(map[string]screenKey)
@@ -1122,6 +1144,12 @@ func validateDuplicatePNGBytes(packetDir string, pkt Packet) error {
 					if priorRoute != "" && priorRoute == curRoute {
 						continue // same HTML route — allowed to share PNG
 					}
+				}
+				// For live/approved-tui surfaces: interaction variants declared
+				// via VariantOf may share PNG bytes when they capture the same
+				// terminal layout scrolled to different content (proof viewport).
+				if isVariantPair(prior.screenID, m.ScreenID) {
+					continue // declared interaction variant — allowed to share PNG
 				}
 				return fmt.Errorf("screenshot: ValidatePacket: duplicate PNG bytes (SHA-256 %s) for differently-named screens %q and %q on surface %q — both were likely captured from the same terminal state",
 					actualHash, prior.screenID, m.ScreenID, surface)
