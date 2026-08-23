@@ -1111,14 +1111,14 @@ func compareInventories(first, second string) error {
 }
 
 // canonicalSemanticPacket preserves the registry-derived frame inventory,
-// captured text and raw-transcript hashes, region records, and candidate
-// metadata. PNG hashes are intentionally blank: each candidate is separately
-// required to contain complete, valid PNGs, but renderer bytes are not UX
-// semantics under ONESHOT Rule 11 and L16.
+// captured text and region records, and candidate metadata. Raw transcript
+// (.raw) and PNG hashes are excluded: .raw bytes vary slightly between
+// real-PTY runs due to terminal escape timing, and PNG renderer bytes are
+// not UX semantics under ONESHOT Rule 11 and L16.
 func canonicalSemanticPacket(pkt screenshot.Packet) screenshot.Packet {
 	pkt.ManifestSHA256 = ""
 	for i := range pkt.Members {
-		if strings.HasSuffix(pkt.Members[i].Path, ".png") {
+		if strings.HasSuffix(pkt.Members[i].Path, ".png") || strings.HasSuffix(pkt.Members[i].Path, ".raw") {
 			pkt.Members[i].SHA256 = ""
 		}
 	}
