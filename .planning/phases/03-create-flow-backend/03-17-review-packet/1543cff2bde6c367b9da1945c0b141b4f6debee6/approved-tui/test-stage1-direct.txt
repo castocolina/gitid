@@ -1,0 +1,30 @@
+gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor              8 ids · ! 1 ✗ 3
+ Identities › New identity › Test connection
+S ssh · G git  ✓ ok ! attn ✗ broken │  Step 2/4 · Test connection ● ● ○ ○
+▸ ✓ personal                  S✓ G✓ │  Shift+←/→ jump sections · forward needs a valid step
+    SSH Host block and Git fragment…│  Key ~/.ssh/id_ed25519_acme generated (ed25519).
+  ! work                      S✓ G– │  Both stages run against /tmp/gitid-test-a1b2c3.config — your
+    SSH Host block present; no Git …│ live ~/.ssh/config is untouched until the final confirm.
+  ! opensource 1⚑             S– G✓ │
+    Git identity relies on the glob…│  ☐ Demo failure control — locked (stage running or test
+  ! archived 1⚑               S– G– │ passed)
+    Key file exists on disk but no …│
+  ✓ staging                   S✓ G– │ ╭╌ Stage 1 — key DIRECT against the provider (TEST-01) ╌╌╮
+    Key referenced by a Host block;…│ ┊ $ ssh -T -F /tmp/gitid-test-a1b2c3.config -p 443 -i    ┊
+  ✓ clientA                   S✓ G✓ │ ┊ ~/.ss…                                                 ┊
+    Key wired for both SSH auth and…│ ┊                                                        ┊
+  ✗ clientB 1⚑                S✗ G– │ ╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+    Host block references a key fil…│  … running ssh…
+  ✗ legacy 1⚑                 S✓ G✗ │
+    includeIf points at a Git fragm…│
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+ Esc returns to the identity detail without writing anything.
+
+ Esc back · Ctrl+P palette

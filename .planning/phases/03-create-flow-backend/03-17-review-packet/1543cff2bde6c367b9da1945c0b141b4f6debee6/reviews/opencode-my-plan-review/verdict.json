@@ -1,0 +1,8 @@
+{
+  "version": "03-16.1",
+  "source_commit": "1543cff2bde6c367b9da1945c0b141b4f6debee6",
+  "candidate_manifest_sha256": "cc6d42d40fe9669883b46b0e0b359e9fee99a21855ee7646cc4f7baf7b8a2af1",
+  "reviewer": "opencode-my-plan-review",
+  "open_critical": 0,
+  "open_high": 0
+}

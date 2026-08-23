@@ -1,0 +1,25 @@
+{
+  "version": "03-16.1",
+  "source_commit": "1543cff2bde6c367b9da1945c0b141b4f6debee6",
+  "candidate_manifest_sha256": "cc6d42d40fe9669883b46b0e0b359e9fee99a21855ee7646cc4f7baf7b8a2af1",
+  "reviews": [
+    {
+      "reviewer": "opencode-my-plan-review",
+      "tool": "opencode",
+      "provider": "local-llm-env",
+      "model": "local-llm-env/my-plan-review",
+      "session": "ses_fd0d7e845ffePr6WJm6HasDnQo",
+      "started_at": "2026-08-23T15:06:05Z",
+      "ended_at": "2026-08-23T15:16:09Z",
+      "exit_code": 0,
+      "prompt_path": "reviews/opencode-my-plan-review/prompt.txt",
+      "prompt_sha256": "b57c2c86bfb672c905f726ce3a1dc07daac6de740303d111336fe9b54cd4a3de",
+      "stdout_path": "reviews/opencode-my-plan-review/raw-stdout.txt",
+      "stdout_sha256": "bef68c1830b9033ec2b1b32ff76b3f4b85fb3020fde50a33c110dde598cf084d",
+      "stderr_path": "reviews/opencode-my-plan-review/raw-stderr.txt",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "verdict_path": "reviews/opencode-my-plan-review/verdict.json",
+      "verdict_sha256": "943844f9c00f9b2aefcb704542296691a5816ca7149401c57f05900992552251"
+    }
+  ]
+}

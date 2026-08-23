@@ -1,0 +1,457 @@
+{
+  "version": "03-11.2",
+  "source_commit": "1543cff2bde6c367b9da1945c0b141b4f6debee6",
+  "approval_commit": "3c3130e404329cf42baafdf63a6c22758437edc6",
+  "captured_at": "2026-08-21T00:00:00Z",
+  "live_backend_ref": "1543cff2bde6c367b9da1945c0b141b4f6debee6",
+  "members": [
+    {
+      "path": "EVIDENCE.json",
+      "sha256": "9e304e744cbfa6bcc9e522e9a8c4a8d44436fc43453080d04f1de8938a0c5475",
+      "kind": "provenance"
+    },
+    {
+      "path": "REGION-DIFFS.json",
+      "sha256": "0d78da7b5e1d134ac3fe2e686fc4414b2efb91329505e3a68ad124218887e509",
+      "kind": "provenance"
+    },
+    {
+      "path": "approved-tui/confirm-write.png",
+      "sha256": "8392d809f596bed2ad4593b86229a3a1e05e92afbf13580df4d1b374c4e1a838",
+      "kind": "png-approved-tui",
+      "screen_id": "confirm-write"
+    },
+    {
+      "path": "approved-tui/confirm-write.raw",
+      "sha256": "1b4125b3489c04e298f8c1d953a3b82d3b51fa0cf70bbca3590aa5d7442ff9eb",
+      "kind": "raw",
+      "screen_id": "confirm-write"
+    },
+    {
+      "path": "approved-tui/confirm-write.txt",
+      "sha256": "3b406c4fba0874a906d9ae19f6295329832ccce67e0a4d1b69a67f87a21def46",
+      "kind": "text",
+      "screen_id": "confirm-write"
+    },
+    {
+      "path": "approved-tui/git-form-demo.png",
+      "sha256": "a577c179a0bfc6c653cb9d26ccc563a62308bf0374bbabdb799f00deba527537",
+      "kind": "png-approved-tui",
+      "screen_id": "git-form-demo"
+    },
+    {
+      "path": "approved-tui/git-form-demo.raw",
+      "sha256": "436dde233815279082be65e68836ec3de4b5b81422dec15775c8b9659adae118",
+      "kind": "raw",
+      "screen_id": "git-form-demo"
+    },
+    {
+      "path": "approved-tui/git-form-demo.txt",
+      "sha256": "537fdbcf189ba2d1a61cf8294a5d392ef0634a401c32cc43fe3d7d07cbb27fb6",
+      "kind": "text",
+      "screen_id": "git-form-demo"
+    },
+    {
+      "path": "approved-tui/mouse-focused-field.png",
+      "sha256": "04dd02d9163fa4d969091de2a67e029450e52ce68ab32ed987dae7aa1e0317a6",
+      "kind": "png-approved-tui",
+      "screen_id": "mouse-focused-field"
+    },
+    {
+      "path": "approved-tui/mouse-focused-field.raw",
+      "sha256": "2181c53684fecb8bd6d0681fc57d0cb39bf26a1511880b94ba1d45cc24ac9d77",
+      "kind": "raw",
+      "screen_id": "mouse-focused-field"
+    },
+    {
+      "path": "approved-tui/mouse-focused-field.txt",
+      "sha256": "f02d82f7bcb46e17c6afc2073e1f7108774f10ff15b5be7dfb52befff880a14f",
+      "kind": "text",
+      "screen_id": "mouse-focused-field"
+    },
+    {
+      "path": "approved-tui/ssh-form-filled.png",
+      "sha256": "4d212d1ffcd23d251086af72406a5d0801048a5bac29cb95fc5104977b89573e",
+      "kind": "png-approved-tui",
+      "screen_id": "ssh-form-filled"
+    },
+    {
+      "path": "approved-tui/ssh-form-filled.raw",
+      "sha256": "75e3af10f0e5ca6633fcc75347ab56c4bd48af89c803e4c7897f41722e033467",
+      "kind": "raw",
+      "screen_id": "ssh-form-filled"
+    },
+    {
+      "path": "approved-tui/ssh-form-filled.txt",
+      "sha256": "9057623c44f7a603e194adfe4f8775dc8d92197b078e4a2f6bf6b230859e75dc",
+      "kind": "text",
+      "screen_id": "ssh-form-filled"
+    },
+    {
+      "path": "approved-tui/test-stage1-direct.png",
+      "sha256": "c3d3ff9c3489c9226aa66e2cf98660418a6bcbb3a8ccd5578b25ccab4277afe7",
+      "kind": "png-approved-tui",
+      "screen_id": "test-stage1-direct"
+    },
+    {
+      "path": "approved-tui/test-stage1-direct.raw",
+      "sha256": "e82d5030f125999c26cbd14d8f47aa84df6cbf2d47bba9f687777ccc34333212",
+      "kind": "raw",
+      "screen_id": "test-stage1-direct"
+    },
+    {
+      "path": "approved-tui/test-stage1-direct.txt",
+      "sha256": "46bbdd6118852c7e4fe879df328ea0bdd75a05cf3243e04ba2d1831ef3cc29b0",
+      "kind": "text",
+      "screen_id": "test-stage1-direct"
+    },
+    {
+      "path": "live/confirm-managed-block.png",
+      "sha256": "df58167af9800d1351d4f331046ba2105ab0f15c31f2ed3fe4aed9c588c30d75",
+      "kind": "png-live",
+      "screen_id": "confirm-managed-block"
+    },
+    {
+      "path": "live/confirm-managed-block.raw",
+      "sha256": "804fd59ad6b6c5c3abc346b572c986802d16c358257c6ca99ab99a5068a9af55",
+      "kind": "raw",
+      "screen_id": "confirm-managed-block"
+    },
+    {
+      "path": "live/confirm-managed-block.txt",
+      "sha256": "d2e8ce767aef2cf4bb02bf51b011927b2a56b92e06cf22575bc11129cc850f8d",
+      "kind": "text",
+      "screen_id": "confirm-managed-block"
+    },
+    {
+      "path": "live/confirm-summary-key-path.png",
+      "sha256": "11c92e8f5fbfd10e4f456bca7567431943b4de8367eda21e6e56a8fcc094652f",
+      "kind": "png-live",
+      "screen_id": "confirm-summary-key-path"
+    },
+    {
+      "path": "live/confirm-summary-key-path.raw",
+      "sha256": "5ee10911615582793401f73a54b7598a5a7856a7a99d20d1abcadfe9cb1d8ce8",
+      "kind": "raw",
+      "screen_id": "confirm-summary-key-path"
+    },
+    {
+      "path": "live/confirm-summary-key-path.txt",
+      "sha256": "a4536e3fc6ff676a6d8753105570543360dd45addbb474d3cd881f5e5baaf4f1",
+      "kind": "text",
+      "screen_id": "confirm-summary-key-path"
+    },
+    {
+      "path": "live/confirm-write.png",
+      "sha256": "ff505f47b94502cc2bf1167856b0a95b6a4ea9f9ff4b185032dc807d0d467aac",
+      "kind": "png-live",
+      "screen_id": "confirm-write"
+    },
+    {
+      "path": "live/confirm-write.raw",
+      "sha256": "a459199178b1baf466118ec91513ecd9ab05994dc14c2bb833ea45dfc2229708",
+      "kind": "raw",
+      "screen_id": "confirm-write"
+    },
+    {
+      "path": "live/confirm-write.txt",
+      "sha256": "1d4c03fc1f781efa81d41451fc1fd059562f52be166d37840a88b414090a9037",
+      "kind": "text",
+      "screen_id": "confirm-write"
+    },
+    {
+      "path": "live/git-form-demo.png",
+      "sha256": "2e19ce1a5c08d520f74eec649d537e3d3b7f9b11b1bb8eb060d7820cfab3f837",
+      "kind": "png-live",
+      "screen_id": "git-form-demo"
+    },
+    {
+      "path": "live/git-form-demo.raw",
+      "sha256": "0be42f0ecfbc3a78a1b79136fee824aa2b0d94fc74408e7ac7b5a1b75c56acf5",
+      "kind": "raw",
+      "screen_id": "git-form-demo"
+    },
+    {
+      "path": "live/git-form-demo.txt",
+      "sha256": "cae3afdacc2f6145413e9ffb358f9a1074c2d41bd81b016fa2c8a53b77588b18",
+      "kind": "text",
+      "screen_id": "git-form-demo"
+    },
+    {
+      "path": "live/mouse-focused-field.png",
+      "sha256": "0fdb8688a5bfa9b16986bb4f7bececb9c7fd62b819d8098a1bab20ce8125df2d",
+      "kind": "png-live",
+      "screen_id": "mouse-focused-field"
+    },
+    {
+      "path": "live/mouse-focused-field.raw",
+      "sha256": "e757b953b28b536583e0c17164e19a4067e9f1c2b8d4d2ccaf26ea478faa6456",
+      "kind": "raw",
+      "screen_id": "mouse-focused-field"
+    },
+    {
+      "path": "live/mouse-focused-field.txt",
+      "sha256": "8e5cee6a44a7c5eca4fa0d361f999f2d9d99fdf1a59ffc24a7a0b9ec452959b7",
+      "kind": "text",
+      "screen_id": "mouse-focused-field"
+    },
+    {
+      "path": "live/reuse-key-vs-generate.png",
+      "sha256": "2cb53c6e61a226832ad989af89fcfbc5dde757f15cb87dfaf46cf51657f8d459",
+      "kind": "png-live",
+      "screen_id": "reuse-key-vs-generate"
+    },
+    {
+      "path": "live/reuse-key-vs-generate.raw",
+      "sha256": "fed30b8590c781bc372ebf5090b2f55f5a05468c7d133a4602deb73cec233d7e",
+      "kind": "raw",
+      "screen_id": "reuse-key-vs-generate"
+    },
+    {
+      "path": "live/reuse-key-vs-generate.txt",
+      "sha256": "0dff8062e12b2e7603a00a9f93cf8c3b37367e088d0c660cb55ef9677bf70d42",
+      "kind": "text",
+      "screen_id": "reuse-key-vs-generate"
+    },
+    {
+      "path": "live/reuse-manual-path.png",
+      "sha256": "dd96dc6e91fdd264e83a9e3d1b2d8f022b7dc3a787a69231b216ebe7bfee6fa4",
+      "kind": "png-live",
+      "screen_id": "reuse-manual-path"
+    },
+    {
+      "path": "live/reuse-manual-path.raw",
+      "sha256": "9526c1519468d558f6172f12c717b3a253f82dadbeb838056503a8c48f683a70",
+      "kind": "raw",
+      "screen_id": "reuse-manual-path"
+    },
+    {
+      "path": "live/reuse-manual-path.txt",
+      "sha256": "7dd7d2009faf851f15b4164c8b0f307e874521a9a5463d5ae120bd51a2afce49",
+      "kind": "text",
+      "screen_id": "reuse-manual-path"
+    },
+    {
+      "path": "live/reuse-manual-resolved.png",
+      "sha256": "4a1c83e33b953d5457185f9beff30c7a980417e6e6a3d2695fb3b0bf1213cd91",
+      "kind": "png-live",
+      "screen_id": "reuse-manual-resolved"
+    },
+    {
+      "path": "live/reuse-manual-resolved.raw",
+      "sha256": "41c1a40d10b053eb4419fcc8eff22ec1d3a5e61a27a8713156e8fc1ac15c01d5",
+      "kind": "raw",
+      "screen_id": "reuse-manual-resolved"
+    },
+    {
+      "path": "live/reuse-manual-resolved.txt",
+      "sha256": "f9fc154a1d44bf5e4e70c1f60e41c79ca88aba99c0a8eb09ecdd43d53b87861b",
+      "kind": "text",
+      "screen_id": "reuse-manual-resolved"
+    },
+    {
+      "path": "live/ssh-form-filled.png",
+      "sha256": "5c76baabb0ac185f8a89c11e367b9b50c77f347d04d12fdbaf824e5dbc9dff83",
+      "kind": "png-live",
+      "screen_id": "ssh-form-filled"
+    },
+    {
+      "path": "live/ssh-form-filled.raw",
+      "sha256": "762977397a8ea60077282fde2ebe9087187e252c46607edaf4f073a930bda7cf",
+      "kind": "raw",
+      "screen_id": "ssh-form-filled"
+    },
+    {
+      "path": "live/ssh-form-filled.txt",
+      "sha256": "0e7d2283f798b2383dca1cfabc8b5714ae96a11d5deed6b3ffdafb1f2628006a",
+      "kind": "text",
+      "screen_id": "ssh-form-filled"
+    },
+    {
+      "path": "live/test-hard-failure-retry.png",
+      "sha256": "91f610c12db4247febe136dfd2989eff7f0b25fa1806333572c23228ed7c1dfc",
+      "kind": "png-live",
+      "screen_id": "test-hard-failure-retry"
+    },
+    {
+      "path": "live/test-hard-failure-retry.raw",
+      "sha256": "013b1edd2190e8aa260f67dd897bb94eb068894f92a0b20fe6728d61784d5b1c",
+      "kind": "raw",
+      "screen_id": "test-hard-failure-retry"
+    },
+    {
+      "path": "live/test-hard-failure-retry.txt",
+      "sha256": "3f76df8451cd161283536309028835676d7ab86bfc018120cb3772743f6abdec",
+      "kind": "text",
+      "screen_id": "test-hard-failure-retry"
+    },
+    {
+      "path": "live/test-reachable-not-uploaded.png",
+      "sha256": "666ac2477a1d41a1ae327586c6e85ac5ef19025d4bd96fef2465f8d8113dd463",
+      "kind": "png-live",
+      "screen_id": "test-reachable-not-uploaded"
+    },
+    {
+      "path": "live/test-reachable-not-uploaded.raw",
+      "sha256": "ea69679a8f6c1815734484cf1c4e1c05bf2805b47609478dc599dffb24ba6ca4",
+      "kind": "raw",
+      "screen_id": "test-reachable-not-uploaded"
+    },
+    {
+      "path": "live/test-reachable-not-uploaded.txt",
+      "sha256": "4cf5ecbc3760e6269b220754a34c6abf07895b188ada6f8c13910816ab24e5cd",
+      "kind": "text",
+      "screen_id": "test-reachable-not-uploaded"
+    },
+    {
+      "path": "live/test-stage1-command-output.png",
+      "sha256": "6dbb8abf5836220abba3c7f6934c1b10ce137e4ecf54ff16f4043dcb8cbe6e6a",
+      "kind": "png-live",
+      "screen_id": "test-stage1-command-output"
+    },
+    {
+      "path": "live/test-stage1-command-output.raw",
+      "sha256": "4f9c83d0af822284973d5dea277c60e26afd5ecf9445cbc00558084143a2c26c",
+      "kind": "raw",
+      "screen_id": "test-stage1-command-output"
+    },
+    {
+      "path": "live/test-stage1-command-output.txt",
+      "sha256": "eb26309f4ef5eda52b36f01ae82b9fce4032763b2b01044b584e5f1a9017d569",
+      "kind": "text",
+      "screen_id": "test-stage1-command-output"
+    },
+    {
+      "path": "live/test-stage1-direct.png",
+      "sha256": "364826eb550f61b4d686a3c6b371133132ce503c2ece93064bfb43fd4001132a",
+      "kind": "png-live",
+      "screen_id": "test-stage1-direct"
+    },
+    {
+      "path": "live/test-stage1-direct.raw",
+      "sha256": "42d211e4c52626851d7e08a3a2ddf24716c3d1d41c8e5fb3db1a4be09dd0e902",
+      "kind": "raw",
+      "screen_id": "test-stage1-direct"
+    },
+    {
+      "path": "live/test-stage1-direct.txt",
+      "sha256": "5a7d8d2f9c7d32f6bb1f0b70a96388269d49fdce74c02467db68915deda1425a",
+      "kind": "text",
+      "screen_id": "test-stage1-direct"
+    },
+    {
+      "path": "live/test-stage1-pass.png",
+      "sha256": "b8db4fdb199ae7961a1ddafff4611512e0c8581b3fd7bfd0fe8caa257b1b1af2",
+      "kind": "png-live",
+      "screen_id": "test-stage1-pass"
+    },
+    {
+      "path": "live/test-stage1-pass.raw",
+      "sha256": "81961174aabcc6ad9b9f866eed105f28983755ef826394e63f6e23e8f72516cf",
+      "kind": "raw",
+      "screen_id": "test-stage1-pass"
+    },
+    {
+      "path": "live/test-stage1-pass.txt",
+      "sha256": "0db3e9dbb6b47a18c5693252be327c93e16b7a8b298eed737872e927cd4ee1e7",
+      "kind": "text",
+      "screen_id": "test-stage1-pass"
+    },
+    {
+      "path": "live/test-stage2-by-alias.png",
+      "sha256": "71bdd263f7ea6821b28b9086521cea709c21c8fe31139d516005aec3fa367230",
+      "kind": "png-live",
+      "screen_id": "test-stage2-by-alias"
+    },
+    {
+      "path": "live/test-stage2-by-alias.raw",
+      "sha256": "d7b4248cd3ca016d0555d19526b6c8c012d0b9541fd85493bc0ca492868a65ca",
+      "kind": "raw",
+      "screen_id": "test-stage2-by-alias"
+    },
+    {
+      "path": "live/test-stage2-by-alias.txt",
+      "sha256": "dfd7a6692e63fa41fad842520c1361cdc1515ff734a2985763b1c483bf24f5a1",
+      "kind": "text",
+      "screen_id": "test-stage2-by-alias"
+    },
+    {
+      "path": "live/test-stage2-command-output.png",
+      "sha256": "cdeb147aa2b175a85ec8f3343c54ffc306b0529cb045b171073d3ff0ceaeba94",
+      "kind": "png-live",
+      "screen_id": "test-stage2-command-output"
+    },
+    {
+      "path": "live/test-stage2-command-output.raw",
+      "sha256": "c8faeb636808dd34a4e6705dd1678b53f8d457e5c57754d314152b58164d4bd9",
+      "kind": "raw",
+      "screen_id": "test-stage2-command-output"
+    },
+    {
+      "path": "live/test-stage2-command-output.txt",
+      "sha256": "75dea7ca195ca1072cb1391f336fd91234007de629522f7e060a880735fd15aa",
+      "kind": "text",
+      "screen_id": "test-stage2-command-output"
+    },
+    {
+      "path": "live/test-stage2-resolution-identities-key.png",
+      "sha256": "7183e61f9e607ca1f27adcf538847db730f61166447db94d01a8f7ccba8384af",
+      "kind": "png-live",
+      "screen_id": "test-stage2-resolution-identities-key"
+    },
+    {
+      "path": "live/test-stage2-resolution-identities-key.raw",
+      "sha256": "c24ea253aa167a85eb12a7a9e9bd551d8fb8361fdf718f5366a4ae7e30aa82d3",
+      "kind": "raw",
+      "screen_id": "test-stage2-resolution-identities-key"
+    },
+    {
+      "path": "live/test-stage2-resolution-identities-key.txt",
+      "sha256": "4d2bf32e6da826b7172e9b8cdd8c559809e9c62882925c12c605c8e0192ee33c",
+      "kind": "text",
+      "screen_id": "test-stage2-resolution-identities-key"
+    },
+    {
+      "path": "live/test-stage2-resolution-user-host-port.png",
+      "sha256": "7183e61f9e607ca1f27adcf538847db730f61166447db94d01a8f7ccba8384af",
+      "kind": "png-live",
+      "screen_id": "test-stage2-resolution-user-host-port"
+    },
+    {
+      "path": "live/test-stage2-resolution-user-host-port.raw",
+      "sha256": "c24ea253aa167a85eb12a7a9e9bd551d8fb8361fdf718f5366a4ae7e30aa82d3",
+      "kind": "raw",
+      "screen_id": "test-stage2-resolution-user-host-port"
+    },
+    {
+      "path": "live/test-stage2-resolution-user-host-port.txt",
+      "sha256": "4d2bf32e6da826b7172e9b8cdd8c559809e9c62882925c12c605c8e0192ee33c",
+      "kind": "text",
+      "screen_id": "test-stage2-resolution-user-host-port"
+    }
+  ],
+  "manifest_sha256": "cc6d42d40fe9669883b46b0e0b359e9fee99a21855ee7646cc4f7baf7b8a2af1",
+  "capture": {
+    "commands": [
+      "git archive 3c3130e404329cf42baafdf63a6c22758437edc6",
+      "go build -o \u003clive-gitid\u003e ./cmd/gitid",
+      "\u003clive-gitid\u003e (PTY, HOME=\u003csandbox\u003e, PATH=\u003cfake-ssh\u003e)",
+      "go build -o \u003capproved-gitid-dummy\u003e ./cmd/gitid-dummy",
+      "\u003capproved-gitid-dummy\u003e (PTY)",
+      "freeze \u003ccapture.txt\u003e -o \u003cpanel.png\u003e --font.file JetBrainsMono-Regular.ttf --theme dracula"
+    ],
+    "tool_versions": [
+      {
+        "name": "freeze",
+        "version": "freeze version v0.2.2"
+      },
+      {
+        "name": "go",
+        "version": "go version go1.27.0 darwin/amd64"
+      }
+    ],
+    "geometry": "TUI=100x30",
+    "font_sha256": "a0bf60ef0f83c5ed4d7a75d45838548b1f6873372dfac88f71804491898d138f",
+    "theme": "dracula"
+  }
+}

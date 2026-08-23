@@ -1,0 +1,80 @@
+[?2026$p[?2027$p[>4m[=0;1u[?1049h[?25l[?5W[?2004h[?1002h[?1006h[>4;2m[=1;1u[?u[H[2J [1mgitid[m  [97;44;1m [1] Identities [39;49;22;2m·[m [2] Global SSH [2m·[m [3] Global Git [2m·[m [4] Doctor[14X[1;85H8 ids[2m · [33;22m! 1[m [31m✗ 3[m
+ [2mIdentities › personal[m
+[2mS ssh · G git  ✓ ok ! attn ✗ broken[m [2m│[m  [1mpersonal[m  [32m✓ complete[m
+[1m▸ [32;22m✓[m [1;7mpersonal[m[18X[4;31H[90mS[32m✓[m [90mG[32m✓[m [2m│[m
+[5G[2mSSH Host block and Git fragment…│[m  [1;4mSSH[22m [1m—[22m [1mshown[22m [1mfirst,[22m [1malways[m
+  [33m![m [1mwork[m[22X[6;31H[90mS[32m✓[m [90mG–[m [2m│[m    Host alias: personal.github.com
+[5G[2mSSH Host block present; no Git …│[m    Hostname: ssh.github.com · Port 443 · User git
+  [33m![m [1mopensource[33;22m 1⚑[m[13X[8;31H[90mS–[m [90mG[32m✓[m [2m│[m    IdentityFile: ~/.ssh/id_ed25519_personal
+[5G[2mGit identity relies on the glob…│[m    IdentitiesOnly: yes
+  [33m![m [1marchived[33;22m 1⚑[m[15X[10;31H[90mS–[m [90mG–[m [2m│[m
+[5G[2mKey file exists on disk but no …│[m  [1;4mGit[m
+  [32m✓[m [1mstaging[m[19X[12;31H[90mS[32m✓[m [90mG–[m [2m│[m    Fragment: ~/.gitconfig.d/personal
+[5G[2mKey referenced by a Host block;…│[m    Author: personal identity <you@personal.example>
+  [32m✓[m [1mclientA[m[19X[14;31H[90mS[32m✓[m [90mG[32m✓[m [2m│[m    Signing: gpg.format=ssh · signingkey
+[5G[2mKey wired for both SSH auth and…│[m ~/.ssh/id_ed25519_personal.pub
+  [31m✗[m [1mclientB[33;22m 1⚑[m[16X[16;31H[90mS[31m✗[m [90mG–[m [2m│[m  [2mGlobal baseline (inherited — not applied yet):[m
+[5G[2mHost block references a key fil…│[m [2minit.defaultBranch=main · core.ignorecase=false ·[m
+  [31m✗[m [1mlegacy[33;22m 1⚑[m[17X[18;31H[90mS[32m✓[m [90mG[31m✗[m [2m│[m [2mautocrlf=input/lf · push.autoSetupRemote=true ·[m
+[5G[2mincludeIf points at a Git fragm…│[m [2mpull.rebase=true · merge=diff3[m[20;37H[2m│[m    [34;4mEdit in Global Git (3)[m[21;37H[2m│[m
+[2m│[m  [1;4mFindings[22m [1m(0)[22m [1m—[22m [1msame[22m [1mdata[22m [1mthe[22m [1mDoctor[22m [1mshows[22m [1m(4)[m[23;37H[2m│[m    [32m✓ No findings for "personal".[m[24;37H[2m│[m
+[2m│[m
+[2m│[m
+[2m│[m
+ [2m8 identities — selection renders the detail live; every action is dummy but really changes this s…[m
+ [1m↑↓[m [2mselect identity · [22;1mn[m [2mnew · [22;1me[m [2medit SSH · [22;1mg[m [2mconfigure Git · [22;1mc[m [2mclone · [22;1md[m [2mdelete · [22;1m←→[m [2mswitch view[m
+ [1mEnter[m [2mactivate · [22;1mEsc[m [2mback · [22;1m?[m [2mhelp · [22;1mCtrl+P[m [2mpalette · [22;1mq[m [2mquit[m[1;9H[34;1m [1] Identities [39;22;2m· [2] Global SSH · [3] Global Git · [4] Doctor [m
+ [34mIdentities › New identity › SSH details[m
+[1mStep 1/4[22;2m · [34;22;1mSSH details[m [34m●[m [2m○[m [2m○[m [2m○[m
+[2m▸ ✓ personal[18X[4;31HS✓ G✓[m [2m│[m  [2mShift+→ next section · Shift+← exits the wizard[m
+[2m    SSH Host block and Git fragment…│[m    [1mProvider        [22;2m[github.com][m
+[2m  ! work[22X[6;31HS✓ G–[m [2m│[m  [1m▸ Alias prefix    [34m[[macme[37;7m [m][K
+[2m    SSH Host block present; no Git …│[m      [2mBlank prefix → SSH Host = the provider host itself[m
+[2m  ! opensource 1⚑[13X[8;31HS– G✓[m [2m│[m    [1mSSH Host (alias)[22;2m[acme.github.com][m[K
+[2m    Git identity relies on the glob…│[m      [2mAuto-joined: <prefix>.<provider> — editable[m
+[2m  ! archived 1⚑[15X[10;31HS– G–[m [2m│[m    [1mReal hostname   [22;2m[ssh.github.com][m
+[2m    Key file exists on disk but no …│[m    [1mPort            [22;2m[443][m
+[2m  ✓ staging[19X[12;31HS✓ G–[m [2m│[m    [1mKey algorithm[m [2m(←/→ change)[m[K
+[2m    Key referenced by a Host block;…│[m      ● [1med25519 — ★ recommended[m[K
+[2m  ✓ clientA[19X[14;31HS✓ G✓[m [2m│[m      [2m○ ed25519-sk — Disabled: needs libfido2 + a FIDO2[m
+[2m    Key wired for both SSH auth and…│[m [2msecurity key — none detected on this machine[m
+[2m  ✗ clientB 1⚑[16X[16;31HS✗ G–[m [2m│[m      ○ rsa-4096[K
+[2m    Host block references a key fil…│[m      ○ ecdsa-p256[K
+[2m  ✗ legacy 1⚑[17X[18;31HS✓ G✗[m [2m│[m      [2m○ ecdsa-sk — Disabled: needs libfido2 + a FIDO2 security[m
+[2m    includeIf points at a Git fragm…│[m [2mkey — none detected on this machine[m[20;39H[90m╭╌ Live Host-block preview (written on confirm) ╌╌╌╌╌╌╌╌╌╮[m[21;39H[90m┊[m [2mHost acme.github.com[m[35X[96G[90m┊[m[22;39H[90m┊[m [2m    Hostname ssh.github.com[m[28X[96G[90m┊[m[23;39H[90m┊[m [2m    Port 443[m[43X[96G[90m┊[m[24;39H[90m┊[m [2m    User git[m[43X[96G[90m┊[m[25;39H[90m┊[m [2m    IdentityFile ~/.ssh/id_ed25519_acme[m[16X[96G[90m┊[m[26;39H[90m┊[m [2m    IdentitiesOnly yes[m[33X[96G[90m┊[m[27;39H[90m╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯[m
+ [2mEsc returns to the identity detail without writing anything.[m[K
+ [1mTab/↑↓[m [2mfields · [22;1mEnter[m [2mnext: test connection[m[K
+[3G[1msc[m [2mback · [22;1mCtrl+P[m [2mpalette[m[K[2;30H[34mTest connection[m
+[1m2/4[22;2m · [34;22;1mTest connection[C[22m●[m [34m●[m [2m○[m [2m○[m[4;46H[2m←/→ jump sections · forward needs a valid step[m[5;40H[36mKey ~/.ssh/id_ed25519_acme generated (ed25519).[m[6;40H[36mBoth stages run against /tmp/gitid-test-a1b2c3.config — your[m[7;39H[36mlive ~/.ssh/config is untouched until the final confirm.[m[8;42H[K
+☐ Demo control — simulate a provider failure (key not[10;39Hregistered) to preview the error path  [2m(space toggles)[m[11;42H  [2mReview aid only, not part of the real flow. It locks[m[12;39H[2mwhile a stage is running and once the test has passed — there[m[13;39H[2mis nothing left to simulate then.[m[14;44H[K
+[5D[90m╭╌ Stage 1 — key DIRECT against the provider (TEST-01) ╌╌╮[m[16;39H[90m┊[m [2m$ ssh -T -F /tmp/gitid-test-a1b2c3.config -p 443 -i[m    [90m┊[m[17;39H[90m┊[m [2m~/.ss…[m[49X[96G[90m┊[m[18;39H[90m┊[m[56X[96G[90m┊[m[K[19;39H[90m╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯[m[20;39H [1;7m Run stage 1 (Enter) [m[K[21;39H[K
+[K
+[K
+[K
+[K
+[K
+[K
+
+ [1mEnter[m [2mrun stage 1 · [22;1mspace[m [2mtoggle failure demo[m[9;40H[2m☐ Demo failure control — locked (stage running or test[m[10;39H[2mpassed)[m[K
+[K
+[5D[90m╭╌ Stage 1 — key DIRECT against the provider (TEST-01) ╌╌╮[m[K[13;39H[90m┊[m [2m$ ssh -T -F /tmp/gitid-test-a1b2c3.config -p 443 -i[m    [90m┊[m[14;39H[90m┊[m [2m~/.ss…[m[49X[96G[90m┊[m[15;39H[90m┊[m[56X[96G[90m┊[m[16;39H[90m╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯[m[17;39H [2m… running ssh…[m[K[18;39H[K
+[K
+ [K[9B[K[17;40H[32m✓ Hi acme! You've successfully authenticated, but GitHub does[m[18;39H[32mnot provide shell access.[m[20;40H[2mNo -i here on purpose: the config must supply the key; that[m[21;39H[2mis exactly what this stage proves.[m[22;39H[90m╭╌ Stage 2 — resolve BY ALIAS (TEST-02) ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮[m[23;39H[90m┊[m [2m$ ssh -G -F /tmp/gitid-test-a1b2c3.config[m[14X[96G[90m┊[m[24;39H[90m┊[m [2macme.github.com…[m[39X[96G[90m┊[m[25;39H[90m┊[m[56X[96G[90m┊[m[26;39H[90m╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯[m[27;40H[1;7m Run stage 2 (Enter) [m
+
+ [1mEnter[m [2mrun stage 2[m[17;40H[2m… running ssh…[m[K[18;39H[K
+
+ [K
+[K
+[K
+[K
+[K
+[K
+[K
+ [K
+
+[K[17;40H[32m✓ Hi acme! You've successfully authenticated, but GitHub does[m[18;39H[32mnot provide shell access.[m[20;40H[2mNo -i here on purpose: the config must supply the key; that[m[21;39H[2mis exactly what this stage proves.[m[22;39H[90m╭╌ Stage 2 — resolve BY ALIAS (TEST-02) ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮[m[23;39H[90m┊[m [2m$ ssh -G -F /tmp/gitid-test-a1b2c3.config[m[14X[96G[90m┊[m[24;39H[90m┊[m [2macme.github.com…[m[39X[96G[90m┊[m[25;39H[90m┊[m[56X[96G[90m┊[m[26;39H[90m╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯[m[27;40H[32m✓ identityfile ~/.ssh/id_ed25519_acme[m
+
+ [1mEnter[m [2mnext: Git identity[m[2;30H[34mGit identity[m[K
+[3C[1m3/4[22;2m · [34;22;1mGit identity[m [34m●[m [34m●[m [34m●[m [2m○[m[K[5;40H[1m▸ user.name       [34m[[mAcme Identity[37;7m [m][K[6;40H  [1muser.email      [22;2m[you@acme.example][m[K[7;39H     [2mKept byte-identical to ~/.ssh/allowed_signers (GITUI-04)[m[8;42H[1mMatch strategy — when does this Git identity apply?[m [2m(←/→[m[9;39H[2mchange)[m[K[10;39H     [2mDetermines which repos this Git identity applies to.[m[11;44H● [1mgitdir (default) — applies inside ~/acme/[m[12;39H     ○ hasconfig — repos whose remote uses this alias[K[13;39H     ○ both — either condition (two includeIf blocks = OR)[14;39H[90m╭╌ ~/.gitconfig.d/acme (fragment file — preview) ╌╌╌╌╌╌╌╌╮[m[15;41H[2m[user][m[16;39H[90m┊[m [2m… (+9 more lines)[m[38X[96G[90m┊[m[17;39H[90m╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯[m[K[18;39H[90m╭╌ ~/.gitconfig (includeIf block — preview) ╌╌╌╌╌╌╌╌╌╌╌╌╌╮[m[19;39H[90m┊[m [2m[includeIf "gitdir:~/acme/"][m[27X[96G[90m┊[m[20;39H[90m┊[m [2m… (+1 more lines)[m[38X[96G[90m┊[m[K[21;39H[90m╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯[m[22;39H [2mGlobal baseline (inherited — not applied yet): init.def…[m [34;4m(3)[m[23;39H [1m Back (Esc) [m  [1m [ Skip Git ] [m  [1m [ Continue ] [m[K[24;39H [2mSkip keeps this identity SSH-only and marks it incomplete.[m[25;39H [2mContinue reviews the Git fragment, includeIf, and[m[K[26;39H[2mallowed_signers entries before writing.[m[K[27;40H[K
+
+[8G[2mactivate focused / continue · [22;1mTab/↑↓[m [2mfields & buttons[m

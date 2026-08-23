@@ -3,7 +3,7 @@ phase: 03-create-flow-backend
 plan: 17
 subsystem: create-flow PTY presentation
 tags: [tdd, pty, tuikit, visual-regression]
-status: candidate-ready
+status: finalized
 ---
 
 # Phase 3 Plan 17 Summary
@@ -120,4 +120,44 @@ the assertion. No production behavior changed for that correction.
 - Existing dirty paths remained unchanged.
 - No real user configuration, key, account, network, browser, HTML, MUI, or
   Chromium surface was used.
-- Review, finalization, and publication remain intentionally pending.
+- Review, finalization, and publication evidence is recorded below.
+
+## Orchestrator Review And Finalization
+
+The sole configured review was preserved outside the repository at
+`/var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/opencode/gitid-03-17-review.y8tJax/orchestrator-review`.
+It contains the exact review request, the unmodified direct-review output log,
+an empty observed stderr stream, timestamps, exit status, metadata, and a
+machine-readable verdict.
+
+| Binding | Value |
+|---|---|
+| Reviewer / CLI / provider / model | `opencode-my-plan-review` / `opencode` / `local-llm-env` / `local-llm-env/my-plan-review` |
+| Session | `ses_fd0d7e845ffePr6WJm6HasDnQo` |
+| Started / ended | `2026-08-23T15:06:05Z` / `2026-08-23T15:16:09Z` |
+| Exit status | `0` |
+| Source commit | `1543cff2bde6c367b9da1945c0b141b4f6debee6` |
+| Candidate manifest file SHA-256 | `7b2d69b4d677978cd6e537f055f9ac423442d4c21ee6699fea79d3c177e41a8b` |
+| Candidate manifest self-hash | `cc6d42d40fe9669883b46b0e0b359e9fee99a21855ee7646cc4f7baf7b8a2af1` |
+| Canonical manifest file SHA-256 | `ac4733fabb95eb746a2a01a5b5f8fb446a0b87c0f373c68dbba826eff9716663` |
+| Canonical manifest self-hash | `ea9535d1074843beca5d29bf1fba816c7bea9a3c785e9fa48ca0e35cb0c17077` |
+| Verdict | Zero Critical, zero High; all differences classified and no defects. |
+
+The previously supplied canonical hash belonged to a prior candidate. The
+freshly verified canonical file and self-hash above are authoritative for this
+candidate.
+
+Finalization command and result:
+
+```text
+gitid-evidence finalize --source-commit 1543cff2bde6c367b9da1945c0b141b4f6debee6 --candidate-dir <external-candidate> --review-dir <external-orchestrator-review> --output-root .planning/phases/03-create-flow-backend/03-17-review-packet
+PASS: published .planning/phases/03-create-flow-backend/03-17-review-packet/1543cff2bde6c367b9da1945c0b141b4f6debee6
+```
+
+The final packet's manifest self-hash is
+`f0671195fa171cc07de1ae36074fc2252c3c3c99771481416299d862b18f10ca`.
+An independent post-publication scan verified all 77 declared member hashes,
+the single `03-16.1` review provenance record, the configured
+reviewer/CLI/provider/model/session/exit-status bindings, the bound candidate
+self-hash, the zero-blocker verdict, and byte-identical embedded prompt,
+stdout, stderr, and verdict assets.

@@ -1,0 +1,30 @@
+gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Identities › New identity › Test connection
+S ssh · G git  ✓ ok ! attn ✗ broken │  Step 2/4 · Test connection ● ● ○ ○
+                                    │  Shift+←/→ jump sections · forward needs a valid step
+                                    │  Demo failure control — locked (nothing left to simulate)
+                                    │  Completed test stages; exact captured proof follows.
+                                    │  ✓ Hi user! You've successfully authenticated, but GitHub doe
+                                    │  No -i here on purpose: the config must supply the key; that
+                                    │ is exactly what this stage proves.
+                                    │  ✓ identityfile /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000g
+                                    │   Next: Git identity (Enter)
+                                    │  Proof viewport: PgUp/PgDn scroll · v focus · ←/→ columns
+                                    │ Stage 2 command:
+                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/gitid-evi
+                                    │ Stage 2 output:
+                                    │ identityfile /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000g
+                                    │ Stage 2 resolution command:
+                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/gitid-evi
+                                    │ Stage 2 resolution output:
+                                    │ ↓ lines 9–17 of 17  PgDn↓ PgUp↑
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+ Esc returns to the identity detail without writing anything.
+ Enter next: Git identity
+ Esc back · Ctrl+P palette

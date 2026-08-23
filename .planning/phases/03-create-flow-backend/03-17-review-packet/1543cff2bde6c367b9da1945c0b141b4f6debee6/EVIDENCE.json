@@ -1,0 +1,121 @@
+{
+  "version": "03-12.1",
+  "source_commit": "1543cff2bde6c367b9da1945c0b141b4f6debee6",
+  "approval_commit": "3c3130e404329cf42baafdf63a6c22758437edc6",
+  "captured_at": "2026-08-21T00:00:00Z",
+  "commands": [
+    "git archive 3c3130e404329cf42baafdf63a6c22758437edc6",
+    "go build -o \u003clive-gitid\u003e ./cmd/gitid",
+    "\u003clive-gitid\u003e (PTY, HOME=\u003csandbox\u003e, PATH=\u003cfake-ssh\u003e)",
+    "go build -o \u003capproved-gitid-dummy\u003e ./cmd/gitid-dummy",
+    "\u003capproved-gitid-dummy\u003e (PTY)",
+    "freeze \u003ccapture.txt\u003e -o \u003cpanel.png\u003e --font.file JetBrainsMono-Regular.ttf --theme dracula"
+  ],
+  "tool_versions": [
+    {
+      "name": "freeze",
+      "version": "freeze version v0.2.2"
+    },
+    {
+      "name": "go",
+      "version": "go version go1.27.0 darwin/amd64"
+    }
+  ],
+  "geometry": "TUI=100x30",
+  "font_sha256": "a0bf60ef0f83c5ed4d7a75d45838548b1f6873372dfac88f71804491898d138f",
+  "theme": "dracula",
+  "screens": [
+    {
+      "screen_id": "ssh-form-filled",
+      "surface": "live"
+    },
+    {
+      "screen_id": "reuse-key-vs-generate",
+      "surface": "live"
+    },
+    {
+      "screen_id": "reuse-manual-path",
+      "surface": "live"
+    },
+    {
+      "screen_id": "mouse-focused-field",
+      "surface": "live"
+    },
+    {
+      "screen_id": "test-stage1-direct",
+      "surface": "live"
+    },
+    {
+      "screen_id": "test-stage2-by-alias",
+      "surface": "live"
+    },
+    {
+      "screen_id": "git-form-demo",
+      "surface": "live"
+    },
+    {
+      "screen_id": "confirm-write",
+      "surface": "live"
+    },
+    {
+      "screen_id": "reuse-manual-resolved",
+      "surface": "live"
+    },
+    {
+      "screen_id": "test-stage1-pass",
+      "surface": "live"
+    },
+    {
+      "screen_id": "test-stage1-command-output",
+      "surface": "live"
+    },
+    {
+      "screen_id": "test-stage2-command-output",
+      "surface": "live"
+    },
+    {
+      "screen_id": "test-stage2-resolution-user-host-port",
+      "surface": "live"
+    },
+    {
+      "screen_id": "test-stage2-resolution-identities-key",
+      "surface": "live"
+    },
+    {
+      "screen_id": "test-reachable-not-uploaded",
+      "surface": "live"
+    },
+    {
+      "screen_id": "test-hard-failure-retry",
+      "surface": "live"
+    },
+    {
+      "screen_id": "confirm-summary-key-path",
+      "surface": "live"
+    },
+    {
+      "screen_id": "confirm-managed-block",
+      "surface": "live"
+    },
+    {
+      "screen_id": "ssh-form-filled",
+      "surface": "approved-tui"
+    },
+    {
+      "screen_id": "mouse-focused-field",
+      "surface": "approved-tui"
+    },
+    {
+      "screen_id": "test-stage1-direct",
+      "surface": "approved-tui"
+    },
+    {
+      "screen_id": "git-form-demo",
+      "surface": "approved-tui"
+    },
+    {
+      "screen_id": "confirm-write",
+      "surface": "approved-tui"
+    }
+  ]
+}
