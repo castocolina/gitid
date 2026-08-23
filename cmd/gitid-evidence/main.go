@@ -269,6 +269,9 @@ func generateCandidate(sourceCommit, outputDir string) error {
 	if err := compareInventories(outputDir, second); err != nil {
 		return fmt.Errorf("two-process candidate determinism check failed: %w", err)
 	}
+	if _, err := writeCanonicalManifest(outputDir); err != nil {
+		return fmt.Errorf("writing canonical candidate manifest: %w", err)
+	}
 	return nil
 }
 
@@ -382,9 +385,6 @@ func generateCandidateOnce(sourceCommit, outputDir string) error {
 	}
 	if _, err := screenshot.ValidateCandidate(filepath.Dir(candidateManifest)); err != nil {
 		return fmt.Errorf("validating generated candidate: %w", err)
-	}
-	if _, err := writeCanonicalManifest(filepath.Dir(candidateManifest)); err != nil {
-		return fmt.Errorf("writing canonical candidate manifest: %w", err)
 	}
 	return nil
 }
