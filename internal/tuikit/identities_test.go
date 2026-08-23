@@ -1940,6 +1940,24 @@ func TestGitStepDisabledHintSuppressedForRealBackend(t *testing.T) {
 	}
 }
 
+type sentinelIncludeIfBackend struct{ stubBackend }
+
+func (sentinelIncludeIfBackend) IncludeIfPreview(GitSpec) string {
+	return "# BEGIN gitid managed: personal\n[includeIf \"gitdir:~/personal/\"]\n    path = ~/.gitconfig.d/personal\n# END gitid managed: personal"
+}
+
+func TestCompactIncludeIfPreviewShowsCondition(t *testing.T) {
+	form := newGitForm(sentinelIncludeIfBackend{}, "Personal", "personal@example.com", "gitdir")
+	view := form.view("personal", "~/.ssh/id_ed25519_personal", gitFieldName, 62, "")
+
+	if !strings.Contains(view, `[includeIf "gitdir:~/personal/"]`) {
+		t.Errorf("compact includeIf preview must show its condition:\n%s", view)
+	}
+	if strings.Contains(view, "# BEGIN gitid managed: personal") {
+		t.Errorf("compact includeIf preview must not spend its only content row on the sentinel:\n%s", view)
+	}
+}
+
 // disabledGitBackend wraps stubBackend so GitStepDisabledReason reports
 // always=true — the D-19 real-backend behavior (Phase-3: no Git backend yet).
 type disabledGitBackend struct{ stubBackend }
