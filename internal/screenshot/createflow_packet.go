@@ -136,6 +136,85 @@ const packetVersion = "03-11.1"
 
 const visualPacketVersion = "03-11.2"
 
+// ---------------------------------------------------------------------------
+// 03-16 Task 1: Single configured-review constants.
+// These must match .planning/config.json review.reviewer_instances exactly.
+// They are compile-time constants — never read from config at runtime.
+// ---------------------------------------------------------------------------
+
+// ConfiguredReviewerInstance is the instance name of the sole configured reviewer.
+const ConfiguredReviewerInstance = "opencode-my-plan-review"
+
+// ConfiguredReviewerCLI is the CLI tool name for the configured reviewer.
+const ConfiguredReviewerCLI = "opencode"
+
+// ConfiguredReviewerModel is the model identifier for the configured reviewer.
+const ConfiguredReviewerModel = "local-llm-env/my-plan-review"
+
+// configuredReviewVersion is the version tag for new review records (03-16.1).
+const configuredReviewVersion = "03-16.1"
+
+// validateConfiguredReviewRecord verifies that a review input satisfies the
+// single-configured-reviewer contract. It checks:
+//
+//   - Reviewer matches ConfiguredReviewerInstance
+//   - Tool matches ConfiguredReviewerCLI
+//   - Model matches ConfiguredReviewerModel
+//   - Provider is non-empty and is NOT a configured literal (not equal to the
+//     tool name or model name — a provider that equals those values is a sign of
+//     tampered provenance; a real provider hash must differ from config constants)
+//   - Verdict version is configuredReviewVersion
+//   - Verdict is bound to the correct source commit and candidate manifest hash
+//   - Verdict OpenCritical == 0 and OpenHigh == 0
+func validateConfiguredReviewRecord(review ReviewInput, sourceCommit, candidateManifestSHA256 string) error {
+	if review.Reviewer != ConfiguredReviewerInstance {
+		return fmt.Errorf("screenshot: configured review: reviewer %q does not match configured instance %q", review.Reviewer, ConfiguredReviewerInstance)
+	}
+	if review.Tool != ConfiguredReviewerCLI {
+		return fmt.Errorf("screenshot: configured review: tool %q does not match configured CLI %q", review.Tool, ConfiguredReviewerCLI)
+	}
+	if review.Model != ConfiguredReviewerModel {
+		return fmt.Errorf("screenshot: configured review: model %q does not match configured model %q", review.Model, ConfiguredReviewerModel)
+	}
+	if strings.TrimSpace(review.Provider) == "" {
+		return fmt.Errorf("screenshot: configured review: provider must be non-empty")
+	}
+	// Provider must not be a configured literal — it must be externally-generated
+	// provenance data (a session hash, token, etc.), not the tool or model name.
+	if review.Provider == ConfiguredReviewerCLI || review.Provider == ConfiguredReviewerModel || review.Provider == ConfiguredReviewerInstance {
+		return fmt.Errorf("screenshot: configured review: provider %q must not be a configured literal (use an external session hash)", review.Provider)
+	}
+	if review.Session == "" {
+		return fmt.Errorf("screenshot: configured review: session must be non-empty")
+	}
+	if review.ExitCode != 0 || len(review.Prompt) == 0 || len(review.Stdout) == 0 || len(review.Verdict) == 0 {
+		return fmt.Errorf("screenshot: configured review: review has incomplete raw inputs or nonzero exit")
+	}
+	// Parse and validate the verdict.
+	decoder := json.NewDecoder(strings.NewReader(string(review.Verdict)))
+	decoder.DisallowUnknownFields()
+	var verdict ReviewVerdict
+	if err := decoder.Decode(&verdict); err != nil {
+		return fmt.Errorf("screenshot: configured review: decoding verdict: %w", err)
+	}
+	if verdict.Version != configuredReviewVersion {
+		return fmt.Errorf("screenshot: configured review: verdict version %q does not match expected %q", verdict.Version, configuredReviewVersion)
+	}
+	if verdict.SourceCommit != sourceCommit {
+		return fmt.Errorf("screenshot: configured review: verdict source commit %q does not match %q", verdict.SourceCommit, sourceCommit)
+	}
+	if verdict.CandidateManifestSHA256 != candidateManifestSHA256 {
+		return fmt.Errorf("screenshot: configured review: verdict candidate hash %q does not match %q", verdict.CandidateManifestSHA256, candidateManifestSHA256)
+	}
+	if verdict.Reviewer != ConfiguredReviewerInstance {
+		return fmt.Errorf("screenshot: configured review: verdict reviewer %q does not match configured instance %q", verdict.Reviewer, ConfiguredReviewerInstance)
+	}
+	if verdict.OpenCritical != 0 || verdict.OpenHigh != 0 {
+		return fmt.Errorf("screenshot: configured review: verdict has nonzero blockers (critical=%d, high=%d)", verdict.OpenCritical, verdict.OpenHigh)
+	}
+	return nil
+}
+
 // GenerateVisualPacket writes the complete registry-derived evidence packet. Unlike
 // GenerateTextPacket, this API cannot represent a panel without both the text
 // captured from the source binary/page and a non-empty renderer-produced PNG.
@@ -729,8 +808,8 @@ type reviewProvenance struct {
 	Reviews                 []reviewProvenanceRecord `json:"reviews"`
 }
 
-// ValidateReviewProvenance binds the final packet to the embedded candidate,
-// both raw independent reviews, and their structured zero-blocker verdicts.
+// ValidateReviewProvenance binds the final packet to the embedded candidate
+// and the single configured-reviewer zero-blocker verdict.
 func ValidateReviewProvenance(packetDir string, pkt Packet) error {
 	if err := ValidateProvenanceRecords(pkt); err != nil {
 		return err
@@ -756,63 +835,87 @@ func ValidateReviewProvenance(packetDir string, pkt Packet) error {
 	if err := decoder.Decode(&provenance); err != nil {
 		return fmt.Errorf("screenshot: ValidateReviewProvenance: decoding provenance: %w", err)
 	}
-	if provenance.Version != "03-14.1" || provenance.SourceCommit != pkt.SourceCommit || provenance.CandidateManifestSHA256 != candidate.ManifestSHA256 || len(provenance.Reviews) != 2 {
-		return fmt.Errorf("screenshot: ValidateReviewProvenance: invalid source, candidate binding, or review count")
+	// New contract: exactly one review from the configured reviewer (03-16.1).
+	if provenance.Version != configuredReviewVersion || provenance.SourceCommit != pkt.SourceCommit || provenance.CandidateManifestSHA256 != candidate.ManifestSHA256 || len(provenance.Reviews) != 1 {
+		return fmt.Errorf("screenshot: ValidateReviewProvenance: invalid version, source, candidate binding, or review count (want exactly 1 at version %q)", configuredReviewVersion)
+	}
+	record := provenance.Reviews[0]
+	// Validate the configured reviewer triple.
+	if record.Reviewer != ConfiguredReviewerInstance {
+		return fmt.Errorf("screenshot: ValidateReviewProvenance: reviewer %q does not match configured instance %q", record.Reviewer, ConfiguredReviewerInstance)
+	}
+	if record.Tool != ConfiguredReviewerCLI {
+		return fmt.Errorf("screenshot: ValidateReviewProvenance: tool %q does not match configured CLI %q", record.Tool, ConfiguredReviewerCLI)
+	}
+	if record.Model != ConfiguredReviewerModel {
+		return fmt.Errorf("screenshot: ValidateReviewProvenance: model %q does not match configured model %q", record.Model, ConfiguredReviewerModel)
+	}
+	if strings.TrimSpace(record.Provider) == "" {
+		return fmt.Errorf("screenshot: ValidateReviewProvenance: provider must be non-empty")
+	}
+	if record.Provider == ConfiguredReviewerCLI || record.Provider == ConfiguredReviewerModel || record.Provider == ConfiguredReviewerInstance {
+		return fmt.Errorf("screenshot: ValidateReviewProvenance: provider %q must not be a configured literal", record.Provider)
+	}
+	if record.Session == "" {
+		return fmt.Errorf("screenshot: ValidateReviewProvenance: session must be non-empty")
+	}
+	if record.ExitCode != 0 {
+		return fmt.Errorf("screenshot: ValidateReviewProvenance: reviewer %q exited %d", record.Reviewer, record.ExitCode)
 	}
 	members := make(map[string]PacketMember, len(pkt.Members))
 	for _, member := range pkt.Members {
 		members[member.Path] = member
 	}
-	identities := make(map[string]bool, 2)
-	stdoutHashes := make(map[string]bool, 2)
-	for _, record := range provenance.Reviews {
-		identity := record.Reviewer + "\x00" + record.Tool + "\x00" + record.Provider
-		if record.Reviewer == "" || record.Tool == "" || record.Provider == "" || record.Model == "" || record.Session == "" || identities[identity] {
-			return fmt.Errorf("screenshot: ValidateReviewProvenance: reviewers must have distinct complete identities")
+	for _, asset := range []struct{ path, hash string }{
+		{record.PromptPath, record.PromptSHA256}, {record.StdoutPath, record.StdoutSHA256}, {record.StderrPath, record.StderrSHA256}, {record.VerdictPath, record.VerdictSHA256},
+	} {
+		member, ok := members[asset.path]
+		if !ok || member.SHA256 != asset.hash {
+			return fmt.Errorf("screenshot: ValidateReviewProvenance: declared review asset %q is missing or hash-mismatched", asset.path)
 		}
-		identities[identity] = true
-		if record.ExitCode != 0 {
-			return fmt.Errorf("screenshot: ValidateReviewProvenance: reviewer %q exited %d", record.Reviewer, record.ExitCode)
-		}
-		for _, asset := range []struct{ path, hash string }{
-			{record.PromptPath, record.PromptSHA256}, {record.StdoutPath, record.StdoutSHA256}, {record.StderrPath, record.StderrSHA256}, {record.VerdictPath, record.VerdictSHA256},
-		} {
-			member, ok := members[asset.path]
-			if !ok || member.SHA256 != asset.hash {
-				return fmt.Errorf("screenshot: ValidateReviewProvenance: declared review asset %q is missing or hash-mismatched", asset.path)
-			}
-		}
-		if stdoutHashes[record.StdoutSHA256] {
-			return fmt.Errorf("screenshot: ValidateReviewProvenance: reviews reuse raw stdout")
-		}
-		stdoutHashes[record.StdoutSHA256] = true
-		verdictData, err := os.ReadFile(filepath.Join(packetDir, record.VerdictPath)) //nolint:gosec // declared manifest member
-		if err != nil {
-			return fmt.Errorf("screenshot: ValidateReviewProvenance: reading verdict: %w", err)
-		}
-		verdictDecoder := json.NewDecoder(strings.NewReader(string(verdictData)))
-		verdictDecoder.DisallowUnknownFields()
-		var verdict ReviewVerdict
-		if err := verdictDecoder.Decode(&verdict); err != nil {
-			return fmt.Errorf("screenshot: ValidateReviewProvenance: decoding verdict: %w", err)
-		}
-		if verdict.Version != "03-14.1" || verdict.SourceCommit != pkt.SourceCommit || verdict.CandidateManifestSHA256 != candidate.ManifestSHA256 || verdict.Reviewer != record.Reviewer || verdict.OpenCritical != 0 || verdict.OpenHigh != 0 {
-			return fmt.Errorf("screenshot: ValidateReviewProvenance: verdict for %q is not a bound zero-blocker result", record.Reviewer)
-		}
+	}
+	verdictData, err := os.ReadFile(filepath.Join(packetDir, record.VerdictPath)) //nolint:gosec // declared manifest member
+	if err != nil {
+		return fmt.Errorf("screenshot: ValidateReviewProvenance: reading verdict: %w", err)
+	}
+	verdictDecoder := json.NewDecoder(strings.NewReader(string(verdictData)))
+	verdictDecoder.DisallowUnknownFields()
+	var verdict ReviewVerdict
+	if err := verdictDecoder.Decode(&verdict); err != nil {
+		return fmt.Errorf("screenshot: ValidateReviewProvenance: decoding verdict: %w", err)
+	}
+	if verdict.Version != configuredReviewVersion || verdict.SourceCommit != pkt.SourceCommit || verdict.CandidateManifestSHA256 != candidate.ManifestSHA256 || verdict.Reviewer != ConfiguredReviewerInstance || verdict.OpenCritical != 0 || verdict.OpenHigh != 0 {
+		return fmt.Errorf("screenshot: ValidateReviewProvenance: verdict for %q is not a bound zero-blocker result at version %q", record.Reviewer, configuredReviewVersion)
 	}
 	return nil
 }
 
-// FinalizeCandidate creates a new immutable final packet only after two
-// complete, distinct, zero-blocker reviews bind to the candidate manifest.
-// It never mutates the candidate and refuses an existing destination.
+// FinalizeCandidate creates a new immutable final packet only after exactly
+// one complete, zero-blocker review from the configured reviewer
+// (opencode-my-plan-review / opencode / local-llm-env/my-plan-review) binds
+// to the candidate manifest. It never mutates the candidate and refuses an
+// existing destination.
 func FinalizeCandidate(candidateDir, finalDir string, reviews []ReviewInput) (Packet, error) {
 	candidate, err := ValidateCandidate(candidateDir)
 	if err != nil {
 		return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: invalid candidate: %w", err)
 	}
-	if len(reviews) != 2 {
-		return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: exactly two reviews are required")
+	// Exactly one review from the configured reviewer is required.
+	configuredCount := 0
+	for _, r := range reviews {
+		if r.Reviewer == ConfiguredReviewerInstance {
+			configuredCount++
+		}
+	}
+	if configuredCount != 1 {
+		return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: exactly one review from configured reviewer %q is required (got %d)", ConfiguredReviewerInstance, configuredCount)
+	}
+	if len(reviews) != 1 {
+		return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: exactly one review is accepted (got %d); duplicate or extra reviewers are not permitted", len(reviews))
+	}
+	review := reviews[0]
+	if err := validateConfiguredReviewRecord(review, candidate.SourceCommit, candidate.ManifestSHA256); err != nil {
+		return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: %w", err)
 	}
 	if _, err := os.Stat(finalDir); err == nil {
 		return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: destination %q already exists", finalDir)
@@ -828,56 +931,36 @@ func FinalizeCandidate(candidateDir, finalDir string, reviews []ReviewInput) (Pa
 	if err := copyTree(candidateDir, stage); err != nil {
 		return Packet{}, err
 	}
-	records := make([]reviewProvenanceRecord, 0, len(reviews))
-	identities := make(map[string]bool, len(reviews))
-	for _, review := range reviews {
-		identity := review.Reviewer + "\x00" + review.Tool + "\x00" + review.Provider
-		if review.Reviewer == "" || review.Tool == "" || review.Provider == "" || review.Model == "" || review.Session == "" || identities[identity] {
-			return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: reviews must have distinct complete identities")
+	records := make([]reviewProvenanceRecord, 0, 1)
+	name := strings.ReplaceAll(strings.ReplaceAll(review.Reviewer, "/", "_"), "\\", "_")
+	base := filepath.ToSlash(filepath.Join("reviews", name))
+	assets := []struct {
+		name string
+		data []byte
+	}{{"prompt.txt", review.Prompt}, {"raw-stdout.txt", review.Stdout}, {"raw-stderr.txt", review.Stderr}, {"verdict.json", review.Verdict}}
+	record := reviewProvenanceRecord{Reviewer: review.Reviewer, Tool: review.Tool, Provider: review.Provider, Model: review.Model, Session: review.Session, StartedAt: review.StartedAt, EndedAt: review.EndedAt, ExitCode: review.ExitCode}
+	for _, asset := range assets {
+		path := filepath.Join(stage, filepath.FromSlash(base), asset.name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: creating review directory: %w", err)
 		}
-		if review.ExitCode != 0 || len(review.Prompt) == 0 || len(review.Stdout) == 0 || len(review.Verdict) == 0 {
-			return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: review %q has incomplete raw inputs or nonzero exit", review.Reviewer)
+		if err := writeAndSync(path, asset.data); err != nil {
+			return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: writing review asset: %w", err)
 		}
-		identities[identity] = true
-		decoder := json.NewDecoder(strings.NewReader(string(review.Verdict)))
-		decoder.DisallowUnknownFields()
-		var verdict ReviewVerdict
-		if err := decoder.Decode(&verdict); err != nil {
-			return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: decoding review %q verdict: %w", review.Reviewer, err)
+		path = filepath.ToSlash(filepath.Join(base, asset.name))
+		switch asset.name {
+		case "prompt.txt":
+			record.PromptPath, record.PromptSHA256 = path, sha256Hex(asset.data)
+		case "raw-stdout.txt":
+			record.StdoutPath, record.StdoutSHA256 = path, sha256Hex(asset.data)
+		case "raw-stderr.txt":
+			record.StderrPath, record.StderrSHA256 = path, sha256Hex(asset.data)
+		case "verdict.json":
+			record.VerdictPath, record.VerdictSHA256 = path, sha256Hex(asset.data)
 		}
-		if verdict.Version != "03-14.1" || verdict.SourceCommit != candidate.SourceCommit || verdict.CandidateManifestSHA256 != candidate.ManifestSHA256 || verdict.Reviewer != review.Reviewer || verdict.OpenCritical != 0 || verdict.OpenHigh != 0 {
-			return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: review %q verdict is not a bound zero-blocker result", review.Reviewer)
-		}
-		name := strings.ReplaceAll(strings.ReplaceAll(review.Reviewer, "/", "_"), "\\", "_")
-		base := filepath.ToSlash(filepath.Join("reviews", name))
-		assets := []struct {
-			name string
-			data []byte
-		}{{"prompt.txt", review.Prompt}, {"raw-stdout.txt", review.Stdout}, {"raw-stderr.txt", review.Stderr}, {"verdict.json", review.Verdict}}
-		record := reviewProvenanceRecord{Reviewer: review.Reviewer, Tool: review.Tool, Provider: review.Provider, Model: review.Model, Session: review.Session, StartedAt: review.StartedAt, EndedAt: review.EndedAt, ExitCode: review.ExitCode}
-		for _, asset := range assets {
-			path := filepath.Join(stage, filepath.FromSlash(base), asset.name)
-			if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-				return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: creating review directory: %w", err)
-			}
-			if err := writeAndSync(path, asset.data); err != nil {
-				return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: writing review asset: %w", err)
-			}
-			path = filepath.ToSlash(filepath.Join(base, asset.name))
-			switch asset.name {
-			case "prompt.txt":
-				record.PromptPath, record.PromptSHA256 = path, sha256Hex(asset.data)
-			case "raw-stdout.txt":
-				record.StdoutPath, record.StdoutSHA256 = path, sha256Hex(asset.data)
-			case "raw-stderr.txt":
-				record.StderrPath, record.StderrSHA256 = path, sha256Hex(asset.data)
-			case "verdict.json":
-				record.VerdictPath, record.VerdictSHA256 = path, sha256Hex(asset.data)
-			}
-		}
-		records = append(records, record)
 	}
-	provenanceData, err := json.MarshalIndent(reviewProvenance{Version: "03-14.1", SourceCommit: candidate.SourceCommit, CandidateManifestSHA256: candidate.ManifestSHA256, Reviews: records}, "", "  ")
+	records = append(records, record)
+	provenanceData, err := json.MarshalIndent(reviewProvenance{Version: configuredReviewVersion, SourceCommit: candidate.SourceCommit, CandidateManifestSHA256: candidate.ManifestSHA256, Reviews: records}, "", "  ")
 	if err != nil {
 		return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: marshaling provenance: %w", err)
 	}

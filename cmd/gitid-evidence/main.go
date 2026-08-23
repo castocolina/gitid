@@ -115,8 +115,11 @@ func finalize(args []string) error {
 			return fmt.Errorf("unknown finalize argument %q", args[i])
 		}
 	}
-	if err := validateSourceCommitFormat(sourceCommit); err != nil || candidateDir == "" || outputRoot == "" || len(reviewDirs) != 2 {
-		return fmt.Errorf("finalize requires --source-commit <full-40-hex-sha> --candidate-dir <dir> --review-dir <dir> --review-dir <dir> --output-root <dir>")
+	if len(reviewDirs) > 1 {
+		return fmt.Errorf("finalize requires exactly one --review-dir (single configured reviewer); got %d", len(reviewDirs))
+	}
+	if err := validateSourceCommitFormat(sourceCommit); err != nil || candidateDir == "" || outputRoot == "" || len(reviewDirs) != 1 {
+		return fmt.Errorf("finalize requires --source-commit <full-40-hex-sha> --candidate-dir <dir> --review-dir <dir> --output-root <dir> (exactly one review directory)")
 	}
 	repoRoot, err := repositoryRoot()
 	if err != nil {
@@ -132,14 +135,11 @@ func finalize(args []string) error {
 	if candidate.SourceCommit != sourceCommit {
 		return fmt.Errorf("candidate source commit %q does not match requested source %q", candidate.SourceCommit, sourceCommit)
 	}
-	reviews := make([]screenshot.ReviewInput, 0, 2)
-	for _, dir := range reviewDirs {
-		review, err := loadReviewInput(dir)
-		if err != nil {
-			return err
-		}
-		reviews = append(reviews, review)
+	review, err := loadReviewInput(reviewDirs[0])
+	if err != nil {
+		return err
 	}
+	reviews := []screenshot.ReviewInput{review}
 	if err := prepareOutputRoot(outputRoot); err != nil {
 		return err
 	}

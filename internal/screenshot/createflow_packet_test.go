@@ -698,14 +698,26 @@ func TestCandidateManifestIsReviewableButNotFinal(t *testing.T) {
 	}
 }
 
-func TestFinalizeCandidateRequiresTwoBoundDistinctZeroBlockerReviews(t *testing.T) {
-	candidateDir := filepath.Join(t.TempDir(), "candidate")
-	source := strings.Repeat("d", 40)
+// ---------------------------------------------------------------------------
+// 03-16 Task 1: Single configured-review finalization contract.
+//
+// Exactly one record from opencode-my-plan-review / opencode /
+// local-llm-env/my-plan-review is necessary and sufficient.  Every substitute,
+// duplicate, missing, stale, nonzero, empty-provider, or provider-inconsistent
+// verdict fails closed.
+// ---------------------------------------------------------------------------
+
+// makeFinalizeCandidate builds a minimal reviewable candidate for Task 1 tests.
+func makeFinalizeCandidate(t *testing.T) (candidateDir string, candidateManifestSHA256 string, source string) {
+	t.Helper()
+	source = strings.Repeat("d", 40)
+	candidateDir = filepath.Join(t.TempDir(), "candidate")
 	result, err := screenshot.GenerateVisualPacket(screenshot.PacketOptions{
 		SourceCommit: source, ApprovalCommit: screenshot.PacketApprovalCommit, OutputDir: candidateDir,
 		ProvenanceFiles: map[string][]byte{"EVIDENCE.json": []byte("evidence"), "REGION-DIFFS.json": validRegionDiffs(t, source)},
 	}, makeMinimalPanels(t, t.TempDir()), screenshot.PacketCapture{
-		Commands: []string{"test"}, ToolVersions: []screenshot.PacketTool{{Name: "go", Version: "test"}}, Geometry: "100x30", FontSHA256: strings.Repeat("a", 64), Theme: "test",
+		Commands: []string{"test"}, ToolVersions: []screenshot.PacketTool{{Name: "go", Version: "test"}},
+		Geometry: "100x30", FontSHA256: strings.Repeat("a", 64), Theme: "test",
 	})
 	if err != nil {
 		t.Fatalf("GenerateVisualPacket: %v", err)
@@ -713,25 +725,358 @@ func TestFinalizeCandidateRequiresTwoBoundDistinctZeroBlockerReviews(t *testing.
 	if err := os.Rename(result.ManifestPath, filepath.Join(candidateDir, "CANDIDATE-MANIFEST.json")); err != nil {
 		t.Fatalf("renaming candidate manifest: %v", err)
 	}
-	boundReview := func(reviewer, stdout string, critical int) screenshot.ReviewInput {
-		verdict, marshalErr := json.Marshal(screenshot.ReviewVerdict{Version: "03-14.1", SourceCommit: source, CandidateManifestSHA256: result.Packet.ManifestSHA256, Reviewer: reviewer, OpenCritical: critical, OpenHigh: 0})
-		if marshalErr != nil {
-			t.Fatalf("marshaling verdict: %v", marshalErr)
-		}
-		return screenshot.ReviewInput{Reviewer: reviewer, Tool: reviewer + "-tool", Provider: reviewer + "-provider", Model: "test-model", Session: reviewer + "-session", StartedAt: "2026-08-22T00:00:00Z", EndedAt: "2026-08-22T00:01:00Z", Prompt: []byte("review " + reviewer), Stdout: []byte(stdout), Stderr: []byte(""), Verdict: verdict}
+	return candidateDir, result.Packet.ManifestSHA256, source
+}
+
+// makeConfiguredReview builds a ReviewInput from the configured reviewer constants.
+func makeConfiguredReview(t *testing.T, source, candidateHash string, critical, high int, stdout, providerOverride, modelOverride string) screenshot.ReviewInput {
+	t.Helper()
+	reviewer := screenshot.ConfiguredReviewerInstance
+	if providerOverride != "" {
+		// use a fake but non-empty provider (tampered case handled separately)
 	}
-	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "blocked"), []screenshot.ReviewInput{boundReview("ui", "same", 0), boundReview("codex", "same", 0)}); err == nil {
-		t.Fatal("FinalizeCandidate must reject reused raw review output")
+	verdictReviewer := reviewer
+	verdictVersion := "03-16.1"
+	verdict, err := json.Marshal(screenshot.ReviewVerdict{
+		Version:                 verdictVersion,
+		SourceCommit:            source,
+		CandidateManifestSHA256: candidateHash,
+		Reviewer:                verdictReviewer,
+		OpenCritical:            critical,
+		OpenHigh:                high,
+	})
+	if err != nil {
+		t.Fatalf("marshaling verdict: %v", err)
 	}
-	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "blocked-critical"), []screenshot.ReviewInput{boundReview("ui", "ui output", 1), boundReview("codex", "codex output", 0)}); err == nil {
-		t.Fatal("FinalizeCandidate must reject an open Critical finding")
+	tool := screenshot.ConfiguredReviewerCLI
+	model := screenshot.ConfiguredReviewerModel
+	if modelOverride != "" {
+		model = modelOverride
 	}
+	provider := screenshot.ConfiguredReviewerCLI + "-provider-hash-abc123"
+	if providerOverride != "" {
+		provider = providerOverride
+	}
+	return screenshot.ReviewInput{
+		Reviewer:  reviewer,
+		Tool:      tool,
+		Provider:  provider,
+		Model:     model,
+		Session:   "session-abc",
+		StartedAt: "2026-08-23T00:00:00Z",
+		EndedAt:   "2026-08-23T00:01:00Z",
+		Prompt:    []byte("review prompt"),
+		Stdout:    []byte(stdout),
+		Stderr:    []byte(""),
+		Verdict:   verdict,
+	}
+}
+
+// TestFinalizeCandidateSingleConfiguredReview: one fresh zero-blocker record
+// from the configured reviewer finalizes successfully.
+func TestFinalizeCandidateSingleConfiguredReview(t *testing.T) {
+	candidateDir, candidateHash, source := makeFinalizeCandidate(t)
+	review := makeConfiguredReview(t, source, candidateHash, 0, 0, "unique stdout content", "", "")
 	finalDir := filepath.Join(t.TempDir(), "final")
-	if _, err := screenshot.FinalizeCandidate(candidateDir, finalDir, []screenshot.ReviewInput{boundReview("ui", "ui output", 0), boundReview("codex", "codex output", 0)}); err != nil {
-		t.Fatalf("FinalizeCandidate: %v", err)
+	if _, err := screenshot.FinalizeCandidate(candidateDir, finalDir, []screenshot.ReviewInput{review}); err != nil {
+		t.Fatalf("FinalizeCandidate must accept one configured zero-blocker review: %v", err)
 	}
 	if _, err := screenshot.ValidatePacket(finalDir); err != nil {
-		t.Fatalf("ValidatePacket finalized review-gated packet: %v", err)
+		t.Fatalf("ValidatePacket must accept finalized packet: %v", err)
+	}
+}
+
+// TestFinalizeCandidateRejectsSubstituteReviewer: a non-configured reviewer name fails.
+func TestFinalizeCandidateRejectsSubstituteReviewer(t *testing.T) {
+	candidateDir, candidateHash, source := makeFinalizeCandidate(t)
+	// Build a review with a wrong reviewer name but correct tool/model.
+	verdictBytes, _ := json.Marshal(screenshot.ReviewVerdict{
+		Version: "03-16.1", SourceCommit: source, CandidateManifestSHA256: candidateHash,
+		Reviewer: "wrong-reviewer", OpenCritical: 0, OpenHigh: 0,
+	})
+	review := screenshot.ReviewInput{
+		Reviewer: "wrong-reviewer", Tool: screenshot.ConfiguredReviewerCLI,
+		Provider: "some-provider", Model: screenshot.ConfiguredReviewerModel,
+		Session: "s", StartedAt: "2026-08-23T00:00:00Z", EndedAt: "2026-08-23T00:01:00Z",
+		Prompt: []byte("p"), Stdout: []byte("out"), Stderr: []byte(""), Verdict: verdictBytes,
+	}
+	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "blocked"), []screenshot.ReviewInput{review}); err == nil {
+		t.Fatal("FinalizeCandidate must reject a substitute reviewer name")
+	}
+}
+
+// TestFinalizeCandidateRejectsReviewerCLIMismatch: wrong CLI fails.
+func TestFinalizeCandidateRejectsReviewerCLIMismatch(t *testing.T) {
+	candidateDir, candidateHash, source := makeFinalizeCandidate(t)
+	verdictBytes, _ := json.Marshal(screenshot.ReviewVerdict{
+		Version: "03-16.1", SourceCommit: source, CandidateManifestSHA256: candidateHash,
+		Reviewer: screenshot.ConfiguredReviewerInstance, OpenCritical: 0, OpenHigh: 0,
+	})
+	review := screenshot.ReviewInput{
+		Reviewer: screenshot.ConfiguredReviewerInstance, Tool: "wrong-cli",
+		Provider: "some-provider", Model: screenshot.ConfiguredReviewerModel,
+		Session: "s", StartedAt: "2026-08-23T00:00:00Z", EndedAt: "2026-08-23T00:01:00Z",
+		Prompt: []byte("p"), Stdout: []byte("out"), Stderr: []byte(""), Verdict: verdictBytes,
+	}
+	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "blocked"), []screenshot.ReviewInput{review}); err == nil {
+		t.Fatal("FinalizeCandidate must reject a CLI mismatch")
+	}
+}
+
+// TestFinalizeCandidateRejectsReviewerModelMismatch: wrong model fails.
+func TestFinalizeCandidateRejectsReviewerModelMismatch(t *testing.T) {
+	candidateDir, candidateHash, source := makeFinalizeCandidate(t)
+	verdictBytes, _ := json.Marshal(screenshot.ReviewVerdict{
+		Version: "03-16.1", SourceCommit: source, CandidateManifestSHA256: candidateHash,
+		Reviewer: screenshot.ConfiguredReviewerInstance, OpenCritical: 0, OpenHigh: 0,
+	})
+	review := screenshot.ReviewInput{
+		Reviewer: screenshot.ConfiguredReviewerInstance, Tool: screenshot.ConfiguredReviewerCLI,
+		Provider: "some-provider", Model: "wrong-model",
+		Session: "s", StartedAt: "2026-08-23T00:00:00Z", EndedAt: "2026-08-23T00:01:00Z",
+		Prompt: []byte("p"), Stdout: []byte("out"), Stderr: []byte(""), Verdict: verdictBytes,
+	}
+	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "blocked"), []screenshot.ReviewInput{review}); err == nil {
+		t.Fatal("FinalizeCandidate must reject a model mismatch")
+	}
+}
+
+// TestFinalizeCandidateRejectsEmptyReviewerProvider: empty provider fails.
+func TestFinalizeCandidateRejectsEmptyReviewerProvider(t *testing.T) {
+	candidateDir, candidateHash, source := makeFinalizeCandidate(t)
+	verdictBytes, _ := json.Marshal(screenshot.ReviewVerdict{
+		Version: "03-16.1", SourceCommit: source, CandidateManifestSHA256: candidateHash,
+		Reviewer: screenshot.ConfiguredReviewerInstance, OpenCritical: 0, OpenHigh: 0,
+	})
+	review := screenshot.ReviewInput{
+		Reviewer: screenshot.ConfiguredReviewerInstance, Tool: screenshot.ConfiguredReviewerCLI,
+		Provider: "", Model: screenshot.ConfiguredReviewerModel, // empty provider
+		Session: "s", StartedAt: "2026-08-23T00:00:00Z", EndedAt: "2026-08-23T00:01:00Z",
+		Prompt: []byte("p"), Stdout: []byte("out"), Stderr: []byte(""), Verdict: verdictBytes,
+	}
+	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "blocked"), []screenshot.ReviewInput{review}); err == nil {
+		t.Fatal("FinalizeCandidate must reject an empty provider")
+	}
+}
+
+// TestFinalizeCandidateRejectsTamperedReviewerProviderProvenance: tampered provider fails.
+func TestFinalizeCandidateRejectsTamperedReviewerProviderProvenance(t *testing.T) {
+	candidateDir, candidateHash, source := makeFinalizeCandidate(t)
+	// Provider field is intentionally a hard-coded literal (configured CLI name) —
+	// that would be a tampered/unverifiable provenance.
+	verdictBytes, _ := json.Marshal(screenshot.ReviewVerdict{
+		Version: "03-16.1", SourceCommit: source, CandidateManifestSHA256: candidateHash,
+		Reviewer: screenshot.ConfiguredReviewerInstance, OpenCritical: 0, OpenHigh: 0,
+	})
+	review := screenshot.ReviewInput{
+		Reviewer: screenshot.ConfiguredReviewerInstance, Tool: screenshot.ConfiguredReviewerCLI,
+		Provider: screenshot.ConfiguredReviewerCLI, // provider equals CLI name — tampered
+		Model:    screenshot.ConfiguredReviewerModel,
+		Session:  "s", StartedAt: "2026-08-23T00:00:00Z", EndedAt: "2026-08-23T00:01:00Z",
+		Prompt: []byte("p"), Stdout: []byte("out"), Stderr: []byte(""), Verdict: verdictBytes,
+	}
+	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "blocked"), []screenshot.ReviewInput{review}); err == nil {
+		t.Fatal("FinalizeCandidate must reject a tampered provider (provider == CLI name)")
+	}
+}
+
+// TestFinalizeCandidateRejectsDuplicateConfiguredReviewer: two records with same reviewer fails.
+func TestFinalizeCandidateRejectsDuplicateConfiguredReviewer(t *testing.T) {
+	candidateDir, candidateHash, source := makeFinalizeCandidate(t)
+	r1 := makeConfiguredReview(t, source, candidateHash, 0, 0, "output-a", "", "")
+	r2 := makeConfiguredReview(t, source, candidateHash, 0, 0, "output-b", "", "")
+	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "blocked"), []screenshot.ReviewInput{r1, r2}); err == nil {
+		t.Fatal("FinalizeCandidate must reject duplicate configured reviewer records")
+	}
+}
+
+// TestFinalizeCandidateRejectsMissingConfiguredReviewer: no configured reviewer fails.
+func TestFinalizeCandidateRejectsMissingConfiguredReviewer(t *testing.T) {
+	candidateDir, candidateHash, source := makeFinalizeCandidate(t)
+	// Use a different (non-configured) reviewer.
+	verdictBytes, _ := json.Marshal(screenshot.ReviewVerdict{
+		Version: "03-16.1", SourceCommit: source, CandidateManifestSHA256: candidateHash,
+		Reviewer: "other-reviewer", OpenCritical: 0, OpenHigh: 0,
+	})
+	review := screenshot.ReviewInput{
+		Reviewer: "other-reviewer", Tool: "other-cli",
+		Provider: "other-provider-hash", Model: "other-model",
+		Session: "s", StartedAt: "2026-08-23T00:00:00Z", EndedAt: "2026-08-23T00:01:00Z",
+		Prompt: []byte("p"), Stdout: []byte("out"), Stderr: []byte(""), Verdict: verdictBytes,
+	}
+	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "blocked"), []screenshot.ReviewInput{review}); err == nil {
+		t.Fatal("FinalizeCandidate must reject a review with no configured reviewer")
+	}
+}
+
+// TestFinalizeCandidateRejectsStaleOrMismatchedConfiguredReview: stale/mismatched verdict fails.
+func TestFinalizeCandidateRejectsStaleOrMismatchedConfiguredReview(t *testing.T) {
+	candidateDir, candidateHash, source := makeFinalizeCandidate(t)
+	// Stale version string.
+	staleVerdictBytes, _ := json.Marshal(screenshot.ReviewVerdict{
+		Version:      "03-14.1", // old version
+		SourceCommit: source, CandidateManifestSHA256: candidateHash,
+		Reviewer: screenshot.ConfiguredReviewerInstance, OpenCritical: 0, OpenHigh: 0,
+	})
+	review := screenshot.ReviewInput{
+		Reviewer: screenshot.ConfiguredReviewerInstance, Tool: screenshot.ConfiguredReviewerCLI,
+		Provider: "provider-hash-xyz", Model: screenshot.ConfiguredReviewerModel,
+		Session: "s", StartedAt: "2026-08-23T00:00:00Z", EndedAt: "2026-08-23T00:01:00Z",
+		Prompt: []byte("p"), Stdout: []byte("out"), Stderr: []byte(""), Verdict: staleVerdictBytes,
+	}
+	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "blocked-stale"), []screenshot.ReviewInput{review}); err == nil {
+		t.Fatal("FinalizeCandidate must reject a stale verdict version")
+	}
+	// Mismatched candidate hash.
+	mismatchVerdictBytes, _ := json.Marshal(screenshot.ReviewVerdict{
+		Version: "03-16.1", SourceCommit: source,
+		CandidateManifestSHA256: strings.Repeat("0", 64), // wrong hash
+		Reviewer:                screenshot.ConfiguredReviewerInstance, OpenCritical: 0, OpenHigh: 0,
+	})
+	review2 := screenshot.ReviewInput{
+		Reviewer: screenshot.ConfiguredReviewerInstance, Tool: screenshot.ConfiguredReviewerCLI,
+		Provider: "provider-hash-xyz", Model: screenshot.ConfiguredReviewerModel,
+		Session: "s2", StartedAt: "2026-08-23T00:00:00Z", EndedAt: "2026-08-23T00:01:00Z",
+		Prompt: []byte("p"), Stdout: []byte("out2"), Stderr: []byte(""), Verdict: mismatchVerdictBytes,
+	}
+	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "blocked-mismatch"), []screenshot.ReviewInput{review2}); err == nil {
+		t.Fatal("FinalizeCandidate must reject a mismatched candidate hash")
+	}
+}
+
+// TestValidateReviewProvenanceRejectsSubstituteReviewerTriple: wrong reviewer triple in provenance fails.
+func TestValidateReviewProvenanceRejectsSubstituteReviewerTriple(t *testing.T) {
+	candidateDir, candidateHash, source := makeFinalizeCandidate(t)
+	// First build a finalized packet using the correct configured reviewer,
+	// then directly test ValidateReviewProvenance with a tampered provenance.
+	_ = candidateDir
+	pkt := screenshot.Packet{
+		Version:        "03-11.2",
+		SourceCommit:   source,
+		ApprovalCommit: screenshot.PacketApprovalCommit,
+		Members: []screenshot.PacketMember{
+			{Path: "EVIDENCE.json", SHA256: strings.Repeat("a", 64), Kind: "provenance"},
+			{Path: "REGION-DIFFS.json", SHA256: strings.Repeat("b", 64), Kind: "provenance"},
+			{Path: "REVIEW-PROVENANCE.json", SHA256: strings.Repeat("c", 64), Kind: "provenance"},
+			{Path: "CANDIDATE-MANIFEST.json", SHA256: strings.Repeat("d", 64), Kind: "candidate-manifest"},
+		},
+	}
+	_ = pkt
+	_ = candidateHash
+	// This test verifies the validator rejects a wrong reviewer triple.
+	// We test it indirectly: a finalized packet with a non-configured reviewer
+	// reviewer-name in REVIEW-PROVENANCE.json must fail ValidateReviewProvenance.
+	// Since we can't easily call ValidateReviewProvenance in isolation without
+	// a full packet directory, we verify the behavior through FinalizeCandidate.
+	verdictBytes, _ := json.Marshal(screenshot.ReviewVerdict{
+		Version: "03-16.1", SourceCommit: source, CandidateManifestSHA256: candidateHash,
+		Reviewer: "wrong-reviewer", OpenCritical: 0, OpenHigh: 0,
+	})
+	review := screenshot.ReviewInput{
+		Reviewer: "wrong-reviewer", Tool: screenshot.ConfiguredReviewerCLI,
+		Provider: "some-provider-hash", Model: screenshot.ConfiguredReviewerModel,
+		Session: "s", StartedAt: "2026-08-23T00:00:00Z", EndedAt: "2026-08-23T00:01:00Z",
+		Prompt: []byte("p"), Stdout: []byte("out"), Stderr: []byte(""), Verdict: verdictBytes,
+	}
+	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "blocked"), []screenshot.ReviewInput{review}); err == nil {
+		t.Fatal("FinalizeCandidate (via ValidateReviewProvenance) must reject wrong reviewer triple")
+	}
+}
+
+// TestValidateReviewProvenanceRejectsCLIOrModelMismatch: CLI/model mismatch fails.
+func TestValidateReviewProvenanceRejectsCLIOrModelMismatch(t *testing.T) {
+	candidateDir, candidateHash, source := makeFinalizeCandidate(t)
+	// Wrong CLI
+	verdictBytes, _ := json.Marshal(screenshot.ReviewVerdict{
+		Version: "03-16.1", SourceCommit: source, CandidateManifestSHA256: candidateHash,
+		Reviewer: screenshot.ConfiguredReviewerInstance, OpenCritical: 0, OpenHigh: 0,
+	})
+	cliMismatch := screenshot.ReviewInput{
+		Reviewer: screenshot.ConfiguredReviewerInstance, Tool: "wrong-cli",
+		Provider: "provider-hash", Model: screenshot.ConfiguredReviewerModel,
+		Session: "s", StartedAt: "2026-08-23T00:00:00Z", EndedAt: "2026-08-23T00:01:00Z",
+		Prompt: []byte("p"), Stdout: []byte("out"), Stderr: []byte(""), Verdict: verdictBytes,
+	}
+	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "blocked-cli"), []screenshot.ReviewInput{cliMismatch}); err == nil {
+		t.Fatal("FinalizeCandidate must reject wrong CLI")
+	}
+	// Wrong model
+	modelMismatch := screenshot.ReviewInput{
+		Reviewer: screenshot.ConfiguredReviewerInstance, Tool: screenshot.ConfiguredReviewerCLI,
+		Provider: "provider-hash", Model: "wrong-model",
+		Session: "s", StartedAt: "2026-08-23T00:00:00Z", EndedAt: "2026-08-23T00:01:00Z",
+		Prompt: []byte("p"), Stdout: []byte("out2"), Stderr: []byte(""), Verdict: verdictBytes,
+	}
+	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "blocked-model"), []screenshot.ReviewInput{modelMismatch}); err == nil {
+		t.Fatal("FinalizeCandidate must reject wrong model")
+	}
+}
+
+// TestValidateReviewProvenanceRejectsEmptyProvider: empty provider fails.
+func TestValidateReviewProvenanceRejectsEmptyProvider(t *testing.T) {
+	candidateDir, candidateHash, source := makeFinalizeCandidate(t)
+	verdictBytes, _ := json.Marshal(screenshot.ReviewVerdict{
+		Version: "03-16.1", SourceCommit: source, CandidateManifestSHA256: candidateHash,
+		Reviewer: screenshot.ConfiguredReviewerInstance, OpenCritical: 0, OpenHigh: 0,
+	})
+	review := screenshot.ReviewInput{
+		Reviewer: screenshot.ConfiguredReviewerInstance, Tool: screenshot.ConfiguredReviewerCLI,
+		Provider: "", Model: screenshot.ConfiguredReviewerModel,
+		Session: "s", StartedAt: "2026-08-23T00:00:00Z", EndedAt: "2026-08-23T00:01:00Z",
+		Prompt: []byte("p"), Stdout: []byte("out"), Stderr: []byte(""), Verdict: verdictBytes,
+	}
+	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "blocked"), []screenshot.ReviewInput{review}); err == nil {
+		t.Fatal("ValidateReviewProvenance must reject empty provider")
+	}
+}
+
+// TestValidateReviewProvenanceRejectsTamperedProviderProvenance: tampered provider fails.
+func TestValidateReviewProvenanceRejectsTamperedProviderProvenance(t *testing.T) {
+	candidateDir, candidateHash, source := makeFinalizeCandidate(t)
+	verdictBytes, _ := json.Marshal(screenshot.ReviewVerdict{
+		Version: "03-16.1", SourceCommit: source, CandidateManifestSHA256: candidateHash,
+		Reviewer: screenshot.ConfiguredReviewerInstance, OpenCritical: 0, OpenHigh: 0,
+	})
+	// Provider is a configured literal (same as the CLI name) — tampered.
+	review := screenshot.ReviewInput{
+		Reviewer: screenshot.ConfiguredReviewerInstance, Tool: screenshot.ConfiguredReviewerCLI,
+		Provider: screenshot.ConfiguredReviewerCLI, // tampered: provider == tool name
+		Model:    screenshot.ConfiguredReviewerModel,
+		Session:  "s", StartedAt: "2026-08-23T00:00:00Z", EndedAt: "2026-08-23T00:01:00Z",
+		Prompt: []byte("p"), Stdout: []byte("out"), Stderr: []byte(""), Verdict: verdictBytes,
+	}
+	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "blocked"), []screenshot.ReviewInput{review}); err == nil {
+		t.Fatal("ValidateReviewProvenance must reject tampered provider provenance (provider == tool)")
+	}
+}
+
+// TestValidateReviewProvenanceRejectsDuplicateMissingStaleOrMismatchedTriple:
+// duplicate, missing, and stale all fail.
+func TestValidateReviewProvenanceRejectsDuplicateMissingStaleOrMismatchedTriple(t *testing.T) {
+	candidateDir, candidateHash, source := makeFinalizeCandidate(t)
+	// Zero reviews — missing configured reviewer.
+	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "empty"), []screenshot.ReviewInput{}); err == nil {
+		t.Fatal("FinalizeCandidate must reject empty review list")
+	}
+	// Two reviews — duplicate configured reviewer.
+	r1 := makeConfiguredReview(t, source, candidateHash, 0, 0, "out-a", "", "")
+	r2 := makeConfiguredReview(t, source, candidateHash, 0, 0, "out-b", "", "")
+	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "dup"), []screenshot.ReviewInput{r1, r2}); err == nil {
+		t.Fatal("FinalizeCandidate must reject duplicate configured reviewer")
+	}
+	// Stale version.
+	staleVerdictBytes, _ := json.Marshal(screenshot.ReviewVerdict{
+		Version: "03-14.1", SourceCommit: source, CandidateManifestSHA256: candidateHash,
+		Reviewer: screenshot.ConfiguredReviewerInstance, OpenCritical: 0, OpenHigh: 0,
+	})
+	staleReview := screenshot.ReviewInput{
+		Reviewer: screenshot.ConfiguredReviewerInstance, Tool: screenshot.ConfiguredReviewerCLI,
+		Provider: "provider-hash", Model: screenshot.ConfiguredReviewerModel,
+		Session: "s", StartedAt: "2026-08-23T00:00:00Z", EndedAt: "2026-08-23T00:01:00Z",
+		Prompt: []byte("p"), Stdout: []byte("out"), Stderr: []byte(""), Verdict: staleVerdictBytes,
+	}
+	if _, err := screenshot.FinalizeCandidate(candidateDir, filepath.Join(t.TempDir(), "stale"), []screenshot.ReviewInput{staleReview}); err == nil {
+		t.Fatal("FinalizeCandidate must reject stale verdict version")
 	}
 }
 

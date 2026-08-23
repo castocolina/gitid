@@ -607,6 +607,48 @@ func TestCaptureTUIScreenConfirmationManagedBlockFrame(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// 03-16 Task 1: Single-review finalize CLI contract.
+// ---------------------------------------------------------------------------
+
+// TestFinalizeCLIAcceptsOneReviewDirectory: one --review-dir parses without
+// a count-error. May fail downstream for commit/candidate reasons, but must
+// not fail with a review-count validation error.
+func TestFinalizeCLIAcceptsOneReviewDirectory(t *testing.T) {
+	err := finalize([]string{
+		"--source-commit", strings.Repeat("a", 40),
+		"--candidate-dir", "/nonexistent",
+		"--output-root", t.TempDir(),
+		"--review-dir", "/nonexistent-review",
+	})
+	// With the old 2-review requirement, finalize() returns the help-text
+	// error which contains "--review-dir <dir> --review-dir <dir>" (two dirs).
+	// After fix, one review-dir must not trigger this error.
+	if err != nil && (strings.Contains(err.Error(), "--review-dir <dir> --review-dir <dir>") ||
+		strings.Contains(err.Error(), "exactly two reviews")) {
+		t.Fatalf("finalize with one review-dir must not fail with a two-review count error; got: %v", err)
+	}
+}
+
+// TestFinalizeCLIRejectsSecondReviewDirectory: two --review-dir arguments must
+// fail with a count error (the new single-review contract).
+func TestFinalizeCLIRejectsSecondReviewDirectory(t *testing.T) {
+	err := finalize([]string{
+		"--source-commit", strings.Repeat("a", 40),
+		"--candidate-dir", "/nonexistent",
+		"--output-root", t.TempDir(),
+		"--review-dir", "/review-a",
+		"--review-dir", "/review-b",
+	})
+	if err == nil {
+		t.Fatal("finalize must reject two --review-dir arguments")
+	}
+	// The error must indicate exactly one is required (not two).
+	if !strings.Contains(err.Error(), "one") && !strings.Contains(err.Error(), "single") && !strings.Contains(err.Error(), "exactly 1") {
+		t.Fatalf("finalize with two review-dirs must mention single/one requirement; got: %v", err)
+	}
+}
+
 func TestCaptureTUIScreenStage1PassStopsBeforeStage2(t *testing.T) {
 	bin := filepath.Join(t.TempDir(), "gitid")
 	build := exec.Command("go", "build", "-o", bin, "../gitid") //nolint:gosec // fixed local package and sandbox output
