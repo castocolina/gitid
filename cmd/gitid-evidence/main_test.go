@@ -317,6 +317,12 @@ func TestCanonicalManifestIgnoresRawPTYTranscriptVariation(t *testing.T) {
 	if string(firstBytes) != string(secondBytes) {
 		t.Fatal("canonical manifests must ignore raw PTY transcript variation")
 	}
+	if _, err := screenshot.ValidateCandidate(first); err != nil {
+		t.Fatalf("canonical manifest must not make first candidate invalid: %v", err)
+	}
+	if _, err := screenshot.ValidateCandidate(second); err != nil {
+		t.Fatalf("canonical manifest must not make second candidate invalid: %v", err)
+	}
 }
 
 func makeCandidate(t *testing.T, dir string) string {

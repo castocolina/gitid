@@ -1126,7 +1126,7 @@ func writeCanonicalManifest(candidateDir string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("marshaling canonical candidate manifest: %w", err)
 	}
-	path := filepath.Join(candidateDir, "CANONICAL-MANIFEST.json")
+	path := candidateDir + ".canonical-manifest.json"
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return "", fmt.Errorf("writing canonical candidate manifest: %w", err)
 	}
