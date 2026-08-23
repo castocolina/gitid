@@ -305,11 +305,6 @@ func generateCandidateOnce(sourceCommit, outputDir string) error {
 	if err != nil {
 		return fmt.Errorf("reading Go version: %w", err)
 	}
-	pnpmVersion, err := commandOutput("pnpm", "--version")
-	if err != nil {
-		return fmt.Errorf("reading pnpm version: %w", err)
-	}
-
 	workspace, err := captureWorkspace(sourceCommit)
 	if err != nil {
 		return fmt.Errorf("creating capture workspace: %w", err)
@@ -328,12 +323,9 @@ func generateCandidateOnce(sourceCommit, outputDir string) error {
 	if err != nil {
 		return err
 	}
-	approvedHTML, err := captureApprovedHTMLPanels(repoRoot, approvalDir, workspace, renderDir)
-	if err != nil {
-		return err
-	}
+	// Approved-HTML capture removed from candidate path (03-16 Task 2: TUI-only).
+	// Historical captureApprovedHTMLPanels remains but is not called here.
 	panels := append(live, approvedTUI...)
-	panels = append(panels, approvedHTML...)
 
 	capture := screenshot.PacketCapture{
 		Commands: []string{
@@ -342,16 +334,13 @@ func generateCandidateOnce(sourceCommit, outputDir string) error {
 			"<live-gitid> (PTY, HOME=<sandbox>, PATH=<fake-ssh>)",
 			"go build -o <approved-gitid-dummy> ./cmd/gitid-dummy",
 			"<approved-gitid-dummy> (PTY)",
-			"pnpm exec vite build --outDir <approval-dist>",
 			"freeze <capture.txt> -o <panel.png> --font.file JetBrainsMono-Regular.ttf --theme dracula",
 		},
 		ToolVersions: []screenshot.PacketTool{
 			{Name: "freeze", Version: strings.TrimSpace(freezeVersion)},
 			{Name: "go", Version: strings.TrimSpace(goVersion)},
-			{Name: "pnpm", Version: strings.TrimSpace(pnpmVersion)},
-			{Name: "chromium-revision", Version: fmt.Sprintf("%d", screenshot.ChromiumRevision)},
 		},
-		Geometry:   "TUI=100x30;HTML=1280x800@1/light",
+		Geometry:   "TUI=100x30",
 		FontSHA256: sha256Hex(font),
 		Theme:      "dracula",
 	}

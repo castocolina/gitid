@@ -365,10 +365,15 @@ func screenSpec(id string) (ScreenSpec, bool) {
 	return ScreenSpec{}, false
 }
 
+// requiredVisualPanels returns the TUI-only panel inventory for candidate
+// generation and the routine gate. Approved-HTML capture was removed from the
+// candidate and gate paths in 03-16 Task 2 (browser/pnpm removed); historical
+// helpers may still reference approved-html but must not be reachable from
+// either path.
 func requiredVisualPanels() map[string]bool {
 	expected := make(map[string]bool)
 	for _, spec := range RequiredScreenSpecs() {
-		for _, surface := range []string{"live", "approved-tui", "approved-html"} {
+		for _, surface := range []string{"live", "approved-tui"} {
 			if ScreenAppliesToSurface(spec, surface) {
 				expected[surface+"/"+spec.ScreenID] = true
 			}

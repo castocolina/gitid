@@ -34,10 +34,17 @@ func unmarshalJSON(data []byte, v interface{}) error {
 func fixedClock(t time.Time) func() time.Time { return func() time.Time { return t } }
 
 // makeTestCaptures returns two identical sets of text captures from the dummy backend.
-func makeTestCaptures() (map[string]string, map[string]string) {
+func makeTestCaptures(t *testing.T) (map[string]string, map[string]string) {
+	t.Helper()
 	backend := dummytui.NewFixtureBackend()
-	live := screenshot.CaptureCreateFlowScreens(backend)
-	approved := screenshot.CaptureCreateFlowScreens(backend)
+	live, err := screenshot.CaptureCreateFlowScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureCreateFlowScreens (live): %v", err)
+	}
+	approved, err := screenshot.CaptureCreateFlowScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureCreateFlowScreens (approved): %v", err)
+	}
 	return live, approved
 }
 
@@ -45,7 +52,7 @@ func makeTestCaptures() (map[string]string, map[string]string) {
 // a MANIFEST.json into the output directory (CR-01 basic packet creation).
 func TestGenerateTextPacket_CreatesManifest(t *testing.T) {
 	outDir := filepath.Join(t.TempDir(), "packet")
-	live, approved := makeTestCaptures()
+	live, approved := makeTestCaptures(t)
 
 	result, err := screenshot.GenerateTextPacket(screenshot.PacketOptions{
 		SourceCommit:   strings.Repeat("a", 40),
@@ -71,7 +78,7 @@ func TestGenerateTextPacket_CreatesManifest(t *testing.T) {
 // TestGenerateTextPacket_RejectsShortSourceCommit verifies fail-closed behavior:
 // a source commit that is not 40 hex characters is rejected (CR-01).
 func TestGenerateTextPacket_RejectsShortSourceCommit(t *testing.T) {
-	live, approved := makeTestCaptures()
+	live, approved := makeTestCaptures(t)
 	_, err := screenshot.GenerateTextPacket(screenshot.PacketOptions{
 		SourceCommit:   "abc123", // too short
 		ApprovalCommit: screenshot.PacketApprovalCommit,
@@ -86,7 +93,7 @@ func TestGenerateTextPacket_RejectsShortSourceCommit(t *testing.T) {
 // output directory is rejected (CR-01 immutability guarantee).
 func TestGenerateTextPacket_RejectsExistingDestination(t *testing.T) {
 	outDir := t.TempDir() // already exists
-	live, approved := makeTestCaptures()
+	live, approved := makeTestCaptures(t)
 
 	_, err := screenshot.GenerateTextPacket(screenshot.PacketOptions{
 		SourceCommit:   strings.Repeat("b", 40),
@@ -102,7 +109,7 @@ func TestGenerateTextPacket_RejectsExistingDestination(t *testing.T) {
 // represented for every applicable surface.
 func TestGenerateTextPacket_AllScreensPresent(t *testing.T) {
 	outDir := filepath.Join(t.TempDir(), "packet")
-	live, approved := makeTestCaptures()
+	live, approved := makeTestCaptures(t)
 
 	result, err := screenshot.GenerateTextPacket(screenshot.PacketOptions{
 		SourceCommit:   strings.Repeat("c", 40),
@@ -139,7 +146,7 @@ func TestGenerateTextPacket_AllScreensPresent(t *testing.T) {
 // passes ValidatePacket without error (CR-01 round-trip).
 func TestValidatePacket_AcceptsValidPacket(t *testing.T) {
 	outDir := filepath.Join(t.TempDir(), "packet")
-	live, approved := makeTestCaptures()
+	live, approved := makeTestCaptures(t)
 
 	_, err := screenshot.GenerateTextPacket(screenshot.PacketOptions{
 		SourceCommit:   strings.Repeat("d", 40),
@@ -165,7 +172,7 @@ func TestValidatePacket_AcceptsValidPacket(t *testing.T) {
 // integrity).
 func TestValidatePacket_RejectsTamperedMember(t *testing.T) {
 	outDir := filepath.Join(t.TempDir(), "packet")
-	live, approved := makeTestCaptures()
+	live, approved := makeTestCaptures(t)
 
 	result, err := screenshot.GenerateTextPacket(screenshot.PacketOptions{
 		SourceCommit:   strings.Repeat("e", 40),
@@ -205,7 +212,7 @@ func TestValidatePacket_RejectsTamperedMember(t *testing.T) {
 // results produce no manifest diff (CR-10 cross-process determinism).
 func TestCompareManifests_IdenticalReturnsNil(t *testing.T) {
 	makePacket := func(outDir string) screenshot.PacketResult {
-		live, approved := makeTestCaptures()
+		live, approved := makeTestCaptures(t)
 		result, err := screenshot.GenerateTextPacket(screenshot.PacketOptions{
 			SourceCommit:   strings.Repeat("f", 40),
 			ApprovalCommit: screenshot.PacketApprovalCommit,
@@ -231,8 +238,14 @@ func TestCompareManifests_IdenticalReturnsNil(t *testing.T) {
 // sets produce no diff (CR-10 positive case).
 func TestCompareTextCaptures_IdenticalReturnsNil(t *testing.T) {
 	backend := dummytui.NewFixtureBackend()
-	c1 := screenshot.CaptureCreateFlowScreens(backend)
-	c2 := screenshot.CaptureCreateFlowScreens(backend)
+	c1, err := screenshot.CaptureCreateFlowScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureCreateFlowScreens: %v", err)
+	}
+	c2, err := screenshot.CaptureCreateFlowScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureCreateFlowScreens: %v", err)
+	}
 
 	if err := screenshot.CompareTextCaptures(c1, c2); err != nil {
 		t.Errorf("CompareTextCaptures with identical captures: %v", err)
@@ -243,7 +256,10 @@ func TestCompareTextCaptures_IdenticalReturnsNil(t *testing.T) {
 // different content produce an error (CR-10 negative case).
 func TestCompareTextCaptures_DifferentReturnError(t *testing.T) {
 	backend := dummytui.NewFixtureBackend()
-	c1 := screenshot.CaptureCreateFlowScreens(backend)
+	c1, err := screenshot.CaptureCreateFlowScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureCreateFlowScreens: %v", err)
+	}
 	c2 := make(map[string]string)
 	for k, v := range c1 {
 		c2[k] = v
@@ -261,13 +277,19 @@ func TestCompareTextCaptures_DifferentReturnError(t *testing.T) {
 // a live capture is missing a required screen (CR-01).
 func TestGenerateTextPacket_MissingLiveCapture(t *testing.T) {
 	backend := dummytui.NewFixtureBackend()
-	live := screenshot.CaptureCreateFlowScreens(backend)
-	approved := screenshot.CaptureCreateFlowScreens(backend)
+	live, err := screenshot.CaptureCreateFlowScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureCreateFlowScreens: %v", err)
+	}
+	approved, err := screenshot.CaptureCreateFlowScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureCreateFlowScreens: %v", err)
+	}
 
 	// Remove one screen from live.
 	delete(live, screenshot.RequiredScreenSpecs()[0].ScreenID)
 
-	_, err := screenshot.GenerateTextPacket(screenshot.PacketOptions{
+	_, err = screenshot.GenerateTextPacket(screenshot.PacketOptions{
 		SourceCommit:   strings.Repeat("g", 40),
 		ApprovalCommit: screenshot.PacketApprovalCommit,
 		OutputDir:      filepath.Join(t.TempDir(), "packet"),
@@ -472,7 +494,7 @@ func TestUndeclaredReviewArtifact(t *testing.T) {
 // newline). This is the machine-verifiable contract the review can check.
 func TestCanonicalManifest(t *testing.T) {
 	outDir := filepath.Join(t.TempDir(), "packet")
-	live, approved := makeTestCaptures()
+	live, approved := makeTestCaptures(t)
 
 	result, err := screenshot.GenerateTextPacket(screenshot.PacketOptions{
 		SourceCommit:   strings.Repeat("h", 40),
@@ -526,7 +548,7 @@ func TestCanonicalManifest(t *testing.T) {
 // hashing, exactly reproducing how the hash was originally computed.
 func TestSelfHashAlgorithm(t *testing.T) {
 	outDir := filepath.Join(t.TempDir(), "packet")
-	live, approved := makeTestCaptures()
+	live, approved := makeTestCaptures(t)
 
 	result, err := screenshot.GenerateTextPacket(screenshot.PacketOptions{
 		SourceCommit:   strings.Repeat("i", 40),
@@ -628,8 +650,14 @@ func TestFinalPacketRequiresReviewProvenance(t *testing.T) {
 func TestRegionDiffCoverage(t *testing.T) {
 	// Use dummy backend captures as the input (live vs approved-tui text).
 	backend := dummytui.NewFixtureBackend()
-	liveCaptures := screenshot.CaptureCreateFlowScreens(backend)
-	approvedCaptures := screenshot.CaptureCreateFlowScreens(backend)
+	liveCaptures, err := screenshot.CaptureCreateFlowScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureCreateFlowScreens: %v", err)
+	}
+	approvedCaptures, err := screenshot.CaptureCreateFlowScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureCreateFlowScreens: %v", err)
+	}
 
 	specs := screenshot.RequiredScreenSpecs()
 	diffs, err := screenshot.BuildRegionDiffs("test-commit", liveCaptures, approvedCaptures, specs)
@@ -1495,10 +1523,15 @@ func TestStateMarkerGate(t *testing.T) {
 	if err := screenshot.ValidateCapturedState(spec, textWithoutMarker); err == nil {
 		t.Errorf("ValidateCapturedState must reject text lacking the state marker for %q", spec.ScreenID)
 	}
-	// Text with the marker must be accepted.
-	textWithMarker := textWithoutMarker + "\n" + spec.StateMarker
+	// Text with the marker inside a focused pane (│ prefix) must be accepted.
+	// Region-bound enforcement requires the marker to appear within a pane line.
+	marker := spec.StateMarker
+	if len(spec.StateMarkers) > 0 {
+		marker = spec.StateMarkers[0]
+	}
+	textWithMarker := textWithoutMarker + "\n│ " + marker
 	if err := screenshot.ValidateCapturedState(spec, textWithMarker); err != nil {
-		t.Errorf("ValidateCapturedState must accept text with state marker %q; got: %v", spec.StateMarker, err)
+		t.Errorf("ValidateCapturedState must accept text with state marker %q inside pane; got: %v", marker, err)
 	}
 }
 
@@ -1577,7 +1610,8 @@ func writeTinyPNG(t *testing.T, path string, pixel color.RGBA) {
 // makeMinimalPanels returns every registry-required panel with a unique PNG.
 func makeMinimalPanels(t *testing.T, dir string) []screenshot.VisualPanel {
 	t.Helper()
-	surfaces := []string{"live", "approved-tui", "approved-html"}
+	// TUI-only surfaces: approved-html removed from candidate/gate paths (03-16 Task 2).
+	surfaces := []string{"live", "approved-tui"}
 	panels := make([]screenshot.VisualPanel, 0, screenshot.RequiredVisualPanelCount())
 	for _, surface := range surfaces {
 		for i, spec := range screenshot.RequiredScreenSpecs() {

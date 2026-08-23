@@ -429,8 +429,15 @@ func NonApplicabilityForSurface(spec ScreenSpec, surface string) (SurfaceNonAppl
 }
 
 // ValidateCapturedState reports whether the captured text satisfies the spec's
-// state marker contract. Returns nil if the marker is present, an error if
-// absent or if the marker belongs to a different screen's spec.
+// state marker contract. Returns nil if all markers are present, an error if
+// any marker is absent.
+//
+// Region-bound enforcement (03-16 Task 2): each marker must appear at least
+// once within a focused pane line (prefixed with │ or after stripping the │
+// border from a line where only whitespace precedes it). Markers that appear
+// only outside the focused pane — i.e., in plain unreceived lines without any
+// │ — do not authorize the capture. This prevents a complete out-of-viewport
+// duplicate from impersonating a focused-region marker.
 func ValidateCapturedState(spec ScreenSpec, capturedText string) error {
 	markers := spec.StateMarkers
 	if len(markers) == 0 && spec.StateMarker != "" {
@@ -440,11 +447,52 @@ func ValidateCapturedState(spec ScreenSpec, capturedText string) error {
 		return fmt.Errorf("screenshot: ValidateCapturedState: spec %q has no state marker", spec.ScreenID)
 	}
 	for _, marker := range markers {
-		if !strings.Contains(normalizeCapturedStateText(capturedText), normalizeCapturedStateText(marker)) {
-			return fmt.Errorf("screenshot: ValidateCapturedState: spec %q state marker %q absent from captured text", spec.ScreenID, marker)
+		if !markerInPane(capturedText, marker) {
+			return fmt.Errorf("screenshot: ValidateCapturedState: spec %q state marker %q absent from captured text or not within a focused viewport pane (│)", spec.ScreenID, marker)
 		}
 	}
 	return nil
+}
+
+// markerInPane reports whether marker appears within the focused pane content
+// of text — i.e., in lines that start with │ (after optional whitespace).
+//
+// Markers that wrap across physical terminal lines (e.g. "Reuse an\nexisting key"
+// rendering as "Reuse an existing key") are matched correctly: pane-line content
+// from all │-prefixed lines is accumulated and normalized together before checking.
+//
+// A line qualifies as a pane line if it contains '│' at a position where all
+// characters before '│' are whitespace. Only those lines contribute to the
+// authorizing context, so markers that appear only outside the pane (in header,
+// breadcrumb, or keybar lines without │) do not authorize the capture.
+//
+// If there are no pane lines at all, the marker is rejected.
+func markerInPane(text, marker string) bool {
+	normalizedMarker := normalizeCapturedStateText(marker)
+
+	// Collect content from all pane lines (lines with │ at the left border).
+	var paneContent strings.Builder
+	for _, line := range strings.Split(text, "\n") {
+		border := strings.IndexRune(line, '│')
+		if border < 0 {
+			continue
+		}
+		if strings.TrimSpace(line[:border]) != "" {
+			continue
+		}
+		// This is a pane line. Append its content (after │) with a space separator.
+		if paneContent.Len() > 0 {
+			paneContent.WriteByte(' ')
+		}
+		paneContent.WriteString(line[border+len("│"):])
+	}
+	if paneContent.Len() == 0 {
+		// No pane lines found — marker cannot be in the pane.
+		return false
+	}
+	// Normalize the accumulated pane content (collapse whitespace) and check.
+	normalizedPane := strings.Join(strings.Fields(paneContent.String()), " ")
+	return strings.Contains(normalizedPane, normalizedMarker)
 }
 
 // normalizeCapturedStateText removes the detail-pane border from wrapped rows
@@ -805,7 +853,9 @@ func captureSpec(backend tuikit.Backend) tuikit.CreateSpec {
 // All captures are normalized: timestamps in backup file names are replaced
 // with "<timestamp>" so the output is byte-identical across wall-clock seconds
 // (CR-01 determinism contract).
-func CaptureCreateFlowScreens(backend tuikit.Backend) map[string]string {
+//
+// Returns an error if any required frame is missing or fails marker validation.
+func CaptureCreateFlowScreens(backend tuikit.Backend) (map[string]string, error) {
 	backend = offlineCaptureBackend{backend}
 	out := make(map[string]string, len(RequiredScreenSpecs()))
 	capture := func(m tea.Model) string {
@@ -942,5 +992,16 @@ func CaptureCreateFlowScreens(backend tuikit.Backend) map[string]string {
 	})
 	out["test-hard-failure-retry"] = capture(failure)
 
-	return out
+	// Validate that all required live frames are present.
+	for _, spec := range RequiredScreenSpecs() {
+		if !spec.ApplicableLive {
+			continue
+		}
+		text, ok := out[spec.ScreenID]
+		if !ok || strings.TrimSpace(text) == "" {
+			return nil, fmt.Errorf("screenshot: CaptureCreateFlowScreens: required frame %q is missing or empty", spec.ScreenID)
+		}
+	}
+
+	return out, nil
 }

@@ -318,14 +318,28 @@ func TestGateVisualRegression(t *testing.T) {
 	t.Setenv("HOME", home1)
 	realBackend1 := newBackendForHome(home1)
 	dummyBackend1 := dummytui.NewFixtureBackend()
-	realCaptures1 := normalizeDisposableHome(screenshot.CaptureCreateFlowScreens(realBackend1), home1)
-	dummyCaptures1 := screenshot.CaptureCreateFlowScreens(dummyBackend1)
+	rawRealCaptures1, err := screenshot.CaptureCreateFlowScreens(realBackend1)
+	if err != nil {
+		t.Fatalf("gate-visual-regression: capturing real backend (run 1): %v", err)
+	}
+	realCaptures1 := normalizeDisposableHome(rawRealCaptures1, home1)
+	dummyCaptures1, err := screenshot.CaptureCreateFlowScreens(dummyBackend1)
+	if err != nil {
+		t.Fatalf("gate-visual-regression: capturing dummy backend (run 1): %v", err)
+	}
 
 	t.Setenv("HOME", home2)
 	realBackend2 := newBackendForHome(home2)
 	dummyBackend2 := dummytui.NewFixtureBackend()
-	realCaptures2 := normalizeDisposableHome(screenshot.CaptureCreateFlowScreens(realBackend2), home2)
-	dummyCaptures2 := screenshot.CaptureCreateFlowScreens(dummyBackend2)
+	rawRealCaptures2, err := screenshot.CaptureCreateFlowScreens(realBackend2)
+	if err != nil {
+		t.Fatalf("gate-visual-regression: capturing real backend (run 2): %v", err)
+	}
+	realCaptures2 := normalizeDisposableHome(rawRealCaptures2, home2)
+	dummyCaptures2, err := screenshot.CaptureCreateFlowScreens(dummyBackend2)
+	if err != nil {
+		t.Fatalf("gate-visual-regression: capturing dummy backend (run 2): %v", err)
+	}
 
 	specs := screenshot.RequiredScreenSpecs()
 	// Determinism is checked within each surface. Real and dummy are not byte,
@@ -387,8 +401,12 @@ func TestGateVisualRegressionReadOnly(t *testing.T) {
 	t.Setenv("HOME", home)
 	realB := newBackendForHome(home)
 	dummyB := dummytui.NewFixtureBackend()
-	screenshot.CaptureCreateFlowScreens(realB)
-	screenshot.CaptureCreateFlowScreens(dummyB)
+	if _, err := screenshot.CaptureCreateFlowScreens(realB); err != nil {
+		t.Logf("gate-visual-regression: capturing real backend (read-only check): %v", err)
+	}
+	if _, err := screenshot.CaptureCreateFlowScreens(dummyB); err != nil {
+		t.Logf("gate-visual-regression: capturing dummy backend (read-only check): %v", err)
+	}
 
 	after := snapshotDir(t, packetDir)
 
@@ -466,8 +484,14 @@ func TestAllScreensCapturedAndNonEmpty(t *testing.T) {
 	t.Setenv("HOME", home)
 	realB := newBackendForHome(home)
 	dummyB := dummytui.NewFixtureBackend()
-	realCaptures := screenshot.CaptureCreateFlowScreens(realB)
-	dummyCaptures := screenshot.CaptureCreateFlowScreens(dummyB)
+	realCaptures, err := screenshot.CaptureCreateFlowScreens(realB)
+	if err != nil {
+		t.Fatalf("capturing real backend: %v", err)
+	}
+	dummyCaptures, err := screenshot.CaptureCreateFlowScreens(dummyB)
+	if err != nil {
+		t.Fatalf("capturing dummy backend: %v", err)
+	}
 
 	for _, spec := range screenshot.RequiredScreenSpecs() {
 		if spec.ApplicableLive && strings.TrimSpace(realCaptures[spec.ScreenID]) == "" {
@@ -487,9 +511,15 @@ func TestNegativeControls_AllProtectedRegionsDetectMutation(t *testing.T) {
 	deterministicReusableKeyFixture(t, home)
 	t.Setenv("HOME", home)
 	realB := newBackendForHome(home)
-	realCaptures := screenshot.CaptureCreateFlowScreens(realB)
+	realCaptures, err := screenshot.CaptureCreateFlowScreens(realB)
+	if err != nil {
+		t.Fatalf("capturing real backend: %v", err)
+	}
 	dummyB := dummytui.NewFixtureBackend()
-	dummyCaptures := screenshot.CaptureCreateFlowScreens(dummyB)
+	dummyCaptures, err := screenshot.CaptureCreateFlowScreens(dummyB)
+	if err != nil {
+		t.Fatalf("capturing dummy backend: %v", err)
+	}
 
 	specs := screenshot.RequiredScreenSpecs()
 	records, err := screenshot.BuildRegionDiffs("negative-control", realCaptures, dummyCaptures, specs)
