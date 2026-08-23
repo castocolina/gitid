@@ -559,8 +559,10 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 	}
 	if fakeSSH != "" {
 		mode := "pass"
-		if id == "test-stage1-direct" || id == "test-reachable-not-uploaded" {
+		if id == "test-stage1-direct" {
 			mode = "denied"
+		} else if id == "test-reachable-not-uploaded" {
+			mode = "reachable-not-uploaded"
 		} else if id == "test-hard-failure-retry" {
 			mode = "timeout"
 		}
@@ -1307,6 +1309,16 @@ if [ "$GITID_FAKE_SSH_MODE" = "timeout" ]; then
 fi
 if [ "$GITID_FAKE_SSH_MODE" = "denied" ]; then
   echo "git@ssh.github.com: Permission denied (publickey)." >&2
+  exit 1
+fi
+if [ "$GITID_FAKE_SSH_MODE" = "reachable-not-uploaded" ]; then
+  # ReachableNotUploaded: stage 1 (no -F config) passes so the host is reachable,
+  # stage 2 connection test (with -F config) is denied so the key is not uploaded.
+  if [ -n "$config_path" ]; then
+    echo "git@ssh.github.com: Permission denied (publickey)." >&2
+    exit 1
+  fi
+  echo "Hi user! You've successfully authenticated, but GitHub does not provide shell access."
   exit 1
 fi
 echo "Hi user! You've successfully authenticated, but GitHub does not provide shell access."
