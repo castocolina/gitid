@@ -1058,3 +1058,116 @@ func TestCreateFlow_MouseFieldFocus(t *testing.T) {
 
 	saveFrame(t, "create-flow-mouse-field-focus", s)
 }
+
+func delayedResolutionSSHDir(t *testing.T) string {
+	t.Helper()
+	dir := FakeSSHDir(t, "pass")
+	path := filepath.Join(dir, "ssh")
+	script, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading fake ssh fixture: %v", err)
+	}
+	const resolutionBranch = "if [ \"$is_resolution\" = \"1\" ]; then\n"
+	if !strings.Contains(string(script), resolutionBranch) {
+		t.Fatal("fake ssh fixture no longer exposes the resolution branch")
+	}
+	script = []byte(strings.Replace(string(script), resolutionBranch, resolutionBranch+"  sleep 2\n", 1))
+	if err := os.WriteFile(path, script, 0o700); err != nil {
+		t.Fatalf("delaying fake ssh resolution: %v", err)
+	}
+	return dir
+}
+
+// TestCreateFlow_PTYReviewCorrections guards the three Phase-3 presentation
+// corrections through real 100x30 PTYs. The real binary uses disposable HOME
+// directories and fake SSH; the dummy is the only UI reference.
+func TestCreateFlow_PTYReviewCorrections(t *testing.T) {
+	t.Run("running stage", func(t *testing.T) {
+		home := SandboxHome(t)
+		bin := BuildBinary(t)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, delayedResolutionSSHDir(t)), dummyTermWidth, dummyTermHeight)
+		defer s.close(t)
+		openCreateWizard(t, s)
+		s.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSee(t, s, "Step 2/4", "step 0 -> step 1")
+		s.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSee(t, s, "running ssh", "stage 2 remains in progress while fake ssh -G is delayed")
+		frame := s.snapshot()
+		if strings.Contains(frame, "Completed test stages; exact captured proof follows.") {
+			t.Errorf("stage-two-in-progress frame claims completion:\n%s", frame)
+		}
+		if !strings.Contains(frame, "Hi user!") {
+			t.Errorf("stage-two-in-progress frame lost stage-one output:\n%s", frame)
+		}
+		mustSee(t, s, "identityfile", "completed stage keeps the resolution proof")
+		mustSee(t, s, "Completed test stages; exact captured proof follows.", "completed stage labels the proof viewport")
+	})
+
+	t.Run("reachable warning", func(t *testing.T) {
+		home := SandboxHome(t)
+		bin := BuildBinary(t)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, FakeSSHDir(t, "denied")), dummyTermWidth, dummyTermHeight)
+		defer s.close(t)
+		openCreateWizard(t, s)
+		s.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSee(t, s, "Step 2/4", "step 0 -> step 1")
+		s.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSee(t, s, "identityfile", "stage-two proof remains visible on warning path")
+		frame := s.snapshot()
+		if got := strings.Count(frame, "! Reachable — key not uploaded yet"); got != 1 {
+			t.Errorf("D-02 warning count = %d, want 1:\n%s", got, frame)
+		}
+		if got := strings.Count(frame, "Press c to copy the .pub"); got != 1 {
+			t.Errorf("D-03 instruction count = %d, want 1:\n%s", got, frame)
+		}
+		for _, want := range []string{"Permission denied (publickey).", "identityfile", "copy public key"} {
+			if !strings.Contains(frame, want) {
+				t.Errorf("warning frame lost %q:\n%s", want, frame)
+			}
+		}
+	})
+
+	t.Run("compact includeIf preview", func(t *testing.T) {
+		home := SandboxHome(t)
+		bin := BuildBinary(t)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, FakeSSHDir(t, "pass")), dummyTermWidth, dummyTermHeight)
+		defer s.close(t)
+		openCreateWizard(t, s)
+		s.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSee(t, s, "Step 2/4", "step 0 -> step 1")
+		s.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSee(t, s, "Next: Git identity", "both test stages complete")
+		s.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSee(t, s, "Step 3/4", "Git step")
+		realFrame := s.snapshot()
+		if !strings.Contains(realFrame, "[includeIf ") || strings.Contains(realFrame, "# BEGIN gitid managed:") {
+			t.Errorf("real compact preview must show an includeIf condition, not a sentinel:\n%s", realFrame)
+		}
+
+		dummyHome := SandboxHome(t)
+		dummyBin := BuildDummyBinary(t)
+		dummyCtx, dummyCancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer dummyCancel()
+		dummyCmd := exec.CommandContext(dummyCtx, dummyBin) //nolint:gosec // binary is built by BuildDummyBinary
+		dummyCmd.Env = append(os.Environ(), "HOME="+dummyHome, "TERM=xterm-256color")
+		dummy := startPTYAt(t, dummyCmd, dummyTermWidth, dummyTermHeight)
+		defer dummy.close(t)
+		openCreateWizard(t, dummy)
+		dummy.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSee(t, dummy, "Step 2/4", "dummy step 0 -> step 1")
+		dummy.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSee(t, dummy, "Next: Git identity", "dummy test stages complete")
+		dummy.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSee(t, dummy, "Step 3/4", "dummy Git step")
+		mustSee(t, dummy, `[includeIf "gitdir:~/acme/"]`, "dummy compact preview exposes its includeIf condition")
+	})
+}
