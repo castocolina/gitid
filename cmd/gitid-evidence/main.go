@@ -644,6 +644,11 @@ func captureTUIScreen(bin, home, fakeSSH, id string, autoStage2 bool, rawOutput 
 			return "", err
 		}
 		if id == "test-stage1-command-output" {
+			// The running-state label can render before the proof viewport is
+			// populated. Wait for its first required marker before sending v.
+			if _, err := session.waitFor("Stage 1 command:", 8*time.Second); err != nil {
+				return "", fmt.Errorf("waiting for stage-one proof viewport: %w", err)
+			}
 			if err := focusAndNavigateViewport(session, []string{"Stage 1 command:", "Stage 1 output:", "Hi user!"}, false); err != nil {
 				return "", err
 			}
