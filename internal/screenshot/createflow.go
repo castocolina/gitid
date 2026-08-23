@@ -454,37 +454,29 @@ func ValidateCapturedState(spec ScreenSpec, capturedText string) error {
 	return nil
 }
 
-// markerInPane reports whether marker appears within the focused pane content
-// of text — i.e., in lines that start with │ (after optional whitespace).
+// markerInPane reports whether marker appears within the right-pane content
+// of text — i.e., in lines that contain the "│" pane separator.
 //
-// Markers that wrap across physical terminal lines (e.g. "Reuse an\nexisting key"
-// rendering as "Reuse an existing key") are matched correctly: pane-line content
-// from all │-prefixed lines is accumulated and normalized together before checking.
-//
-// A line qualifies as a pane line if it contains '│' at a position where all
-// characters before '│' are whitespace. Only those lines contribute to the
-// authorizing context, so markers that appear only outside the pane (in header,
-// breadcrumb, or keybar lines without │) do not authorize the capture.
-//
-// If there are no pane lines at all, the marker is rejected.
+// The separator may have sidebar content (or ANSI styling) to its left, so
+// only the portion to the RIGHT of the first "│" contributes to the
+// authorizing context. Markers that appear only in lines without "│" (header,
+// breadcrumb, keybar, or out-of-viewport duplicates) do not authorize.
 func markerInPane(text, marker string) bool {
 	normalizedMarker := normalizeCapturedStateText(marker)
 
-	// Collect content from all pane lines (lines with │ at the left border).
+	// Collect content from all pane lines (lines with a "│" separator).
 	var paneContent strings.Builder
 	for _, line := range strings.Split(text, "\n") {
-		border := strings.IndexRune(line, '│')
-		if border < 0 {
+		if !strings.Contains(stripANSI(line), "│") {
 			continue
 		}
-		if strings.TrimSpace(line[:border]) != "" {
-			continue
-		}
-		// This is a pane line. Append its content (after │) with a space separator.
+		// rightPane maps through ANSI codes to the raw offset of the separator
+		// and returns only the content to its right.
+		rp := rightPane(line)
 		if paneContent.Len() > 0 {
 			paneContent.WriteByte(' ')
 		}
-		paneContent.WriteString(line[border+len("│"):])
+		paneContent.WriteString(rp)
 	}
 	if paneContent.Len() == 0 {
 		// No pane lines found — marker cannot be in the pane.
