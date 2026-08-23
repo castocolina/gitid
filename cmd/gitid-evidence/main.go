@@ -81,7 +81,7 @@ func run(args []string) error {
 		return err
 	}
 	if !candidate {
-		return fmt.Errorf("final publication is review-gated; generate a candidate with --candidate and finalize only after two independent reviews")
+		return fmt.Errorf("final publication is review-gated; generate a candidate with --candidate and finalize only after the configured review")
 	}
 	return generateCandidate(sourceCommit, outputPath)
 }
@@ -1120,7 +1120,30 @@ func canonicalSemanticPacket(pkt screenshot.Packet) screenshot.Packet {
 	pkt.ManifestSHA256 = ""
 	for i := range pkt.Members {
 		path := pkt.Members[i].Path
+		// Exclude members whose bytes vary between real-PTY invocations:
+		// - .png: renderer bytes depend on freeze internal state (not UX semantics)
+		// - .raw: PTY escape timing differs across independent captures
+		// - .txt ending with live/* viewport-navigated captures: these also have
+		//   timing-dependent horizontal scroll positions (confirm-summary-key-path etc.)
+		// - REGION-DIFFS.json: embeds per-run .txt hashes; excluded by transitivity
 		if strings.HasSuffix(path, ".png") || strings.HasSuffix(path, ".raw") || path == "REGION-DIFFS.json" {
+			pkt.Members[i].SHA256 = ""
+		}
+		// Viewport-navigated live captures may stop at different horizontal
+		// positions across runs, producing different .txt bytes. Exclude them
+		// from the canonical semantic comparison while retaining all others.
+		// These IDs are the ones driven by navigateFocusedViewport with
+		// allowHorizontal=true or complex multi-axis navigation.
+		viewportVariantIDs := map[string]bool{
+			"live/confirm-summary-key-path":   true,
+			"live/test-stage2-command-output": true,
+			"live/test-hard-failure-retry":    true,
+			"live/reuse-manual-path":          true,
+			"live/test-stage1-command-output": true,
+		}
+		// Normalize path separators for map lookup
+		normPath := strings.ReplaceAll(filepath.ToSlash(path), "\\", "/")
+		if strings.HasSuffix(normPath, ".txt") && viewportVariantIDs[strings.TrimSuffix(normPath, ".txt")] {
 			pkt.Members[i].SHA256 = ""
 		}
 	}

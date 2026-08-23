@@ -272,6 +272,27 @@ func TestCompareInventoriesRejectsInvalidPNG(t *testing.T) {
 	}
 }
 
+func TestCanonicalSemanticPacketIgnoresKnownViewportVariantText(t *testing.T) {
+	pkt := screenshot.Packet{Members: []screenshot.PacketMember{
+		{Path: "live/confirm-summary-key-path.txt", SHA256: "confirm"},
+		{Path: "live/test-stage1-command-output.txt", SHA256: "stage1"},
+		{Path: "live/test-stage2-command-output.txt", SHA256: "stage2"},
+		{Path: "live/test-hard-failure-retry.txt", SHA256: "retry"},
+		{Path: "live\\reuse-manual-path.txt", SHA256: "reuse"},
+		{Path: "live/ssh-form-filled.txt", SHA256: "stable"},
+	}}
+
+	canonical := canonicalSemanticPacket(pkt)
+	for _, member := range canonical.Members[:5] {
+		if member.SHA256 != "" {
+			t.Errorf("volatile viewport transcript %q retained hash %q", member.Path, member.SHA256)
+		}
+	}
+	if got := canonical.Members[5].SHA256; got != "stable" {
+		t.Fatalf("stable transcript hash = %q, want stable", got)
+	}
+}
+
 func makeCandidate(t *testing.T, dir string) string {
 	t.Helper()
 	source := strings.Repeat("a", 40)
