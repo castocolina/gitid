@@ -1094,8 +1094,12 @@ func TestCreateFlow_PTYReviewCorrections(t *testing.T) {
 		s.sendKey(dummyKeyEnter, keystrokeDelay)
 		mustSee(t, s, "Step 2/4", "step 0 -> step 1")
 		s.sendKey(dummyKeyEnter, keystrokeDelay)
-		mustSee(t, s, "running ssh", "stage 2 remains in progress while fake ssh -G is delayed")
-		frame := s.snapshot()
+		frame, ok := s.waitFor(8*time.Second, func(frame string) bool {
+			return strings.Contains(frame, "Hi user!") && strings.Contains(frame, "running ssh")
+		})
+		if !ok {
+			t.Fatalf("stage-two-in-progress frame never showed completed stage-one output and a running stage two:\n%s", frame)
+		}
 		if strings.Contains(frame, "Completed test stages; exact captured proof follows.") {
 			t.Errorf("stage-two-in-progress frame claims completion:\n%s", frame)
 		}
