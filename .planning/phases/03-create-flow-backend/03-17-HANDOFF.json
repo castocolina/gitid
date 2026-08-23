@@ -1,0 +1,8 @@
+{
+  "source_sha": "3c6f49946da953fa37058213e6a507bc2da9bddf",
+  "evidence_bin": ".planning/phases/03-create-flow-backend/03-17-handoff/3c6f49946da953fa37058213e6a507bc2da9bddf/gitid-evidence",
+  "candidate_dir": ".planning/phases/03-create-flow-backend/03-17-handoff/3c6f49946da953fa37058213e6a507bc2da9bddf/candidate",
+  "candidate_manifest_sha256": "f9521f6fa3e1077e5153201450f77878db4da6b99525b403c7f6a148ba42bc9b",
+  "canonical_manifest_sha256": "84dfebaf4c483f44b6b53f23ca0a06ff2d9cac70bfba9b28e094c1505355a90c",
+  "opencode_review_dir": ".planning/phases/03-create-flow-backend/03-17-handoff/3c6f49946da953fa37058213e6a507bc2da9bddf/opencode-review"
+}
