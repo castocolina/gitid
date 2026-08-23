@@ -620,6 +620,18 @@ func (g gitForm) includeIfPreview(name string) string {
 	return g.backend.IncludeIfPreview(g.spec(name, ""))
 }
 
+// compactIncludeIfPreview uses the one-row preview budget for the condition,
+// not the managed-block sentinel that surrounds the full persisted preview.
+func compactIncludeIfPreview(preview string) string {
+	for _, line := range strings.Split(preview, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[includeIf ") {
+			return line
+		}
+	}
+	return preview
+}
+
 // view renders the merged Git form with the dual dim previews (stacked —
 // terminal-width adaptation of the web's side-by-side pair).
 func (g gitForm) view(name, keyPath string, focus int, width int, baseline string) string {
@@ -675,7 +687,7 @@ func (g gitForm) view(name, keyPath string, focus int, width int, baseline strin
 	// the border's top edge instead of a separate PreviewLabel row, saving
 	// one row per preview.
 	b.WriteString(PreviewBlock("~/.gitconfig.d/"+name+" (fragment file — preview)", g.fragmentPreview(keyPath), false, width, 1) + "\n")
-	b.WriteString(PreviewBlock("~/.gitconfig (includeIf block — preview)", g.includeIfPreview(name), false, width, 1) + "\n")
+	b.WriteString(PreviewBlock("~/.gitconfig (includeIf block — preview)", compactIncludeIfPreview(g.includeIfPreview(name)), false, width, 1) + "\n")
 	b.WriteString(baseline + "\n")
 	return b.String()
 }
