@@ -1047,9 +1047,17 @@ const (
 // never a second inline body row — the row-budget discipline every wizard
 // pane keeps (02-STYLE-SPEC.md §7).
 func renderStageOutcome(r TestResultView, providerHost string, showHint bool, width int) string {
+	return renderStageEvidence(r, providerHost, true, showHint, width)
+}
+
+// renderStageEvidence keeps each stage's raw output visible while allowing a
+// completed two-stage warning state to present one aggregate warning/action.
+func renderStageEvidence(r TestResultView, providerHost string, showWarning, showHint bool, width int) string {
 	var b strings.Builder
 	if r.Outcome == TestOutcomeReachableNotUploaded {
-		b.WriteString(" " + styleWarning.Render(stageWarningLine) + "\n")
+		if showWarning {
+			b.WriteString(" " + styleWarning.Render(stageWarningLine) + "\n")
+		}
 		if r.Detail != "" {
 			// Hard-truncate at terminal edge without "…" substitution so the
 			// line stays within the row budget while remaining byte-observable
@@ -3008,11 +3016,12 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 				b.WriteString(" " + styleSelected.Render(" Retry (Enter) ") + "\n")
 			case testStage2:
 				b.WriteString(" " + styleInfo.Render("Completed test stages; exact captured proof follows.") + "\n")
-				b.WriteString(renderStageOutcome(w.stage1, w.form.providerHost(), false, width))
+				b.WriteString(renderStageEvidence(w.stage1, w.form.providerHost(), false, false, width))
 				b.WriteString(" " + styleFaint.Render("No -i here on purpose: the config must supply the key; that is exactly what this stage proves.") + "\n")
-				b.WriteString(renderStageOutcome(w.stage2, w.form.providerHost(), w.keyUnused(), width))
+				b.WriteString(renderStageEvidence(w.stage2, w.form.providerHost(), false, false, width))
 				if w.keyUnused() {
 					b.WriteString(" " + styleWarning.Render(stageWarningLine) + "\n")
+					b.WriteString(" " + reachableHint(w.form.providerHost()) + "\n")
 				}
 				b.WriteString(" " + styleSelected.Render(" Next: Git identity (Enter) ") + "\n")
 			}
@@ -3081,12 +3090,14 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 			b.WriteString(" " + styleError.Render("✗ "+detail) + "\n")
 			b.WriteString(" " + styleError.Render("The connection failed — check the hostname, port, and network, then retry.") + "\n")
 			b.WriteString(" " + styleSelected.Render(" Retry (Enter) ") + "\n")
-		case testStage1, testStage2:
+		case testStage1:
 			// Show the D-03 hint here only while stage 2 has not resolved yet
 			// (design-review F2): once stage 2 lands, its own render is the
 			// final word and carries the hint instead, so the two stages
 			// never repeat the identical instruction line.
-			b.WriteString(renderStageOutcome(w.stage1, w.form.providerHost(), w.testPhase == testStage1, width))
+			b.WriteString(renderStageOutcome(w.stage1, w.form.providerHost(), true, width))
+		case testStage2:
+			b.WriteString(renderStageEvidence(w.stage1, w.form.providerHost(), false, false, width))
 		}
 		if w.testPhase == testStage1 || w.testPhase == testStage2 {
 			// The short "Stage 2 — ..." title moves into the border's top
@@ -3099,7 +3110,11 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 			if w.testPhase == testStage1 {
 				b.WriteString(" " + styleSelected.Render(" Run stage 2 (Enter) ") + "\n")
 			} else {
-				b.WriteString(renderStageOutcome(w.stage2, w.form.providerHost(), true, width))
+				b.WriteString(renderStageEvidence(w.stage2, w.form.providerHost(), false, false, width))
+				if w.keyUnused() {
+					b.WriteString(" " + styleWarning.Render(stageWarningLine) + "\n")
+					b.WriteString(" " + reachableHint(w.form.providerHost()) + "\n")
+				}
 				b.WriteString(" " + styleSelected.Render(" Next: Git identity (Enter) ") + "\n")
 			}
 		}
