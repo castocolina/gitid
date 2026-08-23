@@ -383,6 +383,9 @@ func generateCandidateOnce(sourceCommit, outputDir string) error {
 	if _, err := screenshot.ValidateCandidate(filepath.Dir(candidateManifest)); err != nil {
 		return fmt.Errorf("validating generated candidate: %w", err)
 	}
+	if _, err := writeCanonicalManifest(filepath.Dir(candidateManifest)); err != nil {
+		return fmt.Errorf("writing canonical candidate manifest: %w", err)
+	}
 	return nil
 }
 
@@ -1108,6 +1111,26 @@ func compareInventories(first, second string) error {
 		return fmt.Errorf("canonical semantic evidence differs")
 	}
 	return nil
+}
+
+// writeCanonicalManifest records the deterministic semantic form of a valid
+// candidate without weakening the candidate manifest's per-file integrity data.
+func writeCanonicalManifest(candidateDir string) (string, error) {
+	pkt, err := screenshot.ValidateCandidate(candidateDir)
+	if err != nil {
+		return "", fmt.Errorf("validating candidate for canonical manifest: %w", err)
+	}
+	canonical := canonicalSemanticPacket(pkt)
+	canonical.ManifestSHA256 = screenshot.CanonicalManifestHash(canonical)
+	data, err := json.MarshalIndent(canonical, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshaling canonical candidate manifest: %w", err)
+	}
+	path := filepath.Join(candidateDir, "CANONICAL-MANIFEST.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return "", fmt.Errorf("writing canonical candidate manifest: %w", err)
+	}
+	return path, nil
 }
 
 // canonicalSemanticPacket preserves the registry-derived frame inventory,

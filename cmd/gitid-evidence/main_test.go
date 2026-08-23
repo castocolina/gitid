@@ -293,6 +293,32 @@ func TestCanonicalSemanticPacketIgnoresKnownViewportVariantText(t *testing.T) {
 	}
 }
 
+func TestCanonicalManifestIgnoresRawPTYTranscriptVariation(t *testing.T) {
+	first := makeCandidate(t, filepath.Join(t.TempDir(), "first"))
+	second := makeCandidate(t, filepath.Join(t.TempDir(), "second"))
+	mutateCandidateMember(t, second, "live/confirm-managed-block.raw", []byte("volatile raw PTY transcript"))
+
+	firstManifest, err := writeCanonicalManifest(first)
+	if err != nil {
+		t.Fatalf("writing first canonical manifest: %v", err)
+	}
+	secondManifest, err := writeCanonicalManifest(second)
+	if err != nil {
+		t.Fatalf("writing second canonical manifest: %v", err)
+	}
+	firstBytes, err := os.ReadFile(firstManifest)
+	if err != nil {
+		t.Fatalf("reading first canonical manifest: %v", err)
+	}
+	secondBytes, err := os.ReadFile(secondManifest)
+	if err != nil {
+		t.Fatalf("reading second canonical manifest: %v", err)
+	}
+	if string(firstBytes) != string(secondBytes) {
+		t.Fatal("canonical manifests must ignore raw PTY transcript variation")
+	}
+}
+
 func makeCandidate(t *testing.T, dir string) string {
 	t.Helper()
 	source := strings.Repeat("a", 40)
