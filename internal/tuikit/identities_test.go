@@ -1873,6 +1873,46 @@ func TestDistinctStageCapturesHaveDifferentContent(t *testing.T) {
 	}
 }
 
+func TestWizardRunningStageDoesNotClaimAllStagesComplete(t *testing.T) {
+	a := NewApp(stubBackend{})
+	m, _ := a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	a = m.(App)
+	a = wizardToStep2(t, a)
+	a, _ = press(t, a, "enter")
+
+	b := stubBackend{}
+	spec := identModel(t, a).wizard.spec()
+	m, _ = a.Update(WizardStageMsg{Stage: 1, Result: TestResultView{
+		Outcome: TestOutcomePass,
+		Command: b.Stage1Command(spec),
+		Detail:  "Hi user! You've successfully authenticated.",
+	}})
+	a = m.(App)
+
+	running := appView(a)
+	if !strings.Contains(running, "running ssh") {
+		t.Fatalf("stage-two-in-progress frame must identify the running stage:\n%s", running)
+	}
+	if strings.Contains(running, "Completed test stages; exact captured proof follows.") {
+		t.Errorf("stage-two-in-progress frame must not claim all stages completed:\n%s", running)
+	}
+
+	m, _ = a.Update(WizardStageMsg{Stage: 2, Result: TestResultView{
+		Outcome: TestOutcomePass,
+		Command: b.Stage2Command(spec),
+		Detail:  "identityfile " + spec.KeyPath,
+	}})
+	a = m.(App)
+
+	completed := appView(a)
+	if !strings.Contains(completed, "Completed test stages; exact captured proof follows.") {
+		t.Errorf("completed frame must label the complete proof viewport:\n%s", completed)
+	}
+	if !strings.Contains(completed, "Proof viewport") {
+		t.Errorf("completed frame must retain the proof viewport:\n%s", completed)
+	}
+}
+
 // TestGitStepDisabledHintSuppressedForRealBackend proves that wizardContinueHint
 // is always visible on the Git step regardless of whether the backend reports
 // always-disabled=true. Per FIELDS.md:159-164 and the 03-13 correction, BOTH
