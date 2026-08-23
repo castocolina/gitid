@@ -351,11 +351,11 @@ func ScreenSpecRegistry() []ScreenSpec {
 		{
 			ScreenID:       "test-reachable-not-uploaded",
 			Interaction:    "Run both stages through the denied fake SSH and capture the completed copy-public-key warning state.",
-			StateMarker:    "copy public key",
+			StateMarker:    "key not uploaded yet",
 			ApplicableLive: true,
 			NonApplicability: []SurfaceNonApplicability{
 				uxNonComparable("approved-tui", "D-02", "The approved TUI has no Phase 3 reachable-not-uploaded outcome."),
-				uxNonComparable("approved-html", "D-02", "The approved HTML has no Phase 3 reachable-not-uploaded outcome."),
+				uxNonComparable("approved-html", "D-02", "The approved TUI has no Phase 3 reachable-not-uploaded outcome."),
 			},
 			RequiredRegions: []RegionName{RegionConnectivityOutput},
 		},
