@@ -105,25 +105,10 @@
       "opencode-my-plan-review": {
         "cli": "opencode",
         "model": "local-llm-env/my-plan-review"
-      },
-      "claude-opus": {
-        "cli": "claude",
-        "model": "opus"
-      },
-      "xai-grok": {
-        "cli": "opencode",
-        "model": "xai/grok-4.6"
-      },
-      "opencode-go-kimi": {
-        "cli": "opencode",
-        "model": "opencode-go/kimi-k3"
       }
     },
     "default_reviewers": [
-      "opencode-my-plan-review",
-      "claude-opus",
-      "xai-grok",
-      "opencode-go-kimi"
+      "opencode-my-plan-review"
     ],
     "models": {
       "opencode": "local-llm-env/my-plan-review"
