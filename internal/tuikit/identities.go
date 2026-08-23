@@ -2993,7 +2993,6 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 		b.WriteString(renderHostBlockPreview(m.backend, w.form.sshHost(), w.form.hostname.Value(), w.form.port.Value(), w.keyPath(), width))
 	case 1:
 		if w.proof.Text != "" {
-			b.WriteString(" " + styleInfo.Render("Completed test stages; exact captured proof follows.") + "\n")
 			b.WriteString(" " + styleFaint.Render("Demo failure control — locked (nothing left to simulate)") + "\n")
 			switch w.testPhase {
 			case testRunning2:
@@ -3008,6 +3007,7 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 				b.WriteString(" " + styleError.Render("The connection failed — check the hostname, port, and network, then retry.") + "\n")
 				b.WriteString(" " + styleSelected.Render(" Retry (Enter) ") + "\n")
 			case testStage2:
+				b.WriteString(" " + styleInfo.Render("Completed test stages; exact captured proof follows.") + "\n")
 				b.WriteString(renderStageOutcome(w.stage1, w.form.providerHost(), false, width))
 				b.WriteString(" " + styleFaint.Render("No -i here on purpose: the config must supply the key; that is exactly what this stage proves.") + "\n")
 				b.WriteString(renderStageOutcome(w.stage2, w.form.providerHost(), w.keyUnused(), width))
