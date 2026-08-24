@@ -1436,13 +1436,14 @@ type identitiesModel struct {
 	editFocus    int
 	editCeremony ceremonyModel
 
-	gitPaneForm gitForm
-	gitFocus    int
-	gitCeremony ceremonyModel
-	gitExisting bool
-	deleteScope string
-	deleteCerem ceremonyModel
-	cloneInput  textinput.Model
+	gitPaneForm      gitForm
+	gitFocus         int
+	gitCeremony      ceremonyModel
+	gitCommitPending bool
+	gitExisting      bool
+	deleteScope      string
+	deleteCerem      ceremonyModel
+	cloneInput       textinput.Model
 	// cloneOnButton: the clone pane's 2-slot focus ring sits on the Clone
 	// button instead of the name input (batch 3 focus-ring parity).
 	cloneOnButton bool
@@ -1500,6 +1501,22 @@ func firstFixableFinding(s DemoState, name string) (DemoFinding, bool) {
 // handleMsg completes wizard test stages once the Backend's command has
 // answered — the OUTCOME decides the next phase, never a local guess.
 func (m identitiesModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
+	if commit, ok := msg.(GitCommitMsg); ok && m.pane == paneGitCeremony && m.gitCommitPending {
+		m.gitCommitPending = false
+		if commit.Err != "" {
+			message := commit.Err
+			if len(commit.Restored) > 0 {
+				message += " (restored: " + strings.Join(commit.Restored, "; ") + ")"
+			}
+			m.gitCeremony = m.gitCeremony.commitFailed(message)
+			return keyResult{model: m}
+		}
+		m.gitCeremony = m.gitCeremony.commitSucceeded(commit.Backups)
+		return keyResult{model: m, note: `Git identity "` + m.selected + `" configured.`, actions: []Action{ConfigureGit{
+			Name: m.selected, GitName: m.gitPaneForm.name.Value(), GitEmail: m.gitPaneForm.email.Value(),
+			MatchStrategy: m.gitPaneForm.strategy(), Backup: firstBackup(commit.Backups),
+		}}}
+	}
 	if m.pane != paneCreate {
 		return keyResult{model: m}
 	}
@@ -1542,6 +1559,13 @@ func (m identitiesModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 // key legitimately cannot authenticate before its .pub is uploaded — that is
 // a warning, never a failure, Pitfall 6); only a hard Failure stops the
 // wizard.
+func firstBackup(backups []string) string {
+	if len(backups) == 0 {
+		return ""
+	}
+	return backups[0]
+}
+
 func succeededOutcome(o TestOutcome) bool {
 	return o == TestOutcomePass || o == TestOutcomeReachableNotUploaded
 }
@@ -1779,21 +1803,22 @@ func (m identitiesModel) handleGitKey(msg tea.KeyMsg, s DemoState) keyResult {
 	key := msg.String()
 
 	if m.pane == paneGitCeremony {
+		if m.gitCommitPending {
+			return keyResult{model: m, handled: true}
+		}
 		var outcome ceremonyOutcome
 		m.gitCeremony, outcome = m.gitCeremony.handleKey(msg)
 		switch outcome {
 		case ceremonyCancelled:
 			m.pane = paneGit
+		case ceremonyConfirmed:
+			m.gitCommitPending = true
+			spec := m.gitPaneForm.spec(sel.Name, sel.KeyPath)
+			return keyResult{model: m, handled: true, cmd: m.backend.CommitGit(spec)}
 		case ceremonyFinished:
-			m.pane = paneDetail
-			return keyResult{model: m, handled: true, note: `Git identity "` + sel.Name + `" configured.`, actions: []Action{ConfigureGit{
-				Name:          sel.Name,
-				GitName:       m.gitPaneForm.name.Value(),
-				GitEmail:      m.gitPaneForm.email.Value(),
-				MatchStrategy: m.gitPaneForm.strategy(),
-				Backup:        NewBackupPath("~/.gitconfig"),
-			}}}
-		case ceremonyNone, ceremonyConfirmed:
+			// Receipt acknowledgement is deliberately inert until a successful
+			// GitCommitMsg has reduced ConfigureGit below.
+		case ceremonyNone:
 		}
 		return keyResult{model: m, handled: true}
 	}

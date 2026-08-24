@@ -2037,6 +2037,42 @@ func TestGitFlowEditDiffReplacesSignerEmail(t *testing.T) {
 	}
 }
 
+type recordingGitBackend struct {
+	stubBackend
+	specs  []GitSpec
+	result GitCommitMsg
+}
+
+func (b *recordingGitBackend) CommitGit(spec GitSpec) tea.Cmd {
+	b.specs = append(b.specs, spec)
+	return func() tea.Msg { return b.result }
+}
+
+func TestStandaloneGitCeremonyCommitsBeforeConfigureGit(t *testing.T) {
+	b := &recordingGitBackend{}
+	m := newIdentitiesModel(b, DemoState{Identities: []DemoIdentity{{Name: "work", SSHHost: "work.github.example", KeyPath: "~/.ssh/id_work"}}})
+	m = m.openGitForm(DemoIdentity{Name: "work", SSHHost: "work.github.example", KeyPath: "~/.ssh/id_work"})
+	m.gitPaneForm.name.SetValue("Work")
+	m.gitPaneForm.email.SetValue("work@example.test")
+	state := DemoState{Identities: []DemoIdentity{{Name: "work", SSHHost: "work.github.example", KeyPath: "~/.ssh/id_work"}}}
+	opened := m.handleGitKey(pressKey("enter"), state).model.(identitiesModel)
+	confirmed := opened.handleGitKey(pressKey("enter"), state)
+	if len(confirmed.actions) != 0 || len(b.specs) != 1 || confirmed.cmd == nil {
+		t.Fatalf("confirmation must dispatch only async CommitGit: actions=%d calls=%d cmd=%v", len(confirmed.actions), len(b.specs), confirmed.cmd != nil)
+	}
+	if got, want := b.specs[0].SSHHost, "work.github.example"; got != want {
+		t.Errorf("CommitGit SSHHost = %q, want exact alias %q", got, want)
+	}
+	failure := confirmed.model.(identitiesModel).handleMsg(GitCommitMsg{Err: "disk failed", Restored: []string{"~/.gitconfig"}}, state)
+	if len(failure.actions) != 0 || failure.model.(identitiesModel).gitCommitPending {
+		t.Error("failed Git commit must not reduce ConfigureGit or remain pending")
+	}
+	success := confirmed.model.(identitiesModel).handleMsg(GitCommitMsg{Backups: []string{"~/.gitconfig.backup"}}, state)
+	if len(success.actions) != 1 {
+		t.Fatalf("successful GitCommitMsg actions=%d, want one ConfigureGit", len(success.actions))
+	}
+}
+
 type sentinelIncludeIfBackend struct{ stubBackend }
 
 func (sentinelIncludeIfBackend) IncludeIfPreview(GitSpec) string {
