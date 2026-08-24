@@ -1234,13 +1234,9 @@ func (w wizardModel) stepForward(s DemoState) (wizardModel, bool) {
 }
 
 // gitContinueGate resolves the wizard's Git-identity step [ Continue ]
-// enablement + disabled-suffix reason (D-19). The real binary's Backend
-// returns alwaysDisabled=true with the "arrives with the next build"
-// reason: Continue never enables regardless of what the user typed,
-// because there is no Git backend until Phase 4 — reusing the
-// validity-gated reason there would be a lie about capability. The dummy
-// (and every internal/tuikit test double) returns alwaysDisabled=false,
-// keeping the UNCHANGED form-validity gate and its original reason string.
+// enablement + disabled-suffix reason. The production backend leaves the
+// normal form-validity gate in control; an always-disabled result is reserved
+// for a backend that explicitly cannot commit the requested operation.
 func (w wizardModel) gitContinueGate() (enabled bool, reason string) {
 	if r, always := w.backend.GitStepDisabledReason(); always {
 		return false, r
@@ -3138,23 +3134,14 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 		// D6 (checkpoint-2 contract): all THREE real buttons (M2) share ONE
 		// row — Back / Skip / Continue — with both frozen hints ALWAYS
 		// visible BELOW the row (Theme.Hint), never on the button itself.
-		// D-19: continueEnabled/continueReason come from the Backend-driven
-		// gate — the REAL binary forces Continue disabled with its OWN
-		// frozen reason (Git backend arrives in Phase 4); the dummy keeps
-		// the unchanged form-validity gate.
+		// The backend may explicitly veto a Git commit, otherwise Continue
+		// shares the normal client-side form-validity gate with the dummy.
 		continueEnabled, continueReason := w.gitContinueGate()
 		b.WriteString(" " + wizardButton(wizardBackButton, w.gitFocus == gitFocusBack, true, "") + "  " +
 			wizardButton(wizardSkipButton, w.gitFocus == gitFocusSkip, true, "") + "  " +
 			wizardButton(wizardContinueButton, w.gitFocus == gitFocusContinue, continueEnabled, continueReason) + "\n")
 		b.WriteString(" " + styleFaint.Render(wizardSkipHint) + "\n")
-		// D-19 / 03-13 correction: wizardContinueHint is ALWAYS rendered
-		// alongside the disabled reason — FIELDS.md:159-164 requires both
-		// hint rows to remain visible in ALL states (the frozen design keeps
-		// a reserved row for each). The 03-12 suppression was incorrect: the
-		// hint describes the action Continue WILL perform once the Phase-4
-		// Git backend lands; showing it alongside "arrives with the next build"
-		// is not a contradiction — it is the accurate description of what is
-		// coming. Only the disabled REASON changes per D-19; the hint stays.
+		// The frozen review hint remains visible in every validity state.
 		b.WriteString(" " + styleFaint.Render(wizardContinueHint))
 	default:
 		b.WriteString(w.ceremony.view(width))

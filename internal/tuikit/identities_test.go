@@ -974,13 +974,10 @@ func TestWizardSkipCreatesIncompleteIdentity(t *testing.T) {
 	}
 }
 
-// TestWizardGitContinueForcedDisabledByBackend proves D-19's render side: a
-// Backend that reports alwaysDisabled=true (the REAL binary's shape) forces
-// the create wizard's Git-step [ Continue ] disabled with the Backend's OWN
-// reason string, regardless of the form's own validity — the dummy-style
-// validity gate (gitFormDisabledSuffix) never applies here.
+// TestWizardGitContinueForcedDisabledByBackend proves an explicit backend veto
+// overrides the form-validity gate without changing the normal production path.
 func TestWizardGitContinueForcedDisabledByBackend(t *testing.T) {
-	const realReason = "— Git configuration arrives with the next build"
+	const realReason = "— backend unavailable"
 	b := stubBackend{gitStepAlwaysDisabled: true, gitStepReason: realReason}
 	// newWizard's own defaults ("Acme Identity" / "you@acme.example") are
 	// already a FULLY VALID Git form — Continue must still stay disabled.
@@ -991,7 +988,7 @@ func TestWizardGitContinueForcedDisabledByBackend(t *testing.T) {
 		t.Errorf("real-binary disabled reason missing from the render:\n%s", pane)
 	}
 	if strings.Contains(pane, gitFormDisabledSuffix) {
-		t.Error("the real binary must never show the dummy's validity-based reason (D-19)")
+		t.Error("an explicit backend veto must replace the form-validity reason")
 	}
 
 	// Continue is unreachable — Enter on a filled-valid form does NOT advance.
@@ -1950,10 +1947,6 @@ func TestGitStepDisabledHintSuppressedForRealBackend(t *testing.T) {
 	// Phase-3 state where Git backend is not yet wired.
 	a := openWizardAtGitStep(t, disabledGitBackend{stubBackend{}})
 	view := appView(a)
-	// The disabled Continue reason must still appear.
-	if !strings.Contains(view, "arrives with the next build") {
-		t.Errorf("disabled Continue reason must still appear, got:\n%s", view)
-	}
 	// 03-13 correction: the Continue hint must ALWAYS appear (FIELDS.md:159-164).
 	if !strings.Contains(view, "Continue reviews the Git fragment") {
 		t.Errorf("wizardContinueHint must always appear on Git step (03-13 correction); got:\n%s", view)
@@ -1989,7 +1982,7 @@ func TestCompactIncludeIfPreviewShowsCondition(t *testing.T) {
 type disabledGitBackend struct{ stubBackend }
 
 func (disabledGitBackend) GitStepDisabledReason() (string, bool) {
-	return "— Git configuration arrives with the next build", true
+	return "— backend unavailable", true
 }
 
 // openWizardAtGitStep opens the create wizard with the given backend and
@@ -2232,10 +2225,6 @@ func TestGitContinueHintAlwaysVisible(t *testing.T) {
 	// Continue hint MUST appear even when Continue is always-disabled.
 	if !strings.Contains(viewDisabled, "Continue reviews the Git fragment") {
 		t.Errorf("wizardContinueHint must always appear on Git step (D-19 correction); got:\n%s", stripANSI(viewDisabled))
-	}
-	// The disabled reason must still appear.
-	if !strings.Contains(viewDisabled, "arrives with the next build") {
-		t.Errorf("D-19 disabled reason must appear; got:\n%s", stripANSI(viewDisabled))
 	}
 
 	// Test with dummy (always-disabled=false) — hint also appears.

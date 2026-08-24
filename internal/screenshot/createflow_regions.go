@@ -58,12 +58,6 @@ const (
 	// divergence region (yellow warning vs. success/failure glyph text).
 	RegionConnectivityOutput RegionName = "connectivity-output"
 
-	// RegionContinueDisabledReason is the line immediately below the
-	// "[ Continue ]" button that carries the disabled reason. On git-form-demo
-	// this is the D-19 divergence: real binary shows "— Git configuration
-	// arrives with the next build"; dummy shows "— needs user.name + a valid email".
-	RegionContinueDisabledReason RegionName = "continue-disabled-reason"
-
 	// RegionKeybar is the last 2–3 non-empty lines — the keybar/footer area
 	// below the form that shows Tab/↑↓/Enter/Esc affordances.
 	RegionKeybar RegionName = "keybar"
@@ -127,8 +121,6 @@ func ExtractRegion(screen string, region RegionName) string {
 		return extractHostPreview(lines)
 	case RegionConnectivityOutput:
 		return extractConnectivityOutput(lines)
-	case RegionContinueDisabledReason:
-		return extractContinueDisabledReason(lines)
 	case RegionKeybar:
 		return extractKeybar(lines)
 	case RegionReusePickerEntries:
@@ -488,7 +480,6 @@ func AllRegionNames() []RegionName {
 		RegionKeySection,
 		RegionHostPreview,
 		RegionConnectivityOutput,
-		RegionContinueDisabledReason,
 		RegionKeybar,
 		RegionReusePickerEntries,
 		RegionSidebar,

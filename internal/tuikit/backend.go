@@ -131,11 +131,8 @@ type Backend interface {
 	// [ Continue ] gating (D-19). alwaysDisabled=true means Continue never
 	// enables regardless of the form's own validity, and reason is the
 	// suffix to show instead of the form-validity one — the real binary
-	// returns ("— Git configuration arrives with the next build", true)
-	// because there is no Git backend until Phase 4. alwaysDisabled=false
-	// (the dummy, unchanged) means Continue stays gated on the form's own
-	// validity, with its existing "— needs user.name + a valid email"
-	// reason (owned by internal/tuikit, never re-derived here).
+	// returns alwaysDisabled=false now that the real Git path is wired. The
+	// method remains for temporary backend failures and test doubles.
 	GitStepDisabledReason() (reason string, alwaysDisabled bool)
 
 	// CommitCreate dispatches the confirmed create transaction off the

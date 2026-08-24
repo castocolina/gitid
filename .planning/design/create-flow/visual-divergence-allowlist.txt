@@ -116,15 +116,6 @@ mouse-focused-field:key-section:contains:"ed25519":T-03-KEYSECTION:same as ssh-f
 test-stage1-direct:connectivity-output:contains:"ssh":D-02:stage-1 connectivity output differs (real uses actual staged-config path, dummy uses fixture hardcoded path) but both must contain "ssh" connectivity command
 test-stage2-by-alias:connectivity-output:contains:"identityfile":D-02:stage-2 resolution output differs (different key path strings) but must contain the ssh -G alias resolution proof "identityfile"
 
-# ---------------------------------------------------------------------------
-# D-19 — Git-form [ Continue ] disabled reason (03-CONTEXT.md, 03-UI-SPEC.md).
-# Real binary: "— Git configuration arrives with the next build" (honest,
-# capability-limited). Dummy: "— needs user.name + a valid email" (validity-gated).
-# Both are frozen strings asserted byte-exactly by gate-copy-freeze.
-# Predicate: real-binary reason must contain "configuration arrives" (its marker).
-# ---------------------------------------------------------------------------
-git-form-demo:continue-disabled-reason:contains:"configuration arrives":D-19:real-binary Continue-disabled reason differs from dummy validity-gated one; both frozen strings asserted by gate-copy-freeze
-
 # D-05/D-06 — real confirmation previews the auto-detected write plan. Unlike
 # the fixed dummy sample, the live viewport is scrollable and may initially show
 # the BEGIN sentinel while the remaining managed block is available on paging.

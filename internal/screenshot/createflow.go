@@ -210,7 +210,7 @@ func ScreenSpecRegistry() []ScreenSpec {
 			ApplicableLive:         true,
 			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
-			RequiredRegions:        []RegionName{RegionFormFields},
+			RequiredRegions:        []RegionName{RegionKeybar},
 			RegionDispositions: []RegionDisposition{
 				uxRegionDifference(RegionFormFields, "form-defaults", "D-16", "The live backend uses current provider defaults while the approved TUI preserves frozen demo defaults."),
 				uxRegionDifference(RegionKeySection, "key-catalog", "D-16", "The live backend uses its probed key catalog while the approved TUI preserves the frozen fixture order."),
@@ -256,9 +256,8 @@ func ScreenSpecRegistry() []ScreenSpec {
 			ApplicableLive:         true,
 			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
-			RequiredRegions:        []RegionName{RegionContinueDisabledReason},
+			RequiredRegions:        []RegionName{RegionKeybar},
 			RegionDispositions: []RegionDisposition{
-				uxRegionDifference(RegionContinueDisabledReason, "continue-disabled-reason", "D-19", "The live binary exposes the deferred Git configuration reason while the approved TUI preserves its validity-gated copy."),
 				uxRegionDifference(RegionHeaderStatus, "fixture-header-status", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),
 				uxRegionDifference(RegionSidebar, "fixture-sidebar", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),
 			},

@@ -173,12 +173,9 @@ test: gate-copy-freeze
 ##
 ## Phase 3 adds the D-16 banner copy (02-UI-SPEC.md "Scoped Divergences") plus
 ## plan 03-05's D-02/D-01 warning-state copy (below). The demo's OWN frozen
-## string (`-- needs user.name + a valid email`, D7) is asserted too: D-19
-## adds a SECOND, different reason string for the REAL binary in the SAME
-## visual slot (cmd/gitid/wiring.go, not internal/tuikit — the real binary's
-## Backend supplies it through the GitStepDisabledReason seam), so it gets
-## its OWN grep scoped to cmd/gitid — the two strings are never collapsed
-## into one, and the demo's original is never deleted.
+## string (`-- needs user.name + a valid email`, D7) is asserted too. Phase 4
+## removes the real binary's retired capability override, so both binaries use
+## the same form-validity gate.
 gate-copy-freeze:
 	@echo "==> gate-copy-freeze: 02-STYLE-SPEC.md §6 frozen copy"
 	@fail=0; \
@@ -200,11 +197,6 @@ gate-copy-freeze:
 			echo "    MISSING  $$s"; fail=1; \
 		fi; \
 	done; \
-	if grep -rqF -- '— Git configuration arrives with the next build' cmd/gitid; then \
-		echo "    ok   — Git configuration arrives with the next build (cmd/gitid)"; \
-	else \
-		echo "    MISSING  — Git configuration arrives with the next build (cmd/gitid)"; fail=1; \
-	fi; \
 	if [ $$fail -ne 0 ]; then \
 		echo "gate-copy-freeze: FROZEN COPY MISSING (02-STYLE-SPEC.md §6)"; \
 		exit 1; \
