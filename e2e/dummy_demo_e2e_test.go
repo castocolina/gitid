@@ -237,6 +237,7 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // [ Continue ]
 	mustSee(t, s, `Create identity "e2e"`, "wizard: ceremony heading")
+	mustSee(t, s, "Nothing has changed yet", "wizard: approved pre-confirm assurance")
 
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // confirm write
 	mustSee(t, s, "Wrote →", "wizard: receipt")
