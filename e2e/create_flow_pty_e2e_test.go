@@ -340,16 +340,10 @@ func TestCreateFlow_TestStageFailureRetry(t *testing.T) {
 //    TEST-03, D-05/D-06/D-08/D-09)
 // ---------------------------------------------------------------------------
 
-// TestCreateFlow_GitStepDisabledReasonAndConfirmWrite proves: (a) D-19 — the
-// REAL binary's Git-identity step [ Continue ] carries its own scoped
-// disabled reason, never the dummy's form-validity one; (b) SSHUI-04 — the
-// live ~/.ssh/config is untouched both before AND at the review ceremony,
-// only the confirm keystroke may write it; (c) D-18 — Skip Git commits SSH
-// artifacts only; (d) D-05/D-06 — a fresh machine's first create defaults to
-// the Include'd layout (gitid.config + the gitid Include line); (e) SSHUI-05/
-// D-08 — on darwin, the macOS Host * globals block lands in the same
-// resolved target.
-func TestCreateFlow_GitStepDisabledReasonAndConfirmWrite(t *testing.T) {
+// TestCreateFlow_GitConfigurationDefaultTracer drives the compiled real binary
+// through the default Git path and proves no live artifact appears before the
+// single combined confirmation.
+func TestCreateFlow_GitConfigurationDefaultTracer(t *testing.T) {
 	home := SandboxHome(t)
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "pass")
@@ -377,25 +371,18 @@ func TestCreateFlow_GitStepDisabledReasonAndConfirmWrite(t *testing.T) {
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // -> step 2 (Git, demo'd)
 	mustSee(t, s, "Step 3/4", "advanced to the Git step")
 
-	// D-19: the real binary's own scoped disabled reason, never the demo's.
-	// The full sentence can legitimately WRAP across two physical rows at
-	// the fixed 62-col detail-pane width ("...— Git" / "configuration
-	// arrives with the next build"), which would break a Contains check
-	// spanning the embedded newline — assert the tail, which always
-	// renders on one wrapped line.
-	mustSee(t, s, "arrives with the next build", "D-19: the real-binary Continue-disabled reason")
-	mustNotSee(t, s, "needs user.name", "the dummy's validity-gated reason must never leak into the real binary")
+	mustNotSee(t, s, "arrives with the next build", "Phase 4 removes the retired capability-disabled reason")
 
 	// SSHUI-04: nothing has touched the LIVE ~/.ssh/config yet.
 	if _, err := os.Stat(liveSSHConfig); !os.IsNotExist(err) {
 		t.Fatalf("the live ~/.ssh/config must be untouched before the confirm ceremony; stat err = %v", err)
 	}
 
-	// D-18: Skip Git — Tab from user.name (0) through email/strategy/Back to
-	// the Skip button (4 Tabs), then activate it.
-	tabKeys(s, 4)
+	// The default form is valid, so Enter reaches the combined read-only review.
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
-	mustSee(t, s, `Create identity "acme"`, "Skip Git jumps straight to the review ceremony")
+	mustSee(t, s, `Create identity "acme"`, "valid Git form reaches the combined review ceremony")
+	mustSee(t, s, "~/.gitconfig.d/acme", "review includes the fragment target")
+	mustSee(t, s, "allowed_signers", "review includes the signing target")
 	mustSee(t, s, "Nothing has changed yet", "the approved pre-confirm assurance appears before any write")
 
 	// Still untouched — the ceremony is a PREVIEW; nothing is written until
@@ -432,9 +419,26 @@ func TestCreateFlow_GitStepDisabledReasonAndConfirmWrite(t *testing.T) {
 		t.Errorf("the written Host block must be recipe-faithful (Port 443 + IdentitiesOnly yes):\n%s", includedText)
 	}
 
-	// D-18: Skip Git commits the SSH leg ONLY.
-	if _, statErr := os.Stat(filepath.Join(home, ".gitconfig")); !os.IsNotExist(statErr) {
-		t.Errorf("Skip Git must not write ~/.gitconfig; stat err = %v", statErr)
+	fragment, err := os.ReadFile(filepath.Join(home, ".gitconfig.d", "acme"))
+	if err != nil {
+		t.Fatalf("reading Git fragment after confirm: %v", err)
+	}
+	if !strings.Contains(string(fragment), "email = you@acme.example") {
+		t.Errorf("fragment must carry the entered user.email:\n%s", fragment)
+	}
+	gitconfig, err := os.ReadFile(filepath.Join(home, ".gitconfig"))
+	if err != nil {
+		t.Fatalf("reading ~/.gitconfig after confirm: %v", err)
+	}
+	if !strings.Contains(string(gitconfig), `[includeIf "gitdir:~/git/acme/"]`) {
+		t.Errorf("gitconfig must carry the default gitdir includeIf:\n%s", gitconfig)
+	}
+	signers, err := os.ReadFile(filepath.Join(home, ".ssh", "allowed_signers"))
+	if err != nil {
+		t.Fatalf("reading allowed_signers after confirm: %v", err)
+	}
+	if !strings.Contains(string(signers), `you@acme.example namespaces="git"`) {
+		t.Errorf("allowed_signers must use the exact user.email principal:\n%s", signers)
 	}
 
 	// SSHUI-05/D-08: on darwin, every create writes the idempotent macOS
@@ -745,12 +749,7 @@ func TestCreateFlow_ReuseManualPath(t *testing.T) {
 	saveFrame(t, "create-flow-reuse-manual-path", s)
 }
 
-// TestCreateFlow_GitStepDisabledReasonHintSuppressed proves the 03-13
-// correction: wizardContinueHint is ALWAYS visible on the Git step alongside
-// the D-19 disabled reason (not suppressed). This test was updated from the
-// 03-12 behavior (hint suppressed) to the corrected 03-13 behavior
-// (hint always shown per FIELDS.md:159-164).
-func TestCreateFlow_GitStepDisabledReasonHintSuppressed(t *testing.T) {
+func TestCreateFlow_GitStepContinueHint(t *testing.T) {
 	home := SandboxHome(t)
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "pass")
@@ -772,9 +771,8 @@ func TestCreateFlow_GitStepDisabledReasonHintSuppressed(t *testing.T) {
 
 	// 03-13 correction: Continue hint MUST appear (FIELDS.md:159-164).
 	mustSee(t, s, "Continue reviews the Git fragment",
-		"03-13: wizardContinueHint must always appear alongside the disabled reason")
-	// The disabled reason must still appear.
-	mustSee(t, s, "arrives with the next build", "D-19: disabled reason still appears")
+		"the enabled Git step retains its review hint")
+	mustNotSee(t, s, "arrives with the next build", "retired disabled copy must not remain")
 
 	saveFrame(t, "create-flow-git-disabled-hint-corrected-03-13", s)
 }
@@ -1028,10 +1026,7 @@ func TestCreateFlow_HardFailureRetryEvidence(t *testing.T) {
 	saveFrame(t, "create-flow-hard-failure-retry-evidence", s)
 }
 
-// TestCreateFlow_GitStepDisabledReason proves the 03-13 correction: the
-// wizardContinueHint is ALWAYS visible on the Git step alongside the
-// D-19 disabled reason (not suppressed). Covers FIELDS.md:159-164.
-func TestCreateFlow_GitStepDisabledReason(t *testing.T) {
+func TestCreateFlow_GitStepUsesFormValidityReason(t *testing.T) {
 	home := SandboxHome(t)
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "pass")
@@ -1051,10 +1046,8 @@ func TestCreateFlow_GitStepDisabledReason(t *testing.T) {
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 	mustSee(t, s, "Step 3/4", "Git step")
 
-	// D-19 disabled reason must appear.
-	mustSee(t, s, "arrives with the next build", "D-19: Continue disabled reason")
-	// 03-13 correction: wizardContinueHint ALWAYS appears (not suppressed).
-	mustSee(t, s, "Continue reviews the Git fragment", "03-13: wizardContinueHint always visible")
+	mustNotSee(t, s, "arrives with the next build", "retired capability-disabled reason")
+	mustSee(t, s, "Continue reviews the Git fragment", "wizardContinueHint always visible")
 	// Skip hint also present.
 	mustSee(t, s, "Skip keeps this identity SSH-only", "Skip hint always visible")
 

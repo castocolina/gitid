@@ -1463,9 +1463,13 @@ func (b *realBackend) stageFailure(stage int, command string, err error, in iden
 // emits the gitdir and hasconfig rules together in one managed block (GIT-02).
 func matchesFor(spec tuikit.GitSpec) []gitconfig.Match {
 	gitdir := gitconfig.Match{Kind: gitconfig.MatchGitdir, Value: "~/git/" + spec.Identity + "/"}
+	sshHost := spec.SSHHost
+	if sshHost == "" {
+		sshHost = spec.Identity + ".github.com"
+	}
 	hasconfig := gitconfig.Match{
 		Kind:  gitconfig.MatchHasconfig,
-		Value: "remote.*.url:git@" + spec.SSHHost + ":*/**",
+		Value: "remote.*.url:git@" + sshHost + ":*/**",
 	}
 	switch spec.Strategy {
 	case "hasconfig":
