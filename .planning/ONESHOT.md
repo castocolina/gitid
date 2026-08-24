@@ -1,4 +1,4 @@
-# ONESHOT PLAYBOOK - gitid v1.0 OpenCode Autonomous Run
+# ONESHOT PLAYBOOK - gitid v1.0 Claude Code Autonomous Run
 
 ## Starting Point
 

@@ -1,6 +1,6 @@
-# gitid v1.0 - OpenCode Autonomous Run Driver
+# gitid v1.0 - Claude Code Autonomous Run Driver
 
-Copy-paste driver for a single long-running OpenCode session (expect a
+Copy-paste driver for a single long-running Claude Code session (expect a
 multi-hour, possibly multi-day run). All operational detail — model routing,
 per-phase checklist, gates, rules — lives in `.planning/ONESHOT.md`; this file
 only starts the run and points there.
@@ -10,8 +10,13 @@ only starts the run and points there.
 From the repository root:
 
 ```sh
-opencode .
+claude --dangerously-skip-permissions
 ```
+
+`--dangerously-skip-permissions` is required so the session doesn't stall on
+a tool-permission prompt partway through an unattended run — the real safety
+gates for this run are `.planning/ONESHOT.md`'s own Non-Negotiable Rules
+(rules 5 and 9), not Claude Code's generic per-call confirmation.
 
 Paste the block below as the first message, then leave it running.
 
@@ -21,7 +26,7 @@ Paste the block below as the first message, then leave it running.
 
 /gsd-autonomous --from 3 --to 10 --converge
 
-You are the OpenCode orchestrator for the remaining gitid v1.0 milestone.
+You are the Claude Code orchestrator for the remaining gitid v1.0 milestone.
 
 Read `.planning/ONESHOT.md` in full now, and again at the start of every
 turn, along with `.planning/STATE.md`, `.planning/ROADMAP.md`, and
