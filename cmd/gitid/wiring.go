@@ -1475,7 +1475,17 @@ func (b *realBackend) stageFailure(stage int, command string, err error, in iden
 // matchesFor renders the includeIf match rules for spec's strategy. "both"
 // emits the gitdir and hasconfig rules together in one managed block (GIT-02).
 func matchesFor(spec tuikit.GitSpec) []gitconfig.Match {
-	gitdir := gitconfig.Match{Kind: gitconfig.MatchGitdir, Value: "~/git/" + spec.Identity + "/"}
+	gitdirPath := strings.TrimSpace(spec.GitDir)
+	if gitdirPath == "" {
+		gitdirPath = "~/git/" + spec.Identity + "/"
+	}
+	if !strings.HasSuffix(gitdirPath, "/") {
+		gitdirPath += "/"
+	}
+	gitdir := gitconfig.Match{Kind: gitconfig.MatchGitdir, Value: gitdirPath}
+	// SSHHost is the validated alias from the SSH block. Falling back only when
+	// legacy callers omit it preserves older create flow data without creating
+	// a glob or changing a provided alias.
 	sshHost := spec.SSHHost
 	if sshHost == "" {
 		sshHost = spec.Identity + ".github.com"

@@ -1983,6 +1983,60 @@ func TestGitCommitContractIsAsyncAndStubSafe(t *testing.T) {
 	}
 }
 
+func TestGitFlowFieldsUseEmptySSHOnlyValuesAndExactHostPreview(t *testing.T) {
+	// Hypothesis: SSH-only completion starts without invented author data and
+	// hasconfig previews consume the exact SSH alias, not the identity name.
+	m := newIdentitiesModel(stubBackend{}, DemoState{Identities: []DemoIdentity{{
+		Name: "work", SSHHost: "corp.github.example", KeyPath: "~/.ssh/id_ed25519_work",
+	}}})
+	m = m.openGitForm(DemoIdentity{Name: "work", SSHHost: "corp.github.example", KeyPath: "~/.ssh/id_ed25519_work"})
+	if got := m.gitPaneForm.name.Value(); got != "" {
+		t.Errorf("SSH-only name = %q, want empty completion field", got)
+	}
+	if got := m.gitPaneForm.email.Value(); got != "" {
+		t.Errorf("SSH-only email = %q, want empty completion field", got)
+	}
+	m.gitPaneForm.name.SetValue("Work")
+	m.gitPaneForm.email.SetValue("work@example.test")
+	m.gitPaneForm.strategyIdx = 1 // hasconfig
+	m.gitPaneForm.gitDir.SetValue("~/src/work")
+	spec := m.gitPaneForm.spec("work", "~/.ssh/id_ed25519_work")
+	if got, want := spec.SSHHost, "corp.github.example"; got != want {
+		t.Fatalf("GitSpec SSHHost = %q, want %q", got, want)
+	}
+	preview := includeIfPreviewForTest(spec)
+	if !strings.Contains(preview, `git@corp.github.example:*/**`) {
+		t.Errorf("hasconfig preview = %q, want exact SSH host", preview)
+	}
+	if strings.Contains(preview, `git@work.github`) {
+		t.Errorf("hasconfig preview synthesized identity alias: %q", preview)
+	}
+	if !spec.ForceSSH || spec.GitDir != "~/src/work/" {
+		t.Errorf("GitSpec defaults = %+v, want default rewrite and normalized editable gitdir", spec)
+	}
+}
+
+func includeIfPreviewForTest(spec GitSpec) string {
+	return "[includeIf \"hasconfig:remote.*.url:git@" + spec.SSHHost + ":*/**\"]"
+}
+
+func TestGitFlowEditDiffReplacesSignerEmail(t *testing.T) {
+	form := newGitForm(stubBackend{}, "Personal", "new@example.test", "gitdir")
+	form.original = GitOriginal{
+		Fragment:       "[user]\n    email = old@example.test",
+		AllowedSigners: "old@example.test namespaces=\"git\" ssh-ed25519 AAAA",
+	}
+	diff := form.changedLines("personal", "~/.ssh/id_ed25519_personal")
+	for _, want := range []string{"-     email = old@example.test", "+     email = new@example.test", "- old@example.test namespaces", "+ new@example.test namespaces"} {
+		if !strings.Contains(diff, want) {
+			t.Errorf("edit diff missing %q:\n%s", want, diff)
+		}
+	}
+	if strings.Count(diff, "old@example.test namespaces") != 1 {
+		t.Errorf("old signer must be a replacement line, not an appended duplicate:\n%s", diff)
+	}
+}
+
 type sentinelIncludeIfBackend struct{ stubBackend }
 
 func (sentinelIncludeIfBackend) IncludeIfPreview(GitSpec) string {

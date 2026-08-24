@@ -497,6 +497,7 @@ func (f sshForm) view(focus int, prefixError, hostHelper string, validation *Val
 const (
 	gitFieldName = iota
 	gitFieldEmail
+	gitFieldGitdir
 	gitFieldStrategy
 )
 
@@ -540,7 +541,12 @@ type gitForm struct {
 	backend     Backend
 	name        textinput.Model
 	email       textinput.Model
+	gitDir      textinput.Model
 	strategyIdx int
+	sshHost     string
+	// original is populated for edit mode and drives a changed-lines-only
+	// review; create mode leaves it zero-valued.
+	original GitOriginal
 }
 
 // newGitForm builds the form with initial values.
@@ -551,7 +557,10 @@ func newGitForm(b Backend, name, email, strategy string) gitForm {
 			idx = i
 		}
 	}
-	return gitForm{backend: b, name: newTextInput(name), email: newTextInput(email), strategyIdx: idx}
+	return gitForm{
+		backend: b, name: newTextInput(name), email: newTextInput(email),
+		gitDir: newTextInput("~/git/" + name + "/"), strategyIdx: idx,
+	}
 }
 
 // spec projects the form's current values into the Backend's GitSpec.
@@ -562,7 +571,48 @@ func (g gitForm) spec(identity, keyPath string) GitSpec {
 		Email:    g.email.Value(),
 		Strategy: g.strategy(),
 		KeyPath:  keyPath,
+		GitDir:   normalizeGitDir(g.gitDir.Value(), identity),
+		ForceSSH: true,
+		SSHHost:  g.sshHost,
+		Original: g.original,
 	}
+}
+
+func normalizeGitDir(value, identity string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		value = "~/git/" + identity + "/"
+	}
+	if !strings.HasSuffix(value, "/") {
+		value += "/"
+	}
+	return value
+}
+
+// changedLines renders only the before/after lines that differ in edit mode.
+// Signer principals are intentionally compared as raw email bytes: replacing
+// an address produces a -/+ pair rather than retaining a stale signer line.
+func (g gitForm) changedLines(identity, keyPath string) string {
+	spec := g.spec(identity, keyPath)
+	var lines []string
+	if g.original.Fragment != "" {
+		for _, old := range strings.Split(g.original.Fragment, "\n") {
+			if strings.Contains(old, "email = ") && !strings.Contains(old, spec.Email) {
+				lines = append(lines, "- "+old, "+     email = "+spec.Email)
+			}
+		}
+	}
+	if g.original.AllowedSigners != "" {
+		for _, old := range strings.Split(g.original.AllowedSigners, "\n") {
+			if old != "" && !strings.HasPrefix(old, spec.Email+" ") {
+				fields := strings.Fields(old)
+				if len(fields) > 1 {
+					lines = append(lines, "- "+old, "+ "+spec.Email+" "+strings.Join(fields[1:], " "))
+				}
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // strategy is the selected match strategy.
@@ -585,6 +635,11 @@ func (g gitForm) setFocus(focus int) gitForm {
 	} else {
 		g.email.Blur()
 	}
+	if focus == gitFieldGitdir {
+		g.gitDir.Focus()
+	} else {
+		g.gitDir.Blur()
+	}
 	return g
 }
 
@@ -597,6 +652,8 @@ func (g gitForm) handleEdit(msg tea.KeyMsg, focus int) gitForm {
 		g.name, _ = updateInput(g.name, msg)
 	case gitFieldEmail:
 		g.email, _ = updateInput(g.email, msg)
+	case gitFieldGitdir:
+		g.gitDir, _ = updateInput(g.gitDir, msg)
 	case gitFieldStrategy:
 		if key == "left" {
 			g.strategyIdx = (g.strategyIdx + len(matchStrategies) - 1) % len(matchStrategies)
@@ -643,6 +700,7 @@ func (g gitForm) view(name, keyPath string, focus int, width int, baseline strin
 	}
 	b.WriteString("\n")
 	b.WriteString(helperLine("Kept byte-identical to ~/.ssh/allowed_signers (GITUI-04)", false) + "\n")
+	b.WriteString(formFieldLine("gitdir", g.gitDir, focus == gitFieldGitdir, false) + "\n")
 	// Row-budget trap (02-STYLE-SPEC.md §7): the separate "Signing: ..."
 	// line was dropped (its signingkey-is-a-path fact is already visible in
 	// the fragment preview block below) to make room for the field-contour
@@ -1687,19 +1745,16 @@ func (m identitiesModel) handleEditKey(msg tea.KeyMsg, s DemoState) keyResult {
 // openGitForm mirrors Identities.tsx openGitForm (defaults when the row
 // has no Git side yet).
 func (m identitiesModel) openGitForm(sel DemoIdentity) identitiesModel {
+	// SSH-only completion must solicit real author values; never invent dummy
+	// values that could be persisted by a confirmed transaction.
 	name := sel.GitName
-	if name == "" {
-		name = sel.Name + " identity"
-	}
 	email := sel.GitEmail
-	if email == "" {
-		email = "you@" + sel.Name + ".example"
-	}
 	strategy := sel.MatchStrategy
 	if strategy == "" {
 		strategy = m.backend.DefaultMatchStrategy()
 	}
 	m.gitPaneForm = newGitForm(m.backend, name, email, strategy)
+	m.gitPaneForm.sshHost = sel.SSHHost
 	m.gitFocus = gitFieldName
 	m.gitPaneForm = m.gitPaneForm.setFocus(m.gitFocus)
 	m.gitExisting = sel.GitFragmentPath != ""
