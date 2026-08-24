@@ -220,12 +220,12 @@ Plans:
    review compares it with `cmd/gitid-dummy` and classifies every difference as an
    improvement or a defect. (DLV-04, DLV-06)
 
-**Plans**: 4 plans in 4 waves
+**Plans**: 1/4 plans executed in 4 waves
 **UI hint**: yes
 
 Plans:
 
-- [ ] 04-01-PLAN.md — Default Git-configuration tracer through the compiled real TUI and combined confirmed write
+- [x] 04-01-PLAN.md — Default Git-configuration tracer through the compiled real TUI and combined confirmed write
 - [ ] 04-02-PLAN.md — Round-trip includeIf strategies, provider insteadOf block, and doctor reservation
 - [ ] 04-03-PLAN.md — Reusable create/edit Git flow, truthful diffs, collision resume, and all-or-nothing transaction
 - [ ] 04-04-PLAN.md — Per-state real PTY and compiled real-vs-live-dummy semantic UI gate
@@ -338,7 +338,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Foundations, Spikes & CI | 7/7 | Complete | 2026-07-03 |
 | 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 14/15 | In Progress|  |
 | 3. Create Flow Backend | 19/19 | Complete | 2026-08-24 |
-| 4. Git Configuration Screen | 0/TBD | Not started | - |
+| 4. Git Configuration Screen | 1/4 | In Progress|  |
 | 5. Identity Manager | 0/TBD | Not started | - |
 | 6. Global SSH Options | 0/TBD | Not started | - |
 | 7. Global Git Options | 0/TBD | Not started | - |

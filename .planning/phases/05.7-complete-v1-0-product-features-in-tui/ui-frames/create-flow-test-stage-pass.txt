@@ -19,11 +19,11 @@ S ssh · G git  ✓ ok ! attn ✗ broken │  Step 3/4 · Git identity ● ● �
                                     │ ┊ [includeIf "gitdir:~/git/acme/"]                       ┊
                                     │ ╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
                                     │  Global baseline (inherited — not applied yet): init.def… (3)
-                                    │   Back (Esc)    [ Skip Git ]    [ Continue ] — Git
-                                    │ configuration arrives with the next build
+                                    │   Back (Esc)    [ Skip Git ]    [ Continue ]
                                     │  Skip keeps this identity SSH-only and marks it incomplete.
                                     │  Continue reviews the Git fragment, includeIf, and
                                     │ allowed_signers entries before writing.
+                                    │
                                     │
  Esc returns to the identity detail without writing anything.
  Enter activate focused / continue · Tab/↑↓ fields & buttons

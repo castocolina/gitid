@@ -15,14 +15,14 @@ S ssh · G git  ✓ ok ! attn ✗ broken │  Step 2/4 · Test connection ● �
                                     │ github.com/settings/keys
                                     │   Next: Git identity (Enter)
                                     │  Proof viewport focused: PgUp/PgDn and ←/→ scroll
-                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestCreat
-                                    │ Stage 2 resolution output:
-                                    │ user git
-                                    │ hostname ssh.github.com
-                                    │ port 443
-                                    │ identitiesonly yes
                                     │ identityfile /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000g
-                                    │ ↓ lines 15–20 of 20  PgDn↓ PgUp↑
+                                    │ gitidrawmarker proof-retained-verbatim
+                                    │
+                                    │ Stage 1 command:
+                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestCreat
+                                    │ Stage 1 output:
+                                    │ git@ssh.github.com: Permission denied (publickey).
+                                    │
                                     │
                                     │
  Esc returns to the identity detail without writing anything.

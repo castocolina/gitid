@@ -15,7 +15,7 @@ S ssh · G git  ✓ ok ! attn ✗ broken │  Step 2/4 · Test connection ● �
                                     │ Stage 1 output:
                                     │ ssh: connect to host ssh.github.com port 443: Operation ti
                                     │
-                                    │ → cols 1–58 of 425  ←→scroll
+                                    │ → cols 1–58 of 428  ←→scroll
                                     │
                                     │
                                     │

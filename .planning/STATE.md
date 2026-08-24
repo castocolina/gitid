@@ -4,18 +4,18 @@ milestone: v1.0
 milestone_name: TUI-First Redesign
 current_phase: 04
 current_phase_name: Git Configuration Screen
-status: READY — Phase 03 closure is evidenced by 03-VERIFICATION.md, 03-19 reviews, UAT-AUDIT.md, and the clean-worktree gate run.
+status: executing
 stopped_at: Phase 03 complete; Phase 04 discovery is next.
-last_updated: "2026-08-24T00:00:00Z"
+last_updated: "2026-08-24T10:59:32.792Z"
 last_activity: 2026-08-24
-last_activity_desc: "Phase 03 closed after 03-16 through 03-19: fail-closed TUI-only evidence, single-review final packet, raw ssh -G proof retention, restored confirmation copy, clean code/UI reviews, passed verification, UAT audit, and clean-worktree gates."
-state_head: bc513423dee5226408df95bad1e9d3d6d0bf13de
+last_activity_desc: Phase 04 execution started
+state_head: 789c2d94ec0f0d5aca5bc7de7622bfce101edcf9
 progress:
   total_phases: 10
-  completed_phases: 3
-  total_plans: 38
-  completed_plans: 36
-  percent: 30
+  completed_phases: 0
+  total_plans: 45
+  completed_plans: 40
+  percent: 0
 ---
 
 # Project State
@@ -25,16 +25,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** Managing a Git identity produces coordinated, coherent SSH + Git artifacts that are proven to authenticate and resolve correctly (`ssh -G`) before any file is written, and existing hand-written config is never corrupted.
-**Current focus:** Phase 03 COMPLETE — all ONESHOT checklist items are evidenced by the 03-16 through 03-19 corrective sequence, current verification, code/UI reviews, UAT audit, and clean-worktree gates. Phase 04 (Git Configuration Screen) is next.
+**Current focus:** Phase 04 — Git Configuration Screen
 
 ## Current Position
 
-Phase: 04 (git-configuration-screen) — READY. Phase 03 is complete; its final current evidence is 03-VERIFICATION.md (5/5), 03-19-CODE-REVIEW.md, 03-19-UI-REVIEW.md, and UAT-AUDIT.md. Next: discuss and plan Phase 04.
-Plan: 03-09 (wave 8) — COMPLETE. Region-scoped visual gate, offline capture, contact sheets, two independent reviews PASS (no Critical/High). CR-10/CR-11/WR-01 closed. See 03-09-SUMMARY.md.
+Phase: 04 (Git Configuration Screen) — EXECUTING
+Plan: 2 of 4
 Plan: 03-08 (wave 7) — COMPLETE. Four-field SSH form, strict validation, effective collision checks, verified key pairs, complete ssh -G proof. See 03-08-SUMMARY.md.
 Plan: 03-07 (wave 6) — COMPLETE. Hermetic staging, automatic stage-2 chaining, async commit ceremony, rollback-capable confirmed SSH writes, and fail-closed store gate. See 03-07-SUMMARY.md.
-Status: Phase 2 (below) is the last COMPLETE phase; Phase 3 is the active phase, Wave 5 of 6 (its last wave) 2/3 tasks closed plus Wave 6 complete. See "Session Continuity" below for the live wave-by-wave Phase 3 record (WAVE 1-4 close notes, replan resolution map, execution obligations, and the new WAVE 5/6 entries).
-Last activity: 2026-08-18 -- Plan 03-07 (Wave 6) complete: see the frontmatter `last_activity` field above for the full description.
+Status: Ready to execute
+Last activity: 2026-08-24 — Phase 04 execution started
 
 ### Phase 2 (COMPLETE) — historical record
 
