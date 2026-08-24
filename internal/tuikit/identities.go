@@ -1416,7 +1416,7 @@ func (w wizardModel) finishIdentity() DemoIdentity {
 	}
 	if w.configureGit {
 		gitSpec := w.gitSpec()
-		id.GitDir = gitSpec.GitDir
+		id.GitDir = "~/git/" + name + "/"
 		id.ForceSSH = gitSpec.ForceSSH
 		id.PublicKeyPath = gitSpec.PublicKeyPath
 	}

@@ -739,10 +739,187 @@ func (b *realBackend) CommitGit(spec tuikit.GitSpec) tea.Cmd {
 	}
 }
 
-// commitGitTransaction performs the confirmed Git writes as a rollback-capable
-// unit. All paths are derived from the configured HOME roots and rejected if a
-// symlink or lexical escape crosses those roots.
-func (b *realBackend) commitGitTransaction(spec tuikit.GitSpec) (backups, restored []string, err error) {
+// commitGitTransaction reads the signing key before delegating every mutation to
+// the shared journal. Standalone and combined create writes therefore have the
+// same snapshot, backup, rollback, and failure-reporting behavior.
+func (b *realBackend) commitGitTransaction(spec tuikit.GitSpec) ([]string, []string, error) {
+	return b.commitGitArtifacts(spec, "")
+}
+
+// gitMutationJournal captures the exact pre-transaction state of every mutable
+// Git artifact. Its rollback intentionally restores from in-memory snapshots,
+// not by moving timestamped backups: backups remain durable safety artifacts.
+type gitMutationJournal struct {
+	b           *realBackend
+	files       []gitFileSnapshot
+	dirs        []gitDirSnapshot
+	seenFile    map[string]bool
+	seenDir     map[string]bool
+	createdDirs []string
+	backups     []string
+}
+
+type gitFileSnapshot struct {
+	path    string
+	exists  bool
+	content []byte
+	mode    os.FileMode
+}
+
+type gitDirSnapshot struct {
+	path   string
+	exists bool
+	mode   os.FileMode
+}
+
+func newGitMutationJournal(b *realBackend) *gitMutationJournal {
+	return &gitMutationJournal{b: b, seenFile: make(map[string]bool), seenDir: make(map[string]bool)}
+}
+
+func (j *gitMutationJournal) watchFile(path string) error {
+	if j.seenFile[path] {
+		return nil
+	}
+	if err := containedRegularPath(path, j.b.home); err != nil {
+		return err
+	}
+	j.seenFile[path] = true
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		j.files = append(j.files, gitFileSnapshot{path: path})
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("gitid: stat transaction target %s: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("gitid: refusing non-regular transaction target: %s", path)
+	}
+	content, err := os.ReadFile(path) //nolint:gosec // path was contained and checked above
+	if err != nil {
+		return fmt.Errorf("gitid: snapshotting %s: %w", path, err)
+	}
+	j.files = append(j.files, gitFileSnapshot{path: path, exists: true, content: content, mode: info.Mode().Perm()})
+	return nil
+}
+
+func (j *gitMutationJournal) watchDir(path string) error {
+	if j.seenDir[path] {
+		return nil
+	}
+	if err := containedRegularPath(path, j.b.home); err != nil {
+		return err
+	}
+	j.seenDir[path] = true
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		j.dirs = append(j.dirs, gitDirSnapshot{path: path})
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("gitid: stat transaction directory %s: %w", path, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("gitid: refusing non-directory transaction path: %s", path)
+	}
+	j.dirs = append(j.dirs, gitDirSnapshot{path: path, exists: true, mode: info.Mode().Perm()})
+	return nil
+}
+
+func (j *gitMutationJournal) ensureDir(path string, mode os.FileMode) error {
+	var missing []string
+	for current := filepath.Clean(path); ; current = filepath.Dir(current) {
+		if err := j.watchDir(current); err != nil {
+			return err
+		}
+		if current == filepath.Clean(j.b.home) {
+			break
+		}
+		if _, err := os.Lstat(current); os.IsNotExist(err) {
+			missing = append(missing, current)
+		} else if err != nil {
+			return fmt.Errorf("gitid: checking transaction directory %s: %w", current, err)
+		}
+	}
+	for i := len(missing) - 1; i >= 0; i-- {
+		if err := os.Mkdir(missing[i], mode); err != nil {
+			return fmt.Errorf("gitid: creating transaction directory %s: %w", missing[i], err)
+		}
+		j.createdDirs = append(j.createdDirs, missing[i])
+		if err := os.Chmod(missing[i], mode); err != nil {
+			return fmt.Errorf("gitid: securing transaction directory %s: %w", missing[i], err)
+		}
+	}
+	return nil
+}
+
+func (j *gitMutationJournal) addBackup(path string) {
+	if path != "" {
+		j.backups = append(j.backups, path)
+	}
+}
+
+func (j *gitMutationJournal) file(path string) (gitFileSnapshot, bool) {
+	for _, snapshot := range j.files {
+		if snapshot.path == path {
+			return snapshot, true
+		}
+	}
+	return gitFileSnapshot{}, false
+}
+
+func (j *gitMutationJournal) restore() ([]string, error) {
+	var outcomes []string
+	var failures []string
+	for i := len(j.files) - 1; i >= 0; i-- {
+		s := j.files[i]
+		var err error
+		if s.exists {
+			err = filewriter.WriteNoBackup(s.path, s.content, s.mode)
+		} else if removeErr := os.Remove(s.path); removeErr != nil && !os.IsNotExist(removeErr) {
+			err = removeErr
+		}
+		if err != nil {
+			outcome := s.path + ": restoration failed: " + err.Error()
+			outcomes = append(outcomes, outcome)
+			failures = append(failures, outcome)
+		} else {
+			outcomes = append(outcomes, s.path+": restored")
+		}
+	}
+	for i := len(j.dirs) - 1; i >= 0; i-- {
+		s := j.dirs[i]
+		if !s.exists {
+			continue
+		}
+		if err := os.Chmod(s.path, s.mode); err != nil {
+			outcome := s.path + ": restoration failed: " + err.Error()
+			outcomes = append(outcomes, outcome)
+			failures = append(failures, outcome)
+		} else {
+			outcomes = append(outcomes, s.path+": restored")
+		}
+	}
+	for i := len(j.createdDirs) - 1; i >= 0; i-- {
+		path := j.createdDirs[i]
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			outcome := path + ": restoration failed: " + err.Error()
+			outcomes = append(outcomes, outcome)
+			failures = append(failures, outcome)
+		} else {
+			outcomes = append(outcomes, path+": restored")
+		}
+	}
+	if len(failures) != 0 {
+		return outcomes, fmt.Errorf("%s", strings.Join(failures, "; "))
+	}
+	return outcomes, nil
+}
+
+// commitGitArtifacts performs all confirmed Git mutations. pubLine is supplied
+// by CommitCreate so the signing line is derived from the key already staged for
+// that create; standalone writes read the requested public-key path instead.
+func (b *realBackend) commitGitArtifacts(spec tuikit.GitSpec, pubLine string) (backups, restored []string, err error) {
 	if strings.TrimSpace(spec.Identity) == "" || strings.TrimSpace(spec.Name) == "" || strings.TrimSpace(spec.Email) == "" || strings.TrimSpace(spec.SSHHost) == "" {
 		return nil, nil, fmt.Errorf("gitid: incomplete Git configuration")
 	}
@@ -751,68 +928,130 @@ func (b *realBackend) commitGitTransaction(spec tuikit.GitSpec) (backups, restor
 	if publicKeyPath == "" {
 		publicKeyPath = spec.KeyPath + ".pub"
 	}
-	for _, path := range []string{fragmentPath, b.gitconfigPath, b.allowedSigners, b.resolveKeyPath(publicKeyPath)} {
-		if err := containedRegularPath(path, b.home); err != nil {
+	resolvedPublicKeyPath := b.resolveKeyPath(publicKeyPath)
+	gitDirPath := ""
+	if spec.Strategy != "hasconfig" {
+		gitDirPath = b.resolveKeyPath(strings.TrimSpace(spec.GitDir))
+		if gitDirPath == "" {
+			gitDirPath = filepath.Join(b.home, "git", spec.Identity)
+		}
+	}
+	journal := newGitMutationJournal(b)
+	for _, path := range []string{fragmentPath, b.gitconfigPath, b.allowedSigners} {
+		if err := journal.watchFile(path); err != nil {
 			return nil, nil, err
 		}
 	}
-	type receipt struct{ target, backup string }
-	var receipts []receipt
-	rollback := func(cause error) ([]string, []string, error) {
-		for i := len(receipts) - 1; i >= 0; i-- {
-			r := receipts[i]
-			if r.backup != "" {
-				if restoreErr := os.Rename(r.backup, r.target); restoreErr != nil {
-					restored = append(restored, r.target+": restoration failed: "+restoreErr.Error())
-				} else {
-					restored = append(restored, r.target)
-				}
-			} else if removeErr := os.Remove(r.target); removeErr != nil && !os.IsNotExist(removeErr) {
-				restored = append(restored, r.target+": removal failed: "+removeErr.Error())
-			} else {
-				restored = append(restored, r.target)
-			}
+	for _, path := range []string{b.fragmentDir, filepath.Dir(b.allowedSigners)} {
+		if err := journal.watchDir(path); err != nil {
+			return nil, nil, err
 		}
-		return backups, restored, cause
 	}
-	// Read and validate the public key before any mutation. Fragment is last:
-	// its authoritative git writer returns no backup receipt, so no fallible
-	// operation is permitted after it.
-	pub, readErr := os.ReadFile(b.resolveKeyPath(publicKeyPath))
-	if readErr != nil {
-		return nil, nil, fmt.Errorf("gitid: reading signing key: %w", readErr)
+	if gitDirPath != "" {
+		if err := journal.watchDir(gitDirPath); err != nil {
+			return nil, nil, err
+		}
 	}
-	matches := matchesFor(spec)
-	backup, writeErr := gitconfig.WriteIncludeIf(b.gitconfigPath, spec.Identity, "~/.gitconfig.d/"+spec.Identity, matches)
-	if writeErr != nil {
-		return rollback(fmt.Errorf("gitid: writing Git includeIf: %w", writeErr))
+	if err := containedRegularPath(resolvedPublicKeyPath, b.home); err != nil {
+		return nil, nil, err
 	}
-	receipts = append(receipts, receipt{target: b.gitconfigPath, backup: backup})
-	if backup != "" {
-		backups = append(backups, backup)
+	if pubLine == "" {
+		pub, readErr := os.ReadFile(resolvedPublicKeyPath) //nolint:gosec // contained and checked above
+		if readErr != nil {
+			return nil, nil, fmt.Errorf("gitid: reading signing key: %w", readErr)
+		}
+		pubLine = string(pub)
 	}
-	backup, writeErr = keygen.WriteAllowedSignersReplacing(b.allowedSigners, spec.Identity, spec.Email, string(pub))
-	if writeErr != nil {
-		return rollback(fmt.Errorf("gitid: writing allowed signers: %w", writeErr))
+	fail := func(step string, cause error) ([]string, []string, error) {
+		outcomes, restoreErr := journal.restore()
+		cause = fmt.Errorf("gitid: mutation %s failed: %w", step, cause)
+		if restoreErr != nil {
+			cause = fmt.Errorf("%w; restoration failures: %v", cause, restoreErr)
+		}
+		return journal.backups, outcomes, cause
 	}
-	receipts = append(receipts, receipt{target: b.allowedSigners, backup: backup})
-	if backup != "" {
-		backups = append(backups, backup)
+	inject := func(step string) error {
+		if b.failCommitAt == nil {
+			return nil
+		}
+		return b.failCommitAt(step)
 	}
-	if spec.ForceSSH && spec.Provider != "" {
-		backup, writeErr = gitconfig.WriteProviderRewrite(b.gitconfigPath, spec.Provider, true)
+	if err := inject("git-fragment-dir"); err != nil {
+		return fail("git-fragment-dir", err)
+	}
+	if err := journal.ensureDir(b.fragmentDir, 0o700); err != nil {
+		return fail("git-fragment-dir", err)
+	}
+	if gitDirPath != "" {
+		if err := inject("gitdir"); err != nil {
+			return fail("gitdir", err)
+		}
+	}
+	if err := inject("git-fragment-backup"); err != nil {
+		return fail("git-fragment-backup", err)
+	}
+	if snapshot, ok := journal.file(fragmentPath); ok && snapshot.exists {
+		backup, writeErr := filewriter.Write(fragmentPath, snapshot.content, snapshot.mode)
 		if writeErr != nil {
-			return rollback(fmt.Errorf("gitid: writing provider rewrite: %w", writeErr))
+			return fail("git-fragment-backup", fmt.Errorf("gitid: backing up Git fragment: %w", writeErr))
 		}
-		receipts = append(receipts, receipt{target: b.gitconfigPath, backup: backup})
-		if backup != "" {
-			backups = append(backups, backup)
-		}
+		journal.addBackup(backup)
+	}
+	if err := inject("git-fragment"); err != nil {
+		return fail("git-fragment", err)
 	}
 	if writeErr := gitconfig.WriteFragment(fragmentPath, spec.Name, spec.Email, publicKeyPath, true); writeErr != nil {
-		return rollback(fmt.Errorf("gitid: writing Git fragment: %w", writeErr))
+		return fail("git-fragment", fmt.Errorf("gitid: writing Git fragment: %w", writeErr))
 	}
-	return backups, nil, nil
+	if err := inject("git-includeif"); err != nil {
+		return fail("git-includeif", err)
+	}
+	backup, writeErr := gitconfig.WriteIncludeIf(b.gitconfigPath, spec.Identity, "~/.gitconfig.d/"+spec.Identity, matchesFor(spec))
+	if writeErr != nil {
+		return fail("git-includeif", fmt.Errorf("gitid: writing Git includeIf: %w", writeErr))
+	}
+	journal.addBackup(backup)
+	if spec.ForceSSH && spec.Provider != "" {
+		if err := inject("provider-rewrite"); err != nil {
+			return fail("provider-rewrite", err)
+		}
+		backup, writeErr = gitconfig.WriteProviderRewrite(b.gitconfigPath, spec.Provider, true)
+		if writeErr != nil {
+			return fail("provider-rewrite", fmt.Errorf("gitid: writing provider rewrite: %w", writeErr))
+		}
+		journal.addBackup(backup)
+	}
+	if err := inject("allowed-signers-file-backup"); err != nil {
+		return fail("allowed-signers-file-backup", err)
+	}
+	current, readErr := os.ReadFile(b.gitconfigPath) //nolint:gosec // journal validated this managed path
+	if readErr != nil {
+		return fail("allowed-signers-file-backup", fmt.Errorf("gitid: reading Git config for backup: %w", readErr))
+	}
+	info, statErr := os.Stat(b.gitconfigPath)
+	if statErr != nil {
+		return fail("allowed-signers-file-backup", fmt.Errorf("gitid: stat Git config for backup: %w", statErr))
+	}
+	backup, writeErr = filewriter.Write(b.gitconfigPath, current, info.Mode().Perm())
+	if writeErr != nil {
+		return fail("allowed-signers-file-backup", fmt.Errorf("gitid: backing up Git config: %w", writeErr))
+	}
+	journal.addBackup(backup)
+	if err := inject("allowed-signers-file"); err != nil {
+		return fail("allowed-signers-file", err)
+	}
+	if writeErr := gitconfig.SetAllowedSignersFile(b.gitconfigPath, b.allowedSigners); writeErr != nil {
+		return fail("allowed-signers-file", fmt.Errorf("gitid: setting allowed signers file: %w", writeErr))
+	}
+	if err := inject("allowed-signers"); err != nil {
+		return fail("allowed-signers", err)
+	}
+	backup, writeErr = keygen.WriteAllowedSignersReplacing(b.allowedSigners, spec.Identity, spec.Email, pubLine)
+	if writeErr != nil {
+		return fail("allowed-signers", fmt.Errorf("gitid: writing allowed signers: %w", writeErr))
+	}
+	journal.addBackup(backup)
+	return journal.backups, nil, nil
 }
 
 func containedRegularPath(path, root string) error {
@@ -1329,6 +1568,7 @@ func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged id
 	var ops []backupOp
 	var modeOps []modeOp
 	var createdDirs []string
+	var displayGitBackups []string
 	var rollback bool
 
 	defer func() {
@@ -1483,53 +1723,32 @@ func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged id
 	addOp(st.targetPath, bk)
 
 	if id.GitConfigured && id.GitName != "" && id.GitEmail != "" {
-		if err := inject("git-fragment"); err != nil {
-			rollback = true
-			return nil, err
+		gitSpec := tuikit.GitSpec{
+			Identity:      id.Name,
+			Name:          id.GitName,
+			Email:         id.GitEmail,
+			Strategy:      id.MatchStrategy,
+			PublicKeyPath: id.PublicKeyPath,
+			SSHHost:       id.SSHHost,
+			Provider:      id.Provider,
+			GitDir:        id.GitDir,
+			ForceSSH:      id.ForceSSH,
 		}
-		fragmentPath := filepath.Join(b.fragmentDir, in.Name)
-		if err := gitconfig.WriteFragment(fragmentPath, id.GitName, id.GitEmail, id.KeyPath+".pub", true); err != nil {
-			rollback = true
-			return nil, fmt.Errorf("gitid: writing Git fragment: %w", err)
+		if gitSpec.PublicKeyPath == "" {
+			gitSpec.PublicKeyPath = id.KeyPath + ".pub"
 		}
-
-		if err := inject("git-includeif"); err != nil {
-			rollback = true
-			return nil, err
+		if gitSpec.GitDir == "" {
+			gitSpec.GitDir = "~/git/" + id.Name + "/"
 		}
-		gitSpec := tuikit.GitSpec{Identity: id.Name, Strategy: id.MatchStrategy, SSHHost: id.SSHHost, GitDir: id.GitDir}
 		if gitSpec.Strategy == "" {
 			gitSpec.Strategy = "gitdir"
 		}
-		bk, err = gitconfig.WriteIncludeIf(b.gitconfigPath, in.Name, "~/.gitconfig.d/"+in.Name, matchesFor(gitSpec))
-		if err != nil {
+		gitBackups, _, gitErr := b.commitGitArtifacts(gitSpec, staged.PubLine)
+		if gitErr != nil {
 			rollback = true
-			return nil, fmt.Errorf("gitid: writing Git includeIf: %w", err)
+			return nil, fmt.Errorf("gitid: committing Git artifacts: %w", gitErr)
 		}
-		addOp(b.gitconfigPath, bk)
-		if id.ForceSSH && id.Provider != "" {
-			bk, err = gitconfig.WriteProviderRewrite(b.gitconfigPath, id.Provider, true)
-			if err != nil {
-				rollback = true
-				return nil, fmt.Errorf("gitid: writing provider rewrite: %w", err)
-			}
-			addOp(b.gitconfigPath, bk)
-		}
-		if err := gitconfig.SetAllowedSignersFile(b.gitconfigPath, b.allowedSigners); err != nil {
-			rollback = true
-			return nil, fmt.Errorf("gitid: setting allowed signers file: %w", err)
-		}
-
-		if err := inject("allowed-signers"); err != nil {
-			rollback = true
-			return nil, err
-		}
-		bk, err = keygen.WriteAllowedSigners(b.allowedSigners, in.Name, keygen.AllowedSignersLine(id.GitEmail, staged.PubLine))
-		if err != nil {
-			rollback = true
-			return nil, fmt.Errorf("gitid: writing allowed_signers: %w", err)
-		}
-		addOp(b.allowedSigners, bk)
+		displayGitBackups = append(displayGitBackups, gitBackups...)
 	}
 
 	// Collect timestamped backup paths for the ceremony receipt.
@@ -1538,6 +1757,9 @@ func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged id
 		if op.backup != "" {
 			displayBackups = append(displayBackups, b.displayPath(op.backup))
 		}
+	}
+	for _, backup := range displayGitBackups {
+		displayBackups = append(displayBackups, b.displayPath(backup))
 	}
 	return displayBackups, nil
 }

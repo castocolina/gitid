@@ -811,6 +811,95 @@ func TestToDemoIdentityProjectsGitEditFields(t *testing.T) {
 	}
 }
 
+func TestGitTransactionRollbackMatrixPreservesSnapshotsAndSafetyBackups(t *testing.T) {
+	steps := []string{"git-fragment-dir", "gitdir", "git-fragment-backup", "git-fragment", "git-includeif", "provider-rewrite", "allowed-signers-file-backup", "allowed-signers-file", "allowed-signers"}
+	for _, step := range steps {
+		t.Run(step, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			seedSSHDir(t, home)
+			keyPath := filepath.Join(home, ".ssh", "id_ed25519_personal")
+			pubLine := seedGeneratedKey(t, keyPath, "personal", "")
+			fragmentPath := filepath.Join(home, ".gitconfig.d", "personal")
+			gitconfigPath := filepath.Join(home, ".gitconfig")
+			signersPath := filepath.Join(home, ".ssh", "allowed_signers")
+			if err := os.MkdirAll(filepath.Dir(fragmentPath), 0o700); err != nil {
+				t.Fatalf("seeding fragment directory: %v", err)
+			}
+			writeFile(t, fragmentPath, "[user]\n\tname = Before\n\temail = before@example.test\n")
+			writeFile(t, gitconfigPath, "[core]\n\teditor = vi\n")
+			writeFile(t, signersPath, managedBlock("personal", keygen.AllowedSignersLine("before@example.test", pubLine)))
+			gitDir := filepath.Join(home, "git", "personal")
+			paths := []string{fragmentPath, gitconfigPath, signersPath}
+			before := snapshotPaths(t, paths)
+			b := newBackendForHome(home)
+			b.failCommitAt = func(boundary string) error {
+				if boundary == step {
+					return fmt.Errorf("injected failure at %s", boundary)
+				}
+				return nil
+			}
+			backups, restored, err := b.commitGitTransaction(tuikit.GitSpec{
+				Identity: "personal", Name: "After", Email: "after@example.test", Strategy: "both",
+				KeyPath: keyPath, PublicKeyPath: keyPath + ".pub", SSHHost: "personal.github.com",
+				Provider: "github.com", GitDir: gitDir, ForceSSH: true,
+			})
+			if err == nil || !strings.Contains(err.Error(), "injected failure at "+step) {
+				t.Fatalf("error = %v, want injected boundary %q", err, step)
+			}
+			assertUnchanged(t, before, snapshotPaths(t, paths))
+			if _, statErr := os.Stat(gitDir); !os.IsNotExist(statErr) {
+				t.Errorf("rollback left transaction-created gitdir %s: %v", gitDir, statErr)
+			}
+			if _, statErr := os.Stat(filepath.Join(home, ".gitconfig.d")); statErr != nil {
+				t.Errorf("pre-existing fragment directory was removed: %v", statErr)
+			}
+			if len(backups) > 0 {
+				for _, backup := range backups {
+					if _, statErr := os.Stat(backup); statErr != nil {
+						t.Errorf("rollback removed safety backup %s: %v", backup, statErr)
+					}
+				}
+			}
+			if step != "git-fragment-dir" && len(restored) == 0 {
+				t.Error("rollback must report restoration outcomes after a mutation boundary")
+			}
+		})
+	}
+}
+
+func TestGitTransactionSuccessIsByteStableAndReplacesSignerEmail(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_personal")
+	pubLine := seedGeneratedKey(t, keyPath, "personal", "")
+	b := newBackendForHome(home)
+	spec := tuikit.GitSpec{
+		Identity: "personal", Name: "Personal", Email: "after@example.test", Strategy: "both",
+		KeyPath: keyPath, PublicKeyPath: keyPath + ".pub", SSHHost: "personal.github.com",
+		Provider: "github.com", GitDir: "~/git/personal/", ForceSSH: true,
+	}
+	if _, _, err := b.commitGitTransaction(spec); err != nil {
+		t.Fatalf("first transaction: %v", err)
+	}
+	paths := []string{filepath.Join(home, ".gitconfig.d", "personal"), filepath.Join(home, ".gitconfig"), filepath.Join(home, ".ssh", "allowed_signers")}
+	before := snapshotPaths(t, paths)
+	if _, _, err := b.commitGitTransaction(spec); err != nil {
+		t.Fatalf("idempotent transaction: %v", err)
+	}
+	assertUnchanged(t, before, snapshotPaths(t, paths))
+	signers := readFile(t, filepath.Join(home, ".ssh", "allowed_signers"))
+	if !strings.Contains(signers, keygen.AllowedSignersLine(spec.Email, pubLine)) || strings.Contains(signers, "before@example.test") {
+		t.Errorf("allowed_signers did not contain exactly the replacement email block:\n%s", signers)
+	}
+	for _, want := range []string{`[includeIf "gitdir:~/git/personal/"]`, `[includeIf "hasconfig:remote.*.url:git@personal.github.com:*/**"]`, `[url "git@github.com:"]`} {
+		if !strings.Contains(readFile(t, filepath.Join(home, ".gitconfig")), want) {
+			t.Errorf("gitconfig missing %q", want)
+		}
+	}
+}
+
 func TestMatchesForUsesExactSSHHostAndGitDir(t *testing.T) {
 	// Hypothesis: hasconfig conditions use the SSH alias byte-for-byte and the
 	// editable gitdir path is preserved with its required trailing slash.
