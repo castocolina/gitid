@@ -736,19 +736,63 @@ func TestDemoBannerOnlyIdentitiesIsWired(t *testing.T) {
 // D-18/D-19 — real git-disabled reason + functional Skip Git
 // ---------------------------------------------------------------------------
 
-// TestGitStepDisabledReasonIsAlwaysDisabledInRealBinary proves D-19: the real
-// binary's wizard Git-identity step Continue is UNCONDITIONALLY disabled,
-// with its own honest reason — never the dummy's validity-based one, and
-// never reused to lie about capability (there is no Git backend until
-// Phase 4).
-func TestGitStepDisabledReasonIsAlwaysDisabledInRealBinary(t *testing.T) {
+// TestGitStepDisabledReasonUsesFormValidityInRealBinary proves Phase 4 removes
+// the retired capability gate: the real binary now uses the shared form
+// validity reason rather than claiming Git configuration is unavailable.
+func TestGitStepDisabledReasonUsesFormValidityInRealBinary(t *testing.T) {
 	b := newBackendForHome(t.TempDir())
 	reason, always := b.GitStepDisabledReason()
-	if !always {
-		t.Fatal("the real binary must ALWAYS disable the wizard's Git-step Continue button (D-19)")
+	if always {
+		t.Fatal("the real binary must let a valid Git form advance")
 	}
-	if reason != "— Git configuration arrives with the next build" {
-		t.Errorf("GitStepDisabledReason() reason = %q, want the frozen D-19 string", reason)
+	if reason != "" {
+		t.Errorf("GitStepDisabledReason() reason = %q, want no capability override", reason)
+	}
+}
+
+func TestCommitCreateWritesDefaultGitArtifacts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	b := newBackendForHome(home)
+	id := tuikit.DemoIdentity{
+		Name:          "personal",
+		SSHHost:       "personal.github.com",
+		Hostname:      "ssh.github.com",
+		Port:          443,
+		KeyPath:       "~/.ssh/id_ed25519_personal",
+		Provider:      "github.com",
+		State:         "complete",
+		GitName:       "Personal Identity",
+		GitEmail:      "you@personal.example",
+		MatchStrategy: "gitdir",
+	}
+	unlockStoreForIdentity(t, b, id)
+
+	msg := runCommitCreate(t, b, id)
+	if msg.Err != "" {
+		t.Fatalf("CommitCreate: %s", msg.Err)
+	}
+
+	fragment := readFile(t, filepath.Join(home, ".gitconfig.d", "personal"))
+	for _, want := range []string{
+		"name = Personal Identity",
+		"email = you@personal.example",
+		"format = ssh",
+		"signingkey = ~/.ssh/id_ed25519_personal.pub",
+		"gpgsign = true",
+	} {
+		if !strings.Contains(fragment, want) {
+			t.Errorf("fragment missing %q:\n%s", want, fragment)
+		}
+	}
+	gitconfig := readFile(t, filepath.Join(home, ".gitconfig"))
+	if !strings.Contains(gitconfig, `[includeIf "gitdir:~/git/personal/"]`) {
+		t.Errorf("gitconfig missing default includeIf:\n%s", gitconfig)
+	}
+	signers := readFile(t, filepath.Join(home, ".ssh", "allowed_signers"))
+	if !strings.Contains(signers, `you@personal.example namespaces="git"`) {
+		t.Errorf("allowed_signers missing byte-identical email principal:\n%s", signers)
 	}
 }
 
