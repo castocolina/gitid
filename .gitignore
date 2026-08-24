@@ -20,3 +20,4 @@ skills-lock.json
 
 # Reproducible local evidence handoffs include compiled binaries and candidates.
 .planning/phases/*/*-handoff/
+.gsd/
