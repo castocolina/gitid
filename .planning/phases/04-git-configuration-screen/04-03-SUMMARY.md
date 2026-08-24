@@ -17,6 +17,7 @@ Implemented the reusable Git-flow contract, including UI-local Git DTOs, exact S
 - Managed allowed-signer updates replace the identity block using the exact `user.email` bytes rather than appending a stale principal.
 - The standalone `paneGit` ceremony dispatches `CommitGit` after explicit confirmation and reduces `ConfigureGit` only after a successful `GitCommitMsg`; failures remain visible with rollback detail.
 - `hasconfig` rendering no longer invents a fallback host when the validated SSH alias is absent.
+- The Git mutation journal now materializes the selected contained `gitdir` path and removes it on injected rollback.
 
 ## Commits
 
@@ -28,6 +29,9 @@ Implemented the reusable Git-flow contract, including UI-local Git DTOs, exact S
 | `41de81b` | feat(04-03): make Git writes transactional |
 | `4ac2792` | fix(04-03): commit standalone Git flow asynchronously |
 | `10d7c81` | fix(04-03): reject synthetic Git match hosts |
+| `3c5b0cb` | fix(04-03): complete reusable Git form |
+| `3925b19` | fix(04-03): journal Git artifact mutations |
+| `2d944cd` | fix(04-03): create selected Git directories |
 
 ## Verification
 
