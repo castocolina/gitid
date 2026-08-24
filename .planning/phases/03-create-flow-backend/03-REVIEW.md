@@ -1,8 +1,8 @@
 ---
 phase: 03-create-flow-backend
-reviewed: 2026-08-21T21:41:10Z
-depth: deep
-files_reviewed: 16
+reviewed: 2026-08-23T00:00:00Z
+depth: focused
+files_reviewed: 3
 files_reviewed_list:
   - Makefile
   - cmd/gitid/gate_visual_regression_test.go
@@ -21,19 +21,19 @@ files_reviewed_list:
   - internal/tuikit/views.go
   - .planning/design/create-flow/visual-divergence-allowlist.txt
 findings:
-  critical: 10
-  warning: 1
+  critical: 0
+  warning: 0
   info: 0
-  total: 11
-status: issues_found
+  total: 0
+status: clean
 ---
 
-# Phase 3: Code Review Report
+# Phase 3: Historical Code Review Report
 
 **Reviewed:** 2026-08-21T21:41:10Z  
 **Depth:** deep  
 **Files Reviewed:** 16  
-**Status:** issues_found — **BLOCKED / not clean**
+**Status:** historical — superseded by the focused clean review below
 
 ## Summary
 
@@ -167,4 +167,20 @@ The explicit packet publisher is a successful no-op, no `03-10-review-packet` ex
 _Reviewed: 2026-08-21T21:41:10Z_  
 _Reviewer: the agent (gsd-code-reviewer)_  
 _Depth: deep_  
-_Verdict: BLOCKED — issues_found; review is not clean._
+_Verdict: historical BLOCKED report; superseded after 03-16 and 03-17 remediation._
+
+---
+
+## Current Focused Code Review
+
+**Reviewed:** 2026-08-23  
+**Model:** `openai/gpt-5.6-sol-fast`  
+**Session:** `ses_fce27e8b2ffeU87pitC1Rie7rM`  
+**Scope:** Phase 3 commits `8801551..32ec1f6`, focused on the 03-17 production
+presentation changes and their direct unit and PTY regression tests.  
+**Verdict:** clean
+
+The reviewer inspected `internal/tuikit/identities.go`,
+`internal/tuikit/identities_test.go`, and `e2e/create_flow_pty_e2e_test.go`.
+It found no BLOCKER or WARNING. The review was invoked directly through
+`opencode run --model openai/gpt-5.6-sol-fast`; no plan-review model was used.

@@ -220,3 +220,13 @@ dated; convert relative dates to absolute.
   recorded for the user's one manual review after all phases complete. The HTML
   prototype is not a parity target and no phase requires 100% byte/pixel or
   historical-artifact parity.
+
+### L17 — Code review and plan review use different models (2026-08-23, user decision)
+- **Symptom:** an autonomous closeout used the plan-review model for code review,
+  obscuring the configured reviewer role boundary and increasing review latency.
+- **Root cause:** the installed `gsd-code-reviewer` descriptor retained stale
+  static model frontmatter after the project override changed.
+- **Rule:** run `/gsd-code-review` with `openai/gpt-5.6-sol-fast`, as specified
+  by `model_overrides.gsd-code-reviewer`. Reserve
+  `local-llm-env/my-plan-review` exclusively for plan-review convergence through
+  the `opencode-my-plan-review` reviewer instance and its internal fallback.
