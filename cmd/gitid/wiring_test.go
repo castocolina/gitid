@@ -797,6 +797,28 @@ func TestCommitCreateWritesDefaultGitArtifacts(t *testing.T) {
 	}
 }
 
+func TestMatchesForUsesExactSSHHostAndGitDir(t *testing.T) {
+	// Hypothesis: hasconfig conditions use the SSH alias byte-for-byte and the
+	// editable gitdir path is preserved with its required trailing slash.
+	spec := tuikit.GitSpec{
+		Identity: "personal", Strategy: "both", SSHHost: "team.github.example",
+		GitDir: "~/repos/personal",
+	}
+	matches := matchesFor(spec)
+	if len(matches) != 2 {
+		t.Fatalf("matchesFor returned %d matches, want gitdir + hasconfig", len(matches))
+	}
+	if got, want := matches[0].Value, "~/repos/personal/"; got != want {
+		t.Errorf("gitdir match = %q, want editable path %q", got, want)
+	}
+	if got, want := matches[1].Value, "remote.*.url:git@team.github.example:*/**"; got != want {
+		t.Errorf("hasconfig match = %q, want exact SSH host %q", got, want)
+	}
+	if strings.Contains(matches[1].Value, "personal.github") {
+		t.Errorf("hasconfig match must not synthesize an identity alias: %q", matches[1].Value)
+	}
+}
+
 // TestPersistSkipGitWritesSSHOnlyNoGitArtifacts proves D-18 through the REAL
 // seam: a create commits ONLY the SSH leg (Host block + key) — no Git
 // fragment, includeIf, or allowed_signers entry, EVEN when the identity
