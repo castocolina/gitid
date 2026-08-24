@@ -115,23 +115,109 @@ func TestDetailShowsSSHFirstAndNeverFabricatesGit(t *testing.T) {
 // Create wizard — state 1 validation.
 // --------------------------------------------------------------------------
 
-func TestWizardDuplicatePrefixBlocksNext(t *testing.T) {
-	a := pressSeq(t, identitiesApp(), "n")
+type unownedCollisionBackend struct{ stubBackend }
+
+func (unownedCollisionBackend) AliasCollision(string) (bool, error) { return true, nil }
+
+func TestWizardUnownedAliasCollisionBlocksNext(t *testing.T) {
+	a := pressSeq(t, NewApp(unownedCollisionBackend{}), "n")
 	view := appView(a)
 	if !strings.Contains(view, "Step 1/4") || !strings.Contains(view, "New identity › SSH details") {
 		t.Fatalf("wizard should open at step 1; view:\n%s", view)
 	}
-	// Type "personal" over the default prefix — a taken name.
-	a = clearPrefixRaw(t, a)
-	a = typeText(t, a, "personal")
 	view = appView(a)
 	if !strings.Contains(view, "SSH Host alias already exists") {
-		t.Error("duplicate alias must show the exact error copy")
+		t.Error("unowned duplicate alias must show the exact error copy")
 	}
 	// Next must be blocked.
 	a, _ = press(t, a, "enter")
 	if !strings.Contains(appView(a), "Step 1/4") {
-		t.Error("Enter must not advance while the prefix duplicates an existing identity")
+		t.Error("Enter must not advance while an unowned alias collides")
+	}
+}
+
+type collisionResumeBackend struct {
+	stubBackend
+	state DemoState
+}
+
+func (b collisionResumeBackend) InitialState() DemoState { return b.state }
+
+func (b collisionResumeBackend) AliasCollision(alias string) (bool, error) {
+	for _, identity := range b.state.Identities {
+		if identity.SSHHost == alias {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func TestGitFlowAliasCollisionResume(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		target   DemoIdentity
+		offer    string
+		gitName  string
+		gitEmail string
+		forceSSH bool
+	}{
+		{
+			name: "SSH-only completion",
+			target: DemoIdentity{
+				Name: "existing", SSHHost: "exact.github.com", KeyPath: "~/.ssh/id_existing",
+			},
+			offer:    `Alias already used by "existing" (SSH-only) — complete its Git config instead?`,
+			forceSSH: true,
+		},
+		{
+			name: "complete edit",
+			target: DemoIdentity{
+				Name: "existing", SSHHost: "exact.github.com", KeyPath: "~/.ssh/id_existing",
+				GitFragmentPath: "~/.gitconfig.d/existing", GitConfigured: true, GitName: "Existing", GitEmail: "existing@example.test",
+				MatchStrategy: "both", GitDir: "~/src/existing/", ForceSSH: false,
+			},
+			offer:    `Alias already used by "existing" (complete) — edit its Git config instead?`,
+			gitName:  "Existing",
+			gitEmail: "existing@example.test",
+			forceSSH: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := NewApp(collisionResumeBackend{state: DemoState{Identities: []DemoIdentity{tc.target}}})
+			a = pressSeq(t, a, "n")
+			m := identModel(t, a)
+			m.wizard.form.hostTouched = true
+			m.wizard.form.host.SetValue(tc.target.SSHHost)
+			a.screens[TabIdentities] = m
+
+			if got, err := m.wizard.step0Valid(a.state); err == nil || got {
+				t.Fatalf("collision must fail validation: valid=%v err=%v", got, err)
+			}
+			if view := paneFlat(a); !strings.Contains(view, tc.offer) {
+				t.Fatalf("collision offer missing %q:\n%s", tc.offer, view)
+			}
+
+			a, _ = press(t, a, "enter")
+			m = identModel(t, a)
+			if !m.wizard.hasCollisionTarget || m.wizard.collisionTarget != tc.target {
+				t.Fatalf("collision target = %+v, want exact current-state target %+v", m.wizard.collisionTarget, tc.target)
+			}
+			if m.pane != paneGit || m.selected != tc.target.Name {
+				t.Fatalf("Enter must select %q and open the reusable Git form: pane=%v selected=%q", tc.target.Name, m.pane, m.selected)
+			}
+			if got := m.gitPaneForm.name.Value(); got != tc.gitName {
+				t.Errorf("Git name = %q, want %q", got, tc.gitName)
+			}
+			if got := m.gitPaneForm.email.Value(); got != tc.gitEmail {
+				t.Errorf("Git email = %q, want %q", got, tc.gitEmail)
+			}
+			if got := m.gitPaneForm.forceSSH; got != tc.forceSSH {
+				t.Errorf("Force SSH = %v, want %v", got, tc.forceSSH)
+			}
+			if got := a.state.Identities[0]; got != tc.target {
+				t.Errorf("collision resume rewrote SSH state: got %+v, want %+v", got, tc.target)
+			}
+		})
 	}
 }
 

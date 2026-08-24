@@ -820,11 +820,13 @@ type wizardModel struct {
 	// proof is the exact, captured stage transcript. It is intentionally
 	// separate from the compact status rows so 100x30 rendering never loses a
 	// command or ssh -G field to layout truncation.
-	proof        ExactTextViewport
-	configureGit bool
-	git          gitForm
-	gitFocus     int
-	ceremony     ceremonyModel
+	proof              ExactTextViewport
+	configureGit       bool
+	git                gitForm
+	gitFocus           int
+	ceremony           ceremonyModel
+	collisionTarget    DemoIdentity
+	hasCollisionTarget bool
 }
 
 // newWizard builds the wizard with the web demo's defaults.
@@ -1238,11 +1240,29 @@ func (w wizardModel) renderProof(width int) string {
 	return " " + styleFaint.Render(state) + "\n" + v.View() + "\n"
 }
 
+func collisionTargetFor(s DemoState, alias string) (DemoIdentity, bool) {
+	for _, identity := range s.Identities {
+		if identity.SSHHost == alias {
+			return identity, true
+		}
+	}
+	return DemoIdentity{}, false
+}
+
+func hasGitConfiguration(identity DemoIdentity) bool {
+	return identity.GitConfigured || (identity.GitFragmentPath != "" && identity.GitName != "" && identity.GitEmail != "")
+}
+
+func (w wizardModel) resolveCollisionTarget(s DemoState) wizardModel {
+	w.collisionTarget, w.hasCollisionTarget = collisionTargetFor(s, w.form.sshHost())
+	return w
+}
+
 // step0Valid mirrors the web gating for wizard state 1. Choosing "Reuse an
 // existing key" (D-10) without landing on a usable candidate blocks advance
 // too — otherwise the reuse choice would silently fall back to generating a
 // key under a name the user never asked for.
-func (w wizardModel) step0Valid(_ DemoState) (bool, *ValidationError) {
+func (w wizardModel) step0Valid(s DemoState) (bool, *ValidationError) {
 	if w.keySource == keySourceReuse && w.reuseKeyPath() == "" {
 		return false, nil
 	}
@@ -1258,6 +1278,12 @@ func (w wizardModel) step0Valid(_ DemoState) (bool, *ValidationError) {
 	if collides, err := w.backend.AliasCollision(w.form.sshHost()); err != nil || collides {
 		if err != nil {
 			return false, &ValidationError{Field: "alias", Message: err.Error()}
+		}
+		if target, ok := collisionTargetFor(s, w.form.sshHost()); ok {
+			if hasGitConfiguration(target) {
+				return false, &ValidationError{Field: "alias", Message: `Alias already used by "` + target.Name + `" (complete) — edit its Git config instead?`}
+			}
+			return false, &ValidationError{Field: "alias", Message: `Alias already used by "` + target.Name + `" (SSH-only) — complete its Git config instead?`}
 		}
 		return false, &ValidationError{Field: "alias", Message: "SSH Host alias already exists"}
 	}
@@ -2089,12 +2115,21 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			m.pane = paneDetail
 			return keyResult{model: m, handled: true}
 		case "enter":
+			w = w.resolveCollisionTarget(s)
 			valid, _ := w.step0Valid(s)
 			if valid {
 				w.step = 1
 				w.testPhase = testIdle
+				w.collisionTarget = DemoIdentity{}
+				w.hasCollisionTarget = false
+				m.wizard = w
+			} else if w.hasCollisionTarget {
+				m.wizard = w
+				m.selected = w.collisionTarget.Name
+				m = m.openGitForm(w.collisionTarget)
+			} else {
+				m.wizard = w
 			}
-			m.wizard = w
 			return keyResult{model: m, handled: true}
 		case "tab", "down":
 			ring := wizardStep0FocusRing(w.keySource)
@@ -3127,10 +3162,11 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 
 	switch w.step {
 	case 0:
+		w = w.resolveCollisionTarget(s)
 		prefixError := ""
 		_, valErr := w.step0Valid(s)
-		if valErr != nil && valErr.Field == "alias" && strings.Contains(valErr.Message, "already exists") {
-			prefixError = `"` + w.form.identityName() + `" already exists — pick another prefix.`
+		if valErr != nil && valErr.Field == "alias" {
+			prefixError = valErr.Message
 		}
 		hostHelper := "Auto-joined: <prefix>.<provider> — editable"
 		if w.form.hostTouched {
