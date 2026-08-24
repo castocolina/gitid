@@ -48,7 +48,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundations, Spikes & CI** - Non-UI core (screenshot tooling, multi-algo keygen + probing, dual SSH storage, state taxonomy) + cross-OS CI, no product UI (completed 2026-07-03)
 - [x] **Phase 2: DESIGN — All Mockups (★ CHECKPOINT #1)** - HTML/`mui` mockups for every surface + an interactive web demo + a live Go TUI demo, user-approved (completed 2026-07-06 — **APPROVED:** 2026-07-06 by Pepe)
-- [ ] **Phase 3: Create Flow Backend** - Algorithm → SSH screen → two-stage test → store, behind the approved design
+- [x] **Phase 3: Create Flow Backend** - Algorithm → SSH screen → two-stage test → store, behind the approved design (completed 2026-08-24)
 - [ ] **Phase 4: Git Configuration Screen** - Per-identity git fragment + `includeIf` + `allowed_signers`, review → confirm → write
 - [ ] **Phase 5: Identity Manager** - State-taxonomy list, SSH-first detail, clone / new-key / rotate / delete-choice, app view set
 - [ ] **Phase 6: Global SSH Options** - Danger-aware, explained SSH config options; advisory + fixable
@@ -330,7 +330,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Foundations, Spikes & CI | 7/7 | Complete | 2026-07-03 |
 | 2. DESIGN — All Mockups (★ CHECKPOINT #1) | 14/15 | In Progress|  |
-| 3. Create Flow Backend | 11/11 | In Progress|  |
+| 3. Create Flow Backend | 19/19 | Complete | 2026-08-24 |
 | 4. Git Configuration Screen | 0/TBD | Not started | - |
 | 5. Identity Manager | 0/TBD | Not started | - |
 | 6. Global SSH Options | 0/TBD | Not started | - |
