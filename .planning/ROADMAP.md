@@ -220,8 +220,15 @@ Plans:
    review compares it with `cmd/gitid-dummy` and classifies every difference as an
    improvement or a defect. (DLV-04, DLV-06)
 
-**Plans**: TBD
+**Plans**: 4 plans in 4 waves
 **UI hint**: yes
+
+Plans:
+
+- [ ] 04-01-PLAN.md — Default Git-configuration tracer through the compiled real TUI and combined confirmed write
+- [ ] 04-02-PLAN.md — Round-trip includeIf strategies, provider insteadOf block, and doctor reservation
+- [ ] 04-03-PLAN.md — Reusable create/edit Git flow, truthful diffs, collision resume, and all-or-nothing transaction
+- [ ] 04-04-PLAN.md — Per-state real PTY and compiled real-vs-live-dummy semantic UI gate
 
 ### Phase 5: Identity Manager
 
