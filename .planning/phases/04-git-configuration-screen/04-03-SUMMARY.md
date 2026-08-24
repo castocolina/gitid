@@ -15,6 +15,8 @@ Implemented the reusable Git-flow contract, including UI-local Git DTOs, exact S
 - `hasconfig` matching now uses the configured SSH alias exactly; user-selected `gitdir` paths retain their trailing slash.
 - Confirmed Git writes validate HOME containment and reject symlinked managed paths, write includeIf and signer blocks transactionally, and report restored targets on rollback.
 - Managed allowed-signer updates replace the identity block using the exact `user.email` bytes rather than appending a stale principal.
+- The standalone `paneGit` ceremony dispatches `CommitGit` after explicit confirmation and reduces `ConfigureGit` only after a successful `GitCommitMsg`; failures remain visible with rollback detail.
+- `hasconfig` rendering no longer invents a fallback host when the validated SSH alias is absent.
 
 ## Commits
 
@@ -24,6 +26,8 @@ Implemented the reusable Git-flow contract, including UI-local Git DTOs, exact S
 | `8a5a76e` | test(04-03): cover exact Git match inputs |
 | `8ec66fc` | feat(04-03): preserve Git flow match inputs |
 | `41de81b` | feat(04-03): make Git writes transactional |
+| `4ac2792` | fix(04-03): commit standalone Git flow asynchronously |
+| `10d7c81` | fix(04-03): reject synthetic Git match hosts |
 
 ## Verification
 
@@ -33,6 +37,7 @@ Implemented the reusable Git-flow contract, including UI-local Git DTOs, exact S
 | `make test` | PASS |
 | `make lint` | PASS — 0 issues |
 | `make test-e2e` | PASS |
+| `go test -race -count=1 ./internal/tuikit -run TestStandaloneGitCeremonyCommitsBeforeConfigureGit` | PASS |
 
 ## Deviations from Plan
 
