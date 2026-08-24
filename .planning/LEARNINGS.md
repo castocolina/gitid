@@ -230,3 +230,128 @@ dated; convert relative dates to absolute.
   by `model_overrides.gsd-code-reviewer`. Reserve
   `local-llm-env/my-plan-review` exclusively for plan-review convergence through
   the `opencode-my-plan-review` reviewer instance and its internal fallback.
+
+### L18 — `worktree.baseRef` defaults to `origin/<default-branch>`, not the orchestrator's HEAD (2026-08-24, Phase 4 Wave 2)
+- **Symptom:** `Agent(subagent_type="gsd-executor", isolation="worktree")`
+  provisioned a worktree at `2478493` (== `main`'s tip, ~60 commits behind),
+  missing all of Phases 1–4. The executor correctly refused to self-heal
+  (declined to rebase/merge on its own) and returned a clear diagnostic instead
+  of guessing.
+- **Root cause:** this repo stacks phases sequentially on one long-running
+  branch (`gsd/phase-04-...`) that is never merged back to `main` between
+  phases — non-standard vs. the tool's default assumption
+  (`branching_strategy: "phase"`, fork fresh off `origin/HEAD` per phase). The
+  harness's `worktree.baseRef` setting defaults to `"fresh"`.
+- **Rule:** on any repo where phase branches stack instead of merging to main,
+  set `.claude/settings.json` → `{"worktree": {"baseRef": "head"}}` ONCE at
+  session start, before the first `isolation="worktree"` dispatch — don't wait
+  to discover it via a failed dispatch. (Already applied to this repo; carries
+  forward automatically.)
+
+### L19 — A sandboxed Bash probe cannot prove a local network service is down (2026-08-24, Phase 4 Wave 2)
+- **Symptom:** `opencode run --model local-llm-env/my-coding -` failed with
+  "Cannot connect to API" on the first probe. This was read as "the local
+  model server is unreachable" and nearly caused a fallback to a different
+  (wrong) executor strategy.
+- **Root cause:** the Bash tool's default sandbox blocks localhost network
+  access. The probe never reached the server; the server was fine.
+- **Rule:** before concluding any local/loopback service (local LLM servers,
+  local DBs, etc.) is down, retry the exact same probe with
+  `dangerouslyDisableSandbox: true`. Only trust "unreachable" after a
+  non-sandboxed probe fails.
+
+### L20 — A shell alias silently breaks non-interactive script invocations of the same command (2026-08-24, Phase 4 Wave 2)
+- **Symptom:** first scripted `opencode run ...` dispatch hung indefinitely on
+  an unanswerable interactive permission prompt.
+- **Root cause:** the environment had `alias opencode='opencode --auto'`. Using
+  the aliased form broke CLI arg-order parsing in a *different* way (the
+  `--auto` token landed before `run` and confused yargs), so the fix was to
+  bypass the alias with `command opencode` — which then ALSO silently dropped
+  the auto-approve flag the alias used to provide, reintroducing the hang from
+  the opposite direction.
+- **Rule:** when bypassing a shell alias with `command <name>` (or an absolute
+  path) to fix argument ordering, always re-check what flags the alias itself
+  was contributing and re-add them explicitly. For headless `opencode`
+  execution specifically, always pass `--auto` explicitly:
+  `command opencode run --auto --model <provider/model> -`. Never assume an
+  alias's convenience flags carry over once bypassed.
+
+### L21 — `ps aux | grep <cmdline>` silently never matches a long/backgrounded command (2026-08-24, Phase 4 Waves 3–4)
+- **Symptom:** a `Monitor`-driven exit-detection loop
+  (`until ! ps aux | grep -q "[o]pencode run --auto --model local-llm-env..."`)
+  never fired — not on the process dying, not even while it was still alive —
+  making the background cross-AI run look permanently "not found" in both
+  directions.
+- **Root cause:** `ps aux`'s COMMAND column truncates long command lines at a
+  fixed width, so a long unique grep pattern never matches. Separately,
+  `nohup bash -c '...' & disown` creates a PID chain (wrapper `bash -c` ->
+  nested `bash -c` -> actual `opencode` process); grepping by command text
+  also risks matching the wrong PID in that chain.
+- **Rule:** never key liveness/exit detection off `ps aux | grep <long text>`.
+  Resolve the exact leaf PID once via `pgrep -f` +
+  `ps -p <pid> -o pid,ppid,command` (walk to the real leaf, not the `nohup`
+  wrapper), then poll with `kill -0 <pid>` — it either succeeds (alive) or
+  fails with "no such process" (exited), unambiguously.
+
+### L22 — Independent re-verification catches what an executor's own SUMMARY.md misses (2026-08-24, Phase 4 Wave 3)
+- **Symptom:** the cross-AI executor's own summary claimed
+  `make test-e2e: PASS` and "Self-Check: PASSED", but the summary was written
+  before its own later commits and never actually re-ran `test-e2e` after its
+  final fix. A real regression (see L23) had shipped as "done".
+- **Root cause:** trusting a subagent's/cross-AI executor's self-reported gate
+  results without re-running them, especially when the executor's own commit
+  history continues after the point its summary describes.
+- **Rule:** this is L1 generalized beyond Claude-native executors: it applies
+  identically to cross-AI (`opencode`/local-model) executors, and applies with
+  MORE force to them because they are more likely to under-report or
+  self-audit incompletely. After ANY executor — Claude-native or cross-AI —
+  claims a wave/plan is done, the orchestrator personally re-runs `make test`,
+  `make lint`, `make test-e2e`, and any relevant visual gate before trusting
+  the result or advancing state. Cross-check the SUMMARY's commit list against
+  `git log` for the actual plan-scope path — a summary that predates the
+  branch's last commit on that path is stale by definition.
+
+### L23 — A failing gate after a plan lands is not automatically that plan's regression (2026-08-24, Phase 4 Wave 3 -> `da03009`)
+- **Symptom:** `TestCreateFlow_SSHFormAliasCollision` started failing right
+  after Wave 3 landed a new branch (`hasGitConfiguration`) that depended on
+  correctly-populated `GitName`/`GitEmail`. The new code was the trigger, but
+  not the bug.
+- **Root cause:** a genuinely pre-existing, previously-latent defect in
+  `internal/identity/loader.go`: identity fragment paths are stored verbatim
+  (e.g. `~/.gitconfig.d/<name>`) because `git` itself expands `~` when
+  resolving `includeIf path =` at its own runtime — but `readFrag` opens the
+  file directly via `os.Stat`/`exec.Command`, neither of which expands a
+  literal `~`. Every real identity's fragment read-back had silently been
+  failing since the feature existed; nothing had previously depended on the
+  populated name/email to notice. A prior unit test
+  (`TestReconstruct_LoadProviderRewrite`) had even baked the unexpanded path in
+  as its expected/"correct" value, masking the bug further.
+  See [[gitid-default-match-divergence]]-style pattern: new logic exposing an
+  old defect, not introducing one.
+- **Rule:** when a newly-landed change makes a previously-passing test fail,
+  do NOT default to "revert the new change." Trace the actual data path first
+  (here: read the exact file-open call, and manually reproduce with the CLI —
+  `git config --file "~/..."` proved `git`'s own arg parsing does NOT expand
+  `~` for `--file`, while `includeIf path =` DOES get expanded by git at
+  runtime — an asymmetry worth remembering for this codebase generally). If
+  the new code is correct and only exposed a real pre-existing defect, fix the
+  defect, add a regression test proven RED-without/GREEN-with the fix, and fix
+  (not just delete) any prior test that had encoded the bug as expected
+  behavior.
+
+### L24 — Long-running unsupervised cross-AI executor runs can spiral into low-value self-audit loops (2026-08-24, Phase 4 Wave 3)
+- **Symptom:** Wave 2 (similar scope/complexity) completed in ~40 minutes.
+  Wave 3 took ~4 hours, cycling through internal self-audit/fix passes with
+  diminishing returns, and appeared to stall (long gaps between log lines
+  while CPU time still slowly accumulated) before finally exiting.
+- **Root cause:** the local-model executor has its own internal sub-agent
+  tooling and, left fully unsupervised with no time budget, kept re-auditing
+  and re-fixing its own work well past the point of adding value.
+- **Rule:** budget wall-clock per cross-AI dispatch relative to its sibling
+  waves' actual durations, not just an upper timeout. If a dispatch runs
+  several multiples longer than a comparable prior wave with no new commits
+  landing for an extended stretch, treat that as a signal to check liveness
+  (L21) and consider taking over (Claude-native execution or direct
+  intervention) rather than waiting indefinitely. Kill signals sent to an
+  already-exited process return "no such process" harmlessly — that is a
+  normal race with the process's own exit, not an error to chase further.

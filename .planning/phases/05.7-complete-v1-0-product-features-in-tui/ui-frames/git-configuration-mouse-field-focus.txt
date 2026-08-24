@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 1 ids · ✓ ok
+ Identities › acme › Configure Git
+S ssh · G git  ✓ ok ! attn ✗ broken │ ✓ Git identity "acme" configured — applies via the gitdir
+▸ ✗ acme                      S✗ G✓ │ strategy.
+                                    │
+                                    │ Wrote → ~/.gitconfig.d/acme
+                                    │ Wrote → ~/.gitconfig
+                                    │ Wrote → ~/.ssh/allowed_signers
+                                    │ Backed up → ~/.gitconfig.backup.2026-08-24T23-12-41Z
+                                    │ Backed up → ~/.ssh/allowed_signers.backup.2026-08-24T23-12-41Z
+                                    │
+                                    │  Done (Enter)
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+ Esc returns to the identity detail without writing anything.
+ Tab/←→ Cancel / Confirm · Enter confirm
+ Esc back · Ctrl+P palette
