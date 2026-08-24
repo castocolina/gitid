@@ -31,7 +31,7 @@ keys, configuration, network provider, or external account was accessed.
 |---|---|---|
 | RED | `64e22fa` | `TERM=dumb SSH_AUTH_SOCK= go test -tags e2e -race -count=1 ./e2e -run '^TestCreateFlow_Stage2RendersExactRawSSHOutput$'` failed: validation completed, but the focused proof viewport exposed neither the raw-only `gitidrawmarker proof-retained-verbatim` line nor the stage-two connectivity output. |
 | GREEN | `8802f48` | The same compiled-real PTY command passed after retaining raw `ssh -G` stdout and leaving connectivity output in `Detail`. |
-| Focused contracts | pending commit | `TERM=dumb SSH_AUTH_SOCK= go test -v -race -count=1 ./internal/tester ./cmd/gitid ./internal/tuikit -run 'Test(ResolvedViaRetainsRawResolutionOutput|ResolvedRetainsRawResolutionOutput|Stage2RetainsConnectivityAndRawResolutionOutput|FocusedProofContainsRawStage2Outputs|Stage2RecordsOutcomeAfterValidation|ToTestResultViewMapsEveryOutcome)$'` passed: 9 tests in 3 packages. |
+| Focused contracts | `ba4eb28` | `TERM=dumb SSH_AUTH_SOCK= go test -v -race -count=1 ./internal/tester ./cmd/gitid ./internal/tuikit -run 'Test(ResolvedViaRetainsRawResolutionOutput|ResolvedRetainsRawResolutionOutput|Stage2RetainsConnectivityAndRawResolutionOutput|FocusedProofContainsRawStage2Outputs|Stage2RecordsOutcomeAfterValidation|ToTestResultViewMapsEveryOutcome)$'` passed: 9 tests in 3 packages. |
 
 The RED commit is an ancestor of the GREEN commit. The RED failure was
 behavioral, not a fixture, compile, or setup failure.
