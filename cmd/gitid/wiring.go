@@ -1573,13 +1573,9 @@ func matchesFor(spec tuikit.GitSpec) []gitconfig.Match {
 		gitdirPath += "/"
 	}
 	gitdir := gitconfig.Match{Kind: gitconfig.MatchGitdir, Value: gitdirPath}
-	// SSHHost is the validated alias from the SSH block. Falling back only when
-	// legacy callers omit it preserves older create flow data without creating
-	// a glob or changing a provided alias.
+	// SSHHost is the validated alias from the SSH block. A missing host must
+	// fail validation at the transaction boundary; never synthesize an alias.
 	sshHost := spec.SSHHost
-	if sshHost == "" {
-		sshHost = spec.Identity + ".github.com"
-	}
 	hasconfig := gitconfig.Match{
 		Kind:  gitconfig.MatchHasconfig,
 		Value: "remote.*.url:git@" + sshHost + ":*/**",
