@@ -126,6 +126,8 @@ type GitSpec struct {
 	Strategy string
 	// KeyPath is the identity's key; user.signingkey is KeyPath + ".pub".
 	KeyPath string
+	// SSHHost is the configured SSH alias used by hasconfig remote matching.
+	SSHHost string
 }
 
 // WritePlanView is what a committed create will touch: the files written

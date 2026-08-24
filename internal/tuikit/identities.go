@@ -952,7 +952,9 @@ func (w wizardModel) spec() CreateSpec {
 
 // gitSpec projects the wizard's Git step values into the Backend's GitSpec.
 func (w wizardModel) gitSpec() GitSpec {
-	return w.git.spec(w.form.identityName(), w.keyPath())
+	spec := w.git.spec(w.form.identityName(), w.keyPath())
+	spec.SSHHost = w.form.sshHost()
+	return spec
 }
 
 // algo is the selected key algorithm id.
@@ -1343,6 +1345,7 @@ func (w wizardModel) finishIdentity() DemoIdentity {
 	}
 	if w.configureGit {
 		id.State = "complete"
+		id.GitConfigured = true
 		id.GitFragmentPath = "~/.gitconfig.d/" + name
 		id.GitName = w.git.name.Value()
 		id.GitEmail = w.git.email.Value()

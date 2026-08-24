@@ -30,6 +30,9 @@ type DemoIdentity struct {
 	GitName       string
 	GitEmail      string
 	MatchStrategy string
+	// GitConfigured distinguishes an explicit create-flow confirmation from
+	// incidental Git-shaped row data used by read-only views and tests.
+	GitConfigured bool
 	// Real SSH endpoint + port (SSHUI-01); optional for seeded rows.
 	Hostname string
 	Port     int

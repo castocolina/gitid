@@ -376,7 +376,7 @@ func (b *realBackend) persistCreate(state tuikit.DemoState, a tuikit.AddIdentity
 		b.setPersistErr(err)
 		return state
 	}
-	if _, err := b.commitCreateTransaction(in, staged); err != nil {
+	if _, err := b.commitCreateTransaction(in, staged, a.Identity); err != nil {
 		b.setPersistErr(err)
 		return state
 	}
@@ -715,18 +715,11 @@ func (b *realBackend) CopyPublicKey(pubKeyPath string) (string, error) {
 	return "Public key copied to clipboard (" + b.displayPath(path) + ").", nil
 }
 
-// gitStepDisabledReason is the D-19 frozen reason string the REAL binary
-// shows under the wizard's Git-identity step [ Continue ] button — the
-// existing form-validity reason ("— needs user.name + a valid email") would
-// be a LIE about capability here: there is no Git backend behind Continue
-// until Phase 4, so it must never enable regardless of what the user typed.
-const gitStepDisabledReason = "— Git configuration arrives with the next build"
-
 // GitStepDisabledReason implements D-19: the real binary ALWAYS disables
 // the wizard's Git-identity step [ Continue ] button, with its own honest
 // reason — never the dummy's validity-based one.
 func (b *realBackend) GitStepDisabledReason() (string, bool) {
-	return gitStepDisabledReason, true
+	return "", false
 }
 
 // ---------------------------------------------------------------------------
@@ -1161,7 +1154,7 @@ func (b *realBackend) CommitCreate(id tuikit.DemoIdentity) tea.Cmd {
 		if err != nil {
 			return tuikit.WizardCommitMsg{Err: err.Error()}
 		}
-		backups, err := b.commitCreateTransaction(in, staged)
+		backups, err := b.commitCreateTransaction(in, staged, id)
 		if err != nil {
 			return tuikit.WizardCommitMsg{Err: err.Error()}
 		}
@@ -1183,7 +1176,7 @@ func (b *realBackend) CommitCreate(id tuikit.DemoIdentity) tea.Cmd {
 // Rollback restores pre-write backups and removes transaction-created files so
 // a failure at any step leaves the user's config exactly as it was. For reused
 // keys, rollback restores the original file permissions (CR-09).
-func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged identity.StagedKey) ([]string, error) {
+func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged identity.StagedKey, id tuikit.DemoIdentity) ([]string, error) {
 	type backupOp struct {
 		target string
 		backup string // empty means target did not exist before the transaction
@@ -1350,6 +1343,48 @@ func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged id
 	}
 	addOp(st.targetPath, bk)
 
+	if id.GitConfigured && id.GitName != "" && id.GitEmail != "" {
+		if err := inject("git-fragment"); err != nil {
+			rollback = true
+			return nil, err
+		}
+		fragmentPath := filepath.Join(b.fragmentDir, in.Name)
+		if err := gitconfig.WriteFragment(fragmentPath, id.GitName, id.GitEmail, id.KeyPath+".pub", true); err != nil {
+			rollback = true
+			return nil, fmt.Errorf("gitid: writing Git fragment: %w", err)
+		}
+
+		if err := inject("git-includeif"); err != nil {
+			rollback = true
+			return nil, err
+		}
+		gitSpec := tuikit.GitSpec{Identity: id.Name, Strategy: id.MatchStrategy, SSHHost: id.SSHHost}
+		if gitSpec.Strategy == "" {
+			gitSpec.Strategy = "gitdir"
+		}
+		bk, err = gitconfig.WriteIncludeIf(b.gitconfigPath, in.Name, "~/.gitconfig.d/"+in.Name, matchesFor(gitSpec))
+		if err != nil {
+			rollback = true
+			return nil, fmt.Errorf("gitid: writing Git includeIf: %w", err)
+		}
+		addOp(b.gitconfigPath, bk)
+		if err := gitconfig.SetAllowedSignersFile(b.gitconfigPath, b.allowedSigners); err != nil {
+			rollback = true
+			return nil, fmt.Errorf("gitid: setting allowed signers file: %w", err)
+		}
+
+		if err := inject("allowed-signers"); err != nil {
+			rollback = true
+			return nil, err
+		}
+		bk, err = keygen.WriteAllowedSigners(b.allowedSigners, in.Name, keygen.AllowedSignersLine(id.GitEmail, staged.PubLine))
+		if err != nil {
+			rollback = true
+			return nil, fmt.Errorf("gitid: writing allowed_signers: %w", err)
+		}
+		addOp(b.allowedSigners, bk)
+	}
+
 	// Collect timestamped backup paths for the ceremony receipt.
 	var displayBackups []string
 	for _, op := range ops {
@@ -1430,7 +1465,7 @@ func matchesFor(spec tuikit.GitSpec) []gitconfig.Match {
 	gitdir := gitconfig.Match{Kind: gitconfig.MatchGitdir, Value: "~/git/" + spec.Identity + "/"}
 	hasconfig := gitconfig.Match{
 		Kind:  gitconfig.MatchHasconfig,
-		Value: "remote.*.url:git@" + spec.Identity + ".*:*/**",
+		Value: "remote.*.url:git@" + spec.SSHHost + ":*/**",
 	}
 	switch spec.Strategy {
 	case "hasconfig":

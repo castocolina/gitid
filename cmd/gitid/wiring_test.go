@@ -766,6 +766,7 @@ func TestCommitCreateWritesDefaultGitArtifacts(t *testing.T) {
 		GitName:       "Personal Identity",
 		GitEmail:      "you@personal.example",
 		MatchStrategy: "gitdir",
+		GitConfigured: true,
 	}
 	unlockStoreForIdentity(t, b, id)
 
