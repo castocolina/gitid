@@ -986,6 +986,9 @@ func (b *realBackend) commitGitArtifacts(spec tuikit.GitSpec, pubLine string) (b
 		if err := inject("gitdir"); err != nil {
 			return fail("gitdir", err)
 		}
+		if err := journal.ensureDir(gitDirPath, 0o700); err != nil {
+			return fail("gitdir", err)
+		}
 	}
 	if err := inject("git-fragment-backup"); err != nil {
 		return fail("git-fragment-backup", err)

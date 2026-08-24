@@ -798,6 +798,28 @@ func TestCommitCreateWritesDefaultGitArtifacts(t *testing.T) {
 	}
 }
 
+func TestGitTransactionCreatesSelectedContainedGitDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	b := newBackendForHome(home)
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_personal")
+	seedGeneratedKey(t, keyPath, "personal", "")
+	gitDir := filepath.Join(home, "repos", "personal")
+	_, _, err := b.commitGitTransaction(tuikit.GitSpec{
+		Identity: "personal", Name: "Personal", Email: "personal@example.test",
+		Strategy: "gitdir", SSHHost: "personal.github.com", Provider: "github.com",
+		PublicKeyPath: "~/.ssh/id_ed25519_personal.pub", GitDir: "~/repos/personal/",
+	})
+	if err != nil {
+		t.Fatalf("commitGitTransaction: %v", err)
+	}
+	info, statErr := os.Stat(gitDir)
+	if statErr != nil || !info.IsDir() {
+		t.Fatalf("selected gitdir %s was not created as a directory: %v", gitDir, statErr)
+	}
+}
+
 func TestToDemoIdentityProjectsGitEditFields(t *testing.T) {
 	b := newBackendForHome(t.TempDir())
 	row := b.toDemoIdentity(identity.Account{
