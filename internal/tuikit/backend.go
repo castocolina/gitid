@@ -141,6 +141,11 @@ type Backend interface {
 	// the ceremony honest: the receipt renders only after the transaction
 	// succeeds, and a failure is surfaced instead of swallowed.
 	CommitCreate(identity DemoIdentity) tea.Cmd
+
+	// CommitGit writes a standalone create/edit Git flow asynchronously. The
+	// UI must wait for GitCommitMsg before reducing ConfigureGit, so no
+	// optimistic success can mask a failed transaction.
+	CommitGit(spec GitSpec) tea.Cmd
 }
 
 // WizardStageMsg completes a create-wizard test stage. Backends deliver it

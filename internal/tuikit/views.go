@@ -113,21 +113,40 @@ type CreateSpec struct {
 	ReuseKeyPath string
 }
 
-// GitSpec is the create wizard's Git-identity values (wizard step 3).
+// GitSpec is the UI-local request for a per-identity Git configuration.
+// It deliberately contains only form values and rendered originals; cmd/gitid
+// converts it to the filesystem transaction inputs at the backend boundary.
 type GitSpec struct {
 	// Identity is the identity name the fragment and includeIf are keyed by.
 	Identity string
 	// Name is user.name.
 	Name string
-	// Email is user.email — kept byte-identical to the allowed_signers
-	// entry (GITUI-04).
+	// Email is user.email — kept byte-identical to the allowed_signers entry.
 	Email string
 	// Strategy is the includeIf match strategy (gitdir/hasconfig/both).
 	Strategy string
-	// KeyPath is the identity's key; user.signingkey is KeyPath + ".pub".
+	// KeyPath is the identity's private key; user.signingkey is KeyPath + ".pub".
 	KeyPath string
-	// SSHHost is the configured SSH alias used by hasconfig remote matching.
+	// SSHHost is the exact configured SSH alias used by hasconfig matching.
 	SSHHost string
+	// Provider is the provider hostname used for its optional insteadOf block.
+	Provider string
+	// GitDir is the editable gitdir includeIf path, retaining its trailing slash.
+	GitDir string
+	// ForceSSH requests the provider-level HTTPS-to-SSH rewrite. False never
+	// removes another identity's managed rewrite.
+	ForceSSH bool
+	// Original is the parsed state used for truthful edit-mode review diffs.
+	Original GitOriginal
+}
+
+// GitOriginal is the prior parsed Git state carried by the reusable UI flow.
+// It contains rendered text rather than backend types to preserve tuikit's
+// backend boundary.
+type GitOriginal struct {
+	Fragment       string
+	IncludeIf      string
+	AllowedSigners string
 }
 
 // WritePlanView is what a committed create will touch: the files written
@@ -150,4 +169,13 @@ type WizardCommitMsg struct {
 	// Err is non-empty when the transaction failed; the ceremony renders it
 	// and offers retry/cancel instead of a receipt.
 	Err string
+}
+
+// GitCommitMsg is the standalone reusable Git-flow counterpart of
+// WizardCommitMsg. Restore details stay explicit so a failed receipt can never
+// claim that nothing changed when restoration itself failed.
+type GitCommitMsg struct {
+	Backups  []string
+	Restored []string
+	Err      string
 }

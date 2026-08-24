@@ -1959,6 +1959,30 @@ func TestGitStepDisabledHintSuppressedForRealBackend(t *testing.T) {
 	}
 }
 
+func TestGitCommitContractIsAsyncAndStubSafe(t *testing.T) {
+	// Hypothesis: the reusable Git flow has a UI-local asynchronous contract;
+	// the test backend preserves the zero-value no-filesystem result.
+	b := stubBackend{}
+	spec := GitSpec{
+		Identity: "personal", Name: "Personal", Email: "personal@example.test",
+		Strategy: "hasconfig", KeyPath: "~/.ssh/id_ed25519_personal",
+		SSHHost: "personal.github.com", Provider: "github.com",
+		GitDir: "~/git/personal/", ForceSSH: true,
+		Original: GitOriginal{Fragment: "old fragment", IncludeIf: "old include", AllowedSigners: "old signer"},
+	}
+	cmd := b.CommitGit(spec)
+	if cmd == nil {
+		t.Fatal("CommitGit returned nil; standalone confirmation would have no async result")
+	}
+	msg, ok := cmd().(GitCommitMsg)
+	if !ok {
+		t.Fatalf("CommitGit delivered %T, want GitCommitMsg", cmd())
+	}
+	if msg.Err != "" || len(msg.Backups) != 0 || len(msg.Restored) != 0 {
+		t.Errorf("zero-value stub Git result = %+v, want a no-op success", msg)
+	}
+}
+
 type sentinelIncludeIfBackend struct{ stubBackend }
 
 func (sentinelIncludeIfBackend) IncludeIfPreview(GitSpec) string {

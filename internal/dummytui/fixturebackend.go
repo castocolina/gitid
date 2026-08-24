@@ -331,3 +331,9 @@ func (b FixtureBackend) CommitCreate(id tuikit.DemoIdentity) tea.Cmd {
 		return tuikit.WizardCommitMsg{Backups: plan.Backups}
 	}
 }
+
+// CommitGit keeps the approved dummy flow in memory. It must never touch HOME;
+// success is only the fixture receipt advertised by the design backend.
+func (FixtureBackend) CommitGit(tuikit.GitSpec) tea.Cmd {
+	return func() tea.Msg { return tuikit.GitCommitMsg{} }
+}

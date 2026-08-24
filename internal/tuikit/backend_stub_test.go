@@ -400,3 +400,8 @@ func (stubBackend) CommitCreate(_ DemoIdentity) tea.Cmd {
 		return WizardCommitMsg{Backups: []string{NewBackupPath("~/.ssh/config")}}
 	}
 }
+
+// CommitGit preserves the test backend's zero-value, no-filesystem behavior.
+func (stubBackend) CommitGit(GitSpec) tea.Cmd {
+	return func() tea.Msg { return GitCommitMsg{} }
+}

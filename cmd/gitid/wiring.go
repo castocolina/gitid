@@ -722,6 +722,19 @@ func (b *realBackend) GitStepDisabledReason() (string, bool) {
 	return "", false
 }
 
+// CommitGit is the standalone Git-flow async seam. Its detailed transaction is
+// introduced with the reusable flow; this first contract implementation keeps
+// the existing no-op behavior safe until an explicit confirmed Git request is
+// wired by the reducer.
+func (b *realBackend) CommitGit(_ tuikit.GitSpec) tea.Cmd {
+	return func() tea.Msg {
+		if b.initErr != nil {
+			return tuikit.GitCommitMsg{Err: b.initErr.Error()}
+		}
+		return tuikit.GitCommitMsg{}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Backend -> view converters (the ONLY conversion site)
 // ---------------------------------------------------------------------------
