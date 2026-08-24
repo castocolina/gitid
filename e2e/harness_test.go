@@ -192,7 +192,7 @@ func FakeSSHDir(t *testing.T, mode string) string {
 		"    echo \"fake ssh: staged config is missing required Host fields\" >&2\n" +
 		"    exit 2\n" +
 		"  fi\n" +
-		"  printf 'user %s\\nhostname %s\\nport %s\\nidentitiesonly %s\\nidentityfile %s\\n' \"$user\" \"$hostname\" \"$port\" \"$identitiesonly\" \"$identityfile\"\n" +
+		"  printf 'user %s\\nhostname %s\\nport %s\\nidentitiesonly %s\\nidentityfile %s\\ngitidrawmarker proof-retained-verbatim\\n' \"$user\" \"$hostname\" \"$port\" \"$identitiesonly\" \"$identityfile\"\n" +
 		"  exit 0\n" +
 		"fi\n" +
 		"case \"$GITID_FAKE_SSH_MODE\" in\n" +

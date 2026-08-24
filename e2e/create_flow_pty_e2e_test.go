@@ -153,6 +153,30 @@ func tabKeys(s *ptySession, n int) {
 	}
 }
 
+// requireFocusedProof waits for stage-two completion, focuses the proof
+// viewport, and pages through its retained source to expose the requested raw
+// proof markers at the fixed 100x30 viewport size.
+func requireFocusedProof(t *testing.T, s *ptySession, markers ...string) {
+	t.Helper()
+	mustSee(t, s, "Next: Git identity", "both test stages completed")
+	s.sendKey([]byte("v"), keystrokeDelay)
+	mustSee(t, s, "Proof viewport focused", "raw v focuses the proof viewport")
+
+	seen := make(map[string]bool, len(markers))
+	for range 12 {
+		frame := s.snapshot()
+		for _, marker := range markers {
+			seen[marker] = seen[marker] || strings.Contains(frame, marker)
+		}
+		s.sendKey([]byte("\x1b[6~"), keystrokeDelay)
+	}
+	for _, marker := range markers {
+		if !seen[marker] {
+			t.Errorf("focused real 100x30 proof viewport never exposed %q through raw PgDn navigation", marker)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // 1. Algorithm + SSH form (SSHUI-01/03, D-09)
 // ---------------------------------------------------------------------------
@@ -641,6 +665,30 @@ func TestCreateFlow_ExactStageProof(t *testing.T) {
 	mustSee(t, s, "identityfile", "stage-2: exact identityfile resolution is visible (TEST-02)")
 
 	saveFrame(t, "create-flow-exact-stage-proof", s)
+}
+
+// TestCreateFlow_Stage2RendersExactRawSSHOutput proves that a syntactically
+// harmless line emitted only by the staged ssh -G process survives to the
+// focused proof viewport. A parsed-field reconstruction cannot produce it.
+func TestCreateFlow_Stage2RendersExactRawSSHOutput(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	openCreateWizard(t, s)
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Step 2/4", "step 0 -> step 1")
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+
+	requireFocusedProof(t, s,
+		"Hi user! You've successfully authenticated, but GitHub does not provide shell access.",
+		"gitidrawmarker proof-retained-verbatim",
+	)
 }
 
 // TestCreateFlow_ReuseManualPath proves the KEY-06 manual-path reuse route
