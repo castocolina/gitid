@@ -332,6 +332,7 @@ func (c ceremonyModel) view(width int) string {
 	}
 	b.WriteString(styleFaint.Render(hint) + "\n")
 	b.WriteString(PreviewBlock("Exact change — everything else preserved verbatim", v.View(), c.cfg.PreviewDiff, width, 10) + "\n")
+	b.WriteString(styleFaint.Render("Nothing has changed yet") + "\n")
 	if c.cfg.Destructive != nil {
 		b.WriteString(styleError.Render(wrap.Render(c.cfg.Destructive.Warning)) + "\n")
 		b.WriteString(styleError.Render("> ") + c.typed.View() + "\n")
