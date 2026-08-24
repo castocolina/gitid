@@ -115,6 +115,37 @@ func TestReconstruct_Complete(t *testing.T) {
 // TestReconstruct_MissingSSH verifies that when the SSH block is absent for
 // an identity present in gitconfig, the Account is returned with Incomplete
 // containing "ssh-host-block".
+func TestReconstruct_LoadProviderRewrite(t *testing.T) {
+	sshContent := buildSSHBlock("work", "work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work")
+	workFrag := "~/.gitconfig.d/work"
+	rewriteName, err := gitconfig.ProviderRewriteBlockName("github.com")
+	if err != nil {
+		t.Fatalf("ProviderRewriteBlockName: %v", err)
+	}
+	rewriteBody, err := gitconfig.RenderProviderRewrite("github.com")
+	if err != nil {
+		t.Fatalf("RenderProviderRewrite: %v", err)
+	}
+	gcContent := buildGCBlock("work", workFrag, "~/git/work/") +
+		"# BEGIN gitid managed: " + rewriteName + "\n" + rewriteBody + "\n# END gitid managed: " + rewriteName + "\n"
+
+	accounts, err := Reconstruct([]byte(sshContent), []byte(gcContent), func(path string) (gitconfig.FragmentInfo, error) {
+		if path != workFrag {
+			t.Fatalf("ReadFragment path = %q, want %q", path, workFrag)
+		}
+		return gitconfig.FragmentInfo{GitName: "Work User", GitEmail: "work@example.com"}, nil
+	})
+	if err != nil {
+		t.Fatalf("Reconstruct: %v", err)
+	}
+	if len(accounts) != 1 {
+		t.Fatalf("account count = %d, want 1: %v", len(accounts), accounts)
+	}
+	if accounts[0].Name != "work" {
+		t.Errorf("account name = %q, want work", accounts[0].Name)
+	}
+}
+
 func TestReconstruct_MissingSSH(t *testing.T) {
 	workFrag := "~/.gitconfig.d/work"
 	gcContent := buildGCBlock("work", workFrag, "~/git/work/")

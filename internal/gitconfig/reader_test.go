@@ -113,6 +113,33 @@ func TestParseManagedIncludeIf_ExcludesReservedBaseline(t *testing.T) {
 	}
 }
 
+func TestParseManagedIncludeIfExcludesProviderRewrite(t *testing.T) {
+	workBody := "[includeIf \"gitdir:~/git/work/\"]\n\tpath = ~/.gitconfig.d/work"
+	rewriteName, err := ProviderRewriteBlockName("github.com")
+	if err != nil {
+		t.Fatalf("ProviderRewriteBlockName: %v", err)
+	}
+	rewriteBody, err := RenderProviderRewrite("github.com")
+	if err != nil {
+		t.Fatalf("RenderProviderRewrite: %v", err)
+	}
+	content := []byte(
+		filewriter.BeginPrefix + "work\n" + workBody + "\n" + filewriter.EndPrefix + "work\n" +
+			filewriter.BeginPrefix + rewriteName + "\n" + rewriteBody + "\n" + filewriter.EndPrefix + rewriteName + "\n",
+	)
+
+	got := ParseManagedIncludeIf(content)
+	if _, ok := got[rewriteName]; ok {
+		t.Errorf("provider rewrite %q must be excluded from identity discovery", rewriteName)
+	}
+	if _, ok := got["work"]; !ok {
+		t.Error("neighboring identity includeIf was not reconstructed")
+	}
+	if len(got) != 1 {
+		t.Errorf("identity count = %d, want 1: %v", len(got), got)
+	}
+}
+
 // TestReadFragment_Missing verifies that ReadFragment returns FragmentInfo with
 // Missing=true and no error when the file does not exist.
 func TestReadFragment_Missing(t *testing.T) {

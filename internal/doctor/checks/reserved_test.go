@@ -101,6 +101,61 @@ func TestOrphansReservedArtifactsSurviveFix(t *testing.T) {
 // with managed-block discovery that reads ~/.ssh/config ALONE reports the
 // legitimate identity's gitconfig block as an orphan and offers a fix that
 // deletes it. It documents precisely what Include-aware discovery prevents.
+// TestOrphansReservedGitRewriteSurvivesFix proves D-11: a provider rewrite is
+// managed Git wiring, not an identity, and survives every offered orphan fix.
+func TestOrphansReservedGitRewriteSurvivesFix(t *testing.T) {
+	home := t.TempDir()
+	fx := seedIncludeHome(t, home)
+	rewrite := block("provider-rewrite:github.com", "[url \"git@github.com:\"]\n\tinsteadOf = https://github.com/")
+	foreign := "[url \"ssh://git@legacy.example/\"]\n\tinsteadOf = https://legacy.example/\n"
+	if err := os.WriteFile(fx.gitconfigPath, append(mustReadFile(t, fx.gitconfigPath), []byte(foreign+rewrite)...), 0o600); err != nil {
+		t.Fatalf("seeding provider rewrite: %v", err)
+	}
+	before := string(mustReadFile(t, fx.gitconfigPath))
+
+	names, err := sshconfig.ManagedBlockNames(fx.sshConfigPath)
+	if err != nil {
+		t.Fatalf("sshconfig.ManagedBlockNames: %v", err)
+	}
+	deps := orphanDeps(fx, names)
+	deps.GitconfigManagedBlockNames = []string{"personal", "ghost", "provider-rewrite:github.com"}
+	findings := checks.CheckOrphans(deps)
+	for _, finding := range findings {
+		if strings.Contains(finding.Title, "provider-rewrite") || strings.Contains(finding.Title, "github.com") {
+			t.Errorf("CheckOrphans reported provider rewrite as an identity: %s", finding.Title)
+		}
+	}
+	if applied := applyEveryFix(t, findings); applied == 0 {
+		t.Fatal("expected genuine orphan fix to prove reserved assertion is non-vacuous")
+	}
+	after := string(mustReadFile(t, fx.gitconfigPath))
+	if !strings.Contains(after, rewrite) {
+		t.Errorf("provider rewrite changed or was deleted by orphan fixes\n--- before ---\n%s\n--- after ---\n%s", before, after)
+	}
+	if !strings.Contains(after, foreign) {
+		t.Errorf("foreign Git content changed by orphan fixes\n--- before ---\n%s\n--- after ---\n%s", before, after)
+	}
+	if strings.Contains(after, "# BEGIN gitid managed: ghost") {
+		t.Errorf("genuine orphan control survived fixes:\n%s", after)
+	}
+}
+
+// TestOrphansUnreservedGitBlockControl proves the reserved rewrite regression
+// does not make CheckOrphans skip genuine managed Git identity blocks.
+func TestOrphansUnreservedGitBlockControl(t *testing.T) {
+	home := t.TempDir()
+	fx := seedIncludeHome(t, home)
+	names, err := sshconfig.ManagedBlockNames(fx.sshConfigPath)
+	if err != nil {
+		t.Fatalf("sshconfig.ManagedBlockNames: %v", err)
+	}
+	findings := checks.CheckOrphans(orphanDeps(fx, names))
+	applyEveryFix(t, findings)
+	if got := string(mustReadFile(t, fx.gitconfigPath)); strings.Contains(got, "# BEGIN gitid managed: ghost") {
+		t.Errorf("unreserved Git control was not removed:\n%s", got)
+	}
+}
+
 func TestOrphansNonIncludeAwareDepsAreDestructive(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
