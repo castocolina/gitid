@@ -165,10 +165,17 @@ func requireFocusedProof(t *testing.T, s *ptySession, markers ...string) {
 	seen := make(map[string]bool, len(markers))
 	for range 12 {
 		frame := s.snapshot()
+		complete := true
 		for _, marker := range markers {
 			seen[marker] = seen[marker] || strings.Contains(frame, marker)
+			complete = complete && seen[marker]
 		}
-		s.sendKey([]byte("\x1b[6~"), keystrokeDelay)
+		if complete {
+			return
+		}
+		// The focused viewport updates synchronously in the TUI reducer; this
+		// short pause only gives the PTY decoder time to receive the next frame.
+		s.sendKey([]byte("\x1b[6~"), 10*time.Millisecond)
 	}
 	for _, marker := range markers {
 		if !seen[marker] {

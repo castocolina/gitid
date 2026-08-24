@@ -137,8 +137,8 @@ func TestToTestResultViewMapsEveryOutcome(t *testing.T) {
 			if view.Command != res.Command {
 				t.Errorf("Command = %q, want the command that was RUN (%q)", view.Command, res.Command)
 			}
-			if view.Detail != "some real ssh output" {
-				t.Errorf("Detail = %q, want the real ssh output line", view.Detail)
+			if view.Detail != res.Output {
+				t.Errorf("Detail = %q, want byte-identical real ssh output %q", view.Detail, res.Output)
 			}
 		})
 	}

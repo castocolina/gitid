@@ -836,6 +836,38 @@ func TestStage2RecordsOutcomeAfterValidation(t *testing.T) {
 	}
 }
 
+func TestStage2RetainsConnectivityAndRawResolutionOutput(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	b := newBackendForHome(home)
+
+	const connectivity = "stage-two connectivity banner\nwith exact spacing  \n"
+	const marker = "gitidrawmarker proof-retained-verbatim  \nunknown-setting stays-unparsed\n"
+	b.deps.ResolvedVia = func(configPath, keyPath, alias string) (tester.Result, tester.ResolvedConfig) {
+		raw := "user git\nhostname ssh.github.com\nport 443\nidentitiesonly yes\nidentityfile " + keyPath + "\n" + marker
+		return tester.Result{
+			Command:          "ssh -F " + configPath + " -T git@" + alias,
+			Output:           connectivity,
+			ResolutionOutput: raw,
+			Outcome:          tester.PASS,
+		}, tester.ParseResolved(raw)
+	}
+
+	spec := tuikit.CreateSpec{Identity: "acme", Alias: "acme.github.com", Hostname: "ssh.github.com", Port: "443"}
+	msg, ok := b.TestStage2(spec)().(tuikit.WizardStageMsg)
+	if !ok {
+		t.Fatal("TestStage2 did not return WizardStageMsg")
+	}
+	if msg.Result.Detail != connectivity {
+		t.Errorf("stage-two Detail = %q, want unmodified connectivity output %q", msg.Result.Detail, connectivity)
+	}
+	wantRaw := "user git\nhostname ssh.github.com\nport 443\nidentitiesonly yes\nidentityfile " + b.staged.TempPrivatePath + "\n" + marker
+	if msg.Result.ResolutionOutput != wantRaw {
+		t.Errorf("stage-two ResolutionOutput = %q, want exact raw proof %q", msg.Result.ResolutionOutput, wantRaw)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // CR-07: specFingerprint includes key source (generate vs reuse) and normalized
 // reuse path so that a mid-flow key-source switch invalidates stale cached proof

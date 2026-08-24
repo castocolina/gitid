@@ -535,6 +535,32 @@ func TestWizardTestStageCommandsAndFlagOrder(t *testing.T) {
 	}
 }
 
+func TestFocusedProofContainsRawStage2Outputs(t *testing.T) {
+	const connectivity = "stage-two connectivity banner\nwith exact spacing  \n"
+	const resolution = "user git\nhostname ssh.github.com\nport 443\nidentitiesonly yes\nidentityfile /tmp/id_ed25519_acme\nidentityfile /tmp/id_ed25519_acme\ngitidrawmarker proof-retained-verbatim  \nunknown-setting   keeps-spacing\n"
+	w := newWizard(stubBackend{})
+	w.stage1 = TestResultView{Command: "ssh stage-one", Detail: "stage-one output\n"}
+	w.stage2 = TestResultView{
+		Command:           "ssh stage-two",
+		Detail:            connectivity,
+		ResolutionCommand: "ssh -G acme.github.com",
+		ResolutionOutput:  resolution,
+	}
+	w = w.refreshProof()
+
+	for _, want := range []string{
+		"Stage 2 command:",
+		"Stage 2 output:\n" + connectivity,
+		"Stage 2 resolution output:\n" + resolution,
+		"Stage 1 command:",
+		"Stage 1 output:\nstage-one output\n",
+	} {
+		if !strings.Contains(w.proof.Text, want) {
+			t.Errorf("focused proof source lost contiguous raw output %q:\n%s", want, w.proof.Text)
+		}
+	}
+}
+
 // recordingCopyBackend wraps stubBackend to capture the exact path
 // CopyPublicKey was called with — proving D-03 never leaks private key
 // material, only the .pub line's path, across the clipboard seam.

@@ -1,6 +1,8 @@
 package tester
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -204,6 +206,59 @@ func TestParseResolved_IgnoresCamelCase(t *testing.T) {
 	}
 	if rc.User != "git" {
 		t.Errorf("User = %q, want %q", rc.User, "git")
+	}
+}
+
+const rawResolutionFixture = "user git\n" +
+	"hostname ssh.github.com\n" +
+	"port 443\n" +
+	"identitiesonly yes\n" +
+	"identityfile /tmp/id_ed25519_acme\n" +
+	"identityfile /tmp/id_ed25519_acme\n" +
+	"gitidrawmarker proof-retained-verbatim  \n" +
+	"unknown-setting   keeps-spacing\n"
+
+func fakeSSHForResolvedOutput(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ssh")
+	script := "#!/bin/sh\n" +
+		"case \" $* \" in\n" +
+		"  *\" -G \"*)\n" +
+		"    cat <<'EOF'\n" + rawResolutionFixture + "EOF\n" +
+		"    ;;\n" +
+		"  *)\n" +
+		"    printf '%s\\n' \"Hi user! You've successfully authenticated.\"\n" +
+		"    ;;\n" +
+		"esac\n"
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil { //nolint:gosec // test-only executable fake ssh fixture
+		t.Fatalf("writing fake ssh: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func TestResolvedViaRetainsRawResolutionOutput(t *testing.T) {
+	fakeSSHForResolvedOutput(t)
+
+	res, resolved := ResolvedVia("/tmp/staged-config", "/tmp/id_ed25519_acme", "acme.github.com", "")
+	if res.ResolutionOutput != rawResolutionFixture {
+		t.Errorf("ResolutionOutput = %q, want exact ssh -G stdout %q", res.ResolutionOutput, rawResolutionFixture)
+	}
+	if resolved.User != "git" || resolved.Hostname != "ssh.github.com" || resolved.Port != "443" ||
+		resolved.IdentitiesOnly != "yes" || len(resolved.IdentityFiles) != 2 {
+		t.Errorf("ParseResolved(ResolutionOutput) = %#v, want parsed validation fields from the same raw transcript", resolved)
+	}
+}
+
+func TestResolvedRetainsRawResolutionOutput(t *testing.T) {
+	fakeSSHForResolvedOutput(t)
+
+	res, resolved := Resolved("acme.github.com")
+	if res.ResolutionOutput != rawResolutionFixture {
+		t.Errorf("ResolutionOutput = %q, want exact ssh -G stdout %q", res.ResolutionOutput, rawResolutionFixture)
+	}
+	if resolved.IdentityFiles[0] != "/tmp/id_ed25519_acme" {
+		t.Errorf("first parsed IdentityFile = %q, want raw transcript's first value", resolved.IdentityFiles[0])
 	}
 }
 
