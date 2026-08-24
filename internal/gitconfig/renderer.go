@@ -29,55 +29,102 @@ type Match struct {
 	Value string
 }
 
-// condition renders the includeIf condition string for a match, normalizing a
-// gitdir value to the mandatory trailing slash (Pitfall 7 / D-13).
+// condition renders the includeIf condition string for a validated match,
+// normalizing a gitdir value to the mandatory trailing slash (Pitfall 7 / D-13).
 func (m Match) condition() string {
-	switch m.Kind {
-	case MatchGitdir:
-		v := m.Value
-		if !strings.HasSuffix(v, "/") {
-			v += "/"
+	if m.Kind == MatchGitdir {
+		if strings.HasSuffix(m.Value, "/") {
+			return "gitdir:" + m.Value
 		}
-		return "gitdir:" + v
-	case MatchHasconfig:
-		return "hasconfig:" + m.Value
-	default:
-		return m.Value
+		return "gitdir:" + m.Value + "/"
 	}
+	return "hasconfig:" + m.Value
 }
 
 // RenderIncludeIf builds the full managed-block text for an identity's includeIf
 // headers, wrapped in `# BEGIN gitid managed: <identity>` / `# END gitid managed:
-// <identity>` sentinels. Each match becomes an `[includeIf "<condition>"]` header
-// followed by a `path = <fragment>` line. The gitdir condition always carries a
-// trailing slash (GIT-02, Pitfall 7).
-//
-// A match Value (or the identity / fragment path) containing a newline could
-// break out of the managed block and inject foreign git directives; such input
-// is rejected with a panic, since callers pass gitid-derived, validated values
-// and a newline here is a programming error, not user data.
+// <identity>` sentinels. Invalid form-derived input returns an empty preview.
 func RenderIncludeIf(identity, fragmentPath string, matches []Match) string {
-	body := renderBlockBody(identity, fragmentPath, matches)
-	return filewriter.BeginPrefix + identity + "\n" + body + "\n" + filewriter.EndPrefix + identity
+	block, err := RenderCheckedIncludeIf(identity, fragmentPath, matches)
+	if err != nil {
+		return ""
+	}
+	return block
+}
+
+// RenderCheckedIncludeIf builds the managed includeIf block after validating all
+// values that shape Git config syntax.
+func RenderCheckedIncludeIf(identity, fragmentPath string, matches []Match) (string, error) {
+	if err := validateIncludeIf(identity, fragmentPath, matches); err != nil {
+		return "", err
+	}
+	body := renderBlockBody(fragmentPath, matches)
+	return filewriter.BeginPrefix + identity + "\n" + body + "\n" + filewriter.EndPrefix + identity, nil
 }
 
 // renderBlockBody builds just the includeIf header/path lines (no sentinels),
 // for use with filewriter.ReplaceBlock which supplies its own canonical markers.
-func renderBlockBody(identity, fragmentPath string, matches []Match) string {
-	for _, s := range []string{identity, fragmentPath} {
-		if strings.ContainsAny(s, "\n\r") {
-			panic("gitconfig: identity/fragment path must not contain newlines")
-		}
-	}
+func renderBlockBody(fragmentPath string, matches []Match) string {
 	var b strings.Builder
 	for _, m := range matches {
-		if strings.ContainsAny(m.Value, "\n\r") {
-			panic("gitconfig: includeIf match value must not contain newlines")
-		}
 		fmt.Fprintf(&b, "[includeIf %q]\n", m.condition())
 		fmt.Fprintf(&b, "\tpath = %s\n", fragmentPath)
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func validateIncludeIf(identity, fragmentPath string, matches []Match) error {
+	if !safeInline(identity) || !safeInline(fragmentPath) || len(matches) == 0 {
+		return fmt.Errorf("gitconfig: identity, fragment path, and at least one match are required")
+	}
+	for _, match := range matches {
+		if !safeInline(match.Value) {
+			return fmt.Errorf("gitconfig: includeIf match value contains unsafe characters")
+		}
+		switch match.Kind {
+		case MatchGitdir:
+			if match.Value == "" {
+				return fmt.Errorf("gitconfig: gitdir match value is required")
+			}
+		case MatchHasconfig:
+			if !validSSHHasconfig(match.Value) {
+				return fmt.Errorf("gitconfig: hasconfig match must be SSH-only")
+			}
+		default:
+			return fmt.Errorf("gitconfig: unknown includeIf match kind")
+		}
+	}
+	return nil
+}
+
+func validSSHHasconfig(value string) bool {
+	const prefix = "remote.*.url:git@"
+	const suffix = ":*/**"
+	if !strings.HasPrefix(value, prefix) || !strings.HasSuffix(value, suffix) {
+		return false
+	}
+	host := strings.TrimSuffix(strings.TrimPrefix(value, prefix), suffix)
+	if host == "" {
+		return false
+	}
+	for _, r := range host {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '.' && r != '-' && r != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+func safeInline(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 // WriteIncludeIf composes the identity's includeIf managed block into
@@ -86,7 +133,10 @@ func renderBlockBody(identity, fragmentPath string, matches []Match) string {
 // the file byte-identical, and all foreign content outside the managed block is
 // preserved. It returns the backup path (empty when the target did not pre-exist).
 func WriteIncludeIf(gitconfigPath, identity, fragmentPath string, matches []Match) (string, error) {
-	body := renderBlockBody(identity, fragmentPath, matches)
+	if err := validateIncludeIf(identity, fragmentPath, matches); err != nil {
+		return "", err
+	}
+	body := renderBlockBody(fragmentPath, matches)
 
 	existing, err := os.ReadFile(gitconfigPath) //nolint:gosec // gitconfigPath is a trusted gitid-managed path
 	if err != nil && !os.IsNotExist(err) {
