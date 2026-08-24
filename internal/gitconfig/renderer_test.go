@@ -96,13 +96,166 @@ func TestWriteIncludeIf_IdempotentAndPreservesForeign(t *testing.T) {
 	}
 }
 
-func TestRenderIncludeIf_RejectsInjection(t *testing.T) {
-	// A match value containing a newline could break out of the managed block.
-	defer func() {
-		if r := recover(); r == nil {
-			t.Errorf("expected RenderIncludeIf to reject a newline-bearing match value")
-		}
-	}()
-	matches := []Match{{Kind: MatchGitdir, Value: "~/git/work/\n[remote \"origin\"]"}}
-	_ = RenderIncludeIf("work", "~/.gitconfig.d/work", matches)
+func TestIncludeIfStrategies(t *testing.T) {
+	tests := []struct {
+		name       string
+		identity   string
+		fragment   string
+		matches    []Match
+		conditions []string
+	}{
+		{
+			name:     "gitdir default retains terminal slash",
+			identity: "work",
+			fragment: "~/.gitconfig.d/work",
+			matches:  []Match{{Kind: MatchGitdir, Value: "~/git/work/"}},
+			conditions: []string{
+				`[includeIf "gitdir:~/git/work/"]`,
+			},
+		},
+		{
+			name:     "gitdir nested editable path gains terminal slash",
+			identity: "work",
+			fragment: "~/.gitconfig.d/work",
+			matches:  []Match{{Kind: MatchGitdir, Value: "~/src/company/platform/services"}},
+			conditions: []string{
+				`[includeIf "gitdir:~/src/company/platform/services/"]`,
+			},
+		},
+		{
+			name:     "hasconfig uses the custom SSH alias only",
+			identity: "work",
+			fragment: "~/.gitconfig.d/work",
+			matches: []Match{{
+				Kind:  MatchHasconfig,
+				Value: "remote.*.url:git@engineering.github.example:*/**",
+			}},
+			conditions: []string{
+				`[includeIf "hasconfig:remote.*.url:git@engineering.github.example:*/**"]`,
+			},
+		},
+		{
+			name:     "both emits two OR alternatives",
+			identity: "work",
+			fragment: "~/.gitconfig.d/work",
+			matches: []Match{
+				{Kind: MatchGitdir, Value: "~/src/company/platform/"},
+				{Kind: MatchHasconfig, Value: "remote.*.url:git@engineering.github.example:*/**"},
+			},
+			conditions: []string{
+				`[includeIf "gitdir:~/src/company/platform/"]`,
+				`[includeIf "hasconfig:remote.*.url:git@engineering.github.example:*/**"]`,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := RenderIncludeIf(tt.identity, tt.fragment, tt.matches)
+			for _, condition := range tt.conditions {
+				if !strings.Contains(got, condition) {
+					t.Errorf("RenderIncludeIf() missing %q:\n%s", condition, got)
+				}
+			}
+			if strings.Contains(got, "https://") {
+				t.Errorf("RenderIncludeIf() rendered deferred HTTPS hasconfig variant:\n%s", got)
+			}
+		})
+	}
+}
+
+func TestRenderParseRoundTrip(t *testing.T) {
+	tests := []struct {
+		name     string
+		identity string
+		fragment string
+		matches  []Match
+	}{
+		{
+			name:     "default gitdir",
+			identity: "personal",
+			fragment: "~/.gitconfig.d/personal",
+			matches:  []Match{{Kind: MatchGitdir, Value: "~/git/personal/"}},
+		},
+		{
+			name:     "custom SSH alias",
+			identity: "work",
+			fragment: "~/.gitconfig.d/work",
+			matches: []Match{{
+				Kind:  MatchHasconfig,
+				Value: "remote.*.url:git@team.gitlab.example:*/**",
+			}},
+		},
+		{
+			name:     "both with nested gitdir",
+			identity: "work",
+			fragment: "~/.gitconfig.d/work",
+			matches: []Match{
+				{Kind: MatchGitdir, Value: "~/git/clients/acme/work/"},
+				{Kind: MatchHasconfig, Value: "remote.*.url:git@team.github.example:*/**"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := []byte(RenderIncludeIf(tt.identity, tt.fragment, tt.matches))
+			got, ok := ParseManagedIncludeIf(content)[tt.identity]
+			if !ok {
+				t.Fatalf("ParseManagedIncludeIf() missing %q", tt.identity)
+			}
+			if got.FragmentPath != tt.fragment {
+				t.Errorf("FragmentPath = %q, want %q", got.FragmentPath, tt.fragment)
+			}
+			if len(got.Matches) != len(tt.matches) {
+				t.Fatalf("matches length = %d, want %d: %#v", len(got.Matches), len(tt.matches), got.Matches)
+			}
+			for i, want := range tt.matches {
+				if got.Matches[i] != want {
+					t.Errorf("matches[%d] = %#v, want %#v", i, got.Matches[i], want)
+				}
+			}
+		})
+	}
+}
+
+func TestIncludeIfRejectsUnsafeInput(t *testing.T) {
+	tests := []struct {
+		name     string
+		identity string
+		fragment string
+		matches  []Match
+	}{
+		{
+			name:     "newline in gitdir",
+			identity: "work",
+			fragment: "~/.gitconfig.d/work",
+			matches:  []Match{{Kind: MatchGitdir, Value: "~/git/work/\n[remote \"origin\"]"}},
+		},
+		{
+			name:     "HTTPS hasconfig is deferred",
+			identity: "work",
+			fragment: "~/.gitconfig.d/work",
+			matches:  []Match{{Kind: MatchHasconfig, Value: "remote.*.url:https://github.example/*/**"}},
+		},
+		{
+			name:     "malformed SSH hasconfig",
+			identity: "work",
+			fragment: "~/.gitconfig.d/work",
+			matches:  []Match{{Kind: MatchHasconfig, Value: "remote.*.url:git@github.example:owner/repo"}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := RenderIncludeIf(tt.identity, tt.fragment, tt.matches); got != "" {
+				t.Errorf("RenderIncludeIf() = %q, want empty rejected preview", got)
+			}
+
+			path := filepath.Join(t.TempDir(), ".gitconfig")
+			if _, err := WriteIncludeIf(path, tt.identity, tt.fragment, tt.matches); err == nil {
+				t.Error("WriteIncludeIf() error = nil, want unsafe input rejection")
+			}
+		})
+	}
 }
