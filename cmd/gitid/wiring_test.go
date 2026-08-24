@@ -890,6 +890,75 @@ func TestGitTransactionRollbackMatrixPreservesSnapshotsAndSafetyBackups(t *testi
 	}
 }
 
+func TestCombinedTransactionRollsBackEverySSHAndGitTarget(t *testing.T) {
+	steps := []string{"ssh-dir", "private-key", "public-key", "include-line", "host-block", "git-fragment-dir", "gitdir", "git-fragment-backup", "git-fragment", "git-includeif", "provider-rewrite", "allowed-signers-file-backup", "allowed-signers-file", "allowed-signers"}
+	for _, step := range steps {
+		t.Run(step, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			seedSSHDir(t, home)
+			sshConfig := filepath.Join(home, ".ssh", "config")
+			fragment := filepath.Join(home, ".gitconfig.d", "personal")
+			gitconfigPath := filepath.Join(home, ".gitconfig")
+			signers := filepath.Join(home, ".ssh", "allowed_signers")
+			writeFile(t, sshConfig, "Host legacy\n  Hostname example.test\n")
+			if err := os.MkdirAll(filepath.Dir(fragment), 0o700); err != nil {
+				t.Fatalf("seeding fragment dir: %v", err)
+			}
+			if err := os.Chmod(filepath.Dir(fragment), 0o700); err != nil { //nolint:gosec // directory fixture must preserve mode through rollback
+				t.Fatalf("securing fragment dir fixture: %v", err)
+			}
+			writeFile(t, fragment, "[user]\n\tname = Before\n")
+			writeFile(t, gitconfigPath, "[core]\n\teditor = vi\n")
+			writeFile(t, signers, "before@example.test namespaces=\"git\" ssh-ed25519 AAAABefore\n")
+			paths := []string{filepath.Join(home, ".ssh", "id_ed25519_personal"), filepath.Join(home, ".ssh", "id_ed25519_personal.pub"), sshConfig, filepath.Join(home, ".ssh", "config.d", "gitid.config"), fragment, gitconfigPath, signers}
+			before := snapshotPaths(t, paths)
+			b := newBackendForHome(home)
+			id := tuikit.DemoIdentity{Name: "personal", SSHHost: "personal.github.com", Hostname: "ssh.github.com", Port: 443, KeyPath: "~/.ssh/id_ed25519_personal", Provider: "github.com", GitConfigured: true, GitName: "After", GitEmail: "after@example.test", MatchStrategy: "both", GitDir: "~/repos/personal/", ForceSSH: true}
+			unlockStoreForIdentity(t, b, id)
+			b.failCommitAt = func(boundary string) error {
+				if boundary == step {
+					return fmt.Errorf("injected failure at %s", boundary)
+				}
+				return nil
+			}
+			msg := runCommitCreate(t, b, id)
+			if msg.Err == "" || !strings.Contains(msg.Err, "mutation "+step+" failed") || !strings.Contains(msg.Err, "restoration results:") {
+				t.Fatalf("error = %q, want failed target and restoration results", msg.Err)
+			}
+			assertUnchanged(t, before, snapshotPaths(t, paths))
+			if info, err := os.Stat(filepath.Dir(fragment)); err != nil || info.Mode().Perm() != 0o700 {
+				t.Fatalf("fragment directory restoration = (%v, %v), want mode 0700", info, err)
+			}
+			if _, err := os.Stat(filepath.Join(home, "repos", "personal")); !os.IsNotExist(err) {
+				t.Errorf("rollback left created gitdir: %v", err)
+			}
+		})
+	}
+}
+
+func TestCombinedTransactionReportsRestorationFailure(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	b := newBackendForHome(home)
+	id := tuikit.DemoIdentity{Name: "personal", SSHHost: "personal.github.com", Hostname: "ssh.github.com", Port: 443, KeyPath: "~/.ssh/id_ed25519_personal", Provider: "github.com", GitConfigured: true, GitName: "Personal", GitEmail: "personal@example.test", MatchStrategy: "gitdir"}
+	unlockStoreForIdentity(t, b, id)
+	b.failCommitAt = func(boundary string) error {
+		if boundary == "git-fragment" {
+			return fmt.Errorf("injected failure at git-fragment")
+		}
+		if strings.HasPrefix(boundary, "restore:") {
+			return fmt.Errorf("forced restoration failure")
+		}
+		return nil
+	}
+	msg := runCommitCreate(t, b, id)
+	if msg.Err == "" || !strings.Contains(msg.Err, "mutation git-artifacts failed") || !strings.Contains(msg.Err, "forced restoration failure") || !strings.Contains(msg.Err, "restoration results:") {
+		t.Fatalf("error = %q, want original failed target and forced restoration outcome", msg.Err)
+	}
+}
+
 func TestGitTransactionSuccessIsByteStableAndReplacesSignerEmail(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

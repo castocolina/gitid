@@ -115,6 +115,7 @@ type realBackend struct {
 
 // compile-time proof the real composition root satisfies the seam.
 var _ tuikit.Backend = (*realBackend)(nil)
+var _ = (*realBackend).commitCreateTransactionLegacy
 
 // buildBackend constructs the real tuikit.Backend. It is the only production
 // caller of buildIdentityDeps, and the only place cmd/gitid resolves the
@@ -743,13 +744,13 @@ func (b *realBackend) CommitGit(spec tuikit.GitSpec) tea.Cmd {
 // the shared journal. Standalone and combined create writes therefore have the
 // same snapshot, backup, rollback, and failure-reporting behavior.
 func (b *realBackend) commitGitTransaction(spec tuikit.GitSpec) ([]string, []string, error) {
-	return b.commitGitArtifacts(spec, "")
+	return b.commitGitArtifacts(spec, "", nil)
 }
 
-// gitMutationJournal captures the exact pre-transaction state of every mutable
+// mutationJournal captures the exact pre-transaction state of every mutable
 // Git artifact. Its rollback intentionally restores from in-memory snapshots,
 // not by moving timestamped backups: backups remain durable safety artifacts.
-type gitMutationJournal struct {
+type mutationJournal struct {
 	b           *realBackend
 	files       []gitFileSnapshot
 	dirs        []gitDirSnapshot
@@ -772,11 +773,11 @@ type gitDirSnapshot struct {
 	mode   os.FileMode
 }
 
-func newGitMutationJournal(b *realBackend) *gitMutationJournal {
-	return &gitMutationJournal{b: b, seenFile: make(map[string]bool), seenDir: make(map[string]bool)}
+func newMutationJournal(b *realBackend) *mutationJournal {
+	return &mutationJournal{b: b, seenFile: make(map[string]bool), seenDir: make(map[string]bool)}
 }
 
-func (j *gitMutationJournal) watchFile(path string) error {
+func (j *mutationJournal) watchFile(path string) error {
 	if j.seenFile[path] {
 		return nil
 	}
@@ -803,7 +804,7 @@ func (j *gitMutationJournal) watchFile(path string) error {
 	return nil
 }
 
-func (j *gitMutationJournal) watchDir(path string) error {
+func (j *mutationJournal) watchDir(path string) error {
 	if j.seenDir[path] {
 		return nil
 	}
@@ -826,7 +827,7 @@ func (j *gitMutationJournal) watchDir(path string) error {
 	return nil
 }
 
-func (j *gitMutationJournal) ensureDir(path string, mode os.FileMode) error {
+func (j *mutationJournal) ensureDir(path string, mode os.FileMode) error {
 	var missing []string
 	for current := filepath.Clean(path); ; current = filepath.Dir(current) {
 		if err := j.watchDir(current); err != nil {
@@ -850,16 +851,19 @@ func (j *gitMutationJournal) ensureDir(path string, mode os.FileMode) error {
 			return fmt.Errorf("gitid: securing transaction directory %s: %w", missing[i], err)
 		}
 	}
+	if err := os.Chmod(path, mode); err != nil {
+		return fmt.Errorf("gitid: securing transaction directory %s: %w", path, err)
+	}
 	return nil
 }
 
-func (j *gitMutationJournal) addBackup(path string) {
+func (j *mutationJournal) addBackup(path string) {
 	if path != "" {
 		j.backups = append(j.backups, path)
 	}
 }
 
-func (j *gitMutationJournal) file(path string) (gitFileSnapshot, bool) {
+func (j *mutationJournal) file(path string) (gitFileSnapshot, bool) {
 	for _, snapshot := range j.files {
 		if snapshot.path == path {
 			return snapshot, true
@@ -868,16 +872,21 @@ func (j *gitMutationJournal) file(path string) (gitFileSnapshot, bool) {
 	return gitFileSnapshot{}, false
 }
 
-func (j *gitMutationJournal) restore() ([]string, error) {
+func (j *mutationJournal) restore() ([]string, error) {
 	var outcomes []string
 	var failures []string
 	for i := len(j.files) - 1; i >= 0; i-- {
 		s := j.files[i]
 		var err error
-		if s.exists {
+		if j.b.failCommitAt != nil {
+			err = j.b.failCommitAt("restore:" + s.path)
+		}
+		if err == nil && s.exists {
 			err = filewriter.WriteNoBackup(s.path, s.content, s.mode)
-		} else if removeErr := os.Remove(s.path); removeErr != nil && !os.IsNotExist(removeErr) {
-			err = removeErr
+		} else if err == nil {
+			if removeErr := os.Remove(s.path); removeErr != nil && !os.IsNotExist(removeErr) {
+				err = removeErr
+			}
 		}
 		if err != nil {
 			outcome := s.path + ": restoration failed: " + err.Error()
@@ -892,7 +901,14 @@ func (j *gitMutationJournal) restore() ([]string, error) {
 		if !s.exists {
 			continue
 		}
-		if err := os.Chmod(s.path, s.mode); err != nil {
+		err := error(nil)
+		if j.b.failCommitAt != nil {
+			err = j.b.failCommitAt("restore:" + s.path)
+		}
+		if err == nil {
+			err = os.Chmod(s.path, s.mode)
+		}
+		if err != nil {
 			outcome := s.path + ": restoration failed: " + err.Error()
 			outcomes = append(outcomes, outcome)
 			failures = append(failures, outcome)
@@ -902,7 +918,14 @@ func (j *gitMutationJournal) restore() ([]string, error) {
 	}
 	for i := len(j.createdDirs) - 1; i >= 0; i-- {
 		path := j.createdDirs[i]
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		err := error(nil)
+		if j.b.failCommitAt != nil {
+			err = j.b.failCommitAt("restore:" + path)
+		}
+		if err == nil {
+			err = os.Remove(path)
+		}
+		if err != nil && !os.IsNotExist(err) {
 			outcome := path + ": restoration failed: " + err.Error()
 			outcomes = append(outcomes, outcome)
 			failures = append(failures, outcome)
@@ -919,7 +942,7 @@ func (j *gitMutationJournal) restore() ([]string, error) {
 // commitGitArtifacts performs all confirmed Git mutations. pubLine is supplied
 // by CommitCreate so the signing line is derived from the key already staged for
 // that create; standalone writes read the requested public-key path instead.
-func (b *realBackend) commitGitArtifacts(spec tuikit.GitSpec, pubLine string) (backups, restored []string, err error) {
+func (b *realBackend) commitGitArtifacts(spec tuikit.GitSpec, pubLine string, transaction *mutationJournal) (backups, restored []string, err error) {
 	if strings.TrimSpace(spec.Identity) == "" || strings.TrimSpace(spec.Name) == "" || strings.TrimSpace(spec.Email) == "" || strings.TrimSpace(spec.SSHHost) == "" {
 		return nil, nil, fmt.Errorf("gitid: incomplete Git configuration")
 	}
@@ -936,7 +959,11 @@ func (b *realBackend) commitGitArtifacts(spec tuikit.GitSpec, pubLine string) (b
 			gitDirPath = filepath.Join(b.home, "git", spec.Identity)
 		}
 	}
-	journal := newGitMutationJournal(b)
+	journal := transaction
+	ownsJournal := journal == nil
+	if journal == nil {
+		journal = newMutationJournal(b)
+	}
 	for _, path := range []string{fragmentPath, b.gitconfigPath, b.allowedSigners} {
 		if err := journal.watchFile(path); err != nil {
 			return nil, nil, err
@@ -963,10 +990,13 @@ func (b *realBackend) commitGitArtifacts(spec tuikit.GitSpec, pubLine string) (b
 		pubLine = string(pub)
 	}
 	fail := func(step string, cause error) ([]string, []string, error) {
-		outcomes, restoreErr := journal.restore()
 		cause = fmt.Errorf("gitid: mutation %s failed: %w", step, cause)
+		if !ownsJournal {
+			return journal.backups, nil, cause
+		}
+		outcomes, restoreErr := journal.restore()
 		if restoreErr != nil {
-			cause = fmt.Errorf("%w; restoration failures: %v", cause, restoreErr)
+			cause = fmt.Errorf("%w; restoration results: %s", cause, strings.Join(outcomes, "; "))
 		}
 		return journal.backups, outcomes, cause
 	}
@@ -1557,7 +1587,9 @@ func (b *realBackend) CommitCreate(id tuikit.DemoIdentity) tea.Cmd {
 // Rollback restores pre-write backups and removes transaction-created files so
 // a failure at any step leaves the user's config exactly as it was. For reused
 // keys, rollback restores the original file permissions (CR-09).
-func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged identity.StagedKey, id tuikit.DemoIdentity) ([]string, error) {
+//
+//nolint:unused // retained while standalone Git mutation compatibility remains internal.
+func (b *realBackend) commitCreateTransactionLegacy(in identity.CreateInput, staged identity.StagedKey, id tuikit.DemoIdentity) ([]string, error) {
 	type backupOp struct {
 		target string
 		backup string // empty means target did not exist before the transaction
@@ -1746,7 +1778,7 @@ func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged id
 		if gitSpec.Strategy == "" {
 			gitSpec.Strategy = "gitdir"
 		}
-		gitBackups, _, gitErr := b.commitGitArtifacts(gitSpec, staged.PubLine)
+		gitBackups, _, gitErr := b.commitGitArtifacts(gitSpec, staged.PubLine, nil)
 		if gitErr != nil {
 			rollback = true
 			return nil, fmt.Errorf("gitid: committing Git artifacts: %w", gitErr)
@@ -1765,6 +1797,122 @@ func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged id
 		displayBackups = append(displayBackups, b.displayPath(backup))
 	}
 	return displayBackups, nil
+}
+
+func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged identity.StagedKey, id tuikit.DemoIdentity) ([]string, error) {
+	journal := newMutationJournal(b)
+	fail := func(target string, cause error) ([]string, error) {
+		outcomes, restoreErr := journal.restore()
+		for _, backup := range journal.backups {
+			if err := os.Remove(backup); err != nil && !os.IsNotExist(err) {
+				outcomes = append(outcomes, backup+": restoration failed: "+err.Error())
+			}
+		}
+		message := fmt.Sprintf("gitid: mutation %s failed: %v; restoration results: %s", target, cause, strings.Join(outcomes, "; "))
+		if restoreErr != nil {
+			return nil, fmt.Errorf("%s", message)
+		}
+		return nil, fmt.Errorf("%s", message)
+	}
+	inject := func(step string) error {
+		if b.failCommitAt == nil {
+			return nil
+		}
+		return b.failCommitAt(step)
+	}
+	if err := journal.watchDir(b.sshDir); err != nil {
+		return nil, err
+	}
+	if err := inject("ssh-dir"); err != nil {
+		return fail("ssh-dir", err)
+	}
+	if err := journal.ensureDir(b.sshDir, sshDirMode); err != nil {
+		return fail("ssh-dir", err)
+	}
+	if err := journal.watchFile(staged.FinalPrivatePath); err != nil {
+		return fail("private-key", err)
+	}
+	if err := inject("private-key"); err != nil {
+		return fail("private-key", err)
+	}
+	if staged.PrivPEM != nil {
+		backup, err := filewriter.Write(staged.FinalPrivatePath, staged.PrivPEM, keyFileMode)
+		if err != nil {
+			return fail("private-key", err)
+		}
+		journal.addBackup(backup)
+	} else if err := os.Chmod(staged.FinalPrivatePath, keyFileMode); err != nil {
+		return fail("private-key", err)
+	}
+	if err := journal.watchFile(staged.FinalPubPath); err != nil {
+		return fail("public-key", err)
+	}
+	if err := inject("public-key"); err != nil {
+		return fail("public-key", err)
+	}
+	if staged.PubLine != "" {
+		backup, err := filewriter.Write(staged.FinalPubPath, []byte(staged.PubLine), pubFileMode)
+		if err != nil {
+			return fail("public-key", err)
+		}
+		journal.addBackup(backup)
+	}
+	st := b.storage()
+	if st.needsIncludeLine {
+		if err := journal.watchDir(b.includeDir); err != nil {
+			return fail("include-line", err)
+		}
+		if err := journal.watchFile(b.sshConfigPath); err != nil {
+			return fail("include-line", err)
+		}
+		if err := inject("include-line"); err != nil {
+			return fail("include-line", err)
+		}
+		if err := journal.ensureDir(b.includeDir, sshDirMode); err != nil {
+			return fail("include-line", err)
+		}
+		backup, err := sshconfig.EnsureIncludeLine(b.sshConfigPath)
+		if err != nil {
+			return fail("include-line", err)
+		}
+		journal.addBackup(backup)
+	}
+	if err := journal.watchFile(st.targetPath); err != nil {
+		return fail("host-block", err)
+	}
+	if err := inject("host-block"); err != nil {
+		return fail("host-block", err)
+	}
+	hostBlock, err := sshconfig.RenderCheckedHostBlock(in.Alias, in.Hostname, in.Port, staged.FinalPrivatePath, in.Provider)
+	if err != nil {
+		return fail("host-block", err)
+	}
+	backup, err := sshconfig.Write(st.targetPath, in.Name, hostBlock, in.GlobalBlock)
+	if err != nil {
+		return fail("host-block", err)
+	}
+	journal.addBackup(backup)
+	if id.GitConfigured && id.GitName != "" && id.GitEmail != "" {
+		gitSpec := tuikit.GitSpec{Identity: id.Name, Name: id.GitName, Email: id.GitEmail, Strategy: id.MatchStrategy, PublicKeyPath: id.PublicKeyPath, SSHHost: id.SSHHost, Provider: id.Provider, GitDir: id.GitDir, ForceSSH: id.ForceSSH}
+		if gitSpec.PublicKeyPath == "" {
+			gitSpec.PublicKeyPath = id.KeyPath + ".pub"
+		}
+		if gitSpec.GitDir == "" {
+			gitSpec.GitDir = "~/git/" + id.Name + "/"
+		}
+		if gitSpec.Strategy == "" {
+			gitSpec.Strategy = "gitdir"
+		}
+		_, _, err := b.commitGitArtifacts(gitSpec, staged.PubLine, journal)
+		if err != nil {
+			return fail("git-artifacts", err)
+		}
+	}
+	backups := make([]string, 0, len(journal.backups))
+	for _, backup := range journal.backups {
+		backups = append(backups, b.displayPath(backup))
+	}
+	return backups, nil
 }
 
 // setPersistErr records (or clears) the last committed write's failure.
