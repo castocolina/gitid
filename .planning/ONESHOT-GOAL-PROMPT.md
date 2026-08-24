@@ -24,7 +24,7 @@ Paste the block below as the first message, then leave it running.
 
 ▼▼▼ COPY FROM HERE ▼▼▼
 
-/gsd-autonomous --from 3 --to 10 --converge
+/gsd-autonomous --to 10 --converge
 
 You are the Claude Code orchestrator for the remaining gitid v1.0 milestone.
 
