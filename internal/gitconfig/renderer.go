@@ -150,3 +150,75 @@ func WriteIncludeIf(gitconfigPath, identity, fragmentPath string, matches []Matc
 	}
 	return backupPath, nil
 }
+
+const providerRewritePrefix = "provider-rewrite:"
+
+// ProviderRewriteBlockName returns the provider-owned managed block name for a
+// validated provider hostname. It is never identity-keyed, so identities sharing
+// a provider share one rewrite block.
+func ProviderRewriteBlockName(provider string) (string, error) {
+	host, err := validProviderHostname(provider)
+	if err != nil {
+		return "", err
+	}
+	return providerRewritePrefix + host, nil
+}
+
+// RenderProviderRewrite renders the recipe-shaped HTTPS-to-SSH URL rewrite for
+// one validated provider hostname.
+func RenderProviderRewrite(provider string) (string, error) {
+	host, err := validProviderHostname(provider)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("[url %q]\n\tinsteadOf = https://%s/", "git@"+host+":", host), nil
+}
+
+// WriteProviderRewrite writes one provider-owned HTTPS-to-SSH rewrite through
+// the managed-block chokepoint. When enabled is false, it intentionally does
+// nothing: D-06 opt-out must never remove a rewrite another identity manages.
+func WriteProviderRewrite(gitconfigPath, provider string, enabled bool) (string, error) {
+	name, err := ProviderRewriteBlockName(provider)
+	if err != nil {
+		return "", err
+	}
+	if !enabled {
+		return "", nil
+	}
+	body, err := RenderProviderRewrite(provider)
+	if err != nil {
+		return "", err
+	}
+
+	existing, err := os.ReadFile(gitconfigPath) //nolint:gosec // gitconfigPath is a trusted gitid-managed path
+	if err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("reading %s: %w", gitconfigPath, err)
+	}
+	backupPath, err := filewriter.Write(gitconfigPath, filewriter.ReplaceBlock(existing, name, body), gitconfigMode)
+	if err != nil {
+		return "", fmt.Errorf("writing provider rewrite block to %s: %w", gitconfigPath, err)
+	}
+	return backupPath, nil
+}
+
+func validProviderHostname(provider string) (string, error) {
+	host := strings.ToLower(provider)
+	if len(host) == 0 || len(host) > 253 || strings.HasSuffix(host, ".") {
+		return "", fmt.Errorf("gitconfig: provider hostname is invalid")
+	}
+	labels := strings.Split(host, ".")
+	if len(labels) < 2 {
+		return "", fmt.Errorf("gitconfig: provider hostname is invalid")
+	}
+	for _, label := range labels {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return "", fmt.Errorf("gitconfig: provider hostname is invalid")
+		}
+		for _, r := range label {
+			if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+				return "", fmt.Errorf("gitconfig: provider hostname is invalid")
+			}
+		}
+	}
+	return host, nil
+}

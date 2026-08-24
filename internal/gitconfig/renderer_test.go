@@ -219,6 +219,95 @@ func TestRenderParseRoundTrip(t *testing.T) {
 	}
 }
 
+func TestProviderRewrite(t *testing.T) {
+	dir := t.TempDir()
+	gitconfigPath := filepath.Join(dir, ".gitconfig")
+	foreign := "[core]\n\texcludesfile = ~/.gitignore_global\n[url \"ssh://git@legacy.example/\"]\n\tinsteadOf = https://legacy.example/\n"
+	if err := os.WriteFile(gitconfigPath, []byte(foreign), 0o600); err != nil { //nolint:gosec // hermetic t.TempDir() fixture; writer sets production gitconfig mode
+		t.Fatalf("seeding gitconfig: %v", err)
+	}
+
+	firstBackup, err := WriteProviderRewrite(gitconfigPath, "github.com", true)
+	if err != nil {
+		t.Fatalf("first WriteProviderRewrite: %v", err)
+	}
+	if firstBackup == "" {
+		t.Error("first enabled write backup = empty, want existing-file backup")
+	}
+	afterFirst, err := os.ReadFile(gitconfigPath) //nolint:gosec // hermetic t.TempDir() fixture
+	if err != nil {
+		t.Fatalf("reading first write: %v", err)
+	}
+
+	const wantBlock = "# BEGIN gitid managed: provider-rewrite:github.com\n[url \"git@github.com:\"]\n\tinsteadOf = https://github.com/\n# END gitid managed: provider-rewrite:github.com\n"
+	if !strings.Contains(string(afterFirst), wantBlock) {
+		t.Errorf("provider rewrite block missing or malformed:\n%s", afterFirst)
+	}
+	if !strings.Contains(string(afterFirst), foreign) {
+		t.Errorf("foreign Git content changed:\n%s", afterFirst)
+	}
+
+	if _, err := WriteProviderRewrite(gitconfigPath, "github.com", true); err != nil {
+		t.Fatalf("second WriteProviderRewrite: %v", err)
+	}
+	afterSecond, err := os.ReadFile(gitconfigPath) //nolint:gosec // hermetic t.TempDir() fixture
+	if err != nil {
+		t.Fatalf("reading second write: %v", err)
+	}
+	if string(afterSecond) != string(afterFirst) {
+		t.Errorf("enabled provider rewrite write is not byte-identical:\nfirst:\n%s\nsecond:\n%s", afterFirst, afterSecond)
+	}
+
+	if _, err := WriteProviderRewrite(gitconfigPath, "github.com", false); err != nil {
+		t.Fatalf("disabled WriteProviderRewrite: %v", err)
+	}
+	afterDisabled, err := os.ReadFile(gitconfigPath) //nolint:gosec // hermetic t.TempDir() fixture
+	if err != nil {
+		t.Fatalf("reading disabled write: %v", err)
+	}
+	if string(afterDisabled) != string(afterFirst) {
+		t.Errorf("disabled provider rewrite request changed existing block:\nbefore:\n%s\nafter:\n%s", afterFirst, afterDisabled)
+	}
+}
+
+func TestProviderRewriteSharesProviderBlock(t *testing.T) {
+	dir := t.TempDir()
+	gitconfigPath := filepath.Join(dir, ".gitconfig")
+
+	for _, identity := range []string{"personal", "work"} {
+		if _, err := WriteProviderRewrite(gitconfigPath, "github.com", true); err != nil {
+			t.Fatalf("WriteProviderRewrite for %s: %v", identity, err)
+		}
+	}
+	got, err := os.ReadFile(gitconfigPath) //nolint:gosec // hermetic t.TempDir() fixture
+	if err != nil {
+		t.Fatalf("reading provider rewrite: %v", err)
+	}
+	if count := strings.Count(string(got), "# BEGIN gitid managed: provider-rewrite:github.com"); count != 1 {
+		t.Errorf("provider rewrite block count = %d, want 1:\n%s", count, got)
+	}
+	if strings.Contains(string(got), "provider-rewrite:personal") || strings.Contains(string(got), "provider-rewrite:work") {
+		t.Errorf("provider rewrite must not be identity-keyed:\n%s", got)
+	}
+}
+
+func TestProviderRewriteRejectsUnsafeInput(t *testing.T) {
+	for _, provider := range []string{
+		"github.com\n[core]",
+		"github.com/evil",
+		"git@github.com",
+		"https://github.com",
+		"github..com",
+	} {
+		t.Run(provider, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), ".gitconfig")
+			if _, err := WriteProviderRewrite(path, provider, true); err == nil {
+				t.Errorf("WriteProviderRewrite(%q) error = nil, want rejection", provider)
+			}
+		})
+	}
+}
+
 func TestIncludeIfRejectsUnsafeInput(t *testing.T) {
 	tests := []struct {
 		name     string
