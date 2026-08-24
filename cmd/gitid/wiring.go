@@ -726,13 +726,103 @@ func (b *realBackend) GitStepDisabledReason() (string, bool) {
 // introduced with the reusable flow; this first contract implementation keeps
 // the existing no-op behavior safe until an explicit confirmed Git request is
 // wired by the reducer.
-func (b *realBackend) CommitGit(_ tuikit.GitSpec) tea.Cmd {
+func (b *realBackend) CommitGit(spec tuikit.GitSpec) tea.Cmd {
 	return func() tea.Msg {
 		if b.initErr != nil {
 			return tuikit.GitCommitMsg{Err: b.initErr.Error()}
 		}
-		return tuikit.GitCommitMsg{}
+		backups, restored, err := b.commitGitTransaction(spec)
+		if err != nil {
+			return tuikit.GitCommitMsg{Backups: backups, Restored: restored, Err: err.Error()}
+		}
+		return tuikit.GitCommitMsg{Backups: backups}
 	}
+}
+
+// commitGitTransaction performs the confirmed Git writes as a rollback-capable
+// unit. All paths are derived from the configured HOME roots and rejected if a
+// symlink or lexical escape crosses those roots.
+func (b *realBackend) commitGitTransaction(spec tuikit.GitSpec) (backups, restored []string, err error) {
+	if strings.TrimSpace(spec.Identity) == "" || strings.TrimSpace(spec.Name) == "" || strings.TrimSpace(spec.Email) == "" || strings.TrimSpace(spec.SSHHost) == "" {
+		return nil, nil, fmt.Errorf("gitid: incomplete Git configuration")
+	}
+	fragmentPath := filepath.Join(b.fragmentDir, spec.Identity)
+	for _, path := range []string{fragmentPath, b.gitconfigPath, b.allowedSigners} {
+		if err := containedRegularPath(path, b.home); err != nil {
+			return nil, nil, err
+		}
+	}
+	type receipt struct{ target, backup string }
+	var receipts []receipt
+	rollback := func(cause error) ([]string, []string, error) {
+		for i := len(receipts) - 1; i >= 0; i-- {
+			r := receipts[i]
+			if r.backup != "" {
+				if restoreErr := os.Rename(r.backup, r.target); restoreErr != nil {
+					restored = append(restored, r.target+": restoration failed: "+restoreErr.Error())
+				} else {
+					restored = append(restored, r.target)
+				}
+			} else if removeErr := os.Remove(r.target); removeErr != nil && !os.IsNotExist(removeErr) {
+				restored = append(restored, r.target+": removal failed: "+removeErr.Error())
+			} else {
+				restored = append(restored, r.target)
+			}
+		}
+		return backups, restored, cause
+	}
+	// Read and validate the public key before any mutation. Fragment is last:
+	// its authoritative git writer returns no backup receipt, so no fallible
+	// operation is permitted after it.
+	pub, readErr := os.ReadFile(spec.KeyPath + ".pub")
+	if readErr != nil {
+		return nil, nil, fmt.Errorf("gitid: reading signing key: %w", readErr)
+	}
+	matches := matchesFor(spec)
+	backup, writeErr := gitconfig.WriteIncludeIf(b.gitconfigPath, spec.Identity, "~/.gitconfig.d/"+spec.Identity, matches)
+	if writeErr != nil {
+		return rollback(fmt.Errorf("gitid: writing Git includeIf: %w", writeErr))
+	}
+	receipts = append(receipts, receipt{target: b.gitconfigPath, backup: backup})
+	if backup != "" {
+		backups = append(backups, backup)
+	}
+	backup, writeErr = keygen.WriteAllowedSignersReplacing(b.allowedSigners, spec.Identity, spec.Email, string(pub))
+	if writeErr != nil {
+		return rollback(fmt.Errorf("gitid: writing allowed signers: %w", writeErr))
+	}
+	receipts = append(receipts, receipt{target: b.allowedSigners, backup: backup})
+	if backup != "" {
+		backups = append(backups, backup)
+	}
+	if writeErr := gitconfig.WriteFragment(fragmentPath, spec.Name, spec.Email, spec.KeyPath+".pub", true); writeErr != nil {
+		return rollback(fmt.Errorf("gitid: writing Git fragment: %w", writeErr))
+	}
+	return backups, nil, nil
+}
+
+func containedRegularPath(path, root string) error {
+	cleanRoot, err := filepath.Abs(root)
+	if err != nil {
+		return fmt.Errorf("gitid: resolving managed root: %w", err)
+	}
+	cleanPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("gitid: resolving managed path: %w", err)
+	}
+	if cleanPath != cleanRoot && !strings.HasPrefix(cleanPath, cleanRoot+string(os.PathSeparator)) {
+		return fmt.Errorf("gitid: refusing path outside managed home: %s", path)
+	}
+	for current := cleanPath; current != cleanRoot; current = filepath.Dir(current) {
+		info, statErr := os.Lstat(current)
+		if statErr == nil && info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("gitid: refusing symlinked managed path: %s", current)
+		}
+		if statErr != nil && !os.IsNotExist(statErr) {
+			return fmt.Errorf("gitid: stat managed path: %w", statErr)
+		}
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------

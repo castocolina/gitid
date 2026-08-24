@@ -50,3 +50,10 @@ func WriteAllowedSigners(path, identity, line string) (string, error) {
 	}
 	return backup, nil
 }
+
+// WriteAllowedSignersReplacing replaces identity's managed signer block with
+// exactly one signer built from the exact user.email bytes. It never appends a
+// second principal for the same identity.
+func WriteAllowedSignersReplacing(path, identity, email, pubLine string) (string, error) {
+	return WriteAllowedSigners(path, identity, AllowedSignersLine(email, pubLine))
+}

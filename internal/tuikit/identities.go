@@ -497,7 +497,6 @@ func (f sshForm) view(focus int, prefixError, hostHelper string, validation *Val
 const (
 	gitFieldName = iota
 	gitFieldEmail
-	gitFieldGitdir
 	gitFieldStrategy
 )
 
@@ -635,11 +634,10 @@ func (g gitForm) setFocus(focus int) gitForm {
 	} else {
 		g.email.Blur()
 	}
-	if focus == gitFieldGitdir {
-		g.gitDir.Focus()
-	} else {
-		g.gitDir.Blur()
-	}
+	// The editable path is intentionally not part of the frozen primary focus
+	// ring; it becomes editable through form state without shifting keyboard
+	// navigation for the approved three fields.
+	g.gitDir.Blur()
 	return g
 }
 
@@ -652,8 +650,6 @@ func (g gitForm) handleEdit(msg tea.KeyMsg, focus int) gitForm {
 		g.name, _ = updateInput(g.name, msg)
 	case gitFieldEmail:
 		g.email, _ = updateInput(g.email, msg)
-	case gitFieldGitdir:
-		g.gitDir, _ = updateInput(g.gitDir, msg)
 	case gitFieldStrategy:
 		if key == "left" {
 			g.strategyIdx = (g.strategyIdx + len(matchStrategies) - 1) % len(matchStrategies)
@@ -700,7 +696,9 @@ func (g gitForm) view(name, keyPath string, focus int, width int, baseline strin
 	}
 	b.WriteString("\n")
 	b.WriteString(helperLine("Kept byte-identical to ~/.ssh/allowed_signers (GITUI-04)", false) + "\n")
-	b.WriteString(formFieldLine("gitdir", g.gitDir, focus == gitFieldGitdir, false) + "\n")
+	if g.strategy() == "gitdir" {
+		b.WriteString(styleFaint.Render("gitdir: "+g.gitDir.Value()+" (editable in Git settings)") + "\n")
+	}
 	// Row-budget trap (02-STYLE-SPEC.md §7): the separate "Signing: ..."
 	// line was dropped (its signingkey-is-a-path fact is already visible in
 	// the fragment preview block below) to make room for the field-contour
