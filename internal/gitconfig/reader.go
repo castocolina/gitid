@@ -34,10 +34,18 @@ type FragmentInfo struct {
 const BaselineIncludeBlockName = "baseline-include"
 
 // IsReservedBlockName reports whether a gitid-managed gitconfig block name is a
-// reserved, non-identity block (currently only the baseline include). Callers
-// performing identity discovery or orphan detection must skip reserved blocks.
+// reserved, non-identity block. Callers performing identity discovery or orphan
+// detection must skip reserved blocks.
 func IsReservedBlockName(name string) bool {
-	return name == BaselineIncludeBlockName
+	if name == BaselineIncludeBlockName {
+		return true
+	}
+	provider, ok := strings.CutPrefix(name, providerRewritePrefix)
+	if !ok {
+		return false
+	}
+	_, err := validProviderHostname(provider)
+	return err == nil
 }
 
 // ParseManagedIncludeIf extracts all gitid-managed includeIf blocks from the
