@@ -498,6 +498,8 @@ const (
 	gitFieldName = iota
 	gitFieldEmail
 	gitFieldStrategy
+	gitFieldForceSSH
+	gitFieldGitDir
 )
 
 // Wizard Git-step focus ring — the three fields above, then the three REAL
@@ -508,7 +510,7 @@ const (
 	gitFocusBack = iota + gitFieldStrategy + 1
 	gitFocusSkip
 	gitFocusContinue
-	wizardGitFocusSlots // ring size: 3 fields + 3 buttons
+	wizardGitFocusSlots
 )
 
 // gitPaneFocusButton is the configure-Git pane's extra focus slot: the
@@ -516,7 +518,7 @@ const (
 // button); its ring size is gitPaneFocusRing.
 const (
 	gitPaneFocusButton = gitFieldStrategy + 1
-	gitPaneFocusRing   = 4
+	gitPaneFocusRing   = gitPaneFocusButton + 1
 )
 
 // matchStrategies are the includeIf strategies in select order.
@@ -537,12 +539,16 @@ func strategyCopy(strategy, name string) string {
 // gitForm is the merged Git identity form.
 type gitForm struct {
 	// backend renders the fragment and includeIf previews.
-	backend     Backend
-	name        textinput.Model
-	email       textinput.Model
-	gitDir      textinput.Model
-	strategyIdx int
-	sshHost     string
+	backend       Backend
+	name          textinput.Model
+	email         textinput.Model
+	gitDir        textinput.Model
+	strategyIdx   int
+	sshHost       string
+	provider      string
+	publicKeyPath string
+	forceSSH      bool
+	gitDirFocused bool
 	// original is populated for edit mode and drives a changed-lines-only
 	// review; create mode leaves it zero-valued.
 	original GitOriginal
@@ -558,22 +564,24 @@ func newGitForm(b Backend, name, email, strategy string) gitForm {
 	}
 	return gitForm{
 		backend: b, name: newTextInput(name), email: newTextInput(email),
-		gitDir: newTextInput("~/git/" + name + "/"), strategyIdx: idx,
+		gitDir: newTextInput("~/git/" + name + "/"), strategyIdx: idx, forceSSH: true,
 	}
 }
 
 // spec projects the form's current values into the Backend's GitSpec.
 func (g gitForm) spec(identity, keyPath string) GitSpec {
 	return GitSpec{
-		Identity: identity,
-		Name:     g.name.Value(),
-		Email:    g.email.Value(),
-		Strategy: g.strategy(),
-		KeyPath:  keyPath,
-		GitDir:   normalizeGitDir(g.gitDir.Value(), identity),
-		ForceSSH: true,
-		SSHHost:  g.sshHost,
-		Original: g.original,
+		Identity:      identity,
+		Name:          g.name.Value(),
+		Email:         g.email.Value(),
+		Strategy:      g.strategy(),
+		KeyPath:       keyPath,
+		PublicKeyPath: orDefault(g.publicKeyPath, keyPath+".pub"),
+		GitDir:        normalizeGitDir(g.gitDir.Value(), identity),
+		ForceSSH:      g.forceSSH,
+		SSHHost:       g.sshHost,
+		Provider:      g.provider,
+		Original:      g.original,
 	}
 }
 
@@ -634,10 +642,11 @@ func (g gitForm) setFocus(focus int) gitForm {
 	} else {
 		g.email.Blur()
 	}
-	// The editable path is intentionally not part of the frozen primary focus
-	// ring; it becomes editable through form state without shifting keyboard
-	// navigation for the approved three fields.
-	g.gitDir.Blur()
+	if g.gitDirFocused && g.strategy() != "hasconfig" {
+		g.gitDir.Focus()
+	} else {
+		g.gitDir.Blur()
+	}
 	return g
 }
 
@@ -650,12 +659,20 @@ func (g gitForm) handleEdit(msg tea.KeyMsg, focus int) gitForm {
 		g.name, _ = updateInput(g.name, msg)
 	case gitFieldEmail:
 		g.email, _ = updateInput(g.email, msg)
+	case gitFieldForceSSH:
+		if key == " " || key == "space" || key == "enter" {
+			g.forceSSH = !g.forceSSH
+		}
 	case gitFieldStrategy:
 		if key == "left" {
 			g.strategyIdx = (g.strategyIdx + len(matchStrategies) - 1) % len(matchStrategies)
 		}
 		if key == "right" {
 			g.strategyIdx = (g.strategyIdx + 1) % len(matchStrategies)
+		}
+	case gitFieldGitDir:
+		if g.strategy() != "hasconfig" {
+			g.gitDir, _ = updateInput(g.gitDir, msg)
 		}
 	}
 	return g
@@ -695,14 +712,15 @@ func (g gitForm) view(name, keyPath string, focus int, width int, baseline strin
 		b.WriteString("  " + styleError.Render("needs @"))
 	}
 	b.WriteString("\n")
-	b.WriteString(helperLine("Kept byte-identical to ~/.ssh/allowed_signers (GITUI-04)", false) + "\n")
-	if g.strategy() == "gitdir" {
-		b.WriteString(styleFaint.Render("gitdir: "+g.gitDir.Value()+" (editable in Git settings)") + "\n")
+	forceMarker := glyphCheckOff
+	if g.forceSSH {
+		forceMarker = glyphCheckOn
 	}
-	// Row-budget trap (02-STYLE-SPEC.md §7): the separate "Signing: ..."
-	// line was dropped (its signingkey-is-a-path fact is already visible in
-	// the fragment preview block below) to make room for the field-contour
-	// box and the frozen hint copy the button row now always carries.
+	forceStyle := styleFaint
+	if focus == gitFieldForceSSH {
+		forceStyle = styleBold
+	}
+	b.WriteString(helperLine("Kept byte-identical to ~/.ssh/allowed_signers (GITUI-04) · gpg.format=ssh · signingkey="+g.spec(name, keyPath).PublicKeyPath+" · gpgsign=true · "+forceStyle.Render(forceMarker+" Force SSH"), false) + "\n")
 
 	// D2 (checkpoint-2 contract): the (←/→ change) hint moves onto the
 	// header line, visible in BOTH focus states (it used to show only
@@ -744,7 +762,7 @@ func (g gitForm) view(name, keyPath string, focus int, width int, baseline strin
 	// one row per preview.
 	b.WriteString(PreviewBlock("~/.gitconfig.d/"+name+" (fragment file — preview)", g.fragmentPreview(keyPath), false, width, 1) + "\n")
 	b.WriteString(PreviewBlock("~/.gitconfig (includeIf block — preview)", compactIncludeIfPreview(g.includeIfPreview(name)), false, width, 1) + "\n")
-	b.WriteString(baseline + "\n")
+	_ = baseline
 	return b.String()
 }
 
@@ -1010,6 +1028,7 @@ func (w wizardModel) spec() CreateSpec {
 func (w wizardModel) gitSpec() GitSpec {
 	spec := w.git.spec(w.form.identityName(), w.keyPath())
 	spec.SSHHost = w.form.sshHost()
+	spec.Provider = w.form.providerHost()
 	return spec
 }
 
@@ -1396,6 +1415,12 @@ func (w wizardModel) finishIdentity() DemoIdentity {
 		Provider: sp.Provider,
 	}
 	if w.configureGit {
+		gitSpec := w.gitSpec()
+		id.GitDir = gitSpec.GitDir
+		id.ForceSSH = gitSpec.ForceSSH
+		id.PublicKeyPath = gitSpec.PublicKeyPath
+	}
+	if w.configureGit {
 		id.State = "complete"
 		id.GitConfigured = true
 		id.GitFragmentPath = "~/.gitconfig.d/" + name
@@ -1512,9 +1537,11 @@ func (m identitiesModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 			return keyResult{model: m}
 		}
 		m.gitCeremony = m.gitCeremony.commitSucceeded(commit.Backups)
+		spec := m.gitPaneForm.spec(m.selected, "")
 		return keyResult{model: m, note: `Git identity "` + m.selected + `" configured.`, actions: []Action{ConfigureGit{
 			Name: m.selected, GitName: m.gitPaneForm.name.Value(), GitEmail: m.gitPaneForm.email.Value(),
-			MatchStrategy: m.gitPaneForm.strategy(), Backup: firstBackup(commit.Backups),
+			MatchStrategy: m.gitPaneForm.strategy(), GitDir: spec.GitDir, ForceSSH: spec.ForceSSH,
+			PublicKeyPath: spec.PublicKeyPath, Backup: firstBackup(commit.Backups),
 		}}}
 	}
 	if m.pane != paneCreate {
@@ -1775,11 +1802,16 @@ func (m identitiesModel) openGitForm(sel DemoIdentity) identitiesModel {
 	if strategy == "" {
 		strategy = m.backend.DefaultMatchStrategy()
 	}
+	m.gitExisting = sel.GitFragmentPath != ""
 	m.gitPaneForm = newGitForm(m.backend, name, email, strategy)
 	m.gitPaneForm.sshHost = sel.SSHHost
+	m.gitPaneForm.provider = sel.Provider
+	m.gitPaneForm.publicKeyPath = sel.PublicKeyPath
+	m.gitPaneForm.gitDir.SetValue(orDefault(sel.GitDir, "~/git/"+sel.Name+"/"))
+	m.gitPaneForm.forceSSH = sel.ForceSSH || !m.gitExisting
+	m.gitPaneForm.original = sel.GitOriginal
 	m.gitFocus = gitFieldName
 	m.gitPaneForm = m.gitPaneForm.setFocus(m.gitFocus)
-	m.gitExisting = sel.GitFragmentPath != ""
 	m.pane = paneGit
 	return m
 }
@@ -1837,14 +1869,26 @@ func (m identitiesModel) handleGitKey(msg tea.KeyMsg, s DemoState) keyResult {
 		return keyResult{model: m, handled: true}
 	case "tab", "down":
 		m.gitFocus = (m.gitFocus + 1) % gitPaneFocusRing
+		m.gitPaneForm.gitDirFocused = false
 		m.gitPaneForm = m.gitPaneForm.setFocus(m.gitFocus)
+		return keyResult{model: m, handled: true}
+	case "ctrl+g":
+		if m.gitPaneForm.strategy() != "hasconfig" {
+			m.gitPaneForm.gitDirFocused = true
+			m.gitPaneForm = m.gitPaneForm.setFocus(m.gitFocus)
+		}
 		return keyResult{model: m, handled: true}
 	case "shift+tab", "up":
 		m.gitFocus = (m.gitFocus + gitPaneFocusRing - 1) % gitPaneFocusRing
+		m.gitPaneForm.gitDirFocused = false
 		m.gitPaneForm = m.gitPaneForm.setFocus(m.gitFocus)
 		return keyResult{model: m, handled: true}
 	default:
-		m.gitPaneForm = m.gitPaneForm.handleEdit(msg, m.gitFocus)
+		if m.gitPaneForm.gitDirFocused {
+			m.gitPaneForm = m.gitPaneForm.handleEdit(msg, gitFieldGitDir)
+		} else {
+			m.gitPaneForm = m.gitPaneForm.handleEdit(msg, m.gitFocus)
+		}
 		return keyResult{model: m, handled: true}
 	}
 }
@@ -2386,7 +2430,13 @@ func (m identitiesModel) handleClick(x, y, width, height int, s DemoState) keyRe
 		}
 		sel, ok := m.selectedIdentity(s)
 		if ok {
+			if hitFieldRow(body, x, y, "gitdir path") && m.gitPaneForm.strategy() != "hasconfig" {
+				m.gitPaneForm.gitDirFocused = true
+				m.gitPaneForm = m.gitPaneForm.setFocus(m.gitFocus)
+				return keyResult{model: m, handled: true}
+			}
 			if slot, hit := hitAnyFieldRow(body, x, y, gitFormFieldSlots); hit {
+				m.gitPaneForm.gitDirFocused = false
 				m.gitFocus = slot
 				m.gitPaneForm = m.gitPaneForm.setFocus(slot)
 				return keyResult{model: m, handled: true}
@@ -2484,6 +2534,7 @@ var sshFormFieldSlots = []fieldSlot{
 var gitFormFieldSlots = []fieldSlot{
 	{"user.name", gitFieldName},
 	{"user.email", gitFieldEmail},
+	{"Force SSH", gitFieldForceSSH},
 }
 
 // anchoredLabelMatch reports whether label anchors row line (D8 click-to-
@@ -3219,7 +3270,6 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 			wizardButton(wizardSkipButton, w.gitFocus == gitFocusSkip, true, "") + "  " +
 			wizardButton(wizardContinueButton, w.gitFocus == gitFocusContinue, continueEnabled, continueReason) + "\n")
 		b.WriteString(" " + styleFaint.Render(wizardSkipHint) + "\n")
-		// The frozen review hint remains visible in every validity state.
 		b.WriteString(" " + styleFaint.Render(wizardContinueHint))
 	default:
 		b.WriteString(w.ceremony.view(width))
@@ -3292,9 +3342,13 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 		if m.gitExisting {
 			suffix = " (editing existing fragment)"
 		}
+		gitDirRow := ""
+		if m.gitPaneForm.strategy() != "hasconfig" {
+			gitDirRow = formFieldLine("gitdir path", m.gitPaneForm.gitDir, m.gitPaneForm.gitDirFocused, false) + "\n"
+		}
 		pane = " " + styleBold.Render("Git identity — "+sel.Name+suffix) + "\n" +
 			m.gitPaneForm.view(sel.Name, orDefault(sel.KeyPath, "~/.ssh/id_ed25519_"+sel.Name), m.gitFocus, detailWidth, baselineStripCompact(s, detailWidth)) +
-			" " + wizardButton(identGitWriteButton, m.gitFocus == gitPaneFocusButton, m.gitPaneForm.valid(), gitFormDisabledSuffix)
+			gitDirRow + " " + wizardButton(identGitWriteButton, m.gitFocus == gitPaneFocusButton, m.gitPaneForm.valid(), gitFormDisabledSuffix)
 		crumbs = []string{sel.Name, "Configure Git"}
 		actions = []FooterAction{{Key: "Tab/↑↓", Label: "fields"}, {Key: "Enter", Label: "write Git identity"}}
 		status = "Esc returns to the identity detail without writing anything."

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/identity"
 	"github.com/castocolina/gitid/internal/keygen"
 	"github.com/castocolina/gitid/internal/platform"
@@ -794,6 +795,19 @@ func TestCommitCreateWritesDefaultGitArtifacts(t *testing.T) {
 	signers := readFile(t, filepath.Join(home, ".ssh", "allowed_signers"))
 	if !strings.Contains(signers, `you@personal.example namespaces="git"`) {
 		t.Errorf("allowed_signers missing byte-identical email principal:\n%s", signers)
+	}
+}
+
+func TestToDemoIdentityProjectsGitEditFields(t *testing.T) {
+	b := newBackendForHome(t.TempDir())
+	row := b.toDemoIdentity(identity.Account{
+		Name: "personal", GitName: "Personal", GitEmail: "personal@example.test", Provider: "github.com",
+		Alias: "personal.github.com", KeyPath: filepath.Join(b.home, ".ssh", "id_personal"),
+		PubPath: filepath.Join(b.home, ".ssh", "id_personal.pub"), FragmentPath: filepath.Join(b.home, ".gitconfig.d", "personal"),
+		Matches: []gitconfig.Match{{Kind: gitconfig.MatchGitdir, Value: "~/repos/personal/"}, {Kind: gitconfig.MatchHasconfig, Value: "remote.*.url:git@personal.github.com:*/**"}},
+	})
+	if row.Provider != "github.com" || row.PublicKeyPath != "~/.ssh/id_personal.pub" || row.GitDir != "~/repos/personal/" || row.MatchStrategy != "both" || !row.GitConfigured {
+		t.Errorf("DemoIdentity projection = %+v", row)
 	}
 }
 

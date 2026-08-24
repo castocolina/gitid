@@ -2011,8 +2011,51 @@ func TestGitFlowFieldsUseEmptySSHOnlyValuesAndExactHostPreview(t *testing.T) {
 	if strings.Contains(preview, `git@work.github`) {
 		t.Errorf("hasconfig preview synthesized identity alias: %q", preview)
 	}
-	if !spec.ForceSSH || spec.GitDir != "~/src/work/" {
-		t.Errorf("GitSpec defaults = %+v, want default rewrite and normalized editable gitdir", spec)
+	if !spec.ForceSSH || spec.GitDir != "~/src/work/" || spec.PublicKeyPath != "~/.ssh/id_ed25519_work.pub" {
+		t.Errorf("GitSpec defaults = %+v, want default rewrite, public key path, and normalized editable gitdir", spec)
+	}
+}
+
+func TestGitFlowFormRendersLockedFieldsAndToggle(t *testing.T) {
+	form := newGitForm(stubBackend{}, "Personal", "personal@example.test", "gitdir")
+	form.sshHost = "personal.github.com"
+	form.provider = "github.com"
+	form.publicKeyPath = "~/.ssh/id_personal.pub"
+	view := stripANSI(form.view("personal", "~/.ssh/id_personal", gitFieldName, 100, ""))
+	for _, want := range []string{"gpg.format=ssh", "signingkey=~/.ssh/id_personal.pub", "gpgsign=true", "☑ Force SSH"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("Git form missing %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestGitFlowMouseGitDirFocusAndConditionalVisibility(t *testing.T) {
+	a, _ := press(t, NewApp(stubBackend{}), "g")
+	if !strings.Contains(appView(a), "gitdir path") {
+		t.Fatal("gitdir path must render for gitdir strategy")
+	}
+	a = clickCell(t, a, "gitdir path", 0, 0)
+	if !identModel(t, a).gitPaneForm.gitDirFocused {
+		t.Fatal("clicking gitdir path must focus it")
+	}
+	a, _ = press(t, a, "tab")
+	m := identModel(t, a)
+	m.gitPaneForm.strategyIdx = 1
+	a.screens[TabIdentities] = m
+	if strings.Contains(appView(a), "gitdir path") {
+		t.Fatal("gitdir path must be hidden for hasconfig-only strategy")
+	}
+}
+
+func TestGitFlowForceSSHToggleAndGitDirProjection(t *testing.T) {
+	form := newGitForm(stubBackend{}, "Personal", "personal@example.test", "gitdir")
+	form.provider = "github.com"
+	form.publicKeyPath = "~/.ssh/id_personal.pub"
+	form = form.handleEdit(mustKey("space"), gitFieldForceSSH)
+	form.gitDir.SetValue("~/repos/personal")
+	spec := form.spec("personal", "~/.ssh/id_personal")
+	if spec.ForceSSH || spec.GitDir != "~/repos/personal/" || spec.PublicKeyPath != "~/.ssh/id_personal.pub" || spec.Provider != "github.com" {
+		t.Errorf("GitSpec projection = %+v", spec)
 	}
 }
 

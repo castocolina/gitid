@@ -125,8 +125,10 @@ type GitSpec struct {
 	Email string
 	// Strategy is the includeIf match strategy (gitdir/hasconfig/both).
 	Strategy string
-	// KeyPath is the identity's private key; user.signingkey is KeyPath + ".pub".
+	// KeyPath is the identity's private key, retained only to read its public half.
 	KeyPath string
+	// PublicKeyPath is the user.signingkey path shown and written by this flow.
+	PublicKeyPath string
 	// SSHHost is the exact configured SSH alias used by hasconfig matching.
 	SSHHost string
 	// Provider is the provider hostname used for its optional insteadOf block.

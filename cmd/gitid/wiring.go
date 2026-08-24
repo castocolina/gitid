@@ -747,7 +747,11 @@ func (b *realBackend) commitGitTransaction(spec tuikit.GitSpec) (backups, restor
 		return nil, nil, fmt.Errorf("gitid: incomplete Git configuration")
 	}
 	fragmentPath := filepath.Join(b.fragmentDir, spec.Identity)
-	for _, path := range []string{fragmentPath, b.gitconfigPath, b.allowedSigners} {
+	publicKeyPath := spec.PublicKeyPath
+	if publicKeyPath == "" {
+		publicKeyPath = spec.KeyPath + ".pub"
+	}
+	for _, path := range []string{fragmentPath, b.gitconfigPath, b.allowedSigners, b.resolveKeyPath(publicKeyPath)} {
 		if err := containedRegularPath(path, b.home); err != nil {
 			return nil, nil, err
 		}
@@ -774,7 +778,7 @@ func (b *realBackend) commitGitTransaction(spec tuikit.GitSpec) (backups, restor
 	// Read and validate the public key before any mutation. Fragment is last:
 	// its authoritative git writer returns no backup receipt, so no fallible
 	// operation is permitted after it.
-	pub, readErr := os.ReadFile(spec.KeyPath + ".pub")
+	pub, readErr := os.ReadFile(b.resolveKeyPath(publicKeyPath))
 	if readErr != nil {
 		return nil, nil, fmt.Errorf("gitid: reading signing key: %w", readErr)
 	}
@@ -795,7 +799,17 @@ func (b *realBackend) commitGitTransaction(spec tuikit.GitSpec) (backups, restor
 	if backup != "" {
 		backups = append(backups, backup)
 	}
-	if writeErr := gitconfig.WriteFragment(fragmentPath, spec.Name, spec.Email, spec.KeyPath+".pub", true); writeErr != nil {
+	if spec.ForceSSH && spec.Provider != "" {
+		backup, writeErr = gitconfig.WriteProviderRewrite(b.gitconfigPath, spec.Provider, true)
+		if writeErr != nil {
+			return rollback(fmt.Errorf("gitid: writing provider rewrite: %w", writeErr))
+		}
+		receipts = append(receipts, receipt{target: b.gitconfigPath, backup: backup})
+		if backup != "" {
+			backups = append(backups, backup)
+		}
+	}
+	if writeErr := gitconfig.WriteFragment(fragmentPath, spec.Name, spec.Email, publicKeyPath, true); writeErr != nil {
 		return rollback(fmt.Errorf("gitid: writing Git fragment: %w", writeErr))
 	}
 	return backups, nil, nil
@@ -884,17 +898,39 @@ func toAlgorithmCatalogEntry(a keygen.AlgoInfo) tuikit.AlgorithmCatalogEntry {
 func (b *realBackend) toDemoIdentity(acct identity.Account) tuikit.DemoIdentity {
 	keyExists := acct.KeyPath != "" && fileExists(acct.KeyPath)
 	state := identity.ClassifyState(acct, keyExists, keyExists && acct.Alias != "", acct.FragmentPath != "")
-	return tuikit.DemoIdentity{
+	row := tuikit.DemoIdentity{
 		Name:            acct.Name,
 		State:           string(state),
 		SSHHost:         acct.Alias,
 		KeyPath:         b.displayPath(acct.KeyPath),
+		PublicKeyPath:   b.displayPath(acct.PubPath),
 		GitFragmentPath: b.displayPath(acct.FragmentPath),
 		GitName:         acct.GitName,
 		GitEmail:        acct.GitEmail,
+		Provider:        acct.Provider,
 		Hostname:        acct.Hostname,
 		Port:            acct.Port,
 	}
+	for _, match := range acct.Matches {
+		switch match.Kind {
+		case gitconfig.MatchGitdir:
+			row.GitDir = match.Value
+		case gitconfig.MatchHasconfig:
+			row.MatchStrategy = "hasconfig"
+		}
+	}
+	if row.GitDir != "" {
+		if row.MatchStrategy == "hasconfig" {
+			row.MatchStrategy = "both"
+		} else {
+			row.MatchStrategy = "gitdir"
+		}
+	}
+	if row.MatchStrategy == "" && row.GitFragmentPath != "" {
+		row.MatchStrategy = "gitdir"
+	}
+	row.GitConfigured = row.GitFragmentPath != "" && row.GitName != "" && row.GitEmail != ""
+	return row
 }
 
 // ---------------------------------------------------------------------------
@@ -1461,7 +1497,7 @@ func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged id
 			rollback = true
 			return nil, err
 		}
-		gitSpec := tuikit.GitSpec{Identity: id.Name, Strategy: id.MatchStrategy, SSHHost: id.SSHHost}
+		gitSpec := tuikit.GitSpec{Identity: id.Name, Strategy: id.MatchStrategy, SSHHost: id.SSHHost, GitDir: id.GitDir}
 		if gitSpec.Strategy == "" {
 			gitSpec.Strategy = "gitdir"
 		}
@@ -1471,6 +1507,14 @@ func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged id
 			return nil, fmt.Errorf("gitid: writing Git includeIf: %w", err)
 		}
 		addOp(b.gitconfigPath, bk)
+		if id.ForceSSH && id.Provider != "" {
+			bk, err = gitconfig.WriteProviderRewrite(b.gitconfigPath, id.Provider, true)
+			if err != nil {
+				rollback = true
+				return nil, fmt.Errorf("gitid: writing provider rewrite: %w", err)
+			}
+			addOp(b.gitconfigPath, bk)
+		}
 		if err := gitconfig.SetAllowedSignersFile(b.gitconfigPath, b.allowedSigners); err != nil {
 			rollback = true
 			return nil, fmt.Errorf("gitid: setting allowed signers file: %w", err)

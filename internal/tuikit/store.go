@@ -30,6 +30,10 @@ type DemoIdentity struct {
 	GitName       string
 	GitEmail      string
 	MatchStrategy string
+	GitDir        string
+	ForceSSH      bool
+	PublicKeyPath string
+	GitOriginal   GitOriginal
 	// GitConfigured distinguishes an explicit create-flow confirmation from
 	// incidental Git-shaped row data used by read-only views and tests.
 	GitConfigured bool
@@ -108,6 +112,9 @@ type ConfigureGit struct {
 	GitName       string
 	GitEmail      string
 	MatchStrategy string
+	GitDir        string
+	ForceSSH      bool
+	PublicKeyPath string
 	Backup        string
 }
 
@@ -233,6 +240,10 @@ func Reduce(state DemoState, action Action) DemoState { //nolint:gocyclo // one 
 			row.GitName = a.GitName
 			row.GitEmail = a.GitEmail
 			row.MatchStrategy = a.MatchStrategy
+			row.GitDir = a.GitDir
+			row.ForceSSH = a.ForceSSH
+			row.PublicKeyPath = a.PublicKeyPath
+			row.GitConfigured = true
 			row.State = recomputeAfterGit(row)
 			row.Note = "SSH Host block and Git fragment both present."
 			next.Identities[i] = row
