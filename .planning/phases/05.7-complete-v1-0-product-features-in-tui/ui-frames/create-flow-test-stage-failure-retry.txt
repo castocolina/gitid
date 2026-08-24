@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Identities › New identity › Test connection
+S ssh · G git  ✓ ok ! attn ✗ broken │  Step 2/4 · Test connection ● ● ○ ○
+                                    │  Shift+←/→ jump sections · forward needs a valid step
+                                    │  Key ~/.ssh/id_ed25519_acme generated (ed25519).
+                                    │  A throwaway config is used — ~/.ssh/config untouched.
+                                    │  ☐ Demo control — simulate a provider failure (key not
+                                    │ registered) to preview the error path  (space toggles)
+                                    │      Review aid only, not part of the real flow. It locks
+                                    │ while a stage is running and once the test has passed — there
+                                    │ is nothing left to simulate then.
+                                    │ ╭╌ Stage 1 — key DIRECT against the provider (TEST-01) ╌╌╮
+                                    │ ┊ $                                                      ┊
+                                    │ ┊ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestC ┊
+                                    │ ┊ r…                                                     ┊
+                                    │ ┊                                                        ┊
+                                    │ ╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+                                    │   Run stage 1 (Enter)
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+ Esc returns to the identity detail without writing anything.
+ Enter run stage 1 · space toggle failure demo
+ Esc back · Ctrl+P palette

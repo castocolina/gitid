@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Identities ›
+S ssh · G git  ✓ ok ! attn ✗ broken │
+                                    │
+                                    │  SSH — shown first, always
+                                    │    ! No gitid-managed Host block — relies on the global SSH
+                                    │ config.
+                                    │
+                                    │  Git
+                                    │    ! Git not configured — no fabricated values shown.
+                                    │ [Configure now (g)]
+                                    │  Global baseline (inherited — not applied yet):
+                                    │ init.defaultBranch=main · core.ignorecase=false ·
+                                    │ autocrlf=input/lf · push.autoSetupRemote=true ·
+                                    │ pull.rebase=true · merge=diff3
+                                    │    Edit in Global Git (3)
+                                    │
+                                    │  Findings (0) — same data the Doctor shows (4)
+                                    │    ✓ No findings for "".
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+ Identity "acme" created — SSH only (incomplete). Configure Git from its detail.
+ ↑↓ select identity · n new · e edit SSH · g configure Git · c clone · d delete · ←→ switch view
+ Enter activate · Esc back · ? help · Ctrl+P palette · q quit

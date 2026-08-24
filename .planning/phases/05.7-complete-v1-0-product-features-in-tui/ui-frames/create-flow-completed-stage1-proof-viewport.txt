@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Identities › New identity › Test connection
+S ssh · G git  ✓ ok ! attn ✗ broken │  Step 2/4 · Test connection ● ● ○ ○
+                                    │  Shift+←/→ jump sections · forward needs a valid step
+                                    │  Demo failure control — locked (nothing left to simulate)
+                                    │  ✓ Hi user! You've successfully authenticated, but GitHub doe
+                                    │  … running ssh…
+                                    │  Proof viewport: PgUp/PgDn scroll · v focus · ←/→ columns
+                                    │ Stage 1 command:
+                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestCreat
+                                    │ Stage 1 output:
+                                    │ Hi user! You've successfully authenticated, but GitHub doe
+                                    │
+                                    │ → cols 1–58 of 429  ←→scroll
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+ Esc returns to the identity detail without writing anything.
+
+ Esc back · Ctrl+P palette

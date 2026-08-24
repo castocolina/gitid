@@ -97,7 +97,7 @@
     "enabled": true
   },
   "model_overrides": {
-    "gsd-code-reviewer": "openai/gpt-5.6-sol",
+    "gsd-code-reviewer": "openai/gpt-5.6-sol-fast",
     "gsd-executor": "local-llm-env/my-coding"
   },
   "review": {
@@ -120,9 +120,9 @@
   "runtime": "opencode",
   "model_profile_overrides": {
     "opencode": {
-      "opus": "openai/gpt-5.6-sol",
-      "sonnet": "openai/gpt-5.6-terra",
-      "haiku": "openai/gpt-5.6-luna"
+      "opus": "openai/gpt-5.6-sol-fast",
+      "sonnet": "openai/gpt-5.6-terra-fast",
+      "haiku": "openai/gpt-5.6-luna-fast"
     }
   },
   "dynamic_routing": {
@@ -136,7 +136,7 @@
     "max_escalations": 2,
     "provider_escalation": [
       "xai/grok-build-0.1",
-      "openai/gpt-5.6-terra"
+      "openai/gpt-5.6-terra-fast"
     ]
   },
   "models": {

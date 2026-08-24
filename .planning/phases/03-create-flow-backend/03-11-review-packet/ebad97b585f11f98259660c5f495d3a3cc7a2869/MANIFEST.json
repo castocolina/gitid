@@ -1,0 +1,330 @@
+{
+  "version": "03-11.2",
+  "source_commit": "ebad97b585f11f98259660c5f495d3a3cc7a2869",
+  "approval_commit": "3c3130e404329cf42baafdf63a6c22758437edc6",
+  "captured_at": "2026-08-21T00:00:00Z",
+  "live_backend_ref": "ebad97b585f11f98259660c5f495d3a3cc7a2869",
+  "members": [
+    {
+      "path": "approved-html/confirm-write.png",
+      "sha256": "037f960384690a2dacbbf01182718033402009543cfcc8aa6a1263962b3c818d",
+      "kind": "png-approved-html",
+      "screen_id": "confirm-write"
+    },
+    {
+      "path": "approved-html/confirm-write.txt",
+      "sha256": "2d469a95108171a47aac8e77e020efb40175ad49035daed38b9f1e751ae86d05",
+      "kind": "text",
+      "screen_id": "confirm-write"
+    },
+    {
+      "path": "approved-html/git-form-demo.png",
+      "sha256": "1307ee4e52b17847a03905a61962564caf1c73bd09a286c2d7e12e3e74700abe",
+      "kind": "png-approved-html",
+      "screen_id": "git-form-demo"
+    },
+    {
+      "path": "approved-html/git-form-demo.txt",
+      "sha256": "c76fe01d5652e155601d4bb64593297dd31bbb5b3871a6db6e98e1a4322b3dce",
+      "kind": "text",
+      "screen_id": "git-form-demo"
+    },
+    {
+      "path": "approved-html/mouse-focused-field.png",
+      "sha256": "9e27edea13e27ca7afb225c8c3c258570c0eeb69bdf099017d7f05730dd0d388",
+      "kind": "png-approved-html",
+      "screen_id": "mouse-focused-field"
+    },
+    {
+      "path": "approved-html/mouse-focused-field.txt",
+      "sha256": "c4177f124676545454a727908baeeb1bcef74b3f01657f26507501c36b3d461e",
+      "kind": "text",
+      "screen_id": "mouse-focused-field"
+    },
+    {
+      "path": "approved-html/reuse-key-vs-generate.png",
+      "sha256": "2426a7af8ac6cfcb89dc5eee2258a4485ed8da4f9d72409eda358474323e33d9",
+      "kind": "png-approved-html",
+      "screen_id": "reuse-key-vs-generate"
+    },
+    {
+      "path": "approved-html/reuse-key-vs-generate.txt",
+      "sha256": "88d56092b286c4c6676f268a2a94f154532c98857fadcb97921b29cb72ad6a8f",
+      "kind": "text",
+      "screen_id": "reuse-key-vs-generate"
+    },
+    {
+      "path": "approved-html/reuse-manual-path.png",
+      "sha256": "1abdb57d063db4fb4f4a7c314bf4a111efa23cfc541c402577556ce9b9e36f51",
+      "kind": "png-approved-html",
+      "screen_id": "reuse-manual-path"
+    },
+    {
+      "path": "approved-html/reuse-manual-path.txt",
+      "sha256": "aa7d75c83528d63e37a9d8bcee2e6269b10737f2a766b8c53b017a4b15ffa76c",
+      "kind": "text",
+      "screen_id": "reuse-manual-path"
+    },
+    {
+      "path": "approved-html/ssh-form-filled.png",
+      "sha256": "b997edaab95f370f48704730a5ac75a2f1d7b5fd82757e424f6bff8ad47bad0f",
+      "kind": "png-approved-html",
+      "screen_id": "ssh-form-filled"
+    },
+    {
+      "path": "approved-html/ssh-form-filled.txt",
+      "sha256": "7bb6b2e7d50ef1892d6b82088e6eeac7f7cf170915b57d814b863bb460168248",
+      "kind": "text",
+      "screen_id": "ssh-form-filled"
+    },
+    {
+      "path": "approved-html/test-stage1-direct.png",
+      "sha256": "5d71c8662210058fd9f0814f6556717f676b22fb04a48e4427312f678c3114db",
+      "kind": "png-approved-html",
+      "screen_id": "test-stage1-direct"
+    },
+    {
+      "path": "approved-html/test-stage1-direct.txt",
+      "sha256": "33239ff129d285d47c29cdca286c7dd03e1861e5a80666e36b10a2e4b95ad5e8",
+      "kind": "text",
+      "screen_id": "test-stage1-direct"
+    },
+    {
+      "path": "approved-html/test-stage2-by-alias.png",
+      "sha256": "3705716dfa68a5ef2d3ce10cdb413d54c751f53264f69cec1c11738c2abe840e",
+      "kind": "png-approved-html",
+      "screen_id": "test-stage2-by-alias"
+    },
+    {
+      "path": "approved-html/test-stage2-by-alias.txt",
+      "sha256": "207550468eeb141fb2c4d02fb65d3744026b35810f23fc80ea9474c139534cc2",
+      "kind": "text",
+      "screen_id": "test-stage2-by-alias"
+    },
+    {
+      "path": "approved-tui/confirm-write.png",
+      "sha256": "8392d809f596bed2ad4593b86229a3a1e05e92afbf13580df4d1b374c4e1a838",
+      "kind": "png-approved-tui",
+      "screen_id": "confirm-write"
+    },
+    {
+      "path": "approved-tui/confirm-write.txt",
+      "sha256": "3b406c4fba0874a906d9ae19f6295329832ccce67e0a4d1b69a67f87a21def46",
+      "kind": "text",
+      "screen_id": "confirm-write"
+    },
+    {
+      "path": "approved-tui/git-form-demo.png",
+      "sha256": "a577c179a0bfc6c653cb9d26ccc563a62308bf0374bbabdb799f00deba527537",
+      "kind": "png-approved-tui",
+      "screen_id": "git-form-demo"
+    },
+    {
+      "path": "approved-tui/git-form-demo.txt",
+      "sha256": "537fdbcf189ba2d1a61cf8294a5d392ef0634a401c32cc43fe3d7d07cbb27fb6",
+      "kind": "text",
+      "screen_id": "git-form-demo"
+    },
+    {
+      "path": "approved-tui/mouse-focused-field.png",
+      "sha256": "04dd02d9163fa4d969091de2a67e029450e52ce68ab32ed987dae7aa1e0317a6",
+      "kind": "png-approved-tui",
+      "screen_id": "mouse-focused-field"
+    },
+    {
+      "path": "approved-tui/mouse-focused-field.txt",
+      "sha256": "f02d82f7bcb46e17c6afc2073e1f7108774f10ff15b5be7dfb52befff880a14f",
+      "kind": "text",
+      "screen_id": "mouse-focused-field"
+    },
+    {
+      "path": "approved-tui/reuse-key-vs-generate.png",
+      "sha256": "012b39623893a43f617b06afa6163d84d4e90bd2d7d382ee0213d0614e38785d",
+      "kind": "png-approved-tui",
+      "screen_id": "reuse-key-vs-generate"
+    },
+    {
+      "path": "approved-tui/reuse-key-vs-generate.txt",
+      "sha256": "503a0eb956754ffc3fed3d83f61648ca655aa7840566fb899189a9c7f5d6d5ef",
+      "kind": "text",
+      "screen_id": "reuse-key-vs-generate"
+    },
+    {
+      "path": "approved-tui/reuse-manual-path.png",
+      "sha256": "f05fadcf49f344b6ad0ee4cbf1411f03d2bb76face1c9390e50c4bf908bb7390",
+      "kind": "png-approved-tui",
+      "screen_id": "reuse-manual-path"
+    },
+    {
+      "path": "approved-tui/reuse-manual-path.txt",
+      "sha256": "4425e1b07ed3b318d38914aee6120841160191a6393861ef69f74476775a04b5",
+      "kind": "text",
+      "screen_id": "reuse-manual-path"
+    },
+    {
+      "path": "approved-tui/ssh-form-filled.png",
+      "sha256": "4d212d1ffcd23d251086af72406a5d0801048a5bac29cb95fc5104977b89573e",
+      "kind": "png-approved-tui",
+      "screen_id": "ssh-form-filled"
+    },
+    {
+      "path": "approved-tui/ssh-form-filled.txt",
+      "sha256": "9057623c44f7a603e194adfe4f8775dc8d92197b078e4a2f6bf6b230859e75dc",
+      "kind": "text",
+      "screen_id": "ssh-form-filled"
+    },
+    {
+      "path": "approved-tui/test-stage1-direct.png",
+      "sha256": "3e08fb66a8969c892aad71a2f7fe0a6ca50b4476b17b0ee4a83afea4cb96f1ad",
+      "kind": "png-approved-tui",
+      "screen_id": "test-stage1-direct"
+    },
+    {
+      "path": "approved-tui/test-stage1-direct.txt",
+      "sha256": "b0ec767f84f6215482ef2cef2d33615065f5eec824f93e3b8242fa996a7ccce5",
+      "kind": "text",
+      "screen_id": "test-stage1-direct"
+    },
+    {
+      "path": "approved-tui/test-stage2-by-alias.png",
+      "sha256": "3e08fb66a8969c892aad71a2f7fe0a6ca50b4476b17b0ee4a83afea4cb96f1ad",
+      "kind": "png-approved-tui",
+      "screen_id": "test-stage2-by-alias"
+    },
+    {
+      "path": "approved-tui/test-stage2-by-alias.txt",
+      "sha256": "b0ec767f84f6215482ef2cef2d33615065f5eec824f93e3b8242fa996a7ccce5",
+      "kind": "text",
+      "screen_id": "test-stage2-by-alias"
+    },
+    {
+      "path": "live/confirm-write.png",
+      "sha256": "b8c7d78e749015dbba97d87fa583215f61b15d773868fa3634212a45b3f457de",
+      "kind": "png-live",
+      "screen_id": "confirm-write"
+    },
+    {
+      "path": "live/confirm-write.txt",
+      "sha256": "ae2d33d5e62325ef6d8e57d1bedc6d6dfae50004e606e34c347f46c44626bc51",
+      "kind": "text",
+      "screen_id": "confirm-write"
+    },
+    {
+      "path": "live/git-form-demo.png",
+      "sha256": "d93240de107ad933c9f9127e69f12e206babc77fa4facacee4c1c17e7291ab9a",
+      "kind": "png-live",
+      "screen_id": "git-form-demo"
+    },
+    {
+      "path": "live/git-form-demo.txt",
+      "sha256": "ebbf13af512502bbc13cb088b5639d3834b8ac8deb61ca0f7e714326c069d134",
+      "kind": "text",
+      "screen_id": "git-form-demo"
+    },
+    {
+      "path": "live/mouse-focused-field.png",
+      "sha256": "2838ae42498273124f7eed3c7d12b13a203f1f74b666ffe8cb960d3fafaafe25",
+      "kind": "png-live",
+      "screen_id": "mouse-focused-field"
+    },
+    {
+      "path": "live/mouse-focused-field.txt",
+      "sha256": "5ef8e8ec1b465a52b70b1d356046b7b5bf106c20fcc5836f82797303a87f8f5d",
+      "kind": "text",
+      "screen_id": "mouse-focused-field"
+    },
+    {
+      "path": "live/reuse-key-vs-generate.png",
+      "sha256": "f00c3dce3cd58a5932906ff7a02f25228f15469025bf7bcf1e10651145751daa",
+      "kind": "png-live",
+      "screen_id": "reuse-key-vs-generate"
+    },
+    {
+      "path": "live/reuse-key-vs-generate.txt",
+      "sha256": "3b772fc5c4dea06fd0d412ea4dc8bfd88f3a441e75b91b6601affe45777a7aa3",
+      "kind": "text",
+      "screen_id": "reuse-key-vs-generate"
+    },
+    {
+      "path": "live/reuse-manual-path.png",
+      "sha256": "85ebad28491c39a0aedcc6344a926370b417a274b13b0a7a6789923341ce74bd",
+      "kind": "png-live",
+      "screen_id": "reuse-manual-path"
+    },
+    {
+      "path": "live/reuse-manual-path.txt",
+      "sha256": "d7513a003a789ca638f3af1678bc420154ad8790fd883f828d9bc70fd33817d1",
+      "kind": "text",
+      "screen_id": "reuse-manual-path"
+    },
+    {
+      "path": "live/ssh-form-filled.png",
+      "sha256": "2350303c8f8cbed290b8c424230673ef60217ab939fca21bff49eede40a37e6b",
+      "kind": "png-live",
+      "screen_id": "ssh-form-filled"
+    },
+    {
+      "path": "live/ssh-form-filled.txt",
+      "sha256": "e4397274faa5f46fc6b6de778dda04acbe2e86c105c28b08296b58538dcc69ae",
+      "kind": "text",
+      "screen_id": "ssh-form-filled"
+    },
+    {
+      "path": "live/test-stage1-direct.png",
+      "sha256": "eeabd59cb6014515f114eeb97ff824c52d2b4b183168292f566f811658561a43",
+      "kind": "png-live",
+      "screen_id": "test-stage1-direct"
+    },
+    {
+      "path": "live/test-stage1-direct.txt",
+      "sha256": "5e470dd62663a1a674804eaaa57f04f0c66ead0007450acff2d35e5d100bc9f8",
+      "kind": "text",
+      "screen_id": "test-stage1-direct"
+    },
+    {
+      "path": "live/test-stage2-by-alias.png",
+      "sha256": "eeabd59cb6014515f114eeb97ff824c52d2b4b183168292f566f811658561a43",
+      "kind": "png-live",
+      "screen_id": "test-stage2-by-alias"
+    },
+    {
+      "path": "live/test-stage2-by-alias.txt",
+      "sha256": "5e470dd62663a1a674804eaaa57f04f0c66ead0007450acff2d35e5d100bc9f8",
+      "kind": "text",
+      "screen_id": "test-stage2-by-alias"
+    }
+  ],
+  "manifest_sha256": "62c655a2b8abc72ad8e4d97c10726a1310edeaad39513f5ffe8e57c0cc45f669",
+  "capture": {
+    "commands": [
+      "git archive 3c3130e404329cf42baafdf63a6c22758437edc6",
+      "go build -o \u003clive-gitid\u003e ./cmd/gitid",
+      "\u003clive-gitid\u003e (PTY, HOME=\u003csandbox\u003e, PATH=\u003cfake-ssh\u003e)",
+      "go build -o \u003capproved-gitid-dummy\u003e ./cmd/gitid-dummy",
+      "\u003capproved-gitid-dummy\u003e (PTY)",
+      "pnpm exec vite build --outDir \u003capproval-dist\u003e",
+      "freeze \u003ccapture.txt\u003e -o \u003cpanel.png\u003e --font.file JetBrainsMono-Regular.ttf --theme dracula"
+    ],
+    "tool_versions": [
+      {
+        "name": "freeze",
+        "version": "freeze version v0.2.2"
+      },
+      {
+        "name": "go",
+        "version": "go version go1.26.0 darwin/amd64"
+      },
+      {
+        "name": "pnpm",
+        "version": "11.5.2"
+      },
+      {
+        "name": "chromium-revision",
+        "version": "1321438"
+      }
+    ],
+    "geometry": "TUI=100x30;HTML=1280x800@1/light",
+    "font_sha256": "a0bf60ef0f83c5ed4d7a75d45838548b1f6873372dfac88f71804491898d138f",
+    "theme": "dracula"
+  }
+}

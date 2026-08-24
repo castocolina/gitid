@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Identities › New identity › SSH details
+S ssh · G git  ✓ ok ! attn ✗ broken │  Step 1/4 · SSH details ● ○ ○ ○
+                                    │  Shift+→ next section · Shift+← exits the wizard
+                                    │    Alias prefix    [acme]
+                                    │      Blank prefix → SSH Host = the provider host itself
+                                    │    SSH Host (alias)[acme.github.com]
+                                    │      Auto-joined: <prefix>.<provider> — editable
+                                    │    Real hostname   [ssh.github.com]
+                                    │    Port            [443]
+                                    │    Key (←/→ change)  ○ Generate a new key   ● Reuse an
+                                    │ existing key
+                                    │      ● id_ed25519_manual_test  ssh-ed25519
+                                    │ SHA256:UP1vC31dIK0tT4FXMtGsSMitbh4fJFCYx+xYat1/x6I
+                                    │      ○ Enter a path manually…
+                                    │ ╭╌ Live Host-block preview (written on confirm) ╌╌╌╌╌╌╌╌╌╮
+                                    │ ┊ Host acme.github.com                                   ┊
+                                    │ ┊   Hostname ssh.github.com                              ┊
+                                    │ ┊   Port 443                                             ┊
+                                    │ ┊   User git                                             ┊
+                                    │ ┊   IdentityFile                                         ┊
+                                    │ ┊ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw00…            ┊
+                                    │ ┊   IdentitiesOnly yes                                   ┊
+                                    │ ┊ # gitid: provider=github.com                           ┊
+                                    │ ┊ … (+1 more lines)                                      ┊
+                                    │ ╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+                                    │
+ Esc returns to the identity detail without writing anything.
+ Tab/↑↓ fields · Enter next: test connection
+ Esc back · Ctrl+P palette

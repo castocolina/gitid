@@ -1,0 +1,30 @@
+gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Identities › New identity › Test connection
+S ssh · G git  ✓ ok ! attn ✗ broken │  Step 2/4 · Test connection ● ● ○ ○
+                                    │  Shift+←/→ jump sections · forward needs a valid step
+                                    │  Key ~/.ssh/id_ed25519_acme generated (ed25519).
+                                    │  A throwaway config is used — ~/.ssh/config untouched.
+                                    │  ☐ Demo failure control — locked (nothing left to simulate)
+                                    │ ╭╌ Stage 1 — key DIRECT against the provider (TEST-01) ╌╌╮
+                                    │ ┊ $                                                      ┊
+                                    │ ┊ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/gitid ┊
+                                    │ ┊ -…                                                     ┊
+                                    │ ┊                                                        ┊
+                                    │ ╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+                                    │  ✓ Hi user! You've successfully authenticated, but GitHub do…
+                                    │
+                                    │  No -i here on purpose: the config must supply the key; that
+                                    │ is exactly what this stage proves.
+                                    │ ╭╌ Stage 2 — resolve BY ALIAS (TEST-02) ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮
+                                    │ ┊ $                                                      ┊
+                                    │ ┊ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/gitid ┊
+                                    │ ┊ -…                                                     ┊
+                                    │ ┊                                                        ┊
+                                    │ ╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+                                    │  ✓ identityfile /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000…
+                                    │   Next: Git identity (Enter)
+                                    │
+                                    │
+ Esc returns to the identity detail without writing anything.
+ Enter next: Git identity
+ Esc back · Ctrl+P palette

@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: TUI-First Redesign
-current_phase: 03
-current_phase_name: BLOCKED. Phase 03 gap closure 03-10 left 10 critical findings open after the single authorized retry.
-status: BLOCKED — independent code review found the visual packet publisher is a no-op, approved evidence is not captured from the approval commit, stage-2 proof is disconnected from production, and rollback can leave ~/.ssh behind. Do not advance to Phase 4.
-stopped_at: Completed 03-11 Tasks 1 and 2 — production proof, checked render, fingerprint, rollback, packet publisher
-last_updated: "2026-08-21T23:10:46.403Z"
-last_activity: 2026-08-21
-last_activity_desc: "Plan 03-09 complete: strict region-scoped visual gate + offline capture + live-TUI contact sheet (bcd6e3f) + approved-TUI panels + MANIFEST (6243f07) + UI-REVIEW/CODEX-REVIEW/03-VALIDATION (db5a141). CR-10 closed (96 regions), CR-11 closed (PNG evidence + both reviews), WR-01 closed (offline seam). All gates green."
-state_head: ed6d2d04b1f3c919036a94742cfddad12a2ef83c
+current_phase: 04
+current_phase_name: Git Configuration Screen
+status: READY — Phase 03 closure is evidenced by 03-VERIFICATION.md, 03-19 reviews, UAT-AUDIT.md, and the clean-worktree gate run.
+stopped_at: Phase 03 complete; Phase 04 discovery is next.
+last_updated: "2026-08-24T00:00:00Z"
+last_activity: 2026-08-24
+last_activity_desc: "Phase 03 closed after 03-16 through 03-19: fail-closed TUI-only evidence, single-review final packet, raw ssh -G proof retention, restored confirmation copy, clean code/UI reviews, passed verification, UAT audit, and clean-worktree gates."
+state_head: bc513423dee5226408df95bad1e9d3d6d0bf13de
 progress:
   total_phases: 10
-  completed_phases: 0
-  total_plans: 34
-  completed_plans: 33
-  percent: 0
+  completed_phases: 3
+  total_plans: 38
+  completed_plans: 36
+  percent: 30
 ---
 
 # Project State
@@ -25,11 +25,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** Managing a Git identity produces coordinated, coherent SSH + Git artifacts that are proven to authenticate and resolve correctly (`ssh -G`) before any file is written, and existing hand-written config is never corrupted.
-**Current focus:** Phase 02 COMPLETE (★ CHECKPOINT #1 passed) — Phase 03 (create-flow-backend) COMPLETE: all 9 plans done, all gates green (make test/lint/test-e2e/gate-visual-regression), CR-10/CR-11/WR-01 closed, UI-REVIEW + CODEX-REVIEW PASS. Phase 3 pending ONESHOT per-phase checklist (gsd-code-review, verify-work, UI-review, audit-uat) before Phase 4 starts.
+**Current focus:** Phase 03 COMPLETE — all ONESHOT checklist items are evidenced by the 03-16 through 03-19 corrective sequence, current verification, code/UI reviews, UAT audit, and clean-worktree gates. Phase 04 (Git Configuration Screen) is next.
 
 ## Current Position
 
-Phase: 03 (create-flow-backend) — IN PROGRESS. Wave 1 (03-01+03-02), Wave 2 (03-03), Wave 3 (03-04), Wave 4 (03-05), and Wave 6 (03-07) CLOSED; Wave 5 (plan 03-06) Tasks 1+2 CLOSED this session, Task 3 PARTIAL (packet assembled, review not run). Next: orchestrator runs the DLV-04.2 cross-AI review, then Phase 3 close-out.
+Phase: 04 (git-configuration-screen) — READY. Phase 03 is complete; its final current evidence is 03-VERIFICATION.md (5/5), 03-19-CODE-REVIEW.md, 03-19-UI-REVIEW.md, and UAT-AUDIT.md. Next: discuss and plan Phase 04.
 Plan: 03-09 (wave 8) — COMPLETE. Region-scoped visual gate, offline capture, contact sheets, two independent reviews PASS (no Critical/High). CR-10/CR-11/WR-01 closed. See 03-09-SUMMARY.md.
 Plan: 03-08 (wave 7) — COMPLETE. Four-field SSH form, strict validation, effective collision checks, verified key pairs, complete ssh -G proof. See 03-08-SUMMARY.md.
 Plan: 03-07 (wave 6) — COMPLETE. Hermetic staging, automatic stage-2 chaining, async commit ceremony, rollback-capable confirmed SSH writes, and fail-closed store gate. See 03-07-SUMMARY.md.
@@ -57,16 +57,16 @@ Progress: [░░░░░░░░░░] 0% (30/32 plans complete — Phase 2:
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1. Foundations, Spikes & CI | 0 | - | - |
-| 2. DESIGN — All Mockups (★) | 0 | - | - |
-| 3. Create Flow Backend | 0 | - | - |
-| 4. Git Configuration Screen | 0 | - | - |
-| 5. Identity Manager | 0 | - | - |
-| 6. Global SSH Options | 0 | - | - |
-| 7. Global Git Options | 0 | - | - |
-| 8. Health + Fixer | 0 | - | - |
-| 9. Upload / Credentials Assist | 0 | - | - |
-| 10. Linux Validation + Release | 0 | - | - |
+| 01 | 7 | - | - |
+| 02 | 16 | - | - |
+| 03 | 15 | - | - |
+| 04 | 0 | - | - |
+| 05 | 0 | - | - |
+| 06 | 0 | - | - |
+| 07 | 0 | - | - |
+| 08 | 0 | - | - |
+| 09 | 0 | - | - |
+| 10 | 0 | - | - |
 
 *Updated after each plan completion*
 | Phase 01-foundations-spikes-ci P01 | 15 | 2 tasks | 8 files |
@@ -411,3 +411,12 @@ Replan resolution map (52fc7d9):
 - #5 tuikit backend-free -> 03-02 defines views.go DTOs; 03-04/03-05 consume views; conversion only in cmd/gitid/wiring.go; allowlist-widening forbidden
 - #6 mouse -> 03-06 xterm SGR mouse-CSI PTY case + visual gate enumerates reuse picker/manual-path/mouse-focus
 - #7 STORE-01 -> 03-03 updates REQUIREMENTS.md with supersession note
+
+## Rebuild Log
+
+- timestamp: 2026-08-22T18:02:31.155Z
+  kind: by-phase-table-reconciled
+  section: ## Performance Metrics
+  before: | Phase | Plans | Total | Avg/Plan | \n |-------|-------|-------|----------| \n | 1. Foundations, Spikes & CI | 0 | - | - | \n | 2. DESIGN — All Mockups (★) | 0 | - | - | \n | 3. Create Flow Backend | 0 | - | - | \n | 4. Git Configuration Screen | 0 | - | - | \n | 5. Identity Manager | 0 | - | - | \n | 6. Global SSH Options | 0 | - | - | \n | 7. Global Git Options | 0 | - | - | \n | 8. Health + Fixer | 0 | - | - | \n | 9. Upload / Credentials Assist | 0 | - | - | \n | 10. Linux Validation + Release | 0 | - | - |
+  after: | Phase | Plans | Total | Avg/Plan | \n |-------|-------|-------|----------| \n | 01 | 7 | - | - | \n | 02 | 16 | - | - | \n | 03 | 15 | - | - | \n | 04 | 0 | - | - | \n | 05 | 0 | - | - | \n | 06 | 0 | - | - | \n | 07 | 0 | - | - | \n | 08 | 0 | - | - | \n | 09 | 0 | - | - | \n | 10 | 0 | - | - |
+  reason: phase dirs on disk are canonical; rows for missing phases dropped, missing phases added
