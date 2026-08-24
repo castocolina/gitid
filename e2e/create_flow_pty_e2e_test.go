@@ -209,7 +209,12 @@ func TestCreateFlow_AlgorithmAvailability(t *testing.T) {
 // preview (Port 443 + IdentitiesOnly yes, recipe-faithful) and D-09's
 // alias-collision block, driven through the REAL binary: seeding an existing
 // managed "acme" identity in the fake HOME collides with the wizard's own
-// default "acme" prefix with zero keystrokes, and Enter must not advance.
+// default "acme" prefix with zero keystrokes. seedMinimalIdentity seeds a
+// COMPLETE identity (SSH + Git both configured), so Phase 4's D-07 collision-
+// resume feature (superseding the earlier plain-block-only behavior) reports
+// the "(complete)" variant and routes Enter into the same Git edit flow
+// instead of just blocking advance — see 04-03-PLAN.md Task 3 and
+// internal/tuikit/identities.go step0Valid/resolveCollisionTarget.
 func TestCreateFlow_SSHFormAliasCollision(t *testing.T) {
 	home := SandboxHome(t)
 	seedMinimalIdentity(t, home, "acme")
@@ -226,9 +231,12 @@ func TestCreateFlow_SSHFormAliasCollision(t *testing.T) {
 	mustSee(t, s, "Port 443", "step 0: the live Host-block preview shows the default recipe-faithful port")
 	mustSee(t, s, "IdentitiesOnly yes", "step 0: the live Host-block preview shows IdentitiesOnly yes")
 
-	mustSee(t, s, "SSH Host alias already exists", "step 0: D-09 alias-collision inline error fires against the seeded identity")
+	mustSee(t, s, `Alias already used by "acme" (complete) — edit its Git`, "step 0: D-09/D-07 alias-collision inline error fires against the seeded complete identity")
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
-	mustSee(t, s, "Step 1/4", "step 0: a blocked Enter must not advance past the collision")
+	mustSee(t, s, "Configure Git", "step 0: D-07 collision resume routes Enter into the existing identity's Git edit flow")
+	mustSee(t, s, "editing existing fragment", "step 0: the Git edit flow opens prefilled from the seeded fragment, not a blank create")
+	mustSee(t, s, "acme User", "step 0: edit mode is prefilled with the seeded Git identity values")
+	mustSee(t, s, "acme@example.com", "step 0: edit mode is prefilled with the seeded Git identity values")
 
 	saveFrame(t, "create-flow-ssh-form-collision", s)
 }

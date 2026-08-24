@@ -73,9 +73,20 @@ func Reconstruct(
 			missing = append(missing, "gitconfig-includeif-block")
 		}
 
-		// Fragment side (only when we have a path to read).
+		// Fragment side (only when we have a path to read). FragmentPath is
+		// stored verbatim from the parsed includeIf `path =` value (often
+		// "~/.gitconfig.d/<name>" — git itself expands "~" when resolving
+		// includeIf at runtime, but readFrag opens the file directly via
+		// os.Stat/exec, which never expands "~"). Expand it (WR-02, same
+		// helper update.go uses for pub-key paths) for THIS read only —
+		// acct.FragmentPath itself stays in its original verbatim form,
+		// since callers display it and re-derive write targets from it.
 		if acct.FragmentPath != "" {
-			frag, ferr := readFrag(acct.FragmentPath)
+			readPath, expErr := expandTilde(acct.FragmentPath)
+			if expErr != nil {
+				readPath = acct.FragmentPath
+			}
+			frag, ferr := readFrag(readPath)
 			if ferr == nil && !frag.Missing {
 				acct.GitName = frag.GitName
 				acct.GitEmail = frag.GitEmail

@@ -112,12 +112,70 @@ func TestReconstruct_Complete(t *testing.T) {
 	}
 }
 
+// TestReconstruct_FragmentPathTildeExpansion proves WR-02: gitid always
+// writes includeIf `path =` as "~/.gitconfig.d/<name>" (IncludeIfPreview,
+// WriteIncludeIf), and git itself expands "~" when resolving includeIf at
+// runtime — but Reconstruct's own readFrag callback receives the path
+// directly via os.Stat/exec, which never expands "~". Without expansion,
+// every real identity's own fragment read-back fails and GitName/GitEmail
+// never populate, permanently misclassifying every complete identity as
+// SSH-only (surfaced by the D-07 collision-message branch in Phase 4).
+func TestReconstruct_FragmentPathTildeExpansion(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	sshContent := buildSSHBlock("acme", "acme.github.com", "ssh.github.com", 443,
+		filepath.Join(home, ".ssh", "id_ed25519_acme"),
+	)
+	gcContent := buildGCBlock("acme", "~/.gitconfig.d/acme", "~/git/acme/")
+
+	expandedFrag := filepath.Join(home, ".gitconfig.d", "acme")
+	readFrag := func(fragPath string) (gitconfig.FragmentInfo, error) {
+		if fragPath != expandedFrag {
+			// Prove the callback never receives the literal, unexpanded
+			// "~/..." form.
+			return gitconfig.FragmentInfo{Missing: true}, nil
+		}
+		return gitconfig.FragmentInfo{GitName: "Acme User", GitEmail: "acme@example.com"}, nil
+	}
+
+	accounts, err := Reconstruct([]byte(sshContent), []byte(gcContent), readFrag)
+	if err != nil {
+		t.Fatalf("Reconstruct returned error: %v", err)
+	}
+	if len(accounts) != 1 {
+		t.Fatalf("expected 1 account, got %d: %v", len(accounts), accounts)
+	}
+	acme := accounts[0]
+	if acme.Incomplete != "" {
+		t.Errorf("Incomplete should be empty, got %q", acme.Incomplete)
+	}
+	if acme.GitName != "Acme User" {
+		t.Errorf("GitName: got %q, want %q", acme.GitName, "Acme User")
+	}
+	if acme.GitEmail != "acme@example.com" {
+		t.Errorf("GitEmail: got %q, want %q", acme.GitEmail, "acme@example.com")
+	}
+	// FragmentPath itself stays verbatim ("~/...") — callers (display,
+	// re-derived write targets) depend on the original parsed form.
+	if acme.FragmentPath != "~/.gitconfig.d/acme" {
+		t.Errorf("FragmentPath should stay verbatim, got %q", acme.FragmentPath)
+	}
+}
+
 // TestReconstruct_MissingSSH verifies that when the SSH block is absent for
 // an identity present in gitconfig, the Account is returned with Incomplete
 // containing "ssh-host-block".
 func TestReconstruct_LoadProviderRewrite(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
 	sshContent := buildSSHBlock("work", "work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work")
 	workFrag := "~/.gitconfig.d/work"
+	// Reconstruct expands "~" before calling readFrag (WR-02) — the callback
+	// never sees the literal, unexpanded form. See loader.go and
+	// TestReconstruct_FragmentPathTildeExpansion.
+	wantReadPath := filepath.Join(home, ".gitconfig.d", "work")
 	rewriteName, err := gitconfig.ProviderRewriteBlockName("github.com")
 	if err != nil {
 		t.Fatalf("ProviderRewriteBlockName: %v", err)
@@ -130,8 +188,8 @@ func TestReconstruct_LoadProviderRewrite(t *testing.T) {
 		"# BEGIN gitid managed: " + rewriteName + "\n" + rewriteBody + "\n# END gitid managed: " + rewriteName + "\n"
 
 	accounts, err := Reconstruct([]byte(sshContent), []byte(gcContent), func(path string) (gitconfig.FragmentInfo, error) {
-		if path != workFrag {
-			t.Fatalf("ReadFragment path = %q, want %q", path, workFrag)
+		if path != wantReadPath {
+			t.Fatalf("ReadFragment path = %q, want %q", path, wantReadPath)
 		}
 		return gitconfig.FragmentInfo{GitName: "Work User", GitEmail: "work@example.com"}, nil
 	})
