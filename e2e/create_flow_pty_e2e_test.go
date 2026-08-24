@@ -396,6 +396,7 @@ func TestCreateFlow_GitStepDisabledReasonAndConfirmWrite(t *testing.T) {
 	tabKeys(s, 4)
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 	mustSee(t, s, `Create identity "acme"`, "Skip Git jumps straight to the review ceremony")
+	mustSee(t, s, "Nothing has changed yet", "the approved pre-confirm assurance appears before any write")
 
 	// Still untouched — the ceremony is a PREVIEW; nothing is written until
 	// the confirm keystroke below.

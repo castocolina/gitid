@@ -80,6 +80,50 @@ func TestCeremonyStateAWithNoBackupsNeverClaimsOne(t *testing.T) {
 	}
 }
 
+func TestCeremonyStateAShowsApprovedNothingChangedCopy(t *testing.T) {
+	const approvedCopy = "Nothing has changed yet"
+	for _, tc := range []struct {
+		name    string
+		backups []string
+	}{
+		{name: "without backup"},
+		{name: "with backup", backups: []string{"~/.ssh/config.backup.2026-07-03T03-59-12Z"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newCeremony(ceremonyConfig{
+				Heading:       `Create identity "acme"`,
+				Targets:       []string{"~/.ssh/config"},
+				Backups:       tc.backups,
+				Preview:       "+ Host acme.github.com",
+				ResultMessage: `Identity "acme" created.`,
+				Async:         true,
+			})
+			view := stripANSI(c.view(80))
+			if got := strings.Count(view, approvedCopy); got != 1 {
+				t.Fatalf("state A approved-copy count = %d, want 1:\n%s", got, view)
+			}
+			preview := strings.Index(view, "Exact change")
+			copyIndex := strings.Index(view, approvedCopy)
+			if preview < 0 || copyIndex < preview {
+				t.Fatalf("state A copy must follow the exact-change preview region:\n%s", view)
+			}
+
+			pending, _ := c.handleKey(pressKey("enter"))
+			if view := stripANSI(pending.view(80)); strings.Contains(view, approvedCopy) {
+				t.Errorf("pending state leaked pre-confirm copy:\n%s", view)
+			}
+			failed := pending.commitFailed("permission denied")
+			if view := stripANSI(failed.view(80)); strings.Contains(view, approvedCopy) {
+				t.Errorf("failure state leaked pre-confirm copy:\n%s", view)
+			}
+			receipt := pending.commitSucceeded(nil)
+			if view := stripANSI(receipt.view(80)); strings.Contains(view, approvedCopy) {
+				t.Errorf("receipt state leaked pre-confirm copy:\n%s", view)
+			}
+		})
+	}
+}
+
 func TestCeremonyPlainConfirmThenReceipt(t *testing.T) {
 	c := plainCeremony()
 	c, outcome := c.handleKey(pressKey("enter"))
