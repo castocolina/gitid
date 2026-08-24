@@ -616,16 +616,10 @@ func (b *realBackend) TestStage2(spec tuikit.CreateSpec) tea.Cmd {
 		// Build the base view from the connectivity result.
 		view := toTestResultView(res, res.Command)
 
-		// Attach the ssh -G resolution command and raw output (CR-06).
+		// Attach the ssh -G resolution command and the exact stdout from the
+		// same execution that produced the parsed fields for validation.
 		view.ResolutionCommand = tester.ResolvedViaGCommand(configPath, in.Alias)
-		// The resolution output is synthesized from the ParseResolved fields
-		// returned by ResolvedVia. We capture the raw text by re-assembling
-		// the parsed fields — the real ssh -G output was already parsed by tester.
-		view.ResolutionOutput = formatResolvedConfig(resolved)
-
-		if len(resolved.IdentityFiles) > 0 {
-			view.Detail = "identityfile " + resolved.IdentityFiles[0]
-		}
+		view.ResolutionOutput = res.ResolutionOutput
 
 		// CR-05: Validate all five required resolution fields BEFORE recording
 		// the accepted outcome. A connectivity PASS with a wrong/empty resolution
@@ -655,28 +649,6 @@ func (b *realBackend) TestStage2(spec tuikit.CreateSpec) tea.Cmd {
 		b.recordOutcomeFor(2, view.Outcome, in)
 		return tuikit.WizardStageMsg{Stage: 2, Result: view}
 	}
-}
-
-// formatResolvedConfig renders the parsed ResolvedConfig fields back as
-// ssh -G–style lines for display in the stage-2 proof panel (CR-06).
-func formatResolvedConfig(rc tester.ResolvedConfig) string {
-	var b strings.Builder
-	if rc.User != "" {
-		fmt.Fprintf(&b, "user %s\n", rc.User)
-	}
-	if rc.Hostname != "" {
-		fmt.Fprintf(&b, "hostname %s\n", rc.Hostname)
-	}
-	if rc.Port != "" {
-		fmt.Fprintf(&b, "port %s\n", rc.Port)
-	}
-	if rc.IdentitiesOnly != "" {
-		fmt.Fprintf(&b, "identitiesonly %s\n", rc.IdentitiesOnly)
-	}
-	for _, f := range rc.IdentityFiles {
-		fmt.Fprintf(&b, "identityfile %s\n", f)
-	}
-	return b.String()
 }
 
 // ResolvedStorageTarget is the file gitid's managed blocks actually land in —
@@ -785,7 +757,7 @@ func toReusableKeyViews(keys []keygen.ReusableKey, owners map[string]string) []t
 // tester's job (it reads output substrings, never an exit code), and command is
 // the string that was actually RUN, upholding TEST-01's shown == run contract.
 func toTestResultView(res tester.Result, command string) tuikit.TestResultView {
-	view := tuikit.TestResultView{Command: command, Detail: strings.TrimSpace(res.Output)}
+	view := tuikit.TestResultView{Command: command, Detail: res.Output}
 	switch res.Outcome {
 	case tester.PASS:
 		view.Outcome = tuikit.TestOutcomePass

@@ -25,9 +25,10 @@ const (
 // Result is the structured output of a connectivity test. It always carries the
 // exact command run (input) and the raw combined output (TEST-03).
 type Result struct {
-	Command string
-	Output  string
-	Outcome Outcome
+	Command          string
+	Output           string
+	ResolutionOutput string
+	Outcome          Outcome
 }
 
 // ResolvedConfig holds the lowercase-keyed values parsed from `ssh -G` (D-03).
@@ -173,7 +174,8 @@ func Resolved(alias string) (Result, ResolvedConfig) {
 	res := Result{Command: cmd.String(), Output: out, Outcome: ClassifyPreWrite(out)}
 
 	gOut, _ := exec.Command("ssh", "-G", alias).Output() //nolint:gosec // arg-slice form, no shell; alias is validated gitid input (G204)
-	return res, ParseResolved(string(gOut))
+	res.ResolutionOutput = string(gOut)
+	return res, ParseResolved(res.ResolutionOutput)
 }
 
 // ResolvedVia runs the resolved-config phase against an EXPLICIT ssh config file
@@ -201,7 +203,8 @@ func ResolvedVia(configPath, keyPath, alias string, knownHostsPath string) (Resu
 	res := Result{Command: cmd.String(), Output: out, Outcome: ClassifyPreWrite(out)}
 
 	gOut, _ := exec.Command("ssh", "-F", configPath, "-G", alias).Output() //nolint:gosec // arg-slice form, no shell; paths/alias are validated gitid input (G204)
-	return res, ParseResolved(string(gOut))
+	res.ResolutionOutput = string(gOut)
+	return res, ParseResolved(res.ResolutionOutput)
 }
 
 // ResolvedViaGCommand returns the string representation of the stage-2

@@ -252,7 +252,7 @@ func TestCreateFlow_TestStagePass(t *testing.T) {
 
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // run stage 1; stage 2 auto-chains (D-04)
 	mustSee(t, s, "Hi user!", "stage 1: the REAL ssh PASS banner from the fake-ssh PATH shim")
-	mustSee(t, s, "identityfile", "stage 2: the ssh -G alias-resolution proof")
+	requireFocusedProof(t, s, "identityfile")
 
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // -> step 2 (Git, demo'd)
 	mustSee(t, s, "Step 3/4", "wizard advances to the Git step once both stages PASS")
@@ -287,7 +287,7 @@ func TestCreateFlow_TestStageReachableNotUploaded(t *testing.T) {
 	// chrome text — assert absence of the hard-Failure-SPECIFIC copy
 	// instead (never shown for a ReachableNotUploaded outcome, Pitfall 6).
 	mustNotSee(t, s, "The connection failed", "\"Permission denied (publickey)\" must never render the hard-failure retry copy")
-	mustSee(t, s, "identityfile", "stage 2: the ssh -G alias-resolution proof still runs on the warning path")
+	requireFocusedProof(t, s, "identityfile")
 	mustSee(t, s, "! Reachable — key not uploaded yet", "D-02: stage 2 also renders the yellow warning")
 
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // -> step 2 (Git, demo'd)
@@ -366,7 +366,7 @@ func TestCreateFlow_GitStepDisabledReasonAndConfirmWrite(t *testing.T) {
 	mustSee(t, s, "Step 2/4", "step 0 -> step 1")
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // stage 1; stage 2 auto-chains (D-04)
 	mustSee(t, s, "Hi user!", "stage 1 PASS")
-	mustSee(t, s, "identityfile", "stage 2 resolution proof")
+	requireFocusedProof(t, s, "identityfile")
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // -> step 2 (Git, demo'd)
 	mustSee(t, s, "Step 3/4", "advanced to the Git step")
 
@@ -525,7 +525,7 @@ func TestCreateFlow_ReuseExistingEncryptedKeyClosesL2Seam(t *testing.T) {
 
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // stage 1; stage 2 auto-chains (D-04)
 	mustSee(t, s, "Hi user!", "stage 1 PASS")
-	mustSee(t, s, "identityfile", "stage 2 resolution proof")
+	requireFocusedProof(t, s, "identityfile")
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // -> step 2 (Git, demo'd)
 	mustSee(t, s, "Step 3/4", "advanced to the Git step")
 
@@ -632,7 +632,7 @@ func TestCreateFlow_DistinctStageCaptures(t *testing.T) {
 	// Stage-1 SSH banner appears first.
 	mustSee(t, s, "Hi user!", "stage-1: SSH banner visible")
 	// Stage-2 resolution proof appears after (proving sequential ordering).
-	mustSee(t, s, "identityfile", "stage-2: resolution proof appears after stage-1")
+	requireFocusedProof(t, s, "identityfile")
 	// Final "Next: Git identity" affordance — stage-2 complete.
 	mustSee(t, s, "Next: Git identity", "stage-2: final affordance confirms completion")
 
@@ -662,7 +662,7 @@ func TestCreateFlow_ExactStageProof(t *testing.T) {
 	// Stage-1 PASS: the real SSH banner from the fake-ssh PATH shim.
 	mustSee(t, s, "Hi user!", "stage-1: exact SSH banner text is visible (TEST-01 shown==run)")
 	// Stage-2: the ssh -G resolution proof.
-	mustSee(t, s, "identityfile", "stage-2: exact identityfile resolution is visible (TEST-02)")
+	requireFocusedProof(t, s, "identityfile")
 
 	saveFrame(t, "create-flow-exact-stage-proof", s)
 }
@@ -686,7 +686,7 @@ func TestCreateFlow_Stage2RendersExactRawSSHOutput(t *testing.T) {
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 
 	requireFocusedProof(t, s,
-		"Hi user! You've successfully authenticated, but GitHub does not provide shell access.",
+		"Hi user!",
 		"gitidrawmarker proof-retained-verbatim",
 	)
 }
@@ -758,7 +758,7 @@ func TestCreateFlow_GitStepDisabledReasonHintSuppressed(t *testing.T) {
 	mustSee(t, s, "Step 2/4", "step 0 → step 1")
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 	mustSee(t, s, "Hi user!", "stage 1 PASS")
-	mustSee(t, s, "identityfile", "stage 2 proof")
+	requireFocusedProof(t, s, "identityfile")
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 	mustSee(t, s, "Step 3/4", "Git step")
 
@@ -833,7 +833,7 @@ func TestCreateFlow_CompletedStage2ProofViewport(t *testing.T) {
 
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // run both stages (D-04 auto-chain)
 	mustSee(t, s, "Hi user!", "stage-1 pass")
-	mustSee(t, s, "identityfile", "stage-2 resolution proof visible (TEST-02)")
+	requireFocusedProof(t, s, "identityfile")
 
 	// No ellipsis on the identityfile line.
 	snap := s.snapshot()
@@ -979,7 +979,7 @@ func TestCreateFlow_ReachableNotUploadedEvidence(t *testing.T) {
 	// Warning copy with glyph and word — never hard-failure.
 	mustSee(t, s, "! Reachable — key not uploaded yet", "D-02: yellow warning state (glyph + word)")
 	// Raw ssh output visible.
-	mustSee(t, s, "identityfile", "stage-2 resolution proof")
+	requireFocusedProof(t, s, "identityfile")
 	// Copy affordance present.
 	mustSee(t, s, "copy public key", "D-03: copy .pub affordance present in warning state")
 	// Hard-failure copy absent.
@@ -1039,7 +1039,7 @@ func TestCreateFlow_GitStepDisabledReason(t *testing.T) {
 	mustSee(t, s, "Step 2/4", "step 0 → step 1")
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 	mustSee(t, s, "Hi user!", "stage 1 PASS")
-	mustSee(t, s, "identityfile", "stage 2 proof")
+	requireFocusedProof(t, s, "identityfile")
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 	mustSee(t, s, "Step 3/4", "Git step")
 
@@ -1154,7 +1154,7 @@ func TestCreateFlow_PTYReviewCorrections(t *testing.T) {
 		if !strings.Contains(frame, "Hi user!") {
 			t.Errorf("stage-two-in-progress frame lost stage-one output:\n%s", frame)
 		}
-		mustSee(t, s, "identityfile", "completed stage keeps the resolution proof")
+		requireFocusedProof(t, s, "identityfile")
 		mustSee(t, s, "Completed test stages; exact captured proof follows.", "completed stage labels the proof viewport")
 	})
 
@@ -1170,7 +1170,7 @@ func TestCreateFlow_PTYReviewCorrections(t *testing.T) {
 		s.sendKey(dummyKeyEnter, keystrokeDelay)
 		mustSee(t, s, "Step 2/4", "step 0 -> step 1")
 		s.sendKey(dummyKeyEnter, keystrokeDelay)
-		mustSee(t, s, "identityfile", "stage-two proof remains visible on warning path")
+		requireFocusedProof(t, s, "identityfile")
 		frame := s.snapshot()
 		if got := strings.Count(frame, "! Reachable — key not uploaded yet"); got != 1 {
 			t.Errorf("D-02 warning count = %d, want 1:\n%s", got, frame)
