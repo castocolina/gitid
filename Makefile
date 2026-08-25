@@ -14,20 +14,25 @@
 #                  No release/tag/checksum packaging here — that is BUILD-03, Phase 10.
 #   install        Install gitid to $GOPATH/bin via go install.
 #   uninstall      Remove gitid from $GOPATH/bin.
-#   test           Run the race-enabled test harness with a coverage profile (TDD harness, D-06).
+#   test           Run the race-enabled test harness with a coverage profile (TDD harness,
+#                  D-06), then the fast/hermetic subset of internal/screenshot's own
+#                  `-tags screenshot` suite (WR-28, see lint-screenshot below).
 #   lint           Run golangci-lint (reads .golangci.yml); hard-fails on any finding (D-04).
-#                  Depends on lint-screenshot (WR-28) so the `screenshot` build tag can
-#                  never be silently skipped again.
-#   lint-screenshot `go vet` + golangci-lint + the fast subset of `go test`, all under
-#                  the `screenshot` build tag (WR-28: internal/screenshot was previously
-#                  invisible to both `make lint` and `make test` — no gate ever compiled
-#                  or ran it, so the WR-19/WR-22 regression tests it carries executed
-#                  nowhere and a real regression, WR-26, shipped undetected). Excludes
-#                  TestCaptureTUI/TestCaptureHTML*/TestProvisionPinnedChromium: those are
-#                  the heavy, tool-provisioning/network-dependent capture entry points
-#                  `make screenshot-tui`/`make screenshot-html`/`make setup-env` already
-#                  own — everything else in the package is fast, hermetic unit-style
-#                  coverage and belongs in every `make lint` run.
+#                  Depends on lint-screenshot (WR-28) so the `screenshot` build tag's
+#                  static analysis can never be silently skipped again.
+#   lint-screenshot `go vet` + golangci-lint under the `screenshot` build tag (WR-28:
+#                  internal/screenshot was previously invisible to both `make lint` and
+#                  `make test` — no gate ever compiled or ran it, so the WR-19/WR-22
+#                  regression tests it carries executed nowhere and a real regression,
+#                  WR-26, shipped undetected). The package's own `go test` execution lives
+#                  in the `test` target instead (kept OUT of lint-screenshot so the
+#                  pre-commit hook — make fmt + make lint — stays fast; test already runs
+#                  at the higher-latency-tolerant pre-push stage). Excludes
+#                  TestCaptureTUI/TestCaptureHTML*/TestProvisionPinnedChromium from that
+#                  test run: those are the heavy, tool-provisioning/network-dependent
+#                  capture entry points `make screenshot-tui`/`make screenshot-html`/
+#                  `make setup-env` already own — everything else in the package is fast,
+#                  hermetic unit-style coverage.
 #   fmt            Run goimports then gofmt over all packages.
 #   screenshot-tui  Render the TUI View()-dump golden to a deterministic PNG via freeze
 #                   (TOOL-05, DLV-03; build-tag isolated behind `screenshot`).
@@ -165,52 +170,65 @@ fmt:
 	find . -name "*.go" -not -path "./.planning/*" -exec $(GOIMPORTS) -w {} +
 	find . -name "*.go" -not -path "./.planning/*" -exec $(GOFMT) -w {} +
 
-## lint-screenshot: WR-28 -- gate the `screenshot` build tag. Before this
-## target existed, no gate ever compiled OR ran anything behind
-## `//go:build screenshot`: `make lint` runs golangci-lint untagged, `make
-## test` runs go test untagged, and no other target runs the PACKAGE's own
-## tests (screenshot-tui/screenshot-html only run their own single entry
-## point via -run). That blindspot is why WR-19's and WR-22's regression
-## tests (internal/screenshot/region_disposition_test.go,
+## lint-screenshot: WR-28 -- gate the `screenshot` build tag's SYNTAX/STATIC
+## coverage. Before this target existed, no gate ever compiled OR ran
+## anything behind `//go:build screenshot`: `make lint` ran golangci-lint
+## untagged, `make test` ran go test untagged, and no other target ran the
+## PACKAGE's own tests (screenshot-tui/screenshot-html only run their own
+## single entry point via -run). That blindspot is why WR-19's and WR-22's
+## regression tests (internal/screenshot/region_disposition_test.go,
 ## TestExtractRegion_GitCeremonyMatchesReceiptHeadingAcrossWrap) executed in
 ## NO gate and a real regression (WR-26, an off-by-one in the very window
 ## WR-22 fixed) shipped undetected.
 ##
 ## `go vet` runs across the whole module (cheap, and the `screenshot` tag
 ## also touches cmd/gitid-evidence and cmd/gitid/gate_visual_regression_test.go).
-## golangci-lint and `go test` are scoped to internal/screenshot itself: the
-## other screenshot-tagged files already have dedicated gates
+## golangci-lint is scoped to internal/screenshot itself: the other
+## screenshot-tagged files already have dedicated gates
 ## (`gate-visual-regression`, `generate-visual-review-packet`), and widening
 ## golangci-lint's tagged scope to e2e-/smoke-tagged files elsewhere would
 ## pull in a large pre-existing, unrelated lint backlog this fix is not
 ## scoped to clear.
 ##
-## `go test` here EXCLUDES TestCaptureTUI / TestCaptureHTML* /
-## TestProvisionPinnedChromium: those are the heavy, external-tool
-## (freeze)/headless-Chromium/network-provisioning capture entry points that
-## `make screenshot-tui` / `make screenshot-html` / `make setup-env` already
-## own as their explicit, opt-in single-test invocations. Everything else in
-## the package is fast, hermetic, unit-style coverage — exactly what belongs
-## in every `make lint` run.
+## The package's own TEST execution (WR-19/WR-22/WR-26/WR-27's actual
+## regression coverage) is wired into the `test` target below, NOT here: a
+## first version of this fix ran `go test -tags screenshot ...` (~65s) as
+## part of `lint-screenshot`, which `lint` depends on -- that made every
+## pre-commit hook invocation (`make fmt` + `make lint`, per
+## .pre-commit-config.yaml) 5-7x slower, defeating the fast-feedback point of
+## a pre-commit gate. `test` already runs at pre-push (a naturally
+## higher-latency-tolerant point per .pre-commit-config.yaml's own staging),
+## so that is where the package's real `go test` coverage belongs -- `lint`
+## stays fast (vet + static analysis only) while the tests still execute in
+## an unconditional gate, satisfying "somewhere in make lint or make test".
 lint-screenshot:
 	go vet -tags screenshot ./...
 	$(GOLANGCI_LINT) run --build-tags screenshot ./internal/screenshot/...
-	go test -tags screenshot -skip 'TestCaptureTUI|TestCaptureHTML|TestProvisionPinnedChromium' ./internal/screenshot/...
 
 ## lint: run golangci-lint against all packages.
 ## Hard-fails on any finding — zero tolerance (D-04).
 ## Configuration lives in .golangci.yml.
-## Depends on lint-screenshot (WR-28) so the `screenshot` build tag can never
-## be silently skipped again -- a caller running `make lint` directly (not
-## just CI) always exercises it.
+## Depends on lint-screenshot (WR-28) so the `screenshot` build tag's static
+## analysis can never be silently skipped again -- a caller running `make
+## lint` directly (not just CI) always exercises it.
 lint: lint-screenshot
 	$(GOLANGCI_LINT) run ./...
 
 ## test: run the TDD harness with race detection and a coverage profile.
 ## Coverage is report-only in Phase 1; no hard threshold (D-09 discretion).
 ## This is the same command pre-push hooks and future CI will call (D-06).
+##
+## The second `go test` line is WR-28's actual test-execution half (see
+## lint-screenshot's comment above for why it lives here, not in `lint`):
+## the fast, hermetic subset of internal/screenshot's OWN suite, excluding
+## TestCaptureTUI / TestCaptureHTML* / TestProvisionPinnedChromium — the
+## heavy, external-tool (freeze)/headless-Chromium/network-provisioning
+## capture entry points that `make screenshot-tui` / `make screenshot-html` /
+## `make setup-env` already own as their explicit, opt-in single-test
+## invocations.
 test: gate-copy-freeze
 	go test -race -coverprofile=coverage.out ./...
+	go test -tags screenshot -skip 'TestCaptureTUI|TestCaptureHTML|TestProvisionPinnedChromium' ./internal/screenshot/...
 
 ## gate-copy-freeze: the 02-STYLE-SPEC.md §6 copy-freeze grep gate.
 ## Every string below is FROZEN by an approved design artifact: reword it and
