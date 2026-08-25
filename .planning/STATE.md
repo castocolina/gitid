@@ -201,7 +201,7 @@ None yet.
 
 ### Blockers/Concerns
 
-- **BLOCKING 2026-08-25 — Phase 04 code-review circuit breaker:** the phase 4
+- ~~**BLOCKING 2026-08-25 — Phase 04 code-review circuit breaker:** the phase 4
   code-review/fix convergence loop ran 6 review passes + 5 fix passes on
   branch `gsd/phase-04-git-configuration-screen` (see
   `04-git-configuration-screen/04-REVIEW.md` + `04-REVIEW-FIX.md` +
@@ -227,7 +227,14 @@ None yet.
   another autonomous fix attempt. Precedent: Phase 3's own 2026-08-21
   circuit breaker (below). Resume only after a human reviews and decides;
   do not advance Phase 4 to verify-work/UI-review/audit-uat or start Phase
-  5 until this is resolved.
+  5 until this is resolved.~~ -- RESOLVED 2026-08-25: user reviewed and
+  chose to accept CR-15/CR-16 as a documented scoped divergence (same class
+  of decision as D9/T-04-HOSTBLOCK) rather than design a new gate mechanism.
+  CR-18 (security) was already fixed. CR-17 recorded as a process note
+  (verify future fixer red/green claims via source reversion when
+  CRITICAL/security-relevant). WR-38..43 carried forward as non-blocking.
+  See `04-REVIEW-FIX.md` "Resolution" section. Phase 4 code-review checklist
+  item CLOSED; proceeding to verify-work/UI-review/audit-uat.
 
 - 3 items intentionally open until their phase (documented in REQUIREMENTS.md "Still Open"): GSSH-01 dangerous-options list, KEY-01 catalog ordering/copy, screenshot-tooling mechanism (Phase 1 spike).
 - Phase 2 VERIFICATION.md W1 (non-blocking): `insteadOf` URL rewriting (recipes/ wiring #3) is not rendered in either live demo — only an unused fixture constant. Cover it in Phase 4/7 design or document as a scoped divergence next to D9.

@@ -6,7 +6,7 @@ iteration: 5
 findings_in_scope: 5
 fixed: 1
 skipped: 4
-status: circuit_breaker
+status: resolved_with_scoped_divergence
 ---
 
 # Phase 4: Code Review Fix Report (iteration 4)
@@ -417,3 +417,45 @@ code left uncommitted.**
 Resume with a human review of CR-15/CR-16 (visual-gate architecture) and a
 decision on WR-38 through WR-43, then either continue the automated
 review-fix loop or close Phase 4's code-review gate manually.
+
+---
+
+## Resolution — 2026-08-25T11:16:00Z
+
+The user reviewed this report and made the call: **accept CR-15/CR-16 as a
+documented, scoped divergence; move on.** No mechanical gate was ever red —
+`go build`, `go test -race`, `make lint` (incl. `-tags screenshot/smoke/e2e`),
+`make test`, `make test-e2e`, and `make gate-visual-regression` are all green
+on the current tree. CR-15/CR-16 are a limitation of *what the visual gate
+can detect* (a shared-renderer defect between `cmd/gitid` and
+`cmd/gitid-dummy` produces zero divergence by construction), not a defect in
+the shipped code. This is the same class of decision as this project's own
+D9 precedent (`02-DESIGN-DECISIONS-CHECKPOINT-2.md`) and the T-04-HOSTBLOCK
+allowlist entry (03-03-SUMMARY.md) — a named, reasoned scope boundary rather
+than a silently dropped finding.
+
+**Scoped divergence, recorded:**
+- **CR-15 / CR-16 (accepted, not fixed):** the D-12 real-vs-dummy PTY
+  comparison gate cannot catch a defect that exists identically in the
+  shared `internal/tuikit` renderer both binaries use — it can only catch
+  divergence *between* the two sides. This is an inherent property of the
+  comparison approach, not a bug. If a future phase wants a second,
+  independent correctness check that doesn't depend on real/dummy
+  divergence (e.g. a direct behavioral assertion against the UI-SPEC
+  contract, not a differential one), that is new scope for whichever phase
+  needs it — Identity Manager (05) and Global Git Options (07) are the two
+  phases CR-16's scoped predicate work already lists as `affects` in
+  04-04-SUMMARY.md's dependency graph, so revisit there if it becomes
+  load-bearing.
+- **CR-17 (process note, not code):** treat any future `gsd-code-fixer`
+  "red-before/green-after" claim with the same skepticism this loop's own
+  reviewer applied — verify with an actual source reversion when the finding
+  is CRITICAL/security-relevant, not just by reading the fixer's account.
+- **WR-38 through WR-43 (deferred, not fixed):** carried forward as
+  non-blocking findings, same convention as this project's other carried
+  warnings (see STATE.md "Blockers/Concerns" for the 03-05/03-06 precedent
+  entries). File:line references are above in this report; revisit
+  opportunistically or in a dedicated fix pass.
+
+Phase 4's code-review gate (checklist item 6) is CLOSED on this basis.
+Proceeding to verify-work / UI review / audit-uat.
