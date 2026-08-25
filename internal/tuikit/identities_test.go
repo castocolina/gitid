@@ -1406,6 +1406,45 @@ func TestWizardGitStepEnterOnFieldStillContinues(t *testing.T) {
 	}
 }
 
+// TestWizardGitStepButtonFocusNeverEditsHiddenFields proves the CR-04 fix:
+// gitField* (Name/Email/Strategy) and the wizard's own gitFocus* button ring
+// (Back/Skip/Continue) must never numerically collide, so a keystroke aimed
+// at a button can never reach gitForm.handleEdit's field cases. Before the
+// fix, gitFieldForceSSH==gitFocusBack==3 and gitFieldGitDir==gitFocusSkip==4,
+// so typing while focused on Skip Git silently mutated the wizard's hidden
+// (never rendered) gitdir input, corrupting the includeIf/matchesFor preview.
+func TestWizardGitStepButtonFocusNeverEditsHiddenFields(t *testing.T) {
+	a := wizardThroughTest(t, identitiesApp())
+	before := identModel(t, a).wizard.gitSpec().GitDir
+
+	// Tab: Name -> Email -> Strategy -> Back. Space is not an explicit case
+	// in the step-2 key switch, so it falls to the default branch — exactly
+	// the path that used to reach gitForm.handleEdit with a button's focus
+	// value.
+	a = pressSeq(t, a, "tab", "tab", "tab")
+	if got := identModel(t, a).wizard.gitFocus; got != gitFocusBack {
+		t.Fatalf("gitFocus = %d after 3 tabs, want gitFocusBack (%d)", got, gitFocusBack)
+	}
+	a, _ = press(t, a, " ")
+	if got := identModel(t, a).wizard.gitSpec().GitDir; got != before {
+		t.Errorf("a keystroke on the Back button mutated gitdir: got %q, want unchanged %q", got, before)
+	}
+	if identModel(t, a).wizard.git.forceSSH != true {
+		t.Error("a keystroke on the Back button must not toggle the (unrendered) Force-SSH checkbox")
+	}
+
+	// Tab once more: Back -> Skip. Typing a letter here used to edit the
+	// hidden gitdir field.
+	a, _ = press(t, a, "tab")
+	if got := identModel(t, a).wizard.gitFocus; got != gitFocusSkip {
+		t.Fatalf("gitFocus = %d after 4 tabs, want gitFocusSkip (%d)", got, gitFocusSkip)
+	}
+	a, _ = press(t, a, "x")
+	if got := identModel(t, a).wizard.gitSpec().GitDir; got != before {
+		t.Errorf("a keystroke on the Skip Git button mutated the hidden gitdir field: got %q, want unchanged %q", got, before)
+	}
+}
+
 func TestReservedFooterHonestWhileInputFocused(t *testing.T) {
 	// Detail mode: full reserved footer.
 	a := identitiesApp()
@@ -2169,6 +2208,25 @@ func TestGitFlowMouseGitDirFocusAndConditionalVisibility(t *testing.T) {
 	a.screens[TabIdentities] = m
 	if strings.Contains(appView(a), "gitdir path") {
 		t.Fatal("gitdir path must be hidden for hasconfig-only strategy")
+	}
+}
+
+// TestGitFormFieldSlotsNeverAliasPaneWriteButton proves the CR-04 fix for
+// the configure-Git pane's click-routing table: gitFormFieldSlots' entries
+// (including "Force SSH" -> gitFieldForceSSH) must never numerically alias
+// gitPaneFocusButton. Before the fix, gitPaneFocusButton == gitFieldForceSSH
+// == 3, so IF a click ever hit gitFieldForceSSH's slot, the pane's
+// "Write it…" button-focused render check (`m.gitFocus == gitPaneFocusButton`)
+// would ALSO fire for that same value, visually focusing the wrong control.
+// (gitFormFieldSlots' "Force SSH" row currently has no matching rendered
+// text for hitFieldRow's anchored-prefix check — WR-level gap, not part of
+// this fix — so this test pins the constant relationship directly rather
+// than through a click that cannot yet land.)
+func TestGitFormFieldSlotsNeverAliasPaneWriteButton(t *testing.T) {
+	for _, f := range gitFormFieldSlots {
+		if f.slot == gitPaneFocusButton {
+			t.Errorf("gitFormFieldSlots entry %q (slot %d) numerically aliases gitPaneFocusButton (%d)", f.label, f.slot, gitPaneFocusButton)
+		}
 	}
 }
 

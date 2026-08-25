@@ -493,13 +493,13 @@ func (f sshForm) view(focus int, prefixError, hostHelper string, validation *Val
 // GitFormFields).
 // ---------------------------------------------------------------------------
 
-// Git form focus slots.
+// Git form focus slots — the three fields the WIZARD's own step 2 actually
+// renders and Tab-cycles through. ForceSSH and gitDir are declared further
+// below, deliberately numbered OUTSIDE this block (CR-04).
 const (
 	gitFieldName = iota
 	gitFieldEmail
 	gitFieldStrategy
-	gitFieldForceSSH
-	gitFieldGitDir
 )
 
 // Wizard Git-step focus ring — the three fields above, then the three REAL
@@ -513,9 +513,33 @@ const (
 	wizardGitFocusSlots
 )
 
+// gitFieldForceSSH and gitFieldGitDir are PANE-only fields: the wizard never
+// renders or edits them (its Git step only shows Name/Email/Strategy — the
+// "gitdir path" row and the Force-SSH toggle are configure-Git-pane
+// controls, reached there via direct mouse click / ctrl+g, not Tab-cycling).
+//
+// CR-04: they MUST be numbered strictly AFTER wizardGitFocusSlots (i.e.
+// after Back/Skip/Continue), never right after gitFieldStrategy. Sitting at
+// gitFieldStrategy+1/+2 numerically aliased them onto gitFocusBack and
+// gitFocusSkip (both 3 and 4 respectively), so a keystroke aimed at the
+// wizard's Back or Skip Git button reached gitForm.handleEdit's
+// gitFieldForceSSH/gitFieldGitDir cases instead — typing while focused on
+// Skip Git silently edited the wizard's hidden gitdir input.
+const (
+	gitFieldForceSSH = wizardGitFocusSlots + iota
+	gitFieldGitDir
+)
+
+// Compile-time guard: the field/focus namespaces must never numerically
+// overlap again. This is a compile error (negative array length) the
+// moment gitFieldForceSSH drops to or below the wizard's own button ring.
+var _ [gitFieldForceSSH - wizardGitFocusSlots]struct{}
+
 // gitPaneFocusButton is the configure-Git pane's extra focus slot: the
-// `Write it…` button after the three fields (batch 3 — Tab reaches every
-// button); its ring size is gitPaneFocusRing.
+// `Write it…` button after the pane's three Tab-reachable fields (Name /
+// Email / Strategy — ForceSSH and gitDir are reached via direct mouse
+// click / ctrl+g, matching the wizard's own field/button split, so they are
+// never part of this modulus ring either).
 const (
 	gitPaneFocusButton = gitFieldStrategy + 1
 	gitPaneFocusRing   = gitPaneFocusButton + 1
@@ -2383,7 +2407,14 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			}
 			fallthrough
 		default:
-			w.git = w.git.handleEdit(msg, w.gitFocus)
+			// CR-04: never route a button slot (Back/Skip/Continue) into
+			// gitForm.handleEdit — defense-in-depth alongside the
+			// non-overlapping enum ranges above, so a future renumbering
+			// mistake still can't make a keystroke aimed at a button edit a
+			// hidden field.
+			if w.gitFocus < gitFocusBack {
+				w.git = w.git.handleEdit(msg, w.gitFocus)
+			}
 			m.wizard = w
 			return keyResult{model: m, handled: true}
 		}
