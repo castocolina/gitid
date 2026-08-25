@@ -16,6 +16,18 @@
 #   uninstall      Remove gitid from $GOPATH/bin.
 #   test           Run the race-enabled test harness with a coverage profile (TDD harness, D-06).
 #   lint           Run golangci-lint (reads .golangci.yml); hard-fails on any finding (D-04).
+#                  Depends on lint-screenshot (WR-28) so the `screenshot` build tag can
+#                  never be silently skipped again.
+#   lint-screenshot `go vet` + golangci-lint + the fast subset of `go test`, all under
+#                  the `screenshot` build tag (WR-28: internal/screenshot was previously
+#                  invisible to both `make lint` and `make test` — no gate ever compiled
+#                  or ran it, so the WR-19/WR-22 regression tests it carries executed
+#                  nowhere and a real regression, WR-26, shipped undetected). Excludes
+#                  TestCaptureTUI/TestCaptureHTML*/TestProvisionPinnedChromium: those are
+#                  the heavy, tool-provisioning/network-dependent capture entry points
+#                  `make screenshot-tui`/`make screenshot-html`/`make setup-env` already
+#                  own — everything else in the package is fast, hermetic unit-style
+#                  coverage and belongs in every `make lint` run.
 #   fmt            Run goimports then gofmt over all packages.
 #   screenshot-tui  Render the TUI View()-dump golden to a deterministic PNG via freeze
 #                   (TOOL-05, DLV-03; build-tag isolated behind `screenshot`).
@@ -29,7 +41,7 @@
 #   demo-web       (Re)launch the web design mockup dev server (Vite) on the
 #                   dedicated $(DEMO_WEB_PORT) and open it.
 
-.PHONY: setup-env build build-cross install uninstall test lint fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files gate-visual-regression smoke-network-test demo-web
+.PHONY: setup-env build build-cross install uninstall test lint lint-screenshot fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files gate-visual-regression smoke-network-test demo-web
 
 # Binary output directory.
 BIN_DIR := bin
@@ -153,10 +165,45 @@ fmt:
 	find . -name "*.go" -not -path "./.planning/*" -exec $(GOIMPORTS) -w {} +
 	find . -name "*.go" -not -path "./.planning/*" -exec $(GOFMT) -w {} +
 
+## lint-screenshot: WR-28 -- gate the `screenshot` build tag. Before this
+## target existed, no gate ever compiled OR ran anything behind
+## `//go:build screenshot`: `make lint` runs golangci-lint untagged, `make
+## test` runs go test untagged, and no other target runs the PACKAGE's own
+## tests (screenshot-tui/screenshot-html only run their own single entry
+## point via -run). That blindspot is why WR-19's and WR-22's regression
+## tests (internal/screenshot/region_disposition_test.go,
+## TestExtractRegion_GitCeremonyMatchesReceiptHeadingAcrossWrap) executed in
+## NO gate and a real regression (WR-26, an off-by-one in the very window
+## WR-22 fixed) shipped undetected.
+##
+## `go vet` runs across the whole module (cheap, and the `screenshot` tag
+## also touches cmd/gitid-evidence and cmd/gitid/gate_visual_regression_test.go).
+## golangci-lint and `go test` are scoped to internal/screenshot itself: the
+## other screenshot-tagged files already have dedicated gates
+## (`gate-visual-regression`, `generate-visual-review-packet`), and widening
+## golangci-lint's tagged scope to e2e-/smoke-tagged files elsewhere would
+## pull in a large pre-existing, unrelated lint backlog this fix is not
+## scoped to clear.
+##
+## `go test` here EXCLUDES TestCaptureTUI / TestCaptureHTML* /
+## TestProvisionPinnedChromium: those are the heavy, external-tool
+## (freeze)/headless-Chromium/network-provisioning capture entry points that
+## `make screenshot-tui` / `make screenshot-html` / `make setup-env` already
+## own as their explicit, opt-in single-test invocations. Everything else in
+## the package is fast, hermetic, unit-style coverage — exactly what belongs
+## in every `make lint` run.
+lint-screenshot:
+	go vet -tags screenshot ./...
+	$(GOLANGCI_LINT) run --build-tags screenshot ./internal/screenshot/...
+	go test -tags screenshot -skip 'TestCaptureTUI|TestCaptureHTML|TestProvisionPinnedChromium' ./internal/screenshot/...
+
 ## lint: run golangci-lint against all packages.
 ## Hard-fails on any finding — zero tolerance (D-04).
 ## Configuration lives in .golangci.yml.
-lint:
+## Depends on lint-screenshot (WR-28) so the `screenshot` build tag can never
+## be silently skipped again -- a caller running `make lint` directly (not
+## just CI) always exercises it.
+lint: lint-screenshot
 	$(GOLANGCI_LINT) run ./...
 
 ## test: run the TDD harness with race detection and a coverage profile.

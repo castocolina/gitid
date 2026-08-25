@@ -925,7 +925,7 @@ func (o offlineCaptureBackend) TestStage1(spec tuikit.CreateSpec) tea.Cmd {
 			Stage: 1,
 			Result: tuikit.TestResultView{
 				Outcome: tuikit.TestOutcomePass,
-				Command: o.Backend.Stage1Command(spec),
+				Command: o.Stage1Command(spec),
 				Detail:  "Hi user! You've successfully authenticated, but GitHub does not provide shell access.",
 			},
 		}
@@ -938,7 +938,7 @@ func (o offlineCaptureBackend) TestStage2(spec tuikit.CreateSpec) tea.Cmd {
 			Stage: 2,
 			Result: tuikit.TestResultView{
 				Outcome:           tuikit.TestOutcomeReachableNotUploaded,
-				Command:           o.Backend.Stage2Command(spec),
+				Command:           o.Stage2Command(spec),
 				Detail:            "identityfile " + spec.KeyPath,
 				ResolutionCommand: "ssh -F /tmp/gitid-stage/config -G " + spec.Alias,
 				ResolutionOutput: strings.Join([]string{
@@ -1196,9 +1196,9 @@ func CaptureGitScreenScreens(backend tuikit.Backend) (map[string]string, error) 
 	out["git-form-filled"] = capture(m)
 
 	// match-strategy-select: focus the strategy field (name -> email -> strategy).
-	strat := keyTab(m)
-	strat = keyTab(strat)
-	out["match-strategy-select"] = capture(strat)
+	strategyFocused := keyTab(m)
+	strategyFocused = keyTab(strategyFocused)
+	out["match-strategy-select"] = capture(strategyFocused)
 
 	// review-readonly / result-success: the write ceremony, confirmed twice
 	// (Enter reaches the preview, a second Enter commits — matching the real

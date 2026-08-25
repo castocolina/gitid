@@ -932,7 +932,7 @@ func FinalizeCandidate(candidateDir, finalDir string, reviews []ReviewInput) (Pa
 	if err != nil {
 		return Packet{}, fmt.Errorf("screenshot: FinalizeCandidate: creating staging directory: %w", err)
 	}
-	defer os.RemoveAll(stage)
+	defer func() { _ = os.RemoveAll(stage) }()
 	if err := copyTree(candidateDir, stage); err != nil {
 		return Packet{}, err
 	}
@@ -1247,6 +1247,10 @@ type RegionDiffs struct {
 //
 // normalizePrefix strips disposable absolute path prefixes (temp dirs,
 // timestamps) before hashing, retaining full commands and output content.
+// sourceCommit is part of the exported call contract (mirrored into
+// BuildRegionDiffsJSON's SourceCommit field by callers); kept named for API readability.
+//
+//nolint:revive // unused within this function body, see doc above
 func BuildRegionDiffs(sourceCommit string, liveCaptures, approvedCaptures map[string]string, specs []ScreenSpec) ([]RegionDiffRecord, error) {
 	if err := ValidateScreenSpecs(specs); err != nil {
 		return nil, fmt.Errorf("screenshot: BuildRegionDiffs: invalid screen specs: %w", err)

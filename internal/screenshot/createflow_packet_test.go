@@ -33,7 +33,13 @@ func unmarshalJSON(data []byte, v interface{}) error {
 // fixedClock returns a deterministic clock for tests.
 func fixedClock(t time.Time) func() time.Time { return func() time.Time { return t } }
 
-// makeTestCaptures returns two identical sets of text captures from the dummy backend.
+// makeTestCaptures returns two identical sets of text captures from the dummy
+// backend. RequiredScreenSpecs() is a MERGED registry (04-04-PLAN.md Task 3):
+// the create-flow specs PLUS the five Phase 4 git-screen checkpoints, so both
+// CaptureCreateFlowScreens AND CaptureGitScreenScreens must be merged into
+// each returned map -- otherwise packet generation fails with "live capture
+// missing screen ..." for every git-screen-only ID (mirrors
+// cmd/gitid/gate_visual_regression_test.go's mergeGitScreenCaptures).
 func makeTestCaptures(t *testing.T) (map[string]string, map[string]string) {
 	t.Helper()
 	backend := dummytui.NewFixtureBackend()
@@ -44,6 +50,20 @@ func makeTestCaptures(t *testing.T) (map[string]string, map[string]string) {
 	approved, err := screenshot.CaptureCreateFlowScreens(backend)
 	if err != nil {
 		t.Fatalf("CaptureCreateFlowScreens (approved): %v", err)
+	}
+	gitLive, err := screenshot.CaptureGitScreenScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureGitScreenScreens (live): %v", err)
+	}
+	gitApproved, err := screenshot.CaptureGitScreenScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureGitScreenScreens (approved): %v", err)
+	}
+	for id, text := range gitLive {
+		live[id] = text
+	}
+	for id, text := range gitApproved {
+		approved[id] = text
 	}
 	return live, approved
 }
@@ -195,7 +215,7 @@ func TestValidatePacket_RejectsTamperedMember(t *testing.T) {
 		t.Fatalf("reading member %s: %v", firstMember.Path, err)
 	}
 	tampered := append(original, []byte("\nTAMPERED\n")...)
-	if err := os.WriteFile(absPath, tampered, 0o600); err != nil {
+	if err := os.WriteFile(absPath, tampered, 0o600); err != nil { //nolint:gosec // test fixture path scoped to this test's own outDir (G703)
 		t.Fatalf("writing tampered member: %v", err)
 	}
 
@@ -649,6 +669,9 @@ func TestFinalPacketRequiresReviewProvenance(t *testing.T) {
 // valid inventory entry; RequiredRegions separately defines what must be nonempty.
 func TestRegionDiffCoverage(t *testing.T) {
 	// Use dummy backend captures as the input (live vs approved-tui text).
+	// RequiredScreenSpecs() below is a MERGED registry (04-04-PLAN.md Task 3),
+	// so both CaptureCreateFlowScreens AND CaptureGitScreenScreens must be
+	// merged into the maps BuildRegionDiffs receives (mirrors makeTestCaptures).
 	backend := dummytui.NewFixtureBackend()
 	liveCaptures, err := screenshot.CaptureCreateFlowScreens(backend)
 	if err != nil {
@@ -657,6 +680,20 @@ func TestRegionDiffCoverage(t *testing.T) {
 	approvedCaptures, err := screenshot.CaptureCreateFlowScreens(backend)
 	if err != nil {
 		t.Fatalf("CaptureCreateFlowScreens: %v", err)
+	}
+	gitLiveCaptures, err := screenshot.CaptureGitScreenScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureGitScreenScreens: %v", err)
+	}
+	gitApprovedCaptures, err := screenshot.CaptureGitScreenScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureGitScreenScreens: %v", err)
+	}
+	for id, text := range gitLiveCaptures {
+		liveCaptures[id] = text
+	}
+	for id, text := range gitApprovedCaptures {
+		approvedCaptures[id] = text
 	}
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -760,9 +797,6 @@ func makeFinalizeCandidate(t *testing.T) (candidateDir string, candidateManifest
 func makeConfiguredReview(t *testing.T, source, candidateHash string, critical, high int, stdout, providerOverride, modelOverride string) screenshot.ReviewInput {
 	t.Helper()
 	reviewer := screenshot.ConfiguredReviewerInstance
-	if providerOverride != "" {
-		// use a fake but non-empty provider (tampered case handled separately)
-	}
 	verdictReviewer := reviewer
 	verdictVersion := "03-16.1"
 	verdict, err := json.Marshal(screenshot.ReviewVerdict{
@@ -1211,7 +1245,13 @@ func liveOnlyRegionSpec() screenshot.ScreenSpec {
 
 func TestRegionNonComparable(t *testing.T) {
 	spec := liveOnlyRegionSpec()
-	live := "│ ssh command\n│ Stage 1 output: exact bytes\n"
+	// extractConnectivityOutput's marker is "ssh -" (a flag-prefixed
+	// invocation), not a bare "ssh " substring (04-04-PLAN.md Task 3
+	// discovery, createflow_regions.go:513-521 -- narrowed to stop
+	// false-positiving on the git-screen form's "gpg.format=ssh" line). This
+	// fixture must use a real invocation-shaped line to stay inside the
+	// region it is testing.
+	live := "│ ssh -T git@host\n│ Stage 1 output: exact bytes\n"
 	records, err := screenshot.BuildRegionDiffs("test-commit", map[string]string{spec.ScreenID: live}, nil, []screenshot.ScreenSpec{spec})
 	if err != nil {
 		t.Fatalf("BuildRegionDiffs live-only frame: %v", err)
@@ -1592,7 +1632,7 @@ func makeTinyPNG(t *testing.T, dir, name string) string {
 
 func writeTinyPNG(t *testing.T, path string, pixel color.RGBA) {
 	t.Helper()
-	file, err := os.Create(path)
+	file, err := os.Create(path) //nolint:gosec // test fixture path built from this test's own t.TempDir() (G304)
 	if err != nil {
 		t.Fatalf("makeTinyPNG: creating file: %v", err)
 	}
@@ -1620,7 +1660,7 @@ func makeMinimalPanels(t *testing.T, dir string) []screenshot.VisualPanel {
 			}
 			id := spec.ScreenID
 			pngPath := filepath.Join(dir, surface+"-"+id+".png")
-			writeTinyPNG(t, pngPath, color.RGBA{R: uint8(len(surfaces)*i + len(surface)), A: 0xff})
+			writeTinyPNG(t, pngPath, color.RGBA{R: uint8(len(surfaces)*i + len(surface)), A: 0xff}) //nolint:gosec // test-only pixel value, always < 256 for this fixture's tiny loop bounds (G115)
 			panels = append(panels, screenshot.VisualPanel{
 				Surface:  surface,
 				ScreenID: id,

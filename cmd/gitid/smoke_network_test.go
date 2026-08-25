@@ -52,7 +52,11 @@ func TestSmokeNetworkConnectivity(t *testing.T) {
 		t.Fatalf("smoke-network-test: writing the throwaway key: %v", err)
 	}
 
-	res := tester.PreWrite(keyPath, "ssh.github.com", 443)
+	// knownHostsPath is scoped to this test's TempDir so the smoke probe never
+	// touches the real ~/.ssh/known_hosts (D-23's read-only-except-scratch
+	// contract) -- StrictHostKeyChecking=accept-new populates it on first use.
+	knownHostsPath := filepath.Join(dir, "known_hosts_smoke")
+	res := tester.PreWrite(keyPath, "ssh.github.com", 443, knownHostsPath)
 	switch res.Outcome {
 	case tester.PASS, tester.ReachableNotUploaded:
 		t.Logf("smoke-network-test: outcome=%v output=%q", res.Outcome, res.Output)

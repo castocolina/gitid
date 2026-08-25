@@ -609,6 +609,19 @@ func TestCaptureCreateFlowScreensFailsOnMissingRequiredFrame(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CaptureCreateFlowScreens with valid backend must not fail: %v", err)
 	}
+	// RequiredScreenSpecs() is a MERGED registry (04-04-PLAN.md Task 3): the
+	// create-flow specs above PLUS the five Phase 4 git-screen checkpoints,
+	// which CaptureCreateFlowScreens alone never produces -- merge in
+	// CaptureGitScreenScreens too (mirrors makeTestCaptures in
+	// createflow_packet_test.go), or every git-screen ID is reported as a
+	// false-positive "missing" frame.
+	gitCaptures, gerr := screenshot.CaptureGitScreenScreens(backend)
+	if gerr != nil {
+		t.Fatalf("CaptureGitScreenScreens with valid backend must not fail: %v", gerr)
+	}
+	for id, text := range gitCaptures {
+		captures[id] = text
+	}
 	// Verify all required frames are present.
 	for _, spec := range screenshot.RequiredScreenSpecs() {
 		if spec.ApplicableLive {
@@ -660,7 +673,7 @@ func TestCandidateUsesOnlyTUISurfaces(t *testing.T) {
 
 // TestCandidateToolPreflight asserts that GOPATH-aware freeze discovery
 // works: resolveFreeze checks go env GOPATH first, then PATH.
-func TestCandidateToolPreflight(t *testing.T) {
+func TestCandidateToolPreflight(_ *testing.T) {
 	// This test verifies the freeze resolution order is GOPATH-first, PATH-second.
 	// We can't easily call resolveFreeze() directly from the test package, but we
 	// can verify the exported behavior: the package compiles and the annotation
