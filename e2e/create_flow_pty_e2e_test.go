@@ -1229,6 +1229,11 @@ func TestCreateFlow_PTYReviewCorrections(t *testing.T) {
 		mustSee(t, dummy, "Next: Git identity", "dummy test stages complete")
 		dummy.sendKey(dummyKeyEnter, keystrokeDelay)
 		mustSee(t, dummy, "Step 3/4", "dummy Git step")
-		mustSee(t, dummy, `[includeIf "gitdir:~/acme/"]`, "dummy compact preview exposes its includeIf condition")
+		// CR-14 (04-REVIEW.md iteration 4): the dummy's includeIf preview now
+		// substitutes the SAME "~/git/<identity>/" D-02 derivation the real
+		// binary uses (FixtureBackend.IncludeIfPreview), replacing the
+		// frozen pre-Phase-4 "~/<identity>/" literal (no "git/" segment)
+		// this assertion pinned before that fix.
+		mustSee(t, dummy, `[includeIf "gitdir:~/git/acme/"]`, "dummy compact preview exposes its includeIf condition")
 	})
 }
