@@ -401,11 +401,11 @@ screenshot-html:
 ## determinism before validating classified region evidence.
 ##
 ## Invokes TestGateVisualRegression + TestGateVisualRegressionReadOnly +
-## TestAllScreensCapturedAndNonEmpty + TestNegativeControls_* +
-## TestNegativeControl_* (Phase 4's own missing-state/stale-classification/
-## cross-registry-leakage controls) under the `screenshot` build tag.
+## TestAllScreensCapturedAndNonEmpty + TestNegativeControl_* (Phase 4's own
+## missing-state/unclassified-difference/exhaustive-mutation-sensitivity/
+## cross-registry-leakage controls, CR-11) under the `screenshot` build tag.
 gate-visual-regression:
-	go test -tags screenshot -run 'Test(GateVisualRegression|ApprovalCommitRecorded|AllScreensCapturedAndNonEmpty|NegativeControls|NegativeControl_)' -v ./cmd/gitid/...
+	go test -tags screenshot -run 'Test(GateVisualRegression|ApprovalCommitRecorded|AllScreensCapturedAndNonEmpty|NegativeControl_)' -v ./cmd/gitid/...
 
 ## generate-visual-review-packet: ONE-SHOT explicit publication of a new
 ## content-addressed evidence packet for Task 3 review publication.

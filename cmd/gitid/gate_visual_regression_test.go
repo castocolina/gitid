@@ -453,10 +453,30 @@ func TestAllScreensCapturedAndNonEmpty(t *testing.T) {
 	}
 }
 
-// TestNegativeControls_AllProtectedRegionsDetectMutation proves that every
-// protected (non-allowlisted) region on every screen is sensitive to mutations
-// — the gate can catch any meaningful drift (CR-04 exhaustive negative controls).
-func TestNegativeControls_AllProtectedRegionsDetectMutation(t *testing.T) {
+// TestNegativeControl_UnclassifiedDifferenceRejected proves that a region
+// diverging without a ux-improvement/defect classification is rejected by
+// ValidateRegionDiffs.
+//
+// CR-11 (iteration 4) renamed this from
+// TestNegativeControls_AllProtectedRegionsDetectMutation: the old name and
+// doc comment claimed it proved "every protected (non-allowlisted) region on
+// every screen is sensitive to mutations" — the body did none of that. Both
+// loops `break` on the first hit, so exactly ONE NamedRegionDiff on ONE
+// screen was ever exercised (order-dependent on
+// RequiredScreenSpecs()/AllRegionNames()); it targeted `!region.Equal`
+// regions — i.e. the ALLOWLISTED ones — not "protected (non-allowlisted)"
+// regions; and it only ever cleared a metadata field
+// (Classification = ""), never mutated rendered TEXT, so it proved
+// ValidateRegionDiffs requires a classification field and nothing about
+// whether a changed rendering is actually detected.
+//
+// This narrower, honestly-named test keeps exactly that one property (the
+// classification-requirement check). The property CR-11 actually cared
+// about — "is every silent (equal), allowlist-eligible region really
+// TEXT-sensitive, not just metadata-sensitive" — is now proven exhaustively,
+// across every screen, by
+// TestNegativeControl_AllComparableEqualRegionsAreMutationSensitive below.
+func TestNegativeControl_UnclassifiedDifferenceRejected(t *testing.T) {
 	home := t.TempDir()
 	deterministicReusableKeyFixture(t, home)
 	t.Setenv("HOME", home)
@@ -506,6 +526,87 @@ func TestNegativeControls_AllProtectedRegionsDetectMutation(t *testing.T) {
 	}
 }
 
+// assertAllComparableEqualRegionsAreMutationSensitive is CR-11's exhaustive
+// negative control: for EVERY comparable, currently-Equal region across
+// EVERY record (optionally scoped by include), it mutates the region's
+// rendered TEXT — not a metadata field — and proves ValidateRegionDiffs
+// rejects the mutated evidence. A region that passes here would silently
+// accept a real rendering regression forever, since it is currently equal
+// (no disposition/allowlist entry required) and therefore has nothing else
+// gating it. include may be nil to check every screen.
+func assertAllComparableEqualRegionsAreMutationSensitive(t *testing.T, specs []screenshot.ScreenSpec, records []screenshot.RegionDiffRecord, include func(screenID string) bool) {
+	t.Helper()
+	checked := 0
+	for i := range records {
+		if include != nil && !include(records[i].ScreenID) {
+			continue
+		}
+		for j := range records[i].Regions {
+			region := records[i].Regions[j]
+			if !region.Comparable || !region.Equal {
+				continue // covered by TestNegativeControl_UnclassifiedDifferenceRejected instead
+			}
+			checked++
+
+			// Deep-copy via JSON round-trip so mutating this one region
+			// cannot alias another iteration's fixture.
+			raw, err := json.Marshal(records)
+			if err != nil {
+				t.Fatalf("deep-copying region evidence for %s/%s: %v", records[i].ScreenID, region.Name, err)
+			}
+			var mutated []screenshot.RegionDiffRecord
+			if err := json.Unmarshal(raw, &mutated); err != nil {
+				t.Fatalf("deep-copying region evidence for %s/%s: %v", records[i].ScreenID, region.Name, err)
+			}
+			m := &mutated[i].Regions[j]
+			m.LiveText += "\nGATE-CANARY"
+			m.LiveHash = textHash(m.LiveText)
+
+			data, err := json.Marshal(screenshot.RegionDiffs{Version: "test", SourceCommit: "negative-control", GeneratedAt: "test", Screens: mutated})
+			if err != nil {
+				t.Fatalf("marshaling mutated region evidence for %s/%s: %v", records[i].ScreenID, region.Name, err)
+			}
+			if err := screenshot.ValidateRegionDiffs(data, "negative-control", specs); err == nil {
+				t.Errorf("negative-control: region %q on screen %q is NOT mutation-sensitive — the gate would silently accept a real rendering regression here", region.Name, records[i].ScreenID)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("negative-control: no comparable, currently-equal region was available to mutate — fixture regressed to all-divergent, or the scope filter matched nothing")
+	}
+}
+
+// TestNegativeControl_AllComparableEqualRegionsAreMutationSensitive is CR-11's
+// required fix: proves, across EVERY RequiredScreenSpecs() screen and EVERY
+// comparable currently-equal region on it, that a real TEXT mutation (not a
+// metadata field) is caught. See assertAllComparableEqualRegionsAreMutationSensitive.
+func TestNegativeControl_AllComparableEqualRegionsAreMutationSensitive(t *testing.T) {
+	home := t.TempDir()
+	deterministicReusableKeyFixture(t, home)
+	t.Setenv("HOME", home)
+	realB := newBackendForHome(home)
+	realCaptures, err := screenshot.CaptureCreateFlowScreens(realB)
+	if err != nil {
+		t.Fatalf("capturing real backend: %v", err)
+	}
+	dummyB := dummytui.NewFixtureBackend()
+	dummyCaptures, err := screenshot.CaptureCreateFlowScreens(dummyB)
+	if err != nil {
+		t.Fatalf("capturing dummy backend: %v", err)
+	}
+	gitHome := t.TempDir()
+	deterministicGitIdentityFixture(t, gitHome)
+	mergeGitScreenCaptures(t, realCaptures, dummyCaptures, gitHome)
+	t.Setenv("HOME", home) // restore for any later HOME-dependent assertions
+
+	specs := screenshot.RequiredScreenSpecs()
+	records, err := screenshot.BuildRegionDiffs("negative-control", realCaptures, dummyCaptures, specs)
+	if err != nil {
+		t.Fatalf("building classified region evidence: %v", err)
+	}
+	assertAllComparableEqualRegionsAreMutationSensitive(t, specs, records, nil)
+}
+
 // ---------------------------------------------------------------------------
 // 04-04-PLAN.md Task 3 negative controls: missing state, stale/removed
 // classification, and cross-registry leakage — each proving the gate
@@ -552,13 +653,22 @@ func TestNegativeControl_MissingGitScreenState(t *testing.T) {
 	}
 }
 
-// TestNegativeControl_StaleGitScreenClassification proves that mutating away
-// a Phase 4 git-screen RegionDisposition's classification is caught — the
-// SAME protection TestNegativeControls_AllProtectedRegionsDetectMutation
+// TestNegativeControl_GitScreenUnclassifiedDifferenceRejected proves that
+// mutating away a Phase 4 git-screen RegionDisposition's classification is
+// caught — the SAME protection TestNegativeControl_UnclassifiedDifferenceRejected
 // proves generically, scoped explicitly to a git-screen record so Phase 4
 // coverage can never be silently exempt from the mutation the generic
 // control happens to find first.
-func TestNegativeControl_StaleGitScreenClassification(t *testing.T) {
+//
+// CR-11 (iteration 4) renamed this from TestNegativeControl_StaleGitScreenClassification
+// — it is a copy-paste of the pre-fix generic control and inherited the SAME
+// three defects (break-after-first, targets allowlisted `!Equal` regions
+// only, metadata-only mutation). See the sibling rename's comment for the
+// full account. The exhaustive, TEXT-mutating property is now proven,
+// scoped to git-screen records, by
+// TestNegativeControl_AllGitScreenComparableEqualRegionsAreMutationSensitive
+// below.
+func TestNegativeControl_GitScreenUnclassifiedDifferenceRejected(t *testing.T) {
 	home := t.TempDir()
 	deterministicReusableKeyFixture(t, home)
 	t.Setenv("HOME", home)
@@ -609,6 +719,41 @@ func TestNegativeControl_StaleGitScreenClassification(t *testing.T) {
 	if err := screenshot.ValidateRegionDiffs(data, "negative-control", specs); err == nil {
 		t.Fatal("negative-control: validator accepted a Phase 4 git-screen difference without ux-improvement/defect classification")
 	}
+}
+
+// TestNegativeControl_AllGitScreenComparableEqualRegionsAreMutationSensitive
+// is CR-11's required fix, scoped to the Phase 4 git-screen registry: proves
+// that every comparable, currently-equal region on every git-screen
+// checkpoint (git-form-filled, git-form-empty, match-strategy-select,
+// review-readonly, result-success) is sensitive to a real TEXT mutation, not
+// just a metadata field. See assertAllComparableEqualRegionsAreMutationSensitive.
+func TestNegativeControl_AllGitScreenComparableEqualRegionsAreMutationSensitive(t *testing.T) {
+	home := t.TempDir()
+	deterministicReusableKeyFixture(t, home)
+	t.Setenv("HOME", home)
+	realB := newBackendForHome(home)
+	realCaptures, err := screenshot.CaptureCreateFlowScreens(realB)
+	if err != nil {
+		t.Fatalf("capturing real backend: %v", err)
+	}
+	dummyB := dummytui.NewFixtureBackend()
+	dummyCaptures, err := screenshot.CaptureCreateFlowScreens(dummyB)
+	if err != nil {
+		t.Fatalf("capturing dummy backend: %v", err)
+	}
+	gitHome := t.TempDir()
+	deterministicGitIdentityFixture(t, gitHome)
+	mergeGitScreenCaptures(t, realCaptures, dummyCaptures, gitHome)
+	t.Setenv("HOME", home)
+
+	specs := screenshot.RequiredScreenSpecs()
+	records, err := screenshot.BuildRegionDiffs("negative-control", realCaptures, dummyCaptures, specs)
+	if err != nil {
+		t.Fatalf("building classified region evidence: %v", err)
+	}
+	assertAllComparableEqualRegionsAreMutationSensitive(t, specs, records, func(screenID string) bool {
+		return gitScreenScreenIDs[screenID]
+	})
 }
 
 // TestNegativeControl_CrossRegistryLeakage proves every Phase 4 git-screen
