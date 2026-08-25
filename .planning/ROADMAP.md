@@ -250,7 +250,7 @@ Plans:
 Plans:
 - [ ] 05-01-PLAN.md — Tracer: one write chokepoint proven from the TUI and the CLI (Git-only delete) + the `--json`/table read surface + the D-01 command tree
 - [ ] 05-02-PLAN.md — Key-lifecycle primitives: archive dir + doctor-reserved registration, append-aware allowed_signers writer, per-provider rewrite remover
-- [ ] 05-03-PLAN.md — Rotate becomes a retirement ceremony; new-key becomes a repair action; one state-driven router (has a blocking decision checkpoint)
+- [ ] 05-03-PLAN.md — Pipeline decomposed into phases; rotate becomes a retirement ceremony; new-key becomes a repair action at its own key path; one state-and-ownership router (fully autonomous — the repair signer decision is resolved in-plan per DLV-08)
 - [ ] 05-04-PLAN.md — Delete-everything semantics: provider ref-count, recoverable key removal, shared-key downgrade, unmanaged-reference scan, pure DeletePlan
 - [ ] 05-05-PLAN.md — Clone: copy-versus-re-derive domain function, pre-filled wizard entry, full two-stage gate on same-key clones
 - [ ] 05-06-PLAN.md — tuikit surface: RotateIdentity action, the approved action menu, the delete-screen additions, and the key ceremony
