@@ -48,7 +48,11 @@ findings:
   warning: 16
   info: 0
   total: 21
-status: issues_found
+status: resolved_with_scoped_divergence
+resolution: see 04-REVIEW-FIX.md "Resolution" section (2026-08-25) — CR-18
+  fixed (commit 8c5936b); CR-15/CR-16 accepted as a documented scoped
+  divergence of the D-12 visual-gate comparison approach; CR-17 recorded as
+  a process note; WR-38..43 carried forward non-blocking.
 ---
 
 # Phase 4: Code Review Report (iteration 5)
