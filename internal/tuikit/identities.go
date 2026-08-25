@@ -1876,6 +1876,12 @@ func (m identitiesModel) openGitForm(sel DemoIdentity) identitiesModel {
 	}
 	m.gitPaneForm.publicKeyPath = sel.PublicKeyPath
 	m.gitPaneForm.gitDir.SetValue(orDefault(sel.GitDir, "~/git/"+sel.Name+"/"))
+	// WR-07: textinput.SetValue only re-homes the caret when the field was
+	// EMPTY (see applyProviderDefaults above) — this field is non-empty at
+	// construction (newGitForm seeds it), so without this the caret stays
+	// parked at column 0: the user's first Backspace would delete nothing
+	// and their typing would PREPEND instead of continuing the value.
+	m.gitPaneForm.gitDir.CursorEnd()
 	m.gitPaneForm.forceSSH = sel.ForceSSH || !m.gitExisting
 	m.gitPaneForm.original = sel.GitOriginal
 	m.gitFocus = gitFieldName

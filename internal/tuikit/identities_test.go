@@ -2172,6 +2172,20 @@ func TestOpenGitFormDerivesProviderFromSSHHost(t *testing.T) {
 	}
 }
 
+// TestOpenGitFormHomesGitDirCaretAfterSetValue proves the WR-07 fix:
+// textinput.SetValue only re-homes the caret when the field was EMPTY at
+// construction — gitDir is seeded non-empty by newGitForm, so without an
+// explicit CursorEnd() the caret stayed parked at column 0 and the user's
+// first keystroke would PREPEND instead of continuing the value.
+func TestOpenGitFormHomesGitDirCaretAfterSetValue(t *testing.T) {
+	m := newIdentitiesModel(stubBackend{}, DemoState{})
+	sel := DemoIdentity{Name: "work", SSHHost: "work.github.com", Provider: "github.com", GitDir: "~/src/work/"}
+	m = m.openGitForm(sel)
+	if got, want := m.gitPaneForm.gitDir.Position(), len([]rune(m.gitPaneForm.gitDir.Value())); got != want {
+		t.Errorf("gitDir caret position = %d, want end-of-value %d (value %q)", got, want, m.gitPaneForm.gitDir.Value())
+	}
+}
+
 func TestGitFlowFieldsUseEmptySSHOnlyValuesAndExactHostPreview(t *testing.T) {
 	// Hypothesis: SSH-only completion starts without invented author data and
 	// hasconfig previews consume the exact SSH alias, not the identity name.
