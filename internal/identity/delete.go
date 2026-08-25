@@ -21,12 +21,13 @@ const (
 	// keepKey D-07 this file's doc comments used to cite. Phase 5's own D-07
 	// is the unrelated allowed_signers APPEND decision).
 	DeleteScopeGitOnly DeleteScope = "git-only"
-	// DeleteScopeEverything removes every artifact for the identity (SSH
-	// Host block, gitconfig includeIf block, fragment file, allowed_signers
-	// line, and the key pair). Recognized as a valid scope but NOT YET
-	// IMPLEMENTED in this plan — Delete returns ErrScopeNotAvailable when
-	// called with it. Plan 05-04 replaces that branch with the real
-	// implementation; nothing else about Delete's signature changes.
+	// DeleteScopeEverything removes every artifact for the identity: the
+	// gitconfig includeIf block, the fragment file, the SSH Host block, the
+	// allowed_signers block, the provider rewrite (when no reference of any
+	// kind survives — D-09), and the key pair (archived, then removed —
+	// D-11), unless the key is shared with a sibling identity, in which
+	// case it is kept and the sibling is named (D-12, see delete.go's
+	// keySurvives handling).
 	DeleteScopeEverything DeleteScope = "everything"
 )
 
@@ -80,12 +81,52 @@ type DeleteDeps struct {
 	// NEVER called — D-10 keeps the signing line intact so historic
 	// `git log --show-signature` verification keeps working.
 	RemoveAllowedSigners func(path, name string) (backupPath string, err error)
-	// RemoveKeyFiles removes the private and public key files via a recoverable
-	// backup-then-remove, returning the private and public key backup paths.
-	// Under DeleteScopeGitOnly this is NEVER called — the key pair is kept
-	// untouched (D-10). A missing key file is a no-op (empty backup path, no
-	// error).
+	// RemoveKeyFiles removes the LIVE private and public key files. Under
+	// DeleteScopeEverything it is the LAST seam Delete calls, after the D-11
+	// archive copy (CopyKeyPairToArchive, below) has already landed — the
+	// archive copy IS the recoverable backup, so this seam's own returned
+	// backup paths are not consulted by Delete; only that the live files are
+	// gone afterward matters. Under DeleteScopeGitOnly this is NEVER called
+	// — the key pair is kept untouched (D-10). A missing key file is a no-op
+	// (no error).
 	RemoveKeyFiles func(keyPath, pubPath string) (keyBackup, pubBackup string, err error)
+
+	// Accounts returns every reconstructed account (including the one being
+	// deleted), letting Delete compute ProviderRefCount and SharedKeyOwners
+	// without a second reconstruction pass. The composition root binds this
+	// to the SAME account list the identity list/CommitDelete/CLI delete
+	// already read — never a second, divergent lookup. Only consulted under
+	// DeleteScopeEverything.
+	Accounts func() ([]Account, error)
+
+	// ForeignProviderRefs counts every Host stanza OUTSIDE any gitid-managed
+	// block (D-09: "hand-written aliases targeting the same provider") whose
+	// resolved provider key (ProviderKeyForHost) equals providerKey. The
+	// composition root fills this by walking the real ~/.ssh/config. Only
+	// consulted under DeleteScopeEverything, and only when a provider key is
+	// resolvable for the identity being deleted.
+	ForeignProviderRefs func(providerKey string) (int, error)
+
+	// RemoveProviderRewrite removes the shared "provider-rewrite:<host>"
+	// managed block for providerKey (D-09), called ONLY when both
+	// ProviderRefCount and ForeignProviderRefs report zero for providerKey —
+	// i.e. no reference of any kind survives. Never called under
+	// DeleteScopeGitOnly: the identity's own SSH alias survives that scope,
+	// so it still counts as a user of the provider.
+	RemoveProviderRewrite func(providerKey string) (backupPath string, err error)
+
+	// CopyKeyPairToArchive copies the identity's key pair into the D-11
+	// archive directory WITHOUT touching the sources — the recoverable-
+	// removal primitive delete-everything uses (review R-03; rotation uses
+	// the MOVE primitive instead, through identity.Deps.ArchiveKeyPair — the
+	// two must never be collapsed into one). Called FIRST, before any other
+	// write, so a failure at any later step leaves both the archive copy and
+	// the live key intact. The composition root binds this to a
+	// transaction's journal exactly as identity.Deps.ArchiveKeyPair is bound
+	// (review R3-01): a backend-wide binding refuses; only a
+	// transaction-scoped seam actually archives. Skipped entirely when the
+	// D-12 shared-key downgrade applies (the key survives).
+	CopyKeyPairToArchive func(privPath, pubPath string) (archivedPriv, archivedPub string, err error)
 }
 
 // DeleteResult holds the backup paths produced by Delete. An EMPTY backup
@@ -103,8 +144,31 @@ type DeleteResult struct {
 	GitconfigBackup      string
 	FragmentBackup       string
 	AllowedSignersBackup string
-	KeyBackup            string
-	PubBackup            string
+	// KeyBackup / PubBackup are the D-11 archive copy paths under
+	// DeleteScopeEverything (never a filewriter timestamped sibling backup
+	// — the archive copy itself IS the recoverable backup). Empty when the
+	// key was never touched (git-only) or kept (D-12 shared-key downgrade).
+	KeyBackup string
+	PubBackup string
+
+	// ProviderRewriteRemoved is true when the D-09 ref-count found no
+	// surviving reference of any kind and the provider rewrite block was
+	// removed. ProviderRewriteBackup carries the backup path from that
+	// removal (empty when the block did not pre-exist).
+	ProviderRewriteRemoved bool
+	ProviderRewriteBackup  string
+
+	// KeyKeptFor names every sibling identity that still references this
+	// identity's key path (D-12) — non-empty exactly when the everything
+	// scope's key archive-and-remove step was skipped because the key
+	// survives.
+	KeyKeptFor []string
+
+	// ArchivedKeyPaths carries every archive-directory path this call
+	// created (private, and public when present) — review R-10: so a
+	// caller's rollback journal can discover and undo them even when a
+	// later step in the same transaction fails.
+	ArchivedKeyPaths []string
 }
 
 // Delete removes an identity's artifacts according to scope, with backup via
@@ -125,36 +189,29 @@ type DeleteResult struct {
 // deps.RemoveAllowedSigners / deps.RemoveKeyFiles are never called, so the
 // allowed_signers line and the key pair survive untouched.
 //
-// DeleteScopeEverything is a recognized scope NOT YET IMPLEMENTED in this
-// plan: Delete returns an error satisfying errors.Is(err,
-// ErrScopeNotAvailable) before touching any dep, so the CLI `--all` path and
-// the TUI everything option refuse identically from this one place (review
-// R-16). Plan 05-04 replaces this branch with the real implementation.
+// DeleteScopeEverything removes every artifact (see the constant's doc
+// comment). It is a full implementation as of this plan (05-04) — the prior
+// ErrScopeNotAvailable refusal for this scope has been removed.
 //
-// An unrecognized scope string also returns an error satisfying errors.Is(err,
-// ErrScopeNotAvailable).
+// An unrecognized scope string still returns an error satisfying
+// errors.Is(err, ErrScopeNotAvailable).
 func Delete(acct Account, scope DeleteScope, deps DeleteDeps) (DeleteResult, error) {
 	var res DeleteResult
 
 	switch scope {
 	case DeleteScopeGitOnly:
-		// fall through below
+		res.SSHUntouched = true
 	case DeleteScopeEverything:
-		return res, fmt.Errorf("identity: delete scope %q: %w", scope, ErrScopeNotAvailable)
+		// handled below
 	default:
 		return res, fmt.Errorf("identity: delete scope %q: %w", scope, ErrScopeNotAvailable)
 	}
-
-	// D-10 / review R-13: the SSH branch is STRUCTURALLY skipped for
-	// DeleteScopeGitOnly — deps.ReadSSH and deps.WriteSSH are never called,
-	// so an unchanged ~/.ssh/config can never acquire a timestamped backup.
-	res.SSHUntouched = true
 
 	// Remove ONLY the per-identity includeIf block from the gitconfig bytes.
 	// Equality-guarded (review R-14): when RemoveBlock produces bytes
 	// identical to what was read (e.g. the block is already absent — an
 	// idempotent re-run), the writer is skipped entirely so no second backup
-	// is created and GitconfigBackup stays empty.
+	// is created and GitconfigBackup stays empty. Common to both scopes.
 	gcBytes, err := deps.ReadGitconfig()
 	if err != nil {
 		return res, fmt.Errorf("identity: reading gitconfig: %w", err)
@@ -168,18 +225,123 @@ func Delete(acct Account, scope DeleteScope, deps DeleteDeps) (DeleteResult, err
 		res.GitconfigBackup = gcBak
 	}
 
-	// Remove the whole fragment file (whole-file backup+remove). This is
-	// already idempotent at the deps level: a real RemoveFragment (backed by
-	// filewriter.BackupAndRemove) returns an empty backup path with no error
-	// when the file is already absent.
-	fragBak, err := deps.RemoveFragment(acct.FragmentPath)
-	if err != nil {
-		return res, fmt.Errorf("identity: removing fragment file: %w", err)
+	if scope == DeleteScopeGitOnly {
+		// Remove the whole fragment file (whole-file backup+remove). This is
+		// already idempotent at the deps level: a real RemoveFragment (backed
+		// by filewriter.BackupAndRemove) returns an empty backup path with no
+		// error when the file is already absent.
+		fragBak, ferr := deps.RemoveFragment(acct.FragmentPath)
+		if ferr != nil {
+			return res, fmt.Errorf("identity: removing fragment file: %w", ferr)
+		}
+		res.FragmentBackup = fragBak
+
+		// D-10: allowed_signers, the SSH Host block, the provider rewrite,
+		// and the key pair are NEVER touched under DeleteScopeGitOnly — the
+		// identity's SSH alias survives this scope, so it still counts as a
+		// user of the provider (the ref-count question only arises on the
+		// everything path, below).
+		return res, nil
+	}
+
+	return deleteEverything(acct, deps, res)
+}
+
+// deleteEverything performs the DeleteScopeEverything-only steps, ordered so
+// a partial failure is never destructive in a new way: copy the key pair
+// into the archive FIRST, then remove the managed SSH Host block and the
+// allowed_signers block, then unlink the fragment, then remove the provider
+// rewrite (D-09, only when no reference of any kind survives), then remove
+// the LIVE key files LAST. Any failure before that last step therefore
+// leaves both a valid archive copy and a working live key.
+func deleteEverything(acct Account, deps DeleteDeps, res DeleteResult) (DeleteResult, error) {
+	// 1. Archive the key pair FIRST — before any other write — so a failure
+	// anywhere below still leaves a recoverable copy (D-11, review R-03).
+	if acct.KeyPath != "" {
+		archivedPriv, archivedPub, aerr := deps.CopyKeyPairToArchive(acct.KeyPath, acct.PubPath)
+		// Record whatever archive paths were created BEFORE inspecting the
+		// error (review R3-01/R-10): a partial archive is still reportable.
+		if archivedPriv != "" {
+			res.ArchivedKeyPaths = append(res.ArchivedKeyPaths, archivedPriv)
+		}
+		if archivedPub != "" {
+			res.ArchivedKeyPaths = append(res.ArchivedKeyPaths, archivedPub)
+		}
+		if aerr != nil {
+			return res, fmt.Errorf("identity: archiving key pair: %w", aerr)
+		}
+		res.KeyBackup = archivedPriv
+		res.PubBackup = archivedPub
+	}
+
+	// 2. Remove the managed SSH Host block. Equality-guarded exactly like
+	// the gitconfig block above.
+	sshBytes, rerr := deps.ReadSSH()
+	if rerr != nil {
+		return res, fmt.Errorf("identity: reading ssh config: %w", rerr)
+	}
+	updatedSSH := filewriter.RemoveBlock(sshBytes, acct.Name)
+	if !bytes.Equal(updatedSSH, sshBytes) {
+		sshBak, werr := deps.WriteSSH(updatedSSH)
+		if werr != nil {
+			return res, fmt.Errorf("identity: removing ssh host block: %w", werr)
+		}
+		res.SSHBackup = sshBak
+	}
+
+	// 3. Remove the allowed_signers block, keyed by identity NAME (symmetric
+	// with the block-keyed writer keygen.WriteAllowedSigners) — so an
+	// Incomplete identity with a missing fragment (GitEmail == "") still has
+	// its signing block removed.
+	asBak, aserr := deps.RemoveAllowedSigners(acct.AllowedSignersPath, acct.Name)
+	if aserr != nil {
+		return res, fmt.Errorf("identity: removing allowed_signers block: %w", aserr)
+	}
+	res.AllowedSignersBackup = asBak
+
+	// 4. Unlink the fragment file.
+	fragBak, ferr := deps.RemoveFragment(acct.FragmentPath)
+	if ferr != nil {
+		return res, fmt.Errorf("identity: removing fragment file: %w", ferr)
 	}
 	res.FragmentBackup = fragBak
 
-	// D-10: allowed_signers and the key pair are NEVER touched under
-	// DeleteScopeGitOnly — deps.RemoveAllowedSigners and deps.RemoveKeyFiles
-	// are deliberately not called here.
+	// 5. Remove the provider rewrite block, ONLY when no reference of any
+	// kind survives (D-09): neither another gitid-managed identity
+	// (ProviderRefCount over NORMALIZED keys) nor a hand-written Host stanza
+	// (ForeignProviderRefs).
+	providerKey := RewriteProviderKey(acct.Provider, acct.Alias)
+	if providerKey != "" {
+		accounts, aerr := deps.Accounts()
+		if aerr != nil {
+			return res, fmt.Errorf("identity: listing accounts for provider ref-count: %w", aerr)
+		}
+		managedRefs := ProviderRefCount(accounts, providerKey, acct.Name)
+		foreignRefs := 0
+		if deps.ForeignProviderRefs != nil {
+			foreignRefs, aerr = deps.ForeignProviderRefs(providerKey)
+			if aerr != nil {
+				return res, fmt.Errorf("identity: counting foreign provider refs: %w", aerr)
+			}
+		}
+		if managedRefs == 0 && foreignRefs == 0 && deps.RemoveProviderRewrite != nil {
+			prBak, perr := deps.RemoveProviderRewrite(providerKey)
+			if perr != nil {
+				return res, fmt.Errorf("identity: removing provider rewrite: %w", perr)
+			}
+			res.ProviderRewriteBackup = prBak
+			res.ProviderRewriteRemoved = true
+		}
+	}
+
+	// 6. Remove the LIVE key files LAST. Any failure above this point has
+	// already returned, leaving both the archive copy (step 1) and the live
+	// key intact.
+	if acct.KeyPath != "" {
+		if _, _, kerr := deps.RemoveKeyFiles(acct.KeyPath, acct.PubPath); kerr != nil {
+			return res, fmt.Errorf("identity: removing live key files: %w", kerr)
+		}
+	}
+
 	return res, nil
 }

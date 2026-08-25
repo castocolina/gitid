@@ -244,27 +244,221 @@ func TestDelete_GitOnly_AllowedSignersAndSSHSurvive(t *testing.T) {
 	}
 }
 
-// TestDelete_Everything_NotYetAvailable asserts that DeleteScopeEverything
-// returns an error satisfying errors.Is(err, ErrScopeNotAvailable) in this
-// plan, and that NO dep is invoked before that error is returned.
-func TestDelete_Everything_NotYetAvailable(t *testing.T) {
-	acct := baseDeleteAccount()
-	deps := fatalOnInvokeSSHDeps(t, gcFixtureWithBlocks())
-	deps.ReadGitconfig = func() ([]byte, error) {
-		t.Fatal("ReadGitconfig invoked before the DeleteScopeEverything not-yet-available error was returned")
-		return nil, nil
+// newFakeEverythingDeps returns a full fake DeleteDeps for the everything
+// scope: managed accounts, provider-ref-count, and key-archive seams are all
+// wired to log/track calls. sshFixture/gcFixture are the current bytes;
+// accounts is what deps.Accounts() reports (used for D-09 ref-counting).
+func newFakeEverythingDeps(log *deleteCallLog, sshFixture, gcFixture []byte, accounts []Account) DeleteDeps {
+	deps := newFakeDeleteDeps(log, sshFixture, gcFixture)
+	deps.Accounts = func() ([]Account, error) { return accounts, nil }
+	deps.ForeignProviderRefs = func(string) (int, error) { return 0, nil }
+	deps.RemoveProviderRewrite = func(string) (string, error) { return "pr.bak", nil }
+	deps.CopyKeyPairToArchive = func(privPath, pubPath string) (string, string, error) {
+		return privPath + ".archived", pubPath + ".archived", nil
 	}
-	deps.RemoveFragment = func(string) (string, error) {
-		t.Fatal("RemoveFragment invoked before the DeleteScopeEverything not-yet-available error was returned")
+	return deps
+}
+
+// TestDelete_Everything_NoLongerRefuses asserts that DeleteScopeEverything is
+// a real implementation as of this plan: Delete does NOT return
+// ErrScopeNotAvailable for it anymore.
+func TestDelete_Everything_NoLongerRefuses(t *testing.T) {
+	acct := baseDeleteAccount()
+	var log deleteCallLog
+	deps := newFakeEverythingDeps(&log, sshFixtureWithBlocks(), gcFixtureWithBlocks(), []Account{acct})
+
+	_, err := Delete(acct, DeleteScopeEverything, deps)
+	if err != nil {
+		t.Fatalf("Delete(everything) error: %v", err)
+	}
+	if errors.Is(err, ErrScopeNotAvailable) {
+		t.Error("Delete(everything) still returns ErrScopeNotAvailable — the scope must be implemented in this plan")
+	}
+}
+
+// TestDelete_Everything_SoleProviderRemovesRewrite is the D-09 removal
+// direction: deleting the ONLY identity for a provider (no other managed
+// account, no foreign reference) removes the provider rewrite block and
+// names it via ProviderRewriteRemoved/ProviderRewriteBackup.
+func TestDelete_Everything_SoleProviderRemovesRewrite(t *testing.T) {
+	acct := baseDeleteAccount()
+	var log deleteCallLog
+	deps := newFakeEverythingDeps(&log, sshFixtureWithBlocks(), gcFixtureWithBlocks(), []Account{acct})
+
+	res, err := Delete(acct, DeleteScopeEverything, deps)
+	if err != nil {
+		t.Fatalf("Delete(everything) error: %v", err)
+	}
+	if !res.ProviderRewriteRemoved {
+		t.Error("ProviderRewriteRemoved = false, want true (sole provider reference)")
+	}
+	if res.ProviderRewriteBackup != "pr.bak" {
+		t.Errorf("ProviderRewriteBackup = %q, want %q", res.ProviderRewriteBackup, "pr.bak")
+	}
+}
+
+// TestDelete_Everything_SharedProviderKeepsRewrite is the D-09 survival
+// direction: a sibling managed account on the SAME provider keeps the
+// rewrite block, and ProviderRewriteRemoved stays false.
+func TestDelete_Everything_SharedProviderKeepsRewrite(t *testing.T) {
+	acct := baseDeleteAccount()
+	sibling := acct
+	sibling.Name = "personal"
+	sibling.Alias = "personal.github.com"
+	sibling.KeyPath = "/tmp/.ssh/id_ed25519_personal"
+
+	var log deleteCallLog
+	deps := newFakeEverythingDeps(&log, sshFixtureWithBlocks(), gcFixtureWithBlocks(), []Account{acct, sibling})
+
+	res, err := Delete(acct, DeleteScopeEverything, deps)
+	if err != nil {
+		t.Fatalf("Delete(everything) error: %v", err)
+	}
+	if res.ProviderRewriteRemoved {
+		t.Error("ProviderRewriteRemoved = true, want false (a sibling identity still uses the provider)")
+	}
+	if res.ProviderRewriteBackup != "" {
+		t.Errorf("ProviderRewriteBackup = %q, want empty (block was not removed)", res.ProviderRewriteBackup)
+	}
+}
+
+// TestDelete_Everything_ForeignReferenceKeepsRewrite is D-09's hand-written-
+// alias half: even with NO other managed account, a non-zero
+// ForeignProviderRefs count keeps the rewrite block.
+func TestDelete_Everything_ForeignReferenceKeepsRewrite(t *testing.T) {
+	acct := baseDeleteAccount()
+	var log deleteCallLog
+	deps := newFakeEverythingDeps(&log, sshFixtureWithBlocks(), gcFixtureWithBlocks(), []Account{acct})
+	deps.ForeignProviderRefs = func(providerKey string) (int, error) {
+		if providerKey != "github.com" {
+			t.Errorf("ForeignProviderRefs called with %q, want %q", providerKey, "github.com")
+		}
+		return 1, nil
+	}
+
+	res, err := Delete(acct, DeleteScopeEverything, deps)
+	if err != nil {
+		t.Fatalf("Delete(everything) error: %v", err)
+	}
+	if res.ProviderRewriteRemoved {
+		t.Error("ProviderRewriteRemoved = true, want false (a hand-written alias still targets the provider)")
+	}
+}
+
+// TestDelete_Everything_ArchivesThenRemovesKeyLast proves the D-11 ordering:
+// CopyKeyPairToArchive is invoked, RemoveKeyFiles is invoked LAST, and both
+// archive paths are reported.
+func TestDelete_Everything_ArchivesThenRemovesKeyLast(t *testing.T) {
+	acct := baseDeleteAccount()
+	var log deleteCallLog
+	var order []string
+	deps := newFakeEverythingDeps(&log, sshFixtureWithBlocks(), gcFixtureWithBlocks(), []Account{acct})
+	deps.CopyKeyPairToArchive = func(privPath, pubPath string) (string, string, error) {
+		order = append(order, "archive")
+		return privPath + ".archived", pubPath + ".archived", nil
+	}
+	origRemoveKeyFiles := deps.RemoveKeyFiles
+	deps.RemoveKeyFiles = func(keyPath, pubPath string) (string, string, error) {
+		order = append(order, "remove-key")
+		return origRemoveKeyFiles(keyPath, pubPath)
+	}
+	deps.RemoveProviderRewrite = func(string) (string, error) {
+		order = append(order, "remove-provider-rewrite")
 		return "", nil
 	}
 
-	_, err := Delete(acct, DeleteScopeEverything, deps)
-	if err == nil {
-		t.Fatal("Delete(everything) must return an error in this plan")
+	res, err := Delete(acct, DeleteScopeEverything, deps)
+	if err != nil {
+		t.Fatalf("Delete(everything) error: %v", err)
 	}
-	if !errors.Is(err, ErrScopeNotAvailable) {
-		t.Errorf("Delete(everything) error = %v, want errors.Is(err, ErrScopeNotAvailable)", err)
+	if len(order) == 0 || order[len(order)-1] != "remove-key" {
+		t.Fatalf("call order = %v, want RemoveKeyFiles ('remove-key') LAST", order)
+	}
+	if order[0] != "archive" {
+		t.Fatalf("call order = %v, want CopyKeyPairToArchive ('archive') FIRST", order)
+	}
+	wantArchived := []string{acct.KeyPath + ".archived", acct.PubPath + ".archived"}
+	if len(res.ArchivedKeyPaths) != 2 || res.ArchivedKeyPaths[0] != wantArchived[0] || res.ArchivedKeyPaths[1] != wantArchived[1] {
+		t.Errorf("ArchivedKeyPaths = %v, want %v", res.ArchivedKeyPaths, wantArchived)
+	}
+	if res.KeyBackup != wantArchived[0] || res.PubBackup != wantArchived[1] {
+		t.Errorf("KeyBackup/PubBackup = %q/%q, want %q/%q", res.KeyBackup, res.PubBackup, wantArchived[0], wantArchived[1])
+	}
+	if log.removeKeyFiles != 1 {
+		t.Errorf("RemoveKeyFiles called %d times, want 1", log.removeKeyFiles)
+	}
+}
+
+// TestDelete_Everything_ArchiveFailureLeavesLiveKeyIntact proves that a
+// failure at any step AFTER the key archive and BEFORE the final live-key
+// removal never calls RemoveKeyFiles — the live key survives.
+func TestDelete_Everything_ArchiveFailureLeavesLiveKeyIntact(t *testing.T) {
+	acct := baseDeleteAccount()
+	var log deleteCallLog
+	deps := newFakeEverythingDeps(&log, sshFixtureWithBlocks(), gcFixtureWithBlocks(), []Account{acct})
+	sentinel := errors.New("injected ssh write failure")
+	deps.WriteSSH = func([]byte) (string, error) { return "", sentinel }
+
+	res, err := Delete(acct, DeleteScopeEverything, deps)
+	if err == nil {
+		t.Fatal("Delete(everything) must return the injected error")
+	}
+	if !errors.Is(err, sentinel) {
+		t.Errorf("error = %v, want it to wrap the injected sentinel", err)
+	}
+	if log.removeKeyFiles != 0 {
+		t.Errorf("RemoveKeyFiles called %d times after an earlier-step failure, want 0", log.removeKeyFiles)
+	}
+	if len(res.ArchivedKeyPaths) != 2 {
+		t.Errorf("ArchivedKeyPaths = %v, want both paths reported despite the later failure", res.ArchivedKeyPaths)
+	}
+}
+
+// TestDelete_Everything_MissingKeySucceeds asserts that deleting an identity
+// whose key file is already absent succeeds without invoking the archive or
+// key-removal seams (KeyPath == "").
+func TestDelete_Everything_MissingKeySucceeds(t *testing.T) {
+	acct := baseDeleteAccount()
+	acct.KeyPath = ""
+	acct.PubPath = ""
+	var log deleteCallLog
+	deps := newFakeEverythingDeps(&log, sshFixtureWithBlocks(), gcFixtureWithBlocks(), []Account{acct})
+	deps.CopyKeyPairToArchive = func(string, string) (string, string, error) {
+		t.Fatal("CopyKeyPairToArchive invoked for an identity with no key path")
+		return "", "", nil
+	}
+
+	res, err := Delete(acct, DeleteScopeEverything, deps)
+	if err != nil {
+		t.Fatalf("Delete(everything) error: %v", err)
+	}
+	if log.removeKeyFiles != 0 {
+		t.Errorf("RemoveKeyFiles called %d times for an identity with no key path, want 0", log.removeKeyFiles)
+	}
+	if len(res.ArchivedKeyPaths) != 0 {
+		t.Errorf("ArchivedKeyPaths = %v, want empty", res.ArchivedKeyPaths)
+	}
+}
+
+// TestDelete_Everything_AllowedSignersKeyedByName proves RemoveAllowedSigners
+// is invoked with acct.AllowedSignersPath/acct.Name under everything scope
+// (D-10 contrast: git-only never calls it at all).
+func TestDelete_Everything_AllowedSignersKeyedByName(t *testing.T) {
+	acct := baseDeleteAccount()
+	var log deleteCallLog
+	deps := newFakeEverythingDeps(&log, sshFixtureWithBlocks(), gcFixtureWithBlocks(), []Account{acct})
+
+	if _, err := Delete(acct, DeleteScopeEverything, deps); err != nil {
+		t.Fatalf("Delete(everything) error: %v", err)
+	}
+	if log.removeAllowedSigns != 1 {
+		t.Errorf("RemoveAllowedSigners called %d times, want 1", log.removeAllowedSigns)
+	}
+	if log.lastAllowedSignPath != acct.AllowedSignersPath {
+		t.Errorf("RemoveAllowedSigners path = %q, want %q", log.lastAllowedSignPath, acct.AllowedSignersPath)
+	}
+	if log.lastAllowedSignName != acct.Name {
+		t.Errorf("RemoveAllowedSigners name = %q, want %q", log.lastAllowedSignName, acct.Name)
 	}
 }
 
