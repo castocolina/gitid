@@ -1311,6 +1311,17 @@ func BuildRegionDiffs(sourceCommit string, liveCaptures, approvedCaptures map[st
 				if !found {
 					return nil, fmt.Errorf("screenshot: BuildRegionDiffs: frame %q region %q differs without a screen-specific declared disposition", spec.ScreenID, name)
 				}
+				// WR-19: a disposition with a Predicate only accepts a
+				// divergence whose actual text satisfies it — RequiredRegions
+				// is presence-only and AllRegionNames() above is iterated
+				// regardless, so without this check any future drift in a
+				// dispositioned region passed silently as the SAME
+				// ux-improvement, whether or not it resembled what was
+				// reviewed. An empty Predicate preserves prior blanket
+				// acceptance exactly (backward compatible).
+				if !regionPredicateSatisfied(disposition.Predicate, liveRegion, approvedRegion) {
+					return nil, fmt.Errorf("screenshot: BuildRegionDiffs: frame %q region %q disposition predicate %q does not match the observed divergence (live: %q; approved: %q)", spec.ScreenID, name, disposition.Predicate, liveRegion, approvedRegion)
+				}
 				region.Divergence = disposition.Divergence
 				region.Decision = disposition.Decision
 				region.Justification = disposition.Decision + ": " + disposition.Reason

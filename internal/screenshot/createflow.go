@@ -126,12 +126,24 @@ type SurfaceNonApplicability struct {
 
 // RegionDisposition explicitly authorizes one comparable live/approved-TUI
 // difference on one ScreenSpec. A RegionName alone never grants approval.
+//
+// Predicate is WR-19's fix: RequiredRegions is presence-only (it does not
+// gate comparison — BuildRegionDiffs iterates AllRegionNames() regardless),
+// so without a text predicate a disposition accepts ANY future divergence in
+// that region, not just the one it was written to describe. Predicate is
+// OPTIONAL — empty preserves today's blanket-acceptance behavior exactly —
+// but when set it must be "contains:<text>" or "absent:<text>" (the SAME
+// grammar the e2e git-screen allowlist already parses/enforces via
+// gitScreenPredicateSatisfied in e2e/git_configuration_pty_e2e_test.go), and
+// BuildRegionDiffs rejects a differing region whose live/approved text does
+// not satisfy it.
 type RegionDisposition struct {
 	Region         RegionName
 	Divergence     string
 	Decision       string
 	Reason         string
 	Classification string
+	Predicate      string
 }
 
 // ScreenSpec is the typed capture contract for one create-flow logical screen.
@@ -181,6 +193,44 @@ func uxRegionDifference(region RegionName, divergence, decision, reason string) 
 	return RegionDisposition{
 		Region: region, Divergence: divergence, Decision: decision, Reason: reason, Classification: "ux-improvement",
 	}
+}
+
+// uxRegionDifferenceScoped is uxRegionDifference plus a WR-19 Predicate —
+// use this for any NEW disposition that can be scoped to specific text, so
+// acceptance narrows to the divergence actually reviewed/approved rather
+// than any future difference in that region.
+func uxRegionDifferenceScoped(region RegionName, divergence, decision, reason, predicate string) RegionDisposition {
+	d := uxRegionDifference(region, divergence, decision, reason)
+	d.Predicate = predicate
+	return d
+}
+
+// validRegionPredicate reports whether predicate is empty (no scoping — WR-19
+// keeps this optional) or uses the "contains:"/"absent:" grammar. Mirrors the
+// e2e git-screen allowlist's own predicate contract (CR-04: "differs" is
+// never a valid predicate — every scoped divergence must name specific text).
+func validRegionPredicate(predicate string) bool {
+	return predicate == "" || strings.HasPrefix(predicate, "contains:") || strings.HasPrefix(predicate, "absent:")
+}
+
+// regionPredicateSatisfied reports whether predicate holds against the
+// (live, approved) region text pair — the same "hold on EITHER side" rule
+// e2e/git_configuration_pty_e2e_test.go's gitScreenPredicateSatisfied uses:
+// contains:X is satisfied if X appears on either side; absent:X is satisfied
+// if X is missing from either side. An empty predicate always matches
+// (WR-19: Predicate is optional; empty preserves blanket acceptance).
+func regionPredicateSatisfied(predicate, live, approved string) bool {
+	switch {
+	case predicate == "":
+		return true
+	case strings.HasPrefix(predicate, "contains:"):
+		needle := strings.Trim(strings.TrimPrefix(predicate, "contains:"), `"`)
+		return strings.Contains(live, needle) || strings.Contains(approved, needle)
+	case strings.HasPrefix(predicate, "absent:"):
+		needle := strings.Trim(strings.TrimPrefix(predicate, "absent:"), `"`)
+		return !strings.Contains(live, needle) || !strings.Contains(approved, needle)
+	}
+	return false
 }
 
 // ScreenSpecRegistry returns the canonical typed ScreenSpec registry consumed
@@ -652,6 +702,9 @@ func ValidateScreenSpecs(specs []ScreenSpec) error {
 				strings.TrimSpace(disposition.Reason) == "" ||
 				!validDifferenceClassification(disposition.Classification) {
 				return fmt.Errorf("screenshot: ValidateScreenSpecs: spec %q region %q lacks a decision-linked disposition", s.ScreenID, disposition.Region)
+			}
+			if !validRegionPredicate(disposition.Predicate) {
+				return fmt.Errorf("screenshot: ValidateScreenSpecs: spec %q region %q has invalid predicate %q (must be empty, \"contains:<text>\", or \"absent:<text>\" — WR-19)", s.ScreenID, disposition.Region, disposition.Predicate)
 			}
 			dispositions[disposition.Region] = true
 		}
