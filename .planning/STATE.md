@@ -201,6 +201,34 @@ None yet.
 
 ### Blockers/Concerns
 
+- **BLOCKING 2026-08-25 — Phase 04 code-review circuit breaker:** the phase 4
+  code-review/fix convergence loop ran 6 review passes + 5 fix passes on
+  branch `gsd/phase-04-git-configuration-screen` (see
+  `04-git-configuration-screen/04-REVIEW.md` + `04-REVIEW-FIX.md` +
+  `.iter2..iter7.md` post-mortem trail). It fixed 4 original CRITICAL
+  findings, a 3-defect regression, a 5-defect regression (incl. a repeated
+  gate-blindspot class on a second build tag), and a security finding
+  (CR-18, comma-injection into `~/.ssh/allowed_signers` principals — fixed
+  in `8c5936b`, verified against real `ssh-keygen -Y verify`). It stopped
+  with 2 structural findings open: **CR-15** (the visual-regression gate
+  cannot detect a shared-renderer defect, since `cmd/gitid` and
+  `cmd/gitid-dummy` render Configure-Git through the same `internal/tuikit`
+  code — an architectural property of the D-12 comparison approach) and
+  **CR-16** (44/160 comparable regions accept arbitrary live-side mutation).
+  Also open: **CR-17** (a fixer's claimed red-before-fix test did not
+  reproduce under source reversion — a process-trust concern for this loop
+  specifically) and **WR-38 through WR-43** (6 non-critical findings,
+  documented with file:line in `04-REVIEW-FIX.md`). Every commit this loop
+  produced is independently gate-verified by the orchestrator (go build, go
+  test -race, make lint incl. -tags screenshot/smoke/e2e, make test, make
+  test-e2e, make gate-visual-regression) — the open items require a human
+  design decision (CR-15/CR-16: how the D-12 gate should catch
+  shared-renderer defects) and a scope/priority call (WR-38..43), not
+  another autonomous fix attempt. Precedent: Phase 3's own 2026-08-21
+  circuit breaker (below). Resume only after a human reviews and decides;
+  do not advance Phase 4 to verify-work/UI-review/audit-uat or start Phase
+  5 until this is resolved.
+
 - 3 items intentionally open until their phase (documented in REQUIREMENTS.md "Still Open"): GSSH-01 dangerous-options list, KEY-01 catalog ordering/copy, screenshot-tooling mechanism (Phase 1 spike).
 - Phase 2 VERIFICATION.md W1 (non-blocking): `insteadOf` URL rewriting (recipes/ wiring #3) is not rendered in either live demo — only an unused fixture constant. Cover it in Phase 4/7 design or document as a scoped divergence next to D9.
 - Phase 2 VERIFICATION.md W2 (non-blocking): `internal/dummytui/nobackend_test.go` was deleted in 7453561 and never restored — the no-backend truth was re-proven directly (`go list -deps`) and `gate-no-backend-files` holds, but consider restoring an import-graph test before/during Phase 3.
