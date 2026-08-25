@@ -366,3 +366,18 @@ func (b FixtureBackend) CommitCreate(id tuikit.DemoIdentity) tea.Cmd {
 func (FixtureBackend) CommitGit(tuikit.GitSpec) tea.Cmd {
 	return func() tea.Msg { return tuikit.GitCommitMsg{} }
 }
+
+// CommitDelete keeps the approved dummy flow in memory — it never touches
+// HOME, reporting success after the same brief tick the other async fixture
+// commands use, with the existing fixture backup constants (NewBackupPath)
+// so the dummy binary keeps compiling and behaving byte-identically to
+// before this seam existed.
+func (FixtureBackend) CommitDelete(_ string, scope string) tea.Cmd {
+	backup := tuikit.NewBackupPath("~/.gitconfig")
+	if scope == "everything" {
+		backup = tuikit.NewBackupPath("~/.ssh/config")
+	}
+	return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
+		return tuikit.DeleteCommitMsg{Backups: []string{backup}}
+	})
+}

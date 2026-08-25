@@ -185,3 +185,16 @@ type GitCommitMsg struct {
 	Restored []string
 	Err      string
 }
+
+// DeleteCommitMsg completes an asynchronous delete commit — mirroring
+// GitCommitMsg's shape exactly, delivered from the tea.Cmd
+// Backend.CommitDelete returns. Removed lists the artifact paths the
+// transaction actually removed (fragment file, etc.), distinct from Backups
+// (the timestamped backup paths taken first) and Restored (populated only on
+// a rolled-back failure).
+type DeleteCommitMsg struct {
+	Backups  []string
+	Restored []string
+	Removed  []string
+	Err      string
+}

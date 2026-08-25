@@ -40,6 +40,26 @@ func identModel(t *testing.T, a App) identitiesModel {
 	return m
 }
 
+// pressAndRun presses key, then — if the press returned a non-nil tea.Cmd
+// (the async confirm dispatch) — runs it synchronously and feeds the
+// resulting tea.Msg back through Update, mirroring what the real Bubble Tea
+// runtime does for an async ceremony (CommitGit/CommitDelete) inside a
+// full-App-level test that has no real event loop.
+func pressAndRun(t *testing.T, a App, key string) App {
+	t.Helper()
+	next, cmd := press(t, a, key)
+	if cmd == nil {
+		return next
+	}
+	msg := cmd()
+	model, _ := next.Update(msg)
+	out, ok := model.(App)
+	if !ok {
+		t.Fatalf("Update(async msg) returned %T, want App", model)
+	}
+	return out
+}
+
 // paneFlat extracts the detail-pane region (right of the sidebar) from the
 // rendered frame and collapses whitespace, so assertions survive the
 // pane's word-wrapping of long spec copy.
@@ -1162,8 +1182,8 @@ func TestDeleteEverythingRequiresTypedNameAndRemovesFindings(t *testing.T) {
 		t.Fatal("destructive delete must stay unconfirmed until the name is typed")
 	}
 	a = typeText(t, a, "clientB")
-	a, _ = press(t, a, "enter") // confirm
-	a, _ = press(t, a, "enter") // done
+	a = pressAndRun(t, a, "enter") // confirm — async CommitDelete runs + DeleteCommitMsg reduces
+	a, _ = press(t, a, "enter")    // done (inert acknowledgement)
 	if hasIdentity(a.state, "clientB") {
 		t.Error("clientB should be deleted")
 	}
@@ -1178,8 +1198,8 @@ func TestDeleteEverythingRequiresTypedNameAndRemovesFindings(t *testing.T) {
 
 func TestDeleteGitOnlyHealsToIncomplete(t *testing.T) {
 	a := pressSeq(t, identitiesApp(), "d", "enter") // personal, safer scope, ceremony
-	a, _ = press(t, a, "enter")                     // confirm (no typed word needed)
-	a, _ = press(t, a, "enter")                     // done
+	a = pressAndRun(t, a, "enter")                  // confirm — async CommitDelete runs + DeleteCommitMsg reduces
+	a, _ = press(t, a, "enter")                     // done (inert acknowledgement)
 	personal := findIdentity(t, a.state, "personal")
 	if personal.State != "incomplete" || personal.GitFragmentPath != "" {
 		t.Errorf("git-only delete: state=%q fragment=%q, want incomplete/cleared", personal.State, personal.GitFragmentPath)

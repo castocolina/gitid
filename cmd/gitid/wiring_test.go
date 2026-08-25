@@ -6,10 +6,13 @@ package main
 // real ~/.ssh and ~/.gitconfig are never read or written.
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -2197,4 +2200,290 @@ func readFile(t *testing.T, path string) string {
 		t.Fatalf("reading %s: %v", path, err)
 	}
 	return string(b)
+}
+
+// ---------------------------------------------------------------------------
+// 05-01 — delete tracer (buildDeleteDeps, runDelete, CommitDelete)
+// ---------------------------------------------------------------------------
+
+// TestDeleteDepsEveryFieldIsWired is the L2 guard extended to
+// identity.DeleteDeps: EVERY function field buildDeleteDeps produces must be
+// non-nil, and the failure must NAME the field — the same recurring
+// injected-seam wiring blindspot TestIdentityDepsEveryFieldIsWired guards
+// for identity.Deps.
+func TestDeleteDepsEveryFieldIsWired(t *testing.T) {
+	home := t.TempDir()
+	deps := buildDeleteDeps(newBackendForHome(home))
+
+	v := reflect.ValueOf(deps)
+	typ := v.Type()
+	if typ.NumField() == 0 {
+		t.Fatal("identity.DeleteDeps has no fields; the guard would be vacuous")
+	}
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if field.Type.Kind() != reflect.Func {
+			continue
+		}
+		if v.Field(i).IsNil() {
+			t.Errorf("identity.DeleteDeps.%s is nil in the REAL constructor — a nil seam silently changes behavior (L2)", field.Name)
+		}
+	}
+}
+
+// seedDeleteFixture writes a complete identity (SSH Host block + the macOS
+// "_global" block, gitconfig includeIf block, fragment file, allowed_signers
+// entry, and a real key pair) under home, and returns the pubLine used so
+// callers can build the matching allowed_signers line themselves if needed.
+func seedDeleteFixture(t *testing.T, home, name string) (pubLine string) {
+	t.Helper()
+	seedSSHDir(t, home)
+
+	sshBody := "Host " + name + ".github.com\n" +
+		"  Hostname ssh.github.com\n" +
+		"  Port 443\n" +
+		"  User git\n" +
+		"  IdentityFile ~/.ssh/id_ed25519_" + name + "\n" +
+		"  IdentitiesOnly yes\n"
+	sshConfig := managedBlock("_global", "Host *\n  IdentitiesOnly yes\n") + "\n" + managedBlock(name, sshBody)
+	writeFile(t, filepath.Join(home, ".ssh", "config"), sshConfig)
+
+	pubLine = seedGeneratedKey(t, filepath.Join(home, ".ssh", "id_ed25519_"+name), name, "")
+
+	if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
+		t.Fatalf("seeding .gitconfig.d: %v", err)
+	}
+	fragBody := "[user]\n\tname = " + name + " User\n\temail = " + name + "@example.com\n" +
+		"\tsigningkey = ~/.ssh/id_ed25519_" + name + ".pub\n\n[gpg]\n\tformat = ssh\n\n[commit]\n\tgpgsign = true\n"
+	writeFile(t, filepath.Join(home, ".gitconfig.d", name), fragBody)
+
+	gcBody := "[includeIf \"gitdir:~/git/" + name + "/\"]\n\tpath = ~/.gitconfig.d/" + name + "\n"
+	gitconfig := "[user]\n\tname = Global User\n\n" + managedBlock(name, gcBody)
+	writeFile(t, filepath.Join(home, ".gitconfig"), gitconfig)
+
+	line := mustAllowedSignersLine(t, name+"@example.com", pubLine)
+	writeFile(t, filepath.Join(home, ".ssh", "allowed_signers"), managedBlock(name, line))
+
+	return pubLine
+}
+
+// homeFileListing walks home and returns every regular file path found,
+// relative to home, sorted — used to prove an idempotent re-run creates NO
+// new file anywhere under the fake HOME.
+func homeFileListing(t *testing.T, home string) []string {
+	t.Helper()
+	var out []string
+	err := filepath.Walk(home, func(path string, info os.FileInfo, werr error) error {
+		if werr != nil {
+			return werr
+		}
+		if info.IsDir() {
+			return nil
+		}
+		rel, rerr := filepath.Rel(home, path)
+		if rerr != nil {
+			return rerr
+		}
+		out = append(out, rel)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking home: %v", err)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// TestRunDeleteGitOnlyPreservesSSHKeyAndSigners proves D-10 through the REAL
+// composition root: a git-only runDelete removes the gitconfig includeIf
+// block and the fragment file, and leaves ~/.ssh/config, the key pair, and
+// ~/.ssh/allowed_signers byte-identical to their pre-delete state.
+func TestRunDeleteGitOnlyPreservesSSHKeyAndSigners(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+
+	untouched := []string{
+		filepath.Join(home, ".ssh", "config"),
+		filepath.Join(home, ".ssh", "id_ed25519_work"),
+		filepath.Join(home, ".ssh", "id_ed25519_work.pub"),
+		filepath.Join(home, ".ssh", "allowed_signers"),
+	}
+	before := snapshotPaths(t, untouched)
+
+	b := newBackendForHome(home)
+	backups, restored, err := b.runDelete("work", identity.DeleteScopeGitOnly)
+	if err != nil {
+		t.Fatalf("runDelete(git-only) error: %v", err)
+	}
+	if len(restored) != 0 {
+		t.Errorf("restored = %v on a successful delete, want empty", restored)
+	}
+	if len(backups) == 0 {
+		t.Error("a successful git-only delete over a pre-existing gitconfig/fragment must report backups")
+	}
+
+	assertUnchanged(t, before, snapshotPaths(t, untouched))
+
+	if _, statErr := os.Stat(filepath.Join(home, ".gitconfig.d", "work")); !os.IsNotExist(statErr) {
+		t.Errorf("fragment file survived a git-only delete: statErr=%v", statErr)
+	}
+	gc := readFile(t, filepath.Join(home, ".gitconfig"))
+	if strings.Contains(gc, "BEGIN gitid managed: work") {
+		t.Errorf("gitconfig still carries the work includeIf block:\n%s", gc)
+	}
+}
+
+// TestRunDeleteGitOnlyIdempotentNoSecondFileAnywhere runs the same git-only
+// delete twice and diffs the FULL fake-HOME file listing (review R-14's
+// idempotency contract, stronger than checking the error value alone) — the
+// second run must create no new file anywhere under HOME and report no
+// backups.
+func TestRunDeleteGitOnlyIdempotentNoSecondFileAnywhere(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+
+	b := newBackendForHome(home)
+	first, _, err := b.runDelete("work", identity.DeleteScopeGitOnly)
+	if err != nil {
+		t.Fatalf("first runDelete error: %v", err)
+	}
+	if len(first) == 0 {
+		t.Fatal("first runDelete should have produced at least one backup")
+	}
+
+	listingAfterFirst := homeFileListing(t, home)
+
+	second, restored, err := b.runDelete("work", identity.DeleteScopeGitOnly)
+	if err != nil {
+		t.Fatalf("second (idempotent) runDelete error: %v", err)
+	}
+	if len(second) != 0 {
+		t.Errorf("second runDelete backups = %v, want none (R-14 idempotency)", second)
+	}
+	if len(restored) != 0 {
+		t.Errorf("second runDelete restored = %v, want none", restored)
+	}
+
+	listingAfterSecond := homeFileListing(t, home)
+	if len(listingAfterFirst) != len(listingAfterSecond) {
+		t.Fatalf("second delete changed the fake-HOME file count: %d -> %d\nbefore: %v\nafter:  %v",
+			len(listingAfterFirst), len(listingAfterSecond), listingAfterFirst, listingAfterSecond)
+	}
+	for i := range listingAfterFirst {
+		if listingAfterFirst[i] != listingAfterSecond[i] {
+			t.Fatalf("second delete changed the fake-HOME file listing:\nbefore: %v\nafter:  %v", listingAfterFirst, listingAfterSecond)
+		}
+	}
+}
+
+// TestRunDeleteMidTransactionFailureRestores injects a failure AFTER the
+// gitconfig write has already happened but BEFORE the fragment removal
+// completes, and proves runDelete's journal.restore() puts the gitconfig
+// bytes back exactly as they were and reports the restored path.
+func TestRunDeleteMidTransactionFailureRestores(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+	before := snapshotPaths(t, []string{gitconfigPath})
+
+	b := newBackendForHome(home)
+	b.failCommitAt = func(step string) error {
+		if step == "delete-fragment" {
+			return fmt.Errorf("injected failure at %s", step)
+		}
+		return nil
+	}
+
+	_, restored, err := b.runDelete("work", identity.DeleteScopeGitOnly)
+	if err == nil {
+		t.Fatal("runDelete must report the injected failure")
+	}
+	if !strings.Contains(err.Error(), "injected failure at delete-fragment") {
+		t.Errorf("error = %v, want it to contain the injected failure", err)
+	}
+	if len(restored) == 0 {
+		t.Error("a mid-transaction failure must report the restored paths")
+	}
+
+	assertUnchanged(t, before, snapshotPaths(t, []string{gitconfigPath}))
+}
+
+// TestCLIAllAndTUIEverythingRefuseIdentically proves review R-16: the CLI
+// `--all` path and the TUI's everything CommitDelete both surface an error
+// satisfying errors.Is(err, identity.ErrScopeNotAvailable), rendered as the
+// EXACT SAME string — because both call the SAME runDelete function.
+func TestCLIAllAndTUIEverythingRefuseIdentically(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+
+	b := newBackendForHome(home)
+
+	// The TUI path: Backend.CommitDelete, run synchronously.
+	tuiMsg, ok := b.CommitDelete("work", "everything")().(tuikit.DeleteCommitMsg)
+	if !ok {
+		t.Fatalf("CommitDelete delivered a non-DeleteCommitMsg")
+	}
+	if tuiMsg.Err == "" {
+		t.Fatal("TUI everything CommitDelete must report an error in this plan")
+	}
+
+	// The CLI path: build the delete verb, run it with --all --yes.
+	cliCmd := newVerbCmd(newIdentityDeleteVerb())
+	cliCmd.SetArgs([]string{"work", "--all", "--yes"})
+	var stdout, stderr bytes.Buffer
+	cliCmd.SetOut(&stdout)
+	cliCmd.SetErr(&stderr)
+	cliErr := cliCmd.Execute()
+	if cliErr == nil {
+		t.Fatal("CLI --all must report an error in this plan")
+	}
+
+	if !errors.Is(cliErr, identity.ErrScopeNotAvailable) {
+		t.Errorf("CLI error = %v, want errors.Is(err, identity.ErrScopeNotAvailable)", cliErr)
+	}
+
+	if cliErr.Error() != tuiMsg.Err {
+		t.Errorf("CLI and TUI everything-scope refusal messages differ:\nCLI: %q\nTUI: %q", cliErr.Error(), tuiMsg.Err)
+	}
+}
+
+// TestRunDeleteAndCLIVerbProduceByteIdenticalGitconfig runs the git-only
+// delete twice over two IDENTICAL sandbox HOMEs — once via runDelete
+// directly (the TUI's own call path) and once via the CLI verb — and asserts
+// the resulting ~/.gitconfig bytes are equal, proving D-02's "one shared
+// chokepoint, never a second write pipeline" claim at the wiring layer (the
+// e2e suite proves the same thing end-to-end through the compiled binary).
+func TestRunDeleteAndCLIVerbProduceByteIdenticalGitconfig(t *testing.T) {
+	homeA := t.TempDir()
+	seedDeleteFixture(t, homeA, "work")
+	homeB := t.TempDir()
+	seedDeleteFixture(t, homeB, "work")
+
+	// Path A: the TUI's own call path (runDelete directly).
+	bA := newBackendForHome(homeA)
+	if _, _, err := bA.runDelete("work", identity.DeleteScopeGitOnly); err != nil {
+		t.Fatalf("runDelete over homeA: %v", err)
+	}
+
+	// Path B: the CLI verb.
+	t.Setenv("HOME", homeB)
+	cliCmd := newVerbCmd(newIdentityDeleteVerb())
+	cliCmd.SetArgs([]string{"work", "--git-only", "--yes"})
+	var stdout, stderr bytes.Buffer
+	cliCmd.SetOut(&stdout)
+	cliCmd.SetErr(&stderr)
+	if err := cliCmd.Execute(); err != nil {
+		t.Fatalf("CLI delete over homeB: %v (stderr: %s)", err, stderr.String())
+	}
+
+	gcA := readFile(t, filepath.Join(homeA, ".gitconfig"))
+	gcB := readFile(t, filepath.Join(homeB, ".gitconfig"))
+	if gcA != gcB {
+		t.Errorf("gitconfig bytes differ between runDelete and the CLI verb:\nA:\n%s\n--- B ---\n%s", gcA, gcB)
+	}
 }

@@ -422,6 +422,12 @@ func (stubBackend) CommitCreate(_ DemoIdentity) tea.Cmd {
 	}
 }
 
+// CommitDelete preserves the test backend's zero-value, no-filesystem
+// behavior — an immediate success with no backups.
+func (stubBackend) CommitDelete(string, string) tea.Cmd {
+	return func() tea.Msg { return DeleteCommitMsg{} }
+}
+
 // CommitGit preserves the test backend's zero-value, no-filesystem behavior.
 func (stubBackend) CommitGit(GitSpec) tea.Cmd {
 	return func() tea.Msg { return GitCommitMsg{} }

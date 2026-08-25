@@ -312,6 +312,74 @@ func buildIdentityDeps(b *realBackend) identity.Deps {
 	}
 }
 
+// deleteSSHConfigMode / deleteGitconfigMode are the modes buildDeleteDeps
+// writes raw config bytes at — matching internal/sshconfig's unexported
+// configMode (0o600) and internal/gitconfig's unexported gitconfigMode
+// (0o644) respectively, since neither is exported for reuse here.
+const (
+	deleteSSHConfigMode os.FileMode = 0o600
+	deleteGitconfigMode os.FileMode = 0o644
+)
+
+// buildDeleteDeps wires identity.DeleteDeps from the real internal packages —
+// EVERY field filled, mirroring buildIdentityDeps' non-nil contract
+// (wiring_test.go's reflection guard covers this struct too).
+//
+// Under DeleteScopeGitOnly (the only scope this plan's runDelete reaches),
+// ReadSSH/WriteSSH are wired but never invoked by identity.Delete — the SSH
+// branch is structurally skipped at the domain layer (D-10, review R-13).
+// RemoveAllowedSigners/RemoveKeyFiles are likewise wired but unreachable
+// under git-only for the same reason; they are filled here so the everything
+// scope plan 05-04 lands can use this SAME deps struct without any rewiring.
+func buildDeleteDeps(b *realBackend) identity.DeleteDeps {
+	return identity.DeleteDeps{
+		ReadSSH: func() ([]byte, error) {
+			content, err := os.ReadFile(b.storageTargetPath()) //nolint:gosec // trusted gitid-managed path
+			if err != nil && !os.IsNotExist(err) {
+				return nil, fmt.Errorf("gitid: reading ssh config: %w", err)
+			}
+			return content, nil
+		},
+		ReadGitconfig: func() ([]byte, error) {
+			content, err := os.ReadFile(b.gitconfigPath) //nolint:gosec // trusted gitid-managed path
+			if err != nil && !os.IsNotExist(err) {
+				return nil, fmt.Errorf("gitid: reading gitconfig: %w", err)
+			}
+			return content, nil
+		},
+		WriteSSH: func(content []byte) (string, error) {
+			return filewriter.Write(b.storageTargetPath(), content, deleteSSHConfigMode)
+		},
+		WriteGitconfig: func(content []byte) (string, error) {
+			return filewriter.Write(b.gitconfigPath, content, deleteGitconfigMode)
+		},
+		RemoveFragment: func(fragPath string) (string, error) {
+			if fragPath == "" {
+				return "", nil
+			}
+			return filewriter.BackupAndRemove(fragPath)
+		},
+		RemoveAllowedSigners: gitconfig.RemoveAllowedSignersBlock,
+		RemoveKeyFiles: func(keyPath, pubPath string) (string, string, error) {
+			var keyBak, pubBak string
+			var err error
+			if keyPath != "" {
+				keyBak, err = filewriter.BackupAndRemove(keyPath)
+				if err != nil {
+					return "", "", fmt.Errorf("gitid: removing private key: %w", err)
+				}
+			}
+			if pubPath != "" {
+				pubBak, err = filewriter.BackupAndRemove(pubPath)
+				if err != nil {
+					return keyBak, "", fmt.Errorf("gitid: removing public key: %w", err)
+				}
+			}
+			return keyBak, pubBak, nil
+		},
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Backend: data
 // ---------------------------------------------------------------------------
@@ -355,6 +423,11 @@ func (b *realBackend) Persist(state tuikit.DemoState, action tuikit.Action) tuik
 		return b.InitialState()
 	case tuikit.AddIdentity:
 		return b.persistCreate(state, a)
+	case tuikit.DeleteIdentity:
+		// The write already happened in CommitDelete (the async seam) —
+		// Persist must re-read disk here, never fall through to
+		// tuikit.Reduce's in-memory guess (RESEARCH.md Pitfall 1).
+		return b.InitialState()
 	default:
 		return tuikit.Reduce(state, action)
 	}
@@ -857,6 +930,144 @@ func (b *realBackend) commitGitTransaction(spec tuikit.GitSpec) ([]string, []str
 	return b.commitGitArtifacts(spec, "", nil)
 }
 
+// CommitDelete is the delete async seam, mirroring CommitGit's shape exactly:
+// resolve the scope, call runDelete (which owns its own txMu locking, same
+// as commitGitTransaction), and report the result as a DeleteCommitMsg.
+// Every backup/restored path is scrubbed through b.displayPath/
+// b.displayMessage before it becomes user-facing, the same WR-01/WR-23
+// discipline CommitGit applies. Removed is left empty in this plan — no
+// acceptance criterion consumes it yet; 05-07's lifecycle extension is the
+// natural place to populate it from the resolved account's artifact paths.
+func (b *realBackend) CommitDelete(name, scope string) tea.Cmd {
+	return func() tea.Msg {
+		if b.initErr != nil {
+			return tuikit.DeleteCommitMsg{Err: b.displayMessage(b.initErr.Error())}
+		}
+		deleteScope, serr := identity.DeleteScopeFrom(scope)
+		if serr != nil {
+			return tuikit.DeleteCommitMsg{Err: b.displayMessage(serr.Error())}
+		}
+		backups, restored, err := b.runDelete(name, deleteScope)
+		displayBackups := make([]string, len(backups))
+		for i, backup := range backups {
+			displayBackups[i] = b.displayPath(backup)
+		}
+		displayRestored := make([]string, len(restored))
+		for i, outcome := range restored {
+			displayRestored[i] = b.displayMessage(outcome)
+		}
+		if err != nil {
+			return tuikit.DeleteCommitMsg{
+				Backups: displayBackups, Restored: displayRestored,
+				Err: b.displayMessage(err.Error()),
+			}
+		}
+		return tuikit.DeleteCommitMsg{Backups: displayBackups}
+	}
+}
+
+// runDelete is the ONE production delete writer — the name plan 05-07's full
+// lifecycle uses. Do NOT coin a wave-local transaction name here (review
+// R3-05): plan 05-07 turns this into the full delete lifecycle by changing
+// THIS function's signature (adding a lifecyclePolicy parameter, returning a
+// lifecycleResult) and body, not by adding a second, differently-named
+// writer. One name from wave 1 means the compiler — not an executor's
+// diligence — enforces that there is only ever one production delete writer
+// (D-02's "CLI and TUI call the same chokepoint" claim depends on this).
+//
+// It takes txMu (WR-04: serializes against any concurrent
+// commitCreateTransaction/commitGitTransaction, all of which
+// read-modify-write the same ~/.gitconfig), resolves acct from b.accounts()
+// (the SAME reconstruction the identity list renders — never a second
+// lookup), watches every file the scope will touch via a mutationJournal
+// BEFORE calling identity.Delete, and on a mid-transaction failure calls
+// journal.restore() and returns the restored list — the exact
+// commitGitArtifacts fail() pattern, applied to delete.
+func (b *realBackend) runDelete(name string, scope identity.DeleteScope) (backups, restored []string, err error) {
+	b.txMu.Lock()
+	defer b.txMu.Unlock()
+
+	acct, found := b.findAccount(name)
+	if !found {
+		return nil, nil, fmt.Errorf("gitid: no such identity: %q", name)
+	}
+	// Reconstruct stores FragmentPath/KeyPath/PubPath VERBATIM from the
+	// parsed config (often a literal "~/..." — git itself expands "~" at
+	// includeIf-resolution time, but this process never does). Expand
+	// against b.home explicitly — never os.UserHomeDir()/$HOME (WR-35's
+	// lesson: a caller that already owns an explicit home must never
+	// re-derive it from the process environment) — before this becomes a
+	// real filesystem path anywhere below.
+	acct.FragmentPath = expandTildeForHome(acct.FragmentPath, b.home)
+	acct.KeyPath = expandTildeForHome(acct.KeyPath, b.home)
+	acct.PubPath = expandTildeForHome(acct.PubPath, b.home)
+
+	journal := newMutationJournal(b)
+	if scope == identity.DeleteScopeGitOnly {
+		if werr := journal.watchFile(b.gitconfigPath); werr != nil {
+			return nil, nil, werr
+		}
+		if acct.FragmentPath != "" {
+			if werr := journal.watchFile(acct.FragmentPath); werr != nil {
+				return nil, nil, werr
+			}
+		}
+	}
+
+	deps := buildDeleteDeps(b)
+	if b.failCommitAt != nil {
+		deps = injectDeleteFailures(b, deps)
+	}
+
+	res, derr := identity.Delete(acct, scope, deps)
+	backups = collectDeleteBackups(res)
+	if derr != nil {
+		outcomes, restoreErr := journal.restore()
+		wrapped := fmt.Errorf("gitid: deleting identity %q: %w", name, derr)
+		if restoreErr != nil {
+			wrapped = fmt.Errorf("%w; restoration results: %s", wrapped, strings.Join(outcomes, "; "))
+		}
+		return backups, outcomes, wrapped
+	}
+	return backups, nil, nil
+}
+
+// injectDeleteFailures wraps deps' WriteGitconfig/RemoveFragment with
+// b.failCommitAt fault-injection checkpoints ("delete-gitconfig",
+// "delete-fragment") — the same test-only injection point
+// commitGitArtifacts's inject() closure uses — so a test can prove a
+// mid-transaction delete failure restores every touched file via
+// runDelete's journal.restore() call above.
+func injectDeleteFailures(b *realBackend, deps identity.DeleteDeps) identity.DeleteDeps {
+	origWriteGitconfig := deps.WriteGitconfig
+	deps.WriteGitconfig = func(content []byte) (string, error) {
+		if err := b.failCommitAt("delete-gitconfig"); err != nil {
+			return "", err
+		}
+		return origWriteGitconfig(content)
+	}
+	origRemoveFragment := deps.RemoveFragment
+	deps.RemoveFragment = func(fragPath string) (string, error) {
+		if err := b.failCommitAt("delete-fragment"); err != nil {
+			return "", err
+		}
+		return origRemoveFragment(fragPath)
+	}
+	return deps
+}
+
+// collectDeleteBackups gathers every non-empty backup path a DeleteResult
+// carries, in the same field order the result declares them.
+func collectDeleteBackups(res identity.DeleteResult) []string {
+	var out []string
+	for _, p := range []string{res.SSHBackup, res.GitconfigBackup, res.FragmentBackup, res.AllowedSignersBackup, res.KeyBackup, res.PubBackup} {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // mutationJournal captures the exact pre-transaction state of every mutable
 // Git artifact. Its rollback intentionally restores from in-memory snapshots,
 // not by moving timestamped backups: backups remain durable safety artifacts.
@@ -1326,6 +1537,25 @@ func (b *realBackend) commitGitArtifacts(spec tuikit.GitSpec, pubLine string, tr
 	return journal.backups, nil, nil
 }
 
+// expandTildeForHome expands a leading "~/" (or a bare "~") in path against
+// home explicitly. Paths without a leading tilde are returned unchanged.
+//
+// Deliberately NOT internal/identity's own unexported expandTilde (which
+// resolves against os.UserHomeDir()/$HOME): a caller here already owns an
+// explicit, possibly-sandboxed home (b.home) and must never silently
+// re-derive it from the process environment — the exact WR-35 hermeticity
+// lesson (see accounts()'s doc comment) applied to path expansion instead of
+// config reads.
+func expandTildeForHome(path, home string) string {
+	if path == "~" {
+		return home
+	}
+	if strings.HasPrefix(path, "~/") {
+		return filepath.Join(home, path[2:])
+	}
+	return path
+}
+
 func containedRegularPath(path, root string) error {
 	cleanRoot, err := filepath.Abs(root)
 	if err != nil {
@@ -1582,6 +1812,18 @@ func (b *realBackend) accounts() []identity.Account {
 		return nil
 	}
 	return accounts
+}
+
+// findAccount resolves ONE reconstructed account by name from the SAME
+// b.accounts() list the identity list/CommitDelete/CLI delete all read —
+// never a second, divergent lookup.
+func (b *realBackend) findAccount(name string) (identity.Account, bool) {
+	for _, a := range b.accounts() {
+		if a.Name == name {
+			return a, true
+		}
+	}
+	return identity.Account{}, false
 }
 
 // keyOwners maps a key path to the D-12 "in use by" label — "<identity>

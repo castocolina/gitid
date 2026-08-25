@@ -156,6 +156,25 @@ type Backend interface {
 	// UI must wait for GitCommitMsg before reducing ConfigureGit, so no
 	// optimistic success can mask a failed transaction.
 	CommitGit(spec GitSpec) tea.Cmd
+
+	// CommitDelete performs a confirmed identity delete asynchronously,
+	// scoped by scope ("git-only" | "everything" — mirrors
+	// identity.DeleteScope as plain strings, since this file may never name
+	// an identity type). The UI must wait for DeleteCommitMsg before
+	// reducing DeleteIdentity, so no optimistic success can mask a failed or
+	// rolled-back transaction — the exact GitCommitMsg sequencing this
+	// mirrors.
+	//
+	// Ownership rule (review R2-10), stated once here: CommitDelete lives on
+	// Backend and STAYS there. Plan 05-06 introduces an IdentityPlanner
+	// sub-interface for five NEW Phase-5 seams (KeyActionFor, DeletePlan,
+	// KeyCeremonyPlan, CommitRotate, CommitNewKey) — delete's PREVIEW
+	// (DeletePlan) belongs there, but delete's WRITE (this method) does not
+	// move: CommitDelete ships in wave 1, every Backend implementer already
+	// has it by the time 05-06 lands, and migrating it later would mean
+	// moving three implementers to buy nothing. There is exactly one preview
+	// seam and one write seam for delete, and neither duplicates the other.
+	CommitDelete(name string, scope string) tea.Cmd
 }
 
 // WizardStageMsg completes a create-wizard test stage. Backends deliver it

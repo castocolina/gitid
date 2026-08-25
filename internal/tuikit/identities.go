@@ -1707,7 +1707,12 @@ type identitiesModel struct {
 	gitCommitSpec GitSpec
 	deleteScope   string
 	deleteCerem   ceremonyModel
-	cloneInput    textinput.Model
+	// deleteCommitPending gates the delete ceremony's optimistic reduce,
+	// mirroring gitCommitPending: DeleteIdentity is dispatched only from
+	// handleMsg once DeleteCommitMsg arrives with an empty Err, never
+	// optimistically on ceremonyFinished.
+	deleteCommitPending bool
+	cloneInput          textinput.Model
 	// cloneOnButton: the clone pane's 2-slot focus ring sits on the Clone
 	// button instead of the name input (batch 3 focus-ring parity).
 	cloneOnButton bool
@@ -1764,7 +1769,7 @@ func firstFixableFinding(s DemoState, name string) (DemoFinding, bool) {
 
 // handleMsg completes wizard test stages once the Backend's command has
 // answered — the OUTCOME decides the next phase, never a local guess.
-func (m identitiesModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
+func (m identitiesModel) handleMsg(msg tea.Msg, s DemoState) keyResult {
 	if commit, ok := msg.(GitCommitMsg); ok && m.pane == paneGitCeremony && m.gitCommitPending {
 		m.gitCommitPending = false
 		if commit.Err != "" {
@@ -1795,6 +1800,35 @@ func (m identitiesModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 			MatchStrategy: spec.Strategy, GitDir: spec.GitDir, ForceSSH: spec.ForceSSH,
 			PublicKeyPath: spec.PublicKeyPath, Backup: firstBackup(commit.Backups),
 		}}}
+	}
+	if commit, ok := msg.(DeleteCommitMsg); ok && m.pane == paneDelete && m.deleteCommitPending {
+		m.deleteCommitPending = false
+		if commit.Err != "" {
+			message := commit.Err
+			if len(commit.Restored) > 0 {
+				message += " (restored: " + strings.Join(commit.Restored, "; ") + ")"
+			}
+			m.deleteCerem = m.deleteCerem.commitFailed(message)
+			return keyResult{model: m}
+		}
+		m.deleteCerem = m.deleteCerem.commitSucceeded(commit.Backups)
+		deleted := m.selected
+		scope := m.deleteScope
+		note := `Git identity of "` + deleted + `" deleted — SSH kept.`
+		if scope == "everything" {
+			note = `Identity "` + deleted + `" deleted (backups kept).`
+			for _, row := range s.Identities {
+				if row.Name != deleted {
+					m.selected = row.Name
+					break
+				}
+			}
+		}
+		// Populate the Backup from the FIRST real backup path the message
+		// carries, never from NewBackupPath — that helper is a
+		// dummy-fixture display convention, not the real filewriter naming.
+		return keyResult{model: m, note: note,
+			actions: []Action{DeleteIdentity{Name: deleted, Scope: scope, Backup: firstBackup(commit.Backups)}}}
 	}
 	if m.pane != paneCreate {
 		return keyResult{model: m}
@@ -2266,6 +2300,7 @@ func deleteCeremonyFor(sel DemoIdentity, scope string) ceremonyModel {
 			},
 			ResultMessage: `Identity "` + sel.Name + `" deleted — SSH block, Git fragment, and key removed (backups kept).`,
 			ConfirmLabel:  "Delete",
+			Async:         true,
 		})
 	}
 	return newCeremony(ceremonyConfig{
@@ -2277,6 +2312,7 @@ func deleteCeremonyFor(sel DemoIdentity, scope string) ceremonyModel {
 		PreviewDiff:   true,
 		ResultMessage: `Git identity of "` + sel.Name + `" deleted — the SSH side is untouched (state: incomplete).`,
 		ConfirmLabel:  "Delete",
+		Async:         true,
 	})
 }
 
@@ -2304,30 +2340,23 @@ func (m identitiesModel) handleDeleteKey(msg tea.KeyMsg, s DemoState) keyResult 
 		return keyResult{model: m, handled: true}
 	}
 
+	if m.deleteCommitPending {
+		return keyResult{model: m, handled: true}
+	}
+
 	var outcome ceremonyOutcome
 	m.deleteCerem, outcome = m.deleteCerem.handleKey(msg)
 	switch outcome {
 	case ceremonyCancelled:
 		m.pane = paneDetail
+	case ceremonyConfirmed:
+		m.deleteCommitPending = true
+		return keyResult{model: m, handled: true, cmd: m.backend.CommitDelete(sel.Name, m.deleteScope)}
 	case ceremonyFinished:
-		deleted := sel.Name
-		scope := m.deleteScope
-		m.pane = paneDetail
-		note := `Git identity of "` + deleted + `" deleted — SSH kept.`
-		backup := NewBackupPath("~/.gitconfig")
-		if scope == "everything" {
-			note = `Identity "` + deleted + `" deleted (backups kept).`
-			backup = NewBackupPath("~/.ssh/config")
-			for _, row := range s.Identities {
-				if row.Name != deleted {
-					m.selected = row.Name
-					break
-				}
-			}
-		}
-		return keyResult{model: m, handled: true, note: note,
-			actions: []Action{DeleteIdentity{Name: deleted, Scope: scope, Backup: backup}}}
-	case ceremonyNone, ceremonyConfirmed:
+		// Receipt acknowledgement is deliberately inert until a successful
+		// DeleteCommitMsg has reduced DeleteIdentity below (handleMsg) — the
+		// exact GitCommitMsg sequencing at identities.go's handleMsg.
+	case ceremonyNone:
 	}
 	return keyResult{model: m, handled: true}
 }
