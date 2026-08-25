@@ -100,6 +100,40 @@ func TestWriteFragment_CreatesParentDir(t *testing.T) {
 	}
 }
 
+// TestWriteFragment_LeadingDashValueIsLiteralNotGitOption proves the WR-15
+// fix: gitConfigSet's `--` terminator means a value beginning with `-`
+// (e.g. `--global`) is written as the literal value, never handed to
+// git's own option parser as argument injection.
+func TestWriteFragment_LeadingDashValueIsLiteralNotGitOption(t *testing.T) {
+	dir := t.TempDir()
+	fragPath := filepath.Join(dir, "work")
+	dashLikeName := "--global"
+
+	if err := WriteFragment(fragPath, dashLikeName, "work@example.com", "~/.ssh/id_ed25519_work.pub", true); err != nil {
+		t.Fatalf("WriteFragment: %v", err)
+	}
+	if got := gitGet(t, fragPath, "user.name"); got != dashLikeName {
+		t.Errorf("user.name = %q, want the literal dash-prefixed value %q", got, dashLikeName)
+	}
+}
+
+// TestSetAllowedSignersFile_LeadingDashValueIsLiteral is the same WR-15
+// proof for the second gitConfigSet call site (allowedSignersFile is a
+// filesystem path, so a leading "-" is unusual but must still never be
+// misparsed as an option).
+func TestSetAllowedSignersFile_LeadingDashValueIsLiteral(t *testing.T) {
+	dir := t.TempDir()
+	gitconfigPath := filepath.Join(dir, ".gitconfig")
+	dashLikePath := "--type=bool"
+
+	if err := SetAllowedSignersFile(gitconfigPath, dashLikePath); err != nil {
+		t.Fatalf("SetAllowedSignersFile: %v", err)
+	}
+	if got := gitGet(t, gitconfigPath, "gpg.ssh.allowedSignersFile"); got != dashLikePath {
+		t.Errorf("gpg.ssh.allowedSignersFile = %q, want the literal dash-prefixed value %q", got, dashLikePath)
+	}
+}
+
 func TestSetAllowedSignersFile(t *testing.T) {
 	dir := t.TempDir()
 	gitconfigPath := filepath.Join(dir, ".gitconfig")

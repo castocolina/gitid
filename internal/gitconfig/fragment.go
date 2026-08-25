@@ -91,22 +91,30 @@ func SetAllowedSignersFile(gitconfigPath, allowedSignersPath string) error {
 	return gitConfigSet(gitconfigPath, "gpg.ssh.allowedSignersFile", allowedSignersPath)
 }
 
-// gitConfigSet runs `git config --file <path> <key> <value>` with arguments
-// passed as a slice (never through a shell), so user-derived values cannot be
-// interpreted as shell or git metacharacters.
+// gitConfigSet runs `git config --file <path> -- <key> <value>` with
+// arguments passed as a slice (never through a shell), so user-derived
+// values cannot be interpreted as shell metacharacters. The `--` terminates
+// git's own option parsing (WR-15): validateValue rejects newlines and
+// `[remote`, but not a leading `-` (e.g. `--global`, `--unset-all`,
+// `--type=bool`) — without `--`, such a value would be handed to git's
+// option parser instead of treated as a positional value, which is
+// argument injection into a process gitid runs against the user's config.
 func gitConfigSet(path, key, value string) error {
-	cmd := exec.Command("git", "config", "--file", path, key, value) //nolint:gosec // arg-slice form, no shell; values validated above (G204)
+	cmd := exec.Command("git", "config", "--file", path, "--", key, value) //nolint:gosec // arg-slice form, no shell; values validated above (G204)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git config --file %s %s: %w: %s", path, key, err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
 
-// gitConfigUnsetAll runs `git config --file <path> --unset-all <key>` to remove
-// all occurrences of key. Exit code 5 means the key was not present — this is
-// treated as success (idempotent, Pitfall C).
+// gitConfigUnsetAll runs `git config --file <path> --unset-all -- <key>` to
+// remove all occurrences of key. Exit code 5 means the key was not present
+// — this is treated as success (idempotent, Pitfall C). key is always a
+// compile-time constant at every call site, but the `--` terminator is
+// applied here too (WR-15) for defense-in-depth consistency with
+// gitConfigSet.
 func gitConfigUnsetAll(path, key string) error {
-	cmd := exec.Command("git", "config", "--file", path, "--unset-all", key) //nolint:gosec // arg-slice form, no shell; key is a compile-time constant (G204)
+	cmd := exec.Command("git", "config", "--file", path, "--unset-all", "--", key) //nolint:gosec // arg-slice form, no shell; key is a compile-time constant (G204)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 5 {
