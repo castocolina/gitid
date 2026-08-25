@@ -1655,13 +1655,21 @@ func (b *realBackend) CommitCreate(id tuikit.DemoIdentity) tea.Cmd {
 			return tuikit.WizardCommitMsg{Err: err.Error()}
 		}
 		backups, err := b.commitCreateTransaction(in, staged, id)
+		// WR-21: map through displayPath and surface on BOTH outcomes — the
+		// same way CommitGit does (:749-754) — so a failed create's
+		// retained timestamped backups are as discoverable as a successful
+		// one's, instead of being mentionable only inside the error string.
+		displayBackups := make([]string, len(backups))
+		for i, backup := range backups {
+			displayBackups[i] = b.displayPath(backup)
+		}
 		if err != nil {
-			return tuikit.WizardCommitMsg{Err: err.Error()}
+			return tuikit.WizardCommitMsg{Backups: displayBackups, Err: err.Error()}
 		}
 		b.clearStaged()
 		b.clearOutcomes()
 		b.setPersistErr(nil)
-		return tuikit.WizardCommitMsg{Backups: backups}
+		return tuikit.WizardCommitMsg{Backups: displayBackups}
 	}
 }
 
@@ -1710,7 +1718,16 @@ func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged id
 			}
 			message += "; timestamped backups retained: " + strings.Join(displayBackups, ", ")
 		}
-		return nil, fmt.Errorf("%s", message)
+		// WR-21: return journal.backups (not nil) — CR-02 already stopped
+		// deleting them, but restore() succeeding does not mean there is
+		// nothing to report: the retained .bak.<nanos> paths existed only
+		// inside the error string, and only when restoreErr != nil. When
+		// rollback succeeds, those stale backups were retained on disk with
+		// no way for the caller to find or clean them. This mirrors
+		// commitGitArtifacts.fail, which already returns journal.backups on
+		// the same kind of failure — the two transaction entry points now
+		// report symmetrically.
+		return journal.backups, fmt.Errorf("%s", message)
 	}
 	inject := func(step string) error {
 		if b.failCommitAt == nil {

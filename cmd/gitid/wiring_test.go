@@ -1138,6 +1138,52 @@ func TestCombinedTransactionRetainsBackupsWhenRestorationFails(t *testing.T) {
 	}
 }
 
+// TestCombinedTransactionSurfacesBackupsOnFailureEvenWhenRestorationSucceeds
+// proves the WR-21 fix: commitCreateTransaction.fail returned nil backups
+// unconditionally, so WizardCommitMsg.Backups was always empty on a failed
+// create — even in the common case where rollback SUCCEEDS and the
+// timestamped backups it took before failing are retained on disk (CR-02)
+// with no way for the caller/UI to discover or clean them up. Before the
+// fix, only the error STRING mentioned retained backups, and only when
+// restoreErr != nil (a rarer, harder-to-hit case than this one).
+func TestCombinedTransactionSurfacesBackupsOnFailureEvenWhenRestorationSucceeds(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	fragment := filepath.Join(home, ".gitconfig.d", "personal")
+	if err := os.MkdirAll(filepath.Dir(fragment), 0o700); err != nil {
+		t.Fatalf("seeding fragment dir: %v", err)
+	}
+	writeFile(t, fragment, "[user]\n\tname = Before\n\temail = before@example.test\n")
+	b := newBackendForHome(home)
+	id := tuikit.DemoIdentity{Name: "personal", SSHHost: "personal.github.com", Hostname: "ssh.github.com", Port: 443, KeyPath: "~/.ssh/id_ed25519_personal", Provider: "github.com", GitConfigured: true, GitName: "After", GitEmail: "after@example.test", MatchStrategy: "gitdir"}
+	unlockStoreForIdentity(t, b, id)
+	// Fail AFTER the fragment backup is taken (git-fragment-backup) but
+	// BEFORE any restoration step — restore() itself must succeed normally
+	// here (no injected restore failure), the common failure shape.
+	b.failCommitAt = func(boundary string) error {
+		if boundary == "git-includeif" {
+			return fmt.Errorf("injected failure at git-includeif")
+		}
+		return nil
+	}
+	msg := runCommitCreate(t, b, id)
+	if msg.Err == "" {
+		t.Fatal("setup: expected the injected failure to fail the transaction")
+	}
+	if len(msg.Backups) == 0 {
+		t.Fatal("WizardCommitMsg.Backups is empty on a failed create despite the transaction taking (and CR-02 retaining) a real backup")
+	}
+	for _, backup := range msg.Backups {
+		if strings.HasPrefix(backup, home) {
+			t.Errorf("WizardCommitMsg.Backups entry %q is a raw absolute sandbox path, want it mapped through displayPath (~/-shortened)", backup)
+		}
+		if !strings.Contains(backup, ".bak.") {
+			t.Errorf("WizardCommitMsg.Backups entry %q does not look like a timestamped backup path", backup)
+		}
+	}
+}
+
 func TestProviderFromAliasPreservesMultiLabelProvider(t *testing.T) {
 	if got, want := providerFromAlias("work.github.com"), "github.com"; got != want {
 		t.Errorf("providerFromAlias(work.github.com) = %q, want %q", got, want)
