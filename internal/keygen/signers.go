@@ -19,12 +19,24 @@ const allowedSignersMode = 0o644
 // the pub line may now carry a trailing comment ("ssh-ed25519 AAAA… work@gitid"),
 // which must NOT bleed into the signer line — the principal there is the email.
 // The email is used byte-identically to the supplied value (Pitfall 8).
-func AllowedSignersLine(email, pubLine string) string {
+//
+// CR-18: ssh-keygen(1)'s allowed_signers format treats the PRINCIPALS field as
+// a comma-separated list, so an email carrying a bare comma smuggles in an
+// attacker-chosen second principal (e.g. "victim@corp.test,*" grants a
+// wildcard match — verified against real `ssh-keygen -Y verify`). This is the
+// write-time hard gate: it fails closed rather than emit a multi-principal
+// line, independent of whether an upstream form/config validator already
+// rejected the comma (a pre-existing fragment read back for reuse/adopt never
+// re-runs that validation).
+func AllowedSignersLine(email, pubLine string) (string, error) {
+	if strings.Contains(email, ",") {
+		return "", fmt.Errorf("keygen: allowed_signers principal must not contain a comma (CR-18): %q", email)
+	}
 	keyText := strings.TrimRight(pubLine, "\n")
 	if fields := strings.Fields(keyText); len(fields) >= 2 {
 		keyText = fields[0] + " " + fields[1]
 	}
-	return fmt.Sprintf("%s namespaces=\"git\" %s\n", email, keyText)
+	return fmt.Sprintf("%s namespaces=\"git\" %s\n", email, keyText), nil
 }
 
 // WriteAllowedSigners persists line into the allowed_signers file at path as an
@@ -55,5 +67,9 @@ func WriteAllowedSigners(path, identity, line string) (string, error) {
 // exactly one signer built from the exact user.email bytes. It never appends a
 // second principal for the same identity.
 func WriteAllowedSignersReplacing(path, identity, email, pubLine string) (string, error) {
-	return WriteAllowedSigners(path, identity, AllowedSignersLine(email, pubLine))
+	line, err := AllowedSignersLine(email, pubLine)
+	if err != nil {
+		return "", err
+	}
+	return WriteAllowedSigners(path, identity, line)
 }

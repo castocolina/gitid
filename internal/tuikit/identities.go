@@ -806,8 +806,15 @@ func (g gitForm) changedLines(identity, keyPath string) string {
 func (g gitForm) strategy() string { return matchStrategies[g.strategyIdx] }
 
 // valid mirrors the web gating: name non-empty + email has @.
+//
+// CR-18: a bare comma is rejected too — ssh-keygen(1)'s allowed_signers format
+// treats the principal field as a comma-separated list, so an email like
+// "victim@corp.test,*" would smuggle in an attacker-chosen second principal.
+// internal/keygen.AllowedSignersLine is the write-time hard gate; this is the
+// earlier, fail-fast form gate.
 func (g gitForm) valid() bool {
-	return strings.TrimSpace(g.name.Value()) != "" && strings.Contains(g.email.Value(), "@")
+	email := g.email.Value()
+	return strings.TrimSpace(g.name.Value()) != "" && strings.Contains(email, "@") && !strings.Contains(email, ",")
 }
 
 // setFocus focuses exactly the input at focus.

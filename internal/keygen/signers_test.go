@@ -14,7 +14,10 @@ const samplePubLine = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyDataHere w
 // MarshalAuthorizedKey is stripped, and exactly one newline terminates the line.
 func TestAllowedSignersLine(t *testing.T) {
 	email := "me@example.com"
-	got := AllowedSignersLine(email, samplePubLine)
+	got, err := AllowedSignersLine(email, samplePubLine)
+	if err != nil {
+		t.Fatalf("AllowedSignersLine returned unexpected error: %v", err)
+	}
 
 	wantPrefix := email + ` namespaces="git" ssh-ed25519 `
 	if !strings.HasPrefix(got, wantPrefix) {
@@ -28,12 +31,29 @@ func TestAllowedSignersLine(t *testing.T) {
 	}
 }
 
+// TestAllowedSignersLine_RejectsCommaPrincipalInjection proves CR-18: OpenSSH's
+// allowed_signers format treats the principal field as a COMMA-SEPARATED LIST
+// (ssh-keygen(1) "PRINCIPALS"), so an email carrying a bare comma smuggles in
+// an attacker-chosen second principal — e.g. "victim@corp.test,*" grants a
+// wildcard match verified against real `ssh-keygen -Y verify`. gitForm.valid()
+// and validateEmail both accept a comma today, so this is the load-bearing
+// write-time gate: it must fail closed rather than emit a multi-principal line.
+func TestAllowedSignersLine_RejectsCommaPrincipalInjection(t *testing.T) {
+	_, err := AllowedSignersLine("victim@corp.test,*", samplePubLine)
+	if err == nil {
+		t.Fatal("AllowedSignersLine must reject a comma-containing principal (CR-18), got nil error")
+	}
+}
+
 // TestAllowedSignersLine_StripsTrailingComment asserts the pub line's trailing
 // comment (now present on generated keys, e.g. "… work@gitid") never leaks into
 // the signer line — the principal there is the email, and only keytype+key follow.
 func TestAllowedSignersLine_StripsTrailingComment(t *testing.T) {
 	pub := "ssh-ed25519 AAAABASE64KEYDATA work@gitid\n"
-	got := AllowedSignersLine("me@example.com", pub)
+	got, err := AllowedSignersLine("me@example.com", pub)
+	if err != nil {
+		t.Fatalf("AllowedSignersLine returned unexpected error: %v", err)
+	}
 
 	want := "me@example.com namespaces=\"git\" ssh-ed25519 AAAABASE64KEYDATA\n"
 	if got != want {
@@ -50,7 +70,10 @@ func TestAllowedSignersLine_StripsTrailingComment(t *testing.T) {
 func TestWriteAllowedSignersCreates(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "allowed_signers")
-	line := AllowedSignersLine("me@example.com", samplePubLine)
+	line, lerr := AllowedSignersLine("me@example.com", samplePubLine)
+	if lerr != nil {
+		t.Fatalf("AllowedSignersLine returned unexpected error: %v", lerr)
+	}
 
 	backup, err := WriteAllowedSigners(path, "work", line)
 	if err != nil {
@@ -86,7 +109,10 @@ func TestWriteAllowedSignersCreates(t *testing.T) {
 func TestWriteAllowedSignersIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "allowed_signers")
-	line := AllowedSignersLine("me@example.com", samplePubLine)
+	line, lerr := AllowedSignersLine("me@example.com", samplePubLine)
+	if lerr != nil {
+		t.Fatalf("AllowedSignersLine returned unexpected error: %v", lerr)
+	}
 
 	if _, err := WriteAllowedSigners(path, "work", line); err != nil {
 		t.Fatalf("first write: %v", err)
@@ -115,12 +141,18 @@ func TestWriteAllowedSignersMultiIdentity(t *testing.T) {
 		t.Fatalf("seeding foreign content: %v", err)
 	}
 
-	workLine := AllowedSignersLine("work@example.com", samplePubLine)
+	workLine, werr := AllowedSignersLine("work@example.com", samplePubLine)
+	if werr != nil {
+		t.Fatalf("AllowedSignersLine returned unexpected error: %v", werr)
+	}
 	if _, err := WriteAllowedSigners(path, "work", workLine); err != nil {
 		t.Fatalf("writing work block: %v", err)
 	}
 
-	personalLine := AllowedSignersLine("personal@example.com", samplePubLine)
+	personalLine, perr := AllowedSignersLine("personal@example.com", samplePubLine)
+	if perr != nil {
+		t.Fatalf("AllowedSignersLine returned unexpected error: %v", perr)
+	}
 	if _, err := WriteAllowedSigners(path, "personal", personalLine); err != nil {
 		t.Fatalf("writing personal block: %v", err)
 	}
@@ -146,7 +178,10 @@ func TestWriteAllowedSignersBackup(t *testing.T) {
 		t.Fatalf("seeding file: %v", err)
 	}
 
-	line := AllowedSignersLine("me@example.com", samplePubLine)
+	line, lerr := AllowedSignersLine("me@example.com", samplePubLine)
+	if lerr != nil {
+		t.Fatalf("AllowedSignersLine returned unexpected error: %v", lerr)
+	}
 	backup, err := WriteAllowedSigners(path, "work", line)
 	if err != nil {
 		t.Fatalf("WriteAllowedSigners: %v", err)

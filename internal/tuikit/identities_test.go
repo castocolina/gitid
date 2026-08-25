@@ -2125,6 +2125,19 @@ func TestGitFormSpecTrimsInputWhitespace(t *testing.T) {
 	}
 }
 
+// TestGitFormValidRejectsCommaInEmail proves CR-18's form-layer half: OpenSSH's
+// allowed_signers format treats the principal as a comma-separated list, so an
+// email like "victim@corp.test,*" would smuggle in a wildcard principal
+// (internal/keygen.AllowedSignersLine is the write-time hard gate; this is the
+// earlier, fail-fast UI gate so the user sees the form as invalid before ever
+// reaching the confirm-write ceremony).
+func TestGitFormValidRejectsCommaInEmail(t *testing.T) {
+	form := newGitForm(stubBackend{}, "acme", "Acme", "victim@corp.test,*", "gitdir")
+	if form.valid() {
+		t.Error("gitForm.valid() = true for a comma-containing email, want false (CR-18)")
+	}
+}
+
 // TestWizardGitDirPreviewMatchesWrite proves the CR-03 fix: the wizard's
 // default gitdir preview and finishIdentity's write must agree. Before the
 // fix, newGitForm seeded the preview from the Git author DISPLAY name (the

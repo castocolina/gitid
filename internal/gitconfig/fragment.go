@@ -141,11 +141,17 @@ func validateValue(key, value string) error {
 
 // validateEmail applies validateValue plus a minimal shape check so a clearly
 // malformed address never reaches the fragment.
+//
+// CR-18: a bare comma is rejected too. ssh-keygen(1)'s allowed_signers format
+// treats the PRINCIPALS field as a comma-separated list, so an email like
+// "victim@corp.test,*" would smuggle in an attacker-chosen second principal
+// downstream at internal/keygen.AllowedSignersLine (the load-bearing write-time
+// hard gate). This is the earliest defense-in-depth gate in the pipeline.
 func validateEmail(email string) error {
 	if err := validateValue("user.email", email); err != nil {
 		return err
 	}
-	if !strings.Contains(email, "@") || strings.ContainsAny(email, " \t") {
+	if !strings.Contains(email, "@") || strings.ContainsAny(email, " \t,") {
 		return fmt.Errorf("gitconfig: user.email is malformed: %q", email)
 	}
 	return nil

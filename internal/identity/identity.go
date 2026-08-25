@@ -313,7 +313,14 @@ func RenderPreviews(in CreateInput, staged StagedKey) CreateResult {
 		PubPath:     staged.FinalPubPath,
 		PubLine:     staged.PubLine,
 	}
-	signersLine := keygen.AllowedSignersLine(in.GitEmail, staged.PubLine)
+	signersLine, signersErr := keygen.AllowedSignersLine(in.GitEmail, staged.PubLine)
+	if signersErr != nil {
+		// RenderPreviews is a pure, error-free dry-run preview: surface the
+		// rejection as preview text rather than changing the signature for a
+		// path with no live caller (CR-18) — the real write path (PersistGitconfig,
+		// runPipeline, update.go) fails closed with a real error.
+		signersLine = "(rejected: " + signersErr.Error() + ")"
+	}
 	hostBlock := sshconfig.RenderHostBlock(in.Alias, in.Hostname, in.Port, final.PrivatePath, in.Provider)
 	gitPreview := gitconfig.RenderIncludeIf(in.Name, in.FragmentPath, in.Matches)
 	return CreateResult{
@@ -380,7 +387,10 @@ func PersistGitconfig(in CreateInput, staged StagedKey, deps Deps) (CreateResult
 		PubPath:     staged.FinalPubPath,
 		PubLine:     staged.PubLine,
 	}
-	signersLine := keygen.AllowedSignersLine(in.GitEmail, staged.PubLine)
+	signersLine, signersErr := keygen.AllowedSignersLine(in.GitEmail, staged.PubLine)
+	if signersErr != nil {
+		return CreateResult{}, fmt.Errorf("identity: building allowed_signers line: %w", signersErr)
+	}
 	gitPreview := gitconfig.RenderIncludeIf(in.Name, in.FragmentPath, in.Matches)
 	res := CreateResult{
 		GitconfigPreview:      gitPreview,
@@ -480,7 +490,10 @@ func runPipeline(in CreateInput, staged StagedKey, deps Deps) (CreateResult, err
 		_ = cerr
 	}
 
-	signersLine := keygen.AllowedSignersLine(in.GitEmail, staged.PubLine)
+	signersLine, signersErr := keygen.AllowedSignersLine(in.GitEmail, staged.PubLine)
+	if signersErr != nil {
+		return CreateResult{}, fmt.Errorf("identity: building allowed_signers line: %w", signersErr)
+	}
 
 	// Gate on the TEMP path (BUG-4: pre-write test must use the staged key so
 	// it runs before any ~/.ssh write; for existing-key paths TempPrivatePath ==

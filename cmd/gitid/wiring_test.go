@@ -1201,7 +1201,7 @@ func TestGitTransactionRollbackMatrixPreservesSnapshotsAndSafetyBackups(t *testi
 			}
 			writeFile(t, fragmentPath, "[user]\n\tname = Before\n\temail = before@example.test\n")
 			writeFile(t, gitconfigPath, "[core]\n\teditor = vi\n")
-			writeFile(t, signersPath, managedBlock("personal", keygen.AllowedSignersLine("before@example.test", pubLine)))
+			writeFile(t, signersPath, managedBlock("personal", mustAllowedSignersLine(t, "before@example.test", pubLine)))
 			gitDir := filepath.Join(home, "git", "personal")
 			paths := []string{fragmentPath, gitconfigPath, signersPath}
 			before := snapshotPaths(t, paths)
@@ -1666,7 +1666,7 @@ func TestGitTransactionReplacesExistingSignerEmail(t *testing.T) {
 	keyPath := filepath.Join(home, ".ssh", "id_ed25519_acme")
 	pubLine := seedGeneratedKey(t, keyPath, "acme", "")
 	signersPath := filepath.Join(home, ".ssh", "allowed_signers")
-	writeFile(t, signersPath, managedBlock("acme", keygen.AllowedSignersLine("old@example.test", pubLine)))
+	writeFile(t, signersPath, managedBlock("acme", mustAllowedSignersLine(t, "old@example.test", pubLine)))
 	b := newBackendForHome(home)
 	_, _, err := b.commitGitTransaction(tuikit.GitSpec{
 		Identity: "acme", Name: "Acme", Email: "new@example.test", Strategy: "gitdir",
@@ -1677,7 +1677,7 @@ func TestGitTransactionReplacesExistingSignerEmail(t *testing.T) {
 		t.Fatalf("commitGitTransaction: %v", err)
 	}
 	signers := readFile(t, signersPath)
-	if !strings.Contains(signers, keygen.AllowedSignersLine("new@example.test", pubLine)) || strings.Contains(signers, "old@example.test") {
+	if !strings.Contains(signers, mustAllowedSignersLine(t, "new@example.test", pubLine)) || strings.Contains(signers, "old@example.test") {
 		t.Errorf("allowed_signers =\n%s\nwant the replacement principal only", signers)
 	}
 }
@@ -1704,7 +1704,7 @@ func TestGitTransactionSuccessIsByteStableAndReplacesSignerEmail(t *testing.T) {
 	}
 	assertUnchanged(t, before, snapshotPaths(t, paths))
 	signers := readFile(t, filepath.Join(home, ".ssh", "allowed_signers"))
-	if !strings.Contains(signers, keygen.AllowedSignersLine(spec.Email, pubLine)) || strings.Contains(signers, "before@example.test") {
+	if !strings.Contains(signers, mustAllowedSignersLine(t, spec.Email, pubLine)) || strings.Contains(signers, "before@example.test") {
 		t.Errorf("allowed_signers did not contain exactly the replacement email block:\n%s", signers)
 	}
 	for _, want := range []string{`[includeIf "gitdir:~/git/personal/"]`, `[includeIf "hasconfig:remote.*.url:git@personal.github.com:*/**"]`, `[url "git@github.com:"]`} {
@@ -2169,6 +2169,19 @@ func managedBlock(name, body string) string {
 }
 
 // writeFile writes a fixture file at 0600.
+// mustAllowedSignersLine wraps keygen.AllowedSignersLine for test fixtures
+// that don't expect CR-18's comma rejection to fire; failing the test on an
+// unexpected error (instead of silently ignoring it) keeps a future accidental
+// comma in a fixture email visible as a test failure, not a silently-wrong line.
+func mustAllowedSignersLine(t *testing.T, email, pubLine string) string {
+	t.Helper()
+	line, err := keygen.AllowedSignersLine(email, pubLine)
+	if err != nil {
+		t.Fatalf("AllowedSignersLine(%q): %v", email, err)
+	}
+	return line
+}
+
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {

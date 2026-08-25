@@ -86,7 +86,10 @@ func Update(existing Account, edited Account, deps UpdateDeps, signing bool) (Up
 		if readErr != nil {
 			return UpdateResult{}, fmt.Errorf("identity: reading public key for signing: %w", readErr)
 		}
-		signersLine := keygen.AllowedSignersLine(edited.GitEmail, pubLine)
+		signersLine, signersErr := keygen.AllowedSignersLine(edited.GitEmail, pubLine)
+		if signersErr != nil {
+			return UpdateResult{}, fmt.Errorf("identity: building allowed_signers line: %w", signersErr)
+		}
 		if _, werr := deps.WriteAllowedSigners(edited.AllowedSignersPath, existing.Name, signersLine); werr != nil {
 			return UpdateResult{}, fmt.Errorf("identity: writing allowed_signers: %w", werr)
 		}

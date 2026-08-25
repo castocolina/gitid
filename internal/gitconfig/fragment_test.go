@@ -83,6 +83,21 @@ func TestWriteFragment_RejectsInvalidEmail(t *testing.T) {
 	}
 }
 
+// TestWriteFragment_RejectsCommaInEmail proves CR-18's defense-in-depth gate:
+// ssh-keygen(1)'s allowed_signers PRINCIPALS field is comma-separated, so an
+// email like "victim@corp.test,*" downstream of this validator would smuggle
+// in an attacker-chosen second principal. This validator is the earliest gate
+// in the Git-config write path (fail fast before any file is touched);
+// internal/keygen.AllowedSignersLine is the load-bearing write-time hard gate.
+func TestWriteFragment_RejectsCommaInEmail(t *testing.T) {
+	dir := t.TempDir()
+	fragPath := filepath.Join(dir, "work")
+
+	if err := WriteFragment(fragPath, "Work User", "victim@corp.test,*", "~/.ssh/k.pub", true); err == nil {
+		t.Errorf("expected WriteFragment to reject a comma-containing email (CR-18)")
+	}
+}
+
 func TestWriteFragment_CreatesParentDir(t *testing.T) {
 	// fragPath is one level deeper than a directory that does NOT exist yet.
 	// WriteFragment must ensure the parent dir before calling git config.
