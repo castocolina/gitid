@@ -820,6 +820,71 @@ func TestGitTransactionCreatesSelectedContainedGitDir(t *testing.T) {
 	}
 }
 
+// TestGitTransactionDoesNotChmodPreExistingGitDir proves the CR-01 fix:
+// ensureDir must never chmod a directory the transaction did not create
+// itself. Before the fix, os.Chmod(path, mode) ran unconditionally on the
+// final path component, so pointing the editable gitdir field at any
+// pre-existing directory (including HOME) silently tightened its mode to
+// 0700 on success, with no restore.
+func TestGitTransactionDoesNotChmodPreExistingGitDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_personal")
+	seedGeneratedKey(t, keyPath, "personal", "")
+	preExisting := filepath.Join(home, "Documents")
+	if err := os.Mkdir(preExisting, 0o750); err != nil {
+		t.Fatalf("seeding pre-existing gitdir: %v", err)
+	}
+	b := newBackendForHome(home)
+	_, _, err := b.commitGitTransaction(tuikit.GitSpec{
+		Identity: "personal", Name: "Personal", Email: "personal@example.test",
+		Strategy: "gitdir", SSHHost: "personal.github.com", Provider: "github.com",
+		PublicKeyPath: "~/.ssh/id_ed25519_personal.pub", GitDir: "~/Documents/",
+	})
+	if err != nil {
+		t.Fatalf("commitGitTransaction: %v", err)
+	}
+	info, statErr := os.Stat(preExisting)
+	if statErr != nil {
+		t.Fatalf("stat pre-existing gitdir: %v", statErr)
+	}
+	if got := info.Mode().Perm(); got != 0o750 {
+		t.Errorf("pre-existing gitdir mode changed to %o, want unchanged 0750", got)
+	}
+}
+
+// TestGitTransactionRejectsHomeAsGitDir proves ensureDir refuses to manage
+// HOME itself: a bare "~" (normalized to "~/") must never resolve to a path
+// that gets chmod'ed or otherwise mutated.
+func TestGitTransactionRejectsHomeAsGitDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_personal")
+	seedGeneratedKey(t, keyPath, "personal", "")
+	before, statErr := os.Stat(home)
+	if statErr != nil {
+		t.Fatalf("stat home: %v", statErr)
+	}
+	b := newBackendForHome(home)
+	_, _, err := b.commitGitTransaction(tuikit.GitSpec{
+		Identity: "personal", Name: "Personal", Email: "personal@example.test",
+		Strategy: "gitdir", SSHHost: "personal.github.com", Provider: "github.com",
+		PublicKeyPath: "~/.ssh/id_ed25519_personal.pub", GitDir: "~/",
+	})
+	if err == nil {
+		t.Fatal("commitGitTransaction with GitDir=\"~/\" succeeded, want refusal to manage HOME")
+	}
+	after, statErr := os.Stat(home)
+	if statErr != nil {
+		t.Fatalf("stat home after failed transaction: %v", statErr)
+	}
+	if before.Mode().Perm() != after.Mode().Perm() {
+		t.Errorf("HOME mode changed from %o to %o", before.Mode().Perm(), after.Mode().Perm())
+	}
+}
+
 func TestToDemoIdentityProjectsGitEditFields(t *testing.T) {
 	b := newBackendForHome(t.TempDir())
 	row := b.toDemoIdentity(identity.Account{

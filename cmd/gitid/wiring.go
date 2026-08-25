@@ -828,8 +828,12 @@ func (j *mutationJournal) watchDir(path string) error {
 }
 
 func (j *mutationJournal) ensureDir(path string, mode os.FileMode) error {
+	clean := filepath.Clean(path)
+	if clean == filepath.Clean(j.b.home) {
+		return fmt.Errorf("gitid: refusing to manage the home directory itself: %s", path)
+	}
 	var missing []string
-	for current := filepath.Clean(path); ; current = filepath.Dir(current) {
+	for current := clean; ; current = filepath.Dir(current) {
 		if err := j.watchDir(current); err != nil {
 			return err
 		}
@@ -842,6 +846,10 @@ func (j *mutationJournal) ensureDir(path string, mode os.FileMode) error {
 			return fmt.Errorf("gitid: checking transaction directory %s: %w", current, err)
 		}
 	}
+	// Only directories THIS transaction creates get their mode set (and
+	// restored on rollback via createdDirs). A pre-existing directory the
+	// user names via an editable path (e.g. gitdir) must never be
+	// permission-mutated as a side effect of being referenced here.
 	for i := len(missing) - 1; i >= 0; i-- {
 		if err := os.Mkdir(missing[i], mode); err != nil {
 			return fmt.Errorf("gitid: creating transaction directory %s: %w", missing[i], err)
@@ -850,9 +858,6 @@ func (j *mutationJournal) ensureDir(path string, mode os.FileMode) error {
 		if err := os.Chmod(missing[i], mode); err != nil {
 			return fmt.Errorf("gitid: securing transaction directory %s: %w", missing[i], err)
 		}
-	}
-	if err := os.Chmod(path, mode); err != nil {
-		return fmt.Errorf("gitid: securing transaction directory %s: %w", path, err)
 	}
 	return nil
 }
