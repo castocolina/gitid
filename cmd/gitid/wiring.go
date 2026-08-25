@@ -1069,10 +1069,20 @@ func (b *realBackend) commitGitArtifacts(spec tuikit.GitSpec, pubLine string, tr
 			return nil, nil, err
 		}
 	}
-	for _, path := range []string{b.fragmentDir, filepath.Dir(b.allowedSigners)} {
-		if err := journal.watchDir(path); err != nil {
-			return nil, nil, err
-		}
+	// WR-24: ~/.ssh (b.sshDir) is deliberately NOT watch-only here — it is
+	// one of gitid's own managed roots (same class as b.fragmentDir), and
+	// WriteAllowedSignersReplacing below writes into it. It gets the same
+	// ensureManagedDir hardening treatment b.fragmentDir gets a few lines
+	// down, applied just before the write that actually needs it (mirrors
+	// createStagedKey's own ensureManagedDir(b.sshDir, ...) placement).
+	// Leaving it watch-only (as before this fix) meant CR-05's "gitid's own
+	// managed roots must end at the documented mode" held for CommitCreate
+	// and not for this standalone Git-config path — and left the directory
+	// uncreated, so a from-scratch home (no ~/.ssh at all) failed the whole
+	// transaction at the LAST step, after the fragment and includeIf were
+	// already written and had to be rolled back.
+	if err := journal.watchDir(b.fragmentDir); err != nil {
+		return nil, nil, err
 	}
 	if gitDirPath != "" {
 		if err := journal.watchDir(gitDirPath); err != nil {
@@ -1174,6 +1184,16 @@ func (b *realBackend) commitGitArtifacts(spec tuikit.GitSpec, pubLine string, tr
 	}
 	if writeErr := gitconfig.SetAllowedSignersFile(b.gitconfigPath, b.allowedSigners); writeErr != nil {
 		return fail("allowed-signers-file", fmt.Errorf("gitid: setting allowed signers file: %w", writeErr))
+	}
+	// WR-24: harden (and, on a from-scratch home, CREATE) ~/.ssh right
+	// before the write that needs it — the same ensureManagedDir CR-05 gave
+	// CommitCreate's ~/.ssh handling, now applied on the standalone
+	// Configure-Git path too.
+	if err := inject("ssh-dir"); err != nil {
+		return fail("ssh-dir", err)
+	}
+	if err := journal.ensureManagedDir(b.sshDir, sshDirMode); err != nil {
+		return fail("ssh-dir", err)
 	}
 	if err := inject("allowed-signers"); err != nil {
 		return fail("allowed-signers", err)

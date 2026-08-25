@@ -959,6 +959,78 @@ func TestCommitCreateHardensPreExistingSSHDir(t *testing.T) {
 	}
 }
 
+// TestCommitGitTransactionHardensPreExistingSSHDir is WR-24's positive
+// counterpart to TestCommitCreateHardensPreExistingSSHDir, above, for the
+// STANDALONE Configure-Git path (commitGitTransaction / commitGitArtifacts):
+// CR-05's ensureManagedDir hardening previously only ran on the CREATE path
+// (createStagedKey) — a stale ~/.ssh at 0777 survived a confirmed standalone
+// Git-config commit untouched, even though WriteAllowedSignersReplacing
+// writes into that same directory.
+func TestCommitGitTransactionHardensPreExistingSSHDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o777); err != nil { //nolint:gosec // intentionally loose fixture: proves gitid hardens it back to sshDirMode
+		t.Fatalf("seeding loose ~/.ssh: %v", err)
+	}
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_personal")
+	seedGeneratedKey(t, keyPath, "personal", "")
+	b := newBackendForHome(home)
+	_, _, err := b.commitGitTransaction(tuikit.GitSpec{
+		Identity: "personal", Name: "Personal", Email: "personal@example.test",
+		Strategy: "gitdir", SSHHost: "personal.github.com", Provider: "github.com",
+		PublicKeyPath: "~/.ssh/id_ed25519_personal.pub", GitDir: "~/git/personal/",
+	})
+	if err != nil {
+		t.Fatalf("commitGitTransaction: %v", err)
+	}
+	info, statErr := os.Stat(filepath.Join(home, ".ssh"))
+	if statErr != nil {
+		t.Fatalf("stat ~/.ssh after commit: %v", statErr)
+	}
+	if got := info.Mode().Perm(); got != sshDirMode {
+		t.Errorf("~/.ssh mode after a confirmed standalone Git-config commit = %o, want %o (pre-existing at 0777 must still be hardened)", got, sshDirMode)
+	}
+}
+
+// TestCommitGitArtifactsCreatesAbsentSSHDir is WR-24's other half: on a
+// from-scratch HOME with no ~/.ssh at all, the standalone Configure-Git path
+// used to fail outright at the LAST step (WriteAllowedSignersReplacing
+// creating a temp file inside a directory that does not exist), AFTER the
+// Git fragment and includeIf block had already been written and had to be
+// rolled back. ensureManagedDir creates the directory (like it already does
+// for b.fragmentDir), so the transaction now succeeds end to end. Calls
+// commitGitArtifacts directly with an explicit pubLine (rather than going
+// through commitGitTransaction, which reads the public key file from disk)
+// so this test isolates the ~/.ssh-absence path from the unrelated concern
+// of where the signing key itself lives.
+func TestCommitGitArtifactsCreatesAbsentSSHDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// Deliberately no ~/.ssh at all — not even seedSSHDir.
+	b := newBackendForHome(home)
+	_, _, err := b.commitGitArtifacts(tuikit.GitSpec{
+		Identity: "personal", Name: "Personal", Email: "personal@example.test",
+		Strategy: "gitdir", SSHHost: "personal.github.com", Provider: "github.com",
+		// KeyPath only supplies the (never-read, since pubLine is passed
+		// explicitly below) public-key path shape — it does not need to
+		// exist on disk.
+		KeyPath: "~/.ssh/id_ed25519_personal", GitDir: "~/git/personal/",
+	}, "ssh-ed25519 AAAAstubkeymaterial stub@gitid-test\n", nil)
+	if err != nil {
+		t.Fatalf("commitGitArtifacts on a from-scratch HOME (no ~/.ssh): %v", err)
+	}
+	info, statErr := os.Stat(filepath.Join(home, ".ssh"))
+	if statErr != nil {
+		t.Fatalf("~/.ssh was never created even though the transaction reached the allowed-signers write: %v", statErr)
+	}
+	if got := info.Mode().Perm(); got != sshDirMode {
+		t.Errorf("~/.ssh created mode = %o, want %o", got, sshDirMode)
+	}
+	if _, statErr := os.Stat(filepath.Join(home, ".ssh", "allowed_signers")); statErr != nil {
+		t.Errorf("allowed_signers was not written into the freshly created ~/.ssh: %v", statErr)
+	}
+}
+
 func TestToDemoIdentityProjectsGitEditFields(t *testing.T) {
 	b := newBackendForHome(t.TempDir())
 	row := b.toDemoIdentity(identity.Account{
@@ -973,7 +1045,11 @@ func TestToDemoIdentityProjectsGitEditFields(t *testing.T) {
 }
 
 func TestGitTransactionRollbackMatrixPreservesSnapshotsAndSafetyBackups(t *testing.T) {
-	steps := []string{"git-fragment-dir", "gitdir", "git-fragment-backup", "git-fragment", "git-includeif", "provider-rewrite", "allowed-signers-file", "allowed-signers"}
+	// WR-24: "ssh-dir" is the new ensureManagedDir(b.sshDir, sshDirMode)
+	// boundary commitGitArtifacts now carries — a distinct fault-injection
+	// point from createStagedKey's own "ssh-dir" step (never reached on
+	// this standalone commitGitTransaction path).
+	steps := []string{"git-fragment-dir", "gitdir", "git-fragment-backup", "git-fragment", "git-includeif", "provider-rewrite", "allowed-signers-file", "ssh-dir", "allowed-signers"}
 	for _, step := range steps {
 		t.Run(step, func(t *testing.T) {
 			home := t.TempDir()
