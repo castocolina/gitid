@@ -40,13 +40,14 @@ func TestNewRootCmdDoesNotPanic(t *testing.T) {
 }
 
 // TestNewRootCmdArchivedPOCCommandsAreGone locks in D-14: the 0.0.1 POC Cobra
-// surface is archived, not merely hidden. The v1.0 CLI is rebuilt deliberately
-// in Phase 5 (SHELL-03), so a command silently reappearing here would smuggle
-// the retired POC back into the shipped binary.
+// surface stays archived except for the D-01 taxonomy Phase 5 deliberately
+// rebuilds (SHELL-03) — "identity" is now a real, intentionally-registered
+// noun group (see TestNewRootCmdSurfaceIsPhase5CLI), so it is removed from
+// this archived list; every other POC command name must still be absent.
 func TestNewRootCmdArchivedPOCCommandsAreGone(t *testing.T) {
 	root := newRootCmd()
 	archived := [][]string{
-		{"identity"}, {"baseline"}, {"doctor"}, {"adopt"},
+		{"baseline"}, {"doctor"}, {"adopt"},
 		{"rotate"}, {"copy"}, {"host"}, {"add"}, {"match"}, {"upload"},
 	}
 	for _, path := range archived {
@@ -56,18 +57,24 @@ func TestNewRootCmdArchivedPOCCommandsAreGone(t *testing.T) {
 	}
 }
 
-// TestNewRootCmdSurfaceIsDebugAndCompletionOnly asserts the WHOLE remaining
-// command surface, so a future addition is a deliberate decision rather than an
-// accident: `debug`, Cobra's auto-registered `completion`, and `help`.
-func TestNewRootCmdSurfaceIsDebugAndCompletionOnly(t *testing.T) {
+// TestNewRootCmdSurfaceIsPhase5CLI asserts the WHOLE top-level command
+// surface Phase 5 (05-01-PLAN.md Task 3, D-01) builds, so a future addition
+// is a deliberate decision rather than an accident: the identity noun group
+// and its flat aliases, the reserved ssh/git/health/fix noun groups, the
+// Phase-1 debug readout, and Cobra's auto-registered completion/help.
+func TestNewRootCmdSurfaceIsPhase5CLI(t *testing.T) {
 	root := newRootCmd()
 	root.InitDefaultCompletionCmd()
 	root.InitDefaultHelpCmd()
 
-	want := map[string]bool{"debug": true, "completion": true, "help": true}
+	want := map[string]bool{
+		"debug": true, "completion": true, "help": true,
+		"identity": true, "ssh": true, "git": true, "health": true, "fix": true,
+		"list": true, "show": true, "delete": true,
+	}
 	for _, cmd := range root.Commands() {
 		if !want[cmd.Name()] {
-			t.Errorf("unexpected subcommand %q registered; the Phase-3 surface is debug + completion only (D-14)", cmd.Name())
+			t.Errorf("unexpected subcommand %q registered; update this test deliberately if it is intentional", cmd.Name())
 		}
 		delete(want, cmd.Name())
 	}

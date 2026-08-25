@@ -67,10 +67,15 @@ func Execute() error {
 // newRootCmd assembles the gitid Cobra command tree.
 //
 // D-14 archived the 0.0.1 POC command surface (identity add/list/test/rotate/
-// update/delete/copy, baseline, doctor, adopt, host, add repo) — the v1.0 CLI
-// surface is rebuilt deliberately in Phase 5 (SHELL-03). What remains is the
-// root, the Phase 1 `debug` diagnostic readout, and the `completion`
-// subcommand Cobra auto-registers for bash/zsh/fish/PowerShell (D-08/CLI-02).
+// update/delete/copy, baseline, doctor, adopt, host, add repo). Phase 5
+// (SHELL-03) rebuilds the v1.0 CLI surface deliberately, starting with the
+// D-01 noun-verb taxonomy: the `identity` noun group (list/show/delete) plus
+// its flat root-level aliases, and the reserved `ssh`/`git`/`health`/`fix`
+// noun groups that claim their taxonomy slot before the phases that
+// implement them (6, 7, 8, 8) land — guaranteeing a later phase's verb can
+// never collide with a top-level flat alias. What else remains is the root,
+// the Phase 1 `debug` diagnostic readout, and the `completion` subcommand
+// Cobra auto-registers for bash/zsh/fish/PowerShell (D-08/CLI-02).
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "gitid",
@@ -82,6 +87,17 @@ func newRootCmd() *cobra.Command {
 
 	// D-08: debug/list command surface (KEY-01/PLAT-01/MGR-02 diagnostic readout).
 	root.AddCommand(newDebugCmd())
+
+	// D-01: the identity noun group, its flat root-level aliases (built from
+	// the SAME spec values — review R-15), and the reserved noun groups that
+	// claim ssh/git/health/fix before Phases 6-8 implement them.
+	specs := identityVerbSpecs()
+	root.AddCommand(newIdentityCmd(specs))
+	registerFlatAliases(root, specs)
+	root.AddCommand(newReservedNounCmd("ssh", "Manage global SSH options (arrives in Phase 6)", "Phase 6 (Global SSH Options)"))
+	root.AddCommand(newReservedNounCmd("git", "Manage global Git options (arrives in Phase 7)", "Phase 7 (Global Git Options)"))
+	root.AddCommand(newReservedNounCmd("health", "Show identity/config health (arrives in Phase 8)", "Phase 8 (Health + Fixer)"))
+	root.AddCommand(newReservedNounCmd("fix", "Apply suggested health fixes (arrives in Phase 8)", "Phase 8 (Health + Fixer)"))
 
 	return root
 }

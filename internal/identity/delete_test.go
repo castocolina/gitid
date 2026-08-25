@@ -2,6 +2,7 @@ package identity
 
 import (
 	"errors"
+	"strconv"
 	"testing"
 
 	"github.com/castocolina/gitid/internal/filewriter"
@@ -70,6 +71,30 @@ func newFakeDeleteDeps(log *deleteCallLog, sshFixture, gcFixture []byte) DeleteD
 	}
 }
 
+// fatalOnInvokeSSHDeps returns a DeleteDeps whose ReadSSH/WriteSSH call
+// t.Fatal if invoked — the fail-on-invoke seam used to prove the SSH branch
+// is STRUCTURALLY skipped under DeleteScopeGitOnly (review R-13), not merely
+// equality-guarded. Every other field is a benign fake so a Git-only Delete
+// completes without hitting the SSH seams.
+func fatalOnInvokeSSHDeps(t *testing.T, gcFixture []byte) DeleteDeps {
+	t.Helper()
+	return DeleteDeps{
+		ReadSSH: func() ([]byte, error) {
+			t.Fatal("ReadSSH invoked under DeleteScopeGitOnly — the SSH branch must be structurally skipped (R-13)")
+			return nil, nil
+		},
+		WriteSSH: func([]byte) (string, error) {
+			t.Fatal("WriteSSH invoked under DeleteScopeGitOnly — the SSH branch must be structurally skipped (R-13)")
+			return "", nil
+		},
+		ReadGitconfig:        func() ([]byte, error) { return gcFixture, nil },
+		WriteGitconfig:       func([]byte) (string, error) { return "gc.bak", nil },
+		RemoveFragment:       func(string) (string, error) { return "frag.bak", nil },
+		RemoveAllowedSigners: func(string, string) (string, error) { return "sign.bak", nil },
+		RemoveKeyFiles:       func(string, string) (string, string, error) { return "key.bak", "pub.bak", nil },
+	}
+}
+
 // baseDeleteAccount returns an Account with all fields populated for delete tests.
 func baseDeleteAccount() Account {
 	return Account{
@@ -128,167 +153,213 @@ func gcFixtureWithBlocks() []byte {
 `)
 }
 
-// TestDelete_KeepKey asserts that when keepKey=true, RemoveKeyFiles is NOT
-// called, but all four artifact removals (SSH block, gitconfig block, fragment
-// file, allowed_signers line) ARE performed (D-07).
-func TestDelete_KeepKey(t *testing.T) {
+// TestDelete_GitOnly_RemovesGitconfigAndFragmentOnly asserts that
+// DeleteScopeGitOnly removes the gitconfig includeIf block and the fragment
+// file, and calls neither RemoveAllowedSigners nor RemoveKeyFiles (D-10).
+func TestDelete_GitOnly_RemovesGitconfigAndFragmentOnly(t *testing.T) {
 	acct := baseDeleteAccount()
 	var log deleteCallLog
 	deps := newFakeDeleteDeps(&log, sshFixtureWithBlocks(), gcFixtureWithBlocks())
 
-	res, err := Delete(acct, true, deps)
+	res, err := Delete(acct, DeleteScopeGitOnly, deps)
 	if err != nil {
-		t.Fatalf("Delete(keepKey=true) error: %v", err)
+		t.Fatalf("Delete(git-only) error: %v", err)
 	}
 
-	// RemoveKeyFiles must NOT be called when keepKey=true.
+	// D-10: neither RemoveAllowedSigners nor RemoveKeyFiles is called.
+	if log.removeAllowedSigns != 0 {
+		t.Errorf("RemoveAllowedSigners called %d times under git-only, want 0 (D-10)", log.removeAllowedSigns)
+	}
 	if log.removeKeyFiles != 0 {
-		t.Errorf("RemoveKeyFiles called %d times with keepKey=true, want 0 (D-07)", log.removeKeyFiles)
+		t.Errorf("RemoveKeyFiles called %d times under git-only, want 0 (D-10)", log.removeKeyFiles)
 	}
 
-	// All four artifact removals must have run.
-	if log.writeSSH != 1 {
-		t.Errorf("WriteSSH called %d times, want 1", log.writeSSH)
-	}
+	// The gitconfig and fragment removals DID happen.
 	if log.writeGitconfig != 1 {
 		t.Errorf("WriteGitconfig called %d times, want 1", log.writeGitconfig)
 	}
 	if log.removeFragment != 1 {
 		t.Errorf("RemoveFragment called %d times, want 1", log.removeFragment)
 	}
-	if log.removeAllowedSigns != 1 {
-		t.Errorf("RemoveAllowedSigners called %d times, want 1", log.removeAllowedSigns)
+
+	// The neither-invoked SSH seams (log.readSSH/writeSSH untouched) plus the
+	// explicit SSHUntouched flag are the observable proof.
+	if log.readSSH != 0 || log.writeSSH != 0 {
+		t.Errorf("ReadSSH/WriteSSH called (%d/%d) under git-only, want 0/0 (R-13)", log.readSSH, log.writeSSH)
+	}
+	if !res.SSHUntouched {
+		t.Error("DeleteResult.SSHUntouched = false under git-only, want true")
+	}
+	if res.SSHBackup != "" {
+		t.Errorf("SSHBackup = %q under git-only, want empty", res.SSHBackup)
 	}
 
-	// Backup paths from the fakes must appear in DeleteResult.
-	if res.SSHBackup != "ssh.bak" {
-		t.Errorf("SSHBackup = %q, want %q", res.SSHBackup, "ssh.bak")
-	}
 	if res.GitconfigBackup != "gc.bak" {
 		t.Errorf("GitconfigBackup = %q, want %q", res.GitconfigBackup, "gc.bak")
 	}
 	if res.FragmentBackup != "frag.bak" {
 		t.Errorf("FragmentBackup = %q, want %q", res.FragmentBackup, "frag.bak")
 	}
-	if res.AllowedSignersBackup != "sign.bak" {
-		t.Errorf("AllowedSignersBackup = %q, want %q", res.AllowedSignersBackup, "sign.bak")
+	if res.AllowedSignersBackup != "" {
+		t.Errorf("AllowedSignersBackup = %q under git-only, want empty", res.AllowedSignersBackup)
+	}
+	if res.KeyBackup != "" || res.PubBackup != "" {
+		t.Errorf("Key/Pub backups = %q/%q under git-only, want empty/empty", res.KeyBackup, res.PubBackup)
 	}
 }
 
-// TestDelete_DeleteKey asserts that when keepKey=false, RemoveKeyFiles IS
-// called with the account's KeyPath and PubPath (D-07 irreversible path).
-func TestDelete_DeleteKey(t *testing.T) {
+// TestDelete_GitOnly_SSHBranchStructurallySkipped is the review R-13 proof:
+// injecting DeleteDeps.ReadSSH/WriteSSH seams that call t.Fatal when invoked,
+// Delete under DeleteScopeGitOnly must still complete with a nil error — the
+// SSH branch is never even reached, not merely equality-guarded into a no-op.
+func TestDelete_GitOnly_SSHBranchStructurallySkipped(t *testing.T) {
+	acct := baseDeleteAccount()
+	deps := fatalOnInvokeSSHDeps(t, gcFixtureWithBlocks())
+
+	if _, err := Delete(acct, DeleteScopeGitOnly, deps); err != nil {
+		t.Fatalf("Delete(git-only) error: %v", err)
+	}
+}
+
+// TestDelete_GitOnly_AllowedSignersAndSSHSurvive is the D-10 proof from the
+// caller's point of view: the allowed_signers block and the raw SSH bytes are
+// simply never touched — asserted by the fact that the equivalent deps are
+// never invoked (see TestDelete_GitOnly_SSHBranchStructurallySkipped) and
+// RemoveAllowedSigners is never called (see
+// TestDelete_GitOnly_RemovesGitconfigAndFragmentOnly). This test names the
+// requirement explicitly for readability of the acceptance criteria.
+func TestDelete_GitOnly_AllowedSignersAndSSHSurvive(t *testing.T) {
 	acct := baseDeleteAccount()
 	var log deleteCallLog
 	deps := newFakeDeleteDeps(&log, sshFixtureWithBlocks(), gcFixtureWithBlocks())
 
-	_, err := Delete(acct, false, deps)
-	if err != nil {
-		t.Fatalf("Delete(keepKey=false) error: %v", err)
+	if _, err := Delete(acct, DeleteScopeGitOnly, deps); err != nil {
+		t.Fatalf("Delete(git-only) error: %v", err)
 	}
-
-	if log.removeKeyFiles != 1 {
-		t.Errorf("RemoveKeyFiles called %d times with keepKey=false, want 1 (D-07)", log.removeKeyFiles)
+	if log.removeAllowedSigns != 0 {
+		t.Error("allowed_signers block was touched under DeleteScopeGitOnly (D-10 violation)")
 	}
-	if log.lastKeyPath != acct.KeyPath {
-		t.Errorf("RemoveKeyFiles keyPath = %q, want %q", log.lastKeyPath, acct.KeyPath)
-	}
-	if log.lastPubPath != acct.PubPath {
-		t.Errorf("RemoveKeyFiles pubPath = %q, want %q", log.lastPubPath, acct.PubPath)
+	if log.readSSH != 0 || log.writeSSH != 0 {
+		t.Error("SSH config was touched under DeleteScopeGitOnly (D-10 violation)")
 	}
 }
 
-// TestDelete_GlobalAndForeignPreserved asserts that after Delete:
-//   - The "_global" SSH Host * block is preserved byte-for-byte (D-08).
-//   - Foreign content outside any gitid block is preserved (Success Criterion 3).
-//   - Only the "work" managed block is removed from both SSH config and gitconfig.
-//
-// This test uses the real filewriter.RemoveBlock inside the WriteSSH fake to
-// assert the content passed to WriteSSH has the right blocks removed/preserved.
-func TestDelete_GlobalAndForeignPreserved(t *testing.T) {
+// TestDelete_Everything_NotYetAvailable asserts that DeleteScopeEverything
+// returns an error satisfying errors.Is(err, ErrScopeNotAvailable) in this
+// plan, and that NO dep is invoked before that error is returned.
+func TestDelete_Everything_NotYetAvailable(t *testing.T) {
 	acct := baseDeleteAccount()
-	sshFixture := sshFixtureWithBlocks()
-	gcFixture := gcFixtureWithBlocks()
-
-	var capturedSSH []byte
-	var capturedGC []byte
-
-	deps := DeleteDeps{
-		ReadSSH:       func() ([]byte, error) { return sshFixture, nil },
-		ReadGitconfig: func() ([]byte, error) { return gcFixture, nil },
-		WriteSSH: func(content []byte) (string, error) {
-			capturedSSH = content
-			return "", nil
-		},
-		WriteGitconfig: func(content []byte) (string, error) {
-			capturedGC = content
-			return "", nil
-		},
-		RemoveFragment:       func(_ string) (string, error) { return "", nil },
-		RemoveAllowedSigners: func(_, _ string) (string, error) { return "", nil },
-		RemoveKeyFiles:       func(_, _ string) (string, string, error) { return "", "", nil },
+	deps := fatalOnInvokeSSHDeps(t, gcFixtureWithBlocks())
+	deps.ReadGitconfig = func() ([]byte, error) {
+		t.Fatal("ReadGitconfig invoked before the DeleteScopeEverything not-yet-available error was returned")
+		return nil, nil
+	}
+	deps.RemoveFragment = func(string) (string, error) {
+		t.Fatal("RemoveFragment invoked before the DeleteScopeEverything not-yet-available error was returned")
+		return "", nil
 	}
 
-	_, err := Delete(acct, true, deps)
-	if err != nil {
+	_, err := Delete(acct, DeleteScopeEverything, deps)
+	if err == nil {
+		t.Fatal("Delete(everything) must return an error in this plan")
+	}
+	if !errors.Is(err, ErrScopeNotAvailable) {
+		t.Errorf("Delete(everything) error = %v, want errors.Is(err, ErrScopeNotAvailable)", err)
+	}
+}
+
+// TestDelete_UnknownScope_NotAvailable asserts that an unrecognized scope
+// string also surfaces ErrScopeNotAvailable, not a distinct error type — one
+// sentinel covers both "unimplemented" and "unrecognized" so both skins can
+// still refuse identically regardless of which case fired.
+func TestDelete_UnknownScope_NotAvailable(t *testing.T) {
+	acct := baseDeleteAccount()
+	deps := fatalOnInvokeSSHDeps(t, gcFixtureWithBlocks())
+
+	_, err := Delete(acct, DeleteScope("bogus"), deps)
+	if !errors.Is(err, ErrScopeNotAvailable) {
+		t.Errorf("Delete(bogus scope) error = %v, want errors.Is(err, ErrScopeNotAvailable)", err)
+	}
+}
+
+// TestDeleteScopeFrom_KnownAndUnknown proves DeleteScopeFrom recognizes both
+// constants and rejects anything else with a typed, non-nil error.
+func TestDeleteScopeFrom_KnownAndUnknown(t *testing.T) {
+	cases := []struct {
+		in      string
+		want    DeleteScope
+		wantErr bool
+	}{
+		{"git-only", DeleteScopeGitOnly, false},
+		{"everything", DeleteScopeEverything, false},
+		{"", "", true},
+		{"all", "", true},
+		{"GIT-ONLY", "", true}, // case-sensitive: not a silent normalize
+	}
+	for _, tc := range cases {
+		got, err := DeleteScopeFrom(tc.in)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("DeleteScopeFrom(%q) error = nil, want non-nil", tc.in)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("DeleteScopeFrom(%q) error = %v, want nil", tc.in, err)
+		}
+		if got != tc.want {
+			t.Errorf("DeleteScopeFrom(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestDelete_GitOnly_GlobalAndForeignGitconfigPreserved asserts that after a
+// Git-only Delete: the "work" includeIf block is gone from the gitconfig
+// bytes passed to WriteGitconfig, and foreign content outside any gitid block
+// survives untouched.
+func TestDelete_GitOnly_GlobalAndForeignGitconfigPreserved(t *testing.T) {
+	acct := baseDeleteAccount()
+	gcFixture := gcFixtureWithBlocks()
+
+	var capturedGC []byte
+	deps := DeleteDeps{
+		ReadGitconfig:        func() ([]byte, error) { return gcFixture, nil },
+		WriteGitconfig:       func(content []byte) (string, error) { capturedGC = content; return "", nil },
+		RemoveFragment:       func(string) (string, error) { return "", nil },
+		RemoveAllowedSigners: func(string, string) (string, error) { return "", nil },
+		RemoveKeyFiles:       func(string, string) (string, string, error) { return "", "", nil },
+	}
+
+	if _, err := Delete(acct, DeleteScopeGitOnly, deps); err != nil {
 		t.Fatalf("Delete error: %v", err)
 	}
 
-	// The "work" block must be gone from the SSH content passed to WriteSSH.
-	if containsBlock(capturedSSH, "work") {
-		t.Error("SSH content passed to WriteSSH still contains 'work' managed block")
-	}
-
-	// The "_global" block must still be present (D-08).
-	if !containsBlock(capturedSSH, "_global") {
-		t.Error("SSH content passed to WriteSSH is missing '_global' managed block (D-08)")
-	}
-
-	// Foreign SSH content outside any block must be preserved.
-	if !containsLine(capturedSSH, "Host foreign.example.com") {
-		t.Error("SSH content passed to WriteSSH is missing foreign 'Host foreign.example.com' line (Success Criterion 3)")
-	}
-
-	// The "work" block must be gone from the gitconfig content passed to WriteGitconfig.
 	if containsBlock(capturedGC, "work") {
 		t.Error("gitconfig content passed to WriteGitconfig still contains 'work' managed block")
 	}
-
-	// Foreign gitconfig content outside any block must be preserved.
 	if !containsLine(capturedGC, "[user]") {
-		t.Error("gitconfig content passed to WriteGitconfig is missing foreign '[user]' line (Success Criterion 3)")
+		t.Error("gitconfig content passed to WriteGitconfig is missing foreign '[user]' line")
 	}
 }
 
-// TestDelete_RemoveBlockUsedForSSHAndGitconfig verifies that the content
-// passed to WriteSSH/WriteGitconfig is the result of removing ONLY acct.Name
-// from the respective fixture — using real filewriter.RemoveBlock for
-// comparison. This directly proves the implementation calls RemoveBlock with
-// acct.Name (not a hardcoded string or the wrong name).
-func TestDelete_RemoveBlockUsedForSSHAndGitconfig(t *testing.T) {
+// TestDelete_GitOnly_RemoveBlockUsedForGitconfig verifies that the content
+// passed to WriteGitconfig is the result of removing ONLY acct.Name from the
+// fixture — using real filewriter.RemoveBlock for comparison.
+func TestDelete_GitOnly_RemoveBlockUsedForGitconfig(t *testing.T) {
 	acct := baseDeleteAccount()
-	sshFixture := sshFixtureWithBlocks()
 	gcFixture := gcFixtureWithBlocks()
 
-	var capturedSSH, capturedGC []byte
+	var capturedGC []byte
 	deps := DeleteDeps{
-		ReadSSH:              func() ([]byte, error) { return sshFixture, nil },
 		ReadGitconfig:        func() ([]byte, error) { return gcFixture, nil },
-		WriteSSH:             func(c []byte) (string, error) { capturedSSH = c; return "", nil },
 		WriteGitconfig:       func(c []byte) (string, error) { capturedGC = c; return "", nil },
-		RemoveFragment:       func(_ string) (string, error) { return "", nil },
-		RemoveAllowedSigners: func(_, _ string) (string, error) { return "", nil },
-		RemoveKeyFiles:       func(_, _ string) (string, string, error) { return "", "", nil },
+		RemoveFragment:       func(string) (string, error) { return "", nil },
+		RemoveAllowedSigners: func(string, string) (string, error) { return "", nil },
+		RemoveKeyFiles:       func(string, string) (string, string, error) { return "", "", nil },
 	}
 
-	_, err := Delete(acct, true, deps)
-	if err != nil {
+	if _, err := Delete(acct, DeleteScopeGitOnly, deps); err != nil {
 		t.Fatalf("Delete error: %v", err)
-	}
-
-	expectedSSH := filewriter.RemoveBlock(sshFixture, acct.Name)
-	if string(capturedSSH) != string(expectedSSH) {
-		t.Errorf("SSH content mismatch:\ngot:  %q\nwant: %q", string(capturedSSH), string(expectedSSH))
 	}
 
 	expectedGC := filewriter.RemoveBlock(gcFixture, acct.Name)
@@ -297,61 +368,14 @@ func TestDelete_RemoveBlockUsedForSSHAndGitconfig(t *testing.T) {
 	}
 }
 
-// TestDelete_AllowedSignersArgs verifies that RemoveAllowedSigners receives the
-// correct path and the identity NAME (not the email) — the removal is
-// block-keyed, symmetric with the block-keyed writer (findings #2/#3).
-func TestDelete_AllowedSignersArgs(t *testing.T) {
+// TestDelete_GitOnly_FragmentArgs verifies that RemoveFragment receives the
+// correct path.
+func TestDelete_GitOnly_FragmentArgs(t *testing.T) {
 	acct := baseDeleteAccount()
 	var log deleteCallLog
 	deps := newFakeDeleteDeps(&log, sshFixtureWithBlocks(), gcFixtureWithBlocks())
 
-	_, err := Delete(acct, true, deps)
-	if err != nil {
-		t.Fatalf("Delete error: %v", err)
-	}
-
-	if log.lastAllowedSignPath != acct.AllowedSignersPath {
-		t.Errorf("RemoveAllowedSigners path = %q, want %q", log.lastAllowedSignPath, acct.AllowedSignersPath)
-	}
-	if log.lastAllowedSignName != acct.Name {
-		t.Errorf("RemoveAllowedSigners name = %q, want %q (block-keyed by name)", log.lastAllowedSignName, acct.Name)
-	}
-}
-
-// TestDelete_IncompleteIdentityRemovesAllowedSigners verifies finding #3: an
-// Incomplete identity whose fragment is missing has GitEmail == "", yet its
-// allowed_signers block must still be removed. Because removal is keyed by the
-// (always-known) identity NAME, RemoveAllowedSigners is invoked with the name
-// even when GitEmail is empty — the old email-keyed path would have passed ""
-// and removed nothing.
-func TestDelete_IncompleteIdentityRemovesAllowedSigners(t *testing.T) {
-	acct := baseDeleteAccount()
-	acct.GitEmail = "" // fragment missing — Incomplete identity
-	acct.Incomplete = "fragment-file"
-
-	var log deleteCallLog
-	deps := newFakeDeleteDeps(&log, sshFixtureWithBlocks(), gcFixtureWithBlocks())
-
-	if _, err := Delete(acct, true, deps); err != nil {
-		t.Fatalf("Delete(Incomplete) error: %v", err)
-	}
-
-	if log.removeAllowedSigns != 1 {
-		t.Errorf("RemoveAllowedSigners called %d times for Incomplete identity, want 1", log.removeAllowedSigns)
-	}
-	if log.lastAllowedSignName != acct.Name {
-		t.Errorf("RemoveAllowedSigners name = %q, want %q (must use name, not empty email)", log.lastAllowedSignName, acct.Name)
-	}
-}
-
-// TestDelete_FragmentArgs verifies that RemoveFragment receives the correct path.
-func TestDelete_FragmentArgs(t *testing.T) {
-	acct := baseDeleteAccount()
-	var log deleteCallLog
-	deps := newFakeDeleteDeps(&log, sshFixtureWithBlocks(), gcFixtureWithBlocks())
-
-	_, err := Delete(acct, true, deps)
-	if err != nil {
+	if _, err := Delete(acct, DeleteScopeGitOnly, deps); err != nil {
 		t.Fatalf("Delete error: %v", err)
 	}
 
@@ -360,47 +384,94 @@ func TestDelete_FragmentArgs(t *testing.T) {
 	}
 }
 
-// TestDelete_ReadSSHError verifies that a ReadSSH failure is propagated and
-// wrapped with the expected "identity: ..." prefix.
-func TestDelete_ReadSSHError(t *testing.T) {
+// TestDelete_GitOnly_ReadGitconfigError verifies that a ReadGitconfig
+// failure is propagated and wrapped with the expected "identity: ..." prefix.
+func TestDelete_GitOnly_ReadGitconfigError(t *testing.T) {
 	acct := baseDeleteAccount()
-	sentinel := errors.New("read ssh error")
+	sentinel := errors.New("read gitconfig error")
 	deps := DeleteDeps{
-		ReadSSH:              func() ([]byte, error) { return nil, sentinel },
-		ReadGitconfig:        func() ([]byte, error) { return gcFixtureWithBlocks(), nil },
-		WriteSSH:             func(_ []byte) (string, error) { return "", nil },
-		WriteGitconfig:       func(_ []byte) (string, error) { return "", nil },
-		RemoveFragment:       func(_ string) (string, error) { return "", nil },
-		RemoveAllowedSigners: func(_, _ string) (string, error) { return "", nil },
-		RemoveKeyFiles:       func(_, _ string) (string, string, error) { return "", "", nil },
+		ReadGitconfig:        func() ([]byte, error) { return nil, sentinel },
+		WriteGitconfig:       func([]byte) (string, error) { return "", nil },
+		RemoveFragment:       func(string) (string, error) { return "", nil },
+		RemoveAllowedSigners: func(string, string) (string, error) { return "", nil },
+		RemoveKeyFiles:       func(string, string) (string, string, error) { return "", "", nil },
 	}
 
-	_, err := Delete(acct, true, deps)
+	_, err := Delete(acct, DeleteScopeGitOnly, deps)
 	if err == nil {
-		t.Fatal("Delete must return error when ReadSSH fails")
+		t.Fatal("Delete must return error when ReadGitconfig fails")
 	}
 	if !errors.Is(err, sentinel) {
 		t.Errorf("error should wrap sentinel, got: %v", err)
 	}
 }
 
-// TestDelete_Idempotent verifies that deleting an identity that has no managed
-// block in the file (block already absent) returns no error and calls WriteSSH
-// with the original content (RemoveBlock idempotent property).
-func TestDelete_Idempotent(t *testing.T) {
+// TestDelete_GitOnly_Idempotent verifies that deleting an identity whose
+// gitconfig block is already absent (already deleted) is a true no-op: no
+// error, no WriteGitconfig call (RemoveBlock produced identical bytes), and
+// an empty GitconfigBackup — the review R-14 equality guard in action.
+func TestDelete_GitOnly_Idempotent(t *testing.T) {
 	acct := baseDeleteAccount()
 	acct.Name = "nonexistent" // no block for this name in the fixture
 
 	var log deleteCallLog
 	deps := newFakeDeleteDeps(&log, sshFixtureWithBlocks(), gcFixtureWithBlocks())
 
-	_, err := Delete(acct, true, deps)
+	res, err := Delete(acct, DeleteScopeGitOnly, deps)
 	if err != nil {
 		t.Fatalf("Delete(idempotent) error: %v", err)
 	}
-	// WriteSSH must still be called (content unchanged, but write still happens)
-	if log.writeSSH != 1 {
-		t.Errorf("WriteSSH called %d times on idempotent delete, want 1", log.writeSSH)
+	if log.writeGitconfig != 0 {
+		t.Errorf("WriteGitconfig called %d times on an already-absent block, want 0 (R-14 equality guard)", log.writeGitconfig)
+	}
+	if res.GitconfigBackup != "" {
+		t.Errorf("GitconfigBackup = %q on a no-op delete, want empty", res.GitconfigBackup)
+	}
+}
+
+// TestDelete_GitOnly_SecondRunProducesNoSecondBackup runs the SAME Git-only
+// delete twice over one fixture (using the real filewriter.RemoveBlock
+// result to feed the second run's ReadGitconfig, simulating what the on-disk
+// bytes would actually look like after run 1) and asserts the second run
+// returns a nil error and an empty GitconfigBackup — no second backup file.
+func TestDelete_GitOnly_SecondRunProducesNoSecondBackup(t *testing.T) {
+	acct := baseDeleteAccount()
+	gcFixture := gcFixtureWithBlocks()
+
+	writeCount := 0
+	current := gcFixture
+	deps := DeleteDeps{
+		ReadGitconfig: func() ([]byte, error) { return current, nil },
+		WriteGitconfig: func(content []byte) (string, error) {
+			writeCount++
+			current = content
+			return "gc.bak." + strconv.Itoa(writeCount), nil
+		},
+		RemoveFragment:       func(string) (string, error) { return "", nil },
+		RemoveAllowedSigners: func(string, string) (string, error) { return "", nil },
+		RemoveKeyFiles:       func(string, string) (string, string, error) { return "", "", nil },
+	}
+
+	first, err := Delete(acct, DeleteScopeGitOnly, deps)
+	if err != nil {
+		t.Fatalf("first Delete error: %v", err)
+	}
+	if first.GitconfigBackup == "" {
+		t.Fatal("first Delete should have produced a gitconfig backup (the block was present)")
+	}
+	if writeCount != 1 {
+		t.Fatalf("writeCount after first Delete = %d, want 1", writeCount)
+	}
+
+	second, err := Delete(acct, DeleteScopeGitOnly, deps)
+	if err != nil {
+		t.Fatalf("second Delete error: %v", err)
+	}
+	if writeCount != 1 {
+		t.Errorf("writeCount after second (idempotent) Delete = %d, want 1 (no second backup)", writeCount)
+	}
+	if second.GitconfigBackup != "" {
+		t.Errorf("second Delete GitconfigBackup = %q, want empty", second.GitconfigBackup)
 	}
 }
 
