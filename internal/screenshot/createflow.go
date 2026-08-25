@@ -214,21 +214,41 @@ func validRegionPredicate(predicate string) bool {
 }
 
 // regionPredicateSatisfied reports whether predicate holds against the
-// (live, approved) region text pair — the same "hold on EITHER side" rule
-// e2e/git_configuration_pty_e2e_test.go's gitScreenPredicateSatisfied uses:
-// contains:X is satisfied if X appears on either side; absent:X is satisfied
-// if X is missing from either side. An empty predicate always matches
-// (WR-19: Predicate is optional; empty preserves blanket acceptance).
+// (live, approved) region text pair.
+//
+// CR-10 (iteration 4): the prior "hold on EITHER side" grammar
+// (`!strings.Contains(live, needle) || !strings.Contains(approved, needle)`)
+// was proven vacuous by probe — for every shipped predicate, one side
+// structurally never carries the needle, so the OR made the predicate
+// permanently true regardless of what the OTHER (real) side rendered. A
+// probe with the shipped `absent:"gitdir:~/git/"` predicate accepted an
+// arbitrary, unrelated live-side regression ("TOTALLY BROKEN GARBAGE
+// OUTPUT") because the frozen dummy side never contains "gitdir:~/git/"
+// either way.
+//
+// The fix expresses the SHAPE of the authorized divergence instead of "one
+// side happens to lack the string":
+//   - contains:X — the marker must survive on BOTH sides; the difference is
+//     authorized to be elsewhere in the region (e.g. a differing count next
+//     to a shared "ids" label).
+//   - absent:X — the authorized divergence IS the presence/absence
+//     asymmetry itself: exactly one side must carry X. Both-present or
+//     both-absent is an unreviewed change and must be rejected.
+//
+// An empty predicate always matches (WR-19: Predicate is optional; empty
+// preserves blanket acceptance). Mirrored verbatim in
+// e2e/git_configuration_pty_e2e_test.go's gitScreenPredicateSatisfied — keep
+// both in sync (see WR-43).
 func regionPredicateSatisfied(predicate, live, approved string) bool {
 	switch {
 	case predicate == "":
 		return true
 	case strings.HasPrefix(predicate, "contains:"):
 		needle := strings.Trim(strings.TrimPrefix(predicate, "contains:"), `"`)
-		return strings.Contains(live, needle) || strings.Contains(approved, needle)
+		return strings.Contains(live, needle) && strings.Contains(approved, needle)
 	case strings.HasPrefix(predicate, "absent:"):
 		needle := strings.Trim(strings.TrimPrefix(predicate, "absent:"), `"`)
-		return !strings.Contains(live, needle) || !strings.Contains(approved, needle)
+		return strings.Contains(live, needle) != strings.Contains(approved, needle)
 	}
 	return false
 }

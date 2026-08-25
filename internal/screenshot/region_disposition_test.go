@@ -28,12 +28,23 @@ func TestValidRegionPredicateAcceptsEmptyAndScopedGrammar(t *testing.T) {
 	}
 }
 
-// TestRegionPredicateSatisfiedMatchesEitherSide proves regionPredicateSatisfied
-// mirrors e2e/git_configuration_pty_e2e_test.go's gitScreenPredicateSatisfied:
-// contains:X holds if X appears on EITHER side of the live/approved pair;
-// absent:X holds if X is missing from EITHER side. An empty predicate always
-// matches (WR-19: optional, blanket-acceptance default preserved).
-func TestRegionPredicateSatisfiedMatchesEitherSide(t *testing.T) {
+// TestRegionPredicateSatisfiedRejectsSymmetricCases is CR-10 (iteration 4):
+// the ORIGINAL version of this test (then named
+// TestRegionPredicateSatisfiedMatchesEitherSide) proved the OLD grammar —
+// "holds if X appears on EITHER side" for contains:, "holds if X is missing
+// from EITHER side" for absent: — which a probe against the real
+// BuildRegionDiffs proved vacuous: every shipped predicate is anchored on
+// text that one side structurally never contains, so the OR made the
+// predicate permanently true no matter what the OTHER side rendered.
+//
+// The fixed grammar requires the predicate to express the SHAPE of the
+// authorized divergence:
+//   - contains:X must hold on BOTH sides (the marker survives; the
+//     difference is authorized to be elsewhere in the region).
+//   - absent:X must hold on EXACTLY ONE side (the presence/absence
+//     asymmetry IS the authorized divergence — both-present AND
+//     both-absent are unreviewed changes and must be rejected).
+func TestRegionPredicateSatisfiedRejectsSymmetricCases(t *testing.T) {
 	cases := []struct {
 		name      string
 		predicate string
@@ -42,12 +53,14 @@ func TestRegionPredicateSatisfiedMatchesEitherSide(t *testing.T) {
 		want      bool
 	}{
 		{"empty predicate always matches", "", "anything", "anything else", true},
-		{"contains matches live only", `contains:"acme"`, "identity acme", "identity demo", true},
-		{"contains matches approved only", `contains:"demo"`, "identity acme", "identity demo", true},
-		{"contains matches neither side", `contains:"missing"`, "identity acme", "identity demo", false},
-		{"absent holds when missing from live", `absent:"stale"`, "current", "stale text", true},
-		{"absent holds when missing from approved", `absent:"stale"`, "stale text", "current", true},
-		{"absent fails when present on both sides", `absent:"stale"`, "stale text", "stale text too", false},
+		{"contains holds when present on both sides", `contains:"ids"`, "3 ids", "8 ids", true},
+		{"contains rejects when present on live only", `contains:"acme"`, "identity acme", "identity demo", false},
+		{"contains rejects when present on approved only", `contains:"demo"`, "identity acme", "identity demo", false},
+		{"contains rejects when present on neither side", `contains:"missing"`, "identity acme", "identity demo", false},
+		{"absent holds when present on live only", `absent:"stale"`, "stale text", "current", true},
+		{"absent holds when present on approved only", `absent:"stale"`, "current", "stale text", true},
+		{"absent rejects when present on both sides — CR-10's vacuous-accept case", `absent:"stale"`, "stale text", "stale text too", false},
+		{"absent rejects when present on neither side — symmetric absence is also unreviewed", `absent:"stale"`, "current live", "current approved", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -55,6 +68,63 @@ func TestRegionPredicateSatisfiedMatchesEitherSide(t *testing.T) {
 				t.Errorf("regionPredicateSatisfied(%q, %q, %q) = %v, want %v", tc.predicate, tc.live, tc.approved, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestBuildRegionDiffsRejectsUnrelatedLiveRegressionUnderProductionPredicate
+// is CR-10's required reproduction: the review's exact probe methodology,
+// reused as a permanent regression test. It extracts the REAL, shipped
+// gitPreviewDisposition from gitScreenSpecs()'s "git-form-filled" entry —
+// the actual production `absent:"gitdir:~/git/"` RegionDisposition value,
+// not a hand-typed copy of the predicate string — and drives BuildRegionDiffs
+// with an unrelated live-side regression that has nothing to do with the
+// disposition's authorized divergence. Before the CR-10 fix this predicate
+// vacuously accepted ANY live-side text because the frozen dummy fixture
+// never contains "gitdir:~/git/" either way (the exact probe result quoted
+// in 04-REVIEW.md's CR-10 finding) — this test proves it is now rejected,
+// and stays wired to the real production disposition so it tracks any
+// future edit to the shipped predicate.
+func TestBuildRegionDiffsRejectsUnrelatedLiveRegressionUnderProductionPredicate(t *testing.T) {
+	var prodDisposition RegionDisposition
+	found := false
+	for _, s := range gitScreenSpecs() {
+		if s.ScreenID != "git-form-filled" {
+			continue
+		}
+		for _, d := range s.RegionDispositions {
+			if d.Region == RegionGitPreview {
+				prodDisposition, found = d, true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("gitScreenSpecs()'s git-form-filled no longer carries a RegionGitPreview disposition — update this regression fixture")
+	}
+	if prodDisposition.Predicate == "" {
+		t.Fatalf("production RegionGitPreview disposition on git-form-filled lost its Predicate — CR-10 requires it stay scoped, got %+v", prodDisposition)
+	}
+
+	spec := ScreenSpec{
+		ScreenID:              "cr-10-regression-real-disposition",
+		StateMarker:           "shared header",
+		ApplicableLive:        true,
+		ApplicableApprovedTUI: true,
+		RequiredRegions:       []RegionName{RegionGitPreview},
+		RegionDispositions:    []RegionDisposition{prodDisposition},
+		NonApplicability: []SurfaceNonApplicability{{
+			Surface: "approved-html", Decision: "CTX-D-02", Reason: "HTML is not a parity target.", Classification: "ux-improvement",
+		}},
+	}
+
+	// Verbatim reproduction of the reviewer's probe fixture: an unrelated
+	// live-side regression (garbage output) paired with the dummy's frozen,
+	// structurally-unrelated approved sample.
+	live := "shared header\n│ includeIf block\n│ TOTALLY BROKEN GARBAGE OUTPUT\n│ Write it\nfooter1\nfooter2\nfooter3\n"
+	approved := "shared header\n│ includeIf block\n│ [includeIf \"gitdir:~/acme/\"]\n│ Write it\nfooter1\nfooter2\nfooter3\n"
+
+	_, err := BuildRegionDiffs("test-commit", map[string]string{spec.ScreenID: live}, map[string]string{spec.ScreenID: approved}, []ScreenSpec{spec})
+	if err == nil {
+		t.Fatal("CR-10 regression: BuildRegionDiffs accepted an unrelated live-side regression under the production gitPreviewDisposition predicate — the predicate is vacuous again")
 	}
 }
 

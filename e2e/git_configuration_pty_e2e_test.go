@@ -859,14 +859,24 @@ func loadGitScreenAllowlist(t *testing.T) []*gitScreenAllowlistEntry {
 // cmd/gitid/gate_visual_regression_test.go's create-flow gate uses (CR-04:
 // "differs" is never a valid predicate; every divergence must name specific
 // text).
+//
+// CR-10 (iteration 4): fixed the identical vacuous-accept bug
+// internal/screenshot/createflow.go's regionPredicateSatisfied had — the
+// prior "hold on EITHER side" grammar (`!strings.Contains(real, needle) ||
+// !strings.Contains(dummy, needle)`) was permanently true whenever one side
+// structurally never carries the needle, regardless of what the OTHER
+// (real) side rendered. contains:X now requires the marker on BOTH sides;
+// absent:X now requires the presence/absence ASYMMETRY itself (exactly one
+// side carries X) — see the sibling function's comment for the full
+// rationale. Keep both in sync.
 func gitScreenPredicateSatisfied(entry *gitScreenAllowlistEntry, real, dummy string) bool {
 	switch {
 	case strings.HasPrefix(entry.Predicate, "contains:"):
 		needle := strings.Trim(strings.TrimPrefix(entry.Predicate, "contains:"), `"`)
-		return strings.Contains(real, needle) || strings.Contains(dummy, needle)
+		return strings.Contains(real, needle) && strings.Contains(dummy, needle)
 	case strings.HasPrefix(entry.Predicate, "absent:"):
 		needle := strings.Trim(strings.TrimPrefix(entry.Predicate, "absent:"), `"`)
-		return !strings.Contains(real, needle) || !strings.Contains(dummy, needle)
+		return strings.Contains(real, needle) != strings.Contains(dummy, needle)
 	}
 	return false
 }
