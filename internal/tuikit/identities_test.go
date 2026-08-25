@@ -2070,10 +2070,33 @@ func TestGitCommitContractIsAsyncAndStubSafe(t *testing.T) {
 }
 
 func TestGitFormSpecTrimsInputWhitespace(t *testing.T) {
-	form := newGitForm(stubBackend{}, " Acme ", " acme@example.test ", "gitdir")
+	form := newGitForm(stubBackend{}, "acme", " Acme ", " acme@example.test ", "gitdir")
 	spec := form.spec("acme", "~/.ssh/id_ed25519_acme")
 	if got, want := spec.Email, "acme@example.test"; got != want {
 		t.Errorf("spec.Email = %q, want %q", got, want)
+	}
+}
+
+// TestWizardGitDirPreviewMatchesWrite proves the CR-03 fix: the wizard's
+// default gitdir preview and finishIdentity's write must agree. Before the
+// fix, newGitForm seeded the preview from the Git author DISPLAY name (the
+// "Acme Identity" placeholder), while finishIdentity discarded gitSpec.GitDir
+// and hardcoded "~/git/" + identity + "/" — a silent divergence, visible in
+// committed frames, whenever the display name differed from the identity
+// (any display name containing a space, like "Acme Identity", broke it).
+func TestWizardGitDirPreviewMatchesWrite(t *testing.T) {
+	w := newWizard(stubBackend{})
+	w.configureGit = true
+	preview := w.gitSpec().GitDir
+	if strings.Contains(preview, " ") {
+		t.Fatalf("gitdir preview must never carry the author display name's spaces: %q", preview)
+	}
+	id := w.finishIdentity()
+	if id.GitDir != preview {
+		t.Errorf("finishIdentity().GitDir = %q, want the previewed value %q", id.GitDir, preview)
+	}
+	if want := "~/git/" + w.form.identityName() + "/"; id.GitDir != want {
+		t.Errorf("finishIdentity().GitDir = %q, want %q (identity-derived, not the author display name)", id.GitDir, want)
 	}
 }
 
@@ -2119,7 +2142,7 @@ func TestGitFlowFieldsUseEmptySSHOnlyValuesAndExactHostPreview(t *testing.T) {
 }
 
 func TestGitFlowFormRendersLockedFieldsAndToggle(t *testing.T) {
-	form := newGitForm(stubBackend{}, "Personal", "personal@example.test", "gitdir")
+	form := newGitForm(stubBackend{}, "personal", "Personal", "personal@example.test", "gitdir")
 	form.sshHost = "personal.github.com"
 	form.provider = "github.com"
 	form.publicKeyPath = "~/.ssh/id_personal.pub"
@@ -2150,7 +2173,7 @@ func TestGitFlowMouseGitDirFocusAndConditionalVisibility(t *testing.T) {
 }
 
 func TestGitFlowForceSSHToggleAndGitDirProjection(t *testing.T) {
-	form := newGitForm(stubBackend{}, "Personal", "personal@example.test", "gitdir")
+	form := newGitForm(stubBackend{}, "personal", "Personal", "personal@example.test", "gitdir")
 	form.provider = "github.com"
 	form.publicKeyPath = "~/.ssh/id_personal.pub"
 	form = form.handleEdit(mustKey("space"), gitFieldForceSSH)
@@ -2166,7 +2189,7 @@ func includeIfPreviewForTest(spec GitSpec) string {
 }
 
 func TestGitFlowEditDiffReplacesSignerEmail(t *testing.T) {
-	form := newGitForm(stubBackend{}, "Personal", "new@example.test", "gitdir")
+	form := newGitForm(stubBackend{}, "personal", "Personal", "new@example.test", "gitdir")
 	form.original = GitOriginal{
 		Fragment:       "[user]\n    email = old@example.test",
 		AllowedSigners: "old@example.test namespaces=\"git\" ssh-ed25519 AAAA",
@@ -2254,7 +2277,7 @@ func (sentinelIncludeIfBackend) IncludeIfPreview(GitSpec) string {
 }
 
 func TestCompactIncludeIfPreviewShowsCondition(t *testing.T) {
-	form := newGitForm(sentinelIncludeIfBackend{}, "Personal", "personal@example.com", "gitdir")
+	form := newGitForm(sentinelIncludeIfBackend{}, "personal", "Personal", "personal@example.com", "gitdir")
 	view := form.view("personal", "~/.ssh/id_ed25519_personal", gitFieldName, 62, "")
 
 	if !strings.Contains(view, `[includeIf "gitdir:~/personal/"]`) {

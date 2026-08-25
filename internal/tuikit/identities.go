@@ -554,8 +554,12 @@ type gitForm struct {
 	original GitOriginal
 }
 
-// newGitForm builds the form with initial values.
-func newGitForm(b Backend, name, email, strategy string) gitForm {
+// newGitForm builds the form with initial values. identity seeds the gitdir
+// preview — it is the identity's stored/alias name, deliberately kept
+// separate from name (the Git author display name, e.g. "Acme Identity").
+// CR-03: seeding gitDir from the author display name produced a preview
+// path with a space in it that finishIdentity's write never actually used.
+func newGitForm(b Backend, identity, name, email, strategy string) gitForm {
 	idx := 0
 	for i, s := range matchStrategies {
 		if s == strategy {
@@ -564,7 +568,7 @@ func newGitForm(b Backend, name, email, strategy string) gitForm {
 	}
 	return gitForm{
 		backend: b, name: newTextInput(name), email: newTextInput(email),
-		gitDir: newTextInput("~/git/" + name + "/"), strategyIdx: idx, forceSSH: true,
+		gitDir: newTextInput("~/git/" + identity + "/"), strategyIdx: idx, forceSSH: true,
 	}
 }
 
@@ -847,7 +851,7 @@ func newWizard(b Backend) wizardModel {
 		focus:      sshFieldPrefix,
 		testPhase:  testIdle,
 		manualPath: newTextInput(""),
-		git:        newGitForm(b, "Acme Identity", "you@acme.example", b.DefaultMatchStrategy()).setFocus(gitFieldName),
+		git:        newGitForm(b, form.identityName(), "Acme Identity", "you@acme.example", b.DefaultMatchStrategy()).setFocus(gitFieldName),
 	}
 }
 
@@ -1449,12 +1453,15 @@ func (w wizardModel) finishIdentity() DemoIdentity {
 		Provider: sp.Provider,
 	}
 	if w.configureGit {
+		// CR-03: id.GitDir must be the value gitSpec actually carries (what
+		// the ceremony previewed and what commitGitArtifacts will write),
+		// never a re-derived literal — those two can diverge whenever the
+		// user edits the gitdir field or the preview seed differs from the
+		// identity name.
 		gitSpec := w.gitSpec()
-		id.GitDir = "~/git/" + name + "/"
+		id.GitDir = gitSpec.GitDir
 		id.ForceSSH = gitSpec.ForceSSH
 		id.PublicKeyPath = gitSpec.PublicKeyPath
-	}
-	if w.configureGit {
 		id.State = "complete"
 		id.GitConfigured = true
 		id.GitFragmentPath = "~/.gitconfig.d/" + name
@@ -1837,7 +1844,7 @@ func (m identitiesModel) openGitForm(sel DemoIdentity) identitiesModel {
 		strategy = m.backend.DefaultMatchStrategy()
 	}
 	m.gitExisting = sel.GitFragmentPath != ""
-	m.gitPaneForm = newGitForm(m.backend, name, email, strategy)
+	m.gitPaneForm = newGitForm(m.backend, sel.Name, name, email, strategy)
 	m.gitPaneForm.sshHost = sel.SSHHost
 	m.gitPaneForm.provider = sel.Provider
 	if m.gitPaneForm.provider == "" || !strings.Contains(m.gitPaneForm.provider, ".") {
