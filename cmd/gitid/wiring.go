@@ -739,7 +739,7 @@ func (b *realBackend) GitStepDisabledReason() (string, bool) {
 func (b *realBackend) CommitGit(spec tuikit.GitSpec) tea.Cmd {
 	return func() tea.Msg {
 		if b.initErr != nil {
-			return tuikit.GitCommitMsg{Err: b.initErr.Error()}
+			return tuikit.GitCommitMsg{Err: b.displayMessage(b.initErr.Error())}
 		}
 		backups, restored, err := b.commitGitTransaction(spec)
 		// WR-01: the standalone Git ceremony's receipt rendered raw absolute
@@ -750,8 +750,18 @@ func (b *realBackend) CommitGit(spec tuikit.GitSpec) tea.Cmd {
 		for i, backup := range backups {
 			displayBackups[i] = b.displayPath(backup)
 		}
+		// WR-23: restored's own outcome lines already run their PATH through
+		// displayPath (mutationJournal.restore), but each line's trailing
+		// error text is not path-scrubbed — a wrapped os/gitconfig error
+		// (e.g. `git config --file %s %s: ...`) still embeds the raw
+		// absolute sandbox path. Scrub the whole line here, the one place
+		// that is about to make it user-facing.
+		displayRestored := make([]string, len(restored))
+		for i, outcome := range restored {
+			displayRestored[i] = b.displayMessage(outcome)
+		}
 		if err != nil {
-			return tuikit.GitCommitMsg{Backups: displayBackups, Restored: restored, Err: err.Error()}
+			return tuikit.GitCommitMsg{Backups: displayBackups, Restored: displayRestored, Err: b.displayMessage(err.Error())}
 		}
 		return tuikit.GitCommitMsg{Backups: displayBackups}
 	}
@@ -1643,7 +1653,7 @@ func (b *realBackend) storeUnlocked() bool {
 func (b *realBackend) CommitCreate(id tuikit.DemoIdentity) tea.Cmd {
 	return func() tea.Msg {
 		if b.initErr != nil {
-			return tuikit.WizardCommitMsg{Err: b.initErr.Error()}
+			return tuikit.WizardCommitMsg{Err: b.displayMessage(b.initErr.Error())}
 		}
 		in := b.createInput(id)
 		if !b.storeUnlockedFor(in) {
@@ -1652,7 +1662,7 @@ func (b *realBackend) CommitCreate(id tuikit.DemoIdentity) tea.Cmd {
 		}
 		staged, err := b.stagedKeyFor(in, id.ReuseKeyPath)
 		if err != nil {
-			return tuikit.WizardCommitMsg{Err: err.Error()}
+			return tuikit.WizardCommitMsg{Err: b.displayMessage(err.Error())}
 		}
 		backups, err := b.commitCreateTransaction(in, staged, id)
 		// WR-21: map through displayPath and surface on BOTH outcomes — the
@@ -1664,7 +1674,12 @@ func (b *realBackend) CommitCreate(id tuikit.DemoIdentity) tea.Cmd {
 			displayBackups[i] = b.displayPath(backup)
 		}
 		if err != nil {
-			return tuikit.WizardCommitMsg{Backups: displayBackups, Err: err.Error()}
+			// WR-23: commitCreateTransaction's own message already maps its
+			// displayed BACKUP paths through displayPath (see fail(), above),
+			// but the leading `gitid: mutation %s failed: %v` wraps errors
+			// from gitConfigSet/filewriter/sshconfig that embed raw absolute
+			// paths inline in their own text — scrub the whole message here.
+			return tuikit.WizardCommitMsg{Backups: displayBackups, Err: b.displayMessage(err.Error())}
 		}
 		b.clearStaged()
 		b.clearOutcomes()
@@ -1953,6 +1968,25 @@ func (b *realBackend) displayPath(path string) string {
 		return filepath.Join("~", rel)
 	}
 	return path
+}
+
+// displayMessage is WR-23's fix: WR-01 shortened the explicit Backups list
+// through displayPath, but wrapped errors from the low-level packages
+// (internal/gitconfig's gitConfigSet/gitConfigUnsetAll, filewriter,
+// sshconfig) embed raw absolute sandbox paths inline in their own message
+// text (e.g. `git config --file %s %s: ...`), not as a separate field — so
+// they never went through displayPath and still reached
+// GitCommitMsg/WizardCommitMsg.Err verbatim. Those packages are
+// intentionally UI-free (CLAUDE.md) and have no concept of HOME-relative
+// display formatting; the shortening belongs at this backend boundary, the
+// one place that owns both b.home and the message about to become
+// user-facing text. A plain substring replace is sufficient and safe here:
+// b.home is an absolute path with no regex metacharacters to escape.
+func (b *realBackend) displayMessage(msg string) string {
+	if msg == "" || b.home == "" {
+		return msg
+	}
+	return strings.ReplaceAll(msg, b.home, "~")
 }
 
 // atoiOr parses s, falling back to fallback when it is not a plain integer.

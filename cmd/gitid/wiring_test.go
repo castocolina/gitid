@@ -1184,6 +1184,39 @@ func TestCombinedTransactionSurfacesBackupsOnFailureEvenWhenRestorationSucceeds(
 	}
 }
 
+// TestCombinedTransactionErrorMessageIsDisplayShortened proves the WR-23 fix
+// for commitCreateTransaction's own entry point (CommitCreate), mirroring
+// TestCommitGitErrorMessageIsDisplayShortened for the standalone Git flow.
+// Force a REAL gitConfigSet failure (the fragment path is a directory) via a
+// combined (GitConfigured) create and assert WizardCommitMsg.Err never
+// leaks the raw sandbox HOME path.
+func TestCombinedTransactionErrorMessageIsDisplayShortened(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	fragmentPath := filepath.Join(home, ".gitconfig.d", "personal")
+	if err := os.MkdirAll(fragmentPath, 0o700); err != nil {
+		t.Fatalf("seeding fragment path as a directory: %v", err)
+	}
+	b := newBackendForHome(home)
+	id := tuikit.DemoIdentity{
+		Name: "personal", SSHHost: "personal.github.com", Hostname: "ssh.github.com", Port: 443,
+		KeyPath: "~/.ssh/id_ed25519_personal", Provider: "github.com", GitConfigured: true,
+		GitName: "Personal", GitEmail: "personal@example.test", MatchStrategy: "gitdir",
+	}
+	unlockStoreForIdentity(t, b, id)
+	msg := runCommitCreate(t, b, id)
+	if msg.Err == "" {
+		t.Fatal("setup: expected the directory-as-fragment-path to fail the write")
+	}
+	if strings.Contains(msg.Err, home) {
+		t.Errorf("WizardCommitMsg.Err leaks the raw absolute sandbox HOME path:\n%s", msg.Err)
+	}
+	if !strings.Contains(msg.Err, "~/.gitconfig.d/personal") {
+		t.Errorf("WizardCommitMsg.Err missing the expected ~/-shortened fragment path:\n%s", msg.Err)
+	}
+}
+
 func TestProviderFromAliasPreservesMultiLabelProvider(t *testing.T) {
 	if got, want := providerFromAlias("work.github.com"), "github.com"; got != want {
 		t.Errorf("providerFromAlias(work.github.com) = %q, want %q", got, want)
@@ -1277,6 +1310,50 @@ func TestCommitGitReturnsDisplayShortenedBackupPaths(t *testing.T) {
 		if !strings.HasPrefix(backup, "~/") {
 			t.Errorf("backup path %q does not start with ~/, want the display-shortened form", backup)
 		}
+	}
+}
+
+// TestCommitGitErrorMessageIsDisplayShortened proves the WR-23 fix: WR-01
+// shortened the explicit Backups list, but the Err STRING itself is built
+// from wrapped errors that embed raw absolute paths inline in their own
+// text — e.g. internal/gitconfig's gitConfigSet returns
+// "git config --file %s %s: ...: %s" with an absolute path — so the
+// three-row wrapping problem WR-01 described still occurred on the failure
+// receipt, the screen where legibility matters most. Force a REAL
+// gitConfigSet failure (the fragment path is a directory, so `git config
+// --file <dir> ...` fails) and assert the resulting Err never contains the
+// raw sandbox HOME path, only its ~/-shortened form.
+func TestCommitGitErrorMessageIsDisplayShortened(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_personal")
+	seedGeneratedKey(t, keyPath, "personal", "")
+	// Seed the fragment path AS A DIRECTORY so gitConfigSet's real `git
+	// config --file <dir> ...` invocation fails with a genuine error that
+	// embeds this absolute path — not a synthetic injected failure.
+	fragmentPath := filepath.Join(home, ".gitconfig.d", "personal")
+	if err := os.MkdirAll(fragmentPath, 0o700); err != nil {
+		t.Fatalf("seeding fragment path as a directory: %v", err)
+	}
+	b := newBackendForHome(home)
+	cmd := b.CommitGit(tuikit.GitSpec{
+		Identity: "personal", Name: "Personal", Email: "personal@example.test", Strategy: "gitdir",
+		KeyPath: keyPath, PublicKeyPath: keyPath + ".pub", SSHHost: "personal.github.com",
+		Provider: "github.com", GitDir: "~/git/personal/", ForceSSH: true,
+	})
+	msg, ok := cmd().(tuikit.GitCommitMsg)
+	if !ok {
+		t.Fatalf("CommitGit delivered %T, want GitCommitMsg", cmd())
+	}
+	if msg.Err == "" {
+		t.Fatal("setup: expected the directory-as-fragment-path to fail the write")
+	}
+	if strings.Contains(msg.Err, home) {
+		t.Errorf("GitCommitMsg.Err leaks the raw absolute sandbox HOME path:\n%s", msg.Err)
+	}
+	if !strings.Contains(msg.Err, "~/.gitconfig.d/personal") {
+		t.Errorf("GitCommitMsg.Err missing the expected ~/-shortened fragment path:\n%s", msg.Err)
 	}
 }
 
