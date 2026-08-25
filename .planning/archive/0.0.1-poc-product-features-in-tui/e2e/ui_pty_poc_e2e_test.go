@@ -9,6 +9,14 @@
 
 package e2e
 
+import (
+	"context"
+	"os"
+	"strings"
+	"testing"
+	"time"
+)
+
 // TestUIPTY_WizardInputDecoding drives the Create Identity wizard via PTY raw
 // keystrokes and verifies the typed identity name appears in the decoded frame.
 // This directly tests the input-decoding regression: the historical

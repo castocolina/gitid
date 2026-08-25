@@ -553,3 +553,180 @@ func TestReconstruct_RoundTrip(t *testing.T) {
 		t.Errorf("work GitName: got %q want 'Work User'", work.GitName)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// 05-04 — provider normalization (RewriteProviderKey, ProviderHostForSSHHostname,
+// ProviderKeyForHost, ProviderRefCount)
+// ---------------------------------------------------------------------------
+
+// TestRewriteProviderKey covers the three-branch precedence, including the
+// review R2-11 short-provider/short-alias correction.
+func TestRewriteProviderKey(t *testing.T) {
+	cases := []struct {
+		name     string
+		provider string
+		alias    string
+		want     string
+	}{
+		{"already dotted provider used as-is", "github.com", "work.github.com", "github.com"},
+		{"short provider resolves via table (R2-11)", "github", "work.github.com", "github.com"},
+		{"short provider + short alias still resolves (R2-11 regression)", "github", "mygh", "github.com"},
+		{"gitlab short form", "gitlab", "x", "gitlab.com"},
+		{"bitbucket short form", "bitbucket", "x", "bitbucket.org"},
+		{"empty provider falls to alias suffix", "", "work.github.com", "github.com"},
+		{"empty provider, two-label alias returns alias verbatim", "", "github.com", "github.com"},
+		{"empty provider, empty alias returns empty", "", "", ""},
+		{"unknown short provider falls through to alias suffix", "customcorp", "work.git.example.com", "git.example.com"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := RewriteProviderKey(tc.provider, tc.alias)
+			if got != tc.want {
+				t.Errorf("RewriteProviderKey(%q, %q) = %q, want %q", tc.provider, tc.alias, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestProviderHostForSSHHostname pins every recognized alt-SSH/bare hostname
+// (including the Bitbucket pair review R2-04 adds) and the honest-unknown
+// empty-string case.
+func TestProviderHostForSSHHostname(t *testing.T) {
+	cases := []struct {
+		hostname string
+		want     string
+	}{
+		{"ssh.github.com", "github.com"},
+		{"github.com", "github.com"},
+		{"altssh.gitlab.com", "gitlab.com"},
+		{"gitlab.com", "gitlab.com"},
+		{"altssh.bitbucket.org", "bitbucket.org"},
+		{"bitbucket.org", "bitbucket.org"},
+		{"git.example.internal", ""},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		got := ProviderHostForSSHHostname(tc.hostname)
+		if got != tc.want {
+			t.Errorf("ProviderHostForSSHHostname(%q) = %q, want %q", tc.hostname, got, tc.want)
+		}
+	}
+}
+
+// TestProviderKeyForHost pins the documented precedence: marker, then
+// hostname, then alias-suffix fallback — including the exact recipe-
+// canonical regression cases review R-05 and its Bitbucket twin (R2-04) name.
+func TestProviderKeyForHost(t *testing.T) {
+	cases := []struct {
+		name     string
+		alias    string
+		hostname string
+		marker   string
+		want     string
+	}{
+		{"explicit marker wins", "foo", "ssh.github.com", "gitlab.com", "gitlab.com"},
+		{"ssh.github.com + dotted alias (R-05 regression)", "foo.github.com", "ssh.github.com", "", "github.com"},
+		{"ssh.github.com + dotless alias (R2-11 regression)", "mygh", "ssh.github.com", "", "github.com"},
+		{"altssh.gitlab.com", "x.gitlab.com", "altssh.gitlab.com", "", "gitlab.com"},
+		{"altssh.bitbucket.org (R2-04 Bitbucket twin)", "foo.bitbucket.org", "altssh.bitbucket.org", "", "bitbucket.org"},
+		{"bare bitbucket.org hostname", "foo.bitbucket.org", "bitbucket.org", "", "bitbucket.org"},
+		{"unrecognized hostname falls to alias suffix", "work.custom.example.com", "git.example.internal", "", "custom.example.com"},
+		{"unrecognized hostname, no usable alias", "custom", "git.example.internal", "", "custom"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ProviderKeyForHost(tc.alias, tc.hostname, tc.marker)
+			if got != tc.want {
+				t.Errorf("ProviderKeyForHost(%q, %q, %q) = %q, want %q", tc.alias, tc.hostname, tc.marker, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestProviderRefCount_ShortFormProviderCounted asserts that ProviderRefCount
+// counts an account whose reconstructed Provider is the SHORT form ("github")
+// as a reference to the "github.com" key — both sides of the comparison are
+// normalized.
+func TestProviderRefCount_ShortFormProviderCounted(t *testing.T) {
+	accounts := []Account{
+		{Name: "work", Provider: "github", Alias: "work.github.com"},
+		{Name: "personal", Provider: "github.com", Alias: "personal.github.com"},
+	}
+	got := ProviderRefCount(accounts, "github.com", "personal")
+	if got != 1 {
+		t.Errorf("ProviderRefCount = %d, want 1 (the short-form 'work' account)", got)
+	}
+}
+
+// TestProviderRefCount_ShortProviderShortAlias is the R2-11 sibling proof:
+// an account whose Provider is short AND whose Alias is also dotless still
+// counts as a "github.com" reference (not silently dropped).
+func TestProviderRefCount_ShortProviderShortAlias(t *testing.T) {
+	accounts := []Account{
+		{Name: "mygh-account", Provider: "github", Alias: "mygh"},
+	}
+	got := ProviderRefCount(accounts, "github.com", "someone-else")
+	if got != 1 {
+		t.Errorf("ProviderRefCount = %d, want 1 (short-provider/short-alias account)", got)
+	}
+}
+
+// TestProviderRefCount_ExcludesSelf asserts the excludingName account is
+// never counted, even when it matches providerKey.
+func TestProviderRefCount_ExcludesSelf(t *testing.T) {
+	accounts := []Account{
+		{Name: "work", Provider: "github.com", Alias: "work.github.com"},
+	}
+	got := ProviderRefCount(accounts, "github.com", "work")
+	if got != 0 {
+		t.Errorf("ProviderRefCount = %d, want 0 (self excluded)", got)
+	}
+}
+
+// wizardProviderShortForms is the domain-side mirror of
+// tuikit.wizardProviders' three FQDN entries, expressed as (short, FQDN)
+// pairs matching DefaultHostname's own provider switch (identity.go) — the
+// "providerHostname" table review R2-04's acceptance criterion names.
+// internal/identity must not import internal/tuikit (layering), so this
+// table is declared here, independently, and TestProviderTableRoundTripsWizardProviders
+// asserts it covers every case DefaultHostname's switch handles, so a fourth
+// provider added to DefaultHostname without a matching entry here fails this
+// test.
+var wizardProviderShortForms = []struct {
+	short  string
+	altSSH string
+	fqdn   string
+}{
+	{"github", "ssh.github.com", "github.com"},
+	{"gitlab", "altssh.gitlab.com", "gitlab.com"},
+	{"bitbucket", "altssh.bitbucket.org", "bitbucket.org"},
+}
+
+// TestProviderTableRoundTripsWizardProviders is the review R2-04 coverage
+// gate: for every provider DefaultHostname's own switch handles (github,
+// gitlab, bitbucket), BOTH that function's returned alt-SSH endpoint and the
+// bare FQDN round-trip through ProviderHostForSSHHostname to the same FQDN
+// key — so a provider the product can create can never be silently absent
+// from the D-09 count path.
+func TestProviderTableRoundTripsWizardProviders(t *testing.T) {
+	if len(wizardProviderShortForms) != 3 {
+		t.Fatalf("wizardProviderShortForms has %d entries, want 3 (github, gitlab, bitbucket)", len(wizardProviderShortForms))
+	}
+	for _, tc := range wizardProviderShortForms {
+		t.Run(tc.short, func(t *testing.T) {
+			// DefaultHostname's own answer for this short provider must be the
+			// alt-SSH endpoint this table expects.
+			if got := DefaultHostname(tc.short); got != tc.altSSH {
+				t.Fatalf("DefaultHostname(%q) = %q, want %q (table/switch drift)", tc.short, got, tc.altSSH)
+			}
+			// The alt-SSH endpoint round-trips to the FQDN key.
+			if got := ProviderHostForSSHHostname(tc.altSSH); got != tc.fqdn {
+				t.Errorf("ProviderHostForSSHHostname(%q) = %q, want %q", tc.altSSH, got, tc.fqdn)
+			}
+			// The bare FQDN hostname round-trips to itself.
+			if got := ProviderHostForSSHHostname(tc.fqdn); got != tc.fqdn {
+				t.Errorf("ProviderHostForSSHHostname(%q) = %q, want %q", tc.fqdn, got, tc.fqdn)
+			}
+		})
+	}
+}

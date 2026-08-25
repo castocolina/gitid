@@ -471,24 +471,109 @@ func buildDeleteDeps(b *realBackend) identity.DeleteDeps {
 			return filewriter.BackupAndRemove(fragPath)
 		},
 		RemoveAllowedSigners: gitconfig.RemoveAllowedSignersBlock,
+		// RemoveKeyFiles is the LIVE-key removal seam Delete calls LAST under
+		// DeleteScopeEverything, AFTER CopyKeyPairToArchive has already
+		// landed the recoverable copy (D-11) — so this is a plain remove,
+		// not a second filewriter.BackupAndRemove timestamped backup: the
+		// archive copy already IS the backup. Tolerates an already-absent
+		// file (no error).
 		RemoveKeyFiles: func(keyPath, pubPath string) (string, string, error) {
-			var keyBak, pubBak string
-			var err error
 			if keyPath != "" {
-				keyBak, err = filewriter.BackupAndRemove(keyPath)
-				if err != nil {
+				if err := os.Remove(keyPath); err != nil && !os.IsNotExist(err) {
 					return "", "", fmt.Errorf("gitid: removing private key: %w", err)
 				}
 			}
 			if pubPath != "" {
-				pubBak, err = filewriter.BackupAndRemove(pubPath)
-				if err != nil {
-					return keyBak, "", fmt.Errorf("gitid: removing public key: %w", err)
+				if err := os.Remove(pubPath); err != nil && !os.IsNotExist(err) {
+					return "", "", fmt.Errorf("gitid: removing public key: %w", err)
 				}
 			}
-			return keyBak, pubBak, nil
+			return "", "", nil
 		},
+		// Accounts is the SAME reconstruction the identity list/CommitDelete/
+		// CLI delete already read — never a second, divergent lookup.
+		Accounts: func() ([]identity.Account, error) { return b.accounts(), nil },
+		// ForeignProviderRefs walks the real ~/.ssh/config for the D-09
+		// hand-written-alias half of the reference count.
+		ForeignProviderRefs: func(providerKey string) (int, error) {
+			return countForeignProviderRefs(b, providerKey)
+		},
+		RemoveProviderRewrite: func(providerKey string) (string, error) {
+			return gitconfig.RemoveProviderRewrite(b.gitconfigPath, providerKey)
+		},
+		// CopyKeyPairToArchive is the BACKEND-WIDE binding (review R3-01,
+		// delete's half — mirrors ArchiveKeyPair's precedent exactly): it
+		// REFUSES to archive, because buildDeleteDeps runs with no
+		// transaction in scope. deleteDepsForTransaction is the ONLY way to
+		// obtain a working archive-copy seam.
+		CopyKeyPairToArchive: b.copyKeyPairSeam(func(string) error { return errArchiveOutsideTransaction }),
 	}
+}
+
+// copyKeyPairSeam is the ONE archive-COPY implementation
+// identity.DeleteDeps' CopyKeyPairToArchive field can be bound to — only its
+// onCreated OBSERVER varies between the backend-wide refusing binding
+// (buildDeleteDeps, above) and a transaction-bound working seam
+// (deleteDepsForTransaction, below). It mirrors archiveKeyPairSeam's shape
+// exactly but calls keygen.CopyKeyPairToArchive (NEVER touches sources —
+// delete-everything's primitive, review R-03) with the same monotonic
+// stamp-collision retry.
+func (b *realBackend) copyKeyPairSeam(onCreated keygen.CreatedFunc) func(privPath, pubPath string) (string, string, error) {
+	return func(privPath, pubPath string) (string, string, error) {
+		archiveDir := sshconfig.ArchiveDir(b.sshDir)
+		stampNanos := b.archiveClock().UnixNano()
+		pair, err := keygen.CopyKeyPairToArchive(archiveDir, privPath, pubPath, strconv.FormatInt(stampNanos, 10), onCreated)
+		if err != nil && errors.Is(err, os.ErrExist) {
+			// Same-nanosecond stamp collision (review R2-05/R-21's
+			// composition-root retry, mirrored from archiveKeyPairSeam).
+			stampNanos++
+			pair, err = keygen.CopyKeyPairToArchive(archiveDir, privPath, pubPath, strconv.FormatInt(stampNanos, 10), onCreated)
+		}
+		return pair.PrivatePath, pair.PublicPath, err
+	}
+}
+
+// deleteDepsForTransaction returns a COPY of buildDeleteDeps(b) (review
+// R3-01, delete's half — mirrors depsForTransaction's identity.Deps
+// precedent) with CopyKeyPairToArchive rebound to a working archive seam
+// whose onCreated observer is j.recordCreatedFile. Every archive copy this
+// seam creates is announced to j BEFORE the live key files are ever removed
+// (deleteEverything's own ordering guarantee), so a rollback can always
+// discover and undo it. runDelete is the production caller — never
+// buildDeleteDeps(b) directly for the everything scope, whose
+// CopyKeyPairToArchive binding refuses by design.
+func (b *realBackend) deleteDepsForTransaction(j *mutationJournal) identity.DeleteDeps {
+	deps := buildDeleteDeps(b)
+	deps.CopyKeyPairToArchive = b.copyKeyPairSeam(j.recordCreatedFile)
+	return deps
+}
+
+// countForeignProviderRefs counts every Host stanza OUTSIDE any gitid-managed
+// block whose resolved provider key (identity.ProviderKeyForHost) equals
+// providerKey — the D-09 hand-written-alias half of the reference count.
+// "Foreign" means literally outside every managed block: every managed
+// block's raw text is stripped first (filewriter.RemoveBlock, once per
+// block name filewriter.ListBlocks reports) before parsing, so a gitid-
+// managed identity's OWN Host stanza is never double-counted here —
+// ProviderRefCount already counts every managed account. The Include-aware
+// merged bytes are used (identity.InventoryDepsForHome), so a fresh D-06
+// machine's config.d-only layout is covered too.
+func countForeignProviderRefs(b *realBackend, providerKey string) (int, error) {
+	content, err := identity.InventoryDepsForHome(b.home).ReadSSHConfig()
+	if err != nil {
+		return 0, fmt.Errorf("gitid: reading ssh config for foreign provider refs: %w", err)
+	}
+	foreign := content
+	for _, blk := range filewriter.ListBlocks(content) {
+		foreign = filewriter.RemoveBlock(foreign, blk.Name)
+	}
+	count := 0
+	for _, stanza := range sshconfig.AllHostStanzas(foreign) {
+		if identity.ProviderKeyForHost(stanza.Alias, stanza.Hostname, "") == providerKey {
+			count++
+		}
+	}
+	return count, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1112,20 +1197,35 @@ func (b *realBackend) runDelete(name string, scope identity.DeleteScope) (backup
 	acct.FragmentPath = expandTildeForHome(acct.FragmentPath, b.home)
 	acct.KeyPath = expandTildeForHome(acct.KeyPath, b.home)
 	acct.PubPath = expandTildeForHome(acct.PubPath, b.home)
+	// Account.AllowedSignersPath is never populated by Reconstruct (it has
+	// no per-identity value to reconstruct FROM — the file is shared) —
+	// unlike Fragment/Key/Pub, it is a constant, backend-wide path, so it is
+	// filled here from b.allowedSigners (already absolute, no tilde to
+	// expand) rather than threaded through DeleteDeps as a second seam.
+	acct.AllowedSignersPath = b.allowedSigners
 
 	journal := newMutationJournal(b)
-	if scope == identity.DeleteScopeGitOnly {
-		if werr := journal.watchFile(b.gitconfigPath); werr != nil {
+	if werr := journal.watchFile(b.gitconfigPath); werr != nil {
+		return nil, nil, werr
+	}
+	if acct.FragmentPath != "" {
+		if werr := journal.watchFile(acct.FragmentPath); werr != nil {
 			return nil, nil, werr
 		}
-		if acct.FragmentPath != "" {
-			if werr := journal.watchFile(acct.FragmentPath); werr != nil {
-				return nil, nil, werr
-			}
+	}
+	if scope == identity.DeleteScopeEverything {
+		if werr := journal.watchFile(b.storageTargetPath()); werr != nil {
+			return nil, nil, werr
+		}
+		if werr := journal.watchFile(b.allowedSigners); werr != nil {
+			return nil, nil, werr
 		}
 	}
 
-	deps := buildDeleteDeps(b)
+	// deleteDepsForTransaction, never buildDeleteDeps(b) directly (review
+	// R3-01): only the transaction-bound seam's CopyKeyPairToArchive
+	// actually archives; the backend-wide binding refuses.
+	deps := b.deleteDepsForTransaction(journal)
 	if b.failCommitAt != nil {
 		deps = injectDeleteFailures(b, deps)
 	}
@@ -1171,7 +1271,10 @@ func injectDeleteFailures(b *realBackend, deps identity.DeleteDeps) identity.Del
 // carries, in the same field order the result declares them.
 func collectDeleteBackups(res identity.DeleteResult) []string {
 	var out []string
-	for _, p := range []string{res.SSHBackup, res.GitconfigBackup, res.FragmentBackup, res.AllowedSignersBackup, res.KeyBackup, res.PubBackup} {
+	for _, p := range []string{
+		res.SSHBackup, res.GitconfigBackup, res.FragmentBackup, res.AllowedSignersBackup,
+		res.KeyBackup, res.PubBackup, res.ProviderRewriteBackup,
+	} {
 		if p != "" {
 			out = append(out, p)
 		}

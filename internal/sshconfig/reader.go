@@ -98,6 +98,41 @@ func ParseAllHostIdentityFiles(content []byte) []string {
 	return result
 }
 
+// HostStanza is one Host block's alias pattern plus its Hostname value —
+// the minimal shape identity.ProviderKeyForHost needs to resolve a stanza to
+// a provider key, without cmd/gitid having to import the raw
+// kevinburke/ssh_config decoder itself (D-09).
+type HostStanza struct {
+	Alias    string
+	Hostname string
+}
+
+// AllHostStanzas parses content and returns every Host stanza's alias
+// pattern(s) plus its Hostname value, gitid-managed AND hand-written,
+// skipping the implicit "Host *" the parser injects. A stanza with multiple
+// alias patterns yields one HostStanza per pattern, all sharing the
+// stanza's Hostname value. This is the D-09 data source for the
+// composition root's hand-written-alias provider ref-count
+// (identity.ProviderKeyForHost is applied to each result by the caller).
+func AllHostStanzas(content []byte) []HostStanza {
+	cfg, err := ssh_config.Decode(strings.NewReader(string(content)))
+	if err != nil {
+		return nil
+	}
+	var out []HostStanza
+	for _, host := range cfg.Hosts {
+		if len(host.Patterns) == 1 && host.Patterns[0].String() == "*" {
+			continue
+		}
+		for _, p := range host.Patterns {
+			alias := p.String()
+			hostname, _ := cfg.Get(alias, "Hostname")
+			out = append(out, HostStanza{Alias: alias, Hostname: hostname})
+		}
+	}
+	return out
+}
+
 // parseHostBlockBody parses a single SSH host block body string into an
 // SSHHostInfo. It skips the implicit Host * inserted by the kevinburke parser
 // (Pitfall A guard: len(host.Patterns)==1 && host.Patterns[0].String()=="*").

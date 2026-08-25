@@ -2188,7 +2188,7 @@ func mustAllowedSignersLine(t *testing.T, email, pubLine string) string {
 
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil { //nolint:gosec // hermetic t.TempDir() fixture path (G703)
 		t.Fatalf("writing fixture %s: %v", path, err)
 	}
 }
@@ -2413,43 +2413,55 @@ func TestRunDeleteMidTransactionFailureRestores(t *testing.T) {
 	assertUnchanged(t, before, snapshotPaths(t, []string{gitconfigPath}))
 }
 
-// TestCLIAllAndTUIEverythingRefuseIdentically proves review R-16: the CLI
-// `--all` path and the TUI's everything CommitDelete both surface an error
-// satisfying errors.Is(err, identity.ErrScopeNotAvailable), rendered as the
-// EXACT SAME string — because both call the SAME runDelete function.
-func TestCLIAllAndTUIEverythingRefuseIdentically(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	seedDeleteFixture(t, home, "work")
+// TestCLIAllAndTUIEverythingBothDeleteEverything proves the 05-04 successor
+// to review R-16's refusal-parity test: now that DeleteScopeEverything is
+// implemented, the CLI `--all` path and the TUI's everything CommitDelete
+// both SUCCEED and produce byte-identical results — because both still call
+// the SAME runDelete function (D-02's one-chokepoint claim holds for the
+// everything scope too, not just git-only).
+func TestCLIAllAndTUIEverythingBothDeleteEverything(t *testing.T) {
+	homeA := t.TempDir()
+	seedDeleteFixture(t, homeA, "work")
+	homeB := t.TempDir()
+	seedDeleteFixture(t, homeB, "work")
 
-	b := newBackendForHome(home)
-
-	// The TUI path: Backend.CommitDelete, run synchronously.
-	tuiMsg, ok := b.CommitDelete("work", "everything")().(tuikit.DeleteCommitMsg)
+	// Path A: the TUI path, Backend.CommitDelete run synchronously.
+	bA := newBackendForHome(homeA)
+	tuiMsg, ok := bA.CommitDelete("work", "everything")().(tuikit.DeleteCommitMsg)
 	if !ok {
 		t.Fatalf("CommitDelete delivered a non-DeleteCommitMsg")
 	}
-	if tuiMsg.Err == "" {
-		t.Fatal("TUI everything CommitDelete must report an error in this plan")
+	if tuiMsg.Err != "" {
+		t.Fatalf("TUI everything CommitDelete error: %s", tuiMsg.Err)
 	}
 
-	// The CLI path: build the delete verb, run it with --all --yes.
+	// Path B: the CLI verb, `--all --yes`.
+	t.Setenv("HOME", homeB)
 	cliCmd := newVerbCmd(newIdentityDeleteVerb())
 	cliCmd.SetArgs([]string{"work", "--all", "--yes"})
 	var stdout, stderr bytes.Buffer
 	cliCmd.SetOut(&stdout)
 	cliCmd.SetErr(&stderr)
-	cliErr := cliCmd.Execute()
-	if cliErr == nil {
-		t.Fatal("CLI --all must report an error in this plan")
+	if cliErr := cliCmd.Execute(); cliErr != nil {
+		t.Fatalf("CLI --all error: %v (stderr: %s)", cliErr, stderr.String())
 	}
 
-	if !errors.Is(cliErr, identity.ErrScopeNotAvailable) {
-		t.Errorf("CLI error = %v, want errors.Is(err, identity.ErrScopeNotAvailable)", cliErr)
+	// Both paths must have removed the key pair and the SSH Host block.
+	for _, home := range []string{homeA, homeB} {
+		if _, statErr := os.Stat(filepath.Join(home, ".ssh", "id_ed25519_work")); !os.IsNotExist(statErr) {
+			t.Errorf("%s: private key survived an everything-scope delete", home)
+		}
 	}
 
-	if cliErr.Error() != tuiMsg.Err {
-		t.Errorf("CLI and TUI everything-scope refusal messages differ:\nCLI: %q\nTUI: %q", cliErr.Error(), tuiMsg.Err)
+	gcA := readFile(t, filepath.Join(homeA, ".gitconfig"))
+	gcB := readFile(t, filepath.Join(homeB, ".gitconfig"))
+	if gcA != gcB {
+		t.Errorf("gitconfig bytes differ between the TUI and CLI everything-scope deletes:\nA:\n%s\n--- B ---\n%s", gcA, gcB)
+	}
+	sshA := readFile(t, filepath.Join(homeA, ".ssh", "config"))
+	sshB := readFile(t, filepath.Join(homeB, ".ssh", "config"))
+	if sshA != sshB {
+		t.Errorf("ssh config bytes differ between the TUI and CLI everything-scope deletes:\nA:\n%s\n--- B ---\n%s", sshA, sshB)
 	}
 }
 
@@ -2832,4 +2844,243 @@ func TestArchiveKeyPairSeamStampCollisionRetry(t *testing.T) {
 			t.Fatal("a second collision (on the retried stamp too) must surface as an error, not loop")
 		}
 	})
+}
+
+// ---------------------------------------------------------------------------
+// 05-04 — everything-scope delete (D-09 provider ref-count, D-11 archive)
+// ---------------------------------------------------------------------------
+
+// TestBuildDeleteDepsCopyKeyPairToArchiveBackendWideBindingRefuses is
+// delete's half of review R3-01, mirroring
+// TestArchiveKeyPairBackendWideBindingRefuses's proof exactly: the
+// backend-wide buildDeleteDeps(b).CopyKeyPairToArchive refuses with
+// errArchiveOutsideTransaction and creates nothing, while the same seam
+// obtained from b.deleteDepsForTransaction(j) succeeds and records both
+// archive paths in j.
+func TestBuildDeleteDepsCopyKeyPairToArchiveBackendWideBindingRefuses(t *testing.T) {
+	home := t.TempDir()
+	seedSSHDir(t, home)
+	b := newBackendForHome(home)
+
+	privPath := filepath.Join(home, ".ssh", "id_ed25519_x")
+	seedGeneratedKey(t, privPath, "x", "")
+	pubPath := privPath + ".pub"
+
+	_, _, err := buildDeleteDeps(b).CopyKeyPairToArchive(privPath, pubPath)
+	if !errors.Is(err, errArchiveOutsideTransaction) {
+		t.Errorf("buildDeleteDeps(b).CopyKeyPairToArchive error = %v, want errArchiveOutsideTransaction", err)
+	}
+	if entries, rerr := os.ReadDir(sshconfig.ArchiveDir(b.sshDir)); rerr == nil && len(entries) != 0 {
+		t.Errorf("a refused archive-copy must create no entry; found %d", len(entries))
+	}
+
+	j := newMutationJournal(b)
+	archivedPriv, archivedPub, terr := b.deleteDepsForTransaction(j).CopyKeyPairToArchive(privPath, pubPath)
+	if terr != nil {
+		t.Fatalf("deleteDepsForTransaction's CopyKeyPairToArchive returned error: %v", terr)
+	}
+	if archivedPriv == "" || archivedPub == "" {
+		t.Error("a working archive-copy seam must return non-empty paths")
+	}
+	if len(j.createdFiles) != 2 {
+		t.Errorf("journal recorded %d created files, want 2", len(j.createdFiles))
+	}
+	// COPY semantics (review R-03): the source private key must survive.
+	if _, statErr := os.Stat(privPath); statErr != nil {
+		t.Errorf("source private key must survive CopyKeyPairToArchive: %v", statErr)
+	}
+}
+
+// seedTwoIdentitiesSameProvider writes two complete identities ("work" and
+// "personal") both on github.com, plus the shared provider-rewrite block, so
+// a real-constructor test can drive the D-09 ref-count through
+// runDelete/CommitDelete against actual files.
+func seedTwoIdentitiesSameProvider(t *testing.T, home string) {
+	t.Helper()
+	seedSSHDir(t, home)
+
+	names := []string{"work", "personal"}
+	var sshConfig strings.Builder
+	sshConfig.WriteString(managedBlock("_global", "Host *\n  IdentitiesOnly yes\n"))
+	var gitconfigContent strings.Builder
+	gitconfigContent.WriteString("[user]\n\tname = Global User\n\n")
+
+	for _, name := range names {
+		sshBody := "Host " + name + ".github.com\n" +
+			"  Hostname ssh.github.com\n" +
+			"  Port 443\n" +
+			"  User git\n" +
+			"  IdentityFile ~/.ssh/id_ed25519_" + name + "\n" +
+			"  IdentitiesOnly yes\n"
+		sshConfig.WriteString(managedBlock(name, sshBody))
+
+		pubLine := seedGeneratedKey(t, filepath.Join(home, ".ssh", "id_ed25519_"+name), name, "")
+
+		if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
+			t.Fatalf("seeding .gitconfig.d: %v", err)
+		}
+		fragBody := "[user]\n\tname = " + name + " User\n\temail = " + name + "@example.com\n" +
+			"\tsigningkey = ~/.ssh/id_ed25519_" + name + ".pub\n\n[gpg]\n\tformat = ssh\n\n[commit]\n\tgpgsign = true\n"
+		writeFile(t, filepath.Join(home, ".gitconfig.d", name), fragBody)
+
+		gcBody := "[includeIf \"gitdir:~/git/" + name + "/\"]\n\tpath = ~/.gitconfig.d/" + name + "\n"
+		gitconfigContent.WriteString(managedBlock(name, gcBody))
+
+		line := mustAllowedSignersLine(t, name+"@example.com", pubLine)
+		asPath := filepath.Join(home, ".ssh", "allowed_signers")
+		existing, _ := os.ReadFile(asPath) //nolint:gosec // test fixture path
+		writeFile(t, asPath, string(existing)+managedBlock(name, line))
+	}
+
+	writeFile(t, filepath.Join(home, ".ssh", "config"), sshConfig.String())
+
+	gcPath := filepath.Join(home, ".gitconfig")
+	writeFile(t, gcPath, gitconfigContent.String())
+	if _, err := gitconfig.WriteProviderRewrite(gcPath, "github.com", true); err != nil {
+		t.Fatalf("seeding provider rewrite block: %v", err)
+	}
+}
+
+// TestRunDeleteEverything_TwoIdentitiesSameProvider is the D-09 real-
+// constructor proof Task 1's acceptance criteria names: delete one of two
+// identities sharing a provider and the rewrite block SURVIVES; delete the
+// second and it is GONE.
+func TestRunDeleteEverything_TwoIdentitiesSameProvider(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedTwoIdentitiesSameProvider(t, home)
+
+	b := newBackendForHome(home)
+	gcPath := filepath.Join(home, ".gitconfig")
+
+	if _, _, err := b.runDelete("work", identity.DeleteScopeEverything); err != nil {
+		t.Fatalf("runDelete(work, everything) error: %v", err)
+	}
+	gc1, err := os.ReadFile(gcPath) //nolint:gosec // test fixture path
+	if err != nil {
+		t.Fatalf("reading gitconfig after first delete: %v", err)
+	}
+	has, herr := gitconfig.HasProviderRewrite(gc1, "github.com")
+	if herr != nil {
+		t.Fatalf("HasProviderRewrite: %v", herr)
+	}
+	if !has {
+		t.Error("provider rewrite block removed after deleting only ONE of two identities sharing it")
+	}
+	if _, statErr := os.Stat(filepath.Join(home, ".ssh", "id_ed25519_work")); !os.IsNotExist(statErr) {
+		t.Errorf("work's private key survived an everything-scope delete: statErr=%v", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(home, ".ssh", "id_ed25519_personal")); statErr != nil {
+		t.Errorf("personal's private key was disturbed by work's delete: %v", statErr)
+	}
+
+	if _, _, err := b.runDelete("personal", identity.DeleteScopeEverything); err != nil {
+		t.Fatalf("runDelete(personal, everything) error: %v", err)
+	}
+	gc2, err := os.ReadFile(gcPath) //nolint:gosec // test fixture path
+	if err != nil {
+		t.Fatalf("reading gitconfig after second delete: %v", err)
+	}
+	has2, herr := gitconfig.HasProviderRewrite(gc2, "github.com")
+	if herr != nil {
+		t.Fatalf("HasProviderRewrite: %v", herr)
+	}
+	if has2 {
+		t.Error("provider rewrite block survived after deleting BOTH identities sharing it")
+	}
+}
+
+// TestRunDeleteEverything_HandWrittenAliasKeepsRewrite is the review R-05
+// real-constructor regression: a hand-written Host stanza whose Hostname is
+// the recipe's canonical alt-SSH endpoint (ssh.github.com, port 443) counts
+// as a github.com reference, so deleting the ONLY managed identity for that
+// provider must NOT remove the rewrite block.
+func TestRunDeleteEverything_HandWrittenAliasKeepsRewrite(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+
+	gcPath := filepath.Join(home, ".gitconfig")
+	if _, err := gitconfig.WriteProviderRewrite(gcPath, "github.com", true); err != nil {
+		t.Fatalf("seeding provider rewrite: %v", err)
+	}
+
+	sshPath := filepath.Join(home, ".ssh", "config")
+	existing, err := os.ReadFile(sshPath) //nolint:gosec // test fixture path
+	if err != nil {
+		t.Fatalf("reading ssh config: %v", err)
+	}
+	handWritten := "\nHost foo.github.com\n  Hostname ssh.github.com\n  Port 443\n  IdentityFile ~/.ssh/id_ed25519_foo\n"
+	writeFile(t, sshPath, string(existing)+handWritten)
+
+	b := newBackendForHome(home)
+	if _, _, err := b.runDelete("work", identity.DeleteScopeEverything); err != nil {
+		t.Fatalf("runDelete(work, everything) error: %v", err)
+	}
+	gc, err := os.ReadFile(gcPath) //nolint:gosec // test fixture path
+	if err != nil {
+		t.Fatalf("reading gitconfig: %v", err)
+	}
+	has, herr := gitconfig.HasProviderRewrite(gc, "github.com")
+	if herr != nil {
+		t.Fatalf("HasProviderRewrite: %v", herr)
+	}
+	if !has {
+		t.Error("provider rewrite block removed despite a surviving hand-written Host stanza (R-05 regression)")
+	}
+}
+
+// TestRunDeleteEverything_BitbucketHandWrittenAliasKeepsRewrite is the R2-04
+// Bitbucket twin of the R-05 regression above: a hand-written Host stanza
+// whose Hostname is altssh.bitbucket.org keeps the bitbucket.org rewrite
+// block alive after the only managed Bitbucket identity is deleted.
+func TestRunDeleteEverything_BitbucketHandWrittenAliasKeepsRewrite(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+
+	sshBody := "Host bb.bitbucket.org\n" +
+		"  Hostname altssh.bitbucket.org\n" +
+		"  Port 443\n" +
+		"  IdentityFile ~/.ssh/id_ed25519_bb\n" +
+		"  IdentitiesOnly yes\n"
+	sshConfig := managedBlock("_global", "Host *\n  IdentitiesOnly yes\n") + "\n" +
+		managedBlock("bb", sshBody) +
+		"\nHost foreign.bitbucket.org\n  Hostname altssh.bitbucket.org\n  Port 443\n  IdentityFile ~/.ssh/id_ed25519_foreign\n"
+	writeFile(t, filepath.Join(home, ".ssh", "config"), sshConfig)
+
+	pubLine := seedGeneratedKey(t, filepath.Join(home, ".ssh", "id_ed25519_bb"), "bb", "")
+
+	if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
+		t.Fatalf("seeding .gitconfig.d: %v", err)
+	}
+	fragBody := "[user]\n\tname = BB User\n\temail = bb@example.com\n" +
+		"\tsigningkey = ~/.ssh/id_ed25519_bb.pub\n\n[gpg]\n\tformat = ssh\n\n[commit]\n\tgpgsign = true\n"
+	writeFile(t, filepath.Join(home, ".gitconfig.d", "bb"), fragBody)
+
+	gcBody := "[includeIf \"gitdir:~/git/bb/\"]\n\tpath = ~/.gitconfig.d/bb\n"
+	gcPath := filepath.Join(home, ".gitconfig")
+	writeFile(t, gcPath, "[user]\n\tname = Global User\n\n"+managedBlock("bb", gcBody))
+	if _, err := gitconfig.WriteProviderRewrite(gcPath, "bitbucket.org", true); err != nil {
+		t.Fatalf("seeding provider rewrite: %v", err)
+	}
+
+	line := mustAllowedSignersLine(t, "bb@example.com", pubLine)
+	writeFile(t, filepath.Join(home, ".ssh", "allowed_signers"), managedBlock("bb", line))
+
+	b := newBackendForHome(home)
+	if _, _, err := b.runDelete("bb", identity.DeleteScopeEverything); err != nil {
+		t.Fatalf("runDelete(bb, everything) error: %v", err)
+	}
+	gc, err := os.ReadFile(gcPath) //nolint:gosec // test fixture path
+	if err != nil {
+		t.Fatalf("reading gitconfig: %v", err)
+	}
+	has, herr := gitconfig.HasProviderRewrite(gc, "bitbucket.org")
+	if herr != nil {
+		t.Fatalf("HasProviderRewrite: %v", herr)
+	}
+	if !has {
+		t.Error("bitbucket.org provider rewrite block removed despite a surviving hand-written Host stanza (R2-04 regression)")
+	}
 }
