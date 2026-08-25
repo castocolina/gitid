@@ -225,7 +225,16 @@ func ScreenSpecRegistry() []ScreenSpec {
 			ApplicableLive:         true,
 			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
-			RequiredRegions:        []RegionName{RegionKeybar},
+			// WR-08: this VariantOf ssh-form-filled captures the SAME pane —
+			// only the focus state differs — so it must be gated on the same
+			// RegionFormFields/RegionHostPreview the base screen requires,
+			// not downgraded to RegionKeybar alone. The RegionDispositions
+			// below already declare every accepted divergence (D-16) for
+			// these regions; without RequiredRegions listing them, those
+			// dispositions were dead metadata and the gate silently stopped
+			// failing when the real binary's SSH form fields drifted from
+			// the approved design.
+			RequiredRegions: []RegionName{RegionKeybar, RegionFormFields, RegionHostPreview},
 			RegionDispositions: []RegionDisposition{
 				uxRegionDifference(RegionFormFields, "form-defaults", "D-16", "The live backend uses current provider defaults while the approved TUI preserves frozen demo defaults."),
 				uxRegionDifference(RegionKeySection, "key-catalog", "D-16", "The live backend uses its probed key catalog while the approved TUI preserves the frozen fixture order."),
@@ -271,7 +280,18 @@ func ScreenSpecRegistry() []ScreenSpec {
 			ApplicableLive:         true,
 			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
-			RequiredRegions:        []RegionName{RegionKeybar},
+			// WR-08 investigation: RegionContinueDisabledReason (its extractor,
+			// extractContinueDisabledReason, was orphaned dead code — now
+			// re-wired in createflow_regions.go) does NOT apply to THIS
+			// screen's captured state — git-form-demo captures the wizard's
+			// Git step with valid, filled fields, so [ Continue ] is enabled
+			// and no disabled-reason line is rendered at all. Requiring the
+			// region here would fail the gate with "missing required region"
+			// on a screen it genuinely does not describe (verified: adding it
+			// breaks TestGateVisualRegression). A future screen spec that
+			// captures the DISABLED-Continue state (e.g. an invalid-email
+			// variant) is the correct place to require it.
+			RequiredRegions: []RegionName{RegionKeybar},
 			RegionDispositions: []RegionDisposition{
 				uxRegionDifference(RegionHeaderStatus, "fixture-header-status", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),
 				uxRegionDifference(RegionSidebar, "fixture-sidebar", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),

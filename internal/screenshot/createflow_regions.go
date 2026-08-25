@@ -120,6 +120,15 @@ const (
 	// from its heading ("Write Git identity for …") or its receipt heading
 	// (the "… configured" result message) through the end of the frame.
 	RegionGitCeremony RegionName = "git-ceremony"
+
+	// RegionContinueDisabledReason is the [ Continue ] button's disabled-
+	// reason line on the create-flow wizard's Git step (git-form-demo).
+	// WR-08: extractContinueDisabledReason (below) was left in the file but
+	// UNWIRED — no RegionName pointed at it and it was absent from
+	// git-form-demo's RequiredRegions — so the gate silently stopped
+	// checking whether the real binary's Continue-disabled copy matches
+	// the approved design.
+	RegionContinueDisabledReason RegionName = "continue-disabled-reason"
 )
 
 // ExtractRegion returns the sub-string of screen that corresponds to region.
@@ -162,6 +171,8 @@ func ExtractRegion(screen string, region RegionName) string {
 		return extractGitPreview(lines)
 	case RegionGitCeremony:
 		return extractGitCeremony(lines)
+	case RegionContinueDisabledReason:
+		return extractContinueDisabledReason(lines)
 	}
 	return ""
 }
