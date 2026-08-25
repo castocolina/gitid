@@ -295,3 +295,34 @@ func TestWriteNoBackupDoesNotCreateBackup(t *testing.T) {
 		t.Fatalf("expected exactly 1 file in dir (no backup created), got %d: %v", len(entries), entries)
 	}
 }
+
+// TestCopyFileExclusiveRefusesExistingDestination pins the one property of
+// copyFileExclusive that internal/keygen's archive primitives mirror rather
+// than import (review R2-07): an existing destination is a hard error,
+// never an overwrite. This test and internal/keygen's
+// TestCopyExclusive_RefusesExistingDestination assert the SAME property in
+// both packages so a future change to either implementation is caught.
+func TestCopyFileExclusiveRefusesExistingDestination(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src")
+	if err := os.WriteFile(src, []byte("source-bytes"), 0o600); err != nil {
+		t.Fatalf("seeding src: %v", err)
+	}
+	dst := filepath.Join(dir, "dst")
+	preexisting := []byte("do-not-overwrite")
+	if err := os.WriteFile(dst, preexisting, 0o600); err != nil {
+		t.Fatalf("seeding dst: %v", err)
+	}
+
+	err := copyFileExclusive(src, dst, 0o600)
+	if err == nil || !os.IsExist(err) {
+		t.Fatalf("copyFileExclusive with an existing destination = %v, want an os.IsExist error", err)
+	}
+	got, rerr := os.ReadFile(dst) //nolint:gosec // test reads back a hermetic t.TempDir() fixture
+	if rerr != nil {
+		t.Fatalf("reading dst: %v", rerr)
+	}
+	if string(got) != string(preexisting) {
+		t.Errorf("dst content changed; got %q, want %q", got, preexisting)
+	}
+}

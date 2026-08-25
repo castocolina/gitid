@@ -161,6 +161,47 @@ func TestBuildInventory_ListKeyFilesError(t *testing.T) {
 	}
 }
 
+// TestBuildInventory_IsReservedKeyPathExcludesFromUnusedKeys proves D-06's
+// causal exclusion (review R-04): a key path IsReservedKeyPath reports true
+// for is dropped from the RESULT of ListKeyFiles before the unused-key
+// cross-reference runs, so it never surfaces in Inventory.UnusedKeys — even
+// though nothing else in the fixture references it.
+func TestBuildInventory_IsReservedKeyPathExcludesFromUnusedKeys(t *testing.T) {
+	deps := buildInventoryFixture()
+	const archivedKey = "/keys/archived/gitid-archive/id_ed25519_work.170000"
+	deps.ListKeyFiles = func() ([]string, error) {
+		return []string{"/keys/complete", "/keys/sshonly", "/keys/incomplete", "/keys/fragmentmissing", archivedKey}, nil
+	}
+	deps.IsReservedKeyPath = func(p string) bool { return p == archivedKey }
+
+	inv, err := BuildInventory(deps)
+	if err != nil {
+		t.Fatalf("BuildInventory: %v", err)
+	}
+	for _, k := range inv.UnusedKeys {
+		if k == archivedKey {
+			t.Errorf("UnusedKeys = %v, want it to exclude the reserved archived key", inv.UnusedKeys)
+		}
+	}
+}
+
+// TestBuildInventory_NilIsReservedKeyPathPerformsNoFiltering proves a nil
+// IsReservedKeyPath (the zero value of a caller-constructed InventoryDeps
+// that does not set the field) performs no filtering — existing callers
+// that never set this field keep their prior behavior unchanged.
+func TestBuildInventory_NilIsReservedKeyPathPerformsNoFiltering(t *testing.T) {
+	deps := buildInventoryFixture()
+	deps.IsReservedKeyPath = nil
+
+	inv, err := BuildInventory(deps)
+	if err != nil {
+		t.Fatalf("BuildInventory: %v", err)
+	}
+	if len(inv.UnusedKeys) != 1 || inv.UnusedKeys[0] != "/keys/orphan" {
+		t.Errorf("UnusedKeys with a nil IsReservedKeyPath: got %v, want [/keys/orphan] (unchanged behavior)", inv.UnusedKeys)
+	}
+}
+
 // TestBuildInventoryDeps asserts every function field of the real
 // BuildInventoryDeps() constructor is non-nil, closing the project's
 // documented injected-seam wiring blindspot (a broken/nil real seam must not
@@ -181,6 +222,9 @@ func TestBuildInventoryDeps(t *testing.T) {
 	}
 	if deps.ListKeyFiles == nil {
 		t.Error("BuildInventoryDeps().ListKeyFiles is nil")
+	}
+	if deps.IsReservedKeyPath == nil {
+		t.Error("BuildInventoryDeps().IsReservedKeyPath is nil")
 	}
 }
 

@@ -153,8 +153,10 @@ func TestIsReservedBlockName(t *testing.T) {
 }
 
 // TestReservedPaths proves the gitid-owned Include'd storage locations are
-// registered: the config.d directory and its *.config glob (L4; the SSH-side
-// seed of the reserved-PATH registry Phase 8 D-06.2 generalizes).
+// registered: the config.d directory and its *.config glob, PLUS (D-06) the
+// key-archive directory and a recursive glob beneath it, appended AFTER the
+// config.d entries (L4; the SSH-side seed of the reserved-PATH registry
+// Phase 8 D-06.2 generalizes).
 func TestReservedPaths(t *testing.T) {
 	sshDir := filepath.Join(t.TempDir(), ".ssh")
 	got := ReservedPaths(sshDir)
@@ -162,6 +164,8 @@ func TestReservedPaths(t *testing.T) {
 	want := []string{
 		filepath.Join(sshDir, "config.d"),
 		filepath.Join(sshDir, "config.d", "*.config"),
+		filepath.Join(sshDir, "gitid-archive"),
+		filepath.Join(sshDir, "gitid-archive", "**"),
 	}
 	if len(got) != len(want) {
 		t.Fatalf("ReservedPaths(%q) = %v, want %v", sshDir, got, want)
@@ -173,10 +177,12 @@ func TestReservedPaths(t *testing.T) {
 	}
 }
 
-// TestIsReservedPath proves only the gitid-owned Include'd storage is reserved:
-// the config.d directory itself and the `*.config` files inside it. The main
-// config, key material and non-`.config` files inside config.d are NOT gitid
-// storage and must stay outside the registry.
+// TestIsReservedPath proves only the gitid-owned Include'd storage is
+// reserved: the config.d directory itself and the `*.config` files inside
+// it, PLUS (D-06) the key-archive directory itself and any path nested
+// underneath it at any depth (review R-19). The main config, key material
+// and non-`.config` files inside config.d are NOT gitid storage and must
+// stay outside the registry.
 func TestIsReservedPath(t *testing.T) {
 	sshDir := filepath.Join(t.TempDir(), ".ssh")
 
@@ -191,6 +197,12 @@ func TestIsReservedPath(t *testing.T) {
 		{filepath.Join(sshDir, "config"), false},
 		{filepath.Join(sshDir, "id_ed25519"), false},
 		{filepath.Join(sshDir, "config.d", "notes.txt"), false},
+		{filepath.Join(sshDir, "config.d", "foo.txt"), false},
+		{filepath.Join(sshDir, "config.d", "foo.config"), true},
+		// D-06 archive additions (review R-19): reserved at any depth.
+		{filepath.Join(sshDir, "gitid-archive"), true},
+		{filepath.Join(sshDir, "gitid-archive", "id_ed25519_work.170000"), true},
+		{filepath.Join(sshDir, "gitid-archive", "generation-1", "id_ed25519_work.170000"), true},
 	}
 	for _, tc := range cases {
 		if got := IsReservedPath(sshDir, tc.path); got != tc.want {

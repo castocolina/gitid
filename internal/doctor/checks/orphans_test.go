@@ -2,12 +2,14 @@ package checks_test
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/castocolina/gitid/internal/doctor"
 	"github.com/castocolina/gitid/internal/doctor/checks"
 	"github.com/castocolina/gitid/internal/identity"
+	"github.com/castocolina/gitid/internal/sshconfig"
 )
 
 // orphFileInfo is a minimal os.FileInfo for orphans tests.
@@ -285,6 +287,98 @@ func TestOrphanAllPass(t *testing.T) {
 	if len(findings) != 0 {
 		t.Errorf("expected zero Orphans findings for all-paired artifacts, got %d: %v",
 			len(findings), orphTitles(findings))
+	}
+}
+
+// TestOrphansArchivedKeyExcludedByBuildInventory is the D-06 doctor-reserved
+// regression test (review R-04): an archived key pair, planted inside the
+// dedicated gitid-archive directory, must never surface as a doctor orphan
+// finding.
+//
+// The test is CAUSAL, not incidental: it builds Inventory via
+// identity.BuildInventory with an INJECTED ListKeyFiles seam that returns
+// the archived path DIRECTLY, bypassing the production "id_*" glob (which
+// is non-recursive and would never even match a path under gitid-archive/
+// in the first place — a test that only relied on the glob could never go
+// red, per 05-RESEARCH.md). CheckOrphans then consumes Inventory.UnusedKeys
+// as its KeyPaths, so the exclusion is proven at the exact seam a real
+// doctor composition root would use.
+func TestOrphansArchivedKeyExcludedByBuildInventory(t *testing.T) {
+	home := t.TempDir()
+	sshDir := filepath.Join(home, ".ssh")
+	archiveDir := sshconfig.ArchiveDir(sshDir)
+	if err := os.MkdirAll(archiveDir, 0o700); err != nil {
+		t.Fatalf("seeding archive dir: %v", err)
+	}
+	archivedKey := filepath.Join(archiveDir, "id_ed25519_work.170000000000000001")
+	if err := os.WriteFile(archivedKey, []byte("archived-private-key\n"), 0o600); err != nil { //nolint:gosec // hermetic t.TempDir() fixture
+		t.Fatalf("seeding archived key: %v", err)
+	}
+
+	deps := identity.InventoryDepsForHome(home)
+	deps.ListKeyFiles = func() ([]string, error) { return []string{archivedKey}, nil }
+
+	inv, err := identity.BuildInventory(deps)
+	if err != nil {
+		t.Fatalf("identity.BuildInventory: %v", err)
+	}
+	if len(inv.UnusedKeys) != 0 {
+		t.Fatalf("expected zero UnusedKeys for an archived key, got %v", inv.UnusedKeys)
+	}
+
+	orphDeps := doctor.Deps{
+		Stat:     orphStat(archivedKey),
+		KeyPaths: inv.UnusedKeys,
+	}
+	findings := checks.CheckOrphans(orphDeps)
+	for _, f := range findings {
+		if orphContains(f.Title, archivedKey) {
+			t.Errorf("archived key must not produce an orphan finding, got: %q", f.Title)
+		}
+	}
+}
+
+// TestOrphansArchivedKeyNegativeControl proves the guard above is load-
+// bearing: with IsReservedKeyPath disabled, the SAME planted archive key
+// DOES surface as an orphan finding — the negative control review R-04
+// requires so this test suite can never be vacuously green.
+func TestOrphansArchivedKeyNegativeControl(t *testing.T) {
+	home := t.TempDir()
+	sshDir := filepath.Join(home, ".ssh")
+	archiveDir := sshconfig.ArchiveDir(sshDir)
+	if err := os.MkdirAll(archiveDir, 0o700); err != nil {
+		t.Fatalf("seeding archive dir: %v", err)
+	}
+	archivedKey := filepath.Join(archiveDir, "id_ed25519_work.170000000000000001")
+	if err := os.WriteFile(archivedKey, []byte("archived-private-key\n"), 0o600); err != nil { //nolint:gosec // hermetic t.TempDir() fixture
+		t.Fatalf("seeding archived key: %v", err)
+	}
+
+	deps := identity.InventoryDepsForHome(home)
+	deps.ListKeyFiles = func() ([]string, error) { return []string{archivedKey}, nil }
+	deps.IsReservedKeyPath = func(string) bool { return false } // the negative control
+
+	inv, err := identity.BuildInventory(deps)
+	if err != nil {
+		t.Fatalf("identity.BuildInventory: %v", err)
+	}
+	if len(inv.UnusedKeys) != 1 || inv.UnusedKeys[0] != archivedKey {
+		t.Fatalf("expected the archived key in UnusedKeys with the guard disabled, got %v", inv.UnusedKeys)
+	}
+
+	orphDeps := doctor.Deps{
+		Stat:     orphStat(archivedKey),
+		KeyPaths: inv.UnusedKeys,
+	}
+	findings := checks.CheckOrphans(orphDeps)
+	var found bool
+	for _, f := range findings {
+		if orphContains(f.Title, archivedKey) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected the archived key to produce an orphan finding with the guard disabled, got: %v", orphTitles(findings))
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/castocolina/gitid/internal/filewriter"
 )
@@ -45,6 +46,22 @@ const configDirName = "config.d"
 // user drops in that directory is theirs.
 const configFileExt = ".config"
 
+// ArchiveDirName is the gitid-owned key-archive directory name under
+// ~/.ssh (D-06). Archived key pairs land here, in ONE dedicated directory —
+// distinct from filewriter's sibling ".bak.<nanos>" convention used for
+// config files, because key material gets its own retention location rather
+// than living next to the canonical slot it vacated.
+const ArchiveDirName = "gitid-archive"
+
+// ArchiveDir returns the absolute archive directory path under sshDir
+// (D-06). This is the single source of the archive location — every package
+// that needs it (keygen's archive primitives, identity's inventory
+// exclusion, the doctor reserved-path registry) resolves it from here,
+// never from a duplicated literal.
+func ArchiveDir(sshDir string) string {
+	return filepath.Join(sshDir, ArchiveDirName)
+}
+
 // IsReservedBlockName reports whether a gitid-managed SSH block name is a
 // reserved, non-identity block. Two names are reserved:
 //
@@ -69,21 +86,39 @@ func IsReservedBlockName(name string) bool {
 }
 
 // ReservedPaths returns the gitid-owned Include'd storage locations under
-// sshDir: the `config.d` directory and the `*.config` glob inside it. They are
+// sshDir: the `config.d` directory and the `*.config` glob inside it, PLUS
+// (D-06) the key-archive directory and a recursive glob beneath it. They are
 // the filesystem artifacts D-06 creates on a fresh machine, and no fix path may
-// propose removing or rewriting them (L4).
+// propose removing or rewriting them (L4). The archive entries are appended
+// AFTER the two config.d entries so callers relying on the config.d prefix
+// (e.g. this package's own TestReservedPaths ordering assertion) are
+// unaffected.
 //
 // Hand-off: Phase 8 D-06.2 generalizes this into a cross-cutting reserved-PATH
-// registry; these two entries are the SSH-side seed it consumes.
+// registry; these entries are the SSH-side seed it consumes.
 func ReservedPaths(sshDir string) []string {
 	dir := filepath.Join(sshDir, configDirName)
-	return []string{dir, filepath.Join(dir, "*"+configFileExt)}
+	archiveDir := ArchiveDir(sshDir)
+	return []string{
+		dir,
+		filepath.Join(dir, "*"+configFileExt),
+		archiveDir,
+		filepath.Join(archiveDir, "**"),
+	}
 }
 
 // IsReservedPath reports whether path is one of the gitid-owned Include'd
-// storage locations under sshDir — the `config.d` directory itself, or a
-// `*.config` file directly inside it. Comparison is on filepath.Clean'ed
-// values, so `~/.ssh/config.d/./gitid.config` matches.
+// storage locations under sshDir — the `config.d` directory itself, a
+// `*.config` file directly inside it, OR (D-06) the key-archive directory
+// itself or any path nested underneath it AT ANY DEPTH. Comparison is on
+// filepath.Clean'ed values, so `~/.ssh/config.d/./gitid.config` matches.
+//
+// The archive containment check is a cleaned, separator-bounded PREFIX
+// check — not a filepath.Dir equality test (review R-19): a future
+// per-identity or per-generation archive layout would nest files one or more
+// directories deeper, and a Dir-equality guard would silently stop covering
+// it the moment that happens. A prefix check covers every depth by
+// construction.
 //
 // `~/.ssh/config` itself is NOT reserved (it is the user's file; gitid only
 // owns sentinel-delimited blocks inside it), and a non-`.config` file the user
@@ -96,7 +131,15 @@ func IsReservedPath(sshDir, path string) bool {
 	if clean == dir {
 		return true
 	}
-	return filepath.Dir(clean) == dir && filepath.Ext(clean) == configFileExt
+	if filepath.Dir(clean) == dir && filepath.Ext(clean) == configFileExt {
+		return true
+	}
+
+	archiveDir := filepath.Clean(ArchiveDir(sshDir))
+	if clean == archiveDir || strings.HasPrefix(clean, archiveDir+string(filepath.Separator)) {
+		return true
+	}
+	return false
 }
 
 // ManagedBlockNames returns every gitid-managed block name reachable from

@@ -41,6 +41,14 @@ type InventoryDeps struct {
 	// ListKeyFiles enumerates every gitid-managed private key file on disk,
 	// for the global unused-key cross-reference.
 	ListKeyFiles func() ([]string, error)
+	// IsReservedKeyPath reports whether a key path is a gitid-owned reserved
+	// location (D-06: the key-archive directory) that must never surface as
+	// a doctor orphan/unused-key finding. BuildInventory applies this to the
+	// RESULT of ListKeyFiles — the causal exclusion point (review R-04) —
+	// rather than relying on any particular enumerator's glob shape to
+	// happen to miss the archive directory. A nil predicate performs no
+	// filtering.
+	IsReservedKeyPath func(path string) bool
 }
 
 // BuildInventory is the impure aggregation layer: it reads the managed SSH
@@ -91,9 +99,33 @@ func BuildInventory(deps InventoryDeps) (Inventory, error) {
 	if err != nil {
 		return Inventory{}, fmt.Errorf("identity: build inventory: listing key files: %w", err)
 	}
+	// D-06 / review R-04: drop reserved (archive) paths from the RESULT of
+	// ListKeyFiles before the unused-key cross-reference runs, so the
+	// exclusion is causal for ANY enumeration source — not merely an
+	// incidental consequence of today's non-recursive id_* glob never
+	// matching the archive directory in the first place.
+	keyFiles = filterReservedKeyPaths(keyFiles, deps.IsReservedKeyPath)
 	unusedKeys := crossReferenceUnusedKeys(keyFiles, referencedIdentityFiles)
 
 	return Inventory{Identities: identities, UnusedKeys: unusedKeys}, nil
+}
+
+// filterReservedKeyPaths drops every path in keyFiles for which isReserved
+// reports true. isReserved is nil-tolerant: a nil predicate (the zero value
+// of a caller-constructed InventoryDeps that does not set the field)
+// performs no filtering, preserving existing callers' behavior.
+func filterReservedKeyPaths(keyFiles []string, isReserved func(string) bool) []string {
+	if isReserved == nil {
+		return keyFiles
+	}
+	filtered := make([]string, 0, len(keyFiles))
+	for _, p := range keyFiles {
+		if isReserved(p) {
+			continue
+		}
+		filtered = append(filtered, p)
+	}
+	return filtered
 }
 
 // resolveKeyUsedInGit reports whether acct's key is wired for git commit
@@ -147,6 +179,13 @@ func BuildInventoryDeps() InventoryDeps {
 			return os.Stat(path) //nolint:gosec // path is a trusted gitid-managed path (G304)
 		},
 		ListKeyFiles: listKeyFilesReal,
+		IsReservedKeyPath: func(p string) bool {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return false
+			}
+			return sshconfig.IsReservedPath(filepath.Join(home, ".ssh"), p)
+		},
 	}
 }
 
@@ -167,6 +206,9 @@ func InventoryDepsForHome(home string) InventoryDeps {
 			return os.Stat(path) //nolint:gosec // path is a trusted gitid-managed path (G304)
 		},
 		ListKeyFiles: func() ([]string, error) { return listKeyFilesRealForHome(home) },
+		IsReservedKeyPath: func(p string) bool {
+			return sshconfig.IsReservedPath(filepath.Join(home, ".ssh"), p)
+		},
 	}
 }
 
@@ -263,13 +305,24 @@ func listKeyFilesReal() ([]string, error) {
 
 // listKeyFilesRealForHome is listKeyFilesReal's home-parameterized core.
 func listKeyFilesRealForHome(home string) ([]string, error) {
-	matches, err := filepath.Glob(filepath.Join(home, ".ssh", "id_*"))
+	sshDir := filepath.Join(home, ".ssh")
+	matches, err := filepath.Glob(filepath.Join(sshDir, "id_*"))
 	if err != nil {
 		return nil, fmt.Errorf("identity: globbing ssh key files: %w", err)
 	}
 	keys := make([]string, 0, len(matches))
 	for _, m := range matches {
 		if filepath.Ext(m) == ".pub" {
+			continue
+		}
+		// Defense in depth (D-06): the "id_*" glob is non-recursive and
+		// never matches anything under gitid-archive/ in the first place,
+		// so this branch is currently unreachable in production — the
+		// CAUSAL guard is InventoryDeps.IsReservedKeyPath applied in
+		// BuildInventory (review R-04). Kept here so a future recursive
+		// enumerator inherits the guard for free rather than silently
+		// reintroducing the archive-visibility bug.
+		if sshconfig.IsReservedPath(sshDir, m) {
 			continue
 		}
 		keys = append(keys, m)
