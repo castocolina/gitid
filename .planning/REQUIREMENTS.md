@@ -195,7 +195,7 @@ These are first-class, enforced requirements — the user's core process ask.
 
 ## G. Git Configuration Screen (GITUI)
 
-- [ ] **GITUI-01** (Separate, post-SSH screen): Git config is its own screen AFTER
+- [x] **GITUI-01** (Separate, post-SSH screen): Git config is its own screen AFTER
   the SSH screens. The planner is given the **git recipe** and must model all
   parameters (global vs per-identity); this screen exposes **per-identity
   (individual)** options only.
@@ -211,7 +211,7 @@ These are first-class, enforced requirements — the user's core process ask.
   `<email> namespaces="git" ssh-ed25519 …`, email byte-identical to `user.email`.
   *(built)*
 
-- [ ] **GITUI-05** (Review → confirm → write): a read-only review screen precedes the
+- [x] **GITUI-05** (Review → confirm → write): a read-only review screen precedes the
   git write; confirm writes fragment + `includeIf` + `allowed_signers` (backup +
   idempotent).
 
@@ -485,11 +485,11 @@ row below records each one's **home** phase.
 | STORE-02 | Phase 1 | Complete |
 | STORE-03 | Phase 1 | Complete |
 | STORE-04 | Phase 1 | Complete |
-| GITUI-01 | Phase 4 | Pending |
-| GITUI-02 | Phase 4 | Pending |
-| GITUI-03 | Phase 4 | Pending |
-| GITUI-04 | Phase 4 | Pending |
-| GITUI-05 | Phase 4 | Pending |
+| GITUI-01 | Phase 4 | Complete |
+| GITUI-02 | Phase 4 | Complete |
+| GITUI-03 | Phase 4 | Complete |
+| GITUI-04 | Phase 4 | Complete |
+| GITUI-05 | Phase 4 | Complete |
 | MGR-01 | Phase 5 | Pending |
 | MGR-02 | Phase 1 | Complete |
 | MGR-03 | Phase 5 | Pending |
