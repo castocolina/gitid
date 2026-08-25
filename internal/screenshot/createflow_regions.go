@@ -254,9 +254,12 @@ func extractGitPreview(lines []string) string {
 // (the "… configured — applies via" result message) through the end of the
 // frame.
 func extractGitCeremony(lines []string) string {
-	start := -1
+	rp := make([]string, len(lines))
 	for i, line := range lines {
-		rpPlain := stripANSI(rightPane(line))
+		rp[i] = stripANSI(rightPane(line))
+	}
+	start := -1
+	for i := range lines {
 		// WR-10: "configured — applies via" (the exact receipt heading built
 		// by identities.go's gitCeremonyFor: `Git identity "<name>" configured
 		// — applies via the <strategy> strategy.`) is the actual marker — a
@@ -265,7 +268,22 @@ func extractGitCeremony(lines []string) string {
 		// this alias", or a future "Not configured" status. This mirrors the
 		// same hardening extractConnectivityOutput's "ssh " -> "ssh -" already
 		// applied to this class of over-broad marker.
-		if strings.Contains(rpPlain, "Write Git identity") || strings.Contains(rpPlain, "configured — applies via") {
+		//
+		// WR-22: that 24-character phrase is a contiguous run checked against
+		// a SINGLE rendered row of a width-constrained detail pane — it wraps
+		// as soon as the identity name is long enough, and can split at
+		// either of its two internal spaces, silently degrading the region to
+		// empty (a vacuous pass, not a caught divergence). Check a 2-row
+		// sliding window (this row + the next), with whitespace collapsed
+		// before matching, so a wrap at either space still matches; a
+		// same-row match (the common case) is unaffected since it's already
+		// a substring of its own window.
+		window := rp[i]
+		if i+1 < len(lines) {
+			window += " " + rp[i+1]
+		}
+		normalized := strings.Join(strings.Fields(window), " ")
+		if strings.Contains(normalized, "Write Git identity") || strings.Contains(normalized, "configured — applies via") {
 			start = i
 			break
 		}

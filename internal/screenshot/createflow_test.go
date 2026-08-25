@@ -156,6 +156,33 @@ func TestExtractRegion_GitCeremonyMatchesReceiptHeading(t *testing.T) {
 	}
 }
 
+// TestExtractRegion_GitCeremonyMatchesReceiptHeadingAcrossWrap proves the
+// WR-22 fix: the receipt heading's marker phrase ("configured — applies
+// via") is a 24-character contiguous run checked against a single rendered
+// row of a width-constrained detail pane — it wraps as soon as the identity
+// name is long enough, and the wrap can split at either of the phrase's two
+// internal spaces. Before the fix, a wrap landing INSIDE the phrase (as
+// opposed to TestExtractRegion_GitCeremonyMatchesReceiptHeading's example,
+// where the phrase is fully intact on one row and the wrap happens after it)
+// made extractGitCeremony's start marker never fire, silently degrading the
+// region to empty on both surfaces — a vacuous pass, not a caught
+// divergence.
+func TestExtractRegion_GitCeremonyMatchesReceiptHeadingAcrossWrap(t *testing.T) {
+	screen := "" +
+		" gitid   [1] Identities                                          1 ids · ! 1\n" +
+		" Identities › a-very-long-identity-name-that-forces-a-wrap\n" +
+		"▸ ✓ long-name                    S✓ G✓    │ Git identity \"a-very-long-identity-name-that-forces-a-wrap\" configured —\n" +
+		"                                            │ applies via the gitdir strategy.\n" +
+		"                                            │ Wrote → ~/.gitconfig.d/long-name\n"
+	region := screenshot.ExtractRegion(screen, screenshot.RegionGitCeremony)
+	if region == "" {
+		t.Fatal("RegionGitCeremony degraded to empty — the wrap split the marker phrase across two rows")
+	}
+	if !strings.Contains(region, "configured —") || !strings.Contains(region, "applies via") {
+		t.Errorf("RegionGitCeremony did not start on the wrapped receipt heading:\n%s", region)
+	}
+}
+
 // TestExtractRegion_Header verifies that the header region (first line,
 // containing the nav tabs) is present and contains "Identities".
 func TestExtractRegion_Header(t *testing.T) {
