@@ -739,3 +739,272 @@ Verified against `recipes/README.md`, `internal/identity/delete.go`, `cmd/gitid/
 **Phase risk: MEDIUM**, bordering **HIGH** only on 05-03 `runPipeline`/`PersistKey` double-write and 05-04 provider Hostname vs `github.com` rewrite key.
 
 **Do not proceed past 05-03 until:** (1) repair signer option recorded, (2) rotate does not persist the new key twice, (3) failed rotate leaves one usable key at the canonical path and no stray archive for that generation.
+
+---
+
+# Cycle 2 Review — Phase 5 (Identity Manager)
+
+```yaml
+cycle: 2
+reviewers: [codex, xai-grok]
+reviewed_at: 2026-08-25T13:25:19Z
+plans_reviewed:
+  - .planning/phases/05-identity-manager/05-01-PLAN.md
+  - .planning/phases/05-identity-manager/05-02-PLAN.md
+  - .planning/phases/05-identity-manager/05-03-PLAN.md
+  - .planning/phases/05-identity-manager/05-04-PLAN.md
+  - .planning/phases/05-identity-manager/05-05-PLAN.md
+  - .planning/phases/05-identity-manager/05-06-PLAN.md
+  - .planning/phases/05-identity-manager/05-07-PLAN.md
+  - .planning/phases/05-identity-manager/05-08-PLAN.md
+  - .planning/phases/05-identity-manager/05-09-PLAN.md
+models:
+  codex: "gpt-5.6-sol (reasoning=low)"
+  xai-grok: "xai/grok-4.6 (reasoning=low)"
+model_sources:
+  codex: "banner"
+  xai-grok: "pinned"
+context: >
+  Cycle 2 re-review of the plans revised in commit cc4daf6 to address Cycle 1's
+  13 HIGH + 30 actionable non-HIGH findings. Both reviewers were instructed to verify,
+  against the live repository, whether each Cycle 1 HIGH finding is RESOLVED, PARTIALLY
+  RESOLVED, or UNRESOLVED by the revision — not merely to read the plan text.
+note: >
+  codex-sol's pinned model (openai/gpt-5.6-sol-fast) was again rejected by this host's
+  Codex CLI under a ChatGPT account (identical failure to Cycle 1). The codex builtin
+  lane was invoked instead, using Codex's own default model resolved from its banner,
+  and is reported below under the codex identity — same substitution as Cycle 1.
+```
+
+## Consensus Summary
+
+Both reviewers independently verified all eight Cycle 1 HIGH findings against the current
+repository and the revised plan text (not just the plan's own claims), citing concrete
+`file:line` evidence for each. **Both agree all eight Cycle 1 HIGH findings are resolved by
+the revision** (Codex marks #5 "resolved for GitHub/GitLab; incomplete provider coverage
+remains" and #8 "partially resolved" pending a stage-contract fix; xai-grok marks all eight
+flatly RESOLVED). The core architectural fixes — `runPipeline` decomposition, separate
+archive copy/move primitives, causal doctor-reservation negative control, AST-based action
+exhaustiveness, provider-key normalization, name-derived (not path-derived) shared-key
+repair targets, error-returning planning methods, and shared CLI/TUI lifecycle functions —
+are confirmed as real, source-grounded, and correctly wired to the cited plan tasks by both
+reviewers.
+
+The reviewers diverge sharply on whether the revision is now execution-ready. **Codex finds
+three new HIGH-severity contradictions introduced or exposed by the revision itself**, all
+in the destructive-delete/confirmation lifecycle layer that Cycle 1's finding #8 asked for.
+**xai-grok did not surface these three as findings** — its 05-03/05-04/05-06/05-07/05-08
+sections focus on different (MEDIUM/LOW) concerns and it rates the phase "Approve for
+execution." Because these three are not raised or disputed by xai-grok anywhere in its
+review, this reads as a coverage gap in xai-grok's pass (it did not specifically trace
+`deleteTargets`, the `runDelete` per-verb stage contract, or the `Confirm == nil` semantics
+across 05-07/05-08) rather than a genuine disagreement — nothing in xai-grok's review
+contradicts Codex's citations.
+
+### Agreed: All 8 Cycle 1 HIGH Findings Resolved (with one caveat)
+
+| # | Cycle 1 Finding | Codex verdict | xai-grok verdict |
+|---|---|---|---|
+| 1 | `runPipeline` double-persist | RESOLVED | RESOLVED |
+| 2 | Archive move/copy conflict | RESOLVED | RESOLVED |
+| 3 | Vacuous doctor test / impossible reflection | RESOLVED | RESOLVED |
+| 4 | `Persist` omits `ConfigureGit` | RESOLVED | RESOLVED |
+| 5 | Provider ref-count hostname vs. key | RESOLVED for GitHub/GitLab; **Bitbucket still uncovered** | RESOLVED (raises a separate short-alias MEDIUM) |
+| 6 | Shared-key repair overwrite | RESOLVED | RESOLVED |
+| 7 | Planning methods lack error channel | RESOLVED | RESOLVED |
+| 8 | CLI/TUI parity chokepoint | **PARTIALLY RESOLVED** — mechanism (shared `runRotate`/`runRepair`/`runDelete`) is right, but its stage/confirmation contract is internally inconsistent (see new HIGH findings below) | RESOLVED |
+
+### New HIGH Findings This Cycle (Codex; not raised or disputed by xai-grok)
+
+- **HIGH — `DeletePlan` cannot stay equal to what `Delete` actually writes for shared keys.**
+  `deleteTargets(acct, scope, providerSurvives)` (05-04-PLAN.md:253) has no shared-key-ownership
+  input, but the same plan has `Delete` skip archive/key-removal when siblings exist
+  (05-04-PLAN.md:199). The preview will list key targets the write deliberately skips unless
+  `deleteTargets` also takes a `keySurvives` input derived from the same sibling list `Delete`
+  itself uses.
+- **HIGH — `runDelete`'s six-stage contract contradicts 05-08's own delete dry-run contract.**
+  05-07-PLAN.md:128/157 requires `runDelete` to record the same six stages (including test and
+  re-test) as rotate/repair. 05-08-PLAN.md:134 says delete has no connectivity test and its
+  dry-run must invoke zero test seams — correct, since a deleted identity generally cannot be
+  post-write SSH-tested. The lifecycle contract needs verb-specific stage definitions, not one
+  universal six-stage sequence.
+- **HIGH — `Confirm == nil` conflates two different authorization states.**
+  05-07-PLAN.md:123 treats nil as "already confirmed." 05-08-PLAN.md:123 sets a real prompt only
+  when both streams are TTYs and `--yes` is absent, defaulting to nil otherwise. A complete,
+  non-interactive command run without `--yes` can therefore silently take the
+  "already-confirmed" path instead of failing closed. Needs an explicit confirmation-state enum
+  (required / already-obtained / bypassed-with-yes) rather than a nilable func.
+
+### Divergent Views
+
+- **Overall risk rating.** Codex: **HIGH** ("another revision is warranted before execution").
+  xai-grok: **LOW-MEDIUM** ("approve for execution"). The gap traces entirely to the three new
+  HIGH findings above, which only Codex's pass surfaced — xai-grok's review does not contain
+  language that contradicts them, so this is best read as incomplete coverage on xai-grok's
+  side of the destructive-delete/confirmation seam rather than a substantive disagreement about
+  severity.
+
+---
+
+## Codex Review (Cycle 2)
+
+reflected model: `gpt-5.6-sol (reasoning=low)`, resolved from banner (instance `codex-sol`'s
+pinned model `openai/gpt-5.6-sol-fast` was again rejected by this account — see the note above).
+
+# Cycle 2 Cross-AI Plan Review
+
+## Summary
+
+The revisions materially improve the phase design and resolve the eight listed Cycle 1 HIGH findings at the architectural level. The plans now separate archive copy/move semantics, decompose the key pipeline, normalize provider keys, fail closed on planning errors, and introduce a shared CLI/TUI lifecycle layer.
+
+However, the plans are not yet execution-ready. Three cross-plan contradictions remain HIGH risk:
+
+- Shared-key delete planning cannot match the actual write because `deleteTargets` does not receive shared-key ownership.
+- The lifecycle contract requires six stages for delete even though the CLI contract explicitly says delete has no connectivity test.
+- Non-interactive complete commands without `--yes` can be treated as already confirmed because `Confirm == nil` means both "TUI already confirmed" and "CLI did not install a prompt."
+
+Overall assessment: substantial convergence, but another revision is warranted before execution.
+
+## Cycle 1 HIGH Findings
+
+| # | Finding | Status | Verification |
+|---|---|---|---|
+| 1 | `runPipeline` double-persist risk | **RESOLVED** | The current pipeline really does persist internally at [internal/identity/identity.go:531](/Users/ramon/git/personal/ssh-git-config/internal/identity/identity.go:531), and current `Rotate` calls that monolith at [internal/identity/modes.go:181](/Users/ramon/git/personal/ssh-git-config/internal/identity/modes.go:181). The revision decomposes it into `preWriteGate`, `persistStagedKey`, `writeArtifacts`, and `resolvedPhase`, then explicitly forbids rotate/repair from calling `runPipeline` at [05-03-PLAN.md:131](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-03-PLAN.md:131) and [05-03-PLAN.md:192](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-03-PLAN.md:192). Exactly-once seam tests are specified. |
+| 2 | Archive move/copy semantic conflict | **RESOLVED** | The revision introduces separate `CopyKeyPairToArchive`, `MoveKeyPairToArchive`, and `RemoveArchivedPair` primitives at [05-02-PLAN.md:115](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-02-PLAN.md:115). Rotate uses move at [05-03-PLAN.md:182](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-03-PLAN.md:182); delete uses copy and removes live files last at [05-04-PLAN.md:128](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-04-PLAN.md:128). |
+| 3a | Doctor-reservation regression was vacuous | **RESOLVED** | Current enumeration is non-recursive, so the prior test would indeed have been incidental. The revision moves the exclusion into `BuildInventory` over the injected `ListKeyFiles` result and requires a negative control at [05-02-PLAN.md:126](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-02-PLAN.md:126). This directly exercises the guard independently of glob shape. |
+| 3b | Reflecting over all `Action` implementations is impossible | **RESOLVED** | Current action membership is expressed only through `isAction` methods at [internal/tuikit/store.go:191](/Users/ramon/git/personal/ssh-git-config/internal/tuikit/store.go:191). The revision correctly replaces reflection with `AllActions()` plus a `go/parser`/AST comparison against all `isAction()` receivers at [05-07-PLAN.md:204](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-07-PLAN.md:204). |
+| 4 | Exhaustive `Persist` omitted `ConfigureGit` | **RESOLVED** | `ConfigureGit` is a real action at [internal/tuikit/store.go:110](/Users/ramon/git/personal/ssh-git-config/internal/tuikit/store.go:110), while current `Persist` silently falls through to the reducer at [cmd/gitid/wiring.go:352](/Users/ramon/git/personal/ssh-git-config/cmd/gitid/wiring.go:352). The revised real-owned list explicitly includes `ConfigureGit` and adds a dedicated regression test at [05-07-PLAN.md:207](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-07-PLAN.md:207). |
+| 5 | Foreign provider count compares incompatible host concepts | **RESOLVED for GitHub/GitLab; incomplete provider coverage remains** | Current reconstruction maps `ssh.github.com` to short `github` at [internal/identity/loader.go:13](/Users/ramon/git/personal/ssh-git-config/internal/identity/loader.go:13), while rewrite lookup derives an FQDN at [internal/identity/loader.go:134](/Users/ramon/git/personal/ssh-git-config/internal/identity/loader.go:134). The revision promotes one normalizer and adds `ProviderHostForSSHHostname`/`ProviderKeyForHost` at [05-04-PLAN.md:115](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-04-PLAN.md:115). The exact `ssh.github.com → github.com` case is tested. Bitbucket remains omitted; see Concerns. |
+| 6 | Shared-key repair overwrites the sibling's bytes | **RESOLVED** | The revision defines the repair target from `Account.Name`, not `Account.KeyPath`, and refuses when that own-name target is itself shared at [05-03-PLAN.md:249](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-03-PLAN.md:249). It requires both a sibling-unchanged test and a zero-effects `ErrRepairTargetShared` test. |
+| 7 | Planning methods lack error channels | **RESOLVED** | The revised `IdentityPlanner` signatures return errors for `KeyActionFor`, `DeletePlan`, and `KeyCeremonyPlan` at [05-06-PLAN.md:119](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-06-PLAN.md:119). Both destructive screens disable confirmation and suppress partial plan content on error at [05-06-PLAN.md:189](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-06-PLAN.md:189). |
+| 8 | CLI/TUI reused only transactions, not the complete ceremony | **PARTIALLY RESOLVED** | The revision introduces shared `runRotate`, `runRepair`, and `runDelete` lifecycle functions containing the ceremony, with thin TUI and CLI adapters at [05-07-PLAN.md:119](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-07-PLAN.md:119) and [05-08-PLAN.md:123](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-08-PLAN.md:123). This is the right mechanism. Its confirmation and delete-stage contracts are internally inconsistent, however, so the parity layer needs correction before execution. |
+
+## Strengths
+
+- The plans now trace the real defect in the live backend: current `Persist` sends every unhandled action to `tuikit.Reduce`, producing convincing in-memory success without disk writes at [cmd/gitid/wiring.go:352](/Users/ramon/git/personal/ssh-git-config/cmd/gitid/wiring.go:352). The tracer plus restart assertion is strong evidence against recurrence.
+- The archive design now distinguishes rotation's "move" from deletion's "copy, then remove last." This matches the different rollback requirements instead of overloading one helper.
+- The doctor reservation test now includes a causal negative control. That is much stronger than merely planting a file the production glob never enumerates.
+- The action-exhaustiveness mechanism is implementable in Go and protects both sides: AST parsing detects missing registry entries, while iterating `AllActions()` detects missing `Persist` classifications.
+- Provider reference counting now has a single normalization route for managed accounts and foreign Host stanzas rather than comparing raw `Hostname` and provider strings.
+- Clone validation correctly separates literal-name availability from OpenSSH wildcard shadowing. The repository already has OpenSSH-style pattern handling in [internal/sshconfig/validation.go:100](/Users/ramon/git/personal/ssh-git-config/internal/sshconfig/validation.go:100), so this does not require an ad hoc glob implementation.
+- The revised PTY gate recognizes the shared-renderer limitation and adds an independent `FIELDS.md` manifest assertion against the real binary.
+
+## Concerns
+
+- **HIGH — DeletePlan cannot currently remain equal to the actual shared-key delete.**
+  The plan defines `deleteTargets(acct, scope, providerSurvives)` at [05-04-PLAN.md:253](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-04-PLAN.md:253), but shared-key ownership is not an input. The same plan says `Delete` skips archive and key removal when siblings exist at [05-04-PLAN.md:199](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-04-PLAN.md:199). Therefore the preview must either list key targets that the write deliberately skips, or `DeleteResult.Modified == DeletePlan.Targets` will fail. The shared helper needs a `keySurvives`/shared-owner input.
+- **HIGH — `runDelete` has contradictory stage requirements.**
+  Plan 05-07 requires `runDelete` to record the same literal six-stage sequence, including test and re-test, at [05-07-PLAN.md:128](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-07-PLAN.md:128) and [05-07-PLAN.md:157](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-07-PLAN.md:157). Plan 05-08 says delete has no connectivity test and its dry run must invoke zero test seams at [05-08-PLAN.md:134](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-08-PLAN.md:134). A deleted identity cannot generally be post-write SSH-tested. The lifecycle must define verb-specific stages rather than asserting one six-stage sequence for every verb.
+- **HIGH — `Confirm == nil` conflates authorization states.**
+  The lifecycle policy says nil means "already confirmed" at [05-07-PLAN.md:123](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-07-PLAN.md:123). The CLI handler sets a prompt only when both streams are TTYs and `--yes` is absent; otherwise it uses nil at [05-08-PLAN.md:123](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-08-PLAN.md:123). Thus a complete, non-interactive command without `--yes` can accidentally take the "already confirmed" path. Use an explicit confirmation enum or require `--yes` in non-interactive destructive runs.
+- **MEDIUM — Bitbucket is missing from provider normalization.**
+  The canonical recipe includes `Hostname altssh.bitbucket.org` at [recipes/ssh-config.recipe:48](/Users/ramon/git/personal/ssh-git-config/recipes/ssh-config.recipe:48), and the product provider list includes Bitbucket. Current `hostnameToProvider` covers only GitHub and GitLab at [internal/identity/loader.go:13](/Users/ramon/git/personal/ssh-git-config/internal/identity/loader.go:13). The revised normalization task and acceptance tests still enumerate only GitHub/GitLab at [05-04-PLAN.md:115](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-04-PLAN.md:115). Deleting the last managed Bitbucket identity could under-count a surviving hand-written `altssh.bitbucket.org` stanza and remove a needed rewrite.
+- **MEDIUM — Plan 05-02 tests composition-root retry before the composition-root code exists.**
+  Its acceptance criteria require a "composition-root stamp retry" at [05-02-PLAN.md:140](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-02-PLAN.md:140), but that plan does not modify `cmd/gitid/wiring.go`; the production closure is not introduced until [05-03-PLAN.md:204](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-03-PLAN.md:204). Move that acceptance test to 05-03 or add the composition-root file to 05-02.
+- **MEDIUM — Source-removal failure injection is underspecified.**
+  `MoveKeyPairToArchive` is a concrete API with no injected filesystem operations at [05-02-PLAN.md:116](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-02-PLAN.md:116), yet acceptance requires deterministic failure while removing the second source. Permission-based failure tests are platform-dependent and often unreliable under macOS/Linux differences. Introduce unexported injected operations or test an internal helper that accepts a remove function.
+- **MEDIUM — Archive implementation cannot literally reuse the existing exclusive-copy helper.**
+  The plan says the new keygen helper should use `internal/filewriter`'s exclusive-copy mechanism, but `copyFileExclusive` is unexported at [internal/filewriter/filewriter.go:213](/Users/ramon/git/personal/ssh-git-config/internal/filewriter/filewriter.go:213). Either export a safe primitive from `filewriter` or state that `keygen` will reproduce the exclusive-open pattern. The current wording risks an implementation-time detour.
+- **MEDIUM — Journal restoration-order acceptance is logically confused.**
+  The plan says created paths are removed after watched paths are restored, then asks for a test where "a created file inside a restored directory" survives at [05-07-PLAN.md:162](/Users/ramon/git/personal/ssh-git-config/.planning/phases/05-identity-manager/05-07-PLAN.md:162). A path recorded as created should not survive rollback. If the directory was absent before the transaction, nothing pre-existing inside it should be restored. Replace this with separate assertions: watched pre-existing paths survive; recorded created paths do not.
+- **LOW — Scope remains very large.**
+  Individual plans estimate 84k–116k tokens and combine domain refactors, UI behavior, composition-root transactions, CLI design, and large PTY suites. The dependency structure is good, but execution risk remains high because failures late in a wave may invalidate many acceptance criteria.
+
+## Suggestions
+
+- Change the delete target helper to something equivalent to `deleteTargets(acct, scope, providerSurvives, keySurvives bool)`. Derive `keySurvives` from the same sorted sibling list used by `Delete`.
+- Replace the universal six-stage assertion with explicit per-verb lifecycle definitions: rotate/repair (test replacement → plan → confirm → backup/write → re-test); delete (plan → confirm → backup → write → reconstruction/coherence verification); create/clone (retain the existing two-stage gate).
+- Replace nullable confirmation with an explicit `confirmationMode` enum (`confirmationRequired` / `confirmationAlreadyObtained` / `confirmationBypassWithYes`). Non-interactive destructive commands without `--yes` should fail before planning or writing.
+- Add Bitbucket normalization and tests: `altssh.bitbucket.org → bitbucket.org`, `bitbucket.org → bitbucket.org`, a hand-written Bitbucket Host stanza keeps the provider rewrite alive.
+- Move stamp-retry testing from 05-02 to the plan that first wires the production archive closure.
+- Give archive operations injectable internal filesystem functions so second-remove and collision failures are deterministic on both supported operating systems.
+- Clarify journal invariants: every pre-existing watched path is restored; every transaction-created path is removed; no path should belong to both sets.
+
+## Risk Assessment
+
+**Overall risk: HIGH**
+
+The phase architecture is much stronger than Cycle 1, and all eight prior HIGH findings have credible resolutions or substantial partial resolutions. The remaining risks are concentrated in destructive lifecycle semantics: confirmation authorization, delete preview/write equivalence, and incompatible delete-stage definitions. These issues can cause either unsafe headless writes or plans that cannot satisfy their own acceptance tests. Correcting them should bring the phase down to MEDIUM execution risk without requiring a major redesign.
+
+---
+
+## OpenCode Review (xai-grok) — Cycle 2
+
+I'll load the review skill and check Cycle 1 HIGH findings against the live repo and revised plans.
+
+# Cycle 2 Plan Re-Review — Phase 5
+
+Verified against live code (`runPipeline` persist at `internal/identity/identity.go:527-534`, `Rotate` still calls it at `modes.go:189`, `Persist` still falls through at `cmd/gitid/wiring.go:352-360`, `listKeyFilesRealForHome` is non-recursive `id_*` at `inventory.go:266`, `rewriteLookupProvider` / `hostnameToProvider` at `loader.go:16-21,134-143`, `ConfigureGit` is a real `isAction` at `store.go:110,192`).
+
+## Summary
+
+The cycle-2 revisions close all eight Cycle-1 HIGH findings with mechanisms that match the current repo, not just renamed comments. The remaining risk is execution volume (nine waves, many new seams) and a few MEDIUM consistency gaps, not an unfixed architectural hole. Plans are ready to execute.
+
+## Cycle 1 HIGH verdicts
+
+| # | Finding | Verdict |
+|---|---|---|
+| 1 | `runPipeline` double-persist | **RESOLVED** — 05-03 Task 1 splits persist into `persistStagedKey`; rotate/repair compose phases and must not call `runPipeline`. Repo still has the defect (`identity.go:530-533` + `modes.go:189`). |
+| 2 | Archive move vs copy | **RESOLVED** — 05-02 ships `Copy` / `Move` / `RemoveArchivedPair`; 05-03 uses Move, 05-04 uses Copy + remove-last. |
+| 3 | Vacuous doctor test + reflect-over-Action | **RESOLVED** — 05-02 filters `ListKeyFiles` via `IsReservedKeyPath` + negative control (glob at `inventory.go:266` never sees `gitid-archive/`). 05-07 replaces reflection with `AllActions()` + `go/parser` over `isAction()` (`store.go:191-203`). |
+| 4 | Persist omits `ConfigureGit` | **RESOLVED** — 05-07 classifies `ConfigureGit` real-owned. Today `Persist` only handles `Reset`/`AddIdentity` (`wiring.go:353-360`); `ConfigureGit` exists (`store.go:110`). |
+| 5 | Foreign ref-count hostname vs provider | **RESOLVED** — 05-04 promotes `rewriteLookupProvider` (`loader.go:134-143`), adds `ProviderHostForSSHHostname` (`ssh.github.com`→`github.com` from `hostnameToProvider` at `loader.go:17`). |
+| 6 | Shared-key repair overwrite | **RESOLVED** — `RepairKeyPath` from `Account.Name` via `keygen.KeyPaths`; `ErrRepairTargetShared` fail-closed. |
+| 7 | Plan seams with no error | **RESOLVED** — 05-06 `DeletePlan`/`KeyCeremonyPlan`/`KeyActionFor` return `(view, error)`; confirm disabled on error. |
+| 8 | CLI/TUI not one lifecycle | **RESOLVED** — 05-07 `runRotate`/`runRepair`/`runDelete` own all six D-02 stages; 05-08 handlers call those only. |
+
+## Strengths
+
+- Tracer 05-01 still proves Pitfall 1 with a real-binary restart (`wiring.go:358-359` is still the silent reducer).
+- Structural SSH skip + `ErrScopeNotAvailable` for both skins is the right tracer cut.
+- Taxonomy freeze (7 collapsed row words, 8 axis labels, `unused_keys`) is consistent across 05-01/05-07/05-09.
+- Repair APPEND resolution is recorded in-plan (DLV-08 respected).
+- `IdentityPlanner` + `NoopIdentityPlanner` matches the three Backend implementers.
+- Visual gate: independent FIELDS.md backstop + no manual walk.
+
+## Concerns
+
+- **MEDIUM** — 05-03 Task 1 says keep existing `Rotate` behavior-identical while Task 2 changes `Rotate`'s signature and stops using `runPipeline`. Executor must not treat Task 1's "existing Rotate" as the final ceremony.
+- **MEDIUM** — 05-01 `CommitDelete` lands before 05-06 `IdentityPlanner`. Fine if Delete stays on `Backend`; if 05-06 moves it, 05-01 wiring must be migrated, not duplicated.
+- **MEDIUM** — `rewriteLookupProvider` on a short provider + short alias (`github`, `mygh`) returns `mygh` (`loader.go:139-140`), not `github.com`. `ProviderHostForSSHHostname` covers the R-05 Host-stanza case; managed short-form still needs the 05-04 `Provider`/`RewriteProviderKey` tests.
+- **LOW** — Wave 7–9 token estimates are aggressive; rollback/journal work is the likely slip.
+- **LOW** — 05-08 `--dry-run` for rotate tests the *current* key: correct, but must not be sold as proving the new Host/`ssh -G` path.
+
+## Suggestions
+
+- In 05-03 SUMMARY, state Task 1 leaves `Rotate`→`runPipeline` until Task 2 deletes that call (`grep` gate already planned).
+- Keep `CommitDelete` on `Backend` through 05-06 or list an explicit move in 05-06 Task 1.
+- Add one 05-04 case: `Provider=github`, alias `mygh`, no Hostname — must still count as `github.com`.
+
+## Risk Assessment
+
+**LOW–MEDIUM.** Architecture of the eight HIGHs is sound and repo-backed. Residual risk is implementation size and the two MEDIUM seam/normalization notes, not an unresolved design contradiction. Approve for execution.
+
+---
+
+# Cycle 2 Final Assessment
+
+**Cycle 2 overall risk: HIGH (Codex) / LOW-MEDIUM (xai-grok) — treat as HIGH pending resolution.**
+
+All eight Cycle 1 HIGH findings are resolved (with one caveat on provider coverage). Three new
+HIGH findings surfaced by Codex — none disputed by xai-grok, simply not covered by its pass —
+concentrate in the destructive-delete/confirmation lifecycle that Cycle 1's finding #8 asked
+the revision to fix:
+
+1. `deleteTargets` needs a `keySurvives` input so `DeletePlan` previews match what `Delete`
+   actually writes for shared keys.
+2. `runDelete`'s required six-stage sequence (05-07) contradicts 05-08's own no-test-for-delete
+   dry-run contract — the lifecycle needs per-verb stage definitions.
+3. `Confirm == nil` conflates "already confirmed" with "no prompt was installed," risking a
+   non-interactive destructive command running without explicit `--yes` authorization.
+
+Actionable non-HIGH findings not yet addressed: Bitbucket missing from provider normalization
+(Codex, MEDIUM); 05-02 tests composition-root retry before that code exists (Codex, MEDIUM);
+archive source-removal failure injection underspecified (Codex, MEDIUM); archive helper's
+planned reuse of unexported `copyFileExclusive` (Codex, MEDIUM); journal restoration-order
+acceptance criteria self-contradictory (Codex, MEDIUM); large per-plan scope/token estimate
+(Codex, LOW); 05-03 Task 1/Task 2 rotate-behavior sequencing ambiguity (xai-grok, MEDIUM);
+05-01 `CommitDelete` vs. 05-06 `IdentityPlanner` ownership ambiguity (xai-grok, MEDIUM);
+`rewriteLookupProvider` short-provider/short-alias gap (xai-grok, MEDIUM); wave 7-9 token
+estimates aggressive (xai-grok, LOW); 05-08 rotate dry-run scope caveat (xai-grok, LOW).
+
