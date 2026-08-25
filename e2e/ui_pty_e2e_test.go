@@ -24,9 +24,9 @@ package e2e
 //  5. Writes raw keystrokes (type a name, Tab, Esc, ctrl+r, 'A', 'c') and
 //     asserts on the decoded text — e.g. the typed name appears in the form
 //     field (input-decoding regression test, D-13).
-//  6. Snapshots each decoded frame to
-//     .planning/phases/05.7-complete-v1-0-product-features-in-tui/ui-frames/<surface>.txt
-//     so Task 2's UI critique has REAL PTY-decoded frames as primary evidence.
+//  6. Snapshots each decoded frame to tmp/ui-frames/<surface>.txt (WR-12:
+//     gitignored scratch space, never a tracked directory — see saveFrame)
+//     so a UI critique has REAL PTY-decoded frames as primary evidence.
 //
 // Security notes (gosec/CLAUDE.md):
 //   - The gitid binary is built from this repo, not a user-supplied string.
@@ -260,13 +260,24 @@ func (s *ptySession) waitFor(timeout time.Duration, predicate func(string) bool)
 	return s.snapshot(), false
 }
 
-// saveFrame writes the current emulator snapshot to the ui-frames directory,
-// creating it if necessary. Non-fatal: frame saving is evidence collection only.
+// saveFrame writes the current emulator snapshot to a scratch ui-frames
+// directory, creating it if necessary. Non-fatal: frame saving is evidence
+// collection only.
+//
+// WR-12: this used to write into .planning/phases/05.7-.../ui-frames/, a
+// TRACKED directory — every run embeds absolute sandbox paths
+// (t.TempDir()) and nanosecond backup suffixes, so every run on every
+// machine produced a different file and dirtied the working tree (the same
+// failure mode TestGateVisualRegressionReadOnly exists to prevent for the
+// sibling screenshot gate). /tmp/ at the repo root is ALREADY gitignored
+// for exactly this purpose (".gitignore: Local scratch directory
+// (screenshots, notes — not part of the repo)"), and — unlike t.TempDir(),
+// which Go removes at test end — it survives the run for manual
+// inspection.
 func saveFrame(t *testing.T, name string, s *ptySession) {
 	t.Helper()
 	root := repoRoot(t)
-	dir := filepath.Join(root, ".planning", "phases",
-		"05.7-complete-v1-0-product-features-in-tui", "ui-frames")
+	dir := filepath.Join(root, "tmp", "ui-frames")
 	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // test-only dir (G306)
 		t.Logf("saveFrame: MkdirAll: %v (non-fatal)", err)
 		return
