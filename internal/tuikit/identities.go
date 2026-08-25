@@ -606,6 +606,45 @@ func wizardGitFocusStep(focus, delta int) int {
 	return wizardGitFocusOrder[((i+delta)%n+n)%n]
 }
 
+// paneGitFocusOrder is the configure-Git PANE's own Tab/Shift+Tab ring
+// (CR-08 fix — mirrors wizardGitFocusOrder above, same rationale: cycling by
+// explicit slice position, not raw `% gitPaneFocusRing` modulo arithmetic,
+// because gitFieldForceSSH's raw value is deliberately non-contiguous with
+// gitFieldStrategy's). Before this fix, gitPaneFocusRing == 4 bounded the
+// pane's ring to [0,3] (Name/Email/Strategy/button), so slot 4
+// (gitFieldForceSSH) was never visited by Tab in the pane — CR-06 only
+// wired the WIZARD's ring, leaving the pane's own screen (Phase 4's own
+// screen) with an unreachable control. gitFieldGitDir stays outside this
+// ring — reached only via ctrl+g or a direct click on "gitdir path", same
+// as before this fix.
+var paneGitFocusOrder = []int{
+	gitFieldName, gitFieldEmail, gitFieldStrategy, gitFieldForceSSH, gitPaneFocusButton,
+}
+
+// paneGitFocusIndex returns focus's position in paneGitFocusOrder, or -1 if
+// focus is not a member of the pane's own ring.
+func paneGitFocusIndex(focus int) int {
+	for i, v := range paneGitFocusOrder {
+		if v == focus {
+			return i
+		}
+	}
+	return -1
+}
+
+// paneGitFocusStep returns the ring member delta positions away from focus,
+// wrapping — the pane's Tab (delta=1) / Shift+Tab (delta=-1) primitive.
+// Defaults to the ring's first member if focus is not currently a recognized
+// member (defense-in-depth, mirrors wizardGitFocusStep).
+func paneGitFocusStep(focus, delta int) int {
+	n := len(paneGitFocusOrder)
+	i := paneGitFocusIndex(focus)
+	if i < 0 {
+		return paneGitFocusOrder[0]
+	}
+	return paneGitFocusOrder[((i+delta)%n+n)%n]
+}
+
 // matchStrategies are the includeIf strategies in select order.
 var matchStrategies = []string{"gitdir", "hasconfig", "both"}
 
@@ -847,7 +886,19 @@ func (g gitForm) view(name, keyPath string, focus int, width int, baseline strin
 	if focus == gitFieldForceSSH {
 		forceStyle = styleBold
 	}
-	b.WriteString(helperLine("Kept byte-identical to ~/.ssh/allowed_signers (GITUI-04) · gpg.format=ssh · signingkey="+g.spec(name, keyPath).PublicKeyPath+" · gpgsign=true · "+forceStyle.Render(forceMarker+" Force SSH"), false) + "\n")
+	// CR-08: Force SSH must lead this row (after gutter stripping) so
+	// anchoredLabelMatch's row-START anchoring (D8 click-to-focus) can find
+	// it — it previously sat at the TAIL of this same line, which
+	// anchoredLabelMatch can never match by design, leaving the control
+	// clickable in neither the pane nor the wizard (gitFormFieldSlots'
+	// "Force SSH" entry was dead in both surfaces despite being wired into
+	// both focus rings). Reordering onto the SAME row (rather than adding a
+	// new one) is deliberate: the pane's rows are budgeted against a fixed
+	// 30-row frame (see sshForm.view's own comment on this same
+	// constraint), and an added row pushed the frozen Continue/Skip hint
+	// text below the visible frame in TestWizardGitStepButtonsAreFocusable.
+	b.WriteString("     " + forceStyle.Render(forceMarker+" Force SSH") + " · " +
+		styleFaint.Render("Kept byte-identical to ~/.ssh/allowed_signers (GITUI-04) · gpg.format=ssh · signingkey="+g.spec(name, keyPath).PublicKeyPath+" · gpgsign=true") + "\n")
 
 	// D2 (checkpoint-2 contract): the (←/→ change) hint moves onto the
 	// header line, visible in BOTH focus states (it used to show only
@@ -2076,7 +2127,7 @@ func (m identitiesModel) handleGitKey(msg tea.KeyMsg, s DemoState) keyResult {
 		}
 		return keyResult{model: m, handled: true}
 	case "tab", "down":
-		m.gitFocus = (m.gitFocus + 1) % gitPaneFocusRing
+		m.gitFocus = paneGitFocusStep(m.gitFocus, 1)
 		m.gitPaneForm.gitDirFocused = false
 		m.gitPaneForm = m.gitPaneForm.setFocus(m.gitFocus)
 		return keyResult{model: m, handled: true}
@@ -2087,7 +2138,7 @@ func (m identitiesModel) handleGitKey(msg tea.KeyMsg, s DemoState) keyResult {
 		}
 		return keyResult{model: m, handled: true}
 	case "shift+tab", "up":
-		m.gitFocus = (m.gitFocus + gitPaneFocusRing - 1) % gitPaneFocusRing
+		m.gitFocus = paneGitFocusStep(m.gitFocus, -1)
 		m.gitPaneForm.gitDirFocused = false
 		m.gitPaneForm = m.gitPaneForm.setFocus(m.gitFocus)
 		return keyResult{model: m, handled: true}

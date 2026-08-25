@@ -2291,6 +2291,68 @@ func TestGitFlowMouseGitDirFocusAndConditionalVisibility(t *testing.T) {
 	}
 }
 
+// TestGitFlowPaneTabRingVisitsForceSSH proves the pane's own Tab ring
+// (paneGitFocusOrder) actually visits gitFieldForceSSH. Before CR-08, the
+// ring was bounded by the raw `% gitPaneFocusRing` (== 4) modulo, so
+// `m.gitFocus` only ever took values 0-3 (Name/Email/Strategy/button) no
+// matter how many times Tab was pressed — slot 4 (gitFieldForceSSH) was
+// never visited.
+func TestGitFlowPaneTabRingVisitsForceSSH(t *testing.T) {
+	a, _ := press(t, NewApp(stubBackend{}), "g")
+	seen := map[int]bool{identModel(t, a).gitFocus: true}
+	for i := 0; i < len(paneGitFocusOrder); i++ {
+		a, _ = press(t, a, "tab")
+		seen[identModel(t, a).gitFocus] = true
+	}
+	if !seen[gitFieldForceSSH] {
+		t.Fatalf("pane's Tab ring never visited gitFieldForceSSH: visited %v", seen)
+	}
+	// space while Tab-focused on Force SSH must toggle it (not just clicking).
+	for identModel(t, a).gitFocus != gitFieldForceSSH {
+		a, _ = press(t, a, "tab")
+	}
+	before := identModel(t, a).gitPaneForm.forceSSH
+	a, _ = press(t, a, "space")
+	if identModel(t, a).gitPaneForm.forceSSH == before {
+		t.Fatal("space on Tab-focused gitFieldForceSSH must toggle it")
+	}
+}
+
+// TestGitFlowPaneMouseClickThenSpaceTogglesForceSSH is CR-08's required
+// regression test: before the fix, the configure-Git PANE's Force SSH row
+// was reachable by neither Tab (gitPaneFocusRing bounded the ring to
+// [0,3], so slot 4 was never visited) nor a real mouse click
+// (anchoredLabelMatch requires row-start anchoring, but the row was the
+// TAIL of a helper line). A membership assertion over gitFormFieldSlots
+// provably cannot catch this regression — it passes whether or not the
+// control is actually reachable — so this test drives the real dispatch
+// path end to end: render, locate the rendered "Force SSH" row, send a
+// real tea.MouseClickMsg at that cell, then a real "space" keypress, and
+// assert the model's forceSSH bit actually flipped.
+func TestGitFlowPaneMouseClickThenSpaceTogglesForceSSH(t *testing.T) {
+	a, _ := press(t, NewApp(stubBackend{}), "g")
+	before := identModel(t, a).gitPaneForm.forceSSH
+
+	a = clickCell(t, a, "Force SSH", 0, 0)
+	if identModel(t, a).gitFocus != gitFieldForceSSH {
+		t.Fatalf("clicking the Force SSH row must focus gitFieldForceSSH, got gitFocus=%d", identModel(t, a).gitFocus)
+	}
+
+	a, _ = press(t, a, "space")
+	after := identModel(t, a).gitPaneForm.forceSSH
+	if after == before {
+		t.Fatalf("space on the focused Force SSH row must toggle it: before=%v after=%v", before, after)
+	}
+
+	// Round-trip: a second click + space returns to the original value —
+	// proves the toggle is a real flip, not a one-way side effect.
+	a = clickCell(t, a, "Force SSH", 0, 0)
+	a, _ = press(t, a, "space")
+	if got := identModel(t, a).gitPaneForm.forceSSH; got != before {
+		t.Fatalf("second click+space must toggle back to %v, got %v", before, got)
+	}
+}
+
 // TestGitFormFieldSlotsNeverAliasPaneWriteButton proves the CR-04 fix for
 // the configure-Git pane's click-routing table: gitFormFieldSlots' entries
 // (including "Force SSH" -> gitFieldForceSSH) must never numerically alias
@@ -2298,10 +2360,10 @@ func TestGitFlowMouseGitDirFocusAndConditionalVisibility(t *testing.T) {
 // == 3, so IF a click ever hit gitFieldForceSSH's slot, the pane's
 // "Write it…" button-focused render check (`m.gitFocus == gitPaneFocusButton`)
 // would ALSO fire for that same value, visually focusing the wrong control.
-// (gitFormFieldSlots' "Force SSH" row currently has no matching rendered
-// text for hitFieldRow's anchored-prefix check — WR-level gap, not part of
-// this fix — so this test pins the constant relationship directly rather
-// than through a click that cannot yet land.)
+// (CR-08 gave gitFormFieldSlots' "Force SSH" row its own rendered line —
+// gitForm.view() — so hitFieldRow's anchored-prefix check now DOES land a
+// real click there; this test still pins the constant relationship
+// directly, since it is the more precise guarantee.)
 func TestGitFormFieldSlotsNeverAliasPaneWriteButton(t *testing.T) {
 	for _, f := range gitFormFieldSlots {
 		if f.slot == gitPaneFocusButton {

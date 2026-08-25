@@ -420,9 +420,24 @@ func TestGitConfiguration_RealPTYMouseFieldFocus(t *testing.T) {
 	}
 	mustSee(t, s, "acme-clicked@example.com", "mouse click focused user.email for raw keyboard entry")
 
+	// CR-08/WR-29: assert the TRANSITION, not a state that also holds if the
+	// click/space never did anything. seedGitPTYIdentity never writes a
+	// provider-rewrite ([url "..."] insteadOf) block into ~/.gitconfig, so
+	// (per CR-09) this identity's real ForceSSH state starts false — the
+	// checkbox must render "☐ Force SSH" BEFORE any interaction. A bare
+	// `mustSee(t, s, "☐ Force SSH", ...)` after the click+space would pass
+	// whether or not the click and the space actually did anything, which is
+	// exactly how the CR-08 regression (Force SSH unreachable in the pane)
+	// sailed through this suite undetected. Assert the un-clicked baseline
+	// first, then the flip to "☑", then flip back — proving both the click
+	// (focus) and the space (toggle) are real.
+	mustSee(t, s, "☐ Force SSH", "Force SSH starts unchecked — no provider-rewrite block seeded")
 	clickLabelRow(t, s, "Force SSH")
 	s.sendKey([]byte(" "), keystrokeDelay)
-	mustSee(t, s, "☐ Force SSH", "mouse click focused the Force-SSH toggle; space toggled it off")
+	mustSee(t, s, "☑ Force SSH", "mouse click focused the Force-SSH toggle; space toggled it on")
+	clickLabelRow(t, s, "Force SSH")
+	s.sendKey([]byte(" "), keystrokeDelay)
+	mustSee(t, s, "☐ Force SSH", "a second click+space toggles the Force-SSH checkbox back off")
 
 	clickLabelRow(t, s, "hasconfig — repos whose remote uses this alias")
 	mustSee(t, s, "● hasconfig", "mouse click on a strategy row selects that strategy")
