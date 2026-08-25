@@ -20,9 +20,16 @@ do not assume any of them ran just because the previous one did:
 
 1. Discuss — CONTEXT.md exists and reflects the phase.
 2. UI-phase — UI-SPEC.md exists, only for phases with a TUI surface.
-3. Plan — PLAN.md file(s) exist for every wave.
+3. Plan — PLAN.md file(s) exist for every wave, and every single PLAN.md has
+   `cross_ai: true` in its frontmatter. This is non-negotiable: no plan may
+   be created, replanned, or gap-closed without it. Add it immediately if a
+   planner omitted it — never proceed to review or execution with a plan
+   missing this field.
 4. Plan review convergence — REVIEWS.md shows 0 HIGH concerns.
 5. Execute — every wave's SUMMARY.md exists, tree is clean, tests green.
+   Confirm cross-AI delegation was actually used per Rule 12 below, not a
+   direct on-session executor dispatch, unless a recorded per-plan fallback
+   applies.
 6. Code review — REVIEW.md shows clean or all findings fixed.
 7. Verify-work — VERIFICATION.md shows `passed` (or a resolved
    `human_needed`/`gaps_found` outcome, not left open).
@@ -86,6 +93,28 @@ Only close a phase and advance once all nine are evidenced.
     recorded for the user's one manual review after all phases complete, not at
     individual phase close. Do not require 100% byte, pixel, or historical-
     artifact parity for Phases 3–10.
+12. **Every PLAN.md must carry `cross_ai: true` in its frontmatter — this is
+    non-negotiable, with no exceptions and no alternative path.** Plan
+    EXECUTION is delegated to cross-AI, never run on this session's own token
+    budget. `workflow.cross_ai_execution` is `true` in `.planning/config.json`
+    specifically so `/gsd-execute-phase` routes each plan to the configured
+    external command (`workflow.cross_ai_command`, currently `opencode run
+    --model local-llm-env/my-coding ...`) instead of spawning a
+    `gsd-executor` subagent on this Claude session. The config flag alone
+    does not activate delegation — `execute-phase.md`'s `cross_ai_delegation`
+    step also requires the plan's own frontmatter `cross_ai: true`
+    (per-Checklist-item-3 above). Passing `--cross-ai` to force delegation is
+    a redundant safety net, not a substitute for the frontmatter field — every
+    plan gets the field regardless of whether the flag is also passed. A plan
+    is not considered planned (Checklist item 3) until this field is present;
+    do not advance a plan to review or execution without it. Only fall back
+    to a direct `gsd-executor` dispatch on this session when the cross-AI
+    command demonstrably fails for that specific plan (record the failure) —
+    never as the default path, and never because adding the field was
+    skipped. Burning this session's own context/token budget on ordinary
+    plan execution when a configured external provider exists is the exact
+    mistake this rule exists to prevent; it previously caused an avoidable
+    session-limit stall mid-run.
 
 ## Phase 9 External Account Policy
 
