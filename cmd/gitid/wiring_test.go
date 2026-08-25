@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/identity"
@@ -1070,6 +1071,50 @@ func TestProviderFromAliasPreservesMultiLabelProvider(t *testing.T) {
 	}
 	if got, want := providerFromAlias("work.enterprise.company.co.uk"), "enterprise.company.co.uk"; got != want {
 		t.Errorf("providerFromAlias(work.enterprise.company.co.uk) = %q, want %q", got, want)
+	}
+}
+
+// TestTransactionsAreSerializedAgainstEachOther proves the WR-04 fix:
+// commitGitTransaction and commitCreateTransaction must be mutually
+// exclusive, since both read-modify-write ~/.gitconfig and
+// ~/.ssh/allowed_signers off separate tea.Cmd goroutines. Holding txMu
+// manually and observing that a concurrent commitGitTransaction call
+// blocks until release — then completes promptly once released — proves
+// the lock is real, not merely declared.
+func TestTransactionsAreSerializedAgainstEachOther(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_personal")
+	seedGeneratedKey(t, keyPath, "personal", "")
+	b := newBackendForHome(home)
+
+	b.txMu.Lock()
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := b.commitGitTransaction(tuikit.GitSpec{
+			Identity: "personal", Name: "Personal", Email: "personal@example.test", Strategy: "gitdir",
+			KeyPath: keyPath, PublicKeyPath: keyPath + ".pub", SSHHost: "personal.github.com",
+			Provider: "github.com", GitDir: "~/git/personal/", ForceSSH: true,
+		})
+		done <- err
+	}()
+
+	select {
+	case <-done:
+		t.Fatal("commitGitTransaction completed while txMu was held externally — the transactions are not serialized")
+	case <-time.After(100 * time.Millisecond):
+		// Expected: still blocked on txMu.
+	}
+
+	b.txMu.Unlock()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("commitGitTransaction after lock release: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("commitGitTransaction never completed after txMu was released")
 	}
 }
 

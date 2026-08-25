@@ -86,6 +86,16 @@ type realBackend struct {
 	initErr error
 
 	mu sync.Mutex
+	// txMu (WR-04) serializes the file-mutation transactions themselves —
+	// commitCreateTransaction and commitGitTransaction/commitGitArtifacts.
+	// CommitCreate and CommitGit each return a tea.Cmd that Bubble Tea runs
+	// in its OWN goroutine; without this lock, two overlapping transactions
+	// could interleave read-modify-write cycles on ~/.gitconfig and
+	// ~/.ssh/allowed_signers into a lost update, and both journals would
+	// snapshot the same pre-state, so a rollback could resurrect a stale
+	// file. mu (above) guards only the staged*/stage*Outcome/persistErr
+	// fields — a narrower, unrelated concern.
+	txMu sync.Mutex
 	// stageDir is the throwaway directory both test stages run against.
 	stageDir string
 	// staged/stagedFor hold the key material generated for the in-flight
@@ -750,7 +760,13 @@ func (b *realBackend) CommitGit(spec tuikit.GitSpec) tea.Cmd {
 // commitGitTransaction reads the signing key before delegating every mutation to
 // the shared journal. Standalone and combined create writes therefore have the
 // same snapshot, backup, rollback, and failure-reporting behavior.
+//
+// WR-04: txMu serializes this against any concurrent commitCreateTransaction
+// (both run off the Bubble Tea update loop, each in its own goroutine, and
+// both read-modify-write ~/.gitconfig and ~/.ssh/allowed_signers).
 func (b *realBackend) commitGitTransaction(spec tuikit.GitSpec) ([]string, []string, error) {
+	b.txMu.Lock()
+	defer b.txMu.Unlock()
 	return b.commitGitArtifacts(spec, "", nil)
 }
 
@@ -1612,7 +1628,13 @@ func (b *realBackend) CommitCreate(id tuikit.DemoIdentity) tea.Cmd {
 // which let it silently rot out of sync with the shared mutationJournal.
 // Deleted; nothing behaved differently once the sole caller (CommitCreate)
 // was confirmed to already call this function, not the legacy one.
+//
+// WR-04: txMu serializes this against any concurrent commitGitTransaction
+// (both run off the Bubble Tea update loop, each in its own goroutine, and
+// both read-modify-write ~/.gitconfig and ~/.ssh/allowed_signers).
 func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged identity.StagedKey, id tuikit.DemoIdentity) ([]string, error) {
+	b.txMu.Lock()
+	defer b.txMu.Unlock()
 	journal := newMutationJournal(b)
 	fail := func(target string, cause error) ([]string, error) {
 		// CR-02: never delete the timestamped backups on the failure path —
