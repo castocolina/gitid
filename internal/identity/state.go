@@ -234,3 +234,58 @@ func ClassifyState(acct Account, keyExists, keyUsedInSSH, keyUsedInGit bool) Sta
 
 	return StateComplete
 }
+
+// KeyAction is the D-05 routing vocabulary: which key-lifecycle ceremony the
+// single approved key-row menu entry (FIELDS.md's one action_new_key row)
+// dispatches to for a given identity.
+type KeyAction string
+
+const (
+	// KeyActionRotate retires the identity's current key: archives it and
+	// generates a fresh replacement at the same canonical path (Rotate,
+	// internal/identity/rotate.go).
+	KeyActionRotate KeyAction = "rotate"
+	// KeyActionRepair generates a fresh key at the identity's OWN canonical
+	// path without touching any pre-existing key material (RepairKey,
+	// internal/identity/repair.go).
+	KeyActionRepair KeyAction = "repair"
+)
+
+// KeyActionFor is the pure router behind the single key-row menu entry
+// (D-05, and the FIELDS.md finding that only one key row exists — 05-UI-SPEC.
+// md confirms Phase 5 adds no new screen for this). It performs NO I/O and
+// reads no file: it is a function of a classified health value plus a
+// REQUIRED second input, keyOwnerCount — the number of identities referencing
+// this identity's CURRENT key path, including itself.
+//
+// keyOwnerCount is required, not inferred (review R-07), because
+// IdentityHealth's key axis (h.KeyState) reports how a key is USED
+// (key-used-ssh-only, key-used-both, key-unused, key-missing) and carries no
+// ownership CARDINALITY at all — a router taking only IdentityHealth cannot
+// tell one owner from several, and would silently route a shared-key
+// identity into the destructive retirement ceremony instead of the
+// non-destructive repair one.
+//
+// Routing table (most specific first):
+//
+//	KeyState == key-missing  -> repair (there is nothing to retire)
+//	keyOwnerCount > 1        -> repair (retiring would strand a sibling)
+//	otherwise                -> rotate
+//
+// This deliberately does NOT consume ClassifyState's collapsed single-label
+// result: that collapse is LOSSY on the key axis (it never returns
+// key-used-both — see ClassifyState's own doc comment), which is exactly the
+// kind of hidden fold that would misroute a ceremony (review R-25). Routing
+// over h.KeyState directly keeps key-used-both distinguishable from every
+// other key state, even though no branch here currently needs to
+// distinguish it from key-used-ssh-only — a future taxonomy change that DID
+// need to would already have the right input to work with.
+func KeyActionFor(h IdentityHealth, keyOwnerCount int) KeyAction {
+	if h.KeyState == StateKeyMissing {
+		return KeyActionRepair
+	}
+	if keyOwnerCount > 1 {
+		return KeyActionRepair
+	}
+	return KeyActionRotate
+}

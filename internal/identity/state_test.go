@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"fmt"
 	"sort"
 	"testing"
 )
@@ -223,5 +224,68 @@ func TestClassifyState_PrecedenceStructuralBeforeKey(t *testing.T) {
 	got := ClassifyState(acct, false, false, false) // key-missing AND git-only both apply
 	if got != StateGitOnly {
 		t.Errorf("ClassifyState precedence: got %q want %q (structural axis must win over key axis)", got, StateGitOnly)
+	}
+}
+
+// TestKeyActionFor is the D-05/review-R-07 cross-product table test: every
+// one of the 8 locked State values (as KeyState) crossed with owner counts
+// {1, 2, 3}, asserting KeyActionFor's answer for each combination. A future
+// taxonomy change that adds a 9th State value and forgets to extend this
+// table will fail here (t.Fatalf on an unhandled value), not silently
+// misroute a ceremony.
+func TestKeyActionFor(t *testing.T) {
+	allStates := []State{
+		StateComplete, StateIncomplete, StateGitOnly, StateKeyUnused,
+		StateKeyUsedSSHOnly, StateKeyUsedBoth, StateKeyMissing, StateFragmentPathMissing,
+	}
+	ownerCounts := []int{1, 2, 3}
+
+	for _, keyState := range allStates {
+		for _, owners := range ownerCounts {
+			name := fmt.Sprintf("%s/owners=%d", keyState, owners)
+			t.Run(name, func(t *testing.T) {
+				h := IdentityHealth{KeyState: keyState}
+				got := KeyActionFor(h, owners)
+
+				var want KeyAction
+				switch {
+				case keyState == StateKeyMissing:
+					want = KeyActionRepair
+				case owners > 1:
+					want = KeyActionRepair
+				default:
+					want = KeyActionRotate
+				}
+
+				if got != want {
+					t.Errorf("KeyActionFor(KeyState=%q, owners=%d) = %q, want %q", keyState, owners, got, want)
+				}
+			})
+		}
+	}
+}
+
+// TestKeyActionFor_OwnerCountTwoForcesRepairEvenForKeyUsedBoth is the
+// explicit review R-07 proof: a key actively used for BOTH SSH auth and git
+// signing (key-used-both — the "healthiest" key state) STILL routes to
+// repair when a second identity shares it, because retiring it would strand
+// the sibling.
+func TestKeyActionFor_OwnerCountTwoForcesRepairEvenForKeyUsedBoth(t *testing.T) {
+	h := IdentityHealth{KeyState: StateKeyUsedBoth}
+	got := KeyActionFor(h, 2)
+	if got != KeyActionRepair {
+		t.Errorf("KeyActionFor(key-used-both, owners=2) = %q, want %q", got, KeyActionRepair)
+	}
+}
+
+// TestKeyActionFor_NoIO asserts KeyActionFor performs no I/O: called with a
+// zero-value IdentityHealth and no filesystem seam in scope, it must still
+// return deterministically (rotate is the correct answer for the zero value,
+// since KeyState's zero value "" is not StateKeyMissing and the owner count
+// is 1).
+func TestKeyActionFor_NoIO(t *testing.T) {
+	got := KeyActionFor(IdentityHealth{}, 1)
+	if got != KeyActionRotate {
+		t.Errorf("KeyActionFor(zero-value health, owners=1) = %q, want %q", got, KeyActionRotate)
 	}
 }
