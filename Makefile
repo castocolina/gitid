@@ -16,23 +16,29 @@
 #   uninstall      Remove gitid from $GOPATH/bin.
 #   test           Run the race-enabled test harness with a coverage profile (TDD harness,
 #                  D-06), then the fast/hermetic subset of internal/screenshot's own
-#                  `-tags screenshot` suite (WR-28, see lint-screenshot below).
+#                  `-tags screenshot` suite (WR-28, see lint-tagged below).
 #   lint           Run golangci-lint (reads .golangci.yml); hard-fails on any finding (D-04).
-#                  Depends on lint-screenshot (WR-28) so the `screenshot` build tag's
+#                  Depends on lint-tagged (WR-28, CR-13) so every isolated build tag's
 #                  static analysis can never be silently skipped again.
-#   lint-screenshot `go vet` + golangci-lint under the `screenshot` build tag (WR-28:
-#                  internal/screenshot was previously invisible to both `make lint` and
-#                  `make test` — no gate ever compiled or ran it, so the WR-19/WR-22
-#                  regression tests it carries executed nowhere and a real regression,
-#                  WR-26, shipped undetected). The package's own `go test` execution lives
-#                  in the `test` target instead (kept OUT of lint-screenshot so the
-#                  pre-commit hook — make fmt + make lint — stays fast; test already runs
-#                  at the higher-latency-tolerant pre-push stage). Excludes
-#                  TestCaptureTUI/TestCaptureHTML*/TestProvisionPinnedChromium from that
-#                  test run: those are the heavy, tool-provisioning/network-dependent
-#                  capture entry points `make screenshot-tui`/`make screenshot-html`/
-#                  `make setup-env` already own — everything else in the package is fast,
-#                  hermetic unit-style coverage.
+#   lint-tagged    `go vet` under EVERY isolated build tag (screenshot, smoke, e2e) plus
+#                  golangci-lint under `screenshot` (WR-28: internal/screenshot was
+#                  previously invisible to both `make lint` and `make test` — no gate ever
+#                  compiled or ran it, so the WR-19/WR-22 regression tests it carries
+#                  executed nowhere and a real regression, WR-26, shipped undetected. CR-13:
+#                  the identical blindspot was still open for `smoke` after WR-28 closed it
+#                  only for `screenshot` — a stale 3-arg call in
+#                  cmd/gitid/smoke_network_test.go rotted there uncompiled). A guard loop
+#                  fails the build the moment a NEW `//go:build <tag>` appears without a
+#                  matching `go vet -tags <tag>` line here, so this cannot recur a third
+#                  time. The package's own `go test` execution lives in the `test` target
+#                  instead (kept OUT of lint-tagged so the pre-commit hook — make fmt +
+#                  make lint — stays fast; test already runs at the higher-latency-tolerant
+#                  pre-push stage). Excludes TestCaptureTUI/TestCaptureHTML*/
+#                  TestProvisionPinnedChromium from that test run: those are the heavy,
+#                  tool-provisioning/network-dependent capture entry points
+#                  `make screenshot-tui`/`make screenshot-html`/`make setup-env` already
+#                  own — everything else in the package is fast, hermetic unit-style
+#                  coverage.
 #   fmt            Run goimports then gofmt over all packages.
 #   screenshot-tui  Render the TUI View()-dump golden to a deterministic PNG via freeze
 #                   (TOOL-05, DLV-03; build-tag isolated behind `screenshot`).
@@ -46,7 +52,7 @@
 #   demo-web       (Re)launch the web design mockup dev server (Vite) on the
 #                   dedicated $(DEMO_WEB_PORT) and open it.
 
-.PHONY: setup-env build build-cross install uninstall test lint lint-screenshot fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files gate-visual-regression smoke-network-test demo-web
+.PHONY: setup-env build build-cross install uninstall test lint lint-tagged fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files gate-visual-regression smoke-network-test demo-web
 
 # Binary output directory.
 BIN_DIR := bin
@@ -170,30 +176,38 @@ fmt:
 	find . -name "*.go" -not -path "./.planning/*" -exec $(GOIMPORTS) -w {} +
 	find . -name "*.go" -not -path "./.planning/*" -exec $(GOFMT) -w {} +
 
-## lint-screenshot: WR-28 -- gate the `screenshot` build tag's SYNTAX/STATIC
-## coverage. Before this target existed, no gate ever compiled OR ran
-## anything behind `//go:build screenshot`: `make lint` ran golangci-lint
-## untagged, `make test` ran go test untagged, and no other target ran the
-## PACKAGE's own tests (screenshot-tui/screenshot-html only run their own
-## single entry point via -run). That blindspot is why WR-19's and WR-22's
-## regression tests (internal/screenshot/region_disposition_test.go,
+## lint-tagged: WR-28 (screenshot) / CR-13 (smoke, e2e) -- gate the
+## SYNTAX/STATIC coverage of EVERY build-tag-isolated file in the tree, not
+## just `screenshot`. Before WR-28, no gate ever compiled OR ran anything
+## behind `//go:build screenshot`: `make lint` ran golangci-lint untagged,
+## `make test` ran go test untagged, and no other target ran the PACKAGE's
+## own tests. That blindspot is why WR-19's and WR-22's regression tests
+## (internal/screenshot/region_disposition_test.go,
 ## TestExtractRegion_GitCeremonyMatchesReceiptHeadingAcrossWrap) executed in
 ## NO gate and a real regression (WR-26, an off-by-one in the very window
-## WR-22 fixed) shipped undetected.
+## WR-22 fixed) shipped undetected. WR-28 closed that for `screenshot` only;
+## CR-13 (iteration 4) found the identical blindspot still wide open for
+## `smoke` -- the fixer's own repair of a stale 3-arg `tester.PreWrite` call
+## in cmd/gitid/smoke_network_test.go had rotted there, uncompiled by any
+## gate, exactly like WR-26 rotted behind `screenshot`.
 ##
-## `go vet` runs across the whole module (cheap, and the `screenshot` tag
-## also touches cmd/gitid-evidence and cmd/gitid/gate_visual_regression_test.go).
-## golangci-lint is scoped to internal/screenshot itself: the other
-## screenshot-tagged files already have dedicated gates
-## (`gate-visual-regression`, `generate-visual-review-packet`), and widening
-## golangci-lint's tagged scope to e2e-/smoke-tagged files elsewhere would
-## pull in a large pre-existing, unrelated lint backlog this fix is not
-## scoped to clear.
+## `go vet -tags <tag> ./...` runs for EVERY isolated build tag below (cheap
+## -- no test execution, no network, ~1s per tag). golangci-lint stays
+## scoped to internal/screenshot itself: the other tagged files already have
+## dedicated gates (`gate-visual-regression`, `generate-visual-review-packet`,
+## `test-e2e`), and widening golangci-lint's tagged scope to e2e-/smoke-tagged
+## files elsewhere would pull in a large pre-existing, unrelated lint backlog
+## this fix is not scoped to clear.
+##
+## The guard loop below fails the instant a NEW `//go:build <tag>` line
+## appears anywhere in the tree without a matching `go vet -tags <tag>` line
+## added here -- so this exact blindspot (closed once for `screenshot`, then
+## rediscovered open for `smoke`) cannot recur a third time on a future tag.
 ##
 ## The package's own TEST execution (WR-19/WR-22/WR-26/WR-27's actual
 ## regression coverage) is wired into the `test` target below, NOT here: a
 ## first version of this fix ran `go test -tags screenshot ...` (~65s) as
-## part of `lint-screenshot`, which `lint` depends on -- that made every
+## part of this target, which `lint` depends on -- that made every
 ## pre-commit hook invocation (`make fmt` + `make lint`, per
 ## .pre-commit-config.yaml) 5-7x slower, defeating the fast-feedback point of
 ## a pre-commit gate. `test` already runs at pre-push (a naturally
@@ -201,17 +215,30 @@ fmt:
 ## so that is where the package's real `go test` coverage belongs -- `lint`
 ## stays fast (vet + static analysis only) while the tests still execute in
 ## an unconditional gate, satisfying "somewhere in make lint or make test".
-lint-screenshot:
+KNOWN_BUILD_TAGS := screenshot smoke e2e
+lint-tagged:
+	@echo "==> lint-tagged: guarding against a new ungated //go:build tag (CR-13)"
+	@found_tags=$$(find . -name '*.go' -not -path './.planning/*' -print0 \
+	    | xargs -0 grep -hoE '^//go:build [A-Za-z0-9_]+' 2>/dev/null \
+	    | awk '{print $$2}' | sort -u); \
+	for t in $$found_tags; do \
+	    case " $(KNOWN_BUILD_TAGS) " in \
+	        *" $$t "*) ;; \
+	        *) echo "lint-tagged: //go:build $$t found with no 'go vet -tags $$t' line wired into this target -- add one (CR-13's root cause: a build tag no gate compiles rots silently)"; exit 1 ;; \
+	    esac; \
+	done
 	go vet -tags screenshot ./...
+	go vet -tags smoke ./...
+	go vet -tags e2e ./...
 	$(GOLANGCI_LINT) run --build-tags screenshot ./internal/screenshot/...
 
 ## lint: run golangci-lint against all packages.
 ## Hard-fails on any finding — zero tolerance (D-04).
 ## Configuration lives in .golangci.yml.
-## Depends on lint-screenshot (WR-28) so the `screenshot` build tag's static
+## Depends on lint-tagged (WR-28, CR-13) so every isolated build tag's static
 ## analysis can never be silently skipped again -- a caller running `make
-## lint` directly (not just CI) always exercises it.
-lint: lint-screenshot
+## lint` directly (not just CI) always exercises all of them.
+lint: lint-tagged
 	$(GOLANGCI_LINT) run ./...
 
 ## test: run the TDD harness with race detection and a coverage profile.
