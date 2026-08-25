@@ -480,3 +480,101 @@ func TestRotatePersistKeyOnConfirm(t *testing.T) {
 		}
 	})
 }
+
+// TestCallOrderReuse pins Reuse's exact seam invocation sequence (review
+// R-01): the staging half (PubExists, then the ReadPub-nil-guard fallback to
+// DerivePub, then a second PubExists check inside writeReusePub — the .pub
+// already exists so WritePub is never reached), followed by runPipeline's
+// four phases (PersistKey never appears: PrivPEM is nil for a reuse).
+func TestCallOrderReuse(t *testing.T) {
+	var rec orderRecorder
+	deps := newOrderRecordingDeps(&rec)
+
+	if _, err := Reuse(reuseInput(), "/tmp/.ssh/id_ed25519_existing", deps); err != nil {
+		t.Fatalf("Reuse returned error: %v", err)
+	}
+
+	assertOrder(t, "Reuse", rec.order, []string{
+		"PubExists", "DerivePub", "PubExists",
+		"CopyPub", "PreWrite",
+		"WriteSSH", "WriteGitconfig", "WriteFragment", "WriteAllowedSigners",
+		"Resolved",
+	})
+}
+
+// TestCallOrderAddAccount pins AddAccount's exact seam invocation sequence
+// (review R-01): DerivePub once (deriving the shared key's public line, no
+// Generate call), then runPipeline's four phases (PersistKey never appears:
+// PrivPEM is nil — no new key material for a shared-key second account).
+func TestCallOrderAddAccount(t *testing.T) {
+	var rec orderRecorder
+	deps := newOrderRecordingDeps(&rec)
+
+	existing := Account{
+		Name:     "work",
+		GitName:  "Work User",
+		GitEmail: "work@example.com",
+		Provider: "github",
+		Alias:    "work.github.com",
+		Hostname: "ssh.github.com",
+		Port:     443,
+		KeyPath:  "/tmp/.ssh/id_ed25519_work",
+		PubPath:  "/tmp/.ssh/id_ed25519_work.pub",
+		Matches:  []gitconfig.Match{DefaultMatch("work")},
+	}
+
+	if _, err := AddAccount(existing, "gitlab", "work.gitlab.com", deps); err != nil {
+		t.Fatalf("AddAccount returned error: %v", err)
+	}
+
+	assertOrder(t, "AddAccount", rec.order, []string{
+		"DerivePub",
+		"CopyPub", "PreWrite",
+		"WriteSSH", "WriteGitconfig", "WriteFragment", "WriteAllowedSigners",
+		"Resolved",
+	})
+}
+
+// TestTask1EndRotateStillReachesRunPipeline is a TEMPORARY test (review
+// R2-09): at the end of Task 1, Rotate has NOT yet been moved to
+// rotate.go/recomposed over the four phases directly — it still has its
+// pre-Task-2 signature and still reaches runPipeline exactly like Reuse and
+// AddAccount do. Task 2 changes Rotate's signature, moves it to rotate.go,
+// composes the phases explicitly (inserting an archive step), and DELETES
+// this test in the SAME commit that removes the runPipeline call — so the
+// Task 1/Task 2 boundary is checked, not merely described.
+func TestTask1EndRotateStillReachesRunPipeline(t *testing.T) {
+	var log modeLog
+	deps := newFakeModeDeps(&log, tester.ReachableNotUploaded)
+	deps.Generate = func(_ CreateInput) (StagedKey, error) {
+		log.generate++
+		return StagedKey{
+			TempPrivatePath:  "/tmp/stage/rot",
+			FinalPrivatePath: "/tmp/.ssh/id_ed25519_work_rotated",
+			FinalPubPath:     "/tmp/.ssh/id_ed25519_work_rotated.pub",
+			PubLine:          "ssh-ed25519 AAAAROTED c\n",
+			PrivPEM:          []byte("ROTPEM"),
+		}, nil
+	}
+
+	// Rotate's Task-1 signature: func Rotate(existing Account, deps Deps)
+	// (CreateResult, error) — asserted by the assignment below compiling at
+	// all. If Task 2 changed the signature before this test was deleted,
+	// this line would fail to compile, which is exactly the loud signal
+	// review R2-09 asks for.
+	var res CreateResult
+	var err error
+	res, err = Rotate(rotateAccount(), deps)
+	if err != nil {
+		t.Fatalf("Rotate returned error: %v", err)
+	}
+	// runPipeline's REPLACING writer semantics: WriteAllowedSigners (not
+	// AppendAllowedSigners, which does not exist as a Deps field yet) is the
+	// signer writer invoked — proof Rotate still funnels through runPipeline.
+	if log.writeAllowedSigners != 1 {
+		t.Errorf("Rotate (Task 1 end): WriteAllowedSigners called %d times, want 1 (still on runPipeline)", log.writeAllowedSigners)
+	}
+	if res.Key.PrivatePath == "" {
+		t.Error("Rotate (Task 1 end): result Key.PrivatePath must be populated")
+	}
+}

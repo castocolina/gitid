@@ -906,3 +906,192 @@ func TestPersistAll_CompositionEqualsLEG1PlusLEG2(t *testing.T) {
 		t.Errorf("PersistAll: Resolved.User = %q, want %q", got.Resolved.User, refResult.Resolved.User)
 	}
 }
+
+// --- Task 1 (review R-01): four-phase decomposition call-order proofs ---
+//
+// orderRecorder/newOrderRecordingDeps are shared by identity_test.go (Create)
+// and modes_test.go (Reuse, AddAccount): every Deps seam appends its name to
+// rec.order before doing minimal, deterministic fake work, so the exact
+// invocation SEQUENCE — not just counts — is observable. This is what proves
+// the four-phase decomposition preserves today's real order for every
+// current caller (review R-01's call-order equivalence requirement). The
+// recorded literal sequences below were captured from THIS decomposed code
+// and independently reasoned from the pre-decomposition monolith's line
+// order (preserved verbatim in the four phases' doc comments) — the
+// decomposition is a pure extraction with no reordering.
+
+type orderRecorder struct {
+	order []string
+}
+
+func (r *orderRecorder) log(name string) { r.order = append(r.order, name) }
+
+// newOrderRecordingDeps builds a Deps whose every function field logs its own
+// name to rec before returning minimal, deterministic success values — enough
+// to keep every phase's gate open (PreWrite returns ReachableNotUploaded) so
+// the full pipeline actually runs end to end.
+func newOrderRecordingDeps(rec *orderRecorder) Deps {
+	return Deps{
+		Generate: func(in CreateInput) (StagedKey, error) {
+			rec.log("Generate")
+			return StagedKey{
+				TempPrivatePath:  "/tmp/stage/order",
+				FinalPrivatePath: "/tmp/.ssh/id_ed25519_" + in.Name,
+				FinalPubPath:     "/tmp/.ssh/id_ed25519_" + in.Name + ".pub",
+				PubLine:          "ssh-ed25519 AAAAORDER comment\n",
+				PrivPEM:          []byte("ORDERPEM"),
+			}, nil
+		},
+		PersistKey: func(s StagedKey) (KeyResult, error) {
+			rec.log("PersistKey")
+			return KeyResult{PrivatePath: s.FinalPrivatePath, PubPath: s.FinalPubPath, PubLine: s.PubLine}, nil
+		},
+		Cleanup: func(_ StagedKey) { rec.log("Cleanup") },
+		CopyPub: func(_ string) error { rec.log("CopyPub"); return nil },
+		PreWrite: func(_, _ string, _ int) tester.Result {
+			rec.log("PreWrite")
+			return tester.Result{Outcome: tester.ReachableNotUploaded}
+		},
+		WriteSSH: func(_, _, _ string) (string, error) { rec.log("WriteSSH"); return "", nil },
+		WriteGitconfig: func(_, _, _ string, _ []gitconfig.Match) (string, error) {
+			rec.log("WriteGitconfig")
+			return "", nil
+		},
+		WriteFragment: func(_, _, _, _ string, _ bool) error { rec.log("WriteFragment"); return nil },
+		WriteAllowedSigners: func(_, _, _ string) (string, error) {
+			rec.log("WriteAllowedSigners")
+			return "", nil
+		},
+		Resolved: func(_ string) (tester.Result, tester.ResolvedConfig) {
+			rec.log("Resolved")
+			return tester.Result{Outcome: tester.PASS}, tester.ResolvedConfig{}
+		},
+		PubExists: func(_ string) bool { rec.log("PubExists"); return true },
+		DerivePub: func(_, _ string) (string, error) {
+			rec.log("DerivePub")
+			return "ssh-ed25519 AAAADERIVED c\n", nil
+		},
+		WritePub: func(_, _ string) error { rec.log("WritePub"); return nil },
+	}
+}
+
+// assertOrder fails the test with a readable diff when got != want.
+func assertOrder(t *testing.T, label string, got, want []string) {
+	t.Helper()
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("%s call order = %v, want %v", label, got, want)
+	}
+}
+
+// TestCallOrderCreate pins Create's exact seam invocation sequence: Generate
+// first, then the four decomposed phases in order (preWriteGate's CopyPub +
+// PreWrite, persistStagedKey's PersistKey, writeArtifacts' four writers,
+// resolvedPhase's Resolved), with the deferred Cleanup appearing LAST because
+// it is deferred at the Create call site (review R-01).
+func TestCallOrderCreate(t *testing.T) {
+	var rec orderRecorder
+	deps := newOrderRecordingDeps(&rec)
+
+	if _, err := Create(sampleInput(), deps); err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	assertOrder(t, "Create", rec.order, []string{
+		"Generate", "CopyPub", "PreWrite", "PersistKey",
+		"WriteSSH", "WriteGitconfig", "WriteFragment", "WriteAllowedSigners",
+		"Resolved", "Cleanup",
+	})
+}
+
+// TestPersistStagedKeyExactlyOnce_CreateAndRotate asserts persistStagedKey
+// (through the recording Deps.PersistKey seam) fires EXACTLY once across a
+// full Create and EXACTLY once across a full Rotate — the review R-01
+// property that calling the persist phase twice for the same staged key is
+// impossible by construction from the exported orchestrators.
+func TestPersistStagedKeyExactlyOnce_CreateAndRotate(t *testing.T) {
+	t.Run("Create", func(t *testing.T) {
+		var rec orderRecorder
+		deps := newOrderRecordingDeps(&rec)
+		if _, err := Create(sampleInput(), deps); err != nil {
+			t.Fatalf("Create returned error: %v", err)
+		}
+		count := 0
+		for _, name := range rec.order {
+			if name == "PersistKey" {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Errorf("Create: PersistKey invoked %d times, want exactly 1; order=%v", count, rec.order)
+		}
+	})
+
+	t.Run("Rotate", func(t *testing.T) {
+		var rec orderRecorder
+		deps := newOrderRecordingDeps(&rec)
+		if _, err := Rotate(rotateAccount(), deps); err != nil {
+			t.Fatalf("Rotate returned error: %v", err)
+		}
+		count := 0
+		for _, name := range rec.order {
+			if name == "PersistKey" {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Errorf("Rotate: PersistKey invoked %d times, want exactly 1; order=%v", count, rec.order)
+		}
+	})
+}
+
+// TestPersistStagedKeyNoopWhenPrivPEMNil is a direct unit test of the
+// extracted phase: persistStagedKey must invoke deps.PersistKey ZERO times
+// when staged.PrivPEM is nil (existing-key paths), asserted through the
+// recording seam rather than inferred from a mode-level test.
+func TestPersistStagedKeyNoopWhenPrivPEMNil(t *testing.T) {
+	var log callLog
+	deps := newFakeDeps(&log, tester.ReachableNotUploaded)
+	staged := sampleStaged(sampleInput())
+	staged.PrivPEM = nil
+
+	if err := persistStagedKey(staged, deps); err != nil {
+		t.Fatalf("persistStagedKey with nil PrivPEM returned error: %v", err)
+	}
+	if log.persistKey != 0 {
+		t.Errorf("persistStagedKey with nil PrivPEM: PersistKey called %d times, want 0", log.persistKey)
+	}
+}
+
+// TestWriteArtifactsUsesProvidedSignerAdapter asserts writeArtifacts calls
+// the writeSigners PARAMETER, not deps.WriteAllowedSigners directly, so a
+// caller (Rotate/RepairKey) that passes an adapter over
+// deps.AppendAllowedSigners gets the append writer instead of the replacing
+// one. This is the explicit-parameter form review R-01 asks for in place of
+// a boolean on Deps.
+func TestWriteArtifactsUsesProvidedSignerAdapter(t *testing.T) {
+	var log callLog
+	deps := newFakeDeps(&log, tester.ReachableNotUploaded)
+	adapterCalled := 0
+	adapter := signersWriter(func(_, _, _ string) (string, error) {
+		adapterCalled++
+		return "adapter-backup", nil
+	})
+
+	in := sampleInput()
+	staged := sampleStaged(in)
+	res := CreateResult{Key: KeyResult{PubPath: staged.FinalPubPath}}
+
+	got, err := writeArtifacts(in, "Host x\n", "signer-line", res, deps, adapter)
+	if err != nil {
+		t.Fatalf("writeArtifacts returned error: %v", err)
+	}
+	if adapterCalled != 1 {
+		t.Errorf("writeArtifacts: adapter called %d times, want 1", adapterCalled)
+	}
+	if log.writeAllowedSigners != 0 {
+		t.Errorf("writeArtifacts: deps.WriteAllowedSigners called %d times, want 0 (adapter must be used instead)", log.writeAllowedSigners)
+	}
+	if got.AllowedSignersBackup != "adapter-backup" {
+		t.Errorf("writeArtifacts: AllowedSignersBackup = %q, want the adapter's backup path", got.AllowedSignersBackup)
+	}
+}

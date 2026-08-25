@@ -467,23 +467,23 @@ func mergeCreateResults(res1, res2 CreateResult) CreateResult {
 	}
 }
 
-// runPipeline is the write path for Reuse, AddAccount, and Rotate: copy the
-// .pub → build the allowed_signers line → pre-write test (gates the write,
-// runs against staged.TempPrivatePath) → render the four artifact previews from
-// FINAL paths → persist key (when PrivPEM != nil) → write all four → run the
-// resolved test. These modes always write (they are confirmed write paths) so
-// there is no static consent gate here — these are always-confirmed write paths.
-//
-// The pre-write test gates the write: a Failure outcome aborts with an error and
-// NO writes; PASS or ReachableNotUploaded proceed. If staged.PrivPEM != nil,
-// PersistKey is called FIRST (before the four writers) so a persist failure
-// aborts before any config references a non-existent key. Then all FOUR writers
-// run — WriteSSH, WriteGitconfig, WriteFragment, WriteAllowedSigners — then the
-// resolved test captures the live config.
-//
-// For the create-new flow, use Generate + RenderPreviews + PersistAll (with the
-// auth-gated loop in runCreateLoop in cmd/gitid/add.go).
-func runPipeline(in CreateInput, staged StagedKey, deps Deps) (CreateResult, error) {
+// signersWriter selects which allowed_signers writer writeArtifacts calls:
+// deps.WriteAllowedSigners (single-line replace, create/reuse/add-account) or
+// an adapter over deps.AppendAllowedSigners (D-07 append, rotate/repair).
+// Passed as an explicit parameter rather than a boolean on Deps (review R-01)
+// so the caller selects the writer by composition, not by flag.
+type signersWriter func(path, identity, line string) (backupPath string, err error)
+
+// preWriteGate is PHASE 1 of the four-phase pipeline (review R-01): the
+// clipboard copy, the allowed_signers line build, the pre-write connectivity
+// gate (run against staged.TempPrivatePath, BEFORE any ~/.ssh write), and the
+// preview rendering against the FINAL paths. A Failure outcome aborts with an
+// error and a CreateResult carrying only PreWrite — exactly runPipeline's
+// prior early-return shape, preserved so every current caller stays
+// behavior-identical. On success it returns the populated CreateResult PLUS
+// the rendered SSH host block text, so writeArtifacts (PHASE 3) can pass the
+// same rendered block to deps.WriteSSH without re-rendering it.
+func preWriteGate(in CreateInput, staged StagedKey, deps Deps) (res CreateResult, hostBlock string, err error) {
 	if cerr := deps.CopyPub(staged.PubLine); cerr != nil {
 		// Clipboard is best-effort (CLIP-02): a copy failure never aborts the
 		// flow; the command layer prints the key for manual copy.
@@ -492,7 +492,7 @@ func runPipeline(in CreateInput, staged StagedKey, deps Deps) (CreateResult, err
 
 	signersLine, signersErr := keygen.AllowedSignersLine(in.GitEmail, staged.PubLine)
 	if signersErr != nil {
-		return CreateResult{}, fmt.Errorf("identity: building allowed_signers line: %w", signersErr)
+		return CreateResult{}, "", fmt.Errorf("identity: building allowed_signers line: %w", signersErr)
 	}
 
 	// Gate on the TEMP path (BUG-4: pre-write test must use the staged key so
@@ -500,7 +500,7 @@ func runPipeline(in CreateInput, staged StagedKey, deps Deps) (CreateResult, err
 	// FinalPrivatePath so behavior is unchanged).
 	pre := deps.PreWrite(staged.TempPrivatePath, in.Hostname, in.Port)
 	if pre.Outcome == tester.Failure {
-		return CreateResult{PreWrite: pre}, fmt.Errorf(
+		return CreateResult{PreWrite: pre}, "", fmt.Errorf(
 			"identity: pre-write connectivity test failed for %q, aborting before any write:\n%s\n%s",
 			in.Alias, pre.Command, pre.Output)
 	}
@@ -511,10 +511,10 @@ func runPipeline(in CreateInput, staged StagedKey, deps Deps) (CreateResult, err
 		PubPath:     staged.FinalPubPath,
 		PubLine:     staged.PubLine,
 	}
-	hostBlock := sshconfig.RenderHostBlock(in.Alias, in.Hostname, in.Port, final.PrivatePath, in.Provider)
+	hostBlock = sshconfig.RenderHostBlock(in.Alias, in.Hostname, in.Port, final.PrivatePath, in.Provider)
 	gitPreview := gitconfig.RenderIncludeIf(in.Name, in.FragmentPath, in.Matches)
 
-	res := CreateResult{
+	res = CreateResult{
 		Key:                   final,
 		PreWrite:              pre,
 		SSHPreview:            hostBlock,
@@ -523,39 +523,103 @@ func runPipeline(in CreateInput, staged StagedKey, deps Deps) (CreateResult, err
 		AllowedSignersPreview: signersLine,
 		AllowedSignersLine:    signersLine,
 	}
+	return res, hostBlock, nil
+}
 
-	// Persist the key BEFORE the four writers so a persist failure aborts
-	// before any config references a non-existent key. Skip when PrivPEM is nil
-	// (existing-key reuse/add-account paths — no new key to write).
-	if staged.PrivPEM != nil {
-		if _, perr := deps.PersistKey(staged); perr != nil {
-			return res, fmt.Errorf("identity: persisting key pair: %w", perr)
-		}
+// persistStagedKey is PHASE 2: writes staged.PrivPEM to the final key paths
+// via deps.PersistKey, and is a guaranteed no-op when staged.PrivPEM is nil
+// (existing-key reuse/add-account/repair-with-no-new-material paths). This is
+// the ONLY place any orchestrator may call deps.PersistKey — calling it a
+// second time for the same staged key is impossible by construction from the
+// exported orchestrators (Create, Rotate, RepairKey), because none of them
+// call runPipeline AND also call this phase directly; each composes the four
+// phases exactly once.
+func persistStagedKey(staged StagedKey, deps Deps) error {
+	if staged.PrivPEM == nil {
+		return nil
 	}
+	if _, perr := deps.PersistKey(staged); perr != nil {
+		return fmt.Errorf("identity: persisting key pair: %w", perr)
+	}
+	return nil
+}
 
+// writeArtifacts is PHASE 3: the four writers (WriteSSH, WriteGitconfig,
+// WriteFragment, and the caller-selected allowed_signers writer) in their
+// existing order, recording each backup path on res. writeSigners is the
+// explicit-parameter form review R-01 asks for in place of a boolean on
+// Deps — callers pass deps.WriteAllowedSigners (replace) or an adapter over
+// deps.AppendAllowedSigners (append, D-07) to select behavior.
+func writeArtifacts(in CreateInput, hostBlock, signersLine string, res CreateResult, deps Deps, writeSigners signersWriter) (CreateResult, error) {
 	sshBak, werr := deps.WriteSSH(in.Name, hostBlock, in.GlobalBlock)
 	if werr != nil {
 		return res, fmt.Errorf("identity: writing ssh config: %w", werr)
 	}
 	res.SSHBackup = sshBak
+
 	gcBak, werr := deps.WriteGitconfig(in.Name, in.FragmentPath, in.AllowedSignersPath, in.Matches)
 	if werr != nil {
 		return res, fmt.Errorf("identity: writing gitconfig includeIf: %w", werr)
 	}
 	res.GitconfigBackup = gcBak
-	if werr := deps.WriteFragment(in.FragmentPath, in.GitName, in.GitEmail, final.PubPath, true); werr != nil {
+
+	if werr := deps.WriteFragment(in.FragmentPath, in.GitName, in.GitEmail, res.Key.PubPath, true); werr != nil {
 		return res, fmt.Errorf("identity: writing gitconfig fragment: %w", werr)
 	}
-	signBak, werr := deps.WriteAllowedSigners(in.AllowedSignersPath, in.Name, signersLine)
+
+	signBak, werr := writeSigners(in.AllowedSignersPath, in.Name, signersLine)
 	if werr != nil {
 		return res, fmt.Errorf("identity: writing allowed_signers: %w", werr)
 	}
 	res.AllowedSignersBackup = signBak
 
+	return res, nil
+}
+
+// resolvedPhase is PHASE 4: the closing deps.Resolved call, recording both
+// result fields on res.
+func resolvedPhase(in CreateInput, res CreateResult, deps Deps) CreateResult {
 	resolvedTest, resolved := deps.Resolved(in.Alias)
 	res.ResolvedTest = resolvedTest
 	res.Resolved = resolved
-	return res, nil
+	return res
+}
+
+// runPipeline is the write path for Reuse and AddAccount: it composes the
+// four phases above — preWriteGate → persistStagedKey → writeArtifacts (with
+// the REPLACING deps.WriteAllowedSigners writer) → resolvedPhase — in the
+// same order the pre-decomposition monolith ran them. These modes always
+// write (they are confirmed write paths) so there is no static consent gate
+// here.
+//
+// This is ONE composition among several: internal/identity/rotate.go's
+// Rotate and internal/identity/repair.go's RepairKey compose the SAME four
+// phases directly, in different orders/with different arguments (Rotate
+// inserts an archive step between the gate and persist; RepairKey selects
+// the APPENDING signer writer). No orchestrator may call runPipeline after
+// performing its own persist — that is exactly the double-write defect this
+// decomposition exists to make structurally impossible, because
+// persistStagedKey is the only path to deps.PersistKey and each orchestrator
+// calls it exactly once.
+//
+// For the create-new flow, use Generate + RenderPreviews + PersistAll (with the
+// auth-gated loop in runCreateLoop in cmd/gitid/add.go).
+func runPipeline(in CreateInput, staged StagedKey, deps Deps) (CreateResult, error) {
+	res, hostBlock, err := preWriteGate(in, staged, deps)
+	if err != nil {
+		return res, err
+	}
+
+	if perr := persistStagedKey(staged, deps); perr != nil {
+		return res, perr
+	}
+
+	res, err = writeArtifacts(in, hostBlock, res.AllowedSignersLine, res, deps, deps.WriteAllowedSigners)
+	if err != nil {
+		return res, err
+	}
+
+	return resolvedPhase(in, res, deps), nil
 }
 
 // renderFragmentPreview describes the per-identity fragment keys for the unified
