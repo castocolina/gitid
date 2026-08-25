@@ -1122,6 +1122,15 @@ func keyDown(model tea.Model) tea.Model { return step(model, tea.KeyPressMsg{Cod
 
 // CaptureGitScreenScreens implements the doc comment above.
 func CaptureGitScreenScreens(backend tuikit.Backend) (map[string]string, error) {
+	// WR-11: the doc comment above states the >= 2 identities precondition
+	// but nothing checked it. With a single identity, keyDown (used to reach
+	// git-form-empty below) is a no-op, so git-form-empty silently captured
+	// the SAME identity as git-form-filled — the completeness loop at the
+	// bottom of this function only asserts non-emptiness, so the gate PASSED
+	// while silently losing the SSH-only checkpoint's actual coverage.
+	if n := len(backend.InitialState().Identities); n < 2 {
+		return nil, fmt.Errorf("screenshot: CaptureGitScreenScreens requires >= 2 seeded identities, got %d", n)
+	}
 	out := make(map[string]string, 5)
 	capture := func(m tea.Model) string { return normalizeTimestamps(anyView(m)) }
 
@@ -1155,6 +1164,14 @@ func CaptureGitScreenScreens(backend tuikit.Backend) (map[string]string, error) 
 		if !ok || strings.TrimSpace(text) == "" {
 			return nil, fmt.Errorf("screenshot: CaptureGitScreenScreens: required frame %q is missing or empty", spec.ScreenID)
 		}
+	}
+	// WR-11: even with >= 2 identities confirmed above, a fixture whose
+	// second identity happens to render identically to the first (or a
+	// future script change that stops advancing to it) would still pass
+	// the non-emptiness loop above while silently losing the SSH-only
+	// checkpoint. Assert the two frames actually differ.
+	if out["git-form-empty"] == out["git-form-filled"] {
+		return nil, fmt.Errorf("screenshot: CaptureGitScreenScreens: git-form-empty captured the same frame as git-form-filled — the second identity was never reached")
 	}
 	return out, nil
 }

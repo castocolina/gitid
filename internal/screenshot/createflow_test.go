@@ -43,6 +43,35 @@ func captureCombined(t *testing.T, backend tuikit.Backend) map[string]string {
 	return out
 }
 
+// singleIdentityBackend wraps dummytui.FixtureBackend but truncates
+// InitialState to exactly one identity — the WR-11 regression fixture:
+// CaptureGitScreenScreens must refuse to run against it rather than
+// silently capturing git-form-empty as a duplicate of git-form-filled.
+type singleIdentityBackend struct {
+	dummytui.FixtureBackend
+}
+
+func (singleIdentityBackend) InitialState() tuikit.DemoState {
+	full := dummytui.FixtureBackend{}.InitialState()
+	return tuikit.DemoState{Identities: full.Identities[:1]}
+}
+
+// TestCaptureGitScreenScreens_RequiresTwoIdentities proves the WR-11 fix:
+// the doc comment above CaptureGitScreenScreens states a >= 2 identities
+// precondition, but nothing enforced it. With a single identity, keyDown
+// (used to reach the second identity for git-form-empty) is a no-op, so
+// git-form-empty silently captured the SAME identity as git-form-filled —
+// this must now fail loudly instead.
+func TestCaptureGitScreenScreens_RequiresTwoIdentities(t *testing.T) {
+	_, err := screenshot.CaptureGitScreenScreens(singleIdentityBackend{})
+	if err == nil {
+		t.Fatal("CaptureGitScreenScreens succeeded with a single seeded identity, want an error")
+	}
+	if !strings.Contains(err.Error(), ">= 2 seeded identities") {
+		t.Errorf("error = %v, want the >= 2 seeded identities message", err)
+	}
+}
+
 // TestCaptureCreateFlowScreens_HasAllIDs verifies every enumerated screen ID
 // is present in the output map (no silent omissions).
 func TestCaptureCreateFlowScreens_HasAllIDs(t *testing.T) {
