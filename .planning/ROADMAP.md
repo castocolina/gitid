@@ -245,7 +245,19 @@ Plans:
    review compares it with `cmd/gitid-dummy` and classifies every difference as an
    improvement or a defect. (DLV-04, DLV-06)
 
-**Plans**: TBD
+**Plans**: 9 plans
+
+Plans:
+- [ ] 05-01-PLAN.md — Tracer: one write chokepoint proven from the TUI and the CLI (Git-only delete) + the `--json`/table read surface + the D-01 command tree
+- [ ] 05-02-PLAN.md — Key-lifecycle primitives: archive dir + doctor-reserved registration, append-aware allowed_signers writer, per-provider rewrite remover
+- [ ] 05-03-PLAN.md — Rotate becomes a retirement ceremony; new-key becomes a repair action; one state-driven router (has a blocking decision checkpoint)
+- [ ] 05-04-PLAN.md — Delete-everything semantics: provider ref-count, recoverable key removal, shared-key downgrade, unmanaged-reference scan, pure DeletePlan
+- [ ] 05-05-PLAN.md — Clone: copy-versus-re-derive domain function, pre-filled wizard entry, full two-stage gate on same-key clones
+- [ ] 05-06-PLAN.md — tuikit surface: RotateIdentity action, the approved action menu, the delete-screen additions, and the key ceremony
+- [ ] 05-07-PLAN.md — Real backend wiring: rotate/new-key/delete transactions, exhaustive Persist, honest detail view, real per-identity health, five reachable views
+- [ ] 05-08-PLAN.md — CLI parity completion: adaptive-depth resolver, remaining write verbs, requirement-keyed parity matrix, headless parity e2e
+- [ ] 05-09-PLAN.md — DLV-04/DLV-06 gates: per-state PTY coverage, paired real-versus-dummy comparison, visual-gate registration, full battery
+
 **UI hint**: yes
 
 ### Phase 6: Global SSH Options
