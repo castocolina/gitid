@@ -422,6 +422,37 @@ func TestWriteSSHBlockBacksUpAnExistingTarget(t *testing.T) {
 	}
 }
 
+// TestNewBackendForHomeAccountsIsHermeticWithoutSetenvHOME is WR-35's
+// required fix (iteration 4): newBackendForHome(home) alone — WITHOUT the
+// caller ALSO calling t.Setenv("HOME", home) — must read identities from
+// home, never from the real developer's actual $HOME. This is the exact gap
+// a reviewer's CR-09 probe found by accident: newBackendForHome(t.TempDir())
+// returned the reviewer's OWN real GitHub identity read from their real
+// ~/.ssh/config, despite the doc comment's claim that the seam exists "so
+// tests can drive the whole composition root over a hermetic fake home
+// without ever touching the developer's real ~/.ssh". Deliberately does NOT
+// call t.Setenv("HOME", ...) — that is the point of this test.
+func TestNewBackendForHomeAccountsIsHermeticWithoutSetenvHOME(t *testing.T) {
+	home := t.TempDir()
+	seedSSHDir(t, home)
+	const sentinelAlias = "wr35-hermeticity-sentinel.github.com"
+	writeFile(t, filepath.Join(home, ".ssh", "config"),
+		managedBlock("wr35-sentinel",
+			sshconfig.RenderHostBlock(sentinelAlias, "ssh.github.com", 443, "~/.ssh/id_ed25519_wr35-sentinel", "")))
+
+	b := newBackendForHome(home) // no t.Setenv("HOME", home) — proving the seam itself
+
+	state := b.InitialState()
+	if len(state.Identities) != 1 {
+		t.Fatalf("InitialState().Identities = %v (len %d), want exactly the 1 sentinel identity seeded under home — a real developer identity leaked in if this is wrong",
+			state.Identities, len(state.Identities))
+	}
+	if got := state.Identities[0].SSHHost; got != sentinelAlias {
+		t.Fatalf("InitialState().Identities[0].SSHHost = %q, want the sentinel alias %q seeded under the sandboxed home — accounts() read some OTHER home ($HOME or the real developer's)",
+			got, sentinelAlias)
+	}
+}
+
 // TestCreateWritePlanReportsBothFreshIncludeChanges proves the D-06 ceremony
 // contract: a fresh Include'd create previews BOTH file changes — the
 // gitid.config write AND the Include line added to ~/.ssh/config — with dynamic

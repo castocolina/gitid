@@ -1557,8 +1557,18 @@ func (b *realBackend) writeSSHBlock(accountName, hostBlock, globalBlock string) 
 
 // accounts reconstructs every identity from the user's configuration,
 // Include-aware so a fresh D-06 machine's identities are visible.
+//
+// WR-35 (iteration 4): this MUST use identity.InventoryDepsForHome(b.home),
+// never identity.BuildInventoryDeps() — the latter resolves home from
+// os.UserHomeDir()/$HOME internally, silently ignoring b.home entirely. A
+// reviewer's own CR-09 probe against newBackendForHome(t.TempDir()) proved
+// this: without an accompanying t.Setenv("HOME", home), accounts() returned
+// the REAL developer's identity read from their real ~/.ssh/config, despite
+// newBackendForHome's doc comment claiming hermeticity. Threading b.home
+// explicitly here closes that gap regardless of whether $HOME happens to
+// also be set correctly elsewhere.
 func (b *realBackend) accounts() []identity.Account {
-	deps := identity.BuildInventoryDeps()
+	deps := identity.InventoryDepsForHome(b.home)
 	sshBytes, err := deps.ReadSSHConfig()
 	if err != nil {
 		return nil

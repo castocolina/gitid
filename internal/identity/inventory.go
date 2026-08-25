@@ -129,6 +129,15 @@ const configDirGlob = "config.d/*.config"
 // across the package boundary, mirroring internal/platform's exported
 // BuildProbeDeps and closing the project's documented injected-seam wiring
 // blindspot: every field here is non-nil).
+//
+// This is the $HOME-derived wiring — every field resolves home from
+// os.UserHomeDir() internally. Any caller that already owns an explicit
+// home (a Backend constructed via newBackendForHome, a test sandbox) must
+// use InventoryDepsForHome instead (WR-35): calling this function from
+// such a caller silently reads the REAL developer's ~/.ssh and ~/.gitconfig
+// regardless of what home the caller passed elsewhere, unless the caller
+// ALSO remembers to set $HOME — an easy-to-forget, silent hermeticity leak
+// this project has hit twice before (doctor, Phase 5 TUI).
 func BuildInventoryDeps() InventoryDeps {
 	return InventoryDeps{
 		ReadSSHConfig: readSSHConfigIncludeAware,
@@ -141,6 +150,26 @@ func BuildInventoryDeps() InventoryDeps {
 	}
 }
 
+// InventoryDepsForHome wires InventoryDeps EXPLICITLY rooted at home (WR-35,
+// iteration 4) — ReadSSHConfig/ReadGitconfig/ListKeyFiles never call
+// os.UserHomeDir() or read $HOME at all, so a caller that already owns a
+// resolved home (e.g. realBackend.home) cannot accidentally read the real
+// developer's ~/.ssh/~/.gitconfig just because it forgot to also
+// t.Setenv("HOME", home) somewhere else. Stat is unchanged — it operates on
+// already-resolved absolute paths handed to it by the caller, which are
+// never $HOME-relative on their own.
+func InventoryDepsForHome(home string) InventoryDeps {
+	return InventoryDeps{
+		ReadSSHConfig: func() ([]byte, error) { return readSSHConfigIncludeAwareForHome(home) },
+		ReadGitconfig: func() ([]byte, error) { return readGitconfigRealForHome(home) },
+		ReadFragment:  gitconfig.ReadFragment,
+		Stat: func(path string) (os.FileInfo, error) {
+			return os.Stat(path) //nolint:gosec // path is a trusted gitid-managed path (G304)
+		},
+		ListKeyFiles: func() ([]string, error) { return listKeyFilesRealForHome(home) },
+	}
+}
+
 // readSSHConfigIncludeAware reads ~/.ssh/config, then globs+merges every
 // ~/.ssh/config.d/*.config file's bytes onto it, so managed blocks in EITHER
 // the in-file layout OR the STORE-01 Include'd config.d layout are visible to
@@ -150,12 +179,24 @@ func BuildInventoryDeps() InventoryDeps {
 // treated as empty); an individual config.d read failure is skipped
 // (best-effort merge — one unreadable fragment must not abort the whole
 // inventory). Glob matches are sorted for deterministic merge order.
+//
+// This resolves home from os.UserHomeDir() ($HOME) — the production wiring
+// via BuildInventoryDeps. WR-35: a caller that wants an EXPLICITLY-rooted
+// inventory (e.g. a test-sandboxed HOME, or a Backend that already knows its
+// own home) must use InventoryDepsForHome instead, which never touches
+// os.UserHomeDir()/$HOME at all.
 func readSSHConfigIncludeAware() ([]byte, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("identity: resolving home directory: %w", err)
 	}
+	return readSSHConfigIncludeAwareForHome(home)
+}
 
+// readSSHConfigIncludeAwareForHome is readSSHConfigIncludeAware's home-
+// parameterized core (WR-35) — the ONLY logic difference from the exported
+// wiring is where home comes from.
+func readSSHConfigIncludeAwareForHome(home string) ([]byte, error) {
 	mainPath := filepath.Join(home, ".ssh", "config")
 	mainBytes, err := os.ReadFile(mainPath) //nolint:gosec // trusted gitid-managed path
 	if err != nil && !os.IsNotExist(err) {
@@ -182,13 +223,21 @@ func readSSHConfigIncludeAware() ([]byte, error) {
 	return merged, nil
 }
 
-// readGitconfigReal reads the raw bytes of ~/.gitconfig. A missing file is
-// tolerated (the common first-run case, treated as empty).
+// readGitconfigReal reads the raw bytes of ~/.gitconfig, resolved from
+// os.UserHomeDir() ($HOME) — the production wiring via BuildInventoryDeps.
+// A missing file is tolerated (the common first-run case, treated as
+// empty). See readGitconfigRealForHome (WR-35) for the explicitly-rooted
+// variant InventoryDepsForHome uses.
 func readGitconfigReal() ([]byte, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("identity: resolving home directory: %w", err)
 	}
+	return readGitconfigRealForHome(home)
+}
+
+// readGitconfigRealForHome is readGitconfigReal's home-parameterized core.
+func readGitconfigRealForHome(home string) ([]byte, error) {
 	path := filepath.Join(home, ".gitconfig")
 	b, err := os.ReadFile(path) //nolint:gosec // trusted gitid-managed path
 	if err != nil && !os.IsNotExist(err) {
@@ -200,12 +249,20 @@ func readGitconfigReal() ([]byte, error) {
 // listKeyFilesReal enumerates every gitid-managed private key file under
 // ~/.ssh, matching the "id_*" naming convention used by keygen.KeyPaths, and
 // excluding the ".pub" siblings (only the private-key paths are cross-
-// referenced against Host block IdentityFile values).
+// referenced against Host block IdentityFile values). home is resolved from
+// os.UserHomeDir() ($HOME) — the production wiring via BuildInventoryDeps.
+// See listKeyFilesRealForHome (WR-35) for the explicitly-rooted variant
+// InventoryDepsForHome uses.
 func listKeyFilesReal() ([]string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("identity: resolving home directory: %w", err)
 	}
+	return listKeyFilesRealForHome(home)
+}
+
+// listKeyFilesRealForHome is listKeyFilesReal's home-parameterized core.
+func listKeyFilesRealForHome(home string) ([]string, error) {
 	matches, err := filepath.Glob(filepath.Join(home, ".ssh", "id_*"))
 	if err != nil {
 		return nil, fmt.Errorf("identity: globbing ssh key files: %w", err)
