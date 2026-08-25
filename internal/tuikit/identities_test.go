@@ -2139,6 +2139,31 @@ func TestWizardGitDirPreviewMatchesWrite(t *testing.T) {
 	}
 }
 
+// TestGitCeremonyNotesSharedProviderRewriteWhenForceSSHOff proves the WR-05
+// fix: the configure-Git write ceremony must explicitly say the shared
+// provider-rewrite block is left in place when Force SSH is off — before
+// the fix, unchecking it and confirming produced a plain success receipt
+// with no indication the `[url ...] insteadOf` block silently survived.
+func TestGitCeremonyNotesSharedProviderRewriteWhenForceSSHOff(t *testing.T) {
+	m := newIdentitiesModel(stubBackend{}, DemoState{})
+	sel := DemoIdentity{Name: "work", SSHHost: "work.github.com", Provider: "github.com", ForceSSH: true}
+	m = m.openGitForm(sel)
+
+	// ForceSSH on (the default from the identity): no note.
+	onCeremony := m.gitCeremonyFor(sel)
+	if strings.Contains(onCeremony.cfg.Preview, "shared provider-rewrite:") {
+		t.Errorf("ceremony must not mention the shared rewrite block while Force SSH is on:\n%s", onCeremony.cfg.Preview)
+	}
+
+	// Uncheck Force SSH.
+	m.gitPaneForm = m.gitPaneForm.handleEdit(mustKey("space"), gitFieldForceSSH)
+	offCeremony := m.gitCeremonyFor(sel)
+	want := "Force SSH off: the shared provider-rewrite:github.com block is left in place because other identities may use it."
+	if !strings.Contains(offCeremony.cfg.Preview, want) {
+		t.Errorf("ceremony preview missing shared-rewrite note:\n%s", offCeremony.cfg.Preview)
+	}
+}
+
 func TestOpenGitFormDerivesProviderFromSSHHost(t *testing.T) {
 	m := newIdentitiesModel(stubBackend{}, DemoState{})
 	m = m.openGitForm(DemoIdentity{Name: "work", SSHHost: "work.github.com", Provider: "github"})

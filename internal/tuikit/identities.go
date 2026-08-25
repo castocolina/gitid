@@ -1886,11 +1886,23 @@ func (m identitiesModel) openGitForm(sel DemoIdentity) identitiesModel {
 
 // gitCeremonyFor builds the configure-Git write ceremony.
 func (m identitiesModel) gitCeremonyFor(sel DemoIdentity) ceremonyModel {
+	preview := m.gitPaneForm.includeIfPreview(sel.Name)
+	// WR-05: the checkbox is pre-populated from the identity's stored
+	// ForceSSH, so a user who unchecks it and confirms would otherwise see
+	// a plain success receipt while the shared
+	// `[url ...] insteadOf` rewrite block silently stays in ~/.gitconfig
+	// (commitGitArtifacts intentionally skips removing it — another
+	// identity on the same provider may still depend on it). Make that
+	// explicit instead of a silent no-op the user could easily miss.
+	if !m.gitPaneForm.forceSSH && m.gitPaneForm.provider != "" {
+		preview += "\n\nForce SSH off: the shared provider-rewrite:" + m.gitPaneForm.provider +
+			" block is left in place because other identities may use it."
+	}
 	return newCeremony(ceremonyConfig{
 		Heading: `Write Git identity for "` + sel.Name + `"`,
 		Targets: []string{"~/.gitconfig.d/" + sel.Name, "~/.gitconfig", "~/.ssh/allowed_signers"},
 		Backups: []string{NewBackupPath("~/.gitconfig"), NewBackupPath("~/.ssh/allowed_signers")},
-		Preview: m.gitPaneForm.includeIfPreview(sel.Name),
+		Preview: preview,
 		ResultMessage: `Git identity "` + sel.Name + `" configured — applies via the ` +
 			m.gitPaneForm.strategy() + ` strategy.`,
 		ConfirmLabel: "Write it",
