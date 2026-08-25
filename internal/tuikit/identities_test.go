@@ -2367,6 +2367,43 @@ func TestStandaloneGitCeremonyCommitsCurrentEditedEmail(t *testing.T) {
 	}
 }
 
+// TestConfigureGitReducesExactCommittedSpec proves the WR-14 fix: the
+// GitCommitMsg reducer must build ConfigureGit from the EXACT spec passed
+// to backend.CommitGit, never a spec recomputed from gitPaneForm with an
+// empty keyPath. Before the fix, an identity with no stored PublicKeyPath
+// reduced to the literal string ".pub" (orDefault("", ""+".pub")) instead
+// of the real "<keyPath>.pub" the write actually used.
+func TestConfigureGitReducesExactCommittedSpec(t *testing.T) {
+	b := &recordingGitBackend{result: GitCommitMsg{Backups: []string{"~/.gitconfig.backup"}}}
+	state := DemoState{Identities: []DemoIdentity{{
+		Name: "work", SSHHost: "work.github.example", KeyPath: "~/.ssh/id_work",
+	}}}
+	m := newIdentitiesModel(b, state)
+	m = m.openGitForm(state.Identities[0])
+	m.gitPaneForm.name.SetValue("Work")
+	m.gitPaneForm.email.SetValue("work@example.test")
+	opened := m.handleGitKey(pressKey("enter"), state).model.(identitiesModel)
+	confirmed := opened.handleGitKey(pressKey("enter"), state)
+	if len(b.specs) != 1 {
+		t.Fatalf("CommitGit calls = %d, want 1", len(b.specs))
+	}
+	result := confirmed.model.(identitiesModel).handleMsg(b.result, state)
+	if len(result.actions) != 1 {
+		t.Fatalf("actions = %d, want one ConfigureGit", len(result.actions))
+	}
+	configured, ok := result.actions[0].(ConfigureGit)
+	if !ok {
+		t.Fatalf("action = %T, want ConfigureGit", result.actions[0])
+	}
+	want := b.specs[0].PublicKeyPath
+	if configured.PublicKeyPath != want {
+		t.Errorf("ConfigureGit.PublicKeyPath = %q, want the exact committed spec's %q", configured.PublicKeyPath, want)
+	}
+	if configured.PublicKeyPath == ".pub" {
+		t.Error("ConfigureGit.PublicKeyPath regressed to the empty-keyPath literal \".pub\"")
+	}
+}
+
 type sentinelIncludeIfBackend struct{ stubBackend }
 
 func (sentinelIncludeIfBackend) IncludeIfPreview(GitSpec) string {

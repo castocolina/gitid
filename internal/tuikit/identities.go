@@ -1531,9 +1531,16 @@ type identitiesModel struct {
 	gitCeremony      ceremonyModel
 	gitCommitPending bool
 	gitExisting      bool
-	deleteScope      string
-	deleteCerem      ceremonyModel
-	cloneInput       textinput.Model
+	// gitCommitSpec is the EXACT GitSpec passed to backend.CommitGit at
+	// ceremonyConfirmed (WR-14). handleMsg's GitCommitMsg reducer reuses it
+	// verbatim instead of recomputing a spec from gitPaneForm with an empty
+	// keyPath — recomputing produced a state that could describe a
+	// DIFFERENT write than the one actually performed (an identity with no
+	// PublicKeyPath reduced to the literal string ".pub").
+	gitCommitSpec GitSpec
+	deleteScope   string
+	deleteCerem   ceremonyModel
+	cloneInput    textinput.Model
 	// cloneOnButton: the clone pane's 2-slot focus ring sits on the Clone
 	// button instead of the name input (batch 3 focus-ring parity).
 	cloneOnButton bool
@@ -1602,7 +1609,12 @@ func (m identitiesModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 			return keyResult{model: m}
 		}
 		m.gitCeremony = m.gitCeremony.commitSucceeded(commit.Backups)
-		spec := m.gitPaneForm.spec(m.selected, "")
+		// WR-14: reuse the EXACT spec the write used (captured at
+		// ceremonyConfirmed) — recomputing one here from gitPaneForm with an
+		// empty keyPath could describe a DIFFERENT write than the one
+		// actually performed (e.g. PublicKeyPath reducing to the literal
+		// string ".pub" when the field was empty).
+		spec := m.gitCommitSpec
 		return keyResult{model: m, note: `Git identity "` + m.selected + `" configured.`, actions: []Action{ConfigureGit{
 			Name: m.selected, GitName: m.gitPaneForm.name.Value(), GitEmail: m.gitPaneForm.email.Value(),
 			MatchStrategy: m.gitPaneForm.strategy(), GitDir: spec.GitDir, ForceSSH: spec.ForceSSH,
@@ -1933,6 +1945,10 @@ func (m identitiesModel) handleGitKey(msg tea.KeyMsg, s DemoState) keyResult {
 		case ceremonyConfirmed:
 			m.gitCommitPending = true
 			spec := m.gitPaneForm.spec(sel.Name, sel.KeyPath)
+			// WR-14: capture the EXACT spec the write uses so the later
+			// GitCommitMsg reducer can reuse it verbatim instead of
+			// recomputing one from gitPaneForm with an empty keyPath.
+			m.gitCommitSpec = spec
 			return keyResult{model: m, handled: true, cmd: m.backend.CommitGit(spec)}
 		case ceremonyFinished:
 			// Receipt acknowledgement is deliberately inert until a successful
