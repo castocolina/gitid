@@ -1088,22 +1088,18 @@ func (b *realBackend) commitGitArtifacts(spec tuikit.GitSpec, pubLine string, tr
 		}
 		journal.addBackup(backup)
 	}
-	if err := inject("allowed-signers-file-backup"); err != nil {
-		return fail("allowed-signers-file-backup", err)
-	}
-	current, readErr := os.ReadFile(b.gitconfigPath) //nolint:gosec // journal validated this managed path
-	if readErr != nil {
-		return fail("allowed-signers-file-backup", fmt.Errorf("gitid: reading Git config for backup: %w", readErr))
-	}
-	info, statErr := os.Stat(b.gitconfigPath)
-	if statErr != nil {
-		return fail("allowed-signers-file-backup", fmt.Errorf("gitid: stat Git config for backup: %w", statErr))
-	}
-	backup, writeErr = filewriter.Write(b.gitconfigPath, current, info.Mode().Perm())
-	if writeErr != nil {
-		return fail("allowed-signers-file-backup", fmt.Errorf("gitid: backing up Git config: %w", writeErr))
-	}
-	journal.addBackup(backup)
+	// WR-06: no separate "take another backup of ~/.gitconfig just before
+	// the raw `git config` mutation" step. That used to read the file back
+	// and rewrite it byte-for-byte through filewriter.Write purely to mint
+	// a THIRD .bak.<nanos> path — moments after WriteIncludeIf (and,
+	// conditionally, WriteProviderRewrite) already backed the same file up.
+	// The journal's in-memory pre-transaction snapshot
+	// (journal.file(b.gitconfigPath)) is what actually drives rollback
+	// (restore() never touches these timestamped files); the on-disk
+	// backup from the FIRST mutation of this phase is enough of a durable,
+	// user-visible recovery point. Skipping this step also removes an
+	// extra non-atomic-window rewrite of the user's config for no new
+	// information.
 	if err := inject("allowed-signers-file"); err != nil {
 		return fail("allowed-signers-file", err)
 	}

@@ -799,6 +799,37 @@ func TestCommitCreateWritesDefaultGitArtifacts(t *testing.T) {
 	}
 }
 
+// TestGitTransactionTakesAtMostTwoGitconfigBackups proves the WR-06 fix: a
+// single Configure-Git write must not mint a THIRD ~/.gitconfig.bak.<nanos>
+// purely to obtain a backup path. With ForceSSH true (the worst case: both
+// WriteIncludeIf and WriteProviderRewrite genuinely mutate ~/.gitconfig),
+// exactly two real backups are expected — never a third, redundant one
+// taken moments later with no new content.
+func TestGitTransactionTakesAtMostTwoGitconfigBackups(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_personal")
+	seedGeneratedKey(t, keyPath, "personal", "")
+	writeFile(t, filepath.Join(home, ".gitconfig"), "[core]\n\teditor = vi\n")
+	b := newBackendForHome(home)
+	_, _, err := b.commitGitTransaction(tuikit.GitSpec{
+		Identity: "personal", Name: "Personal", Email: "personal@example.test", Strategy: "gitdir",
+		KeyPath: keyPath, PublicKeyPath: keyPath + ".pub", SSHHost: "personal.github.com",
+		Provider: "github.com", GitDir: "~/git/personal/", ForceSSH: true,
+	})
+	if err != nil {
+		t.Fatalf("commitGitTransaction: %v", err)
+	}
+	matches, globErr := filepath.Glob(filepath.Join(home, ".gitconfig.bak.*"))
+	if globErr != nil {
+		t.Fatalf("globbing for gitconfig backups: %v", globErr)
+	}
+	if len(matches) > 2 {
+		t.Errorf("commitGitTransaction took %d ~/.gitconfig backups, want at most 2 (includeIf + provider-rewrite): %v", len(matches), matches)
+	}
+}
+
 func TestGitTransactionCreatesSelectedContainedGitDir(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -900,7 +931,7 @@ func TestToDemoIdentityProjectsGitEditFields(t *testing.T) {
 }
 
 func TestGitTransactionRollbackMatrixPreservesSnapshotsAndSafetyBackups(t *testing.T) {
-	steps := []string{"git-fragment-dir", "gitdir", "git-fragment-backup", "git-fragment", "git-includeif", "provider-rewrite", "allowed-signers-file-backup", "allowed-signers-file", "allowed-signers"}
+	steps := []string{"git-fragment-dir", "gitdir", "git-fragment-backup", "git-fragment", "git-includeif", "provider-rewrite", "allowed-signers-file", "allowed-signers"}
 	for _, step := range steps {
 		t.Run(step, func(t *testing.T) {
 			home := t.TempDir()
@@ -957,7 +988,7 @@ func TestGitTransactionRollbackMatrixPreservesSnapshotsAndSafetyBackups(t *testi
 }
 
 func TestCombinedTransactionRollsBackEverySSHAndGitTarget(t *testing.T) {
-	steps := []string{"ssh-dir", "private-key", "public-key", "include-line", "host-block", "git-fragment-dir", "gitdir", "git-fragment-backup", "git-fragment", "git-includeif", "provider-rewrite", "allowed-signers-file-backup", "allowed-signers-file", "allowed-signers"}
+	steps := []string{"ssh-dir", "private-key", "public-key", "include-line", "host-block", "git-fragment-dir", "gitdir", "git-fragment-backup", "git-fragment", "git-includeif", "provider-rewrite", "allowed-signers-file", "allowed-signers"}
 	for _, step := range steps {
 		t.Run(step, func(t *testing.T) {
 			home := t.TempDir()
