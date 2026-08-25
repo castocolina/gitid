@@ -8,20 +8,20 @@ S ssh · G git  ✓ ok ! attn ✗ broken │ ✓ Git identity "acme" configured 
                                     │ Wrote → ~/.ssh/allowed_signers
                                     │ Backed up →
                                     │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestGitConfig
-                                    │ uration_RealPTYCompleteEditFlow1955352170/001/.gitconfig.d/acm
-                                    │ e.bak.1787616464046432000
+                                    │ uration_RealPTYCompleteEditFlow10582180/001/.gitconfig.d/acme.
+                                    │ bak.1787617820579885000
                                     │ Backed up →
                                     │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestGitConfig
-                                    │ uration_RealPTYCompleteEditFlow1955352170/001/.gitconfig.bak.1
-                                    │ 787616464156679000
+                                    │ uration_RealPTYCompleteEditFlow10582180/001/.gitconfig.bak.178
+                                    │ 7617820693507000
                                     │ Backed up →
                                     │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestGitConfig
-                                    │ uration_RealPTYCompleteEditFlow1955352170/001/.gitconfig.bak.1
-                                    │ 787616464201464000
+                                    │ uration_RealPTYCompleteEditFlow10582180/001/.gitconfig.bak.178
+                                    │ 7617820736797000
                                     │ Backed up →
                                     │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestGitConfig
-                                    │ uration_RealPTYCompleteEditFlow1955352170/001/.ssh/allowed_sig
-                                    │ ners.bak.1787616464259446000
+                                    │ uration_RealPTYCompleteEditFlow10582180/001/.ssh/allowed_signe
+                                    │ rs.bak.1787617820795119000
                                     │
                                     │  Done (Enter)
                                     │

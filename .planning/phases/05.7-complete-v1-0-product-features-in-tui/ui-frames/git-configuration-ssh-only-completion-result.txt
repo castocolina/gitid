@@ -8,12 +8,12 @@ S ssh · G git  ✓ ok ! attn ✗ broken │ ✓ Git identity "work" configured 
                                     │ Wrote → ~/.ssh/allowed_signers
                                     │ Backed up →
                                     │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestGitConfig
-                                    │ uration_RealPTYSSHOnlyCompletionFlow1915385361/001/.gitconfig.
-                                    │ bak.1787616472105732000
+                                    │ uration_RealPTYSSHOnlyCompletionFlow172184783/001/.gitconfig.b
+                                    │ ak.1787617828632150000
                                     │ Backed up →
                                     │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestGitConfig
-                                    │ uration_RealPTYSSHOnlyCompletionFlow1915385361/001/.gitconfig.
-                                    │ bak.1787616472151294000
+                                    │ uration_RealPTYSSHOnlyCompletionFlow172184783/001/.gitconfig.b
+                                    │ ak.1787617828675984000
                                     │
                                     │  Done (Enter)
                                     │

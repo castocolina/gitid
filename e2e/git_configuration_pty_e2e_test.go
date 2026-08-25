@@ -29,12 +29,24 @@ package e2e
 //  4. TestGitConfiguration_RealPTYMouseFieldFocus — raw SGR mouse clicks
 //     focus name, email, the Force-SSH toggle, each strategy row, the gitdir
 //     path field, and the ceremony's Write-it control.
+//  5. TestGitConfiguration_CompiledRealVsLiveDummyPTY (04-04-PLAN.md Task 2,
+//     D-12) — pairs two REAL PTY sessions, one for the compiled `cmd/gitid`
+//     binary (seeded via seedGitPTYIdentity/removeGitSide) and one for the
+//     compiled `cmd/gitid-dummy` binary (its own frozen "personal"/"work"
+//     fixture identities), and compares NORMALIZED semantic checkpoints —
+//     field order, labels, controls, defaults, ceremony beats, and required
+//     visible content — never raw terminal bytes and never any web/HTML/
+//     MUI/Chromium/PNG artifact. Every unequal or one-sided region consumes
+//     exactly one classification entry in
+//     .planning/design/git-screen/visual-divergence-allowlist.txt.
 
 import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -432,4 +444,604 @@ func TestGitConfiguration_RealPTYMouseFieldFocus(t *testing.T) {
 	mustSee(t, s, `Git identity "acme" configured`, "asynchronous ceremony shows the successful write receipt")
 
 	saveFrame(t, "git-configuration-mouse-field-focus", s)
+}
+
+// ---------------------------------------------------------------------------
+// 5. Compiled real vs. live dummy PTY comparison (04-04-PLAN.md Task 2, D-12).
+//
+// Both cmd/gitid and cmd/gitid-dummy render Configure-Git through the SAME
+// internal/tuikit identities.go code (the Phase 3 D-17 extraction): cmd/gitid
+// injects a real Backend, cmd/gitid-dummy injects
+// internal/dummytui.FixtureBackend. A structural divergence here therefore
+// means either a genuine, classified fixture-vs-live-data difference (see
+// .planning/design/git-screen/visual-divergence-allowlist.txt) or a real
+// regression the gate must catch.
+//
+// The comparison is SEMANTIC, not byte-for-byte: each PTY frame (already
+// ANSI-free plain text — github.com/charmbracelet/x/vt decodes the terminal
+// and .String() returns the plain grid) is split into named regions, then
+// normalized (identity token / email / gitdir path / timestamp placeholders)
+// before comparing. No web/HTML/MUI/Chromium/PNG artifact participates.
+// ---------------------------------------------------------------------------
+
+// gitScreenRegion names a semantic sub-area of a Configure-Git PTY frame for
+// the real-vs-dummy comparison.
+type gitScreenRegion string
+
+const (
+	gitRegionSidebar      gitScreenRegion = "sidebar"
+	gitRegionHeaderStatus gitScreenRegion = "header-status"
+	gitRegionFormFields   gitScreenRegion = "git-form-fields"
+	gitRegionStrategy     gitScreenRegion = "git-strategy"
+	gitRegionPreview      gitScreenRegion = "git-preview"
+	gitRegionCeremony     gitScreenRegion = "git-ceremony"
+)
+
+// allGitScreenRegions lists every region the comparison checks on every
+// checkpoint. A region absent from BOTH sides is skipped (not applicable to
+// that checkpoint's pane state) rather than treated as a divergence.
+func allGitScreenRegions() []gitScreenRegion {
+	return []gitScreenRegion{
+		gitRegionSidebar, gitRegionHeaderStatus, gitRegionFormFields,
+		gitRegionStrategy, gitRegionPreview, gitRegionCeremony,
+	}
+}
+
+// newDummyCmd builds the exec.Cmd for a Configure-Git PTY test against the
+// LIVE cmd/gitid-dummy binary — the SAME internal/tuikit render stack the
+// real binary uses, injected with dummytui.FixtureBackend instead of a real
+// Backend (D-12).
+func newDummyCmd(ctx context.Context, bin, home string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, bin) //nolint:gosec // bin from BuildDummyBinary; no user input
+	cmd.Env = append(os.Environ(), "HOME="+home, "TERM=xterm-256color")
+	return cmd
+}
+
+// openDummyGitFormEditMode opens Configure Git for the dummy's default-
+// selected "personal" fixture identity (internal/dummytui/data.go
+// IdentityManagerRows[0], state "complete") — the dummy-side equivalent of
+// the real binary's seeded complete identity (git-form-filled, edit mode).
+func openDummyGitFormEditMode(t *testing.T, s *ptySession) {
+	t.Helper()
+	mustSee(t, s, "[1] Identities", "dummy: launches on the Identities tab")
+	mustSee(t, s, "personal", "dummy: seeded fixture sidebar row")
+	s.sendKey([]byte("g"), keystrokeDelay)
+}
+
+// openDummyGitFormSSHOnly selects the dummy's "work" fixture identity (state
+// "incomplete" — SSH host present, no Git side configured yet) and opens
+// Configure Git — the dummy-side equivalent of the real binary's SSH-only
+// completion entry (git-form-empty).
+func openDummyGitFormSSHOnly(t *testing.T, s *ptySession) {
+	t.Helper()
+	mustSee(t, s, "[1] Identities", "dummy: launches on the Identities tab")
+	s.sendKey(dummyKeyDown, keystrokeDelay) // personal -> work
+	mustSee(t, s, "! incomplete", "dummy: work fixture selected")
+	s.sendKey([]byte("g"), keystrokeDelay)
+}
+
+var (
+	gitScreenEmailPattern     = regexp.MustCompile(`[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
+	gitScreenTimestampPattern = regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}[:\-]\d{2}[:\-]\d{2}Z`)
+	gitScreenGitDirPattern    = regexp.MustCompile(`~/git/[A-Za-z0-9_-]+/`)
+	// gitScreenIdentityTokens is the fixed, known vocabulary of identity
+	// names this suite's real (seedGitPTYIdentity) and dummy
+	// (internal/dummytui/data.go IdentityManagerRows) fixtures use —
+	// deliberately narrow (not a generic word-matcher), since both sides
+	// are controlled test fixtures, never arbitrary user data.
+	gitScreenIdentityTokens = []string{"acme", "personal", "work"}
+)
+
+// normalizeGitCheckpoint replaces identity-specific, backend-specific, and
+// wall-clock-specific substrings with stable placeholders so a REAL and a
+// DUMMY capture of the SAME semantic state compare structurally rather than
+// byte-for-byte — the checkpoint script drives different fixture identities
+// on each side (D-12: field order/labels/controls/defaults are the
+// comparison target, not literal fixture values).
+func normalizeGitCheckpoint(s string) string {
+	s = gitScreenTimestampPattern.ReplaceAllString(s, "<timestamp>")
+	s = gitScreenEmailPattern.ReplaceAllString(s, "<email>")
+	s = gitScreenGitDirPattern.ReplaceAllString(s, "<gitdir>")
+	for _, tok := range gitScreenIdentityTokens {
+		s = strings.ReplaceAll(s, tok, "<identity>")
+	}
+	return s
+}
+
+// gitScreenRightOfDivider returns the text to the right of the identities
+// pane's master/detail "│" separator. The vt-decoded PTY frame is already
+// ANSI-free plain text, so no ANSI stripping is needed here (unlike the
+// in-process, ANSI-preserving captures in internal/screenshot).
+func gitScreenRightOfDivider(line string) string {
+	idx := strings.Index(line, "│")
+	if idx < 0 {
+		return line
+	}
+	return line[idx+len("│"):]
+}
+
+// extractGitScreenSidebar returns the master-pane identity list (everything
+// left of the "│" divider on lines that carry sidebar content).
+func extractGitScreenSidebar(lines []string) string {
+	var out []string
+	for _, line := range lines {
+		idx := strings.Index(line, "│")
+		if idx > 0 && strings.TrimSpace(line[:idx]) != "" {
+			out = append(out, strings.TrimSpace(line[:idx]))
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// extractGitScreenHeaderStatus returns the header line's trailing status
+// chip ("N ids · <health>"), the portion after the last nav-tab label.
+func extractGitScreenHeaderStatus(lines []string) string {
+	if len(lines) == 0 {
+		return ""
+	}
+	header := lines[0]
+	idx := strings.LastIndex(header, "Doctor")
+	if idx < 0 {
+		return ""
+	}
+	return strings.TrimSpace(header[idx+len("Doctor"):])
+}
+
+// extractGitScreenFormFields returns the git-form's user.name/user.email
+// rows plus the compact gpg.format/signingkey/gpgsign/Force-SSH metadata
+// line — from "user.name" up to (not including) the "Match strategy" row.
+func extractGitScreenFormFields(lines []string) string {
+	var out []string
+	capturing := false
+	for _, line := range lines {
+		rp := gitScreenRightOfDivider(line)
+		if strings.Contains(rp, "Match strategy") {
+			break
+		}
+		if strings.Contains(rp, "user.name") {
+			capturing = true
+		}
+		if capturing {
+			out = append(out, strings.TrimRight(rp, " "))
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// extractGitScreenStrategy returns the match-strategy header, its three
+// always-rendered option rows, and the hint line — from "Match strategy" up
+// to (not including) the fragment preview block.
+func extractGitScreenStrategy(lines []string) string {
+	var out []string
+	capturing := false
+	for _, line := range lines {
+		rp := gitScreenRightOfDivider(line)
+		if strings.Contains(rp, "fragment file") {
+			break
+		}
+		if strings.Contains(rp, "Match strategy") {
+			capturing = true
+		}
+		if capturing {
+			out = append(out, strings.TrimRight(rp, " "))
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// extractGitScreenPreview returns the fragment-file and includeIf-block
+// preview boxes (and the conditional gitdir-path row, when present) — from
+// the first preview title up to the "Write it" button row.
+func extractGitScreenPreview(lines []string) string {
+	var out []string
+	capturing := false
+	for _, line := range lines {
+		rp := gitScreenRightOfDivider(line)
+		if strings.Contains(rp, "Write it") {
+			break
+		}
+		if strings.Contains(rp, "fragment file") || strings.Contains(rp, "includeIf block") {
+			capturing = true
+		}
+		if capturing {
+			out = append(out, strings.TrimRight(rp, " "))
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// extractGitScreenCeremony returns the write-ceremony pane's content — from
+// its heading ("Write Git identity for …") or its receipt heading (the
+// "… configured" result message) through the end of the frame. Ceremony
+// checkpoints never render the git-form fields, so this never collides with
+// extractGitScreenFormFields/Strategy/Preview.
+func extractGitScreenCeremony(lines []string) string {
+	start := -1
+	for i, line := range lines {
+		rp := gitScreenRightOfDivider(line)
+		if strings.Contains(rp, "Write Git identity") || strings.Contains(rp, "configured") {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return ""
+	}
+	var out []string
+	for _, line := range lines[start:] {
+		out = append(out, strings.TrimRight(gitScreenRightOfDivider(line), " "))
+	}
+	return strings.Join(out, "\n")
+}
+
+// extractGitScreenRegion dispatches to the named region's extractor.
+func extractGitScreenRegion(frame string, region gitScreenRegion) string {
+	lines := strings.Split(frame, "\n")
+	switch region {
+	case gitRegionSidebar:
+		return extractGitScreenSidebar(lines)
+	case gitRegionHeaderStatus:
+		return extractGitScreenHeaderStatus(lines)
+	case gitRegionFormFields:
+		return extractGitScreenFormFields(lines)
+	case gitRegionStrategy:
+		return extractGitScreenStrategy(lines)
+	case gitRegionPreview:
+		return extractGitScreenPreview(lines)
+	case gitRegionCeremony:
+		return extractGitScreenCeremony(lines)
+	}
+	return ""
+}
+
+// gitScreenAllowlistEntry is one parsed, strict-schema
+// (checkpoint:region:predicate:decision-ref:reason) divergence
+// classification — the SAME 5-field format
+// cmd/gitid/gate_visual_regression_test.go's create-flow allowlist uses,
+// scoped here to git-screen checkpoints and CTX-D-NN/UI-D-NN decision refs
+// (04-CONTEXT.md/04-UI-SPEC.md).
+type gitScreenAllowlistEntry struct {
+	Checkpoint  string
+	Region      gitScreenRegion
+	Predicate   string
+	DecisionRef string
+	Reason      string
+	used        bool
+}
+
+// splitGitScreenAllowlistLine splits one allowlist line into exactly 5
+// fields, handling the predicate field's own embedded colon
+// ("contains:<text>"/"absent:<text>") the same way
+// cmd/gitid/gate_visual_regression_test.go's splitAllowlistLine does for the
+// create-flow allowlist — a naive 5-way colon split misaligns fields because
+// the predicate itself contains a colon.
+func splitGitScreenAllowlistLine(s string) []string {
+	cut := func(r string) (field, rest string, ok bool) {
+		idx := strings.Index(r, ":")
+		if idx < 0 {
+			return "", r, false
+		}
+		return r[:idx], r[idx+1:], true
+	}
+	f0, rest, ok := cut(s)
+	if !ok {
+		return nil
+	}
+	f1, rest, ok := cut(rest)
+	if !ok {
+		return nil
+	}
+	var f2, f3, f4 string
+	switch {
+	case strings.HasPrefix(rest, "contains:"), strings.HasPrefix(rest, "absent:"):
+		keyword := "contains:"
+		if strings.HasPrefix(rest, "absent:") {
+			keyword = "absent:"
+		}
+		inner := rest[len(keyword):]
+		if strings.HasPrefix(inner, `"`) {
+			closeQ := strings.Index(inner[1:], `"`)
+			if closeQ < 0 {
+				idx := strings.Index(inner, ":")
+				if idx < 0 {
+					return nil
+				}
+				f2 = keyword + inner[:idx]
+				rest = inner[idx+1:]
+			} else {
+				quoted := inner[:closeQ+2]
+				f2 = keyword + quoted
+				rest = inner[closeQ+2:]
+				rest = strings.TrimPrefix(rest, ":")
+			}
+		} else {
+			idx := strings.Index(inner, ":")
+			if idx < 0 {
+				return nil
+			}
+			f2 = keyword + inner[:idx]
+			rest = inner[idx+1:]
+		}
+	default:
+		var ok2 bool
+		f2, rest, ok2 = cut(rest)
+		if !ok2 {
+			return nil
+		}
+	}
+	f3, f4, ok = cut(rest)
+	if !ok {
+		return nil
+	}
+	return []string{f0, f1, f2, f3, f4}
+}
+
+// loadGitScreenAllowlist parses
+// .planning/design/git-screen/visual-divergence-allowlist.txt.
+func loadGitScreenAllowlist(t *testing.T) []*gitScreenAllowlistEntry {
+	t.Helper()
+	path := filepath.Join(repoRoot(t), ".planning", "design", "git-screen", "visual-divergence-allowlist.txt")
+	data, err := os.ReadFile(path) //nolint:gosec // fixed repo-relative path (G304)
+	if err != nil {
+		t.Fatalf("loadGitScreenAllowlist: reading %s: %v", path, err)
+	}
+	validCheckpoints := map[string]bool{
+		"git-form-filled": true, "git-form-empty": true, "match-strategy-select": true,
+		"review-readonly": true, "result-success": true,
+	}
+	validRegions := make(map[gitScreenRegion]bool, len(allGitScreenRegions()))
+	for _, r := range allGitScreenRegions() {
+		validRegions[r] = true
+	}
+	seen := make(map[string]bool)
+	var entries []*gitScreenAllowlistEntry
+	for lineNum, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := splitGitScreenAllowlistLine(line)
+		if len(parts) != 5 {
+			t.Fatalf("git-screen allowlist line %d: expected 5 colon-separated fields (checkpoint:region:predicate:decision-ref:reason), got %d in: %q", lineNum+1, len(parts), line)
+		}
+		checkpoint := strings.TrimSpace(parts[0])
+		region := gitScreenRegion(strings.TrimSpace(parts[1]))
+		predicate := strings.TrimSpace(parts[2])
+		decisionRef := strings.TrimSpace(parts[3])
+		reason := strings.TrimSpace(parts[4])
+		if !validCheckpoints[checkpoint] {
+			t.Fatalf("git-screen allowlist line %d: unknown checkpoint %q", lineNum+1, checkpoint)
+		}
+		if !validRegions[region] {
+			t.Fatalf("git-screen allowlist line %d: unknown region %q", lineNum+1, region)
+		}
+		if predicate == "differs" {
+			t.Fatalf("git-screen allowlist line %d: forbidden predicate %q — use contains:<text> or absent:<text> (CR-04 precedent)", lineNum+1, predicate)
+		}
+		if !strings.HasPrefix(predicate, "contains:") && !strings.HasPrefix(predicate, "absent:") {
+			t.Fatalf("git-screen allowlist line %d: invalid predicate %q (must be 'contains:<text>' or 'absent:<text>')", lineNum+1, predicate)
+		}
+		if !strings.HasPrefix(decisionRef, "CTX-D-") && !strings.HasPrefix(decisionRef, "UI-D-") {
+			t.Fatalf("git-screen allowlist line %d: decision-ref %q must be a scoped CTX-D-NN or UI-D-NN identifier", lineNum+1, decisionRef)
+		}
+		if reason == "" {
+			t.Fatalf("git-screen allowlist line %d: blank reason", lineNum+1)
+		}
+		key := checkpoint + ":" + string(region)
+		if seen[key] {
+			t.Fatalf("git-screen allowlist line %d: duplicate entry for checkpoint %q region %q", lineNum+1, checkpoint, region)
+		}
+		seen[key] = true
+		entries = append(entries, &gitScreenAllowlistEntry{
+			Checkpoint: checkpoint, Region: region, Predicate: predicate, DecisionRef: decisionRef, Reason: reason,
+		})
+	}
+	return entries
+}
+
+// gitScreenPredicateSatisfied reports whether entry's predicate is satisfied
+// by the pair (real, dummy) — the SAME contains:/absent: schema
+// cmd/gitid/gate_visual_regression_test.go's create-flow gate uses (CR-04:
+// "differs" is never a valid predicate; every divergence must name specific
+// text).
+func gitScreenPredicateSatisfied(entry *gitScreenAllowlistEntry, real, dummy string) bool {
+	switch {
+	case strings.HasPrefix(entry.Predicate, "contains:"):
+		needle := strings.Trim(strings.TrimPrefix(entry.Predicate, "contains:"), `"`)
+		return strings.Contains(real, needle) || strings.Contains(dummy, needle)
+	case strings.HasPrefix(entry.Predicate, "absent:"):
+		needle := strings.Trim(strings.TrimPrefix(entry.Predicate, "absent:"), `"`)
+		return !strings.Contains(real, needle) || !strings.Contains(dummy, needle)
+	}
+	return false
+}
+
+// compareGitScreenCheckpoint compares every region of one semantic
+// checkpoint between a real-binary frame and a live-dummy-binary frame.
+// Regions that are structurally identical after normalizeGitCheckpoint
+// require no allowlist entry (D-12: field order/labels/controls/defaults
+// match). Every remaining unequal or one-sided region must consume EXACTLY
+// ONE allowlist entry; an unmatched divergence, or an entry whose predicate
+// does not actually hold, both fail.
+func compareGitScreenCheckpoint(t *testing.T, checkpoint string, realFrame, dummyFrame string, allowlist []*gitScreenAllowlistEntry) {
+	t.Helper()
+	comparable := 0
+	for _, region := range allGitScreenRegions() {
+		realRegion := extractGitScreenRegion(realFrame, region)
+		dummyRegion := extractGitScreenRegion(dummyFrame, region)
+		if strings.TrimSpace(realRegion) == "" && strings.TrimSpace(dummyRegion) == "" {
+			continue // region not applicable to this checkpoint's pane on either side
+		}
+		comparable++
+		if normalizeGitCheckpoint(realRegion) == normalizeGitCheckpoint(dummyRegion) {
+			continue // structurally identical — no divergence to classify
+		}
+		var matched *gitScreenAllowlistEntry
+		for _, entry := range allowlist {
+			if entry.Checkpoint == checkpoint && entry.Region == region {
+				matched = entry
+				break
+			}
+		}
+		if matched == nil {
+			t.Errorf("git-screen semantic gate: %s/%s diverges with NO allowlist classification (D-12 requires ux-improvement or defect for every difference)\n--- real ---\n%s\n--- dummy ---\n%s",
+				checkpoint, region, realRegion, dummyRegion)
+			continue
+		}
+		if !gitScreenPredicateSatisfied(matched, realRegion, dummyRegion) {
+			t.Errorf("git-screen semantic gate: %s/%s allowlist entry %q does not match the observed divergence\n--- real ---\n%s\n--- dummy ---\n%s",
+				checkpoint, region, matched.Predicate, realRegion, dummyRegion)
+			continue
+		}
+		matched.used = true
+	}
+	if comparable == 0 {
+		t.Fatalf("git-screen semantic gate: checkpoint %q produced NO comparable region on either side — checkpoint script bug, not a real absence", checkpoint)
+	}
+}
+
+// TestGitConfiguration_CompiledRealVsLiveDummyPTY drives the SAME
+// Configure-Git checkpoints through two real PTY sessions — the compiled
+// cmd/gitid binary and the compiled cmd/gitid-dummy binary — and compares
+// NORMALIZED semantic checkpoints (field order, labels, controls, defaults,
+// navigation/state order, ceremony beats, required visible content), never
+// raw terminal bytes and never any web/HTML/MUI/Chromium/PNG artifact
+// (D-12). Every unequal or one-sided region on every checkpoint consumes
+// EXACTLY ONE classification entry in
+// .planning/design/git-screen/visual-divergence-allowlist.txt, citing a
+// scoped CTX-D-NN (04-CONTEXT.md) or UI-D-NN (04-UI-SPEC.md) decision.
+func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
+	allowlist := loadGitScreenAllowlist(t)
+	realBin := BuildBinary(t)
+	dummyBin := BuildDummyBinary(t)
+
+	t.Run("git-form-filled", func(t *testing.T) {
+		realHome := SandboxHome(t)
+		seedGitPTYIdentity(t, realHome, "acme")
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		real := startPTYAt(t, newRealCreateFlowCmd(ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
+		defer real.close(t)
+		openStandaloneGitForm(t, real)
+		mustSee(t, real, "editing existing fragment", "real: edit-mode Configure-Git opens")
+
+		dummyHome := SandboxHome(t)
+		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer dcancel()
+		dummy := startPTYAt(t, newDummyCmd(dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
+		defer dummy.close(t)
+		openDummyGitFormEditMode(t, dummy)
+		mustSee(t, dummy, "editing existing fragment", "dummy: edit-mode Configure-Git opens")
+
+		compareGitScreenCheckpoint(t, "git-form-filled", real.snapshot(), dummy.snapshot(), allowlist)
+	})
+
+	t.Run("git-form-empty", func(t *testing.T) {
+		realHome := SandboxHome(t)
+		seedGitPTYIdentity(t, realHome, "work")
+		removeGitSide(t, realHome, "work")
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		real := startPTYAt(t, newRealCreateFlowCmd(ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
+		defer real.close(t)
+		openStandaloneGitForm(t, real)
+		mustSee(t, real, "completes this identity", "real: SSH-only Configure-Git opens")
+
+		dummyHome := SandboxHome(t)
+		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer dcancel()
+		dummy := startPTYAt(t, newDummyCmd(dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
+		defer dummy.close(t)
+		openDummyGitFormSSHOnly(t, dummy)
+		mustSee(t, dummy, "completes this identity", "dummy: SSH-only Configure-Git opens")
+
+		compareGitScreenCheckpoint(t, "git-form-empty", real.snapshot(), dummy.snapshot(), allowlist)
+	})
+
+	t.Run("match-strategy-select", func(t *testing.T) {
+		realHome := SandboxHome(t)
+		seedGitPTYIdentity(t, realHome, "acme")
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		real := startPTYAt(t, newRealCreateFlowCmd(ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
+		defer real.close(t)
+		openStandaloneGitForm(t, real)
+		mustSee(t, real, "editing existing fragment", "real: Configure-Git opens")
+		real.sendKey([]byte("\t"), keystrokeDelay) // name -> email
+		real.sendKey([]byte("\t"), keystrokeDelay) // email -> strategy
+		mustSee(t, real, "● gitdir (default)", "real: match strategy focused at its default")
+
+		dummyHome := SandboxHome(t)
+		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer dcancel()
+		dummy := startPTYAt(t, newDummyCmd(dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
+		defer dummy.close(t)
+		openDummyGitFormEditMode(t, dummy)
+		mustSee(t, dummy, "editing existing fragment", "dummy: Configure-Git opens")
+		dummy.sendKey([]byte("\t"), keystrokeDelay)
+		dummy.sendKey([]byte("\t"), keystrokeDelay)
+		mustSee(t, dummy, "● gitdir (default)", "dummy: match strategy focused at its default")
+
+		compareGitScreenCheckpoint(t, "match-strategy-select", real.snapshot(), dummy.snapshot(), allowlist)
+	})
+
+	t.Run("review-readonly", func(t *testing.T) {
+		realHome := SandboxHome(t)
+		seedGitPTYIdentity(t, realHome, "acme")
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		real := startPTYAt(t, newRealCreateFlowCmd(ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
+		defer real.close(t)
+		openStandaloneGitForm(t, real)
+		mustSee(t, real, "editing existing fragment", "real: Configure-Git opens")
+		real.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSee(t, real, `Write Git identity for "acme"`, "real: review-readonly reached")
+
+		dummyHome := SandboxHome(t)
+		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer dcancel()
+		dummy := startPTYAt(t, newDummyCmd(dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
+		defer dummy.close(t)
+		openDummyGitFormEditMode(t, dummy)
+		mustSee(t, dummy, "editing existing fragment", "dummy: Configure-Git opens")
+		dummy.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSee(t, dummy, `Write Git identity for "personal"`, "dummy: review-readonly reached")
+
+		compareGitScreenCheckpoint(t, "review-readonly", real.snapshot(), dummy.snapshot(), allowlist)
+	})
+
+	t.Run("result-success", func(t *testing.T) {
+		realHome := SandboxHome(t)
+		seedGitPTYIdentity(t, realHome, "acme")
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		real := startPTYAt(t, newRealCreateFlowCmd(ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
+		defer real.close(t)
+		openStandaloneGitForm(t, real)
+		mustSee(t, real, "editing existing fragment", "real: Configure-Git opens")
+		real.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSee(t, real, `Write Git identity for "acme"`, "real: review-readonly reached")
+		real.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSee(t, real, `Git identity "acme" configured`, "real: result-success reached")
+
+		dummyHome := SandboxHome(t)
+		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer dcancel()
+		dummy := startPTYAt(t, newDummyCmd(dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
+		defer dummy.close(t)
+		openDummyGitFormEditMode(t, dummy)
+		mustSee(t, dummy, "editing existing fragment", "dummy: Configure-Git opens")
+		dummy.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSee(t, dummy, `Write Git identity for "personal"`, "dummy: review-readonly reached")
+		dummy.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSee(t, dummy, `Git identity "personal" configured`, "dummy: result-success reached")
+
+		compareGitScreenCheckpoint(t, "result-success", real.snapshot(), dummy.snapshot(), allowlist)
+	})
+
+	for _, entry := range allowlist {
+		if !entry.used {
+			t.Errorf("git-screen allowlist entry %s/%s (%s) was never triggered by any checkpoint comparison — remove the stale entry", entry.Checkpoint, entry.Region, entry.DecisionRef)
+		}
+	}
 }
