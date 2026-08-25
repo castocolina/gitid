@@ -1210,6 +1210,77 @@ func TestGitTransactionRollbackMatrixPreservesSnapshotsAndSafetyBackups(t *testi
 	}
 }
 
+// TestRollbackKeepsHardenedRootSecuredWhenAFileUnderItFailsToRestore is
+// BL-15's required fault-injection case (was WR-25, escalated from skip):
+// restore() must NEVER re-loosen a managed root (~/.ssh) back to its
+// pre-transaction mode when a file underneath it — here, the freshly
+// written allowed_signers file — could not itself be restored/removed. The
+// old unconditional chmodDirs loop would revert ~/.ssh to whatever loose
+// mode it had before the transaction (0755 in this fixture), leaving a
+// partially-rolled-back transaction's leftover file inside a
+// group/world-readable directory.
+func TestRollbackKeepsHardenedRootSecuredWhenAFileUnderItFailsToRestore(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// ~/.ssh pre-exists at a LOOSE mode — ensureManagedDir will harden it to
+	// sshDirMode (0700) and record 0755 as the mode restore() would
+	// normally revert to.
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o755); err != nil { //nolint:gosec // deliberately loose fixture mode — proving BL-15's guard rejects reverting to it
+		t.Fatalf("seeding loose ~/.ssh: %v", err)
+	}
+	keyPath := filepath.Join(sshDir, "id_ed25519_personal")
+	seedGeneratedKey(t, keyPath, "personal", "")
+	signersPath := filepath.Join(sshDir, "allowed_signers")
+
+	b := newBackendForHome(home)
+	b.failCommitAt = func(boundary string) error {
+		switch boundary {
+		case "allowed-signers":
+			// Fail the LAST mutation step (after ensureManagedDir(~/.ssh)
+			// has already hardened the directory) so restore() runs.
+			return fmt.Errorf("injected failure at allowed-signers")
+		case "restore:" + signersPath:
+			// The allowed_signers path never got a real file this run (the
+			// write never happened), so restore()'s own os.Remove would
+			// otherwise succeed as a harmless no-op — force a failure here
+			// so a real "file under ~/.ssh could not be restored" case
+			// exists for the chmodDirs guard to react to.
+			return fmt.Errorf("injected restore failure for allowed_signers")
+		}
+		return nil
+	}
+	_, restored, err := b.commitGitTransaction(tuikit.GitSpec{
+		Identity: "personal", Name: "After", Email: "after@example.test", Strategy: "gitdir",
+		KeyPath: keyPath, PublicKeyPath: keyPath + ".pub", SSHHost: "personal.github.com",
+		Provider: "github.com", ForceSSH: false,
+	})
+	if err == nil || !strings.Contains(err.Error(), "allowed-signers") {
+		t.Fatalf("error = %v, want the injected allowed-signers failure", err)
+	}
+	if !strings.Contains(err.Error(), "injected restore failure for allowed_signers") {
+		t.Fatalf("error = %v, want the restore-path failure surfaced too", err)
+	}
+
+	info, statErr := os.Stat(sshDir)
+	if statErr != nil {
+		t.Fatalf("stat ~/.ssh after rollback: %v", statErr)
+	}
+	if got, want := info.Mode().Perm(), os.FileMode(0o700); got != want {
+		t.Fatalf("BL-15: ~/.ssh mode after rollback = %v, want %v (kept SECURED — a file under it failed to restore, so the pre-transaction loose mode must NOT be reapplied)", got, want)
+	}
+
+	foundKeptMsg := false
+	for _, line := range restored {
+		if strings.Contains(line, ".ssh") && strings.Contains(line, "mode kept at") {
+			foundKeptMsg = true
+		}
+	}
+	if !foundKeptMsg {
+		t.Errorf("restore() outcomes = %v, want a %q line naming ~/.ssh", restored, "mode kept at")
+	}
+}
+
 func TestCombinedTransactionRollsBackEverySSHAndGitTarget(t *testing.T) {
 	steps := []string{"ssh-dir", "private-key", "public-key", "include-line", "host-block", "git-fragment-dir", "gitdir", "git-fragment-backup", "git-fragment", "git-includeif", "provider-rewrite", "allowed-signers-file", "allowed-signers"}
 	for _, step := range steps {

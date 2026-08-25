@@ -1044,6 +1044,12 @@ func (j *mutationJournal) restore() ([]string, error) {
 	// UI — the `~/`-shortened form, never the real absolute sandbox path.
 	var outcomes []string
 	var failures []string
+	// failedFilePaths (BL-15, was WR-25) tracks the RAW (undisplayed) path
+	// of every file this loop failed to restore or remove — kept separate
+	// from failures/outcomes (which are already display-formatted strings)
+	// so the chmodDirs loop below can do an exact, unambiguous prefix match
+	// against real filesystem paths rather than parsing formatted text.
+	var failedFilePaths []string
 	for i := len(j.files) - 1; i >= 0; i-- {
 		s := j.files[i]
 		var err error
@@ -1061,9 +1067,28 @@ func (j *mutationJournal) restore() ([]string, error) {
 			outcome := j.b.displayPath(s.path) + ": restoration failed: " + err.Error()
 			outcomes = append(outcomes, outcome)
 			failures = append(failures, outcome)
+			failedFilePaths = append(failedFilePaths, filepath.Clean(s.path))
 		} else {
 			outcomes = append(outcomes, j.b.displayPath(s.path)+": restored")
 		}
+	}
+	// BL-15 (was WR-25, escalated from skip): a managed root must NEVER be
+	// re-loosened to its pre-transaction (potentially group/world-readable)
+	// mode when a file underneath it could not be restored/removed — e.g. a
+	// freshly written private key at ~/.ssh/id_ed25519_<name> that failed to
+	// delete would otherwise be left inside a directory rollback just
+	// reverted from 0700 back to 0755/0777. under reports whether dirPath is
+	// the exact path of, or an ancestor of, any file this transaction failed
+	// to restore.
+	under := func(dirPath string) bool {
+		clean := filepath.Clean(dirPath)
+		prefix := clean + string(os.PathSeparator)
+		for _, f := range failedFilePaths {
+			if f == clean || strings.HasPrefix(f, prefix) {
+				return true
+			}
+		}
+		return false
 	}
 	// WR-17: iterate chmodDirs, not the full dirs snapshot. dirs holds every
 	// ancestor watchDir walked over while resolving a target path (including
@@ -1075,6 +1100,24 @@ func (j *mutationJournal) restore() ([]string, error) {
 	// pre-existing managed roots this transaction actually chmod'd.
 	for i := len(j.chmodDirs) - 1; i >= 0; i-- {
 		s := j.chmodDirs[i]
+		if under(s.path) {
+			// BL-15: a file under this hardened root failed to restore —
+			// keep the root at its SECURED mode rather than reverting to
+			// its looser pre-transaction mode (s.mode; that is the mode
+			// BEING avoided, not the current one — read the real on-disk
+			// mode for the message instead of assuming what ensureManagedDir
+			// set it to). This is deliberately NOT counted as a restoration
+			// failure (nothing here failed to revert; the revert was
+			// correctly skipped), so it does not widen the returned error's
+			// failure set.
+			current := "unknown"
+			if info, statErr := os.Stat(s.path); statErr == nil {
+				current = info.Mode().Perm().String()
+			}
+			outcomes = append(outcomes, j.b.displayPath(s.path)+
+				": mode kept at "+current+" — a file under it could not be restored")
+			continue
+		}
 		err := error(nil)
 		if j.b.failCommitAt != nil {
 			err = j.b.failCommitAt("restore:" + s.path)
