@@ -733,10 +733,18 @@ func (b *realBackend) CommitGit(spec tuikit.GitSpec) tea.Cmd {
 			return tuikit.GitCommitMsg{Err: b.initErr.Error()}
 		}
 		backups, restored, err := b.commitGitTransaction(spec)
-		if err != nil {
-			return tuikit.GitCommitMsg{Backups: backups, Restored: restored, Err: err.Error()}
+		// WR-01: the standalone Git ceremony's receipt rendered raw absolute
+		// backup paths (wrapping across terminal rows) because this path,
+		// unlike commitCreateTransaction's, never mapped through
+		// b.displayPath before returning.
+		displayBackups := make([]string, len(backups))
+		for i, backup := range backups {
+			displayBackups[i] = b.displayPath(backup)
 		}
-		return tuikit.GitCommitMsg{Backups: backups}
+		if err != nil {
+			return tuikit.GitCommitMsg{Backups: displayBackups, Restored: restored, Err: err.Error()}
+		}
+		return tuikit.GitCommitMsg{Backups: displayBackups}
 	}
 }
 
@@ -878,6 +886,9 @@ func (j *mutationJournal) file(path string) (gitFileSnapshot, bool) {
 }
 
 func (j *mutationJournal) restore() ([]string, error) {
+	// WR-01: every outcome line is user-facing (folded into ceremony
+	// receipts and error messages), so it must read like the rest of the
+	// UI — the `~/`-shortened form, never the real absolute sandbox path.
 	var outcomes []string
 	var failures []string
 	for i := len(j.files) - 1; i >= 0; i-- {
@@ -894,11 +905,11 @@ func (j *mutationJournal) restore() ([]string, error) {
 			}
 		}
 		if err != nil {
-			outcome := s.path + ": restoration failed: " + err.Error()
+			outcome := j.b.displayPath(s.path) + ": restoration failed: " + err.Error()
 			outcomes = append(outcomes, outcome)
 			failures = append(failures, outcome)
 		} else {
-			outcomes = append(outcomes, s.path+": restored")
+			outcomes = append(outcomes, j.b.displayPath(s.path)+": restored")
 		}
 	}
 	for i := len(j.dirs) - 1; i >= 0; i-- {
@@ -914,11 +925,11 @@ func (j *mutationJournal) restore() ([]string, error) {
 			err = os.Chmod(s.path, s.mode)
 		}
 		if err != nil {
-			outcome := s.path + ": restoration failed: " + err.Error()
+			outcome := j.b.displayPath(s.path) + ": restoration failed: " + err.Error()
 			outcomes = append(outcomes, outcome)
 			failures = append(failures, outcome)
 		} else {
-			outcomes = append(outcomes, s.path+": restored")
+			outcomes = append(outcomes, j.b.displayPath(s.path)+": restored")
 		}
 	}
 	for i := len(j.createdDirs) - 1; i >= 0; i-- {
@@ -931,11 +942,11 @@ func (j *mutationJournal) restore() ([]string, error) {
 			err = os.Remove(path)
 		}
 		if err != nil && !os.IsNotExist(err) {
-			outcome := path + ": restoration failed: " + err.Error()
+			outcome := j.b.displayPath(path) + ": restoration failed: " + err.Error()
 			outcomes = append(outcomes, outcome)
 			failures = append(failures, outcome)
 		} else {
-			outcomes = append(outcomes, path+": restored")
+			outcomes = append(outcomes, j.b.displayPath(path)+": restored")
 		}
 	}
 	if len(failures) != 0 {
@@ -1820,8 +1831,13 @@ func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged id
 		message := fmt.Sprintf("gitid: mutation %s failed: %v; restoration results: %s", target, cause, strings.Join(outcomes, "; "))
 		if restoreErr != nil {
 			// Restoration itself failed: the backups are the ONLY
-			// remaining recovery path.
-			message += "; timestamped backups retained: " + strings.Join(journal.backups, ", ")
+			// remaining recovery path. WR-01: display them the same
+			// `~/`-shortened way every other path in this message reads.
+			displayBackups := make([]string, len(journal.backups))
+			for i, backup := range journal.backups {
+				displayBackups[i] = b.displayPath(backup)
+			}
+			message += "; timestamped backups retained: " + strings.Join(displayBackups, ", ")
 		}
 		return nil, fmt.Errorf("%s", message)
 	}

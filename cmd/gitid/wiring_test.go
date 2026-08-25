@@ -1073,6 +1073,49 @@ func TestProviderFromAliasPreservesMultiLabelProvider(t *testing.T) {
 	}
 }
 
+// TestCommitGitReturnsDisplayShortenedBackupPaths proves the WR-01 fix: the
+// standalone Git ceremony's tea.Cmd must map every backup path through
+// b.displayPath before returning it in GitCommitMsg, exactly like
+// commitCreateTransaction already does for the combined flow. Before the
+// fix, CommitGit returned journal.backups verbatim — a full absolute
+// sandbox path that wraps across terminal rows in the receipt.
+func TestCommitGitReturnsDisplayShortenedBackupPaths(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_personal")
+	seedGeneratedKey(t, keyPath, "personal", "")
+	// Seed a pre-existing gitconfig so the write takes a real backup.
+	writeFile(t, filepath.Join(home, ".gitconfig"), "[core]\n\teditor = vi\n")
+	b := newBackendForHome(home)
+	cmd := b.CommitGit(tuikit.GitSpec{
+		Identity: "personal", Name: "Personal", Email: "personal@example.test", Strategy: "gitdir",
+		KeyPath: keyPath, PublicKeyPath: keyPath + ".pub", SSHHost: "personal.github.com",
+		Provider: "github.com", GitDir: "~/git/personal/", ForceSSH: true,
+	})
+	if cmd == nil {
+		t.Fatal("CommitGit returned nil")
+	}
+	msg, ok := cmd().(tuikit.GitCommitMsg)
+	if !ok {
+		t.Fatalf("CommitGit delivered %T, want GitCommitMsg", cmd())
+	}
+	if msg.Err != "" {
+		t.Fatalf("CommitGit: %v", msg.Err)
+	}
+	if len(msg.Backups) == 0 {
+		t.Fatal("CommitGit reported no backups despite a pre-existing gitconfig")
+	}
+	for _, backup := range msg.Backups {
+		if strings.HasPrefix(backup, home) {
+			t.Errorf("backup path %q is a raw absolute path, want the ~/-shortened display form", backup)
+		}
+		if !strings.HasPrefix(backup, "~/") {
+			t.Errorf("backup path %q does not start with ~/, want the display-shortened form", backup)
+		}
+	}
+}
+
 func TestGitTransactionDerivesProviderFromSSHHost(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
