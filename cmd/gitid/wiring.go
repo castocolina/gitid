@@ -1810,15 +1810,18 @@ func (b *realBackend) commitCreateTransactionLegacy(in identity.CreateInput, sta
 func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged identity.StagedKey, id tuikit.DemoIdentity) ([]string, error) {
 	journal := newMutationJournal(b)
 	fail := func(target string, cause error) ([]string, error) {
+		// CR-02: never delete the timestamped backups on the failure path —
+		// this mirrors commitGitArtifacts.fail's existing (correct)
+		// behavior and mutationJournal's own contract ("backups remain
+		// durable safety artifacts"). Deleting them here, especially when
+		// restore() itself failed, destroys the only durable recovery copy
+		// alongside a half-written file.
 		outcomes, restoreErr := journal.restore()
-		for _, backup := range journal.backups {
-			if err := os.Remove(backup); err != nil && !os.IsNotExist(err) {
-				outcomes = append(outcomes, backup+": restoration failed: "+err.Error())
-			}
-		}
 		message := fmt.Sprintf("gitid: mutation %s failed: %v; restoration results: %s", target, cause, strings.Join(outcomes, "; "))
 		if restoreErr != nil {
-			return nil, fmt.Errorf("%s", message)
+			// Restoration itself failed: the backups are the ONLY
+			// remaining recovery path.
+			message += "; timestamped backups retained: " + strings.Join(journal.backups, ", ")
 		}
 		return nil, fmt.Errorf("%s", message)
 	}

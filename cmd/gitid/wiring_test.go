@@ -1024,6 +1024,46 @@ func TestCombinedTransactionReportsRestorationFailure(t *testing.T) {
 	}
 }
 
+// TestCombinedTransactionRetainsBackupsWhenRestorationFails proves the CR-02
+// fix: commitCreateTransaction.fail must NEVER delete the timestamped
+// backups it took, especially when restore() itself fails — that is exactly
+// the case the backups exist for. Before the fix, fail() unconditionally
+// os.Remove'd every entry in journal.backups regardless of restoreErr,
+// destroying the only durable recovery copy alongside a half-written file.
+func TestCombinedTransactionRetainsBackupsWhenRestorationFails(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	fragment := filepath.Join(home, ".gitconfig.d", "personal")
+	if err := os.MkdirAll(filepath.Dir(fragment), 0o700); err != nil {
+		t.Fatalf("seeding fragment dir: %v", err)
+	}
+	writeFile(t, fragment, "[user]\n\tname = Before\n\temail = before@example.test\n")
+	b := newBackendForHome(home)
+	id := tuikit.DemoIdentity{Name: "personal", SSHHost: "personal.github.com", Hostname: "ssh.github.com", Port: 443, KeyPath: "~/.ssh/id_ed25519_personal", Provider: "github.com", GitConfigured: true, GitName: "After", GitEmail: "after@example.test", MatchStrategy: "gitdir"}
+	unlockStoreForIdentity(t, b, id)
+	b.failCommitAt = func(boundary string) error {
+		if boundary == "git-includeif" {
+			return fmt.Errorf("injected failure at git-includeif")
+		}
+		if strings.HasPrefix(boundary, "restore:") {
+			return fmt.Errorf("forced restoration failure")
+		}
+		return nil
+	}
+	msg := runCommitCreate(t, b, id)
+	if msg.Err == "" || !strings.Contains(msg.Err, "timestamped backups retained:") {
+		t.Fatalf("error = %q, want failure message to record retained backups", msg.Err)
+	}
+	matches, globErr := filepath.Glob(fragment + ".bak.*")
+	if globErr != nil {
+		t.Fatalf("globbing for retained fragment backup: %v", globErr)
+	}
+	if len(matches) == 0 {
+		t.Fatal("commitCreateTransaction.fail deleted the fragment backup after a failed restoration")
+	}
+}
+
 func TestProviderFromAliasPreservesMultiLabelProvider(t *testing.T) {
 	if got, want := providerFromAlias("work.github.com"), "github.com"; got != want {
 		t.Errorf("providerFromAlias(work.github.com) = %q, want %q", got, want)
@@ -1427,12 +1467,25 @@ func TestCommitTransactionRollsBackAfterEveryInjectedFailure(t *testing.T) {
 				t.Error("rollback left an empty transaction-created config.d directory behind")
 			}
 
-			// No stale backup from the failed transaction survive: the
-			// restored live config is byte-identical to its own backup, so
-			// the backup is redundant residue the rollback must clean up.
-			matches, _ := filepath.Glob(filepath.Join(home, ".ssh", "config.bak.*"))
-			if len(matches) != 0 {
-				t.Errorf("rollback left transaction backups behind: %v", matches)
+			// CR-02: the timestamped backup from the failed transaction MUST
+			// survive rollback. mutationJournal's own contract is that
+			// backups "remain durable safety artifacts" regardless of
+			// whether the in-memory restore succeeded; deleting them here
+			// would remove the only recovery path in the case restore()
+			// itself fails partway through.
+			if _, statErr := os.Stat(filepath.Join(home, ".ssh", "config")); statErr != nil {
+				t.Fatalf("restored ssh config missing after rollback: %v", statErr)
+			}
+			matches, globErr := filepath.Glob(filepath.Join(home, ".ssh", "config.bak.*"))
+			if globErr != nil {
+				t.Fatalf("globbing for retained ssh config backup: %v", globErr)
+			}
+			// Only steps that run AFTER the ssh config backup was taken
+			// (backup happens inside sshconfig.EnsureIncludeLine, which
+			// runs after the "include-line" injection point) can prove
+			// retention; earlier steps never produced a backup to retain.
+			if step == "host-block" && len(matches) == 0 {
+				t.Errorf("rollback deleted the ssh config backup it should have retained: %v", matches)
 			}
 		})
 	}
