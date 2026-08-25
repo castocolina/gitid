@@ -1037,9 +1037,11 @@ func CaptureCreateFlowScreens(backend tuikit.Backend) (map[string]string, error)
 	}
 	out["git-form-demo"] = capture(m)
 
-	// confirm-write: Skip Git (4 Tabs from user.name to the Skip button,
-	// then Enter) reaches the review ceremony (state A, unconfirmed).
-	m = tabN(m, 4)
+	// confirm-write: Skip Git (5 Tabs from user.name to the Skip button —
+	// name → email → strategy → Force SSH → Back → Skip, CR-06: Force SSH is
+	// now a wizard-ring member — then Enter) reaches the review ceremony
+	// (state A, unconfirmed).
+	m = tabN(m, 5)
 	m = keyEnter(m)
 	out["confirm-write"] = capture(m)
 	if exact, ok := captureViewportMarkers(m, []string{"~/.ssh/id_ed25519_acme"}, true); ok {

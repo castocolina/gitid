@@ -549,7 +549,7 @@ func TestCreateFlow_ReuseExistingEncryptedKeyClosesL2Seam(t *testing.T) {
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // -> step 2 (Git, demo'd)
 	mustSee(t, s, "Step 3/4", "advanced to the Git step")
 
-	tabKeys(s, 4) // -> Skip Git
+	tabKeys(s, 5) // name -> email -> strategy -> Force SSH -> Back -> Skip Git (CR-06)
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 	mustSee(t, s, `Create identity "acme"`, "review ceremony opens")
 
@@ -924,7 +924,7 @@ func TestCreateFlow_ConfirmationExactViewport(t *testing.T) {
 	mustSee(t, s, "Next: Git identity", "both stages complete")
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 	mustSee(t, s, "Step 3/4", "Git step")
-	tabKeys(s, 4)
+	tabKeys(s, 5) // name -> email -> strategy -> Force SSH -> Back -> Skip Git (CR-06)
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 	mustSee(t, s, "Create identity", "pre-write confirmation")
 	s.sendKey([]byte("v"), keystrokeDelay)

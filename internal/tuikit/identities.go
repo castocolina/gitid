@@ -493,57 +493,118 @@ func (f sshForm) view(focus int, prefixError, hostHelper string, validation *Val
 // GitFormFields).
 // ---------------------------------------------------------------------------
 
-// Git form focus slots — the three fields the WIZARD's own step 2 actually
-// renders and Tab-cycles through. ForceSSH and gitDir are declared further
-// below, deliberately numbered OUTSIDE this block (CR-04).
+// Git form focus slots — the three fields BOTH the wizard's own step 2 and
+// the configure-Git pane render.
 const (
 	gitFieldName = iota
 	gitFieldEmail
 	gitFieldStrategy
 )
 
-// Wizard Git-step focus ring — the three fields above, then the three REAL
-// focusable controls the web renders as buttons (review batch 2, M2:
-// Back / Skip Git / Continue; Ctrl+S is gone — it collides with
-// XOFF flow control on IXON terminals).
-const (
-	gitFocusBack = iota + gitFieldStrategy + 1
-	gitFocusSkip
-	gitFocusContinue
-	wizardGitFocusSlots
-)
-
-// gitFieldForceSSH and gitFieldGitDir are PANE-only fields: the wizard never
-// renders or edits them (its Git step only shows Name/Email/Strategy — the
-// "gitdir path" row and the Force-SSH toggle are configure-Git-pane
-// controls, reached there via direct mouse click / ctrl+g, not Tab-cycling).
-//
-// CR-04: they MUST be numbered strictly AFTER wizardGitFocusSlots (i.e.
-// after Back/Skip/Continue), never right after gitFieldStrategy. Sitting at
-// gitFieldStrategy+1/+2 numerically aliased them onto gitFocusBack and
-// gitFocusSkip (both 3 and 4 respectively), so a keystroke aimed at the
-// wizard's Back or Skip Git button reached gitForm.handleEdit's
-// gitFieldForceSSH/gitFieldGitDir cases instead — typing while focused on
-// Skip Git silently edited the wizard's hidden gitdir input.
-const (
-	gitFieldForceSSH = wizardGitFocusSlots + iota
-	gitFieldGitDir
-)
-
-// Compile-time guard: the field/focus namespaces must never numerically
-// overlap again. This is a compile error (negative array length) the
-// moment gitFieldForceSSH drops to or below the wizard's own button ring.
-var _ [gitFieldForceSSH - wizardGitFocusSlots]struct{}
-
 // gitPaneFocusButton is the configure-Git pane's extra focus slot: the
 // `Write it…` button after the pane's three Tab-reachable fields (Name /
-// Email / Strategy — ForceSSH and gitDir are reached via direct mouse
-// click / ctrl+g, matching the wizard's own field/button split, so they are
-// never part of this modulus ring either).
+// Email / Strategy). gitPaneFocusRing is the pane's own Tab/Shift+Tab ring —
+// deliberately the CONTIGUOUS range [0, gitPaneFocusButton], so the pane's
+// raw `(m.gitFocus+1) % gitPaneFocusRing` arithmetic stays correct.
+// ForceSSH and gitDir are reached in the pane via direct mouse click /
+// ctrl+g only, never Tab-cycled, so they must stay OUTSIDE this range.
 const (
 	gitPaneFocusButton = gitFieldStrategy + 1
 	gitPaneFocusRing   = gitPaneFocusButton + 1
 )
+
+// gitFieldForceSSH and gitFieldGitDir are reached via direct mouse click in
+// the configure-Git pane (never Tab-cycled there — see gitPaneFocusRing
+// above). gitFieldForceSSH is ALSO reachable via Tab in the WIZARD's own
+// step-2 ring (wizardGitFocusOrder below) — CR-06: gitForm.view() DOES
+// render and bold the Force-SSH row for the wizard (it is the exact same
+// shared component the pane uses, D-06), so CR-04's premise that "the
+// wizard never renders or edits" it was false, and numbering it after every
+// ring left it clickable-but-inert with a misrouted Tab/Enter.
+//
+// Their raw values sit immediately after gitPaneFocusRing specifically so
+// they can never numerically alias gitPaneFocusButton (CR-04's actual
+// concern, still true) while remaining distinct, individually-dispatched
+// constants for gitForm.view/handleEdit. They are deliberately NOT
+// contiguous with gitFieldStrategy — that slot is already gitPaneFocusButton
+// — which is exactly why the wizard's own ring below cycles by explicit
+// slice position, not raw modulo arithmetic (see wizardGitFocusOrder).
+const (
+	gitFieldForceSSH = gitPaneFocusRing + iota
+	gitFieldGitDir
+)
+
+// gitFocusBack/Skip/Continue are the wizard's three real button controls
+// (review batch 2, M2: Back / Skip Git / Continue; Ctrl+S is gone — it
+// collides with XOFF flow control on IXON terminals). Their raw values only
+// need to be pairwise distinct from every other wizard-relevant constant —
+// see wizardGitFocusOrder/isWizardGitField below, which dispatch by explicit
+// membership, never by an ordinal `<`/`>=` comparison against these.
+const (
+	gitFocusBack = gitFieldGitDir + 1 + iota
+	gitFocusSkip
+	gitFocusContinue
+)
+
+// wizardGitFocusOrder is the wizard's own step-2 keyboard focus ring, in Tab
+// order — CR-06 fix. Cycling is by explicit slice position (see
+// wizardGitFocusStep), NOT raw modulo arithmetic over the constants' numeric
+// values: gitFieldForceSSH's value is deliberately non-contiguous with
+// gitFieldStrategy's (gitPaneFocusButton already owns that slot — see
+// above), so naive `(focus+1) % N` would either land Tab on a phantom stop
+// (the gap) or force ForceSSH to alias the pane's button. gitFieldGitDir is
+// intentionally absent: the wizard never renders a gitdir row — that is the
+// configure-Git pane's own addition on top of the shared gitForm.view().
+var wizardGitFocusOrder = []int{
+	gitFieldName, gitFieldEmail, gitFieldStrategy, gitFieldForceSSH,
+	gitFocusBack, gitFocusSkip, gitFocusContinue,
+}
+
+// isWizardGitField reports whether focus is one of the wizard's EDITABLE
+// field slots (routed to gitForm.handleEdit), as opposed to one of its three
+// button slots (Back/Skip/Continue — non-editing focus regions).
+//
+// This is an explicit, exhaustive membership switch, not an ordinal
+// `focus < gitFocusBack` comparison. CR-06 review note: a zero-length-array
+// compile-time guard (or an ordinal comparison) only catches a value
+// dropping BELOW a single threshold — it cannot catch an out-of-ring value
+// fed in some other way (e.g. a shared click table routing a slot that was
+// never wired into this ring). An unrecognized focus value returns false
+// here, so it is treated as "not editable" rather than silently
+// misinterpreted as a button or reaching handleEdit with the wrong case.
+func isWizardGitField(focus int) bool {
+	switch focus {
+	case gitFieldName, gitFieldEmail, gitFieldStrategy, gitFieldForceSSH:
+		return true
+	default:
+		return false
+	}
+}
+
+// wizardGitFocusIndex returns focus's position in wizardGitFocusOrder, or -1
+// if focus is not a member of the wizard's own ring.
+func wizardGitFocusIndex(focus int) int {
+	for i, v := range wizardGitFocusOrder {
+		if v == focus {
+			return i
+		}
+	}
+	return -1
+}
+
+// wizardGitFocusStep returns the ring member delta positions away from
+// focus, wrapping — the wizard's Tab (delta=1) / Shift+Tab (delta=-1)
+// primitive. Defaults to the ring's first member if focus is not currently a
+// recognized member (defense-in-depth: never trust an externally-set
+// w.gitFocus is in-ring).
+func wizardGitFocusStep(focus, delta int) int {
+	n := len(wizardGitFocusOrder)
+	i := wizardGitFocusIndex(focus)
+	if i < 0 {
+		return wizardGitFocusOrder[0]
+	}
+	return wizardGitFocusOrder[((i+delta)%n+n)%n]
+}
 
 // matchStrategies are the includeIf strategies in select order.
 var matchStrategies = []string{"gitdir", "hasconfig", "both"}
@@ -573,6 +634,16 @@ type gitForm struct {
 	publicKeyPath string
 	forceSSH      bool
 	gitDirFocused bool
+	// gitDirEdited is CR-07's fix: true once gitDir carries an AUTHORITATIVE
+	// value — either the user typed into it (handleEdit's gitFieldGitDir
+	// case) or the pane loaded a genuine stored path in edit mode
+	// (openGitForm, when sel.GitDir != ""). While false, gitDirFor always
+	// RE-DERIVES "~/git/<identity>/" from the identity name passed in at
+	// read time, rather than trusting gitDir's stale seeded text — this is
+	// what makes the wizard's preview and write track a renamed identity: the
+	// wizard never renders a gitdir row (D-06), so it can never set this to
+	// true, and always gets the live default.
+	gitDirEdited bool
 	// original is populated for edit mode and drives a changed-lines-only
 	// review; create mode leaves it zero-valued.
 	original GitOriginal
@@ -605,12 +676,28 @@ func (g gitForm) spec(identity, keyPath string) GitSpec {
 		Strategy:      g.strategy(),
 		KeyPath:       keyPath,
 		PublicKeyPath: orDefault(g.publicKeyPath, keyPath+".pub"),
-		GitDir:        normalizeGitDir(g.gitDir.Value(), identity),
+		GitDir:        g.gitDirFor(identity),
 		ForceSSH:      g.forceSSH,
 		SSHHost:       g.sshHost,
 		Provider:      g.provider,
 		Original:      g.original,
 	}
+}
+
+// gitDirFor returns the effective gitdir for identity — CR-07 fix. While the
+// field carries no authoritative value (gitDirEdited is false), it is
+// RE-DERIVED from identity every call, tracking a renamed identity live —
+// this is what the wizard needs, since newGitForm seeds gitDir once, at
+// wizard-construction time, from whatever the alias prefix defaults to
+// (typically the hardcoded "acme" placeholder), before the user has had a
+// chance to change it. Once the field DOES carry an authoritative value
+// (the user typed into it, or the configure-Git pane loaded a genuine
+// stored path in edit mode), it wins verbatim via normalizeGitDir.
+func (g gitForm) gitDirFor(identity string) string {
+	if !g.gitDirEdited {
+		return "~/git/" + identity + "/"
+	}
+	return normalizeGitDir(g.gitDir.Value(), identity)
 }
 
 func providerFromSSHHost(alias string) string {
@@ -709,6 +796,10 @@ func (g gitForm) handleEdit(msg tea.KeyMsg, focus int) gitForm {
 	case gitFieldGitDir:
 		if g.strategy() != "hasconfig" {
 			g.gitDir, _ = updateInput(g.gitDir, msg)
+			// CR-07: a real keystroke makes this an authoritative,
+			// user-owned value — gitDirFor must stop re-deriving the
+			// identity-based default once the user has touched this field.
+			g.gitDirEdited = true
 		}
 	}
 	return g
@@ -1888,6 +1979,12 @@ func (m identitiesModel) openGitForm(sel DemoIdentity) identitiesModel {
 	}
 	m.gitPaneForm.publicKeyPath = sel.PublicKeyPath
 	m.gitPaneForm.gitDir.SetValue(orDefault(sel.GitDir, "~/git/"+sel.Name+"/"))
+	if sel.GitDir != "" {
+		// CR-07: a genuine stored gitdir (edit mode) is an authoritative
+		// value the pane loaded, not a placeholder guess — gitDirFor must
+		// preserve it verbatim rather than re-deriving the identity default.
+		m.gitPaneForm.gitDirEdited = true
+	}
 	// WR-07: textinput.SetValue only re-homes the caret when the field was
 	// EMPTY (see applyProviderDefaults above) — this field is non-empty at
 	// construction (newGitForm seeds it), so without this the caret stays
@@ -2412,12 +2509,12 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			m.wizard = w
 			return keyResult{model: m, handled: true}
 		case "tab", "down":
-			w.gitFocus = (w.gitFocus + 1) % wizardGitFocusSlots
+			w.gitFocus = wizardGitFocusStep(w.gitFocus, 1)
 			w.git = w.git.setFocus(w.gitFocus)
 			m.wizard = w
 			return keyResult{model: m, handled: true}
 		case "shift+tab", "up":
-			w.gitFocus = (w.gitFocus + wizardGitFocusSlots - 1) % wizardGitFocusSlots
+			w.gitFocus = wizardGitFocusStep(w.gitFocus, -1)
 			w.git = w.git.setFocus(w.gitFocus)
 			m.wizard = w
 			return keyResult{model: m, handled: true}
@@ -2428,7 +2525,7 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			// the field/button ring moves via Tab/Shift+Tab/Up/Down only).
 			// A field or the expanded strategy select still owns <-/-> via
 			// the fallthrough to handleEdit below (clauses 1/2).
-			if w.gitFocus >= gitFocusBack {
+			if !isWizardGitField(w.gitFocus) {
 				if key == "left" {
 					w.step = 1
 				} else if enabled, _ := w.gitContinueGate(); enabled {
@@ -2441,12 +2538,13 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			}
 			fallthrough
 		default:
-			// CR-04: never route a button slot (Back/Skip/Continue) into
-			// gitForm.handleEdit — defense-in-depth alongside the
-			// non-overlapping enum ranges above, so a future renumbering
-			// mistake still can't make a keystroke aimed at a button edit a
-			// hidden field.
-			if w.gitFocus < gitFocusBack {
+			// CR-04/CR-06: never route a button slot (Back/Skip/Continue),
+			// or any focus value outside the wizard's own ring, into
+			// gitForm.handleEdit — isWizardGitField is an exhaustive
+			// membership check, not an ordinal comparison, so this still
+			// holds regardless of how w.gitFocus got set (Tab cycling or a
+			// shared click table).
+			if isWizardGitField(w.gitFocus) {
 				w.git = w.git.handleEdit(msg, w.gitFocus)
 			}
 			m.wizard = w

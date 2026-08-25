@@ -342,9 +342,9 @@ func TestCeremonyDestructiveArrowsStayOnTypedInput(t *testing.T) {
 // TestWizardGitStepButtonsAreFocusable).
 func TestWizardGitButtonsArrowNavigatesWizardSteps(t *testing.T) {
 	a := wizardThroughTest(t, identitiesApp())
-	a = pressSeq(t, a, "tab", "tab", "tab") // → Back button (non-editing focus)
+	a = pressSeq(t, a, "tab", "tab", "tab", "tab") // → Back button (non-editing focus; CR-06: Force SSH is now a ring member)
 	if got := identModel(t, a).wizard.gitFocus; got != gitFocusBack {
-		t.Fatalf("gitFocus = %d after 3 tabs, want Back (%d)", got, gitFocusBack)
+		t.Fatalf("gitFocus = %d after 4 tabs, want Back (%d)", got, gitFocusBack)
 	}
 	// Forward is validity-gated (the default git form values are valid) —
 	// never a validity override, even from the Back button's focus.
@@ -407,7 +407,10 @@ func TestReservedFooterHonestInKeyConsumingStates(t *testing.T) {
 			return pressSeq(t, identitiesApp(), "n", "tab", "tab", "tab", "tab") // prefix → … → algorithm
 		}},
 		{"wizard git buttons", func(t *testing.T) App {
-			return pressSeq(t, wizardThroughTest(t, identitiesApp()), "tab", "tab", "tab")
+			// name → email → strategy → Force SSH → Back (CR-06: Force SSH
+			// is now a wizard-ring member, so it takes 4 tabs, not 3, to
+			// land on the first actual button).
+			return pressSeq(t, wizardThroughTest(t, identitiesApp()), "tab", "tab", "tab", "tab")
 		}},
 		{"delete-scope chooser", func(t *testing.T) App { return pressSeq(t, identitiesApp(), "d") }},
 		{"global ssh apply ceremony", func(t *testing.T) App { return pressSeq(t, NewApp(stubBackend{}), "2", "a") }},

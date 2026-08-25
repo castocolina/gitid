@@ -916,10 +916,10 @@ func TestReachableNotUploadedStoresKeyUnusedCopy(t *testing.T) {
 	a := wizardToStep2(t, identitiesApp())
 	a, _ = press(t, a, "space") // preview the D-02 warning path
 	a, _ = press(t, a, "enter")
-	a = completeStage(t, a, 1)                     // stage-1 warning auto-chains into stage 2 (D-04)
-	a, _ = press(t, a, "enter")                    // → step 2 Git identity
-	a = pressSeq(t, a, "tab", "tab", "tab", "tab") // → Skip button
-	a, _ = press(t, a, "enter")                    // activate [ Skip Git ] → ceremony
+	a = completeStage(t, a, 1)                            // stage-1 warning auto-chains into stage 2 (D-04)
+	a, _ = press(t, a, "enter")                           // → step 2 Git identity
+	a = pressSeq(t, a, "tab", "tab", "tab", "tab", "tab") // → Skip button (CR-06: Force SSH is now a ring member)
+	a, _ = press(t, a, "enter")                           // activate [ Skip Git ] → ceremony
 
 	pane := paneFlat(a)
 	if !strings.Contains(pane, `Create identity "acme2" — ed25519, reachable — key not uploaded yet`) {
@@ -1035,12 +1035,13 @@ func TestWizardStrategySelectShowsAllThreeOptions(t *testing.T) {
 
 func TestWizardSkipCreatesIncompleteIdentity(t *testing.T) {
 	a := wizardThroughTest(t, identitiesApp())
-	// Tab past name/email/strategy/Back to the Skip button, then Enter (M2 —
-	// Skip is a real focusable control, not a Ctrl+S chord).
-	a = pressSeq(t, a, "tab", "tab", "tab", "tab")
+	// Tab past name/email/strategy/Force SSH/Back to the Skip button, then
+	// Enter (M2 — Skip is a real focusable control, not a Ctrl+S chord;
+	// CR-06: Force SSH is now a wizard-ring member too).
+	a = pressSeq(t, a, "tab", "tab", "tab", "tab", "tab")
 	m := identModel(t, a)
 	if m.wizard.gitFocus != gitFocusSkip {
-		t.Fatalf("gitFocus = %d after 4 tabs, want the Skip button (%d)", m.wizard.gitFocus, gitFocusSkip)
+		t.Fatalf("gitFocus = %d after 5 tabs, want the Skip button (%d)", m.wizard.gitFocus, gitFocusSkip)
 	}
 	a, _ = press(t, a, "enter") // activate [ Skip Git ]
 	if !strings.Contains(appView(a), `Create identity "acme2"`) {
@@ -1085,7 +1086,7 @@ func TestWizardGitContinueForcedDisabledByBackend(t *testing.T) {
 	}
 
 	// Skip Git remains the ONLY functional path forward (D-18).
-	a = pressSeq(t, a, "tab", "tab", "tab", "tab") // name → email → strategy → Back → Skip
+	a = pressSeq(t, a, "tab", "tab", "tab", "tab", "tab") // name → email → strategy → Force SSH → Back → Skip (CR-06)
 	if identModel(t, a).wizard.gitFocus != gitFocusSkip {
 		t.Fatalf("gitFocus = %d, want Skip", identModel(t, a).wizard.gitFocus)
 	}
@@ -1369,24 +1370,28 @@ func TestWizardGitStepButtonsAreFocusable(t *testing.T) {
 		t.Error("Ctrl+S must be gone — it is an XOFF hazard on IXON terminals")
 	}
 
-	// Tab ring: name → email → strategy → Back → Skip → Continue → name.
-	a = pressSeq(t, a, "tab", "tab", "tab")
+	// Tab ring (CR-06: Force SSH is a wizard-ring member too):
+	// name → email → strategy → Force SSH → Back → Skip → Continue → name.
+	a = pressSeq(t, a, "tab", "tab", "tab", "tab")
 	m := identModel(t, a)
 	if m.wizard.gitFocus != gitFocusBack {
-		t.Fatalf("gitFocus = %d after 3 tabs, want Back (%d)", m.wizard.gitFocus, gitFocusBack)
+		t.Fatalf("gitFocus = %d after 4 tabs, want Back (%d)", m.wizard.gitFocus, gitFocusBack)
 	}
 	// The focused button renders reverse-video like the ceremony buttons.
 	raw := a.View().Content
 	if !strings.Contains(raw, "\x1b[1;7m Back (Esc) ") && !strings.Contains(raw, "\x1b[7;1m Back (Esc) ") {
 		t.Error("focused Back button must render reverse-video")
 	}
+	// From Back, the three trailing ring members (Skip, Continue, wrap) are
+	// still exactly 3 tabs away, regardless of where Force SSH sits earlier
+	// in the ring.
 	a = pressSeq(t, a, "tab", "tab", "tab")
 	if got := identModel(t, a).wizard.gitFocus; got != gitFieldName {
 		t.Errorf("gitFocus = %d after the full ring, want name (%d)", got, gitFieldName)
 	}
 
 	// Enter on Back returns to the test step; ctrl+s does nothing.
-	a = pressSeq(t, a, "tab", "tab", "tab") // → Back
+	a = pressSeq(t, a, "tab", "tab", "tab", "tab") // → Back
 	a, _ = press(t, a, "enter")
 	if got := identModel(t, a).wizard.step; got != 1 {
 		t.Fatalf("Enter on Back: step = %d, want 1", got)
@@ -1406,38 +1411,42 @@ func TestWizardGitStepEnterOnFieldStillContinues(t *testing.T) {
 	}
 }
 
-// TestWizardGitStepButtonFocusNeverEditsHiddenFields proves the CR-04 fix:
-// gitField* (Name/Email/Strategy) and the wizard's own gitFocus* button ring
-// (Back/Skip/Continue) must never numerically collide, so a keystroke aimed
-// at a button can never reach gitForm.handleEdit's field cases. Before the
-// fix, gitFieldForceSSH==gitFocusBack==3 and gitFieldGitDir==gitFocusSkip==4,
-// so typing while focused on Skip Git silently mutated the wizard's hidden
-// (never rendered) gitdir input, corrupting the includeIf/matchesFor preview.
+// TestWizardGitStepButtonFocusNeverEditsHiddenFields proves the CR-04 fix
+// (and, since gitFieldGitDir is the only field still hidden from the wizard
+// after CR-06, that it still holds): the wizard's button ring
+// (Back/Skip/Continue) and gitFieldGitDir must never numerically collide, so
+// a keystroke aimed at a button can never reach gitForm.handleEdit's
+// gitFieldGitDir case. Before the CR-04 fix, gitFieldForceSSH==gitFocusBack==3
+// and gitFieldGitDir==gitFocusSkip==4, so typing while focused on Skip Git
+// silently mutated the wizard's hidden (never rendered) gitdir input,
+// corrupting the includeIf/matchesFor preview. CR-06 later made Force SSH a
+// real, Tab-reachable wizard-ring field (it IS rendered — see
+// TestWizardGitStepButtonsAreFocusable) — only gitdir remains hidden.
 func TestWizardGitStepButtonFocusNeverEditsHiddenFields(t *testing.T) {
 	a := wizardThroughTest(t, identitiesApp())
 	before := identModel(t, a).wizard.gitSpec().GitDir
 
-	// Tab: Name -> Email -> Strategy -> Back. Space is not an explicit case
-	// in the step-2 key switch, so it falls to the default branch — exactly
-	// the path that used to reach gitForm.handleEdit with a button's focus
-	// value.
-	a = pressSeq(t, a, "tab", "tab", "tab")
+	// Tab: Name -> Email -> Strategy -> Force SSH -> Back. Space is not an
+	// explicit case in the step-2 key switch, so it falls to the default
+	// branch — exactly the path that used to reach gitForm.handleEdit with a
+	// button's focus value.
+	a = pressSeq(t, a, "tab", "tab", "tab", "tab")
 	if got := identModel(t, a).wizard.gitFocus; got != gitFocusBack {
-		t.Fatalf("gitFocus = %d after 3 tabs, want gitFocusBack (%d)", got, gitFocusBack)
+		t.Fatalf("gitFocus = %d after 4 tabs, want gitFocusBack (%d)", got, gitFocusBack)
 	}
 	a, _ = press(t, a, " ")
 	if got := identModel(t, a).wizard.gitSpec().GitDir; got != before {
 		t.Errorf("a keystroke on the Back button mutated gitdir: got %q, want unchanged %q", got, before)
 	}
 	if identModel(t, a).wizard.git.forceSSH != true {
-		t.Error("a keystroke on the Back button must not toggle the (unrendered) Force-SSH checkbox")
+		t.Error("a keystroke on the Back button must not toggle Force SSH — it is focused, but Back is")
 	}
 
 	// Tab once more: Back -> Skip. Typing a letter here used to edit the
 	// hidden gitdir field.
 	a, _ = press(t, a, "tab")
 	if got := identModel(t, a).wizard.gitFocus; got != gitFocusSkip {
-		t.Fatalf("gitFocus = %d after 4 tabs, want gitFocusSkip (%d)", got, gitFocusSkip)
+		t.Fatalf("gitFocus = %d after 5 tabs, want gitFocusSkip (%d)", got, gitFocusSkip)
 	}
 	a, _ = press(t, a, "x")
 	if got := identModel(t, a).wizard.gitSpec().GitDir; got != before {
@@ -1618,7 +1627,7 @@ func TestWizardArrowKeyPrecedenceStep2(t *testing.T) {
 	// Clause 3: a button-slot focus (non-editing region) now performs
 	// wizard-step navigation — replacing the old button-ring-arrow
 	// behavior.
-	a = pressSeq(t, a, "tab") // strategy → Back
+	a = pressSeq(t, a, "tab", "tab") // strategy → Force SSH → Back (CR-06)
 	a, _ = press(t, a, "right")
 	if got := identModel(t, a).wizard.step; got != 3 {
 		t.Errorf("clause 3: right from a button slot must advance (validity-gated); step=%d", got)
@@ -2139,6 +2148,35 @@ func TestWizardGitDirPreviewMatchesWrite(t *testing.T) {
 	}
 }
 
+// TestWizardGitDirTracksRenamedIdentity proves the CR-07 fix: newGitForm's
+// gitDir seed is evaluated ONCE at wizard-construction time, from the
+// hardcoded "acme" default prefix — before the user has had any chance to
+// edit it. CR-03 made the preview and the write agree with EACH OTHER, but
+// both still converged on that stale "acme" seed: renaming the identity
+// left both the preview and the actual write pointing at "~/git/acme/"
+// instead of the real identity's directory (violating 04-UI-SPEC.md D-07).
+// gitDirFor's live re-derivation (spec()) fixes this by never trusting the
+// seeded text at all while the wizard's gitdir field is unedited (it is
+// ALWAYS unedited in the wizard — the wizard never renders a gitdir row).
+func TestWizardGitDirTracksRenamedIdentity(t *testing.T) {
+	w := newWizard(stubBackend{})
+	w.configureGit = true
+	w.form.prefix.SetValue("work")
+	if got, want := w.form.identityName(), "work"; got != want {
+		t.Fatalf("setup: identityName() = %q, want %q", got, want)
+	}
+	const want = "~/git/work/"
+	if got := w.gitSpec().GitDir; got != want {
+		t.Errorf("gitSpec().GitDir after renaming the identity = %q, want %q", got, want)
+	}
+	if got := w.finishIdentity().GitDir; got != want {
+		t.Errorf("finishIdentity().GitDir after renaming the identity = %q, want %q", got, want)
+	}
+	if got := w.gitSpec().GitDir; got != w.finishIdentity().GitDir {
+		t.Errorf("preview (%q) and write (%q) disagree", got, w.finishIdentity().GitDir)
+	}
+}
+
 // TestGitCeremonyNotesSharedProviderRewriteWhenForceSSHOff proves the WR-05
 // fix: the configure-Git write ceremony must explicitly say the shared
 // provider-rewrite block is left in place when Force SSH is off — before
@@ -2203,6 +2241,9 @@ func TestGitFlowFieldsUseEmptySSHOnlyValuesAndExactHostPreview(t *testing.T) {
 	m.gitPaneForm.email.SetValue("work@example.test")
 	m.gitPaneForm.strategyIdx = 1 // hasconfig
 	m.gitPaneForm.gitDir.SetValue("~/src/work")
+	// CR-07: a direct SetValue (bypassing handleEdit) simulates the same
+	// user-owned-value state a real keystroke would set on gitDirEdited.
+	m.gitPaneForm.gitDirEdited = true
 	spec := m.gitPaneForm.spec("work", "~/.ssh/id_ed25519_work")
 	if got, want := spec.SSHHost, "corp.github.example"; got != want {
 		t.Fatalf("GitSpec SSHHost = %q, want %q", got, want)
@@ -2269,12 +2310,40 @@ func TestGitFormFieldSlotsNeverAliasPaneWriteButton(t *testing.T) {
 	}
 }
 
+// TestWizardClickTableEntriesAreAllWizardRingMembers is the load-bearing
+// guard CR-06 asks for: gitFormFieldSlots is explicitly documented as
+// "shared by the wizard step 2 AND Configure-Git click handlers" (its own
+// doc comment), so every slot it can route a click to must be reachable
+// through the WIZARD's own focus ring (wizardGitFocusOrder) too — otherwise
+// a click on that row in the wizard sets w.gitFocus to a value neither
+// isWizardGitField nor the button-focus checks recognize, exactly CR-06's
+// bug (gitFieldForceSSH landed outside every ring: clickable via this same
+// table, but inert to space/Tab/Enter once focused).
+//
+// Unlike the CR-04-era zero-length-array compile-time trick — which only
+// caught a value dropping BELOW a single fixed threshold — this is an
+// exhaustive membership check against the ring the wizard's own Tab/click
+// code actually indexes into. It fails for ANY future entry added to
+// gitFormFieldSlots that is not also wired into wizardGitFocusOrder,
+// including an out-of-range value in either direction.
+func TestWizardClickTableEntriesAreAllWizardRingMembers(t *testing.T) {
+	for _, f := range gitFormFieldSlots {
+		if !isWizardGitField(f.slot) {
+			t.Errorf("gitFormFieldSlots entry %q (slot %d) is not a member of the wizard's own focus ring (wizardGitFocusOrder) — a click on this row in the wizard would misroute", f.label, f.slot)
+		}
+	}
+}
+
 func TestGitFlowForceSSHToggleAndGitDirProjection(t *testing.T) {
 	form := newGitForm(stubBackend{}, "personal", "Personal", "personal@example.test", "gitdir")
 	form.provider = "github.com"
 	form.publicKeyPath = "~/.ssh/id_personal.pub"
 	form = form.handleEdit(mustKey("space"), gitFieldForceSSH)
 	form.gitDir.SetValue("~/repos/personal")
+	// CR-07: gitDirFor only trusts gitDir's text once the field is marked
+	// edited — a direct SetValue (bypassing handleEdit) simulates the same
+	// user-owned-value state a real keystroke would set.
+	form.gitDirEdited = true
 	spec := form.spec("personal", "~/.ssh/id_personal")
 	if spec.ForceSSH || spec.GitDir != "~/repos/personal/" || spec.PublicKeyPath != "~/.ssh/id_personal.pub" || spec.Provider != "github.com" {
 		t.Errorf("GitSpec projection = %+v", spec)
@@ -2687,7 +2756,9 @@ func TestGitContinueHintAlwaysVisible(t *testing.T) {
 func TestConfirmSentinelViewportShowsBeginEnd(t *testing.T) {
 	// Navigate to step 3 (confirm-write ceremony) by skipping Git.
 	a := openWizardAtGitStep(t, stubBackend{})
-	for i := 0; i < 4; i++ { // to Skip button
+	// CR-06: name → email → strategy → Force SSH → Back → Skip is 5 tabs now
+	// that Force SSH is a wizard-ring member.
+	for i := 0; i < 5; i++ { // to Skip button
 		a, _ = press(t, a, "tab")
 	}
 	a, _ = press(t, a, "enter")
@@ -2711,7 +2782,7 @@ func TestConfirmSentinelViewportShowsBeginEnd(t *testing.T) {
 // Pillar 4 BLOCKER: confirm-write.txt showed "~/.ssh/id…" truncation).
 func TestConfirmFullKeyPathVisible(t *testing.T) {
 	a := openWizardAtGitStep(t, stubBackend{})
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 5; i++ { // name → email → strategy → Force SSH → Back → Skip (CR-06)
 		a, _ = press(t, a, "tab")
 	}
 	a, _ = press(t, a, "enter")
@@ -2815,7 +2886,7 @@ func TestProofViewport(t *testing.T) {
 
 func TestConfirmationViewportRoutesAdvertisedControls(t *testing.T) {
 	a := openWizardAtGitStep(t, stubBackend{})
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 5; i++ { // name → email → strategy → Force SSH → Back → Skip (CR-06)
 		a, _ = press(t, a, "tab")
 	}
 	a, _ = press(t, a, "enter")
@@ -2830,7 +2901,7 @@ func TestConfirmationViewportRoutesAdvertisedControls(t *testing.T) {
 
 func TestConfirmationViewport(t *testing.T) {
 	a := openWizardAtGitStep(t, stubBackend{})
-	for range 4 {
+	for range 5 { // name → email → strategy → Force SSH → Back → Skip (CR-06)
 		a, _ = press(t, a, "tab")
 	}
 	a, _ = press(t, a, "enter")
