@@ -251,12 +251,21 @@ func extractGitPreview(lines []string) string {
 
 // extractGitCeremony returns the Configure-Git write-ceremony pane's content
 // — from its heading ("Write Git identity for …") or its receipt heading
-// (the "… configured" result message) through the end of the frame.
+// (the "… configured — applies via" result message) through the end of the
+// frame.
 func extractGitCeremony(lines []string) string {
 	start := -1
 	for i, line := range lines {
 		rpPlain := stripANSI(rightPane(line))
-		if strings.Contains(rpPlain, "Write Git identity") || strings.Contains(rpPlain, "configured") {
+		// WR-10: "configured — applies via" (the exact receipt heading built
+		// by identities.go's gitCeremonyFor: `Git identity "<name>" configured
+		// — applies via the <strategy> strategy.`) is the actual marker — a
+		// bare "configured" false-positives on any OTHER line that happens to
+		// mention it, e.g. the sidebar note "no Git identity configured for
+		// this alias", or a future "Not configured" status. This mirrors the
+		// same hardening extractConnectivityOutput's "ssh " -> "ssh -" already
+		// applied to this class of over-broad marker.
+		if strings.Contains(rpPlain, "Write Git identity") || strings.Contains(rpPlain, "configured — applies via") {
 			start = i
 			break
 		}

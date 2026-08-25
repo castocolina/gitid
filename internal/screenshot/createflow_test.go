@@ -85,6 +85,48 @@ func TestCaptureCreateFlowScreens_Deterministic(t *testing.T) {
 	}
 }
 
+// TestExtractRegion_GitCeremonySkipsUnrelatedConfiguredMention proves the
+// WR-10 fix: extractGitCeremony's start marker must not fire on ANY line
+// merely containing the substring "configured" — only the real receipt
+// heading ("… configured — applies via …") or the ceremony's own
+// "Write Git identity" heading. Before the fix, the sidebar note "no Git
+// identity configured for this alias" (present on an incomplete identity's
+// detail row, ABOVE the actual ceremony content) started the region early
+// and shifted the whole comparison.
+func TestExtractRegion_GitCeremonySkipsUnrelatedConfiguredMention(t *testing.T) {
+	screen := "" +
+		" gitid   [1] Identities                                          1 ids · ! 1\n" +
+		" Identities › acme\n" +
+		"▸ ! acme                          S✓ G–    │ no Git identity configured for this alias\n" +
+		"                                            │\n" +
+		"                                            │ Write Git identity for \"acme\"\n" +
+		"                                            │ [ Write it ]\n"
+	region := screenshot.ExtractRegion(screen, screenshot.RegionGitCeremony)
+	if strings.Contains(region, "no Git identity configured for this alias") {
+		t.Errorf("RegionGitCeremony started on the unrelated sidebar note, not the real ceremony heading:\n%s", region)
+	}
+	if !strings.Contains(region, "Write Git identity for") {
+		t.Errorf("RegionGitCeremony missing the real ceremony heading:\n%s", region)
+	}
+}
+
+// TestExtractRegion_GitCeremonyMatchesReceiptHeading proves the narrowed
+// marker still fires on the ACTUAL receipt heading text gitCeremonyFor
+// builds ('Git identity "<name>" configured — applies via the <strategy>
+// strategy.'), not just the ceremony's pre-confirm heading.
+func TestExtractRegion_GitCeremonyMatchesReceiptHeading(t *testing.T) {
+	screen := "" +
+		" gitid   [1] Identities                                          1 ids · ! 1\n" +
+		" Identities › acme\n" +
+		"▸ ✓ acme                          S✓ G✓    │ Git identity \"acme\" configured — applies via the gitdir\n" +
+		"                                            │ strategy.\n" +
+		"                                            │ Wrote → ~/.gitconfig.d/acme\n"
+	region := screenshot.ExtractRegion(screen, screenshot.RegionGitCeremony)
+	if !strings.Contains(region, "configured — applies via") {
+		t.Errorf("RegionGitCeremony did not start on the receipt heading:\n%s", region)
+	}
+}
+
 // TestExtractRegion_Header verifies that the header region (first line,
 // containing the nav tabs) is present and contains "Identities".
 func TestExtractRegion_Header(t *testing.T) {
