@@ -199,6 +199,32 @@ type Deps struct {
 	WriteProvisionalSSH func(name, hostBlock string) (backupPath string, err error)
 	PromoteSSH          func(name, hostBlock string) (backupPath string, err error)
 	DropProvisionalSSH  func(name string) (backupPath string, err error)
+
+	// ArchiveKeyPair moves an identity's previous key pair (privPath, pubPath)
+	// out of the canonical ~/.ssh paths and into the D-06 archive directory,
+	// vacating the canonical path so Rotate's new key pair can take it (D-06).
+	// The composition root fills this from keygen.MoveKeyPairToArchive bound
+	// to a transaction's journal (cmd/gitid's depsForTransaction) — it is the
+	// MOVE primitive; delete-everything (plan 05-04) deliberately uses the
+	// COPY primitive through a DIFFERENT seam, and the two must never be
+	// collapsed into one.
+	//
+	// Error contract: the seam returns whatever archive paths it created even
+	// when it also returns an error — a partial move (archive copies created,
+	// source removal failed) is still fully reportable, matching
+	// keygen.MoveKeyPairToArchive's own ErrArchiveIncomplete contract. A
+	// caller must assign archivedPriv/archivedPub onto its result BEFORE
+	// checking err, never after.
+	ArchiveKeyPair func(privPath, pubPath string) (archivedPriv, archivedPub string, err error)
+
+	// AppendAllowedSigners appends a new signer line to identity's
+	// allowed_signers block WITHOUT dropping the block's existing line(s)
+	// (D-07). Used by BOTH key-lifecycle ceremonies — Rotate and RepairKey —
+	// per this plan's "Planner resolution: repair signer semantics" (APPEND,
+	// not REPLACE). create/reuse/add-account keep the single-line
+	// WriteAllowedSigners semantics; only the two key ceremonies need the OLD
+	// line(s) to survive.
+	AppendAllowedSigners func(path, identity, email, pubLine string) (backupPath string, err error)
 }
 
 // CreateResult reports everything the command layer needs to display: the four

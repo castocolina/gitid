@@ -24,12 +24,14 @@ package main
 //     (SSHUI-04).
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -121,6 +123,20 @@ type realBackend struct {
 	// fails before the named mutation step. The steps are "private-key",
 	// "public-key", "include-line", and "host-block".
 	failCommitAt func(step string) error
+
+	// failArchiveRemoveAt is a test-only injection point (mirroring
+	// failCommitAt's precedent): when non-nil, archiveKeyPairSeam's source
+	// removal calls it before removing path, letting a test drive a
+	// deterministic second-source-removal failure through the REAL
+	// composition root (review R3-01) rather than a hand-built fake.
+	failArchiveRemoveAt func(path string) error
+
+	// archiveClockNow is a test-only override for the clock
+	// archiveKeyPairSeam uses to build its UnixNano archive stamp — nil
+	// means time.Now. Injecting a clock that returns the same instant twice
+	// makes a stamp collision reproducible without racing a real clock
+	// (review R2-05/R-21's composition-root retry).
+	archiveClockNow func() time.Time
 }
 
 // compile-time proof the real composition root satisfies the seam.
@@ -309,7 +325,102 @@ func buildIdentityDeps(b *realBackend) identity.Deps {
 		DropProvisionalSSH: func(name string) (string, error) {
 			return sshconfig.DropProvisional(b.storageTargetPath(), name)
 		},
+		// ArchiveKeyPair is the BACKEND-WIDE binding (review R3-01): it
+		// REFUSES to archive, because a closure built here (buildIdentityDeps
+		// runs ONCE, inside newBackendForHome, with no transaction in scope)
+		// can never reach a rollback journal. The field stays non-nil so the
+		// reflection guard is satisfied and its intent is preserved, but the
+		// value fails CLOSED — an archive attempted with no journal watching
+		// returns an error BEFORE any copy is made, rather than creating an
+		// untracked archive entry. depsForTransaction is the ONLY way to
+		// obtain a working archive seam; a fail-open no-op observer here
+		// would reintroduce exactly the defect this refusal exists to
+		// remove.
+		ArchiveKeyPair: b.archiveKeyPairSeam(func(string) error { return errArchiveOutsideTransaction }),
+		// AppendAllowedSigners is the D-07 append-not-replace writer, used by
+		// BOTH key-lifecycle ceremonies (rotate, repair). Its signature
+		// matches keygen.AppendAllowedSigners exactly — no adapter needed.
+		AppendAllowedSigners: keygen.AppendAllowedSigners,
 	}
+}
+
+// errArchiveOutsideTransaction is the backend-wide ArchiveKeyPair binding's
+// fail-closed refusal (review R3-01): an archive attempted outside a
+// mutationJournal transaction is refused before any copy is made. Only
+// depsForTransaction(j) rebinds ArchiveKeyPair to a seam that actually
+// archives.
+var errArchiveOutsideTransaction = errors.New("gitid: refusing to archive a key pair outside a transaction")
+
+// archiveKeyPairSeam is the ONE archive implementation identity.Deps'
+// ArchiveKeyPair field can be bound to — only its onCreated OBSERVER varies
+// between the backend-wide refusing binding (buildIdentityDeps, above) and a
+// transaction-bound working seam (depsForTransaction, below). It resolves
+// the D-06 archive directory, builds the project's UnixNano stamp, and calls
+// keygen.MoveKeyPairToArchive — retrying EXACTLY ONCE with a monotonically
+// bumped stamp on a same-nanosecond collision (review R2-05/R-21: plan
+// 05-02 ships the primitive's hard-error collision detection; this
+// composition-root retry is what consumes it, and it lives here because
+// this is the first task that writes this closure at all).
+func (b *realBackend) archiveKeyPairSeam(onCreated keygen.CreatedFunc) func(privPath, pubPath string) (string, string, error) {
+	return func(privPath, pubPath string) (string, string, error) {
+		archiveDir := sshconfig.ArchiveDir(b.sshDir)
+		remove := b.archiveRemove()
+
+		stampNanos := b.archiveClock().UnixNano()
+		pair, err := keygen.MoveKeyPairToArchive(archiveDir, privPath, pubPath, strconv.FormatInt(stampNanos, 10), remove, onCreated)
+		if err != nil && errors.Is(err, os.ErrExist) {
+			// Same-nanosecond stamp collision: the primitive's exclusive-
+			// create leaves nothing behind and announces nothing, so a
+			// monotonic bump — not a fresh clock draw, which the injected
+			// test clock may not advance — is safe to retry exactly once.
+			stampNanos++
+			pair, err = keygen.MoveKeyPairToArchive(archiveDir, privPath, pubPath, strconv.FormatInt(stampNanos, 10), remove, onCreated)
+		}
+		return pair.PrivatePath, pair.PublicPath, err
+	}
+}
+
+// archiveClock returns the clock archiveKeyPairSeam uses, honoring the
+// test-only archiveClockNow override (nil means time.Now).
+func (b *realBackend) archiveClock() time.Time {
+	if b.archiveClockNow != nil {
+		return b.archiveClockNow()
+	}
+	return time.Now()
+}
+
+// archiveRemove returns the source-removal function archiveKeyPairSeam
+// passes to keygen.MoveKeyPairToArchive, honoring the test-only
+// failArchiveRemoveAt injection point (nil means os.Remove) — the same
+// precedent failCommitAt establishes elsewhere in this file, applied to the
+// archive's own removal step so a test can drive the second-source-removal
+// failure through the REAL composition root.
+func (b *realBackend) archiveRemove() func(path string) error {
+	return func(path string) error {
+		if b.failArchiveRemoveAt != nil {
+			if err := b.failArchiveRemoveAt(path); err != nil {
+				return err
+			}
+		}
+		return os.Remove(path)
+	}
+}
+
+// depsForTransaction returns a COPY of b.deps (identity.Deps is a value
+// type, so this re-binds one seam rather than building a second wiring —
+// review R3-01/plan 05-07's "do not build a second Deps value inside the
+// commit path" rule protects against a second WIRING, not against re-binding
+// one seam) with ArchiveKeyPair rebound to a working archive seam whose
+// onCreated observer is j.recordCreatedFile. Every archive copy this seam
+// creates is announced to j BEFORE any source removal is attempted
+// (keygen.MoveKeyPairToArchive's own ordering guarantee), so a rollback can
+// always discover and undo it. Every transactional caller (Rotate/RepairKey
+// callers) must pass depsForTransaction(j) — never b.deps, whose
+// ArchiveKeyPair binding refuses by design.
+func (b *realBackend) depsForTransaction(j *mutationJournal) identity.Deps {
+	deps := b.deps
+	deps.ArchiveKeyPair = b.archiveKeyPairSeam(j.recordCreatedFile)
+	return deps
 }
 
 // deleteSSHConfigMode / deleteGitconfigMode are the modes buildDeleteDeps
@@ -1085,6 +1196,17 @@ type mutationJournal struct {
 	// directories (including HOME) it never modified.
 	chmodDirs []gitDirSnapshot
 	backups   []string
+
+	// createdFiles records paths a mid-transaction seam CREATED (not
+	// snapshotted) — currently the D-06 archive copies recordCreatedFile
+	// receives via depsForTransaction's onCreated observer. restore() removes
+	// every one of these AFTER restoring every watched file (review R3-01).
+	// seenCreated is the disjoint counterpart to seenFile (review R2-08): a
+	// path recorded as CREATED can never also be recorded as WATCHED (a
+	// snapshot-then-restore) and vice versa, because a path in both sets has
+	// no correct rollback outcome.
+	createdFiles []string
+	seenCreated  map[string]bool
 }
 
 type gitFileSnapshot struct {
@@ -1101,12 +1223,46 @@ type gitDirSnapshot struct {
 }
 
 func newMutationJournal(b *realBackend) *mutationJournal {
-	return &mutationJournal{b: b, seenFile: make(map[string]bool), seenDir: make(map[string]bool)}
+	return &mutationJournal{
+		b:           b,
+		seenFile:    make(map[string]bool),
+		seenDir:     make(map[string]bool),
+		seenCreated: make(map[string]bool),
+	}
+}
+
+// recordCreatedFile records path as a file THIS transaction created mid-
+// flight (currently: a D-06 archive copy), so restore() can remove it on
+// rollback. It is the identity.Deps.ArchiveKeyPair observer bound by
+// depsForTransaction — passed directly as a keygen.CreatedFunc, so a
+// refusal here STOPS the archive before the copy is trusted, rather than
+// merely being noticed afterwards.
+//
+// Recording the SAME path twice is an idempotent no-op (plan 05-07's
+// lifecycle also records whatever the domain result names, and the two
+// sources will normally agree). Recording a path already registered as
+// WATCHED is a programming error: review R2-08's disjointness contract — a
+// path in both sets has no correct rollback outcome (restore first reverts
+// the watched snapshot, then would try to remove the very file it just
+// restored).
+func (j *mutationJournal) recordCreatedFile(path string) error {
+	if j.seenCreated[path] {
+		return nil
+	}
+	if j.seenFile[path] {
+		return fmt.Errorf("gitid: internal: %s is already watched, cannot also be recorded as created", path)
+	}
+	j.seenCreated[path] = true
+	j.createdFiles = append(j.createdFiles, path)
+	return nil
 }
 
 func (j *mutationJournal) watchFile(path string) error {
 	if j.seenFile[path] {
 		return nil
+	}
+	if j.seenCreated[path] {
+		return fmt.Errorf("gitid: internal: %s is already recorded as created, cannot also be watched", path)
 	}
 	if err := containedRegularPath(path, j.b.home); err != nil {
 		return err
@@ -1281,6 +1437,32 @@ func (j *mutationJournal) restore() ([]string, error) {
 			failedFilePaths = append(failedFilePaths, filepath.Clean(s.path))
 		} else {
 			outcomes = append(outcomes, j.b.displayPath(s.path)+": restored")
+		}
+	}
+	// createdFiles (review R3-01): remove every path a mid-transaction seam
+	// CREATED — currently the D-06 archive copies recordCreatedFile
+	// received — AFTER every watched file above has been restored. A
+	// created path was never snapshotted (there was nothing to restore it
+	// TO), so the only correct rollback action is removal, mirroring
+	// createdDirs' own removal-only treatment below.
+	for i := len(j.createdFiles) - 1; i >= 0; i-- {
+		path := j.createdFiles[i]
+		var err error
+		if j.b.failCommitAt != nil {
+			err = j.b.failCommitAt("restore:" + path)
+		}
+		if err == nil {
+			if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
+				err = removeErr
+			}
+		}
+		if err != nil {
+			outcome := j.b.displayPath(path) + ": restoration failed: " + err.Error()
+			outcomes = append(outcomes, outcome)
+			failures = append(failures, outcome)
+			failedFilePaths = append(failedFilePaths, filepath.Clean(path))
+		} else {
+			outcomes = append(outcomes, j.b.displayPath(path)+": restored")
 		}
 	}
 	// BL-15 (was WR-25, escalated from skip): a managed root must NEVER be

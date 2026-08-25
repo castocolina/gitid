@@ -167,49 +167,11 @@ func AddAccount(existing Account, newProvider, newAlias string, deps Deps) (Crea
 	return runPipeline(in, staged, deps)
 }
 
-// Rotate orchestrates replacing the key for an existing identity (KEY-01, D-11
-// fast-follow): it generates a fresh key via the injected Generate dep, then
-// re-points ALL FOUR managed artifacts to the new key by running the SAME shared
-// pipeline keyed by the identity's existing name. Because every writer splices
-// its managed block via filewriter.ReplaceBlock keyed by identity name, the old
-// key references are REPLACED, not duplicated (T-02-29, SAFE-02), and each
-// mutated file is backed up first by the filewriter chokepoint (SAFE-01). After
-// the write the two-phase resolved test re-runs against the new key.
-//
-// Confirmation (SAFE-03) is gathered by the command layer before Rotate is
-// called; Rotate uses runPipeline which always writes (consented by the caller).
-func Rotate(existing Account, deps Deps) (CreateResult, error) {
-	in := rotateInput(existing)
-
-	staged, err := deps.Generate(in)
-	if err != nil {
-		return CreateResult{}, fmt.Errorf("identity: generating rotation key: %w", err)
-	}
-	defer deps.Cleanup(staged)
-	return runPipeline(in, staged, deps)
-}
-
-// rotateInput builds the CreateInput that re-points an existing account's four
-// artifacts. It carries the SAME identity name, alias, matches, and managed
-// target paths as the account so every ReplaceBlock rewrite targets the existing
-// managed block (replacing the old key references in place).
-func rotateInput(a Account) CreateInput {
-	return CreateInput{
-		Name:               a.Name,
-		GitName:            a.GitName,
-		GitEmail:           a.GitEmail,
-		Provider:           a.Provider,
-		Alias:              a.Alias,
-		Hostname:           a.Hostname,
-		Port:               a.Port,
-		Matches:            a.Matches,
-		FragmentPath:       a.FragmentPath,
-		GitconfigPath:      a.GitconfigPath,
-		SSHConfigPath:      a.SSHConfigPath,
-		AllowedSignersPath: a.AllowedSignersPath,
-		GlobalBlock:        "",
-	}
-}
+// Rotate has moved to rotate.go (this plan's Task 2): it is now a retirement
+// ceremony composing the four phases from identity.go directly (archive →
+// persist → append-write → resolved), never runPipeline. See rotate.go for
+// the full doc comment and rotateInput/algoFromKeyPath for the CreateInput it
+// builds.
 
 // fragmentPathFor returns the gitid-managed fragment path for an account: the
 // account's persisted FragmentPath when set, otherwise the conventional

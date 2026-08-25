@@ -972,6 +972,18 @@ func newOrderRecordingDeps(rec *orderRecorder) Deps {
 			return "ssh-ed25519 AAAADERIVED c\n", nil
 		},
 		WritePub: func(_, _ string) error { rec.log("WritePub"); return nil },
+		// ArchiveKeyPair/AppendAllowedSigners (plan 05-03 Task 2, D-06/D-07):
+		// wired here too so this SAME recorder can drive Rotate's call-order
+		// tests in rotate_test.go without a second, divergent recording Deps
+		// builder.
+		ArchiveKeyPair: func(privPath, pubPath string) (string, string, error) {
+			rec.log("ArchiveKeyPair")
+			return privPath + ".archived", pubPath + ".archived", nil
+		},
+		AppendAllowedSigners: func(_, _, _, _ string) (string, error) {
+			rec.log("AppendAllowedSigners")
+			return "", nil
+		},
 	}
 }
 

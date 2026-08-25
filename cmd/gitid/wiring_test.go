@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -2486,4 +2487,349 @@ func TestRunDeleteAndCLIVerbProduceByteIdenticalGitconfig(t *testing.T) {
 	if gcA != gcB {
 		t.Errorf("gitconfig bytes differ between runDelete and the CLI verb:\nA:\n%s\n--- B ---\n%s", gcA, gcB)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// 05-03 Task 2 — identity.Rotate's real archive/append wiring (D-06/D-07/D-08,
+// review R3-01)
+// ---------------------------------------------------------------------------
+
+// realRotateAccount reconstructs a real, tilde-expanded Account for name
+// through b.findAccount — the SAME lookup runDelete uses — so a rotation
+// test exercises the real Reconstruct path, never a hand-built Account.
+func realRotateAccount(t *testing.T, b *realBackend, name string) identity.Account {
+	t.Helper()
+	acct, found := b.findAccount(name)
+	if !found {
+		t.Fatalf("no such identity: %q", name)
+	}
+	acct.FragmentPath = expandTildeForHome(acct.FragmentPath, b.home)
+	acct.KeyPath = expandTildeForHome(acct.KeyPath, b.home)
+	acct.PubPath = expandTildeForHome(acct.PubPath, b.home)
+	// Reconstruct populates only what it parses FROM the config files;
+	// GitconfigPath/SSHConfigPath/AllowedSignersPath are gitid-managed
+	// TARGET paths the command layer fills in when an account is loaded for
+	// a write (Account's own doc comment) — the real composition root for
+	// this (plan 05-07) does not exist yet, so this test fills them from the
+	// backend's own resolved paths, mirroring createInput's existing
+	// pattern (wiring.go).
+	acct.GitconfigPath = b.gitconfigPath
+	acct.SSHConfigPath = b.sshConfigPath
+	acct.AllowedSignersPath = b.allowedSigners
+	return acct
+}
+
+// realHermeticDeps overrides the two seams that would otherwise shell out to
+// a REAL ssh handshake (PreWrite/Resolved) with deterministic fakes, leaving
+// every other seam — Generate, PersistKey, the four writers, ArchiveKeyPair,
+// AppendAllowedSigners — wired to the REAL implementation. identity.Deps is
+// a value type, so this is a test-local override of a COPY, never a second
+// production wiring.
+func realHermeticDeps(deps identity.Deps) identity.Deps {
+	deps.PreWrite = func(_, _ string, _ int) tester.Result {
+		return tester.Result{Outcome: tester.ReachableNotUploaded}
+	}
+	deps.Resolved = func(_ string) (tester.Result, tester.ResolvedConfig) {
+		return tester.Result{Outcome: tester.PASS}, tester.ResolvedConfig{}
+	}
+	return deps
+}
+
+// TestRotateEndToEndThroughRealConstructor drives identity.Rotate over a
+// hermetic fake home through the REAL composition root
+// (b.depsForTransaction(newMutationJournal(b)), never b.deps, whose archive
+// binding refuses by design): asserts the new key pair lands at the SAME
+// canonical paths with DIFFERENT bytes (D-06/D-08), the archived private key
+// exists inside the D-06 archive directory carrying the OLD bytes, the
+// journal recorded both archive paths, and the allowed_signers block ends
+// up with two lines for the identity (D-07 APPEND).
+func TestRotateEndToEndThroughRealConstructor(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+
+	b := newBackendForHome(home)
+	acct := realRotateAccount(t, b, "work")
+	privBefore := readFile(t, acct.KeyPath)
+
+	j := newMutationJournal(b)
+	deps := realHermeticDeps(b.depsForTransaction(j))
+
+	res, err := identity.Rotate(acct, deps)
+	if err != nil {
+		t.Fatalf("Rotate returned error: %v", err)
+	}
+
+	// New key pair at the SAME canonical paths (D-08), different bytes.
+	if _, statErr := os.Stat(acct.KeyPath); statErr != nil {
+		t.Errorf("canonical private key missing after rotation: %v", statErr)
+	}
+	if _, statErr := os.Stat(acct.PubPath); statErr != nil {
+		t.Errorf("canonical public key missing after rotation: %v", statErr)
+	}
+	privAfter := readFile(t, acct.KeyPath)
+	if privAfter == privBefore {
+		t.Error("canonical private key bytes unchanged after rotation")
+	}
+
+	// The archived private key exists inside the archive directory and
+	// carries the OLD bytes.
+	if res.ArchivedPrivatePath == "" || res.ArchivedPublicPath == "" {
+		t.Fatal("RotateResult must carry both archived paths")
+	}
+	archiveDir := sshconfig.ArchiveDir(b.sshDir)
+	if !strings.HasPrefix(res.ArchivedPrivatePath, archiveDir+string(filepath.Separator)) {
+		t.Errorf("archived private key path %q is not inside the archive directory %q", res.ArchivedPrivatePath, archiveDir)
+	}
+	archivedBytes := readFile(t, res.ArchivedPrivatePath)
+	if archivedBytes != privBefore {
+		t.Error("archived private key bytes do not match the pre-rotation key")
+	}
+
+	// The journal recorded both archive copies as created.
+	if len(j.createdFiles) != 2 {
+		t.Errorf("journal recorded %d created files, want 2 (priv+pub archive copies): %v", len(j.createdFiles), j.createdFiles)
+	}
+
+	// allowed_signers now carries two lines for "work".
+	signers := readFile(t, filepath.Join(home, ".ssh", "allowed_signers"))
+	lineCount := 0
+	for _, line := range strings.Split(signers, "\n") {
+		if strings.HasPrefix(line, "work@example.com ") {
+			lineCount++
+		}
+	}
+	if lineCount != 2 {
+		t.Errorf("allowed_signers has %d lines for work@example.com, want 2 (D-07 append)\n%s", lineCount, signers)
+	}
+}
+
+// TestArchiveKeyPairBackendWideBindingRefuses proves the fail-closed half of
+// review R3-01: b.deps.ArchiveKeyPair (the backend-wide binding built by
+// buildIdentityDeps) refuses with errArchiveOutsideTransaction and creates
+// NO archive entry, while the SAME call through b.depsForTransaction(j)
+// succeeds and records its paths in j.
+func TestArchiveKeyPairBackendWideBindingRefuses(t *testing.T) {
+	home := t.TempDir()
+	seedSSHDir(t, home)
+	b := newBackendForHome(home)
+
+	privPath := filepath.Join(home, ".ssh", "id_ed25519_x")
+	seedGeneratedKey(t, privPath, "x", "")
+	pubPath := privPath + ".pub"
+
+	_, _, err := b.deps.ArchiveKeyPair(privPath, pubPath)
+	if !errors.Is(err, errArchiveOutsideTransaction) {
+		t.Errorf("b.deps.ArchiveKeyPair error = %v, want errArchiveOutsideTransaction", err)
+	}
+	if _, statErr := os.Stat(privPath); statErr != nil {
+		t.Errorf("source private key must be untouched after a refused archive: %v", statErr)
+	}
+	if entries, rerr := os.ReadDir(sshconfig.ArchiveDir(b.sshDir)); rerr == nil && len(entries) != 0 {
+		t.Errorf("a refused archive must create no entry; found %d", len(entries))
+	}
+
+	j := newMutationJournal(b)
+	archivedPriv, archivedPub, terr := b.depsForTransaction(j).ArchiveKeyPair(privPath, pubPath)
+	if terr != nil {
+		t.Fatalf("depsForTransaction's ArchiveKeyPair returned error: %v", terr)
+	}
+	if archivedPriv == "" || archivedPub == "" {
+		t.Error("a working archive seam must return non-empty paths")
+	}
+	if len(j.createdFiles) != 2 {
+		t.Errorf("journal recorded %d created files, want 2", len(j.createdFiles))
+	}
+}
+
+// TestJournalCreatedAndWatchedSetsAreDisjoint asserts recordCreatedFile
+// rejects an already-watched path and watchFile rejects an already-recorded
+// created path, each naming the path (review R2-08).
+func TestJournalCreatedAndWatchedSetsAreDisjoint(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+
+	t.Run("recordCreatedFile rejects an already-watched path", func(t *testing.T) {
+		j := newMutationJournal(b)
+		path := filepath.Join(home, "watched-then-created")
+		if err := j.watchFile(path); err != nil {
+			t.Fatalf("watchFile: %v", err)
+		}
+		err := j.recordCreatedFile(path)
+		if err == nil {
+			t.Fatal("recordCreatedFile must reject a path already watched")
+		}
+		if !strings.Contains(err.Error(), path) {
+			t.Errorf("error must name the path; got %v", err)
+		}
+	})
+
+	t.Run("watchFile rejects an already-recorded-created path", func(t *testing.T) {
+		j := newMutationJournal(b)
+		path := filepath.Join(home, "created-then-watched")
+		if err := j.recordCreatedFile(path); err != nil {
+			t.Fatalf("recordCreatedFile: %v", err)
+		}
+		err := j.watchFile(path)
+		if err == nil {
+			t.Fatal("watchFile must reject a path already recorded as created")
+		}
+		if !strings.Contains(err.Error(), path) {
+			t.Errorf("error must name the path; got %v", err)
+		}
+	})
+}
+
+// TestRestoreRemovesCreatedFilesAfterRestoringWatched asserts restore()
+// restores every watched file's bytes AND removes every path passed to
+// recordCreatedFile.
+func TestRestoreRemovesCreatedFilesAfterRestoringWatched(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	j := newMutationJournal(b)
+
+	watchedPath := filepath.Join(home, "watched.txt")
+	writeFile(t, watchedPath, "original")
+	if err := j.watchFile(watchedPath); err != nil {
+		t.Fatalf("watchFile: %v", err)
+	}
+	writeFile(t, watchedPath, "mutated") // simulate a transaction write
+
+	createdPath := filepath.Join(home, "created.txt")
+	writeFile(t, createdPath, "new material")
+	if err := j.recordCreatedFile(createdPath); err != nil {
+		t.Fatalf("recordCreatedFile: %v", err)
+	}
+
+	outcomes, rerr := j.restore()
+	if rerr != nil {
+		t.Fatalf("restore returned error: %v; outcomes=%v", rerr, outcomes)
+	}
+	if got := readFile(t, watchedPath); got != "original" {
+		t.Errorf("watched file after restore = %q, want original bytes", got)
+	}
+	if _, statErr := os.Stat(createdPath); !os.IsNotExist(statErr) {
+		t.Errorf("created file must be removed after restore; statErr=%v", statErr)
+	}
+}
+
+// TestRotateSecondSourceRemovalRollback is the review R3-01 regression: a
+// real backend over a hermetic fake home, a real key pair, a mutationJournal
+// watching both canonical key paths, failArchiveRemoveAt failing on the
+// SECOND source removal, and identity.Rotate run with
+// b.depsForTransaction(j). Asserts, in this order: the call returned an
+// error; the journal recorded BOTH archive paths (discoverable BEFORE the
+// failing removal, not after); j.restore() succeeds; the archive directory
+// afterwards holds no entry for this identity; and both canonical key paths
+// hold their pre-transaction bytes.
+func TestRotateSecondSourceRemovalRollback(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+
+	b := newBackendForHome(home)
+	acct := realRotateAccount(t, b, "work")
+	privBefore := readFile(t, acct.KeyPath)
+	pubBefore := readFile(t, acct.PubPath)
+
+	j := newMutationJournal(b)
+	if err := j.watchFile(acct.KeyPath); err != nil {
+		t.Fatalf("watchFile priv: %v", err)
+	}
+	if err := j.watchFile(acct.PubPath); err != nil {
+		t.Fatalf("watchFile pub: %v", err)
+	}
+
+	// keygen.MoveKeyPairToArchive removes priv FIRST, then pub — fail the
+	// SECOND (pub) removal so priv is genuinely gone from the canonical path
+	// and pub survives there, exercising the asymmetric rollback case.
+	b.failArchiveRemoveAt = func(path string) error {
+		if path == acct.PubPath {
+			return fmt.Errorf("injected failure removing %s", path)
+		}
+		return nil
+	}
+
+	deps := realHermeticDeps(b.depsForTransaction(j))
+	_, err := identity.Rotate(acct, deps)
+	if err == nil {
+		t.Fatal("Rotate must return an error when the second source removal fails")
+	}
+
+	if len(j.createdFiles) != 2 {
+		t.Fatalf("journal must have recorded BOTH archive paths before the failing removal; got %v", j.createdFiles)
+	}
+
+	outcomes, rerr := j.restore()
+	if rerr != nil {
+		t.Fatalf("journal.restore() returned error: %v; outcomes=%v", rerr, outcomes)
+	}
+
+	entries, rderr := os.ReadDir(sshconfig.ArchiveDir(b.sshDir))
+	if rderr == nil && len(entries) != 0 {
+		t.Errorf("archive directory must hold no entry for this identity after rollback; found %v", entries)
+	}
+
+	if got := readFile(t, acct.KeyPath); got != privBefore {
+		t.Error("canonical private key bytes not restored to pre-transaction state")
+	}
+	if got := readFile(t, acct.PubPath); got != pubBefore {
+		t.Error("canonical public key bytes not restored to pre-transaction state")
+	}
+}
+
+// TestArchiveKeyPairSeamStampCollisionRetry asserts archiveKeyPairSeam
+// bumps the UnixNano stamp monotonically and retries EXACTLY once on a
+// same-nanosecond collision (review R2-05/R-21): a single pre-seeded
+// collision produces a DISTINCT archive path on the retry; a second
+// collision (on the retried stamp too) surfaces as an error rather than
+// looping.
+func TestArchiveKeyPairSeamStampCollisionRetry(t *testing.T) {
+	home := t.TempDir()
+	seedSSHDir(t, home)
+	b := newBackendForHome(home)
+
+	fixedTime := time.Unix(0, 1234567890)
+	b.archiveClockNow = func() time.Time { return fixedTime }
+
+	archiveDir := sshconfig.ArchiveDir(b.sshDir)
+	if err := os.MkdirAll(archiveDir, 0o700); err != nil {
+		t.Fatalf("mkdir archive dir: %v", err)
+	}
+	stamp := fixedTime.UnixNano()
+
+	t.Run("single collision retries once and succeeds", func(t *testing.T) {
+		privPath := filepath.Join(home, ".ssh", "id_ed25519_x")
+		seedGeneratedKey(t, privPath, "x", "")
+		pubPath := privPath + ".pub"
+
+		collidingDst := filepath.Join(archiveDir, "id_ed25519_x."+strconv.FormatInt(stamp, 10))
+		writeFile(t, collidingDst, "pre-existing collision")
+
+		j := newMutationJournal(b)
+		archivedPriv, _, err := b.depsForTransaction(j).ArchiveKeyPair(privPath, pubPath)
+		if err != nil {
+			t.Fatalf("a single collision must be retried and succeed: %v", err)
+		}
+		if archivedPriv == collidingDst {
+			t.Errorf("retried archive path must be DISTINCT from the collision: got %q", archivedPriv)
+		}
+	})
+
+	t.Run("second collision surfaces the failure", func(t *testing.T) {
+		privPath := filepath.Join(home, ".ssh", "id_ed25519_y")
+		seedGeneratedKey(t, privPath, "y", "")
+		pubPath := privPath + ".pub"
+
+		collidingDst := filepath.Join(archiveDir, "id_ed25519_y."+strconv.FormatInt(stamp, 10))
+		writeFile(t, collidingDst, "pre-existing collision")
+		collidingRetryDst := filepath.Join(archiveDir, "id_ed25519_y."+strconv.FormatInt(stamp+1, 10))
+		writeFile(t, collidingRetryDst, "pre-existing collision on the retry stamp too")
+
+		j := newMutationJournal(b)
+		_, _, err := b.depsForTransaction(j).ArchiveKeyPair(privPath, pubPath)
+		if err == nil {
+			t.Fatal("a second collision (on the retried stamp too) must surface as an error, not loop")
+		}
+	})
 }
