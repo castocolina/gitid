@@ -258,34 +258,58 @@ func extractGitCeremony(lines []string) string {
 	for i, line := range lines {
 		rp[i] = stripANSI(rightPane(line))
 	}
+	// containsGitCeremonyMarker reports whether s (already whitespace-
+	// collapsed) contains either receipt/heading marker phrase. WR-10:
+	// "configured — applies via" (the exact receipt heading built by
+	// identities.go's gitCeremonyFor: `Git identity "<name>" configured —
+	// applies via the <strategy> strategy.`) is the actual marker — a bare
+	// "configured" false-positives on any OTHER line that happens to
+	// mention it, e.g. the sidebar note "no Git identity configured for
+	// this alias", or a future "Not configured" status.
+	containsGitCeremonyMarker := func(s string) bool {
+		return strings.Contains(s, "Write Git identity") || strings.Contains(s, "configured — applies via")
+	}
 	start := -1
 	for i := range lines {
-		// WR-10: "configured — applies via" (the exact receipt heading built
-		// by identities.go's gitCeremonyFor: `Git identity "<name>" configured
-		// — applies via the <strategy> strategy.`) is the actual marker — a
-		// bare "configured" false-positives on any OTHER line that happens to
-		// mention it, e.g. the sidebar note "no Git identity configured for
-		// this alias", or a future "Not configured" status. This mirrors the
-		// same hardening extractConnectivityOutput's "ssh " -> "ssh -" already
-		// applied to this class of over-broad marker.
-		//
-		// WR-22: that 24-character phrase is a contiguous run checked against
-		// a SINGLE rendered row of a width-constrained detail pane — it wraps
-		// as soon as the identity name is long enough, and can split at
-		// either of its two internal spaces, silently degrading the region to
-		// empty (a vacuous pass, not a caught divergence). Check a 2-row
-		// sliding window (this row + the next), with whitespace collapsed
-		// before matching, so a wrap at either space still matches; a
-		// same-row match (the common case) is unaffected since it's already
-		// a substring of its own window.
-		window := rp[i]
-		if i+1 < len(lines) {
-			window += " " + rp[i+1]
-		}
-		normalized := strings.Join(strings.Fields(window), " ")
-		if strings.Contains(normalized, "Write Git identity") || strings.Contains(normalized, "configured — applies via") {
+		// WR-26: check the CURRENT row alone FIRST. The marker phrase is a
+		// contiguous run checked against a SINGLE rendered row of a
+		// width-constrained detail pane; when it is fully intact on row i
+		// (the common, unwrapped case), row i alone already contains it —
+		// resolving start here, not one row early. WR-22's original fix
+		// checked the 2-row window (rp[i]+" "+rp[i+1]) FIRST: when the phrase
+		// is fully intact on row k, the window at i=k-1 already contains it
+		// too (rp[k] is embedded at the window's tail), so the loop broke one
+		// row too early — absorbing an extra, arbitrary, potentially
+		// nondeterministic row into RegionGitCeremony.
+		if containsGitCeremonyMarker(strings.Join(strings.Fields(rp[i]), " ")) {
 			start = i
 			break
+		}
+		// WR-22: the phrase wraps as soon as the identity name is long
+		// enough, splitting at either of its two internal spaces, silently
+		// degrading the region to empty (a vacuous pass, not a caught
+		// divergence) if only a same-row check ran. Only fall through to the
+		// 2-row window when the phrase is NOT already on this row alone —
+		// i.e. only when it genuinely spans the row boundary.
+		if i+1 < len(lines) {
+			// WR-26 (second half): a naive window check here reintroduces the
+			// SAME off-by-one it is meant to fix, just shifted by one
+			// iteration — if row i+1 alone already contains the full marker
+			// (e.g. row i is some unrelated content and row i+1 is the
+			// complete, unwrapped heading), the concatenated window ALSO
+			// contains it as a substring, even though nothing actually spans
+			// the boundary. Skip the window match in that case: the marker
+			// belongs to row i+1, and iteration i+1's own row-alone check
+			// above will correctly set start there.
+			nextAlone := strings.Join(strings.Fields(rp[i+1]), " ")
+			if containsGitCeremonyMarker(nextAlone) {
+				continue
+			}
+			window := strings.Join(strings.Fields(rp[i]+" "+rp[i+1]), " ")
+			if containsGitCeremonyMarker(window) {
+				start = i
+				break
+			}
 		}
 	}
 	if start < 0 {

@@ -183,6 +183,30 @@ func TestExtractRegion_GitCeremonyMatchesReceiptHeadingAcrossWrap(t *testing.T) 
 	}
 }
 
+// TestExtractRegion_GitCeremonyStartsExactlyOnTheHeadingRowNotOneEarly proves
+// the WR-26 fix: WR-22's 2-row sliding window checked rp[i]+" "+rp[i+1]
+// BEFORE checking row i alone, so when the marker phrase is fully intact on
+// row k (the common, unwrapped case), the window at i=k-1 already contained
+// it (row k is embedded at the window's tail) — making the loop break one
+// row too early and absorb an arbitrary, potentially nondeterministic
+// preceding row into RegionGitCeremony. Reproduces the review's own probe: an
+// unrelated row directly above the heading must NOT appear in the region.
+func TestExtractRegion_GitCeremonyStartsExactlyOnTheHeadingRowNotOneEarly(t *testing.T) {
+	screen := "" +
+		" gitid   [1] Identities                                          1 ids · ! 1\n" +
+		" Identities › work\n" +
+		"▸ ✓ work                          S✓ G✓    │ UNRELATED PRECEDING ROW\n" +
+		"                                            │ Write Git identity for \"work\"\n" +
+		"                                            │ Exact change\n"
+	region := screenshot.ExtractRegion(screen, screenshot.RegionGitCeremony)
+	if strings.Contains(region, "UNRELATED PRECEDING ROW") {
+		t.Errorf("RegionGitCeremony started one row early, absorbing the unrelated preceding row:\n%s", region)
+	}
+	if !strings.Contains(region, "Write Git identity for") {
+		t.Errorf("RegionGitCeremony missing the real ceremony heading:\n%s", region)
+	}
+}
+
 // TestExtractRegion_Header verifies that the header region (first line,
 // containing the nav tabs) is present and contains "Identities".
 func TestExtractRegion_Header(t *testing.T) {
