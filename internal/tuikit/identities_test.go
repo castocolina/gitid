@@ -2473,6 +2473,56 @@ func TestConfigureGitReducesExactCommittedSpec(t *testing.T) {
 	}
 }
 
+// TestConfigureGitNameEmailStrategyReduceExactCommittedSpec proves the WR-20
+// fix: WR-14 only routed GitDir/ForceSSH/PublicKeyPath through the exact
+// committed gitCommitSpec — GitName/GitEmail/MatchStrategy were still read
+// live off gitPaneForm, the same class of divergence. Mutate gitPaneForm
+// AFTER the write is dispatched (simulating the pane having moved on by the
+// time the async GitCommitMsg arrives) and assert ConfigureGit still
+// reduces the values that were actually committed, not the live form.
+func TestConfigureGitNameEmailStrategyReduceExactCommittedSpec(t *testing.T) {
+	b := &recordingGitBackend{result: GitCommitMsg{Backups: []string{"~/.gitconfig.backup"}}}
+	state := DemoState{Identities: []DemoIdentity{{
+		Name: "work", SSHHost: "work.github.example", KeyPath: "~/.ssh/id_work",
+	}}}
+	m := newIdentitiesModel(b, state)
+	m = m.openGitForm(state.Identities[0])
+	m.gitPaneForm.name.SetValue("Committed Name")
+	m.gitPaneForm.email.SetValue("committed@example.test")
+	m.gitPaneForm.strategyIdx = 0 // gitdir
+	opened := m.handleGitKey(pressKey("enter"), state).model.(identitiesModel)
+	confirmed := opened.handleGitKey(pressKey("enter"), state)
+	if len(b.specs) != 1 {
+		t.Fatalf("CommitGit calls = %d, want 1", len(b.specs))
+	}
+	committed := confirmed.model.(identitiesModel)
+	// Simulate the pane moving on before the async result arrives.
+	committed.gitPaneForm.name.SetValue("Different Name")
+	committed.gitPaneForm.email.SetValue("different@example.test")
+	committed.gitPaneForm.strategyIdx = 1 // hasconfig
+
+	result := committed.handleMsg(b.result, state)
+	if len(result.actions) != 1 {
+		t.Fatalf("actions = %d, want one ConfigureGit", len(result.actions))
+	}
+	configured, ok := result.actions[0].(ConfigureGit)
+	if !ok {
+		t.Fatalf("action = %T, want ConfigureGit", result.actions[0])
+	}
+	if configured.GitName != b.specs[0].Name {
+		t.Errorf("ConfigureGit.GitName = %q, want the exact committed spec's %q", configured.GitName, b.specs[0].Name)
+	}
+	if configured.GitEmail != b.specs[0].Email {
+		t.Errorf("ConfigureGit.GitEmail = %q, want the exact committed spec's %q", configured.GitEmail, b.specs[0].Email)
+	}
+	if configured.MatchStrategy != b.specs[0].Strategy {
+		t.Errorf("ConfigureGit.MatchStrategy = %q, want the exact committed spec's %q", configured.MatchStrategy, b.specs[0].Strategy)
+	}
+	if configured.GitName == "Different Name" || configured.GitEmail == "different@example.test" {
+		t.Error("ConfigureGit leaked the live gitPaneForm's post-dispatch mutation instead of the committed spec")
+	}
+}
+
 type sentinelIncludeIfBackend struct{ stubBackend }
 
 func (sentinelIncludeIfBackend) IncludeIfPreview(GitSpec) string {

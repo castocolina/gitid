@@ -1705,10 +1705,18 @@ func (m identitiesModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 		// empty keyPath could describe a DIFFERENT write than the one
 		// actually performed (e.g. PublicKeyPath reducing to the literal
 		// string ".pub" when the field was empty).
+		// WR-20: every field below must come from the exact committed spec —
+		// GitName/GitEmail/MatchStrategy were still read live off
+		// gitPaneForm, the same class of divergence WR-14 fixed for
+		// GitDir/ForceSSH/PublicKeyPath. gitPaneForm can already have moved
+		// on by the time this async result arrives (e.g. the user reopens
+		// the pane for a different identity), so spec.Name/Email/Strategy —
+		// captured at ceremonyConfirmed alongside the rest — are the only
+		// values guaranteed to describe the write that actually happened.
 		spec := m.gitCommitSpec
 		return keyResult{model: m, note: `Git identity "` + m.selected + `" configured.`, actions: []Action{ConfigureGit{
-			Name: m.selected, GitName: m.gitPaneForm.name.Value(), GitEmail: m.gitPaneForm.email.Value(),
-			MatchStrategy: m.gitPaneForm.strategy(), GitDir: spec.GitDir, ForceSSH: spec.ForceSSH,
+			Name: m.selected, GitName: spec.Name, GitEmail: spec.Email,
+			MatchStrategy: spec.Strategy, GitDir: spec.GitDir, ForceSSH: spec.ForceSSH,
 			PublicKeyPath: spec.PublicKeyPath, Backup: firstBackup(commit.Backups),
 		}}}
 	}
