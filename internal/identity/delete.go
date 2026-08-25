@@ -170,6 +170,14 @@ type DeleteResult struct {
 	// caller's rollback journal can discover and undo them even when a
 	// later step in the same transaction fails.
 	ArchivedKeyPaths []string
+
+	// Modified is every logical region (deleteplan.go's DeleteTarget) this
+	// call ACTUALLY touched, derived from the SAME deleteTargets helper
+	// DeletePlan.Targets is built from — review R-11's equality guarantee:
+	// a test can assert Modified equals the plan's Targets as sets of
+	// (File, Block) pairs, proving the preview and the write can never
+	// diverge.
+	Modified []DeleteTarget
 }
 
 // Delete removes an identity's artifacts according to scope, with backup via
@@ -264,6 +272,14 @@ func Delete(acct Account, scope DeleteScope, deps DeleteDeps) (DeleteResult, err
 		// identity's SSH alias survives this scope, so it still counts as a
 		// user of the provider (the ref-count question only arises on the
 		// everything path, below).
+		//
+		// review R-11: res.Modified is derived from the SAME deleteTargets
+		// helper PlanDelete uses, so the write and the preview can never
+		// promise different things. providerSurvives/keySurvives are
+		// irrelevant under git-only (deleteTargets never consults them for
+		// this scope) — passed as true/true only because the parameters are
+		// required, not because either fact was computed.
+		res.Modified = deleteTargets(acct, DeleteScopeGitOnly, true, true)
 		return res, nil
 	}
 
@@ -341,6 +357,7 @@ func deleteEverything(acct Account, deps DeleteDeps, res DeleteResult, accounts 
 	// Delete already fetched) nor a hand-written Host stanza
 	// (ForeignProviderRefs).
 	providerKey := RewriteProviderKey(acct.Provider, acct.Alias)
+	providerSurvives := true
 	if providerKey != "" {
 		managedRefs := ProviderRefCount(accounts, providerKey, acct.Name)
 		foreignRefs := 0
@@ -351,7 +368,8 @@ func deleteEverything(acct Account, deps DeleteDeps, res DeleteResult, accounts 
 				return res, fmt.Errorf("identity: counting foreign provider refs: %w", aerr)
 			}
 		}
-		if managedRefs == 0 && foreignRefs == 0 && deps.RemoveProviderRewrite != nil {
+		providerSurvives = managedRefs > 0 || foreignRefs > 0
+		if !providerSurvives && deps.RemoveProviderRewrite != nil {
 			prBak, perr := deps.RemoveProviderRewrite(providerKey)
 			if perr != nil {
 				return res, fmt.Errorf("identity: removing provider rewrite: %w", perr)
@@ -370,6 +388,12 @@ func deleteEverything(acct Account, deps DeleteDeps, res DeleteResult, accounts 
 			return res, fmt.Errorf("identity: removing live key files: %w", kerr)
 		}
 	}
+
+	// review R-11: res.Modified is derived from the SAME deleteTargets
+	// helper PlanDelete uses (deleteplan.go), over the SAME providerSurvives
+	// and keySurvives values this call just acted on — so the write and the
+	// preview can never promise different things.
+	res.Modified = deleteTargets(acct, DeleteScopeEverything, providerSurvives, keySurvives)
 
 	return res, nil
 }
