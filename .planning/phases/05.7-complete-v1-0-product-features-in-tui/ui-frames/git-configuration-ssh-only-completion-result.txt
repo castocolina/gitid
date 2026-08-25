@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 1 ids · ✓ ok
+ Identities › work › Configure Git
+S ssh · G git  ✓ ok ! attn ✗ broken │ ✓ Git identity "work" configured — applies via the gitdir
+▸ ✓ work                      S✓ G✓ │ strategy.
+    SSH Host block and Git fragment…│
+                                    │ Wrote → ~/.gitconfig.d/work
+                                    │ Wrote → ~/.gitconfig
+                                    │ Wrote → ~/.ssh/allowed_signers
+                                    │ Backed up →
+                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestGitConfig
+                                    │ uration_RealPTYSSHOnlyCompletionFlow1915385361/001/.gitconfig.
+                                    │ bak.1787616472105732000
+                                    │ Backed up →
+                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestGitConfig
+                                    │ uration_RealPTYSSHOnlyCompletionFlow1915385361/001/.gitconfig.
+                                    │ bak.1787616472151294000
+                                    │
+                                    │  Done (Enter)
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+ Git identity "work" configured.
+ Tab/←→ Cancel / Confirm · Enter confirm
+ Esc back · Ctrl+P palette

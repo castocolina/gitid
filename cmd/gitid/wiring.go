@@ -946,6 +946,9 @@ func (b *realBackend) commitGitArtifacts(spec tuikit.GitSpec, pubLine string, tr
 	if strings.TrimSpace(spec.Identity) == "" || strings.TrimSpace(spec.Name) == "" || strings.TrimSpace(spec.Email) == "" || strings.TrimSpace(spec.SSHHost) == "" {
 		return nil, nil, fmt.Errorf("gitid: incomplete Git configuration")
 	}
+	if spec.Provider == "" || !strings.Contains(spec.Provider, ".") {
+		spec.Provider = providerFromAlias(spec.SSHHost)
+	}
 	fragmentPath := filepath.Join(b.fragmentDir, spec.Identity)
 	publicKeyPath := spec.PublicKeyPath
 	if publicKeyPath == "" {
@@ -1050,7 +1053,7 @@ func (b *realBackend) commitGitArtifacts(spec tuikit.GitSpec, pubLine string, tr
 		}
 		backup, writeErr = gitconfig.WriteProviderRewrite(b.gitconfigPath, spec.Provider, true)
 		if writeErr != nil {
-			return fail("provider-rewrite", fmt.Errorf("gitid: writing provider rewrite: %w", writeErr))
+			return fail("provider-rewrite", fmt.Errorf("gitid: writing provider rewrite for %q: %w", spec.Provider, writeErr))
 		}
 		journal.addBackup(backup)
 	}
@@ -2016,7 +2019,7 @@ func providerFromAlias(alias string) string {
 	if len(parts) <= 2 {
 		return alias
 	}
-	return strings.Join(parts[len(parts)-2:], ".")
+	return strings.Join(parts[1:], ".")
 }
 
 // resolveKeyPath expands a `~/`-relative display path into a real filesystem

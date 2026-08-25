@@ -959,6 +959,57 @@ func TestCombinedTransactionReportsRestorationFailure(t *testing.T) {
 	}
 }
 
+func TestProviderFromAliasPreservesMultiLabelProvider(t *testing.T) {
+	if got, want := providerFromAlias("work.github.com"), "github.com"; got != want {
+		t.Errorf("providerFromAlias(work.github.com) = %q, want %q", got, want)
+	}
+	if got, want := providerFromAlias("work.enterprise.company.co.uk"), "enterprise.company.co.uk"; got != want {
+		t.Errorf("providerFromAlias(work.enterprise.company.co.uk) = %q, want %q", got, want)
+	}
+}
+
+func TestGitTransactionDerivesProviderFromSSHHost(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_work")
+	seedGeneratedKey(t, keyPath, "work", "")
+	b := newBackendForHome(home)
+	_, _, err := b.commitGitTransaction(tuikit.GitSpec{
+		Identity: "work", Name: "Work", Email: "work@example.test", Strategy: "gitdir",
+		KeyPath: keyPath, PublicKeyPath: keyPath + ".pub", SSHHost: "work.github.com", GitDir: "~/git/work/", ForceSSH: true,
+	})
+	if err != nil {
+		t.Fatalf("commitGitTransaction with inferred provider: %v", err)
+	}
+	if gitconfigText := readFile(t, filepath.Join(home, ".gitconfig")); !strings.Contains(gitconfigText, `url "git@github.com:"`) {
+		t.Errorf("gitconfig missing provider rewrite:\n%s", gitconfigText)
+	}
+}
+
+func TestGitTransactionReplacesExistingSignerEmail(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_acme")
+	pubLine := seedGeneratedKey(t, keyPath, "acme", "")
+	signersPath := filepath.Join(home, ".ssh", "allowed_signers")
+	writeFile(t, signersPath, managedBlock("acme", keygen.AllowedSignersLine("old@example.test", pubLine)))
+	b := newBackendForHome(home)
+	_, _, err := b.commitGitTransaction(tuikit.GitSpec{
+		Identity: "acme", Name: "Acme", Email: "new@example.test", Strategy: "gitdir",
+		KeyPath: keyPath, PublicKeyPath: keyPath + ".pub", SSHHost: "acme.github.com",
+		Provider: "github.com", GitDir: "~/git/acme/", ForceSSH: true,
+	})
+	if err != nil {
+		t.Fatalf("commitGitTransaction: %v", err)
+	}
+	signers := readFile(t, signersPath)
+	if !strings.Contains(signers, keygen.AllowedSignersLine("new@example.test", pubLine)) || strings.Contains(signers, "old@example.test") {
+		t.Errorf("allowed_signers =\n%s\nwant the replacement principal only", signers)
+	}
+}
+
 func TestGitTransactionSuccessIsByteStableAndReplacesSignerEmail(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

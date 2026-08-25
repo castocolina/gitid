@@ -212,7 +212,6 @@ func TestGitConfiguration_RealPTYCompleteEditFlow(t *testing.T) {
 	if !strings.Contains(string(fragment), "acme-edited@example.com") {
 		t.Fatalf("fragment missing the new email:\n%s", fragment)
 	}
-
 	signers, err := os.ReadFile(filepath.Join(home, ".ssh", "allowed_signers"))
 	if err != nil {
 		t.Fatalf("reading updated allowed_signers: %v", err)
@@ -429,7 +428,8 @@ func TestGitConfiguration_RealPTYMouseFieldFocus(t *testing.T) {
 	mustSee(t, s, `Write Git identity for "acme"`, "mouse click on Write it… reaches the write ceremony")
 
 	clickLabelRow(t, s, "Write it")
-	mustSee(t, s, `Git identity "acme" configured`, "mouse click on the ceremony's Write it (Enter) control confirms the write")
+	mustSee(t, s, "Writing…", "mouse click on the ceremony's Write it control starts the asynchronous write")
+	mustSee(t, s, `Git identity "acme" configured`, "asynchronous ceremony shows the successful write receipt")
 
 	saveFrame(t, "git-configuration-mouse-field-focus", s)
 }

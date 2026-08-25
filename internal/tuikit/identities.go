@@ -573,7 +573,7 @@ func (g gitForm) spec(identity, keyPath string) GitSpec {
 	return GitSpec{
 		Identity:      identity,
 		Name:          g.name.Value(),
-		Email:         g.email.Value(),
+		Email:         strings.TrimSpace(g.email.Value()),
 		Strategy:      g.strategy(),
 		KeyPath:       keyPath,
 		PublicKeyPath: orDefault(g.publicKeyPath, keyPath+".pub"),
@@ -583,6 +583,14 @@ func (g gitForm) spec(identity, keyPath string) GitSpec {
 		Provider:      g.provider,
 		Original:      g.original,
 	}
+}
+
+func providerFromSSHHost(alias string) string {
+	parts := strings.Split(alias, ".")
+	if len(parts) <= 2 {
+		return alias
+	}
+	return strings.Join(parts[1:], ".")
 }
 
 func normalizeGitDir(value, identity string) string {
@@ -1832,6 +1840,9 @@ func (m identitiesModel) openGitForm(sel DemoIdentity) identitiesModel {
 	m.gitPaneForm = newGitForm(m.backend, name, email, strategy)
 	m.gitPaneForm.sshHost = sel.SSHHost
 	m.gitPaneForm.provider = sel.Provider
+	if m.gitPaneForm.provider == "" || !strings.Contains(m.gitPaneForm.provider, ".") {
+		m.gitPaneForm.provider = providerFromSSHHost(sel.SSHHost)
+	}
 	m.gitPaneForm.publicKeyPath = sel.PublicKeyPath
 	m.gitPaneForm.gitDir.SetValue(orDefault(sel.GitDir, "~/git/"+sel.Name+"/"))
 	m.gitPaneForm.forceSSH = sel.ForceSSH || !m.gitExisting
@@ -1852,6 +1863,7 @@ func (m identitiesModel) gitCeremonyFor(sel DemoIdentity) ceremonyModel {
 		ResultMessage: `Git identity "` + sel.Name + `" configured — applies via the ` +
 			m.gitPaneForm.strategy() + ` strategy.`,
 		ConfirmLabel: "Write it",
+		Async:        true,
 	})
 }
 

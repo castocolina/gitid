@@ -8,20 +8,20 @@ S ssh · G git  ✓ ok ! attn ✗ broken │ ✓ Git identity "acme" configured 
                                     │ Wrote → ~/.ssh/allowed_signers
                                     │ Backed up →
                                     │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestGitConfig
-                                    │ uration_RealPTYMouseFieldFocus3253329516/001/.gitconfig.d/acme
-                                    │ .bak.1787616490704008000
+                                    │ uration_RealPTYCompleteEditFlow1955352170/001/.gitconfig.d/acm
+                                    │ e.bak.1787616464046432000
                                     │ Backed up →
                                     │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestGitConfig
-                                    │ uration_RealPTYMouseFieldFocus3253329516/001/.gitconfig.bak.17
-                                    │ 87616490810835000
+                                    │ uration_RealPTYCompleteEditFlow1955352170/001/.gitconfig.bak.1
+                                    │ 787616464156679000
                                     │ Backed up →
                                     │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestGitConfig
-                                    │ uration_RealPTYMouseFieldFocus3253329516/001/.gitconfig.bak.17
-                                    │ 87616490853194000
+                                    │ uration_RealPTYCompleteEditFlow1955352170/001/.gitconfig.bak.1
+                                    │ 787616464201464000
                                     │ Backed up →
                                     │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestGitConfig
-                                    │ uration_RealPTYMouseFieldFocus3253329516/001/.ssh/allowed_sign
-                                    │ ers.bak.1787616490911567000
+                                    │ uration_RealPTYCompleteEditFlow1955352170/001/.ssh/allowed_sig
+                                    │ ners.bak.1787616464259446000
                                     │
                                     │  Done (Enter)
                                     │

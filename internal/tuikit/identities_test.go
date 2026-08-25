@@ -2069,6 +2069,22 @@ func TestGitCommitContractIsAsyncAndStubSafe(t *testing.T) {
 	}
 }
 
+func TestGitFormSpecTrimsInputWhitespace(t *testing.T) {
+	form := newGitForm(stubBackend{}, " Acme ", " acme@example.test ", "gitdir")
+	spec := form.spec("acme", "~/.ssh/id_ed25519_acme")
+	if got, want := spec.Email, "acme@example.test"; got != want {
+		t.Errorf("spec.Email = %q, want %q", got, want)
+	}
+}
+
+func TestOpenGitFormDerivesProviderFromSSHHost(t *testing.T) {
+	m := newIdentitiesModel(stubBackend{}, DemoState{})
+	m = m.openGitForm(DemoIdentity{Name: "work", SSHHost: "work.github.com", Provider: "github"})
+	if got, want := m.gitPaneForm.provider, "github.com"; got != want {
+		t.Errorf("provider = %q, want %q", got, want)
+	}
+}
+
 func TestGitFlowFieldsUseEmptySSHOnlyValuesAndExactHostPreview(t *testing.T) {
 	// Hypothesis: SSH-only completion starts without invented author data and
 	// hasconfig previews consume the exact SSH alias, not the identity name.
@@ -2199,6 +2215,35 @@ func TestStandaloneGitCeremonyCommitsBeforeConfigureGit(t *testing.T) {
 	success := confirmed.model.(identitiesModel).handleMsg(GitCommitMsg{Backups: []string{"~/.gitconfig.backup"}}, state)
 	if len(success.actions) != 1 {
 		t.Fatalf("successful GitCommitMsg actions=%d, want one ConfigureGit", len(success.actions))
+	}
+}
+
+func TestStandaloneGitCeremonyCommitsCurrentEditedEmail(t *testing.T) {
+	b := &recordingGitBackend{}
+	state := DemoState{Identities: []DemoIdentity{{
+		Name: "acme", GitFragmentPath: "~/.gitconfig.d/acme", GitName: "Acme", GitEmail: "old@example.test",
+		SSHHost: "acme.github.example", KeyPath: "~/.ssh/id_acme",
+	}}}
+	m := newIdentitiesModel(b, state)
+	m = m.openGitForm(state.Identities[0])
+	m.gitFocus = gitFieldEmail
+	m.gitPaneForm = m.gitPaneForm.setFocus(m.gitFocus)
+	for range "old@example.test" {
+		m = m.handleGitKey(tea.KeyPressMsg{Code: tea.KeyBackspace}, state).model.(identitiesModel)
+	}
+	for _, r := range "new@example.test" {
+		m = m.handleGitKey(pressKey(string(r)), state).model.(identitiesModel)
+	}
+	opened := m.handleGitKey(pressKey("enter"), state).model.(identitiesModel)
+	confirmed := opened.handleGitKey(pressKey("enter"), state)
+	if len(b.specs) != 1 || confirmed.cmd == nil {
+		t.Fatalf("CommitGit calls=%d cmd=%v, want one asynchronous commit", len(b.specs), confirmed.cmd != nil)
+	}
+	if ceremony := confirmed.model.(identitiesModel).gitCeremony; !ceremony.pending || ceremony.done {
+		t.Fatalf("confirmed standalone Git ceremony = pending:%t done:%t, want pending async state", ceremony.pending, ceremony.done)
+	}
+	if got, want := b.specs[0].Email, "new@example.test"; got != want {
+		t.Errorf("CommitGit Email = %q, want current form email %q", got, want)
 	}
 }
 
