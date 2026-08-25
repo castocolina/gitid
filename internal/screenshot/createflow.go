@@ -45,25 +45,39 @@ var timestampPattern = regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}[:\-]\d{2}[:\-
 
 var sandboxPathFragmentPattern = regexp.MustCompile(`(?:gitid-evidence-)?capture-\d+|fake-ssh-\d+|(?:gi)?tid-stage-\d+`)
 
-// longDigitRunPattern matches internal/filewriter's ".bak.<unix-nanoseconds>"
-// backup-path suffix (filewriter.go's targetPath+".bak."+UnixNano()) — the
-// REAL Git-screen commit receipt's actual backup naming (04-04-PLAN.md
-// Task 3), distinct from tuikit.NewBackupPath's ISO-8601 ".backup."
-// convention timestampPattern already normalizes. A 19-digit nanosecond
-// value can wrap mid-number across the fixed 100-column pane, splitting into
-// two independent digit runs in the rendered text; matching ANY 6+ digit run
-// (never legitimately produced elsewhere — ports/counts stay well under 6
-// digits) normalizes each wrapped fragment independently rather than
-// requiring a single contiguous match that a line wrap would break.
-var longDigitRunPattern = regexp.MustCompile(`\d{6,}`)
+// backupSuffixPattern matches internal/filewriter's ".bak.<unix-nanoseconds>"
+// backup-path suffix (filewriter.go's targetPath+".bak."+UnixNano()) —
+// precisely, anchored to the literal ".bak." prefix (captured and
+// preserved in the replacement — only the digits themselves are
+// normalized) — the REAL Git-screen commit receipt's actual backup naming
+// (04-04-PLAN.md Task 3), distinct from tuikit.NewBackupPath's ISO-8601
+// ".backup." convention timestampPattern already normalizes. This is the
+// PRIMARY match: it covers every occurrence that did not get split by a
+// line wrap.
+var backupSuffixPattern = regexp.MustCompile(`(\.bak\.)\d+`)
 
-// normalizeTimestamps replaces all ISO-8601 timestamps and long digit runs
-// (nanosecond-suffixed backup paths, including line-wrapped fragments) in s
-// with fixed placeholders so that captures taken at different wall-clock
-// instants are byte-identical (CR-01).
+// wrappedDigitRowPattern is WR-09's narrowed fallback for the ONE case
+// backupSuffixPattern cannot reach: a 19-digit nanosecond value can wrap
+// mid-number across the fixed 100-column pane, splitting into a SECOND,
+// independent digit run that carries no ".bak." prefix of its own (it
+// continues on the next rendered row). Anchoring to "this row's entire
+// content — after the pane border and padding — is a run of 6+ digits"
+// (rather than matching ANY 6+ digit run anywhere in the frame) means an
+// inline byte count, key size, or future numeric ID embedded alongside
+// other text on the same row is NEVER matched: a genuine wrapped
+// continuation, by construction, has nothing else on its row. The border
+// and padding (captured, not consumed) are preserved verbatim in the
+// replacement — only the digit run itself is normalized.
+var wrappedDigitRowPattern = regexp.MustCompile(`(?m)^([^\S\n]*(?:[│|][^\S\n]*)?)(\d{6,})([^\S\n]*)$`)
+
+// normalizeTimestamps replaces all ISO-8601 timestamps and nanosecond-
+// suffixed backup paths (including line-wrapped fragments) in s with fixed
+// placeholders so that captures taken at different wall-clock instants are
+// byte-identical (CR-01).
 func normalizeTimestamps(s string) string {
 	s = sandboxPathFragmentPattern.ReplaceAllString(s, "<sandbox>")
-	s = longDigitRunPattern.ReplaceAllString(s, "<digits>")
+	s = backupSuffixPattern.ReplaceAllString(s, "${1}<digits>")
+	s = wrappedDigitRowPattern.ReplaceAllString(s, "${1}<digits>${3}")
 	return timestampPattern.ReplaceAllString(s, "<timestamp>")
 }
 
