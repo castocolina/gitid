@@ -175,6 +175,26 @@ type Backend interface {
 	// moving three implementers to buy nothing. There is exactly one preview
 	// seam and one write seam for delete, and neither duplicates the other.
 	CommitDelete(name string, scope string) tea.Cmd
+
+	// ----- Clone (D-14/D-15/D-16/D-17, MGR-04) -------------------------
+
+	// SuggestCloneName is the D-17 suggested clone name for source: the
+	// source name plus the frozen clone suffix, silently auto-bumped to the
+	// next free variant against every existing identity name AND every
+	// literal (non-wildcard) parsed Host pattern — the clone-name prompt
+	// never opens in an error state.
+	SuggestCloneName(source string) string
+
+	// ClonePrefill derives the pre-fill values for cloneName from source
+	// (D-14: copy the two author fields, re-derive everything else) and
+	// returns them as a ClonePrefillView the wizard opens with — NOT a
+	// write. reuseSourceKey selects whether the pre-fill carries the
+	// source's key path (ReuseKeyPath) or leaves it empty for a fresh
+	// generate; either way D-16 still requires the full two-stage gate
+	// before any write. A non-nil error is a validation or D-17/R-29
+	// pattern-shadowing refusal the prompt renders inline — it never
+	// silently substitutes a different name.
+	ClonePrefill(source, cloneName string, reuseSourceKey bool) (ClonePrefillView, error)
 }
 
 // WizardStageMsg completes a create-wizard test stage. Backends deliver it

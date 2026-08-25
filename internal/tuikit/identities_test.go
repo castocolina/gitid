@@ -1213,22 +1213,212 @@ func TestDeleteGitOnlyHealsToIncomplete(t *testing.T) {
 // Clone.
 // --------------------------------------------------------------------------
 
-func TestCloneValidatesAndSelectsTheClone(t *testing.T) {
-	a := pressSeq(t, identitiesApp(), "c")
+// TestCloneOpensPrefilledWizard drives the D-15 clone-into-pre-filled-wizard
+// path end to end: the prompt's initial value is a free name (D-17), and
+// confirming it opens the create pane with the wizard's alias prefix,
+// hostname, port, Git name, and Git email equal to the pre-fill values —
+// never an immediate write (superseding the pre-05-05 immediate-clone flow).
+func TestCloneOpensPrefilledWizard(t *testing.T) {
+	a := identitiesApp()
+	m := identModel(t, a)
+	if got := m.backend.SuggestCloneName("personal"); got != "personal-clone" {
+		t.Fatalf("SuggestCloneName(personal) = %q, want personal-clone (free name)", got)
+	}
+	a = pressSeq(t, a, "c")
+	m = identModel(t, a)
+	if got := m.cloneInput.Value(); got != "personal-clone" {
+		t.Fatalf("clone prompt initial value = %q, want personal-clone (already free)", got)
+	}
 	pane := paneFlat(a)
 	if !strings.Contains(pane, "the Git author is copied (MGR-04)") {
 		t.Error("clone explanation missing")
 	}
-	if !strings.Contains(pane, "Creates personal-clone.github.com + ~/.ssh/id_ed25519_personal-clone") {
-		t.Error("clone helper missing")
-	}
+
 	a, _ = press(t, a, "enter")
-	if !hasIdentity(a.state, "personal-clone") {
-		t.Fatal("clone not created")
+	m = identModel(t, a)
+	if m.pane != paneCreate {
+		t.Fatalf("pane = %v after confirming the clone prompt, want paneCreate (D-15 pre-filled wizard)", m.pane)
 	}
+	if hasIdentity(a.state, "personal-clone") {
+		t.Error("opening the pre-filled wizard must not write anything yet")
+	}
+	if got := m.wizard.form.prefix.Value(); got != "personal-clone" {
+		t.Errorf("wizard alias prefix = %q, want personal-clone", got)
+	}
+	if got := m.wizard.form.hostname.Value(); got != "ssh.github.com" {
+		t.Errorf("wizard hostname = %q, want ssh.github.com (re-derived from source)", got)
+	}
+	if got := m.wizard.form.port.Value(); got != "443" {
+		t.Errorf("wizard port = %q, want 443 (re-derived from source)", got)
+	}
+	if got := m.wizard.git.name.Value(); got != "personal identity" {
+		t.Errorf("wizard Git name = %q, want personal identity (copied from source)", got)
+	}
+	if got := m.wizard.git.email.Value(); got != "you@personal.example" {
+		t.Errorf("wizard Git email = %q, want you@personal.example (copied from source)", got)
+	}
+}
+
+// TestCloneEscapeReturnsToDetailWithoutOpeningWizard proves Escape on the
+// clone prompt is a true no-op: it returns to the detail pane and never
+// touches the wizard field at all.
+func TestCloneEscapeReturnsToDetailWithoutOpeningWizard(t *testing.T) {
+	a := pressSeq(t, identitiesApp(), "c")
+	beforeStep, beforePrefix := identModel(t, a).wizard.step, identModel(t, a).wizard.form.prefix.Value()
+	a, _ = press(t, a, "esc")
 	m := identModel(t, a)
-	if m.selected != "personal-clone" || m.pane != paneDetail {
-		t.Error("clone must be selected after creation")
+	if m.pane != paneDetail {
+		t.Fatalf("pane = %v after Escape on the clone prompt, want paneDetail", m.pane)
+	}
+	// wizardModel is not comparable (embeds textinput.Model), so compare the
+	// identifying fields newWizardPrefilled would have changed: a real
+	// wizard opened at step 0 has a non-empty testPhase (testIdle) and a
+	// non-empty prefix — the untouched zero value has neither.
+	if m.wizard.testPhase != "" {
+		t.Error("Escape on the clone prompt must leave the wizard unmodified (testPhase still zero-value)")
+	}
+	if m.wizard.step != beforeStep || m.wizard.form.prefix.Value() != beforePrefix {
+		t.Error("Escape on the clone prompt must leave the wizard unmodified")
+	}
+}
+
+// TestCloneEnterEmitsNoCloneIdentityAction is the direct handler-level proof
+// that D-15's "no second write pipeline" holds at the action-dispatch layer,
+// not just observably: handleCloneKey's Enter branch must never return a
+// CloneIdentity action — the wizard's OWN commit path is the only write.
+func TestCloneEnterEmitsNoCloneIdentityAction(t *testing.T) {
+	a := pressSeq(t, identitiesApp(), "c")
+	m := identModel(t, a)
+	res := m.handleCloneKey(mustKey("Enter"), a.state)
+	for _, act := range res.actions {
+		if _, ok := act.(CloneIdentity); ok {
+			t.Fatal("handleCloneKey's Enter branch must never emit a CloneIdentity action (D-15)")
+		}
+	}
+}
+
+// TestCloneReviewFlagOnAuthorRowsOnly is the render-level proof of D-14's
+// scope: the Git-step name/email rows carry the "copied from" flag, no
+// other row does, and the flag costs ZERO extra rows (05-UI-SPEC.md
+// Spacing table) — a flagged wizard and an unflagged one render the same
+// line count.
+// clonedWizardAtGitStep opens the "personal" clone prompt, confirms it, and
+// drives the resulting pre-filled wizard through both test stages so it
+// lands on the Git identity step — the SAME through-the-gate path
+// wizardThroughTest drives a fresh wizard through, proving D-15's "no
+// second write pipeline" claim structurally: a clone that skipped the gate
+// would fail this exact sequence.
+func clonedWizardAtGitStep(t *testing.T, a App) App {
+	t.Helper()
+	a = pressSeq(t, a, "c")
+	a, _ = press(t, a, "enter") // confirm clone prompt -> opens the pre-filled wizard at step 0
+	a, _ = press(t, a, "enter") // step 0 -> step 1 (test connection)
+	a, _ = press(t, a, "enter") // start stage-1 test
+	a = completeStage(t, a, 1)  // stage-1 success auto-chains into stage 2 (D-04)
+	a, _ = press(t, a, "enter") // step 1 -> step 2 (Git identity)
+	if !strings.Contains(appView(a), "Step 3/4") || !strings.Contains(appView(a), "New identity › Git identity") {
+		t.Fatalf("cloned wizard did not reach step 3:\n%s", appView(a))
+	}
+	return a
+}
+
+// TestCloneReviewFlagOnAuthorRowsOnly is the render-level proof of D-14's
+// scope: the Git-step name/email rows carry the "copied from" flag, no
+// other row does, and the flag costs ZERO extra rows (05-UI-SPEC.md
+// Spacing table) — a flagged wizard and an unflagged one render the same
+// line count.
+func TestCloneReviewFlagOnAuthorRowsOnly(t *testing.T) {
+	a := clonedWizardAtGitStep(t, identitiesApp())
+	flagged := paneFlat(a)
+	flag := copiedFieldFlag("personal")
+	if !strings.Contains(flagged, flag) {
+		t.Fatalf("Git step must show the D-14 review flag %q:\n%s", flag, flagged)
+	}
+	if got := strings.Count(flagged, flag); got != 2 {
+		t.Errorf("review flag must appear exactly twice (name + email rows), got %d", got)
+	}
+
+	// A fresh (non-clone) wizard's Git step must carry NO flag, and the
+	// pane must render the SAME line count either way (0 extra rows).
+	b := wizardThroughTest(t, identitiesApp())
+	unflagged := paneFlat(b)
+	if strings.Contains(unflagged, "copied from") {
+		t.Error("a fresh wizard's Git step must never show the D-14 review flag")
+	}
+	if got, want := len(strings.Split(flagged, "\n")), len(strings.Split(unflagged, "\n")); got != want {
+		t.Errorf("flagged pane has %d lines, unflagged has %d — the flag must cost ZERO extra rows", got, want)
+	}
+}
+
+// TestCloneReviewFlagNeverOnSSHOrStrategyRows is the negative half of the
+// D-14 scope proof: no SSH field row, no gitdir row, and no strategy row
+// ever carries the flag string, on the SAME pre-filled wizard the positive
+// test above confirms DOES carry it on the Git author rows.
+func TestCloneReviewFlagNeverOnSSHOrStrategyRows(t *testing.T) {
+	a := pressSeq(t, identitiesApp(), "c")
+	a, _ = press(t, a, "enter") // confirm — opens the pre-filled wizard at step 0
+	step0 := paneFlat(a)        // SSH details step
+	if strings.Contains(step0, "copied from") {
+		t.Errorf("SSH step must never show the D-14 review flag:\n%s", step0)
+	}
+
+	// Use the RAW rendered view (real row boundaries), not paneFlat's
+	// whitespace-collapsing helper — collapsing loses line boundaries
+	// entirely, which would make a per-row adjacency check meaningless.
+	gitStep := appView(clonedWizardAtGitStep(t, identitiesApp()))
+	for _, line := range strings.Split(gitStep, "\n") {
+		if strings.Contains(line, "gitdir path") && strings.Contains(line, "copied from") {
+			t.Errorf("gitdir row must never carry the review flag: %q", line)
+		}
+		if strings.Contains(line, "Match strategy") && strings.Contains(line, "copied from") {
+			t.Errorf("strategy row must never carry the review flag: %q", line)
+		}
+	}
+}
+
+// --------------------------------------------------------------------------
+// Clone — D-16 same-key clones re-run the full two-stage gate.
+// --------------------------------------------------------------------------
+
+// TestClonePrefilledWizardTestPhaseMatchesFreshWizard proves newWizardPrefilled
+// never skips or short-circuits the D-01/D-16 test gate: its initial
+// testPhase is EXACTLY newWizard's, so entering pre-filled never lands the
+// user past the gate even though the reused key is already proven — the new
+// Host block's `ssh -G` resolution is not, and stage 2 is precisely the
+// resolution proof.
+func TestClonePrefilledWizardTestPhaseMatchesFreshWizard(t *testing.T) {
+	fresh := newWizard(stubBackend{})
+	pre := ClonePrefillView{
+		SourceName: "personal", CloneName: "personal-clone", AliasPrefix: "personal-clone",
+		Hostname: "ssh.github.com", Port: "443",
+		GitName: "personal identity", GitEmail: "you@personal.example",
+		ReuseKeyPath: "~/.ssh/id_ed25519_personal",
+		CopiedFields: []string{copiedFieldGitName, copiedFieldGitEmail},
+	}
+	prefilled := newWizardPrefilled(stubBackend{}, pre)
+	if prefilled.testPhase != fresh.testPhase {
+		t.Errorf("prefilled testPhase = %q, want %q (fresh wizard's idle value — D-16 gate must not be skipped)",
+			prefilled.testPhase, fresh.testPhase)
+	}
+	if prefilled.testPhase != testIdle {
+		t.Errorf("prefilled testPhase = %q, want testIdle", prefilled.testPhase)
+	}
+}
+
+// TestCloneStageCommandsNameTheCloneAlias proves D-16's "the stage commands
+// shown for a clone name the clone's own alias, not the source's" — stage 2
+// resolves BY ALIAS (TEST-02), so it is the one that must carry the CLONE's
+// alias. Stage 1 tests directly against the provider hostname (TEST-01) and
+// carries no alias at all by design; it is not asserted here.
+func TestCloneStageCommandsNameTheCloneAlias(t *testing.T) {
+	a := pressSeq(t, identitiesApp(), "c")
+	a, _ = press(t, a, "enter") // confirm clone prompt -> opens the pre-filled wizard
+	m := identModel(t, a)
+	if !strings.Contains(m.wizard.stage2Cmd(), "personal-clone") {
+		t.Errorf("stage-2 command = %q, must name the clone's own alias, not the source's", m.wizard.stage2Cmd())
+	}
+	if strings.Contains(m.wizard.stage2Cmd(), " personal ") {
+		t.Errorf("stage-2 command must not resolve the SOURCE's alias: %q", m.wizard.stage2Cmd())
 	}
 }
 

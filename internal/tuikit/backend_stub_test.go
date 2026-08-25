@@ -432,3 +432,97 @@ func (stubBackend) CommitDelete(string, string) tea.Cmd {
 func (stubBackend) CommitGit(GitSpec) tea.Cmd {
 	return func() tea.Msg { return GitCommitMsg{} }
 }
+
+// ---------------------------------------------------------------------------
+// Clone (D-14/D-15/D-16/D-17, MGR-04) — plan 05-05.
+// ---------------------------------------------------------------------------
+
+// stubCloneSuffix mirrors identity.CloneSuffix's value without importing
+// internal/identity (this file's own header comment: the stub is a
+// deliberate copy, never an import, to avoid the tuikit<->dummytui cycle —
+// same reasoning applies one package further down the stack here).
+const stubCloneSuffix = "-clone"
+
+// stubNameTaken reports whether candidate collides (case-insensitively, SSH
+// host patterns are matched case-insensitively) with an existing fixture
+// identity name — the stub's D-17 taken-name check.
+func stubNameTaken(candidate string) bool {
+	for _, row := range stubIdentityRows {
+		if strings.EqualFold(row.Name, candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+// SuggestCloneName mirrors identity.SuggestCloneName's D-17 silent-bump
+// semantics over the fixture rows.
+func (stubBackend) SuggestCloneName(source string) string {
+	base := source + stubCloneSuffix
+	if !stubNameTaken(base) {
+		return base
+	}
+	for n := 2; ; n++ {
+		candidate := fmt.Sprintf("%s-%d", base, n)
+		if !stubNameTaken(candidate) {
+			return candidate
+		}
+	}
+}
+
+// findStubRow resolves a fixture row by name.
+func findStubRow(name string) (stubIdentityRow, bool) {
+	for _, row := range stubIdentityRows {
+		if row.Name == name {
+			return row, true
+		}
+	}
+	return stubIdentityRow{}, false
+}
+
+// ClonePrefill mirrors identity.DeriveCloneInput's D-14 copy/re-derive split
+// over the fixture rows: user.name/user.email are copied verbatim from the
+// source (when the source has a Git identity at all) and reported in
+// CopiedFields; everything else is re-derived from cloneName.
+func (stubBackend) ClonePrefill(source, cloneName string, reuseSourceKey bool) (ClonePrefillView, error) {
+	cloneName = strings.TrimSpace(cloneName)
+	if cloneName == "" {
+		return ClonePrefillView{}, fmt.Errorf("clone name is required")
+	}
+	if strings.EqualFold(cloneName, source) {
+		return ClonePrefillView{}, fmt.Errorf("clone name must differ from the source name")
+	}
+	if stubNameTaken(cloneName) {
+		return ClonePrefillView{}, fmt.Errorf("%q is already in use", cloneName)
+	}
+	src, ok := findStubRow(source)
+	if !ok {
+		return ClonePrefillView{}, fmt.Errorf("clone: source identity %q not found", source)
+	}
+	provider := defaultProvider
+	if src.SSHHost != "" {
+		provider = hostSuffix(src.SSHHost)
+	}
+	hostname, port := stubBackend{}.ProviderDefaults(provider)
+	gitName, gitEmail := "", ""
+	if src.GitFragmentPath != "" {
+		gitName = src.Name + " identity"
+		gitEmail = "you@" + src.Name + ".example"
+	}
+	view := ClonePrefillView{
+		SourceName:    source,
+		CloneName:     cloneName,
+		AliasPrefix:   cloneName,
+		Hostname:      hostname,
+		Port:          port,
+		GitName:       gitName,
+		GitEmail:      gitEmail,
+		MatchStrategy: gitScreenMatchStrategyDefault,
+		GitDir:        "~/git/" + cloneName + "/",
+		CopiedFields:  []string{copiedFieldGitName, copiedFieldGitEmail},
+	}
+	if reuseSourceKey {
+		view.ReuseKeyPath = src.KeyPath
+	}
+	return view, nil
+}

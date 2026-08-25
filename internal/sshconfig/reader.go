@@ -133,6 +133,36 @@ func AllHostStanzas(content []byte) []HostStanza {
 	return out
 }
 
+// MatchingHostStanzas returns the PRIMARY pattern text of every Host stanza
+// in content (gitid-managed and hand-written, Include-unaware — the same
+// single-file scope AllHostStanzas uses) that matches candidate under REAL
+// OpenSSH pattern semantics: kevinburke/ssh_config's own *Host.Matches,
+// which already implements the manpage's wildcard/`?`/negation rules —
+// never a hand-rolled globber (review R-29). This is the D-14/D-17 clone
+// pattern-shadowing check's data source: a wildcard stanza like
+// `Host *.github.com` matches a candidate that no LITERAL alias comparison
+// would ever catch.
+func MatchingHostStanzas(content []byte, candidate string) []string {
+	cfg, err := ssh_config.Decode(strings.NewReader(string(content)))
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, host := range cfg.Hosts {
+		// Skip the implicit Host * inserted by the parser for an empty file.
+		if len(host.Patterns) == 1 && host.Patterns[0].String() == "*" {
+			continue
+		}
+		if len(host.Patterns) == 0 {
+			continue
+		}
+		if host.Matches(candidate) {
+			out = append(out, host.Patterns[0].String())
+		}
+	}
+	return out
+}
+
 // parseHostBlockBody parses a single SSH host block body string into an
 // SSHHostInfo. It skips the implicit Host * inserted by the kevinburke parser
 // (Pitfall A guard: len(host.Patterns)==1 && host.Patterns[0].String()=="*").

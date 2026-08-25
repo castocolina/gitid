@@ -426,6 +426,43 @@ func helperLine(text string, isError bool) string {
 	return "     " + styleFaint.Render(text)
 }
 
+// copiedFieldFlagTemplate is the D-14 "copied from <source> — review" inline
+// flag (05-UI-SPEC.md Copywriting Contract) — a trailing suffix on the SAME
+// row the pre-filled user.name/user.email fields already occupy, costing
+// zero extra rows. Registered as a package constant so the 02-STYLE-SPEC.md
+// §6 copy-freeze grep can find it (review R-31; the Makefile allowlist entry
+// itself is plan 05-09's job per this plan's source_audit table).
+const copiedFieldFlagTemplate = "copied from %s — review"
+
+// copiedFieldFlag renders the D-14 flag naming source.
+func copiedFieldFlag(source string) string {
+	return fmt.Sprintf(copiedFieldFlagTemplate, source)
+}
+
+// Field identifiers a gitForm's copiedFields slice carries — plain string
+// values matching identity.CopiedFieldGitName/CopiedFieldGitEmail's values
+// exactly. tuikit never imports internal/identity (the Backend file-header
+// rule), so these are a local, string-identical mirror rather than a shared
+// constant.
+const (
+	copiedFieldGitName  = "user.name"
+	copiedFieldGitEmail = "user.email"
+)
+
+// formFieldLineFlagged extends formFieldLine with an OPTIONAL trailing D-14
+// review-flag suffix, applied only when flagged is true — the Git-step
+// name/email rows are the ONLY two callers that ever pass flagged=true, and
+// every other field (SSH fields, gitdir, strategy, key rows) keeps calling
+// the unflagged formFieldLine directly, so the flag can never leak onto a
+// re-derived field by accident.
+func formFieldLineFlagged(label string, input textinput.Model, focused, locked, flagged bool, source string) string {
+	line := formFieldLine(label, input, focused, locked)
+	if flagged {
+		line += "  " + styleFaint.Render(copiedFieldFlag(source))
+	}
+	return line
+}
+
 // view renders the shared field set. prefixError (if non-empty) replaces
 // the prefix helper; hostHelper is the auto-join state helper; validation
 // is a field-keyed error surfaced inline on the matching control. Contract
@@ -704,6 +741,25 @@ type gitForm struct {
 	// original is populated for edit mode and drives a changed-lines-only
 	// review; create mode leaves it zero-valued.
 	original GitOriginal
+	// copiedFields/sourceName carry the D-14 clone pre-fill's review flag:
+	// copiedFields names which field identifiers (copiedFieldGitName/
+	// copiedFieldGitEmail) were copied verbatim from sourceName. Both are
+	// zero-valued for a fresh (non-clone) wizard, so view() renders no flag
+	// at all unless newWizardPrefilled populated them.
+	copiedFields []string
+	sourceName   string
+}
+
+// fieldCopied reports whether id carries the D-14 review flag — true only
+// when this form was built by newWizardPrefilled AND id is one of the two
+// author fields the source identity's values were actually copied from.
+func (g gitForm) fieldCopied(id string) bool {
+	for _, f := range g.copiedFields {
+		if f == id {
+			return true
+		}
+	}
+	return false
 }
 
 // newGitForm builds the form with initial values. identity seeds the gitdir
@@ -897,8 +953,10 @@ func compactIncludeIfPreview(preview string) string {
 // terminal-width adaptation of the web's side-by-side pair).
 func (g gitForm) view(name, keyPath string, focus int, width int, baseline string) string {
 	var b strings.Builder
-	b.WriteString(formFieldLine("user.name", g.name, focus == gitFieldName, false) + "\n")
-	b.WriteString(formFieldLine("user.email", g.email, focus == gitFieldEmail, false))
+	b.WriteString(formFieldLineFlagged("user.name", g.name, focus == gitFieldName, false,
+		g.fieldCopied(copiedFieldGitName), g.sourceName) + "\n")
+	b.WriteString(formFieldLineFlagged("user.email", g.email, focus == gitFieldEmail, false,
+		g.fieldCopied(copiedFieldGitEmail), g.sourceName))
 	if !strings.Contains(g.email.Value(), "@") {
 		b.WriteString("  " + styleError.Render("needs @"))
 	}
@@ -1032,18 +1090,118 @@ type wizardModel struct {
 	hasCollisionTarget bool
 }
 
-// newWizard builds the wizard with the web demo's defaults.
-func newWizard(b Backend) wizardModel {
-	form := newSSHForm(b, "acme", "acme.github.com", "ssh.github.com", "443", false)
-	form = form.setFocus(sshFieldPrefix) // web: Alias prefix autoFocus
+// newWizardBase builds the wizard's shared shell — every field newWizard AND
+// newWizardPrefilled need before either one applies its own form/git values
+// (D-15: ONE construction, never a duplicated constructor, so a pre-filled
+// wizard behaves identically to a fresh one for every other interaction).
+func newWizardBase(b Backend) wizardModel {
 	return wizardModel{
 		backend:    b,
-		form:       form,
-		focus:      sshFieldPrefix,
 		testPhase:  testIdle,
 		manualPath: newTextInput(""),
-		git:        newGitForm(b, form.identityName(), "Acme Identity", "you@acme.example", b.DefaultMatchStrategy()).setFocus(gitFieldName),
 	}
+}
+
+// newWizard builds the wizard with the web demo's defaults.
+func newWizard(b Backend) wizardModel {
+	w := newWizardBase(b)
+	form := newSSHForm(b, "acme", "acme.github.com", "ssh.github.com", "443", false)
+	form = form.setFocus(sshFieldPrefix) // web: Alias prefix autoFocus
+	w.form = form
+	w.focus = sshFieldPrefix
+	w.git = newGitForm(b, form.identityName(), "Acme Identity", "you@acme.example", b.DefaultMatchStrategy()).setFocus(gitFieldName)
+	return w
+}
+
+// providerFromHostname is the wizard-local INVERSE of the recipe-canonical
+// alt-SSH table (D-20/D-21) — used only to reconstruct a clone's full SSH
+// Host alias from its re-derived hostname when pre-filling the wizard's
+// "SSH Host (alias)" field. A hostname outside the three known pairings
+// falls back to itself, matching the project's own "unknown provider keeps
+// itself" convention (sshForm.unknownProvider). Plain-string, no backend
+// type — the Backend file-header rule only forbids naming a backend TYPE.
+func providerFromHostname(hostname string) string {
+	switch hostname {
+	case "ssh.github.com":
+		return "github.com"
+	case "altssh.gitlab.com":
+		return "gitlab.com"
+	case "altssh.bitbucket.org":
+		return "bitbucket.org"
+	default:
+		return hostname
+	}
+}
+
+// newWizardPrefilled builds the create wizard pre-filled from a clone
+// derivation (D-14/D-15) — the SAME shared construction newWizard uses
+// (newWizardBase), so the pre-filled wizard inherits the test gate, the
+// stage auto-chain, the alias-collision block, the reusable Git form, and
+// the rollback behavior unchanged. pre.CopiedFields rides along on the Git
+// form so the Git-step renderer flags exactly the two copied rows (D-14).
+// testPhase stays at newWizardBase's idle value — D-16 requires a same-key
+// clone to still run the FULL two-stage gate, because the new Host block's
+// `ssh -G` resolution is genuinely unproven even though the reused key
+// itself is already proven; the auto-chain (handleMsg) makes the extra
+// stage invisible in wall-clock terms, so the gate semantics stay identical
+// between create and clone.
+func newWizardPrefilled(b Backend, pre ClonePrefillView) wizardModel {
+	w := newWizardBase(b)
+	provider := providerFromHostname(pre.Hostname)
+	fullAlias := pre.AliasPrefix
+	if provider != "" {
+		fullAlias = pre.AliasPrefix + "." + provider
+	}
+	form := newSSHForm(b, pre.AliasPrefix, fullAlias, pre.Hostname, pre.Port, false)
+	// The re-derived hostname/port/alias are authoritative pre-fill values,
+	// not provider-default guesses — mark them touched so applyProviderDefaults
+	// never silently overwrites them mid-flow.
+	form.hostTouched = true
+	form.endpointTouched = true
+	form = form.setFocus(sshFieldPrefix)
+	w.form = form
+	w.focus = sshFieldPrefix
+
+	strategy := pre.MatchStrategy
+	if strategy == "" {
+		strategy = b.DefaultMatchStrategy()
+	}
+	git := newGitForm(b, form.identityName(), pre.GitName, pre.GitEmail, strategy).setFocus(gitFieldName)
+	if pre.GitDir != "" {
+		git.gitDir.SetValue(pre.GitDir)
+		git.gitDirEdited = true
+	}
+	git.sourceName = pre.SourceName
+	git.copiedFields = pre.CopiedFields
+	w.git = git
+
+	if pre.ReuseKeyPath != "" {
+		w = w.applyReuseKey(pre.ReuseKeyPath)
+	}
+	return w
+}
+
+// applyReuseKey seeds the D-10 key-source picker onto path — the scanned
+// row when the Backend's picker already lists it, otherwise the manual-path
+// row (mirroring the picker's own manual-entry resolution) so a source key
+// gitid's scan does not surface (an unusual location) still pre-fills.
+func (w wizardModel) applyReuseKey(path string) wizardModel {
+	w.keySource = keySourceReuse
+	views := w.backend.ScanReusableKeys()
+	for i, v := range views {
+		if v.Path == path {
+			w.reuseIdx = i
+			return w
+		}
+	}
+	w.reuseIdx = len(views)
+	w.manualPath = newTextInput(path)
+	if view, err := w.backend.ManualReusePath(path); err == nil {
+		w.manualView = view
+	} else {
+		w.manualErr = err.Error()
+	}
+	return w
 }
 
 // keyPath is the per-identity key the wizard will use: the reused key's own
@@ -1716,8 +1874,12 @@ type identitiesModel struct {
 	// cloneOnButton: the clone pane's 2-slot focus ring sits on the Clone
 	// button instead of the name input (batch 3 focus-ring parity).
 	cloneOnButton bool
-	fixFindingID  string
-	fixCeremony   ceremonyModel
+	// cloneErr carries a ClonePrefill refusal (validation, or the D-17/R-29
+	// pattern-shadowing check) so the prompt renders it inline instead of
+	// silently bumping the name or opening the wizard on bad data.
+	cloneErr     string
+	fixFindingID string
+	fixCeremony  ceremonyModel
 }
 
 // newIdentitiesModel starts on the first row of the Backend's initial
@@ -1944,9 +2106,10 @@ func (m identitiesModel) handleDetailKey(msg tea.KeyMsg, s DemoState) keyResult 
 			return keyResult{model: m, handled: true}
 		}
 		m.pane = paneClone
-		m.cloneInput = newTextInput(sel.Name + "-clone")
+		m.cloneInput = newTextInput(m.backend.SuggestCloneName(sel.Name))
 		m.cloneInput.Focus()
 		m.cloneOnButton = false
+		m.cloneErr = ""
 		return keyResult{model: m, handled: true}
 	case "d":
 		if !ok {
@@ -2252,14 +2415,22 @@ func (m identitiesModel) handleCloneKey(msg tea.KeyMsg, s DemoState) keyResult {
 		}
 		return keyResult{model: m, handled: true}
 	case "enter":
-		if strings.TrimSpace(name) == "" || hasIdentityNamed(s, name) {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" || hasIdentityNamed(s, trimmed) {
 			return keyResult{model: m, handled: true}
 		}
-		m.pane = paneDetail
-		m.selected = name
-		return keyResult{model: m, handled: true,
-			note:    `Identity "` + name + `" cloned from "` + sel.Name + `".`,
-			actions: []Action{CloneIdentity{Source: sel.Name, CloneName: name}}}
+		// D-15: clone opens the EXISTING create wizard pre-filled — there is
+		// no second write pipeline, so a failure here (validation, or the
+		// D-17/R-29 pattern-shadowing refusal) renders inline on THIS prompt
+		// and never falls through to a CloneIdentity action.
+		pre, err := m.backend.ClonePrefill(sel.Name, trimmed, true)
+		if err != nil {
+			m.cloneErr = err.Error()
+			return keyResult{model: m, handled: true}
+		}
+		m.pane = paneCreate
+		m.wizard = newWizardPrefilled(m.backend, pre)
+		return keyResult{model: m, handled: true}
 	default:
 		// ←/→ on the single Clone button have no adjacent button; typing
 		// only reaches the name input while it is the focused slot.
@@ -3715,14 +3886,19 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 	case paneClone:
 		taken := hasIdentityNamed(s, m.cloneInput.Value())
 		helper := "Creates " + m.cloneInput.Value() + ".github.com + ~/.ssh/id_ed25519_" + m.cloneInput.Value()
+		isError := taken
 		if taken {
 			helper = "That name already exists."
 		}
-		cloneValid := !taken && strings.TrimSpace(m.cloneInput.Value()) != ""
+		if m.cloneErr != "" {
+			helper = m.cloneErr
+			isError = true
+		}
+		cloneValid := !taken && m.cloneErr == "" && strings.TrimSpace(m.cloneInput.Value()) != ""
 		pane = " " + styleBold.Render(`Clone "`+sel.Name+`"`) + "\n" +
 			" " + styleFaint.Render("The clone gets its own new key and Host alias; the Git author is copied (MGR-04).") + "\n\n" +
 			formFieldLine("New identity name", m.cloneInput, !m.cloneOnButton, false) + "\n" +
-			helperLine(helper, !cloneValid) + "\n\n" +
+			helperLine(helper, isError) + "\n\n" +
 			" " + wizardButton(identCloneButton, m.cloneOnButton, cloneValid, cloneDisabledSuffix)
 		crumbs = []string{sel.Name, "Clone"}
 		actions = []FooterAction{{Key: "Tab", Label: "switch"}, {Key: "Enter", Label: "clone"}}

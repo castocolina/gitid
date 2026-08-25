@@ -3084,3 +3084,250 @@ func TestRunDeleteEverything_BitbucketHandWrittenAliasKeepsRewrite(t *testing.T)
 		t.Error("bitbucket.org provider rewrite block removed despite a surviving hand-written Host stanza (R2-04 regression)")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// 05-05 — Clone: SuggestCloneName / ClonePrefill (D-14/D-15/D-16/D-17, R-29)
+// ---------------------------------------------------------------------------
+
+// TestClonePrefill_CopiesAuthorFieldsAndRederivesEverythingElse is the
+// real-constructor happy path: DeriveCloneInput's D-14 copy/re-derive split
+// survives the real Reconstruct round-trip, and ClonePrefill projects it
+// into the exact DTO the wizard pre-fills from.
+// seedCloneSourceFixture mirrors seedDeleteFixture's shape but renders the
+// Host block through sshconfig.RenderHostBlock with an explicit provider,
+// so the reconstructed account carries a FULL FQDN Provider ("github.com")
+// via the "# gitid: provider=" marker (D-11) rather than seedDeleteFixture's
+// markerless block, which Reconstruct's hostnameToProvider fallback would
+// resolve to the SHORT form ("github") — correct for a legacy identity, but
+// wrong for these tests' alias-shape assertions (DefaultAlias needs the
+// FQDN to produce "<name>.github.com", not "<name>.github").
+func seedCloneSourceFixture(t *testing.T, home, name string) (pubLine string) {
+	t.Helper()
+	seedSSHDir(t, home)
+
+	hostBody := sshconfig.RenderHostBlock(name+".github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_"+name, "github.com")
+	sshConfig := managedBlock("_global", "Host *\n  IdentitiesOnly yes\n") + "\n" + managedBlock(name, hostBody)
+	writeFile(t, filepath.Join(home, ".ssh", "config"), sshConfig)
+
+	pubLine = seedGeneratedKey(t, filepath.Join(home, ".ssh", "id_ed25519_"+name), name, "")
+
+	if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
+		t.Fatalf("seeding .gitconfig.d: %v", err)
+	}
+	fragBody := "[user]\n\tname = " + name + " User\n\temail = " + name + "@example.com\n" +
+		"\tsigningkey = ~/.ssh/id_ed25519_" + name + ".pub\n\n[gpg]\n\tformat = ssh\n\n[commit]\n\tgpgsign = true\n"
+	writeFile(t, filepath.Join(home, ".gitconfig.d", name), fragBody)
+
+	gcBody := "[includeIf \"gitdir:~/git/" + name + "/\"]\n\tpath = ~/.gitconfig.d/" + name + "\n"
+	gitconfigFile := "[user]\n\tname = Global User\n\n" + managedBlock(name, gcBody)
+	writeFile(t, filepath.Join(home, ".gitconfig"), gitconfigFile)
+
+	line := mustAllowedSignersLine(t, name+"@example.com", pubLine)
+	writeFile(t, filepath.Join(home, ".ssh", "allowed_signers"), managedBlock(name, line))
+
+	return pubLine
+}
+
+func TestClonePrefill_CopiesAuthorFieldsAndRederivesEverythingElse(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "personal")
+	b := newBackendForHome(home)
+
+	pre, err := b.ClonePrefill("personal", "personal-clone", true)
+	if err != nil {
+		t.Fatalf("ClonePrefill: %v", err)
+	}
+	if pre.SourceName != "personal" || pre.CloneName != "personal-clone" {
+		t.Errorf("SourceName/CloneName = %q/%q, want personal/personal-clone", pre.SourceName, pre.CloneName)
+	}
+	if pre.GitName != "personal User" || pre.GitEmail != "personal@example.com" {
+		t.Errorf("GitName/GitEmail = %q/%q, want the source's copied author values", pre.GitName, pre.GitEmail)
+	}
+	if len(pre.CopiedFields) != 2 {
+		t.Fatalf("CopiedFields = %v, want exactly the two author fields", pre.CopiedFields)
+	}
+	if pre.Hostname != "ssh.github.com" || pre.Port != "443" {
+		t.Errorf("Hostname/Port = %q/%q, want the source's re-derived endpoint ssh.github.com/443", pre.Hostname, pre.Port)
+	}
+	wantKey := filepath.Join(home, ".ssh", "id_ed25519_personal")
+	if pre.ReuseKeyPath != wantKey {
+		t.Errorf("ReuseKeyPath = %q, want the source's resolved key %q", pre.ReuseKeyPath, wantKey)
+	}
+}
+
+// TestSuggestCloneName_BumpsPastLiteralHostAlias is the D-17 availability
+// half of the R-29 two-check proof: a hand-written LITERAL Host alias
+// blocks the base suggestion, and the suggestion silently bumps past it —
+// the prompt never opens already claimed.
+func TestSuggestCloneName_BumpsPastLiteralHostAlias(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "personal")
+	sshPath := filepath.Join(home, ".ssh", "config")
+	existing := readFile(t, sshPath)
+	handWritten := "\nHost personal-clone.github.com\n  Hostname ssh.github.com\n  Port 443\n  IdentityFile ~/.ssh/id_ed25519_other\n"
+	writeFile(t, sshPath, existing+handWritten)
+
+	b := newBackendForHome(home)
+	if got := b.SuggestCloneName("personal"); got != "personal-clone-2" {
+		t.Errorf("SuggestCloneName(personal) = %q, want personal-clone-2 (bumped past the literal hand-written alias)", got)
+	}
+}
+
+// TestClonePrefill_WildcardPatternShadowingReturnsTypedError is the D-17/
+// R-29 pattern-shadowing half of the two-check proof: a WILDCARD Host
+// stanza that no literal-name scan would ever catch must be caught here,
+// as a typed error naming the shadowing pattern — never a silent bump.
+func TestClonePrefill_WildcardPatternShadowingReturnsTypedError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedCloneSourceFixture(t, home, "personal")
+	sshPath := filepath.Join(home, ".ssh", "config")
+	existing := readFile(t, sshPath)
+	wildcard := "\nHost *.github.com\n  IdentitiesOnly yes\n"
+	writeFile(t, sshPath, existing+wildcard)
+
+	b := newBackendForHome(home)
+	_, err := b.ClonePrefill("personal", "personal-clone", true)
+	if err == nil {
+		t.Fatal("ClonePrefill must refuse a clone whose derived alias is shadowed by a wildcard Host pattern")
+	}
+	var fe *identity.FieldError
+	if !errors.As(err, &fe) {
+		t.Fatalf("error = %v (%T), want *identity.FieldError", err, err)
+	}
+	if !strings.Contains(fe.Message, "*.github.com") {
+		t.Errorf("error message = %q, must name the shadowing pattern *.github.com", fe.Message)
+	}
+}
+
+// TestSuggestCloneNameAndShadowing_AreDistinctCodePaths proves the
+// availability check (bump) and the pattern-shadowing check (typed error)
+// are genuinely separate: the SAME hermetic home carries BOTH a literal
+// alias (bumps the suggestion) and — once ClonePrefill is asked to derive
+// the bumped name directly — no wildcard is present, so it succeeds; adding
+// a wildcard afterward flips ClonePrefill's outcome to a refusal without
+// touching SuggestCloneName's own bump behavior at all.
+func TestSuggestCloneNameAndShadowing_AreDistinctCodePaths(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedCloneSourceFixture(t, home, "personal")
+	sshPath := filepath.Join(home, ".ssh", "config")
+	existing := readFile(t, sshPath)
+	writeFile(t, sshPath, existing+"\nHost personal-clone.github.com\n  Hostname ssh.github.com\n  Port 443\n  IdentityFile ~/.ssh/id_ed25519_other\n")
+
+	b := newBackendForHome(home)
+	suggested := b.SuggestCloneName("personal")
+	if suggested != "personal-clone-2" {
+		t.Fatalf("SuggestCloneName = %q, want personal-clone-2 (availability bump)", suggested)
+	}
+	if _, err := b.ClonePrefill("personal", suggested, true); err != nil {
+		t.Fatalf("ClonePrefill(%q) must succeed — no wildcard shadowing present yet: %v", suggested, err)
+	}
+
+	// Now add a wildcard that shadows the SAME bumped name's alias — the
+	// availability path (SuggestCloneName) is untouched; only ClonePrefill's
+	// shadowing check reacts.
+	writeFile(t, sshPath, readFile(t, sshPath)+"\nHost *.github.com\n  IdentitiesOnly yes\n")
+	b2 := newBackendForHome(home)
+	if got := b2.SuggestCloneName("personal"); got != suggested {
+		t.Errorf("adding a wildcard must not change SuggestCloneName's own bump result: got %q, want %q", got, suggested)
+	}
+	if _, err := b2.ClonePrefill("personal", suggested, true); err == nil {
+		t.Error("ClonePrefill must now refuse the same name once a shadowing wildcard exists")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 05-05 — Clone: D-16 same-key clones re-run the full two-stage gate.
+// ---------------------------------------------------------------------------
+
+// TestSpecFingerprint_DistinguishesByIdentityNameAndAlias confirms
+// specFingerprint already incorporates BOTH the identity name and the alias
+// (not only the key path) — the fail-closed store gate is only as strong as
+// what the fingerprint binds, and two clones of one source must never share
+// a fingerprint.
+func TestSpecFingerprint_DistinguishesByIdentityNameAndAlias(t *testing.T) {
+	base := identity.CreateInput{
+		Alias: "personal-clone.github.com", Hostname: "ssh.github.com", Port: 443,
+		Algo: "ed25519", Name: "personal-clone", Provider: "github.com",
+	}
+	byName := base
+	byName.Name = "personal-clone-2"
+	if specFingerprint(base) == specFingerprint(byName) {
+		t.Error("specFingerprint must differ when only Name differs")
+	}
+	byAlias := base
+	byAlias.Alias = "personal-clone-2.github.com"
+	if specFingerprint(base) == specFingerprint(byAlias) {
+		t.Error("specFingerprint must differ when only Alias differs")
+	}
+}
+
+// TestCloneStoreGate_LockedUntilBothStagesAccepted is the D-16 gate proof at
+// the store-gate seam: a same-key clone's write stays locked until BOTH
+// stages are accepted for its OWN fingerprint.
+func TestCloneStoreGate_LockedUntilBothStagesAccepted(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	spec := identity.CreateInput{
+		Alias: "personal-clone.github.com", Hostname: "ssh.github.com", Port: 443,
+		Algo: "ed25519", Name: "personal-clone", Provider: "github.com",
+		ReuseKeyPath: filepath.Join(home, ".ssh", "id_ed25519_personal"),
+	}
+	if b.storeUnlockedFor(spec) {
+		t.Fatal("store gate must be locked before either stage runs")
+	}
+	b.recordOutcomeFor(1, tuikit.TestOutcomePass, spec)
+	if b.storeUnlockedFor(spec) {
+		t.Fatal("store gate must stay locked with only stage 1 accepted")
+	}
+	b.recordOutcomeFor(2, tuikit.TestOutcomePass, spec)
+	if !b.storeUnlockedFor(spec) {
+		t.Fatal("store gate must unlock once both stages are accepted for THIS spec")
+	}
+}
+
+// TestCloneStoreGate_SourceOutcomeDoesNotUnlockClone proves one identity's
+// proof provably cannot unlock another's write: an accepted outcome
+// recorded for the SOURCE specification must not unlock the CLONE
+// specification, even though the clone reuses the source's key.
+func TestCloneStoreGate_SourceOutcomeDoesNotUnlockClone(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_personal")
+	sourceSpec := identity.CreateInput{
+		Alias: "personal.github.com", Hostname: "ssh.github.com", Port: 443,
+		Algo: "ed25519", Name: "personal", Provider: "github.com",
+	}
+	cloneSpec := sourceSpec
+	cloneSpec.Name = "personal-clone"
+	cloneSpec.Alias = "personal-clone.github.com"
+	cloneSpec.ReuseKeyPath = keyPath
+
+	b.recordOutcomeFor(1, tuikit.TestOutcomePass, sourceSpec)
+	b.recordOutcomeFor(2, tuikit.TestOutcomePass, sourceSpec)
+	if !b.storeUnlockedFor(sourceSpec) {
+		t.Fatal("sanity: the source spec should be unlocked by its own accepted outcomes")
+	}
+	if b.storeUnlockedFor(cloneSpec) {
+		t.Error("an accepted outcome recorded for the SOURCE specification must not unlock the CLONE specification")
+	}
+}
+
+// TestCloneStageCommandsNameCloneAlias_RealBackend is the real-Backend
+// counterpart of the tuikit-level assertion: Stage2Command (TEST-02,
+// resolve BY ALIAS) must name the clone's own alias, never the source's.
+func TestCloneStageCommandsNameCloneAlias_RealBackend(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	spec := tuikit.CreateSpec{
+		Identity: "personal-clone", Alias: "personal-clone.github.com",
+		Hostname: "ssh.github.com", Port: "443", KeyPath: filepath.Join(home, ".ssh", "id_ed25519_personal"),
+	}
+	cmd := b.Stage2Command(spec)
+	if !strings.Contains(cmd, "personal-clone") {
+		t.Errorf("Stage2Command = %q, must name the clone's own alias", cmd)
+	}
+}

@@ -198,3 +198,44 @@ type DeleteCommitMsg struct {
 	Removed  []string
 	Err      string
 }
+
+// ClonePrefillView is the D-14/D-15 clone pre-fill DTO: what a confirmed
+// clone-name prompt hands the create wizard as its INITIAL state. D-15 is
+// explicit that clone gets no second write pipeline — this is a pre-fill for
+// the SAME wizard a fresh create uses, never a parallel spec type.
+//
+// CopiedFields names exactly which fields were COPIED verbatim from the
+// source (D-14 restricts this to user.name/user.email) so the Git-step
+// renderer can attach the "copied from <source> — review" flag to exactly
+// those two rows and no others — every other field here was RE-DERIVED from
+// the new name, never copied, even though it is also "pre-filled".
+type ClonePrefillView struct {
+	// SourceName is the identity the clone was derived from — the flag's
+	// "copied from <source>" text names it.
+	SourceName string
+	// CloneName is the resolved, validated new identity name.
+	CloneName string
+	// AliasPrefix seeds the wizard's "Alias prefix" field — the identity/
+	// prefix half of the SSH Host alias, re-derived from CloneName (D-14).
+	AliasPrefix string
+	// Hostname is the re-derived SSH endpoint (copied from the source
+	// verbatim — the endpoint itself is not identity-scoped).
+	Hostname string
+	// Port is the re-derived SSH port, as a string for the form field.
+	Port string
+	// GitName/GitEmail are COPIED verbatim from the source (D-14's two
+	// author fields) — the only two entries CopiedFields ever names.
+	GitName  string
+	GitEmail string
+	// MatchStrategy is the re-derived includeIf match strategy, preserving
+	// the source's match KIND (review R-23's documented divergence note).
+	MatchStrategy string
+	// GitDir is the re-derived gitdir path when the strategy uses one.
+	GitDir string
+	// ReuseKeyPath is the source's key path when the clone reuses it, empty
+	// when the clone will generate a fresh key (D-16 still gates either way).
+	ReuseKeyPath string
+	// CopiedFields names the field identifiers ("user.name", "user.email")
+	// that carry the D-14 review flag — exactly two entries, always.
+	CopiedFields []string
+}

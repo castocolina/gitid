@@ -133,14 +133,23 @@ func TestMouseConfigureNowAndPerFindingFixClick(t *testing.T) {
 	}
 }
 
+// TestMouseCloneButtonClones drives the D-15 clone-into-pre-filled-wizard
+// path via a mouse click: clicking the Clone button opens the create wizard
+// pre-filled, rather than dispatching an immediate CloneIdentity action
+// (plan 05-05 supersedes the old immediate-clone flow this test used to
+// assert).
 func TestMouseCloneButtonClones(t *testing.T) {
 	a := pressSeq(t, NewApp(stubBackend{}), "c")
 	a = clickCell(t, a, "Clone (Enter)", 0, frameBodyTop)
-	if got := identModel(t, a).selected; got != "personal-clone" {
-		t.Fatalf("selected = %q after clicking Clone, want personal-clone", got)
+	m := identModel(t, a)
+	if m.pane != paneCreate {
+		t.Fatalf("pane = %v after clicking Clone, want paneCreate (D-15 pre-filled wizard)", m.pane)
 	}
-	if len(a.state.Identities) != 9 {
-		t.Error("clicking Clone must dispatch CloneIdentity")
+	if got := m.wizard.form.prefix.Value(); got != "personal-clone" {
+		t.Errorf("wizard alias prefix = %q, want personal-clone", got)
+	}
+	if len(a.state.Identities) != 8 {
+		t.Error("clicking Clone must NOT dispatch CloneIdentity — no write until the wizard commits")
 	}
 }
 
@@ -265,8 +274,12 @@ func TestCloneFocusRingInputToButton(t *testing.T) {
 		t.Errorf("clone name = %q — typing on the button must not edit the input", got)
 	}
 	a, _ = press(t, a, "enter")
-	if got := identModel(t, a).selected; got != "personal-clone" {
-		t.Errorf("Enter on the focused Clone button must clone; selected = %q", got)
+	m = identModel(t, a)
+	if m.pane != paneCreate {
+		t.Errorf("Enter on the focused Clone button must open the pre-filled wizard; pane = %v", m.pane)
+	}
+	if got := m.wizard.form.prefix.Value(); got != "personal-clone" {
+		t.Errorf("wizard alias prefix = %q, want personal-clone", got)
 	}
 }
 

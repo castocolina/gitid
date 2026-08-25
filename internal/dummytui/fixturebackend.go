@@ -381,3 +381,103 @@ func (FixtureBackend) CommitDelete(_ string, scope string) tea.Cmd {
 		return tuikit.DeleteCommitMsg{Backups: []string{backup}}
 	})
 }
+
+// ---------------------------------------------------------------------------
+// Clone (D-14/D-15/D-16/D-17, MGR-04) — plan 05-05.
+// ---------------------------------------------------------------------------
+
+// fixtureCloneSuffix mirrors identity.CloneSuffix's value — the dummy has no
+// backend package to import (tuikit's own import-allowlist rule extends to
+// its Backend implementers), so this is a deliberate copy of the frozen
+// literal, not a shared constant.
+const fixtureCloneSuffix = "-clone"
+
+// fixtureCopiedFieldGitName/Email mirror identity.CopiedFieldGitName/Email's
+// values exactly — the D-14 review-flag field identifiers.
+const (
+	fixtureCopiedFieldGitName  = "user.name"
+	fixtureCopiedFieldGitEmail = "user.email"
+)
+
+// fixtureNameTaken is the dummy's D-17 taken-name check over the fixture
+// rows, case-insensitive (SSH host patterns are matched case-insensitively).
+func fixtureNameTaken(candidate string) bool {
+	for _, row := range IdentityManagerRows {
+		if strings.EqualFold(row.Name, candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+// findFixtureRow resolves a fixture row by name.
+func findFixtureRow(name string) (IdentityManagerRow, bool) {
+	for _, row := range IdentityManagerRows {
+		if row.Name == name {
+			return row, true
+		}
+	}
+	return IdentityManagerRow{}, false
+}
+
+// SuggestCloneName mirrors identity.SuggestCloneName's D-17 silent-bump
+// semantics over the fixture rows.
+func (FixtureBackend) SuggestCloneName(source string) string {
+	base := source + fixtureCloneSuffix
+	if !fixtureNameTaken(base) {
+		return base
+	}
+	for n := 2; ; n++ {
+		candidate := fmt.Sprintf("%s-%d", base, n)
+		if !fixtureNameTaken(candidate) {
+			return candidate
+		}
+	}
+}
+
+// ClonePrefill mirrors identity.DeriveCloneInput's D-14 copy/re-derive split
+// over the fixture rows: user.name/user.email are copied verbatim from the
+// source (when the source has a Git identity at all) and reported in
+// CopiedFields; everything else is re-derived from cloneName.
+func (b FixtureBackend) ClonePrefill(source, cloneName string, reuseSourceKey bool) (tuikit.ClonePrefillView, error) {
+	cloneName = strings.TrimSpace(cloneName)
+	if cloneName == "" {
+		return tuikit.ClonePrefillView{}, fmt.Errorf("clone name is required")
+	}
+	if strings.EqualFold(cloneName, source) {
+		return tuikit.ClonePrefillView{}, fmt.Errorf("clone name must differ from the source name")
+	}
+	if fixtureNameTaken(cloneName) {
+		return tuikit.ClonePrefillView{}, fmt.Errorf("%q is already in use", cloneName)
+	}
+	src, ok := findFixtureRow(source)
+	if !ok {
+		return tuikit.ClonePrefillView{}, fmt.Errorf("clone: source identity %q not found", source)
+	}
+	provider := "github.com"
+	if src.SSHHost != "" {
+		provider = providerHostFromAlias(src.SSHHost)
+	}
+	hostname, port := b.ProviderDefaults(provider)
+	gitName, gitEmail := "", ""
+	if src.GitFragmentPath != "" {
+		gitName = src.Name + " identity"
+		gitEmail = "you@" + src.Name + ".example"
+	}
+	view := tuikit.ClonePrefillView{
+		SourceName:    source,
+		CloneName:     cloneName,
+		AliasPrefix:   cloneName,
+		Hostname:      hostname,
+		Port:          port,
+		GitName:       gitName,
+		GitEmail:      gitEmail,
+		MatchStrategy: GitScreenMatchStrategyDefault,
+		GitDir:        "~/git/" + cloneName + "/",
+		CopiedFields:  []string{fixtureCopiedFieldGitName, fixtureCopiedFieldGitEmail},
+	}
+	if reuseSourceKey {
+		view.ReuseKeyPath = src.KeyPath
+	}
+	return view, nil
+}

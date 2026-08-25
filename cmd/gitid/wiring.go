@@ -1282,6 +1282,163 @@ func collectDeleteBackups(res identity.DeleteResult) []string {
 	return out
 }
 
+// ---------------------------------------------------------------------------
+// Clone (D-14/D-15/D-16/D-17, MGR-04) — plan 05-05.
+//
+// SuggestCloneName and ClonePrefill are PREVIEW-ONLY seams: neither writes
+// anything. D-15 is explicit that clone gets no second write pipeline — the
+// pre-filled wizard ClonePrefill returns feeds into commits through the
+// SAME CommitCreate a fresh create uses (identities.go's handleCloneKey +
+// newWizardPrefilled).
+// ---------------------------------------------------------------------------
+
+// takenCloneNames builds the D-17 taken-name list: every existing identity
+// name UNION every LITERAL (non-wildcard, non-negated) parsed Host
+// pattern's derived name, compared case-insensitively by
+// identity.SuggestCloneName. A wildcard pattern is deliberately NOT part of
+// this list — it can never be silently bumped past (review R-29); it is
+// caught by the SEPARATE pattern-shadowing check inside ClonePrefill.
+func (b *realBackend) takenCloneNames() []string {
+	var taken []string
+	for _, a := range b.accounts() {
+		taken = append(taken, a.Name)
+	}
+	if b.initErr != nil {
+		return taken
+	}
+	content, err := os.ReadFile(b.sshConfigPath) //nolint:gosec // b.sshConfigPath is a trusted gitid-managed path resolved in-process
+	if err != nil {
+		return taken
+	}
+	for _, stanza := range sshconfig.AllHostStanzas(content) {
+		if strings.ContainsAny(stanza.Alias, "*?") || strings.HasPrefix(stanza.Alias, "!") {
+			continue // wildcard/negated — the shadowing check's job, not availability's
+		}
+		taken = append(taken, nameFromAlias(stanza.Alias))
+	}
+	return taken
+}
+
+// nameFromAlias strips a two-label provider suffix off alias to recover the
+// NAME half of the `<name>.<provider>` convention (identity.DefaultAlias's
+// inverse) — used only to compare a hand-written literal alias against a
+// candidate NAME for the D-17 taken-list union.
+func nameFromAlias(alias string) string {
+	parts := strings.Split(alias, ".")
+	if len(parts) <= 2 {
+		return alias
+	}
+	return parts[0]
+}
+
+// SuggestCloneName is the D-17 suggested clone name for source, silently
+// auto-bumped past every taken name (existing identities plus every literal
+// hand-written alias) so the clone-name prompt never opens already claimed.
+func (b *realBackend) SuggestCloneName(source string) string {
+	return identity.SuggestCloneName(source, b.takenCloneNames())
+}
+
+// matchStrategyFromMatches projects a derived Matches slice back into the
+// wizard's three-value strategy vocabulary (gitdir/hasconfig/both) — the
+// SAME vocabulary buildMatchesForStrategy's switch produces, run in reverse.
+func matchStrategyFromMatches(matches []gitconfig.Match) string {
+	hasGitdir, hasHasconfig := false, false
+	for _, m := range matches {
+		switch m.Kind {
+		case gitconfig.MatchGitdir:
+			hasGitdir = true
+		case gitconfig.MatchHasconfig:
+			hasHasconfig = true
+		}
+	}
+	switch {
+	case hasGitdir && hasHasconfig:
+		return "both"
+	case hasHasconfig:
+		return "hasconfig"
+	default:
+		return "gitdir"
+	}
+}
+
+// gitDirFromMatches returns the first gitdir-kind match's value, or "" when
+// the derived Matches carry no gitdir entry (a pure-hasconfig clone).
+func gitDirFromMatches(matches []gitconfig.Match) string {
+	for _, m := range matches {
+		if m.Kind == gitconfig.MatchGitdir {
+			return m.Value
+		}
+	}
+	return ""
+}
+
+// ClonePrefill derives cloneName's pre-fill values from source (D-14) and
+// returns them as the DTO the wizard opens with — never a write. Two
+// DISTINCT checks run before a value is returned (review R-29):
+//
+//  1. Availability (identity.DeriveCloneInput's own name/alias validation,
+//     via ValidateName + sshconfig.ValidateHostBlock) — the caller
+//     (SuggestCloneName) already silently bumped past every taken literal
+//     name, so this mostly re-confirms rather than surprises.
+//  2. Pattern shadowing — the derived ALIAS is checked against every parsed
+//     Host pattern using REAL OpenSSH pattern semantics
+//     (sshconfig.MatchingHostStanzas, never a hand-rolled globber). A
+//     wildcard stanza the availability scan can never see (it only sees
+//     LITERAL patterns) is a typed, non-bumpable refusal naming the
+//     shadowing pattern — the user needs to know a wildcard stanza is in
+//     play, not have the name silently changed under them.
+func (b *realBackend) ClonePrefill(source, cloneName string, reuseSourceKey bool) (tuikit.ClonePrefillView, error) {
+	if b.initErr != nil {
+		return tuikit.ClonePrefillView{}, b.initErr
+	}
+	src, found := b.findAccount(source)
+	if !found {
+		return tuikit.ClonePrefillView{}, fmt.Errorf("clone: source identity %q not found", source)
+	}
+	// Reconstruct stores KeyPath verbatim from the parsed config (often a
+	// literal "~/…") — expand it before it becomes the resolved
+	// ReuseKeyPath the wizard's D-10 picker looks up against
+	// ScanReusableKeys' absolute paths (runDelete's own precedent, above).
+	src.KeyPath = expandTildeForHome(src.KeyPath, b.home)
+
+	targets := identity.CloneTargets{
+		GitconfigPath:      b.gitconfigPath,
+		SSHConfigPath:      b.sshConfigPath,
+		AllowedSignersPath: b.allowedSigners,
+		FragmentDir:        b.fragmentDir,
+	}
+	in, notices, derr := identity.DeriveCloneInput(src, cloneName, reuseSourceKey, targets)
+	if derr != nil {
+		return tuikit.ClonePrefillView{}, derr
+	}
+
+	content, rerr := os.ReadFile(b.sshConfigPath) //nolint:gosec // b.sshConfigPath is a trusted gitid-managed path resolved in-process
+	if rerr == nil {
+		if matches := sshconfig.MatchingHostStanzas(content, in.Alias); len(matches) > 0 {
+			return tuikit.ClonePrefillView{}, &identity.FieldError{
+				Field: "alias",
+				Message: fmt.Sprintf(
+					"%q is already matched by the existing Host pattern %q — pick a different name or edit that pattern first",
+					in.Alias, matches[0]),
+			}
+		}
+	}
+
+	return tuikit.ClonePrefillView{
+		SourceName:    source,
+		CloneName:     in.Name,
+		AliasPrefix:   in.Name,
+		Hostname:      in.Hostname,
+		Port:          strconv.Itoa(in.Port),
+		GitName:       in.GitName,
+		GitEmail:      in.GitEmail,
+		MatchStrategy: matchStrategyFromMatches(in.Matches),
+		GitDir:        gitDirFromMatches(in.Matches),
+		ReuseKeyPath:  in.ReuseKeyPath,
+		CopiedFields:  notices.CopiedFields,
+	}, nil
+}
+
 // mutationJournal captures the exact pre-transaction state of every mutable
 // Git artifact. Its rollback intentionally restores from in-memory snapshots,
 // not by moving timestamped backups: backups remain durable safety artifacts.
