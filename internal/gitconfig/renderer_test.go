@@ -308,6 +308,111 @@ func TestProviderRewriteRejectsUnsafeInput(t *testing.T) {
 	}
 }
 
+// TestRemoveProviderRewrite proves RemoveProviderRewrite removes exactly the
+// named provider's rewrite block, leaving a sibling provider's rewrite AND
+// the global baseline url-rewrites block untouched, and that a second
+// removal is idempotent (byte-identical to the first result).
+func TestRemoveProviderRewrite(t *testing.T) {
+	dir := t.TempDir()
+	gitconfigPath := filepath.Join(dir, ".gitconfig")
+
+	if _, err := WriteProviderRewrite(gitconfigPath, "github.com", true); err != nil {
+		t.Fatalf("seeding github.com rewrite: %v", err)
+	}
+	if _, err := WriteProviderRewrite(gitconfigPath, "gitlab.com", true); err != nil {
+		t.Fatalf("seeding gitlab.com rewrite: %v", err)
+	}
+	// A global baseline url-rewrites block, distinct from the per-provider
+	// blocks this function must never touch (05-RESEARCH.md Pitfall 4).
+	existing, err := os.ReadFile(gitconfigPath) //nolint:gosec // hermetic t.TempDir() fixture
+	if err != nil {
+		t.Fatalf("reading gitconfig: %v", err)
+	}
+	baselineBlock := "# BEGIN gitid managed: url-rewrites\n[url \"ssh://git@baseline.example/\"]\n\tinsteadOf = https://baseline.example/\n# END gitid managed: url-rewrites\n"
+	if err := os.WriteFile(gitconfigPath, append(existing, []byte(baselineBlock)...), 0o644); err != nil { //nolint:gosec // hermetic t.TempDir() fixture; writer sets production gitconfig mode
+		t.Fatalf("seeding baseline url-rewrites block: %v", err)
+	}
+
+	backup, err := RemoveProviderRewrite(gitconfigPath, "github.com")
+	if err != nil {
+		t.Fatalf("RemoveProviderRewrite: %v", err)
+	}
+	if backup == "" {
+		t.Error("expected a non-empty backup path for an existing file")
+	}
+
+	gc, err := os.ReadFile(gitconfigPath) //nolint:gosec // hermetic t.TempDir() fixture
+	if err != nil {
+		t.Fatalf("reading gitconfig after removal: %v", err)
+	}
+
+	githubHas, err := HasProviderRewrite(gc, "github.com")
+	if err != nil {
+		t.Fatalf("HasProviderRewrite github.com: %v", err)
+	}
+	if githubHas {
+		t.Error("github.com rewrite still present after removal")
+	}
+	gitlabHas, err := HasProviderRewrite(gc, "gitlab.com")
+	if err != nil {
+		t.Fatalf("HasProviderRewrite gitlab.com: %v", err)
+	}
+	if !gitlabHas {
+		t.Error("gitlab.com rewrite must survive github.com's removal")
+	}
+	if !strings.Contains(string(gc), "# BEGIN gitid managed: url-rewrites") {
+		t.Errorf("global baseline url-rewrites block must survive a per-provider removal:\n%s", gc)
+	}
+
+	// Idempotent: a second removal leaves the file byte-identical.
+	if _, err := RemoveProviderRewrite(gitconfigPath, "github.com"); err != nil {
+		t.Fatalf("second RemoveProviderRewrite: %v", err)
+	}
+	gc2, err := os.ReadFile(gitconfigPath) //nolint:gosec // hermetic t.TempDir() fixture
+	if err != nil {
+		t.Fatalf("reading gitconfig after second removal: %v", err)
+	}
+	if string(gc) != string(gc2) {
+		t.Errorf("RemoveProviderRewrite not idempotent:\nfirst:\n%s\nsecond:\n%s", gc, gc2)
+	}
+}
+
+// TestRemoveProviderRewrite_InvalidHostname proves an invalid provider
+// hostname is rejected before any read or write.
+func TestRemoveProviderRewrite_InvalidHostname(t *testing.T) {
+	dir := t.TempDir()
+	gitconfigPath := filepath.Join(dir, ".gitconfig")
+	seed := []byte("[core]\n\texcludesfile = ~/.gitignore_global\n")
+	if err := os.WriteFile(gitconfigPath, seed, 0o644); err != nil { //nolint:gosec // hermetic t.TempDir() fixture; writer sets production gitconfig mode
+		t.Fatalf("seeding gitconfig: %v", err)
+	}
+
+	if _, err := RemoveProviderRewrite(gitconfigPath, "not a host!"); err == nil {
+		t.Fatal("RemoveProviderRewrite with an invalid provider hostname = nil error, want rejection")
+	}
+	got, err := os.ReadFile(gitconfigPath) //nolint:gosec // hermetic t.TempDir() fixture
+	if err != nil {
+		t.Fatalf("reading gitconfig: %v", err)
+	}
+	if string(got) != string(seed) {
+		t.Errorf("file modified despite invalid hostname rejection:\nbefore:\n%s\nafter:\n%s", seed, got)
+	}
+}
+
+// TestRemoveProviderRewrite_NoSuchBlockIsNilError proves removing a provider
+// rewrite from a file with no such block returns a nil error.
+func TestRemoveProviderRewrite_NoSuchBlockIsNilError(t *testing.T) {
+	dir := t.TempDir()
+	gitconfigPath := filepath.Join(dir, ".gitconfig")
+	if err := os.WriteFile(gitconfigPath, []byte("[core]\n\texcludesfile = ~/.gitignore_global\n"), 0o644); err != nil { //nolint:gosec // hermetic t.TempDir() fixture; writer sets production gitconfig mode
+		t.Fatalf("seeding gitconfig: %v", err)
+	}
+
+	if _, err := RemoveProviderRewrite(gitconfigPath, "github.com"); err != nil {
+		t.Errorf("RemoveProviderRewrite for an absent block returned an error: %v", err)
+	}
+}
+
 func TestIncludeIfRejectsUnsafeInput(t *testing.T) {
 	tests := []struct {
 		name     string

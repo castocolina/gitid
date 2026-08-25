@@ -201,6 +201,49 @@ func WriteProviderRewrite(gitconfigPath, provider string, enabled bool) (string,
 	return backupPath, nil
 }
 
+// RemoveProviderRewrite removes ONLY the per-identity-provider
+// "provider-rewrite:<host>" managed block WriteProviderRewrite creates for
+// provider (D-09) — the missing half of the WriteProviderRewrite pair,
+// placed directly after it so the writer and remover read together.
+//
+// This is NOT gitconfig.RemoveURLRewritesBlock: that function targets the
+// GLOBAL baseline's static "url-rewrites" block (a Phase 7 concern), while
+// RemoveProviderRewrite targets the per-identity-provider block this file's
+// WriteProviderRewrite creates. Confusing the two removes the wrong block
+// (05-RESEARCH.md Pitfall 4).
+//
+// It mirrors WriteProviderRewrite's shape: the sentinel name is resolved
+// through ProviderRewriteBlockName, so an invalid provider hostname is
+// rejected identically and before any read or write. A missing gitconfigPath
+// is tolerated (nil error, nothing to remove). Removal never touches any
+// other managed block — a different provider's rewrite and the global
+// baseline url-rewrites block both survive — and is idempotent (a second
+// call leaves the file byte-identical to the first result).
+//
+// Ref-counting WHETHER to call this function belongs to the delete
+// orchestration in plan 05-04; this function ships the mechanism only.
+func RemoveProviderRewrite(gitconfigPath, provider string) (backupPath string, err error) {
+	name, err := ProviderRewriteBlockName(provider)
+	if err != nil {
+		return "", err
+	}
+
+	existing, readErr := os.ReadFile(gitconfigPath) //nolint:gosec // gitconfigPath is a trusted gitid-managed path
+	if os.IsNotExist(readErr) {
+		return "", nil // nothing to remove — idempotent no-op
+	}
+	if readErr != nil {
+		return "", fmt.Errorf("reading %s: %w", gitconfigPath, readErr)
+	}
+
+	composed := filewriter.RemoveBlock(existing, name)
+	backupPath, err = filewriter.Write(gitconfigPath, composed, gitconfigMode)
+	if err != nil {
+		return "", fmt.Errorf("removing provider rewrite block %q from %s: %w", name, gitconfigPath, err)
+	}
+	return backupPath, nil
+}
+
 // HasProviderRewrite reports whether the provider-owned rewrite block
 // WriteProviderRewrite manages (ProviderRewriteBlockName's sentinel name) is
 // ACTUALLY present in gcBytes for provider — CR-09: the caller must never
