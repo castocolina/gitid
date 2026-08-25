@@ -307,6 +307,22 @@ func (FixtureBackend) CreateWritePlan(spec tuikit.CreateSpec, git *tuikit.GitSpe
 	}
 }
 
+// GitWritePlan mirrors CreateWritePlan's declared-fixture shape for the
+// standalone Configure-Git ceremony (CR-12's Backend.GitWritePlan seam). The
+// dummy's own CommitGit never touches HOME and reports no real backups
+// (FixtureBackend.CommitGit returns an empty GitCommitMsg), so the ceremony
+// keeps whatever this declared plan states throughout state A AND the
+// receipt — this is the SAME static 2-entry backup list
+// (CTX-D-12/result-success:git-ceremony's allowlisted divergence already
+// documents that the dummy's declared list never names a fragment backup,
+// unlike the real binary's complete receipt).
+func (FixtureBackend) GitWritePlan(spec tuikit.GitSpec) tuikit.WritePlanView {
+	return tuikit.WritePlanView{
+		Targets: []string{"~/.gitconfig.d/" + spec.Identity, "~/.gitconfig", "~/.ssh/allowed_signers"},
+		Backups: []string{tuikit.NewBackupPath("~/.gitconfig"), tuikit.NewBackupPath("~/.ssh/allowed_signers")},
+	}
+}
+
 // CopyPublicKey is the D-03 clipboard copy offered on the ReachableNotUploaded
 // warning path. The dummy touches NOTHING — it says so explicitly in the
 // receipt, because only the Backend knows whether a real clipboard was written.

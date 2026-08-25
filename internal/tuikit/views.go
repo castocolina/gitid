@@ -160,6 +160,10 @@ type WritePlanView struct {
 	Targets []string
 	// Backups are the timestamped backup paths taken before writing.
 	Backups []string
+	// CreatedDirs are directories the transaction creates if absent (CR-12):
+	// e.g. a from-scratch ~/.gitconfig.d/, ~/git/<identity>/, or ~/.ssh.
+	// Empty when every directory the write touches already exists.
+	CreatedDirs []string
 }
 
 // WizardCommitMsg reports the result of an asynchronous create commit. It is

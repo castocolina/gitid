@@ -49,9 +49,17 @@ const (
 
 // ceremonyConfig declares one write ceremony.
 type ceremonyConfig struct {
-	Heading       string
-	Targets       []string
-	Backups       []string
+	Heading string
+	Targets []string
+	Backups []string
+	// Creates lists directories the transaction will create if absent
+	// (CR-12/WR-16): e.g. a from-scratch ~/.gitconfig.d/, ~/git/<identity>/,
+	// or ~/.ssh. Empty by default, so every existing ceremonyConfig literal
+	// that never creates a directory is unaffected. Rendered as its own
+	// disclosed line in state A, directly below "Touches" — a confirmation
+	// ceremony that stays silent about a directory it is about to create is
+	// not fully disclosing what the confirmed write will do.
+	Creates       []string
 	Preview       string
 	PreviewDiff   bool
 	Destructive   *FixDestructive
@@ -302,6 +310,11 @@ func (c ceremonyModel) view(width int) string {
 	wrap := lipgloss.NewStyle().Width(maxInt(20, width-2))
 	b.WriteString(styleBold.Render(c.cfg.Heading) + "\n")
 	b.WriteString(styleFaint.Render(wrap.Render("Touches "+strings.Join(c.cfg.Targets, " · "))) + "\n")
+	if len(c.cfg.Creates) > 0 {
+		// CR-12/WR-16: disclose directory creation explicitly instead of
+		// leaving it an undisclosed side effect of "Touches".
+		b.WriteString(styleFaint.Render(wrap.Render("Creates "+strings.Join(c.cfg.Creates, " · ")+" (new directory)")) + "\n")
+	}
 	if len(c.cfg.Backups) > 0 {
 		for _, bk := range c.cfg.Backups {
 			b.WriteString(styleFaint.Render("Backup → ") + bk + "\n")

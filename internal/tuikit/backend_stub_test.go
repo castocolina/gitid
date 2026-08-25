@@ -388,6 +388,19 @@ func (stubBackend) CreateWritePlan(spec CreateSpec, git *GitSpec) WritePlanView 
 	}
 }
 
+// GitWritePlan mirrors CreateWritePlan's stub shape for the standalone
+// Configure-Git ceremony (CR-12's Backend.GitWritePlan seam). The stub has
+// no real filesystem to probe, so it returns the same declared 2-backup
+// shape gitCeremonyFor used to hardcode before CR-12 — sufficient for
+// internal/tuikit's own unit tests, which assert on ceremony Preview/note
+// text, never on Targets/Backups counts.
+func (stubBackend) GitWritePlan(spec GitSpec) WritePlanView {
+	return WritePlanView{
+		Targets: []string{"~/.gitconfig.d/" + spec.Identity, "~/.gitconfig", "~/.ssh/allowed_signers"},
+		Backups: []string{NewBackupPath("~/.gitconfig"), NewBackupPath("~/.ssh/allowed_signers")},
+	}
+}
+
 func (stubBackend) CopyPublicKey(string) (string, error) {
 	return "Public key copied to clipboard (demo).", nil
 }

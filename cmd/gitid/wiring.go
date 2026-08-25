@@ -709,6 +709,83 @@ func (b *realBackend) CreateWritePlan(spec tuikit.CreateSpec, git *tuikit.GitSpe
 	return plan
 }
 
+// GitWritePlan is CreateWritePlan's sibling for the standalone Configure-Git
+// ceremony (CR-12). Before this seam existed, gitCeremonyFor built its
+// disclosure from hardcoded strings: it named ~/.gitconfig.backup.<ISO> and
+// ~/.ssh/allowed_signers.backup.<ISO> — paths NewBackupPath mints but
+// filewriter never does (filewriter always mints <file>.bak.<unix-nanos>) —
+// declared exactly 2 backups when commitGitArtifacts can take up to 4, and
+// never mentioned that it creates ~/.gitconfig.d/, ~/git/<identity>/, or
+// ~/.ssh from scratch. This mirrors commitGitArtifacts' own write order and
+// existence checks exactly, using the SAME backupSuffixPreview convention
+// CreateWritePlan already uses (the real receipt stamps the actual
+// UnixNano at write time; this preview only shows the shape).
+func (b *realBackend) GitWritePlan(spec tuikit.GitSpec) tuikit.WritePlanView {
+	if b.initErr != nil {
+		return tuikit.WritePlanView{}
+	}
+	if spec.Provider == "" || !strings.Contains(spec.Provider, ".") {
+		spec.Provider = providerFromAlias(spec.SSHHost)
+	}
+	fragmentPath := filepath.Join(b.fragmentDir, spec.Identity)
+	gitDirPath := ""
+	if spec.Strategy != "hasconfig" {
+		gitDirPath = b.resolveKeyPath(strings.TrimSpace(spec.GitDir))
+		if gitDirPath == "" {
+			gitDirPath = filepath.Join(b.home, "git", spec.Identity)
+		}
+	}
+
+	plan := tuikit.WritePlanView{
+		Targets: []string{
+			b.displayPath(fragmentPath),
+			b.displayPath(b.gitconfigPath),
+			b.displayPath(b.allowedSigners),
+		},
+	}
+
+	// Backups, in commitGitArtifacts' exact write order:
+	//  1. the fragment — backed up only if it already exists (edit, not
+	//     create).
+	//  2. ~/.gitconfig via gitconfig.WriteIncludeIf — backed up only if it
+	//     already exists BEFORE this transaction.
+	//  3. ~/.gitconfig AGAIN via gitconfig.WriteProviderRewrite, when
+	//     ForceSSH is on — by the time this second write runs, step 2 has
+	//     already created the file if it did not exist, so this backup is
+	//     ALWAYS taken when ForceSSH+Provider are set, independent of the
+	//     file's original state. This is the real, easily-missed reason a
+	//     single transaction can back up ~/.gitconfig twice.
+	//  4. ~/.ssh/allowed_signers — backed up only if it already exists.
+	if fileExists(fragmentPath) {
+		plan.Backups = append(plan.Backups, b.displayPath(fragmentPath)+backupSuffixPreview)
+	}
+	if fileExists(b.gitconfigPath) {
+		plan.Backups = append(plan.Backups, b.displayPath(b.gitconfigPath)+backupSuffixPreview)
+	}
+	if spec.ForceSSH && spec.Provider != "" {
+		plan.Backups = append(plan.Backups, b.displayPath(b.gitconfigPath)+backupSuffixPreview)
+	}
+	if fileExists(b.allowedSigners) {
+		plan.Backups = append(plan.Backups, b.displayPath(b.allowedSigners)+backupSuffixPreview)
+	}
+
+	// CreatedDirs: every managed root commitGitArtifacts creates via
+	// ensureManagedDir/ensureDir when absent — b.fragmentDir and b.sshDir
+	// always (gitid's own managed roots), gitDirPath only when the match
+	// strategy actually uses one ("hasconfig" writes no gitdir root).
+	if !fileExists(b.fragmentDir) {
+		plan.CreatedDirs = append(plan.CreatedDirs, b.displayPath(b.fragmentDir))
+	}
+	if gitDirPath != "" && !fileExists(gitDirPath) {
+		plan.CreatedDirs = append(plan.CreatedDirs, b.displayPath(gitDirPath))
+	}
+	if !fileExists(b.sshDir) {
+		plan.CreatedDirs = append(plan.CreatedDirs, b.displayPath(b.sshDir))
+	}
+
+	return plan
+}
+
 // CopyPublicKey copies the identity's public key line to the system clipboard
 // (D-03) — offered on the reachable-but-not-uploaded path so the user can
 // register it with the provider and retry. Only the `.pub` line ever leaves

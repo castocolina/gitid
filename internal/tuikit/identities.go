@@ -2083,10 +2083,20 @@ func (m identitiesModel) gitCeremonyFor(sel DemoIdentity) ceremonyModel {
 		preview += "\n\nForce SSH off: the shared provider-rewrite:" + m.gitPaneForm.provider +
 			" block is left in place because other identities may use it."
 	}
+	// CR-12: Targets/Backups/Creates come from the Backend (GitWritePlan) —
+	// the same TEST-03/D-05..D-09 discipline CreateWritePlan already applies
+	// to the combined create-flow ceremony — instead of hardcoded UI-layer
+	// strings. The old hardcoded shape named backup files
+	// (~/.gitconfig.backup.<ISO>) that filewriter never actually creates
+	// (it mints <file>.bak.<unix-nanos>), always declared exactly 2 backups
+	// when the real transaction can take up to 4, and never disclosed the
+	// directories it creates.
+	plan := m.backend.GitWritePlan(m.gitPaneForm.spec(sel.Name, sel.KeyPath))
 	return newCeremony(ceremonyConfig{
 		Heading: `Write Git identity for "` + sel.Name + `"`,
-		Targets: []string{"~/.gitconfig.d/" + sel.Name, "~/.gitconfig", "~/.ssh/allowed_signers"},
-		Backups: []string{NewBackupPath("~/.gitconfig"), NewBackupPath("~/.ssh/allowed_signers")},
+		Targets: plan.Targets,
+		Backups: plan.Backups,
+		Creates: plan.CreatedDirs,
 		Preview: preview,
 		ResultMessage: `Git identity "` + sel.Name + `" configured — applies via the ` +
 			m.gitPaneForm.strategy() + ` strategy.`,

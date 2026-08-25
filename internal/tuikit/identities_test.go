@@ -2228,6 +2228,76 @@ func TestGitCeremonyOmitsSharedProviderRewriteNoteWhenBlockNeverExisted(t *testi
 	}
 }
 
+// fixedGitWritePlanBackend returns a fixed WritePlanView from GitWritePlan,
+// regardless of the spec — used to prove gitCeremonyFor renders EXACTLY what
+// the backend reports (CR-12), not a hardcoded UI-layer guess.
+type fixedGitWritePlanBackend struct {
+	stubBackend
+	plan WritePlanView
+}
+
+func (b fixedGitWritePlanBackend) GitWritePlan(GitSpec) WritePlanView { return b.plan }
+
+// TestGitCeremonyForSourcesTargetsBackupsCreatesFromBackend is CR-12's
+// required fix: gitCeremonyFor's Targets/Backups/Creates must come verbatim
+// from Backend.GitWritePlan, not a hardcoded 2-backup, no-directory-creation
+// UI-layer literal. Before the fix, the ceremony ALWAYS declared exactly
+// `~/.gitconfig` + `~/.ssh/allowed_signers` (2 backups, wrong ".backup."
+// naming, never a fragment backup, never a Creates line) no matter what the
+// real transaction was actually about to do — a backend reporting 4 real
+// backups and a new directory here proves that lie is gone.
+func TestGitCeremonyForSourcesTargetsBackupsCreatesFromBackend(t *testing.T) {
+	plan := WritePlanView{
+		Targets: []string{"~/.gitconfig.d/acme", "~/.gitconfig", "~/.ssh/allowed_signers"},
+		Backups: []string{
+			"~/.gitconfig.d/acme.bak.111",
+			"~/.gitconfig.bak.222",
+			"~/.gitconfig.bak.333", // WriteIncludeIf + WriteProviderRewrite can both back up ~/.gitconfig
+			"~/.ssh/allowed_signers.bak.444",
+		},
+		CreatedDirs: []string{"~/git/acme"},
+	}
+	m := newIdentitiesModel(fixedGitWritePlanBackend{plan: plan}, DemoState{})
+	sel := DemoIdentity{Name: "acme", SSHHost: "acme.github.com", Provider: "github.com"}
+	m = m.openGitForm(sel)
+
+	ceremony := m.gitCeremonyFor(sel)
+	if got, want := ceremony.cfg.Targets, plan.Targets; !equalStringSlices(got, want) {
+		t.Errorf("ceremony Targets = %v, want the backend's GitWritePlan.Targets %v", got, want)
+	}
+	if got, want := ceremony.cfg.Backups, plan.Backups; !equalStringSlices(got, want) {
+		t.Errorf("ceremony Backups = %v, want the backend's GitWritePlan.Backups %v (NOT a hardcoded 2-entry guess)", got, want)
+	}
+	if got, want := ceremony.cfg.Creates, plan.CreatedDirs; !equalStringSlices(got, want) {
+		t.Errorf("ceremony Creates = %v, want the backend's GitWritePlan.CreatedDirs %v", got, want)
+	}
+
+	view := stripANSI(ceremony.view(80))
+	for _, want := range []string{
+		"~/.gitconfig.d/acme.bak.111",
+		"~/.gitconfig.bak.222",
+		"~/.gitconfig.bak.333",
+		"~/.ssh/allowed_signers.bak.444",
+		"Creates ~/git/acme",
+	} {
+		if !strings.Contains(view, want) {
+			t.Errorf("ceremony view missing %q — backend-reported write plan not rendered:\n%s", want, view)
+		}
+	}
+}
+
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestOpenGitFormDerivesProviderFromSSHHost(t *testing.T) {
 	m := newIdentitiesModel(stubBackend{}, DemoState{})
 	m = m.openGitForm(DemoIdentity{Name: "work", SSHHost: "work.github.com", Provider: "github"})

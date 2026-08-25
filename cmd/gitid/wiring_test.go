@@ -450,6 +450,111 @@ func TestCreateWritePlanReportsBothFreshIncludeChanges(t *testing.T) {
 	}
 }
 
+// TestGitWritePlanReportsFreshHomeNoBackupsButCreatesEveryDir is CR-12's
+// required fix: on a completely fresh home (nothing pre-exists), GitWritePlan
+// must declare NO backups (filewriter never backs up a file that does not
+// yet exist) and must disclose all three directories commitGitArtifacts
+// actually creates: the fragment dir, the gitdir root, and ~/.ssh.
+func TestGitWritePlanReportsFreshHomeNoBackupsButCreatesEveryDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	b := newBackendForHome(home)
+
+	plan := b.GitWritePlan(tuikit.GitSpec{
+		Identity: "acme", Name: "Acme User", Email: "acme@example.test",
+		SSHHost: "acme.github.com", Provider: "github.com", Strategy: "gitdir",
+	})
+
+	wantTargets := []string{"~/.gitconfig.d/acme", "~/.gitconfig", "~/.ssh/allowed_signers"}
+	if len(plan.Targets) != len(wantTargets) {
+		t.Fatalf("Targets = %v, want %v", plan.Targets, wantTargets)
+	}
+	for i, want := range wantTargets {
+		if plan.Targets[i] != want {
+			t.Errorf("Targets[%d] = %q, want %q", i, plan.Targets[i], want)
+		}
+	}
+	if len(plan.Backups) != 0 {
+		t.Errorf("Backups = %v, want none — nothing pre-exists on a fresh home", plan.Backups)
+	}
+	wantCreates := []string{"~/.gitconfig.d", "~/git/acme", "~/.ssh"}
+	if len(plan.CreatedDirs) != len(wantCreates) {
+		t.Fatalf("CreatedDirs = %v, want %v (fragment dir, gitdir root, and ~/.ssh — all absent on a fresh home)", plan.CreatedDirs, wantCreates)
+	}
+	for i, want := range wantCreates {
+		if plan.CreatedDirs[i] != want {
+			t.Errorf("CreatedDirs[%d] = %q, want %q", i, plan.CreatedDirs[i], want)
+		}
+	}
+}
+
+// TestGitWritePlanBacksUpGitconfigTwiceWhenForceSSHTakesTheProviderRewritePath
+// is CR-12's exact reproduction of the review's finding: on a from-scratch
+// home with ForceSSH set, WriteIncludeIf's own backup is empty (the file did
+// not exist yet), but WriteProviderRewrite's later call backs up the SAME
+// file a second time — because by then WriteIncludeIf has already created
+// it. A caller who only checked "does ~/.gitconfig currently exist" once,
+// up front, would silently miss this second, real backup.
+func TestGitWritePlanBacksUpGitconfigTwiceWhenForceSSHTakesTheProviderRewritePath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	b := newBackendForHome(home)
+
+	plan := b.GitWritePlan(tuikit.GitSpec{
+		Identity: "acme", Name: "Acme User", Email: "acme@example.test",
+		SSHHost: "acme.github.com", Provider: "github.com", Strategy: "gitdir",
+		ForceSSH: true,
+	})
+	if len(plan.Backups) != 1 || !strings.HasPrefix(plan.Backups[0], "~/.gitconfig.bak.") {
+		t.Errorf("Backups = %v, want exactly one ~/.gitconfig.bak.<nanos> backup (taken by WriteProviderRewrite, since WriteIncludeIf created the file moments before)", plan.Backups)
+	}
+}
+
+// TestGitWritePlanReportsExistingHomeBackupsWithRealFilewriterNaming is CR-12's
+// pre-existing-identity (edit) scenario: every target already exists, so
+// every one is backed up, using the SAME ".bak.<nanos>" naming filewriter
+// actually mints — never NewBackupPath's ".backup.<ISO>" shape.
+func TestGitWritePlanReportsExistingHomeBackupsWithRealFilewriterNaming(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	b := newBackendForHome(home)
+
+	if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
+		t.Fatalf("seeding fragment dir: %v", err)
+	}
+	writeFile(t, filepath.Join(home, ".gitconfig.d", "acme"), "[user]\n\tname = Acme User\n")
+	writeFile(t, b.gitconfigPath, "[core]\n\teditor = vim\n")
+	writeFile(t, b.allowedSigners, "acme@example.test namespaces=\"git\" ssh-ed25519 AAAA\n")
+	if err := os.MkdirAll(filepath.Join(home, "git", "acme"), 0o700); err != nil {
+		t.Fatalf("seeding gitdir root: %v", err)
+	}
+
+	plan := b.GitWritePlan(tuikit.GitSpec{
+		Identity: "acme", Name: "Acme User", Email: "acme@example.test",
+		SSHHost: "acme.github.com", Provider: "github.com", Strategy: "gitdir",
+	})
+
+	if len(plan.Backups) != 3 {
+		t.Fatalf("Backups = %v, want exactly 3 (fragment + gitconfig + allowed_signers, all pre-existing, ForceSSH off)", plan.Backups)
+	}
+	for _, want := range []string{"~/.gitconfig.d/acme.bak.", "~/.gitconfig.bak.", "~/.ssh/allowed_signers.bak."} {
+		found := false
+		for _, b := range plan.Backups {
+			if strings.HasPrefix(b, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Backups = %v, missing a %q-prefixed entry", plan.Backups, want)
+		}
+	}
+	if len(plan.CreatedDirs) != 0 {
+		t.Errorf("CreatedDirs = %v, want none — every directory already exists", plan.CreatedDirs)
+	}
+}
+
 // TestStagedTestConfigLeavesLiveConfigUntouched is the SSHUI-04 invariant: the
 // pre-confirm test stages write ONLY to the throwaway staging config. The live
 // ~/.ssh/config must be byte-identical afterwards.

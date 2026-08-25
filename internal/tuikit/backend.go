@@ -120,6 +120,16 @@ type Backend interface {
 	// when the user skipped the Git step.
 	CreateWritePlan(spec CreateSpec, git *GitSpec) WritePlanView
 
+	// GitWritePlan is CreateWritePlan's sibling for the standalone
+	// Configure-Git ceremony (CR-12): what a committed Git-config write
+	// will touch, the timestamped backups actually taken (existence-gated,
+	// same naming convention filewriter really uses), and any directories
+	// the transaction creates. Before this seam existed, gitCeremonyFor
+	// built its disclosure from hardcoded UI-layer strings that named
+	// backup files that would never exist, undercounted the real backup
+	// total, and never mentioned directory creation at all.
+	GitWritePlan(spec GitSpec) WritePlanView
+
 	// CopyPublicKey copies the identity's public key to the system
 	// clipboard (D-03) — offered on the ReachableNotUploaded warning path so
 	// the user can register it with the provider and retry. It returns the
