@@ -917,6 +917,48 @@ func TestGitTransactionRejectsHomeAsGitDir(t *testing.T) {
 	}
 }
 
+// TestCommitCreateHardensPreExistingSSHDir proves the CR-05 fix: unlike the
+// user-editable gitdir (CR-01), gitid's own managed roots — starting with
+// ~/.ssh — must still be secured to their documented mode even when they
+// pre-exist the transaction. The CR-01 fix over-corrected by dropping the
+// chmod for every path ensureDir touches, including gitid's own roots; a
+// stale ~/.ssh at 0777 survived a full confirmed create untouched, and gitid
+// wrote a new private key into a world-writable directory.
+func TestCommitCreateHardensPreExistingSSHDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o777); err != nil { //nolint:gosec // intentionally loose fixture: proves gitid hardens it back to sshDirMode
+		t.Fatalf("seeding loose ~/.ssh: %v", err)
+	}
+	b := newBackendForHome(home)
+	id := tuikit.DemoIdentity{
+		Name:          "personal",
+		SSHHost:       "personal.github.com",
+		Hostname:      "ssh.github.com",
+		Port:          443,
+		KeyPath:       "~/.ssh/id_ed25519_personal",
+		Provider:      "github.com",
+		State:         "complete",
+		GitName:       "Personal Identity",
+		GitEmail:      "you@personal.example",
+		MatchStrategy: "gitdir",
+		GitConfigured: true,
+	}
+	unlockStoreForIdentity(t, b, id)
+
+	msg := runCommitCreate(t, b, id)
+	if msg.Err != "" {
+		t.Fatalf("CommitCreate: %s", msg.Err)
+	}
+	info, statErr := os.Stat(filepath.Join(home, ".ssh"))
+	if statErr != nil {
+		t.Fatalf("stat ~/.ssh after commit: %v", statErr)
+	}
+	if got := info.Mode().Perm(); got != sshDirMode {
+		t.Errorf("~/.ssh mode after a confirmed create = %o, want %o (pre-existing at 0777 must still be hardened)", got, sshDirMode)
+	}
+}
+
 func TestToDemoIdentityProjectsGitEditFields(t *testing.T) {
 	b := newBackendForHome(t.TempDir())
 	row := b.toDemoIdentity(identity.Account{

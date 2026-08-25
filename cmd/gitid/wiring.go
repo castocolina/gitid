@@ -780,7 +780,13 @@ type mutationJournal struct {
 	seenFile    map[string]bool
 	seenDir     map[string]bool
 	createdDirs []string
-	backups     []string
+	// chmodDirs records the pre-transaction mode of every PRE-EXISTING
+	// directory this transaction actually chmods via ensureManagedDir (CR-05).
+	// restore() reverts only these — not every watched-but-untouched ancestor
+	// (WR-17) — so a failed transaction never rewrites permission metadata on
+	// directories (including HOME) it never modified.
+	chmodDirs []gitDirSnapshot
+	backups   []string
 }
 
 type gitFileSnapshot struct {
@@ -885,6 +891,51 @@ func (j *mutationJournal) ensureDir(path string, mode os.FileMode) error {
 	return nil
 }
 
+// dir returns the snapshot watchDir recorded for path, if any.
+func (j *mutationJournal) dir(path string) (gitDirSnapshot, bool) {
+	clean := filepath.Clean(path)
+	for _, snapshot := range j.dirs {
+		if snapshot.path == clean {
+			return snapshot, true
+		}
+	}
+	return gitDirSnapshot{}, false
+}
+
+// ensureManagedDir hardens a root gitid itself owns (~/.ssh, the Git fragment
+// directory, the SSH include directory) — CR-05. Unlike ensureDir, which is
+// intentionally mode-neutral toward pre-existing paths (CR-01: a user-named
+// gitdir must never be permission-mutated just for being referenced), a
+// managed root gitid documents itself as securing must end up at mode even
+// when it pre-existed the transaction (e.g. a stale `~/.ssh` at 0777).
+//
+// The prior mode of a pre-existing managed root is recorded in chmodDirs so
+// restore() can revert exactly this chmod on rollback (WR-17) — freshly
+// created roots are already covered by createdDirs' full removal and need no
+// mode revert.
+func (j *mutationJournal) ensureManagedDir(path string, mode os.FileMode) error {
+	if err := j.ensureDir(path, mode); err != nil {
+		return err
+	}
+	clean := filepath.Clean(path)
+	for _, created := range j.createdDirs {
+		if created == clean {
+			// Freshly created by this transaction: ensureDir already
+			// Mkdir+Chmod'd it at mode, and rollback removes it wholesale.
+			return nil
+		}
+	}
+	snapshot, ok := j.dir(clean)
+	if !ok {
+		return fmt.Errorf("gitid: internal: %s not watched before securing", clean)
+	}
+	if err := os.Chmod(clean, mode); err != nil {
+		return fmt.Errorf("gitid: securing managed directory %s: %w", clean, err)
+	}
+	j.chmodDirs = append(j.chmodDirs, snapshot)
+	return nil
+}
+
 func (j *mutationJournal) addBackup(path string) {
 	if path != "" {
 		j.backups = append(j.backups, path)
@@ -927,11 +978,16 @@ func (j *mutationJournal) restore() ([]string, error) {
 			outcomes = append(outcomes, j.b.displayPath(s.path)+": restored")
 		}
 	}
-	for i := len(j.dirs) - 1; i >= 0; i-- {
-		s := j.dirs[i]
-		if !s.exists {
-			continue
-		}
+	// WR-17: iterate chmodDirs, not the full dirs snapshot. dirs holds every
+	// ancestor watchDir walked over while resolving a target path (including
+	// HOME) whether or not this transaction ever changed its mode; reverting
+	// all of them on every rollback rewrote permission metadata on
+	// directories gitid never touched and could clobber a legitimate
+	// concurrent permission change made between snapshot and rollback.
+	// chmodDirs (populated only by ensureManagedDir, CR-05) holds exactly the
+	// pre-existing managed roots this transaction actually chmod'd.
+	for i := len(j.chmodDirs) - 1; i >= 0; i-- {
+		s := j.chmodDirs[i]
 		err := error(nil)
 		if j.b.failCommitAt != nil {
 			err = j.b.failCommitAt("restore:" + s.path)
@@ -1043,13 +1099,16 @@ func (b *realBackend) commitGitArtifacts(spec tuikit.GitSpec, pubLine string, tr
 	if err := inject("git-fragment-dir"); err != nil {
 		return fail("git-fragment-dir", err)
 	}
-	if err := journal.ensureDir(b.fragmentDir, 0o700); err != nil {
+	if err := journal.ensureManagedDir(b.fragmentDir, 0o700); err != nil {
 		return fail("git-fragment-dir", err)
 	}
 	if gitDirPath != "" {
 		if err := inject("gitdir"); err != nil {
 			return fail("gitdir", err)
 		}
+		// CR-01: gitDirPath is the user-editable gitdir — never mode-mutated
+		// as a side effect of being referenced, unlike gitid's own managed
+		// roots above/below (CR-05: ensureManagedDir).
 		if err := journal.ensureDir(gitDirPath, 0o700); err != nil {
 			return fail("gitdir", err)
 		}
@@ -1665,7 +1724,7 @@ func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged id
 	if err := inject("ssh-dir"); err != nil {
 		return fail("ssh-dir", err)
 	}
-	if err := journal.ensureDir(b.sshDir, sshDirMode); err != nil {
+	if err := journal.ensureManagedDir(b.sshDir, sshDirMode); err != nil {
 		return fail("ssh-dir", err)
 	}
 	if err := journal.watchFile(staged.FinalPrivatePath); err != nil {
@@ -1707,7 +1766,7 @@ func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged id
 		if err := inject("include-line"); err != nil {
 			return fail("include-line", err)
 		}
-		if err := journal.ensureDir(b.includeDir, sshDirMode); err != nil {
+		if err := journal.ensureManagedDir(b.includeDir, sshDirMode); err != nil {
 			return fail("include-line", err)
 		}
 		backup, err := sshconfig.EnsureIncludeLine(b.sshConfigPath)
