@@ -440,6 +440,85 @@ func TestDelete_Everything_MissingKeySucceeds(t *testing.T) {
 	}
 }
 
+// TestSharedKeyOwners_MultipleSiblingsSortedOrder proves SharedKeyOwners
+// returns EVERY other identity referencing the target key path, sorted.
+func TestSharedKeyOwners_MultipleSiblingsSortedOrder(t *testing.T) {
+	shared := "/tmp/.ssh/id_ed25519_shared"
+	accounts := []Account{
+		{Name: "zeta", KeyPath: shared},
+		{Name: "alpha", KeyPath: shared},
+		{Name: "target", KeyPath: shared},
+		{Name: "unrelated", KeyPath: "/tmp/.ssh/id_ed25519_other"},
+	}
+	got := SharedKeyOwners(accounts, shared, "target")
+	want := []string{"alpha", "zeta"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("SharedKeyOwners = %v, want %v", got, want)
+	}
+}
+
+// TestSharedKeyOwners_NoOwnersEmpty asserts a sole-owner key returns nil/empty.
+func TestSharedKeyOwners_NoOwnersEmpty(t *testing.T) {
+	accounts := []Account{{Name: "target", KeyPath: "/tmp/.ssh/id_ed25519_target"}}
+	got := SharedKeyOwners(accounts, "/tmp/.ssh/id_ed25519_target", "target")
+	if len(got) != 0 {
+		t.Errorf("SharedKeyOwners = %v, want empty", got)
+	}
+}
+
+// TestDelete_Everything_SharedKeyDowngrade_SkipsArchiveKeepsFiles is the D-12
+// downgrade proof: when a sibling shares the key, the archive-and-remove
+// step is skipped entirely, the live key files survive, and KeyKeptFor names
+// the sibling.
+func TestDelete_Everything_SharedKeyDowngrade_SkipsArchiveKeepsFiles(t *testing.T) {
+	acct := baseDeleteAccount()
+	sibling := Account{Name: "sibling", KeyPath: acct.KeyPath, Alias: "sibling.github.com"}
+
+	var log deleteCallLog
+	deps := newFakeEverythingDeps(&log, sshFixtureWithBlocks(), gcFixtureWithBlocks(), []Account{acct, sibling})
+	deps.CopyKeyPairToArchive = func(string, string) (string, string, error) {
+		t.Fatal("CopyKeyPairToArchive invoked despite a surviving sibling (D-12 violation)")
+		return "", "", nil
+	}
+
+	res, err := Delete(acct, DeleteScopeEverything, deps)
+	if err != nil {
+		t.Fatalf("Delete(everything) error: %v", err)
+	}
+	if log.removeKeyFiles != 0 {
+		t.Errorf("RemoveKeyFiles called %d times despite a surviving sibling, want 0", log.removeKeyFiles)
+	}
+	if len(res.ArchivedKeyPaths) != 0 {
+		t.Errorf("ArchivedKeyPaths = %v, want empty (key was kept, not archived)", res.ArchivedKeyPaths)
+	}
+	if len(res.KeyKeptFor) != 1 || res.KeyKeptFor[0] != "sibling" {
+		t.Errorf("KeyKeptFor = %v, want [\"sibling\"]", res.KeyKeptFor)
+	}
+}
+
+// TestDelete_Everything_NoSharedKey_ArchivesAndRemoves is the D-12 contrast:
+// with no sibling, the key is archived and removed normally, and KeyKeptFor
+// stays empty.
+func TestDelete_Everything_NoSharedKey_ArchivesAndRemoves(t *testing.T) {
+	acct := baseDeleteAccount()
+	var log deleteCallLog
+	deps := newFakeEverythingDeps(&log, sshFixtureWithBlocks(), gcFixtureWithBlocks(), []Account{acct})
+
+	res, err := Delete(acct, DeleteScopeEverything, deps)
+	if err != nil {
+		t.Fatalf("Delete(everything) error: %v", err)
+	}
+	if log.removeKeyFiles != 1 {
+		t.Errorf("RemoveKeyFiles called %d times, want 1", log.removeKeyFiles)
+	}
+	if len(res.ArchivedKeyPaths) != 2 {
+		t.Errorf("ArchivedKeyPaths = %v, want 2 entries", res.ArchivedKeyPaths)
+	}
+	if len(res.KeyKeptFor) != 0 {
+		t.Errorf("KeyKeptFor = %v, want empty", res.KeyKeptFor)
+	}
+}
+
 // TestDelete_Everything_AllowedSignersKeyedByName proves RemoveAllowedSigners
 // is invoked with acct.AllowedSignersPath/acct.Name under everything scope
 // (D-10 contrast: git-only never calls it at all).

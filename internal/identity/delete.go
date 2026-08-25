@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/castocolina/gitid/internal/filewriter"
 )
@@ -207,6 +208,28 @@ func Delete(acct Account, scope DeleteScope, deps DeleteDeps) (DeleteResult, err
 		return res, fmt.Errorf("identity: delete scope %q: %w", scope, ErrScopeNotAvailable)
 	}
 
+	// D-12 / review R2-01 / R3-03: the shared-key survival fact is computed
+	// EXACTLY ONCE here, before any effect, from the SAME account list
+	// ProviderRefCount (below) also consults — never re-derived anywhere
+	// else. keySurvives is the sole gate on both the key-archive-and-remove
+	// steps in deleteEverything AND (Task 3) the key targets deleteTargets
+	// emits for the preview: there is no second place that can decide the
+	// key's fate.
+	var accounts []Account
+	var keySurvives bool
+	if scope == DeleteScopeEverything {
+		var aerr error
+		accounts, aerr = deps.Accounts()
+		if aerr != nil {
+			return res, fmt.Errorf("identity: listing accounts: %w", aerr)
+		}
+		if acct.KeyPath != "" {
+			owners := SharedKeyOwners(accounts, acct.KeyPath, acct.Name)
+			res.KeyKeptFor = owners
+			keySurvives = len(owners) > 0
+		}
+	}
+
 	// Remove ONLY the per-identity includeIf block from the gitconfig bytes.
 	// Equality-guarded (review R-14): when RemoveBlock produces bytes
 	// identical to what was read (e.g. the block is already absent — an
@@ -244,20 +267,26 @@ func Delete(acct Account, scope DeleteScope, deps DeleteDeps) (DeleteResult, err
 		return res, nil
 	}
 
-	return deleteEverything(acct, deps, res)
+	return deleteEverything(acct, deps, res, accounts, keySurvives)
 }
 
 // deleteEverything performs the DeleteScopeEverything-only steps, ordered so
 // a partial failure is never destructive in a new way: copy the key pair
-// into the archive FIRST, then remove the managed SSH Host block and the
-// allowed_signers block, then unlink the fragment, then remove the provider
-// rewrite (D-09, only when no reference of any kind survives), then remove
-// the LIVE key files LAST. Any failure before that last step therefore
-// leaves both a valid archive copy and a working live key.
-func deleteEverything(acct Account, deps DeleteDeps, res DeleteResult) (DeleteResult, error) {
+// into the archive FIRST (skipped entirely when keySurvives — D-12), then
+// remove the managed SSH Host block and the allowed_signers block, then
+// unlink the fragment, then remove the provider rewrite (D-09, only when no
+// reference of any kind survives), then remove the LIVE key files LAST
+// (also skipped when keySurvives). Any failure before that last step
+// therefore leaves both a valid archive copy and a working live key.
+// accounts and keySurvives are both computed ONCE by Delete, above — this
+// function never re-derives either.
+func deleteEverything(acct Account, deps DeleteDeps, res DeleteResult, accounts []Account, keySurvives bool) (DeleteResult, error) {
 	// 1. Archive the key pair FIRST — before any other write — so a failure
 	// anywhere below still leaves a recoverable copy (D-11, review R-03).
-	if acct.KeyPath != "" {
+	// Skipped entirely when the key survives (D-12): the key is KEPT, not
+	// archived-then-removed, and res.KeyKeptFor (set by Delete, above)
+	// already names every sibling still using it.
+	if acct.KeyPath != "" && !keySurvives {
 		archivedPriv, archivedPub, aerr := deps.CopyKeyPairToArchive(acct.KeyPath, acct.PubPath)
 		// Record whatever archive paths were created BEFORE inspecting the
 		// error (review R3-01/R-10): a partial archive is still reportable.
@@ -308,16 +337,14 @@ func deleteEverything(acct Account, deps DeleteDeps, res DeleteResult) (DeleteRe
 
 	// 5. Remove the provider rewrite block, ONLY when no reference of any
 	// kind survives (D-09): neither another gitid-managed identity
-	// (ProviderRefCount over NORMALIZED keys) nor a hand-written Host stanza
+	// (ProviderRefCount over NORMALIZED keys, over the SAME accounts list
+	// Delete already fetched) nor a hand-written Host stanza
 	// (ForeignProviderRefs).
 	providerKey := RewriteProviderKey(acct.Provider, acct.Alias)
 	if providerKey != "" {
-		accounts, aerr := deps.Accounts()
-		if aerr != nil {
-			return res, fmt.Errorf("identity: listing accounts for provider ref-count: %w", aerr)
-		}
 		managedRefs := ProviderRefCount(accounts, providerKey, acct.Name)
 		foreignRefs := 0
+		var aerr error
 		if deps.ForeignProviderRefs != nil {
 			foreignRefs, aerr = deps.ForeignProviderRefs(providerKey)
 			if aerr != nil {
@@ -336,12 +363,38 @@ func deleteEverything(acct Account, deps DeleteDeps, res DeleteResult) (DeleteRe
 
 	// 6. Remove the LIVE key files LAST. Any failure above this point has
 	// already returned, leaving both the archive copy (step 1) and the live
-	// key intact.
-	if acct.KeyPath != "" {
+	// key intact. Skipped when keySurvives (D-12) — same gate as step 1, so
+	// the two can never disagree about the key's fate.
+	if acct.KeyPath != "" && !keySurvives {
 		if _, _, kerr := deps.RemoveKeyFiles(acct.KeyPath, acct.PubPath); kerr != nil {
 			return res, fmt.Errorf("identity: removing live key files: %w", kerr)
 		}
 	}
 
 	return res, nil
+}
+
+// SharedKeyOwners returns EVERY other identity (excluding excludingName) in
+// accounts whose KeyPath equals keyPath, sorted by name for stable output
+// (D-12). The substrate CAN return more than one sibling — several
+// identities may point at one key path — so the return type is a slice, not
+// a single label; a caller that wants one-label-per-key display must
+// collapse this itself (mirroring 05-UI-SPEC.md's resolved zero-one-many
+// question: yes, the render joins). An empty keyPath returns nil (nothing
+// to check ownership of).
+func SharedKeyOwners(accounts []Account, keyPath, excludingName string) []string {
+	if keyPath == "" {
+		return nil
+	}
+	var owners []string
+	for _, a := range accounts {
+		if a.Name == excludingName {
+			continue
+		}
+		if a.KeyPath == keyPath {
+			owners = append(owners, a.Name)
+		}
+	}
+	sort.Strings(owners)
+	return owners
 }
