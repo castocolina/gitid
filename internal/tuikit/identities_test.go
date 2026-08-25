@@ -966,7 +966,7 @@ func TestWizardFullFlowCreatesCompleteIdentity(t *testing.T) {
 	if !strings.Contains(pane, "[user]") || !strings.Contains(pane, "more lines") {
 		t.Error("fragment preview must still show its opening line + clip cue")
 	}
-	if !strings.Contains(pane, "gitdir (default) — applies inside ~/acme2/") {
+	if !strings.Contains(pane, "gitdir (default) — applies inside ~/git/acme2/") {
 		t.Error("default match-strategy copy missing")
 	}
 	if !strings.Contains(pane, "(fragment file — preview)") || !strings.Contains(pane, "(includeIf block — preview)") {
@@ -1017,7 +1017,7 @@ func TestWizardStrategySelectShowsAllThreeOptions(t *testing.T) {
 	a = pressSeq(t, a, "tab", "tab") // name → email → strategy
 	pane := paneFlat(a)
 	for _, want := range []string{
-		"gitdir (default) — applies inside ~/acme2/",
+		"gitdir (default) — applies inside ~/git/acme2/",
 		"hasconfig — repos whose remote uses this alias",
 		"both — either condition (two includeIf blocks = OR)",
 	} {
@@ -1739,7 +1739,7 @@ func TestGitFormStrategyAlwaysExpandedWithHeaderHint(t *testing.T) {
 		t.Error("D2: the (←/→ change) hint must be on the header line even while blurred")
 	}
 	for _, want := range []string{
-		"gitdir (default) — applies inside ~/acme2/",
+		"gitdir (default) — applies inside ~/git/acme2/",
 		"hasconfig — repos whose remote uses this alias",
 		"both — either condition (two includeIf blocks = OR)",
 	} {
@@ -2296,6 +2296,31 @@ func equalStringSlices(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// TestStrategyLabelAgreesWithIncludeIfPreviewAndGitDirField is CR-14's
+// required fix, reproducing the reviewer's exact probe: on ONE rendered
+// frame, three widgets state the gitdir — the selected radio option's own
+// label ("gitdir (default) — applies inside …"), the includeIf preview
+// ("[includeIf \"gitdir:…\"]"), and the editable gitdir field itself. Before
+// the fix, strategyCopy hardcoded "~/" + name + "/" (no "git/" segment)
+// while every write path used gitDirFor's "~/git/" + identity + "/" — the
+// confirmation-gated screen's own radio label was the one element that
+// lied. All three must now agree.
+func TestStrategyLabelAgreesWithIncludeIfPreviewAndGitDirField(t *testing.T) {
+	a := pressSeq(t, NewApp(stubBackend{}), "g") // open Configure Git for the default-selected identity
+	pane := paneFlat(a)
+
+	const wantGitDir = "~/git/personal/" // stubIdentityRows[0].Name == "personal"
+	for _, want := range []string{
+		"gitdir (default) — applies inside " + wantGitDir,
+		`gitdir:` + wantGitDir,
+		"[" + wantGitDir + "]",
+	} {
+		if !strings.Contains(pane, want) {
+			t.Errorf("Configure-Git pane missing %q — the three gitdir widgets disagree:\n%s", want, pane)
+		}
+	}
 }
 
 func TestOpenGitFormDerivesProviderFromSSHHost(t *testing.T) {

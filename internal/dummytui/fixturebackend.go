@@ -161,8 +161,21 @@ func (FixtureBackend) GitFragmentPreview(spec tuikit.GitSpec) string {
 
 // IncludeIfPreview is the ~/.gitconfig includeIf block for spec's match
 // strategy, aliased to spec.Identity.
+//
+// CR-14 (was WR-31): the gitdir-match condition substitutes spec.GitDir —
+// the SAME resolved value gitForm.gitDirFor derives and every other widget
+// on the frame renders — not a frozen "~/personal/" literal predating D-02's
+// "~/git/<identity>/" derivation. Without this, the dummy and real previews
+// can never agree about the gitdir, which is exactly the divergence CR-10's
+// scoped predicate is supposed to narrowly authorize (and nothing wider).
 func (FixtureBackend) IncludeIfPreview(spec tuikit.GitSpec) string {
-	return strings.ReplaceAll(GitScreenMatchStrategyPreview[spec.Strategy], "personal", spec.Identity)
+	preview := GitScreenMatchStrategyPreview[spec.Strategy]
+	gitDir := spec.GitDir
+	if gitDir == "" {
+		gitDir = "~/git/" + spec.Identity + "/"
+	}
+	preview = strings.ReplaceAll(preview, `gitdir:~/personal/`, "gitdir:"+gitDir)
+	return strings.ReplaceAll(preview, "personal", spec.Identity)
 }
 
 // AliasCollision reports whether alias is already claimed by an existing

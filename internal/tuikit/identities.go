@@ -649,10 +649,21 @@ func paneGitFocusStep(focus, delta int) int {
 var matchStrategies = []string{"gitdir", "hasconfig", "both"}
 
 // strategyCopy renders one match-strategy option with the exact web copy.
-func strategyCopy(strategy, name string) string {
+//
+// CR-14 (was WR-31, carried four review iterations): gitDir must be the
+// SAME resolved gitdir every other widget on this frame renders —
+// gitForm.gitDirFor(identity), i.e. "~/git/<identity>/" by default. This
+// used to hardcode "~/" + name + "/" (no "git/" segment), which put THREE
+// different values for the same underlying gitdir on one rendered frame:
+// the radio label ("~/<identity>/"), the includeIf preview
+// ("gitdir:~/git/<identity>/"), and the editable gitdir field itself
+// ("~/git/<identity>/"). On a confirmation-gated screen whose whole purpose
+// is showing the user what will change, the selected radio option's own
+// label was the one element that lied.
+func strategyCopy(strategy, gitDir string) string {
 	switch strategy {
 	case "gitdir":
-		return "gitdir (default) — applies inside ~/" + name + "/"
+		return "gitdir (default) — applies inside " + gitDir
 	case "hasconfig":
 		return "hasconfig — repos whose remote uses this alias"
 	default:
@@ -919,7 +930,7 @@ func (g gitForm) view(name, keyPath string, focus int, width int, baseline strin
 	// group is focused, plain-bold when blurred.
 	for i, s := range matchStrategies {
 		dot := glyphRadioOff
-		text := strategyCopy(s, name)
+		text := strategyCopy(s, g.gitDirFor(name))
 		if i == g.strategyIdx {
 			dot = glyphRadioOn
 			if focus == gitFieldStrategy {
@@ -2738,7 +2749,7 @@ func (m identitiesModel) handleClick(x, y, width, height int, s DemoState) keyRe
 				m.gitPaneForm = m.gitPaneForm.setFocus(slot)
 				return keyResult{model: m, handled: true}
 			}
-			if idx, hit := hitStrategyRow(body, x, y, sel.Name); hit {
+			if idx, hit := hitStrategyRow(body, x, y, m.gitPaneForm.gitDirFor(sel.Name)); hit {
 				m.gitPaneForm.strategyIdx = idx
 				m.gitFocus = gitFieldStrategy
 				m.gitPaneForm = m.gitPaneForm.setFocus(gitFieldStrategy)
@@ -2926,10 +2937,13 @@ func hitAlgorithmRow(catalog []AlgorithmCatalogEntry, body string, x, y int) (in
 }
 
 // hitStrategyRow resolves which match-strategy option row (x, y) falls on
-// (D8 — reused by the wizard Git step and the Configure-Git pane).
-func hitStrategyRow(body string, x, y int, identityName string) (int, bool) {
+// (D8 — reused by the wizard Git step and the Configure-Git pane). gitDir
+// must be the SAME resolved gitdir the row was rendered with (CR-14) —
+// callers pass gitForm.gitDirFor(identity), never a raw identity name, so
+// the click target always matches the label actually on screen.
+func hitStrategyRow(body string, x, y int, gitDir string) (int, bool) {
 	for i, strategyID := range matchStrategies {
-		if hitFieldRow(body, x, y, strategyCopy(strategyID, identityName)) {
+		if hitFieldRow(body, x, y, strategyCopy(strategyID, gitDir)) {
 			return i, true
 		}
 	}
@@ -2999,7 +3013,7 @@ func (m identitiesModel) handleWizardClick(body string, x, y int, s DemoState) k
 			m.wizard = w
 			return keyResult{model: m, handled: true}
 		}
-		if idx, ok := hitStrategyRow(body, x, y, w.form.identityName()); ok {
+		if idx, ok := hitStrategyRow(body, x, y, w.git.gitDirFor(w.form.identityName())); ok {
 			w.git.strategyIdx = idx
 			w.gitFocus = gitFieldStrategy
 			w.git = w.git.setFocus(gitFieldStrategy)

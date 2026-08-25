@@ -75,19 +75,32 @@ result-success:sidebar:absent:"clientB":CTX-D-12:real sidebar carries only the c
 result-success:header-status:contains:"ids":CTX-D-12:header status shows the identity count, which differs (1 for real, 8 for dummy) — both contain the "ids" marker
 
 # ---------------------------------------------------------------------------
-# CTX-D-02 — gitdir default derivation: the dummy's frozen includeIf preview
-# fixture (internal/dummytui/data.go GitScreenIncludeIfGitdirLine =
-# `[includeIf "gitdir:~/personal/"]`) predates D-02's "~/git/<identity>/"
-# derivation and still uses the pre-Phase-4 sample path (no "git/" segment).
-# The real binary correctly derives `~/git/<identity>/` per D-02
-# (cmd/gitid/wiring.go matchesFor, gitconfig.Match.condition). This is a
-# ux-improvement — the LIVE binary is more correct than the frozen dummy
-# sample, not a defect in either. Predicate: "~/git/" is present in the real
-# compact preview and absent from the dummy's frozen sample.
+# CTX-D-12 — gitdir includeIf preview, identity-name only (CR-14, iteration
+# 4). This WAS a CTX-D-02 "gitdir default derivation" divergence: the
+# dummy's frozen includeIf preview fixture
+# (internal/dummytui/data.go GitScreenIncludeIfGitdirLine =
+# `[includeIf "gitdir:~/personal/"]`) predated D-02's "~/git/<identity>/"
+# derivation and used the pre-Phase-4 sample path (no "git/" segment), while
+# the real binary correctly derived `~/git/<identity>/` per D-02
+# (cmd/gitid/wiring.go matchesFor, gitconfig.Match.condition). CR-14 fixed
+# FixtureBackend.IncludeIfPreview to substitute the real spec.GitDir instead
+# of that frozen literal, so real and dummy now AGREE on the "~/git/"
+# derivation — the CTX-D-02 divergence is gone. What remains is purely the
+# identity-name substitution (fragment path + includeIf condition embed the
+# selected identity), the SAME CTX-D-12 class the sidebar/header-status
+# entries above already cover. Predicate: "gitdir:~/git/" must be present on
+# BOTH sides — narrower than a blanket "differs", and it actively guards
+# against this exact regression recurring (if the dummy's derivation ever
+# regresses back to a frozen "~/<identity>/" literal, only the real side
+# would carry the marker and this predicate correctly rejects it).
+#
+# git-form-empty carries NO entry here: its "not yet configured" checkpoint
+# renders no includeIf preview content on either side (both regions extract
+# empty and are skipped as non-comparable), so a git-preview entry for it
+# would be stale (never triggered) — removed, not re-predicated.
 # ---------------------------------------------------------------------------
-git-form-filled:git-preview:absent:"gitdir:~/git/":CTX-D-02:the real binary derives the gitdir default as "~/git/<identity>/" per D-02; the dummy's frozen includeIf preview fixture predates this derivation and shows the pre-Phase-4 "~/<identity>/" sample path with no "git/" segment
-git-form-empty:git-preview:absent:"gitdir:~/git/":CTX-D-02:the real binary derives the gitdir default as "~/git/<identity>/" per D-02; the dummy's frozen includeIf preview fixture predates this derivation and shows the pre-Phase-4 "~/<identity>/" sample path with no "git/" segment
-match-strategy-select:git-preview:absent:"gitdir:~/git/":CTX-D-02:the real binary derives the gitdir default as "~/git/<identity>/" per D-02; the dummy's frozen includeIf preview fixture predates this derivation and shows the pre-Phase-4 "~/<identity>/" sample path with no "git/" segment
+git-form-filled:git-preview:contains:"gitdir:~/git/":CTX-D-12:the includeIf preview's fragment path and gitdir condition embed the selected identity's name, which differs between the real fixture and the dummy fixture by construction; CR-14 fixed the dummy's frozen preview to derive the same "~/git/<identity>/" shape D-02 requires, so no other content differs
+match-strategy-select:git-preview:contains:"gitdir:~/git/":CTX-D-12:the includeIf preview's fragment path and gitdir condition embed the selected identity's name, which differs between the real fixture and the dummy fixture by construction; CR-14 fixed the dummy's frozen preview to derive the same "~/git/<identity>/" shape D-02 requires, so no other content differs
 
 # ---------------------------------------------------------------------------
 # CTX-D-01 — seeded author-name template. The real PTY suite's sandbox

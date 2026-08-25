@@ -1280,24 +1280,42 @@ func isGitScreenID(id string) bool {
 }
 
 func gitScreenSpecs() []ScreenSpec {
-	// WR-27: these four dispositions gain a real Predicate, ported verbatim
-	// from .planning/design/git-screen/visual-divergence-allowlist.txt —
-	// the SAME strings/grammar the e2e gate (gitScreenPredicateSatisfied)
+	// WR-27: these dispositions gain a real Predicate, ported verbatim from
+	// .planning/design/git-screen/visual-divergence-allowlist.txt — the
+	// SAME strings/grammar the e2e gate (gitScreenPredicateSatisfied)
 	// already enforces for these exact checkpoint/region pairs, so this
 	// in-process gate now narrows to the identical divergence rather than
 	// accepting any future difference in the region. Before this fix, all 32
 	// dispositions across this file used blanket uxRegionDifference with an
 	// empty Predicate — uxRegionDifferenceScoped had zero production callers,
 	// so WR-19's rejection branch in BuildRegionDiffs never actually fired.
+	// CR-14 (iteration 4) subsequently re-scoped gitPreviewDisposition's
+	// Predicate from `absent:"gitdir:~/git/"` to `contains:"gitdir:~/git/"`
+	// — see its own comment below for why the divergence it authorizes
+	// changed shape.
 	fixtureSidebarDisposition := uxRegionDifferenceScoped(RegionSidebar, "sidebar-state", "CTX-D-12",
 		"real sidebar carries only the checkpoint's own seeded identities; dummy sidebar lists the full 8-identity IdentityManagerRows fixture set",
 		`absent:"clientB"`)
 	fixtureHeaderStatusDisposition := uxRegionDifferenceScoped(RegionHeaderStatus, "identity-count", "CTX-D-12",
 		"header status shows the identity count, which differs (real's small seeded set vs dummy's 8 fixtures)",
 		`contains:"ids"`)
-	gitPreviewDisposition := uxRegionDifferenceScoped(RegionGitPreview, "gitdir-default", "CTX-D-02",
-		"the real binary derives the gitdir default as \"~/git/<identity>/\" per D-02; the dummy's frozen includeIf preview fixture predates this derivation and shows the pre-Phase-4 \"~/<identity>/\" sample path",
-		`absent:"gitdir:~/git/"`)
+	// CR-14 (iteration 4): FixtureBackend.IncludeIfPreview now substitutes
+	// spec.GitDir (the real "~/git/<identity>/" D-02 derivation) instead of
+	// a frozen "~/<identity>/" literal, so the CTX-D-02 gitdir-default
+	// divergence this disposition used to authorize no longer occurs — real
+	// and dummy now agree on the SAME derivation. What remains is purely the
+	// identity-name substitution (fragment path + includeIf condition embed
+	// the selected identity), the SAME CTX-D-12 class breadcrumbDisposition/
+	// gitStrategyDisposition already cover. The `absent:"gitdir:~/git/"`
+	// predicate is replaced with `contains:"gitdir:~/git/"` rather than
+	// dropped to bare/blanket: under CR-10's fixed grammar, contains:
+	// requires the marker on BOTH sides, so this actively guards against
+	// CR-14's exact regression recurring — if the dummy's derivation ever
+	// regresses back to a frozen "~/<identity>/" literal, only the real side
+	// would carry "gitdir:~/git/" and this predicate correctly rejects it.
+	gitPreviewDisposition := uxRegionDifferenceScoped(RegionGitPreview, "identity-name", "CTX-D-12",
+		"the includeIf preview's fragment path and gitdir condition (\"gitdir:~/git/<identity>/\") embed the selected identity's name, which differs between the real fixture (\"gscreen\"/\"gscreenssh\") and the dummy fixture (\"personal\"/\"work\") by construction — CR-14 fixed the dummy's frozen preview to derive the same \"~/git/<identity>/\" shape D-02 requires, so no other content differs",
+		`contains:"gitdir:~/git/"`)
 	formFieldsDisposition := uxRegionDifferenceScoped(RegionGitFormFields, "author-name-template", "CTX-D-01",
 		"the real fixture's seeded author name (\"<identity> User\") and the dummy's frozen fixture (\"<identity> identity\") use different literal text from two independently authored test fixtures; field structure/order is identical",
 		`absent:"User"`)

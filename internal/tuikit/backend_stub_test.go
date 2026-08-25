@@ -253,8 +253,16 @@ func (stubBackend) GitFragmentPreview(spec GitSpec) string {
 		"\n    signingkey = " + spec.KeyPath + ".pub\n\n[gpg]\n    format = ssh\n\n[commit]\n    gpgsign = true"
 }
 
+// IncludeIfPreview mirrors FixtureBackend's CR-14 fix: the gitdir-match
+// condition substitutes spec.GitDir, not a frozen "~/personal/" literal.
 func (stubBackend) IncludeIfPreview(spec GitSpec) string {
-	return strings.ReplaceAll(gitScreenMatchStrategyPreview[spec.Strategy], "personal", spec.Identity)
+	preview := gitScreenMatchStrategyPreview[spec.Strategy]
+	gitDir := spec.GitDir
+	if gitDir == "" {
+		gitDir = "~/git/" + spec.Identity + "/"
+	}
+	preview = strings.ReplaceAll(preview, `gitdir:~/personal/`, "gitdir:"+gitDir)
+	return strings.ReplaceAll(preview, "personal", spec.Identity)
 }
 
 func (stubBackend) AliasCollision(alias string) (bool, error) {

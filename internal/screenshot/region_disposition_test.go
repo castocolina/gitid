@@ -74,16 +74,20 @@ func TestRegionPredicateSatisfiedRejectsSymmetricCases(t *testing.T) {
 // TestBuildRegionDiffsRejectsUnrelatedLiveRegressionUnderProductionPredicate
 // is CR-10's required reproduction: the review's exact probe methodology,
 // reused as a permanent regression test. It extracts the REAL, shipped
-// gitPreviewDisposition from gitScreenSpecs()'s "git-form-filled" entry —
-// the actual production `absent:"gitdir:~/git/"` RegionDisposition value,
-// not a hand-typed copy of the predicate string — and drives BuildRegionDiffs
-// with an unrelated live-side regression that has nothing to do with the
-// disposition's authorized divergence. Before the CR-10 fix this predicate
-// vacuously accepted ANY live-side text because the frozen dummy fixture
-// never contains "gitdir:~/git/" either way (the exact probe result quoted
-// in 04-REVIEW.md's CR-10 finding) — this test proves it is now rejected,
-// and stays wired to the real production disposition so it tracks any
-// future edit to the shipped predicate.
+// fixtureSidebarDisposition from gitScreenSpecs()'s "git-form-filled" entry —
+// the actual production `absent:"clientB"` RegionDisposition value, not a
+// hand-typed copy of the predicate string — and drives BuildRegionDiffs with
+// an unrelated live-side regression that has nothing to do with the
+// disposition's authorized divergence. Before the CR-10 fix, this class of
+// predicate vacuously accepted ANY live-side text whenever the frozen dummy
+// fixture happened to structurally lack the needle on one side regardless of
+// the other (the exact probe result quoted in 04-REVIEW.md's CR-10 finding,
+// there reproduced against gitPreviewDisposition — RegionGitPreview's OWN
+// predicate was independently dropped by CR-14, see gitScreenSpecs' comment,
+// so this regression test targets fixtureSidebarDisposition instead, which
+// remains genuinely scoped) — this test proves the fixed grammar rejects it,
+// and stays wired to the real production disposition so it tracks any future
+// edit to the shipped predicate.
 func TestBuildRegionDiffsRejectsUnrelatedLiveRegressionUnderProductionPredicate(t *testing.T) {
 	var prodDisposition RegionDisposition
 	found := false
@@ -92,16 +96,16 @@ func TestBuildRegionDiffsRejectsUnrelatedLiveRegressionUnderProductionPredicate(
 			continue
 		}
 		for _, d := range s.RegionDispositions {
-			if d.Region == RegionGitPreview {
+			if d.Region == RegionSidebar {
 				prodDisposition, found = d, true
 			}
 		}
 	}
 	if !found {
-		t.Fatal("gitScreenSpecs()'s git-form-filled no longer carries a RegionGitPreview disposition — update this regression fixture")
+		t.Fatal("gitScreenSpecs()'s git-form-filled no longer carries a RegionSidebar disposition — update this regression fixture")
 	}
 	if prodDisposition.Predicate == "" {
-		t.Fatalf("production RegionGitPreview disposition on git-form-filled lost its Predicate — CR-10 requires it stay scoped, got %+v", prodDisposition)
+		t.Fatalf("production RegionSidebar disposition on git-form-filled lost its Predicate — CR-10 requires it stay scoped, got %+v", prodDisposition)
 	}
 
 	spec := ScreenSpec{
@@ -109,22 +113,24 @@ func TestBuildRegionDiffsRejectsUnrelatedLiveRegressionUnderProductionPredicate(
 		StateMarker:           "shared header",
 		ApplicableLive:        true,
 		ApplicableApprovedTUI: true,
-		RequiredRegions:       []RegionName{RegionGitPreview},
+		RequiredRegions:       []RegionName{RegionSidebar},
 		RegionDispositions:    []RegionDisposition{prodDisposition},
 		NonApplicability: []SurfaceNonApplicability{{
-			Surface: "approved-html", Decision: "CTX-D-02", Reason: "HTML is not a parity target.", Classification: "ux-improvement",
+			Surface: "approved-html", Decision: "CTX-D-12", Reason: "HTML is not a parity target.", Classification: "ux-improvement",
 		}},
 	}
 
-	// Verbatim reproduction of the reviewer's probe fixture: an unrelated
-	// live-side regression (garbage output) paired with the dummy's frozen,
-	// structurally-unrelated approved sample.
-	live := "shared header\n│ includeIf block\n│ TOTALLY BROKEN GARBAGE OUTPUT\n│ Write it\nfooter1\nfooter2\nfooter3\n"
-	approved := "shared header\n│ includeIf block\n│ [includeIf \"gitdir:~/acme/\"]\n│ Write it\nfooter1\nfooter2\nfooter3\n"
+	// An unrelated live-side regression (garbage sidebar content) paired
+	// with an approved sample that ALSO never mentions the dummy fixture's
+	// real "clientB" identity — reproducing the reviewer's probe finding
+	// that this predicate class accepts ANY divergence as long as neither
+	// side happens to carry the scoped needle.
+	live := "shared header\n TOTALLY-BROKEN-GARBAGE│ right pane\n"
+	approved := "shared header\n someoneElse        │ right pane\n"
 
 	_, err := BuildRegionDiffs("test-commit", map[string]string{spec.ScreenID: live}, map[string]string{spec.ScreenID: approved}, []ScreenSpec{spec})
 	if err == nil {
-		t.Fatal("CR-10 regression: BuildRegionDiffs accepted an unrelated live-side regression under the production gitPreviewDisposition predicate — the predicate is vacuous again")
+		t.Fatal("CR-10 regression: BuildRegionDiffs accepted an unrelated live-side regression under the production fixtureSidebarDisposition predicate — the predicate is vacuous again")
 	}
 }
 
