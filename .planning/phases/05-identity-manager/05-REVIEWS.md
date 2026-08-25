@@ -1008,3 +1008,281 @@ acceptance criteria self-contradictory (Codex, MEDIUM); large per-plan scope/tok
 `rewriteLookupProvider` short-provider/short-alias gap (xai-grok, MEDIUM); wave 7-9 token
 estimates aggressive (xai-grok, LOW); 05-08 rotate dry-run scope caveat (xai-grok, LOW).
 
+---
+
+# Cycle 3 Review — Phase 5 (Identity Manager)
+
+```yaml
+cycle: 3
+reviewers: [codex, xai-grok]
+reviewed_at: 2026-08-25T09:47:00Z
+plans_reviewed:
+  - .planning/phases/05-identity-manager/05-01-PLAN.md
+  - .planning/phases/05-identity-manager/05-02-PLAN.md
+  - .planning/phases/05-identity-manager/05-03-PLAN.md
+  - .planning/phases/05-identity-manager/05-04-PLAN.md
+  - .planning/phases/05-identity-manager/05-05-PLAN.md
+  - .planning/phases/05-identity-manager/05-06-PLAN.md
+  - .planning/phases/05-identity-manager/05-07-PLAN.md
+  - .planning/phases/05-identity-manager/05-08-PLAN.md
+  - .planning/phases/05-identity-manager/05-09-PLAN.md
+models:
+  codex: "gpt-5.6-sol (reasoning=low)"
+  xai-grok: "xai/grok-4.6 (reasoning=low)"
+model_sources:
+  codex: "banner"
+  xai-grok: "pinned"
+context: >
+  Final cycle (max-cycles=3) re-review of the plans revised in commit 8ee2f72 to address
+  Cycle 2's 3 new HIGH findings (deleteTargets missing shared-key-ownership input, the
+  universal six-stage runDelete contract contradicting 05-08's delete dry-run contract, and
+  the overloaded Confirm == nil sentinel). Both reviewers were instructed to verify, against
+  the live repository, whether each Cycle 2 HIGH finding is RESOLVED, PARTIALLY RESOLVED, or
+  UNRESOLVED, to re-check for regressions in areas Cycle 1/Cycle 2 already closed, and — since
+  no further replanning cycle remains — to weigh carefully whether any new finding is a true
+  execution blocker versus an acceptable scoped divergence.
+note: >
+  codex-sol's pinned model (openai/gpt-5.6-sol-fast) was again rejected by this host's Codex
+  CLI under a ChatGPT account (identical failure to Cycle 1 and Cycle 2). The codex builtin
+  lane was invoked instead, using Codex's own default model resolved from its banner, and is
+  reported below under the codex identity — same substitution as prior cycles.
+```
+
+## Consensus Summary
+
+Both reviewers independently verified all three Cycle 2 HIGH findings against the live
+repository (still pre-Phase-5: `Delete` is `keepKey bool` at `internal/identity/delete.go:56`,
+no `deleteTargets` exists yet, `hostnameToProvider` has no Bitbucket at
+`internal/identity/loader.go:16-21`, `runPipeline` still persists internally at
+`internal/identity/identity.go:527-534`, `Persist` still falls through to `tuikit.Reduce` at
+`cmd/gitid/wiring.go:352-360`) and the revised plan text (commit 8ee2f72), citing concrete
+`file:line` evidence. **Both agree all three Cycle 2 HIGH findings are resolved in the plan
+text**: `deleteTargets` now takes a `keySurvives` input derived from `SharedKeyOwners`
+(05-04-PLAN.md:269), the six-stage lifecycle contract was replaced with a verb-specific
+`lifecycleStages` table where delete is `plan → confirm → backup → write → verify` with zero
+tester invocations (05-07-PLAN.md:152, 05-08-PLAN.md:146), and `Confirm == nil`'s dual meaning
+was replaced with an explicit `confirmationMode` enum whose zero value fails closed
+(05-07-PLAN.md:168, 05-08-PLAN.md:132). Both reviewers also re-checked the areas Cycle 1/Cycle 2
+already closed (pipeline decomposition, archive copy/move split, doctor-reservation negative
+control, `AllActions`+AST exhaustiveness, provider normalization including Bitbucket,
+`RepairKeyPath` derivation, planner error channels, `CommitDelete` ownership) and found no
+regression in any of them.
+
+The reviewers diverge on whether the phase is now execution-ready. **Codex finds one new
+HIGH-severity gap**: the rotation rollback path cannot reliably track or restore archive
+entries created by a `MoveKeyPairToArchive` failure that occurs during the archive step itself
+(specifically a second-source-removal failure), because the archive closures described in
+05-07-PLAN.md are constructed outside the lifecycle's local journal and there is no
+transaction-scoped "created file" hook wired to them. **xai-grok does not surface this finding**
+and rates the phase "EXECUTION VERDICT: READY" at overall risk MEDIUM. As in Cycle 2, nothing
+in xai-grok's review contradicts Codex's citations — xai-grok's pass did not specifically trace
+the archive-closure-to-journal wiring in 05-07 the way Codex did — so this reads as a coverage
+gap in xai-grok's pass rather than a genuine disagreement about the underlying mechanism.
+
+### Agreed: All 3 Cycle 2 HIGH Findings Resolved
+
+| # | Cycle 2 Finding | Codex verdict | xai-grok verdict |
+|---|---|---|---|
+| 1 | `deleteTargets` missing shared-key-ownership input | RESOLVED in plan | RESOLVED |
+| 2 | Universal six-stage `runDelete` vs. delete dry-run contract | RESOLVED in plan | RESOLVED |
+| 3 | `Confirm == nil` conflates authorization states | RESOLVED in plan | RESOLVED |
+
+### New HIGH Finding This Cycle (Codex; not raised or disputed by xai-grok)
+
+- **HIGH — Rotation rollback cannot reliably discover or restore archive entries created by a
+  failing archive seam.** 05-02-PLAN.md:100/115 specifies that a failure while removing the
+  second source during `MoveKeyPairToArchive` returns an `ArchivedPair` plus an error, leaving
+  archive copies intact and (at most) one source removed. 05-03-PLAN.md:192 only guarantees a
+  populated `RotateResult` for failures at step 4 or later, not for an error returned by step 3
+  itself. 05-07-PLAN.md:182/186 has the archive closures call `journal.recordCreatedFile`, but
+  those closures are constructed outside the lifecycle's local journal and are not wired to
+  receive one — confirmed by the current dependency-construction code, which has no
+  transaction-local created-file hook (`cmd/gitid/wiring.go:863`). A second-source-removal
+  failure can therefore leave the canonical key pair partially removed with the archive copy
+  untracked by the journal, which the rollback cannot then identify or restore — violating the
+  phase's all-or-nothing key-lifecycle requirement.
+
+### Divergent Views
+
+- **Overall execution readiness.** Codex: **HIGH / NOT READY** ("the remaining rotation
+  rollback gap crosses the most sensitive boundary in the phase: movement of the active
+  private-key pair"). xai-grok: **MEDIUM / READY** ("the Cycle 2 contradictions that could
+  authorize a silent delete or lie on confirm are specified away"). The gap traces entirely to
+  the one new HIGH finding above — xai-grok's review contains no language that disputes Codex's
+  citations of 05-02-PLAN.md, 05-03-PLAN.md, or 05-07-PLAN.md, so this is a coverage gap on the
+  archive-rollback-journal wiring rather than a substantive disagreement about severity.
+
+---
+
+## Codex Review (Cycle 3)
+
+reflected model: `gpt-5.6-sol (reasoning=low)`, resolved from banner (instance `codex-sol`'s
+pinned model `openai/gpt-5.6-sol-fast` was again rejected by this account — see the note above).
+
+# Summary
+
+The Cycle 2 HIGH findings are resolved in the revised plans, but the live source remains
+pre-implementation — as expected for an execution-plan review. Most previously identified
+non-HIGH issues are now explicitly addressed with concrete tests. However, one new blocking
+rollback contradiction remains: archive files created during a failed rotation cannot reliably
+be registered with the transaction journal under the planned dependency wiring, especially when
+`MoveKeyPairToArchive` fails after copying but before fully removing the original pair.
+
+## Cycle 2 HIGH verification
+
+| Finding | Status | Evidence |
+|---|---|---|
+| Delete preview lists a shared key that deletion preserves | **RESOLVED in plan** | `deleteTargets` now requires `keySurvives`, and both planning and writing derive it from `SharedKeyOwners`; three fixture classes plus negative controls are required ([05-04-PLAN.md:269](.planning/phases/05-identity-manager/05-04-PLAN.md#L269)). Current source has no `DeletePlan` yet and still uses `keepKey bool` ([internal/identity/delete.go:48](internal/identity/delete.go#L48)), confirming this is planned work rather than an inaccurate claim of completion. |
+| Delete incorrectly required connectivity test/re-test | **RESOLVED in plan** | The single source of truth is now verb-specific: rotate/repair use test and retest; delete uses `plan → confirm → backup → write → verify` ([05-07-PLAN.md:152](.planning/phases/05-identity-manager/05-07-PLAN.md#L152)). The CLI plan reads this table and explicitly requires zero delete tester invocations ([05-08-PLAN.md:146](.planning/phases/05-identity-manager/05-08-PLAN.md#L146)). |
+| `Confirm == nil` could authorize a non-interactive destructive command | **RESOLVED in plan** | The zero-value `confirmationRequired` state fails closed without a prompt; TUI confirmation and `--yes` are distinct enum values ([05-07-PLAN.md:168](.planning/phases/05-identity-manager/05-07-PLAN.md#L168)). CLI code is forbidden from constructing `confirmationAlreadyObtained` and refuses non-TTY writes without `--yes` before invoking lifecycle logic ([05-08-PLAN.md:132](.planning/phases/05-identity-manager/05-08-PLAN.md#L132)). |
+
+## Strengths
+
+- The revised shared-key contract is mechanically checkable. Preview/write equality is compared using logical `(File, Block)` targets across sole-owner, shared-key, and shared-provider fixtures, with an inverted-input negative control.
+- `runPipeline` decomposition has an explicit safe migration boundary. The current monolith persists internally ([internal/identity/identity.go:527](internal/identity/identity.go#L527)), and current rotation still calls it ([internal/identity/modes.go:181](internal/identity/modes.go#L181)). Plan 05-03 first pins current behavior, then removes rotation from the monolith in the next task ([05-03-PLAN.md:128](.planning/phases/05-identity-manager/05-03-PLAN.md#L128)).
+- Archive copy/move semantics are now distinct and correctly assigned: rotation moves, deletion copies and removes live files last. Source-removal failure is injected deterministically instead of relying on platform-sensitive permissions ([05-02-PLAN.md:113](.planning/phases/05-identity-manager/05-02-PLAN.md#L113)).
+- Doctor reservation is causal rather than incidental. The filter is applied to the enumerator result through `InventoryDeps.IsReservedKeyPath`, with a negative control that deliberately disables it.
+- Provider normalization now covers Bitbucket and the short-provider/short-alias case. This directly repairs the current substrate, whose provider table only contains GitHub and GitLab ([internal/identity/loader.go:12](internal/identity/loader.go#L12)) and whose current alias fallback returns invalid one-label aliases ([internal/identity/loader.go:134](internal/identity/loader.go#L134)).
+- Action exhaustiveness uses an implementable mechanism: `AllActions()` plus Go AST inspection. That appropriately replaces the impossible idea of discovering interface implementers through reflection. It also targets the real current defect: `Persist` still silently delegates unknown actions to the demo reducer ([cmd/gitid/wiring.go:352](cmd/gitid/wiring.go#L352)).
+- Planning seams fail closed through explicit error channels. `DeletePlan`, `KeyCeremonyPlan`, and `KeyActionFor` return errors, and destructive screens disable confirmation on failure.
+- `CommitDelete` ownership is now unambiguous: write remains on `Backend`; planning remains on the five-method `IdentityPlanner`, with an exact-method-set test.
+
+## Concerns
+
+- **HIGH — Rotation rollback cannot reliably discover archive entries created by a failing archive seam.** Plan 05-02 deliberately specifies that failure while removing the second source returns an `ArchivedPair` plus an error, leaving archive copies intact and one source potentially removed ([05-02-PLAN.md:100](.planning/phases/05-identity-manager/05-02-PLAN.md#L100), [05-02-PLAN.md:115](.planning/phases/05-identity-manager/05-02-PLAN.md#L115)). Plan 05-03 only guarantees populated `RotateResult` for failures at step 4 or later — not an error during step 3 itself ([05-03-PLAN.md:192](.planning/phases/05-identity-manager/05-03-PLAN.md#L192)). Plan 05-07 then says the archive closures should call `journal.recordCreatedFile`, but also requires reuse of the backend-wide `b.deps`; those closures are constructed outside the lifecycle's local journal and receive no journal argument ([05-07-PLAN.md:182](.planning/phases/05-identity-manager/05-07-PLAN.md#L182), [05-07-PLAN.md:186](.planning/phases/05-identity-manager/05-07-PLAN.md#L186)). The current journal confirms there is no transaction-local created-file hook in dependency construction ([cmd/gitid/wiring.go:863](cmd/gitid/wiring.go#L863)). A second-source removal failure can therefore leave the canonical pair partially removed and archive copies untracked, violating the all-or-nothing key-lifecycle requirement.
+- **MEDIUM — One confirmation acceptance criterion remains internally contradictory.** The plan correctly requires `confirmationRequired` with no prompt to fail before backup ([05-07-PLAN.md:208](.planning/phases/05-identity-manager/05-07-PLAN.md#L208)), but then asks to cross every confirmation mode with `DryRun` and require a backup for every non-dry-run case ([05-07-PLAN.md:210](.planning/phases/05-identity-manager/05-07-PLAN.md#L210)). That must exclude the no-prompt required-confirmation case or install an accepting prompt.
+- **MEDIUM — "SharedKeyOwners consulted exactly once" is not testable as currently shaped.** It is planned as a pure function, yet the acceptance criterion requests a recording seam ([05-04-PLAN.md:210](.planning/phases/05-identity-manager/05-04-PLAN.md#L210)). Either inject the owner resolver or test the stronger observable invariant — one precomputed slice/boolean used by both target derivation and key mutation.
+- **LOW — Execution remains very large.** The raised estimates are more honest, but plans 05-07 through 05-09 still combine substantial transaction, CLI, PTY, and visual-gate work. This is schedule risk, not a correctness blocker.
+
+## Suggestions
+
+- Fix the archive rollback blocker before execution by choosing one explicit design:
+  - Build transaction-scoped `identity.Deps` inside `runRotate`, with archive closures that capture that lifecycle's journal; or
+  - Change the archive seam to accept an observer such as `onCreated(path)`; or
+  - Guarantee `Rotate` always copies returned archive paths into `RotateResult` before checking the archive error, and make the lifecycle register and roll back those paths even when step 3 returns an error.
+  - Add a real lifecycle test for failure during removal of the second source — not merely failures after archive success — and assert canonical private/public bytes and modes are fully restored and archive entries are absent.
+- Rewrite the confirmation matrix criterion to say: backups exist for both authorized non-dry-run modes and for `confirmationRequired` only when an accepting prompt is installed; missing or rejecting prompts must produce no backup.
+- Replace the "consulted exactly once" test with either an injected resolver or a structural/helper-level test showing `owners` and `keySurvives` are computed once and passed to both consumers.
+
+## Risk Assessment
+
+**Overall risk: HIGH.** The three requested Cycle 2 HIGH findings are resolved at the plan level, and nearly all earlier non-HIGH findings are now well covered. Nevertheless, the remaining rotation rollback gap crosses the most sensitive boundary in the phase: movement of the active private-key pair. As written, an injected and explicitly tested archive failure can leave filesystem state that the planned journal cannot identify or fully restore.
+
+**EXECUTION VERDICT: NOT READY**
+
+Blocking HIGH finding:
+
+1. Transaction-local tracking and rollback of archive paths is undefined for `MoveKeyPairToArchive` failures occurring during the archive step, particularly second-source removal failure.
+
+---
+
+## OpenCode Review (xai-grok) — Cycle 3
+
+Verifying Cycle 2 HIGH fixes against live code and the revised plans. Checking live substrate
+for the three Cycle 2 HIGHs and previously closed items.
+
+# Cycle 3 Plan Review — Phase 5 Identity Manager
+
+Live code is still pre–Phase 5 (`Delete` is `keepKey bool` at `internal/identity/delete.go:56`;
+`hostnameToProvider` has no Bitbucket at `internal/identity/loader.go:16-21`; `runPipeline`
+still persists internally at `internal/identity/identity.go:527-534`; `Persist` still falls
+through to `tuikit.Reduce` at `cmd/gitid/wiring.go:352-360`). Findings below judge **revised
+plan text (8ee2f72)** against that substrate.
+
+## Summary
+
+The three Cycle 2 HIGH contradictions are **RESOLVED in the plans**, with tests that would fail
+if an executor reintroduced them. Previously closed HIGH items remain specified (pipeline
+split, copy/move archive, doctor predicate + negative control, `AllActions`+AST,
+`RepairKeyPath`, planner error channels). Bitbucket, short-provider/short-alias, journal
+disjointness, `CommitDelete` ownership, and confirmation fail-closed are now in-plan. No new
+execution-blocking HIGH. Residual risk is size/token load and executor discipline across nine
+waves, not an internal contradiction.
+
+## Cycle 2 HIGH verification
+
+| Finding | Status | Evidence |
+|---|---|---|
+| R2-01 `deleteTargets` missing `keySurvives` | **RESOLVED** | `05-04-PLAN.md` helper is `deleteTargets(..., providerSurvives, keySurvives bool)`; key targets only when everything && `!keySurvives`; `Delete` computes `SharedKeyOwners` once; plan/write equality over three fixtures + invert-`keySurvives` negative control. Not in code yet (`delete.go` has no `deleteTargets`). |
+| R2-02 universal six-stage `runDelete` vs delete dry-run | **RESOLVED** | `05-07-PLAN.md` `lifecycleStages`: delete = `plan → confirm → backup → write → verify`; zero tester invocations. `05-08` reads that table instead of restating stages. |
+| R2-03 `Confirm == nil` dual meaning | **RESOLVED** | `confirmationRequired` (zero) / `AlreadyObtained` / `BypassedWithYes`; CLI refuse-before-lifecycle without TTY+`--yes`; grep gate that CLI never uses `confirmationAlreadyObtained`. |
+
+## Closed items — no regression in plan
+
+- **runPipeline persist** — still real at `identity.go:527-534`; 05-03 Task 1 decomposes, Task 2 owns rotate leaving `runPipeline` (R2-09).
+- **Copy vs Move** — 05-02 three primitives; rotate Move, delete Copy.
+- **Doctor reservation** — `IsReservedKeyPath` on `ListKeyFiles` result; injected-path + `false` predicate (glob at `inventory.go:266` cannot prove this).
+- **AllActions** — `store.go:191-203` has 13 `isAction` receivers; 05-07 AST completeness, not reflection.
+- **Repair target** — `RepairKeyPath` from `Account.Name`.
+- **Planner errors** — `DeletePlan` / `KeyCeremonyPlan` / `KeyActionFor` return `error`; fail-closed UI.
+- **Provider normalize** — Bitbucket + short→FQDN before alias fallback (live `rewriteLookupProvider` at `loader.go:134-142` still returns `"mygh"` for `("github","mygh")`; 05-04 Task 1 is the fix).
+- **CommitDelete** — stays on `Backend`; `IdentityPlanner` frozen at five methods.
+
+## Strengths
+
+- Tracer (05-01) closes Pitfall 1 before four ceremonies pile on a fake write.
+- Preview/write equality is load-bearing (`keySurvives` + negative control).
+- Destructive CLI fail-closed is structural (enum zero value + refuse-before-call).
+- One `lifecycleStages` table shared by both skins.
+- Shared-renderer backstop (FIELDS.md vs real PTY) is the right DLV-04 complement.
+
+## Concerns
+
+- **MEDIUM — 05-01 vs 05-07 delete chokepoint names.** Wave 1 ships `deleteIdentityTransaction`; wave 7 ships `runDelete`. If 05-01 CLI stays on the thin writer after 05-07, D-02 forks. Executor must wrap, not leave two production callers.
+- **MEDIUM — wave size (R2-12).** Estimates raised; 05-07 Task 1 is still a single commit-sized monster (lifecycle + journal disjointness + confirmation + rotate/repair tx). Slip risk, not a spec hole.
+- **LOW — 05-01 `Persist` DeleteIdentity vs later exhaustive switch.** Ordered correctly; do not treat the wave-1 case as the final classification.
+- **LOW — token/PTY timeout.** 05-08 raises e2e timeout with measured wall-clock; still uncalibrated.
+
+Cycle 2 non-HIGH leftovers (Bitbucket, stamp-retry owner, injected `remove`, exclusive-open in
+keygen, journal disjointness, rotate T1/T2, R2-10, short alias, estimates) are **addressed in
+plan text**.
+
+## Suggestions
+
+- In 05-07 Task 1, first line: "replace `deleteIdentityTransaction` call sites with `runDelete`; leave no second writer."
+- Split 05-07 Task 1 if the executor hits context limits: journal+confirmation first, then rotate/repair tx.
+- Do not register remaining detail fabrication as a visual divergence after 05-07 Task 3.
+
+## Risk Assessment
+
+**MEDIUM** — irreversible key/config work, large sequential surface, but the Cycle 2
+contradictions that could authorize a silent delete or lie on confirm are specified away. Live
+code still has the old defects; that is expected pre-execute.
+
+**EXECUTION VERDICT: READY**
+
+---
+
+# Cycle 3 Final Assessment
+
+**Cycle 3 overall risk: HIGH (Codex) / MEDIUM (xai-grok) — treat as HIGH pending resolution.**
+
+All three Cycle 2 HIGH findings are resolved in the plan text, confirmed independently by both
+reviewers with `file:line` citations, and no regression was found in any of the eight Cycle 1
+HIGH findings or the Cycle 2 non-HIGH leftovers. One new HIGH finding surfaced by Codex — not
+disputed by xai-grok, simply not covered by its pass — remains open:
+
+1. Rotation rollback cannot reliably track or restore archive entries created by a
+   `MoveKeyPairToArchive` failure occurring during the archive step itself (specifically a
+   second-source-removal failure): the archive closures in 05-07-PLAN.md call
+   `journal.recordCreatedFile` but are constructed outside the lifecycle's local journal, and
+   05-03-PLAN.md only guarantees a populated `RotateResult` for failures at step 4 or later, not
+   for a step-3 archive error. Concrete evidence: 05-02-PLAN.md:100/115, 05-03-PLAN.md:192,
+   05-07-PLAN.md:182/186, cmd/gitid/wiring.go:863.
+
+Actionable non-HIGH findings not yet addressed: confirmation-matrix acceptance criterion crosses
+`DryRun` with every confirmation mode inconsistently with the fail-closed no-prompt case (Codex,
+MEDIUM, 05-07-PLAN.md:208/210); "SharedKeyOwners consulted exactly once" acceptance criterion is
+not testable as a pure function (Codex, MEDIUM, 05-04-PLAN.md:210); large per-plan token/schedule
+risk in 05-07–05-09 (Codex, LOW); 05-01 `deleteIdentityTransaction` vs. 05-07 `runDelete` naming
+divergence risking two production delete callers (xai-grok, MEDIUM); 05-07 Task 1 remains a
+single commit-sized monster combining lifecycle + journal + confirmation + rotate/repair tx
+(xai-grok, MEDIUM); 05-08 e2e timeout still uncalibrated (xai-grok, LOW).
+
+This is the final allowed review cycle (max-cycles=3). The one remaining HIGH finding is a
+scoping decision for the orchestrator/human: it is narrowly bounded (the archive-closure-to-
+journal wiring inside 05-07's `runRotate`/`runRepair` construction, and 05-03's step-3 failure
+contract), backed by concrete file:line evidence from a source-grounded reviewer, and not
+disputed by the second reviewer — but it was raised by only one of two reviewers, exactly the
+pattern that occurred with the (subsequently confirmed-real) Cycle 2 findings.
+
