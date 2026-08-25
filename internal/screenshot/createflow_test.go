@@ -17,16 +17,37 @@ import (
 
 	"github.com/castocolina/gitid/internal/dummytui"
 	"github.com/castocolina/gitid/internal/screenshot"
+	"github.com/castocolina/gitid/internal/tuikit"
 )
+
+// captureCombined merges CaptureCreateFlowScreens and CaptureGitScreenScreens
+// (04-04-PLAN.md Task 3) — the SAME two-call merge
+// cmd/gitid/gate_visual_regression_test.go's real gate does, so tests that
+// assert over the FULL RequiredScreenSpecs() inventory (both registries) see
+// every applicable screen. dummytui.NewFixtureBackend() needs no extra
+// seeding: its fixed "personal"/"work" identities already satisfy
+// CaptureGitScreenScreens' two-identity precondition.
+func captureCombined(t *testing.T, backend tuikit.Backend) map[string]string {
+	t.Helper()
+	out, err := screenshot.CaptureCreateFlowScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureCreateFlowScreens: %v", err)
+	}
+	gitOut, err := screenshot.CaptureGitScreenScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureGitScreenScreens: %v", err)
+	}
+	for id, text := range gitOut {
+		out[id] = text
+	}
+	return out
+}
 
 // TestCaptureCreateFlowScreens_HasAllIDs verifies every enumerated screen ID
 // is present in the output map (no silent omissions).
 func TestCaptureCreateFlowScreens_HasAllIDs(t *testing.T) {
 	backend := dummytui.NewFixtureBackend()
-	captures, err := screenshot.CaptureCreateFlowScreens(backend)
-	if err != nil {
-		t.Fatalf("CaptureCreateFlowScreens: %v", err)
-	}
+	captures := captureCombined(t, backend)
 	for _, spec := range screenshot.RequiredScreenSpecs() {
 		if spec.ApplicableLive {
 			if _, ok := captures[spec.ScreenID]; !ok {
@@ -40,10 +61,7 @@ func TestCaptureCreateFlowScreens_HasAllIDs(t *testing.T) {
 // an empty string (a capture bug that silently passes a byte-exact diff).
 func TestCaptureCreateFlowScreens_NonEmptyContent(t *testing.T) {
 	backend := dummytui.NewFixtureBackend()
-	captures, err := screenshot.CaptureCreateFlowScreens(backend)
-	if err != nil {
-		t.Fatalf("CaptureCreateFlowScreens: %v", err)
-	}
+	captures := captureCombined(t, backend)
 	for _, spec := range screenshot.RequiredScreenSpecs() {
 		if spec.ApplicableLive && strings.TrimSpace(captures[spec.ScreenID]) == "" {
 			t.Errorf("CaptureCreateFlowScreens: screen %q has empty content", spec.ScreenID)
@@ -56,14 +74,8 @@ func TestCaptureCreateFlowScreens_NonEmptyContent(t *testing.T) {
 // D-22/D-24 determinism contract: the gate must not rely on random ordering.
 func TestCaptureCreateFlowScreens_Deterministic(t *testing.T) {
 	backend := dummytui.NewFixtureBackend()
-	first, err := screenshot.CaptureCreateFlowScreens(backend)
-	if err != nil {
-		t.Fatalf("CaptureCreateFlowScreens (first): %v", err)
-	}
-	second, err := screenshot.CaptureCreateFlowScreens(backend)
-	if err != nil {
-		t.Fatalf("CaptureCreateFlowScreens (second): %v", err)
-	}
+	first := captureCombined(t, backend)
+	second := captureCombined(t, backend)
 	for _, spec := range screenshot.RequiredScreenSpecs() {
 		id := spec.ScreenID
 		if spec.ApplicableLive && first[id] != second[id] {

@@ -2,7 +2,7 @@
  Identities › acme › Configure Git
 S ssh · G git  ✓ ok ! attn ✗ broken │ ✗ gitid: refusing symlinked managed path:
 ▸ ✗ acme                      S✗ G✓ │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestGitConfig
-                                    │ uration_RealPTYWriteFailureRollback2974791812/001/.gitconfig.d
+                                    │ uration_RealPTYWriteFailureRollback3606953788/001/.gitconfig.d
                                     │ /acme
                                     │
                                     │  Cancel (Esc)   Retry (Enter)

@@ -45,10 +45,25 @@ var timestampPattern = regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}[:\-]\d{2}[:\-
 
 var sandboxPathFragmentPattern = regexp.MustCompile(`(?:gitid-evidence-)?capture-\d+|fake-ssh-\d+|(?:gi)?tid-stage-\d+`)
 
-// normalizeTimestamps replaces all ISO-8601 timestamps in s with a fixed placeholder
-// so that captures taken at different wall-clock seconds are byte-identical (CR-01).
+// longDigitRunPattern matches internal/filewriter's ".bak.<unix-nanoseconds>"
+// backup-path suffix (filewriter.go's targetPath+".bak."+UnixNano()) — the
+// REAL Git-screen commit receipt's actual backup naming (04-04-PLAN.md
+// Task 3), distinct from tuikit.NewBackupPath's ISO-8601 ".backup."
+// convention timestampPattern already normalizes. A 19-digit nanosecond
+// value can wrap mid-number across the fixed 100-column pane, splitting into
+// two independent digit runs in the rendered text; matching ANY 6+ digit run
+// (never legitimately produced elsewhere — ports/counts stay well under 6
+// digits) normalizes each wrapped fragment independently rather than
+// requiring a single contiguous match that a line wrap would break.
+var longDigitRunPattern = regexp.MustCompile(`\d{6,}`)
+
+// normalizeTimestamps replaces all ISO-8601 timestamps and long digit runs
+// (nanosecond-suffixed backup paths, including line-wrapped fragments) in s
+// with fixed placeholders so that captures taken at different wall-clock
+// instants are byte-identical (CR-01).
 func normalizeTimestamps(s string) string {
 	s = sandboxPathFragmentPattern.ReplaceAllString(s, "<sandbox>")
+	s = longDigitRunPattern.ReplaceAllString(s, "<digits>")
 	return timestampPattern.ReplaceAllString(s, "<timestamp>")
 }
 
@@ -260,6 +275,16 @@ func ScreenSpecRegistry() []ScreenSpec {
 			RegionDispositions: []RegionDisposition{
 				uxRegionDifference(RegionHeaderStatus, "fixture-header-status", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),
 				uxRegionDifference(RegionSidebar, "fixture-sidebar", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),
+				// 04-04-PLAN.md Task 3 discovery: git-form-demo renders through
+				// the SAME shared gitForm.view() code the git-screen registry's
+				// RegionGitPreview/RegionGitFormFields regions extract from — the
+				// SAME CTX-D-02/CTX-D-01 gitdir-default/author-name-template
+				// divergences the git-screen registry classifies apply here too,
+				// since this screen's wizard-default identity is "acme" (create-flow's
+				// hardcoded default prefix), not the git-screen registry's own
+				// "gscreen"/"gscreenssh" fixture identities.
+				uxRegionDifference(RegionGitPreview, "gitdir-default", "CTX-D-02",
+					"the real binary derives the gitdir default as \"~/git/<identity>/\" per D-02; the dummy's frozen includeIf preview fixture predates this derivation and shows the pre-Phase-4 \"~/<identity>/\" sample path"),
 			},
 		},
 		{
@@ -398,6 +423,11 @@ func ScreenSpecRegistry() []ScreenSpec {
 			RequiredRegions: []RegionName{RegionConfirmationPreview},
 		},
 	}
+	// 04-04-PLAN.md Task 3: consume the git-screen registry alongside the
+	// create-flow registry above — ONE combined ScreenSpec inventory drives
+	// every consumer (the routine gate, RequiredVisualPanelCount, and the
+	// evidence packet publisher).
+	specs = append(specs, gitScreenSpecs()...)
 	return specs
 }
 
@@ -502,6 +532,19 @@ func normalizeCapturedStateText(text string) string {
 	return strings.Join(strings.Fields(strings.Join(lines, " ")), " ")
 }
 
+// validDecisionRef reports whether ref is a recognized decision-reference
+// vocabulary entry: the create-flow registry's bare D-NN/T-NN identifiers
+// (03-CONTEXT.md/03-06-SUMMARY.md), or the Phase 4 git-screen registry's
+// scoped CTX-D-NN (04-CONTEXT.md) / UI-D-NN (04-UI-SPEC.md) identifiers
+// (04-04-PLAN.md Task 3 — generalized decision-ref validation). Scoped
+// prefixes exist because 04-CONTEXT.md and 04-UI-SPEC.md's own D-NN
+// numbering collides (both start at D-01) — CTX-D-/UI-D- disambiguate which
+// document a reference resolves against.
+func validDecisionRef(ref string) bool {
+	return strings.HasPrefix(ref, "D-") || strings.HasPrefix(ref, "T-") ||
+		strings.HasPrefix(ref, "CTX-D-") || strings.HasPrefix(ref, "UI-D-")
+}
+
 // ValidateScreenSpecs checks the registry for structural correctness:
 // - No duplicate screen IDs without valid VariantOf metadata
 // - Every VariantOf references an existing base screen ID
@@ -540,7 +583,7 @@ func ValidateScreenSpecs(specs []ScreenSpec) error {
 				}
 				continue
 			}
-			if !found || record.Decision == "" || !strings.HasPrefix(record.Decision, "D-") || record.Reason == "" || !validDifferenceClassification(record.Classification) {
+			if !found || record.Decision == "" || !validDecisionRef(record.Decision) || record.Reason == "" || !validDifferenceClassification(record.Classification) {
 				return fmt.Errorf("screenshot: ValidateScreenSpecs: non-applicable %s spec %q lacks a decision-linked record", surface, s.ScreenID)
 			}
 		}
@@ -571,7 +614,7 @@ func ValidateScreenSpecs(specs []ScreenSpec) error {
 				return fmt.Errorf("screenshot: ValidateScreenSpecs: spec %q has invalid region disposition %q", s.ScreenID, disposition.Region)
 			}
 			if strings.TrimSpace(disposition.Divergence) == "" ||
-				!strings.HasPrefix(disposition.Decision, "D-") ||
+				!validDecisionRef(disposition.Decision) ||
 				strings.TrimSpace(disposition.Reason) == "" ||
 				!validDifferenceClassification(disposition.Classification) {
 				return fmt.Errorf("screenshot: ValidateScreenSpecs: spec %q region %q lacks a decision-linked disposition", s.ScreenID, disposition.Region)
@@ -987,9 +1030,18 @@ func CaptureCreateFlowScreens(backend tuikit.Backend) (map[string]string, error)
 	})
 	out["test-hard-failure-retry"] = capture(failure)
 
-	// Validate that all required live frames are present.
+	// Validate that all required live frames are present. Git-screen specs
+	// (04-04-PLAN.md Task 3) are captured SEPARATELY by
+	// CaptureGitScreenScreens against their OWN seeded HOME — merging them
+	// into this same backend/HOME would add real identities to the wizard's
+	// sidebar and shift every create-flow screen's layout (a regression
+	// discovered empirically: it broke "git-form-demo"'s connectivity-output
+	// region, which has no identity-count dependency of its own). Callers
+	// that need the combined inventory (the routine gate, the packet
+	// publisher) merge both capture maps explicitly — see
+	// cmd/gitid/gate_visual_regression_test.go.
 	for _, spec := range RequiredScreenSpecs() {
-		if !spec.ApplicableLive {
+		if !spec.ApplicableLive || isGitScreenID(spec.ScreenID) {
 			continue
 		}
 		text, ok := out[spec.ScreenID]
@@ -999,4 +1051,198 @@ func CaptureCreateFlowScreens(backend tuikit.Backend) (map[string]string, error)
 	}
 
 	return out, nil
+}
+
+// ---------------------------------------------------------------------------
+// Git-screen checkpoints (04-04-PLAN.md Task 3, Phase 4 registration).
+//
+// CaptureGitScreenScreens drives backend's Identities/Configure-Git pane
+// in-process through the SAME semantic checkpoint script
+// e2e/git_configuration_pty_e2e_test.go's TestGitConfiguration_
+// CompiledRealVsLiveDummyPTY (Task 2) drives over real PTYs — five named
+// checkpoints (git-form-filled, git-form-empty, match-strategy-select,
+// review-readonly, result-success), the SAME vocabulary both gates classify
+// divergences against in
+// .planning/design/git-screen/visual-divergence-allowlist.txt.
+//
+// backend must expose at least two identities: the default-selected
+// identity (index 0, a COMPLETE identity — Git already configured) drives
+// every checkpoint except git-form-empty; the SECOND identity (index 1, an
+// SSH-only identity with no Git fragment yet) drives git-form-empty.
+// dummytui.NewFixtureBackend() already satisfies this (its "personal"/"work"
+// fixtures); a real Backend needs its HOME seeded accordingly before this is
+// called (see cmd/gitid/gate_visual_regression_test.go's
+// deterministicGitIdentityFixture).
+// ---------------------------------------------------------------------------
+
+// gitScreenIdentitiesApp boots a fresh tuikit.App around backend at the
+// fixed capture geometry, landing on the Identities detail pane — the SAME
+// entry point the "g" keystroke launches Configure Git from.
+func gitScreenIdentitiesApp(backend tuikit.Backend) tea.Model {
+	var model tea.Model = tuikit.NewApp(backend)
+	model = step(model, tea.WindowSizeMsg{Width: CaptureWidth, Height: CaptureHeight})
+	return model
+}
+
+func keyDown(model tea.Model) tea.Model { return step(model, tea.KeyPressMsg{Code: tea.KeyDown}) }
+
+// CaptureGitScreenScreens implements the doc comment above.
+func CaptureGitScreenScreens(backend tuikit.Backend) (map[string]string, error) {
+	out := make(map[string]string, 5)
+	capture := func(m tea.Model) string { return normalizeTimestamps(anyView(m)) }
+
+	// git-form-filled: default-selected identity (edit mode — Git already
+	// configured).
+	m := gitScreenIdentitiesApp(backend)
+	m = keyRune(m, 'g')
+	out["git-form-filled"] = capture(m)
+
+	// match-strategy-select: focus the strategy field (name -> email -> strategy).
+	strat := keyTab(m)
+	strat = keyTab(strat)
+	out["match-strategy-select"] = capture(strat)
+
+	// review-readonly / result-success: the write ceremony, confirmed twice
+	// (Enter reaches the preview, a second Enter commits — matching the real
+	// PTY suite's confirmed sequence).
+	review := keyEnter(m)
+	out["review-readonly"] = capture(review)
+	result := keyEnter(review)
+	out["result-success"] = capture(result)
+
+	// git-form-empty: the second identity (SSH-only completion).
+	empty := gitScreenIdentitiesApp(backend)
+	empty = keyDown(empty)
+	empty = keyRune(empty, 'g')
+	out["git-form-empty"] = capture(empty)
+
+	for _, spec := range gitScreenSpecs() {
+		text, ok := out[spec.ScreenID]
+		if !ok || strings.TrimSpace(text) == "" {
+			return nil, fmt.Errorf("screenshot: CaptureGitScreenScreens: required frame %q is missing or empty", spec.ScreenID)
+		}
+	}
+	return out, nil
+}
+
+// gitScreenSpecs returns the five Phase 4 git-screen checkpoint specs — the
+// SAME checkpoint vocabulary e2e/git_configuration_pty_e2e_test.go's
+// TestGitConfiguration_CompiledRealVsLiveDummyPTY (Task 2) uses over real
+// PTYs. ApplicableApprovedHTML is false throughout: D-12 makes
+// cmd/gitid-dummy the sole Phase 4 UI/UX reference — no HTML/MUI/browser
+// capture participates.
+//
+// RegionDispositions mirror
+// .planning/design/git-screen/visual-divergence-allowlist.txt's classified
+// entries verbatim (kept in sync by
+// TestGitScreenAllowlistMatchesRegistry in cmd/gitid/gate_visual_regression_test.go) —
+// this is the mechanism BuildRegionDiffs/ValidateRegionDiffs actually
+// consult (the same pattern the create-flow registry above already uses),
+// generalized to accept CTX-D-NN decision refs (04-CONTEXT.md) alongside the
+// create-flow registry's bare D-NN/T-NN vocabulary.
+// isGitScreenID reports whether id is one of the five Phase 4 git-screen
+// checkpoint IDs — used to exclude them from CaptureCreateFlowScreens'
+// completeness check (they are captured separately; see gitScreenSpecs'
+// doc comment).
+func isGitScreenID(id string) bool {
+	for _, spec := range gitScreenSpecs() {
+		if spec.ScreenID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func gitScreenSpecs() []ScreenSpec {
+	fixtureSidebarDisposition := uxRegionDifference(RegionSidebar, "sidebar-state", "CTX-D-12",
+		"real sidebar carries only the checkpoint's own seeded identities; dummy sidebar lists the full 8-identity IdentityManagerRows fixture set")
+	fixtureHeaderStatusDisposition := uxRegionDifference(RegionHeaderStatus, "identity-count", "CTX-D-12",
+		"header status shows the identity count, which differs (real's small seeded set vs dummy's 8 fixtures)")
+	gitPreviewDisposition := uxRegionDifference(RegionGitPreview, "gitdir-default", "CTX-D-02",
+		"the real binary derives the gitdir default as \"~/git/<identity>/\" per D-02; the dummy's frozen includeIf preview fixture predates this derivation and shows the pre-Phase-4 \"~/<identity>/\" sample path")
+	formFieldsDisposition := uxRegionDifference(RegionGitFormFields, "author-name-template", "CTX-D-01",
+		"the real fixture's seeded author name (\"<identity> User\") and the dummy's frozen fixture (\"<identity> identity\") use different literal text from two independently authored test fixtures; field structure/order is identical")
+	emptyFormFieldsDisposition := uxRegionDifference(RegionGitFormFields, "identity-name", "CTX-D-12",
+		"the empty form's compact metadata line (\"signingkey=~/.ssh/id_ed25519_<identity>.pub\") embeds the selected identity's name, which differs between the real and dummy fixtures by construction — field structure/order is identical")
+	breadcrumbDisposition := uxRegionDifference(RegionBreadcrumb, "identity-name", "CTX-D-12",
+		"the breadcrumb (\"Identities › <identity> › Configure Git\") embeds the selected identity's name, which differs between the real fixture (\"gscreen\"/\"gscreenssh\") and the dummy fixture (\"personal\"/\"work\") by construction")
+	gitStrategyDisposition := uxRegionDifference(RegionGitStrategy, "identity-name", "CTX-D-12",
+		"the gitdir strategy option's label (\"gitdir (default) — applies inside ~/<identity>/\") embeds the selected identity's name, which differs between the real and dummy fixtures by construction — same label text/structure otherwise")
+	noHTML := []SurfaceNonApplicability{uxNonComparable("approved-html", "CTX-D-12",
+		"D-12: cmd/gitid-dummy is the sole Phase 4 UI/UX reference — no HTML/MUI/browser capture participates in Phase 4 acceptance")}
+
+	return []ScreenSpec{
+		{
+			ScreenID:              "git-form-filled",
+			Interaction:           "Boot the Identities pane on the default-selected (complete) identity and press 'g' to open Configure Git in edit mode.",
+			StateMarker:           "editing existing fragment",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionGitFormFields, RegionGitPreview},
+			RegionDispositions:    []RegionDisposition{fixtureSidebarDisposition, fixtureHeaderStatusDisposition, gitPreviewDisposition, formFieldsDisposition, breadcrumbDisposition, gitStrategyDisposition},
+		},
+		{
+			ScreenID:              "git-form-empty",
+			Interaction:           "From the Identities pane, select the second (SSH-only) identity and press 'g' to open Configure Git's SSH-only completion path.",
+			StateMarker:           "completes this identity",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionGitPreview},
+			RegionDispositions:    []RegionDisposition{fixtureSidebarDisposition, fixtureHeaderStatusDisposition, gitPreviewDisposition, breadcrumbDisposition, gitStrategyDisposition, emptyFormFieldsDisposition},
+		},
+		{
+			ScreenID:              "match-strategy-select",
+			Interaction:           "From git-form-filled, Tab twice (name -> email -> strategy) to focus the match-strategy field at its default (gitdir).",
+			StateMarker:           "gitdir (default)",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionGitStrategy, RegionGitPreview},
+			RegionDispositions:    []RegionDisposition{fixtureSidebarDisposition, fixtureHeaderStatusDisposition, gitPreviewDisposition, formFieldsDisposition, breadcrumbDisposition, gitStrategyDisposition},
+		},
+		{
+			ScreenID:              "review-readonly",
+			Interaction:           "From git-form-filled, press Enter to reach the read-only write-ceremony preview.",
+			StateMarker:           "Write Git identity for",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionGitCeremony},
+			RegionDispositions: []RegionDisposition{
+				fixtureSidebarDisposition, fixtureHeaderStatusDisposition, breadcrumbDisposition,
+				uxRegionDifference(RegionGitCeremony, "sentinel-wrapped-preview", "CTX-D-12",
+					"the real ceremony preview renders the production sentinel-wrapped includeIf block (gitconfig.RenderIncludeIf); the dummy's frozen sample has no sentinels and predates the production renderer"),
+				// internal/tuikit/ceremony.go's "Exact change: …" hint is a
+				// STATIC line always rendered on the review pane — the SAME
+				// shared ceremony code create-flow's own confirm-write screen
+				// uses, so RegionConfirmationPreview (a create-flow-scoped
+				// region) also picks up this git-screen ceremony's content.
+				// Same divergence, same reason as RegionGitCeremony above.
+				uxRegionDifference(RegionConfirmationPreview, "sentinel-wrapped-preview", "CTX-D-12",
+					"internal/tuikit/ceremony.go's shared \"Exact change\" hint triggers RegionConfirmationPreview's extraction on this git-screen ceremony too; the real preview's production sentinels vs the dummy's sentinel-less frozen sample is the SAME divergence RegionGitCeremony already classifies"),
+			},
+		},
+		{
+			ScreenID:              "result-success",
+			Interaction:           "From review-readonly, press Enter to confirm the write and reach the result receipt.",
+			StateMarker:           "configured",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionGitCeremony},
+			RegionDispositions: []RegionDisposition{
+				fixtureSidebarDisposition, fixtureHeaderStatusDisposition, breadcrumbDisposition,
+				uxRegionDifference(RegionGitCeremony, "backup-receipt-completeness", "CTX-D-12",
+					"the real commit receipt lists every backup actually taken (including the pre-existing fragment file's own \".bak.\"-suffixed backup); the dummy's ceremony echoes its static 2-entry declared backup list, which never names a fragment backup"),
+				// extractKeybar's "last 3 non-empty lines" heuristic includes
+				// the receipt's "Git identity "<identity>" configured." echo
+				// line (below the ceremony body), which also embeds the
+				// identity name.
+				uxRegionDifference(RegionKeybar, "identity-name", "CTX-D-12",
+					"the receipt echo line (\"Git identity \\\"<identity>\\\" configured.\") embeds the selected identity's name, which differs between the real and dummy fixtures by construction — the keybar chrome itself (Tab/Esc hints) is byte-identical"),
+			},
+		},
+	}
 }

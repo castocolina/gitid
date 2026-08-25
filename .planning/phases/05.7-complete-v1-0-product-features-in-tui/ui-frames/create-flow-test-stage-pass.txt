@@ -5,6 +5,8 @@ S ssh · G git  ✓ ok ! attn ✗ broken │  Step 3/4 · Git identity ● ● �
                                     │  ▸ user.name       [Acme Identity ]
                                     │    user.email      [you@acme.example]
                                     │      Kept byte-identical to ~/.ssh/allowed_signers (GITUI-04)
+                                    │ · gpg.format=ssh · signingkey=~/.ssh/id_ed25519_acme.pub ·
+                                    │ gpgsign=true · ☑ Force SSH
                                     │    Match strategy — when does this Git identity apply? (←/→
                                     │ change)
                                     │      Determines which repos this Git identity applies to.
@@ -16,14 +18,12 @@ S ssh · G git  ✓ ok ! attn ✗ broken │  Step 3/4 · Git identity ● ● �
                                     │ ┊ … (+9 more lines)                                      ┊
                                     │ ╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
                                     │ ╭╌ ~/.gitconfig (includeIf block — preview) ╌╌╌╌╌╌╌╌╌╌╌╌╌╮
-                                    │ ┊ [includeIf "gitdir:~/git/acme/"]                       ┊
+                                    │ ┊ [includeIf "gitdir:~/git/Acme Identity/"]              ┊
                                     │ ╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
-                                    │  Global baseline (inherited — not applied yet): init.def… (3)
                                     │   Back (Esc)    [ Skip Git ]    [ Continue ]
                                     │  Skip keeps this identity SSH-only and marks it incomplete.
                                     │  Continue reviews the Git fragment, includeIf, and
                                     │ allowed_signers entries before writing.
-                                    │
                                     │
  Esc returns to the identity detail without writing anything.
  Enter activate focused / continue · Tab/↑↓ fields & buttons

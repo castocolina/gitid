@@ -237,11 +237,25 @@ uninstall:
 ## test-e2e: run end-to-end agent-driven tests (builds binary first).
 ## E2E tests use a hermetic sandbox HOME and a fake ssh script injected on PATH.
 ## Tests are tagged //go:build e2e and are excluded from the normal make test target.
-## Timeout 180s: gives the real-TUI PTY suite CI-variance headroom without masking a
-## genuine hang (TestUIPTY_* each carry their own inner waitFor timeouts, so a real
-## hang still fails fast well under 180s).
+## Timeout 360s (raised from 180s in 04-04-PLAN.md Task 2 — the same class of
+## adjustment 02-11 made, 60s -> 180s, "once the full 50-screen dummy-nav walk
+## runs alongside the real-TUI PTY suite in one package"): the FULL package,
+## measured under -race, now runs ~260s
+## (TestGitConfiguration_CompiledRealVsLiveDummyPTY alone adds ~53-93s — five
+## paired real-binary/dummy-binary PTY sessions). 360s gives CI-variance
+## headroom without masking a genuine hang (every test carries its own inner
+## waitFor/close timeouts, so a real hang still fails fast well under 360s).
+##
+## Phase 4 (04-04-PLAN.md Task 2/3, D-12): this target ALSO runs
+## TestGitConfiguration_CompiledRealVsLiveDummyPTY — the paired compiled PTY
+## workflow that drives the REAL cmd/gitid binary AND the compiled
+## cmd/gitid-dummy binary over raw pseudo-terminals and compares NORMALIZED
+## semantic checkpoints (never raw bytes, never HTML/MUI/Chromium/PNG). It is
+## the DLV-06 real-keystroke counterpart to `make gate-visual-regression`'s
+## in-process capture gate below — both classify divergences against the SAME
+## .planning/design/git-screen/visual-divergence-allowlist.txt.
 test-e2e: build
-	go test -tags e2e -race -timeout 180s ./e2e/...
+	go test -tags e2e -race -timeout 360s ./e2e/...
 
 ## screenshot-tui: render the Bubble Tea View()-dump golden to a deterministic PNG
 ## via freeze (TOOL-05, DLV-03). Invokes TestCaptureTUI — the concrete runnable
@@ -277,16 +291,29 @@ screenshot-html:
 ## unequal or one-sided named region needs an explicit ux-improvement/defect
 ## classification. HTML, pixel parity, and real/dummy byte parity are excluded.
 ##
+## Phase 4 (04-04-PLAN.md Task 3, D-12): RequiredScreenSpecs is a MERGED
+## registry — the create-flow specs above PLUS five Phase 4 git-screen
+## checkpoints (git-form-filled, git-form-empty, match-strategy-select,
+## review-readonly, result-success), captured separately (their own seeded
+## HOME — see cmd/gitid/gate_visual_regression_test.go's
+## deterministicGitIdentityFixture/mergeGitScreenCaptures) so the git-screen
+## fixture's extra identities never shift the create-flow wizard's own
+## sidebar layout. This target runs the Phase 4 SEMANTIC gate (in-process,
+## no PTY); `make test-e2e` above runs the PAIRED compiled PTY workflow —
+## both classify against the SAME
+## .planning/design/git-screen/visual-divergence-allowlist.txt.
+##
 ## READ-ONLY (CR-01): writes ONLY to temp directories. Never modifies
 ## .planning/phases/03-create-flow-backend/ or any tracked path.
 ## Runs TWO independent captures per surface and asserts within-surface
 ## determinism before validating classified region evidence.
 ##
 ## Invokes TestGateVisualRegression + TestGateVisualRegressionReadOnly +
-## TestAllScreensCapturedAndNonEmpty + TestNegativeControls_* under the
-## `screenshot` build tag.
+## TestAllScreensCapturedAndNonEmpty + TestNegativeControls_* +
+## TestNegativeControl_* (Phase 4's own missing-state/stale-classification/
+## cross-registry-leakage controls) under the `screenshot` build tag.
 gate-visual-regression:
-	go test -tags screenshot -run 'Test(GateVisualRegression|ApprovalCommitRecorded|AllScreensCapturedAndNonEmpty|NegativeControls)' -v ./cmd/gitid/...
+	go test -tags screenshot -run 'Test(GateVisualRegression|ApprovalCommitRecorded|AllScreensCapturedAndNonEmpty|NegativeControls|NegativeControl_)' -v ./cmd/gitid/...
 
 ## generate-visual-review-packet: ONE-SHOT explicit publication of a new
 ## content-addressed evidence packet for Task 3 review publication.

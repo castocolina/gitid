@@ -99,6 +99,27 @@ const (
 	// RegionConfirmationPreview is the complete focusable review text in a
 	// create ceremony, including summary, key path, and managed-block sentinels.
 	RegionConfirmationPreview RegionName = "confirmation-preview"
+
+	// RegionGitFormFields is the Configure-Git form's user.name/user.email
+	// rows plus the compact gpg.format/signingkey/gpgsign/Force-SSH metadata
+	// line (04-04-PLAN.md Task 3 — Phase 4 git-screen registration). Spans
+	// from "user.name" up to (not including) the "Match strategy" row.
+	RegionGitFormFields RegionName = "git-form-fields"
+
+	// RegionGitStrategy is the git-screen's match-strategy header, its three
+	// always-rendered option rows, and the conditional gitdir-path row. Spans
+	// from "Match strategy" up to (not including) the fragment preview block.
+	RegionGitStrategy RegionName = "git-strategy"
+
+	// RegionGitPreview is the git-screen's fragment-file and includeIf-block
+	// preview boxes. Spans from the first preview title through the
+	// "Write it" button row.
+	RegionGitPreview RegionName = "git-preview"
+
+	// RegionGitCeremony is the Configure-Git write-ceremony pane's content —
+	// from its heading ("Write Git identity for …") or its receipt heading
+	// (the "… configured" result message) through the end of the frame.
+	RegionGitCeremony RegionName = "git-ceremony"
 )
 
 // ExtractRegion returns the sub-string of screen that corresponds to region.
@@ -133,8 +154,110 @@ func ExtractRegion(screen string, region RegionName) string {
 		return extractKeySection(lines)
 	case RegionConfirmationPreview:
 		return extractConfirmationPreview(lines)
+	case RegionGitFormFields:
+		return extractGitFormFields(lines)
+	case RegionGitStrategy:
+		return extractGitStrategy(lines)
+	case RegionGitPreview:
+		return extractGitPreview(lines)
+	case RegionGitCeremony:
+		return extractGitCeremony(lines)
 	}
 	return ""
+}
+
+// ---------------------------------------------------------------------------
+// Git-screen regions (04-04-PLAN.md Task 3). The git-form/ceremony pane
+// shares the SAME master/detail "│" divider as create-flow's wizard, so
+// rightPane's ANSI-aware split reuses unchanged. These extractors use the
+// same structural-marker approach as
+// e2e/git_configuration_pty_e2e_test.go's ANSI-free PTY-frame extractors
+// (Task 2), operating here on ANSI-PRESERVING captured text.
+// ---------------------------------------------------------------------------
+
+// extractGitFormFields returns the git-form's user.name/user.email rows plus
+// the compact gpg.format/signingkey/gpgsign/Force-SSH metadata line.
+func extractGitFormFields(lines []string) string {
+	var out []string
+	capturing := false
+	for _, line := range lines {
+		rp := rightPane(line)
+		rpPlain := stripANSI(rp)
+		if strings.Contains(rpPlain, "Match strategy") {
+			break
+		}
+		if strings.Contains(rpPlain, "user.name") {
+			capturing = true
+		}
+		if capturing {
+			out = append(out, rp)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// extractGitStrategy returns the match-strategy header, its three
+// always-rendered option rows, and the conditional gitdir-path row.
+func extractGitStrategy(lines []string) string {
+	var out []string
+	capturing := false
+	for _, line := range lines {
+		rp := rightPane(line)
+		rpPlain := stripANSI(rp)
+		if strings.Contains(rpPlain, "fragment file") {
+			break
+		}
+		if strings.Contains(rpPlain, "Match strategy") {
+			capturing = true
+		}
+		if capturing {
+			out = append(out, rp)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// extractGitPreview returns the fragment-file and includeIf-block preview
+// boxes — from the first preview title up to the "Write it" button row.
+func extractGitPreview(lines []string) string {
+	var out []string
+	capturing := false
+	for _, line := range lines {
+		rp := rightPane(line)
+		rpPlain := stripANSI(rp)
+		if strings.Contains(rpPlain, "Write it") {
+			break
+		}
+		if strings.Contains(rpPlain, "fragment file") || strings.Contains(rpPlain, "includeIf block") {
+			capturing = true
+		}
+		if capturing {
+			out = append(out, rp)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// extractGitCeremony returns the Configure-Git write-ceremony pane's content
+// — from its heading ("Write Git identity for …") or its receipt heading
+// (the "… configured" result message) through the end of the frame.
+func extractGitCeremony(lines []string) string {
+	start := -1
+	for i, line := range lines {
+		rpPlain := stripANSI(rightPane(line))
+		if strings.Contains(rpPlain, "Write Git identity") || strings.Contains(rpPlain, "configured") {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return ""
+	}
+	var out []string
+	for _, line := range lines[start:] {
+		out = append(out, rightPane(line))
+	}
+	return strings.Join(out, "\n")
 }
 
 func extractConfirmationPreview(lines []string) string {
@@ -349,7 +472,16 @@ func extractConnectivityOutput(lines []string) string {
 		plain := stripANSI(line)
 		rp := rightPane(line)
 		rpPlain := stripANSI(rp)
-		if !inOutput && (strings.Contains(rpPlain, "ssh ") ||
+		// "ssh -" (a flag-prefixed invocation, e.g. "ssh -T -F ...") is the
+		// actual test-stage command marker. A bare "ssh " false-positives on
+		// unrelated content that merely mentions ssh as a substring — e.g.
+		// the git-screen form's "gpg.format=ssh " metadata line (04-04-PLAN.md
+		// Task 3 discovery: this pre-existing over-broad marker made
+		// extractConnectivityOutput swallow the REST of a git-form-demo
+		// capture, which has no "Esc returns" line to close the region,
+		// producing spurious real-vs-dummy divergence on an unrelated
+		// screen/region pair).
+		if !inOutput && (strings.Contains(rpPlain, "ssh -") ||
 			strings.Contains(rpPlain, "Running") ||
 			strings.Contains(rpPlain, "Reachable") ||
 			strings.Contains(rpPlain, "Permission denied") ||
@@ -484,6 +616,10 @@ func AllRegionNames() []RegionName {
 		RegionReusePickerEntries,
 		RegionSidebar,
 		RegionConfirmationPreview,
+		RegionGitFormFields,
+		RegionGitStrategy,
+		RegionGitPreview,
+		RegionGitCeremony,
 	}
 }
 

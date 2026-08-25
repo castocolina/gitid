@@ -11,7 +11,7 @@ S ssh · G git  ✓ ok ! attn ✗ broken │  Step 1/4 · SSH details ● ○ �
                                     │    Key (←/→ change)  ○ Generate a new key   ● Reuse an
                                     │ existing key
                                     │      ● id_ed25519_manual_test  ssh-ed25519
-                                    │ SHA256:HXBtqmuaYzwiFCMcKOsp2UW2aVNjSntZlP/QiBie0n4
+                                    │ SHA256:98HV/A+mqqA5E02eRB3FIgUL9bjoTzUseSuCMIDnyBM
                                     │      ○ Enter a path manually…
                                     │ ╭╌ Live Host-block preview (written on confirm) ╌╌╌╌╌╌╌╌╌╮
                                     │ ┊ Host acme.github.com                                   ┊
