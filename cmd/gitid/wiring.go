@@ -1281,6 +1281,11 @@ func (b *realBackend) toDemoIdentity(acct identity.Account) tuikit.DemoIdentity 
 		Provider:        acct.Provider,
 		Hostname:        acct.Hostname,
 		Port:            acct.Port,
+		// CR-09: project the REAL on-disk provider-rewrite state, not a
+		// default. identity.Reconstruct already populated acct.ForceSSH from
+		// the actual ~/.gitconfig bytes (gitconfig.HasProviderRewrite) — this
+		// is a straight passthrough, never a heuristic.
+		ForceSSH: acct.ForceSSH,
 	}
 	for _, match := range acct.Matches {
 		switch match.Kind {

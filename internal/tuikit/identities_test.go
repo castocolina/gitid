@@ -2202,6 +2202,32 @@ func TestGitCeremonyNotesSharedProviderRewriteWhenForceSSHOff(t *testing.T) {
 	}
 }
 
+// TestGitCeremonyOmitsSharedProviderRewriteNoteWhenBlockNeverExisted is CR-09's
+// negative counterpart to TestGitCeremonyNotesSharedProviderRewriteWhenForceSSHOff:
+// an identity whose ForceSSH was ALWAYS false (no provider-rewrite block ever
+// written for it — the common case for a plain existing identity) must never
+// see the "is left in place" note, since there is nothing on disk to leave in
+// place. Before CR-09, sel.ForceSSH was always false regardless of real disk
+// state (toDemoIdentity never populated it), which made this note fire
+// unconditionally for every existing Git identity — a false claim about the
+// user's real ~/.gitconfig.
+func TestGitCeremonyOmitsSharedProviderRewriteNoteWhenBlockNeverExisted(t *testing.T) {
+	m := newIdentitiesModel(stubBackend{}, DemoState{})
+	sel := DemoIdentity{Name: "work", SSHHost: "work.github.com", Provider: "github.com", GitFragmentPath: "~/.gitconfig.d/work", ForceSSH: false}
+	m = m.openGitForm(sel)
+
+	// openGitForm's default (sel.ForceSSH || !m.gitExisting) leaves the
+	// checkbox OFF for this existing, never-force-SSH identity — confirm the
+	// starting state before asserting the ceremony note.
+	if m.gitPaneForm.forceSSH {
+		t.Fatal("gitPaneForm.forceSSH must start false for an existing identity whose real ForceSSH is false")
+	}
+	ceremony := m.gitCeremonyFor(sel)
+	if strings.Contains(ceremony.cfg.Preview, "shared provider-rewrite:") {
+		t.Errorf("ceremony must not claim a provider-rewrite block is left in place when none ever existed:\n%s", ceremony.cfg.Preview)
+	}
+}
+
 func TestOpenGitFormDerivesProviderFromSSHHost(t *testing.T) {
 	m := newIdentitiesModel(stubBackend{}, DemoState{})
 	m = m.openGitForm(DemoIdentity{Name: "work", SSHHost: "work.github.com", Provider: "github"})

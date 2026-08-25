@@ -202,6 +202,38 @@ func TestReconstruct_LoadProviderRewrite(t *testing.T) {
 	if accounts[0].Name != "work" {
 		t.Errorf("account name = %q, want work", accounts[0].Name)
 	}
+	// CR-09: the provider-rewrite block IS present in gcContent -- ForceSSH
+	// must reflect that real on-disk state, not a default.
+	if !accounts[0].ForceSSH {
+		t.Error("ForceSSH = false, want true — the provider-rewrite block is present in the parsed gitconfig bytes")
+	}
+}
+
+// TestReconstruct_ForceSSHFalseWithoutRewriteBlock is CR-09's negative
+// counterpart to TestReconstruct_LoadProviderRewrite: the SAME identity,
+// same provider, but with NO provider-rewrite block in ~/.gitconfig — proves
+// ForceSSH is read from the real bytes each time, not defaulted true
+// whenever a Provider happens to be set.
+func TestReconstruct_ForceSSHFalseWithoutRewriteBlock(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	sshContent := buildSSHBlock("work", "work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work")
+	workFrag := "~/.gitconfig.d/work"
+	gcContent := buildGCBlock("work", workFrag, "~/git/work/") // no provider-rewrite block
+
+	accounts, err := Reconstruct([]byte(sshContent), []byte(gcContent), func(string) (gitconfig.FragmentInfo, error) {
+		return gitconfig.FragmentInfo{GitName: "Work User", GitEmail: "work@example.com"}, nil
+	})
+	if err != nil {
+		t.Fatalf("Reconstruct: %v", err)
+	}
+	if len(accounts) != 1 {
+		t.Fatalf("account count = %d, want 1: %v", len(accounts), accounts)
+	}
+	if accounts[0].ForceSSH {
+		t.Error("ForceSSH = true, want false — no provider-rewrite block exists in the parsed gitconfig bytes")
+	}
 }
 
 func TestReconstruct_MissingSSH(t *testing.T) {

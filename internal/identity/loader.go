@@ -65,6 +65,26 @@ func Reconstruct(
 			missing = append(missing, "ssh-host-block")
 		}
 
+		// CR-09: ForceSSH must reflect the REAL on-disk state, never a
+		// default. The rewrite block gitconfig.WriteProviderRewrite manages
+		// is always keyed by the FQDN-shaped provider host the pane writes
+		// with (tuikit's g.provider, e.g. "github.com" — see
+		// providerFromSSHHost/providerHost in internal/tuikit/identities.go),
+		// but acct.Provider here can ALSO be the short form from
+		// hostnameToProvider ("github", no dot) when no "# gitid: provider="
+		// marker is present. rewriteLookupProvider mirrors the pane's own
+		// alias-suffix fallback so the lookup key always matches what was
+		// actually written, regardless of which form acct.Provider holds. A
+		// malformed/unrecognized host (HasProviderRewrite erroring on
+		// hostname validation) is treated as "no rewrite" rather than
+		// failing the whole reconstruction — this is a read-only display
+		// value, not a write-path decision.
+		if lookupProvider := rewriteLookupProvider(acct.Provider, acct.Alias); lookupProvider != "" {
+			if has, herr := gitconfig.HasProviderRewrite(gcBytes, lookupProvider); herr == nil {
+				acct.ForceSSH = has
+			}
+		}
+
 		// Gitconfig includeIf side.
 		if gc, ok := gcBlocks[name]; ok && gc.FragmentPath != "" {
 			acct.Matches = gc.Matches
@@ -99,6 +119,27 @@ func Reconstruct(
 		accounts = append(accounts, acct)
 	}
 	return accounts, nil
+}
+
+// rewriteLookupProvider returns the FQDN-shaped provider host to look up the
+// provider-rewrite managed block under, mirroring
+// internal/tuikit/identities.go's providerFromSSHHost fallback (CR-09): when
+// provider is already dotted (the marker/CreateInput form every current
+// write path produces), it is used as-is; otherwise it is re-derived from
+// alias's suffix (e.g. "work.github.com" -> "github.com"), the same way the
+// pane derives g.provider when acct.Provider is the short hostnameToProvider
+// form ("github", no dot) or empty. Returns "" when neither source yields a
+// usable host (e.g. no alias either), matching gitconfig.HasProviderRewrite's
+// contract that an empty provider never has a block.
+func rewriteLookupProvider(provider, alias string) string {
+	if provider != "" && strings.Contains(provider, ".") {
+		return provider
+	}
+	parts := strings.Split(alias, ".")
+	if len(parts) <= 2 {
+		return alias
+	}
+	return strings.Join(parts[1:], ".")
 }
 
 // nameUnion returns a sorted slice of all unique identity names found in

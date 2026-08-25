@@ -201,6 +201,27 @@ func WriteProviderRewrite(gitconfigPath, provider string, enabled bool) (string,
 	return backupPath, nil
 }
 
+// HasProviderRewrite reports whether the provider-owned rewrite block
+// WriteProviderRewrite manages (ProviderRewriteBlockName's sentinel name) is
+// ACTUALLY present in gcBytes for provider — CR-09: the caller must never
+// infer or default this from create-time input, since the block is shared
+// across every identity that uses the same provider host. Operates on
+// already-loaded bytes (the same gcBytes identity.Reconstruct already parses
+// ~/.ssh/config's includeIf blocks from) rather than reading the file itself,
+// so callers already holding the bytes never pay a second read.
+func HasProviderRewrite(gcBytes []byte, provider string) (bool, error) {
+	name, err := ProviderRewriteBlockName(provider)
+	if err != nil {
+		return false, err
+	}
+	for _, block := range filewriter.ListBlocks(gcBytes) {
+		if block.Name == name {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func validProviderHostname(provider string) (string, error) {
 	host := strings.ToLower(provider)
 	if len(host) == 0 || len(host) > 253 || strings.HasSuffix(host, ".") {

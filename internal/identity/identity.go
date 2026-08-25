@@ -35,6 +35,16 @@ type Account struct {
 	PubPath  string
 	Matches  []gitconfig.Match
 
+	// ForceSSH reports whether the shared provider-owned rewrite block
+	// (gitconfig.WriteProviderRewrite's managed block, "provider-rewrite:<host>")
+	// is ACTUALLY present in ~/.gitconfig for this account's Provider (CR-09).
+	// Reconstruct populates it from the real gitconfig bytes it already
+	// parses — it is never inferred or defaulted, because the block is
+	// shared across every identity that uses the same provider (D-06 opt-out
+	// semantics: disabling Force SSH for one identity must never imply the
+	// block is absent for another).
+	ForceSSH bool
+
 	// Gitid-managed target paths the lifecycle modes (rotate/add-account) write
 	// to. They mirror the CreateInput target fields and are filled by the command
 	// layer from platform defaults when an account is loaded.

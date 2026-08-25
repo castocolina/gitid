@@ -2068,7 +2068,18 @@ func (m identitiesModel) gitCeremonyFor(sel DemoIdentity) ceremonyModel {
 	// (commitGitArtifacts intentionally skips removing it — another
 	// identity on the same provider may still depend on it). Make that
 	// explicit instead of a silent no-op the user could easily miss.
-	if !m.gitPaneForm.forceSSH && m.gitPaneForm.provider != "" {
+	//
+	// CR-09: sel.ForceSSH is now the REAL on-disk state (identity.Reconstruct
+	// -> gitconfig.HasProviderRewrite), so this note is gated on it too — the
+	// note claims a rewrite block "is left in place", which is only true when
+	// one genuinely exists on disk right now (sel.ForceSSH). Gating on
+	// m.gitPaneForm.forceSSH alone (the checkbox's CURRENT value) would fire
+	// this note for every identity that simply never had the block, since a
+	// fresh/incomplete identity's checkbox also defaults to true
+	// (openGitForm: `sel.ForceSSH || !m.gitExisting`) and a real block-less
+	// identity's checkbox is false by default — neither case has anything
+	// "left in place" to warn about.
+	if !m.gitPaneForm.forceSSH && m.gitPaneForm.provider != "" && sel.ForceSSH {
 		preview += "\n\nForce SSH off: the shared provider-rewrite:" + m.gitPaneForm.provider +
 			" block is left in place because other identities may use it."
 	}
