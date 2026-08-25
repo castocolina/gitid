@@ -120,15 +120,6 @@ const (
 	// from its heading ("Write Git identity for …") or its receipt heading
 	// (the "… configured" result message) through the end of the frame.
 	RegionGitCeremony RegionName = "git-ceremony"
-
-	// RegionContinueDisabledReason is the [ Continue ] button's disabled-
-	// reason line on the create-flow wizard's Git step (git-form-demo).
-	// WR-08: extractContinueDisabledReason (below) was left in the file but
-	// UNWIRED — no RegionName pointed at it and it was absent from
-	// git-form-demo's RequiredRegions — so the gate silently stopped
-	// checking whether the real binary's Continue-disabled copy matches
-	// the approved design.
-	RegionContinueDisabledReason RegionName = "continue-disabled-reason"
 )
 
 // ExtractRegion returns the sub-string of screen that corresponds to region.
@@ -171,8 +162,6 @@ func ExtractRegion(screen string, region RegionName) string {
 		return extractGitPreview(lines)
 	case RegionGitCeremony:
 		return extractGitCeremony(lines)
-	case RegionContinueDisabledReason:
-		return extractContinueDisabledReason(lines)
 	}
 	return ""
 }
@@ -559,25 +548,6 @@ func extractConnectivityOutput(lines []string) string {
 		}
 	}
 	return strings.Join(out, "\n")
-}
-
-// extractContinueDisabledReason returns the disabled reason line for the
-// [ Continue ] button on the git-form-demo screen (right pane only).
-func extractContinueDisabledReason(lines []string) string {
-	for i, line := range lines {
-		plain := stripANSI(line)
-		if strings.Contains(plain, "[ Continue ]") || strings.Contains(plain, "Continue ]") {
-			if i+1 < len(lines) {
-				return rightPane(lines[i+1])
-			}
-		}
-		rpPlain := strings.TrimSpace(stripANSI(rightPane(line)))
-		if strings.HasPrefix(rpPlain, "—") &&
-			(strings.Contains(rpPlain, "needs user.name") || strings.Contains(rpPlain, "Git configuration")) {
-			return rightPane(line)
-		}
-	}
-	return ""
 }
 
 // extractKeybar returns the last 2–3 non-empty lines (the keybar/footer area).

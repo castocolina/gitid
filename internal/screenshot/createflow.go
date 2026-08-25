@@ -364,17 +364,23 @@ func ScreenSpecRegistry() []ScreenSpec {
 			ApplicableLive:         true,
 			ApplicableApprovedTUI:  true,
 			ApplicableApprovedHTML: true,
-			// WR-08 investigation: RegionContinueDisabledReason (its extractor,
-			// extractContinueDisabledReason, was orphaned dead code — now
-			// re-wired in createflow_regions.go) does NOT apply to THIS
-			// screen's captured state — git-form-demo captures the wizard's
-			// Git step with valid, filled fields, so [ Continue ] is enabled
-			// and no disabled-reason line is rendered at all. Requiring the
-			// region here would fail the gate with "missing required region"
-			// on a screen it genuinely does not describe (verified: adding it
-			// breaks TestGateVisualRegression). A future screen spec that
-			// captures the DISABLED-Continue state (e.g. an invalid-email
-			// variant) is the correct place to require it.
+			// WR-08 investigation found a RegionContinueDisabledReason
+			// extractor (extractContinueDisabledReason) that was defined but
+			// never wired into any RequiredRegions or AllRegionNames() —
+			// dead code no gate ever exercised. WR-36 (04-REVIEW.md
+			// iteration 4) found that WR-08's OWN follow-up comment here
+			// claimed it was "now re-wired in createflow_regions.go", which
+			// was false: AllRegionNames() still omitted it, so it remained
+			// exactly as unreachable as before, just now documented as live
+			// (worse than plain dead code). Both the constant and its
+			// extractor were DELETED (not re-wired) — git-form-demo captures
+			// the wizard's Git step with valid, filled fields, so
+			// [ Continue ] is enabled and no disabled-reason line is
+			// rendered at all; this screen genuinely has nothing for that
+			// region to extract. A future screen spec that captures the
+			// DISABLED-Continue state (e.g. an invalid-email variant) is the
+			// correct place to reintroduce a region for it, wired into both
+			// RequiredRegions and AllRegionNames() from the start.
 			RequiredRegions: []RegionName{RegionKeybar},
 			RegionDispositions: []RegionDisposition{
 				uxRegionDifference(RegionHeaderStatus, "fixture-header-status", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),

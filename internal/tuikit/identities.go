@@ -503,34 +503,39 @@ const (
 
 // gitPaneFocusButton is the configure-Git pane's extra focus slot: the
 // `Write it…` button after the pane's three Tab-reachable fields (Name /
-// Email / Strategy). gitPaneFocusRing is the pane's own Tab/Shift+Tab ring —
-// deliberately the CONTIGUOUS range [0, gitPaneFocusButton], so the pane's
-// raw `(m.gitFocus+1) % gitPaneFocusRing` arithmetic stays correct.
-// ForceSSH and gitDir are reached in the pane via direct mouse click /
-// ctrl+g only, never Tab-cycled, so they must stay OUTSIDE this range.
-const (
-	gitPaneFocusButton = gitFieldStrategy + 1
-	gitPaneFocusRing   = gitPaneFocusButton + 1
-)
-
-// gitFieldForceSSH and gitFieldGitDir are reached via direct mouse click in
-// the configure-Git pane (never Tab-cycled there — see gitPaneFocusRing
-// above). gitFieldForceSSH is ALSO reachable via Tab in the WIZARD's own
-// step-2 ring (wizardGitFocusOrder below) — CR-06: gitForm.view() DOES
-// render and bold the Force-SSH row for the wizard (it is the exact same
-// shared component the pane uses, D-06), so CR-04's premise that "the
-// wizard never renders or edits" it was false, and numbering it after every
-// ring left it clickable-but-inert with a misrouted Tab/Enter.
+// Email / Strategy).
 //
-// Their raw values sit immediately after gitPaneFocusRing specifically so
-// they can never numerically alias gitPaneFocusButton (CR-04's actual
-// concern, still true) while remaining distinct, individually-dispatched
-// constants for gitForm.view/handleEdit. They are deliberately NOT
-// contiguous with gitFieldStrategy — that slot is already gitPaneFocusButton
-// — which is exactly why the wizard's own ring below cycles by explicit
-// slice position, not raw modulo arithmetic (see wizardGitFocusOrder).
+// WR-37 (04-REVIEW.md iteration 4): this block used to also define
+// `gitPaneFocusRing` and describe it as "the pane's own Tab/Shift+Tab ring",
+// claiming a raw `(m.gitFocus+1) % gitPaneFocusRing` arithmetic that has not
+// existed since CR-08 — the pane's REAL ring is paneGitFocusOrder below,
+// cycled by explicit slice position via paneGitFocusStep/paneGitFocusIndex,
+// specifically BECAUSE the naive modulo approach is what caused CR-04/CR-06.
+// The comment also claimed ForceSSH is "never Tab-cycled" in the pane, which
+// CR-08 made false: paneGitFocusOrder includes gitFieldForceSSH. Leaving
+// those claims in the exact constant block behind three consecutive
+// regressions (CR-04 -> CR-06 -> CR-08) is how a fourth one gets written —
+// the sole ring definitions are paneGitFocusOrder (pane) and
+// wizardGitFocusOrder (wizard) below; nothing in this file computes focus by
+// modulo arithmetic over these raw constant values.
+const gitPaneFocusButton = gitFieldStrategy + 1
+
+// gitFieldForceSSH and gitFieldGitDir are two individually-dispatched focus
+// slots for gitForm.view/handleEdit, deliberately NOT contiguous with
+// gitFieldStrategy (gitPaneFocusButton already owns that next slot) so
+// neither can numerically alias it (CR-04's actual concern, still true).
+//
+//   - gitFieldForceSSH is reached via direct mouse click in the
+//     configure-Git pane AND via Tab in BOTH the pane's own ring
+//     (paneGitFocusOrder) and the WIZARD's step-2 ring
+//     (wizardGitFocusOrder below) — CR-06/CR-08: gitForm.view() renders and
+//     bolds the Force-SSH row in both surfaces (the exact same shared
+//     component, D-06), so it must be Tab-reachable in both.
+//   - gitFieldGitDir is reached ONLY via direct mouse click on "gitdir
+//     path" or ctrl+g in the configure-Git pane — never Tab-cycled, and
+//     never rendered by the wizard at all (the wizard has no gitdir row).
 const (
-	gitFieldForceSSH = gitPaneFocusRing + iota
+	gitFieldForceSSH = gitPaneFocusButton + 1 + iota
 	gitFieldGitDir
 )
 
@@ -606,17 +611,19 @@ func wizardGitFocusStep(focus, delta int) int {
 	return wizardGitFocusOrder[((i+delta)%n+n)%n]
 }
 
-// paneGitFocusOrder is the configure-Git PANE's own Tab/Shift+Tab ring
-// (CR-08 fix — mirrors wizardGitFocusOrder above, same rationale: cycling by
-// explicit slice position, not raw `% gitPaneFocusRing` modulo arithmetic,
-// because gitFieldForceSSH's raw value is deliberately non-contiguous with
-// gitFieldStrategy's). Before this fix, gitPaneFocusRing == 4 bounded the
-// pane's ring to [0,3] (Name/Email/Strategy/button), so slot 4
-// (gitFieldForceSSH) was never visited by Tab in the pane — CR-06 only
-// wired the WIZARD's ring, leaving the pane's own screen (Phase 4's own
-// screen) with an unreachable control. gitFieldGitDir stays outside this
-// ring — reached only via ctrl+g or a direct click on "gitdir path", same
-// as before this fix.
+// paneGitFocusOrder is the configure-Git PANE's own Tab/Shift+Tab ring —
+// THE sole definition of that ring (CR-08 fix; WR-37 removed the stale
+// constant-block comments that used to describe a since-deleted raw modulo
+// ring alongside it). Mirrors wizardGitFocusOrder above, same rationale:
+// cycling by explicit slice position, not modulo arithmetic over the raw
+// constant values, because gitFieldForceSSH's raw value is deliberately
+// non-contiguous with gitFieldStrategy's. Before CR-08, the pane's ring was
+// bounded to a contiguous [0,3] range (Name/Email/Strategy/button) by raw
+// modulo, so slot 4 (gitFieldForceSSH) was never visited by Tab in the
+// pane — CR-06 only wired the WIZARD's ring, leaving the pane's own screen
+// (Phase 4's own screen) with an unreachable control. gitFieldGitDir stays
+// outside this ring — reached only via ctrl+g or a direct click on "gitdir
+// path".
 var paneGitFocusOrder = []int{
 	gitFieldName, gitFieldEmail, gitFieldStrategy, gitFieldForceSSH, gitPaneFocusButton,
 }
