@@ -1483,6 +1483,85 @@ func TestBuildRegionDiffsDeclaresConfirmationPreviewComparator(t *testing.T) {
 	}
 }
 
+// TestBuildRegionDiffsAcceptsDivergenceSatisfyingScopedPredicate proves
+// WR-27: a disposition with a real Predicate (not just the empty default)
+// still accepts a divergence that genuinely satisfies it — the mechanism
+// WR-19 introduced but which, until this fix, had zero production callers.
+func TestBuildRegionDiffsAcceptsDivergenceSatisfyingScopedPredicate(t *testing.T) {
+	spec := screenshot.ScreenSpec{
+		ScreenID:              "scoped-predicate-satisfied",
+		StateMarker:           "shared header",
+		ApplicableLive:        true,
+		ApplicableApprovedTUI: true,
+		RequiredRegions:       []screenshot.RegionName{screenshot.RegionGitPreview},
+		RegionDispositions: []screenshot.RegionDisposition{{
+			Region: screenshot.RegionGitPreview, Divergence: "gitdir-default", Decision: "CTX-D-02",
+			Reason: "the real binary derives the modern gitdir default", Classification: "ux-improvement",
+			Predicate: `absent:"gitdir:~/git/"`,
+		}},
+		NonApplicability: []screenshot.SurfaceNonApplicability{{
+			Surface: "approved-html", Decision: "CTX-D-02", Reason: "HTML is not a parity target.", Classification: "ux-improvement",
+		}},
+	}
+	// Trailing footer1/footer2/footer3 lines are byte-identical on both sides
+	// so extractKeybar's own "last 3 non-empty lines" heuristic (an
+	// unrelated region) never differs and needs no disposition of its own —
+	// isolating this test to the RegionGitPreview predicate under test.
+	live := "shared header\n│ includeIf block\n│ [includeIf \"gitdir:~/git/acme/\"]\n│ Write it\nfooter1\nfooter2\nfooter3\n"
+	approved := "shared header\n│ includeIf block\n│ [includeIf \"gitdir:~/acme/\"]\n│ Write it\nfooter1\nfooter2\nfooter3\n"
+
+	diffs, err := screenshot.BuildRegionDiffs("test-commit", map[string]string{spec.ScreenID: live}, map[string]string{spec.ScreenID: approved}, []screenshot.ScreenSpec{spec})
+	if err != nil {
+		t.Fatalf("BuildRegionDiffs rejected a divergence that satisfies its scoped predicate: %v", err)
+	}
+	region := regionDiffByName(t, diffs[0], screenshot.RegionGitPreview)
+	if region.Divergence != "gitdir-default" || !strings.Contains(region.Justification, "CTX-D-02") {
+		t.Fatalf("scoped predicate must still classify the accepted divergence, got %+v", region)
+	}
+}
+
+// TestBuildRegionDiffsRejectsDivergenceViolatingScopedPredicate is WR-27's
+// explicit required test: a mutation the predicate is supposed to catch
+// must produce an error, not a silent pass. Before WR-27, every disposition
+// used blanket uxRegionDifference (empty Predicate), so
+// regionPredicateSatisfied always returned true and this rejection branch
+// (createflow_packet.go's BuildRegionDiffs) never fired for any real
+// disposition — this test proves it now does for a genuinely scoped one.
+// The fixture uses the SAME absent:"gitdir:~/git/" predicate
+// gitScreenSpecs' real gitPreviewDisposition now carries (WR-27), but with
+// text present on BOTH sides — a divergence the predicate was never meant
+// to authorize.
+func TestBuildRegionDiffsRejectsDivergenceViolatingScopedPredicate(t *testing.T) {
+	spec := screenshot.ScreenSpec{
+		ScreenID:              "scoped-predicate-violated",
+		StateMarker:           "shared header",
+		ApplicableLive:        true,
+		ApplicableApprovedTUI: true,
+		RequiredRegions:       []screenshot.RegionName{screenshot.RegionGitPreview},
+		RegionDispositions: []screenshot.RegionDisposition{{
+			Region: screenshot.RegionGitPreview, Divergence: "gitdir-default", Decision: "CTX-D-02",
+			Reason: "the real binary derives the modern gitdir default", Classification: "ux-improvement",
+			Predicate: `absent:"gitdir:~/git/"`,
+		}},
+		NonApplicability: []screenshot.SurfaceNonApplicability{{
+			Surface: "approved-html", Decision: "CTX-D-02", Reason: "HTML is not a parity target.", Classification: "ux-improvement",
+		}},
+	}
+	// Both sides now contain "gitdir:~/git/" -- an UNRELATED divergence
+	// (different identity names) that the "absent:" predicate must reject,
+	// since the text it was scoped to exclude is present on both sides.
+	live := "shared header\n│ includeIf block\n│ [includeIf \"gitdir:~/git/acme-live/\"]\n│ Write it\nfooter1\nfooter2\nfooter3\n"
+	approved := "shared header\n│ includeIf block\n│ [includeIf \"gitdir:~/git/acme-approved/\"]\n│ Write it\nfooter1\nfooter2\nfooter3\n"
+
+	_, err := screenshot.BuildRegionDiffs("test-commit", map[string]string{spec.ScreenID: live}, map[string]string{spec.ScreenID: approved}, []screenshot.ScreenSpec{spec})
+	if err == nil {
+		t.Fatal("BuildRegionDiffs accepted a divergence that violates its own scoped predicate")
+	}
+	if !strings.Contains(err.Error(), "disposition predicate") || !strings.Contains(err.Error(), "does not match the observed divergence") {
+		t.Fatalf("BuildRegionDiffs rejected for the wrong reason: %v", err)
+	}
+}
+
 func TestValidateRegionDiffsRejectsMissingRequiredRegion(t *testing.T) {
 	source := strings.Repeat("f", 40)
 	var diffs screenshot.RegionDiffs

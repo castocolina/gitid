@@ -1260,14 +1260,27 @@ func isGitScreenID(id string) bool {
 }
 
 func gitScreenSpecs() []ScreenSpec {
-	fixtureSidebarDisposition := uxRegionDifference(RegionSidebar, "sidebar-state", "CTX-D-12",
-		"real sidebar carries only the checkpoint's own seeded identities; dummy sidebar lists the full 8-identity IdentityManagerRows fixture set")
-	fixtureHeaderStatusDisposition := uxRegionDifference(RegionHeaderStatus, "identity-count", "CTX-D-12",
-		"header status shows the identity count, which differs (real's small seeded set vs dummy's 8 fixtures)")
-	gitPreviewDisposition := uxRegionDifference(RegionGitPreview, "gitdir-default", "CTX-D-02",
-		"the real binary derives the gitdir default as \"~/git/<identity>/\" per D-02; the dummy's frozen includeIf preview fixture predates this derivation and shows the pre-Phase-4 \"~/<identity>/\" sample path")
-	formFieldsDisposition := uxRegionDifference(RegionGitFormFields, "author-name-template", "CTX-D-01",
-		"the real fixture's seeded author name (\"<identity> User\") and the dummy's frozen fixture (\"<identity> identity\") use different literal text from two independently authored test fixtures; field structure/order is identical")
+	// WR-27: these four dispositions gain a real Predicate, ported verbatim
+	// from .planning/design/git-screen/visual-divergence-allowlist.txt —
+	// the SAME strings/grammar the e2e gate (gitScreenPredicateSatisfied)
+	// already enforces for these exact checkpoint/region pairs, so this
+	// in-process gate now narrows to the identical divergence rather than
+	// accepting any future difference in the region. Before this fix, all 32
+	// dispositions across this file used blanket uxRegionDifference with an
+	// empty Predicate — uxRegionDifferenceScoped had zero production callers,
+	// so WR-19's rejection branch in BuildRegionDiffs never actually fired.
+	fixtureSidebarDisposition := uxRegionDifferenceScoped(RegionSidebar, "sidebar-state", "CTX-D-12",
+		"real sidebar carries only the checkpoint's own seeded identities; dummy sidebar lists the full 8-identity IdentityManagerRows fixture set",
+		`absent:"clientB"`)
+	fixtureHeaderStatusDisposition := uxRegionDifferenceScoped(RegionHeaderStatus, "identity-count", "CTX-D-12",
+		"header status shows the identity count, which differs (real's small seeded set vs dummy's 8 fixtures)",
+		`contains:"ids"`)
+	gitPreviewDisposition := uxRegionDifferenceScoped(RegionGitPreview, "gitdir-default", "CTX-D-02",
+		"the real binary derives the gitdir default as \"~/git/<identity>/\" per D-02; the dummy's frozen includeIf preview fixture predates this derivation and shows the pre-Phase-4 \"~/<identity>/\" sample path",
+		`absent:"gitdir:~/git/"`)
+	formFieldsDisposition := uxRegionDifferenceScoped(RegionGitFormFields, "author-name-template", "CTX-D-01",
+		"the real fixture's seeded author name (\"<identity> User\") and the dummy's frozen fixture (\"<identity> identity\") use different literal text from two independently authored test fixtures; field structure/order is identical",
+		`absent:"User"`)
 	emptyFormFieldsDisposition := uxRegionDifference(RegionGitFormFields, "identity-name", "CTX-D-12",
 		"the empty form's compact metadata line (\"signingkey=~/.ssh/id_ed25519_<identity>.pub\") embeds the selected identity's name, which differs between the real and dummy fixtures by construction — field structure/order is identical")
 	breadcrumbDisposition := uxRegionDifference(RegionBreadcrumb, "identity-name", "CTX-D-12",
@@ -1318,14 +1331,24 @@ func gitScreenSpecs() []ScreenSpec {
 			RequiredRegions:       []RegionName{RegionGitCeremony},
 			RegionDispositions: []RegionDisposition{
 				fixtureSidebarDisposition, fixtureHeaderStatusDisposition, breadcrumbDisposition,
-				uxRegionDifference(RegionGitCeremony, "sentinel-wrapped-preview", "CTX-D-12",
-					"the real ceremony preview renders the production sentinel-wrapped includeIf block (gitconfig.RenderIncludeIf); the dummy's frozen sample has no sentinels and predates the production renderer"),
+				// WR-27: predicate ported verbatim from the allowlist's
+				// review-readonly:git-ceremony entry.
+				uxRegionDifferenceScoped(RegionGitCeremony, "sentinel-wrapped-preview", "CTX-D-12",
+					"the real ceremony preview renders the production sentinel-wrapped includeIf block (gitconfig.RenderIncludeIf); the dummy's frozen sample has no sentinels and predates the production renderer",
+					`absent:"BEGIN gitid managed"`),
 				// internal/tuikit/ceremony.go's "Exact change: …" hint is a
 				// STATIC line always rendered on the review pane — the SAME
 				// shared ceremony code create-flow's own confirm-write screen
 				// uses, so RegionConfirmationPreview (a create-flow-scoped
 				// region) also picks up this git-screen ceremony's content.
 				// Same divergence, same reason as RegionGitCeremony above.
+				//
+				// WR-27: intentionally left BLANKET (no Predicate) — the
+				// allowlist file's own schema does not list "confirmation-
+				// preview" as a valid region at all (only "git-ceremony" is),
+				// so there is no allowlist-sourced predicate string to port
+				// here without independently deriving/verifying one. Scoping
+				// this one is a genuine follow-up, not silently declared done.
 				uxRegionDifference(RegionConfirmationPreview, "sentinel-wrapped-preview", "CTX-D-12",
 					"internal/tuikit/ceremony.go's shared \"Exact change\" hint triggers RegionConfirmationPreview's extraction on this git-screen ceremony too; the real preview's production sentinels vs the dummy's sentinel-less frozen sample is the SAME divergence RegionGitCeremony already classifies"),
 			},
@@ -1340,8 +1363,11 @@ func gitScreenSpecs() []ScreenSpec {
 			RequiredRegions:       []RegionName{RegionGitCeremony},
 			RegionDispositions: []RegionDisposition{
 				fixtureSidebarDisposition, fixtureHeaderStatusDisposition, breadcrumbDisposition,
-				uxRegionDifference(RegionGitCeremony, "backup-receipt-completeness", "CTX-D-12",
-					"the real commit receipt lists every backup actually taken (including the pre-existing fragment file's own \".bak.\"-suffixed backup); the dummy's ceremony echoes its static 2-entry declared backup list, which never names a fragment backup"),
+				// WR-27: predicate ported verbatim from the allowlist's
+				// result-success:git-ceremony entry.
+				uxRegionDifferenceScoped(RegionGitCeremony, "backup-receipt-completeness", "CTX-D-12",
+					"the real commit receipt lists every backup actually taken (including the pre-existing fragment file's own \".bak.\"-suffixed backup); the dummy's ceremony echoes its static 2-entry declared backup list, which never names a fragment backup",
+					`absent:".bak."`),
 				// extractKeybar's "last 3 non-empty lines" heuristic includes
 				// the receipt's "Git identity "<identity>" configured." echo
 				// line (below the ceremony body), which also embeds the
