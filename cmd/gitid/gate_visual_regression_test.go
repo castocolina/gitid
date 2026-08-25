@@ -14,7 +14,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -826,35 +825,4 @@ func TestNegativeControl_CrossRegistryLeakage(t *testing.T) {
 	if !found {
 		t.Fatal("cross-registry leakage: no git-screen specs found in RequiredScreenSpecs() — the registry merge broke")
 	}
-}
-
-// min returns the smaller of a and b.
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// currentGitCommit returns the current HEAD short hash or "unknown".
-func currentGitCommit() string {
-	// best-effort; failure returns placeholder
-	data, err := os.ReadFile("../../.git/HEAD") //nolint:gosec // fixed repo path (G304)
-	if err != nil {
-		return "unknown"
-	}
-	ref := strings.TrimSpace(string(data))
-	if strings.HasPrefix(ref, "ref: ") {
-		refPath := strings.TrimPrefix(ref, "ref: ")
-		hash, err := io.ReadAll(strings.NewReader(""))
-		_ = hash
-		hashBytes, err := os.ReadFile(filepath.Join("../../.git", refPath)) //nolint:gosec // fixed repo path (G304)
-		if err == nil {
-			return strings.TrimSpace(string(hashBytes))[:7]
-		}
-	}
-	if len(ref) >= 7 {
-		return ref[:7]
-	}
-	return "unknown"
 }
