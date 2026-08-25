@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/castocolina/gitid/internal/gitconfig"
 )
 
 const samplePubLine = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyDataHere work@gitid\n"
@@ -189,6 +191,202 @@ func TestWriteAllowedSignersBackup(t *testing.T) {
 	if backup == "" {
 		t.Errorf("expected a non-empty backupPath when the file pre-existed")
 	}
+}
+
+// pubLine builds a distinguishable public-key authorized-key line for
+// AppendAllowedSigners tests, using key text unique to the given label so
+// two appended lines for the same identity are visibly distinct.
+func pubLine(label string) string {
+	return "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI" + label + "KeyDataHere " + label + "@gitid\n"
+}
+
+// TestAppendAllowedSigners_CreatesBlockWhenAbsent proves appending to an
+// identity with no existing block creates the block containing exactly the
+// new line (D-07).
+func TestAppendAllowedSigners_CreatesBlockWhenAbsent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "allowed_signers")
+
+	backup, err := AppendAllowedSigners(path, "work", "work@example.com", pubLine("First"))
+	if err != nil {
+		t.Fatalf("AppendAllowedSigners: %v", err)
+	}
+	if backup != "" {
+		t.Errorf("backupPath should be empty for a new file; got %q", backup)
+	}
+
+	content := readFile(t, path)
+	if !strings.Contains(content, "# BEGIN gitid managed: work") {
+		t.Errorf("missing BEGIN sentinel; content:\n%s", content)
+	}
+	if strings.Count(content, "namespaces=\"git\"") != 1 {
+		t.Errorf("expected exactly 1 signer line, got content:\n%s", content)
+	}
+}
+
+// TestAppendAllowedSigners_AppendsSecondLine proves a second append yields a
+// block with TWO lines, oldest first, both preserved verbatim (D-07: never
+// replace, always append).
+func TestAppendAllowedSigners_AppendsSecondLine(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "allowed_signers")
+
+	if _, err := AppendAllowedSigners(path, "work", "work@example.com", pubLine("First")); err != nil {
+		t.Fatalf("first append: %v", err)
+	}
+	if _, err := AppendAllowedSigners(path, "work", "work@example.com", pubLine("Second")); err != nil {
+		t.Fatalf("second append: %v", err)
+	}
+
+	content := readFile(t, path)
+	firstIdx := strings.Index(content, "FirstKeyDataHere")
+	secondIdx := strings.Index(content, "SecondKeyDataHere")
+	if firstIdx == -1 || secondIdx == -1 {
+		t.Fatalf("expected both signer lines present; content:\n%s", content)
+	}
+	if firstIdx > secondIdx {
+		t.Errorf("expected the first-appended line before the second (oldest first); content:\n%s", content)
+	}
+	if strings.Count(content, "namespaces=\"git\"") != 2 {
+		t.Errorf("expected exactly 2 signer lines, got content:\n%s", content)
+	}
+}
+
+// TestAppendAllowedSigners_IdempotentSameLine proves appending an
+// already-present line is a byte-identical no-op with an empty backup path.
+func TestAppendAllowedSigners_IdempotentSameLine(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "allowed_signers")
+
+	if _, err := AppendAllowedSigners(path, "work", "work@example.com", pubLine("First")); err != nil {
+		t.Fatalf("first append: %v", err)
+	}
+	before := readFile(t, path)
+
+	backup, err := AppendAllowedSigners(path, "work", "work@example.com", pubLine("First"))
+	if err != nil {
+		t.Fatalf("re-append of the same line: %v", err)
+	}
+	if backup != "" {
+		t.Errorf("expected an empty backup path for an idempotent re-append; got %q", backup)
+	}
+	after := readFile(t, path)
+	if before != after {
+		t.Errorf("re-appending an already-present line changed the file;\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+// TestAppendAllowedSigners_PreservesForeignContent proves foreign content
+// outside the identity's block and another identity's own block survive
+// byte-for-byte across two appends.
+func TestAppendAllowedSigners_PreservesForeignContent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "allowed_signers")
+
+	foreign := "alice@example.com namespaces=\"git\" ssh-ed25519 AAAAForeignKey alice\n"
+	if err := os.WriteFile(path, []byte(foreign), 0o600); err != nil { //nolint:gosec // test fixture seed; AppendAllowedSigners rewrites at 0644
+		t.Fatalf("seeding foreign content: %v", err)
+	}
+	if _, err := WriteAllowedSigners(path, "personal", mustLine(t, "personal@example.com", pubLine("Personal"))); err != nil {
+		t.Fatalf("seeding personal identity block: %v", err)
+	}
+
+	if _, err := AppendAllowedSigners(path, "work", "work@example.com", pubLine("First")); err != nil {
+		t.Fatalf("first append: %v", err)
+	}
+	if _, err := AppendAllowedSigners(path, "work", "work@example.com", pubLine("Second")); err != nil {
+		t.Fatalf("second append: %v", err)
+	}
+
+	content := readFile(t, path)
+	if !strings.Contains(content, foreign) {
+		t.Errorf("foreign content not preserved; content:\n%s", content)
+	}
+	if !strings.Contains(content, "# BEGIN gitid managed: personal") {
+		t.Errorf("other identity's block not preserved; content:\n%s", content)
+	}
+	if !strings.Contains(content, "PersonalKeyDataHere") {
+		t.Errorf("other identity's signer line not preserved; content:\n%s", content)
+	}
+}
+
+// TestAppendAllowedSigners_RejectsCommaEmail proves a comma-containing email
+// is rejected before any write (CR-18), leaving the file untouched/absent.
+func TestAppendAllowedSigners_RejectsCommaEmail(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "allowed_signers")
+
+	if _, err := AppendAllowedSigners(path, "work", "victim@corp.test,*", pubLine("First")); err == nil {
+		t.Fatal("AppendAllowedSigners must reject a comma-containing principal (CR-18), got nil error")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("expected the file to remain absent after a rejected append; stat err = %v", err)
+	}
+}
+
+// TestAppendAllowedSigners_Mode0644 proves the written file's mode is 0644.
+func TestAppendAllowedSigners_Mode0644(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "allowed_signers")
+
+	if _, err := AppendAllowedSigners(path, "work", "work@example.com", pubLine("First")); err != nil {
+		t.Fatalf("AppendAllowedSigners: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat allowed_signers: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o644 {
+		t.Errorf("allowed_signers mode = %o, want 0644", got)
+	}
+}
+
+// TestAppendAllowedSigners_ThenBlockRemovalRemovesAllLines proves the
+// existing block-keyed removal helper (gitconfig.RemoveAllowedSignersBlock)
+// still removes the WHOLE identity block after two appends — all three
+// lines (the two appended plus none foreign inside the block) disappear
+// together, because removal is keyed by identity NAME, not by line (review
+// R-22): rotate-twice accumulation leaves N+1 lines in one block; delete-
+// everything removes the whole block regardless of line count, and a
+// Git-only delete keeps the whole block regardless of line count (D-10).
+func TestAppendAllowedSigners_ThenBlockRemovalRemovesAllLines(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "allowed_signers")
+
+	if _, err := AppendAllowedSigners(path, "work", "work@example.com", pubLine("First")); err != nil {
+		t.Fatalf("first append: %v", err)
+	}
+	if _, err := AppendAllowedSigners(path, "work", "work@example.com", pubLine("Second")); err != nil {
+		t.Fatalf("second append: %v", err)
+	}
+	before := readFile(t, path)
+	if strings.Count(before, "namespaces=\"git\"") != 2 {
+		t.Fatalf("fixture setup: expected 2 lines before removal, got content:\n%s", before)
+	}
+
+	if _, err := gitconfig.RemoveAllowedSignersBlock(path, "work"); err != nil {
+		t.Fatalf("RemoveAllowedSignersBlock: %v", err)
+	}
+
+	after := readFile(t, path)
+	if strings.Contains(after, "# BEGIN gitid managed: work") {
+		t.Errorf("work block still present after block-keyed removal; content:\n%s", after)
+	}
+	if strings.Contains(after, "FirstKeyDataHere") || strings.Contains(after, "SecondKeyDataHere") {
+		t.Errorf("both accumulated lines must disappear together with the block; content:\n%s", after)
+	}
+}
+
+// mustLine is a small test helper wrapping AllowedSignersLine for fixture
+// setup where the line is known-good and an error would indicate a broken
+// test, not a case under test.
+func mustLine(t *testing.T, email, pub string) string {
+	t.Helper()
+	line, err := AllowedSignersLine(email, pub)
+	if err != nil {
+		t.Fatalf("AllowedSignersLine fixture setup: %v", err)
+	}
+	return line
 }
 
 func readFile(t *testing.T, path string) string {

@@ -73,3 +73,70 @@ func WriteAllowedSignersReplacing(path, identity, email, pubLine string) (string
 	}
 	return WriteAllowedSigners(path, identity, line)
 }
+
+// AppendAllowedSigners appends pubLine's signer line for email to identity's
+// managed allowed_signers block WITHOUT dropping the block's existing
+// line(s) (D-07). This is the KEY-CEREMONY writer used by BOTH rotate and
+// repair (rotate: D-07; plan 05-03 records the planner resolution extending
+// the same rule to repair). create/update/clone keep the single-line
+// WriteAllowedSigners/WriteAllowedSignersReplacing semantics — only rotate
+// and repair need the OLD line to survive.
+//
+// Reason: an allowed_signers entry verifies signatures from its PUBLIC key
+// blob alone, so keeping the old line lets `git log --show-signature` keep
+// verifying pre-rotation commits even after the old private key is archived
+// or gone. Pruning accumulated lines is deliberately deferred to Phase 8.
+//
+// The new line is built through AllowedSignersLine, so the CR-18
+// comma-injection guard applies to this write path exactly as it applies to
+// the existing one — never construct the line string inline. A comma in
+// email is rejected before any read or write, leaving the file untouched.
+//
+// Appending a line already present in the block (compared exactly, after
+// trimming) is a no-op: it returns an empty backup path and a nil error
+// rather than re-writing the file, so a byte-identical re-run never
+// produces a spurious backup.
+//
+// N rotations leave N+1 lines in one identity's block (review R-22): the
+// removal side needs no change because RemoveAllowedSignersBlock is
+// block-keyed (by identity name), not line-keyed — deleting the whole
+// identity removes all N+1 lines together regardless of count, and a
+// Git-only delete keeps the whole block regardless of count (D-10).
+func AppendAllowedSigners(path, identity, email, pubLine string) (backupPath string, err error) {
+	line, err := AllowedSignersLine(email, pubLine)
+	if err != nil {
+		return "", err
+	}
+	newLine := strings.TrimRight(line, "\n")
+
+	existing, err := os.ReadFile(path) //nolint:gosec // path is a trusted gitid-managed path
+	if err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("keygen: reading %s: %w", path, err)
+	}
+
+	var body string
+	for _, block := range filewriter.ListBlocks(existing) {
+		if block.Name == identity {
+			body = block.Body
+			break
+		}
+	}
+
+	for _, existingLine := range strings.Split(body, "\n") {
+		if existingLine == newLine {
+			return "", nil // already present — idempotent no-op
+		}
+	}
+
+	combined := newLine
+	if body != "" {
+		combined = body + "\n" + newLine
+	}
+
+	composed := filewriter.ReplaceBlock(existing, identity, combined)
+	backup, err := filewriter.Write(path, composed, allowedSignersMode)
+	if err != nil {
+		return "", fmt.Errorf("keygen: appending allowed_signers: %w", err)
+	}
+	return backup, nil
+}
