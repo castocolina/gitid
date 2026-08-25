@@ -1,543 +1,723 @@
 ---
 phase: 04-git-configuration-screen
-reviewed: 2026-08-24T21:35:00Z
+reviewed: 2026-08-25T09:40:00Z
 depth: standard
-files_reviewed: 25
+iteration: 5
+files_reviewed: 36
 files_reviewed_list:
   - .gitignore
+  - Makefile
   - cmd/gitid/gate_visual_regression_test.go
-  - cmd/gitid/wiring_test.go
+  - cmd/gitid/smoke_network_test.go
   - cmd/gitid/wiring.go
+  - cmd/gitid/wiring_test.go
   - e2e/create_flow_pty_e2e_test.go
   - e2e/git_configuration_pty_e2e_test.go
+  - e2e/ui_pty_e2e_test.go
   - internal/doctor/checks/reserved_test.go
   - internal/dummytui/fixturebackend.go
-  - internal/gitconfig/reader_test.go
+  - internal/gitconfig/fragment.go
+  - internal/gitconfig/fragment_test.go
   - internal/gitconfig/reader.go
-  - internal/gitconfig/renderer_test.go
+  - internal/gitconfig/reader_test.go
   - internal/gitconfig/renderer.go
-  - internal/identity/loader_test.go
+  - internal/gitconfig/renderer_test.go
+  - internal/identity/identity.go
+  - internal/identity/inventory.go
   - internal/identity/loader.go
+  - internal/identity/loader_test.go
+  - internal/identity/update.go
   - internal/keygen/signers.go
+  - internal/screenshot/createflow.go
+  - internal/screenshot/createflow_packet.go
+  - internal/screenshot/createflow_packet_test.go
   - internal/screenshot/createflow_regions.go
   - internal/screenshot/createflow_test.go
-  - internal/screenshot/createflow.go
-  - internal/tuikit/backend_stub_test.go
+  - internal/screenshot/normalize_test.go
+  - internal/screenshot/region_disposition_test.go
   - internal/tuikit/backend.go
-  - internal/tuikit/identities_test.go
+  - internal/tuikit/backend_stub_test.go
+  - internal/tuikit/ceremony.go
   - internal/tuikit/identities.go
+  - internal/tuikit/identities_test.go
   - internal/tuikit/store.go
   - internal/tuikit/views.go
-  - Makefile
+  - .planning/design/git-screen/visual-divergence-allowlist.txt
 findings:
-  critical: 4
-  warning: 13
+  critical: 5
+  warning: 16
   info: 0
-  total: 17
+  total: 21
 status: issues_found
 ---
 
-# Phase 4: Code Review Report
+# Phase 4: Code Review Report (iteration 5)
 
-**Reviewed:** 2026-08-24T21:35:00Z
+**Reviewed:** 2026-08-25T09:40:00Z
 **Depth:** standard
-**Files Reviewed:** 25
+**Files Reviewed:** 36
 **Status:** issues_found
 
 ## Summary
 
-Phase 4 wires the Git leg of identity creation: default Git artifacts on create,
-`includeIf` gitdir/hasconfig matching, a provider-level `insteadOf` rewrite, a
-standalone Configure-Git flow, and a shared `mutationJournal` transaction with
-rollback. The transaction design (snapshot → mutate → restore-in-reverse) is
-sound in outline, and the containment/symlink guard (`containedRegularPath`) is
-a real improvement over the legacy path.
+Adversarial re-review of the 9 fixes claimed in `04-REVIEW-FIX.md` (iteration 4,
+commits `5a6051d` … `37d667e`), an assessment of the 7 items the fixer explicitly
+skipped, and a fresh sweep of the full current state. Every verdict below is backed
+by an executed probe — mutation-revert (make the fix wrong, re-run the test that
+allegedly proves it), fault injection, or real end-to-end execution against a
+sandboxed HOME. Probe files were created, run, and deleted; the working tree outside
+`.planning/` is clean and `make lint` reports 0 issues.
 
-The implementation nonetheless ships four defects that reach the user's real
-filesystem or the truth of the confirm ceremony. Two were reproduced with
-executable probes against the real backend:
+**Baseline gate status measured this session (not quoted from the fixer):**
 
-1. The user-editable **gitdir** value is fed straight into `os.Chmod` — entering
-   `~` in that field permanently changes the user's HOME to `0700`
-   (**reproduced**, evidence below). No preview, no confirmation, no restore on
-   success.
-2. Rollback in `commitCreateTransaction` **deletes every timestamped backup it
-   took**, including in the case where the in-memory restoration itself failed
-   (**reproduced**), which is exactly the case the backups exist for. This
-   directly contradicts `mutationJournal`'s own doc comment ("backups remain
-   durable safety artifacts") and `CLAUDE.md`'s backup requirement.
-3. The wizard's Git-step preview and the bytes actually written **disagree** on
-   the `gitdir` condition — evidenced by frames already committed to
-   `.planning/.../ui-frames/`.
-4. The Git form's field enum and its button-ring enum **collide numerically**, so
-   keystrokes aimed at the Skip button silently edit a hidden path field that
-   feeds the `includeIf`.
+| Gate | Result |
+|---|---|
+| `TERM=dumb SSH_AUTH_SOCK= go test -count=1 -race ./...` | PASS (1061 tests, 19 packages) |
+| `make lint` (incl. `lint-tagged`) | PASS, 0 issues |
+| `make gate-visual-regression` | PASS (10 tests, no SKIP) |
+| `go test -tags e2e -race -run TestGitConfiguration_CompiledRealVsLiveDummyPTY ./e2e/...` | PASS (57 s) |
 
-Beyond correctness, the phase weakened two visual-regression gates
-(`RequiredRegions` downgraded, a blanket `\d{6,}` normalizer), retained ~200
-lines of dead legacy transaction code behind a `//nolint:unused` + package-level
-`var _`, and left the file-write transactions unserialized against each other.
+### What genuinely landed (each independently proven load-bearing by mutation-revert)
+
+| Fix | Probe | Verdict |
+|---|---|---|
+| **BL-15** | Stubbed the `under(s.path)` guard → `TestRollbackKeepsHardenedRootSecuredWhenAFileUnderItFailsToRestore` fails with `~/.ssh mode after rollback = -rwxr-xr-x, want -rwx------` | **Landed.** The motivating scenario is genuinely covered: `journal.watchFile(staged.FinalPrivatePath)` (wiring.go:1917) puts the private key in `j.files`, so a failed key restore does reach `failedFilePaths`. |
+| **WR-35** | Reverted `accounts()` to `identity.BuildInventoryDeps()` → test fails with `SSHHost = "github.com"` (my real `~/.ssh/config`) | **Landed.** |
+| **CR-14** | Replaced `strategyCopy`'s gitdir case with `~/BUGGY/` → `TestStrategyLabelAgreesWithIncludeIfPreviewAndGitDirField` fails | **Landed** (product fix). Call sites at `:940`, `:2759`, `:3023`, `:2953` all thread the real gitdir. **But see CR-15 — neither gate can catch its recurrence.** |
+| **CR-12** | Hardcoded the ceremony's `Backups` → `TestGitCeremonyForSourcesTargetsBackupsCreatesFromBackend` fails. Separately drove `GitWritePlan` + the REAL `commitGitTransaction` across 4 scenarios (fresh/existing × ForceSSH on/off): declared backup counts `0/1/3/4` matched actual `0/1/3/4` exactly, with correct `.bak.` naming. | **Landed and fidelity-verified.** Residuals: WR-47, WR-48. |
+| **CR-11** | The new `assertAllComparableEqualRegionsAreMutationSensitive` really does mutate region TEXT and really is exhaustive over its scope — 116 comparable-equal regions checked | **Landed for the regions it covers.** But it deliberately `continue`s past every `!Equal` region — see CR-16. |
+| **CR-13** | Injected `//go:build probetag` → `make lint-tagged` correctly fails with the guard message | **Landed for simple tags.** Bypassed by compound/parenthesized constraints — see WR-45. |
+| **WR-36 / WR-37** | `RegionContinueDisabledReason` + `extractContinueDisabledReason` are gone (only a historical comment remains); `gitPaneFocusRing` is gone; the 16 `RegionName` constants match `AllRegionNames()`'s 16 entries | **Landed.** Structural half unfixed — see WR-58. |
+| **CR-10 (the grammar itself)** | Reverted both branches to `\|\|` → `TestRegionPredicateSatisfiedRejectsSymmetricCases` fails on 3 subtests | **Grammar landed.** Its *production-level* regression test does not — see CR-17. |
+
+### What is newly broken, or was never actually closed
+
+1. **Both visual gates are structurally blind to the exact class of bug they were built to catch** (CR-15). I reintroduced CR-14's bug and `make gate-visual-regression` AND the real-PTY e2e suite both passed fully green.
+2. **`ValidateRegionDiffs` never evaluates the predicate CR-10 fixed** (CR-16). 44 of 160 comparable regions accept an arbitrary live-side text mutation.
+3. **CR-10's headline regression test is vacuous** (CR-17) — it passes with the bug fully restored. The fixer's claimed red-before-fix evidence for it is not reproducible.
+4. **WR-44 is confirmed as a real security defect and escalated** (CR-18) — but via a mechanism the prior review did not identify, which its proposed fix would not have closed.
+5. **Three ceremonies on a non-demo-bannered tab announce writes and backups that never happen** (CR-19).
+
+---
 
 ## Critical Issues
 
-### CR-01: User-editable gitdir path is chmod'ed to 0700 — including HOME
+### CR-15: both visual gates pass green with CR-14's BLOCKER reintroduced — a real/dummy comparison cannot detect a regression in code the two binaries share
 
-**File:** `cmd/gitid/wiring.go:830-858` (`mutationJournal.ensureDir`), `cmd/gitid/wiring.go:958-964`, `cmd/gitid/wiring.go:1018-1024`
+**File:** `internal/screenshot/createflow.go:1288-1430` (`gitScreenSpecs`),
+`e2e/git_configuration_pty_e2e_test.go:884-926` (`compareGitScreenCheckpoint`),
+`.planning/design/git-screen/visual-divergence-allowlist.txt:3-19`
 **Severity:** BLOCKER
 
-**Issue:** `commitGitArtifacts` resolves the user-typed gitdir
-(`spec.GitDir`, editable via the "gitdir path" field / `ctrl+g` / mouse click)
-and hands it to `journal.ensureDir(gitDirPath, 0o700)`. `ensureDir` ends with an
-unconditional `os.Chmod(path, mode)` on the *final* component, whether or not
-this transaction created it. Any pre-existing directory the user names is
-silently tightened to `0700`, and the mode is **only** restored on rollback —
-on success it stays changed forever.
+**Issue:** The allowlist's own header states the gate's purpose: *"A structural divergence here means either a genuine, classified fixture-vs-live-data difference or a real regression the gate must catch."* It cannot. Both `cmd/gitid` and `cmd/gitid-dummy` render Configure-Git through the **same** `internal/tuikit/identities.go` code (the D-17 extraction, stated verbatim in the allowlist header). Any defect in that shared code changes **both** sides identically, so the comparison stays equal and the gate stays green.
 
-Because `normalizeGitDir` appends a trailing slash (`identities.go:596-605`),
-typing a bare `~` becomes `~/`, which `resolveKeyPath` expands to HOME itself,
-which `containedRegularPath` accepts (`cleanPath == cleanRoot`), which
-`ensureDir` then chmods.
-
-Reproduced against the real backend (`commitGitTransaction`, temp HOME):
-
-```
-PROBE: ~/Documents mode after commit = -rwx------ (was 0755)   # GitDir "~/Documents/"
-PROBE: err = <nil>
-PROBE: HOME mode after commit = -rwx------ (was 0755)          # GitDir "~/"
-```
-
-None of this appears in the ceremony's disclosed `Targets`
-(`identities.go:1860`), so the user confirms three files and gets a fourth,
-silent, irreversible permission mutation.
-
-**Fix:** Do not chmod directories the transaction did not create, and never
-chmod a path that resolves to HOME (or any ancestor of the managed roots):
+Proven directly. I re-injected exactly the CR-14 bug that was classified BLOCKER and fixed in *this* iteration:
 
 ```go
-func (j *mutationJournal) ensureDir(path string, mode os.FileMode) error {
-	clean := filepath.Clean(path)
-	if clean == filepath.Clean(j.b.home) {
-		return fmt.Errorf("gitid: refusing to manage the home directory itself: %s", path)
-	}
-	// ... walk-up / create loop unchanged ...
-	for i := len(missing) - 1; i >= 0; i-- {
-		if err := os.Mkdir(missing[i], mode); err != nil { ... }
-		j.createdDirs = append(j.createdDirs, missing[i])
-		if err := os.Chmod(missing[i], mode); err != nil { ... }
-	}
-	// REMOVED: unconditional os.Chmod(path, mode) on a pre-existing directory.
-	return nil
+// internal/tuikit/identities.go strategyCopy
+return "gitdir (default) — applies inside " + strings.Replace(gitDir, "~/git/", "~/", 1)
+```
+
+Result:
+
+```
+$ make gate-visual-regression
+    gate_visual_regression_test.go:318: gate-visual-regression: OK — 23 RequiredScreenSpecs frames checked
+--- PASS: TestGateVisualRegression (1.53s)
+--- PASS: TestNegativeControl_AllComparableEqualRegionsAreMutationSensitive (1.65s)
+--- PASS: TestNegativeControl_AllGitScreenComparableEqualRegionsAreMutationSensitive (1.15s)
+PASS   ok  github.com/castocolina/gitid/cmd/gitid  8.150s
+
+$ go test -tags e2e -race -run TestGitConfiguration_CompiledRealVsLiveDummyPTY ./e2e/...
+ok      github.com/castocolina/gitid/e2e        57.048s
+```
+
+Ten gate tests, 23 frames, a full 57-second raw-PTY real-vs-dummy comparison — and the user-visible falsehood CR-14 was raised about renders on every frame, undetected. The **only** thing that catches it is the unit test `TestStrategyLabelAgreesWithIncludeIfPreviewAndGitDirField`, which D-12 explicitly says cannot stand in for this proof (*"no unit test, no in-process tea.Msg synthesis stands in for this proof"*).
+
+This is the root cause behind three consecutive iterations of gate work (WR-19 → WR-27 → CR-10; CR-04 → CR-11; WR-28 → CR-13). Each fix hardened the *classification* of divergences between two sides that are computed by the same function. The gate's real detection surface is the backend seam (real vs fixture data), not the renderer — and the renderer is where all of Phase 4's product code lives.
+
+**Fix:** stop describing this gate as regression detection for the screen and add a mechanism that actually is one. Concretely, one of:
+
+```go
+// (a) pin the real binary's rendered regions against a COMMITTED golden, so a
+//     shared-code change moves the frame away from a fixed reference, not away
+//     from a co-moving twin.
+func TestGitScreenRegionsMatchApprovedGolden(t *testing.T) {
+    for _, region := range allGitScreenRegions() {
+        want := readGolden(t, "git-form-filled", region) // committed under .planning/design/git-screen/goldens/
+        got := normalizeGitCheckpoint(extractGitScreenRegion(realFrame, region))
+        if got != want { t.Errorf(...) }   // fails on ANY shared-code drift
+    }
 }
 ```
 
-Additionally reject a gitdir that is not strictly *below* `~` (require at least
-one path component), and surface "create directory `<path>`" in the ceremony's
-`Targets` so the mutation is confirmed rather than assumed.
+or (b) assert semantic invariants across widgets on the same real frame for every git-screen region (the `TestStrategyLabelAgreesWith…` pattern, generalised), and demote the real-vs-dummy comparison to what it demonstrably is: a *backend-seam parity* check. Update the allowlist header and `gitScreenSpecs`' comments to say so — the current text asserts a guarantee the mechanism does not provide, which is the exact defect pattern this loop keeps re-manufacturing.
 
 ---
 
-### CR-02: Rollback deletes every timestamped backup, including after a failed restore
+### CR-16: `ValidateRegionDiffs` never evaluates the predicate — 44 of 160 comparable regions accept an arbitrary live-side text mutation, and CR-11's exhaustive control deliberately skips all of them
 
-**File:** `cmd/gitid/wiring.go:1805-1819` (`commitCreateTransaction.fail`)
+**File:** `internal/screenshot/createflow_packet.go:1386-1485` (`ValidateRegionDiffs`,
+`else if !region.Equal` at `:1457-1462`),
+`cmd/gitid/gate_visual_regression_test.go:537-577` (`assertAllComparableEqualRegionsAreMutationSensitive`, the `continue` at `:546-548`)
 **Severity:** BLOCKER
 
-**Issue:** `fail()` runs `journal.restore()` and then unconditionally removes
-every backup the transaction produced:
+**Issue:** CR-10 put `regionPredicateSatisfied` on the `BuildRegionDiffs` path only. `ValidateRegionDiffs` — which re-derives and re-checks *every other* invariant (hashes, comparability, equality, classification, decision linkage, region inventory) — never calls it. Its `!region.Equal` branch checks only that the record's metadata equals the disposition's metadata:
 
 ```go
-outcomes, restoreErr := journal.restore()
-for _, backup := range journal.backups {
-	if err := os.Remove(backup); err != nil && !os.IsNotExist(err) { ... }
+} else if !region.Equal {
+    disposition, found := RegionDispositionFor(spec, region.Name)
+    if !found || region.Divergence != disposition.Divergence || region.Decision != disposition.Decision ||
+        region.Justification != disposition.Decision+": "+disposition.Reason || region.Classification != disposition.Classification {
+        return fmt.Errorf("…unexplained or unclassified divergence…")
+    }
+}   // region.LiveText is never examined
+```
+
+CR-11's new exhaustive control then skips exactly these regions (`if !region.Comparable || !region.Equal { continue }`), with a comment claiming they are *"covered by TestNegativeControl_UnclassifiedDifferenceRejected instead"* — that test only proves a *cleared metadata field* is rejected, never a text change.
+
+Measured with a probe that iterates every region of every `RequiredScreenSpecs()` screen, appends `"\nGATE-CANARY-TOTALLY-BROKEN"` to `LiveText`, recomputes the hash, and calls `ValidateRegionDiffs`:
+
+```
+PROBE totals: comparable-equal=116  comparable-differing(dispositioned)=44  acceptedMutations=44
+ACCEPTED arbitrary live mutation: screen=git-form-filled region=git-strategy
+ACCEPTED arbitrary live mutation: screen=git-form-filled region=git-preview
+ACCEPTED arbitrary live mutation: screen=git-form-filled region=git-form-fields
+ACCEPTED arbitrary live mutation: screen=review-readonly region=git-ceremony
+ACCEPTED arbitrary live mutation: screen=result-success region=git-ceremony
+… 44/44 accepted, 0 rejected
+```
+
+Every git-screen region that carries product-specific copy is in that 44. So the stored `REGION-DIFFS.json` evidence packet — the artifact that gets published and re-validated — carries no integrity guarantee at all for 27.5 % of the regions, and CR-11's headline "exhaustive negative control" cannot, by construction, ever reach them.
+
+**Fix:** enforce the predicate on both paths and extend the control to cover dispositioned regions:
+
+```go
+// createflow_packet.go, inside ValidateRegionDiffs' `else if !region.Equal` branch:
+if !regionPredicateSatisfied(disposition.Predicate, region.LiveText, region.ApprovedText) {
+    return fmt.Errorf("screenshot: ValidateRegionDiffs: frame %q region %q no longer satisfies disposition predicate %q",
+        spec.ScreenID, region.Name, disposition.Predicate)
 }
 ```
 
-If `restore()` partially failed (`restoreErr != nil`, e.g. a read-only mount, a
-disk-full condition, or an `os.Chmod`/`WriteNoBackup` error mid-loop), the
-file on disk is now in an unknown, half-written state **and** the only durable
-copy of the original content has just been deleted. This is precisely the
-data-loss scenario the `CLAUDE.md` backup rule exists to prevent, and it
-contradicts `mutationJournal`'s own doc comment (`wiring.go:750-752`): "Its
-rollback intentionally restores from in-memory snapshots, not by moving
-timestamped backups: **backups remain durable safety artifacts**."
-
-The two transaction entry points also disagree: `commitGitArtifacts.fail`
-(`wiring.go:995-1005`) keeps its backups; `commitCreateTransaction.fail`
-deletes them.
-
-Reproduced (injected failure at `host-block`, pre-existing `~/.ssh/config`):
-
-```
-PROBE ~/.ssh after rollback: [config]
-PROBE: NO .bak.* backup remains after rollback
-```
-
-**Fix:** Never delete backups on the failure path. At most, delete them only
-when `restoreErr == nil` *and* a post-restore content comparison confirms every
-file matches its snapshot — and even then, prefer keeping them:
-
 ```go
-outcomes, restoreErr := journal.restore()
-message := fmt.Sprintf("gitid: mutation %s failed: %v; restoration results: %s",
-	target, cause, strings.Join(outcomes, "; "))
-if restoreErr != nil {
-	// Restoration itself failed: the backups are the ONLY recovery path.
-	message += "; timestamped backups retained: " + strings.Join(journal.backups, ", ")
+// gate_visual_regression_test.go — replace the `continue` with a second control:
+// a dispositioned region must reject a mutation that BREAKS its predicate.
+if !region.Equal {
+    m.LiveText = strings.ReplaceAll(m.LiveText, needleOf(disposition.Predicate), "MUTATED")
+    …
+    if err := screenshot.ValidateRegionDiffs(data, …); err == nil {
+        t.Errorf("dispositioned region %q/%q accepts a mutation that violates its own predicate", …)
+    }
 }
-return journal.backups, fmt.Errorf("%s", message)
 ```
+
+This must be red before the change lands — the probe above is the exact fixture to reuse.
 
 ---
 
-### CR-03: Wizard Git preview shows a different gitdir than the one written
+### CR-17: CR-10's production-disposition regression test passes with the bug fully restored — the fixer's red-before-fix evidence for it is not reproducible
 
-**File:** `internal/tuikit/identities.go:1451-1456` (`finishIdentity`), `internal/tuikit/identities.go:565-569` (`newGitForm`)
+**File:** `internal/screenshot/region_disposition_test.go:91-135`
+(`TestBuildRegionDiffsRejectsUnrelatedLiveRegressionUnderProductionPredicate`)
 **Severity:** BLOCKER
 
-**Issue:** Two independent bugs combine into a preview/write divergence on the
-project's core WYSIWYG contract:
+**Issue:** The prior review's fix instruction was explicit: *"add a test that mutates the **live** side of a production disposition (not a synthetic one) and asserts `BuildRegionDiffs` errors… Until such a test exists and is red before the fix, WR-27 must not be recorded as closed."* The fixer added this test and reported: *"Red-before-fix: reverted the grammar to the old `||`/`!…||!…` form and re-ran the new regression test — it failed with `CR-10 regression: BuildRegionDiffs accepted an unrelated live-side regression…`"*
 
-1. `newGitForm(b, name, email, strategy)` seeds the gitdir input from the Git
-   **display name**, not the identity name:
-   `gitDir: newTextInput("~/git/" + name + "/")`. In the wizard, `newWizard`
-   calls `newGitForm(b, "Acme Identity", ...)`, so the default gitdir becomes
-   `~/git/Acme Identity/` — a path with a space, derived from a human name.
-2. `finishIdentity` computes `gitSpec := w.gitSpec()` and then **discards**
-   `gitSpec.GitDir`, hardcoding `id.GitDir = "~/git/" + name + "/"`.
-
-The preview the user reads therefore comes from (1) while the bytes written
-come from (2). This is already visible in captured frames committed to the
-repo:
-
-```
-.planning/phases/05.7-.../ui-frames/create-flow-test-stage-pass.txt:21
-  │ ┊ [includeIf "gitdir:~/git/Acme Identity/"]              ┊
-```
-
-…while `CommitCreate` writes `[includeIf "gitdir:~/git/acme/"]`.
-
-The same function also contains two consecutive `if w.configureGit {` blocks
-that should be one.
-
-**Fix:** Seed the gitdir from the identity name, not the author name, and honour
-the user's edited value on write:
+That is not reproducible. I reverted **both** predicate branches to the exact pre-CR-10 grammar and the test stays green:
 
 ```go
-// newGitForm — take the identity separately from the author display name.
-func newGitForm(b Backend, identity, name, email, strategy string) gitForm {
-	...
-	gitDir: newTextInput("~/git/" + identity + "/"),
-}
+case strings.HasPrefix(predicate, "contains:"):
+    return strings.Contains(live, needle) || strings.Contains(approved, needle)
+case strings.HasPrefix(predicate, "absent:"):
+    return !strings.Contains(live, needle) || !strings.Contains(approved, needle)
+```
+```
+=== RUN   TestBuildRegionDiffsRejectsUnrelatedLiveRegressionUnderProductionPredicate
+--- PASS (0.00s)
+```
 
-// finishIdentity — one block, and the user's value survives.
-if w.configureGit {
-	gitSpec := w.gitSpec()
-	id.GitDir = gitSpec.GitDir
-	id.ForceSSH = gitSpec.ForceSSH
-	id.PublicKeyPath = gitSpec.PublicKeyPath
-	id.State = "complete"
-	id.GitConfigured = true
-	...
+The reason, from a probe against the same fixture:
+
+```
+PROBE err = screenshot: BuildRegionDiffs: frame "cr-10-regression-real-disposition"
+            region "breadcrumb" differs without a screen-specific declared disposition
+PROBE predicate = "absent:\"clientB\""
+PROBE predicateSatisfied = false
+```
+
+`BuildRegionDiffs` iterates `AllRegionNames()` and returns on the **first** failing region. The synthetic fixture's `breadcrumb` region differs and carries no disposition, so the function errors there — before or regardless of the sidebar predicate. The test's assertion (`if err == nil { t.Fatal }`) is therefore satisfied by an unrelated missing-disposition error and is completely insensitive to the predicate grammar it claims to guard.
+
+Across the whole `-tags screenshot` suite, reverting both branches turns exactly **one** test red — the pure-unit `TestRegionPredicateSatisfiedRejectsSymmetricCases`. Every `BuildRegionDiffs`-level test is predicate-insensitive.
+
+**Fix:** make the fixture minimal so the predicate is the only thing that can fail, and assert on the error *text*, not merely on non-nil:
+
+```go
+spec.RegionDispositions = []RegionDisposition{prodDisposition}
+// give EVERY other region that would differ a blanket disposition, or make the
+// fixture render only the sidebar region, so nothing else can error first.
+_, err := BuildRegionDiffs(…)
+if err == nil || !strings.Contains(err.Error(), "disposition predicate") {
+    t.Fatalf("CR-10 regression: want a predicate rejection, got %v", err)
 }
 ```
+
+Then re-run the mutation-revert above and confirm it is genuinely red.
 
 ---
 
-### CR-04: Git form field enum collides with the button-ring enum — keystrokes hit the wrong control
+### CR-18 (security): a comma in the Git e-mail writes a wildcard principal into `~/.ssh/allowed_signers`, making the signing key verify as ANY identity (WR-44 confirmed and escalated)
 
-**File:** `internal/tuikit/identities.go:497-522`, `internal/tuikit/identities.go:2379`, `internal/tuikit/identities.go:1924-1930`, `internal/tuikit/identities.go:2581-2584`
-**Severity:** BLOCKER
+**File:** `internal/keygen/signers.go:22-28` (`AllowedSignersLine`),
+`internal/gitconfig/fragment.go:144-152` (`validateEmail`),
+`internal/tuikit/identities.go:809-811` (`gitForm.valid`),
+`cmd/gitid/wiring.go:1321`
+**Severity:** BLOCKER (security)
 
-**Issue:** The two `const` blocks now overlap numerically:
+**Issue:** WR-44 is real, but the exploitable mechanism is **not** the embedded newline the prior review proposed a fix for. `~/.ssh/allowed_signers`'s first field is a **comma-separated list of principal patterns**, and `*` is a valid pattern. `AllowedSignersLine` interpolates the e-mail verbatim into that field, and no layer rejects a comma or an asterisk:
+
+- `gitForm.valid()` requires only `strings.Contains(email, "@")`.
+- `gitconfig.validateEmail` rejects `\n \r " " \t` and requires `@` — commas and `*` pass.
+- `keygen.AllowedSignersLine` is documented as deliberately unvalidating (*"The email is used byte-identically to the supplied value (Pitfall 8)"*).
+
+End-to-end through the **real** backend (`commitGitTransaction`, seeded HOME, `Email: "victim@corp.test,*"` — a value the form accepts and the ceremony displays as an ordinary e-mail):
 
 ```
-gitFieldName=0  gitFieldEmail=1  gitFieldStrategy=2  gitFieldForceSSH=3  gitFieldGitDir=4
-gitFocusBack   = iota + gitFieldStrategy + 1 = 3
-gitFocusSkip   = 4
-gitFocusContinue = 5
-gitPaneFocusButton = gitFieldStrategy + 1 = 3
+PROBE allowed_signers on disk:
+# BEGIN gitid managed: acme
+victim@corp.test,* namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5…
+# END gitid managed: acme
 ```
 
-Consequences in the wizard's Git step, whose `default:` branch is
-`w.git.handleEdit(msg, w.gitFocus)` (`identities.go:2379`):
+And the effect of that line, verified against real OpenSSH:
 
-- With focus on **Back** (`gitFocus == 3`), `space`/`enter` reach
-  `case gitFieldForceSSH` and toggle the Force-SSH checkbox.
-- With focus on **Skip Git** (`gitFocus == 4`), every printable keystroke
-  reaches `case gitFieldGitDir` and edits the gitdir text input — a field the
-  wizard **never renders** (the "gitdir path" row exists only in the
-  configure-Git pane, `identities.go:3393-3395`). The invisible value feeds
-  `matchesFor()` and the `includeIf` preview.
+```
+$ ssh-keygen -Y verify -f allowed -I victim@corp.test        -n git -s msg.sig < msg
+Good "git" signature for victim@corp.test with ED25519 key SHA256:4WtIi8…
+$ ssh-keygen -Y verify -f allowed -I ceo@othercompany.example -n git -s msg.sig < msg
+Good "git" signature for ceo@othercompany.example with ED25519 key SHA256:4WtIi8…
+```
 
-In the configure-Git pane, `gitPaneFocusButton == gitFieldForceSSH == 3` means a
-mouse click on the "Force SSH" row (`gitFormFieldSlots`) focuses the **Write
-it…** button; `enter` there opens the write ceremony instead of toggling.
+Git commit-signature verification is silently reduced to "any signature by this key verifies as anybody". Aggravating factors:
 
-**Fix:** Give the button ring its own non-overlapping numbering (or a distinct
-type), and gate `handleEdit` on field slots only:
+- The value **persists and re-applies**: `gitconfig.ReadFragment` (reader.go:112-129) truncates a value at the first newline but passes a comma straight through, so the poisoned e-mail is read back into the form and re-written on every subsequent Configure-Git write.
+- `gitconfig.RemoveAllowedSignersLine` (reader.go:199) matches `fields[0] == identityEmail` **exactly**, so the wildcard line cannot be removed by e-mail — the very CR-01 prefix-safety reasoning in that function's own doc comment is defeated by the field it never validates.
+- The prior review's proposed fix (`ContainsAny(" \t\r\n")` + require `@`) does **not** close this.
+
+**Fix:** validate at the boundary that owns the file, and make the function fallible:
 
 ```go
-const (
-	gitFocusBack = iota + gitFieldGitDir + 1 // first slot AFTER every field
-	gitFocusSkip
-	gitFocusContinue
-	wizardGitFocusSlots
-)
+// internal/keygen/signers.go
+var allowedSignersPrincipal = regexp.MustCompile(`^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$`)
 
-// wizard step 2, default branch:
-default:
-	if w.gitFocus <= gitFieldStrategy { // never route a button slot into a field
-		w.git = w.git.handleEdit(msg, w.gitFocus)
+// AllowedSignersLine … The principal MUST be a single, literal address: OpenSSH
+// reads field 1 as a comma-separated list of PATTERNS, so a comma or a wildcard
+// character there silently widens the key's trust to other identities.
+func AllowedSignersLine(email, pubLine string) (string, error) {
+	if !allowedSignersPrincipal.MatchString(email) {
+		return "", fmt.Errorf("keygen: allowed_signers principal is not a single literal address: %q", email)
 	}
+	…
+}
 ```
 
-Add a compile-time guard so the two rings can never overlap again:
+Propagate the error through `WriteAllowedSignersReplacing` and the four `internal/identity` call sites, and mirror the same check in `gitForm.valid()` so the ceremony is never reachable with such a value. Add a table test covering `"a@b.c,*"`, `"a@b.c,other@d.e"`, `"*"`, `"a@b.c "`, and `"a@b\nevil@c namespaces=\"git\" ssh-ed25519 AAAA"`.
+
+---
+
+### CR-19: the Delete, Edit-SSH and Clone ceremonies announce backups and writes that never happen, on a tab that carries no demo banner
+
+**File:** `internal/tuikit/identities.go:1980` (edit ceremony), `:2251`, `:2267`, `:2310`
+(delete), `cmd/gitid/wiring.go:340-361` (`DemoBanner`, `Persist`)
+**Severity:** BLOCKER
+
+**Issue:** `realBackend.Persist` performs a real write for exactly one action:
 
 ```go
-var _ = [1]struct{}{}[boolToInt(gitFocusBack <= gitFieldGitDir)] // fails to compile on overlap
+func (b *realBackend) Persist(state tuikit.DemoState, action tuikit.Action) tuikit.DemoState {
+	switch a := action.(type) {
+	case tuikit.Reset:      return b.InitialState()
+	case tuikit.AddIdentity: return b.persistCreate(state, a)
+	default:                 return tuikit.Reduce(state, action)   // in-memory only
+	}
+}
 ```
+
+There is no `CommitDelete`/`CommitEdit` on `*realBackend` at all. Meanwhile `DemoBanner` returns **false** for `TabIdentities`, so the user gets no "this is a demo" signal, and the delete flow presents a full confirmation ceremony that declares a backup:
+
+```go
+// identities.go:2251, :2267
+Backups: []string{NewBackupPath("~/.ssh/config"), NewBackupPath("~/.gitconfig")},
+// rendered by ceremony.go:318-322 as
+//   Backup → ~/.ssh/config.backup.2026-08-25T09-40-00Z
+//     (written first — restore it to undo)
+```
+
+Nothing is written and nothing is backed up. The identity vanishes from the list, the receipt claims a recovery point, and the identity reappears on the next launch. CLAUDE.md makes this ceremony the auditable contract for mutating the user's real files; here it is an unconditional falsehood on the one destructive operation in the screen.
+
+This may be deliberate deferred scope (Phase 5.7), but it is not *marked* as such anywhere the user can see, and `DemoBanner`'s own exclusion of `TabIdentities` actively suppresses the only signal that would have made it honest.
+
+**Fix:** either wire the writes, or make the unwired flows visibly inert until they are:
+
+```go
+// cmd/gitid/wiring.go
+func (b *realBackend) DemoBanner(tab tuikit.TabID) bool { return true } // until Persist covers every action
+// or, better: gate the ceremony itself
+func (b *realBackend) DeleteDisabledReason() (string, bool) {
+    return "Delete is not wired to disk yet — nothing will be written.", true
+}
+```
+
+and add a test asserting that every `Action` a ceremony can dispatch from `TabIdentities` is either handled by a real `Persist` branch or reports a disabled reason.
+
+---
 
 ## Warnings
 
-### WR-01: Standalone Git receipt prints raw absolute backup paths
+### WR-45: CR-13's build-tag guard is bypassed by compound and parenthesized build constraints, and `KNOWN_BUILD_TAGS` can drift from the `go vet` lines it claims to mirror
 
-**File:** `cmd/gitid/wiring.go:730-741` (`CommitGit`), `cmd/gitid/wiring.go:746-748`
-**Issue:** `CommitGit` returns `journal.backups` verbatim, while
-`commitCreateTransaction` maps them through `b.displayPath` (`wiring.go:1914-1917`).
-The Git ceremony therefore renders full absolute paths that wrap across three
-terminal rows. Captured evidence
-(`ui-frames/git-configuration-mouse-field-focus.txt`):
+**File:** `Makefile:218-232` (`KNOWN_BUILD_TAGS`, `lint-tagged`), `:203-207` (the comment)
+**Severity:** WARNING
 
-```
-│ Wrote → ~/.gitconfig
-│ Backed up →
-│ /var/folders/5w/.../001/.gitconfig.bak.17
-│ 87620713903758000
-```
-
-The same raw-path leak appears in the rollback error string
-(`wiring.go:1814`), which concatenates every restoration outcome — each with a
-full absolute path — into one unbounded message.
-**Fix:** `backups = append(backups, b.displayPath(backup))` before returning from
-`commitGitTransaction`, and use `b.displayPath` in the `fail()` message builder.
-
-### WR-02: Dead branch in `commitCreateTransaction.fail` — restore failure is indistinguishable
-
-**File:** `cmd/gitid/wiring.go:1814-1818`
-**Issue:** Both arms of `if restoreErr != nil { ... } return ...` construct and
-return the identical `fmt.Errorf("%s", message)`. `restoreErr` is computed and
-then effectively unused, so a caller cannot tell "rolled back cleanly" from
-"rollback itself failed" — the single most important distinction on this path.
-**Fix:** Wrap `restoreErr` into the returned error (see CR-02's snippet) or
-delete the branch.
-
-### WR-03: ~200 lines of dead legacy transaction kept alive to defeat the linter
-
-**File:** `cmd/gitid/wiring.go:118`, `cmd/gitid/wiring.go:1594-1803`
-**Issue:** `commitCreateTransactionLegacy` is superseded by
-`commitCreateTransaction` and is referenced only by
-`var _ = (*realBackend).commitCreateTransactionLegacy` plus a
-`//nolint:unused` directive — i.e. two suppressions whose only purpose is to
-keep dead code compiling. It duplicates the rollback semantics (with the *old*
-`os.Rename(backup, target)` model) and will silently rot out of sync with the
-journal.
-**Fix:** Delete `commitCreateTransactionLegacy`, the `var _` reference, and the
-`//nolint:unused`. If any behaviour there is still needed, move it into the
-journal with a test.
-
-### WR-04: File transactions are not serialized against each other
-
-**File:** `cmd/gitid/wiring.go:88` (`mu`), `cmd/gitid/wiring.go:730-741`, `cmd/gitid/wiring.go:1557-1580`
-**Issue:** `b.mu` guards only `staged*`/`stage*Outcome`/`persistErr`. Both
-`CommitCreate` and `CommitGit` return `tea.Cmd`s that Bubble Tea executes in
-separate goroutines, and both perform read-modify-write cycles on
-`~/.gitconfig` (`WriteIncludeIf`, `WriteProviderRewrite`,
-`SetAllowedSignersFile`) and `~/.ssh/allowed_signers`. Two overlapping
-transactions interleave into a lost update, and both journals snapshot the same
-pre-state, so rollback would resurrect a stale file.
-**Fix:** Add a dedicated `txMu sync.Mutex` held for the whole of
-`commitCreateTransaction` / `commitGitTransaction`.
-
-### WR-05: Unchecking "Force SSH" silently does nothing
-
-**File:** `internal/gitconfig/renderer.go:180-187`, `cmd/gitid/wiring.go:1050-1059`
-**Issue:** `WriteProviderRewrite(..., enabled=false)` validates the provider and
-then returns `("", nil)` without touching the file, and `commitGitArtifacts`
-skips the step entirely when `!spec.ForceSSH`. In the edit flow the checkbox is
-pre-populated from the identity's stored `ForceSSH`, so a user who unchecks it
-and confirms sees a success receipt while the `[url ...] insteadOf` block stays
-in `~/.gitconfig`. The rationale (shared provider block, don't remove another
-identity's rewrite) is sound; the silence is not.
-**Fix:** Render the checkbox as informational when a shared rewrite exists, or
-surface an explicit note in the ceremony
-("Force SSH off: the shared `provider-rewrite:github.com` block is left in place
-because other identities use it").
-
-### WR-06: Redundant full-file rewrite of `~/.gitconfig` purely to force a backup
-
-**File:** `cmd/gitid/wiring.go:1060-1075`
-**Issue:** The `allowed-signers-file-backup` step reads `~/.gitconfig` and writes
-the *identical bytes* back through `filewriter.Write` just to obtain a second
-backup path — moments after `WriteIncludeIf` already backed the same file up. A
-single Configure-Git write therefore produces 3-4 `.bak.<nanos>` files (visible
-in `ui-frames/git-configuration-mouse-field-focus.txt`: two `.gitconfig.bak.*`
-in one receipt), and adds an extra non-atomic-window rewrite of the user's
-config for no new information.
-**Fix:** The journal already holds the pre-transaction snapshot
-(`journal.file(b.gitconfigPath)`); take exactly one backup for `~/.gitconfig`
-at the start of the Git phase and reuse it, instead of one per mutation step.
-
-### WR-07: `gitDir` caret is left at column 0 after `SetValue`
-
-**File:** `internal/tuikit/identities.go:1847`
-**Issue:** `m.gitPaneForm.gitDir.SetValue(orDefault(sel.GitDir, "~/git/"+sel.Name+"/"))`
-is not followed by `CursorEnd()`. This is the exact defect the codebase already
-documents and fixes for hostname/port (`identities.go:270-277`: "textinput.SetValue
-only re-homes the caret when the field was EMPTY … the user's first Backspace
-would delete nothing and their typing would PREPEND"). Here the field is
-non-empty at construction (`newTextInput("~/git/"+name+"/")`), so the caret
-never moves.
-**Fix:** `m.gitPaneForm.gitDir.CursorEnd()` after `SetValue`. Note the e2e
-mouse test (`git_configuration_pty_e2e_test.go:433-437`) only asserts
-`mustSee "extra"`, which passes for both prepend and append — it does not pin
-the resulting path.
-
-### WR-08: Visual-regression gate weakened rather than the divergence fixed
-
-**File:** `internal/screenshot/createflow.go:225-232`, `internal/screenshot/createflow.go:271-287`
-**Issue:** Two specs had their `RequiredRegions` downgraded to
-`RegionKeybar` — `create-flow-ssh-form` from `RegionFormFields`, and
-`git-form-demo` from `RegionContinueDisabledReason` (the region was deleted
-outright from `createflow_regions.go`). The form-fields divergence is now
-recorded as an accepted `ux-improvement` disposition instead of being gated.
-The net effect is that the gate no longer fails when the real binary's SSH form
-fields drift from the approved design.
-**Fix:** If the divergence is genuinely approved, keep the region in
-`RequiredRegions` and pin it with a narrow `contains:`/`absent:` allowlist
-predicate (the mechanism `parseAllowlist` already enforces) rather than removing
-it from the mandatory set.
-
-### WR-09: Blanket `\d{6,}` normalizer can mask real divergences
-
-**File:** `internal/screenshot/createflow.go:48-66`
-**Issue:** `normalizeTimestamps` now replaces *any* run of six or more digits
-with `<digits>` before comparison, justified as covering wrapped `UnixNano`
-backup suffixes. It also erases any other long numeric content (byte counts,
-key sizes, future numeric IDs) from both the real and dummy captures, so a
-genuine real-vs-dummy numeric difference is normalized into equality.
-**Fix:** Anchor the pattern to the backup suffix it targets, e.g.
-`\.bak\.\d+` plus an explicit wrapped-fragment rule, instead of a bare
-`\d{6,}` over the whole frame.
-
-### WR-10: `extractGitCeremony` start marker is over-broad
-
-**File:** `internal/screenshot/createflow_regions.go` (`extractGitCeremony`)
-**Issue:** The region starts at the first right-pane line containing
-`"Write Git identity"` **or** the bare substring `"configured"`. Any other line
-mentioning "configured" (e.g. the sidebar note
-`"no Git identity configured for this alias"`, or a future "Not configured"
-status) starts the region early and shifts the whole comparison. The sibling
-extractors in this same file were just hardened against exactly this class of
-over-broad marker (`"ssh "` → `"ssh -"`, lines 472-483).
-**Fix:** Match the full receipt shape, e.g.
-`strings.Contains(rpPlain, "Write Git identity") || strings.Contains(rpPlain, `" configured — applies via"`)`.
-
-### WR-11: `CaptureGitScreenScreens` degrades silently when the backend has <2 identities
-
-**File:** `internal/screenshot/createflow.go` (`CaptureGitScreenScreens`)
-**Issue:** The doc comment states "backend must expose at least two
-identities", but nothing checks it. With a single identity, `keyDown` is a no-op
-and `git-form-empty` captures the *same* identity as `git-form-filled`; the
-completeness loop only asserts non-emptiness, so the gate passes while silently
-losing the SSH-only checkpoint.
-**Fix:** Assert the precondition before scripting:
+**Issue:** The guard's own doc comment claims completeness: *"The guard loop below fails the instant a NEW `//go:build <tag>` line appears anywhere in the tree without a matching `go vet -tags <tag>` line added here — so this exact blindspot … cannot recur a third time on a future tag."* Two probes disprove it. Each file below contains `var x int = "nope"`:
 
 ```go
-if len(backend.InitialState().Identities) < 2 {
-	return nil, fmt.Errorf("screenshot: CaptureGitScreenScreens requires >= 2 seeded identities, got %d", n)
+//go:build screenshot && probehidden     →  make lint-tagged: "0 issues."  ✗
+//go:build (probea || probeb)            →  make lint-tagged: "0 issues."  ✗
+//go:build probetag                      →  make lint-tagged: guard fires  ✓
+```
+
+`grep -hoE '^//go:build [A-Za-z0-9_]+' | awk '{print $2}'` extracts only the first bare identifier, so `screenshot && probehidden` reports `screenshot` (a known tag) and the parenthesized form matches nothing at all — while neither file is compiled by any `go vet -tags` line. A negated constraint (`//go:build !x`) is safe, because default vet compiles it.
+
+Second, weaker gap: the guard compares found tags against the `KNOWN_BUILD_TAGS` *variable*, but the `go vet -tags` lines are hardcoded separately. Adding a name to the variable silences the guard without wiring the vet, which is precisely the "declared, not enforced" split that produced CR-13.
+
+**Fix:** derive the tag list from the recipe, and parse the whole constraint:
+
+```make
+lint-tagged:
+	@found=$$(find . -name '*.go' -not -path './.planning/*' -print0 \
+	    | xargs -0 grep -hE '^//go:build ' 2>/dev/null \
+	    | sed -e 's|^//go:build ||' -e 's/[()!]/ /g' -e 's/&&/ /g' -e 's/||/ /g' \
+	    | tr ' ' '\n' | grep -E '^[A-Za-z0-9_]+$$' | sort -u); \
+	vetted=$$(grep -oE '^\tgo vet -tags [A-Za-z0-9_]+' $(MAKEFILE_LIST) | awk '{print $$4}' | sort -u); \
+	missing=$$(comm -23 <(echo "$$found") <(echo "$$vetted")); \
+	[ -z "$$missing" ] || { echo "lint-tagged: ungated build tag(s): $$missing"; exit 1; }
+```
+
+Then add a compound-tag fixture to whatever gates the Makefile, so this specific bypass stays closed.
+
+### WR-46: the `git-strategy` region — where CR-14's bug actually rendered — carries no predicate at all, and its disposition still quotes the buggy pre-CR-14 label
+
+**File:** `internal/screenshot/createflow.go:1332-1333` (`gitStrategyDisposition`),
+`:1328-1331` (`emptyFormFieldsDisposition`, `breadcrumbDisposition`)
+**Severity:** WARNING
+
+**Issue:** The CR-14 fix comment at `:1315-1321` claims the new `contains:"gitdir:~/git/"` predicate *"actively guards against CR-14's exact regression recurring."* It guards `git-preview` only. The `git-strategy` region — the one that renders `strategyCopy`'s output — uses blanket `uxRegionDifference` with an empty `Predicate`, which `regionPredicateSatisfied` treats as *always true*. Same for `breadcrumb` and `git-form-empty`'s `git-form-fields`.
+
+Worse, the disposition's own reason string still documents the buggy text:
+
+```go
+gitStrategyDisposition := uxRegionDifference(RegionGitStrategy, "identity-name", "CTX-D-12",
+    "the gitdir strategy option's label (\"gitdir (default) — applies inside ~/<identity>/\") …")
+                                                                          ^^^^^^^^^^^^^^ pre-CR-14 shape
+```
+
+The reviewed, recorded justification for accepting divergence in that region describes exactly the string CR-14 declared a BLOCKER. The e2e allowlist has no `git-strategy` entry at all (the region normalizes to equal via `gitScreenGitDirPattern`), so neither gate carries a scoped guard for it.
+
+**Fix:** re-predicate `gitStrategyDisposition` with `contains:"gitdir:~/git/"` (the same guard `gitPreviewDisposition` uses) and correct the reason text to `"~/git/<identity>/"`. Audit the remaining blanket dispositions in `gitScreenSpecs()` the same way.
+
+### WR-47: `GitWritePlan.CreatedDirs` omits the intermediate parents `MkdirAll` creates — probe shows `~/git` created on a fresh home and never disclosed
+
+**File:** `cmd/gitid/wiring.go:772-784` (`GitWritePlan`), `:946-978` (`ensureDir`)
+**Severity:** WARNING
+
+**Issue:** `ensureDir` walks up from the target and creates **every** missing ancestor (`for current := clean; ; current = filepath.Dir(current)` … `os.Mkdir(missing[i], mode)`), recording each in `createdDirs`. `GitWritePlan` only tests the three leaf paths. Probe against a fresh home:
+
+```
+PLAN creates: [~/.gitconfig.d ~/git/acme]
+post-commit dir exists: …/001/.gitconfig.d
+post-commit dir exists: …/001/git/acme
+post-commit dir exists: …/001/git          ← created, never disclosed
+```
+
+CR-12 was raised precisely because directory creation was an undisclosed side effect of a confirmed write. The leaf case is now disclosed; the parent case is not.
+
+**Fix:** mirror `ensureDir`'s ancestor walk in the plan:
+
+```go
+addCreated := func(target string) {
+    var missing []string
+    for cur := filepath.Clean(target); cur != filepath.Clean(b.home); cur = filepath.Dir(cur) {
+        if fileExists(cur) { break }
+        missing = append(missing, b.displayPath(cur))
+    }
+    for i := len(missing) - 1; i >= 0; i-- { plan.CreatedDirs = append(plan.CreatedDirs, missing[i]) }
 }
 ```
 
-and additionally assert `out["git-form-empty"] != out["git-form-filled"]`.
+and extend `TestGitWritePlanReportsFreshHomeNoBackupsButCreatesEveryDir` to expect `~/git` alongside `~/git/acme`.
 
-### WR-12: `make test-e2e` writes non-deterministic frames into the tracked `.planning/` tree
+### WR-48: the corrected ceremony renders two byte-identical backup lines and a literal `<timestamp>` placeholder, then tells the user to "restore it to undo"
 
-**File:** `e2e/git_configuration_pty_e2e_test.go:238`, `:309`, `:385`, `:446` (via `e2e/ui_pty_e2e_test.go` `saveFrame`)
-**Issue:** Phase 4 adds four more `saveFrame` calls that `os.WriteFile` into
-`.planning/phases/05.7-.../ui-frames/`, a tracked directory. The written frames
-embed absolute sandbox paths
-(`/var/folders/5w/.../TestGitConfiguration_RealPTYMouseFieldFocus2762737905/001/...`)
-and nanosecond backup suffixes, so every run on every machine produces a
-different file and dirties the working tree. This is the same failure mode
-`TestGateVisualRegressionReadOnly` was written to prevent for the sibling gate.
-Confirmed on this working tree: six `ui-frames/*.txt` files show as modified
-after an e2e run.
-**Fix:** Write frames to `t.TempDir()` (or a gitignored `.gsd/`/`artifacts/`
-path) and attach the path via `t.Logf`; publish approved frames through an
-explicit make target, as the visual gate already does.
+**File:** `cmd/gitid/wiring.go:60-64` (`backupSuffixPreview`), `:762-767`,
+`internal/tuikit/ceremony.go:318-322`
+**Severity:** WARNING
 
-### WR-13: Dead code and a panicking slice in the gate test helper
+**Issue:** On the phase's headline flow (edit an existing identity with Force SSH on) the confirmation now reads:
 
-**File:** `cmd/gitid/gate_visual_regression_test.go:831-860`
-**Issue:** Three problems in adjacent lines:
-- `hash, err := io.ReadAll(strings.NewReader("")); _ = hash` is pure dead code
-  (and the only reason `io` is imported).
-- `strings.TrimSpace(string(hashBytes))[:7]` panics with index-out-of-range if
-  the ref file is shorter than 7 bytes.
-- `min` and `currentGitCommit` are both unreferenced anywhere in
-  `cmd/gitid`.
-
-**Fix:** Delete `min`, `currentGitCommit`, and the `io` import; if the helper is
-needed later, restore it with a length check:
-
-```go
-h := strings.TrimSpace(string(hashBytes))
-if len(h) < 7 { return "unknown" }
-return h[:7]
+```
+Backup → ~/.gitconfig.d/acme.bak.<timestamp>
+Backup → ~/.gitconfig.bak.<timestamp>
+Backup → ~/.gitconfig.bak.<timestamp>          ← byte-identical to the line above
+Backup → ~/.ssh/allowed_signers.bak.<timestamp>
+  (written first — restore it to undo)
 ```
 
-### WR-14: Reduced `ConfigureGit` state is rebuilt with an empty key path
+Two things degrade an auditable-contract screen. (1) The duplicate is real and correct — `~/.gitconfig` genuinely is backed up twice — but the disclosure gives the user no way to tell that from a rendering bug, and no way to know which of the two to restore. (2) `<timestamp>` is a literal placeholder token in user-facing copy; the instruction "restore it to undo" points at a filename that will never exist verbatim. CR-12's stated defect was *"points the user at a path that is never created"*; the naming convention is now right, the actionability is not.
 
-**File:** `internal/tuikit/identities.go:1573-1578`
-**Issue:** After a successful `GitCommitMsg`, the reducer rebuilds the spec with
-`m.gitPaneForm.spec(m.selected, "")` — an empty `keyPath` — while the write
-itself used `m.gitPaneForm.spec(sel.Name, sel.KeyPath)`. Since
-`PublicKeyPath: orDefault(g.publicKeyPath, keyPath+".pub")`, an identity whose
-`PublicKeyPath` is empty (no SSH block reconstructed) reduces to the literal
-string `".pub"` in `DemoState`, disagreeing with what was actually written.
-**Fix:** Capture the spec used for the commit on the model
-(`m.gitCommitSpec = spec` at `ceremonyConfirmed`) and reuse it when reducing,
-so the state can never describe a different write than the one performed.
-
-### WR-15: `git config --file` values starting with `-` are parsed as git options
-
-**File:** `internal/gitconfig/fragment.go:97-103` and `:124-132` (reached from `cmd/gitid/wiring.go:1039`)
-**Issue:** Phase 4 newly routes user-typed `user.name`, `user.email`, and
-`user.signingkey` values into `gitConfigSet`, which builds
-`exec.Command("git", "config", "--file", path, key, value)`. `validateValue`
-rejects only newlines and `[remote`, so a value beginning with `-` (e.g.
-`--global`, `--unset-all`, `--type=bool`) is handed to git's option parser
-rather than treated as a value. Impact is bounded (no shell, and `git config`
-rejects a second config-file option), but it is argument injection into a
-process gitid runs against the user's config, and it produces a confusing
-mid-transaction failure rather than a validation error.
-**Fix:** Reject leading `-` in `validateValue`, or terminate option parsing:
+**Fix:** collapse repeats and label the ordering:
 
 ```go
-cmd := exec.Command("git", "config", "--file", path, "--", key, value)
+// wiring.go — annotate rather than repeat
+plan.Backups = append(plan.Backups, b.displayPath(b.gitconfigPath)+backupSuffixPreview+" (again, after the includeIf write)")
+// ceremony.go — say what the token means
+b.WriteString(styleFaint.Render("  (each written before its file is modified; <timestamp> is filled in at write time — the exact paths are listed in the receipt)") + "\n")
 ```
 
-## Notes on scope
+### WR-49: unchecking Force SSH is a silent no-op — probe-confirmed round trip (was WR-38)
 
-- `internal/gitconfig/renderer.go`'s `validProviderHostname`, `safeInline`, and
-  `validSSHHasconfig` are sound: `%q` escaping plus the control-character reject
-  closes the `includeIf`-injection path I probed for.
-- `internal/identity/loader.go`'s tilde expansion for the fragment read is
-  correct and correctly scoped (`acct.FragmentPath` stays verbatim).
-- `internal/gitconfig/reader.go`'s `IsReservedBlockName` extension is correct;
-  the `provider-rewrite:<host>` prefix is validated, not merely prefix-matched.
+**File:** `internal/tuikit/store.go:244`, `internal/tuikit/identities.go:1788`,
+`cmd/gitid/wiring.go:1280-1289`
+**Severity:** WARNING
+
+**Issue:** Confirmed by executing the real transaction twice against one sandboxed home:
+
+```
+after ForceSSH=true  write : ForceSSH=true
+after ForceSSH=false write : ForceSSH=true     ← re-read from disk
+~/.gitconfig now:
+  # BEGIN gitid managed: provider-rewrite:github.com
+  [url "git@github.com:"]
+      insteadOf = https://github.com/
+  # END gitid managed: provider-rewrite:github.com
+```
+
+`commitGitArtifacts` has no removal branch (`if spec.ForceSSH && spec.Provider != ""` writes; `false` does nothing — D-06, intentional), but the reducer writes `row.ForceSSH = a.ForceSSH` unconditionally. So the session shows `☐` while disk says `☑`, and the next launch flips the checkbox back. The ceremony's WR-05 note explains the *disk* state correctly, which makes the *list* state the sole liar.
+
+**Fix:** as previously recommended — either re-read after the Git commit (the `persistCreate` path already does `return b.InitialState()`), or drop `ForceSSH` from the `ConfigureGit` payload so the row keeps its disk-derived value. Add a write-then-reload test asserting the checkbox survives the round trip. Separately, document and test the provider-scoped semantics (`Reconstruct` sets `ForceSSH: true` for *every* identity on that host).
+
+### WR-50: Enter on the Force-SSH checkbox — and on the gitdir field — opens the write ceremony instead of editing (was WR-39)
+
+**File:** `internal/tuikit/identities.go:2160-2167` (pane), `:2499-2518` (wizard),
+`:842-845` (`handleEdit`'s unreachable `"enter"` clause)
+**Severity:** WARNING
+
+**Issue:** Unchanged and confirmed. `handleGitKey`'s `case "enter"` fires regardless of `m.gitFocus` and regardless of `m.gitPaneForm.gitDirFocused`, so Enter while focused on the checkbox — or mid-edit in the gitdir path field — jumps straight to the write ceremony. `handleEdit`'s `case gitFieldForceSSH: if key == "enter" { g.forceSSH = !g.forceSSH }` is therefore dead code that reads as if the behaviour were implemented.
+
+**Fix:** route Enter to the focused control first in **both** surfaces, then keep (and test) `handleEdit`'s now-reachable `"enter"` clause:
+
+```go
+case "enter":
+    if m.gitFocus == gitFieldForceSSH || m.gitPaneForm.gitDirFocused {
+        m.gitPaneForm = m.gitPaneForm.handleEdit(msg, m.gitFocus)
+        return keyResult{model: m, handled: true}
+    }
+    if m.gitPaneForm.valid() { … }
+```
+
+### WR-51: `ConfigureGit.Name` reads `m.selected` — the divergence does not require async timing (was WR-40, assessment corrected)
+
+**File:** `internal/tuikit/identities.go:1786-1790`, `:1725-1735` (`selectedIdentity`)
+**Severity:** WARNING
+
+**Issue:** The prior review and the fixer both classified this as latent behind `gitCommitPending`. That framing is wrong. `selectedIdentity` **silently falls back to row 0** whenever `m.selected` is not present in `s.Identities`:
+
+```go
+for _, row := range s.Identities { if row.Name == m.selected { return row, true } }
+if len(s.Identities) > 0 { return s.Identities[0], true }   // fallback, `ok` discarded at :2128
+```
+
+`spec.Identity` is captured from `sel.Name` (the fallback row); `ConfigureGit{Name: m.selected}` targets the stale name. Whenever `m.selected` goes stale — the identity list is re-read from disk on every `InitialState()`, and nothing reconciles `m.selected` against it — the write lands on identity A while the reducer updates nothing (no row matches), and the note reads `Git identity "<stale>" configured.` No async window is involved; the two values diverge at the same instant. There is also no guard on `ok` at `:2128`, so with zero identities the ceremony renders `Write Git identity for ""` and dispatches a spec the backend rejects.
+
+**Fix:** `Name: spec.Identity`, note text `spec.Identity`, and honour `ok`:
+
+```go
+sel, ok := m.selectedIdentity(s)
+if !ok { return keyResult{model: m, handled: true} }
+```
+
+### WR-52: `handleWizardClick` routes the algorithm row through a bare literal `5` (was WR-41)
+
+**File:** `internal/tuikit/identities.go:2971-2976`
+**Severity:** WARNING
+
+**Issue:** Unchanged. `w.focus = 5` / `w.form.setFocus(5)` is correct only as long as `sshFieldPrefix…sshFieldPort` and `wizardFocusKeySource` keep their current values — the exact shape that produced CR-04 and CR-06.
+
+**Fix:** `w.focus = wizardFocusKeyBody` at both sites, plus the membership-guard test asserting every slot a click handler can assign is a member of `wizardStep0FocusRing(w.keySource)`.
+
+### WR-53: `displayMessage`'s substring replace fails open on symlinked HOMEs and mangles prefix-sharing siblings (was WR-42)
+
+**File:** `cmd/gitid/wiring.go:2140-2145`
+**Severity:** WARNING
+
+**Issue:** Unchanged. `strings.ReplaceAll(msg, b.home, "~")` is unanchored, and `b.home` comes from `os.UserHomeDir()` without `filepath.EvalSymlinks`. On a symlinked HOME (including this project's own `/tmp → /private/tmp` sandbox shape) nothing is scrubbed and raw absolute paths reach the receipt; `/Users/ramonaldo/x` becomes `~aldo/x`. Note `displayPath` (`:2118-2126`) is correct — it uses `filepath.Rel` — so the two sibling helpers disagree.
+
+**Fix:** anchor on the separator and cover both spellings, longest first, as previously specified; add a symlinked-HOME fixture and a prefix-sharing-sibling fixture.
+
+### WR-54: stale cross-reference to `splitAllowlistLine`, a symbol deleted three iterations ago (was WR-43)
+
+**File:** `e2e/git_configuration_pty_e2e_test.go:730`
+**Severity:** WARNING
+
+**Issue:** Confirmed still live. `grep -rn "splitAllowlistLine" cmd/ internal/ e2e/` returns exactly one hit — this comment. It claims a shared implementation that does not exist, which is materially misleading given that CR-10/CR-16 show the two gates' predicate logic really is duplicated and really does need one source of truth.
+
+**Fix:** describe the inline parser, or point at a shared predicate helper once one exists.
+
+### WR-55: `identity.Update` writes `allowed_signers` **before** the validating `WriteFragment` — and has zero production callers
+
+**File:** `internal/identity/update.go:89-92` vs `:104-106`
+**Severity:** WARNING
+
+**Issue:** The only thing that keeps CR-18's newline vector closed on the Phase-4 path is ordering: `commitGitArtifacts` runs `gitconfig.WriteFragment` (which calls `validateEmail`) at step `git-fragment`, before `keygen.WriteAllowedSignersReplacing` at step `allowed-signers`. `identity.Update` reverses exactly that:
+
+```go
+signersLine := keygen.AllowedSignersLine(edited.GitEmail, pubLine)   // :89  unvalidated
+deps.WriteAllowedSigners(edited.AllowedSignersPath, existing.Name, signersLine)  // :90  WRITES
+…
+deps.WriteFragment(edited.FragmentPath, edited.GitName, edited.GitEmail, …)      // :104 validates, aborts
+```
+
+A malformed e-mail is persisted into `~/.ssh/allowed_signers` and *then* the update fails, leaving the corrupted file behind. This is not currently reachable — `grep -rn "identity.Update("` outside `_test.go` returns nothing, so the function is dead code — but it is live proof that the "safety by incidental ordering" the package relies on is already violated in-tree.
+
+**Fix:** fix CR-18 at the boundary (which makes the ordering irrelevant), and either delete `identity.Update` or wire it. Independently, move `WriteFragment` ahead of `WriteAllowedSigners` in `Update` so the two write paths agree on ordering.
+
+### WR-56: `NewBackupPath` still mints a naming convention `filewriter` never produces — CR-12's stated minimum fix was not applied
+
+**File:** `internal/tuikit/store.go:448-451`, consumers at
+`internal/tuikit/identities.go:1938`, `:1980`, `:2251`, `:2267`, `:2310`
+**Severity:** WARNING
+
+**Issue:** The prior review's CR-12 said: *"At minimum, and independently of the seam work, `NewBackupPath`'s suffix must be changed to `.bak.` so the declared and actual naming conventions cannot disagree, and a test must pin `NewBackupPath`'s format against `filewriter`'s."* Neither was done. `NewBackupPath` still returns `<file>.backup.<ISO>` while `filewriter.Write` (`filewriter.go:138`) mints `<file>.bak.<unix-nanos>`, and five UI call sites still use it. The Configure-Git ceremony was migrated off it; every other ceremony was not (see CR-19 for why that currently matters more than a naming nit).
+
+**Fix:** change the suffix to `.bak.` and add the pinning test:
+
+```go
+func TestNewBackupPathMatchesFilewriterNamingConvention(t *testing.T) {
+    real, _ := filewriter.Write(seeded, []byte("x"), 0o600)
+    if !strings.Contains(filepath.Base(NewBackupPath("~/f")), ".bak.") ||
+       !strings.Contains(filepath.Base(real), ".bak.") {
+        t.Fatalf("declared %q and actual %q disagree", NewBackupPath("~/f"), real)
+    }
+}
+```
+
+### WR-57: `normalizeForRegion` is a no-op whose doc comment describes work it does not do
+
+**File:** `internal/screenshot/createflow_packet.go:1487-1494`
+**Severity:** WARNING
+
+**Issue:**
+
+```go
+// normalizeForRegion strips disposable absolute temp-path prefixes and
+// timestamp strings from a capture for stable region comparison — retaining
+// full commands, outputs, config values, ANSI semantic codes, and markers.
+func normalizeForRegion(text string) string {
+	return text
+}
+```
+
+It is called six times on the hot path of `BuildRegionDiffs` and does nothing. Whether the normalization genuinely moved upstream (the trailing comment suggests it did) or was lost, the comment as written is the same "asserts a guarantee the body does not provide" defect that produced WR-28, CR-13, CR-11 and CR-17 — and it sits on the function every region hash is derived through.
+
+**Fix:** delete the function and inline the identity, or restore the normalization and test it. If it truly is redundant with `CaptureCreateFlowScreens`' `normalizeTimestamps`, say that in one line and delete the body's misleading claim.
+
+### WR-58: `AllRegionNames()` still has no exhaustiveness guard — a new `RegionName` constant is silently never compared
+
+**File:** `internal/screenshot/createflow_regions.go:637-656`
+**Severity:** WARNING
+
+**Issue:** WR-36's concrete half landed (`RegionContinueDisabledReason` and its extractor are gone; 16 constants match 16 slice entries today). The structural half did not. `BuildRegionDiffs` and `ValidateRegionDiffs` both iterate `AllRegionNames()`, so any constant omitted from that hand-maintained slice is invisible to every gate, with no compile-time or test-time link between the two.
+
+**Fix:** add the guard the prior review specified — a test that enumerates every declared `RegionName` (hand-kept `EveryRegionConstant()` or a `go:generate` extraction) and asserts membership in `AllRegionNames()`.
+
+### WR-59: `gitScreenPredicateSatisfied` — the e2e half of CR-10's fix — has no direct test coverage
+
+**File:** `e2e/git_configuration_pty_e2e_test.go:872-882`
+**Severity:** WARNING
+
+**Issue:** `grep -rn "gitScreenPredicateSatisfied" e2e/` returns its definition and one call site. There is no unit test. Its sibling `regionPredicateSatisfied` is the *only* function in this pair whose grammar is actually verified (`TestRegionPredicateSatisfiedRejectsSymmetricCases`), and the two are kept in sync by comment alone. Given CR-17, comment-enforced synchronisation between two copies of security-relevant gate logic is not adequate.
+
+**Fix:** extract the predicate into one shared, tested helper both gates import (the e2e package can import an exported `screenshot.PredicateSatisfied`), or mirror `TestRegionPredicateSatisfiedRejectsSymmetricCases` verbatim into the e2e package.
+
+### WR-60: `gpg.ssh.allowedSignersFile` is written as an absolute HOME path, unlike every other gitid-written path in `~/.gitconfig`, and is not disclosed in the ceremony
+
+**File:** `cmd/gitid/wiring.go:1305`, `internal/gitconfig/fragment.go:87-92`
+**Severity:** WARNING
+
+**Issue:** Observed on disk after a real commit:
+
+```
+# BEGIN gitid managed: acme
+[includeIf "gitdir:~/git/acme/"]
+	path = ~/.gitconfig.d/acme            ← tilde form
+# END gitid managed: acme
+[gpg "ssh"]
+	allowedSignersFile = /var/folders/…/001/.ssh/allowed_signers   ← absolute
+```
+
+Two consequences: the file is not portable (a moved or differently-named HOME silently breaks signature verification, with no gitid diagnostic), and the raw absolute path is written outside any managed block — so it is also outside `filewriter.ReplaceBlock`'s idempotency guarantee and outside the doctor's reserved-block accounting. It is likewise absent from the ceremony's `Targets`/`Preview` disclosure, even though it mutates `~/.gitconfig` a third time in the same transaction (after `WriteIncludeIf` and `WriteProviderRewrite`).
+
+**Fix:** write the tilde form and disclose the key:
+
+```go
+if writeErr := gitconfig.SetAllowedSignersFile(b.gitconfigPath, "~/.ssh/allowed_signers"); writeErr != nil { … }
+```
+
+(git expands `~` for this value.) Add it to `GitWritePlan`'s preview text, and a test asserting `~/.gitconfig` contains no absolute HOME path after a commit.
 
 ---
 
-_Reviewed: 2026-08-24T21:35:00Z_
+## Verdict on the fixer's 7 skips (explicitly requested)
+
+| Skip | Verdict this pass |
+|---|---|
+| **WR-38** Force-SSH desync | **Confirmed, evidence strengthened.** Reproduced end-to-end against the real backend (two `commitGitTransaction` runs, disk re-read). Carried as **WR-49**, WARNING — it is a silent no-op on a user's explicit choice, not merely a stale row. |
+| **WR-39** Enter on checkbox | **Confirmed, scope widened.** Also fires while the *gitdir path field* is focused (`m.gitPaneForm.gitDirFocused` is not consulted at `:2160`). Carried as **WR-50**, WARNING. |
+| **WR-40** `Name: m.selected` | **Assessment corrected — no longer "latent behind gitCommitPending".** `selectedIdentity`'s discarded-`ok` fallback makes the divergence synchronous. Carried as **WR-51**, WARNING (not escalated: it needs a stale `m.selected`, which requires an external list change). |
+| **WR-41** bare `5` | **Confirmed unchanged.** Carried as **WR-52**, WARNING. Correctly assessed as latent. |
+| **WR-42** `displayMessage` | **Confirmed unchanged.** Carried as **WR-53**, WARNING. Note the sibling `displayPath` already does it correctly — the fix is a two-line alignment, not a research task. |
+| **WR-43** stale comment | **Confirmed unchanged.** Carried as **WR-54**, WARNING. |
+| **WR-44** unvalidated principal | **Confirmed and ESCALATED to BLOCKER (CR-18).** The fixer was right to flag it as the priority. It is worse than described: the exploitable field is not the newline (blocked today by widget sanitisation, `ReadFragment`'s truncation, and step ordering) but the **comma-separated principal list**, which every existing layer accepts and which the prior review's proposed fix would not have caught. Proven end-to-end through `commitGitTransaction` and against real `ssh-keygen -Y verify`. |
+
+**Interaction between the skips:** WR-49 and WR-51 both write into the same `ConfigureGit` payload and should be fixed together (one is "stop trusting the optimistic reducer", the other is "stop reading live model state") — fixing only one leaves the reducer half-authoritative. WR-55 is the same defect family as CR-18 and must be resolved by the same boundary validation, not separately.
+
+---
+
+## Convergence assessment (explicitly requested)
+
+**This loop has not converged, and the two halves of the work are converging at very different rates.**
+
+**Product code is converging.** Every product-side fix this pass survived an independent mutation-revert probe: BL-15, WR-35, CR-14, CR-12 (including a 4-scenario fidelity check against the real transaction), WR-36, WR-37. The CR-04 → CR-06 → CR-08 regression chain has stayed closed for two consecutive iterations. Of the five BLOCKERs raised this pass, only two (CR-18, CR-19) are in product code, and CR-19 is plausibly deferred scope rather than a defect introduced by this phase.
+
+**The evidence apparatus is not converging, and the trend is flat.** Four consecutive iterations have each produced a new BLOCKER in the same three files — `internal/screenshot/createflow.go`, `cmd/gitid/gate_visual_regression_test.go`, `Makefile` — and each fix has been proven insufficient by the following pass:
+
+- WR-19 → WR-27 → CR-10 → **CR-17** (the predicate's own regression test is vacuous) + **CR-16** (the predicate is not enforced where the evidence is validated)
+- CR-04 → CR-11 → **CR-16** (the exhaustive control skips 27.5 % of regions by construction)
+- WR-28 → CR-13 → **WR-45** (the anti-recurrence guard is bypassable)
+
+**This pass did find a genuinely new class**, which is why I do not think the loop has simply run out of signal: **CR-15** is not a variation on a known finding type. Every prior gate finding was "the classification logic is too permissive." CR-15 is "the comparison being classified cannot observe the defect at all" — a real/dummy diff over a shared renderer. It subsumes and explains the previous three: three iterations of BLOCKER work went into narrowing which divergences are accepted, when the regression under discussion produces **no divergence**. Two further new classes appeared: build-time vs validate-time enforcement asymmetry (CR-16), and a confirmation ceremony for a write that is not wired (CR-19).
+
+**Recommendation to the orchestrator:**
+
+1. **Stop running unattended fixer iterations on the gate.** CR-15 needs a design decision a fixer cannot make: whether the real-vs-dummy comparison can serve as Phase 4 acceptance evidence at all, given D-12's explicit prohibition on substituting unit tests. Four automated attempts have each produced a locally-correct fix to a mechanism that does not do what the phase needs.
+2. **Fix CR-18 first, on its own.** It is a self-contained ~15-line change plus a table test, it is the only finding with a security impact, and it is independent of everything else.
+3. **Then CR-17 + CR-16 together** (one gate, one commit) and the product warnings WR-49/WR-51, WR-47/WR-48.
+4. **Route CR-19 back to the human** — "delete announces a backup and writes nothing on a tab with no demo banner" is either a scope decision or a P0, and the reviewer cannot tell which from the code.
+5. **Do not accept another `04-REVIEW-FIX.md` that reports red-before-fix evidence without the reverted-source diff.** CR-17 shows a claimed red-before-fix that does not reproduce; that specific verification claim is now the loop's weakest link.
+
+---
+
+_Reviewed: 2026-08-25T09:40:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+_Iteration: 5 (adversarial re-review of 04-REVIEW-FIX.md iteration 4 + full-state sweep)_
