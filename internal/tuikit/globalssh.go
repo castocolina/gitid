@@ -71,18 +71,39 @@ func withToggled(set map[string]bool, key string) map[string]bool {
 
 // globalSSHModel is the Global SSH tab child model.
 type globalSSHModel struct {
-	subTab        gssSubTab
-	mode          gssMode
-	detailKey     string
-	chosen        map[string]bool
+	// backend is the injected options/commit seam. The model fetches the
+	// option states on activation and never renders fixture data for a row
+	// the backend could have answered.
+	backend Backend
+	subTab  gssSubTab
+	mode    gssMode
+	// detailKey is the selected option row's key.
+	detailKey string
+	chosen    map[string]bool
+	// storageChoice is the STORE-01 radio selection (Storage sub-tab, still
+	// demo until plan 06-05).
 	storageChoice SSHStorageLayout
 	ceremony      ceremonyModel
+	// options is the live Options-sub-tab row set fetched from the backend on
+	// activation; optionsErr carries the fetch failure the pane renders
+	// instead of a blank body (GSSH-01 advisory posture).
+	options    []GlobalSSHOptionView
+	optionsErr string
+	// applyCommitPending gates the apply ceremony's receipt: ApplySSH is
+	// dispatched only from handleMsg once GlobalSSHCommitMsg arrives with an
+	// empty Err, never optimistically on ceremonyFinished (mirrors
+	// identities.go's gitCommitPending). appliedKeys is the EXACT key set
+	// captured at ceremonyConfirmed, so the receipt's action describes the
+	// write that actually happened.
+	applyCommitPending bool
+	appliedKeys        []string
 }
 
-// newGlobalSSHModel mirrors GlobalSsh.tsx's initial state: IdentitiesOnly
-// detail, every needs-action option pre-chosen EXCEPT ForwardAgent (the
-// fixture user's deliberate decline).
-func newGlobalSSHModel() globalSSHModel {
+// newGlobalSSHModel mirrors GlobalSsh.tsx's initial state: the fixture's
+// IdentitiesOnly detail, every needs-action option pre-chosen EXCEPT
+// ForwardAgent (the fixture user's deliberate decline). The option states
+// themselves come from the backend on activation.
+func newGlobalSSHModel(b Backend) globalSSHModel {
 	chosen := map[string]bool{}
 	for _, o := range GlobalSSHOptions {
 		if o.NeedsAction && o.Key != "ForwardAgent" {
@@ -90,38 +111,85 @@ func newGlobalSSHModel() globalSSHModel {
 		}
 	}
 	return globalSSHModel{
+		backend:       b,
 		detailKey:     "IdentitiesOnly",
 		chosen:        chosen,
 		storageChoice: StorageSentinel,
 	}
 }
 
-// activate syncs the storage radio with the live state.
+// activate syncs the storage radio with the live state and fetches the
+// Options sub-tab rows from the backend. A non-nil fetch error stores an
+// empty slice plus an error note the pane renders instead of a blank body.
 func (m globalSSHModel) activate(s DemoState) (screenModel, tea.Cmd) {
 	m.storageChoice = s.SSHStorage
+	options, err := m.backend.GlobalSSHOptionStates()
+	m.options = options
+	if err != nil {
+		m.options = nil
+		m.optionsErr = err.Error()
+	}
 	return m, nil
 }
 
-func (m globalSSHModel) handleMsg(tea.Msg, DemoState) keyResult { return keyResult{model: m} }
+// handleMsg completes the asynchronous apply commit once the backend's
+// command has answered. The receipt is reachable ONLY from an explicit
+// success; the ApplySSH reducer action is dispatched here, never
+// optimistically.
+func (m globalSSHModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
+	if commit, ok := msg.(GlobalSSHCommitMsg); ok && m.mode == gssApplyCeremony && m.applyCommitPending {
+		m.applyCommitPending = false
+		if commit.Err != "" {
+			message := commit.Err
+			if len(commit.Restored) > 0 {
+				message += " (restored: " + strings.Join(commit.Restored, "; ") + ")"
+			}
+			m.ceremony = m.ceremony.commitFailed(message)
+			return keyResult{model: m}
+		}
+		m.ceremony = m.ceremony.commitSucceeded(commit.Backups)
+		plural := "s"
+		if len(m.appliedKeys) == 1 {
+			plural = ""
+		}
+		return keyResult{
+			model:   m,
+			note:    fmt.Sprintf("%d global SSH option%s applied.", len(m.appliedKeys), plural),
+			actions: []Action{ApplySSH{Keys: m.appliedKeys, Backup: firstBackup(commit.Backups)}},
+		}
+	}
+	return keyResult{model: m}
+}
 
 // appliedOption is one option after the applied-state overlay.
 type appliedOption struct {
-	GlobalSSHOption
+	GlobalSSHOptionView
 	applied bool
 }
 
-// overlaidOptions maps the fixture options through the applied overlay:
-// keys the user applied render as current=recommended, needsAction=false,
+// needsAction reports whether the row still wants action: an explicitly
+// applied row never does, and a row whose backend state is already-set,
+// differs, or not-applicable does what its state says.
+func (o appliedOption) needsAction() bool {
+	if o.applied {
+		return false
+	}
+	return o.State == GlobalSSHNeedsAction
+}
+
+// overlaidOptions maps the model's LIVE backend views through the applied
+// overlay: keys the user applied render as current=recommended, applied=true,
 // one-liner prefixed "Applied by gitid — ".
-func overlaidOptions(s DemoState) []appliedOption {
-	out := make([]appliedOption, 0, len(GlobalSSHOptions))
-	for _, o := range GlobalSSHOptions {
-		entry := appliedOption{GlobalSSHOption: o}
+func (m globalSSHModel) overlaidOptions(s DemoState) []appliedOption {
+	out := make([]appliedOption, 0, len(m.options))
+	for _, o := range m.options {
+		entry := appliedOption{GlobalSSHOptionView: o}
 		for _, k := range s.SSHApplied {
 			if k == o.Key {
-				entry.Current = o.Recommended
-				entry.NeedsAction = false
+				entry.CurrentValue = o.Recommended
+				entry.State = GlobalSSHAlreadySet
 				entry.OneLiner = "Applied by gitid — " + o.OneLiner
+				entry.Explanation = entry.OneLiner
 				entry.applied = true
 			}
 		}
@@ -134,18 +202,18 @@ func overlaidOptions(s DemoState) []appliedOption {
 func pendingOptions(options []appliedOption) []appliedOption {
 	var out []appliedOption
 	for _, o := range options {
-		if o.NeedsAction {
+		if o.needsAction() {
 			out = append(out, o)
 		}
 	}
 	return out
 }
 
-// applyChosen is the chosen ∩ pending key set, in fixture order.
+// applyChosen is the chosen ∩ pending key set, in row order.
 func (m globalSSHModel) applyChosen(options []appliedOption) []string {
 	var keys []string
 	for _, o := range options {
-		if o.NeedsAction && m.chosen[o.Key] {
+		if o.needsAction() && m.chosen[o.Key] {
 			keys = append(keys, o.Key)
 		}
 	}
@@ -193,22 +261,26 @@ func includePreviewOwned(s DemoState) string {
 }
 
 // applyCeremonyFor builds the Apply-selected ceremony: `+` per chosen key,
-// context for already-set options, and an explicit declined line per
-// pending-but-unchecked option (advisory, never required).
+// context for already-set options, an explicit declined line per
+// pending-but-unchecked option (advisory, never required), and — from the
+// backend's plan — the resolved TARGET FILE the write will actually touch and
+// its diff. The ceremony is ASYNC: confirmation dispatches the backend commit
+// and the receipt is reachable only from that commit's explicit success
+// (ceremony.go's Async contract), exactly like the standalone Git ceremony.
 func (m globalSSHModel) applyCeremonyFor(s DemoState) ceremonyModel {
-	options := overlaidOptions(s)
+	options := m.overlaidOptions(s)
 	pending := pendingOptions(options)
 	chosen := m.applyChosen(options)
 	var lines []string
 	for _, k := range chosen {
-		for _, o := range GlobalSSHOptions {
+		for _, o := range options {
 			if o.Key == k {
 				lines = append(lines, "+ "+o.Key+" "+o.Recommended)
 			}
 		}
 	}
 	for _, o := range options {
-		if !o.NeedsAction {
+		if !o.needsAction() {
 			lines = append(lines, "  "+o.Key+" "+o.Recommended+" (already set)")
 		}
 	}
@@ -217,22 +289,40 @@ func (m globalSSHModel) applyCeremonyFor(s DemoState) ceremonyModel {
 			lines = append(lines, "  "+o.Key+" — left unchanged (declined; advisory)")
 		}
 	}
-	target := "~/.ssh/config"
-	if s.SSHStorage == StorageInclude {
-		target = "~/.ssh/config.d/gitid.config"
+
+	plan, _ := m.backend.GlobalSSHApplyPlan(chosen)
+	targets := plan.Targets
+	if len(targets) == 0 {
+		// The backend's plan always resolves the storage target (D-07); this
+		// fallback keeps the ceremony buildable for a stub that answers an
+		// empty plan.
+		fallback := "~/.ssh/config"
+		if s.SSHStorage == StorageInclude {
+			fallback = "~/.ssh/config.d/gitid.config"
+		}
+		targets = []string{fallback}
+	}
+	backups := plan.Backups
+	if len(backups) == 0 {
+		backups = []string{NewBackupPath(targets[0])}
+	}
+	preview := plan.Diff
+	if preview == "" {
+		preview = strings.Join(lines, "\n")
 	}
 	rest := ""
 	if len(pending)-len(chosen) > 0 {
 		rest = " The rest were left unchanged, as chosen."
 	}
 	return newCeremony(ceremonyConfig{
-		Heading:       "Write Host * managed block to ~/.ssh/config",
-		Targets:       []string{target},
-		Backups:       []string{NewBackupPath("~/.ssh/config")},
-		Preview:       strings.Join(lines, "\n"),
+		Heading:       "Write Host * managed block to " + targets[0],
+		Targets:       targets,
+		Backups:       backups,
+		Preview:       preview,
 		PreviewDiff:   true,
 		ResultMessage: fmt.Sprintf("%d of %d recommended options applied to Host *.%s", len(chosen), len(pending), rest),
 		ConfirmLabel:  "Apply selected",
+		Async:         true,
 	})
 }
 
@@ -264,22 +354,25 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 	key := msg.String()
 
 	if m.mode == gssApplyCeremony {
+		if m.applyCommitPending {
+			// In flight: keys are inert until the commit result arrives.
+			return keyResult{model: m, handled: true}
+		}
 		var outcome ceremonyOutcome
 		m.ceremony, outcome = m.ceremony.handleKey(msg)
 		switch outcome {
 		case ceremonyCancelled:
 			m.mode = gssBrowse
+		case ceremonyConfirmed:
+			// Dispatch the async commit; the receipt is reached only from the
+			// commit's explicit success (handleMsg), never optimistically.
+			keys := m.applyChosen(m.overlaidOptions(s))
+			m.appliedKeys = keys
+			m.applyCommitPending = true
+			return keyResult{model: m, handled: true, cmd: m.backend.CommitGlobalSSH(keys)}
 		case ceremonyFinished:
-			keys := m.applyChosen(overlaidOptions(s))
 			m.mode = gssBrowse
-			plural := "s"
-			if len(keys) == 1 {
-				plural = ""
-			}
-			return keyResult{model: m, handled: true,
-				note:    fmt.Sprintf("%d global SSH option%s applied.", len(keys), plural),
-				actions: []Action{ApplySSH{Keys: keys, Backup: NewBackupPath("~/.ssh/config")}}}
-		case ceremonyNone, ceremonyConfirmed:
+		case ceremonyNone:
 		}
 		return keyResult{model: m, handled: true}
 	}
@@ -299,7 +392,12 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		return keyResult{model: m, handled: true}
 	}
 
-	options := overlaidOptions(s)
+	options := m.overlaidOptions(s)
+	if m.subTab == gssOptions && len(options) == 0 {
+		// No rows (the backend could not answer): every row key is inert; the
+		// pane renders the error note.
+		return keyResult{model: m, handled: true}
+	}
 	switch key {
 	case "left", "right":
 		if m.subTab == gssOptions {
@@ -330,7 +428,7 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 	case "space":
 		if m.subTab == gssOptions {
 			o := options[m.detailIndex(options)]
-			if o.NeedsAction {
+			if o.needsAction() {
 				m.chosen = withToggled(m.chosen, o.Key)
 			}
 		}
@@ -413,12 +511,12 @@ func (m globalSSHModel) handleClick(x, y, width, height int, s DemoState) keyRes
 	if x >= masterListWidth(width) || y < gssOptionsTopLines(s) {
 		return keyResult{model: m}
 	}
-	options := overlaidOptions(s)
+	options := m.overlaidOptions(s)
 	row := (y - gssOptionsTopLines(s)) / optionRowLines
 	if row >= len(options) {
 		return keyResult{model: m}
 	}
-	if options[row].NeedsAction && m.clickOnCheckbox(x, y, width, height, s) {
+	if options[row].needsAction() && m.clickOnCheckbox(x, y, width, height, s) {
 		// The checkbox cell toggles THAT row without moving the selection
 		// (GlobalSsh.tsx:185 — Checkbox onClick stops propagation).
 		m.chosen = withToggled(m.chosen, options[row].Key)
@@ -522,7 +620,7 @@ func truncLine(line string, width int) string {
 
 // view implements screenModel.
 func (m globalSSHModel) view(s DemoState, width, height int) screenView {
-	options := overlaidOptions(s)
+	options := m.overlaidOptions(s)
 	pending := pendingOptions(options)
 	chosen := m.applyChosen(options)
 
@@ -548,14 +646,22 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 		capturesKeys = true // the ceremony consumes every plain key
 	case gssBrowse:
 		if m.subTab == gssOptions {
-			body = m.renderOptions(s, options, width, height)
-			actions = []FooterAction{
-				{Key: "↑↓", Label: "select option"},
-				{Key: "←→", Label: "Options / Storage"},
-				{Key: "space", Label: "toggle"},
-			}
-			if len(chosen) > 0 {
-				actions = append(actions, FooterAction{Key: "a", Label: fmt.Sprintf("apply %d selected", len(chosen))})
+			if m.optionsErr != "" {
+				// Advisory posture extends to the detection layer: the pane
+				// renders the error note, never a blank body.
+				body = m.subTabStrip() + "\n " + styleWarning.Render("! "+m.optionsErr) + "\n\n " +
+					styleFaint.Render("The option states could not be read from this machine.")
+				actions = []FooterAction{{Key: "←→", Label: "Options / Storage"}}
+			} else {
+				body = m.renderOptions(s, options, width, height)
+				actions = []FooterAction{
+					{Key: "↑↓", Label: "select option"},
+					{Key: "←→", Label: "Options / Storage"},
+					{Key: "space", Label: "toggle"},
+				}
+				if len(chosen) > 0 {
+					actions = append(actions, FooterAction{Key: "a", Label: fmt.Sprintf("apply %d selected", len(chosen))})
+				}
 			}
 		} else {
 			body = m.renderStorage(s, width, height)
@@ -581,19 +687,27 @@ func (m globalSSHModel) renderOptions(s DemoState, options []appliedOption, widt
 	var listRows []string
 	selIdx := m.detailIndex(options)
 	for i, o := range options {
-		listRows = append(listRows, optionRow(o.Key, o.Current, o.Recommended, o.Risk, o.NeedsAction, m.chosen[o.Key], i == selIdx, o.applied, listWidth))
+		listRows = append(listRows, optionRow(o.Key, o.CurrentValue, o.Recommended, o.Risk, o.needsAction(), m.chosen[o.Key], i == selIdx, o.applied, listWidth))
 	}
 	list := strings.Join(listRows, "\n")
 
 	detail := options[selIdx]
-	explanation := detail.OneLiner
-	if detail.Key == "IdentitiesOnly" {
-		explanation = GlobalSSHDetailExplanation
+	explanation := detail.Explanation
+	if explanation == "" {
+		explanation = detail.OneLiner
 	}
 	var d strings.Builder
 	d.WriteString(" " + styleBold.Render(detail.Key) + "\n")
 	d.WriteString(" " + styleInfo.Render("~ "+GlobalSSHAdvisoryNote) + "\n\n")
 	d.WriteString(" " + explanation + "\n")
+	// D-03: provenance renders in the detail block — longer label text in an
+	// existing slot, never a new row.
+	if detail.Provenance != "" {
+		d.WriteString(" " + styleFaint.Render(detail.Provenance) + "\n")
+	}
+	if detail.ProbeError != "" {
+		d.WriteString(" " + styleWarning.Render("! "+detail.ProbeError) + "\n")
+	}
 	// Wrap to the pane width, then clip with a VISIBLE cue — long option
 	// explanations must never be silently cut mid-sentence (H3).
 	detailPane := fitPane(lipgloss.NewStyle().Width(detailWidth).Render(d.String()), rows)

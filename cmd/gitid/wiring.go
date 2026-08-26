@@ -144,6 +144,13 @@ type realBackend struct {
 var _ tuikit.Backend = (*realBackend)(nil)
 var _ tuikit.IdentityPlanner = (*realBackend)(nil)
 
+// plan 06-01 seam pin: the real composition root implements the global-SSH
+// planner seam from backend.go. It must NOT get there by embedding
+// NoopGlobalSSHPlanner — a reflection test in wiring_test.go asserts the
+// struct carries no such anonymous field, so a missing real implementation
+// stays a compile error, not a silent sentinel.
+var _ tuikit.GlobalSSHPlanner = (*realBackend)(nil)
+
 // buildBackend constructs the real tuikit.Backend. It is the only production
 // caller of buildIdentityDeps, and the only place cmd/gitid resolves the
 // user's configuration paths.

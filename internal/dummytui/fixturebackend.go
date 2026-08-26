@@ -414,6 +414,59 @@ func (FixtureBackend) CommitNewKey(string) tea.Cmd {
 }
 
 // ---------------------------------------------------------------------------
+// Global SSH options (plan 06-01) — the Options sub-tab seam, projected from
+// the frozen fixture so the demo's rendering stays byte-identical.
+// ---------------------------------------------------------------------------
+
+// GlobalSSHOptionStates projects the frozen GlobalSSHOptions fixture into the
+// live view shape: Current/Recommended/Risk/OneLiner are the fixture's own
+// values, and the NeedsAction flag becomes the row State. The provenance is a
+// fixture-friendly label — the real backend names the actual file and line;
+// the demo never probes a machine.
+func (FixtureBackend) GlobalSSHOptionStates() ([]tuikit.GlobalSSHOptionView, error) {
+	out := make([]tuikit.GlobalSSHOptionView, 0, len(tuikit.GlobalSSHOptions))
+	for _, o := range tuikit.GlobalSSHOptions {
+		explanation := o.OneLiner
+		if o.Key == "IdentitiesOnly" {
+			explanation = tuikit.GlobalSSHDetailExplanation
+		}
+		state := tuikit.GlobalSSHAlreadySet
+		if o.NeedsAction {
+			state = tuikit.GlobalSSHNeedsAction
+		}
+		out = append(out, tuikit.GlobalSSHOptionView{
+			Key:          o.Key,
+			CurrentValue: o.Current,
+			Provenance:   "fixture value — the demo does not probe this machine",
+			Recommended:  o.Recommended,
+			Risk:         o.Risk,
+			OneLiner:     o.OneLiner,
+			Explanation:  explanation,
+			State:        state,
+		})
+	}
+	return out, nil
+}
+
+// GlobalSSHApplyPlan is deliberately EMPTY for the demo: the ceremony falls
+// back to its own fixture-derived target/backup/preview (the frozen Phase-2
+// shape), and the demo never computes a real diff. The REAL backend returns
+// the resolved storage target, promised backups and a genuine diff.
+func (FixtureBackend) GlobalSSHApplyPlan([]string) (tuikit.GlobalSSHApplyPlanView, error) {
+	return tuikit.GlobalSSHApplyPlanView{}, nil
+}
+
+// CommitGlobalSSH keeps the approved dummy apply flow in memory — it never
+// touches HOME, reporting the fixture receipt after the same brief tick the
+// other async fixture commands use.
+func (FixtureBackend) CommitGlobalSSH([]string) tea.Cmd {
+	backup := tuikit.NewBackupPath("~/.ssh/config")
+	return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
+		return tuikit.GlobalSSHCommitMsg{Backups: []string{backup}}
+	})
+}
+
+// ---------------------------------------------------------------------------
 // Clone (D-14/D-15/D-16/D-17, MGR-04) — plan 05-05.
 // ---------------------------------------------------------------------------
 
