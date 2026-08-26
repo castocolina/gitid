@@ -115,6 +115,23 @@ Only close a phase and advance once all nine are evidenced.
     plan execution when a configured external provider exists is the exact
     mistake this rule exists to prevent; it previously caused an avoidable
     session-limit stall mid-run.
+13. **Prefer the `codegraph` MCP tool (`codegraph_explore`) over Grep/Read
+    loops for code exploration, in every executor — this session's own
+    subagents and cross-AI dispatches alike.** `codegraph` is registered as
+    an MCP server for both Claude Code (`~/.claude.json`) and opencode
+    (`~/.config/opencode/opencode.jsonc`), and this project already has a
+    built index (`.codegraph/codegraph.db`). One `codegraph_explore` call
+    returns the verbatim source of relevant symbols across files plus their
+    call graph and blast radius — the same job a dozen-plus sequential
+    Grep/Read calls does, at a fraction of the tool-call count and time.
+    Cross-AI dispatches (Rule 12) that had no `codegraph` MCP access
+    repeatedly burned 15-90+ minutes per plan in pure sequential-read
+    exploration before ever writing code — the single largest source of
+    wasted wall-clock time in this phase's execution. Every executor prompt
+    (cross-AI or on-session `gsd-executor`) must instruct the agent to try
+    `codegraph_explore` first for "how does X work" / "where is X defined" /
+    "what calls X" questions, falling back to Grep/Glob/Read only when
+    `codegraph` is unavailable or its answer is insufficient.
 
 ## Phase 9 External Account Policy
 
