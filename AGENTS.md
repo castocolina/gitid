@@ -34,6 +34,27 @@ through real PTY interaction. HTML/MUI artifacts are Phase-2 design history and
 are not a later-phase parity target. Every UI difference must be classified as
 an improvement or a defect; unclassified differences fail automated review.
 
+## Code Exploration
+
+Before any Grep/Read loop to answer "how does X work," "where is X defined,"
+or "what calls X," use the `codegraph_explore` MCP tool. It is registered for
+both Claude Code and opencode, and this repo has a built index
+(`.codegraph/codegraph.db`). One call returns verbatim source across files
+plus the call graph — the same job as a dozen-plus sequential Grep/Read
+calls, at a fraction of the tool-call count and time. This was the single
+largest source of wasted wall-clock time in cross-AI plan execution before
+the tool was registered for opencode.
+
+Before starting ANY task in this repo, run `codegraph index || codegraph init -i`
+once to make sure the index reflects the current tree (the file watcher lags
+writes by ~1s, but a stale/missing index after a fresh clone or long gap needs
+this explicit refresh). The orchestrator (or, for a solo agent session, the
+agent itself) is responsible for this — do not assume the index is current.
+
+Fall back to Grep/Glob/Read only when `codegraph` is unavailable or its answer
+is insufficient — and when you do, prefer `rg` (ripgrep) over `grep` for
+speed and gitignore-aware matching.
+
 ## Commands
 
 - `make test`
