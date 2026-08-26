@@ -705,6 +705,9 @@ func (m globalSSHModel) renderOptions(s DemoState, options []appliedOption, widt
 	if detail.Provenance != "" {
 		d.WriteString(" " + styleFaint.Render(detail.Provenance) + "\n")
 	}
+	if detail.VersionNote != "" {
+		d.WriteString(" " + styleFaint.Render(detail.VersionNote) + "\n")
+	}
 	if detail.ProbeError != "" {
 		d.WriteString(" " + styleWarning.Render("! "+detail.ProbeError) + "\n")
 	}

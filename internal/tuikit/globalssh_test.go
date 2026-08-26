@@ -81,7 +81,7 @@ func TestGlobalSSHApplySubsetMarksAppliedAndShowsDeclined(t *testing.T) {
 	if !strings.Contains(view, "Write Host * managed block to ~/.ssh/config") {
 		t.Fatalf("apply ceremony missing:\n%s", view)
 	}
-	if !strings.Contains(view, "+ StrictHostKeyChecking ask") || !strings.Contains(view, "+ IdentitiesOnly yes") {
+	if !strings.Contains(view, "+ StrictHostKeyChecking accept-new") || !strings.Contains(view, "+ IdentitiesOnly yes") {
 		t.Error("chosen keys must render as + diff lines")
 	}
 	if !strings.Contains(view, "ForwardAgent — left unchanged (declined; advisory)") {
@@ -258,6 +258,26 @@ func TestGlobalSSHLongExplanationClipsWithVisibleCue(t *testing.T) {
 	a, _ = press(t, a, "up") // → HashKnownHosts
 	if regexp.MustCompile(`… \(\+\d+ more lines\)`).MatchString(appView(a)) {
 		t.Error("short detail must not render a clip cue")
+	}
+}
+
+func TestGlobalSSHOptionVersionNoteInDetailPane(t *testing.T) {
+	b := &stubBackend{sshOptions: []GlobalSSHOptionView{
+		{Key: "StrictHostKeyChecking", CurrentValue: "ask", Recommended: "accept-new", Risk: "Medium", OneLiner: "accept-new pins first-seen keys", VersionNote: "Your OpenSSH: 9.7p1 — accept-new is available", State: GlobalSSHNeedsAction},
+		{Key: "HashKnownHosts", CurrentValue: "no", Recommended: "yes", Risk: "Low", OneLiner: "Hashing known_hosts hides which hosts you connect to", State: GlobalSSHNeedsAction},
+	}}
+	a := NewApp(b)
+	a, _ = press(t, a, "2")
+	m := gssModel(t, a)
+	m.detailKey = "StrictHostKeyChecking"
+	a.screens[TabGlobalSSH] = m
+	if !strings.Contains(appView(a), "Your OpenSSH: 9.7p1 — accept-new is available") {
+		t.Fatal("StrictHostKeyChecking detail must show the dynamic version note")
+	}
+	m.detailKey = "HashKnownHosts"
+	a.screens[TabGlobalSSH] = m
+	if strings.Contains(appView(a), "Your OpenSSH:") {
+		t.Fatal("HashKnownHosts detail must not show the version note")
 	}
 }
 

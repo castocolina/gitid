@@ -210,8 +210,8 @@ type GlobalSSHOption struct {
 // static, diff-able contract). Order matches 02-UX-DIRECTION.md §4.4's
 // verbatim list.
 var GlobalSSHOptions = []GlobalSSHOption{
-	{Key: "StrictHostKeyChecking", Current: "not set (OpenSSH default: ask)", Risk: "Medium", Recommended: "ask", NeedsAction: true, OneLiner: "Stating \"ask\" explicitly removes ambiguity about how an unknown host key is handled."},
-	{Key: "ForwardAgent", Current: "not set (OpenSSH default: no)", Risk: "Medium", Recommended: "no", NeedsAction: true, OneLiner: "Globally forwarding your agent lets any host you connect to authenticate elsewhere as you."},
+	{Key: "StrictHostKeyChecking", Current: "not set (OpenSSH default: ask)", Risk: "Medium", Recommended: "accept-new", NeedsAction: true, OneLiner: "accept-new pins first-seen keys and hard-fails on a changed key; it requires OpenSSH 7.6 or newer."},
+	{Key: "ForwardAgent", Current: "not set (OpenSSH default: no)", Risk: "High", Recommended: "no", NeedsAction: true, OneLiner: "Globally forwarding your agent lets any host you connect to authenticate elsewhere as you."},
 	{Key: "HashKnownHosts", Current: "not set", Risk: "Low", Recommended: "yes", NeedsAction: true, OneLiner: "Hashing known_hosts hides which hosts you connect to if the file ever leaks."},
 	{Key: "IdentitiesOnly", Current: "not set globally (set per-Host by gitid)", Risk: "High", Recommended: "yes", NeedsAction: true, OneLiner: "Without it, ssh may offer every key it knows about to every host — leaking which OTHER keys you hold."},
 	{Key: "AddKeysToAgent", Current: "yes", Risk: "Low", Recommended: "yes", NeedsAction: false, OneLiner: "Already set — keys stay available in the agent for the session (recipes/ssh-config.recipe Host * block)."},

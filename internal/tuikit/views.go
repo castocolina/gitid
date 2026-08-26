@@ -316,9 +316,27 @@ const (
 	// value — a deliberate choice still flagged with the same `!` glyph (D-12
 	// word state; 06-03 owns the word).
 	GlobalSSHDiffers
-	// GlobalSSHNotApplicable means the option does not exist on this platform
-	// (useKeychain off macOS; D-11 row state; 06-03 owns the word).
+	// GlobalSSHNotApplicable means the option does not apply on this machine
+	// (wrong platform, OpenSSH too old or unverified, or nothing to verify).
 	GlobalSSHNotApplicable
+)
+
+// GlobalSSHNotApplicableReason mirrors globalssh.NotApplicableReason by VALUE
+// ONLY. The backend boundary forbids tuikit importing globalssh; cmd/gitid
+// pins the numeric pairing so a silent renumbering cannot drift the copy.
+type GlobalSSHNotApplicableReason int
+
+const (
+	// GlobalSSHReasonNone is the zero value: the row is applicable.
+	GlobalSSHReasonNone GlobalSSHNotApplicableReason = iota
+	// GlobalSSHReasonPlatform means the option does not exist on this OS.
+	GlobalSSHReasonPlatform
+	// GlobalSSHReasonVersionTooOld means the recommended value needs a newer OpenSSH.
+	GlobalSSHReasonVersionTooOld
+	// GlobalSSHReasonVersionUnverified means gitid could not read the OpenSSH version.
+	GlobalSSHReasonVersionUnverified
+	// GlobalSSHReasonNothingToVerify means IdentitiesOnly has no managed hosts to check.
+	GlobalSSHReasonNothingToVerify
 )
 
 // GlobalSSHOptionView is one Options-sub-tab row as the render stack knows it.
@@ -326,16 +344,19 @@ const (
 // the view deliberately carries no source-class enum. 06-03 owns the exact
 // frozen copy wording for OneLiner/Explanation/VersionNote.
 type GlobalSSHOptionView struct {
-	Key          string
-	CurrentValue string
-	Provenance   string
-	Recommended  string
-	Risk         string
-	OneLiner     string
-	Explanation  string
-	VersionNote  string
-	ProbeError   string
-	State        GlobalSSHOptionState
+	Key                 string
+	CurrentValue        string
+	Provenance          string
+	Recommended         string
+	Risk                string
+	OneLiner            string
+	Explanation         string
+	VersionNote         string
+	ProbeError          string
+	State               GlobalSSHOptionState
+	NotApplicableReason GlobalSSHNotApplicableReason
+	AttributedToUser    bool
+	WritableToHostStar  bool
 }
 
 // GlobalSSHApplyPlanView is the confirmed-apply preview scene: the resolved

@@ -125,6 +125,11 @@ type realBackend struct {
 	// "public-key", "include-line", and "host-block".
 	failCommitAt func(step string) error
 
+	// probeSSHVersion is a test-only override for platform.ProbeSSHVersion so
+	// version-gate outcomes can be driven without a live ssh -V. Nil means the
+	// real probe.
+	probeSSHVersion func() (platform.SSHVersion, error)
+
 	// failArchiveRemoveAt is a test-only injection point (mirroring
 	// failCommitAt's precedent): when non-nil, archiveKeyPairSeam's source
 	// removal calls it before removing path, letting a test drive a
@@ -1333,6 +1338,7 @@ func (b *realBackend) GlobalSSHOptionStates() ([]tuikit.GlobalSSHOptionView, err
 		return nil, b.initErr
 	}
 	statuses := globalssh.Statuses(globalssh.BuildProbeDeps(b.sshConfigPath))
+	sshVersion := b.readSSHVersion()
 	fixture := make(map[string]tuikit.GlobalSSHOption, len(tuikit.GlobalSSHOptions))
 	for _, o := range tuikit.GlobalSSHOptions {
 		fixture[o.Key] = o
@@ -1344,19 +1350,48 @@ func (b *realBackend) GlobalSSHOptionStates() ([]tuikit.GlobalSSHOptionView, err
 		if st.Key == "IdentitiesOnly" {
 			explanation = tuikit.GlobalSSHDetailExplanation
 		}
-		out = append(out, tuikit.GlobalSSHOptionView{
-			Key:          st.Key,
-			CurrentValue: st.CurrentValue,
-			Provenance:   b.globalSSHProvenanceLabel(st),
-			Recommended:  st.RecommendedValue,
-			Risk:         st.Risk,
-			OneLiner:     oneLiner,
-			Explanation:  explanation,
-			ProbeError:   st.ProbeError,
-			State:        toGlobalSSHOptionState(st.State),
-		})
+		policy, _ := globalssh.PolicyFor(st.Key)
+		view := tuikit.GlobalSSHOptionView{
+			Key:                 st.Key,
+			CurrentValue:        st.CurrentValue,
+			Provenance:          b.globalSSHProvenanceLabel(st),
+			Recommended:         st.RecommendedValue,
+			Risk:                st.Risk,
+			OneLiner:            oneLiner,
+			Explanation:         explanation,
+			ProbeError:          st.ProbeError,
+			State:               toGlobalSSHOptionState(st.State),
+			NotApplicableReason: tuikit.GlobalSSHNotApplicableReason(st.NotApplicableReason),
+			AttributedToUser:    st.Source == globalssh.SourceGitidParsed,
+			WritableToHostStar:  policy.WritableToHostStar(),
+		}
+		if policy.MinOpenSSH != "" {
+			outcome, note := globalssh.VersionGate(sshVersion, policy)
+			view.VersionNote = note
+			switch outcome {
+			case globalssh.VersionTooOld:
+				view.State = tuikit.GlobalSSHNotApplicable
+				view.NotApplicableReason = tuikit.GlobalSSHReasonVersionTooOld
+			case globalssh.VersionUnverified:
+				view.State = tuikit.GlobalSSHNotApplicable
+				view.NotApplicableReason = tuikit.GlobalSSHReasonVersionUnverified
+			}
+		}
+		out = append(out, view)
 	}
 	return out, nil
+}
+
+func (b *realBackend) readSSHVersion() platform.SSHVersion {
+	probe := b.probeSSHVersion
+	if probe == nil {
+		probe = platform.ProbeSSHVersion
+	}
+	v, err := probe()
+	if err != nil {
+		return platform.SSHVersion{}
+	}
+	return v
 }
 
 // GlobalSSHApplyPlan is the global-SSH apply preview scene: the resolved
