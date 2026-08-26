@@ -199,6 +199,27 @@ func TestGlobalSSHApplyTargetsOwnedFileUnderIncludeLayout(t *testing.T) {
 	}
 }
 
+// TestGlobalSSHApplyCeremonyNamesStorageTarget pins D-07's confirm-screen
+// copy: state A names the file GlobalSSHApplyPlanView.Targets supplied, not
+// a hardcoded ~/.ssh/config. The path is a scoped divergence from the frozen
+// heading (Phase-3 D-05 precedent).
+func TestGlobalSSHApplyCeremonyNamesStorageTarget(t *testing.T) {
+	const sentinel = "/tmp/gitid-sentinel-resolved-target.config"
+	b := &stubBackend{sshApplyPlan: GlobalSSHApplyPlanView{Targets: []string{sentinel}}}
+	a := NewApp(b)
+	a, _ = press(t, a, "2")
+	a, _ = press(t, a, "a")
+	view := appView(a)
+	want := "Write Host * managed block to " + sentinel
+	if !strings.Contains(view, want) {
+		t.Fatalf("ceremony state A must name the plan target; want %q in:\n%s", want, view)
+	}
+	if strings.Contains(view, "Write Host * managed block to ~/.ssh/config\n") ||
+		strings.Contains(view, "Write Host * managed block to ~/.ssh/config ") {
+		t.Error("ceremony must not fall back to a hardcoded path when the plan supplied a target")
+	}
+}
+
 func TestGlobalSSHSpaceToggleIsCopyOnWrite(t *testing.T) {
 	m := newGlobalSSHModel(stubBackend{})
 	activated, _ := m.activate(Seed())

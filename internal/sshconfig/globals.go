@@ -103,6 +103,7 @@ func EnsureGlobals(existing []byte, explicit map[string]string, goos string) ([]
 	rendered := renderGlobalBody(merged)
 	composed := filewriter.ReplaceBlock(existing, GlobalBlockName, rendered)
 	composed = filewriter.RemoveBlock(composed, LegacyGlobalBlockName)
+	composed = ensureGlobalsLast(composed, rendered)
 
 	// Round-trip safety: parse -> compose -> parse stability, exactly as Write
 	// already requires of its own composition.
@@ -110,6 +111,47 @@ func EnsureGlobals(existing []byte, explicit map[string]string, goos string) ([]
 		return nil, fmt.Errorf("sshconfig: composed globals block is not parseable, refusing to write: %w", perr)
 	}
 	return composed, nil
+}
+
+// ensureGlobalsLast is the D-09 post-condition: the globals block's start
+// offset must be greater than the start offset of every other gitid-managed
+// block. ReplaceBlock updates an existing block IN PLACE, so an adopted
+// legacy block (or a create that appended an identity after a prior globals
+// write) can sit in the wrong position; when that happens, remove and
+// re-append so the block lands last. Do not rely on ReplaceBlock to preserve
+// last-position — that is incidental, not the invariant.
+func ensureGlobalsLast(content []byte, body string) []byte {
+	if !globalsBlockIsLast(content) {
+		content = filewriter.RemoveBlock(content, GlobalBlockName)
+		content = filewriter.ReplaceBlock(content, GlobalBlockName, body)
+	}
+	return content
+}
+
+// globalsBlockIsLast reports whether the GlobalBlockName block starts after
+// every other gitid-managed block in content. A missing globals block is
+// treated as "not last" so a caller that expected one to exist still
+// re-appends.
+func globalsBlockIsLast(content []byte) bool {
+	globalsOff := -1
+	otherOff := -1
+	offset := 0
+	for _, line := range strings.SplitAfter(string(content), "\n") {
+		trimmed := strings.TrimRight(line, "\n\r")
+		if strings.HasPrefix(trimmed, filewriter.BeginPrefix) {
+			name := strings.TrimPrefix(trimmed, filewriter.BeginPrefix)
+			if name == GlobalBlockName {
+				globalsOff = offset
+			} else {
+				otherOff = offset
+			}
+		}
+		offset += len(line)
+	}
+	if globalsOff < 0 {
+		return false
+	}
+	return globalsOff > otherOff
 }
 
 // existingGlobalBody returns the current block body under GlobalBlockName, or

@@ -3893,3 +3893,299 @@ func TestApplyThenCreatePreservesGlobalFix(t *testing.T) {
 	}
 	t.Fatalf("no %s managed block after the create:\n%s", sshconfig.GlobalBlockName, target)
 }
+
+// ---------------------------------------------------------------------------
+// Task 2 — placement (D-07, D-09) and survival across every other flow (D-06)
+// ---------------------------------------------------------------------------
+
+// TestGlobalsPlacementIncludeLayout writes the globals block into the
+// gitid-owned included file, not the main config (D-07).
+func TestGlobalsPlacementIncludeLayout(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+
+	msg, ok := b.CommitGlobalSSH([]string{"HashKnownHosts"})().(tuikit.GlobalSSHCommitMsg)
+	if !ok || msg.Err != "" {
+		t.Fatalf("apply: ok=%v err=%q", ok, msg.Err)
+	}
+
+	included := readFile(t, filepath.Join(home, ".ssh", "config.d", "gitid.config"))
+	if !strings.Contains(included, filewriter.BeginPrefix+sshconfig.GlobalBlockName) {
+		t.Fatalf("included file must carry the globals block:\n%s", included)
+	}
+	main := readFile(t, filepath.Join(home, ".ssh", "config"))
+	if strings.Contains(main, filewriter.BeginPrefix+sshconfig.GlobalBlockName) {
+		t.Fatalf("main config must NOT carry the globals block under the Include'd layout:\n%s", main)
+	}
+}
+
+// TestGlobalsPlacementInFileLayout writes the globals block into the main
+// config when the machine already uses in-file identity blocks (D-07).
+func TestGlobalsPlacementInFileLayout(t *testing.T) {
+	home := t.TempDir()
+	seedInFileIdentity(t, home, "personal")
+	b := newBackendForHome(home)
+	if b.storage().includeLayout {
+		t.Fatal("fixture must pin the in-file layout")
+	}
+
+	msg, ok := b.CommitGlobalSSH([]string{"HashKnownHosts"})().(tuikit.GlobalSSHCommitMsg)
+	if !ok || msg.Err != "" {
+		t.Fatalf("apply: ok=%v err=%q", ok, msg.Err)
+	}
+
+	main := readFile(t, filepath.Join(home, ".ssh", "config"))
+	if !strings.Contains(main, filewriter.BeginPrefix+sshconfig.GlobalBlockName) {
+		t.Fatalf("in-file layout must write the globals block into ~/.ssh/config:\n%s", main)
+	}
+	included := filepath.Join(home, ".ssh", "config.d", "gitid.config")
+	if fileExists(included) {
+		t.Errorf("in-file apply must not create the Include'd file; got:\n%s", readFile(t, included))
+	}
+}
+
+// TestGlobalsPlacementFreshHomeFloorsIncludeLine pins the empty-machine
+// contract: a global fix creates the include directory, floors the Include
+// line, and that line's byte offset is smaller than any gitid block in the
+// main file (D-07 + Phase 3's floor model).
+func TestGlobalsPlacementFreshHomeFloorsIncludeLine(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+
+	msg, ok := b.CommitGlobalSSH([]string{"HashKnownHosts"})().(tuikit.GlobalSSHCommitMsg)
+	if !ok || msg.Err != "" {
+		t.Fatalf("apply: ok=%v err=%q", ok, msg.Err)
+	}
+
+	includeDir := filepath.Join(home, ".ssh", "config.d")
+	info, err := os.Stat(includeDir)
+	if err != nil {
+		t.Fatalf("include directory missing after a fresh-HOME apply: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("%s exists but is not a directory", includeDir)
+	}
+
+	main := readFile(t, filepath.Join(home, ".ssh", "config"))
+	includeOff := strings.Index(main, "Include ~/.ssh/config.d/*.config")
+	if includeOff < 0 {
+		t.Fatalf("Include line missing from ~/.ssh/config:\n%s", main)
+	}
+	// The Include line lives inside the ssh-include wiring block (floored at
+	// the top). Compare against every OTHER gitid-managed block in the main
+	// file — identity / globals must not precede the Include line (D-07).
+	offset := 0
+	for _, line := range strings.SplitAfter(main, "\n") {
+		trimmed := strings.TrimRight(line, "\n\r")
+		if strings.HasPrefix(trimmed, filewriter.BeginPrefix) {
+			name := strings.TrimPrefix(trimmed, filewriter.BeginPrefix)
+			if name != "ssh-include" && includeOff >= offset {
+				t.Errorf("Include line offset %d is not smaller than gitid block %q at %d:\n%s", includeOff, name, offset, main)
+			}
+		}
+		offset += len(line)
+	}
+}
+
+// TestGlobalsFixThenCreateSurvivesCreate is D-06's ordered guarantee under
+// BOTH layouts: apply a global fix, then create an identity through the real
+// commit path; the fixed directive stays in the globals block AND the
+// identity's begin-sentinel precedes the globals begin-sentinel (D-09).
+func TestGlobalsFixThenCreateSurvivesCreate(t *testing.T) {
+	for _, layout := range []string{"include", "in-file"} {
+		t.Run(layout, func(t *testing.T) {
+			home := t.TempDir()
+			if layout == "in-file" {
+				seedInFileIdentity(t, home, "personal")
+			}
+			b := newBackendForHome(home)
+
+			msg, ok := b.CommitGlobalSSH([]string{"HashKnownHosts"})().(tuikit.GlobalSSHCommitMsg)
+			if !ok || msg.Err != "" {
+				t.Fatalf("apply: ok=%v err=%q", ok, msg.Err)
+			}
+
+			id := tuikit.DemoIdentity{
+				Name: "work", SSHHost: "work.github.com", Provider: "github.com",
+				Hostname: "ssh.github.com", Port: 443, KeyPath: filepath.Join(home, ".ssh", "id_ed25519_work"),
+				GitConfigured: false,
+			}
+			unlockStoreForIdentity(t, b, id)
+			if createMsg := runCommitCreate(t, b, id); createMsg.Err != "" {
+				t.Fatalf("create error: %s", createMsg.Err)
+			}
+
+			target := readFile(t, b.globalsTargetPath())
+			assertFixedDirectivePresent(t, target)
+			identityOff := strings.Index(target, filewriter.BeginPrefix+"work\n")
+			globalsOff := strings.Index(target, filewriter.BeginPrefix+sshconfig.GlobalBlockName+"\n")
+			if identityOff < 0 || globalsOff < 0 {
+				t.Fatalf("missing sentinels (identity=%d globals=%d) in:\n%s", identityOff, globalsOff, target)
+			}
+			if identityOff >= globalsOff {
+				t.Errorf("identity begin-sentinel at %d does not precede globals at %d:\n%s", identityOff, globalsOff, target)
+			}
+		})
+	}
+}
+
+// TestGlobalsCreateThenFixLeavesIdentityUntouched is the reverse order:
+// create first, then apply a global fix; the identity block's body bytes
+// stay identical and the fix is present.
+func TestGlobalsCreateThenFixLeavesIdentityUntouched(t *testing.T) {
+	for _, layout := range []string{"include", "in-file"} {
+		t.Run(layout, func(t *testing.T) {
+			home := t.TempDir()
+			name := "work"
+			if layout == "in-file" {
+				seedInFileIdentity(t, home, "personal")
+			}
+			b := newBackendForHome(home)
+
+			id := tuikit.DemoIdentity{
+				Name: name, SSHHost: name + ".github.com", Provider: "github.com",
+				Hostname: "ssh.github.com", Port: 443, KeyPath: filepath.Join(home, ".ssh", "id_ed25519_"+name),
+				GitConfigured: false,
+			}
+			unlockStoreForIdentity(t, b, id)
+			if createMsg := runCommitCreate(t, b, id); createMsg.Err != "" {
+				t.Fatalf("create error: %s", createMsg.Err)
+			}
+
+			before := identityBlockBody(t, readFile(t, b.globalsTargetPath()), name)
+
+			msg, ok := b.CommitGlobalSSH([]string{"HashKnownHosts"})().(tuikit.GlobalSSHCommitMsg)
+			if !ok || msg.Err != "" {
+				t.Fatalf("apply: ok=%v err=%q", ok, msg.Err)
+			}
+
+			afterContent := readFile(t, b.globalsTargetPath())
+			after := identityBlockBody(t, afterContent, name)
+			if after != before {
+				t.Errorf("identity block body changed by the global fix;\nbefore:\n%s\nafter:\n%s", before, after)
+			}
+			assertFixedDirectivePresent(t, afterContent)
+		})
+	}
+}
+
+// TestGlobalsFixThenRotateLeavesGlobalsByteIdentical pins the empty-platform
+// contract on rotate: a global fix, then a rotation, leaves the globals
+// block's bytes identical.
+func TestGlobalsFixThenRotateLeavesGlobalsByteIdentical(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+	b := groupHermeticBackend(home)
+
+	msg, ok := b.CommitGlobalSSH([]string{"HashKnownHosts"})().(tuikit.GlobalSSHCommitMsg)
+	if !ok || msg.Err != "" {
+		t.Fatalf("apply: ok=%v err=%q", ok, msg.Err)
+	}
+	before := globalsBlockBytes(t, readFile(t, b.globalsTargetPath()))
+
+	if _, err := b.runRotate("work", lifecyclePolicy{Confirm: confirmationAlreadyObtained}); err != nil {
+		t.Fatalf("runRotate: %v", err)
+	}
+
+	after := globalsBlockBytes(t, readFile(t, b.globalsTargetPath()))
+	if after != before {
+		t.Errorf("rotate mutated the globals block (empty-platform contract);\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+// TestGlobalsFixThenRepairLeavesGlobalsByteIdentical pins the empty-platform
+// contract on repair: a global fix, then a new-key ceremony, leaves the
+// globals block's bytes identical.
+func TestGlobalsFixThenRepairLeavesGlobalsByteIdentical(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+	b := groupHermeticBackend(home)
+
+	msg, ok := b.CommitGlobalSSH([]string{"HashKnownHosts"})().(tuikit.GlobalSSHCommitMsg)
+	if !ok || msg.Err != "" {
+		t.Fatalf("apply: ok=%v err=%q", ok, msg.Err)
+	}
+	before := globalsBlockBytes(t, readFile(t, b.globalsTargetPath()))
+
+	if _, err := b.runRepair("work", lifecyclePolicy{Confirm: confirmationAlreadyObtained}); err != nil {
+		t.Fatalf("runRepair: %v", err)
+	}
+
+	after := globalsBlockBytes(t, readFile(t, b.globalsTargetPath()))
+	if after != before {
+		t.Errorf("repair mutated the globals block (empty-platform contract);\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+// TestGlobalSSHApplyPlanNamesResolvedTarget proves the ceremony heading's
+// source of truth: GlobalSSHApplyPlan.Targets names the SAME file the write
+// actually touches, under both layouts.
+func TestGlobalSSHApplyPlanNamesResolvedTarget(t *testing.T) {
+	for _, layout := range []string{"include", "in-file"} {
+		t.Run(layout, func(t *testing.T) {
+			home := t.TempDir()
+			if layout == "in-file" {
+				seedInFileIdentity(t, home, "personal")
+			}
+			b := newBackendForHome(home)
+			plan, err := b.GlobalSSHApplyPlan([]string{"HashKnownHosts"})
+			if err != nil {
+				t.Fatalf("GlobalSSHApplyPlan: %v", err)
+			}
+			if len(plan.Targets) == 0 {
+				t.Fatal("plan.Targets is empty")
+			}
+			want := b.displayPath(b.globalsTargetPath())
+			if plan.Targets[0] != want {
+				t.Errorf("plan.Targets[0] = %q, want the resolved storage target %q", plan.Targets[0], want)
+			}
+		})
+	}
+}
+
+// seedInFileIdentity writes a single identity Host block into ~/.ssh/config
+// so storage() pins the in-file layout (D-05).
+func seedInFileIdentity(t *testing.T, home, name string) {
+	t.Helper()
+	seedSSHDir(t, home)
+	body := sshconfig.RenderHostBlock(name+".github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_"+name, "github.com")
+	writeFile(t, filepath.Join(home, ".ssh", "config"), managedBlock(name, body))
+}
+
+func assertFixedDirectivePresent(t *testing.T, content string) {
+	t.Helper()
+	for _, blk := range filewriter.ListBlocks([]byte(content)) {
+		if blk.Name == sshconfig.GlobalBlockName {
+			if !strings.Contains(blk.Body, "HashKnownHosts yes") {
+				t.Fatalf("fixed HashKnownHosts yes missing from globals block:\n%s", content)
+			}
+			return
+		}
+	}
+	t.Fatalf("no %s managed block in:\n%s", sshconfig.GlobalBlockName, content)
+}
+
+func identityBlockBody(t *testing.T, content, name string) string {
+	t.Helper()
+	for _, blk := range filewriter.ListBlocks([]byte(content)) {
+		if blk.Name == name {
+			return blk.Body
+		}
+	}
+	t.Fatalf("no identity block %q in:\n%s", name, content)
+	return ""
+}
+
+func globalsBlockBytes(t *testing.T, content string) string {
+	t.Helper()
+	begin := filewriter.BeginPrefix + sshconfig.GlobalBlockName + "\n"
+	end := filewriter.EndPrefix + sshconfig.GlobalBlockName + "\n"
+	start := strings.Index(content, begin)
+	stop := strings.Index(content, end)
+	if start < 0 || stop < 0 || stop < start {
+		t.Fatalf("globals block sentinels missing in:\n%s", content)
+	}
+	return content[start : stop+len(end)]
+}

@@ -187,6 +187,78 @@ func TestEnsureGlobalsUnconditionalGuardOnEmptyConfig(t *testing.T) {
 	}
 }
 
+// TestEnsureGlobalsRepositionsAdoptedLegacyBlockAfterIdentity pins D-09:
+// a legacy-named globals block that sat BEFORE an identity Host block is
+// adopted AND moved so the new-named globals block is the last gitid-managed
+// block. filewriter.ReplaceBlock would otherwise leave a wrong-position
+// block in place (or, for a first-write of GlobalBlockName, append — either
+// way the post-condition is "last", never "wherever it happened to sit").
+func TestEnsureGlobalsRepositionsAdoptedLegacyBlockAfterIdentity(t *testing.T) {
+	identity := managedTestBlock("personal", "Host personal.github.com\n  Hostname ssh.github.com\n")
+	legacy := managedTestBlock("_global", "Host *\n  HashKnownHosts yes\n")
+	got, err := EnsureGlobals([]byte(legacy+identity), nil, "linux")
+	if err != nil {
+		t.Fatalf("EnsureGlobals: %v", err)
+	}
+	assertGlobalsLastAfter(t, got, "personal")
+	if !strings.Contains(globalBody(t, got), "HashKnownHosts yes") {
+		t.Errorf("adopted directive lost during reposition; got:\n%s", got)
+	}
+}
+
+// TestEnsureGlobalsRepositionsExistingBlockAfterIdentity is the in-place
+// case D-09 cannot leave to ReplaceBlock: a GlobalBlockName block that
+// already sits BEFORE an identity must be removed and re-appended so it
+// lands last. This is also the create-after-fix shape — Write appends the
+// new identity after the existing globals, then EnsureGlobals must move
+// the globals block back to the end.
+func TestEnsureGlobalsRepositionsExistingBlockAfterIdentity(t *testing.T) {
+	identity := managedTestBlock("personal", "Host personal.github.com\n  Hostname ssh.github.com\n")
+	globals := managedTestBlock("global-ssh", "Host *\n  HashKnownHosts no\n")
+	got, err := EnsureGlobals([]byte(globals+identity), map[string]string{"HashKnownHosts": "yes"}, "linux")
+	if err != nil {
+		t.Fatalf("EnsureGlobals: %v", err)
+	}
+	assertGlobalsLastAfter(t, got, "personal")
+	if !strings.Contains(globalBody(t, got), "HashKnownHosts yes") {
+		t.Errorf("explicit overlay lost during reposition; got:\n%s", got)
+	}
+	second, err := EnsureGlobals(got, map[string]string{"HashKnownHosts": "yes"}, "linux")
+	if err != nil {
+		t.Fatalf("second EnsureGlobals: %v", err)
+	}
+	if !bytes.Equal(got, second) {
+		t.Errorf("repositioned globals render is not idempotent;\nfirst:\n%s\nsecond:\n%s", got, second)
+	}
+}
+
+// assertGlobalsLastAfter fails if the globals begin-sentinel is missing, if
+// the named identity begin-sentinel is missing, or if the globals block does
+// not start after the identity block.
+func assertGlobalsLastAfter(t *testing.T, content []byte, identityName string) {
+	t.Helper()
+	text := string(content)
+	gOff := strings.Index(text, filewriter.BeginPrefix+GlobalBlockName+"\n")
+	iOff := strings.Index(text, filewriter.BeginPrefix+identityName+"\n")
+	if gOff < 0 || iOff < 0 {
+		t.Fatalf("missing sentinels (globals=%d identity=%d) in:\n%s", gOff, iOff, content)
+	}
+	if gOff < iOff {
+		t.Errorf("globals begin-sentinel at %d precedes identity %q at %d; want globals LAST:\n%s", gOff, identityName, iOff, content)
+	}
+	blocks := filewriter.ListBlocks(content)
+	if len(blocks) == 0 || blocks[len(blocks)-1].Name != GlobalBlockName {
+		t.Errorf("last gitid-managed block = %q, want %s:\n%s", lastBlockName(blocks), GlobalBlockName, content)
+	}
+}
+
+func lastBlockName(blocks []filewriter.NamedBlock) string {
+	if len(blocks) == 0 {
+		return ""
+	}
+	return blocks[len(blocks)-1].Name
+}
+
 // managedTestBlock wraps body in the managed sentinels for name (a package
 // local mirror of the composition EnsureGlobals itself produces).
 func managedTestBlock(name, body string) string {

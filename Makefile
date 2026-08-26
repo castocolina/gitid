@@ -305,6 +305,7 @@ gate-copy-freeze:
 		'The old key stays valid at %s during this window — upload the new key, verify it, then remove the old one there.' \
 		'Old key archived to %s' \
 		'gitid always writes' \
+		'Write Host * managed block to ' \
 		'This dry run tests only the current key'\''s reachability — the new key has not been generated, uploaded, or resolved, so nothing about the post-rotation state is proven.'; \
 	do \
 		if grep -rqF -- "$$s" internal/tuikit internal/identity cmd/gitid; then \
