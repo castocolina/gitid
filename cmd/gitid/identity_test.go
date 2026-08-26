@@ -1212,6 +1212,37 @@ func TestCreateInputFromCreateFlagsForceSSHDefaultsOffAndFlagEnables(t *testing.
 	}
 }
 
+// TestCloneCeremonyInputsGitDirMatchesClonePrefillDerivation is the WR-10
+// regression: cloneCeremonyInputs hardcoded its own GitDir literal
+// ("~/git/"+in.Name+"/") instead of deriving it via gitDirFromMatches(in.
+// Matches) the way realBackend.ClonePrefill (the TUI wizard's prefill,
+// consulted by this same verb's resolvePrefilledTUI branch a few lines
+// above) already does — a duplicated derivation that a future change to
+// either side could silently diverge. The two must now derive from the
+// SAME formula and therefore agree. (Investigation note: with
+// identity.DeriveCloneInput's current kind-only Matches rebuild — R-12 —
+// both derivations happen to already coincide on every constructible
+// input, so this guards against FUTURE drift between the two call sites
+// rather than reproducing a live divergent value today.)
+func TestCloneCeremonyInputsGitDirMatchesClonePrefillDerivation(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+	b := newBackendForHome(home)
+
+	_, id, err := cloneCeremonyInputs(b, "work", "work-clone", true)
+	if err != nil {
+		t.Fatalf("cloneCeremonyInputs: %v", err)
+	}
+	prefill, perr := b.ClonePrefill("work", "work-clone", true)
+	if perr != nil {
+		t.Fatalf("ClonePrefill: %v", perr)
+	}
+	if id.GitDir != prefill.GitDir {
+		t.Errorf("WR-10: headless GitDir = %q, wizard prefill GitDir = %q — the two clone paths must derive the SAME includeIf gitdir from the SAME identity.DeriveCloneInput matches, never a second, independently hardcoded default", id.GitDir, prefill.GitDir)
+	}
+}
+
 // TestCloneCeremonyInputsMirrorsSourceForceSSH is WR-06's clone half:
 // cloneCeremonyInputs hardcoded ForceSSH: true unconditionally, contradicting
 // D-15's "copy the author fields, re-derive the rest" — a clone must not

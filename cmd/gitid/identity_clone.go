@@ -157,7 +157,15 @@ func cloneCeremonyInputs(b *realBackend, source, cloneName string, reuseSourceKe
 		GitName:       in.GitName,
 		GitEmail:      in.GitEmail,
 		MatchStrategy: matchStrategyFromMatches(in.Matches),
-		GitDir:        "~/git/" + in.Name + "/",
+		// WR-10: derive GitDir from in.Matches the SAME way realBackend.
+		// ClonePrefill does (gitDirFromMatches) — a source whose gitdir is
+		// "~/work/acme/" must clone to "~/work/acme/" headless too, not
+		// silently re-derive "~/git/<clone>/" and diverge from what the
+		// wizard's own prefill (and this verb's own resolvePrefilledTUI
+		// branch a few lines above) would have produced. Only fall back to
+		// the "~/git/<name>/" default for a pure-hasconfig clone, which
+		// carries no gitdir match at all.
+		GitDir:        orDefault(gitDirFromMatches(in.Matches), "~/git/"+in.Name+"/"),
 		PublicKeyPath: in.ReuseKeyPath + ".pub",
 		// WR-06: default to the CLONE SOURCE's own current setting, never an
 		// unconditional true. This is a machine-global rewrite of every
@@ -181,4 +189,12 @@ func cloneCeremonyInputs(b *realBackend, source, cloneName string, reuseSourceKe
 		id.PublicKeyPath = "~/.ssh/id_ed25519_" + in.Name + ".pub"
 	}
 	return in, id, nil
+}
+
+// orDefault returns v unless it is empty, in which case it returns fallback.
+func orDefault(v, fallback string) string {
+	if v == "" {
+		return fallback
+	}
+	return v
 }
