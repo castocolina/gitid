@@ -1,6 +1,7 @@
 package checks
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/castocolina/gitid/internal/doctor"
@@ -197,6 +198,29 @@ func TestCheckRedundancy_FixAlwaysNil(t *testing.T) {
 			if f.Fix != nil {
 				t.Errorf("every redundancy finding must have Fix==nil; got non-nil for %q", f.Title)
 			}
+		}
+	}
+}
+
+// TestCheckRedundancy_AdviceNamesCurrentBlock pins the D-08 Task 1 copy: the
+// user-facing advisory sentences must name the CURRENT globals block
+// ("global-ssh") — the key an up-to-date gitid actually writes — and never
+// the retired legacy name ("_global"), which would point users at a block gitid
+// no longer produces.
+func TestCheckRedundancy_AdviceNamesCurrentBlock(t *testing.T) {
+	deps := makeRedundancyDeps(twoHostStarsConfig)
+	findings := CheckRedundancy(deps)
+	if len(findings) == 0 {
+		t.Fatal("two Host * stanzas must produce at least one finding")
+	}
+
+	for _, f := range findings {
+		text := f.Title + f.Explanation + f.SuggestedFix
+		if strings.Contains(text, "_global") {
+			t.Errorf("redundancy advice must not name the retired legacy block; contains \"_global\":\n%s", text)
+		}
+		if !strings.Contains(text, "global-ssh") {
+			t.Errorf("redundancy advice must name the current globals block (global-ssh):\n%s", text)
 		}
 	}
 }

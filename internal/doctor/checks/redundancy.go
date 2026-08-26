@@ -98,7 +98,7 @@ func scanGlobalDirectives(content []byte) globalScan {
 }
 
 // CheckRedundancy detects SSH-config structural redundancy across the ENTIRE
-// ~/.ssh/config (pre-existing unmanaged content AND gitid's managed _global
+// ~/.ssh/config (pre-existing unmanaged content AND gitid's managed global-ssh
 // block) and returns advisory findings for:
 //
 //  1. Multiple "Host *" stanzas (count > 1) — one finding.
@@ -139,13 +139,13 @@ func CheckRedundancy(deps doctor.Deps) []doctor.Finding {
 				"~/.ssh/config contains %d \"Host *\" stanzas. "+
 					"SSH evaluates Host patterns in file order; multiple global stanzas "+
 					"can cause unexpected directive resolution. One \"Host *\" stanza "+
-					"(gitid's managed _global block) is sufficient. "+
+					"(gitid's managed global-ssh block) is sufficient. "+
 					"The extra stanzas likely include directives that duplicate those "+
-					"already set in gitid's managed _global block.",
+					"already set in gitid's managed global-ssh block.",
 				scan.hostStarCount,
 			),
 			SuggestedFix: "Consolidate all global SSH directives (UseKeychain, AddKeysToAgent, " +
-				"IgnoreUnknown) into a single \"Host *\" stanza — gitid's managed _global block " +
+				"IgnoreUnknown) into a single \"Host *\" stanza — gitid's managed global-ssh block " +
 				"already contains the correct set. Remove any hand-written \"Host *\" blocks " +
 				"that duplicate it.",
 			Fix: nil, // advisory only — no destructive auto-fix (T-05.7-11-02)
@@ -170,13 +170,13 @@ func CheckRedundancy(deps doctor.Deps) []doctor.Finding {
 				Explanation: fmt.Sprintf(
 					"The global SSH directive %q is set %d times at global scope "+
 						"(root-level or under \"Host *\") across ~/.ssh/config. "+
-						"This spans both hand-written content and gitid's managed _global block. "+
+						"This spans both hand-written content and gitid's managed global-ssh block. "+
 						"Only the last occurrence takes effect, which may hide "+
 						"intent or cause confusion.",
 					canonical, count,
 				),
 				SuggestedFix: fmt.Sprintf(
-					"Keep %q only in gitid's managed _global \"Host *\" block and "+
+					"Keep %q only in gitid's managed global-ssh \"Host *\" block and "+
 						"remove all other occurrences from hand-written sections of ~/.ssh/config.",
 					canonical,
 				),

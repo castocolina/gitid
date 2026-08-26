@@ -3,6 +3,7 @@ package identity
 import (
 	"errors"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/castocolina/gitid/internal/filewriter"
@@ -116,13 +117,21 @@ func baseDeleteAccount() Account {
 
 // sshFixtureWithBlocks returns a minimal SSH config that contains:
 //   - a managed block for "work" (the identity being deleted)
-//   - a managed block for "_global" (macOS Host * block — must NOT be removed)
+//   - a managed block for "_global" (legacy macOS Host * block — must NOT be removed)
+//   - a managed block for "global-ssh" (current D-08 wildcard key — must NOT
+//     be removed either; the delete path may never treat EITHER registered
+//     globals sentinel name as a deletable identity artifact)
 //   - a foreign Host block outside any sentinel (must NOT be removed)
 func sshFixtureWithBlocks() []byte {
 	return []byte(`# BEGIN gitid managed: _global
 Host *
   IdentitiesOnly yes
 # END gitid managed: _global
+
+# BEGIN gitid managed: global-ssh
+Host *
+  HashKnownHosts yes
+# END gitid managed: global-ssh
 
 # foreign line not inside any block
 Host foreign.example.com
@@ -538,6 +547,28 @@ func TestDelete_Everything_AllowedSignersKeyedByName(t *testing.T) {
 	}
 	if log.lastAllowedSignName != acct.Name {
 		t.Errorf("RemoveAllowedSigners name = %q, want %q", log.lastAllowedSignName, acct.Name)
+	}
+}
+
+// TestDelete_Everything_GlobalsBlocksSurvive pins the D-08 registry property
+// from the delete side: even under DeleteScopeEverything the gitid wildcard
+// stanza is never treated as a deletable identity artifact — only acct.Name is
+// passed to RemoveBlock, so the block under EITHER registered sentinel name
+// ("global-ssh" and the legacy "_global") must still be present in the SSH
+// config written afterwards.
+func TestDelete_Everything_GlobalsBlocksSurvive(t *testing.T) {
+	acct := baseDeleteAccount()
+	var log deleteCallLog
+	deps := newFakeEverythingDeps(&log, sshFixtureWithBlocks(), gcFixtureWithBlocks(), []Account{acct})
+
+	if _, err := Delete(acct, DeleteScopeEverything, deps); err != nil {
+		t.Fatalf("Delete(everything) error: %v", err)
+	}
+	content := string(log.lastSSHContent)
+	for _, name := range []string{"_global", "global-ssh"} {
+		if !strings.Contains(content, "# BEGIN gitid managed: "+name) {
+			t.Errorf("globals block %q must survive DeleteScopeEverything; written SSH config:\n%s", name, content)
+		}
 	}
 }
 

@@ -180,6 +180,42 @@ func TestOrphanReservedSSHIncludeNotFlagged(t *testing.T) {
 	}
 }
 
+// TestOrphanReservedGlobalsNotFlagged: neither globals block name is a
+// deletable identity artifact. A lone "global-ssh" (or legacy "_global") SSH
+// managed block has no gitconfig counterpart by design — gitid's wildcard
+// stanza is SSH-only wiring — and MUST NOT be reported as an orphan under
+// either registered sentinel name (D-08, Task 1). Flagging it produces a
+// removal [fix] that deletes the stanza, fighting EnsureGlobals' restore in an
+// endless loop — the same reserved-block false-positive loop this file
+// documents for ssh-include.
+func TestOrphanReservedGlobalsNotFlagged(t *testing.T) {
+	for _, name := range []string{sshconfig.GlobalBlockName, sshconfig.LegacyGlobalBlockName} {
+		d := doctor.Deps{
+			Stat:       orphStat(),
+			Identities: []identity.Account{},
+			// Only the reserved globals block is present in ~/.ssh/config; no
+			// gitconfig side.
+			SSHManagedBlockNames:       []string{name},
+			GitconfigManagedBlockNames: []string{},
+			AllSSHHostIdentityFiles:    []string{},
+			KeyPaths:                   []string{},
+			SSHConfigPath:              "/home/u/.ssh/config",
+			RemoveBlock:                func(_, _ string) error { return nil },
+		}
+
+		findings := checks.CheckOrphans(d)
+
+		for _, f := range findings {
+			if orphContains(f.Title, name) {
+				t.Errorf("reserved globals block %q must not be reported as an orphan, got: %q", name, f.Title)
+			}
+		}
+		if len(findings) != 0 {
+			t.Errorf("expected no orphan findings for a lone reserved %q block, got: %v", name, orphTitles(findings))
+		}
+	}
+}
+
 // TestOrphanKey: a gitid key file exists on disk but is referenced by NO Host block
 // (managed or hand-written) → warning, no [fix], honest wording.
 func TestOrphanKey(t *testing.T) {
