@@ -366,6 +366,43 @@ func TestConfirmationRequiredPromptRejectedAborts(t *testing.T) {
 	}
 }
 
+// TestDeletePlanPreviewOmitsSharedKeyNeverToBeRemoved is the WR-03
+// regression: runDelete's confirmation-prompt preview used to be built by a
+// SECOND, hand-rolled target list (deletePlanPreview) that named the key
+// pair unconditionally whenever acct.KeyPath was non-empty — with no
+// keySurvives consultation, promising to delete a key the write would
+// actually KEEP for a sibling (the exact preview/write divergence R-11 and
+// the shared deleteTargets helper were built to make impossible). The
+// preview must now be derived from the SAME identity.PlanDelete the confirm
+// screen renders, which omits a shared key from its Targets.
+func TestDeletePlanPreviewOmitsSharedKeyNeverToBeRemoved(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSharedKeyFixture(t, home, true)
+	b := groupHermeticBackend(home)
+
+	var captured string
+	_, err := b.runDelete("work", identity.DeleteScopeEverything, lifecyclePolicy{
+		Confirm: confirmationRequired,
+		Prompt: func(preview string) (bool, error) {
+			captured = preview
+			return false, nil // reject — the test only needs the preview text
+		},
+	})
+	if err == nil {
+		t.Fatal("a rejected prompt must abort the delete")
+	}
+	if captured == "" {
+		t.Fatal("the confirmation prompt must have been called with a non-empty preview")
+	}
+	if strings.Contains(captured, "id_ed25519_work") {
+		t.Errorf("WR-03: preview must not name the key pair when a sibling still shares it: %q", captured)
+	}
+	if !strings.Contains(captured, ".gitconfig") {
+		t.Errorf("preview must still name the gitconfig target: %q", captured)
+	}
+}
+
 // TestRunDeleteConfirmationMatrix crosses DryRun with every confirmation
 // mode and declares the expected outcome PER CELL across the four outcome
 // classes (review R3-02): dry runs produce no backup; confirmationRequired
