@@ -102,10 +102,18 @@ func runIdentityDelete(cmd *cobra.Command, name string, flags identityDeleteFlag
 	// Print the delete plan before acting so the headless run discloses what
 	// the confirm screen would have shown (threat T-05-38) — targets, the
 	// shared-key downgrade note, the scan hits, and the disclaimer.
-	if plan, perr := b.DeletePlan(name, string(scope)); perr == nil {
-		if rerr := renderDeletePlan(cmd.OutOrStdout(), b, plan, "will delete"); rerr != nil {
-			return rerr
-		}
+	// CR-05: PlanDelete is deliberately fail-closed — a plan that failed to
+	// read a scan source must never be indistinguishable from a
+	// legitimately small plan. The TUI honors that (refreshDeletePlan
+	// blanks the plan and disables the confirm control); this must too,
+	// instead of silently falling through to the irreversible delete with
+	// no disclosure.
+	plan, perr := b.DeletePlan(name, string(scope))
+	if perr != nil {
+		return fmt.Errorf("gitid: refusing to delete %q: the delete plan could not be built: %w", name, perr)
+	}
+	if rerr := renderDeletePlan(cmd.OutOrStdout(), b, plan, "will delete"); rerr != nil {
+		return rerr
 	}
 
 	policy, perr := confirmationPolicyFrom(cmd, "delete "+name, stdinTTY, stdoutTTY, flags.Yes, func() (bool, error) {

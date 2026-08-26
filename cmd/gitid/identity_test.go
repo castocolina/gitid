@@ -640,6 +640,42 @@ func TestIdentityDeleteRequiresExactlyOneScopeFlag(t *testing.T) {
 	}
 }
 
+// TestIdentityDeleteRefusesWhenPlanFails is the CR-05 regression: PlanDelete
+// is deliberately fail-closed — a plan that failed to read a scan source
+// must never be indistinguishable from a legitimately small plan — and the
+// TUI honors that (refreshDeletePlan blanks the plan, disables the confirm
+// control). The CLI used to do the opposite: `if plan, perr :=
+// b.DeletePlan(...); perr == nil { render }` silently fell through to the
+// irreversible delete on any plan error, printing nothing (defeating the
+// T-05-38 disclosure the code comment above it claims to satisfy). The fix
+// must refuse the delete outright when the plan cannot be built.
+func TestIdentityDeleteRefusesWhenPlanFails(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+
+	allowed := filepath.Join(home, ".ssh", "allowed_signers")
+	if err := os.Chmod(allowed, 0o000); err != nil {
+		t.Fatalf("chmod 0000 allowed_signers: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(allowed, 0o600) })
+
+	cmd, _, _ := cliTestCmd()
+	err := runIdentityDelete(cmd, "work", identityDeleteFlags{All: true, Yes: true}, false, false)
+	if err == nil {
+		t.Fatal("identity delete must refuse when the delete plan cannot be built, not proceed silently")
+	}
+	if !strings.Contains(err.Error(), "delete plan") {
+		t.Errorf("error = %v, want it to name the delete-plan failure", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(home, ".ssh", "config")); os.IsNotExist(statErr) {
+		t.Error("identity delete must not have deleted anything when the plan could not be built")
+	}
+	if _, statErr := os.Stat(filepath.Join(home, ".ssh", "id_ed25519_work")); os.IsNotExist(statErr) {
+		t.Error("identity delete must not have removed the key pair when the plan could not be built")
+	}
+}
+
 // --- confirmation flag still backs up ----------------------------------------
 
 // TestIdentityDeleteWithYesStillBacksUp runs a write verb with the
