@@ -131,7 +131,7 @@ These are first-class, enforced requirements — the user's core process ask.
 - [~] **KEY-06** (Reuse existing key): create an identity that reuses an existing key
   instead of generating one. *(built; re-fit to new create flow)*
 
-- [ ] **KEY-07** (New key for existing identity): from the manager, generate a new
+- [x] **KEY-07** (New key for existing identity): from the manager, generate a new
   key for an existing identity (distinct from rotate — see MGR-05).
 
 ## D. SSH Identity Screen (SSHUI)
@@ -217,7 +217,7 @@ These are first-class, enforced requirements — the user's core process ask.
 
 ## H. Identity Manager (MGR) — app main view
 
-- [ ] **MGR-01** (Completeness in list): The identity list shows, per row, whether the
+- [x] **MGR-01** (Completeness in list): The identity list shows, per row, whether the
   identity is **complete** (SSH + Git) or **incomplete** (flagged; e.g. SSH-only, no
   git config).
 
@@ -229,22 +229,22 @@ These are first-class, enforced requirements — the user's core process ask.
   file that is absent) · **fragment-path-missing** (an `includeIf` points at a
   non-existent fragment).
 
-- [ ] **MGR-03** (SSH-first detail): The identity detail view shows **SSH details
+- [x] **MGR-03** (SSH-first detail): The identity detail view shows **SSH details
   first**, then Git details, and never renders nonexistent git attributes for an
   SSH-only identity (no mixed/blank fields).
 
-- [ ] **MGR-04** (Clone): Clone an identity into a **new name** (must differ from the
+- [x] **MGR-04** (Clone): Clone an identity into a **new name** (must differ from the
   source) that either **references the same SSH key** or **generates a new key**;
   user customizes the clone before writing.
 
-- [ ] **MGR-05** (New key): Generate a new key for an existing identity from the
+- [x] **MGR-05** (New key): Generate a new key for an existing identity from the
   manager (see also KEY-07).
 
 - [~] **MGR-06** (Delete choice): Delete asks **"delete everything (SSH + Git + key)"**
   vs **"delete the Git identity only"** (keep the key / SSH). *(current delete only
   removes managed blocks/keys — must add the two-way choice.)*
 
-- [ ] **MGR-07** (Per-identity health): Opening an identity shows whether **that
+- [x] **MGR-07** (Per-identity health): Opening an identity shows whether **that
   identity** is healthy (its key resolves, fragment exists, signing wired, etc.).
 
 - [x] **MGR-08** (No sidecar DB): the identity list is reconstructed by parsing
@@ -315,7 +315,7 @@ These are first-class, enforced requirements — the user's core process ask.
   sidebar + master-detail pane + footer — composed under focus moves, collapsible on
   narrow terminals, SSH-safe. *(built; redesign refines the views.)*
 
-- [ ] **SHELL-02** (View set): the app's primary views are — **1) Identities
+- [x] **SHELL-02** (View set): the app's primary views are — **1) Identities
   (manager)**, **2) Global SSH options**, **3) Global Git options**, **4) Health**,
   **5) Fixer** — reachable via palette + number keys.
 
@@ -470,9 +470,9 @@ row below records each one's **home** phase.
 | KEY-02 | Phase 1 | Complete |
 | KEY-03 | Phase 1 | Complete |
 | KEY-04 | Phase 1 | Complete |
-| KEY-05 | Phase 5 | Pending |
+| KEY-05 | Phase 5 | Complete |
 | KEY-06 | Phase 3 | Complete |
-| KEY-07 | Phase 5 | Pending |
+| KEY-07 | Phase 5 | Complete |
 | SSHUI-01 | Phase 3 | Complete |
 | SSHUI-02 | Phase 3 | Complete |
 | SSHUI-03 | Phase 3 | Complete |
@@ -490,14 +490,14 @@ row below records each one's **home** phase.
 | GITUI-03 | Phase 4 | Complete |
 | GITUI-04 | Phase 4 | Complete |
 | GITUI-05 | Phase 4 | Complete |
-| MGR-01 | Phase 5 | Pending |
+| MGR-01 | Phase 5 | Complete |
 | MGR-02 | Phase 1 | Complete |
-| MGR-03 | Phase 5 | Pending |
-| MGR-04 | Phase 5 | Pending |
-| MGR-05 | Phase 5 | Pending |
-| MGR-06 | Phase 5 | Pending |
-| MGR-07 | Phase 5 | Pending |
-| MGR-08 | Phase 5 | Pending |
+| MGR-03 | Phase 5 | Complete |
+| MGR-04 | Phase 5 | Complete |
+| MGR-05 | Phase 5 | Complete |
+| MGR-06 | Phase 5 | Complete |
+| MGR-07 | Phase 5 | Complete |
+| MGR-08 | Phase 5 | Complete |
 | GSSH-01 | Phase 6 | Pending |
 | GGIT-01 | Phase 7 | Pending |
 | HLTH-01 | Phase 8 | Pending |
@@ -511,9 +511,9 @@ row below records each one's **home** phase.
 | UP-01 | Phase 9 | Pending |
 | UP-02 | Phase 9 | Pending |
 | UP-03 | Phase 9 | Pending |
-| SHELL-01 | Phase 5 | Pending |
-| SHELL-02 | Phase 5 | Pending |
-| SHELL-03 | Phase 5 | Pending |
+| SHELL-01 | Phase 5 | Complete |
+| SHELL-02 | Phase 5 | Complete |
+| SHELL-03 | Phase 5 | Complete |
 | PLAT-01 | Phase 1 | Complete |
 | PLAT-02 | Phase 1 | Complete |
 | PLAT-03 | Phase 10 | Pending |
