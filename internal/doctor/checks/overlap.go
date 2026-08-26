@@ -7,6 +7,7 @@ import (
 	"github.com/castocolina/gitid/internal/doctor"
 	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/identity"
+	"github.com/castocolina/gitid/internal/sshconfig"
 )
 
 // OverlapPair names two identities whose match conditions overlap.
@@ -18,15 +19,17 @@ type OverlapPair struct {
 
 // DetectOverlaps returns raw overlap pairs across all three overlap kinds (D-14).
 // Exported so cmd/gitid/add.go and update.go can call it at write time (D-16).
-// Reserved blocks (IsReservedBlockName) and "_global" are filtered automatically
-// to avoid spurious findings and to prevent the baseline-include infinite-fix loop
-// bug class (Pitfall 4 / T-05.5-15).
+// Reserved blocks on BOTH sides of the registry — gitconfig.IsReservedBlockName
+// (baseline-include and its provider rewrites) and sshconfig.IsReservedBlockName
+// (the SSH Include line and BOTH globals sentinel keys, D-08) — are filtered
+// automatically to avoid spurious findings and to prevent the
+// baseline-include infinite-fix loop bug class (Pitfall 4 / T-05.5-15).
 func DetectOverlaps(accounts []identity.Account) []OverlapPair {
-	// Filter out reserved and _global accounts — they have no active match
-	// conditions and must never produce overlap findings.
+	// Filter out reserved accounts — they have no active match conditions and
+	// must never produce overlap findings.
 	filtered := make([]identity.Account, 0, len(accounts))
 	for _, a := range accounts {
-		if gitconfig.IsReservedBlockName(a.Name) || a.Name == "_global" {
+		if gitconfig.IsReservedBlockName(a.Name) || sshconfig.IsReservedBlockName(a.Name) {
 			continue
 		}
 		filtered = append(filtered, a)

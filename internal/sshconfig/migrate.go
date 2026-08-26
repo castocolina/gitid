@@ -192,11 +192,14 @@ func RealMigrateDeps(configPath, includePath string, aliases []string) MigrateDe
 }
 
 // Migrate performs a cross-file transactional migration of every managed
-// identity block between the in-file (~/.ssh/config) and Include'd
-// (~/.ssh/config.d/gitid.config) layouts, in this order (Codex HIGH):
+// identity block AND the gitid globals block between the in-file (~/.ssh/config)
+// and Include'd (~/.ssh/config.d/gitid.config) layouts, in this order (Codex
+// HIGH):
 //
-//  1. preflight — snapshot the pre-migration `ssh -G` resolution for every
-//     managed alias and confirm both files parse.
+//  1. preflight — read both files, abort if BOTH carry a gitid globals block
+//     (gitid will not guess which wildcard stanza wins), snapshot the
+//     pre-migration `ssh -G` resolution for every managed alias, and confirm
+//     both files parse.
 //  2. backup BOTH files (timestamped, via filewriter) — pristine,
 //     pre-any-change snapshots, recorded regardless of what happens later.
 //  3. write the DESTINATION file (the one GAINING blocks) FIRST and
@@ -205,6 +208,13 @@ func RealMigrateDeps(configPath, includePath string, aliases []string) MigrateDe
 //     Include line for MigrateToInclude) and validate the FINAL combined
 //     state (`ssh -G` for every alias equals the preflight snapshot).
 //  5. commit — return success + both backup paths + a recovery description.
+//
+// WHAT MOVES (06-REVIEWS.md HIGH resolution): every managed identity block
+// plus the globals block — the wildcard stanza is layout-following content per
+// D-07, and stranding it would leave two `Host *` stanzas across two files,
+// the exact D-06 violation this phase closes. The Include-line block is
+// explicitly NOT moved in either direction: it stays in the main config file,
+// because it is what makes the destination reachable.
 //
 // Add-to-destination-before-remove-from-source ordering guarantees NO block
 // loss at any crash point: the worst intermediate state is a transient
@@ -239,11 +249,6 @@ func Migrate(direction MigrateDirection, deps MigrateDeps) (MigrateResult, error
 	}
 
 	// --- Step 1: preflight.
-	preSnapshot, err := snapshotResolution(deps)
-	if err != nil {
-		return MigrateResult{}, fmt.Errorf("sshconfig: migrate: preflight: %w", err)
-	}
-
 	sourceContent, err := readOrEmpty(deps, sourcePath)
 	if err != nil {
 		return MigrateResult{}, fmt.Errorf("sshconfig: migrate: preflight: reading %s: %w", sourcePath, err)
@@ -252,6 +257,25 @@ func Migrate(direction MigrateDirection, deps MigrateDeps) (MigrateResult, error
 	if err != nil {
 		return MigrateResult{}, fmt.Errorf("sshconfig: migrate: preflight: reading %s: %w", destPath, err)
 	}
+
+	// Pathological-machine abort BEFORE any backup or write (T-06-34): when
+	// both files carry a gitid globals block, gitid refuses to guess which
+	// wildcard stanza governs the user's authentication. Merging them silently
+	// would be a security-relevant guess about which `Host *` body wins; the
+	// Options screen is where the user resolves that deliberately.
+	_, sourceGlobals := migrationClasses(sourceContent)
+	_, destGlobals := migrationClasses(destContent)
+	if len(sourceGlobals) > 0 && len(destGlobals) > 0 {
+		return MigrateResult{}, fmt.Errorf(
+			"sshconfig: migrate: refusing to guess which wildcard stanza wins: both %s and %s carry a gitid globals block; merge or remove one before migrating — resolve it on the Options screen",
+			sourcePath, destPath)
+	}
+
+	preSnapshot, err := snapshotResolution(deps)
+	if err != nil {
+		return MigrateResult{}, fmt.Errorf("sshconfig: migrate: preflight: %w", err)
+	}
+
 	if _, perr := Parse(sourceContent); perr != nil {
 		return MigrateResult{}, fmt.Errorf("sshconfig: migrate: preflight: %s does not parse: %w", sourcePath, perr)
 	}
@@ -283,8 +307,8 @@ func Migrate(direction MigrateDirection, deps MigrateDeps) (MigrateResult, error
 	}
 
 	// --- Step 3: write DESTINATION first (add-before-remove ordering).
-	movable := movableBlockNames(sourceContent)
-	destComposed := reorderGlobalLast(composeDestination(destContent, sourceContent, movable))
+	movableIdentities, movableGlobals := migrationClasses(sourceContent)
+	destComposed := reorderGlobalLast(composeDestination(destContent, sourceContent, movableIdentities, movableGlobals))
 	if _, perr := Parse(destComposed); perr != nil {
 		return rollback(deps, sourceSnap, destSnap,
 			fmt.Errorf("sshconfig: migrate: composed %s is not parseable, refusing to write: %w", destPath, perr))
@@ -305,7 +329,7 @@ func Migrate(direction MigrateDirection, deps MigrateDeps) (MigrateResult, error
 	// also floors the Include line in the same composed write, so the
 	// removal and the wiring that makes the destination reachable commit
 	// atomically together — never as two separate writes).
-	sourceComposed := reorderGlobalLast(composeSource(direction, sourceContent, movable))
+	sourceComposed := reorderGlobalLast(composeSource(direction, sourceContent, movableIdentities, movableGlobals))
 	if _, perr := Parse(sourceComposed); perr != nil {
 		return rollback(deps, sourceSnap, destSnap,
 			fmt.Errorf("sshconfig: migrate: composed %s is not parseable, refusing to write: %w", sourcePath, perr))
@@ -416,19 +440,37 @@ func equalStringSlices(a, b []string) bool {
 	return true
 }
 
-// movableBlockNames returns the managed block names in content that
-// participate in migration — every gitid-managed identity block EXCLUDING
-// the reserved Include block and the macOS `_global` wildcard block (both
-// are non-identity wiring, not per-identity content).
-func movableBlockNames(content []byte) []string {
-	var names []string
+// migrationClasses walks content's gitid-managed blocks and sorts each into one
+// of three classes (06-REVIEWS.md HIGH resolution — the predecessor
+// movableBlockNames filter answered "which blocks are per-identity content" and
+// reused it for "which blocks move"; those diverged the moment D-07 made the
+// globals block layout-following):
+//
+//   - identities — per-identity content that MOVES with a storage migration;
+//   - globals — the gitid `Host *` wildcard stanza under EITHER registered
+//     sentinel name (IsGlobalBlockName). The globals block is layout-following
+//     content per D-07, so it moves exactly like the identities: stranding it
+//     leaves two wildcard stanzas across two files, the exact D-06 violation
+//     this phase exists to close;
+//   - stationary — the reserved Include-line block, returned in NEITHER slice:
+//     moving it would relocate the very wiring that makes the destination
+//     reachable, breaking the migration's own Include plumbing.
+//
+// The classification uses the narrow IsGlobalBlockName predicate deliberately,
+// NOT the broad IsReservedBlockName — conflating them is what made the Include
+// wiring movable under the predecessor filter.
+func migrationClasses(content []byte) (identities []string, globals []string) {
 	for _, b := range filewriter.ListBlocks(content) {
-		if b.Name == globalBlockName || IsReservedBlockName(b.Name) {
-			continue
+		switch {
+		case IsGlobalBlockName(b.Name):
+			globals = append(globals, b.Name)
+		case IsReservedBlockName(b.Name):
+			// stationary — the Include-line block stays in the main config file
+		default:
+			identities = append(identities, b.Name)
 		}
-		names = append(names, b.Name)
 	}
-	return names
+	return identities, globals
 }
 
 // blockBodyMap indexes content's managed blocks by name for body lookup.
@@ -440,28 +482,36 @@ func blockBodyMap(content []byte) map[string]string {
 	return m
 }
 
-// composeDestination returns destContent with every name in movable set to
-// its body from sourceContent (filewriter.ReplaceBlock — idempotent:
-// replacing an already-present identical block is a no-op).
-func composeDestination(destContent, sourceContent []byte, movable []string) []byte {
+// composeDestination returns destContent with every movable block set to its
+// body from sourceContent — identities first, then the globals block, in that
+// order (filewriter.ReplaceBlock — idempotent: replacing an already-present
+// identical block is a no-op). The Include-line block is never in either list,
+// so it is never written into the destination.
+func composeDestination(destContent, sourceContent []byte, movableIdentities, movableGlobals []string) []byte {
 	bodies := blockBodyMap(sourceContent)
 	composed := destContent
-	for _, name := range movable {
+	for _, name := range movableIdentities {
+		composed = filewriter.ReplaceBlock(composed, name, bodies[name])
+	}
+	for _, name := range movableGlobals {
 		composed = filewriter.ReplaceBlock(composed, name, bodies[name])
 	}
 	return composed
 }
 
-// composeSource returns sourceContent with every name in movable removed
+// composeSource returns sourceContent with every movable block removed
 // (filewriter.RemoveBlock — idempotent). For MigrateToInclude, the Include
 // line is ALSO floored in the same composed result (filewriter.
 // PrependBlockIfNotFound) — the removal and the wiring that makes the
 // destination reachable commit atomically together in one write, never as
 // two separate writes (T-01-22: a crash between them must never leave a
 // dangling Include-less state with the blocks already gone).
-func composeSource(direction MigrateDirection, sourceContent []byte, movable []string) []byte {
+func composeSource(direction MigrateDirection, sourceContent []byte, movableIdentities, movableGlobals []string) []byte {
 	composed := sourceContent
-	for _, name := range movable {
+	for _, name := range movableIdentities {
+		composed = filewriter.RemoveBlock(composed, name)
+	}
+	for _, name := range movableGlobals {
 		composed = filewriter.RemoveBlock(composed, name)
 	}
 	if direction == MigrateToInclude {
@@ -470,17 +520,20 @@ func composeSource(direction MigrateDirection, sourceContent []byte, movable []s
 	return composed
 }
 
-// reorderGlobalLast re-positions the macOS `_global` Host * block to the end
-// of content when present, preserving the "always last" first-match-wins
-// invariant (mirrors sshconfig.Write's placement guarantee) after
-// ReplaceBlock may have appended new identity blocks after it. A no-op when
-// no `_global` block exists.
+// reorderGlobalLast re-positions the gitid `Host *` globals block to the end of
+// content when present, under EITHER registered sentinel name (IsGlobalBlockName),
+// preserving the "always last" first-match-wins invariant (D-09; mirrors
+// sshconfig.Write's placement guarantee) after the compose step may have
+// appended new identity blocks after it. By running AFTER the globals block has
+// been added to the destination, the file ends with identities first and the
+// wildcard stanza last. A no-op when no globals block exists.
 func reorderGlobalLast(content []byte) []byte {
 	for _, b := range filewriter.ListBlocks(content) {
-		if b.Name == globalBlockName {
-			trimmed := filewriter.RemoveBlock(content, globalBlockName)
-			return filewriter.ReplaceBlock(trimmed, globalBlockName, b.Body)
+		if !IsGlobalBlockName(b.Name) {
+			continue
 		}
+		trimmed := filewriter.RemoveBlock(content, b.Name)
+		return filewriter.ReplaceBlock(trimmed, b.Name, b.Body)
 	}
 	return content
 }

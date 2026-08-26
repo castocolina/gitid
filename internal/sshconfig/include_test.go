@@ -137,18 +137,42 @@ func TestEnsureIncludeDirChmodsExistingBackTo0700(t *testing.T) {
 
 // TestIsReservedBlockName proves the reserved Include block name is
 // recognised, mirroring gitconfig.IsReservedBlockName (Pitfall 4), and that
-// the macOS `Host *` globals block (`_global`) is reserved too — Phase 3 D-08
-// writes it on EVERY create, so an unregistered name would let the doctor
-// Orphans fix path delete it in a destructive false-positive loop (L4).
+// BOTH globals sentinel keys — the current GlobalBlockName and the
+// pre-D-08 LegacyGlobalBlockName — are reserved too: the create ceremony
+// writes the wildcard block on EVERY create, so an unregistered name would
+// let the doctor Orphans fix path delete it in a destructive false-positive
+// loop (L4), and a machine still carrying the legacy name must be treated
+// identically until its next write adopts it (D-08).
 func TestIsReservedBlockName(t *testing.T) {
-	if !IsReservedBlockName("ssh-include") {
-		t.Error(`IsReservedBlockName("ssh-include") = false, want true`)
+	if !IsReservedBlockName(sshIncludeBlockName) {
+		t.Error(`IsReservedBlockName(sshIncludeBlockName) = false, want true`)
 	}
-	if !IsReservedBlockName("_global") {
-		t.Error(`IsReservedBlockName("_global") = false, want true (D-08 macOS globals block, L4)`)
+	for _, name := range []string{GlobalBlockName, LegacyGlobalBlockName} {
+		if !IsReservedBlockName(name) {
+			t.Errorf("IsReservedBlockName(%q) = false, want true (D-08 globals block, L4)", name)
+		}
 	}
 	if IsReservedBlockName("personal") {
 		t.Error(`IsReservedBlockName("personal") = true, want false`)
+	}
+}
+
+// TestIsGlobalBlockName proves the NARROW wildcard-block predicate recognises
+// both globals sentinel names and — critically — returns FALSE for the
+// Include-line block name: IsGlobalBlockName is not the broad reserved
+// predicate, and conflating the two is what would make the Include wiring
+// movable in a storage migration (06-REVIEWS.md HIGH).
+func TestIsGlobalBlockName(t *testing.T) {
+	for _, name := range []string{GlobalBlockName, LegacyGlobalBlockName} {
+		if !IsGlobalBlockName(name) {
+			t.Errorf("IsGlobalBlockName(%q) = false, want true", name)
+		}
+	}
+	if IsGlobalBlockName(sshIncludeBlockName) {
+		t.Error("IsGlobalBlockName(sshIncludeBlockName) = true, want false — the Include line is reserved but is NOT a movable globals stanza")
+	}
+	if IsGlobalBlockName("personal") {
+		t.Error(`IsGlobalBlockName("personal") = true, want false`)
 	}
 }
 

@@ -12,6 +12,11 @@ package checks_test
 // then proposes removing them, the next create re-writes them, and the two
 // fight in a destructive false-positive loop.
 //
+// TestOrphansReservedArtifactsSurviveFix seeds the wildcard stanza under BOTH
+// registered sentinel keys ("global-ssh" AND the legacy "_global"), because a
+// machine may still carry the pre-D-08 name until its next write adopts it:
+// the fix path must provably leave both alone.
+//
 // The test below applies EVERY Fix the Orphans check offers over an Include'd
 // fake home and asserts the three artifacts come back byte-identical. The
 // non-Include-aware control asserts the opposite, so the guard cannot silently
@@ -41,7 +46,11 @@ const includeLine = "Include ~/.ssh/config.d/*.config"
 // TestOrphansReservedArtifactsSurviveFix is the L4 proof: over an Include'd
 // fake home, CheckOrphans built with Include-AWARE managed-block discovery
 // reports nothing about the Phase-3 artifacts, and applying every Fix it does
-// offer leaves those artifacts byte-identical.
+// offer leaves those artifacts byte-identical. The fixture deliberately
+// carries the gitid wildcard block under BOTH of its registered sentinel names
+// — the current "global-ssh" key AND a raw pre-Phase-6 "_global" machine —
+// so the fix path provably leaves both alone (D-08; if only the current name
+// were seeded, a future unregistering of the legacy name could silently pass).
 func TestOrphansReservedArtifactsSurviveFix(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -59,7 +68,7 @@ func TestOrphansReservedArtifactsSurviveFix(t *testing.T) {
 
 	// 1. Nothing may be reported ABOUT the reserved artifacts.
 	for _, f := range findings {
-		for _, reserved := range []string{"ssh-include", "_global", "config.d"} {
+		for _, reserved := range []string{"ssh-include", "_global", "global-ssh", "config.d"} {
 			if strings.Contains(f.Title, reserved) || strings.Contains(f.Explanation, reserved) {
 				t.Errorf("CheckOrphans reported a finding naming the reserved artifact %q: %s\n%s",
 					reserved, f.Title, f.Explanation)
@@ -202,7 +211,9 @@ type includeFixture struct {
 
 // seedIncludeHome writes the D-06 Include'd layout under home:
 //
-//	~/.ssh/config              — the `ssh-include` block + the `_global` block
+//	~/.ssh/config              — the `ssh-include` block + the `global-ssh` AND
+//	                             legacy `_global` wildcard blocks (both
+//	                             registered sentinel names, D-08)
 //	~/.ssh/config.d/gitid.config — the `personal` identity Host block
 //	~/.gitconfig               — the `personal` includeIf block + a `ghost` orphan
 //
@@ -225,7 +236,8 @@ func seedIncludeHome(t *testing.T, home string) includeFixture {
 
 	sshConfig := block("ssh-include", includeLine) +
 		"# a hand-written stanza gitid must never touch\nHost legacy\n  Hostname example.com\n\n" +
-		block("_global", "Host *\n  IgnoreUnknown UseKeychain\n  UseKeychain yes\n  AddKeysToAgent yes")
+		block("global-ssh", "Host *\n  IgnoreUnknown UseKeychain\n  UseKeychain yes\n  AddKeysToAgent yes") +
+		block("_global", "Host *\n  IdentitiesOnly yes\n")
 	writeFixture(t, fx.sshConfigPath, sshConfig)
 
 	included := block("personal",

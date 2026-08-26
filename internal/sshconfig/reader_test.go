@@ -66,23 +66,30 @@ func TestParseManagedHosts_TwoBlocks(t *testing.T) {
 	}
 }
 
-// TestParseManagedHosts_GlobalSkipped verifies that the _global block is
-// skipped and not included in the result map.
+// TestParseManagedHosts_GlobalSkipped verifies that NEITHER globals block
+// name is returned as a managed identity host (D-08): the legacy `_global`
+// key — a raw pre-Phase-6 machine handed to us on disk — and the current
+// GlobalBlockName, registered in the same IsReservedBlockName predicate, are
+// both skipped. A globals block is wiring, not identity content: returning it
+// here would surface a phantom "global-ssh" identity in the Identity Manager.
 func TestParseManagedHosts_GlobalSkipped(t *testing.T) {
 	globalBody := "Host *\n\tAddKeysToAgent yes\n"
 	workBody := "Host work.github.com\n\tHostname ssh.github.com\n\tPort 22\n\tIdentityFile ~/.ssh/id_ed25519_work\n\tIdentitiesOnly yes\n"
 
 	content := []byte(
 		filewriter.BeginPrefix + "work\n" + workBody + filewriter.EndPrefix + "work\n" +
-			filewriter.BeginPrefix + "_global\n" + globalBody + filewriter.EndPrefix + "_global\n",
+			filewriter.BeginPrefix + "_global\n" + globalBody + filewriter.EndPrefix + "_global\n" +
+			filewriter.BeginPrefix + GlobalBlockName + "\n" + globalBody + filewriter.EndPrefix + GlobalBlockName + "\n",
 	)
 
 	got, err := ParseManagedHosts(content)
 	if err != nil {
 		t.Fatalf("ParseManagedHosts returned error: %v", err)
 	}
-	if _, ok := got["_global"]; ok {
-		t.Error("_global block must be skipped, but found in result")
+	for _, name := range []string{"_global", GlobalBlockName} {
+		if _, ok := got[name]; ok {
+			t.Errorf("globals block %q must be skipped (IsReservedBlockName), but found in result", name)
+		}
 	}
 	if len(got) != 1 {
 		t.Fatalf("expected 1 entry (only 'work'), got %d: %v", len(got), got)

@@ -7,6 +7,7 @@ import (
 	"github.com/castocolina/gitid/internal/doctor"
 	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/identity"
+	"github.com/castocolina/gitid/internal/sshconfig"
 )
 
 // makeGitdirAccount builds a minimal Account with a single MatchGitdir match.
@@ -91,6 +92,33 @@ func TestDetectOverlaps_ReservedBlockExcluded(t *testing.T) {
 	// Only "real" identities count — "baseline-include" and "_global" must be skipped.
 	if len(pairs) != 0 {
 		t.Errorf("expected 0 pairs (reserved/global filtered), got %d: %+v", len(pairs), pairs)
+	}
+}
+
+// TestCheckOverlap_GlobalsNamesAbsentFromFindings asserts the D-08 registry
+// property from the overlap side: an account named under EITHER globals
+// sentinel key can never produce a finding — the filter routes through
+// sshconfig.IsReservedBlockName, so neither the current name nor the legacy
+// name appears in any returned finding. The alpha/beta pair genuinely overlaps
+// and must still be reported, keeping the exclusion assertion non-vacuous.
+func TestCheckOverlap_GlobalsNamesAbsentFromFindings(t *testing.T) {
+	accounts := []identity.Account{
+		makeGitdirAccount(sshconfig.GlobalBlockName, "~/git/"),
+		makeGitdirAccount(sshconfig.LegacyGlobalBlockName, "~/git/"),
+		makeGitdirAccount("alpha", "~/git/"),
+		makeGitdirAccount("beta", "~/git/"),
+	}
+	findings := CheckOverlap(doctor.Deps{Identities: accounts})
+
+	for _, f := range findings {
+		for _, name := range []string{sshconfig.GlobalBlockName, sshconfig.LegacyGlobalBlockName} {
+			if strings.Contains(f.Title, name) || strings.Contains(f.Explanation, name) {
+				t.Errorf("overlap finding names the excluded globals block %q: %s\n%s", name, f.Title, f.Explanation)
+			}
+		}
+	}
+	if len(findings) == 0 {
+		t.Fatal("expected a genuine overlap finding between alpha and beta; an empty finding set would make the exclusion assertion vacuous")
 	}
 }
 

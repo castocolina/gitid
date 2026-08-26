@@ -181,9 +181,12 @@ type DeleteResult struct {
 }
 
 // Delete removes an identity's artifacts according to scope, with backup via
-// the injected DeleteDeps. Shared/global blocks (e.g. the macOS "_global" SSH
-// block and the global signing wiring) are NEVER touched — only acct.Name is
-// passed to RemoveBlock. RemoveBlock is idempotent: if a block is already
+// the injected DeleteDeps. Shared/global blocks are NEVER touched: the gitid
+// wildcard stanza is gitid-owned wiring under either of its registered
+// sentinel names (sshconfig.IsReservedBlockName covers "global-ssh" AND the
+// legacy `_global`), and the global signing/rewrite wiring is reserved on the
+// gitconfig side the same way — so only acct.Name is passed to RemoveBlock.
+// RemoveBlock is idempotent: if a block is already
 // absent the file is returned unchanged (no error), and — for the writer
 // branches that live directly inside Delete (review R-14) — an unchanged
 // RemoveBlock result skips its writer entirely, so an idempotent re-run never

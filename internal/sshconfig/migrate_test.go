@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -241,6 +242,353 @@ func TestMigratePreservesForeignContent(t *testing.T) {
 	configContent := mustReadFile(t, configPath)
 	if !bytes.Contains(configContent, []byte("Host handwritten")) {
 		t.Errorf("foreign hand-written content was lost during migration; got:\n%s", configContent)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Globals-carriage migration tests (plan 06-02 Task 2 — 06-REVIEWS.md HIGH)
+// ---------------------------------------------------------------------------
+
+// containsBlockName reports whether content carries a managed block named name.
+func containsBlockName(content []byte, name string) bool {
+	for _, b := range filewriter.ListBlocks(content) {
+		if b.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// assertGlobalsBlockLast fails unless the block named globalsName starts after
+// the block named identityName in content and is the final gitid-managed block
+// there (the D-09 identities-first / wildcard-last invariant).
+func assertGlobalsBlockLast(t *testing.T, content []byte, globalsName, identityName string) {
+	t.Helper()
+	text := string(content)
+	gOff := strings.Index(text, filewriter.BeginPrefix+globalsName+"\n")
+	iOff := strings.Index(text, filewriter.BeginPrefix+identityName+"\n")
+	if gOff < 0 || iOff < 0 {
+		t.Fatalf("missing sentinels (globals=%d identity=%d) in:\n%s", gOff, iOff, content)
+	}
+	if gOff < iOff {
+		t.Errorf("globals begin-sentinel at %d precedes identity %q at %d; want globals LAST:\n%s", gOff, identityName, iOff, content)
+	}
+	blocks := filewriter.ListBlocks(content)
+	if len(blocks) == 0 || blocks[len(blocks)-1].Name != globalsName {
+		t.Errorf("last gitid-managed block = %q, want %s:\n%s", lastBlockName(blocks), globalsName, content)
+	}
+}
+
+// TestMigrationClasses asserts the three-way storage-migration classification
+// (06-REVIEWS.md HIGH resolution): the globals block goes in the globals list,
+// the Include-line block is stationary and appears in NEITHER list, and an
+// ordinary identity name goes in the identities list — under BOTH globals
+// sentinel names.
+func TestMigrationClasses(t *testing.T) {
+	content := []byte(
+		managedTestBlock(sshIncludeBlockName, sshIncludeLineBody+"\n") +
+			managedTestBlock(GlobalBlockName, "Host *\n  HashKnownHosts yes\n") +
+			managedTestBlock(LegacyGlobalBlockName, "Host *\n  HashKnownHosts no\n") +
+			managedTestBlock("personal", "Host personal.github.com\n  Hostname ssh.github.com\n"),
+	)
+
+	identities, globals := migrationClasses(content)
+
+	for _, name := range []string{GlobalBlockName, LegacyGlobalBlockName} {
+		if !containsName(globals, name) {
+			t.Errorf("migrationClasses globals = %v, want it to contain %q; identities = %v", globals, name, identities)
+		}
+		if containsName(identities, name) {
+			t.Errorf("globals block %q must not be classified as identity content; identities = %v", name, identities)
+		}
+	}
+	if containsName(identities, sshIncludeBlockName) || containsName(globals, sshIncludeBlockName) {
+		t.Errorf("the Include-line block must be stationary and appear in NEITHER list; identities=%v globals=%v", identities, globals)
+	}
+	if !containsName(identities, "personal") {
+		t.Errorf("ordinary identity must be classified as identity content; identities = %v", identities)
+	}
+}
+
+// TestMigrateToIncludeCarriesGlobalsBlock proves D-07/D-09 for the Include'd
+// direction: a storage migration toward the Include'd layout moves EVERY
+// managed identity block AND the globals block into the destination file,
+// leaves neither in the source, carries every directive the globals body had,
+// finishes with the wildcard stanza as the LAST gitid block in the
+// destination, and never moves the Include-line block into the destination.
+func TestMigrateToIncludeCarriesGlobalsBlock(t *testing.T) {
+	skipIfNoSSH(t)
+	home, configPath, includePath := migrateFixture(t)
+	sshDir := filepath.Join(home, ".ssh")
+
+	identityKey := filepath.Join(sshDir, "id_ed25519_personal")
+	hostBlock := RenderHostBlock("personal.github.com", "ssh.github.com", 443, identityKey, "")
+	content := managedTestBlock("personal", hostBlock) +
+		managedTestBlock(GlobalBlockName, "Host *\n  HashKnownHosts yes\n  AddKeysToAgent yes\n")
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil { //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+		t.Fatalf("seeding in-line identity + globals: %v", err)
+	}
+
+	deps := RealMigrateDeps(configPath, includePath, []string{"personal.github.com"})
+	if _, err := Migrate(MigrateToInclude, deps); err != nil {
+		t.Fatalf("Migrate(MigrateToInclude): %v", err)
+	}
+
+	dest := mustReadFile(t, includePath)
+	if !containsBlockName(dest, GlobalBlockName) {
+		t.Errorf("globals block must be present in the destination file; got:\n%s", dest)
+	}
+	if !bytes.Contains(dest, []byte("HashKnownHosts yes")) || !bytes.Contains(dest, []byte("AddKeysToAgent yes")) {
+		t.Errorf("globals directives lost during migration; got:\n%s", dest)
+	}
+	assertGlobalsBlockLast(t, dest, GlobalBlockName, "personal")
+	if containsBlockName(dest, sshIncludeBlockName) {
+		t.Errorf("the Include-line block must never be written into the destination file; got:\n%s", dest)
+	}
+
+	src := mustReadFile(t, configPath)
+	if containsBlockName(src, GlobalBlockName) {
+		t.Errorf("globals block must be ABSENT from the source file after migration; got:\n%s", src)
+	}
+	if containsBlockName(src, "personal") {
+		t.Errorf("identity block must be absent from the source file after migration; got:\n%s", src)
+	}
+	if !containsBlockName(src, sshIncludeBlockName) {
+		t.Errorf("the Include-line block must stay in the main config file; got:\n%s", src)
+	}
+	if !bytes.Contains(src, []byte(sshIncludeLineBody)) {
+		t.Errorf("the Include line body must stay in the main config file; got:\n%s", src)
+	}
+}
+
+// TestMigrateToInFileCarriesGlobalsBlock is the same proof for the in-file
+// direction: everything moves back into ~/.ssh/config, the globals block lands
+// LAST there, the Include-wiring block stays in the main config file, and the
+// Include'd file is left empty of gitid block content.
+func TestMigrateToInFileCarriesGlobalsBlock(t *testing.T) {
+	skipIfNoSSH(t)
+	home, configPath, includePath := migrateFixture(t)
+
+	if err := EnsureIncludeDir(filepath.Dir(includePath)); err != nil {
+		t.Fatalf("EnsureIncludeDir: %v", err)
+	}
+	if _, err := EnsureIncludeLine(configPath); err != nil {
+		t.Fatalf("EnsureIncludeLine: %v", err)
+	}
+
+	sshDir := filepath.Join(home, ".ssh")
+	identityKey := filepath.Join(sshDir, "id_ed25519_personal")
+	hostBlock := RenderHostBlock("personal.github.com", "ssh.github.com", 443, identityKey, "")
+	includeContent := managedTestBlock("personal", hostBlock) +
+		managedTestBlock(GlobalBlockName, "Host *\n  HashKnownHosts yes\n")
+	if err := os.WriteFile(includePath, []byte(includeContent), 0o600); err != nil { //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+		t.Fatalf("seeding Include'd identity + globals: %v", err)
+	}
+
+	deps := RealMigrateDeps(configPath, includePath, []string{"personal.github.com"})
+	if _, err := Migrate(MigrateToInFile, deps); err != nil {
+		t.Fatalf("Migrate(MigrateToInFile): %v", err)
+	}
+
+	dest := mustReadFile(t, configPath)
+	if !containsBlockName(dest, GlobalBlockName) {
+		t.Errorf("globals block must be present in ~/.ssh/config after migration; got:\n%s", dest)
+	}
+	if !bytes.Contains(dest, []byte("HashKnownHosts yes")) {
+		t.Errorf("globals directives lost during migration; got:\n%s", dest)
+	}
+	assertGlobalsBlockLast(t, dest, GlobalBlockName, "personal")
+	if !containsBlockName(dest, sshIncludeBlockName) {
+		t.Errorf("the Include-line block must stay in the main config file; got:\n%s", dest)
+	}
+
+	src := mustReadFile(t, includePath)
+	if containsBlockName(src, GlobalBlockName) || containsBlockName(src, "personal") {
+		t.Errorf("Include'd file retains moved blocks after migration; got:\n%s", src)
+	}
+	if containsBlockName(src, sshIncludeBlockName) {
+		t.Errorf("the Include-line block must never be written into the Include'd file; got:\n%s", src)
+	}
+}
+
+// TestMigrateToIncludeCarriesLegacyGlobalsBlock proves a machine whose
+// wildcard stanza is stored under the pre-D-08 sentinel name migrates exactly
+// like one storing it under the current name, and its adopted content survives
+// (D-08 / 06-CONTEXT.md D-07).
+func TestMigrateToIncludeCarriesLegacyGlobalsBlock(t *testing.T) {
+	skipIfNoSSH(t)
+	home, configPath, includePath := migrateFixture(t)
+	sshDir := filepath.Join(home, ".ssh")
+
+	identityKey := filepath.Join(sshDir, "id_ed25519_personal")
+	hostBlock := RenderHostBlock("personal.github.com", "ssh.github.com", 443, identityKey, "")
+	content := managedTestBlock("personal", hostBlock) +
+		managedTestBlock(LegacyGlobalBlockName, "Host *\n  HashKnownHosts yes\n  AddKeysToAgent yes\n")
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil { //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+		t.Fatalf("seeding in-line identity + legacy globals: %v", err)
+	}
+
+	deps := RealMigrateDeps(configPath, includePath, []string{"personal.github.com"})
+	if _, err := Migrate(MigrateToInclude, deps); err != nil {
+		t.Fatalf("Migrate(MigrateToInclude): %v", err)
+	}
+
+	dest := mustReadFile(t, includePath)
+	if !containsBlockName(dest, LegacyGlobalBlockName) {
+		t.Errorf("legacy-named globals block must be present in the destination; got:\n%s", dest)
+	}
+	if !bytes.Contains(dest, []byte("HashKnownHosts yes")) || !bytes.Contains(dest, []byte("AddKeysToAgent yes")) {
+		t.Errorf("adopted globals content lost during migration; got:\n%s", dest)
+	}
+	assertGlobalsBlockLast(t, dest, LegacyGlobalBlockName, "personal")
+
+	src := mustReadFile(t, configPath)
+	if containsBlockName(src, LegacyGlobalBlockName) {
+		t.Errorf("legacy globals block must be ABSENT from the source after migration; got:\n%s", src)
+	}
+}
+
+// TestMigrateToInFileCarriesLegacyGlobalsBlock is the in-file direction for the
+// legacy sentinel name.
+func TestMigrateToInFileCarriesLegacyGlobalsBlock(t *testing.T) {
+	skipIfNoSSH(t)
+	home, configPath, includePath := migrateFixture(t)
+
+	if err := EnsureIncludeDir(filepath.Dir(includePath)); err != nil {
+		t.Fatalf("EnsureIncludeDir: %v", err)
+	}
+	if _, err := EnsureIncludeLine(configPath); err != nil {
+		t.Fatalf("EnsureIncludeLine: %v", err)
+	}
+
+	sshDir := filepath.Join(home, ".ssh")
+	identityKey := filepath.Join(sshDir, "id_ed25519_personal")
+	hostBlock := RenderHostBlock("personal.github.com", "ssh.github.com", 443, identityKey, "")
+	includeContent := managedTestBlock("personal", hostBlock) +
+		managedTestBlock(LegacyGlobalBlockName, "Host *\n  HashKnownHosts yes\n")
+	if err := os.WriteFile(includePath, []byte(includeContent), 0o600); err != nil { //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+		t.Fatalf("seeding Include'd identity + legacy globals: %v", err)
+	}
+
+	deps := RealMigrateDeps(configPath, includePath, []string{"personal.github.com"})
+	if _, err := Migrate(MigrateToInFile, deps); err != nil {
+		t.Fatalf("Migrate(MigrateToInFile): %v", err)
+	}
+
+	dest := mustReadFile(t, configPath)
+	if !containsBlockName(dest, LegacyGlobalBlockName) {
+		t.Errorf("legacy-named globals block must be present in ~/.ssh/config after migration; got:\n%s", dest)
+	}
+	if !bytes.Contains(dest, []byte("HashKnownHosts yes")) {
+		t.Errorf("adopted globals content lost during migration; got:\n%s", dest)
+	}
+	assertGlobalsBlockLast(t, dest, LegacyGlobalBlockName, "personal")
+
+	src := mustReadFile(t, includePath)
+	if containsBlockName(src, LegacyGlobalBlockName) || containsBlockName(src, "personal") {
+		t.Errorf("Include'd file retains moved blocks after migration; got:\n%s", src)
+	}
+}
+
+// TestMigrateNoGlobalsBehavesAsBefore proves a machine with NO globals block
+// at all migrates exactly as it did before the classification change: the
+// identity block moves, the Include line is floored, and no globals block is
+// fabricated into either file (the globals list is empty, so the move is
+// identity-only).
+func TestMigrateNoGlobalsBehavesAsBefore(t *testing.T) {
+	skipIfNoSSH(t)
+	home, configPath, includePath := migrateFixture(t)
+	sshDir := filepath.Join(home, ".ssh")
+
+	identityKey := filepath.Join(sshDir, "id_ed25519_personal")
+	hostBlock := RenderHostBlock("personal.github.com", "ssh.github.com", 443, identityKey, "")
+	if _, err := Write(configPath, "personal", hostBlock, ""); err != nil {
+		t.Fatalf("seeding in-line identity (no globals): %v", err)
+	}
+
+	deps := RealMigrateDeps(configPath, includePath, []string{"personal.github.com"})
+	if _, err := Migrate(MigrateToInclude, deps); err != nil {
+		t.Fatalf("Migrate(MigrateToInclude): %v", err)
+	}
+
+	dest := mustReadFile(t, includePath)
+	if !containsBlockName(dest, "personal") {
+		t.Errorf("identity block must still move without any globals block; got:\n%s", dest)
+	}
+	if containsBlockName(dest, GlobalBlockName) || containsBlockName(dest, LegacyGlobalBlockName) {
+		t.Errorf("no globals block may be fabricated by the migration; got:\n%s", dest)
+	}
+
+	src := mustReadFile(t, configPath)
+	if containsBlockName(src, "personal") {
+		t.Errorf("identity block must be removed from source; got:\n%s", src)
+	}
+	if !containsBlockName(src, sshIncludeBlockName) {
+		t.Errorf("Include line must be floored as before; got:\n%s", src)
+	}
+	if containsBlockName(src, GlobalBlockName) || containsBlockName(src, LegacyGlobalBlockName) {
+		t.Errorf("no globals block may be fabricated in the source either; got:\n%s", src)
+	}
+}
+
+// TestMigrateBothFilesGlobalsAbortsAtPreflight pins the T-06-34 preflight
+// abort: when BOTH files carry a gitid globals block before the migration,
+// Migrate refuses to guess which wildcard stanza wins — the returned error
+// names both file paths, and neither file's bytes change (the abort happens
+// before any backup or write, so no `.bak.*` files are created either).
+func TestMigrateBothFilesGlobalsAbortsAtPreflight(t *testing.T) {
+	skipIfNoSSH(t)
+	home, configPath, includePath := migrateFixture(t)
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(filepath.Dir(includePath), 0o700); err != nil {
+		t.Fatalf("seeding config.d: %v", err)
+	}
+
+	identityKey := filepath.Join(sshDir, "id_ed25519_personal")
+	hostBlock := RenderHostBlock("personal.github.com", "ssh.github.com", 443, identityKey, "")
+	sourceContent := managedTestBlock("personal", hostBlock) +
+		managedTestBlock(GlobalBlockName, "Host *\n  HashKnownHosts yes\n")
+	if err := os.WriteFile(configPath, []byte(sourceContent), 0o600); err != nil { //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+		t.Fatalf("seeding in-file globals: %v", err)
+	}
+	destContent := managedTestBlock(LegacyGlobalBlockName, "Host *\n  HashKnownHosts no\n")
+	if err := os.WriteFile(includePath, []byte(destContent), 0o600); err != nil { //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+		t.Fatalf("seeding Include'd globals: %v", err)
+	}
+
+	preSource := mustReadFile(t, configPath)
+	preDest := mustReadFile(t, includePath)
+
+	deps := RealMigrateDeps(configPath, includePath, []string{"personal.github.com"})
+	_, err := Migrate(MigrateToInclude, deps)
+	if err == nil {
+		t.Fatal("Migrate must abort when both files carry a globals block")
+	}
+	for _, path := range []string{configPath, includePath} {
+		if !strings.Contains(err.Error(), path) {
+			t.Errorf("preflight error must name %s; got %v", path, err)
+		}
+	}
+	if !strings.Contains(err.Error(), "guess") {
+		t.Errorf("preflight error must state gitid will not guess which stanza wins; got %v", err)
+	}
+
+	// Both files byte-identical, and the abort happened before step 2's backup
+	// (seeding via os.WriteFile leaves no backup files to begin with).
+	for _, path := range []string{configPath, includePath} {
+		matches, globErr := filepath.Glob(path + ".bak.*")
+		if globErr != nil {
+			t.Fatalf("globbing %s backups: %v", path, globErr)
+		}
+		if len(matches) != 0 {
+			t.Errorf("preflight abort must not create backup files for %s; found %v", path, matches)
+		}
+	}
+	if got := mustReadFile(t, configPath); !bytes.Equal(preSource, got) {
+		t.Errorf("source changed by the aborted migration:\nwant:\n%s\ngot:\n%s", preSource, got)
+	}
+	if got := mustReadFile(t, includePath); !bytes.Equal(preDest, got) {
+		t.Errorf("destination changed by the aborted migration:\nwant:\n%s\ngot:\n%s", preDest, got)
 	}
 }
 

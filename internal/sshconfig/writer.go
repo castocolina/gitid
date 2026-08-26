@@ -7,14 +7,6 @@ import (
 	"github.com/castocolina/gitid/internal/filewriter"
 )
 
-// globalBlockName is the fixed sentinel key for the `Host *` managed block —
-// an alias of the exported GlobalBlockName so there is exactly one literal in
-// production code (D-08). Keying it separately from per-identity blocks lets
-// the writer rewrite it idempotently and always keep it LAST, after every
-// specific host block, so first-match-wins resolution keeps the aliases
-// authoritative (Pitfall 5 / T-02-15).
-const globalBlockName = GlobalBlockName
-
 // configMode is the restrictive mode for ~/.ssh/config. The file can reference
 // private-key paths, so it is never world-readable (T-02-01).
 const configMode os.FileMode = 0o600

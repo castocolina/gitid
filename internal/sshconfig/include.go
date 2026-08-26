@@ -72,18 +72,45 @@ func ArchiveDir(sshDir string) string {
 //     wiring, not an identity: without this registration the doctor Orphans
 //     check and identity discovery would both report it as a phantom
 //     "global-ssh" identity the instant the block is written.
-//   - LegacyGlobalBlockName ("_global") — the PRE-Phase-6 sentinel key, kept
-//     registered through the 06-01→06-02 transition so a machine still
-//     carrying the legacy block is neither reported as a phantom identity nor
-//     offered a destructive removal. Plan 06-02 owns the full registry
-//     consolidation and the migration classification of the legacy name.
+//   - LegacyGlobalBlockName — the PRE-Phase-6 sentinel key (`_global`, spelled
+//     by the constant and by no other production literal). A machine may still
+//     carry a block under this name until its next write
+//     adopts it (EnsureGlobals renames it in the same write), so BOTH names
+//     stay registered: an unregistered legacy block would be reported as a
+//     phantom identity and offered a destructive removal the moment it
+//     appears, exactly like an unregistered current-named block.
 //
 // Mirrors gitconfig.IsReservedBlockName, so identity discovery and the doctor
 // Orphans check can exclude the globals wiring the same way the gitconfig side
 // already does (Pitfall 4 / project memory "Doctor reserved-block
 // false-positive loop").
+//
+// IsGlobalBlockName is the NARROW question — "is this the gitid wildcard
+// stanza?" — while this predicate is the BROAD one — "is this non-identity
+// wiring?" — and the two must not be conflated: the Include-line block is
+// reserved but is NOT a movable globals stanza, so code that decides what a
+// storage migration carries must call IsGlobalBlockName (or the migration
+// classification built on it), never this predicate.
 func IsReservedBlockName(name string) bool {
 	return name == sshIncludeBlockName || name == GlobalBlockName || name == LegacyGlobalBlockName
+}
+
+// IsGlobalBlockName reports whether name is one of the two sentinel keys of
+// gitid's single `Host *` managed block: GlobalBlockName ("global-ssh", the
+// current D-08 key written by EnsureGlobals) or LegacyGlobalBlockName
+// (`_global` — the pre-D-08 sentinel a machine may still carry until its next
+// write adopts it).
+//
+// This is deliberately NOT the broad reserved-name predicate: it answers the
+// layout-following question "which wildcard stanza must a storage migration
+// carry?", and it answers false for the Include-line block — reserved wiring
+// that must never move, because it is what makes the Include'd destination
+// reachable. Conflating the two predicates — letting a reserved-ness check
+// decide what a migration moves — is exactly what made the Include wiring
+// movable under the predecessor filter (06-REVIEWS.md HIGH) and what stranded
+// the globals block it should have carried.
+func IsGlobalBlockName(name string) bool {
+	return name == GlobalBlockName || name == LegacyGlobalBlockName
 }
 
 // ReservedPaths returns the gitid-owned Include'd storage locations under
