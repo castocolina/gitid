@@ -1,0 +1,194 @@
+package sshconfig
+
+import (
+	"bytes"
+	"strings"
+	"testing"
+
+	"github.com/castocolina/gitid/internal/filewriter"
+)
+
+// globalBody extracts the GlobalBlockName block body from content.
+func globalBody(t *testing.T, content []byte) string {
+	t.Helper()
+	for _, b := range filewriter.ListBlocks(content) {
+		if b.Name == GlobalBlockName {
+			return b.Body
+		}
+	}
+	t.Fatalf("no %s block found in:\n%s", GlobalBlockName, content)
+	return ""
+}
+
+// TestEnsureGlobalsGuardFirstOnEveryPlatform pins D-11: the guard directive is
+// the FIRST non-sentinel line of the rendered body on darwin AND on linux, and
+// its index is strictly less than the `Host *` line and any `UseKeychain` line
+// (the lexical-before requirement that keeps a config synced from a mac from
+// hard-erroring on linux).
+func TestEnsureGlobalsGuardFirstOnEveryPlatform(t *testing.T) {
+	for _, goos := range []string{"darwin", "linux"} {
+		got, err := EnsureGlobals(nil, nil, goos)
+		if err != nil {
+			t.Fatalf("EnsureGlobals(%s): %v", goos, err)
+		}
+		body := globalBody(t, got)
+		lines := strings.Split(body, "\n")
+		if len(lines) == 0 || strings.TrimSpace(lines[0]) != "IgnoreUnknown UseKeychain" {
+			t.Errorf("%s: first body line = %q, want the guard directive", goos, lines[0])
+		}
+		guardIdx := strings.Index(body, "IgnoreUnknown UseKeychain")
+		hostIdx := strings.Index(body, "Host *")
+		useIdx := strings.Index(body, "UseKeychain yes")
+		if guardIdx == -1 || hostIdx == -1 {
+			t.Fatalf("%s: guard or Host * missing; body:\n%s", goos, body)
+		}
+		if guardIdx >= hostIdx || (useIdx != -1 && guardIdx >= useIdx) {
+			t.Errorf("%s: guard must be lexically before Host * and any UseKeychain line; body:\n%s", goos, body)
+		}
+	}
+}
+
+// TestEnsureGlobalsIdempotent proves the managed block is stable: applying the
+// same inputs twice yields byte-identical content the second time.
+func TestEnsureGlobalsIdempotent(t *testing.T) {
+	seed := []byte(managedTestBlock("global-ssh", "Host *\n  UseKeychain yes\n  AddKeysToAgent yes\n"))
+	first, err := EnsureGlobals(seed, nil, "darwin")
+	if err != nil {
+		t.Fatalf("first EnsureGlobals: %v", err)
+	}
+	second, err := EnsureGlobals(first, nil, "darwin")
+	if err != nil {
+		t.Fatalf("second EnsureGlobals: %v", err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Errorf("non-idempotent globals render; first:\n%s\nsecond:\n%s", first, second)
+	}
+}
+
+// TestEnsureGlobalsPreservesDarwinKeyOnLinux pins the platform contract: a
+// darwin-only key already present in the body is PRESERVED when running on
+// linux — dropping it would silently degrade a config synced from a mac.
+func TestEnsureGlobalsPreservesDarwinKeyOnLinux(t *testing.T) {
+	seed := []byte(managedTestBlock("global-ssh", "Host *\n  UseKeychain yes\n  AddKeysToAgent yes\n"))
+	got, err := EnsureGlobals(seed, nil, "linux")
+	if err != nil {
+		t.Fatalf("EnsureGlobals(linux): %v", err)
+	}
+	body := globalBody(t, got)
+	for _, want := range []string{"UseKeychain yes", "AddKeysToAgent yes"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("darwin-only key %q lost on linux; body:\n%s", want, body)
+		}
+	}
+}
+
+// TestEnsureGlobalsExistingValueBeatsDefault pins D-06's key-union rule: a key
+// already present in the body is preserved when the platform default would
+// have supplied a DIFFERENT value.
+func TestEnsureGlobalsExistingValueBeatsDefault(t *testing.T) {
+	seed := []byte(managedTestBlock("global-ssh", "Host *\n  UseKeychain no\n"))
+	got, err := EnsureGlobals(seed, nil, "darwin")
+	if err != nil {
+		t.Fatalf("EnsureGlobals: %v", err)
+	}
+	body := globalBody(t, got)
+	if !strings.Contains(body, "UseKeychain no") {
+		t.Errorf("pre-existing UseKeychain no was overwritten by the darwin default; body:\n%s", body)
+	}
+	if strings.Contains(body, "UseKeychain yes") {
+		t.Errorf("platform default must not override an existing value; body:\n%s", body)
+	}
+}
+
+// TestEnsureGlobalsExplicitOverlayAlwaysWins pins the fix direction: a key
+// named in the explicit overlay wins even when the body already carries a
+// different value.
+func TestEnsureGlobalsExplicitOverlayAlwaysWins(t *testing.T) {
+	seed := []byte(managedTestBlock("global-ssh", "Host *\n  HashKnownHosts no\n"))
+	got, err := EnsureGlobals(seed, map[string]string{"HashKnownHosts": "yes"}, "linux")
+	if err != nil {
+		t.Fatalf("EnsureGlobals: %v", err)
+	}
+	body := globalBody(t, got)
+	if !strings.Contains(body, "HashKnownHosts yes") {
+		t.Errorf("explicit overlay did not win; body:\n%s", body)
+	}
+	if strings.Contains(body, "HashKnownHosts no") {
+		t.Errorf("the old non-recommended value survived the explicit overlay; body:\n%s", body)
+	}
+}
+
+// TestEnsureGlobalsAdoptsLegacyBlock pins D-08 adoption: a legacy-named block
+// carrying a directive is renamed to GlobalBlockName, its body survives, and
+// no block remains under the legacy name after the same write.
+func TestEnsureGlobalsAdoptsLegacyBlock(t *testing.T) {
+	seed := []byte(managedTestBlock("_global", "Host *\n  HashKnownHosts yes\n"))
+	got, err := EnsureGlobals(seed, nil, "linux")
+	if err != nil {
+		t.Fatalf("EnsureGlobals: %v", err)
+	}
+	body := globalBody(t, got)
+	if !strings.Contains(body, "HashKnownHosts yes") {
+		t.Errorf("adopted legacy body directive lost; body:\n%s", body)
+	}
+	for _, b := range filewriter.ListBlocks(got) {
+		if b.Name == LegacyGlobalBlockName {
+			t.Errorf("legacy block still present after adoption:\n%s", got)
+		}
+	}
+}
+
+// TestEnsureGlobalsLeavesForeignHostStarAlone pins the byte-for-byte safety
+// property (T-06-01): a hand-written `Host *` stanza OUTSIDE every gitid
+// sentinel is untouched.
+func TestEnsureGlobalsLeavesForeignHostStarAlone(t *testing.T) {
+	foreign := "Host *\n  Compression yes\n"
+	seed := []byte(foreign)
+	got, err := EnsureGlobals(seed, nil, "linux")
+	if err != nil {
+		t.Fatalf("EnsureGlobals: %v", err)
+	}
+	if !strings.Contains(string(got), foreign) {
+		t.Errorf("hand-written foreign stanza changed; got:\n%s", got)
+	}
+}
+
+// TestEnsureGlobalsAppendsUnrecognisedKey pins the never-drop contract: a
+// hand-added directive inside the managed block that is not in the canonical
+// order is preserved and appended after the ordered keys.
+func TestEnsureGlobalsAppendsUnrecognisedKey(t *testing.T) {
+	seed := []byte(managedTestBlock("global-ssh", "Host *\n  ServerAliveInterval 60\n"))
+	got, err := EnsureGlobals(seed, nil, "darwin")
+	if err != nil {
+		t.Fatalf("EnsureGlobals: %v", err)
+	}
+	body := globalBody(t, got)
+	if !strings.Contains(body, "ServerAliveInterval 60") {
+		t.Errorf("unrecognised pre-existing key dropped; body:\n%s", body)
+	}
+	ordered := strings.Index(body, "AddKeysToAgent")
+	unrecognised := strings.Index(body, "ServerAliveInterval")
+	if unrecognised <= ordered {
+		t.Errorf("unrecognised key must be appended AFTER ordered keys (AddKeysToAgent at %d, ServerAliveInterval at %d); body:\n%s", ordered, unrecognised, body)
+	}
+}
+
+// TestEnsureGlobalsUnconditionalGuardOnEmptyConfig pins the empty-config
+// case: on linux an empty config still renders the guard + the Host * stanza
+// (the block itself is never dropped).
+func TestEnsureGlobalsUnconditionalGuardOnEmptyConfig(t *testing.T) {
+	got, err := EnsureGlobals(nil, nil, "linux")
+	if err != nil {
+		t.Fatalf("EnsureGlobals: %v", err)
+	}
+	body := globalBody(t, got)
+	if !strings.Contains(body, "Host *") {
+		t.Errorf("empty linux config must still carry the Host * stanza; body:\n%s", body)
+	}
+}
+
+// managedTestBlock wraps body in the managed sentinels for name (a package
+// local mirror of the composition EnsureGlobals itself produces).
+func managedTestBlock(name, body string) string {
+	return "# BEGIN gitid managed: " + name + "\n" + strings.TrimRight(body, "\n") + "\n# END gitid managed: " + name + "\n"
+}
