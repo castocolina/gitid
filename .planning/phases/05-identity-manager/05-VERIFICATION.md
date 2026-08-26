@@ -74,7 +74,7 @@ functional intent (every named capability reachable) is met.
 | Lint | `make lint` | `golangci-lint run ./...` → `0 issues`; `go vet` all tags clean | ✓ PASS |
 | Named regression test (CR-01) | `TestRunRotateRefusesWhenKeyIsSharedWithAnotherIdentity` | refuses, key bytes unchanged, no archive entry created | ✓ PASS |
 | Completion generation | `gitid completion bash\|zsh\|fish` | valid scripts emitted for all three shells | ✓ PASS |
-| Full-suite e2e (real PTY) | `make test-e2e` | Same commit set independently verified PASS in `05-REVIEW-FIX.md`'s isolated worktree (`gsd-reviewfix/05-33032`, branched from this exact commit, then fast-forward-merged — tree is byte-identical); a fresh re-run was started during this verification but did not finish inside the session window (real-PTY suite runs long). Not re-asserted as fresh evidence beyond the documented pass + the fresh clean build/lint/race-unit results above. | ✓ CORROBORATED (see note) |
+| Full-suite e2e (real PTY, race) | `go clean -testcache && make test-e2e` (`go test -tags e2e -race -timeout 900s ./e2e/...`) | `ok github.com/castocolina/gitid/e2e 442.868s`, exit code 0 — fresh run against `HEAD` with test cache cleared first | ✓ PASS |
 
 **Anti-pattern scan:** `TBD`/`FIXME`/`XXX` grep across all 9 review-fix-touched files
 (`lifecycle.go`, `wiring.go`, `identity_create.go`, `identity_delete.go`,
