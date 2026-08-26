@@ -65,6 +65,22 @@ func makeTestCaptures(t *testing.T) (map[string]string, map[string]string) {
 	for id, text := range gitApproved {
 		approved[id] = text
 	}
+	// 05-09-PLAN.md Task 3: identity-manager captures merged the SAME way
+	// git-screen's are, immediately above.
+	imgrLive, err := screenshot.CaptureIdentityManagerScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureIdentityManagerScreens (live): %v", err)
+	}
+	imgrApproved, err := screenshot.CaptureIdentityManagerScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureIdentityManagerScreens (approved): %v", err)
+	}
+	for id, text := range imgrLive {
+		live[id] = text
+	}
+	for id, text := range imgrApproved {
+		approved[id] = text
+	}
 	return live, approved
 }
 
@@ -669,32 +685,10 @@ func TestFinalPacketRequiresReviewProvenance(t *testing.T) {
 // valid inventory entry; RequiredRegions separately defines what must be nonempty.
 func TestRegionDiffCoverage(t *testing.T) {
 	// Use dummy backend captures as the input (live vs approved-tui text).
-	// RequiredScreenSpecs() below is a MERGED registry (04-04-PLAN.md Task 3),
-	// so both CaptureCreateFlowScreens AND CaptureGitScreenScreens must be
-	// merged into the maps BuildRegionDiffs receives (mirrors makeTestCaptures).
-	backend := dummytui.NewFixtureBackend()
-	liveCaptures, err := screenshot.CaptureCreateFlowScreens(backend)
-	if err != nil {
-		t.Fatalf("CaptureCreateFlowScreens: %v", err)
-	}
-	approvedCaptures, err := screenshot.CaptureCreateFlowScreens(backend)
-	if err != nil {
-		t.Fatalf("CaptureCreateFlowScreens: %v", err)
-	}
-	gitLiveCaptures, err := screenshot.CaptureGitScreenScreens(backend)
-	if err != nil {
-		t.Fatalf("CaptureGitScreenScreens: %v", err)
-	}
-	gitApprovedCaptures, err := screenshot.CaptureGitScreenScreens(backend)
-	if err != nil {
-		t.Fatalf("CaptureGitScreenScreens: %v", err)
-	}
-	for id, text := range gitLiveCaptures {
-		liveCaptures[id] = text
-	}
-	for id, text := range gitApprovedCaptures {
-		approvedCaptures[id] = text
-	}
+	// RequiredScreenSpecs() below is a MERGED registry (04-04-PLAN.md Task 3,
+	// 05-09-PLAN.md Task 3), so makeTestCaptures merges CaptureCreateFlowScreens,
+	// CaptureGitScreenScreens, AND CaptureIdentityManagerScreens.
+	liveCaptures, approvedCaptures := makeTestCaptures(t)
 
 	specs := screenshot.RequiredScreenSpecs()
 	diffs, err := screenshot.BuildRegionDiffs("test-commit", liveCaptures, approvedCaptures, specs)

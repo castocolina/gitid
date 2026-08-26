@@ -120,6 +120,43 @@ const (
 	// from its heading ("Write Git identity for …") or its receipt heading
 	// (the "… configured" result message) through the end of the frame.
 	RegionGitCeremony RegionName = "git-ceremony"
+
+	// RegionDetailSSHSection is the identity detail pane's "SSH — shown
+	// first, always" section (FIELDS.md detail-ssh-first's ssh_section
+	// field) — from that heading through the blank line before "Git".
+	RegionDetailSSHSection RegionName = "identity-detail-ssh"
+
+	// RegionDetailGitSection is the identity detail pane's "Git" section
+	// (FIELDS.md's git_section_absent_note field, MGR-03) — from the "Git"
+	// heading through the blank line before the global-baseline strip.
+	RegionDetailGitSection RegionName = "identity-detail-git"
+
+	// RegionDetailFindingsSection is the identity detail pane's
+	// "Findings (N) …" section (FIELDS.md's per_identity_health field,
+	// MGR-07) — from that heading to the end of the frame.
+	RegionDetailFindingsSection RegionName = "identity-detail-findings"
+
+	// RegionActionMenuRows is the action-menu's four approved rows
+	// (FIELDS.md action-menu state) — from the "Actions — <name>" heading
+	// to the end of the frame.
+	RegionActionMenuRows RegionName = "identity-action-menu"
+
+	// RegionDeleteChoiceOptions is the delete-choice screen's two scope
+	// options (FIELDS.md delete-choice state) — from the
+	// `Delete "<name>" — choose scope` heading to the end of the frame.
+	RegionDeleteChoiceOptions RegionName = "identity-delete-choice"
+
+	// RegionConfirmWarningBlock is the confirm-destructive/backup-notice
+	// ceremony's warning + hint + scan-preview text (FIELDS.md
+	// confirm_warning field) — from the ceremony heading ("Delete
+	// EVERYTHING for …") through the "Exact change" preview title, so it
+	// captures the D-11/D-12/D-13 additions without the dynamic diff body.
+	RegionConfirmWarningBlock RegionName = "identity-confirm-warning"
+
+	// RegionBackupPathList is every "Backup → "/"Backed up → " line on a
+	// ceremony pane (FIELDS.md backup-notice's path fields) — matched by
+	// line prefix wherever it appears in the frame.
+	RegionBackupPathList RegionName = "identity-backup-paths"
 )
 
 // ExtractRegion returns the sub-string of screen that corresponds to region.
@@ -162,6 +199,20 @@ func ExtractRegion(screen string, region RegionName) string {
 		return extractGitPreview(lines)
 	case RegionGitCeremony:
 		return extractGitCeremony(lines)
+	case RegionDetailSSHSection:
+		return extractDetailSSHSection(lines)
+	case RegionDetailGitSection:
+		return extractDetailGitSection(lines)
+	case RegionDetailFindingsSection:
+		return extractDetailFindingsSection(lines)
+	case RegionActionMenuRows:
+		return extractActionMenuRows(lines)
+	case RegionDeleteChoiceOptions:
+		return extractDeleteChoiceOptions(lines)
+	case RegionConfirmWarningBlock:
+		return extractConfirmWarningBlock(lines)
+	case RegionBackupPathList:
+		return extractBackupPathList(lines)
 	}
 	return ""
 }
@@ -633,6 +684,139 @@ func extractSidebar(lines []string) string {
 	return strings.Join(out, "\n")
 }
 
+// identRightOfDivider returns the (ANSI-preserved) content right of the "│"
+// master/detail separator on one line, or "" (never the whole line) when no
+// divider is present — mirroring e2e/identity_manager_pty_e2e_test.go's own
+// identRightOfDivider so footer/status chrome (which never carries "│")
+// never leaks into an extracted identity-manager region.
+func identRightOfDivider(line string) string {
+	idx := strings.Index(stripANSI(line), "│")
+	if idx < 0 {
+		return ""
+	}
+	raw := ansiOffsetToRaw(line, idx)
+	if raw < 0 || raw+len("│") > len(line) {
+		return ""
+	}
+	return line[raw+len("│"):]
+}
+
+// extractIdentityRightOfDividerBetween returns the right-of-divider content
+// from the first line whose plain text contains startMarker through (not
+// including) the first SUBSEQUENT line whose plain text contains
+// endMarker — or through the end of the frame when endMarker is "" or never
+// found. Shared by every identity-manager section extractor below (the
+// SAME "from heading to next heading" shape createflow.go's own
+// extractGitScreenFormFields/Strategy/Preview already use for git-screen).
+func extractIdentityRightOfDividerBetween(lines []string, startMarker, endMarker string) string {
+	var out []string
+	capturing := false
+	for _, line := range lines {
+		rp := identRightOfDivider(line)
+		plain := stripANSI(rp)
+		if capturing && endMarker != "" && strings.Contains(plain, endMarker) {
+			break
+		}
+		if !capturing && strings.Contains(plain, startMarker) {
+			capturing = true
+		}
+		if capturing {
+			out = append(out, rp)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// extractDetailSSHSection returns the "SSH — shown first, always" section.
+func extractDetailSSHSection(lines []string) string {
+	return extractIdentityRightOfDividerBetween(lines, "SSH — shown first, always", "Git")
+}
+
+// extractDetailGitSection returns the "Git" section (MGR-03's honest
+// absence-note field) — bounded by the "Global baseline" strip that always
+// follows it.
+func extractDetailGitSection(lines []string) string {
+	// A plain Contains("Git") start marker is FAR too generic (it collides
+	// with "Configure Git", "Write Git identity for", git-screen frames,
+	// etc. — found empirically when this region's diff fired on the
+	// UNRELATED create-flow "test-stage1-direct" screen). renderDetail's
+	// section heading is a WHOLE, bare "Git" line (sectionHeader("Git")) —
+	// require the right-of-divider content's TRIMMED plain text to equal
+	// "Git" exactly, never a substring match.
+	var out []string
+	capturing := false
+	for _, line := range lines {
+		rp := identRightOfDivider(line)
+		plain := strings.TrimSpace(stripANSI(rp))
+		if capturing && strings.Contains(plain, "Global baseline") {
+			break
+		}
+		if !capturing && plain == "Git" {
+			capturing = true
+		}
+		if capturing {
+			out = append(out, rp)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// extractDetailFindingsSection returns the "Findings (N) …" section (MGR-07).
+func extractDetailFindingsSection(lines []string) string {
+	return extractIdentityRightOfDividerBetween(lines, "Findings (", "")
+}
+
+// extractActionMenuRows returns the action-menu's four rows.
+func extractActionMenuRows(lines []string) string {
+	return extractIdentityRightOfDividerBetween(lines, "Actions — ", "")
+}
+
+// extractDeleteChoiceOptions returns the delete-choice screen's two options.
+func extractDeleteChoiceOptions(lines []string) string {
+	return extractIdentityRightOfDividerBetween(lines, "— choose scope", "")
+}
+
+// extractConfirmWarningBlock returns the confirm-destructive ceremony's
+// warning/hint/scan-preview text, stopping before the dynamic diff preview.
+func extractConfirmWarningBlock(lines []string) string {
+	return extractIdentityRightOfDividerBetween(lines, "Delete EVERYTHING for", "Exact change")
+}
+
+// extractBackupPathList returns every "Backup → "/"Backed up → " line,
+// wherever it appears (both the pre-confirm promise and the post-confirm
+// receipt use these exact prefixes — ceremony.go's view()).
+func extractBackupPathList(lines []string) string {
+	// Scoped to frames that also carry the confirm-destructive heading
+	// ("Delete EVERYTHING for") — a bare substring search for "Backup → "
+	// alone collides with EVERY OTHER ceremony pane in the registry
+	// (create-flow's confirm-write, git-screen's review-readonly/result-
+	// success — all share ceremony.go's identical backup-line rendering),
+	// found empirically when this region fired on the unrelated create-flow
+	// "confirm-write" screen. This region is currently used by ONLY the
+	// identity-manager confirm-destructive checkpoint; if a future
+	// checkpoint needs it too, widen the anchor list rather than dropping
+	// it back to a bare substring search.
+	hasAnchor := false
+	for _, line := range lines {
+		if strings.Contains(stripANSI(identRightOfDivider(line)), "Delete EVERYTHING for") {
+			hasAnchor = true
+			break
+		}
+	}
+	if !hasAnchor {
+		return ""
+	}
+	var out []string
+	for _, line := range lines {
+		rp := identRightOfDivider(line)
+		plain := stripANSI(rp)
+		if strings.Contains(plain, "Backup → ") || strings.Contains(plain, "Backed up → ") {
+			out = append(out, rp)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
 // AllRegionNames returns all defined RegionNames for allowlist schema validation.
 func AllRegionNames() []RegionName {
 	return []RegionName{
@@ -652,6 +836,13 @@ func AllRegionNames() []RegionName {
 		RegionGitStrategy,
 		RegionGitPreview,
 		RegionGitCeremony,
+		RegionDetailSSHSection,
+		RegionDetailGitSection,
+		RegionDetailFindingsSection,
+		RegionActionMenuRows,
+		RegionDeleteChoiceOptions,
+		RegionConfirmWarningBlock,
+		RegionBackupPathList,
 	}
 }
 

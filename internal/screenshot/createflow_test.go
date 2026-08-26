@@ -40,6 +40,15 @@ func captureCombined(t *testing.T, backend tuikit.Backend) map[string]string {
 	for id, text := range gitOut {
 		out[id] = text
 	}
+	// 05-09-PLAN.md Task 3: identity-manager captures merged the SAME way
+	// git-screen's are, immediately above.
+	imgrOut, err := screenshot.CaptureIdentityManagerScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureIdentityManagerScreens: %v", err)
+	}
+	for id, text := range imgrOut {
+		out[id] = text
+	}
 	return out
 }
 
@@ -644,6 +653,15 @@ func TestCaptureCreateFlowScreensFailsOnMissingRequiredFrame(t *testing.T) {
 		t.Fatalf("CaptureGitScreenScreens with valid backend must not fail: %v", gerr)
 	}
 	for id, text := range gitCaptures {
+		captures[id] = text
+	}
+	// 05-09-PLAN.md Task 3: identity-manager captures merged the SAME way
+	// git-screen's are, immediately above.
+	imgrCaptures, ierr := screenshot.CaptureIdentityManagerScreens(backend)
+	if ierr != nil {
+		t.Fatalf("CaptureIdentityManagerScreens with valid backend must not fail: %v", ierr)
+	}
+	for id, text := range imgrCaptures {
 		captures[id] = text
 	}
 	// Verify all required frames are present.

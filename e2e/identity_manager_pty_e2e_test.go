@@ -722,7 +722,11 @@ func openKeyCeremonyViaActionMenu(t *testing.T, s *ptySession) {
 // hint renders on the receipt plus the D-06 archive path, and that the
 // archive directory gains the retired key.
 func TestIdentityManager_KeyCeremonyRotate(t *testing.T) {
-	home := SandboxHome(t)
+	// ShortSandboxHome (never SandboxHome): assertReceiptPathsExist below
+	// parses the receipt's absolute path tokens, which must survive the
+	// pane's word-wrap without a mid-path line break — see
+	// ShortSandboxHome's own doc comment.
+	home := ShortSandboxHome(t)
 	// The lifecycle's pre-write connectivity gate runs a REAL ssh probe
 	// (identity.go's preWriteGate) against acct.Hostname/acct.Port — a
 	// Port-less fixture resolves to port 0 and hard-fails ("Bad port '0'")
@@ -761,6 +765,10 @@ func TestIdentityManager_KeyCeremonyRotate(t *testing.T) {
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // confirm — async CommitRotate
 	mustSee(t, s, "Key ceremony completed.", "rotate: the receipt renders after the real write completes")
 	mustSee(t, s, "The old key stays valid at", "rotate: the D-08 grace-window hint renders on the receipt")
+	// review R-28: every receipt path genuinely exists on disk for rotate —
+	// its "Wrote → " list only ever names files the transaction actually
+	// wrote, never a removed target (unlike delete's fragment-removal case).
+	assertReceiptPathsExist(t, home, s.snapshot())
 
 	saveFrame(t, "identity-manager-key-ceremony-rotate", s)
 
@@ -783,7 +791,9 @@ func TestIdentityManager_KeyCeremonyRotate(t *testing.T) {
 // hint NOR the archive-path line renders (D-05: repair never touches
 // pre-existing key material, and there is no old key to keep valid).
 func TestIdentityManager_KeyCeremonyRepair(t *testing.T) {
-	home := SandboxHome(t)
+	// ShortSandboxHome: see TestIdentityManager_KeyCeremonyRotate's own
+	// comment — assertReceiptPathsExist needs unwrapped absolute paths.
+	home := ShortSandboxHome(t)
 	seedGitPTYIdentity(t, home, "acme")
 	seedRecipeShapeSSHConfig(t, home, "acme")
 	keyPath := filepath.Join(home, ".ssh", "id_ed25519_acme")
@@ -811,6 +821,9 @@ func TestIdentityManager_KeyCeremonyRepair(t *testing.T) {
 	mustSee(t, s, "Key ceremony completed.", "repair: the receipt renders after the real write completes")
 	mustNotSee(t, s, "The old key stays valid at", "repair: no grace-window hint — there is no old key")
 	mustNotSee(t, s, "Old key archived to", "repair: no archive-path line — repair never archives")
+	// review R-28: repair's "Wrote → " list never names a removed target
+	// either (D-05: repair only ever creates, never archives/removes).
+	assertReceiptPathsExist(t, home, s.snapshot())
 
 	saveFrame(t, "identity-manager-key-ceremony-repair", s)
 
@@ -1671,4 +1684,171 @@ func TestIdentityManager_AllowlistStaleEntryRejected(t *testing.T) {
 		t.Fatal("negative control FAILED: a stale allowlist entry (checkpoint/region that never differs) must fail the staleness check, but it reported no failure")
 	}
 	t.Logf("negative control observed the expected staleness failure: %v", rec.messages)
+}
+
+// ---------------------------------------------------------------------------
+// 05-09-PLAN.md Task 3 (review R-28) — the previously-planned manual walk,
+// automated. Three claims, each mechanically checkable against the compiled
+// binary's own PTY receipts and the real sandbox filesystem — no human
+// walkthrough. Phase-level human acceptance remains at /gsd-verify-work
+// (phase close), outside this plan; nothing here replaces it.
+// ---------------------------------------------------------------------------
+
+// receiptPathPattern matches a filesystem-looking token in a decoded PTY
+// receipt frame: a tilde-relative or absolute path made of the path-safe
+// character set this project's own rendered paths use (letters, digits, "._-/").
+// Trailing punctuation a sentence might attach (".", ",", ")") is trimmed by
+// the caller, never matched here, so a token like "acme." doesn't wrongly
+// keep its full stop.
+var receiptPathPattern = regexp.MustCompile(`(?:~|/)[A-Za-z0-9._/-]+`)
+
+// parseReceiptFilesystemTokens extracts every filesystem-looking token from
+// a decoded receipt frame, deduplicated, in first-seen order. Pure text
+// scanning — no filesystem access — so the negative control below can prove
+// it fails deterministically on a fabricated path without seeding one.
+func parseReceiptFilesystemTokens(frame string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, raw := range receiptPathPattern.FindAllString(frame, -1) {
+		tok := strings.TrimRight(raw, ".,;:)")
+		if tok == "" || tok == "~" || tok == "/" || seen[tok] {
+			continue
+		}
+		seen[tok] = true
+		out = append(out, tok)
+	}
+	return out
+}
+
+// assertReceiptPathsExist parses every filesystem-looking token out of a
+// decoded receipt frame and os.Stats each one (tilde-expanded against home)
+// in the real sandbox — review R-28's "every receipt names real paths that
+// exist on disk" claim, automated. Delegates to
+// assertReceiptPathsExistRecorder (*testing.T satisfies receiptPathRecorder)
+// so the negative control below exercises the EXACT SAME logic through a
+// non-propagating fake, never a separately-written duplicate that could
+// silently drift from what this function actually checks.
+func assertReceiptPathsExist(t *testing.T, home, frame string) {
+	t.Helper()
+	assertReceiptPathsExistRecorder(t, home, frame)
+}
+
+// TestIdentityManager_ReceiptPathsNegativeControl proves
+// assertReceiptPathsExist actually fails for a fabricated, non-existent
+// path — review R-28's required negative control.
+func TestIdentityManager_ReceiptPathsNegativeControl(t *testing.T) {
+	home := t.TempDir()
+	fabricated := "✓ Key ceremony completed.\nWrote → ~/.ssh/this-path-was-never-written-by-anything\n"
+	// fakeErrorRecorder (defined above, alongside
+	// TestIdentityManager_AllowlistUnclassifiedDifferenceRejected) already
+	// implements the Helper/Errorf/Fatalf shape both errorRecorder and
+	// receiptPathRecorder need — one fake, reused for both negative-control
+	// families rather than a second, near-identical type.
+	rec := &fakeErrorRecorder{}
+	assertReceiptPathsExistRecorder(rec, home, fabricated)
+	if !rec.failed {
+		t.Fatal("negative control FAILED: a fabricated non-existent path must make assertReceiptPathsExist report a failure, but it reported none")
+	}
+}
+
+// receiptPathRecorder is the minimal *testing.T surface
+// assertReceiptPathsExistRecorder needs.
+type receiptPathRecorder interface {
+	Helper()
+	Errorf(format string, args ...any)
+	Fatalf(format string, args ...any)
+}
+
+// assertReceiptPathsExistRecorder is assertReceiptPathsExist generalized
+// over receiptPathRecorder so the negative control above can inject a
+// non-propagating fake. The real test-facing assertReceiptPathsExist(t
+// *testing.T, ...) delegates here — *testing.T already satisfies the
+// interface.
+func assertReceiptPathsExistRecorder(t receiptPathRecorder, home, frame string) {
+	t.Helper()
+	tokens := parseReceiptFilesystemTokens(frame)
+	if len(tokens) == 0 {
+		t.Fatalf("assertReceiptPathsExist: no filesystem-looking token found in receipt frame — parser or frame drifted:\n%s", frame)
+		return
+	}
+	var missing []string
+	for _, tok := range tokens {
+		real := tok
+		if strings.HasPrefix(real, "~/") {
+			real = filepath.Join(home, real[2:])
+		} else if real == "~" {
+			real = home
+		}
+		if !filepath.IsAbs(real) {
+			continue
+		}
+		if _, err := os.Stat(real); err != nil {
+			missing = append(missing, tok)
+		}
+	}
+	if len(missing) > 0 {
+		t.Errorf("assertReceiptPathsExist: receipt names %d path(s) that do NOT exist on disk: %v\nframe:\n%s", len(missing), missing, frame)
+	}
+}
+
+// TestIdentityManager_SuccessNeverClaimedWithoutTheWork is review R-28's
+// third claim ("nothing reported success without doing the work"), made
+// explicit as its OWN cross-check rather than left implicit in every write
+// case's post-receipt filesystem assertion: it drives one full ceremony
+// (git-only delete) and proves the receipt heading is reachable ONLY AFTER
+// the corresponding file change (the gitconfig includeIf block's removal)
+// is observable on disk — never before.
+func TestIdentityManager_SuccessNeverClaimedWithoutTheWork(t *testing.T) {
+	// ShortSandboxHome (never SandboxHome): the receipt's absolute path
+	// tokens must survive the pane's word-wrap without a mid-path line
+	// break, or parseReceiptFilesystemTokens sees wrapped fragments instead
+	// of one path — see ShortSandboxHome's own doc comment (originally
+	// written for the D-13 hit-line assertions, the same class of problem).
+	home := ShortSandboxHome(t)
+	seedGitPTYIdentity(t, home, "acme")
+	bin := BuildBinary(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	uiReady(t, s)
+	mustSee(t, s, "acme", "sidebar renders the seeded identity")
+	s.sendKey([]byte("d"), keystrokeDelay)
+	mustSee(t, s, "Delete Git identity only", "delete-choice renders")
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // git-only ceremony
+	mustSee(t, s, `Delete the Git identity of "acme" (SSH stays)`, "ceremony opens")
+
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+	before, err := os.ReadFile(gitconfigPath) //nolint:gosec // fixed sandbox path (G304)
+	if err != nil {
+		t.Fatalf("reading pre-delete gitconfig: %v", err)
+	}
+	if !strings.Contains(string(before), "BEGIN gitid managed: acme") {
+		t.Fatalf("fixture invalid: gitconfig missing the acme block before any write:\n%s", before)
+	}
+
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // confirm
+	mustSee(t, s, `Git identity of "acme" deleted`, "the success receipt renders")
+
+	// The receipt is ALREADY visible at this point (mustSee polled until it
+	// appeared) — the real question is whether the WORK was already done
+	// by the time it did. Reading the file NOW must show it gone; if the
+	// receipt could render before the write landed, this read would race
+	// and non-deterministically still show the block present.
+	after, err := os.ReadFile(gitconfigPath) //nolint:gosec // fixed sandbox path (G304)
+	if err != nil {
+		t.Fatalf("reading post-delete gitconfig: %v", err)
+	}
+	if strings.Contains(string(after), "BEGIN gitid managed: acme") {
+		t.Fatalf("the success receipt rendered but the gitconfig still carries the acme block — success was claimed without doing the work:\n%s", after)
+	}
+	// assertReceiptPathsExist is deliberately NOT called here: a delete
+	// ceremony's "Wrote → " target list legitimately includes the FRAGMENT
+	// FILE IT REMOVES (D-10) — "Wrote → " means "this transaction touched
+	// this location," not "this file now exists," for a delete target
+	// specifically. The claim genuinely holds for create-like receipts
+	// (rotate/repair, which never remove a listed target) — see
+	// TestIdentityManager_KeyCeremonyRotate/Repair, which call it.
 }

@@ -365,6 +365,17 @@ uninstall:
 ## the DLV-06 real-keystroke counterpart to `make gate-visual-regression`'s
 ## in-process capture gate below — both classify divergences against the SAME
 ## .planning/design/git-screen/visual-divergence-allowlist.txt.
+##
+## Phase 5 (05-09-PLAN.md Tasks 1/2, DLV-06/DLV-04): this target ALSO runs the
+## full per-state identity-manager PTY suite (TestIdentityManager_*, every
+## approved manager state plus both key-ceremony modes, driven with raw
+## keystrokes against the REAL compiled binary) PLUS
+## TestIdentityManager_CompiledRealVsLiveDummyPTY — the SAME paired-PTY
+## pattern as the git-screen case above, classifying divergences against
+## .planning/design/identity-manager/visual-divergence-allowlist.txt. The
+## per-state suite's independent FIELDS.md manifest backstop (review R-26)
+## is what still catches a shared-renderer defect this paired comparison
+## structurally cannot see.
 test-e2e: build
 	go test -tags e2e -race -timeout 900s ./e2e/...
 
@@ -423,6 +434,23 @@ screenshot-html:
 ## TestAllScreensCapturedAndNonEmpty + TestNegativeControl_* (Phase 4's own
 ## missing-state/unclassified-difference/exhaustive-mutation-sensitivity/
 ## cross-registry-leakage controls, CR-11) under the `screenshot` build tag.
+##
+## Phase 5 (05-09-PLAN.md Task 3): RequiredScreenSpecs is now a THREE-way
+## merged registry — create-flow + Phase 4 git-screen + Phase 5
+## identity-manager (action-menu, delete-choice, confirm-destructive,
+## detail-ssh-first — captured separately via its own seeded HOME, see
+## deterministicIdentityManagerFixture/mergeIdentityManagerCaptures, same
+## isolation reason as git-screen's own fixture). rotate-result/repair-result
+## are DELIBERATELY NOT registered in this in-process gate: both require a
+## real (or FakeSSHDir-substituted) SSH connectivity probe this no-subprocess
+## gate has no way to inject — `make test-e2e`'s PTY suite above carries that
+## evidence instead. This target classifies identity-manager divergences
+## against .planning/design/identity-manager/visual-divergence-allowlist.txt,
+## and also runs the Phase 5 negative controls
+## (TestNegativeControl_MissingIdentityManagerState,
+## TestNegativeControl_IdentityManagerUnclassifiedDifferenceRejected,
+## TestNegativeControl_AllIdentityManagerComparableEqualRegionsAreMutationSensitive,
+## TestNegativeControl_IdentityManagerCrossRegistryLeakage).
 gate-visual-regression:
 	go test -tags screenshot -run 'Test(GateVisualRegression|ApprovalCommitRecorded|AllScreensCapturedAndNonEmpty|NegativeControl_)' -v ./cmd/gitid/...
 

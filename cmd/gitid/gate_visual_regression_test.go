@@ -141,6 +141,105 @@ func deterministicGitIdentityFixture(t *testing.T, home string) {
 	}
 }
 
+// deterministicIdentityManagerFixture seeds home with TWO identities the
+// identity-manager registry (05-09-PLAN.md Task 3,
+// screenshot.CaptureIdentityManagerScreens) needs — "imgr" (COMPLETE: SSH
+// host block + Git fragment + includeIf + allowed_signers, index 0 — drives
+// action-menu/delete-choice/confirm-destructive) and "imgrssh" (SSH-only, no
+// Git side, index 1 — drives detail-ssh-first). Names deliberately avoid
+// collision with the create-flow wizard's own default "acme" prefix and
+// deterministicGitIdentityFixture's "gscreen"/"gscreenssh" (both fixtures
+// run against SEPARATE, dedicated HOMEs, same isolation precedent as
+// git-screen's own fixture — see mergeGitScreenCaptures' doc comment). Every
+// byte here is FIXED, no randomness/timestamps (CR-01).
+func deterministicIdentityManagerFixture(t *testing.T, home string) {
+	t.Helper()
+	sshDir := filepath.Join(home, ".ssh")
+	gitconfigD := filepath.Join(home, ".gitconfig.d")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatalf("gate-visual-regression: seeding %s: %v", sshDir, err)
+	}
+	if err := os.MkdirAll(gitconfigD, 0o755); err != nil {
+		t.Fatalf("gate-visual-regression: seeding %s: %v", gitconfigD, err)
+	}
+
+	for _, name := range []string{"imgr", "imgrssh"} {
+		priv := filepath.Join(sshDir, "id_ed25519_"+name)
+		if err := os.WriteFile(priv, []byte("-----BEGIN OPENSSH PRIVATE KEY-----\nSTUB\n-----END OPENSSH PRIVATE KEY-----\n"), 0o600); err != nil {
+			t.Fatalf("gate-visual-regression: writing fixture key %s: %v", priv, err)
+		}
+		pub := priv + ".pub"
+		pubContent := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5STUB " + name + "@gitid-test\n"
+		if err := os.WriteFile(pub, []byte(pubContent), 0o644); err != nil { //nolint:gosec // .pub is public key material by definition; hermetic sandbox HOME fixture (G306)
+			t.Fatalf("gate-visual-regression: writing fixture pubkey %s: %v", pub, err)
+		}
+	}
+
+	// "imgr" declared FIRST so identity.Reconstruct's file-order
+	// reconstruction puts it at index 0 (the default-selected identity) and
+	// "imgrssh" at index 1.
+	sshConfig := "# BEGIN gitid managed: imgr\n" +
+		"Host imgr.github.com\n  HostName github.com\n  User git\n  IdentityFile ~/.ssh/id_ed25519_imgr\n  IdentitiesOnly yes\n" +
+		"# END gitid managed: imgr\n\n" +
+		"# BEGIN gitid managed: imgrssh\n" +
+		"Host imgrssh.github.com\n  HostName github.com\n  User git\n  IdentityFile ~/.ssh/id_ed25519_imgrssh\n  IdentitiesOnly yes\n" +
+		"# END gitid managed: imgrssh\n\n" +
+		"Host *\n  IgnoreUnknown UseKeychain\n  AddKeysToAgent yes\n"
+	if err := os.WriteFile(filepath.Join(sshDir, "config"), []byte(sshConfig), 0o600); err != nil {
+		t.Fatalf("gate-visual-regression: writing fixture ssh/config: %v", err)
+	}
+
+	gitconfig := "[user]\n  name = Test User\n  email = test@example.com\n\n" +
+		"# BEGIN gitid managed: imgr\n" +
+		"[includeIf \"gitdir:~/git/imgr/\"]\n  path = ~/.gitconfig.d/imgr\n" +
+		"# END gitid managed: imgr\n"
+	if err := os.WriteFile(filepath.Join(home, ".gitconfig"), []byte(gitconfig), 0o644); err != nil {
+		t.Fatalf("gate-visual-regression: writing fixture .gitconfig: %v", err)
+	}
+
+	fragment := "[user]\n  name = imgr User\n  email = imgr@example.com\n  signingkey = ~/.ssh/id_ed25519_imgr.pub\n"
+	if err := os.WriteFile(filepath.Join(gitconfigD, "imgr"), []byte(fragment), 0o644); err != nil {
+		t.Fatalf("gate-visual-regression: writing fixture fragment: %v", err)
+	}
+
+	signers := "# BEGIN gitid managed: imgr\n" +
+		"imgr@example.com namespaces=\"git\" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5STUB imgr@gitid-test\n" +
+		"# END gitid managed: imgr\n"
+	if err := os.WriteFile(filepath.Join(sshDir, "allowed_signers"), []byte(signers), 0o644); err != nil { //nolint:gosec // hermetic sandbox HOME fixture (G306)
+		t.Fatalf("gate-visual-regression: writing fixture allowed_signers: %v", err)
+	}
+}
+
+// mergeIdentityManagerCaptures captures the four Phase 5 identity-manager
+// checkpoints (05-09-PLAN.md Task 3, screenshot.CaptureIdentityManagerScreens)
+// for both the real backend (seeded from imgrHome via
+// deterministicIdentityManagerFixture) and the dummy backend, merging each
+// into the caller's realCaptures/dummyCaptures maps — mirrors
+// mergeGitScreenCaptures exactly, including its temporary $HOME override.
+func mergeIdentityManagerCaptures(t *testing.T, realCaptures, dummyCaptures map[string]string, imgrHome string) {
+	t.Helper()
+	restoreHome := os.Getenv("HOME")
+	t.Setenv("HOME", imgrHome)
+	imgrRealBackend := newBackendForHome(imgrHome)
+	rawImgrReal, err := screenshot.CaptureIdentityManagerScreens(imgrRealBackend)
+	if err != nil {
+		t.Fatalf("gate-visual-regression: capturing identity-manager real backend: %v", err)
+	}
+	t.Setenv("HOME", restoreHome)
+	imgrReal := normalizeDisposableHome(rawImgrReal, imgrHome)
+	for id, text := range imgrReal {
+		realCaptures[id] = text
+	}
+
+	imgrDummy, err := screenshot.CaptureIdentityManagerScreens(dummytui.NewFixtureBackend())
+	if err != nil {
+		t.Fatalf("gate-visual-regression: capturing identity-manager dummy backend: %v", err)
+	}
+	for id, text := range imgrDummy {
+		dummyCaptures[id] = text
+	}
+}
+
 // predicateMatches returns true when the allowlist predicate permits the
 // difference between real and dummy for this region. The "differs" predicate
 // is never a valid input here — it is rejected at parse time (CR-04).
@@ -250,6 +349,13 @@ func TestGateVisualRegression(t *testing.T) {
 	deterministicGitIdentityFixture(t, gitHome1)
 	deterministicGitIdentityFixture(t, gitHome2)
 
+	// 05-09-PLAN.md Task 3: identity-manager checkpoints, isolated the SAME
+	// way git-screen's own fixture is (see comment above).
+	imgrHome1 := t.TempDir()
+	imgrHome2 := t.TempDir()
+	deterministicIdentityManagerFixture(t, imgrHome1)
+	deterministicIdentityManagerFixture(t, imgrHome2)
+
 	// CR-01: run TWO independent captures and compare text hashes.
 	t.Setenv("HOME", home1)
 	realBackend1 := newBackendForHome(home1)
@@ -264,6 +370,7 @@ func TestGateVisualRegression(t *testing.T) {
 		t.Fatalf("gate-visual-regression: capturing dummy backend (run 1): %v", err)
 	}
 	mergeGitScreenCaptures(t, realCaptures1, dummyCaptures1, gitHome1)
+	mergeIdentityManagerCaptures(t, realCaptures1, dummyCaptures1, imgrHome1)
 
 	t.Setenv("HOME", home2)
 	realBackend2 := newBackendForHome(home2)
@@ -278,6 +385,7 @@ func TestGateVisualRegression(t *testing.T) {
 		t.Fatalf("gate-visual-regression: capturing dummy backend (run 2): %v", err)
 	}
 	mergeGitScreenCaptures(t, realCaptures2, dummyCaptures2, gitHome2)
+	mergeIdentityManagerCaptures(t, realCaptures2, dummyCaptures2, imgrHome2)
 
 	specs := screenshot.RequiredScreenSpecs()
 	// Determinism is checked within each surface. Real and dummy are not byte,
@@ -352,6 +460,14 @@ func TestGateVisualRegressionReadOnly(t *testing.T) {
 	}
 	if _, err := screenshot.CaptureGitScreenScreens(dummyB); err != nil {
 		t.Logf("gate-visual-regression: capturing git-screen dummy backend (read-only check): %v", err)
+	}
+	// 05-09-PLAN.md Task 3: identity-manager captures must be equally read-only.
+	deterministicIdentityManagerFixture(t, home)
+	if _, err := screenshot.CaptureIdentityManagerScreens(realB); err != nil {
+		t.Logf("gate-visual-regression: capturing identity-manager real backend (read-only check): %v", err)
+	}
+	if _, err := screenshot.CaptureIdentityManagerScreens(dummyB); err != nil {
+		t.Logf("gate-visual-regression: capturing identity-manager dummy backend (read-only check): %v", err)
 	}
 
 	after := snapshotDir(t, packetDir)
@@ -441,6 +557,9 @@ func TestAllScreensCapturedAndNonEmpty(t *testing.T) {
 	gitHome := t.TempDir()
 	deterministicGitIdentityFixture(t, gitHome)
 	mergeGitScreenCaptures(t, realCaptures, dummyCaptures, gitHome)
+	imgrHome := t.TempDir()
+	deterministicIdentityManagerFixture(t, imgrHome)
+	mergeIdentityManagerCaptures(t, realCaptures, dummyCaptures, imgrHome)
 	t.Setenv("HOME", home) // restore for any later HOME-dependent assertions
 
 	for _, spec := range screenshot.RequiredScreenSpecs() {
@@ -493,6 +612,9 @@ func TestNegativeControl_UnclassifiedDifferenceRejected(t *testing.T) {
 	gitHome := t.TempDir()
 	deterministicGitIdentityFixture(t, gitHome)
 	mergeGitScreenCaptures(t, realCaptures, dummyCaptures, gitHome)
+	imgrHome := t.TempDir()
+	deterministicIdentityManagerFixture(t, imgrHome)
+	mergeIdentityManagerCaptures(t, realCaptures, dummyCaptures, imgrHome)
 	t.Setenv("HOME", home) // restore for any later HOME-dependent assertions
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -597,6 +719,9 @@ func TestNegativeControl_AllComparableEqualRegionsAreMutationSensitive(t *testin
 	gitHome := t.TempDir()
 	deterministicGitIdentityFixture(t, gitHome)
 	mergeGitScreenCaptures(t, realCaptures, dummyCaptures, gitHome)
+	imgrHome := t.TempDir()
+	deterministicIdentityManagerFixture(t, imgrHome)
+	mergeIdentityManagerCaptures(t, realCaptures, dummyCaptures, imgrHome)
 	t.Setenv("HOME", home) // restore for any later HOME-dependent assertions
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -685,6 +810,14 @@ func TestNegativeControl_GitScreenUnclassifiedDifferenceRejected(t *testing.T) {
 	gitHome := t.TempDir()
 	deterministicGitIdentityFixture(t, gitHome)
 	mergeGitScreenCaptures(t, realCaptures, dummyCaptures, gitHome)
+	// 05-09-PLAN.md Task 3: RequiredScreenSpecs() is a THREE-way merged
+	// registry now (create-flow + git-screen + identity-manager) —
+	// BuildRegionDiffs below requires every ApplicableLive frame present
+	// regardless of which registry this control scopes ITS OWN mutation to,
+	// so the identity-manager captures must still be merged in.
+	imgrHome := t.TempDir()
+	deterministicIdentityManagerFixture(t, imgrHome)
+	mergeIdentityManagerCaptures(t, realCaptures, dummyCaptures, imgrHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -744,6 +877,12 @@ func TestNegativeControl_AllGitScreenComparableEqualRegionsAreMutationSensitive(
 	gitHome := t.TempDir()
 	deterministicGitIdentityFixture(t, gitHome)
 	mergeGitScreenCaptures(t, realCaptures, dummyCaptures, gitHome)
+	// 05-09-PLAN.md Task 3: same reason as the sibling negative control
+	// above — RequiredScreenSpecs() now needs every registry's captures
+	// present regardless of which one this control scopes its own check to.
+	imgrHome := t.TempDir()
+	deterministicIdentityManagerFixture(t, imgrHome)
+	mergeIdentityManagerCaptures(t, realCaptures, dummyCaptures, imgrHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -786,5 +925,170 @@ func TestNegativeControl_CrossRegistryLeakage(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("cross-registry leakage: no git-screen specs found in RequiredScreenSpecs() — the registry merge broke")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 05-09-PLAN.md Task 3 negative controls: missing state, unclassified
+// difference, mutation-sensitivity, and cross-registry leakage — scoped to
+// the Phase 5 identity-manager registry, mirroring the Phase 4 git-screen
+// negative controls above exactly.
+// ---------------------------------------------------------------------------
+
+// identityManagerScreenIDs is the known Phase 5 identity-manager checkpoint
+// vocabulary, duplicated here (internal/screenshot's identityManagerSpecs is
+// unexported) so these negative controls can scope themselves to Phase 5
+// without a new export surface — mirrors gitScreenScreenIDs' own precedent.
+var identityManagerScreenIDs = map[string]bool{
+	"action-menu": true, "delete-choice": true, "confirm-destructive": true, "detail-ssh-first": true,
+}
+
+// TestNegativeControl_MissingIdentityManagerState proves the gate fails
+// closed when a required Phase 5 identity-manager capture is missing.
+func TestNegativeControl_MissingIdentityManagerState(t *testing.T) {
+	dummyCaptures, err := screenshot.CaptureIdentityManagerScreens(dummytui.NewFixtureBackend())
+	if err != nil {
+		t.Fatalf("capturing identity-manager dummy backend: %v", err)
+	}
+	broken := make(map[string]string, len(dummyCaptures))
+	for id, text := range dummyCaptures {
+		if id == "confirm-destructive" {
+			continue // deliberately drop a required identity-manager state
+		}
+		broken[id] = text
+	}
+	if _, ok := broken["confirm-destructive"]; ok {
+		t.Fatal("negative-control setup bug: \"confirm-destructive\" was not actually dropped")
+	}
+	specs := screenshot.RequiredScreenSpecs()
+	if _, err := screenshot.BuildRegionDiffs("negative-control", broken, broken, specs); err == nil {
+		t.Fatal("negative-control: BuildRegionDiffs accepted a capture set missing the required \"confirm-destructive\" identity-manager frame — CR-05 fail-closed is NOT enforced for Phase 5 states")
+	}
+}
+
+// TestNegativeControl_IdentityManagerUnclassifiedDifferenceRejected proves
+// that mutating away a Phase 5 identity-manager RegionDisposition's
+// classification is caught — mirrors
+// TestNegativeControl_GitScreenUnclassifiedDifferenceRejected exactly,
+// scoped to identityManagerScreenIDs.
+func TestNegativeControl_IdentityManagerUnclassifiedDifferenceRejected(t *testing.T) {
+	home := t.TempDir()
+	deterministicReusableKeyFixture(t, home)
+	t.Setenv("HOME", home)
+	realB := newBackendForHome(home)
+	realCaptures, err := screenshot.CaptureCreateFlowScreens(realB)
+	if err != nil {
+		t.Fatalf("capturing real backend: %v", err)
+	}
+	dummyB := dummytui.NewFixtureBackend()
+	dummyCaptures, err := screenshot.CaptureCreateFlowScreens(dummyB)
+	if err != nil {
+		t.Fatalf("capturing dummy backend: %v", err)
+	}
+	gitHome := t.TempDir()
+	deterministicGitIdentityFixture(t, gitHome)
+	mergeGitScreenCaptures(t, realCaptures, dummyCaptures, gitHome)
+	imgrHome := t.TempDir()
+	deterministicIdentityManagerFixture(t, imgrHome)
+	mergeIdentityManagerCaptures(t, realCaptures, dummyCaptures, imgrHome)
+	t.Setenv("HOME", home)
+
+	specs := screenshot.RequiredScreenSpecs()
+	records, err := screenshot.BuildRegionDiffs("negative-control", realCaptures, dummyCaptures, specs)
+	if err != nil {
+		t.Fatalf("building classified region evidence: %v", err)
+	}
+	mutated := false
+	for i := range records {
+		if !identityManagerScreenIDs[records[i].ScreenID] {
+			continue // scope this control to Phase 5 identity-manager records only
+		}
+		for j := range records[i].Regions {
+			region := &records[i].Regions[j]
+			if !region.Comparable || !region.Equal {
+				region.Classification = ""
+				mutated = true
+				break
+			}
+		}
+		if mutated {
+			break
+		}
+	}
+	if !mutated {
+		t.Fatal("negative-control: no classified identity-manager difference was available to mutate")
+	}
+	data, err := json.Marshal(screenshot.RegionDiffs{Version: "test", SourceCommit: "negative-control", GeneratedAt: "test", Screens: records})
+	if err != nil {
+		t.Fatalf("marshaling mutated region evidence: %v", err)
+	}
+	if err := screenshot.ValidateRegionDiffs(data, "negative-control", specs); err == nil {
+		t.Fatal("negative-control: validator accepted a Phase 5 identity-manager difference without ux-improvement/defect classification")
+	}
+}
+
+// TestNegativeControl_AllIdentityManagerComparableEqualRegionsAreMutationSensitive
+// proves that every comparable, currently-equal region on every identity-
+// manager checkpoint (action-menu, delete-choice, confirm-destructive,
+// detail-ssh-first) is sensitive to a real TEXT mutation, not just a
+// metadata field — mirrors the git-screen sibling exactly.
+func TestNegativeControl_AllIdentityManagerComparableEqualRegionsAreMutationSensitive(t *testing.T) {
+	home := t.TempDir()
+	deterministicReusableKeyFixture(t, home)
+	t.Setenv("HOME", home)
+	realB := newBackendForHome(home)
+	realCaptures, err := screenshot.CaptureCreateFlowScreens(realB)
+	if err != nil {
+		t.Fatalf("capturing real backend: %v", err)
+	}
+	dummyB := dummytui.NewFixtureBackend()
+	dummyCaptures, err := screenshot.CaptureCreateFlowScreens(dummyB)
+	if err != nil {
+		t.Fatalf("capturing dummy backend: %v", err)
+	}
+	gitHome := t.TempDir()
+	deterministicGitIdentityFixture(t, gitHome)
+	mergeGitScreenCaptures(t, realCaptures, dummyCaptures, gitHome)
+	imgrHome := t.TempDir()
+	deterministicIdentityManagerFixture(t, imgrHome)
+	mergeIdentityManagerCaptures(t, realCaptures, dummyCaptures, imgrHome)
+	t.Setenv("HOME", home)
+
+	specs := screenshot.RequiredScreenSpecs()
+	records, err := screenshot.BuildRegionDiffs("negative-control", realCaptures, dummyCaptures, specs)
+	if err != nil {
+		t.Fatalf("building classified region evidence: %v", err)
+	}
+	assertAllComparableEqualRegionsAreMutationSensitive(t, specs, records, func(screenID string) bool {
+		return identityManagerScreenIDs[screenID]
+	})
+}
+
+// TestNegativeControl_IdentityManagerCrossRegistryLeakage proves every Phase
+// 5 identity-manager spec's decision references use ONLY the scoped
+// DLV-NN/MGR-D-NN vocabulary — never a bare D-NN/T-NN ref that would
+// silently resolve against create-flow's own 03-CONTEXT.md numbering
+// instead of 05-CONTEXT.md's — mirrors TestNegativeControl_CrossRegistryLeakage
+// exactly, scoped to identityManagerScreenIDs.
+func TestNegativeControl_IdentityManagerCrossRegistryLeakage(t *testing.T) {
+	found := false
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		if !identityManagerScreenIDs[spec.ScreenID] {
+			continue
+		}
+		found = true
+		for _, d := range spec.RegionDispositions {
+			if !strings.HasPrefix(d.Decision, "DLV-") && !strings.HasPrefix(d.Decision, "MGR-D-") {
+				t.Errorf("cross-registry leakage: identity-manager spec %q region %q disposition uses decision ref %q — must be scoped DLV-NN/MGR-D-NN", spec.ScreenID, d.Region, d.Decision)
+			}
+		}
+		for _, na := range spec.NonApplicability {
+			if !strings.HasPrefix(na.Decision, "DLV-") && !strings.HasPrefix(na.Decision, "MGR-D-") {
+				t.Errorf("cross-registry leakage: identity-manager spec %q surface %q non-applicability uses decision ref %q — must be scoped DLV-NN/MGR-D-NN", spec.ScreenID, na.Surface, na.Decision)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("cross-registry leakage: no identity-manager specs found in RequiredScreenSpecs() — the registry merge broke")
 	}
 }
