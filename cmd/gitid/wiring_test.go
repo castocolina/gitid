@@ -2322,14 +2322,14 @@ func TestRunDeleteGitOnlyPreservesSSHKeyAndSigners(t *testing.T) {
 	before := snapshotPaths(t, untouched)
 
 	b := newBackendForHome(home)
-	backups, restored, err := b.runDelete("work", identity.DeleteScopeGitOnly)
+	res, err := b.runDelete("work", identity.DeleteScopeGitOnly, lifecyclePolicy{Confirm: confirmationBypassedWithYes})
 	if err != nil {
 		t.Fatalf("runDelete(git-only) error: %v", err)
 	}
-	if len(restored) != 0 {
-		t.Errorf("restored = %v on a successful delete, want empty", restored)
+	if len(res.Restored) != 0 {
+		t.Errorf("restored = %v on a successful delete, want empty", res.Restored)
 	}
-	if len(backups) == 0 {
+	if len(res.Backups) == 0 {
 		t.Error("a successful git-only delete over a pre-existing gitconfig/fragment must report backups")
 	}
 
@@ -2355,25 +2355,25 @@ func TestRunDeleteGitOnlyIdempotentNoSecondFileAnywhere(t *testing.T) {
 	seedDeleteFixture(t, home, "work")
 
 	b := newBackendForHome(home)
-	first, _, err := b.runDelete("work", identity.DeleteScopeGitOnly)
+	firstRes, err := b.runDelete("work", identity.DeleteScopeGitOnly, lifecyclePolicy{Confirm: confirmationBypassedWithYes})
 	if err != nil {
 		t.Fatalf("first runDelete error: %v", err)
 	}
-	if len(first) == 0 {
+	if len(firstRes.Backups) == 0 {
 		t.Fatal("first runDelete should have produced at least one backup")
 	}
 
 	listingAfterFirst := homeFileListing(t, home)
 
-	second, restored, err := b.runDelete("work", identity.DeleteScopeGitOnly)
+	secondRes, err := b.runDelete("work", identity.DeleteScopeGitOnly, lifecyclePolicy{Confirm: confirmationBypassedWithYes})
 	if err != nil {
 		t.Fatalf("second (idempotent) runDelete error: %v", err)
 	}
-	if len(second) != 0 {
-		t.Errorf("second runDelete backups = %v, want none (R-14 idempotency)", second)
+	if len(secondRes.Backups) != 0 {
+		t.Errorf("second runDelete backups = %v, want none (R-14 idempotency)", secondRes.Backups)
 	}
-	if len(restored) != 0 {
-		t.Errorf("second runDelete restored = %v, want none", restored)
+	if len(secondRes.Restored) != 0 {
+		t.Errorf("second runDelete restored = %v, want none", secondRes.Restored)
 	}
 
 	listingAfterSecond := homeFileListing(t, home)
@@ -2408,14 +2408,14 @@ func TestRunDeleteMidTransactionFailureRestores(t *testing.T) {
 		return nil
 	}
 
-	_, restored, err := b.runDelete("work", identity.DeleteScopeGitOnly)
+	res, err := b.runDelete("work", identity.DeleteScopeGitOnly, lifecyclePolicy{Confirm: confirmationBypassedWithYes})
 	if err == nil {
 		t.Fatal("runDelete must report the injected failure")
 	}
 	if !strings.Contains(err.Error(), "injected failure at delete-fragment") {
 		t.Errorf("error = %v, want it to contain the injected failure", err)
 	}
-	if len(restored) == 0 {
+	if len(res.Restored) == 0 {
 		t.Error("a mid-transaction failure must report the restored paths")
 	}
 
@@ -2488,7 +2488,7 @@ func TestRunDeleteAndCLIVerbProduceByteIdenticalGitconfig(t *testing.T) {
 
 	// Path A: the TUI's own call path (runDelete directly).
 	bA := newBackendForHome(homeA)
-	if _, _, err := bA.runDelete("work", identity.DeleteScopeGitOnly); err != nil {
+	if _, err := bA.runDelete("work", identity.DeleteScopeGitOnly, lifecyclePolicy{Confirm: confirmationBypassedWithYes}); err != nil {
 		t.Fatalf("runDelete over homeA: %v", err)
 	}
 
@@ -2962,7 +2962,7 @@ func TestRunDeleteEverything_TwoIdentitiesSameProvider(t *testing.T) {
 	b := newBackendForHome(home)
 	gcPath := filepath.Join(home, ".gitconfig")
 
-	if _, _, err := b.runDelete("work", identity.DeleteScopeEverything); err != nil {
+	if _, err := b.runDelete("work", identity.DeleteScopeEverything, lifecyclePolicy{Confirm: confirmationBypassedWithYes}); err != nil {
 		t.Fatalf("runDelete(work, everything) error: %v", err)
 	}
 	gc1, err := os.ReadFile(gcPath) //nolint:gosec // test fixture path
@@ -2983,7 +2983,7 @@ func TestRunDeleteEverything_TwoIdentitiesSameProvider(t *testing.T) {
 		t.Errorf("personal's private key was disturbed by work's delete: %v", statErr)
 	}
 
-	if _, _, err := b.runDelete("personal", identity.DeleteScopeEverything); err != nil {
+	if _, err := b.runDelete("personal", identity.DeleteScopeEverything, lifecyclePolicy{Confirm: confirmationBypassedWithYes}); err != nil {
 		t.Fatalf("runDelete(personal, everything) error: %v", err)
 	}
 	gc2, err := os.ReadFile(gcPath) //nolint:gosec // test fixture path
@@ -3023,7 +3023,7 @@ func TestRunDeleteEverything_HandWrittenAliasKeepsRewrite(t *testing.T) {
 	writeFile(t, sshPath, string(existing)+handWritten)
 
 	b := newBackendForHome(home)
-	if _, _, err := b.runDelete("work", identity.DeleteScopeEverything); err != nil {
+	if _, err := b.runDelete("work", identity.DeleteScopeEverything, lifecyclePolicy{Confirm: confirmationBypassedWithYes}); err != nil {
 		t.Fatalf("runDelete(work, everything) error: %v", err)
 	}
 	gc, err := os.ReadFile(gcPath) //nolint:gosec // test fixture path
@@ -3078,7 +3078,7 @@ func TestRunDeleteEverything_BitbucketHandWrittenAliasKeepsRewrite(t *testing.T)
 	writeFile(t, filepath.Join(home, ".ssh", "allowed_signers"), managedBlock("bb", line))
 
 	b := newBackendForHome(home)
-	if _, _, err := b.runDelete("bb", identity.DeleteScopeEverything); err != nil {
+	if _, err := b.runDelete("bb", identity.DeleteScopeEverything, lifecyclePolicy{Confirm: confirmationBypassedWithYes}); err != nil {
 		t.Fatalf("runDelete(bb, everything) error: %v", err)
 	}
 	gc, err := os.ReadFile(gcPath) //nolint:gosec // test fixture path

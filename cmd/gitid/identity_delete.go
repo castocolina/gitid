@@ -83,30 +83,37 @@ func runIdentityDelete(cmd *cobra.Command, name string, flags identityDeleteFlag
 		return printDeleteDryRun(cmd.OutOrStdout(), b, name, scope)
 	}
 
+	// Map the CLI's flags onto the lifecycle's three-valued confirmation
+	// enum (review R2-03): --yes IS confirmationBypassedWithYes; an
+	// interactive run installs the existing confirmDelete prompt under
+	// confirmationRequired; a non-interactive run without --yes is refused
+	// BEFORE the lifecycle (it can never be mistaken for pre-confirmed). The
+	// CLI does NOT set confirmationAlreadyObtained — that value is reserved
+	// for a layer that actually displayed the TUI's confirm screen.
+	policy := lifecyclePolicy{Confirm: confirmationBypassedWithYes}
 	if !flags.Yes {
 		if !isTTY {
 			return fmt.Errorf("gitid: refusing to delete %q without --yes in non-interactive mode", name)
 		}
-		confirmed, cerr := confirmDelete(cmd, name, scope)
-		if cerr != nil {
-			return cerr
-		}
-		if !confirmed {
-			return fmt.Errorf("gitid: delete of %q cancelled", name)
+		policy = lifecyclePolicy{
+			Confirm: confirmationRequired,
+			Prompt: func(string) (bool, error) {
+				return confirmDelete(cmd, name, scope)
+			},
 		}
 	}
 
 	// --yes suppresses ONLY the confirmation prompt above — the timestamped
 	// backup itself is taken unconditionally by identity.Delete regardless
 	// of --yes (D-02).
-	backups, restored, derr := b.runDelete(name, scope)
+	res, derr := b.runDelete(name, scope, policy)
 	if derr != nil {
-		if len(restored) > 0 {
-			fmt.Fprintf(cmd.ErrOrStderr(), "restored: %s\n", strings.Join(restored, "; ")) //nolint:errcheck // best-effort diagnostic
+		if len(res.Restored) > 0 {
+			fmt.Fprintf(cmd.ErrOrStderr(), "restored: %s\n", strings.Join(res.Restored, "; ")) //nolint:errcheck // best-effort diagnostic
 		}
 		return derr
 	}
-	for _, bak := range backups {
+	for _, bak := range res.Backups {
 		fmt.Fprintf(cmd.OutOrStdout(), "backed up -> %s\n", b.displayPath(bak)) //nolint:errcheck // best-effort stdout
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "deleted %q (%s)\n", name, scope) //nolint:errcheck // best-effort stdout

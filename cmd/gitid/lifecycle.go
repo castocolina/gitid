@@ -1,0 +1,674 @@
+package main
+
+// lifecycle.go is the ONE complete-lifecycle chokepoint per write verb (review
+// R-11-CLI). D-02 requires that the CLI and the TUI run the same
+// test → preview → confirmation → backup → write → re-test ceremony; sharing
+// only the final write transaction does not prove that, because two callers
+// could reach the same writer through different ceremonies. Each verb has
+// exactly ONE named lifecycle function — runRotate / runRepair / runDelete —
+// and every caller (the TUI commit seams in wiring.go today, plan 05-08's CLI
+// handlers tomorrow) is a thin adapter over it. The per-verb stage sequence is
+// defined once, as data, in lifecycleStages; this file is the single source of
+// truth that both skins' tests assert against. When a stage list drifts, the
+// CLI test and the TUI test break together.
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/castocolina/gitid/internal/gitconfig"
+	"github.com/castocolina/gitid/internal/identity"
+	"github.com/castocolina/gitid/internal/sshconfig"
+	"github.com/castocolina/gitid/internal/tester"
+)
+
+// ---------------------------------------------------------------------------
+// Confirmation authorization (review R2-03)
+// ---------------------------------------------------------------------------
+
+// confirmationMode is the three-valued authorization state a lifecycle
+// function reaches at its confirm stage. It is an EXPLICIT enum, never a
+// nilable func, because a nil func conflates two opposite intents —
+// "authorization already happened" (the TUI's confirm screen ran) versus
+// "authorization cannot happen" (no prompt could be installed for a
+// non-interactive invocation). The ZERO value is confirmationRequired, so a
+// caller that forgets to set the field fails closed rather than silently
+// proceeding as authorized.
+type confirmationMode int
+
+const (
+	// confirmationRequired is the ZERO VALUE. Reaching the confirm stage in
+	// this mode with p.Prompt == nil returns errConfirmationUnavailable
+	// immediately — before the backup stage, before any write. A caller that
+	// sets nothing therefore fails closed: a scripted destructive invocation
+	// with no TTY and no --yes can never be mistaken for pre-confirmed.
+	confirmationRequired confirmationMode = iota
+	// confirmationAlreadyObtained asserts a human already saw and accepted
+	// the exact preview on a confirm screen. ONLY the TUI's commit seams may
+	// set it — setting it from a code path with no such screen is a security
+	// defect, not a shortcut.
+	confirmationAlreadyObtained
+	// confirmationBypassedWithYes is the CLI's consent: the user passed
+	// --yes. It is distinct from confirmationAlreadyObtained so a receipt or
+	// a log can tell "a human clicked confirm" from "a script asserted
+	// consent up front" — and so the CLI can never reach the TUI's value.
+	confirmationBypassedWithYes
+)
+
+// lifecyclePolicy carries everything that may legitimately vary across a
+// lifecycle invocation. The backup stage is deliberately NOT policy-
+// controlled: no field here can suppress it (D-02's invariant, asserted as a
+// property over lifecycleStages in lifecycle_test.go).
+type lifecyclePolicy struct {
+	// DryRun stops the function after the plan stage, before the
+	// confirmation gate and therefore before any backup or write. A dry run
+	// needs no authorization because it cannot write, which keeps --dry-run
+	// usable in non-interactive CI.
+	DryRun bool
+	// Confirm is one of the three confirmationMode values above.
+	Confirm confirmationMode
+	// Prompt is required iff Confirm == confirmationRequired. It receives
+	// the plan preview and returns whether the user accepted it.
+	Prompt func(preview string) (bool, error)
+	// Stages is a test hook called with every stage name as the function
+	// enters that stage's boundary. nil in production.
+	Stages func(stage string)
+}
+
+// lifecycleResult is what a lifecycle function reports. Backups are the
+// timestamped safety copies the write produced and, once authorized, are
+// never suppressed. Restored carries journal.restore()'s outcome lines on a
+// rollback. ArchivedKeyPaths names every archive copy THIS transaction
+// created (populated for a failure from the archive step onward, review
+// R3-01). ReTest carries the closing post-write connectivity test result.
+type lifecycleResult struct {
+	Backups          []string
+	Restored         []string
+	Removed          []string
+	ArchivedKeyPaths []string
+	ReTest           tester.Result
+}
+
+// ---------------------------------------------------------------------------
+// The per-verb stage table (review R2-02)
+// ---------------------------------------------------------------------------
+
+// lifecycleStages is the SINGLE source of truth for D-02's
+// no-behavioral-fork claim: one complete-Lifecycle function per verb, both
+// skins calling it, one table both skins' tests assert against. A stage list
+// that drifts breaks the CLI test and the TUI test together.
+//
+// Rotate and repair run a connectivity test before AND after the write;
+// delete CANNOT — a deleted identity has no Host block, no key, and no
+// fragment left to connect with, so there is no connectivity test to run
+// before or after it (review R2-02, reconciling this plan with plan 05-08's
+// delete dry-run contract). Delete's closing `verify` stage is a re-read of
+// the reconstructed inventory proving the identity is gone and the survivors
+// still parse — the coherence check that plays delete's structural
+// equivalent of a re-test without pretending a connection is possible.
+//
+// The verb-INDEPENDENT part of D-02 is asserted as a PROPERTY over this
+// table, not as a literal sequence: every row must contain confirm, backup,
+// and write in that relative order — a future verb cannot be added with the
+// backup stage quietly missing. Plan 05-08's confirmation matrix and dry-run
+// contract MUST be written against this same table; adding a verb means
+// adding a row HERE first.
+var lifecycleStages = map[string][]string{
+	"rotate": {"test", "plan", "confirm", "backup", "write", "retest"},
+	"repair": {"test", "plan", "confirm", "backup", "write", "retest"},
+	"delete": {"plan", "confirm", "backup", "write", "verify"},
+}
+
+// errConfirmationUnavailable is returned when a confirmationRequired
+// lifecycle call reaches its confirm stage with no prompt installed — the
+// fail-closed proof that a non-interactive destructive run without --yes can
+// never be mistaken for pre-confirmed (review R2-03).
+var errConfirmationUnavailable = errors.New("gitid: confirmation required, but no confirmation prompt is available")
+
+// confirmGate evaluates lifecyclePolicy.Confirm at the confirm stage
+// boundary (review R2-03). confirmationAlreadyObtained and
+// confirmationBypassedWithYes never consult a prompt — the authorization
+// already happened, or a script asserted it up front. confirmationRequired
+// consults p.Prompt, failing closed with errConfirmationUnavailable when none
+// is installed.
+func (b *realBackend) confirmGate(p lifecyclePolicy, preview string) (bool, error) {
+	switch p.Confirm {
+	case confirmationAlreadyObtained, confirmationBypassedWithYes:
+		return true, nil
+	case confirmationRequired:
+		if p.Prompt == nil {
+			return false, errConfirmationUnavailable
+		}
+		return p.Prompt(preview)
+	default:
+		return false, fmt.Errorf("gitid: internal: unknown confirmation mode %d: refusing to proceed", p.Confirm)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// runRotate — the ONE complete rotate ceremony
+// ---------------------------------------------------------------------------
+
+// runRotate owns rotate's whole declared ceremony — test → plan → confirm →
+// backup → write → re-test — driving it from lifecycleStages["rotate"]. No
+// other function reimplements a stage. It takes txMu (WR-04), resolves the
+// account from the SAME reconstruction the identity list renders, and calls
+// the domain through b.depsForTransaction(journal) — never b.deps, whose
+// ArchiveKeyPair binding refuses by design (review R3-01). A dry run stops
+// after the plan stage; an un-authorized run fails closed before any backup
+// or write; a mid-transaction failure restores every watched file to its
+// pre-transaction bytes AND mode and removes every archive copy this
+// transaction created.
+func (b *realBackend) runRotate(name string, p lifecyclePolicy) (lifecycleResult, error) {
+	b.txMu.Lock()
+	defer b.txMu.Unlock()
+
+	res := lifecycleResult{}
+	record := func(stage string) {
+		if p.Stages != nil {
+			p.Stages(stage)
+		}
+	}
+	stages := lifecycleStages["rotate"]
+
+	if b.initErr != nil {
+		return res, b.initErr
+	}
+	acct, found := b.findAccount(name)
+	if !found {
+		return res, fmt.Errorf("gitid: no such identity: %q", name)
+	}
+	acct = b.normalizeAccountForWrite(acct)
+
+	// test — the connectivity probe against the identity as it currently
+	// resolves through its alias (the only probe a rotation can run before
+	// the write). The resident is advisory at commit time: the TUI's two
+	// test stages already gated the ceremony, and a transient probe failure
+	// must not brick a rotation the user has confirmed.
+	record(stages[0])
+	_, _ = b.deps.Resolved(acct.Alias)
+
+	// plan — render the confirmed-write preview the confirmation prompt
+	// receives.
+	record(stages[1])
+	preview := "rotate " + name + ": archive the current key pair (move it out of " +
+		b.displayPath(acct.KeyPath) + " into the D-06 archive directory), generate a new pair at the same canonical paths, " +
+		"append the new signing line, and re-point the SSH block, gitconfig includeIf, fragment, and allowed_signers"
+	if p.DryRun {
+		// ordering consequence stated here: stopping AFTER the plan stage
+		// means a dry run never reaches the confirmation gate and therefore
+		// needs no authorization — a non-interactive dry run must not demand
+		// consent for a run that cannot write.
+		return res, nil
+	}
+
+	// confirm — the authorization boundary (review R2-03).
+	record(stages[2])
+	authorized, cerr := b.confirmGate(p, preview)
+	if cerr != nil {
+		return res, cerr
+	}
+	if !authorized {
+		return res, fmt.Errorf("gitid: cancelled rotation of %q", name)
+	}
+
+	// backup — record the stage boundary. The timestamped backups themselves
+	// are taken by the filewriter-backed writers during the write stage
+	// below. No field of lifecyclePolicy can remove this stage (D-02).
+	record(stages[3])
+
+	// write — the backed-up, all-or-nothing transaction.
+	record(stages[4])
+	journal := newMutationJournal(b)
+	for _, watch := range b.rotateWatchPaths(acct) {
+		if werr := journal.watchFile(watch); werr != nil {
+			return res, werr
+		}
+	}
+	// A rotation may create the D-06 archive directory mid-transaction. If it
+	// did not pre-exist, record it as created so rollback removes it too
+	// (review R-10 / R2-08); if it pre-existed, only the copies inside are
+	// created-files and only they are removed.
+	archiveDir := sshconfig.ArchiveDir(b.sshDir)
+	if _, serr := os.Stat(archiveDir); os.IsNotExist(serr) {
+		if rerr := journal.recordCreatedDir(archiveDir); rerr != nil {
+			return res, rerr
+		}
+	}
+
+	// The domain is called through depsForTransaction(journal) — NEVER the
+	// backend-wide b.deps, whose ArchiveKeyPair binding refuses (review
+	// R3-01). identity.Deps is a value type, so re-binding one seam on a
+	// copy is not a second wiring.
+	deps := b.depsForTransaction(journal)
+	if b.failCommitAt != nil {
+		deps = injectRotateFailures(b, deps)
+	}
+	rot, terr := identity.Rotate(acct, deps)
+	res.Backups = collectCreateBackups(rot.CreateResult)
+	res.ArchivedKeyPaths = rotateArchivePaths(rot)
+	if terr != nil {
+		// Belt and braces (review R-10): the domain result names every
+		// archive path it created (populated from the archive step onward,
+		// including a failure INSIDE the archive step itself), so record them
+		// here too — recordCreatedFile is an idempotent no-op on a path the
+		// transaction seam already recorded, and both normally name the same
+		// paths.
+		for _, a := range res.ArchivedKeyPaths {
+			if rerr := journal.recordCreatedFile(a); rerr != nil {
+				terr = fmt.Errorf("%w; recording archive path %s for rollback: %v", terr, a, rerr)
+			}
+		}
+		outcomes, restoreErr := journal.restore()
+		res.Restored = outcomes
+		wrapped := fmt.Errorf("gitid: rotating identity %q: %w", name, terr)
+		if restoreErr != nil {
+			wrapped = fmt.Errorf("%w; restoration results: %s", wrapped, strings.Join(outcomes, "; "))
+		}
+		return res, wrapped
+	}
+
+	// re-test — the closing post-write probe through the live config, which
+	// now points at the new key. Its result is carried back in the lifecycle
+	// result so the commit receipt can render it.
+	record(stages[5])
+	res.ReTest, _ = b.deps.Resolved(acct.Alias)
+	return res, nil
+}
+
+// ---------------------------------------------------------------------------
+// runRepair — the ONE complete new-key (repair) ceremony
+// ---------------------------------------------------------------------------
+
+// runRepair owns repair's whole declared ceremony — test → plan → confirm →
+// backup → write → re-test — driving it from lifecycleStages["repair"]. It
+// mirrors runRotate except for the two D-05 differences: repair generates a
+// key at THIS identity's OWN canonical path (RepairKeyPath, never
+// Account.KeyPath) and NEVER archives — pre-existing key material is left
+// untouched, including a sibling's key the account may be sharing. Its
+// repair commit message therefore carries an empty archived path.
+func (b *realBackend) runRepair(name string, p lifecyclePolicy) (lifecycleResult, error) {
+	b.txMu.Lock()
+	defer b.txMu.Unlock()
+
+	res := lifecycleResult{}
+	record := func(stage string) {
+		if p.Stages != nil {
+			p.Stages(stage)
+		}
+	}
+	stages := lifecycleStages["repair"]
+
+	if b.initErr != nil {
+		return res, b.initErr
+	}
+	acct, found := b.findAccount(name)
+	if !found {
+		return res, fmt.Errorf("gitid: no such identity: %q", name)
+	}
+	acct = b.normalizeAccountForWrite(acct)
+
+	// test — advisory probe exactly as runRotate's (informational at commit
+	// time; the resident stage voices the D-02 ceremony, not a hard gate).
+	record(stages[0])
+	_, _ = b.deps.Resolved(acct.Alias)
+
+	// plan.
+	record(stages[1])
+	privTarget, _ := identity.RepairKeyPath(acct)
+	preview := "repair " + name + ": generate a fresh key pair at the identity's own canonical path " +
+		b.displayPath(privTarget) + " (no archiving, pre-existing key material untouched) and re-point the SSH block, " +
+		"gitconfig includeIf, fragment, and allowed_signers to it"
+	if p.DryRun {
+		return res, nil
+	}
+
+	// confirm.
+	record(stages[2])
+	authorized, cerr := b.confirmGate(p, preview)
+	if cerr != nil {
+		return res, cerr
+	}
+	if !authorized {
+		return res, fmt.Errorf("gitid: cancelled repair of %q", name)
+	}
+
+	// backup — unconditional once authorized (D-02). Nothing to record as
+	// created below: repair never archives (D-05), so the archive directory
+	// is never touched.
+	record(stages[3])
+
+	// write.
+	record(stages[4])
+	journal := newMutationJournal(b)
+	for _, watch := range b.repairWatchPaths(acct) {
+		if werr := journal.watchFile(watch); werr != nil {
+			return res, werr
+		}
+	}
+	deps := b.depsForTransaction(journal) // never b.deps (review R3-01)
+	if b.failCommitAt != nil {
+		deps = injectRepairFailures(b, deps)
+	}
+	// otherOwnersOfTarget is computed against the repair TARGET path
+	// (RepairKeyPath), NEVER against Account.KeyPath — the pathological case
+	// a naive reading gets wrong (review R-02). RepairKey fails closed with
+	// ErrRepairTargetShared before any seam runs when a sibling depends on
+	// the target.
+	otherOwners := identity.SharedKeyOwners(b.accounts(), privTarget, name)
+	rr, rerr := identity.RepairKey(acct, otherOwners, deps)
+	res.Backups = collectCreateBackups(rr)
+	if rerr != nil {
+		outcomes, restoreErr := journal.restore()
+		res.Restored = outcomes
+		wrapped := fmt.Errorf("gitid: repairing identity %q: %w", name, rerr)
+		if restoreErr != nil {
+			wrapped = fmt.Errorf("%w; restoration results: %s", wrapped, strings.Join(outcomes, "; "))
+		}
+		return res, wrapped
+	}
+
+	// re-test.
+	record(stages[5])
+	res.ReTest, _ = b.deps.Resolved(acct.Alias)
+	return res, nil
+}
+
+// normalizeAccountForWrite expands a reconstructed account's tilde-prefixed
+// artifact paths against b.home (never os.UserHomeDir()/$HOME — WR-35's
+// lesson: a caller that already owns an explicit home must never re-derive
+// it) and fills the gitid-managed TARGET paths (GitconfigPath /
+// SSHConfigPath / AllowedSignersPath), which Reconstruct deliberately does
+// not populate. Every lifecycle function runs an account through this before
+// any write, so the delete-only tilt-rblock runDelete used to inline is now
+// shared by all three verbs.
+func (b *realBackend) normalizeAccountForWrite(acct identity.Account) identity.Account {
+	acct.FragmentPath = expandTildeForHome(acct.FragmentPath, b.home)
+	acct.KeyPath = expandTildeForHome(acct.KeyPath, b.home)
+	acct.PubPath = expandTildeForHome(acct.PubPath, b.home)
+	acct.GitconfigPath = b.gitconfigPath
+	acct.SSHConfigPath = b.sshConfigPath
+	acct.AllowedSignersPath = b.allowedSigners
+	return acct
+}
+
+// rotateWatchPaths returns every file a rotation transaction can mutate: the
+// SSH storage target (where the Host block lives), the gitconfig, the
+// identity's fragment, the allowed_signers file, and both canonical key
+// paths. All are watched (snapshotted bytes + mode) before the write so a
+// rollback restores them exactly. (watchFile deduplicates a repeated path and
+// tolerates a missing one, so an account with an empty FragmentPath is fine.)
+func (b *realBackend) rotateWatchPaths(acct identity.Account) []string {
+	paths := []string{
+		b.storageTargetPath(),
+		b.gitconfigPath,
+		acct.AllowedSignersPath,
+		acct.KeyPath,
+		acct.PubPath,
+	}
+	if acct.FragmentPath != "" {
+		paths = append(paths, acct.FragmentPath)
+	}
+	return paths
+}
+
+// repairWatchPaths returns every file a repair transaction can mutate: the
+// SSH storage target, the gitconfig, the identity's fragment, the
+// allowed_signers file, and THIS identity's OWN canonical key paths
+// (RepairKeyPath — the account's Account.KeyPath is deliberately NOT
+// watched, because repair must never touch the key material it is not
+// permitted to overwrite).
+func (b *realBackend) repairWatchPaths(acct identity.Account) []string {
+	privTarget, pubTarget := identity.RepairKeyPath(acct)
+	paths := []string{b.storageTargetPath(), b.gitconfigPath, acct.AllowedSignersPath, privTarget, pubTarget}
+	if acct.FragmentPath != "" {
+		paths = append(paths, acct.FragmentPath)
+	}
+	return paths
+}
+
+// collectCreateBackups gathers every non-empty backup path a CreateResult
+// carries, in the same field order the result declares them.
+func collectCreateBackups(res identity.CreateResult) []string {
+	var out []string
+	for _, p := range []string{res.SSHBackup, res.GitconfigBackup, res.AllowedSignersBackup} {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// rotateArchivePaths gathers the two archived key-pair paths a RotateResult
+// reports when non-empty (the private and public archive copies).
+func rotateArchivePaths(rot identity.RotateResult) []string {
+	var out []string
+	if rot.ArchivedPrivatePath != "" {
+		out = append(out, rot.ArchivedPrivatePath)
+	}
+	if rot.ArchivedPublicPath != "" {
+		out = append(out, rot.ArchivedPublicPath)
+	}
+	return out
+}
+
+// displayPaths maps a raw-path slice through b.displayPath, the WR-01
+// discipline CommitGit applies — every path that becomes user-facing must
+// render the `~/`-shortened form, never the absolute sandbox path.
+func displayPaths(b *realBackend, in []string) []string {
+	out := make([]string, len(in))
+	for i, p := range in {
+		out[i] = b.displayPath(p)
+	}
+	return out
+}
+
+// displayMessages maps a raw-message slice through b.displayMessage, the
+// WR-01/WR-23 discipline CommitGit applies to restoration outcome lines.
+func displayMessages(b *realBackend, in []string) []string {
+	out := make([]string, len(in))
+	for i, m := range in {
+		out[i] = b.displayMessage(m)
+	}
+	return out
+}
+
+// ---------------------------------------------------------------------------
+// runDelete — the ONE complete delete ceremony
+// ---------------------------------------------------------------------------
+
+// runDelete owns delete's whole declared ceremony — plan → confirm → backup →
+// write → verify — driving it from lifecycleStages["delete"] (review R2-02).
+// plan 05-01 shipped this function under THIS exact name so that this plan
+// extends one function rather than introducing a differently-named
+// replacement (review R3-05): Task 1 changes its signature to take a
+// lifecyclePolicy and return a lifecycleResult, Task 2 extends its body for
+// the everything scope. It is the ONE production delete writer: the TUI's
+// CommitDelete, the everything scope, and plan 05-08's CLI handler all reach
+// it and nothing else.
+//
+// Delete invokes the connectivity-tester seam ZERO times — dry or full —
+// because a deleted identity has no Host block, no key, and no fragment left
+// to connect with (lifecycleStages["delete"] contains no test stage). Its
+// closing verify stage re-reads the reconstructed inventory and fails the
+// call if the identity is still reconstructable, so the stage is load-bearing
+// rather than a recorded no-op.
+func (b *realBackend) runDelete(name string, scope identity.DeleteScope, p lifecyclePolicy) (lifecycleResult, error) {
+	b.txMu.Lock()
+	defer b.txMu.Unlock()
+
+	res := lifecycleResult{}
+	record := func(stage string) {
+		if p.Stages != nil {
+			p.Stages(stage)
+		}
+	}
+	stages := lifecycleStages["delete"]
+
+	if b.initErr != nil {
+		return res, b.initErr
+	}
+	acct, found := b.findAccount(name)
+	if !found {
+		return res, fmt.Errorf("gitid: no such identity: %q", name)
+	}
+	acct = b.normalizeAccountForWrite(acct)
+
+	// plan — the target list the confirmation prompt previews, mirrored from
+	// the CLI's --dry-run listing.
+	record(stages[0])
+	preview := b.deletePlanPreview(acct, scope)
+	if p.DryRun {
+		return res, nil
+	}
+
+	// confirm — the authorization boundary.
+	record(stages[1])
+	authorized, cerr := b.confirmGate(p, preview)
+	if cerr != nil {
+		return res, cerr
+	}
+	if !authorized {
+		return res, fmt.Errorf("gitid: cancelled delete of %q", name)
+	}
+
+	// backup — unconditional once authorized (D-02).
+	record(stages[2])
+
+	// write — the backed-up, all-or-nothing transaction.
+	record(stages[3])
+	journal := newMutationJournal(b)
+	if werr := journal.watchFile(b.gitconfigPath); werr != nil {
+		return res, werr
+	}
+	if acct.FragmentPath != "" {
+		if werr := journal.watchFile(acct.FragmentPath); werr != nil {
+			return res, werr
+		}
+	}
+	if scope == identity.DeleteScopeEverything {
+		if werr := journal.watchFile(b.storageTargetPath()); werr != nil {
+			return res, werr
+		}
+		if werr := journal.watchFile(b.allowedSigners); werr != nil {
+			return res, werr
+		}
+		if acct.KeyPath != "" {
+			if werr := journal.watchFile(acct.KeyPath); werr != nil {
+				return res, werr
+			}
+		}
+		if acct.PubPath != "" {
+			if werr := journal.watchFile(acct.PubPath); werr != nil {
+				return res, werr
+			}
+		}
+		// An everything delete may create the D-06 archive directory when it
+		// copies the key pair out (D-11). Record it as created when it did
+		// not pre-exist so a rollback leaves no empty shell behind.
+		archiveDir := sshconfig.ArchiveDir(b.sshDir)
+		if _, serr := os.Stat(archiveDir); os.IsNotExist(serr) {
+			if rerr := journal.recordCreatedDir(archiveDir); rerr != nil {
+				return res, rerr
+			}
+		}
+	}
+
+	// The domain is called through deleteDepsForTransaction(journal) — never
+	// buildDeleteDeps(b) directly, whose CopyKeyPairToArchive binding refuses
+	// (review R3-01).
+	deps := b.deleteDepsForTransaction(journal)
+	if b.failCommitAt != nil {
+		deps = injectDeleteFailures(b, deps)
+	}
+	del, derr := identity.Delete(acct, scope, deps)
+	res.Backups = collectDeleteBackups(del)
+	res.ArchivedKeyPaths = del.ArchivedKeyPaths
+	if derr != nil {
+		for _, a := range res.ArchivedKeyPaths {
+			if rerr := journal.recordCreatedFile(a); rerr != nil {
+				derr = fmt.Errorf("%w; recording archive path %s for rollback: %v", derr, a, rerr)
+			}
+		}
+		outcomes, restoreErr := journal.restore()
+		res.Restored = outcomes
+		wrapped := fmt.Errorf("gitid: deleting identity %q: %w", name, derr)
+		if restoreErr != nil {
+			wrapped = fmt.Errorf("%w; restoration results: %s", wrapped, strings.Join(outcomes, "; "))
+		}
+		return res, wrapped
+	}
+
+	// verify — delete's closing coherence check (lifecycleStages["delete"]'s
+	// last entry).
+	record(stages[4])
+	if verr := b.verifyDeleteGone(name, scope); verr != nil {
+		return res, verr
+	}
+	return res, nil
+}
+
+// deletePlanPreview renders the target list for name/scope the confirmation
+// prompt previews and --dry-run would act on. Git-only names the gitconfig
+// and the fragment; everything additionally names the SSH storage target, the
+// key pair, and the allowed_signers file, mirroring the CLI's printDeleteDryRun.
+func (b *realBackend) deletePlanPreview(acct identity.Account, scope identity.DeleteScope) string {
+	targets := []string{b.displayPath(b.gitconfigPath)}
+	if acct.FragmentPath != "" {
+		targets = append(targets, b.displayPath(acct.FragmentPath))
+	}
+	if scope == identity.DeleteScopeEverything {
+		targets = append([]string{b.displayPath(b.storageTargetPath())}, targets...)
+		if acct.KeyPath != "" {
+			targets = append(targets, b.displayPath(acct.KeyPath), b.displayPath(acct.PubPath))
+		}
+		targets = append(targets, b.displayPath(b.allowedSigners))
+	}
+	return "delete " + acct.Name + " (" + string(scope) + "): " + strings.Join(targets, ", ")
+}
+
+// verifyDeleteGone is delete's closing verify stage: a re-read of the
+// reconstructed inventory — never a no-op, and never the vacuous nil-on-error
+// b.accounts() path — failing the call when the delete did not actually take
+// effect. The check is deliberately scope-aware:
+//
+//   - DeleteScopeEverything: the identity must not reconstruct AT ALL — its
+//     SSH Host block, gitconfig includeIf block, fragment, allowed_signers
+//     block, and key pair are all removed, so any trace of the name is a
+//     failed delete.
+//
+//   - DeleteScopeGitOnly: the SSH Host block stays by design (D-10), so the
+//     name WILL still reconstruct from the SSH side — that is the intended
+//     outcome, not a failure. The git side must be gone: the gitconfig must
+//     no longer carry the identity's managed includeIf block. (The fragment
+//     file's absence is asserted separately by the git-only tests.)
+func (b *realBackend) verifyDeleteGone(name string, scope identity.DeleteScope) error {
+	deps := identity.InventoryDepsForHome(b.home)
+	sshBytes, err := deps.ReadSSHConfig()
+	if err != nil {
+		return fmt.Errorf("gitid: delete verify: rereading ssh config: %w", err)
+	}
+	gcBytes, err := deps.ReadGitconfig()
+	if err != nil {
+		return fmt.Errorf("gitid: delete verify: rereading gitconfig: %w", err)
+	}
+	if scope == identity.DeleteScopeGitOnly {
+		blocks := gitconfig.ParseManagedIncludeIf(gcBytes)
+		if _, ok := blocks[name]; ok {
+			return fmt.Errorf("gitid: delete verify: gitconfig still carries the managed includeIf block for %q", name)
+		}
+		return nil
+	}
+	accounts, err := identity.Reconstruct(sshBytes, gcBytes, deps.ReadFragment)
+	if err != nil {
+		return fmt.Errorf("gitid: delete verify: re-reconstructing the inventory: %w", err)
+	}
+	for _, a := range accounts {
+		if a.Name == name {
+			return fmt.Errorf("gitid: delete verify: %q is still reconstructable from the on-disk configuration", name)
+		}
+	}
+	return nil
+}

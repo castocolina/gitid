@@ -1128,13 +1128,14 @@ func (b *realBackend) commitGitTransaction(spec tuikit.GitSpec) ([]string, []str
 }
 
 // CommitDelete is the delete async seam, mirroring CommitGit's shape exactly:
-// resolve the scope, call runDelete (which owns its own txMu locking, same
-// as commitGitTransaction), and report the result as a DeleteCommitMsg.
-// Every backup/restored path is scrubbed through b.displayPath/
-// b.displayMessage before it becomes user-facing, the same WR-01/WR-23
-// discipline CommitGit applies. Removed is left empty in this plan — no
-// acceptance criterion consumes it yet; 05-07's lifecycle extension is the
-// natural place to populate it from the resolved account's artifact paths.
+// resolve the scope, call runDelete — the ONE complete per-verb delete
+// ceremony in lifecycle.go, which owns its own txMu locking, same as
+// commitGitTransaction — and report the result as a DeleteCommitMsg. The
+// delete-choice ceremony screen IS the confirmation, so the lifecycle is
+// authorized with confirmationAlreadyObtained (the only layer permitted to
+// assert that value). Every backup/restored path is scrubbed through
+// b.displayPath/b.displayMessage before it becomes user-facing, the same
+// WR-01/WR-23 discipline CommitGit applies.
 func (b *realBackend) CommitDelete(name, scope string) tea.Cmd {
 	return func() tea.Msg {
 		if b.initErr != nil {
@@ -1144,15 +1145,9 @@ func (b *realBackend) CommitDelete(name, scope string) tea.Cmd {
 		if serr != nil {
 			return tuikit.DeleteCommitMsg{Err: b.displayMessage(serr.Error())}
 		}
-		backups, restored, err := b.runDelete(name, deleteScope)
-		displayBackups := make([]string, len(backups))
-		for i, backup := range backups {
-			displayBackups[i] = b.displayPath(backup)
-		}
-		displayRestored := make([]string, len(restored))
-		for i, outcome := range restored {
-			displayRestored[i] = b.displayMessage(outcome)
-		}
+		res, err := b.runDelete(name, deleteScope, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+		displayBackups := displayPaths(b, res.Backups)
+		displayRestored := displayMessages(b, res.Restored)
 		if err != nil {
 			return tuikit.DeleteCommitMsg{
 				Backups: displayBackups, Restored: displayRestored,
@@ -1163,86 +1158,14 @@ func (b *realBackend) CommitDelete(name, scope string) tea.Cmd {
 	}
 }
 
-// runDelete is the ONE production delete writer — the name plan 05-07's full
-// lifecycle uses. Do NOT coin a wave-local transaction name here (review
-// R3-05): plan 05-07 turns this into the full delete lifecycle by changing
-// THIS function's signature (adding a lifecyclePolicy parameter, returning a
-// lifecycleResult) and body, not by adding a second, differently-named
-// writer. One name from wave 1 means the compiler — not an executor's
-// diligence — enforces that there is only ever one production delete writer
-// (D-02's "CLI and TUI call the same chokepoint" claim depends on this).
-//
-// It takes txMu (WR-04: serializes against any concurrent
-// commitCreateTransaction/commitGitTransaction, all of which
-// read-modify-write the same ~/.gitconfig), resolves acct from b.accounts()
-// (the SAME reconstruction the identity list renders — never a second
-// lookup), watches every file the scope will touch via a mutationJournal
-// BEFORE calling identity.Delete, and on a mid-transaction failure calls
-// journal.restore() and returns the restored list — the exact
-// commitGitArtifacts fail() pattern, applied to delete.
-func (b *realBackend) runDelete(name string, scope identity.DeleteScope) (backups, restored []string, err error) {
-	b.txMu.Lock()
-	defer b.txMu.Unlock()
-
-	acct, found := b.findAccount(name)
-	if !found {
-		return nil, nil, fmt.Errorf("gitid: no such identity: %q", name)
-	}
-	// Reconstruct stores FragmentPath/KeyPath/PubPath VERBATIM from the
-	// parsed config (often a literal "~/..." — git itself expands "~" at
-	// includeIf-resolution time, but this process never does). Expand
-	// against b.home explicitly — never os.UserHomeDir()/$HOME (WR-35's
-	// lesson: a caller that already owns an explicit home must never
-	// re-derive it from the process environment) — before this becomes a
-	// real filesystem path anywhere below.
-	acct.FragmentPath = expandTildeForHome(acct.FragmentPath, b.home)
-	acct.KeyPath = expandTildeForHome(acct.KeyPath, b.home)
-	acct.PubPath = expandTildeForHome(acct.PubPath, b.home)
-	// Account.AllowedSignersPath is never populated by Reconstruct (it has
-	// no per-identity value to reconstruct FROM — the file is shared) —
-	// unlike Fragment/Key/Pub, it is a constant, backend-wide path, so it is
-	// filled here from b.allowedSigners (already absolute, no tilde to
-	// expand) rather than threaded through DeleteDeps as a second seam.
-	acct.AllowedSignersPath = b.allowedSigners
-
-	journal := newMutationJournal(b)
-	if werr := journal.watchFile(b.gitconfigPath); werr != nil {
-		return nil, nil, werr
-	}
-	if acct.FragmentPath != "" {
-		if werr := journal.watchFile(acct.FragmentPath); werr != nil {
-			return nil, nil, werr
-		}
-	}
-	if scope == identity.DeleteScopeEverything {
-		if werr := journal.watchFile(b.storageTargetPath()); werr != nil {
-			return nil, nil, werr
-		}
-		if werr := journal.watchFile(b.allowedSigners); werr != nil {
-			return nil, nil, werr
-		}
-	}
-
-	// deleteDepsForTransaction, never buildDeleteDeps(b) directly (review
-	// R3-01): only the transaction-bound seam's CopyKeyPairToArchive
-	// actually archives; the backend-wide binding refuses.
-	deps := b.deleteDepsForTransaction(journal)
-	if b.failCommitAt != nil {
-		deps = injectDeleteFailures(b, deps)
-	}
-
-	res, derr := identity.Delete(acct, scope, deps)
-	backups = collectDeleteBackups(res)
-	if derr != nil {
-		outcomes, restoreErr := journal.restore()
-		wrapped := fmt.Errorf("gitid: deleting identity %q: %w", name, derr)
-		if restoreErr != nil {
-			wrapped = fmt.Errorf("%w; restoration results: %s", wrapped, strings.Join(outcomes, "; "))
-		}
-		return backups, outcomes, wrapped
-	}
-	return backups, nil, nil
-}
+// runDelete is the ONE production delete writer, defined in lifecycle.go
+// (cmd/gitid/lifecycle.go) as the complete per-verb delete ceremony — plan
+// 05-01 shipped this function under this exact name so plan 05-07 extends
+// one function rather than introducing a differently-named replacement
+// (review R3-05). It must never be redefined here: its signature takes a
+// lifecyclePolicy and returns a lifecycleResult, and the compiler forces
+// every call site to follow. Do NOT coin a second, wave-local name beside
+// it.
 
 // injectDeleteFailures wraps deps' WriteGitconfig/RemoveFragment with
 // b.failCommitAt fault-injection checkpoints ("delete-gitconfig",
@@ -1264,6 +1187,104 @@ func injectDeleteFailures(b *realBackend, deps identity.DeleteDeps) identity.Del
 			return "", err
 		}
 		return origRemoveFragment(fragPath)
+	}
+	return deps
+}
+
+// injectRotateFailures wraps each rotate transaction step's Deps seam with a
+// b.failCommitAt fault-injection checkpoint — the same test-only injection
+// point commitGitArtifacts's inject() and injectDeleteFailures use — so a
+// test can prove a failure at ANY step of a rotation restores every watched
+// file (bytes AND mode, including the removed-and-replaced key pair) and
+// removes every archive copy this transaction created. Checkpoint names:
+// rotate-archive, rotate-persist-key, rotate-ssh, rotate-gitconfig,
+// rotate-fragment, rotate-signers.
+func injectRotateFailures(b *realBackend, deps identity.Deps) identity.Deps {
+	origArchive := deps.ArchiveKeyPair
+	deps.ArchiveKeyPair = func(privPath, pubPath string) (string, string, error) {
+		if err := b.failCommitAt("rotate-archive"); err != nil {
+			return "", "", err
+		}
+		return origArchive(privPath, pubPath)
+	}
+	origPersist := deps.PersistKey
+	deps.PersistKey = func(s identity.StagedKey) (identity.KeyResult, error) {
+		if err := b.failCommitAt("rotate-persist-key"); err != nil {
+			return identity.KeyResult{}, err
+		}
+		return origPersist(s)
+	}
+	origWriteSSH := deps.WriteSSH
+	deps.WriteSSH = func(accountName, hostBlock, globalBlock string) (string, error) {
+		if err := b.failCommitAt("rotate-ssh"); err != nil {
+			return "", err
+		}
+		return origWriteSSH(accountName, hostBlock, globalBlock)
+	}
+	origWriteGit := deps.WriteGitconfig
+	deps.WriteGitconfig = func(id, fragmentPath, allowedSignersPath string, matches []gitconfig.Match) (string, error) {
+		if err := b.failCommitAt("rotate-gitconfig"); err != nil {
+			return "", err
+		}
+		return origWriteGit(id, fragmentPath, allowedSignersPath, matches)
+	}
+	origWriteFrag := deps.WriteFragment
+	deps.WriteFragment = func(fragmentPath, name, email, signingKeyPath string, signing bool) error {
+		if err := b.failCommitAt("rotate-fragment"); err != nil {
+			return err
+		}
+		return origWriteFrag(fragmentPath, name, email, signingKeyPath, signing)
+	}
+	origAppend := deps.AppendAllowedSigners
+	deps.AppendAllowedSigners = func(path, identity, email, pubLine string) (string, error) {
+		if err := b.failCommitAt("rotate-signers"); err != nil {
+			return "", err
+		}
+		return origAppend(path, identity, email, pubLine)
+	}
+	return deps
+}
+
+// injectRepairFailures is injectRotateFailures's sibling for the repair
+// path. Repair never archives, so there is no rotate-archive checkpoint; the
+// step names are repair-persist-key, repair-ssh, repair-gitconfig,
+// repair-fragment, repair-signers (plus the shared restore: boundaries the
+// journal itself injects).
+func injectRepairFailures(b *realBackend, deps identity.Deps) identity.Deps {
+	origPersist := deps.PersistKey
+	deps.PersistKey = func(s identity.StagedKey) (identity.KeyResult, error) {
+		if err := b.failCommitAt("repair-persist-key"); err != nil {
+			return identity.KeyResult{}, err
+		}
+		return origPersist(s)
+	}
+	origWriteSSH := deps.WriteSSH
+	deps.WriteSSH = func(accountName, hostBlock, globalBlock string) (string, error) {
+		if err := b.failCommitAt("repair-ssh"); err != nil {
+			return "", err
+		}
+		return origWriteSSH(accountName, hostBlock, globalBlock)
+	}
+	origWriteGit := deps.WriteGitconfig
+	deps.WriteGitconfig = func(id, fragmentPath, allowedSignersPath string, matches []gitconfig.Match) (string, error) {
+		if err := b.failCommitAt("repair-gitconfig"); err != nil {
+			return "", err
+		}
+		return origWriteGit(id, fragmentPath, allowedSignersPath, matches)
+	}
+	origWriteFrag := deps.WriteFragment
+	deps.WriteFragment = func(fragmentPath, name, email, signingKeyPath string, signing bool) error {
+		if err := b.failCommitAt("repair-fragment"); err != nil {
+			return err
+		}
+		return origWriteFrag(fragmentPath, name, email, signingKeyPath, signing)
+	}
+	origAppend := deps.AppendAllowedSigners
+	deps.AppendAllowedSigners = func(path, identity, email, pubLine string) (string, error) {
+		if err := b.failCommitAt("repair-signers"); err != nil {
+			return "", err
+		}
+		return origAppend(path, identity, email, pubLine)
 	}
 	return deps
 }
@@ -1444,12 +1465,11 @@ func (b *realBackend) ClonePrefill(source, cloneName string, reuseSourceKey bool
 // Git artifact. Its rollback intentionally restores from in-memory snapshots,
 // not by moving timestamped backups: backups remain durable safety artifacts.
 type mutationJournal struct {
-	b           *realBackend
-	files       []gitFileSnapshot
-	dirs        []gitDirSnapshot
-	seenFile    map[string]bool
-	seenDir     map[string]bool
-	createdDirs []string
+	b        *realBackend
+	files    []gitFileSnapshot
+	dirs     []gitDirSnapshot
+	seenFile map[string]bool
+	seenDir  map[string]bool
 	// chmodDirs records the pre-transaction mode of every PRE-EXISTING
 	// directory this transaction actually chmods via ensureManagedDir (CR-05).
 	// restore() reverts only these — not every watched-but-untouched ancestor
@@ -1468,6 +1488,18 @@ type mutationJournal struct {
 	// no correct rollback outcome.
 	createdFiles []string
 	seenCreated  map[string]bool
+
+	// createdDirs (final two fields) records directories THIS transaction
+	// created. Two mechanisms feed it: ensureDir appends each directory it
+	// Mkdirs (a freshly created transaction root), and recordCreatedDir
+	// appends a directory a mid-transaction seam created (currently the D-06
+	// archive directory, which is timestamp-created DURING the transaction
+	// and unknowable at watch time). seenCreatedDir is the disjoint
+	// counterpart to the watched-set (review R2-08), enforced at
+	// registration: a created DIRECTORY is removed on rollback (after every
+	// created file), never snapshot-restored.
+	createdDirs    []string
+	seenCreatedDir map[string]bool
 }
 
 type gitFileSnapshot struct {
@@ -1485,10 +1517,11 @@ type gitDirSnapshot struct {
 
 func newMutationJournal(b *realBackend) *mutationJournal {
 	return &mutationJournal{
-		b:           b,
-		seenFile:    make(map[string]bool),
-		seenDir:     make(map[string]bool),
-		seenCreated: make(map[string]bool),
+		b:              b,
+		seenFile:       make(map[string]bool),
+		seenDir:        make(map[string]bool),
+		seenCreated:    make(map[string]bool),
+		seenCreatedDir: make(map[string]bool),
 	}
 }
 
@@ -1518,12 +1551,49 @@ func (j *mutationJournal) recordCreatedFile(path string) error {
 	return nil
 }
 
+// recordCreatedDir records path as a DIRECTORY this transaction created
+// mid-flight (currently: the D-06 archive directory, whose timestamped name
+// cannot be known at watch time), so restore() removes it too — after every
+// recorded created file, so the copies inside a fresh archive shell go first
+// (review R-10). It mirrors recordCreatedFile's disjointness rule: a path
+// already registered as a WATCHED file or as a created FILE has no correct
+// rollback outcome (a path in both sets cannot be both snapshot-restored and
+// removed), so a mid-transaction seam that trips the check ABORTS before the
+// directory is trusted, exactly like a recordCreatedFile refusal.
+//
+// Recording the SAME directory twice is an idempotent no-op. It is only ever
+// called when the directory did NOT exist before the transaction (the
+// lifecycle stats the archive directory first): a pre-existing directory must
+// NEVER be recorded as created, or rollback would remove existing archives.
+func (j *mutationJournal) recordCreatedDir(path string) error {
+	clean := filepath.Clean(path)
+	if j.seenCreatedDir[clean] {
+		return nil
+	}
+	if j.seenFile[clean] {
+		return fmt.Errorf("gitid: internal: %s is already watched, cannot also be recorded as created", path)
+	}
+	if j.seenCreated[clean] {
+		return fmt.Errorf("gitid: internal: %s is already recorded as created, cannot also be recorded as a created directory", path)
+	}
+	if j.seenDir[clean] {
+		return fmt.Errorf("gitid: internal: %s is already watched as a directory, cannot also be recorded as created", path)
+	}
+	j.seenCreatedDir[clean] = true
+	j.createdDirs = append(j.createdDirs, clean)
+	return nil
+}
+
 func (j *mutationJournal) watchFile(path string) error {
 	if j.seenFile[path] {
 		return nil
 	}
 	if j.seenCreated[path] {
 		return fmt.Errorf("gitid: internal: %s is already recorded as created, cannot also be watched", path)
+	}
+	clean := filepath.Clean(path)
+	if j.seenCreatedDir[clean] {
+		return fmt.Errorf("gitid: internal: %s is already recorded as a created directory, cannot also be watched", path)
 	}
 	if err := containedRegularPath(path, j.b.home); err != nil {
 		return err
@@ -1549,16 +1619,23 @@ func (j *mutationJournal) watchFile(path string) error {
 }
 
 func (j *mutationJournal) watchDir(path string) error {
-	if j.seenDir[path] {
+	clean := filepath.Clean(path)
+	if j.seenDir[clean] {
 		return nil
+	}
+	// Disjointness (review R2-08): a directory recorded as CREATED by this
+	// transaction cannot ALSO be watched — its only correct rollback outcome
+	// is removal, never a snapshot-restore.
+	if j.seenCreatedDir[clean] {
+		return fmt.Errorf("gitid: internal: %s is already recorded as created, cannot also be watched", path)
 	}
 	if err := containedRegularPath(path, j.b.home); err != nil {
 		return err
 	}
-	j.seenDir[path] = true
-	info, err := os.Lstat(path)
+	j.seenDir[clean] = true
+	info, err := os.Lstat(clean)
 	if os.IsNotExist(err) {
-		j.dirs = append(j.dirs, gitDirSnapshot{path: path})
+		j.dirs = append(j.dirs, gitDirSnapshot{path: clean})
 		return nil
 	}
 	if err != nil {
@@ -1567,7 +1644,7 @@ func (j *mutationJournal) watchDir(path string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("gitid: refusing non-directory transaction path: %s", path)
 	}
-	j.dirs = append(j.dirs, gitDirSnapshot{path: path, exists: true, mode: info.Mode().Perm()})
+	j.dirs = append(j.dirs, gitDirSnapshot{path: clean, exists: true, mode: info.Mode().Perm()})
 	return nil
 }
 
@@ -2701,6 +2778,20 @@ func (b *realBackend) stagingDir() (string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.stageDir != "" {
+		// The cached directory may have been REMOVED by a prior transaction's
+		// Cleanup seam (deps.Cleanup removes the stage dir after a confirmed
+		// write). Running a second ceremony on the same backend — rotate work,
+		// then rotate personal, in one TUI session — must recreate it rather
+		// than write into a deleted directory.
+		if info, err := os.Stat(b.stageDir); err == nil && info.IsDir() {
+			return b.stageDir, nil
+		}
+		if err := os.MkdirAll(b.stageDir, sshDirMode); err != nil { //nolint:gosec // gitid-owned stage path under the invoking user's temp
+			return "", fmt.Errorf("gitid: recreating the staging directory: %w", err)
+		}
+		if cerr := os.Chmod(b.stageDir, sshDirMode); cerr != nil { //nolint:gosec // gitid-owned stage path under the invoking user's temp
+			return "", fmt.Errorf("gitid: securing the recreated staging directory: %w", cerr)
+		}
 		return b.stageDir, nil
 	}
 	dir := os.Getenv("GITID_STAGE_DIR")
@@ -2868,16 +2959,71 @@ func (*realBackend) KeyCeremonyPlan(string, string) (tuikit.KeyCeremonyView, err
 	return tuikit.KeyCeremonyView{}, tuikit.ErrPlannerNotImplemented
 }
 
-// CommitRotate implements tuikit.IdentityPlanner. The live write lands in 05-07.
-func (*realBackend) CommitRotate(string) tea.Cmd {
+// commitRotateInto and commitRepairInto are the test-only seams the two TUI
+// commit closures below delegate their lifecycle through (introduced so a
+// recording double can prove the seam contributes NO stage of its own —
+// "one call, then message marshalling"). nil in production means the real
+// runRotate / runRepair. Mirrors the failCommitAt precedent of a test-only
+// injection point on the composition root.
+var (
+	commitRotateInto = func(b *realBackend, name string, p lifecyclePolicy) (lifecycleResult, error) {
+		return b.runRotate(name, p)
+	}
+	commitRepairInto = func(b *realBackend, name string, p lifecyclePolicy) (lifecycleResult, error) {
+		return b.runRepair(name, p)
+	}
+)
+
+// CommitRotate implements tuikit.IdentityPlanner: the TUI's confirmed rotate
+// ceremony. It is a THIN ADAPTER over runRotate — the ONE complete rotate
+// lifecycle in lifecycle.go — and adds nothing but message marshalling: all
+// journal handling, file watching, confirmation, and rollback live inside the
+// lifecycle function (review R-11-CLI). The ceremony screen IS the
+// confirmation (review R2-03), so it authorizes with
+// confirmationAlreadyObtained — the only layer permitted to assert it. Every
+// backup/restored path is scrubbed through displayPath/displayMessage, the
+// same WR-01/WR-23 discipline CommitGit applies.
+func (b *realBackend) CommitRotate(name string) tea.Cmd {
 	return func() tea.Msg {
-		return tuikit.KeyCommitMsg{Err: tuikit.ErrPlannerNotImplemented.Error()}
+		if b.initErr != nil {
+			return tuikit.KeyCommitMsg{Mode: "rotate", Err: b.displayMessage(b.initErr.Error())}
+		}
+		res, err := commitRotateInto(b, name, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+		msg := tuikit.KeyCommitMsg{
+			Mode:     "rotate",
+			Backups:  displayPaths(b, res.Backups),
+			Restored: displayMessages(b, res.Restored),
+		}
+		for _, pth := range res.ArchivedKeyPaths {
+			if msg.ArchivedKeyPath == "" {
+				msg.ArchivedKeyPath = b.displayPath(pth)
+			}
+		}
+		if err != nil {
+			msg.Err = b.displayMessage(err.Error())
+		}
+		return msg
 	}
 }
 
-// CommitNewKey implements tuikit.IdentityPlanner. The live write lands in 05-07.
-func (*realBackend) CommitNewKey(string) tea.Cmd {
+// CommitNewKey implements tuikit.IdentityPlanner: the TUI's confirmed
+// new-key (repair) ceremony — the same thin adapter as CommitRotate, over
+// runRepair. Repair never archives (D-05), so the delivered commit message
+// carries an EMPTY archived path and the archive directory is untouched.
+func (b *realBackend) CommitNewKey(name string) tea.Cmd {
 	return func() tea.Msg {
-		return tuikit.KeyCommitMsg{Err: tuikit.ErrPlannerNotImplemented.Error()}
+		if b.initErr != nil {
+			return tuikit.KeyCommitMsg{Mode: "repair", Err: b.displayMessage(b.initErr.Error())}
+		}
+		res, err := commitRepairInto(b, name, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+		msg := tuikit.KeyCommitMsg{
+			Mode:     "repair",
+			Backups:  displayPaths(b, res.Backups),
+			Restored: displayMessages(b, res.Restored),
+		}
+		if err != nil {
+			msg.Err = b.displayMessage(err.Error())
+		}
+		return msg
 	}
 }
