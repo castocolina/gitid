@@ -1374,3 +1374,127 @@ func TestGitconfigBlockVerifier(t *testing.T) {
 		t.Errorf("gitconfig still carries managed includeIf blocks after the delete: %v", blocks)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// runGlobalSSHApply — the ONE global-SSH fix ceremony (plan 06-01)
+// ---------------------------------------------------------------------------
+
+// TestRunGlobalSSHApplyInjectedFailureRestoresWatchedFiles is the journal's
+// restore, EXERCISED rather than assumed, so plan 06-04 inherits a proven
+// mechanism instead of a described one (06-REVIEWS.md cycle-2 pin): a write
+// failure injected AFTER the first file has been written (the floored Include
+// line) must return every watched file to its pre-transaction bytes — a
+// fresh-HOME ~/.ssh/config that did NOT exist before the transaction is
+// removed, never "restored to empty" — and the returned lifecycleResult must
+// name the restored paths.
+func TestRunGlobalSSHApplyInjectedFailureRestoresWatchedFiles(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	b.failCommitAt = func(s string) error {
+		if s == "global-ssh-write" {
+			return fmt.Errorf("injected failure after the include-line write")
+		}
+		return nil
+	}
+
+	configPath := filepath.Join(home, ".ssh", "config")
+	target := filepath.Join(home, ".ssh", "config.d", "gitid.config")
+	includeDir := filepath.Join(home, ".ssh", "config.d")
+	before := snapshotPaths(t, []string{configPath, target, includeDir})
+
+	res, err := b.runGlobalSSHApply([]string{"HashKnownHosts"}, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+	if err == nil {
+		t.Fatal("runGlobalSSHApply must surface the injected write failure")
+	}
+	if !strings.Contains(err.Error(), "injected failure") {
+		t.Errorf("err = %q, want the concrete injected failure", err.Error())
+	}
+	assertUnchanged(t, before, snapshotPaths(t, []string{configPath, target, includeDir}))
+
+	if len(res.Restored) == 0 {
+		t.Error("the lifecycleResult must name the restored paths")
+	}
+	for _, outcome := range res.Restored {
+		if !strings.Contains(outcome, ": restored") && !strings.Contains(outcome, "restoration failed") {
+			t.Errorf("restore outcome line = %q, want a restored/removed outcome", outcome)
+		}
+	}
+}
+
+// TestRunGlobalSSHApplyFreshHomeRemovesCreatedConfigOnFailure pins the
+// fresh-file-removal semantics explicitly: the failed apply that had to CREATE
+// ~/.ssh/config (the floored Include line) must remove it again rather than
+// leave an empty file behind — the fresh-HOME half of the journal contract.
+func TestRunGlobalSSHApplyFreshHomeRemovesCreatedConfigOnFailure(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	failed := false
+	b.failCommitAt = func(s string) error {
+		if s == "global-ssh-write" {
+			failed = true
+			return fmt.Errorf("injected write failure")
+		}
+		return nil
+	}
+
+	configPath := filepath.Join(home, ".ssh", "config")
+	if _, err := b.runGlobalSSHApply([]string{"HashKnownHosts"}, lifecyclePolicy{Confirm: confirmationAlreadyObtained}); err == nil {
+		t.Fatal("runGlobalSSHApply must surface the injected failure")
+	}
+	if !failed {
+		t.Fatal("test setup: the target-write injection point never fired")
+	}
+	if fileExists(configPath) {
+		t.Errorf("%s must be REMOVED on rollback (it did not exist before the transaction), not left behind", configPath)
+	}
+	if fileExists(filepath.Join(home, ".ssh", "config.d", "gitid.config")) {
+		t.Error("the created target file must be removed on rollback")
+	}
+}
+
+// TestRunGlobalSSHApplyDryRunLeavesTargetUnchanged pins the per-verb dry-run
+// contract: stopping AFTER the plan stage must leave the resolved target's
+// bytes unchanged and return a non-empty plan-stage record, with no further
+// stage recorded.
+func TestRunGlobalSSHApplyDryRunLeavesTargetUnchanged(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	record, stages := rec()
+	before := snapshotPaths(t, []string{filepath.Join(home, ".ssh", "config")})
+
+	res, err := b.runGlobalSSHApply([]string{"HashKnownHosts"}, lifecyclePolicy{DryRun: true, Stages: record})
+	if err != nil {
+		t.Fatalf("dry run failed: %v", err)
+	}
+	if len(*stages) == 0 || (*stages)[0] != "plan" {
+		t.Errorf("dry run stages = %v, want a non-empty list starting with plan", *stages)
+	}
+	for _, s := range *stages {
+		if s == "write" || s == "backup" || s == "confirm" {
+			t.Errorf("dry run must not record %q — it stops after the plan stage", s)
+		}
+	}
+	assertUnchanged(t, before, snapshotPaths(t, []string{filepath.Join(home, ".ssh", "config")}))
+	if len(res.Backups) != 0 {
+		t.Errorf("dry run reported backups %v, want none", res.Backups)
+	}
+}
+
+// TestRunGlobalSSHApplyRejectsPerAliasOptionByName pins the none-silent-drop
+// contract: the per-alias option (IdentitiesOnly — D-10 scope "per-alias",
+// never the `Host *` block) is rejected BY NAME before any candidate is built,
+// and no write happens.
+func TestRunGlobalSSHApplyRejectsPerAliasOptionByName(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	before := snapshotPaths(t, []string{filepath.Join(home, ".ssh", "config")})
+
+	_, err := b.runGlobalSSHApply([]string{"IdentitiesOnly"}, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+	if err == nil {
+		t.Fatal("runGlobalSSHApply must reject the per-alias option, not silently drop it")
+	}
+	if !strings.Contains(err.Error(), "IdentitiesOnly") {
+		t.Errorf("err = %q, want it to name the rejected key", err.Error())
+	}
+	assertUnchanged(t, before, snapshotPaths(t, []string{filepath.Join(home, ".ssh", "config")}))
+}

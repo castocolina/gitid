@@ -147,6 +147,7 @@ func Seed() DemoState { return stubBackend{}.InitialState() }
 // gitStepAlwaysDisabled simulates the real binary's unconditional disable.
 type stubBackend struct {
 	NoopIdentityPlanner
+	NoopGlobalSSHPlanner
 	gitStepAlwaysDisabled bool
 	gitStepReason         string
 	keyActionErr          error
@@ -155,6 +156,13 @@ type stubBackend struct {
 	keyCeremonyPlanErr    error
 	keyCeremonyPlanFn     func(name, mode string) (KeyCeremonyView, error)
 	keyCommit             KeyCommitMsg
+	// Global-SSH seam overrides (zero values keep the fixture projection from
+	// the frozen GlobalSSHOptions below).
+	sshOptions     []GlobalSSHOptionView
+	sshOptionsErr  error
+	sshApplyPlan   GlobalSSHApplyPlanView
+	sshApplyPlanFn func(keys []string) (GlobalSSHApplyPlanView, error)
+	sshCommitMsg   GlobalSSHCommitMsg
 }
 
 var _ Backend = stubBackend{}
@@ -446,6 +454,64 @@ func (stubBackend) CommitDelete(string, string) tea.Cmd {
 // CommitGit preserves the test backend's zero-value, no-filesystem behavior.
 func (stubBackend) CommitGit(GitSpec) tea.Cmd {
 	return func() tea.Msg { return GitCommitMsg{} }
+}
+
+// ---------------------------------------------------------------------------
+// Global SSH (plan 06-01) — the Options-sub-tab seam.
+// ---------------------------------------------------------------------------
+
+// fixtureGlobalSSHOptionViews projects the frozen GlobalSSHOptions fixture
+// into the live view shape — the stub's zero value, mirroring the dummy's
+// projection so the render stays fixture-identical unless a test overrides.
+func fixtureGlobalSSHOptionViews() []GlobalSSHOptionView {
+	out := make([]GlobalSSHOptionView, 0, len(GlobalSSHOptions))
+	for _, o := range GlobalSSHOptions {
+		explanation := o.OneLiner
+		if o.Key == "IdentitiesOnly" {
+			explanation = GlobalSSHDetailExplanation
+		}
+		state := GlobalSSHAlreadySet
+		if o.NeedsAction {
+			state = GlobalSSHNeedsAction
+		}
+		out = append(out, GlobalSSHOptionView{
+			Key:          o.Key,
+			CurrentValue: o.Current,
+			Provenance:   "fixture value — the test backend does not probe a machine",
+			Recommended:  o.Recommended,
+			Risk:         o.Risk,
+			OneLiner:     o.OneLiner,
+			Explanation:  explanation,
+			State:        state,
+		})
+	}
+	return out
+}
+
+// GlobalSSHOptionStates returns the test override when set, otherwise the
+// fixture projection.
+func (b stubBackend) GlobalSSHOptionStates() ([]GlobalSSHOptionView, error) {
+	if b.sshOptionsErr != nil {
+		return nil, b.sshOptionsErr
+	}
+	if b.sshOptions != nil {
+		return b.sshOptions, nil
+	}
+	return fixtureGlobalSSHOptionViews(), nil
+}
+
+// GlobalSSHApplyPlan returns the test override when set; the zero value keeps
+// the ceremony's layout-aware fixture fallback.
+func (b stubBackend) GlobalSSHApplyPlan(keys []string) (GlobalSSHApplyPlanView, error) {
+	if b.sshApplyPlanFn != nil {
+		return b.sshApplyPlanFn(keys)
+	}
+	return b.sshApplyPlan, nil
+}
+
+// CommitGlobalSSH delivers the test override's commit message immediately.
+func (b stubBackend) CommitGlobalSSH([]string) tea.Cmd {
+	return func() tea.Msg { return b.sshCommitMsg }
 }
 
 // ---------------------------------------------------------------------------

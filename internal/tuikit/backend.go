@@ -80,6 +80,60 @@ func (NoopIdentityPlanner) CommitNewKey(string) tea.Cmd {
 
 var _ IdentityPlanner = NoopIdentityPlanner{}
 
+// ErrGlobalSSHPlannerNotImplemented is the sentinel NoopGlobalSSHPlanner
+// returns from every method. Fixtures and test stubs embed the noop and
+// override only the methods they exercise; a missing real implementation must
+// be a compile error, not this sentinel at runtime.
+var ErrGlobalSSHPlannerNotImplemented = errors.New("global SSH planner not implemented")
+
+// GlobalSSHPlanner is the Phase 6 global-SSH seam: the options-list read, the
+// apply-preview write plan, and the asynchronous apply commit. The THREE
+// methods are the whole seam — no speculative surface. The storage
+// (migration) seam is deliberately a SEPARATE interface owned by plan 06-05,
+// so this interface never grows migration methods.
+type GlobalSSHPlanner interface {
+	// GlobalSSHOptionStates returns the Options sub-tab's live rows: the
+	// real current value and the provable provenance LABEL per policy option.
+	// A non-nil error must fail loosely per GSSH-01's advisory posture — the
+	// pane renders an error note rather than a blank body.
+	GlobalSSHOptionStates() ([]GlobalSSHOptionView, error)
+	// GlobalSSHApplyPlan returns the confirmed-apply preview: the resolved
+	// targets, the promised backup paths, and the diff of the candidate
+	// write. A non-nil error must fail closed: the confirm screen renders the
+	// error state.
+	GlobalSSHApplyPlan(keys []string) (GlobalSSHApplyPlanView, error)
+	// CommitGlobalSSH dispatches the confirmed global-SSH apply transaction
+	// off the update loop and delivers a GlobalSSHCommitMsg.
+	CommitGlobalSSH(keys []string) tea.Cmd
+}
+
+// NoopGlobalSSHPlanner implements every GlobalSSHPlanner method with a
+// zero-value view plus ErrGlobalSSHPlannerNotImplemented (and a command
+// delivering that error for the commit seam). Fixtures and test stubs embed
+// it and override only what they exercise. The REAL backend must NOT embed
+// it — a missing real implementation must be a compile error, pinned by the
+// compile-time assertion in cmd/gitid/wiring.go and a reflection test.
+type NoopGlobalSSHPlanner struct{}
+
+// GlobalSSHOptionStates implements GlobalSSHPlanner.
+func (NoopGlobalSSHPlanner) GlobalSSHOptionStates() ([]GlobalSSHOptionView, error) {
+	return nil, ErrGlobalSSHPlannerNotImplemented
+}
+
+// GlobalSSHApplyPlan implements GlobalSSHPlanner.
+func (NoopGlobalSSHPlanner) GlobalSSHApplyPlan([]string) (GlobalSSHApplyPlanView, error) {
+	return GlobalSSHApplyPlanView{}, ErrGlobalSSHPlannerNotImplemented
+}
+
+// CommitGlobalSSH implements GlobalSSHPlanner.
+func (NoopGlobalSSHPlanner) CommitGlobalSSH([]string) tea.Cmd {
+	return func() tea.Msg {
+		return GlobalSSHCommitMsg{Err: ErrGlobalSSHPlannerNotImplemented.Error()}
+	}
+}
+
+var _ GlobalSSHPlanner = NoopGlobalSSHPlanner{}
+
 // backend.go defines the ONE injected seam this package is built around.
 //
 // tuikit renders the approved, frozen gitid design. It never reads or
@@ -99,6 +153,11 @@ var _ IdentityPlanner = NoopIdentityPlanner{}
 // wizard know which one they are talking to.
 type Backend interface {
 	IdentityPlanner
+	// GlobalSSHPlanner: plan 06-01's Options-sub-tab seam. The real backend
+	// must NOT embed NoopGlobalSSHPlanner — a missing real implementation must
+	// be a compile error, pinned by wiring.go's compile-time assertion and by
+	// a reflection test.
+	GlobalSSHPlanner
 
 	// ----- Data -------------------------------------------------------
 

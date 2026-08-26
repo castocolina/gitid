@@ -299,3 +299,64 @@ type KeyCommitMsg struct {
 	ArchivedKeyPath string
 	Err             string
 }
+
+// GlobalSSHOptionState is the four-state row model the Options sub-tab
+// renders (D-11/D-12). The real backend converts the globalssh engine's own
+// OptionState into this DTO at the wiring boundary; the render package never
+// learns the backend source-class enum.
+type GlobalSSHOptionState int
+
+const (
+	// GlobalSSHNeedsAction is the zero value: the option is unset (or differs
+	// from the recommendation), so applying is meaningful.
+	GlobalSSHNeedsAction GlobalSSHOptionState = iota
+	// GlobalSSHAlreadySet means the effective value equals the recommendation.
+	GlobalSSHAlreadySet
+	// GlobalSSHDiffers means the option is explicitly set to a non-recommended
+	// value — a deliberate choice still flagged with the same `!` glyph (D-12
+	// word state; 06-03 owns the word).
+	GlobalSSHDiffers
+	// GlobalSSHNotApplicable means the option does not exist on this platform
+	// (useKeychain off macOS; D-11 row state; 06-03 owns the word).
+	GlobalSSHNotApplicable
+)
+
+// GlobalSSHOptionView is one Options-sub-tab row as the render stack knows it.
+// Provenance is a rendered LABEL string computed in cmd/gitid/wiring.go —
+// the view deliberately carries no source-class enum. 06-03 owns the exact
+// frozen copy wording for OneLiner/Explanation/VersionNote.
+type GlobalSSHOptionView struct {
+	Key          string
+	CurrentValue string
+	Provenance   string
+	Recommended  string
+	Risk         string
+	OneLiner     string
+	Explanation  string
+	VersionNote  string
+	ProbeError   string
+	State        GlobalSSHOptionState
+}
+
+// GlobalSSHApplyPlanView is the confirmed-apply preview scene: the resolved
+// targets, the promised backup paths, and the diff the ceremony previews.
+// ShadowWarnings stays empty in plan 06-01 and is filled by 06-04's pre-write
+// simulation.
+type GlobalSSHApplyPlanView struct {
+	Targets        []string
+	Backups        []string
+	Diff           string
+	ShadowWarnings []string
+}
+
+// GlobalSSHCommitMsg completes an asynchronous global-SSH apply commit —
+// delivered from the tea.Cmd Backend.CommitGlobalSSH returns. Restore details
+// stay explicit so a failed receipt can never claim nothing changed when
+// restoration itself failed. ShadowAdvisories stays empty in plan 06-01 and
+// is filled by 06-04's post-write verification.
+type GlobalSSHCommitMsg struct {
+	Backups          []string
+	Restored         []string
+	ShadowAdvisories []string
+	Err              string
+}

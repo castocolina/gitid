@@ -564,11 +564,13 @@ func padRight(s string, width int) string {
 
 // newScreens wires the four tab child models in header order. Only the
 // Identities tab owns create-flow effects, so it is the one screen handed
-// the Backend; the other three are pure DemoState renderers.
+// the Backend; the Global SSH model needs the backend for its live
+// options read and its apply commit, the other two are pure DemoState
+// renderers.
 func newScreens(b Backend, initial DemoState) [4]screenModel {
 	return [4]screenModel{
 		newIdentitiesModel(b, initial),
-		newGlobalSSHModel(),
+		newGlobalSSHModel(b),
 		newGlobalGitModel(),
 		newDoctorModel(),
 	}

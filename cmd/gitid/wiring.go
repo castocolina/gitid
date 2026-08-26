@@ -38,6 +38,7 @@ import (
 	"github.com/castocolina/gitid/internal/clipboard"
 	"github.com/castocolina/gitid/internal/filewriter"
 	"github.com/castocolina/gitid/internal/gitconfig"
+	"github.com/castocolina/gitid/internal/globalssh"
 	"github.com/castocolina/gitid/internal/identity"
 	"github.com/castocolina/gitid/internal/keygen"
 	"github.com/castocolina/gitid/internal/platform"
@@ -143,6 +144,13 @@ type realBackend struct {
 var _ tuikit.Backend = (*realBackend)(nil)
 var _ tuikit.IdentityPlanner = (*realBackend)(nil)
 
+// plan 06-01 seam pin: the real composition root implements the global-SSH
+// planner seam from backend.go. It must NOT get there by embedding
+// NoopGlobalSSHPlanner — a reflection test in wiring_test.go asserts the
+// struct carries no such anonymous field, so a missing real implementation
+// stays a compile error, not a silent sentinel.
+var _ tuikit.GlobalSSHPlanner = (*realBackend)(nil)
+
 // buildBackend constructs the real tuikit.Backend. It is the only production
 // caller of buildIdentityDeps, and the only place cmd/gitid resolves the
 // user's configuration paths.
@@ -247,9 +255,10 @@ func buildIdentityDeps(b *realBackend) identity.Deps {
 			return tester.PreWrite(keyPath, hostname, port, knownHosts)
 		},
 		// WriteSSH resolves the STORAGE LAYOUT first (D-05/D-06) and writes the
-		// Host block plus the macOS globals block into the resolved target.
-		WriteSSH: func(accountName, hostBlock, globalBlock string) (string, error) {
-			return b.writeSSHBlock(accountName, hostBlock, globalBlock)
+		// Host block into the resolved target, normalising the globals block
+		// for the requested platform through the single EnsureGlobals owner.
+		WriteSSH: func(accountName, hostBlock, globalsGOOS string) (string, error) {
+			return b.writeSSHBlock(accountName, hostBlock, globalsGOOS)
 		},
 		WriteGitconfig: func(id, fragmentPath, allowedSignersPath string, matches []gitconfig.Match) (string, error) {
 			backup, werr := gitconfig.WriteIncludeIf(b.gitconfigPath, id, fragmentPath, matches)
@@ -713,8 +722,13 @@ func (b *realBackend) Persist(state tuikit.DemoState, action tuikit.Action) tuik
 		// behavior pinned rather than turning it into an error (R-09-DEMO).
 		return tuikit.Reduce(state, action)
 	case tuikit.ApplySSH:
-		// Demo-only: Phase 6 will make the global-ssh ceremony real.
-		return tuikit.Reduce(state, action)
+		// Real-owned: the write already happened in CommitGlobalSSH (the async
+		// seam — which mirrors CommitDelete); Persist must re-read disk here,
+		// never fall through to tuikit.Reduce's in-memory guess. There is NO
+		// persistApplySSH function in this design: if execution finds itself
+		// writing one, that is the retired architecture reappearing.
+		b.setPersistErr(nil)
+		return b.InitialState()
 	case tuikit.SetSSHStorage:
 		// Demo-only: Phase 6 owns STORE-01 migration.
 		return tuikit.Reduce(state, action)
@@ -1279,6 +1293,224 @@ func (b *realBackend) CommitDelete(name, scope string) tea.Cmd {
 // every call site to follow. Do NOT coin a second, wave-local name beside
 // it.
 
+// CommitGlobalSSH is the global-SSH apply async seam, mirroring CommitDelete
+// exactly: resolve nothing cached, call runGlobalSSHApply — the ONE complete
+// per-verb global apply ceremony in lifecycle.go, which owns its own txMu
+// locking — and report the result as a GlobalSSHCommitMsg. The apply-ceremony
+// screen IS the confirmation, so the lifecycle is authorized with
+// confirmationAlreadyObtained (the only layer permitted to assert that
+// value). Every backup/restored path is scrubbed through b.displayPath /
+// b.displayMessage before it becomes user-facing, the same WR-01/WR-23
+// discipline CommitGit and CommitDelete apply. ShadowAdvisories stays empty
+// in this plan; 06-04 fills it.
+func (b *realBackend) CommitGlobalSSH(keys []string) tea.Cmd {
+	return func() tea.Msg {
+		if b.initErr != nil {
+			return tuikit.GlobalSSHCommitMsg{Err: b.displayMessage(b.initErr.Error())}
+		}
+		res, err := b.runGlobalSSHApply(keys, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+		msg := tuikit.GlobalSSHCommitMsg{
+			Backups:  displayPaths(b, res.Backups),
+			Restored: displayMessages(b, res.Restored),
+		}
+		if err != nil {
+			msg.Err = b.displayMessage(err.Error())
+		}
+		return msg
+	}
+}
+
+// GlobalSSHOptionStates is the ONE conversion site from the globalssh engine
+// to the render DTO: it runs the D-01 probe set through the real constructor
+// and renders the D-03 provenance LABEL here (tuikit must never learn the
+// source-class enum — Provenance is a rendered string, per the view boundary).
+//
+// Statuses never returns an error (a probe failure degrades to a per-option
+// advisory note), so this method's only error path is a construction failure;
+// the fail-open choice lives in the engine, documented there.
+func (b *realBackend) GlobalSSHOptionStates() ([]tuikit.GlobalSSHOptionView, error) {
+	if b.initErr != nil {
+		return nil, b.initErr
+	}
+	statuses := globalssh.Statuses(globalssh.BuildProbeDeps(b.sshConfigPath))
+	fixture := make(map[string]tuikit.GlobalSSHOption, len(tuikit.GlobalSSHOptions))
+	for _, o := range tuikit.GlobalSSHOptions {
+		fixture[o.Key] = o
+	}
+	out := make([]tuikit.GlobalSSHOptionView, 0, len(statuses))
+	for _, st := range statuses {
+		oneLiner := fixture[st.Key].OneLiner
+		explanation := oneLiner
+		if st.Key == "IdentitiesOnly" {
+			explanation = tuikit.GlobalSSHDetailExplanation
+		}
+		out = append(out, tuikit.GlobalSSHOptionView{
+			Key:          st.Key,
+			CurrentValue: st.CurrentValue,
+			Provenance:   b.globalSSHProvenanceLabel(st),
+			Recommended:  st.RecommendedValue,
+			Risk:         st.Risk,
+			OneLiner:     oneLiner,
+			Explanation:  explanation,
+			ProbeError:   st.ProbeError,
+			State:        toGlobalSSHOptionState(st.State),
+		})
+	}
+	return out, nil
+}
+
+// GlobalSSHApplyPlan is the global-SSH apply preview scene: the resolved
+// targets, the promised backup path, and a diff computed from the target
+// file's CURRENT bytes and the EnsureGlobals candidate. Its shadow-warning
+// field stays empty in this plan; 06-04 fills it.
+func (b *realBackend) GlobalSSHApplyPlan(keys []string) (tuikit.GlobalSSHApplyPlanView, error) {
+	if b.initErr != nil {
+		return tuikit.GlobalSSHApplyPlanView{}, b.initErr
+	}
+	explicit := make(map[string]string, len(keys))
+	for _, k := range keys {
+		policy, ok := globalssh.PolicyFor(k)
+		if !ok || policy.Scope == "per-alias" {
+			return tuikit.GlobalSSHApplyPlanView{}, fmt.Errorf("gitid: option %q cannot be applied to the global Host * block", k)
+		}
+		explicit[k] = policy.Recommended
+	}
+	st := b.storage()
+	targets := []string{st.targetPath}
+	if st.needsIncludeLine {
+		targets = append(targets, b.sshConfigPath)
+	}
+	view := tuikit.GlobalSSHApplyPlanView{}
+	for _, p := range targets {
+		view.Targets = append(view.Targets, b.displayPath(p))
+		// Only files that ALREADY exist get a backup — filewriter backs up
+		// nothing when it creates a file for the first time, and promising a
+		// backup that will not be taken would be a lie in the ceremony.
+		if fileExists(p) {
+			view.Backups = append(view.Backups, b.displayPath(p)+backupSuffixPreview)
+		}
+	}
+	existing, err := os.ReadFile(st.targetPath) //nolint:gosec // trusted gitid-managed path (G304)
+	if err != nil && !os.IsNotExist(err) {
+		return tuikit.GlobalSSHApplyPlanView{}, err
+	}
+	candidate, err := sshconfig.EnsureGlobals(existing, explicit, platform.CurrentOS())
+	if err != nil {
+		return tuikit.GlobalSSHApplyPlanView{}, err
+	}
+	view.Diff = globalsTextDiff(globalsBodyText(existing), globalsBodyText(candidate))
+	return view, nil
+}
+
+// globalSSHProvenanceLabel renders the D-03 provenance label for one source
+// class, scoped to exactly what each class proves (06-REVIEWS.md HIGH pin):
+// the parsed class names the file and line gitid actually read; the system
+// class names the system file gitid actually parsed and states gitid cannot
+// change it; the baseline class states the option is not set in any file
+// gitid reads and gives the value OpenSSH resolves without a user
+// configuration on this machine; the outside class states the value comes
+// from somewhere gitid does not read; the inconclusive class states the probe
+// did not answer. 06-03 owns exact copy-freeze wording; these forms are the
+// scoped placeholders.
+func (b *realBackend) globalSSHProvenanceLabel(st globalssh.OptionStatus) string {
+	switch st.Source {
+	case globalssh.SourceGitidParsed:
+		return fmt.Sprintf("set by you at %s line %d", b.displayPath(st.SourceFile), st.SourceLine)
+	case globalssh.SourceSystemFile:
+		return fmt.Sprintf("set in %s — gitid cannot change this", b.displayPath(st.SourceFile))
+	case globalssh.SourceBaseline:
+		return fmt.Sprintf("not set in any file gitid reads — OpenSSH resolves %q on this machine without a user configuration", st.CurrentValue)
+	case globalssh.SourceOutsideGitid:
+		return "set from somewhere gitid does not read"
+	default:
+		return "the probe did not answer — see the advisory note"
+	}
+}
+
+// toGlobalSSHOptionState maps the engine's OptionState to the render DTO's
+// row state. The one-to-one correspondence is structurally pinned by the
+// exported constants on both sides.
+func toGlobalSSHOptionState(s globalssh.OptionState) tuikit.GlobalSSHOptionState {
+	switch s {
+	case globalssh.StateAlreadySet:
+		return tuikit.GlobalSSHAlreadySet
+	case globalssh.StateDiffers:
+		return tuikit.GlobalSSHDiffers
+	case globalssh.StateNotApplicable:
+		return tuikit.GlobalSSHNotApplicable
+	default:
+		return tuikit.GlobalSSHNeedsAction
+	}
+}
+
+// globalsBodyText returns the body of the gitid `Host *` managed block in
+// content (empty when absent) — the /candidate diff is computed over the
+// block that EnsureGlobals actually owns and changes.
+func globalsBodyText(content []byte) string {
+	for _, blk := range filewriter.ListBlocks(content) {
+		if blk.Name == sshconfig.GlobalBlockName {
+			return blk.Body
+		}
+	}
+	return ""
+}
+
+// globalsTextDiff is a compact +/− line diff of the block body before and
+// after. It is the honest, best-effort preview text the apply ceremony shows;
+// plan 06-04's pre-write simulation supersedes it with a real `ssh -G -F`
+// re-verification.
+func globalsTextDiff(before, after string) string {
+	oldLines := splitLines(before)
+	newLines := splitLines(after)
+	var out []string
+	i, j := 0, 0
+	for i < len(oldLines) && j < len(newLines) {
+		if oldLines[i] == newLines[j] {
+			i++
+			j++
+			continue
+		}
+		// A line that still appears later in the new set was removed from
+		// before; otherwise it was added to after.
+		if containsLine(newLines[j:], oldLines[i]) {
+			out = append(out, "- "+oldLines[i])
+			i++
+		} else {
+			out = append(out, "+ "+newLines[j])
+			j++
+		}
+	}
+	for ; i < len(oldLines); i++ {
+		out = append(out, "- "+oldLines[i])
+	}
+	for ; j < len(newLines); j++ {
+		out = append(out, "+ "+newLines[j])
+	}
+	return strings.Join(out, "\n")
+}
+
+// splitLines splits s into non-empty trimmed lines.
+func splitLines(s string) []string {
+	seen := make([]string, 0, 8)
+	for _, line := range strings.Split(s, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		seen = append(seen, line)
+	}
+	return seen
+}
+
+// containsLine reports whether lines contains line (exact match).
+func containsLine(lines []string, line string) bool {
+	for _, l := range lines {
+		if l == line {
+			return true
+		}
+	}
+	return false
+}
+
 // injectDeleteFailures wraps deps' WriteGitconfig/RemoveFragment with
 // b.failCommitAt fault-injection checkpoints ("delete-gitconfig",
 // "delete-fragment") — the same test-only injection point
@@ -1327,11 +1559,11 @@ func injectRotateFailures(b *realBackend, deps identity.Deps) identity.Deps {
 		return origPersist(s)
 	}
 	origWriteSSH := deps.WriteSSH
-	deps.WriteSSH = func(accountName, hostBlock, globalBlock string) (string, error) {
+	deps.WriteSSH = func(accountName, hostBlock, globalsGOOS string) (string, error) {
 		if err := b.failCommitAt("rotate-ssh"); err != nil {
 			return "", err
 		}
-		return origWriteSSH(accountName, hostBlock, globalBlock)
+		return origWriteSSH(accountName, hostBlock, globalsGOOS)
 	}
 	origWriteGit := deps.WriteGitconfig
 	deps.WriteGitconfig = func(id, fragmentPath, allowedSignersPath string, matches []gitconfig.Match) (string, error) {
@@ -1371,11 +1603,11 @@ func injectRepairFailures(b *realBackend, deps identity.Deps) identity.Deps {
 		return origPersist(s)
 	}
 	origWriteSSH := deps.WriteSSH
-	deps.WriteSSH = func(accountName, hostBlock, globalBlock string) (string, error) {
+	deps.WriteSSH = func(accountName, hostBlock, globalsGOOS string) (string, error) {
 		if err := b.failCommitAt("repair-ssh"); err != nil {
 			return "", err
 		}
-		return origWriteSSH(accountName, hostBlock, globalBlock)
+		return origWriteSSH(accountName, hostBlock, globalsGOOS)
 	}
 	origWriteGit := deps.WriteGitconfig
 	deps.WriteGitconfig = func(id, fragmentPath, allowedSignersPath string, matches []gitconfig.Match) (string, error) {
@@ -2393,12 +2625,16 @@ func (b *realBackend) hasIncludeLine() bool {
 	return false
 }
 
-// writeSSHBlock persists the managed Host block and the macOS globals block
-// into the resolved storage target, creating the Include'd layout first when
-// this is a fresh machine's first create (D-06). Every write routes through
-// internal/sshconfig, and therefore through the filewriter backup + atomic
-// temp->rename->chmod chokepoint — never os.WriteFile.
-func (b *realBackend) writeSSHBlock(accountName, hostBlock, globalBlock string) (string, error) {
+// writeSSHBlock persists the managed Host block and normalises the gitid
+// `Host *` globals block through sshconfig.EnsureGlobals into the resolved
+// storage target, creating the Include'd layout first when this is a fresh
+// machine's first write (D-06). globalsGOOS follows sshconfig.Write's
+// contract: a non-empty platform means "normalise the globals block", the
+// empty value means "do not touch it at all" (rotate/repair/update). Every
+// write routes through internal/sshconfig, and therefore through the
+// filewriter backup + atomic temp->rename->chmod chokepoint — never
+// os.WriteFile.
+func (b *realBackend) writeSSHBlock(accountName, hostBlock, globalsGOOS string) (string, error) {
 	if b.initErr != nil {
 		return "", b.initErr
 	}
@@ -2411,7 +2647,7 @@ func (b *realBackend) writeSSHBlock(accountName, hostBlock, globalBlock string) 
 			return "", err
 		}
 	}
-	return sshconfig.Write(st.targetPath, accountName, hostBlock, globalBlock)
+	return sshconfig.Write(st.targetPath, accountName, hostBlock, globalsGOOS)
 }
 
 // ---------------------------------------------------------------------------
@@ -2543,8 +2779,10 @@ func (b *realBackend) keyOwners() map[string]string {
 // ---------------------------------------------------------------------------
 
 // createInput builds the CreateInput for a committed create from the view row
-// the wizard produced, filling the gitid-managed target paths and the macOS
-// globals block (D-08: written on EVERY create, empty off darwin).
+// the wizard produced, filling the gitid-managed target paths and the globals
+// PLATFORM (D-08 semantics, D-06 single owner): create passes
+// platform.CurrentOS() so sshconfig.EnsureGlobals normalises the `Host *`
+// block for the actual machine rather than re-rendering a body here.
 func (b *realBackend) createInput(row tuikit.DemoIdentity) identity.CreateInput {
 	port := row.Port
 	if port == 0 {
@@ -2591,7 +2829,7 @@ func (b *realBackend) createInput(row tuikit.DemoIdentity) identity.CreateInput 
 		GitconfigPath:      b.gitconfigPath,
 		SSHConfigPath:      b.storageTargetPath(),
 		AllowedSignersPath: b.allowedSigners,
-		GlobalBlock:        sshconfig.RenderGlobalBlock(platform.CurrentOS()),
+		GlobalsGOOS:        platform.CurrentOS(),
 	}
 }
 
@@ -2904,7 +3142,7 @@ func (b *realBackend) commitCreateTransaction(in identity.CreateInput, staged id
 	if err != nil {
 		return fail("host-block", err)
 	}
-	backup, err := sshconfig.Write(st.targetPath, in.Name, hostBlock, in.GlobalBlock)
+	backup, err := sshconfig.Write(st.targetPath, in.Name, hostBlock, in.GlobalsGOOS)
 	if err != nil {
 		return fail("host-block", err)
 	}

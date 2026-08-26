@@ -91,8 +91,15 @@ type CreateInput struct {
 	SSHConfigPath      string
 	AllowedSignersPath string
 
-	// GlobalBlock is the rendered macOS `Host *` block body (empty off darwin).
-	GlobalBlock string
+	// GlobalsGOOS is the PLATFORM token the real WriteSSH seam passes to
+	// sshconfig.Write as its globals-platform argument (D-06). A NON-EMPTY
+	// value means "normalise the gitid `Host *` globals block through
+	// sshconfig.EnsureGlobals for this platform"; an EMPTY value means "do not
+	// touch the globals block at all" — rotate/repair/add-account pass the
+	// empty value because their write must not re-normalise a block they did
+	// not change. No production file constructs a globals block body anymore;
+	// EnsureGlobals is the single owner.
+	GlobalsGOOS string
 }
 
 // KeyResult is the subset of keygen.Result the orchestration needs, decoupling
@@ -146,7 +153,7 @@ type Deps struct {
 	Cleanup             func(s StagedKey)
 	CopyPub             func(pubLine string) error
 	PreWrite            func(keyPath, hostname string, port int) tester.Result
-	WriteSSH            func(accountName, hostBlock, globalBlock string) (backupPath string, err error)
+	WriteSSH            func(accountName, hostBlock, globalsGOOS string) (backupPath string, err error)
 	WriteGitconfig      func(identity, fragmentPath, allowedSignersPath string, matches []gitconfig.Match) (backupPath string, err error)
 	WriteFragment       func(fragmentPath, name, email, signingKeyPath string, signing bool) error
 	WriteAllowedSigners func(path, identity, line string) (backupPath string, err error)
@@ -391,7 +398,7 @@ func PersistSSH(in CreateInput, staged StagedKey, deps Deps) (CreateResult, erro
 		}
 	}
 
-	sshBak, werr := deps.WriteSSH(in.Name, hostBlock, in.GlobalBlock)
+	sshBak, werr := deps.WriteSSH(in.Name, hostBlock, in.GlobalsGOOS)
 	if werr != nil {
 		return res, fmt.Errorf("identity: writing ssh config: %w", werr)
 	}
@@ -578,7 +585,7 @@ func persistStagedKey(staged StagedKey, deps Deps) error {
 // Deps — callers pass deps.WriteAllowedSigners (replace) or an adapter over
 // deps.AppendAllowedSigners (append, D-07) to select behavior.
 func writeArtifacts(in CreateInput, hostBlock, signersLine string, res CreateResult, deps Deps, writeSigners signersWriter) (CreateResult, error) {
-	sshBak, werr := deps.WriteSSH(in.Name, hostBlock, in.GlobalBlock)
+	sshBak, werr := deps.WriteSSH(in.Name, hostBlock, in.GlobalsGOOS)
 	if werr != nil {
 		return res, fmt.Errorf("identity: writing ssh config: %w", werr)
 	}

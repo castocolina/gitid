@@ -142,6 +142,6 @@ func repairInput(a Account) CreateInput {
 		GitconfigPath:      a.GitconfigPath,
 		SSHConfigPath:      a.SSHConfigPath,
 		AllowedSignersPath: a.AllowedSignersPath,
-		GlobalBlock:        "",
+		GlobalsGOOS:        "",
 	}
 }

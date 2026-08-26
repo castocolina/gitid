@@ -74,9 +74,8 @@ func TestWriteIdempotent(t *testing.T) {
 	path := filepath.Join(dir, "config")
 
 	host := RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work", "")
-	global := RenderGlobalBlock("darwin")
 
-	if _, err := Write(path, "work.github.com", host, global); err != nil {
+	if _, err := Write(path, "work.github.com", host, "darwin"); err != nil {
 		t.Fatalf("first Write: %v", err)
 	}
 	first, err := os.ReadFile(path) //nolint:gosec // test reads back a TempDir fixture path it just wrote
@@ -84,7 +83,7 @@ func TestWriteIdempotent(t *testing.T) {
 		t.Fatalf("read after first write: %v", err)
 	}
 
-	if _, err := Write(path, "work.github.com", host, global); err != nil {
+	if _, err := Write(path, "work.github.com", host, "darwin"); err != nil {
 		t.Fatalf("second Write: %v", err)
 	}
 	second, err := os.ReadFile(path) //nolint:gosec // test reads back a TempDir fixture path it just wrote
@@ -104,9 +103,8 @@ func TestWriteGlobalBlockOrderedLast(t *testing.T) {
 	path := filepath.Join(dir, "config")
 
 	host := RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work", "")
-	global := RenderGlobalBlock("darwin")
 
-	if _, err := Write(path, "work.github.com", host, global); err != nil {
+	if _, err := Write(path, "work.github.com", host, "darwin"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 

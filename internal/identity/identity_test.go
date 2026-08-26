@@ -115,7 +115,7 @@ func sampleInput() CreateInput {
 		GitconfigPath:      "/tmp/.gitconfig",
 		SSHConfigPath:      "/tmp/.ssh/config",
 		AllowedSignersPath: "/tmp/.ssh/allowed_signers",
-		GlobalBlock:        "Host *\n  UseKeychain yes\n",
+		GlobalsGOOS:        "",
 	}
 }
 

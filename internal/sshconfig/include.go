@@ -63,26 +63,27 @@ func ArchiveDir(sshDir string) string {
 }
 
 // IsReservedBlockName reports whether a gitid-managed SSH block name is a
-// reserved, non-identity block. Two names are reserved:
+// reserved, non-identity block. Three names are reserved:
 //
 //   - sshIncludeBlockName ("ssh-include") — the gitid-owned Include line, which
 //     has no per-identity Host block and no gitconfig counterpart by design.
-//   - globalBlockName ("_global") — the macOS `Host *` keychain/agent stanza,
-//     which Phase 3 D-08 rewrites on EVERY create. It is wiring, not an
-//     identity: without this registration the doctor Orphans check reports it
-//     as an SSH block with no gitconfig partner and offers a removal fix that
-//     deletes the block the next create immediately re-writes — the project's
-//     documented destructive false-positive loop (L4).
+//   - GlobalBlockName ("global-ssh") — the gitid `Host *` keychain/key/global
+//     stanza, which Phase 6 writes on EVERY flow through EnsureGlobals. It is
+//     wiring, not an identity: without this registration the doctor Orphans
+//     check and identity discovery would both report it as a phantom
+//     "global-ssh" identity the instant the block is written.
+//   - LegacyGlobalBlockName ("_global") — the PRE-Phase-6 sentinel key, kept
+//     registered through the 06-01→06-02 transition so a machine still
+//     carrying the legacy block is neither reported as a phantom identity nor
+//     offered a destructive removal. Plan 06-02 owns the full registry
+//     consolidation and the migration classification of the legacy name.
 //
 // Mirrors gitconfig.IsReservedBlockName, so identity discovery and the doctor
-// Orphans check can exclude both the same way the gitconfig side already does
-// (Pitfall 4 / project memory "Doctor reserved-block false-positive loop").
-//
-// Hand-off: renaming `_global` to `global-ssh` is Phase 6's job (LEGACY-TRIAGE
-// P6 D-08). This registration is deliberately ADDITIVE — the constant and its
-// value stay untouched here.
+// Orphans check can exclude the globals wiring the same way the gitconfig side
+// already does (Pitfall 4 / project memory "Doctor reserved-block
+// false-positive loop").
 func IsReservedBlockName(name string) bool {
-	return name == sshIncludeBlockName || name == globalBlockName
+	return name == sshIncludeBlockName || name == GlobalBlockName || name == LegacyGlobalBlockName
 }
 
 // ReservedPaths returns the gitid-owned Include'd storage locations under

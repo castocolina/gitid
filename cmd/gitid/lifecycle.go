@@ -18,8 +18,11 @@ import (
 	"os"
 	"strings"
 
+	"github.com/castocolina/gitid/internal/filewriter"
 	"github.com/castocolina/gitid/internal/gitconfig"
+	"github.com/castocolina/gitid/internal/globalssh"
 	"github.com/castocolina/gitid/internal/identity"
+	"github.com/castocolina/gitid/internal/platform"
 	"github.com/castocolina/gitid/internal/sshconfig"
 	"github.com/castocolina/gitid/internal/tester"
 	"github.com/castocolina/gitid/internal/tuikit"
@@ -117,9 +120,10 @@ type lifecycleResult struct {
 // contract MUST be written against this same table; adding a verb means
 // adding a row HERE first.
 var lifecycleStages = map[string][]string{
-	"rotate": {"test", "plan", "confirm", "backup", "write", "retest"},
-	"repair": {"test", "plan", "confirm", "backup", "write", "retest"},
-	"delete": {"plan", "confirm", "backup", "write", "verify"},
+	"rotate":     {"test", "plan", "confirm", "backup", "write", "retest"},
+	"repair":     {"test", "plan", "confirm", "backup", "write", "retest"},
+	"delete":     {"plan", "confirm", "backup", "write", "verify"},
+	"global-ssh": {"plan", "confirm", "backup", "write"},
 }
 
 // errConfirmationUnavailable is returned when a confirmationRequired
@@ -741,4 +745,175 @@ func (b *realBackend) verifyDeleteGone(name string, scope identity.DeleteScope) 
 		}
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// runGlobalSSHApply — the ONE global-SSH fix ceremony
+// ---------------------------------------------------------------------------
+
+// runGlobalSSHApply owns the whole declared global-SSH fix ceremony — plan →
+// confirm → backup → write — driving it from lifecycleStages["global-ssh"]. It
+// is the ONE production writer a global option fix may use: the TUI's
+// CommitGlobalSSH reaches it and plan 06-06's CLI verb will too; nothing else
+// writes a global option. It takes txMu, resolves the storage target through
+// b.storage() (D-07: layout-follows-identities), floors the Include line and
+// creates the include directory when the resolved layout reports that it is
+// needed, builds the explicit overlay from the requested keys and their D-10
+// recommended values, merges the target file's bytes through the single owner
+// sshconfig.EnsureGlobals, and writes every path through filewriter (the
+// timestamped-backup + atomic temp→rename chokepoint).
+//
+// A key that is not writable to the wildcard block is REJECTED BY NAME before
+// any candidate is built — returning an error rather than silently dropping
+// it, because a silent drop would make a later receipt count wrong.
+//
+// ROLLBACK — the phase's SINGLE restore authority for the apply path: the
+// write opens a mutationJournal and watchFile's every path it is about to
+// touch (the resolved target, plus ~/.ssh/config itself when the Include line
+// is floored on a fresh machine). Each individual file write still goes
+// through filewriter.Write, which takes the timestamped backup and performs
+// the atomic temp→rename at 0600; the journal does not replace that, it
+// records what to put back. Any error after the first write calls the
+// journal's restore, which returns every watched file to its pre-transaction
+// bytes. A file that did not exist before the transaction is REMOVED rather
+// than "restored to empty". The restored paths ride out on the lifecycleResult
+// so the receipt can name them.
+//
+// plan 06-04 EXTENDS this function with pre-write simulation and post-write
+// verification and REUSES this journal — it must not add a second restore path
+// or layer another journal over it. plan 06-06 calls this function from the
+// CLI. The one deliberate exception is plan 06-05's migration ceremony:
+// sshconfig.Migrate owns its own rollback because it alone knows which of its
+// two files it wrote, so runSSHStorageMigrate does NOT open a journal — one
+// restoration authority per transaction.
+func (b *realBackend) runGlobalSSHApply(keys []string, p lifecyclePolicy) (lifecycleResult, error) {
+	b.txMu.Lock()
+	defer b.txMu.Unlock()
+
+	res := lifecycleResult{}
+	record := func(stage string) {
+		if p.Stages != nil {
+			p.Stages(stage)
+		}
+	}
+	stages := lifecycleStages["global-ssh"]
+
+	if b.initErr != nil {
+		return res, b.initErr
+	}
+
+	// plan — reject unwritable keys by name BEFORE building any candidate, and
+	// build the explicit overlay from the D-10 recommended values.
+	record(stages[0])
+	explicit := make(map[string]string, len(keys))
+	var previewKeys []string
+	for _, k := range keys {
+		policy, ok := globalssh.PolicyFor(k)
+		if !ok {
+			return res, fmt.Errorf("gitid: unknown global SSH option %q", k)
+		}
+		if policy.Scope == "per-alias" {
+			return res, fmt.Errorf("gitid: option %q cannot be applied to the global Host * block (the recipe scopes it per-alias)", k)
+		}
+		explicit[k] = policy.Recommended
+		previewKeys = append(previewKeys, k)
+	}
+	target := b.globalsTargetPath()
+	if p.DryRun {
+		// Ordering consequence stated here, matching runRotate: stopping AFTER
+		// the plan stage means a dry run never reaches the confirmation gate
+		// and therefore needs no authorization.
+		return res, nil
+	}
+
+	// confirm — the authorization boundary.
+	record(stages[1])
+	preview := fmt.Sprintf("apply global SSH option(s) %s to the gitid Host * block in %s",
+		strings.Join(previewKeys, ", "), b.displayPath(target))
+	authorized, cerr := b.confirmGate(p, preview)
+	if cerr != nil {
+		return res, cerr
+	}
+	if !authorized {
+		return res, fmt.Errorf("gitid: cancelled global SSH apply of %q", strings.Join(keys, ", "))
+	}
+
+	// backup — unconditional once authorized (D-02). The timestamped backups
+	// are taken by the filewriter-backed writes during the write stage below.
+	record(stages[2])
+
+	// write — the backed-up, all-or-nothing transaction.
+	record(stages[3])
+	st := b.storage()
+	journal := newMutationJournal(b)
+	fail := func(cause error) (lifecycleResult, error) {
+		outcomes, restoreErr := journal.restore()
+		res.Restored = outcomes
+		wrapped := fmt.Errorf("gitid: applying global SSH options: %w", cause)
+		if restoreErr != nil {
+			wrapped = fmt.Errorf("%w; restoration results: %s", wrapped, strings.Join(outcomes, "; "))
+		}
+		return res, wrapped
+	}
+	inject := func(step string) error {
+		if b.failCommitAt == nil {
+			return nil
+		}
+		return b.failCommitAt(step)
+	}
+	if werr := journal.watchFile(st.targetPath); werr != nil {
+		return res, werr
+	}
+	if st.needsIncludeLine {
+		// WR-04: ~/.ssh/config itself is DISTINCT from the storage target when
+		// the include-dir layout is active — the floored Include line must be
+		// watched or a mid-transaction rollback leaves it behind. Record the
+		// include directory as created when it does not pre-exist, so a
+		// rollback removes it rather than leaving an empty shell.
+		if werr := journal.watchFile(b.sshConfigPath); werr != nil {
+			return res, werr
+		}
+		if _, serr := os.Stat(b.includeDir); os.IsNotExist(serr) {
+			if rerr := journal.recordCreatedDir(b.includeDir); rerr != nil {
+				return res, rerr
+			}
+		}
+		if err := inject("global-include-line"); err != nil {
+			return fail(err)
+		}
+		if err := sshconfig.EnsureIncludeDir(b.includeDir); err != nil {
+			return fail(err)
+		}
+		backup, err := sshconfig.EnsureIncludeLine(b.sshConfigPath)
+		if err != nil {
+			return fail(err)
+		}
+		journal.addBackup(backup)
+	}
+	if err := inject("global-ssh-write"); err != nil {
+		return fail(err)
+	}
+	existing, err := os.ReadFile(st.targetPath) //nolint:gosec // st.targetPath is a trusted gitid-managed path supplied in-process
+	if err != nil && !os.IsNotExist(err) {
+		return fail(err)
+	}
+	merged, err := sshconfig.EnsureGlobals(existing, explicit, platform.CurrentOS())
+	if err != nil {
+		return fail(err)
+	}
+	backup, err := filewriter.Write(st.targetPath, merged, deleteSSHConfigMode)
+	if err != nil {
+		return fail(err)
+	}
+	journal.addBackup(backup)
+
+	res.Backups = append(res.Backups, journal.backups...)
+	return res, nil
+}
+
+// globalsTargetPath is the resolved file the gitid `Host *` globals block
+// lands in — the SAME resolution the identity block uses (D-07:
+// layout-follows-identities, never a second independent decision).
+func (b *realBackend) globalsTargetPath() string {
+	return b.storage().targetPath
 }
