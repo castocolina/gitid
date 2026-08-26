@@ -3516,6 +3516,51 @@ func TestKeyRowRoutesKeyMissingToRepair(t *testing.T) {
 	}
 }
 
+// TestKeyCeremonyStagesDoNotFabricateAPassResult is the CR-03 regression: the
+// rotate/repair ceremony's two "test" beats used to hardcode
+// TestResultView{Outcome: TestOutcomePass, Detail: "Stage N test passed."}
+// without ever calling a backend seam — a fabricated green checkmark shown
+// immediately before authorizing a real key rotation. Neither beat may claim
+// a PASS outcome, and the rendered stage-2 pane must not show the fabricated
+// "✓ Stage 1 test passed" line.
+func TestKeyCeremonyStagesDoNotFabricateAPassResult(t *testing.T) {
+	a := pressSeq(t, identitiesApp(), "a", "down", "down", "enter")
+	if identModel(t, a).keyCeremonyPhase != "stage1" {
+		t.Fatalf("phase = %q, want stage1", identModel(t, a).keyCeremonyPhase)
+	}
+
+	a, _ = press(t, a, "enter")
+	m := identModel(t, a)
+	if m.keyCeremonyPhase != "stage2" {
+		t.Fatalf("phase = %q, want stage2", m.keyCeremonyPhase)
+	}
+	if m.keyCeremonyStage1.Outcome == TestOutcomePass {
+		t.Error("CR-03: stage 1 must not fabricate a PASS outcome — no backend seam ran")
+	}
+	if strings.Contains(m.keyCeremonyStage1.Detail, "test passed") {
+		t.Errorf("CR-03: stage 1 detail = %q, must not claim a test passed", m.keyCeremonyStage1.Detail)
+	}
+	pane := stripANSI(paneFlat(a))
+	if strings.Contains(pane, "✓ Stage 1 test passed") {
+		t.Errorf("CR-03: rendered ceremony still shows the fabricated stage-1 checkmark: %s", pane)
+	}
+	if !strings.Contains(pane, "Not tested") {
+		t.Errorf("CR-03: rendered ceremony must honestly disclose stage 1 was not tested: %s", pane)
+	}
+
+	a, _ = press(t, a, "enter")
+	m = identModel(t, a)
+	if m.keyCeremonyPhase != "review" {
+		t.Fatalf("phase = %q, want review", m.keyCeremonyPhase)
+	}
+	if m.keyCeremonyStage2.Outcome == TestOutcomePass {
+		t.Error("CR-03: stage 2 must not fabricate a PASS outcome — no backend seam ran")
+	}
+	if strings.Contains(m.keyCeremonyStage2.Detail, "test passed") {
+		t.Errorf("CR-03: stage 2 detail = %q, must not claim a test passed", m.keyCeremonyStage2.Detail)
+	}
+}
+
 func TestDirectKeyAndMenuRowConverge(t *testing.T) {
 	s := Seed()
 	b := stubBackend{}
