@@ -52,8 +52,13 @@ prompt.
 - Core logic lives in a UI-free package and is built test-first (TDD).
 - Never write to a user's `~/.ssh/config` or `~/.gitconfig` without a
   timestamped backup, idempotent managed blocks, and explicit confirmation.
-- Code exploration: see `AGENTS.md` § Code Exploration (`codegraph_explore`
-  before Grep/Read; `rg` over `grep` as fallback).
+- Code exploration: use the `codegraph_explore` MCP tool before any
+  Grep/Read loop. Run `codegraph index || codegraph init -i` once at task
+  start to refresh the index. Fall back to `rg` (not `grep`) + Read only if
+  codegraph is unavailable or insufficient. (Same rule lives in `AGENTS.md`
+  § Code Exploration — duplicated, not referenced, because a cross-AI/local
+  model dispatched via `AGENTS.md` won't reliably follow a pointer into
+  `CLAUDE.md`.)
 
 ## Commits
 
