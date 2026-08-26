@@ -765,6 +765,37 @@ func TestScanReusableKeysLabelsInUseByWithProvider(t *testing.T) {
 	}
 }
 
+// TestScanReusableKeysLabelsTildeSpelledIdentityKey is the WR-05 regression:
+// keyOwners() keyed its map on the VERBATIM Account.KeyPath (accounts(),
+// not normalizedAccounts()), while it is looked up with ABSOLUTE paths
+// (toReusableKeyViews' owners[k.Path], built from keygen.ScanReusableKeys'
+// filepath.Glob results). For any recipe-shaped identity — IdentityFile
+// spelled "~/.ssh/id_ed25519_<name>", exactly what seedDeleteFixture writes
+// — the lookup missed entirely, so the reuse picker showed a key already
+// owned by another identity with an empty InUseBy label: the same class of
+// miss wave 9 fixed for delete, in the safety label that warns a user
+// before they point a second identity at an existing key.
+func TestScanReusableKeysLabelsTildeSpelledIdentityKey(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_work")
+	views := newBackendForHome(home).ScanReusableKeys()
+	var found bool
+	for _, v := range views {
+		if v.Path == keyPath {
+			found = true
+			if v.InUseBy != "work (github.com)" {
+				t.Errorf("WR-05: InUseBy = %q, want %q — a recipe-shaped tilde IdentityFile must still label the key as in-use", v.InUseBy, "work (github.com)")
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("the seeded key was not among the scanned candidates: %+v", views)
+	}
+}
+
 // TestManualReusePathResolvesRegularFile proves the picker's manual-path row
 // (D-10) resolves a plain, non-symlinked candidate the SAME way the
 // directory scan would — same fields, same D-12 label.

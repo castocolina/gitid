@@ -2516,7 +2516,16 @@ func (b *realBackend) findAccount(name string) (identity.Account, bool) {
 // labels can never disagree with the manager.
 func (b *realBackend) keyOwners() map[string]string {
 	owners := make(map[string]string)
-	for _, acct := range b.accounts() {
+	// WR-05: normalizedAccounts() (not accounts()) — this map is looked up
+	// with ABSOLUTE paths (toReusableKeyViews' owners[k.Path], where k.Path
+	// comes from keygen.ScanReusableKeys' filepath.Glob results), while
+	// accounts() returns KeyPath verbatim from Reconstruct (usually the
+	// recipe-shaped tilde literal). Keying on the raw tilde path made every
+	// recipe-shaped identity's key silently miss this lookup, so the reuse
+	// picker showed a key already owned by another identity with an empty
+	// InUseBy label — the exact safety warning D-12 exists to show BEFORE a
+	// second identity is pointed at an existing key.
+	for _, acct := range b.normalizedAccounts() {
 		if acct.KeyPath == "" {
 			continue
 		}
