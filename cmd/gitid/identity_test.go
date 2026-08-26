@@ -1007,6 +1007,39 @@ func TestIdentityCloneRecordingDoubleInvokedExactlyOnce(t *testing.T) {
 	}
 }
 
+// TestCloneCeremonyInputsFingerprintsMatchTestStage proves the store gate a
+// headless clone consults is the same fingerprint TestStage1/2 record: empty
+// Algo and a display-form reuse path would pass both stages and still be
+// refused as stale.
+func TestCloneCeremonyInputsFingerprintsMatchTestStage(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+	b := newBackendForHome(home)
+	in, id, err := cloneCeremonyInputs(b, "work", "work-clone", true)
+	if err != nil {
+		t.Fatalf("cloneCeremonyInputs: %v", err)
+	}
+	if in.Algo == "" {
+		t.Fatal("clone CreateInput.Algo is empty; TestStage defaults it to ed25519 and the store gate treats the pair as stale")
+	}
+	if in.Alias != "work-clone.github.com" {
+		t.Fatalf("clone alias = %q, want work-clone.github.com (FQDN, not the reconstructed short token)", in.Alias)
+	}
+	staged := b.createInputFromSpec(tuikit.CreateSpec{
+		Identity:     id.Name,
+		Alias:        in.Alias,
+		Hostname:     in.Hostname,
+		Port:         fmt.Sprintf("%d", in.Port),
+		ReuseKeyPath: in.ReuseKeyPath,
+		Algorithm:    id.Algorithm,
+		Provider:     in.Provider,
+	})
+	if got, want := specFingerprint(in), specFingerprint(staged); got != want {
+		t.Fatalf("clone CreateInput fingerprint %q != TestStage reconstruction %q", got, want)
+	}
+}
+
 // --- the post-write re-test drives the exit code (D-02) ----------------------
 
 // TestIdentityKeyVerbReTestDrivesExitCode proves a failing post-write re-test

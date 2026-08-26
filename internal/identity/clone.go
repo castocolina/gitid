@@ -134,7 +134,16 @@ func DeriveCloneInput(source Account, cloneName string, reuseSourceKey bool, tar
 		return CreateInput{}, notices, &FieldError{Field: "name", Message: err.Error()}
 	}
 
-	alias := DefaultAlias(cloneName, source.Provider)
+	// Reconstruct stores a short provider token ("github") when no
+	// "# gitid: provider=" marker is present. DefaultAlias concatenates
+	// that token, which would write Host acme-clone.github. The TUI
+	// wizard rebuilds the FQDN from the hostname; normalize here so the
+	// CLI clone path produces the same alias.
+	provider := source.Provider
+	if fqdn := RewriteProviderKey(provider, source.Alias); fqdn != "" {
+		provider = fqdn
+	}
+	alias := DefaultAlias(cloneName, provider)
 	portStr := fmt.Sprintf("%d", source.Port)
 	if source.Port == 0 {
 		portStr = fmt.Sprintf("%d", DefaultPort())
@@ -163,7 +172,7 @@ func DeriveCloneInput(source Account, cloneName string, reuseSourceKey bool, tar
 		Name:               cloneName,
 		GitName:            source.GitName,
 		GitEmail:           source.GitEmail,
-		Provider:           source.Provider,
+		Provider:           provider,
 		Alias:              alias,
 		Hostname:           source.Hostname,
 		Port:               port,

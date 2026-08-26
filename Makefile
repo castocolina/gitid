@@ -346,14 +346,16 @@ uninstall:
 ## test-e2e: run end-to-end agent-driven tests (builds binary first).
 ## E2E tests use a hermetic sandbox HOME and a fake ssh script injected on PATH.
 ## Tests are tagged //go:build e2e and are excluded from the normal make test target.
-## Timeout 360s (raised from 180s in 04-04-PLAN.md Task 2 — the same class of
-## adjustment 02-11 made, 60s -> 180s, "once the full 50-screen dummy-nav walk
-## runs alongside the real-TUI PTY suite in one package"): the FULL package,
-## measured under -race, now runs ~260s
-## (TestGitConfiguration_CompiledRealVsLiveDummyPTY alone adds ~53-93s — five
-## paired real-binary/dummy-binary PTY sessions). 360s gives CI-variance
-## headroom without masking a genuine hang (every test carries its own inner
-## waitFor/close timeouts, so a real hang still fails fast well under 360s).
+## Timeout 900s (raised from 360s in 05-08-PLAN.md Task 3 / review R3-06).
+## Pre-Phase-5 measurement: 258.8s wall-clock over 34 test functions (~7.6s
+## each) under -race, leaving 101s of headroom before Phase 5 adds anything.
+## This plan adds 5 paired CLI/TUI cases plus a failure case, and plan 05-09
+## adds the per-state PTY suite plus its paired real-versus-dummy case — call
+## it ~24 new functions. PTY cases run slower than the 7.6s average, so budget
+## ~10s each: ~240s of new work on top of 258.8s projects to ~500s. 900s is
+## ~1.8x that projection, which is the headroom a hosted macOS CI runner needs
+## without absorbing a genuine hang (every test still carries its own inner
+## waitFor/close timeouts, so a real hang fails fast well under 900s).
 ##
 ## Phase 4 (04-04-PLAN.md Task 2/3, D-12): this target ALSO runs
 ## TestGitConfiguration_CompiledRealVsLiveDummyPTY — the paired compiled PTY
@@ -364,7 +366,7 @@ uninstall:
 ## in-process capture gate below — both classify divergences against the SAME
 ## .planning/design/git-screen/visual-divergence-allowlist.txt.
 test-e2e: build
-	go test -tags e2e -race -timeout 360s ./e2e/...
+	go test -tags e2e -race -timeout 900s ./e2e/...
 
 ## screenshot-tui: render the Bubble Tea View()-dump golden to a deterministic PNG
 ## via freeze (TOOL-05, DLV-03). Invokes TestCaptureTUI — the concrete runnable

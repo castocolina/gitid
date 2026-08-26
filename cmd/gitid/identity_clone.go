@@ -136,6 +136,17 @@ func cloneCeremonyInputs(b *realBackend, source, cloneName string, reuseSourceKe
 			}
 		}
 	}
+	// TestStage1/2 reconstruct the CreateInput via createInputFromSpec, which
+	// defaults an empty algorithm to ed25519 and resolves a ~/ reuse path.
+	// The store gate fingerprints THAT reconstructed value, so a clone input
+	// that leaves Algo empty (or a display-form reuse path) would pass both
+	// stages and still be refused as stale.
+	if in.Algo == "" {
+		in.Algo = "ed25519"
+	}
+	if in.ReuseKeyPath != "" {
+		in.ReuseKeyPath = b.resolveKeyPath(in.ReuseKeyPath)
+	}
 	id := tuikit.DemoIdentity{
 		Name:            in.Name,
 		SSHHost:         in.Alias,
@@ -149,7 +160,7 @@ func cloneCeremonyInputs(b *realBackend, source, cloneName string, reuseSourceKe
 		GitDir:          "~/git/" + in.Name + "/",
 		PublicKeyPath:   in.ReuseKeyPath + ".pub",
 		ForceSSH:        true,
-		Algorithm:       "",
+		Algorithm:       in.Algo,
 		ReuseKeyPath:    in.ReuseKeyPath,
 		GitFragmentPath: in.FragmentPath,
 	}

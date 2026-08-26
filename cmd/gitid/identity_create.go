@@ -181,9 +181,6 @@ func createInputFromCreateFlags(b *realBackend, flags identityCreateFlags) (iden
 	if algo == "" {
 		algo = "ed25519"
 	}
-	if reuseKey != "" {
-		algo = ""
-	}
 
 	in := identity.CreateInput{
 		Name:               name,

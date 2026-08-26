@@ -99,6 +99,26 @@ func TestDeriveCloneInput_CopiesAuthorAndSSHEndpoint(t *testing.T) {
 	}
 }
 
+// TestDeriveCloneInput_ShortReconstructedProviderYieldsFQDNAlias is the CLI/TUI
+// parity proof for a markerless Host block: Reconstruct stores "github", and
+// DefaultAlias would concatenate that into Host acme-clone.github. The TUI
+// wizard rebuilds github.com from the hostname; DeriveCloneInput must do the
+// same so a headless clone writes the FQDN alias.
+func TestDeriveCloneInput_ShortReconstructedProviderYieldsFQDNAlias(t *testing.T) {
+	src := cloneSource()
+	src.Provider = "github"
+	in, _, err := DeriveCloneInput(src, "work-clone", true, cloneTargets())
+	if err != nil {
+		t.Fatalf("DeriveCloneInput: %v", err)
+	}
+	if in.Provider != "github.com" {
+		t.Errorf("Provider = %q, want github.com (FQDN-normalized from reconstructed short token)", in.Provider)
+	}
+	if in.Alias != "work-clone.github.com" {
+		t.Errorf("Alias = %q, want work-clone.github.com", in.Alias)
+	}
+}
+
 func TestDeriveCloneInput_MatchesContainCloneNotSource(t *testing.T) {
 	src := cloneSource()
 	in, _, err := DeriveCloneInput(src, "work-clone", false, cloneTargets())
