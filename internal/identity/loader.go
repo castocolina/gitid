@@ -137,6 +137,7 @@ func Reconstruct(
 			if ferr == nil && !frag.Missing {
 				acct.GitName = frag.GitName
 				acct.GitEmail = frag.GitEmail
+				acct.SigningKeyPath = frag.SigningKey
 			} else {
 				missing = append(missing, "fragment-file")
 			}

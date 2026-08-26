@@ -4034,3 +4034,106 @@ func TestReusePickerManualPathRejectsInvalidCandidate(t *testing.T) {
 		t.Error("an unresolved manual-path candidate must block advance")
 	}
 }
+
+// --------------------------------------------------------------------------
+// Plan 05-07 Task 3 — honest detail (MGR-03), real findings (MGR-07).
+// --------------------------------------------------------------------------
+
+func renderDetailPlain(sel DemoIdentity, findings []DemoFinding) string {
+	state := DemoState{Identities: []DemoIdentity{sel}, Findings: findings}
+	m := newIdentitiesModel(stubBackend{}, state)
+	return stripANSI(m.renderDetail(state, sel))
+}
+
+func TestDetailAbsentHostnameUsesAbsenceMarker(t *testing.T) {
+	got := renderDetailPlain(DemoIdentity{
+		Name: "sparse", State: "incomplete", SSHHost: "sparse.github.com",
+	}, nil)
+	for _, line := range strings.Split(got, "\n") {
+		if !strings.Contains(line, "Hostname:") {
+			continue
+		}
+		if strings.Contains(line, "ssh.github.com") || strings.Contains(line, "github.com") {
+			t.Errorf("absent hostname must not render a provider hostname literal on the hostname line %q", line)
+		}
+		if !strings.Contains(line, "— missing") {
+			t.Errorf("absent hostname must render the existing absence marker; got:\n%s", got)
+		}
+	}
+}
+
+func TestDetailAbsentPortUsesAbsenceMarker(t *testing.T) {
+	got := renderDetailPlain(DemoIdentity{
+		Name: "sparse", State: "incomplete", SSHHost: "sparse.example",
+		Hostname: "git.example.com",
+	}, nil)
+	for _, line := range strings.Split(got, "\n") {
+		if !strings.Contains(line, "Hostname:") && !strings.Contains(line, "Port") {
+			continue
+		}
+		if strings.Contains(line, "443") || strings.Contains(line, "22") {
+			t.Errorf("absent port must not render a numeric port literal on the hostname/port line %q", line)
+		}
+	}
+}
+
+func TestDetailSigningKeyFollowsFragmentNotKeyPath(t *testing.T) {
+	got := renderDetailPlain(DemoIdentity{
+		Name: "work", State: "complete", SSHHost: "work.github.com",
+		Hostname: "ssh.github.com", Port: 443,
+		KeyPath: "~/.ssh/id_ed25519_work", GitFragmentPath: "~/.gitconfig.d/work",
+		GitName: "Work", GitEmail: "work@example.com",
+		SigningKeyPath: "~/.ssh/id_ed25519_other.pub",
+	}, nil)
+	if !strings.Contains(got, "~/.ssh/id_ed25519_other.pub") {
+		t.Errorf("signing line must follow the fragment signing key; got:\n%s", got)
+	}
+	if strings.Contains(got, "signingkey ~/.ssh/id_ed25519_work.pub") {
+		t.Errorf("signing line must not derive the key path with .pub; got:\n%s", got)
+	}
+}
+
+func TestDetailSSHOnlyShowsFrozenGitAbsenceNote(t *testing.T) {
+	got := renderDetailPlain(DemoIdentity{
+		Name: "work", State: "incomplete", SSHHost: "work.github.com",
+		Hostname: "ssh.github.com", Port: 443, KeyPath: "~/.ssh/id_ed25519_work",
+	}, nil)
+	if !strings.Contains(got, "! Git not configured — no fabricated values shown.") {
+		t.Errorf("SSH-only Git section must contain the frozen absence note; got:\n%s", got)
+	}
+	if strings.Contains(got, "Author:") {
+		t.Errorf("SSH-only Git section must not render an author line; got:\n%s", got)
+	}
+}
+
+func TestDetailPolicyConstantsSeparatedFromParsedValues(t *testing.T) {
+	got := renderDetailPlain(DemoIdentity{
+		Name: "work", State: "incomplete", SSHHost: "work.github.com",
+		Hostname: "git.example.com", Port: 2222, KeyPath: "~/.ssh/id_ed25519_work",
+	}, nil)
+	if !strings.Contains(got, "gitid always writes") {
+		t.Errorf("User git / IdentitiesOnly yes must appear under the policy label; got:\n%s", got)
+	}
+	for _, line := range strings.Split(got, "\n") {
+		hasParsed := strings.Contains(line, "Hostname:") || strings.Contains(line, "git.example.com") || strings.Contains(line, "Port 2222")
+		hasPolicy := strings.Contains(line, "User git") || strings.Contains(line, "IdentitiesOnly")
+		if hasParsed && hasPolicy {
+			t.Errorf("policy constants must not share a line with parsed hostname/port: %q", line)
+		}
+	}
+}
+
+func TestDetailFindingsShowRealClassificationSeverities(t *testing.T) {
+	sel := DemoIdentity{Name: "broken", State: "fragment-path-missing", SSHHost: "broken.github.com"}
+	findings := []DemoFinding{
+		{HealthFinding: HealthFinding{ID: "broken:fragment-file-missing", Title: "fragment-file-missing", Severity: SeverityError}, Identity: "broken"},
+		{HealthFinding: HealthFinding{ID: "broken:key-file-missing", Title: "key-file-missing", Severity: SeverityError}, Identity: "broken"},
+	}
+	got := renderDetailPlain(sel, findings)
+	if !strings.Contains(got, "fragment-file-missing") || !strings.Contains(got, "key-file-missing") {
+		t.Errorf("findings section must list both classified problems; got:\n%s", got)
+	}
+	if !strings.Contains(got, "error") {
+		t.Errorf("findings section must render the domain-assigned severity; got:\n%s", got)
+	}
+}

@@ -3741,22 +3741,10 @@ func (m identitiesModel) renderDetail(s DemoState, sel DemoIdentity) string {
 
 	b.WriteString(sectionHeader("SSH — shown first, always") + "\n")
 	if sel.SSHHost != "" {
-		hostname := sel.Hostname
-		if hostname == "" {
-			hostname = "ssh.github.com"
-		}
-		port := sel.Port
-		if port == 0 {
-			port = 443
-		}
-		keyPath := sel.KeyPath
-		if keyPath == "" {
-			keyPath = "— missing"
-		}
 		b.WriteString("   Host alias: " + sel.SSHHost + "\n")
-		b.WriteString("   Hostname: " + hostname + " · Port " + strconv.Itoa(port) + " · User git\n")
-		b.WriteString("   IdentityFile: " + keyPath + "\n")
-		b.WriteString("   IdentitiesOnly: yes\n")
+		b.WriteString("   Hostname: " + observedOrMissing(sel.Hostname) + " · Port " + observedPort(sel.Port) + "\n")
+		b.WriteString("   IdentityFile: " + observedOrMissing(sel.KeyPath) + "\n")
+		b.WriteString("   gitid always writes: User git · IdentitiesOnly yes\n")
 	} else {
 		b.WriteString("   " + styleWarning.Render("! No gitid-managed Host block — relies on the global SSH config.") + "\n")
 	}
@@ -3765,7 +3753,7 @@ func (m identitiesModel) renderDetail(s DemoState, sel DemoIdentity) string {
 	if sel.GitFragmentPath != "" {
 		b.WriteString("   Fragment: " + sel.GitFragmentPath + "\n")
 		b.WriteString("   Author: " + sel.GitName + " <" + sel.GitEmail + ">\n")
-		signing := "   Signing: gpg.format=ssh · signingkey " + orDefault(sel.KeyPath, "?") + ".pub"
+		signing := "   Signing: gpg.format=ssh · signingkey " + observedOrMissing(sel.SigningKeyPath)
 		if sel.MatchStrategy != "" {
 			signing += " · strategy " + sel.MatchStrategy
 		}
@@ -4239,6 +4227,24 @@ func orDefault(s, fallback string) string {
 		return fallback
 	}
 	return s
+}
+
+// observedOrMissing renders a parsed value, or the existing absence marker
+// when the manager did not actually read one (MGR-03).
+func observedOrMissing(s string) string {
+	if s == "" {
+		return "— missing"
+	}
+	return s
+}
+
+// observedPort renders a parsed port, or the existing absence marker when
+// the Host block had no Port directive (0 means unset, never a fabricated 443).
+func observedPort(port int) string {
+	if port == 0 {
+		return "— missing"
+	}
+	return strconv.Itoa(port)
 }
 
 // view implements screenModel: sidebar + the active right-pane state.

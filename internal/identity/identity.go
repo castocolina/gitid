@@ -24,16 +24,17 @@ import (
 // managed blocks across ~/.ssh/config and ~/.gitconfig. The filesystem is the
 // source of truth; this struct is the in-memory translation.
 type Account struct {
-	Name     string
-	GitName  string
-	GitEmail string
-	Provider string
-	Alias    string
-	Hostname string
-	Port     int
-	KeyPath  string
-	PubPath  string
-	Matches  []gitconfig.Match
+	Name           string
+	GitName        string
+	GitEmail       string
+	Provider       string
+	Alias          string
+	Hostname       string
+	Port           int
+	KeyPath        string
+	PubPath        string
+	SigningKeyPath string
+	Matches        []gitconfig.Match
 
 	// ForceSSH reports whether the shared provider-owned rewrite block
 	// (gitconfig.WriteProviderRewrite's managed block, "provider-rewrite:<host>")

@@ -177,9 +177,16 @@ func (stubBackend) InitialState() DemoState {
 			GitFragmentPath: row.GitFragmentPath,
 			Note:            row.Note,
 		}
+		if row.SSHHost != "" {
+			id.Hostname = "ssh.github.com"
+			id.Port = 443
+		}
 		if row.GitFragmentPath != "" {
 			id.GitName = row.Name + " identity"
 			id.GitEmail = "you@" + row.Name + ".example"
+			if row.KeyPath != "" {
+				id.SigningKeyPath = row.KeyPath + ".pub"
+			}
 		}
 		identities = append(identities, id)
 	}

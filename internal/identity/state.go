@@ -97,6 +97,39 @@ const (
 	ProblemKeyUnreferenced Problem = "key-unreferenced"
 )
 
+// Severity is the domain-owned problem severity vocabulary. It reuses the
+// project's existing lowercase labels (info / warning / error) so Phase 8's
+// doctor can consume SeverityFor without a second policy table. cmd/gitid
+// maps these to tuikit.HealthSeverity at the ONE conversion site — a straight
+// vocabulary translation with no policy in it.
+type Severity string
+
+const (
+	// SeverityInfo is advisory — something optional is missing or unused.
+	SeverityInfo Severity = "info"
+	// SeverityWarning is degraded or incomplete but not immediately broken.
+	SeverityWarning Severity = "warning"
+	// SeverityError means broken — a required artifact is absent.
+	SeverityError Severity = "error"
+)
+
+// SeverityFor maps a Problem to its domain-owned severity. An unmapped
+// Problem returns the empty string so a completeness test can fail loudly
+// rather than silently treating an unknown constant as healthy. Phase 8's
+// doctor is the second consumer of this table.
+func SeverityFor(p Problem) Severity {
+	switch p {
+	case ProblemNoSSHHostBlock, ProblemNoGitconfigBlock:
+		return SeverityWarning
+	case ProblemFragmentMissing, ProblemKeyFileMissing:
+		return SeverityError
+	case ProblemKeyUnreferenced:
+		return SeverityInfo
+	default:
+		return ""
+	}
+}
+
 // IdentityHealth is the per-identity health report: an orthogonal
 // IdentityState axis (structural — is the Host block / gitconfig fragment
 // present and coherent) and KeyState axis (is the key file present and how is

@@ -1,10 +1,9 @@
 // Package identity — clone derivation tests (plan 05-05).
 //
-// R-28 / 05-07: Account carries key paths and author values but no parsed
-// fragment SigningKey value. That field only becomes available in plan 05-07
-// (SigningKeyPath on Account). Until then, tests assert the DERIVED signing
-// path only (ReuseKeyPath when reusing, or the empty generate sentinel) and
-// MUST NOT claim equality against the source's configured fragment signing key.
+// R-28 / 05-07: Account.SigningKeyPath now carries the parsed fragment
+// signing key. Clone still does not copy that field — tests assert the
+// DERIVED signing path only (ReuseKeyPath when reusing, or the empty
+// generate sentinel).
 package identity
 
 import (

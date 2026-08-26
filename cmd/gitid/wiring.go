@@ -582,9 +582,10 @@ func countForeignProviderRefs(b *realBackend, providerKey string) (int, error) {
 // ---------------------------------------------------------------------------
 
 // InitialState reads the user's ACTUAL configuration: every reconstructed
-// identity plus the detected STORE-01 storage layout. Health findings stay
-// empty in Phase 3 — the Doctor tab still renders demo content behind the
-// D-16 banner (see DemoBanner).
+// identity plus the detected STORE-01 storage layout. Findings are the
+// per-identity Problems identity.BuildInventory already classified (MGR-07),
+// never re-derived here. The Doctor tab still renders demo content behind
+// the D-16 banner (see DemoBanner).
 func (b *realBackend) InitialState() tuikit.DemoState {
 	state := tuikit.DemoState{SSHStorage: tuikit.StorageSentinel}
 	if b.initErr != nil {
@@ -593,8 +594,24 @@ func (b *realBackend) InitialState() tuikit.DemoState {
 	if b.storage().includeLayout {
 		state.SSHStorage = tuikit.StorageInclude
 	}
+	healthByName := b.healthByName()
 	for _, acct := range b.accounts() {
-		state.Identities = append(state.Identities, b.toDemoIdentity(acct))
+		row := b.toDemoIdentity(acct)
+		if h, ok := healthByName[acct.Name]; ok {
+			row.State = string(collapseState(h))
+			for _, p := range h.Problems {
+				state.Findings = append(state.Findings, tuikit.DemoFinding{
+					HealthFinding: tuikit.HealthFinding{
+						ID:          acct.Name + ":" + string(p),
+						Title:       string(p),
+						Explanation: string(p),
+						Severity:    tuikit.HealthSeverity(identity.SeverityFor(p)),
+					},
+					Identity: acct.Name,
+				})
+			}
+		}
+		state.Identities = append(state.Identities, row)
 	}
 	return state
 }
@@ -2244,7 +2261,7 @@ func toAlgorithmCatalogEntry(a keygen.AlgoInfo) tuikit.AlgorithmCatalogEntry {
 // toDemoIdentity projects one reconstructed account into the identity list's
 // view row, classified through the locked MGR-02 state vocabulary.
 func (b *realBackend) toDemoIdentity(acct identity.Account) tuikit.DemoIdentity {
-	keyExists := acct.KeyPath != "" && fileExists(acct.KeyPath)
+	keyExists := acct.KeyPath != "" && fileExists(expandTildeForHome(acct.KeyPath, b.home))
 	state := identity.ClassifyState(acct, keyExists, keyExists && acct.Alias != "", acct.FragmentPath != "")
 	row := tuikit.DemoIdentity{
 		Name:            acct.Name,
@@ -2253,6 +2270,7 @@ func (b *realBackend) toDemoIdentity(acct identity.Account) tuikit.DemoIdentity 
 		KeyPath:         b.displayPath(acct.KeyPath),
 		PublicKeyPath:   b.displayPath(acct.PubPath),
 		GitFragmentPath: b.displayPath(acct.FragmentPath),
+		SigningKeyPath:  b.displayPath(acct.SigningKeyPath),
 		GitName:         acct.GitName,
 		GitEmail:        acct.GitEmail,
 		Provider:        acct.Provider,
@@ -2419,6 +2437,31 @@ func (b *realBackend) accounts() []identity.Account {
 		return nil
 	}
 	return accounts
+}
+
+// inventoryDeps is InventoryDepsForHome with Stat expanding "~/" against
+// b.home, so recipe-shaped IdentityFile values classify against real files
+// rather than always looking missing.
+func (b *realBackend) inventoryDeps() identity.InventoryDeps {
+	deps := identity.InventoryDepsForHome(b.home)
+	deps.Stat = func(path string) (os.FileInfo, error) {
+		return os.Stat(expandTildeForHome(path, b.home)) //nolint:gosec // trusted gitid-managed key path
+	}
+	return deps
+}
+
+// healthByName is the per-identity classification InitialState and the
+// findings section share — one BuildInventory call, never a second policy.
+func (b *realBackend) healthByName() map[string]identity.IdentityHealth {
+	inv, err := identity.BuildInventory(b.inventoryDeps())
+	if err != nil {
+		return nil
+	}
+	out := make(map[string]identity.IdentityHealth, len(inv.Identities))
+	for _, h := range inv.Identities {
+		out[h.Name] = h
+	}
+	return out
 }
 
 // findAccount resolves ONE reconstructed account by name from the SAME
@@ -3045,7 +3088,7 @@ func (b *realBackend) KeyActionFor(name string) (string, error) {
 	if !found {
 		return "", fmt.Errorf("gitid: no such identity: %q", name)
 	}
-	inventory, err := identity.BuildInventory(identity.InventoryDepsForHome(b.home))
+	inventory, err := identity.BuildInventory(b.inventoryDeps())
 	if err != nil {
 		return "", fmt.Errorf("gitid: computing key action for %q: %w", name, err)
 	}

@@ -2,6 +2,10 @@ package identity
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
 	"sort"
 	"testing"
 )
@@ -287,5 +291,86 @@ func TestKeyActionFor_NoIO(t *testing.T) {
 	got := KeyActionFor(IdentityHealth{}, 1)
 	if got != KeyActionRotate {
 		t.Errorf("KeyActionFor(zero-value health, owners=1) = %q, want %q", got, KeyActionRotate)
+	}
+}
+
+// problemConstants parses state.go and returns every Problem constant
+// declared in the file, so SeverityFor's table fails on an unmapped one
+// rather than a hand-maintained list drifting from the source of truth.
+func problemConstants(t *testing.T) []Problem {
+	t.Helper()
+	src, err := os.ReadFile("state.go")
+	if err != nil {
+		t.Fatalf("reading state.go: %v", err)
+	}
+	fset := token.NewFileSet()
+	f, parseErr := parser.ParseFile(fset, "state.go", src, 0)
+	if parseErr != nil {
+		t.Fatalf("parsing state.go: %v", parseErr)
+	}
+	var out []Problem
+	ast.Inspect(f, func(n ast.Node) bool {
+		vs, ok := n.(*ast.ValueSpec)
+		if !ok || vs.Type == nil {
+			return true
+		}
+		ident, ok := vs.Type.(*ast.Ident)
+		if !ok || ident.Name != "Problem" {
+			return true
+		}
+		for _, value := range vs.Values {
+			lit, ok := value.(*ast.BasicLit)
+			if !ok {
+				continue
+			}
+			out = append(out, Problem(stringsTrimQuotes(lit.Value)))
+		}
+		return true
+	})
+	if len(out) == 0 {
+		t.Fatal("state.go declared no Problem constants")
+	}
+	return out
+}
+
+func stringsTrimQuotes(s string) string {
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		return s[1 : len(s)-1]
+	}
+	return s
+}
+
+// TestSeverityForCoversEveryProblemConstant is the completeness gate for
+// identity.SeverityFor: every Problem constant has a mapped Severity, and
+// an unmapped constant fails this test rather than silently returning the
+// zero value. Phase 8's doctor is the second consumer of this table.
+func TestSeverityForCoversEveryProblemConstant(t *testing.T) {
+	want := map[Problem]Severity{
+		ProblemNoSSHHostBlock:   SeverityWarning,
+		ProblemNoGitconfigBlock: SeverityWarning,
+		ProblemFragmentMissing:  SeverityError,
+		ProblemKeyFileMissing:   SeverityError,
+		ProblemKeyUnreferenced:  SeverityInfo,
+	}
+	for _, p := range problemConstants(t) {
+		got := SeverityFor(p)
+		if got == "" {
+			t.Errorf("SeverityFor(%q) is unmapped — add it to the table", p)
+			continue
+		}
+		if expected, ok := want[p]; ok && got != expected {
+			t.Errorf("SeverityFor(%q) = %q, want %q", p, got, expected)
+		}
+	}
+	for p, expected := range want {
+		if got := SeverityFor(p); got != expected {
+			t.Errorf("SeverityFor(%q) = %q, want %q", p, got, expected)
+		}
+	}
+}
+
+func TestSeverityForUnknownProblemIsEmpty(t *testing.T) {
+	if got := SeverityFor(Problem("not-a-real-problem")); got != "" {
+		t.Errorf("SeverityFor(unknown) = %q, want empty so an unmapped constant is a loud miss", got)
 	}
 }

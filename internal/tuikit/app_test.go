@@ -51,6 +51,32 @@ func TestNumberKeysSwitchTabs(t *testing.T) {
 	}
 }
 
+// TestTabsAndPaletteReachAllPrimaryViews pins SHELL-02 against the frozen
+// FIX-02 four-tab shell: number keys 1–4 switch the four primary views,
+// the palette offers those four plus Help (five entries), and a fifth
+// number key does not invent a tab the approved design absorbed into Doctor.
+func TestTabsAndPaletteReachAllPrimaryViews(t *testing.T) {
+	want := []TabID{TabIdentities, TabGlobalSSH, TabGlobalGit, TabDoctor}
+	a := NewApp(stubBackend{})
+	for i, tab := range want {
+		key := string(rune('1' + i))
+		a, _ = press(t, a, key)
+		if a.tab != tab {
+			t.Errorf("key %s → tab %v, want %v", key, a.tab, tab)
+		}
+	}
+	if len(paletteEntries) != 5 {
+		t.Errorf("palette entries = %d, want 5 (four views + help)", len(paletteEntries))
+	}
+	a, _ = press(t, a, "ctrl+p")
+	view := appView(a)
+	for _, e := range paletteEntries {
+		if !strings.Contains(view, e.label) {
+			t.Errorf("palette missing %q", e.label)
+		}
+	}
+}
+
 func TestHelpOverlayShowsFullLegend(t *testing.T) {
 	a := NewApp(stubBackend{})
 	a, _ = press(t, a, "?")

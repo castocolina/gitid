@@ -40,6 +40,9 @@ type DemoIdentity struct {
 	// Real SSH endpoint + port (SSHUI-01); optional for seeded rows.
 	Hostname string
 	Port     int
+	// SigningKeyPath is the fragment's user.signingkey value as parsed,
+	// never derived from KeyPath (MGR-03). Empty means absent.
+	SigningKeyPath string
 	// ReuseKeyPath carries the D-10 "reuse an existing key" selection through
 	// to the committed write — non-empty means Persist must NOT generate a
 	// new key pair, it must point the identity at this existing key (KEY-06).

@@ -290,7 +290,8 @@ gate-copy-freeze:
 		'%s will be removed from active use; a copy of the key pair exists at %s.' \
 		'Repo remotes using git@<alias>: cannot be scanned and will break after this delete.' \
 		'The old key stays valid at %s during this window — upload the new key, verify it, then remove the old one there.' \
-		'Old key archived to %s'; \
+		'Old key archived to %s' \
+		'gitid always writes'; \
 	do \
 		if grep -rqF -- "$$s" internal/tuikit internal/identity; then \
 			echo "    ok   $$s"; \
