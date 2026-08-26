@@ -97,3 +97,17 @@ Not applicable — Go Bubble Tea v2 TUI, no shadcn/npm component registry (`comp
 - `.planning/phases/05-identity-manager/05-UI-SPEC.md` (audit baseline)
 - `.planning/phases/05-identity-manager/05-REVIEW-FIX.md` (18 already-fixed findings, folded in as context)
 - Real-PTY capture evidence: `tmp/ui-frames/identity-manager-action-menu.txt`, `identity-manager-key-ceremony-rotate.txt`, `identity-manager-key-ceremony-repair.txt`, `identity-manager-list-empty.txt`, `identity-manager-detail-ssh-first.txt`, `identity-manager-delete-git-only-post-restart.txt`, `identity-manager-delete-everything-clean.txt`, `identity-manager-delete-everything-planted-hits.txt`
+
+---
+
+## Resolution
+
+**Status: resolved** (2026-08-26, commit `7468bcf`)
+
+All 3 priority findings fixed test-first:
+
+1. **Leftover mockup copy** — `identities.go`'s status line no longer claims "every action is dummy"; replaced with "every action writes real files." Guarded by `TestIdentitiesListStatusHasNoLeftoverMockupCopy`.
+2. **Unbounded receipt overflow** — `ceremony.go`'s `Wrote →`/`Backed up →` lists now clip at `receiptListMaxLines` (6) with a visible "+N more lines" cue, same pattern as `PreviewBlock`/`fitPane` elsewhere in the codebase. The "Done (Enter)" CTA is now always reachable regardless of target/backup count. Guarded by `TestCeremonyReceiptClipsLongTargetAndBackupLists`.
+3. **Footer mid-word truncation** — `renderFooterLine` now drops a whole trailing action when it doesn't fit at width, instead of `ansi.Truncate` cutting a label mid-word. Guarded by `TestRenderFooterLineNeverCutsAWordMidWord`.
+
+Independently verified post-fix: `go build`, `go test -race` (1468 tests), `make lint` (0 issues), `make gate-visual-regression`, `make test-e2e` all green.
