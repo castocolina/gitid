@@ -52,6 +52,8 @@ prompt.
 - Core logic lives in a UI-free package and is built test-first (TDD).
 - Never write to a user's `~/.ssh/config` or `~/.gitconfig` without a
   timestamped backup, idempotent managed blocks, and explicit confirmation.
+- Code exploration: see `AGENTS.md` § Code Exploration (`codegraph_explore`
+  before Grep/Read; `rg` over `grep` as fallback).
 
 ## Commits
 
