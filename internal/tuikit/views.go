@@ -359,6 +359,16 @@ type GlobalSSHOptionView struct {
 	WritableToHostStar  bool
 }
 
+// Selectable is the one predicate for the toggle key, the checkbox click,
+// and the checkbox glyph: only a needs-action or set-but-differs row that
+// is writable to Host * and carries no probe error can be chosen.
+func (o GlobalSSHOptionView) Selectable() bool {
+	if o.ProbeError != "" || !o.WritableToHostStar {
+		return false
+	}
+	return o.State == GlobalSSHNeedsAction || o.State == GlobalSSHDiffers
+}
+
 // GlobalSSHApplyPlanView is the confirmed-apply preview scene: the resolved
 // targets, the promised backup paths, and the diff the ceremony previews.
 // ShadowWarnings stays empty in plan 06-01 and is filled by 06-04's pre-write

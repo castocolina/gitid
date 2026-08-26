@@ -2,9 +2,13 @@ package tuikit
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // gssApp returns an App on the Global SSH tab.
@@ -72,8 +76,8 @@ func TestGlobalSSHApplySubsetMarksAppliedAndShowsDeclined(t *testing.T) {
 	m := gssModel(t, a)
 	// Initial chosen: every needs-action key EXCEPT ForwardAgent.
 	keys := m.applyChosen(m.overlaidOptions(a.state))
-	if len(keys) != 3 {
-		t.Fatalf("initial chosen = %v, want 3 (ForwardAgent declined)", keys)
+	if len(keys) != 2 {
+		t.Fatalf("initial chosen = %v, want 2 writable keys (IdentitiesOnly is verify-only, ForwardAgent declined)", keys)
 	}
 
 	a, _ = press(t, a, "a")
@@ -81,8 +85,11 @@ func TestGlobalSSHApplySubsetMarksAppliedAndShowsDeclined(t *testing.T) {
 	if !strings.Contains(view, "Write Host * managed block to ~/.ssh/config") {
 		t.Fatalf("apply ceremony missing:\n%s", view)
 	}
-	if !strings.Contains(view, "+ StrictHostKeyChecking accept-new") || !strings.Contains(view, "+ IdentitiesOnly yes") {
-		t.Error("chosen keys must render as + diff lines")
+	if !strings.Contains(view, "+ StrictHostKeyChecking accept-new") || !strings.Contains(view, "+ HashKnownHosts yes") {
+		t.Error("chosen writable keys must render as + diff lines")
+	}
+	if strings.Contains(view, "+ IdentitiesOnly") {
+		t.Error("IdentitiesOnly must never appear as a Host * write")
 	}
 	if !strings.Contains(view, "ForwardAgent — left unchanged (declined; advisory)") {
 		t.Error("declined pending key must render the left-unchanged line")
@@ -107,11 +114,11 @@ func TestGlobalSSHApplySubsetMarksAppliedAndShowsDeclined(t *testing.T) {
 	// The receipt appears ONLY from the commit's explicit success.
 	model, _ := a.Update(msg)
 	a = model.(App)
-	if !strings.Contains(appView(a), "3 of 4 recommended options applied to Host *.") {
+	if !strings.Contains(appView(a), "2 of 3 recommended options applied to Host *.") {
 		t.Error("result message missing")
 	}
-	if len(a.state.SSHApplied) != 3 {
-		t.Fatalf("SSHApplied = %v, want 3 only after the commit succeeded", a.state.SSHApplied)
+	if len(a.state.SSHApplied) != 2 {
+		t.Fatalf("SSHApplied = %v, want 2 only after the commit succeeded", a.state.SSHApplied)
 	}
 
 	a, _ = press(t, a, "enter") // done → back to browse
@@ -123,21 +130,23 @@ func TestGlobalSSHApplySubsetMarksAppliedAndShowsDeclined(t *testing.T) {
 		t.Error("applied keys must render the Applied-by-gitid overlay one-liner")
 	}
 	// ForwardAgent is still pending.
-	if got := pendingOptions(m.overlaidOptions(a.state)); len(got) != 1 || got[0].Key != "ForwardAgent" {
-		t.Errorf("pending after apply = %v, want only ForwardAgent", got)
+	got := pendingOptions(gssModel(t, a).overlaidOptions(a.state))
+	if len(got) != 1 || got[0].Key != "ForwardAgent" {
+		t.Errorf("pending after apply = %v, want only ForwardAgent (declined; IdentitiesOnly is verify-only)", got)
 	}
 }
 
 func TestGlobalSSHSpaceTogglesChoice(t *testing.T) {
-	a := gssApp(t) // detail starts at IdentitiesOnly (pending, chosen)
+	a := gssApp(t)
+	a, _ = press(t, a, "up") // IdentitiesOnly is verify-only; HashKnownHosts is writable.
 	a, _ = press(t, a, "space")
 	m := gssModel(t, a)
-	if m.chosen["IdentitiesOnly"] {
+	if m.chosen["HashKnownHosts"] {
 		t.Error("space must uncheck the selected pending option")
 	}
 	a, _ = press(t, a, "space")
 	m = gssModel(t, a)
-	if !m.chosen["IdentitiesOnly"] {
+	if !m.chosen["HashKnownHosts"] {
 		t.Error("space must re-check the selected pending option")
 	}
 }
@@ -381,5 +390,302 @@ func TestGlobalSSHApplyFailureRendersRetryNoReceiptNoApply(t *testing.T) {
 	}
 	if len(a.state.SSHApplied) != 0 {
 		t.Error("no ApplySSH action may be emitted after a failed commit")
+	}
+}
+
+func TestOptionRowFourStatesAreTwoLines(t *testing.T) {
+	for _, o := range []GlobalSSHOptionView{
+		{Key: "StrictHostKeyChecking", CurrentValue: "ask", Recommended: "accept-new", State: GlobalSSHNeedsAction, WritableToHostStar: true},
+		{Key: "ForwardAgent", CurrentValue: "yes", Recommended: "no", State: GlobalSSHDiffers, AttributedToUser: true, WritableToHostStar: true},
+		{Key: "AddKeysToAgent", CurrentValue: "yes", Recommended: "yes", State: GlobalSSHAlreadySet, WritableToHostStar: true},
+		{Key: "UseKeychain", CurrentValue: "", Recommended: "yes", State: GlobalSSHNotApplicable, NotApplicableReason: GlobalSSHReasonPlatform},
+	} {
+		got := strings.Split(stripANSI(optionRow(o, false, false, false, 44)), "\n")
+		if len(got) != optionRowLines {
+			t.Errorf("%s state %v: %d lines, want %d", o.Key, o.State, len(got), optionRowLines)
+		}
+	}
+}
+
+func TestOptionRowNeedsActionAndDiffersShareWarningGlyph(t *testing.T) {
+	needs := optionRow(GlobalSSHOptionView{Key: "HashKnownHosts", CurrentValue: "no", Recommended: "yes", State: GlobalSSHNeedsAction, WritableToHostStar: true}, false, false, false, 80)
+	differs := optionRow(GlobalSSHOptionView{Key: "ForwardAgent", CurrentValue: "yes", Recommended: "no", State: GlobalSSHDiffers, AttributedToUser: true, WritableToHostStar: true}, false, false, false, 80)
+	warn := styleWarning.Render("!")
+	if !strings.Contains(needs, warn) || !strings.Contains(differs, warn) {
+		t.Fatal("needs-action and set-but-differs must share the warning glyph and theme role")
+	}
+	if strings.Contains(needs, styleHealthy.Render("✓")) || strings.Contains(differs, styleHealthy.Render("✓")) {
+		t.Fatal("flagged rows must not use the healthy glyph")
+	}
+	n2 := strings.Split(stripANSI(needs), "\n")[1]
+	d2 := strings.Split(stripANSI(differs), "\n")[1]
+	if n2 == d2 {
+		t.Fatalf("line-2 texts must differ; both %q", n2)
+	}
+	if !strings.Contains(d2, GlobalSSHWordDiffersUser) {
+		t.Fatalf("differs line-2 = %q, want %q", d2, GlobalSSHWordDiffersUser)
+	}
+}
+
+func TestOptionRowDiffersAttribution(t *testing.T) {
+	user := optionRow(GlobalSSHOptionView{Key: "ForwardAgent", CurrentValue: "yes", Recommended: "no", State: GlobalSSHDiffers, AttributedToUser: true, WritableToHostStar: true}, false, false, false, 100)
+	outside := optionRow(GlobalSSHOptionView{Key: "ForwardAgent", CurrentValue: "yes", Recommended: "no", State: GlobalSSHDiffers, AttributedToUser: false, WritableToHostStar: true}, false, false, false, 100)
+	u2 := strings.Split(stripANSI(user), "\n")[1]
+	o2 := strings.Split(stripANSI(outside), "\n")[1]
+	if u2 == o2 {
+		t.Fatalf("attributed and non-attributed differs line-2 must differ; both %q", u2)
+	}
+	if !strings.Contains(u2, "your choice") {
+		t.Fatalf("user-attributed line-2 = %q, want the user-attribution wording", u2)
+	}
+	if strings.Contains(o2, "your choice") {
+		t.Fatalf("non-attributed line-2 = %q must not contain the user-attribution wording", o2)
+	}
+	if !strings.Contains(o2, GlobalSSHWordDiffersOutside) {
+		t.Fatalf("non-attributed line-2 = %q, want %q", o2, GlobalSSHWordDiffersOutside)
+	}
+}
+
+func TestOptionRowAlreadySetUsesHealthyGlyph(t *testing.T) {
+	got := optionRow(GlobalSSHOptionView{Key: "AddKeysToAgent", CurrentValue: "yes", Recommended: "yes", State: GlobalSSHAlreadySet, WritableToHostStar: true}, false, false, false, 80)
+	if !strings.Contains(got, styleHealthy.Render("✓")) {
+		t.Fatal("already-set row must use the healthy glyph")
+	}
+	if strings.Contains(got, styleWarning.Render("!")) {
+		t.Fatal("already-set row must not use the warning glyph")
+	}
+}
+
+func TestOptionRowAlreadySetBaselineProvenance(t *testing.T) {
+	parsed := GlobalSSHOptionView{
+		Key: "AddKeysToAgent", CurrentValue: "yes", Recommended: "yes", State: GlobalSSHAlreadySet,
+		AttributedToUser: true, WritableToHostStar: true,
+		Provenance: "set by you at ~/.ssh/config line 4",
+	}
+	baseline := GlobalSSHOptionView{
+		Key: "ForwardAgent", CurrentValue: "no", Recommended: "no", State: GlobalSSHAlreadySet,
+		AttributedToUser: false, WritableToHostStar: true,
+		Provenance: "not set (OpenSSH default: no)",
+	}
+	if parsed.Provenance == baseline.Provenance {
+		t.Fatal("gitid-parsed and baseline provenance must differ")
+	}
+	if strings.Contains(baseline.Provenance, "your choice") || strings.Contains(baseline.Provenance, "/") {
+		t.Fatalf("baseline provenance = %q must contain neither user-attribution nor a file path", baseline.Provenance)
+	}
+	b2 := strings.Split(stripANSI(optionRow(baseline, false, false, false, 100)), "\n")[1]
+	if !strings.Contains(b2, GlobalSSHWordSafeByDefault) {
+		t.Fatalf("baseline already-set line-2 = %q, want %q", b2, GlobalSSHWordSafeByDefault)
+	}
+	if strings.Contains(b2, "your choice") || strings.Contains(b2, "~/.ssh") {
+		t.Fatalf("baseline already-set line-2 = %q must not credit the user or a file", b2)
+	}
+}
+
+func TestOptionRowNotApplicableReasonsAreDistinct(t *testing.T) {
+	reasons := []GlobalSSHNotApplicableReason{
+		GlobalSSHReasonPlatform, GlobalSSHReasonVersionTooOld, GlobalSSHReasonVersionUnverified, GlobalSSHReasonNothingToVerify,
+	}
+	seen := map[string]GlobalSSHNotApplicableReason{}
+	platform := notApplicableSentence(GlobalSSHReasonPlatform)
+	for _, r := range reasons {
+		o := GlobalSSHOptionView{Key: "UseKeychain", State: GlobalSSHNotApplicable, NotApplicableReason: r}
+		if r != GlobalSSHReasonPlatform {
+			o.Key = "StrictHostKeyChecking"
+		}
+		text := stripANSI(optionRow(o, false, false, false, 80))
+		sent := notApplicableSentence(r)
+		if sent == "" || strings.Count(text, sent) == 0 {
+			t.Fatalf("reason %v: sentence %q missing from %q", r, sent, text)
+		}
+		if prev, ok := seen[sent]; ok {
+			t.Fatalf("reasons %v and %v share sentence %q", prev, r, sent)
+		}
+		seen[sent] = r
+		if r != GlobalSSHReasonPlatform && strings.Contains(text, platform) {
+			t.Fatalf("version/verify reason %v leaked the platform sentence %q", r, platform)
+		}
+		if strings.Contains(text, glyphCheckOn) || strings.Contains(text, glyphCheckOff) {
+			t.Fatalf("not-applicable row for %v must contain neither checkbox glyph", r)
+		}
+		if strings.Contains(text, "→") {
+			t.Fatalf("not-applicable row for %v must omit the recommendation arrow", r)
+		}
+	}
+	if len(seen) != 4 {
+		t.Fatalf("got %d distinct sentences, want 4", len(seen))
+	}
+}
+
+func TestGlobalSSHSelectablePredicate(t *testing.T) {
+	ok := GlobalSSHOptionView{Key: "HashKnownHosts", State: GlobalSSHNeedsAction, WritableToHostStar: true}
+	if !ok.Selectable() {
+		t.Fatal("writable needs-action row must be selectable")
+	}
+	differs := GlobalSSHOptionView{Key: "ForwardAgent", State: GlobalSSHDiffers, WritableToHostStar: true}
+	if !differs.Selectable() {
+		t.Fatal("writable set-but-differs row must be selectable")
+	}
+	cases := []GlobalSSHOptionView{
+		{Key: "AddKeysToAgent", State: GlobalSSHAlreadySet, WritableToHostStar: true},
+		{Key: "UseKeychain", State: GlobalSSHNotApplicable, NotApplicableReason: GlobalSSHReasonPlatform, WritableToHostStar: true},
+		{Key: "IdentitiesOnly", State: GlobalSSHNeedsAction, WritableToHostStar: false},
+		{Key: "HashKnownHosts", State: GlobalSSHNeedsAction, WritableToHostStar: true, ProbeError: "ssh -G failed"},
+	}
+	for _, o := range cases {
+		if o.Selectable() {
+			t.Errorf("%s state=%v writable=%v probe=%q: Selectable() = true, want false", o.Key, o.State, o.WritableToHostStar, o.ProbeError)
+		}
+	}
+}
+
+func TestGlobalSSHToggleAndClickRespectSelectability(t *testing.T) {
+	b := &stubBackend{sshOptions: []GlobalSSHOptionView{
+		{Key: "StrictHostKeyChecking", CurrentValue: "ask", Recommended: "accept-new", Risk: "Medium", OneLiner: "a", State: GlobalSSHNeedsAction, WritableToHostStar: true},
+		{Key: "ForwardAgent", CurrentValue: "no", Recommended: "no", Risk: "High", OneLiner: "b", State: GlobalSSHAlreadySet, Provenance: "not set (OpenSSH default: no)", WritableToHostStar: true},
+		{Key: "HashKnownHosts", CurrentValue: "no", Recommended: "yes", Risk: "Low", OneLiner: "c", State: GlobalSSHDiffers, AttributedToUser: true, WritableToHostStar: true},
+		{Key: "IdentitiesOnly", CurrentValue: "mixed", Recommended: "yes", Risk: "High", OneLiner: "d", Explanation: "per-alias", State: GlobalSSHNeedsAction, WritableToHostStar: false},
+		{Key: "AddKeysToAgent", CurrentValue: "yes", Recommended: "yes", Risk: "Low", OneLiner: "e", State: GlobalSSHNeedsAction, WritableToHostStar: true, ProbeError: "ssh -G failed"},
+		{Key: "UseKeychain", CurrentValue: "", Recommended: "yes", Risk: "Low", OneLiner: "f", State: GlobalSSHNotApplicable, NotApplicableReason: GlobalSSHReasonPlatform},
+	}}
+	m := newGlobalSSHModel(b)
+	activated, _ := m.activate(Seed())
+	m = activated.(globalSSHModel)
+	m.chosen = map[string]bool{}
+	s := Seed()
+	width, height := minFrameWidth, minFrameHeight
+
+	assertUnchanged := func(t *testing.T, key string, via string) {
+		t.Helper()
+		m.detailKey = key
+		before := len(m.chosen)
+		res := m.handleKey(pressKey("space"), s)
+		m = res.model.(globalSSHModel)
+		if len(m.chosen) != before || m.chosen[key] {
+			t.Fatalf("%s via space: chosen = %v, want unchanged", via, m.chosen)
+		}
+		row := m.detailIndex(m.overlaidOptions(s))
+		res = m.handleClick(3, gssOptionsTopLines(s)+row*optionRowLines, width, height, s)
+		m = res.model.(globalSSHModel)
+		if m.chosen[key] {
+			t.Fatalf("%s via checkbox click: chosen gained %q", via, key)
+		}
+	}
+	assertUnchanged(t, "ForwardAgent", "already-set baseline")
+	assertUnchanged(t, "UseKeychain", "not-applicable platform")
+	m.options[0].State = GlobalSSHNotApplicable
+	m.options[0].NotApplicableReason = GlobalSSHReasonVersionTooOld
+	assertUnchanged(t, "StrictHostKeyChecking", "not-applicable version-too-old")
+	m.options[0].NotApplicableReason = GlobalSSHReasonVersionUnverified
+	assertUnchanged(t, "StrictHostKeyChecking", "not-applicable version-unverified")
+	m.options[0].NotApplicableReason = GlobalSSHReasonNothingToVerify
+	assertUnchanged(t, "StrictHostKeyChecking", "not-applicable nothing-to-verify")
+	m.options[0].State = GlobalSSHNeedsAction
+	m.options[0].NotApplicableReason = GlobalSSHReasonNone
+	assertUnchanged(t, "AddKeysToAgent", "probe-error")
+	assertUnchanged(t, "IdentitiesOnly", "IdentitiesOnly")
+
+	m.detailKey = "HashKnownHosts"
+	res := m.handleKey(pressKey("space"), s)
+	m = res.model.(globalSSHModel)
+	if !m.chosen["HashKnownHosts"] {
+		t.Fatal("space on a set-but-differs row must add that key")
+	}
+}
+
+func TestGlobalSSHDetailShowsProvenanceAndProbeError(t *testing.T) {
+	b := &stubBackend{sshOptions: []GlobalSSHOptionView{
+		{Key: "HashKnownHosts", CurrentValue: "no", Recommended: "yes", Risk: "Low", OneLiner: "hash", Provenance: "set by you at ~/.ssh/config line 9", State: GlobalSSHNeedsAction, WritableToHostStar: true},
+		{Key: "ForwardAgent", CurrentValue: "yes", Recommended: "no", Risk: "High", OneLiner: "agent", ProbeError: "ssh -G failed: exit 255", State: GlobalSSHNeedsAction, WritableToHostStar: true},
+	}}
+	a := NewApp(b)
+	a, _ = press(t, a, "2")
+	if !strings.Contains(appView(a), "set by you at ~/.ssh/config line 9") {
+		t.Fatal("detail pane must show the selected row's provenance label")
+	}
+	m := gssModel(t, a)
+	m.detailKey = "ForwardAgent"
+	a.screens[TabGlobalSSH] = m
+	if !strings.Contains(appView(a), "ssh -G failed: exit 255") {
+		t.Fatal("probe-error row's detail pane must show the error note")
+	}
+}
+
+func TestGlobalSSHNoColorStatesDistinguishable(t *testing.T) {
+	b := &stubBackend{sshOptions: []GlobalSSHOptionView{
+		{Key: "StrictHostKeyChecking", CurrentValue: "ask", Recommended: "accept-new", Risk: "Medium", OneLiner: "a", State: GlobalSSHNeedsAction, WritableToHostStar: true},
+		{Key: "ForwardAgent", CurrentValue: "yes", Recommended: "no", Risk: "High", OneLiner: "b", State: GlobalSSHDiffers, AttributedToUser: true, WritableToHostStar: true},
+		{Key: "HashKnownHosts", CurrentValue: "yes", Recommended: "yes", Risk: "Low", OneLiner: "c", State: GlobalSSHAlreadySet, WritableToHostStar: true, Provenance: "set by you at ~/.ssh/config line 1"},
+		{Key: "UseKeychain", CurrentValue: "", Recommended: "yes", Risk: "Low", OneLiner: "d", State: GlobalSSHNotApplicable, NotApplicableReason: GlobalSSHReasonPlatform},
+	}}
+	a := NewApp(b)
+	a, _ = press(t, a, "2")
+	view := appView(a)
+	if !strings.Contains(view, "now: ask → accept-new") {
+		t.Fatal("needs-action must keep the plain recommendation form")
+	}
+	if !strings.Contains(view, "differs") {
+		t.Fatal("set-but-differs must be named by its word")
+	}
+	if !strings.Contains(view, GlobalSSHWordAlreadySet) {
+		t.Fatal("already-set must be named by its word")
+	}
+	if !strings.Contains(view, "not applicable") {
+		t.Fatal("not-applicable must be named by its reason sentence")
+	}
+}
+
+func TestGlobalSSHStatusTallyCountsNeedsActionAndDiffers(t *testing.T) {
+	b := &stubBackend{sshOptions: []GlobalSSHOptionView{
+		{Key: "StrictHostKeyChecking", CurrentValue: "ask", Recommended: "accept-new", Risk: "Medium", OneLiner: "a", State: GlobalSSHNeedsAction, WritableToHostStar: true},
+		{Key: "ForwardAgent", CurrentValue: "yes", Recommended: "no", Risk: "High", OneLiner: "b", State: GlobalSSHDiffers, WritableToHostStar: true},
+		{Key: "HashKnownHosts", CurrentValue: "yes", Recommended: "yes", Risk: "Low", OneLiner: "c", State: GlobalSSHAlreadySet, WritableToHostStar: true},
+		{Key: "IdentitiesOnly", CurrentValue: "mixed", Recommended: "yes", Risk: "High", OneLiner: "d", State: GlobalSSHNeedsAction, WritableToHostStar: false},
+		{Key: "AddKeysToAgent", CurrentValue: "yes", Recommended: "yes", Risk: "Low", OneLiner: "e", State: GlobalSSHAlreadySet, WritableToHostStar: true},
+		{Key: "UseKeychain", CurrentValue: "", Recommended: "yes", Risk: "Low", OneLiner: "f", State: GlobalSSHNotApplicable, NotApplicableReason: GlobalSSHReasonPlatform},
+	}}
+	m := newGlobalSSHModel(b)
+	activated, _ := m.activate(Seed())
+	m = activated.(globalSSHModel)
+	sv := m.view(Seed(), minFrameWidth, minFrameHeight)
+	want := 0
+	for _, o := range m.overlaidOptions(Seed()) {
+		if o.needsAttention() {
+			want++
+		}
+	}
+	if want != 3 {
+		t.Fatalf("fixture attention count = %d, want 3 (needs-action + differs, skip N/A and already-set)", want)
+	}
+	if !strings.Contains(sv.status, fmt.Sprintf("%d of %d options need action", want, len(b.sshOptions))) {
+		t.Fatalf("status = %q, want tally %d of %d", sv.status, want, len(b.sshOptions))
+	}
+}
+
+func TestGlobalSSHGeometryWithEveryStateAndBanner(t *testing.T) {
+	b := &stubBackend{sshOptions: []GlobalSSHOptionView{
+		{Key: "StrictHostKeyChecking", CurrentValue: "ask\x1b[0m" + strings.Repeat("X", 80), Recommended: "accept-new", Risk: "Medium", OneLiner: "a", State: GlobalSSHNeedsAction, WritableToHostStar: true},
+		{Key: "ForwardAgent", CurrentValue: "yes", Recommended: "no", Risk: "High", OneLiner: "b", State: GlobalSSHDiffers, AttributedToUser: false, WritableToHostStar: true},
+		{Key: "HashKnownHosts", CurrentValue: "yes", Recommended: "yes", Risk: "Low", OneLiner: "c", State: GlobalSSHAlreadySet, WritableToHostStar: true},
+		{Key: "IdentitiesOnly", CurrentValue: "mixed", Recommended: "yes", Risk: "High", OneLiner: "d", Explanation: GlobalSSHDetailExplanation, State: GlobalSSHNeedsAction, WritableToHostStar: false},
+		{Key: "AddKeysToAgent", CurrentValue: "yes", Recommended: "yes", Risk: "Low", OneLiner: "e", State: GlobalSSHAlreadySet, Provenance: "not set (OpenSSH default: yes)", WritableToHostStar: true},
+		{Key: "UseKeychain", CurrentValue: "", Recommended: "yes", Risk: "Low", OneLiner: "f", State: GlobalSSHNotApplicable, NotApplicableReason: GlobalSSHReasonPlatform},
+	}}
+	a := NewApp(b)
+	model, _ := a.Update(tea.WindowSizeMsg{Width: minFrameWidth, Height: minFrameHeight})
+	a = model.(App)
+	a, _ = press(t, a, "2")
+	content := a.View().Content
+	lines := strings.Split(content, "\n")
+	if len(lines) != minFrameHeight {
+		t.Fatalf("frame has %d rows, want %d", len(lines), minFrameHeight)
+	}
+	for i, line := range lines {
+		if w := ansi.StringWidth(stripANSI(line)); w > minFrameWidth {
+			t.Errorf("line %d width %d > %d: %q", i, w, minFrameWidth, stripANSI(line))
+		}
+	}
+	if !strings.Contains(appView(a), "The doctor found 3 SSH findings beyond these global options.") {
+		t.Fatal("geometry fixture must keep the findings banner")
 	}
 }

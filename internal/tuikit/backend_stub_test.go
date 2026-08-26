@@ -475,14 +475,15 @@ func fixtureGlobalSSHOptionViews() []GlobalSSHOptionView {
 			state = GlobalSSHNeedsAction
 		}
 		out = append(out, GlobalSSHOptionView{
-			Key:          o.Key,
-			CurrentValue: o.Current,
-			Provenance:   "fixture value — the test backend does not probe a machine",
-			Recommended:  o.Recommended,
-			Risk:         o.Risk,
-			OneLiner:     o.OneLiner,
-			Explanation:  explanation,
-			State:        state,
+			Key:                o.Key,
+			CurrentValue:       o.Current,
+			Provenance:         "fixture value — the test backend does not probe a machine",
+			Recommended:        o.Recommended,
+			Risk:               o.Risk,
+			OneLiner:           o.OneLiner,
+			Explanation:        explanation,
+			State:              state,
+			WritableToHostStar: o.Key != "IdentitiesOnly",
 		})
 	}
 	return out

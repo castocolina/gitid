@@ -307,7 +307,19 @@ gate-copy-freeze:
 		'gitid always writes' \
 		'Write Host * managed block to ' \
 		'This dry run tests only the current key'\''s reachability — the new key has not been generated, uploaded, or resolved, so nothing about the post-rotation state is proven.' \
-		'OpenSSH version could not be read; run ssh -V to check compatibility'; \
+		'OpenSSH version could not be read; run ssh -V to check compatibility' \
+		'set by you at ' \
+		'set in ' \
+		'gitid cannot change this' \
+		'not set (OpenSSH default: ' \
+		'set outside your config' \
+		'set, differs from recommendation — your choice' \
+		'set, differs from recommendation — set outside your config' \
+		'safe by default' \
+		'not applicable (macOS-only setting)' \
+		'not applicable (OpenSSH too old for accept-new)' \
+		'not applicable (OpenSSH version could not be verified)' \
+		'not applicable (nothing on this machine to verify)'; \
 	do \
 		if grep -rqF -- "$$s" internal/tuikit internal/identity cmd/gitid internal/globalssh; then \
 			echo "    ok   $$s"; \

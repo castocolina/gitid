@@ -167,14 +167,21 @@ type appliedOption struct {
 	applied bool
 }
 
-// needsAction reports whether the row still wants action: an explicitly
-// applied row never does, and a row whose backend state is already-set,
-// differs, or not-applicable does what its state says.
 func (o appliedOption) needsAction() bool {
 	if o.applied {
 		return false
 	}
-	return o.State == GlobalSSHNeedsAction
+	return o.Selectable()
+}
+
+// needsAttention is the pinned tally rule (06-CONTEXT.md discretion):
+// needs-action and set-but-differs count together; not-applicable does not.
+// Plan 06-04's ceremony N-of-M must read this same predicate.
+func (o appliedOption) needsAttention() bool {
+	if o.applied {
+		return false
+	}
+	return o.State == GlobalSSHNeedsAction || o.State == GlobalSSHDiffers
 }
 
 // overlaidOptions maps the model's LIVE backend views through the applied
@@ -280,7 +287,7 @@ func (m globalSSHModel) applyCeremonyFor(s DemoState) ceremonyModel {
 		}
 	}
 	for _, o := range options {
-		if !o.needsAction() {
+		if o.State == GlobalSSHAlreadySet {
 			lines = append(lines, "  "+o.Key+" "+o.Recommended+" (already set)")
 		}
 	}
@@ -428,7 +435,7 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 	case "space":
 		if m.subTab == gssOptions {
 			o := options[m.detailIndex(options)]
-			if o.needsAction() {
+			if o.Selectable() {
 				m.chosen = withToggled(m.chosen, o.Key)
 			}
 		}
@@ -516,7 +523,7 @@ func (m globalSSHModel) handleClick(x, y, width, height int, s DemoState) keyRes
 	if row >= len(options) {
 		return keyResult{model: m}
 	}
-	if options[row].needsAction() && m.clickOnCheckbox(x, y, width, height, s) {
+	if options[row].Selectable() && m.clickOnCheckbox(x, y, width, height, s) {
 		// The checkbox cell toggles THAT row without moving the selection
 		// (GlobalSsh.tsx:185 — Checkbox onClick stops propagation).
 		m.chosen = withToggled(m.chosen, options[row].Key)
@@ -580,13 +587,14 @@ func findingsBanner(s DemoState, section, beyond string) string {
 }
 
 // optionRow renders one master-list option row (2 lines).
-func optionRow(key, current, recommended, risk string, needsAction, chosen, selected, applied bool, width int) string {
+func optionRow(o GlobalSSHOptionView, chosen, selected, applied bool, width int) string {
 	marker := "  "
 	if selected {
 		marker = styleBold.Render("▸ ")
 	}
+	selectable := o.Selectable()
 	box := "   "
-	if needsAction {
+	if selectable {
 		box = glyphCheckOff + " "
 		if chosen {
 			box = glyphCheckOn + " "
@@ -594,21 +602,60 @@ func optionRow(key, current, recommended, risk string, needsAction, chosen, sele
 	} else if applied {
 		box = "✓ "
 	}
-	tone := styleHealthy.Render("✓")
-	if needsAction {
+	tone := " "
+	switch o.State {
+	case GlobalSSHAlreadySet:
+		tone = styleHealthy.Render("✓")
+	case GlobalSSHNeedsAction, GlobalSSHDiffers:
 		tone = styleWarning.Render("!")
 	}
-	name := styleBold.Render(key)
+	name := styleBold.Render(o.Key)
 	if selected {
-		name = styleSelected.Render(key)
+		name = styleSelected.Render(o.Key)
 	}
 	chip := ""
-	if risk != "" {
-		chip = "  " + styleFaint.Render("["+risk+"]")
+	if o.Risk != "" {
+		chip = "  " + styleFaint.Render("["+o.Risk+"]")
 	}
 	line1 := " " + marker + box + tone + " " + name + chip
-	line2 := "      " + styleFaint.Render("now: "+current+" → "+recommended)
+	line2 := "      " + styleFaint.Render(optionRowLine2(o))
 	return truncLine(line1, width) + "\n" + truncLine(line2, width)
+}
+
+func optionRowLine2(o GlobalSSHOptionView) string {
+	if o.State == GlobalSSHNotApplicable {
+		return notApplicableSentence(o.NotApplicableReason)
+	}
+	now := "now: " + o.CurrentValue + " → " + o.Recommended
+	switch o.State {
+	case GlobalSSHDiffers:
+		if o.AttributedToUser {
+			return now + "  " + GlobalSSHWordDiffersUser
+		}
+		return now + "  " + GlobalSSHWordDiffersOutside
+	case GlobalSSHAlreadySet:
+		if strings.HasPrefix(o.Provenance, "not set") {
+			return now + "  " + GlobalSSHWordSafeByDefault
+		}
+		return now + "  " + GlobalSSHWordAlreadySet
+	default:
+		return now
+	}
+}
+
+func notApplicableSentence(r GlobalSSHNotApplicableReason) string {
+	switch r {
+	case GlobalSSHReasonPlatform:
+		return GlobalSSHNAPlatform
+	case GlobalSSHReasonVersionTooOld:
+		return GlobalSSHNAVersionTooOld
+	case GlobalSSHReasonVersionUnverified:
+		return GlobalSSHNAVersionUnverified
+	case GlobalSSHReasonNothingToVerify:
+		return GlobalSSHNANothingToVerify
+	default:
+		return GlobalSSHNAPlatform
+	}
 }
 
 // truncLine truncates a styled line to width cells with a visible `…` cue
@@ -621,13 +668,20 @@ func truncLine(line string, width int) string {
 // view implements screenModel.
 func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 	options := m.overlaidOptions(s)
-	pending := pendingOptions(options)
 	chosen := m.applyChosen(options)
 
+	// Status tally = needs-action + set-but-differs; skip not-applicable
+	// (06-CONTEXT.md discretion, pinned here so 06-04 cannot re-derive it).
+	attention := 0
+	for _, o := range options {
+		if o.needsAttention() {
+			attention++
+		}
+	}
 	status := "All recommendations applied or already set. Advisory, never a compliance gate."
 	tone := "info"
-	if len(pending) > 0 {
-		status = fmt.Sprintf("%d of %d options need action — %s", len(pending), len(options), GlobalSSHAdvisoryNote)
+	if attention > 0 {
+		status = fmt.Sprintf("%d of %d options need action — %s", attention, len(options), GlobalSSHAdvisoryNote)
 		tone = "warning"
 	}
 
@@ -687,7 +741,7 @@ func (m globalSSHModel) renderOptions(s DemoState, options []appliedOption, widt
 	var listRows []string
 	selIdx := m.detailIndex(options)
 	for i, o := range options {
-		listRows = append(listRows, optionRow(o.Key, o.CurrentValue, o.Recommended, o.Risk, o.needsAction(), m.chosen[o.Key], i == selIdx, o.applied, listWidth))
+		listRows = append(listRows, optionRow(o.GlobalSSHOptionView, m.chosen[o.Key], i == selIdx, o.applied, listWidth))
 	}
 	list := strings.Join(listRows, "\n")
 

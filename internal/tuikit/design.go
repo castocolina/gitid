@@ -232,6 +232,27 @@ Setting "IdentitiesOnly yes" on a Host block restricts ssh to ONLY the IdentityF
 // globalSshAdvisoryNote. Recommendations are ADVISORY, never blocking.
 const GlobalSSHAdvisoryNote = "Recommended, not required -- you can leave any option unchanged. This is advisory, never a compliance gate."
 
+// Frozen 06-03 copy: D-12 differs words, the safe-by-default already-set
+// phrasing, and the four not-applicable reason sentences (D-11/D-13).
+const (
+	// GlobalSSHWordDiffersUser is the D-12 line-2 word when gitid parsed the value.
+	GlobalSSHWordDiffersUser = "set, differs from recommendation — your choice"
+	// GlobalSSHWordDiffersOutside is the D-12 line-2 word when the value came from outside gitid's files.
+	GlobalSSHWordDiffersOutside = "set, differs from recommendation — set outside your config"
+	// GlobalSSHWordAlreadySet is the line-2 word when the value was set somewhere and equals the recommendation.
+	GlobalSSHWordAlreadySet = "already set"
+	// GlobalSSHWordSafeByDefault is the line-2 word when OpenSSH's own default already equals the recommendation.
+	GlobalSSHWordSafeByDefault = "safe by default"
+	// GlobalSSHNAPlatform is the D-11 not-applicable sentence (UseKeychain off macOS).
+	GlobalSSHNAPlatform = "not applicable (macOS-only setting)"
+	// GlobalSSHNAVersionTooOld is the D-13 not-applicable sentence when OpenSSH is below the minimum.
+	GlobalSSHNAVersionTooOld = "not applicable (OpenSSH too old for accept-new)"
+	// GlobalSSHNAVersionUnverified is the D-13 not-applicable sentence when ssh -V could not be read.
+	GlobalSSHNAVersionUnverified = "not applicable (OpenSSH version could not be verified)"
+	// GlobalSSHNANothingToVerify is the IdentitiesOnly sentence when no managed hosts exist.
+	GlobalSSHNANothingToVerify = "not applicable (nothing on this machine to verify)"
+)
+
 // ---------------------------------------------------------------------------
 // Global Git options (GGIT-01's baseline/recipe-default catalog).
 // ---------------------------------------------------------------------------

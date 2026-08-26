@@ -448,8 +448,10 @@ func TestReservedFooterHonestInKeyConsumingStates(t *testing.T) {
 // --------------------------------------------------------------------------
 
 func TestOptionRowNowValueClipsWithEllipsis(t *testing.T) {
-	long := optionRow("StrictHostKeyChecking",
-		"not set (OpenSSH default: ask)", "ask", "Medium", true, true, false, false, 44)
+	long := optionRow(GlobalSSHOptionView{
+		Key: "StrictHostKeyChecking", CurrentValue: "not set (OpenSSH default: ask)",
+		Recommended: "ask", Risk: "Medium", State: GlobalSSHNeedsAction, WritableToHostStar: true,
+	}, true, false, false, 44)
 	lines := strings.Split(stripANSI(long), "\n")
 	if len(lines) != optionRowLines {
 		t.Fatalf("option row = %d lines, want %d", len(lines), optionRowLines)
@@ -457,7 +459,9 @@ func TestOptionRowNowValueClipsWithEllipsis(t *testing.T) {
 	if !strings.HasSuffix(lines[1], "…") {
 		t.Errorf("a clipped `now:` line must end with …; got %q", lines[1])
 	}
-	short := stripANSI(optionRow("K", "a", "b", "", true, false, false, false, 44))
+	short := stripANSI(optionRow(GlobalSSHOptionView{
+		Key: "K", CurrentValue: "a", Recommended: "b", State: GlobalSSHNeedsAction, WritableToHostStar: true,
+	}, false, false, false, 44))
 	if strings.Contains(short, "…") {
 		t.Errorf("an unclipped row must not carry the … cue; got %q", short)
 	}

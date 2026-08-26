@@ -1454,9 +1454,9 @@ func (b *realBackend) globalSSHProvenanceLabel(st globalssh.OptionStatus) string
 	case globalssh.SourceSystemFile:
 		return fmt.Sprintf("set in %s — gitid cannot change this", b.displayPath(st.SourceFile))
 	case globalssh.SourceBaseline:
-		return fmt.Sprintf("not set in any file gitid reads — OpenSSH resolves %q on this machine without a user configuration", st.CurrentValue)
+		return fmt.Sprintf("not set (OpenSSH default: %s)", st.CurrentValue)
 	case globalssh.SourceOutsideGitid:
-		return "set from somewhere gitid does not read"
+		return "set outside your config"
 	default:
 		return "the probe did not answer — see the advisory note"
 	}

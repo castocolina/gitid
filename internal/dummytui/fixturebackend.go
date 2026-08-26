@@ -435,14 +435,15 @@ func (FixtureBackend) GlobalSSHOptionStates() ([]tuikit.GlobalSSHOptionView, err
 			state = tuikit.GlobalSSHNeedsAction
 		}
 		out = append(out, tuikit.GlobalSSHOptionView{
-			Key:          o.Key,
-			CurrentValue: o.Current,
-			Provenance:   "fixture value — the demo does not probe this machine",
-			Recommended:  o.Recommended,
-			Risk:         o.Risk,
-			OneLiner:     o.OneLiner,
-			Explanation:  explanation,
-			State:        state,
+			Key:                o.Key,
+			CurrentValue:       o.Current,
+			Provenance:         "fixture value — the demo does not probe this machine",
+			Recommended:        o.Recommended,
+			Risk:               o.Risk,
+			OneLiner:           o.OneLiner,
+			Explanation:        explanation,
+			State:              state,
+			WritableToHostStar: o.Key != "IdentitiesOnly",
 		})
 	}
 	return out, nil
