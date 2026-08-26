@@ -1243,6 +1243,40 @@ func TestCloneCeremonyInputsGitDirMatchesClonePrefillDerivation(t *testing.T) {
 	}
 }
 
+// TestCloneCeremonyInputsPublicKeyPathNeverBarePubSuffix is the WR-11
+// regression: cloneCeremonyInputs' DemoIdentity{} struct literal set
+// PublicKeyPath: in.ReuseKeyPath + ".pub" eagerly, then the if/else block a
+// few lines below unconditionally reassigned it — dead when ReuseKeyPath is
+// non-empty (immediately overwritten with the identical value), and a live
+// trap when it is empty (the literal alone would have produced the bare
+// string ".pub", the exact defect WR-14 in identities.go was written to
+// eliminate) — harmless only because the reassignment always runs. This
+// guards BOTH branches directly so a future reordering that drops the
+// explicit reassignment fails loudly instead of silently regressing to
+// ".pub".
+func TestCloneCeremonyInputsPublicKeyPathNeverBarePubSuffix(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+	b := newBackendForHome(home)
+
+	_, idReuse, err := cloneCeremonyInputs(b, "work", "work-clone", true)
+	if err != nil {
+		t.Fatalf("cloneCeremonyInputs(reuse): %v", err)
+	}
+	if idReuse.PublicKeyPath == ".pub" || idReuse.PublicKeyPath == "" {
+		t.Errorf("WR-11: reuse-key clone PublicKeyPath = %q, must not be the bare \".pub\" suffix", idReuse.PublicKeyPath)
+	}
+
+	_, idGen, err := cloneCeremonyInputs(b, "work", "work-clone2", false)
+	if err != nil {
+		t.Fatalf("cloneCeremonyInputs(generated): %v", err)
+	}
+	if want := "~/.ssh/id_ed25519_work-clone2.pub"; idGen.PublicKeyPath != want {
+		t.Errorf("WR-11: generated-key clone PublicKeyPath = %q, want %q", idGen.PublicKeyPath, want)
+	}
+}
+
 // TestCloneCeremonyInputsMirrorsSourceForceSSH is WR-06's clone half:
 // cloneCeremonyInputs hardcoded ForceSSH: true unconditionally, contradicting
 // D-15's "copy the author fields, re-derive the rest" — a clone must not

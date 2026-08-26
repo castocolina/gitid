@@ -165,8 +165,14 @@ func cloneCeremonyInputs(b *realBackend, source, cloneName string, reuseSourceKe
 		// branch a few lines above) would have produced. Only fall back to
 		// the "~/git/<name>/" default for a pure-hasconfig clone, which
 		// carries no gitdir match at all.
-		GitDir:        orDefault(gitDirFromMatches(in.Matches), "~/git/"+in.Name+"/"),
-		PublicKeyPath: in.ReuseKeyPath + ".pub",
+		GitDir: orDefault(gitDirFromMatches(in.Matches), "~/git/"+in.Name+"/"),
+		// WR-11: PublicKeyPath is deliberately NOT set here — it is
+		// unconditionally reassigned by the if/else below (reuse vs.
+		// generated), so setting it in this literal was dead: when
+		// ReuseKeyPath is empty, the literal produced the bare string
+		// ".pub" (the exact value WR-14 in identities.go was written to
+		// eliminate) before being immediately overwritten. Harmless today,
+		// a trap on the next edit that reorders these blocks.
 		// WR-06: default to the CLONE SOURCE's own current setting, never an
 		// unconditional true. This is a machine-global rewrite of every
 		// HTTPS clone URL for the provider — forcing it on for every
