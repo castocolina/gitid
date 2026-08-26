@@ -1892,6 +1892,14 @@ type identitiesModel struct {
 	// always taken from the everything-scope plan so the note stays visible
 	// while the safer git-only option is focused.
 	deleteChoiceOwners []string
+	// deleteChoiceOwnersErr is WR-07's fail-closed disclosure: when the
+	// everything-scope plan computed to populate deleteChoiceOwners fails
+	// WHILE the primary (git-only-focused) plan succeeds, this carries the
+	// error so the choice screen discloses that the sibling-key note could
+	// not be computed — never silently rendering as "no siblings share this
+	// key" (the same R-07 rule deletePlanErr enforces for the primary plan,
+	// kept in its own field so the two failure modes are never conflated).
+	deleteChoiceOwnersErr string
 	// deletePlanErr is the fail-closed error from IdentityPlanner.DeletePlan.
 	// A non-empty value means the confirm screen MUST render the error state
 	// with the confirm control disabled and no partial target list (R-07).
@@ -2237,11 +2245,22 @@ func (m identitiesModel) refreshDeletePlan(sel DemoIdentity) identitiesModel {
 	m.deletePlanErr = ""
 	if m.deleteScope == "everything" {
 		m.deleteChoiceOwners = plan.SharedKeyOwners
+		m.deleteChoiceOwnersErr = ""
 		return m
 	}
-	if everything, eerr := m.backend.DeletePlan(sel.Name, "everything"); eerr == nil {
-		m.deleteChoiceOwners = everything.SharedKeyOwners
+	// WR-07: fail closed on the SECOND plan exactly like the first (R-07) —
+	// silently keeping the previous (possibly stale, possibly empty)
+	// deleteChoiceOwners on a read failure would render the scope-choice
+	// screen with no shared-key note and no error, telling the user nothing
+	// shares this key when the disclosure simply could not be computed.
+	everything, eerr := m.backend.DeletePlan(sel.Name, "everything")
+	if eerr != nil {
+		m.deleteChoiceOwners = nil
+		m.deleteChoiceOwnersErr = eerr.Error()
+		return m
 	}
+	m.deleteChoiceOwners = everything.SharedKeyOwners
+	m.deleteChoiceOwnersErr = ""
 	return m
 }
 
@@ -4407,6 +4426,11 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 			"  " + everythingLine
 		if note := formatSharedKeyNote(m.deleteChoiceOwners, detailWidth-2); note != "" {
 			pane += "\n  " + styleFaint.Render(note)
+		}
+		// WR-07: disclose a failure to compute the sibling-key note rather
+		// than rendering silently as if no identity shares this key.
+		if m.deleteChoiceOwnersErr != "" {
+			pane += "\n  " + styleError.Render("✗ shared-key check failed: "+m.deleteChoiceOwnersErr)
 		}
 		pane += "\n\n" + " " + styleFaint.Render("↑↓/Tab choose · Enter continue · Esc cancel")
 		crumbs = []string{sel.Name, "Delete"}

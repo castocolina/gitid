@@ -3730,6 +3730,36 @@ func TestDeleteEverythingReceiptReflectsSharedKeyDowngrade(t *testing.T) {
 	}
 }
 
+// TestDeleteChoiceDisclosesSecondPlanFailure is the WR-07 regression:
+// refreshDeletePlan's second, everything-scope DeletePlan call (computed
+// purely to populate deleteChoiceOwners while the safer git-only scope is
+// focused) silently dropped its error — `if everything, eerr :=
+// ...; eerr == nil { ... }` — leaving the scope-choice screen with NO
+// shared-key note and NO error when that computation failed. Same
+// fail-closed rule as the primary plan (R-07): the failure must be
+// disclosed, not indistinguishable from "no siblings share this key".
+func TestDeleteChoiceDisclosesSecondPlanFailure(t *testing.T) {
+	sentinel := errors.New("scan source unreadable")
+	a := NewApp(stubBackend{deletePlanFn: func(name, scope string) (DeletePlanView, error) {
+		if scope == "everything" {
+			return DeletePlanView{}, sentinel
+		}
+		return stubDefaultDeletePlan(name, scope), nil
+	}})
+	a, _ = press(t, a, "d")
+	m := identModel(t, a)
+	if m.deletePlanErr != "" {
+		t.Errorf("the PRIMARY (git-only) plan must not be marked failed: deletePlanErr = %q", m.deletePlanErr)
+	}
+	if m.deleteChoiceOwnersErr == "" {
+		t.Fatal("WR-07: a failed everything-scope plan must be disclosed via deleteChoiceOwnersErr")
+	}
+	pane := paneFlat(a)
+	if !strings.Contains(pane, "shared-key check failed") || !strings.Contains(pane, sentinel.Error()) {
+		t.Errorf("WR-07: the choice screen must disclose the second plan's failure: %s", pane)
+	}
+}
+
 func TestDeleteChoiceFiveLongSiblingsOverflowToCount(t *testing.T) {
 	owners := []string{
 		"identity-with-a-very-long-name-alpha",
