@@ -47,6 +47,51 @@ func TestAllowedSignersLine_RejectsCommaPrincipalInjection(t *testing.T) {
 	}
 }
 
+// TestAllowedSignersLine_RejectsNewlineLineInjection is the WR-08
+// regression: the doc comment calls the comma check "the write-time hard
+// gate... independent of whether an upstream form/config validator already
+// rejected the comma", but a NEWLINE in the principal was not rejected — it
+// injects an entire ADDITIONAL allowed_signers line (an attacker-chosen
+// principal + key of the attacker's own choosing), not merely a smuggled
+// comma-separated principal.
+func TestAllowedSignersLine_RejectsNewlineLineInjection(t *testing.T) {
+	for _, email := range []string{
+		"victim@corp.test\nevil@attacker.test namespaces=\"git\" ssh-ed25519 AAAA evil",
+		"victim@corp.test\revil@attacker.test",
+	} {
+		if _, err := AllowedSignersLine(email, samplePubLine); err == nil {
+			t.Errorf("AllowedSignersLine(%q) must reject a newline/CR line-injection principal (WR-08), got nil error", email)
+		}
+	}
+}
+
+// TestAllowedSignersLine_RejectsSpaceFieldInjection is WR-08's second gap: a
+// space (or tab) in the principal silently changes the allowed_signers field
+// layout ssh-keygen(1) parses — e.g. embedding a bare "namespaces=..."
+// token — rather than being carried as part of a single principal field.
+func TestAllowedSignersLine_RejectsSpaceFieldInjection(t *testing.T) {
+	for _, email := range []string{
+		"victim@corp.test namespaces=\"*\"",
+		"victim@corp.test\tnamespaces=\"*\"",
+	} {
+		if _, err := AllowedSignersLine(email, samplePubLine); err == nil {
+			t.Errorf("AllowedSignersLine(%q) must reject a space/tab field-injection principal (WR-08), got nil error", email)
+		}
+	}
+}
+
+// TestAllowedSignersLine_RequiresBareAddress is WR-08's self-sufficiency
+// proof: the gate must not rely on an upstream validator having already
+// confirmed the value looks like an address — an empty principal or one
+// missing "@" must be rejected here too, independently.
+func TestAllowedSignersLine_RequiresBareAddress(t *testing.T) {
+	for _, email := range []string{"", "not-an-address"} {
+		if _, err := AllowedSignersLine(email, samplePubLine); err == nil {
+			t.Errorf("AllowedSignersLine(%q) must reject a non-address principal (WR-08), got nil error", email)
+		}
+	}
+}
+
 // TestAllowedSignersLine_StripsTrailingComment asserts the pub line's trailing
 // comment (now present on generated keys, e.g. "… work@gitid") never leaks into
 // the signer line — the principal there is the email, and only keytype+key follow.
