@@ -259,6 +259,19 @@ func (b *realBackend) runRotate(name string, p lifecyclePolicy) (lifecycleResult
 			return res, rerr
 		}
 	}
+	// WR-04: deps.WriteSSH (writeSSHBlock) may ALSO create b.includeDir
+	// (the SSH config.d directory) mid-transaction when the include-dir
+	// layout needs its first Include line — same shape as the archive
+	// directory above: record it as created only if it does not pre-exist,
+	// so a mid-transaction rollback removes the directory it introduced
+	// rather than leaving an empty shell behind.
+	if b.storage().needsIncludeLine {
+		if _, serr := os.Stat(b.includeDir); os.IsNotExist(serr) {
+			if rerr := journal.recordCreatedDir(b.includeDir); rerr != nil {
+				return res, rerr
+			}
+		}
+	}
 
 	// The domain is called through depsForTransaction(journal) — NEVER the
 	// backend-wide b.deps, whose ArchiveKeyPair binding refuses (review
@@ -370,6 +383,15 @@ func (b *realBackend) runRepair(name string, p lifecyclePolicy) (lifecycleResult
 			return res, werr
 		}
 	}
+	// WR-04: same shape as runRotate's includeDir recording above — repair's
+	// deps.WriteSSH may also create b.includeDir mid-transaction.
+	if b.storage().needsIncludeLine {
+		if _, serr := os.Stat(b.includeDir); os.IsNotExist(serr) {
+			if rerr := journal.recordCreatedDir(b.includeDir); rerr != nil {
+				return res, rerr
+			}
+		}
+	}
 	deps := b.depsForTransaction(journal) // never b.deps (review R3-01)
 	if b.failCommitAt != nil {
 		deps = injectRepairFailures(b, deps)
@@ -428,6 +450,13 @@ func (b *realBackend) normalizeAccountForWrite(acct identity.Account) identity.A
 func (b *realBackend) rotateWatchPaths(acct identity.Account) []string {
 	paths := []string{
 		b.storageTargetPath(),
+		// WR-04: b.sshConfigPath (~/.ssh/config itself) is DISTINCT from
+		// storageTargetPath() whenever the include-dir layout is active —
+		// deps.WriteSSH (writeSSHBlock) calls sshconfig.EnsureIncludeLine
+		// against b.sshConfigPath outside the journal entirely if it is not
+		// also watched here, so a mid-transaction failure left the injected
+		// Include line behind.
+		b.sshConfigPath,
 		b.gitconfigPath,
 		acct.AllowedSignersPath,
 		acct.KeyPath,
@@ -440,14 +469,14 @@ func (b *realBackend) rotateWatchPaths(acct identity.Account) []string {
 }
 
 // repairWatchPaths returns every file a repair transaction can mutate: the
-// SSH storage target, the gitconfig, the identity's fragment, the
-// allowed_signers file, and THIS identity's OWN canonical key paths
-// (RepairKeyPath — the account's Account.KeyPath is deliberately NOT
-// watched, because repair must never touch the key material it is not
-// permitted to overwrite).
+// SSH storage target, ~/.ssh/config itself (WR-04 — see rotateWatchPaths),
+// the gitconfig, the identity's fragment, the allowed_signers file, and
+// THIS identity's OWN canonical key paths (RepairKeyPath — the account's
+// Account.KeyPath is deliberately NOT watched, because repair must never
+// touch the key material it is not permitted to overwrite).
 func (b *realBackend) repairWatchPaths(acct identity.Account) []string {
 	privTarget, pubTarget := identity.RepairKeyPath(acct)
-	paths := []string{b.storageTargetPath(), b.gitconfigPath, acct.AllowedSignersPath, privTarget, pubTarget}
+	paths := []string{b.storageTargetPath(), b.sshConfigPath, b.gitconfigPath, acct.AllowedSignersPath, privTarget, pubTarget}
 	if acct.FragmentPath != "" {
 		paths = append(paths, acct.FragmentPath)
 	}

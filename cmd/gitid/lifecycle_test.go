@@ -775,6 +775,84 @@ func archivedPrivatePath(paths []string) (string, bool) {
 	return "", false
 }
 
+// TestRotateAndRepairWatchPathsIncludeSSHConfigPath is the WR-04
+// regression: rotateWatchPaths/repairWatchPaths watched b.storageTargetPath()
+// but never b.sshConfigPath — DISTINCT paths whenever the include-dir
+// layout is active (storageTargetPath() resolves to the config.d target,
+// while b.sshConfigPath is ~/.ssh/config itself, the file
+// deps.WriteSSH/writeSSHBlock calls sshconfig.EnsureIncludeLine against). A
+// mid-transaction failure therefore left an injected Include line (and the
+// config.d directory sshconfig.EnsureIncludeDir created) behind, outside
+// the journal's watch entirely. Both watch-path builders must include
+// b.sshConfigPath so mutationJournal.restore() can undo it like any other
+// watched file.
+func TestRotateAndRepairWatchPathsIncludeSSHConfigPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+
+	// Build the include-dir layout by hand, through the real production
+	// seams (EnsureIncludeDir/EnsureIncludeLine), so b.storageTargetPath()
+	// resolves to config.d/gitid.config while b.sshConfigPath stays
+	// ~/.ssh/config — two DISTINCT paths, the exact condition WR-04's bug
+	// required (seedDeleteFixture's in-file layout makes the two identical,
+	// which would make this regression test pass even without the fix).
+	includeDir := filepath.Join(home, ".ssh", "config.d")
+	if err := sshconfig.EnsureIncludeDir(includeDir); err != nil {
+		t.Fatalf("EnsureIncludeDir: %v", err)
+	}
+	sshConfigPath := filepath.Join(home, ".ssh", "config")
+	if _, err := sshconfig.EnsureIncludeLine(sshConfigPath); err != nil {
+		t.Fatalf("EnsureIncludeLine: %v", err)
+	}
+	sshBody := "Host work.github.com\n" +
+		"  Hostname ssh.github.com\n" +
+		"  Port 443\n" +
+		"  User git\n" +
+		"  IdentityFile ~/.ssh/id_ed25519_work\n" +
+		"  IdentitiesOnly yes\n"
+	canonical := filepath.Join(includeDir, "gitid.config")
+	writeFile(t, canonical, managedBlock("_global", "Host *\n  IdentitiesOnly yes\n")+"\n"+managedBlock("work", sshBody))
+
+	pubLine := seedGeneratedKey(t, filepath.Join(home, ".ssh", "id_ed25519_work"), "work", "")
+	if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
+		t.Fatalf("seeding .gitconfig.d: %v", err)
+	}
+	fragBody := "[user]\n\tname = work User\n\temail = work@example.com\n" +
+		"\tsigningkey = ~/.ssh/id_ed25519_work.pub\n\n[gpg]\n\tformat = ssh\n\n[commit]\n\tgpgsign = true\n"
+	writeFile(t, filepath.Join(home, ".gitconfig.d", "work"), fragBody)
+	gcBody := "[includeIf \"gitdir:~/git/work/\"]\n\tpath = ~/.gitconfig.d/work\n"
+	writeFile(t, filepath.Join(home, ".gitconfig"), "[user]\n\tname = Global User\n\n"+managedBlock("work", gcBody))
+	line := mustAllowedSignersLine(t, "work@example.com", pubLine)
+	writeFile(t, filepath.Join(home, ".ssh", "allowed_signers"), managedBlock("work", line))
+
+	b := newBackendForHome(home)
+	acct, found := b.findAccount("work")
+	if !found {
+		t.Fatal("fixture account \"work\" not found")
+	}
+	if got := b.storageTargetPath(); got == b.sshConfigPath {
+		t.Fatalf("fixture setup failed: storageTargetPath() == sshConfigPath (%q) — the include-dir layout was not exercised", got)
+	}
+	acct = b.normalizeAccountForWrite(acct)
+
+	hasPath := func(paths []string, want string) bool {
+		for _, p := range paths {
+			if p == want {
+				return true
+			}
+		}
+		return false
+	}
+
+	if rotatePaths := b.rotateWatchPaths(acct); !hasPath(rotatePaths, b.sshConfigPath) {
+		t.Errorf("WR-04: rotateWatchPaths = %v, must include b.sshConfigPath %q", rotatePaths, b.sshConfigPath)
+	}
+	if repairPaths := b.repairWatchPaths(acct); !hasPath(repairPaths, b.sshConfigPath) {
+		t.Errorf("WR-04: repairWatchPaths = %v, must include b.sshConfigPath %q", repairPaths, b.sshConfigPath)
+	}
+}
+
 // TestRunRotateFailureMatrixRestoresBytesAndMode injects a failure at every
 // transaction step and asserts each watched file's bytes AND mode match the
 // pre-transaction snapshot, and that no archive entry for the identity
