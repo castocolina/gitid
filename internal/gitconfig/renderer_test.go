@@ -364,9 +364,16 @@ func TestRemoveProviderRewrite(t *testing.T) {
 		t.Errorf("global baseline url-rewrites block must survive a per-provider removal:\n%s", gc)
 	}
 
-	// Idempotent: a second removal leaves the file byte-identical.
-	if _, err := RemoveProviderRewrite(gitconfigPath, "github.com"); err != nil {
+	// Idempotent: a second removal leaves the file byte-identical AND mints
+	// NO spurious backup (WR-12) — the block is already absent, so
+	// filewriter.Write must not run at all.
+	backupsBefore := countBackupFiles(t, dir)
+	backup2, err := RemoveProviderRewrite(gitconfigPath, "github.com")
+	if err != nil {
 		t.Fatalf("second RemoveProviderRewrite: %v", err)
+	}
+	if backup2 != "" {
+		t.Errorf("WR-12: second (no-op) RemoveProviderRewrite returned a backup path %q, want empty — nothing changed, so nothing should be written", backup2)
 	}
 	gc2, err := os.ReadFile(gitconfigPath) //nolint:gosec // hermetic t.TempDir() fixture
 	if err != nil {
@@ -375,6 +382,27 @@ func TestRemoveProviderRewrite(t *testing.T) {
 	if string(gc) != string(gc2) {
 		t.Errorf("RemoveProviderRewrite not idempotent:\nfirst:\n%s\nsecond:\n%s", gc, gc2)
 	}
+	if got := countBackupFiles(t, dir); got != backupsBefore {
+		t.Errorf("WR-12: second (no-op) RemoveProviderRewrite minted %d new backup file(s) on disk, want 0", got-backupsBefore)
+	}
+}
+
+// countBackupFiles counts timestamped .bak.<nanos>-style backup files under
+// dir — WR-12's proof that a no-op removal writes NOTHING to disk, not just
+// that its returned backup path is empty.
+func countBackupFiles(t *testing.T, dir string) int {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading dir %s: %v", dir, err)
+	}
+	count := 0
+	for _, e := range entries {
+		if strings.Contains(e.Name(), ".bak.") {
+			count++
+		}
+	}
+	return count
 }
 
 // TestRemoveProviderRewrite_InvalidHostname proves an invalid provider
@@ -400,16 +428,36 @@ func TestRemoveProviderRewrite_InvalidHostname(t *testing.T) {
 }
 
 // TestRemoveProviderRewrite_NoSuchBlockIsNilError proves removing a provider
-// rewrite from a file with no such block returns a nil error.
+// rewrite from a file with no such block returns a nil error, and — WR-12 —
+// writes NOTHING: no backup path, no rewritten file (byte-identical, same
+// mtime-independent content), and no spurious .bak.<nanos> file minted on
+// disk. The prior unconditional filewriter.Write call rewrote the file
+// byte-for-byte and reported a real-looking backup of a delete transaction
+// that touched nothing.
 func TestRemoveProviderRewrite_NoSuchBlockIsNilError(t *testing.T) {
 	dir := t.TempDir()
 	gitconfigPath := filepath.Join(dir, ".gitconfig")
-	if err := os.WriteFile(gitconfigPath, []byte("[core]\n\texcludesfile = ~/.gitignore_global\n"), 0o644); err != nil { //nolint:gosec // hermetic t.TempDir() fixture; writer sets production gitconfig mode
+	seed := []byte("[core]\n\texcludesfile = ~/.gitignore_global\n")
+	if err := os.WriteFile(gitconfigPath, seed, 0o644); err != nil { //nolint:gosec // hermetic t.TempDir() fixture; writer sets production gitconfig mode
 		t.Fatalf("seeding gitconfig: %v", err)
 	}
 
-	if _, err := RemoveProviderRewrite(gitconfigPath, "github.com"); err != nil {
+	backup, err := RemoveProviderRewrite(gitconfigPath, "github.com")
+	if err != nil {
 		t.Errorf("RemoveProviderRewrite for an absent block returned an error: %v", err)
+	}
+	if backup != "" {
+		t.Errorf("WR-12: RemoveProviderRewrite for an absent block returned backup path %q, want empty — nothing to remove means no write", backup)
+	}
+	got, rerr := os.ReadFile(gitconfigPath) //nolint:gosec // hermetic t.TempDir() fixture
+	if rerr != nil {
+		t.Fatalf("reading gitconfig: %v", rerr)
+	}
+	if string(got) != string(seed) {
+		t.Errorf("WR-12: file rewritten despite having no matching block:\nbefore:\n%s\nafter:\n%s", seed, got)
+	}
+	if n := countBackupFiles(t, dir); n != 0 {
+		t.Errorf("WR-12: a no-op removal minted %d backup file(s) on disk, want 0", n)
 	}
 }
 
