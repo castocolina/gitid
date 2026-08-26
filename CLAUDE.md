@@ -55,10 +55,7 @@ prompt.
 - Code exploration: use the `codegraph_explore` MCP tool before any
   Grep/Read loop. Run `codegraph index || codegraph init -i` once at task
   start to refresh the index. Fall back to `rg` (not `grep`) + Read only if
-  codegraph is unavailable or insufficient. (Same rule lives in `AGENTS.md`
-  § Code Exploration — duplicated, not referenced, because a cross-AI/local
-  model dispatched via `AGENTS.md` won't reliably follow a pointer into
-  `CLAUDE.md`.)
+  codegraph is unavailable or insufficient.
 
 ## Commits
 
