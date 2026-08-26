@@ -22,6 +22,7 @@ import (
 	"github.com/castocolina/gitid/internal/identity"
 	"github.com/castocolina/gitid/internal/sshconfig"
 	"github.com/castocolina/gitid/internal/tester"
+	"github.com/castocolina/gitid/internal/tuikit"
 )
 
 // ---------------------------------------------------------------------------
@@ -182,6 +183,27 @@ func (b *realBackend) runRotate(name string, p lifecyclePolicy) (lifecycleResult
 	}
 	acct = b.normalizeAccountForWrite(acct)
 
+	// CR-01: refuse to archive (move) a key another identity still depends
+	// on. identity.Rotate calls deps.ArchiveKeyPair — the MOVE primitive —
+	// so without this gate a sibling sharing the current key is left with a
+	// dangling IdentityFile the moment rotation completes. This is the same
+	// class of loss ErrRepairTargetShared exists to prevent on the repair
+	// side (below), applied at the ONE chokepoint both the CLI and TUI call
+	// through. b.normalizedAccounts() (not b.accounts()) per CR-02, so a
+	// mixed tilde/absolute IdentityFile spelling cannot hide the sharing.
+	if owners := identity.SharedKeyOwners(b.normalizedAccounts(), acct.KeyPath, name); len(owners) > 0 {
+		return res, fmt.Errorf(
+			"gitid: refusing to rotate %q: its key pair is also used by %s — use `gitid identity new-key %s` instead: %w",
+			name, strings.Join(owners, ", "), name, identity.ErrRepairTargetShared)
+	}
+	// Secondary consequence of the same missing gate (CR-01): rotating an
+	// identity with no current key pair must refuse and point at `new-key`,
+	// never call identity.Rotate with an empty/missing key path (which
+	// silently archives "" instead of generating the missing key).
+	if acct.KeyPath == "" || !fileExists(acct.KeyPath) {
+		return res, fmt.Errorf("gitid: refusing to rotate %q: no current key pair to retire — use `gitid identity new-key %s`", name, name)
+	}
+
 	// test — the connectivity probe against the identity as it currently
 	// resolves through its alias (the only probe a rotation can run before
 	// the write). The resident is advisory at commit time: the TUI's two
@@ -235,6 +257,19 @@ func (b *realBackend) runRotate(name string, p lifecyclePolicy) (lifecycleResult
 	if _, serr := os.Stat(archiveDir); os.IsNotExist(serr) {
 		if rerr := journal.recordCreatedDir(archiveDir); rerr != nil {
 			return res, rerr
+		}
+	}
+	// WR-04: deps.WriteSSH (writeSSHBlock) may ALSO create b.includeDir
+	// (the SSH config.d directory) mid-transaction when the include-dir
+	// layout needs its first Include line — same shape as the archive
+	// directory above: record it as created only if it does not pre-exist,
+	// so a mid-transaction rollback removes the directory it introduced
+	// rather than leaving an empty shell behind.
+	if b.storage().needsIncludeLine {
+		if _, serr := os.Stat(b.includeDir); os.IsNotExist(serr) {
+			if rerr := journal.recordCreatedDir(b.includeDir); rerr != nil {
+				return res, rerr
+			}
 		}
 	}
 
@@ -348,6 +383,15 @@ func (b *realBackend) runRepair(name string, p lifecyclePolicy) (lifecycleResult
 			return res, werr
 		}
 	}
+	// WR-04: same shape as runRotate's includeDir recording above — repair's
+	// deps.WriteSSH may also create b.includeDir mid-transaction.
+	if b.storage().needsIncludeLine {
+		if _, serr := os.Stat(b.includeDir); os.IsNotExist(serr) {
+			if rerr := journal.recordCreatedDir(b.includeDir); rerr != nil {
+				return res, rerr
+			}
+		}
+	}
 	deps := b.depsForTransaction(journal) // never b.deps (review R3-01)
 	if b.failCommitAt != nil {
 		deps = injectRepairFailures(b, deps)
@@ -356,8 +400,11 @@ func (b *realBackend) runRepair(name string, p lifecyclePolicy) (lifecycleResult
 	// (RepairKeyPath), NEVER against Account.KeyPath — the pathological case
 	// a naive reading gets wrong (review R-02). RepairKey fails closed with
 	// ErrRepairTargetShared before any seam runs when a sibling depends on
-	// the target.
-	otherOwners := identity.SharedKeyOwners(b.accounts(), privTarget, name)
+	// the target. CR-02: privTarget is ABSOLUTE (derived from the already-
+	// normalized acct), so the comparison list must be b.normalizedAccounts()
+	// — comparing against the raw, tilde-spelled b.accounts() made this
+	// unreachable for any recipe-shaped identity.
+	otherOwners := identity.SharedKeyOwners(b.normalizedAccounts(), privTarget, name)
 	rr, rerr := identity.RepairKey(acct, otherOwners, deps)
 	res.Backups = collectCreateBackups(rr)
 	if rerr != nil {
@@ -403,6 +450,13 @@ func (b *realBackend) normalizeAccountForWrite(acct identity.Account) identity.A
 func (b *realBackend) rotateWatchPaths(acct identity.Account) []string {
 	paths := []string{
 		b.storageTargetPath(),
+		// WR-04: b.sshConfigPath (~/.ssh/config itself) is DISTINCT from
+		// storageTargetPath() whenever the include-dir layout is active —
+		// deps.WriteSSH (writeSSHBlock) calls sshconfig.EnsureIncludeLine
+		// against b.sshConfigPath outside the journal entirely if it is not
+		// also watched here, so a mid-transaction failure left the injected
+		// Include line behind.
+		b.sshConfigPath,
 		b.gitconfigPath,
 		acct.AllowedSignersPath,
 		acct.KeyPath,
@@ -415,14 +469,14 @@ func (b *realBackend) rotateWatchPaths(acct identity.Account) []string {
 }
 
 // repairWatchPaths returns every file a repair transaction can mutate: the
-// SSH storage target, the gitconfig, the identity's fragment, the
-// allowed_signers file, and THIS identity's OWN canonical key paths
-// (RepairKeyPath — the account's Account.KeyPath is deliberately NOT
-// watched, because repair must never touch the key material it is not
-// permitted to overwrite).
+// SSH storage target, ~/.ssh/config itself (WR-04 — see rotateWatchPaths),
+// the gitconfig, the identity's fragment, the allowed_signers file, and
+// THIS identity's OWN canonical key paths (RepairKeyPath — the account's
+// Account.KeyPath is deliberately NOT watched, because repair must never
+// touch the key material it is not permitted to overwrite).
 func (b *realBackend) repairWatchPaths(acct identity.Account) []string {
 	privTarget, pubTarget := identity.RepairKeyPath(acct)
-	paths := []string{b.storageTargetPath(), b.gitconfigPath, acct.AllowedSignersPath, privTarget, pubTarget}
+	paths := []string{b.storageTargetPath(), b.sshConfigPath, b.gitconfigPath, acct.AllowedSignersPath, privTarget, pubTarget}
 	if acct.FragmentPath != "" {
 		paths = append(paths, acct.FragmentPath)
 	}
@@ -516,10 +570,19 @@ func (b *realBackend) runDelete(name string, scope identity.DeleteScope, p lifec
 	}
 	acct = b.normalizeAccountForWrite(acct)
 
-	// plan — the target list the confirmation prompt previews, mirrored from
-	// the CLI's --dry-run listing.
+	// plan — the target list the confirmation prompt previews, derived from
+	// the SAME identity.PlanDelete both the CLI's --dry-run listing and the
+	// TUI's confirm screen render (WR-03) — never a second, hand-rolled
+	// preview that can diverge from what the write actually does (the prior
+	// deletePlanPreview unconditionally named the key pair with no
+	// keySurvives consultation, promising to delete a key the write would
+	// keep for a sibling).
 	record(stages[0])
-	preview := b.deletePlanPreview(acct, scope)
+	plan, plerr := b.DeletePlan(name, string(scope))
+	if plerr != nil {
+		return res, fmt.Errorf("gitid: refusing to delete %q: the delete plan could not be built: %w", name, plerr)
+	}
+	preview := b.deletePlanPreviewText(plan)
 	if p.DryRun {
 		return res, nil
 	}
@@ -622,23 +685,18 @@ func (b *realBackend) runDelete(name string, scope identity.DeleteScope, p lifec
 	return res, nil
 }
 
-// deletePlanPreview renders the target list for name/scope the confirmation
-// prompt previews and --dry-run would act on. Git-only names the gitconfig
-// and the fragment; everything additionally names the SSH storage target, the
-// key pair, and the allowed_signers file, mirroring the CLI's printDeleteDryRun.
-func (b *realBackend) deletePlanPreview(acct identity.Account, scope identity.DeleteScope) string {
-	targets := []string{b.displayPath(b.gitconfigPath)}
-	if acct.FragmentPath != "" {
-		targets = append(targets, b.displayPath(acct.FragmentPath))
+// deletePlanPreviewText renders the ONE-line confirmation-prompt preview
+// from the real DeletePlanView (WR-03) — a target list built by walking
+// plan.Targets (display-formatted the same way renderDeletePlan formats
+// them), never a second, hand-rolled list that can name a file the write
+// will not actually touch (e.g. a key pair keySurvives is keeping for a
+// sibling).
+func (b *realBackend) deletePlanPreviewText(plan tuikit.DeletePlanView) string {
+	files := make([]string, 0, len(plan.Targets))
+	for _, t := range plan.Targets {
+		files = append(files, b.displayPath(t.File))
 	}
-	if scope == identity.DeleteScopeEverything {
-		targets = append([]string{b.displayPath(b.storageTargetPath())}, targets...)
-		if acct.KeyPath != "" {
-			targets = append(targets, b.displayPath(acct.KeyPath), b.displayPath(acct.PubPath))
-		}
-		targets = append(targets, b.displayPath(b.allowedSigners))
-	}
-	return "delete " + acct.Name + " (" + string(scope) + "): " + strings.Join(targets, ", ")
+	return "delete " + plan.Name + " (" + plan.Scope + "): " + strings.Join(files, ", ")
 }
 
 // verifyDeleteGone is delete's closing verify stage: a re-read of the

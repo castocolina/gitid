@@ -3516,6 +3516,51 @@ func TestKeyRowRoutesKeyMissingToRepair(t *testing.T) {
 	}
 }
 
+// TestKeyCeremonyStagesDoNotFabricateAPassResult is the CR-03 regression: the
+// rotate/repair ceremony's two "test" beats used to hardcode
+// TestResultView{Outcome: TestOutcomePass, Detail: "Stage N test passed."}
+// without ever calling a backend seam — a fabricated green checkmark shown
+// immediately before authorizing a real key rotation. Neither beat may claim
+// a PASS outcome, and the rendered stage-2 pane must not show the fabricated
+// "✓ Stage 1 test passed" line.
+func TestKeyCeremonyStagesDoNotFabricateAPassResult(t *testing.T) {
+	a := pressSeq(t, identitiesApp(), "a", "down", "down", "enter")
+	if identModel(t, a).keyCeremonyPhase != "stage1" {
+		t.Fatalf("phase = %q, want stage1", identModel(t, a).keyCeremonyPhase)
+	}
+
+	a, _ = press(t, a, "enter")
+	m := identModel(t, a)
+	if m.keyCeremonyPhase != "stage2" {
+		t.Fatalf("phase = %q, want stage2", m.keyCeremonyPhase)
+	}
+	if m.keyCeremonyStage1.Outcome == TestOutcomePass {
+		t.Error("CR-03: stage 1 must not fabricate a PASS outcome — no backend seam ran")
+	}
+	if strings.Contains(m.keyCeremonyStage1.Detail, "test passed") {
+		t.Errorf("CR-03: stage 1 detail = %q, must not claim a test passed", m.keyCeremonyStage1.Detail)
+	}
+	pane := stripANSI(paneFlat(a))
+	if strings.Contains(pane, "✓ Stage 1 test passed") {
+		t.Errorf("CR-03: rendered ceremony still shows the fabricated stage-1 checkmark: %s", pane)
+	}
+	if !strings.Contains(pane, "Not tested") {
+		t.Errorf("CR-03: rendered ceremony must honestly disclose stage 1 was not tested: %s", pane)
+	}
+
+	a, _ = press(t, a, "enter")
+	m = identModel(t, a)
+	if m.keyCeremonyPhase != "review" {
+		t.Fatalf("phase = %q, want review", m.keyCeremonyPhase)
+	}
+	if m.keyCeremonyStage2.Outcome == TestOutcomePass {
+		t.Error("CR-03: stage 2 must not fabricate a PASS outcome — no backend seam ran")
+	}
+	if strings.Contains(m.keyCeremonyStage2.Detail, "test passed") {
+		t.Errorf("CR-03: stage 2 detail = %q, must not claim a test passed", m.keyCeremonyStage2.Detail)
+	}
+}
+
 func TestDirectKeyAndMenuRowConverge(t *testing.T) {
 	s := Seed()
 	b := stubBackend{}
@@ -3659,6 +3704,59 @@ func TestDeleteChoiceThreeSiblingsCommaJoined(t *testing.T) {
 	}
 	if !strings.Contains(pane, DeleteSharedKeyNotePrefix) {
 		t.Fatal("downgrade note prefix missing")
+	}
+}
+
+// TestDeleteEverythingReceiptReflectsSharedKeyDowngrade is the WR-02
+// regression: cfg.ResultMessage was fixed at ceremony-build time to "...
+// SSH block, Git fragment, and key removed (backups kept)." even when
+// plan.SharedKeyOwners is non-empty — i.e. when D-12's downgrade kept the
+// key pair for a sibling. The confirm screen's hint says "kept", the
+// receipt said "removed": the user was told their key was gone when it was
+// not. The receipt must name the sibling and say "kept", never "removed".
+func TestDeleteEverythingReceiptReflectsSharedKeyDowngrade(t *testing.T) {
+	owners := []string{"staging"}
+	a := NewApp(stubBackend{deletePlanFn: planWithSiblings(owners)})
+	a = pressSeq(t, a, "d", "down", "enter") // everything scope -> ceremony
+	name := identModel(t, a).selected
+	a = typeText(t, a, name)
+	a = pressAndRun(t, a, "enter") // confirm — async CommitDelete + DeleteCommitMsg reduces
+	pane := paneFlat(a)
+	if strings.Contains(pane, "and key removed") {
+		t.Errorf("WR-02: receipt must not claim the key was removed when a sibling still uses it: %s", pane)
+	}
+	if !strings.Contains(pane, "key kept") || !strings.Contains(pane, "staging") {
+		t.Errorf("WR-02: receipt must disclose the key was kept for the sibling %q: %s", "staging", pane)
+	}
+}
+
+// TestDeleteChoiceDisclosesSecondPlanFailure is the WR-07 regression:
+// refreshDeletePlan's second, everything-scope DeletePlan call (computed
+// purely to populate deleteChoiceOwners while the safer git-only scope is
+// focused) silently dropped its error — `if everything, eerr :=
+// ...; eerr == nil { ... }` — leaving the scope-choice screen with NO
+// shared-key note and NO error when that computation failed. Same
+// fail-closed rule as the primary plan (R-07): the failure must be
+// disclosed, not indistinguishable from "no siblings share this key".
+func TestDeleteChoiceDisclosesSecondPlanFailure(t *testing.T) {
+	sentinel := errors.New("scan source unreadable")
+	a := NewApp(stubBackend{deletePlanFn: func(name, scope string) (DeletePlanView, error) {
+		if scope == "everything" {
+			return DeletePlanView{}, sentinel
+		}
+		return stubDefaultDeletePlan(name, scope), nil
+	}})
+	a, _ = press(t, a, "d")
+	m := identModel(t, a)
+	if m.deletePlanErr != "" {
+		t.Errorf("the PRIMARY (git-only) plan must not be marked failed: deletePlanErr = %q", m.deletePlanErr)
+	}
+	if m.deleteChoiceOwnersErr == "" {
+		t.Fatal("WR-07: a failed everything-scope plan must be disclosed via deleteChoiceOwnersErr")
+	}
+	pane := paneFlat(a)
+	if !strings.Contains(pane, "shared-key check failed") || !strings.Contains(pane, sentinel.Error()) {
+		t.Errorf("WR-07: the choice screen must disclose the second plan's failure: %s", pane)
 	}
 }
 

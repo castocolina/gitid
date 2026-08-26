@@ -1484,6 +1484,14 @@ const (
 	keyUnusedResultMessage = "Stored — key not uploaded yet; this identity is not proven for Git yet"
 )
 
+// keyCeremonyNotTestedDetail is CR-03's honest replacement for the rotate/
+// repair key ceremony's two "test" beats: no backend seam runs a real
+// connectivity probe here (unlike the create wizard's stage1Cmd/stage2Cmd,
+// which dispatch through Backend.TestStage1/TestStage2), so the beat must
+// never render a fabricated pass. Silence — or, as here, an explicit
+// disclosure — is acceptable; a fabricated checkmark is not.
+const keyCeremonyNotTestedDetail = "Not tested — no connectivity probe runs before this write; the post-write re-test result (if any) will be shown after you confirm."
+
 // renderStageOutcome renders one test stage's outcome row: PASS is the
 // EXISTING green ✓ + the real ssh output (TestResultView.Detail — never a
 // hand-built string, so the shown text can never drift from what actually
@@ -1504,6 +1512,16 @@ const (
 // pane keeps (02-STYLE-SPEC.md §7).
 func renderStageOutcome(r TestResultView, providerHost string, showHint bool, width int) string {
 	return renderStageEvidence(r, providerHost, true, showHint, width)
+}
+
+// renderStageNotTested renders the CR-03 honest "not tested" beat: it
+// deliberately suppresses BOTH the ReachableNotUploaded warning banner
+// (stageWarningLine claims "Reachable", which is itself unproven when no
+// probe ran) and the D-03 hint — only the plain disclosure text prints. Used
+// in place of renderStageOutcome wherever a key-ceremony beat has no real
+// backend result to show.
+func renderStageNotTested(r TestResultView, width int) string {
+	return renderStageEvidence(r, "", false, false, width)
 }
 
 // renderStageEvidence keeps each stage's raw output visible while allowing a
@@ -1874,6 +1892,14 @@ type identitiesModel struct {
 	// always taken from the everything-scope plan so the note stays visible
 	// while the safer git-only option is focused.
 	deleteChoiceOwners []string
+	// deleteChoiceOwnersErr is WR-07's fail-closed disclosure: when the
+	// everything-scope plan computed to populate deleteChoiceOwners fails
+	// WHILE the primary (git-only-focused) plan succeeds, this carries the
+	// error so the choice screen discloses that the sibling-key note could
+	// not be computed — never silently rendering as "no siblings share this
+	// key" (the same R-07 rule deletePlanErr enforces for the primary plan,
+	// kept in its own field so the two failure modes are never conflated).
+	deleteChoiceOwnersErr string
 	// deletePlanErr is the fail-closed error from IdentityPlanner.DeletePlan.
 	// A non-empty value means the confirm screen MUST render the error state
 	// with the confirm control disabled and no partial target list (R-07).
@@ -2219,11 +2245,22 @@ func (m identitiesModel) refreshDeletePlan(sel DemoIdentity) identitiesModel {
 	m.deletePlanErr = ""
 	if m.deleteScope == "everything" {
 		m.deleteChoiceOwners = plan.SharedKeyOwners
+		m.deleteChoiceOwnersErr = ""
 		return m
 	}
-	if everything, eerr := m.backend.DeletePlan(sel.Name, "everything"); eerr == nil {
-		m.deleteChoiceOwners = everything.SharedKeyOwners
+	// WR-07: fail closed on the SECOND plan exactly like the first (R-07) —
+	// silently keeping the previous (possibly stale, possibly empty)
+	// deleteChoiceOwners on a read failure would render the scope-choice
+	// screen with no shared-key note and no error, telling the user nothing
+	// shares this key when the disclosure simply could not be computed.
+	everything, eerr := m.backend.DeletePlan(sel.Name, "everything")
+	if eerr != nil {
+		m.deleteChoiceOwners = nil
+		m.deleteChoiceOwnersErr = eerr.Error()
+		return m
 	}
+	m.deleteChoiceOwners = everything.SharedKeyOwners
+	m.deleteChoiceOwnersErr = ""
 	return m
 }
 
@@ -2237,6 +2274,13 @@ func (m identitiesModel) openKeyCeremony(sel DemoIdentity) identitiesModel {
 	}
 	m.actionsErr = ""
 	m.keyCeremonyMode = mode
+	// CR-03 (deferred, tracked): this seeds the REVIEW screen's grace-window
+	// hint (keyCeremonyFor) unconditionally, before any probe runs — the
+	// same "unproven Reachable claim" class as the stage1/stage2 fabrication
+	// fixed below, left in place here because TestKeyCeremonyRotateRenders-
+	// GraceAndArchive currently encodes the resulting grace hint as intended
+	// product behavior (advisory guidance shown on every rotate). Revisit
+	// together with adding a real pre-write probe seam (TestKeyStage1/2).
 	m.keyCeremonyResult = TestResultView{Outcome: TestOutcomeReachableNotUploaded}
 	plan, err := m.backend.KeyCeremonyPlan(sel.Name, mode)
 	if err != nil {
@@ -2320,10 +2364,15 @@ func (m identitiesModel) handleKeyCeremonyKey(msg tea.KeyMsg, s DemoState) keyRe
 		case "enter":
 			switch m.keyCeremonyPhase {
 			case "stage1":
-				m.keyCeremonyStage1 = TestResultView{Outcome: TestOutcomePass, Detail: "Stage 1 test passed."}
+				// CR-03: no backend seam runs here (contrast the create
+				// wizard's TestStage1/TestStage2) — a fabricated PASS was
+				// rendered as a green checkmark immediately before
+				// authorizing a real key rotation. Record the honest
+				// disclosure instead of a result that never happened.
+				m.keyCeremonyStage1 = TestResultView{Outcome: TestOutcomeReachableNotUploaded, Detail: keyCeremonyNotTestedDetail}
 				m.keyCeremonyPhase = "stage2"
 			case "stage2":
-				m.keyCeremonyStage2 = TestResultView{Outcome: TestOutcomePass, Detail: "Stage 2 test passed."}
+				m.keyCeremonyStage2 = TestResultView{Outcome: TestOutcomeReachableNotUploaded, Detail: keyCeremonyNotTestedDetail}
 				m.keyCeremonyPhase = "review"
 			}
 		}
@@ -2426,7 +2475,7 @@ func (m identitiesModel) renderKeyCeremony(sel DemoIdentity) string {
 			" " + styleSelected.Render(" Run stage 1 (Enter) ")
 	case "stage2":
 		return " " + styleBold.Render("Key ceremony — "+sel.Name) + "\n" +
-			renderStageOutcome(m.keyCeremonyStage1, m.keyCeremonyPlan.ProviderHost, false, deleteChoiceNoteWidth) +
+			renderStageNotTested(m.keyCeremonyStage1, deleteChoiceNoteWidth) +
 			" " + styleSelected.Render(" Run stage 2 (Enter) ")
 	default:
 		return m.keyCeremony.view(deleteChoiceNoteWidth)
@@ -2768,7 +2817,16 @@ func deleteCeremonyFor(plan DeletePlanView) ceremonyModel {
 			ConfirmWord: plan.Name,
 			Warning:     deleteEverythingWarning(plan),
 		}
-		cfg.ResultMessage = `Identity "` + plan.Name + `" deleted — SSH block, Git fragment, and key removed (backups kept).`
+		// WR-02: the receipt must agree with the confirm screen's own hint
+		// (formatSharedKeyNote above). When plan.SharedKeyOwners is
+		// non-empty, D-12's downgrade kept the key pair for the sibling —
+		// claiming "removed" here told the user their key was gone when it
+		// was not.
+		removedKey := "and key removed"
+		if len(plan.SharedKeyOwners) > 0 {
+			removedKey = "(key kept — still used by " + strings.Join(plan.SharedKeyOwners, ", ") + ")"
+		}
+		cfg.ResultMessage = `Identity "` + plan.Name + `" deleted — SSH block, Git fragment ` + removedKey + ` (backups kept).`
 		return newCeremony(cfg)
 	}
 	cfg.Heading = `Delete the Git identity of "` + plan.Name + `" (SSH stays)`
@@ -4368,6 +4426,11 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 			"  " + everythingLine
 		if note := formatSharedKeyNote(m.deleteChoiceOwners, detailWidth-2); note != "" {
 			pane += "\n  " + styleFaint.Render(note)
+		}
+		// WR-07: disclose a failure to compute the sibling-key note rather
+		// than rendering silently as if no identity shares this key.
+		if m.deleteChoiceOwnersErr != "" {
+			pane += "\n  " + styleError.Render("✗ shared-key check failed: "+m.deleteChoiceOwnersErr)
 		}
 		pane += "\n\n" + " " + styleFaint.Render("↑↓/Tab choose · Enter continue · Esc cancel")
 		crumbs = []string{sel.Name, "Delete"}

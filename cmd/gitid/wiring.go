@@ -2516,7 +2516,16 @@ func (b *realBackend) findAccount(name string) (identity.Account, bool) {
 // labels can never disagree with the manager.
 func (b *realBackend) keyOwners() map[string]string {
 	owners := make(map[string]string)
-	for _, acct := range b.accounts() {
+	// WR-05: normalizedAccounts() (not accounts()) — this map is looked up
+	// with ABSOLUTE paths (toReusableKeyViews' owners[k.Path], where k.Path
+	// comes from keygen.ScanReusableKeys' filepath.Glob results), while
+	// accounts() returns KeyPath verbatim from Reconstruct (usually the
+	// recipe-shaped tilde literal). Keying on the raw tilde path made every
+	// recipe-shaped identity's key silently miss this lookup, so the reuse
+	// picker showed a key already owned by another identity with an empty
+	// InUseBy label — the exact safety warning D-12 exists to show BEFORE a
+	// second identity is pointed at an existing key.
+	for _, acct := range b.normalizedAccounts() {
 		if acct.KeyPath == "" {
 			continue
 		}
@@ -3133,7 +3142,14 @@ func (b *realBackend) KeyActionFor(name string) (string, error) {
 	if health.Name == "" {
 		return "", fmt.Errorf("gitid: key action: no health report for identity %q", name)
 	}
-	ownerCount := len(identity.SharedKeyOwners(b.accounts(), acct.KeyPath, name)) + 1
+	// CR-02: both sides of this comparison must be normalized. acct.KeyPath
+	// and b.accounts() are both raw/tilde here, which only happens to work
+	// while every identity in the file spells its IdentityFile the same
+	// way — a gitconfig mixing a gitid-written absolute IdentityFile with a
+	// recipe-written tilde one for the SAME physical key hid the sharing and
+	// routed the destructive rotate path (CR-01) instead of repair.
+	normalizedAcct := b.normalizeAccountForWrite(acct)
+	ownerCount := len(identity.SharedKeyOwners(b.normalizedAccounts(), normalizedAcct.KeyPath, name)) + 1
 	return string(identity.KeyActionFor(health, ownerCount)), nil
 }
 

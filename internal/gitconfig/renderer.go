@@ -1,6 +1,7 @@
 package gitconfig
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"strings"
@@ -237,6 +238,18 @@ func RemoveProviderRewrite(gitconfigPath, provider string) (backupPath string, e
 	}
 
 	composed := filewriter.RemoveBlock(existing, name)
+	// WR-08 (05-REVIEW.md): unlike the two equality-guarded removals in
+	// identity.Delete (`if !bytes.Equal(updated, original)`), this used to
+	// call filewriter.Write unconditionally. When the block is already
+	// absent, composed is byte-identical to existing — writing it anyway
+	// rewrote the file byte-for-byte and minted a spurious
+	// .bak.<nanos>, reported as a real backup of a delete transaction that
+	// touched nothing. The doc comment's own idempotence claim ("a second
+	// call leaves the file byte-identical to the first result") was true of
+	// CONTENT but not of side effects.
+	if bytes.Equal(composed, existing) {
+		return "", nil // nothing to remove — no write, no backup
+	}
 	backupPath, err = filewriter.Write(gitconfigPath, composed, gitconfigMode)
 	if err != nil {
 		return "", fmt.Errorf("removing provider rewrite block %q from %s: %w", name, gitconfigPath, err)

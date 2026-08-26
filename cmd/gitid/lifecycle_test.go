@@ -366,6 +366,43 @@ func TestConfirmationRequiredPromptRejectedAborts(t *testing.T) {
 	}
 }
 
+// TestDeletePlanPreviewOmitsSharedKeyNeverToBeRemoved is the WR-03
+// regression: runDelete's confirmation-prompt preview used to be built by a
+// SECOND, hand-rolled target list (deletePlanPreview) that named the key
+// pair unconditionally whenever acct.KeyPath was non-empty — with no
+// keySurvives consultation, promising to delete a key the write would
+// actually KEEP for a sibling (the exact preview/write divergence R-11 and
+// the shared deleteTargets helper were built to make impossible). The
+// preview must now be derived from the SAME identity.PlanDelete the confirm
+// screen renders, which omits a shared key from its Targets.
+func TestDeletePlanPreviewOmitsSharedKeyNeverToBeRemoved(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSharedKeyFixture(t, home, true)
+	b := groupHermeticBackend(home)
+
+	var captured string
+	_, err := b.runDelete("work", identity.DeleteScopeEverything, lifecyclePolicy{
+		Confirm: confirmationRequired,
+		Prompt: func(preview string) (bool, error) {
+			captured = preview
+			return false, nil // reject — the test only needs the preview text
+		},
+	})
+	if err == nil {
+		t.Fatal("a rejected prompt must abort the delete")
+	}
+	if captured == "" {
+		t.Fatal("the confirmation prompt must have been called with a non-empty preview")
+	}
+	if strings.Contains(captured, "id_ed25519_work") {
+		t.Errorf("WR-03: preview must not name the key pair when a sibling still shares it: %q", captured)
+	}
+	if !strings.Contains(captured, ".gitconfig") {
+		t.Errorf("preview must still name the gitconfig target: %q", captured)
+	}
+}
+
 // TestRunDeleteConfirmationMatrix crosses DryRun with every confirmation
 // mode and declares the expected outcome PER CELL across the four outcome
 // classes (review R3-02): dry runs produce no backup; confirmationRequired
@@ -660,6 +697,74 @@ func TestRunRotateEndToEnd(t *testing.T) {
 	}
 }
 
+// TestRunRotateRefusesWhenKeyIsSharedWithAnotherIdentity is the CR-01
+// regression: rotate calls identity.Rotate, which ARCHIVES (moves) the
+// current key pair. When a sibling identity's IdentityFile still points at
+// that same key, moving it strands the sibling with a dangling reference.
+// runRotate — the chokepoint both the CLI and TUI call through — must refuse
+// before any write, exactly as runRepair already refuses via
+// ErrRepairTargetShared, and must leave the shared key pair byte-for-byte
+// unchanged at its original path.
+func TestRunRotateRefusesWhenKeyIsSharedWithAnotherIdentity(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSharedKeyFixture(t, home, true)
+	b := groupHermeticBackend(home)
+
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_work")
+	pubPath := keyPath + ".pub"
+	before := snapshotPaths(t, []string{keyPath, pubPath})
+
+	_, err := b.runRotate("work", lifecyclePolicy{Confirm: confirmationBypassedWithYes})
+	if err == nil {
+		t.Fatal("runRotate over a shared key must refuse, not archive it")
+	}
+	if !errors.Is(err, identity.ErrRepairTargetShared) {
+		t.Errorf("runRotate error = %v, want errors.Is(err, identity.ErrRepairTargetShared)", err)
+	}
+	if !strings.Contains(err.Error(), "personal") {
+		t.Errorf("runRotate error = %v, want it to name the sibling %q", err, "personal")
+	}
+
+	assertUnchanged(t, before, snapshotPaths(t, []string{keyPath, pubPath}))
+	archiveDir := sshconfig.ArchiveDir(b.sshDir)
+	if _, serr := os.Stat(archiveDir); !os.IsNotExist(serr) {
+		entries, rderr := os.ReadDir(archiveDir)
+		if rderr != nil {
+			t.Fatalf("reading archive dir: %v", rderr)
+		}
+		if len(entries) != 0 {
+			t.Errorf("archive directory holds entries after a refused rotation: %v", entries)
+		}
+	}
+}
+
+// TestRunRotateRefusesWhenKeyIsMissing is CR-01's secondary consequence:
+// rotating an identity with no current key pair must refuse and point at
+// `new-key`, never call identity.Rotate with an empty key path (which would
+// silently archive "" instead of generating the missing key).
+func TestRunRotateRefusesWhenKeyIsMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_work")
+	if err := os.Remove(keyPath); err != nil {
+		t.Fatalf("removing key fixture: %v", err)
+	}
+	if err := os.Remove(keyPath + ".pub"); err != nil {
+		t.Fatalf("removing pub key fixture: %v", err)
+	}
+	b := groupHermeticBackend(home)
+
+	_, err := b.runRotate("work", lifecyclePolicy{Confirm: confirmationBypassedWithYes})
+	if err == nil {
+		t.Fatal("runRotate with no current key pair must refuse, not archive an empty path")
+	}
+	if !strings.Contains(err.Error(), "new-key") {
+		t.Errorf("runRotate error = %v, want it to point at `gitid identity new-key work`", err)
+	}
+}
+
 func archivedPrivatePath(paths []string) (string, bool) {
 	for _, p := range paths {
 		if strings.HasSuffix(p, ".pub") {
@@ -668,6 +773,84 @@ func archivedPrivatePath(paths []string) (string, bool) {
 		return p, true
 	}
 	return "", false
+}
+
+// TestRotateAndRepairWatchPathsIncludeSSHConfigPath is the WR-04
+// regression: rotateWatchPaths/repairWatchPaths watched b.storageTargetPath()
+// but never b.sshConfigPath — DISTINCT paths whenever the include-dir
+// layout is active (storageTargetPath() resolves to the config.d target,
+// while b.sshConfigPath is ~/.ssh/config itself, the file
+// deps.WriteSSH/writeSSHBlock calls sshconfig.EnsureIncludeLine against). A
+// mid-transaction failure therefore left an injected Include line (and the
+// config.d directory sshconfig.EnsureIncludeDir created) behind, outside
+// the journal's watch entirely. Both watch-path builders must include
+// b.sshConfigPath so mutationJournal.restore() can undo it like any other
+// watched file.
+func TestRotateAndRepairWatchPathsIncludeSSHConfigPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+
+	// Build the include-dir layout by hand, through the real production
+	// seams (EnsureIncludeDir/EnsureIncludeLine), so b.storageTargetPath()
+	// resolves to config.d/gitid.config while b.sshConfigPath stays
+	// ~/.ssh/config — two DISTINCT paths, the exact condition WR-04's bug
+	// required (seedDeleteFixture's in-file layout makes the two identical,
+	// which would make this regression test pass even without the fix).
+	includeDir := filepath.Join(home, ".ssh", "config.d")
+	if err := sshconfig.EnsureIncludeDir(includeDir); err != nil {
+		t.Fatalf("EnsureIncludeDir: %v", err)
+	}
+	sshConfigPath := filepath.Join(home, ".ssh", "config")
+	if _, err := sshconfig.EnsureIncludeLine(sshConfigPath); err != nil {
+		t.Fatalf("EnsureIncludeLine: %v", err)
+	}
+	sshBody := "Host work.github.com\n" +
+		"  Hostname ssh.github.com\n" +
+		"  Port 443\n" +
+		"  User git\n" +
+		"  IdentityFile ~/.ssh/id_ed25519_work\n" +
+		"  IdentitiesOnly yes\n"
+	canonical := filepath.Join(includeDir, "gitid.config")
+	writeFile(t, canonical, managedBlock("_global", "Host *\n  IdentitiesOnly yes\n")+"\n"+managedBlock("work", sshBody))
+
+	pubLine := seedGeneratedKey(t, filepath.Join(home, ".ssh", "id_ed25519_work"), "work", "")
+	if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
+		t.Fatalf("seeding .gitconfig.d: %v", err)
+	}
+	fragBody := "[user]\n\tname = work User\n\temail = work@example.com\n" +
+		"\tsigningkey = ~/.ssh/id_ed25519_work.pub\n\n[gpg]\n\tformat = ssh\n\n[commit]\n\tgpgsign = true\n"
+	writeFile(t, filepath.Join(home, ".gitconfig.d", "work"), fragBody)
+	gcBody := "[includeIf \"gitdir:~/git/work/\"]\n\tpath = ~/.gitconfig.d/work\n"
+	writeFile(t, filepath.Join(home, ".gitconfig"), "[user]\n\tname = Global User\n\n"+managedBlock("work", gcBody))
+	line := mustAllowedSignersLine(t, "work@example.com", pubLine)
+	writeFile(t, filepath.Join(home, ".ssh", "allowed_signers"), managedBlock("work", line))
+
+	b := newBackendForHome(home)
+	acct, found := b.findAccount("work")
+	if !found {
+		t.Fatal("fixture account \"work\" not found")
+	}
+	if got := b.storageTargetPath(); got == b.sshConfigPath {
+		t.Fatalf("fixture setup failed: storageTargetPath() == sshConfigPath (%q) — the include-dir layout was not exercised", got)
+	}
+	acct = b.normalizeAccountForWrite(acct)
+
+	hasPath := func(paths []string, want string) bool {
+		for _, p := range paths {
+			if p == want {
+				return true
+			}
+		}
+		return false
+	}
+
+	if rotatePaths := b.rotateWatchPaths(acct); !hasPath(rotatePaths, b.sshConfigPath) {
+		t.Errorf("WR-04: rotateWatchPaths = %v, must include b.sshConfigPath %q", rotatePaths, b.sshConfigPath)
+	}
+	if repairPaths := b.repairWatchPaths(acct); !hasPath(repairPaths, b.sshConfigPath) {
+		t.Errorf("WR-04: repairWatchPaths = %v, must include b.sshConfigPath %q", repairPaths, b.sshConfigPath)
+	}
 }
 
 // TestRunRotateFailureMatrixRestoresBytesAndMode injects a failure at every
@@ -838,6 +1021,37 @@ func TestRunRepairEndToEndAndCommitMessage(t *testing.T) {
 	if len(msg.Backups) == 0 {
 		t.Error("repair commit message must carry the real backup paths")
 	}
+}
+
+// TestRunRepairRefusesWhenSharedKeyComparisonIsNormalized is the CR-02
+// regression for lifecycle.go's runRepair: `privTarget` is derived from the
+// ALREADY-normalized `acct` (absolute), but the sibling comparison used to
+// run against the raw, tilde-spelled b.accounts() list, so the two paths
+// could never be byte-equal and identity.ErrRepairTargetShared was
+// unreachable. With the fix (comparing against b.normalizedAccounts()),
+// repairing "work" — whose own canonical key path is shared with sibling
+// "personal" — must refuse and leave the shared key untouched.
+func TestRunRepairRefusesWhenSharedKeyComparisonIsNormalized(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSharedKeyFixture(t, home, true)
+	b := groupHermeticBackend(home)
+
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_work")
+	pubPath := keyPath + ".pub"
+	before := snapshotPaths(t, []string{keyPath, pubPath})
+
+	_, err := b.runRepair("work", lifecyclePolicy{Confirm: confirmationBypassedWithYes})
+	if err == nil {
+		t.Fatal("runRepair over a key shared with a sibling must refuse, not overwrite it")
+	}
+	if !errors.Is(err, identity.ErrRepairTargetShared) {
+		t.Errorf("runRepair error = %v, want errors.Is(err, identity.ErrRepairTargetShared)", err)
+	}
+	if !strings.Contains(err.Error(), "personal") {
+		t.Errorf("runRepair error = %v, want it to name the sibling %q", err, "personal")
+	}
+	assertUnchanged(t, before, snapshotPaths(t, []string{keyPath, pubPath}))
 }
 
 func archiveEntriesOrZero(t *testing.T, archiveDir string) int {

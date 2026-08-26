@@ -275,6 +275,12 @@ test: gate-copy-freeze
 ## string (`-- needs user.name + a valid email`, D7) is asserted too. Phase 4
 ## removes the real binary's retired capability override, so both binaries use
 ## the same form-validity gate.
+##
+## WR-08 (05-REVIEW.md): cmd/gitid's own rotateDryRunCaveat sentence claimed
+## this gate protected it, but the grep roots below never covered cmd/gitid
+## and the sentence was never added to the list — a false verification claim.
+## Both are now real: the grep roots include cmd/gitid, and the caveat's
+## byte-exact text is registered below.
 gate-copy-freeze:
 	@echo "==> gate-copy-freeze: 02-STYLE-SPEC.md §6 frozen copy"
 	@fail=0; \
@@ -298,9 +304,10 @@ gate-copy-freeze:
 		'Repo remotes using git@<alias>: cannot be scanned and will break after this delete.' \
 		'The old key stays valid at %s during this window — upload the new key, verify it, then remove the old one there.' \
 		'Old key archived to %s' \
-		'gitid always writes'; \
+		'gitid always writes' \
+		'This dry run tests only the current key'\''s reachability — the new key has not been generated, uploaded, or resolved, so nothing about the post-rotation state is proven.'; \
 	do \
-		if grep -rqF -- "$$s" internal/tuikit internal/identity; then \
+		if grep -rqF -- "$$s" internal/tuikit internal/identity cmd/gitid; then \
 			echo "    ok   $$s"; \
 		else \
 			echo "    MISSING  $$s"; fail=1; \

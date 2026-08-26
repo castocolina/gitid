@@ -148,18 +148,38 @@ func cloneCeremonyInputs(b *realBackend, source, cloneName string, reuseSourceKe
 		in.ReuseKeyPath = b.resolveKeyPath(in.ReuseKeyPath)
 	}
 	id := tuikit.DemoIdentity{
-		Name:            in.Name,
-		SSHHost:         in.Alias,
-		Hostname:        in.Hostname,
-		Port:            in.Port,
-		Provider:        in.Provider,
-		GitConfigured:   true,
-		GitName:         in.GitName,
-		GitEmail:        in.GitEmail,
-		MatchStrategy:   matchStrategyFromMatches(in.Matches),
-		GitDir:          "~/git/" + in.Name + "/",
-		PublicKeyPath:   in.ReuseKeyPath + ".pub",
-		ForceSSH:        true,
+		Name:          in.Name,
+		SSHHost:       in.Alias,
+		Hostname:      in.Hostname,
+		Port:          in.Port,
+		Provider:      in.Provider,
+		GitConfigured: true,
+		GitName:       in.GitName,
+		GitEmail:      in.GitEmail,
+		MatchStrategy: matchStrategyFromMatches(in.Matches),
+		// WR-10: derive GitDir from in.Matches the SAME way realBackend.
+		// ClonePrefill does (gitDirFromMatches) — a source whose gitdir is
+		// "~/work/acme/" must clone to "~/work/acme/" headless too, not
+		// silently re-derive "~/git/<clone>/" and diverge from what the
+		// wizard's own prefill (and this verb's own resolvePrefilledTUI
+		// branch a few lines above) would have produced. Only fall back to
+		// the "~/git/<name>/" default for a pure-hasconfig clone, which
+		// carries no gitdir match at all.
+		GitDir: orDefault(gitDirFromMatches(in.Matches), "~/git/"+in.Name+"/"),
+		// WR-11: PublicKeyPath is deliberately NOT set here — it is
+		// unconditionally reassigned by the if/else below (reuse vs.
+		// generated), so setting it in this literal was dead: when
+		// ReuseKeyPath is empty, the literal produced the bare string
+		// ".pub" (the exact value WR-14 in identities.go was written to
+		// eliminate) before being immediately overwritten. Harmless today,
+		// a trap on the next edit that reorders these blocks.
+		// WR-06: default to the CLONE SOURCE's own current setting, never an
+		// unconditional true. This is a machine-global rewrite of every
+		// HTTPS clone URL for the provider — forcing it on for every
+		// headless clone contradicts D-15's "copy the author fields,
+		// re-derive the rest": a clone must not silently switch on a
+		// global side effect the source never had.
+		ForceSSH:        src.ForceSSH,
 		Algorithm:       in.Algo,
 		ReuseKeyPath:    in.ReuseKeyPath,
 		GitFragmentPath: in.FragmentPath,
@@ -175,4 +195,12 @@ func cloneCeremonyInputs(b *realBackend, source, cloneName string, reuseSourceKe
 		id.PublicKeyPath = "~/.ssh/id_ed25519_" + in.Name + ".pub"
 	}
 	return in, id, nil
+}
+
+// orDefault returns v unless it is empty, in which case it returns fallback.
+func orDefault(v, fallback string) string {
+	if v == "" {
+		return fallback
+	}
+	return v
 }

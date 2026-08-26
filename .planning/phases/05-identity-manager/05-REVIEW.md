@@ -38,7 +38,15 @@ findings:
   warning: 13
   info: 0
   total: 18
-status: issues_found
+status: resolved
+resolution: see 05-REVIEW-FIX.md (2026-08-26) — all 18 findings fixed
+  (CR-01..05, WR-01..13), each with a test-first RED/GREEN regression test
+  and its own atomic commit. Two findings (WR-10, WR-11) and part of a third
+  (WR-13) had no reproducible live divergence in the current codebase on
+  investigation; the review's suggested code was still applied as a
+  defensive consolidation, documented inline in 05-REVIEW-FIX.md. Final
+  verification (go build, make lint, go test -race ./..., make test-e2e)
+  all passed.
 ---
 
 # Phase 5: Code Review Report

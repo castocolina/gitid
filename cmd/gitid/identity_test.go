@@ -331,6 +331,67 @@ func TestBuildIdentityRecords_UnusedKeyNotInAnyRecord(t *testing.T) {
 	}
 }
 
+// TestBuildIdentityRecords_UnionNeverDoubleCountsAClassifiedIdentity is the
+// WR-13 regression's non-regression half: after switching
+// buildIdentityRecords to build the record set from the UNION of
+// inv.Identities and b.accounts() (keyed by name), a normally-classified
+// identity (present in BOTH sets, the common case) must still appear
+// EXACTLY ONCE, fully classified — never duplicated by the union logic,
+// and never demoted to unclassifiedIdentityRecord's empty-state fallback.
+func TestBuildIdentityRecords_UnionNeverDoubleCountsAClassifiedIdentity(t *testing.T) {
+	home := t.TempDir()
+	seedDeleteFixture(t, home, "work")
+
+	records, _, err := buildIdentityRecords(home)
+	if err != nil {
+		t.Fatalf("buildIdentityRecords: %v", err)
+	}
+	var matches int
+	for _, r := range records {
+		if r.Name != "work" {
+			continue
+		}
+		matches++
+		if r.State == "" {
+			t.Errorf("WR-13: a normally-classified identity must not fall through to the unclassified fallback: %+v", r)
+		}
+	}
+	if matches != 1 {
+		t.Errorf("WR-13: identity %q appears %d times in records, want exactly 1", "work", matches)
+	}
+}
+
+// TestUnclassifiedIdentityRecordNeverFabricatesState is the WR-13
+// regression's direct unit proof: unclassifiedIdentityRecord — the fallback
+// buildIdentityRecords now uses for an account b.accounts() reconstructed
+// but identity.BuildInventory's classification omitted — must never
+// fabricate a specific State/IdentityState/KeyState or report Complete,
+// since no classification actually ran. It must still carry every
+// Account-shaped fact so `identity show` can describe what it knows.
+func TestUnclassifiedIdentityRecordNeverFabricatesState(t *testing.T) {
+	acct := identity.Account{
+		Name: "ghost", Alias: "ghost.github.com", Hostname: "ssh.github.com", Port: 443,
+		Provider: "github.com", KeyPath: "~/.ssh/id_ed25519_ghost", PubPath: "~/.ssh/id_ed25519_ghost.pub",
+		FragmentPath: "~/.gitconfig.d/ghost", GitName: "Ghost User", GitEmail: "ghost@example.com",
+	}
+	r := unclassifiedIdentityRecord(acct)
+	if r.Name != "ghost" {
+		t.Errorf("Name = %q, want %q", r.Name, "ghost")
+	}
+	if r.State != "" || r.IdentityState != "" || r.KeyState != "" {
+		t.Errorf("WR-13: unclassifiedIdentityRecord must not fabricate a state — got State=%q IdentityState=%q KeyState=%q", r.State, r.IdentityState, r.KeyState)
+	}
+	if r.Complete {
+		t.Error("WR-13: an unclassified identity must never report Complete = true")
+	}
+	if r.Problems == nil {
+		t.Error("Problems must be a non-nil empty slice, never null (MGR-03/D-03 JSON contract)")
+	}
+	if r.Alias != acct.Alias || r.Hostname != acct.Hostname || r.GitEmail != acct.GitEmail || r.KeyPath != acct.KeyPath {
+		t.Errorf("unclassifiedIdentityRecord must still carry every Account-shaped fact: %+v", r)
+	}
+}
+
 // TestBuildIdentityRecords_NoWriteBetweenCalls asserts two consecutive
 // buildIdentityRecords calls with no intervening write produce byte-identical
 // records (MGR-08 — nothing is cached or persisted between calls).
@@ -555,6 +616,70 @@ func TestIdentityCreateMissingFlagsErrorNamesOnlyMissing(t *testing.T) {
 	}
 }
 
+// TestIdentityCreateRejectsPathTraversalName is the CR-04 regression:
+// createInputFromCreateFlags validated only the SSH host block
+// (sshconfig.ValidateHostBlock), never the identity NAME itself.
+// validateToken (inside ValidateHostBlock) rejects whitespace and shell
+// metacharacters but not '/' or '..', so an unvalidated name flowed straight
+// into FragmentPath = filepath.Join(b.fragmentDir, name) — "--name
+// '../.bashrc'" resolved the fragment write to ~/.bashrc, still "inside"
+// $HOME by containedRegularPath's own (weaker) check.
+func TestIdentityCreateRejectsPathTraversalName(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cmd, _, _ := cliTestCmd()
+	flags := identityCreateFlags{
+		Name:     "../.bashrc",
+		Provider: "github.com",
+		GitName:  "Attacker",
+		GitEmail: "attacker@example.com",
+		Yes:      true,
+	}
+	err := runIdentityCreate(cmd, flags, false, false)
+	if err == nil {
+		t.Fatal("identity create with a path-traversal name must be refused, not written")
+	}
+	if !strings.Contains(err.Error(), "invalid identity name") {
+		t.Errorf("error = %v, want it to name the identity-name validation failure", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(home, ".bashrc")); !os.IsNotExist(statErr) {
+		t.Errorf("identity create must not write outside the managed fragment directory: statErr=%v", statErr)
+	}
+}
+
+// TestIdentityCreateRejectsInvalidGitEmail is CR-04's second gap:
+// createInputFromCreateFlags never called identity.ValidateEmail, so a
+// malformed --git-email reached WriteFragment unchecked and was only caught
+// later, deep inside gitconfig.validateEmail — by then the SSH block and
+// key had already been written and the whole transaction had to roll back
+// (proven pre-fix: the error names "gitconfig: user.email is malformed" and
+// lists ~12 restored paths, including the generated key pair). The fix must
+// refuse at the flag boundary, before ~/.ssh even exists.
+func TestIdentityCreateRejectsInvalidGitEmail(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cmd, _, _ := cliTestCmd()
+	flags := identityCreateFlags{
+		Name:     "work",
+		Provider: "github.com",
+		GitName:  "Work User",
+		GitEmail: "not-an-email",
+		Yes:      true,
+	}
+	err := runIdentityCreate(cmd, flags, false, false)
+	if err == nil {
+		t.Fatal("identity create with an invalid git-email must be refused before any write")
+	}
+	if !strings.Contains(err.Error(), "invalid email") {
+		t.Errorf("error = %v, want the early ValidateEmail rejection (\"invalid email\"), not a deep-write rollback", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(home, ".ssh")); !os.IsNotExist(statErr) {
+		t.Errorf("identity create must not create ~/.ssh before email validation: statErr=%v", statErr)
+	}
+}
+
 // --- delete: exactly one scope flag ----------------------------------------
 
 // TestIdentityDeleteRequiresExactlyOneScopeFlag asserts supplying BOTH scope
@@ -573,6 +698,80 @@ func TestIdentityDeleteRequiresExactlyOneScopeFlag(t *testing.T) {
 	}
 	if err := runIdentityDelete(cmd, "work", identityDeleteFlags{}, true, true); err == nil {
 		t.Error("passing neither scope flag must be an error in interactive mode too")
+	}
+}
+
+// TestConfirmDeleteRequiresTypedNameForEverythingScope is the WR-01
+// regression: for the identical irreversible everything-scope delete, the
+// TUI requires FixDestructive{ConfirmWord: plan.Name} (typing the identity
+// name), while the CLI's interactive prompt accepted the generic "yes" used
+// by every other verb — the stronger gate was dropped exactly where the
+// blast radius is largest. git-only delete must still accept "yes".
+func TestConfirmDeleteRequiresTypedNameForEverythingScope(t *testing.T) {
+	cmd, _, _ := cliTestCmd()
+	cmd.SetIn(strings.NewReader("yes\n"))
+	ok, err := confirmDelete(cmd, "work", identity.DeleteScopeEverything)
+	if err != nil {
+		t.Fatalf("confirmDelete: %v", err)
+	}
+	if ok {
+		t.Error("typing the generic \"yes\" must NOT confirm an everything-scope delete — the identity name is required")
+	}
+
+	cmd2, _, _ := cliTestCmd()
+	cmd2.SetIn(strings.NewReader("work\n"))
+	ok2, err := confirmDelete(cmd2, "work", identity.DeleteScopeEverything)
+	if err != nil {
+		t.Fatalf("confirmDelete: %v", err)
+	}
+	if !ok2 {
+		t.Error("typing the identity name must confirm an everything-scope delete")
+	}
+
+	cmd3, _, _ := cliTestCmd()
+	cmd3.SetIn(strings.NewReader("yes\n"))
+	ok3, err := confirmDelete(cmd3, "work", identity.DeleteScopeGitOnly)
+	if err != nil {
+		t.Fatalf("confirmDelete: %v", err)
+	}
+	if !ok3 {
+		t.Error("git-only scope must still accept the generic \"yes\"")
+	}
+}
+
+// TestIdentityDeleteRefusesWhenPlanFails is the CR-05 regression: PlanDelete
+// is deliberately fail-closed — a plan that failed to read a scan source
+// must never be indistinguishable from a legitimately small plan — and the
+// TUI honors that (refreshDeletePlan blanks the plan, disables the confirm
+// control). The CLI used to do the opposite: `if plan, perr :=
+// b.DeletePlan(...); perr == nil { render }` silently fell through to the
+// irreversible delete on any plan error, printing nothing (defeating the
+// T-05-38 disclosure the code comment above it claims to satisfy). The fix
+// must refuse the delete outright when the plan cannot be built.
+func TestIdentityDeleteRefusesWhenPlanFails(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+
+	allowed := filepath.Join(home, ".ssh", "allowed_signers")
+	if err := os.Chmod(allowed, 0o000); err != nil {
+		t.Fatalf("chmod 0000 allowed_signers: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(allowed, 0o600) })
+
+	cmd, _, _ := cliTestCmd()
+	err := runIdentityDelete(cmd, "work", identityDeleteFlags{All: true, Yes: true}, false, false)
+	if err == nil {
+		t.Fatal("identity delete must refuse when the delete plan cannot be built, not proceed silently")
+	}
+	if !strings.Contains(err.Error(), "delete plan") {
+		t.Errorf("error = %v, want it to name the delete-plan failure", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(home, ".ssh", "config")); os.IsNotExist(statErr) {
+		t.Error("identity delete must not have deleted anything when the plan could not be built")
+	}
+	if _, statErr := os.Stat(filepath.Join(home, ".ssh", "id_ed25519_work")); os.IsNotExist(statErr) {
+		t.Error("identity delete must not have removed the key pair when the plan could not be built")
 	}
 }
 
@@ -1037,6 +1236,125 @@ func TestCloneCeremonyInputsFingerprintsMatchTestStage(t *testing.T) {
 	})
 	if got, want := specFingerprint(in), specFingerprint(staged); got != want {
 		t.Fatalf("clone CreateInput fingerprint %q != TestStage reconstruction %q", got, want)
+	}
+}
+
+// TestCreateInputFromCreateFlagsForceSSHDefaultsOffAndFlagEnables is the
+// WR-06 regression: createInputFromCreateFlags hardcoded ForceSSH: true
+// unconditionally, so every headless `identity create` wrote
+// `[url "git@<provider>:"] insteadOf = https://<provider>/` into
+// ~/.gitconfig — a MACHINE-GLOBAL rewrite of every HTTPS clone URL for that
+// provider, for every repository, including ones unrelated to gitid. The
+// TUI exposes this as a user-visible toggle; the CLI must default it off
+// and gate it behind an explicit --force-ssh flag.
+func TestCreateInputFromCreateFlagsForceSSHDefaultsOffAndFlagEnables(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	b := newBackendForHome(home)
+
+	_, id, err := createInputFromCreateFlags(b, identityCreateFlags{
+		Name: "work", Provider: "github.com", GitName: "Work User", GitEmail: "work@example.com",
+	})
+	if err != nil {
+		t.Fatalf("createInputFromCreateFlags: %v", err)
+	}
+	if id.ForceSSH {
+		t.Error("WR-06: identity create without --force-ssh must default ForceSSH to false")
+	}
+
+	_, id2, err := createInputFromCreateFlags(b, identityCreateFlags{
+		Name: "work", Provider: "github.com", GitName: "Work User", GitEmail: "work@example.com", ForceSSH: true,
+	})
+	if err != nil {
+		t.Fatalf("createInputFromCreateFlags --force-ssh: %v", err)
+	}
+	if !id2.ForceSSH {
+		t.Error("WR-06: identity create --force-ssh must set ForceSSH true")
+	}
+}
+
+// TestCloneCeremonyInputsGitDirMatchesClonePrefillDerivation is the WR-10
+// regression: cloneCeremonyInputs hardcoded its own GitDir literal
+// ("~/git/"+in.Name+"/") instead of deriving it via gitDirFromMatches(in.
+// Matches) the way realBackend.ClonePrefill (the TUI wizard's prefill,
+// consulted by this same verb's resolvePrefilledTUI branch a few lines
+// above) already does — a duplicated derivation that a future change to
+// either side could silently diverge. The two must now derive from the
+// SAME formula and therefore agree. (Investigation note: with
+// identity.DeriveCloneInput's current kind-only Matches rebuild — R-12 —
+// both derivations happen to already coincide on every constructible
+// input, so this guards against FUTURE drift between the two call sites
+// rather than reproducing a live divergent value today.)
+func TestCloneCeremonyInputsGitDirMatchesClonePrefillDerivation(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+	b := newBackendForHome(home)
+
+	_, id, err := cloneCeremonyInputs(b, "work", "work-clone", true)
+	if err != nil {
+		t.Fatalf("cloneCeremonyInputs: %v", err)
+	}
+	prefill, perr := b.ClonePrefill("work", "work-clone", true)
+	if perr != nil {
+		t.Fatalf("ClonePrefill: %v", perr)
+	}
+	if id.GitDir != prefill.GitDir {
+		t.Errorf("WR-10: headless GitDir = %q, wizard prefill GitDir = %q — the two clone paths must derive the SAME includeIf gitdir from the SAME identity.DeriveCloneInput matches, never a second, independently hardcoded default", id.GitDir, prefill.GitDir)
+	}
+}
+
+// TestCloneCeremonyInputsPublicKeyPathNeverBarePubSuffix is the WR-11
+// regression: cloneCeremonyInputs' DemoIdentity{} struct literal set
+// PublicKeyPath: in.ReuseKeyPath + ".pub" eagerly, then the if/else block a
+// few lines below unconditionally reassigned it — dead when ReuseKeyPath is
+// non-empty (immediately overwritten with the identical value), and a live
+// trap when it is empty (the literal alone would have produced the bare
+// string ".pub", the exact defect WR-14 in identities.go was written to
+// eliminate) — harmless only because the reassignment always runs. This
+// guards BOTH branches directly so a future reordering that drops the
+// explicit reassignment fails loudly instead of silently regressing to
+// ".pub".
+func TestCloneCeremonyInputsPublicKeyPathNeverBarePubSuffix(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+	b := newBackendForHome(home)
+
+	_, idReuse, err := cloneCeremonyInputs(b, "work", "work-clone", true)
+	if err != nil {
+		t.Fatalf("cloneCeremonyInputs(reuse): %v", err)
+	}
+	if idReuse.PublicKeyPath == ".pub" || idReuse.PublicKeyPath == "" {
+		t.Errorf("WR-11: reuse-key clone PublicKeyPath = %q, must not be the bare \".pub\" suffix", idReuse.PublicKeyPath)
+	}
+
+	_, idGen, err := cloneCeremonyInputs(b, "work", "work-clone2", false)
+	if err != nil {
+		t.Fatalf("cloneCeremonyInputs(generated): %v", err)
+	}
+	if want := "~/.ssh/id_ed25519_work-clone2.pub"; idGen.PublicKeyPath != want {
+		t.Errorf("WR-11: generated-key clone PublicKeyPath = %q, want %q", idGen.PublicKeyPath, want)
+	}
+}
+
+// TestCloneCeremonyInputsMirrorsSourceForceSSH is WR-06's clone half:
+// cloneCeremonyInputs hardcoded ForceSSH: true unconditionally, contradicting
+// D-15's "copy the author fields, re-derive the rest" — a clone must not
+// silently switch on a machine-global rewrite the source never had. The
+// clone's ForceSSH must mirror src.ForceSSH, not force it on.
+func TestCloneCeremonyInputsMirrorsSourceForceSSH(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work") // no provider-rewrite block seeded -> src.ForceSSH == false
+	b := newBackendForHome(home)
+
+	_, id, err := cloneCeremonyInputs(b, "work", "work-clone", true)
+	if err != nil {
+		t.Fatalf("cloneCeremonyInputs: %v", err)
+	}
+	if id.ForceSSH {
+		t.Error("WR-06: cloning a source without the provider rewrite must not force it on for the clone")
 	}
 }
 

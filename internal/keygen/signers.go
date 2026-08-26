@@ -20,17 +20,25 @@ const allowedSignersMode = 0o644
 // which must NOT bleed into the signer line — the principal there is the email.
 // The email is used byte-identically to the supplied value (Pitfall 8).
 //
-// CR-18: ssh-keygen(1)'s allowed_signers format treats the PRINCIPALS field as
-// a comma-separated list, so an email carrying a bare comma smuggles in an
-// attacker-chosen second principal (e.g. "victim@corp.test,*" grants a
-// wildcard match — verified against real `ssh-keygen -Y verify`). This is the
-// write-time hard gate: it fails closed rather than emit a multi-principal
-// line, independent of whether an upstream form/config validator already
-// rejected the comma (a pre-existing fragment read back for reuse/adopt never
-// re-runs that validation).
+// CR-18/WR-08: ssh-keygen(1)'s allowed_signers format treats the PRINCIPALS
+// field as a comma-separated list, so an email carrying a bare comma
+// smuggles in an attacker-chosen second principal (e.g. "victim@corp.test,*"
+// grants a wildcard match — verified against real `ssh-keygen -Y verify`).
+// This is the write-time hard gate: it fails closed rather than emit a
+// multi-principal (or multi-line, or reshaped-field) line, independent of
+// whether an upstream form/config validator already rejected the offending
+// character (a pre-existing fragment read back for reuse/adopt never
+// re-runs that validation). WR-08: a comma is not the only character that
+// breaks this contract — a newline in email injects an entire ADDITIONAL
+// allowed_signers line (an attacker-chosen principal + key on its own
+// line), and a space or embedded "namespaces=" silently changes the field
+// layout ssh-keygen(1) parses. The gate now rejects every character that
+// is unsafe in this single-line, single-field format, and requires a
+// single bare "user@host"-shaped address — never partial validation that
+// relies on some earlier, independent layer having already run.
 func AllowedSignersLine(email, pubLine string) (string, error) {
-	if strings.Contains(email, ",") {
-		return "", fmt.Errorf("keygen: allowed_signers principal must not contain a comma (CR-18): %q", email)
+	if email == "" || strings.ContainsAny(email, ",\n\r \t") || !strings.Contains(email, "@") {
+		return "", fmt.Errorf("keygen: allowed_signers principal is not a single bare address (CR-18): %q", email)
 	}
 	keyText := strings.TrimRight(pubLine, "\n")
 	if fields := strings.Fields(keyText); len(fields) >= 2 {

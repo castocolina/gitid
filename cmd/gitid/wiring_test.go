@@ -765,6 +765,37 @@ func TestScanReusableKeysLabelsInUseByWithProvider(t *testing.T) {
 	}
 }
 
+// TestScanReusableKeysLabelsTildeSpelledIdentityKey is the WR-05 regression:
+// keyOwners() keyed its map on the VERBATIM Account.KeyPath (accounts(),
+// not normalizedAccounts()), while it is looked up with ABSOLUTE paths
+// (toReusableKeyViews' owners[k.Path], built from keygen.ScanReusableKeys'
+// filepath.Glob results). For any recipe-shaped identity — IdentityFile
+// spelled "~/.ssh/id_ed25519_<name>", exactly what seedDeleteFixture writes
+// — the lookup missed entirely, so the reuse picker showed a key already
+// owned by another identity with an empty InUseBy label: the same class of
+// miss wave 9 fixed for delete, in the safety label that warns a user
+// before they point a second identity at an existing key.
+func TestScanReusableKeysLabelsTildeSpelledIdentityKey(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519_work")
+	views := newBackendForHome(home).ScanReusableKeys()
+	var found bool
+	for _, v := range views {
+		if v.Path == keyPath {
+			found = true
+			if v.InUseBy != "work (github.com)" {
+				t.Errorf("WR-05: InUseBy = %q, want %q — a recipe-shaped tilde IdentityFile must still label the key as in-use", v.InUseBy, "work (github.com)")
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("the seeded key was not among the scanned candidates: %+v", views)
+	}
+}
+
 // TestManualReusePathResolvesRegularFile proves the picker's manual-path row
 // (D-10) resolves a plain, non-symlinked candidate the SAME way the
 // directory scan would — same fields, same D-12 label.
@@ -2277,6 +2308,67 @@ func seedDeleteFixture(t *testing.T, home, name string) (pubLine string) {
 	return pubLine
 }
 
+// seedSharedKeyFixture writes two complete identities, "work" and
+// "personal", whose SSH Host blocks both reference the SAME canonical key
+// pair (~/.ssh/id_ed25519_work) — the CR-01/CR-02 shared-key regression
+// shape. When tildeSpelling is true both Host blocks spell the shared
+// IdentityFile with the recipe-shaped tilde form; when false "personal"'s
+// Host block spells it as an ABSOLUTE path instead (simulating a
+// gitid-written absolute IdentityFile coexisting with a recipe-written
+// tilde one — the exact mixed-spelling case CR-02 names for wiring.go:3136's
+// un-normalized KeyActionFor comparison). Returns the shared key's pub line.
+func seedSharedKeyFixture(t *testing.T, home string, tildeSpelling bool) (pubLine string) {
+	t.Helper()
+	seedSSHDir(t, home)
+
+	tildeIdentityFile := "~/.ssh/id_ed25519_work"
+	absoluteIdentityFile := filepath.Join(home, ".ssh", "id_ed25519_work")
+	personalIdentityFile := tildeIdentityFile
+	if !tildeSpelling {
+		personalIdentityFile = absoluteIdentityFile
+	}
+
+	sshBody := func(name, identityFile string) string {
+		return "Host " + name + ".github.com\n" +
+			"  Hostname ssh.github.com\n" +
+			"  Port 443\n" +
+			"  User git\n" +
+			"  IdentityFile " + identityFile + "\n" +
+			"  IdentitiesOnly yes\n"
+	}
+	sshConfig := managedBlock("_global", "Host *\n  IdentitiesOnly yes\n") + "\n" +
+		managedBlock("work", sshBody("work", tildeIdentityFile)) + "\n" +
+		managedBlock("personal", sshBody("personal", personalIdentityFile))
+	writeFile(t, filepath.Join(home, ".ssh", "config"), sshConfig)
+
+	pubLine = seedGeneratedKey(t, absoluteIdentityFile, "work", "")
+
+	if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
+		t.Fatalf("seeding .gitconfig.d: %v", err)
+	}
+	fragBody := func(name, identityFile string) string {
+		return "[user]\n\tname = " + name + " User\n\temail = " + name + "@example.com\n" +
+			"\tsigningkey = " + identityFile + ".pub\n\n[gpg]\n\tformat = ssh\n\n[commit]\n\tgpgsign = true\n"
+	}
+	writeFile(t, filepath.Join(home, ".gitconfig.d", "work"), fragBody("work", tildeIdentityFile))
+	writeFile(t, filepath.Join(home, ".gitconfig.d", "personal"), fragBody("personal", personalIdentityFile))
+
+	gcBody := func(name string) string {
+		return "[includeIf \"gitdir:~/git/" + name + "/\"]\n\tpath = ~/.gitconfig.d/" + name + "\n"
+	}
+	gitconfig := "[user]\n\tname = Global User\n\n" +
+		managedBlock("work", gcBody("work")) + "\n" +
+		managedBlock("personal", gcBody("personal"))
+	writeFile(t, filepath.Join(home, ".gitconfig"), gitconfig)
+
+	workLine := mustAllowedSignersLine(t, "work@example.com", pubLine)
+	personalLine := mustAllowedSignersLine(t, "personal@example.com", pubLine)
+	signers := managedBlock("work", workLine) + "\n" + managedBlock("personal", personalLine)
+	writeFile(t, filepath.Join(home, ".ssh", "allowed_signers"), signers)
+
+	return pubLine
+}
+
 // homeFileListing walks home and returns every regular file path found,
 // relative to home, sorted — used to prove an idempotent re-run creates NO
 // new file anywhere under the fake HOME.
@@ -3445,6 +3537,30 @@ func TestPlannerSeamsFailClosedOnMissingIdentity(t *testing.T) {
 		t.Error("KeyActionFor on a missing identity must error")
 	} else if action != "" {
 		t.Errorf("KeyActionFor returned %q alongside an error, want empty", action)
+	}
+}
+
+// TestKeyActionForDetectsSharedKeyAcrossMixedPathSpelling is the CR-02
+// regression for wiring.go's KeyActionFor: the owner-count comparison used
+// to run acct.KeyPath and b.accounts() BOTH un-normalized. That happens to
+// still work when every identity spells its IdentityFile the same way, but a
+// gitconfig mixing a tilde-spelled IdentityFile with an absolute one for the
+// SAME physical key file hid the sharing entirely, routing the destructive
+// rotate path (CR-01) instead of repair. With the fix (normalizing both the
+// account and the comparison list), KeyActionFor("work") must return
+// "repair" regardless of how the sibling's IdentityFile is spelled.
+func TestKeyActionForDetectsSharedKeyAcrossMixedPathSpelling(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSharedKeyFixture(t, home, false) // false: "personal" spells the shared key as an ABSOLUTE path
+	b := newBackendForHome(home)
+
+	action, err := b.KeyActionFor("work")
+	if err != nil {
+		t.Fatalf("KeyActionFor(work): %v", err)
+	}
+	if action != string(identity.KeyActionRepair) {
+		t.Errorf("KeyActionFor(work) = %q, want %q — a key shared across mixed tilde/absolute spellings must still route to repair", action, identity.KeyActionRepair)
 	}
 }
 
