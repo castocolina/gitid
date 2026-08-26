@@ -182,6 +182,27 @@ func (b *realBackend) runRotate(name string, p lifecyclePolicy) (lifecycleResult
 	}
 	acct = b.normalizeAccountForWrite(acct)
 
+	// CR-01: refuse to archive (move) a key another identity still depends
+	// on. identity.Rotate calls deps.ArchiveKeyPair — the MOVE primitive —
+	// so without this gate a sibling sharing the current key is left with a
+	// dangling IdentityFile the moment rotation completes. This is the same
+	// class of loss ErrRepairTargetShared exists to prevent on the repair
+	// side (below), applied at the ONE chokepoint both the CLI and TUI call
+	// through. b.normalizedAccounts() (not b.accounts()) per CR-02, so a
+	// mixed tilde/absolute IdentityFile spelling cannot hide the sharing.
+	if owners := identity.SharedKeyOwners(b.normalizedAccounts(), acct.KeyPath, name); len(owners) > 0 {
+		return res, fmt.Errorf(
+			"gitid: refusing to rotate %q: its key pair is also used by %s — use `gitid identity new-key %s` instead: %w",
+			name, strings.Join(owners, ", "), name, identity.ErrRepairTargetShared)
+	}
+	// Secondary consequence of the same missing gate (CR-01): rotating an
+	// identity with no current key pair must refuse and point at `new-key`,
+	// never call identity.Rotate with an empty/missing key path (which
+	// silently archives "" instead of generating the missing key).
+	if acct.KeyPath == "" || !fileExists(acct.KeyPath) {
+		return res, fmt.Errorf("gitid: refusing to rotate %q: no current key pair to retire — use `gitid identity new-key %s`", name, name)
+	}
+
 	// test — the connectivity probe against the identity as it currently
 	// resolves through its alias (the only probe a rotation can run before
 	// the write). The resident is advisory at commit time: the TUI's two
@@ -356,8 +377,11 @@ func (b *realBackend) runRepair(name string, p lifecyclePolicy) (lifecycleResult
 	// (RepairKeyPath), NEVER against Account.KeyPath — the pathological case
 	// a naive reading gets wrong (review R-02). RepairKey fails closed with
 	// ErrRepairTargetShared before any seam runs when a sibling depends on
-	// the target.
-	otherOwners := identity.SharedKeyOwners(b.accounts(), privTarget, name)
+	// the target. CR-02: privTarget is ABSOLUTE (derived from the already-
+	// normalized acct), so the comparison list must be b.normalizedAccounts()
+	// — comparing against the raw, tilde-spelled b.accounts() made this
+	// unreachable for any recipe-shaped identity.
+	otherOwners := identity.SharedKeyOwners(b.normalizedAccounts(), privTarget, name)
 	rr, rerr := identity.RepairKey(acct, otherOwners, deps)
 	res.Backups = collectCreateBackups(rr)
 	if rerr != nil {
