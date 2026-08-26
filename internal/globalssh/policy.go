@@ -47,3 +47,9 @@ func PolicyFor(key string) (OptionPolicy, bool) {
 	}
 	return OptionPolicy{}, false
 }
+
+// WritableToHostStar reports whether this recommendation may be written to
+// gitid's Host * block. IdentitiesOnly is per-alias and must never be.
+func (p OptionPolicy) WritableToHostStar() bool {
+	return p.Scope != "per-alias"
+}

@@ -105,11 +105,9 @@ func TestProbeHostIsInvalidTLD(t *testing.T) {
 	}
 }
 
-// TestStatusesNeverReturnsEmptyOnProbeError pins the fail-open contract: when
-// `ssh -G` refuses to answer, Statuses still returns one row per policy entry,
-// every row carrying a non-empty ProbeError and the inconclusive class — never
-// a nil slice, never an error that empties the pane (06-UI-SPEC.md's
-// unresolved probe-failure question, resolved fail-open).
+// TestStatusesNeverReturnsEmptyOnProbeError pins the fail-open contract. A
+// failed resolution probe degrades only rows that consulted it; file-derived
+// rows retain their independent evidence and the pane always retains all rows.
 func TestStatusesNeverReturnsEmptyOnProbeError(t *testing.T) {
 	sentinel := errors.New("probe exploded")
 	deps := depsForOut("", "", "~/.ssh/config", nil, "/etc/ssh/ssh_config", nil, nil)
@@ -119,27 +117,31 @@ func TestStatusesNeverReturnsEmptyOnProbeError(t *testing.T) {
 	if len(statuses) != len(Policy) {
 		t.Fatalf("Statuses len = %d, want %d even when the probe fails", len(statuses), len(Policy))
 	}
-	for _, st := range statuses {
-		if st.Source != SourceInconclusive {
-			t.Errorf("%s: source = %v, want SourceInconclusive on probe error", st.Key, st.Source)
+	byKey := statusByKey(t, statuses)
+	for _, key := range []string{"StrictHostKeyChecking", "ForwardAgent", "HashKnownHosts", "AddKeysToAgent"} {
+		if byKey[key].Source != SourceInconclusive || byKey[key].ProbeError == "" {
+			t.Errorf("%s = (%v, %q), want inconclusive with note", key, byKey[key].Source, byKey[key].ProbeError)
 		}
-		if st.ProbeError == "" {
-			t.Errorf("%s: ProbeError must be populated on probe error", st.Key)
+	}
+	for _, key := range []string{"UseKeychain", "IdentitiesOnly"} {
+		if byKey[key].ProbeError != "" {
+			t.Errorf("%s ProbeError = %q, want independent evidence without resolution-probe note", key, byKey[key].ProbeError)
 		}
 	}
 }
 
-// TestStatusesTimeoutDegradesToInconclusive proves a timed-out probe (not just
-// a hard error) also degrades to an advisory note rather than a hang or an
-// empty pane (T-06-02).
+// TestStatusesTimeoutDegradesToInconclusive proves a timed-out resolution
+// probe degrades its dependent rows to an advisory note rather than a hang.
 func TestStatusesTimeoutDegradesToInconclusive(t *testing.T) {
 	deps := depsForOut("", "", "~/.ssh/config", nil, "/etc/ssh/ssh_config", nil, nil)
 	deps.RunSSHG = func(_ context.Context, _ ...string) (string, error) {
 		return "", context.DeadlineExceeded
 	}
-	for _, st := range Statuses(deps) {
+	byKey := statusByKey(t, Statuses(deps))
+	for _, key := range []string{"StrictHostKeyChecking", "ForwardAgent", "HashKnownHosts", "AddKeysToAgent"} {
+		st := byKey[key]
 		if st.Source != SourceInconclusive || st.ProbeError == "" {
-			t.Errorf("%s: source = %v probeErr = %q, want inconclusive + note", st.Key, st.Source, st.ProbeError)
+			t.Errorf("%s: source = %v probeErr = %q, want inconclusive + note", key, st.Source, st.ProbeError)
 		}
 	}
 }

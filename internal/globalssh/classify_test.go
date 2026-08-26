@@ -3,7 +3,11 @@ package globalssh
 import (
 	"context"
 	"errors"
+	"reflect"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // TestStatuses is the table-driven provenance classifier suite (D-01 with the
@@ -109,19 +113,19 @@ func TestStatuses(t *testing.T) {
 	}
 }
 
-// TestStatusesHashKnownHostsState pins the tracer row's correct State: only
-// HashKnownHosts carries an already-set/needs-action State in this plan; the
-// other five rows keep the needs-action zero value (06-03 owns the full model).
-func TestStatusesHashKnownHostsState(t *testing.T) {
-	deps := depsForOut("hashknownhosts yes\n", cannedResolved, "~/.ssh/config",
+func TestStatusesClassifiesAllPolicyRows(t *testing.T) {
+	plain := strings.ReplaceAll(cannedResolved, "hashknownhosts no", "hashknownhosts yes")
+	deps := depsForOut(plain, cannedResolved, "~/.ssh/config",
 		[]byte("HashKnownHosts yes\n"), "/etc/ssh/ssh_config", nil, nil)
-	for _, st := range Statuses(deps) {
-		if st.Key == "HashKnownHosts" && st.State != StateAlreadySet {
-			t.Errorf("HashKnownHosts state = %v, want StateAlreadySet", st.State)
-		}
-		if st.Key != "HashKnownHosts" && st.State != StateNeedsAction {
-			t.Errorf("%s state = %v, want the needs-action zero value in 06-01", st.Key, st.State)
-		}
+	statuses := statusByKey(t, Statuses(deps))
+	if statuses["HashKnownHosts"].State != StateAlreadySet {
+		t.Errorf("HashKnownHosts state = %v, want StateAlreadySet", statuses["HashKnownHosts"].State)
+	}
+	if statuses["ForwardAgent"].State != StateAlreadySet {
+		t.Errorf("ForwardAgent state = %v, want StateAlreadySet for its safe default", statuses["ForwardAgent"].State)
+	}
+	if statuses["IdentitiesOnly"].State != StateNotApplicable || statuses["IdentitiesOnly"].NotApplicableReason != ReasonNothingToVerify {
+		t.Errorf("IdentitiesOnly = (%v, %v), want not applicable with nothing to verify", statuses["IdentitiesOnly"].State, statuses["IdentitiesOnly"].NotApplicableReason)
 	}
 }
 
@@ -131,9 +135,183 @@ func TestStatusesHashKnownHostsState(t *testing.T) {
 func TestStatusesProbeErrorCarriesMessage(t *testing.T) {
 	deps := depsForOut("", "", "~/.ssh/config", nil, "/etc/ssh/ssh_config", nil, nil)
 	deps.RunSSHG = func(context.Context, ...string) (string, error) { return "", errors.New("ssh: boom") }
-	for _, st := range Statuses(deps) {
-		if st.ProbeError != "ssh: boom" {
-			t.Errorf("%s ProbeError = %q, want the concrete probe error", st.Key, st.ProbeError)
+	statuses := statusByKey(t, Statuses(deps))
+	for _, key := range []string{"StrictHostKeyChecking", "ForwardAgent", "HashKnownHosts", "AddKeysToAgent"} {
+		if statuses[key].ProbeError != "ssh: boom" {
+			t.Errorf("%s ProbeError = %q, want the concrete probe error", key, statuses[key].ProbeError)
 		}
+	}
+}
+
+func TestStateFor(t *testing.T) {
+	forwardAgent, ok := PolicyFor("ForwardAgent")
+	if !ok {
+		t.Fatal("ForwardAgent policy missing")
+	}
+	useKeychain, ok := PolicyFor("UseKeychain")
+	if !ok {
+		t.Fatal("UseKeychain policy missing")
+	}
+
+	cases := []struct {
+		name      string
+		policy    OptionPolicy
+		effective string
+		source    SourceClass
+		goos      string
+		wantState OptionState
+		wantWhy   NotApplicableReason
+	}{
+		{"missing value", forwardAgent, "", SourceBaseline, "linux", StateNeedsAction, ReasonNone},
+		{"safe default matches", forwardAgent, "no", SourceBaseline, "linux", StateAlreadySet, ReasonNone},
+		{"different baseline", forwardAgent, "yes", SourceBaseline, "linux", StateNeedsAction, ReasonNone},
+		{"explicit different", forwardAgent, "yes", SourceGitidParsed, "linux", StateDiffers, ReasonNone},
+		{"case insensitive", forwardAgent, "NO", SourceOutsideGitid, "linux", StateAlreadySet, ReasonNone},
+		{"platform gate first", useKeychain, "yes", SourceGitidParsed, "linux", StateNotApplicable, ReasonPlatform},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotState, gotWhy := stateFor(tc.policy, tc.effective, tc.source, tc.goos)
+			if gotState != tc.wantState || gotWhy != tc.wantWhy {
+				t.Fatalf("stateFor() = (%v, %v), want (%v, %v)", gotState, gotWhy, tc.wantState, tc.wantWhy)
+			}
+		})
+	}
+}
+
+func TestStateForEqualityWinsForEverySource(t *testing.T) {
+	p, ok := PolicyFor("ForwardAgent")
+	if !ok {
+		t.Fatal("ForwardAgent policy missing")
+	}
+	for _, source := range []SourceClass{SourceGitidParsed, SourceOutsideGitid, SourceSystemFile, SourceBaseline, SourceInconclusive} {
+		state, reason := stateFor(p, "no", source, "linux")
+		if state != StateAlreadySet || reason != ReasonNone {
+			t.Errorf("source %v: stateFor() = (%v, %v), want (StateAlreadySet, ReasonNone)", source, state, reason)
+		}
+	}
+}
+
+func TestStatusesDiffersKeepsAttributionSeparate(t *testing.T) {
+	p, ok := PolicyFor("ForwardAgent")
+	if !ok {
+		t.Fatal("ForwardAgent policy missing")
+	}
+	userState, _ := stateFor(p, "yes", SourceGitidParsed, "linux")
+	outsideState, _ := stateFor(p, "yes", SourceOutsideGitid, "linux")
+	if userState != StateDiffers || outsideState != StateDiffers {
+		t.Fatalf("unequal sources produced %v and %v, want StateDiffers for both", userState, outsideState)
+	}
+}
+
+func TestStatusesUseKeychainIgnoresResolutionOutput(t *testing.T) {
+	deps := depsForOut("usekeychain no\n", cannedResolved, "~/.ssh/config", []byte("UseKeychain yes\n"), "/etc/ssh/ssh_config", nil, nil)
+	deps.GOOS = "darwin"
+	status := statusByKey(t, Statuses(deps))["UseKeychain"]
+	if status.CurrentValue != "yes" || status.Source != SourceGitidParsed || status.State != StateAlreadySet {
+		t.Fatalf("UseKeychain = %+v, want parsed file value yes and already set", status)
+	}
+}
+
+func TestStatusesResolutionProbeErrorLeavesFileRowsUnchanged(t *testing.T) {
+	config := []byte("UseKeychain yes\n# BEGIN gitid managed: personal\nHost personal.github.com\n  IdentitiesOnly yes\n# END gitid managed: personal\n")
+	okDeps := depsForOut(cannedResolved, cannedResolved, "~/.ssh/config", config, "/etc/ssh/ssh_config", nil, nil)
+	okDeps.GOOS = "darwin"
+	ok := statusByKey(t, Statuses(okDeps))
+	failDeps := depsForOut(cannedResolved, cannedResolved, "~/.ssh/config", config, "/etc/ssh/ssh_config", nil, nil)
+	failDeps.GOOS = "darwin"
+	failDeps.RunSSHG = func(context.Context, ...string) (string, error) { return "", errors.New("ssh: boom") }
+	fail := statusByKey(t, Statuses(failDeps))
+	for _, key := range []string{"UseKeychain", "IdentitiesOnly"} {
+		if fail[key].State != ok[key].State || fail[key].ProbeError != ok[key].ProbeError {
+			t.Errorf("%s changed after resolution probe failure: ok=%+v fail=%+v", key, ok[key], fail[key])
+		}
+	}
+	if ok["UseKeychain"].State != StateAlreadySet && ok["IdentitiesOnly"].State != StateAlreadySet {
+		t.Fatal("fixture must keep at least one file-derived row already set")
+	}
+	for _, key := range resolutionDependentKeys() {
+		if fail[key].State != StateNeedsAction || fail[key].ProbeError == "" {
+			t.Errorf("%s = %+v, want needs-action with probe error", key, fail[key])
+		}
+		if fail[key].State == StateAlreadySet {
+			t.Errorf("%s must not promote to already-set on a failed resolution probe", key)
+		}
+	}
+}
+
+func TestStatusesIdentitiesOnlyNothingToVerify(t *testing.T) {
+	deps := depsForOut(cannedResolved, cannedResolved, "~/.ssh/config", nil, "/etc/ssh/ssh_config", nil, nil)
+	st := statusByKey(t, Statuses(deps))["IdentitiesOnly"]
+	if st.State != StateNotApplicable || st.NotApplicableReason != ReasonNothingToVerify {
+		t.Fatalf("IdentitiesOnly = (%v, %v), want not-applicable with nothing to verify", st.State, st.NotApplicableReason)
+	}
+	if st.State == StateAlreadySet {
+		t.Fatal("an empty inventory is not conformance")
+	}
+}
+
+func TestStatusesIdentitiesOnlyConformance(t *testing.T) {
+	all := []byte("# BEGIN gitid managed: personal\nHost personal.github.com\n  IdentitiesOnly yes\n# END gitid managed: personal\n")
+	one := []byte("# BEGIN gitid managed: personal\nHost personal.github.com\n  IdentitiesOnly yes\n# END gitid managed: personal\n# BEGIN gitid managed: work\nHost work.github.com\n  Hostname ssh.github.com\n# END gitid managed: work\n")
+	allState := statusByKey(t, Statuses(depsForOut(cannedResolved, cannedResolved, "~/.ssh/config", all, "/etc/ssh/ssh_config", nil, nil)))["IdentitiesOnly"]
+	if allState.State != StateAlreadySet {
+		t.Errorf("all-conforming IdentitiesOnly = %v, want already-set", allState.State)
+	}
+	oneState := statusByKey(t, Statuses(depsForOut(cannedResolved, cannedResolved, "~/.ssh/config", one, "/etc/ssh/ssh_config", nil, nil)))["IdentitiesOnly"]
+	if oneState.State != StateNeedsAction {
+		t.Errorf("one-offender IdentitiesOnly = %v, want needs-action", oneState.State)
+	}
+}
+
+func TestStatusesConfigReadErrorIsIsolated(t *testing.T) {
+	deps := depsForOut(cannedResolved, cannedResolved, "~/.ssh/config", nil, "/etc/ssh/ssh_config", nil, nil)
+	deps.ReadConfig = func() (string, []byte, error) { return "", nil, errors.New("config denied") }
+	statuses := statusByKey(t, Statuses(deps))
+	for _, key := range []string{"UseKeychain", "IdentitiesOnly"} {
+		if statuses[key].ProbeError != "config denied" {
+			t.Errorf("%s ProbeError = %q, want config error", key, statuses[key].ProbeError)
+		}
+	}
+	if statuses["ForwardAgent"].ProbeError != "" || statuses["ForwardAgent"].State != StateAlreadySet {
+		t.Errorf("ForwardAgent = %+v, want its resolution-derived safe state", statuses["ForwardAgent"])
+	}
+}
+
+func TestStatusesDeterministic(t *testing.T) {
+	deps := depsForOut(cannedResolved, cannedResolved, "~/.ssh/config", []byte("UseKeychain yes\n"), "/etc/ssh/ssh_config", nil, nil)
+	deps.GOOS = "darwin"
+	first := Statuses(deps)
+	second := Statuses(deps)
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("Statuses changed without machine change:\nfirst=%+v\nsecond=%+v", first, second)
+	}
+}
+
+func TestStatusesConcurrentLatency(t *testing.T) {
+	sleep := 90 * time.Millisecond
+	var mu sync.Mutex
+	calls := 0
+	deps := depsForOut(cannedResolved, cannedResolved, "~/.ssh/config", []byte("UseKeychain yes\n"), "/etc/ssh/ssh_config", nil, nil)
+	deps.GOOS = "darwin"
+	deps.RunSSHG = func(_ context.Context, _ ...string) (string, error) {
+		time.Sleep(sleep)
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		return cannedResolved, nil
+	}
+	read := deps.ReadConfig
+	deps.ReadConfig = func() (string, []byte, error) { time.Sleep(sleep); return read() }
+	sys := deps.ReadSystemConfig
+	deps.ReadSystemConfig = func() (string, []byte, error) { time.Sleep(sleep); return sys() }
+	started := time.Now()
+	_ = Statuses(deps)
+	elapsed := time.Since(started)
+	if elapsed >= 3*sleep {
+		t.Fatalf("Statuses elapsed %s, want concurrent runtime below the 3-probe sum", elapsed)
+	}
+	if calls != 2 {
+		t.Fatalf("RunSSHG called %d times, want 2 concurrent probes", calls)
 	}
 }
