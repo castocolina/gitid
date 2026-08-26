@@ -1,7 +1,7 @@
 ---
 phase: 6
 reviewers: [codex-sol, xai-grok]
-reviewed_at: 2026-08-26T19:25:19Z
+reviewed_at: 2026-08-26T15:52:00Z
 plans_reviewed:
   - .planning/phases/06-global-ssh-options/06-01-PLAN.md
   - .planning/phases/06-global-ssh-options/06-02-PLAN.md
@@ -18,269 +18,209 @@ model_sources:
   xai-grok: "pinned"
 ---
 
-# Cross-AI Plan Review — Phase 6 (Cycle 2)
+# Cross-AI Plan Review — Phase 6 (Cycle 3)
 
 > Note on `codex-sol`: `.planning/config.json` pins this instance's model to
 > `openai/gpt-5.6-sol-fast`, but the Codex CLI on this host authenticates via a
-> ChatGPT account, which rejected that model with `400 invalid_request_error:
-> "The 'openai/gpt-5.6-sol-fast' model is not supported when using Codex with a
-> ChatGPT account."` (captured in the run's `.err` log, same failure mode as
-> Cycle 1). The review below was produced by re-invoking the `codex` lane
-> without the model override, so it ran on the account's default resolved
-> model (`gpt-5.6-sol`, reasoning=low) instead of the configured
-> `gpt-5.6-sol-fast`. The `review.reviewer_instances` entry for `codex-sol`
-> should be corrected (or the account's available model list re-checked)
-> before the next review run.
+> ChatGPT account, which again rejected that model with `400
+> invalid_request_error: "The 'openai/gpt-5.6-sol-fast' model is not supported
+> when using Codex with a ChatGPT account."` — same failure mode as Cycles 1
+> and 2. The review below was produced by re-invoking the `codex` lane without
+> the model override, so it ran on the account's default resolved model
+> (`gpt-5.6-sol`, reasoning=low). The `review.reviewer_instances` entry for
+> `codex-sol` should be corrected (or the account's available model list
+> re-checked) before the next review run.
 
-This is Cycle 2 — the planner revised the plan set from 5 plans to 7 plans to
-address Cycle 1's 8 HIGH + 6 actionable findings. Both reviewers were asked to
-(1) independently verify each Cycle-1 finding's disposition against the
-revised plan text and the actual code, and (2) flag any new issue the
-revision introduced.
+This is Cycle 3 — the final allowed cycle before escalation. Cycle 2 found 3
+HIGH findings (all confirmed by orchestrator verification: `06-04`'s
+shadowing-precedence reversal, `06-03`'s `stateFor` baseline-ordering
+self-contradiction, `06-05`'s preview/commit plan-identity TOCTOU gap) plus 6
+actionable MEDIUM/LOW findings. The planner revised the plan text to address
+all 9 (shadowing-precedence algorithm rewrite, `stateFor` branch reorder, a
+single digest-bearing `MigrationPlan` object carried preview-to-commit via an
+opaque token).
 
-**The orchestrator (this session) independently re-verified three of the
-disputed findings below against the actual plan text and source** —
-`06-04-PLAN.md`'s shadow-precedence example, `06-03-PLAN.md`'s `stateFor`
-baseline rule, and `06-05-PLAN.md`'s preview/commit plan identity — since the
-two reviewers disagreed sharply on their severity. All three are confirmed
-real, independent of either reviewer's framing; see "Orchestrator
-Verification" below.
+Both reviewers were asked to independently verify each claimed fix against
+the current plan text and the actual source, not to trust the summary of
+what changed. **The orchestrator (this session) additionally re-verified the
+one point where the two reviewers diverged** — codex-sol's new HIGH finding
+that `06-04-PLAN.md` requires calling an unexported cross-package matcher —
+directly against `internal/sshconfig/validation.go` and `06-04-PLAN.md`'s
+file list. See "Orchestrator Verification" below.
 
 ## Codex Review (codex-sol)
 
-# Cycle 2 Review — Phase 6: Global SSH Options
+# Cycle 3 Plan Review
 
 ## Summary
 
-The revision substantially improves the plan set. The single-write-authority conflict, create-call-site omissions, migration classification, migration backup/concurrency design, CLI contract, and HTML-parity ambiguity are now addressed explicitly and generally with appropriate tests.
+The three Cycle-2 HIGH findings are substantively corrected in the current plans:
 
-However, the plans are not ready for execution unchanged. Two new/high-risk defects remain:
+- The shadowing model now follows OpenSSH's first-obtained-value rule and includes paired positive/negative tests.
+- `stateFor` now checks recommendation equality before source classification.
+- Migration preview and commit now share one digest-bearing `MigrationPlan`, carried through an opaque token and verified before backup.
 
-1. The shadowing model reverses OpenSSH's first-obtained-value precedence: it expects a directive after the floored `Include` to shadow the included `Host *`, when the included value actually wins.
-2. The storage preview and commit do not use the same immutable migration plan despite repeatedly claiming they do; the plan is recomputed at preview, lifecycle planning, and commit, leaving a confirmation-time TOCTOU gap.
+The six actionable non-HIGH findings are also represented with concrete mechanisms and acceptance tests. However, Cycle 3 exposes one new implementation blocker in Plan 06-04: it requires `internal/globalssh` to reuse the unexported `sshconfig.aliasCollides` matcher without modifying or exporting anything from `validation.go`. That mechanism cannot compile as written. There are also smaller inconsistencies in probe-failure acceptance criteria and concurrency ownership around the pending migration plan. Overall risk remains MEDIUM until the matcher/API issue is resolved.
 
-The purported hermetic `HOME` test for default SSH configuration isolation also remains unreliable, and nested Includes are not faithfully mirrored.
+## Strengths
 
-Overall risk: **HIGH until the simulation precedence and migration preview/commit identity are corrected.**
+- The shadowing correction is real and directionally precise. [06-04-PLAN.md:99](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-04-PLAN.md:99) states first-obtained-value as binding, then correctly distinguishes: main-file directive below the floored Include (no shadowing), above the Include (shadowing), an earlier-sorting included file (shadowing), an earlier matching stanza in the same file (shadowing). This agrees with the existing floor behavior in [include.go:19](/Users/ramon/git/personal/ssh-git-config/internal/sshconfig/include.go:19) and [EnsureIncludeLine, include.go:217](/Users/ramon/git/personal/ssh-git-config/internal/sshconfig/include.go:217).
+- The culprit-selection correction is also real: the revised plan linearizes files around each Include, preserves true line offsets, filters nonmatching host patterns, and returns the first surviving hit ([06-04-PLAN.md:221](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-04-PLAN.md:221)) — this directly fixes the earlier "last hit" mistake.
+- Recursive Include handling is genuinely incorporated: [06-04-PLAN.md:204](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-04-PLAN.md:204) specifies recursive discovery, cycle detection, a depth cap, rewriting Includes in every mirrored file, and inconclusive results when fidelity cannot be proven, improving on current single-hop discovery in [include.go:183](/Users/ramon/git/personal/ssh-git-config/internal/sshconfig/include.go:183).
+- The `stateFor` fix is explicit and testable: the branch order at [06-03-PLAN.md:137](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-03-PLAN.md:137) is now (1) platform applicability, (2) missing value, (3) value equals recommendation, (4) unequal baseline value, (5) unequal explicitly-sourced value. The exact `ForwardAgent=no` baseline case and equality across every `SourceClass` are pinned at [06-03-PLAN.md:170](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-03-PLAN.md:170). This closes the false-alarm defect rather than merely changing copy.
+- The migration TOCTOU fix is real and complete in design: [06-05-PLAN.md:147](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-05-PLAN.md:147) defines a digest-bearing `MigrationPlan`; [06-05-PLAN.md:169](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-05-PLAN.md:169) makes `MigrateWithPlan` verify those digests before backup and write the plan's bytes verbatim. The plan explicitly tests the human-shaped preview window ([06-05-PLAN.md:194](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-05-PLAN.md:194): plan → external edit → commit, `ErrConfigChangedSincePreview`, no backup, no writes). The opaque-token bridge preserves package boundaries ([06-05-PLAN.md:261](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-05-PLAN.md:261)).
+- Cycle-2's remaining actionable findings are incorporated: apply rollback is consistently `mutationJournal` around `filewriter.Write` ([06-01-PLAN.md:242](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-01-PLAN.md:242)); production-only `rg` scopes avoid archived-source false positives ([06-01-PLAN.md:298](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-01-PLAN.md:298)); the `IgnoreUnknown` visual divergence is explicitly assigned to `T-06-GLOBALBLOCK` ([06-07-PLAN.md:116](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-07-PLAN.md:116)); both write commands have frozen JSON envelopes ([06-06-PLAN.md:145](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-06-PLAN.md:145)); adaptive-depth behavior is frozen per verb ([06-06-PLAN.md:93](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-06-PLAN.md:93)).
 
----
+## Concerns
 
-## Plan 06-01 — Tracer, provenance, and single globals owner
+- **HIGH — Plan 06-04 requires calling an unexported matcher across package boundaries.** The plan tells `internal/globalssh/shadow.go` to reuse `sshconfig.aliasCollides` at [06-04-PLAN.md:121](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-04-PLAN.md:121) and again at [06-04-PLAN.md:226](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-04-PLAN.md:226). But `aliasCollides` is unexported in [validation.go:164](/Users/ramon/git/personal/ssh-git-config/internal/sshconfig/validation.go:164), and its exported wrapper `AliasCollision` accepts a config PATH (it reads and parses a whole file itself) rather than an individual host-pattern list already extracted by the scanner. Plan 06-04 does not list `validation.go` among files to modify. The executor must either duplicate the negation-aware matching logic — expressly forbidden by the plan's own wording — or deviate from the plan as written.
+- **MEDIUM — The probe-failure acceptance criteria can contradict the independent-evidence requirement.** Plan 06-03 correctly says UseKeychain and IdentitiesOnly remain unchanged when the resolution probe fails ([06-03-PLAN.md:177](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-03-PLAN.md:177)). The next criterion says none of all SIX rows is `StateAlreadySet` under that failure ([06-03-PLAN.md:179](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-03-PLAN.md:179)). If either independently-derived row (UseKeychain/IdentitiesOnly) is already-set in the all-success fixture, both conditions cannot hold simultaneously. The latter assertion should cover only the four resolution-dependent rows.
+- **MEDIUM — `BuildGraph`'s cycle rule conflates cycles with repeated DAG references.** [06-04-PLAN.md:204](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-04-PLAN.md:204) says to "track visited absolute paths" and report a cycle when revisited. A file included from two separate branches (a diamond-shaped Include graph) is a repeated node, not necessarily a recursion cycle. A global visited set would produce an unnecessary INCONCLUSIVE result on a legitimate, non-cyclic layout. The current recursive implementation in [validation.go:164](/Users/ramon/git/personal/ssh-git-config/internal/sshconfig/validation.go:164) has the same limitation, so copying it verbatim would preserve that false positive rather than fix it.
+- **MEDIUM — Pending-plan lock ownership is underspecified.** [06-05-PLAN.md:263](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-05-PLAN.md:263) says `runSSHStorageMigrate` takes `txMu`, while [06-05-PLAN.md:274](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-05-PLAN.md:274) says `pendingMigration` is protected by "the same mutex discipline." If that means `txMu` itself, looking up or consuming the pending plan through a helper that also locks it can deadlock (Go's `sync.Mutex` is not reentrant). If it means a separate mutex, the token lookup/invalidation ordering relative to `txMu` should be stated explicitly so the executor does not have to guess.
+- **LOW — Some source citations in the plan are descriptive rather than operative.** Plan 06-04 cites [renderer.go:112](/Users/ramon/git/personal/ssh-git-config/internal/sshconfig/renderer.go:112) as evidence that the global block is placed last, but those lines only document the requirement; actual placement comes from call order in [writer.go:47](/Users/ramon/git/personal/ssh-git-config/internal/sshconfig/writer.go:47) and `reorderGlobalLast` in [migrate.go:473](/Users/ramon/git/personal/ssh-git-config/internal/sshconfig/migrate.go:473). Does not invalidate the corrected model; the evidence citation should point to operative code.
+- **LOW — The plan set remains very large for a single phase.** Plans 06-01, 06-03, 06-04, and 06-05 each span many packages with low-confidence estimates. Sequential waves reduce merge risk, but execution risk remains meaningful because intermediate refactors alter core SSH mutation and migration contracts before the final full battery.
 
-**Strengths:** Single write authority correctly established (`runGlobalSSHApply` sole mutation owner, `Persist(ApplySSH)` reread-only, [06-01-PLAN.md:391](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-01-PLAN.md:391)); both missed create sites now retargeted ([identity_create.go:227](/Users/ramon/git/personal/ssh-git-config/cmd/gitid/identity_create.go:227), [wiring.go:2594](/Users/ramon/git/personal/ssh-git-config/cmd/gitid/wiring.go:2594)); `RenderGlobalBlock` correctly deleted; directive-aware scanner closes the API gap; provenance wording bounded to evidence.
+## Suggestions
 
-**Concerns:** HIGH — the isolation-contract test's evidentiary strength is disputed (see Orchestrator Verification: judged sufficient on independent check). MEDIUM — lossy managed-block normalization (duplicate directives/comments) remains under-tested. LOW — Wave 1 remains very large (120k tokens across probe/renderer/writer/identity/lifecycle/TUI/dummy).
+- Export a narrow pure matcher from `internal/sshconfig`, e.g. `func HostPatternsMatch(patterns []string, candidate string) bool`, add `validation.go` and its tests to Plan 06-04's file list, and have both `AliasCollision` and `shadowSourceFor` use it so negation behavior has one implementation.
+- Change the resolution-probe failure criterion to: "none of the FOUR resolution-dependent rows is `StateAlreadySet`," preserving UseKeychain and IdentitiesOnly exactly as independently derived.
+- Use two sets during Include traversal — an `active` recursion stack for true cycle detection and an `expanded`/memoized set for repeated non-cyclic includes — and add a diamond-shaped Include graph test to distinguish shared references from cycles.
+- Specify pending-plan synchronization concretely: a dedicated `pendingMigrationMu`, atomic lookup-and-consume, invalidation points (selection change, activation, successful commit, failed digest validation), and never holding that mutex during filesystem I/O.
+- Correct the shadowing-precedence evidence citation to the operative ordering code in `writer.go` and `migrate.go`.
+- Consider a mandatory integration checkpoint after Waves 1, 4, and 5, not only the final Wave-7 battery, since those waves alter the single write authority, shadow simulation, and two-file migration transaction respectively.
 
-**Risk:** MEDIUM-HIGH per this reviewer; downgraded to MEDIUM by orchestrator verification of the isolation test.
+## Risk Assessment
 
-## Plan 06-02 — Reserved registry and migration classification
+**Overall risk: MEDIUM.** The phase goal is achievable, and all three Cycle-2 HIGH defects are genuinely corrected in the current plan text with strong directional acceptance tests. The six non-HIGH items are also materially incorporated. Risk is not LOW because Plan 06-04 currently specifies an impossible cross-package call to an unexported matcher, and the phase combines several security-sensitive refactors across SSH precedence, backups, rollback, and multi-file migration.
 
-**Strengths:** Correctly separates `IsGlobalBlockName` from the broader reserved set so Include wiring stays put; migration exclusion defect accurately grounded against [migrate.go:419](/Users/ramon/git/personal/ssh-git-config/internal/sshconfig/migrate.go:419); both-direction tests, last-block ordering, legacy-name migration, both-files-ambiguity refusal all cover the important cases.
+## Cycle-2 HIGH Disposition (codex-sol)
 
-**Concerns:** MEDIUM — both-files preflight rejects even identical global blocks (conservative, undocumented whether intentional). LOW — legacy-name renaming timing unclear.
-
-**Risk:** MEDIUM.
-
-## Plan 06-03 — Six-option classification
-
-**Strengths:** Source attribution correctly separated from state (`AttributedToUser`); UseKeychain/IdentitiesOnly no longer depend on generic probe success; empty IdentitiesOnly inventory → not-applicable, not false conformance; unknown OpenSSH version → explicit refusal.
-
-**Concerns:** **HIGH — confirmed by orchestrator** — `stateFor`'s stated rule ("baseline class... whatever its source" for equality) contradicts its own ordering: `src is baseline class → StateNeedsAction` fires BEFORE the equality check, so a safe OpenSSH default equal to the recommendation (e.g. `ForwardAgent no`, matching [design.go:214](/Users/ramon/git/personal/ssh-git-config/internal/tuikit/design.go:214)'s fixture) is incorrectly flagged as needing action. MEDIUM — "baseline" conflates safe default with unset recommendation generally. LOW — concurrent-latency test may be flaky under `-race`.
-
-**Risk:** MEDIUM-HIGH — confirmed HIGH by orchestrator.
-
-## Plan 06-04 — Whole-graph simulation and Options PTY
-
-**Strengths:** Explicit graph object with line-aware naming API; scanner correctly limited to naming, real `ssh -G` probe decides winner; mirror uses 0700/0600 with cleanup; PTY covers clean/shadowed/inconclusive/failed-write.
-
-**Concerns:** **HIGH — confirmed by orchestrator** — the plan's shadowing example ([06-04-PLAN.md:115](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-04-PLAN.md:115)) has the main config directive win over the Include'd candidate when it appears textually after the Include line. `internal/sshconfig/include.go`'s own doc comment ([include.go:19-22](/Users/ramon/git/personal/ssh-git-config/internal/sshconfig/include.go:19)) states the Include is floored at the top specifically so it is "first-match-wins ahead of any later hand-written Host block" — i.e. the Included content (gitid's candidate) wins, not the later main-config directive. The plan's expected test outcome is backwards from both OpenSSH's documented first-obtained-value semantics and the codebase's own existing design rationale. HIGH — `shadowSourceFor` picks "last hit before the managed block" as culprit, which is the wrong side under first-obtained-value: the actual culprit is an earlier matching assignment, not a later one. HIGH — the mirror only copies the entry point's direct Includes; nested Includes inside those files are neither discovered nor rewritten, so the mirror is not a faithful isolated copy of the resolved graph ([include.go:183](/Users/ramon/git/personal/ssh-git-config/internal/sshconfig/include.go:183) shows existing Include discovery is non-recursive too, so this isn't a regression, but the plan's "whole-graph" claim overstates what it delivers).
-
-**Risk:** HIGH — the phase's central prove-before-write mechanism currently models the primary precedence case incorrectly.
-
-## Plan 06-05 — Migration hardening and Storage UI
-
-**Strengths:** `filewriter.Backup` correctly separates backup from write ([filewriter.go:47](/Users/ramon/git/personal/ssh-git-config/internal/filewriter/filewriter.go:47) shows the old always-write-then-backup pattern); `PlanMigration` extracts pure composition; content digests catch same-tick edits; per-file written-by-us rollback tracking fixes the current restore-both defect ([migrate.go:488](/Users/ramon/git/personal/ssh-git-config/internal/sshconfig/migrate.go:488)).
-
-**Concerns:** **HIGH — confirmed by orchestrator** — preview (`SSHStorageMigrationPlan` → `sshconfig.PlanMigration`) and commit (`runSSHStorageMigrate` → `sshconfig.Migrate`, which "CALLS `PlanMigration`" again internally per the plan's own text) are two separate `PlanMigration` invocations against disk read at two different times. The plan's concurrency detection only guards `Migrate`'s own internal preflight-to-write window; it never compares against what the earlier preview call showed the user. A disk change between preview and confirm silently commits different bytes than the user approved, without tripping the concurrency abort. MEDIUM — backups may not correspond to displayed bytes for the same reason.
-
-**Risk:** HIGH — confirmed by orchestrator; the "what you saw is what gets written" guarantee is not actually achieved by this plan's mechanism.
-
-## Plan 06-06 — CLI and parity contract
-
-**Strengths:** Command tree frozen before implementation; Cobra calls UI-free lifecycle functions; JSON schema/enum/ordering explicitly versioned and tested; zero-on-advisory posture resolved.
-
-**Concerns:** MEDIUM — advisory JSON promised in the threat model but no write verb has `--json` in the frozen tree; write-result schema undefined. MEDIUM — interactive fallback for `options apply` with missing args underspecified. LOW — exit code 2 wording doesn't distinguish pre-write vs post-write failure.
-
-**Risk:** MEDIUM.
-
-## Plan 06-07 — Visual gate and review packet
-
-**Strengths:** HTML non-applicability explicit; named PTY-frame evidence; four negative controls; separate fixture homes; visual closeout split from CLI work.
-
-**Concerns:** MEDIUM — shared-renderer blind spot (live/dummy can share the same defect) not eliminated, only reduced. LOW — exact frame-count assertion is brittle across unrelated registry changes. LOW — closure table hard-coded to 8 HIGH / 6 non-HIGH; should derive from review IDs so Cycle 2 findings are included.
-
-**Risk:** MEDIUM-LOW in isolation; cannot compensate for upstream simulation/migration defects.
-
-## Cycle-1 Finding Disposition (codex-sol)
-
-| Cycle-1 finding | Disposition | Evidence |
+| Cycle-2 finding | Disposition | Evidence |
 |---|---|---|
-| Two competing global-SSH write authorities | FULLY RESOLVED | `runGlobalSSHApply` sole owner; `Persist` reread-only ([06-01-PLAN.md:391](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-01-PLAN.md:391)) |
-| Provenance falsely claims `/etc` | FULLY RESOLVED | Explicit system-file parse required ([06-01-PLAN.md:193](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-01-PLAN.md:193)) |
-| `-F /dev/null` baseline assumption unproven | PARTIALLY RESOLVED (orchestrator: RESOLVED, see below) | isolation_contract_test.go added ([06-01-PLAN.md:191](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-01-PLAN.md:191)) |
-| Create paths not all retargeted | FULLY RESOLVED | Both sites named and retargeted |
-| Managed-block map may drop unknown content | PARTIALLY RESOLVED | Unknown keys retained; duplicates/comments still lossy |
-| Shadow scanner API lacks directive values/lines | FULLY RESOLVED | `ScanDirectives`/`ScanDirectivesMulti` replaces `HostStanza` |
-| Candidate-file-only simulation misses main graph | PARTIALLY RESOLVED | Entry point + direct Includes mirrored; nested Includes not recursive |
-| Migration excludes global block | FULLY RESOLVED | Plan 06-02 fixes `migrate.go:419` exclusion |
-| Concurrency check occurred after backup writes | FULLY RESOLVED | Backup-only seam + pre-backup check |
-| Rollback could erase external edits | FULLY RESOLVED | Per-file written-by-us tracking |
-| No pure migration preview | PARTIALLY RESOLVED (see new HIGH above) | `PlanMigration` added but not shared between preview and commit |
-| CLI syntax, schema, exit semantics unfrozen | FULLY RESOLVED | Frozen in 06-06-PLAN.md |
-| HTML might become a Phase 6 parity target | FULLY RESOLVED | Every spec marks HTML non-applicable |
-| Oversized closing wave / overall scope | PARTIALLY RESOLVED | Split into CLI + visual plans; Waves 1/3/4/5 still 120k-140k tokens |
+| Shadowing precedence reversed | FULLY RESOLVED | [06-04-PLAN.md:99-122](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-04-PLAN.md:99), `shadowSourceFor` returns FIRST hit |
+| `stateFor` baseline-ordering self-contradiction | FULLY RESOLVED | [06-03-PLAN.md:137-144](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-03-PLAN.md:137) |
+| Migration preview/commit plan-identity TOCTOU | FULLY RESOLVED | [06-05-PLAN.md:147-173](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-05-PLAN.md:147) |
 
 ## New Issues (codex-sol)
 
 | Finding | Severity | Evidence |
 |---|---:|---|
-| Shadowing example reverses first-obtained-value precedence | HIGH — confirmed | [06-04-PLAN.md:115](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-04-PLAN.md:115) vs [include.go:19](/Users/ramon/git/personal/ssh-git-config/internal/sshconfig/include.go:19) |
-| Confirmed migration preview can differ from committed plan | HIGH — confirmed | [06-05-PLAN.md:212](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-05-PLAN.md:212) vs [06-05-PLAN.md:134](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-05-PLAN.md:134) |
-| Nested Includes can escape or disappear from the mirror | HIGH | `SimulationGraph` entry-point-only rewriting |
-| Baseline safe defaults incorrectly forced to needs-action | HIGH — confirmed | [06-03-PLAN.md:134](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-03-PLAN.md:134) vs [design.go:214](/Users/ramon/git/personal/ssh-git-config/internal/tuikit/design.go:214) |
-| Advisory JSON promised without a write JSON schema/flag | MEDIUM | Frozen tree gives JSON only to read verbs |
+| `06-04` requires reusing an unexported `sshconfig.aliasCollides` matcher across a package boundary — cannot compile as written | HIGH | [06-04-PLAN.md:121](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-04-PLAN.md:121), [06-04-PLAN.md:226](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-04-PLAN.md:226) vs [validation.go:160-164](/Users/ramon/git/personal/ssh-git-config/internal/sshconfig/validation.go:160) |
+| Probe-failure "none of six rows AlreadySet" criterion can contradict the independent-evidence requirement for UseKeychain/IdentitiesOnly | MEDIUM | [06-03-PLAN.md:177-179](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-03-PLAN.md:177) |
+| `BuildGraph`'s global visited-path cycle rule flags legitimate diamond Include graphs as cycles | MEDIUM | [06-04-PLAN.md:204](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-04-PLAN.md:204) |
+| `pendingMigration`'s mutex relationship to `txMu` is unstated — potential deadlock if they are the same lock | MEDIUM | [06-05-PLAN.md:263](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-05-PLAN.md:263) vs [274](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-05-PLAN.md:274) |
 
 ---
 
 ## OpenCode Review (xai-grok)
 
-Verified against live source. Cycle-1 findings were checked in the revised plan text and in the code those plans still claim to change.
+Verifying cycle-3 HIGH fixes against plan text and source, not the summary.
 
-## Executive assessment
+### Document Type
+GSD · plan (seven sequential waves)
 
-The 5→7 replan closes the Cycle-1 blockers in the plans. Write ownership, provenance honesty, whole-graph simulation, migration classification, backup-before-check, frozen CLI, and wave split are all written into the right waves with acceptance criteria that pin the original defects.
+### Files Read
+- `.planning/phases/06-global-ssh-options/06-0{1–7}-PLAN.md`
+- `internal/sshconfig/{include.go,migrate.go,renderer.go}`
+- `cmd/gitid/{wiring.go,lifecycle.go}` (`Persist` `ApplySSH` still DEMO-ONLY at `wiring.go:715`; `runDelete` journal at `lifecycle.go:605`)
+- `internal/sshconfig/include.go:19-28` (Include floored at top), `include.go:84-86` (`IsReservedBlockName` still only `ssh-include` + `_global`)
+- `internal/sshconfig/migrate.go:423-428` (`movableBlockNames` still excludes globals)
+- `internal/sshconfig/renderer.go:118-127` (`RenderGlobalBlock` still emits `IgnoreUnknown` *inside* `Host *`)
 
-The code still matches Cycle 1 (expected — nothing executed). Residual risk is execution of Wave 1's huge tracer, plus a few new plan-level nits (IgnoreUnknown placement vs current renderer, `rg RenderGlobalBlock` vs archive, journal vs `filewriter.Write` on apply). None re-open the old dual-write or strand-globals defects.
+### Cycle-3 HIGH verification (against plan text, not the prompt)
 
-**Overall risk: MEDIUM** (was HIGH). Ready to execute 06-01.
+**1. 06-04 first-obtained-value — CONFIRMED FIXED.** Binding `<resolution_order>` at `06-04-PLAN.md:99-122` quotes `ssh_config(5)` and matches source: Include prepend (`include.go:19-28`, `EnsureIncludeLine` + `PrependBlockIfNotFound`), globals last (`renderer.go:112-114`, `migrate.go:473-486`). Row 1 (directive **below** floored Include → **no** shadow) is a required negative control in behavior (`:147`), unit ACs (`:238`), wiring pair (`:337`), and PTY cases 5/6 (`:390`). `shadowSourceFor` is rewritten to linearise, filter, return **FIRST** hit (`:221`). This is a mechanism rewrite, not a caption change.
 
-## Plan 06-01 — Tracer + single owner
+**2. 06-03 `stateFor` order — CONFIRMED FIXED.** Numbered branches at `06-03-PLAN.md:138-144`: (1) platform (2) no value (3) **value equals recommended → AlreadySet regardless of `src`** (4) baseline ∧ unequal → NeedsAction (5) set ∧ unequal → Differs. Pinned by ForwardAgent/`"no"`/baseline → AlreadySet (`:171`) and equality over **every** `SourceClass` (`:172`). Matches `design.go:214` + D-10. Cycle-2 self-contradiction is gone.
 
-**Strengths:** Single write authority matches existing `ConfigureGit` ownership pattern (`wiring.go:650-684`); create-path HIGH confirmed real and fixed; `HostStanza` confirmed lacking directive value/line; isolation-contract test answers the `/etc` spoofing finding.
+**3. 06-05 plan object + digest — CONFIRMED FIXED.** `MigrationPlan.Digests` + `MigrateWithPlan` as sole writer (`06-05-PLAN.md:35-36`, `:164-173`). First action: re-read vs `plan.Digests`, `ErrConfigChangedSincePreview` **before any backup**. TUI: one `PlanMigration`, hold in `pendingMigration`, opaque `PlanToken` (`:261-266`). Sequence AC: plan → mutate → `MigrateWithPlan` (`:204`). Call-count AC (`:313` area). Not "same function twice."
 
-**Concerns:** MEDIUM — `rg -n 'RenderGlobalBlock'` will also hit `.planning/archive/0.0.1-poc-...`; scope the grep to production packages. MEDIUM — recipe/dummy put `IgnoreUnknown` before `Host *`; live `RenderGlobalBlock` puts it inside ([renderer.go:123-125](/Users/ramon/git/personal/ssh-git-config/internal/sshconfig/renderer.go:123)); dummy visual baselines will move — classify in 06-07 or the gate fails. LOW — Task 1 still spans ~35 files across three commits.
+### Cycle-2 non-HIGH (6) incorporation
 
-**Risk:** MEDIUM.
+| Item | Status in current plans |
+|---|---|
+| Journal vs `filewriter.Write` | Incorporated. 06-01 Layer 4 names `mutationJournal` wrapping `filewriter.Write` (`:242`); 06-04 Task 2 says REUSE, no second restore (`:305`). Matches `lifecycle.go:605`. |
+| `rg RenderGlobalBlock` vs archive | Incorporated. Scoped to `internal cmd e2e` (`06-01-PLAN.md:298`). Same for `persistApplySSH` (`06-04-PLAN.md:345`). |
+| `IgnoreUnknown` vs dummy / visual gate | Incorporated. Required allowlist `T-06-GLOBALBLOCK` in 06-07 (`:116`); 06-01 output requires side-by-side renderings. Matches live `renderer.go:123-125` (guard inside stanza today). |
+| Write-verb `--json` / T-06-43 | Incorporated. Four frozen envelopes including `gitid.ssh.apply/v1` with `advisories` + `exit_code` (06-06 `<frozen_contract>`). |
+| Adaptive-depth / incomplete apply | Incorporated. Per-verb table: both TTYs → named view+sub-tab, empty selection; else exit 1. Routes through existing `depthResolver`. |
+| Nested Include / `shadowSourceFor` last-hit | Folded into HIGH #1 (recursion + FIRST hit). |
 
-## Plan 06-02 — Registry + migration classes
+### Summary
 
-**Strengths:** Filter excludes globals two ways today (`migrate.go:419-427`, `include.go:84-85`) — registering `global-ssh` without Task 2 would strand it; narrow `IsGlobalBlockName` correctly motivated.
+Cycle-3 plans close the three cycle-2 HIGHs with executable mechanisms and paired tests, not restated intent. Source still matches cycle 1 (unexecuted): `ApplySSH` is demo (`wiring.go:715-717`), `movableBlockNames` strands globals (`migrate.go:423-428`), `RenderGlobalBlock` still exists (`renderer.go:118`). Residual risk is Wave-1 size and a few execution traps, not inverted precedence, false-alarm `stateFor`, or preview/commit TOCTOU.
 
-**Concerns:** LOW — `reorderGlobalLast` must handle both names during adopt-in-flight; keep as an explicit acceptance criterion.
+### Strengths
 
-**Risk:** LOW-MEDIUM.
+- One write authority from Wave 1: `runGlobalSSHApply`; `persistApplySSH` forbidden; `Persist(ApplySSH)` re-read-only — matches existing `ConfigureGit`/`DeleteIdentity` (`wiring.go:679-690`).
+- D-06/D-08 co-located with migration classification in 06-02 so reserved registration cannot strand `Host *` (`migrate.go:426` is the live trap).
+- Provenance: `/etc/ssh/ssh_config` named only after parse; isolation contract test; hedged class when system read fails.
+- Advisory posture consistent: empty opt-in, zero-on-advisory CLI default + `--fail-on-advisory`, simulation inconclusive ≠ "safe."
+- Threat model IDs map to ACs (T-06-48 pairs, T-06-41 plan-hold sequence, T-06-51 equality-first).
 
-## Plan 06-03 — Six-option classifier
+### Concerns
 
-**Strengths:** Attribution split fixes the explicit≠effective HIGH; per-source probe errors, empty IdentitiesOnly, `VersionUnverified`, reason codes, concurrent probes all pinned.
+- LOW — Wave 1 still ~35 files / 120k. Accepted with three staged commits; pre-commit still lints the whole module (L11). Execution risk, not a correctness hole.
+- LOW — 06-04 `read_first` cites `renderer.go:103-128` after 06-01 deletes it. Correct as *current* substrate; executor must not treat those lines as post-06-01 API.
+- LOW — CLI empty-token migrate still plans+commits in one `txMu` (microseconds). Documented as honest; not the preview-to-confirm window.
+- MEDIUM (execution, not plan defect) — PTY fake must read `-F` path. Vacuous shadowing if the fake is a constant. Plan pins this (T-06-38 + dedicated test). Do not weaken.
 
-**Concerns:** LOW — dual `NotApplicableReason` enums (package + tuikit) can drift; pin numeric values in a test. LOW — latency test against a fake sleeper doesn't prove real concurrency.
+No new HIGH found by this reviewer. No remaining cycle-2 HIGH.
 
-*(This reviewer did not flag the `stateFor` baseline-ordering self-contradiction the orchestrator independently confirmed — see "Orchestrator Verification".)*
+### Suggestions
 
-**Risk:** MEDIUM.
+- Keep 06-01 Task 1 as three hook-clean commits; do not re-slice the tracer.
+- 06-07 must wait for 06-01 SUMMARY's quoted `EnsureGlobals` vs `managedHostStar` text before writing `T-06-GLOBALBLOCK` needles.
+- Do not "clarify" exit code 2 into a fourth code; `restored`/`error` in JSON already distinguish pre vs post write.
 
-## Plan 06-04 — Whole-graph simulate + ceremony + PTY
+### Risk Assessment
 
-**Strengths:** `SimulationGraph` + mirrored entry point addresses the vacuous Include-layout proof; extends `runGlobalSSHApply` rather than adding a second writer; fake-ssh "read the `-F` path" AC prevents vacuous shadow tests.
+**LOW–MEDIUM.** Correctness of the three former HIGHs is pinned. Remaining risk is Wave-1 blast radius and PTY-fake fidelity, both already mitigated in the plans.
 
-**Concerns:** MEDIUM — 06-01 says apply writes via `filewriter.Write`; 06-04 says journal-backed rollback; `runDelete` uses `mutationJournal` ([lifecycle.go:605](/Users/ramon/git/personal/ssh-git-config/cmd/gitid/lifecycle.go:605)) but 06-01 Layer 4 doesn't name a journal — pin the atomicity story in 06-01 so 06-04 doesn't invent a second restore model. LOW — `ScanDirectivesMulti` best-effort (accepted).
-
-*(This reviewer did not flag the shadowing-precedence reversal the orchestrator independently confirmed — see "Orchestrator Verification".)*
-
-**Risk:** MEDIUM.
-
-## Plan 06-05 — Storage + engine harden
-
-**Strengths:** `filewriter.Backup`, pre-backup digest, restore-only-what-we-wrote, `PlanMigration` close all three Cycle-1 engine HIGHs against the live defects at `migrate.go:265-270` and `migrate.go:219-226`.
-
-**Concerns:** LOW — round-trip "same key via resolution" needs the fake `ssh` to be Include-aware after a layout change; state that in the test setup.
-
-*(This reviewer did not flag the preview/commit plan-identity gap the orchestrator independently confirmed — see "Orchestrator Verification".)*
-
-**Risk:** MEDIUM.
-
-## Plan 06-06 — Frozen CLI
-
-**Strengths:** Tree, JSON `gitid.ssh.options/v1`, exit 0/1/2/3 + `--fail-on-advisory` actually frozen; shared `run*` ceremonies match `identity_delete.go`.
-
-**Concerns:** LOW — "incomplete args on a TTY opens the TUI" is extra surface; keep identical to identity verbs or drop from acceptance criteria.
-
-**Risk:** LOW-MEDIUM.
-
-## Plan 06-07 — Visual gate + battery
-
-**Strengths:** Split from CLI is correct; HTML non-applicability + named PTY files close the hollow-frame and HTML-parity findings.
-
-**Concerns:** LOW — closure table depends on 06-01…06-06 summaries existing.
-
-**Risk:** LOW.
-
-## Cycle-1 Finding Disposition (xai-grok)
-
-All 18 tracked Cycle-1 findings (the 8 HIGH plus 10 of the itemized sub-findings) are recorded as FULLY RESOLVED at the plan level, cross-checked against current source (e.g. `wiring.go:715` DEMO-ONLY confirmed for Persist/Commit; `migrate.go:419-427` confirmed for the strand-globals filter; `reader.go:101-108`/`105-108` confirmed for `HostStanza`'s missing value/line fields). Full table in the run's `gsd-review-xai-grok.md` capture.
-
-## New Issues (xai-grok)
-
-| Finding | Severity |
-|---|---:|
-| Apply rollback story unstated: `filewriter.Write` (06-01) vs journal (06-04) | MEDIUM |
-| `RenderGlobalBlock` grep will hit archive; `IgnoreUnknown` placement vs dummy baseline | MEDIUM |
-| Dual reason enums; TTY→TUI apply depth | LOW |
-
-## Recommendation
-
-Approve with nits — do not re-cycle the whole set. Before executing 06-01, tighten: (1) apply journal vs `Write`, (2) grep scope, (3) `IgnoreUnknown` visual allowlist note. Then run Wave 1.
+**Verdict:** Cycle-3 claims are real. Ready to execute Wave 1 — *this reviewer did not check `06-04`'s cross-package reuse of `sshconfig.aliasCollides` for exportedness; see Orchestrator Verification below, where the orchestrator confirms codex-sol's HIGH finding on this point.*
 
 ---
 
 ## Orchestrator Verification
 
-The two reviewers diverged sharply on severity (codex-sol: HIGH risk, 4 new HIGHs; xai-grok: MEDIUM risk, 0 new HIGHs, "approve with nits"). Given the stakes — this phase writes to `~/.ssh/config` — the orchestrator independently re-checked the three highest-impact disputed claims against the plan text and the actual source files, rather than taking either reviewer's word.
+The two reviewers agree on all three former Cycle-2 HIGH dispositions (all FULLY RESOLVED, both source-grounded with matching file:line citations) and on all 6 actionable items being incorporated. They diverge on one new finding: codex-sol raises a HIGH that `06-04-PLAN.md` requires `internal/globalssh/shadow.go` to reuse `sshconfig.aliasCollides`, which is unexported; xai-grok's review does not mention this function at all.
 
-1. **06-04 shadowing example reversed — CONFIRMED REAL.** `06-04-PLAN.md`'s behavior spec ([06-04-PLAN.md:115](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-04-PLAN.md:115)) states: "Simulating a graph whose MAIN config sets the same option after the Include line reports shadowing, even though the candidate file itself contains the requested value." `internal/sshconfig/include.go:19-22` documents gitid's own design rationale for flooring the Include at the top of the file: "first-match-wins ahead of any later hand-written Host block" — i.e., OpenSSH's first-obtained-value semantics mean the Included content (gitid's candidate) wins over anything appearing later in the main file, not the reverse. The plan's stated test expectation is backwards relative to both OpenSSH's documented behavior and the codebase's own existing comment. This will either produce a test that fails against real `ssh -G`, or force the fake to encode incorrect precedence. **Confirmed HIGH.**
+**Independently confirmed REAL.** `internal/sshconfig/validation.go:160-164`:
 
-2. **06-03 `stateFor` baseline rule contradicts itself — CONFIRMED REAL.** `06-03-PLAN.md`'s behavior list states "An option whose effective value equals the policy's recommended value classifies as already-set, whatever its source" ([06-03-PLAN.md:99](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-03-PLAN.md:99)) — but the algorithm immediately below it orders the checks as: platform gate first, then "`src` is the baseline class or there is no value at all → `StateNeedsAction`" ([06-03-PLAN.md:134](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-03-PLAN.md:134)), and only THEN checks value equality. A baseline-sourced value is routed to `StateNeedsAction` unconditionally, before the equality check ever runs — directly contradicting the "whatever its source" promise two paragraphs earlier. `internal/tuikit/design.go:214`'s existing fixture records `ForwardAgent`'s OpenSSH default as `no`, which equals the D-10 recommendation of `no` — exactly the case this ordering bug would mis-flag as needing action. **Confirmed HIGH — a genuine self-contradiction in the plan's own text, not a matter of interpretation.**
+```go
+func AliasCollision(configPath, candidate string) (bool, error) {
+	return aliasCollides(configPath, candidate, nil)
+}
 
-3. **06-05 preview/commit plan-identity gap — CONFIRMED REAL.** `06-05-PLAN.md` promises "Preview and commit read the SAME plan" ([06-05-PLAN.md:35](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-05-PLAN.md:35)) via one `PlanMigration` call. Tracing the actual call chain in the plan text: `SSHStorageMigrationPlan` (preview, backend) calls `sshconfig.PlanMigration` once ([06-05-PLAN.md:212](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-05-PLAN.md:212)); separately, `Migrate` (commit path, reached via `runSSHStorageMigrate` → `sshconfig.Migrate`) "CALLS `PlanMigration`" again ([06-05-PLAN.md:134](/Users/ramon/git/personal/ssh-git-config/.planning/phases/06-global-ssh-options/06-05-PLAN.md:134)) against disk read at commit time. These are two independent reads of disk at two different points in time. The plan's concurrency detection (06-05's Task 1) only guards `Migrate`'s own internal preflight-to-write window — it never compares against the bytes the earlier preview call rendered to the user. A disk change between the preview screen and the confirm action produces a self-consistent-but-different plan at commit time, with no abort, silently writing something other than what was previewed. **Confirmed HIGH — the plan's own "what you saw is what gets written" guarantee is not met by the described mechanism.** (Note: the isolation_contract_test.go design for a *different* Cycle-1 finding — the `$HOME`-based OpenSSH proof in 06-01 — was also checked and judged adequate: it is an executable, empirical comparison of plain-vs-isolated `ssh -G` output rather than an assumption, so that particular disputed claim resolves in xai-grok's favor, not codex-sol's.)
+func aliasCollides(configPath, candidate string, seen map[string]bool) (bool, error) {
+```
 
-These three are carried into the Consensus Summary below as active, unresolved HIGH concerns for this cycle, regardless of either individual reviewer's overall risk label.
+`aliasCollides` (lowercase) is unexported and therefore invisible outside `internal/sshconfig`. Its exported wrapper, `AliasCollision`, takes a `configPath` and does its own file read + parse + recursive Include walk internally — it is not a per-pattern matcher usable against directives the shadow scanner has already extracted via `ScanDirectivesMulti`. `06-04-PLAN.md:121` and `:226` both instruct: "Reuse the negation-aware matching `internal/sshconfig/validation.go:155-215` (`aliasCollides`) already implements rather than writing a second matcher." `06-04-PLAN.md`'s Task 1 file list (`internal/globalssh/shadow.go, internal/globalssh/shadow_test.go, internal/sshconfig/directives.go, internal/sshconfig/directives_test.go`) does not include `validation.go`, so nothing in the plan exports the needed symbol. As written, an executor following the plan literally cannot compile `shadowSourceFor`'s host-pattern filtering step without either (a) violating the plan's explicit "don't write a second matcher" instruction by duplicating the negation logic, or (b) silently deviating from the plan to add an export the plan never authorizes. This is a genuine, confirmed HIGH — not a matter of interpretation, the same class of defect (a plan instruction that cannot execute as literally written) as the Cycle-2 HIGHs.
+
+The MEDIUM findings (probe-failure "none of six rows" over-broad assertion at `06-03-PLAN.md:179`; the global-visited-set cycle/diamond conflation at `06-04-PLAN.md:204`; the unstated `pendingMigration`/`txMu` mutex relationship at `06-05-PLAN.md:263` vs `:274`) were spot-checked against the cited plan text and are all real, textually-grounded ambiguities or over-broad test assertions — none is blocking in the way the HIGH is, but all three would benefit from being tightened before the corresponding wave executes.
 
 ---
 
 ## Consensus Summary
 
-Both reviewers agree the 5→7 replan genuinely closes the large majority of Cycle 1's findings — the write-authority conflict, provenance overclaiming, missed create sites, migration-exclusion, concurrency-check timing, rollback-erasure, CLI freeze, and HTML-parity ambiguity are all FULLY RESOLVED by both independent accounts, each with matching file:line citations against current source. Neither reviewer's verdict on these should be discounted; both are source-grounded (`[reviewed-without-source-citations]` does not apply to either).
+Both reviewers agree, independently and with matching file:line citations, that the 5→7→(same 7, revised) plan set genuinely closes all three Cycle-2 HIGH findings with real mechanism changes, not reworded promises: the shadowing model now correctly implements OpenSSH's first-obtained-value rule with the culprit-selection direction fixed too; `stateFor`'s branch order now checks value-equality before any source-class branch, closing the false-alarm-on-safe-default defect; and migration preview/commit now share one digest-bearing `MigrationPlan` object carried through an opaque token, closing the TOCTOU window. Both reviewers also independently confirm all 6 Cycle-2 actionable (non-HIGH) findings are incorporated with concrete mechanisms.
 
-Where they diverge is severity of what's left. codex-sol treats the shadowing-precedence reversal (06-04), the stateFor baseline contradiction (06-03), and the preview/commit plan-identity gap (06-05) as blocking HIGH defects; xai-grok treats the plan set as ready to execute with only MEDIUM/LOW nits and does not surface any of the three. The orchestrator independently traced all three against the plan text and cited source and confirms all three are real — the 06-04 and 06-03 findings in particular are not judgment calls: the plan's own stated intent (in each case, quoted in the plan) is directly contradicted by the mechanism it specifies two paragraphs later.
+Where they diverge is a single new finding: codex-sol identifies a genuine HIGH — `06-04-PLAN.md` instructs reuse of an unexported `sshconfig.aliasCollides` function without adding it (or an exported equivalent) to the plan's file list, which cannot compile as literally written. xai-grok's review does not surface this. The orchestrator independently traced the claim against `internal/sshconfig/validation.go` and `06-04-PLAN.md`'s file list and confirms it is real: this is carried forward as an active, unresolved HIGH for this cycle.
 
 ### Agreed Strengths
-- Single write authority (`runGlobalSSHApply`) correctly replaces the dual-write conflict; `Persist` is reread-only.
-- Both missed create-site call sites (`identity_create.go:227`, `wiring.go:2594`) are retargeted.
-- `RenderGlobalBlock` is correctly deleted rather than left as a second renderer.
-- Migration classification now includes the globals block (`06-02` fixes `migrate.go:419`'s exclusion).
-- `filewriter.Backup` correctly separates backup from write, closing the concurrency-detection-after-corruption defect.
-- Per-file written-by-us rollback tracking prevents external-edit erasure.
-- CLI command tree, JSON schema, and exit codes are genuinely frozen.
-- HTML non-applicability is explicit per-spec.
+- The shadowing-precedence model is now directionally correct and matches `include.go`'s own documented design and OpenSSH's `ssh_config(5)` first-obtained-value rule, with a required negative control.
+- `stateFor`'s branch order now checks value-equality before any source-class test, closing the false-alarm-on-safe-default defect (pinned by an every-`SourceClass` equality test).
+- The migration engine now carries one `MigrationPlan` object (with content digests) from preview to commit via an opaque token, verified against disk before any backup — closing the TOCTOU window with a sequence test that mutates disk between plan and commit.
+- All 6 Cycle-2 actionable findings (journal/`filewriter.Write` consistency, archive-scoped `rg` greps, `IgnoreUnknown` visual classification, write-verb JSON envelopes, adaptive-depth freeze, dual-enum numeric pin) are incorporated with concrete mechanisms and acceptance criteria.
 
 ### Agreed Concerns
-- Wave 1 (06-01) remains large (~120k tokens, ~35 files across three staged commits) — both reviewers flag this as execution risk even though the architecture is correct.
-- The apply-path rollback/atomicity story is inconsistently stated between 06-01 (`filewriter.Write`) and 06-04 (journal-backed rollback) — both reviewers independently flag this; pin it in 06-01 before 06-04 is planned in detail.
-- `RenderGlobalBlock` deletion verification via `rg` needs to be scoped to production packages, or it will false-positive against `.planning/archive/`.
+- Wave 1 remains large (~120k tokens, ~35 files across three staged commits) — accepted with mitigation (three hook-clean commits) rather than re-sliced further, since the module-wide pre-commit lint forbids finer splitting without breaking the tracer property.
+- The PTY fake `ssh -G` stub must actually read the `-F` isolated-config path rather than returning a constant, or the shadowing tests are vacuous; the plan already pins this but it is an execution-fidelity risk worth flagging again.
 
-### Divergent Views — now resolved by orchestrator verification
-- **06-04 shadowing precedence**: codex-sol HIGH, xai-grok not flagged. **Orchestrator confirms codex-sol is correct** — the plan's example contradicts `include.go`'s own documented design.
-- **06-03 stateFor baseline rule**: codex-sol HIGH, xai-grok not flagged. **Orchestrator confirms codex-sol is correct** — a direct textual self-contradiction in the plan.
-- **06-05 preview/commit plan identity**: codex-sol HIGH, xai-grok not flagged (xai-grok credits `PlanMigration` with closing the Cycle-1 "no pure preview" finding without checking whether preview and commit share one instance). **Orchestrator confirms codex-sol is correct** — they do not share one instance.
-- **06-01 isolation_contract_test.go**: codex-sol HIGH ("not reliably hermetic"), xai-grok FULLY RESOLVED. **Orchestrator sides with xai-grok** — the test's plain-vs-isolated comparison is an executable, empirical proof, not an unverified assumption.
+### Divergent Views — resolved by orchestrator verification
+- **06-04 unexported `aliasCollides` reuse**: codex-sol HIGH, xai-grok not flagged. **Orchestrator confirms codex-sol is correct** — `aliasCollides` is unexported in `internal/sshconfig/validation.go:164`, its exported wrapper `AliasCollision` has an incompatible signature (config path, not pattern list), and `06-04-PLAN.md`'s Task 1 file list omits `validation.go`, so the plan as written cannot compile.
+
+### New Actionable (non-HIGH) Findings This Cycle
+- MEDIUM — `06-03-PLAN.md:179`'s "none of six rows is `StateAlreadySet`" probe-failure assertion can contradict the independently-derived UseKeychain/IdentitiesOnly rows; should scope to the four resolution-dependent rows.
+- MEDIUM — `06-04-PLAN.md:204`'s global visited-path cycle detection in `BuildGraph` will flag a legitimate diamond-shaped (non-cyclic) Include graph as a cycle, producing an unearned INCONCLUSIVE; needs a recursion-stack-vs-memoization split.
+- MEDIUM — `06-05-PLAN.md:263` vs `:274`: the relationship between `txMu` and whatever guards `pendingMigration` is unstated; if they are the same lock, a lookup-and-consume helper called from inside `runSSHStorageMigrate` could deadlock on Go's non-reentrant `sync.Mutex`.
