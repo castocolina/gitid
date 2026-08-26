@@ -3707,6 +3707,29 @@ func TestDeleteChoiceThreeSiblingsCommaJoined(t *testing.T) {
 	}
 }
 
+// TestDeleteEverythingReceiptReflectsSharedKeyDowngrade is the WR-02
+// regression: cfg.ResultMessage was fixed at ceremony-build time to "...
+// SSH block, Git fragment, and key removed (backups kept)." even when
+// plan.SharedKeyOwners is non-empty — i.e. when D-12's downgrade kept the
+// key pair for a sibling. The confirm screen's hint says "kept", the
+// receipt said "removed": the user was told their key was gone when it was
+// not. The receipt must name the sibling and say "kept", never "removed".
+func TestDeleteEverythingReceiptReflectsSharedKeyDowngrade(t *testing.T) {
+	owners := []string{"staging"}
+	a := NewApp(stubBackend{deletePlanFn: planWithSiblings(owners)})
+	a = pressSeq(t, a, "d", "down", "enter") // everything scope -> ceremony
+	name := identModel(t, a).selected
+	a = typeText(t, a, name)
+	a = pressAndRun(t, a, "enter") // confirm — async CommitDelete + DeleteCommitMsg reduces
+	pane := paneFlat(a)
+	if strings.Contains(pane, "and key removed") {
+		t.Errorf("WR-02: receipt must not claim the key was removed when a sibling still uses it: %s", pane)
+	}
+	if !strings.Contains(pane, "key kept") || !strings.Contains(pane, "staging") {
+		t.Errorf("WR-02: receipt must disclose the key was kept for the sibling %q: %s", "staging", pane)
+	}
+}
+
 func TestDeleteChoiceFiveLongSiblingsOverflowToCount(t *testing.T) {
 	owners := []string{
 		"identity-with-a-very-long-name-alpha",

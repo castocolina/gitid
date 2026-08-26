@@ -2798,7 +2798,16 @@ func deleteCeremonyFor(plan DeletePlanView) ceremonyModel {
 			ConfirmWord: plan.Name,
 			Warning:     deleteEverythingWarning(plan),
 		}
-		cfg.ResultMessage = `Identity "` + plan.Name + `" deleted — SSH block, Git fragment, and key removed (backups kept).`
+		// WR-02: the receipt must agree with the confirm screen's own hint
+		// (formatSharedKeyNote above). When plan.SharedKeyOwners is
+		// non-empty, D-12's downgrade kept the key pair for the sibling —
+		// claiming "removed" here told the user their key was gone when it
+		// was not.
+		removedKey := "and key removed"
+		if len(plan.SharedKeyOwners) > 0 {
+			removedKey = "(key kept — still used by " + strings.Join(plan.SharedKeyOwners, ", ") + ")"
+		}
+		cfg.ResultMessage = `Identity "` + plan.Name + `" deleted — SSH block, Git fragment ` + removedKey + ` (backups kept).`
 		return newCeremony(cfg)
 	}
 	cfg.Heading = `Delete the Git identity of "` + plan.Name + `" (SSH stays)`
