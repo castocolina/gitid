@@ -355,3 +355,38 @@ func TestCeremonyDestructiveAffirmativeNeverDefaultFocused(t *testing.T) {
 		t.Error("destructive warning missing")
 	}
 }
+
+// TestCeremonyReceiptClipsLongTargetAndBackupLists guards 05-UI-REVIEW.md
+// top fix #2: an everything-scope delete (or any ceremony with many
+// targets/backups) must never let the Wrote→/Backed up→ lists push the
+// "Done (Enter)" CTA off the rendered pane. Every other list-of-lines
+// preview in this codebase clips with a "+N more" cue (PreviewBlock,
+// fitPane); the receipt state must do the same.
+func TestCeremonyReceiptClipsLongTargetAndBackupLists(t *testing.T) {
+	targets := make([]string, 0, 30)
+	backups := make([]string, 0, 30)
+	for i := 0; i < 30; i++ {
+		targets = append(targets, "~/.ssh/config.d/target-"+string(rune('a'+i)))
+		backups = append(backups, "~/.ssh/config.d/target-"+string(rune('a'+i))+".backup.X")
+	}
+	c := newCeremony(ceremonyConfig{
+		Heading:       "Delete EVERYTHING",
+		Targets:       targets,
+		Backups:       backups,
+		ResultMessage: "Deleted.",
+	})
+	c, outcome := c.handleKey(pressKey("enter"))
+	if outcome != ceremonyConfirmed || !c.done {
+		t.Fatalf("confirm = (%v, done=%v), want (confirmed, true)", outcome, c.done)
+	}
+	plain := stripANSI(c.view(80))
+	if !strings.Contains(plain, "Done (Enter)") {
+		t.Error("the Done CTA must remain visible no matter how many targets/backups exist")
+	}
+	if strings.Count(plain, "Wrote → ") > 10 {
+		t.Errorf("Wrote-> list must clip well below 30 raw lines; got %d unclipped lines", strings.Count(plain, "Wrote → "))
+	}
+	if !strings.Contains(plain, "more line") {
+		t.Error("a clipped list must carry a visible \"+N more\" cue, never a silent cut")
+	}
+}

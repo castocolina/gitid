@@ -4324,7 +4324,7 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 	var body string
 	var crumbs []string
 	var actions []FooterAction
-	status := fmt.Sprintf("%d identities — selection renders the detail live; every action is dummy but really changes this state.", len(s.Identities))
+	status := fmt.Sprintf("%d identities — selection renders the detail live; every action writes real files.", len(s.Identities))
 
 	var pane string
 	switch m.pane {

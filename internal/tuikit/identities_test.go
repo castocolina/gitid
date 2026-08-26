@@ -4235,3 +4235,16 @@ func TestDetailFindingsShowRealClassificationSeverities(t *testing.T) {
 		t.Errorf("findings section must render the domain-assigned severity; got:\n%s", got)
 	}
 }
+
+// TestIdentitiesListStatusHasNoLeftoverMockupCopy guards against the
+// gitid-dummy mockup's "every action is dummy but really changes this
+// state" placeholder leaking into the real compiled binary (05-UI-REVIEW.md
+// top fix #1): the real binary does write real files, so the status line
+// must not claim the opposite.
+func TestIdentitiesListStatusHasNoLeftoverMockupCopy(t *testing.T) {
+	a := identitiesApp()
+	view := appView(a)
+	if strings.Contains(view, "dummy") {
+		t.Errorf("identities list status must not mention mockup-only \"dummy\" copy; got:\n%s", view)
+	}
+}

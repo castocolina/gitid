@@ -16,6 +16,7 @@ package tuikit
 // reducer action on ceremonyFinished.
 
 import (
+	"fmt"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -285,6 +286,33 @@ func (c ceremonyModel) commitFailed(err string) ceremonyModel {
 	return c
 }
 
+// receiptListMaxLines caps the receipt's Wrote→/Backed up→ lists (05-UI-
+// REVIEW.md top fix #2): an everything-scope delete or global apply can
+// touch dozens of files, and without a cap the list pushes the "Done
+// (Enter)" CTA off the pane exactly like an unbounded PreviewBlock would —
+// every other list-of-lines preview in this codebase clips with a visible
+// cue instead of silently overflowing.
+const receiptListMaxLines = 6
+
+// renderReceiptList renders a receipt line list with the given label
+// prefix, clipping to maxLines with a "+N more" cue so the CTA below it
+// always stays visible.
+func renderReceiptList(label string, entries []string, maxLines int) string {
+	var b strings.Builder
+	if len(entries) <= maxLines {
+		for _, e := range entries {
+			b.WriteString(styleFaint.Render(label) + e + "\n")
+		}
+		return b.String()
+	}
+	for _, e := range entries[:maxLines] {
+		b.WriteString(styleFaint.Render(label) + e + "\n")
+	}
+	hidden := len(entries) - maxLines
+	b.WriteString(styleFaint.Render(fmt.Sprintf("… (+%d more lines)", hidden)) + "\n")
+	return b.String()
+}
+
 // view renders the ceremony: state A (preview + backup promise + confirm),
 // state B (receipt with Wrote → / Backed up → lines), or for async ceremonies
 // the in-flight pending state and the retryable failure state.
@@ -299,12 +327,8 @@ func (c ceremonyModel) view(width int) string {
 			b.WriteString(" " + styleFaint.Render(c.cfg.ResultHint) + "\n")
 		}
 		b.WriteString("\n")
-		for _, t := range c.cfg.Targets {
-			b.WriteString(styleFaint.Render("Wrote → ") + t + "\n")
-		}
-		for _, bk := range c.cfg.Backups {
-			b.WriteString(styleFaint.Render("Backed up → ") + bk + "\n")
-		}
+		b.WriteString(renderReceiptList("Wrote → ", c.cfg.Targets, receiptListMaxLines))
+		b.WriteString(renderReceiptList("Backed up → ", c.cfg.Backups, receiptListMaxLines))
 		b.WriteString("\n" + styleSelected.Render(" Done (Enter) "))
 		return b.String()
 	}

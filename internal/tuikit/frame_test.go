@@ -629,6 +629,23 @@ func TestExactTextViewport_HorizontalSliceKeepsANSIEscapesIntact(t *testing.T) {
 	}
 }
 
+// TestRenderFooterLineNeverCutsAWordMidWord guards 05-UI-REVIEW.md's third
+// finding: at a width too narrow for every action, the footer keybar must
+// drop a whole trailing action rather than fragment its label mid-word.
+func TestRenderFooterLineNeverCutsAWordMidWord(t *testing.T) {
+	actions := []FooterAction{
+		{Key: "↑↓", Label: "select identity"},
+		{Key: "1234", Label: "switch tabs"},
+	}
+	got := stripANSI(renderFooterLine(30, actions))
+	if !strings.Contains(got, "select identity") {
+		t.Errorf("the action that fully fits must still render whole; got %q", got)
+	}
+	if strings.Contains(got, "switch") {
+		t.Errorf("an action that doesn't fully fit must be dropped whole, never fragmented (e.g. \"sw…\"); got %q", got)
+	}
+}
+
 func TestSeverityLabelLockedContract(t *testing.T) {
 	cases := []struct {
 		severity HealthSeverity

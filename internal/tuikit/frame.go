@@ -288,12 +288,36 @@ func headerChipAt(width int, s DemoState, x int) bool {
 
 // renderFooterLine renders one footer keybar line (bold key + faint label
 // pairs joined with faint dots).
+// renderFooterLine joins the footer keybar's actions, dropping whole
+// trailing actions that don't fit at width rather than cutting a label
+// mid-word (05-UI-REVIEW.md finding: "switch tabs" was rendering as "sw…").
 func renderFooterLine(width int, actions []FooterAction) string {
-	parts := make([]string, 0, len(actions))
-	for _, a := range actions {
-		parts = append(parts, styleBold.Render(a.Key)+" "+styleFaint.Render(a.Label))
+	sep := " · "
+	sepWidth := ansi.StringWidth(sep)
+	line := " "
+	used := ansi.StringWidth(line)
+	dropped := false
+	for i, a := range actions {
+		plain := a.Key + " " + a.Label
+		addWidth := ansi.StringWidth(plain)
+		if i > 0 {
+			addWidth += sepWidth
+		}
+		if used+addWidth > width {
+			dropped = true
+			break
+		}
+		if i > 0 {
+			line += styleFaint.Render(sep)
+			used += sepWidth
+		}
+		line += styleBold.Render(a.Key) + " " + styleFaint.Render(a.Label)
+		used += ansi.StringWidth(plain)
 	}
-	return ansi.Truncate(" "+strings.Join(parts, styleFaint.Render(" · ")), width, "…")
+	if dropped {
+		line += styleFaint.Render("…")
+	}
+	return line
 }
 
 // footerActionAt resolves which footer action covers column x on a keybar
