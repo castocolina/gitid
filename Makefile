@@ -281,9 +281,16 @@ gate-copy-freeze:
 		'Write it' \
 		'Blank prefix → SSH Host = the provider host itself' \
 		'! Reachable — key not uploaded yet' \
-		'Stored — key not uploaded yet; this identity is not proven for Git yet'; \
+		'Stored — key not uploaded yet; this identity is not proven for Git yet' \
+		'This key is also used by ' \
+		' — it will be kept. Only this identity'\''s SSH and Git artifacts are removed.' \
+		'(+%d more)' \
+		'Found %q referenced in %s: %d — review before continuing.' \
+		'This action is irreversible' \
+		'%s will be removed from active use; a copy of the key pair exists at %s.' \
+		'Repo remotes using git@<alias>: cannot be scanned and will break after this delete.'; \
 	do \
-		if grep -rqF -- "$$s" internal/tuikit; then \
+		if grep -rqF -- "$$s" internal/tuikit internal/identity; then \
 			echo "    ok   $$s"; \
 		else \
 			echo "    MISSING  $$s"; fail=1; \

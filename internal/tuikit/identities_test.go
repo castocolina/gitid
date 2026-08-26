@@ -3,12 +3,20 @@ package tuikit
 import (
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/castocolina/gitid/internal/identity"
 )
 
 // identitiesApp returns a fresh App (Identities tab active).
@@ -3607,6 +3615,284 @@ func TestStubBackendSatisfiesIdentityPlannerThroughNoop(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("stubBackend must satisfy IdentityPlanner by embedding NoopIdentityPlanner")
+	}
+}
+
+func TestDeletePlanErrorFailsClosed(t *testing.T) {
+	a := NewApp(stubBackend{deletePlanErr: errors.New("unreadable fragment")})
+	a = pressSeq(t, a, "d", "enter")
+	m := identModel(t, a)
+	if m.pane != paneDelete {
+		t.Fatalf("pane = %v, want paneDelete (confirm error state)", m.pane)
+	}
+	view := paneFlat(a)
+	if !strings.Contains(view, "unreadable fragment") {
+		t.Fatalf("error state must render; pane:\n%s", view)
+	}
+	for _, banned := range []string{
+		DeleteSharedKeyNotePrefix,
+		identity.UnmanagedScanDisclaimer,
+		"Touches ",
+		DeleteScanHitNeedle,
+	} {
+		if strings.Contains(view, banned) {
+			t.Errorf("failed plan must not render %q", banned)
+		}
+	}
+	next, cmd := press(t, a, "enter")
+	if cmd != nil {
+		t.Fatal("confirm control must be disabled: Enter produced a commit command")
+	}
+	if identModel(t, next).pane != paneDelete {
+		t.Fatal("Enter on a failed plan must not leave the error state as a commit")
+	}
+}
+
+func TestDeleteChoiceThreeSiblingsCommaJoined(t *testing.T) {
+	owners := []string{"work", "staging", "clientA"}
+	a := NewApp(stubBackend{deletePlanFn: planWithSiblings(owners)})
+	a, _ = press(t, a, "d")
+	pane := paneFlat(a)
+	joined := `"work", "staging", "clientA"`
+	if !strings.Contains(pane, joined) {
+		t.Fatalf("downgrade note must name all three siblings comma-joined; pane:\n%s", pane)
+	}
+	if !strings.Contains(pane, DeleteSharedKeyNotePrefix) {
+		t.Fatal("downgrade note prefix missing")
+	}
+}
+
+func TestDeleteChoiceFiveLongSiblingsOverflowToCount(t *testing.T) {
+	owners := []string{
+		"identity-with-a-very-long-name-alpha",
+		"identity-with-a-very-long-name-bravo",
+		"identity-with-a-very-long-name-charlie",
+		"identity-with-a-very-long-name-delta",
+		"identity-with-a-very-long-name-echo",
+	}
+	a := NewApp(stubBackend{deletePlanFn: planWithSiblings(owners)})
+	a = pressSeq(t, a, "d", "down", "enter")
+	stripped := stripANSI(appView(a))
+	for _, name := range owners {
+		if strings.Contains(stripped, name[:len(name)-3]+"…") || strings.Contains(stripped, name[:len(name)-3]+"...") {
+			t.Errorf("sibling %q appears truncated", name)
+		}
+	}
+	if !strings.Contains(stripped, "(+") || !strings.Contains(stripped, " more)") {
+		t.Fatalf("overflow note must carry a remaining-count suffix; view:\n%s", stripped)
+	}
+	preview := paneFlat(a)
+	for _, name := range owners {
+		if !strings.Contains(preview, name) {
+			t.Errorf("confirm preview must contain sibling %q", name)
+		}
+	}
+}
+
+func TestTuikitDeclaresNoUnmanagedScanDisclaimer(t *testing.T) {
+	needle := identity.UnmanagedScanDisclaimer
+	if needle == "" {
+		t.Fatal("identity.UnmanagedScanDisclaimer must stay non-empty")
+	}
+	root := "."
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(filepath.Join(root, name)) //nolint:gosec // package-local .go files from os.ReadDir (G304)
+		if err != nil {
+			t.Fatal(err)
+		}
+		file, err := parser.ParseFile(fset, name, src, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			lit, ok := n.(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return true
+			}
+			if strings.Contains(lit.Value, needle) {
+				t.Errorf("%s declares a string literal equal to identity.UnmanagedScanDisclaimer", name)
+			}
+			return true
+		})
+	}
+}
+
+func TestDeleteChoiceEmptySiblingsOmitsDowngradeNote(t *testing.T) {
+	a := pressSeq(t, identitiesApp(), "d")
+	if strings.Contains(paneFlat(a), DeleteSharedKeyNotePrefix) {
+		t.Fatal("delete-choice must omit the downgrade note when there are no siblings")
+	}
+	a = pressSeq(t, a, "enter")
+	if strings.Contains(paneFlat(a), DeleteSharedKeyNotePrefix) {
+		t.Fatal("confirm must omit the downgrade note when there are no siblings")
+	}
+}
+
+func TestDeleteConfirmZeroHitsOmitsScanBlock(t *testing.T) {
+	a := pressSeq(t, identitiesApp(), "d", "down", "enter")
+	pane := paneFlat(a)
+	if strings.Contains(pane, identity.UnmanagedScanDisclaimer) {
+		t.Fatal("zero hits must not render the disclaimer")
+	}
+	if strings.Contains(pane, DeleteScanHitNeedle) {
+		t.Fatal("zero hits must not render a hit line")
+	}
+}
+
+func TestDeleteConfirmTwoHitsRenderDisclaimer(t *testing.T) {
+	hits := []UnmanagedHitView{
+		{File: "~/.ssh/config", Line: 14, Region: "unmanaged", Text: "Host leftover"},
+		{File: "~/.gitconfig", Line: 22, Region: "unmanaged", Text: "insteadOf leftover"},
+	}
+	a := NewApp(stubBackend{deletePlanFn: planWithHits(hits)})
+	a = pressSeq(t, a, "d", "down", "enter")
+	pane := paneFlat(a)
+	if strings.Count(pane, DeleteScanHitNeedle) != 2 {
+		t.Fatalf("want 2 hit lines, pane:\n%s", pane)
+	}
+	if !strings.Contains(pane, identity.UnmanagedScanDisclaimer) {
+		t.Fatalf("disclaimer must render from the plan field; pane:\n%s\n---full---\n%s", pane, stripANSI(appView(a)))
+	}
+}
+
+func TestDeleteConfirmLongScanLineClippedToPane(t *testing.T) {
+	long := strings.Repeat("Host leftover-alias-comment ", 20)
+	a := NewApp(stubBackend{deletePlanFn: planWithHits([]UnmanagedHitView{
+		{File: "~/.ssh/config", Line: 9, Region: "unmanaged", Text: long},
+	})})
+	a = pressSeq(t, a, "d", "down", "enter")
+	detailW := minFrameWidth - sidebarWidth(minFrameWidth) - masterDetailGutter
+	for _, line := range strings.Split(stripANSI(appView(a)), "\n") {
+		if ansi.StringWidth(line) > minFrameWidth {
+			t.Fatalf("frame line width %d exceeds frame %d: %q", ansi.StringWidth(line), minFrameWidth, line)
+		}
+	}
+	pane := paneFlat(a)
+	if !strings.Contains(pane, DeleteScanHitNeedle) {
+		t.Fatal("hit line missing")
+	}
+	_ = detailW
+}
+
+func TestDeleteConfirmProviderRewriteTargetPresence(t *testing.T) {
+	label := "insteadOf block for github.com"
+	with := NewApp(stubBackend{deletePlanFn: planWithProvider(label)})
+	with = pressSeq(t, with, "d", "down", "enter")
+	if !strings.Contains(paneFlat(with), label) {
+		t.Fatal("provider rewrite target must render when the plan carries it")
+	}
+	without := pressSeq(t, identitiesApp(), "d", "down", "enter")
+	if strings.Contains(paneFlat(without), label) {
+		t.Fatal("provider rewrite target must be absent when the plan omits it")
+	}
+}
+
+func TestDeleteBackupNoticeKeyCopyAndCannotBeUndoneScope(t *testing.T) {
+	keyCopy := "~/.ssh/id_ed25519_personal.copy"
+	a := NewApp(stubBackend{deletePlanFn: func(name, scope string) (DeletePlanView, error) {
+		p := stubDefaultDeletePlan(name, scope)
+		if scope == "everything" {
+			p.KeyCopyPath = keyCopy
+			p.Backups = append(append([]string{}, p.Backups...), keyCopy)
+		}
+		return p, nil
+	}})
+	a = pressSeq(t, a, "d", "down", "enter")
+	pane := paneFlat(a)
+	if !strings.Contains(pane, keyCopy) {
+		t.Fatal("key copy path must appear in the backup notice")
+	}
+	if !strings.Contains(pane, DeleteKeyCopyNeedle) {
+		t.Fatal("D-11 active-use copy must render")
+	}
+	for _, line := range strings.Split(stripANSI(appView(a)), "\n") {
+		if strings.Contains(line, keyCopy) && strings.Contains(line, DeleteCannotBeUndone) {
+			t.Fatalf("cannot-be-undone heading must not apply to the key path line: %q", line)
+		}
+	}
+	gitOnly := NewApp(stubBackend{deletePlanFn: func(name, scope string) (DeletePlanView, error) {
+		return stubDefaultDeletePlan(name, scope), nil
+	}})
+	gitOnly = pressSeq(t, gitOnly, "d", "enter")
+	everythingBackups := strings.Count(pane, "Backup → ")
+	gitOnlyBackups := strings.Count(paneFlat(gitOnly), "Backup → ")
+	if everythingBackups == gitOnlyBackups {
+		t.Fatalf("backup list length must differ between git-only (%d) and everything (%d)", gitOnlyBackups, everythingBackups)
+	}
+}
+
+func TestDeleteChoiceFocusUnmovedByDowngradeNote(t *testing.T) {
+	withNote := identModel(t, pressSeq(t, NewApp(stubBackend{deletePlanFn: planWithSiblings([]string{"work"})}), "d"))
+	without := identModel(t, pressSeq(t, identitiesApp(), "d"))
+	if withNote.deleteScope != without.deleteScope {
+		t.Fatalf("focus index moved: with note %q, without %q", withNote.deleteScope, without.deleteScope)
+	}
+	if withNote.deleteScope != "git-only" {
+		t.Fatal("safer scope must stay default-focused")
+	}
+}
+
+func TestDeleteConfirmMaximalFixtureFitsFrame(t *testing.T) {
+	rewrite := DeleteTargetView{File: "~/.gitconfig", Block: "url.github.com", Label: "insteadOf block for github.com"}
+	a := NewApp(stubBackend{deletePlanFn: func(name, scope string) (DeletePlanView, error) {
+		p := stubDefaultDeletePlan(name, scope)
+		p.SharedKeyOwners = []string{"work", "staging", "clientA"}
+		p.Hits = []UnmanagedHitView{
+			{File: "~/.ssh/config", Line: 14, Region: "unmanaged", Text: "Host leftover"},
+			{File: "~/.gitconfig", Line: 22, Region: "unmanaged", Text: "insteadOf leftover"},
+		}
+		p.Disclaimer = identity.UnmanagedScanDisclaimer
+		p.ProviderRewriteTarget = &rewrite
+		p.Targets = append(p.Targets, rewrite)
+		p.KeyCopyPath = "~/.ssh/id_ed25519_personal.copy"
+		return p, nil
+	}})
+	a = pressSeq(t, a, "d", "down", "enter")
+	lines := strings.Split(stripANSI(appView(a)), "\n")
+	if got := len(lines); got != minFrameHeight {
+		t.Fatalf("frame height = %d, want %d", got, minFrameHeight)
+	}
+}
+
+func planWithSiblings(owners []string) func(string, string) (DeletePlanView, error) {
+	return func(name, scope string) (DeletePlanView, error) {
+		p := stubDefaultDeletePlan(name, scope)
+		if scope == "everything" {
+			p.SharedKeyOwners = owners
+		}
+		return p, nil
+	}
+}
+
+func planWithHits(hits []UnmanagedHitView) func(string, string) (DeletePlanView, error) {
+	return func(name, scope string) (DeletePlanView, error) {
+		p := stubDefaultDeletePlan(name, scope)
+		if scope == "everything" {
+			p.Hits = hits
+			p.Disclaimer = identity.UnmanagedScanDisclaimer
+		}
+		return p, nil
+	}
+}
+
+func planWithProvider(label string) func(string, string) (DeletePlanView, error) {
+	return func(name, scope string) (DeletePlanView, error) {
+		p := stubDefaultDeletePlan(name, scope)
+		if scope == "everything" {
+			t := DeleteTargetView{File: "~/.gitconfig", Block: "url.github.com", Label: label}
+			p.ProviderRewriteTarget = &t
+			p.Targets = append(p.Targets, t)
+		}
+		return p, nil
 	}
 }
 

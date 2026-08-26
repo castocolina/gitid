@@ -156,6 +156,28 @@ const (
 	IdentityManagerActionNewKey = "Generate new key"
 	// IdentityManagerActionDelete is the action-menu's fourth approved row.
 	IdentityManagerActionDelete = "Delete (d)"
+
+	// DeleteSharedKeyNotePrefix is the D-12 downgrade-note lead-in. Sibling
+	// names are comma-joined after it (plural-safe; review R-17).
+	DeleteSharedKeyNotePrefix = `This key is also used by `
+	// DeleteSharedKeyNoteSuffix is the D-12 downgrade-note close.
+	DeleteSharedKeyNoteSuffix = ` — it will be kept. Only this identity's SSH and Git artifacts are removed.`
+	// DeleteSharedKeyMoreFmt is the R-17 remaining-count suffix. The count is
+	// the format argument.
+	DeleteSharedKeyMoreFmt = `(+%d more)`
+	// DeleteScanHitFmt is one D-13 unmanaged-reference hit line. Args: alias,
+	// file, line.
+	DeleteScanHitFmt = `Found %q referenced in %s: %d — review before continuing.`
+	// DeleteScanHitNeedle is the stable substring tests use to count hit lines.
+	DeleteScanHitNeedle = `referenced in`
+	// DeleteCannotBeUndone is the confirm-destructive heading, scoped to
+	// managed-block removals (D-11) — never applied to a recoverable key copy.
+	DeleteCannotBeUndone = `This action is irreversible`
+	// DeleteKeyRemovedFmt is the D-11 key-copy sentence. Args: identity name,
+	// key-copy path.
+	DeleteKeyRemovedFmt = `%s will be removed from active use; a copy of the key pair exists at %s.`
+	// DeleteKeyCopyNeedle is the stable D-11 substring.
+	DeleteKeyCopyNeedle = `will be removed from active use`
 )
 
 // ---------------------------------------------------------------------------

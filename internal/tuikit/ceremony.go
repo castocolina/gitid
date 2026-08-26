@@ -72,6 +72,20 @@ type ceremonyConfig struct {
 	// every existing ceremonyConfig literal is unaffected.
 	ResultHint   string
 	ConfirmLabel string
+	// Hint is an optional faint row rendered under the destructive warning
+	// (D-12 shared-key downgrade note). Empty by default.
+	Hint string
+	// ScanPreview is an optional extra preview under the warning and
+	// above the default-no control (D-13 unmanaged-reference scan). Empty
+	// means the warning block does not render at all.
+	ScanPreview string
+	// ScanDisclaimer is the D-13 honest disclaimer, rendered in full below
+	// the clipped hit list so a long sentence is never lost to truncation.
+	ScanDisclaimer string
+	// PreviewMaxLines caps the Exact-change preview. Zero means the default
+	// 10-line budget; delete shrinks this so the D-12/D-13 rows stay inside
+	// the fixed frame.
+	PreviewMaxLines int
 	// Async means confirmation dispatches a backend commit and the receipt
 	// is reachable ONLY from that commit's explicit success result. The
 	// ceremony enters an in-flight state on confirmation and remains there
@@ -335,19 +349,34 @@ func (c ceremonyModel) view(width int) string {
 	// fixes), so this change applies everywhere ceremony.view renders. The
 	// wording is shortened from the original PreviewLabel text to fit the
 	// narrowest caller's pane width (identities.go's detailWidth=62).
+	if c.cfg.Destructive != nil {
+		b.WriteString(styleError.Render(wrap.Render(c.cfg.Destructive.Warning)) + "\n")
+	}
+	if c.cfg.Hint != "" {
+		b.WriteString(styleFaint.Render(wrap.Render(c.cfg.Hint)) + "\n")
+	}
+	if c.cfg.ScanPreview != "" {
+		b.WriteString(previewBlockClipped(c.cfg.ScanPreview, false, width, 4) + "\n")
+	}
+	if c.cfg.ScanDisclaimer != "" {
+		b.WriteString(styleWarning.Render(wrap.Render(c.cfg.ScanDisclaimer)) + "\n")
+	}
 	v := c.preview
 	v.Width = maxInt(20, width-4)
-	v.VisibleLines = 10
+	previewLines := 10
+	if c.cfg.PreviewMaxLines > 0 {
+		previewLines = c.cfg.PreviewMaxLines
+	}
+	v.VisibleLines = previewLines
 	v = v.Clamp()
 	hint := "Exact change: PgUp/PgDn scroll · v focus · ←/→ columns"
 	if v.Focused {
 		hint = "Exact change focused: PgUp/PgDn and ←/→ scroll"
 	}
 	b.WriteString(styleFaint.Render(hint) + "\n")
-	b.WriteString(PreviewBlock("Exact change — everything else preserved verbatim", v.View(), c.cfg.PreviewDiff, width, 10) + "\n")
+	b.WriteString(PreviewBlock("Exact change — everything else preserved verbatim", v.View(), c.cfg.PreviewDiff, width, previewLines) + "\n")
 	b.WriteString(styleFaint.Render("Nothing has changed yet") + "\n")
 	if c.cfg.Destructive != nil {
-		b.WriteString(styleError.Render(wrap.Render(c.cfg.Destructive.Warning)) + "\n")
 		b.WriteString(styleError.Render("> ") + c.typed.View() + "\n")
 	}
 	// The affirmative action is NEVER default-focused — Cancel carries the

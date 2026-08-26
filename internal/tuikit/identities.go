@@ -1869,6 +1869,15 @@ type identitiesModel struct {
 	gitCommitSpec GitSpec
 	deleteScope   string
 	deleteCerem   ceremonyModel
+	deletePlan    DeletePlanView
+	// deleteChoiceOwners is the D-12 sibling list for the choice screen,
+	// always taken from the everything-scope plan so the note stays visible
+	// while the safer git-only option is focused.
+	deleteChoiceOwners []string
+	// deletePlanErr is the fail-closed error from IdentityPlanner.DeletePlan.
+	// A non-empty value means the confirm screen MUST render the error state
+	// with the confirm control disabled and no partial target list (R-07).
+	deletePlanErr string
 	// deleteCommitPending gates the delete ceremony's optimistic reduce,
 	// mirroring gitCommitPending: DeleteIdentity is dispatched only from
 	// handleMsg once DeleteCommitMsg arrives with an empty Err, never
@@ -2160,9 +2169,32 @@ func (m identitiesModel) openClonePrompt(sel DemoIdentity) identitiesModel {
 
 // openDeleteChoice is the one delete-choice implementation both the detail
 // shortcut (`d`) and the action-menu delete row call (review R-33).
-func (m identitiesModel) openDeleteChoice(_ DemoIdentity) identitiesModel {
+func (m identitiesModel) openDeleteChoice(sel DemoIdentity) identitiesModel {
 	m.pane = paneDeleteScope
 	m.deleteScope = "git-only" // safer scope default-focused
+	return m.refreshDeletePlan(sel)
+}
+
+// refreshDeletePlan fetches the one plan value both delete screens render
+// from. A non-nil error is stored and the plan is cleared — a destructive
+// confirmation must never render a partial description of what it is about
+// to do (review R-07).
+func (m identitiesModel) refreshDeletePlan(sel DemoIdentity) identitiesModel {
+	plan, err := m.backend.DeletePlan(sel.Name, m.deleteScope)
+	if err != nil {
+		m.deletePlan = DeletePlanView{}
+		m.deletePlanErr = err.Error()
+		return m
+	}
+	m.deletePlan = plan
+	m.deletePlanErr = ""
+	if m.deleteScope == "everything" {
+		m.deleteChoiceOwners = plan.SharedKeyOwners
+		return m
+	}
+	if everything, eerr := m.backend.DeletePlan(sel.Name, "everything"); eerr == nil {
+		m.deleteChoiceOwners = everything.SharedKeyOwners
+	}
 	return m
 }
 
@@ -2571,50 +2603,153 @@ func (m identitiesModel) handleCloneKey(msg tea.KeyMsg, s DemoState) keyResult {
 	}
 }
 
-// deleteCeremonyFor builds the delete ceremony for the chosen scope —
-// everything is destructive (typed identity name).
-func deleteCeremonyFor(sel DemoIdentity, scope string) ceremonyModel {
-	fragment := sel.GitFragmentPath
-	if fragment == "" {
-		fragment = "~/.gitconfig.d/" + sel.Name
+// deleteCeremonyFor builds the delete ceremony from the one DeletePlanView
+// both screens consume. The UI no longer invents target or backup paths.
+func deleteCeremonyFor(plan DeletePlanView) ceremonyModel {
+	targets := deletePlanTargetFiles(plan)
+	backups := append([]string{}, plan.Backups...)
+	if plan.KeyCopyPath != "" && !containsString(backups, plan.KeyCopyPath) {
+		backups = append(backups, plan.KeyCopyPath)
 	}
-	keyPath := sel.KeyPath
-	if keyPath == "" {
-		keyPath = "~/.ssh/id_ed25519_" + sel.Name
+	cfg := ceremonyConfig{
+		Targets:         targets,
+		Backups:         backups,
+		Preview:         deletePlanPreview(plan),
+		PreviewDiff:     true,
+		Hint:            formatSharedKeyNote(plan.SharedKeyOwners, deleteChoiceNoteWidth),
+		ScanPreview:     deleteScanPreview(plan),
+		ScanDisclaimer:  deleteScanDisclaimer(plan),
+		PreviewMaxLines: 6,
+		ConfirmLabel:    "Delete",
+		Async:           true,
 	}
-	sshHost := sel.SSHHost
-	if sshHost == "" {
-		sshHost = sel.Name + ".github.com"
+	if plan.Scope == "everything" {
+		cfg.Heading = `Delete EVERYTHING for "` + plan.Name + `" (SSH + Git + key)`
+		cfg.Destructive = &FixDestructive{
+			ConfirmWord: plan.Name,
+			Warning:     deleteEverythingWarning(plan),
+		}
+		cfg.ResultMessage = `Identity "` + plan.Name + `" deleted — SSH block, Git fragment, and key removed (backups kept).`
+		return newCeremony(cfg)
 	}
-	if scope == "everything" {
-		return newCeremony(ceremonyConfig{
-			Heading: `Delete EVERYTHING for "` + sel.Name + `" (SSH + Git + key)`,
-			Targets: []string{"~/.ssh/config", "~/.gitconfig", fragment, keyPath},
-			Backups: []string{NewBackupPath("~/.ssh/config"), NewBackupPath("~/.gitconfig")},
-			Preview: "- Host " + sshHost + " (managed block removed)\n- [includeIf] → " + fragment +
-				" (removed)\n- " + keyPath + " (key file removed)",
-			PreviewDiff: true,
-			Destructive: &FixDestructive{
-				ConfirmWord: sel.Name,
-				Warning: `This removes the key file too — it cannot be regenerated. Type the identity name "` +
-					sel.Name + `" to confirm.`,
-			},
-			ResultMessage: `Identity "` + sel.Name + `" deleted — SSH block, Git fragment, and key removed (backups kept).`,
-			ConfirmLabel:  "Delete",
-			Async:         true,
-		})
+	cfg.Heading = `Delete the Git identity of "` + plan.Name + `" (SSH stays)`
+	cfg.ResultMessage = `Git identity of "` + plan.Name + `" deleted — the SSH side is untouched (state: incomplete).`
+	return newCeremony(cfg)
+}
+
+// deleteChoiceNoteWidth is the min-frame detail pane width the overflow
+// rule budgets against (100-col frame, 36% sidebar, 2-col gutter).
+const deleteChoiceNoteWidth = 62
+
+func deletePlanTargetFiles(plan DeletePlanView) []string {
+	var files []string
+	seen := map[string]bool{}
+	add := func(file string) {
+		if file == "" || seen[file] {
+			return
+		}
+		seen[file] = true
+		files = append(files, file)
 	}
-	return newCeremony(ceremonyConfig{
-		Heading: `Delete the Git identity of "` + sel.Name + `" (SSH stays)`,
-		Targets: []string{"~/.gitconfig", fragment, "~/.ssh/allowed_signers"},
-		Backups: []string{NewBackupPath("~/.ssh/config"), NewBackupPath("~/.gitconfig")},
-		Preview: "- [includeIf] → " + fragment + " (removed)\n- " + fragment +
-			" (fragment removed)\n  Host " + sshHost + " (unchanged)",
-		PreviewDiff:   true,
-		ResultMessage: `Git identity of "` + sel.Name + `" deleted — the SSH side is untouched (state: incomplete).`,
-		ConfirmLabel:  "Delete",
-		Async:         true,
-	})
+	for _, t := range plan.Targets {
+		add(t.File)
+	}
+	if plan.ProviderRewriteTarget != nil {
+		add(plan.ProviderRewriteTarget.File)
+	}
+	return files
+}
+
+func deletePlanPreview(plan DeletePlanView) string {
+	var b strings.Builder
+	for _, name := range plan.SharedKeyOwners {
+		b.WriteString(name + "\n")
+	}
+	seen := map[string]bool{}
+	writeTarget := func(t DeleteTargetView) {
+		key := t.File + "\x00" + t.Block + "\x00" + t.Label
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		line := "- " + t.File
+		if t.Label != "" {
+			line += " (" + t.Label + ")"
+		}
+		b.WriteString(line + "\n")
+	}
+	if plan.ProviderRewriteTarget != nil {
+		writeTarget(*plan.ProviderRewriteTarget)
+	}
+	for _, t := range plan.Targets {
+		writeTarget(t)
+	}
+	return b.String()
+}
+
+func deleteScanPreview(plan DeletePlanView) string {
+	if len(plan.Hits) == 0 {
+		return ""
+	}
+	alias := plan.Name
+	var lines []string
+	for _, h := range plan.Hits {
+		line := fmt.Sprintf(DeleteScanHitFmt, alias, h.File, h.Line)
+		if h.Text != "" {
+			line += " " + h.Text
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func deleteScanDisclaimer(plan DeletePlanView) string {
+	if len(plan.Hits) == 0 {
+		return ""
+	}
+	return plan.Disclaimer
+}
+
+func deleteEverythingWarning(plan DeletePlanView) string {
+	warn := DeleteCannotBeUndone + ". The managed Host block and Git fragment are removed."
+	if plan.KeyCopyPath != "" {
+		warn += " " + fmt.Sprintf(DeleteKeyRemovedFmt, plan.Name, plan.KeyCopyPath)
+	}
+	return warn + ` Type the identity name "` + plan.Name + `" to confirm.`
+}
+
+func formatSharedKeyNote(owners []string, width int) string {
+	if len(owners) == 0 {
+		return ""
+	}
+	quoted := make([]string, len(owners))
+	for i, name := range owners {
+		quoted[i] = strconv.Quote(name)
+	}
+	joined := strings.Join(quoted, ", ")
+	full := DeleteSharedKeyNotePrefix + joined + DeleteSharedKeyNoteSuffix
+	if width <= 0 || lipgloss.Width(joined) <= width {
+		return full
+	}
+	for keep := len(owners) - 1; keep >= 1; keep-- {
+		rest := len(owners) - keep
+		names := strings.Join(quoted[:keep], ", ") + " " + fmt.Sprintf(DeleteSharedKeyMoreFmt, rest)
+		if lipgloss.Width(names) <= width {
+			return DeleteSharedKeyNotePrefix + names + DeleteSharedKeyNoteSuffix
+		}
+	}
+	rest := len(owners) - 1
+	return DeleteSharedKeyNotePrefix + quoted[0] + " " +
+		fmt.Sprintf(DeleteSharedKeyMoreFmt, rest) + DeleteSharedKeyNoteSuffix
+}
+
+func containsString(vals []string, want string) bool {
+	for _, v := range vals {
+		if v == want {
+			return true
+		}
+	}
+	return false
 }
 
 // handleDeleteKey drives the scope chooser then the delete ceremony.
@@ -2626,17 +2761,37 @@ func (m identitiesModel) handleDeleteKey(msg tea.KeyMsg, s DemoState) keyResult 
 		switch key {
 		case "esc":
 			m.pane = paneDetail
+			m.deletePlanErr = ""
 		case "up", "down", "tab", "shift+tab", "left", "right":
 			// The two scope options ARE the focus ring (batch 3): Tab and
-			// ←/→ move it exactly like ↑/↓.
+			// ←/→ move it exactly like ↑/↓. Refetch so the screen always
+			// describes the scope currently focused.
 			if m.deleteScope == "git-only" {
 				m.deleteScope = "everything"
 			} else {
 				m.deleteScope = "git-only"
 			}
+			m = m.refreshDeletePlan(sel)
 		case "enter":
-			m.deleteCerem = deleteCeremonyFor(sel, m.deleteScope)
+			m = m.refreshDeletePlan(sel)
 			m.pane = paneDelete
+			if m.deletePlanErr == "" {
+				m.deleteCerem = deleteCeremonyFor(m.deletePlan)
+			}
+		}
+		return keyResult{model: m, handled: true}
+	}
+
+	if m.deletePlanErr != "" {
+		switch key {
+		case "esc":
+			m.pane = paneDetail
+			m.deletePlanErr = ""
+		case "enter":
+			m = m.refreshDeletePlan(sel)
+			if m.deletePlanErr == "" {
+				m.deleteCerem = deleteCeremonyFor(m.deletePlan)
+			}
 		}
 		return keyResult{model: m, handled: true}
 	}
@@ -3117,12 +3272,19 @@ func (m identitiesModel) handleClick(x, y, width, height int, s DemoState) keyRe
 	case paneDeleteScope:
 		// Clicking a scope row chooses that scope (radio semantics).
 		if line, ok := blockLine(body, y); ok {
+			sel, selOK := m.selectedIdentity(s)
 			if strings.Contains(line, IdentityManagerDeleteChoiceGitOnly) {
 				m.deleteScope = "git-only"
+				if selOK {
+					m = m.refreshDeletePlan(sel)
+				}
 				return keyResult{model: m, handled: true}
 			}
 			if strings.Contains(line, IdentityManagerDeleteChoiceEverything) {
 				m.deleteScope = "everything"
+				if selOK {
+					m = m.refreshDeletePlan(sel)
+				}
 				return keyResult{model: m, handled: true}
 			}
 		}
@@ -4048,12 +4210,20 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 		}
 		pane = " " + styleBold.Render(`Delete "`+sel.Name+`" — choose scope`) + "\n\n" +
 			"  " + gitOnlyLine + "\n" +
-			"  " + everythingLine + "\n\n" +
-			" " + styleFaint.Render("↑↓/Tab choose · Enter continue · Esc cancel")
+			"  " + everythingLine
+		if note := formatSharedKeyNote(m.deleteChoiceOwners, detailWidth-2); note != "" {
+			pane += "\n  " + styleFaint.Render(note)
+		}
+		pane += "\n\n" + " " + styleFaint.Render("↑↓/Tab choose · Enter continue · Esc cancel")
 		crumbs = []string{sel.Name, "Delete"}
 		status = "Esc returns to the identity detail without writing anything."
 	case paneDelete:
-		pane = m.deleteCerem.view(detailWidth)
+		if m.deletePlanErr != "" {
+			pane = " " + styleError.Render("✗ "+m.deletePlanErr) + "\n\n" +
+				styleSelected.Render(" Cancel (Esc) ") + " " + styleBold.Render(" Retry (Enter) ")
+		} else {
+			pane = m.deleteCerem.view(detailWidth)
+		}
 		crumbs = []string{sel.Name, "Delete"}
 		actions = ceremonyFooterActions()
 		status = "Esc returns to the identity detail without writing anything."

@@ -150,6 +150,8 @@ type stubBackend struct {
 	gitStepAlwaysDisabled bool
 	gitStepReason         string
 	keyActionErr          error
+	deletePlanErr         error
+	deletePlanFn          func(name, scope string) (DeletePlanView, error)
 }
 
 var _ Backend = stubBackend{}
@@ -498,6 +500,44 @@ func (b stubBackend) KeyActionFor(name string) (string, error) {
 		return KeyCeremonyModeRepair, nil
 	}
 	return KeyCeremonyModeRotate, nil
+}
+
+// DeletePlan answers from fixture rows, or a test-injected error/override.
+func (b stubBackend) DeletePlan(name, scope string) (DeletePlanView, error) {
+	if b.deletePlanErr != nil {
+		return DeletePlanView{}, b.deletePlanErr
+	}
+	if b.deletePlanFn != nil {
+		return b.deletePlanFn(name, scope)
+	}
+	return stubDefaultDeletePlan(name, scope), nil
+}
+
+func stubDefaultDeletePlan(name, scope string) DeletePlanView {
+	row, _ := findStubRow(name)
+	fragment := row.GitFragmentPath
+	if fragment == "" {
+		fragment = "~/.gitconfig.d/" + name
+	}
+	keyPath := row.KeyPath
+	if keyPath == "" {
+		keyPath = "~/.ssh/id_ed25519_" + name
+	}
+	plan := DeletePlanView{Name: name, Scope: scope, Backups: []string{NewBackupPath("~/.gitconfig")}}
+	plan.Targets = []DeleteTargetView{
+		{File: "~/.gitconfig", Block: name, Label: "Git includeIf block"},
+		{File: fragment, Block: "", Label: "Git fragment file"},
+	}
+	if scope != "everything" {
+		return plan
+	}
+	plan.Targets = append(plan.Targets,
+		DeleteTargetView{File: "~/.ssh/config", Block: name, Label: "SSH Host block"},
+		DeleteTargetView{File: "~/.ssh/allowed_signers", Block: name, Label: "allowed_signers entry"},
+		DeleteTargetView{File: keyPath, Block: "", Label: "Key pair"},
+	)
+	plan.Backups = []string{NewBackupPath("~/.ssh/config"), NewBackupPath("~/.gitconfig")}
+	return plan
 }
 
 // ClonePrefill mirrors identity.DeriveCloneInput's D-14 copy/re-derive split

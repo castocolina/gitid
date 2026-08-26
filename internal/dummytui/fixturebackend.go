@@ -451,6 +451,35 @@ func (FixtureBackend) KeyActionFor(name string) (string, error) {
 	return tuikit.KeyCeremonyModeRotate, nil
 }
 
+// DeletePlan answers from fixture rows so the demo delete screens render a
+// real plan value instead of UI-invented paths.
+func (FixtureBackend) DeletePlan(name, scope string) (tuikit.DeletePlanView, error) {
+	row, _ := findFixtureRow(name)
+	fragment := row.GitFragmentPath
+	if fragment == "" {
+		fragment = "~/.gitconfig.d/" + name
+	}
+	keyPath := row.KeyPath
+	if keyPath == "" {
+		keyPath = "~/.ssh/id_ed25519_" + name
+	}
+	plan := tuikit.DeletePlanView{Name: name, Scope: scope, Backups: []string{tuikit.NewBackupPath("~/.gitconfig")}}
+	plan.Targets = []tuikit.DeleteTargetView{
+		{File: "~/.gitconfig", Block: name, Label: "Git includeIf block"},
+		{File: fragment, Block: "", Label: "Git fragment file"},
+	}
+	if scope != "everything" {
+		return plan, nil
+	}
+	plan.Targets = append(plan.Targets,
+		tuikit.DeleteTargetView{File: "~/.ssh/config", Block: name, Label: "SSH Host block"},
+		tuikit.DeleteTargetView{File: "~/.ssh/allowed_signers", Block: name, Label: "allowed_signers entry"},
+		tuikit.DeleteTargetView{File: keyPath, Block: "", Label: "Key pair"},
+	)
+	plan.Backups = []string{tuikit.NewBackupPath("~/.ssh/config"), tuikit.NewBackupPath("~/.gitconfig")}
+	return plan, nil
+}
+
 // ClonePrefill mirrors identity.DeriveCloneInput's D-14 copy/re-derive split
 // over the fixture rows: user.name/user.email are copied verbatim from the
 // source (when the source has a Git identity at all) and reported in
