@@ -555,6 +555,70 @@ func TestIdentityCreateMissingFlagsErrorNamesOnlyMissing(t *testing.T) {
 	}
 }
 
+// TestIdentityCreateRejectsPathTraversalName is the CR-04 regression:
+// createInputFromCreateFlags validated only the SSH host block
+// (sshconfig.ValidateHostBlock), never the identity NAME itself.
+// validateToken (inside ValidateHostBlock) rejects whitespace and shell
+// metacharacters but not '/' or '..', so an unvalidated name flowed straight
+// into FragmentPath = filepath.Join(b.fragmentDir, name) — "--name
+// '../.bashrc'" resolved the fragment write to ~/.bashrc, still "inside"
+// $HOME by containedRegularPath's own (weaker) check.
+func TestIdentityCreateRejectsPathTraversalName(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cmd, _, _ := cliTestCmd()
+	flags := identityCreateFlags{
+		Name:     "../.bashrc",
+		Provider: "github.com",
+		GitName:  "Attacker",
+		GitEmail: "attacker@example.com",
+		Yes:      true,
+	}
+	err := runIdentityCreate(cmd, flags, false, false)
+	if err == nil {
+		t.Fatal("identity create with a path-traversal name must be refused, not written")
+	}
+	if !strings.Contains(err.Error(), "invalid identity name") {
+		t.Errorf("error = %v, want it to name the identity-name validation failure", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(home, ".bashrc")); !os.IsNotExist(statErr) {
+		t.Errorf("identity create must not write outside the managed fragment directory: statErr=%v", statErr)
+	}
+}
+
+// TestIdentityCreateRejectsInvalidGitEmail is CR-04's second gap:
+// createInputFromCreateFlags never called identity.ValidateEmail, so a
+// malformed --git-email reached WriteFragment unchecked and was only caught
+// later, deep inside gitconfig.validateEmail — by then the SSH block and
+// key had already been written and the whole transaction had to roll back
+// (proven pre-fix: the error names "gitconfig: user.email is malformed" and
+// lists ~12 restored paths, including the generated key pair). The fix must
+// refuse at the flag boundary, before ~/.ssh even exists.
+func TestIdentityCreateRejectsInvalidGitEmail(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cmd, _, _ := cliTestCmd()
+	flags := identityCreateFlags{
+		Name:     "work",
+		Provider: "github.com",
+		GitName:  "Work User",
+		GitEmail: "not-an-email",
+		Yes:      true,
+	}
+	err := runIdentityCreate(cmd, flags, false, false)
+	if err == nil {
+		t.Fatal("identity create with an invalid git-email must be refused before any write")
+	}
+	if !strings.Contains(err.Error(), "invalid email") {
+		t.Errorf("error = %v, want the early ValidateEmail rejection (\"invalid email\"), not a deep-write rollback", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(home, ".ssh")); !os.IsNotExist(statErr) {
+		t.Errorf("identity create must not create ~/.ssh before email validation: statErr=%v", statErr)
+	}
+}
+
 // --- delete: exactly one scope flag ----------------------------------------
 
 // TestIdentityDeleteRequiresExactlyOneScopeFlag asserts supplying BOTH scope

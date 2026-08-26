@@ -142,6 +142,26 @@ func createInputFromCreateFlags(b *realBackend, flags identityCreateFlags) (iden
 	name := strings.TrimSpace(flags.Name)
 	provider := strings.TrimSpace(flags.Provider)
 	hostname := strings.TrimSpace(flags.Hostname)
+
+	// CR-04: validate the identity name, git email, and provider BEFORE
+	// anything is derived from them. name in particular flows unvalidated
+	// into FragmentPath (filepath.Join(b.fragmentDir, name)) and, via
+	// createInput/keygen.KeyPaths, into the ~/.ssh/id_<algo>_<name> key
+	// paths — validateToken (below, via ValidateHostBlock) rejects
+	// whitespace and shell metacharacters but NOT '/' or '..', so an
+	// unvalidated name such as "../.bashrc" would resolve those writes to
+	// an arbitrary in-home path. ValidateName's charset
+	// (^[A-Za-z0-9._-]+$) rejects '/' outright.
+	if err := identity.ValidateName(name); err != nil {
+		return identity.CreateInput{}, tuikit.DemoIdentity{}, fmt.Errorf("gitid: identity create: %w", err)
+	}
+	if err := identity.ValidateEmail(strings.TrimSpace(flags.GitEmail)); err != nil {
+		return identity.CreateInput{}, tuikit.DemoIdentity{}, fmt.Errorf("gitid: identity create: %w", err)
+	}
+	if err := identity.ValidateProvider(provider); err != nil {
+		return identity.CreateInput{}, tuikit.DemoIdentity{}, fmt.Errorf("gitid: identity create: %w", err)
+	}
+
 	port := strings.TrimSpace(flags.Port)
 	if hostname == "" {
 		hostname = identity.DefaultHostname(provider)
