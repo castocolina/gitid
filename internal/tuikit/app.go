@@ -177,6 +177,35 @@ func NewApp(b Backend) App {
 	return a
 }
 
+// NewAppPrefilled launches the app with the create wizard already open and
+// pre-filled from pre (D-15's pre-filled-entry mode, consumed by D-02's CLI
+// flag pre-fill). pre is nil-less to the caller's choice: when pre is nil it
+// behaves byte-for-byte like NewApp (the no-prefill case keeps NewApp's
+// original signature working). The pre-filled wizard shares newWizardBase with
+// a fresh one, so it inherits the D-09 collision gate, the D-01/D-04 two-stage
+// test gate, the ceremony, and the rollback behavior unchanged. b must not be
+// nil.
+func NewAppPrefilled(b Backend, pre *ClonePrefillView) App {
+	if b == nil {
+		panic("tuikit: NewAppPrefilled requires a non-nil Backend")
+	}
+	a := NewApp(b)
+	if pre == nil {
+		return a
+	}
+	// The Identities screen owns the wizard; open its create pane populated
+	// from the derivation. First run the screen's own construction so the
+	// backend-seeded sidebar state stays intact.
+	screen, ok := a.screens[TabIdentities].(identitiesModel)
+	if !ok {
+		return a
+	}
+	screen.wizard = newWizardPrefilled(b, *pre)
+	screen.pane = paneCreate
+	a.screens[TabIdentities] = screen
+	return a
+}
+
 // Init satisfies tea.Model — the first activation already happened in
 // NewApp; Init only surfaces its command to the runtime.
 func (a App) Init() tea.Cmd {

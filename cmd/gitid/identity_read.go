@@ -67,7 +67,7 @@ type identityListDocument struct {
 
 // newIdentityListVerb builds the `list` verb spec.
 func newIdentityListVerb() identityVerb {
-	var jsonOut bool
+	var jsonOut, dryRun bool
 	return identityVerb{
 		use:     "list",
 		aliases: nil,
@@ -75,8 +75,12 @@ func newIdentityListVerb() identityVerb {
 		args:    cobra.NoArgs,
 		bindFlags: func(fs *pflag.FlagSet) {
 			fs.BoolVar(&jsonOut, "json", false, "print a single JSON document with identities and unused_keys")
+			fs.BoolVar(&dryRun, "dry-run", false, "reserved: reads never write, so --dry-run is a usage error")
 		},
 		run: func(cmd *cobra.Command, _ []string) error {
+			if dryRun {
+				return fmt.Errorf("gitid: --dry-run is not valid for a read command: `identity list` never writes")
+			}
 			home, err := resolveHomeForCLI()
 			if err != nil {
 				return err
@@ -93,7 +97,7 @@ func newIdentityListVerb() identityVerb {
 
 // newIdentityShowVerb builds the `show <name>` verb spec.
 func newIdentityShowVerb() identityVerb {
-	var jsonOut bool
+	var jsonOut, dryRun bool
 	return identityVerb{
 		use:     "show <name>",
 		aliases: nil,
@@ -101,8 +105,12 @@ func newIdentityShowVerb() identityVerb {
 		args:    cobra.ExactArgs(1),
 		bindFlags: func(fs *pflag.FlagSet) {
 			fs.BoolVar(&jsonOut, "json", false, "print a single JSON identity record")
+			fs.BoolVar(&dryRun, "dry-run", false, "reserved: reads never write, so --dry-run is a usage error")
 		},
 		run: func(cmd *cobra.Command, args []string) error {
+			if dryRun {
+				return fmt.Errorf("gitid: --dry-run is not valid for a read command: `identity show` never writes")
+			}
 			home, err := resolveHomeForCLI()
 			if err != nil {
 				return err

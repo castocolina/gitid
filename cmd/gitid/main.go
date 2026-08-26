@@ -68,14 +68,18 @@ func Execute() error {
 //
 // D-14 archived the 0.0.1 POC command surface (identity add/list/test/rotate/
 // update/delete/copy, baseline, doctor, adopt, host, add repo). Phase 5
-// (SHELL-03) rebuilds the v1.0 CLI surface deliberately, starting with the
-// D-01 noun-verb taxonomy: the `identity` noun group (list/show/delete) plus
-// its flat root-level aliases, and the reserved `ssh`/`git`/`health`/`fix`
-// noun groups that claim their taxonomy slot before the phases that
-// implement them (6, 7, 8, 8) land — guaranteeing a later phase's verb can
-// never collide with a top-level flat alias. What else remains is the root,
-// the Phase 1 `debug` diagnostic readout, and the `completion` subcommand
-// Cobra auto-registers for bash/zsh/fish/PowerShell (D-08/CLI-02).
+// (SHELL-03) rebuilt the v1.0 CLI surface deliberately: the D-01 noun-verb
+// taxonomy — the `identity` noun group (create/list/show/clone/new-key/
+// rotate/delete, added incrementally across plans 05-01 and 05-08) plus its
+// flat root-level aliases — and the reserved `ssh`/`git`/`health`/`fix` noun
+// groups that claim their taxonomy slot before the phases that implement them
+// (6, 7, 8, 8) land — guaranteeing a later phase's verb can never collide
+// with a top-level flat alias. What else remains is the root, the Phase 1
+// `debug` diagnostic readout, and the `completion` subcommand Cobra
+// auto-registers for bash/zsh/fish/PowerShell (D-08/CLI-02). Plan 05-08 adds
+// the adaptive-depth write verbs: every product outcome has a CLI command and
+// no ceremony step (preview/confirm/backup/re-test) does (D-04), enforced by
+// the requirement-keyed parity matrix check in docs/cli-parity-matrix.md.
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "gitid",

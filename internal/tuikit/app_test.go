@@ -168,3 +168,85 @@ func TestWindowSizeGuard(t *testing.T) {
 		t.Error("undersized terminals must render the resize guard")
 	}
 }
+
+// TestNewAppPrefilledNilBehavesLikeNewApp pins the no-prefill contract of the
+// D-02 pre-filled entry point: a nil pre-fill value must behave byte-for-byte
+// like NewApp (the create wizard stays closed, the pane is the detail pane).
+func TestNewAppPrefilledNilBehavesLikeNewApp(t *testing.T) {
+	a := NewApp(stubBackend{})
+	prefilled := NewAppPrefilled(stubBackend{}, nil)
+	if prefilled.View().Content != a.View().Content {
+		t.Error("NewAppPrefilled(b, nil) rendered a different frame than NewApp(b)")
+	}
+	im := prefilled.screens[TabIdentities].(identitiesModel)
+	if im.pane != paneDetail {
+		t.Errorf("pane = %v with nil pre-fill, want paneDetail", im.pane)
+	}
+}
+
+// TestNewAppPrefilledOpensWizardPrefilled proves the D-15 pre-filled entry
+// the CLI's D-02 flag pre-fill consumes: NewAppPrefilled(b, pre) opens the
+// Identities screen's create pane with the wizard populated from the pre-fill
+// values — SSH alias prefix/host/endpoint from the derivation, author fields
+// on the Git form — while the test gate stays at the fresh wizard's idle
+// value (D-16: a pre-filled clone still re-runs the FULL two-stage test).
+func TestNewAppPrefilledOpensWizardPrefilled(t *testing.T) {
+	pre := ClonePrefillView{
+		AliasPrefix:   "acme-work",
+		Hostname:      "ssh.github.com",
+		Port:          "443",
+		GitName:       "Acme Work",
+		GitEmail:      "work@acme.example",
+		MatchStrategy: "gitdir",
+		GitDir:        "~/git/acme-work/",
+	}
+	a := NewAppPrefilled(stubBackend{}, &pre)
+	im := a.screens[TabIdentities].(identitiesModel)
+	if im.pane != paneCreate {
+		t.Fatalf("pane = %v, want paneCreate", im.pane)
+	}
+	if got := im.wizard.form.identityName(); got != "acme-work" {
+		t.Errorf("wizard identityName = %q, want acme-work (pre-filled alias prefix)", got)
+	}
+	if got := im.wizard.form.sshHost(); got != "acme-work.github.com" {
+		t.Errorf("wizard sshHost = %q, want acme-work.github.com (provider reconstructed from the re-derived hostname)", got)
+	}
+	if got := im.wizard.form.hostname.Value(); got != "ssh.github.com" {
+		t.Errorf("wizard hostname = %q, want ssh.github.com", got)
+	}
+	if got := im.wizard.form.port.Value(); got != "443" {
+		t.Errorf("wizard port = %q, want 443", got)
+	}
+	if got := im.wizard.git.name.Value(); got != "Acme Work" {
+		t.Errorf("wizard git name = %q, want Acme Work", got)
+	}
+	if got := im.wizard.git.email.Value(); got != "work@acme.example" {
+		t.Errorf("wizard git email = %q, want work@acme.example", got)
+	}
+	if im.wizard.testPhase != testIdle {
+		t.Errorf("pre-filled wizard testPhase = %q, want %q (D-16: the gate still runs)", im.wizard.testPhase, testIdle)
+	}
+}
+
+// TestNewAppPrefilledReuseKeyPopulatesPicker proves the D-10 reuse-path
+// pre-fill rides through the D-02 entry point: a pre-fill carrying a source
+// key path seeds the wizard's key-source picker onto that path.
+func TestNewAppPrefilledReuseKeyPopulatesPicker(t *testing.T) {
+	pre := ClonePrefillView{
+		AliasPrefix:   "acme-work",
+		Hostname:      "ssh.github.com",
+		Port:          "443",
+		GitName:       "Acme Work",
+		GitEmail:      "work@acme.example",
+		ReuseKeyPath:  stubManualReusePath,
+		MatchStrategy: "gitdir",
+	}
+	a := NewAppPrefilled(stubBackend{}, &pre)
+	im := a.screens[TabIdentities].(identitiesModel)
+	if im.wizard.keySource != keySourceReuse {
+		t.Fatalf("keySource = %v, want reuse", im.wizard.keySource)
+	}
+	if got := im.wizard.reuseKeyPath(); got != stubManualReusePath {
+		t.Errorf("reuseKeyPath = %q, want the pre-filled source key path", got)
+	}
+}

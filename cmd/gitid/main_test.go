@@ -46,9 +46,13 @@ func TestNewRootCmdDoesNotPanic(t *testing.T) {
 // this archived list; every other POC command name must still be absent.
 func TestNewRootCmdArchivedPOCCommandsAreGone(t *testing.T) {
 	root := newRootCmd()
+	// "rotate" was removed from this archived list in plan 05-08 exactly like
+	// "identity" was removed in 05-01: the D-01 taxonomy deliberately rebuilds
+	// the noun form (`gitid identity rotate`) and its flat alias, so it is no
+	// longer an archived command but a real, intentionally-registered one.
 	archived := [][]string{
 		{"baseline"}, {"doctor"}, {"adopt"},
-		{"rotate"}, {"copy"}, {"host"}, {"add"}, {"match"}, {"upload"},
+		{"copy"}, {"host"}, {"add"}, {"match"}, {"upload"},
 	}
 	for _, path := range archived {
 		if _, _, err := root.Find(path); err == nil {
@@ -58,10 +62,11 @@ func TestNewRootCmdArchivedPOCCommandsAreGone(t *testing.T) {
 }
 
 // TestNewRootCmdSurfaceIsPhase5CLI asserts the WHOLE top-level command
-// surface Phase 5 (05-01-PLAN.md Task 3, D-01) builds, so a future addition
-// is a deliberate decision rather than an accident: the identity noun group
-// and its flat aliases, the reserved ssh/git/health/fix noun groups, the
-// Phase-1 debug readout, and Cobra's auto-registered completion/help.
+// surface Phase 5 (05-01-PLAN.md Task 3 + 05-08-PLAN.md Task 1, D-01) builds,
+// so a future addition is a deliberate decision rather than an accident: the
+// identity noun group and its flat aliases (including the 05-08 write verbs),
+// the reserved ssh/git/health/fix noun groups, the Phase-1 debug readout, and
+// Cobra's auto-registered completion/help.
 func TestNewRootCmdSurfaceIsPhase5CLI(t *testing.T) {
 	root := newRootCmd()
 	root.InitDefaultCompletionCmd()
@@ -71,6 +76,7 @@ func TestNewRootCmdSurfaceIsPhase5CLI(t *testing.T) {
 		"debug": true, "completion": true, "help": true,
 		"identity": true, "ssh": true, "git": true, "health": true, "fix": true,
 		"list": true, "show": true, "delete": true,
+		"create": true, "clone": true, "new-key": true, "rotate": true,
 	}
 	for _, cmd := range root.Commands() {
 		if !want[cmd.Name()] {

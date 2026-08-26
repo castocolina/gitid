@@ -8,6 +8,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -59,8 +60,12 @@ func newVerbCmd(v identityVerb) *cobra.Command {
 // (re-)constructed ones.
 func identityVerbSpecs() []identityVerb {
 	return []identityVerb{
+		newIdentityCreateVerb(),
 		newIdentityListVerb(),
 		newIdentityShowVerb(),
+		newIdentityCloneVerb(),
+		newIdentityRotateVerb(),
+		newIdentityNewKeyVerb(),
 		newIdentityDeleteVerb(),
 	}
 }
@@ -103,4 +108,107 @@ func newReservedNounCmd(use, short, phase string) *cobra.Command {
 			return fmt.Errorf("gitid: %q arrives in %s — not yet implemented", use, phase)
 		},
 	}
+}
+
+// ---------------------------------------------------------------------------
+// The D-02 adaptive-depth resolver (review R-21)
+// ---------------------------------------------------------------------------
+
+// resolveOutcome is one of the three D-02 branches every write verb's resolver
+// can return.
+type resolveOutcome int
+
+const (
+	// resolveHeadless: every required flag was supplied — run to completion
+	// with no interactive surface, exactly as a script would.
+	resolveHeadless resolveOutcome = iota
+	// resolvePrefilledTUI: a required flag is missing AND both stdin and
+	// stdout are terminals — open the app with the wizard pre-filled from the
+	// flags that WERE supplied.
+	resolvePrefilledTUI
+	// resolveMissingFlags: a required flag is missing AND not both descriptors
+	// are terminals — exit non-zero naming exactly the missing flags, never
+	// an interactive surface and never a silent default.
+	resolveMissingFlags
+)
+
+// depthResolver is the ONE D-02 adaptive-depth decision point shared by every
+// write verb. It carries the verb's required flag names, the flag set the
+// invocation actually supplied, and TWO independent terminal facts
+// (review R-21): stdinTTY and stdoutTTY. A single isTTY conflates two distinct
+// situations — a terminal stdout with a piped stdin means the confirmation
+// prompt cannot be answered, and a terminal stdin with a piped stdout means
+// the output is being captured — and in BOTH cases an interactive surface is
+// wrong. The rule: the pre-filled TUI launches ONLY for (stdinTTY &&
+// stdoutTTY); every other combination routes the incomplete-flags case to the
+// non-interactive error branch. The two booleans are injected rather than
+// read from the terminal inside the resolver, mirroring noArgsAction's
+// existing seam (main.go), so all three branches are unit-testable.
+type depthResolver struct {
+	required  []string
+	supplied  map[string]bool
+	stdinTTY  bool
+	stdoutTTY bool
+}
+
+// resolve returns the outcome plus the missing flag names (empty except for
+// the missing-flags outcome, populated for the pre-filled branch so the
+// caller knows what it could not fill from flags).
+func (r depthResolver) resolve() (resolveOutcome, []string) {
+	var missing []string
+	for _, name := range r.required {
+		if !r.supplied[name] {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) == 0 {
+		return resolveHeadless, nil
+	}
+	if r.stdinTTY && r.stdoutTTY {
+		return resolvePrefilledTUI, missing
+	}
+	return resolveMissingFlags, missing
+}
+
+// missingFlagErr names EVERY missing flag and no flag that was supplied — the
+// D-02 non-interactive contract for an incomplete invocation.
+func missingFlagErr(verb string, missing []string) error {
+	return fmt.Errorf("gitid: %s requires the flag(s) %s to run headless", verb, strings.Join(missing, ", "))
+}
+
+// ---------------------------------------------------------------------------
+// The exhaustive flag-to-confirmationMode mapping (review R2-03)
+// ---------------------------------------------------------------------------
+
+// confirmationPolicyFrom maps a CLI write verb's authorization flags onto plan
+// 05-07's three-valued confirmationMode with NO fallback branch. The two
+// inputs are analyzed exhaustively:
+//
+//	--yes given                     -> confirmationBypassedWithYes, Prompt nil
+//	--yes absent, both TTYs          -> confirmationRequired + the prompt closure
+//	--yes absent, not both TTYs      -> a refusal error BEFORE any lifecycle
+//	                                     function is constructed or called
+//
+// The last branch treats a missing authorization exactly like a missing
+// required flag: a non-interactive destructive run without --yes must never be
+// mistaken for pre-confirmed (05-07's confirmationRequired is the enum's ZERO
+// value and fails closed regardless, but the refusal here happens even
+// earlier — before a policy value exists). The TUI-only authorization value
+// (the mode that asserts a human already accepted a confirm screen) is NEVER
+// produced from a CLI path — asserted by a source-level test that greps the
+// CLI handler files for the identifier and demands zero occurrences — so a
+// future handler cannot borrow it to silence a prompt.
+//
+// A dry run is exempt from this gate because it cannot write: --dry-run is
+// accepted without a terminal and without --yes, and 05-07's lifecycle stops
+// after the plan stage, before the confirmation gate. Callers route dry runs
+// BEFORE invoking this function.
+func confirmationPolicyFrom(_ *cobra.Command, refuseVerb string, stdinTTY, stdoutTTY, yes bool, prompt func() (bool, error)) (lifecyclePolicy, error) {
+	if yes {
+		return lifecyclePolicy{Confirm: confirmationBypassedWithYes}, nil
+	}
+	if stdinTTY && stdoutTTY {
+		return lifecyclePolicy{Confirm: confirmationRequired, Prompt: func(string) (bool, error) { return prompt() }}, nil
+	}
+	return lifecyclePolicy{}, fmt.Errorf("gitid: refusing to %s without --yes in non-interactive mode (use --yes to skip only the confirmation prompt; the timestamped backup is still taken)", refuseVerb)
 }
