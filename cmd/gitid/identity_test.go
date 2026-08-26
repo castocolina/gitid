@@ -640,6 +640,44 @@ func TestIdentityDeleteRequiresExactlyOneScopeFlag(t *testing.T) {
 	}
 }
 
+// TestConfirmDeleteRequiresTypedNameForEverythingScope is the WR-01
+// regression: for the identical irreversible everything-scope delete, the
+// TUI requires FixDestructive{ConfirmWord: plan.Name} (typing the identity
+// name), while the CLI's interactive prompt accepted the generic "yes" used
+// by every other verb — the stronger gate was dropped exactly where the
+// blast radius is largest. git-only delete must still accept "yes".
+func TestConfirmDeleteRequiresTypedNameForEverythingScope(t *testing.T) {
+	cmd, _, _ := cliTestCmd()
+	cmd.SetIn(strings.NewReader("yes\n"))
+	ok, err := confirmDelete(cmd, "work", identity.DeleteScopeEverything)
+	if err != nil {
+		t.Fatalf("confirmDelete: %v", err)
+	}
+	if ok {
+		t.Error("typing the generic \"yes\" must NOT confirm an everything-scope delete — the identity name is required")
+	}
+
+	cmd2, _, _ := cliTestCmd()
+	cmd2.SetIn(strings.NewReader("work\n"))
+	ok2, err := confirmDelete(cmd2, "work", identity.DeleteScopeEverything)
+	if err != nil {
+		t.Fatalf("confirmDelete: %v", err)
+	}
+	if !ok2 {
+		t.Error("typing the identity name must confirm an everything-scope delete")
+	}
+
+	cmd3, _, _ := cliTestCmd()
+	cmd3.SetIn(strings.NewReader("yes\n"))
+	ok3, err := confirmDelete(cmd3, "work", identity.DeleteScopeGitOnly)
+	if err != nil {
+		t.Fatalf("confirmDelete: %v", err)
+	}
+	if !ok3 {
+		t.Error("git-only scope must still accept the generic \"yes\"")
+	}
+}
+
 // TestIdentityDeleteRefusesWhenPlanFails is the CR-05 regression: PlanDelete
 // is deliberately fail-closed — a plan that failed to read a scan source
 // must never be indistinguishable from a legitimately small plan — and the

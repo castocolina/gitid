@@ -141,12 +141,20 @@ func runIdentityDelete(cmd *cobra.Command, name string, flags identityDeleteFlag
 }
 
 // confirmDelete prints a one-line prompt and reads a line from cmd's stdin,
-// returning true only when the user typed exactly "yes".
+// returning true only when the typed confirmation matches. WR-01: for the
+// everything scope — the identical irreversible delete the TUI gates behind
+// FixDestructive{ConfirmWord: plan.Name} (typing the identity NAME) — the
+// CLI must demand the same, not the generic "yes" every other verb accepts.
+// The stronger gate belongs exactly where the blast radius is largest.
 func confirmDelete(cmd *cobra.Command, name string, scope identity.DeleteScope) (bool, error) {
-	fmt.Fprintf(cmd.OutOrStdout(), "Delete identity %q (%s)? Type \"yes\" to confirm: ", name, scope) //nolint:errcheck // best-effort prompt
+	want := "yes"
+	if scope == identity.DeleteScopeEverything {
+		want = name
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Delete identity %q (%s)? Type %q to confirm: ", name, scope, want) //nolint:errcheck // best-effort prompt
 	reader := bufio.NewReader(cmd.InOrStdin())
 	line, _ := reader.ReadString('\n')
-	return strings.TrimSpace(line) == "yes", nil
+	return strings.TrimSpace(line) == want, nil
 }
 
 // printDeleteDryRun prints the full DeletePlan for name/scope and exits
