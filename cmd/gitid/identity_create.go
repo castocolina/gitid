@@ -224,7 +224,7 @@ func createInputFromCreateFlags(b *realBackend, flags identityCreateFlags) (iden
 		GitconfigPath:      b.gitconfigPath,
 		SSHConfigPath:      b.storageTargetPath(),
 		AllowedSignersPath: b.allowedSigners,
-		GlobalBlock:        sshconfig.RenderGlobalBlock(platform.CurrentOS()),
+		GlobalsGOOS:        platform.CurrentOS(),
 	}
 	id := tuikit.DemoIdentity{
 		Name:            name,

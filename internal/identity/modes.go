@@ -140,7 +140,7 @@ func AddAccount(existing Account, newProvider, newAlias string, deps Deps) (Crea
 		GitconfigPath:      existing.GitconfigPath,
 		SSHConfigPath:      existing.SSHConfigPath,
 		AllowedSignersPath: existing.AllowedSignersPath,
-		GlobalBlock:        "",
+		GlobalsGOOS:        "",
 	}
 
 	pubLine := "" // derived below if needed for the allowed_signers line

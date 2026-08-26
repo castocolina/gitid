@@ -126,34 +126,47 @@ func TestRenderHostBlock(t *testing.T) {
 	}
 }
 
-// TestRenderGlobalBlockDarwin asserts SSH-03 + Pitfall 4: on macOS the Host *
-// block emits IgnoreUnknown UseKeychain before UseKeychain yes before
-// AddKeysToAgent yes.
-func TestRenderGlobalBlockDarwin(t *testing.T) {
-	got := RenderGlobalBlock("darwin")
-
-	if !strings.Contains(got, "Host *") {
-		t.Fatalf("RenderGlobalBlock(darwin) missing 'Host *'; got:\n%s", got)
+// TestEnsureGlobalsDarwinKeychainTrio asserts the new EnsureGlobals contract's
+// darwin half (the assurance the retired standalone globals renderer carried):
+// the guard directive leads, followed by the two macOS keychain directives in
+// the canonical GlobalHostStarOrder (AddKeysToAgent before UseKeychain — the
+// policy-ordered key sequence, documented as the real-vs-dummy divergence in
+// 06-01-SUMMARY.md).
+func TestEnsureGlobalsDarwinKeychainTrio(t *testing.T) {
+	var buf strings.Builder
+	buf.WriteString(managedTestBlock("global-ssh", "Host *\n"))
+	got, err := EnsureGlobals([]byte(buf.String()), nil, "darwin")
+	if err != nil {
+		t.Fatalf("EnsureGlobals(darwin): %v", err)
 	}
+	body := globalBody(t, got)
 
-	ignoreIdx := indexOf(got, "IgnoreUnknown UseKeychain")
-	useIdx := indexOf(got, "UseKeychain yes")
-	addIdx := indexOf(got, "AddKeysToAgent yes")
+	ignoreIdx := indexOf(body, "IgnoreUnknown UseKeychain")
+	useIdx := indexOf(body, "UseKeychain yes")
+	addIdx := indexOf(body, "AddKeysToAgent yes")
 
 	if ignoreIdx == -1 || useIdx == -1 || addIdx == -1 {
-		t.Fatalf("RenderGlobalBlock(darwin) missing keychain directives; got:\n%s", got)
+		t.Fatalf("EnsureGlobals(darwin) missing keychain directives; body:\n%s", body)
 	}
-	if ignoreIdx >= useIdx || useIdx >= addIdx {
-		t.Fatalf("RenderGlobalBlock(darwin) directive order wrong (want IgnoreUnknown < UseKeychain < AddKeysToAgent); got:\n%s", got)
+	if ignoreIdx >= addIdx || addIdx >= useIdx {
+		t.Fatalf("EnsureGlobals(darwin) directive order wrong (want IgnoreUnknown < AddKeysToAgent < UseKeychain in GlobalHostStarOrder); body:\n%s", body)
 	}
 }
 
-// TestRenderGlobalBlockLinux asserts SSH-03: Linux gets no UseKeychain block at
-// all (empty string), since the directive is Apple-only.
-func TestRenderGlobalBlockLinux(t *testing.T) {
-	got := RenderGlobalBlock("linux")
-	if got != "" {
-		t.Fatalf("RenderGlobalBlock(linux) want empty string, got:\n%s", got)
+// TestEnsureGlobalsLinuxOmitsDarwinDefaults asserts the new contract's linux
+// half (the assurance the retired standalone globals renderer carried):
+// running on linux supplies NO darwin-only default keys.
+func TestEnsureGlobalsLinuxOmitsDarwinDefaults(t *testing.T) {
+	got, err := EnsureGlobals(nil, nil, "linux")
+	if err != nil {
+		t.Fatalf("EnsureGlobals(linux): %v", err)
+	}
+	body := globalBody(t, got)
+	if strings.Contains(body, "UseKeychain yes") || strings.Contains(body, "AddKeysToAgent yes") {
+		t.Fatalf("EnsureGlobals(linux) must not supply darwin-only defaults; body:\n%s", body)
+	}
+	if !strings.Contains(body, "Host *") {
+		t.Fatalf("EnsureGlobals(linux) must still carry the Host * stanza; body:\n%s", body)
 	}
 }
 
@@ -201,21 +214,24 @@ func TestRenderHostBlock_NewlineInProviderPanics(t *testing.T) {
 }
 
 // TestGlobalBlockOrderedLast asserts Pitfall 5 / T-02-15: when a host block and
-// the global block are composed, 'Host *' must come AFTER the specific host so
-// first-match-wins does not let the wildcard override the alias.
+// the composed globals block are written, 'Host *' must come AFTER the specific
+// host so first-match-wins does not let the wildcard override the alias.
 func TestGlobalBlockOrderedLast(t *testing.T) {
 	host := RenderHostBlock("work.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_work", "")
-	global := RenderGlobalBlock("darwin")
+	seed := managedTestBlock("global-ssh", "Host *\n")
+	composed, err := EnsureGlobals([]byte(host+seed), nil, "darwin")
+	if err != nil {
+		t.Fatalf("EnsureGlobals: %v", err)
+	}
 
-	composed := host + "\n" + global
-
-	hostIdx := indexOf(composed, "Host work.github.com")
-	wildcardIdx := indexOf(composed, "Host *")
+	composedText := string(composed)
+	hostIdx := indexOf(composedText, "Host work.github.com")
+	wildcardIdx := indexOf(composedText, "Host *")
 
 	if hostIdx == -1 || wildcardIdx == -1 {
-		t.Fatalf("composed config missing a host marker; got:\n%s", composed)
+		t.Fatalf("composed config missing a host marker; got:\n%s", composedText)
 	}
 	if wildcardIdx < hostIdx {
-		t.Fatalf("'Host *' must be ordered after specific host; got:\n%s", composed)
+		t.Fatalf("'Host *' must be ordered after specific host; got:\n%s", composedText)
 	}
 }
