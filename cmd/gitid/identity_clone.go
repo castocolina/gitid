@@ -148,18 +148,24 @@ func cloneCeremonyInputs(b *realBackend, source, cloneName string, reuseSourceKe
 		in.ReuseKeyPath = b.resolveKeyPath(in.ReuseKeyPath)
 	}
 	id := tuikit.DemoIdentity{
-		Name:            in.Name,
-		SSHHost:         in.Alias,
-		Hostname:        in.Hostname,
-		Port:            in.Port,
-		Provider:        in.Provider,
-		GitConfigured:   true,
-		GitName:         in.GitName,
-		GitEmail:        in.GitEmail,
-		MatchStrategy:   matchStrategyFromMatches(in.Matches),
-		GitDir:          "~/git/" + in.Name + "/",
-		PublicKeyPath:   in.ReuseKeyPath + ".pub",
-		ForceSSH:        true,
+		Name:          in.Name,
+		SSHHost:       in.Alias,
+		Hostname:      in.Hostname,
+		Port:          in.Port,
+		Provider:      in.Provider,
+		GitConfigured: true,
+		GitName:       in.GitName,
+		GitEmail:      in.GitEmail,
+		MatchStrategy: matchStrategyFromMatches(in.Matches),
+		GitDir:        "~/git/" + in.Name + "/",
+		PublicKeyPath: in.ReuseKeyPath + ".pub",
+		// WR-06: default to the CLONE SOURCE's own current setting, never an
+		// unconditional true. This is a machine-global rewrite of every
+		// HTTPS clone URL for the provider — forcing it on for every
+		// headless clone contradicts D-15's "copy the author fields,
+		// re-derive the rest": a clone must not silently switch on a
+		// global side effect the source never had.
+		ForceSSH:        src.ForceSSH,
 		Algorithm:       in.Algo,
 		ReuseKeyPath:    in.ReuseKeyPath,
 		GitFragmentPath: in.FragmentPath,

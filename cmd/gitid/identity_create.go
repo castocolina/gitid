@@ -56,6 +56,7 @@ type identityCreateFlags struct {
 	GitEmail  string
 	Strategy  string
 	GitDir    string
+	ForceSSH  bool
 	Yes       bool
 	DryRun    bool
 }
@@ -80,6 +81,13 @@ func newIdentityCreateVerb() identityVerb {
 			fs.StringVar(&flags.GitEmail, "git-email", "", "Git author email (user.email; byte-identical to the allowed_signers principal)")
 			fs.StringVar(&flags.Strategy, "strategy", "gitdir", "includeIf match strategy: gitdir, hasconfig, or both")
 			fs.StringVar(&flags.GitDir, "git-dir", "", "gitdir includeIf match path (default ~/git/<name>/)")
+			// WR-06: default false — the TUI exposes this as a user-visible
+			// toggle, and Reconstruct deliberately never DEFAULTS this value
+			// when reading (CR-09); writing it unconditionally on the CLI
+			// was an unrequested MACHINE-GLOBAL rewrite of every HTTPS clone
+			// URL for this provider, for every repository, including ones
+			// unrelated to gitid.
+			fs.BoolVar(&flags.ForceSSH, "force-ssh", false, "write the machine-global insteadOf rewrite so HTTPS clone URLs for this provider resolve over SSH (default: off — same toggle the TUI exposes)")
 			fs.BoolVar(&flags.Yes, "yes", false, "skip the confirmation prompt; the timestamped backup is still taken unconditionally")
 			fs.BoolVar(&flags.DryRun, "dry-run", false, "run both connectivity stages, print the artifact previews, and exit 0 without writing")
 		},
@@ -230,7 +238,7 @@ func createInputFromCreateFlags(b *realBackend, flags identityCreateFlags) (iden
 		MatchStrategy:   strategy,
 		GitDir:          gitDir,
 		PublicKeyPath:   keyForValidation + ".pub",
-		ForceSSH:        true,
+		ForceSSH:        flags.ForceSSH,
 		Algorithm:       strings.TrimSpace(flags.Algorithm),
 		ReuseKeyPath:    reuseKey,
 		GitFragmentPath: in.FragmentPath,
@@ -434,7 +442,9 @@ func runCreateDryRun(cmd *cobra.Command, b *realBackend, in identity.CreateInput
 		SSHHost:       in.Alias,
 		Provider:      in.Provider,
 		GitDir:        id.GitDir,
-		ForceSSH:      true,
+		// WR-06: mirror the real ceremony's id.ForceSSH — the preview must
+		// never claim a rewrite the real write would not perform.
+		ForceSSH: id.ForceSSH,
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "  fragment (~/.gitconfig.d/%s):\n%s", in.Name, indentBlock(b.GitFragmentPreview(gitSpec))) //nolint:errcheck // best-effort stdout
 

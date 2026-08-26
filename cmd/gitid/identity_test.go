@@ -1178,6 +1178,60 @@ func TestCloneCeremonyInputsFingerprintsMatchTestStage(t *testing.T) {
 	}
 }
 
+// TestCreateInputFromCreateFlagsForceSSHDefaultsOffAndFlagEnables is the
+// WR-06 regression: createInputFromCreateFlags hardcoded ForceSSH: true
+// unconditionally, so every headless `identity create` wrote
+// `[url "git@<provider>:"] insteadOf = https://<provider>/` into
+// ~/.gitconfig — a MACHINE-GLOBAL rewrite of every HTTPS clone URL for that
+// provider, for every repository, including ones unrelated to gitid. The
+// TUI exposes this as a user-visible toggle; the CLI must default it off
+// and gate it behind an explicit --force-ssh flag.
+func TestCreateInputFromCreateFlagsForceSSHDefaultsOffAndFlagEnables(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	b := newBackendForHome(home)
+
+	_, id, err := createInputFromCreateFlags(b, identityCreateFlags{
+		Name: "work", Provider: "github.com", GitName: "Work User", GitEmail: "work@example.com",
+	})
+	if err != nil {
+		t.Fatalf("createInputFromCreateFlags: %v", err)
+	}
+	if id.ForceSSH {
+		t.Error("WR-06: identity create without --force-ssh must default ForceSSH to false")
+	}
+
+	_, id2, err := createInputFromCreateFlags(b, identityCreateFlags{
+		Name: "work", Provider: "github.com", GitName: "Work User", GitEmail: "work@example.com", ForceSSH: true,
+	})
+	if err != nil {
+		t.Fatalf("createInputFromCreateFlags --force-ssh: %v", err)
+	}
+	if !id2.ForceSSH {
+		t.Error("WR-06: identity create --force-ssh must set ForceSSH true")
+	}
+}
+
+// TestCloneCeremonyInputsMirrorsSourceForceSSH is WR-06's clone half:
+// cloneCeremonyInputs hardcoded ForceSSH: true unconditionally, contradicting
+// D-15's "copy the author fields, re-derive the rest" — a clone must not
+// silently switch on a machine-global rewrite the source never had. The
+// clone's ForceSSH must mirror src.ForceSSH, not force it on.
+func TestCloneCeremonyInputsMirrorsSourceForceSSH(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work") // no provider-rewrite block seeded -> src.ForceSSH == false
+	b := newBackendForHome(home)
+
+	_, id, err := cloneCeremonyInputs(b, "work", "work-clone", true)
+	if err != nil {
+		t.Fatalf("cloneCeremonyInputs: %v", err)
+	}
+	if id.ForceSSH {
+		t.Error("WR-06: cloning a source without the provider rewrite must not force it on for the clone")
+	}
+}
+
 // --- the post-write re-test drives the exit code (D-02) ----------------------
 
 // TestIdentityKeyVerbReTestDrivesExitCode proves a failing post-write re-test
