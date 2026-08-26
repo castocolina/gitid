@@ -115,41 +115,15 @@ Only close a phase and advance once all nine are evidenced.
     plan execution when a configured external provider exists is the exact
     mistake this rule exists to prevent; it previously caused an avoidable
     session-limit stall mid-run.
-13. **Prefer the `codegraph` MCP tool (`codegraph_explore`) over Grep/Read
-    loops for code exploration, in every executor — this session's own
-    subagents and cross-AI dispatches alike.** `codegraph` is registered as
-    an MCP server for both Claude Code (`~/.claude.json`) and opencode
-    (`~/.config/opencode/opencode.jsonc`), and both engines also read
-    `AGENTS.md` (opencode natively; Claude Code per Rule 1/ONESHOT-mandated
-    reading), which carries the same mandate under "Code Exploration" — that
-    section is the durable, single-source instruction; do not rely on it
-    alone reaching a cross-AI dispatch, though (see below).
-    - **Index freshness (orchestrator responsibility):** before dispatching
-      ANY agent role that will explore this codebase — a fresh cross-AI
-      worktree, a new `gsd-executor`/`gsd-code-reviewer` subagent, or the
-      start of a new phase/wave — run `codegraph index || codegraph init -i`
-      at the repo root first. The file watcher only tracks live edits inside
-      an already-running session; a new worktree, a long gap, or a fresh
-      clone can leave the index stale or (for a brand-new worktree path)
-      entirely missing. Do not assume the index is current.
-    - **Inline the instruction, don't rely on it being read.** Every
-      cross-AI dispatch prompt must restate the `codegraph_explore`-first
-      mandate directly in its own body (not just by reference to
-      `AGENTS.md`/`CLAUDE.md`), because a local model following a long
-      required-reading list does not reliably internalize and act on a
-      policy buried in referenced files the way it acts on an instruction
-      in its own prompt. On-session `gsd-executor`/`gsd-code-reviewer`
-      dispatches get this for free since they load `AGENTS.md`/`CLAUDE.md`
-      directly as part of the agent definition's own reading, but state it
-      explicitly in their prompts too rather than assuming.
-    - **Grep/Read fallback:** only when `codegraph` is unavailable or its
-      answer is insufficient. When falling back, prefer `rg` (ripgrep) over
-      `grep` — faster and gitignore-aware, avoiding false hits inside
-      `node_modules`, build output, or other ignored trees.
-    - Cross-AI dispatches (Rule 12) that had no `codegraph` MCP access
-      repeatedly burned 15-90+ minutes per plan in pure sequential-read
-      exploration before ever writing code — the single largest source of
-      wasted wall-clock time in this phase's execution.
+13. **Every executor uses `codegraph_explore` before Grep/Read** (see
+    `AGENTS.md` § Code Exploration for the base rule). Two additions specific
+    to autonomous dispatch:
+    - Before dispatching any exploration-heavy role (new worktree, new
+      subagent, new phase/wave), run `codegraph index || codegraph init -i`
+      yourself — don't assume the index is fresh.
+    - Restate the `codegraph_explore`-first instruction inline in every
+      cross-AI dispatch prompt. A local model does not reliably act on
+      policy it only sees via a referenced file in its required reading.
 
 ## Phase 9 External Account Policy
 
