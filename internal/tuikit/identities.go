@@ -3733,7 +3733,17 @@ func baselineStripCompact(s DemoState, width int) string {
 
 // renderDetail renders the identity detail: SSH section FIRST, Git section
 // (or Configure now), the baseline strip, and the findings sub-panel.
+//
+// list-empty (identity-manager/FIELDS.md, the true first-run landing state)
+// is rendered here instead of a blank/fabricated detail whenever the sandbox
+// home has NO identities at all — never left to renderDetail's normal
+// SSH-first path, which would otherwise describe a zero-value DemoIdentity as
+// if it were a real, incomplete identity (05-09-PLAN.md Task 1 must_have).
 func (m identitiesModel) renderDetail(s DemoState, sel DemoIdentity) string {
+	if len(s.Identities) == 0 {
+		return " " + styleBold.Render(IdentityManagerEmptyStateCopy) + "\n\n" +
+			" " + styleFaint.Render(IdentityManagerEmptyStateCTA) + "\n"
+	}
 	var b strings.Builder
 	tone := toneStyle(IdentityManagerStateTone[sel.State])
 	b.WriteString(" " + styleBold.Render(sel.Name) + "  " +

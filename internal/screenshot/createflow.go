@@ -538,6 +538,9 @@ func ScreenSpecRegistry() []ScreenSpec {
 	// every consumer (the routine gate, RequiredVisualPanelCount, and the
 	// evidence packet publisher).
 	specs = append(specs, gitScreenSpecs()...)
+	// 05-09-PLAN.md Task 3: consume the identity-manager registry alongside
+	// the existing two, without disturbing either.
+	specs = append(specs, identityManagerSpecs()...)
 	return specs
 }
 
@@ -651,8 +654,26 @@ func normalizeCapturedStateText(text string) string {
 // numbering collides (both start at D-01) — CTX-D-/UI-D- disambiguate which
 // document a reference resolves against.
 func validDecisionRef(ref string) bool {
+	// 05-09-PLAN.md Task 3: two additions to the existing (D-/T-/CTX-D-/
+	// UI-D-) vocabulary, both scoped the SAME way "CTX-D-" already
+	// disambiguates Phase 4's git-screen decisions from Phase 3's bare
+	// D-NN/T-NN namespace in this SAME shared registry:
+	//   - "DLV-" for the one divergence class that is a property of the
+	//     real-vs-dummy comparison MECHANISM itself (fixture-set size)
+	//     rather than of any single numbered design decision — mirrors
+	//     e2e/identity_manager_pty_e2e_test.go's own
+	//     identManagerDecisionRefPattern, which accepts the same DLV-NN
+	//     form for the identical reason.
+	//   - "MGR-D-" for a genuine Phase 5 05-CONTEXT.md decision cited in
+	//     THIS shared registry: 05-CONTEXT.md's OWN D-NN numbering starts
+	//     at D-01, same as 03-CONTEXT.md's — a bare "D-11" here would be
+	//     genuinely ambiguous (Phase 3's D-11 is "Validation: parse +
+	//     derive missing .pub..."; Phase 5's D-11 is "Delete everything
+	//     backup-copies the key pair..."), the EXACT cross-registry
+	//     collision "CTX-D-" was introduced to prevent for Phase 4.
 	return strings.HasPrefix(ref, "D-") || strings.HasPrefix(ref, "T-") ||
-		strings.HasPrefix(ref, "CTX-D-") || strings.HasPrefix(ref, "UI-D-")
+		strings.HasPrefix(ref, "CTX-D-") || strings.HasPrefix(ref, "UI-D-") ||
+		strings.HasPrefix(ref, "DLV-") || strings.HasPrefix(ref, "MGR-D-")
 }
 
 // ValidateScreenSpecs checks the registry for structural correctness:
@@ -1156,7 +1177,10 @@ func CaptureCreateFlowScreens(backend tuikit.Backend) (map[string]string, error)
 	// publisher) merge both capture maps explicitly — see
 	// cmd/gitid/gate_visual_regression_test.go.
 	for _, spec := range RequiredScreenSpecs() {
-		if !spec.ApplicableLive || isGitScreenID(spec.ScreenID) {
+		// 05-09-PLAN.md Task 3: identity-manager specs (CaptureIdentityManagerScreens)
+		// are ALSO captured separately, against their own seeded HOME, for the
+		// SAME reason git-screen specs are excluded here (see comment above).
+		if !spec.ApplicableLive || isGitScreenID(spec.ScreenID) || isIdentityManagerScreenID(spec.ScreenID) {
 			continue
 		}
 		text, ok := out[spec.ScreenID]
@@ -1418,6 +1442,202 @@ func gitScreenSpecs() []ScreenSpec {
 				// identity name.
 				uxRegionDifference(RegionKeybar, "identity-name", "CTX-D-12",
 					"the receipt echo line (\"Git identity \\\"<identity>\\\" configured.\") embeds the selected identity's name, which differs between the real and dummy fixtures by construction — the keybar chrome itself (Tab/Esc hints) is byte-identical"),
+			},
+		},
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Identity-manager checkpoints (05-09-PLAN.md Task 3, Phase 5 registration).
+//
+// CaptureIdentityManagerScreens drives backend's Identities pane in-process
+// through FOUR of the six checkpoints
+// e2e/identity_manager_pty_e2e_test.go's
+// TestIdentityManager_CompiledRealVsLiveDummyPTY (05-09-PLAN.md Task 2)
+// drives over real PTYs: action-menu, delete-choice, confirm-destructive,
+// and detail-ssh-first. rotate-result and repair-result are DELIBERATELY
+// NOT registered here: both require a real (or FakeSSHDir-substituted) SSH
+// connectivity probe (cmd/gitid/lifecycle.go's preWriteGate), which needs a
+// subprocess PATH override this in-process, no-subprocess gate has no way
+// to inject — forcing a real network-dependent probe into this FAST,
+// deterministic supplementary check would defeat its own purpose (and this
+// plan's own CR-01-style determinism requirement). The e2e PTY suite
+// (Task 1's TestIdentityManager_KeyCeremonyRotate/Repair and Task 2's own
+// rotate-result/repair-result checkpoints) already carries the real DLV-06/
+// DLV-04 evidence for both ceremonies with FakeSSHDir substituted.
+//
+// backend must expose at least two identities: the default-selected
+// identity (index 0, a COMPLETE identity) drives action-menu/delete-choice/
+// confirm-destructive; the SECOND identity (index 1, SSH-only) drives
+// detail-ssh-first.
+// ---------------------------------------------------------------------------
+
+// identityManagerApp boots a fresh tuikit.App around backend at the fixed
+// capture geometry, landing on the Identities detail pane.
+func identityManagerApp(backend tuikit.Backend) tea.Model {
+	var model tea.Model = tuikit.NewApp(backend)
+	model = step(model, tea.WindowSizeMsg{Width: CaptureWidth, Height: CaptureHeight})
+	return model
+}
+
+// CaptureIdentityManagerScreens implements the doc comment above.
+func CaptureIdentityManagerScreens(backend tuikit.Backend) (map[string]string, error) {
+	if n := len(backend.InitialState().Identities); n < 2 {
+		return nil, fmt.Errorf("screenshot: CaptureIdentityManagerScreens requires >= 2 seeded identities, got %d", n)
+	}
+	out := make(map[string]string, 4)
+	capture := func(m tea.Model) string { return normalizeTimestamps(anyView(m)) }
+
+	// action-menu: default-selected (complete) identity, 'a' opens the menu.
+	m := identityManagerApp(backend)
+	actions := keyRune(m, 'a')
+	out["action-menu"] = capture(actions)
+
+	// delete-choice: 'd' opens the git-only-default scope chooser.
+	del := keyRune(m, 'd')
+	out["delete-choice"] = capture(del)
+
+	// confirm-destructive: Down selects "everything", Enter opens the
+	// ceremony's confirm state (still pre-confirm — the preview/backup
+	// promise, never the actual write).
+	everything := keyDown(del)
+	confirm := keyEnter(everything)
+	out["confirm-destructive"] = capture(confirm)
+
+	// detail-ssh-first: the second (SSH-only) identity's live detail pane.
+	detail := identityManagerApp(backend)
+	detail = keyDown(detail)
+	out["detail-ssh-first"] = capture(detail)
+
+	for _, spec := range identityManagerSpecs() {
+		text, ok := out[spec.ScreenID]
+		if !ok || strings.TrimSpace(text) == "" {
+			return nil, fmt.Errorf("screenshot: CaptureIdentityManagerScreens: required frame %q is missing or empty", spec.ScreenID)
+		}
+	}
+	if out["detail-ssh-first"] == out["action-menu"] {
+		return nil, fmt.Errorf("screenshot: CaptureIdentityManagerScreens: detail-ssh-first captured the same frame as action-menu — the second identity was never reached")
+	}
+	return out, nil
+}
+
+// isIdentityManagerScreenID reports whether id is one of the four Phase 5
+// identity-manager checkpoint IDs registered here — used to exclude them
+// from CaptureCreateFlowScreens' completeness check (they are captured
+// separately; see CaptureIdentityManagerScreens' doc comment).
+func isIdentityManagerScreenID(id string) bool {
+	for _, spec := range identityManagerSpecs() {
+		if spec.ScreenID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func identityManagerSpecs() []ScreenSpec {
+	// DLV-4 (never a numbered D-NN): this class of divergence is a property
+	// of the comparison MECHANISM itself (the dummy's frozen, always-8-
+	// identity fixture set vs. the real backend's minimal seeded set),
+	// governed directly by the DLV-04 requirement — mirrors
+	// e2e/identity_manager_pty_e2e_test.go's own allowlist citation for the
+	// SAME divergence class.
+	fixtureSidebarDisposition := uxRegionDifferenceScoped(RegionSidebar, "sidebar-state", "DLV-4",
+		"real sidebar carries only the checkpoint's own seeded identities; dummy sidebar lists the full 8-identity IdentityManagerRows fixture set",
+		`absent:"clientB"`)
+	fixtureHeaderStatusDisposition := uxRegionDifferenceScoped(RegionHeaderStatus, "identity-count", "DLV-4",
+		"header status shows the identity count, which differs (real's small seeded set vs dummy's 8 fixtures)",
+		`contains:"ids"`)
+	// breadcrumbDisposition mirrors gitScreenSpecs' own breadcrumbDisposition:
+	// the breadcrumb ("Identities › <identity> › …") embeds the selected
+	// identity's name, which differs between the real fixture ("imgr"/
+	// "imgrssh") and the dummy fixture ("personal"/"work") by construction.
+	breadcrumbDisposition := uxRegionDifference(RegionBreadcrumb, "identity-name", "DLV-4",
+		"the breadcrumb (\"Identities › <identity> › …\") embeds the selected identity's name, which differs between the real fixture (\"imgr\"/\"imgrssh\") and the dummy fixture (\"personal\"/\"work\") by construction")
+	noHTML := []SurfaceNonApplicability{uxNonComparable("approved-html", "DLV-4",
+		"cmd/gitid-dummy is the sole Phase 5 UI/UX reference for this in-process gate, matching the e2e PTY suite's own DLV-04 comparison — no HTML/MUI/browser capture participates in Phase 5 acceptance")}
+
+	return []ScreenSpec{
+		{
+			ScreenID:              "action-menu",
+			Interaction:           "Boot the Identities pane on the default-selected (complete) identity and press 'a' to open the action menu.",
+			StateMarker:           "Actions — ",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionActionMenuRows},
+			RegionDispositions: []RegionDisposition{
+				fixtureSidebarDisposition, fixtureHeaderStatusDisposition, breadcrumbDisposition,
+				uxRegionDifferenceScoped(RegionActionMenuRows, "identity-name", "DLV-4",
+					"the action-menu heading (\"Actions — <identity>\") embeds the selected identity's name, which differs between the real fixture (\"imgr\") and the dummy fixture (\"personal\") by construction — the four row labels below it are identical",
+					`contains:"Actions — "`),
+			},
+		},
+		{
+			ScreenID:              "delete-choice",
+			Interaction:           "From the Identities pane, press 'd' to open the delete-scope chooser.",
+			StateMarker:           "choose scope",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionDeleteChoiceOptions},
+			RegionDispositions: []RegionDisposition{
+				fixtureSidebarDisposition, fixtureHeaderStatusDisposition, breadcrumbDisposition,
+				uxRegionDifferenceScoped(RegionDeleteChoiceOptions, "identity-name", "DLV-4",
+					"the delete-choice heading (\"Delete \\\"<identity>\\\" — choose scope\") embeds the selected identity's name, which differs between the real fixture (\"imgr\") and the dummy fixture (\"personal\") by construction — the two scope options below it are identical",
+					`contains:"choose scope"`),
+			},
+		},
+		{
+			ScreenID:              "confirm-destructive",
+			Interaction:           "From delete-choice, press Down to select everything scope then Enter to reach the confirm-destructive ceremony's pre-confirm preview.",
+			StateMarker:           "This action is irreversible",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionConfirmWarningBlock},
+			RegionDispositions: []RegionDisposition{
+				fixtureSidebarDisposition, fixtureHeaderStatusDisposition, breadcrumbDisposition,
+				uxRegionDifferenceScoped(RegionConfirmWarningBlock, "key-copy-completeness", "MGR-D-11",
+					"the real confirm pane names the D-11 key-copy sentence and the real archive-dir backup line (DeletePlan.KeyCopyPath, sshconfig.ArchiveDir); the dummy's FixtureBackend.DeletePlan never sets KeyCopyPath and echoes its own static declared backup list instead — the dummy fixture predates the D-11 requirement",
+					`contains:"This action is irreversible"`),
+				uxRegionDifferenceScoped(RegionBackupPathList, "key-copy-completeness", "MGR-D-11",
+					"same divergence as RegionConfirmWarningBlock above: the real backup-promise line names the D-06 archive directory; the dummy's static declared backup list names file-level paths instead",
+					`contains:"Backup"`),
+				// git-screen's own RegionGitPreview extractor (extractGitPreview)
+				// starts on ANY line containing "fragment file" — a marker this
+				// ceremony's OWN target-list line ("- ~/.gitconfig.d/<identity>
+				// (Git fragment file)") also contains, so BuildRegionDiffs (which
+				// checks every named region against every screen regardless of
+				// RequiredRegions) picks it up here too. Same identity-name
+				// divergence class as RegionConfirmWarningBlock above.
+				uxRegionDifferenceScoped(RegionGitPreview, "extraction-boundary-asymmetry", "DLV-4",
+					"git-screen's RegionGitPreview extractor (bounded by a \"Write it\" end marker this delete ceremony never renders — its confirm button reads \"Delete (Enter)\") extracts this ceremony's target-list content asymmetrically between the two ANSI-styled renders; both sides carry the SAME target-list content verbatim (verified directly against RegionConfirmWarningBlock above), this is purely an extraction-boundary artifact of a region built for a different ceremony shape",
+					`absent:"fragment file"`),
+			},
+		},
+		{
+			ScreenID:              "detail-ssh-first",
+			Interaction:           "From the Identities pane, select the second (SSH-only) identity — its detail pane renders the SSH-first section with no fabricated Git fields.",
+			StateMarker:           "SSH — shown first, always",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionDetailSSHSection, RegionDetailGitSection, RegionDetailFindingsSection},
+			RegionDispositions: []RegionDisposition{
+				fixtureSidebarDisposition, fixtureHeaderStatusDisposition, breadcrumbDisposition,
+				uxRegionDifferenceScoped(RegionDetailSSHSection, "fixture-literal-values", "DLV-6",
+					"the real fixture (no explicit Port) renders the honest absence marker per observedPort; the dummy's frozen fixture carries a recipe-shape Hostname/Port pair — different fixture literal values, same field structure/order/labels",
+					// "Hostname:" (a PLAIN label, not the styled/underlined
+					// section heading) — the heading itself is rendered with
+					// PER-CHARACTER ANSI styling, so a multi-character needle
+					// spanning it never survives as a contiguous substring.
+					`contains:"Hostname:"`),
+				uxRegionDifferenceScoped(RegionDetailFindingsSection, "real-vs-frozen-findings", "DLV-6",
+					"MGR-07 findings are real per-identity health on the real side (one real \"no-gitconfig-includeif-block\" warning for the SSH-only fixture) vs. the dummy's frozen zero-findings demo data — the section heading's own count differs too, but its underlined styling renders per-character (a multi-character needle spanning it can never survive as a contiguous plain substring), so the predicate below is scoped to the body content instead",
+					`absent:"No findings for"`),
+				uxRegionDifferenceScoped(RegionKeybar, "identity-count", "DLV-4",
+					"the status line's identity count (\"N identities — selection renders…\") differs (real's 2-identity seeded set vs dummy's 8 fixtures) — the keybar chrome itself (Esc/Ctrl+P hints) is byte-identical",
+					`contains:"identities"`),
 			},
 		},
 	}

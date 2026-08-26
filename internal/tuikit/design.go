@@ -178,6 +178,16 @@ const (
 	DeleteKeyRemovedFmt = `%s will be removed from active use; a copy of the key pair exists at %s.`
 	// DeleteKeyCopyNeedle is the stable D-11 substring.
 	DeleteKeyCopyNeedle = `will be removed from active use`
+
+	// IdentityManagerEmptyStateCopy is the frozen list-empty landing copy
+	// (identity-manager/FIELDS.md's `empty_state_copy` field) — the true
+	// first-run state, rendered instead of a blank list when the sandbox
+	// home has no identities at all (05-09-PLAN.md Task 1).
+	IdentityManagerEmptyStateCopy = "No identities yet"
+	// IdentityManagerEmptyStateCTA is the frozen list-empty call to action
+	// (identity-manager/FIELDS.md's `empty_state_cta` field), pointing at
+	// create-flow's `n` LaunchKey.
+	IdentityManagerEmptyStateCTA = "Press n to create your first identity"
 )
 
 // ---------------------------------------------------------------------------

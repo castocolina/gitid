@@ -148,12 +148,22 @@ func resolveHomeForCLI() (string, error) {
 // Two consecutive calls with no intervening write produce byte-identical
 // records (MGR-08 — nothing is cached or persisted between calls).
 func buildIdentityRecords(home string) (records []identityRecord, unusedKeys []string, err error) {
-	inv, err := identity.BuildInventory(identity.InventoryDepsForHome(home))
+	b := newBackendForHome(home)
+	// b.inventoryDeps() (never the bare identity.InventoryDepsForHome(home))
+	// so a recipe-shaped, literal-tilde IdentityFile (e.g. "~/.ssh/id_ed25519_x"
+	// — the shape every gitid-managed Host block uses) resolves against a
+	// real file instead of always reporting key-missing: os.Stat never
+	// expands "~" itself. This mirrors the TUI's own healthByName(), the
+	// established "one classification, one list" pattern (05-07-SUMMARY.md)
+	// — a bare InventoryDepsForHome(home) call here was the ONE place still
+	// bypassing it, silently misclassifying every real-world identity's key
+	// as missing via `identity list`/`identity show --json` (found while
+	// writing 05-09's list-populated PTY suite).
+	inv, err := identity.BuildInventory(b.inventoryDeps())
 	if err != nil {
 		return nil, nil, fmt.Errorf("gitid: building identity inventory: %w", err)
 	}
 
-	b := newBackendForHome(home)
 	acctByName := make(map[string]identity.Account, len(inv.Identities))
 	for _, a := range b.accounts() {
 		acctByName[a.Name] = a

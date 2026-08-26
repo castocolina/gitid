@@ -1,0 +1,131 @@
+# Identity-manager visual-divergence allowlist (Phase 5, DLV-04, plan 05-09
+# Task 2)
+#
+# Consumed by e2e/identity_manager_pty_e2e_test.go's
+# TestIdentityManager_CompiledRealVsLiveDummyPTY — a RAW-PTY, real-keystroke
+# comparison of the compiled `cmd/gitid` binary against the compiled
+# `cmd/gitid-dummy` binary at 100x30 (DLV-04: no unit test, no in-process
+# tea.Msg synthesis stands in for this proof).
+#
+# SHARED-RENDERER LIMITATION (accepted, carried from Phase 4's CTX-D-12/CR-15
+# precedent — 04-REVIEW-FIX.md "Resolution"): both binaries render EVERY
+# identity-manager screen through the SAME internal/tuikit identities.go code
+# (the Phase 3 D-17 extraction). cmd/gitid injects a real Backend;
+# cmd/gitid-dummy injects internal/dummytui.FixtureBackend. This comparison
+# therefore catches wiring and CONTENT differences between the two Backend
+# implementations, never a defect INSIDE the shared renderer itself — that
+# was reviewed and accepted as a scoped divergence in Phase 4, restated here
+# so a future reader does not mistake this gate for something stronger than
+# it is. 05-09-PLAN.md Task 1's independent FIELDS.md manifest backstop
+# (parsed at test time, asserted against the REAL binary alone, with its own
+# field-removal negative control) is the countermeasure a shared-renderer
+# defect cannot hide from.
+#
+# STRICT SCHEMA — each entry must be EXACTLY:
+#   checkpoint : region : predicate : decision-ref : reason
+#
+# where:
+#   checkpoint    one of: action-menu | delete-choice | confirm-destructive |
+#                 detail-ssh-first | rotate-result | repair-result
+#   region        one of: sidebar | header-status | detail
+#   predicate     "contains:<quoted-text>" | "absent:<quoted-text>"
+#                 The unconstrained "differs" predicate is FORBIDDEN — every
+#                 differing region must be narrowly scoped (CR-04 precedent).
+#   decision-ref  a scoped D-NN (05-CONTEXT.md, this phase's own decisions —
+#                 the default per 05-09-PLAN.md's <authority> convention),
+#                 UI-D-NN (05-UI-SPEC.md), CTX-D-NN (04-CONTEXT.md, Phase 4),
+#                 or DLV-NN (REQUIREMENTS.md) for the one divergence class
+#                 that is a property of the comparison MECHANISM itself
+#                 (fixture-set size) rather than of any single design
+#                 decision.
+#   reason        non-empty human-readable explanation
+#
+# VALIDATION RULES (enforced by TestIdentityManager_CompiledRealVsLiveDummyPTY):
+#   - No unknown checkpoint or region names
+#   - No duplicate (checkpoint, region) pairs
+#   - No blank reasons or missing decision-ref
+#   - Every entry must be USED (a non-differing region in an allowlisted
+#     entry fails — stale entries are rejected)
+#   - Every checkpoint must have at least one NON-allowlisted region that is
+#     structurally equal after normalization (identity token / email /
+#     timestamp placeholders) — proving the gate is not vacuously permissive
+#   - "differs" predicate is NOT valid (CR-04 precedent)
+#
+# Blank lines and lines starting with # are ignored.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# DLV-04 — sidebar + header-status fixture-vs-live-HOME divergence, every
+# checkpoint. The real binary's sandbox HOME seeds exactly the checkpoint's
+# own fixture identity/identities; the dummy's FixtureBackend always carries
+# its full 8-identity IdentityManagerRows fixture set
+# (internal/dummytui/data.go). The sidebar identity list and the header's
+# "N ids · <health>" status line are therefore inherently different by
+# construction — the SAME class of divergence Phase 4's git-screen allowlist
+# classifies as CTX-D-12 there, cited here against DLV-04 itself (the
+# comparison mechanism's own requirement) since it is a property of the
+# real-vs-dummy PAIRING, not of any single identity-manager design decision.
+# ---------------------------------------------------------------------------
+action-menu:sidebar:absent:"clientB":DLV-4:real sidebar carries only the checkpoint's own seeded identity; dummy sidebar lists all 8 IdentityManagerRows fixtures including "clientB" — absent in real
+action-menu:header-status:contains:"ids":DLV-4:header status shows the identity count, which differs (1 for real, 8 for dummy) — both contain the "ids" marker
+delete-choice:sidebar:absent:"clientB":DLV-4:real sidebar carries only the checkpoint's own seeded identity; dummy sidebar lists all 8 IdentityManagerRows fixtures including "clientB" — absent in real
+delete-choice:header-status:contains:"ids":DLV-4:header status shows the identity count, which differs (1 for real, 8 for dummy) — both contain the "ids" marker
+confirm-destructive:sidebar:absent:"clientB":DLV-4:real sidebar carries only the checkpoint's own seeded identity; dummy sidebar lists all 8 IdentityManagerRows fixtures including "clientB" — absent in real
+confirm-destructive:header-status:contains:"ids":DLV-4:header status shows the identity count, which differs (1 for real, 8 for dummy) — both contain the "ids" marker
+detail-ssh-first:sidebar:absent:"clientB":DLV-4:real sidebar carries only the checkpoint's own seeded identity; dummy sidebar lists all 8 IdentityManagerRows fixtures including "clientB" — absent in real
+detail-ssh-first:header-status:contains:"ids":DLV-4:header status shows the identity count, which differs (1 for real, 8 for dummy) — both contain the "ids" marker
+rotate-result:sidebar:absent:"clientB":DLV-4:real sidebar carries only the checkpoint's own seeded identity; dummy sidebar lists all 8 IdentityManagerRows fixtures including "clientB" — absent in real
+rotate-result:header-status:contains:"ids":DLV-4:header status shows the identity count, which differs (1 for real, 8 for dummy) — both contain the "ids" marker
+repair-result:sidebar:absent:"clientB":DLV-4:real sidebar carries only the checkpoint's own seeded identity; dummy sidebar lists all 8 IdentityManagerRows fixtures including "clientB" — absent in real
+repair-result:header-status:contains:"ids":DLV-4:header status shows the identity count, which differs (1 for real, 8 for dummy) — both contain the "ids" marker
+
+# ---------------------------------------------------------------------------
+# D-11 — confirm-destructive's key-copy completeness. The real backend's
+# DeletePlan populates KeyCopyPath from the actual D-06 archive directory
+# (sshconfig.ArchiveDir), so the confirm pane's D-11 sentence ("<name> will
+# be removed from active use; a copy of the key pair exists at
+# ~/.ssh/gitid-archive.") and its archive-dir backup line both render.
+# internal/dummytui/fixturebackend.go's DeletePlan never sets KeyCopyPath at
+# all (a static, always-empty field) and echoes its own hardcoded 2-entry
+# Backups list (~/.ssh/config, ~/.gitconfig — file-level, ".backup."-suffix
+# naming) instead of the archive-dir line. ux-improvement: the real preview
+# is the more complete, accurate one (this is the exact write it is about to
+# perform); the dummy's fixture predates D-11's key-copy requirement.
+# ---------------------------------------------------------------------------
+confirm-destructive:detail:contains:"This action is irreversible":D-11:the real confirm pane names the D-11 key-copy sentence and the real archive-dir backup line (DeletePlan.KeyCopyPath, sshconfig.ArchiveDir); the dummy's FixtureBackend.DeletePlan never sets KeyCopyPath and echoes its own static 2-entry declared backup list instead — the dummy fixture predates the D-11 requirement, not a real-binary regression
+
+# ---------------------------------------------------------------------------
+# D-06 — rotate-result's target/backup-list completeness. The real
+# lifecycle's rotate transaction touches every artifact the ceremony
+# actually rewrites (SSH config, gitconfig, allowed_signers, the identity's
+# fragment, both key halves) and the receipt lists every real timestamped
+# backup taken (nanosecond-suffixed ".bak." paths) plus the D-06 archived-key
+# line. internal/dummytui/fixturebackend.go's KeyCeremonyPlan returns a
+# static, minimal 3-target/1-backup list (Targets: config, allowed_signers,
+# the key path only) that never grows to match what a real rotation touches.
+# ux-improvement: the real receipt is the accurate, complete one.
+# ---------------------------------------------------------------------------
+rotate-result:detail:contains:"Key ceremony completed.":D-6:the real rotate receipt lists every artifact the transaction actually touched (6 Wrote lines, 3 real timestamped Backed-up lines) and the real provider host ("github" vs the dummy's frozen "github.com"); the dummy's FixtureBackend.KeyCeremonyPlan returns a static, minimal 3-target/1-backup list that never reflects a real transaction's full scope — the dummy fixture is a simplified static echo, not a real-binary regression
+
+# ---------------------------------------------------------------------------
+# D-05 — repair-result's target/backup-list completeness. Same class as
+# rotate-result immediately above (D-06), for the repair ceremony D-05
+# defines: the real repair transaction's receipt lists every artifact it
+# actually touched; the dummy's static KeyCeremonyPlan fixture does not.
+# ---------------------------------------------------------------------------
+repair-result:detail:contains:"Key ceremony completed.":D-5:the real repair receipt lists every artifact the transaction actually touched (6 Wrote lines, 3 real timestamped Backed-up lines); the dummy's FixtureBackend.KeyCeremonyPlan returns a static, minimal 3-target/1-backup list that never reflects a real transaction's full scope — the dummy fixture is a simplified static echo, not a real-binary regression
+
+# ---------------------------------------------------------------------------
+# MGR-03/MGR-07 — detail-ssh-first's fixture-literal SSH values and
+# per-identity findings. The real binary's seedSSHOnlyIdentity fixture
+# writes a plain (no explicit Port) Hostname, so the honest-render rule
+# (05-07-SUMMARY.md's observedOrMissing/observedPort) shows the real
+# absence marker for Port; the dummy's frozen "work" fixture carries a
+# recipe-shape Hostname/Port pair instead. The Findings count also differs
+# (1 real "no-gitconfig-includeif-block" warning vs. the dummy's static
+# empty findings for "work") because MGR-07 findings are now REAL
+# per-identity health (05-UI-SPEC.md's Approved Base States table,
+# detail-ssh-first row) computed from the real fixture's actual gap, while
+# the dummy's findings remain its own frozen demo data.
+# ---------------------------------------------------------------------------
+detail-ssh-first:detail:contains:"SSH — shown first, always":DLV-6:the real seedSSHOnlyIdentity fixture (no explicit Port) renders the honest absence marker per observedPort; the dummy's frozen "work" fixture carries a recipe-shape Hostname/Port pair — different fixture literal values, same field structure/order/labels; the Findings count also differs because MGR-07 findings are now real per-identity health on the real side, still frozen demo data on the dummy side
