@@ -646,6 +646,30 @@ func TestRenderFooterLineNeverCutsAWordMidWord(t *testing.T) {
 	}
 }
 
+// TestFooterActionAtNeverHitsADroppedAction closes a 02-13-review-flagged
+// "theoretical" click-hijack: footerActionAt used to derive click spans from
+// the FULL action list regardless of what renderFooterLine actually
+// rendered, so a click past the visible "…" cue could dispatch an action
+// that isn't on screen. It stopped being theoretical once renderFooterLine
+// began dropping whole trailing actions (05-UI-REVIEW.md fix) instead of
+// padding the line to width.
+func TestFooterActionAtNeverHitsADroppedAction(t *testing.T) {
+	actions := []FooterAction{
+		{Key: "↑↓", Label: "select identity"},
+		{Key: "1234", Label: "switch tabs"},
+	}
+	width := 30
+	rendered := stripANSI(renderFooterLine(width, actions))
+	// The second action does not fit at width 30 and must be dropped — any
+	// click past the rendered content must report no hit, never the dropped
+	// action's key.
+	for x := len(rendered); x < 60; x++ {
+		if action, ok := footerActionAt(width, actions, x); ok {
+			t.Fatalf("footerActionAt(%d) hit %q past the rendered %q — dropped action must not be clickable", x, action.Key, rendered)
+		}
+	}
+}
+
 func TestSeverityLabelLockedContract(t *testing.T) {
 	cases := []struct {
 		severity HealthSeverity

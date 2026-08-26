@@ -381,7 +381,7 @@ func (a App) handleMouse(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	// reserved line stays keyboard-only — its keys are global anyway.
 	if msg.Y == a.height-frameChromeBelow+1 {
 		sv := a.screens[a.tab].view(a.state, a.width, a.height)
-		if action, ok := footerActionAt(sv.actions, msg.X); ok {
+		if action, ok := footerActionAt(a.width, sv.actions, msg.X); ok {
 			if key, ok := synthKey(action.Key); ok {
 				return a.handleKey(key)
 			}

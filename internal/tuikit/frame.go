@@ -286,17 +286,16 @@ func headerChipAt(width int, s DemoState, x int) bool {
 	return x >= width-ansi.StringWidth(chip) && x < width
 }
 
-// renderFooterLine renders one footer keybar line (bold key + faint label
-// pairs joined with faint dots).
-// renderFooterLine joins the footer keybar's actions, dropping whole
-// trailing actions that don't fit at width rather than cutting a label
-// mid-word (05-UI-REVIEW.md finding: "switch tabs" was rendering as "sw…").
-func renderFooterLine(width int, actions []FooterAction) string {
-	sep := " · "
+// footerFit decides which leading actions fit at width — the single source
+// of truth both renderFooterLine and footerActionAt build on, so a click
+// can never target an action that isn't actually rendered (02-13 review:
+// flagged as theoretical when truncation only ever cut mid-label; live once
+// renderFooterLine started dropping whole trailing actions instead of
+// padding the line to width). starts[i] is fitted[i]'s first column.
+func footerFit(width int, actions []FooterAction) (fitted []FooterAction, starts []int, dropped bool) {
+	const sep = " · "
 	sepWidth := ansi.StringWidth(sep)
-	line := " "
-	used := ansi.StringWidth(line)
-	dropped := false
+	used := 1 // the leading space
 	for i, a := range actions {
 		plain := a.Key + " " + a.Label
 		addWidth := ansi.StringWidth(plain)
@@ -308,11 +307,27 @@ func renderFooterLine(width int, actions []FooterAction) string {
 			break
 		}
 		if i > 0 {
-			line += styleFaint.Render(sep)
 			used += sepWidth
 		}
-		line += styleBold.Render(a.Key) + " " + styleFaint.Render(a.Label)
+		starts = append(starts, used)
+		fitted = append(fitted, a)
 		used += ansi.StringWidth(plain)
+	}
+	return fitted, starts, dropped
+}
+
+// renderFooterLine renders one footer keybar line (bold key + faint label
+// pairs joined with faint dots), dropping whole trailing actions that don't
+// fit at width rather than cutting a label mid-word (05-UI-REVIEW.md
+// finding: "switch tabs" was rendering as "sw…").
+func renderFooterLine(width int, actions []FooterAction) string {
+	fitted, _, dropped := footerFit(width, actions)
+	line := " "
+	for i, a := range fitted {
+		if i > 0 {
+			line += styleFaint.Render(" · ")
+		}
+		line += styleBold.Render(a.Key) + " " + styleFaint.Render(a.Label)
 	}
 	if dropped {
 		line += styleFaint.Render("…")
@@ -321,17 +336,17 @@ func renderFooterLine(width int, actions []FooterAction) string {
 }
 
 // footerActionAt resolves which footer action covers column x on a keybar
-// line, deriving each `<key> <label>` span from the exact strings
-// renderFooterLine renders (spec §7 — footer hints are real buttons in the
-// web demo, Frame.tsx onActivate).
-func footerActionAt(actions []FooterAction, x int) (FooterAction, bool) {
-	cursor := 1 // the leading space
-	for _, a := range actions {
+// line, deriving each `<key> <label>` span from footerFit — the same fit
+// decision renderFooterLine renders (spec §7 — footer hints are real
+// buttons in the web demo, Frame.tsx onActivate) — so a click past the
+// rendered "…" cue never dispatches an action that isn't on screen.
+func footerActionAt(width int, actions []FooterAction, x int) (FooterAction, bool) {
+	fitted, starts, _ := footerFit(width, actions)
+	for i, a := range fitted {
 		w := ansi.StringWidth(a.Key + " " + a.Label)
-		if x >= cursor && x < cursor+w {
+		if x >= starts[i] && x < starts[i]+w {
 			return a, true
 		}
-		cursor += w + ansi.StringWidth(" · ")
 	}
 	return FooterAction{}, false
 }
