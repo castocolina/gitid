@@ -492,8 +492,16 @@ func buildDeleteDeps(b *realBackend) identity.DeleteDeps {
 			return "", "", nil
 		},
 		// Accounts is the SAME reconstruction the identity list/CommitDelete/
-		// CLI delete already read — never a second, divergent lookup.
-		Accounts: func() ([]identity.Account, error) { return b.accounts(), nil },
+		// CLI delete already read — never a second, divergent lookup — but
+		// NORMALIZED (b.normalizedAccounts(), not the bare b.accounts()) so
+		// every entry's KeyPath is comparable, via plain string equality,
+		// against acct.KeyPath below (which normalizeAccountForWrite has
+		// ALSO already expanded to an absolute path). Delete's own
+		// SharedKeyOwners gate compares these two sources directly; a
+		// mismatched tilde-vs-absolute pairing here would make it silently
+		// report a genuinely shared key as unshared for any recipe-shaped
+		// (tilde-path) identity.
+		Accounts: func() ([]identity.Account, error) { return b.normalizedAccounts(), nil },
 		// ForeignProviderRefs walks the real ~/.ssh/config for the D-09
 		// hand-written-alias half of the reference count.
 		ForeignProviderRefs: func(providerKey string) (int, error) {
@@ -2439,6 +2447,29 @@ func (b *realBackend) accounts() []identity.Account {
 	return accounts
 }
 
+// normalizedAccounts returns b.accounts() with EVERY entry's tilde-prefixed
+// artifact paths expanded against b.home via normalizeAccountForWrite — the
+// consistent-comparison basis any cross-identity path equality check (D-12's
+// SharedKeyOwners, D-09's ProviderRefCount) must use. b.accounts() alone
+// returns paths verbatim from Reconstruct (often literal "~/.ssh/id_..."),
+// while a caller comparing against ITS OWN already-normalized (absolute)
+// acct.KeyPath — as every lifecycle function does, via
+// normalizeAccountForWrite — would silently see every OTHER account's key
+// path as never matching, since a literal tilde string is never equal to an
+// absolute path. That mismatch made D-12's "this key is also used by
+// <sibling>" detection unreachable for every recipe-shaped (tilde-path)
+// identity, both in the confirm-screen PREVIEW (DeletePlan) and in the
+// REAL delete decision (identity.Delete's own keySurvives gate) — found
+// while seeding 05-09-PLAN.md's delete-everything shared-key PTY fixture.
+func (b *realBackend) normalizedAccounts() []identity.Account {
+	raw := b.accounts()
+	out := make([]identity.Account, len(raw))
+	for i, a := range raw {
+		out[i] = b.normalizeAccountForWrite(a)
+	}
+	return out
+}
+
 // inventoryDeps is InventoryDepsForHome with Stat expanding "~/" against
 // b.home, so recipe-shaped IdentityFile values classify against real files
 // rather than always looking missing.
@@ -3184,7 +3215,11 @@ func (b *realBackend) DeletePlan(name, scope string) (tuikit.DeletePlanView, err
 	}
 	acct = b.normalizeAccountForWrite(acct)
 	deps := identity.PlanDeps{
-		Accounts: func() ([]identity.Account, error) { return b.accounts(), nil },
+		// Normalized for the same reason buildDeleteDeps' own Accounts field
+		// is (see its comment): PlanDelete's SharedKeyOwners/ProviderRefCount
+		// checks compare these entries' paths against acct's — which is
+		// ALREADY normalized two lines up — by plain string equality.
+		Accounts: func() ([]identity.Account, error) { return b.normalizedAccounts(), nil },
 		ForeignProviderRefs: func(providerKey string) (int, error) {
 			return countForeignProviderRefs(b, providerKey)
 		},

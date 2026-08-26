@@ -134,11 +134,29 @@ func filterReservedKeyPaths(keyFiles []string, isReserved func(string) bool) []s
 // private-key path — SigningKey is stored as the literal git config value,
 // Pitfall E, so both forms are checked). Returns false when acct has no
 // FragmentPath (nothing to read) or the fragment read fails/is missing.
+//
+// acct.FragmentPath is stored VERBATIM by Reconstruct — often a literal
+// "~/.gitconfig.d/<name>" (the shape every gitid-managed includeIf block
+// uses; see loader.go's own Reconstruct doc comment on this exact point).
+// readFragment (gitconfig.ReadFragment in production) opens the path
+// directly via os.Stat/exec, which never expands "~" itself. This function
+// therefore expands the tilde HERE, exactly mirroring the tilde-expand-then-
+// read Reconstruct already performs for its OWN, separate fragment read
+// (loader.go, WR-02) — without it, key-used-both/key-used-ssh-only's
+// SIGNING half of the git axis is silently unreachable for every
+// recipe-shaped identity (found empirically while seeding 05-09-PLAN.md's
+// list-populated eight-taxonomy PTY fixture: every identity with a
+// tilde-form FragmentPath and a correctly-configured signing fragment still
+// classified as git-signing-unused).
 func resolveKeyUsedInGit(acct Account, readFragment func(string) (gitconfig.FragmentInfo, error)) bool {
 	if acct.FragmentPath == "" || acct.KeyPath == "" {
 		return false
 	}
-	frag, err := readFragment(acct.FragmentPath)
+	readPath, expErr := expandTilde(acct.FragmentPath)
+	if expErr != nil {
+		readPath = acct.FragmentPath
+	}
+	frag, err := readFragment(readPath)
 	if err != nil || frag.Missing {
 		return false
 	}
