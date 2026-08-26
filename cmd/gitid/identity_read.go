@@ -164,14 +164,30 @@ func buildIdentityRecords(home string) (records []identityRecord, unusedKeys []s
 		return nil, nil, fmt.Errorf("gitid: building identity inventory: %w", err)
 	}
 
-	acctByName := make(map[string]identity.Account, len(inv.Identities))
-	for _, a := range b.accounts() {
+	accounts := b.accounts()
+	acctByName := make(map[string]identity.Account, len(accounts))
+	for _, a := range accounts {
 		acctByName[a.Name] = a
 	}
 
-	records = make([]identityRecord, 0, len(inv.Identities))
+	// WR-13: the record set is the UNION of inv.Identities and b.accounts(),
+	// keyed by name — never the inventory alone. runDelete/runRotate/
+	// runRepair resolve an identity via findAccount (the SAME b.accounts()
+	// reconstruction), so `identity show`/`list` must be able to resolve at
+	// least that same set; a BuildInventory failure mode that drops an
+	// account it cannot classify must never make the read surface disagree
+	// with the write surface about what exists.
+	records = make([]identityRecord, 0, len(accounts))
+	seen := make(map[string]bool, len(accounts))
 	for _, h := range inv.Identities {
 		records = append(records, toIdentityRecord(h, acctByName[h.Name]))
+		seen[h.Name] = true
+	}
+	for _, a := range accounts {
+		if seen[a.Name] {
+			continue
+		}
+		records = append(records, unclassifiedIdentityRecord(a))
 	}
 
 	unusedKeys = inv.UnusedKeys
@@ -192,8 +208,7 @@ func toIdentityRecord(h identity.IdentityHealth, acct identity.Account) identity
 		problems = append(problems, string(p))
 	}
 	state := collapseState(h)
-	gitDir, strategy := matchStrategyFor(acct)
-	_ = gitDir // GitDir is not part of the frozen D-03 record shape; kept local for clarity.
+	strategy := matchStrategyFor(acct)
 	return identityRecord{
 		Name:          h.Name,
 		IdentityState: string(h.IdentityState),
@@ -212,6 +227,32 @@ func toIdentityRecord(h identity.IdentityHealth, acct identity.Account) identity
 		GitEmail:      acct.GitEmail,
 		MatchStrategy: strategy,
 		Complete:      state == identity.StateComplete,
+	}
+}
+
+// unclassifiedIdentityRecord builds a best-effort record for an account
+// b.accounts() reconstructed but identity.BuildInventory's classification
+// omitted (WR-13). It intentionally leaves IdentityState/KeyState/State
+// empty and Complete false rather than fabricating a specific classification
+// that never ran (MGR-03's "never a fabricated placeholder" rule extended to
+// the health axis, not just the Account fields) — the point is that `show`/
+// `list` can still NAME and describe the identity's Account-shaped facts,
+// not that it can pretend to classify it.
+func unclassifiedIdentityRecord(acct identity.Account) identityRecord {
+	return identityRecord{
+		Name:          acct.Name,
+		Problems:      []string{},
+		Alias:         acct.Alias,
+		Hostname:      acct.Hostname,
+		Port:          acct.Port,
+		KeyPath:       acct.KeyPath,
+		PubPath:       acct.PubPath,
+		FragmentPath:  acct.FragmentPath,
+		Provider:      acct.Provider,
+		ForceSSH:      acct.ForceSSH,
+		GitName:       acct.GitName,
+		GitEmail:      acct.GitEmail,
+		MatchStrategy: matchStrategyFor(acct),
 	}
 }
 
@@ -239,7 +280,13 @@ func collapseState(h identity.IdentityHealth) identity.State {
 // wiring.go's toDemoIdentity does — the sole source of this derivation is
 // acct.Matches; an SSH-only identity (empty FragmentPath, no Matches) yields
 // an empty strategy, never a fabricated default.
-func matchStrategyFor(acct identity.Account) (gitDir, strategy string) {
+//
+// WR-13: returns only strategy — GitDir is not part of the frozen D-03
+// record shape, so the prior two-value signature forced every caller to
+// carry a dead `gitDir, strategy := ...; _ = gitDir` local. Add a separate
+// accessor here if a future caller needs the raw gitdir value.
+func matchStrategyFor(acct identity.Account) (strategy string) {
+	var gitDir string
 	for _, match := range acct.Matches {
 		switch match.Kind {
 		case gitconfig.MatchGitdir:
@@ -258,7 +305,7 @@ func matchStrategyFor(acct identity.Account) (gitDir, strategy string) {
 	if strategy == "" && acct.FragmentPath != "" {
 		strategy = "gitdir"
 	}
-	return gitDir, strategy
+	return strategy
 }
 
 // renderIdentityList dispatches list's three output modes. jsonOut wins over

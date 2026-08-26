@@ -331,6 +331,67 @@ func TestBuildIdentityRecords_UnusedKeyNotInAnyRecord(t *testing.T) {
 	}
 }
 
+// TestBuildIdentityRecords_UnionNeverDoubleCountsAClassifiedIdentity is the
+// WR-13 regression's non-regression half: after switching
+// buildIdentityRecords to build the record set from the UNION of
+// inv.Identities and b.accounts() (keyed by name), a normally-classified
+// identity (present in BOTH sets, the common case) must still appear
+// EXACTLY ONCE, fully classified — never duplicated by the union logic,
+// and never demoted to unclassifiedIdentityRecord's empty-state fallback.
+func TestBuildIdentityRecords_UnionNeverDoubleCountsAClassifiedIdentity(t *testing.T) {
+	home := t.TempDir()
+	seedDeleteFixture(t, home, "work")
+
+	records, _, err := buildIdentityRecords(home)
+	if err != nil {
+		t.Fatalf("buildIdentityRecords: %v", err)
+	}
+	var matches int
+	for _, r := range records {
+		if r.Name != "work" {
+			continue
+		}
+		matches++
+		if r.State == "" {
+			t.Errorf("WR-13: a normally-classified identity must not fall through to the unclassified fallback: %+v", r)
+		}
+	}
+	if matches != 1 {
+		t.Errorf("WR-13: identity %q appears %d times in records, want exactly 1", "work", matches)
+	}
+}
+
+// TestUnclassifiedIdentityRecordNeverFabricatesState is the WR-13
+// regression's direct unit proof: unclassifiedIdentityRecord — the fallback
+// buildIdentityRecords now uses for an account b.accounts() reconstructed
+// but identity.BuildInventory's classification omitted — must never
+// fabricate a specific State/IdentityState/KeyState or report Complete,
+// since no classification actually ran. It must still carry every
+// Account-shaped fact so `identity show` can describe what it knows.
+func TestUnclassifiedIdentityRecordNeverFabricatesState(t *testing.T) {
+	acct := identity.Account{
+		Name: "ghost", Alias: "ghost.github.com", Hostname: "ssh.github.com", Port: 443,
+		Provider: "github.com", KeyPath: "~/.ssh/id_ed25519_ghost", PubPath: "~/.ssh/id_ed25519_ghost.pub",
+		FragmentPath: "~/.gitconfig.d/ghost", GitName: "Ghost User", GitEmail: "ghost@example.com",
+	}
+	r := unclassifiedIdentityRecord(acct)
+	if r.Name != "ghost" {
+		t.Errorf("Name = %q, want %q", r.Name, "ghost")
+	}
+	if r.State != "" || r.IdentityState != "" || r.KeyState != "" {
+		t.Errorf("WR-13: unclassifiedIdentityRecord must not fabricate a state — got State=%q IdentityState=%q KeyState=%q", r.State, r.IdentityState, r.KeyState)
+	}
+	if r.Complete {
+		t.Error("WR-13: an unclassified identity must never report Complete = true")
+	}
+	if r.Problems == nil {
+		t.Error("Problems must be a non-nil empty slice, never null (MGR-03/D-03 JSON contract)")
+	}
+	if r.Alias != acct.Alias || r.Hostname != acct.Hostname || r.GitEmail != acct.GitEmail || r.KeyPath != acct.KeyPath {
+		t.Errorf("unclassifiedIdentityRecord must still carry every Account-shaped fact: %+v", r)
+	}
+}
+
 // TestBuildIdentityRecords_NoWriteBetweenCalls asserts two consecutive
 // buildIdentityRecords calls with no intervening write produce byte-identical
 // records (MGR-08 — nothing is cached or persisted between calls).
