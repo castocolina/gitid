@@ -245,6 +245,13 @@ lint: lint-tagged
 ## Coverage is report-only in Phase 1; no hard threshold (D-09 discretion).
 ## This is the same command pre-push hooks and future CI will call (D-06).
 ##
+## D-04's requirement-keyed parity matrix check runs here via the cmd/gitid
+## TestParityMatrix* suite: the first `go test ./...` line exercises the
+## two-directional matrix-vs-tree checker (shipped rows resolve, deferred
+## nouns agree on their phase, every runnable command is named), so any drift
+## between docs/cli-parity-matrix.md and the built command tree fails
+## `make test` (plan 05-08 Task 2).
+##
 ## The second `go test` line is WR-28's actual test-execution half (see
 ## lint-screenshot's comment above for why it lives here, not in `lint`):
 ## the fast, hermetic subset of internal/screenshot's OWN suite, excluding
