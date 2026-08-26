@@ -1,8 +1,13 @@
 package tuikit
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
 	"reflect"
 	"regexp"
+	"sort"
 	"testing"
 )
 
@@ -391,5 +396,123 @@ func TestNewBackupPathShape(t *testing.T) {
 	want := regexp.MustCompile(`^~/\.ssh/config\.backup\.\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$`)
 	if !want.MatchString(got) {
 		t.Errorf("NewBackupPath = %q, want timestamped `<file>.backup.<stamp>` shape", got)
+	}
+}
+
+// actionReceiverTypeNames parses src (Go source) and returns every concrete
+// type name that declares an isAction() receiver, ignoring pointer markers —
+// the source-level truth the AllActions() completeness check compares
+// against. go/ast CAN enumerate an interface's implementers by construction;
+// reflect cannot (review R-08).
+func actionReceiverTypeNames(src string) []string {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "store.go", src, 0)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	ast.Inspect(f, func(n ast.Node) bool {
+		fd, ok := n.(*ast.FuncDecl)
+		if !ok || fd.Name.Name != "isAction" || fd.Recv == nil {
+			return true
+		}
+		for _, r := range fd.Recv.List {
+			name := exprTypeName(r.Type)
+			if name != "" {
+				out = append(out, name)
+			}
+		}
+		return true
+	})
+	return out
+}
+
+// exprTypeName reduces a receiver type expression to its base identifier,
+// stripping a leading "*" (pointer receiver) so "Foo" and "*Foo" both yield
+// "Foo". Returns "" for anything that is not a straight identifier.
+func exprTypeName(e ast.Expr) string {
+	switch t := e.(type) {
+	case *ast.Ident:
+		return t.Name
+	case *ast.StarExpr:
+		return exprTypeName(t.X)
+	default:
+		return ""
+	}
+}
+
+// registeredActionTypeNames maps AllActions()'s dynamic type names to a
+// membership set.
+func registeredActionTypeNames(actions []Action) map[string]bool {
+	set := make(map[string]bool)
+	for _, a := range actions {
+		set[reflect.TypeOf(a).Name()] = true
+	}
+	return set
+}
+
+// TestAllActionsRegistryMatchesDeclaredReceivers is the review-R-08
+// completeness gate: the set of isAction() receivers DECLARED in store.go
+// must equal the set of dynamic types AllActions() registers — so an action
+// that gains an isAction() method without being added to the registry fails
+// this test loudly (and a registry entry for a type that no longer exists
+// fails too).
+func TestAllActionsRegistryMatchesDeclaredReceivers(t *testing.T) {
+	src, err := os.ReadFile("store.go")
+	if err != nil {
+		t.Fatalf("reading store.go: %v", err)
+	}
+	declared := actionReceiverTypeNames(string(src))
+
+	registered := registeredActionTypeNames(AllActions())
+
+	var extra, missing []string
+	sort.Strings(declared)
+	for _, name := range declared {
+		if !registered[name] {
+			missing = append(missing, name)
+		}
+	}
+	declaredSet := make(map[string]bool, len(declared))
+	for _, name := range declared {
+		declaredSet[name] = true
+	}
+	for name := range registered {
+		if !declaredSet[name] {
+			extra = append(extra, name)
+		}
+	}
+	if len(missing) != 0 {
+		t.Errorf("isAction() receiver(s) %v declared in store.go but missing from AllActions() — add each to the registry", missing)
+	}
+	if len(extra) != 0 {
+		t.Errorf("AllActions() registers %v with no isAction() receiver in store.go — remove the stale entry", extra)
+	}
+}
+
+// TestActionRegistryReportsMissingEntry is the negative control for review
+// R-08: a fixture source declaring an isAction() receiver that AllActions()
+// does NOT register is reported as missing by the same comparison, proving
+// the parser-based gate can actually see an omitted type.
+func TestActionRegistryReportsMissingEntry(t *testing.T) {
+	fixture := `
+package fixture
+type ExtraAction struct{}
+func (ExtraAction) isAction() {}
+`
+	declared := actionReceiverTypeNames(fixture)
+	registered := registeredActionTypeNames(AllActions())
+
+	var missing []string
+	for _, name := range declared {
+		if !registered[name] {
+			missing = append(missing, name)
+		}
+	}
+	if len(declared) == 0 {
+		t.Fatal("sanity: the fixture must declare the extra receiver")
+	}
+	if len(missing) == 0 {
+		t.Errorf("the comparison must report an unregistered isAction() receiver; fixture declared %v, registered %v", declared, registered)
 	}
 }

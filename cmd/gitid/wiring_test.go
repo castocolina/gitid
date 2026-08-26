@@ -3340,3 +3340,310 @@ func TestCloneStageCommandsNameCloneAlias_RealBackend(t *testing.T) {
 		t.Errorf("Stage2Command = %q, must name the clone's own alias", cmd)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Plan 05-07 Task 2: real delete plan seams, exhaustive Persist, one writer
+// ---------------------------------------------------------------------------
+
+// TestDeletePlanScanReportsUnmanagedAndSiblingHits is the D-13/T-05-34
+// admission test over the REAL plan seam: a hand-written stanza naming the
+// alias is reported as an unmanaged hit with file+line, the same alias
+// inside a SIBLING's managed block is reported as other-managed, and the
+// identity's OWN managed block stays silent.
+func TestDeletePlanScanReportsUnmanagedAndSiblingHits(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+	b := newBackendForHome(home)
+
+	sshConfig := `# BEGIN gitid managed: _global
+Host *
+  IdentitiesOnly yes
+# END gitid managed: _global
+
+# BEGIN gitid managed: work
+Host work.github.com
+  Hostname ssh.github.com
+  Port 443
+  User git
+  IdentityFile ~/.ssh/id_ed25519_work
+  IdentitiesOnly yes
+# END gitid managed: work
+
+# BEGIN gitid managed: personal
+Host personal.github.com
+  Hostname ssh.github.com
+  Port 443
+  User git
+  IdentityFile ~/.ssh/id_ed25519_personal
+  PermitOpen work.github.com:443
+# END gitid managed: personal
+
+Host work.github.com
+  Hostname ssh.github.com
+  IdentityFile ~/.ssh/id_ed25519_work
+`
+	writeFile(t, filepath.Join(home, ".ssh", "config"), sshConfig)
+
+	plan, err := b.DeletePlan("work", "everything")
+	if err != nil {
+		t.Fatalf("DeletePlan: %v", err)
+	}
+	sshFile := filepath.Join(home, ".ssh", "config")
+	var gotOther, gotUnmanaged bool
+	for _, h := range plan.Hits {
+		if h.File != sshFile {
+			t.Errorf("unexpected hit outside ~/.ssh/config: %q %+v", h.File, h)
+			continue
+		}
+		switch h.Region {
+		case "other-managed":
+			if h.Line != 21 {
+				t.Errorf("other-managed hit line = %d, want 21 (PermitOpen line)", h.Line)
+			}
+			gotOther = true
+		case "unmanaged":
+			if h.Line != 24 {
+				t.Errorf("unmanaged hit line = %d, want 24 (hand-written Host line)", h.Line)
+			}
+			gotUnmanaged = true
+		case "own-managed":
+			t.Errorf("own-managed hit must be dropped: %+v", h)
+		}
+	}
+	if !gotOther {
+		t.Error("no other-managed hit — the alias inside the sibling's block must be reported")
+	}
+	if !gotUnmanaged {
+		t.Error("no unmanaged hit — the alias in a hand-written stanza must be reported")
+	}
+}
+
+// TestPlannerSeamsFailClosedOnMissingIdentity proves DeletePlan,
+// KeyCeremonyPlan, and KeyActionFor each return a non-nil error plus a
+// ZERO-VALUE view on a resolution failure — never a partial plan with a nil
+// error (review R-07's fail-closed rule).
+func TestPlannerSeamsFailClosedOnMissingIdentity(t *testing.T) {
+	b := newBackendForHome(t.TempDir())
+
+	v, err := b.DeletePlan("ghost", "everything")
+	if err == nil {
+		t.Error("DeletePlan on a missing identity must error")
+	} else if !reflect.DeepEqual(v, tuikit.DeletePlanView{}) {
+		t.Errorf("DeletePlan returned a non-zero view %+v alongside an error", v)
+	}
+
+	kv, err := b.KeyCeremonyPlan("ghost", "rotate")
+	if err == nil {
+		t.Error("KeyCeremonyPlan on a missing identity must error")
+	} else if !reflect.DeepEqual(kv, tuikit.KeyCeremonyView{}) {
+		t.Errorf("KeyCeremonyPlan returned a non-zero view %+v alongside an error", kv)
+	}
+
+	action, err := b.KeyActionFor("ghost")
+	if err == nil {
+		t.Error("KeyActionFor on a missing identity must error")
+	} else if action != "" {
+		t.Errorf("KeyActionFor returned %q alongside an error, want empty", action)
+	}
+}
+
+// TestDeletePlanFailsOnUnreadableScanSource proves the plan seam surfaces a
+// READ failure as an error rather than as an eerily-small plan: an
+// everything-scope plan whose allowed_signers file cannot be read aborts.
+func TestDeletePlanFailsOnUnreadableScanSource(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+	b := newBackendForHome(home)
+
+	allowed := filepath.Join(home, ".ssh", "allowed_signers")
+	if err := os.Chmod(allowed, 0o000); err != nil {
+		t.Fatalf("chmod 0000 allowed_signers: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(allowed, 0o600) })
+
+	v, err := b.DeletePlan("work", "everything")
+	if err == nil {
+		t.Error("DeletePlan must error when a scan source is unreadable")
+	} else if !reflect.DeepEqual(v, tuikit.DeletePlanView{}) {
+		t.Errorf("DeletePlan returned a non-zero view %+v alongside an error", v)
+	}
+}
+
+// TestForeignProviderCounterResolvesHostname is the D-09 hand-written-alias
+// resolver test: a foreign Host stanza whose Hostname is the recipe-canonical
+// alt-SSH endpoint counts against its provider key (never raw hostname
+// equality against the alias).
+func TestForeignProviderCounterResolvesHostname(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedSSHDir(t, home)
+	writeFile(t, filepath.Join(home, ".ssh", "config"), `# BEGIN gitid managed: _global
+Host *
+  IdentitiesOnly yes
+# END gitid managed: _global
+
+Host foo.github.com
+  Hostname ssh.github.com
+  User git
+
+Host bar.gitlab.com
+  Hostname altssh.gitlab.com
+  User git
+`)
+	b := newBackendForHome(home)
+
+	if n, err := countForeignProviderRefs(b, "github.com"); err != nil || n != 1 {
+		t.Errorf("countForeignProviderRefs(github.com) = %d, %v; want 1, nil — Hostname ssh.github.com must resolve to the github.com key", n, err)
+	}
+	if n, err := countForeignProviderRefs(b, "gitlab.com"); err != nil || n != 1 {
+		t.Errorf("countForeignProviderRefs(gitlab.com) = %d, %v; want 1, nil", n, err)
+	}
+	if n, err := countForeignProviderRefs(b, "bitbucket.org"); err != nil || n != 0 {
+		t.Errorf("countForeignProviderRefs(bitbucket.org) = %d, %v; want 0, nil", n, err)
+	}
+}
+
+// TestNoWaveOneDeleteWriterName is the review R3-05 grep gate: the rejected
+// wave-1 name for a second delete writer must appear NOWHERE in cmd/gitid,
+// so the one-writer invariant cannot silently regress. Comment lines are
+// stripped before the check, exactly as the plan's `grep -v '^\s*//'`
+// gate does; the needle is built from parts so this very test does not trip
+// its own gate.
+func TestNoWaveOneDeleteWriterName(t *testing.T) {
+	const needle = "deleteIdentity" + "Transaction"
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("globbing cmd/gitid: %v", err)
+	}
+	for _, file := range files {
+		src, rerr := os.ReadFile(file) //nolint:gosec // test-only read under the repo (G304)
+		if rerr != nil {
+			t.Fatalf("reading %s: %v", file, rerr)
+		}
+		for lineNo, raw := range strings.Split(string(src), "\n") {
+			code := strings.TrimSpace(strings.Split(raw, "//")[0])
+			if strings.Contains(code, needle) {
+				t.Errorf("%s:%d mentions the rejected wave-1 delete-writer name", file, lineNo+1)
+			}
+		}
+	}
+}
+
+// TestPersistClassifiesEveryAction iterates tuikit.AllActions() and asserts
+// no call lands in the unclassified branch: an errUnhandledAction persist
+// error after a real Persist means a mutating action reached the dummy's
+// reducer (05-RESEARCH.md Pitfall 1). Each action runs on a FRESH backend so
+// a leftover persistErr from one action cannot mask a neighbor.
+func TestPersistClassifiesEveryAction(t *testing.T) {
+	seed := tuikit.DemoState{}
+	for _, action := range tuikit.AllActions() {
+		b := newBackendForHome(t.TempDir())
+		_ = b.Persist(seed, action)
+		if perr := b.PersistError(); perr != nil && errors.Is(perr, errUnhandledAction) {
+			t.Errorf("Persist(%T) recorded errUnhandledAction %v — every action in the union must be classified explicitly", action, perr)
+		}
+	}
+}
+
+// TestPersistConfigureGitIsRealOwned pins review R-09-CG: ConfigureGit is a
+// REAL action, so Persist returns a re-read of disk and records NO persist
+// error — a working Git edit must never become a persist error.
+func TestPersistConfigureGitIsRealOwned(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+	b := newBackendForHome(home)
+
+	next := b.Persist(tuikit.DemoState{}, tuikit.ConfigureGit{
+		Name: "work", GitName: "Work User", GitEmail: "work@example.com", MatchStrategy: "gitdir", GitDir: "~/git/work/",
+	})
+	if perr := b.PersistError(); perr != nil {
+		t.Errorf("Persist(ConfigureGit) recorded a persist error where the plan requires re-read-only: %v", perr)
+	}
+	if len(next.Identities) == 0 {
+		t.Error("Persist(ConfigureGit) must re-read disk — the seeded identity must appear in the returned state")
+	}
+}
+
+// TestPersistDemoOnlyActionsPreserveTuikitReduce pins review R-09-DEMO: the
+// Phase 6-8 banner actions keep producing the SAME state the dummy's reducer
+// produces, so the D-16 banner screens' approved behavior is unchanged.
+func TestPersistDemoOnlyActionsPreserveTuikitReduce(t *testing.T) {
+	seed := tuikit.DemoState{Identities: []tuikit.DemoIdentity{{Name: "legacy", State: "complete"}}}
+	demo := []tuikit.Action{
+		tuikit.MarkScanned{},
+		tuikit.FixFinding{ID: "git-includeif-missing-fragment"},
+		tuikit.ApplySSH{Keys: []string{"VisualHostKey"}},
+		tuikit.SetSSHStorage{Layout: tuikit.StorageInclude},
+		tuikit.ApplyGitBaseline{},
+		tuikit.ApplyGitGlobalEmail{Email: "dev@example.com"},
+	}
+	for _, action := range demo {
+		b := newBackendForHome(t.TempDir())
+		got := b.Persist(seed, action)
+		want := tuikit.Reduce(seed, action)
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("Persist(%T) = %+v, want Reduce's output %+v", action, got, want)
+		}
+	}
+}
+
+// TestPersistCloneIdentityIsClassifiedRefusal pins the CloneIdentity
+// classification: the real backend never emits it (D-15), so Persist records
+// a persist error naming it — and that error is NOT errUnhandledAction (it is
+// a classified refusal, not an omission).
+func TestPersistCloneIdentityIsClassifiedRefusal(t *testing.T) {
+	b := newBackendForHome(t.TempDir())
+	_ = b.Persist(tuikit.DemoState{}, tuikit.CloneIdentity{Source: "work", CloneName: "work-copy"})
+	perr := b.PersistError()
+	if perr == nil {
+		t.Fatal("Persist(CloneIdentity) must record a persist error")
+	}
+	if !strings.Contains(perr.Error(), "CloneIdentity") {
+		t.Errorf("persist error must name the action: %v", perr)
+	}
+	if errors.Is(perr, errUnhandledAction) {
+		t.Errorf("CloneIdentity is a classified refusal, not an omission — error must not be errUnhandledAction: %v", perr)
+	}
+}
+
+// TestCommitDeleteEverythingSurfacesRemoved drives the EVERYTHING-scope
+// delete through the TUI CommitDelete seam and asserts the returned message
+// names what was removed: the provider-rewrite block (sole-provider ref-count
+// hits zero) and the D-11 key copy target — the "one delete writer, both
+// skins" end of review R3-05.
+func TestCommitDeleteEverythingSurfacesRemoved(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+	b := groupHermeticBackend(home)
+
+	msgI := b.CommitDelete("work", "everything")()
+	msg, ok := msgI.(tuikit.DeleteCommitMsg)
+	if !ok {
+		t.Fatalf("CommitDelete delivered %T, want DeleteCommitMsg", msgI)
+	}
+	if msg.Err != "" {
+		t.Fatalf("CommitDelete(everything) error: %s", msg.Err)
+	}
+	if len(msg.Backups) == 0 {
+		t.Error("an everything-scope delete must report timestamped backups")
+	}
+	var sawRewrite, sawArchive bool
+	for _, removed := range msg.Removed {
+		if strings.Contains(removed, "provider rewrite") {
+			sawRewrite = true
+		}
+		if strings.Contains(removed, "gitid-archive") {
+			sawArchive = true
+		}
+	}
+	if !sawRewrite {
+		t.Errorf("message.Removed must name the provider-rewrite removal (D-09), got %v", msg.Removed)
+	}
+	if !sawArchive {
+		t.Errorf("message.Removed must name the D-11 key copy path, got %v", msg.Removed)
+	}
+}

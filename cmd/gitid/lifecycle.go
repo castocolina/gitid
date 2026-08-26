@@ -601,6 +601,18 @@ func (b *realBackend) runDelete(name string, scope identity.DeleteScope, p lifec
 		return res, wrapped
 	}
 
+	if scope == identity.DeleteScopeEverything {
+		// Task 2: surface the two facts the everything-scope receipt must
+		// name (D-09/D-11) — that the ref-counted provider rewrite was
+		// removed, and WHERE the key pair was copied before removal. The
+		// provider label is a constant string (not a path); the archive
+		// paths are raw filesystem paths the seam scrubs via displayPath.
+		if del.ProviderRewriteRemoved {
+			res.Removed = append(res.Removed, "provider rewrite (shared)")
+		}
+		res.Removed = append(res.Removed, del.ArchivedKeyPaths...)
+	}
+
 	// verify — delete's closing coherence check (lifecycleStages["delete"]'s
 	// last entry).
 	record(stages[4])

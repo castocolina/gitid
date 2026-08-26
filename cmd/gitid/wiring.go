@@ -606,27 +606,110 @@ func (b *realBackend) DemoBanner(tab tuikit.TabID) bool {
 	return tab != tuikit.TabIdentities
 }
 
+// errUnhandledAction is what Persist records when a mutating action has NO
+// classification in the real backend's exhaustive switch. Reaching it is the
+// bug class 05-RESEARCH.md Pitfall 1 describes — the dummy reducer reporting
+// success with no write — made loud instead of silent: the D-16-equivalent
+// in-memory behavior is NOT a valid outcome for the real binary. The
+// sentinel keeps `errors.Is` checks stable even when a future action wraps
+// a different root cause around it.
+var errUnhandledAction = errors.New("gitid: unhandled action for the real backend")
+
 // Persist commits one action against the real machine and re-reads the
 // configuration, so the list always reflects what is actually on disk rather
 // than an optimistic in-memory guess.
 //
-// Only AddIdentity performs a real write in Phase 3 (the SSH leg — the Git leg
-// is Phase 4, D-18: a skipped Git step stores an SSH-only, incomplete
-// identity). Every other action still reduces in memory so the not-yet-wired
-// screens behind the D-16 banner keep working.
+// The cases enumerate the FULL action union as it exists in store.go today,
+// read from that file, never from memory (review R-09-CG: ConfigureGit was
+// missed exactly that way before). Every action is classified explicitly:
+//
+//   - REAL-OWNED — the write has already happened through this backend's
+//     corresponding async commit seam (CommitGit/CommitDelete/CommitRotate/
+//     CommitNewKey/persistCreate); Persist only re-reads disk. Returning
+//     tuikit.Reduce here would mock a write the real machine already did.
+//   - DEMO-ONLY — the Phase 6-8 views behind the D-16 banner still need
+//     their approved in-memory behavior; delegating to tuikit.Reduce keeps
+//     those banner screens' behavior unchanged (review R-09-DEMO). The
+//     comment on each names the phase that will make it real.
+//   - INVALID — CloneIdentity: the real binary never emits it (D-15 routes
+//     clone through the create wizard's own commit path). If it ever
+//     arrives that is a bug, so it records a persist error NAMING it — a
+//     classified refusal, not an omission, hence deliberately NOT
+//     errUnhandledAction.
+//   - UNCLASSIFIED (default) — a future action added to the union and to
+//     AllActions() but not to this switch records an errUnhandledAction
+//     persist error naming its dynamic type, failing the all-actions test
+//     loudly instead of silently reducing in memory.
+//
+// The permissive default branch is GONE because that branch reached the
+// DUMMY's reducer from the real backend — indistinguishable from success
+// while producing no write at all (05-RESEARCH.md Pitfall 1's defect class).
 func (b *realBackend) Persist(state tuikit.DemoState, action tuikit.Action) tuikit.DemoState {
 	switch a := action.(type) {
 	case tuikit.Reset:
+		b.setPersistErr(nil)
 		return b.InitialState()
 	case tuikit.AddIdentity:
 		return b.persistCreate(state, a)
-	case tuikit.DeleteIdentity:
-		// The write already happened in CommitDelete (the async seam) —
-		// Persist must re-read disk here, never fall through to
-		// tuikit.Reduce's in-memory guess (RESEARCH.md Pitfall 1).
+	case tuikit.ConfigureGit:
+		// Real-owned: the Git edit already committed through CommitGit (the
+		// UI waits for GitCommitMsg before reducing this action, so no
+		// optimistic success can mask a failed transaction).
+		b.setPersistErr(nil)
 		return b.InitialState()
-	default:
+	case tuikit.DeleteIdentity:
+		// Real-owned: the write already happened in CommitDelete (the
+		// async seam) — Persist must re-read disk here, never fall through
+		// to tuikit.Reduce's in-memory guess (RESEARCH.md Pitfall 1).
+		b.setPersistErr(nil)
+		return b.InitialState()
+	case tuikit.NewKey:
+		// Real-owned: the repair write already happened through
+		// CommitNewKey; this action only refreshes the list.
+		b.setPersistErr(nil)
+		return b.InitialState()
+	case tuikit.RotateIdentity:
+		// Real-owned: the rotation write already happened through
+		// CommitRotate; this action only refreshes the list.
+		b.setPersistErr(nil)
+		return b.InitialState()
+	case tuikit.EditSSH:
+		// Real-owned: the Host-block rewrite ceremony confirmed before this
+		// action dispatched; re-read disk (the write-path ownership details
+		// belong to the ceremony's commit seam).
+		b.setPersistErr(nil)
+		return b.InitialState()
+	case tuikit.MarkScanned:
+		// Demo-only: the Phase 8 doctor scan does not write in-disk config;
+		// keep the approved in-memory reducer behavior behind the D-16 banner.
 		return tuikit.Reduce(state, action)
+	case tuikit.FixFinding:
+		// Demo-only: Phase 8's fixer is not wired yet; keep the banner
+		// behavior pinned rather than turning it into an error (R-09-DEMO).
+		return tuikit.Reduce(state, action)
+	case tuikit.ApplySSH:
+		// Demo-only: Phase 6 will make the global-ssh ceremony real.
+		return tuikit.Reduce(state, action)
+	case tuikit.SetSSHStorage:
+		// Demo-only: Phase 6 owns STORE-01 migration.
+		return tuikit.Reduce(state, action)
+	case tuikit.ApplyGitBaseline:
+		// Demo-only: Phase 7 will make the global-git baseline real.
+		return tuikit.Reduce(state, action)
+	case tuikit.ApplyGitGlobalEmail:
+		// Demo-only: Phase 7 owns the global user.email ceremony.
+		return tuikit.Reduce(state, action)
+	case tuikit.CloneIdentity:
+		// Invalid for the real backend: D-15 routes clone through the
+		// create wizard's own commit path, so the real binary never emits
+		// this action. Arriving here is a bug — refuse loudly, with the
+		// action named (a classified refusal, intentionally NOT
+		// errUnhandledAction so it cannot be mistaken for an omission).
+		b.setPersistErr(fmt.Errorf("gitid: %T is not valid for the real backend (D-15 routes clone through the create wizard)", action))
+		return state
+	default:
+		b.setPersistErr(fmt.Errorf("%w: %T", errUnhandledAction, action))
+		return state
 	}
 }
 
@@ -1148,13 +1231,17 @@ func (b *realBackend) CommitDelete(name, scope string) tea.Cmd {
 		res, err := b.runDelete(name, deleteScope, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
 		displayBackups := displayPaths(b, res.Backups)
 		displayRestored := displayMessages(b, res.Restored)
+		// Removed names what the everything scope took off disk (the D-09
+		// provider rewrite and the D-11 key copy target); displayPath leaves
+		// the non-path provider label alone and shortens the archive paths.
+		displayRemoved := displayPaths(b, res.Removed)
 		if err != nil {
 			return tuikit.DeleteCommitMsg{
-				Backups: displayBackups, Restored: displayRestored,
+				Backups: displayBackups, Restored: displayRestored, Removed: displayRemoved,
 				Err: b.displayMessage(err.Error()),
 			}
 		}
-		return tuikit.DeleteCommitMsg{Backups: displayBackups}
+		return tuikit.DeleteCommitMsg{Backups: displayBackups, Removed: displayRemoved}
 	}
 }
 
@@ -2943,20 +3030,169 @@ func fileExists(path string) bool {
 // than a silent NoopIdentityPlanner embed.
 // ---------------------------------------------------------------------------
 
-// KeyActionFor implements tuikit.IdentityPlanner. The live classification
-// lands in plan 05-07; until then the seam fails closed.
-func (*realBackend) KeyActionFor(string) (string, error) {
-	return "", tuikit.ErrPlannerNotImplemented
+// KeyActionFor implements tuikit.IdentityPlanner: the D-05 routing answer
+// ("rotate" or "repair") for one identity, classified through the SAME
+// BuildInventory/Classify the identity list rows render (MGR-07's
+// never-re-derived rule), with the owner count for the account's current key
+// path computed via identity.SharedKeyOwners against the same reconstruction.
+// It fails closed on any read or resolution failure — never a zero-value
+// answer with a nil error.
+func (b *realBackend) KeyActionFor(name string) (string, error) {
+	if b.initErr != nil {
+		return "", b.initErr
+	}
+	acct, found := b.findAccount(name)
+	if !found {
+		return "", fmt.Errorf("gitid: no such identity: %q", name)
+	}
+	inventory, err := identity.BuildInventory(identity.InventoryDepsForHome(b.home))
+	if err != nil {
+		return "", fmt.Errorf("gitid: computing key action for %q: %w", name, err)
+	}
+	var health identity.IdentityHealth
+	for _, h := range inventory.Identities {
+		if h.Name == name {
+			health = h
+			break
+		}
+	}
+	if health.Name == "" {
+		return "", fmt.Errorf("gitid: key action: no health report for identity %q", name)
+	}
+	ownerCount := len(identity.SharedKeyOwners(b.accounts(), acct.KeyPath, name)) + 1
+	return string(identity.KeyActionFor(health, ownerCount)), nil
 }
 
-// DeletePlan implements tuikit.IdentityPlanner. The live plan lands in 05-07.
-func (*realBackend) DeletePlan(string, string) (tuikit.DeletePlanView, error) {
-	return tuikit.DeletePlanView{}, tuikit.ErrPlannerNotImplemented
+// scanSourcesForIdentity returns the D-13 scan-source seam for one identity:
+// SplitScanRegions over exactly FOUR artifacts — the SSH config, the
+// gitconfig, the identity's fragment, and the allowed_signers file — never a
+// key file. A missing artifact is skipped (a fresh machine has nothing to
+// scan there); any other read failure aborts the plan (review R-07's
+// fail-closed rule). The identity's own managed blocks are tagged
+// own-managed, so its own alias inside its own Host block is never reported
+// as an unmanaged reference (T-05-34).
+func (b *realBackend) scanSourcesForIdentity(name string, fragmentPath string) func() ([]identity.ScanSource, error) {
+	return func() ([]identity.ScanSource, error) {
+		files := []string{b.storageTargetPath(), b.gitconfigPath, b.allowedSigners}
+		if fragmentPath != "" {
+			files = append(files, fragmentPath)
+		}
+		var sources []identity.ScanSource
+		for _, file := range files {
+			content, rerr := os.ReadFile(file) //nolint:gosec // trusted gitid-managed scan source path
+			if os.IsNotExist(rerr) {
+				continue
+			}
+			if rerr != nil {
+				return nil, fmt.Errorf("gitid: gathering scan source %s: %w", file, rerr)
+			}
+			sources = append(sources, identity.SplitScanRegions(file, content, name)...)
+		}
+		return sources, nil
+	}
 }
 
-// KeyCeremonyPlan implements tuikit.IdentityPlanner. The live plan lands in 05-07.
-func (*realBackend) KeyCeremonyPlan(string, string) (tuikit.KeyCeremonyView, error) {
-	return tuikit.KeyCeremonyView{}, tuikit.ErrPlannerNotImplemented
+// deletePlanView is the ONE conversion site from identity.DeletePlan to the
+// render DTO — a straight field copy with no policy in it (plan: "convert the
+// result at this one conversion site, propagating the domain error
+// unchanged"). KeyCopyPath is populated from the D-11 evidence actually
+// available at PLAN time: the archive directory the key pair WILL be copied
+// into for an everything-scope delete where the key does not survive.
+func (b *realBackend) deletePlanView(p identity.DeletePlan) tuikit.DeletePlanView {
+	v := tuikit.DeletePlanView{
+		Name:            p.Name,
+		Scope:           string(p.Scope),
+		SharedKeyOwners: p.SharedKeyOwners,
+		Disclaimer:      p.Disclaimer,
+	}
+	for _, t := range p.Targets {
+		v.Targets = append(v.Targets, tuikit.DeleteTargetView{File: t.File, Block: t.Block, Label: t.Label})
+	}
+	if p.ProviderRewriteTarget != nil {
+		v.ProviderRewriteTarget = &tuikit.DeleteTargetView{
+			File: p.ProviderRewriteTarget.File, Block: p.ProviderRewriteTarget.Block, Label: p.ProviderRewriteTarget.Label,
+		}
+	}
+	for _, h := range p.UnmanagedHits {
+		v.Hits = append(v.Hits, tuikit.UnmanagedHitView{File: h.File, Line: h.Line, Region: string(h.Region), Text: h.Text})
+	}
+	if p.Scope == identity.DeleteScopeEverything && len(p.KeyPaths) > 0 {
+		v.KeyCopyPath = b.displayPath(sshconfig.ArchiveDir(b.sshDir))
+	}
+	return v
+}
+
+// DeletePlan implements tuikit.IdentityPlanner: the real preview both delete
+// screens render, built from identity.PlanDelete over the resolved account
+// (the SAME reconstruction the list rows render) at the one conversion site.
+// Every read or parse failure propagates as an error — never a zero-value
+// view with a nil error — and loses no domain context.
+func (b *realBackend) DeletePlan(name, scope string) (tuikit.DeletePlanView, error) {
+	if b.initErr != nil {
+		return tuikit.DeletePlanView{}, b.initErr
+	}
+	deleteScope, serr := identity.DeleteScopeFrom(scope)
+	if serr != nil {
+		return tuikit.DeletePlanView{}, serr
+	}
+	acct, found := b.findAccount(name)
+	if !found {
+		return tuikit.DeletePlanView{}, fmt.Errorf("gitid: no such identity: %q", name)
+	}
+	acct = b.normalizeAccountForWrite(acct)
+	deps := identity.PlanDeps{
+		Accounts: func() ([]identity.Account, error) { return b.accounts(), nil },
+		ForeignProviderRefs: func(providerKey string) (int, error) {
+			return countForeignProviderRefs(b, providerKey)
+		},
+		ScanSources: b.scanSourcesForIdentity(name, acct.FragmentPath),
+	}
+	plan, err := identity.PlanDelete(acct, deleteScope, deps)
+	if err != nil {
+		return tuikit.DeletePlanView{}, err
+	}
+	return b.deletePlanView(plan), nil
+}
+
+// KeyCeremonyPlan implements tuikit.IdentityPlanner: the facts the
+// rotate/repair ceremony renders — the resolved account (provider host, key
+// pair paths), the D-06 archive directory for the rotate ceremony, and the
+// real target list. It returns an error on any resolution failure, never a
+// zero-value view.
+func (b *realBackend) KeyCeremonyPlan(name, mode string) (tuikit.KeyCeremonyView, error) {
+	if b.initErr != nil {
+		return tuikit.KeyCeremonyView{}, b.initErr
+	}
+	if mode != tuikit.KeyCeremonyModeRotate && mode != tuikit.KeyCeremonyModeRepair {
+		return tuikit.KeyCeremonyView{}, fmt.Errorf("gitid: unknown key ceremony mode %q", mode)
+	}
+	acct, found := b.findAccount(name)
+	if !found {
+		return tuikit.KeyCeremonyView{}, fmt.Errorf("gitid: no such identity: %q", name)
+	}
+	acct = b.normalizeAccountForWrite(acct)
+
+	v := tuikit.KeyCeremonyView{
+		Mode:         mode,
+		IdentityName: name,
+		ProviderHost: acct.Provider,
+		KeyPath:      b.displayPath(acct.KeyPath),
+		PubKeyPath:   b.displayPath(acct.PubPath),
+		Targets:      []string{b.displayPath(b.storageTargetPath()), b.displayPath(b.gitconfigPath), b.displayPath(b.allowedSigners)},
+	}
+	if acct.FragmentPath != "" {
+		v.Targets = append(v.Targets, b.displayPath(acct.FragmentPath))
+	}
+	if acct.KeyPath != "" {
+		v.Targets = append(v.Targets, b.displayPath(acct.KeyPath), b.displayPath(acct.PubPath))
+	}
+	if mode == tuikit.KeyCeremonyModeRotate {
+		// D-06: the archived pair lands inside the dedicated archive
+		// directory; the timestamped filename is generated DURING the
+		// transaction, so the ceremony preview names the directory itself.
+		v.ArchivedKeyPath = b.displayPath(sshconfig.ArchiveDir(b.sshDir))
+	}
+	return v, nil
 }
 
 // commitRotateInto and commitRepairInto are the test-only seams the two TUI

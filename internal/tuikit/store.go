@@ -214,6 +214,34 @@ func (EditSSH) isAction()             {}
 func (SetSSHStorage) isAction()       {}
 func (Reset) isAction()               {}
 
+// AllActions returns one zero-value instance of every Action type, in
+// declaration order (the order this file declares them). It is the explicit
+// registry review R-08 replaces a reflection-based enumeration with: Go
+// reflection cannot list the concrete types implementing an interface, so a
+// completeness check over "every action" must have a hand-maintained source
+// of truth — AllActions is that source. A new action MUST be added here.
+// store_test.go's source-parsing test keeps this registry honest: it parses
+// this file with go/ast and asserts the set of isAction() receivers equals
+// the set of dynamic types AllActions returns.
+func AllActions() []Action {
+	return []Action{
+		AddIdentity{},
+		ConfigureGit{},
+		CloneIdentity{},
+		DeleteIdentity{},
+		NewKey{},
+		RotateIdentity{},
+		MarkScanned{},
+		FixFinding{},
+		ApplySSH{},
+		ApplyGitBaseline{},
+		ApplyGitGlobalEmail{},
+		EditSSH{},
+		SetSSHStorage{},
+		Reset{},
+	}
+}
+
 // recomputeAfterGit is the state an identity lands in once BOTH its SSH
 // and Git sides exist — the Go mirror of store.ts's recomputeAfterGit.
 func recomputeAfterGit(row DemoIdentity) string {
