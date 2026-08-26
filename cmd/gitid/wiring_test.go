@@ -20,6 +20,7 @@ import (
 
 	"github.com/castocolina/gitid/internal/filewriter"
 	"github.com/castocolina/gitid/internal/gitconfig"
+	"github.com/castocolina/gitid/internal/globalssh"
 	"github.com/castocolina/gitid/internal/identity"
 	"github.com/castocolina/gitid/internal/keygen"
 	"github.com/castocolina/gitid/internal/platform"
@@ -4176,6 +4177,88 @@ func identityBlockBody(t *testing.T, content, name string) string {
 	}
 	t.Fatalf("no identity block %q in:\n%s", name, content)
 	return ""
+}
+
+func TestGlobalSSHFixturePolicyParity(t *testing.T) {
+	if len(tuikit.GlobalSSHOptions) != len(globalssh.Policy) {
+		t.Fatalf("fixture has %d rows, policy has %d", len(tuikit.GlobalSSHOptions), len(globalssh.Policy))
+	}
+	for i := range globalssh.Policy {
+		fix := tuikit.GlobalSSHOptions[i]
+		pol := globalssh.Policy[i]
+		if fix.Key != pol.Key || fix.Recommended != pol.Recommended || fix.Risk != pol.Risk {
+			t.Errorf("row %d fixture=(%s %s %s) policy=(%s %s %s)", i, fix.Key, fix.Recommended, fix.Risk, pol.Key, pol.Recommended, pol.Risk)
+		}
+	}
+	if int(tuikit.GlobalSSHReasonNone) != int(globalssh.ReasonNone) ||
+		int(tuikit.GlobalSSHReasonPlatform) != int(globalssh.ReasonPlatform) ||
+		int(tuikit.GlobalSSHReasonVersionTooOld) != int(globalssh.ReasonVersionTooOld) ||
+		int(tuikit.GlobalSSHReasonVersionUnverified) != int(globalssh.ReasonVersionUnverified) ||
+		int(tuikit.GlobalSSHReasonNothingToVerify) != int(globalssh.ReasonNothingToVerify) {
+		t.Fatal("NotApplicableReason enums drifted between tuikit and globalssh")
+	}
+	p, _ := globalssh.PolicyFor("StrictHostKeyChecking")
+	if tuikit.GlobalSSHOptions[0].Recommended != p.Recommended || !strings.Contains(tuikit.GlobalSSHOptions[0].OneLiner, p.Recommended) {
+		t.Fatalf("StrictHostKeyChecking fixture Recommended/OneLiner must name %q", p.Recommended)
+	}
+	fp, _ := globalssh.PolicyFor("ForwardAgent")
+	if tuikit.GlobalSSHOptions[1].Risk != fp.Risk {
+		t.Fatalf("ForwardAgent fixture Risk = %q, want %q", tuikit.GlobalSSHOptions[1].Risk, fp.Risk)
+	}
+}
+
+func TestGlobalSSHOptionStatesVersionUnverified(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	b.probeSSHVersion = func() (platform.SSHVersion, error) { return platform.SSHVersion{}, nil }
+	views, err := b.GlobalSSHOptionStates()
+	if err != nil {
+		t.Fatalf("GlobalSSHOptionStates: %v", err)
+	}
+	var found *tuikit.GlobalSSHOptionView
+	for i := range views {
+		if views[i].Key == "StrictHostKeyChecking" {
+			found = &views[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("StrictHostKeyChecking row missing")
+	}
+	if found.State != tuikit.GlobalSSHNotApplicable || found.NotApplicableReason != tuikit.GlobalSSHReasonVersionUnverified {
+		t.Fatalf("view state = (%v, %v), want not-applicable/unverified", found.State, found.NotApplicableReason)
+	}
+	if found.Explanation == "" {
+		t.Fatal("explanation must remain non-empty when version is unverified")
+	}
+	_, applyErr := b.runGlobalSSHApply([]string{"StrictHostKeyChecking"}, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+	if applyErr == nil || !strings.Contains(applyErr.Error(), "ssh -V") {
+		t.Fatalf("runGlobalSSHApply err = %v, want a refusal naming ssh -V", applyErr)
+	}
+}
+
+func TestGlobalSSHOptionStatesVersionTooOld(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	b.probeSSHVersion = func() (platform.SSHVersion, error) {
+		return platform.SSHVersion{OpenSSHVersion: "7.5"}, nil
+	}
+	views, err := b.GlobalSSHOptionStates()
+	if err != nil {
+		t.Fatalf("GlobalSSHOptionStates: %v", err)
+	}
+	var found tuikit.GlobalSSHOptionView
+	for _, v := range views {
+		if v.Key == "StrictHostKeyChecking" {
+			found = v
+		}
+	}
+	if found.NotApplicableReason != tuikit.GlobalSSHReasonVersionTooOld {
+		t.Fatalf("reason = %v, want ReasonVersionTooOld", found.NotApplicableReason)
+	}
+	if strings.Contains(found.VersionNote, "macOS-only") {
+		t.Fatalf("version-gated copy leaked the platform sentence: %q", found.VersionNote)
+	}
 }
 
 func globalsBlockBytes(t *testing.T, content string) string {

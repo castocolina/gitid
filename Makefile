@@ -306,9 +306,22 @@ gate-copy-freeze:
 		'Old key archived to %s' \
 		'gitid always writes' \
 		'Write Host * managed block to ' \
-		'This dry run tests only the current key'\''s reachability — the new key has not been generated, uploaded, or resolved, so nothing about the post-rotation state is proven.'; \
+		'This dry run tests only the current key'\''s reachability — the new key has not been generated, uploaded, or resolved, so nothing about the post-rotation state is proven.' \
+		'OpenSSH version could not be read; run ssh -V to check compatibility' \
+		'set by you at ' \
+		'set in ' \
+		'gitid cannot change this' \
+		'not set (OpenSSH default: ' \
+		'set outside your config' \
+		'set, differs from recommendation — your choice' \
+		'set, differs from recommendation — set outside your config' \
+		'safe by default' \
+		'not applicable (macOS-only setting)' \
+		'not applicable (OpenSSH too old for accept-new)' \
+		'not applicable (OpenSSH version could not be verified)' \
+		'not applicable (nothing on this machine to verify)'; \
 	do \
-		if grep -rqF -- "$$s" internal/tuikit internal/identity cmd/gitid; then \
+		if grep -rqF -- "$$s" internal/tuikit internal/identity cmd/gitid internal/globalssh; then \
 			echo "    ok   $$s"; \
 		else \
 			echo "    MISSING  $$s"; fail=1; \
@@ -317,6 +330,16 @@ gate-copy-freeze:
 	if [ $$fail -ne 0 ]; then \
 		echo "gate-copy-freeze: FROZEN COPY MISSING (02-STYLE-SPEC.md §6)"; \
 		exit 1; \
+	fi; \
+	# D-13: the dynamic version line's prefix (VersionNotePrefix) must never be
+	# frozen — it changes with the user's OpenSSH build. Assembled at runtime so
+	# this check line cannot satisfy (or trip) the grep itself.
+	dyn_prefix="Your OpenSSH"; dyn_prefix="$$dyn_prefix:"; \
+	if grep -qF -- "$$dyn_prefix" Makefile; then \
+		echo "    FAIL  dynamic version prefix must stay out of the frozen list (D-13)"; \
+		exit 1; \
+	else \
+		echo "    ok   D-13 exclusion (dynamic version prefix not frozen)"; \
 	fi
 
 ## build: compile the gitid binary.

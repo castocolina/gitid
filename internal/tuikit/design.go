@@ -210,8 +210,8 @@ type GlobalSSHOption struct {
 // static, diff-able contract). Order matches 02-UX-DIRECTION.md §4.4's
 // verbatim list.
 var GlobalSSHOptions = []GlobalSSHOption{
-	{Key: "StrictHostKeyChecking", Current: "not set (OpenSSH default: ask)", Risk: "Medium", Recommended: "ask", NeedsAction: true, OneLiner: "Stating \"ask\" explicitly removes ambiguity about how an unknown host key is handled."},
-	{Key: "ForwardAgent", Current: "not set (OpenSSH default: no)", Risk: "Medium", Recommended: "no", NeedsAction: true, OneLiner: "Globally forwarding your agent lets any host you connect to authenticate elsewhere as you."},
+	{Key: "StrictHostKeyChecking", Current: "not set (OpenSSH default: ask)", Risk: "Medium", Recommended: "accept-new", NeedsAction: true, OneLiner: "accept-new pins first-seen keys and hard-fails on a changed key; it requires OpenSSH 7.6 or newer."},
+	{Key: "ForwardAgent", Current: "not set (OpenSSH default: no)", Risk: "High", Recommended: "no", NeedsAction: true, OneLiner: "Globally forwarding your agent lets any host you connect to authenticate elsewhere as you."},
 	{Key: "HashKnownHosts", Current: "not set", Risk: "Low", Recommended: "yes", NeedsAction: true, OneLiner: "Hashing known_hosts hides which hosts you connect to if the file ever leaks."},
 	{Key: "IdentitiesOnly", Current: "not set globally (set per-Host by gitid)", Risk: "High", Recommended: "yes", NeedsAction: true, OneLiner: "Without it, ssh may offer every key it knows about to every host — leaking which OTHER keys you hold."},
 	{Key: "AddKeysToAgent", Current: "yes", Risk: "Low", Recommended: "yes", NeedsAction: false, OneLiner: "Already set — keys stay available in the agent for the session (recipes/ssh-config.recipe Host * block)."},
@@ -231,6 +231,27 @@ Setting "IdentitiesOnly yes" on a Host block restricts ssh to ONLY the IdentityF
 // GlobalSSHAdvisoryNote — byte-identical to recipeFixtures.ts's
 // globalSshAdvisoryNote. Recommendations are ADVISORY, never blocking.
 const GlobalSSHAdvisoryNote = "Recommended, not required -- you can leave any option unchanged. This is advisory, never a compliance gate."
+
+// Frozen 06-03 copy: D-12 differs words, the safe-by-default already-set
+// phrasing, and the four not-applicable reason sentences (D-11/D-13).
+const (
+	// GlobalSSHWordDiffersUser is the D-12 line-2 word when gitid parsed the value.
+	GlobalSSHWordDiffersUser = "set, differs from recommendation — your choice"
+	// GlobalSSHWordDiffersOutside is the D-12 line-2 word when the value came from outside gitid's files.
+	GlobalSSHWordDiffersOutside = "set, differs from recommendation — set outside your config"
+	// GlobalSSHWordAlreadySet is the line-2 word when the value was set somewhere and equals the recommendation.
+	GlobalSSHWordAlreadySet = "already set"
+	// GlobalSSHWordSafeByDefault is the line-2 word when OpenSSH's own default already equals the recommendation.
+	GlobalSSHWordSafeByDefault = "safe by default"
+	// GlobalSSHNAPlatform is the D-11 not-applicable sentence (UseKeychain off macOS).
+	GlobalSSHNAPlatform = "not applicable (macOS-only setting)"
+	// GlobalSSHNAVersionTooOld is the D-13 not-applicable sentence when OpenSSH is below the minimum.
+	GlobalSSHNAVersionTooOld = "not applicable (OpenSSH too old for accept-new)"
+	// GlobalSSHNAVersionUnverified is the D-13 not-applicable sentence when ssh -V could not be read.
+	GlobalSSHNAVersionUnverified = "not applicable (OpenSSH version could not be verified)"
+	// GlobalSSHNANothingToVerify is the IdentitiesOnly sentence when no managed hosts exist.
+	GlobalSSHNANothingToVerify = "not applicable (nothing on this machine to verify)"
+)
 
 // ---------------------------------------------------------------------------
 // Global Git options (GGIT-01's baseline/recipe-default catalog).

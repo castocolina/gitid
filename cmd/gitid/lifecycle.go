@@ -815,6 +815,12 @@ func (b *realBackend) runGlobalSSHApply(keys []string, p lifecyclePolicy) (lifec
 		if policy.Scope == "per-alias" {
 			return res, fmt.Errorf("gitid: option %q cannot be applied to the global Host * block (the recipe scopes it per-alias)", k)
 		}
+		if policy.MinOpenSSH != "" {
+			outcome, _ := globalssh.VersionGate(b.readSSHVersion(), policy)
+			if outcome != globalssh.VersionAvailable {
+				return res, fmt.Errorf("gitid: option %q cannot be applied until OpenSSH compatibility is verified (run ssh -V)", k)
+			}
+		}
 		explicit[k] = policy.Recommended
 		previewKeys = append(previewKeys, k)
 	}
