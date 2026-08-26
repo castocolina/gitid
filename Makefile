@@ -288,7 +288,9 @@ gate-copy-freeze:
 		'Found %q referenced in %s: %d — review before continuing.' \
 		'This action is irreversible' \
 		'%s will be removed from active use; a copy of the key pair exists at %s.' \
-		'Repo remotes using git@<alias>: cannot be scanned and will break after this delete.'; \
+		'Repo remotes using git@<alias>: cannot be scanned and will break after this delete.' \
+		'The old key stays valid at %s during this window — upload the new key, verify it, then remove the old one there.' \
+		'Old key archived to %s'; \
 	do \
 		if grep -rqF -- "$$s" internal/tuikit internal/identity; then \
 			echo "    ok   $$s"; \

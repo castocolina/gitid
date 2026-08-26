@@ -64,13 +64,19 @@ type ceremonyConfig struct {
 	PreviewDiff   bool
 	Destructive   *FixDestructive
 	ResultMessage string
+	// ResultExtra is optional result content rendered directly below
+	// ResultMessage. Key ceremonies use the shared test-stage renderer here.
+	ResultExtra string
 	// ResultHint is an OPTIONAL faint follow-on line rendered directly below
 	// ResultMessage on the receipt (state B) — for a ceremony whose result
 	// is not fully "done" (e.g. the create-flow's D-01 key-unused store:
 	// design-review F4.2 found the receipt was a dead end with no pointer to
 	// finish the job once the user leaves the wizard). Empty by default, so
 	// every existing ceremonyConfig literal is unaffected.
-	ResultHint   string
+	ResultHint string
+	// ArchivePath is the D-06 key-retirement archive notice. It is empty for
+	// ceremonies that do not retire existing key material.
+	ArchivePath  string
 	ConfirmLabel string
 	// Hint is an optional faint row rendered under the destructive warning
 	// (D-12 shared-key downgrade note). Empty by default.
@@ -286,8 +292,11 @@ func (c ceremonyModel) view(width int) string {
 	var b strings.Builder
 	if c.done {
 		b.WriteString(styleHealthy.Render("✓ "+c.cfg.ResultMessage) + "\n")
+		if c.cfg.ResultExtra != "" {
+			b.WriteString(c.cfg.ResultExtra)
+		}
 		if c.cfg.ResultHint != "" {
-			b.WriteString(" " + c.cfg.ResultHint + "\n")
+			b.WriteString(" " + styleFaint.Render(c.cfg.ResultHint) + "\n")
 		}
 		b.WriteString("\n")
 		for _, t := range c.cfg.Targets {
@@ -329,9 +338,12 @@ func (c ceremonyModel) view(width int) string {
 		// leaving it an undisclosed side effect of "Touches".
 		b.WriteString(styleFaint.Render(wrap.Render("Creates "+strings.Join(c.cfg.Creates, " · ")+" (new directory)")) + "\n")
 	}
-	if len(c.cfg.Backups) > 0 {
+	if len(c.cfg.Backups) > 0 || c.cfg.ArchivePath != "" {
 		for _, bk := range c.cfg.Backups {
 			b.WriteString(styleFaint.Render("Backup → ") + bk + "\n")
+		}
+		if c.cfg.ArchivePath != "" {
+			b.WriteString(styleFaint.Render("Old key archived to ") + c.cfg.ArchivePath + "\n")
 		}
 		b.WriteString(styleFaint.Render("  (written first — restore it to undo)") + "\n")
 	} else {

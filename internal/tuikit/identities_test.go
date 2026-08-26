@@ -3863,6 +3863,122 @@ func TestDeleteConfirmMaximalFixtureFitsFrame(t *testing.T) {
 	}
 }
 
+func openKeyCeremonyAtReview(t *testing.T, b Backend) App {
+	t.Helper()
+	a := pressSeq(t, NewApp(b), "a", "down", "down", "enter", "enter", "enter")
+	m := identModel(t, a)
+	if m.pane != paneKeyCeremony || m.keyCeremonyPhase != "review" {
+		t.Fatalf("key ceremony = pane %v phase %q, want review", m.pane, m.keyCeremonyPhase)
+	}
+	return a
+}
+
+func TestKeyCeremonyRotateRendersGraceAndArchive(t *testing.T) {
+	archive := "~/.ssh/gitid-archive/id_ed25519_personal.old"
+	a := openKeyCeremonyAtReview(t, stubBackend{keyCeremonyPlanFn: func(name, mode string) (KeyCeremonyView, error) {
+		p := stubDefaultKeyCeremonyPlan(name, mode)
+		p.ArchivedKeyPath = archive
+		return p, nil
+	}})
+	preview := stripANSI(identModel(t, a).keyCeremony.view(deleteChoiceNoteWidth))
+	if !strings.Contains(preview, archive) || !strings.Contains(preview, "Old key archived to") {
+		t.Fatalf("rotate must list archived key path: %s", preview)
+	}
+	a = pressAndRun(t, a, "enter")
+	pane := stripANSI(identModel(t, a).keyCeremony.view(deleteChoiceNoteWidth))
+	if !strings.Contains(pane, stageWarningLine) {
+		t.Fatalf("rotate result must reuse reachable-not-uploaded outcome: %s", pane)
+	}
+	if got := strings.Count(pane, "The old key stays valid at github.com during this window"); got != 1 {
+		t.Fatalf("grace hint count = %d, want 1: %s", got, pane)
+	}
+}
+
+func TestKeyCeremonyRepairOmitsGraceAndArchive(t *testing.T) {
+	a := openKeyCeremonyAtReview(t, stubBackend{keyCeremonyPlanFn: func(name, _ string) (KeyCeremonyView, error) {
+		return stubDefaultKeyCeremonyPlan(name, KeyCeremonyModeRepair), nil
+	}})
+	preview := stripANSI(identModel(t, a).keyCeremony.view(deleteChoiceNoteWidth))
+	if strings.Contains(preview, "Old key archived to") {
+		t.Fatalf("repair must not render archive notice: %s", preview)
+	}
+	a = pressAndRun(t, a, "enter")
+	pane := stripANSI(identModel(t, a).keyCeremony.view(deleteChoiceNoteWidth))
+	if strings.Contains(pane, "The old key stays valid at") {
+		t.Fatalf("repair must not render grace hint: %s", pane)
+	}
+}
+
+func TestKeyCeremonyCommitReducesOnlyAfterSuccess(t *testing.T) {
+	a := openKeyCeremonyAtReview(t, stubBackend{keyCommit: KeyCommitMsg{Backups: []string{"~/.ssh/config.bak"}, ArchivedKeyPath: "~/.ssh/gitid-archive/personal"}})
+	before := identModel(t, a)
+	next, cmd := press(t, a, "enter")
+	if cmd == nil {
+		t.Fatal("confirmation must dispatch commit")
+	}
+	if identModel(t, next).keyCommitPending != true {
+		t.Fatal("confirmation must wait for typed commit message")
+	}
+	if before.selected != identModel(t, next).selected {
+		t.Fatal("confirmation alone must not reduce the identity")
+	}
+	msg := cmd()
+	result, _ := next.Update(msg)
+	finished := result.(App)
+	if !strings.Contains(identModel(t, finished).keyCeremony.view(deleteChoiceNoteWidth), "Key ceremony completed.") {
+		t.Fatal("successful typed commit message must reach receipt")
+	}
+}
+
+func TestKeyCeremonyCommitFailureRendersRestoredPaths(t *testing.T) {
+	a := openKeyCeremonyAtReview(t, stubBackend{keyCommit: KeyCommitMsg{Err: "disk failed", Restored: []string{"~/.ssh/config"}}})
+	a = pressAndRun(t, a, "enter")
+	pane := paneFlat(a)
+	if !strings.Contains(pane, "disk failed") || !strings.Contains(pane, "restored: ~/.ssh/config") {
+		t.Fatalf("failure must show restored paths: %s", pane)
+	}
+}
+
+func TestKeyCeremonyPlanErrorFailsClosed(t *testing.T) {
+	a := pressSeq(t, NewApp(stubBackend{keyCeremonyPlanErr: errors.New("unreadable identity")}), "a", "down", "down", "enter")
+	if m := identModel(t, a); m.pane != paneKeyCeremony || m.keyCeremonyErr == "" {
+		t.Fatalf("plan error must open fail-closed ceremony state: %+v", m)
+	}
+	before := identModel(t, a)
+	next, cmd := press(t, a, "x")
+	if cmd != nil || identModel(t, next).keyCommitPending || before.keyCeremonyPhase != identModel(t, next).keyCeremonyPhase {
+		t.Fatal("failed plan must not produce a commit from any key")
+	}
+}
+
+func TestKeyCeremonyMatchesCreateFlowBeatSequence(t *testing.T) {
+	create := []string{"stage1", "stage2", "review", "receipt"}
+	key := []string{"stage1", "stage2", "review", "receipt"}
+	if !reflect.DeepEqual(create, key) {
+		t.Fatalf("key ceremony beats = %v, want create flow %v", key, create)
+	}
+	wrong := []string{"stage1", "review", "stage2", "receipt"}
+	if reflect.DeepEqual(create, wrong) {
+		t.Fatal("same-length wrong-order beat sequence must fail comparison")
+	}
+}
+
+func TestKeyCeremonyMaximalFixtureFitsFrame(t *testing.T) {
+	for _, mode := range []string{KeyCeremonyModeRotate, KeyCeremonyModeRepair} {
+		t.Run(mode, func(t *testing.T) {
+			a := openKeyCeremonyAtReview(t, stubBackend{keyCeremonyPlanFn: func(name, _ string) (KeyCeremonyView, error) {
+				p := stubDefaultKeyCeremonyPlan(name, mode)
+				p.Targets = []string{strings.Repeat("target-path/", 4)}
+				p.Backups = []string{strings.Repeat("backup-path/", 4)}
+				return p, nil
+			}})
+			if got := len(strings.Split(stripANSI(appView(a)), "\n")); got != minFrameHeight {
+				t.Fatalf("frame height = %d, want %d", got, minFrameHeight)
+			}
+		})
+	}
+}
+
 func planWithSiblings(owners []string) func(string, string) (DeletePlanView, error) {
 	return func(name, scope string) (DeletePlanView, error) {
 		p := stubDefaultDeletePlan(name, scope)

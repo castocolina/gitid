@@ -152,6 +152,9 @@ type stubBackend struct {
 	keyActionErr          error
 	deletePlanErr         error
 	deletePlanFn          func(name, scope string) (DeletePlanView, error)
+	keyCeremonyPlanErr    error
+	keyCeremonyPlanFn     func(name, mode string) (KeyCeremonyView, error)
+	keyCommit             KeyCommitMsg
 }
 
 var _ Backend = stubBackend{}
@@ -511,6 +514,57 @@ func (b stubBackend) DeletePlan(name, scope string) (DeletePlanView, error) {
 		return b.deletePlanFn(name, scope)
 	}
 	return stubDefaultDeletePlan(name, scope), nil
+}
+
+func (b stubBackend) KeyCeremonyPlan(name, mode string) (KeyCeremonyView, error) {
+	if b.keyCeremonyPlanErr != nil {
+		return KeyCeremonyView{}, b.keyCeremonyPlanErr
+	}
+	if b.keyCeremonyPlanFn != nil {
+		return b.keyCeremonyPlanFn(name, mode)
+	}
+	return stubDefaultKeyCeremonyPlan(name, mode), nil
+}
+
+func (b stubBackend) CommitRotate(string) tea.Cmd {
+	return func() tea.Msg {
+		result := b.keyCommit
+		result.Mode = KeyCeremonyModeRotate
+		return result
+	}
+}
+
+func (b stubBackend) CommitNewKey(string) tea.Cmd {
+	return func() tea.Msg {
+		result := b.keyCommit
+		result.Mode = KeyCeremonyModeRepair
+		return result
+	}
+}
+
+func stubDefaultKeyCeremonyPlan(name, mode string) KeyCeremonyView {
+	row, _ := findStubRow(name)
+	keyPath := row.KeyPath
+	if keyPath == "" {
+		keyPath = "~/.ssh/id_ed25519_" + name
+	}
+	provider := hostSuffix(row.SSHHost)
+	if provider == "" {
+		provider = defaultProvider
+	}
+	plan := KeyCeremonyView{
+		Mode:         mode,
+		IdentityName: name,
+		ProviderHost: provider,
+		KeyPath:      keyPath,
+		PubKeyPath:   keyPath + ".pub",
+		Targets:      []string{"~/.ssh/config", "~/.ssh/allowed_signers", keyPath},
+		Backups:      []string{NewBackupPath("~/.ssh/config")},
+	}
+	if mode == KeyCeremonyModeRotate {
+		plan.ArchivedKeyPath = "~/.ssh/gitid-archive/id_ed25519_" + name + ".old"
+	}
+	return plan
 }
 
 func stubDefaultDeletePlan(name, scope string) DeletePlanView {

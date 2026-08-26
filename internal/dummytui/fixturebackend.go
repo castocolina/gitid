@@ -385,6 +385,27 @@ func (FixtureBackend) CommitDelete(_ string, scope string) tea.Cmd {
 	})
 }
 
+// CommitRotate returns the dummy's successful rotation result.
+func (FixtureBackend) CommitRotate(name string) tea.Cmd {
+	return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
+		return tuikit.KeyCommitMsg{
+			Mode:            tuikit.KeyCeremonyModeRotate,
+			Backups:         []string{tuikit.NewBackupPath("~/.ssh/config")},
+			ArchivedKeyPath: "~/.ssh/gitid-archive/id_ed25519_" + name + ".old",
+		}
+	})
+}
+
+// CommitNewKey returns the dummy's successful repair result.
+func (FixtureBackend) CommitNewKey(string) tea.Cmd {
+	return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
+		return tuikit.KeyCommitMsg{
+			Mode:    tuikit.KeyCeremonyModeRepair,
+			Backups: []string{tuikit.NewBackupPath("~/.ssh/config")},
+		}
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Clone (D-14/D-15/D-16/D-17, MGR-04) — plan 05-05.
 // ---------------------------------------------------------------------------
@@ -449,6 +470,35 @@ func (FixtureBackend) KeyActionFor(name string) (string, error) {
 		return tuikit.KeyCeremonyModeRepair, nil
 	}
 	return tuikit.KeyCeremonyModeRotate, nil
+}
+
+// KeyCeremonyPlan returns fixture facts for the rotate or repair ceremony.
+func (FixtureBackend) KeyCeremonyPlan(name, mode string) (tuikit.KeyCeremonyView, error) {
+	row, ok := findFixtureRow(name)
+	if !ok {
+		return tuikit.KeyCeremonyView{}, fmt.Errorf("unknown identity %q", name)
+	}
+	keyPath := row.KeyPath
+	if keyPath == "" {
+		keyPath = "~/.ssh/id_ed25519_" + name
+	}
+	provider := strings.TrimPrefix(row.SSHHost, name+".")
+	if provider == "" {
+		provider = "github.com"
+	}
+	plan := tuikit.KeyCeremonyView{
+		Mode:         mode,
+		IdentityName: name,
+		ProviderHost: provider,
+		KeyPath:      keyPath,
+		PubKeyPath:   keyPath + ".pub",
+		Targets:      []string{"~/.ssh/config", "~/.ssh/allowed_signers", keyPath},
+		Backups:      []string{tuikit.NewBackupPath("~/.ssh/config")},
+	}
+	if mode == tuikit.KeyCeremonyModeRotate {
+		plan.ArchivedKeyPath = "~/.ssh/gitid-archive/id_ed25519_" + name + ".old"
+	}
+	return plan, nil
 }
 
 // DeletePlan answers from fixture rows so the demo delete screens render a

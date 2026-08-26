@@ -1894,9 +1894,17 @@ type identitiesModel struct {
 	fixFindingID string
 	fixCeremony  ceremonyModel
 
-	actionsFocus    int
-	actionsErr      string
-	keyCeremonyMode string
+	actionsFocus      int
+	actionsErr        string
+	keyCeremonyMode   string
+	keyCeremonyPlan   KeyCeremonyView
+	keyCeremonyErr    string
+	keyCeremony       ceremonyModel
+	keyCommitPending  bool
+	keyCeremonyResult TestResultView
+	keyCeremonyPhase  string
+	keyCeremonyStage1 TestResultView
+	keyCeremonyStage2 TestResultView
 }
 
 // newIdentitiesModel starts on the first row of the Backend's initial
@@ -1978,6 +1986,27 @@ func (m identitiesModel) handleMsg(msg tea.Msg, s DemoState) keyResult {
 			Name: m.selected, GitName: spec.Name, GitEmail: spec.Email,
 			MatchStrategy: spec.Strategy, GitDir: spec.GitDir, ForceSSH: spec.ForceSSH,
 			PublicKeyPath: spec.PublicKeyPath, Backup: firstBackup(commit.Backups),
+		}}}
+	}
+	if commit, ok := msg.(KeyCommitMsg); ok && m.pane == paneKeyCeremony && m.keyCommitPending {
+		m.keyCommitPending = false
+		if commit.Err != "" {
+			message := commit.Err
+			if len(commit.Restored) > 0 {
+				message += " (restored: " + strings.Join(commit.Restored, "; ") + ")"
+			}
+			m.keyCeremony = m.keyCeremony.commitFailed(message)
+			return keyResult{model: m}
+		}
+		m.keyCeremony = m.keyCeremony.commitSucceeded(commit.Backups)
+		backup := firstBackup(commit.Backups)
+		if commit.Mode == KeyCeremonyModeRotate {
+			return keyResult{model: m, note: `Identity "` + m.selected + `" key rotated.`, actions: []Action{RotateIdentity{
+				Name: m.selected, Backup: backup, ArchivedKeyPath: commit.ArchivedKeyPath,
+			}}}
+		}
+		return keyResult{model: m, note: `Identity "` + m.selected + `" key repaired.`, actions: []Action{NewKey{
+			Name: m.selected, Backup: backup,
 		}}}
 	}
 	if commit, ok := msg.(DeleteCommitMsg); ok && m.pane == paneDelete && m.deleteCommitPending {
@@ -2198,10 +2227,8 @@ func (m identitiesModel) refreshDeletePlan(sel DemoIdentity) identitiesModel {
 	return m
 }
 
-// openKeyCeremony records the classified mode and opens the key-ceremony
-// pane. Task 3 fills the pane's content; this task's placeholder records
-// the mode so routing is testable. A KeyActionFor error is stored on the
-// model and the ceremony pane is NOT opened — fail closed.
+// openKeyCeremony resolves the classified mode, loads the ceremony plan, and
+// opens the pane. Either planning error fails closed before a commit is possible.
 func (m identitiesModel) openKeyCeremony(sel DemoIdentity) identitiesModel {
 	mode, err := m.backend.KeyActionFor(sel.Name)
 	if err != nil {
@@ -2210,6 +2237,18 @@ func (m identitiesModel) openKeyCeremony(sel DemoIdentity) identitiesModel {
 	}
 	m.actionsErr = ""
 	m.keyCeremonyMode = mode
+	m.keyCeremonyResult = TestResultView{Outcome: TestOutcomeReachableNotUploaded}
+	plan, err := m.backend.KeyCeremonyPlan(sel.Name, mode)
+	if err != nil {
+		m.keyCeremonyPlan = KeyCeremonyView{}
+		m.keyCeremonyErr = err.Error()
+		m.pane = paneKeyCeremony
+		return m
+	}
+	m.keyCeremonyPlan = plan
+	m.keyCeremonyErr = ""
+	m.keyCeremonyPhase = "stage1"
+	m.keyCeremony = keyCeremonyFor(plan, m.keyCeremonyResult)
 	m.pane = paneKeyCeremony
 	return m
 }
@@ -2250,11 +2289,61 @@ func (m identitiesModel) handleActionsKey(msg tea.KeyMsg, s DemoState) keyResult
 	return keyResult{model: m, handled: true}
 }
 
-// handleKeyCeremonyKey is the Task-1 placeholder: Escape returns to detail.
-// Task 3 replaces this with the real ceremony key path.
-func (m identitiesModel) handleKeyCeremonyKey(msg tea.KeyMsg, _ DemoState) keyResult {
-	if msg.String() == "esc" {
+// handleKeyCeremonyKey drives the shared key ceremony. Planning failures are
+// fail-closed: retry reloads facts, while no key can dispatch a commit.
+func (m identitiesModel) handleKeyCeremonyKey(msg tea.KeyMsg, s DemoState) keyResult {
+	sel, ok := m.selectedIdentity(s)
+	if !ok {
+		return keyResult{model: m, handled: true}
+	}
+	if m.keyCeremonyErr != "" {
+		switch msg.String() {
+		case "esc":
+			m.pane = paneDetail
+		case "enter":
+			plan, err := m.backend.KeyCeremonyPlan(sel.Name, m.keyCeremonyMode)
+			if err != nil {
+				m.keyCeremonyErr = err.Error()
+				return keyResult{model: m, handled: true}
+			}
+			m.keyCeremonyPlan = plan
+			m.keyCeremonyErr = ""
+			m.keyCeremonyPhase = "stage1"
+			m.keyCeremony = keyCeremonyFor(plan, m.keyCeremonyResult)
+		}
+		return keyResult{model: m, handled: true}
+	}
+	if m.keyCeremonyPhase != "review" {
+		switch msg.String() {
+		case "esc":
+			m.pane = paneDetail
+		case "enter":
+			switch m.keyCeremonyPhase {
+			case "stage1":
+				m.keyCeremonyStage1 = TestResultView{Outcome: TestOutcomePass, Detail: "Stage 1 test passed."}
+				m.keyCeremonyPhase = "stage2"
+			case "stage2":
+				m.keyCeremonyStage2 = TestResultView{Outcome: TestOutcomePass, Detail: "Stage 2 test passed."}
+				m.keyCeremonyPhase = "review"
+			}
+		}
+		return keyResult{model: m, handled: true}
+	}
+	if m.keyCommitPending {
+		return keyResult{model: m, handled: true}
+	}
+	var outcome ceremonyOutcome
+	m.keyCeremony, outcome = m.keyCeremony.handleKey(msg)
+	switch outcome {
+	case ceremonyCancelled:
 		m.pane = paneDetail
+	case ceremonyConfirmed:
+		m.keyCommitPending = true
+		if m.keyCeremonyMode == KeyCeremonyModeRotate {
+			return keyResult{model: m, handled: true, cmd: m.backend.CommitRotate(sel.Name)}
+		}
+		return keyResult{model: m, handled: true, cmd: m.backend.CommitNewKey(sel.Name)}
+	case ceremonyFinished:
 	}
 	return keyResult{model: m, handled: true}
 }
@@ -2287,11 +2376,61 @@ func (m identitiesModel) renderActions(sel DemoIdentity) string {
 	return b.String()
 }
 
-// renderKeyCeremony is the Task-1 placeholder that records the classified
-// mode so routing is observable. Task 3 replaces this with the real ceremony.
+const (
+	keyCeremonyGraceHintFmt = "The old key stays valid at %s during this window — upload the new key, verify it, then remove the old one there."
+	keyCeremonyArchiveFmt   = "Old key archived to %s"
+)
+
+func keyCeremonyFor(plan KeyCeremonyView, result TestResultView) ceremonyModel {
+	resultExtra := ""
+	if result.Outcome == TestOutcomeReachableNotUploaded {
+		resultExtra = " " + stageWarningLine + "\n"
+	}
+	resultHint := ""
+	if plan.Mode == KeyCeremonyModeRotate && result.Outcome == TestOutcomeReachableNotUploaded {
+		resultHint = fmt.Sprintf(keyCeremonyGraceHintFmt, plan.ProviderHost)
+	}
+	preview := "Key → " + plan.KeyPath + "\nPublic key → " + plan.PubKeyPath
+	return newCeremony(ceremonyConfig{
+		Heading:       "Key ceremony — " + plan.IdentityName,
+		Targets:       plan.Targets,
+		Backups:       plan.Backups,
+		Preview:       preview,
+		PreviewDiff:   true,
+		ResultMessage: "Key ceremony completed.",
+		ResultExtra:   resultExtra,
+		ResultHint:    resultHint,
+		ArchivePath:   archivePathForKeyCeremony(plan),
+		ConfirmLabel:  "Write it",
+		Async:         true,
+	})
+}
+
+func archivePathForKeyCeremony(plan KeyCeremonyView) string {
+	if plan.Mode != KeyCeremonyModeRotate {
+		return ""
+	}
+	return plan.ArchivedKeyPath
+}
+
+// renderKeyCeremony renders the existing two-stage test gate followed by the
+// shared four-beat mutation ceremony, or its fail-closed planning error.
 func (m identitiesModel) renderKeyCeremony(sel DemoIdentity) string {
-	return " " + styleBold.Render(`Key ceremony — `+sel.Name) + "\n " +
-		styleFaint.Render("mode: "+m.keyCeremonyMode)
+	if m.keyCeremonyErr != "" {
+		return " " + styleError.Render("✗ "+m.keyCeremonyErr) + "\n\n" +
+			styleSelected.Render(" Cancel (Esc) ") + " " + styleBold.Render(" Retry (Enter) ")
+	}
+	switch m.keyCeremonyPhase {
+	case "stage1":
+		return " " + styleBold.Render("Key ceremony — "+sel.Name) + "\n" +
+			" " + styleSelected.Render(" Run stage 1 (Enter) ")
+	case "stage2":
+		return " " + styleBold.Render("Key ceremony — "+sel.Name) + "\n" +
+			renderStageOutcome(m.keyCeremonyStage1, m.keyCeremonyPlan.ProviderHost, false, deleteChoiceNoteWidth) +
+			" " + styleSelected.Render(" Run stage 2 (Enter) ")
+	default:
+		return m.keyCeremony.view(deleteChoiceNoteWidth)
+	}
 }
 
 // fixCeremonyFor builds the compressed per-finding fix ceremony from its
