@@ -274,8 +274,28 @@ Plans:
    review compares it with `cmd/gitid-dummy` and classifies every difference as an
    improvement or a defect. (DLV-04, DLV-06)
 
-**Plans**: TBD
+**Plans**: 5 plans in 5 waves (run SEQUENTIALLY per LEARNINGS L11 — the pre-commit hooks lint the whole module)
 **UI hint**: yes
+
+**Wave 1**
+
+- [ ] 06-01-PLAN.md — TRACER: one option end-to-end (three-probe read → real provenance render → backed-up idempotent write); `EnsureGlobals` as the single `Host *` owner; `_global` → `global-ssh` rename + reserved-name registry consolidation (GSSH-01)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 06-02-PLAN.md — All six options: four-state model, UseKeychain/IdentitiesOnly special cases, platform + OpenSSH-version gates, D-10 fixture correction pinned by a parity test (GSSH-01)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 06-03-PLAN.md — Shadowing simulation before the write and re-verification after it; the one combined advisory ceremony with empty opt-in selection and journal-backed rollback; Options-sub-tab PTY e2e (GSSH-01, DLV-04, DLV-06)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 06-04-PLAN.md — Storage & preview sub-tab wired to the real migration engine (concurrent-modification detection discharged first); Global SSH demo banner removed; Storage-sub-tab PTY e2e (GSSH-01, DLV-04, DLV-06)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 06-05-PLAN.md — `gitid ssh` command group replacing the reserved noun + parity-matrix rows; Global SSH screens registered in the visual-regression gate with a classified allowlist and negative controls; phase exit battery (GSSH-01, SHELL-03, DLV-04)
 
 ### Phase 7: Global Git Options
 
