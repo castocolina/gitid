@@ -29,6 +29,15 @@ e2e]` to `.golangci.yml` so `make lint` actually covers these files going forwar
 (b) fix the 11 findings above. Not addressed here — out of 02-03's declared file scope
 and none of the findings are new regressions this plan introduced.
 
+**PARTIALLY ADDRESSED (audited 2026-08-26, Phase 5 closeout):** `make lint`'s
+`lint-tagged` target now runs `go vet` under `screenshot`/`smoke`/`e2e` tags and
+`golangci-lint run --build-tags screenshot ./internal/screenshot/...` (0 issues).
+The `e2e` tag is still not covered by `golangci-lint` itself (only `go vet`) —
+`golangci-lint run --build-tags=e2e ./e2e/...` on this machine hits an unrelated
+Go 1.27/golangci-lint typecheck incompatibility in the stdlib's own
+`crypto/internal/randutil`, not this project's code. Still open; out of Phase 5's
+scope to chase a toolchain compatibility issue.
+
 ## From 02-11 (2026-07-03)
 
 `make test` (`go test -race -coverprofile=coverage.out ./...`) fails with `go: no
@@ -51,14 +60,19 @@ this plan's declared file scope and not a regression this plan introduced.
 Three cosmetic-robustness minors left open by the final three-reviewer convergence
 pass on 0169ae7 (all reviewers verdict: ready to present; none affects behavior today):
 
-- `internal/dummytui/globalssh.go` (`handleStorageClick` radio rows) and
+- ~~`internal/dummytui/globalssh.go` (`handleStorageClick` radio rows) and
   `internal/dummytui/identities.go` (`paneDeleteScope` click) match option labels with
-  whole-line `strings.Contains` instead of the `needleSpan`/`hitNeedle` x-range
-  discipline the rest of the mouse layer uses. No colliding strings exist in current
-  copy; route both through `hitNeedle` for robustness.
-- `footerActionAt` maps click spans from the untruncated hint list; if a contextual
-  footer line ever truncated with `…`, a click in the ellipsis region could dispatch a
-  hidden action. All current hint sets fit 100 columns; theoretical.
+  whole-line `strings.Contains`...~~ **STALE (audited 2026-08-26, Phase 5 closeout):**
+  neither file exists anymore — `internal/dummytui` was restructured to
+  `data.go`/`fixturebackend.go`/`doc.go` only; the mouse layer this note referred to
+  now lives in `internal/tuikit`.
+- ~~`footerActionAt` maps click spans from the untruncated hint list...~~ **FIXED
+  (2026-08-26, commit `313e559`):** confirmed no longer theoretical — this session's
+  own `renderFooterLine` fix (dropping whole trailing actions instead of padding to
+  width, commit `7468bcf`) made the mismatch live. `footerActionAt` now shares a
+  `footerFit` decision with `renderFooterLine` so a click can never target a
+  dropped/unrendered action. See `TestFooterActionAtNeverHitsADroppedAction`.
 - Ceremony primary state renders Cancel with the default-focused (reverse) look while
   Enter still confirms — a deliberate, test-pinned mirror of the web's ceremony-level
   Enter handler; noted as a possible visual surprise on non-destructive ceremonies.
+  Still open — unchanged, low-priority design note, not touched by this audit.
