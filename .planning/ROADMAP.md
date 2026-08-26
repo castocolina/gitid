@@ -274,28 +274,36 @@ Plans:
    review compares it with `cmd/gitid-dummy` and classifies every difference as an
    improvement or a defect. (DLV-04, DLV-06)
 
-**Plans**: 5 plans in 5 waves (run SEQUENTIALLY per LEARNINGS L11 — the pre-commit hooks lint the whole module)
+**Plans**: 7 plans in 7 waves (run SEQUENTIALLY per LEARNINGS L11 — the pre-commit hooks lint the whole module). Re-planned after the cross-AI review in `06-REVIEWS.md`: the write-authority conflict was resolved onto one per-verb ceremony, and the two oversized waves were split (the registry/migration work out of Wave 1, and the CLI apart from the visual gate).
 **UI hint**: yes
 
 **Wave 1**
 
-- [ ] 06-01-PLAN.md — TRACER: one option end-to-end (three-probe read → real provenance render → backed-up idempotent write); `EnsureGlobals` as the single `Host *` owner; `_global` → `global-ssh` rename + reserved-name registry consolidation (GSSH-01)
+- [ ] 06-01-PLAN.md — TRACER: one option end-to-end (probe set → provable provenance render → backed-up idempotent write) through `runGlobalSSHApply`, the SINGLE write authority; `EnsureGlobals` as the single `Host *` owner with `RenderGlobalBlock` deleted and every create/rotate/repair call site retargeted; placement in the resolved storage target, last (GSSH-01)
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 06-02-PLAN.md — All six options: four-state model, UseKeychain/IdentitiesOnly special cases, platform + OpenSSH-version gates, D-10 fixture correction pinned by a parity test (GSSH-01)
+- [ ] 06-02-PLAN.md — Reserved-name registry consolidation (`global-ssh` + legacy), and the migration classification that registration would otherwise break: the globals block MOVES with the identities, the Include wiring stays put (GSSH-01)
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 06-03-PLAN.md — Shadowing simulation before the write and re-verification after it; the one combined advisory ceremony with empty opt-in selection and journal-backed rollback; Options-sub-tab PTY e2e (GSSH-01, DLV-04, DLV-06)
+- [ ] 06-03-PLAN.md — All six options: four-state model keyed on source class (never misattributing an external value to the user), per-source probe-error handling, UseKeychain/IdentitiesOnly special cases, platform + OpenSSH-version gates with a compatibility-unverified refusal, D-10 fixture correction pinned by a parity test (GSSH-01)
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 06-04-PLAN.md — Storage & preview sub-tab wired to the real migration engine (concurrent-modification detection discharged first); Global SSH demo banner removed; Storage-sub-tab PTY e2e (GSSH-01, DLV-04, DLV-06)
+- [ ] 06-04-PLAN.md — Whole-config-graph shadowing simulation before the write and re-verification after it, as extra stages of the one write authority; the combined advisory ceremony with empty opt-in selection and journal-backed rollback; Options-sub-tab PTY e2e including inconclusive and commit-failure cases (GSSH-01, DLV-04, DLV-06)
 
 **Wave 5** *(blocked on Wave 4)*
 
-- [ ] 06-05-PLAN.md — `gitid ssh` command group replacing the reserved noun + parity-matrix rows; Global SSH screens registered in the visual-regression gate with a classified allowlist and negative controls; phase exit battery (GSSH-01, SHELL-03, DLV-04)
+- [ ] 06-05-PLAN.md — Migration engine hardened before a button reaches it (pure `PlanMigration` preview, backup-only seam, concurrency detection before the backups, abort that preserves the external edit); Storage & preview sub-tab wired to it; Global SSH demo banner removed; Storage-sub-tab PTY e2e (GSSH-01; re-exercises STORE-01/03/04, DLV-04, DLV-06)
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [ ] 06-06-PLAN.md — `gitid ssh` command group replacing the reserved noun, with a frozen command tree, a frozen versioned JSON schema and a frozen exit-status contract, wired to the same per-verb ceremonies the TUI calls; parity-matrix rows (GSSH-01, SHELL-03)
+
+**Wave 7** *(blocked on Wave 6)*
+
+- [ ] 06-07-PLAN.md — Global SSH screens registered in the visual-regression gate with a classified allowlist, explicit HTML non-applicability and four negative controls; phase exit battery; cross-AI review packet with a `06-REVIEWS.md` closure table (GSSH-01, DLV-04, DLV-06)
 
 ### Phase 7: Global Git Options
 
