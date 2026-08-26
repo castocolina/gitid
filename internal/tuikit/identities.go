@@ -51,7 +51,11 @@ const (
 	paneDeleteScope
 	paneDelete
 	paneFix
+	paneActions
+	paneKeyCeremony
 )
+
+const actionMenuRows = 4
 
 // wizardProviders are the create wizard's provider suggestions.
 var wizardProviders = []string{"github.com", "gitlab.com", "bitbucket.org"}
@@ -1880,6 +1884,10 @@ type identitiesModel struct {
 	cloneErr     string
 	fixFindingID string
 	fixCeremony  ceremonyModel
+
+	actionsFocus    int
+	actionsErr      string
+	keyCeremonyMode string
 }
 
 // newIdentitiesModel starts on the first row of the Backend's initial
@@ -2064,6 +2072,10 @@ func (m identitiesModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		return m.handleDeleteKey(msg, s)
 	case paneFix:
 		return m.handleFixKey(msg, s)
+	case paneActions:
+		return m.handleActionsKey(msg, s)
+	case paneKeyCeremony:
+		return m.handleKeyCeremonyKey(msg, s)
 	}
 	return keyResult{model: m}
 }
@@ -2101,22 +2113,25 @@ func (m identitiesModel) handleDetailKey(msg tea.KeyMsg, s DemoState) keyResult 
 		}
 		m = m.openGitForm(sel)
 		return keyResult{model: m, handled: true}
+	case "a":
+		if !ok {
+			return keyResult{model: m, handled: true}
+		}
+		m.pane = paneActions
+		m.actionsFocus = 0
+		m.actionsErr = ""
+		return keyResult{model: m, handled: true}
 	case "c":
 		if !ok {
 			return keyResult{model: m, handled: true}
 		}
-		m.pane = paneClone
-		m.cloneInput = newTextInput(m.backend.SuggestCloneName(sel.Name))
-		m.cloneInput.Focus()
-		m.cloneOnButton = false
-		m.cloneErr = ""
+		m = m.openClonePrompt(sel)
 		return keyResult{model: m, handled: true}
 	case "d":
 		if !ok {
 			return keyResult{model: m, handled: true}
 		}
-		m.pane = paneDeleteScope
-		m.deleteScope = "git-only" // safer scope default-focused
+		m = m.openDeleteChoice(sel)
 		return keyResult{model: m, handled: true}
 	case "f":
 		if !ok {
@@ -2130,6 +2145,121 @@ func (m identitiesModel) handleDetailKey(msg tea.KeyMsg, s DemoState) keyResult 
 		return keyResult{model: m, handled: true}
 	}
 	return keyResult{model: m}
+}
+
+// openClonePrompt is the one clone-prompt implementation both the detail
+// shortcut (`c`) and the action-menu clone row call (review R-33).
+func (m identitiesModel) openClonePrompt(sel DemoIdentity) identitiesModel {
+	m.pane = paneClone
+	m.cloneInput = newTextInput(m.backend.SuggestCloneName(sel.Name))
+	m.cloneInput.Focus()
+	m.cloneOnButton = false
+	m.cloneErr = ""
+	return m
+}
+
+// openDeleteChoice is the one delete-choice implementation both the detail
+// shortcut (`d`) and the action-menu delete row call (review R-33).
+func (m identitiesModel) openDeleteChoice(_ DemoIdentity) identitiesModel {
+	m.pane = paneDeleteScope
+	m.deleteScope = "git-only" // safer scope default-focused
+	return m
+}
+
+// openKeyCeremony records the classified mode and opens the key-ceremony
+// pane. Task 3 fills the pane's content; this task's placeholder records
+// the mode so routing is testable. A KeyActionFor error is stored on the
+// model and the ceremony pane is NOT opened — fail closed.
+func (m identitiesModel) openKeyCeremony(sel DemoIdentity) identitiesModel {
+	mode, err := m.backend.KeyActionFor(sel.Name)
+	if err != nil {
+		m.actionsErr = err.Error()
+		return m
+	}
+	m.actionsErr = ""
+	m.keyCeremonyMode = mode
+	m.pane = paneKeyCeremony
+	return m
+}
+
+// handleActionsKey drives the four-row action menu.
+func (m identitiesModel) handleActionsKey(msg tea.KeyMsg, s DemoState) keyResult {
+	sel, ok := m.selectedIdentity(s)
+	switch msg.String() {
+	case "esc":
+		m.pane = paneDetail
+		m.actionsErr = ""
+		return keyResult{model: m, handled: true}
+	case "down", "tab":
+		m.actionsFocus = (m.actionsFocus + 1) % actionMenuRows
+		m.actionsErr = ""
+		return keyResult{model: m, handled: true}
+	case "up", "shift+tab":
+		m.actionsFocus = (m.actionsFocus + actionMenuRows - 1) % actionMenuRows
+		m.actionsErr = ""
+		return keyResult{model: m, handled: true}
+	case "enter":
+		if !ok {
+			return keyResult{model: m, handled: true}
+		}
+		switch m.actionsFocus {
+		case 0:
+			m.pane = paneDetail
+			m.actionsErr = ""
+		case 1:
+			m = m.openClonePrompt(sel)
+		case 2:
+			m = m.openKeyCeremony(sel)
+		case 3:
+			m = m.openDeleteChoice(sel)
+		}
+		return keyResult{model: m, handled: true}
+	}
+	return keyResult{model: m, handled: true}
+}
+
+// handleKeyCeremonyKey is the Task-1 placeholder: Escape returns to detail.
+// Task 3 replaces this with the real ceremony key path.
+func (m identitiesModel) handleKeyCeremonyKey(msg tea.KeyMsg, _ DemoState) keyResult {
+	if msg.String() == "esc" {
+		m.pane = paneDetail
+	}
+	return keyResult{model: m, handled: true}
+}
+
+// actionMenuLabels is the approved four-row order (FIELDS.md action-menu).
+func actionMenuLabels() []string {
+	return []string{
+		IdentityManagerActionViewDetail,
+		IdentityManagerActionClone,
+		IdentityManagerActionNewKey,
+		IdentityManagerActionDelete,
+	}
+}
+
+// renderActions renders the four-row action menu; the focused row is reverse
+// video. A KeyActionFor error renders inline beneath the rows.
+func (m identitiesModel) renderActions(sel DemoIdentity) string {
+	var b strings.Builder
+	b.WriteString(" " + styleBold.Render(`Actions — `+sel.Name) + "\n\n")
+	for i, label := range actionMenuLabels() {
+		line := "  " + label
+		if i == m.actionsFocus {
+			line = "  " + styleSelected.Render(label)
+		}
+		b.WriteString(line + "\n")
+	}
+	if m.actionsErr != "" {
+		b.WriteString("\n " + styleError.Render(m.actionsErr) + "\n")
+	}
+	return b.String()
+}
+
+// renderKeyCeremony is the Task-1 placeholder that records the classified
+// mode so routing is observable. Task 3 replaces this with the real ceremony.
+func (m identitiesModel) renderKeyCeremony(sel DemoIdentity) string {
+	return " " + styleBold.Render(`Key ceremony — `+sel.Name) + "\n " +
+		styleFaint.Render("mode: "+m.keyCeremonyMode)
 }
 
 // fixCeremonyFor builds the compressed per-finding fix ceremony from its
@@ -3837,6 +3967,7 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 		if _, found := firstFixableFinding(s, sel.Name); found {
 			actions = append(actions, FooterAction{Key: "f", Label: "fix finding"})
 		}
+		actions = append(actions, FooterAction{Key: "a", Label: "actions"})
 	case paneCreate:
 		pane = m.renderWizard(s, detailWidth)
 		// wizardSteps (the LONG labels) is the breadcrumb/help source —
@@ -3930,6 +4061,15 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 		pane = m.fixCeremony.view(detailWidth)
 		crumbs = []string{sel.Name, "Fix"}
 		actions = ceremonyFooterActions()
+		status = "Esc returns to the identity detail without writing anything."
+	case paneActions:
+		pane = m.renderActions(sel)
+		crumbs = []string{sel.Name, "Actions"}
+		actions = []FooterAction{{Key: "↑↓/Tab", Label: "move"}, {Key: "Enter", Label: "activate"}}
+		status = "Esc returns to the identity detail without writing anything."
+	case paneKeyCeremony:
+		pane = m.renderKeyCeremony(sel)
+		crumbs = []string{sel.Name, "Key"}
 		status = "Esc returns to the identity detail without writing anything."
 	}
 

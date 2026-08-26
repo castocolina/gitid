@@ -90,6 +90,7 @@ func TestReduceNeverMutatesInput(t *testing.T) {
 		DeleteIdentity{Name: "clientB", Scope: "everything", Backup: "b"},
 		DeleteIdentity{Name: "personal", Scope: "git-only", Backup: "b"},
 		NewKey{Name: "clientB", Backup: "b"},
+		RotateIdentity{Name: "personal", Backup: "b", ArchivedKeyPath: "p"},
 		MarkScanned{},
 		FixFinding{ID: "git-includeif-missing-fragment", Backup: "b"},
 		ApplySSH{Keys: []string{"IdentitiesOnly"}, Backup: "b"},
@@ -224,6 +225,34 @@ func TestReduceNewKey(t *testing.T) {
 	}
 	if clientB.Note != "New key generated; Host block re-points at it." {
 		t.Errorf("note = %q", clientB.Note)
+	}
+}
+
+func TestReduceRotateIdentity(t *testing.T) {
+	s := Seed()
+	work := findIdentity(t, s, "work")
+	next := Reduce(s, RotateIdentity{
+		Name:            "personal",
+		Backup:          "~/.ssh/id_ed25519_personal.archive",
+		ArchivedKeyPath: "~/.ssh/archive/id_ed25519_personal",
+	})
+	got := findIdentity(t, next, "personal")
+	if got.Note != "Key rotated — previous key archived." {
+		t.Errorf("note = %q, want it to name the rotation", got.Note)
+	}
+	if len(next.Backups) != 1 || next.Backups[0] != "~/.ssh/id_ed25519_personal.archive" {
+		t.Errorf("backup not prepended: %v", next.Backups)
+	}
+	if findIdentity(t, next, "work") != work {
+		t.Error("rotate must leave every other identity untouched")
+	}
+}
+
+func TestReduceRotateIdentityUnknownName(t *testing.T) {
+	s := Seed()
+	next := Reduce(s, RotateIdentity{Name: "ghost", Backup: "b", ArchivedKeyPath: "p"})
+	if !reflect.DeepEqual(next, s) {
+		t.Error("rotate of an unknown name must be a no-op")
 	}
 }
 

@@ -141,6 +141,7 @@ type realBackend struct {
 
 // compile-time proof the real composition root satisfies the seam.
 var _ tuikit.Backend = (*realBackend)(nil)
+var _ tuikit.IdentityPlanner = (*realBackend)(nil)
 
 // buildBackend constructs the real tuikit.Backend. It is the only production
 // caller of buildIdentityDeps, and the only place cmd/gitid resolves the
@@ -2843,4 +2844,40 @@ func atoiOr(s string, fallback int) int {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// ---------------------------------------------------------------------------
+// IdentityPlanner (plan 05-06). Real Commit/Plan bodies land in 05-07; these
+// methods exist so a missing real implementation is a compile error rather
+// than a silent NoopIdentityPlanner embed.
+// ---------------------------------------------------------------------------
+
+// KeyActionFor implements tuikit.IdentityPlanner. The live classification
+// lands in plan 05-07; until then the seam fails closed.
+func (*realBackend) KeyActionFor(string) (string, error) {
+	return "", tuikit.ErrPlannerNotImplemented
+}
+
+// DeletePlan implements tuikit.IdentityPlanner. The live plan lands in 05-07.
+func (*realBackend) DeletePlan(string, string) (tuikit.DeletePlanView, error) {
+	return tuikit.DeletePlanView{}, tuikit.ErrPlannerNotImplemented
+}
+
+// KeyCeremonyPlan implements tuikit.IdentityPlanner. The live plan lands in 05-07.
+func (*realBackend) KeyCeremonyPlan(string, string) (tuikit.KeyCeremonyView, error) {
+	return tuikit.KeyCeremonyView{}, tuikit.ErrPlannerNotImplemented
+}
+
+// CommitRotate implements tuikit.IdentityPlanner. The live write lands in 05-07.
+func (*realBackend) CommitRotate(string) tea.Cmd {
+	return func() tea.Msg {
+		return tuikit.KeyCommitMsg{Err: tuikit.ErrPlannerNotImplemented.Error()}
+	}
+}
+
+// CommitNewKey implements tuikit.IdentityPlanner. The live write lands in 05-07.
+func (*realBackend) CommitNewKey(string) tea.Cmd {
+	return func() tea.Msg {
+		return tuikit.KeyCommitMsg{Err: tuikit.ErrPlannerNotImplemented.Error()}
+	}
 }

@@ -1,6 +1,7 @@
 package dummytui
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -70,4 +71,19 @@ func TestFixtureConsistency(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestFixtureBackendSatisfiesIdentityPlannerThroughNoop(t *testing.T) {
+	var _ tuikit.IdentityPlanner = FixtureBackend{}
+	rt := reflect.TypeOf(FixtureBackend{})
+	found := false
+	for i := range rt.NumField() {
+		if rt.Field(i).Type == reflect.TypeOf(tuikit.NoopIdentityPlanner{}) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("FixtureBackend must satisfy IdentityPlanner by embedding NoopIdentityPlanner")
+	}
 }

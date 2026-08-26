@@ -133,10 +133,21 @@ type DeleteIdentity struct {
 	Backup string
 }
 
-// NewKey regenerates the identity's key (heals key-missing).
+// NewKey is the repair action that generates a fresh key at the identity's
+// own canonical path and never touches pre-existing key material. Distinct
+// from RotateIdentity, which is the retirement ceremony that archives.
 type NewKey struct {
 	Name   string
 	Backup string
+}
+
+// RotateIdentity is the key-retirement ceremony: it archives the previous
+// key and records the rotation. Distinct from NewKey, which is the repair
+// action that never touches pre-existing key material.
+type RotateIdentity struct {
+	Name            string
+	Backup          string
+	ArchivedKeyPath string
 }
 
 // MarkScanned records that the doctor scan ran this session.
@@ -193,6 +204,7 @@ func (ConfigureGit) isAction()        {}
 func (CloneIdentity) isAction()       {}
 func (DeleteIdentity) isAction()      {}
 func (NewKey) isAction()              {}
+func (RotateIdentity) isAction()      {}
 func (MarkScanned) isAction()         {}
 func (FixFinding) isAction()          {}
 func (ApplySSH) isAction()            {}
@@ -319,6 +331,20 @@ func Reduce(state DemoState, action Action) DemoState { //nolint:gocyclo // one 
 				row.Note = "New key generated; Host block re-points at it."
 			}
 			next.Identities[i] = row
+		}
+		next.Backups = append([]string{a.Backup}, next.Backups...)
+	case RotateIdentity:
+		found := false
+		for i, row := range next.Identities {
+			if row.Name != a.Name {
+				continue
+			}
+			found = true
+			row.Note = "Key rotated — previous key archived."
+			next.Identities[i] = row
+		}
+		if !found {
+			return state
 		}
 		next.Backups = append([]string{a.Backup}, next.Backups...)
 	case MarkScanned:

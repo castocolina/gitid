@@ -146,6 +146,16 @@ const (
 	// IdentityManagerDeleteChoiceEverything is the full destructive delete
 	// scope (SSH + Git + key).
 	IdentityManagerDeleteChoiceEverything = "Delete everything (SSH + Git + key)"
+
+	// IdentityManagerActionViewDetail is the action-menu's first approved row.
+	IdentityManagerActionViewDetail = "View SSH-first detail"
+	// IdentityManagerActionClone is the action-menu's second approved row.
+	IdentityManagerActionClone = "Clone (c)"
+	// IdentityManagerActionNewKey is the action-menu's third approved row —
+	// one label that routes to rotate or repair from classified state.
+	IdentityManagerActionNewKey = "Generate new key"
+	// IdentityManagerActionDelete is the action-menu's fourth approved row.
+	IdentityManagerActionDelete = "Delete (d)"
 )
 
 // ---------------------------------------------------------------------------

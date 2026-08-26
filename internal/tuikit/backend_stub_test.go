@@ -146,11 +146,14 @@ func Seed() DemoState { return stubBackend{}.InitialState() }
 // UNCHANGED dummy-style form-validity gate; only a test that explicitly sets
 // gitStepAlwaysDisabled simulates the real binary's unconditional disable.
 type stubBackend struct {
+	NoopIdentityPlanner
 	gitStepAlwaysDisabled bool
 	gitStepReason         string
+	keyActionErr          error
 }
 
 var _ Backend = stubBackend{}
+var _ IdentityPlanner = stubBackend{}
 
 // GitStepDisabledReason implements the D-19 seam for tests. See the struct
 // doc comment above for the zero-value (dummy-style) default.
@@ -478,6 +481,23 @@ func findStubRow(name string) (stubIdentityRow, bool) {
 		}
 	}
 	return stubIdentityRow{}, false
+}
+
+// KeyActionFor answers from fixture rows: key-missing routes to repair,
+// every other classified state routes to rotate. A test-injected keyActionErr
+// fails closed so the menu cannot open the ceremony on a classification miss.
+func (b stubBackend) KeyActionFor(name string) (string, error) {
+	if b.keyActionErr != nil {
+		return "", b.keyActionErr
+	}
+	row, ok := findStubRow(name)
+	if !ok {
+		return "", fmt.Errorf("unknown identity %q", name)
+	}
+	if row.State == "key-missing" {
+		return KeyCeremonyModeRepair, nil
+	}
+	return KeyCeremonyModeRotate, nil
 }
 
 // ClonePrefill mirrors identity.DeriveCloneInput's D-14 copy/re-derive split

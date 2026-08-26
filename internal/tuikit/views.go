@@ -239,3 +239,63 @@ type ClonePrefillView struct {
 	// that carry the D-14 review flag — exactly two entries, always.
 	CopiedFields []string
 }
+
+// KeyCeremonyModeRotate / KeyCeremonyModeRepair are the plain-string forms of
+// the D-05 routing answer IdentityPlanner.KeyActionFor returns.
+const (
+	KeyCeremonyModeRotate = "rotate"
+	KeyCeremonyModeRepair = "repair"
+)
+
+// DeletePlanView is the render DTO both delete screens consume. Task 2 fills
+// the fields; the type exists here so IdentityPlanner can name it.
+type DeletePlanView struct {
+	Name                  string
+	Scope                 string
+	Targets               []DeleteTargetView
+	ProviderRewriteTarget *DeleteTargetView
+	SharedKeyOwners       []string
+	Hits                  []UnmanagedHitView
+	Disclaimer            string
+	KeyCopyPath           string
+	Backups               []string
+}
+
+// DeleteTargetView mirrors identity.DeleteTarget field-for-field so the one
+// conversion site in cmd/gitid is a straight field copy.
+type DeleteTargetView struct {
+	File  string
+	Block string
+	Label string
+}
+
+// UnmanagedHitView mirrors identity.UnmanagedHit field-for-field.
+type UnmanagedHitView struct {
+	File   string
+	Line   int
+	Region string
+	Text   string
+}
+
+// KeyCeremonyView is the render DTO the rotate/repair ceremony consumes.
+// Task 3 fills the fields; the type exists here so IdentityPlanner can name it.
+type KeyCeremonyView struct {
+	Mode            string
+	IdentityName    string
+	ProviderHost    string
+	KeyPath         string
+	PubKeyPath      string
+	ArchivedKeyPath string
+	Targets         []string
+	Backups         []string
+}
+
+// KeyCommitMsg completes an asynchronous rotate or new-key commit — delivered
+// from the tea.Cmd IdentityPlanner.CommitRotate / CommitNewKey return.
+type KeyCommitMsg struct {
+	Mode            string
+	Backups         []string
+	Restored        []string
+	ArchivedKeyPath string
+	Err             string
+}

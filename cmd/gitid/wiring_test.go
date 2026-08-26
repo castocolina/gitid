@@ -45,6 +45,15 @@ func TestBuildBackendSatisfiesSeam(t *testing.T) {
 	}
 }
 
+func TestRealBackendDoesNotEmbedNoopIdentityPlanner(t *testing.T) {
+	rt := reflect.TypeOf(realBackend{})
+	for i := range rt.NumField() {
+		if rt.Field(i).Type == reflect.TypeOf(tuikit.NoopIdentityPlanner{}) {
+			t.Fatal("realBackend must not embed NoopIdentityPlanner — a missing real implementation must be a compile error")
+		}
+	}
+}
+
 // TestIdentityDepsEveryFieldIsWired is the L2 real-constructor guard: EVERY
 // identity.Deps function field the real composition root builds must be
 // non-nil, and the failure must NAME the field.

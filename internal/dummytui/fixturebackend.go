@@ -44,7 +44,9 @@ var findingIdentityAttribution = map[string]string{
 // It holds no state of its own: the App owns the DemoState and hands it back
 // on every Persist, so the whole demo stays a pure (state, action) → state
 // reduction over data.go's fixtures.
-type FixtureBackend struct{}
+type FixtureBackend struct {
+	tuikit.NoopIdentityPlanner
+}
 
 // NewFixtureBackend returns the demo's fixture Backend. cmd/gitid-dummy is
 // its only production caller.
@@ -54,6 +56,7 @@ func NewFixtureBackend() FixtureBackend { return FixtureBackend{} }
 // injected-seam wiring blindspot: a seam that only "looks" wired is worse
 // than no seam at all).
 var _ tuikit.Backend = FixtureBackend{}
+var _ tuikit.IdentityPlanner = FixtureBackend{}
 
 // ---------------------------------------------------------------------------
 // Data
@@ -433,6 +436,19 @@ func (FixtureBackend) SuggestCloneName(source string) string {
 			return candidate
 		}
 	}
+}
+
+// KeyActionFor answers from fixture rows: key-missing routes to repair,
+// every other classified state routes to rotate.
+func (FixtureBackend) KeyActionFor(name string) (string, error) {
+	row, ok := findFixtureRow(name)
+	if !ok {
+		return "", fmt.Errorf("unknown identity %q", name)
+	}
+	if row.State == "key-missing" {
+		return tuikit.KeyCeremonyModeRepair, nil
+	}
+	return tuikit.KeyCeremonyModeRotate, nil
 }
 
 // ClonePrefill mirrors identity.DeriveCloneInput's D-14 copy/re-derive split

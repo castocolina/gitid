@@ -1,7 +1,9 @@
 package tuikit
 
 import (
+	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -3436,6 +3438,176 @@ func openWizardAtTestStage2(t *testing.T, b Backend) App {
 		Detail:  "identityfile " + spec.KeyPath,
 	}})
 	return m4.(App)
+}
+
+func TestActionMenuRendersFourApprovedRowsInOrder(t *testing.T) {
+	a := pressSeq(t, identitiesApp(), "a")
+	pane := paneFlat(a)
+	labels := []string{
+		IdentityManagerActionViewDetail,
+		IdentityManagerActionClone,
+		IdentityManagerActionNewKey,
+		IdentityManagerActionDelete,
+	}
+	last := -1
+	for _, label := range labels {
+		idx := strings.Index(pane, label)
+		if idx < 0 {
+			t.Fatalf("action menu missing %q:\n%s", label, pane)
+		}
+		if idx < last {
+			t.Errorf("row %q appears before the previous approved row", label)
+		}
+		last = idx
+	}
+}
+
+func TestActionMenuOpensOnAllocatedKeyAndCreateGitKeysStay(t *testing.T) {
+	a := pressSeq(t, identitiesApp(), "a")
+	if identModel(t, a).pane != paneActions {
+		t.Fatal("a must open the action menu (key-allocation table intra-surface key)")
+	}
+	a, _ = press(t, a, "esc")
+	if identModel(t, a).pane != paneDetail {
+		t.Fatal("esc must close the action menu back to the detail pane")
+	}
+	a, _ = press(t, a, "n")
+	if identModel(t, a).pane != paneCreate {
+		t.Fatal("n from detail must still open the create flow")
+	}
+	a, _ = press(t, a, "esc")
+	a, _ = press(t, a, "g")
+	if identModel(t, a).pane != paneGit {
+		t.Fatal("g from detail must still open the git screen")
+	}
+}
+
+func TestKeyRowRoutesHealthyIdentityToRotate(t *testing.T) {
+	a := pressSeq(t, identitiesApp(), "a", "down", "down", "enter")
+	m := identModel(t, a)
+	if m.pane != paneKeyCeremony {
+		t.Fatalf("pane = %v, want paneKeyCeremony", m.pane)
+	}
+	if m.keyCeremonyMode != KeyCeremonyModeRotate {
+		t.Errorf("mode = %q, want %q", m.keyCeremonyMode, KeyCeremonyModeRotate)
+	}
+}
+
+func TestKeyRowRoutesKeyMissingToRepair(t *testing.T) {
+	a := pressSeq(t, identitiesApp(), "down", "down", "down", "down", "down", "down")
+	if identModel(t, a).selected != "clientB" {
+		t.Fatalf("selected = %q, want clientB", identModel(t, a).selected)
+	}
+	a = pressSeq(t, a, "a", "down", "down", "enter")
+	m := identModel(t, a)
+	if m.pane != paneKeyCeremony {
+		t.Fatalf("pane = %v, want paneKeyCeremony", m.pane)
+	}
+	if m.keyCeremonyMode != KeyCeremonyModeRepair {
+		t.Errorf("mode = %q, want %q", m.keyCeremonyMode, KeyCeremonyModeRepair)
+	}
+}
+
+func TestDirectKeyAndMenuRowConverge(t *testing.T) {
+	s := Seed()
+	b := stubBackend{}
+	sel, ok := newIdentitiesModel(b, s).selectedIdentity(s)
+	if !ok {
+		t.Fatal("seed has no selected identity")
+	}
+
+	t.Run("clone", func(t *testing.T) {
+		fromKey := newIdentitiesModel(b, s)
+		fromKey = fromKey.handleDetailKey(mustKey("c"), s).model.(identitiesModel)
+		fromMenu := newIdentitiesModel(b, s)
+		fromMenu.pane = paneActions
+		fromMenu.actionsFocus = 1
+		fromMenu = fromMenu.handleActionsKey(mustKey("Enter"), s).model.(identitiesModel)
+		assertSameActionState(t, fromKey, fromMenu)
+	})
+	t.Run("delete", func(t *testing.T) {
+		fromKey := newIdentitiesModel(b, s)
+		fromKey = fromKey.handleDetailKey(mustKey("d"), s).model.(identitiesModel)
+		fromMenu := newIdentitiesModel(b, s)
+		fromMenu.pane = paneActions
+		fromMenu.actionsFocus = 3
+		fromMenu = fromMenu.handleActionsKey(mustKey("Enter"), s).model.(identitiesModel)
+		assertSameActionState(t, fromKey, fromMenu)
+	})
+	t.Run("key ceremony", func(t *testing.T) {
+		fromDirect := newIdentitiesModel(b, s).openKeyCeremony(sel)
+		fromMenu := newIdentitiesModel(b, s)
+		fromMenu.pane = paneActions
+		fromMenu.actionsFocus = 2
+		fromMenu = fromMenu.handleActionsKey(mustKey("Enter"), s).model.(identitiesModel)
+		assertSameActionState(t, fromDirect, fromMenu)
+	})
+}
+
+func assertSameActionState(t *testing.T, a, b identitiesModel) {
+	t.Helper()
+	if a.pane != b.pane {
+		t.Errorf("pane: %v vs %v", a.pane, b.pane)
+	}
+	if a.cloneInput.Value() != b.cloneInput.Value() || a.cloneOnButton != b.cloneOnButton || a.cloneErr != b.cloneErr {
+		t.Errorf("clone state diverged: %+v vs %+v", a.cloneInput.Value(), b.cloneInput.Value())
+	}
+	if a.deleteScope != b.deleteScope {
+		t.Errorf("deleteScope: %q vs %q", a.deleteScope, b.deleteScope)
+	}
+	if a.keyCeremonyMode != b.keyCeremonyMode || a.actionsErr != b.actionsErr {
+		t.Errorf("key ceremony: mode %q/%q err %q/%q", a.keyCeremonyMode, b.keyCeremonyMode, a.actionsErr, b.actionsErr)
+	}
+}
+
+func TestKeyActionForErrorFailsClosed(t *testing.T) {
+	a := NewApp(stubBackend{keyActionErr: errors.New("classification failed")})
+	a = pressSeq(t, a, "a", "down", "down", "enter")
+	m := identModel(t, a)
+	if m.pane == paneKeyCeremony {
+		t.Fatal("KeyActionFor error must not open the ceremony pane")
+	}
+	if m.pane != paneActions {
+		t.Fatalf("pane = %v, want paneActions", m.pane)
+	}
+	if !strings.Contains(paneFlat(a), "classification failed") {
+		t.Errorf("error text must render inline; pane:\n%s", paneFlat(a))
+	}
+}
+
+func TestIdentityPlannerMethodSetIsExactlyFive(t *testing.T) {
+	rt := reflect.TypeOf((*IdentityPlanner)(nil)).Elem()
+	want := []string{"KeyActionFor", "DeletePlan", "KeyCeremonyPlan", "CommitRotate", "CommitNewKey"}
+	if rt.NumMethod() != len(want) {
+		t.Fatalf("IdentityPlanner has %d methods, want exactly %d (review R2-10)", rt.NumMethod(), len(want))
+	}
+	got := map[string]bool{}
+	for i := range rt.NumMethod() {
+		got[rt.Method(i).Name] = true
+	}
+	for _, name := range want {
+		if !got[name] {
+			t.Errorf("IdentityPlanner missing method %s", name)
+		}
+	}
+	if got["CommitDelete"] {
+		t.Error("IdentityPlanner must not absorb CommitDelete (review R2-10)")
+	}
+}
+
+func TestStubBackendSatisfiesIdentityPlannerThroughNoop(t *testing.T) {
+	var _ IdentityPlanner = stubBackend{}
+	rt := reflect.TypeOf(stubBackend{})
+	found := false
+	for i := range rt.NumField() {
+		if rt.Field(i).Type == reflect.TypeOf(NoopIdentityPlanner{}) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("stubBackend must satisfy IdentityPlanner by embedding NoopIdentityPlanner")
+	}
 }
 
 // TestReusePickerManualPathRejectsInvalidCandidate proves an unrecognized

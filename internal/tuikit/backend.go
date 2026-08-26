@@ -1,6 +1,84 @@
 package tuikit
 
-import tea "charm.land/bubbletea/v2"
+import (
+	"errors"
+
+	tea "charm.land/bubbletea/v2"
+)
+
+// ErrPlannerNotImplemented is the sentinel NoopIdentityPlanner returns from
+// every method. Fixtures and test stubs embed the noop and override only the
+// methods they exercise; a missing real implementation must be a compile
+// error, not this sentinel at runtime.
+var ErrPlannerNotImplemented = errors.New("identity planner not implemented")
+
+// IdentityPlanner is the five Phase-5 preview and key-write seams.
+//
+// Ownership rule (review R2-10): Backend owns CommitDelete; IdentityPlanner
+// owns KeyActionFor, DeletePlan, KeyCeremonyPlan, CommitRotate, and
+// CommitNewKey. The dividing line is preview versus write — delete's preview
+// (DeletePlan) is a planner seam and delete's write (CommitDelete) is a
+// Backend seam, exactly one of each. IdentityPlanner contains exactly these
+// five methods and does NOT absorb CommitDelete.
+type IdentityPlanner interface {
+	// KeyActionFor returns the routing answer for one identity ("rotate" or
+	// "repair"). A non-nil error must fail closed: the menu row renders the
+	// error and does not open the ceremony pane.
+	KeyActionFor(name string) (string, error)
+	// DeletePlan returns the one plan value both delete screens render from.
+	// A non-nil error must fail closed: the confirm screen renders the error
+	// state with the confirm control disabled and no partial target list.
+	DeletePlan(name, scope string) (DeletePlanView, error)
+	// KeyCeremonyPlan returns the facts the rotate/repair ceremony renders.
+	// A non-nil error must fail closed: the ceremony pane renders the error
+	// and never advances to a beat that would trigger a commit.
+	KeyCeremonyPlan(name, mode string) (KeyCeremonyView, error)
+	// CommitRotate dispatches the confirmed rotate transaction off the
+	// update loop and eventually delivers a KeyCommitMsg.
+	CommitRotate(name string) tea.Cmd
+	// CommitNewKey dispatches the confirmed repair (new-key) transaction
+	// off the update loop and eventually delivers a KeyCommitMsg.
+	CommitNewKey(name string) tea.Cmd
+}
+
+// NoopIdentityPlanner implements every IdentityPlanner method with a
+// zero-value view plus ErrPlannerNotImplemented (and a command delivering
+// that error for the two commit seams). Fixtures and test stubs embed it
+// and override only what they exercise, so a sixth method in a later phase
+// does not break every implementer. The real backend must NOT embed it — a
+// missing real implementation must be a compile error.
+type NoopIdentityPlanner struct{}
+
+// KeyActionFor implements IdentityPlanner.
+func (NoopIdentityPlanner) KeyActionFor(string) (string, error) {
+	return "", ErrPlannerNotImplemented
+}
+
+// DeletePlan implements IdentityPlanner.
+func (NoopIdentityPlanner) DeletePlan(string, string) (DeletePlanView, error) {
+	return DeletePlanView{}, ErrPlannerNotImplemented
+}
+
+// KeyCeremonyPlan implements IdentityPlanner.
+func (NoopIdentityPlanner) KeyCeremonyPlan(string, string) (KeyCeremonyView, error) {
+	return KeyCeremonyView{}, ErrPlannerNotImplemented
+}
+
+// CommitRotate implements IdentityPlanner.
+func (NoopIdentityPlanner) CommitRotate(string) tea.Cmd {
+	return func() tea.Msg {
+		return KeyCommitMsg{Err: ErrPlannerNotImplemented.Error()}
+	}
+}
+
+// CommitNewKey implements IdentityPlanner.
+func (NoopIdentityPlanner) CommitNewKey(string) tea.Cmd {
+	return func() tea.Msg {
+		return KeyCommitMsg{Err: ErrPlannerNotImplemented.Error()}
+	}
+}
+
+var _ IdentityPlanner = NoopIdentityPlanner{}
 
 // backend.go defines the ONE injected seam this package is built around.
 //
@@ -20,6 +98,8 @@ import tea "charm.land/bubbletea/v2"
 // into. Both binaries satisfy it; neither the screens nor the create
 // wizard know which one they are talking to.
 type Backend interface {
+	IdentityPlanner
+
 	// ----- Data -------------------------------------------------------
 
 	// InitialState is the state the App starts from: identities, health
