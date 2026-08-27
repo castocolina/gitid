@@ -281,6 +281,19 @@ test: gate-copy-freeze
 ## and the sentence was never added to the list — a false verification claim.
 ## Both are now real: the grep roots include cmd/gitid, and the caveat's
 ## byte-exact text is registered below.
+##
+## WR-13 (06-REVIEW.md): the D-13 exclusion check below (the dynamic version
+## line's prefix, VersionNotePrefix, must never be frozen — it changes with
+## the user's OpenSSH build) is assembled at runtime so the check line cannot
+## satisfy (or trip) the grep gate itself. This explanation used to live as a
+## `#` comment INSIDE the backslash-continued recipe below; a `fi; \` line
+## continues straight into a `#` line, which comments out the REST of that
+## logical shell line — so the next two `#` lines and the `dyn_prefix=`
+## assignment silently lost their `@` prefix and became raw, un-quieted
+## recipe lines. Worse: a one-character edit (adding a trailing `\` to any of
+## those comment lines) would silently swallow the entire D-13 check with the
+## gate still reporting success. Keeping the explanation OUT of the
+## continued recipe removes that trap entirely.
 gate-copy-freeze:
 	@echo "==> gate-copy-freeze: 02-STYLE-SPEC.md §6 frozen copy"
 	@fail=0; \
@@ -334,9 +347,6 @@ gate-copy-freeze:
 		echo "gate-copy-freeze: FROZEN COPY MISSING (02-STYLE-SPEC.md §6)"; \
 		exit 1; \
 	fi; \
-	# D-13: the dynamic version line's prefix (VersionNotePrefix) must never be
-	# frozen — it changes with the user's OpenSSH build. Assembled at runtime so
-	# this check line cannot satisfy (or trip) the grep itself.
 	dyn_prefix="Your OpenSSH"; dyn_prefix="$$dyn_prefix:"; \
 	if grep -qF -- "$$dyn_prefix" Makefile; then \
 		echo "    FAIL  dynamic version prefix must stay out of the frozen list (D-13)"; \
