@@ -1681,34 +1681,28 @@ func (b *realBackend) SSHStorageMigrationPlan(layout tuikit.SSHStorageLayout) (t
 	}
 
 	view := tuikit.SSHStorageMigrationView{
-		CurrentLayout:   currentLayout,
-		TargetLayout:    layout,
-		Heading:         "Migrate SSH storage layout \xe2\x86\x92 " + headingTail,
-		Targets:         targets,
-		Backups:         backups,
-		Diff:            plan.Diff,
-		MainPreview:     string(plan.DestAfter),
-		OwnedPreview:    string(plan.DestAfter),
-		SentinelPreview: string(plan.DestAfter),
-		SourceBefore:    string(plan.SourceBefore),
-		DestBefore:      string(plan.DestBefore),
-		PlanToken:       token,
+		CurrentLayout: currentLayout,
+		TargetLayout:  layout,
+		Heading:       "Migrate SSH storage layout \xe2\x86\x92 " + headingTail,
+		Targets:       targets,
+		Backups:       backups,
+		Diff:          plan.Diff,
+		SourceBefore:  string(plan.SourceBefore),
+		DestBefore:    string(plan.DestBefore),
+		PlanToken:     token,
 	}
-	// Assign the preview fields correctly based on direction:
-	// - toInclude: DestAfter is the new gitid.config, SourceAfter is ~/.ssh/config with Include line
-	// - toInFile:  DestAfter is the new ~/.ssh/config with blocks inline, SourceAfter is the trimmed gitid.config
+	// The three preview fields are set exactly once each, below, based on
+	// PlanMigration's own source/dest assignment for each direction — never
+	// pre-seeded in the struct literal above, so there is no dead write to
+	// spot the correct branch overwriting.
+	//
+	// PlanMigration(MigrateToInclude): source=~/.ssh/config, dest=gitid.config.
+	// PlanMigration(MigrateToInFile):  source=gitid.config, dest=~/.ssh/config.
 	if toInclude {
-		// MainPreview is the Include-line-bearing ~/.ssh/config (SourceAfter for toInclude
-		// means the config file after the Include line and block removal — wait, let me check)
-		// PlanMigration for MigrateToInclude: source=~/.ssh/config, dest=gitid.config
 		view.MainPreview = string(plan.SourceAfter) // ~/.ssh/config after migration (has Include line, no blocks)
 		view.OwnedPreview = string(plan.DestAfter)  // gitid.config after migration (has all blocks)
-		view.SentinelPreview = ""
 	} else {
-		// PlanMigration for MigrateToInFile: source=gitid.config, dest=~/.ssh/config
 		view.SentinelPreview = string(plan.DestAfter) // ~/.ssh/config after migration (has all blocks)
-		view.MainPreview = ""
-		view.OwnedPreview = ""
 	}
 	return view, nil
 }
