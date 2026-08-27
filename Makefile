@@ -319,7 +319,10 @@ gate-copy-freeze:
 		'not applicable (macOS-only setting)' \
 		'not applicable (OpenSSH too old for accept-new)' \
 		'not applicable (OpenSSH version could not be verified)' \
-		'not applicable (nothing on this machine to verify)'; \
+		'not applicable (nothing on this machine to verify)' \
+		'shadow warning: ' \
+		'simulation inconclusive — gitid could not fully read your config graph' \
+		'advisory: '; \
 	do \
 		if grep -rqF -- "$$s" internal/tuikit internal/identity cmd/gitid internal/globalssh; then \
 			echo "    ok   $$s"; \

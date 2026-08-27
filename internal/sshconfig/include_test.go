@@ -447,3 +447,55 @@ func TestIncludeResolution(t *testing.T) {
 			resolved.IdentityFiles[0], identityKey)
 	}
 }
+
+// TestEnsureIncludeLinePreExistingCycleProceeds asserts that EnsureIncludeLine
+// succeeds when the EXISTING config already contains a cyclic Include chain in
+// UNRELATED files — i.e., the parse failure existed before gitid's edit and is
+// therefore not caused by it. The refuse-to-corrupt invariant protects only
+// against gitid's OWN edit breaking a previously-parseable config; it must not
+// block a write because external files the user owns happen to form a cycle.
+//
+// This pins the fix introduced in plan 06-04 (the pre-write simulation's
+// BuildGraph detects cycles and returns INCONCLUSIVE, but EnsureIncludeLine's
+// round-trip Parse call was also following those external cycles and refusing
+// the write with an unrelated error, never reaching the write stage).
+func TestEnsureIncludeLinePreExistingCycleProceeds(t *testing.T) {
+	dir := t.TempDir()
+	cycleA := filepath.Join(dir, "a.config")
+	cycleB := filepath.Join(dir, "b.config")
+	configPath := filepath.Join(dir, "config")
+
+	// Plant a cycle: a.config → b.config → a.config, all unrelated to gitid.
+	if err := os.WriteFile(cycleA, []byte("Include "+cycleB+"\n"), 0o600); err != nil {
+		t.Fatalf("seeding a.config: %v", err)
+	}
+	if err := os.WriteFile(cycleB, []byte("Include "+cycleA+"\n"), 0o600); err != nil {
+		t.Fatalf("seeding b.config: %v", err)
+	}
+	// The main config includes the cycle (pre-existing condition).
+	if err := os.WriteFile(configPath, []byte("Include "+cycleA+"\n"), 0o600); err != nil {
+		t.Fatalf("seeding config: %v", err)
+	}
+
+	// Verify the precondition: the existing config is already unparseable.
+	existing, _ := os.ReadFile(configPath) //nolint:gosec // hermetic temp file
+	_, existingParseErr := Parse(existing)
+	if existingParseErr == nil {
+		t.Skip("precondition not met: existing config parsed cleanly (cycle not triggered by this parser version)")
+	}
+
+	// EnsureIncludeLine must succeed — gitid's edit did not create the cycle.
+	_, err := EnsureIncludeLine(configPath)
+	if err != nil {
+		t.Fatalf("EnsureIncludeLine must succeed when the parse failure is pre-existing: %v", err)
+	}
+
+	// The gitid Include line must appear in the written file.
+	written, readErr := os.ReadFile(configPath) //nolint:gosec // hermetic temp file
+	if readErr != nil {
+		t.Fatalf("reading written config: %v", readErr)
+	}
+	if !strings.Contains(string(written), sshIncludeLineBody) {
+		t.Errorf("written config does not contain the gitid Include line; got:\n%s", written)
+	}
+}

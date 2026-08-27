@@ -371,13 +371,16 @@ func (o GlobalSSHOptionView) Selectable() bool {
 
 // GlobalSSHApplyPlanView is the confirmed-apply preview scene: the resolved
 // targets, the promised backup paths, and the diff the ceremony previews.
-// ShadowWarnings stays empty in plan 06-01 and is filled by 06-04's pre-write
-// simulation.
+// ShadowWarnings is filled by 06-04's pre-write simulation.
+// SimulationInconclusive is true when the simulation could not faithfully
+// reproduce the config graph; SimulationNote carries the human-readable reason.
 type GlobalSSHApplyPlanView struct {
-	Targets        []string
-	Backups        []string
-	Diff           string
-	ShadowWarnings []string
+	Targets                []string
+	Backups                []string
+	Diff                   string
+	ShadowWarnings         []string
+	SimulationInconclusive bool
+	SimulationNote         string
 }
 
 // GlobalSSHCommitMsg completes an asynchronous global-SSH apply commit —

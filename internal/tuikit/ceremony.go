@@ -286,6 +286,14 @@ func (c ceremonyModel) commitFailed(err string) ceremonyModel {
 	return c
 }
 
+// withResultExtra sets the ResultExtra field on the ceremony config — used to
+// append post-write advisories (e.g. shadow warnings from the D-04 verify
+// stage) to the receipt without requiring a new ceremony state field.
+func (c ceremonyModel) withResultExtra(extra string) ceremonyModel {
+	c.cfg.ResultExtra = extra
+	return c
+}
+
 // receiptListMaxLines caps the receipt's Wrote→/Backed up→ lists (05-UI-
 // REVIEW.md top fix #2): an everything-scope delete or global apply can
 // touch dozens of files, and without a cap the list pushes the "Done

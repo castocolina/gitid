@@ -87,12 +87,17 @@ type lifecyclePolicy struct {
 // rollback. ArchivedKeyPaths names every archive copy THIS transaction
 // created (populated for a failure from the archive step onward, review
 // R3-01). ReTest carries the closing post-write connectivity test result.
+// Advisories carries post-write shadow advisories from the D-04 verify stage
+// (plan 06-04). SimulationInconclusive is true when the pre-write simulation
+// could not faithfully reproduce the config graph.
 type lifecycleResult struct {
-	Backups          []string
-	Restored         []string
-	Removed          []string
-	ArchivedKeyPaths []string
-	ReTest           tester.Result
+	Backups                []string
+	Restored               []string
+	Removed                []string
+	ArchivedKeyPaths       []string
+	ReTest                 tester.Result
+	Advisories             []string
+	SimulationInconclusive bool
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +128,7 @@ var lifecycleStages = map[string][]string{
 	"rotate":     {"test", "plan", "confirm", "backup", "write", "retest"},
 	"repair":     {"test", "plan", "confirm", "backup", "write", "retest"},
 	"delete":     {"plan", "confirm", "backup", "write", "verify"},
-	"global-ssh": {"plan", "confirm", "backup", "write"},
+	"global-ssh": {"plan", "simulate", "confirm", "backup", "write", "verify"},
 }
 
 // errConfirmationUnavailable is returned when a confirmationRequired
@@ -824,6 +829,35 @@ func (b *realBackend) runGlobalSSHApply(keys []string, p lifecyclePolicy) (lifec
 		explicit[k] = policy.Recommended
 		previewKeys = append(previewKeys, k)
 	}
+
+	// Build the EnsureGlobals candidate bytes (same bytes the write will use).
+	st := b.storage()
+	existingForPlan, _ := os.ReadFile(st.targetPath) //nolint:gosec // trusted gitid-managed path
+	candidateForPlan, err := sshconfig.EnsureGlobals(existingForPlan, explicit, platform.CurrentOS())
+	if err != nil {
+		return res, fmt.Errorf("gitid: building candidate for simulation: %w", err)
+	}
+
+	// simulate — D-04 pre-write whole-graph simulation. A BuildGraph error
+	// becomes INCONCLUSIVE (gitid not being able to model the graph is not a
+	// reason to refuse a backed-up, reversible write). Reported on the plan so
+	// a dry run shows shadowing without writing.
+	record(stages[1])
+	simGraph, buildErr := globalssh.BuildGraph(b.sshConfigPath, st.targetPath, candidateForPlan)
+	if buildErr != nil {
+		res.SimulationInconclusive = true
+	} else {
+		simResult := globalssh.Simulate(globalssh.BuildProbeDeps(b.sshConfigPath), simGraph, keys)
+		res.SimulationInconclusive = simResult.Inconclusive
+		for _, f := range simResult.Findings {
+			if f.ShadowedByFile != "" {
+				res.Advisories = append(res.Advisories, fmt.Sprintf("shadow warning: %s will be shadowed by %s (line %d)", f.Key, b.displayPath(f.ShadowedByFile), f.ShadowedByLine))
+			} else {
+				res.Advisories = append(res.Advisories, fmt.Sprintf("shadow warning: %s will be shadowed (source unnameable)", f.Key))
+			}
+		}
+	}
+
 	target := b.globalsTargetPath()
 	if p.DryRun {
 		// Ordering consequence stated here, matching runRotate: stopping AFTER
@@ -833,7 +867,7 @@ func (b *realBackend) runGlobalSSHApply(keys []string, p lifecyclePolicy) (lifec
 	}
 
 	// confirm — the authorization boundary.
-	record(stages[1])
+	record(stages[2])
 	preview := fmt.Sprintf("apply global SSH option(s) %s to the gitid Host * block in %s",
 		strings.Join(previewKeys, ", "), b.displayPath(target))
 	authorized, cerr := b.confirmGate(p, preview)
@@ -846,11 +880,10 @@ func (b *realBackend) runGlobalSSHApply(keys []string, p lifecyclePolicy) (lifec
 
 	// backup — unconditional once authorized (D-02). The timestamped backups
 	// are taken by the filewriter-backed writes during the write stage below.
-	record(stages[2])
+	record(stages[3])
 
 	// write — the backed-up, all-or-nothing transaction.
-	record(stages[3])
-	st := b.storage()
+	record(stages[4])
 	journal := newMutationJournal(b)
 	fail := func(cause error) (lifecycleResult, error) {
 		outcomes, restoreErr := journal.restore()
@@ -914,6 +947,20 @@ func (b *realBackend) runGlobalSSHApply(keys []string, p lifecyclePolicy) (lifec
 	journal.addBackup(backup)
 
 	res.Backups = append(res.Backups, journal.backups...)
+
+	// verify — D-04 post-write re-verification against the live machine.
+	// Advisories from verify stage are appended; the write has already
+	// succeeded so verification is informational only.
+	record(stages[5])
+	verResult := globalssh.Verify(globalssh.BuildProbeDeps(b.sshConfigPath), keys)
+	for _, f := range verResult.Findings {
+		if f.ShadowedByFile != "" {
+			res.Advisories = append(res.Advisories, fmt.Sprintf("advisory: %s was applied but is still shadowed at %s (line %d) — the fix may not take effect", f.Key, b.displayPath(f.ShadowedByFile), f.ShadowedByLine))
+		} else {
+			res.Advisories = append(res.Advisories, fmt.Sprintf("advisory: %s was applied but is still shadowed by an external directive — the fix may not take effect", f.Key))
+		}
+	}
+
 	return res, nil
 }
 
