@@ -162,6 +162,13 @@ func BuildGraph(entryPointPath, managedTargetPath string, candidate []byte) (Sim
 	if err := discover(absEntry, 0); err != nil {
 		return SimulationGraph{}, err
 	}
+	if !expanded[absTarget] {
+		content, readErr := os.ReadFile(absTarget) //nolint:gosec // absTarget is a trusted gitid-managed path supplied in-process
+		if readErr != nil && !os.IsNotExist(readErr) {
+			return SimulationGraph{}, fmt.Errorf("globalssh: reading managed target %s: %w", absTarget, readErr)
+		}
+		files = append(files, GraphFile{Path: absTarget, Content: content})
+	}
 
 	return SimulationGraph{
 		EntryPointPath:    absEntry,
@@ -452,13 +459,11 @@ func linearise(graph SimulationGraph) []sshconfig.DirectiveSource {
 func findIncludeLine(lines []string, expanded, raw string) int {
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if !strings.EqualFold(strings.Fields(trimmed)[0:1:1][0], "Include") {
+		fields := strings.Fields(trimmed)
+		if len(fields) < 2 || !strings.EqualFold(fields[0], "Include") {
 			continue
 		}
-		if len(strings.Fields(trimmed)) < 2 {
-			continue
-		}
-		token := strings.Fields(trimmed)[1]
+		token := fields[1]
 		token = strings.Trim(token, `"`)
 		if token == raw || token == expanded {
 			return i
@@ -524,9 +529,21 @@ func rewriteIncludes(content []byte, graphFiles []GraphFile, mirrorPath func(str
 		}
 		// Rewrite this Include line.
 		raw := strings.Trim(fields[1], `"`)
-		// Try to find the matching mirrored file via glob.
-		matches, _ := filepath.Glob(expandPathForMirror(raw))
-		if len(matches) == 0 {
+		// Try to find the matching mirrored file via glob. A candidate managed
+		// target may not exist on the real filesystem yet, so also match the
+		// graph's known files before deciding an Include is unresolved.
+		expanded := expandPathForMirror(raw)
+		matches, _ := filepath.Glob(expanded)
+		known := len(matches) > 0
+		if !known {
+			for _, gf := range graphFiles {
+				if ok, _ := filepath.Match(expanded, gf.Path); ok {
+					known = true
+					break
+				}
+			}
+		}
+		if !known {
 			// No matches — rewrite to a non-existent path inside the mirror.
 			lines[i] = "Include " + filepath.Join(mirrorRoot, "nonexistent-"+filepath.Base(raw))
 			continue

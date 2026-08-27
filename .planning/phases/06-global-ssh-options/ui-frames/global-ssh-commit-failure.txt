@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Global SSH › Options
+ ! Preview — demo data, not wired to your system yet
+  Options   Storage & preview
+✗ gitid: refusing symlinked managed path: ~/.ssh/config.d/gitid.config
+
+ Cancel (Esc)   Retry (Enter)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 4 of 6 options need action — Recommended, not required -- you can leave any option unchanged. Thi…
+ Tab/←→ Cancel / Confirm · Enter confirm
+ Esc back · Ctrl+P palette

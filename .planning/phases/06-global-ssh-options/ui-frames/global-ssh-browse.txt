@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Global SSH › Options
+ ! Preview — demo data, not wired to your system yet
+  Options   Storage & preview
+   ☐ ! StrictHostKeyChecking  [Medium]      │  AddKeysToAgent
+      now: no → accept-new                  │  ~ Recommended, not required -- you can leave any
+      ✓ ForwardAgent  [High]                │ option unchanged. This is advisory, never a compliance
+      now: no → no  safe by default         │ gate.
+   ☐ ! HashKnownHosts  [Low]                │
+      now: no → yes                         │  Already set — keys stay available in the agent for
+        IdentitiesOnly  [High]              │ the session (recipes/ssh-config.recipe Host * block).
+      not applicable (nothing on this machi…│  not set (OpenSSH default: no)
+ ▸ ☐ ! AddKeysToAgent  [Low]                │
+      now: no → yes                         │
+   ☐ ! UseKeychain  [Low]                   │
+      now:  → yes                           │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+ 4 of 6 options need action — Recommended, not required -- you can leave any option unchanged. Thi…
+ ↑↓ select option · ←→ Options / Storage · space toggle
+ Enter activate · Esc back · ? help · Ctrl+P palette · q quit
