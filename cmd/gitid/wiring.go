@@ -702,9 +702,10 @@ func (b *realBackend) InitialState() tuikit.DemoState {
 // Phases that have wired their views and therefore do NOT raise the banner:
 //   - TabIdentities (plan 03)
 //   - TabGlobalSSH (plan 06-05: both Options and Storage sub-tabs are now live)
+//   - TabGlobalGit (plan 07-04: real option states, ceremonies, and probe error render are live)
 func (b *realBackend) DemoBanner(tab tuikit.TabID) bool {
 	switch tab {
-	case tuikit.TabGlobalGit, tuikit.TabDoctor:
+	case tuikit.TabDoctor:
 		return true
 	default:
 		return false
@@ -1562,7 +1563,7 @@ const globalSSHSimInconclusiveNote = "simulation inconclusive — gitid could no
 // path is a construction failure.
 func (b *realBackend) GlobalGitOptionStates() ([]tuikit.GlobalGitOptionView, error) {
 	if b.initErr != nil {
-		return nil, b.initErr
+		return nil, fmt.Errorf("git probe failed: %w", b.initErr)
 	}
 	fixture := make(map[string]tuikit.GlobalGitOption, len(tuikit.GlobalGitOptions))
 	for _, o := range tuikit.GlobalGitOptions {
@@ -1571,7 +1572,10 @@ func (b *realBackend) GlobalGitOptionStates() ([]tuikit.GlobalGitOptionView, err
 	probeDeps := globalgit.BuildProbeDeps(b.fragmentDir)
 	rows, err := globalgit.Statuses(probeDeps, b.baselineTargetPath())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("git probe failed: %w", err)
+	}
+	if len(rows) > 0 && rows[0].ProbeError != "" {
+		return nil, fmt.Errorf("git probe failed: %s", rows[0].ProbeError)
 	}
 	// One git-version read per screen activation (D-08, the D-13 precedent:
 	// the dynamic version line is non-contractual). The gate outcome itself is

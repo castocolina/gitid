@@ -117,6 +117,7 @@ func newGlobalGitModel(b Backend) globalGitModel {
 func (m globalGitModel) activate(DemoState) (screenModel, tea.Cmd) {
 	m.chosen = map[string]bool{}
 	m.listWindowStart = 0
+	m.optionsErr = ""
 	options, err := m.backend.GlobalGitOptionStates()
 	m.options = options
 	if err != nil {
@@ -388,6 +389,16 @@ func (m globalGitModel) baselineCeremonyFor(keys []string, pending int) (ceremon
 	if preview == "" {
 		preview = GlobalGitFullManagedBlockText
 	}
+	note := ""
+	if containsString(keys, "user.useConfigOnly") {
+		name, email := strings.TrimSpace(m.nameInput.Value()), strings.TrimSpace(m.emailInput.Value())
+		switch {
+		case email != "" && name == "":
+			note = GlobalGitCrossWarningNameMissing
+		case name != "" && email == "":
+			note = GlobalGitCrossWarningEmailMissing
+		}
+	}
 	return newCeremony(ceremonyConfig{
 		Heading: "Write global-git managed block to " + targets[0],
 		Targets: targets,
@@ -399,9 +410,11 @@ func (m globalGitModel) baselineCeremonyFor(keys []string, pending int) (ceremon
 		// globalssh.go's chosen/pending shape) — only the tail sentence about
 		// the baseline apply leaving the global author alone is frozen
 		// (GlobalGitResultTail, registered in the copy-freeze gate).
-		ResultMessage: fmt.Sprintf("%d of %d baseline options applied to %s. %s", len(keys), pending, targets[0], GlobalGitResultTail),
-		ConfirmLabel:  "Apply selected",
-		Async:         true,
+		ResultMessage:   fmt.Sprintf("%d of %d baseline options applied to %s. %s", len(keys), pending, targets[0], GlobalGitResultTail),
+		ConfirmLabel:    "Apply selected",
+		Hint:            note,
+		PreviewMaxLines: len(strings.Split(preview, "\n")),
+		Async:           true,
 	}), nil
 }
 
@@ -511,6 +524,12 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 	}
 
 	options := m.overlaidGitOptions(s)
+	if m.optionsErr != "" {
+		// A failed probe is advisory/fail-open: no rows or apply action are
+		// available, but this screen must not consume navigation keys and
+		// trap the user here (07-UI-SPEC.md RESOLVED "error" row).
+		return keyResult{model: m}
+	}
 	if len(options) == 0 {
 		return keyResult{model: m, handled: true}
 	}

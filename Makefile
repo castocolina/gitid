@@ -339,6 +339,7 @@ gate-copy-freeze:
 		'not applicable (OpenSSH version could not be verified)' \
 		'not applicable (nothing on this machine to verify)' \
 		'not applicable (could not be probed)' \
+		'The option states could not be read from this machine.' \
 		'shadow warning: ' \
 		'simulation inconclusive — gitid could not fully read your config graph' \
 		'advisory: ' \

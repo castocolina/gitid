@@ -930,20 +930,18 @@ func TestReuseDoesNotGenerateANewKey(t *testing.T) {
 	}
 }
 
-// TestDemoBannerOnlyIdentitiesIsWired proves D-16: the create-flow tab is live,
-// every other tab still shows demo content and must say so.
-func TestDemoBannerOnlyIdentitiesIsWired(t *testing.T) {
+// TestDemoBannerOnlyDoctorIsUnwired proves D-16: the Identities, Global SSH,
+// and Global Git views are live; Doctor remains the sole fixture-backed tab
+// and must still say so.
+func TestDemoBannerOnlyDoctorIsUnwired(t *testing.T) {
 	b := newBackendForHome(t.TempDir())
-	if b.DemoBanner(tuikit.TabIdentities) {
-		t.Error("the Identities tab is wired to live data in Phase 3; it must not carry the demo banner")
-	}
-	if b.DemoBanner(tuikit.TabGlobalSSH) {
-		t.Error("the Global SSH tab is wired to live data as of plan 06-05 (both sub-tabs); it must not carry the demo banner")
-	}
-	for _, tab := range []tuikit.TabID{tuikit.TabGlobalGit, tuikit.TabDoctor} {
-		if !b.DemoBanner(tab) {
-			t.Errorf("tab %v is not wired yet; it must carry the D-16 demo banner", tab)
+	for _, tab := range []tuikit.TabID{tuikit.TabIdentities, tuikit.TabGlobalSSH, tuikit.TabGlobalGit} {
+		if b.DemoBanner(tab) {
+			t.Errorf("tab %v is wired to live data and must not carry the demo banner", tab)
 		}
+	}
+	if !b.DemoBanner(tuikit.TabDoctor) {
+		t.Error("the Doctor tab is not wired yet; it must carry the D-16 demo banner")
 	}
 }
 
@@ -4323,4 +4321,15 @@ func globalsBlockBytes(t *testing.T, content string) string {
 		t.Fatalf("globals block sentinels missing in:\n%s", content)
 	}
 	return content[start : stop+len(end)]
+}
+
+func TestGlobalGitOptionStatesWrapsProbeFailure(t *testing.T) {
+	b := &realBackend{initErr: errors.New("bare probe failure")}
+	_, err := b.GlobalGitOptionStates()
+	if err == nil {
+		t.Fatal("GlobalGitOptionStates must return its construction failure")
+	}
+	if got, want := err.Error(), "git probe failed: bare probe failure"; got != want {
+		t.Errorf("wrapped error = %q, want %q", got, want)
+	}
 }

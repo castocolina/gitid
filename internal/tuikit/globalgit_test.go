@@ -1509,3 +1509,88 @@ func TestGlobalGitNoColorCuesRemainLegible(t *testing.T) {
 		t.Errorf("up cue not legible without colour:\n%s", view)
 	}
 }
+
+func TestGlobalGitProbeErrorRendersInlineAdvisoryAndStaysNavigable(t *testing.T) {
+	b := stubBackend{gitOptionsErr: errGlobalGitTest}
+	a, _ := press(t, NewApp(b), "3")
+	view := appView(a)
+	for _, want := range []string{"! global git test error", "The option states could not be read from this machine."} {
+		if !strings.Contains(view, want) {
+			t.Errorf("probe-error view missing %q:\n%s", want, view)
+		}
+	}
+	for _, row := range GlobalGitOptions {
+		if strings.Contains(view, row.Key) {
+			t.Errorf("probe-error view must replace rows; found %q:\n%s", row.Key, view)
+		}
+	}
+	for _, action := range ggitModel(t, a).view(a.state, minFrameWidth, minFrameHeight).actions {
+		if action.Key == "a" {
+			t.Errorf("probe-error view must not offer apply: %+v", action)
+		}
+	}
+	a, _ = press(t, a, "right")
+	if a.tab != TabDoctor {
+		t.Errorf("right navigation from a probe-error Global Git view selected tab %v, want Doctor", a.tab)
+	}
+}
+
+func TestGlobalGitBaselineCeremonyShowsWholeManagedBlockAndCrossWarning(t *testing.T) {
+	b := stubBackend{fallbackState: GitFallbackAuthorView{Email: "fallback@example.com"}}
+	m := newGlobalGitModel(b)
+	activated, _ := m.activate(Seed())
+	m = activated.(globalGitModel)
+	m.chosen["user.useConfigOnly"] = true
+	ceremony, err := m.baselineCeremonyFor([]string{"user.useConfigOnly"}, 1)
+	if err != nil {
+		t.Fatalf("baselineCeremonyFor: %v", err)
+	}
+	view := stripANSI(ceremony.view(minFrameWidth - 2))
+	for _, want := range []string{GlobalGitSentinelBegin, GlobalGitSentinelEnd} {
+		if !strings.Contains(view, want) {
+			t.Errorf("Global Git ceremony missing %q:\n%s", want, view)
+		}
+	}
+	for _, want := range []string{"user.useConfigOnly is selected but the fallback author has no name set", "only the email half is"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("Global Git ceremony missing cross-warning fragment %q:\n%s", want, view)
+		}
+	}
+	if ceremony.cfg.PreviewMaxLines <= 10 {
+		t.Errorf("Global Git ceremony preview budget = %d, want a scoped widening beyond the shared default 10", ceremony.cfg.PreviewMaxLines)
+	}
+}
+
+func TestGlobalGitBaselineCeremonyOmitsCrossWarningWhenFallbackIsComplete(t *testing.T) {
+	b := stubBackend{fallbackState: GitFallbackAuthorView{Name: "Fallback", Email: "fallback@example.com"}}
+	m := newGlobalGitModel(b)
+	activated, _ := m.activate(Seed())
+	m = activated.(globalGitModel)
+	m.chosen["user.useConfigOnly"] = true
+	ceremony, err := m.baselineCeremonyFor([]string{"user.useConfigOnly"}, 1)
+	if err != nil {
+		t.Fatalf("baselineCeremonyFor: %v", err)
+	}
+	view := stripANSI(ceremony.view(minFrameWidth - 2))
+	if strings.Contains(view, GlobalGitCrossWarningNameMissing) || strings.Contains(view, GlobalGitCrossWarningEmailMissing) {
+		t.Errorf("complete fallback author must not render a cross-warning:\n%s", view)
+	}
+}
+
+func TestGlobalSSHCeremonyPreviewUsesUnchangedDefaultBudget(t *testing.T) {
+	m := newGlobalSSHModel(stubBackend{})
+	activated, _ := m.activate(Seed())
+	m = activated.(globalSSHModel)
+	first := m.overlaidOptions(Seed())[0]
+	m.chosen[first.Key] = true
+	ceremony, err := m.applyCeremonyFor(Seed())
+	if err != nil {
+		t.Fatalf("applyCeremonyFor: %v", err)
+	}
+	if ceremony.cfg.PreviewMaxLines != 0 {
+		t.Errorf("Global SSH preview override = %d, want unchanged shared default", ceremony.cfg.PreviewMaxLines)
+	}
+	if ceremony.preview.VisibleLines != 10 {
+		t.Errorf("Global SSH preview visible lines = %d, want unchanged default 10", ceremony.preview.VisibleLines)
+	}
+}
