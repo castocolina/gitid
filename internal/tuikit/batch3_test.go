@@ -28,9 +28,13 @@ func TestMouseFooterContextualHintDispatchesItsKey(t *testing.T) {
 
 func TestMouseFooterApplyHintOpensGlobalGitCeremony(t *testing.T) {
 	a, _ := press(t, NewApp(stubBackend{}), "3")
-	a = clickCell(t, a, "a apply 10 selected", 0, a.height-2)
+	// R-1: selection starts empty; init.defaultBranch is the only
+	// policy-backed (selectable) row in this wave (07-01) — toggle it so
+	// the apply hint has something to report.
+	a, _ = press(t, a, "space")
+	a = clickCell(t, a, "a apply 1 selected", 0, a.height-2)
 	if !gitModelOf(t, a).ceremonyOpen {
-		t.Fatal("clicking the `a apply 10 selected` footer hint must open the apply ceremony")
+		t.Fatal("clicking the `a apply 1 selected` footer hint must open the apply ceremony")
 	}
 }
 
@@ -238,14 +242,19 @@ func TestMouseGlobalSSHCheckboxCellTogglesWithoutSelecting(t *testing.T) {
 
 func TestMouseGlobalGitCheckboxCellToggles(t *testing.T) {
 	a, _ := press(t, NewApp(stubBackend{}), "3")
-	// Skip past init.defaultBranch (row 0) — click core.ignorecase's ☑.
-	a = clickCell(t, a, "☑", masterListWidth(a.width), frameBodyTop+3)
+	// init.defaultBranch is the only policy-backed (checkbox-bearing) row
+	// in this wave (07-01) — the rest become selectable in 07-03. Move the
+	// detail selection off it first, so a click on its checkbox can prove
+	// it toggles the row WITHOUT moving the detail selection.
+	a, _ = press(t, a, "down")
+	before := gitModelOf(t, a).detailKey
+	a = clickCell(t, a, glyphCheckOff, masterListWidth(a.width), frameBodyTop)
 	m := gitModelOf(t, a)
-	if m.chosen["core.ignorecase"] {
-		t.Error("clicking the ☑ cell must uncheck core.ignorecase")
+	if !m.chosen["init.defaultBranch"] {
+		t.Error("clicking the ☐ cell must check init.defaultBranch")
 	}
-	if m.detailKey != "init.defaultBranch" {
-		t.Errorf("detailKey = %q — the checkbox click must NOT move the selection", m.detailKey)
+	if m.detailKey != before {
+		t.Errorf("detailKey = %q, want unchanged %q — the checkbox click must NOT move the selection", m.detailKey, before)
 	}
 }
 
@@ -443,7 +452,11 @@ func TestReservedFooterHonestInKeyConsumingStates(t *testing.T) {
 			// D-15: selection starts empty; select HashKnownHosts before applying.
 			return pressSeq(t, NewApp(stubBackend{}), "2", "up", "space", "a")
 		}},
-		{"global git apply ceremony", func(t *testing.T) App { return pressSeq(t, NewApp(stubBackend{}), "3", "a") }},
+		{"global git apply ceremony", func(t *testing.T) App {
+			// R-1: selection starts empty; select init.defaultBranch (the
+			// only policy-backed row in this wave) before applying.
+			return pressSeq(t, NewApp(stubBackend{}), "3", "space", "a")
+		}},
 		{"doctor fix ceremony", func(t *testing.T) App { return pressSeq(t, doctorApp(t), "f") }},
 	}
 	for _, tc := range cases {

@@ -489,6 +489,24 @@ type GlobalGitOptionView struct {
 	GitDefault   string
 	ProbeError   string
 	State        GlobalGitOptionState
+	// PolicyBacked is answered by the backend at the wiring boundary — tuikit
+	// must never import internal/globalgit to ask PolicyFor itself (the
+	// no-backend import-graph gate forbids it). True only for a key the live
+	// policy table resolves; plan 07-01 sets this for init.defaultBranch
+	// alone, plan 07-03 grows it to the full D-08 set.
+	PolicyBacked bool
+}
+
+// Selectable reports whether this row can be toggled and have a checkbox
+// rendered — the ONE predicate the toggle key, checkbox glyph render, and
+// click hit-test all route through, mirroring GlobalSSHOptionView.Selectable
+// exactly. A row whose key the live policy table does not resolve, or whose
+// probe failed, is never selectable.
+func (o GlobalGitOptionView) Selectable() bool {
+	if o.ProbeError != "" || !o.PolicyBacked {
+		return false
+	}
+	return o.State == GlobalGitNeedsAction || o.State == GlobalGitSetButDiffers
 }
 
 // GlobalGitApplyPlanView is the confirmed-apply preview scene: the resolved

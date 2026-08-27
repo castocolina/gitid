@@ -1567,6 +1567,7 @@ func (b *realBackend) GlobalGitOptionStates() ([]tuikit.GlobalGitOptionView, err
 			GitDefault:   row.GitDefault,
 			ProbeError:   row.ProbeError,
 			State:        toGlobalGitOptionState(row.State),
+			PolicyBacked: true,
 		})
 	}
 	return out, nil

@@ -148,7 +148,10 @@ func Seed() DemoState { return stubBackend{}.InitialState() }
 type stubBackend struct {
 	NoopIdentityPlanner
 	NoopGlobalSSHPlanner
-	NoopGlobalGitPlanner
+	// NoopGlobalGitPlanner is intentionally NOT embedded: the stub provides
+	// fixture-driven implementations of GlobalGitPlanner below, exactly
+	// mirroring how it handles GlobalSSHPlanner. A missing real implementation
+	// must be a compile error, not a silent sentinel.
 	NoopSSHStoragePlanner
 	gitStepAlwaysDisabled bool
 	gitStepReason         string
@@ -165,6 +168,13 @@ type stubBackend struct {
 	sshApplyPlan   GlobalSSHApplyPlanView
 	sshApplyPlanFn func(keys []string) (GlobalSSHApplyPlanView, error)
 	sshCommitMsg   GlobalSSHCommitMsg
+	// Global-Git seam overrides (zero values keep the fixture projection from
+	// fixtureGlobalGitOptionViews() below — mirrors the SSH seam pattern).
+	gitOptions     []GlobalGitOptionView
+	gitOptionsErr  error
+	gitApplyPlan   GlobalGitApplyPlanView
+	gitApplyPlanFn func(keys []string) (GlobalGitApplyPlanView, error)
+	gitCommitMsg   GlobalGitCommitMsg
 	// Storage-migration seam overrides (zero values keep the fixture
 	// preview helpers so existing Storage sub-tab tests stay green).
 	sshStorageView   SSHStorageMigrationView
@@ -582,6 +592,63 @@ func (b stubBackend) CommitSSHStorage(layout SSHStorageLayout, planToken string)
 		b.storageCall.token = planToken
 	}
 	return func() tea.Msg { return b.sshStorageCommit }
+}
+
+// ---------------------------------------------------------------------------
+// Global Git (plan 07-01) — the Options pane seam.
+// ---------------------------------------------------------------------------
+
+// fixtureGlobalGitOptionViews projects the frozen GlobalGitOptions fixture
+// into the live view shape — the stub's zero value, mirroring the dummy's
+// projection in fixturebackend.go so the render stays fixture-identical
+// unless a test overrides. Rows travel through the seam, never around it —
+// this is the only place fixture values enter the globalGitModel.
+func fixtureGlobalGitOptionViews() []GlobalGitOptionView {
+	out := make([]GlobalGitOptionView, 0, len(GlobalGitOptions))
+	for _, o := range GlobalGitOptions {
+		state := GlobalGitAlreadySet
+		if o.NeedsAction {
+			state = GlobalGitNeedsAction
+		}
+		out = append(out, GlobalGitOptionView{
+			Key:          o.Key,
+			CurrentValue: o.Current,
+			Provenance:   "fixture value — the test backend does not probe a machine",
+			Recommended:  o.Recommended,
+			OneLiner:     o.OneLiner,
+			State:        state,
+			// PolicyBacked mirrors the wave-07-01 real policy table's only
+			// live entry (internal/dummytui/fixturebackend.go's comment).
+			PolicyBacked: o.Key == "init.defaultBranch",
+		})
+	}
+	return out
+}
+
+// GlobalGitOptionStates returns the test override when set, otherwise the
+// fixture projection.
+func (b stubBackend) GlobalGitOptionStates() ([]GlobalGitOptionView, error) {
+	if b.gitOptionsErr != nil {
+		return nil, b.gitOptionsErr
+	}
+	if b.gitOptions != nil {
+		return b.gitOptions, nil
+	}
+	return fixtureGlobalGitOptionViews(), nil
+}
+
+// GlobalGitApplyPlan returns the test override when set; the zero value keeps
+// the ceremony's target/backup fallback.
+func (b stubBackend) GlobalGitApplyPlan(keys []string) (GlobalGitApplyPlanView, error) {
+	if b.gitApplyPlanFn != nil {
+		return b.gitApplyPlanFn(keys)
+	}
+	return b.gitApplyPlan, nil
+}
+
+// CommitGlobalGit delivers the test override's commit message immediately.
+func (b stubBackend) CommitGlobalGit([]string) tea.Cmd {
+	return func() tea.Msg { return b.gitCommitMsg }
 }
 
 // ---------------------------------------------------------------------------
