@@ -148,6 +148,31 @@ func backupExistingTarget(targetPath string) (backupPath string, err error) {
 	return "", fmt.Errorf("could not create a unique backup for %s after %d attempts", targetPath, maxBackupCollisionAttempts)
 }
 
+// Backup creates a collision-proof timestamped copy of path — the SAME
+// UnixNano + exclusive-create strategy as Write — WITHOUT replacing the
+// original. The original is left byte-identical. This is the dedicated
+// backup-only seam for sshconfig.Migrate step 2 (06-05 plan, 06-REVIEWS.md
+// HIGH): the old mechanism called WriteFile with the snapshotted bytes,
+// which REPLACED the target — so an external edit landing between the
+// preflight snapshot and step 2 was silently overwritten before any
+// concurrency check could see it. Backup is a pure copy with no write to the
+// original, so it cannot destroy an external edit.
+//
+// If path does not exist, Backup returns ("", nil) — idempotent for a file
+// that was not present at snapshot time and still is not.
+func Backup(path string) (backupPath string, err error) {
+	if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
+		return "", nil
+	} else if statErr != nil {
+		return "", fmt.Errorf("filewriter: stat %s: %w", path, statErr)
+	}
+	backupPath, err = backupExistingTarget(path)
+	if err != nil {
+		return "", fmt.Errorf("filewriter: backing up %s: %w", path, err)
+	}
+	return backupPath, nil
+}
+
 // BackupAndRemove creates a collision-proof backup of path (the SAME
 // UnixNano + exclusive-create strategy as Write) and removes the original.
 // Used for whole-file deletion where content replacement does not apply
