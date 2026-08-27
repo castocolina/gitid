@@ -514,65 +514,52 @@ func isInsideManagedBlock(hit sshconfig.DirectiveHit, managedTargetPath, beginSe
 // contributes nothing" rather than silently reading the user's real file —
 // an unresolved Include must never leak the real machine into the simulation
 // (T-06-37, T-06-49).
+//
+// Rewriting is driven by sshconfig.ParseIncludeLine — the same tokenizer
+// DetectInclude uses — rather than a fresh strings.Fields split, so it
+// inherits OpenSSH's full Include grammar: multiple space-separated globs on
+// one line, the `Include=path` equals form, and double-quoted paths
+// containing spaces. Every rewritten token is preserved (not just the first)
+// and every emitted mirror path is double-quoted, so a mirrored path
+// containing a space (a home directory with a space in it) still parses
+// (CR-03).
 func rewriteIncludes(content []byte, graphFiles []GraphFile, mirrorPath func(string) string, mirrorRoot string) []byte {
-	fileSet := map[string]bool{}
-	for _, gf := range graphFiles {
-		fileSet[gf.Path] = true
-	}
-
 	lines := strings.Split(string(content), "\n")
 	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		fields := strings.Fields(trimmed)
-		if len(fields) < 2 || !strings.EqualFold(fields[0], "Include") {
+		directives, ok := sshconfig.ParseIncludeLine(line)
+		if !ok {
 			continue
 		}
-		// Rewrite this Include line.
-		raw := strings.Trim(fields[1], `"`)
-		// Try to find the matching mirrored file via glob. A candidate managed
-		// target may not exist on the real filesystem yet, so also match the
-		// graph's known files before deciding an Include is unresolved.
-		expanded := expandPathForMirror(raw)
-		matches, _ := filepath.Glob(expanded)
-		known := len(matches) > 0
-		if !known {
-			for _, gf := range graphFiles {
-				if ok, _ := filepath.Match(expanded, gf.Path); ok {
-					known = true
-					break
-				}
-			}
+		parts := make([]string, 0, len(directives))
+		for _, d := range directives {
+			target := resolveIncludeTarget(d, graphFiles, mirrorPath, mirrorRoot)
+			parts = append(parts, `"`+target+`"`)
 		}
-		if !known {
-			// No matches — rewrite to a non-existent path inside the mirror.
-			lines[i] = "Include " + filepath.Join(mirrorRoot, "nonexistent-"+filepath.Base(raw))
-			continue
-		}
-		// Check if the match is a glob pattern; if so rewrite to the mirrored glob.
-		if strings.Contains(raw, "*") || strings.Contains(raw, "?") {
-			// Rewrite the glob path to the mirror.
-			// Find the directory portion and rewrite it.
-			mirrored := mirrorPath(expandPathForMirror(raw))
-			lines[i] = "Include " + mirrored
-		} else {
-			// Single file: rewrite to mirrored path.
-			mirrored := mirrorPath(expandPathForMirror(raw))
-			lines[i] = "Include " + mirrored
-		}
+		lines[i] = "Include " + strings.Join(parts, " ")
 	}
 	return []byte(strings.Join(lines, "\n"))
 }
 
-// expandPathForMirror expands a raw Include path token to an absolute path
-// for mirror path construction. Mirrors expandIncludePath in adopt.go.
-func expandPathForMirror(raw string) string {
-	home, _ := os.UserHomeDir()
-	switch {
-	case filepath.IsAbs(raw):
-		return raw
-	case len(raw) >= 2 && raw[0] == '~' && raw[1] == '/':
-		return filepath.Join(home, raw[2:])
-	default:
-		return filepath.Join(home, ".ssh", raw)
+// resolveIncludeTarget maps one parsed Include token to its mirrored path.
+// A token that cannot be resolved to any file in the graph is mapped to a
+// non-existent path inside the mirror, so the simulation reads nothing for
+// it rather than falling through to the real, unmirrored file.
+func resolveIncludeTarget(d sshconfig.IncludeDirective, graphFiles []GraphFile, mirrorPath func(string) string, mirrorRoot string) string {
+	// Try to find the matching mirrored file via glob. A candidate managed
+	// target may not exist on the real filesystem yet, so also match the
+	// graph's known files before deciding an Include is unresolved.
+	matches, _ := filepath.Glob(d.Expanded)
+	known := len(matches) > 0
+	if !known {
+		for _, gf := range graphFiles {
+			if ok, _ := filepath.Match(d.Expanded, gf.Path); ok {
+				known = true
+				break
+			}
+		}
 	}
+	if !known {
+		return filepath.Join(mirrorRoot, "nonexistent-"+filepath.Base(d.Raw))
+	}
+	return mirrorPath(d.Expanded)
 }

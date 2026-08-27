@@ -99,20 +99,40 @@ func DetectInclude(configPath string) ([]IncludeDirective, error) {
 
 	var result []IncludeDirective
 	for _, line := range strings.Split(string(content), "\n") {
-		trimmed := strings.TrimSpace(line)
-		rest, ok := includeDirectiveArgs(trimmed)
+		directives, ok := ParseIncludeLine(line)
 		if !ok {
 			continue
 		}
-		for _, tok := range tokenizeIncludeArgs(rest) {
-			result = append(result, IncludeDirective{
-				Raw:      tok.raw,
-				Expanded: expandIncludePath(tok.raw),
-				Quoted:   tok.quoted,
-			})
-		}
+		result = append(result, directives...)
 	}
 	return result, nil
+}
+
+// ParseIncludeLine parses a single line of ~/.ssh/config-shaped text and, if
+// it is an `Include` directive line, returns every path token on that line —
+// in order, honouring OpenSSH's full grammar (multiple space-separated globs
+// per line, the `Include=path` equals form, and double-quoted paths
+// containing spaces) — plus true. A non-Include line returns (nil, false).
+//
+// This is the single tokenizer DetectInclude and any other line-at-a-time
+// Include consumer (globalssh's shadow-simulation mirror rewriter) must share
+// — re-tokenising an Include line with strings.Fields loses every token past
+// the first and cannot see the `=` form at all (CR-03).
+func ParseIncludeLine(line string) ([]IncludeDirective, bool) {
+	trimmed := strings.TrimSpace(line)
+	rest, ok := includeDirectiveArgs(trimmed)
+	if !ok {
+		return nil, false
+	}
+	var result []IncludeDirective
+	for _, tok := range tokenizeIncludeArgs(rest) {
+		result = append(result, IncludeDirective{
+			Raw:      tok.raw,
+			Expanded: expandIncludePath(tok.raw),
+			Quoted:   tok.quoted,
+		})
+	}
+	return result, true
 }
 
 // includeDirectiveArgs reports whether trimmed is an `Include` directive line

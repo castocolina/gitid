@@ -1236,6 +1236,211 @@ func TestSimulateProbedEntryPoint(t *testing.T) {
 	}
 }
 
+// testMirrorPath replicates Simulate's own mirrorPath closure (real absolute
+// path -> path inside mirrorRoot), so rewriteIncludes unit tests exercise the
+// exact same mapping production code uses.
+func testMirrorPath(mirrorRoot string) func(string) string {
+	return func(realPath string) string {
+		rel := strings.TrimPrefix(realPath, "/")
+		return filepath.Join(mirrorRoot, rel)
+	}
+}
+
+// TestRewriteIncludesMultiGlobPreservesAllTokens is the CR-03 regression for
+// finding 1: `Include a b` (two space-separated globs on one line) must
+// mirror BOTH paths, not just the first — dropping the second silently
+// removes a reachable file from the simulation (a false "no shadowing").
+func TestRewriteIncludesMultiGlobPreservesAllTokens(t *testing.T) {
+	dir := t.TempDir()
+	pathA := filepath.Join(dir, "a")
+	pathB := filepath.Join(dir, "b")
+	if err := os.WriteFile(pathA, []byte("Host *\n  Compression yes\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pathB, []byte("Host *\n  StrictHostKeyChecking no\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte(fmt.Sprintf("Include %s %s\n", pathA, pathB))
+	graphFiles := []GraphFile{
+		{Path: pathA, Content: []byte("Host *\n  Compression yes\n")},
+		{Path: pathB, Content: []byte("Host *\n  StrictHostKeyChecking no\n")},
+	}
+	mirrorRoot := t.TempDir()
+
+	got := string(rewriteIncludes(content, graphFiles, testMirrorPath(mirrorRoot), mirrorRoot))
+
+	mirroredA := testMirrorPath(mirrorRoot)(pathA)
+	mirroredB := testMirrorPath(mirrorRoot)(pathB)
+	if !strings.Contains(got, mirroredA) {
+		t.Errorf("first Include token %s not mirrored; got:\n%s", pathA, got)
+	}
+	if !strings.Contains(got, mirroredB) {
+		t.Errorf("second Include token %s dropped, not mirrored; got:\n%s", pathB, got)
+	}
+}
+
+// TestRewriteIncludesEqualsFormResolves is the CR-03 regression for finding
+// 2: `Include=path` (the equals form) must be resolved and rewritten into
+// the mirror exactly like the space form — leaving it verbatim would make
+// `ssh -G -F <mirror>` read the user's REAL file, defeating probe isolation
+// (T-06-37, T-06-49).
+func TestRewriteIncludesEqualsFormResolves(t *testing.T) {
+	dir := t.TempDir()
+	other := filepath.Join(dir, "other")
+	if err := os.WriteFile(other, []byte("Host *\n  Compression yes\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rawLine := fmt.Sprintf("Include=%s", other)
+	content := []byte(rawLine + "\n")
+	graphFiles := []GraphFile{{Path: other, Content: []byte("Host *\n  Compression yes\n")}}
+	mirrorRoot := t.TempDir()
+
+	got := string(rewriteIncludes(content, graphFiles, testMirrorPath(mirrorRoot), mirrorRoot))
+
+	// Before the fix: strings.Fields("Include=/abs/path") yields ONE token,
+	// so len(fields) < 2 and the line was left COMPLETELY untouched — the
+	// literal "Include=<real path>" line survives into the mirror, and
+	// `ssh -G -F <mirror>` then reads the user's REAL file straight through
+	// it. Assert the raw, unrewritten line is gone.
+	if strings.Contains(got, rawLine) {
+		t.Errorf("Include=path form left verbatim (unrewritten) — leaks the real path into the mirror; got:\n%s", got)
+	}
+	mirrored := testMirrorPath(mirrorRoot)(other)
+	wantLine := `Include "` + mirrored + `"`
+	if !strings.Contains(got, wantLine) {
+		t.Errorf("Include=path form not resolved to its mirrored path; want to contain %q, got:\n%s", wantLine, got)
+	}
+}
+
+// TestRewriteIncludesQuotedPathWithSpaceResolves is the CR-03 regression for
+// finding 3: a double-quoted Include path containing a space must be
+// tokenized as ONE path (not split on the internal space), resolved against
+// the graph, and mirrored — not silently rewritten to a "nonexistent-" stub
+// that drops a reachable file from the simulation.
+func TestRewriteIncludesQuotedPathWithSpaceResolves(t *testing.T) {
+	dir := t.TempDir()
+	spaced := filepath.Join(dir, "my config")
+	if err := os.WriteFile(spaced, []byte("Host *\n  Compression yes\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte(fmt.Sprintf("Include %q\n", spaced))
+	graphFiles := []GraphFile{{Path: spaced, Content: []byte("Host *\n  Compression yes\n")}}
+	mirrorRoot := t.TempDir()
+
+	got := string(rewriteIncludes(content, graphFiles, testMirrorPath(mirrorRoot), mirrorRoot))
+
+	if strings.Contains(got, "nonexistent-") {
+		t.Errorf("quoted path with a space was misparsed as unresolved; got:\n%s", got)
+	}
+	mirrored := testMirrorPath(mirrorRoot)(spaced)
+	if !strings.Contains(got, mirrored) {
+		t.Errorf("quoted path with a space not resolved to its mirrored path %s; got:\n%s", mirrored, got)
+	}
+}
+
+// TestRewriteIncludesEmittedPathsAreQuoted asserts every rewritten Include
+// line double-quotes its path token(s) — required for a mirrored path that
+// itself contains a space (e.g. a HOME directory with a space in it) to
+// remain a single, parseable token rather than splitting into two.
+func TestRewriteIncludesEmittedPathsAreQuoted(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "config.d", "gitid.config")
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("Host *\n  Compression yes\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte(fmt.Sprintf("Include %s\n", target))
+	graphFiles := []GraphFile{{Path: target, Content: []byte("Host *\n  Compression yes\n")}}
+	// A mirror root that itself contains a space, standing in for a HOME
+	// directory with a space in it.
+	mirrorRoot := filepath.Join(t.TempDir(), "spaced root")
+	if err := os.MkdirAll(mirrorRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	got := string(rewriteIncludes(content, graphFiles, testMirrorPath(mirrorRoot), mirrorRoot))
+
+	mirrored := testMirrorPath(mirrorRoot)(target)
+	wantLine := `Include "` + mirrored + `"`
+	if !strings.Contains(got, wantLine) {
+		t.Errorf("rewritten Include line is not double-quoted; want to contain %q, got:\n%s", wantLine, got)
+	}
+}
+
+// TestSimulateHomeDirectoryWithSpaceStaysInsideMirror is the CR-03
+// end-to-end regression: with HOME containing a space, BuildGraph + the
+// mirror-writing half of Simulate must produce an entry-point file whose
+// Include line(s) resolve entirely inside mirrorRoot — no path segment
+// referencing the real (spaced) HOME may leak into the probed file.
+func TestSimulateHomeDirectoryWithSpaceStaysInsideMirror(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "spaced home")
+	if err := os.MkdirAll(filepath.Join(home, ".ssh", "config.d"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+
+	target := filepath.Join(home, ".ssh", "config.d", "gitid.config")
+	mainConfig := filepath.Join(home, ".ssh", "config")
+
+	candidate := managedBlockFor(t, "HashKnownHosts", "yes")
+	writeFileInDir(t, target, candidate)
+	mainContent := []byte(fmt.Sprintf("Include %s\n", target))
+	writeFileInDir(t, mainConfig, mainContent)
+
+	var mirroredEntryContent []byte
+	var capturedMirrorRoot string
+	deps := Deps{
+		RunSSHG: func(_ context.Context, args ...string) (string, error) {
+			for i, a := range args {
+				if a == "-F" && i+1 < len(args) {
+					fPath := args[i+1]
+					capturedMirrorRoot = filepath.Dir(fPath)
+					content, rerr := os.ReadFile(fPath) //nolint:gosec
+					if rerr == nil {
+						mirroredEntryContent = content
+					}
+				}
+			}
+			return recommendedOutput(), nil
+		},
+		ReadConfig:       func() (string, []byte, error) { return "", nil, nil },
+		ReadSystemConfig: func() (string, []byte, error) { return "", nil, fmt.Errorf("no sys") },
+		GOOS:             "linux",
+	}
+
+	graph, err := BuildGraph(mainConfig, target, candidate)
+	if err != nil {
+		t.Fatalf("BuildGraph: %v", err)
+	}
+	result := Simulate(deps, graph, []string{"HashKnownHosts"})
+	if result.Inconclusive {
+		t.Fatalf("Simulate unexpectedly inconclusive: %s", result.Reason)
+	}
+
+	if capturedMirrorRoot == "" {
+		t.Fatal("no mirror root captured from -F arg")
+	}
+	if len(mirroredEntryContent) == 0 {
+		t.Fatal("mirrored entry-point content not captured")
+	}
+	// Every path token inside every Include line of the mirrored entry point
+	// must live under capturedMirrorRoot — none may reference the real,
+	// spaced HOME directly.
+	for _, line := range strings.Split(string(mirroredEntryContent), "\n") {
+		directives, ok := sshconfig.ParseIncludeLine(line)
+		if !ok {
+			continue
+		}
+		for _, d := range directives {
+			if strings.HasPrefix(d.Raw, home) {
+				t.Errorf("mirrored Include line leaks the real spaced HOME: %q", line)
+			}
+		}
+	}
+}
+
 // ---- helper used for testing filewriter sentinels ----
 
 func init() {
