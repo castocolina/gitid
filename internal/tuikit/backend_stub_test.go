@@ -148,6 +148,7 @@ func Seed() DemoState { return stubBackend{}.InitialState() }
 type stubBackend struct {
 	NoopIdentityPlanner
 	NoopGlobalSSHPlanner
+	NoopGlobalGitPlanner
 	NoopSSHStoragePlanner
 	gitStepAlwaysDisabled bool
 	gitStepReason         string

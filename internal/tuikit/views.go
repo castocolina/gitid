@@ -443,3 +443,69 @@ type SSHStorageCommitMsg struct {
 	Err                       string
 	ConfigChangedSincePreview bool
 }
+
+// ---------------------------------------------------------------------------
+// Global Git view DTOs (plan 07-01)
+// ---------------------------------------------------------------------------
+
+// GlobalGitOptionState is the actionable state of one global-git option row.
+// The render stack reads this; the real backend converts globalgit.OptionRowState
+// into this DTO at the wiring boundary so the render package never learns the
+// backend source-class enum.
+type GlobalGitOptionState int
+
+const (
+	// GlobalGitNeedsAction is the zero value: the option is unset or differs
+	// from the recommendation, so applying is meaningful.
+	GlobalGitNeedsAction GlobalGitOptionState = iota
+	// GlobalGitAlreadySet means the effective value equals the recommendation.
+	GlobalGitAlreadySet
+	// GlobalGitSetButDiffers means the option is explicitly set to a
+	// non-recommended value — a deliberate choice flagged with `!` (D-02
+	// word state: "set, differs from recommendation — your choice").
+	GlobalGitSetButDiffers
+	// GlobalGitUnclaimed means a probe failure prevented classification —
+	// ProbeError carries the details.
+	GlobalGitUnclaimed
+)
+
+// GlobalGitOptionView is one row of the Global Git options pane. Provenance is
+// a rendered LABEL string computed in cmd/gitid/wiring.go — the view
+// deliberately carries no source-class enum. Plan 07-03 adds the reason enum,
+// bundle aggregate, and version note; plan 07-01 carries the minimum set to
+// make init.defaultBranch real.
+//
+// A row whose State is GlobalGitNeedsAction or GlobalGitSetButDiffers and
+// whose ProbeError is empty is selectable. Selectability is gated by the live
+// policy table in internal/globalgit — plan 07-01 leaves exactly one selectable
+// row (init.defaultBranch); the rest render without a checkbox.
+type GlobalGitOptionView struct {
+	Key          string
+	CurrentValue string
+	Provenance   string
+	Recommended  string
+	OneLiner     string
+	Explanation  string
+	GitDefault   string
+	ProbeError   string
+	State        GlobalGitOptionState
+}
+
+// GlobalGitApplyPlanView is the confirmed-apply preview scene: the resolved
+// target, the promised backup paths, and the diff the ceremony previews.
+type GlobalGitApplyPlanView struct {
+	Targets []string
+	Backups []string
+	Diff    string
+}
+
+// GlobalGitCommitMsg completes an asynchronous global-git apply commit —
+// delivered from the tea.Cmd Backend.CommitGlobalGit returns. Restored stays
+// explicit so a failed receipt can never claim nothing changed when restoration
+// itself failed. Advisories carries post-write floor-model notes (D-02).
+type GlobalGitCommitMsg struct {
+	Backups    []string
+	Restored   []string
+	Advisories []string
+	Err        string
+}

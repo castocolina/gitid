@@ -40,6 +40,7 @@ import (
 	"github.com/castocolina/gitid/internal/clipboard"
 	"github.com/castocolina/gitid/internal/filewriter"
 	"github.com/castocolina/gitid/internal/gitconfig"
+	"github.com/castocolina/gitid/internal/globalgit"
 	"github.com/castocolina/gitid/internal/globalssh"
 	"github.com/castocolina/gitid/internal/identity"
 	"github.com/castocolina/gitid/internal/keygen"
@@ -170,6 +171,13 @@ var _ tuikit.IdentityPlanner = (*realBackend)(nil)
 // struct carries no such anonymous field, so a missing real implementation
 // stays a compile error, not a silent sentinel.
 var _ tuikit.GlobalSSHPlanner = (*realBackend)(nil)
+
+// plan 07-01 seam pin: the real composition root implements the global-git
+// planner seam from backend.go. It must NOT get there by embedding
+// NoopGlobalGitPlanner — a reflection test in wiring_test.go asserts the
+// struct carries no such anonymous field, so a missing real implementation
+// stays a compile error, not a silent sentinel.
+var _ tuikit.GlobalGitPlanner = (*realBackend)(nil)
 
 // plan 06-05 seam pin: the real composition root implements the storage
 // planner seam. It must NOT embed NoopSSHStoragePlanner.
@@ -1521,6 +1529,150 @@ const globalSSHShadowWarnNoFileFmt = "shadow warning: %s will be shadowed (sourc
 // globalSSHSimInconclusiveNote is the frozen warning when the simulation
 // cannot faithfully mirror the config graph. Registered in gate-copy-freeze.
 const globalSSHSimInconclusiveNote = "simulation inconclusive — gitid could not fully read your config graph; apply will continue but shadowing cannot be checked"
+
+// ---------------------------------------------------------------------------
+// GlobalGitPlanner (plan 07-01)
+// ---------------------------------------------------------------------------
+
+// GlobalGitOptionStates is the ONE conversion site from the globalgit engine
+// to the render DTO, mirroring GlobalSSHOptionStates: it runs the D-03 probe
+// set through the real constructor and renders the provenance LABEL here —
+// tuikit must never learn the source-class enum.
+//
+// globalgit.Statuses never returns an error for a probe failure (it degrades
+// per-row to StateUnclaimed with ProbeError set), so this method's only error
+// path is a construction failure.
+func (b *realBackend) GlobalGitOptionStates() ([]tuikit.GlobalGitOptionView, error) {
+	if b.initErr != nil {
+		return nil, b.initErr
+	}
+	fixture := make(map[string]tuikit.GlobalGitOption, len(tuikit.GlobalGitOptions))
+	for _, o := range tuikit.GlobalGitOptions {
+		fixture[o.Key] = o
+	}
+	deps := globalgit.BuildProbeDeps(b.fragmentDir)
+	rows, err := globalgit.Statuses(deps, b.baselineTargetPath())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]tuikit.GlobalGitOptionView, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, tuikit.GlobalGitOptionView{
+			Key:          row.Key,
+			CurrentValue: row.CurrentValue,
+			Provenance:   b.globalGitProvenanceLabel(row),
+			Recommended:  row.Recommended,
+			OneLiner:     fixture[row.Key].OneLiner,
+			Explanation:  fixture[row.Key].OneLiner,
+			GitDefault:   row.GitDefault,
+			ProbeError:   row.ProbeError,
+			State:        toGlobalGitOptionState(row.State),
+		})
+	}
+	return out, nil
+}
+
+// globalGitProvenanceLabel renders the D-03 provenance label from the
+// classifier's source class — the render package never learns the enum.
+func (b *realBackend) globalGitProvenanceLabel(row globalgit.OptionRow) string {
+	switch row.Source {
+	case globalgit.SourceSetByGitid:
+		return fmt.Sprintf("set by gitid in %s", b.displayPath(b.baselineTargetPath()))
+	case globalgit.SourceSetByUser:
+		origin := row.EffectiveOrigin
+		if origin != "" {
+			return fmt.Sprintf("set by you in %s", b.displayPath(origin))
+		}
+		return "set by you"
+	case globalgit.SourceUnchangeable:
+		return "set outside a file gitid can change"
+	default:
+		if row.ProbeError != "" {
+			return "the probe did not answer — see the advisory note"
+		}
+		return "not set"
+	}
+}
+
+// toGlobalGitOptionState maps the engine's OptionRowState to the render DTO's
+// row state. The one-to-one correspondence is structurally pinned by the
+// exported constants on both sides.
+func toGlobalGitOptionState(s globalgit.OptionRowState) tuikit.GlobalGitOptionState {
+	switch s {
+	case globalgit.StateAlreadySet:
+		return tuikit.GlobalGitAlreadySet
+	case globalgit.StateSetButDiffers:
+		return tuikit.GlobalGitSetButDiffers
+	case globalgit.StateUnclaimed:
+		return tuikit.GlobalGitUnclaimed
+	default:
+		return tuikit.GlobalGitNeedsAction
+	}
+}
+
+// GlobalGitApplyPlan is the global-git apply preview scene: the resolved
+// baseline target, the promised backup paths (main config + baseline file,
+// whichever already exist), and a diff of the baseline file's candidate body.
+func (b *realBackend) GlobalGitApplyPlan(keys []string) (tuikit.GlobalGitApplyPlanView, error) {
+	if b.initErr != nil {
+		return tuikit.GlobalGitApplyPlanView{}, b.initErr
+	}
+	explicit := make(map[string]string, len(keys))
+	for _, k := range keys {
+		policy, ok := globalgit.PolicyFor(k)
+		if !ok {
+			return tuikit.GlobalGitApplyPlanView{}, fmt.Errorf("gitid: unknown global git option %q", k)
+		}
+		explicit[k] = policy.Recommended
+	}
+	target := b.baselineTargetPath()
+	view := tuikit.GlobalGitApplyPlanView{}
+	for _, p := range []string{b.gitconfigPath, target} {
+		view.Targets = append(view.Targets, b.displayPath(p))
+		// Only files that ALREADY exist get a backup — filewriter backs up
+		// nothing when it creates a file for the first time, and promising a
+		// backup that will not be taken would be a lie in the ceremony.
+		if fileExists(p) {
+			view.Backups = append(view.Backups, b.displayPath(p)+backupSuffixPreview)
+		}
+	}
+	existing, err := os.ReadFile(target) //nolint:gosec // trusted gitid-managed path (G304)
+	if err != nil && !os.IsNotExist(err) {
+		return tuikit.GlobalGitApplyPlanView{}, err
+	}
+	candidate, err := gitconfig.EnsureGlobalGit(existing, explicit)
+	if err != nil {
+		return tuikit.GlobalGitApplyPlanView{}, err
+	}
+	view.Diff = globalsTextDiff(string(existing), string(candidate))
+	return view, nil
+}
+
+// CommitGlobalGit is the global-git apply async seam, mirroring CommitGlobalSSH
+// exactly: resolve nothing cached, call runGlobalGitApply — the ONE complete
+// per-verb global apply ceremony in lifecycle.go, which owns its own txMu
+// locking — and report the result as a GlobalGitCommitMsg. The apply-ceremony
+// screen IS the confirmation, so the lifecycle is authorized with
+// confirmationAlreadyObtained (the only layer permitted to assert that
+// value). Every backup/restored path is scrubbed through b.displayPath /
+// b.displayMessage before it becomes user-facing.
+func (b *realBackend) CommitGlobalGit(keys []string) tea.Cmd {
+	return func() tea.Msg {
+		if b.initErr != nil {
+			return tuikit.GlobalGitCommitMsg{Err: b.displayMessage(b.initErr.Error())}
+		}
+		res, err := b.runGlobalGitApply(keys, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+		msg := tuikit.GlobalGitCommitMsg{
+			Backups:    displayPaths(b, res.Backups),
+			Restored:   displayMessages(b, res.Restored),
+			Advisories: displayMessages(b, res.Advisories),
+		}
+		if err != nil {
+			msg.Err = b.displayMessage(err.Error())
+		}
+		return msg
+	}
+}
 
 // ---------------------------------------------------------------------------
 // SSHStoragePlanner (plan 06-05)

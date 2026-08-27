@@ -58,6 +58,7 @@ func NewFixtureBackend() FixtureBackend { return FixtureBackend{} }
 var _ tuikit.Backend = FixtureBackend{}
 var _ tuikit.IdentityPlanner = FixtureBackend{}
 var _ tuikit.SSHStoragePlanner = FixtureBackend{}
+var _ tuikit.GlobalGitPlanner = FixtureBackend{}
 
 // ---------------------------------------------------------------------------
 // Data
@@ -465,6 +466,54 @@ func (FixtureBackend) CommitGlobalSSH([]string) tea.Cmd {
 	backup := tuikit.NewBackupPath("~/.ssh/config")
 	return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
 		return tuikit.GlobalSSHCommitMsg{Backups: []string{backup}}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// GlobalGitPlanner (plan 07-01) — the demo satisfies the seam from frozen
+// fixtures. cmd/gitid-dummy renders its Global Git screen byte-identically
+// to today through this seam; cmd/gitid injects a real GlobalGitPlanner.
+// ---------------------------------------------------------------------------
+
+// GlobalGitOptionStates projects the frozen GlobalGitOptions fixture into the
+// live view shape: Current/Recommended/OneLiner are the fixture's own values,
+// and the NeedsAction flag becomes the row State. The provenance is a
+// fixture-friendly label — the real backend names the actual file; the demo
+// never probes a machine.
+func (FixtureBackend) GlobalGitOptionStates() ([]tuikit.GlobalGitOptionView, error) {
+	out := make([]tuikit.GlobalGitOptionView, 0, len(tuikit.GlobalGitOptions))
+	for _, o := range tuikit.GlobalGitOptions {
+		state := tuikit.GlobalGitAlreadySet
+		if o.NeedsAction {
+			state = tuikit.GlobalGitNeedsAction
+		}
+		out = append(out, tuikit.GlobalGitOptionView{
+			Key:          o.Key,
+			CurrentValue: o.Current,
+			Provenance:   "fixture value — the demo does not probe this machine",
+			Recommended:  o.Recommended,
+			OneLiner:     o.OneLiner,
+			State:        state,
+		})
+	}
+	return out, nil
+}
+
+// GlobalGitApplyPlan is deliberately EMPTY for the demo: the ceremony falls
+// back to its own fixture-derived target/backup/preview (the frozen Phase-2
+// shape), and the demo never computes a real diff. The REAL backend returns
+// the resolved baseline target, promised backups and a genuine diff.
+func (FixtureBackend) GlobalGitApplyPlan([]string) (tuikit.GlobalGitApplyPlanView, error) {
+	return tuikit.GlobalGitApplyPlanView{}, nil
+}
+
+// CommitGlobalGit keeps the approved dummy apply flow in memory — it never
+// touches HOME, reporting the fixture receipt after the same brief tick the
+// other async fixture commands use.
+func (FixtureBackend) CommitGlobalGit([]string) tea.Cmd {
+	backup := tuikit.NewBackupPath("~/.gitconfig.d/00-baseline")
+	return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
+		return tuikit.GlobalGitCommitMsg{Backups: []string{backup}}
 	})
 }
 

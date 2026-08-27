@@ -134,6 +134,59 @@ func (NoopGlobalSSHPlanner) CommitGlobalSSH([]string) tea.Cmd {
 
 var _ GlobalSSHPlanner = NoopGlobalSSHPlanner{}
 
+// ErrGlobalGitPlannerNotImplemented is the sentinel NoopGlobalGitPlanner
+// returns from every method. Fixtures and test stubs embed the noop and
+// override only the methods they exercise; a missing real implementation must
+// be a compile error, not this sentinel at runtime.
+var ErrGlobalGitPlannerNotImplemented = errors.New("global git planner not implemented")
+
+// GlobalGitPlanner is the Phase 7 global-git seam: the options-list read, the
+// apply-preview write plan, and the asynchronous apply commit. The THREE
+// methods are the whole seam — no speculative surface. The D9 fallback-author
+// seam is deliberately a SEPARATE interface owned by plan 07-02, so this
+// interface never grows author methods.
+type GlobalGitPlanner interface {
+	// GlobalGitOptionStates returns the Options pane's live rows: the real
+	// current value and the provable provenance LABEL per policy option.
+	// A non-nil error must fail loosely per GGIT-01's advisory posture — the
+	// pane renders an error note rather than a blank body.
+	GlobalGitOptionStates() ([]GlobalGitOptionView, error)
+	// GlobalGitApplyPlan returns the confirmed-apply preview: the resolved
+	// target, the promised backup paths, and the diff of the candidate write.
+	// A non-nil error must fail closed: the confirm screen renders the error.
+	GlobalGitApplyPlan(keys []string) (GlobalGitApplyPlanView, error)
+	// CommitGlobalGit dispatches the confirmed global-git apply transaction
+	// off the update loop and delivers a GlobalGitCommitMsg.
+	CommitGlobalGit(keys []string) tea.Cmd
+}
+
+// NoopGlobalGitPlanner implements every GlobalGitPlanner method with a
+// zero-value view plus ErrGlobalGitPlannerNotImplemented (and a command
+// delivering that error for the commit seam). Fixtures and test stubs embed
+// it and override only what they exercise. The REAL backend must NOT embed
+// it — a missing real implementation must be a compile error, pinned by the
+// compile-time assertion in cmd/gitid/wiring.go and a reflection test.
+type NoopGlobalGitPlanner struct{}
+
+// GlobalGitOptionStates implements GlobalGitPlanner.
+func (NoopGlobalGitPlanner) GlobalGitOptionStates() ([]GlobalGitOptionView, error) {
+	return nil, ErrGlobalGitPlannerNotImplemented
+}
+
+// GlobalGitApplyPlan implements GlobalGitPlanner.
+func (NoopGlobalGitPlanner) GlobalGitApplyPlan([]string) (GlobalGitApplyPlanView, error) {
+	return GlobalGitApplyPlanView{}, ErrGlobalGitPlannerNotImplemented
+}
+
+// CommitGlobalGit implements GlobalGitPlanner.
+func (NoopGlobalGitPlanner) CommitGlobalGit([]string) tea.Cmd {
+	return func() tea.Msg {
+		return GlobalGitCommitMsg{Err: ErrGlobalGitPlannerNotImplemented.Error()}
+	}
+}
+
+var _ GlobalGitPlanner = NoopGlobalGitPlanner{}
+
 // ErrSSHStoragePlannerNotImplemented is the sentinel NoopSSHStoragePlanner
 // returns from every method. Fixtures and test stubs embed the noop and
 // override only the methods they exercise; a missing real implementation must
@@ -205,6 +258,12 @@ type Backend interface {
 	// be a compile error, pinned by wiring.go's compile-time assertion and by
 	// a reflection test.
 	GlobalSSHPlanner
+	// GlobalGitPlanner: plan 07-01's global-git Options seam. The real backend
+	// must NOT embed NoopGlobalGitPlanner — a missing real implementation must
+	// be a compile error, pinned by wiring.go's compile-time assertion and by
+	// a reflection test. The D9 fallback-author seam is a SEPARATE interface
+	// owned by plan 07-02, so this interface never grows author methods.
+	GlobalGitPlanner
 	// SSHStoragePlanner: plan 06-05's Storage-sub-tab seam. Deliberately
 	// separate from GlobalSSHPlanner — one interface owns the option
 	// catalogue and its write, this one owns the layout and its migration.
