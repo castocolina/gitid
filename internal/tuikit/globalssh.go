@@ -99,30 +99,27 @@ type globalSSHModel struct {
 	appliedKeys        []string
 }
 
-// newGlobalSSHModel mirrors GlobalSsh.tsx's initial state: the fixture's
-// IdentitiesOnly detail, every needs-action option pre-chosen EXCEPT
-// ForwardAgent (the fixture user's deliberate decline). The option states
-// themselves come from the backend on activation.
+// newGlobalSSHModel returns a model with an EMPTY selection set (D-15): the
+// selection starts empty on every entry to the screen, and the toggle key is
+// the only way to add to it. The pre-chosen fixture set was the demo's
+// scripted state, not the real default.
 func newGlobalSSHModel(b Backend) globalSSHModel {
-	chosen := map[string]bool{}
-	for _, o := range GlobalSSHOptions {
-		if o.NeedsAction && o.Key != "ForwardAgent" {
-			chosen[o.Key] = true
-		}
-	}
 	return globalSSHModel{
 		backend:       b,
 		detailKey:     "IdentitiesOnly",
-		chosen:        chosen,
+		chosen:        map[string]bool{},
 		storageChoice: StorageSentinel,
 	}
 }
 
 // activate syncs the storage radio with the live state and fetches the
-// Options sub-tab rows from the backend. A non-nil fetch error stores an
-// empty slice plus an error note the pane renders instead of a blank body.
+// Options sub-tab rows from the backend. The selection is reset to empty on
+// every entry so returning to the screen never resurrects a stale selection
+// (D-15). A non-nil fetch error stores an empty slice plus an error note the
+// pane renders instead of a blank body.
 func (m globalSSHModel) activate(s DemoState) (screenModel, tea.Cmd) {
 	m.storageChoice = s.SSHStorage
+	m.chosen = map[string]bool{}
 	options, err := m.backend.GlobalSSHOptionStates()
 	m.options = options
 	if err != nil {
@@ -147,10 +144,17 @@ func (m globalSSHModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 			m.ceremony = m.ceremony.commitFailed(message)
 			return keyResult{model: m}
 		}
-		m.ceremony = m.ceremony.commitSucceeded(commit.Backups)
 		plural := "s"
 		if len(m.appliedKeys) == 1 {
 			plural = ""
+		}
+		m.ceremony = m.ceremony.commitSucceeded(commit.Backups)
+		// Append post-write shadow advisories to the receipt (D-04).
+		// The ResultExtra field is the right slot: it is rendered directly
+		// below ResultMessage on the receipt without requiring a new ceremony
+		// field (06-UI-SPEC.md budgets this against the existing field).
+		if len(commit.ShadowAdvisories) > 0 {
+			m.ceremony = m.ceremony.withResultExtra(strings.Join(commit.ShadowAdvisories, "\n"))
 		}
 		return keyResult{
 			model:   m,
@@ -274,7 +278,7 @@ func includePreviewOwned(s DemoState) string {
 // its diff. The ceremony is ASYNC: confirmation dispatches the backend commit
 // and the receipt is reachable only from that commit's explicit success
 // (ceremony.go's Async contract), exactly like the standalone Git ceremony.
-func (m globalSSHModel) applyCeremonyFor(s DemoState) ceremonyModel {
+func (m globalSSHModel) applyCeremonyFor(s DemoState) (ceremonyModel, error) {
 	options := m.overlaidOptions(s)
 	pending := pendingOptions(options)
 	chosen := m.applyChosen(options)
@@ -297,7 +301,10 @@ func (m globalSSHModel) applyCeremonyFor(s DemoState) ceremonyModel {
 		}
 	}
 
-	plan, _ := m.backend.GlobalSSHApplyPlan(chosen)
+	plan, planErr := m.backend.GlobalSSHApplyPlan(chosen)
+	if planErr != nil {
+		return ceremonyModel{}, planErr
+	}
 	targets := plan.Targets
 	if len(targets) == 0 {
 		// The backend's plan always resolves the storage target (D-07); this
@@ -317,6 +324,19 @@ func (m globalSSHModel) applyCeremonyFor(s DemoState) ceremonyModel {
 	if preview == "" {
 		preview = strings.Join(lines, "\n")
 	}
+	// Append shadow warnings or the inconclusive note (D-04).
+	// With zero warnings and a conclusive simulation, nothing extra renders.
+	// With an inconclusive simulation, the note renders and no shadow warnings
+	// are shown (an unproven claim is never printed as a fact).
+	if plan.SimulationInconclusive {
+		if plan.SimulationNote != "" {
+			preview += "\n" + plan.SimulationNote
+		}
+	} else {
+		for _, w := range plan.ShadowWarnings {
+			preview += "\n" + w
+		}
+	}
 	rest := ""
 	if len(pending)-len(chosen) > 0 {
 		rest = " The rest were left unchanged, as chosen."
@@ -330,7 +350,7 @@ func (m globalSSHModel) applyCeremonyFor(s DemoState) ceremonyModel {
 		ResultMessage: fmt.Sprintf("%d of %d recommended options applied to Host *.%s", len(chosen), len(pending), rest),
 		ConfirmLabel:  "Apply selected",
 		Async:         true,
-	})
+	}), nil
 }
 
 // storageCeremonyFor builds the STORE-03 migration ceremony for the
@@ -442,7 +462,14 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		return keyResult{model: m, handled: true}
 	case "a":
 		if m.subTab == gssOptions && len(m.applyChosen(options)) > 0 {
-			m.ceremony = m.applyCeremonyFor(s)
+			cer, cerErr := m.applyCeremonyFor(s)
+			if cerErr != nil {
+				// A preview that cannot be computed renders the error inline
+				// and does NOT open the ceremony.
+				m.optionsErr = cerErr.Error()
+				return keyResult{model: m, handled: true}
+			}
+			m.ceremony = cer
 			m.mode = gssApplyCeremony
 		}
 		return keyResult{model: m, handled: true}

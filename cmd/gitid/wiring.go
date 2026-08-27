@@ -1306,8 +1306,7 @@ func (b *realBackend) CommitDelete(name, scope string) tea.Cmd {
 // confirmationAlreadyObtained (the only layer permitted to assert that
 // value). Every backup/restored path is scrubbed through b.displayPath /
 // b.displayMessage before it becomes user-facing, the same WR-01/WR-23
-// discipline CommitGit and CommitDelete apply. ShadowAdvisories stays empty
-// in this plan; 06-04 fills it.
+// discipline CommitGit and CommitDelete apply.
 func (b *realBackend) CommitGlobalSSH(keys []string) tea.Cmd {
 	return func() tea.Msg {
 		if b.initErr != nil {
@@ -1315,8 +1314,9 @@ func (b *realBackend) CommitGlobalSSH(keys []string) tea.Cmd {
 		}
 		res, err := b.runGlobalSSHApply(keys, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
 		msg := tuikit.GlobalSSHCommitMsg{
-			Backups:  displayPaths(b, res.Backups),
-			Restored: displayMessages(b, res.Restored),
+			Backups:          displayPaths(b, res.Backups),
+			Restored:         displayMessages(b, res.Restored),
+			ShadowAdvisories: displayMessages(b, res.Advisories),
 		}
 		if err != nil {
 			msg.Err = b.displayMessage(err.Error())
@@ -1396,8 +1396,8 @@ func (b *realBackend) readSSHVersion() platform.SSHVersion {
 
 // GlobalSSHApplyPlan is the global-SSH apply preview scene: the resolved
 // targets, the promised backup path, and a diff computed from the target
-// file's CURRENT bytes and the EnsureGlobals candidate. Its shadow-warning
-// field stays empty in this plan; 06-04 fills it.
+// file's CURRENT bytes and the EnsureGlobals candidate. The shadow-warning
+// and simulation-inconclusive fields are filled by BuildGraph+Simulate.
 func (b *realBackend) GlobalSSHApplyPlan(keys []string) (tuikit.GlobalSSHApplyPlanView, error) {
 	if b.initErr != nil {
 		return tuikit.GlobalSSHApplyPlanView{}, b.initErr
@@ -1434,8 +1434,49 @@ func (b *realBackend) GlobalSSHApplyPlan(keys []string) (tuikit.GlobalSSHApplyPl
 		return tuikit.GlobalSSHApplyPlanView{}, err
 	}
 	view.Diff = globalsTextDiff(globalsBodyText(existing), globalsBodyText(candidate))
+
+	// D-04 pre-write simulation: build the whole config graph (recursively,
+	// cycle-detected) and simulate the candidate against the mirror's entry
+	// point — not the candidate file alone, which cannot see directives in
+	// the main config (06-REVIEWS.md HIGH). A BuildGraph error becomes
+	// SimulationInconclusive; the apply is still permitted (a graph gitid
+	// cannot model is not grounds for refusing a backed-up, reversible write).
+	graph, buildErr := globalssh.BuildGraph(b.sshConfigPath, st.targetPath, candidate)
+	if buildErr != nil {
+		view.SimulationInconclusive = true
+		view.SimulationNote = globalSSHSimInconclusiveNote
+	} else {
+		simResult := globalssh.Simulate(globalssh.BuildProbeDeps(b.sshConfigPath), graph, keys)
+		if simResult.Inconclusive {
+			view.SimulationInconclusive = true
+			view.SimulationNote = globalSSHSimInconclusiveNote
+		} else {
+			for _, f := range simResult.Findings {
+				if f.ShadowedByFile != "" {
+					view.ShadowWarnings = append(view.ShadowWarnings,
+						fmt.Sprintf(globalSSHShadowWarningFmt, f.Key, b.displayPath(f.ShadowedByFile), f.ShadowedByLine))
+				} else {
+					view.ShadowWarnings = append(view.ShadowWarnings,
+						fmt.Sprintf(globalSSHShadowWarnNoFileFmt, f.Key))
+				}
+			}
+		}
+	}
 	return view, nil
 }
+
+// globalSSHShadowWarningFmt is the frozen warning text for a nameable shadow
+// source. Registered in gate-copy-freeze; the format string sentinel must
+// stay in this package.
+const globalSSHShadowWarningFmt = "shadow warning: %s will be shadowed by %s (line %d)"
+
+// globalSSHShadowWarnNoFileFmt is the frozen warning text when the shadowing
+// source cannot be named. Registered in gate-copy-freeze.
+const globalSSHShadowWarnNoFileFmt = "shadow warning: %s will be shadowed (source unnameable)"
+
+// globalSSHSimInconclusiveNote is the frozen warning when the simulation
+// cannot faithfully mirror the config graph. Registered in gate-copy-freeze.
+const globalSSHSimInconclusiveNote = "simulation inconclusive — gitid could not fully read your config graph; apply will continue but shadowing cannot be checked"
 
 // globalSSHProvenanceLabel renders the D-03 provenance label for one source
 // class, scoped to exactly what each class proves (06-REVIEWS.md HIGH pin):

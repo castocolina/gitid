@@ -269,8 +269,20 @@ func EnsureIncludeLine(configPath string) (backupPath string, err error) {
 
 	// Round-trip safety: the composed config must parse cleanly before we
 	// commit it to disk (parse -> compose -> parse stability).
+	//
+	// Exception: if the EXISTING content is also unparseable (e.g. due to a
+	// pre-existing Include cycle in unrelated files), the composed parse failure
+	// is not caused by gitid's own edit. In that case we proceed — the config
+	// was already broken before us, and a backed-up atomic write is safe.
+	// This preserves the refuse-to-corrupt invariant for gitid's own edits:
+	// a previously-parseable config that becomes unparseable after gitid's
+	// Include line is prepended is still refused.
 	if _, perr := Parse(composed); perr != nil {
-		return "", fmt.Errorf("sshconfig: composed config with Include line is not parseable, refusing to write: %w", perr)
+		_, existingErr := Parse(existing)
+		preExisting := len(existing) > 0 && existingErr != nil
+		if !preExisting {
+			return "", fmt.Errorf("sshconfig: composed config with Include line is not parseable, refusing to write: %w", perr)
+		}
 	}
 
 	backupPath, err = filewriter.Write(configPath, composed, includeFileMode)

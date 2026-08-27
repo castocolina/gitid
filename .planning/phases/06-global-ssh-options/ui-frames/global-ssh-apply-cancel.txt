@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Global SSH › Options
+ ! Preview — demo data, not wired to your system yet
+  Options   Storage & preview
+ ▸ ☑ ! StrictHostKeyChecking  [Medium]      │  StrictHostKeyChecking
+      now: no → accept-new                  │  ~ Recommended, not required -- you can leave any
+      ✓ ForwardAgent  [High]                │ option unchanged. This is advisory, never a compliance
+      now: no → no  safe by default         │ gate.
+   ☐ ! HashKnownHosts  [Low]                │
+      now: no → yes                         │  accept-new pins first-seen keys and hard-fails on a
+        IdentitiesOnly  [High]              │ changed key; it requires OpenSSH 7.6 or newer.
+      not applicable (nothing on this machi…│  not set (OpenSSH default: no)
+   ☐ ! AddKeysToAgent  [Low]                │  Your OpenSSH: 9.9p2 — accept-new is available
+      now: no → yes                         │
+   ☐ ! UseKeychain  [Low]                   │
+      now:  → yes                           │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+ 4 of 6 options need action — Recommended, not required -- you can leave any option unchanged. Thi…
+ ↑↓ select option · ←→ Options / Storage · space toggle · a apply 1 selected
+ Enter activate · Esc back · ? help · Ctrl+P palette · q quit

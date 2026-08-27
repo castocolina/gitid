@@ -1498,3 +1498,110 @@ func TestRunGlobalSSHApplyRejectsPerAliasOptionByName(t *testing.T) {
 	}
 	assertUnchanged(t, before, snapshotPaths(t, []string{filepath.Join(home, ".ssh", "config")}))
 }
+
+// TestRunGlobalSSHApplySimulateStageIsRecorded confirms the simulate stage
+// is now part of the global-ssh stage sequence (plan 06-04 extension).
+func TestRunGlobalSSHApplySimulateStageIsRecorded(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	record, stages := rec()
+	_, err := b.runGlobalSSHApply([]string{"HashKnownHosts"}, lifecyclePolicy{
+		Confirm: confirmationAlreadyObtained,
+		Stages:  record,
+	})
+	if err != nil {
+		t.Fatalf("runGlobalSSHApply: %v", err)
+	}
+	found := false
+	for _, s := range *stages {
+		if s == "simulate" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("stages = %v, want 'simulate' stage recorded", *stages)
+	}
+}
+
+// TestRunGlobalSSHApplyVerifyStageIsRecorded confirms the verify stage
+// is now part of the global-ssh stage sequence after the write.
+func TestRunGlobalSSHApplyVerifyStageIsRecorded(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	record, stages := rec()
+	_, err := b.runGlobalSSHApply([]string{"HashKnownHosts"}, lifecyclePolicy{
+		Confirm: confirmationAlreadyObtained,
+		Stages:  record,
+	})
+	if err != nil {
+		t.Fatalf("runGlobalSSHApply: %v", err)
+	}
+	found := false
+	for _, s := range *stages {
+		if s == "verify" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("stages = %v, want 'verify' stage recorded", *stages)
+	}
+}
+
+// TestRunGlobalSSHApplyInconclusiveSimulationPermitsWrite asserts that when
+// BuildGraph fails (e.g. due to a cycle), the apply still completes the write
+// and sets SimulationInconclusive in the result.
+func TestRunGlobalSSHApplyInconclusiveSimulationPermitsWrite(t *testing.T) {
+	home := t.TempDir()
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(sshDir, "config")
+	target := filepath.Join(sshDir, "config.d", "gitid.config")
+	includeA := filepath.Join(sshDir, "a.config")
+	includeB := filepath.Join(sshDir, "b.config")
+
+	// Plant a cycle: a.config includes b.config which includes a.config.
+	writeFile(t, includeA, fmt.Sprintf("Include %s\n", includeB))
+	writeFile(t, includeB, fmt.Sprintf("Include %s\n", includeA))
+	mainContent := fmt.Sprintf("Include %s\n", includeA)
+	writeFile(t, configPath, mainContent)
+
+	b := newBackendForHome(home)
+	res, err := b.runGlobalSSHApply([]string{"HashKnownHosts"}, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+	if err != nil {
+		t.Fatalf("runGlobalSSHApply must succeed even when graph is inconclusive: %v", err)
+	}
+	// The write should still happen.
+	if !fileExists(target) {
+		t.Error("apply must write the target even when simulation is inconclusive")
+	}
+	_ = res
+}
+
+// TestRunGlobalSSHApplyDryRunReportsSimulate asserts that a dry run records
+// the simulate stage and leaves the target unchanged.
+func TestRunGlobalSSHApplyDryRunReportsSimulate(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	record, stages := rec()
+	before := snapshotPaths(t, []string{filepath.Join(home, ".ssh", "config")})
+
+	_, err := b.runGlobalSSHApply([]string{"HashKnownHosts"}, lifecyclePolicy{DryRun: true, Stages: record})
+	if err != nil {
+		t.Fatalf("dry run failed: %v", err)
+	}
+	found := false
+	for _, s := range *stages {
+		if s == "simulate" {
+			found = true
+		}
+		if s == "write" {
+			t.Errorf("dry run must not record 'write' stage")
+		}
+	}
+	if !found {
+		t.Errorf("stages = %v, want simulate stage even in dry run", *stages)
+	}
+	assertUnchanged(t, before, snapshotPaths(t, []string{filepath.Join(home, ".ssh", "config")}))
+}

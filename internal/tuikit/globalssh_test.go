@@ -74,10 +74,25 @@ func TestGlobalSSHOptionsMasterDetail(t *testing.T) {
 func TestGlobalSSHApplySubsetMarksAppliedAndShowsDeclined(t *testing.T) {
 	a := gssApp(t)
 	m := gssModel(t, a)
-	// Initial chosen: every needs-action key EXCEPT ForwardAgent.
+	// D-15: the selection starts EMPTY on every entry to the screen.
 	keys := m.applyChosen(m.overlaidOptions(a.state))
+	if len(keys) != 0 {
+		t.Fatalf("initial chosen = %v, want 0 (D-15: selection starts empty)", keys)
+	}
+
+	// Toggle HashKnownHosts and StrictHostKeyChecking.
+	// List order: StrictHostKeyChecking(0) ForwardAgent(1) HashKnownHosts(2) IdentitiesOnly(3) ...
+	// Starting at IdentitiesOnly: up→HashKnownHosts, space; up→ForwardAgent, skip;
+	// up→StrictHostKeyChecking, space.
+	a, _ = press(t, a, "up") // IdentitiesOnly → HashKnownHosts
+	a, _ = press(t, a, "space")
+	a, _ = press(t, a, "up") // HashKnownHosts → ForwardAgent (skip)
+	a, _ = press(t, a, "up") // ForwardAgent → StrictHostKeyChecking
+	a, _ = press(t, a, "space")
+	m = gssModel(t, a)
+	keys = m.applyChosen(m.overlaidOptions(a.state))
 	if len(keys) != 2 {
-		t.Fatalf("initial chosen = %v, want 2 writable keys (IdentitiesOnly is verify-only, ForwardAgent declined)", keys)
+		t.Fatalf("after toggling 2 keys, chosen = %v, want 2", keys)
 	}
 
 	a, _ = press(t, a, "a")
@@ -123,9 +138,15 @@ func TestGlobalSSHApplySubsetMarksAppliedAndShowsDeclined(t *testing.T) {
 
 	a, _ = press(t, a, "enter") // done → back to browse
 	// Applied overlay: an applied key's detail renders "Applied by
-	// gitid — <one-liner>" (IdentitiesOnly always shows the deep-dive, so
-	// move the selection up to HashKnownHosts).
-	a, _ = press(t, a, "up")
+	// gitid — <one-liner>". Navigate to HashKnownHosts explicitly.
+	// After ceremony, detailKey may be anywhere; use down to reach HashKnownHosts.
+	for _, key := range [3]string{"down", "down", "down"} {
+		a, _ = press(t, a, key)
+	}
+	// Wrap around a few times to find HashKnownHosts — simpler: just set it directly.
+	m = gssModel(t, a)
+	m.detailKey = "HashKnownHosts"
+	a.screens[TabGlobalSSH] = m
 	if !strings.Contains(regionFlat(a, 45, 100), "Applied by gitid — Hashing known_hosts") {
 		t.Error("applied keys must render the Applied-by-gitid overlay one-liner")
 	}
@@ -139,15 +160,16 @@ func TestGlobalSSHApplySubsetMarksAppliedAndShowsDeclined(t *testing.T) {
 func TestGlobalSSHSpaceTogglesChoice(t *testing.T) {
 	a := gssApp(t)
 	a, _ = press(t, a, "up") // IdentitiesOnly is verify-only; HashKnownHosts is writable.
+	// D-15: selection starts empty, so first space must CHECK the option.
 	a, _ = press(t, a, "space")
 	m := gssModel(t, a)
-	if m.chosen["HashKnownHosts"] {
-		t.Error("space must uncheck the selected pending option")
+	if !m.chosen["HashKnownHosts"] {
+		t.Error("space must check the selected pending option (D-15: starts empty)")
 	}
 	a, _ = press(t, a, "space")
 	m = gssModel(t, a)
-	if !m.chosen["HashKnownHosts"] {
-		t.Error("space must re-check the selected pending option")
+	if m.chosen["HashKnownHosts"] {
+		t.Error("space must uncheck the selected pending option")
 	}
 }
 
@@ -202,6 +224,9 @@ func TestGlobalSSHStoragePreviewsSwitchAndMigrateRoundTrips(t *testing.T) {
 func TestGlobalSSHApplyTargetsOwnedFileUnderIncludeLayout(t *testing.T) {
 	a := gssApp(t)
 	a.state = Reduce(a.state, SetSSHStorage{Layout: StorageInclude, Backup: "b"})
+	// D-15: selection starts empty; must select something before applying.
+	a, _ = press(t, a, "up") // HashKnownHosts
+	a, _ = press(t, a, "space")
 	a, _ = press(t, a, "a")
 	if !strings.Contains(appView(a), "Touches ~/.ssh/config.d/gitid.config") {
 		t.Error("apply ceremony must target the owned file under the include layout")
@@ -217,6 +242,9 @@ func TestGlobalSSHApplyCeremonyNamesStorageTarget(t *testing.T) {
 	b := &stubBackend{sshApplyPlan: GlobalSSHApplyPlanView{Targets: []string{sentinel}}}
 	a := NewApp(b)
 	a, _ = press(t, a, "2")
+	// D-15: selection starts empty; must select something before pressing "a".
+	a, _ = press(t, a, "up") // HashKnownHosts
+	a, _ = press(t, a, "space")
 	a, _ = press(t, a, "a")
 	view := appView(a)
 	want := "Write Host * managed block to " + sentinel
@@ -235,18 +263,31 @@ func TestGlobalSSHSpaceToggleIsCopyOnWrite(t *testing.T) {
 	m = activated.(globalSSHModel)
 	orig := m.chosen
 	m.detailKey = "HashKnownHosts"
-	if !orig["HashKnownHosts"] {
-		t.Fatal("fixture: HashKnownHosts must start pre-chosen")
+	// D-15: selection starts empty; pre-check it to test uncheck behavior.
+	if orig["HashKnownHosts"] {
+		t.Fatal("D-15: HashKnownHosts must start NOT pre-chosen (empty selection)")
 	}
+	// First toggle: check the option.
 	res := m.handleKey(pressKey("space"), Seed())
 	next, ok := res.model.(globalSSHModel)
 	if !ok {
 		t.Fatalf("model is %T, want globalSSHModel", res.model)
 	}
-	if next.chosen["HashKnownHosts"] {
+	if !next.chosen["HashKnownHosts"] {
+		t.Error("space must choose the selected option")
+	}
+	// Second toggle: un-check it (copy-on-write property).
+	res2 := next.handleKey(pressKey("space"), Seed())
+	next2, ok := res2.model.(globalSSHModel)
+	if !ok {
+		t.Fatalf("model is %T, want globalSSHModel", res2.model)
+	}
+	if next2.chosen["HashKnownHosts"] {
 		t.Error("space must un-choose the selected option")
 	}
-	if !orig["HashKnownHosts"] {
+	// Elm purity: the map must be copy-on-write; the original must be unchanged.
+	// orig is the empty map from activate; it must still be empty after toggles.
+	if orig["HashKnownHosts"] {
 		t.Error("Elm purity: the toggle mutated the map shared with the pre-update model copy")
 	}
 }
@@ -334,6 +375,10 @@ func TestGlobalSSHApplyConfirmationIsInFlightNoApplyAction(t *testing.T) {
 	state := Seed()
 	activated, _ := m.activate(state)
 	m = activated.(globalSSHModel)
+	// D-15: selection starts empty; toggle to select HashKnownHosts before applying.
+	m.detailKey = "HashKnownHosts"
+	toggled := m.handleKey(pressKey("space"), state)
+	m = toggled.model.(globalSSHModel)
 	opened := m.handleKey(pressKey("a"), state)
 	m = opened.model.(globalSSHModel)
 	confirmed := m.handleKey(pressKey("enter"), state)
@@ -372,6 +417,9 @@ func TestGlobalSSHApplyFailureRendersRetryNoReceiptNoApply(t *testing.T) {
 	b := &stubBackend{sshCommitMsg: GlobalSSHCommitMsg{Err: "disk on fire"}}
 	a := NewApp(b)
 	a, _ = press(t, a, "2")
+	// D-15: selection starts empty; select HashKnownHosts before applying.
+	a, _ = press(t, a, "up") // HashKnownHosts
+	a, _ = press(t, a, "space")
 	a, _ = press(t, a, "a")
 	a, cmd := press(t, a, "enter") // confirm
 	msg := cmd().(GlobalSSHCommitMsg)

@@ -202,23 +202,29 @@ func TestMouseDoctorFixThisButtonAndCeremonyCancel(t *testing.T) {
 
 func TestMouseGlobalSSHCheckboxCellTogglesWithoutSelecting(t *testing.T) {
 	a, _ := press(t, NewApp(stubBackend{}), "2")
-	if !gssModelOf(t, a).chosen["StrictHostKeyChecking"] {
-		t.Fatal("fixture: StrictHostKeyChecking must start chosen")
+	// D-15: selection starts empty. First ☐ is StrictHostKeyChecking — click
+	// to check it, then verify it unchecks.
+	if gssModelOf(t, a).chosen["StrictHostKeyChecking"] {
+		t.Fatal("D-15: StrictHostKeyChecking must NOT start chosen (empty selection)")
 	}
-	// The first ☑ in the list is StrictHostKeyChecking's checkbox cell.
-	a = clickCell(t, a, "☑", masterListWidth(a.width), frameBodyTop)
+	// Click the first ☐ (StrictHostKeyChecking) to check it.
+	a = clickCell(t, a, "☐", masterListWidth(a.width), frameBodyTop)
 	m := gssModelOf(t, a)
-	if m.chosen["StrictHostKeyChecking"] {
-		t.Error("clicking the ☑ cell must uncheck the row (like space)")
+	if !m.chosen["StrictHostKeyChecking"] {
+		t.Error("clicking the ☐ cell must check the row (D-15: starting from empty)")
 	}
 	if m.detailKey != "IdentitiesOnly" {
 		t.Errorf("detailKey = %q — the checkbox click must NOT move the selection", m.detailKey)
 	}
-	// On a fresh screen the first ☐ is ForwardAgent's (the fixture
-	// decline) — clicking the empty checkbox cell checks it.
+	// Clicking a checked ☑ must uncheck it.
+	a = clickCell(t, a, "☑", masterListWidth(a.width), frameBodyTop)
+	if gssModelOf(t, a).chosen["StrictHostKeyChecking"] {
+		t.Error("clicking the ☑ cell must uncheck the row")
+	}
+	// On a fresh screen the first ☐ is StrictHostKeyChecking — clicking it checks it.
 	b, _ := press(t, NewApp(stubBackend{}), "2")
 	b = clickCell(t, b, "☐", masterListWidth(b.width), frameBodyTop)
-	if !gssModelOf(t, b).chosen["ForwardAgent"] {
+	if !gssModelOf(t, b).chosen["StrictHostKeyChecking"] {
 		t.Error("clicking the ☐ cell must check the row")
 	}
 }
@@ -426,7 +432,10 @@ func TestReservedFooterHonestInKeyConsumingStates(t *testing.T) {
 			return pressSeq(t, wizardThroughTest(t, identitiesApp()), "tab", "tab", "tab", "tab")
 		}},
 		{"delete-scope chooser", func(t *testing.T) App { return pressSeq(t, identitiesApp(), "d") }},
-		{"global ssh apply ceremony", func(t *testing.T) App { return pressSeq(t, NewApp(stubBackend{}), "2", "a") }},
+		{"global ssh apply ceremony", func(t *testing.T) App {
+			// D-15: selection starts empty; select HashKnownHosts before applying.
+			return pressSeq(t, NewApp(stubBackend{}), "2", "up", "space", "a")
+		}},
 		{"global git apply ceremony", func(t *testing.T) App { return pressSeq(t, NewApp(stubBackend{}), "3", "a") }},
 		{"doctor fix ceremony", func(t *testing.T) App { return pressSeq(t, doctorApp(t), "f") }},
 	}

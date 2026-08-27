@@ -202,6 +202,57 @@ func FakeSSHDir(t *testing.T, mode string) string {
 		"    is_resolution=1\n" +
 		"  fi\n" +
 		"done\n" +
+		"if [ \"$GITID_FAKE_SSH_MODE\" = \"globalssh\" ] || [ \"$GITID_FAKE_SSH_MODE\" = \"globalssh-inconclusive\" ]; then\n" +
+		"  if [ \"$1\" = \"-V\" ]; then\n" +
+		"    echo \"OpenSSH_9.9p2, LibreSSL 3.3.6\" >&2\n" +
+		"    exit 0\n" +
+		"  fi\n" +
+		"  if [ \"$is_resolution\" != \"1\" ]; then\n" +
+		"    echo \"fake ssh: unsupported global SSH probe\" >&2\n" +
+		"    exit 2\n" +
+		"  fi\n" +
+		"  if [ \"$GITID_FAKE_SSH_MODE\" = \"globalssh-inconclusive\" ] && [ -n \"$config_path\" ] && [ \"$config_path\" != \"/dev/null\" ]; then\n" +
+		"    echo \"fake ssh: isolated global SSH probe failed\" >&2\n" +
+		"    exit 2\n" +
+		"  fi\n" +
+		"  if [ -z \"$config_path\" ]; then\n" +
+		"    config_path=\"$HOME/.ssh/config\"\n" +
+		"  fi\n" +
+		"  strict=no\n" +
+		"  forward=no\n" +
+		"  hash=no\n" +
+		"  identities=no\n" +
+		"  addkeys=no\n" +
+		"  usekeychain=yes\n" +
+		"  strict_set=0\n" +
+		"  forward_set=0\n" +
+		"  hash_set=0\n" +
+		"  identities_set=0\n" +
+		"  addkeys_set=0\n" +
+		"  usekeychain_set=0\n" +
+		"  scan_global_ssh_config() {\n" +
+		"    scan_path=\"$1\"\n" +
+		"    [ -r \"$scan_path\" ] || return\n" +
+		"    scan_host=1\n" +
+		"    while read -r scan_key scan_value scan_rest; do\n" +
+		"      [ -n \"$scan_key\" ] || continue\n" +
+		"      case \"$scan_key\" in\n" +
+		"        #*) continue ;;\n" +
+		"        Host|host) [ \"$scan_value\" = \"*\" ] && scan_host=1 || scan_host=0 ;;\n" +
+		"        Include|include) for include_path in $scan_value; do scan_global_ssh_config \"$include_path\"; done ;;\n" +
+		"        StrictHostKeyChecking|stricthostkeychecking) if [ \"$scan_host\" = \"1\" ] && [ \"$strict_set\" = \"0\" ]; then strict=\"$scan_value\"; strict_set=1; fi ;;\n" +
+		"        ForwardAgent|forwardagent) if [ \"$scan_host\" = \"1\" ] && [ \"$forward_set\" = \"0\" ]; then forward=\"$scan_value\"; forward_set=1; fi ;;\n" +
+		"        HashKnownHosts|hashknownhosts) if [ \"$scan_host\" = \"1\" ] && [ \"$hash_set\" = \"0\" ]; then hash=\"$scan_value\"; hash_set=1; fi ;;\n" +
+		"        IdentitiesOnly|identitiesonly) if [ \"$scan_host\" = \"1\" ] && [ \"$identities_set\" = \"0\" ]; then identities=\"$scan_value\"; identities_set=1; fi ;;\n" +
+		"        AddKeysToAgent|addkeystoagent) if [ \"$scan_host\" = \"1\" ] && [ \"$addkeys_set\" = \"0\" ]; then addkeys=\"$scan_value\"; addkeys_set=1; fi ;;\n" +
+		"        UseKeychain|usekeychain) if [ \"$scan_host\" = \"1\" ] && [ \"$usekeychain_set\" = \"0\" ]; then usekeychain=\"$scan_value\"; usekeychain_set=1; fi ;;\n" +
+		"      esac\n" +
+		"    done < \"$scan_path\"\n" +
+		"  }\n" +
+		"  scan_global_ssh_config \"$config_path\"\n" +
+		"  printf 'stricthostkeychecking %s\\nforwardagent %s\\nhashknownhosts %s\\nidentitiesonly %s\\naddkeystoagent %s\\nusekeychain %s\\n' \"$strict\" \"$forward\" \"$hash\" \"$identities\" \"$addkeys\" \"$usekeychain\"\n" +
+		"  exit 0\n" +
+		"fi\n" +
 		"if [ \"$is_resolution\" = \"1\" ]; then\n" +
 		"  if [ -z \"$config_path\" ] || [ ! -r \"$config_path\" ]; then\n" +
 		"    echo \"fake ssh: ssh -G requires a readable staged -F config\" >&2\n" +
@@ -261,6 +312,48 @@ func TestFakeSSHDirResolvesIdentityFileFromStagedConfig(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "identityfile "+wantIdentityFile) {
 		t.Fatalf("fake ssh -G identityfile = %q, want staged config path %q", out, wantIdentityFile)
+	}
+}
+
+func TestFakeSSHDirGlobalSSHProbesReadTheirConfig(t *testing.T) {
+	home := SandboxHome(t)
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatalf("creating .ssh: %v", err)
+	}
+	writeFileT(t, filepath.Join(sshDir, "config"), "Host *\n  StrictHostKeyChecking ask\n")
+
+	ssh := filepath.Join(FakeSSHDir(t, "globalssh"), "ssh")
+	plain, err := exec.Command(ssh, "-G", "gitid-probe.invalid").CombinedOutput() //nolint:gosec // ssh is the test-owned FakeSSHDir script
+	if err != nil {
+		t.Fatalf("running plain global SSH probe: %v\n%s", err, plain)
+	}
+	if !strings.Contains(string(plain), "stricthostkeychecking ask") {
+		t.Fatalf("plain global SSH probe = %q, want HOME config value", plain)
+	}
+
+	first := filepath.Join(t.TempDir(), "first")
+	second := filepath.Join(t.TempDir(), "second")
+	writeFileT(t, first, "Host *\n  StrictHostKeyChecking accept-new\n")
+	writeFileT(t, second, "Host *\n  StrictHostKeyChecking no\n")
+	firstOut, err := exec.Command(ssh, "-G", "-F", first, "gitid-probe.invalid").CombinedOutput() //nolint:gosec // ssh is the test-owned FakeSSHDir script
+	if err != nil {
+		t.Fatalf("running first isolated global SSH probe: %v\n%s", err, firstOut)
+	}
+	secondOut, err := exec.Command(ssh, "-G", "-F", second, "gitid-probe.invalid").CombinedOutput() //nolint:gosec // ssh is the test-owned FakeSSHDir script
+	if err != nil {
+		t.Fatalf("running second isolated global SSH probe: %v\n%s", err, secondOut)
+	}
+	if !strings.Contains(string(firstOut), "stricthostkeychecking accept-new") || !strings.Contains(string(secondOut), "stricthostkeychecking no") {
+		t.Fatalf("isolated global SSH probes must read their supplied config paths:\nfirst=%q\nsecond=%q", firstOut, secondOut)
+	}
+
+	version, err := exec.Command(ssh, "-V").CombinedOutput() //nolint:gosec // ssh is the test-owned FakeSSHDir script
+	if err != nil {
+		t.Fatalf("running global SSH version probe: %v\n%s", err, version)
+	}
+	if !strings.Contains(string(version), "OpenSSH_9.9p2") {
+		t.Fatalf("global SSH version probe = %q, want OpenSSH version", version)
 	}
 }
 
