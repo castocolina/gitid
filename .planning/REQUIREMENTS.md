@@ -252,7 +252,7 @@ These are first-class, enforced requirements — the user's core process ask.
 
 ## I. Global SSH Options (GSSH)
 
-- [ ] **GSSH-01** (Danger-aware): A global-SSH-options screen surfaces SSH config
+- [x] **GSSH-01** (Danger-aware): A global-SSH-options screen surfaces SSH config
   options that are **dangerous by default when unset/misconfigured** (e.g.
   `StrictHostKeyChecking`, `ForwardAgent`, `HashKnownHosts`, `IdentitiesOnly`,
   `AddKeysToAgent`, `UseKeychain`) and **explains every option** with its risk and
@@ -498,7 +498,7 @@ row below records each one's **home** phase.
 | MGR-06 | Phase 5 | Complete |
 | MGR-07 | Phase 5 | Complete |
 | MGR-08 | Phase 5 | Complete |
-| GSSH-01 | Phase 6 | Pending |
+| GSSH-01 | Phase 6 | Complete |
 | GGIT-01 | Phase 7 | Pending |
 | HLTH-01 | Phase 8 | Pending |
 | HLTH-02 | Phase 8 | Pending |

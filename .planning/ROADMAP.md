@@ -51,7 +51,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Create Flow Backend** - Algorithm → SSH screen → two-stage test → store, behind the approved design (completed 2026-08-24)
 - [x] **Phase 4: Git Configuration Screen** - Per-identity git fragment + `includeIf` + `allowed_signers`, review → confirm → write (completed 2026-08-25)
 - [x] **Phase 5: Identity Manager** - State-taxonomy list, SSH-first detail, clone / new-key / rotate / delete-choice, app view set (completed 2026-08-26)
-- [ ] **Phase 6: Global SSH Options** - Danger-aware, explained SSH config options; advisory + fixable
+- [x] **Phase 6: Global SSH Options** - Danger-aware, explained SSH config options; advisory + fixable (completed 2026-08-27)
 - [ ] **Phase 7: Global Git Options** - Baseline git config (main/master, eol, case, email) + recipe defaults, explained
 - [ ] **Phase 8: Health + Fixer** - Two-section (SSH + Git) health with redundancy/contradiction detection and in-place fixes
 - [ ] **Phase 9: Upload / Credentials Assist** - Auto-upload the `.pub` (auth + signing) when `gh`/`glab` authenticated; manual fallback
@@ -279,31 +279,31 @@ Plans:
 
 **Wave 1**
 
-- [ ] 06-01-PLAN.md — TRACER: one option end-to-end (probe set → provable provenance render → backed-up idempotent write) through `runGlobalSSHApply`, the SINGLE write authority; `EnsureGlobals` as the single `Host *` owner with `RenderGlobalBlock` deleted and every create/rotate/repair call site retargeted; placement in the resolved storage target, last (GSSH-01)
+- [x] 06-01-PLAN.md — TRACER: one option end-to-end (probe set → provable provenance render → backed-up idempotent write) through `runGlobalSSHApply`, the SINGLE write authority; `EnsureGlobals` as the single `Host *` owner with `RenderGlobalBlock` deleted and every create/rotate/repair call site retargeted; placement in the resolved storage target, last (GSSH-01)
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 06-02-PLAN.md — Reserved-name registry consolidation (`global-ssh` + legacy), and the migration classification that registration would otherwise break: the globals block MOVES with the identities, the Include wiring stays put (GSSH-01)
+- [x] 06-02-PLAN.md — Reserved-name registry consolidation (`global-ssh` + legacy), and the migration classification that registration would otherwise break: the globals block MOVES with the identities, the Include wiring stays put (GSSH-01)
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 06-03-PLAN.md — All six options: four-state model keyed on source class (never misattributing an external value to the user), per-source probe-error handling, UseKeychain/IdentitiesOnly special cases, platform + OpenSSH-version gates with a compatibility-unverified refusal, D-10 fixture correction pinned by a parity test (GSSH-01)
+- [x] 06-03-PLAN.md — All six options: four-state model keyed on source class (never misattributing an external value to the user), per-source probe-error handling, UseKeychain/IdentitiesOnly special cases, platform + OpenSSH-version gates with a compatibility-unverified refusal, D-10 fixture correction pinned by a parity test (GSSH-01)
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 06-04-PLAN.md — Whole-config-graph shadowing simulation before the write and re-verification after it, as extra stages of the one write authority; the combined advisory ceremony with empty opt-in selection and journal-backed rollback; Options-sub-tab PTY e2e including inconclusive and commit-failure cases (GSSH-01, DLV-04, DLV-06)
+- [x] 06-04-PLAN.md — Whole-config-graph shadowing simulation before the write and re-verification after it, as extra stages of the one write authority; the combined advisory ceremony with empty opt-in selection and journal-backed rollback; Options-sub-tab PTY e2e including inconclusive and commit-failure cases (GSSH-01, DLV-04, DLV-06)
 
 **Wave 5** *(blocked on Wave 4)*
 
-- [ ] 06-05-PLAN.md — Migration engine hardened before a button reaches it (pure `PlanMigration` preview, backup-only seam, concurrency detection before the backups, abort that preserves the external edit); Storage & preview sub-tab wired to it; Global SSH demo banner removed; Storage-sub-tab PTY e2e (GSSH-01; re-exercises STORE-01/03/04, DLV-04, DLV-06)
+- [x] 06-05-PLAN.md — Migration engine hardened before a button reaches it (pure `PlanMigration` preview, backup-only seam, concurrency detection before the backups, abort that preserves the external edit); Storage & preview sub-tab wired to it; Global SSH demo banner removed; Storage-sub-tab PTY e2e (GSSH-01; re-exercises STORE-01/03/04, DLV-04, DLV-06)
 
 **Wave 6** *(blocked on Wave 5)*
 
-- [ ] 06-06-PLAN.md — `gitid ssh` command group replacing the reserved noun, with a frozen command tree, a frozen versioned JSON schema and a frozen exit-status contract, wired to the same per-verb ceremonies the TUI calls; parity-matrix rows (GSSH-01, SHELL-03)
+- [x] 06-06-PLAN.md — `gitid ssh` command group replacing the reserved noun, with a frozen command tree, a frozen versioned JSON schema and a frozen exit-status contract, wired to the same per-verb ceremonies the TUI calls; parity-matrix rows (GSSH-01, SHELL-03)
 
 **Wave 7** *(blocked on Wave 6)*
 
-- [ ] 06-07-PLAN.md — Global SSH screens registered in the visual-regression gate with a classified allowlist, explicit HTML non-applicability and four negative controls; phase exit battery; cross-AI review packet with a `06-REVIEWS.md` closure table (GSSH-01, DLV-04, DLV-06)
+- [x] 06-07-PLAN.md — Global SSH screens registered in the visual-regression gate with a classified allowlist, explicit HTML non-applicability and four negative controls; phase exit battery; cross-AI review packet with a `06-REVIEWS.md` closure table (GSSH-01, DLV-04, DLV-06)
 
 ### Phase 7: Global Git Options
 
@@ -381,7 +381,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Create Flow Backend | 19/19 | Complete | 2026-08-24 |
 | 4. Git Configuration Screen | 4/4 | Complete    | 2026-08-25 |
 | 5. Identity Manager | 9/9 | Complete    | 2026-08-26 |
-| 6. Global SSH Options | 0/TBD | Not started | - |
+| 6. Global SSH Options | 7/7 | Complete    | 2026-08-27 |
 | 7. Global Git Options | 0/TBD | Not started | - |
 | 8. Health + Fixer | 0/TBD | Not started | - |
 | 9. Upload / Credentials Assist | 0/TBD | Not started | - |
