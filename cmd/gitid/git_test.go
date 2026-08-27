@@ -6,6 +6,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -695,5 +696,443 @@ func TestGitCompletionStillGenerates(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("git completion missing %q:\n%s", want, got)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Task 2: the four versioned JSON envelopes, the exit-status table, and the
+// exact-key-set / enum contracts pinned in the shape of the SSH noun's tests.
+// ---------------------------------------------------------------------------
+
+func TestGitJSONOptionsListExactKeySetAndEnums(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// The probe (cliGitOptionStates -> globalgit.Statuses) shells out with a
+	// working directory rooted at ~/.gitconfig.d — see
+	// TestGitOptionsApplyDryRunTouchesNothingAndSkipsConfirm.
+	if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
+		t.Fatalf("mkdir .gitconfig.d: %v", err)
+	}
+	b := newBackendForHome(home)
+	recs, err := gitOptionRecords(b)
+	if err != nil {
+		t.Fatalf("gitOptionRecords: %v", err)
+	}
+	var buf bytes.Buffer
+	if rerr := renderGitOptionsList(&buf, false, true, recs); rerr != nil {
+		t.Fatalf("renderGitOptionsList: %v", rerr)
+	}
+	raw := buf.Bytes()
+
+	keys, kerr := jsonObjectKeys(raw)
+	if kerr != nil {
+		t.Fatalf("top-level keys: %v\n%s", kerr, raw)
+	}
+	assertExactKeys(t, keys, gitOptionsDocKeys)
+
+	var doc gitOptionsDocument
+	if uerr := json.Unmarshal(raw, &doc); uerr != nil {
+		t.Fatalf("unmarshal: %v", uerr)
+	}
+	if doc.Schema != gitOptionsSchema {
+		t.Errorf("schema = %q, want %q", doc.Schema, gitOptionsSchema)
+	}
+	if len(doc.Options) != len(globalgit.Policy) {
+		t.Fatalf("options = %d, want %d (policy declaration order)", len(doc.Options), len(globalgit.Policy))
+	}
+	for i, rec := range doc.Options {
+		if rec.Key != globalgit.Policy[i].Key {
+			t.Errorf("options[%d].key = %q, want %q", i, rec.Key, globalgit.Policy[i].Key)
+		}
+		recRaw, merr := json.Marshal(rec)
+		if merr != nil {
+			t.Fatalf("marshal option: %v", merr)
+		}
+		recKeys, rerr := jsonObjectKeys(recRaw)
+		if rerr != nil {
+			t.Fatalf("option keys: %v", rerr)
+		}
+		assertExactKeys(t, recKeys, gitOptionRecordKeys)
+		assertEnumMember(t, "state", rec.State, gitStateEnum)
+	}
+}
+
+// TestGitJSONStateEnumsAreRenderLayerTaxonomy asserts the JSON state enum is
+// EXACTLY the taxonomy the render layer can emit — every
+// GlobalGitOptionState maps to a documented member, and every documented
+// member is reachable from the render layer. A future screen state that leaks
+// into the JSON without a documented member fails here, as does a documented
+// member the render layer can never produce.
+func TestGitJSONStateEnumsAreRenderLayerTaxonomy(t *testing.T) {
+	byRender := map[tuikit.GlobalGitOptionState]string{
+		tuikit.GlobalGitNeedsAction:   "needs-action",
+		tuikit.GlobalGitAlreadySet:    "already-set",
+		tuikit.GlobalGitSetButDiffers: "differs",
+		tuikit.GlobalGitNotApplicable: "not-applicable",
+	}
+	reachable := map[string]bool{}
+	for state, want := range byRender {
+		got := gitRowStateName(tuikit.GlobalGitOptionView{Key: "init.defaultBranch", State: state})
+		if got != want {
+			t.Errorf("gitRowStateName(%v) = %q, want %q", state, got, want)
+		}
+		assertEnumMember(t, "state", got, gitStateEnum)
+		reachable[got] = true
+	}
+	probeErr := gitRowStateName(tuikit.GlobalGitOptionView{Key: "init.defaultBranch", ProbeError: "git probe failed"})
+	if probeErr != "probe-error" {
+		t.Errorf("probe-error state = %q, want probe-error", probeErr)
+	}
+	assertEnumMember(t, "state", probeErr, gitStateEnum)
+	reachable[probeErr] = true
+	for _, member := range gitStateEnum {
+		if !reachable[member] {
+			t.Errorf("documented state enum member %q is not reachable from the render layer", member)
+		}
+	}
+}
+
+func TestGitJSONEnvelopesCarrySchemaIdentifiers(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
+		t.Fatalf("mkdir .gitconfig.d: %v", err)
+	}
+	seamGuard(t)
+	cliGlobalGitApplyInto = func(_ *realBackend, _ []string, _ lifecyclePolicy) (lifecycleResult, error) {
+		return lifecycleResult{Backups: []string{filepath.Join(home, ".gitconfig")}}, nil
+	}
+
+	rawApply, code := captureGitApplyJSON(t, []string{"init.defaultBranch"}, gitApplyFlags{Yes: true, JSON: true}, false, false)
+	if code != 0 {
+		t.Fatalf("apply exit = %d, want 0", code)
+	}
+	rawFallbackSet, code := captureGitFallbackSetJSON(t, gitFallbackSetFlags{Name: "Pat", nameWasSet: true, Yes: true, JSON: true}, false, false)
+	if code != 0 {
+		t.Fatalf("fallback set exit = %d, want 0", code)
+	}
+	rawFallbackShow, code := captureGitFallbackShowJSON(t)
+	if code != 0 {
+		t.Fatalf("fallback show exit = %d, want 0", code)
+	}
+
+	cases := []struct {
+		name   string
+		schema string
+		raw    []byte
+	}{
+		{"options", gitOptionsSchema, captureGitOptionsListJSON(t, home)},
+		{"apply", gitApplySchema, rawApply},
+		{"fallback", gitFallbackSchema, rawFallbackShow},
+		{"fallbackset", gitFallbackSetSchema, rawFallbackSet},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var got struct {
+				Schema string `json:"schema"`
+			}
+			if uerr := json.Unmarshal(tc.raw, &got); uerr != nil {
+				t.Fatalf("unmarshal: %v\n%s", uerr, tc.raw)
+			}
+			if got.Schema != tc.schema {
+				t.Errorf("schema = %q, want %q", got.Schema, tc.schema)
+			}
+		})
+	}
+}
+
+func TestGitJSONEnvelopesExactKeySets(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
+		t.Fatalf("mkdir .gitconfig.d: %v", err)
+	}
+	seamGuard(t)
+	cliGlobalGitApplyInto = func(_ *realBackend, _ []string, _ lifecyclePolicy) (lifecycleResult, error) {
+		return lifecycleResult{Backups: []string{filepath.Join(home, ".gitconfig")}, Advisories: []string{"advisory: below the version gate"}}, nil
+	}
+
+	t.Run("options", func(t *testing.T) {
+		assertExactKeysFrom(t, captureGitOptionsListJSON(t, home), gitOptionsDocKeys)
+	})
+	t.Run("apply", func(t *testing.T) {
+		raw, _ := captureGitApplyJSON(t, []string{"init.defaultBranch"}, gitApplyFlags{Yes: true, JSON: true}, false, false)
+		assertExactKeysFrom(t, raw, gitApplyDocKeys)
+	})
+	t.Run("fallback", func(t *testing.T) {
+		raw, _ := captureGitFallbackShowJSON(t)
+		assertExactKeysFrom(t, raw, gitFallbackDocKeys)
+	})
+	t.Run("fallbackset", func(t *testing.T) {
+		raw, _ := captureGitFallbackSetJSON(t, gitFallbackSetFlags{Name: "Pat", nameWasSet: true, Yes: true, JSON: true}, false, false)
+		assertExactKeysFrom(t, raw, gitFallbackSetDocKeys)
+	})
+}
+
+func TestGitJSONFallbackShowExactKeySetAndUnsetStatuses(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	raw, code := captureGitFallbackShowJSON(t)
+	if code != 0 {
+		t.Fatalf("fresh-home show exit = %d, want 0", code)
+	}
+	assertExactKeysFrom(t, raw, gitFallbackDocKeys)
+	var doc gitFallbackDocument
+	if uerr := json.Unmarshal(raw, &doc); uerr != nil {
+		t.Fatalf("unmarshal: %v\n%s", uerr, raw)
+	}
+	if doc.Schema != gitFallbackSchema {
+		t.Errorf("schema = %q, want %q", doc.Schema, gitFallbackSchema)
+	}
+	if doc.NameStatus != "unset" || doc.EmailStatus != "unset" {
+		t.Errorf("fresh-home statuses = (%q, %q), want (unset, unset)", doc.NameStatus, doc.EmailStatus)
+	}
+}
+
+func TestGitJSONApplyAndFallbackSetEnvelopesOnEveryPath(t *testing.T) {
+	t.Run("apply success", func(t *testing.T) {
+		gitEnvHome(t)
+		raw, code := captureGitApplyJSON(t, []string{"init.defaultBranch"}, gitApplyFlags{Yes: true, JSON: true}, false, false)
+		assertGitApplyEnvelope(t, raw, code, false)
+		if code != 0 {
+			t.Errorf("success exit = %d, want 0", code)
+		}
+	})
+	t.Run("apply refusal unknown token", func(t *testing.T) {
+		gitEnvHome(t)
+		raw, code := captureGitApplyJSON(t, []string{"TotallyFake"}, gitApplyFlags{Yes: true, JSON: true}, false, false)
+		assertGitApplyEnvelope(t, raw, code, false)
+		if code != 1 {
+			t.Errorf("unknown token exit = %d, want 1", code)
+		}
+		var doc gitApplyDocument
+		if uerr := json.Unmarshal(raw, &doc); uerr != nil {
+			t.Fatalf("unmarshal: %v", uerr)
+		}
+		if doc.Error == "" {
+			t.Error("refusal envelope must populate error")
+		}
+	})
+	t.Run("apply rolled-back failure", func(t *testing.T) {
+		gitEnvHome(t)
+		seamGuard(t)
+		cliGlobalGitApplyInto = func(_ *realBackend, _ []string, _ lifecyclePolicy) (lifecycleResult, error) {
+			return lifecycleResult{Restored: []string{"~/.gitconfig.d/00-baseline: restored"}}, fmt.Errorf("injected write failure")
+		}
+		raw, code := captureGitApplyJSON(t, []string{"init.defaultBranch"}, gitApplyFlags{Yes: true, JSON: true}, false, false)
+		assertGitApplyEnvelope(t, raw, code, false)
+		if code != 2 {
+			t.Errorf("rolled-back apply exit = %d, want 2", code)
+		}
+		var doc gitApplyDocument
+		if uerr := json.Unmarshal(raw, &doc); uerr != nil {
+			t.Fatalf("unmarshal: %v", uerr)
+		}
+		if len(doc.Restored) == 0 {
+			t.Error("rolled-back apply envelope must report its restored paths")
+		}
+	})
+	t.Run("fallback set refusal no flags", func(t *testing.T) {
+		gitEnvHome(t)
+		raw, code := captureGitFallbackSetJSON(t, gitFallbackSetFlags{Yes: true, JSON: true}, false, false)
+		assertGitFallbackSetEnvelope(t, raw, code, false)
+		if code != 1 {
+			t.Errorf("no-flags exit = %d, want 1", code)
+		}
+		var doc gitFallbackSetDocument
+		if uerr := json.Unmarshal(raw, &doc); uerr != nil {
+			t.Fatalf("unmarshal: %v", uerr)
+		}
+		if doc.Error == "" {
+			t.Error("refusal envelope must populate error")
+		}
+	})
+	t.Run("fallback set rolled-back failure", func(t *testing.T) {
+		gitEnvHome(t)
+		seamGuard(t)
+		cliGitFallbackAuthorApplyInto = func(_ *realBackend, _, _ string, _ lifecyclePolicy) (lifecycleResult, error) {
+			return lifecycleResult{Restored: []string{"~/.gitconfig: restored"}}, fmt.Errorf("injected write failure")
+		}
+		raw, code := captureGitFallbackSetJSON(t, gitFallbackSetFlags{Name: "Pat", nameWasSet: true, Yes: true, JSON: true}, false, false)
+		assertGitFallbackSetEnvelope(t, raw, code, false)
+		if code != 2 {
+			t.Errorf("rolled-back fallback set exit = %d, want 2", code)
+		}
+	})
+}
+
+func gitEnvHome(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
+		t.Fatalf("mkdir .gitconfig.d: %v", err)
+	}
+}
+
+func TestGitApplyAdvisoryExitZeroByDefaultNonZeroWithOptIn(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
+		t.Fatalf("mkdir .gitconfig.d: %v", err)
+	}
+	seamGuard(t)
+	cliGlobalGitApplyInto = func(_ *realBackend, _ []string, _ lifecyclePolicy) (lifecycleResult, error) {
+		return lifecycleResult{Backups: []string{"b"}, Advisories: []string{"advisory: below the version gate"}}, nil
+	}
+
+	_, codeDefault := captureGitApplyJSON(t, []string{"init.defaultBranch"}, gitApplyFlags{Yes: true, JSON: true}, false, false)
+	if codeDefault != 0 {
+		t.Errorf("advisory success default exit = %d, want 0", codeDefault)
+	}
+	_, codeOptIn := captureGitApplyJSON(t, []string{"init.defaultBranch"}, gitApplyFlags{Yes: true, JSON: true, FailOnAdvisory: true}, false, false)
+	if codeOptIn != 3 {
+		t.Errorf("advisory success --fail-on-advisory exit = %d, want 3", codeOptIn)
+	}
+}
+
+func TestGitApplyDryRunExitsZeroEvenWithAdvisoryOptIn(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
+		t.Fatalf("mkdir .gitconfig.d: %v", err)
+	}
+	seamGuard(t)
+	cliGlobalGitApplyInto = func(_ *realBackend, _ []string, _ lifecyclePolicy) (lifecycleResult, error) {
+		return lifecycleResult{Advisories: []string{"advisory: below the version gate"}}, nil
+	}
+	raw, code := captureGitApplyJSON(t, []string{"init.defaultBranch"}, gitApplyFlags{DryRun: true, JSON: true, FailOnAdvisory: true}, false, false)
+	assertGitApplyEnvelope(t, raw, code, true)
+	if code != 0 {
+		t.Errorf("dry run with advisory opt-in exit = %d, want 0", code)
+	}
+}
+
+func TestGitExitCodeEqualsEnvelopeForEveryRow(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
+		t.Fatalf("mkdir .gitconfig.d: %v", err)
+	}
+	seamGuard(t)
+
+	cases := []struct {
+		name           string
+		res            lifecycleResult
+		err            error
+		failOnAdvisory bool
+		dryRun         bool
+		want           int
+	}{
+		{"success", lifecycleResult{Backups: []string{"b"}}, nil, false, false, 0},
+		{"success-with-advisory", lifecycleResult{Backups: []string{"b"}, Advisories: []string{"advisory: below the version gate"}}, nil, false, false, 0},
+		{"fail-on-advisory", lifecycleResult{Backups: []string{"b"}, Advisories: []string{"advisory: below the version gate"}}, nil, true, false, 3},
+		{"usage-refusal", lifecycleResult{}, fmt.Errorf("unknown token"), false, false, 1},
+		{"rolled-back", lifecycleResult{Restored: []string{"r"}}, fmt.Errorf("write failed"), false, false, 2},
+		{"dry-run-advisory-stays-zero", lifecycleResult{Advisories: []string{"advisory: below the version gate"}}, nil, true, true, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := gitWriteExitCode(tc.res, tc.err, tc.failOnAdvisory, tc.dryRun)
+			if got != tc.want {
+				t.Errorf("gitWriteExitCode = %d, want %d", got, tc.want)
+			}
+			cliGlobalGitApplyInto = func(_ *realBackend, _ []string, _ lifecyclePolicy) (lifecycleResult, error) {
+				return tc.res, tc.err
+			}
+			raw, code := captureGitApplyJSON(t, []string{"init.defaultBranch"}, gitApplyFlags{
+				Yes:            true,
+				JSON:           true,
+				FailOnAdvisory: tc.failOnAdvisory,
+				DryRun:         tc.dryRun,
+			}, false, false)
+			var doc gitApplyDocument
+			if uerr := json.Unmarshal(raw, &doc); uerr != nil {
+				t.Fatalf("unmarshal: %v\n%s", uerr, raw)
+			}
+			if doc.ExitCode != code {
+				t.Errorf("envelope exit_code %d != process status %d", doc.ExitCode, code)
+			}
+			if doc.ExitCode != tc.want {
+				t.Errorf("envelope exit_code = %d, want %d", doc.ExitCode, tc.want)
+			}
+		})
+	}
+}
+
+func captureGitApplyJSON(t *testing.T, tokens []string, flags gitApplyFlags, stdin, stdout bool) ([]byte, int) {
+	t.Helper()
+	cmd, out, _ := cliTestCmd()
+	err := runGitOptionsApply(cmd, tokens, flags, stdin, stdout)
+	return out.Bytes(), exitStatusOf(err)
+}
+
+func captureGitFallbackSetJSON(t *testing.T, flags gitFallbackSetFlags, stdin, stdout bool) ([]byte, int) {
+	t.Helper()
+	cmd, out, _ := cliTestCmd()
+	err := runGitFallbackSet(cmd, flags, stdin, stdout)
+	return out.Bytes(), exitStatusOf(err)
+}
+
+func captureGitFallbackShowJSON(t *testing.T) ([]byte, int) {
+	t.Helper()
+	cmd, out, _ := cliTestCmd()
+	err := runGitFallbackShow(cmd, true)
+	return out.Bytes(), exitStatusOf(err)
+}
+
+func captureGitOptionsListJSON(t *testing.T, home string) []byte {
+	t.Helper()
+	b := newBackendForHome(home)
+	recs, err := gitOptionRecords(b)
+	if err != nil {
+		t.Fatalf("gitOptionRecords: %v", err)
+	}
+	var buf bytes.Buffer
+	if rerr := renderGitOptionsList(&buf, false, true, recs); rerr != nil {
+		t.Fatalf("renderGitOptionsList: %v", rerr)
+	}
+	return buf.Bytes()
+}
+
+func assertGitApplyEnvelope(t *testing.T, raw []byte, processCode int, dryRun bool) {
+	t.Helper()
+	assertExactKeysFrom(t, raw, gitApplyDocKeys)
+	var doc gitApplyDocument
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("unmarshal apply envelope: %v\n%s", err, raw)
+	}
+	if doc.Schema != gitApplySchema {
+		t.Errorf("schema = %q, want %q", doc.Schema, gitApplySchema)
+	}
+	if doc.DryRun != dryRun {
+		t.Errorf("dry_run = %v, want %v", doc.DryRun, dryRun)
+	}
+	if doc.ExitCode != processCode {
+		t.Errorf("exit_code %d != process status %d", doc.ExitCode, processCode)
+	}
+	if doc.Advisories == nil {
+		t.Error("advisories must be present even when empty")
+	}
+}
+
+func assertGitFallbackSetEnvelope(t *testing.T, raw []byte, processCode int, dryRun bool) {
+	t.Helper()
+	assertExactKeysFrom(t, raw, gitFallbackSetDocKeys)
+	var doc gitFallbackSetDocument
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("unmarshal fallback-set envelope: %v\n%s", err, raw)
+	}
+	if doc.Schema != gitFallbackSetSchema {
+		t.Errorf("schema = %q, want %q", doc.Schema, gitFallbackSetSchema)
+	}
+	if doc.DryRun != dryRun {
+		t.Errorf("dry_run = %v, want %v", doc.DryRun, dryRun)
+	}
+	if doc.ExitCode != processCode {
+		t.Errorf("exit_code %d != process status %d", doc.ExitCode, processCode)
+	}
+	if doc.Advisories == nil {
+		t.Error("advisories must be present even when empty")
 	}
 }

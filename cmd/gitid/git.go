@@ -25,6 +25,25 @@ import (
 const (
 	gitApplyRequiredKey = "<key>"
 	gitFallbackRequired = "--name/--email/--clear-name/--clear-email"
+
+	// The four frozen schema identifiers (07-05 <authority>). A consumer may
+	// rely on each key set staying byte-identical until the identifier bumps.
+	gitOptionsSchema     = "gitid.git.options/v1"
+	gitApplySchema       = "gitid.git.apply/v1"
+	gitFallbackSchema    = "gitid.git.fallback/v1"
+	gitFallbackSetSchema = "gitid.git.fallbackset/v1"
+
+	// gitStateNeedsAction..gitStateProbeError are the JSON state taxonomy,
+	// shared with the render layer's own vocabulary: every state the Options
+	// pane and the refusals display is one of these five strings.
+	gitStateNeedsAction   = "needs-action"
+	gitStateAlreadySet    = "already-set"
+	gitStateDiffers       = "differs"
+	gitStateNotApplicable = "not-applicable"
+	gitStateProbeError    = "probe-error"
+
+	gitStatusSet   = "set"
+	gitStatusUnset = "unset"
 )
 
 // cliGlobalGitApplyInto / cliGitFallbackAuthorApplyInto are the CLI's
@@ -46,6 +65,17 @@ var (
 		return b.GlobalGitOptionStates()
 	}
 )
+
+// gitWriteExitCode maps a lifecycleResult plus its error plus the
+// --fail-on-advisory opt-in onto the SAME frozen exit-status table as the SSH
+// noun (07-05 <authority>): 0 success even with advisories and always for a
+// dry run, 1 refusal, 2 a rolled-back write, 3 the advisory opt-in on a
+// successful advisory-carrying write. One helper produces BOTH the process
+// status and the envelope's exit_code field, so a script that trusts the exit
+// status and a consumer that reads the envelope can never disagree.
+func gitWriteExitCode(res lifecycleResult, err error, failOnAdvisory, dryRun bool) int {
+	return sshWriteExitCode(res, err, failOnAdvisory, dryRun)
+}
 
 func newGitCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -210,7 +240,14 @@ func runGitOptionsApply(cmd *cobra.Command, tokens []string, flags gitApplyFlags
 		}
 		return gitTUILaunch(newBackendForHome(home))
 	case resolveMissingFlags:
-		return sshFinish(1, missingFlagErr("git options apply", missing))
+		err := missingFlagErr("git options apply", missing)
+		if flags.JSON {
+			env := newGitApplyEnvelope(flags.DryRun)
+			env.Error = err.Error()
+			env.ExitCode = 1
+			return finishGitApply(cmd, true, env, err)
+		}
+		return sshFinish(1, err)
 	case resolveHeadless:
 	}
 
@@ -220,8 +257,18 @@ func runGitOptionsApply(cmd *cobra.Command, tokens []string, flags gitApplyFlags
 	}
 	b := newBackendForHome(home)
 
+	env := newGitApplyEnvelope(flags.DryRun)
+	env.TargetPath = b.displayPath(b.baselineTargetPath())
+
 	keys, verr := validateGitApplyTokens(b, tokens)
 	if verr != nil {
+		env.Declined = append([]string{}, tokens...)
+		env.Applied = []string{}
+		env.Error = verr.Error()
+		env.ExitCode = 1
+		if flags.JSON {
+			return finishGitApply(cmd, true, env, verr)
+		}
 		return sshFinish(1, verr)
 	}
 
@@ -231,8 +278,9 @@ func runGitOptionsApply(cmd *cobra.Command, tokens []string, flags gitApplyFlags
 			plan, _ := b.GlobalGitApplyPlan(keys)
 			printGitApplyDryRun(cmd.OutOrStdout(), plan)
 		}
-		_ = res
-		return sshFinish(sshWriteExitCode(res, rerr, flags.FailOnAdvisory, true), rerr)
+		fillGitApplyFromResult(b, &env, res, rerr, tokens)
+		env.ExitCode = gitWriteExitCode(res, rerr, flags.FailOnAdvisory, true)
+		return finishGitApply(cmd, flags.JSON, env, rerr)
 	}
 
 	policy, perr := confirmationPolicyFrom(cmd, "apply global Git options", stdinTTY, stdoutTTY, flags.Yes, func(preview string) (bool, error) {
@@ -245,14 +293,20 @@ func runGitOptionsApply(cmd *cobra.Command, tokens []string, flags gitApplyFlags
 		return strings.TrimSpace(line) == "yes", nil
 	})
 	if perr != nil {
-		return sshFinish(1, perr)
+		env.Declined = append([]string{}, tokens...)
+		env.Applied = []string{}
+		env.Error = perr.Error()
+		env.ExitCode = 1
+		return finishGitApply(cmd, flags.JSON, env, perr)
 	}
 
 	res, rerr := cliGlobalGitApplyInto(b, keys, policy)
+	fillGitApplyFromResult(b, &env, res, rerr, tokens)
+	env.ExitCode = gitWriteExitCode(res, rerr, flags.FailOnAdvisory, false)
 	if !flags.JSON {
 		printGitApplyHuman(cmd, b, res, rerr, tokens)
 	}
-	return sshFinish(sshWriteExitCode(res, rerr, flags.FailOnAdvisory, false), rerr)
+	return finishGitApply(cmd, flags.JSON, env, rerr)
 }
 
 // validateGitApplyTokens validates every argv token in two passes so that an
@@ -299,17 +353,17 @@ func validateGitApplyTokens(b *realBackend, tokens []string) ([]string, error) {
 
 func gitRowStateName(v tuikit.GlobalGitOptionView) string {
 	if v.ProbeError != "" {
-		return "probe-error"
+		return gitStateProbeError
 	}
 	switch v.State {
 	case tuikit.GlobalGitAlreadySet:
-		return "already-set"
+		return gitStateAlreadySet
 	case tuikit.GlobalGitSetButDiffers:
-		return "differs"
+		return gitStateDiffers
 	case tuikit.GlobalGitNotApplicable:
-		return "not-applicable"
+		return gitStateNotApplicable
 	default:
-		return "needs-action"
+		return gitStateNeedsAction
 	}
 }
 
@@ -323,19 +377,20 @@ func runGitFallbackShow(cmd *cobra.Command, jsonOut bool) error {
 	if serr != nil {
 		return sshFinish(1, fmt.Errorf("gitid: cannot read fallback author from %s: %w", b.displayPath(b.gitconfigPath), serr))
 	}
-	nameStatus, emailStatus := "unset", "unset"
+	nameStatus, emailStatus := gitStatusUnset, gitStatusUnset
 	if state.Name != "" {
-		nameStatus = "set"
+		nameStatus = gitStatusSet
 	}
 	if state.Email != "" {
-		emailStatus = "set"
+		emailStatus = gitStatusSet
 	}
 	if jsonOut {
-		return writeJSON(cmd.OutOrStdout(), map[string]string{
-			"name":         state.Name,
-			"email":        state.Email,
-			"name_status":  nameStatus,
-			"email_status": emailStatus,
+		return writeJSON(cmd.OutOrStdout(), gitFallbackDocument{
+			Schema:      gitFallbackSchema,
+			Name:        state.Name,
+			Email:       state.Email,
+			NameStatus:  nameStatus,
+			EmailStatus: emailStatus,
 		})
 	}
 	_, err = fmt.Fprintf(cmd.OutOrStdout(), "name\t%s\t%s\nemail\t%s\t%s\n",
@@ -360,11 +415,24 @@ func runGitFallbackSet(cmd *cobra.Command, flags gitFallbackSetFlags, stdinTTY, 
 		}
 		return gitTUILaunch(newBackendForHome(home))
 	case resolveMissingFlags:
-		return sshFinish(1, missingFlagErr("git fallback set", missing))
+		err := missingFlagErr("git fallback set", missing)
+		if flags.JSON {
+			env := newGitFallbackSetEnvelope(flags.DryRun)
+			env.Error = err.Error()
+			env.ExitCode = 1
+			return finishGitFallbackSet(cmd, true, env, err)
+		}
+		return sshFinish(1, err)
 	case resolveHeadless:
 	}
 
 	if verr := validateFallbackSetFlags(flags); verr != nil {
+		if flags.JSON {
+			env := newGitFallbackSetEnvelope(flags.DryRun)
+			env.Error = verr.Error()
+			env.ExitCode = 1
+			return finishGitFallbackSet(cmd, true, env, verr)
+		}
 		return sshFinish(1, verr)
 	}
 
@@ -375,9 +443,23 @@ func runGitFallbackSet(cmd *cobra.Command, flags gitFallbackSetFlags, stdinTTY, 
 	b := newBackendForHome(home)
 	state, serr := b.GitFallbackAuthorState()
 	if serr != nil {
-		return sshFinish(1, fmt.Errorf("gitid: cannot read fallback author from %s: %w", b.displayPath(b.gitconfigPath), serr))
+		verr := fmt.Errorf("gitid: cannot read fallback author from %s: %w", b.displayPath(b.gitconfigPath), serr)
+		if flags.JSON {
+			env := newGitFallbackSetEnvelope(flags.DryRun)
+			env.Error = verr.Error()
+			env.ExitCode = 1
+			return finishGitFallbackSet(cmd, true, env, verr)
+		}
+		return sshFinish(1, verr)
 	}
 	name, email := resolveFallbackPair(state, flags)
+
+	env := newGitFallbackSetEnvelope(flags.DryRun)
+	env.TargetPath = b.displayPath(b.gitconfigPath)
+	env.SetName = flags.nameWasSet
+	env.SetEmail = flags.emailWasSet
+	env.ClearedName = flags.ClearName
+	env.ClearedEmail = flags.ClearEmail
 
 	if flags.DryRun {
 		res, rerr := cliGitFallbackAuthorApplyInto(b, name, email, lifecyclePolicy{DryRun: true})
@@ -385,7 +467,9 @@ func runGitFallbackSet(cmd *cobra.Command, flags gitFallbackSetFlags, stdinTTY, 
 			plan, _ := b.GitFallbackAuthorPlan(name, email)
 			printGitFallbackDryRun(cmd.OutOrStdout(), plan)
 		}
-		return sshFinish(sshWriteExitCode(res, rerr, false, true), rerr)
+		fillGitFallbackSetFromResult(b, &env, res, rerr)
+		env.ExitCode = gitWriteExitCode(res, rerr, false, true)
+		return finishGitFallbackSet(cmd, flags.JSON, env, rerr)
 	}
 
 	policy, perr := confirmationPolicyFrom(cmd, "set git fallback author", stdinTTY, stdoutTTY, flags.Yes, func(preview string) (bool, error) {
@@ -398,14 +482,18 @@ func runGitFallbackSet(cmd *cobra.Command, flags gitFallbackSetFlags, stdinTTY, 
 		return strings.TrimSpace(line) == "yes", nil
 	})
 	if perr != nil {
-		return sshFinish(1, perr)
+		env.Error = perr.Error()
+		env.ExitCode = 1
+		return finishGitFallbackSet(cmd, flags.JSON, env, perr)
 	}
 
 	res, rerr := cliGitFallbackAuthorApplyInto(b, name, email, policy)
+	fillGitFallbackSetFromResult(b, &env, res, rerr)
+	env.ExitCode = gitWriteExitCode(res, rerr, false, false)
 	if !flags.JSON {
 		printGitFallbackHuman(cmd, b, res, rerr)
 	}
-	return sshFinish(sshWriteExitCode(res, rerr, false, false), rerr)
+	return finishGitFallbackSet(cmd, flags.JSON, env, rerr)
 }
 
 func validateFallbackSetFlags(flags gitFallbackSetFlags) error {
@@ -480,7 +568,7 @@ func renderGitOptionsList(w io.Writer, isTTY, jsonOut bool, recs []gitOptionReco
 		if recs == nil {
 			recs = []gitOptionRecord{}
 		}
-		return writeJSON(w, map[string]interface{}{"options": recs})
+		return writeJSON(w, gitOptionsDocument{Schema: gitOptionsSchema, Options: recs})
 	}
 	if isTTY {
 		tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
@@ -540,4 +628,171 @@ func printGitFallbackHuman(cmd *cobra.Command, b *realBackend, res lifecycleResu
 		fmt.Fprintln(cmd.OutOrStdout(), b.displayMessage(a)) //nolint:errcheck
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "applied git fallback author") //nolint:errcheck
+}
+
+// ---------------------------------------------------------------------------
+// JSON envelopes (plan 07-05 Task 2) — the frozen key sets are pinned by
+// git_schema_test.go, so an envelope that grows a key silently is a test
+// failure, not a contract drift.
+// ---------------------------------------------------------------------------
+
+type gitOptionsDocument struct {
+	Schema  string            `json:"schema"`
+	Options []gitOptionRecord `json:"options"`
+}
+
+type gitApplyDocument struct {
+	Schema     string   `json:"schema"`
+	DryRun     bool     `json:"dry_run"`
+	Applied    []string `json:"applied"`
+	Declined   []string `json:"declined"`
+	TargetPath string   `json:"target_path"`
+	Backups    []string `json:"backups"`
+	Restored   []string `json:"restored"`
+	Advisories []string `json:"advisories"`
+	Error      string   `json:"error"`
+	ExitCode   int      `json:"exit_code"`
+}
+
+type gitFallbackDocument struct {
+	Schema      string `json:"schema"`
+	Name        string `json:"name"`
+	Email       string `json:"email"`
+	NameStatus  string `json:"name_status"`
+	EmailStatus string `json:"email_status"`
+}
+
+type gitFallbackSetDocument struct {
+	Schema       string   `json:"schema"`
+	DryRun       bool     `json:"dry_run"`
+	SetName      bool     `json:"set_name"`
+	SetEmail     bool     `json:"set_email"`
+	ClearedName  bool     `json:"cleared_name"`
+	ClearedEmail bool     `json:"cleared_email"`
+	TargetPath   string   `json:"target_path"`
+	Backups      []string `json:"backups"`
+	Restored     []string `json:"restored"`
+	Advisories   []string `json:"advisories"`
+	Error        string   `json:"error"`
+	ExitCode     int      `json:"exit_code"`
+}
+
+func newGitApplyEnvelope(dryRun bool) gitApplyDocument {
+	return gitApplyDocument{
+		Schema:     gitApplySchema,
+		DryRun:     dryRun,
+		Applied:    []string{},
+		Declined:   []string{},
+		Backups:    []string{},
+		Restored:   []string{},
+		Advisories: []string{},
+	}
+}
+
+func newGitFallbackSetEnvelope(dryRun bool) gitFallbackSetDocument {
+	return gitFallbackSetDocument{
+		Schema:     gitFallbackSetSchema,
+		DryRun:     dryRun,
+		Backups:    []string{},
+		Restored:   []string{},
+		Advisories: []string{},
+	}
+}
+
+// finishGitApply writes the apply envelope when requested and returns an error
+// whose exit status equals the envelope's own exit-code field on every path —
+// success, refusal and rollback alike, so a consumer never has to distinguish
+// no output from no advisories.
+func finishGitApply(cmd *cobra.Command, jsonOut bool, env gitApplyDocument, err error) error {
+	if env.Advisories == nil {
+		env.Advisories = []string{}
+	}
+	if env.Applied == nil {
+		env.Applied = []string{}
+	}
+	if env.Declined == nil {
+		env.Declined = []string{}
+	}
+	if env.Backups == nil {
+		env.Backups = []string{}
+	}
+	if env.Restored == nil {
+		env.Restored = []string{}
+	}
+	if jsonOut {
+		if werr := writeJSON(cmd.OutOrStdout(), env); werr != nil {
+			return werr
+		}
+	}
+	return sshFinish(env.ExitCode, err)
+}
+
+// finishGitFallbackSet mirrors finishGitApply for the fallback-set envelope.
+func finishGitFallbackSet(cmd *cobra.Command, jsonOut bool, env gitFallbackSetDocument, err error) error {
+	if env.Advisories == nil {
+		env.Advisories = []string{}
+	}
+	if env.Backups == nil {
+		env.Backups = []string{}
+	}
+	if env.Restored == nil {
+		env.Restored = []string{}
+	}
+	if jsonOut {
+		if werr := writeJSON(cmd.OutOrStdout(), env); werr != nil {
+			return werr
+		}
+	}
+	return sshFinish(env.ExitCode, err)
+}
+
+// fillGitApplyFromResult fills the apply envelope from a lifecycleResult.
+// tokens are the argv row tokens the command line named (R-5's argv
+// vocabulary) — the same spelling a script typed.
+func fillGitApplyFromResult(b *realBackend, env *gitApplyDocument, res lifecycleResult, err error, tokens []string) {
+	env.Backups = displayPaths(b, res.Backups)
+	if env.Backups == nil {
+		env.Backups = []string{}
+	}
+	env.Restored = displayMessages(b, res.Restored)
+	if env.Restored == nil {
+		env.Restored = []string{}
+	}
+	env.Advisories = displayMessages(b, res.Advisories)
+	if env.Advisories == nil {
+		env.Advisories = []string{}
+	}
+	if err != nil {
+		env.Error = err.Error()
+		if len(res.Restored) == 0 {
+			env.Declined = append([]string{}, tokens...)
+			env.Applied = []string{}
+		} else {
+			env.Applied = []string{}
+			env.Declined = []string{}
+		}
+		return
+	}
+	env.Applied = append([]string{}, tokens...)
+	env.Declined = []string{}
+}
+
+// fillGitFallbackSetFromResult fills the fallback-set envelope from a
+// lifecycleResult.
+func fillGitFallbackSetFromResult(b *realBackend, env *gitFallbackSetDocument, res lifecycleResult, err error) {
+	env.Backups = displayPaths(b, res.Backups)
+	if env.Backups == nil {
+		env.Backups = []string{}
+	}
+	env.Restored = displayMessages(b, res.Restored)
+	if env.Restored == nil {
+		env.Restored = []string{}
+	}
+	env.Advisories = displayMessages(b, res.Advisories)
+	if env.Advisories == nil {
+		env.Advisories = []string{}
+	}
+	if err != nil {
+		env.Error = err.Error()
+	}
 }

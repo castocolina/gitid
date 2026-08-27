@@ -265,8 +265,11 @@ These are first-class, enforced requirements — the user's core process ask.
   still default to master), `core.ignorecase` (false), `core.autocrlf`/eol (line-feed
   policy), global `user.email`, plus recipe defaults (`push.autoSetupRemote`,
   `pull.rebase`, `fetch.prune`, aliases, color, `merge.conflictstyle`,
-  `diff.colorMoved`). Each option explained. *(GLOBAL-01/GITIGNORE-01/URLRW-01 built
-  as substrate to fold in.)*
+  `diff.colorMoved`). Each option explained. *(Substrate note: GLOBAL-01 is built
+  here and folded in; URLRW-01 is Phase 4's insteadOf rewrite; GITIGNORE-01 belongs
+  to Phase 8's fixer — BOTH `core.excludesfile` AND the managed pattern file are
+  written together there, because a key-only fold-in would leave git silently
+  tolerating a dangling excludesfile (D-11).)*
 
 ## K. Health (HLTH)
 
