@@ -296,6 +296,67 @@ func TestWriteNoBackupDoesNotCreateBackup(t *testing.T) {
 	}
 }
 
+// TestBackupLeavesOriginalUnchanged verifies filewriter.Backup copies a file
+// to a timestamped sibling and leaves the original's bytes and mode unchanged
+// (the backup-only seam from 06-05 Task 1: a backup must never replace the
+// target, so an external edit cannot be silently overwritten by the step).
+func TestBackupLeavesOriginalUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "config")
+	originalBytes := []byte("pristine-content\n")
+	if err := os.WriteFile(target, originalBytes, 0o600); err != nil {
+		t.Fatalf("seeding target: %v", err)
+	}
+
+	backupPath, err := Backup(target)
+	if err != nil {
+		t.Fatalf("Backup returned error: %v", err)
+	}
+	if backupPath == "" {
+		t.Fatal("Backup of an existing file must return a non-empty backup path")
+	}
+
+	// Original bytes and mode must be unchanged.
+	gotBytes, err := os.ReadFile(target) //nolint:gosec // test reads back a hermetic t.TempDir() fixture (G304)
+	if err != nil {
+		t.Fatalf("reading original after Backup: %v", err)
+	}
+	if string(gotBytes) != string(originalBytes) {
+		t.Errorf("Backup changed original bytes: got %q want %q", gotBytes, originalBytes)
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("stat original: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("Backup changed original mode: got %o want 0600", info.Mode().Perm())
+	}
+
+	// Backup content must match the original.
+	backupBytes, err := os.ReadFile(backupPath) //nolint:gosec // backupPath is a timestamped sibling under t.TempDir() (G304)
+	if err != nil {
+		t.Fatalf("reading backup: %v", err)
+	}
+	if string(backupBytes) != string(originalBytes) {
+		t.Errorf("backup content mismatch: got %q want %q", backupBytes, originalBytes)
+	}
+}
+
+// TestBackupMissingFileReturnsEmpty asserts Backup on a non-existent file
+// returns an empty path and nil error — idempotent for an absent file.
+func TestBackupMissingFileReturnsEmpty(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "does-not-exist")
+
+	backupPath, err := Backup(target)
+	if err != nil {
+		t.Fatalf("Backup of a missing file returned error: %v", err)
+	}
+	if backupPath != "" {
+		t.Errorf("Backup of a missing file returned non-empty path: %q", backupPath)
+	}
+}
+
 // TestCopyFileExclusiveRefusesExistingDestination pins the one property of
 // copyFileExclusive that internal/keygen's archive primitives mirror rather
 // than import (review R2-07): an existing destination is a hard error,

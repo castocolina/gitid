@@ -394,3 +394,47 @@ type GlobalSSHCommitMsg struct {
 	ShadowAdvisories []string
 	Err              string
 }
+
+// SSHStorageMigrationView is the Storage sub-tab's live preview: the resolved
+// current layout, the requested target, the ceremony heading/targets/backups
+// and the resulting-config bytes PlanMigration produced. The three preview
+// fields exist because the pane renders one or two blocks depending on the
+// layout and the render package must not compose that text from backend
+// knowledge.
+//
+// PlanToken is how one plan reaches the commit without a backend type
+// crossing the boundary. internal/tuikit must treat it as opaque: never
+// parse it, never construct one, never compare it to anything but itself.
+type SSHStorageMigrationView struct {
+	CurrentLayout   SSHStorageLayout
+	TargetLayout    SSHStorageLayout
+	Heading         string
+	Targets         []string
+	Backups         []string
+	Diff            string
+	MainPreview     string
+	OwnedPreview    string
+	SentinelPreview string
+	// SourceBefore / DestBefore are the bytes PlanMigration read, carried so
+	// a concurrent-preview test can assert each managed block sits in exactly
+	// one file. The render path does not display them.
+	SourceBefore string
+	DestBefore   string
+	// PlanToken identifies the plan the backend still holds. Opaque: tuikit
+	// must never parse it, never construct one, never compare it to anything
+	// but itself.
+	PlanToken string
+}
+
+// SSHStorageCommitMsg completes an asynchronous storage-migration commit —
+// delivered from the tea.Cmd Backend.CommitSSHStorage returns. Restore details
+// stay explicit so a failed receipt can never claim nothing changed when
+// restoration itself failed. ConfigChangedSincePreview is what lets the pane
+// render the re-open-the-preview message for that one cause without parsing
+// the error string.
+type SSHStorageCommitMsg struct {
+	Backups                   []string
+	Restored                  []string
+	Err                       string
+	ConfigChangedSincePreview bool
+}

@@ -134,6 +134,53 @@ func (NoopGlobalSSHPlanner) CommitGlobalSSH([]string) tea.Cmd {
 
 var _ GlobalSSHPlanner = NoopGlobalSSHPlanner{}
 
+// ErrSSHStoragePlannerNotImplemented is the sentinel NoopSSHStoragePlanner
+// returns from every method. Fixtures and test stubs embed the noop and
+// override only the methods they exercise; a missing real implementation must
+// be a compile error, not this sentinel at runtime.
+var ErrSSHStoragePlannerNotImplemented = errors.New("SSH storage planner not implemented")
+
+// SSHStoragePlanner is the Phase 6 storage-migration seam: the layout
+// preview and the asynchronous migrate commit. It is deliberately SEPARATE
+// from GlobalSSHPlanner — that interface owns the option catalogue and its
+// write; this one owns the layout and its migration. Two focused interfaces
+// let a fixture or a test stub adopt one without hand-writing the other.
+type SSHStoragePlanner interface {
+	// SSHStorageMigrationPlan returns the Storage sub-tab's live preview
+	// for the requested target layout: current vs target, the resulting
+	// config bytes, and an opaque PlanToken identifying the held plan.
+	// A non-nil error must fail closed: the pane renders the error and
+	// suppresses the migrate action.
+	SSHStorageMigrationPlan(layout SSHStorageLayout) (SSHStorageMigrationView, error)
+	// CommitSSHStorage dispatches the confirmed storage-migration
+	// transaction off the update loop and delivers an SSHStorageCommitMsg.
+	// planToken must be the opaque identifier the view carried when the
+	// ceremony opened — the commit path must pass it through unchanged.
+	CommitSSHStorage(layout SSHStorageLayout, planToken string) tea.Cmd
+}
+
+// NoopSSHStoragePlanner implements every SSHStoragePlanner method with a
+// zero-value view plus ErrSSHStoragePlannerNotImplemented (and a command
+// delivering that error for the commit seam). Fixtures and test stubs embed
+// it and override only what they exercise. The REAL backend must NOT embed
+// it — a missing real implementation must be a compile error, pinned by the
+// compile-time assertion in cmd/gitid/wiring.go and a reflection test.
+type NoopSSHStoragePlanner struct{}
+
+// SSHStorageMigrationPlan implements SSHStoragePlanner.
+func (NoopSSHStoragePlanner) SSHStorageMigrationPlan(SSHStorageLayout) (SSHStorageMigrationView, error) {
+	return SSHStorageMigrationView{}, ErrSSHStoragePlannerNotImplemented
+}
+
+// CommitSSHStorage implements SSHStoragePlanner.
+func (NoopSSHStoragePlanner) CommitSSHStorage(SSHStorageLayout, string) tea.Cmd {
+	return func() tea.Msg {
+		return SSHStorageCommitMsg{Err: ErrSSHStoragePlannerNotImplemented.Error()}
+	}
+}
+
+var _ SSHStoragePlanner = NoopSSHStoragePlanner{}
+
 // backend.go defines the ONE injected seam this package is built around.
 //
 // tuikit renders the approved, frozen gitid design. It never reads or
@@ -158,6 +205,11 @@ type Backend interface {
 	// be a compile error, pinned by wiring.go's compile-time assertion and by
 	// a reflection test.
 	GlobalSSHPlanner
+	// SSHStoragePlanner: plan 06-05's Storage-sub-tab seam. Deliberately
+	// separate from GlobalSSHPlanner — one interface owns the option
+	// catalogue and its write, this one owns the layout and its migration.
+	// The real backend must NOT embed NoopSSHStoragePlanner.
+	SSHStoragePlanner
 
 	// ----- Data -------------------------------------------------------
 

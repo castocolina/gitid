@@ -57,6 +57,7 @@ func NewFixtureBackend() FixtureBackend { return FixtureBackend{} }
 // than no seam at all).
 var _ tuikit.Backend = FixtureBackend{}
 var _ tuikit.IdentityPlanner = FixtureBackend{}
+var _ tuikit.SSHStoragePlanner = FixtureBackend{}
 
 // ---------------------------------------------------------------------------
 // Data
@@ -464,6 +465,41 @@ func (FixtureBackend) CommitGlobalSSH([]string) tea.Cmd {
 	backup := tuikit.NewBackupPath("~/.ssh/config")
 	return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
 		return tuikit.GlobalSSHCommitMsg{Backups: []string{backup}}
+	})
+}
+
+// SSHStorageMigrationPlan returns the frozen STORE-01 fixture previews so the
+// dummy's Storage sub-tab render stays byte-identical to before this plan.
+func (FixtureBackend) SSHStorageMigrationPlan(layout tuikit.SSHStorageLayout) (tuikit.SSHStorageMigrationView, error) {
+	s := FixtureBackend{}.InitialState()
+	toInclude := layout == tuikit.StorageInclude
+	headingTail := "sentinel blocks in ~/.ssh/config"
+	diff := "+ gitid blocks written back, sentinel-delimited, into ~/.ssh/config\n- Include ~/.ssh/config.d/gitid.config (line removed)\n- ~/.ssh/config.d/gitid.config (file retired)\n  everything outside gitid blocks: untouched"
+	if toInclude {
+		headingTail = "Include’d gitid.config"
+		diff = "+ Include ~/.ssh/config.d/gitid.config   (near the top of ~/.ssh/config)\n+ ~/.ssh/config.d/gitid.config (all gitid blocks move here)\n- # BEGIN/END gitid managed blocks removed from ~/.ssh/config\n  everything outside gitid blocks: untouched"
+	}
+	return tuikit.SSHStorageMigrationView{
+		CurrentLayout:   s.SSHStorage,
+		TargetLayout:    layout,
+		Heading:         "Migrate SSH storage layout → " + headingTail,
+		Targets:         []string{"~/.ssh/config", "~/.ssh/config.d/gitid.config"},
+		Backups:         []string{tuikit.NewBackupPath("~/.ssh/config")},
+		Diff:            diff,
+		MainPreview:     tuikit.IncludePreviewMain,
+		OwnedPreview:    tuikit.IncludePreviewOwned(s),
+		SentinelPreview: tuikit.SentinelPreview(s),
+		PlanToken:       "fixture-token-" + string(layout),
+	}, nil
+}
+
+// CommitSSHStorage keeps the approved dummy migrate flow in memory — it never
+// touches HOME, reporting the fixture receipt after the same brief tick the
+// other async fixture commands use.
+func (FixtureBackend) CommitSSHStorage(tuikit.SSHStorageLayout, string) tea.Cmd {
+	backup := tuikit.NewBackupPath("~/.ssh/config")
+	return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
+		return tuikit.SSHStorageCommitMsg{Backups: []string{backup}}
 	})
 }
 

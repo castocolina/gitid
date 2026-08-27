@@ -1,6 +1,5 @@
  gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
  Global SSH › Options
- ! Preview — demo data, not wired to your system yet
   Options   Storage & preview
    ☐ ! StrictHostKeyChecking  [Medium]      │  IdentitiesOnly
       now: no → accept-new                  │  ~ Recommended, not required -- you can leave any
@@ -25,6 +24,7 @@
                                             │ this is why every gitid-managed Host block
                                             │ (recipes/ssh-config.recipe) already sets it per-
                                             │ identity. This screen recommends also stating it
+                                            │  … (+4 more lines)
  4 of 6 options need action — Recommended, not required -- you can leave any option unchanged. Thi…
  ↑↓ select option · ←→ Options / Storage · space toggle
  Enter activate · Esc back · ? help · Ctrl+P palette · q quit

@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor              2 ids · ! 2 ✗ 0
+ Global SSH › Storage & preview
+  Options   Storage & preview
+ STORE-01 — where gitid-managed SSH config  │  Resulting config — Include + owned file
+lives                                       │ ╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮
+ ○ Sentinel blocks in ~/.ssh/config         │ ┊ # BEGIN gitid managed: ssh-include ┊
+(default) — current                         │ ┊ Include ~/.ssh/config.d/*.config   ┊
+ ● gitid-owned ~/.ssh/config.d/gitid.config │ ┊ # END gitid managed: ssh-include   ┊
+via one Include line                        │ ┊                                    ┊
+                                            │ ┊ … (+3 more lines)                  ┊
+ Include paths must be absolute or ~/.ssh-  │ ╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+relative; the Include line goes NEAR THE TOP│ ╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮
+of ~/.ssh/config. Migration between layouts │ ┊ # BEGIN gitid managed: personal                    ┊
+is backed-up and reversible (STORE-03).     │ ┊ Host personal.github.com                           ┊
+                                            │ ┊   Hostname ssh.github.com                          ┊
+  Migrate layout… (Enter)                   │ ┊   Port 443                                         ┊
+                                            │ ┊   User git                                         ┊
+                                            │ ┊   IdentityFile /tmp/h741486159/.ssh/id_ed25519_pe… ┊
+                                            │ ┊   IdentitiesOnly yes                               ┊
+                                            │ ┊ # END gitid managed: personal                      ┊
+                                            │ ┊ # BEGIN gitid managed: work                        ┊
+                                            │ ┊ Host work.github.com                               ┊
+                                            │ ┊ … (+11 more lines)                                 ┊
+                                            │ ╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+                                            │
+                                            │
+                                            │
+ 5 of 6 options need action — Recommended, not required -- you can leave any option unchanged. Thi…
+ ←→ Options / Storage · ↑↓ layout · Enter migrate layout…
+ Enter activate · Esc back · ? help · Ctrl+P palette · q quit

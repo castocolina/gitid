@@ -143,6 +143,19 @@ type realBackend struct {
 	// makes a stamp collision reproducible without racing a real clock
 	// (review R2-05/R-21's composition-root retry).
 	archiveClockNow func() time.Time
+
+	// pendingMigration is the ONE previewed MigrationPlan the backend holds
+	// between SSHStorageMigrationPlan and CommitSSHStorage. It is covered by
+	// pendingMigrationMu — a SEPARATE mutex from txMu, per <lock_contract>:
+	// txMu covers the two config files as a coherent pair (every read AND
+	// write of them); pendingMigrationMu covers only this slot, never held
+	// across I/O. If it were txMu, runSSHStorageMigrate — which already holds
+	// txMu — would self-deadlock the moment it called takePendingMigration.
+	// Acquisition order when both are held: txMu first, pendingMigrationMu
+	// second — never the reverse, so a lock cycle is not expressible.
+	pendingMigration   sshconfig.MigrationPlan
+	pendingMigrationMu sync.Mutex
+	pendingToken       string // the opaque token the view carried
 }
 
 // compile-time proof the real composition root satisfies the seam.
@@ -155,6 +168,21 @@ var _ tuikit.IdentityPlanner = (*realBackend)(nil)
 // struct carries no such anonymous field, so a missing real implementation
 // stays a compile error, not a silent sentinel.
 var _ tuikit.GlobalSSHPlanner = (*realBackend)(nil)
+
+// plan 06-05 seam pin: the real composition root implements the storage
+// planner seam. It must NOT embed NoopSSHStoragePlanner.
+var _ tuikit.SSHStoragePlanner = (*realBackend)(nil)
+
+// newMigrateDeps is the package-level indirection both SSHStorageMigrationPlan
+// and runSSHStorageMigrate use to construct sshconfig.MigrateDeps. Using a
+// variable rather than an inline call lets tests override it to wrap WriteFile
+// (which IS exported) so they can inject failures and pauses —
+// MigrateDeps.afterStep is unexported and unreachable from cmd/gitid, so this
+// indirection is the only way a cmd/gitid test can wrap the seam without
+// reaching into the internal package.
+var newMigrateDeps = func(configPath, includePath string, aliases []string) sshconfig.MigrateDeps {
+	return sshconfig.RealMigrateDeps(configPath, includePath, aliases)
+}
 
 // buildBackend constructs the real tuikit.Backend. It is the only production
 // caller of buildIdentityDeps, and the only place cmd/gitid resolves the
@@ -638,11 +666,21 @@ func (b *realBackend) InitialState() tuikit.DemoState {
 	return state
 }
 
-// DemoBanner raises the D-16 "still demo data" banner on every tab EXCEPT
-// Identities: the create flow is the only surface Phase 3 wires to live data.
-// Each later phase removes its own banner as it wires its view.
+// DemoBanner raises the D-16 "still demo data" banner for each view that is
+// still wired to fixture data. The condition is an explicit enumeration of the
+// STILL-UNWIRED views rather than a negated single comparison, so the next
+// phase removing its own banner edits one entry instead of restructuring the
+// expression.
+// Phases that have wired their views and therefore do NOT raise the banner:
+//   - TabIdentities (plan 03)
+//   - TabGlobalSSH (plan 06-05: both Options and Storage sub-tabs are now live)
 func (b *realBackend) DemoBanner(tab tuikit.TabID) bool {
-	return tab != tuikit.TabIdentities
+	switch tab {
+	case tuikit.TabGlobalGit, tuikit.TabDoctor:
+		return true
+	default:
+		return false
+	}
 }
 
 // errUnhandledAction is what Persist records when a mutating action has NO
@@ -735,8 +773,12 @@ func (b *realBackend) Persist(state tuikit.DemoState, action tuikit.Action) tuik
 		b.setPersistErr(nil)
 		return b.InitialState()
 	case tuikit.SetSSHStorage:
-		// Demo-only: Phase 6 owns STORE-01 migration.
-		return tuikit.Reduce(state, action)
+		// Real-owned (plan 06-05): the migration write already happened in
+		// CommitSSHStorage (the async seam). Persist must re-read disk here,
+		// never fall through to tuikit.Reduce's in-memory guess. There is no
+		// persistSetSSHStorage function in this design.
+		b.setPersistErr(nil)
+		return b.InitialState()
 	case tuikit.ApplyGitBaseline:
 		// Demo-only: Phase 7 will make the global-git baseline real.
 		return tuikit.Reduce(state, action)
@@ -1477,6 +1519,211 @@ const globalSSHShadowWarnNoFileFmt = "shadow warning: %s will be shadowed (sourc
 // globalSSHSimInconclusiveNote is the frozen warning when the simulation
 // cannot faithfully mirror the config graph. Registered in gate-copy-freeze.
 const globalSSHSimInconclusiveNote = "simulation inconclusive — gitid could not fully read your config graph; apply will continue but shadowing cannot be checked"
+
+// ---------------------------------------------------------------------------
+// SSHStoragePlanner (plan 06-05)
+// ---------------------------------------------------------------------------
+
+// errReopenPreview is the sentinel error returned when CommitSSHStorage is
+// called with a token that does not match the held plan — either because the
+// selection changed, the screen was re-entered, the plan was already
+// committed, or the token was never issued. Distinct from a generic migration
+// failure so the screen can render the re-open-the-preview message for exactly
+// this cause.
+var errReopenPreview = errors.New("gitid: re-open the preview — the held plan no longer matches this token")
+
+// planTokenFor derives the opaque token for a MigrationPlan. It is a
+// deterministic fingerprint over direction + both file paths + both After
+// byte slices — enough to uniquely identify the plan without leaking any
+// file content across the boundary, and stable across a process restart
+// only by accident (the digests change when disk changes). The token is
+// treated as opaque by tuikit and by the caller: never parsed, never
+// compared to anything but itself.
+func planTokenFor(plan sshconfig.MigrationPlan) string {
+	h := fmt.Sprintf("%d|%s|%s|%x|%x",
+		plan.Direction, plan.SourcePath, plan.DestPath,
+		plan.Digests[plan.SourcePath], plan.Digests[plan.DestPath])
+	// A short but collision-resistant representation. Using the raw digest
+	// strings from the plan (which are already sha256 hex) keeps this
+	// derivative simple and dependency-free.
+	return fmt.Sprintf("%x", []byte(h))
+}
+
+// putPendingMigration stores plan under token, replacing any previously held
+// plan. Called while txMu is held (rule 1's order: txMu first).
+func (b *realBackend) putPendingMigration(token string, plan sshconfig.MigrationPlan) {
+	b.pendingMigrationMu.Lock()
+	b.pendingToken = token
+	b.pendingMigration = plan
+	b.pendingMigrationMu.Unlock()
+}
+
+// takePendingMigration is the atomic lookup-and-consume: one
+// pendingMigrationMu hold that compares the token, copies the plan out,
+// CLEARS the slot and returns. Not a get followed by a separate clear,
+// because the gap between them is a window where a second confirmation could
+// commit the same plan twice. A non-matching token clears NOTHING and
+// returns false, so a bogus commit cannot evict a legitimate held plan.
+// This helper NEVER takes txMu; its caller (runSSHStorageMigrate) already
+// holds txMu and Go's sync.Mutex is not reentrant — taking txMu here would
+// self-deadlock (the cycle-3 MEDIUM the <lock_contract> was written to prevent).
+func (b *realBackend) takePendingMigration(token string) (sshconfig.MigrationPlan, bool) {
+	b.pendingMigrationMu.Lock()
+	defer b.pendingMigrationMu.Unlock()
+	if b.pendingToken != token {
+		return sshconfig.MigrationPlan{}, false
+	}
+	plan := b.pendingMigration
+	b.pendingToken = ""
+	b.pendingMigration = sshconfig.MigrationPlan{}
+	return plan, true
+}
+
+// managedAliases returns the set of all managed SSH aliases from the current
+// storage target — these are the aliases the migration engine validates
+// resolution for after the move.
+func (b *realBackend) managedAliases() []string {
+	st := b.storage()
+	content, err := os.ReadFile(st.targetPath) //nolint:gosec // trusted gitid-managed path
+	if err != nil {
+		return nil
+	}
+	hosts, err := sshconfig.ParseManagedHosts(content)
+	if err != nil {
+		return nil
+	}
+	aliases := make([]string, 0, len(hosts))
+	for alias := range hosts {
+		aliases = append(aliases, alias)
+	}
+	return aliases
+}
+
+// SSHStorageMigrationPlan is the Storage sub-tab preview seam.
+//
+// It acquires txMu BEFORE resolving the current layout — per <lock_contract>
+// rule 5, every cross-file READ of the two config files takes txMu so a
+// preview opened between the migration engine's destination write and its
+// source trim waits for the transaction to finish and observes only the final
+// coherent state. (The migration engine writes the destination in step 3 and
+// trims the source in step 4 as two SEPARATE writes; without this lock a
+// preview landing between them renders a diff of a state that never existed.)
+//
+// Both locks are released before returning to the UI: txMu must NOT cross the
+// tea.Cmd boundary, and pendingMigrationMu is never held across I/O
+// (<lock_contract> rule 2).
+//
+// MUST NOT be called from runSSHStorageMigrate: that function already holds
+// txMu, and Go's sync.Mutex is not reentrant. The CLI branch (plan 06-06)
+// calls sshconfig.PlanMigration directly for exactly this reason — stated
+// there too.
+func (b *realBackend) SSHStorageMigrationPlan(layout tuikit.SSHStorageLayout) (tuikit.SSHStorageMigrationView, error) {
+	if b.initErr != nil {
+		return tuikit.SSHStorageMigrationView{}, b.initErr
+	}
+
+	// Rule 5: acquire txMu before ANY read of the two config files.
+	b.txMu.Lock()
+	defer b.txMu.Unlock()
+
+	st := b.storage()
+	currentLayout := tuikit.StorageSentinel
+	if st.includeLayout {
+		currentLayout = tuikit.StorageInclude
+	}
+	if currentLayout == layout {
+		return tuikit.SSHStorageMigrationView{}, fmt.Errorf("gitid: layout is already %s — nothing to plan", layout)
+	}
+
+	direction := sshconfig.MigrateToInclude
+	if layout == tuikit.StorageSentinel {
+		direction = sshconfig.MigrateToInFile
+	}
+
+	aliases := b.managedAliases()
+	deps := newMigrateDeps(b.sshConfigPath, filepath.Join(b.includeDir, gitidConfigFileName), aliases)
+	plan, err := sshconfig.PlanMigration(direction, deps)
+	if err != nil {
+		return tuikit.SSHStorageMigrationView{}, fmt.Errorf("gitid: planning migration: %w", err)
+	}
+
+	token := planTokenFor(plan)
+
+	// Rule 1 acquisition order: txMu first (already held), then pendingMigrationMu.
+	b.putPendingMigration(token, plan)
+
+	toInclude := layout == tuikit.StorageInclude
+	headingTail := "sentinel blocks in ~/.ssh/config"
+	if toInclude {
+		headingTail = "Include\xe2\x80\x99d gitid.config"
+	}
+
+	targets := []string{b.displayPath(b.sshConfigPath), b.displayPath(filepath.Join(b.includeDir, gitidConfigFileName))}
+	backups := []string{}
+	for _, p := range []string{b.sshConfigPath, filepath.Join(b.includeDir, gitidConfigFileName)} {
+		if fileExists(p) {
+			backups = append(backups, b.displayPath(p)+backupSuffixPreview)
+		}
+	}
+
+	view := tuikit.SSHStorageMigrationView{
+		CurrentLayout:   currentLayout,
+		TargetLayout:    layout,
+		Heading:         "Migrate SSH storage layout \xe2\x86\x92 " + headingTail,
+		Targets:         targets,
+		Backups:         backups,
+		Diff:            plan.Diff,
+		MainPreview:     string(plan.DestAfter),
+		OwnedPreview:    string(plan.DestAfter),
+		SentinelPreview: string(plan.DestAfter),
+		SourceBefore:    string(plan.SourceBefore),
+		DestBefore:      string(plan.DestBefore),
+		PlanToken:       token,
+	}
+	// Assign the preview fields correctly based on direction:
+	// - toInclude: DestAfter is the new gitid.config, SourceAfter is ~/.ssh/config with Include line
+	// - toInFile:  DestAfter is the new ~/.ssh/config with blocks inline, SourceAfter is the trimmed gitid.config
+	if toInclude {
+		// MainPreview is the Include-line-bearing ~/.ssh/config (SourceAfter for toInclude
+		// means the config file after the Include line and block removal — wait, let me check)
+		// PlanMigration for MigrateToInclude: source=~/.ssh/config, dest=gitid.config
+		view.MainPreview = string(plan.SourceAfter) // ~/.ssh/config after migration (has Include line, no blocks)
+		view.OwnedPreview = string(plan.DestAfter)  // gitid.config after migration (has all blocks)
+		view.SentinelPreview = ""
+	} else {
+		// PlanMigration for MigrateToInFile: source=gitid.config, dest=~/.ssh/config
+		view.SentinelPreview = string(plan.DestAfter) // ~/.ssh/config after migration (has all blocks)
+		view.MainPreview = ""
+		view.OwnedPreview = ""
+	}
+	return view, nil
+}
+
+// CommitSSHStorage is the storage-migration async seam, mirroring
+// CommitGlobalSSH exactly: a tea.Cmd closure that guards b.initErr, calls
+// runSSHStorageMigrate with the token and confirmationAlreadyObtained,
+// scrubs paths and messages, and returns an SSHStorageCommitMsg. The token
+// must pass through UNCHANGED — a commit path that regenerates or ignores the
+// token puts the two-reads-of-disk defect straight back.
+func (b *realBackend) CommitSSHStorage(layout tuikit.SSHStorageLayout, planToken string) tea.Cmd {
+	return func() tea.Msg {
+		if b.initErr != nil {
+			return tuikit.SSHStorageCommitMsg{Err: b.displayMessage(b.initErr.Error())}
+		}
+		res, err := b.runSSHStorageMigrate(layout, planToken, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+		msg := tuikit.SSHStorageCommitMsg{
+			Backups:  displayPaths(b, res.Backups),
+			Restored: displayMessages(b, res.Restored),
+		}
+		if err != nil {
+			msg.Err = b.displayMessage(err.Error())
+			if errors.Is(err, sshconfig.ErrConfigChangedSincePreview) {
+				msg.ConfigChangedSincePreview = true
+			}
+		}
+		return msg
+	}
+}
 
 // globalSSHProvenanceLabel renders the D-03 provenance label for one source
 // class, scoped to exactly what each class proves (06-REVIEWS.md HIGH pin):
