@@ -128,6 +128,10 @@ type realBackend struct {
 	// "public-key", "include-line", and "host-block".
 	failCommitAt func(step string) error
 
+	// verifyAuthorResolution is a test-only override of the D-06 post-write
+	// probe. Nil means the real globalgit.VerifyAuthorResolution.
+	verifyAuthorResolution func(deps globalgit.Deps, matchedDir, unmatchedDir string) (globalgit.AuthorResolution, error)
+
 	// probeSSHVersion is a test-only override for platform.ProbeSSHVersion so
 	// version-gate outcomes can be driven without a live ssh -V. Nil means the
 	// real probe.
@@ -178,6 +182,12 @@ var _ tuikit.GlobalSSHPlanner = (*realBackend)(nil)
 // struct carries no such anonymous field, so a missing real implementation
 // stays a compile error, not a silent sentinel.
 var _ tuikit.GlobalGitPlanner = (*realBackend)(nil)
+
+// plan 07-02 seam pin: the real composition root implements the fallback-
+// author planner seam from backend.go. It must NOT get there by embedding
+// NoopGitFallbackAuthorPlanner — a reflection test in wiring_test.go asserts
+// the struct carries no such anonymous field.
+var _ tuikit.GitFallbackAuthorPlanner = (*realBackend)(nil)
 
 // plan 06-05 seam pin: the real composition root implements the storage
 // planner seam. It must NOT embed NoopSSHStoragePlanner.
@@ -1664,6 +1674,73 @@ func (b *realBackend) CommitGlobalGit(keys []string) tea.Cmd {
 		}
 		res, err := b.runGlobalGitApply(keys, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
 		msg := tuikit.GlobalGitCommitMsg{
+			Backups:    displayPaths(b, res.Backups),
+			Restored:   displayMessages(b, res.Restored),
+			Advisories: displayMessages(b, res.Advisories),
+		}
+		if err != nil {
+			msg.Err = b.displayMessage(err.Error())
+		}
+		return msg
+	}
+}
+
+// GitFallbackAuthorState reads the current fallback-author pair from the
+// main config via ReadGitFallbackAuthor. Empty strings mean unset.
+func (b *realBackend) GitFallbackAuthorState() (tuikit.GitFallbackAuthorView, error) {
+	if b.initErr != nil {
+		return tuikit.GitFallbackAuthorView{}, b.initErr
+	}
+	existing, err := os.ReadFile(b.gitconfigPath) //nolint:gosec // trusted gitid-managed path
+	if err != nil && !os.IsNotExist(err) {
+		return tuikit.GitFallbackAuthorView{}, err
+	}
+	name, email := gitconfig.ReadGitFallbackAuthor(existing)
+	return tuikit.GitFallbackAuthorView{Name: name, Email: email}, nil
+}
+
+// GitFallbackAuthorPlan is the fallback-author apply preview: the resolved
+// main-config target, the promised backup, and a diff of the candidate body.
+func (b *realBackend) GitFallbackAuthorPlan(name, email string) (tuikit.GitFallbackAuthorPlanView, error) {
+	if b.initErr != nil {
+		return tuikit.GitFallbackAuthorPlanView{}, b.initErr
+	}
+	if email != "" && !strings.Contains(email, "@") {
+		return tuikit.GitFallbackAuthorPlanView{}, fmt.Errorf("gitid: malformed fallback email %q", email)
+	}
+	existing, err := os.ReadFile(b.gitconfigPath) //nolint:gosec // trusted gitid-managed path
+	if err != nil && !os.IsNotExist(err) {
+		return tuikit.GitFallbackAuthorPlanView{}, err
+	}
+	currentName, currentEmail := gitconfig.ReadGitFallbackAuthor(existing)
+	hasBlock := currentName != "" || currentEmail != ""
+	emptyPair := name == "" && email == ""
+	view := tuikit.GitFallbackAuthorPlanView{
+		Targets: []string{b.displayPath(b.gitconfigPath)},
+		Removal: emptyPair && hasBlock,
+	}
+	if fileExists(b.gitconfigPath) && (!emptyPair || hasBlock) {
+		view.Backups = []string{b.displayPath(b.gitconfigPath) + backupSuffixPreview}
+	}
+	composed := gitconfig.ComposeBaselineInclude(existing, b.displayBaselineTargetPath())
+	composed, err = gitconfig.EnsureGitFallbackAuthor(composed, name, email)
+	if err != nil {
+		return tuikit.GitFallbackAuthorPlanView{}, err
+	}
+	view.Diff = globalsTextDiff(string(existing), string(composed))
+	return view, nil
+}
+
+// CommitGitFallbackAuthor is the fallback-author apply async seam: call
+// runGitFallbackAuthorApply — the ONE complete per-verb ceremony — with
+// confirmationAlreadyObtained and map the result onto the commit message.
+func (b *realBackend) CommitGitFallbackAuthor(name, email string) tea.Cmd {
+	return func() tea.Msg {
+		if b.initErr != nil {
+			return tuikit.GitFallbackAuthorCommitMsg{Err: b.displayMessage(b.initErr.Error())}
+		}
+		res, err := b.runGitFallbackAuthorApply(name, email, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+		msg := tuikit.GitFallbackAuthorCommitMsg{
 			Backups:    displayPaths(b, res.Backups),
 			Restored:   displayMessages(b, res.Restored),
 			Advisories: displayMessages(b, res.Advisories),

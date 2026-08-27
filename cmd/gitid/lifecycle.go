@@ -100,6 +100,9 @@ type lifecycleResult struct {
 	ReTest                 tester.Result
 	Advisories             []string
 	SimulationInconclusive bool
+	// Kind is populated by runGitFallbackAuthorApply: "write", "remove", or
+	// "noop". Other verbs leave it empty.
+	Kind string
 }
 
 // ---------------------------------------------------------------------------
@@ -127,12 +130,13 @@ type lifecycleResult struct {
 // contract MUST be written against this same table; adding a verb means
 // adding a row HERE first.
 var lifecycleStages = map[string][]string{
-	"rotate":          {"test", "plan", "confirm", "backup", "write", "retest"},
-	"repair":          {"test", "plan", "confirm", "backup", "write", "retest"},
-	"delete":          {"plan", "confirm", "backup", "write", "verify"},
-	"global-ssh":      {"plan", "simulate", "confirm", "backup", "write", "verify"},
-	"global-git":      {"plan", "confirm", "backup", "write", "verify"},
-	"storage-migrate": {"plan", "confirm", "backup", "write"},
+	"rotate":            {"test", "plan", "confirm", "backup", "write", "retest"},
+	"repair":            {"test", "plan", "confirm", "backup", "write", "retest"},
+	"delete":            {"plan", "confirm", "backup", "write", "verify"},
+	"global-ssh":        {"plan", "simulate", "confirm", "backup", "write", "verify"},
+	"global-git":        {"plan", "confirm", "backup", "write", "verify"},
+	"global-git-author": {"plan", "confirm", "backup", "write", "verify"},
+	"storage-migrate":   {"plan", "confirm", "backup", "write"},
 }
 
 // errConfirmationUnavailable is returned when a confirmationRequired
@@ -1298,4 +1302,254 @@ func (b *realBackend) baselineTargetPath() string {
 // for use in [include] pointers in ~/.gitconfig and ceremony preview headings.
 func (b *realBackend) displayBaselineTargetPath() string {
 	return "~/.gitconfig.d/00-baseline"
+}
+
+// ---------------------------------------------------------------------------
+// runGitFallbackAuthorApply — the ONE complete fallback-author ceremony
+// (plan 07-02)
+// ---------------------------------------------------------------------------
+
+// runGitFallbackAuthorApply owns the whole declared fallback-author write
+// ceremony — plan → confirm → backup → write → verify — driving it from
+// lifecycleStages["global-git-author"]. It is a SECOND verb, not a mode of
+// runGlobalGitApply: D-05 and checkpoint-2 D9 require the fallback pair's
+// own dedicated ceremony, never folded into the baseline managed-block
+// apply. One function per verb is this project's established rule; this
+// function must not call runGlobalGitApply, and runGlobalGitApply must not
+// call this one.
+//
+// WRITE (R-4): both the floor include block and the fallback block live in
+// the SAME file, so the ceremony reads ~/.gitconfig once, composes
+// ComposeBaselineInclude and then EnsureGitFallbackAuthor over those same
+// bytes, and performs ONE filewriter.Write. The anchor InsertBlockAfter
+// needs is present by construction, there is no two-write window, and there
+// is exactly one backup for one file.
+func (b *realBackend) runGitFallbackAuthorApply(name, email string, p lifecyclePolicy) (lifecycleResult, error) {
+	b.txMu.Lock()
+	defer b.txMu.Unlock()
+
+	res := lifecycleResult{}
+	record := func(stage string) {
+		if p.Stages != nil {
+			p.Stages(stage)
+		}
+	}
+	stages := lifecycleStages["global-git-author"]
+
+	if b.initErr != nil {
+		return res, b.initErr
+	}
+
+	// plan — reject a malformed non-empty email BY NAME before any file is
+	// read. An empty email is valid (unset). The name has no format constraint.
+	record(stages[0])
+	if email != "" && !strings.Contains(email, "@") {
+		return res, fmt.Errorf("gitid: malformed fallback email %q", email)
+	}
+
+	existing, readErr := os.ReadFile(b.gitconfigPath) //nolint:gosec // trusted gitid-managed path
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return res, readErr
+	}
+	currentName, currentEmail := gitconfig.ReadGitFallbackAuthor(existing)
+	hasBlock := currentName != "" || currentEmail != ""
+	emptyPair := name == "" && email == ""
+	switch {
+	case emptyPair && !hasBlock:
+		res.Kind = "noop"
+	case emptyPair && hasBlock:
+		res.Kind = "remove"
+	default:
+		res.Kind = "write"
+	}
+
+	if p.DryRun {
+		return res, nil
+	}
+
+	if res.Kind == "noop" {
+		return res, nil
+	}
+
+	record(stages[1])
+	preview := fallbackAuthorPreview(name, email, currentName, currentEmail, b.displayPath(b.gitconfigPath))
+	authorized, cerr := b.confirmGate(p, preview)
+	if cerr != nil {
+		return res, cerr
+	}
+	if !authorized {
+		return res, fmt.Errorf("gitid: cancelled git fallback author apply")
+	}
+
+	record(stages[2])
+
+	record(stages[3])
+	journal := newMutationJournal(b)
+	fail := func(cause error) (lifecycleResult, error) {
+		outcomes, restoreErr := journal.restore()
+		res.Restored = outcomes
+		wrapped := fmt.Errorf("gitid: applying git fallback author: %w", cause)
+		if restoreErr != nil {
+			wrapped = fmt.Errorf("%w; restoration results: %s", wrapped, strings.Join(outcomes, "; "))
+		}
+		return res, wrapped
+	}
+	inject := func(step string) error {
+		if b.failCommitAt == nil {
+			return nil
+		}
+		return b.failCommitAt(step)
+	}
+
+	if werr := journal.watchFile(b.gitconfigPath); werr != nil {
+		return res, werr
+	}
+	parent := filepath.Dir(b.gitconfigPath)
+	if _, serr := os.Stat(parent); os.IsNotExist(serr) {
+		if rerr := journal.recordCreatedDir(parent); rerr != nil {
+			return res, rerr
+		}
+	}
+
+	composed := gitconfig.ComposeBaselineInclude(existing, b.displayBaselineTargetPath())
+	composed, composeErr := gitconfig.EnsureGitFallbackAuthor(composed, name, email)
+	if composeErr != nil {
+		return fail(composeErr)
+	}
+	backup, writeErr := filewriter.Write(b.gitconfigPath, composed, deleteGitconfigMode)
+	if writeErr != nil {
+		return fail(fmt.Errorf("writing fallback author to %s: %w", b.gitconfigPath, writeErr))
+	}
+	journal.addBackup(backup)
+	if err := inject("global-git-author-after-write"); err != nil {
+		return fail(err)
+	}
+	res.Backups = append(res.Backups, journal.backups...)
+
+	record(stages[4])
+	b.appendFallbackAuthorAdvisories(&res, composed)
+
+	return res, nil
+}
+
+func fallbackAuthorPreview(name, email, currentName, currentEmail, path string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "apply git fallback author to %s\n", path)
+	switch {
+	case name != "":
+		fmt.Fprintf(&b, "set user.name = %s\n", name)
+	case currentName != "":
+		b.WriteString("remove user.name\n")
+	}
+	switch {
+	case email != "":
+		fmt.Fprintf(&b, "set user.email = %s\n", email)
+	case currentEmail != "":
+		b.WriteString("remove user.email\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func (b *realBackend) appendFallbackAuthorAdvisories(res *lifecycleResult, content []byte) {
+	matchedDir, fragmentPath := b.fallbackMatchedDir(content)
+	if matchedDir == "" {
+		res.Advisories = append(res.Advisories,
+			"advisory: matched-identity author resolution could not be verified on this machine")
+	}
+	unmatchedDir := b.home
+	if _, err := os.Stat(b.fragmentDir); err == nil {
+		unmatchedDir = b.fragmentDir
+	}
+	probe := globalgit.VerifyAuthorResolution
+	if b.verifyAuthorResolution != nil {
+		probe = b.verifyAuthorResolution
+	}
+	got, err := probe(globalgit.BuildProbeDeps(unmatchedDir), matchedDir, unmatchedDir)
+	if err != nil {
+		res.Advisories = append(res.Advisories,
+			"advisory: post-write author resolution could not run ("+err.Error()+") — the write succeeded but was not re-verified")
+		return
+	}
+	if !originNamesFile(got.Unmatched.Email.Origin, b.gitconfigPath) &&
+		!originNamesFile(got.Unmatched.Name.Origin, b.gitconfigPath) {
+		named := got.Unmatched.Email.Origin
+		if named == "" {
+			named = got.Unmatched.Name.Origin
+		}
+		if named == "" {
+			named = "(unset)"
+		}
+		res.Advisories = append(res.Advisories,
+			"advisory: unmatched-directory author resolved from "+named+" instead of the fallback block")
+	}
+	if got.MatchedOutcome == globalgit.MatchedVerified && fragmentPath != "" {
+		fragAbs := b.expandUserPath(fragmentPath)
+		if !originNamesFile(got.Matched.Email.Origin, fragAbs) &&
+			!originNamesFile(got.Matched.Name.Origin, fragAbs) {
+			res.Advisories = append(res.Advisories,
+				fmt.Sprintf("advisory: matched-directory author resolved from %s, not the identity fragment %s — includeIf precedence may be violated",
+					got.Matched.Email.Origin, fragAbs))
+		}
+	}
+}
+
+func (b *realBackend) fallbackMatchedDir(content []byte) (dir, fragment string) {
+	for _, info := range gitconfig.ParseManagedIncludeIf(content) {
+		for _, m := range info.Matches {
+			if m.Kind != gitconfig.MatchGitdir {
+				continue
+			}
+			if found := findGitWorkTree(b.expandUserPath(m.Value)); found != "" {
+				return found, info.FragmentPath
+			}
+		}
+	}
+	return "", ""
+}
+
+// findGitWorkTree returns dir if it is a git work tree, or a direct child
+// that is. includeIf gitdir: matching only fires inside a repository, so a
+// directory that exists but is not a repo cannot prove the matched half
+// (D-06) — returning it would mis-report a precedence advisory.
+func findGitWorkTree(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	if isGitWorkTree(dir) {
+		return dir
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		child := filepath.Join(dir, e.Name())
+		if isGitWorkTree(child) {
+			return child
+		}
+	}
+	return ""
+}
+
+func isGitWorkTree(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, ".git"))
+	return err == nil
+}
+
+func (b *realBackend) expandUserPath(p string) string {
+	p = strings.TrimSpace(p)
+	if strings.HasPrefix(p, "~/") {
+		p = filepath.Join(b.home, strings.TrimPrefix(p, "~/"))
+	}
+	return filepath.Clean(p)
+}
+
+func originNamesFile(origin, want string) bool {
+	if origin == "" || want == "" {
+		return false
+	}
+	return filepath.Clean(origin) == filepath.Clean(want)
 }

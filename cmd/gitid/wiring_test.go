@@ -56,6 +56,33 @@ func TestRealBackendDoesNotEmbedNoopIdentityPlanner(t *testing.T) {
 	}
 }
 
+func TestRealBackendDoesNotEmbedNoopGitFallbackAuthorPlanner(t *testing.T) {
+	var _ tuikit.GitFallbackAuthorPlanner = (*realBackend)(nil)
+	rt := reflect.TypeOf(realBackend{})
+	for i := range rt.NumField() {
+		if rt.Field(i).Type == reflect.TypeOf(tuikit.NoopGitFallbackAuthorPlanner{}) {
+			t.Fatal("realBackend must not embed NoopGitFallbackAuthorPlanner — a missing real implementation must be a compile error")
+		}
+	}
+}
+
+func TestGitFallbackAuthorVerifySeamIsRealWired(t *testing.T) {
+	b := newBackendForHome(t.TempDir())
+	if b.verifyAuthorResolution != nil {
+		t.Fatal("real constructor must leave verifyAuthorResolution nil so VerifyAuthorResolution runs")
+	}
+	src, err := os.ReadFile(filepath.Join(testRepoRoot(t), "cmd", "gitid", "lifecycle.go")) //nolint:gosec // repository source
+	if err != nil {
+		t.Fatalf("reading lifecycle.go: %v", err)
+	}
+	if !strings.Contains(string(src), "globalgit.BuildProbeDeps") {
+		t.Fatal("runGitFallbackAuthorApply verify stage must call BuildProbeDeps — a nil seam silently changes behavior")
+	}
+	if !strings.Contains(string(src), "globalgit.VerifyAuthorResolution") {
+		t.Fatal("runGitFallbackAuthorApply verify stage must call VerifyAuthorResolution")
+	}
+}
+
 // TestIdentityDepsEveryFieldIsWired is the L2 real-constructor guard: EVERY
 // identity.Deps function field the real composition root builds must be
 // non-nil, and the failure must NAME the field.

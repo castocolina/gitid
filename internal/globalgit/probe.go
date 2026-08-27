@@ -208,8 +208,7 @@ func parseNULRecords(out string) map[string]EffectiveEntry {
 		key := strings.ToLower(keyValue[:nlIdx])
 		value := keyValue[nlIdx+1:]
 
-		// Strip the "file:" prefix from the origin when present.
-		origin = strings.TrimPrefix(origin, "file:")
+		origin = stripFileOrigin(origin)
 
 		// Last-wins: overwrite any earlier entry for the same key.
 		result[key] = EffectiveEntry{
@@ -220,4 +219,12 @@ func parseNULRecords(out string) map[string]EffectiveEntry {
 	}
 
 	return result
+}
+
+// stripFileOrigin strips git's "file:" origin prefix when present, leaving
+// other origins (command line, blob:, standard input) verbatim. Shared by
+// the -z list parser and VerifyAuthorResolution's --show-origin --get parser
+// so the prefix rule cannot drift (D-06).
+func stripFileOrigin(origin string) string {
+	return strings.TrimPrefix(origin, "file:")
 }

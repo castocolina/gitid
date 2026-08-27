@@ -187,6 +187,54 @@ func (NoopGlobalGitPlanner) CommitGlobalGit([]string) tea.Cmd {
 
 var _ GlobalGitPlanner = NoopGlobalGitPlanner{}
 
+// ErrGitFallbackAuthorPlannerNotImplemented is the sentinel
+// NoopGitFallbackAuthorPlanner returns from every method. Fixtures and test
+// stubs embed the noop and override only the methods they exercise; a missing
+// real implementation must be a compile error, not this sentinel at runtime.
+var ErrGitFallbackAuthorPlannerNotImplemented = errors.New("git fallback author planner not implemented")
+
+// GitFallbackAuthorPlanner is the Phase 7 D9 fallback-author seam: the
+// current-pair read, the apply-preview write plan, and the asynchronous
+// apply commit. The THREE methods are the whole seam — no speculative
+// surface. This is deliberately SEPARATE from GlobalGitPlanner because that
+// interface owns the option catalogue and its write, and this one owns the
+// fallback author and its own write — two focused interfaces let a fixture
+// adopt one without hand-writing the other, and the separation is the
+// structural expression of D-05's "own dedicated ceremony, never folded
+// into the baseline block".
+type GitFallbackAuthorPlanner interface {
+	GitFallbackAuthorState() (GitFallbackAuthorView, error)
+	GitFallbackAuthorPlan(name, email string) (GitFallbackAuthorPlanView, error)
+	CommitGitFallbackAuthor(name, email string) tea.Cmd
+}
+
+// NoopGitFallbackAuthorPlanner implements every GitFallbackAuthorPlanner
+// method with a zero-value view plus ErrGitFallbackAuthorPlannerNotImplemented.
+// Fixtures and test stubs embed it and override only what they exercise.
+// The REAL backend must NOT embed it — a missing real implementation must
+// be a compile error, pinned by the compile-time assertion in
+// cmd/gitid/wiring.go and a reflection test.
+type NoopGitFallbackAuthorPlanner struct{}
+
+// GitFallbackAuthorState implements GitFallbackAuthorPlanner.
+func (NoopGitFallbackAuthorPlanner) GitFallbackAuthorState() (GitFallbackAuthorView, error) {
+	return GitFallbackAuthorView{}, ErrGitFallbackAuthorPlannerNotImplemented
+}
+
+// GitFallbackAuthorPlan implements GitFallbackAuthorPlanner.
+func (NoopGitFallbackAuthorPlanner) GitFallbackAuthorPlan(string, string) (GitFallbackAuthorPlanView, error) {
+	return GitFallbackAuthorPlanView{}, ErrGitFallbackAuthorPlannerNotImplemented
+}
+
+// CommitGitFallbackAuthor implements GitFallbackAuthorPlanner.
+func (NoopGitFallbackAuthorPlanner) CommitGitFallbackAuthor(string, string) tea.Cmd {
+	return func() tea.Msg {
+		return GitFallbackAuthorCommitMsg{Err: ErrGitFallbackAuthorPlannerNotImplemented.Error()}
+	}
+}
+
+var _ GitFallbackAuthorPlanner = NoopGitFallbackAuthorPlanner{}
+
 // ErrSSHStoragePlannerNotImplemented is the sentinel NoopSSHStoragePlanner
 // returns from every method. Fixtures and test stubs embed the noop and
 // override only the methods they exercise; a missing real implementation must

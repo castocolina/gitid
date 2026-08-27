@@ -527,3 +527,31 @@ type GlobalGitCommitMsg struct {
 	Advisories []string
 	Err        string
 }
+
+// GitFallbackAuthorView is the fallback block's current contents — the two
+// fields the D9 pane seeds from on activate (D-04 / 07-UI-SPEC.md partial
+// row). Empty strings mean the key is currently unset.
+type GitFallbackAuthorView struct {
+	Name  string
+	Email string
+}
+
+// GitFallbackAuthorPlanView is the confirmed-apply preview scene for the
+// fallback-author ceremony. Removal distinguishes a block-clearing apply
+// from a write so the ceremony can word itself honestly.
+type GitFallbackAuthorPlanView struct {
+	Targets []string
+	Backups []string
+	Diff    string
+	Removal bool
+}
+
+// GitFallbackAuthorCommitMsg completes an asynchronous fallback-author
+// apply commit — delivered from the tea.Cmd Backend.CommitGitFallbackAuthor
+// returns. Advisories carries the D-06 post-write precedence notes.
+type GitFallbackAuthorCommitMsg struct {
+	Backups    []string
+	Restored   []string
+	Advisories []string
+	Err        string
+}
