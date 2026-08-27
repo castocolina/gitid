@@ -1,6 +1,5 @@
  gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
  Global SSH › Options
- ! Preview — demo data, not wired to your system yet
   Options   Storage & preview
  ▸ ☑ ! StrictHostKeyChecking  [Medium]      │  StrictHostKeyChecking
       now: no → accept-new                  │  ~ Recommended, not required -- you can leave any
@@ -14,6 +13,7 @@
       now: no → yes                         │
    ☐ ! UseKeychain  [Low]                   │
       now:  → yes                           │
+                                            │
                                             │
                                             │
                                             │

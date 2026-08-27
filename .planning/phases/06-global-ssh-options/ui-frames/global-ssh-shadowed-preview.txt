@@ -1,6 +1,5 @@
  gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
  Global SSH › Options
- ! Preview — demo data, not wired to your system yet
   Options   Storage & preview
 Write Host * managed block to ~/.ssh/config.d/gitid.config
 Touches ~/.ssh/config.d/gitid.config · ~/.ssh/config
@@ -23,6 +22,7 @@ Exact change: PgUp/PgDn scroll · v focus · ←/→ columns
 Nothing has changed yet
 
  Cancel (Esc)   Apply selected (Enter)
+
 
 
  4 of 6 options need action — Recommended, not required -- you can leave any option unchanged. Thi…
