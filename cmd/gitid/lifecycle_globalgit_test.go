@@ -323,3 +323,64 @@ func TestRunGlobalGitApply_BundleCollisionUserValueWins(t *testing.T) {
 		t.Errorf("value = %q, want the user's own 'pull' (their value wins under floor + last-wins)", strings.TrimSpace(out))
 	}
 }
+
+// TestRunGlobalGitApply_LeavesFallbackAuthorBlockUntouched proves (not just
+// asserts) that the baseline apply ceremony never touches the D9
+// fallback-author block — a SEPARATE managed block in the SAME file, owned by
+// a SEPARATE ceremony (runGitFallbackAuthorApply). This is what makes
+// GlobalGitResultTail's claim ("Global user.email was left alone, as always")
+// true by construction rather than by comment (07-03-PLAN.md Task 3).
+func TestRunGlobalGitApply_LeavesFallbackAuthorBlockUntouched(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("no git binary in PATH: %v", err)
+	}
+	home := t.TempDir()
+	b := newBackendForHome(home)
+
+	// Set the fallback author pair first.
+	if _, err := b.runGitFallbackAuthorApply("Team", "team@example.com", lifecyclePolicy{Confirm: confirmationAlreadyObtained}); err != nil {
+		t.Fatalf("runGitFallbackAuthorApply: %v", err)
+	}
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+	before, readErr := os.ReadFile(gitconfigPath) //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+	if readErr != nil {
+		t.Fatalf("reading %s: %v", gitconfigPath, readErr)
+	}
+	fallbackBefore, ok := extractManagedBlock(string(before), "global-git-author")
+	if !ok {
+		t.Fatalf("fallback-author block not found after runGitFallbackAuthorApply:\n%s", before)
+	}
+
+	// Now apply a baseline option — a SEPARATE ceremony, a SEPARATE managed
+	// block (in the include'd baseline file, not ~/.gitconfig's fallback block).
+	if _, err := b.runGlobalGitApply([]string{"init.defaultBranch"}, lifecyclePolicy{Confirm: confirmationAlreadyObtained}); err != nil {
+		t.Fatalf("runGlobalGitApply: %v", err)
+	}
+	after, readErr := os.ReadFile(gitconfigPath) //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+	if readErr != nil {
+		t.Fatalf("re-reading %s: %v", gitconfigPath, readErr)
+	}
+	fallbackAfter, ok := extractManagedBlock(string(after), "global-git-author")
+	if !ok {
+		t.Fatalf("fallback-author block missing after a baseline apply:\n%s", after)
+	}
+	if fallbackBefore != fallbackAfter {
+		t.Errorf("fallback-author block changed after a baseline apply:\nbefore:\n%s\nafter:\n%s", fallbackBefore, fallbackAfter)
+	}
+}
+
+// extractManagedBlock returns the BEGIN..END managed block body for name, and
+// whether it was found.
+func extractManagedBlock(content, name string) (string, bool) {
+	begin := "# BEGIN gitid managed: " + name
+	end := "# END gitid managed: " + name
+	i := strings.Index(content, begin)
+	if i < 0 {
+		return "", false
+	}
+	j := strings.Index(content[i:], end)
+	if j < 0 {
+		return "", false
+	}
+	return content[i : i+j+len(end)], true
+}

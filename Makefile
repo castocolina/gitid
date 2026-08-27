@@ -339,9 +339,20 @@ gate-copy-freeze:
 		'not applicable (could not be probed)' \
 		'shadow warning: ' \
 		'simulation inconclusive — gitid could not fully read your config graph' \
-		'advisory: '; \
+		'advisory: ' \
+		'set by gitid in ' \
+		'set by you in ' \
+		'set somewhere gitid cannot name' \
+		'not set (git'\''s built-in default: ' \
+		'git'\''s own init and clone commands probe the filesystem and may write a repository-local core.ignorecase that overrides this global setting.' \
+		'Requires git 2.35 or newer to write zdiff3' \
+		'user.useConfigOnly is selected but the fallback author has no name set' \
+		'user.useConfigOnly is selected but the fallback author has no email set' \
+		'The fallback email is set but the fallback name is empty' \
+		'Global user.email was left alone, as always -- each identity'\''s commits use their own includeIf fragment.' \
+		' — your value differs, so yours wins'; \
 	do \
-		if grep -rqF -- "$$s" internal/tuikit internal/identity cmd/gitid internal/globalssh; then \
+		if grep -rqF -- "$$s" internal/tuikit internal/identity cmd/gitid internal/globalssh internal/globalgit; then \
 			echo "    ok   $$s"; \
 		else \
 			echo "    MISSING  $$s"; fail=1; \
@@ -357,6 +368,27 @@ gate-copy-freeze:
 		exit 1; \
 	else \
 		echo "    ok   D-13 exclusion (dynamic version prefix not frozen)"; \
+	fi; \
+	git_dyn_prefix="Your git"; git_dyn_prefix="$$git_dyn_prefix:"; \
+	if grep -qF -- "$$git_dyn_prefix" Makefile; then \
+		echo "    FAIL  dynamic git-version prefix must stay out of the frozen list (07-03 D-13 precedent)"; \
+		exit 1; \
+	else \
+		echo "    ok   07-03 exclusion (dynamic git-version prefix not frozen)"; \
+	fi; \
+	bundle_dyn="of"; bundle_dyn="$$bundle_dyn set"; \
+	if grep -qF -- "$$bundle_dyn" Makefile; then \
+		echo "    FAIL  dynamic bundle aggregate count must stay out of the frozen list (D-09)"; \
+		exit 1; \
+	else \
+		echo "    ok   D-09 exclusion (dynamic bundle aggregate count not frozen)"; \
+	fi; \
+	counts_dyn="baseline options applied"; counts_dyn="$$counts_dyn to"; \
+	if grep -qF -- "$$counts_dyn" Makefile; then \
+		echo "    FAIL  dynamic applied/selected counts must stay out of the frozen list (result message)"; \
+		exit 1; \
+	else \
+		echo "    ok   result-message exclusion (dynamic applied/selected counts not frozen)"; \
 	fi
 
 ## build: compile the gitid binary.

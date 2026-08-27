@@ -291,6 +291,37 @@ const (
 	// GlobalGitEmailResultMessage is the ceremony's receipt message —
 	// pins the SAME includeIf-precedence invariant.
 	GlobalGitEmailResultMessage = "Global fallback user.email set — used only where no identity matches; identity fragments still win."
+
+	// GlobalGitCaseSensitivityCaveat is appended to core.ignorecase's
+	// explanation (07-03-PLAN.md Task 3): git's own init/clone filesystem
+	// probe can write a repository-local override that beats this global
+	// setting, so recommending it without saying so would be dishonest.
+	GlobalGitCaseSensitivityCaveat = "git's own init and clone commands probe the filesystem and may write a repository-local core.ignorecase that overrides this global setting."
+
+	// GlobalGitConflictStyleGateNote is the STATIC half of the D-08 hard-gate
+	// explanation for merge.conflictstyle — it names the required git version
+	// and states the fallback is written instead, but NEVER the machine's
+	// actual version (that lives on its own separate dynamic VersionNote
+	// line, internal/globalgit.VersionGate, excluded from this gate per the
+	// Phase 6 D-13 precedent — splitting the two is what makes this half
+	// freezable). Shown only when the gate is NOT met.
+	GlobalGitConflictStyleGateNote = "Requires git 2.35 or newer to write zdiff3 — on older git, gitid writes diff3 instead (old git errors on an unrecognized merge style value)."
+
+	// GlobalGitCrossWarningNameMissing and GlobalGitCrossWarningEmailMissing
+	// are D-07's mandatory cross-warning, as TWO fully-static constants (one
+	// per missing half) rather than one interpolated sentence — an
+	// interpolated sentence would only be half-frozen. Shown when the
+	// user.useConfigOnly row is selected and exactly one fallback-author half
+	// is set.
+	GlobalGitCrossWarningNameMissing  = "user.useConfigOnly is selected but the fallback author has no name set — a commit with no matching identity will hard-fail instead of falling back, because only the email half is configured."
+	GlobalGitCrossWarningEmailMissing = "user.useConfigOnly is selected but the fallback author has no email set — a commit with no matching identity will hard-fail instead of falling back, because only the name half is configured."
+
+	// GlobalGitGuessedNameWarning fires independently of user.useConfigOnly's
+	// selection state: a fallback email with no fallback name means git will
+	// guess the commit author's NAME from the OS account while using the
+	// explicit fallback email — the exact half-works-by-construction problem
+	// D-04 exists to fix, still possible while useConfigOnly is off.
+	GlobalGitGuessedNameWarning = "The fallback email is set but the fallback name is empty — git will guess the author name from your OS account for any commit that falls back to this email."
 )
 
 // GlobalGitOption mirrors recipeFixtures.ts's GlobalGitOption shape — one
@@ -359,9 +390,15 @@ const (
 	// GlobalGitSentinelEnd closes the global-git managed block.
 	GlobalGitSentinelEnd = "# END gitid managed: global-git"
 
-	// GlobalGitResultMessage is the success message after the baseline
-	// apply — global user.email is always left alone.
-	GlobalGitResultMessage = "10 of 10 baseline options applied to ~/.gitconfig. Global user.email was left alone, as always -- each identity's commits use their own includeIf fragment."
+	// GlobalGitResultTail is the FROZEN static tail of the baseline apply's
+	// success message — "N of M ... applied to <target>. " is prefixed at
+	// runtime with the real selected/pending counts (globalgit.go's
+	// baselineCeremonyFor), so only this sentence is a fixed, freezable
+	// string (07-03-PLAN.md Task 3: "freeze only the static tail"). It stays
+	// TRUE by construction: the baseline ceremony never touches the
+	// fallback-author block (a separate managed block, a separate ceremony),
+	// proven by TestGlobalGitBaselineApplyLeavesFallbackAuthorUntouched.
+	GlobalGitResultTail = "Global user.email was left alone, as always -- each identity's commits use their own includeIf fragment."
 )
 
 // GlobalGitBaselineStripText is the read-only inherited global-baseline

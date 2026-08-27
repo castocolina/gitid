@@ -1595,6 +1595,7 @@ func (b *realBackend) GlobalGitOptionStates() ([]tuikit.GlobalGitOptionView, err
 			HasWritableMember:   len(policy.Members) > 0,
 			AttributedToUser:    row.Source == globalgit.SourceSetByUser,
 			VersionNote:         globalGitVersionNote(policy, gitVersion),
+			GateNotMet:          policy.Gate == globalgit.GateHard && globalGitGateOutcome(policy, gitVersion) != globalgit.GateMet,
 		}
 		// Bundle rows' current cell is the D-09 aggregate ("3 of 8 set, 1
 		// differs"), computed from the probes — the detail pane names the
@@ -1607,6 +1608,22 @@ func (b *realBackend) GlobalGitOptionStates() ([]tuikit.GlobalGitOptionView, err
 		out = append(out, view)
 	}
 	return out, nil
+}
+
+// globalGitGateOutcome resolves the gate outcome for policy against
+// gitVersion, treating an unreadable version the same way globalGitVersionNote
+// does: GateUnreadable when the version could not be read, otherwise whatever
+// globalgit.VersionGate decides. A row with no MinVersion has no gate at all
+// (globalgit.VersionGate itself returns GateMet for that case).
+func globalGitGateOutcome(policy globalgit.OptionPolicy, gitVersion string) globalgit.GateOutcome {
+	if strings.TrimSpace(gitVersion) == "" {
+		if policy.MinVersion == "" {
+			return globalgit.GateMet
+		}
+		return globalgit.GateUnreadable
+	}
+	outcome, _ := globalgit.VersionGate(gitVersion, policy)
+	return outcome
 }
 
 // globalGitVersionNote renders the NON-contractual dynamic version line for a

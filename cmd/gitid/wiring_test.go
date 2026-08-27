@@ -20,6 +20,7 @@ import (
 
 	"github.com/castocolina/gitid/internal/filewriter"
 	"github.com/castocolina/gitid/internal/gitconfig"
+	"github.com/castocolina/gitid/internal/globalgit"
 	"github.com/castocolina/gitid/internal/globalssh"
 	"github.com/castocolina/gitid/internal/identity"
 	"github.com/castocolina/gitid/internal/keygen"
@@ -4234,6 +4235,27 @@ func TestGlobalSSHFixturePolicyParity(t *testing.T) {
 	fp, _ := globalssh.PolicyFor("ForwardAgent")
 	if tuikit.GlobalSSHOptions[1].Risk != fp.Risk {
 		t.Fatalf("ForwardAgent fixture Risk = %q, want %q", tuikit.GlobalSSHOptions[1].Risk, fp.Risk)
+	}
+}
+
+// TestGlobalGitFixturePolicyParity walks internal/globalgit.Policy and
+// internal/tuikit.GlobalGitOptions together and asserts they agree on row
+// identity, order and recommended value — the mechanism that stops the demo
+// and the real binary drifting apart again (07-03-PLAN.md Task 3), mirroring
+// TestGlobalSSHFixturePolicyParity's own shape on the SSH side.
+func TestGlobalGitFixturePolicyParity(t *testing.T) {
+	if len(tuikit.GlobalGitOptions) != len(globalgit.Policy) {
+		t.Fatalf("fixture has %d rows, policy has %d", len(tuikit.GlobalGitOptions), len(globalgit.Policy))
+	}
+	for i := range globalgit.Policy {
+		fix := tuikit.GlobalGitOptions[i]
+		pol := globalgit.Policy[i]
+		if fix.Key != pol.Key {
+			t.Errorf("row %d identity: fixture=%q policy=%q", i, fix.Key, pol.Key)
+		}
+		if fix.Recommended != pol.Recommended {
+			t.Errorf("row %d (%s) recommended: fixture=%q policy=%q", i, fix.Key, fix.Recommended, pol.Recommended)
+		}
 	}
 }
 

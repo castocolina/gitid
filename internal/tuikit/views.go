@@ -527,6 +527,13 @@ type GlobalGitOptionView struct {
 	// version-gated row's detail pane. Dynamically assembled at runtime; MUST
 	// be excluded from the copy-freeze gate.
 	VersionNote string
+	// GateNotMet is true only for the hard-gated row (merge.conflictstyle)
+	// when the machine's git version is below the gate or unreadable — it
+	// gates whether the STATIC GlobalGitConflictStyleGateNote renders
+	// (07-03-PLAN.md Task 3: shown when not met, hidden when met). Kept
+	// separate from VersionNote's dynamic sentence so the static half stays
+	// freezable.
+	GateNotMet bool
 }
 
 // Selectable reports whether this row can be toggled and have a checkbox

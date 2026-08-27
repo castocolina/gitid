@@ -956,3 +956,144 @@ func TestGlobalGitNotApplicableRowRendersSentence(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Task 3: new copy — case-sensitivity caveat, conflict-style gate note,
+// cross-warning, guessed-name warning.
+// ---------------------------------------------------------------------------
+
+// TestGlobalGitCaseSensitivityCaveatInDetail asserts core.ignorecase's
+// rendered explanation contains the per-repository-override caveat.
+func TestGlobalGitCaseSensitivityCaveatInDetail(t *testing.T) {
+	a := ggitApp(t)
+	a, _ = press(t, a, "down") // row 1: core.ignorecase
+	if got := ggitModel(t, a).detailKey; got != "core.ignorecase" {
+		t.Fatalf("detailKey = %q, want core.ignorecase", got)
+	}
+	if !strings.Contains(regionFlat(a, 45, 200), GlobalGitCaseSensitivityCaveat) {
+		t.Error("core.ignorecase's detail pane must carry the case-sensitivity caveat")
+	}
+}
+
+// TestGlobalGitConflictStyleGateNoteShownWhenNotMet asserts the static gate
+// note appears when the hard gate is not met, and is absent when it is.
+func TestGlobalGitConflictStyleGateNoteShownWhenNotMet(t *testing.T) {
+	rows := func(gateNotMet bool) []GlobalGitOptionView {
+		return []GlobalGitOptionView{
+			{Key: "merge.conflictstyle", CurrentValue: "merge", Recommended: "zdiff3", OneLiner: "x", State: GlobalGitNeedsAction, PolicyBacked: true, HasWritableMember: true, GateNotMet: gateNotMet},
+		}
+	}
+	notMet, _ := press(t, NewApp(stubBackend{gitOptions: rows(true)}), "3")
+	if !strings.Contains(regionFlat(notMet, 45, 200), GlobalGitConflictStyleGateNote) {
+		t.Error("the static gate note must show when the gate is not met")
+	}
+	met, _ := press(t, NewApp(stubBackend{gitOptions: rows(false)}), "3")
+	if strings.Contains(regionFlat(met, 45, 200), GlobalGitConflictStyleGateNote) {
+		t.Error("the static gate note must NOT show when the gate is met")
+	}
+}
+
+// TestGlobalGitCrossWarning pins D-07's mandatory cross-warning: selecting
+// user.useConfigOnly while the fallback pair has exactly one half set renders
+// the warning naming the missing half; both or neither set renders neither
+// variant.
+func TestGlobalGitCrossWarning(t *testing.T) {
+	cases := []struct {
+		name        string
+		fallback    GitFallbackAuthorView
+		wantMissing string
+		wantAbsent  string
+	}{
+		{"email only", GitFallbackAuthorView{Name: "", Email: "team@example.com"}, GlobalGitCrossWarningNameMissing, GlobalGitCrossWarningEmailMissing},
+		{"name only", GitFallbackAuthorView{Name: "Team", Email: ""}, GlobalGitCrossWarningEmailMissing, GlobalGitCrossWarningNameMissing},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			b := stubBackend{fallbackState: tc.fallback}
+			a := App(NewApp(b))
+			a, _ = press(t, a, "3")
+			a = pressSeq(t, a, "down", "down", "down", "down") // row 4: user.useConfigOnly
+			if got := ggitModel(t, a).detailKey; got != "user.useConfigOnly" {
+				t.Fatalf("detailKey = %q, want user.useConfigOnly", got)
+			}
+			a, _ = press(t, a, "space") // select it
+			view := regionFlat(a, 45, 200)
+			if !strings.Contains(view, tc.wantMissing) {
+				t.Errorf("expected cross-warning %q, view:\n%s", tc.wantMissing, view)
+			}
+			if strings.Contains(view, tc.wantAbsent) {
+				t.Errorf("must not render the other variant %q", tc.wantAbsent)
+			}
+		})
+	}
+}
+
+// TestGlobalGitCrossWarningAbsentWhenBothOrNeitherSet asserts neither
+// cross-warning variant renders when the fallback pair is fully set or fully
+// empty, with user.useConfigOnly selected.
+func TestGlobalGitCrossWarningAbsentWhenBothOrNeitherSet(t *testing.T) {
+	for _, fallback := range []GitFallbackAuthorView{
+		{Name: "Team", Email: "team@example.com"},
+		{Name: "", Email: ""},
+	} {
+		b := stubBackend{fallbackState: fallback}
+		a := App(NewApp(b))
+		a, _ = press(t, a, "3")
+		a = pressSeq(t, a, "down", "down", "down", "down")
+		a, _ = press(t, a, "space")
+		view := appView(a)
+		if strings.Contains(view, GlobalGitCrossWarningNameMissing) || strings.Contains(view, GlobalGitCrossWarningEmailMissing) {
+			t.Errorf("fallback=%+v must render neither cross-warning variant:\n%s", fallback, view)
+		}
+	}
+}
+
+// TestGlobalGitGuessedNameWarningIndependentOfUseConfigOnly asserts the
+// guessed-name warning renders whenever the fallback email is set and the
+// fallback name is empty, regardless of user.useConfigOnly's selection.
+func TestGlobalGitGuessedNameWarningIndependentOfUseConfigOnly(t *testing.T) {
+	b := stubBackend{fallbackState: GitFallbackAuthorView{Name: "", Email: "team@example.com"}}
+	a := App(NewApp(b))
+	a, _ = press(t, a, "3")
+	a = pressSeq(t, a, "down", "down", "down") // row 3: the fallback-author row
+	if got := ggitModel(t, a).detailKey; got != GlobalGitEmailFallbackKey {
+		t.Fatalf("detailKey = %q, want %q", got, GlobalGitEmailFallbackKey)
+	}
+	if !strings.Contains(regionFlat(a, 45, 200), GlobalGitGuessedNameWarning) {
+		t.Error("the guessed-name warning must render on the fallback row's own detail pane (useConfigOnly untouched)")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Task 3: colour-disabled legibility.
+// ---------------------------------------------------------------------------
+
+// TestGlobalGitNoColorStatesDistinguishable asserts all four row states
+// remain distinguishable by glyph and word alone once ANSI colour is
+// stripped, and that the differs state introduces no new glyph or theme
+// role — only a new WORD (D-02).
+func TestGlobalGitNoColorStatesDistinguishable(t *testing.T) {
+	b := stubBackend{gitOptions: []GlobalGitOptionView{
+		{Key: "init.defaultBranch", CurrentValue: "not set", Recommended: "main", OneLiner: "a", State: GlobalGitNeedsAction, PolicyBacked: true, HasWritableMember: true},
+		{Key: "core.ignorecase", CurrentValue: "true", Recommended: "false", OneLiner: "b", State: GlobalGitSetButDiffers, AttributedToUser: true},
+		{Key: "pull.rebase", CurrentValue: "true", Recommended: "true", OneLiner: "c", State: GlobalGitAlreadySet},
+		{Key: "diff.colorMoved", CurrentValue: "", Recommended: "zebra", OneLiner: "d", State: GlobalGitNotApplicable, NotApplicableReason: GlobalGitReasonProbeFailed, ProbeError: "probe failed"},
+	}}
+	a, _ := press(t, NewApp(b), "3")
+	view := appView(a)
+	if !strings.Contains(view, "now: not set → main") {
+		t.Error("needs-action must keep the plain recommendation form")
+	}
+	// The master list clips the long sentence at the list-column width — the
+	// surviving WORD still carries the meaning (matches
+	// TestGlobalGitDiffersRowRendersWordNotNewGlyph's own contract).
+	if !strings.Contains(view, "differs") {
+		t.Error("set-but-differs must be named by its word, not a new glyph")
+	}
+	if !strings.Contains(view, GlobalSSHWordAlreadySet) {
+		t.Error("already-set must be named by its word")
+	}
+	if !strings.Contains(view, GlobalSSHNAProbeFailed) {
+		t.Error("not-applicable must be named by its reason sentence")
+	}
+}

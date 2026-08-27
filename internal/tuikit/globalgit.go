@@ -360,7 +360,7 @@ func (m globalGitModel) fallbackApplyOffered() bool {
 // ASYNC: confirmation dispatches the backend commit and the receipt is
 // reachable only from that commit's explicit success (ceremony.go's Async
 // contract), exactly like the global-SSH apply ceremony.
-func (m globalGitModel) baselineCeremonyFor(keys []string) (ceremonyModel, error) {
+func (m globalGitModel) baselineCeremonyFor(keys []string, pending int) (ceremonyModel, error) {
 	plan, planErr := m.backend.GlobalGitApplyPlan(keys)
 	if planErr != nil {
 		return ceremonyModel{}, planErr
@@ -380,11 +380,17 @@ func (m globalGitModel) baselineCeremonyFor(keys []string) (ceremonyModel, error
 		preview = GlobalGitFullManagedBlockText
 	}
 	return newCeremony(ceremonyConfig{
-		Heading:       "Write global-git managed block to " + targets[0],
-		Targets:       targets,
-		Backups:       backups,
-		Preview:       preview,
-		ResultMessage: GlobalGitResultMessage,
+		Heading: "Write global-git managed block to " + targets[0],
+		Targets: targets,
+		Backups: backups,
+		Preview: preview,
+		// The counts are real — len(keys) selected/applied against pending
+		// (needs-action rows at the moment "a" was pressed, via the SAME
+		// gitNeedsAttention/D-10 tally predicate the status line reads, mirroring
+		// globalssh.go's chosen/pending shape) — only the tail sentence about
+		// the baseline apply leaving the global author alone is frozen
+		// (GlobalGitResultTail, registered in the copy-freeze gate).
+		ResultMessage: fmt.Sprintf("%d of %d baseline options applied to %s. %s", len(keys), pending, targets[0], GlobalGitResultTail),
 		ConfirmLabel:  "Apply selected",
 		Async:         true,
 	}), nil
@@ -549,7 +555,13 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		}
 		chosen := m.gitApplyChosen(options)
 		if len(chosen) > 0 {
-			cer, cerErr := m.baselineCeremonyFor(chosen)
+			pending := 0
+			for _, o := range options {
+				if gitNeedsAttention(o) {
+					pending++
+				}
+			}
+			cer, cerErr := m.baselineCeremonyFor(chosen, pending)
 			if cerErr != nil {
 				m.optionsErr = cerErr.Error()
 				return keyResult{model: m, handled: true}
@@ -711,10 +723,24 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 		d.WriteString("\n")
 		d.WriteString(helperLine(GlobalGitEmailFallbackHelper, false) + "\n")
 		d.WriteString(helperLine(GlobalGitEmailFallbackAdvisory, false) + "\n")
+		// The guessed-name warning fires independently of user.useConfigOnly's
+		// selection — it names a real, always-live half-works-by-construction
+		// problem (D-04): git guesses the author NAME from the OS account
+		// whenever a fallback email is set but the fallback name is not.
+		if strings.TrimSpace(m.emailInput.Value()) != "" && strings.TrimSpace(m.nameInput.Value()) == "" {
+			d.WriteString(" " + styleWarning.Render(GlobalGitGuessedNameWarning) + "\n")
+		}
 	} else {
 		explanation := detail.OneLiner
-		if detail.Key == "init.defaultBranch" {
+		switch detail.Key {
+		case "init.defaultBranch":
 			explanation = GlobalGitDetailExplanation
+		case "core.ignorecase":
+			// The case-sensitivity caveat is appended to the existing
+			// explanation, not baked into the frozen fixture OneLiner
+			// (07-03-PLAN.md Task 3) — recommending false without saying git
+			// can defeat it per-repository would be dishonest.
+			explanation += " " + GlobalGitCaseSensitivityCaveat
 		}
 		d.WriteString(" " + styleBold.Render(detail.Key) + "\n")
 		d.WriteString(" " + styleInfo.Render("~ "+GlobalGitAdvisoryNote) + "\n\n")
@@ -723,6 +749,26 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 			// Per-key "yours differs — yours wins" notes for a bundle row's
 			// members the user set differently (D-09).
 			d.WriteString(" " + styleFaint.Render(note) + "\n")
+		}
+		if detail.GateNotMet {
+			// The STATIC half of the hard-gate explanation — shown only when
+			// the gate is not met, kept separate from the dynamic VersionNote
+			// line below so this sentence stays freezable.
+			d.WriteString(" " + styleWarning.Render(GlobalGitConflictStyleGateNote) + "\n")
+		}
+		if detail.Key == "user.useConfigOnly" && m.chosen["user.useConfigOnly"] {
+			// D-07's mandatory cross-warning: selecting the fail-loud row
+			// while the fallback pair has exactly one half set means an
+			// unmatched commit will hard-fail — the user is told before
+			// confirming. Rendered on this row's own detail pane, since
+			// that's where the checkbox the warning is ABOUT lives.
+			name, email := strings.TrimSpace(m.nameInput.Value()), strings.TrimSpace(m.emailInput.Value())
+			switch {
+			case email != "" && name == "":
+				d.WriteString(" " + styleWarning.Render(GlobalGitCrossWarningNameMissing) + "\n")
+			case name != "" && email == "":
+				d.WriteString(" " + styleWarning.Render(GlobalGitCrossWarningEmailMissing) + "\n")
+			}
 		}
 		if detail.VersionNote != "" {
 			// The NON-contractual dynamic version line (D-13 precedent) —
