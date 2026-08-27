@@ -289,10 +289,10 @@ func runSSHOptionsApply(cmd *cobra.Command, keys []string, flags sshApplyFlags, 
 
 	if flags.DryRun {
 		res, rerr := cliGlobalSSHApplyInto(b, keys, lifecyclePolicy{DryRun: true})
-		fillApplyFromResult(b, &env, res, rerr, keys, true)
+		fillApplyFromResult(b, &env, res, rerr, keys)
 		if !flags.JSON {
 			plan, _ := b.GlobalSSHApplyPlan(keys)
-			printApplyDryRun(cmd.OutOrStdout(), false, plan)
+			printApplyDryRun(cmd.OutOrStdout(), plan)
 		}
 		env.ExitCode = sshWriteExitCode(res, rerr, flags.FailOnAdvisory, true)
 		return finishApply(cmd, flags.JSON, env, rerr)
@@ -313,7 +313,7 @@ func runSSHOptionsApply(cmd *cobra.Command, keys []string, flags sshApplyFlags, 
 	}
 
 	res, rerr := cliGlobalSSHApplyInto(b, keys, policy)
-	fillApplyFromResult(b, &env, res, rerr, keys, false)
+	fillApplyFromResult(b, &env, res, rerr, keys)
 	env.ExitCode = sshWriteExitCode(res, rerr, flags.FailOnAdvisory, false)
 	if !flags.JSON {
 		printApplyHuman(cmd, b, res, rerr, keys)
@@ -467,7 +467,11 @@ func finishMigrate(cmd *cobra.Command, jsonOut bool, env sshMigrateDocument, err
 	return sshFinish(env.ExitCode, err)
 }
 
-func fillApplyFromResult(b *realBackend, env *sshApplyDocument, res lifecycleResult, err error, keys []string, dryRun bool) {
+// fillApplyFromResult fills env from res/err/keys. WR-06: the success path is
+// identical whether the caller is a dry run or a real apply — dryRun was a
+// dead parameter (the two branches it selected between were byte-identical)
+// and has been removed.
+func fillApplyFromResult(b *realBackend, env *sshApplyDocument, res lifecycleResult, err error, keys []string) {
 	env.Backups = displayPaths(b, res.Backups)
 	if env.Backups == nil {
 		env.Backups = []string{}
@@ -495,11 +499,6 @@ func fillApplyFromResult(b *realBackend, env *sshApplyDocument, res lifecycleRes
 		}
 		return
 	}
-	if dryRun {
-		env.Applied = append([]string{}, keys...)
-		env.Declined = []string{}
-		return
-	}
 	env.Applied = append([]string{}, keys...)
 	env.Declined = []string{}
 }
@@ -518,10 +517,10 @@ func fillMigrateFromResult(b *realBackend, env *sshMigrateDocument, res lifecycl
 	}
 }
 
-func printApplyDryRun(w io.Writer, jsonOut bool, plan tuikit.GlobalSSHApplyPlanView) {
-	if jsonOut {
-		return
-	}
+// printApplyDryRun prints the dry-run diff/warnings. WR-06: jsonOut was a
+// dead parameter — the single call site already nests this call inside
+// `if !flags.JSON`, so the guard here could never fire on the JSON path.
+func printApplyDryRun(w io.Writer, plan tuikit.GlobalSSHApplyPlanView) {
 	fmt.Fprintln(w, "dry run: would apply global SSH options") //nolint:errcheck
 	if plan.Diff != "" {
 		fmt.Fprintln(w, plan.Diff) //nolint:errcheck
