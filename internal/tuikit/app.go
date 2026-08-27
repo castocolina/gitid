@@ -206,6 +206,50 @@ func NewAppPrefilled(b Backend, pre *ClonePrefillView) App {
 	return a
 }
 
+// NewAppOnGlobalSSH launches the app on the Global SSH view (D-02's
+// incomplete-write TUI fallback for `gitid ssh options apply` /
+// `gitid ssh storage migrate`). storageTab selects the Storage & preview
+// sub-tab; otherwise the Options sub-tab. activate() has already run, so
+// the option selection is empty and the storage radio sits on the current
+// layout — nothing is pre-selected (D-15).
+func NewAppOnGlobalSSH(b Backend, storageTab bool) App {
+	if b == nil {
+		panic("tuikit: NewAppOnGlobalSSH requires a non-nil Backend")
+	}
+	a := NewApp(b)
+	next, cmd := a.setTab(TabGlobalSSH)
+	next.initCmd = cmd
+	if storageTab {
+		screen, ok := next.screens[TabGlobalSSH].(globalSSHModel)
+		if ok {
+			screen.subTab = gssStorage
+			next.screens[TabGlobalSSH] = screen
+		}
+	}
+	return next
+}
+
+// ActiveTab reports the currently selected primary view. The CLI adaptive-
+// depth tests inspect it after NewAppOnGlobalSSH without reaching into the
+// unexported tab field.
+func (a App) ActiveTab() TabID { return a.tab }
+
+// GlobalSSHUIState reports the Global SSH sub-tab, the number of selected
+// options, and the storage-radio choice — the three facts the CLI fallback
+// contract freezes (empty selection; radio on the current layout).
+func (a App) GlobalSSHUIState() (storageSubTab bool, chosen int, storageChoice SSHStorageLayout) {
+	m, ok := a.screens[TabGlobalSSH].(globalSSHModel)
+	if !ok {
+		return false, 0, ""
+	}
+	for _, v := range m.chosen {
+		if v {
+			chosen++
+		}
+	}
+	return m.subTab == gssStorage, chosen, m.storageChoice
+}
+
 // Init satisfies tea.Model — the first activation already happened in
 // NewApp; Init only surfaces its command to the runtime.
 func (a App) Init() tea.Cmd {

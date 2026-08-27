@@ -70,7 +70,6 @@ func TestNoDuplicateFullyQualifiedCommandPaths(t *testing.T) {
 func TestReservedNounGroupsReturnPhaseNamedErrors(t *testing.T) {
 	root := newRootCmd()
 	cases := map[string]string{
-		"ssh":    "Phase 6",
 		"git":    "Phase 7",
 		"health": "Phase 8",
 		"fix":    "Phase 8",
@@ -516,10 +515,12 @@ func snapshotSeams() func() {
 	oldCreate, oldGate := commitCreateInto, cliPreWriteGate
 	oldRotate, oldRepair := cliRotateInto, cliRepairInto
 	oldDelete, oldTest := cliDeleteInto, cliConnectivityTest
+	oldApply, oldMigrate, oldSSHTUI := cliGlobalSSHApplyInto, cliSSHStorageMigrateInto, sshTUILaunch
 	return func() {
 		commitCreateInto, cliPreWriteGate = oldCreate, oldGate
 		cliRotateInto, cliRepairInto = oldRotate, oldRepair
 		cliDeleteInto, cliConnectivityTest = oldDelete, oldTest
+		cliGlobalSSHApplyInto, cliSSHStorageMigrateInto, sshTUILaunch = oldApply, oldMigrate, oldSSHTUI
 	}
 }
 
@@ -1417,6 +1418,7 @@ func TestIdentityCLICannotReachConfirmationAlreadyObtained(t *testing.T) {
 	for _, name := range []string{
 		"identity.go", "identity_read.go", "identity_delete.go",
 		"identity_create.go", "identity_clone.go", "identity_key.go",
+		"ssh.go",
 	} {
 		data, err := os.ReadFile(filepath.Join(root, "cmd", "gitid", name)) //nolint:gosec // fixed repository-relative source path (G304)
 		if err != nil {
@@ -1888,7 +1890,7 @@ func TestParityMatrixResolvesAndCoversTree(t *testing.T) {
 // requirement this plan claims to satisfy: each id appears in at least one row.
 func TestParityMatrixRequirementCoverage(t *testing.T) {
 	rows, _ := parseParityMatrix(t)
-	required := []string{"MGR-04", "MGR-05", "MGR-06", "KEY-05", "KEY-07", "SHELL-03"}
+	required := []string{"MGR-04", "MGR-05", "MGR-06", "KEY-05", "KEY-07", "SHELL-03", "GSSH-01"}
 	for _, id := range required {
 		found := false
 		for _, row := range rows {
@@ -1908,7 +1910,7 @@ func TestParityMatrixRequirementCoverage(t *testing.T) {
 // every write verb plus the reads list and show.
 func TestParityMatrixDryRunContractTable(t *testing.T) {
 	_, dryRunVerbs := parseParityMatrix(t)
-	want := map[string]bool{"create": true, "clone": true, "rotate": true, "new-key": true, "delete": true, "list": true, "show": true}
+	want := map[string]bool{"create": true, "clone": true, "rotate": true, "new-key": true, "delete": true, "list": true, "show": true, "ssh options apply": true, "ssh storage migrate": true}
 	got := map[string]bool{}
 	for _, cell := range dryRunVerbs {
 		for _, tok := range strings.Split(cell, ",") {

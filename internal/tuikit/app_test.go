@@ -36,6 +36,35 @@ func TestNewAppRendersTheFrame(t *testing.T) {
 	}
 }
 
+func TestNewAppOnGlobalSSHOpensEmptyOptionsAndStorage(t *testing.T) {
+	opts := NewAppOnGlobalSSH(stubBackend{}, false)
+	if opts.ActiveTab() != TabGlobalSSH {
+		t.Fatalf("options fallback tab = %v, want TabGlobalSSH", opts.ActiveTab())
+	}
+	storage, chosen, _ := opts.GlobalSSHUIState()
+	if storage {
+		t.Fatal("options fallback must open the Options sub-tab")
+	}
+	if chosen != 0 {
+		t.Fatalf("options fallback selection = %d, want empty", chosen)
+	}
+
+	stor := NewAppOnGlobalSSH(stubBackend{}, true)
+	if stor.ActiveTab() != TabGlobalSSH {
+		t.Fatalf("storage fallback tab = %v, want TabGlobalSSH", stor.ActiveTab())
+	}
+	storage, chosen, radio := stor.GlobalSSHUIState()
+	if !storage {
+		t.Fatal("storage fallback must open the Storage sub-tab")
+	}
+	if chosen != 0 {
+		t.Fatalf("storage fallback option selection = %d, want empty", chosen)
+	}
+	if radio != StorageSentinel {
+		t.Fatalf("storage radio = %q, want the stub's current layout %q", radio, StorageSentinel)
+	}
+}
+
 func TestNumberKeysSwitchTabs(t *testing.T) {
 	a := NewApp(stubBackend{})
 	a, _ = press(t, a, "3")
