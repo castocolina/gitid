@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/castocolina/gitid/internal/filewriter"
@@ -125,10 +126,11 @@ type lifecycleResult struct {
 // contract MUST be written against this same table; adding a verb means
 // adding a row HERE first.
 var lifecycleStages = map[string][]string{
-	"rotate":     {"test", "plan", "confirm", "backup", "write", "retest"},
-	"repair":     {"test", "plan", "confirm", "backup", "write", "retest"},
-	"delete":     {"plan", "confirm", "backup", "write", "verify"},
-	"global-ssh": {"plan", "simulate", "confirm", "backup", "write", "verify"},
+	"rotate":          {"test", "plan", "confirm", "backup", "write", "retest"},
+	"repair":          {"test", "plan", "confirm", "backup", "write", "retest"},
+	"delete":          {"plan", "confirm", "backup", "write", "verify"},
+	"global-ssh":      {"plan", "simulate", "confirm", "backup", "write", "verify"},
+	"storage-migrate": {"plan", "confirm", "backup", "write"},
 }
 
 // errConfirmationUnavailable is returned when a confirmationRequired
@@ -969,4 +971,123 @@ func (b *realBackend) runGlobalSSHApply(keys []string, p lifecyclePolicy) (lifec
 // layout-follows-identities, never a second independent decision).
 func (b *realBackend) globalsTargetPath() string {
 	return b.storage().targetPath
+}
+
+// runSSHStorageMigrate — the ONE complete storage-migration ceremony
+//
+// runSSHStorageMigrate owns the whole declared storage-migration ceremony:
+// plan → confirm → backup → write — driving it from
+// lifecycleStages["storage-migrate"]. No other path in this binary performs
+// a layout migration; plan 06-06's CLI verb calls this same function.
+//
+// The engine (sshconfig.MigrateWithPlan / sshconfig.Migrate) owns rollback:
+// it alone knows which of its two files it wrote, so this function does NOT
+// open a mutationJournal — one restoration authority per transaction. Stated
+// explicitly to prevent a future refactor from layering a second journal over
+// it by analogy with runGlobalSSHApply.
+//
+// planToken selects between the two legitimate callers:
+//   - Non-empty (TUI, which already showed the user a preview): call
+//     takePendingMigration — the atomic lookup-and-consume helper defined in
+//     <lock_contract> — while holding txMu. A non-match (selection changed,
+//     screen re-entered, plan already committed, or wrong process) is a
+//     REFUSAL with errReopenPreview, never a silent re-plan.
+//   - Empty (CLI, plan 06-06, no preview screen): call sshconfig.PlanMigration
+//     and MigrateWithPlan back-to-back within the same txMu hold. The window
+//     is microseconds, not minutes, and the digest check still runs — but
+//     there is nothing to carry from a preview that never happened.
+//     IMPORTANT: this branch calls sshconfig.PlanMigration DIRECTLY, never
+//     b.SSHStorageMigrationPlan. That backend method takes txMu itself
+//     (<lock_contract> rule 5) and this function already holds txMu — routing
+//     the CLI branch through it would self-deadlock on Go's non-reentrant
+//     sync.Mutex. This is the cycle-3 hazard reappearing at a new call site.
+func (b *realBackend) runSSHStorageMigrate(target tuikit.SSHStorageLayout, planToken string, p lifecyclePolicy) (lifecycleResult, error) {
+	b.txMu.Lock()
+	defer b.txMu.Unlock()
+
+	res := lifecycleResult{}
+	record := func(stage string) {
+		if p.Stages != nil {
+			p.Stages(stage)
+		}
+	}
+	stages := lifecycleStages["storage-migrate"]
+
+	if b.initErr != nil {
+		return res, b.initErr
+	}
+
+	// plan — resolve the current layout and refuse a no-op.
+	record(stages[0])
+	st := b.storage()
+	currentLayout := tuikit.StorageSentinel
+	if st.includeLayout {
+		currentLayout = tuikit.StorageInclude
+	}
+	if currentLayout == target {
+		return res, fmt.Errorf("gitid: storage layout is already %s — nothing to migrate", target)
+	}
+
+	direction := sshconfig.MigrateToInclude
+	if target == tuikit.StorageSentinel {
+		direction = sshconfig.MigrateToInFile
+	}
+
+	aliases := b.managedAliases()
+	deps := newMigrateDeps(b.sshConfigPath, filepath.Join(b.includeDir, gitidConfigFileName), aliases)
+
+	var plan sshconfig.MigrationPlan
+	if planToken != "" {
+		// TUI path: retrieve the pre-computed plan. takePendingMigration
+		// takes pendingMigrationMu only, never txMu (<lock_contract> rule 3).
+		held, ok := b.takePendingMigration(planToken)
+		if !ok {
+			return res, errReopenPreview
+		}
+		plan = held
+	} else {
+		// CLI path (plan 06-06): plan and commit in one txMu hold.
+		// MUST call sshconfig.PlanMigration directly — NOT
+		// b.SSHStorageMigrationPlan, which would deadlock on txMu.
+		var planErr error
+		plan, planErr = sshconfig.PlanMigration(direction, deps)
+		if planErr != nil {
+			return res, fmt.Errorf("gitid: planning migration: %w", planErr)
+		}
+	}
+
+	if p.DryRun {
+		return res, nil
+	}
+
+	// confirm — the authorization boundary.
+	record(stages[1])
+	authorized, cerr := b.confirmGate(p, fmt.Sprintf("migrate SSH storage layout to %s", target))
+	if cerr != nil {
+		return res, cerr
+	}
+	if !authorized {
+		return res, fmt.Errorf("gitid: cancelled SSH storage migration to %s", target)
+	}
+
+	// backup + write — MigrateWithPlan performs both in one call: it verifies
+	// the plan's digests against disk (aborting with ErrConfigChangedSincePreview
+	// if they changed), takes the backups (step 2), then writes the two files.
+	// The engine's own rollback is the single restoration authority; this
+	// function does NOT open a mutationJournal.
+	record(stages[2]) // backup
+	record(stages[3]) // write
+	result, merr := sshconfig.MigrateWithPlan(plan, deps)
+	if merr != nil {
+		return res, fmt.Errorf("gitid: storage migration: %w", merr)
+	}
+
+	if result.SourceBackup != "" {
+		res.Backups = append(res.Backups, result.SourceBackup)
+	}
+	if result.TargetBackup != "" {
+		res.Backups = append(res.Backups, result.TargetBackup)
+	}
+
+	return res, nil
 }

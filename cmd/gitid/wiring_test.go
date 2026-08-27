@@ -909,7 +909,10 @@ func TestDemoBannerOnlyIdentitiesIsWired(t *testing.T) {
 	if b.DemoBanner(tuikit.TabIdentities) {
 		t.Error("the Identities tab is wired to live data in Phase 3; it must not carry the demo banner")
 	}
-	for _, tab := range []tuikit.TabID{tuikit.TabGlobalSSH, tuikit.TabGlobalGit, tuikit.TabDoctor} {
+	if b.DemoBanner(tuikit.TabGlobalSSH) {
+		t.Error("the Global SSH tab is wired to live data as of plan 06-05 (both sub-tabs); it must not carry the demo banner")
+	}
+	for _, tab := range []tuikit.TabID{tuikit.TabGlobalGit, tuikit.TabDoctor} {
 		if !b.DemoBanner(tab) {
 			t.Errorf("tab %v is not wired yet; it must carry the D-16 demo banner", tab)
 		}
@@ -3697,7 +3700,6 @@ func TestPersistDemoOnlyActionsPreserveTuikitReduce(t *testing.T) {
 	demo := []tuikit.Action{
 		tuikit.MarkScanned{},
 		tuikit.FixFinding{ID: "git-includeif-missing-fragment"},
-		tuikit.SetSSHStorage{Layout: tuikit.StorageInclude},
 		tuikit.ApplyGitBaseline{},
 		tuikit.ApplyGitGlobalEmail{Email: "dev@example.com"},
 	}

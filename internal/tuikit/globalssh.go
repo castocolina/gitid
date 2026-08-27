@@ -80,8 +80,7 @@ type globalSSHModel struct {
 	// detailKey is the selected option row's key.
 	detailKey string
 	chosen    map[string]bool
-	// storageChoice is the STORE-01 radio selection (Storage sub-tab, still
-	// demo until plan 06-05).
+	// storageChoice is the STORE-01 radio selection (Storage & preview sub-tab).
 	storageChoice SSHStorageLayout
 	ceremony      ceremonyModel
 	// options is the live Options-sub-tab row set fetched from the backend on
@@ -97,6 +96,21 @@ type globalSSHModel struct {
 	// write that actually happened.
 	applyCommitPending bool
 	appliedKeys        []string
+	// storageView is the live Storage-sub-tab migration preview fetched from
+	// the backend on activation and after a successful migration. It carries
+	// the PlanToken the ceremony passes back on confirmation — the token is
+	// the only way one previewed plan reaches the commit without a backend
+	// type crossing the boundary. storageViewErr carries the fetch failure
+	// when the pane cannot describe the machine.
+	storageView    SSHStorageMigrationView
+	storageViewErr string
+	// storageCommitPending gates the storage ceremony's receipt: SetSSHStorage
+	// is dispatched only from handleMsg once SSHStorageCommitMsg arrives with
+	// an empty Err, never optimistically on ceremonyFinished (mirrors
+	// applyCommitPending above). storageTargetLayout is the layout the user
+	// confirmed, captured at ceremonyConfirmed.
+	storageCommitPending bool
+	storageTargetLayout  SSHStorageLayout
 }
 
 // newGlobalSSHModel returns a model with an EMPTY selection set (D-15): the
@@ -112,28 +126,38 @@ func newGlobalSSHModel(b Backend) globalSSHModel {
 	}
 }
 
-// activate syncs the storage radio with the live state and fetches the
-// Options sub-tab rows from the backend. The selection is reset to empty on
-// every entry so returning to the screen never resurrects a stale selection
-// (D-15). A non-nil fetch error stores an empty slice plus an error note the
-// pane renders instead of a blank body.
+// activate syncs the storage radio with the live state, fetches the Options
+// sub-tab rows and the Storage sub-tab migration preview from the backend.
+// The selection is reset to empty on every entry so returning to the screen
+// never resurrects a stale selection (D-15). A non-nil fetch error stores an
+// empty slice plus an error note the pane renders instead of a blank body.
+// Clearing storageView (and its token) here means a plan held from a
+// previous entry to this screen cannot be committed against a new one.
 func (m globalSSHModel) activate(s DemoState) (screenModel, tea.Cmd) {
 	m.storageChoice = s.SSHStorage
 	m.chosen = map[string]bool{}
+	m.storageView = SSHStorageMigrationView{}
+	m.storageViewErr = ""
 	options, err := m.backend.GlobalSSHOptionStates()
 	m.options = options
 	if err != nil {
 		m.options = nil
 		m.optionsErr = err.Error()
 	}
+	view, verr := m.backend.SSHStorageMigrationPlan(m.storageChoice)
+	if verr != nil {
+		m.storageViewErr = verr.Error()
+	} else {
+		m.storageView = view
+	}
 	return m, nil
 }
 
-// handleMsg completes the asynchronous apply commit once the backend's
-// command has answered. The receipt is reachable ONLY from an explicit
-// success; the ApplySSH reducer action is dispatched here, never
+// handleMsg completes the asynchronous apply and storage-migration commits
+// once the backend's commands have answered. The receipt is reachable ONLY
+// from an explicit success; reducer actions are dispatched here, never
 // optimistically.
-func (m globalSSHModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
+func (m globalSSHModel) handleMsg(msg tea.Msg, s DemoState) keyResult {
 	if commit, ok := msg.(GlobalSSHCommitMsg); ok && m.mode == gssApplyCeremony && m.applyCommitPending {
 		m.applyCommitPending = false
 		if commit.Err != "" {
@@ -160,6 +184,33 @@ func (m globalSSHModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 			model:   m,
 			note:    fmt.Sprintf("%d global SSH option%s applied.", len(m.appliedKeys), plural),
 			actions: []Action{ApplySSH{Keys: m.appliedKeys, Backup: firstBackup(commit.Backups)}},
+		}
+	}
+	if commit, ok := msg.(SSHStorageCommitMsg); ok && m.mode == gssStorageCeremony && m.storageCommitPending {
+		m.storageCommitPending = false
+		if commit.Err != "" {
+			message := commit.Err
+			if commit.ConfigChangedSincePreview {
+				message = "Configuration changed since the preview was opened — re-open the preview to migrate."
+			} else if len(commit.Restored) > 0 {
+				message += " (restored: " + strings.Join(commit.Restored, "; ") + ")"
+			}
+			m.ceremony = m.ceremony.commitFailed(message)
+			return keyResult{model: m}
+		}
+		layout := m.storageTargetLayout
+		m.ceremony = m.ceremony.commitSucceeded(commit.Backups)
+		// Refetch the storage view so the current-layout marker moves to the
+		// new layout. A fetch error is advisory — the write already succeeded.
+		view, verr := m.backend.SSHStorageMigrationPlan(s.SSHStorage)
+		if verr == nil {
+			m.storageView = view
+			m.storageViewErr = ""
+		}
+		return keyResult{
+			model:   m,
+			note:    "SSH storage layout migrated to " + string(layout) + ".",
+			actions: []Action{SetSSHStorage{Layout: layout, Backup: firstBackup(commit.Backups)}},
 		}
 	}
 	return keyResult{model: m}
@@ -260,14 +311,21 @@ func managedHostStar(applied []string) string {
 	return begin + "\nIgnoreUnknown UseKeychain\n\nHost *\n" + body + "    UseKeychain yes\n    AddKeysToAgent yes\n" + end
 }
 
-// The STORE-01 resulting-config previews (GlobalSsh.tsx mirror strings).
-func sentinelPreview(s DemoState) string {
+// SentinelPreview is the STORE-01 resulting-config preview for the in-place
+// sentinel layout (GlobalSsh.tsx mirror string). The dummy backend returns
+// this verbatim; the real backend returns PlanMigration's bytes instead.
+func SentinelPreview(s DemoState) string {
 	return "# ~/.ssh/config — gitid blocks live in place, sentinel-delimited\n\nHost personal.github.com\n    Hostname ssh.github.com\n    Port 443\n    User git\n    IdentityFile ~/.ssh/id_ed25519_personal\n    IdentitiesOnly yes\n\n" + managedHostStar(s.SSHApplied)
 }
 
-const includePreviewMain = "# ~/.ssh/config (top of file)\nInclude ~/.ssh/config.d/gitid.config\n\n# …everything else in your config, untouched…"
+// IncludePreviewMain is the STORE-01 preview of ~/.ssh/config after an
+// Include-layout migration (the floored Include line; gitid blocks have moved).
+const IncludePreviewMain = "# ~/.ssh/config (top of file)\nInclude ~/.ssh/config.d/gitid.config\n\n# …everything else in your config, untouched…"
 
-func includePreviewOwned(s DemoState) string {
+// IncludePreviewOwned is the STORE-01 preview of the gitid-owned Include'd
+// file (GlobalSsh.tsx mirror string). The dummy backend returns this
+// verbatim; the real backend returns PlanMigration's bytes instead.
+func IncludePreviewOwned(s DemoState) string {
 	return "# ~/.ssh/config.d/gitid.config (gitid-owned file)\nHost personal.github.com\n    Hostname ssh.github.com\n    Port 443\n    User git\n    IdentityFile ~/.ssh/id_ed25519_personal\n    IdentitiesOnly yes\n\n" + managedHostStar(s.SSHApplied)
 }
 
@@ -353,26 +411,51 @@ func (m globalSSHModel) applyCeremonyFor(s DemoState) (ceremonyModel, error) {
 	}), nil
 }
 
-// storageCeremonyFor builds the STORE-03 migration ceremony for the
-// selected layout.
-func (m globalSSHModel) storageCeremonyFor() ceremonyModel {
+// storageCeremonyFor builds the STORE-03 migration ceremony for the selected
+// layout using the plan view the backend already computed (which carries the
+// PlanToken the confirmation will send back). The ceremony is ASYNC:
+// confirmation dispatches the backend commit and the receipt is reachable
+// only from that commit's explicit success (ceremony.go's Async contract),
+// exactly like the apply ceremony.
+func (m globalSSHModel) storageCeremonyFor(view SSHStorageMigrationView) ceremonyModel {
 	toInclude := m.storageChoice == StorageInclude
-	headingTail := "sentinel blocks in ~/.ssh/config"
-	diff := "+ gitid blocks written back, sentinel-delimited, into ~/.ssh/config\n- Include ~/.ssh/config.d/gitid.config (line removed)\n- ~/.ssh/config.d/gitid.config (file retired)\n  everything outside gitid blocks: untouched"
 	result := "SSH storage layout migrated to in-place sentinel blocks — reversible via this same screen."
 	if toInclude {
-		headingTail = "Include’d gitid.config"
-		diff = "+ Include ~/.ssh/config.d/gitid.config   (near the top of ~/.ssh/config)\n+ ~/.ssh/config.d/gitid.config (all gitid blocks move here)\n- # BEGIN/END gitid managed blocks removed from ~/.ssh/config\n  everything outside gitid blocks: untouched"
 		result = "SSH storage layout migrated to the Include’d gitid-owned file — reversible via this same screen."
 	}
+	heading := view.Heading
+	if heading == "" {
+		headingTail := "sentinel blocks in ~/.ssh/config"
+		if toInclude {
+			headingTail = "Include’d gitid.config"
+		}
+		heading = "Migrate SSH storage layout → " + headingTail
+	}
+	targets := view.Targets
+	if len(targets) == 0 {
+		targets = []string{"~/.ssh/config", "~/.ssh/config.d/gitid.config"}
+	}
+	backups := view.Backups
+	if len(backups) == 0 {
+		backups = []string{NewBackupPath("~/.ssh/config")}
+	}
+	diff := view.Diff
+	if diff == "" {
+		if toInclude {
+			diff = "+ Include ~/.ssh/config.d/gitid.config   (near the top of ~/.ssh/config)\n+ ~/.ssh/config.d/gitid.config (all gitid blocks move here)\n- # BEGIN/END gitid managed blocks removed from ~/.ssh/config\n  everything outside gitid blocks: untouched"
+		} else {
+			diff = "+ gitid blocks written back, sentinel-delimited, into ~/.ssh/config\n- Include ~/.ssh/config.d/gitid.config (line removed)\n- ~/.ssh/config.d/gitid.config (file retired)\n  everything outside gitid blocks: untouched"
+		}
+	}
 	return newCeremony(ceremonyConfig{
-		Heading:       "Migrate SSH storage layout → " + headingTail,
-		Targets:       []string{"~/.ssh/config", "~/.ssh/config.d/gitid.config"},
-		Backups:       []string{NewBackupPath("~/.ssh/config")},
+		Heading:       heading,
+		Targets:       targets,
+		Backups:       backups,
 		Preview:       diff,
 		PreviewDiff:   true,
 		ResultMessage: result,
 		ConfirmLabel:  "Migrate",
+		Async:         true,
 	})
 }
 
@@ -404,17 +487,27 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		return keyResult{model: m, handled: true}
 	}
 	if m.mode == gssStorageCeremony {
+		if m.storageCommitPending {
+			// In flight: keys are inert until the commit result arrives.
+			return keyResult{model: m, handled: true}
+		}
 		var outcome ceremonyOutcome
 		m.ceremony, outcome = m.ceremony.handleKey(msg)
 		switch outcome {
 		case ceremonyCancelled:
 			m.mode = gssBrowse
+		case ceremonyConfirmed:
+			// Dispatch the async commit; the receipt is reached only from the
+			// commit's explicit success (handleMsg), never optimistically.
+			// Pass the token from the view the ceremony was OPENED with —
+			// never a freshly fetched one.
+			m.storageTargetLayout = m.storageChoice
+			m.storageCommitPending = true
+			return keyResult{model: m, handled: true,
+				cmd: m.backend.CommitSSHStorage(m.storageChoice, m.storageView.PlanToken)}
 		case ceremonyFinished:
 			m.mode = gssBrowse
-			return keyResult{model: m, handled: true,
-				note:    "SSH storage layout: " + string(m.storageChoice) + ".",
-				actions: []Action{SetSSHStorage{Layout: m.storageChoice, Backup: NewBackupPath("~/.ssh/config")}}}
-		case ceremonyNone, ceremonyConfirmed:
+		case ceremonyNone:
 		}
 		return keyResult{model: m, handled: true}
 	}
@@ -450,6 +543,17 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 			} else {
 				m.storageChoice = StorageSentinel
 			}
+			// Refetch the storage view for the newly selected layout.
+			// Clear it first so a fetch error does not leave a stale plan
+			// whose token belongs to the previous layout.
+			m.storageView = SSHStorageMigrationView{}
+			m.storageViewErr = ""
+			view, verr := m.backend.SSHStorageMigrationPlan(m.storageChoice)
+			if verr != nil {
+				m.storageViewErr = verr.Error()
+			} else {
+				m.storageView = view
+			}
 		}
 		return keyResult{model: m, handled: true}
 	case "space":
@@ -475,7 +579,12 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		return keyResult{model: m, handled: true}
 	case "enter":
 		if m.subTab == gssStorage && m.storageChoice != s.SSHStorage {
-			m.ceremony = m.storageCeremonyFor()
+			if m.storageViewErr != "" {
+				// A preview that cannot be computed renders the error inline
+				// and does NOT open the ceremony.
+				return keyResult{model: m, handled: true}
+			}
+			m.ceremony = m.storageCeremonyFor(m.storageView)
 			m.mode = gssStorageCeremony
 			return keyResult{model: m, handled: true}
 		}
@@ -750,7 +859,7 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 				{Key: "←→", Label: "Options / Storage"},
 				{Key: "↑↓", Label: "layout"},
 			}
-			if m.storageChoice != s.SSHStorage {
+			if m.storageChoice != s.SSHStorage && m.storageViewErr == "" {
 				actions = append(actions, FooterAction{Key: "Enter", Label: "migrate layout…"})
 			}
 		}
@@ -827,19 +936,25 @@ func (m globalSSHModel) renderStorage(s DemoState, width, height int) string {
 	l.WriteString(" " + radio(StorageSentinel) + "Sentinel blocks in ~/.ssh/config (default)" + current(StorageSentinel) + "\n")
 	l.WriteString(" " + radio(StorageInclude) + "gitid-owned ~/.ssh/config.d/gitid.config via one Include line" + current(StorageInclude) + "\n\n")
 	l.WriteString(" " + styleFaint.Render("Include paths must be absolute or ~/.ssh-relative; the Include line goes NEAR THE TOP of ~/.ssh/config. Migration between layouts is backed-up and reversible (STORE-03).") + "\n")
-	if m.storageChoice != s.SSHStorage {
+	if m.storageChoice != s.SSHStorage && m.storageViewErr == "" {
 		l.WriteString("\n " + styleSelected.Render(" Migrate layout… (Enter) ") + "\n")
 	}
 	left := l.String()
 
 	var r strings.Builder
-	if m.storageChoice == StorageSentinel {
+	if m.storageViewErr != "" {
+		// When the preview cannot be computed, render the error in the right
+		// pane and suppress the migrate action — a pane that cannot describe
+		// the machine must not offer to change it.
+		r.WriteString(" " + styleWarning.Render("! "+m.storageViewErr) + "\n")
+		r.WriteString(" " + styleFaint.Render("Re-enter the screen to retry.") + "\n")
+	} else if m.storageChoice == StorageSentinel {
 		r.WriteString(" " + PreviewLabel("Resulting config — sentinel blocks in place") + "\n")
-		r.WriteString(previewBlockClipped(sentinelPreview(s), false, rightWidth, 18) + "\n")
+		r.WriteString(previewBlockClipped(m.storageView.SentinelPreview, false, rightWidth, 18) + "\n")
 	} else {
 		r.WriteString(" " + PreviewLabel("Resulting config — Include + owned file") + "\n")
-		r.WriteString(previewBlockClipped(includePreviewMain, false, rightWidth, 4) + "\n")
-		r.WriteString(previewBlockClipped(includePreviewOwned(s), false, rightWidth, 10) + "\n")
+		r.WriteString(previewBlockClipped(m.storageView.MainPreview, false, rightWidth, 4) + "\n")
+		r.WriteString(previewBlockClipped(m.storageView.OwnedPreview, false, rightWidth, 10) + "\n")
 	}
 	right := lipgloss.NewStyle().Width(rightWidth).Render(r.String())
 

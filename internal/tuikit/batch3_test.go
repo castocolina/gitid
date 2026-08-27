@@ -176,11 +176,18 @@ func TestMouseStorageRadioAndMigrateButton(t *testing.T) {
 	if got := gssModelOf(t, a).mode; got != gssStorageCeremony {
 		t.Fatalf("mode = %v after clicking Migrate, want the storage ceremony", got)
 	}
-	// The ceremony's confirm button clicks through too.
-	a = clickCell(t, a, "Migrate (Enter)", 0, frameBodyTop)
-	a = clickCell(t, a, "Done (Enter)", 0, frameBodyTop)
+	// The ceremony's confirm button clicks through too. The storage ceremony
+	// is async: confirm dispatches CommitSSHStorage, and SetSSHStorage is
+	// only dispatched after SSHStorageCommitMsg arrives.
+	a, cmd := press(t, a, "enter") // confirm (same as clicking "Migrate (Enter)")
+	if cmd == nil {
+		t.Fatal("confirmation must dispatch the async CommitSSHStorage command")
+	}
+	msg := cmd().(SSHStorageCommitMsg)
+	model, _ := a.Update(msg)
+	a = model.(App)
 	if a.state.SSHStorage != StorageInclude {
-		t.Error("the clicked migrate ceremony must dispatch SetSSHStorage")
+		t.Error("the storage ceremony must dispatch SetSSHStorage after CommitSSHStorage succeeds")
 	}
 }
 

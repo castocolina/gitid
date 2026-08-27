@@ -148,6 +148,7 @@ func Seed() DemoState { return stubBackend{}.InitialState() }
 type stubBackend struct {
 	NoopIdentityPlanner
 	NoopGlobalSSHPlanner
+	NoopSSHStoragePlanner
 	gitStepAlwaysDisabled bool
 	gitStepReason         string
 	keyActionErr          error
@@ -163,6 +164,23 @@ type stubBackend struct {
 	sshApplyPlan   GlobalSSHApplyPlanView
 	sshApplyPlanFn func(keys []string) (GlobalSSHApplyPlanView, error)
 	sshCommitMsg   GlobalSSHCommitMsg
+	// Storage-migration seam overrides (zero values keep the fixture
+	// preview helpers so existing Storage sub-tab tests stay green).
+	sshStorageView   SSHStorageMigrationView
+	sshStorageErr    error
+	sshStoragePlanFn func(layout SSHStorageLayout) (SSHStorageMigrationView, error)
+	sshStorageCommit SSHStorageCommitMsg
+	// storageCall records the last CommitSSHStorage arguments when non-nil
+	// (a pointer field so a value-receiver stub can still write through).
+	storageCall *storageCommitCall
+}
+
+// storageCommitCall is the last CommitSSHStorage (layout, token) pair a
+// stub recorded — pointed at from stubBackend so value-receiver methods
+// can write through.
+type storageCommitCall struct {
+	layout SSHStorageLayout
+	token  string
 }
 
 var _ Backend = stubBackend{}
@@ -513,6 +531,56 @@ func (b stubBackend) GlobalSSHApplyPlan(keys []string) (GlobalSSHApplyPlanView, 
 // CommitGlobalSSH delivers the test override's commit message immediately.
 func (b stubBackend) CommitGlobalSSH([]string) tea.Cmd {
 	return func() tea.Msg { return b.sshCommitMsg }
+}
+
+// fixtureSSHStorageView returns the frozen STORE-01 previews so a zero-value
+// stub keeps existing Storage sub-tab tests byte-identical.
+func fixtureSSHStorageView(layout SSHStorageLayout) SSHStorageMigrationView {
+	s := Seed()
+	toInclude := layout == StorageInclude
+	headingTail := "sentinel blocks in ~/.ssh/config"
+	diff := "+ gitid blocks written back, sentinel-delimited, into ~/.ssh/config\n- Include ~/.ssh/config.d/gitid.config (line removed)\n- ~/.ssh/config.d/gitid.config (file retired)\n  everything outside gitid blocks: untouched"
+	if toInclude {
+		headingTail = "Include’d gitid.config"
+		diff = "+ Include ~/.ssh/config.d/gitid.config   (near the top of ~/.ssh/config)\n+ ~/.ssh/config.d/gitid.config (all gitid blocks move here)\n- # BEGIN/END gitid managed blocks removed from ~/.ssh/config\n  everything outside gitid blocks: untouched"
+	}
+	return SSHStorageMigrationView{
+		CurrentLayout:   s.SSHStorage,
+		TargetLayout:    layout,
+		Heading:         "Migrate SSH storage layout → " + headingTail,
+		Targets:         []string{"~/.ssh/config", "~/.ssh/config.d/gitid.config"},
+		Backups:         []string{NewBackupPath("~/.ssh/config")},
+		Diff:            diff,
+		MainPreview:     IncludePreviewMain,
+		OwnedPreview:    IncludePreviewOwned(s),
+		SentinelPreview: SentinelPreview(s),
+		PlanToken:       "fixture-token-" + string(layout),
+	}
+}
+
+// SSHStorageMigrationPlan returns the test override when set, otherwise the
+// fixture preview so existing Storage sub-tab tests stay green.
+func (b stubBackend) SSHStorageMigrationPlan(layout SSHStorageLayout) (SSHStorageMigrationView, error) {
+	if b.sshStorageErr != nil {
+		return SSHStorageMigrationView{}, b.sshStorageErr
+	}
+	if b.sshStoragePlanFn != nil {
+		return b.sshStoragePlanFn(layout)
+	}
+	if b.sshStorageView.PlanToken != "" || b.sshStorageView.SentinelPreview != "" || b.sshStorageView.MainPreview != "" {
+		return b.sshStorageView, nil
+	}
+	return fixtureSSHStorageView(layout), nil
+}
+
+// CommitSSHStorage records the token the model passed (when storageCall is
+// set) and delivers the override commit message immediately.
+func (b stubBackend) CommitSSHStorage(layout SSHStorageLayout, planToken string) tea.Cmd {
+	if b.storageCall != nil {
+		b.storageCall.layout = layout
+		b.storageCall.token = planToken
+	}
+	return func() tea.Msg { return b.sshStorageCommit }
 }
 
 // ---------------------------------------------------------------------------

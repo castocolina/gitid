@@ -200,22 +200,34 @@ func TestGlobalSSHStoragePreviewsSwitchAndMigrateRoundTrips(t *testing.T) {
 		t.Error("Migrate must appear when the choice differs from current")
 	}
 
-	// Walk the migration ceremony.
+	// Walk the migration ceremony (async: confirm dispatches CommitSSHStorage,
+	// the state changes only after SSHStorageCommitMsg arrives).
 	a, _ = press(t, a, "enter")
 	if !strings.Contains(appView(a), "Migrate SSH storage layout → Include’d gitid.config") {
 		t.Fatalf("migration ceremony missing:\n%s", appView(a))
 	}
-	a, _ = press(t, a, "enter")
-	a, _ = press(t, a, "enter")
+	a, cmd := press(t, a, "enter") // confirm
+	if cmd == nil {
+		t.Fatal("confirmation must dispatch the async CommitSSHStorage command")
+	}
+	msg := cmd().(SSHStorageCommitMsg)
+	model, _ := a.Update(msg)
+	a = model.(App)
 	if a.state.SSHStorage != StorageInclude {
 		t.Fatalf("SSHStorage = %q, want include", a.state.SSHStorage)
 	}
+	a, _ = press(t, a, "enter") // dismiss receipt
 
 	// Reversible (STORE-03): migrate back.
-	a, _ = press(t, a, "down") // toggle radio back to sentinel
-	a, _ = press(t, a, "enter")
-	a, _ = press(t, a, "enter")
-	a, _ = press(t, a, "enter")
+	a, _ = press(t, a, "down")    // toggle radio back to sentinel
+	a, _ = press(t, a, "enter")   // open ceremony
+	a, cmd = press(t, a, "enter") // confirm
+	if cmd == nil {
+		t.Fatal("round-trip confirmation must dispatch the async CommitSSHStorage command")
+	}
+	msg = cmd().(SSHStorageCommitMsg)
+	model, _ = a.Update(msg)
+	a = model.(App)
 	if a.state.SSHStorage != StorageSentinel {
 		t.Errorf("SSHStorage = %q, want sentinel (round trip)", a.state.SSHStorage)
 	}
