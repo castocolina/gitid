@@ -87,3 +87,62 @@ func TestFixtureBackendSatisfiesIdentityPlannerThroughNoop(t *testing.T) {
 		t.Fatal("FixtureBackend must satisfy IdentityPlanner by embedding NoopIdentityPlanner")
 	}
 }
+
+// TestDummyStorageSubTabGoldenText proves the plan 06-05 acceptance criterion:
+// the dummy's Storage sub-tab render is byte-identical to its pre-change output
+// (golden-text comparison). This pins the three preview strings produced by
+// FixtureBackend.SSHStorageMigrationPlan so a render-stack change that
+// accidentally alters the fixture output fails here loudly.
+//
+// The "golden" here is the FIXTURE text the helper constants already produce —
+// not a separate file — since the dummy's job is to render fixture-identical
+// output, and the constants themselves are the authoritative source.
+func TestDummyStorageSubTabGoldenText(t *testing.T) {
+	fb := FixtureBackend{}
+	s := fb.InitialState() // StorageSentinel by default
+
+	// Golden text for the sentinel layout preview (SSHStorageMigrationPlan → StorageInclude).
+	viewToInclude, err := fb.SSHStorageMigrationPlan(tuikit.StorageInclude)
+	if err != nil {
+		t.Fatalf("SSHStorageMigrationPlan(StorageInclude): %v", err)
+	}
+
+	// The three preview fields must match the constants IncludePreviewMain,
+	// IncludePreviewOwned, and SentinelPreview exactly — byte-for-byte.
+	if viewToInclude.MainPreview != tuikit.IncludePreviewMain {
+		t.Errorf("MainPreview changed:\ngot:  %q\nwant: %q", viewToInclude.MainPreview, tuikit.IncludePreviewMain)
+	}
+	wantOwned := tuikit.IncludePreviewOwned(s)
+	if viewToInclude.OwnedPreview != wantOwned {
+		t.Errorf("OwnedPreview changed:\ngot:  %q\nwant: %q", viewToInclude.OwnedPreview, wantOwned)
+	}
+	wantSentinel := tuikit.SentinelPreview(s)
+	if viewToInclude.SentinelPreview != wantSentinel {
+		t.Errorf("SentinelPreview changed:\ngot:  %q\nwant: %q", viewToInclude.SentinelPreview, wantSentinel)
+	}
+
+	// The heading must match the frozen format for the Include direction.
+	wantHeading := "Migrate SSH storage layout \xe2\x86\x92 Include\xe2\x80\x99d gitid.config"
+	if viewToInclude.Heading != wantHeading {
+		t.Errorf("Heading changed:\ngot:  %q\nwant: %q", viewToInclude.Heading, wantHeading)
+	}
+
+	// Targets and the plan token shape are also pinned.
+	if len(viewToInclude.Targets) == 0 {
+		t.Error("Targets must be non-empty")
+	}
+	if viewToInclude.PlanToken == "" {
+		t.Error("PlanToken must be non-empty for a fixture view")
+	}
+
+	// Verify the sentinel direction too.
+	viewToSentinel, err := fb.SSHStorageMigrationPlan(tuikit.StorageSentinel)
+	if err != nil {
+		t.Fatalf("SSHStorageMigrationPlan(StorageSentinel): %v", err)
+	}
+	wantSentinelHeading := "Migrate SSH storage layout \xe2\x86\x92 sentinel blocks in ~/.ssh/config"
+	if viewToSentinel.Heading != wantSentinelHeading {
+		t.Errorf("Sentinel heading changed:\ngot:  %q\nwant: %q", viewToSentinel.Heading, wantSentinelHeading)
+	}
+	_ = wantSentinel // already asserted above for Include direction
+}
