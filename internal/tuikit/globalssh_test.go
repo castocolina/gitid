@@ -969,6 +969,61 @@ func TestGlobalSSHStoragePlanErrSuppressesMigrateAction(t *testing.T) {
 	}
 }
 
+// TestGlobalSSHStorageMouseClickRefetchesAfterActivationError is the CR-05
+// regression for the mouse path. It reproduces the exact pre-fix production
+// shape via sshStoragePlanFn: SSHStorageMigrationPlan errors when asked to
+// plan for the layout that IS already current (the real wiring.go guard the
+// review found), so activate() lands with m.storageViewErr set — same as the
+// real backend used to on every entry to the tab.
+//
+// Before the CR-05 fix, handleStorageClick set m.storageChoice WITHOUT
+// refetching, so m.storageViewErr kept holding this activation error forever
+// — the Migrate button (gated on storageViewErr == "") could never render
+// and the mouse-only path could never reach the migration ceremony. After
+// the fix, a click on the OTHER radio calls refetchStoragePlan(), which
+// clears the error and fetches a fresh (successful) view for the new choice.
+func TestGlobalSSHStorageMouseClickRefetchesAfterActivationError(t *testing.T) {
+	b := stubBackend{
+		sshStoragePlanFn: func(layout SSHStorageLayout) (SSHStorageMigrationView, error) {
+			if layout == StorageSentinel { // gssApp's fixture home starts at Sentinel
+				return SSHStorageMigrationView{}, fmt.Errorf("gitid: layout is already %s — nothing to plan", layout)
+			}
+			return fixtureSSHStorageView(layout), nil
+		},
+	}
+	a := NewApp(b)
+	a, _ = press(t, a, "2")
+	a, _ = press(t, a, "right") // activate Storage sub-tab — hits the injected "already this layout" error
+
+	before := appView(a)
+	if !strings.Contains(before, "nothing to plan") {
+		t.Fatalf("test setup: expected activation to render the injected error:\n%s", before)
+	}
+	if strings.Contains(before, "Migrate layout") {
+		t.Fatalf("test setup: Migrate button must be absent while storageViewErr is set:\n%s", before)
+	}
+
+	// Mouse-click the OTHER (Include) radio row.
+	a = clickCell(t, a, "gitid-owned ~/.ssh/config.d", 0, 0)
+
+	after := appView(a)
+	if strings.Contains(after, "nothing to plan") {
+		t.Errorf("mouse click did not clear the stale activation error; CR-05 regressed:\n%s", after)
+	}
+	if !strings.Contains(after, "Migrate layout") {
+		t.Fatalf("Migrate button still absent after mouse click cleared the error; CR-05 regressed:\n%s", after)
+	}
+
+	// Complete the mouse-only path: click the Migrate button itself and prove
+	// it actually opens the STORE-03 ceremony (gssStorageCeremony), not just
+	// that the button renders.
+	a = clickCell(t, a, "Migrate layout… (Enter)", 0, 0)
+	m := gssModel(t, a)
+	if m.mode != gssStorageCeremony {
+		t.Errorf("mode = %v after clicking Migrate, want gssStorageCeremony — the mouse-only path still cannot reach the migration ceremony", m.mode)
+	}
+}
+
 // TestGlobalSSHStorageTokenPassthroughAndClearing proves the acceptance
 // criterion: the token the model sends to CommitSSHStorage is byte-identical
 // to the one the view it opened the ceremony with carried, and that moving

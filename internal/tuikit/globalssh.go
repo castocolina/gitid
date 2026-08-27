@@ -136,21 +136,38 @@ func newGlobalSSHModel(b Backend) globalSSHModel {
 func (m globalSSHModel) activate(s DemoState) (screenModel, tea.Cmd) {
 	m.storageChoice = s.SSHStorage
 	m.chosen = map[string]bool{}
-	m.storageView = SSHStorageMigrationView{}
-	m.storageViewErr = ""
 	options, err := m.backend.GlobalSSHOptionStates()
 	m.options = options
 	if err != nil {
 		m.options = nil
 		m.optionsErr = err.Error()
 	}
+	m = m.refetchStoragePlan()
+	return m, nil
+}
+
+// refetchStoragePlan re-fetches the Storage sub-tab's migration preview for
+// m.storageChoice from the backend, clearing any previously held plan/error
+// first so a fetch failure never leaves a stale plan (and its now-invalid
+// PlanToken) from a DIFFERENT layout selection visible.
+//
+// Shared by activate, the keyboard up/down handler, and the mouse radio-click
+// handler (CR-05): before this helper existed, a mouse click on a radio row
+// set m.storageChoice WITHOUT refetching, so m.storageViewErr kept holding
+// whatever error activate() had stored (typically the CR-05 "already this
+// layout" refusal), the Migrate button never rendered (renderStorage
+// requires m.storageViewErr == ""), and the mouse-only path could never
+// reach the migration ceremony.
+func (m globalSSHModel) refetchStoragePlan() globalSSHModel {
+	m.storageView = SSHStorageMigrationView{}
+	m.storageViewErr = ""
 	view, verr := m.backend.SSHStorageMigrationPlan(m.storageChoice)
 	if verr != nil {
 		m.storageViewErr = verr.Error()
 	} else {
 		m.storageView = view
 	}
-	return m, nil
+	return m
 }
 
 // handleMsg completes the asynchronous apply and storage-migration commits
@@ -544,16 +561,7 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 				m.storageChoice = StorageSentinel
 			}
 			// Refetch the storage view for the newly selected layout.
-			// Clear it first so a fetch error does not leave a stale plan
-			// whose token belongs to the previous layout.
-			m.storageView = SSHStorageMigrationView{}
-			m.storageViewErr = ""
-			view, verr := m.backend.SSHStorageMigrationPlan(m.storageChoice)
-			if verr != nil {
-				m.storageViewErr = verr.Error()
-			} else {
-				m.storageView = view
-			}
+			m = m.refetchStoragePlan()
 		}
 		return keyResult{model: m, handled: true}
 	case "space":
@@ -694,10 +702,14 @@ func (m globalSSHModel) handleStorageClick(x, y, width, height int, s DemoState)
 	switch {
 	case strings.Contains(line, "Sentinel blocks in ~/.ssh/config"):
 		m.storageChoice = StorageSentinel
-		return keyResult{model: m, handled: true}
+		// CR-05: refetch, mirroring the keyboard up/down handler — a mouse
+		// click that only set the radio without refetching left
+		// m.storageViewErr holding a stale error, hiding the Migrate button
+		// and making the ceremony unreachable from the mouse path.
+		return keyResult{model: m.refetchStoragePlan(), handled: true}
 	case strings.Contains(line, "gitid-owned ~/.ssh/config.d"):
 		m.storageChoice = StorageInclude
-		return keyResult{model: m, handled: true}
+		return keyResult{model: m.refetchStoragePlan(), handled: true}
 	}
 	return keyResult{model: m}
 }

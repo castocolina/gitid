@@ -270,6 +270,17 @@ func TestGlobalSSHStorage_RealPTYBrowse(t *testing.T) {
 		t.Errorf("sub-tab strip missing from storage browse frame:\n%s", before)
 	}
 
+	// CR-05 regression: the FIRST frame (before any keystroke) activates with
+	// the radio on the CURRENT layout — the exact case that used to render
+	// "layout is already sentinel — nothing to plan" in the right pane
+	// instead of the resulting-config preview the sub-tab exists to show.
+	if !strings.Contains(before, "Resulting config") {
+		t.Errorf("first storage frame missing the resulting-config preview; CR-05 regressed:\n%s", before)
+	}
+	if strings.Contains(before, "nothing to plan") {
+		t.Errorf("first storage frame still renders the CR-05 refusal instead of a preview:\n%s", before)
+	}
+
 	// Move the layout selection and assert the preview pane changes.
 	s.sendKey(dummyKeyDown, keystrokeDelay)
 	after := captureStorageFrame(t, "storage-browse", s)

@@ -209,6 +209,34 @@ func runStorageCommit(t *testing.T, b *realBackend, layout tuikit.SSHStorageLayo
 // Basic preview and migration correctness
 // ---------------------------------------------------------------------------
 
+// TestSSHStorageMigrationPlanCurrentLayoutIsNotAnError is the CR-05
+// regression: SSHStorageMigrationPlan(currentLayout) — exactly what
+// activate() calls on EVERY entry to the Storage & preview sub-tab, since
+// m.storageChoice is seeded from the live layout — must return a normal
+// resulting-config preview, not the "layout is already X — nothing to plan"
+// refusal. Before the fix this fired on every activation (and on every mouse
+// click, since m.storageChoice starts equal to the live layout), rendering
+// an error in the right pane instead of the STORE-01 preview the sub-tab
+// exists to show.
+func TestSSHStorageMigrationPlanCurrentLayoutIsNotAnError(t *testing.T) {
+	skipIfNoSSHForStorage(t)
+	home, _, _, fakeSSHDir := seedMigrateHome(t) // seeds the SENTINEL layout
+	b := backendWithFakeSSH(t, home, fakeSSHDir)
+
+	view, err := b.SSHStorageMigrationPlan(tuikit.StorageSentinel) // == current layout
+	if err != nil {
+		t.Fatalf("SSHStorageMigrationPlan(currentLayout) returned an error; CR-05 regressed: %v", err)
+	}
+	if view.SentinelPreview == "" {
+		t.Error("SSHStorageMigrationPlan(currentLayout) returned an empty SentinelPreview")
+	}
+	// The preview must describe the CURRENT (sentinel) content — the managed
+	// identity block names must be present.
+	if !strings.Contains(view.SentinelPreview, "personal") {
+		t.Errorf("SentinelPreview does not describe the current managed content: %q", view.SentinelPreview)
+	}
+}
+
 // TestSSHStorageMigrationPlanPreviewsDontMutateDisk proves the plan's
 // "leaves both files unchanged on disk" requirement: SSHStorageMigrationPlan
 // is read-only and its preview content is derived from PlanMigration's bytes.

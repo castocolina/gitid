@@ -1631,10 +1631,15 @@ func (b *realBackend) SSHStorageMigrationPlan(layout tuikit.SSHStorageLayout) (t
 	if st.includeLayout {
 		currentLayout = tuikit.StorageInclude
 	}
-	if currentLayout == layout {
-		return tuikit.SSHStorageMigrationView{}, fmt.Errorf("gitid: layout is already %s — nothing to plan", layout)
-	}
-
+	// CR-05: requesting a plan for the CURRENT layout is NOT an error — it is
+	// the pane's normal first-activation state (activate() seeds
+	// m.storageChoice from the live layout, so every entry to the tab used
+	// to hit this branch). PlanMigration naturally computes a no-op plan for
+	// this case (the "moving" source file has nothing gitid-managed to move,
+	// so DestAfter is just the current managed content unchanged) — it is a
+	// legitimate "resulting config if you stay here" preview, not an error
+	// condition. Do NOT special-case it; let it fall through to the same
+	// planning path every other layout choice takes.
 	direction := sshconfig.MigrateToInclude
 	if layout == tuikit.StorageSentinel {
 		direction = sshconfig.MigrateToInFile

@@ -1914,23 +1914,17 @@ func globalSSHSpecs() []ScreenSpec {
 			},
 		},
 		{
-			ScreenID:              "gss-storage-current",
-			Interaction:           "From the Options sub-tab, press Right to open the Storage & preview sub-tab in browse mode with the radio on the CURRENT layout.",
+			ScreenID: "gss-storage-current",
+			Interaction: "From the Options sub-tab, press Right to open the Storage & preview sub-tab in browse mode " +
+				"with the radio on the CURRENT layout.",
 			StateMarker:           "STORE-01 — where gitid-managed SSH config lives",
-			ApplicableLive:        false,
+			ApplicableLive:        true,
 			ApplicableApprovedTUI: true,
-			NonApplicability: append(noHTML,
-				// The live backend CANNOT truthfully render this frame: on the
-				// seeded fixture home the current layout is Include, and
-				// planning a migration TO the current layout is a no-op the
-				// real backend honestly reports ("layout is already include —
-				// nothing to plan") instead of fabricating a resulting-config
-				// preview. The real-machine browse evidence lives in the PTY
-				// frame (06-05) instead.
-				uxNonComparable("live", "DLV-4",
-					"the real backend renders the honest \"nothing to plan\" hint for the CURRENT layout (SSHStorageMigrationPlan refuses a no-op migration to the layout that already is current on the seeded Include-layout fixture home) and never a resulting-config preview browse; the Include-layout browse evidence lives in the PTY frame .planning/phases/06-global-ssh-options/ui-frames/storage-browse.txt"),
-			),
-			RequiredRegions: []RegionName{RegionGSSStorageBrowse},
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionGSSStorageBrowse},
+			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDisposition, gssStorageFixtureDisposition, gssStoragePreviewDisposition,
+			},
 		},
 		{
 			ScreenID:              "gss-storage-other",
