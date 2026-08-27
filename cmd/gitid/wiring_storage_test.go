@@ -580,6 +580,38 @@ func TestStoragePlanTokenConsumeOnce(t *testing.T) {
 	}
 }
 
+// TestStorageDryRunDoesNotConsumePendingPlan is the WR-03 regression: a dry
+// run driven with a plan token must NOT consume it — a subsequent real
+// commit against the SAME token must still succeed. Before the fix,
+// takePendingMigration ran (and cleared the slot) BEFORE the `if p.DryRun`
+// early return, so a dry-run-then-commit sequence against the same token
+// always failed with errReopenPreview.
+func TestStorageDryRunDoesNotConsumePendingPlan(t *testing.T) {
+	skipIfNoSSHForStorage(t)
+	home, _, _, fakeSSHDir := seedMigrateHome(t)
+	b := backendWithFakeSSH(t, home, fakeSSHDir)
+
+	view, err := b.SSHStorageMigrationPlan(tuikit.StorageInclude)
+	if err != nil {
+		t.Fatalf("SSHStorageMigrationPlan: %v", err)
+	}
+	token := view.PlanToken
+
+	// Dry run against the token: must succeed and NOT consume it.
+	dryRes, dryErr := b.runSSHStorageMigrate(tuikit.StorageInclude, token, lifecyclePolicy{DryRun: true})
+	if dryErr != nil {
+		t.Fatalf("dry run: %v", dryErr)
+	}
+	_ = dryRes
+
+	// The real commit against the SAME token must still succeed — proving
+	// the dry run above did not consume the pending plan.
+	msg := runStorageCommit(t, b, tuikit.StorageInclude, token)
+	if msg.Err != "" {
+		t.Fatalf("commit after dry run with the same token must succeed; WR-03 regressed: %v", msg.Err)
+	}
+}
+
 // TestStorageStaleTokenRefused proves that calling SSHStorageMigrationPlan twice
 // makes the FIRST token stale — only the most-recently previewed plan can be
 // committed.

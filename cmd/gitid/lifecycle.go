@@ -1043,6 +1043,14 @@ func (b *realBackend) runSSHStorageMigrate(target tuikit.SSHStorageLayout, planT
 	aliases := b.managedAliases()
 	deps := newMigrateDeps(b.sshConfigPath, filepath.Join(b.includeDir, gitidConfigFileName), aliases)
 
+	// WR-03: a dry run with a token must never consume the held plan — the
+	// token still names a plan the caller may want to actually commit next.
+	// Peeking here (before takePendingMigration) means a dry-run-then-commit
+	// sequence against the same token still finds it.
+	if p.DryRun && planToken != "" {
+		return res, nil
+	}
+
 	var plan sshconfig.MigrationPlan
 	if planToken != "" {
 		// TUI path: retrieve the pre-computed plan. takePendingMigration
