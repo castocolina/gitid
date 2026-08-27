@@ -70,7 +70,6 @@ func TestNoDuplicateFullyQualifiedCommandPaths(t *testing.T) {
 func TestReservedNounGroupsReturnPhaseNamedErrors(t *testing.T) {
 	root := newRootCmd()
 	cases := map[string]string{
-		"ssh":    "Phase 6",
 		"git":    "Phase 7",
 		"health": "Phase 8",
 		"fix":    "Phase 8",
@@ -516,10 +515,12 @@ func snapshotSeams() func() {
 	oldCreate, oldGate := commitCreateInto, cliPreWriteGate
 	oldRotate, oldRepair := cliRotateInto, cliRepairInto
 	oldDelete, oldTest := cliDeleteInto, cliConnectivityTest
+	oldApply, oldMigrate, oldSSHTUI := cliGlobalSSHApplyInto, cliSSHStorageMigrateInto, sshTUILaunch
 	return func() {
 		commitCreateInto, cliPreWriteGate = oldCreate, oldGate
 		cliRotateInto, cliRepairInto = oldRotate, oldRepair
 		cliDeleteInto, cliConnectivityTest = oldDelete, oldTest
+		cliGlobalSSHApplyInto, cliSSHStorageMigrateInto, sshTUILaunch = oldApply, oldMigrate, oldSSHTUI
 	}
 }
 
@@ -1417,6 +1418,7 @@ func TestIdentityCLICannotReachConfirmationAlreadyObtained(t *testing.T) {
 	for _, name := range []string{
 		"identity.go", "identity_read.go", "identity_delete.go",
 		"identity_create.go", "identity_clone.go", "identity_key.go",
+		"ssh.go",
 	} {
 		data, err := os.ReadFile(filepath.Join(root, "cmd", "gitid", name)) //nolint:gosec // fixed repository-relative source path (G304)
 		if err != nil {

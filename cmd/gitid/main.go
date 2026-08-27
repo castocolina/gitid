@@ -53,8 +53,10 @@ func main() {
 		os.Exit(code)
 	}
 	if err := Execute(); err != nil {
-		// A real command error. Cobra has already printed it; exit non-zero.
-		os.Exit(1)
+		// A real command error. Cobra has already printed it. Write verbs
+		// that use the frozen ssh exit-status table return *exitCodeError so
+		// the process status matches the JSON envelope's exit_code field.
+		os.Exit(exitStatusOf(err))
 	}
 }
 
@@ -71,15 +73,14 @@ func Execute() error {
 // (SHELL-03) rebuilt the v1.0 CLI surface deliberately: the D-01 noun-verb
 // taxonomy — the `identity` noun group (create/list/show/clone/new-key/
 // rotate/delete, added incrementally across plans 05-01 and 05-08) plus its
-// flat root-level aliases — and the reserved `ssh`/`git`/`health`/`fix` noun
-// groups that claim their taxonomy slot before the phases that implement them
-// (6, 7, 8, 8) land — guaranteeing a later phase's verb can never collide
-// with a top-level flat alias. What else remains is the root, the Phase 1
-// `debug` diagnostic readout, and the `completion` subcommand Cobra
-// auto-registers for bash/zsh/fish/PowerShell (D-08/CLI-02). Plan 05-08 adds
-// the adaptive-depth write verbs: every product outcome has a CLI command and
-// no ceremony step (preview/confirm/backup/re-test) does (D-04), enforced by
-// the requirement-keyed parity matrix check in docs/cli-parity-matrix.md.
+// flat root-level aliases. Phase 6 replaces the reserved `ssh` noun with
+// real verbs; `git`/`health`/`fix` stay reserved until Phases 7-8. What else
+// remains is the root, the Phase 1 `debug` diagnostic readout, and the
+// `completion` subcommand Cobra auto-registers for bash/zsh/fish/PowerShell
+// (D-08/CLI-02). Plan 05-08 adds the adaptive-depth write verbs: every
+// product outcome has a CLI command and no ceremony step (preview/confirm/
+// backup/re-test) does (D-04), enforced by the requirement-keyed parity
+// matrix check in docs/cli-parity-matrix.md.
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "gitid",
@@ -93,12 +94,13 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newDebugCmd())
 
 	// D-01: the identity noun group, its flat root-level aliases (built from
-	// the SAME spec values — review R-15), and the reserved noun groups that
-	// claim ssh/git/health/fix before Phases 6-8 implement them.
+	// the SAME spec values — review R-15), the real ssh noun group (Phase 6),
+	// and the reserved git/health/fix noun groups that claim their taxonomy
+	// slot before Phases 7-8 implement them.
 	specs := identityVerbSpecs()
 	root.AddCommand(newIdentityCmd(specs))
 	registerFlatAliases(root, specs)
-	root.AddCommand(newReservedNounCmd("ssh", "Manage global SSH options (arrives in Phase 6)", "Phase 6 (Global SSH Options)"))
+	root.AddCommand(newSSHCmd())
 	root.AddCommand(newReservedNounCmd("git", "Manage global Git options (arrives in Phase 7)", "Phase 7 (Global Git Options)"))
 	root.AddCommand(newReservedNounCmd("health", "Show identity/config health (arrives in Phase 8)", "Phase 8 (Health + Fixer)"))
 	root.AddCommand(newReservedNounCmd("fix", "Apply suggested health fixes (arrives in Phase 8)", "Phase 8 (Health + Fixer)"))
