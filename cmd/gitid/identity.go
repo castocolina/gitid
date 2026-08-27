@@ -203,12 +203,19 @@ func missingFlagErr(verb string, missing []string) error {
 // accepted without a terminal and without --yes, and 05-07's lifecycle stops
 // after the plan stage, before the confirmation gate. Callers route dry runs
 // BEFORE invoking this function.
-func confirmationPolicyFrom(_ *cobra.Command, refuseVerb string, stdinTTY, stdoutTTY, yes bool, prompt func() (bool, error)) (lifecyclePolicy, error) {
+// confirmationPolicyFrom builds the confirmation half of a write ceremony's
+// lifecyclePolicy. prompt receives the SAME preview string confirmGate
+// passes to lifecyclePolicy.Prompt (the resolved target path plus what will
+// change) — WR-08: prompt used to take no argument, so every caller's
+// wrapper silently discarded confirmGate's preview and the interactive user
+// was asked to confirm a write having been shown neither the resolved target
+// nor the diff nor any shadow warnings.
+func confirmationPolicyFrom(_ *cobra.Command, refuseVerb string, stdinTTY, stdoutTTY, yes bool, prompt func(preview string) (bool, error)) (lifecyclePolicy, error) {
 	if yes {
 		return lifecyclePolicy{Confirm: confirmationBypassedWithYes}, nil
 	}
 	if stdinTTY && stdoutTTY {
-		return lifecyclePolicy{Confirm: confirmationRequired, Prompt: func(string) (bool, error) { return prompt() }}, nil
+		return lifecyclePolicy{Confirm: confirmationRequired, Prompt: prompt}, nil
 	}
 	return lifecyclePolicy{}, fmt.Errorf("gitid: refusing to %s without --yes in non-interactive mode (use --yes to skip only the confirmation prompt; the timestamped backup is still taken)", refuseVerb)
 }

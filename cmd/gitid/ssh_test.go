@@ -281,6 +281,60 @@ func TestSSHStorageMigrateRealRollbackReportsExitTwoAndRestored(t *testing.T) {
 	}
 }
 
+// TestSSHApplyInteractiveConfirmationShowsPreview is the WR-08 regression:
+// the interactive (TTY) confirmation prompt must show the resolved
+// target/diff preview before asking "yes" — not a bare option-name question.
+// Before the fix, confirmationPolicyFrom's prompt closure took no argument,
+// so confirmGate's preview string was silently discarded no matter what the
+// caller passed.
+func TestSSHApplyInteractiveConfirmationShowsPreview(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cmd, out, _ := cliTestCmd()
+	cmd.SetIn(strings.NewReader("yes\n"))
+
+	err := runSSHOptionsApply(cmd, []string{"HashKnownHosts"}, sshApplyFlags{}, true, true)
+	if err != nil {
+		t.Fatalf("runSSHOptionsApply: %v", err)
+	}
+
+	body := out.String()
+	if !strings.Contains(body, "apply global SSH option(s) HashKnownHosts to the gitid Host * block in") {
+		t.Errorf("interactive confirmation must show the resolved target preview before asking; WR-08 regressed:\n%s", body)
+	}
+	if !strings.Contains(body, `Type "yes" to confirm:`) {
+		t.Errorf("prompt is missing the confirm question:\n%s", body)
+	}
+}
+
+// TestSSHMigrateInteractiveConfirmationShowsPreview is the WR-08 regression
+// for the storage-migrate verb: the interactive prompt must show the
+// resolved migration plan diff before asking "yes".
+func TestSSHMigrateInteractiveConfirmationShowsPreview(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".ssh", "config.d"), 0o700); err != nil {
+		t.Fatalf("seeding .ssh/config.d dir: %v", err)
+	}
+	cmd, out, _ := cliTestCmd()
+	cmd.SetIn(strings.NewReader("yes\n"))
+
+	// A fresh HOME defaults to the Include layout (D-06), so target the
+	// OTHER layout (in-file) to avoid the "already this layout" refusal.
+	err := runSSHStorageMigrateVerb(cmd, sshMigrateFlags{To: sshLayoutInFile}, true, true)
+	if err != nil {
+		t.Fatalf("runSSHStorageMigrateVerb: %v", err)
+	}
+
+	body := out.String()
+	if !strings.Contains(body, "migrate SSH storage layout to sentinel") {
+		t.Errorf("interactive confirmation must show the resolved migration preview before asking; WR-08 regressed:\n%s", body)
+	}
+	if !strings.Contains(body, `Type "yes" to confirm:`) {
+		t.Errorf("prompt is missing the confirm question:\n%s", body)
+	}
+}
+
 func TestSSHJSONApplyAdvisoriesPresentEvenWhenEmpty(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

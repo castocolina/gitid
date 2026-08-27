@@ -119,7 +119,7 @@ func runIdentityKeyVerb(cmd *cobra.Command, name, verb string, flags identityKey
 	}
 	b := newBackendForHome(home)
 
-	policy, perr := confirmationPolicyFrom(cmd, verb+" "+name, stdinTTY, stdoutTTY, flags.Yes, func() (bool, error) {
+	policy, perr := confirmationPolicyFrom(cmd, verb+" "+name, stdinTTY, stdoutTTY, flags.Yes, func(string) (bool, error) {
 		fmt.Fprintf(cmd.OutOrStdout(), "%s identity %q? Type \"yes\" to confirm: ", keyVerbLabel(verb), name) //nolint:errcheck // best-effort prompt
 		reader := bufio.NewReader(cmd.InOrStdin())
 		line, _ := reader.ReadString('\n')

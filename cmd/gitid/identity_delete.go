@@ -116,7 +116,7 @@ func runIdentityDelete(cmd *cobra.Command, name string, flags identityDeleteFlag
 		return rerr
 	}
 
-	policy, perr := confirmationPolicyFrom(cmd, "delete "+name, stdinTTY, stdoutTTY, flags.Yes, func() (bool, error) {
+	policy, perr := confirmationPolicyFrom(cmd, "delete "+name, stdinTTY, stdoutTTY, flags.Yes, func(string) (bool, error) {
 		return confirmDelete(cmd, name, scope)
 	})
 	if perr != nil {

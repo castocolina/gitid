@@ -297,8 +297,15 @@ func runSSHOptionsApply(cmd *cobra.Command, keys []string, flags sshApplyFlags, 
 		return finishApply(cmd, flags.JSON, env, rerr)
 	}
 
-	policy, perr := confirmationPolicyFrom(cmd, "apply global SSH options", stdinTTY, stdoutTTY, flags.Yes, func() (bool, error) {
-		fmt.Fprintf(cmd.OutOrStdout(), "Apply global SSH option(s) %s? Type \"yes\" to confirm: ", strings.Join(keys, ", ")) //nolint:errcheck
+	policy, perr := confirmationPolicyFrom(cmd, "apply global SSH options", stdinTTY, stdoutTTY, flags.Yes, func(preview string) (bool, error) {
+		// WR-08: show the resolved target/diff/shadow-warning preview before
+		// asking — the interactive CLI user must see the SAME ceremony
+		// information the TUI and --dry-run show, not a bare option-name
+		// question.
+		if plan, perr := b.GlobalSSHApplyPlan(keys); perr == nil {
+			printApplyDryRun(cmd.OutOrStdout(), plan)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "%s\nType \"yes\" to confirm: ", preview) //nolint:errcheck
 		reader := bufio.NewReader(cmd.InOrStdin())
 		line, _ := reader.ReadString('\n')
 		return strings.TrimSpace(line) == "yes", nil
@@ -403,8 +410,14 @@ func runSSHStorageMigrateVerb(cmd *cobra.Command, flags sshMigrateFlags, stdinTT
 		return finishMigrate(cmd, flags.JSON, env, rerr)
 	}
 
-	policy, perr := confirmationPolicyFrom(cmd, "migrate SSH storage", stdinTTY, stdoutTTY, flags.Yes, func() (bool, error) {
-		fmt.Fprintf(cmd.OutOrStdout(), "Migrate SSH storage layout to %s? Type \"yes\" to confirm: ", toWire) //nolint:errcheck
+	policy, perr := confirmationPolicyFrom(cmd, "migrate SSH storage", stdinTTY, stdoutTTY, flags.Yes, func(preview string) (bool, error) {
+		// WR-08: show the resolved plan diff before asking — the interactive
+		// CLI user must see the SAME ceremony information the TUI and
+		// --dry-run show, not a bare layout-name question.
+		if planErr == nil {
+			printMigrateDryRun(cmd.OutOrStdout(), b, plan)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "%s\nType \"yes\" to confirm: ", preview) //nolint:errcheck
 		reader := bufio.NewReader(cmd.InOrStdin())
 		line, _ := reader.ReadString('\n')
 		return strings.TrimSpace(line) == "yes", nil

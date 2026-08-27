@@ -347,7 +347,7 @@ func runCreateCeremony(cmd *cobra.Command, b *realBackend, in identity.CreateInp
 		return runCreateDryRun(cmd, b, in, id)
 	}
 
-	policy, err := confirmationPolicyFrom(cmd, "create "+in.Name, stdinTTY, stdoutTTY, yes, func() (bool, error) {
+	policy, err := confirmationPolicyFrom(cmd, "create "+in.Name, stdinTTY, stdoutTTY, yes, func(string) (bool, error) {
 		fmt.Fprintf(cmd.OutOrStdout(), "Create identity %q (alias %s) and write its managed artifacts? Type \"yes\" to confirm: ", in.Name, in.Alias) //nolint:errcheck // best-effort prompt
 		return confirmYes(cmd)
 	})
