@@ -52,6 +52,41 @@ func TestVersionGateUnverified(t *testing.T) {
 	}
 }
 
+// TestVersionGateNamesTheGatedOptionNotAHardcodedLiteral is the WR-09
+// regression: VersionGate is generic over OptionPolicy, so the rendered note
+// must name THAT policy's key/recommended value — never a hardcoded
+// "accept-new" literal that would describe the wrong option the moment a
+// second policy row gains a MinOpenSSH.
+func TestVersionGateNamesTheGatedOptionNotAHardcodedLiteral(t *testing.T) {
+	synthetic := OptionPolicy{
+		Key:         "SendEnv",
+		Recommended: "LANG",
+		MinOpenSSH:  "8.0",
+	}
+
+	tooOldOutcome, tooOldNote := VersionGate(platform.SSHVersion{OpenSSHVersion: "7.9"}, synthetic)
+	if tooOldOutcome != VersionTooOld {
+		t.Fatalf("VersionGate(7.9) outcome = %v, want VersionTooOld", tooOldOutcome)
+	}
+	if !strings.Contains(tooOldNote, "SendEnv LANG") {
+		t.Errorf("too-old note = %q, want it to name %q, not a hardcoded accept-new literal", tooOldNote, "SendEnv LANG")
+	}
+	if strings.Contains(tooOldNote, "accept-new") {
+		t.Errorf("too-old note = %q, WR-09 regressed: hardcoded accept-new literal reappeared for a different policy", tooOldNote)
+	}
+
+	availableOutcome, availableNote := VersionGate(platform.SSHVersion{OpenSSHVersion: "9.0"}, synthetic)
+	if availableOutcome != VersionAvailable {
+		t.Fatalf("VersionGate(9.0) outcome = %v, want VersionAvailable", availableOutcome)
+	}
+	if !strings.Contains(availableNote, "SendEnv LANG") {
+		t.Errorf("available note = %q, want it to name %q, not a hardcoded accept-new literal", availableNote, "SendEnv LANG")
+	}
+	if strings.Contains(availableNote, "accept-new") {
+		t.Errorf("available note = %q, WR-09 regressed: hardcoded accept-new literal reappeared for a different policy", availableNote)
+	}
+}
+
 func TestVersionGateNoMinimum(t *testing.T) {
 	p, ok := PolicyFor("ForwardAgent")
 	if !ok {

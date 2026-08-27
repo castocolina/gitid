@@ -45,10 +45,17 @@ func VersionGate(v platform.SSHVersion, p OptionPolicy) (VersionOutcome, string)
 	if strings.TrimSpace(v.OpenSSHVersion) == "" {
 		return VersionUnverified, VersionNoteUnverified
 	}
+	// WR-09: name the GATED option/value from p, never a hardcoded literal.
+	// VersionGate is generic over OptionPolicy — Policy is explicitly DATA,
+	// not behavior, so the moment a second row gains a MinOpenSSH, a literal
+	// "accept-new" here would render for the wrong option on both render
+	// surfaces (cmd/gitid/ssh.go and cmd/gitid/wiring.go simply forward this
+	// note verbatim).
+	gated := p.Key + " " + p.Recommended
 	if versionLess(v.OpenSSHVersion, p.MinOpenSSH) {
-		return VersionTooOld, fmt.Sprintf("%s %s — accept-new needs OpenSSH %s+, upgrade to use it", VersionNotePrefix, v.OpenSSHVersion, p.MinOpenSSH)
+		return VersionTooOld, fmt.Sprintf("%s %s — %s needs OpenSSH %s+, upgrade to use it", VersionNotePrefix, v.OpenSSHVersion, gated, p.MinOpenSSH)
 	}
-	return VersionAvailable, fmt.Sprintf("%s %s — accept-new is available", VersionNotePrefix, v.OpenSSHVersion)
+	return VersionAvailable, fmt.Sprintf("%s %s — %s is available", VersionNotePrefix, v.OpenSSHVersion, gated)
 }
 
 func versionLess(got, minimum string) bool {
