@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -22,6 +23,7 @@ import (
 	"github.com/castocolina/gitid/internal/dummytui"
 	"github.com/castocolina/gitid/internal/keygen"
 	"github.com/castocolina/gitid/internal/screenshot"
+	"github.com/castocolina/gitid/internal/tuikit"
 )
 
 // approvalCommitFull is the full SHA of the Phase-2 design approval commit (CR-03).
@@ -356,6 +358,14 @@ func TestGateVisualRegression(t *testing.T) {
 	deterministicIdentityManagerFixture(t, imgrHome1)
 	deterministicIdentityManagerFixture(t, imgrHome2)
 
+	// 06-07-PLAN.md Task 1: Global SSH checkpoints, isolated the SAME way
+	// (deterministicGlobalSSHFixture seeds its OWN Include-layout home so the
+	// four option states are produced without perturbing any prior surface).
+	gssHome1 := t.TempDir()
+	gssHome2 := t.TempDir()
+	deterministicGlobalSSHFixture(t, gssHome1)
+	deterministicGlobalSSHFixture(t, gssHome2)
+
 	// CR-01: run TWO independent captures and compare text hashes.
 	t.Setenv("HOME", home1)
 	realBackend1 := newBackendForHome(home1)
@@ -371,6 +381,7 @@ func TestGateVisualRegression(t *testing.T) {
 	}
 	mergeGitScreenCaptures(t, realCaptures1, dummyCaptures1, gitHome1)
 	mergeIdentityManagerCaptures(t, realCaptures1, dummyCaptures1, imgrHome1)
+	mergeGlobalSSHCaptures(t, realCaptures1, dummyCaptures1, gssHome1)
 
 	t.Setenv("HOME", home2)
 	realBackend2 := newBackendForHome(home2)
@@ -386,6 +397,7 @@ func TestGateVisualRegression(t *testing.T) {
 	}
 	mergeGitScreenCaptures(t, realCaptures2, dummyCaptures2, gitHome2)
 	mergeIdentityManagerCaptures(t, realCaptures2, dummyCaptures2, imgrHome2)
+	mergeGlobalSSHCaptures(t, realCaptures2, dummyCaptures2, gssHome2)
 
 	specs := screenshot.RequiredScreenSpecs()
 	// Determinism is checked within each surface. Real and dummy are not byte,
@@ -468,6 +480,14 @@ func TestGateVisualRegressionReadOnly(t *testing.T) {
 	}
 	if _, err := screenshot.CaptureIdentityManagerScreens(dummyB); err != nil {
 		t.Logf("gate-visual-regression: capturing identity-manager dummy backend (read-only check): %v", err)
+	}
+	// 06-07-PLAN.md Task 1: Global SSH captures must be equally read-only.
+	deterministicGlobalSSHFixture(t, home)
+	if _, err := screenshot.CaptureGlobalSSHScreens(realB); err != nil {
+		t.Logf("gate-visual-regression: capturing global-ssh real backend (read-only check): %v", err)
+	}
+	if _, err := screenshot.CaptureGlobalSSHScreens(dummyB); err != nil {
+		t.Logf("gate-visual-regression: capturing global-ssh dummy backend (read-only check): %v", err)
 	}
 
 	after := snapshotDir(t, packetDir)
@@ -560,6 +580,12 @@ func TestAllScreensCapturedAndNonEmpty(t *testing.T) {
 	imgrHome := t.TempDir()
 	deterministicIdentityManagerFixture(t, imgrHome)
 	mergeIdentityManagerCaptures(t, realCaptures, dummyCaptures, imgrHome)
+	// 06-07-PLAN.md Task 1: the Global SSH registry shares this spec set, so
+	// its frames must be present for BuildRegionDiffs regardless of which
+	// registry this control scopes its own mutation to.
+	gssHome := t.TempDir()
+	deterministicGlobalSSHFixture(t, gssHome)
+	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
 	t.Setenv("HOME", home) // restore for any later HOME-dependent assertions
 
 	for _, spec := range screenshot.RequiredScreenSpecs() {
@@ -615,6 +641,12 @@ func TestNegativeControl_UnclassifiedDifferenceRejected(t *testing.T) {
 	imgrHome := t.TempDir()
 	deterministicIdentityManagerFixture(t, imgrHome)
 	mergeIdentityManagerCaptures(t, realCaptures, dummyCaptures, imgrHome)
+	// 06-07-PLAN.md Task 1: the Global SSH registry shares this spec set, so
+	// its frames must be present for BuildRegionDiffs regardless of which
+	// registry this control scopes its own mutation to.
+	gssHome := t.TempDir()
+	deterministicGlobalSSHFixture(t, gssHome)
+	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
 	t.Setenv("HOME", home) // restore for any later HOME-dependent assertions
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -722,6 +754,12 @@ func TestNegativeControl_AllComparableEqualRegionsAreMutationSensitive(t *testin
 	imgrHome := t.TempDir()
 	deterministicIdentityManagerFixture(t, imgrHome)
 	mergeIdentityManagerCaptures(t, realCaptures, dummyCaptures, imgrHome)
+	// 06-07-PLAN.md Task 1: the Global SSH registry shares this spec set, so
+	// its frames must be present for BuildRegionDiffs regardless of which
+	// registry this control scopes its own mutation to.
+	gssHome := t.TempDir()
+	deterministicGlobalSSHFixture(t, gssHome)
+	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
 	t.Setenv("HOME", home) // restore for any later HOME-dependent assertions
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -818,6 +856,12 @@ func TestNegativeControl_GitScreenUnclassifiedDifferenceRejected(t *testing.T) {
 	imgrHome := t.TempDir()
 	deterministicIdentityManagerFixture(t, imgrHome)
 	mergeIdentityManagerCaptures(t, realCaptures, dummyCaptures, imgrHome)
+	// 06-07-PLAN.md Task 1: the Global SSH registry shares this spec set, so
+	// its frames must be present for BuildRegionDiffs regardless of which
+	// registry this control scopes its own mutation to.
+	gssHome := t.TempDir()
+	deterministicGlobalSSHFixture(t, gssHome)
+	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -883,6 +927,12 @@ func TestNegativeControl_AllGitScreenComparableEqualRegionsAreMutationSensitive(
 	imgrHome := t.TempDir()
 	deterministicIdentityManagerFixture(t, imgrHome)
 	mergeIdentityManagerCaptures(t, realCaptures, dummyCaptures, imgrHome)
+	// 06-07-PLAN.md Task 1: the Global SSH registry shares this spec set, so
+	// its frames must be present for BuildRegionDiffs regardless of which
+	// registry this control scopes its own mutation to.
+	gssHome := t.TempDir()
+	deterministicGlobalSSHFixture(t, gssHome)
+	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -991,6 +1041,12 @@ func TestNegativeControl_IdentityManagerUnclassifiedDifferenceRejected(t *testin
 	imgrHome := t.TempDir()
 	deterministicIdentityManagerFixture(t, imgrHome)
 	mergeIdentityManagerCaptures(t, realCaptures, dummyCaptures, imgrHome)
+	// 06-07-PLAN.md Task 1: the Global SSH registry shares this spec set, so
+	// its frames must be present for BuildRegionDiffs regardless of which
+	// registry this control scopes its own mutation to.
+	gssHome := t.TempDir()
+	deterministicGlobalSSHFixture(t, gssHome)
+	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1052,6 +1108,12 @@ func TestNegativeControl_AllIdentityManagerComparableEqualRegionsAreMutationSens
 	imgrHome := t.TempDir()
 	deterministicIdentityManagerFixture(t, imgrHome)
 	mergeIdentityManagerCaptures(t, realCaptures, dummyCaptures, imgrHome)
+	// 06-07-PLAN.md Task 1: the Global SSH registry shares this spec set, so
+	// its frames must be present for BuildRegionDiffs regardless of which
+	// registry this control scopes its own mutation to.
+	gssHome := t.TempDir()
+	deterministicGlobalSSHFixture(t, gssHome)
+	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1091,4 +1153,753 @@ func TestNegativeControl_IdentityManagerCrossRegistryLeakage(t *testing.T) {
 	if !found {
 		t.Fatal("cross-registry leakage: no identity-manager specs found in RequiredScreenSpecs() — the registry merge broke")
 	}
+}
+
+// ---------------------------------------------------------------------------
+// 06-07-PLAN.md Task 1 (Phase 6 registration): the Global SSH checkpoints'
+// deterministic fixture, merge, acceptance tests, and four negative controls —
+// mirroring the Phase 4 and Phase 5 sets by name and by shape.
+// ---------------------------------------------------------------------------
+
+// globalSSHScreenIDs is the known Phase 6 Global SSH checkpoint vocabulary,
+// duplicated here (internal/screenshot's globalSSHSpecs is unexported) so the
+// negative controls and the count assertion can scope themselves to Phase 6
+// without a new export surface — mirrors gitScreenScreenIDs/
+// identityManagerScreenIDs' own precedent.
+var globalSSHScreenIDs = map[string]bool{
+	"gss-options-list": true, "gss-storage-current": true, "gss-storage-other": true,
+	"gss-apply-preview": true, "gss-apply-receipt": true,
+	"gss-storage-migrate-preview": true, "gss-storage-migrate-receipt": true,
+}
+
+// preGlobalSSHScreenIDs is the complete pre-Phase-6 registry vocabulary the
+// four-way merge must leave untouched: 18 create-flow + 5 git-screen + 4
+// identity-manager checkpoint IDs. Hardcoded here so
+// TestGlobalSSHRegistryFrameCountIncrease proves the frame count rose by
+// EXACTLY the number of Global SSH specs registered (06-07-PLAN.md Task 1
+// acceptance criterion) rather than by an unexamined drift.
+var preGlobalSSHScreenIDs = []string{
+	"ssh-form-filled", "reuse-key-vs-generate", "reuse-manual-path", "mouse-focused-field",
+	"test-stage1-direct", "test-stage2-by-alias", "git-form-demo", "confirm-write",
+	"reuse-manual-resolved", "test-stage1-pass", "test-stage1-command-output",
+	"test-stage2-command-output", "test-stage2-resolution-user-host-port",
+	"test-stage2-resolution-identities-key", "test-reachable-not-uploaded",
+	"test-hard-failure-retry", "confirm-summary-key-path", "confirm-managed-block",
+	"git-form-filled", "git-form-empty", "match-strategy-select", "review-readonly", "result-success",
+	"action-menu", "delete-choice", "confirm-destructive", "detail-ssh-first",
+}
+
+// globalSSHPTYFrameDir is the committed PTY evidence directory the receipt
+// states' non-applicability records must point at — resolved from the repo
+// root so the assertion works from any working directory.
+func globalSSHPTYFrameDir() string {
+	return filepath.Join("..", "..", ".planning", "phases", "06-global-ssh-options", "ui-frames")
+}
+
+// deterministicGlobalSSHFixture seeds home with the Include-layout config
+// graph the Phase 6 Global SSH registry (06-07-PLAN.md Task 1,
+// screenshot.CaptureGlobalSSHScreens) needs: an Include line (floored from
+// the fixture's own SSH dir), the Include'd gitid-owned file, and a bare
+// `Host *` block carrying TWO directives that make the D-01 probe classify
+// four distinct row states WITHOUT depending on this machine's real ssh
+// defaults — ForwardAgent yes (recommended no -> StateDiffers,
+// SourceGitidParsed) and AddKeysToAgent yes (recommended yes ->
+// StateAlreadySet). StrictHostKeyChecking/HashKnownHosts/UseKeychain stay
+// unset (StateNeedsAction via the isolated baseline) and IdentitiesOnly has
+// zero gitid-managed aliases to verify (StateNotApplicable/ReasonNothingToVerify).
+// Names deliberately avoid collision with the create-flow "acme" default and
+// the git-screen/identity-manager fixtures (all run against SEPARATE,
+// dedicated HOMEs, the same isolation precedent as mergeGitScreenCaptures).
+func deterministicGlobalSSHFixture(t *testing.T, home string) {
+	t.Helper()
+	sshDir := filepath.Join(home, ".ssh")
+	includeDir := filepath.Join(sshDir, "config.d")
+	if err := os.MkdirAll(includeDir, 0o700); err != nil {
+		t.Fatalf("gate-visual-regression: seeding global-ssh %s: %v", includeDir, err)
+	}
+
+	main := "Include " + filepath.Join(includeDir, "*.config") + "\n\n" +
+		"Host *\n" +
+		"  ForwardAgent yes\n" +
+		"  AddKeysToAgent yes\n"
+	if err := os.WriteFile(filepath.Join(sshDir, "config"), []byte(main), 0o600); err != nil {
+		t.Fatalf("gate-visual-regression: writing global-ssh fixture ssh/config: %v", err)
+	}
+	owned := "Host placeholder.invalid\n  User git\n"
+	if err := os.WriteFile(filepath.Join(includeDir, "gitid.config"), []byte(owned), 0o600); err != nil {
+		t.Fatalf("gate-visual-regression: writing global-ssh fixture owned file: %v", err)
+	}
+}
+
+// mergeGlobalSSHCaptures captures the Phase 6 Global SSH checkpoints
+// (06-07-PLAN.md Task 1, screenshot.CaptureGlobalSSHScreens) for both the
+// real backend (seeded from gssHome via deterministicGlobalSSHFixture) and
+// the dummy backend, merging each into the caller's realCaptures/
+// dummyCaptures maps — mirrors mergeGitScreenCaptures exactly, including its
+// temporary $HOME override, so the fixture's extra identities/config never
+// perturb any previously registered surface's capture (T-06-46).
+func mergeGlobalSSHCaptures(t *testing.T, realCaptures, dummyCaptures map[string]string, gssHome string) {
+	t.Helper()
+	restoreHome := os.Getenv("HOME")
+	t.Setenv("HOME", gssHome)
+	gssRealBackend := newBackendForHome(gssHome)
+	rawGssReal, err := screenshot.CaptureGlobalSSHScreens(gssRealBackend)
+	if err != nil {
+		t.Fatalf("gate-visual-regression: capturing global-ssh real backend: %v", err)
+	}
+	t.Setenv("HOME", restoreHome)
+	gssReal := normalizeDisposableHome(rawGssReal, gssHome)
+	for id, text := range gssReal {
+		realCaptures[id] = text
+	}
+
+	gssDummy, err := screenshot.CaptureGlobalSSHScreens(dummytui.NewFixtureBackend())
+	if err != nil {
+		t.Fatalf("gate-visual-regression: capturing global-ssh dummy backend: %v", err)
+	}
+	for id, text := range gssDummy {
+		dummyCaptures[id] = text
+	}
+}
+
+// TestGlobalSSHRegistryFrameCountIncrease proves the registry frame count
+// rose by EXACTLY the number of Global SSH specs registered (Task 1
+// acceptance criterion: "its output reports a frame count that increased by
+// exactly the number of Global SSH specs registered") and that every
+// pre-Phase-6 screen survived the four-way merge untouched.
+func TestGlobalSSHRegistryFrameCountIncrease(t *testing.T) {
+	specs := screenshot.RequiredScreenSpecs()
+	byID := make(map[string]screenshot.ScreenSpec, len(specs))
+	for _, s := range specs {
+		byID[s.ScreenID] = s
+	}
+	for _, id := range preGlobalSSHScreenIDs {
+		if _, ok := byID[id]; !ok {
+			t.Errorf("registry frame-count: pre-existing screen %q missing from the four-way registry", id)
+		}
+	}
+	if len(byID) != len(preGlobalSSHScreenIDs)+len(globalSSHScreenIDs) {
+		t.Errorf("registry frame-count: got %d frames, want %d (%d pre-existing + %d Global SSH registered)",
+			len(byID), len(preGlobalSSHScreenIDs)+len(globalSSHScreenIDs), len(preGlobalSSHScreenIDs), len(globalSSHScreenIDs))
+	}
+	for id := range globalSSHScreenIDs {
+		if _, ok := byID[id]; !ok {
+			t.Errorf("registry frame-count: Global SSH screen %q missing from the registry", id)
+		}
+	}
+	t.Logf("gate-visual-regression: frame count preamble — %d pre-existing + %d Global SSH = %d (06-07 adds exactly the Phase 6 specs)",
+		len(preGlobalSSHScreenIDs), len(globalSSHScreenIDs), len(byID))
+}
+
+// TestGlobalSSHHTMLNonApplicabilityPerSpec proves EVERY Global SSH spec
+// records the approved-HTML surface as explicitly non-applicable with a
+// non-empty reason naming the standing UI-reference rule, and that the
+// approved-TUI surface is applicable on the capturable states and declared
+// non-applicable on the two receipt states (T-06-45).
+func TestGlobalSSHHTMLNonApplicabilityPerSpec(t *testing.T) {
+	found := 0
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		if !globalSSHScreenIDs[spec.ScreenID] {
+			continue
+		}
+		found++
+		record, ok := screenshot.NonApplicabilityForSurface(spec, "approved-html")
+		if !ok {
+			t.Errorf("Global SSH spec %q has no approved-html non-applicability record", spec.ScreenID)
+			continue
+		}
+		if strings.TrimSpace(record.Reason) == "" {
+			t.Errorf("Global SSH spec %q approved-html non-applicability has an empty reason", spec.ScreenID)
+		}
+		if !strings.Contains(record.Reason, "UI Reference") && !strings.Contains(record.Reason, "Bubble Tea dummy") && !strings.Contains(record.Reason, "HTML/MUI") {
+			t.Errorf("Global SSH spec %q approved-html reason does not name the standing UI-reference rule: %q", spec.ScreenID, record.Reason)
+		}
+	}
+	if found != len(globalSSHScreenIDs) {
+		t.Fatalf("Global SSH HTML audit found %d specs in the registry, want %d", found, len(globalSSHScreenIDs))
+	}
+}
+
+// TestGlobalSSHNonApplicabilityNamesExistingPTYFrame proves every Global SSH
+// spec that declares any OTHER surface non-applicable (live or approved-tui;
+// i.e. the two receipt states) carries a reason naming a SPECIFIC PTY frame
+// file, and that the named file exists under the phase's ui-frames/
+// directory — the T-06-44 anti-hollow-capture contract (a pointer to "the
+// PTY suite" is not evidence).
+func TestGlobalSSHNonApplicabilityNamesExistingPTYFrame(t *testing.T) {
+	frameDir := globalSSHPTYFrameDir()
+	if _, err := os.Stat(frameDir); err != nil {
+		t.Fatalf("Global SSH ui-frames dir %s is not readable: %v", frameDir, err)
+	}
+	specs := screenshot.RequiredScreenSpecs()
+	for _, spec := range specs {
+		if !globalSSHScreenIDs[spec.ScreenID] {
+			continue
+		}
+		for surface, skipped := range map[string]bool{"live": spec.ApplicableLive, "approved-tui": spec.ApplicableApprovedTUI} {
+			if skipped {
+				continue
+			}
+			record, ok := screenshot.NonApplicabilityForSurface(spec, surface)
+			if !ok {
+				t.Errorf("Global SSH spec %q surface %q is non-applicable but has no record", spec.ScreenID, surface)
+				continue
+			}
+			frame := namedPTYFrame(t, record.Reason, spec.ScreenID)
+			if frame == "" {
+				t.Errorf("Global SSH spec %q surface %q non-applicability names no ui-frames/ file: %q", spec.ScreenID, surface, record.Reason)
+				continue
+			}
+			if _, err := os.Stat(filepath.Join(frameDir, frame)); err != nil {
+				t.Errorf("Global SSH spec %q surface %q names PTY frame %s which does not exist under %s", spec.ScreenID, surface, frame, frameDir)
+			}
+		}
+	}
+}
+
+// namedPTYFrame extracts the ui-frames/<name>.txt file a reason string names.
+func namedPTYFrame(t *testing.T, reason, screenID string) string {
+	t.Helper()
+	m := regexp.MustCompile(`ui-frames/([A-Za-z0-9._-]+\.txt)`).FindStringSubmatch(reason)
+	if len(m) == 2 {
+		return m[1]
+	}
+	return ""
+}
+
+// TestGlobalSSHFixtureCoversFourOptionStates proves the deterministic fixture
+// produces at least one row in each of the four option states (Task 1
+// acceptance criterion) — so the comparison never exercises a single state.
+func TestGlobalSSHFixtureCoversFourOptionStates(t *testing.T) {
+	home := t.TempDir()
+	deterministicGlobalSSHFixture(t, home)
+	restore := os.Getenv("HOME")
+	t.Setenv("HOME", home)
+	defer t.Setenv("HOME", restore)
+	states, err := newBackendForHome(home).GlobalSSHOptionStates()
+	if err != nil {
+		t.Fatalf("reading fixture option states: %v", err)
+	}
+	labels := map[tuikit.GlobalSSHOptionState]string{
+		tuikit.GlobalSSHNeedsAction: "needs-action", tuikit.GlobalSSHAlreadySet: "already-set",
+		tuikit.GlobalSSHDiffers: "set-differs", tuikit.GlobalSSHNotApplicable: "not-applicable",
+	}
+	for _, o := range states {
+		if _, ok := labels[o.State]; !ok {
+			t.Errorf("fixture option %q reports unknown state %d", o.Key, o.State)
+		}
+	}
+	for state, want := range labels {
+		n := 0
+		for _, o := range states {
+			if o.State == state {
+				n++
+			}
+		}
+		if n == 0 {
+			t.Errorf("deterministicGlobalSSHFixture produced no %s row (all states: %v)", want, stateLabels(states, labels))
+		}
+	}
+}
+
+// stateLabels renders every fixture row's state name for a failure message.
+func stateLabels(states []tuikit.GlobalSSHOptionView, labels map[tuikit.GlobalSSHOptionState]string) string {
+	var out []string
+	for _, o := range states {
+		out = append(out, o.Key+"="+labels[o.State])
+	}
+	return strings.Join(out, " ")
+}
+
+// TestGlobalSSHAllowlistMatchesRegistry parses
+// .planning/design/global-ssh/visual-divergence-allowlist.txt and proves a
+// byte 1:1 correspondence with the Global SSH specs' code dispositions —
+// every allowlist entry maps to a registry disposition and vice versa — and
+// that the three REQUIRED entries exist by name (T-06-GLOBALBLOCK,
+// T-06-CEREMONYTARGET, T-06-PROVENANCE). THE FILE IS THE GATE'S CHECKED-IN
+// CLASSIFICATION: removing a disposition (or widening a registry predicate)
+// fails this test before the gate can ever pass silently.
+func TestGlobalSSHAllowlistMatchesRegistry(t *testing.T) {
+	entries, err := readDivergenceAllowlist(filepath.Join("..", "..", ".planning", "design", "global-ssh", "visual-divergence-allowlist.txt"))
+	if err != nil {
+		t.Fatalf("reading the Global SSH allowlist: %v", err)
+	}
+	ids := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		if ids[e.Name] {
+			t.Errorf("allowlist duplicate entry name %q", e.Name)
+		}
+		ids[e.Name] = true
+	}
+	for _, want := range []string{"T-06-GLOBALBLOCK", "T-06-CEREMONYTARGET", "T-06-PROVENANCE"} {
+		if !ids[want] {
+			t.Errorf("allowlist is missing the REQUIRED entry %q — a known divergence would fail as an unexplained gate failure", want)
+		}
+	}
+	// T-06-GLOBALBLOCK's entry must pin ALL THREE aspects of that recorded
+	// divergence (06-01): the guard-line placement, the two-vs-four-space
+	// indent, and the Policy-ordered key sequence — removing any one of the
+	// needles from the file is a gate failure.
+	byName := make(map[string]allowlistEntry, len(entries))
+	for _, e := range entries {
+		byName[e.Name] = e
+	}
+	block, ok := byName["T-06-GLOBALBLOCK"]
+	if !ok {
+		t.Fatal("T-06-GLOBALBLOCK entry missing after name audit")
+	}
+	for _, needle := range []string{"IgnoreUnknown UseKeychain", "two-space", "Policy"} {
+		if !strings.Contains(block.Reason, needle) {
+			t.Errorf("T-06-GLOBALBLOCK reason does not pin needle %q — that aspect of the divergence is unclassified", needle)
+		}
+	}
+	// Byte 1:1 with the registry dispositions.
+	registry := make(map[string]screenshot.RegionDisposition)
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		if !globalSSHScreenIDs[spec.ScreenID] {
+			continue
+		}
+		for _, d := range spec.RegionDispositions {
+			registry[spec.ScreenID+":"+string(d.Region)] = d
+		}
+	}
+	entryKey := func(e allowlistEntry) string { return e.ScreenID + ":" + e.Region }
+	entryMap := make(map[string]allowlistEntry, len(entries))
+	for _, e := range entries {
+		entryMap[entryKey(e)] = e
+	}
+	for key, d := range registry {
+		e, ok := entryMap[key]
+		if !ok {
+			t.Errorf("registry disposition %s has no allowlist entry — the classification is not recorded", key)
+			continue
+		}
+		if e.Predicate != d.Predicate {
+			t.Errorf("allowlist entry %s predicate %q != registry predicate %q", key, e.Predicate, d.Predicate)
+		}
+		if e.Decision != d.Decision {
+			t.Errorf("allowlist entry %s decision %q != registry decision %q", key, e.Decision, d.Decision)
+		}
+	}
+	for key := range entryMap {
+		if _, ok := registry[key]; !ok {
+			t.Errorf("allowlist entry %s has no matching registry disposition — stale entry (a removed allowlisted divergence) must be deleted", key)
+		}
+	}
+}
+
+// TestGlobalSSHAllowlistFormat proves the allowlist file's schema: every
+// entry states a classification and no predicate is broader than a specific
+// needle (each begins contains:/absent: with a non-empty quoted needle).
+func TestGlobalSSHAllowlistFormat(t *testing.T) {
+	entries, err := readDivergenceAllowlist(filepath.Join("..", "..", ".planning", "design", "global-ssh", "visual-divergence-allowlist.txt"))
+	if err != nil {
+		t.Fatalf("reading the Global SSH allowlist: %v", err)
+	}
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Classification, "improvement") && !strings.HasPrefix(e.Classification, "defect") {
+			t.Errorf("allowlist entry %q has no improvement/defect classification: %q", e.Name, e.Classification)
+		}
+		if !strings.HasPrefix(e.Predicate, `contains:"`) && !strings.HasPrefix(e.Predicate, `absent:"`) {
+			t.Errorf("allowlist entry %q uses a non-needle predicate %q — a broad predicate would match unrelated text", e.Name, e.Predicate)
+		} else {
+			needle := strings.Trim(e.Predicate[strings.Index(e.Predicate, ":"):], `" `)
+			if strings.TrimSpace(needle) == "" {
+				t.Errorf("allowlist entry %q predicate %q has an empty needle", e.Name, e.Predicate)
+			}
+		}
+	}
+}
+
+// TestGlobalSSHMakefileFilterSelectsControls asserts the Makefile's
+// gate-visual-regression test-name filter selects all four Global SSH
+// negative controls (by name-prefix comparison), so a rename cannot silently
+// orphan a control.
+func TestGlobalSSHMakefileFilterSelectsControls(t *testing.T) {
+	makefile, err := os.ReadFile(filepath.Join("..", "..", "Makefile"))
+	if err != nil {
+		t.Skipf("cannot read Makefile: %v", err)
+	}
+	lines := strings.Split(string(makefile), "\n")
+	targetIdx := -1
+	for i, line := range lines {
+		if strings.HasPrefix(line, "gate-visual-regression:") {
+			targetIdx = i
+			break
+		}
+	}
+	if targetIdx < 0 {
+		t.Fatal("Makefile has no gate-visual-regression target to inspect")
+	}
+	filter := ""
+	for _, line := range lines[targetIdx+1:] {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(line, "\t") || strings.HasPrefix(line, " ") {
+			if strings.HasPrefix(trimmed, "go test -tags screenshot -run") {
+				filter = trimmed
+				break
+			}
+			if trimmed != "" {
+				// Still inside the recipe body but not the -run line yet.
+				continue
+			}
+		}
+		// A non-indented, non-blank line ends the target's recipe.
+		break
+	}
+	if filter == "" {
+		t.Fatal("gate-visual-regression target has no -run filter line to inspect")
+	}
+	start := strings.Index(filter, "'Test(")
+	if start < 0 {
+		t.Fatalf("gate filter %q carries no 'Test( pattern to assert against", filter)
+	}
+	end := strings.LastIndex(filter, ")")
+	if end < 0 || end <= start {
+		t.Fatalf("gate filter %q has an unbalanced pattern", filter)
+	}
+	pattern := filter[start+1 : end+1]
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		t.Fatalf("gate filter %q is not a valid Go regexp: %v", pattern, err)
+	}
+	controls := []string{
+		"TestNegativeControl_MissingGlobalSSHState",
+		"TestNegativeControl_GlobalSSHUnclassifiedDifferenceRejected",
+		"TestNegativeControl_AllGlobalSSHComparableEqualRegionsAreMutationSensitive",
+		"TestNegativeControl_GlobalSSHCrossRegistryLeakage",
+	}
+	for _, c := range controls {
+		if !re.MatchString(c) {
+			t.Errorf("Makefile gate filter %q does not select control %q — a rename has silently orphaned it", pattern, c)
+		}
+	}
+	for _, c := range controls {
+		if !strings.HasPrefix(c, "TestNegativeControl_") {
+			t.Errorf("control %q does not carry the named-prefix contract %q", c, "TestNegativeControl_")
+		}
+	}
+}
+
+// TestNegativeControl_MissingGlobalSSHState proves the gate fails closed when
+// a required Phase 6 Global SSH live capture is missing — CR-05's fail-closed
+// contract is not vacuous for the Global SSH registry specifically.
+func TestNegativeControl_MissingGlobalSSHState(t *testing.T) {
+	home := t.TempDir()
+	deterministicGlobalSSHFixture(t, home)
+	restore := os.Getenv("HOME")
+	t.Setenv("HOME", home)
+	realB := newBackendForHome(home)
+	captures, err := screenshot.CaptureGlobalSSHScreens(realB)
+	if err != nil {
+		t.Fatalf("capturing global-ssh real backend: %v", err)
+	}
+	t.Setenv("HOME", restore)
+	broken := make(map[string]string, len(captures))
+	for id, text := range captures {
+		if id == "gss-options-list" {
+			continue // deliberately drop a required Global SSH state
+		}
+		broken[id] = text
+	}
+	if _, ok := broken["gss-options-list"]; ok {
+		t.Fatal("negative-control setup bug: \"gss-options-list\" was not actually dropped")
+	}
+	specs := screenshot.RequiredScreenSpecs()
+	if _, err := screenshot.BuildRegionDiffs("negative-control", broken, broken, specs); err == nil {
+		t.Fatal("negative-control: BuildRegionDiffs accepted a capture set missing the required \"gss-options-list\" frame — CR-05 fail-closed is NOT enforced for Phase 6 states")
+	}
+}
+
+// TestNegativeControl_GlobalSSHUnclassifiedDifferenceRejected proves that
+// mutating away a Phase 6 Global SSH RegionDisposition's classification is
+// caught — the same protection the generic control proves, scoped explicitly
+// to a Global SSH record.
+func TestNegativeControl_GlobalSSHUnclassifiedDifferenceRejected(t *testing.T) {
+	home := t.TempDir()
+	deterministicReusableKeyFixture(t, home)
+	t.Setenv("HOME", home)
+	realB := newBackendForHome(home)
+	realCaptures, err := screenshot.CaptureCreateFlowScreens(realB)
+	if err != nil {
+		t.Fatalf("capturing real backend: %v", err)
+	}
+	dummyB := dummytui.NewFixtureBackend()
+	dummyCaptures, err := screenshot.CaptureCreateFlowScreens(dummyB)
+	if err != nil {
+		t.Fatalf("capturing dummy backend: %v", err)
+	}
+	gitHome := t.TempDir()
+	deterministicGitIdentityFixture(t, gitHome)
+	mergeGitScreenCaptures(t, realCaptures, dummyCaptures, gitHome)
+	imgrHome := t.TempDir()
+	deterministicIdentityManagerFixture(t, imgrHome)
+	mergeIdentityManagerCaptures(t, realCaptures, dummyCaptures, imgrHome)
+	gssHome := t.TempDir()
+	deterministicGlobalSSHFixture(t, gssHome)
+	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
+	t.Setenv("HOME", home)
+
+	specs := screenshot.RequiredScreenSpecs()
+	records, err := screenshot.BuildRegionDiffs("negative-control", realCaptures, dummyCaptures, specs)
+	if err != nil {
+		t.Fatalf("building classified region evidence: %v", err)
+	}
+	mutated := false
+	for i := range records {
+		if !globalSSHScreenIDs[records[i].ScreenID] {
+			continue // scope this control to Phase 6 Global SSH records only
+		}
+		for j := range records[i].Regions {
+			region := &records[i].Regions[j]
+			if !region.Comparable || !region.Equal {
+				region.Classification = ""
+				mutated = true
+				break
+			}
+		}
+		if mutated {
+			break
+		}
+	}
+	if !mutated {
+		t.Fatal("negative-control: no classified Global SSH difference was available to mutate")
+	}
+	data, err := json.Marshal(screenshot.RegionDiffs{Version: "test", SourceCommit: "negative-control", GeneratedAt: "test", Screens: records})
+	if err != nil {
+		t.Fatalf("marshaling mutated region evidence: %v", err)
+	}
+	if err := screenshot.ValidateRegionDiffs(data, "negative-control", specs); err == nil {
+		t.Fatal("negative-control: validator accepted a Phase 6 Global SSH difference without ux-improvement/defect classification")
+	}
+}
+
+// TestNegativeControl_AllGlobalSSHComparableEqualRegionsAreMutationSensitive
+// proves every comparable, currently-equal region on every Global SSH
+// checkpoint is sensitive to a real TEXT mutation, not just a metadata field.
+func TestNegativeControl_AllGlobalSSHComparableEqualRegionsAreMutationSensitive(t *testing.T) {
+	home := t.TempDir()
+	deterministicReusableKeyFixture(t, home)
+	t.Setenv("HOME", home)
+	realB := newBackendForHome(home)
+	realCaptures, err := screenshot.CaptureCreateFlowScreens(realB)
+	if err != nil {
+		t.Fatalf("capturing real backend: %v", err)
+	}
+	dummyB := dummytui.NewFixtureBackend()
+	dummyCaptures, err := screenshot.CaptureCreateFlowScreens(dummyB)
+	if err != nil {
+		t.Fatalf("capturing dummy backend: %v", err)
+	}
+	gitHome := t.TempDir()
+	deterministicGitIdentityFixture(t, gitHome)
+	mergeGitScreenCaptures(t, realCaptures, dummyCaptures, gitHome)
+	imgrHome := t.TempDir()
+	deterministicIdentityManagerFixture(t, imgrHome)
+	mergeIdentityManagerCaptures(t, realCaptures, dummyCaptures, imgrHome)
+	gssHome := t.TempDir()
+	deterministicGlobalSSHFixture(t, gssHome)
+	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
+	t.Setenv("HOME", home)
+
+	specs := screenshot.RequiredScreenSpecs()
+	records, err := screenshot.BuildRegionDiffs("negative-control", realCaptures, dummyCaptures, specs)
+	if err != nil {
+		t.Fatalf("building classified region evidence: %v", err)
+	}
+	assertAllComparableEqualRegionsAreMutationSensitive(t, specs, records, func(screenID string) bool {
+		return globalSSHScreenIDs[screenID]
+	})
+}
+
+// TestNegativeControl_GlobalSSHCrossRegistryLeakage proves every Phase 6
+// Global SSH spec's decision references use ONLY the scoped
+// GSSH-D-NN/STORE-NN/DLV-NN vocabulary — never a bare D-NN/T-NN ref
+// (03-CONTEXT.md's namespace), never CTX-D-/UI-D- (04-CONTEXT.md's), never
+// MGR-D- (05-CONTEXT.md's) — mirroring the Phase 4 and Phase 5 leakage
+// controls exactly. DLV- remains valid because it is a shared REQUIREMENTS
+// literal (DLV-04), the same exception Phase 5's own control grants.
+func TestNegativeControl_GlobalSSHCrossRegistryLeakage(t *testing.T) {
+	found := false
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		if !globalSSHScreenIDs[spec.ScreenID] {
+			continue
+		}
+		found = true
+		for _, d := range spec.RegionDispositions {
+			if !isGlobalSSHScopedRef(d.Decision) {
+				t.Errorf("cross-registry leakage: Global SSH spec %q region %q disposition uses decision ref %q — must be scoped GSSH-D-NN/STORE-NN/DLV-NN (never bare D-/T-, CTX-D-/UI-D-, or MGR-D-)", spec.ScreenID, d.Region, d.Decision)
+			}
+		}
+		for _, na := range spec.NonApplicability {
+			if !isGlobalSSHScopedRef(na.Decision) {
+				t.Errorf("cross-registry leakage: Global SSH spec %q surface %q non-applicability uses decision ref %q — must be scoped GSSH-D-NN/STORE-NN/DLV-NN", spec.ScreenID, na.Surface, na.Decision)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("cross-registry leakage: no Global SSH specs found in RequiredScreenSpecs() — the registry merge broke")
+	}
+}
+
+// isGlobalSSHScopedRef reports whether ref uses the Phase-6 scoped vocabulary.
+func isGlobalSSHScopedRef(ref string) bool {
+	return strings.HasPrefix(ref, "GSSH-D-") || strings.HasPrefix(ref, "STORE-") || strings.HasPrefix(ref, "DLV-")
+}
+
+// TestGlobalSSHFixtureDeterminismAcrossRuns proves the Global SSH fixture's
+// captures are byte-identical across two independent runs in the same test
+// process (CR-01's across-runs determinism contract, scoped to Phase 6).
+func TestGlobalSSHFixtureDeterminismAcrossRuns(t *testing.T) {
+	home1 := t.TempDir()
+	home2 := t.TempDir()
+	deterministicGlobalSSHFixture(t, home1)
+	deterministicGlobalSSHFixture(t, home2)
+
+	restore := os.Getenv("HOME")
+	t.Setenv("HOME", home1)
+	r1, err := screenshot.CaptureGlobalSSHScreens(newBackendForHome(home1))
+	if err != nil {
+		t.Fatalf("run 1: %v", err)
+	}
+	t.Setenv("HOME", home2)
+	r2, err := screenshot.CaptureGlobalSSHScreens(newBackendForHome(home2))
+	if err != nil {
+		t.Fatalf("run 2: %v", err)
+	}
+	t.Setenv("HOME", restore)
+
+	n1 := normalizeDisposableHome(r1, home1)
+	n2 := normalizeDisposableHome(r2, home2)
+	for id := range globalSSHScreenIDs {
+		if a, b := n1[id], n2[id]; a != b {
+			t.Errorf("Global SSH screen %q is NOT deterministic across two independent fixtured runs:\n--- run 1 ---\n%s\n--- run 2 ---\n%s", id, screenshot.StripANSIExported(a), screenshot.StripANSIExported(b))
+		}
+	}
+}
+
+// TestGlobalSSHPriorSurfacesUnchanged proves adding the Global SSH fixture
+// does not perturb any previously registered surface's capture: the
+// create-flow/git-screen/identity-manager frames captured WITH the Global SSH
+// merge are byte-identical to the same frames captured WITHOUT it (T-06-46).
+func TestGlobalSSHPriorSurfacesUnchanged(t *testing.T) {
+	home := t.TempDir()
+	deterministicReusableKeyFixture(t, home)
+	t.Setenv("HOME", home)
+	realB := newBackendForHome(home)
+	dummyB := dummytui.NewFixtureBackend()
+
+	baselineReal, err := screenshot.CaptureCreateFlowScreens(realB)
+	if err != nil {
+		t.Fatalf("baseline real: %v", err)
+	}
+	baselineDummy, err := screenshot.CaptureCreateFlowScreens(dummyB)
+	if err != nil {
+		t.Fatalf("baseline dummy: %v", err)
+	}
+	gitHome := t.TempDir()
+	deterministicGitIdentityFixture(t, gitHome)
+	mergeGitScreenCaptures(t, baselineReal, baselineDummy, gitHome)
+	imgrHome := t.TempDir()
+	deterministicIdentityManagerFixture(t, imgrHome)
+	mergeIdentityManagerCaptures(t, baselineReal, baselineDummy, imgrHome)
+
+	// Re-capture the prior surfaces with the Global SSH merge in play.
+	real2, err := screenshot.CaptureCreateFlowScreens(realB)
+	if err != nil {
+		t.Fatalf("post-gss real: %v", err)
+	}
+	dummy2, err := screenshot.CaptureCreateFlowScreens(dummyB)
+	if err != nil {
+		t.Fatalf("post-gss dummy: %v", err)
+	}
+	gitHome2 := t.TempDir()
+	deterministicGitIdentityFixture(t, gitHome2)
+	mergeGitScreenCaptures(t, real2, dummy2, gitHome2)
+	imgrHome2 := t.TempDir()
+	deterministicIdentityManagerFixture(t, imgrHome2)
+	mergeIdentityManagerCaptures(t, real2, dummy2, imgrHome2)
+	gssHome := t.TempDir()
+	deterministicGlobalSSHFixture(t, gssHome)
+	mergeGlobalSSHCaptures(t, real2, dummy2, gssHome)
+	t.Setenv("HOME", home)
+
+	for _, id := range preGlobalSSHScreenIDs {
+		if baselineReal[id] != real2[id] {
+			t.Errorf("prior surface %q real capture changed after the Global SSH fixture was added", id)
+		}
+		if baselineDummy[id] != dummy2[id] {
+			t.Errorf("prior surface %q dummy capture changed after the Global SSH fixture was added", id)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Global SSH allowlist file primitives
+// ---------------------------------------------------------------------------
+
+// allowlistEntry is one parsed row of the checked-in divergence allowlist.
+type allowlistEntry struct {
+	Name           string
+	ScreenID       string
+	Region         string
+	Predicate      string
+	Decision       string
+	Reason         string
+	Classification string
+}
+
+// allowlistFrameNamePattern matches the ui-frames/<file>.txt pointer syntax.
+var allowlistFrameNamePattern = regexp.MustCompile(`ui-frames/([A-Za-z0-9._-]+\.txt)`)
+
+// allowlistLinePattern parses one strict-schema allowlist row:
+//
+//	<T-06-NAME> <screen-id>:<region>:<predicate>:<decision>:<classification>:<reason>
+//
+// where predicate is the quoted-needle form contains:"..." / absent:"..."
+// (the quoted needle may itself contain colons), the <T-06-NAME> marker is
+// optional (defaulting to <screen-id>:<region>), and the reason is the rest
+// of the line (it may contain colons). The quoted needle is what makes a
+// colon-split parser wrong — a bare strings.SplitN shifts every field after
+// `contains:"now:"`.
+var allowlistLinePattern = regexp.MustCompile(
+	`^(?:<([^>]+)>)?\s*(gss-[A-Za-z0-9-]+):([a-z0-9-]+):(contains:"[^"]*"|absent:"[^"]*"):(GSSH-D-[0-9]+|STORE-[0-9]+|DLV-[0-9]+):(improvement|defect):(.*)$`)
+
+// readDivergenceAllowlist parses the strict 7-field allowlist schema shared
+// by every phase's visual-divergence-allowlist.txt (see allowlistLinePattern).
+// Blank lines and #-comments are ignored.
+func readDivergenceAllowlist(path string) ([]allowlistEntry, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // fixed repo-relative path (G304)
+	if err != nil {
+		return nil, err
+	}
+	var out []allowlistEntry
+	for idx, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		m := allowlistLinePattern.FindStringSubmatch(line)
+		if m == nil {
+			return nil, fmt.Errorf("allowlist line %d does not match the strict schema: %q", idx+1, line)
+		}
+		name := ""
+		if m[1] != "" {
+			name = strings.TrimSpace(m[1])
+		}
+		entry := allowlistEntry{
+			ScreenID:       m[2],
+			Region:         m[3],
+			Predicate:      m[4],
+			Decision:       m[5],
+			Classification: m[6],
+			Reason:         strings.TrimSpace(m[7]),
+		}
+		if name == "" {
+			name = entry.ScreenID + ":" + entry.Region
+		}
+		entry.Name = name
+		out = append(out, entry)
+	}
+	return out, nil
 }

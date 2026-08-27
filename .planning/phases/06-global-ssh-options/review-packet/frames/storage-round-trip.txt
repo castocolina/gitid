@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor              2 ids · ! 2 ✗ 0
+ Global SSH › Storage & preview
+  Options   Storage & preview
+✓ SSH storage layout migrated to in-place sentinel blocks — reversible via this same screen.
+
+Wrote → ~/.ssh/config
+Wrote → ~/.ssh/config.d/gitid.config
+Backed up → ~/.ssh/config.d/gitid.config.bak.1787815980012436000
+Backed up → ~/.ssh/config.bak.1787815980033178000
+
+ Done (Enter)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ SSH storage layout migrated to sentinel.
+ Tab/←→ Cancel / Confirm · Enter confirm
+ Esc back · Ctrl+P palette

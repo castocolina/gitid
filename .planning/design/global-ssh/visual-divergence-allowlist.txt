@@ -1,0 +1,90 @@
+# Global SSH visual-divergence allowlist (Phase 6, 06-07-PLAN.md Task 1)
+#
+# Consumed by cmd/gitid/gate_visual_regression_test.go's in-process capture
+# gate (06-07 Task 1), which registers the Phase 6 Global SSH checkpoints
+# alongside the existing create-flow / git-screen / identity-manager
+# registries in the SHARED internal/screenshot RequiredScreenSpecs inventory.
+# The REAL cmd/gitid backend renders from a seeded fixture home; the
+# cmd/gitid-dummy FixtureBackend renders its frozen demo data. Every
+# divergence between the two surfaces below is classified and documented —
+# every other comparable region must be byte-identical.
+#
+# STRICT SCHEMA — each entry must be EXACTLY:
+#   <T-06-NAME> <screen-id>:<region>:<predicate>:<decision>:<classification>:<reason>
+#
+# where:
+#   screen-id       one of the seven Phase 6 Global SSH checkpoint IDs
+#                   registered in internal/screenshot's globalSSHSpecs():
+#                   gss-options-list | gss-storage-current |
+#                   gss-storage-other | gss-apply-preview |
+#                   gss-apply-receipt | gss-storage-migrate-preview |
+#                   gss-storage-migrate-receipt
+#   region          one of the shared registry region names (the Global SSH
+#                   registrations add gss-options-browse, gss-storage-browse,
+#                   gss-apply-ceremony, gss-apply-heading, gss-storage-ceremony)
+#   predicate       "contains:<quoted-text>" | "absent:<quoted-text>" — the
+#                   CR-04/CR-10 specific-needle grammar. A broad predicate
+#                   that would match unrelated text is a defect in the gate.
+#   decision        a scoped Phase 6 identifier: GSSH-D-NN (06-CONTEXT.md's
+#                   D-NN decisions, disambiguated from 03-CONTEXT.md's bare
+#                   D-NN namespace), STORE-NN (the storage-layout decisions),
+#                   or DLV- (the shared DLV-04 real-vs-frozen-dummy
+#                   comparison-class literal). Bare D-/T-, CTX-D-/UI-D-, and
+#                   MGR-D- refs are NOT valid here (cross-registry leakage).
+#   classification  improvement | defect — every entry states which it is.
+#   reason          non-empty human-readable explanation.
+#
+# VALIDATION RULES (enforced by cmd/gitid/gate_visual_regression_test.go):
+#   - TestGlobalSSHAllowlistMatchesRegistry proves a byte 1:1 correspondence
+#     between these entries and the code dispositions in globalSSHSpecs()
+#     (both directions): removing an entry, or widening a registry predicate,
+#     fails the gate.
+#   - TestGlobalSSHAllowlistFormat rejects any entry lacking a needle-form
+#     predicate or a classification.
+#   - TestGlobalSSHHTMLNonApplicabilityPerSpec proves the approved-HTML
+#     surface is non-applicable on every Global SSH spec with the standing
+#     UI-reference rule reason; the receipts additionally record their live /
+#     approved-tui non-applicability naming the specific ui-frames/ PTY file
+#     that carries the receipt evidence instead of a hollow in-process frame.
+#
+# Blank lines and lines starting with # are ignored.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# DLV-4 — fixture-vs-live comparison class (real backend reads a seeded
+# fixture home; the dummy's FixtureBackend always renders its frozen
+# 8-identity demo data). The real side is the more accurate render, so every
+# entry below classifies as an improvement.
+# ---------------------------------------------------------------------------
+
+<T-06-OPTIONS-HEADER> gss-options-list:header-status:contains:"ids":DLV-4:improvement:header status shows the identity count, which differs (real's zero-identity seeded Global SSH fixture home vs the dummy's 8-identity IdentityManagerRows fixture set) — both sides carry the "ids" marker
+
+<T-06-OPTIONS-LIST-ROWS> gss-options-list:sidebar:contains:"now:":DLV-4:improvement:on this surface RegionSidebar's left-of-│ extraction captures the OPTION LIST rows, not an identity sidebar — the real row set describes the live probe (D-01) while the dummy rows carry the frozen GlobalSSHOptions now-values; the list content is the fixture-vs-live divergence and "now:" survives on both sides
+
+<T-06-PROVENANCE> gss-options-list:gss-options-browse:absent:"not set (OpenSSH default: ask)":DLV-4:improvement:the real Options body renders the live D-01/D-03 three-tier provenance labels, the D-13 OpenSSH-version line, and the D-11/D-12 three/four-state row states against the seeded fixture home; the dummy renders its frozen GlobalSSHOptions Current values (whose "not set (OpenSSH default: ask)" StrictHostKeyChecking formulation is the visible-pane discriminator — the real side's bare baseline renders as "now: ask → …" and never carries the "OpenSSH default: " prefix) and its "the demo does not probe this machine" provenance — the whole master-detail body is the classified fixture-vs-live divergence (T-06-PROVENANCE, described in 06-01..06-03's summaries and 06-UI-SPEC's approved base states)
+
+<T-06-STORAGE-OTHER-HEADER> gss-storage-other:header-status:contains:"ids":DLV-4:improvement:header status identity count differs (zero-identity real fixture home vs the dummy's 8 fixtures) — both carry "ids"
+
+<T-06-STORAGE-OTHER-LEFT> gss-storage-other:sidebar:contains:"STORE-01":DLV-4:improvement:the Storage left pane's radio and current-layout markers render the backend's live layout (real fixture home is Include; the dummy fixture is Sentinel) — identical STORE-01 chrome, radio/current state differs by construction
+
+<T-06-STORAGE-OTHER-PREVIEW> gss-storage-other:gss-storage-browse:absent:"Host personal.github.com":DLV-4:improvement:the real resulting-config preview is PlanMigration's compose of the seeded machine bytes (Include line, zero gitid-managed identities); the dummy renders its frozen personal/work IncludePreviewOwned/SentinelPreview fixtures, whose "Host personal.github.com" identity the real fixture-rendering never carries
+
+# ---------------------------------------------------------------------------
+# GSSH-D-06 / GSSH-D-07 — the apply ceremony's D-06 managed-block diff and
+# D-07 resolved-target heading (T-06-GLOBALBLOCK and T-06-CEREMONYTARGET,
+# the two plan-06-01 recorded divergences this gate must classify).
+# ---------------------------------------------------------------------------
+
+<T-06-GLOBALBLOCK> gss-apply-preview:gss-apply-ceremony:absent:"IgnoreUnknown UseKeychain":GSSH-D-06:improvement:the real apply-ceremony diff is the EnsureGlobals write target (06-01): 'IgnoreUnknown UseKeychain' as the guard line BEFORE 'Host *' (matching recipes/ssh-config.recipe), a two-space hostIndent body, and keys in globalssh.Policy declaration order — the dummy's empty GlobalSSHApplyPlan falls back to a flat '+ Key Recommended' list that never renders the block. The guard-line placement, the two-space (real) versus four-space (frozen managedHostStar fixture) indent, and the Policy-ordered key sequence are the three recorded aspects of this divergence; removing any one of those needles from this file fails the gate
+
+<T-06-CEREMONYTARGET> gss-apply-preview:gss-apply-heading:contains:"Write Host * managed block to ":GSSH-D-07:improvement:the apply ceremony's heading names the RESOLVED storage target (D-07): the real side resolves ~/.ssh/config.d/gitid.config (the Include'd gitid-owned file, default layout), the dummy falls back to ~/.ssh/config — the shared frozen "Write Host * managed block to " prefix anchors both sides
+
+<T-06-APPLY-HEADER> gss-apply-preview:header-status:contains:"ids":DLV-4:improvement:header status identity count differs (zero-identity real fixture home vs the dummy's 8 fixtures) — both carry "ids"
+
+# ---------------------------------------------------------------------------
+# STORE-03 — the storage-migration ceremony's plan diff.
+# ---------------------------------------------------------------------------
+
+<T-06-STORAGE-MIGRATE-HEADER> gss-storage-migrate-preview:header-status:contains:"ids":DLV-4:improvement:header status identity count differs (zero-identity real fixture home vs the dummy's 8 fixtures) — both carry "ids"
+
+<T-06-STORAGE-MIGRATE-DIFF> gss-storage-migrate-preview:gss-storage-ceremony:contains:"Migrate SSH storage layout":STORE-03:improvement:the real storage-migration ceremony diff is PlanMigration's actual STORE-03 plan for the seeded machine; the dummy renders its frozen fixture diff — the shared "Migrate SSH storage layout" heading anchors the authorized divergence

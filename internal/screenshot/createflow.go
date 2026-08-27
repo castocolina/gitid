@@ -541,6 +541,9 @@ func ScreenSpecRegistry() []ScreenSpec {
 	// 05-09-PLAN.md Task 3: consume the identity-manager registry alongside
 	// the existing two, without disturbing either.
 	specs = append(specs, identityManagerSpecs()...)
+	// 06-07-PLAN.md Task 1: consume the Phase 6 Global SSH registry alongside
+	// the existing three, without disturbing any of them (four-way merged).
+	specs = append(specs, globalSSHSpecs()...)
 	return specs
 }
 
@@ -673,7 +676,17 @@ func validDecisionRef(ref string) bool {
 	//     collision "CTX-D-" was introduced to prevent for Phase 4.
 	return strings.HasPrefix(ref, "D-") || strings.HasPrefix(ref, "T-") ||
 		strings.HasPrefix(ref, "CTX-D-") || strings.HasPrefix(ref, "UI-D-") ||
-		strings.HasPrefix(ref, "DLV-") || strings.HasPrefix(ref, "MGR-D-")
+		strings.HasPrefix(ref, "DLV-") || strings.HasPrefix(ref, "MGR-D-") ||
+		// 06-07-PLAN.md Task 1 (Phase 6 registration): the scoped vocabulary
+		// for the Global SSH registries in this SHARED registry. 06-CONTEXT.md
+		// numbers its own decisions D-01..D-16, colliding with 03-CONTEXT.md's
+		// bare D-NN namespace exactly the way 04-CONTEXT.md's did — so the
+		// Phase 6 refs use the disambiguating GSSH-D- prefix (the git-screen
+		// CTX-D-/UI-D- precedent) for 06-CONTEXT decisions and STORE- for the
+		// STORE-01/STORE-03 storage-layout decisions. DLV- remains a valid
+		// shared requirements literal for the DLV-04 real-vs-frozen-dummy
+		// comparison class (the same literal Phase 5's registry already uses).
+		strings.HasPrefix(ref, "GSSH-D-") || strings.HasPrefix(ref, "STORE-")
 }
 
 // ValidateScreenSpecs checks the registry for structural correctness:
@@ -1180,7 +1193,9 @@ func CaptureCreateFlowScreens(backend tuikit.Backend) (map[string]string, error)
 		// 05-09-PLAN.md Task 3: identity-manager specs (CaptureIdentityManagerScreens)
 		// are ALSO captured separately, against their own seeded HOME, for the
 		// SAME reason git-screen specs are excluded here (see comment above).
-		if !spec.ApplicableLive || isGitScreenID(spec.ScreenID) || isIdentityManagerScreenID(spec.ScreenID) {
+		// 06-07-PLAN.md Task 1: Global SSH specs (CaptureGlobalSSHScreens) are
+		// likewise captured separately against their own seeded HOME.
+		if !spec.ApplicableLive || isGitScreenID(spec.ScreenID) || isIdentityManagerScreenID(spec.ScreenID) || isGlobalSSHScreenID(spec.ScreenID) {
 			continue
 		}
 		text, ok := out[spec.ScreenID]
@@ -1224,6 +1239,8 @@ func gitScreenIdentitiesApp(backend tuikit.Backend) tea.Model {
 }
 
 func keyDown(model tea.Model) tea.Model { return step(model, tea.KeyPressMsg{Code: tea.KeyDown}) }
+
+func keyUp(model tea.Model) tea.Model { return step(model, tea.KeyPressMsg{Code: tea.KeyUp}) }
 
 // CaptureGitScreenScreens implements the doc comment above.
 func CaptureGitScreenScreens(backend tuikit.Backend) (map[string]string, error) {
@@ -1639,6 +1656,335 @@ func identityManagerSpecs() []ScreenSpec {
 					"the status line's identity count (\"N identities — selection renders…\") differs (real's 2-identity seeded set vs dummy's 8 fixtures) — the keybar chrome itself (Esc/Ctrl+P hints) is byte-identical",
 					`contains:"identities"`),
 			},
+		},
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Global SSH checkpoints (06-07-PLAN.md Task 1, Phase 6 registration).
+//
+// CaptureGlobalSSHScreens drives backend's Global SSH tab (view 2) in-process
+// through the SAME semantic checkpoints
+// e2e/global_ssh_pty_e2e_test.go's TestGlobalSSH_RealPTY* suite (Task 3 of
+// 06-04) and e2e/global_ssh_storage_pty_e2e_test.go's TestGlobalSSHStorage_*
+// suite (06-05 Task 3) drive over real PTYs — six named checkpoints derived
+// from 06-UI-SPEC.md's Approved Base States table:
+//
+//   - gss-options-list           Options sub-tab in browse mode (master-detail).
+//   - gss-storage-current        Storage & preview sub-tab in browse mode with
+//                                the radio on the CURRENT layout (real fixture
+//                                home is Include-layout, so the real side holds
+//                                the Include radio; the dummy fixture home is
+//                                Sentinel-layout, so the dummy side holds the
+//                                Sentinel radio — the layout-selection state
+//                                itself is part of the fixture-vs-live DLV-4
+//                                class, see gssStorageFixtureDisposition).
+//   - gss-storage-other          Storage & preview sub-tab in browse mode with
+//                                the radio on the OTHER (non-current) layout.
+//   - gss-apply-preview          The apply ceremony's state A (pre-write diff).
+//   - gss-apply-receipt          NON-APPLICABLE in this in-process gate — the
+//                                receipt requires the real journal-backed write
+//                                (runGlobalSSHApply, plan 06-04) to have
+//                                happened, which this no-subprocess capture path
+//                                never performs. Evidence lives in the PTY
+//                                frame .planning/phases/06-global-ssh-options/
+//                                ui-frames/global-ssh-apply-confirm.txt
+//                                (TestGlobalSSH_RealPTYApplyConfirm).
+//   - gss-storage-migrate-preview The storage-migration ceremony's state A
+//                                (STORE-03 pre-write diff).
+//   - gss-storage-migrate-receipt NON-APPLICABLE in this in-process gate — the
+//                                receipt requires the STORE-03 two-file write
+//                                (runSSHStorageMigrate, plan 06-05) to have
+//                                happened. Evidence lives in the PTY frame
+//                                .planning/phases/06-global-ssh-options/
+//                                ui-frames/storage-migrate-confirm-post.txt.
+//
+// backend must satisfy tuikit.GlobalSSHPlanner and tuikit.SSHStoragePlanner
+// (both real cmd/gitid and dummytui.NewFixtureBackend do). The real backend's
+// option states run the D-01 ssh -G/ssh -V probes against the seeded fixture
+// home; the dummy returns its frozen fixture rows.
+// ---------------------------------------------------------------------------
+
+// globalSSHApp boots a fresh tuikit.App around backend at the fixed capture
+// geometry and activates the Global SSH tab — the SAME '2' ActivationKey a
+// real user presses (cmd/gitid/app.go's setTab(TabGlobalSSH)).
+func globalSSHApp(backend tuikit.Backend) tea.Model {
+	var model tea.Model = tuikit.NewApp(backend)
+	model = step(model, tea.WindowSizeMsg{Width: CaptureWidth, Height: CaptureHeight})
+	return keyRune(model, '2')
+}
+
+// CaptureGlobalSSHScreens implements the doc comment above.
+func CaptureGlobalSSHScreens(backend tuikit.Backend) (map[string]string, error) {
+	out := make(map[string]string, 6)
+	capture := func(m tea.Model) string { return normalizeTimestamps(anyView(m)) }
+
+	// gss-options-list: the Options sub-tab in browse mode (default entry).
+	browse := globalSSHApp(backend)
+	out["gss-options-list"] = capture(browse)
+
+	// gss-storage-current / gss-storage-other: the Storage & preview sub-tab
+	// in browse mode under each layout. '→' switches to Storage at the CD
+	// current layout; '↓' flips the radio to the other layout and refetches
+	// its STORE-03 plan.
+	current := keyRight(browse)
+	out["gss-storage-current"] = capture(current)
+	other := keyDown(current)
+	out["gss-storage-other"] = capture(other)
+
+	// gss-apply-preview: move UP from the default-selected IdentitiesOnly row
+	// (verify-only, not selectable) to StrictHostKeyChecking — the SAME
+	// navigation e2e/global_ssh_pty_e2e_test.go's openGlobalSSHPreview uses
+	// (3 up-arrows) — toggle it, and open the apply ceremony at its pre-write
+	// state A. The real ceremony renders the EnsureGlobals block diff
+	// (T-06-GLOBALBLOCK); the dummy's empty GlobalSSHApplyPlan falls back to
+	// its flat "+ Key Recommended" list.
+	apply := globalSSHApp(backend)
+	apply = keyUp(apply)
+	apply = keyUp(apply)
+	apply = keyUp(apply)
+	apply = keyRune(apply, ' ')
+	apply = keyRune(apply, 'a')
+	out["gss-apply-preview"] = capture(apply)
+
+	// gss-storage-migrate-preview: Storage sub-tab, flip the layout radio
+	// (choice != current is what arms the migrate action), then Enter opens
+	// the STORE-03 migration ceremony at its pre-write state A.
+	migrate := globalSSHApp(backend)
+	migrate = keyRight(migrate)
+	migrate = keyDown(migrate)
+	migrate = keyEnter(migrate)
+	out["gss-storage-migrate-preview"] = capture(migrate)
+
+	for _, spec := range globalSSHSpecs() {
+		// The two receipt states are registered non-applicable on BOTH
+		// surfaces (they need a real write neither side performs in-process);
+		// nothing is captured for them, by design — never a hollow frame.
+		if !spec.ApplicableLive && !spec.ApplicableApprovedTUI {
+			continue
+		}
+		text, ok := out[spec.ScreenID]
+		if !ok || strings.TrimSpace(text) == "" {
+			return nil, fmt.Errorf("screenshot: CaptureGlobalSSHScreens: required frame %q is missing or empty", spec.ScreenID)
+		}
+	}
+	// A fixture/home bug that leaves the two storage browse frames identical
+	// (or the apply ceremony stuck in browse mode) would pass the non-emptiness
+	// loop above; assert the states actually differ.
+	if out["gss-storage-current"] == out["gss-storage-other"] {
+		return nil, fmt.Errorf("screenshot: CaptureGlobalSSHScreens: the two storage-layout browse frames are identical — the layout radio never moved")
+	}
+	if out["gss-apply-preview"] == out["gss-options-list"] {
+		return nil, fmt.Errorf("screenshot: CaptureGlobalSSHScreens: gss-apply-preview captured the same frame as gss-options-list — the apply ceremony never opened")
+	}
+	return out, nil
+}
+
+// isGlobalSSHScreenID reports whether id is one of the Phase 6 Global SSH
+// checkpoint IDs registered here — used to exclude them from
+// CaptureCreateFlowScreens' completeness check (they are captured separately;
+// see CaptureGlobalSSHScreens' doc comment).
+func isGlobalSSHScreenID(id string) bool {
+	for _, spec := range globalSSHSpecs() {
+		if spec.ScreenID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// globalSSHSpecs returns the Phase 6 Global SSH checkpoint specs — the SAME
+// vocabulary 06-UI-SPEC.md's Approved Base States table names and 06-04/06-05's
+// real-PTY suites drive over real PTYs. ApplicableApprovedHTML is false
+// throughout: per AGENTS.md's BINDING UI Reference rule (recorded in the
+// authority of 06-07-PLAN.md), Phase 2's approved Bubble Tea dummy is the SOLE
+// Phase 6 UI/UX parity target (Phases 3-10), and the historical HTML/MUI
+// artifacts are Phase-2 design history — made EXPLICIT on every spec rather
+// than left to the registry's default (T-06-45).
+//
+// RegionDispositions mirror
+// .planning/design/global-ssh/visual-divergence-allowlist.txt's classified
+// entries verbatim (kept in sync by
+// TestGlobalSSHAllowlistMatchesRegistry in cmd/gitid/gate_visual_regression_test.go).
+func globalSSHSpecs() []ScreenSpec {
+	// DLV-4 (never a numbered D-NN): the fixture-vs-live comparison-class
+	// divergence — the real backend reads a seeded fixture home, the dummy's
+	// FixtureBackend always renders its frozen 8-identity/static fixture set.
+	// Governed directly by the DLV-04 requirement; the SAME literal the Phase
+	// 5 identity-manager registry uses for the identical class.
+	gssFixtureClass := "DLV-4"
+	fixtureHeaderStatusDisposition := uxRegionDifferenceScoped(RegionHeaderStatus, "identity-count", gssFixtureClass,
+		"header status shows the identity count, which differs (real's zero-identity seeded Global SSH fixture home vs the dummy's 8-identity IdentityManagerRows fixture set)",
+		`contains:"ids"`)
+	// gssOptionsFixtureDisposition authorizes the whole Options master-detail
+	// body as the D-01/D-03-provenance + D-11/D-12-row-state fixture-vs-live
+	// divergence: the real body carries the live three-tier provenance and
+	// the machine's four-state row renderings while the dummy body carries
+	// its frozen fixture values and its "the demo does not probe this
+	// machine" provenance label (T-06-PROVENANCE). The predicate is
+	// `absent:` on the dummy's frozen row formulation "not set (OpenSSH
+	// default: ask)" (StrictHostKeyChecking's fixture Current) — present in
+	// the visible pane on the dummy side, never rendered by the real side,
+	// whose bare baseline already says "None" as "now: ask → …" without the
+	// "OpenSSH default: " prefix.
+	gssOptionsFixtureDisposition := uxRegionDifferenceScoped(RegionGSSOptionsBrowse, "provenance-state-and-rows", gssFixtureClass,
+		"the real Options body renders the live D-01/D-03 provenance labels and the D-11/D-12 four-state rows against the seeded fixture home; the dummy renders its frozen GlobalSSHOptions Current values (its \"not set (OpenSSH default: ask)\" StrictHostKeyChecking formulation is the visible-pane needle) and its 'the demo does not probe this machine' provenance — the whole master-detail body is the classified fixture-vs-live divergence (T-06-PROVENANCE)",
+		`absent:"not set (OpenSSH default: ask)"`)
+	// gssListFixtureDisposition covers RegionSidebar's extraction on this
+	// surface: its 'content before │' rule captures the OPTION-LIST rows
+	// (this surface has no identity sidebar), which differ exactly as the
+	// gss-options-browse rows above do.
+	gssListFixtureDisposition := uxRegionDifferenceScoped(RegionSidebar, "fixture-vs-probe-rows", gssFixtureClass,
+		"on this surface RegionSidebar's left-of-│ extraction captures the OPTION LIST rows, not an identity sidebar — the real row set describes the live probe while the dummy rows carry its frozen fixture now-values; the list text is what the gate compares, and 'now:' survives on both sides",
+		`contains:"now:"`)
+	// gssStorageFixtureDisposition covers RegionSidebar on the Storage
+	// sub-tab: the left pane's radio/current markers differ because the real
+	// fixture home is Include-layout and the dummy fixture home is always
+	// Sentinel-layout (STORE-01 label is the shared anchor).
+	gssStorageFixtureDisposition := uxRegionDifferenceScoped(RegionSidebar, "storage-layout-radio-state", gssFixtureClass,
+		"the Storage left pane's STORE-01 label, radios and current-layout marker render the backend's live layout choice (real fixture home = Include; dummy fixture = Sentinel) — identical STORE-01 chrome, radio/marker state differs by construction",
+		`contains:"STORE-01"`)
+	// gssStoragePreviewDisposition authorizes the Storage right-pane resulting-
+	// config previews: the real side plans the migration from the seeded
+	// machine bytes while the dummy renders its frozen personal/work + managed
+	// globals-block fixture previews (T-06-GLOBALBLOCK's frozen-side fixture
+	// is here). "Host personal.github.com" is the dummy-only fixture identity
+	// needle.
+	gssStoragePreviewDisposition := uxRegionDifferenceScoped(RegionGSSStorageBrowse, "fixture-preview-vs-planned", gssFixtureClass,
+		"the real resulting-config preview is PlanMigration's compose of the seeded machine bytes (Include line, zero managed identities); the dummy renders its frozen personal/work IncludePreviewOwned/SentinelPreview fixtures, including the managedHostStar globals block's four-space fixture rendering (06-01's recorded T-06-GLOBALBLOCK fixture side)",
+		`absent:"Host personal.github.com"`)
+	// gssApplyCeremonyDisposition is the T-06-GLOBALBLOCK required entry's
+	// enforcement: the real apply-ceremony diff renders the EnsureGlobals
+	// managed block (IgnoreUnknown UseKeychain guard FIRST, two-space body
+	// indents, Policy-ordered keys — 06-01's recorded real side); the dummy's
+	// empty GlobalSSHApplyPlan falls back to a flat "+ Key Recommended" list
+	// that never renders the block at all, so the guard needle is present on
+	// the real side ONLY.
+	gssApplyCeremonyDisposition := uxRegionDifferenceScoped(RegionGSSApplyCeremony, "managed-globals-block-diff", "GSSH-D-06",
+		"the real apply-ceremony diff is the EnsureGlobals write target: 'IgnoreUnknown UseKeychain' as the guard line BEFORE 'Host *', two-space hostIndent body, Policy-ordered keys (T-06-GLOBALBLOCK, 06-01); the dummy ceremony (empty GlobalSSHApplyPlan) lists '+ Key Recommended' flat lines and never renders the block — removing either the guard-line placement, the two-vs-four-space indent, or the Policy-vs-selection key order from the real renderer would break this needle",
+		`absent:"IgnoreUnknown UseKeychain"`)
+	// gssApplyHeadingDisposition is the T-06-CEREMONYTARGET required entry's
+	// enforcement: the D-07 resolved-target ceremony heading shares the frozen
+	// "Write Host * managed block to " prefix on both sides while its target
+	// tail is the resolved file (real: Include'd gitid.config; dummy: the
+	// ~/.ssh/config fallback).
+	gssApplyHeadingDisposition := uxRegionDifferenceScoped(RegionGSSApplyHeading, "resolved-target-file", "GSSH-D-07",
+		"the apply ceremony's heading names the RESOLVED storage target (D-07, T-06-CEREMONYTARGET) — the real side resolves ~/.ssh/config.d/gitid.config (Include'd layout), the dummy falls back to ~/.ssh/config; the shared 'Write Host * managed block to ' prefix anchors both sides",
+		`contains:"Write Host * managed block to "`)
+	// gssStorageCeremonyDisposition authorizes the STORE-03 migration
+	// ceremony's diff body: the real plan diff vs the dummy's frozen fixture
+	// diff, sharing the "Migrate SSH storage layout" heading on both sides.
+	gssStorageCeremonyDisposition := uxRegionDifferenceScoped(RegionGSSStorageCeremony, "store-03-plan-diff", "STORE-03",
+		"the real storage-migration ceremony diff is PlanMigration's actual STORE-03 plan for the seeded machine; the dummy renders its frozen fixture diff — the shared heading anchors the authorized divergence",
+		`contains:"Migrate SSH storage layout"`)
+
+	// noHTML is the explicit approved-HTML non-applicability record EVERY
+	// Global SSH spec carries, stating the standing UI-reference rule by name
+	// rather than leaving HTML parity to the registry's default (T-06-45).
+	noHTML := []SurfaceNonApplicability{uxNonComparable("approved-html", "DLV-4",
+		"AGENTS.md's BINDING UI Reference rule: Phase 2's approved Bubble Tea dummy is the SOLE Phase 6 UI/UX parity target for Phases 3-10; the historical HTML/MUI artifacts are Phase-2 design history and are recorded explicitly NON-APPLICABLE for every Phase 6 comparison")}
+
+	// receiptNA builds the non-applicability records for the two receipt
+	// states: they need a real write this no-subprocess in-process gate never
+	// performs, so each names the specific PTY frame file that carries that
+	// evidence instead (a hollow in-process frame would be worse than an
+	// accurate non-applicability record — Phase 5's rotate-result/repair-result
+	// precedent).
+	receiptNA := func(decision, reason string) []SurfaceNonApplicability {
+		return append(noHTML,
+			uxNonComparable("live", decision, reason),
+			uxNonComparable("approved-tui", decision, reason),
+		)
+	}
+
+	applyReceiptReason := "the apply receipt requires the real journal-backed write (runGlobalSSHApply, plan 06-04) to have completed; this in-process, no-subprocess capture path never performs it. Evidence lives in the PTY frame .planning/phases/06-global-ssh-options/ui-frames/global-ssh-apply-confirm.txt (TestGlobalSSH_RealPTYApplyConfirm)"
+	storageReceiptReason := "the storage-migration receipt requires the STORE-03 two-file write (runSSHStorageMigrate, plan 06-05) to have completed; this in-process, no-subprocess capture path never performs it. Evidence lives in the PTY frame .planning/phases/06-global-ssh-options/ui-frames/storage-migrate-confirm-post.txt"
+
+	return []ScreenSpec{
+		{
+			ScreenID:              "gss-options-list",
+			Interaction:           "Boot the Global SSH tab (view 2) on the Options sub-tab in browse mode.",
+			StateMarker:           "StrictHostKeyChecking",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionGSSOptionsBrowse},
+			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDisposition, gssListFixtureDisposition, gssOptionsFixtureDisposition,
+			},
+		},
+		{
+			ScreenID:              "gss-storage-current",
+			Interaction:           "From the Options sub-tab, press Right to open the Storage & preview sub-tab in browse mode with the radio on the CURRENT layout.",
+			StateMarker:           "STORE-01 — where gitid-managed SSH config lives",
+			ApplicableLive:        false,
+			ApplicableApprovedTUI: true,
+			NonApplicability: append(noHTML,
+				// The live backend CANNOT truthfully render this frame: on the
+				// seeded fixture home the current layout is Include, and
+				// planning a migration TO the current layout is a no-op the
+				// real backend honestly reports ("layout is already include —
+				// nothing to plan") instead of fabricating a resulting-config
+				// preview. The real-machine browse evidence lives in the PTY
+				// frame (06-05) instead.
+				uxNonComparable("live", "DLV-4",
+					"the real backend renders the honest \"nothing to plan\" hint for the CURRENT layout (SSHStorageMigrationPlan refuses a no-op migration to the layout that already is current on the seeded Include-layout fixture home) and never a resulting-config preview browse; the Include-layout browse evidence lives in the PTY frame .planning/phases/06-global-ssh-options/ui-frames/storage-browse.txt"),
+			),
+			RequiredRegions: []RegionName{RegionGSSStorageBrowse},
+		},
+		{
+			ScreenID:              "gss-storage-other",
+			Interaction:           "From the Storage & preview sub-tab, press Down to flip the layout radio to the OTHER (non-current) layout in browse mode — arming the migrate action. On the seeded fixture home the non-current layout is Sentinel; on the dummy it is Include.",
+			StateMarker:           "Resulting config",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionGSSStorageBrowse},
+			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDisposition, gssStorageFixtureDisposition, gssStoragePreviewDisposition,
+			},
+		},
+		{
+			ScreenID:              "gss-apply-preview",
+			Interaction:           "From the Options sub-tab, move Up three rows from the default-selected IdentitiesOnly row to StrictHostKeyChecking (the same navigation the real PTY suite's openGlobalSSHPreview uses), Space to toggle it, then 'a' to open the apply ceremony at its pre-write preview.",
+			StateMarker:           "Write Host * managed block to",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionGSSApplyCeremony, RegionGSSApplyHeading},
+			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDisposition, gssApplyCeremonyDisposition, gssApplyHeadingDisposition,
+			},
+		},
+		{
+			ScreenID:              "gss-apply-receipt",
+			Interaction:           "Apply ceremony state B (result receipt): the real journal-backed write has completed — NOT capturable in-process; see the live/approved-tui non-applicability reasons for the PTY frame that carries this evidence.",
+			StateMarker:           "Wrote →",
+			ApplicableLive:        false,
+			ApplicableApprovedTUI: false,
+			NonApplicability:      receiptNA("GSSH-D-04", applyReceiptReason),
+			RequiredRegions:       []RegionName{RegionGSSApplyCeremony},
+		},
+		{
+			ScreenID:              "gss-storage-migrate-preview",
+			Interaction:           "From the Storage & preview sub-tab, flip the layout radio (Down) then press Enter to open the STORE-03 migration ceremony at its pre-write preview.",
+			StateMarker:           "Migrate SSH storage layout",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionGSSStorageCeremony},
+			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDisposition, gssStorageCeremonyDisposition,
+			},
+		},
+		{
+			ScreenID:              "gss-storage-migrate-receipt",
+			Interaction:           "Storage-migration ceremony state B (result receipt): the STORE-03 two-file write has completed — NOT capturable in-process; see the live/approved-tui non-applicability reasons for the PTY frame that carries this evidence.",
+			StateMarker:           "SSH storage layout migrated to",
+			ApplicableLive:        false,
+			ApplicableApprovedTUI: false,
+			NonApplicability:      receiptNA("STORE-03", storageReceiptReason),
+			RequiredRegions:       []RegionName{RegionGSSStorageCeremony},
 		},
 	}
 }

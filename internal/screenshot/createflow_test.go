@@ -49,6 +49,15 @@ func captureCombined(t *testing.T, backend tuikit.Backend) map[string]string {
 	for id, text := range imgrOut {
 		out[id] = text
 	}
+	// 06-07-PLAN.md Task 1: Global SSH captures merged the SAME way (the
+	// shared registry is now four-way merged).
+	gssOut, err := screenshot.CaptureGlobalSSHScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureGlobalSSHScreens: %v", err)
+	}
+	for id, text := range gssOut {
+		out[id] = text
+	}
 	return out
 }
 
@@ -662,6 +671,16 @@ func TestCaptureCreateFlowScreensFailsOnMissingRequiredFrame(t *testing.T) {
 		t.Fatalf("CaptureIdentityManagerScreens with valid backend must not fail: %v", ierr)
 	}
 	for id, text := range imgrCaptures {
+		captures[id] = text
+	}
+	// 06-07-PLAN.md Task 1: Global SSH captures merged the SAME way (the
+	// registry is now four-way merged; the receipts are non-applicable on
+	// both surfaces so they are not produced here either).
+	gssCaptures, gerr2 := screenshot.CaptureGlobalSSHScreens(backend)
+	if gerr2 != nil {
+		t.Fatalf("CaptureGlobalSSHScreens with valid backend must not fail: %v", gerr2)
+	}
+	for id, text := range gssCaptures {
 		captures[id] = text
 	}
 	// Verify all required frames are present.

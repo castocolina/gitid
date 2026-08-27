@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Global SSH › Options
+  Options   Storage & preview
+Write Host * managed block to ~/.ssh/config.d/gitid.config
+Touches ~/.ssh/config.d/gitid.config · ~/.ssh/config
+Backup → ~/.ssh/config.d/gitid.config.bak.<timestamp>
+Backup → ~/.ssh/config.bak.<timestamp>
+  (written first — restore it to undo)
+Exact change: PgUp/PgDn scroll · v focus · ←/→ columns
+╭╌ Exact change — everything else preserved verbatim ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮
+┊ + IgnoreUnknown UseKeychain                                                                ┊
+┊ + Host *                                                                                   ┊
+┊ +   StrictHostKeyChecking accept-new                                                       ┊
+┊ +   AddKeysToAgent yes                                                                     ┊
+┊ +   UseKeychain yes                                                                        ┊
+┊ simulation inconclusive — gitid could not fully read your config graph; apply will         ┊
+┊ continue bu                                                                                ┊
+┊ → cols 1–94 of 123  ←→scroll                                                               ┊
+┊                                                                                            ┊
+┊                                                                                            ┊
+┊                                                                                            ┊
+╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+Nothing has changed yet
+
+ Cancel (Esc)   Apply selected (Enter)
+
+
+ 4 of 6 options need action — Recommended, not required -- you can leave any option unchanged. Thi…
+ Tab/←→ Cancel / Confirm · Enter confirm
+ Esc back · Ctrl+P palette

@@ -485,8 +485,32 @@ screenshot-html:
 ## TestNegativeControl_IdentityManagerUnclassifiedDifferenceRejected,
 ## TestNegativeControl_AllIdentityManagerComparableEqualRegionsAreMutationSensitive,
 ## TestNegativeControl_IdentityManagerCrossRegistryLeakage).
+##
+## Phase 6 (06-07-PLAN.md Task 1): RequiredScreenSpecs is now a FOUR-way
+## merged registry — the three above PLUS seven Phase 6 Global SSH checkpoints
+## (gss-options-list, gss-storage-current, gss-storage-other, gss-apply-preview,
+## gss-apply-receipt, gss-storage-migrate-preview, gss-storage-migrate-receipt;
+## captured via deterministicGlobalSSHFixture/mergeGlobalSSHCaptures against
+## their OWN Include-layout seeded HOME, same isolation reason). The two
+## receipt states are DELIBERATELY non-applicable on BOTH surfaces in this
+## in-process gate: each receipt requires a real journal-backed write that
+## neither surface performs here — the PTY frames
+## ui-frames/global-ssh-apply-confirm.txt (06-04) and
+## ui-frames/storage-migrate-confirm-post.txt (06-05) carry that evidence
+## instead, named by the specs' non-applicability records and asserted to
+## exist. The Phase 6 surface-classified divergences live in
+## .planning/design/global-ssh/visual-divergence-allowlist.txt (kept in byte
+## 1:1 sync with the code dispositions by
+## TestGlobalSSHAllowlistMatchesRegistry), and the Phase 6 negative controls
+## (TestNegativeControl_MissingGlobalSSHState,
+## TestNegativeControl_GlobalSSHUnclassifiedDifferenceRejected,
+## TestNegativeControl_AllGlobalSSHComparableEqualRegionsAreMutationSensitive,
+## TestNegativeControl_GlobalSSHCrossRegistryLeakage) plus the TestGlobalSSH*
+## acceptance tests (HTML non-applicability, PTY-frame evidence existence,
+## four-state fixture coverage, allowlist schema, Makefile filter selection,
+## cross-run determinism, prior-surface stability) run under the filter below.
 gate-visual-regression:
-	go test -tags screenshot -run 'Test(GateVisualRegression|ApprovalCommitRecorded|AllScreensCapturedAndNonEmpty|NegativeControl_)' -v ./cmd/gitid/...
+	go test -tags screenshot -run 'Test(GateVisualRegression|ApprovalCommitRecorded|AllScreensCapturedAndNonEmpty|GlobalSSH|NegativeControl_)' -v ./cmd/gitid/...
 
 ## generate-visual-review-packet: ONE-SHOT explicit publication of a new
 ## content-addressed evidence packet for Task 3 review publication.

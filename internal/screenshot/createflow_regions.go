@@ -157,6 +157,49 @@ const (
 	// ceremony pane (FIELDS.md backup-notice's path fields) — matched by
 	// line prefix wherever it appears in the frame.
 	RegionBackupPathList RegionName = "identity-backup-paths"
+
+	// RegionGSSOptionsBrowse is the Global SSH Options sub-tab's whole
+	// master-detail body (06-07-PLAN.md Task 1, Phase 6 registration): the
+	// option-row master list (left of the │ divider) AND its live detail
+	// pane (right of the │), from the first pane row through the last one.
+	// The sub-tab strip line above it is identical chrome on both surfaces.
+	// Anchor: the detail pane's always-rendered advisory note
+	// ("~ Recommended, not required") inside a │-pane line — present only
+	// on the Options sub-tab, never on Storage or the ceremonies, so the
+	// region is empty on every other screen (CR-10: no cross-screen
+	// contamination of the comparison inventory).
+	RegionGSSOptionsBrowse RegionName = "gss-options-browse"
+
+	// RegionGSSStorageBrowse is the Global SSH Storage & preview sub-tab's
+	// whole master-detail body: the STORE-01 left pane and the resulting-
+	// config preview boxes (right of the │), from the first pane row that
+	// introduces a preview ("Resulting config") through the last │ line.
+	// Anchor: the preview label "Resulting config" inside a │-pane line —
+	// rendered by BOTH the sentinel and Include layouts, never by the
+	// Options sub-tab or the ceremonies.
+	RegionGSSStorageBrowse RegionName = "gss-storage-browse"
+
+	// RegionGSSApplyCeremony is the Global SSH apply ceremony's preview
+	// body (06-07 registration): from the D-07 heading
+	// ("Write Host * managed block to …") through the confirm/cancel
+	// button row. The ceremony renders full-width (no │ divider), so
+	// rightPane returns raw lines; the heading anchor is unique to this
+	// ceremony on either surface.
+	RegionGSSApplyCeremony RegionName = "gss-apply-ceremony"
+
+	// RegionGSSApplyHeading is the apply ceremony's resolved-target heading
+	// line ONLY (06-07 registration, T-06-CEREMONYTARGET): the D-07 heading
+	// whose shared prefix is "Write Host * managed block to " and whose tail
+	// is the RESOLVED storage target — a distinct region from the ceremony
+	// body so the target-file divergence gets its own narrow disposition.
+	RegionGSSApplyHeading RegionName = "gss-apply-heading"
+
+	// RegionGSSStorageCeremony is the Global SSH storage-migration
+	// ceremony's preview body (06-07 registration): from the STORE-03
+	// heading ("Migrate SSH storage layout → …") through the confirm/cancel
+	// button row. Full-width like the apply ceremony; anchor unique to this
+	// ceremony on either surface.
+	RegionGSSStorageCeremony RegionName = "gss-storage-ceremony"
 )
 
 // ExtractRegion returns the sub-string of screen that corresponds to region.
@@ -213,6 +256,16 @@ func ExtractRegion(screen string, region RegionName) string {
 		return extractConfirmWarningBlock(lines)
 	case RegionBackupPathList:
 		return extractBackupPathList(lines)
+	case RegionGSSOptionsBrowse:
+		return extractGSSOptionsBrowse(lines)
+	case RegionGSSStorageBrowse:
+		return extractGSSStorageBrowse(lines)
+	case RegionGSSApplyCeremony:
+		return extractGSSApplyCeremony(lines)
+	case RegionGSSApplyHeading:
+		return extractGSSApplyHeading(lines)
+	case RegionGSSStorageCeremony:
+		return extractGSSStorageCeremony(lines)
 	}
 	return ""
 }
@@ -817,6 +870,111 @@ func extractBackupPathList(lines []string) string {
 	return strings.Join(out, "\n")
 }
 
+// gssPaneBodyAfter returns every line from the first line containing marker
+// inside a │-pane line through the last │-containing line of the frame — the
+// structural body boundary of both Global SSH master-detail sub-tabs
+// (sub-tab strip and chrome sit above the first pane row; the status line
+// and the two footer keybar rows carry no │). Returns "" when the anchor is
+// absent so an unrelated surface never contributes content to this region
+// (CR-10 cross-screen contamination guard).
+func gssPaneBodyAfter(lines []string, marker string) string {
+	start := -1
+	for i, line := range lines {
+		if !strings.Contains(stripANSI(line), "│") {
+			continue
+		}
+		rp := stripANSI(rightPane(line))
+		if strings.Contains(rp, marker) {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return ""
+	}
+	var out []string
+	for _, line := range lines[start:] {
+		if !strings.Contains(stripANSI(line), "│") {
+			break
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+// gssCeremonyBodyAfter returns every line from the first line containing
+// heading through the line containing endMarker — the full-width ceremony
+// body (no │ divider), bounded below by its own confirm/cancel button row so
+// the status line and footer keybar never leak in. Returns "" when the
+// heading is absent.
+func gssCeremonyBodyAfter(lines []string, heading, endMarker string) string {
+	start := -1
+	for i, line := range lines {
+		if strings.Contains(stripANSI(line), heading) {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return ""
+	}
+	var out []string
+	for i, line := range lines[start:] {
+		if i > 0 && strings.Contains(stripANSI(line), endMarker) {
+			break
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+// extractGSSOptionsBrowse returns the Options sub-tab master-detail body.
+func extractGSSOptionsBrowse(lines []string) string {
+	// Anchor on the SHORT leading phrase of the detail pane's advisory note:
+	// the full GlobalSSHAdvisoryNote (128 chars) wraps across multiple pane
+	// rows, so a contains-check on the whole note can never match a single
+	// row. "Recommended, not required" survives on the advisory's first wrap
+	// row and appears nowhere else on this surface (the status line that also
+	// embeds it carries no │ and is excluded by gssPaneBodyAfter).
+	return gssPaneBodyAfter(lines, "Recommended, not required")
+}
+
+// extractGSSStorageBrowse returns the Storage & preview sub-tab master-detail body.
+func extractGSSStorageBrowse(lines []string) string {
+	return gssPaneBodyAfter(lines, "Resulting config")
+}
+
+// extractGSSApplyCeremony returns the apply ceremony's preview body.
+func extractGSSApplyCeremony(lines []string) string {
+	return gssCeremonyBodyAfter(lines, "Write Host * managed block to", "Apply selected (Enter)")
+}
+
+// extractGSSApplyHeading returns only the apply ceremony's D-07 resolved-
+// target heading line(s) — the line(s) carrying "Write Host * managed block
+// to", truncated to the heading paragraph so the body diff never leaks in.
+func extractGSSApplyHeading(lines []string) string {
+	var out []string
+	for i, line := range lines {
+		plain := stripANSI(line)
+		if !strings.Contains(plain, "Write Host * managed block to") {
+			continue
+		}
+		out = append(out, line)
+		// Absorb an immediately-following wrapped continuation row if the
+		// resolved target wraps past the ceremony's width.
+		if i+1 < len(lines) && strings.Contains(stripANSI(lines[i+1]), "Touches") {
+			break
+		}
+		return strings.Join(out, "\n")
+	}
+	return strings.Join(out, "\n")
+}
+
+// extractGSSStorageCeremony returns the storage-migration ceremony's preview body.
+func extractGSSStorageCeremony(lines []string) string {
+	return gssCeremonyBodyAfter(lines, "Migrate SSH storage layout", "Migrate (Enter)")
+}
+
 // AllRegionNames returns all defined RegionNames for allowlist schema validation.
 func AllRegionNames() []RegionName {
 	return []RegionName{
@@ -843,6 +1001,11 @@ func AllRegionNames() []RegionName {
 		RegionDeleteChoiceOptions,
 		RegionConfirmWarningBlock,
 		RegionBackupPathList,
+		RegionGSSOptionsBrowse,
+		RegionGSSStorageBrowse,
+		RegionGSSApplyCeremony,
+		RegionGSSApplyHeading,
+		RegionGSSStorageCeremony,
 	}
 }
 
