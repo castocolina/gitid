@@ -162,6 +162,20 @@ func BuildGraph(entryPointPath, managedTargetPath string, candidate []byte) (Sim
 	if err := discover(absEntry, 0); err != nil {
 		return SimulationGraph{}, err
 	}
+	// WR-11: always seed Files with the entry point, even when it is missing
+	// on disk (empty content) — discover's missing-file branch above returns
+	// nil WITHOUT appending to files or marking it expanded. On a fresh
+	// machine under the Include layout, the entry point (~/.ssh/config) can
+	// be absent while the managed target (config.d/gitid.config) exists;
+	// without this seed, graph.Files never contains the entry point, Simulate
+	// never writes mirroredEntryPoint into the mirror, and `ssh -G -F
+	// <missing>` fails — the D-04 pre-write shadow check becomes permanently
+	// unavailable in exactly the first-run case this phase targets. Prepend
+	// (not append) to preserve "entry point first" order.
+	if !expanded[absEntry] {
+		files = append([]GraphFile{{Path: absEntry, Content: nil}}, files...)
+		expanded[absEntry] = true
+	}
 	if !expanded[absTarget] {
 		content, readErr := os.ReadFile(absTarget) //nolint:gosec // absTarget is a trusted gitid-managed path supplied in-process
 		if readErr != nil && !os.IsNotExist(readErr) {

@@ -193,6 +193,42 @@ func TestBuildGraphIncludedLayout(t *testing.T) {
 	}
 }
 
+// TestBuildGraphMissingEntryPointStillSeedsFiles is the WR-11 regression:
+// the fresh-machine Include layout, where ~/.ssh/config (the entry point)
+// does not exist yet but the managed target (config.d/gitid.config) does.
+// graph.Files must still contain an entry for the entry point (empty
+// content) — before the fix, discover's missing-file branch returned
+// without appending anything, so graph.Files never carried the entry point
+// at all.
+func TestBuildGraphMissingEntryPointStillSeedsFiles(t *testing.T) {
+	dir := t.TempDir()
+	configD := filepath.Join(dir, "config.d")
+	if err := os.MkdirAll(configD, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(configD, "gitid.config")
+	mainConfig := filepath.Join(dir, "config") // deliberately never written
+
+	writeFileInDir(t, target, managedBlockFor(t, "HashKnownHosts", "yes"))
+
+	graph, err := BuildGraph(mainConfig, target, managedBlockFor(t, "HashKnownHosts", "yes"))
+	if err != nil {
+		t.Fatalf("BuildGraph error: %v", err)
+	}
+	found := false
+	for _, gf := range graph.Files {
+		if gf.Path == mainConfig {
+			found = true
+			if gf.Content != nil {
+				t.Errorf("missing entry point seeded with non-nil content: %q", gf.Content)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("graph.Files does not contain the missing entry point %s; WR-11 regressed. Files: %+v", mainConfig, graph.Files)
+	}
+}
+
 func TestBuildGraphCycleReturnsError(t *testing.T) {
 	dir := t.TempDir()
 	a := filepath.Join(dir, "a.config")
@@ -681,6 +717,62 @@ func TestSimulateDiamondIsNotInconclusive(t *testing.T) {
 
 // TestSimulateInFileLayoutMirrorHasOneFile asserts that under the in-file
 // layout the mirror contains exactly one file and the probe targets it.
+// TestSimulateMissingEntryPointIsNotInconclusive is the WR-11 end-to-end
+// regression: on a fresh machine under the Include layout, the entry point
+// (~/.ssh/config) may not exist yet while the managed target
+// (config.d/gitid.config) does. Before the fix, BuildGraph never seeded the
+// missing entry point into graph.Files, so Simulate never wrote
+// mirroredEntryPoint into the mirror and `ssh -G -F <missing>` failed —
+// making the D-04 pre-write shadow check permanently unavailable in exactly
+// this first-run case.
+func TestSimulateMissingEntryPointIsNotInconclusive(t *testing.T) {
+	dir := t.TempDir()
+	configD := filepath.Join(dir, "config.d")
+	if err := os.MkdirAll(configD, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(configD, "gitid.config")
+	mainConfig := filepath.Join(dir, "config") // deliberately never written
+	candidate := managedBlockFor(t, "HashKnownHosts", "yes")
+	writeFileInDir(t, target, candidate)
+
+	var capturedFPath string
+	var mirroredEntryExistedAtProbeTime bool
+	deps := Deps{
+		RunSSHG: func(_ context.Context, args ...string) (string, error) {
+			for i, a := range args {
+				if a == "-F" && i+1 < len(args) {
+					capturedFPath = args[i+1]
+					// Check existence HERE, during the probe call — the mirror
+					// is torn down by Simulate's own defer once it returns.
+					if _, statErr := os.Stat(capturedFPath); statErr == nil {
+						mirroredEntryExistedAtProbeTime = true
+					}
+				}
+			}
+			return recommendedOutput(), nil
+		},
+		ReadConfig:       func() (string, []byte, error) { return "", nil, nil },
+		ReadSystemConfig: func() (string, []byte, error) { return "", nil, fmt.Errorf("no sys") },
+		GOOS:             "linux",
+	}
+
+	graph, err := BuildGraph(mainConfig, target, candidate)
+	if err != nil {
+		t.Fatalf("BuildGraph: %v", err)
+	}
+	result := Simulate(deps, graph, []string{"HashKnownHosts"})
+	if result.Inconclusive {
+		t.Errorf("Simulate is Inconclusive (%s) when only the entry point is missing; WR-11 regressed", result.Reason)
+	}
+	if capturedFPath == "" {
+		t.Fatal("no -F path captured — the probe never ran")
+	}
+	if !mirroredEntryExistedAtProbeTime {
+		t.Errorf("mirrored entry point %s did not exist at probe time; WR-11 regressed", capturedFPath)
+	}
+}
+
 func TestSimulateInFileLayoutMirrorHasOneFile(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "config")
