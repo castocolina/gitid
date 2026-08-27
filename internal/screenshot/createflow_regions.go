@@ -960,12 +960,17 @@ func extractGSSApplyHeading(lines []string) string {
 			continue
 		}
 		out = append(out, line)
-		// Absorb an immediately-following wrapped continuation row if the
-		// resolved target wraps past the ceremony's width.
-		if i+1 < len(lines) && strings.Contains(stripANSI(lines[i+1]), "Touches") {
-			break
+		// WR-12: absorb every immediately-following wrapped continuation row
+		// up to (but not including) the "Touches" row — a resolved target
+		// long enough to wrap (the common case for a sandbox HOME like
+		// /tmp/h4042748673/.ssh/config.d/gitid.config) spans MORE than one
+		// row past the heading. The previous version appended nothing here
+		// and always returned after the FIRST line, silently dropping the
+		// wrapped tail from the comparison.
+		for j := i + 1; j < len(lines) && !strings.Contains(stripANSI(lines[j]), "Touches"); j++ {
+			out = append(out, lines[j])
 		}
-		return strings.Join(out, "\n")
+		break
 	}
 	return strings.Join(out, "\n")
 }
