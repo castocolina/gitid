@@ -342,16 +342,19 @@ func TestDummyDemo_MouseAndGitApply(t *testing.T) {
 	mustSee(t, s, "Health only diagnoses", "mouse: Doctor body after clicking the header tab")
 
 	// ---- (b) Global Git apply walk ----
+	// D-15/R-1 (07-CONTEXT.md, carried forward from 06-D-15): the selection
+	// starts EMPTY on every entry to this screen — space SELECTS the
+	// focused row, it does not "unchoose" a demo-preselected one.
 	s.sendKey([]byte("3"), keystrokeDelay)
 	mustSee(t, s, "Global Git › Options", "git apply: breadcrumb")
-	s.sendKey([]byte(" "), keystrokeDelay) // space unchooses the selected row
-	mustSee(t, s, "a apply 9 selected", "git apply: space toggled the selected row's checkbox")
+	s.sendKey([]byte(" "), keystrokeDelay) // space selects the focused row
+	mustSee(t, s, "a apply 1 selected", "git apply: space toggled the focused row's checkbox")
 	s.sendKey([]byte("a"), keystrokeDelay)
-	mustSee(t, s, "Write baseline managed block to ~/.gitconfig", "git apply: ceremony heading")
+	mustSee(t, s, "Write global-git managed block to", "git apply: ceremony heading")
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // confirm
 	mustSee(t, s, "Wrote →", "git apply: receipt")
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // done
-	mustSee(t, s, "Global git baseline applied", "git apply: applied status note")
+	mustSee(t, s, "Baseline applied.", "git apply: applied status note (GlobalGitResultTail)")
 }
 
 // TestDummyDemo_ShiftChordRawBytes drives the REAL binary over a PTY and
