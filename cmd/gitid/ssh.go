@@ -7,7 +7,6 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -790,41 +789,4 @@ func wireToStorage(s string) (tuikit.SSHStorageLayout, bool) {
 	default:
 		return "", false
 	}
-}
-
-var (
-	sshOptionRecordKeys = []string{
-		"key", "current_value", "recommended_value", "risk", "scope", "state",
-		"source", "source_file", "source_line", "not_applicable_reason",
-		"version_note", "probe_error",
-	}
-	sshOptionsDocKeys = []string{"schema", "options"}
-	sshStorageDocKeys = []string{"schema", "layout", "target_path", "main_config_path", "include_line_present"}
-	sshApplyDocKeys   = []string{
-		"schema", "dry_run", "applied", "declined", "target_path", "backups",
-		"restored", "advisories", "simulation_inconclusive", "simulation_note",
-		"error", "exit_code",
-	}
-	sshMigrateDocKeys = []string{
-		"schema", "dry_run", "from_layout", "to_layout", "moved_identities",
-		"moved_globals", "backups", "restored", "error", "exit_code",
-	}
-	sshStateEnum    = []string{"needs-action", "already-set", "differs", "not-applicable"}
-	sshSourceEnum   = []string{"gitid-parsed", "outside-gitid", "system-file", "baseline", "inconclusive"}
-	sshRiskEnum     = []string{"low", "medium", "high"}
-	sshScopeEnum    = []string{"global", "per-alias"}
-	sshNAReasonEnum = []string{"none", "platform", "version-too-old", "version-unverified", "nothing-to-verify"}
-	sshLayoutEnum   = []string{"include", "in-file"}
-)
-
-func jsonObjectKeys(raw []byte) ([]string, error) {
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &obj); err != nil {
-		return nil, err
-	}
-	keys := make([]string, 0, len(obj))
-	for k := range obj {
-		keys = append(keys, k)
-	}
-	return keys, nil
 }
