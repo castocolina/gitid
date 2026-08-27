@@ -239,7 +239,7 @@ func FakeSSHDir(t *testing.T, mode string) string {
 		"      case \"$scan_key\" in\n" +
 		"        #*) continue ;;\n" +
 		"        Host|host) [ \"$scan_value\" = \"*\" ] && scan_host=1 || scan_host=0 ;;\n" +
-		"        Include|include) for include_path in $scan_value; do scan_global_ssh_config \"$include_path\"; done ;;\n" +
+		"        Include|include) inc=\"$scan_value\"; inc=\"${inc#\\\"}\"; inc=\"${inc%\\\"}\"; for include_path in $inc; do scan_global_ssh_config \"$include_path\"; done ;;\n" +
 		"        StrictHostKeyChecking|stricthostkeychecking) if [ \"$scan_host\" = \"1\" ] && [ \"$strict_set\" = \"0\" ]; then strict=\"$scan_value\"; strict_set=1; fi ;;\n" +
 		"        ForwardAgent|forwardagent) if [ \"$scan_host\" = \"1\" ] && [ \"$forward_set\" = \"0\" ]; then forward=\"$scan_value\"; forward_set=1; fi ;;\n" +
 		"        HashKnownHosts|hashknownhosts) if [ \"$scan_host\" = \"1\" ] && [ \"$hash_set\" = \"0\" ]; then hash=\"$scan_value\"; hash_set=1; fi ;;\n" +
