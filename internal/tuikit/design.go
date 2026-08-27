@@ -214,8 +214,8 @@ var GlobalSSHOptions = []GlobalSSHOption{
 	{Key: "ForwardAgent", Current: "not set (OpenSSH default: no)", Risk: "High", Recommended: "no", NeedsAction: true, OneLiner: "Globally forwarding your agent lets any host you connect to authenticate elsewhere as you."},
 	{Key: "HashKnownHosts", Current: "not set", Risk: "Low", Recommended: "yes", NeedsAction: true, OneLiner: "Hashing known_hosts hides which hosts you connect to if the file ever leaks."},
 	{Key: "IdentitiesOnly", Current: "not set globally (set per-Host by gitid)", Risk: "High", Recommended: "yes", NeedsAction: true, OneLiner: "Without it, ssh may offer every key it knows about to every host — leaking which OTHER keys you hold."},
-	{Key: "AddKeysToAgent", Current: "yes", Risk: "Low", Recommended: "yes", NeedsAction: false, OneLiner: "Already set — keys stay available in the agent for the session (recipes/ssh-config.recipe Host * block)."},
-	{Key: "UseKeychain", Current: "yes (macOS only)", Risk: "Low", Recommended: "yes", NeedsAction: false, OneLiner: "Already set — stores the key passphrase in the macOS Keychain (guarded by IgnoreUnknown on Linux)."},
+	{Key: "AddKeysToAgent", Current: "yes", Risk: "Low", Recommended: "yes", NeedsAction: false, OneLiner: "Keeps keys available in the agent for the session (recipes/ssh-config.recipe Host * block)."},
+	{Key: "UseKeychain", Current: "yes (macOS only)", Risk: "Low", Recommended: "yes", NeedsAction: false, OneLiner: "Stores the key passphrase in the macOS Keychain (guarded by IgnoreUnknown on Linux)."},
 }
 
 // GlobalSSHDetailExplanation is GSSH-01's contractual (verbatim, §3)

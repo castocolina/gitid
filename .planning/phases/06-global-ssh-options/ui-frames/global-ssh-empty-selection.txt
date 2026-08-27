@@ -7,7 +7,7 @@
       now: no → no  safe by default         │ gate.
    ☐ ! HashKnownHosts  [Low]                │
       now: no → yes                         │  When IdentitiesOnly is not set (or set to "no"), ssh
- ▸      IdentitiesOnly  [High]              │ may try EVERY key it can find -- every file in ~/.ssh
+ ▸    · IdentitiesOnly  [High]              │ may try EVERY key it can find -- every file in ~/.ssh
       not applicable (nothing on this machi…│ matching the default names, plus every key already
    ☐ ! AddKeysToAgent  [Low]                │ loaded in your ssh-agent -- against any host you
       now: no → yes                         │ connect to. On a machine with multiple identities

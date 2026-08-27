@@ -769,6 +769,12 @@ func optionRow(o GlobalSSHOptionView, chosen, selected, applied bool, width int)
 		tone = styleHealthy.Render("✓")
 	case GlobalSSHNeedsAction, GlobalSSHDiffers:
 		tone = styleWarning.Render("!")
+	case GlobalSSHNotApplicable:
+		// A neutral marker, not a health-tone glyph (D-12 forbids introducing
+		// a new health state): every other row carries a visible tone glyph,
+		// so a blank cell here reads as a missing/broken row rather than a
+		// deliberately inert one.
+		tone = styleFaint.Render("·")
 	}
 	name := styleBold.Render(o.Key)
 	if selected {

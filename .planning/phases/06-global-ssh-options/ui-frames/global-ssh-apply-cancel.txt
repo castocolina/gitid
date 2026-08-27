@@ -7,7 +7,7 @@
       now: no → no  safe by default         │ gate.
    ☐ ! HashKnownHosts  [Low]                │
       now: no → yes                         │  accept-new pins first-seen keys and hard-fails on a
-        IdentitiesOnly  [High]              │ changed key; it requires OpenSSH 7.6 or newer.
+      · IdentitiesOnly  [High]              │ changed key; it requires OpenSSH 7.6 or newer.
       not applicable (nothing on this machi…│  not set (OpenSSH default: no)
    ☐ ! AddKeysToAgent  [Low]                │  Your OpenSSH: 9.9p2 — StrictHostKeyChecking accept-
       now: no → yes                         │ new is available

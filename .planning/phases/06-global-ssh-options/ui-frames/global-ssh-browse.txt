@@ -6,8 +6,8 @@
       ✓ ForwardAgent  [High]                │ option unchanged. This is advisory, never a compliance
       now: no → no  safe by default         │ gate.
    ☐ ! HashKnownHosts  [Low]                │
-      now: no → yes                         │  Already set — keys stay available in the agent for
-        IdentitiesOnly  [High]              │ the session (recipes/ssh-config.recipe Host * block).
+      now: no → yes                         │  Keeps keys available in the agent for the session
+      · IdentitiesOnly  [High]              │ (recipes/ssh-config.recipe Host * block).
       not applicable (nothing on this machi…│  not set (OpenSSH default: no)
  ▸ ☐ ! AddKeysToAgent  [Low]                │
       now: no → yes                         │
