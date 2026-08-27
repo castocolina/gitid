@@ -1025,6 +1025,23 @@ func TestGlobalSSHStorageMouseClickRefetchesAfterActivationError(t *testing.T) {
 	}
 }
 
+// TestGlobalSSHRenderOptionsEmptyNoErrorDoesNotPanic is the WR-17
+// regression: a Backend may legitimately return (nil-or-empty, nil) — zero
+// rows, no error — for GlobalSSHOptionStates (globalssh.Statuses always
+// returns len(Policy) rows today, but GlobalSSHOptionStates is an interface
+// method any implementation may satisfy). Before the fix, renderOptions
+// indexed options[selIdx] with no length guard and panicked with an
+// index-out-of-range on the first render.
+func TestGlobalSSHRenderOptionsEmptyNoErrorDoesNotPanic(t *testing.T) {
+	b := stubBackend{sshOptions: []GlobalSSHOptionView{}}
+	a := NewApp(b)
+	a, _ = press(t, a, "2") // activate Global SSH tab — renders Options sub-tab
+	view := appView(a)
+	if !strings.Contains(view, "No global SSH options to show.") {
+		t.Errorf("empty-no-error options must render the empty-state note, got:\n%s", view)
+	}
+}
+
 // TestGlobalSSHStorageTokenPassthroughAndClearing proves the acceptance
 // criterion: the token the model sends to CommitSSHStorage is byte-identical
 // to the one the view it opened the ceremony with carried, and that moving

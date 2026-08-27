@@ -884,6 +884,17 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 
 // renderOptions renders the Options master-detail.
 func (m globalSSHModel) renderOptions(s DemoState, options []appliedOption, width, height int) string {
+	// WR-17: a Backend implementation may legitimately return (nil, nil) —
+	// zero rows, no error. handleKey guards len(options)==0 for key routing
+	// and view guards m.optionsErr != "" for the fetch-error case, but a
+	// zero-row/no-error answer reached here and panicked on options[selIdx]
+	// below (detailIndex returns 0 on no match, and 0 is out of range for an
+	// empty slice). globalssh.Statuses always returns len(Policy) rows
+	// today, but NoopGlobalSSHPlanner exists precisely to be substituted.
+	if len(options) == 0 {
+		return m.subTabStrip() + "\n " + styleFaint.Render("No global SSH options to show.")
+	}
+
 	listWidth := masterListWidth(width)
 	detailWidth := width - listWidth - masterDetailGutter
 	rows := frameBodyRows(height) - gssOptionsTopLines(s)
