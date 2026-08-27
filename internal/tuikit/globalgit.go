@@ -77,6 +77,14 @@ type globalGitModel struct {
 	// the user has since typed.
 	currentName  string
 	currentEmail string
+	// listWindowStart is the index of the first visible ROW in the master
+	// list (0-based) — the per-row analog of ExactTextViewport.LineOffset
+	// (07-UI-SPEC.md RESOLVED "overflow" row). It stays 0 whenever every
+	// row fits inside the computed body budget; only when the row set
+	// exceeds the budget does it advance, one row at a time, in the
+	// direction of travel as the selection moves outside the visible
+	// window (never a jump-to-center).
+	listWindowStart int
 }
 
 // newGlobalGitModel returns a model with an EMPTY selection set (D-15, R-1):
@@ -108,6 +116,7 @@ func newGlobalGitModel(b Backend) globalGitModel {
 // every other Global-* tab).
 func (m globalGitModel) activate(DemoState) (screenModel, tea.Cmd) {
 	m.chosen = map[string]bool{}
+	m.listWindowStart = 0
 	options, err := m.backend.GlobalGitOptionStates()
 	m.options = options
 	if err != nil {
@@ -515,6 +524,7 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 			idx--
 		}
 		m.detailKey = options[idx].Key
+		m.listWindowStart = scrollWindowFor(m.listWindowStart, idx, gitVisibleRowCount(len(options), s))
 		return keyResult{model: m, handled: true}
 	case "space":
 		o := options[m.gitDetailIndex(options)]
@@ -587,6 +597,183 @@ func gitTopLines(s DemoState) int {
 	return 0
 }
 
+// gitCueDownFmt / gitCueUpFmt are the master list's own "+N more" scroll
+// cues (07-UI-SPEC.md RESOLVED "overflow" row) — byte-identical style/format
+// convention to renderReceiptList's "… (+%d more lines)" cue (ceremony.go),
+// reworded from lines to rows with a direction arrow. Registered in
+// gate-copy-freeze — the receipt list's own entry covers only its own
+// wording, not these.
+const (
+	gitCueDownFmt = "↓ (+%d more options)"
+	gitCueUpFmt   = "↑ (+%d more options)"
+)
+
+// gitVisibleRowCount computes how many option rows fit inside the body
+// budget WITHOUT overflowing — the SAME frameBodyRows helper the rest of
+// the screen uses, minus the master list's existing chrome (the findings
+// banner via gitTopLines), divided by the row height. This is a MEASURED
+// budget, never a hardcoded row count (plan 02-15's standing lesson —
+// "re-measure the row budget, don't assume") — it calls frameBodyRows
+// rather than embedding a literal number.
+//
+// It deliberately uses the CANONICAL fixed frame height (minFrameHeight),
+// not a caller-supplied height: 07-UI-SPEC.md's resolved "overflow" row
+// pins this screen's row height and 100x30 frame as UNCHANGED — the
+// scrolling window's budget is a property of that fixed design, not of
+// whatever height a particular render call happens to pass. This also
+// keeps handleKey (which has no width/height parameter to receive) and
+// view/handleClick (which do) computing the identical budget, so the
+// window position handleKey advances can never disagree with what view
+// renders for the very same model.
+//
+// When every row already fits inside the raw budget, the full row count is
+// returned and no line is reserved for a cue — byte-identical to the
+// pre-scrolling behavior. Only when the row set does NOT fit does one line
+// get reserved for the cue, shrinking the visible count by the row height's
+// worth of budget.
+func gitVisibleRowCount(totalRows int, s DemoState) int {
+	budget := frameBodyRows(minFrameHeight) - gitTopLines(s)
+	if budget < 1 {
+		budget = 1
+	}
+	if totalRows*optionRowLines <= budget {
+		return totalRows
+	}
+	reserved := budget - 1
+	if reserved < 0 {
+		reserved = 0
+	}
+	visible := reserved / optionRowLines
+	if visible < 1 {
+		visible = 1
+	}
+	if visible > totalRows {
+		visible = totalRows
+	}
+	return visible
+}
+
+// scrollWindowFor computes the new window start given the CURRENT window
+// start, the newly selected row index, and the visible row count — moving
+// the window by exactly ONE row in the direction of travel whenever the
+// selection falls outside it, never jumping to center (07-UI-SPEC.md
+// RESOLVED "overflow" row; the per-row analog of
+// ExactTextViewport.ScrollDown(1)/ScrollUp(1)'s existing one-step model).
+// Selection moves WITHIN the window leave the window start unchanged.
+func scrollWindowFor(windowStart, selectedIdx, visibleRowCount int) int {
+	if selectedIdx >= windowStart+visibleRowCount {
+		windowStart++
+	}
+	if selectedIdx < windowStart {
+		windowStart--
+	}
+	if windowStart < 0 {
+		windowStart = 0
+	}
+	return windowStart
+}
+
+// gitCueNone / gitCueDown / gitCueUp name which (if any) scroll cue the one
+// reserved line renders — shared by view (which renders the cue text) and
+// handleClick (which must treat that same line as inert).
+type gitCueDirection int
+
+const (
+	gitCueNone gitCueDirection = iota
+	gitCueDown
+	gitCueUp
+)
+
+// gitScrollWindow bundles every measurement view and handleClick both need
+// to agree on: whether the list needs to scroll at all, the effective
+// (clamped) window start, the visible row count, and which cue (if any) the
+// one reserved line shows. Computing this ONCE from the model + option
+// count is what keeps the render and the click hit-test from silently
+// disagreeing about where a row is — the exact defect class 07-04-PLAN.md's
+// threat register names twice.
+type gitScrollWindow struct {
+	needsScroll bool
+	windowStart int
+	visibleRows int
+	cue         gitCueDirection
+	hiddenCount int
+}
+
+// gitComputeScrollWindow derives the current scroll window from the model's
+// listWindowStart and the live option count. windowStart is clamped
+// defensively (never negative, never past the last valid window) so a
+// model driven directly in a test (bypassing handleKey's own incremental
+// clamp) still renders and click-hit-tests consistently.
+func (m globalGitModel) gitComputeScrollWindow(totalRows int, s DemoState) gitScrollWindow {
+	visible := gitVisibleRowCount(totalRows, s)
+	needsScroll := visible < totalRows
+	windowStart := m.listWindowStart
+	if windowStart < 0 {
+		windowStart = 0
+	}
+	maxStart := totalRows - visible
+	if maxStart < 0 {
+		maxStart = 0
+	}
+	if windowStart > maxStart {
+		windowStart = maxStart
+	}
+	w := gitScrollWindow{needsScroll: needsScroll, windowStart: windowStart, visibleRows: visible}
+	if !needsScroll {
+		return w
+	}
+	hiddenBelow := windowStart+visible < totalRows
+	if hiddenBelow {
+		w.cue = gitCueDown
+		w.hiddenCount = totalRows - (windowStart + visible)
+		return w
+	}
+	// Not hidden below but needsScroll is true: the window must be
+	// scrolled past the top (windowStart > 0), so rows are hidden above.
+	w.cue = gitCueUp
+	w.hiddenCount = windowStart
+	return w
+}
+
+// gitCueLine renders the one reserved cue line — byte-identical style/format
+// convention to renderReceiptList's own "+N more" cue (ceremony.go), reworded
+// from lines to rows with a direction arrow (07-UI-SPEC.md RESOLVED
+// "overflow" row).
+func gitCueLine(w gitScrollWindow) string {
+	switch w.cue {
+	case gitCueDown:
+		return " " + styleFaint.Render(fmt.Sprintf(gitCueDownFmt, w.hiddenCount))
+	case gitCueUp:
+		return " " + styleFaint.Render(fmt.Sprintf(gitCueUpFmt, w.hiddenCount))
+	default:
+		return ""
+	}
+}
+
+// gitRowForScreenRow maps a body-relative screen row (y - gitTopLines(s)) to
+// the option-row index the user is pointing at, honoring the scroll window
+// and treating the reserved cue line as inert. ok is false for the cue line
+// or any row past the rendered window — handleClick must never toggle or
+// select based on a screen position that isn't a real, visible row.
+func gitRowForScreenRow(w gitScrollWindow, y int) (idx int, ok bool) {
+	if !w.needsScroll {
+		row := y / optionRowLines
+		return w.windowStart + row, row >= 0 && row < w.visibleRows
+	}
+	switch w.cue {
+	case gitCueUp:
+		if y == 0 {
+			return 0, false // the cue line itself
+		}
+		yy := y - 1
+		row := yy / optionRowLines
+		return w.windowStart + row, row >= 0 && row < w.visibleRows
+	default: // gitCueDown (the both-edges-hidden tie-break also resolves here)
+		row := y / optionRowLines
+		return w.windowStart + row, row >= 0 && row < w.visibleRows
+	}
+}
+
 // handleClick implements mouseTarget: a click on an option row's checkbox
 // glyph TOGGLES it like space (GlobalGit.tsx:127 — Checkbox onClick stops
 // propagation), a click elsewhere in the row selects it, and the ceremony's
@@ -605,13 +792,23 @@ func (m globalGitModel) handleClick(x, y, width, height int, s DemoState) keyRes
 		return keyResult{model: m}
 	}
 	options := m.overlaidGitOptions(s)
-	row := (y - gitTopLines(s)) / optionRowLines
-	if row >= len(options) {
+	// The click's row index is computed from the WINDOW START, not from the
+	// screen position alone — a scroll offset the click handler does not
+	// know about silently toggles the wrong row, the exact defect class
+	// this project has hit twice before on mouse-driven field focus
+	// (07-04-PLAN.md T-07-22). gitRowForScreenRow bound-checks against the
+	// VISIBLE window (not the full row count) and reports the cue line as
+	// inert.
+	w := m.gitComputeScrollWindow(len(options), s)
+	row, ok := gitRowForScreenRow(w, y-gitTopLines(s))
+	if !ok || row >= len(options) {
 		return keyResult{model: m}
 	}
 	o := options[row]
 	// Checkbox hit-test: only selectable rows carry a checkbox — the same ONE
-	// predicate that gates the toggle key and the checkbox glyph (D-02, D-05).
+	// predicate that gates the toggle key and the checkbox glyph (D-02, D-05)
+	// — routed through Selectable() rather than re-checking a state field,
+	// so the click, the toggle key, and the rendered glyph stay one decision.
 	if o.Selectable() {
 		body := m.view(s, width, height).body
 		if hitNeedle(body, x, y, glyphCheckOff) || hitNeedle(body, x, y, glyphCheckOn) {
@@ -619,7 +816,7 @@ func (m globalGitModel) handleClick(x, y, width, height int, s DemoState) keyRes
 			return keyResult{model: m, handled: true}
 		}
 	}
-	m.detailKey = options[row].Key
+	m.detailKey = o.Key
 	return keyResult{model: m, handled: true}
 }
 
@@ -671,10 +868,27 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 	selIdx := m.gitDetailIndex(options)
 	bodyRows := frameBodyRows(height) - gitTopLines(s)
 
+	// The master list becomes a scrolling window over the row set
+	// (07-UI-SPEC.md RESOLVED "overflow" row): when every row fits inside
+	// the computed budget, scrollWin.needsScroll is false, the loop below
+	// covers every row exactly as before this plan (byte-identical, zero
+	// regression), and no cue line is emitted. When it does not fit,
+	// exactly [windowStart, windowStart+visibleRows) renders plus one
+	// reserved cue line.
+	scrollWin := m.gitComputeScrollWindow(len(options), s)
+	visible := options
+	if scrollWin.needsScroll {
+		visible = options[scrollWin.windowStart : scrollWin.windowStart+scrollWin.visibleRows]
+	}
+
 	var rows []string
-	for i, o := range options {
+	if scrollWin.cue == gitCueUp {
+		rows = append(rows, gitCueLine(scrollWin))
+	}
+	for i, o := range visible {
+		absoluteIdx := scrollWin.windowStart + i
 		marker := "  "
-		if i == selIdx {
+		if absoluteIdx == selIdx {
 			marker = styleBold.Render("▸ ")
 		}
 		// Checkbox: only selectable rows get a checkbox glyph — driven by the
@@ -698,7 +912,7 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 			toneGlyph = styleFaint.Render("·")
 		}
 		name := styleBold.Render(o.Key)
-		if i == selIdx {
+		if absoluteIdx == selIdx {
 			name = styleSelected.Render(o.Key)
 		}
 		chip := ""
@@ -707,6 +921,9 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 		}
 		rows = append(rows, truncLine(" "+marker+box+toneGlyph+" "+name+chip, listWidth))
 		rows = append(rows, truncLine("      "+styleFaint.Render(globalGitRowLine2(o)), listWidth))
+	}
+	if scrollWin.cue == gitCueDown {
+		rows = append(rows, gitCueLine(scrollWin))
 	}
 	list := strings.Join(rows, "\n")
 

@@ -311,6 +311,8 @@ gate-copy-freeze:
 		'This key is also used by ' \
 		' — it will be kept. Only this identity'\''s SSH and Git artifacts are removed.' \
 		'(+%d more)' \
+		'↓ (+%d more options)' \
+		'↑ (+%d more options)' \
 		'Found %q referenced in %s: %d — review before continuing.' \
 		'This action is irreversible' \
 		'%s will be removed from active use; a copy of the key pair exists at %s.' \

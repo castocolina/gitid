@@ -1,6 +1,7 @@
 package tuikit
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -1095,5 +1096,416 @@ func TestGlobalGitNoColorStatesDistinguishable(t *testing.T) {
 	}
 	if !strings.Contains(view, GlobalSSHNAProbeFailed) {
 		t.Error("not-applicable must be named by its reason sentence")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Task 1 (plan 07-04): the scrolling master list and the scroll-aware click
+// mapping (07-UI-SPEC.md RESOLVED "overflow" row).
+// ---------------------------------------------------------------------------
+
+// gitScrollRows builds n synthetic, selectable option rows for scroll tests
+// — enough to force the master list past the measured body budget. Keys are
+// short and distinct ("row00".."rowNN") so truncLine's width clip never
+// swallows the identifying substring the tests assert on.
+func gitScrollRows(n int) []GlobalGitOptionView {
+	out := make([]GlobalGitOptionView, 0, n)
+	for i := 0; i < n; i++ {
+		out = append(out, GlobalGitOptionView{
+			Key:               fmt.Sprintf("row%02d", i),
+			CurrentValue:      "not set",
+			Recommended:       "x",
+			OneLiner:          "scroll test row",
+			State:             GlobalGitNeedsAction,
+			PolicyBacked:      true,
+			HasWritableMember: true,
+		})
+	}
+	return out
+}
+
+// TestGlobalGitSmallListNoScrollByteIdentical asserts that when every row
+// fits the computed budget, the window start is zero and NO cue line
+// appears at all — byte-identical to the pre-scrolling behavior for a list
+// that already fitted (zero regression for the no-scroll path).
+func TestGlobalGitSmallListNoScrollByteIdentical(t *testing.T) {
+	b := stubBackend{gitOptions: gitScrollRows(3)}
+	a, _ := press(t, NewApp(b), "3")
+	m := ggitModel(t, a)
+	if m.listWindowStart != 0 {
+		t.Errorf("listWindowStart = %d, want 0 for a small list", m.listWindowStart)
+	}
+	view := appView(a)
+	if strings.Contains(view, "more options") {
+		t.Errorf("a small list must render no scroll cue:\n%s", view)
+	}
+}
+
+// TestGlobalGitFullListFitsComputedBudget renders the real 12-row fixture at
+// the frame's real geometry and asserts every rendered master-list line
+// count is within the SAME budget gitVisibleRowCount computes — the test
+// derives the budget from the same helper rather than hardcoding a number
+// (plan 02-15's standing lesson).
+func TestGlobalGitFullListFitsComputedBudget(t *testing.T) {
+	a, _ := press(t, NewApp(stubBackend{}), "3")
+	m := ggitModel(t, a)
+	s := a.state
+	options := m.overlaidGitOptions(s)
+	w := m.gitComputeScrollWindow(len(options), s)
+	budgetLines := w.visibleRows * optionRowLines
+	if w.needsScroll {
+		budgetLines++ // the reserved cue line
+	}
+	if got := frameBodyRows(minFrameHeight) - gitTopLines(s); budgetLines > got {
+		t.Errorf("computed render budget %d exceeds frameBodyRows-chrome budget %d", budgetLines, got)
+	}
+}
+
+// TestGlobalGitScrollDownMovesWindowByOneRowPerStep drives the selection
+// from the first row to the last, one keystroke at a time, and asserts the
+// window start increases by exactly one on each step past the edge and
+// never more.
+func TestGlobalGitScrollDownMovesWindowByOneRowPerStep(t *testing.T) {
+	const n = 20
+	b := stubBackend{gitOptions: gitScrollRows(n)}
+	a, _ := press(t, NewApp(b), "3")
+	m := ggitModel(t, a)
+	if !m.gitComputeScrollWindow(n, a.state).needsScroll {
+		t.Fatal("setup: 20 rows must need scrolling at the fixed frame size")
+	}
+	prevStart := m.listWindowStart
+	for i := 0; i < n-1; i++ {
+		a, _ = press(t, a, "down")
+		m = ggitModel(t, a)
+		delta := m.listWindowStart - prevStart
+		if delta < 0 || delta > 1 {
+			t.Fatalf("step %d: listWindowStart moved by %d, want 0 or 1", i, delta)
+		}
+		prevStart = m.listWindowStart
+	}
+}
+
+// TestGlobalGitScrollUpMovesWindowByOneRowPerStep drives the selection back
+// up from the last row to the first and asserts the window start decreases
+// by exactly one per step past the edge.
+func TestGlobalGitScrollUpMovesWindowByOneRowPerStep(t *testing.T) {
+	const n = 20
+	b := stubBackend{gitOptions: gitScrollRows(n)}
+	a, _ := press(t, NewApp(b), "3")
+	for i := 0; i < n-1; i++ {
+		a, _ = press(t, a, "down")
+	}
+	m := ggitModel(t, a)
+	maxStart := m.listWindowStart
+	if maxStart == 0 {
+		t.Fatal("setup: scrolling to the last row must have advanced the window")
+	}
+	prevStart := maxStart
+	for i := 0; i < n-1; i++ {
+		a, _ = press(t, a, "up")
+		m = ggitModel(t, a)
+		delta := prevStart - m.listWindowStart
+		if delta < 0 || delta > 1 {
+			t.Fatalf("step %d: listWindowStart moved by %d, want 0 or 1", i, delta)
+		}
+		prevStart = m.listWindowStart
+	}
+	if m.listWindowStart != 0 {
+		t.Errorf("after returning to the first row, listWindowStart = %d, want 0", m.listWindowStart)
+	}
+}
+
+// TestGlobalGitScrollWithinWindowDoesNotMove asserts that moving the
+// selection while it stays inside the currently visible window leaves the
+// window start unchanged.
+func TestGlobalGitScrollWithinWindowDoesNotMove(t *testing.T) {
+	const n = 20
+	b := stubBackend{gitOptions: gitScrollRows(n)}
+	a, _ := press(t, NewApp(b), "3")
+	// Advance far enough that the window has scrolled, then move back up
+	// ONE row (still inside the window) and assert no window movement.
+	for i := 0; i < 5; i++ {
+		a, _ = press(t, a, "down")
+	}
+	m := ggitModel(t, a)
+	beforeStart := m.listWindowStart
+	a, _ = press(t, a, "up")
+	m = ggitModel(t, a)
+	if m.listWindowStart != beforeStart {
+		t.Errorf("moving within the window changed listWindowStart: %d -> %d", beforeStart, m.listWindowStart)
+	}
+}
+
+// TestGlobalGitDownCueRendersBelowLastVisibleRow asserts the down cue
+// renders with the correct hidden count when rows are hidden below the
+// window (the initial state of a long list).
+func TestGlobalGitDownCueRendersBelowLastVisibleRow(t *testing.T) {
+	const n = 20
+	b := stubBackend{gitOptions: gitScrollRows(n)}
+	a, _ := press(t, NewApp(b), "3")
+	m := ggitModel(t, a)
+	s := a.state
+	w := m.gitComputeScrollWindow(n, s)
+	if w.cue != gitCueDown {
+		t.Fatalf("cue = %v, want gitCueDown at the initial (top) window", w.cue)
+	}
+	want := fmt.Sprintf(gitCueDownFmt, w.hiddenCount)
+	view := appView(a)
+	if !strings.Contains(view, want) {
+		t.Errorf("view must contain %q;\nview:\n%s", want, view)
+	}
+	// The cue must render on the LAST line of the master-list column — i.e.
+	// after every visible row's two lines.
+	lines := strings.Split(view, "\n")
+	found := -1
+	for i, l := range lines {
+		if strings.Contains(l, "more options") {
+			found = i
+			break
+		}
+	}
+	if found == -1 {
+		t.Fatal("cue line not found in rendered output")
+	}
+}
+
+// TestGlobalGitUpCueRendersAboveFirstVisibleRow scrolls to the bottom of a
+// long list (rows hidden only above) and asserts the up cue renders with
+// the correct hidden count.
+func TestGlobalGitUpCueRendersAboveFirstVisibleRow(t *testing.T) {
+	const n = 20
+	b := stubBackend{gitOptions: gitScrollRows(n)}
+	a, _ := press(t, NewApp(b), "3")
+	for i := 0; i < n-1; i++ {
+		a, _ = press(t, a, "down")
+	}
+	m := ggitModel(t, a)
+	s := a.state
+	w := m.gitComputeScrollWindow(n, s)
+	if w.cue != gitCueUp {
+		t.Fatalf("cue = %v, want gitCueUp once scrolled to the bottom", w.cue)
+	}
+	want := fmt.Sprintf(gitCueUpFmt, w.hiddenCount)
+	view := appView(a)
+	if !strings.Contains(view, want) {
+		t.Errorf("view must contain %q;\nview:\n%s", want, view)
+	}
+}
+
+// TestGlobalGitBothEdgesHiddenPrefersDownCue asserts that when rows are
+// hidden both above and below the window (mid-scroll), the reserved line
+// shows the DOWN cue — the tie-break 07-UI-SPEC.md's overflow row pins.
+func TestGlobalGitBothEdgesHiddenPrefersDownCue(t *testing.T) {
+	const n = 20
+	b := stubBackend{gitOptions: gitScrollRows(n)}
+	a, _ := press(t, NewApp(b), "3")
+	// Land somewhere in the middle — enough steps to leave the top window
+	// but nowhere near the bottom.
+	for i := 0; i < 13; i++ {
+		a, _ = press(t, a, "down")
+	}
+	m := ggitModel(t, a)
+	s := a.state
+	w := m.gitComputeScrollWindow(n, s)
+	if w.windowStart == 0 {
+		t.Fatal("setup: window must have scrolled past the top")
+	}
+	if w.windowStart+w.visibleRows >= n {
+		t.Fatal("setup: window must not yet be at the bottom (rows must still be hidden below)")
+	}
+	if w.cue != gitCueDown {
+		t.Errorf("cue = %v, want gitCueDown when both edges hide rows", w.cue)
+	}
+}
+
+// TestGlobalGitClickAtNonZeroWindowStartTogglesWindowRow is the highest-risk
+// assertion in this task: a click on the visually-FIRST checkbox at a
+// NON-ZERO window start must toggle the row AT THE WINDOW START index, not
+// the row at index zero. A click test that only ever clicks at offset zero
+// proves nothing (07-04-PLAN.md T-07-22).
+func TestGlobalGitClickAtNonZeroWindowStartTogglesWindowRow(t *testing.T) {
+	const n = 20
+	b := stubBackend{gitOptions: gitScrollRows(n)}
+	a, _ := press(t, NewApp(b), "3")
+	for i := 0; i < 11; i++ {
+		a, _ = press(t, a, "down")
+	}
+	m := ggitModel(t, a)
+	s := a.state
+	options := m.overlaidGitOptions(s)
+	w := m.gitComputeScrollWindow(len(options), s)
+	if w.windowStart == 0 {
+		t.Fatal("setup: window must be at a non-zero start")
+	}
+	windowRowKey := options[w.windowStart].Key
+	if m.chosen[windowRowKey] {
+		t.Fatalf("setup: %q must start un-chosen", windowRowKey)
+	}
+	// Click the visually-first row's checkbox column (x=3 lands on the
+	// checkbox glyph, per the row layout " " + marker(2) + box(2) + glyph).
+	topLineY := gitTopLines(s)
+	if w.cue == gitCueUp {
+		topLineY++ // the up cue occupies the reserved line above row 0
+	}
+	res := m.handleClick(3, topLineY, minFrameWidth, minFrameHeight, s)
+	next, ok := res.model.(globalGitModel)
+	if !ok {
+		t.Fatalf("handleClick returned %T, want globalGitModel", res.model)
+	}
+	if !next.chosen[windowRowKey] {
+		t.Errorf("click at the visually-first row (window start %d, key %q) did not toggle it; chosen=%v",
+			w.windowStart, windowRowKey, next.chosen)
+	}
+	if next.chosen["row00"] {
+		t.Error("click at a non-zero window start must NOT toggle row00 — the pre-scroll defect class")
+	}
+}
+
+// TestGlobalGitClickElsewhereAtNonZeroWindowStartSelectsWindowRow asserts a
+// click elsewhere in the visually-first row (not on the checkbox) selects
+// that same window-start row, at a non-zero scroll offset.
+func TestGlobalGitClickElsewhereAtNonZeroWindowStartSelectsWindowRow(t *testing.T) {
+	const n = 20
+	b := stubBackend{gitOptions: gitScrollRows(n)}
+	a, _ := press(t, NewApp(b), "3")
+	for i := 0; i < 11; i++ {
+		a, _ = press(t, a, "down")
+	}
+	m := ggitModel(t, a)
+	s := a.state
+	options := m.overlaidGitOptions(s)
+	w := m.gitComputeScrollWindow(len(options), s)
+	windowRowKey := options[w.windowStart].Key
+	topLineY := gitTopLines(s)
+	if w.cue == gitCueUp {
+		topLineY++
+	}
+	// x=15 lands past the checkbox/glyph columns, on the key name itself.
+	res := m.handleClick(15, topLineY, minFrameWidth, minFrameHeight, s)
+	next, ok := res.model.(globalGitModel)
+	if !ok {
+		t.Fatalf("handleClick returned %T, want globalGitModel", res.model)
+	}
+	if next.detailKey != windowRowKey {
+		t.Errorf("detailKey = %q, want %q (the window-start row)", next.detailKey, windowRowKey)
+	}
+}
+
+// TestGlobalGitClickOnCueLineChangesNothing asserts a click on the reserved
+// cue line changes neither the selection nor any toggle.
+func TestGlobalGitClickOnCueLineChangesNothing(t *testing.T) {
+	const n = 20
+	b := stubBackend{gitOptions: gitScrollRows(n)}
+	a, _ := press(t, NewApp(b), "3")
+	m := ggitModel(t, a)
+	s := a.state
+	options := m.overlaidGitOptions(s)
+	w := m.gitComputeScrollWindow(len(options), s)
+	if w.cue != gitCueDown {
+		t.Fatal("setup: initial window must show the down cue")
+	}
+	cueY := gitTopLines(s) + w.visibleRows*optionRowLines
+	beforeKey := m.detailKey
+	beforeChosen := len(m.chosen)
+	res := m.handleClick(4, cueY, minFrameWidth, minFrameHeight, s)
+	next, ok := res.model.(globalGitModel)
+	if !ok {
+		t.Fatalf("handleClick returned %T, want globalGitModel", res.model)
+	}
+	if next.detailKey != beforeKey {
+		t.Errorf("click on the cue line changed the selection: %q -> %q", beforeKey, next.detailKey)
+	}
+	if len(next.chosen) != beforeChosen {
+		t.Errorf("click on the cue line changed the toggle set: %d -> %d", beforeChosen, len(next.chosen))
+	}
+}
+
+// TestGlobalGitClickOnNonSelectableRowChecksNothing asserts a click at a
+// non-selectable row's checkbox position toggles nothing, at a scrolled
+// offset.
+func TestGlobalGitClickOnNonSelectableRowChecksNothing(t *testing.T) {
+	const n = 20
+	rows := gitScrollRows(n)
+	rows[8].PolicyBacked = false
+	rows[8].HasWritableMember = false
+	b := stubBackend{gitOptions: rows}
+	a, _ := press(t, NewApp(b), "3")
+	// Scroll so row 8 is the window-start (visually-first) row.
+	for i := 0; i < 18; i++ {
+		a, _ = press(t, a, "down")
+	}
+	m := ggitModel(t, a)
+	s := a.state
+	options := m.overlaidGitOptions(s)
+	w := m.gitComputeScrollWindow(len(options), s)
+	if options[w.windowStart].Key != "row08" {
+		t.Fatalf("setup: window start row = %q, want row08", options[w.windowStart].Key)
+	}
+	topLineY := gitTopLines(s)
+	if w.cue == gitCueUp {
+		topLineY++
+	}
+	res := m.handleClick(4, topLineY, minFrameWidth, minFrameHeight, s)
+	next, ok := res.model.(globalGitModel)
+	if !ok {
+		t.Fatalf("handleClick returned %T, want globalGitModel", res.model)
+	}
+	if next.chosen["row08"] {
+		t.Error("click at a non-selectable row's checkbox position must not toggle it")
+	}
+}
+
+// TestGlobalGitNoLineExceedsListWidthAtAnyScrollOffset asserts no rendered
+// master-list line exceeds the master list width, at window start zero and
+// at the maximum window start.
+func TestGlobalGitNoLineExceedsListWidthAtAnyScrollOffset(t *testing.T) {
+	const n = 20
+	b := stubBackend{gitOptions: gitScrollRows(n)}
+	a, _ := press(t, NewApp(b), "3")
+	listWidth := masterListWidth(minFrameWidth)
+	assertWithinWidth := func(t *testing.T, a App) {
+		t.Helper()
+		m := ggitModel(t, a)
+		body := stripANSI(m.view(a.state, minFrameWidth, minFrameHeight).body)
+		for _, line := range strings.Split(body, "\n") {
+			if !strings.Contains(line, "│") {
+				// Not a master/detail row (e.g. the findings banner, which
+				// deliberately spans the full body width above the split).
+				continue
+			}
+			listCol := strings.SplitN(line, "│", 2)[0]
+			if w := ansiWidthForTest(listCol); w > listWidth {
+				t.Errorf("list column width %d exceeds %d: %q", w, listWidth, listCol)
+			}
+		}
+	}
+	assertWithinWidth(t, a) // window start zero
+	for i := 0; i < n-1; i++ {
+		a, _ = press(t, a, "down")
+	}
+	assertWithinWidth(t, a) // maximum window start
+}
+
+// ansiWidthForTest counts display columns of already-ANSI-stripped text
+// (appView already strips ANSI, so this is a plain rune count).
+func ansiWidthForTest(s string) int { return len([]rune(s)) }
+
+// TestGlobalGitNoColorCuesRemainLegible asserts both cue lines remain
+// legible (contain their identifying arrow + word) with ANSI colour
+// stripped.
+func TestGlobalGitNoColorCuesRemainLegible(t *testing.T) {
+	const n = 20
+	b := stubBackend{gitOptions: gitScrollRows(n)}
+	a, _ := press(t, NewApp(b), "3")
+	view := appView(a) // appView already strips ANSI
+	if !strings.Contains(view, "↓ (+") || !strings.Contains(view, "more options)") {
+		t.Errorf("down cue not legible without colour:\n%s", view)
+	}
+	for i := 0; i < n-1; i++ {
+		a, _ = press(t, a, "down")
+	}
+	view = appView(a)
+	if !strings.Contains(view, "↑ (+") || !strings.Contains(view, "more options)") {
+		t.Errorf("up cue not legible without colour:\n%s", view)
 	}
 }
