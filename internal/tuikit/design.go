@@ -323,12 +323,19 @@ var GlobalGitOptions = []GlobalGitOption{
 	// applied through its OWN dedicated ceremony (globalgit.go), never
 	// folded into the baseline managed block.
 	{Key: GlobalGitEmailFallbackKey, Current: "unset (recipes default)", Recommended: "left unset unless explicitly opted in", NeedsAction: true, OneLiner: GlobalGitEmailFallbackHelper},
+	// D-07: the fail-loud companion to includeIf setups — its own opt-in
+	// advisory row, unchecked by default (recipes leave it unset). Pinned
+	// position: immediately after the fallback-author row (07-03-PLAN.md
+	// <authority>), so D-07's cross-warning has both participants on screen
+	// together. Joins the SAME baseline ceremony when selected (its [user] line
+	// is in GlobalGitFullManagedBlockText) — never the fallback ceremony.
+	{Key: "user.useConfigOnly", Current: "unset (recipes default)", Recommended: "true", NeedsAction: true, OneLiner: "Turns a commit with no matching identity into a hard error instead of git silently guessing an author from your OS account — the fail-loud companion to includeIf setups."},
 	{Key: "push.autoSetupRemote", Current: "not set (git default: false)", Recommended: "true", NeedsAction: true, OneLiner: "Lets `git push` on a new branch set its upstream automatically, instead of requiring --set-upstream every time."},
 	{Key: "pull.rebase", Current: "not set (git default: false -- merge)", Recommended: "true", NeedsAction: true, OneLiner: "Replays local commits on top of the fetched branch instead of creating a merge commit on every pull."},
 	{Key: "fetch.prune", Current: "not set (git default: false)", Recommended: "true", NeedsAction: true, OneLiner: "Removes local references to remote branches that were deleted upstream, every fetch."},
 	{Key: "alias (8 shortcuts)", Current: "not set", Recommended: "st, co, br, ci, df, lg, unstage, last", NeedsAction: true, OneLiner: "Short, common-workflow aliases (status, checkout, branch, commit, diff, a graph log, unstage, last commit)."},
 	{Key: "color (ui/branch/diff/status)", Current: "not set (ui defaults to auto in modern git; the rest vary)", Recommended: "auto for all four", NeedsAction: true, OneLiner: "Colorizes status, branch, diff, and general UI output consistently, even where a specific subcommand's own default might differ."},
-	{Key: "merge.conflictstyle", Current: "not set (git default: merge)", Recommended: "diff3", NeedsAction: true, OneLiner: "Shows the common ancestor alongside both sides of a conflict, making it easier to tell what each side actually changed."},
+	{Key: "merge.conflictstyle", Current: "not set (git default: merge)", Recommended: "zdiff3", NeedsAction: true, OneLiner: "Shows the common ancestor plus both sides of a merge conflict (zdiff3; git >= 2.35, with a fallback to the older three-way form on older git)."},
 	{Key: "diff.colorMoved", Current: "not set", Recommended: "zebra", NeedsAction: true, OneLiner: "Highlights moved blocks of code distinctly from genuine additions/deletions in colorized diffs, striping each moved block."},
 }
 
@@ -360,7 +367,7 @@ const (
 // GlobalGitBaselineStripText is the read-only inherited global-baseline
 // strip rendered on per-identity Git surfaces (GITUI-01 kept intact) —
 // values interpolated from recipeFixtures.ts's globalGitDefaults.
-const GlobalGitBaselineStripText = "init.defaultBranch=main · core.ignorecase=false · autocrlf=input/lf · push.autoSetupRemote=true · pull.rebase=true · merge=diff3"
+const GlobalGitBaselineStripText = "init.defaultBranch=main · core.ignorecase=false · autocrlf=input/lf · push.autoSetupRemote=true · pull.rebase=true · merge=zdiff3"
 
 // GlobalGitFullManagedBlockText is the exact managed-block text gitid
 // writes to ~/.gitconfig — the Go mirror of recipeFixtures.ts's
@@ -375,6 +382,9 @@ const GlobalGitFullManagedBlockText = GlobalGitSentinelBegin + `
     ignorecase = false
     autocrlf = input
     eol = lf
+
+[user]
+    useConfigOnly = true
 
 [push]
     autoSetupRemote = true
@@ -392,7 +402,7 @@ const GlobalGitFullManagedBlockText = GlobalGitSentinelBegin + `
     status = auto
 
 [merge]
-    conflictstyle = diff3
+    conflictstyle = zdiff3
 
 [diff]
     colorMoved = zebra

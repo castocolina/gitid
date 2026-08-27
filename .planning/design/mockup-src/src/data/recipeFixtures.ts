@@ -135,7 +135,7 @@ export const globalGitDefaults = {
   pushAutoSetupRemote: true,
   pullRebase: true,
   fetchPrune: true,
-  mergeConflictstyle: 'diff3',
+  mergeConflictstyle: 'zdiff3',
   diffColorMoved: 'zebra',
 } as const;
 
@@ -795,6 +795,14 @@ export const globalGitOptions: GlobalGitOption[] = [
     oneLiner: globalGitEmailFallbackHelper,
   },
   {
+    key: 'user.useConfigOnly',
+    currentValue: 'unset (recipes default)',
+    recommendedValue: 'true',
+    needsAction: true,
+    oneLiner:
+      'Turns a commit with no matching identity into a hard error instead of git silently guessing an author from your OS account — the fail-loud companion to includeIf setups.',
+  },
+  {
     key: 'push.autoSetupRemote',
     currentValue: 'not set (git default: false)',
     recommendedValue: String(globalGitDefaults.pushAutoSetupRemote),
@@ -909,6 +917,9 @@ export const globalGitFullManagedBlockText = `${globalGitManagedBlockSentinels.b
     ignorecase = ${globalGitDefaults.coreIgnorecase}
     autocrlf = ${globalGitAutocrlf}
     eol = ${globalGitEol}
+
+[user]
+    useConfigOnly = true
 
 [push]
     autoSetupRemote = ${globalGitDefaults.pushAutoSetupRemote}

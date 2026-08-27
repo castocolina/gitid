@@ -31,13 +31,13 @@ func ggitModel(t *testing.T, a App) globalGitModel {
 // ---------------------------------------------------------------------------
 
 func TestGlobalGitRendersAllElevenRows(t *testing.T) {
-	if got := len(GlobalGitOptions); got != 11 {
-		t.Fatalf("fixture rows = %d, want 11 (GGIT-01 baseline)", got)
+	if got := len(GlobalGitOptions); got != 12 {
+		t.Fatalf("fixture rows = %d, want 12 (D-08 + D-07)", got)
 	}
 	view := appView(ggitApp(t))
 	for _, key := range []string{
 		"init.defaultBranch", "core.ignorecase", "core.autocrlf / core.eol",
-		"user.email (global fallback)", "push.autoSetupRemote", "pull.rebase",
+		"user.email (global fallback)", "user.useConfigOnly", "push.autoSetupRemote", "pull.rebase",
 		"fetch.prune", "alias (8 shortcuts)", "color (ui/branch/diff/status)",
 		"merge.conflictstyle", "diff.colorMoved",
 	} {
