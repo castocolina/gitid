@@ -10,6 +10,15 @@ import (
 	"time"
 )
 
+// resolutionDependentKeys are the four rows that consult the generic
+// resolution / isolated probes. Named here so tests assert by this map, not
+// by "all rows minus two". WR-10: test-only (referenced only from this
+// file), so it lives with the test that uses it rather than in production
+// classify.go.
+func resolutionDependentKeys() []string {
+	return []string{keyStrictHostKey, keyForwardAgent, keyHashKnownHosts, keyAddKeysToAgent}
+}
+
 // TestStatuses is the table-driven provenance classifier suite (D-01 with the
 // review's correction — a claim is made only when the evidence supports it).
 // Each case pins the returned SourceClass constant and, where the class names

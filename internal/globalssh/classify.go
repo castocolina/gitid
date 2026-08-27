@@ -156,13 +156,6 @@ const (
 	keyAddKeysToAgent = "AddKeysToAgent"
 )
 
-// resolutionDependentKeys are the four rows that consult the generic
-// resolution / isolated probes. Named here so tests assert by this map, not
-// by "all rows minus two".
-func resolutionDependentKeys() []string {
-	return []string{keyStrictHostKey, keyForwardAgent, keyHashKnownHosts, keyAddKeysToAgent}
-}
-
 // Statuses probes the machine for every D-10 policy row and classifies each
 // value's provenance per D-01, with the review's correction — a claim is made
 // only when the evidence supports it:
