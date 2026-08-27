@@ -182,6 +182,86 @@ func TestAliasCollisionCyclicInclude(t *testing.T) {
 	}
 }
 
+// TestHostPatternsMatch drives the exported stanza matcher over the full
+// vocabulary of cases the plan pinned: plain, wildcard, negated-only,
+// positive-plus-negated, multi-token, and empty.
+func TestHostPatternsMatch(t *testing.T) {
+	const probe = "gitid-probe.invalid"
+	cases := []struct {
+		name     string
+		patterns []string
+		want     bool
+	}{
+		{"plain match", []string{"gitid-probe.invalid"}, true},
+		{"plain no-match", []string{"other.invalid"}, false},
+		{"wildcard star", []string{"*"}, true},
+		{"wildcard glob", []string{"*.invalid"}, true},
+		{"negated only", []string{"!gitid-probe.invalid"}, false},
+		{"negated only non-matching", []string{"!other.invalid"}, false},
+		{"positive plus negated — excluded", []string{"*.invalid", "!gitid-probe.invalid"}, false},
+		{"positive plus negated — not excluded", []string{"*.invalid", "!other.invalid"}, true},
+		{"multi-token match", []string{"first.invalid", "gitid-probe.invalid"}, true},
+		{"empty patterns", []string{}, false},
+		// The projection gate: the wildcard guard stays at aliasCollides' call site,
+		// so HostPatternsMatch({"*"}, probe) MUST return true — a matcher that
+		// skips "*" would blind the dominant row-4 shadowing case.
+		{"single-star must match", []string{"*"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := HostPatternsMatch(tc.patterns, probe)
+			if got != tc.want {
+				t.Errorf("HostPatternsMatch(%v, %q) = %v, want %v", tc.patterns, probe, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestHostLineMatchesEquivalence asserts that HostLineMatches returns identical
+// results for the same lists supplied as one whitespace-separated string.
+func TestHostLineMatchesEquivalence(t *testing.T) {
+	const probe = "gitid-probe.invalid"
+	cases := []struct {
+		line string
+		want bool
+	}{
+		{"*", true},
+		{"*.invalid", true},
+		{"gitid-probe.invalid", true},
+		{"other.invalid", false},
+		{"*.invalid !gitid-probe.invalid", false},
+		{"*.invalid !other.invalid", true},
+		{"", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.line, func(t *testing.T) {
+			got := HostLineMatches(tc.line, probe)
+			if got != tc.want {
+				t.Errorf("HostLineMatches(%q, %q) = %v, want %v", tc.line, probe, got, tc.want)
+			}
+			// Verify equivalence with HostPatternsMatch over the same tokens.
+			tokens := strings.Fields(tc.line)
+			want2 := HostPatternsMatch(tokens, probe)
+			if got != want2 {
+				t.Errorf("HostLineMatches(%q) = %v but HostPatternsMatch(%v) = %v — must agree", tc.line, got, tokens, want2)
+			}
+		})
+	}
+}
+
+// TestHostPatternsMatchPreservesNegationPrefix is the projection gate from
+// matcher_extraction cycle-4 LOW: tokens must arrive with their "!" prefix
+// intact so HostPatternsMatch can interpret them. A negation-carrying list
+// must still exclude.
+func TestHostPatternsMatchPreservesNegationPrefix(t *testing.T) {
+	const probe = "gitid-probe.invalid"
+	// "!gitid-probe.invalid" should exclude; if the prefix were pre-trimmed the
+	// token would become "gitid-probe.invalid" and match positively.
+	if HostPatternsMatch([]string{"*.invalid", "!gitid-probe.invalid"}, probe) {
+		t.Error("negation-carrying token excluded the host but HostPatternsMatch returned true — prefix was not preserved")
+	}
+}
+
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

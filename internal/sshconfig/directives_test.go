@@ -1,6 +1,8 @@
 package sshconfig
 
-import "testing"
+import (
+	"testing"
+)
 
 // TestScanDirectivesReportsKnownLineAndHostPattern seeds a directive at a
 // known line inside a Host stanza and asserts the exact 1-based line number
@@ -63,5 +65,67 @@ func TestScanDirectivesCaseInsensitiveKeys(t *testing.T) {
 	hits := ScanDirectives(content, "p", []string{"HashKnownHosts"})
 	if len(hits) != 1 || hits[0].Key != "HashKnownHosts" {
 		t.Fatalf("hits = %+v, want one hit with canonical key HashKnownHosts", hits)
+	}
+}
+
+// TestScanDirectivesMultiOrderAndPath asserts that ScanDirectivesMulti returns
+// hits attributed to the correct source path and line across three sources, and
+// returns nothing for an absent key.
+func TestScanDirectivesMultiOrderAndPath(t *testing.T) {
+	src1 := DirectiveSource{Path: "/a.config", Content: []byte("Host *\n  HashKnownHosts yes\n"), LineOffset: 0}
+	src2 := DirectiveSource{Path: "/b.config", Content: []byte("Host *\n  ForwardAgent no\n"), LineOffset: 0}
+	src3 := DirectiveSource{Path: "/c.config", Content: []byte(""), LineOffset: 0}
+
+	hits := ScanDirectivesMulti([]DirectiveSource{src1, src2, src3}, []string{"HashKnownHosts", "ForwardAgent"})
+	if len(hits) != 2 {
+		t.Fatalf("hits = %d, want 2", len(hits))
+	}
+	if hits[0].SourcePath != "/a.config" || hits[0].Key != "HashKnownHosts" || hits[0].Line != 2 {
+		t.Errorf("hit[0] = %+v, want /a.config HashKnownHosts line 2", hits[0])
+	}
+	if hits[1].SourcePath != "/b.config" || hits[1].Key != "ForwardAgent" || hits[1].Line != 2 {
+		t.Errorf("hit[1] = %+v, want /b.config ForwardAgent line 2", hits[1])
+	}
+
+	absent := ScanDirectivesMulti([]DirectiveSource{src1}, []string{"UseKeychain"})
+	if len(absent) != 0 {
+		t.Errorf("absent key returned %d hits, want 0", len(absent))
+	}
+}
+
+// TestScanDirectivesMultiLineOffset asserts that DirectiveSource.LineOffset is
+// added to each hit's Line, recovering the true file line for a slice taken
+// from mid-file. A hit at in-slice line 2 with LineOffset=20 must report
+// line 22.
+func TestScanDirectivesMultiLineOffset(t *testing.T) {
+	src := DirectiveSource{
+		Path:       "/main.config",
+		Content:    []byte("Host *\n  HashKnownHosts yes\n"),
+		LineOffset: 20,
+	}
+	hits := ScanDirectivesMulti([]DirectiveSource{src}, []string{"HashKnownHosts"})
+	if len(hits) != 1 {
+		t.Fatalf("hits = %d, want 1", len(hits))
+	}
+	if hits[0].Line != 22 {
+		t.Errorf("Line = %d, want 22 (in-slice line 2 + offset 20)", hits[0].Line)
+	}
+}
+
+// TestScanDirectivesMultiResolutionOrder asserts that hits are returned in the
+// order the sources were supplied, so a caller can take the first hit as the
+// first-obtained value.
+func TestScanDirectivesMultiResolutionOrder(t *testing.T) {
+	s1 := DirectiveSource{Path: "/first.config", Content: []byte("Host *\n  HashKnownHosts yes\n"), LineOffset: 0}
+	s2 := DirectiveSource{Path: "/second.config", Content: []byte("Host *\n  HashKnownHosts no\n"), LineOffset: 0}
+	hits := ScanDirectivesMulti([]DirectiveSource{s1, s2}, []string{"HashKnownHosts"})
+	if len(hits) != 2 {
+		t.Fatalf("hits = %d, want 2", len(hits))
+	}
+	if hits[0].SourcePath != "/first.config" {
+		t.Errorf("first hit source = %q, want /first.config", hits[0].SourcePath)
+	}
+	if hits[1].SourcePath != "/second.config" {
+		t.Errorf("second hit source = %q, want /second.config", hits[1].SourcePath)
 	}
 }

@@ -2,6 +2,57 @@ package sshconfig
 
 import "strings"
 
+// DirectiveSource names one slice of a real config file to be scanned by
+// ScanDirectivesMulti. Path is the absolute path the content came from (used
+// in every DirectiveHit.SourcePath the scan produces); Content is the slice of
+// that file; LineOffset is added to each in-slice 1-based line to recover the
+// true 1-based line in the file.
+//
+// LineOffset exists because a single file participates in the resolved order in
+// TWO pieces when it contains an Include directive: the bytes above the
+// directive are obtained BEFORE the included files, and the bytes below are
+// obtained AFTER. A caller linearises that by emitting the entry point twice,
+// around the included files, and the second slice needs a non-zero offset so
+// that every hit reports the correct line in the file. Without it, a directive
+// below an Include line would be misattributed by exactly the number of lines
+// above it — a wrong file:line in a security warning is worse than none.
+type DirectiveSource struct {
+	Path       string
+	Content    []byte
+	LineOffset int
+}
+
+// ScanDirectivesMulti applies ScanDirectives to each source in the order
+// given, adds each source's LineOffset to every hit's Line, and concatenates
+// the results. The returned slice is therefore in RESOLUTION ORDER — the order
+// the caller supplies — and every hit still carries the real file path and the
+// true 1-based line in that file.
+//
+// The caller is responsible for supplying the sources in the correct resolution
+// order; this function does NOT discover Include targets and does NOT model
+// Match blocks. The result is BEST-EFFORT NAMING ONLY: a caller must never
+// promise a line this function did not actually report, and must never use a
+// scan result to DECIDE whether shadowing occurred (the probe decides that;
+// this only labels). A directive that reaches the machine through a user
+// Include the caller did not supply, a Match block, or an environment option
+// is invisible here — the caller's honest bound, recorded in doc-comment form
+// so nobody routes the decision through this API again (06-REVIEWS.md HIGH:
+// AllHostStanzas cannot carry directive values or line numbers, and this
+// function is the replacement that can — but it is still naming-only).
+func ScanDirectivesMulti(sources []DirectiveSource, keys []string) []DirectiveHit {
+	var all []DirectiveHit
+	for _, src := range sources {
+		hits := ScanDirectives(src.Content, src.Path, keys)
+		if src.LineOffset != 0 {
+			for i := range hits {
+				hits[i].Line += src.LineOffset
+			}
+		}
+		all = append(all, hits...)
+	}
+	return all
+}
+
 // DirectiveHit is one occurrence of a requested directive found by a
 // ScanDirectives pass: the canonical key spelling, its value, the enclosing
 // Host pattern (empty when the directive is not nested inside a Host stanza),
@@ -48,10 +99,14 @@ func ScanDirectives(content []byte, sourcePath string, keys []string) []Directiv
 			continue
 		}
 		if strings.EqualFold(fields[0], "Host") {
-			// Track the enclosing Host pattern (first alias token); an empty
+			// Track the enclosing Host pattern — ALL tokens after the Host
+			// keyword, whitespace-joined, so that HostLineMatches can apply
+			// the full negation-aware stanza rule (a single first-token miss
+			// would make "Host * !gitid-probe.invalid" look like a plain "*"
+			// stanza and match the probe host when it should not). An empty
 			// pattern means "not nested inside a Host stanza". Multiple Host
 			// lines simply move the current stanza.
-			pattern = fields[1]
+			pattern = strings.Join(fields[1:], " ")
 			continue
 		}
 		key, ok := want[strings.ToLower(fields[0])]

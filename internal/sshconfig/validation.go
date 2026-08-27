@@ -142,6 +142,58 @@ func globMatch(pattern, s string) bool {
 	return len(s) == 0
 }
 
+// HostPatternsMatch reports whether a Host stanza whose pattern tokens are
+// patterns matches candidate under OpenSSH stanza semantics: the stanza
+// matches when at least one non-negated pattern matches the candidate AND no
+// negated pattern in the same stanza matches it.
+//
+// Each token in patterns is taken exactly as returned by pat.String() on the
+// kevinburke/ssh_config parser's Pattern type, negation prefix ("!") included.
+// The trim of the "!" prefix is performed HERE, never at the call site, so a
+// caller that pre-trims would silently turn every negation into an inclusion.
+//
+// HostLineMatches is the companion that accepts a raw whitespace-separated Host
+// line string and calls this function after tokenising it — both functions
+// therefore operate on the same negation-carrying token shape, so the rule
+// lives in exactly one place.
+//
+// internal/globalssh's shadow-naming pass is the second caller; adding a third
+// negation implementation anywhere is the defect this export exists to prevent
+// (06-REVIEWS.md cycle-3 HIGH: the previous revision told shadow.go to call
+// the unexported aliasCollides).
+func HostPatternsMatch(patterns []string, candidate string) bool {
+	if len(patterns) == 0 {
+		return false
+	}
+	positive := false
+	negative := false
+	for _, tok := range patterns {
+		negated := strings.HasPrefix(tok, "!")
+		s := tok
+		if negated {
+			s = strings.TrimPrefix(s, "!")
+		}
+		if HostMatch(s, candidate) {
+			if negated {
+				negative = true
+			} else {
+				positive = true
+			}
+		}
+	}
+	return positive && !negative
+}
+
+// HostLineMatches applies the same negation-aware stanza rule as
+// HostPatternsMatch to the raw whitespace-separated pattern text of a Host
+// line — the shape DirectiveHit.HostPattern carries. strings.Fields tokenises
+// the line into the same negation-carrying form pat.String() returns, so both
+// callers hand HostPatternsMatch identical tokens and the rule is decided in
+// one place.
+func HostLineMatches(patternLine, candidate string) bool {
+	return HostPatternsMatch(strings.Fields(patternLine), candidate)
+}
+
 // HostPattern is one pattern from a Host line, annotated with its negation
 // state and the file it came from.
 type HostPattern struct {
@@ -189,29 +241,27 @@ func aliasCollides(configPath, candidate string, seen map[string]bool) (bool, er
 
 	for _, host := range cfg.Hosts {
 		// Skip the implicit Host * inserted by the parser for an empty file.
+		// This guard stays at the call site: folding it into HostPatternsMatch
+		// would both change AliasCollision's behavior and blind internal/globalssh
+		// to a real `Host *` stanza (resolution_order row 4's dominant shadowing
+		// case — HostPatternsMatch([]string{"*"}, ProbeHost) MUST return true).
 		if len(host.Patterns) == 1 && host.Patterns[0].String() == "*" {
 			continue
 		}
+		// The zero-patterns guard is similarly a fact about cfg.Hosts' shape,
+		// not pattern semantics — it stays here for the same reason.
 		if len(host.Patterns) == 0 {
 			continue
 		}
-		positive := false
-		negative := false
+		// Project []*ssh_config.Pattern to []string, keeping the negation prefix
+		// exactly as pat.String() returns it. The trim of "!" belongs inside
+		// HostPatternsMatch, never here — pre-trimming silently converts every
+		// negation into an inclusion (matcher_extraction call-site rule 2).
+		tokens := make([]string, 0, len(host.Patterns))
 		for _, pat := range host.Patterns {
-			s := pat.String()
-			negated := strings.HasPrefix(s, "!")
-			if negated {
-				s = strings.TrimPrefix(s, "!")
-			}
-			if HostMatch(s, candidate) {
-				if negated {
-					negative = true
-				} else {
-					positive = true
-				}
-			}
+			tokens = append(tokens, pat.String())
 		}
-		if positive && !negative {
+		if HostPatternsMatch(tokens, candidate) {
 			return true, nil
 		}
 	}
