@@ -206,9 +206,23 @@ func Statuses(deps Deps) []OptionStatus {
 		sysErr     error
 		wg         sync.WaitGroup
 	)
-	wg.Add(5)
-	go func() { defer wg.Done(); hits, configErr = fileHits(deps) }()
-	go func() { defer wg.Done(); _, config, _ = deps.ReadConfig() }()
+	wg.Add(4)
+	// WR-15: read the per-user config ONCE and derive BOTH hits and config
+	// from that single read — the previous version had TWO independent
+	// concurrent deps.ReadConfig() calls (this one, plus fileHits' own),
+	// discarded the second call's error entirely, and gated the code below
+	// on the FIRST call's error while using the SECOND call's bytes. A write
+	// landing between the two reads could leave configErr==nil (first call
+	// succeeded) while config held stale or inconsistent bytes from the
+	// second call — or vice versa.
+	go func() {
+		defer wg.Done()
+		var path string
+		path, config, configErr = deps.ReadConfig()
+		if configErr == nil {
+			hits = hitsFromContent(config, path)
+		}
+	}()
 	go func() { defer wg.Done(); eff, effErr = effective(deps) }()
 	go func() { defer wg.Done(); base, baseErr = baseline(deps) }()
 	go func() { defer wg.Done(); sysPath, sysContent, sysErr = deps.ReadSystemConfig() }()

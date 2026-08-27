@@ -186,20 +186,21 @@ func policyKeys() []string {
 	return keys
 }
 
-// fileHits scans the gitid-visible per-user config for the six policy keys
+// hitsFromContent scans already-read config bytes for the six policy keys
 // through sshconfig.ScanDirectives. The scan is best-effort and single-file
 // (Include-unaware, exactly like its neighbours in sshconfig/reader.go): an
-// empty result means "cannot name", never "does not exist". A read failure is
-// treated the same way (best-effort), because the provenance label must never
-// hard-fail the pane.
-func fileHits(deps Deps) (map[string]sshconfig.DirectiveHit, error) {
-	path, content, err := deps.ReadConfig()
-	if err != nil {
-		return nil, err
-	}
+// empty result means "cannot name", never "does not exist".
+//
+// WR-15: this used to be fileHits(deps), which called deps.ReadConfig()
+// itself — a SECOND, independent read from the one Statuses also performed
+// for perAliasFromContent. Splitting the read from the scan lets Statuses
+// derive both from the SAME deps.ReadConfig() call, so a write landing
+// between two reads can no longer produce hits and the per-alias
+// conformance count computed against two different file snapshots.
+func hitsFromContent(content []byte, path string) map[string]sshconfig.DirectiveHit {
 	hits := make(map[string]sshconfig.DirectiveHit)
 	for _, hit := range sshconfig.ScanDirectives(content, path, policyKeys()) {
 		hits[hit.Key] = hit
 	}
-	return hits, nil
+	return hits
 }

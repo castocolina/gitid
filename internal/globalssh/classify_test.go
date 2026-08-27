@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -198,6 +199,49 @@ func TestStatusesConfigReadErrorDegradesToNotApplicable(t *testing.T) {
 		}
 		if st.NotApplicableReason != ReasonProbeFailed {
 			t.Errorf("%s NotApplicableReason = %v, want ReasonProbeFailed; WR-14 regressed", key, st.NotApplicableReason)
+		}
+	}
+}
+
+// TestStatusesReadsConfigOnce is the WR-15 regression: Statuses must call
+// deps.ReadConfig() exactly ONCE and derive both the directive hits AND the
+// perAliasFromContent input from that single read. Before the fix, two
+// independent goroutines each called deps.ReadConfig() concurrently — a
+// write landing between the two reads could leave the hits (from the first
+// call) and the per-alias conformance count (from the second call, whose
+// error was silently discarded) computed against two DIFFERENT snapshots of
+// the file.
+func TestStatusesReadsConfigOnce(t *testing.T) {
+	var calls int32
+	deps := depsForOut(cannedResolved, cannedResolved, "~/.ssh/config", nil, "/etc/ssh/ssh_config", nil, nil)
+	deps.ReadConfig = func() (string, []byte, error) {
+		atomic.AddInt32(&calls, 1)
+		return "~/.ssh/config", []byte("StrictHostKeyChecking accept-new\n"), nil
+	}
+	Statuses(deps)
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Errorf("deps.ReadConfig called %d times, want exactly 1; WR-15 regressed", got)
+	}
+}
+
+// TestStatusesConfigReadErrorNeverLeavesStaleHits proves the single-read
+// fix's error-propagation half: when deps.ReadConfig fails, hits AND the
+// per-alias conformance count must BOTH degrade together (SourceInconclusive
+// for the config-dependent rows), never partially succeed from a second,
+// separately-erroring read.
+func TestStatusesConfigReadErrorNeverLeavesStaleHits(t *testing.T) {
+	deps := depsForOut(cannedResolved, cannedResolved, "~/.ssh/config", nil, "/etc/ssh/ssh_config", nil, nil)
+	deps.GOOS = "darwin"
+	deps.ReadConfig = func() (string, []byte, error) {
+		return "", nil, errors.New("config: boom")
+	}
+	statuses := statusByKey(t, Statuses(deps))
+	for _, key := range []string{"UseKeychain", "IdentitiesOnly"} {
+		if statuses[key].Source != SourceInconclusive {
+			t.Errorf("%s Source = %v, want SourceInconclusive", key, statuses[key].Source)
+		}
+		if statuses[key].ProbeError == "" {
+			t.Errorf("%s ProbeError is empty, want the config read error", key)
 		}
 	}
 }
