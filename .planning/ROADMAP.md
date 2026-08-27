@@ -318,8 +318,32 @@ Plans:
    review compares it with `cmd/gitid-dummy` and classifies every difference as an
    improvement or a defect. (DLV-04, DLV-06)
 
-**Plans**: TBD
+**Plans**: 6 plans in 6 sequential waves (LEARNINGS L11 — the whole-module pre-commit hooks make parallel executors block each other's commits)
 **UI hint**: yes
+
+**Wave 1**
+
+- [ ] 07-01-PLAN.md — TRACER: the UI-free `internal/globalgit` probe/policy/classify engine, the `global-git` sentinel with POC-name adoption + reserved registration, `EnsureGlobalGit` as the one block owner, `runGlobalGitApply` as the one journal-backed write ceremony, and the `GlobalGitPlanner` seam — proven end to end on `init.defaultBranch` (GGIT-01; D-01, D-03, D-11.2)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 07-02-PLAN.md — The D9 fallback author as a two-field pair: `InsertBlockAfter`, its own early sentinel block above every `includeIf`, `runGitFallbackAuthorApply`, and the post-write matched/unmatched precedence proof (GGIT-01; D-04, D-05, D-06)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 07-03-PLAN.md — All twelve rows honest: the complete pinned table, the informational-vs-hard version gates and the `zdiff3`/`diff3` write substitution, the `set, differs` informational state, three-tier provenance, bundle aggregates, the pinned tally rule, the fixture corrections and the new frozen copy (GGIT-01; D-02, D-03, D-07, D-08, D-09, D-10)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 07-04-PLAN.md — The TUI surface at real size: the scrolling master list with a scroll-aware click mapping, the git-probe error state, the verified ceremony preview budget, the demo banner retired, and raw-keystroke PTY coverage of every state (GGIT-01, DLV-04, DLV-06)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 07-05-PLAN.md — The frozen `gitid git` CLI surface: four commands over the same two ceremonies, four versioned JSON envelopes, the exit-status table, the parity-matrix rows, the REQUIREMENTS §J correction, and headless e2e (GGIT-01; D-11.1)
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [ ] 07-06-PLAN.md — Visual-regression closure: every Global Git state registered with a classified divergence allowlist and four working negative controls; the cross-AI review packet; the full exit battery run for real; GGIT-01 closed against the roadmap criteria (GGIT-01, DLV-04, DLV-06)
 
 ### Phase 8: Health + Fixer
 
