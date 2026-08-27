@@ -774,6 +774,8 @@ func sshNAReasonWire(r globalssh.NotApplicableReason) string {
 		return "version-unverified"
 	case globalssh.ReasonNothingToVerify:
 		return "nothing-to-verify"
+	case globalssh.ReasonProbeFailed:
+		return "probe-failed"
 	default:
 		return "none"
 	}

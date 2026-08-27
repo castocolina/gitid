@@ -801,6 +801,8 @@ func notApplicableSentence(r GlobalSSHNotApplicableReason) string {
 		return GlobalSSHNAVersionUnverified
 	case GlobalSSHReasonNothingToVerify:
 		return GlobalSSHNANothingToVerify
+	case GlobalSSHReasonProbeFailed:
+		return GlobalSSHNAProbeFailed
 	default:
 		return GlobalSSHNAPlatform
 	}

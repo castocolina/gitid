@@ -333,6 +333,7 @@ gate-copy-freeze:
 		'not applicable (OpenSSH too old for accept-new)' \
 		'not applicable (OpenSSH version could not be verified)' \
 		'not applicable (nothing on this machine to verify)' \
+		'not applicable (could not be probed)' \
 		'shadow warning: ' \
 		'simulation inconclusive — gitid could not fully read your config graph' \
 		'advisory: '; \

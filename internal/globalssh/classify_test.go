@@ -152,6 +152,56 @@ func TestStatusesProbeErrorCarriesMessage(t *testing.T) {
 	}
 }
 
+// TestStatusesProbeErrorDegradesToNotApplicable is the WR-14 regression: a
+// row whose Source is SourceInconclusive (a probe it depends on failed) must
+// render as StateNotApplicable/ReasonProbeFailed, never StateNeedsAction.
+// Before the fix, the inconclusive branches left CurrentValue empty and fell
+// through to stateFor's effective=="" case, which returns StateNeedsAction —
+// a machine with no ssh on PATH rendered every resolution-dependent row as a
+// selectable "needs action" checkbox despite the probe having failed.
+func TestStatusesProbeErrorDegradesToNotApplicable(t *testing.T) {
+	deps := depsForOut("", "", "~/.ssh/config", nil, "/etc/ssh/ssh_config", nil, nil)
+	deps.RunSSHG = func(context.Context, ...string) (string, error) { return "", errors.New("ssh: boom") }
+	statuses := statusByKey(t, Statuses(deps))
+	for _, key := range resolutionDependentKeys() {
+		st := statuses[key]
+		if st.Source != SourceInconclusive {
+			t.Fatalf("%s Source = %v, want SourceInconclusive (test setup)", key, st.Source)
+		}
+		if st.State != StateNotApplicable {
+			t.Errorf("%s State = %v, want StateNotApplicable; WR-14 regressed", key, st.State)
+		}
+		if st.NotApplicableReason != ReasonProbeFailed {
+			t.Errorf("%s NotApplicableReason = %v, want ReasonProbeFailed; WR-14 regressed", key, st.NotApplicableReason)
+		}
+		if st.ProbeError == "" {
+			t.Errorf("%s ProbeError is empty; the advisory explanation must survive the degrade", key)
+		}
+	}
+}
+
+// TestStatusesConfigReadErrorDegradesToNotApplicable proves the same WR-14
+// fix for the config-read-dependent rows (UseKeychain, IdentitiesOnly),
+// which consult deps.ReadConfig rather than the resolution probe.
+func TestStatusesConfigReadErrorDegradesToNotApplicable(t *testing.T) {
+	deps := depsForOut(cannedResolved, cannedResolved, "~/.ssh/config", nil, "/etc/ssh/ssh_config", nil, nil)
+	deps.GOOS = "darwin"
+	deps.ReadConfig = func() (string, []byte, error) { return "", nil, errors.New("config: boom") }
+	statuses := statusByKey(t, Statuses(deps))
+	for _, key := range []string{"UseKeychain", "IdentitiesOnly"} {
+		st := statuses[key]
+		if st.Source != SourceInconclusive {
+			t.Fatalf("%s Source = %v, want SourceInconclusive (test setup)", key, st.Source)
+		}
+		if st.State != StateNotApplicable {
+			t.Errorf("%s State = %v, want StateNotApplicable; WR-14 regressed", key, st.State)
+		}
+		if st.NotApplicableReason != ReasonProbeFailed {
+			t.Errorf("%s NotApplicableReason = %v, want ReasonProbeFailed; WR-14 regressed", key, st.NotApplicableReason)
+		}
+	}
+}
+
 func TestStateFor(t *testing.T) {
 	forwardAgent, ok := PolicyFor("ForwardAgent")
 	if !ok {
@@ -239,9 +289,13 @@ func TestStatusesResolutionProbeErrorLeavesFileRowsUnchanged(t *testing.T) {
 	if ok["UseKeychain"].State != StateAlreadySet && ok["IdentitiesOnly"].State != StateAlreadySet {
 		t.Fatal("fixture must keep at least one file-derived row already set")
 	}
+	// WR-14: a resolution probe failure degrades these rows to
+	// not-applicable/probe-failed (never needs-action — that would render a
+	// selectable checkbox inviting the user to "fix" something gitid could
+	// not read) while still carrying the ProbeError explanation.
 	for _, key := range resolutionDependentKeys() {
-		if fail[key].State != StateNeedsAction || fail[key].ProbeError == "" {
-			t.Errorf("%s = %+v, want needs-action with probe error", key, fail[key])
+		if fail[key].State != StateNotApplicable || fail[key].NotApplicableReason != ReasonProbeFailed || fail[key].ProbeError == "" {
+			t.Errorf("%s = %+v, want not-applicable/probe-failed with probe error", key, fail[key])
 		}
 		if fail[key].State == StateAlreadySet {
 			t.Errorf("%s must not promote to already-set on a failed resolution probe", key)

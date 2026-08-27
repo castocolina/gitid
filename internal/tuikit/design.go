@@ -251,6 +251,10 @@ const (
 	GlobalSSHNAVersionUnverified = "not applicable (OpenSSH version could not be verified)"
 	// GlobalSSHNANothingToVerify is the IdentitiesOnly sentence when no managed hosts exist.
 	GlobalSSHNANothingToVerify = "not applicable (nothing on this machine to verify)"
+	// GlobalSSHNAProbeFailed is the WR-14 not-applicable sentence when a probe
+	// this row depends on returned an error — the row's own ProbeError line
+	// carries the detail; this is the master-list summary.
+	GlobalSSHNAProbeFailed = "not applicable (could not be probed)"
 )
 
 // ---------------------------------------------------------------------------

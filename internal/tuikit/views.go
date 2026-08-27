@@ -337,6 +337,11 @@ const (
 	GlobalSSHReasonVersionUnverified
 	// GlobalSSHReasonNothingToVerify means IdentitiesOnly has no managed hosts to check.
 	GlobalSSHReasonNothingToVerify
+	// GlobalSSHReasonProbeFailed means a probe this row depends on returned
+	// an error (WR-14) — no state claim is possible, so the row is
+	// not-applicable rather than a selectable "needs action" the user might
+	// try to "fix" on a machine that cannot verify it.
+	GlobalSSHReasonProbeFailed
 )
 
 // GlobalSSHOptionView is one Options-sub-tab row as the render stack knows it.

@@ -545,6 +545,7 @@ func TestOptionRowAlreadySetBaselineProvenance(t *testing.T) {
 func TestOptionRowNotApplicableReasonsAreDistinct(t *testing.T) {
 	reasons := []GlobalSSHNotApplicableReason{
 		GlobalSSHReasonPlatform, GlobalSSHReasonVersionTooOld, GlobalSSHReasonVersionUnverified, GlobalSSHReasonNothingToVerify,
+		GlobalSSHReasonProbeFailed,
 	}
 	seen := map[string]GlobalSSHNotApplicableReason{}
 	platform := notApplicableSentence(GlobalSSHReasonPlatform)
@@ -572,8 +573,8 @@ func TestOptionRowNotApplicableReasonsAreDistinct(t *testing.T) {
 			t.Fatalf("not-applicable row for %v must omit the recommendation arrow", r)
 		}
 	}
-	if len(seen) != 4 {
-		t.Fatalf("got %d distinct sentences, want 4", len(seen))
+	if len(seen) != len(reasons) {
+		t.Fatalf("got %d distinct sentences, want %d (one per reason)", len(seen), len(reasons))
 	}
 }
 

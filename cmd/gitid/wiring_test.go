@@ -4196,7 +4196,8 @@ func TestGlobalSSHFixturePolicyParity(t *testing.T) {
 		int(tuikit.GlobalSSHReasonPlatform) != int(globalssh.ReasonPlatform) ||
 		int(tuikit.GlobalSSHReasonVersionTooOld) != int(globalssh.ReasonVersionTooOld) ||
 		int(tuikit.GlobalSSHReasonVersionUnverified) != int(globalssh.ReasonVersionUnverified) ||
-		int(tuikit.GlobalSSHReasonNothingToVerify) != int(globalssh.ReasonNothingToVerify) {
+		int(tuikit.GlobalSSHReasonNothingToVerify) != int(globalssh.ReasonNothingToVerify) ||
+		int(tuikit.GlobalSSHReasonProbeFailed) != int(globalssh.ReasonProbeFailed) {
 		t.Fatal("NotApplicableReason enums drifted between tuikit and globalssh")
 	}
 	p, _ := globalssh.PolicyFor("StrictHostKeyChecking")

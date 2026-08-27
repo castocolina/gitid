@@ -32,7 +32,7 @@ var (
 	sshSourceEnum   = []string{"gitid-parsed", "outside-gitid", "system-file", "baseline", "inconclusive"}
 	sshRiskEnum     = []string{"low", "medium", "high"}
 	sshScopeEnum    = []string{"global", "per-alias"}
-	sshNAReasonEnum = []string{"none", "platform", "version-too-old", "version-unverified", "nothing-to-verify"}
+	sshNAReasonEnum = []string{"none", "platform", "version-too-old", "version-unverified", "nothing-to-verify", "probe-failed"}
 	sshLayoutEnum   = []string{"include", "in-file"}
 )
 

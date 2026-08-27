@@ -75,6 +75,14 @@ const (
 	ReasonVersionUnverified
 	// ReasonNothingToVerify means IdentitiesOnly has no managed Host blocks to check.
 	ReasonNothingToVerify
+	// ReasonProbeFailed means a probe this row depends on returned an error
+	// (SourceInconclusive), so no state claim is possible (WR-14). Without
+	// this reason, a probe failure fell through to stateFor's
+	// effective=="" branch and rendered as StateNeedsAction — a selectable
+	// checkbox inviting the user to "fix" a value gitid could not read, on
+	// a machine (e.g. no ssh on PATH) where writing it would proceed
+	// unverified.
+	ReasonProbeFailed
 )
 
 // OptionStatus is one policy row's machine-readable answer: the effective
@@ -292,7 +300,22 @@ func Statuses(deps Deps) []OptionStatus {
 				}
 			}
 		}
-		st.State, st.NotApplicableReason = stateFor(p, st.CurrentValue, st.Source, deps.GOOS)
+		if st.Source == SourceInconclusive {
+			// WR-14: a probe failure must render as not-applicable, not as
+			// needs-action. Without this, a machine that cannot answer a
+			// probe (e.g. no ssh on PATH) rendered all its rows as
+			// "needs action" with a checkbox the TUI's own Selectable()
+			// predicate already withholds (it checks ProbeError directly),
+			// but the label and detail-pane wording were still wrong —
+			// inviting the user to "fix" something gitid could not read.
+			// The advisory posture is preserved for the EXPLANATION (the row
+			// still renders with its ProbeError); only the misleading STATE
+			// classification changes here.
+			st.State = StateNotApplicable
+			st.NotApplicableReason = ReasonProbeFailed
+		} else {
+			st.State, st.NotApplicableReason = stateFor(p, st.CurrentValue, st.Source, deps.GOOS)
+		}
 		out = append(out, st)
 	}
 	return out

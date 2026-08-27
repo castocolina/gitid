@@ -43,7 +43,7 @@ Top-level keys (exact set): `schema`, `options`.
 | `source` | string | `gitid-parsed` \| `outside-gitid` \| `system-file` \| `baseline` \| `inconclusive`. |
 | `source_file` | string | Display path of the named source; empty when unknown. |
 | `source_line` | integer | Line number; `0` when unknown. |
-| `not_applicable_reason` | string | `none` \| `platform` \| `version-too-old` \| `version-unverified` \| `nothing-to-verify`. |
+| `not_applicable_reason` | string | `none` \| `platform` \| `version-too-old` \| `version-unverified` \| `nothing-to-verify` \| `probe-failed`. |
 | `version_note` | string | Dynamic OpenSSH note; empty when none. |
 | `probe_error` | string | Probe failure note; empty when none. |
 
