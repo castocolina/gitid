@@ -1890,7 +1890,7 @@ func TestParityMatrixResolvesAndCoversTree(t *testing.T) {
 // requirement this plan claims to satisfy: each id appears in at least one row.
 func TestParityMatrixRequirementCoverage(t *testing.T) {
 	rows, _ := parseParityMatrix(t)
-	required := []string{"MGR-04", "MGR-05", "MGR-06", "KEY-05", "KEY-07", "SHELL-03"}
+	required := []string{"MGR-04", "MGR-05", "MGR-06", "KEY-05", "KEY-07", "SHELL-03", "GSSH-01"}
 	for _, id := range required {
 		found := false
 		for _, row := range rows {
@@ -1910,7 +1910,7 @@ func TestParityMatrixRequirementCoverage(t *testing.T) {
 // every write verb plus the reads list and show.
 func TestParityMatrixDryRunContractTable(t *testing.T) {
 	_, dryRunVerbs := parseParityMatrix(t)
-	want := map[string]bool{"create": true, "clone": true, "rotate": true, "new-key": true, "delete": true, "list": true, "show": true}
+	want := map[string]bool{"create": true, "clone": true, "rotate": true, "new-key": true, "delete": true, "list": true, "show": true, "ssh options apply": true, "ssh storage migrate": true}
 	got := map[string]bool{}
 	for _, cell := range dryRunVerbs {
 		for _, tok := range strings.Split(cell, ",") {
