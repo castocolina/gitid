@@ -15,7 +15,7 @@ is backed-up and reversible (STORE-03).     │ ┊ Host personal.github.com    
                                             │ ┊   Hostname ssh.github.com                          ┊
   Migrate layout… (Enter)                   │ ┊   Port 443                                         ┊
                                             │ ┊   User git                                         ┊
-                                            │ ┊   IdentityFile /tmp/h741486159/.ssh/id_ed25519_pe… ┊
+                                            │ ┊   IdentityFile /tmp/h1449177130/.ssh/id_ed25519_p… ┊
                                             │ ┊   IdentitiesOnly yes                               ┊
                                             │ ┊ # END gitid managed: personal                      ┊
                                             │ ┊ # BEGIN gitid managed: work                        ┊
@@ -25,6 +25,6 @@ is backed-up and reversible (STORE-03).     │ ┊ Host personal.github.com    
                                             │
                                             │
                                             │
- 5 of 6 options need action — Recommended, not required -- you can leave any option unchanged. Thi…
+ 1 of 6 options need action — Recommended, not required -- you can leave any option unchanged. Thi…
  ←→ Options / Storage · ↑↓ layout · Enter migrate layout…
  Enter activate · Esc back · ? help · Ctrl+P palette · q quit

@@ -970,6 +970,49 @@ func TestGlobalSSHStoragePlanErrSuppressesMigrateAction(t *testing.T) {
 	}
 }
 
+// TestGlobalSSHStoragePostMigrationRefetchUsesConfirmedLayout is the WR-18
+// regression: handleMsg's post-migration refetch must plan for the
+// CONFIRMED target layout, not s.SSHStorage (the state captured BEFORE the
+// SetSSHStorage reducer runs — still the OLD, pre-migration layout). Before
+// the fix, this refetch silently planned the REVERSE migration (back to the
+// old layout) and stored it as the live pending plan via
+// SSHStorageMigrationPlan's own putPendingMigration side effect.
+func TestGlobalSSHStoragePostMigrationRefetchUsesConfirmedLayout(t *testing.T) {
+	var calls []SSHStorageLayout
+	b := stubBackend{
+		sshStoragePlanFn: func(layout SSHStorageLayout) (SSHStorageMigrationView, error) {
+			calls = append(calls, layout)
+			return fixtureSSHStorageView(layout), nil
+		},
+	}
+	a := NewApp(b)
+	a, _ = press(t, a, "2")
+	a, _ = press(t, a, "right") // activate Storage sub-tab (fixture starts at Sentinel)
+	a, _ = press(t, a, "down")  // select Include (the migration target)
+	a, _ = press(t, a, "enter") // open ceremony
+	a, cmd := press(t, a, "enter")
+	if cmd == nil {
+		t.Fatal("confirmation must dispatch the async CommitSSHStorage command")
+	}
+	msg, ok := cmd().(SSHStorageCommitMsg)
+	if !ok {
+		t.Fatalf("cmd() = %T, want SSHStorageCommitMsg", cmd())
+	}
+	callsBeforeCommitMsg := len(calls)
+	model, _ := a.Update(msg)
+	a = model.(App)
+	_ = a
+
+	if len(calls) != callsBeforeCommitMsg+1 {
+		t.Fatalf("expected exactly one additional SSHStorageMigrationPlan call after the commit message, got %d (total calls: %v)",
+			len(calls)-callsBeforeCommitMsg, calls)
+	}
+	got := calls[len(calls)-1]
+	if got != StorageInclude {
+		t.Errorf("post-migration refetch planned for %v, want the confirmed target %v; WR-18 regressed (reverse-migration plan)", got, StorageInclude)
+	}
+}
+
 // TestGlobalSSHStorageMouseClickRefetchesAfterActivationError is the CR-05
 // regression for the mouse path. It reproduces the exact pre-fix production
 // shape via sshStoragePlanFn: SSHStorageMigrationPlan errors when asked to

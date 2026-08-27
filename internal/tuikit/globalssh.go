@@ -174,7 +174,7 @@ func (m globalSSHModel) refetchStoragePlan() globalSSHModel {
 // once the backend's commands have answered. The receipt is reachable ONLY
 // from an explicit success; reducer actions are dispatched here, never
 // optimistically.
-func (m globalSSHModel) handleMsg(msg tea.Msg, s DemoState) keyResult {
+func (m globalSSHModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 	if commit, ok := msg.(GlobalSSHCommitMsg); ok && m.mode == gssApplyCeremony && m.applyCommitPending {
 		m.applyCommitPending = false
 		if commit.Err != "" {
@@ -217,9 +217,22 @@ func (m globalSSHModel) handleMsg(msg tea.Msg, s DemoState) keyResult {
 		}
 		layout := m.storageTargetLayout
 		m.ceremony = m.ceremony.commitSucceeded(commit.Backups)
-		// Refetch the storage view so the current-layout marker moves to the
-		// new layout. A fetch error is advisory — the write already succeeded.
-		view, verr := m.backend.SSHStorageMigrationPlan(s.SSHStorage)
+		// WR-18: refetch for the CONFIRMED target layout, not s.SSHStorage —
+		// s is the state captured BEFORE the SetSSHStorage reducer below runs,
+		// so s.SSHStorage is still the OLD (pre-migration) layout. On disk the
+		// layout is now `layout` (the new one), so planning for s.SSHStorage
+		// silently computed the plan to migrate BACK — and stored it as the
+		// live pending plan (SSHStorageMigrationPlan's own side effect), a
+		// reverse migration nobody asked for. The stated "current-layout
+		// marker" purpose was never actually served by this call either:
+		// renderStorage's marker reads s.SSHStorage fresh from the render
+		// argument, which the SetSSHStorage action below already keeps
+		// correct. What genuinely goes stale is m.storageChoice and
+		// m.storageView — both are refreshed here for the layout the
+		// migration ACTUALLY produced. A fetch error is advisory — the write
+		// already succeeded.
+		m.storageChoice = layout
+		view, verr := m.backend.SSHStorageMigrationPlan(layout)
 		if verr == nil {
 			m.storageView = view
 			m.storageViewErr = ""

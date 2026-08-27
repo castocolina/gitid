@@ -2,29 +2,29 @@
  Global SSH › Storage & preview
   Options   Storage & preview
  STORE-01 — where gitid-managed SSH config  │  Resulting config — Include + owned file
-lives                                       │ ╭╌╌╮
- ○ Sentinel blocks in ~/.ssh/config         │ ┊  ┊
-(default)                                   │ ╰╌╌╯
- ● gitid-owned ~/.ssh/config.d/gitid.config │ ╭╌╌╮
-via one Include line — current              │ ┊  ┊
-                                            │ ╰╌╌╯
- Include paths must be absolute or ~/.ssh-  │
-relative; the Include line goes NEAR THE TOP│
-of ~/.ssh/config. Migration between layouts │
-is backed-up and reversible (STORE-03).     │
+lives                                       │ ╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮
+ ○ Sentinel blocks in ~/.ssh/config         │ ┊ # BEGIN gitid managed: ssh-include ┊
+(default)                                   │ ┊ Include ~/.ssh/config.d/*.config   ┊
+ ● gitid-owned ~/.ssh/config.d/gitid.config │ ┊ # END gitid managed: ssh-include   ┊
+via one Include line — current              │ ┊                                    ┊
+                                            │ ┊ … (+3 more lines)                  ┊
+ Include paths must be absolute or ~/.ssh-  │ ╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+relative; the Include line goes NEAR THE TOP│ ╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮
+of ~/.ssh/config. Migration between layouts │ ┊ # BEGIN gitid managed: personal                    ┊
+is backed-up and reversible (STORE-03).     │ ┊ Host personal.github.com                           ┊
+                                            │ ┊   Hostname ssh.github.com                          ┊
+                                            │ ┊   Port 443                                         ┊
+                                            │ ┊   User git                                         ┊
+                                            │ ┊   IdentityFile /tmp/h2458888222/.ssh/id_ed25519_p… ┊
+                                            │ ┊   IdentitiesOnly yes                               ┊
+                                            │ ┊ # END gitid managed: personal                      ┊
+                                            │ ┊ # BEGIN gitid managed: work                        ┊
+                                            │ ┊ Host work.github.com                               ┊
+                                            │ ┊ … (+11 more lines)                                 ┊
+                                            │ ╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
                                             │
                                             │
                                             │
-                                            │
-                                            │
-                                            │
-                                            │
-                                            │
-                                            │
-                                            │
-                                            │
-                                            │
-                                            │
- 5 of 6 options need action — Recommended, not required -- you can leave any option unchanged. Thi…
+ 1 of 6 options need action — Recommended, not required -- you can leave any option unchanged. Thi…
  ←→ Options / Storage · ↑↓ layout
  Enter activate · Esc back · ? help · Ctrl+P palette · q quit

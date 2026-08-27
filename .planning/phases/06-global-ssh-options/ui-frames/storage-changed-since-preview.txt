@@ -25,6 +25,6 @@
 
 
 
- 5 of 6 options need action — Recommended, not required -- you can leave any option unchanged. Thi…
+ 1 of 6 options need action — Recommended, not required -- you can leave any option unchanged. Thi…
  Tab/←→ Cancel / Confirm · Enter confirm
  Esc back · Ctrl+P palette
