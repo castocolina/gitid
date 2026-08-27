@@ -6,8 +6,8 @@ shadow warning: StrictHostKeyChecking will be shadowed by ~/.ssh/config (line 2)
 advisory: StrictHostKeyChecking was applied but is still shadowed by an external directive — the fix
 Wrote → ~/.ssh/config.d/gitid.config
 Wrote → ~/.ssh/config
-Backed up → ~/.ssh/config.bak.1787829526236310000
-Backed up → ~/.ssh/config.d/gitid.config.bak.1787829526283655000
+Backed up → ~/.ssh/config.bak.1787871864989126000
+Backed up → ~/.ssh/config.d/gitid.config.bak.1787871865033117000
 
  Done (Enter)
 

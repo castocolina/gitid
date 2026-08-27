@@ -4,7 +4,7 @@
 
 Wrote → ~/.gitconfig
 Wrote → ~/.gitconfig.d/00-baseline
-Backed up → ~/.gitconfig.backup.2026-08-27T21-25-26Z
+Backed up → ~/.gitconfig.backup.2026-08-27T23-03-54Z
 
  Done (Enter)
 
