@@ -1547,6 +1547,34 @@ func TestRunGlobalSSHApplyVerifyStageIsRecorded(t *testing.T) {
 	}
 }
 
+// TestRunGlobalSSHApplyVerifyInconclusiveIsAdvised is the WR-01 regression:
+// when the post-write verification probe cannot run at all (here, by
+// removing `ssh` from PATH so globalssh.Verify's RunSSHG fails), the result
+// must carry an advisory saying so — before the fix, an Inconclusive verify
+// result was silently dropped and a failed post-write verification reported
+// success with no advisory at all.
+func TestRunGlobalSSHApplyVerifyInconclusiveIsAdvised(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+
+	// Remove ssh from PATH so the post-write globalssh.Verify probe fails.
+	t.Setenv("PATH", t.TempDir())
+
+	res, err := b.runGlobalSSHApply([]string{"HashKnownHosts"}, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+	if err != nil {
+		t.Fatalf("runGlobalSSHApply must still succeed (the write itself does not need ssh): %v", err)
+	}
+	found := false
+	for _, a := range res.Advisories {
+		if strings.Contains(a, "post-write verification could not run") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("advisories = %v, want one noting the post-write verification could not run; WR-01 regressed", res.Advisories)
+	}
+}
+
 // TestRunGlobalSSHApplyInconclusiveSimulationPermitsWrite asserts that when
 // BuildGraph fails (e.g. due to a cycle), the apply still completes the write
 // and sets SimulationInconclusive in the result.

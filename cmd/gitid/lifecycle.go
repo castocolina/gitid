@@ -955,12 +955,19 @@ func (b *realBackend) runGlobalSSHApply(keys []string, p lifecyclePolicy) (lifec
 	// succeeded so verification is informational only.
 	record(stages[5])
 	verResult := globalssh.Verify(globalssh.BuildProbeDeps(b.sshConfigPath), keys)
+	if verResult.Inconclusive {
+		// WR-01: a failed post-write verification must be surfaced, not
+		// silently dropped — otherwise a probe failure right after the write
+		// reports success with no advisory at all.
+		res.Advisories = append(res.Advisories,
+			"advisory: post-write verification could not run ("+verResult.Reason+") — the fix was written but not re-verified")
+	}
 	for _, f := range verResult.Findings {
-		if f.ShadowedByFile != "" {
-			res.Advisories = append(res.Advisories, fmt.Sprintf("advisory: %s was applied but is still shadowed at %s (line %d) — the fix may not take effect", f.Key, b.displayPath(f.ShadowedByFile), f.ShadowedByLine))
-		} else {
-			res.Advisories = append(res.Advisories, fmt.Sprintf("advisory: %s was applied but is still shadowed by an external directive — the fix may not take effect", f.Key))
-		}
+		// globalssh.Verify never sets ShadowedByFile/ShadowedByLine (it has no
+		// access to the config graph — see its own doc comment), so the
+		// file/line branch here was dead code; only the generic advisory is
+		// ever reachable.
+		res.Advisories = append(res.Advisories, fmt.Sprintf("advisory: %s was applied but is still shadowed by an external directive — the fix may not take effect", f.Key))
 	}
 
 	return res, nil
