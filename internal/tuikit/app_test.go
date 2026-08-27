@@ -65,6 +65,16 @@ func TestNewAppOnGlobalSSHOpensEmptyOptionsAndStorage(t *testing.T) {
 	}
 }
 
+func TestNewAppOnGlobalGitOpensEmptySelection(t *testing.T) {
+	app := NewAppOnGlobalGit(stubBackend{})
+	if app.ActiveTab() != TabGlobalGit {
+		t.Fatalf("fallback tab = %v, want TabGlobalGit", app.ActiveTab())
+	}
+	if chosen := app.GlobalGitUIState(); chosen != 0 {
+		t.Fatalf("fallback selection = %d, want empty", chosen)
+	}
+}
+
 func TestNumberKeysSwitchTabs(t *testing.T) {
 	a := NewApp(stubBackend{})
 	a, _ = press(t, a, "3")

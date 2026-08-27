@@ -70,7 +70,6 @@ func TestNoDuplicateFullyQualifiedCommandPaths(t *testing.T) {
 func TestReservedNounGroupsReturnPhaseNamedErrors(t *testing.T) {
 	root := newRootCmd()
 	cases := map[string]string{
-		"git":    "Phase 7",
 		"health": "Phase 8",
 		"fix":    "Phase 8",
 	}
@@ -516,11 +515,13 @@ func snapshotSeams() func() {
 	oldRotate, oldRepair := cliRotateInto, cliRepairInto
 	oldDelete, oldTest := cliDeleteInto, cliConnectivityTest
 	oldApply, oldMigrate, oldSSHTUI := cliGlobalSSHApplyInto, cliSSHStorageMigrateInto, sshTUILaunch
+	oldGitApply, oldGitFallback, oldGitTUI, oldGitStates := cliGlobalGitApplyInto, cliGitFallbackAuthorApplyInto, gitTUILaunch, cliGitOptionStates
 	return func() {
 		commitCreateInto, cliPreWriteGate = oldCreate, oldGate
 		cliRotateInto, cliRepairInto = oldRotate, oldRepair
 		cliDeleteInto, cliConnectivityTest = oldDelete, oldTest
 		cliGlobalSSHApplyInto, cliSSHStorageMigrateInto, sshTUILaunch = oldApply, oldMigrate, oldSSHTUI
+		cliGlobalGitApplyInto, cliGitFallbackAuthorApplyInto, gitTUILaunch, cliGitOptionStates = oldGitApply, oldGitFallback, oldGitTUI, oldGitStates
 	}
 }
 

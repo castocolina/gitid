@@ -250,6 +250,35 @@ func (a App) GlobalSSHUIState() (storageSubTab bool, chosen int, storageChoice S
 	return m.subTab == gssStorage, chosen, m.storageChoice
 }
 
+// NewAppOnGlobalGit launches the app on the Global Git view (D-02's
+// incomplete-write TUI fallback for `gitid git options apply` /
+// `gitid git fallback set`). activate() has already run, so the option
+// selection is empty — nothing is pre-selected (D-15, R-1).
+func NewAppOnGlobalGit(b Backend) App {
+	if b == nil {
+		panic("tuikit: NewAppOnGlobalGit requires a non-nil Backend")
+	}
+	a := NewApp(b)
+	next, cmd := a.setTab(TabGlobalGit)
+	next.initCmd = cmd
+	return next
+}
+
+// GlobalGitUIState reports the number of selected Global Git options — the
+// fact the CLI fallback contract freezes (empty selection).
+func (a App) GlobalGitUIState() (chosen int) {
+	m, ok := a.screens[TabGlobalGit].(globalGitModel)
+	if !ok {
+		return 0
+	}
+	for _, v := range m.chosen {
+		if v {
+			chosen++
+		}
+	}
+	return chosen
+}
+
 // Init satisfies tea.Model — the first activation already happened in
 // NewApp; Init only surfaces its command to the runtime.
 func (a App) Init() tea.Cmd {

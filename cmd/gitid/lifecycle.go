@@ -1169,7 +1169,17 @@ func (b *realBackend) runGlobalGitApply(keys []string, p lifecyclePolicy) (lifec
 		}
 		gate := b.gitGateOutcome(policy)
 		for _, member := range policy.Members {
-			explicit[member.Key] = globalgit.WriteValueFor(policy, member.Key, gate)
+			written := globalgit.WriteValueFor(policy, member.Key, gate)
+			explicit[member.Key] = written
+			// The hard-gated row (merge.conflictstyle) substitutes the
+			// fallback (diff3) when the machine's git is below 2.35;
+			// report that from the plan stage so TUI and CLI share one
+			// advisory (T-07-31).
+			if policy.Gate == globalgit.GateHard && gate != globalgit.GateMet && written != "" {
+				res.Advisories = append(res.Advisories,
+					fmt.Sprintf("advisory: %s is below the git version gate — wrote %q instead of %q",
+						policy.Key, written, policy.Recommended))
+			}
 		}
 	}
 

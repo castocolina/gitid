@@ -255,3 +255,30 @@ func PolicyFor(key string) (OptionPolicy, bool) {
 	}
 	return OptionPolicy{}, false
 }
+
+// PolicyForToken returns the approved row whose frozen CLI token equals
+// token exactly (R-5: case-sensitive, never a fuzzy or member-key match).
+// Rows with an empty Token (the fallback-author row) are not apply targets.
+func PolicyForToken(token string) (OptionPolicy, bool) {
+	for _, p := range Policy {
+		if p.Token != "" && p.Token == token {
+			return p, true
+		}
+	}
+	return OptionPolicy{}, false
+}
+
+// TokenOwningMember returns the frozen CLI token of the row that manages
+// member as a config key, matched case-insensitively. Used only to name the
+// token a script should have typed when it passed a member key instead.
+func TokenOwningMember(member string) (string, bool) {
+	for _, p := range Policy {
+		if p.Token == "" {
+			continue
+		}
+		if _, ok := p.memberFor(member); ok {
+			return p.Token, true
+		}
+	}
+	return "", false
+}

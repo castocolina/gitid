@@ -95,13 +95,13 @@ func newRootCmd() *cobra.Command {
 
 	// D-01: the identity noun group, its flat root-level aliases (built from
 	// the SAME spec values — review R-15), the real ssh noun group (Phase 6),
-	// and the reserved git/health/fix noun groups that claim their taxonomy
-	// slot before Phases 7-8 implement them.
+	// the real git noun group (Phase 7), and the reserved health/fix noun
+	// groups that claim their taxonomy slot before Phase 8 implements them.
 	specs := identityVerbSpecs()
 	root.AddCommand(newIdentityCmd(specs))
 	registerFlatAliases(root, specs)
 	root.AddCommand(newSSHCmd())
-	root.AddCommand(newReservedNounCmd("git", "Manage global Git options (arrives in Phase 7)", "Phase 7 (Global Git Options)"))
+	root.AddCommand(newGitCmd())
 	root.AddCommand(newReservedNounCmd("health", "Show identity/config health (arrives in Phase 8)", "Phase 8 (Health + Fixer)"))
 	root.AddCommand(newReservedNounCmd("fix", "Apply suggested health fixes (arrives in Phase 8)", "Phase 8 (Health + Fixer)"))
 
