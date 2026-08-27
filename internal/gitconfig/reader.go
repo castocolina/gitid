@@ -36,8 +36,15 @@ const BaselineIncludeBlockName = "baseline-include"
 // IsReservedBlockName reports whether a gitid-managed gitconfig block name is a
 // reserved, non-identity block. Callers performing identity discovery or orphan
 // detection must skip reserved blocks.
+//
+// BOTH the current and legacy global-git sentinel names are registered here
+// because a machine may still carry the legacy name (LegacyGlobalGitBlockName)
+// until its next write adopts it. An unregistered name is one the doctor's
+// orphans fix will delete out from under the Baseline check — fighting the
+// restore in a destructive false-positive loop (project learning L4, T-07-03).
 func IsReservedBlockName(name string) bool {
-	if name == BaselineIncludeBlockName {
+	switch name {
+	case BaselineIncludeBlockName, GlobalGitBlockName, LegacyGlobalGitBlockName:
 		return true
 	}
 	provider, ok := strings.CutPrefix(name, providerRewritePrefix)

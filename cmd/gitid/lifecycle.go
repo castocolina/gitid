@@ -21,6 +21,7 @@ import (
 
 	"github.com/castocolina/gitid/internal/filewriter"
 	"github.com/castocolina/gitid/internal/gitconfig"
+	"github.com/castocolina/gitid/internal/globalgit"
 	"github.com/castocolina/gitid/internal/globalssh"
 	"github.com/castocolina/gitid/internal/identity"
 	"github.com/castocolina/gitid/internal/platform"
@@ -130,6 +131,7 @@ var lifecycleStages = map[string][]string{
 	"repair":          {"test", "plan", "confirm", "backup", "write", "retest"},
 	"delete":          {"plan", "confirm", "backup", "write", "verify"},
 	"global-ssh":      {"plan", "simulate", "confirm", "backup", "write", "verify"},
+	"global-git":      {"plan", "confirm", "backup", "write", "verify"},
 	"storage-migrate": {"plan", "confirm", "backup", "write"},
 }
 
@@ -1109,4 +1111,191 @@ func (b *realBackend) runSSHStorageMigrate(target tuikit.SSHStorageLayout, planT
 	}
 
 	return res, nil
+}
+
+// ---------------------------------------------------------------------------
+// runGlobalGitApply — the ONE complete global-git fix ceremony (plan 07-01)
+// ---------------------------------------------------------------------------
+
+// runGlobalGitApply owns the whole declared global-git fix ceremony — plan →
+// confirm → backup → write → verify — driving it from
+// lifecycleStages["global-git"]. It is the ONE production writer a global-git
+// option fix may use: the TUI's CommitGlobalGit reaches it and plan 07-06's
+// CLI verb will too; nothing else writes a global-git option.
+//
+// The ceremony writes TWO files: the include'd baseline file (which holds the
+// gitid-managed global-git block) and the main ~/.gitconfig file (which holds
+// the floor [include] pointer). Both writes go through filewriter.Write
+// UNCONDITIONALLY once the confirmation gate has returned (R-3): backup is
+// never conditional on byte equality once authorized. The existing callers of
+// WriteBaselineInclude (doctor Baseline check and the cmd-layer wiring
+// dispatcher) keep their idempotent-skip contract; this function uses
+// ComposeBaselineInclude and writes the result itself.
+//
+// ROLLBACK: a mutationJournal watches both files and the created baseline
+// parent directory. Any error after the first write restores every watched file
+// to its pre-transaction bytes; a file created by this transaction is REMOVED,
+// not left behind empty. Restored paths ride out on lifecycleResult.Restored.
+func (b *realBackend) runGlobalGitApply(keys []string, p lifecyclePolicy) (lifecycleResult, error) {
+	b.txMu.Lock()
+	defer b.txMu.Unlock()
+
+	res := lifecycleResult{}
+	record := func(stage string) {
+		if p.Stages != nil {
+			p.Stages(stage)
+		}
+	}
+	stages := lifecycleStages["global-git"]
+
+	if b.initErr != nil {
+		return res, b.initErr
+	}
+
+	// plan — reject unknown keys BY NAME before building any candidate, and
+	// build the explicit selection from the D-08 recommended values.
+	record(stages[0])
+	explicit := make(map[string]string, len(keys))
+	for _, k := range keys {
+		policy, ok := globalgit.PolicyFor(k)
+		if !ok {
+			return res, fmt.Errorf("gitid: unknown global git option %q", k)
+		}
+		explicit[k] = policy.Recommended
+	}
+
+	if p.DryRun {
+		// Ordering consequence: stopping AFTER the plan stage means a dry run
+		// never reaches the confirmation gate and therefore needs no authorization.
+		return res, nil
+	}
+
+	// confirm — the authorization boundary.
+	record(stages[1])
+	target := b.baselineTargetPath()
+	preview := fmt.Sprintf("apply global git option(s) %s to the gitid managed block in %s",
+		strings.Join(keys, ", "), b.displayPath(target))
+	authorized, cerr := b.confirmGate(p, preview)
+	if cerr != nil {
+		return res, cerr
+	}
+	if !authorized {
+		return res, fmt.Errorf("gitid: cancelled global git apply of %q", strings.Join(keys, ", "))
+	}
+
+	// backup — unconditional once authorized (R-3).
+	record(stages[2])
+
+	// write — the backed-up, all-or-nothing transaction.
+	record(stages[3])
+	journal := newMutationJournal(b)
+	fail := func(cause error) (lifecycleResult, error) {
+		outcomes, restoreErr := journal.restore()
+		res.Restored = outcomes
+		wrapped := fmt.Errorf("gitid: applying global git options: %w", cause)
+		if restoreErr != nil {
+			wrapped = fmt.Errorf("%w; restoration results: %s", wrapped, strings.Join(outcomes, "; "))
+		}
+		return res, wrapped
+	}
+	inject := func(step string) error {
+		if b.failCommitAt == nil {
+			return nil
+		}
+		return b.failCommitAt(step)
+	}
+
+	// Watch both files before writing either.
+	if werr := journal.watchFile(b.gitconfigPath); werr != nil {
+		return res, werr
+	}
+	if werr := journal.watchFile(target); werr != nil {
+		return res, werr
+	}
+	// Record the baseline file's parent directory when it does not pre-exist,
+	// so a rollback removes it rather than leaving an empty shell.
+	baselineDir := filepath.Dir(target)
+	if _, serr := os.Stat(baselineDir); os.IsNotExist(serr) {
+		if rerr := journal.recordCreatedDir(baselineDir); rerr != nil {
+			return res, rerr
+		}
+	}
+
+	// Write 1: floor the [include] block in the main config unconditionally
+	// (R-3 — ComposeBaselineInclude then filewriter.Write, bypassing
+	// WriteBaselineInclude's byte-equality skip which would swallow the backup
+	// on a second identical apply and contradict this ceremony's invariant).
+	if err := inject("global-git-include-write"); err != nil {
+		return fail(err)
+	}
+	existingGC, gcErr := os.ReadFile(b.gitconfigPath) //nolint:gosec // trusted gitid-managed path
+	if gcErr != nil && !os.IsNotExist(gcErr) {
+		return fail(gcErr)
+	}
+	composedGC := gitconfig.ComposeBaselineInclude(existingGC, b.displayBaselineTargetPath())
+	backupGC, gcWriteErr := filewriter.Write(b.gitconfigPath, composedGC, deleteGitconfigMode)
+	if gcWriteErr != nil {
+		return fail(fmt.Errorf("writing floor include to %s: %w", b.gitconfigPath, gcWriteErr))
+	}
+	journal.addBackup(backupGC)
+
+	// Write 2: compose the global-git managed block into the baseline file.
+	if err := inject("global-git-baseline-write"); err != nil {
+		return fail(err)
+	}
+	if mkErr := filewriter.EnsureDir(baselineDir, 0o700); mkErr != nil {
+		return fail(fmt.Errorf("ensuring baseline dir %s: %w", baselineDir, mkErr))
+	}
+	existingBF, bfErr := os.ReadFile(target) //nolint:gosec // trusted gitid-managed path
+	if bfErr != nil && !os.IsNotExist(bfErr) {
+		return fail(bfErr)
+	}
+	mergedBF, mergeErr := gitconfig.EnsureGlobalGit(existingBF, explicit)
+	if mergeErr != nil {
+		return fail(mergeErr)
+	}
+	backupBF, bfWriteErr := filewriter.Write(target, mergedBF, deleteGitconfigMode)
+	if bfWriteErr != nil {
+		return fail(fmt.Errorf("writing global-git block to %s: %w", target, bfWriteErr))
+	}
+	journal.addBackup(backupBF)
+
+	res.Backups = append(res.Backups, journal.backups...)
+
+	// verify — re-read the effective configuration and surface an advisory when
+	// a key gitid just wrote does not resolve to the value it wrote. Under the
+	// floor model that means the user's own later setting wins — correct
+	// behavior, reported as information, never as a failure (D-02).
+	record(stages[4])
+	probeDeps := globalgit.BuildProbeDeps(baselineDir)
+	rows, probErr := globalgit.Statuses(probeDeps, target)
+	if probErr != nil {
+		res.Advisories = append(res.Advisories,
+			"advisory: post-write verification could not run ("+probErr.Error()+") — the fix was written but not re-verified")
+	} else {
+		for _, row := range rows {
+			for _, k := range keys {
+				if strings.EqualFold(row.Key, k) && row.State != globalgit.StateAlreadySet && row.CurrentValue != "" {
+					res.Advisories = append(res.Advisories,
+						fmt.Sprintf("advisory: %s was applied but the effective value is %q — a later setting in your config may override it", k, row.CurrentValue))
+				}
+			}
+		}
+	}
+
+	return res, nil
+}
+
+// baselineTargetPath is the resolved absolute path of the include'd baseline
+// file that holds the gitid global-git managed block — the git-side analog of
+// globalsTargetPath. The tilde form ("~/.gitconfig.d/00-baseline") is used in
+// the [include] pointer; this function returns the absolute form for file I/O.
+func (b *realBackend) baselineTargetPath() string {
+	return filepath.Join(b.fragmentDir, "00-baseline")
+}
+
+// displayBaselineTargetPath returns the tilde form of the baseline target path
+// for use in [include] pointers in ~/.gitconfig and ceremony preview headings.
+func (b *realBackend) displayBaselineTargetPath() string {
+	return "~/.gitconfig.d/00-baseline"
 }

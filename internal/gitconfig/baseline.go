@@ -608,18 +608,16 @@ func WriteGlobalGitignore(gitignorePath string, patterns []string) (string, erro
 // its floor position is preserved. It returns the backup path (empty when the
 // file is new or when the content is unchanged — idempotent skip).
 func WriteBaselineInclude(gitconfigPath, baselineFilePath string) (string, error) {
-	// Build the include body from the caller-supplied path so that non-default
-	// locations are honoured (WR-01: the parameter must not be silently discarded).
-	// baselineFilePath is a gitid-controlled path (never free-form user input), so
-	// interpolation here does not introduce injection risk — T-03.1-03 is satisfied.
-	includeBody := "[include]\n\tpath = " + baselineFilePath
-
 	existing, err := os.ReadFile(gitconfigPath) //nolint:gosec // gitconfigPath is a trusted gitid-managed path
 	if err != nil && !os.IsNotExist(err) {
 		return "", fmt.Errorf("reading %s: %w", gitconfigPath, err)
 	}
 
-	composed := filewriter.PrependBlockIfNotFound(existing, "baseline-include", includeBody)
+	// ComposeBaselineInclude is extracted so the global-git apply ceremony can
+	// compose and write unconditionally (R-3) while this function keeps the
+	// SC-1 idempotent-skip contract its callers (the doctor Baseline check and
+	// the cmd-layer wiring dispatcher) depend on — byte for byte.
+	composed := ComposeBaselineInclude(existing, baselineFilePath)
 
 	// SC-1 idempotency: skip write (and backup) when content is unchanged.
 	if bytes.Equal(composed, existing) {
