@@ -8,6 +8,7 @@ import (
 
 	"github.com/castocolina/gitid/internal/doctor"
 	"github.com/castocolina/gitid/internal/doctor/checks"
+	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/identity"
 	"github.com/castocolina/gitid/internal/sshconfig"
 )
@@ -144,6 +145,35 @@ func TestOrphanReservedBaselineNotFlagged(t *testing.T) {
 	}
 	if len(findings) != 0 {
 		t.Errorf("expected no orphan findings for a lone reserved block, got: %v", orphTitles(findings))
+	}
+}
+
+// TestOrphanReservedGitFallbackAuthorNotFlagged: the reserved
+// global-git-author gitconfig block has no SSH Host block by design and MUST
+// NOT be reported as an orphan (D-05, T-07-13). Flagging it produces a
+// removal [fix] that deletes the legitimate fallback-author block, fighting
+// EnsureGitFallbackAuthor's restore in an endless loop.
+func TestOrphanReservedGitFallbackAuthorNotFlagged(t *testing.T) {
+	d := doctor.Deps{
+		Stat:                       orphStat(),
+		Identities:                 []identity.Account{},
+		SSHManagedBlockNames:       []string{},
+		GitconfigManagedBlockNames: []string{gitconfig.GitFallbackAuthorBlockName},
+		AllSSHHostIdentityFiles:    []string{},
+		KeyPaths:                   []string{},
+		GitconfigPath:              "/home/u/.gitconfig",
+		RemoveBlock:                func(_, _ string) error { return nil },
+	}
+
+	findings := checks.CheckOrphans(d)
+
+	for _, f := range findings {
+		if orphContains(f.Title, gitconfig.GitFallbackAuthorBlockName) {
+			t.Errorf("reserved %q must not be reported as an orphan, got: %q", gitconfig.GitFallbackAuthorBlockName, f.Title)
+		}
+	}
+	if len(findings) != 0 {
+		t.Errorf("expected no orphan findings for a lone reserved fallback-author block, got: %v", orphTitles(findings))
 	}
 }
 

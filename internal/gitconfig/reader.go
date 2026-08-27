@@ -39,12 +39,13 @@ const BaselineIncludeBlockName = "baseline-include"
 //
 // BOTH the current and legacy global-git sentinel names are registered here
 // because a machine may still carry the legacy name (LegacyGlobalGitBlockName)
-// until its next write adopts it. An unregistered name is one the doctor's
-// orphans fix will delete out from under the Baseline check — fighting the
-// restore in a destructive false-positive loop (project learning L4, T-07-03).
+// until its next write adopts it. GitFallbackAuthorBlockName is registered
+// for the same reason: an unregistered name is one the doctor's orphans fix
+// will delete out from under the next write — fighting the restore in a
+// destructive false-positive loop (project learning L4, T-07-03, T-07-13).
 func IsReservedBlockName(name string) bool {
 	switch name {
-	case BaselineIncludeBlockName, GlobalGitBlockName, LegacyGlobalGitBlockName:
+	case BaselineIncludeBlockName, GlobalGitBlockName, LegacyGlobalGitBlockName, GitFallbackAuthorBlockName:
 		return true
 	}
 	provider, ok := strings.CutPrefix(name, providerRewritePrefix)

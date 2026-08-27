@@ -35,6 +35,7 @@ import (
 
 	"github.com/castocolina/gitid/internal/doctor"
 	"github.com/castocolina/gitid/internal/doctor/checks"
+	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/sshconfig"
 )
 
@@ -68,7 +69,7 @@ func TestOrphansReservedArtifactsSurviveFix(t *testing.T) {
 
 	// 1. Nothing may be reported ABOUT the reserved artifacts.
 	for _, f := range findings {
-		for _, reserved := range []string{"ssh-include", "_global", "global-ssh", "config.d"} {
+		for _, reserved := range []string{"ssh-include", "_global", "global-ssh", "config.d", gitconfig.GitFallbackAuthorBlockName} {
 			if strings.Contains(f.Title, reserved) || strings.Contains(f.Explanation, reserved) {
 				t.Errorf("CheckOrphans reported a finding naming the reserved artifact %q: %s\n%s",
 					reserved, f.Title, f.Explanation)
@@ -92,13 +93,18 @@ func TestOrphansReservedArtifactsSurviveFix(t *testing.T) {
 		t.Fatal("no Fix.Fn was offered; the byte-identity assertion below would be vacuous")
 	}
 
-	// 4. The three Phase-3 artifacts must be byte-identical afterwards.
+	// 4. The Phase-3 artifacts AND the D-05 fallback-author block must be
+	// byte-identical afterwards.
 	after := snapshotArtifacts(t, fx)
 	for name, want := range before {
 		if got := after[name]; got != want {
 			t.Errorf("reserved artifact %s was mutated by the fix path (L4 violation)\n--- before ---\n%s\n--- after ---\n%s",
 				name, want, got)
 		}
+	}
+	gcAfter := string(mustReadFile(t, fx.gitconfigPath))
+	if !strings.Contains(gcAfter, "# BEGIN gitid managed: "+gitconfig.GitFallbackAuthorBlockName) {
+		t.Errorf("reserved fallback-author block was deleted by the fix path:\n%s", gcAfter)
 	}
 	// The Include line specifically must still be present and floored.
 	if !strings.Contains(after["ssh config"], includeLine) {
@@ -245,9 +251,10 @@ func seedIncludeHome(t *testing.T, home string) includeFixture {
 			"  IdentityFile "+filepath.Join(sshDir, "id_ed25519_personal")+"\n  IdentitiesOnly yes")
 	writeFixture(t, fx.includedPath, included)
 
-	gitconfig := block("personal", "[includeIf \"gitdir:~/git/personal/\"]\n\tpath = ~/.gitconfig.d/personal") +
-		block("ghost", "[includeIf \"gitdir:~/git/ghost/\"]\n\tpath = ~/.gitconfig.d/ghost")
-	writeFixture(t, fx.gitconfigPath, gitconfig)
+	gitconfigBody := block("personal", "[includeIf \"gitdir:~/git/personal/\"]\n\tpath = ~/.gitconfig.d/personal") +
+		block("ghost", "[includeIf \"gitdir:~/git/ghost/\"]\n\tpath = ~/.gitconfig.d/ghost") +
+		block(gitconfig.GitFallbackAuthorBlockName, "[user]\n\tname = Fallback\n\temail = fallback@example.com")
+	writeFixture(t, fx.gitconfigPath, gitconfigBody)
 
 	return fx
 }
@@ -259,7 +266,7 @@ func orphanDeps(fx includeFixture, sshManagedBlockNames []string) doctor.Deps {
 		SSHConfigPath:              fx.sshConfigPath,
 		GitconfigPath:              fx.gitconfigPath,
 		SSHManagedBlockNames:       sshManagedBlockNames,
-		GitconfigManagedBlockNames: []string{"personal", "ghost"},
+		GitconfigManagedBlockNames: []string{"personal", "ghost", gitconfig.GitFallbackAuthorBlockName},
 		Stat: func(path string) (os.FileInfo, error) {
 			return os.Stat(path) //nolint:gosec // hermetic t.TempDir() fixture path (G304)
 		},

@@ -2,6 +2,7 @@ package filewriter
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 )
 
@@ -247,4 +248,72 @@ func PrependBlockIfNotFound(existing []byte, name, blockBody string) []byte {
 	// The canonical block already ends with "\n" so no separator is injected
 	// between the block and the existing content.
 	return append([]byte(block), existing...)
+}
+
+// InsertBlockAfter returns existing with the gitid managed block for name set
+// to blockBody, placed immediately after the named anchor block's end marker.
+//
+// WHY this primitive exists: a plain `git config --global user.email` appends,
+// so on a recipe-shaped ~/.gitconfig the new [user] section lands AFTER the
+// [includeIf …] blocks and hijacks every identity's author (D-05). Position is
+// the whole point of this function; a future refactor must not "simplify" it
+// into an append.
+//
+// Anchor contract: this primitive does not create anchors and must not learn
+// to. An insert with no anchor has no defensible position, so a missing
+// anchor returns the input bytes unchanged plus an error naming the anchor.
+// Guaranteeing the anchor is the CALLER's obligation, discharged by
+// cmd/gitid's runGitFallbackAuthorApply (plan 07-02 Task 2) which composes
+// gitconfig.ComposeBaselineInclude into the same byte stream first (R-4).
+// A reader hitting the missing-anchor error should look there, not here.
+//
+// Semantics, in this precedence order: if a block named name already exists,
+// delegate to ReplaceBlock — position is preserved and no second copy
+// appears, exactly as PrependBlockIfNotFound behaves for its own floor case.
+// Otherwise locate the anchor's end marker and splice the canonical block
+// form directly after it. Marker scanning matches ReplaceBlock's CRLF
+// tolerance.
+func InsertBlockAfter(existing []byte, anchorName, name, blockBody string) ([]byte, error) {
+	beginMarker := BeginPrefix + name
+	endMarker := EndPrefix + name
+	anchorEndMarker := EndPrefix + anchorName
+
+	lines := strings.SplitAfter(string(existing), "\n")
+
+	beginIdx, endIdx := -1, -1
+	for i, line := range lines {
+		trimmed := strings.TrimRight(line, "\n\r")
+		switch {
+		case beginIdx == -1 && trimmed == beginMarker:
+			beginIdx = i
+		case beginIdx != -1 && trimmed == endMarker:
+			endIdx = i
+		}
+		if beginIdx != -1 && endIdx != -1 {
+			break
+		}
+	}
+	if beginIdx != -1 && endIdx != -1 {
+		return ReplaceBlock(existing, name, blockBody), nil
+	}
+
+	anchorEndIdx := -1
+	for i, line := range lines {
+		if strings.TrimRight(line, "\n\r") == anchorEndMarker {
+			anchorEndIdx = i
+			break
+		}
+	}
+	if anchorEndIdx == -1 {
+		return existing, fmt.Errorf("filewriter: InsertBlockAfter: missing anchor %q", anchorName)
+	}
+
+	body := strings.TrimRight(blockBody, "\n")
+	block := beginMarker + "\n" + body + "\n" + endMarker + "\n"
+
+	var b strings.Builder
+	b.WriteString(strings.Join(lines[:anchorEndIdx+1], ""))
+	b.WriteString(block)
+	b.WriteString(strings.Join(lines[anchorEndIdx+1:], ""))
+	return []byte(b.String()), nil
 }
