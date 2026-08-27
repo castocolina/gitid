@@ -33,18 +33,36 @@ const (
 type OptionRowState int
 
 const (
-	// StateNeedsAction is the ZERO value: the option is unset or differs from
-	// the recommendation, and gitid could help.
+	// StateNeedsAction is the ZERO value: the option is unset (or a bundle has
+	// an unset member), and gitid could help.
 	StateNeedsAction OptionRowState = iota
 	// StateAlreadySet means the effective value equals the recommendation.
 	StateAlreadySet
 	// StateSetButDiffers means the option is set somewhere to a
 	// non-recommended value — a deliberate or external choice that is
-	// flagged informational (D-02 word state, never blocking).
+	// flagged informational (D-02 word state, never blocking). Differs rows
+	// are NOT selectable: gitid's block sits at the floor, so a write into a
+	// key the user set later is provably a no-op (D-02's documented reason is
+	// on the state so the renderer never has to re-derive it).
 	StateSetButDiffers
-	// StateUnclaimed means a probe failure prevented classification — no
-	// state claim can be made. ProbeError on the row carries the details.
-	StateUnclaimed
+	// StateNotApplicable means the option does not apply on this machine —
+	// a probe failure (no state claim, ReasonProbeFailed) or a reason the
+	// NotApplicableReason enum names. The four states are the whole
+	// vocabulary, mirroring globalssh exactly.
+	StateNotApplicable
+)
+
+// NotApplicableReason distinguishes the situations that can share the
+// not-applicable visual state so each one keeps its own words (the git-side
+// analog of globalssh.NotApplicableReason).
+type NotApplicableReason int
+
+const (
+	// ReasonNone is the zero value: the row is applicable.
+	ReasonNone NotApplicableReason = iota
+	// ReasonProbeFailed means a probe this row depends on returned an error,
+	// so no state claim is possible.
+	ReasonProbeFailed
 )
 
 // OptionRow is the classified output for one option. Both State and Source
@@ -53,9 +71,11 @@ const (
 type OptionRow struct {
 	// Key is the canonical display key (e.g. "init.defaultBranch").
 	Key string
-	// CurrentValue is the effective value git reported, or empty if unset.
+	// CurrentValue is the effective value git reported, or empty if unset. For
+	// a bundle row it holds the first present member's value (the aggregate
+	// summary lives in Bundle*).
 	CurrentValue string
-	// Recommended is the policy's recommended value.
+	// Recommended is the policy's recommended value (row-level display summary).
 	Recommended string
 	// GitDefault is the policy's git built-in default to name when unset.
 	GitDefault string
@@ -65,9 +85,25 @@ type OptionRow struct {
 	State OptionRowState
 	// Source is the provenance class.
 	Source SourceClass
+	// NotApplicableReason is populated only when State == StateNotApplicable.
+	NotApplicableReason NotApplicableReason
 	// ProbeError is non-empty when a probe failure prevented classification.
-	// When non-empty, State == StateUnclaimed.
+	// When non-empty, State == StateNotApplicable with ReasonProbeFailed.
 	ProbeError string
+	// BundleSet is how many of the bundle's member keys are set at all.
+	BundleSet int
+	// BundleDiffers is how many of the set members differ from the
+	// recommendation. It is the re-derivation of the retired ScanConflicts
+	// intersect-and-compare rule against strictly better evidence (the probes),
+	// per 07-03-PLAN.md's <authority> block.
+	BundleDiffers int
+	// BundleTotal is how many member keys the bundle manages (for the
+	// aggregate's denominator).
+	BundleTotal int
+	// BundleDiffersKeys names each member whose OWN value differs from the
+	// recommendation and therefore wins under floor + last-wins (D-09) — the
+	// detail pane's "yours differs — yours wins" notes. Empty for scalar rows.
+	BundleDiffersKeys []string
 }
 
 // Statuses is the package-level entry point: it runs both probes through deps
@@ -114,8 +150,9 @@ func Classify(
 // inFileProbeErr carry any probe failures; a non-empty string means that probe
 // failed and its evidence is unavailable for this row. A probe failure
 // degrades only the rows that depended on that probe — the row carries the
-// failure as ProbeError and makes no state claim (StateUnclaimed), while rows
-// whose evidence came from the other probe are unaffected.
+// failure as ProbeError and makes no state claim (StateNotApplicable with
+// ReasonProbeFailed), while rows whose evidence came from the other probe are
+// unaffected.
 func ClassifyWithErrors(
 	policies []OptionPolicy,
 	effective map[string]EffectiveEntry,
@@ -160,19 +197,22 @@ func classifyOne(
 
 	// Both probes failed — cannot classify.
 	if effectiveProbeErr != "" && inFileProbeErr != "" {
-		row.State = StateUnclaimed
+		row.State = StateNotApplicable
+		row.NotApplicableReason = ReasonProbeFailed
 		row.ProbeError = "effective: " + effectiveProbeErr + "; in-file: " + inFileProbeErr
 		return row
 	}
 	// Individual probe failure: the row carries the error from whichever
 	// probe failed (we need BOTH to classify confidently).
 	if effectiveProbeErr != "" {
-		row.State = StateUnclaimed
+		row.State = StateNotApplicable
+		row.NotApplicableReason = ReasonProbeFailed
 		row.ProbeError = "effective probe: " + effectiveProbeErr
 		return row
 	}
 	if inFileProbeErr != "" {
-		row.State = StateUnclaimed
+		row.State = StateNotApplicable
+		row.NotApplicableReason = ReasonProbeFailed
 		row.ProbeError = "in-file probe: " + inFileProbeErr
 		return row
 	}
@@ -223,24 +263,27 @@ func classifyOne(
 	// every member key per D-09), but it never alone lifts the row above
 	// needs-action. Only when every member is already its recommendation is
 	// the row already-set.
-	anyUnset := false
-	anyDiffers := false
-	allSetEqual := true
-	hasPresent := false
+	bundle := BundleFor(policy, effective)
+	row.BundleTotal, row.BundleSet, row.BundleDiffers = bundle.Total, bundle.Set, bundle.Differs
+	row.BundleDiffersKeys = bundle.DiffersKeys
+	anyUnset := bundle.Set < bundle.Total
+	anyDiffers := bundle.Differs > 0
+	allSetEqual := !anyUnset && !anyDiffers
+	hasPresent := bundle.Set > 0
 	source := SourceUnset
 	for _, member := range policy.Members {
 		lk := strings.ToLower(member.Key)
 		effEntry, effPresent := effective[lk]
 		_, inFilePresent := inFile[lk]
 		if !effPresent {
-			anyUnset = true
-			allSetEqual = false
 			continue
 		}
-		hasPresent = true
-		if !strings.EqualFold(effEntry.Value, member.Recommended) {
-			anyDiffers = true
-			allSetEqual = false
+		if row.CurrentValue == "" {
+			row.CurrentValue = effEntry.Value
+			row.EffectiveOrigin = effEntry.Origin
+		}
+		if row.GitDefault == "" {
+			row.GitDefault = member.GitDefault
 		}
 		memberSource := sourceClassFor(effEntry, baselineFilePath, inFilePresent)
 		switch memberSource {

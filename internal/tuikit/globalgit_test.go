@@ -1,13 +1,12 @@
 package tuikit
 
 import (
+	"os"
 	"regexp"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-
-	"github.com/castocolina/gitid/internal/globalgit"
 )
 
 // ggitApp returns an App on the Global Git tab.
@@ -170,61 +169,42 @@ func TestGlobalGitPolicyBackedRowIsSelectable(t *testing.T) {
 	t.Fatal("init.defaultBranch not found in fixture views")
 }
 
-// TestGlobalGitNonPolicyRowIsNotSelectable asserts a row whose key the policy
-// table does not resolve renders no checkbox glyph, does not respond to the
-// toggle key, and does not respond to a click at its checkbox position — all
-// driven from the single gitSelectable predicate.
-func TestGlobalGitNonPolicyRowIsNotSelectable(t *testing.T) {
-	// Use a row whose key is known NOT to be in the policy table yet
-	// (core.ignorecase is in the fixture but not in globalgit.Policy for 07-01).
-	_, ok := globalgit.PolicyFor("core.ignorecase")
-	if ok {
-		t.Skip("core.ignorecase is now in the policy table — pick a different key")
-	}
-
+// TestGlobalGitNonSelectableRowIsNotTogglable asserts a row with no writable
+// member keys (the fallback-author row, whose pair is owned by plan 07-02's
+// own ceremony) renders no checkbox glyph, does not respond to the toggle key,
+// and does not respond to a click at its checkbox position — all driven from
+// the single Selectable() predicate.
+func TestGlobalGitNonSelectableRowIsNotTogglable(t *testing.T) {
 	a := ggitApp(t)
-	// Navigate to core.ignorecase (row index 1, one down from init.defaultBranch).
-	a, _ = press(t, a, "down")
+	a = pressSeq(t, a, "down", "down", "down") // the fallback row
 	m := ggitModel(t, a)
-	if m.detailKey != "core.ignorecase" {
-		t.Fatalf("expected core.ignorecase, got %q", m.detailKey)
+	if m.detailKey != GlobalGitEmailFallbackKey {
+		t.Fatalf("expected fallback row, got %q", m.detailKey)
 	}
-
-	// 1. No checkbox glyph in the rendered row. Master and detail panes are
-	// joined onto the SAME visual line (joinMasterDetail), separated by
-	// "│" — a naive whole-line Contains check picks up detail-pane prose
-	// that happens to mention the key, so only the master-list column
-	// (left of "│") is inspected.
 	body := appView(a)
-	// Find the core.ignorecase line in the master list.
 	for _, line := range strings.Split(body, "\n") {
 		listCol := strings.SplitN(line, "│", 2)[0]
-		if strings.Contains(listCol, "core.ignorecase") {
-			// The checkbox glyph must not appear on this line.
+		if strings.Contains(listCol, GlobalGitEmailFallbackKey) {
 			if strings.Contains(listCol, glyphCheckOff) || strings.Contains(listCol, glyphCheckOn) {
-				t.Errorf("non-policy row must not render a checkbox glyph; got line: %q", listCol)
+				t.Errorf("non-selectable row must not render a checkbox glyph; got line: %q", listCol)
 			}
 		}
 	}
-
-	// 2. Toggle key does not change the selection.
+	// Toggle key does not change the selection.
 	a, _ = press(t, a, "space")
 	m = ggitModel(t, a)
-	if m.chosen["core.ignorecase"] {
-		t.Error("toggle key must not choose a non-policy row")
+	if m.chosen[GlobalGitEmailFallbackKey] {
+		t.Error("toggle key must not choose a non-selectable row")
 	}
-
-	// 3. A click at the checkbox position of this row must not toggle it.
-	// We drive handleClick directly at y=2 (row index 1, line 2/3 of the body),
-	// x=4 (the checkbox column). The result should not toggle the row.
-	before := ggitModel(t, a).chosen["core.ignorecase"]
-	res := ggitModel(t, a).handleClick(4, 2, 120, 40, a.state)
+	// A click at its checkbox position must not toggle it.
+	before := ggitModel(t, a).chosen[GlobalGitEmailFallbackKey]
+	res := ggitModel(t, a).handleClick(4, 4, 120, 40, a.state)
 	after, ok2 := res.model.(globalGitModel)
 	if !ok2 {
 		t.Fatal("handleClick returned wrong type")
 	}
-	if after.chosen["core.ignorecase"] != before {
-		t.Error("click at checkbox position of non-policy row must not toggle it")
+	if after.chosen[GlobalGitEmailFallbackKey] != before {
+		t.Error("click at checkbox position of a non-selectable row must not toggle it")
 	}
 }
 
@@ -748,5 +728,231 @@ func TestGlobalGitCheckboxColumnIsUnchecked(t *testing.T) {
 	}
 	if !foundDefaultBranch {
 		t.Error("init.defaultBranch row not found in rendered body")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Plan 07-03 Task 2: the Selectable predicate, the D-10 tally, and rendering.
+// ---------------------------------------------------------------------------
+
+// TestGlobalGitSelectablePredicate asserts the ONE toggle predicate: only a
+// needs-action row with a writable member key and no probe error is selectable
+// — each non-selectable state fails for its OWN distinct reason.
+func TestGlobalGitSelectablePredicate(t *testing.T) {
+	base := GlobalGitOptionView{Key: "x", State: GlobalGitNeedsAction, PolicyBacked: true, HasWritableMember: true}
+	if !base.Selectable() {
+		t.Fatal("needs-action + writable + no probe error must be selectable")
+	}
+
+	differs := base
+	differs.State = GlobalGitSetButDiffers
+	if differs.Selectable() {
+		t.Error("set-but-differs rows must NOT be selectable (D-02: the floor write is a no-op)")
+	}
+
+	already := base
+	already.State = GlobalGitAlreadySet
+	if already.Selectable() {
+		t.Error("already-set rows must not be selectable")
+	}
+
+	na := base
+	na.State = GlobalGitNotApplicable
+	na.NotApplicableReason = GlobalGitReasonProbeFailed
+	if na.Selectable() {
+		t.Error("not-applicable rows must not be selectable")
+	}
+
+	perr := base
+	perr.ProbeError = "probe failed"
+	if perr.Selectable() {
+		t.Error("probe-error rows must not be selectable")
+	}
+
+	nowrite := base
+	nowrite.HasWritableMember = false // the fallback-author row (D-05)
+	if nowrite.Selectable() {
+		t.Error("rows with no writable member key must not be selectable")
+	}
+
+	unbacked := base
+	unbacked.PolicyBacked = false
+	if unbacked.Selectable() {
+		t.Error("rows not backed by the live policy table must not be selectable")
+	}
+}
+
+// TestGlobalGitNeedsAttentionTally asserts the D-10 tally predicate counts a
+// row at most once, only needs-action selectable rows, and excludes differs,
+// already-set, not-applicable and writeless rows.
+func TestGlobalGitNeedsAttentionTally(t *testing.T) {
+	rows := []GlobalGitOptionView{
+		{Key: "needs", State: GlobalGitNeedsAction, PolicyBacked: true, HasWritableMember: true},
+		{Key: "differs", State: GlobalGitSetButDiffers, PolicyBacked: true, HasWritableMember: true, AttributedToUser: true},
+		{Key: "set", State: GlobalGitAlreadySet, PolicyBacked: true, HasWritableMember: true},
+		{Key: "fallback", State: GlobalGitNeedsAction, PolicyBacked: true, HasWritableMember: false},
+		{Key: "na", State: GlobalGitNotApplicable, PolicyBacked: true, HasWritableMember: true, NotApplicableReason: GlobalGitReasonProbeFailed},
+	}
+	got := 0
+	for _, o := range rows {
+		if gitNeedsAttention(o) {
+			got++
+		}
+	}
+	if got != 1 {
+		t.Fatalf("tally = %d, want 1 (only the needs-action writable row counts once)", got)
+	}
+}
+
+// TestGlobalGitBundleCountsOnce asserts a bundle row with one unset member
+// counts EXACTLY once even though it manages eight keys (D-10).
+func TestGlobalGitBundleCountsOnce(t *testing.T) {
+	row := GlobalGitOptionView{
+		Key: "alias (8 shortcuts)", State: GlobalGitNeedsAction,
+		PolicyBacked: true, HasWritableMember: true,
+		BundleAggregate: "7 of 8 set, 0 differs",
+	}
+	if !gitNeedsAttention(row) {
+		t.Fatal("a bundle row with an unset member must need attention")
+	}
+	count := 0
+	if gitNeedsAttention(row) {
+		count++
+	}
+	if count != 1 {
+		t.Errorf("bundle row counted %d times, want 1 (a row counts at most once)", count)
+	}
+}
+
+// TestGlobalGitStatusLineUsesTheTally asserts the status line's count comes
+// from gitNeedsAttention — the SAME predicate the ceremony's apply-selection
+// reads — not a re-derived number.
+func TestGlobalGitStatusLineUsesTheTally(t *testing.T) {
+	b := stubBackend{gitOptions: []GlobalGitOptionView{
+		{Key: "one", State: GlobalGitNeedsAction, PolicyBacked: true, HasWritableMember: true, OneLiner: "a"},
+		{Key: "two", State: GlobalGitNeedsAction, PolicyBacked: true, HasWritableMember: true, OneLiner: "b"},
+		{Key: "differs", State: GlobalGitSetButDiffers, PolicyBacked: true, HasWritableMember: true, OneLiner: "c", AttributedToUser: true},
+	}}
+	m := newGlobalGitModel(b)
+	next, _ := m.activate(Seed())
+	m = next.(globalGitModel)
+	sv := m.view(Seed(), 120, 40)
+	if sv.status != "2 baseline options not set — "+GlobalGitAdvisoryNote {
+		t.Errorf("status = %q, want the tally to drive it (2 pending, differs excluded)", sv.status)
+	}
+}
+
+// TestGlobalGitNoSecondCountingLoop is the source-level D-10 guard: the apply
+// selection must derive ONLY from Selectable(), and the status line must read
+// gitNeedsAttention — a second counting loop reappearing is caught here, not
+// in review.
+func TestGlobalGitNoSecondCountingLoop(t *testing.T) {
+	src, err := os.ReadFile("globalgit.go")
+	if err != nil {
+		t.Fatalf("reading globalgit.go: %v", err)
+	}
+	s := string(src)
+	for _, bad := range []string{
+		"o.Selectable() && o.State",
+		"o.State == GlobalGitNeedsAction &&",
+		"o.Key != GlobalGitEmailFallbackKey &&",
+		"o.Key != GlobalGitNameFallbackKey &&",
+	} {
+		if strings.Contains(s, bad) {
+			t.Errorf("a second, ad-hoc counting path re-appeared in globalgit.go: %q", bad)
+		}
+	}
+}
+
+// TestGlobalGitToggleAndClickRespectSelectability drives the toggle key and
+// the click hit-test over rows of every non-selectable kind and asserts the
+// SAME rows render no checkbox glyph — the one predicate governs all three.
+func TestGlobalGitToggleAndClickRespectSelectability(t *testing.T) {
+	b := stubBackend{gitOptions: []GlobalGitOptionView{
+		{Key: "core.ignorecase", CurrentValue: "true", Recommended: "false", OneLiner: "x", State: GlobalGitSetButDiffers, PolicyBacked: true, HasWritableMember: true, AttributedToUser: true},
+		{Key: "fetch.prune", CurrentValue: "", Recommended: "true", OneLiner: "y", State: GlobalGitNotApplicable, PolicyBacked: true, HasWritableMember: true, NotApplicableReason: GlobalGitReasonProbeFailed, ProbeError: "probe failed"},
+		{Key: "init.defaultBranch", CurrentValue: "main", Recommended: "main", OneLiner: "z", State: GlobalGitAlreadySet, PolicyBacked: true, HasWritableMember: true},
+	}}
+	a, _ := press(t, NewApp(b), "3")
+	for _, o := range ggitModel(t, a).overlaidGitOptions(a.state) {
+		if o.Selectable() {
+			t.Errorf("row %q with state %v must not be selectable", o.Key, o.State)
+		}
+	}
+	body := appView(a)
+	for _, line := range strings.Split(body, "\n") {
+		listCol := strings.SplitN(line, "│", 2)[0]
+		for _, o := range b.gitOptions {
+			if strings.Contains(listCol, o.Key) && (strings.Contains(listCol, glyphCheckOff) || strings.Contains(listCol, glyphCheckOn)) {
+				t.Errorf("non-selectable row %q renders a checkbox glyph: %q", o.Key, listCol)
+			}
+		}
+	}
+	// Toggle refused: selecting the differs row directly and pressing space
+	// changes nothing in the selection.
+	m := ggitModel(t, a)
+	m.detailKey = "core.ignorecase"
+	a.screens[TabGlobalGit] = m
+	before := len(m.chosen)
+	a, _ = press(t, a, "space")
+	if len(ggitModel(t, a).chosen) != before {
+		t.Error("space must be refused for a non-selectable row")
+	}
+	// Click refused: the checkbox cell of the differs row must not toggle it.
+	m = ggitModel(t, a)
+	res := m.handleClick(4, 2, 120, 40, a.state)
+	if after, ok := res.model.(globalGitModel); ok && len(after.chosen) != before {
+		t.Error("click on a non-selectable row's checkbox position must not toggle it")
+	}
+}
+
+// TestGlobalGitDiffersRowRendersWordNotNewGlyph asserts the set-but-differs
+// word state is the existing `!` glyph plus a new WORD only — never a new
+// glyph or colour (D-02 / 07-UI-SPEC's word contract).
+func TestGlobalGitDiffersRowRendersWordNotNewGlyph(t *testing.T) {
+	b := stubBackend{gitOptions: []GlobalGitOptionView{
+		{Key: "core.ignorecase", CurrentValue: "true", Recommended: "false", OneLiner: "x", State: GlobalGitSetButDiffers, PolicyBacked: true, HasWritableMember: true, AttributedToUser: true},
+	}}
+	a, _ := press(t, NewApp(b), "3")
+	body := appView(a)
+	// The master list clips the long sentence at the list-column width — the
+	// surviving WORD still carries the meaning (Phase 6's own no-color
+	// contract; the unclipped sentence is pinned below).
+	if !strings.Contains(body, "differs") {
+		t.Error("differs row must render the differs WORD")
+	}
+	if strings.Contains(body, glyphCheckOff) || strings.Contains(body, glyphCheckOn) {
+		t.Error("differs row must render no checkbox glyph (D-02)")
+	}
+	// The unclipped line-2 keeps the full Phase 6 frozen sentence, byte-identical.
+	line2 := globalGitRowLine2(GlobalGitOptionView{State: GlobalGitSetButDiffers, CurrentValue: "true", Recommended: "false", AttributedToUser: true})
+	if !strings.Contains(line2, GlobalSSHWordDiffersUser) {
+		t.Errorf("unclipped differs line-2 = %q, want the frozen sentence %q", line2, GlobalSSHWordDiffersUser)
+	}
+	line2Outside := globalGitRowLine2(GlobalGitOptionView{State: GlobalGitSetButDiffers, CurrentValue: "true", Recommended: "false", AttributedToUser: false})
+	if !strings.Contains(line2Outside, GlobalSSHWordDiffersOutside) {
+		t.Errorf("unclipped external differs line-2 = %q, want %q", line2Outside, GlobalSSHWordDiffersOutside)
+	}
+}
+
+// TestGlobalGitNotApplicableRowRendersSentence asserts a not-applicable row
+// (probe failed) renders its reason sentence on the master list and its probe
+// error in the detail pane, and is not offered as a fix.
+func TestGlobalGitNotApplicableRowRendersSentence(t *testing.T) {
+	b := stubBackend{gitOptions: []GlobalGitOptionView{
+		{Key: "fetch.prune", CurrentValue: "", Recommended: "true", OneLiner: "y", State: GlobalGitNotApplicable, PolicyBacked: true, HasWritableMember: true, NotApplicableReason: GlobalGitReasonProbeFailed, ProbeError: "probe failed"},
+	}}
+	a, _ := press(t, NewApp(b), "3")
+	body := appView(a)
+	if !strings.Contains(body, GlobalSSHNAProbeFailed) {
+		t.Error("not-applicable row must render its reason sentence on the master list")
+	}
+	if !strings.Contains(body, "probe failed") {
+		t.Error("detail pane must render the row's probe error")
+	}
+	for _, action := range a.screens[TabGlobalGit].view(a.state, 120, 40).actions {
+		if strings.Contains(action.Key, "a") && strings.Contains(action.Label, "apply") {
+			t.Error("a not-applicable row must never be offered through the apply action")
+		}
 	}
 }

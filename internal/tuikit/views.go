@@ -455,30 +455,39 @@ type SSHStorageCommitMsg struct {
 type GlobalGitOptionState int
 
 const (
-	// GlobalGitNeedsAction is the zero value: the option is unset or differs
-	// from the recommendation, so applying is meaningful.
+	// GlobalGitNeedsAction is the zero value: the option is unset (or a bundle
+	// has an unset member), so applying is meaningful.
 	GlobalGitNeedsAction GlobalGitOptionState = iota
 	// GlobalGitAlreadySet means the effective value equals the recommendation.
 	GlobalGitAlreadySet
-	// GlobalGitSetButDiffers means the option is explicitly set to a
-	// non-recommended value — a deliberate choice flagged with `!` (D-02
-	// word state: "set, differs from recommendation — your choice").
+	// GlobalGitSetButDiffers means the option is set to a non-recommended
+	// value — a deliberate choice flagged with `!` (D-02 word state). Differs
+	// rows are INFORMATIONAL: gitid's block sits at the floor, so a write into
+	// a key the user set later is provably a no-op. They render, they are
+	// explained, and they are NOT selectable.
 	GlobalGitSetButDiffers
-	// GlobalGitUnclaimed means a probe failure prevented classification —
-	// ProbeError carries the details.
-	GlobalGitUnclaimed
+	// GlobalGitNotApplicable means the option does not apply on this machine —
+	// a probe failure with ReasonProbeFailed today; the reason enum keeps the
+	// vocabulary open for future reasons.
+	GlobalGitNotApplicable
+)
+
+// GlobalGitNotApplicableReason mirrors globalgit's not-applicable reasons by
+// VALUE ONLY, following globalssh. cmd/gitid pins the numeric pairing in a
+// parity test so a silent renumbering cannot drift the copy.
+type GlobalGitNotApplicableReason int
+
+const (
+	// GlobalGitReasonNone is the zero value: the row is applicable.
+	GlobalGitReasonNone GlobalGitNotApplicableReason = iota
+	// GlobalGitReasonProbeFailed means a probe this row depends on returned an
+	// error — no state claim is possible.
+	GlobalGitReasonProbeFailed
 )
 
 // GlobalGitOptionView is one row of the Global Git options pane. Provenance is
 // a rendered LABEL string computed in cmd/gitid/wiring.go — the view
-// deliberately carries no source-class enum. Plan 07-03 adds the reason enum,
-// bundle aggregate, and version note; plan 07-01 carries the minimum set to
-// make init.defaultBranch real.
-//
-// A row whose State is GlobalGitNeedsAction or GlobalGitSetButDiffers and
-// whose ProbeError is empty is selectable. Selectability is gated by the live
-// policy table in internal/globalgit — plan 07-01 leaves exactly one selectable
-// row (init.defaultBranch); the rest render without a checkbox.
+// deliberately carries no source-class enum.
 type GlobalGitOptionView struct {
 	Key          string
 	CurrentValue string
@@ -489,24 +498,50 @@ type GlobalGitOptionView struct {
 	GitDefault   string
 	ProbeError   string
 	State        GlobalGitOptionState
+	// NotApplicableReason is populated only when State is
+	// GlobalGitNotApplicable. cmd/gitid lands this from the backend enum.
+	NotApplicableReason GlobalGitNotApplicableReason
+	// BundleAggregate is the "set / differs" summary for a bundle row's
+	// current cell ("3 of 8 set, 1 differs"), rendered by the backend — it is
+	// dynamic, so it must stay OUT of the copy-freeze gate.
+	BundleAggregate string
+	// BundlePerKeyNotes lists the per-member "yours differs — yours wins"
+	// notes the detail pane shows. Each note is a frozen sentence naming a
+	// member key.
+	BundlePerKeyNotes []string
 	// PolicyBacked is answered by the backend at the wiring boundary — tuikit
 	// must never import internal/globalgit to ask PolicyFor itself (the
 	// no-backend import-graph gate forbids it). True only for a key the live
-	// policy table resolves; plan 07-01 sets this for init.defaultBranch
-	// alone, plan 07-03 grows it to the full D-08 set.
+	// policy table resolves.
 	PolicyBacked bool
+	// HasWritableMember is answered by the backend: true for a row with at
+	// least one member key gitid may write (false for the fallback-author row,
+	// which has none). Coupled with NeedsAction it drives Selectable().
+	HasWritableMember bool
+	// AttributedToUser is true when the effective value's origin is a file
+	// gitid does not own (the "your choice" differs word). It is the render
+	// layer's projection of the source class — the view never carries the
+	// enum itself.
+	AttributedToUser bool
+	// VersionNote is the non-contractual "your git: X.Y" line for a
+	// version-gated row's detail pane. Dynamically assembled at runtime; MUST
+	// be excluded from the copy-freeze gate.
+	VersionNote string
 }
 
 // Selectable reports whether this row can be toggled and have a checkbox
 // rendered — the ONE predicate the toggle key, checkbox glyph render, and
-// click hit-test all route through, mirroring GlobalSSHOptionView.Selectable
-// exactly. A row whose key the live policy table does not resolve, or whose
-// probe failed, is never selectable.
+// click hit-test all route through, mirroring GlobalSSHOptionView.Selectable.
+//
+// A row is selectable only when it is needs-action, has at least one writable
+// member key (PolicyBacked && HasWritableMember), and carries no probe error.
+// This makes the differs, not-applicable, probe-error, and fallback-author rows
+// non-selectable BY CONSTRUCTION rather than by four separate guards.
 func (o GlobalGitOptionView) Selectable() bool {
-	if o.ProbeError != "" || !o.PolicyBacked {
+	if o.ProbeError != "" || !o.PolicyBacked || !o.HasWritableMember {
 		return false
 	}
-	return o.State == GlobalGitNeedsAction || o.State == GlobalGitSetButDiffers
+	return o.State == GlobalGitNeedsAction
 }
 
 // GlobalGitApplyPlanView is the confirmed-apply preview scene: the resolved

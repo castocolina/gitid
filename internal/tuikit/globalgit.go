@@ -218,17 +218,77 @@ func (m globalGitModel) overlaidGitOptions(s DemoState) []GlobalGitOptionView {
 	return out
 }
 
-// gitApplyChosen is the chosen ∩ selectable key set, in row order — the
-// D9 global-fallback user.email row is EXCLUDED (it has its own dedicated
-// ceremony, never folded into the baseline managed-block apply).
+// gitNeedsAttention is the ONE tally predicate for the Global Git options
+// pane (D-10, pinned in 07-03-PLAN.md's <authority> block). It counts a ROW
+// at most once, and counts only rows in the needs-action state — a row whose
+// State is set-but-differs is EXCLUDED (D-02: under the floor + last-wins
+// model, a write into a key the user set later is provably a no-op, so the
+// row has no action to offer), not-applicable rows are excluded, and a bundle
+// row counts once when at least one member key is unset, whatever the other
+// members do. The fallback-author row is excluded because it carries no
+// writable member keys — it has its own dedicated ceremony (D-05).
+//
+// The list's status line and the apply ceremony's count BOTH read this one
+// predicate; nothing re-derives a second count.
+//
+// This DIVERGES from Phase 6's own tally (06-03-SUMMARY.md), which counts
+// set-but-differs rows as needing attention. The divergence is deliberate and
+// asymmetric because the precedence arrow is reversed: on the SSH side gitid's
+// `Host *` block can genuinely change a differing value, on the git side it
+// provably cannot. Cite both D-02 and 06-03's own rule so a future reader
+// sees the asymmetry is intended.
+func gitNeedsAttention(o GlobalGitOptionView) bool {
+	return o.Selectable()
+}
+
+// gitApplyChosen is the chosen ∩ selectable key set, in row order. The
+// selectable predicate (needs-action + writable member keys + no probe error)
+// is what excludes the differs, not-applicable and fallback-author rows — there
+// is no per-key exclusion list and no second counting loop here.
 func (m globalGitModel) gitApplyChosen(options []GlobalGitOptionView) []string {
 	var keys []string
 	for _, o := range options {
-		if o.Key != GlobalGitEmailFallbackKey && o.Selectable() && o.State == GlobalGitNeedsAction && m.chosen[o.Key] {
+		if o.Selectable() && m.chosen[o.Key] {
 			keys = append(keys, o.Key)
 		}
 	}
 	return keys
+}
+
+// globalGitRowLine2 renders the option row's second line: "now: <current> →
+// <recommended>" plus the state WORD. The D-02 differs vocabulary deliberately
+// reuses Phase 6's own frozen sentences (GlobalSSHWordDiffersUser/Outside) —
+// one vocabulary across both Global-* screens, already inside the copy-freeze
+// gate. Not-applicable rows replace the now-line with their reason sentence.
+func globalGitRowLine2(o GlobalGitOptionView) string {
+	if o.State == GlobalGitNotApplicable {
+		return globalGitNotApplicableSentence(o.NotApplicableReason)
+	}
+	now := "now: " + o.CurrentValue + " → " + o.Recommended
+	switch o.State {
+	case GlobalGitSetButDiffers:
+		if o.AttributedToUser {
+			return now + "  " + GlobalSSHWordDiffersUser
+		}
+		return now + "  " + GlobalSSHWordDiffersOutside
+	case GlobalGitAlreadySet:
+		if o.CurrentValue != "" {
+			return now + "  " + GlobalSSHWordAlreadySet
+		}
+	}
+	return now
+}
+
+// globalGitNotApplicableSentence renders the per-reason not-applicable line.
+func globalGitNotApplicableSentence(r GlobalGitNotApplicableReason) string {
+	switch r {
+	case GlobalGitReasonProbeFailed:
+		// Byte-identical to Phase 6's own probe-failed sentence (already in
+		// the freeze gate) — one vocabulary across both Global-* screens.
+		return GlobalSSHNAProbeFailed
+	default:
+		return GlobalSSHNAProbeFailed
+	}
 }
 
 // gitDetailIndex resolves the selected option row index.
@@ -452,12 +512,11 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		return keyResult{model: m, handled: true}
 	case "space":
 		o := options[m.gitDetailIndex(options)]
-		if o.Key == GlobalGitEmailFallbackKey {
-			// D-04 removed the checkbox: the fallback row does not
-			// respond to the toggle key. Its detail pane is its own
-			// interface now.
-			return keyResult{model: m, handled: true}
-		}
+		// Selectable() is the ONE predicate: a row that cannot be toggled
+		// (including the fallback-author row, which carries no writable member
+		// keys under D-04/D-05) is refused here, renders no checkbox glyph, and
+		// clicks at its checkbox position do nothing — there is no path by
+		// which the three can disagree.
 		if o.Selectable() {
 			m.chosen = withToggled(m.chosen, o.Key)
 		}
@@ -539,11 +598,9 @@ func (m globalGitModel) handleClick(x, y, width, height int, s DemoState) keyRes
 		return keyResult{model: m}
 	}
 	o := options[row]
-	// Checkbox hit-test: only rows whose key the policy table resolves carry a
-	// checkbox — the same Selectable predicate that gates the toggle key.
-	// D-04 removed the fallback row's checkbox; its detail pane is its own
-	// interface now.
-	if o.Key != GlobalGitEmailFallbackKey && o.Selectable() {
+	// Checkbox hit-test: only selectable rows carry a checkbox — the same ONE
+	// predicate that gates the toggle key and the checkbox glyph (D-02, D-05).
+	if o.Selectable() {
 		body := m.view(s, width, height).body
 		if hitNeedle(body, x, y, glyphCheckOff) || hitNeedle(body, x, y, glyphCheckOn) {
 			m.chosen = withToggled(m.chosen, o.Key)
@@ -560,7 +617,7 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 
 	var pending int
 	for _, o := range options {
-		if o.Key != GlobalGitEmailFallbackKey && o.Selectable() && o.State == GlobalGitNeedsAction {
+		if gitNeedsAttention(o) {
 			pending++
 		}
 	}
@@ -608,12 +665,11 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 		if i == selIdx {
 			marker = styleBold.Render("▸ ")
 		}
-		// Checkbox: only policy-backed rows get a checkbox glyph. D-04
-		// removed the fallback row's checkbox — its detail pane is its
-		// own interface. Rows with no policy entry render a blank
-		// placeholder — honest "not yet actionable" rendering.
+		// Checkbox: only selectable rows get a checkbox glyph — driven by the
+		// ONE Selectable predicate (needs-action + writable member keys + no
+		// probe error), so a does/render mismatch cannot exist (D-02, D-05).
 		box := "   "
-		if o.Key != GlobalGitEmailFallbackKey && o.Selectable() {
+		if o.Selectable() {
 			box = glyphCheckOff + " "
 			if m.chosen[o.Key] {
 				box = glyphCheckOn + " "
@@ -623,6 +679,11 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 		switch o.State {
 		case GlobalGitNeedsAction, GlobalGitSetButDiffers:
 			toneGlyph = styleWarning.Render("!")
+		case GlobalGitNotApplicable:
+			// A neutral marker, not a health-tone glyph (mirrors globalssh):
+			// every other row carries a visible tone glyph, so a blank cell
+			// here would read as a missing/broken row.
+			toneGlyph = styleFaint.Render("·")
 		}
 		name := styleBold.Render(o.Key)
 		if i == selIdx {
@@ -633,7 +694,7 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 			chip = "  " + styleWarning.Render("[main vs master]")
 		}
 		rows = append(rows, truncLine(" "+marker+box+toneGlyph+" "+name+chip, listWidth))
-		rows = append(rows, truncLine("      "+styleFaint.Render("now: "+o.CurrentValue+" → "+o.Recommended), listWidth))
+		rows = append(rows, truncLine("      "+styleFaint.Render(globalGitRowLine2(o)), listWidth))
 	}
 	list := strings.Join(rows, "\n")
 
@@ -658,6 +719,16 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 		d.WriteString(" " + styleBold.Render(detail.Key) + "\n")
 		d.WriteString(" " + styleInfo.Render("~ "+GlobalGitAdvisoryNote) + "\n\n")
 		d.WriteString(" " + explanation + "\n")
+		for _, note := range detail.BundlePerKeyNotes {
+			// Per-key "yours differs — yours wins" notes for a bundle row's
+			// members the user set differently (D-09).
+			d.WriteString(" " + styleFaint.Render(note) + "\n")
+		}
+		if detail.VersionNote != "" {
+			// The NON-contractual dynamic version line (D-13 precedent) —
+			// excluded from the copy-freeze gate.
+			d.WriteString(" " + styleFaint.Render(" "+detail.VersionNote) + "\n")
+		}
 		if detail.Provenance != "" {
 			d.WriteString(" " + styleFaint.Render(detail.Provenance) + "\n")
 		}

@@ -622,15 +622,15 @@ func fixtureGlobalGitOptionViews() []GlobalGitOptionView {
 			state = GlobalGitNeedsAction
 		}
 		out = append(out, GlobalGitOptionView{
-			Key:          o.Key,
-			CurrentValue: o.Current,
-			Provenance:   "fixture value — the test backend does not probe a machine",
-			Recommended:  o.Recommended,
-			OneLiner:     o.OneLiner,
-			State:        state,
-			// PolicyBacked mirrors the wave-07-01 real policy table's only
-			// live entry (internal/dummytui/fixturebackend.go's comment).
-			PolicyBacked: o.Key == "init.defaultBranch",
+			Key:               o.Key,
+			CurrentValue:      o.Current,
+			Provenance:        "fixture value — the test backend does not probe a machine",
+			Recommended:       o.Recommended,
+			OneLiner:          o.OneLiner,
+			State:             state,
+			PolicyBacked:      o.Key != GlobalGitEmailFallbackKey,
+			HasWritableMember: o.Key != GlobalGitEmailFallbackKey,
+			AttributedToUser:  false,
 		})
 	}
 	return out

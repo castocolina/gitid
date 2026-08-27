@@ -38,6 +38,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/castocolina/gitid/internal/clipboard"
+	"github.com/castocolina/gitid/internal/deps"
 	"github.com/castocolina/gitid/internal/filewriter"
 	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/globalgit"
@@ -1567,46 +1568,127 @@ func (b *realBackend) GlobalGitOptionStates() ([]tuikit.GlobalGitOptionView, err
 	for _, o := range tuikit.GlobalGitOptions {
 		fixture[o.Key] = o
 	}
-	deps := globalgit.BuildProbeDeps(b.fragmentDir)
-	rows, err := globalgit.Statuses(deps, b.baselineTargetPath())
+	probeDeps := globalgit.BuildProbeDeps(b.fragmentDir)
+	rows, err := globalgit.Statuses(probeDeps, b.baselineTargetPath())
 	if err != nil {
 		return nil, err
 	}
+	// One git-version read per screen activation (D-08, the D-13 precedent:
+	// the dynamic version line is non-contractual). The gate outcome itself is
+	// computed per row by VersionGate.
+	gitVersion, _ := deps.GitVersion()
 	out := make([]tuikit.GlobalGitOptionView, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, tuikit.GlobalGitOptionView{
-			Key:          row.Key,
-			CurrentValue: row.CurrentValue,
-			Provenance:   b.globalGitProvenanceLabel(row),
-			Recommended:  row.Recommended,
-			OneLiner:     fixture[row.Key].OneLiner,
-			Explanation:  fixture[row.Key].OneLiner,
-			GitDefault:   row.GitDefault,
-			ProbeError:   row.ProbeError,
-			State:        toGlobalGitOptionState(row.State),
-			PolicyBacked: true,
-		})
+		policy, _ := globalgit.PolicyFor(row.Key)
+		view := tuikit.GlobalGitOptionView{
+			Key:                 row.Key,
+			CurrentValue:        row.CurrentValue,
+			Provenance:          b.globalGitProvenanceLabel(row),
+			Recommended:         row.Recommended,
+			OneLiner:            fixture[row.Key].OneLiner,
+			Explanation:         fixture[row.Key].OneLiner,
+			GitDefault:          row.GitDefault,
+			ProbeError:          row.ProbeError,
+			State:               toGlobalGitOptionState(row.State),
+			NotApplicableReason: toGlobalGitNotApplicableReason(row.NotApplicableReason),
+			PolicyBacked:        true, // every policy row is backed by the D-08 table
+			HasWritableMember:   len(policy.Members) > 0,
+			AttributedToUser:    row.Source == globalgit.SourceSetByUser,
+			VersionNote:         globalGitVersionNote(policy, gitVersion),
+		}
+		// Bundle rows' current cell is the D-09 aggregate ("3 of 8 set, 1
+		// differs"), computed from the probes — the detail pane names the
+		// differing members underneath.
+		if row.BundleTotal > 1 {
+			view.CurrentValue = bundleAggregateCell(row)
+			view.BundleAggregate = view.CurrentValue
+			view.BundlePerKeyNotes = bundlePerKeyNotes(row)
+		}
+		out = append(out, view)
 	}
 	return out, nil
 }
 
+// globalGitVersionNote renders the NON-contractual dynamic version line for a
+// version-gated row's detail pane (D-08). It must never reach the copy-freeze
+// gate — the prefix "Your git:" is versioned by the machine. An unreadable
+// version is silent for informational gates (nothing changes when unsupported)
+// and names the fallback for the hard gate (the fallback IS written).
+func globalGitVersionNote(policy globalgit.OptionPolicy, gitVersion string) string {
+	if policy.MinVersion == "" {
+		return ""
+	}
+	if strings.TrimSpace(gitVersion) == "" {
+		if policy.Gate == globalgit.GateHard {
+			return globalgit.VersionNoteUnreadable
+		}
+		return ""
+	}
+	_, note := globalgit.VersionGate(gitVersion, policy)
+	return note
+}
+
+// bundleAggregateCell renders the D-09 aggregate summary for a bundle row's
+// current cell. It carries counts and is therefore DYNAMIC — excluded from the
+// copy-freeze gate.
+func bundleAggregateCell(row globalgit.OptionRow) string {
+	cell := fmt.Sprintf("%d of %d set", row.BundleSet, row.BundleTotal)
+	if row.BundleDiffers > 0 {
+		cell += fmt.Sprintf(", %d differs", row.BundleDiffers)
+	}
+	return cell
+}
+
+// bundlePerKeyNotes renders the per-key "yours differs — yours wins" notes the
+// detail pane shows for a bundle row (D-09). The tail wording is the frozen
+// copy; the member key is dynamic.
+func bundlePerKeyNotes(row globalgit.OptionRow) []string {
+	notes := make([]string, 0, len(row.BundleDiffersKeys))
+	for _, key := range row.BundleDiffersKeys {
+		notes = append(notes, fmt.Sprintf("%s — your value differs, so yours wins", key))
+	}
+	return notes
+}
+
+// toGlobalGitNotApplicableReason maps the engine's reason to the render DTO by
+// value, pinned numeric-for-numeric by the parity test (mirrors globalssh).
+func toGlobalGitNotApplicableReason(r globalgit.NotApplicableReason) tuikit.GlobalGitNotApplicableReason {
+	switch r {
+	case globalgit.ReasonProbeFailed:
+		return tuikit.GlobalGitReasonProbeFailed
+	default:
+		return tuikit.GlobalGitReasonNone
+	}
+}
+
 // globalGitProvenanceLabel renders the D-03 provenance label from the
-// classifier's source class — the render package never learns the enum.
+// classifier's source class — the render package never learns the enum. The
+// five-word vocabulary mirrors Phase 6's registered set on the git side:
+// the user's own file, a scope gitid cannot change, unset naming git's
+// built-in default, applied by gitid, and set somewhere gitid cannot name.
 func (b *realBackend) globalGitProvenanceLabel(row globalgit.OptionRow) string {
 	switch row.Source {
 	case globalgit.SourceSetByGitid:
 		return fmt.Sprintf("set by gitid in %s", b.displayPath(b.baselineTargetPath()))
 	case globalgit.SourceSetByUser:
-		origin := row.EffectiveOrigin
-		if origin != "" {
-			return fmt.Sprintf("set by you in %s", b.displayPath(origin))
+		if row.EffectiveOrigin != "" {
+			return fmt.Sprintf("set by you in %s", b.displayPath(row.EffectiveOrigin))
 		}
 		return "set by you"
 	case globalgit.SourceUnchangeable:
-		return "set outside a file gitid can change"
+		// A named file (e.g. the system config) is still a file — the label
+		// names it and states the scope is unchangeable. A non-file origin
+		// ("command line", "blob:…") cannot be named at all.
+		if row.EffectiveOrigin != "" && !strings.ContainsRune(row.EffectiveOrigin, ' ') {
+			return fmt.Sprintf("set in %s — gitid cannot change this", b.displayPath(row.EffectiveOrigin))
+		}
+		return "set somewhere gitid cannot name"
 	default:
 		if row.ProbeError != "" {
 			return "the probe did not answer — see the advisory note"
+		}
+		if row.GitDefault != "" {
+			return fmt.Sprintf("not set (git's built-in default: %s)", row.GitDefault)
 		}
 		return "not set"
 	}
@@ -1621,8 +1703,8 @@ func toGlobalGitOptionState(s globalgit.OptionRowState) tuikit.GlobalGitOptionSt
 		return tuikit.GlobalGitAlreadySet
 	case globalgit.StateSetButDiffers:
 		return tuikit.GlobalGitSetButDiffers
-	case globalgit.StateUnclaimed:
-		return tuikit.GlobalGitUnclaimed
+	case globalgit.StateNotApplicable:
+		return tuikit.GlobalGitNotApplicable
 	default:
 		return tuikit.GlobalGitNeedsAction
 	}

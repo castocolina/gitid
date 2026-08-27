@@ -490,17 +490,14 @@ func (FixtureBackend) GlobalGitOptionStates() ([]tuikit.GlobalGitOptionView, err
 			state = tuikit.GlobalGitNeedsAction
 		}
 		out = append(out, tuikit.GlobalGitOptionView{
-			Key:          o.Key,
-			CurrentValue: o.Current,
-			Provenance:   "fixture value — the demo does not probe this machine",
-			Recommended:  o.Recommended,
-			OneLiner:     o.OneLiner,
-			State:        state,
-			// PolicyBacked hardcodes the wave-07-01 policy table's ONLY
-			// live entry — the dummy must not import internal/globalgit to
-			// ask PolicyFor itself (the no-backend import-graph gate
-			// forbids it). Plan 07-03 grows this to the full D-08 set.
-			PolicyBacked: o.Key == "init.defaultBranch",
+			Key:               o.Key,
+			CurrentValue:      o.Current,
+			Provenance:        "fixture value — the demo does not probe this machine",
+			Recommended:       o.Recommended,
+			OneLiner:          o.OneLiner,
+			State:             state,
+			PolicyBacked:      o.Key != tuikit.GlobalGitEmailFallbackKey,
+			HasWritableMember: o.Key != tuikit.GlobalGitEmailFallbackKey,
 		})
 	}
 	return out, nil
