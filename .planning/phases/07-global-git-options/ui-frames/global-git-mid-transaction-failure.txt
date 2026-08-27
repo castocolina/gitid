@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Global Git › Options
+✗ gitid: refusing non-regular transaction target: ~/.gitconfig.d/00-baseline
+
+ Cancel (Esc)   Retry (Enter)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 11 baseline options not set — Recommended, not required -- you can leave any option unchanged. Th…
+ Tab/←→ Cancel / Confirm · Enter confirm
+ Esc back · Ctrl+P palette

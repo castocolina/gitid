@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Global Git › Options
+   ☐ ! init.defaultBranch  [main vs master] │  diff.colorMoved
+      now:  → main                          │  ~ Recommended, not required -- you can leave any
+   ☐ ! core.ignorecase                      │ option unchanged. This is advisory, never a compliance
+      now:  → false                         │ gate.
+   ☐ ! core.autocrlf / core.eol             │
+      now: 0 of 2 set → input / lf          │  Highlights moved blocks of code distinctly from
+      ! user.email (global fallback)        │ genuine additions/deletions in colorized diffs,
+      now:  → left unset unless explicitly …│ striping each moved block.
+   ☐ ! user.useConfigOnly                   │   Your git: 2.55.0 — diff.colorMoved zebra is
+      now:  → true                          │ available
+   ☐ ! push.autoSetupRemote                 │  not set (git's built-in default: no)
+      now:  → true                          │
+   ☐ ! pull.rebase                          │
+      now:  → true                          │
+   ☐ ! fetch.prune                          │
+      now:  → true                          │
+   ☐ ! alias (8 shortcuts)                  │
+      now: 0 of 8 set → st, co, br, ci, df,…│
+   ☐ ! color (ui/branch/diff/status)        │
+      now: 0 of 4 set → auto for all four   │
+   ☐ ! merge.conflictstyle                  │
+      now:  → zdiff3                        │
+ ▸ ☐ ! diff.colorMoved                      │
+      now:  → zebra                         │
+                                            │
+ 11 baseline options not set — Recommended, not required -- you can leave any option unchanged. Th…
+ ↑↓ select option · space toggle · ←→ switch view
+ Enter activate · Esc back · ? help · Ctrl+P palette · q quit

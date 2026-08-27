@@ -469,9 +469,68 @@ func FakeGitDir(t *testing.T, mode string) string {
 	return dir
 }
 
+func FakeGitShimDir(t *testing.T, version, failSubcommand string) string {
+	t.Helper()
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatalf("FakeGitShimDir: locating real git: %v", err)
+	}
+	dir := t.TempDir()
+	const script = "#!/bin/sh\n" +
+		"if [ \"$1\" = \"--version\" ] && [ \"$#\" -eq 1 ]; then\n" +
+		"  printf 'git version %s\\n' \"$GITID_FAKE_GIT_VERSION\"\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"if [ \"$1\" = \"$GITID_FAKE_GIT_FAIL_SUBCOMMAND\" ]; then\n" +
+		"  printf 'fake git: %s failed\\n' \"$1\" >&2\n" +
+		"  exit 1\n" +
+		"fi\n" +
+		"exec \"$GITID_REAL_GIT\" \"$@\"\n"
+	scriptPath := filepath.Join(dir, "git")
+	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil { //nolint:gosec // test-only static script (G306)
+		t.Fatalf("FakeGitShimDir: writing fake git: %v", err)
+	}
+	t.Setenv("GITID_REAL_GIT", realGit)
+	t.Setenv("GITID_FAKE_GIT_VERSION", version)
+	t.Setenv("GITID_FAKE_GIT_FAIL_SUBCOMMAND", failSubcommand)
+	return dir
+}
+
 // setupLocalBareRepo initialises a git bare repository in a temp directory and
 // returns its file:// URL and base name. The REAL system git is used here (not a
 // fake) so the network-free clone target is a genuine git repository.
+func TestFakeGitShimDelegatesOverridesVersionAndFailsSubcommand(t *testing.T) {
+	seeded := filepath.Join(t.TempDir(), "seeded.gitconfig")
+	writeFileT(t, seeded, "[user]\n\tname = Shim User\n\temail = shim@example.com\n")
+
+	git := filepath.Join(FakeGitShimDir(t, "2.34.1", "rev-parse"), "git")
+	version, err := exec.Command(git, "--version").CombinedOutput() //nolint:gosec // git is the test-owned FakeGitShimDir script
+	if err != nil {
+		t.Fatalf("running shim version: %v\n%s", err, version)
+	}
+	if got, want := strings.TrimSpace(string(version)), "git version 2.34.1"; got != want {
+		t.Fatalf("shim version = %q, want %q", got, want)
+	}
+
+	delegated, err := exec.Command(git, "config", "--file", seeded, "--list").CombinedOutput() //nolint:gosec // git is the test-owned FakeGitShimDir script
+	if err != nil {
+		t.Fatalf("running delegated config: %v\n%s", err, delegated)
+	}
+	for _, want := range []string{"user.name=Shim User", "user.email=shim@example.com"} {
+		if !strings.Contains(string(delegated), want) {
+			t.Fatalf("delegated config = %q, want %q", delegated, want)
+		}
+	}
+
+	failed, err := exec.Command(git, "rev-parse", "--git-dir").CombinedOutput() //nolint:gosec // git is the test-owned FakeGitShimDir script
+	if err == nil {
+		t.Fatalf("configured failing subcommand succeeded: %s", failed)
+	}
+	if !strings.Contains(string(failed), "fake git: rev-parse failed") {
+		t.Fatalf("configured failing subcommand output = %q", failed)
+	}
+}
+
 func setupLocalBareRepo(t *testing.T) (repoURL, repoName string) {
 	t.Helper()
 	bare := t.TempDir()
