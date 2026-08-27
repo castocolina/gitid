@@ -312,6 +312,12 @@ type Backend interface {
 	// a reflection test. The D9 fallback-author seam is a SEPARATE interface
 	// owned by plan 07-02, so this interface never grows author methods.
 	GlobalGitPlanner
+	// GitFallbackAuthorPlanner: plan 07-02's D9 fallback-author seam.
+	// Deliberately separate from GlobalGitPlanner — one interface owns the
+	// option catalogue and its write, this one owns the fallback author and
+	// its own write. The real backend must NOT embed
+	// NoopGitFallbackAuthorPlanner.
+	GitFallbackAuthorPlanner
 	// SSHStoragePlanner: plan 06-05's Storage-sub-tab seam. Deliberately
 	// separate from GlobalSSHPlanner — one interface owns the option
 	// catalogue and its write, this one owns the layout and its migration.

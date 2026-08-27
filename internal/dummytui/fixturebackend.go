@@ -46,6 +46,7 @@ var findingIdentityAttribution = map[string]string{
 // reduction over data.go's fixtures.
 type FixtureBackend struct {
 	tuikit.NoopIdentityPlanner
+	tuikit.NoopGitFallbackAuthorPlanner
 }
 
 // NewFixtureBackend returns the demo's fixture Backend. cmd/gitid-dummy is
@@ -59,6 +60,7 @@ var _ tuikit.Backend = FixtureBackend{}
 var _ tuikit.IdentityPlanner = FixtureBackend{}
 var _ tuikit.SSHStoragePlanner = FixtureBackend{}
 var _ tuikit.GlobalGitPlanner = FixtureBackend{}
+var _ tuikit.GitFallbackAuthorPlanner = FixtureBackend{}
 
 // ---------------------------------------------------------------------------
 // Data
@@ -519,6 +521,40 @@ func (FixtureBackend) CommitGlobalGit([]string) tea.Cmd {
 	backup := tuikit.NewBackupPath("~/.gitconfig.d/00-baseline")
 	return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
 		return tuikit.GlobalGitCommitMsg{Backups: []string{backup}}
+	})
+}
+
+// GitFallbackAuthorState returns an empty pair — the demo's fallback
+// fields start unset, matching the recipes default.
+func (FixtureBackend) GitFallbackAuthorState() (tuikit.GitFallbackAuthorView, error) {
+	return tuikit.GitFallbackAuthorView{}, nil
+}
+
+// GitFallbackAuthorPlan is the demo apply preview: the frozen ~/.gitconfig
+// target, a promised backup, and a locally-composed pair snapshot.
+func (FixtureBackend) GitFallbackAuthorPlan(name, email string) (tuikit.GitFallbackAuthorPlanView, error) {
+	preview := "+ [user]\n"
+	if name != "" {
+		preview += "+     name = " + name + "  " + tuikit.GlobalGitEmailDiffAnnotation + "\n"
+	}
+	if email != "" {
+		preview += "+     email = " + email + "  " + tuikit.GlobalGitEmailDiffAnnotation + "\n"
+	}
+	return tuikit.GitFallbackAuthorPlanView{
+		Targets: []string{"~/.gitconfig"},
+		Backups: []string{tuikit.NewBackupPath("~/.gitconfig")},
+		Diff:    strings.TrimRight(preview, "\n"),
+		Removal: name == "" && email == "",
+	}, nil
+}
+
+// CommitGitFallbackAuthor keeps the approved dummy apply flow in memory —
+// it never touches HOME, reporting the fixture receipt after the same
+// brief tick the other async fixture commands use.
+func (FixtureBackend) CommitGitFallbackAuthor(string, string) tea.Cmd {
+	backup := tuikit.NewBackupPath("~/.gitconfig")
+	return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
+		return tuikit.GitFallbackAuthorCommitMsg{Backups: []string{backup}}
 	})
 }
 

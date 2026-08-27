@@ -88,9 +88,10 @@ type DemoState struct {
 	SSHApplied []string
 	// GitBaselineApplied is whether the global-git baseline was applied.
 	GitBaselineApplied bool
-	// GitGlobalEmail is the D9 global-fallback user.email — empty (unset)
-	// by default (recipes default preserved); set only via its own
-	// dedicated apply ceremony, never folded into the baseline.
+	// GitGlobalName / GitGlobalEmail are the D-04 two-field global-fallback
+	// pair — empty (unset) by default (recipes default preserved); set only
+	// via its own dedicated apply ceremony, never folded into the baseline.
+	GitGlobalName  string
 	GitGlobalEmail string
 	// SSHStorage is STORE-01's current layout.
 	SSHStorage SSHStorageLayout
@@ -174,9 +175,11 @@ type ApplyGitBaseline struct {
 	Backup string
 }
 
-// ApplyGitGlobalEmail applies the D9 global-fallback user.email through its
-// own dedicated ceremony — never folded into the baseline managed block.
+// ApplyGitGlobalEmail applies the D-04 two-field global-fallback pair
+// through its own dedicated ceremony — never folded into the baseline
+// managed block.
 type ApplyGitGlobalEmail struct {
+	Name   string
 	Email  string
 	Backup string
 }
@@ -428,6 +431,7 @@ func Reduce(state DemoState, action Action) DemoState { //nolint:gocyclo // one 
 		next.GitBaselineApplied = true
 		next.Backups = append([]string{a.Backup}, next.Backups...)
 	case ApplyGitGlobalEmail:
+		next.GitGlobalName = a.Name
 		next.GitGlobalEmail = a.Email
 		next.Backups = append([]string{a.Backup}, next.Backups...)
 	case EditSSH:

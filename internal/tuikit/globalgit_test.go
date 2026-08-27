@@ -438,146 +438,281 @@ func TestGlobalGitSpaceToggleIsCopyOnWrite(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// D9 user.email fallback tests (unchanged from original — ceremony is still
-// synchronous for the email path, plan 07-02 owns its real seam).
+// D-04 two-field fallback pane (plan 07-02 Task 3).
 // ---------------------------------------------------------------------------
 
-// TestGlobalGitUserEmailFallbackIsEditableAndDefaultsOff pins D9
-// (checkpoint-2 contract): the promoted global-fallback user.email row is a
-// first-class EDITABLE field + apply checkbox, default OFF (recipes leave
-// it unset), and is EXCLUDED from the generic baseline apply set — it has
-// its own dedicated ceremony.
-func TestGlobalGitUserEmailFallbackIsEditableAndDefaultsOff(t *testing.T) {
-	a := ggitApp(t)
-	// user.email (global fallback) row is index 3.
-	a = pressSeq(t, a, "down", "down", "down")
+func fallbackRowApp(t *testing.T, b stubBackend) App {
+	t.Helper()
+	a, _ := press(t, NewApp(b), "3")
+	return pressSeq(t, a, "down", "down", "down")
+}
+
+func TestGitFallbackPaneHasTwoFieldRowsAndFocusMoves(t *testing.T) {
+	a := fallbackRowApp(t, stubBackend{})
 	m := ggitModel(t, a)
 	if m.detailKey != GlobalGitEmailFallbackKey {
 		t.Fatalf("detailKey = %q, want %q", m.detailKey, GlobalGitEmailFallbackKey)
 	}
-	if m.chosen[GlobalGitEmailFallbackKey] {
-		t.Fatal("D9: the global-fallback row must default to unchecked (recipes leave it unset)")
+	detail := regionFlat(a, 45, 100)
+	if !strings.Contains(detail, GlobalGitNameFallbackKey) {
+		t.Errorf("name field row missing; detail:\n%s", detail)
 	}
-	detail := regionFlat(a, 45, 100) // word-wrap-proof: flatten the detail column
-	if !strings.Contains(detail, GlobalGitEmailFallbackHelper) {
-		t.Errorf("D9 helper copy missing; detail pane:\n%s", detail)
+	if !strings.Contains(detail, GlobalGitEmailFallbackKey) {
+		t.Errorf("email field row missing; detail:\n%s", detail)
 	}
-	if !strings.Contains(detail, GlobalGitEmailFallbackAdvisory) {
-		t.Errorf("D9 advisory copy missing; detail pane:\n%s", detail)
+	if m.fieldFocus != 0 {
+		t.Errorf("fieldFocus = %d, want 0 (name)", m.fieldFocus)
 	}
-	// Apply never includes it in the generic baseline set.
-	options := ggitModel(t, a).overlaidGitOptions(a.state)
-	for _, key := range ggitModel(t, a).gitApplyChosen(options) {
-		if key == GlobalGitEmailFallbackKey {
-			t.Error("the generic baseline apply set must never contain the global-fallback row")
-		}
+	a, _ = press(t, a, "tab")
+	if ggitModel(t, a).fieldFocus != 1 {
+		t.Errorf("tab must move focus to the email field, got %d", ggitModel(t, a).fieldFocus)
 	}
-	// Enter starts text-editing (D8/D9) — typing then reaches the field.
-	a, _ = press(t, a, "enter")
-	if !ggitModel(t, a).emailEditing {
-		t.Fatal("Enter on the selected fallback row must start text-editing")
-	}
-	a = typeText(t, a, "team@example.com")
-	if got := ggitModel(t, a).emailInput.Value(); got != "team@example.com" {
-		t.Errorf("emailInput = %q, want the typed value", got)
-	}
-	// Esc exits editing back to row navigation.
-	a, _ = press(t, a, "esc")
-	if ggitModel(t, a).emailEditing {
-		t.Error("Esc must exit text-editing")
-	}
-	// space checks the row — an explicit opt-in.
-	a, _ = press(t, a, "space")
-	m = ggitModel(t, a)
-	if !m.chosen[GlobalGitEmailFallbackKey] {
-		t.Error("space must check the global-fallback row (explicit opt-in)")
+	a, _ = press(t, a, "tab")
+	if ggitModel(t, a).fieldFocus != 0 {
+		t.Error("tab must wrap focus back to the name field")
 	}
 }
 
-// TestGlobalGitUserEmailFallbackApplyGatedOnPlausibleEmail pins
-// review-findings F10: an empty (or "@"-less) fallback email must never be
-// applicable.
-func TestGlobalGitUserEmailFallbackApplyGatedOnPlausibleEmail(t *testing.T) {
-	a := ggitApp(t)
-	// Navigate to init.defaultBranch, toggle, and apply it first so the
-	// baseline apply set is empty when we test the email gate.
-	a, _ = press(t, a, "space") // toggle init.defaultBranch
-	a, _ = press(t, a, "a")     // open baseline ceremony
-	a, _ = press(t, a, "enter") // confirm
-	// Deliver the commit msg to complete the ceremony.
-	a, _ = deliverMsg(t, a, GlobalGitCommitMsg{Backups: []string{NewBackupPath("~/.gitconfig.d/00-baseline")}})
-	a, _ = press(t, a, "enter") // done (finish ceremony view)
-
-	a = pressSeq(t, a, "down", "down", "down") // → the fallback row
-	a, _ = press(t, a, "space")                // opt in, email still empty
-	if !strings.Contains(regionFlat(a, 45, 100), "needs @") {
-		t.Errorf("expected the inline 'needs @' error while the fallback email is empty:\n%s", regionFlat(a, 45, 100))
+func TestGitFallbackInputsSeededFromStateView(t *testing.T) {
+	b := stubBackend{fallbackState: GitFallbackAuthorView{Name: "Pat Example", Email: "pat@example.com"}}
+	m := newGlobalGitModel(b)
+	next, _ := m.activate(Seed())
+	gm := next.(globalGitModel)
+	if gm.nameInput.Value() != "Pat Example" {
+		t.Errorf("nameInput = %q, want Pat Example", gm.nameInput.Value())
 	}
-	// "a" must be a no-op.
-	a, _ = press(t, a, "a")
-	if strings.Contains(appView(a), GlobalGitEmailCeremonyHeading) {
-		t.Error("pressing a with an implausible (empty) fallback email must not open the dedicated ceremony")
+	if gm.emailInput.Value() != "pat@example.com" {
+		t.Errorf("emailInput = %q, want pat@example.com", gm.emailInput.Value())
 	}
+	if gm.currentName != "Pat Example" || gm.currentEmail != "pat@example.com" {
+		t.Errorf("current pair = (%q, %q), want seeded values", gm.currentName, gm.currentEmail)
+	}
+}
 
-	// Typing a value without "@" still blocks it.
+func TestGitFallbackEditModeRoutesShortcutIntoField(t *testing.T) {
+	a := fallbackRowApp(t, stubBackend{})
+	a, _ = press(t, a, "enter")
+	if !ggitModel(t, a).fieldEditing {
+		t.Fatal("Enter on the selected fallback row must start text-editing")
+	}
+	a = typeText(t, a, "a")
+	if got := ggitModel(t, a).nameInput.Value(); got != "a" {
+		t.Errorf("nameInput = %q, want the typed shortcut letter", got)
+	}
+	if ggitModel(t, a).ceremonyOpen {
+		t.Error("typing a screen shortcut while editing must not open a ceremony")
+	}
+	a, _ = press(t, a, "esc")
+	if ggitModel(t, a).fieldEditing {
+		t.Error("Esc must exit text-editing")
+	}
+}
+
+func TestGitFallbackEmailInlineValidation(t *testing.T) {
+	a := fallbackRowApp(t, stubBackend{})
+	detail := regionFlat(a, 45, 100)
+	if strings.Contains(detail, "needs @") {
+		t.Errorf("empty email must not show needs @; detail:\n%s", detail)
+	}
+	a, _ = press(t, a, "tab")
 	a, _ = press(t, a, "enter")
 	a = typeText(t, a, "not-an-email")
 	a, _ = press(t, a, "esc")
 	if !strings.Contains(regionFlat(a, 45, 100), "needs @") {
-		t.Error("expected the inline 'needs @' error for a value missing '@'")
-	}
-	a, _ = press(t, a, "a")
-	if strings.Contains(appView(a), GlobalGitEmailCeremonyHeading) {
-		t.Error("pressing a with an implausible email (no @) must not open the dedicated ceremony")
-	}
-
-	// A plausible email clears the error and unblocks apply.
-	a, _ = press(t, a, "enter")
-	a = clearGitFieldRaw(t, a)
-	a = typeText(t, a, "team@example.com")
-	a, _ = press(t, a, "esc")
-	if strings.Contains(regionFlat(a, 45, 100), "needs @") {
-		t.Error("the inline 'needs @' error must clear once the email is plausible")
-	}
-	a, _ = press(t, a, "a")
-	if !strings.Contains(appView(a), GlobalGitEmailCeremonyHeading) {
-		t.Fatalf("expected the dedicated ceremony to open with a plausible email:\n%s", appView(a))
+		t.Error("non-empty malformed email must show needs @")
 	}
 }
 
-// TestGlobalGitUserEmailFallbackDedicatedCeremony pins D9's dedicated apply
-// ceremony — distinct heading/target/annotated-diff/result from the
-// baseline managed-block ceremony, and the includeIf-precedence invariant
-// stated in the result line.
-func TestGlobalGitUserEmailFallbackDedicatedCeremony(t *testing.T) {
-	a := ggitApp(t)
-	a = pressSeq(t, a, "down", "down", "down") // → the fallback row
-	a, _ = press(t, a, "enter")                // start editing
-	a = typeText(t, a, "team@example.com")
-	a, _ = press(t, a, "esc")   // done editing
-	a, _ = press(t, a, "space") // opt in
+func TestGitFallbackNameNeverValidates(t *testing.T) {
+	a := fallbackRowApp(t, stubBackend{})
+	a, _ = press(t, a, "enter")
+	a = typeText(t, a, "!!!")
+	a, _ = press(t, a, "esc")
+	detail := regionFlat(a, 45, 100)
+	if strings.Contains(detail, "needs @") {
+		t.Error("the name field must never render a validation message")
+	}
+}
+
+func TestGitFallbackApplyOfferedForFilledFields(t *testing.T) {
+	cases := []struct {
+		name, email string
+	}{
+		{"Pat Example", ""},
+		{"", "pat@example.com"},
+		{"Pat Example", "pat@example.com"},
+	}
+	for _, tc := range cases {
+		b := stubBackend{fallbackState: GitFallbackAuthorView{Name: tc.name, Email: tc.email}}
+		a := fallbackRowApp(t, b)
+		sv := a.screens[TabGlobalGit].view(a.state, 120, 40)
+		offered := false
+		for _, action := range sv.actions {
+			if action.Key == "a" {
+				offered = true
+			}
+		}
+		if !offered {
+			t.Errorf("apply must be offered for name=%q email=%q", tc.name, tc.email)
+		}
+		a, _ = press(t, a, "a")
+		if !ggitModel(t, a).ceremonyOpen {
+			t.Errorf("a must open the fallback ceremony for name=%q email=%q", tc.name, tc.email)
+		}
+	}
+}
+
+func TestGitFallbackApplyNotOfferedForMalformedEmail(t *testing.T) {
+	a := fallbackRowApp(t, stubBackend{})
+	a, _ = press(t, a, "tab")
+	a, _ = press(t, a, "enter")
+	a = typeText(t, a, "not-an-email")
+	a, _ = press(t, a, "esc")
+	sv := a.screens[TabGlobalGit].view(a.state, 120, 40)
+	for _, action := range sv.actions {
+		if action.Key == "a" {
+			t.Error("apply must not be offered for a malformed email")
+		}
+	}
+	a, _ = press(t, a, "a")
+	if ggitModel(t, a).ceremonyOpen {
+		t.Error("a must not open a ceremony for a malformed email")
+	}
+}
+
+func TestGitFallbackApplyOfferedForRemoval(t *testing.T) {
+	b := stubBackend{
+		fallbackState: GitFallbackAuthorView{Name: "Pat Example", Email: "pat@example.com"},
+		fallbackPlan: GitFallbackAuthorPlanView{
+			Targets: []string{"~/.gitconfig"},
+			Removal: true,
+			Diff:    "- [user]",
+		},
+	}
+	a, _ := press(t, NewApp(b), "3")
+	m := ggitModel(t, a)
+	m.nameInput = newTextInput("")
+	m.emailInput = newTextInput("")
+	a.screens[TabGlobalGit] = m
+	a = pressSeq(t, a, "down", "down", "down")
+	sv := a.screens[TabGlobalGit].view(a.state, 120, 40)
+	offered := false
+	for _, action := range sv.actions {
+		if action.Key == "a" {
+			offered = true
+		}
+	}
+	if !offered {
+		t.Fatal("apply must be offered when both fields are empty over a non-empty current block")
+	}
+	a, _ = press(t, a, "a")
+	if !ggitModel(t, a).ceremonyOpen {
+		t.Fatal("a must open the removal ceremony")
+	}
+	if !strings.Contains(appView(a), "Remove global fallback") {
+		t.Errorf("removal ceremony heading missing:\n%s", appView(a))
+	}
+}
+
+func TestGitFallbackApplyNotOfferedWhenBlockEmpty(t *testing.T) {
+	a := fallbackRowApp(t, stubBackend{})
+	sv := a.screens[TabGlobalGit].view(a.state, 120, 40)
+	for _, action := range sv.actions {
+		if action.Key == "a" {
+			t.Error("apply must not be offered when both fields and the current block are empty")
+		}
+	}
+	a, _ = press(t, a, "a")
+	if ggitModel(t, a).ceremonyOpen {
+		t.Error("a must not open a ceremony for the empty/empty no-op")
+	}
+}
+
+func TestGitFallbackCeremonyHeadingAndCommitAreDistinct(t *testing.T) {
+	var fallbackCalled, baselineCalled bool
+	b := stubBackend{
+		fallbackState: GitFallbackAuthorView{Email: "pat@example.com"},
+		fallbackCommitFn: func(string, string) tea.Cmd {
+			fallbackCalled = true
+			return func() tea.Msg { return GitFallbackAuthorCommitMsg{Backups: []string{NewBackupPath("~/.gitconfig")}} }
+		},
+		gitCommitFn: func([]string) tea.Cmd {
+			baselineCalled = true
+			return func() tea.Msg { return GlobalGitCommitMsg{} }
+		},
+	}
+	a := fallbackRowApp(t, b)
 	a, _ = press(t, a, "a")
 	view := appView(a)
 	if !strings.Contains(view, GlobalGitEmailCeremonyHeading) {
-		t.Fatalf("ceremony heading missing:\n%s", view)
+		t.Fatalf("fallback ceremony heading missing:\n%s", view)
 	}
-	if !strings.Contains(view, GlobalGitEmailDiffAnnotation) {
-		t.Error("the diff preview must carry the includeIf-precedence annotation")
+	if strings.Contains(view, "Write global-git managed block") {
+		t.Error("fallback ceremony must not use the baseline heading")
 	}
-	if !strings.Contains(view, "team@example.com") {
-		t.Error("the diff preview must show the typed email value")
+	_, cmd := press(t, a, "enter")
+	if cmd != nil {
+		msg := cmd()
+		if _, ok := msg.(GitFallbackAuthorCommitMsg); !ok {
+			t.Errorf("confirm must dispatch CommitGitFallbackAuthor, got %T", msg)
+		}
 	}
-	a, _ = press(t, a, "enter") // confirm (email ceremony is synchronous)
-	if !strings.Contains(appView(a), "Global fallback user.email set — used only where no identity matches") {
-		t.Error("the receipt must carry the frozen result message")
+	if !fallbackCalled {
+		t.Error("confirming the fallback ceremony must dispatch the fallback commit")
 	}
-	a, _ = press(t, a, "enter") // done
-	if a.state.GitGlobalEmail != "team@example.com" {
-		t.Errorf("GitGlobalEmail = %q, want the applied email", a.state.GitGlobalEmail)
+	if baselineCalled {
+		t.Error("confirming the fallback ceremony must never dispatch the baseline commit")
 	}
-	// The baseline itself was never touched by the email-only apply.
-	if a.state.GitBaselineApplied {
-		t.Error("applying the fallback email must not also mark the baseline applied")
+}
+
+func TestGitFallbackBaselineCeremonyNeverDispatchesFallbackCommit(t *testing.T) {
+	var fallbackCalled, baselineCalled bool
+	b := stubBackend{
+		fallbackCommitFn: func(string, string) tea.Cmd {
+			fallbackCalled = true
+			return func() tea.Msg { return GitFallbackAuthorCommitMsg{} }
+		},
+		gitCommitFn: func([]string) tea.Cmd {
+			baselineCalled = true
+			return func() tea.Msg {
+				return GlobalGitCommitMsg{Backups: []string{NewBackupPath("~/.gitconfig.d/00-baseline")}}
+			}
+		},
+	}
+	a, _ := press(t, NewApp(b), "3")
+	a, _ = press(t, a, "space")
+	a, _ = press(t, a, "a")
+	if !strings.Contains(appView(a), "Write global-git managed block") {
+		t.Fatalf("baseline ceremony heading missing:\n%s", appView(a))
+	}
+	_, cmd := press(t, a, "enter")
+	if cmd != nil {
+		msg := cmd()
+		if _, ok := msg.(GlobalGitCommitMsg); !ok {
+			t.Errorf("confirm must dispatch CommitGlobalGit, got %T", msg)
+		}
+	}
+	if !baselineCalled {
+		t.Error("confirming the baseline ceremony must dispatch the baseline commit")
+	}
+	if fallbackCalled {
+		t.Error("confirming the baseline ceremony must never dispatch the fallback commit")
+	}
+}
+
+func TestGitFallbackRowRendersNoCheckboxAndIgnoresToggle(t *testing.T) {
+	a := fallbackRowApp(t, stubBackend{})
+	for _, line := range strings.Split(appView(a), "\n") {
+		listCol := strings.SplitN(line, "│", 2)[0]
+		if strings.Contains(listCol, GlobalGitEmailFallbackKey) {
+			if strings.Contains(listCol, glyphCheckOff) || strings.Contains(listCol, glyphCheckOn) {
+				t.Errorf("fallback row must render no checkbox glyph; line: %q", listCol)
+			}
+		}
+	}
+	a, _ = press(t, a, "space")
+	if ggitModel(t, a).chosen[GlobalGitEmailFallbackKey] {
+		t.Error("space must not toggle the fallback row")
 	}
 }
 

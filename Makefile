@@ -320,6 +320,8 @@ gate-copy-freeze:
 		'gitid always writes' \
 		'Write Host * managed block to ' \
 		'apply global git option(s) ' \
+		'user.name (global fallback)' \
+		'user.email (global fallback)' \
 		'This dry run tests only the current key'\''s reachability — the new key has not been generated, uploaded, or resolved, so nothing about the post-rotation state is proven.' \
 		'OpenSSH version could not be read; run ssh -V to check compatibility' \
 		'set by you at ' \

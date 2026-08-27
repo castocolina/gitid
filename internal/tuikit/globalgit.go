@@ -45,20 +45,38 @@ type globalGitModel struct {
 	// appliedKeys is the EXACT key set captured at ceremonyConfirmed.
 	applyCommitPending bool
 	appliedKeys        []string
-	// ceremonyOpen flags the active ceremony; D9 email ceremony uses a
-	// separate heading check.
+	// fallbackCommitPending gates the D9 ceremony's receipt the same way
+	// applyCommitPending gates the baseline ceremony. The two flags are
+	// mutually exclusive: confirming one ceremony never dispatches the
+	// other's commit method.
+	fallbackCommitPending bool
+	// ceremonyOpen flags the active ceremony; the D9 fallback ceremony
+	// uses a separate heading check so it can never be confused with the
+	// baseline one.
 	ceremonyOpen bool
 	ceremony     ceremonyModel
-	// emailInput is the D9 editable global-fallback user.email field —
-	// unset/empty by default (recipes default preserved; setting it is
-	// explicit opt-in).
+	// nameInput / emailInput are the D-04 two-field fallback pair —
+	// independently editable, independently applicable. Seeded from
+	// GitFallbackAuthorState on activate so "what is currently filled"
+	// is always a truthful statement about the machine.
+	nameInput  textinput.Model
 	emailInput textinput.Model
-	// emailEditing: Enter on the selected fallback row enters text-edit
-	// mode (D1 focused rendering; every key but Esc/Enter reaches the
-	// input) — this screen's single reserved-letter shortcuts (space, a)
-	// would otherwise collide with typing those same letters into the
-	// field; Esc/Enter exit editing back to row navigation.
-	emailEditing bool
+	// fieldFocus is 0 = name, 1 = email while the fallback detail pane
+	// is selected. Tab moves between them; Enter starts text-edit on
+	// the focused field.
+	fieldFocus int
+	// fieldEditing: Enter on the selected fallback row enters text-edit
+	// mode on the focused field (D1 focused rendering; every key but
+	// Esc/Enter/Tab reaches the input) — this screen's single reserved-
+	// letter shortcuts (space, a) would otherwise collide with typing
+	// those same letters into the field; Esc/Enter exit editing back
+	// to row navigation.
+	fieldEditing bool
+	// currentName / currentEmail are the block's contents at activate
+	// time — the removal-case guard needs them independently of whatever
+	// the user has since typed.
+	currentName  string
+	currentEmail string
 }
 
 // newGlobalGitModel returns a model with an EMPTY selection set (D-15, R-1):
@@ -73,6 +91,7 @@ func newGlobalGitModel(b Backend) globalGitModel {
 		backend:    b,
 		detailKey:  "init.defaultBranch",
 		chosen:     map[string]bool{},
+		nameInput:  newTextInput(""),
 		emailInput: newTextInput(""),
 	}
 }
@@ -94,6 +113,13 @@ func (m globalGitModel) activate(DemoState) (screenModel, tea.Cmd) {
 	if err != nil {
 		m.options = nil
 		m.optionsErr = err.Error()
+	}
+	state, stateErr := m.backend.GitFallbackAuthorState()
+	if stateErr == nil {
+		m.currentName = state.Name
+		m.currentEmail = state.Email
+		m.nameInput = newTextInput(state.Name)
+		m.emailInput = newTextInput(state.Email)
 	}
 	return m, nil
 }
@@ -126,6 +152,28 @@ func (m globalGitModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 			actions: []Action{ApplyGitBaseline{Backup: firstBackup(commit.Backups)}},
 		}
 	}
+	if commit, ok := msg.(GitFallbackAuthorCommitMsg); ok && m.ceremonyOpen && m.fallbackCommitPending {
+		m.fallbackCommitPending = false
+		if commit.Err != "" {
+			message := commit.Err
+			if len(commit.Restored) > 0 {
+				message += " (restored: " + strings.Join(commit.Restored, "; ") + ")"
+			}
+			m.ceremony = m.ceremony.commitFailed(message)
+			return keyResult{model: m}
+		}
+		m.ceremony = m.ceremony.commitSucceeded(commit.Backups)
+		if len(commit.Advisories) > 0 {
+			m.ceremony = m.ceremony.withResultExtra(strings.Join(commit.Advisories, "\n"))
+		}
+		m.currentName = m.nameInput.Value()
+		m.currentEmail = m.emailInput.Value()
+		return keyResult{
+			model:   m,
+			note:    GlobalGitEmailResultMessage,
+			actions: []Action{ApplyGitGlobalEmail{Email: m.emailInput.Value(), Name: m.nameInput.Value(), Backup: firstBackup(commit.Backups)}},
+		}
+	}
 	return keyResult{model: m}
 }
 
@@ -144,12 +192,10 @@ func (m globalGitModel) overlaidGitOptions(s DemoState) []GlobalGitOptionView {
 	for _, o := range m.options {
 		entry := o
 		if o.Key == GlobalGitEmailFallbackKey {
-			// D9: the email-fallback row has its OWN dedicated apply ceremony
-			// and must NEVER join the generic baseline overlay — see globalssh.go
-			// for the structural reason (the row stays independently selectable
-			// regardless of the baseline state, per review-findings F4 precedent).
-			if s.GitGlobalEmail != "" {
-				entry.CurrentValue = s.GitGlobalEmail
+			// D9: the fallback row has its OWN dedicated apply ceremony
+			// and must NEVER join the generic baseline overlay.
+			if s.GitGlobalName != "" || s.GitGlobalEmail != "" {
+				entry.CurrentValue = fallbackCurrentLabel(s.GitGlobalName, s.GitGlobalEmail)
 			}
 			out = append(out, entry)
 			continue
@@ -195,11 +241,55 @@ func (m globalGitModel) gitDetailIndex(options []GlobalGitOptionView) int {
 	return 0
 }
 
-// emailValid reports whether the D9 global-fallback field holds a plausible
-// email (review-findings F10) — reusing the wizard git-form's own
-// contains-@ check (gitForm.valid()) rather than inventing a second rule.
+func fallbackCurrentLabel(name, email string) string {
+	switch {
+	case name != "" && email != "":
+		return name + " <" + email + ">"
+	case name != "":
+		return name
+	case email != "":
+		return email
+	default:
+		return "unset (recipes default)"
+	}
+}
+
+// emailValid reports whether the D9 email field is empty (unset, valid) or
+// holds a plausible email — reusing the wizard git-form's own contains-@
+// check rather than inventing a second rule. A non-empty malformed email
+// is the only invalid state.
 func (m globalGitModel) emailValid() bool {
-	return strings.Contains(m.emailInput.Value(), "@")
+	email := m.emailInput.Value()
+	return email == "" || strings.Contains(email, "@")
+}
+
+// fallbackApplyOffered is the D-04 / 07-UI-SPEC.md resolved "partial" row
+// apply guard. Pressing `a` applies a PAIR SNAPSHOT of whatever the two
+// seeded fields currently hold, in ONE ceremony instance. Clearing one
+// field and applying also re-asserts the other's seeded value — that is
+// correct for a TUI whose fields are visible and pre-filled. Plan 07-05's
+// CLI uses explicit set/clear flags because a CLI has no screen, so an
+// omitted flag must mean "leave it alone" rather than "clear it". Both
+// call the SAME EnsureGitFallbackAuthor with a resolved pair; do not
+// "fix" the TUI into per-field flags or the CLI into a snapshot.
+//
+// Offer the action when the email is empty or valid, AND at least one of
+// these is true: a field is non-empty, or the machine's current block is
+// non-empty (the removal case — the one place a naive "both empty means
+// nothing to do" guard is wrong, and exactly how the user clears a
+// fallback they previously set). Do not offer it when the email is
+// non-empty and malformed, or when both fields are empty and the current
+// block is empty.
+func (m globalGitModel) fallbackApplyOffered() bool {
+	if !m.emailValid() {
+		return false
+	}
+	name := m.nameInput.Value()
+	email := m.emailInput.Value()
+	if name != "" || email != "" {
+		return true
+	}
+	return m.currentName != "" || m.currentEmail != ""
 }
 
 // baselineCeremonyFor builds the apply ceremony using the plan view returned
@@ -240,19 +330,54 @@ func (m globalGitModel) baselineCeremonyFor(keys []string) (ceremonyModel, error
 	}), nil
 }
 
-// emailCeremonyFor builds the D9 dedicated apply ceremony for the
-// global-fallback user.email — separate from the baseline managed-block
-// ceremony (its own heading/target/annotated diff/result), because gitid
-// NEVER folds a fallback author into the baseline managed block.
-func emailCeremonyFor(email string) ceremonyModel {
+// fallbackCeremonyFor builds the D9 dedicated apply ceremony from the
+// planner's plan view — heading, targets, backups, and preview all come
+// from GitFallbackAuthorPlan so the ceremony names the resolved file and
+// the real promised backup. It is a SECOND, independent ceremony instance:
+// the baseline ceremony branch is untouched and neither branch can reach
+// the other's commit method.
+func (m globalGitModel) fallbackCeremonyFor(name, email string) (ceremonyModel, error) {
+	plan, planErr := m.backend.GitFallbackAuthorPlan(name, email)
+	if planErr != nil {
+		return ceremonyModel{}, planErr
+	}
+	targets := plan.Targets
+	if len(targets) == 0 {
+		targets = []string{"~/.gitconfig"}
+	}
+	backups := plan.Backups
+	if len(backups) == 0 && !plan.Removal {
+		backups = []string{NewBackupPath(targets[0])}
+	}
+	preview := plan.Diff
+	if preview == "" {
+		preview = fallbackPreview(name, email)
+	}
+	heading := GlobalGitEmailCeremonyHeading
+	if plan.Removal {
+		heading = "Remove global fallback author"
+	}
 	return newCeremony(ceremonyConfig{
-		Heading:       GlobalGitEmailCeremonyHeading,
-		Targets:       []string{"~/.gitconfig"},
-		Backups:       []string{NewBackupPath("~/.gitconfig")},
-		Preview:       "+ [user]\n+     email = " + email + "  " + GlobalGitEmailDiffAnnotation,
+		Heading:       heading,
+		Targets:       targets,
+		Backups:       backups,
+		Preview:       preview,
 		ResultMessage: GlobalGitEmailResultMessage,
 		ConfirmLabel:  "Apply",
-	})
+		Async:         true,
+	}), nil
+}
+
+func fallbackPreview(name, email string) string {
+	var b strings.Builder
+	b.WriteString("+ [user]\n")
+	if name != "" {
+		b.WriteString("+     name = " + name + "  " + GlobalGitEmailDiffAnnotation + "\n")
+	}
+	if email != "" {
+		b.WriteString("+     email = " + email + "  " + GlobalGitEmailDiffAnnotation + "\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // handleKey implements the Global Git key model.
@@ -260,7 +385,7 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 	key := msg.String()
 
 	if m.ceremonyOpen {
-		if m.applyCommitPending {
+		if m.applyCommitPending || m.fallbackCommitPending {
 			// In flight: keys are inert until the commit result arrives.
 			return keyResult{model: m, handled: true}
 		}
@@ -270,46 +395,42 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		case ceremonyCancelled:
 			m.ceremonyOpen = false
 		case ceremonyConfirmed:
-			if m.ceremony.cfg.Heading == GlobalGitEmailCeremonyHeading {
-				// D9 email ceremony — SYNCHRONOUS (no backend seam yet;
-				// plan 07-02 owns the real D9 write seam). Confirming only
-				// transitions the ceremony to its receipt state (state B,
-				// rendered internally by ceremony.go with the frozen
-				// GlobalGitEmailResultMessage) — the state mutation and
-				// ceremonyOpen close happen on the FOLLOWING
-				// ceremonyFinished, matching the two-step confirm→dismiss
-				// contract every synchronous ceremony in this codebase
-				// follows.
-				return keyResult{model: m, handled: true}
+			if m.ceremony.cfg.Heading == GlobalGitEmailCeremonyHeading ||
+				strings.HasPrefix(m.ceremony.cfg.Heading, "Remove global fallback") {
+				m.fallbackCommitPending = true
+				return keyResult{model: m, handled: true, cmd: m.backend.CommitGitFallbackAuthor(m.nameInput.Value(), m.emailInput.Value())}
 			}
-			// Baseline apply ceremony — dispatch the async commit.
 			keys := m.gitApplyChosen(m.overlaidGitOptions(s))
 			m.appliedKeys = keys
 			m.applyCommitPending = true
 			return keyResult{model: m, handled: true, cmd: m.backend.CommitGlobalGit(keys)}
 		case ceremonyFinished:
 			m.ceremonyOpen = false
-			if m.ceremony.cfg.Heading == GlobalGitEmailCeremonyHeading {
-				return keyResult{model: m, handled: true,
-					note:    "Global fallback user.email set — identities override it via includeIf.",
-					actions: []Action{ApplyGitGlobalEmail{Email: m.emailInput.Value(), Backup: NewBackupPath("~/.gitconfig")}}}
-			}
 		case ceremonyNone:
 		}
 		return keyResult{model: m, handled: true}
 	}
 
-	// D9: while text-editing the fallback field, every key but Esc/Enter
+	// D9: while text-editing a fallback field, every key but Esc/Enter/Tab
 	// reaches the input — this screen's single-letter shortcuts (space, a)
 	// would otherwise collide with typing those same letters.
-	if m.emailEditing {
+	if m.fieldEditing {
 		switch key {
 		case "esc", "enter":
-			m.emailEditing = false
+			m.fieldEditing = false
+			m.nameInput.Blur()
 			m.emailInput.Blur()
 			return keyResult{model: m, handled: true}
+		case "tab":
+			m.fieldFocus = 1 - m.fieldFocus
+			m.focusFallbackField()
+			return keyResult{model: m, handled: true}
 		default:
-			m.emailInput, _ = updateInput(m.emailInput, msg)
+			if m.fieldFocus == 0 {
+				m.nameInput, _ = updateInput(m.nameInput, msg)
+			} else {
+				m.emailInput, _ = updateInput(m.emailInput, msg)
+			}
 			return keyResult{model: m, handled: true}
 		}
 	}
@@ -332,31 +453,38 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 	case "space":
 		o := options[m.gitDetailIndex(options)]
 		if o.Key == GlobalGitEmailFallbackKey {
-			// D9: the email-fallback row uses the same space toggle but is
-			// never gated by the policy table — it is always opt-in selectable.
-			m.chosen = withToggled(m.chosen, o.Key)
+			// D-04 removed the checkbox: the fallback row does not
+			// respond to the toggle key. Its detail pane is its own
+			// interface now.
 			return keyResult{model: m, handled: true}
 		}
 		if o.Selectable() {
 			m.chosen = withToggled(m.chosen, o.Key)
 		}
 		return keyResult{model: m, handled: true}
-	case "enter":
-		// D9/D8: Enter on the selected fallback row starts text-editing.
+	case "tab":
 		if m.detailKey == GlobalGitEmailFallbackKey {
-			m.emailEditing = true
-			m.emailInput.Focus()
+			m.fieldFocus = 1 - m.fieldFocus
+			return keyResult{model: m, handled: true}
+		}
+		return keyResult{model: m}
+	case "enter":
+		// D9/D8: Enter on the selected fallback row starts text-editing
+		// the focused field.
+		if m.detailKey == GlobalGitEmailFallbackKey {
+			m.fieldEditing = true
+			m.focusFallbackField()
 			return keyResult{model: m, handled: true}
 		}
 		return keyResult{model: m}
 	case "a":
-		// D9: the global-fallback checkbox, when chosen, applies through
-		// its OWN dedicated ceremony — never folded into the baseline.
-		// review-findings F10: gate the apply on a plausible email (reusing
-		// the wizard's contains-@ check) — an empty/invalid fallback email
-		// must never be applicable.
-		if m.detailKey == GlobalGitEmailFallbackKey && m.chosen[GlobalGitEmailFallbackKey] && m.emailValid() {
-			m.ceremony = emailCeremonyFor(m.emailInput.Value())
+		if m.detailKey == GlobalGitEmailFallbackKey && m.fallbackApplyOffered() {
+			cer, cerErr := m.fallbackCeremonyFor(m.nameInput.Value(), m.emailInput.Value())
+			if cerErr != nil {
+				m.optionsErr = cerErr.Error()
+				return keyResult{model: m, handled: true}
+			}
+			m.ceremony = cer
 			m.ceremonyOpen = true
 			return keyResult{model: m, handled: true}
 		}
@@ -413,9 +541,9 @@ func (m globalGitModel) handleClick(x, y, width, height int, s DemoState) keyRes
 	o := options[row]
 	// Checkbox hit-test: only rows whose key the policy table resolves carry a
 	// checkbox — the same Selectable predicate that gates the toggle key.
-	// D9 email-fallback row is always checkboxable (independent of policy).
-	checkboxable := o.Selectable() || o.Key == GlobalGitEmailFallbackKey
-	if checkboxable {
+	// D-04 removed the fallback row's checkbox; its detail pane is its own
+	// interface now.
+	if o.Key != GlobalGitEmailFallbackKey && o.Selectable() {
 		body := m.view(s, width, height).body
 		if hitNeedle(body, x, y, glyphCheckOff) || hitNeedle(body, x, y, glyphCheckOn) {
 			m.chosen = withToggled(m.chosen, o.Key)
@@ -480,18 +608,12 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 		if i == selIdx {
 			marker = styleBold.Render("▸ ")
 		}
-		// Checkbox: only policy-backed rows get a checkbox glyph. The D9
-		// email-fallback row is always independently toggleable.
-		// Rows with no policy entry render a blank placeholder — honest
-		// "not yet actionable" rendering indistinguishable structurally
-		// from later not-applicable states.
+		// Checkbox: only policy-backed rows get a checkbox glyph. D-04
+		// removed the fallback row's checkbox — its detail pane is its
+		// own interface. Rows with no policy entry render a blank
+		// placeholder — honest "not yet actionable" rendering.
 		box := "   "
-		if o.Key == GlobalGitEmailFallbackKey {
-			box = glyphCheckOff + " "
-			if m.chosen[o.Key] {
-				box = glyphCheckOn + " "
-			}
-		} else if o.Selectable() {
+		if o.Key != GlobalGitEmailFallbackKey && o.Selectable() {
 			box = glyphCheckOff + " "
 			if m.chosen[o.Key] {
 				box = glyphCheckOn + " "
@@ -518,13 +640,10 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 	detail := options[selIdx]
 	var d strings.Builder
 	if detail.Key == GlobalGitEmailFallbackKey {
-		// D9: the promoted, editable global-fallback row — D1 single-row
-		// field template + apply checkbox, its own always-visible
-		// helper/advisory lines (byte-exact, verbatim).
-		d.WriteString(formFieldLine(GlobalGitEmailFallbackKey, m.emailInput, m.emailEditing, false))
-		// review-findings F10: the same "needs @" inline-error idiom the
-		// wizard's Git-step user.email field already carries (gitForm.view)
-		// — gates the apply action on a plausible email.
+		nameFocused := m.fieldFocus == 0 && m.fieldEditing
+		emailFocused := m.fieldFocus == 1 && m.fieldEditing
+		d.WriteString(formFieldLine(GlobalGitNameFallbackKey, m.nameInput, nameFocused, false) + "\n")
+		d.WriteString(formFieldLine(GlobalGitEmailFallbackKey, m.emailInput, emailFocused, false))
 		if !m.emailValid() {
 			d.WriteString("  " + styleError.Render("needs @"))
 		}
@@ -556,21 +675,31 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 	}
 	body += joinMasterDetail(list, listWidth, detailPane, bodyRows)
 
-	if m.emailEditing {
+	if m.fieldEditing {
 		return screenView{body: body, crumbs: []string{"Options"}, status: status, statusTone: tone,
-			actions:      []FooterAction{{Key: "Esc/Enter", Label: "done editing"}},
+			actions:      []FooterAction{{Key: "Esc/Enter", Label: "done editing"}, {Key: "Tab", Label: "next field"}},
 			capturesKeys: true}
 	}
 	chosen := m.gitApplyChosen(options)
 	actions := []FooterAction{{Key: "↑↓", Label: "select option"}, {Key: "space", Label: "toggle"}}
 	if m.detailKey == GlobalGitEmailFallbackKey {
-		actions = append(actions, FooterAction{Key: "Enter", Label: "edit"})
+		actions = []FooterAction{{Key: "↑↓", Label: "select option"}, {Key: "Tab", Label: "next field"}, {Key: "Enter", Label: "edit"}}
 	}
 	switch {
 	case len(chosen) > 0:
 		actions = append(actions, FooterAction{Key: "a", Label: fmt.Sprintf("apply %d selected", len(chosen))})
-	case m.detailKey == GlobalGitEmailFallbackKey && m.chosen[GlobalGitEmailFallbackKey] && m.emailValid():
-		actions = append(actions, FooterAction{Key: "a", Label: "set global fallback email"})
+	case m.detailKey == GlobalGitEmailFallbackKey && m.fallbackApplyOffered():
+		actions = append(actions, FooterAction{Key: "a", Label: "set global fallback author"})
 	}
 	return screenView{body: body, crumbs: []string{"Options"}, status: status, statusTone: tone, actions: actions}
+}
+
+func (m *globalGitModel) focusFallbackField() {
+	if m.fieldFocus == 0 {
+		m.nameInput.Focus()
+		m.emailInput.Blur()
+		return
+	}
+	m.nameInput.Blur()
+	m.emailInput.Focus()
 }

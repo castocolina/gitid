@@ -267,6 +267,12 @@ const (
 // a DOCUMENTED, CONSCIOUS divergence from recipes/ (which leave user.email
 // unset by default) — recorded in FIELDS.md + 02-STYLE-SPEC.md (Task 3).
 const (
+	// GlobalGitNameFallbackKey is the D-04 sibling of GlobalGitEmailFallbackKey
+	// — the user.name half of the two-field fallback pair. Same wording
+	// shape; registered in gate-copy-freeze alongside its sibling. The six
+	// existing D9 constants need no rewrite (07-UI-SPEC.md: D-04 is a
+	// behavioural amendment, not a copy amendment).
+	GlobalGitNameFallbackKey = "user.name (global fallback)"
 	// GlobalGitEmailFallbackKey is the row label AND the frozen copy the
 	// copy-freeze grep requires present in both demos.
 	GlobalGitEmailFallbackKey = "user.email (global fallback)"

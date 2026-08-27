@@ -175,6 +175,17 @@ type stubBackend struct {
 	gitApplyPlan   GlobalGitApplyPlanView
 	gitApplyPlanFn func(keys []string) (GlobalGitApplyPlanView, error)
 	gitCommitMsg   GlobalGitCommitMsg
+	// Fallback-author seam overrides (zero values keep empty/unset fields
+	// so existing tests stay green). Do NOT embed
+	// NoopGitFallbackAuthorPlanner — a missing real implementation must
+	// be a compile error, not a silent sentinel.
+	fallbackState     GitFallbackAuthorView
+	fallbackStateErr  error
+	fallbackPlan      GitFallbackAuthorPlanView
+	fallbackPlanFn    func(name, email string) (GitFallbackAuthorPlanView, error)
+	fallbackCommitMsg GitFallbackAuthorCommitMsg
+	fallbackCommitFn  func(name, email string) tea.Cmd
+	gitCommitFn       func(keys []string) tea.Cmd
 	// Storage-migration seam overrides (zero values keep the fixture
 	// preview helpers so existing Storage sub-tab tests stay green).
 	sshStorageView   SSHStorageMigrationView
@@ -647,8 +658,47 @@ func (b stubBackend) GlobalGitApplyPlan(keys []string) (GlobalGitApplyPlanView, 
 }
 
 // CommitGlobalGit delivers the test override's commit message immediately.
-func (b stubBackend) CommitGlobalGit([]string) tea.Cmd {
+func (b stubBackend) CommitGlobalGit(keys []string) tea.Cmd {
+	if b.gitCommitFn != nil {
+		return b.gitCommitFn(keys)
+	}
 	return func() tea.Msg { return b.gitCommitMsg }
+}
+
+func (b stubBackend) GitFallbackAuthorState() (GitFallbackAuthorView, error) {
+	if b.fallbackStateErr != nil {
+		return GitFallbackAuthorView{}, b.fallbackStateErr
+	}
+	return b.fallbackState, nil
+}
+
+func (b stubBackend) GitFallbackAuthorPlan(name, email string) (GitFallbackAuthorPlanView, error) {
+	if b.fallbackPlanFn != nil {
+		return b.fallbackPlanFn(name, email)
+	}
+	if b.fallbackPlan.Targets != nil || b.fallbackPlan.Diff != "" || b.fallbackPlan.Removal {
+		return b.fallbackPlan, nil
+	}
+	preview := fallbackPreview(name, email)
+	if name == "" && email == "" {
+		return GitFallbackAuthorPlanView{
+			Targets: []string{"~/.gitconfig"},
+			Removal: true,
+			Diff:    preview,
+		}, nil
+	}
+	return GitFallbackAuthorPlanView{
+		Targets: []string{"~/.gitconfig"},
+		Backups: []string{NewBackupPath("~/.gitconfig")},
+		Diff:    preview,
+	}, nil
+}
+
+func (b stubBackend) CommitGitFallbackAuthor(name, email string) tea.Cmd {
+	if b.fallbackCommitFn != nil {
+		return b.fallbackCommitFn(name, email)
+	}
+	return func() tea.Msg { return b.fallbackCommitMsg }
 }
 
 // ---------------------------------------------------------------------------
