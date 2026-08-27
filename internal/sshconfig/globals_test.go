@@ -173,6 +173,62 @@ func TestEnsureGlobalsAppendsUnrecognisedKey(t *testing.T) {
 	}
 }
 
+// TestEnsureGlobalsPreservesMultiTokenValues is the CR-02 regression: a
+// hand-added directive whose value is more than one whitespace-separated
+// token must round-trip intact — before the fix, parseGlobalBody kept only
+// fields[1] and silently deleted every token after it (the common
+// 1Password/Secretive macOS IdentityAgent setup, SendEnv globs, ProxyCommand
+// arguments, and CanonicalDomains lists all lost data on every write).
+func TestEnsureGlobalsPreservesMultiTokenValues(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+	}{
+		{"IdentityAgent", `IdentityAgent "~/Library/Group Containers/2BUA8C4S2C.com.agilebits/Library/Application Support/1Password/agent.sock"`},
+		{"SendEnv", "SendEnv LANG LC_*"},
+		{"ProxyCommand", "ProxyCommand ssh -W %h:%p bastion"},
+		{"CanonicalDomains", "CanonicalDomains example.com internal.example.com"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			seed := []byte(managedTestBlock("global-ssh", "Host *\n  "+tc.line+"\n"))
+			got, err := EnsureGlobals(seed, nil, "linux")
+			if err != nil {
+				t.Fatalf("EnsureGlobals: %v", err)
+			}
+			body := globalBody(t, got)
+			if !strings.Contains(body, tc.line) {
+				t.Errorf("multi-token value truncated; want line %q intact in body:\n%s", tc.line, body)
+			}
+		})
+	}
+}
+
+// TestEnsureGlobalsPreservesCommentLines is the comment half of the CR-02
+// fix: a `#` comment line inside the managed block must survive round-trip
+// rather than being silently dropped.
+func TestEnsureGlobalsPreservesCommentLines(t *testing.T) {
+	seed := []byte(managedTestBlock("global-ssh", "Host *\n  # keep this note\n  HashKnownHosts yes\n"))
+	got, err := EnsureGlobals(seed, nil, "linux")
+	if err != nil {
+		t.Fatalf("EnsureGlobals: %v", err)
+	}
+	body := globalBody(t, got)
+	if !strings.Contains(body, "# keep this note") {
+		t.Errorf("comment line dropped from managed block; body:\n%s", body)
+	}
+
+	// Idempotency: the comment must survive a second pass too, not just be
+	// silently re-appended a second time or duplicated.
+	second, err := EnsureGlobals(got, nil, "linux")
+	if err != nil {
+		t.Fatalf("second EnsureGlobals: %v", err)
+	}
+	if !bytes.Equal(got, second) {
+		t.Errorf("comment preservation is not idempotent; first:\n%s\nsecond:\n%s", got, second)
+	}
+}
+
 // TestEnsureGlobalsUnconditionalGuardOnEmptyConfig pins the empty-config
 // case: on linux an empty config still renders the guard + the Host * stanza
 // (the block itself is never dropped).

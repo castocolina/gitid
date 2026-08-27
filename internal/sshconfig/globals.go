@@ -172,11 +172,13 @@ func existingGlobalBody(content []byte) string {
 	return ""
 }
 
-// globalKV is one parsed directive inside the managed block: the original key
-// spelling plus its value.
+// globalKV is one parsed line inside the managed block: either a directive
+// (key + value) or, when raw is non-empty, an opaque line — a `#` comment —
+// that is re-emitted verbatim rather than reconstructed from key/value.
 type globalKV struct {
 	key   string
 	value string
+	raw   string
 }
 
 // globalMap is an ordered, case-insensitive key/value table. Order preserves
@@ -209,15 +211,33 @@ func (g *globalMap) lookup(key string) (string, bool) {
 	return g.pairs[idx].value, true
 }
 
+// addRaw appends an opaque line (a `#` comment inside the managed block) that
+// must be re-emitted verbatim. It is keyed uniquely so it never collides with
+// a real directive and is never reachable via lookup/set — it only ever
+// travels through g.pairs, in original relative order among the "unrecognised
+// key" entries renderGlobalBody appends after the ordered keys.
+func (g *globalMap) addRaw(line string) {
+	key := fmt.Sprintf("#raw:%d", len(g.pairs))
+	g.index[key] = len(g.pairs)
+	g.pairs = append(g.pairs, globalKV{key: key, raw: line})
+}
+
 // parseGlobalBody parses a managed-block body into an ordered key/value map,
 // tolerating both the two-space hostIndent and the four-space form, and
 // ignoring the `Host *` and `IgnoreUnknown` lines — they are structure,
-// re-rendered below.
+// re-rendered below. A `#` comment line is preserved verbatim (as a raw
+// entry) rather than dropped; a directive's value carries every token after
+// the key, not just the first, so a multi-token value (a quoted path with a
+// space, a space-separated argument list) survives round-trip intact (CR-02).
 func parseGlobalBody(body string) *globalMap {
 	m := newGlobalMap()
 	for _, line := range strings.Split(body, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "#") {
+			m.addRaw(trimmed)
 			continue
 		}
 		fields := strings.Fields(trimmed)
@@ -227,7 +247,7 @@ func parseGlobalBody(body string) *globalMap {
 		if strings.EqualFold(fields[0], "Host") || strings.EqualFold(fields[0], "IgnoreUnknown") {
 			continue
 		}
-		m.set(fields[0], fields[1])
+		m.set(fields[0], strings.Join(fields[1:], " "))
 	}
 	return m
 }
@@ -250,6 +270,10 @@ func renderGlobalBody(m *globalMap) string {
 		}
 	}
 	for _, kv := range m.pairs {
+		if kv.raw != "" {
+			fmt.Fprintf(&b, "%s%s\n", hostIndent, kv.raw)
+			continue
+		}
 		if known[strings.ToLower(kv.key)] {
 			continue
 		}
