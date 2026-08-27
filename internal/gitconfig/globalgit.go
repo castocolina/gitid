@@ -45,12 +45,19 @@ const globalGitExcludesKey = "core.excludesfile"
 
 // globalGitSectionOrder is the canonical section order the merged body renders
 // in. It matches GlobalGitFullManagedBlockText's declaration order in
-// internal/tuikit/design.go. Plan 07-03 fills all sections; plan 07-01 uses
-// only [init]. A section is emitted whenever the merged result has at least
-// one key in it — an empty section is never written.
+// internal/tuikit/design.go. [user] sits immediately after [core] — the
+// useConfigOnly row's pinned placement right after the line-endings pair in
+// the D-08 display order. A section is emitted whenever the merged result has
+// at least one key in it — an empty section is never written.
+//
+// The [user] section inside this BASELINE block carries ONLY useConfigOnly.
+// The fallback author's own [user] section lives in plan 07-02's separate
+// block (EnsureGitFallbackAuthor, "global-git-author") — two different
+// [user] sections in two different managed blocks, never merged.
 var globalGitSectionOrder = []string{
 	"init",
 	"core",
+	"user",
 	"push",
 	"pull",
 	"fetch",
@@ -247,10 +254,12 @@ func keysForSection(merged map[string]string, section string) []sectionKeyValue 
 
 // canonicalSectionKeys defines the canonical key order within each section,
 // matching the frozen GlobalGitFullManagedBlockText in internal/tuikit/design.go.
-// Plan 07-03 fills all sections; plan 07-01 only needs [init].
+// The [user] section is the baseline block's useConfigOnly home — never the
+// author pair (which lives in the separate global-git-author block).
 var canonicalSectionKeys = map[string][]string{
 	"init":  {"defaultBranch"},
 	"core":  {"ignorecase", "autocrlf", "eol", "pager"},
+	"user":  {"useConfigOnly"},
 	"push":  {"autoSetupRemote"},
 	"pull":  {"rebase"},
 	"fetch": {"prune"},

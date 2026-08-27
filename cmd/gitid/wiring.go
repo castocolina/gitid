@@ -137,6 +137,13 @@ type realBackend struct {
 	// real probe.
 	probeSSHVersion func() (platform.SSHVersion, error)
 
+	// gitGate is a test-only override for the global-git version-gate outcome
+	// (D-08's only WRITE-changing gate: merge.conflictstyle). Nil means
+	// globalgit.RealGateForRow, which reads the single git-version probe in
+	// internal/deps. The second return is the version note (informational);
+	// the gate OUTCOME alone decides the written value.
+	gitGate func() (globalgit.GateOutcome, string)
+
 	// failArchiveRemoveAt is a test-only injection point (mirroring
 	// failCommitAt's precedent): when non-nil, archiveKeyPairSeam's source
 	// removal calls it before removing path, letting a test drive a
@@ -1628,13 +1635,16 @@ func (b *realBackend) GlobalGitApplyPlan(keys []string) (tuikit.GlobalGitApplyPl
 	if b.initErr != nil {
 		return tuikit.GlobalGitApplyPlanView{}, b.initErr
 	}
-	explicit := make(map[string]string, len(keys))
+	explicit := make(map[string]string, len(keys)*2)
 	for _, k := range keys {
 		policy, ok := globalgit.PolicyFor(k)
 		if !ok {
 			return tuikit.GlobalGitApplyPlanView{}, fmt.Errorf("gitid: unknown global git option %q", k)
 		}
-		explicit[k] = policy.Recommended
+		gate := b.gitGateOutcome(policy)
+		for _, member := range policy.Members {
+			explicit[member.Key] = globalgit.WriteValueFor(policy, member.Key, gate)
+		}
 	}
 	target := b.baselineTargetPath()
 	view := tuikit.GlobalGitApplyPlanView{}

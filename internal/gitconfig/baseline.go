@@ -4,21 +4,11 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/castocolina/gitid/internal/filewriter"
 )
-
-// Conflict records one overlap between a user-set gitconfig key and the
-// baseline key set. Winner is always "user" under floor ordering (D-10).
-type Conflict struct {
-	Key           string
-	UserValue     string
-	BaselineValue string
-	Winner        string // always "user" (floor ordering — user keys win)
-}
 
 // BaselineState holds the reconstructed managed baseline across all three
 // managed surfaces. It is a value type (no pointer), following the FragmentInfo
@@ -40,102 +30,6 @@ type BaselineState struct {
 	// GitignorePatterns is the list of non-empty pattern lines from the
 	// managed gitignore block, in file order.
 	GitignorePatterns []string
-}
-
-// BaselineKeySet returns the canonical set of lowercase section.key → value
-// pairs that the baseline block manages. This is the authoritative source used
-// by ScanConflicts so the two never drift (C2 algorithm requirement). The map
-// contains ONLY Tier-1 unconditional keys; Tier-2 keys (autocrlf, pager, …)
-// could be absent depending on cfg — the scan is conservative (reports only
-// certain conflicts). Callers that need the full Tier-2 set should call
-// BaselineKeySet and augment before passing to ScanConflicts.
-func BaselineKeySet() map[string]string {
-	return map[string]string{
-		"core.ignorecase":      "false",
-		"core.excludesfile":    "~/.gitignore_global",
-		"push.autosetupremote": "true", // git lower-cases keys in --list output
-		"pull.rebase":          "true",
-		"fetch.prune":          "true",
-		"color.ui":             "auto",
-	}
-}
-
-// ScanConflicts detects overlaps between user-owned keys in gitconfigPath and
-// the provided baselineKeys map. It strips ALL gitid managed blocks first
-// (RESEARCH C2 / Pitfall C) so that baseline-written keys are never reported
-// as user conflicts. The user-owned portion is written to a temp file and
-// parsed via `git config --file --list` (WITHOUT --includes per C6). Each
-// overlap is returned as a Conflict with Winner="user" (floor ordering).
-// Missing file returns (nil, nil) for the first-run case.
-func ScanConflicts(gitconfigPath string, baselineKeys map[string]string) ([]Conflict, error) {
-	content, err := os.ReadFile(gitconfigPath) //nolint:gosec // gitconfigPath is a trusted gitid-managed path (G304)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil // first-run case: no gitconfig yet
-		}
-		return nil, fmt.Errorf("scanning conflicts: reading %s: %w", gitconfigPath, err)
-	}
-
-	// Strip ALL gitid managed blocks from the content to isolate user-owned
-	// keys (RESEARCH C2 / Pitfall C): managed-block keys must never appear
-	// as user conflicts.
-	userPortion := content
-	for _, b := range filewriter.ListBlocks(content) {
-		userPortion = filewriter.RemoveBlock(userPortion, b.Name)
-	}
-
-	// Write the user-owned portion to a temp file so git can parse it.
-	tmp, err := os.CreateTemp("", "gitid-conflict-*.gitconfig")
-	if err != nil {
-		return nil, fmt.Errorf("scanning conflicts: creating temp file: %w", err)
-	}
-	if _, err = tmp.Write(userPortion); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmp.Name())
-		return nil, fmt.Errorf("scanning conflicts: writing temp file: %w", err)
-	}
-	if err = tmp.Close(); err != nil {
-		_ = os.Remove(tmp.Name())
-		return nil, fmt.Errorf("scanning conflicts: closing temp file: %w", err)
-	}
-	defer os.Remove(tmp.Name()) //nolint:errcheck // best-effort cleanup of short-lived temp
-
-	// Parse user-owned keys: arg-slice form (no shell), WITHOUT --includes (C6),
-	// so we only see keys physically in this file.
-	cmd := exec.Command("git", "config", "--file", tmp.Name(), "--list") //nolint:gosec // arg-slice form, no shell; trusted temp path (G204)
-	out, err := cmd.Output()
-	if err != nil {
-		// A pre-existing malformed ~/.gitconfig must not block baseline setup —
-		// the user's parse error is unrelated to gitid's managed blocks. Degrade
-		// gracefully: skip conflict detection and let setup proceed (WR-05).
-		return nil, nil //nolint:nilerr // intentional: malformed config → no conflicts, not a fatal error
-	}
-
-	// Build a lowercase key→value map from the user-owned portion.
-	userKeys := make(map[string]string)
-	for _, line := range strings.Split(string(out), "\n") {
-		kv := strings.SplitN(line, "=", 2)
-		if len(kv) != 2 {
-			continue
-		}
-		userKeys[strings.ToLower(kv[0])] = kv[1]
-	}
-
-	// Intersect user keys with the baseline key set; emit a Conflict only when the
-	// user's value differs from the baseline value (WR-02: identical values are not
-	// conflicts under the floor model — the user's setting is already what we'd set).
-	var conflicts []Conflict
-	for baseKey, baseVal := range baselineKeys {
-		if userVal, ok := userKeys[baseKey]; ok && userVal != baseVal {
-			conflicts = append(conflicts, Conflict{
-				Key:           baseKey,
-				UserValue:     userVal,
-				BaselineValue: baseVal,
-				Winner:        "user", // floor ordering: user keys always win (D-10)
-			})
-		}
-	}
-	return conflicts, nil
 }
 
 // RemoveURLRewritesBlock removes the "url-rewrites" managed block from

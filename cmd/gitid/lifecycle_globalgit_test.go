@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/castocolina/gitid/internal/globalgit"
 )
 
 // ---------------------------------------------------------------------------
@@ -203,4 +205,56 @@ func TestRunGlobalGitApply_UnknownKeyRejectedByName(t *testing.T) {
 		t.Errorf("err should name the rejected key, got: %v", err)
 	}
 	assertUnchanged(t, before, snapshotPaths(t, []string{filepath.Join(home, ".gitconfig")}))
+}
+
+// readBaselineConflictstyle reads the composed global-git block's
+// merge.conflictstyle value back from the baseline file.
+func readBaselineConflictstyle(t *testing.T, baselinePath string) string {
+	t.Helper()
+	bf, err := os.ReadFile(baselinePath) //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+	if err != nil {
+		t.Fatalf("reading baseline file %s: %v", baselinePath, err)
+	}
+	for _, line := range strings.Split(string(bf), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "conflictstyle = ") {
+			return strings.TrimPrefix(line, "conflictstyle = ")
+		}
+	}
+	t.Fatalf("conflictstyle line not found in baseline file:\n%s", bf)
+	return ""
+}
+
+// TestRunGlobalGitApply_HardGateBelowWritesFallback injects a below-gate
+// version and asserts the written merge.conflictstyle value is the fallback
+// (diff3) — the write boundary, not just the unit, must substitute (T-07-16).
+func TestRunGlobalGitApply_HardGateBelowWritesFallback(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	b.gitGate = func() (globalgit.GateOutcome, string) { return globalgit.GateBelow, "" }
+
+	_, err := b.runGlobalGitApply([]string{"merge.conflictstyle"}, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+	if err != nil {
+		t.Fatalf("runGlobalGitApply: %v", err)
+	}
+	if got := readBaselineConflictstyle(t, b.baselineTargetPath()); got != "diff3" {
+		t.Errorf("written conflictstyle = %q, want diff3 below the hard gate", got)
+	}
+}
+
+// TestRunGlobalGitApply_HardGateMetWritesRecommendation injects an at-gate
+// version and asserts the written merge.conflictstyle value is the
+// recommendation (zdiff3).
+func TestRunGlobalGitApply_HardGateMetWritesRecommendation(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	b.gitGate = func() (globalgit.GateOutcome, string) { return globalgit.GateMet, "" }
+
+	_, err := b.runGlobalGitApply([]string{"merge.conflictstyle"}, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+	if err != nil {
+		t.Fatalf("runGlobalGitApply: %v", err)
+	}
+	if got := readBaselineConflictstyle(t, b.baselineTargetPath()); got != "zdiff3" {
+		t.Errorf("written conflictstyle = %q, want zdiff3 at/above the hard gate", got)
+	}
 }

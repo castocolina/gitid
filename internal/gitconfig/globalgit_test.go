@@ -327,3 +327,173 @@ func TestWriteBaselineInclude_SkipBehaviorUnchanged(t *testing.T) {
 		t.Errorf("WriteBaselineInclude: second call with identical content should return empty backup, got %q", bp2)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Plan 07-03 composer tests — the full twelve-row table (D-08) as a block.
+// ---------------------------------------------------------------------------
+
+// recipeLg is recipes/gitconfig.recipe's alias.lg format string, byte-identical.
+const recipeLg = "log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit"
+
+// fullTableSelection is every selectable row's member key → value (the
+// fallback-author row manages none).
+func fullTableSelection() map[string]string {
+	return map[string]string{
+		"init.defaultBranch":   "main",
+		"core.ignorecase":      "false",
+		"core.autocrlf":        "input",
+		"core.eol":             "lf",
+		"user.useConfigOnly":   "true",
+		"push.autoSetupRemote": "true",
+		"pull.rebase":          "true",
+		"fetch.prune":          "true",
+		"alias.st":             "status",
+		"alias.co":             "checkout",
+		"alias.br":             "branch",
+		"alias.ci":             "commit",
+		"alias.df":             "diff",
+		"alias.lg":             recipeLg,
+		"alias.unstage":        "reset HEAD --",
+		"alias.last":           "log -1 HEAD",
+		"color.ui":             "auto",
+		"color.branch":         "auto",
+		"color.diff":           "auto",
+		"color.status":         "auto",
+		"merge.conflictstyle":  "zdiff3",
+		"diff.colorMoved":      "zebra",
+	}
+}
+
+// TestEnsureGlobalGit_UserSectionCarriesOnlyUseConfigOnly asserts a selection
+// containing the fail-loud author key emits a [user] section inside the
+// baseline block carrying ONLY useConfigOnly — never an author name or email,
+// which live in plan 07-02's separate fallback block.
+func TestEnsureGlobalGit_UserSectionCarriesOnlyUseConfigOnly(t *testing.T) {
+	selected := map[string]string{"user.useConfigOnly": "true"}
+	result, err := EnsureGlobalGit(nil, selected)
+	if err != nil {
+		t.Fatalf("EnsureGlobalGit: %v", err)
+	}
+	s := string(result)
+	if !strings.Contains(s, "[user]\n\tuseConfigOnly = true") {
+		t.Errorf("baseline block must carry the [user] section with useConfigOnly:\n%s", s)
+	}
+	if strings.Contains(s, "name = ") || strings.Contains(s, "email = ") {
+		t.Errorf("baseline block must never carry an author name/email key (they live in the global-git-author block):\n%s", s)
+	}
+}
+
+// TestEnsureGlobalGit_FullSelectionEmitsEveryAlias asserts a selection
+// containing the alias row emits all eight aliases with the lg format string
+// byte-identical to recipes/gitconfig.recipe.
+func TestEnsureGlobalGit_FullSelectionEmitsEveryAlias(t *testing.T) {
+	selected := map[string]string{
+		"alias.st": "status", "alias.co": "checkout", "alias.br": "branch",
+		"alias.ci": "commit", "alias.df": "diff", "alias.lg": recipeLg,
+		"alias.unstage": "reset HEAD --", "alias.last": "log -1 HEAD",
+	}
+	result, err := EnsureGlobalGit(nil, selected)
+	if err != nil {
+		t.Fatalf("EnsureGlobalGit: %v", err)
+	}
+	s := string(result)
+	for _, line := range []string{
+		"\tst = status",
+		"\tco = checkout",
+		"\tbr = branch",
+		"\tci = commit",
+		"\tdf = diff",
+		"\tlg = " + recipeLg,
+		"\tunstage = reset HEAD --",
+		"\tlast = log -1 HEAD",
+	} {
+		if !strings.Contains(s, line) {
+			t.Errorf("alias block missing %q:\n%s", line, s)
+		}
+	}
+}
+
+// TestEnsureGlobalGit_FullSelectionEmitsEveryColorKey asserts a selection
+// containing the color row emits all four color keys.
+func TestEnsureGlobalGit_FullSelectionEmitsEveryColorKey(t *testing.T) {
+	selected := map[string]string{
+		"color.ui": "auto", "color.branch": "auto", "color.diff": "auto", "color.status": "auto",
+	}
+	result, err := EnsureGlobalGit(nil, selected)
+	if err != nil {
+		t.Fatalf("EnsureGlobalGit: %v", err)
+	}
+	s := string(result)
+	for _, line := range []string{
+		"\tui = auto", "\tbranch = auto", "\tdiff = auto", "\tstatus = auto",
+	} {
+		if !strings.Contains(s, line) {
+			t.Errorf("color block missing %q:\n%s", line, s)
+		}
+	}
+}
+
+// sectionOrder extracts the bracketed section headers from a block body in
+// document order.
+func sectionOrder(t *testing.T, body string) []string {
+	t.Helper()
+	var order []string
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			order = append(order, line[1:len(line)-1])
+		}
+	}
+	return order
+}
+
+// TestEnsureGlobalGit_FullSelectionSectionOrder asserts a composed block
+// containing every selectable row's keys matches the frozen block text's
+// section order (init, core, user, push, pull, fetch, color, merge, diff,
+// alias).
+func TestEnsureGlobalGit_FullSelectionSectionOrder(t *testing.T) {
+	result, err := EnsureGlobalGit(nil, fullTableSelection())
+	if err != nil {
+		t.Fatalf("EnsureGlobalGit: %v", err)
+	}
+	want := []string{"init", "core", "user", "push", "pull", "fetch", "color", "merge", "diff", "alias"}
+	got := sectionOrder(t, string(result))
+	if len(got) != len(want) {
+		t.Fatalf("section order = %v, want %v (block:\n%s)", got, want, result)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("section order = %v, want %v (block:\n%s)", got, want, result)
+		}
+	}
+}
+
+// TestEnsureGlobalGit_FullSelectionPreservesPager is the R-6 acceptance: an
+// adopted block carrying the deferred pager line survives a FULL twelve-row
+// selection composed through gitid.
+func TestEnsureGlobalGit_FullSelectionPreservesPager(t *testing.T) {
+	existing := []byte(GlobalGitSentinelBegin + "\n" +
+		"[core]\n\tpager = less -FRX\n" +
+		GlobalGitSentinelEnd + "\n")
+	result, err := EnsureGlobalGit(existing, fullTableSelection())
+	if err != nil {
+		t.Fatalf("EnsureGlobalGit: %v", err)
+	}
+	if !strings.Contains(string(result), "pager = less -FRX") {
+		t.Errorf("adopted block's core.pager line must survive a full apply (R-6):\n%s", result)
+	}
+}
+
+// TestEnsureGlobalGit_NoCompositionAddsPager asserts NO composition ever ADDS
+// a pager key or value (R-6: the deferred pager is never a row and never a
+// write; it is only preserved when already present).
+func TestEnsureGlobalGit_NoCompositionAddsPager(t *testing.T) {
+	result, err := EnsureGlobalGit(nil, fullTableSelection())
+	if err != nil {
+		t.Fatalf("EnsureGlobalGit: %v", err)
+	}
+	s := string(result)
+	if strings.Contains(s, "pager") || strings.Contains(s, "less -FRX") {
+		t.Errorf("composition must never add the deferred pager key:\n%s", s)
+	}
+}

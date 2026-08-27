@@ -1157,15 +1157,20 @@ func (b *realBackend) runGlobalGitApply(keys []string, p lifecyclePolicy) (lifec
 	}
 
 	// plan — reject unknown keys BY NAME before building any candidate, and
-	// build the explicit selection from the D-08 recommended values.
+	// build the explicit selection from the D-08 recommended values via
+	// WriteValueFor (the ONE place the version gate may change a written
+	// value — merge.conflictstyle writes diff3 instead of zdiff3 on old git).
 	record(stages[0])
-	explicit := make(map[string]string, len(keys))
+	explicit := make(map[string]string, len(keys)*2)
 	for _, k := range keys {
 		policy, ok := globalgit.PolicyFor(k)
 		if !ok {
 			return res, fmt.Errorf("gitid: unknown global git option %q", k)
 		}
-		explicit[k] = policy.Recommended
+		gate := b.gitGateOutcome(policy)
+		for _, member := range policy.Members {
+			explicit[member.Key] = globalgit.WriteValueFor(policy, member.Key, gate)
+		}
 	}
 
 	if p.DryRun {
@@ -1296,6 +1301,23 @@ func (b *realBackend) runGlobalGitApply(keys []string, p lifecyclePolicy) (lifec
 // the [include] pointer; this function returns the absolute form for file I/O.
 func (b *realBackend) baselineTargetPath() string {
 	return filepath.Join(b.fragmentDir, "00-baseline")
+}
+
+// gitGateOutcome resolves the version-gate outcome for policy from the
+// injected test seam (b.gitGate) or, when nil, from globalgit.RealGateForRow,
+// which reads internal/deps' ONE git-version probe (D-08). Rows without a hard
+// gate never consult the probe at all — informational gates never change a
+// written value, so their outcome is irrelevant to the ceremony.
+func (b *realBackend) gitGateOutcome(policy globalgit.OptionPolicy) globalgit.GateOutcome {
+	if policy.Gate != globalgit.GateHard {
+		return globalgit.GateMet
+	}
+	if b.gitGate != nil {
+		gate, _ := b.gitGate()
+		return gate
+	}
+	gate, _ := globalgit.RealGateForRow(policy)
+	return gate
 }
 
 // displayBaselineTargetPath returns the tilde form of the baseline target path

@@ -39,37 +39,57 @@ func found(name string) bool {
 	return err == nil
 }
 
-// GitVersionAtLeast reports whether the installed git binary is at least the
-// given major.minor version. It is used for feature gates such as the
-// merge.conflictstyle=zdiff3 gate (requires git >= 2.35, RESEARCH C4). On any
-// error (git not found, unexpected output) it returns true so callers default to
-// including the feature rather than silently omitting it.
-func GitVersionAtLeast(major, minor int) bool {
+// GitVersion returns the installed git version token — the first field after
+// "git version" in `git --version` output — or an error when git is not on
+// PATH or its output is unparseable. It is the ONE git-version probe in the
+// module: GitVersionAtLeast below reads through it, and
+// globalgit.VersionGate receives its result (D-08 mandates reusing this probe
+// rather than opening a second one). Unlike GitVersionAtLeast, it fails loudly
+// on an unreadable version, which is exactly the signal a HARD gate needs.
+func GitVersion() (string, error) {
 	cmd := exec.Command("git", "--version") //nolint:gosec // arg-slice form, no shell; fixed argument (G204)
 	out, err := cmd.Output()
 	if err != nil {
-		return true // optimistic fallback: assume modern git
+		return "", fmt.Errorf("running git --version: %w", err)
 	}
 	line := strings.TrimSpace(string(out))
 	parts := strings.Fields(line)
 	if len(parts) < 3 {
-		return true
+		return "", fmt.Errorf("unexpected git --version output %q", line)
 	}
-	vparts := strings.SplitN(parts[2], ".", 3)
-	if len(vparts) < 2 {
-		return true
+	return parts[2], nil
+}
+
+// GitVersionAtLeast reports whether the installed git binary is at least the
+// given major.minor version. It is used for feature gates such as the
+// merge.conflictstyle=zdiff3 gate (requires git >= 2.35, RESEARCH C4). On any
+// error (git not found, unexpected output) it returns true so callers default to
+// including the feature rather than silently omitting it. That optimistic
+// fallback is correct for a feature that is merely ignored when unsupported —
+// NOT for the hard gate, whose callers must consult GitVersion itself (the
+// conservative direction) instead of this boolean.
+func GitVersionAtLeast(major, minor int) bool {
+	v, err := GitVersion()
+	if err != nil {
+		return true // optimistic fallback: assume modern git
 	}
-	var maj, minV int
-	if _, err := fmt.Sscanf(vparts[0], "%d", &maj); err != nil {
-		return true
+	gMajor, gMinor := gitVersionParts(v)
+	if gMajor != major {
+		return gMajor > major
 	}
-	if _, err := fmt.Sscanf(vparts[1], "%d", &minV); err != nil {
-		return true
+	return gMinor >= minor
+}
+
+// gitVersionParts parses a "major.minor" token into its numeric components.
+func gitVersionParts(v string) (major, minor int) {
+	parts := strings.SplitN(v, ".", 3)
+	if len(parts) > 0 {
+		_, _ = fmt.Sscanf(parts[0], "%d", &major)
 	}
-	if maj != major {
-		return maj > major
+	if len(parts) > 1 {
+		_, _ = fmt.Sscanf(parts[1], "%d", &minor)
 	}
-	return minV >= minor
+	return major, minor
 }
 
 // Detect probes the local PATH for each required and optional tool and

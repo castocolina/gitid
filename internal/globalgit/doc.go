@@ -13,8 +13,10 @@
 //     value is never mistaken for a global one (T-07-06).
 //
 //   - In-file probe: `git config --file <path> --list -z` WITHOUT --includes,
-//     so only keys physically present in that file are returned (same contract
-//     gitconfig.ScanConflicts relies on, referenced in probe.go).
+//     so only keys physically present in that file are returned — the physical
+//     presence signal the classifier and its D-09 bundle aggregate consume
+//     (the descendent of the retired conflict-scan contract in
+//     internal/gitconfig, re-derived here from the probe results).
 //
 // classify.go turns the two probe results into one honest row per option,
 // following globalssh/classify.go's branch order: decide by VALUE first, by

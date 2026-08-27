@@ -136,6 +136,15 @@ func ClassifyWithErrors(
 // order: VALUE first, source second. This ensures that a value equal to the
 // recommendation is already-set whatever set it — the source class only
 // decides the WORDS in the rendered label.
+//
+// A row with exactly one member classifies exactly as the tracer did. A BUNDLE
+// row (several members — the line-endings pair and the two sections) is
+// needs-action when ANY member is unset (D-09/D-10: a write to that member is
+// a real offer, whatever the others do), already-set only when every member is
+// set to its recommendation, and set-but-differs otherwise. A row with NO
+// members (the fallback-author pair, owned by plan 07-02's separate verb) is
+// needs-action with no state claim — the view never offers it through the
+// baseline apply.
 func classifyOne(
 	policy OptionPolicy,
 	effective map[string]EffectiveEntry,
@@ -147,7 +156,6 @@ func classifyOne(
 	row := OptionRow{
 		Key:         policy.Key,
 		Recommended: policy.Recommended,
-		GitDefault:  policy.GitDefault,
 	}
 
 	// Both probes failed — cannot classify.
@@ -156,7 +164,6 @@ func classifyOne(
 		row.ProbeError = "effective: " + effectiveProbeErr + "; in-file: " + inFileProbeErr
 		return row
 	}
-
 	// Individual probe failure: the row carries the error from whichever
 	// probe failed (we need BOTH to classify confidently).
 	if effectiveProbeErr != "" {
@@ -170,47 +177,101 @@ func classifyOne(
 		return row
 	}
 
-	// Both probes succeeded. Look up the effective value.
-	lk := strings.ToLower(policy.Key)
-	effEntry, effPresent := effective[lk]
-	_, inFilePresent := inFile[lk]
-
-	if !effPresent {
-		// Not set anywhere — needs action, source unset.
+	if len(policy.Members) == 0 {
+		// The fallback-author row: no member key gitid manages through the
+		// baseline block, so no value claim can come from the probes.
 		row.State = StateNeedsAction
 		row.Source = SourceUnset
 		return row
 	}
 
-	row.CurrentValue = effEntry.Value
-	row.EffectiveOrigin = effEntry.Origin
+	// Single-member (scalar) row — the tracer's exact path.
+	if len(policy.Members) == 1 {
+		member := policy.Members[0]
+		row.GitDefault = member.GitDefault
+		lk := strings.ToLower(member.Key)
+		effEntry, effPresent := effective[lk]
+		_, inFilePresent := inFile[lk]
 
-	// Decide source class.
-	row.Source = sourceClassFor(effEntry, baselineFilePath, inFilePresent)
+		if !effPresent {
+			// Not set anywhere — needs action, source unset.
+			row.State = StateNeedsAction
+			row.Source = SourceUnset
+			return row
+		}
 
-	// Branch by VALUE first (globalssh/classify.go's order: decide by value
-	// first, by source second — stated in the doc comment there).
-	if strings.EqualFold(effEntry.Value, policy.Recommended) {
+		row.CurrentValue = effEntry.Value
+		row.EffectiveOrigin = effEntry.Origin
+		row.Source = sourceClassFor(effEntry, baselineFilePath, inFilePresent)
+
+		if strings.EqualFold(effEntry.Value, member.Recommended) {
+			row.State = StateAlreadySet
+			return row
+		}
+		if row.Source == SourceUnchangeable || row.Source == SourceSetByUser {
+			row.State = StateSetButDiffers
+			return row
+		}
+		// Source is gitid or unset but value differs from recommendation.
+		row.State = StateNeedsAction
+		return row
+	}
+
+	// Bundle row (several members): aggregate across members. Any member
+	// unset makes the row needs-action — a write there is a real offer. A
+	// member set to a different value is STILL written (the block contains
+	// every member key per D-09), but it never alone lifts the row above
+	// needs-action. Only when every member is already its recommendation is
+	// the row already-set.
+	anyUnset := false
+	anyDiffers := false
+	allSetEqual := true
+	hasPresent := false
+	source := SourceUnset
+	for _, member := range policy.Members {
+		lk := strings.ToLower(member.Key)
+		effEntry, effPresent := effective[lk]
+		_, inFilePresent := inFile[lk]
+		if !effPresent {
+			anyUnset = true
+			allSetEqual = false
+			continue
+		}
+		hasPresent = true
+		if !strings.EqualFold(effEntry.Value, member.Recommended) {
+			anyDiffers = true
+			allSetEqual = false
+		}
+		memberSource := sourceClassFor(effEntry, baselineFilePath, inFilePresent)
+		switch memberSource {
+		case SourceUnchangeable:
+			source = SourceUnchangeable
+		case SourceSetByUser:
+			if source != SourceUnchangeable {
+				source = SourceSetByUser
+			}
+		case SourceSetByGitid:
+			if source == SourceUnset {
+				source = SourceSetByGitid
+			}
+		}
+	}
+	if !hasPresent {
+		row.Source = SourceUnset
+		row.State = StateNeedsAction
+		return row
+	}
+	row.Source = source
+	switch {
+	case anyUnset:
+		row.State = StateNeedsAction
+	case allSetEqual:
 		row.State = StateAlreadySet
-		return row
-	}
-
-	// Value is not the recommendation. Source determines the state.
-	// A value at a scope gitid cannot change → set-but-differs.
-	// A value set by the user in their own config → set-but-differs.
-	// A value set by gitid itself but not matching → treat as needs-action
-	// (this means gitid wrote an old value; the write will correct it).
-	if row.Source == SourceUnchangeable {
+	case anyDiffers:
 		row.State = StateSetButDiffers
-		return row
+	default:
+		row.State = StateNeedsAction
 	}
-	if row.Source == SourceSetByUser {
-		row.State = StateSetButDiffers
-		return row
-	}
-
-	// Source is gitid or unset but value differs from recommendation.
-	row.State = StateNeedsAction
 	return row
 }
 

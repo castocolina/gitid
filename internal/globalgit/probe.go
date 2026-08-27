@@ -98,9 +98,13 @@ func effectiveProbe(deps Deps) (map[string]EffectiveEntry, error) {
 }
 
 // inFileProbe runs `git config --file <path> --list -z` WITHOUT --includes,
-// so it reports only keys physically present in that file (the same contract
-// gitconfig.ScanConflicts already relies on, referenced here by analogy —
-// see internal/gitconfig/baseline.go ScanConflicts for the reasoning).
+// so it reports only keys physically present in that file — the physical
+// presence signal that decides set-by-gitid attribution (plan 07-01) and the
+// bundle aggregate's set/differs counts (plan 07-03, bundle.go). It replaces
+// the retired conflict-scan contract in internal/gitconfig, which previously
+// shelled a second `git config --file --list` on a temp file; the two probes
+// already taken here carry strictly more information (the effective value, its
+// origin, AND physical presence).
 // A missing file is not an error — it returns an empty result (the first-run
 // case, when the baseline file has not yet been written).
 func inFileProbe(deps Deps, filePath string) (map[string]EffectiveEntry, error) {
