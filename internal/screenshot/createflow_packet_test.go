@@ -81,6 +81,23 @@ func makeTestCaptures(t *testing.T) (map[string]string, map[string]string) {
 	for id, text := range imgrApproved {
 		approved[id] = text
 	}
+	// 06-07-PLAN.md Task 1: Global SSH captures merged the SAME way the
+	// git-screen and identity-manager captures are, immediately above —
+	// RequiredScreenSpecs() is now a FOUR-way merged registry.
+	gssLive, err := screenshot.CaptureGlobalSSHScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureGlobalSSHScreens (live): %v", err)
+	}
+	gssApproved, err := screenshot.CaptureGlobalSSHScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureGlobalSSHScreens (approved): %v", err)
+	}
+	for id, text := range gssLive {
+		live[id] = text
+	}
+	for id, text := range gssApproved {
+		approved[id] = text
+	}
 	return live, approved
 }
 

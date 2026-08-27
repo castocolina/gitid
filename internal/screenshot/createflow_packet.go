@@ -1277,8 +1277,8 @@ func BuildRegionDiffs(sourceCommit string, liveCaptures, approvedCaptures map[st
 			Equal:        liveNorm == approvedNorm,
 		}
 		for _, name := range spec.RequiredRegions {
-			liveRegion := normalizeForRegion(ExtractRegion(liveText, name))
-			approvedRegion := normalizeForRegion(ExtractRegion(approvedText, name))
+			liveRegion := sanitizeRegion(ExtractRegion(liveText, name))
+			approvedRegion := sanitizeRegion(ExtractRegion(approvedText, name))
 			if spec.ApplicableLive && strings.TrimSpace(liveRegion) == "" {
 				return nil, fmt.Errorf("screenshot: BuildRegionDiffs: frame %q required region %q is empty in live evidence", spec.ScreenID, name)
 			}
@@ -1287,8 +1287,8 @@ func BuildRegionDiffs(sourceCommit string, liveCaptures, approvedCaptures map[st
 			}
 		}
 		for _, name := range AllRegionNames() {
-			liveRegion := normalizeForRegion(ExtractRegion(liveText, name))
-			approvedRegion := normalizeForRegion(ExtractRegion(approvedText, name))
+			liveRegion := sanitizeRegion(ExtractRegion(liveText, name))
+			approvedRegion := sanitizeRegion(ExtractRegion(approvedText, name))
 			region := NamedRegionDiff{
 				Name:               name,
 				LiveText:           liveRegion,
@@ -1491,6 +1491,18 @@ func normalizeForRegion(text string) string {
 	// Replace temp dir prefixes (e.g. /var/folders/.../gitid-...).
 	// These are already normalized in CaptureCreateFlowScreens via normalizeTimestamps.
 	return text
+}
+
+// sanitizeRegion replaces invalid UTF-8 sequences with U+FFFD so the region
+// text survives the JSON round-trip byte-for-byte (ValidateRegionDiffs
+// re-hashes the JSON-decoded evidence). Discovered by the Phase 6
+// registration (06-07-PLAN.md Task 1): a master-list truncation can clip a
+// multi-byte rune (e.g. the "→" of "now: x → y") at the pane boundary,
+// leaving a lone lead byte in the extracted region; encoding/json replaces
+// such invalid UTF-8 with U+FFFD on marshal, so an unsanitized hash could
+// never match its own re-decoded value.
+func sanitizeRegion(text string) string {
+	return strings.ToValidUTF8(text, "\uFFFD")
 }
 
 // approvedHTMLRoutesInternal is the package-internal version of the route map
