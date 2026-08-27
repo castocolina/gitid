@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Global SSH › Options
+  Options   Storage & preview
+   ☐ ! StrictHostKeyChecking  [Medium]      │  IdentitiesOnly
+      now: no → accept-new                  │  ~ Recommended, not required -- you can leave any
+      ✓ ForwardAgent  [High]                │ option unchanged. This is advisory, never a compliance
+      now: no → no  safe by default         │ gate.
+   ☐ ! HashKnownHosts  [Low]                │
+      now: no → yes                         │  When IdentitiesOnly is not set (or set to "no"), ssh
+ ▸      IdentitiesOnly  [High]              │ may try EVERY key it can find -- every file in ~/.ssh
+      not applicable (nothing on this machi…│ matching the default names, plus every key already
+   ☐ ! AddKeysToAgent  [Low]                │ loaded in your ssh-agent -- against any host you
+      now: no → yes                         │ connect to. On a machine with multiple identities
+   ☐ ! UseKeychain  [Low]                   │ (personal, work, client keys), this means:
+      now:  → yes                           │
+                                            │   - the wrong key can be offered first, revealing to a
+                                            │ server which OTHER keys you hold;
+                                            │   - a host you don't fully trust can trigger
+                                            │ authentication attempts meant for a completely
+                                            │ different identity.
+                                            │
+                                            │ Setting "IdentitiesOnly yes" on a Host block restricts
+                                            │ ssh to ONLY the IdentityFile(s) listed for that host -
+                                            │ this is why every gitid-managed Host block
+                                            │ (recipes/ssh-config.recipe) already sets it per-
+                                            │ identity. This screen recommends also stating it
+                                            │  … (+4 more lines)
+ 4 of 6 options need action — Recommended, not required -- you can leave any option unchanged. Thi…
+ ↑↓ select option · ←→ Options / Storage · space toggle
+ Enter activate · Esc back · ? help · Ctrl+P palette · q quit

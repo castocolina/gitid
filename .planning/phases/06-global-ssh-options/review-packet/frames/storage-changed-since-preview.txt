@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor              2 ids · ! 2 ✗ 0
+ Global SSH › Storage & preview
+  Options   Storage & preview
+✗ Configuration changed since the preview was opened — re-open the preview to migrate.
+
+ Cancel (Esc)   Retry (Enter)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 5 of 6 options need action — Recommended, not required -- you can leave any option unchanged. Thi…
+ Tab/←→ Cancel / Confirm · Enter confirm
+ Esc back · Ctrl+P palette
