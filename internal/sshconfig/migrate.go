@@ -286,11 +286,11 @@ func RealMigrateDeps(configPath, includePath string, aliases []string) MigrateDe
 func PlanMigration(direction MigrateDirection, deps MigrateDeps) (MigrationPlan, error) {
 	sourcePath, destPath := migratePaths(direction, deps)
 
-	if direction == MigrateToInclude {
-		if derr := EnsureIncludeDir(filepath.Dir(destPath)); derr != nil {
-			return MigrationPlan{}, fmt.Errorf("sshconfig: plan migration: %w", derr)
-		}
-	}
+	// NO EnsureIncludeDir here: planning is read-only. MigrateWithPlan creates
+	// the directory after the confirm gate (see below). A missing directory is
+	// not an error at plan time — readOrEmpty already tolerates a missing
+	// destination file (and a missing parent directory surfaces the same
+	// os.IsNotExist path).
 
 	sourceContent, err := readOrEmpty(deps, sourcePath)
 	if err != nil {

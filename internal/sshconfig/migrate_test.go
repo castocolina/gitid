@@ -836,6 +836,58 @@ func TestPlanMigrationLeavesFilesUnchanged(t *testing.T) {
 	if plan.Digests[includePath] != absentDigestMarker {
 		t.Errorf("Digests entry for absent file = %q, want %q", plan.Digests[includePath], absentDigestMarker)
 	}
+
+	// CR-01 regression: the config.d directory that would hold the include
+	// file must NOT be created by planning alone — PlanMigration is
+	// documented as read-only ("It never writes, backs up, or shells out
+	// beyond the resolution snapshot"), and CLAUDE.md forbids any write to
+	// ~/.ssh without a timestamped backup and explicit confirmation.
+	if _, statErr := os.Stat(filepath.Dir(includePath)); statErr == nil {
+		t.Error("PlanMigration created the config.d directory; planning must be read-only (CR-01)")
+	} else if !os.IsNotExist(statErr) {
+		t.Fatalf("stat config.d dir: %v", statErr)
+	}
+}
+
+// TestPlanMigrationNeverMutatesSSHDir is the CR-01 regression: it snapshots
+// os.Stat(~/.ssh) (existence, mode, mtime) before and after PlanMigration for
+// BOTH directions, and fails on any difference — proving the "pure,
+// non-mutating" planning path really is pure, including the ~/.ssh/config.d
+// mkdir+chmod that used to fire on every arrow-key preview / --dry-run.
+func TestPlanMigrationNeverMutatesSSHDir(t *testing.T) {
+	home, configPath, includePath := migrateFixture(t)
+	seedTwoIdentityPlusGlobals(t, configPath)
+	sshDir := filepath.Join(home, ".ssh")
+
+	statSSHDir := func() os.FileInfo {
+		t.Helper()
+		info, err := os.Stat(sshDir)
+		if err != nil {
+			t.Fatalf("stat %s: %v", sshDir, err)
+		}
+		return info
+	}
+
+	before := statSSHDir()
+
+	deps := fakeDepsForMutate(configPath, includePath)
+	if _, err := PlanMigration(MigrateToInclude, deps); err != nil {
+		t.Fatalf("PlanMigration(MigrateToInclude): %v", err)
+	}
+	if _, err := PlanMigration(MigrateToInFile, deps); err != nil {
+		t.Fatalf("PlanMigration(MigrateToInFile): %v", err)
+	}
+
+	after := statSSHDir()
+	if before.Mode() != after.Mode() {
+		t.Errorf("PlanMigration changed ~/.ssh mode: before %v, after %v", before.Mode(), after.Mode())
+	}
+	if before.ModTime() != after.ModTime() {
+		t.Errorf("PlanMigration changed ~/.ssh mtime: before %v, after %v", before.ModTime(), after.ModTime())
+	}
+	if _, statErr := os.Stat(filepath.Join(sshDir, "config.d")); !os.IsNotExist(statErr) {
+		t.Errorf("PlanMigration created ~/.ssh/config.d (statErr=%v); planning must be read-only (CR-01)", statErr)
+	}
 }
 
 // TestMigrateWrittenBytesMustMatchPlanBytes asserts the bytes Migrate writes
