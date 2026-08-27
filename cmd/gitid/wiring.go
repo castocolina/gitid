@@ -24,6 +24,8 @@ package main
 //     (SSHUI-04).
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -1539,14 +1541,21 @@ var errReopenPreview = errors.New("gitid: re-open the preview — the held plan 
 // only by accident (the digests change when disk changes). The token is
 // treated as opaque by tuikit and by the caller: never parsed, never
 // compared to anything but itself.
+//
+// WR-04: the token is a REAL hash (sha256 of the fingerprint string), not a
+// hex ENCODING of it. `%x` on a string/[]byte is reversible hex encoding, not
+// hashing — hex-encoding the fingerprint (which itself embeds both absolute
+// file paths, i.e. the user's home directory) made the token a trivially
+// reversible ~350-byte dump of the user's home directory, double-hex-encoded.
+// The token crosses into the view layer and PTY frame captures, so it must
+// not leak path content. sha256+hex here produces a genuinely
+// collision-resistant, fixed-length (64 hex chars), non-reversible token.
 func planTokenFor(plan sshconfig.MigrationPlan) string {
-	h := fmt.Sprintf("%d|%s|%s|%x|%x",
+	h := fmt.Sprintf("%d|%s|%s|%s|%s",
 		plan.Direction, plan.SourcePath, plan.DestPath,
 		plan.Digests[plan.SourcePath], plan.Digests[plan.DestPath])
-	// A short but collision-resistant representation. Using the raw digest
-	// strings from the plan (which are already sha256 hex) keeps this
-	// derivative simple and dependency-free.
-	return fmt.Sprintf("%x", []byte(h))
+	sum := sha256.Sum256([]byte(h))
+	return hex.EncodeToString(sum[:])
 }
 
 // putPendingMigration stores plan under token, replacing any previously held

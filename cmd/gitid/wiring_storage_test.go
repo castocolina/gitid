@@ -11,6 +11,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -577,6 +578,47 @@ func TestStoragePlanTokenConsumeOnce(t *testing.T) {
 	}
 	if !strings.Contains(msg2.Err, "re-open") {
 		t.Errorf("refusal message = %q, want it to mention re-opening the preview", msg2.Err)
+	}
+}
+
+// TestPlanTokenForIsNotReversible is the WR-04 regression: planTokenFor must
+// be a genuine hash (fixed-length, non-reversible), not a hex ENCODING of
+// its fingerprint string. Before the fix, `%x` on the fingerprint (which
+// embeds both absolute file paths — i.e. the user's home directory) produced
+// a trivially reversible hex dump; hex-decoding the token recovered the
+// plaintext paths.
+func TestPlanTokenForIsNotReversible(t *testing.T) {
+	skipIfNoSSHForStorage(t)
+	home, configPath, includePath, fakeSSHDir := seedMigrateHome(t)
+	b := backendWithFakeSSH(t, home, fakeSSHDir)
+
+	view, err := b.SSHStorageMigrationPlan(tuikit.StorageInclude)
+	if err != nil {
+		t.Fatalf("SSHStorageMigrationPlan: %v", err)
+	}
+	token := view.PlanToken
+
+	// A sha256 hex digest is always exactly 64 lowercase hex characters.
+	if len(token) != 64 {
+		t.Errorf("token length = %d, want 64 (sha256 hex digest)", len(token))
+	}
+	for _, r := range token {
+		if !strings.ContainsRune("0123456789abcdef", r) {
+			t.Fatalf("token contains a non-hex-digit rune %q: %q", r, token)
+		}
+	}
+
+	// Hex-decoding the token must NOT recover either absolute path — proving
+	// it is a real hash, not a reversible encoding of the fingerprint string.
+	decoded, derr := hex.DecodeString(token)
+	if derr != nil {
+		t.Fatalf("hex.DecodeString(token): %v", derr)
+	}
+	decodedText := string(decoded)
+	for _, p := range []string{configPath, includePath, home} {
+		if strings.Contains(decodedText, p) {
+			t.Errorf("hex-decoding the token recovered path %q — WR-04 regressed (token is reversible)", p)
+		}
 	}
 }
 
