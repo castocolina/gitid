@@ -667,9 +667,26 @@ func TestMigrateInjectedFailureAfterSourceTrimmedRollsBack(t *testing.T) {
 		return nil
 	}
 
-	_, err := Migrate(MigrateToInclude, deps)
+	result, err := Migrate(MigrateToInclude, deps)
 	if err == nil {
 		t.Fatal("expected Migrate to fail when afterStep injects an error after the source trim")
+	}
+
+	// CR-04 regression: rollbackTracked must return the restored paths
+	// ALONGSIDE the error, not discard them — a caller (cmd/gitid/lifecycle.go)
+	// reads result.Restored even when err != nil to populate the frozen
+	// `restored` JSON field and pick exit code 2 over 1.
+	if len(result.Restored) == 0 {
+		t.Fatal("Migrate returned no Restored paths after a rollback; CR-04 regressed")
+	}
+	foundSource := false
+	for _, p := range result.Restored {
+		if p == configPath {
+			foundSource = true
+		}
+	}
+	if !foundSource {
+		t.Errorf("Restored = %v, want it to include the rolled-back source path %s", result.Restored, configPath)
 	}
 
 	out, sshErr := exec.Command("ssh", "-G", "-F", configPath, "personal.github.com").Output() //nolint:gosec // arg-slice form, hermetic fixture path (G204)

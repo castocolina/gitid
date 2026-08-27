@@ -130,16 +130,26 @@ type backupSnapshot struct {
 	content    []byte
 }
 
-// MigrateResult carries the outcome of a successful Migrate call.
+// MigrateResult carries the outcome of a Migrate call, whether it committed
+// or rolled back.
 type MigrateResult struct {
 	// SourceBackup / TargetBackup are the timestamped backup paths for the
 	// file LOSING blocks (source) and the file GAINING blocks (target),
-	// captured before any content-changing write (step 2).
+	// captured before any content-changing write (step 2). Populated only on
+	// a successful commit.
 	SourceBackup string
-	// TargetBackup is the backup path for the file gaining blocks.
+	// TargetBackup is the backup path for the file gaining blocks. Populated
+	// only on a successful commit.
 	TargetBackup string
 	// Recovery is a human-readable restore-from-backup description.
 	Recovery string
+	// Restored lists the paths this transaction rolled back to their
+	// pre-migration state (CR-04). Populated ONLY on a rollback — a file
+	// gitid wrote earlier in THIS transaction and then restored (or
+	// removed, when it did not pre-exist) after an abort. A file gitid never
+	// wrote in this transaction is never listed, matching rollbackTracked's
+	// writtenByUs guard. Empty on a successful commit.
+	Restored []string
 }
 
 // MigrateDeps holds all external effects Migrate needs, injectable for
@@ -548,11 +558,20 @@ func MigrateWithPlan(plan MigrationPlan, deps MigrateDeps) (MigrateResult, error
 // would destroy exactly the data the detector was built to protect.
 func rollbackTracked(deps MigrateDeps, sourceSnap, destSnap backupSnapshot, writtenByUs map[string]bool, cause error) (MigrateResult, error) {
 	var restoreErrs []error
+	var restored []string
 	if writtenByUs[sourceSnap.path] {
-		restoreErrs = append(restoreErrs, restoreSnapshot(deps, sourceSnap)...)
+		if errs := restoreSnapshot(deps, sourceSnap); len(errs) > 0 {
+			restoreErrs = append(restoreErrs, errs...)
+		} else {
+			restored = append(restored, sourceSnap.path)
+		}
 	}
 	if writtenByUs[destSnap.path] {
-		restoreErrs = append(restoreErrs, restoreSnapshot(deps, destSnap)...)
+		if errs := restoreSnapshot(deps, destSnap); len(errs) > 0 {
+			restoreErrs = append(restoreErrs, errs...)
+		} else {
+			restored = append(restored, destSnap.path)
+		}
 	}
 
 	err := fmt.Errorf("sshconfig: migrate: aborted and restored gitid's own writes (source backup: %s, target backup: %s): %w",
@@ -560,7 +579,9 @@ func rollbackTracked(deps MigrateDeps, sourceSnap, destSnap backupSnapshot, writ
 	if len(restoreErrs) > 0 {
 		err = fmt.Errorf("%w; additionally, restore encountered errors: %v", err, restoreErrs)
 	}
-	return MigrateResult{}, err
+	// Restored is returned alongside the error (CR-04) — callers must read
+	// res.Restored even on a non-nil error to learn what was rolled back.
+	return MigrateResult{Restored: restored}, err
 }
 
 // Migrate performs a cross-file transactional migration of every managed

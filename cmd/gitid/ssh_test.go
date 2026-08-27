@@ -22,6 +22,7 @@ import (
 
 	"github.com/castocolina/gitid/internal/globalssh"
 	"github.com/castocolina/gitid/internal/platform"
+	"github.com/castocolina/gitid/internal/sshconfig"
 	"github.com/castocolina/gitid/internal/tuikit"
 )
 
@@ -226,6 +227,58 @@ func TestSSHJSONApplyAndMigrateEnvelopesOnEveryPath(t *testing.T) {
 			t.Errorf("rolled-back migrate exit = %d, want 2", exitStatusOf(err))
 		}
 	})
+}
+
+// TestSSHStorageMigrateRealRollbackReportsExitTwoAndRestored is the CR-04
+// regression: drive a REAL migration failure through the full CLI ceremony
+// (plan -> confirm -> commit -> rollback), rather than stubbing
+// cliSSHStorageMigrateInto with a hand-built lifecycleResult. Before the fix,
+// MigrateWithPlan's own rollback discarded the restored paths, so
+// res.Restored was always empty on this path, sshWriteExitCode never chose
+// exit 2, and fillMigrateFromResult always wrote "restored": [] into the
+// frozen envelope regardless of what actually happened on disk.
+func TestSSHStorageMigrateRealRollbackReportsExitTwoAndRestored(t *testing.T) {
+	skipIfNoSSHForStorage(t)
+	_, _, _, fakeSSHDir := seedMigrateHome(t)
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", fakeSSHDir+":"+origPath)
+
+	// Fail the SECOND WriteFile call (the source trim — step 4 of
+	// MigrateWithPlan) so the engine has already written the destination and
+	// must roll it back — a real failure inside the real ceremony, not a
+	// fabricated lifecycleResult.
+	origNewMigrateDeps := newMigrateDeps
+	t.Cleanup(func() { newMigrateDeps = origNewMigrateDeps })
+	writeCount := 0
+	newMigrateDeps = func(cfgPath, incPath string, aliases []string) sshconfig.MigrateDeps {
+		deps := sshconfig.RealMigrateDeps(cfgPath, incPath, aliases)
+		origWrite := deps.WriteFile
+		deps.WriteFile = func(path string, content []byte, mode os.FileMode) (string, error) {
+			writeCount++
+			if writeCount == 2 {
+				return "", fmt.Errorf("injected write failure on source trim")
+			}
+			return origWrite(path, content, mode)
+		}
+		return deps
+	}
+
+	cmd, out, _ := cliTestCmd()
+	err := runSSHStorageMigrateVerb(cmd, sshMigrateFlags{To: sshLayoutInclude, Yes: true, JSON: true}, false, false)
+
+	code := exitStatusOf(err)
+	assertMigrateEnvelope(t, out.Bytes(), code, false)
+	if code != 2 {
+		t.Errorf("real rolled-back migrate exit = %d, want 2 (err=%v)", code, err)
+	}
+
+	var doc sshMigrateDocument
+	if uerr := json.Unmarshal(out.Bytes(), &doc); uerr != nil {
+		t.Fatalf("unmarshal migrate envelope: %v\n%s", uerr, out.Bytes())
+	}
+	if len(doc.Restored) == 0 {
+		t.Error("migrate envelope's restored array is empty after a real rollback; CR-04 regressed")
+	}
 }
 
 func TestSSHJSONApplyAdvisoriesPresentEvenWhenEmpty(t *testing.T) {

@@ -1078,6 +1078,10 @@ func (b *realBackend) runSSHStorageMigrate(target tuikit.SSHStorageLayout, planT
 	record(stages[2]) // backup
 	record(stages[3]) // write
 	result, merr := sshconfig.MigrateWithPlan(plan, deps)
+	// res.Restored must be read regardless of merr — rollbackTracked returns
+	// the restored paths ALONGSIDE the error (CR-04), and sshWriteExitCode
+	// only reports exit code 2 (rolled back) when res.Restored is non-empty.
+	res.Restored = result.Restored
 	if merr != nil {
 		return res, fmt.Errorf("gitid: storage migration: %w", merr)
 	}
