@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: TUI-First Redesign
-current_phase: 08
-current_phase_name: Health + Fixer
+current_phase: 09
+current_phase_name: Upload / Credentials Assist
 status: executing
-stopped_at: Phase 8 (Health + Fixer) all 8 waves complete and merged; closeout checklist in progress
-last_updated: "2026-08-28T14:15:00.000Z"
+stopped_at: Phase 8 (Health + Fixer) COMPLETE, all 9 checklist items evidenced; starting Phase 9 (Upload / Credentials Assist)
+last_updated: "2026-08-28T19:00:00.000Z"
 last_activity: 2026-08-28
-last_activity_desc: Phase 8 Wave 8 (08-08, the LAST wave) closed DLV-04/DLV-06 and REQUIREMENTS.md — see Current Position below for full detail. Two new cross-AI executor failure modes hand-recovered (a stall, an unbounded exploration loop); 3 real bugs found and fixed in Task 1's PTY suite, 1 real CR-01 non-determinism fixed in Task 2's gate registration, 1 real Phase-8-scoped UX finding (F6) fixed with a regression test after independently tracing all 15 UX-review findings against source. Merged to gsd/phase-08-health-fixer at 98ed007. Phase 8's own 9-item closeout checklist (mirroring Phase 7's) starts next.
-state_head: 540b6ed
+last_activity_desc: Phase 8 closeout finished — CR-01 (Critical: Fixable signal was SuggestedFix!="" instead of Fix!=nil, letting report-only findings show a fake fix ceremony) and WR-01 (nonsensical batch-halt banner on a single non-batch fix failure) fixed with regression tests; DLV-06 PTY gap closed via a real chflags-uchg-forced OS failure through the compiled binary (TestHealthFixer_RealPTYFixerBatchWalkHalt). All gates re-verified green (go test -race 2157 passed, lint 0 issues, gate-visual-regression PASS, test-e2e PASS 676s). Committed as cbb5279 (fixes) + 6881319 (review artifacts + HIGH-concerns resolution appended to 08-REVIEWS.md). Phase 8 is now genuinely complete; advancing to Phase 9.
+state_head: 6881319
 progress:
   total_phases: 10
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 67
   completed_plans: 66
-  percent: 70
+  percent: 80
 ---
 
 # Project State
@@ -29,9 +29,16 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 ## Current Position
 
-Phase: 08 — Health + Fixer
-Status: ALL 8 WAVES COMPLETE and merged. Closeout checklist in progress.
-Last activity: 2026-08-28 — Wave 8 (08-08, the LAST wave) closed DLV-04/DLV-06: raw-keystroke PTY e2e for every Health/Fixer screen state (`e2e/health_fixer_pty_e2e_test.go`, 7 tests), visual-regression gate registration (`healthFixerSpecs()`/`CaptureHealthFixerScreens`, mirroring Global Git's self-contained pattern, 4 negative controls, `.planning/design/health-fixer/visual-divergence-allowlist.txt`), and Task 3's cross-AI review + REQUIREMENTS.md closure. Two NEW executor failure modes hit and hand-recovered from this wave: a genuine STALL on Task 1 (killed, hand-completed — found+fixed 3 real bugs: optimistic-receipt double-Enter, `seedMinimalIdentity` clobbering when composing two identities, a literal-tab assertion mismatch) and an UNBOUNDED EXPLORATION LOOP on Task 2 (40+ min, zero writes, killed, hand-completed — found+fixed a genuine CR-01 non-determinism from a wrapped backup timestamp). Task 3: spawned `agent-ui-ux-designer` against three real captured frames (this session's own orchestrator obligation per the `07-06` review-packet precedent); of 15 findings, 14 traced to shared/locked design-system behavior from earlier phases (cited code evidence per finding, `08-08-REVIEWS.md`) and were deferred with rationale, 1 (F6, stale "available on the Fixer screen" hand-off text) was genuinely Phase-8-scoped and fixed with a regression test. **Caught and fixed a real mistake mid-wave**: an early commit accidentally overwrote the phase-level pre-execution `08-REVIEWS.md` (the `/gsd-plan-review-convergence 8` cross-AI plan review) with Task 3's closeout content — reverted, closeout content moved to `08-08-REVIEWS.md` instead. HLTH-01 through HLTH-06 and FIX-01/FIX-02 are now Complete in `.planning/REQUIREMENTS.md`. Merged (fast-forward) to `gsd/phase-08-health-fixer` at `98ed007`; full gate battery (build, vet, `go test -race` 2156 passed, lint 0 issues, `gate-visual-regression` PASS 154s, `make test-e2e` in progress) independently re-verified green both in the wave worktree and on the merged tree; pure ui-frame timestamp noise reverted both times. See `08-08-SUMMARY.md`/`08-08-REVIEWS.md`. Phase 8's own closeout checklist (code review, verify-work, UI review, gsd-audit-uat) is next, mirroring Phase 7's 9-item pattern.
+Phase: 09 — Upload / Credentials Assist
+Status: Starting. Not yet discussed/planned.
+Last activity: 2026-08-28 — Phase 8 closed out fully (see historical record below); Phase 9 kickoff next via `/gsd-plan-review-convergence 9`.
+
+### Phase 8 (COMPLETE) — historical record
+
+Phase: 08 (Health + Fixer) — COMPLETE (8 plans/waves; HLTH-01..06, FIX-01, FIX-02, DLV-04, DLV-06 closed in REQUIREMENTS.md)
+Status: All 9 Per-Phase Checklist items evidenced — see `.planning/phases/08-health-fixer/{08-CONTEXT.md, 08-UI-SPEC.md, 08-REVIEWS.md (pre-execution cross-AI review + appended post-close HIGH-concerns resolution), 08-0{1..8}-SUMMARY.md, 08-08-REVIEWS.md (UX review packet), 08-REVIEW.md (code review), 08-VERIFICATION.md, 08-UI-REVIEW.md}`.
+Waves 1-8 delivered Health + Fixer screens, doctor/fix wiring, real batch-walk-with-rollback semantics (D-16), CLI parity (`doctor`/`doctor --fix`, JSON envelope, tiered exit codes), raw-keystroke PTY e2e per screen state, and visual-regression gate registration. Two NEW cross-AI executor failure modes were hit and hand-recovered during Wave 8 (a stall, an unbounded 40+min zero-write exploration loop) — see `08-08-SUMMARY.md`.
+Closeout (this session, worked directly on `gsd/phase-08-health-fixer`, no separate worktree): code review found 1 Critical (CR-01: the Fixer/Health TUI's fixability signal was `SuggestedFix != ""` instead of `Fix != nil`, letting report-only findings show a fake success ceremony with a fabricated backup path — fixed via a new `Fixable bool` field threaded from `doctor.Finding.Fix != nil`) and 1 actionable Warning (WR-01: a single non-batch fix failure rendered a nonsensical "Fix N of M failed" banner — fixed, `haltBatch` now only builds that banner when `m.batch != nil`). verify-work found one gap (DLV-06: the D-16 mid-batch-halt-and-rollback path had no real-PTY coverage — closed via `TestHealthFixer_RealPTYFixerBatchWalkHalt`, which forces a genuine OS-level chmod failure with `chflags uchg` through the compiled binary). UI review: 21/24, no new regressions. `/gsd-audit-uat` found nothing Phase-8-scoped outstanding. All fixes committed as `cbb5279`; review artifacts + appended HIGH-concerns resolution as `6881319`. Full gate battery re-verified green after every fix: `go test -race` 2157 passed, `make lint` 0 issues, `make gate-visual-regression` PASS 129.5s, `make test-e2e` PASS 676s.
 
 ### Phase 7 (COMPLETE) — historical record
 
