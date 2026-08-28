@@ -24,6 +24,7 @@ package main
 //     (SSHUI-04).
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -52,6 +53,8 @@ import (
 	"github.com/castocolina/gitid/internal/sshconfig"
 	"github.com/castocolina/gitid/internal/tester"
 	"github.com/castocolina/gitid/internal/tuikit"
+	"github.com/castocolina/gitid/internal/upload"
+	"github.com/castocolina/gitid/internal/uploader"
 )
 
 // keyFileMode / pubFileMode are the explicit permission bits for generated key
@@ -193,6 +196,23 @@ type realBackend struct {
 	// field above.
 	convergenceAlarmed   map[string]bool
 	convergenceAlarmedMu sync.Mutex
+
+	// uploadEligibilityMemo caches UploadEligibility's answer PER PROVIDER
+	// KEY ("github"/"gitlab"), not per host — the probe answers a question
+	// about the TOOL (is gh/glab present and authenticated for the
+	// canonical domain), which is the same question for every host that
+	// shares a provider key (github.com and ssh.github.com share one
+	// cache entry). This exists so a wizard session cannot spawn one
+	// "gh auth status" per host edit (R3). Guarded by its own mutex since
+	// it is read/written independently of every other field above.
+	uploadEligibilityMemo   map[string]tuikit.UploadEligibilityView
+	uploadEligibilityMemoMu sync.Mutex
+
+	// uploaderDeps is the real gh/glab exec wiring (buildUploaderDeps()).
+	// Set once in newBackendForHome; tests may overwrite it directly with a
+	// fake uploader.Deps to drive UploadEligibility/RunUpload without a real
+	// gh/glab on PATH, mirroring how b.deps itself is test-overridable.
+	uploaderDeps uploader.Deps
 }
 
 // compile-time proof the real composition root satisfies the seam.
@@ -261,6 +281,7 @@ func newBackendForHome(home string) *realBackend {
 		fragmentDir:    filepath.Join(home, ".gitconfig.d"),
 	}
 	b.deps = buildIdentityDeps(b)
+	b.uploaderDeps = buildUploaderDeps()
 	return b
 }
 
@@ -443,6 +464,59 @@ func buildIdentityDeps(b *realBackend) identity.Deps {
 // depsForTransaction(j) rebinds ArchiveKeyPair to a seam that actually
 // archives.
 var errArchiveOutsideTransaction = errors.New("gitid: refusing to archive a key pair outside a transaction")
+
+// ---------------------------------------------------------------------------
+// uploader.Deps — the Phase 9 (UP-02/UP-03) gh/glab wiring
+// ---------------------------------------------------------------------------
+
+// providerCommandTimeout bounds every subprocess buildUploaderDeps' RunCmd
+// invokes (R3: no provider subprocess may hang the TUI). It is a package
+// `var`, not a `const`, SOLELY so a test can shorten it — the same
+// test-only-override precedent archiveClockNow (above) establishes for a
+// different seam. The production value is chosen to comfortably cover an
+// ordinary network-backed `gh`/`glab` call (auth status, ssh-key add) on a
+// slow connection without leaving a hung process indefinitely blocking the
+// wizard's upload beat.
+var providerCommandTimeout = 20 * time.Second
+
+// buildUploaderDeps wires uploader.Deps from the real exec package —
+// re-derived from the archived cmd/gitid/copy.go's buildUploaderDeps
+// (Phase-9-tracer POC layout), the ONLY function this task resurrects from
+// that file. EVERY field is filled: a nil seam here is a silent behavior
+// change, not a missing feature (TestUploaderDepsEveryFieldIsWired mirrors
+// TestIdentityDepsEveryFieldIsWired's reflection guard).
+//
+// RunCmd is time-bounded via exec.CommandContext over a per-invocation
+// context.WithTimeout (R3): a command that outlives providerCommandTimeout
+// is killed and RunCmd returns a non-zero exit code and a non-nil error
+// naming the timeout, instead of blocking the caller forever. That error
+// text reaches the user only through the RedactCLIOutput-bounded
+// last-resort reason path (plan 09-03) — it is operational runner text of
+// the same class as raw CLI output, not new product copy subject to the
+// copy-freeze.
+func buildUploaderDeps() uploader.Deps {
+	return uploader.Deps{
+		LookPath: exec.LookPath,
+		RunCmd: func(name string, args ...string) (string, int, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), providerCommandTimeout)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // arg-slice; no shell; name is a trusted resolved binary path (G204)
+			out, err := cmd.CombinedOutput()
+			output := string(out)
+			if ctx.Err() == context.DeadlineExceeded {
+				return output, 124, fmt.Errorf("gitid: %s timed out after %s: %w", name, providerCommandTimeout, ctx.Err())
+			}
+			if err == nil {
+				return output, 0, nil
+			}
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) {
+				return output, exitErr.ExitCode(), nil
+			}
+			return "", 2, err
+		},
+	}
+}
 
 // archiveKeyPairSeam is the ONE archive implementation identity.Deps'
 // ArchiveKeyPair field can be bound to — only its onCreated OBSERVER varies
@@ -1143,6 +1217,199 @@ func (b *realBackend) TestStage2(spec tuikit.CreateSpec) tea.Cmd {
 		b.recordOutcomeFor(2, view.Outcome, in)
 		return tuikit.WizardStageMsg{Stage: 2, Result: view}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Upload / Credentials Assist (Phase 9, UP-02/UP-03)
+// ---------------------------------------------------------------------------
+
+// providerDisplayName maps a provider key ("github"/"gitlab") to its
+// checkbox-label display form ("GitHub"/"GitLab"). uploader never carries
+// display strings itself (it deals in tool/provider KEYS), so the mapping
+// lives at this one conversion site alongside the rest of the DTO
+// conversions (views.go:13-20's "one place" rule).
+func providerDisplayName(provider string) string {
+	switch provider {
+	case "github":
+		return "GitHub"
+	case "gitlab":
+		return "GitLab"
+	default:
+		return provider
+	}
+}
+
+// providerToolName maps a provider key to its CLI tool name.
+func providerToolName(provider string) string {
+	switch provider {
+	case "github":
+		return "gh"
+	case "gitlab":
+		return "glab"
+	default:
+		return ""
+	}
+}
+
+// UploadEligibility resolves whether autonomous key upload can run for
+// hostname — ASYNCHRONOUSLY (R3): the returned tea.Cmd runs the LookPath +
+// "auth status" probe in Bubble Tea's own goroutine, never on the render
+// path. A hostname whose provider is not one of D-13's gated main domains
+// answers Omitted with NO subprocess call at all — ProviderForHostname
+// alone decides that, and it is pure.
+//
+// The probe is MEMOIZED per PROVIDER KEY (not per host): two hosts that
+// share one provider key (github.com and ssh.github.com) share one cache
+// entry, because the probe answers a question about the TOOL, not the host.
+// This is what keeps a wizard session from spawning one "gh auth status"
+// per host edit.
+//
+// AuthCheck is always called with ProviderForHostname's SECOND return value
+// (the canonical host), never the raw hostname parameter (R18) — gh/glab
+// track authentication per canonical web domain, not per SSH endpoint, and
+// this project's alt-SSH recipe (ssh.github.com, port 443) makes that
+// divergence the common case for real identities.
+func (b *realBackend) UploadEligibility(hostname string) tea.Cmd {
+	return func() tea.Msg {
+		provider, canonicalHost := uploader.ProviderForHostname(hostname)
+		if provider == "" {
+			return tuikit.UploadEligibilityMsg{Hostname: hostname, View: tuikit.UploadEligibilityView{
+				State: tuikit.UploadEligibilityOmitted,
+			}}
+		}
+
+		b.uploadEligibilityMemoMu.Lock()
+		if b.uploadEligibilityMemo != nil {
+			if cached, ok := b.uploadEligibilityMemo[provider]; ok {
+				b.uploadEligibilityMemoMu.Unlock()
+				return tuikit.UploadEligibilityMsg{Hostname: hostname, View: cached}
+			}
+		}
+		b.uploadEligibilityMemoMu.Unlock()
+
+		view := tuikit.UploadEligibilityView{
+			ProviderName: providerDisplayName(provider),
+			ToolName:     providerToolName(provider),
+			Hostname:     canonicalHost,
+		}
+		_, toolPath, status := uploader.DetectFor(provider, b.uploaderDeps)
+		switch status {
+		case uploader.AuthToolNotFound:
+			view.State = tuikit.UploadEligibilityDisabled
+		default:
+			if uploader.AuthCheck(toolPath, b.uploaderDeps, canonicalHost) == uploader.AuthAuthenticated {
+				view.State = tuikit.UploadEligibilityReady
+			} else {
+				view.State = tuikit.UploadEligibilityUnauth
+			}
+		}
+
+		b.uploadEligibilityMemoMu.Lock()
+		if b.uploadEligibilityMemo == nil {
+			b.uploadEligibilityMemo = make(map[string]tuikit.UploadEligibilityView)
+		}
+		b.uploadEligibilityMemo[provider] = view
+		b.uploadEligibilityMemoMu.Unlock()
+
+		return tuikit.UploadEligibilityMsg{Hostname: hostname, View: view}
+	}
+}
+
+// shortHostname returns the local machine's hostname truncated at the first
+// "." (D-07's machine-scoped key title; hostname normalization is
+// explicitly Claude's Discretion), falling back to "unknown-host" when
+// os.Hostname fails.
+func shortHostname() string {
+	h, err := os.Hostname()
+	if err != nil || h == "" {
+		return "unknown-host"
+	}
+	if idx := strings.Index(h, "."); idx >= 0 {
+		return h[:idx]
+	}
+	return h
+}
+
+// RunUpload dispatches the confirmed autonomous upload beat: it stages the
+// key through the SAME b.stagedKeyFor cache TestStage1 uses (never a second
+// key-material read), builds the shown-and-run command through
+// uploader.CommandPreview/UploadKey (one buildArgs, so shown==run is
+// structural), and runs the upload. It NEVER returns an error that could
+// stop the wizard (D-03/D-11): every failure — staging, detect, auth,
+// upload — is reported as a failed UploadResultRow inside the delivered
+// UploadRunMsg.
+func (b *realBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
+	return func() tea.Msg {
+		provider, canonicalHost := uploader.ProviderForHostname(spec.Hostname)
+		if provider == "" {
+			// D-13: not a gated provider — nothing to run. The wizard only
+			// reaches this method when the checkbox was checked, which
+			// itself requires a non-omitted eligibility answer, but this
+			// stays a safe no-op degrade rather than an assumption.
+			return tuikit.UploadRunMsg{View: tuikit.UploadRunView{Skipped: true}}
+		}
+
+		in := b.createInputFromSpec(spec)
+		staged, err := b.stagedKeyFor(in, spec.ReuseKeyPath)
+		if err != nil {
+			return tuikit.UploadRunMsg{View: tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{{
+				Registration: tuikit.UploadRegistrationAuthentication,
+				Label:        tuikit.UploadRegistrationLabelAuth,
+				Outcome:      tuikit.UploadRowFailed,
+				Reason:       err.Error(),
+			}}}}
+		}
+		// SECURITY (T-09-02-02/ASVS V5): the key-file operand is taken from
+		// the staged result's PUBLIC-key field — never a private-key field,
+		// never a string-appended suffix.
+		pubPath := staged.FinalPubPath
+
+		tool, toolPath, status := uploader.DetectFor(provider, b.uploaderDeps)
+		if status == uploader.AuthToolNotFound {
+			return tuikit.UploadRunMsg{View: tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{{
+				Registration: tuikit.UploadRegistrationAuthentication,
+				Label:        tuikit.UploadRegistrationLabelAuth,
+				Outcome:      tuikit.UploadRowFailed,
+				Reason:       fmt.Sprintf("%s not found on PATH", providerToolName(provider)),
+			}}}}
+		}
+		if uploader.AuthCheck(toolPath, b.uploaderDeps, canonicalHost) != uploader.AuthAuthenticated {
+			return tuikit.UploadRunMsg{View: tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{{
+				Registration: tuikit.UploadRegistrationAuthentication,
+				Label:        tuikit.UploadRegistrationLabelAuth,
+				Outcome:      tuikit.UploadRowFailed,
+				Reason:       fmt.Sprintf("not authenticated to %s", canonicalHost),
+			}}}}
+		}
+
+		title := fmt.Sprintf(tuikit.UploadKeyTitleFmt, spec.Identity, shortHostname())
+		command := uploader.CommandPreview(tool, toolPath, pubPath, title, uploader.KeyAuthentication)
+		out, upErr := uploader.UploadKey(tool, toolPath, pubPath, title, uploader.KeyAuthentication, b.uploaderDeps)
+		row := tuikit.UploadResultRow{
+			Registration: tuikit.UploadRegistrationAuthentication,
+			Label:        tuikit.UploadRegistrationLabelAuth,
+			Command:      command,
+		}
+		if upErr != nil {
+			row.Outcome = tuikit.UploadRowFailed
+			reason := out
+			if reason == "" {
+				reason = upErr.Error()
+			}
+			row.Reason = reason
+		} else {
+			row.Outcome = tuikit.UploadRowUploaded
+		}
+		return tuikit.UploadRunMsg{View: tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{row}}}
+	}
+}
+
+// UploadInstructions returns the manual-fallback text, byte-identical to
+// internal/upload.Instructions(provider) — this method exists so
+// internal/tuikit never imports internal/upload directly (09-UI-SPEC.md's
+// byte-identical-reuse requirement, and views.go's no-backend-import rule).
+func (b *realBackend) UploadInstructions(provider string) string {
+	return upload.Instructions(provider)
 }
 
 // ResolvedStorageTarget is the file gitid's managed blocks actually land in —

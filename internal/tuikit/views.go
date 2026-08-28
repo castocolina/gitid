@@ -597,3 +597,120 @@ type GitFallbackAuthorCommitMsg struct {
 	Advisories []string
 	Err        string
 }
+
+// ---------------------------------------------------------------------------
+// Upload / Credentials Assist view DTOs (Phase 9, plan 09-02 tracer).
+//
+// These mirror internal/uploader's provider/auth concepts by VALUE ONLY —
+// this package never imports internal/uploader (the no-backend-import rule
+// at the top of this file names it explicitly). cmd/gitid/wiring.go is the
+// one conversion site.
+// ---------------------------------------------------------------------------
+
+// UploadEligibilityState is the D-01 four-scenario checkbox state: whether
+// autonomous upload is offered at all, and if so, in which of the three
+// visible shapes (ready/unauth/disabled).
+type UploadEligibilityState int
+
+const (
+	// UploadEligibilityOmitted means the identity's provider host is not
+	// one of D-13's gated main domains (github.com/gitlab.com or a
+	// subdomain) — the checkbox row does not render at all, and no
+	// provider subprocess is ever invoked to answer this.
+	UploadEligibilityOmitted UploadEligibilityState = iota
+	// UploadEligibilityDisabled means the provider is gated, but neither
+	// gh nor glab (whichever matches) was found on PATH.
+	UploadEligibilityDisabled
+	// UploadEligibilityUnauth means the matching tool is present but not
+	// authenticated for this host — the row renders unchecked but
+	// toggleable.
+	UploadEligibilityUnauth
+	// UploadEligibilityReady means the matching tool is present and
+	// authenticated — the row renders pre-checked.
+	UploadEligibilityReady
+)
+
+// UploadEligibilityView is the wizard's live answer to "can this identity's
+// key be uploaded autonomously right now" — resolved OFF the render path
+// (Backend.UploadEligibility is async; see backend.go) and cached per
+// provider key.
+type UploadEligibilityView struct {
+	State UploadEligibilityState
+	// ProviderName is the display form ("GitHub"/"GitLab") the checkbox
+	// label's %s verb interpolates.
+	ProviderName string
+	// ToolName is the resolved CLI name ("gh"/"glab") the unauth label's
+	// %s verbs interpolate.
+	ToolName string
+	// Hostname is the canonical host ("github.com"/"gitlab.com") the
+	// unauth label's remaining %s verb interpolates.
+	Hostname string
+}
+
+// UploadEligibilityMsg is the asynchronous answer Backend.UploadEligibility
+// delivers. Hostname carries the ORIGINAL hostname the caller probed
+// for — never the canonicalized value — so a stale reply (the user changed
+// the host before this arrived) can be discarded by comparing against
+// whatever host the wizard most recently dispatched with, mirroring the
+// existing KeyCommitMsg stale-guard idiom.
+type UploadEligibilityMsg struct {
+	Hostname string
+	View     UploadEligibilityView
+}
+
+// UploadRegistration identifies WHICH key role a result row is about.
+// gh registers authentication and signing separately; glab registers one
+// combined key. This is a named seam: plan 09-03 adds the signing row,
+// 09-04 the combined row — no later plan reshapes this type.
+type UploadRegistration int
+
+const (
+	// UploadRegistrationAuthentication is gh's authentication-key registration.
+	UploadRegistrationAuthentication UploadRegistration = iota
+	// UploadRegistrationSigning is gh's signing-key registration.
+	UploadRegistrationSigning
+	// UploadRegistrationCombined is glab's single auth_and_signing registration.
+	UploadRegistrationCombined
+)
+
+// UploadRowOutcome is one registration attempt's result.
+type UploadRowOutcome int
+
+const (
+	// UploadRowUploaded means the key was newly registered.
+	UploadRowUploaded UploadRowOutcome = iota
+	// UploadRowAlreadyPresent is the D-15 idempotent-dedupe outcome.
+	UploadRowAlreadyPresent
+	// UploadRowFailed means the registration attempt failed.
+	UploadRowFailed
+)
+
+// UploadResultRow is one registration's shown-and-run record: the label,
+// the exact command that was run (shown==run, UP-02), the outcome, and — on
+// failure — the classified reason text.
+type UploadResultRow struct {
+	Registration UploadRegistration
+	Label        string
+	Command      string
+	Outcome      UploadRowOutcome
+	Reason       string
+}
+
+// UploadRunView is the D-02 announce-and-do beat's full result: one row per
+// attempted registration. InventoryDegraded, ManualFallback, and Skipped are
+// named seams later plans fill (D-15 inventory-read failure, the manual
+// instructions text, and a --no-upload-style skip) — declared now so no
+// later plan reshapes this struct's field set.
+type UploadRunView struct {
+	Rows              []UploadResultRow
+	InventoryDegraded bool
+	ManualFallback    string
+	Skipped           bool
+}
+
+// UploadRunMsg completes the asynchronous upload beat Backend.RunUpload
+// dispatches — the wizard renders View's rows, then auto-advances into the
+// existing test-stage gate with no user keystroke (D-02).
+type UploadRunMsg struct {
+	View UploadRunView
+}

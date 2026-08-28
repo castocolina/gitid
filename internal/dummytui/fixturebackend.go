@@ -429,6 +429,58 @@ func (FixtureBackend) CommitNewKey(string) tea.Cmd {
 }
 
 // ---------------------------------------------------------------------------
+// Upload / Credentials Assist (Phase 9, plan 09-02 tracer).
+//
+// The demo must render IDENTICALLY on every machine, or the visual-
+// regression gate becomes noise — so UploadEligibility never probes a real
+// PATH: it deliberately, frozen-ly answers Ready for any hostname
+// containing "github" (the demo's happy path) and Omitted otherwise. The
+// real binary's machine-dependent answer is a classified divergence plan
+// 09-07 registers, not a bug in this fixture.
+//
+// UploadInstructions returns fixed prose rather than importing
+// internal/upload — dummytui's ALLOWLIST (nobackend_test.go) forbids
+// importing ANY first-party backend package, uploader/upload included.
+// ---------------------------------------------------------------------------
+
+// UploadEligibility answers the frozen demo shape described above.
+func (FixtureBackend) UploadEligibility(hostname string) tea.Cmd {
+	return func() tea.Msg {
+		if strings.Contains(hostname, "github") {
+			return tuikit.UploadEligibilityMsg{Hostname: hostname, View: tuikit.UploadEligibilityView{
+				State: tuikit.UploadEligibilityReady, ProviderName: "GitHub", ToolName: "gh", Hostname: "github.com",
+			}}
+		}
+		return tuikit.UploadEligibilityMsg{Hostname: hostname, View: tuikit.UploadEligibilityView{State: tuikit.UploadEligibilityOmitted}}
+	}
+}
+
+// RunUpload "runs" the autonomous upload beat: a brief tick (mirroring
+// TestStage1/TestStage2's fixtureStageDelay), then one UploadRowUploaded
+// result whose Command is built through uploader.CommandPreview-shaped text
+// against a fixed fake tool path — never a real gh/glab lookup — so the
+// demo shows a real command SHAPE without ever touching a real PATH.
+func (b FixtureBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
+	command := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title %s --type authentication",
+		spec.KeyPath, fmt.Sprintf(tuikit.UploadKeyTitleFmt, spec.Identity, "demo-machine"))
+	return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
+		return tuikit.UploadRunMsg{View: tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{{
+			Registration: tuikit.UploadRegistrationAuthentication,
+			Label:        tuikit.UploadRegistrationLabelAuth,
+			Command:      command,
+			Outcome:      tuikit.UploadRowUploaded,
+		}}}}
+	})
+}
+
+// UploadInstructions returns fixed demo prose — the real backend's
+// byte-identical internal/upload.Instructions(provider) is out of reach
+// here by the ALLOWLIST rule above.
+func (FixtureBackend) UploadInstructions(provider string) string {
+	return "Upload your public key to " + provider + " manually — see its SSH key settings page."
+}
+
+// ---------------------------------------------------------------------------
 // Global SSH options (plan 06-01) — the Options sub-tab seam, projected from
 // the frozen fixture so the demo's rendering stays byte-identical.
 // ---------------------------------------------------------------------------

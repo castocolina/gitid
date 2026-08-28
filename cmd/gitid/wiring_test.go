@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/castocolina/gitid/internal/sshconfig"
 	"github.com/castocolina/gitid/internal/tester"
 	"github.com/castocolina/gitid/internal/tuikit"
+	"github.com/castocolina/gitid/internal/uploader"
 )
 
 // ---------------------------------------------------------------------------
@@ -4852,5 +4854,178 @@ func TestAuthorResolutionCheckRealWiring_UnknownIdentity(t *testing.T) {
 	_, ok, err := check("no-such-identity")
 	if err != nil || ok {
 		t.Errorf("unknown identity: ok=%v err=%v, want ok=false err=nil", ok, err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Upload / Credentials Assist (Phase 9, UP-02/UP-03) — the L2 wiring guards.
+// ---------------------------------------------------------------------------
+
+// TestUploaderDepsEveryFieldIsWired is the L2 real-constructor guard mirrored
+// for uploader.Deps: EVERY function field buildUploaderDeps() produces must
+// be non-nil, and the failure must NAME the field — the same recurring
+// injected-seam wiring blindspot TestIdentityDepsEveryFieldIsWired guards
+// for identity.Deps.
+func TestUploaderDepsEveryFieldIsWired(t *testing.T) {
+	deps := buildUploaderDeps()
+
+	v := reflect.ValueOf(deps)
+	typ := v.Type()
+	if typ.NumField() == 0 {
+		t.Fatal("uploader.Deps has no fields; the guard would be vacuous")
+	}
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if field.Type.Kind() != reflect.Func {
+			continue
+		}
+		if v.Field(i).IsNil() {
+			t.Errorf("uploader.Deps.%s is nil in the REAL constructor — a nil seam silently changes behavior (L2)", field.Name)
+		}
+	}
+}
+
+// TestUploaderDepsRunCmdIsTimeBounded proves the REAL RunCmd closure (R3: no
+// provider subprocess may hang the TUI) kills a command that outlives
+// providerCommandTimeout and returns a non-zero exit code plus a non-nil
+// error within a bounded wall time, instead of blocking forever. The
+// timeout is shortened for the duration of this test only (restored via
+// t.Cleanup) — the package var exists solely for this purpose.
+func TestUploaderDepsRunCmdIsTimeBounded(t *testing.T) {
+	if _, err := exec.LookPath("sleep"); err != nil {
+		t.Skipf("no sleep binary in PATH: %v", err)
+	}
+	original := providerCommandTimeout
+	providerCommandTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { providerCommandTimeout = original })
+
+	deps := buildUploaderDeps()
+
+	start := time.Now()
+	_, code, err := deps.RunCmd("sleep", "5")
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("RunCmd against a command outliving the timeout must return a non-nil error")
+	}
+	if code == 0 {
+		t.Errorf("RunCmd exit code = 0, want non-zero on timeout")
+	}
+	if elapsed > 5*time.Second {
+		t.Errorf("RunCmd took %s — the timeout did not bound the wall time", elapsed)
+	}
+}
+
+// TestUploadEligibilityIsAsyncAndMemoized proves UploadEligibility (a)
+// returns a non-nil tea.Cmd rather than answering synchronously (R3), (b)
+// probes AT MOST ONCE per provider key — two hosts sharing one provider key
+// (github.com and ssh.github.com) record exactly one LookPath and one auth
+// status invocation in total, and (c) a host with no provider key records
+// ZERO invocations (the omitted decision is pure).
+func TestUploadEligibilityIsAsyncAndMemoized(t *testing.T) {
+	b := newBackendForHome(t.TempDir())
+
+	var mu sync.Mutex
+	var lookPathCalls, authStatusCalls []string
+	b.uploaderDeps = uploader.Deps{
+		LookPath: func(name string) (string, error) {
+			mu.Lock()
+			lookPathCalls = append(lookPathCalls, name)
+			mu.Unlock()
+			return "/fake/" + name, nil
+		},
+		RunCmd: func(name string, args ...string) (string, int, error) {
+			mu.Lock()
+			authStatusCalls = append(authStatusCalls, strings.Join(append([]string{name}, args...), " "))
+			mu.Unlock()
+			return "", 0, nil
+		},
+	}
+
+	cmd := b.UploadEligibility("github.com")
+	if cmd == nil {
+		t.Fatal("UploadEligibility must return a non-nil tea.Cmd (R3: never synchronous)")
+	}
+	msg1, ok := cmd().(tuikit.UploadEligibilityMsg)
+	if !ok {
+		t.Fatalf("UploadEligibility() delivered %T, want tuikit.UploadEligibilityMsg", cmd())
+	}
+	if msg1.View.State != tuikit.UploadEligibilityReady {
+		t.Fatalf("first probe State = %v, want Ready", msg1.View.State)
+	}
+
+	cmd2 := b.UploadEligibility("ssh.github.com")
+	msg2, ok := cmd2().(tuikit.UploadEligibilityMsg)
+	if !ok {
+		t.Fatalf("second UploadEligibility() delivered %T, want tuikit.UploadEligibilityMsg", cmd2())
+	}
+	if msg2.Hostname != "ssh.github.com" {
+		t.Errorf("second msg.Hostname = %q, want the original probed hostname %q", msg2.Hostname, "ssh.github.com")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(lookPathCalls) != 1 {
+		t.Errorf("LookPath calls = %v, want exactly 1 (memoized per provider key)", lookPathCalls)
+	}
+	if len(authStatusCalls) != 1 {
+		t.Errorf("auth-status calls = %v, want exactly 1 (memoized per provider key)", authStatusCalls)
+	}
+
+	// A host with no provider key: zero invocations, pure decision.
+	lookPathCalls, authStatusCalls = nil, nil
+	cmd3 := b.UploadEligibility("example.com")
+	msg3, ok := cmd3().(tuikit.UploadEligibilityMsg)
+	if !ok {
+		t.Fatalf("third UploadEligibility() delivered %T, want tuikit.UploadEligibilityMsg", cmd3())
+	}
+	if msg3.View.State != tuikit.UploadEligibilityOmitted {
+		t.Errorf("ungated host State = %v, want Omitted", msg3.View.State)
+	}
+	if len(lookPathCalls) != 0 || len(authStatusCalls) != 0 {
+		t.Errorf("ungated host recorded calls (lookPath=%v auth=%v), want zero", lookPathCalls, authStatusCalls)
+	}
+}
+
+// TestAuthCheckAlwaysReceivesCanonicalHost is the R18 regression, driven
+// end-to-end through the real composition root: realBackend.UploadEligibility
+// with an alt-SSH hostname (ssh.github.com, this project's own recipe shape)
+// must record "auth status --hostname github.com" — never
+// "--hostname ssh.github.com". gh/glab track authentication per canonical
+// web domain, never per SSH endpoint, and this project's alt-SSH recipe
+// (ssh.github.com, port 443) makes that divergence the common case for real
+// identities, not an edge case.
+func TestAuthCheckAlwaysReceivesCanonicalHost(t *testing.T) {
+	b := newBackendForHome(t.TempDir())
+
+	var recordedArgs []string
+	b.uploaderDeps = uploader.Deps{
+		LookPath: func(name string) (string, error) { return "/fake/" + name, nil },
+		RunCmd: func(_ string, args ...string) (string, int, error) {
+			recordedArgs = append(recordedArgs, args...)
+			return "", 0, nil
+		},
+	}
+
+	cmd := b.UploadEligibility("ssh.github.com")
+	msg, ok := cmd().(tuikit.UploadEligibilityMsg)
+	if !ok {
+		t.Fatalf("UploadEligibility() delivered %T, want tuikit.UploadEligibilityMsg", cmd())
+	}
+	if msg.View.State != tuikit.UploadEligibilityReady {
+		t.Fatalf("State = %v, want Ready", msg.View.State)
+	}
+
+	found := false
+	for i, a := range recordedArgs {
+		if a == "--hostname" && i+1 < len(recordedArgs) {
+			if recordedArgs[i+1] != "github.com" {
+				t.Fatalf("--hostname argument = %q, want the canonical %q (never the raw ssh.github.com)", recordedArgs[i+1], "github.com")
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("recorded argv %v never carried --hostname", recordedArgs)
 	}
 }

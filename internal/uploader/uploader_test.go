@@ -2,6 +2,9 @@ package uploader
 
 import (
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"strings"
 	"testing"
 )
@@ -191,7 +194,7 @@ func TestAuthCheck_Authenticated(t *testing.T) {
 	runCmd, _ := recordingRunCmd(0, "")
 	deps := Deps{RunCmd: runCmd}
 
-	if got := AuthCheck("/fake/gh", deps); got != AuthAuthenticated {
+	if got := AuthCheck("/fake/gh", deps, "github.com"); got != AuthAuthenticated {
 		t.Errorf("AuthCheck exit 0: got %d want AuthAuthenticated(%d)", got, AuthAuthenticated)
 	}
 }
@@ -201,8 +204,121 @@ func TestAuthCheck_NotLoggedIn(t *testing.T) {
 	runCmd, _ := recordingRunCmd(1, "")
 	deps := Deps{RunCmd: runCmd}
 
-	if got := AuthCheck("/fake/gh", deps); got != AuthNotLoggedIn {
+	if got := AuthCheck("/fake/gh", deps, "github.com"); got != AuthNotLoggedIn {
 		t.Errorf("AuthCheck exit 1: got %d want AuthNotLoggedIn(%d)", got, AuthNotLoggedIn)
+	}
+}
+
+// TestAuthCheckPassesHostname asserts the exact argv AuthCheck sends —
+// "auth status --hostname <canonicalHost>", NEVER a bare "auth status"
+// (D-14: a bare auth status checks ALL hosts, wrong in both directions).
+func TestAuthCheckPassesHostname(t *testing.T) {
+	runCmd, calls := recordingRunCmd(0, "")
+	deps := Deps{RunCmd: runCmd}
+
+	AuthCheck("/fake/gh", deps, "github.com")
+
+	if len(*calls) != 1 {
+		t.Fatalf("RunCmd call count: got %d want 1", len(*calls))
+	}
+	want := []string{"auth", "status", "--hostname", "github.com"}
+	assertArgs(t, (*calls)[0].name, (*calls)[0].args, "/fake/gh", want)
+}
+
+// ---- TestProviderForHostname -----------------------------------------------
+
+// TestProviderForHostnameMatchesHostBoundaries is R2's regression test: a
+// future strings.Contains reimplementation of the provider gate must fail
+// this table. Positive cases cover the main domain and real subdomains
+// (including this project's own alt-SSH aliases); negative cases cover
+// every host that merely CONTAINS a provider's name without being a genuine
+// subdomain of it.
+func TestProviderForHostnameMatchesHostBoundaries(t *testing.T) {
+	cases := []struct {
+		host, wantProvider, wantCanonical string
+	}{
+		{"github.com", "github", "github.com"},
+		{"ssh.github.com", "github", "github.com"},
+		{"personal.github.com", "github", "github.com"},
+		{"GitHub.com", "github", "github.com"},
+		{"github.com.", "github", "github.com"},
+		{"github.com:443", "github", "github.com"},
+		{"gitlab.com", "gitlab", "gitlab.com"},
+		{"altssh.gitlab.com", "gitlab", "gitlab.com"},
+		{"github.example.com", "", ""},
+		{"notgithub.com", "", ""},
+		{"mygithub.com", "", ""},
+		{"github.com.evil.net", "", ""},
+		{"gitlab.example.org", "", ""},
+		{"git.internal.example", "", ""},
+	}
+	for _, c := range cases {
+		gotProvider, gotCanonical := ProviderForHostname(c.host)
+		if gotProvider != c.wantProvider || gotCanonical != c.wantCanonical {
+			t.Errorf("ProviderForHostname(%q) = (%q, %q), want (%q, %q)",
+				c.host, gotProvider, gotCanonical, c.wantProvider, c.wantCanonical)
+		}
+		if c.wantProvider != "" && c.host != c.wantCanonical {
+			// Every subdomain/alias case must differ from its canonical
+			// answer — only the bare canonical domain itself may equal it.
+			if gotCanonical == c.host {
+				t.Errorf("ProviderForHostname(%q) canonical host echoed the input; want the canonical %q", c.host, c.wantCanonical)
+			}
+		}
+	}
+}
+
+// ---- TestDetectFor ----------------------------------------------------------
+
+// TestDetectForNeverCrossRoutes is D-11's never-cross-route regression: a
+// fake reporting glab present+authenticated and gh absent must still make
+// DetectFor("github", ...) answer AuthToolNotFound, and glab must never
+// appear in the recorded LookPath calls.
+func TestDetectForNeverCrossRoutes(t *testing.T) {
+	var lookedUp []string
+	deps := Deps{
+		LookPath: func(name string) (string, error) {
+			lookedUp = append(lookedUp, name)
+			if name == "glab" {
+				return "/fake/glab", nil
+			}
+			return "", &notFoundError{name: name}
+		},
+		RunCmd: func(_ string, _ ...string) (string, int, error) { return "", 0, nil },
+	}
+
+	tool, path, status := DetectFor("github", deps)
+	if status != AuthToolNotFound {
+		t.Errorf("DetectFor(github): status = %d, want AuthToolNotFound(%d)", status, AuthToolNotFound)
+	}
+	if tool != 0 || path != "" {
+		t.Errorf("DetectFor(github): tool=%d path=%q, want zero values on not-found", tool, path)
+	}
+	for _, name := range lookedUp {
+		if name == "glab" {
+			t.Fatalf("DetectFor(github) must never LookPath(glab); recorded calls: %v", lookedUp)
+		}
+	}
+}
+
+// TestDetectForUnknownProviderNeverProbes verifies that an unknown/empty
+// provider key never calls LookPath at all — the omitted decision is pure.
+func TestDetectForUnknownProviderNeverProbes(t *testing.T) {
+	var lookedUp []string
+	deps := Deps{
+		LookPath: func(name string) (string, error) {
+			lookedUp = append(lookedUp, name)
+			return "/fake/" + name, nil
+		},
+		RunCmd: func(_ string, _ ...string) (string, int, error) { return "", 0, nil },
+	}
+
+	_, _, status := DetectFor("", deps)
+	if status != AuthToolNotFound {
+		t.Errorf("DetectFor(\"\"): status = %d, want AuthToolNotFound(%d)", status, AuthToolNotFound)
+	}
+	if len(lookedUp) != 0 {
+		t.Errorf("DetectFor(\"\") must not call LookPath; recorded calls: %v", lookedUp)
 	}
 }
 
@@ -328,6 +444,34 @@ func TestCommandPreview_GHEqualsRunCmd(t *testing.T) {
 	}
 }
 
+// TestUploadShownEqualsRun is the named UP-02 regression: the space-joined
+// tail of CommandPreview's output must equal the recorded RunCmd invocation
+// for the same inputs — buildArgs is the ONE function behind both, so
+// shown==run is structural rather than merely asserted per test case.
+func TestUploadShownEqualsRun(t *testing.T) {
+	runCmd, calls := recordingRunCmd(0, "")
+	deps := Deps{RunCmd: runCmd}
+
+	pubPath := "~/.ssh/id_ed25519.pub"
+	title := "gitid: acme @ my-machine"
+	keyType := KeyAuthentication
+	toolPath := "/fake/gh"
+
+	preview := CommandPreview(ToolGH, toolPath, pubPath, title, keyType)
+	if _, err := UploadKey(ToolGH, toolPath, pubPath, title, keyType, deps); err != nil {
+		t.Fatalf("UploadKey: unexpected error: %v", err)
+	}
+
+	if len(*calls) != 1 {
+		t.Fatalf("RunCmd call count: got %d want 1", len(*calls))
+	}
+	c := (*calls)[0]
+	runStr := strings.Join(append([]string{c.name}, c.args...), " ")
+	if preview != runStr {
+		t.Errorf("shown command != run command:\n  preview: %q\n  run:     %q", preview, runStr)
+	}
+}
+
 // TestCommandPreview_GLab verifies the glab form of the preview string.
 func TestCommandPreview_GLab(t *testing.T) {
 	preview := CommandPreview(ToolGLab, "/fake/glab", "~/.ssh/id_ed25519.pub", "gitid: work", GLabKeyTypeForAuth)
@@ -369,4 +513,53 @@ func safeGet(s []string, i int) string {
 		return s[i]
 	}
 	return "<missing>"
+}
+
+// TestProviderForHostnameContainsNoUnanchoredSubstringTest is R2's source-
+// level guard: it parses THIS package's own uploader.go, isolates
+// ProviderForHostname's function body (and ONLY that body — comment lines
+// are stripped by go/parser itself, so prose about the review can never
+// satisfy or trip this), and fails if that body calls strings.Contains
+// directly. The gate must be built from equality plus a dot-anchored
+// suffix test (isMainDomainOrSubdomain), never an unanchored containment
+// predicate — a future `strings.Contains(host, "github")` reimplementation
+// fails this test even though TestProviderForHostnameMatchesHostBoundaries
+// might still pass on an incomplete case table.
+func TestProviderForHostnameContainsNoUnanchoredSubstringTest(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "uploader.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parsing uploader.go: %v", err)
+	}
+
+	var fn *ast.FuncDecl
+	ast.Inspect(file, func(n ast.Node) bool {
+		if f, ok := n.(*ast.FuncDecl); ok && f.Name.Name == "ProviderForHostname" {
+			fn = f
+			return false
+		}
+		return true
+	})
+	if fn == nil || fn.Body == nil {
+		t.Fatal("ProviderForHostname not found in uploader.go — has it been renamed?")
+	}
+
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		pkg, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		if pkg.Name == "strings" && sel.Sel.Name == "Contains" {
+			t.Error("ProviderForHostname's body calls strings.Contains directly — R2 requires equality + a dot-anchored suffix test (isMainDomainOrSubdomain), never an unanchored containment predicate")
+		}
+		return true
+	})
 }

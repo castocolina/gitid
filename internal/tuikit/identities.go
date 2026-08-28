@@ -144,15 +144,59 @@ const (
 	wizardFocusKeySource  = sshFieldPort + 1
 	wizardFocusKeyBody    = wizardFocusKeySource + 1
 	wizardFocusManualPath = wizardFocusKeyBody + 1
+	// wizardFocusUploadCheckbox is the D-01 auto-upload checkbox's focus
+	// slot (Phase 9). Appended at the END of the const block, not inserted
+	// between Port and KeySource where it renders VISUALLY — so no
+	// existing focus constant changes its numeric value and every literal
+	// comparison against wizardFocusKeySource/KeyBody/ManualPath elsewhere
+	// in this file stays correct (09-RESEARCH.md Pitfall 2 avoided rather
+	// than merely survived). wizardStep0FocusOrder (below) is what makes
+	// the value's VISUAL position independent of its declaration order.
+	wizardFocusUploadCheckbox = wizardFocusManualPath + 1
 )
 
-// wizardStep0FocusRing is the step-0 Tab ring size: one slot longer while
-// reusing a key, since the manual-path text input joins the ring only then.
-func wizardStep0FocusRing(keySource int) int {
-	if keySource == keySourceReuse {
-		return wizardFocusManualPath + 1
+// wizardStep0FocusOrder is the step-0 Tab ring, in VISUAL order — the ring
+// is no longer a dense integer range once a slot (the upload checkbox) is
+// conditional, and tracking a count and an order in two places is exactly
+// the parallel-value desync this file already carries elsewhere
+// (09-RESEARCH.md Pitfall 2). uploadRowVisible controls whether the
+// checkbox slot joins the ring at all; keySource controls whether the
+// manual-path slot does. This REPLACES the former wizardStep0FocusRing,
+// whose modulo arithmetic could not express a conditional middle slot.
+func wizardStep0FocusOrder(keySource int, uploadRowVisible bool) []int {
+	order := []int{sshFieldPrefix, sshFieldHost, sshFieldHostname, sshFieldPort}
+	if uploadRowVisible {
+		order = append(order, wizardFocusUploadCheckbox)
 	}
-	return wizardFocusKeyBody + 1
+	order = append(order, wizardFocusKeySource, wizardFocusKeyBody)
+	if keySource == keySourceReuse {
+		order = append(order, wizardFocusManualPath)
+	}
+	return order
+}
+
+// stepAdvance returns the neighbour of current in order, delta steps away
+// (1 = next/Tab, -1 = previous/Shift+Tab), wrapping around either end.
+// When current is not present in order — the transition case where the
+// upload checkbox disappears while it holds focus — it falls back to
+// order[0] rather than panicking or leaving focus stuck on a vanished slot.
+func stepAdvance(order []int, current, delta int) int {
+	n := len(order)
+	if n == 0 {
+		return current
+	}
+	idx := -1
+	for i, v := range order {
+		if v == current {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return order[0]
+	}
+	idx = ((idx+delta)%n + n) % n
+	return order[idx]
 }
 
 // catalogAlgorithmTokens are the OpenSSH wire-type tokens
@@ -1045,7 +1089,12 @@ var wizardSteps = []string{"SSH details", "Test connection", "Git identity", "Re
 
 // Test phases (wizard state 2).
 const (
-	testIdle     = "idle"
+	testIdle = "idle"
+	// testUpload is the Phase 9 (UP-02/UP-03) autonomous-upload sub-beat:
+	// entered from testIdle when the D-01 checkbox is checked, and exited
+	// (with no user keystroke, D-02) straight into testRunning1 once the
+	// upload's UploadRunMsg arrives.
+	testUpload   = "upload"
 	testRunning1 = "running1"
 	testStage1   = "stage1"
 	testRunning2 = "running2"
@@ -1092,6 +1141,22 @@ type wizardModel struct {
 	ceremony           ceremonyModel
 	collisionTarget    DemoIdentity
 	hasCollisionTarget bool
+
+	// uploadEligibility/uploadEligibilityHost/uploadChecked/uploadRun are
+	// the Phase 9 (UP-02/UP-03) autonomous-upload state. uploadEligibility
+	// is the LAST answer Backend.UploadEligibility delivered;
+	// uploadEligibilityHost is the host that answer was dispatched FOR
+	// (the stale-guard key). uploadChecked is the D-01 checkbox's boolean
+	// state — the wizard's own, independent of uploadEligibility.State, so
+	// a user who explicitly checks an Unauth row keeps it checked even
+	// though the row is not Ready. uploadRun is the testUpload beat's
+	// rendered result once UploadRunMsg has arrived. Nothing here persists
+	// across wizard steps beyond uploadChecked itself (D-18: no persisted
+	// upload state).
+	uploadEligibility     UploadEligibilityView
+	uploadEligibilityHost string
+	uploadChecked         bool
+	uploadRun             UploadRunView
 }
 
 // newWizardBase builds the wizard's shared shell — every field newWizard AND
@@ -1397,6 +1462,69 @@ func (w wizardModel) gitSpec() GitSpec {
 	spec.SSHHost = w.form.sshHost()
 	spec.Provider = w.form.providerHost()
 	return spec
+}
+
+// wizardGatedHostnames mirrors internal/uploader.ProviderForHostname's D-13
+// main-domain gate BY VALUE ONLY — this package never imports
+// internal/uploader (the no-backend-import rule). It answers the single
+// pure question "does this hostname's provider key differ from the one the
+// wizard last probed eligibility for" so Update can decide whether to
+// dispatch a NEW Backend.UploadEligibility probe, without ever calling
+// exec.LookPath or a subprocess itself (R3: eligibility resolution stays
+// off the render path AND off this pure gate).
+func wizardProviderKeyForHostname(hostname string) string {
+	host := strings.ToLower(strings.TrimSpace(hostname))
+	host = strings.TrimSuffix(host, ".")
+	switch {
+	case host == "github.com" || strings.HasSuffix(host, ".github.com"):
+		return "github"
+	case host == "gitlab.com" || strings.HasSuffix(host, ".gitlab.com"):
+		return "gitlab"
+	default:
+		return ""
+	}
+}
+
+// uploadRowVisible reports whether the D-01 checkbox row should render at
+// all right now: the current SSH form's implied provider must be one of
+// D-13's gated main domains AND the wizard must hold a NON-omitted
+// eligibility answer for a host of that SAME provider key. Until the async
+// probe for a newly-gated provider lands, uploadEligibility is the zero
+// value (Omitted) — checkUploadEligibility resets it there before
+// dispatching a new probe — so the row is simply absent, never a
+// placeholder, during the in-flight gap.
+func (w wizardModel) uploadRowVisible() bool {
+	if wizardProviderKeyForHostname(w.form.providerHost()) == "" {
+		return false
+	}
+	return w.uploadEligibility.State != UploadEligibilityOmitted
+}
+
+// checkUploadEligibility re-derives the provider key implied by the form's
+// CURRENT hostname and, when it differs from the provider key the wizard's
+// cached eligibility answer was probed for, dispatches a fresh
+// Backend.UploadEligibility probe — called from Update (never View, R3), so
+// no subprocess work ever runs on the render path. Returns the (possibly
+// unchanged) wizard plus a nil cmd when no new probe is needed.
+func (w wizardModel) checkUploadEligibility() (wizardModel, tea.Cmd) {
+	host := w.form.providerHost()
+	wantKey := wizardProviderKeyForHostname(host)
+	haveKey := wizardProviderKeyForHostname(w.uploadEligibilityHost)
+	if wantKey == haveKey && w.uploadEligibilityHost != "" {
+		return w, nil
+	}
+	// The provider key changed (including to/from "not gated") — reset to
+	// the zero value (Omitted) so the checkbox row disappears immediately
+	// rather than showing a stale answer for the PREVIOUS host while a new
+	// probe (if any) is in flight.
+	w.uploadEligibility = UploadEligibilityView{}
+	w.uploadEligibilityHost = host
+	if wantKey == "" {
+		// Not a gated provider: the omitted answer is pure — no subprocess,
+		// no dispatch needed.
+		return w, nil
+	}
+	return w, w.backend.UploadEligibility(host)
 }
 
 // algo is the selected key algorithm id.
@@ -2067,6 +2195,25 @@ func (m identitiesModel) handleMsg(msg tea.Msg, s DemoState) keyResult {
 	if m.pane != paneCreate {
 		return keyResult{model: m}
 	}
+	if elig, ok := msg.(UploadEligibilityMsg); ok {
+		// Stale-guard (mirrors the existing KeyCommitMsg idiom): discard any
+		// reply whose Hostname no longer matches the host the wizard most
+		// recently dispatched a probe for — the user may have changed the
+		// host before this async answer arrived.
+		if elig.Hostname == m.wizard.uploadEligibilityHost {
+			m.wizard.uploadEligibility = elig.View
+			m.wizard.uploadChecked = elig.View.State == UploadEligibilityReady
+		}
+		return keyResult{model: m}
+	}
+	if run, ok := msg.(UploadRunMsg); ok && m.wizard.testPhase == testUpload {
+		// D-02: no prompt, no cancel timer, no actionable key — the upload
+		// beat renders its result row(s) and auto-advances into the
+		// EXISTING testRunning1 -> TestStage1 gate with NO user keystroke.
+		m.wizard.uploadRun = run.View
+		m.wizard.testPhase = testRunning1
+		return keyResult{model: m, cmd: m.wizard.backend.TestStage1(m.wizard.spec())}
+	}
 	if stage, ok := msg.(WizardStageMsg); ok {
 		switch {
 		case stage.Stage == 1 && m.wizard.testPhase == testRunning1:
@@ -2163,8 +2310,9 @@ func (m identitiesModel) handleDetailKey(msg tea.KeyMsg, s DemoState) keyResult 
 		return keyResult{model: m, handled: true}
 	case "n":
 		m.pane = paneCreate
-		m.wizard = newWizard(m.backend)
-		return keyResult{model: m, handled: true}
+		w, cmd := newWizard(m.backend).checkUploadEligibility()
+		m.wizard = w
+		return keyResult{model: m, handled: true, cmd: cmd}
 	case "e":
 		if !ok {
 			return keyResult{model: m, handled: true}
@@ -2786,8 +2934,9 @@ func (m identitiesModel) handleCloneKey(msg tea.KeyMsg, s DemoState) keyResult {
 			return keyResult{model: m, handled: true}
 		}
 		m.pane = paneCreate
-		m.wizard = newWizardPrefilled(m.backend, pre)
-		return keyResult{model: m, handled: true}
+		w, cmd := newWizardPrefilled(m.backend, pre).checkUploadEligibility()
+		m.wizard = w
+		return keyResult{model: m, handled: true, cmd: cmd}
 	default:
 		// ←/→ on the single Clone button have no adjacent button; typing
 		// only reaches the name input while it is the focused slot.
@@ -3078,6 +3227,27 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 
 	switch w.step {
 	case 0:
+		// D-01 checkbox toggles, hoisted above the key switch (mirroring the
+		// Shift+←/→ hoist above): `space` toggles ONLY while the checkbox
+		// row itself is focused; `u` toggles from any NON-text-editing slot
+		// (focus > sshFieldPort — key-source/key-body/manual-path), but
+		// while a text field owns focus it must type a literal `u` instead
+		// of flipping the checkbox out from under the user's typing.
+		if key == "space" && w.focus == wizardFocusUploadCheckbox {
+			w.uploadChecked = !w.uploadChecked
+			m.wizard = w
+			return keyResult{model: m, handled: true}
+		}
+		if key == "u" && w.focus > sshFieldPort && (w.focus != wizardFocusManualPath || w.keySource != keySourceReuse) {
+			// The D-10 manual-path row (when reusing a key) is ALSO a
+			// text-editing slot above sshFieldPort — excluded here so
+			// typing a path containing the letter "u" (e.g.
+			// "/manual/id_ed25519_manual") is never intercepted as the
+			// checkbox hotkey.
+			w.uploadChecked = !w.uploadChecked
+			m.wizard = w
+			return keyResult{model: m, handled: true}
+		}
 		switch key {
 		case "esc":
 			m.pane = paneDetail
@@ -3100,19 +3270,23 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			}
 			return keyResult{model: m, handled: true}
 		case "tab", "down":
-			ring := wizardStep0FocusRing(w.keySource)
-			w.focus = (w.focus + 1) % ring
+			order := wizardStep0FocusOrder(w.keySource, w.uploadRowVisible())
+			w.focus = stepAdvance(order, w.focus, 1)
 			w = w.focusStep0(w.focus)
 			m.wizard = w
 			return keyResult{model: m, handled: true}
 		case "shift+tab", "up":
-			ring := wizardStep0FocusRing(w.keySource)
-			w.focus = (w.focus + ring - 1) % ring
+			order := wizardStep0FocusOrder(w.keySource, w.uploadRowVisible())
+			w.focus = stepAdvance(order, w.focus, -1)
 			w = w.focusStep0(w.focus)
 			m.wizard = w
 			return keyResult{model: m, handled: true}
 		case "left", "right":
 			switch w.focus {
+			case wizardFocusUploadCheckbox: // D-01: left/right also toggles, mirroring wizardFocusKeySource
+				w.uploadChecked = !w.uploadChecked
+				m.wizard = w
+				return keyResult{model: m, handled: true}
 			case wizardFocusKeySource: // D-10: generate ↔ reuse toggle
 				if w.keySource == keySourceGenerate {
 					w.keySource = keySourceReuse
@@ -3148,9 +3322,11 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			}
 			fallthrough
 		default:
+			var uploadCmd tea.Cmd
 			switch {
 			case w.focus <= sshFieldPort:
 				w.form = w.form.handleEdit(msg, w.focus)
+				w, uploadCmd = w.checkUploadEligibility()
 			case w.focus == wizardFocusManualPath && w.keySource == keySourceReuse:
 				var changed bool
 				w.manualPath, changed = updateInput(w.manualPath, msg)
@@ -3159,7 +3335,7 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 				}
 			}
 			m.wizard = w
-			return keyResult{model: m, handled: true}
+			return keyResult{model: m, handled: true, cmd: uploadCmd}
 		}
 	case 1:
 		if w.proof.Text != "" {
@@ -3233,6 +3409,16 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 		case "enter":
 			switch w.testPhase {
 			case testIdle:
+				if w.uploadChecked {
+					// UP-02/UP-03: the checkbox is checked — enter the
+					// autonomous upload sub-beat instead of stage 1
+					// directly. UploadRunMsg's handler (handleMsg) is what
+					// dispatches TestStage1 next, with no further keystroke
+					// (D-02).
+					w.testPhase = testUpload
+					m.wizard = w
+					return keyResult{model: m, handled: true, cmd: w.backend.RunUpload(w.spec())}
+				}
 				w.testPhase = testRunning1
 				m.wizard = w
 				return keyResult{model: m, handled: true, cmd: w.backend.TestStage1(w.spec())}
@@ -3660,11 +3846,36 @@ func hitStrategyRow(body string, x, y int, gitDir string) (int, bool) {
 	return 0, false
 }
 
+// uploadCheckboxRowLabelPrefixes are the anchored-match prefixes shared by
+// the checkbox row's three possible labels (Ready/Unauth share "Register
+// with", Disabled has its own) — hitUploadCheckboxRow uses these so a click
+// anywhere on the row focuses+toggles it regardless of which eligibility
+// state is currently rendered (checkpoint-2 D8, mirroring gitFormFieldSlots'
+// label-anchored click-to-focus for every other form row).
+var uploadCheckboxRowLabelPrefixes = []string{"Register with", "Auto-registration unavailable"}
+
+// hitUploadCheckboxRow reports whether (x, y) falls on the D-01 checkbox
+// row, whichever eligibility-state label is currently rendered.
+func hitUploadCheckboxRow(body string, x, y int) bool {
+	for _, label := range uploadCheckboxRowLabelPrefixes {
+		if hitFieldRow(body, x, y, label) {
+			return true
+		}
+	}
+	return false
+}
+
 // handleWizardClick resolves the wizard's per-step field/radio/button clicks.
 func (m identitiesModel) handleWizardClick(body string, x, y int, s DemoState) keyResult {
 	w := m.wizard
 	switch w.step {
 	case 0:
+		if hitUploadCheckboxRow(body, x, y) {
+			w.focus = wizardFocusUploadCheckbox
+			w.uploadChecked = !w.uploadChecked
+			m.wizard = w
+			return keyResult{model: m, handled: true}
+		}
 		if slot, ok := hitAnyFieldRow(body, x, y, sshFormFieldSlots); ok {
 			w.focus = slot
 			w.form = w.form.setFocus(slot)
@@ -3947,6 +4158,38 @@ func wizardChordHint(step int) string {
 	}
 }
 
+// renderUploadCheckboxRow renders the D-01 auto-upload checkbox — ONE row
+// (09-UI-SPEC.md's first Focal point forbids a stacked second line), as the
+// last row of the SSH form, immediately after Port. It renders nothing at
+// all when uploadRowVisible is false (the omitted shape: no row, not an
+// empty placeholder) — the row simply appears once the async eligibility
+// answer lands (checkUploadEligibility, called from Update, never View).
+func (w wizardModel) renderUploadCheckboxRow() string {
+	if !w.uploadRowVisible() {
+		return ""
+	}
+	marker := "  "
+	if w.focus == wizardFocusUploadCheckbox {
+		marker = styleBold.Render("▸ ")
+	}
+	check := glyphCheckOff
+	if w.uploadChecked {
+		check = glyphCheckOn
+	}
+	var label string
+	switch w.uploadEligibility.State {
+	case UploadEligibilityReady:
+		label = fmt.Sprintf(UploadCheckboxLabelReadyFmt, w.uploadEligibility.ProviderName)
+	case UploadEligibilityUnauth:
+		label = fmt.Sprintf(UploadCheckboxLabelUnauthFmt, w.uploadEligibility.ProviderName, w.uploadEligibility.Hostname, w.uploadEligibility.ToolName)
+	case UploadEligibilityDisabled:
+		label = fmt.Sprintf(UploadCheckboxLabelDisabledFmt, w.uploadEligibility.ProviderName)
+	default:
+		return ""
+	}
+	return " " + marker + check + " " + label + "\n"
+}
+
 // renderKeyBody renders the D-10 key-source choice and whichever body
 // follows it — the algorithm radios (generate) or the reuse picker (reuse)
 // — under ONE combined header row (row-budget trap, 02-STYLE-SPEC.md §7): a
@@ -4157,9 +4400,32 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 			hostHelper = "Manually edited — auto-join off"
 		}
 		b.WriteString(w.form.view(w.focus, prefixError, hostHelper, valErr))
+		b.WriteString(w.renderUploadCheckboxRow())
 		b.WriteString(w.renderKeyBody())
 		b.WriteString(renderHostBlockPreview(m.backend, w.form.sshHost(), w.form.hostname.Value(), w.form.port.Value(), w.keyPath(), width))
 	case 1:
+		if w.testPhase == testUpload {
+			// D-02: announce-and-do — one Running: line per attempted
+			// registration, using the SAME faint command styling
+			// renderStageOutcome/PreviewBlock use, then (once uploadRun.Rows
+			// is populated) one result row per registration. No prompt, no
+			// actionable key here (wizardFooter returns nil for this
+			// phase) — the beat auto-advances on its own.
+			for _, row := range w.uploadRun.Rows {
+				b.WriteString(" " + styleFaint.Render(fmt.Sprintf(UploadRunningLineFmt, row.Command)) + "\n")
+			}
+			for _, row := range w.uploadRun.Rows {
+				switch row.Outcome {
+				case UploadRowUploaded:
+					b.WriteString(" " + styleHealthy.Render(fmt.Sprintf(UploadResultOKFmt, row.Label)) + "\n")
+				case UploadRowAlreadyPresent:
+					b.WriteString(" " + styleHealthy.Render(fmt.Sprintf(UploadResultSkippedFmt, row.Label)) + "\n")
+				case UploadRowFailed:
+					b.WriteString(" " + styleError.Render(fmt.Sprintf(UploadResultFailedFmt, row.Label, row.Reason)) + "\n")
+				}
+			}
+			return b.String()
+		}
 		if w.proof.Text != "" {
 			b.WriteString(" " + styleFaint.Render("Demo failure control — locked (nothing left to simulate)") + "\n")
 			switch w.testPhase {
@@ -4509,6 +4775,13 @@ func (m identitiesModel) wizardFooter(s DemoState) []FooterAction {
 		switch w.testPhase {
 		case testIdle:
 			return []FooterAction{{Key: "Enter", Label: "run stage 1"}, {Key: "space", Label: "toggle failure demo"}}
+		case testUpload:
+			// D-02/D-10: the archived POC's per-key Enter/skip prompt queue
+			// is NOT reproduced here — UP-03 requires the upload beat to
+			// announce, run, and auto-advance with NO actionable key, so
+			// this branch deliberately returns nil rather than offering a
+			// keystroke that does not exist.
+			return nil
 		case testFailed:
 			// D-03 is warning-only — a hard Failure never offers copy public
 			// key, only retry.

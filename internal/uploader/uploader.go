@@ -4,15 +4,19 @@
 // is testable without real binaries on PATH.
 //
 // Design constraints (AUTOUP-01):
-//   - Detect-then-prompt only: this package never drives an interactive login,
-//     never auto-uploads, and never gates create or the test loop. Callers
-//     decide per-key with explicit confirmation (D-11, D-12).
 //   - All subprocess invocations use explicit arg slices (no sh -c) and go
 //     through Deps.RunCmd so unit tests can record calls without a real binary.
-//   - The live RunCmd closure (wrapping exec.Command + *exec.ExitError) is NOT
-//     defined here. It is wired in Plan 06 in two places:
-//     tui/deps.go buildTUIUploaderDeps (TUI surface) and
-//     cmd/gitid/copy.go buildUploaderDeps (CLI surface). (REVIEWS.md #11)
+//   - The live RunCmd closure (wrapping exec.Command + *exec.ExitError) is
+//     wired in cmd/gitid/wiring.go's buildUploaderDeps — the ONE wiring site
+//     (the earlier "tui/deps.go" / "cmd/gitid/copy.go" split named above was
+//     the pre-Phase-9-tracer POC layout; both are archived).
+//   - Phase 9 (UP-02/UP-03, D-01/D-02) supersedes the former "never
+//     auto-uploads" constraint this comment used to state: when the detected
+//     tool is present, authenticated for the identity's canonical host, and
+//     the user has not opted out, the create wizard drives UploadKey
+//     autonomously — announce-then-run, never a per-key interactive prompt.
+//     Detection and auth-checking stay exactly as conservative as before;
+//     only the "must a human explicitly trigger every upload" rule changed.
 package uploader
 
 import (
@@ -20,6 +24,96 @@ import (
 	"fmt"
 	"strings"
 )
+
+// Canonical main-domain hosts D-13 gates autonomous upload to. Declared as
+// constants (not inlined into ProviderForHostname) so the equality test and
+// the dot-anchored suffix test can never independently drift apart.
+const (
+	githubMainDomain = "github.com"
+	gitlabMainDomain = "gitlab.com"
+)
+
+// ProviderForHostname implements D-13's "v1.0 autonomous upload is gated to
+// github.com / gitlab.com hosts only" rule with HOST-BOUNDARY matching —
+// never an unanchored substring test. A prior draft of this function used
+// strings.Contains(host, "github"), which the cross-AI review (R2) found
+// would misclassify github.example.com, notgithub.com, mygithub.com, and
+// github.com.evil.net as GitHub — pointing an autonomous key upload at the
+// wrong (or an attacker-controlled) provider.
+//
+// Decision-conflict resolution recorded here (R2): D-11's "lowercase
+// substring match, same convention as upload.Instructions" describes the
+// PROVIDER-KEY convention — upload.Instructions receives a provider token
+// ("github"), never a hostname, and DetectFor (below) is where that
+// never-cross-route rule lives. This function implements the SEPARATE,
+// stricter D-13 HOSTNAME gate: exact match on the canonical domain, or a
+// proper dot-anchored subdomain of it.
+//
+// Returns the provider key ("github"/"gitlab") and the CANONICAL host
+// ("github.com"/"gitlab.com") — never an echo of the input. Callers (R18/the
+// review's canonical-host regression) MUST pass this canonical host, not the
+// raw hostname, to AuthCheck: gh/glab track authentication per canonical web
+// domain, never per the SSH endpoint an identity happens to connect through,
+// and this project's own alt-SSH recipe (ssh.github.com, port 443) makes
+// that divergence the COMMON case for real identities, not an edge case.
+//
+// Anything that is neither of the two main domains nor a subdomain of one —
+// including a host that merely CONTAINS a provider's name — returns ("", "")
+// so the caller falls back to the manual instructions path.
+func ProviderForHostname(hostname string) (provider, canonicalHost string) {
+	host := normalizeHostname(hostname)
+	if host == "" {
+		return "", ""
+	}
+	if isMainDomainOrSubdomain(host, githubMainDomain) {
+		return "github", githubMainDomain
+	}
+	if isMainDomainOrSubdomain(host, gitlabMainDomain) {
+		return "gitlab", gitlabMainDomain
+	}
+	return "", ""
+}
+
+// normalizeHostname lowercases hostname, trims surrounding whitespace, drops
+// a trailing dot, and drops a trailing ":port" suffix — so
+// "GitHub.com", "github.com.", and "github.com:443" all normalize to the
+// same comparable value.
+func normalizeHostname(hostname string) string {
+	host := strings.ToLower(strings.TrimSpace(hostname))
+	host = strings.TrimSuffix(host, ".")
+	if idx := strings.LastIndex(host, ":"); idx >= 0 {
+		// Only strip a trailing :port — never touch a bare IPv6 literal
+		// (this package never receives one; provider hostnames are always
+		// DNS names), and never strip when nothing follows the colon.
+		if port := host[idx+1:]; port != "" && isAllDigits(port) {
+			host = host[:idx]
+		}
+	}
+	return host
+}
+
+// isAllDigits reports whether s is a non-empty run of ASCII digits.
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// isMainDomainOrSubdomain reports whether host equals mainDomain or ends
+// with "."+mainDomain — the dot-anchored suffix test that keeps
+// "github.example.com" and "notgithub.com" from matching "github.com".
+func isMainDomainOrSubdomain(host, mainDomain string) bool {
+	if host == mainDomain {
+		return true
+	}
+	return strings.HasSuffix(host, "."+mainDomain)
+}
 
 // Deps holds all external effects. Build live in tui/deps.go;
 // pass fakes in tests. Every function field must be non-nil (wiring guard in
@@ -84,6 +178,13 @@ const (
 // probes auth status for the first tool found, and returns the tool identifier,
 // its resolved path, and the auth status.
 //
+// Deprecated: Detect is the D-11 first-found router this package's Phase-9
+// wiring no longer calls — a caller that knows the identity's PROVIDER (from
+// ProviderForHostname) must route through DetectFor instead, which never
+// cross-routes a GitHub identity's key to an authenticated glab or vice
+// versa. Kept only until Phase 9's tracer wave lands its own callers; slated
+// for removal once nothing references it.
+//
 // Return values when neither tool is found: (0, "", AuthToolNotFound).
 // The tool constant (first return) is meaningful only when status != AuthToolNotFound.
 func Detect(deps Deps) (tool Tool, toolPath string, status AuthStatus) {
@@ -104,12 +205,50 @@ func Detect(deps Deps) (tool Tool, toolPath string, status AuthStatus) {
 	return 0, "", AuthToolNotFound
 }
 
+// DetectFor resolves the ONE tool that matches provider ("github" or
+// "gitlab", as ProviderForHostname returns) and looks up ONLY that tool —
+// D-11's never-cross-route rule enforced structurally rather than by
+// convention. A GitHub identity never probes glab even when glab is present
+// and authenticated and gh is not; a GitLab identity never probes gh.
+//
+// It does NOT probe auth status — callers call AuthCheck separately with the
+// CANONICAL host ProviderForHostname returned, never a raw input host (R18).
+// The returned status is provisional: AuthAuthenticated is never returned
+// here, because auth is not checked; a successful LookPath returns
+// AuthNotLoggedIn as a placeholder the caller immediately refines via
+// AuthCheck. An unknown provider, or a provider whose tool is absent from
+// PATH, returns (0, "", AuthToolNotFound) — and for an unknown provider key,
+// LookPath is never called at all.
+func DetectFor(provider string, deps Deps) (tool Tool, toolPath string, status AuthStatus) {
+	var name string
+	switch provider {
+	case "github":
+		name = "gh"
+	case "gitlab":
+		name = "glab"
+	default:
+		return 0, "", AuthToolNotFound
+	}
+	p, err := deps.LookPath(name)
+	if err != nil {
+		return 0, "", AuthToolNotFound
+	}
+	return toolForName(name), p, AuthNotLoggedIn
+}
+
 // AuthCheck probes the authentication status of toolPath by running
-// "<toolPath> auth status" and returning the corresponding AuthStatus.
-// It does not check whether the tool exists on PATH; callers that need
-// both detection and auth should use Detect.
-func AuthCheck(toolPath string, deps Deps) AuthStatus {
-	_, code, _ := deps.RunCmd(toolPath, "auth", "status")
+// "<toolPath> auth status --hostname <canonicalHost>" and returning the
+// corresponding AuthStatus. D-14 is explicit that a bare "auth status"
+// checks ALL hosts — wrong in both directions — so canonicalHost is
+// required, never optional. canonicalHost MUST be the value
+// ProviderForHostname's second return produced, never the raw wizard-
+// supplied hostname (R18): gh/glab track authentication per canonical web
+// domain, not per SSH endpoint, and this project's alt-SSH recipe
+// (ssh.github.com, port 443) makes that divergence the common case for real
+// identities. It does not check whether the tool exists on PATH; callers
+// that need both detection and auth should use DetectFor first.
+func AuthCheck(toolPath string, deps Deps, canonicalHost string) AuthStatus {
+	_, code, _ := deps.RunCmd(toolPath, "auth", "status", "--hostname", canonicalHost)
 	if code == 0 {
 		return AuthAuthenticated
 	}

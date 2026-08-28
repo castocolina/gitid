@@ -535,6 +535,40 @@ func (stubBackend) CommitGit(GitSpec) tea.Cmd {
 }
 
 // ---------------------------------------------------------------------------
+// Upload / Credentials Assist (Phase 9, plan 09-02 tracer) — the stub answers
+// Ready for any hostname whose provider resolves to "github" (matching the
+// wizard's default acme.github.com fixture) and Omitted otherwise. No real
+// subprocess is ever involved — deterministic, in-memory, mirroring the
+// dummy's own frozen-choice fixture convention.
+// ---------------------------------------------------------------------------
+
+func (stubBackend) UploadEligibility(hostname string) tea.Cmd {
+	return func() tea.Msg {
+		if strings.Contains(hostname, "github") {
+			return UploadEligibilityMsg{Hostname: hostname, View: UploadEligibilityView{
+				State: UploadEligibilityReady, ProviderName: "GitHub", ToolName: "gh", Hostname: "github.com",
+			}}
+		}
+		return UploadEligibilityMsg{Hostname: hostname, View: UploadEligibilityView{State: UploadEligibilityOmitted}}
+	}
+}
+
+func (b stubBackend) RunUpload(spec CreateSpec) tea.Cmd {
+	return func() tea.Msg {
+		return UploadRunMsg{View: UploadRunView{Rows: []UploadResultRow{{
+			Registration: UploadRegistrationAuthentication,
+			Label:        UploadRegistrationLabelAuth,
+			Command:      "gh ssh-key add " + spec.KeyPath + ".pub --title gitid: " + spec.Identity + " --type authentication",
+			Outcome:      UploadRowUploaded,
+		}}}}
+	}
+}
+
+func (stubBackend) UploadInstructions(provider string) string {
+	return "Upload your public key to " + provider + " manually."
+}
+
+// ---------------------------------------------------------------------------
 // Global SSH (plan 06-01) — the Options-sub-tab seam.
 // ---------------------------------------------------------------------------
 

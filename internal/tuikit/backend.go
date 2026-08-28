@@ -519,6 +519,38 @@ type Backend interface {
 	// pattern-shadowing refusal the prompt renders inline — it never
 	// silently substitutes a different name.
 	ClonePrefill(source, cloneName string, reuseSourceKey bool) (ClonePrefillView, error)
+
+	// ----- Upload / Credentials Assist (Phase 9, UP-02/UP-03) ---------
+
+	// UploadEligibility resolves whether autonomous key upload can run for
+	// hostname right now — RESOLVED ASYNCHRONOUSLY, never on the render
+	// path. Answering requires exec.LookPath plus a "gh/glab auth status"
+	// subprocess (real backend); a Bubble Tea View or Update pass must
+	// never block on an external process that can be slow or hung (review
+	// R3). This is a hard rule: no future implementation may make this
+	// method synchronous. An implementation MAY answer without any
+	// subprocess when the hostname's provider is not one of D-13's gated
+	// main domains — that path is pure and still returns a command for
+	// call-site uniformity. The delivered UploadEligibilityMsg carries the
+	// ORIGINAL hostname argument (never a canonicalized form) so a stale
+	// reply — the user changed the host before this arrived — can be
+	// discarded by the caller.
+	UploadEligibility(hostname string) tea.Cmd
+
+	// RunUpload dispatches the confirmed autonomous upload beat off the
+	// update loop — async, like TestStage1/TestStage2 — and MUST
+	// eventually deliver an UploadRunMsg. It never returns an error that
+	// could stop the wizard: every failure (staging, detect, auth,
+	// upload) is reported as a failed UploadResultRow inside the
+	// delivered view (D-03/D-11 — upload never gates).
+	RunUpload(spec CreateSpec) tea.Cmd
+
+	// UploadInstructions is the manual-fallback text slot: the real
+	// backend returns internal/upload.Instructions(provider) byte-
+	// identically; this method exists so internal/tuikit never imports
+	// internal/upload and never carries a second copy of the instruction
+	// text (09-UI-SPEC.md requires byte-identical reuse).
+	UploadInstructions(provider string) string
 }
 
 // WizardStageMsg completes a create-wizard test stage. Backends deliver it
