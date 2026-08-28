@@ -148,7 +148,10 @@ strip the clause ONLY in Fixer's own rendering; Health is untouched.
 Regression test: `TestFixerSuggestedFixDropsStaleFixerHandoff`.
 
 Full findings/disposition table, exit-battery evidence, and the draft
-REQUIREMENTS.md closure section are in `08-REVIEWS.md`. After independently
+REQUIREMENTS.md closure section are in `08-08-REVIEWS.md` (named distinctly
+from the phase-level `08-REVIEWS.md`, which is the pre-execution cross-AI
+PLAN review from `/gsd-plan-review-convergence 8` — a separate, valuable
+historical document this closure does not touch). After independently
 confirming zero CRITICAL/HIGH findings remain open without disposition and
 all gates green, applied the closure edit directly to
 `.planning/REQUIREMENTS.md`: HLTH-01 through HLTH-06 and FIX-01/FIX-02 are
