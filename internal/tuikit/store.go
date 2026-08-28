@@ -75,6 +75,22 @@ const (
 type DemoFinding struct {
 	HealthFinding
 	Identity string
+	// Rewrite, when non-nil, describes the D-09 surgical single-directive
+	// rewrite this finding's fix performs — a tuikit-local mirror of
+	// doctor.FixRewrite (internal/tuikit imports zero internal/doctor
+	// identifiers, so it cannot reuse that type directly). Backend.FixPlanFor
+	// reads it to render the real before/after diff and the typed-confirm
+	// target. Nil for every finding that does not perform a surgical rewrite.
+	Rewrite *FixRewriteTarget
+}
+
+// FixRewriteTarget is the tuikit-local mirror of doctor.FixRewrite: the Host
+// stanza pattern, directive name, and new value a D-09 surgical rewrite
+// targets.
+type FixRewriteTarget struct {
+	HostPattern string
+	Directive   string
+	NewValue    string
 }
 
 // DemoState is the whole live-demo state — the Go mirror of store.ts's

@@ -17,6 +17,7 @@ import (
 
 // fixerModel is the Fixer tab child model.
 type fixerModel struct {
+	backend    Backend
 	scanning   bool
 	selectedID string
 	fixing     bool
@@ -24,8 +25,11 @@ type fixerModel struct {
 	ceremony   ceremonyModel
 }
 
-// newFixerModel builds the Fixer tab (scan runs on first activation).
-func newFixerModel() fixerModel { return fixerModel{} }
+// newFixerModel builds the Fixer tab (scan runs on first activation). b is
+// the injected Backend seam Backend.FixPlanFor routes through (08-02-PLAN.md
+// Task 2) — the real backend renders a true diff from actual file content,
+// FixtureBackend delegates unchanged to the frozen free PlanFor switch.
+func newFixerModel(b Backend) fixerModel { return fixerModel{backend: b} }
 
 // fixableState returns s with Findings narrowed to fixableFindings(ordered)
 // only — the Fixer tab's list scope. Every handler below operates on this
@@ -79,7 +83,7 @@ func (m fixerModel) handleKey(msg tea.KeyMsg, rawState DemoState) keyResult {
 			m.fixing = false
 			m.batch = nil
 		case ceremonyFinished:
-			plan := PlanFor(sel)
+			plan := m.backend.FixPlanFor(sel)
 			action := FixFinding{ID: sel.ID, Backup: NewBackupPath(plan.File)}
 			if m.batch != nil {
 				queue := m.batch.queue[:0]
@@ -95,7 +99,7 @@ func (m fixerModel) handleKey(msg tea.KeyMsg, rawState DemoState) keyResult {
 					m.selectedID = queue[0]
 					for _, f := range ordered {
 						if f.ID == queue[0] {
-							m.ceremony = fixCeremonyFor(f)
+							m.ceremony = fixCeremonyFor(m.backend, f)
 						}
 					}
 					return keyResult{model: m, handled: true, note: plan.Result, actions: []Action{action}}
@@ -132,7 +136,7 @@ func (m fixerModel) handleKey(msg tea.KeyMsg, rawState DemoState) keyResult {
 		sel, _, ok := selectFinding(ordered, m.selectedID)
 		if ok && sel.SuggestedFix != "" {
 			m.selectedID = sel.ID
-			m.ceremony = fixCeremonyFor(sel)
+			m.ceremony = fixCeremonyFor(m.backend, sel)
 			m.fixing = true
 		}
 		return keyResult{model: m, handled: true}
@@ -145,7 +149,7 @@ func (m fixerModel) handleKey(msg tea.KeyMsg, rawState DemoState) keyResult {
 			}
 			m.batch = &doctorBatch{queue: ids, total: len(ids)}
 			m.selectedID = ids[0]
-			m.ceremony = fixCeremonyFor(fixable[0])
+			m.ceremony = fixCeremonyFor(m.backend, fixable[0])
 			m.fixing = true
 		}
 		return keyResult{model: m, handled: true}

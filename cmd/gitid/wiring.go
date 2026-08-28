@@ -132,6 +132,16 @@ type realBackend struct {
 	// "public-key", "include-line", and "host-block".
 	failCommitAt func(step string) error
 
+	// fixFnOverride is a test-only injection point (mirroring failCommitAt's
+	// precedent): when non-nil, persistFixFinding calls it INSTEAD of the
+	// matched finding's real Fix.Fn — the only way to reproduce D-14's
+	// convergence-alarm path with a real "the fix reported success but the
+	// finding's signature is still present" disagreement without a flaky
+	// external race (every REAL check's Fix.Fn either genuinely fixes the
+	// condition or genuinely fails; only a test double can report success
+	// while leaving the condition unchanged). Nil in production.
+	fixFnOverride func() error
+
 	// verifyAuthorResolution is a test-only override of the D-06 post-write
 	// probe. Nil means the real globalgit.VerifyAuthorResolution.
 	verifyAuthorResolution func(deps globalgit.Deps, matchedDir, unmatchedDir string) (globalgit.AuthorResolution, error)
@@ -174,6 +184,15 @@ type realBackend struct {
 	pendingMigration   sshconfig.MigrationPlan
 	pendingMigrationMu sync.Mutex
 	pendingToken       string // the opaque token the view carried
+
+	// convergenceAlarmed tracks (08-02-PLAN.md Task 3, D-14) the stable IDs
+	// of findings whose fix reported success but reappeared after the
+	// mandatory post-fix full re-scan — session-scoped, in-memory only (no
+	// persistence needed per 08-RESEARCH.md's Assumptions Log), guarded by
+	// its own mutex since it is read/written independently of every other
+	// field above.
+	convergenceAlarmed   map[string]bool
+	convergenceAlarmedMu sync.Mutex
 }
 
 // compile-time proof the real composition root satisfies the seam.
@@ -789,9 +808,7 @@ func (b *realBackend) Persist(state tuikit.DemoState, action tuikit.Action) tuik
 		// keep the approved in-memory reducer behavior behind the D-16 banner.
 		return tuikit.Reduce(state, action)
 	case tuikit.FixFinding:
-		// Demo-only: Phase 8's fixer is not wired yet; keep the banner
-		// behavior pinned rather than turning it into an error (R-09-DEMO).
-		return tuikit.Reduce(state, action)
+		return b.persistFixFinding(a)
 	case tuikit.ApplySSH:
 		// Real-owned: the write already happened in CommitGlobalSSH (the async
 		// seam — which mirrors CommitDelete); Persist must re-read disk here,
@@ -1267,6 +1284,40 @@ func (b *realBackend) CopyPublicKey(pubKeyPath string) (string, error) {
 		return "", fmt.Errorf("gitid: copying the public key to the clipboard: %w", err)
 	}
 	return "Public key copied to clipboard (" + b.displayPath(path) + ").", nil
+}
+
+// FixPlanFor is the real Backend.FixPlanFor implementation (08-02-PLAN.md
+// Task 2): for a finding carrying a doctor-originated Rewrite descriptor
+// (currently the D-09 hand-written IdentitiesOnly contradiction), it reads
+// the ACTUAL ~/.ssh/config content and renders the true before/after diff
+// via sshconfig.DiffHostDirective — never the frozen fixture text. Every
+// other finding falls back to the free tuikit.PlanFor(finding) switch
+// unchanged — this wave introduces exactly one new rewrite kind; other
+// fixable findings' plans are out of its scope.
+func (b *realBackend) FixPlanFor(finding tuikit.DemoFinding) tuikit.FixPlan {
+	rw := finding.Rewrite
+	if rw == nil {
+		return tuikit.PlanFor(finding)
+	}
+	content, err := os.ReadFile(b.sshConfigPath) //nolint:gosec // b.sshConfigPath is gitid's own resolved, trusted path (G304)
+	if err != nil {
+		return tuikit.PlanFor(finding)
+	}
+	diff, derr := sshconfig.DiffHostDirective(content, rw.HostPattern, rw.Directive, rw.NewValue)
+	if derr != nil {
+		return tuikit.PlanFor(finding)
+	}
+	return tuikit.FixPlan{
+		File: b.displayPath(b.sshConfigPath),
+		Diff: diff,
+		Destructive: &tuikit.FixDestructive{
+			ConfirmWord: rw.HostPattern,
+			Warning: fmt.Sprintf(
+				"This rewrites a directive already present in your SSH config. Type the Host name %q to confirm — this cannot be undone without restoring the backup.",
+				rw.HostPattern),
+		},
+		Result: fmt.Sprintf("%s set to %s on Host %s in %s.", rw.Directive, rw.NewValue, rw.HostPattern, b.displayPath(b.sshConfigPath)),
+	}
 }
 
 // GitStepDisabledReason implements D-19: the real binary ALWAYS disables
@@ -3702,23 +3753,53 @@ func doctorAddWiring(allowedSignersPath string) func(path, name, line string) er
 // continues importing ZERO internal/doctor identifiers (the no-backend-import
 // gate). Do not reintroduce a second findings source in internal/tuikit.
 func doctorFindings(home string) []tuikit.DemoFinding {
-	findings := doctor.Run(buildDoctorDeps(home))
-	out := make([]tuikit.DemoFinding, 0, len(findings))
-	seen := make(map[string]int, len(findings))
-	for _, f := range findings {
-		id := string(f.Family) + "|" + f.Title
-		if f.IdentityName != "" {
-			id += "|" + f.IdentityName
+	_, converted := runDoctorAndConvert(buildDoctorDeps(home))
+	return converted
+}
+
+// findingStableID computes the D-01 stable ID for a doctor.Finding against
+// the seen-occurrence map — the ONE ID scheme every consumer (the TUI,
+// gitid health --json, and the fix-apply path's raw<->converted lookup)
+// must agree on, extracted once so it can never drift between callers.
+func findingStableID(f doctor.Finding, seen map[string]int) string {
+	id := string(f.Family) + "|" + f.Title
+	if f.IdentityName != "" {
+		id += "|" + f.IdentityName
+	}
+	// Two distinct findings can share Family+Title+IdentityName (e.g. two
+	// separate global Redundancy findings, IdentityName empty on both) —
+	// disambiguate with an occurrence counter rather than collapse them
+	// onto the same ID (08-01-PLAN.md Task 1).
+	seen[id]++
+	if n := seen[id]; n > 1 {
+		id += fmt.Sprintf("|%d", n)
+	}
+	return id
+}
+
+// runDoctorAndConvert runs doctor.Run(deps) once and returns BOTH the raw
+// findings (carrying their Fix descriptors, for the apply path) and their
+// tuikit.DemoFinding conversion (for every render/JSON consumer) — index-
+// aligned by construction, so a converted finding's ID always resolves back
+// to its raw counterpart via the SAME stable-ID scheme (08-02-PLAN.md Task 2:
+// realBackend.Persist's FixFinding case needs the raw Fix.Fn/Fix.Interactive
+// a tuikit.DemoFinding cannot carry, since internal/tuikit imports zero
+// internal/doctor identifiers).
+func runDoctorAndConvert(deps doctor.Deps) (raw []doctor.Finding, converted []tuikit.DemoFinding) {
+	raw = doctor.Run(deps)
+	converted = make([]tuikit.DemoFinding, 0, len(raw))
+	seen := make(map[string]int, len(raw))
+	for _, f := range raw {
+		id := findingStableID(f, seen)
+		var rewrite *tuikit.FixRewriteTarget
+		if f.Rewrite != nil {
+			rewrite = &tuikit.FixRewriteTarget{
+				HostPattern: f.Rewrite.HostPattern,
+				Directive:   f.Rewrite.Directive,
+				NewValue:    f.Rewrite.NewValue,
+			}
 		}
-		// Two distinct findings can share Family+Title+IdentityName (e.g. two
-		// separate global Redundancy findings, IdentityName empty on both) —
-		// disambiguate with an occurrence counter rather than collapse them
-		// onto the same ID (08-01-PLAN.md Task 1).
-		seen[id]++
-		if n := seen[id]; n > 1 {
-			id += fmt.Sprintf("|%d", n)
-		}
-		out = append(out, tuikit.DemoFinding{
+		converted = append(converted, tuikit.DemoFinding{
 			HealthFinding: tuikit.HealthFinding{
 				ID:           id,
 				Section:      f.Target,
@@ -3729,9 +3810,133 @@ func doctorFindings(home string) []tuikit.DemoFinding {
 				Severity:     tuikit.HealthSeverity(f.Severity.String()),
 			},
 			Identity: f.IdentityName,
+			Rewrite:  rewrite,
 		})
 	}
+	return raw, converted
+}
+
+// persistFixFinding implements realBackend.Persist's FixFinding case
+// (08-02-PLAN.md Task 2/3): locate the raw doctor.Finding matching
+// action.ID (built fresh, since a stale Findings slice must never drive a
+// write), call its Fix.Fn, then — REGARDLESS of which check produced the
+// finding, not only the D-09 flagship — re-run doctor.Run(deps) in full
+// (D-13) and replace state.Findings with the fresh conversion. If the fixed
+// finding's stable ID is STILL present after the re-run, replace it with a
+// D-14 convergence-alarm finding and remember that ID so it is never
+// offered as fixable again this session.
+func (b *realBackend) persistFixFinding(action tuikit.FixFinding) tuikit.DemoState {
+	deps := buildDoctorDeps(b.home)
+	raw, converted := runDoctorAndConvert(deps)
+
+	b.convergenceAlarmedMu.Lock()
+	alreadyWithdrawn := b.convergenceAlarmed[action.ID]
+	b.convergenceAlarmedMu.Unlock()
+	if alreadyWithdrawn {
+		// D-14: a withdrawn fix is never re-offered, even once conditions on
+		// disk would let the real Fn genuinely succeed this time — the alarm
+		// substitution below (driven by convergenceAlarmed) still applies.
+		b.setPersistErr(nil)
+		return b.stateWithFreshFindings(applyConvergenceAlarms(b, converted))
+	}
+
+	var target *doctor.Finding
+	for i := range raw {
+		if converted[i].ID == action.ID {
+			target = &raw[i]
+			break
+		}
+	}
+	if target == nil || target.Fix == nil || target.Fix.Fn == nil {
+		// The finding is already gone, or carries no direct Fn (an
+		// Interactive-only fix is a CLI concern, Task 3) — nothing to apply;
+		// return the current converged state rather than erroring the TUI.
+		b.setPersistErr(nil)
+		return b.stateWithFreshFindings(converted)
+	}
+
+	fixFn := target.Fix.Fn
+	if b.fixFnOverride != nil {
+		fixFn = b.fixFnOverride
+	}
+	fixErr := fixFn()
+	b.setPersistErr(fixErr)
+
+	// D-13: re-run the full scan against a FRESHLY BUILT Deps — buildDoctorDeps
+	// reads every config file EAGERLY (sshBytes/gcBytes are captured once, not
+	// lazily), so reusing the pre-fix `deps` here would re-scan the SAME
+	// stale bytes the fix already changed on disk, silently defeating the
+	// entire point of a re-run. A failed Fn may still have partially mutated
+	// disk state, and a local prune of the previous Findings slice must
+	// never substitute for a real re-scan either.
+	_, rescanned := runDoctorAndConvert(buildDoctorDeps(b.home))
+
+	fixedID := action.ID
+	stillPresent := false
+	for i := range rescanned {
+		if rescanned[i].ID == fixedID {
+			stillPresent = true
+			break
+		}
+	}
+	if fixErr == nil && stillPresent {
+		// D-14: the fix reported success but the SAME finding survived the
+		// re-scan — replace it with the alarm and withdraw it from re-offer.
+		b.convergenceAlarmedMu.Lock()
+		if b.convergenceAlarmed == nil {
+			b.convergenceAlarmed = make(map[string]bool)
+		}
+		b.convergenceAlarmed[fixedID] = true
+		b.convergenceAlarmedMu.Unlock()
+	}
+
+	return b.stateWithFreshFindings(applyConvergenceAlarms(b, rescanned))
+}
+
+// applyConvergenceAlarms replaces every finding in findings whose ID is in
+// b.convergenceAlarmed with the D-14 alarm shape (error severity, empty
+// SuggestedFix so it renders as an unfixable row — the copy contract
+// 08-UI-SPEC.md pins). Shared by persistFixFinding's early-withdrawal
+// return and its main post-fix path, so the alarm rendering can never drift
+// between the two.
+func applyConvergenceAlarms(b *realBackend, findings []tuikit.DemoFinding) []tuikit.DemoFinding {
+	out := make([]tuikit.DemoFinding, 0, len(findings))
+	for _, f := range findings {
+		b.convergenceAlarmedMu.Lock()
+		alarmed := b.convergenceAlarmed[f.ID]
+		b.convergenceAlarmedMu.Unlock()
+		if alarmed {
+			out = append(out, tuikit.DemoFinding{
+				HealthFinding: tuikit.HealthFinding{
+					ID:      f.ID,
+					Section: f.Section,
+					Family:  f.Family,
+					Title:   f.Title,
+					Explanation: fmt.Sprintf(
+						"%s did not resolve after its own fix reported success -- this fix has been withdrawn from the Fixer; re-run Health after investigating manually.",
+						f.Title),
+					Severity: tuikit.SeverityError,
+					// SuggestedFix left empty so this renders as an unfixable
+					// row (D-14's copy contract).
+				},
+				Identity: f.Identity,
+			})
+			continue
+		}
+		out = append(out, f)
+	}
 	return out
+}
+
+// stateWithFreshFindings returns InitialState() with its Findings replaced
+// by findings — the shared tail every persistFixFinding return path uses so
+// Scanned/Identities/every other DemoState field stays freshly re-derived
+// from disk, never a stale in-memory copy.
+func (b *realBackend) stateWithFreshFindings(findings []tuikit.DemoFinding) tuikit.DemoState {
+	state := b.InitialState()
+	state.Findings = findings
+	state.Scanned = true
+	return state
 }
 
 // ---------------------------------------------------------------------------

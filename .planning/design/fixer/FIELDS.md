@@ -46,9 +46,12 @@ directives.** The flagship walk-through target
 deep-dives: rewriting `IdentitiesOnly no` to `IdentitiesOnly yes` on an
 EXISTING `Host clientb.github.com` block — a true before/after diff
 (`-`/`+` lines), not an additions-only `+` list (unlike global-ssh/
-global-git's fix-preview). `confirm-destructive` uses the strongest
-confirm this medium allows short of a typed confirmation (mirrors
-identity-manager's "delete everything" precedent) — destructive actions
+global-git's fix-preview). `confirm-destructive` uses a TYPED confirmation
+(D-11, 08-02-PLAN.md Task 2's flagship implementation: the Host block's
+own pattern is the typed word — `ConfirmWord: "clientb.github.com"`,
+`fixplans.go` — matched exactly via `ceremony.go`'s existing
+`confirmEnabled`, case-sensitive, no partial match), not merely a
+default-focused-No button gate — destructive actions
 never default-focus "yes" (§5). `backup-notice` names the timestamped
 backup path BEFORE applying. A batch-fix is offered (`fixerBatchFixNote`)
 but explicitly still previews every change — no 7th named state is added
@@ -87,8 +90,8 @@ affordance).
 ## fixer / confirm-destructive
 
 **Goal:** mutation-ceremony beat 2 (§5), specific to fix-in-place
-rewrites of existing directives — the strongest confirm this medium
-allows.
+rewrites of existing directives — a TYPED confirmation (D-11), the
+strongest confirm this medium offers.
 
 | # | Field | Label | Order | HTML present | TUI present | Notes |
 |---|-------|-------|-------|---------------|--------------|-------|

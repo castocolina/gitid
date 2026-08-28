@@ -434,6 +434,17 @@ type Backend interface {
 	// total, and never mentioned directory creation at all.
 	GitWritePlan(spec GitSpec) WritePlanView
 
+	// FixPlanFor returns finding's fix plan (target file, diff, destructive
+	// gating, result receipt) — the ONE seam every internal/tuikit call site
+	// routes through instead of calling the free PlanFor(finding) function
+	// directly (08-02-PLAN.md Task 2). FixtureBackend delegates unchanged to
+	// PlanFor, preserving the frozen Phase-2 visual-regression fixture; the
+	// real backend reads actual target-file content and renders a true
+	// before/after diff (currently for findings carrying a
+	// doctor-originated Rewrite descriptor — the D-09 surgical rewrite this
+	// wave introduces — falling back to PlanFor's frozen shape otherwise).
+	FixPlanFor(finding DemoFinding) FixPlan
+
 	// CopyPublicKey copies the identity's public key to the system
 	// clipboard (D-03) — offered on the ReachableNotUploaded warning path so
 	// the user can register it with the provider and retry. It returns the

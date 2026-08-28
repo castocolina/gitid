@@ -647,7 +647,7 @@ func newScreens(b Backend, initial DemoState) [5]screenModel {
 		newGlobalSSHModel(b),
 		newGlobalGitModel(b),
 		newHealthModel(),
-		newFixerModel(),
+		newFixerModel(b),
 	}
 }
 

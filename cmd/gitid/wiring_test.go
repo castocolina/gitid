@@ -3726,7 +3726,6 @@ func TestPersistDemoOnlyActionsPreserveTuikitReduce(t *testing.T) {
 	seed := tuikit.DemoState{Identities: []tuikit.DemoIdentity{{Name: "legacy", State: "complete"}}}
 	demo := []tuikit.Action{
 		tuikit.MarkScanned{},
-		tuikit.FixFinding{ID: "git-includeif-missing-fragment"},
 		tuikit.ApplyGitBaseline{},
 		tuikit.ApplyGitGlobalEmail{Email: "dev@example.com"},
 	}
@@ -4458,5 +4457,197 @@ func TestMGR07TwoSignalsResolveFromConvergedSource(t *testing.T) {
 	}
 	if flagCount == 0 {
 		t.Error("flag count = 0, want at least the missing-fragment Coherence finding")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 08-02-PLAN.md Task 2 — the D-09 flagship fix-in-place, real end-to-end
+// ---------------------------------------------------------------------------
+
+// seedFlagshipFixture writes a real ~/.ssh/config with a hand-written
+// (non-gitid-managed) Host clientb.github.com block carrying the D-09
+// flagship contradiction (IdentitiesOnly no + an explicit IdentityFile),
+// plus a hand-written comment and an unrelated Host block that must survive
+// the fix byte-for-byte.
+func seedFlagshipFixture(t *testing.T, home string) (configPath string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
+		t.Fatalf("seeding .ssh: %v", err)
+	}
+	configPath = filepath.Join(home, ".ssh", "config")
+	content := "# my own notes\n" +
+		"Host clientb.github.com\n" +
+		"\t# do not touch\n" +
+		"\tHostName ssh.github.com\n" +
+		"\tIdentitiesOnly no # deliberately loose\n" +
+		"\tIdentityFile ~/.ssh/id_ed25519_clientb\n" +
+		"\n" +
+		"Host untouched.example.com\n" +
+		"\tHostName example.com\n"
+	writeFile(t, configPath, content)
+	return configPath
+}
+
+// findFlagshipFinding runs doctorFindings against home and returns the
+// converged finding carrying the D-09 Rewrite descriptor, or fails the test.
+func findFlagshipFinding(t *testing.T, home string) tuikit.DemoFinding {
+	t.Helper()
+	for _, f := range doctorFindings(home) {
+		if f.Rewrite != nil {
+			return f
+		}
+	}
+	t.Fatalf("no finding with a Rewrite descriptor found in %v", doctorFindings(home))
+	return tuikit.DemoFinding{}
+}
+
+// TestRealBackendFixPlanForRendersRealDiff proves realBackend.FixPlanFor
+// (unlike FixtureBackend's, which stays frozen) reads the ACTUAL config file
+// and renders a true before/after diff — not the static PlanFor fallback
+// text.
+func TestRealBackendFixPlanForRendersRealDiff(t *testing.T) {
+	home := t.TempDir()
+	seedFlagshipFixture(t, home)
+	finding := findFlagshipFinding(t, home)
+
+	b := newBackendForHome(home)
+	plan := b.FixPlanFor(finding)
+
+	if !strings.Contains(plan.Diff, "- \tIdentitiesOnly no # deliberately loose") {
+		t.Errorf("diff missing the real removed line:\n%s", plan.Diff)
+	}
+	if !strings.Contains(plan.Diff, "+ \tIdentitiesOnly yes # deliberately loose") {
+		t.Errorf("diff missing the real added line:\n%s", plan.Diff)
+	}
+	if plan.Destructive == nil || plan.Destructive.ConfirmWord != "clientb.github.com" {
+		t.Errorf("Destructive = %+v, want ConfirmWord clientb.github.com", plan.Destructive)
+	}
+}
+
+// TestPersistFixFindingAppliesRealRewrite drives the flagship fix through
+// the SAME realBackend.Persist(FixFinding) path the TUI ceremony calls:
+// the file is rewritten (only the target line), and the returned state no
+// longer carries the fixed finding.
+func TestPersistFixFindingAppliesRealRewrite(t *testing.T) {
+	home := t.TempDir()
+	configPath := seedFlagshipFixture(t, home)
+	before := readFile(t, configPath)
+	finding := findFlagshipFinding(t, home)
+
+	b := newBackendForHome(home)
+	state := b.Persist(tuikit.DemoState{}, tuikit.FixFinding{ID: finding.ID, Backup: tuikit.NewBackupPath("~/.ssh/config")})
+
+	if perr := b.PersistError(); perr != nil {
+		t.Fatalf("Persist(FixFinding) recorded an error: %v", perr)
+	}
+
+	after := readFile(t, configPath)
+	if !strings.Contains(after, "IdentitiesOnly yes # deliberately loose") {
+		t.Fatalf("rewrite did not apply:\n%s", after)
+	}
+	if !strings.Contains(after, "Host untouched.example.com\n\tHostName example.com") {
+		t.Fatalf("the unrelated Host block was altered:\n%s", after)
+	}
+	if !strings.Contains(after, "# do not touch") {
+		t.Fatalf("the hand-written comment was lost:\n%s", after)
+	}
+	_ = before
+
+	for _, f := range state.Findings {
+		if f.ID == finding.ID {
+			t.Errorf("the fixed finding must not survive the post-fix re-scan: %+v", f)
+		}
+	}
+}
+
+// TestPersistFixFindingRerunsFullScanNotLocalPrune is the D-13 regression
+// test: after ONE fix applies, the returned state's Findings must reflect a
+// FRESH doctor.Run(deps) re-scan — proven by seeding a SECOND, independent
+// finding (loose ~/.ssh permissions) that only a real re-scan (not a local
+// prune of the pre-fix Findings slice) would surface for the first time in
+// the returned state.
+func TestPersistFixFindingRerunsFullScanNotLocalPrune(t *testing.T) {
+	home := t.TempDir()
+	seedFlagshipFixture(t, home)
+	finding := findFlagshipFinding(t, home)
+
+	// Loosen ~/.ssh AFTER computing the finding to fix, but BEFORE calling
+	// Persist — a local prune of the pre-fix Findings slice would never see
+	// this, since it was never in that slice; only a genuine re-scan will.
+	if err := os.Chmod(filepath.Join(home, ".ssh"), 0o755); err != nil { //nolint:gosec // deliberately loose — this test asserts the re-scan catches it (G301 in test scope)
+		t.Fatalf("chmod: %v", err)
+	}
+
+	b := newBackendForHome(home)
+	state := b.Persist(tuikit.DemoState{}, tuikit.FixFinding{ID: finding.ID, Backup: tuikit.NewBackupPath("~/.ssh/config")})
+
+	var sawPermsFinding bool
+	for _, f := range state.Findings {
+		if f.Family == "Permissions" {
+			sawPermsFinding = true
+		}
+	}
+	if !sawPermsFinding {
+		t.Errorf("Persist(FixFinding)'s returned state must reflect a FRESH full re-scan (D-13), not a local prune — the independently-introduced Permissions finding is missing: %+v", state.Findings)
+	}
+}
+
+// TestPersistFixFindingConvergenceAlarm is the D-14 regression test: when a
+// fix's Fn reports success but the SAME finding survives the mandatory
+// post-fix re-scan, the returned state replaces it with an error-severity
+// "did not converge" finding (SuggestedFix empty — unfixable), and a SECOND
+// Persist(FixFinding) call for the SAME ID must not re-offer it (the
+// session-scoped withdrawal).
+func TestPersistFixFindingConvergenceAlarm(t *testing.T) {
+	home := t.TempDir()
+	seedFlagshipFixture(t, home)
+	finding := findFlagshipFinding(t, home)
+
+	// Every REAL check's Fix.Fn either genuinely fixes the condition or
+	// genuinely fails — reproducing "the fix reported success but the
+	// finding's signature is still present" needs a test double, via the
+	// fixFnOverride seam (mirrors this file's existing failCommitAt
+	// precedent): return nil (success) while touching NOTHING, so the D-13
+	// re-scan finds the identical contradiction still there.
+	b := newBackendForHome(home)
+	b.fixFnOverride = func() error { return nil }
+
+	state := b.Persist(tuikit.DemoState{}, tuikit.FixFinding{ID: finding.ID, Backup: tuikit.NewBackupPath("~/.ssh/config")})
+	if perr := b.PersistError(); perr != nil {
+		t.Fatalf("Persist(FixFinding) recorded an error: %v", perr)
+	}
+
+	var alarm *tuikit.DemoFinding
+	for i, f := range state.Findings {
+		if f.ID == finding.ID {
+			alarm = &state.Findings[i]
+		}
+	}
+	if alarm == nil {
+		t.Fatalf("expected a convergence-alarm finding with ID %q, findings: %+v", finding.ID, state.Findings)
+	}
+	if alarm.Severity != tuikit.SeverityError {
+		t.Errorf("alarm severity = %q, want error", alarm.Severity)
+	}
+	if alarm.SuggestedFix != "" {
+		t.Errorf("alarm SuggestedFix = %q, want empty (unfixable-row copy contract)", alarm.SuggestedFix)
+	}
+	if !strings.Contains(alarm.Explanation, "did not resolve after its own fix reported success") {
+		t.Errorf("alarm Explanation = %q, want the D-14 copy contract", alarm.Explanation)
+	}
+
+	// Withdrawal: a SECOND Persist(FixFinding) for the SAME ID — now with the
+	// override cleared, so a real Fn would genuinely fix it this time — must
+	// still show the withdrawn alarm, never re-offer the fix.
+	b.fixFnOverride = nil
+	state = b.Persist(state, tuikit.FixFinding{ID: finding.ID, Backup: tuikit.NewBackupPath("~/.ssh/config")})
+	var stillAlarmed bool
+	for _, f := range state.Findings {
+		if f.ID == finding.ID && f.SuggestedFix == "" {
+			stillAlarmed = true
+		}
+	}
+	if !stillAlarmed {
+		t.Error("a withdrawn fix must stay withdrawn across subsequent Persist(FixFinding) calls this session, even once the real fix would have converged")
 	}
 }

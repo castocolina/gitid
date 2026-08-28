@@ -357,6 +357,13 @@ func (FixtureBackend) CopyPublicKey(string) (string, error) {
 	return "Public key copied to clipboard (demo).", nil
 }
 
+// FixPlanFor delegates UNCHANGED to the frozen free tuikit.PlanFor switch
+// (08-02-PLAN.md Task 2) — the dummy's fix-plan text is Phase-2 approved
+// design fixture data, never real file content.
+func (FixtureBackend) FixPlanFor(finding tuikit.DemoFinding) tuikit.FixPlan {
+	return tuikit.PlanFor(finding)
+}
+
 // GitStepDisabledReason implements D-19: the dummy keeps the UNCHANGED
 // form-validity gate and its own frozen reason ("— needs user.name + a
 // valid email", owned by internal/tuikit) — Phase 3 does not touch the

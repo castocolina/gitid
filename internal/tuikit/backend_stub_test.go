@@ -247,6 +247,8 @@ func (stubBackend) InitialState() DemoState {
 
 func (stubBackend) DemoBanner(TabID) bool { return false }
 
+func (stubBackend) FixPlanFor(finding DemoFinding) FixPlan { return PlanFor(finding) }
+
 func (b stubBackend) Persist(state DemoState, action Action) DemoState {
 	if _, isReset := action.(Reset); isReset {
 		return b.InitialState()

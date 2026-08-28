@@ -2204,7 +2204,7 @@ func (m identitiesModel) handleDetailKey(msg tea.KeyMsg, s DemoState) keyResult 
 		if finding, found := firstFixableFinding(s, sel.Name); found {
 			m.pane = paneFix
 			m.fixFindingID = finding.ID
-			m.fixCeremony = fixCeremonyFor(finding)
+			m.fixCeremony = fixCeremonyFor(m.backend, finding)
 		}
 		return keyResult{model: m, handled: true}
 	}
@@ -2483,9 +2483,11 @@ func (m identitiesModel) renderKeyCeremony(sel DemoIdentity) string {
 }
 
 // fixCeremonyFor builds the compressed per-finding fix ceremony from its
-// fix plan.
-func fixCeremonyFor(finding DemoFinding) ceremonyModel {
-	plan := PlanFor(finding)
+// fix plan. b is the injected Backend seam whose FixPlanFor renders the
+// plan — real content for the real backend, the frozen fixture text for
+// FixtureBackend (08-02-PLAN.md Task 2).
+func fixCeremonyFor(b Backend, finding DemoFinding) ceremonyModel {
+	plan := b.FixPlanFor(finding)
 	return newCeremony(ceremonyConfig{
 		Heading:       "Fix: " + finding.Title,
 		Targets:       []string{plan.File},
@@ -3029,7 +3031,7 @@ func (m identitiesModel) handleFixKey(msg tea.KeyMsg, s DemoState) keyResult {
 		plan := FixPlan{File: "~/.ssh/config"} // fallback for an already-gone finding
 		for _, f := range s.Findings {
 			if f.ID == id {
-				plan = PlanFor(f)
+				plan = m.backend.FixPlanFor(f)
 			}
 		}
 		return keyResult{model: m, handled: true, note: plan.Result,
@@ -3516,7 +3518,7 @@ func (m identitiesModel) handleDetailClick(body string, x, y int, s DemoState) k
 			if f.SuggestedFix != "" && strings.Contains(line, f.Title) {
 				m.pane = paneFix
 				m.fixFindingID = f.ID
-				m.fixCeremony = fixCeremonyFor(f)
+				m.fixCeremony = fixCeremonyFor(m.backend, f)
 				return keyResult{model: m, handled: true}
 			}
 		}
