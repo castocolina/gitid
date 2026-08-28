@@ -4,11 +4,11 @@ milestone: v1.0
 milestone_name: TUI-First Redesign
 current_phase: 08
 current_phase_name: Health + Fixer
-status: planning
-stopped_at: Phase 7 (Global Git Options) complete — all 9 closeout checklist items evidenced; ready to plan Phase 08
-last_updated: "2026-08-28T02:00:00.000Z"
-last_activity: 2026-08-28
-last_activity_desc: Phase 7 complete (6 waves executed via cross-AI, closeout checklist items 6-9 run and their findings fixed); transitioned to Phase 08
+status: executing
+stopped_at: Phase 8 (Health + Fixer) planned and review-converged (single-reviewer degradation, documented); starting wave execution
+last_updated: "2026-08-27T23:15:00.000Z"
+last_activity: 2026-08-27
+last_activity_desc: Phase 8 planned (8 waves, 968edca), cross-AI reviewed (xai-grok single-reviewer pass — codex-sol lane permanently broken on this host, account doesn't support pinned model; documented, not a blocker), replanned to close all 5 HIGH + 12 actionable findings (3d7c2d9). Starting Wave 1 execution.
 state_head: 540b6ed
 progress:
   total_phases: 10
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 ## Current Position
 
 Phase: 08 — Health + Fixer
-Status: Ready to plan (discuss-phase not yet run for Phase 8; check whether 08-CONTEXT.md already exists from an earlier batch discussion pass before re-running it)
-Last activity: 2026-08-28 — Phase 7 (Global Git Options) COMPLETE: all 6 waves executed (cross-AI dispatch per ONESHOT Rule 12, with orchestrator hand-recovery on infra-level crashes — banned /tmp writes, a transient network error), 07-06 closed GGIT-01 in REQUIREMENTS.md after a fully green exit battery, and the 9-item Per-Phase Checklist's remaining items (6 code review, 7 verify-work, 8 UI review, 9 UAT audit) were run in parallel by three independent review agents plus the standing UAT audit — each surfaced one real, distinct finding (a BLOCKER selection-desync bug, a test-rigor gap in two negative controls, and a UI defect class regression), all fixed with regression tests verified to catch the original bug. See 07-01 through 07-06 SUMMARY.md, 07-VERIFICATION.md, 07-UI-REVIEW.md, and review-packet/MANIFEST.md.
+Status: Planned and review-converged; beginning Wave 1 execution (tracer: pipeline convergence, Finding.Target, TabID 4→5 split, minimal `gitid health --json`)
+Last activity: 2026-08-27 — Phase 8 planning cycle complete: 8-wave plan set (968edca), cross-AI review via `gsd-review` (292fdfa) — `codex-sol` lane permanently failed (HTTP 400, `openai/gpt-5.6-sol-fast` unsupported on this host's ChatGPT-account Codex login; a `.planning/config.json` reviewer-pin issue, not a transient failure), `xai-grok` lane produced a real, file:line-verified single-reviewer pass (5 HIGH + 12 actionable findings). Replanned in place to close every finding (3d7c2d9), independently spot-verified against the actual plan text (not just the agent's self-report). Judgment call: proceeded to execution on the single-reviewer signal rather than blocking on the broken codex-sol lane — documented as an acceptable degradation, not a Rule 9 stop condition. See 08-REVIEWS.md for the full review and 08-0{1,2,3,4,5,7}-PLAN.md for the addressed findings.
 
 ### Phase 7 (COMPLETE) — historical record
 
