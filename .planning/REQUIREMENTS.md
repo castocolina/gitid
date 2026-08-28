@@ -273,16 +273,16 @@ These are first-class, enforced requirements — the user's core process ask.
 
 ## K. Health (HLTH)
 
-- [ ] **HLTH-01** (Two sections): The health screen has **SSH** and **Git** sections.
-- [ ] **HLTH-02** (Files + syntax): Checks config files exist and parse (syntax valid).
-- [ ] **HLTH-03** (Redundancy/override): Detects repeated or overridden directives and
+- [x] **HLTH-01** (Two sections): The health screen has **SSH** and **Git** sections.
+- [x] **HLTH-02** (Files + syntax): Checks config files exist and parse (syntax valid).
+- [x] **HLTH-03** (Redundancy/override): Detects repeated or overridden directives and
   duplicate managed/global blocks (e.g. multiple `Host *`). *(CheckRedundancy built.)*
 
-- [ ] **HLTH-04** (Contradictions): Detects contradictory settings where possible
+- [x] **HLTH-04** (Contradictions): Detects contradictory settings where possible
   (e.g. `IdentitiesOnly no` with a specific `IdentityFile`; alias whose `includeIf`
   targets a missing fragment).
 
-- [ ] **HLTH-05** (Per-identity): Health is computable for a single identity (feeds
+- [x] **HLTH-05** (Per-identity): Health is computable for a single identity (feeds
   MGR-07) and globally.
 
 - [x] **HLTH-06** (Deps/perms/coherence/orphans/signing/agent): the existing doctor
@@ -294,7 +294,7 @@ These are first-class, enforced requirements — the user's core process ask.
   explanation + suggested fix, applied only with confirmation and backup. *(doctor
   fix engine built — re-home into the health screen.)*
 
-- [ ] **FIX-02** (Two-section fixer UX): The fixer presents SSH and Git problems in
+- [x] **FIX-02** (Two-section fixer UX): The fixer presents SSH and Git problems in
   the health screen's two sections and fixes them in place.
 
 ## M. Upload / Credentials (UP)
@@ -503,14 +503,14 @@ row below records each one's **home** phase.
 | MGR-08 | Phase 5 | Complete |
 | GSSH-01 | Phase 6 | Complete |
 | GGIT-01 | Phase 7 | Complete |
-| HLTH-01 | Phase 8 | Pending |
-| HLTH-02 | Phase 8 | Pending |
-| HLTH-03 | Phase 8 | Pending |
-| HLTH-04 | Phase 8 | Pending |
-| HLTH-05 | Phase 8 | Pending |
-| HLTH-06 | Phase 8 | Pending |
-| FIX-01 | Phase 8 | Pending |
-| FIX-02 | Phase 8 | Pending |
+| HLTH-01 | Phase 8 | Complete |
+| HLTH-02 | Phase 8 | Complete |
+| HLTH-03 | Phase 8 | Complete |
+| HLTH-04 | Phase 8 | Complete |
+| HLTH-05 | Phase 8 | Complete |
+| HLTH-06 | Phase 8 | Complete |
+| FIX-01 | Phase 8 | Complete |
+| FIX-02 | Phase 8 | Complete |
 | UP-01 | Phase 9 | Pending |
 | UP-02 | Phase 9 | Pending |
 | UP-03 | Phase 9 | Pending |

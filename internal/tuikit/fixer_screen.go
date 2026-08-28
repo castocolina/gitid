@@ -15,6 +15,24 @@ import (
 	lipgloss "charm.land/lipgloss/v2"
 )
 
+// fixerSuggestedFixHandoff is the trailing clause every SuggestedFix string
+// carries so Health's read-only detail pane can point the user at the
+// Fixer tab (HLTH-04's own "available on the Fixer screen" hand-off,
+// internal/dummytui/data.go). On the Fixer screen itself the SAME clause
+// is stale -- the user is already here, and the "f · Fix this…" affordance
+// immediately below the suggested-fix line already states the action --
+// so fixerSuggestedFixText strips it before rendering (08-08 UX review
+// finding F6).
+const fixerSuggestedFixHandoff = " -- available on the Fixer screen."
+
+// fixerSuggestedFixText returns text with the Fixer hand-off clause
+// stripped, for the Fixer tab's own detail pane. Health's detail pane
+// renders the SuggestedFix field unchanged (fixerSuggestedFixHandoff's
+// doc comment).
+func fixerSuggestedFixText(text string) string {
+	return strings.TrimSuffix(text, fixerSuggestedFixHandoff)
+}
+
 // fixerModel is the Fixer tab child model.
 type fixerModel struct {
 	backend    Backend
@@ -350,7 +368,7 @@ func (m fixerModel) view(rawState DemoState, width, height int) screenView {
 		}
 		d.WriteString(chips + "\n\n")
 		d.WriteString(" " + sel.Explanation + "\n\n")
-		d.WriteString(" " + styleInfo.Render("~ Suggested fix: "+sel.SuggestedFix) + "\n")
+		d.WriteString(" " + styleInfo.Render("~ Suggested fix: "+fixerSuggestedFixText(sel.SuggestedFix)) + "\n")
 		d.WriteString(" " + styleSelected.Render(" f · Fix this… ") + "\n")
 	}
 	// Wrap to the pane width, then clip with a VISIBLE cue — finding

@@ -116,6 +116,32 @@ func TestFixerCompleteFixableSet(t *testing.T) {
 	}
 }
 
+// TestFixerSuggestedFixDropsStaleFixerHandoff proves 08-08's UX review
+// finding F6: the Fixer tab's own detail pane never renders the "available
+// on the Fixer screen" hand-off clause SuggestedFix carries for Health's
+// benefit -- it is stale once the user is already standing on the Fixer
+// tab. Health's own detail pane must still render the FULL text unchanged
+// (health_screen_test.go covers that side).
+func TestFixerSuggestedFixDropsStaleFixerHandoff(t *testing.T) {
+	finding := DemoFinding{HealthFinding: HealthFinding{
+		ID: "ssh-identitiesonly-contradiction", Section: "SSH", Severity: SeverityError, Family: "Coherence",
+		Title:        "IdentitiesOnly no contradicts an explicit IdentityFile",
+		SuggestedFix: "Set IdentitiesOnly yes on the clientb.github.com Host block -- available on the Fixer screen.",
+	}}
+	state := DemoState{Scanned: true, Findings: []DemoFinding{finding}}
+	m := newFixerModel(stubBackend{})
+	m.selectedID = finding.ID
+	view := stripANSI(m.view(state, 100, 30).body)
+	if strings.Contains(view, "available on the Fixer screen") {
+		t.Errorf("Fixer detail pane must not render the stale Fixer hand-off clause:\n%s", view)
+	}
+	for _, want := range []string{"Set IdentitiesOnly yes on the", "clientb.github.com Host block"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("Fixer detail pane must still render the rest of the suggested-fix text (missing %q):\n%s", want, view)
+		}
+	}
+}
+
 // threeBatchFindings returns 3 fixable findings in strictly descending
 // severity (Critical, Error, Warning) so orderedFindings' stable severity
 // sort makes their walk order deterministic: fix-1, fix-2, fix-3.
