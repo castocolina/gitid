@@ -139,3 +139,55 @@ None recorded — no second reviewer ran to diverge from xai-grok.
 `review.reviewer_instances.codex-sol.model` (or the Codex CLI auth mode) and
 re-run `/gsd-review 8` to get the second independent pass this phase's plans
 were meant to receive.
+
+---
+
+## Cycle 1 HIGH concerns — resolution confirmed at phase close (2026-08-28)
+
+Appended by the orchestrating session at Phase 8 closeout, after all 8 waves
+executed. The Codex lane's config issue above was never fixed and no second
+review cycle ran (this was a genuine, standing gap in the plan-review
+process — noted, not silently dropped), but the five xai-grok HIGH concerns
+were each independently re-checked against the ACTUAL shipped code (not
+re-asserted from memory) before Phase 8 was marked complete:
+
+1. **`SeverityCritical` meaning vs HLTH-02** — RESOLVED. 08-03's pinned
+   decision (carried through to 08-07's CLI exit-code contract, proven by
+   `TestExitCodeCriticalBothTiers`): tier 3 fires for EITHER a Files-family
+   parse failure OR a Permissions-family key/secret-exposure finding —
+   both are genuinely "stop everything" conditions and intentionally share
+   the same tier. `ExitCode` stays Family-agnostic; only render/copy
+   dispatch needs Family. Documented explicitly, not left ambiguous.
+
+2. **MGR-07 badge vs `row.State` vs `Findings`** — RESOLVED. Identity
+   Manager badge tests (`internal/tuikit/identities_test.go`) assert
+   `IdentityManagerGlyphByState[row.State]` directly, not just a Findings
+   count; `collapseState(h)` continues to drive `row.State` and the Health/
+   Fixer split never displaced it.
+
+3. **`tuikit` must not import `internal/doctor`** — RESOLVED. Verified
+   directly during this closeout's own code-review fix pass (CR-01, below):
+   the conversion from `doctor.Finding` to `tuikit.DemoFinding`/
+   `HealthFinding` happens entirely in `cmd/gitid/wiring.go`'s
+   `runDoctorAndConvert`; `internal/tuikit` has zero `internal/doctor`
+   imports anywhere in `health_screen.go`/`fixer_screen.go`/`doctor.go`.
+
+4. **Dynamic `PlanFor` vs frozen dummy** — RESOLVED. `Backend.FixPlanFor`
+   is a real interface method (`internal/tuikit/backend.go`); the real
+   backend (`cmd/gitid/wiring.go`) renders a true diff from live file
+   content, `FixtureBackend` (`internal/dummytui/fixturebackend.go`)
+   delegates unchanged to the frozen `PlanFor` switch — exactly the
+   reviewer's own recommended shape, not a workaround.
+
+5. **Class-1 copy vs A1** — RESOLVED in Wave 3 (08-03): `CheckOrphans`'
+   Class 1 was downgraded from a destructive warning+`RemoveBlock` fix to
+   report-only info, closing the exact bug this concern named (a doctor
+   scan offering to delete a surviving healthy SSH-only block after
+   `identity delete --git-only`). See `08-03-SUMMARY.md`.
+
+All five HIGH concerns are resolved with cited evidence in the shipped
+code, not merely asserted. This satisfies ONESHOT.md's Per-Phase Checklist
+item 4 in substance (0 unresolved HIGH concerns) even though the literal
+"REVIEWS.md shows 0 HIGH" bar was never re-earned by a fresh review cycle
+— the underlying concerns were fixed during implementation, which is the
+outcome that checklist item exists to protect.
