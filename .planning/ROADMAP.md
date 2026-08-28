@@ -422,11 +422,11 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 09-02-PLAN.md — TRACER: one GitHub authentication-key upload wired end-to-end — `DetectFor`, `buildUploaderDeps` + nil-guard, the Backend seam, the `testUpload` sub-beat, the step-0 checkbox, the fixture, and a raw-keystroke PTY proof (UP-02, UP-03)
+- [ ] 09-02-PLAN.md — TRACER: one GitHub authentication-key upload wired end-to-end — `DetectFor`, boundary-matched `ProviderForHostname`, `buildUploaderDeps` + nil-guard + bounded runner, the async Backend seam, the `testUpload` sub-beat, the step-0 checkbox, the fixture, a raw-keystroke PTY proof, AND the suite-wide hermetic provider-PATH boundary that stops any e2e run from reaching a real `gh`/`glab` (UP-02, UP-03)
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 09-03-PLAN.md — `internal/uploader` engine completion: the D-16 per-registration result, D-12's combined GitLab usage type, D-15's provider inventory and delete call, D-14's failure classifiers, D-07's machine-scoped title, and the ASVS V5 `.pub`-only invariant (UP-01, UP-02, UP-03)
+- [ ] 09-03-PLAN.md — `internal/uploader` engine completion: the D-16 per-registration result, D-12's combined GitLab usage type, D-15's provider inventory and validated delete call, D-14's failure classifiers, D-07's machine-scoped title, per-registration upload titles, and the ASVS V5 public-key-only invariant enforced by CONTENT rather than by filename suffix (UP-01, UP-02, UP-03)
 
 **Wave 4** *(blocked on Wave 3)*
 
