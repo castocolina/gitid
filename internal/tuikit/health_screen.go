@@ -184,7 +184,7 @@ func (m healthModel) view(s DemoState, width, height int) screenView {
 				title = styleSelected.Render(f.Title)
 			}
 			fixNote := "info only"
-			if f.SuggestedFix != "" {
+			if f.Fixable {
 				fixNote = "fixable"
 			}
 			rows = append(rows, truncLine(" "+marker+severityLabel(f.Severity)+" "+title, listWidth))
@@ -204,7 +204,9 @@ func (m healthModel) view(s DemoState, width, height int) screenView {
 		d.WriteString(" " + sel.Explanation + "\n\n")
 		if sel.SuggestedFix != "" {
 			d.WriteString(" " + styleInfo.Render("~ Suggested fix: "+sel.SuggestedFix) + "\n")
-			d.WriteString(" " + styleInfo.Render("~ Switch to Fixer to apply this.") + "\n")
+			if sel.Fixable {
+				d.WriteString(" " + styleInfo.Render("~ Switch to Fixer to apply this.") + "\n")
+			}
 		} else {
 			d.WriteString(" " + styleInfo.Render("~ Informational only — nothing to fix.") + "\n")
 		}

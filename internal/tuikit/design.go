@@ -499,6 +499,16 @@ type HealthFinding struct {
 	Explanation  string
 	SuggestedFix string
 	Severity     HealthSeverity
+	// Fixable is the authoritative "can the Fixer actually apply this"
+	// signal (set from doctor.Finding.Fix != nil at conversion time,
+	// cmd/gitid/wiring.go's runDoctorAndConvert). SuggestedFix is NOT this
+	// signal: many report-only checks set non-empty SuggestedFix text
+	// (advisory "do this by hand" prose) while leaving Fix nil -- a
+	// pre-Fixable bug let the Fixer offer a full preview/confirm/backup
+	// ceremony for these, ending in a fabricated backup path and a fake
+	// "applied" receipt while persistFixFinding silently no-oped (08-08
+	// code review CR-01).
+	Fixable bool
 }
 
 // ---------------------------------------------------------------------------

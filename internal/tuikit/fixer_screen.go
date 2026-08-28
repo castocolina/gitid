@@ -71,26 +71,33 @@ type fixerModel struct {
 // FixtureBackend delegates unchanged to the frozen free PlanFor switch.
 func newFixerModel(b Backend) fixerModel { return fixerModel{backend: b} }
 
-// haltBatch builds the D-16 batch-walk-halt state (08-06-PLAN.md Task 3).
-// It is called on the PRE-dispatch fixerModel snapshot (the receiver, m,
-// as it stood right before ceremonyFinished's optimistic queue-advance) so
-// m.batch/m.selectedID/m.batchSucceeded already correctly identify the fix
-// that just failed and every fix that already succeeded before it — App's
-// own optimistic post-handleKey model (which already advanced past this
-// fix assuming success) is discarded by the caller in favor of this one.
+// haltBatch handles a real Persist failure after a fix ceremony's confirm
+// (08-06-PLAN.md Task 3). It is called on the PRE-dispatch fixerModel
+// snapshot (the receiver, m, as it stood right before ceremonyFinished's
+// optimistic queue-advance) so m.batch/m.selectedID/m.batchSucceeded
+// already correctly identify the fix that just failed and every fix that
+// already succeeded before it — App's own optimistic post-handleKey model
+// (which already advanced past this fix assuming success) is discarded by
+// the caller in favor of this one.
 //
-// m.ceremony (also the PRE-transition ceremony) is put into the SAME
+// m.ceremony (also the PRE-transition ceremony) is always put into the SAME
 // retryable-error state every other ceremony in this codebase uses
 // (ceremonyModel.commitFailed) — Wave 2's D-10 auto-restore already
 // guarantees the failed fix's own backed-up file is back to its pre-fix
 // state; this only adds the user-facing halt message and Retry affordance,
 // not a new commit-failure detection mechanism.
+//
+// The D-16 batch-shaped banner ("Fix N of M failed...") is ONLY added when
+// this failure happened mid-`F`-walk (m.batch != nil) — a single `f` fix
+// failing outside a batch is not "Fix 1 of 0" (08-08 code review WR-01:
+// that message previously rendered nonsensically, mentioning "this batch"
+// and "0 of 0", for a fix that was never part of one).
 func (m fixerModel) haltBatch(failedName, errMsg string) fixerModel {
 	m.ceremony = m.ceremony.commitFailed(errMsg)
-	total := 0
-	if m.batch != nil {
-		total = m.batch.total
+	if m.batch == nil {
+		return m
 	}
+	total := m.batch.total
 	n := len(m.batchSucceeded) + 1
 	m.batchFailedName = failedName
 	m.batchHalt = fmt.Sprintf(
@@ -212,7 +219,7 @@ func (m fixerModel) handleKey(msg tea.KeyMsg, rawState DemoState) keyResult {
 		return keyResult{model: m, handled: true}
 	case "f":
 		sel, _, ok := selectFinding(ordered, m.selectedID)
-		if ok && sel.SuggestedFix != "" {
+		if ok && sel.Fixable {
 			m.selectedID = sel.ID
 			m.ceremony = fixCeremonyFor(m.backend, sel)
 			m.fixing = true
@@ -319,7 +326,7 @@ func (m fixerModel) view(rawState DemoState, width, height int) screenView {
 		actions = []FooterAction{{Key: "Esc", Label: "cancel fix"}}
 	} else {
 		actions = []FooterAction{{Key: "↑↓", Label: "select finding"}}
-		if hasSel && sel.SuggestedFix != "" {
+		if hasSel && sel.Fixable {
 			actions = append(actions, FooterAction{Key: "f", Label: "fix this"})
 		}
 		if len(fixable) > 1 {

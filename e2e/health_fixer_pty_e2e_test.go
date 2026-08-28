@@ -294,6 +294,65 @@ func TestHealthFixer_RealPTYFixerBatchWalk(t *testing.T) {
 	}
 }
 
+// makeImmutable applies macOS/BSD's chflags uchg (the user-immutable flag)
+// to path, which blocks chmod(2) with EPERM even for the file's owner --
+// a real, deterministic, OS-level failure for a Permissions Fix.Fn
+// (deps.FixPerm wraps os.Chmod, cmd/gitid/wiring.go), reused here to force
+// a genuine D-16 mid-batch Persist failure through the real binary rather
+// than a stubbed one (08-08-VERIFICATION.md's DLV-06 gap: the halt-on-
+// failure path was previously proven only at the unit level,
+// TestBatchWalkHalt, never through a real compiled-binary PTY session).
+// t.Cleanup lifts the flag so t.TempDir()'s own removal doesn't fail.
+func makeImmutable(t *testing.T, path string) {
+	t.Helper()
+	if err := exec.Command("chflags", "uchg", path).Run(); err != nil { //nolint:gosec // fixed args, test-only, no shell (G204)
+		t.Fatalf("chflags uchg %s: %v", path, err)
+	}
+	t.Cleanup(func() {
+		_ = exec.Command("chflags", "nouchg", path).Run() //nolint:gosec // fixed args, test-only, no shell (G204)
+	})
+}
+
+// TestHealthFixer_RealPTYFixerBatchWalkHalt proves the D-16 batch-walk
+// halt-on-failure path against the REAL compiled binary: fix-1 (alpha's
+// key) succeeds normally; fix-2 (bravo's key, made immutable via chflags
+// uchg so its real chmod(2) genuinely fails with EPERM) halts the batch,
+// naming the failure and the already-applied count, and the queue is
+// cleared -- proven by returning to the fixer list (not silently paused)
+// and by bravo's permission bits being UNCHANGED (the failed chmod never
+// took effect).
+func TestHealthFixer_RealPTYFixerBatchWalkHalt(t *testing.T) {
+	home := SandboxHome(t)
+	keyAlpha, keyBravo := seedHealthFixerBatch(t, home)
+	makeImmutable(t, keyBravo)
+	s := startHealthFixerPTY(t, home)
+	openFixer(t, s)
+	s.sendKey([]byte("F"), keystrokeDelay)
+	mustSee(t, s, "Fix all", "F starts the real batch walk over the fixable queue")
+	confirmNonDestructiveFix(s)
+	mustSee(t, s, "1 / ", "batch progress line advances after the real first fix applies")
+	confirmNonDestructiveFix(s)
+	mustSee(t, s, "Fix 2 of", "the real chmod failure halts the batch with the D-16 message")
+	mustSee(t, s, "failed and was rolled back", "the real chmod failure halts the batch with the D-16 message")
+	mustSee(t, s, "Nothing else in this batch was attempted", "the halt message states the queue stopped")
+	mustSee(t, s, "operation not permitted", "the ceremony's own failure state names the real OS error")
+
+	alphaInfo, err := os.Stat(keyAlpha)
+	if err != nil {
+		t.Fatalf("stat alpha key: %v", err)
+	}
+	if got := alphaInfo.Mode().Perm(); got != 0o600 {
+		t.Errorf("alpha key permissions = %04o, want 0600 (fix-1 must have really applied and stand)", got)
+	}
+	bravoInfo, err := os.Stat(keyBravo)
+	if err != nil {
+		t.Fatalf("stat bravo key: %v", err)
+	}
+	if got := bravoInfo.Mode().Perm(); got != 0o644 {
+		t.Errorf("bravo key permissions = %04o, want 0644 unchanged (the failed chmod must never have taken effect)", got)
+	}
+}
+
 func TestHealthFixer_RealPTYFixerNothingToFix(t *testing.T) {
 	home := SandboxHome(t)
 	seedHealthFixerGreen(t, home)

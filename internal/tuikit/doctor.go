@@ -101,11 +101,14 @@ func selectFinding(ordered []DemoFinding, id string) (DemoFinding, int, bool) {
 	return DemoFinding{}, -1, false
 }
 
-// fixableFindings filters the ordered findings that carry a suggested fix.
+// fixableFindings filters the ordered findings that carry a REAL fix (the
+// Fixable bit, set from doctor.Finding.Fix != nil) -- NOT SuggestedFix
+// non-emptiness, which many report-only findings also carry as advisory
+// "do this by hand" prose (08-08 code review CR-01).
 func fixableFindings(ordered []DemoFinding) []DemoFinding {
 	var out []DemoFinding
 	for _, f := range ordered {
-		if f.SuggestedFix != "" {
+		if f.Fixable {
 			out = append(out, f)
 		}
 	}

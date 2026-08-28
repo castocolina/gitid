@@ -381,24 +381,28 @@ var HealthFindings = []tuikit.HealthFinding{
 		Title:        "Private key is world-readable",
 		Explanation:  "~/.ssh/id_ed25519_archived is mode 0644 -- gitid-managed keys must be 0600. Any other account on this machine can read the key material.",
 		SuggestedFix: "chmod 0600 ~/.ssh/id_ed25519_archived -- available on the Fixer screen.",
+		Fixable:      true,
 	},
 	{
 		ID: "ssh-identitiesonly-contradiction", Section: "SSH", Severity: tuikit.SeverityError, Family: "Coherence",
 		Title:        "IdentitiesOnly no contradicts an explicit IdentityFile",
 		Explanation:  "Host clientb.github.com sets IdentitiesOnly no while also naming IdentityFile ~/.ssh/id_ed25519_clientB -- ssh may still offer every other key it knows before falling back to the one explicitly configured (HLTH-04).",
 		SuggestedFix: "Set IdentitiesOnly yes on the clientb.github.com Host block -- available on the Fixer screen.",
+		Fixable:      true,
 	},
 	{
 		ID: "git-includeif-missing-fragment", Section: "Git", Severity: tuikit.SeverityError, Family: "Orphans",
 		Title:        "includeIf targets a missing fragment",
 		Explanation:  "[includeIf \"gitdir:~/legacy/\"] in ~/.gitconfig points at ~/.gitconfig.d/legacy, which does not exist on disk -- commits made under ~/legacy/ silently fall back to your global git identity instead of \"legacy\" (HLTH-04).",
 		SuggestedFix: "Restore ~/.gitconfig.d/legacy, or repoint the includeIf -- available on the Fixer screen.",
+		Fixable:      true,
 	},
 	{
 		ID: "ssh-duplicate-host-star", Section: "SSH", Severity: tuikit.SeverityWarning, Family: "Redundancy",
 		Title:        "Duplicate Host * stanza",
 		Explanation:  "~/.ssh/config defines Host * twice -- line 4 and line 41. The second stanza silently overrides directives set by the first (HLTH-03).",
 		SuggestedFix: "Merge the two Host * stanzas into one -- available on the Fixer screen.",
+		Fixable:      true,
 	},
 	{
 		ID: "git-opensource-no-host-block", Section: "Git", Severity: tuikit.SeverityInfo, Family: "Overlap",

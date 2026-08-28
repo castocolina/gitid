@@ -7,60 +7,81 @@ import (
 )
 
 // wave2to5FixableFindings mirrors, in shape and ID naming convention, every
-// fixable (non-nil doctor.FixDescriptor / non-empty SuggestedFix) finding
-// this phase's checks produce through Wave 5: the flagship D-09
-// IdentitiesOnly/IdentityFile contradiction (Wave 2), the D-05 gitignore
-// pair fix (Wave 4), and the pre-existing Coherence/Permissions/Orphans
-// fixable findings the Fixer must keep surfacing unchanged. Waves 3 and 5
-// shipped no NEW fixable findings (Wave 3's tolerance downgrades and parse
-// gate, and Wave 5's shadowed-option/author-resolution/directive-above-block
-// checks are all report-only, Fix: nil per their own SUMMARY.md) — this
-// fixture still includes their family shapes as info-only rows so the
-// filter is proven to EXCLUDE them, not just include the fixable ones.
+// fixable (Fix != nil, per doctor.Finding) finding this phase's checks
+// produce through Wave 5: the flagship D-09 IdentitiesOnly/IdentityFile
+// contradiction (Wave 2), the D-05 gitignore pair fix (Wave 4), and the
+// pre-existing Coherence/Permissions/Orphans fixable findings the Fixer must
+// keep surfacing unchanged. Waves 3 and 5 shipped no NEW fixable findings
+// (Wave 3's tolerance downgrades and parse gate, and Wave 5's
+// shadowed-option/author-resolution/directive-above-block checks are all
+// report-only, Fix: nil per their own SUMMARY.md) — this fixture still
+// includes their family shapes as info-only rows so the filter is proven to
+// EXCLUDE them, not just include the fixable ones.
+//
+// 08-08 code review CR-01: fixableFindings' true signal is the Fixable bit
+// (set from Fix != nil at conversion, cmd/gitid/wiring.go's
+// runDoctorAndConvert), NOT SuggestedFix non-emptiness — a report-only check
+// can and does carry non-empty advisory SuggestedFix text ("do this by
+// hand") while still being un-fixable via the Fixer's own ceremony. The
+// report-only rows below now carry a non-empty SuggestedFix (matching the
+// real checks' actual production shape) with Fixable left false (its zero
+// value), so this fixture exercises the REAL discriminator instead of a
+// shape engineered to pass.
 func wave2to5FixableFindings() []DemoFinding {
 	return []DemoFinding{
 		{HealthFinding: HealthFinding{
 			ID: "ssh-identitiesonly-contradiction", Section: "SSH", Severity: SeverityError, Family: "Coherence",
 			Title:        "IdentitiesOnly no contradicts an explicit IdentityFile",
 			SuggestedFix: "Set IdentitiesOnly yes on the clientb.github.com Host block -- available on the Fixer screen.",
+			Fixable:      true,
 		}},
 		{HealthFinding: HealthFinding{
 			ID: "git-baseline-gitignore-pair", Section: "Git", Severity: SeverityWarning, Family: "Baseline",
 			Title:        "core.excludesfile and global gitignore are not configured",
 			SuggestedFix: "run 'gitid baseline setup'",
+			Fixable:      true,
 		}},
 		{HealthFinding: HealthFinding{
 			ID: "ssh-key-perms-archived", Section: "SSH", Severity: SeverityCritical, Family: "Permissions",
 			Title:        "Private key is world-readable",
 			SuggestedFix: "chmod 0600 ~/.ssh/id_ed25519_archived -- available on the Fixer screen.",
+			Fixable:      true,
 		}},
 		{HealthFinding: HealthFinding{
 			ID: "git-allowed-signers-missing", Section: "SSH", Severity: SeverityError, Family: "Coherence",
 			Title:        "allowed_signers: no entry for you@example.com",
 			SuggestedFix: "add the line manually or re-run 'gitid identity add'",
+			Fixable:      true,
 		}},
 		{HealthFinding: HealthFinding{
 			ID: "git-allowed-signers-mismatch", Section: "SSH", Severity: SeverityError, Family: "Coherence",
 			Title:        "allowed_signers: email mismatch for identity \"legacy\"",
 			SuggestedFix: "correct the email in ~/.ssh/allowed_signers to exactly match 'you@example.com'",
+			Fixable:      true,
 		}},
 		{HealthFinding: HealthFinding{
 			ID: "ssh-orphan-class2", Section: "SSH", Severity: SeverityWarning, Family: "Orphans",
 			Title:        "Orphaned SSH Host block for \"stale\"",
 			SuggestedFix: "remove the orphaned Host block or re-run 'gitid identity add'",
+			Fixable:      true,
 		}},
-		// Wave 3/5 report-only checks — must NOT appear as fixable.
+		// Wave 3/5 report-only checks — carry real advisory SuggestedFix
+		// text (matching production) but Fixable stays false: must NOT
+		// appear as fixable.
 		{HealthFinding: HealthFinding{
 			ID: "ssh-shadowed-option", Section: "SSH", Severity: SeverityWarning, Family: "Coherence",
-			Title: "IdentitiesOnly is shadowed by an earlier directive",
+			Title:        "IdentitiesOnly is shadowed by an earlier directive",
+			SuggestedFix: "review the earlier directive and remove the shadow manually -- advisory only; not offered as a fix.",
 		}},
 		{HealthFinding: HealthFinding{
 			ID: "git-author-resolution", Section: "Git", Severity: SeverityError, Family: "Coherence",
-			Title: "Author resolution invariant broke for \"legacy\"",
+			Title:        "Author resolution invariant broke for \"legacy\"",
+			SuggestedFix: "repair via the Global Git screen or re-run 'gitid identity add' -- not offered as a fix.",
 		}},
 		{HealthFinding: HealthFinding{
 			ID: "ssh-directive-above-block", Section: "SSH", Severity: SeverityWarning, Family: "Coherence",
-			Title: "User directive precedes the managed block",
+			Title:        "User directive precedes the managed block",
+			SuggestedFix: "user content above a managed block is left untouched by design -- not offered as a fix.",
 		}},
 		{HealthFinding: HealthFinding{
 			ID: "git-set-differs", Section: "Git", Severity: SeverityInfo, Family: "Baseline",
@@ -69,17 +90,20 @@ func wave2to5FixableFindings() []DemoFinding {
 	}
 }
 
-// TestFixerCompleteFixableSet proves every Wave 2-5 fixable finding (a
-// non-empty SuggestedFix) appears in the Fixer's fixableFindings-filtered
-// list and its detail pane shows the "Fix this" affordance when selected —
-// while every report-only Wave 3/5 finding (empty SuggestedFix) is excluded.
+// TestFixerCompleteFixableSet proves every Wave 2-5 fixable finding
+// (Fixable == true) appears in the Fixer's fixableFindings-filtered list
+// and its detail pane shows the "Fix this" affordance when selected — while
+// every report-only Wave 3/5 finding (Fixable == false, even though each
+// carries real non-empty advisory SuggestedFix text) is excluded (08-08
+// code review CR-01: SuggestedFix non-emptiness is not the fixability
+// signal).
 func TestFixerCompleteFixableSet(t *testing.T) {
 	all := wave2to5FixableFindings()
 	state := DemoState{Scanned: true, Findings: all}
 
 	var wantFixable []string
 	for _, f := range all {
-		if f.SuggestedFix != "" {
+		if f.Fixable {
 			wantFixable = append(wantFixable, f.ID)
 		}
 	}
@@ -127,6 +151,7 @@ func TestFixerSuggestedFixDropsStaleFixerHandoff(t *testing.T) {
 		ID: "ssh-identitiesonly-contradiction", Section: "SSH", Severity: SeverityError, Family: "Coherence",
 		Title:        "IdentitiesOnly no contradicts an explicit IdentityFile",
 		SuggestedFix: "Set IdentitiesOnly yes on the clientb.github.com Host block -- available on the Fixer screen.",
+		Fixable:      true,
 	}}
 	state := DemoState{Scanned: true, Findings: []DemoFinding{finding}}
 	m := newFixerModel(stubBackend{})
@@ -150,14 +175,17 @@ func threeBatchFindings() []DemoFinding {
 		{HealthFinding: HealthFinding{
 			ID: "fix-1", Section: "SSH", Severity: SeverityCritical, Family: "Permissions",
 			Title: "Fix One", SuggestedFix: "chmod 0600 ~/.ssh/id_ed25519_one -- available on the Fixer screen.",
+			Fixable: true,
 		}},
 		{HealthFinding: HealthFinding{
 			ID: "fix-2", Section: "SSH", Severity: SeverityError, Family: "Coherence",
 			Title: "Fix Two", SuggestedFix: "repair Fix Two -- available on the Fixer screen.",
+			Fixable: true,
 		}},
 		{HealthFinding: HealthFinding{
 			ID: "fix-3", Section: "Git", Severity: SeverityWarning, Family: "Orphans",
 			Title: "Fix Three", SuggestedFix: "repair Fix Three -- available on the Fixer screen.",
+			Fixable: true,
 		}},
 	}
 }
@@ -256,5 +284,53 @@ func TestBatchWalkHalt(t *testing.T) {
 	}
 	if !stillPresent["fix-3"] {
 		t.Error("fix-3 must still be present (it was never attempted)")
+	}
+}
+
+// TestSingleFixFailureNoNonsensicalBatchMessage proves 08-08 code review
+// WR-01: a single `f` fix (never part of an `F` batch walk) that fails
+// must NOT render the D-16 batch-shaped "Fix N of M failed..." banner --
+// haltBatch previously built that message unconditionally, producing the
+// nonsensical "Fix 1 of 0 failed... this batch..." for a fix that was
+// never in a batch. The ceremony's own retryable failure state (commitErr,
+// "Retry"/"Cancel") must still render — the fix must not fail silently.
+func TestSingleFixFailureNoNonsensicalBatchMessage(t *testing.T) {
+	backend := stubBackend{
+		fixPersistErr:  errors.New("simulated single-fix write failure"),
+		fixFailID:      "fix-1",
+		lastPersistErr: new(error),
+	}
+	a := NewApp(backend)
+	a.state.Scanned = true
+	a.state.Findings = threeBatchFindings()
+	a, _ = a.setTab(TabFixer)
+	fx, ok := a.screens[TabFixer].(fixerModel)
+	if !ok {
+		t.Fatalf("screens[TabFixer] is %T, want fixerModel", a.screens[TabFixer])
+	}
+	fx.scanning = false
+	a.screens[TabFixer] = fx
+
+	// "f" on the single highest-severity finding — NOT "F" (no batch walk).
+	a, _ = press(t, a, "f")
+	fx, _ = a.screens[TabFixer].(fixerModel)
+	if fx.batch != nil {
+		t.Fatalf("fixture sanity: single 'f' fix must never start a batch, got %+v", fx.batch)
+	}
+	a = confirmFix(t, a)
+	fx, _ = a.screens[TabFixer].(fixerModel)
+
+	if fx.batchHalt != "" {
+		t.Errorf("a single, non-batch fix failure must not set the batch-shaped halt message, got %q", fx.batchHalt)
+	}
+	if fx.ceremony.commitErr == "" {
+		t.Error("the failed single fix's own ceremony must still show the retryable failure state (commitErr set)")
+	}
+	view := stripANSI(fx.view(fixableState(a.state), 100, 30).body)
+	if strings.Contains(view, "of 0 failed") || strings.Contains(view, "Fix 1 of 0") {
+		t.Errorf("Fixer view must never render the nonsensical batch-shaped message for a single fix:\n%s", view)
+	}
+	if !strings.Contains(view, "simulated single-fix write failure") {
+		t.Errorf("Fixer view must still render the single fix's own ceremony failure:\n%s", view)
 	}
 }

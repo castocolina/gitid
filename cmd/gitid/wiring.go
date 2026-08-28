@@ -4057,6 +4057,7 @@ func runDoctorAndConvert(deps doctor.Deps) (raw []doctor.Finding, converted []tu
 				Explanation:  f.Explanation,
 				SuggestedFix: f.SuggestedFix,
 				Severity:     tuikit.HealthSeverity(f.Severity.String()),
+				Fixable:      f.Fix != nil,
 			},
 			Identity:   f.IdentityName,
 			Rewrite:    rewrite,
