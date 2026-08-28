@@ -43,3 +43,65 @@ The first full race-suite run exposed two real test assumptions invalidated by t
 - `make test-e2e` — PASS: `ok github.com/castocolina/gitid/e2e 598.327s`.
 
 The visual and E2E gates rewrote old UI frame snapshots only because the new finding changes fixture totals. Inspected diffs were real count-only changes outside this plan's render scope, so all snapshot files were reverted before commit.
+
+## Post-executor findings (orchestrator independent verification)
+
+Independent verification went beyond the executor's own gates (which never
+actually round-tripped "apply the fix, then re-scan and confirm
+convergence" — only that the fix WRITES something and that findings render)
+and found **two real, connected bugs** in the executor's implementation,
+both verified empirically (real fixture before/after) and fixed:
+
+1. **Read/write location mismatch (non-convergence).** `CheckBaseline`'s
+   gitignore-pair check read `core.excludesfile` via
+   `RunGitConfigGet(d.GitconfigPath, "core.excludesfile")` — `git config
+   --file <path> <key>` does **not** follow `[include]` directives when
+   resolving a key (verified directly: `git config --file ~/.gitconfig
+   core.excludesfile` exits 1 even when the key is set inside a fragment
+   `~/.gitconfig` includes). Since gitid's own baseline setup always places
+   `core.excludesfile` inside the included fragment (never directly in
+   `~/.gitconfig`), this made the check report "not configured" for EVERY
+   correctly-configured baseline — a false positive of exactly the class
+   this whole phase exists to close, and a straight regression of the
+   check's OWN pre-Wave-4 implementation, which already correctly read
+   `state.BaselineKeys["core.excludesfile"]` (parsed from the fragment's
+   own block body by `gitconfig.ReadBaselineState`). Fixed: `CheckBaseline`
+   reads from `state.BaselineKeys` again; `checkGitConfig`'s ERROR branch
+   narrowed to `!fileExists` only (a genuinely dangling pointer) — the
+   original code ALSO escalated a merely-incomplete-content file to the
+   same "missing" ERROR, double-reporting the same condition Check 4
+   ("curated entries missing", WARNING) already covers correctly.
+2. **Fix write lands in the wrong file, and outside the managed block.**
+   `Deps.FixExcludesfile`'s real implementation wrote `core.excludesfile`
+   via a bare `git config --file gitconfigPath core.excludesfile <path>` —
+   this would (a) land the write in `~/.gitconfig`, the file the corrected
+   check no longer reads from, so the fix could never converge, and (b)
+   even redirected to the fragment, a bare `git config --file --set` writes
+   a PLAIN, unmanaged directive appended after the file's content —
+   OUTSIDE the `# BEGIN/END gitid managed: baseline` sentinels, invisible
+   to `parseGitconfigBlockBody`. Fixed: `fixExcludesfile` now patches the
+   EXISTING "baseline" managed block's body in place (insert-or-replace
+   the `excludesfile` line under `[core]`, mirroring
+   `gitconfig.RenderBaselineBlock`'s own Tier-1 key ordering), preserving
+   every other line — including the user's own Tier-2 choices
+   (`init.defaultBranch`, a custom `[alias]` section) — byte-for-byte, via
+   `filewriter.ListBlocks`/`ReplaceBlock`/`Write`, the same chokepoint
+   every other managed-block mutation in this codebase uses. A naive
+   `gitconfig.WriteBaselineFile` re-render was considered and rejected: it
+   would reset the user's OTHER Tier-2 settings to defaults, a severe
+   regression the "set, differs" check (Task 2) explicitly promises never
+   to happen ("gitid will not override it").
+
+Verified via a full apply→re-scan round trip against a real fixture
+(`TestBaselineGitignoreFixPreservesOtherBaselineSettings`,
+`cmd/gitid/fix_test.go`): a baseline fragment with a custom
+`init.defaultBranch` and a hand-written `[alias]` section, missing only
+`core.excludesfile` — after `gitid fix --yes`, both the custom branch name
+and the alias section survive byte-for-byte, `core.excludesfile` is
+correctly patched into the fragment's own block body, and a fresh doctor
+re-scan produces zero Baseline findings. `TestBaselineGitignoreFixViaCLI`
+and `TestCheckBaselineGitignorePair`/`TestFixExcludesfileCallsInjectedEffect`
+updated to match the corrected read location and severity mapping. Full
+gate battery re-run after both fixes: `go build`, `TERM=dumb
+SSH_AUTH_SOCK= go test -count=1 -race ./...` (2115 passed), `make lint` (0
+issues), `make gate-visual-regression` (PASS, 57.8s).

@@ -101,16 +101,34 @@ func CheckBaseline(d doctor.Deps) []doctor.Finding {
 	}
 
 	// Check 2: core.excludesfile and its managed pattern file are one pair.
-	excludesFile, err := currentExcludesfile(d)
+	// Read from state.BaselineKeys (parsed directly from the baseline
+	// fragment's own body by ReadBaselineState) — NEVER via a
+	// RunGitConfigGet(d.GitconfigPath, ...) query. `git config --file <path>`
+	// does not follow [include] directives when resolving a key (verified
+	// empirically: `git config --file ~/.gitconfig core.excludesfile` exits
+	// 1 even when the key is set inside the fragment ~/.gitconfig includes)
+	// — and gitid's OWN baseline setup always places core.excludesfile
+	// inside the included fragment, never directly in ~/.gitconfig. A
+	// --file-scoped query would therefore report "not configured" for
+	// EVERY correctly-configured baseline, a false positive of exactly the
+	// class this whole phase exists to close.
+	excludesFile := state.BaselineKeys["core.excludesfile"]
 	gitignorePresent := matchesDefaultGitignorePatterns(state.GitignorePatterns)
 	fileExists := excludesFileExists(d, excludesFile)
-	if err != nil || excludesFile == "" {
+	if excludesFile == "" {
 		if !gitignorePresent {
 			findings = append(findings, gitignorePairFinding(d, doctor.SeverityWarning,
 				"core.excludesfile and global gitignore are not configured",
 				"Git has no configured global ignore file. OS/editor artifacts may be committed."))
 		}
-	} else if !fileExists || !gitignorePresent {
+	} else if !fileExists {
+		// A dangling pointer — the key is wired but the file it names does
+		// not exist at all. Content-incompleteness of an EXISTING file is a
+		// separate, lower-severity concern (Check 4's "curated entries
+		// missing" WARNING below) — conflating the two under this ERROR's
+		// "missing" wording would misreport an existing-but-incomplete file
+		// as absent, a false positive of exactly the class this phase
+		// exists to close.
 		findings = append(findings, gitignorePairFinding(d, doctor.SeverityError,
 			"core.excludesfile points to a missing global gitignore",
 			"Git silently tolerates this dangling excludesfile path, so OS/editor artifacts may be committed."))
@@ -170,17 +188,6 @@ func setDiffersFindings(d doctor.Deps) []doctor.Finding {
 		}
 	}
 	return findings
-}
-
-func currentExcludesfile(d doctor.Deps) (string, error) {
-	if d.RunGitConfigGet == nil || d.GitconfigPath == "" {
-		return "", nil
-	}
-	value, err := d.RunGitConfigGet(d.GitconfigPath, "core.excludesfile")
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(value), nil
 }
 
 func excludesFileExists(d doctor.Deps, path string) bool {

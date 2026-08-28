@@ -3643,7 +3643,7 @@ func buildDoctorDeps(home string) doctor.Deps {
 			return nil
 		},
 		AddWiring:       doctorAddWiring(allowedSignersPath),
-		FixExcludesfile: fixExcludesfile(gitconfigPath),
+		FixExcludesfile: fixExcludesfile(baselineFilePath),
 
 		// Check function fields — all 9 families wired to their real
 		// internal/doctor/checks function (08-01-PLAN.md Task 2; Task 1
@@ -3661,17 +3661,95 @@ func buildDoctorDeps(home string) doctor.Deps {
 	}
 }
 
-func fixExcludesfile(gitconfigPath string) func(path string) error {
+// fixExcludesfile writes BOTH halves of the gitignore pair: the managed
+// pattern file (via gitconfig.WriteGlobalGitignore) AND the core.excludesfile
+// key — patched directly into the EXISTING "baseline" managed block's body
+// inside baselineFilePath, never as a bare `git config --file gitconfigPath
+// core.excludesfile ...` write. Two independently-verified real bugs drove
+// this shape (found empirically, not assumed):
+//
+//  1. `git config --file <path> <key>` does NOT follow [include] directives
+//     when READING — CheckBaseline's gitignore-pair check correctly reads
+//     core.excludesfile from state.BaselineKeys (parsed from the baseline
+//     FRAGMENT's own block body by gitconfig.ReadBaselineState), never from
+//     gitconfigPath. A fix that WRITES to gitconfigPath while the check
+//     READS from baselineFilePath can never converge — the check would keep
+//     reporting the same finding.
+//  2. `git config --file <path> --set` on ANY file appends a plain,
+//     UNMANAGED directive outside any sentinel block. Even writing to
+//     baselineFilePath directly this way would land the key OUTSIDE the
+//     "# BEGIN gitid managed: baseline" ... "# END" markers — invisible to
+//     parseGitconfigBlockBody, which only reads the block's own body — so
+//     the same non-convergence would recur one file over.
+//
+// The fix therefore patches the block's body in place (inserting or
+// replacing the "excludesfile" line under [core], preserving every other
+// line — including the user's own Tier-2 choices like autocrlf/pager/
+// init.defaultBranch and any [alias]/[merge] sections — byte-for-byte) and
+// writes it back through filewriter.ReplaceBlock + filewriter.Write, the
+// SAME chokepoint every other managed-block mutation in this codebase uses.
+func fixExcludesfile(baselineFilePath string) func(path string) error {
 	return func(path string) error {
 		if _, err := gitconfig.WriteGlobalGitignore(path, gitconfig.DefaultGitignorePatterns()); err != nil {
 			return fmt.Errorf("doctor: writing global gitignore: %w", err)
 		}
-		cmd := exec.Command("git", "config", "--file", gitconfigPath, "core.excludesfile", path) //nolint:gosec // arg-slice form; paths are resolved from the trusted home
-		if output, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("doctor: setting core.excludesfile: %w: %s", err, strings.TrimSpace(string(output)))
+
+		content, rerr := os.ReadFile(baselineFilePath) //nolint:gosec // baselineFilePath is a trusted gitid-managed path (G304)
+		if rerr != nil && !os.IsNotExist(rerr) {
+			return fmt.Errorf("doctor: reading %s: %w", baselineFilePath, rerr)
+		}
+
+		var body string
+		for _, blk := range filewriter.ListBlocks(content) {
+			if blk.Name == "baseline" {
+				body = blk.Body
+				break
+			}
+		}
+		newBody := patchExcludesfileInBaselineBody(body, path)
+		composed := filewriter.ReplaceBlock(content, "baseline", newBody)
+
+		if _, werr := filewriter.Write(baselineFilePath, composed, deleteGitconfigMode); werr != nil {
+			return fmt.Errorf("doctor: setting core.excludesfile in %s: %w", baselineFilePath, werr)
 		}
 		return nil
 	}
+}
+
+// patchExcludesfileInBaselineBody returns body with its "excludesfile" line
+// (under [core]) set to path — replacing an existing line's value if found,
+// otherwise inserting a new line immediately after the [core] section header
+// (matching gitconfig.RenderBaselineBlock's own Tier-1 key ordering:
+// ignorecase, then excludesfile). Every other line is preserved verbatim. If
+// body has no [core] section at all (should not happen for a gitid-authored
+// block, per RenderBaselineBlock's own unconditional Tier-1 guarantee — but
+// handled defensively rather than silently dropping the key), a fresh
+// [core] section is prepended.
+func patchExcludesfileInBaselineBody(body, path string) string {
+	lines := strings.Split(body, "\n")
+	inCore := false
+	coreLineIdx := -1
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") {
+			inCore = trimmed == "[core]"
+			if inCore {
+				coreLineIdx = i
+			}
+			continue
+		}
+		if inCore && strings.HasPrefix(strings.ToLower(strings.TrimSpace(trimmed)), "excludesfile") {
+			lines[i] = "\texcludesfile = " + path
+			return strings.Join(lines, "\n")
+		}
+	}
+	if coreLineIdx >= 0 {
+		insertAt := coreLineIdx + 1
+		lines = append(lines[:insertAt], append([]string{"\texcludesfile = " + path}, lines[insertAt:]...)...)
+		return strings.Join(lines, "\n")
+	}
+	// No [core] section found — prepend one.
+	return "[core]\n\texcludesfile = " + path + "\n" + body
 }
 
 func filterReservedDoctorKeyPaths(keyPaths []string, sshDir string) []string {

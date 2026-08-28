@@ -25,9 +25,14 @@ func TestBaselineGitignoreFixViaCLI(t *testing.T) {
 	if err := runFix(io.Discard, strings.NewReader(""), home, true, false); err != nil {
 		t.Fatalf("runFix(--yes): %v", err)
 	}
-	gitconfigPath := filepath.Join(home, ".gitconfig")
+	// core.excludesfile is patched into the "baseline" managed block INSIDE
+	// baselineFilePath, never gitconfigPath directly — `git config --file`
+	// does not follow [include] directives when reading, and this is
+	// exactly where CheckBaseline's gitignore-pair check reads it from
+	// (state.BaselineKeys, parsed from the fragment's own block body).
+	baselineFilePath := filepath.Join(home, ".gitconfig.d", "00-baseline")
 	gitignorePath := filepath.Join(home, ".gitignore_global")
-	value, err := gitconfig.RunGitConfigGet(gitconfigPath, "core.excludesfile")
+	value, err := gitconfig.RunGitConfigGet(baselineFilePath, "core.excludesfile")
 	if err != nil {
 		t.Fatalf("reading core.excludesfile: %v", err)
 	}
@@ -37,6 +42,57 @@ func TestBaselineGitignoreFixViaCLI(t *testing.T) {
 	content := readFile(t, gitignorePath)
 	if !strings.Contains(content, "# BEGIN gitid managed: gitignore") {
 		t.Errorf("missing managed gitignore block:\n%s", content)
+	}
+}
+
+// TestBaselineGitignoreFixPreservesOtherBaselineSettings is the regression
+// test for a real bug found empirically (not assumed): the gitignore-pair
+// fix originally wrote core.excludesfile via `git config --file gitconfigPath
+// ...`, landing it OUTSIDE any managed block in the WRONG file — `git config
+// --file` does not follow [include] directives when reading, and
+// CheckBaseline reads core.excludesfile from state.BaselineKeys (parsed from
+// the baseline FRAGMENT's own block body), so the fix could never converge.
+// A second bug surfaced fixing the first: patching the fragment naively via
+// a bare git-config-set would land the key OUTSIDE the "baseline" managed
+// block's sentinels too. This test proves the corrected fix patches the
+// EXISTING block body in place — preserving the user's own Tier-2 baseline
+// choices (init.defaultBranch, a custom [alias] section) byte-for-byte —
+// and that the check converges to zero findings afterward.
+func TestBaselineGitignoreFixPreservesOtherBaselineSettings(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
+		t.Fatalf("seeding .ssh: %v", err)
+	}
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+	baselineFilePath := filepath.Join(home, ".gitconfig.d", "00-baseline")
+	if err := os.MkdirAll(filepath.Dir(baselineFilePath), 0o700); err != nil {
+		t.Fatalf("seeding .gitconfig.d: %v", err)
+	}
+	writeFile(t, baselineFilePath, managedBlock("baseline",
+		"[core]\n\tignorecase = false\n[init]\n\tdefaultBranch = my-custom-branch\n[alias]\n\tco = checkout\n"))
+	if _, err := gitconfig.WriteBaselineInclude(gitconfigPath, baselineFilePath); err != nil {
+		t.Fatalf("seeding baseline-include: %v", err)
+	}
+
+	if err := runFix(io.Discard, strings.NewReader(""), home, true, false); err != nil {
+		t.Fatalf("runFix(--yes): %v", err)
+	}
+
+	after := readFile(t, baselineFilePath)
+	if !strings.Contains(after, "defaultBranch = my-custom-branch") {
+		t.Errorf("the user's init.defaultBranch override was lost:\n%s", after)
+	}
+	if !strings.Contains(after, "[alias]\n\tco = checkout") {
+		t.Errorf("the user's custom [alias] section was lost:\n%s", after)
+	}
+	if !strings.Contains(after, "excludesfile = "+filepath.Join(home, ".gitignore_global")) {
+		t.Errorf("core.excludesfile was not patched into the baseline block:\n%s", after)
+	}
+
+	for _, f := range doctorFindings(home) {
+		if f.Family == "Baseline" {
+			t.Errorf("expected the fix to converge to zero Baseline findings, got: %+v", f)
+		}
 	}
 }
 
