@@ -65,32 +65,6 @@ func TestNoDuplicateFullyQualifiedCommandPaths(t *testing.T) {
 	walk(root)
 }
 
-// TestReservedNounGroupsReturnPhaseNamedErrors asserts each reserved noun
-// group's RunE returns a non-nil error naming the implementing phase (D-01).
-func TestReservedNounGroupsReturnPhaseNamedErrors(t *testing.T) {
-	root := newRootCmd()
-	cases := map[string]string{
-		"fix": "Phase 8",
-	}
-	for use, wantPhase := range cases {
-		cmd, _, err := root.Find([]string{use})
-		if err != nil {
-			t.Fatalf("Find(%q): %v", use, err)
-		}
-		if cmd.RunE == nil {
-			t.Fatalf("%q has no RunE", use)
-		}
-		rerr := cmd.RunE(cmd, nil)
-		if rerr == nil {
-			t.Errorf("%q RunE returned nil, want a not-yet-implemented error", use)
-			continue
-		}
-		if !strings.Contains(rerr.Error(), wantPhase) {
-			t.Errorf("%q RunE error = %q, want it to name %q", use, rerr.Error(), wantPhase)
-		}
-	}
-}
-
 // TestVerbSpecsProduceIdenticalNounAndFlatCommands proves review R-15: for
 // EVERY identity verb spec, the noun-form command and the flat-alias command
 // — two DISTINCT *cobra.Command objects built from the SAME spec — expose

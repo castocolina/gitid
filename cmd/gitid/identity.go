@@ -94,22 +94,6 @@ func registerFlatAliases(root *cobra.Command, specs []identityVerb) {
 	}
 }
 
-// newReservedNounCmd builds a placeholder noun group that claims a D-01
-// taxonomy slot before the phase that implements it lands — guaranteeing a
-// later phase's real verb can never collide with a top-level flat alias.
-// Its RunE returns a non-nil error naming the implementing phase; it
-// performs no other action.
-func newReservedNounCmd(use, short, phase string) *cobra.Command {
-	return &cobra.Command{
-		Use:          use,
-		Short:        short,
-		SilenceUsage: true,
-		RunE: func(*cobra.Command, []string) error {
-			return fmt.Errorf("gitid: %q arrives in %s — not yet implemented", use, phase)
-		},
-	}
-}
-
 // ---------------------------------------------------------------------------
 // The D-02 adaptive-depth resolver (review R-21)
 // ---------------------------------------------------------------------------

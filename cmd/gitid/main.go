@@ -103,7 +103,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newSSHCmd())
 	root.AddCommand(newGitCmd())
 	root.AddCommand(newHealthCmd())
-	root.AddCommand(newReservedNounCmd("fix", "Apply suggested health fixes (arrives in Phase 8)", "Phase 8 (Health + Fixer)"))
+	root.AddCommand(newFixCmd())
 
 	return root
 }
