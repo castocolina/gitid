@@ -38,11 +38,12 @@ type screenView struct {
 // screen, reducer actions to dispatch, a command, whether the key was
 // consumed, and an optional transient status note.
 type keyResult struct {
-	model   screenModel
-	actions []Action
-	cmd     tea.Cmd
-	handled bool
-	note    string
+	model          screenModel
+	actions        []Action
+	cmd            tea.Cmd
+	handled        bool
+	note           string
+	healthIdentity string
 }
 
 // screenModel is the contract every tab's child model implements. Handlers
@@ -295,6 +296,40 @@ func (a *App) apply(actions []Action) {
 	}
 }
 
+// checkFixBatchHalt implements D-16: a FixFinding dispatched during a Fixer
+// batch walk that fails halts the walk instead of silently advancing.
+// Persist runs SYNCHRONOUSLY inside apply, called right before this from
+// the SAME handleKey/handleClick call — a.backend.PersistError() already
+// reflects the real outcome of the just-dispatched action, no async round
+// trip needed.
+//
+// fixerModel.handleKey optimistically advances its own batch queue
+// assuming success BEFORE Persist ever runs (a.screens[a.tab] already holds
+// that optimistic model by the time this is called). On failure, that
+// optimistic model is discarded in favor of one built from prevScreen — the
+// PRE-dispatch snapshot passed in, which still correctly names the failed
+// fix and the batch state exactly as it stood right before the doomed
+// dispatch.
+func (a *App) checkFixBatchHalt(prevScreen screenModel) {
+	postFixer, ok := a.screens[a.tab].(fixerModel)
+	if !ok || postFixer.pendingFixID == "" {
+		return
+	}
+	preFixer, wasFixer := prevScreen.(fixerModel)
+	if err := a.backend.PersistError(); err != nil {
+		if wasFixer {
+			a.screens[a.tab] = preFixer.haltBatch(postFixer.pendingFixName, err.Error())
+		}
+		return
+	}
+	if wasFixer && preFixer.batch != nil {
+		postFixer.batchSucceeded = append(postFixer.batchSucceeded, postFixer.pendingFixName)
+	}
+	postFixer.pendingFixID = ""
+	postFixer.pendingFixName = ""
+	a.screens[a.tab] = postFixer
+}
+
 // Update satisfies tea.Model — window sizing, key routing, and forwarding
 // screen-owned messages (ticks) to every screen (each ignores what it does
 // not own).
@@ -387,11 +422,28 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Screen-local handler next: forms and ceremonies own their keys.
 	a.note = ""
+	prevScreen := a.screens[a.tab]
 	res := a.screens[a.tab].handleKey(msg, a.state)
 	a.screens[a.tab] = res.model
 	a.apply(res.actions)
+	a.checkFixBatchHalt(prevScreen)
 	if res.note != "" {
 		a.note = res.note
+	}
+	if res.healthIdentity != "" {
+		health, ok := a.screens[TabHealth].(healthModel)
+		if ok {
+			health.identityName = res.healthIdentity
+			a.screens[TabHealth] = health
+		}
+		next, cmd := a.setTab(TabHealth)
+		if res.cmd != nil && cmd != nil {
+			return next, tea.Batch(res.cmd, cmd)
+		}
+		if res.cmd != nil {
+			return next, res.cmd
+		}
+		return next, cmd
 	}
 	if res.handled {
 		return a, res.cmd
@@ -471,11 +523,21 @@ func (a App) handleMouse(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 	a.note = ""
+	prevScreen := a.screens[a.tab]
 	res := target.handleClick(msg.X, bodyY, a.width, a.height, a.state)
 	a.screens[a.tab] = res.model
 	a.apply(res.actions)
+	a.checkFixBatchHalt(prevScreen)
 	if res.note != "" {
 		a.note = res.note
+	}
+	if res.healthIdentity != "" {
+		health, ok := a.screens[TabHealth].(healthModel)
+		if ok {
+			health.identityName = res.healthIdentity
+			a.screens[TabHealth] = health
+		}
+		return a.setTab(TabHealth)
 	}
 	return a, res.cmd
 }

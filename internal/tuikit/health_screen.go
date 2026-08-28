@@ -17,8 +17,9 @@ import (
 
 // healthModel is the Health tab child model.
 type healthModel struct {
-	scanning   bool
-	selectedID string
+	scanning     bool
+	selectedID   string
+	identityName string
 }
 
 // newHealthModel builds the Health tab (scan runs on first activation).
@@ -47,7 +48,7 @@ func (m healthModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 // handleKey implements the Health key model: navigation only — no f/F.
 func (m healthModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 	key := msg.String()
-	ordered := orderedFindings(s)
+	ordered := m.findings(s)
 
 	if m.scanning {
 		return keyResult{model: m}
@@ -85,7 +86,7 @@ func (m healthModel) handleClick(x, y, width, _ int, s DemoState) keyResult {
 		return keyResult{model: m}
 	}
 	line := 0
-	for _, group := range groupFindings(orderedFindings(s)) {
+	for _, group := range groupFindings(m.findings(s)) {
 		line++ // the group's faint label line
 		for _, f := range group.findings {
 			if y == line || y == line+1 {
@@ -96,6 +97,13 @@ func (m healthModel) handleClick(x, y, width, _ int, s DemoState) keyResult {
 		}
 	}
 	return keyResult{model: m}
+}
+
+func (m healthModel) findings(s DemoState) []DemoFinding {
+	if m.identityName == "" {
+		return orderedFindings(s)
+	}
+	return orderedFindings(DemoState{Findings: FindingsFor(s, m.identityName)})
 }
 
 func parseErrorFinding(findings []DemoFinding) (DemoFinding, bool) {
@@ -128,7 +136,7 @@ func parseErrorScreenView(finding DemoFinding) screenView {
 
 // view implements screenModel.
 func (m healthModel) view(s DemoState, width, height int) screenView {
-	ordered := orderedFindings(s)
+	ordered := m.findings(s)
 	if finding, ok := parseErrorFinding(ordered); ok {
 		return parseErrorScreenView(finding)
 	}
@@ -143,6 +151,10 @@ func (m healthModel) view(s DemoState, width, height int) screenView {
 
 	status := fmt.Sprintf("%d finding%s — read-only diagnostics; switch to Fixer to apply a fix.",
 		len(ordered), pluralS(len(ordered)))
+	if m.identityName != "" {
+		status = fmt.Sprintf("%s: %d finding%s — read-only diagnostics; switch to Fixer to apply a fix.",
+			m.identityName, len(ordered), pluralS(len(ordered)))
+	}
 	tone := "info"
 	for _, f := range ordered {
 		if f.Severity != SeverityInfo {

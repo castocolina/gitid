@@ -141,6 +141,43 @@ func TestDetailShowsSSHFirstAndNeverFabricatesGit(t *testing.T) {
 	}
 }
 
+// TestIdentityHealthDeepLink proves D-04's per-identity health entry point:
+// pressing h on an Identity Manager row switches to the Health tab scoped
+// to exactly that identity's own findings (via store.FindingsFor), and the
+// deep-link's status line names the identity.
+func TestIdentityHealthDeepLink(t *testing.T) {
+	a := NewApp(stubBackend{})
+	// The seeded default selection is "personal" (no findings); move onto
+	// clientB, which carries the ssh-identitiesonly-contradiction finding.
+	for identModel(t, a).selected != "clientB" {
+		a = pressSeq(t, a, "down")
+	}
+	a, _ = press(t, a, "h")
+	if a.tab != TabHealth {
+		t.Fatalf("tab after h = %v, want TabHealth", a.tab)
+	}
+	health, ok := a.screens[TabHealth].(healthModel)
+	if !ok {
+		t.Fatalf("screens[TabHealth] is %T, want healthModel", a.screens[TabHealth])
+	}
+	if health.identityName != "clientB" {
+		t.Errorf("healthModel.identityName = %q, want clientB", health.identityName)
+	}
+	// The scan tick must still complete for the deep-linked tab.
+	model, _ := a.Update(doctorScanMsg{})
+	a = model.(App)
+	view := appView(a)
+	if !strings.Contains(view, "IdentitiesOnly no contradicts an explicit") {
+		t.Errorf("deep-linked Health view must show clientB's own finding:\n%s", view)
+	}
+	if strings.Contains(view, "Private key is world-readable") {
+		t.Errorf("deep-linked Health view must NOT show a different identity's finding:\n%s", view)
+	}
+	if !strings.Contains(view, "clientB:") {
+		t.Errorf("deep-linked Health status must name the identity:\n%s", view)
+	}
+}
+
 // --------------------------------------------------------------------------
 // Create wizard — state 1 validation.
 // --------------------------------------------------------------------------

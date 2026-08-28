@@ -19,14 +19,26 @@ import (
 	"github.com/castocolina/gitid/internal/tuikit"
 )
 
+// newHealthCmd builds `gitid health [--json] [--identity NAME]`. --identity
+// scopes the findings to one identity via Finding.IdentityName (D-04,
+// HLTH-05), with real identity-name shell completion (mirroring the
+// existing identity-noun completion pattern). Per D-04's Claude's-discretion
+// note, global (empty-IdentityName) findings are EXCLUDED entirely from the
+// scoped view — the same choice internal/tuikit/identities.go's TUI deep-link
+// makes (health_screen.go's healthModel.findings scopes via
+// tuikit.FindingsFor, which only matches DemoFinding.Identity == name and
+// therefore never includes a global finding either); documented here so the
+// TUI and the CLI stay consistent per D-04's requirement.
 func newHealthCmd() *cobra.Command {
 	var jsonOut bool
-	return newVerbCmd(identityVerb{
+	var identityName string
+	cmd := newVerbCmd(identityVerb{
 		use:   "health",
 		short: "Show identity/config health findings",
 		args:  cobra.NoArgs,
 		bindFlags: func(fs *pflag.FlagSet) {
 			fs.BoolVar(&jsonOut, "json", false, "print findings as a JSON array (provisional shape — superseded in a later phase 8 wave)")
+			fs.StringVar(&identityName, "identity", "", "scope findings to one identity's own SSH + Git findings (D-04); global findings are excluded from the scoped view")
 		},
 		run: func(cmd *cobra.Command, _ []string) error {
 			home, err := resolveHomeForCLI()
@@ -34,12 +46,43 @@ func newHealthCmd() *cobra.Command {
 				return err
 			}
 			findings := suppressParseErrorFindings(doctorFindings(home))
+			if identityName != "" {
+				findings = findingsForIdentity(findings, identityName)
+			}
 			if jsonOut {
 				return writeJSON(cmd.OutOrStdout(), findings)
 			}
 			return printHealthFindings(cmd.OutOrStdout(), findings)
 		},
 	})
+	//nolint:errcheck // completion registration failure is non-fatal (cobra ignores it gracefully)
+	_ = cmd.RegisterFlagCompletionFunc("identity", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		home, err := resolveHomeForCLI()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		b := newBackendForHome(home)
+		var names []string
+		for _, a := range b.accounts() {
+			names = append(names, a.Name)
+		}
+		return names, cobra.ShellCompDirectiveNoFileComp
+	})
+	return cmd
+}
+
+// findingsForIdentity filters findings to exactly identityName's own
+// findings (Finding.IdentityName) — global (empty-Identity) findings are
+// excluded, the same choice the TUI deep-link's healthModel.findings makes
+// via tuikit.FindingsFor.
+func findingsForIdentity(findings []tuikit.DemoFinding, identityName string) []tuikit.DemoFinding {
+	out := make([]tuikit.DemoFinding, 0, len(findings))
+	for _, f := range findings {
+		if f.Identity == identityName {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 func suppressParseErrorFindings(findings []tuikit.DemoFinding) []tuikit.DemoFinding {

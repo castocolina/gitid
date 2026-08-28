@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/castocolina/gitid/internal/tuikit"
@@ -69,6 +70,104 @@ func TestSetDiffersRealWiring(t *testing.T) {
 		}
 	}
 	t.Fatalf("health findings missing init.defaultBranch override: %+v", findings)
+}
+
+// TestHealthIdentityFlagScopesAndExcludesGlobal proves D-04's `gitid health
+// --identity NAME` filters via Finding.IdentityName to exactly that
+// identity's own findings, and — matching the TUI deep-link's documented
+// choice (internal/tuikit/health_screen.go's healthModel.findings, which
+// scopes via tuikit.FindingsFor) — EXCLUDES global (empty-IdentityName)
+// findings entirely from the scoped view.
+func TestHealthIdentityFlagScopesAndExcludesGlobal(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+	seedDeleteFixture(t, home, "orphan")
+	// Break "orphan"'s own IdentityFile so Coherence Check 1 fires an
+	// identity-scoped finding (IdentityName == "orphan").
+	if err := os.Remove(filepath.Join(home, ".ssh", "id_ed25519_orphan")); err != nil {
+		t.Fatalf("removing orphan key: %v", err)
+	}
+	if err := os.Remove(filepath.Join(home, ".ssh", "id_ed25519_orphan.pub")); err != nil {
+		t.Fatalf("removing orphan pub: %v", err)
+	}
+	// A global Permissions finding (no IdentityName) — must never appear in
+	// EITHER identity's scoped view.
+	if err := os.Chmod(filepath.Join(home, ".ssh"), 0o755); err != nil { //nolint:gosec // deliberately loose — asserts the global finding is excluded from scoped views (G301 in test scope)
+		t.Fatalf("chmod .ssh: %v", err)
+	}
+
+	all := doctorFindings(home)
+	var sawGlobalPermsFinding, sawOrphanFinding bool
+	for _, f := range all {
+		if f.Family == "Permissions" && f.Identity == "" {
+			sawGlobalPermsFinding = true
+		}
+		if f.Identity == "orphan" {
+			sawOrphanFinding = true
+		}
+	}
+	if !sawGlobalPermsFinding {
+		t.Fatalf("fixture sanity: expected a global Permissions finding, findings: %+v", all)
+	}
+	if !sawOrphanFinding {
+		t.Fatalf("fixture sanity: expected an orphan-scoped finding, findings: %+v", all)
+	}
+
+	scoped := findingsForIdentity(all, "orphan")
+	if len(scoped) == 0 {
+		t.Fatal("findingsForIdentity(orphan) must include orphan's own finding")
+	}
+	for _, f := range scoped {
+		if f.Identity != "orphan" {
+			t.Errorf("scoped finding %+v carries the wrong identity", f)
+		}
+		if f.Family == "Permissions" {
+			t.Errorf("scoped view for orphan must EXCLUDE the global Permissions finding: %+v", f)
+		}
+	}
+
+	scopedWork := findingsForIdentity(all, "work")
+	for _, f := range scopedWork {
+		if f.Family == "Permissions" {
+			t.Errorf("scoped view for work must EXCLUDE the global Permissions finding: %+v", f)
+		}
+	}
+
+	var output bytes.Buffer
+	root := newRootCmd()
+	root.SetArgs([]string{"health", "--identity", "orphan"})
+	root.SetOut(&output)
+	if err := root.Execute(); err != nil {
+		t.Fatalf("health --identity orphan: %v", err)
+	}
+	got := output.String()
+	if !strings.Contains(got, "orphan") && !strings.Contains(got, "IdentityFile") {
+		t.Errorf("gitid health --identity orphan output missing the scoped finding:\n%s", got)
+	}
+	if strings.Contains(got, "0755") || strings.Contains(got, ".ssh: ") {
+		t.Errorf("gitid health --identity orphan must not print the global Permissions finding:\n%s", got)
+	}
+}
+
+// TestHealthIdentityCompletionListsRealIdentities proves the --identity flag
+// carries real identity-name shell completion, mirroring the project's
+// existing identity-noun completion pattern.
+func TestHealthIdentityCompletionListsRealIdentities(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+
+	root := newRootCmd()
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetArgs([]string{"__complete", "health", "--identity", ""})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("__complete health --identity: %v", err)
+	}
+	if !strings.Contains(buf.String(), "work") {
+		t.Errorf("health --identity completion missing %q:\n%s", "work", buf.String())
+	}
 }
 
 func TestHealthJSONParseErrorSuppression(t *testing.T) {

@@ -2197,6 +2197,11 @@ func (m identitiesModel) handleDetailKey(msg tea.KeyMsg, s DemoState) keyResult 
 		}
 		m = m.openDeleteChoice(sel)
 		return keyResult{model: m, handled: true}
+	case "h":
+		if !ok {
+			return keyResult{model: m, handled: true}
+		}
+		return keyResult{model: m, handled: true, healthIdentity: sel.Name}
 	case "f":
 		if !ok {
 			return keyResult{model: m, handled: true}
@@ -3846,7 +3851,7 @@ func (m identitiesModel) renderDetail(s DemoState, sel DemoIdentity) string {
 			}
 			b.WriteString("   " + severityLabel(f.Severity) + "  " + f.Title + "  " + fix + "\n")
 		}
-		b.WriteString("   " + styleFocusLink.Render("Open Health (4) for the global picture") + "\n")
+		b.WriteString("   " + styleFocusLink.Render("h · Open Health for "+sel.Name) + "\n")
 	}
 	return b.String()
 }

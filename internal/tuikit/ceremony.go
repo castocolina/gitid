@@ -193,8 +193,16 @@ func (c ceremonyModel) handleKey(msg tea.KeyMsg) (ceremonyModel, ceremonyOutcome
 		// Retryable failure state.
 		switch key {
 		case "enter":
-			c.pending = true
 			c.commitErr = ""
+			if c.cfg.Async {
+				c.pending = true
+			} else {
+				// A non-async ceremony (e.g. fixCeremonyFor) has no external
+				// host that will later call commitSucceeded — mirror the
+				// original confirm branch's non-async path (done=true
+				// directly) or retry would leave it stuck pending forever.
+				c.done = true
+			}
 			return c, ceremonyConfirmed
 		case "esc":
 			return c, ceremonyCancelled
@@ -277,10 +285,19 @@ func (c ceremonyModel) commitSucceeded(backups []string) ceremonyModel {
 	return c
 }
 
-// commitFailed transitions an async ceremony from pending to a retryable error
-// state that renders the concrete error with Retry / Cancel affordances.
+// commitFailed transitions a ceremony to a retryable error state that
+// renders the concrete error with Retry / Cancel affordances. c.done is
+// always cleared too — view()'s receipt branch (c.done) takes priority over
+// the commitErr branch, so a ceremony that reached done OPTIMISTICALLY
+// before its commit outcome was known (08-06-PLAN.md Task 3's fix
+// ceremonies: fixCeremonyFor builds a non-Async ceremony that sets done=true
+// on Enter #1, before App ever dispatches the FixFinding Persist call on
+// Enter #2) must have that optimism corrected here, or the retry view is
+// silently unreachable. Async ceremonies that call this while still pending
+// (done already false) are unaffected.
 func (c ceremonyModel) commitFailed(err string) ceremonyModel {
 	c.pending = false
+	c.done = false
 	c.commitErr = err
 	c.focus = ceremonyFocusPrimary
 	return c

@@ -195,6 +195,19 @@ type stubBackend struct {
 	// storageCall records the last CommitSSHStorage arguments when non-nil
 	// (a pointer field so a value-receiver stub can still write through).
 	storageCall *storageCommitCall
+	// fixPersistErr, when non-nil, makes Persist(FixFinding{ID: fixFailID})
+	// return state UNCHANGED (mirroring Wave 2's D-10 auto-restore: a
+	// failed fix's own file is restored, so a rescan reproduces the same
+	// finding) — 08-06-PLAN.md Task 3's TestBatchWalkHalt fixture.
+	fixPersistErr error
+	fixFailID     string
+	// lastPersistErr is a pointer box (a value-receiver Persist still
+	// writes through it, mirroring storageCall above) recording whether
+	// the MOST RECENT Persist call was the configured fix failure — every
+	// other action, including a SUCCEEDING fix, must report nil here, or
+	// App.checkFixBatchHalt would wrongly halt on every subsequent
+	// dispatch once fixPersistErr is set once.
+	lastPersistErr *error
 }
 
 // storageCommitCall is the last CommitSSHStorage (layout, token) pair a
@@ -250,10 +263,29 @@ func (stubBackend) DemoBanner(TabID) bool { return false }
 func (stubBackend) FixPlanFor(finding DemoFinding) FixPlan { return PlanFor(finding) }
 
 func (b stubBackend) Persist(state DemoState, action Action) DemoState {
+	if fx, isFix := action.(FixFinding); isFix && b.fixPersistErr != nil && fx.ID == b.fixFailID {
+		if b.lastPersistErr != nil {
+			*b.lastPersistErr = b.fixPersistErr
+		}
+		return state // unchanged -- mirrors D-10 auto-restore: nothing converges
+	}
+	if b.lastPersistErr != nil {
+		*b.lastPersistErr = nil
+	}
 	if _, isReset := action.(Reset); isReset {
 		return b.InitialState()
 	}
 	return Reduce(state, action)
+}
+
+// PersistError reports the error the MOST RECENT Persist call failed with —
+// see lastPersistErr's doc comment for why this must track only the last
+// call, not fixPersistErr unconditionally.
+func (b stubBackend) PersistError() error {
+	if b.lastPersistErr == nil {
+		return nil
+	}
+	return *b.lastPersistErr
 }
 
 func (stubBackend) AlgorithmCatalog() []AlgorithmCatalogEntry { return AlgorithmCatalog }

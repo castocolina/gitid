@@ -124,6 +124,10 @@ func (b FixtureBackend) Persist(state tuikit.DemoState, action tuikit.Action) tu
 	return tuikit.Reduce(state, action)
 }
 
+// PersistError always returns nil — Reduce is an in-memory transition and
+// never fails.
+func (FixtureBackend) PersistError() error { return nil }
+
 // ---------------------------------------------------------------------------
 // Create-flow effects
 // ---------------------------------------------------------------------------

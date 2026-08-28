@@ -23,6 +23,28 @@ type fixerModel struct {
 	fixing     bool
 	batch      *doctorBatch
 	ceremony   ceremonyModel
+	// pendingFixID/pendingFixName name the fix this handleKey call just
+	// dispatched a FixFinding action for (D-16). Backend.Persist runs
+	// SYNCHRONOUSLY inside App.apply, called right after handleKey returns
+	// in the SAME Update cycle -- there is no async message round trip for
+	// this action (unlike the globalgit/globalssh/identities ceremonies,
+	// which dispatch a tea.Cmd and later call commitFailed/commitSucceeded
+	// from a delivered Msg). App.handleKey checks Backend.PersistError()
+	// immediately after a.apply() returns and, on failure, replaces the
+	// screen's optimistically-advanced model with one built from the
+	// PRE-dispatch snapshot via haltBatch -- see app.go's FixFinding
+	// post-apply check.
+	pendingFixID   string
+	pendingFixName string
+	// batchSucceeded lists the titles of every fix that has ALREADY applied
+	// and verified successfully in the CURRENT batch walk (D-16's "the
+	// first N-1 fixes already applied stand").
+	batchSucceeded []string
+	// batchHalt is the D-16 queue-halt message, non-empty only while the
+	// batch walk has stopped on a verified failure. batchFailedName names
+	// the fix that failed.
+	batchHalt       string
+	batchFailedName string
 }
 
 // newFixerModel builds the Fixer tab (scan runs on first activation). b is
@@ -30,6 +52,35 @@ type fixerModel struct {
 // Task 2) — the real backend renders a true diff from actual file content,
 // FixtureBackend delegates unchanged to the frozen free PlanFor switch.
 func newFixerModel(b Backend) fixerModel { return fixerModel{backend: b} }
+
+// haltBatch builds the D-16 batch-walk-halt state (08-06-PLAN.md Task 3).
+// It is called on the PRE-dispatch fixerModel snapshot (the receiver, m,
+// as it stood right before ceremonyFinished's optimistic queue-advance) so
+// m.batch/m.selectedID/m.batchSucceeded already correctly identify the fix
+// that just failed and every fix that already succeeded before it — App's
+// own optimistic post-handleKey model (which already advanced past this
+// fix assuming success) is discarded by the caller in favor of this one.
+//
+// m.ceremony (also the PRE-transition ceremony) is put into the SAME
+// retryable-error state every other ceremony in this codebase uses
+// (ceremonyModel.commitFailed) — Wave 2's D-10 auto-restore already
+// guarantees the failed fix's own backed-up file is back to its pre-fix
+// state; this only adds the user-facing halt message and Retry affordance,
+// not a new commit-failure detection mechanism.
+func (m fixerModel) haltBatch(failedName, errMsg string) fixerModel {
+	m.ceremony = m.ceremony.commitFailed(errMsg)
+	total := 0
+	if m.batch != nil {
+		total = m.batch.total
+	}
+	n := len(m.batchSucceeded) + 1
+	m.batchFailedName = failedName
+	m.batchHalt = fmt.Sprintf(
+		"Fix %d of %d failed and was rolled back from its own backup -- the first %d fixes already applied stand. Nothing else in this batch was attempted.",
+		n, total, n-1)
+	m.batch = nil
+	return m
+}
 
 // fixableState returns s with Findings narrowed to fixableFindings(ordered)
 // only — the Fixer tab's list scope. Every handler below operates on this
@@ -82,9 +133,18 @@ func (m fixerModel) handleKey(msg tea.KeyMsg, rawState DemoState) keyResult {
 			// Esc cancels this fix AND the remainder of a Fix-all walk.
 			m.fixing = false
 			m.batch = nil
+			m.batchHalt = ""
+			m.batchFailedName = ""
+			m.batchSucceeded = nil
 		case ceremonyFinished:
 			plan := m.backend.FixPlanFor(sel)
 			action := FixFinding{ID: sel.ID, Backup: NewBackupPath(plan.File)}
+			// D-16: name what this dispatch is FOR so App.handleKey can check
+			// Backend.PersistError() after Persist runs and, on failure,
+			// build the halt state from the pre-dispatch snapshot it also
+			// keeps (see app.go).
+			m.pendingFixID = sel.ID
+			m.pendingFixName = sel.Title
 			if m.batch != nil {
 				queue := m.batch.queue[:0]
 				for _, id := range m.batch.queue {
@@ -151,6 +211,11 @@ func (m fixerModel) handleKey(msg tea.KeyMsg, rawState DemoState) keyResult {
 			m.selectedID = ids[0]
 			m.ceremony = fixCeremonyFor(m.backend, fixable[0])
 			m.fixing = true
+			// A fresh batch walk starts with no halt/success history from
+			// any earlier walk.
+			m.batchHalt = ""
+			m.batchFailedName = ""
+			m.batchSucceeded = nil
 		}
 		return keyResult{model: m, handled: true}
 	}
@@ -269,7 +334,9 @@ func (m fixerModel) view(rawState DemoState, width, height int) screenView {
 	}
 
 	var d strings.Builder
-	if m.batch != nil && m.fixing {
+	if m.batchHalt != "" {
+		d.WriteString(" " + styleError.Render(m.batchHalt) + "\n")
+	} else if m.batch != nil && m.fixing {
 		fixed := m.batch.total - len(m.batch.queue)
 		d.WriteString(" " + styleInfo.Render(fmt.Sprintf("Fix all — %d / %d fixed; each change still previews its own diff and backup before writing.", fixed, m.batch.total)) + "\n")
 	}

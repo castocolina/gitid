@@ -343,6 +343,15 @@ type Backend interface {
 	// the ONLY place a committed mutation leaves the render stack.
 	Persist(state DemoState, action Action) DemoState
 
+	// PersistError reports the error the LAST Persist call failed with, or
+	// nil. App.handleKey consults it immediately after Persist runs (D-16):
+	// a FixFinding dispatched during a Fixer batch walk that fails halts
+	// the walk instead of silently advancing (fixer_screen.go's haltBatch).
+	// The dummy always returns nil (Reduce never fails); the real binary
+	// records the last commit's error and returns it here (unchanged from
+	// its pre-existing realBackend.PersistError()).
+	PersistError() error
+
 	// ----- Create-flow effects ---------------------------------------
 
 	// AlgorithmCatalog is the KEY-01 key-algorithm catalog offered on the
