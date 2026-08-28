@@ -958,6 +958,34 @@ func TestGlobalGitNotApplicableRowRendersSentence(t *testing.T) {
 	}
 }
 
+// TestGlobalGitNonSelectableRowCheckboxNeverBlank asserts a non-selectable
+// row's checkbox column renders a visible neutral marker, never a blank
+// cell — the same reasoning already applied to the row's own tone-glyph
+// slot (07-UI-REVIEW.md: the checkbox slot did not receive that fix,
+// silently rendering three blank spaces where the tone glyph correctly
+// renders a faint "·"). A blank checkbox cell is visually indistinguishable
+// from a rendering bug; a real row must always show SOMETHING there.
+func TestGlobalGitNonSelectableRowCheckboxNeverBlank(t *testing.T) {
+	b := stubBackend{gitOptions: []GlobalGitOptionView{
+		{Key: "fetch.prune", CurrentValue: "", Recommended: "true", OneLiner: "y", State: GlobalGitNotApplicable, PolicyBacked: true, HasWritableMember: true, NotApplicableReason: GlobalGitReasonProbeFailed, ProbeError: "probe failed"},
+	}}
+	a, _ := press(t, NewApp(b), "3")
+	body := stripANSI(appView(a))
+	for _, line := range strings.Split(body, "\n") {
+		if strings.Contains(line, "fetch.prune") {
+			master := strings.SplitN(line, "│", 2)[0]
+			// A not-applicable row's tone glyph is ALSO the same faint "·"
+			// (07-UI-REVIEW.md precedent), so a row with the fix applied
+			// carries TWO dots on its master line: one for the checkbox
+			// column, one for the tone-glyph column. Before the fix, only
+			// the tone glyph's dot was present.
+			if got := strings.Count(master, "·"); got != 2 {
+				t.Errorf("non-selectable row must render a neutral marker in BOTH the checkbox and tone-glyph columns (want 2 '·', got %d) in master column %q", got, master)
+			}
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Task 3: new copy — case-sensitivity caveat, conflict-style gate note,
 // cross-warning, guessed-name warning.
@@ -1233,6 +1261,43 @@ func TestGlobalGitScrollWithinWindowDoesNotMove(t *testing.T) {
 	m = ggitModel(t, a)
 	if m.listWindowStart != beforeStart {
 		t.Errorf("moving within the window changed listWindowStart: %d -> %d", beforeStart, m.listWindowStart)
+	}
+}
+
+// TestGlobalGitReactivateResetsDetailKeyWithListWindow proves activate()
+// resets detailKey alongside listWindowStart (code review finding): screens
+// are persistent model instances re-activated in place on every tab switch
+// (app.go), so a deep-scrolled selection previously survived a tab switch
+// while listWindowStart did not — leaving the selection off-window with no
+// ▸ marker anywhere on re-entry until several more keypresses let the
+// window catch up.
+func TestGlobalGitReactivateResetsDetailKeyWithListWindow(t *testing.T) {
+	const n = 20
+	b := stubBackend{gitOptions: gitScrollRows(n)}
+	a, _ := press(t, NewApp(b), "3")
+	for i := 0; i < n-1; i++ {
+		a, _ = press(t, a, "down")
+	}
+	m := ggitModel(t, a)
+	if m.listWindowStart == 0 {
+		t.Fatal("setup: selecting the last row must have scrolled the window")
+	}
+
+	// Leave the Global Git tab and return — this re-activates the SAME
+	// persistent model instance.
+	a, _ = press(t, a, "1") // Identities
+	a, _ = press(t, a, "3") // back to Global Git
+
+	m = ggitModel(t, a)
+	if m.listWindowStart != 0 {
+		t.Errorf("listWindowStart after reactivation = %d, want 0", m.listWindowStart)
+	}
+	if m.detailKey != "init.defaultBranch" {
+		t.Errorf("detailKey after reactivation = %q, want the first row's key — a stale deep selection would be off the reset window with no visible marker", m.detailKey)
+	}
+	body := stripANSI(appView(a))
+	if !strings.Contains(body, "▸") {
+		t.Error("the selection marker must be visible somewhere in the list after reactivation")
 	}
 }
 
@@ -1532,6 +1597,23 @@ func TestGlobalGitProbeErrorRendersInlineAdvisoryAndStaysNavigable(t *testing.T)
 	a, _ = press(t, a, "right")
 	if a.tab != TabDoctor {
 		t.Errorf("right navigation from a probe-error Global Git view selected tab %v, want Doctor", a.tab)
+	}
+}
+
+// TestGlobalGitProbeErrorDoesNotClaimBaselineApplied is a UI review
+// regression test, confirmed against a real captured PTY frame
+// (global-git-probe-failure.txt): the status line's default text
+// ("Baseline applied. user.email stays untouched...") is computed from a
+// `pending` count derived from `options`, which is empty on a probe
+// failure — so `pending == 0` VACUOUSLY, and the misleading "applied"
+// claim rendered even though nothing was applied and the real state is
+// unknown.
+func TestGlobalGitProbeErrorDoesNotClaimBaselineApplied(t *testing.T) {
+	b := stubBackend{gitOptionsErr: errGlobalGitTest}
+	a, _ := press(t, NewApp(b), "3")
+	view := appView(a)
+	if strings.Contains(view, "Baseline applied") {
+		t.Errorf("probe-error view must not claim a baseline was applied:\n%s", view)
 	}
 }
 

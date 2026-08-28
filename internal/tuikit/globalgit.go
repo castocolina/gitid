@@ -117,6 +117,14 @@ func newGlobalGitModel(b Backend) globalGitModel {
 func (m globalGitModel) activate(DemoState) (screenModel, tea.Cmd) {
 	m.chosen = map[string]bool{}
 	m.listWindowStart = 0
+	// detailKey must reset alongside listWindowStart: screens are persistent
+	// model instances re-activated in place on every tab switch (app.go), so
+	// a deep-scrolled selection would otherwise survive a tab switch while
+	// listWindowStart does not — leaving the selected row off-window with no
+	// ▸ marker anywhere until several more keypresses let the window catch
+	// up (found in code review: the selection cursor genuinely desyncs from
+	// the visible scroll window after leaving and returning to this screen).
+	m.detailKey = "init.defaultBranch"
 	m.optionsErr = ""
 	options, err := m.backend.GlobalGitOptionStates()
 	m.options = options
@@ -875,9 +883,17 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 		body += " " + styleWarning.Render("! "+m.optionsErr) + "\n\n " +
 			styleFaint.Render("The option states could not be read from this machine.")
 		return screenView{
-			body:    body,
+			body: body,
+			// status is deliberately NOT the outer `status` var here (UI
+			// review finding, confirmed via the captured
+			// global-git-probe-failure.txt PTY frame): `pending` above is
+			// computed from `options`, which activate()'s error path
+			// leaves empty — so `pending == 0` VACUOUSLY on a probe
+			// failure, and the outer default ("Baseline applied...")
+			// rendered as the status line even though nothing was applied
+			// and the real state is unknown. A probe failure has nothing
+			// honest to report as a baseline status; leave it blank.
 			crumbs:  []string{"Options"},
-			status:  status,
 			actions: []FooterAction{{Key: "↑↓", Label: "select option"}},
 		}
 	}
@@ -913,7 +929,12 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 		// Checkbox: only selectable rows get a checkbox glyph — driven by the
 		// ONE Selectable predicate (needs-action + writable member keys + no
 		// probe error), so a does/render mismatch cannot exist (D-02, D-05).
-		box := "   "
+		// A non-selectable row still gets a NEUTRAL marker, never a blank
+		// cell — the exact same reasoning already applied to toneGlyph's
+		// NotApplicable case just below: every other row carries a visible
+		// glyph in this column, so leaving it blank reads as a missing or
+		// broken row rather than a deliberately non-interactive one.
+		box := styleFaint.Render("·") + "  "
 		if o.Selectable() {
 			box = glyphCheckOff + " "
 			if m.chosen[o.Key] {
