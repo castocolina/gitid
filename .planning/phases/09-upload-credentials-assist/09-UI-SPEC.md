@@ -136,6 +136,38 @@ simultaneously.
 
 ---
 
+**Focal points (per-screen primary focus, for executor clarity):**
+- Step 0's checkbox row — primary focus: the row must read correctly as ONE
+  line in all three states (`checkbox-disabled`, `checkbox-unchecked-unauth`,
+  `checkbox-checked-auth`) without ever wrapping to a second line — the
+  disabled/hint reason is inline on the same row, never a stacked line
+  underneath. This is the first thing a user sees about upload, and the
+  D-01 autonomy model lives or dies on this row being scannable at a glance.
+- Step 1's `testUpload` sub-beat — primary focus: the `announcing` →
+  `per-key-results` transition must visually match `renderStageOutcome`'s
+  existing command/PASS-row treatment exactly (same faint/command styling,
+  same glyph+word shape) so upload reads as "one more stage in the same
+  test-loop the user already saw," not a bolted-on new UI language. The
+  highest-implementation-risk item here is `announcing` staying up long
+  enough to be legible before `per-key-results` replaces it — never a
+  same-frame flash.
+- The manual-fallback block — primary focus: it must be byte-identical to
+  the existing `internal/upload.Instructions(provider)` output. Any
+  divergence (even reformatting) breaks the "shown command equals the run
+  command" contract (UP-02/UP-03) this whole phase exists to satisfy.
+- Rotate's delete-offer (D-04) — primary focus: this is the one new
+  confirmation ceremony in the phase and the only place autonomy is
+  deliberately absent — the Yes/No choice row must default-focus "No"
+  (leave the old key) per D-04's non-destructive-by-default posture, never
+  default to the delete option.
+- Identity Manager's copy-modal — primary focus: reuse `placeOverlay`
+  pixel-for-pixel; this is new content in an existing, already-approved
+  modal pattern, not a new visual surface — any deviation from the existing
+  `action-menu`/`clone-name-prompt` modal geometry is a defect, not a
+  design choice.
+
+---
+
 ## Spacing / Layout Scale (TUI-adapted: rows and columns, not px)
 
 | Token | Value | Usage | Source |
@@ -375,11 +407,15 @@ planning or execution.
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS (checker flagged the missing "Focal points"
+      section against Phase 8's precedent, non-blocking; added above)
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS (not applicable — no component
+      registry in this stack)
 
-**Approval:** pending
+**Approval:** APPROVED (gsd-ui-checker, 2026-08-28) — Focal points addendum
+added post-approval to close the one non-blocking Dimension 2 flag before
+planning.
