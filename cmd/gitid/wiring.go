@@ -29,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -39,6 +40,8 @@ import (
 
 	"github.com/castocolina/gitid/internal/clipboard"
 	"github.com/castocolina/gitid/internal/deps"
+	"github.com/castocolina/gitid/internal/doctor"
+	"github.com/castocolina/gitid/internal/doctor/checks"
 	"github.com/castocolina/gitid/internal/filewriter"
 	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/globalgit"
@@ -660,10 +663,18 @@ func countForeignProviderRefs(b *realBackend, providerKey string) (int, error) {
 // ---------------------------------------------------------------------------
 
 // InitialState reads the user's ACTUAL configuration: every reconstructed
-// identity plus the detected STORE-01 storage layout. Findings are the
-// per-identity Problems identity.BuildInventory already classified (MGR-07),
-// never re-derived here. The Doctor tab still renders demo content behind
-// the D-16 banner (see DemoBanner).
+// identity plus the detected STORE-01 storage layout. The per-identity glyph
+// (row.State, via collapseState) stays sourced from
+// identity.BuildInventory's IdentityHealth exactly as before (MGR-07) — it
+// never reads state.Findings. Findings themselves are computed ONCE, by
+// doctorFindings(b.home) — internal/doctor.Run(deps)'s converged output —
+// the SOLE findings source for the Health/Fixer tabs and `gitid health
+// --json` (08-01-PLAN.md's binding architecture decision). The retired
+// identity.Problem-to-DemoFinding synthesis this replaced produced a SECOND,
+// independent findings stream that could disagree with doctor.Run's own
+// Coherence/Orphans/etc. checks for the same underlying issue
+// (08-RESEARCH.md Pitfall 3) — that failure mode is now structurally
+// impossible: there is only one findings computation.
 func (b *realBackend) InitialState() tuikit.DemoState {
 	state := tuikit.DemoState{SSHStorage: tuikit.StorageSentinel}
 	if b.initErr != nil {
@@ -677,20 +688,10 @@ func (b *realBackend) InitialState() tuikit.DemoState {
 		row := b.toDemoIdentity(acct)
 		if h, ok := healthByName[acct.Name]; ok {
 			row.State = string(collapseState(h))
-			for _, p := range h.Problems {
-				state.Findings = append(state.Findings, tuikit.DemoFinding{
-					HealthFinding: tuikit.HealthFinding{
-						ID:          acct.Name + ":" + string(p),
-						Title:       string(p),
-						Explanation: string(p),
-						Severity:    tuikit.HealthSeverity(identity.SeverityFor(p)),
-					},
-					Identity: acct.Name,
-				})
-			}
 		}
 		state.Identities = append(state.Identities, row)
 	}
+	state.Findings = doctorFindings(b.home)
 	return state
 }
 
@@ -703,13 +704,11 @@ func (b *realBackend) InitialState() tuikit.DemoState {
 //   - TabIdentities (plan 03)
 //   - TabGlobalSSH (plan 06-05: both Options and Storage sub-tabs are now live)
 //   - TabGlobalGit (plan 07-04: real option states, ceremonies, and probe error render are live)
-func (b *realBackend) DemoBanner(tab tuikit.TabID) bool {
-	switch tab {
-	case tuikit.TabDoctor:
-		return true
-	default:
-		return false
-	}
+//   - TabHealth, TabFixer (08-01-PLAN.md Task 1: both now render
+//     doctor.Run(deps)'s converged output, never fixture data — the whole
+//     point of this plan is that they are no longer demo data)
+func (b *realBackend) DemoBanner(tuikit.TabID) bool {
+	return false
 }
 
 // errUnhandledAction is what Persist records when a mutating action has NO
@@ -3454,6 +3453,275 @@ func (b *realBackend) keyOwners() map[string]string {
 		owners[acct.KeyPath] = label
 	}
 	return owners
+}
+
+// ---------------------------------------------------------------------------
+// doctor.Deps — the Phase 8 Health/Fixer/CLI findings source
+// ---------------------------------------------------------------------------
+
+// buildDoctorDeps wires a real internal/doctor.Deps from home. It is the
+// SHARED constructor realBackend.InitialState() (via doctorFindings) and
+// `gitid health --json` (cmd/gitid/health.go) both call — one construction
+// site, so the TUI Health/Fixer tabs and the CLI can never disagree about
+// what doctor.Run(deps) sees (08-01-PLAN.md Task 1's "one source, three
+// consumers" contract).
+//
+// Every DATA/path/read/fix-effect field is wired for real (the injected-seam
+// "every field non-nil" rule from wiring.go's own top-of-file doc comment).
+// The 9 CheckFn fields are the one deliberate exception during this plan's
+// tracer wave: only CheckCoherence is wired here (Task 1's "prove one real
+// finding" scope) — the other 8 are wired by Task 2, which replaces this
+// function's CheckFn block in place. doctor.Run skips a nil CheckFn by
+// design (doctor.go:286-288), so leaving them nil for now is not a bug.
+//
+// SetupBaseline (the Interactive `gitid baseline setup` fix for the
+// baseline-missing finding) is left nil: no such command exists yet in this
+// binary (it lived only in the retired POC). CheckBaseline's own fix
+// fallback (AddWiring's "baseline-include:" case, wired below) still
+// restores the bare [include] pointer when SetupBaseline is nil — see
+// checks/baseline.go's own nil-guard.
+func buildDoctorDeps(home string) doctor.Deps {
+	sshConfigPath := filepath.Join(home, ".ssh", "config")
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+	allowedSignersPath := filepath.Join(home, ".ssh", "allowed_signers")
+	sshDir := filepath.Join(home, ".ssh")
+	baselineFilePath := filepath.Join(home, ".gitconfig.d", "00-baseline")
+	gitignorePath := filepath.Join(home, ".gitignore_global")
+
+	// Reconstruct the SAME identity list InitialState()/accounts() reads
+	// (identity.InventoryDepsForHome — WR-35 hermetic, never os.UserHomeDir()
+	// /$HOME) so a doctor.Deps built from home never diverges from what the
+	// Identity Manager itself shows for that home.
+	invDeps := identity.InventoryDepsForHome(home)
+	sshBytes, _ := invDeps.ReadSSHConfig()
+	gcBytes, _ := invDeps.ReadGitconfig()
+	accounts, _ := identity.Reconstruct(sshBytes, gcBytes, invDeps.ReadFragment)
+
+	var keyPaths, pubKeyPaths []string
+	for _, a := range accounts {
+		if a.KeyPath != "" {
+			keyPaths = append(keyPaths, a.KeyPath)
+		}
+		if a.PubPath != "" {
+			pubKeyPaths = append(pubKeyPaths, a.PubPath)
+		}
+	}
+
+	managedHosts, _ := sshconfig.ParseManagedHosts(sshBytes)
+	sshBlockNames := make([]string, 0, len(managedHosts))
+	for name := range managedHosts {
+		sshBlockNames = append(sshBlockNames, name)
+	}
+
+	gcBlocks := filewriter.ListBlocks(gcBytes)
+	gcBlockNames := make([]string, 0, len(gcBlocks))
+	for _, blk := range gcBlocks {
+		gcBlockNames = append(gcBlockNames, blk.Name)
+	}
+
+	allSSHHostIDFiles := sshconfig.ParseAllHostIdentityFiles(sshBytes)
+
+	return doctor.Deps{
+		// Read fields.
+		ReadFile: func(path string) ([]byte, error) {
+			return os.ReadFile(path) //nolint:gosec // path is a trusted gitid-managed path (G304)
+		},
+		Stat: func(path string) (os.FileInfo, error) {
+			return os.Stat(expandTildeForHome(path, home)) //nolint:gosec // path is a trusted gitid-managed path (G304)
+		},
+
+		// Process fields.
+		RunSSHAdd:               runDoctorSSHAdd,
+		RunSSHKeygenFingerprint: runDoctorSSHKeygenFingerprint,
+		RunGitConfigGet:         gitconfig.RunGitConfigGet,
+
+		// Injected data and seams.
+		GitVersionAtLeast: deps.GitVersionAtLeast,
+		CurrentOS:         platform.CurrentOS,
+		InstallHint:       platform.InstallHint,
+		DetectTools:       deps.Detect,
+		ReadBaselineState: gitconfig.ReadBaselineState,
+
+		// Path fields.
+		SSHDir:             sshDir,
+		SSHConfigPath:      sshConfigPath,
+		GitconfigPath:      gitconfigPath,
+		AllowedSignersPath: allowedSignersPath,
+		BaselineFilePath:   baselineFilePath,
+		GitignorePath:      gitignorePath,
+
+		KeyPaths:    keyPaths,
+		PubKeyPaths: pubKeyPaths,
+
+		Identities:                 accounts,
+		ManagedHosts:               managedHosts,
+		SSHManagedBlockNames:       sshBlockNames,
+		GitconfigManagedBlockNames: gcBlockNames,
+		AllSSHHostIdentityFiles:    allSSHHostIDFiles,
+
+		// Fix fields (D-01: doctor core never calls os.Chmod/filewriter
+		// directly — every mutation is injected from here).
+		FixPerm: func(path string, mode os.FileMode) error {
+			return os.Chmod(expandTildeForHome(path, home), mode) //nolint:gosec // chmod to a caller-supplied tighten-only mode (G306)
+		},
+		RemoveBlock: func(path, name string) error {
+			content, rerr := os.ReadFile(path) //nolint:gosec // path is a gitid-managed trusted path (G304)
+			if rerr != nil && !os.IsNotExist(rerr) {
+				return fmt.Errorf("doctor: reading %s for block removal: %w", path, rerr)
+			}
+			removed := filewriter.RemoveBlock(content, name)
+			mode := os.FileMode(0o600)
+			if path == allowedSignersPath {
+				mode = 0o644
+			}
+			if _, werr := filewriter.Write(path, removed, mode); werr != nil {
+				return fmt.Errorf("doctor: removing block %q from %s: %w", name, path, werr)
+			}
+			return nil
+		},
+		AddWiring: doctorAddWiring(allowedSignersPath),
+
+		// Check function fields — Task 1 wires only CheckCoherence (the
+		// tracer's "one real finding"). Task 2 replaces this block with all
+		// 9 families wired.
+		CheckCoherence: checks.CheckCoherence,
+	}
+}
+
+// runDoctorSSHAdd runs `ssh-add -l` via arg-slice exec (no shell, G204-clean)
+// and returns the combined output and the exit code. A non-ExitError exec
+// failure (binary not found, permission error) returns ("", 2) so
+// classifyAgentState treats it as unreachable.
+func runDoctorSSHAdd() (string, int) {
+	cmd := exec.Command("ssh-add", "-l") //nolint:gosec // arg-slice form, no shell; fixed args (G204)
+	out, err := cmd.CombinedOutput()
+	output := string(out)
+	if err == nil {
+		return output, 0
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return output, exitErr.ExitCode()
+	}
+	return "", 2
+}
+
+// runDoctorSSHKeygenFingerprint runs `ssh-keygen -lf <path>` via arg-slice
+// exec (no shell, G204-clean) and returns the first output line and any
+// error. path is a gitid-managed .pub path (G304-annotated).
+func runDoctorSSHKeygenFingerprint(path string) (string, error) {
+	cmd := exec.Command("ssh-keygen", "-lf", path) //nolint:gosec // arg-slice form, no shell; path is trusted gitid-managed .pub (G204/G304)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	line := strings.SplitN(string(out), "\n", 2)[0]
+	return line, nil
+}
+
+// doctorAddWiring returns the AddWiring dispatcher, closing over
+// allowedSignersPath so the "signers:" case's target-file identity is
+// available without threading it through the line payload. It dispatches to
+// the correct existing writer for the finding being fixed, per the `line`
+// payload's prefix:
+//
+//   - "ssh-host:<alias>:<hostname>:<port>:<keyPath>"   — re-add a Host block
+//     (with IdentitiesOnly yes) via sshconfig.Write.
+//   - "signers:<email>:<pubLine>"                       — re-add an
+//     allowed_signers entry via keygen.WriteAllowedSigners.
+//   - "baseline-include:<baselineFilePath>"              — restore the
+//     baseline [include] block via gitconfig.WriteBaselineInclude.
+//
+// Every sub-path delegates to an existing writer that routes through
+// internal/filewriter (backup + atomic write) — this function never calls
+// os.WriteFile directly (CLAUDE.md).
+func doctorAddWiring(allowedSignersPath string) func(path, name, line string) error {
+	return func(path, name, line string) error {
+		switch {
+		case strings.HasPrefix(line, "ssh-host:"):
+			rest := strings.TrimPrefix(line, "ssh-host:")
+			parts := strings.SplitN(rest, ":", 4)
+			if len(parts) != 4 {
+				return fmt.Errorf("doctor: AddWiring ssh-host: malformed line %q", line)
+			}
+			alias, hostname, portStr, identityFile := parts[0], parts[1], parts[2], parts[3]
+			port := 22
+			if portStr != "" {
+				if _, serr := fmt.Sscanf(portStr, "%d", &port); serr != nil {
+					port = 22
+				}
+			}
+			hostBlock := sshconfig.RenderHostBlock(alias, hostname, port, identityFile, "")
+			if _, werr := sshconfig.Write(path, name, hostBlock, platform.CurrentOS()); werr != nil {
+				return fmt.Errorf("doctor: AddWiring ssh-host for %q: %w", name, werr)
+			}
+		case strings.HasPrefix(line, "signers:"):
+			rest := strings.TrimPrefix(line, "signers:")
+			parts := strings.SplitN(rest, ":", 2)
+			if len(parts) != 2 {
+				return fmt.Errorf("doctor: AddWiring signers: malformed line %q", line)
+			}
+			email, pubLine := parts[0], parts[1]
+			signerLine, lerr := keygen.AllowedSignersLine(email, pubLine)
+			if lerr != nil {
+				return fmt.Errorf("doctor: AddWiring signers for %q: %w", name, lerr)
+			}
+			if _, werr := keygen.WriteAllowedSigners(allowedSignersPath, name, signerLine); werr != nil {
+				return fmt.Errorf("doctor: AddWiring signers for %q: %w", name, werr)
+			}
+		case strings.HasPrefix(line, "baseline-include:"):
+			target := strings.TrimPrefix(line, "baseline-include:")
+			if _, werr := gitconfig.WriteBaselineInclude(path, target); werr != nil {
+				return fmt.Errorf("doctor: AddWiring baseline-include: %w", werr)
+			}
+		default:
+			return fmt.Errorf("doctor: AddWiring: unknown wiring type in line %q", line)
+		}
+		return nil
+	}
+}
+
+// doctorFindings converts internal/doctor.Run(deps)'s output into
+// []tuikit.DemoFinding. This is the D-01/08-01-PLAN.md Task 1 architecture
+// decision's ONLY conversion site: internal/doctor.Run(deps) is the SOLE
+// findings source for both TUI tabs (Health, Fixer) and `gitid health
+// --json` — identity.BuildInventory's Problem taxonomy is an INPUT to
+// doctor.Deps (via Identities/ManagedHosts/KeyPaths above), never a second,
+// independently-rendered output. This function — and any Family/Severity
+// mapping helper it uses — MUST live in cmd/gitid only: internal/tuikit
+// continues importing ZERO internal/doctor identifiers (the no-backend-import
+// gate). Do not reintroduce a second findings source in internal/tuikit.
+func doctorFindings(home string) []tuikit.DemoFinding {
+	findings := doctor.Run(buildDoctorDeps(home))
+	out := make([]tuikit.DemoFinding, 0, len(findings))
+	seen := make(map[string]int, len(findings))
+	for _, f := range findings {
+		id := string(f.Family) + "|" + f.Title
+		if f.IdentityName != "" {
+			id += "|" + f.IdentityName
+		}
+		// Two distinct findings can share Family+Title+IdentityName (e.g. two
+		// separate global Redundancy findings, IdentityName empty on both) —
+		// disambiguate with an occurrence counter rather than collapse them
+		// onto the same ID (08-01-PLAN.md Task 1).
+		seen[id]++
+		if n := seen[id]; n > 1 {
+			id += fmt.Sprintf("|%d", n)
+		}
+		out = append(out, tuikit.DemoFinding{
+			HealthFinding: tuikit.HealthFinding{
+				ID:           id,
+				Section:      f.Target,
+				Family:       string(f.Family),
+				Title:        f.Title,
+				Explanation:  f.Explanation,
+				SuggestedFix: f.SuggestedFix,
+				Severity:     tuikit.HealthSeverity(f.Severity.String()),
+			},
+			Identity: f.IdentityName,
+		})
+	}
+	return out
 }
 
 // ---------------------------------------------------------------------------

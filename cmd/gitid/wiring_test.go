@@ -930,18 +930,19 @@ func TestReuseDoesNotGenerateANewKey(t *testing.T) {
 	}
 }
 
-// TestDemoBannerOnlyDoctorIsUnwired proves D-16: the Identities, Global SSH,
-// and Global Git views are live; Doctor remains the sole fixture-backed tab
-// and must still say so.
+// TestDemoBannerOnlyDoctorIsUnwired proves D-16: every primary view is wired
+// to live data. As of 08-01-PLAN.md Task 1, Health and Fixer join
+// Identities/Global SSH/Global Git as real (doctor.Run(deps)-backed) —
+// no tab carries the demo banner anymore.
 func TestDemoBannerOnlyDoctorIsUnwired(t *testing.T) {
 	b := newBackendForHome(t.TempDir())
-	for _, tab := range []tuikit.TabID{tuikit.TabIdentities, tuikit.TabGlobalSSH, tuikit.TabGlobalGit} {
+	for _, tab := range []tuikit.TabID{
+		tuikit.TabIdentities, tuikit.TabGlobalSSH, tuikit.TabGlobalGit,
+		tuikit.TabHealth, tuikit.TabFixer,
+	} {
 		if b.DemoBanner(tab) {
 			t.Errorf("tab %v is wired to live data and must not carry the demo banner", tab)
 		}
-	}
-	if !b.DemoBanner(tuikit.TabDoctor) {
-		t.Error("the Doctor tab is not wired yet; it must carry the D-16 demo banner")
 	}
 }
 

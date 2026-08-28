@@ -1,11 +1,11 @@
- gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor              2 ids · ! 2 ✗ 0
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  2 ids · ! 0 ✗ 2
  Global SSH › Storage & preview
   Options   Storage & preview
 ✓ SSH storage layout migrated to the Include’d gitid-owned file — reversible via this same screen.
 
 Wrote → ~/.ssh/config
 Wrote → ~/.ssh/config.d/gitid.config
-Backed up → ~/.ssh/config.bak.1787871900376617000
+Backed up → ~/.ssh/config.bak.1787895707189826000
 
  Done (Enter)
 

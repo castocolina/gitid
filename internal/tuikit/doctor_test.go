@@ -19,14 +19,16 @@ func doctorApp(t *testing.T) App {
 	return model.(App)
 }
 
-// docModel extracts the Doctor child model.
+// docModel extracts the Health tab's underlying doctorModel (08-01-PLAN.md
+// Task 1: healthModel wraps doctorModel unchanged for this tracer wave —
+// Task 2 forks the read-only/fix-ceremony halves apart for real).
 func docModel(t *testing.T, a App) doctorModel {
 	t.Helper()
-	m, ok := a.screens[TabDoctor].(doctorModel)
+	m, ok := a.screens[TabHealth].(healthModel)
 	if !ok {
-		t.Fatalf("screens[3] is %T, want doctorModel", a.screens[TabDoctor])
+		t.Fatalf("screens[3] is %T, want healthModel", a.screens[TabHealth])
 	}
-	return m
+	return m.doctorModel
 }
 
 func TestDoctorAutoScanThenGroupedFindings(t *testing.T) {

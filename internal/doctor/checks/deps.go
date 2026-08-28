@@ -47,6 +47,13 @@ func CheckDeps(d doctor.Deps) []doctor.Finding {
 		if d.InstallHint != nil {
 			hint = d.InstallHint(t.name, currentOS)
 		}
+		// D-01: tool-level findings route per tool — ssh/ssh-keygen/ssh-add
+		// are SSH-domain tools; git is Git-domain — never a new "System"
+		// sub-label.
+		target := "SSH"
+		if t.name == "git" {
+			target = "Git"
+		}
 		findings = append(findings, doctor.Finding{
 			Family:       doctor.FamilyDeps,
 			Severity:     doctor.SeverityError,
@@ -54,6 +61,7 @@ func CheckDeps(d doctor.Deps) []doctor.Finding {
 			Explanation:  "Required tool not found in PATH. gitid cannot function without it.",
 			SuggestedFix: hint,
 			Fix:          nil, // dep installs are report-only (D-03)
+			Target:       target,
 		})
 	}
 
@@ -71,6 +79,8 @@ func CheckDeps(d doctor.Deps) []doctor.Finding {
 			Explanation:  "Optional tool not installed. Public-key copy to clipboard will not work.",
 			SuggestedFix: clipHint,
 			Fix:          nil, // dep installs are report-only (D-03)
+			// D-01: clipboard-info routes to SSH — no new "System" sub-label.
+			Target: "SSH",
 		})
 	}
 

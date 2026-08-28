@@ -55,20 +55,24 @@ const masterDetailGutter = 2
 // frameBodyRows is how many body rows RenderFrame gives a view at height.
 func frameBodyRows(height int) int { return height - frameBodyTop - frameChromeBelow }
 
-// TabID indexes the four primary views (SHELL-01 as redesigned: the Fixer
-// is NOT a tab — FIX-02 re-homed it into Doctor).
+// TabID indexes the five primary views. Health and Fixer are separate,
+// independently-reachable tabs (08-01-PLAN.md Task 1 — the SHELL-01/FIX-02
+// "Fixer lives inside Doctor" design is superseded: Phase 8's Health screen
+// is read-only diagnosis and the Fixer screen owns the write ceremony,
+// each its own tab).
 type TabID int
 
-// The four primary views, in header order.
+// The five primary views, in header order.
 const (
 	TabIdentities TabID = iota
 	TabGlobalSSH
 	TabGlobalGit
-	TabDoctor
+	TabHealth
+	TabFixer
 )
 
 // tabLabels are the nav tab labels, indexed by TabID.
-var tabLabels = [...]string{"Identities", "Global SSH", "Global Git", "Doctor"}
+var tabLabels = [...]string{"Identities", "Global SSH", "Global Git", "Health", "Fixer"}
 
 // FooterAction is one contextual footer hint (key + label).
 type FooterAction struct {

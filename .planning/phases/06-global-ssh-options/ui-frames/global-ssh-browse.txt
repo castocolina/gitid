@@ -1,4 +1,4 @@
- gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer     0 ids · ✓ ok
  Global SSH › Options
   Options   Storage & preview
    ☐ ! StrictHostKeyChecking  [Medium]      │  AddKeysToAgent

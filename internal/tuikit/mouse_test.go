@@ -67,17 +67,30 @@ func TestMouseHeaderTabLabelsSwitchTabs(t *testing.T) {
 func TestMouseHealthChipOpensDoctor(t *testing.T) {
 	a := NewApp(stubBackend{})
 	a = clickCell(t, a, "8 ids", 0, 0)
-	if a.tab != TabDoctor {
-		t.Errorf("tab = %v after clicking the health chip, want Doctor", a.tab)
+	if a.tab != TabHealth {
+		t.Errorf("tab = %v after clicking the health chip, want Health", a.tab)
 	}
 }
 
 func TestMouseClickBetweenHeaderTargetsIsInert(t *testing.T) {
 	a := NewApp(stubBackend{})
-	// The gap between the last tab label and the right-aligned chip (the
-	// bracketed `[N] Label` format, D4, widened the tab segments — this
-	// column sits past `[4] Doctor` and before the right-aligned chip).
-	a, _ = clickAt(t, a, a.width/2+28, 0)
+	// The gap between the last tab label ("[5] Fixer") and the right-aligned
+	// chip — derived from the same headerTabAt/headerChipAt spans renderHeader
+	// itself uses, so this stays correct regardless of how many nav tabs exist.
+	deadX := -1
+	for x := 0; x < a.width; x++ {
+		if _, onTab := headerTabAt(x); onTab {
+			continue
+		}
+		if headerChipAt(a.width, a.state, x) {
+			break
+		}
+		deadX = x
+	}
+	if deadX < 0 {
+		t.Fatal("no header dead space found between the last tab and the health chip")
+	}
+	a, _ = clickAt(t, a, deadX, 0)
 	if a.tab != TabIdentities {
 		t.Errorf("tab = %v after clicking header dead space, want Identities", a.tab)
 	}
@@ -165,7 +178,7 @@ func TestMouseRightClickAndOverlayClicksAreIgnored(t *testing.T) {
 		t.Error("right clicks must be ignored")
 	}
 	a, _ = press(t, a, "?")
-	a = clickCell(t, a, "[4] Doctor", 0, 0)
+	a = clickCell(t, a, "[4] Health", 0, 0)
 	if a.tab != TabIdentities || a.overlay != overlayHelp {
 		t.Error("clicks while an overlay is open must be ignored (overlays are keyboard-driven)")
 	}

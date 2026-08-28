@@ -148,7 +148,8 @@ func CheckRedundancy(deps doctor.Deps) []doctor.Finding {
 				"IgnoreUnknown) into a single \"Host *\" stanza — gitid's managed global-ssh block " +
 				"already contains the correct set. Remove any hand-written \"Host *\" blocks " +
 				"that duplicate it.",
-			Fix: nil, // advisory only — no destructive auto-fix (T-05.7-11-02)
+			Fix:    nil, // advisory only — no destructive auto-fix (T-05.7-11-02)
+			Target: "SSH",
 		})
 	}
 
@@ -180,7 +181,8 @@ func CheckRedundancy(deps doctor.Deps) []doctor.Finding {
 						"remove all other occurrences from hand-written sections of ~/.ssh/config.",
 					canonical,
 				),
-				Fix: nil, // advisory only — no destructive auto-fix (T-05.7-11-02)
+				Fix:    nil, // advisory only — no destructive auto-fix (T-05.7-11-02)
+				Target: "SSH",
 			})
 		}
 	}

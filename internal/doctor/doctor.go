@@ -105,6 +105,16 @@ type Finding struct {
 	// Set by per-family check functions that iterate deps.Identities.
 	// Used by the TUI to derive per-identity sidebar badge severity (D-08).
 	IdentityName string
+	// Target is the D-01 section this finding belongs to on the Health/Fixer
+	// screens and the CLI: always "SSH" or "Git", never a third "System"
+	// sub-label. Single-domain families (every Finding they emit is always
+	// about the same file domain) leave Target unset on the literal and let
+	// Run resolve it via defaultTargetForFamily. Families that mix SSH and
+	// Git targets WITHIN themselves (Coherence, Orphans, Signing, Redundancy,
+	// Deps) must set Target explicitly on every Finding literal — Run's
+	// fallback returns "" for those families by design, so a missed literal
+	// fails the D-01 guard test loudly instead of silently defaulting.
+	Target string
 }
 
 // CheckFn is the type of a per-family check function. All seven check
@@ -251,6 +261,15 @@ type Deps struct {
 // os.Chmod — fix capabilities are injected via deps (D-01).
 // Order: Dependencies, Permissions, Coherence, Orphans, Signing, Agent, Baseline,
 // Overlap, Redundancy.
+//
+// D-01: every returned Finding carries a resolved, non-empty Target ("SSH" or
+// "Git"). A Finding whose construction site already set Target explicitly
+// (the cross-file families: Coherence, Orphans, Signing, Redundancy, Deps —
+// see defaultTargetForFamily's own doc comment) keeps that value unchanged;
+// every other Finding's empty Target is resolved from its Family via
+// defaultTargetForFamily. This resolution happens ONCE, here, so every
+// consumer (the Health/Fixer TUI screens, gitid health --json, the
+// HLTH-05/MGR-07 per-identity slice) sees the same Target.
 func Run(deps Deps) []Finding {
 	var all []Finding
 	for _, fn := range []CheckFn{
@@ -264,11 +283,55 @@ func Run(deps Deps) []Finding {
 		deps.CheckOverlap,
 		deps.CheckRedundancy,
 	} {
-		if fn != nil {
-			all = append(all, fn(deps)...)
+		if fn == nil {
+			continue
+		}
+		for _, f := range fn(deps) {
+			if f.Target == "" {
+				f.Target = defaultTargetForFamily(f.Family)
+			}
+			all = append(all, f)
 		}
 	}
 	return all
+}
+
+// defaultTargetForFamily returns the D-01 family-default Target for
+// families whose findings are ALWAYS single-domain — verified against each
+// family's own internal/doctor/checks/*.go source, not guessed:
+//
+//   - FamilyPerms: mostly SSH (ssh dir, private/public keys, ssh config) but
+//     checkGitconfigPath also emits a FamilyPerms finding for ~/.gitconfig's
+//     write-access risk — that ONE call site sets Target explicitly
+//     ("Git"), so the family default here only ever backfills the four
+//     SSH-domain checkPath call sites that leave Target unset.
+//   - FamilyBaseline: every finding is about ~/.gitconfig's baseline
+//     [include] block, core.excludesfile/core.ignorecase, or the curated
+//     ~/.gitignore_global patterns — always Git.
+//   - FamilyOverlap: every finding is about overlapping gitconfig includeIf
+//     match conditions — always Git.
+//   - FamilyAgent: every finding is about ssh-agent reachability or a
+//     gitid-managed key not being loaded in it — always SSH.
+//
+// FamilyCoherence, FamilyOrphans, FamilySigning, FamilyRedundancy, and
+// FamilyDeps mix SSH- and Git-domain findings WITHIN the same family (or are
+// explicitly required by D-01 to route per-tool) and therefore return "" —
+// every Finding literal in those families' checks/*.go files sets Target
+// explicitly, and Run's resolution deliberately does not paper over a
+// missed literal with a guessed default.
+func defaultTargetForFamily(f Family) string {
+	switch f {
+	case FamilyPerms:
+		return "SSH"
+	case FamilyBaseline:
+		return "Git"
+	case FamilyOverlap:
+		return "Git"
+	case FamilyAgent:
+		return "SSH"
+	default:
+		return ""
+	}
 }
 
 // ExitCode returns the tiered exit code for a findings slice (D-07):

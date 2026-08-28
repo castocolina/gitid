@@ -181,6 +181,9 @@ func CheckSigning(deps doctor.Deps) []doctor.Finding {
 				"         brew upgrade git  (macOS)\n" +
 				"         apt install git   (Debian/Ubuntu — may need backports)",
 			Fix: nil, // report-only per D-03
+			// D-01: the hasconfig: match strategy is a ~/.gitconfig includeIf
+			// concern — Git.
+			Target: "Git",
 		},
 	}
 }

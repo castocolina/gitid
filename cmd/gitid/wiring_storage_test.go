@@ -1074,17 +1074,15 @@ func TestStoragePlanMigrationCalledExactlyOncePerCeremony(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestStorageDemoBannerGlobalSSHIsOff proves DemoBanner returns false for
-// the Global SSH view (both sub-tabs wired), stays false for Global Git once
-// plan 07-04 wires it, and remains true for the still-unwired Doctor tab.
+// every wired view: Global SSH (both sub-tabs), Global Git (plan 07-04),
+// and — as of 08-01-PLAN.md Task 1 — Health and Fixer, since both now
+// render doctor.Run(deps)'s converged output rather than fixture data.
 func TestStorageDemoBannerGlobalSSHIsOff(t *testing.T) {
 	b := newBackendForHome(t.TempDir())
-	for _, tab := range []tuikit.TabID{tuikit.TabGlobalSSH, tuikit.TabGlobalGit} {
+	for _, tab := range []tuikit.TabID{tuikit.TabGlobalSSH, tuikit.TabGlobalGit, tuikit.TabHealth, tuikit.TabFixer} {
 		if b.DemoBanner(tab) {
 			t.Errorf("TabID %v: DemoBanner must be false — this tab is wired", tab)
 		}
-	}
-	if !b.DemoBanner(tuikit.TabDoctor) {
-		t.Error("TabDoctor: DemoBanner must be true — this tab is not yet wired")
 	}
 }
 

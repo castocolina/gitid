@@ -26,7 +26,7 @@ func appView(a App) string {
 func TestNewAppRendersTheFrame(t *testing.T) {
 	a := NewApp(stubBackend{})
 	view := appView(a)
-	for _, want := range []string{"gitid", "[1] Identities", "[2] Global SSH", "[3] Global Git", "[4] Doctor", "8 ids"} {
+	for _, want := range []string{"gitid", "[1] Identities", "[2] Global SSH", "[3] Global Git", "[4] Health", "[5] Fixer", "8 ids"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("initial frame missing %q", want)
 		}
@@ -90,12 +90,12 @@ func TestNumberKeysSwitchTabs(t *testing.T) {
 	}
 }
 
-// TestTabsAndPaletteReachAllPrimaryViews pins SHELL-02 against the frozen
-// FIX-02 four-tab shell: number keys 1–4 switch the four primary views,
-// the palette offers those four plus Help (five entries), and a fifth
-// number key does not invent a tab the approved design absorbed into Doctor.
+// TestTabsAndPaletteReachAllPrimaryViews pins SHELL-02 against the 5-tab
+// shell (08-01-PLAN.md Task 1's TabID split): number keys 1–5 switch the
+// five primary views, and the palette offers those five plus Help (six
+// entries).
 func TestTabsAndPaletteReachAllPrimaryViews(t *testing.T) {
-	want := []TabID{TabIdentities, TabGlobalSSH, TabGlobalGit, TabDoctor}
+	want := []TabID{TabIdentities, TabGlobalSSH, TabGlobalGit, TabHealth, TabFixer}
 	a := NewApp(stubBackend{})
 	for i, tab := range want {
 		key := string(rune('1' + i))
@@ -104,8 +104,8 @@ func TestTabsAndPaletteReachAllPrimaryViews(t *testing.T) {
 			t.Errorf("key %s → tab %v, want %v", key, a.tab, tab)
 		}
 	}
-	if len(paletteEntries) != 5 {
-		t.Errorf("palette entries = %d, want 5 (four views + help)", len(paletteEntries))
+	if len(paletteEntries) != 6 {
+		t.Errorf("palette entries = %d, want 6 (five views + help)", len(paletteEntries))
 	}
 	a, _ = press(t, a, "ctrl+p")
 	view := appView(a)
@@ -186,15 +186,15 @@ func TestPaletteFiltersAndOpensFirstMatch(t *testing.T) {
 		t.Error("palette body missing")
 	}
 
-	for _, r := range "doctor" {
+	for _, r := range "health" {
 		a, _ = press(t, a, string(r))
 	}
 	matches := a.paletteMatches()
-	if len(matches) != 1 || matches[0].tab != TabDoctor {
-		t.Fatalf("palette matches for 'doctor' = %v", matches)
+	if len(matches) != 1 || matches[0].tab != TabHealth {
+		t.Fatalf("palette matches for 'health' = %v", matches)
 	}
 	a, _ = press(t, a, "enter")
-	if a.overlay != overlayNone || a.tab != TabDoctor {
+	if a.overlay != overlayNone || a.tab != TabHealth {
 		t.Errorf("enter must open the first match; overlay=%v tab=%v", a.overlay, a.tab)
 	}
 }

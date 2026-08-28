@@ -76,7 +76,7 @@ func renderSeededFrame(crumbs []string, actions []FooterAction) string {
 func TestRenderFrameShowsNumberedTabsAndReservedFooter(t *testing.T) {
 	plain := stripANSI(renderSeededFrame(nil, nil))
 
-	for _, want := range []string{"[1] Identities", "[2] Global SSH", "[3] Global Git", "[4] Doctor"} {
+	for _, want := range []string{"[1] Identities", "[2] Global SSH", "[3] Global Git", "[4] Health", "[5] Fixer"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("frame missing numbered tab %q", want)
 		}

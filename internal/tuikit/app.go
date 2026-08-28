@@ -79,14 +79,14 @@ const (
 // adapted to the terminal (q really quits; the palette lists views and
 // actions — there are no browser reference routes here).
 var helpKeys = [][2]string{
-	{"1 · 2 · 3 · 4", "Switch view: Identities / Global SSH / Global Git / Doctor"},
+	{"1 · 2 · 3 · 4 · 5", "Switch view: Identities / Global SSH / Global Git / Health / Fixer"},
 	{"↑ ↓", "Move the selection — the detail pane updates live"},
 	{"← →", "Switch sub-tabs (e.g. Options / Storage on Global SSH)"},
 	{"Enter", "Activate the focused control / primary action of the pane"},
 	{"Esc", "Back out one level (form → detail, modal → cancel). Never destructive"},
 	{"Tab / Shift+Tab", "Move between fields and buttons in a form"},
 	{"n · e · g · c · d", "Identities: new / edit SSH / configure Git / clone / delete"},
-	{"f · F", "Doctor: fix the selected finding / fix all (each still previews)"},
+	{"f · F", "Fixer: fix the selected finding / fix all (each still previews)"},
 	{"Ctrl+P", "Command palette — views and actions"},
 	{"?", "This help"},
 	{"q", "Quit gitid (asks first)"},
@@ -125,7 +125,8 @@ var paletteEntries = []paletteEntry{
 	{label: "1 · Identities", tab: TabIdentities},
 	{label: "2 · Global SSH options", tab: TabGlobalSSH},
 	{label: "3 · Global Git options", tab: TabGlobalGit},
-	{label: "4 · Doctor", tab: TabDoctor},
+	{label: "4 · Health", tab: TabHealth},
+	{label: "5 · Fixer", tab: TabFixer},
 	{label: "? · Help / key map / state legend", help: true},
 }
 
@@ -141,7 +142,7 @@ type App struct {
 	overlay overlayKind
 	palette textinput.Model
 	note    string
-	screens [4]screenModel
+	screens [5]screenModel
 	// initCmd is the initial tab's activation command — the activation
 	// itself already ran in NewApp (Init's value receiver cannot retain
 	// the activated screen model, so activating there would lose it).
@@ -398,11 +399,11 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Globals last.
 	switch key {
-	case "1", "2", "3", "4":
+	case "1", "2", "3", "4", "5":
 		next, cmd := a.setTab(TabID(int(key[0] - '1')))
 		return next, cmd
 	case "left":
-		// D4 (checkpoint-2 contract): plain ←/→ switch views 1..4 at the
+		// D4 (checkpoint-2 contract): plain ←/→ switch views 1..5 at the
 		// TOP LEVEL ONLY — reached here exactly because the active screen's
 		// own handler returned unhandled (capturing panes and Global SSH's
 		// ←/→ sub-tabs already consumed the key above and never reach this
@@ -413,7 +414,7 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	case "right":
-		if a.tab < TabDoctor {
+		if a.tab < TabFixer {
 			next, cmd := a.setTab(a.tab + 1)
 			return next, cmd
 		}
@@ -444,7 +445,7 @@ func (a App) handleMouse(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 			return a.setTab(t)
 		}
 		if headerChipAt(a.width, a.state, msg.X) {
-			return a.setTab(TabDoctor)
+			return a.setTab(TabHealth)
 		}
 		return a, nil
 	}
@@ -640,12 +641,13 @@ func padRight(s string, width int) string {
 // the Backend; the Global SSH and Global Git models need the backend for
 // their live options read and apply commit, the other two are pure
 // DemoState renderers.
-func newScreens(b Backend, initial DemoState) [4]screenModel {
-	return [4]screenModel{
+func newScreens(b Backend, initial DemoState) [5]screenModel {
+	return [5]screenModel{
 		newIdentitiesModel(b, initial),
 		newGlobalSSHModel(b),
 		newGlobalGitModel(b),
-		newDoctorModel(),
+		newHealthModel(),
+		newFixerModel(),
 	}
 }
 

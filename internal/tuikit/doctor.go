@@ -40,9 +40,6 @@ type doctorModel struct {
 	ceremony   ceremonyModel
 }
 
-// newDoctorModel builds the Doctor tab (scan runs on first activation).
-func newDoctorModel() doctorModel { return doctorModel{} }
-
 // activate auto-runs the first scan — the view must show value
 // immediately; later visits are instant.
 func (m doctorModel) activate(s DemoState) (screenModel, tea.Cmd) {

@@ -81,7 +81,8 @@ func CheckOrphans(deps doctor.Deps) []doctor.Finding {
 				Explanation: fmt.Sprintf("A gitid-managed SSH Host block %q exists but no gitconfig includeIf block claims it.", n),
 				SuggestedFix: fmt.Sprintf(
 					"remove the orphaned SSH Host block %q  (gitid will confirm before removing)", n),
-				Fix: fix,
+				Fix:    fix,
+				Target: "SSH",
 			})
 		}
 	}
@@ -118,7 +119,8 @@ func CheckOrphans(deps doctor.Deps) []doctor.Finding {
 				Explanation: fmt.Sprintf("A gitconfig managed block %q exists but no SSH Host block claims it.", n),
 				SuggestedFix: fmt.Sprintf(
 					"remove the orphaned gitconfig block %q  (gitid will confirm before removing)", n),
-				Fix: fix,
+				Fix:    fix,
+				Target: "Git",
 			})
 		}
 	}
@@ -150,7 +152,8 @@ func CheckOrphans(deps doctor.Deps) []doctor.Finding {
 					"It may be used for direct server SSH or 'ssh -i' — review before deleting.",
 				SuggestedFix: fmt.Sprintf(
 					"inspect usage manually; delete with 'rm %s' if confirmed unused", kp),
-				Fix: nil, // key deletion is NEVER auto-fixed (D-03/D-13)
+				Fix:    nil, // key deletion is NEVER auto-fixed (D-03/D-13)
+				Target: "SSH",
 			})
 		}
 	}

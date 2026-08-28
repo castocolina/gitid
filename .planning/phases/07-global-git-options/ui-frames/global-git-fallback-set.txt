@@ -1,9 +1,9 @@
- gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer     0 ids · ✓ ok
  Global Git › Options
 ✓ Global fallback user.email set — used only where no identity matches; identity fragments still win
 advisory: matched-identity author resolution could not be verified on this machine
 Wrote → ~/.gitconfig
-Backed up → ~/.gitconfig.backup.2026-08-27T23-03-29Z
+Backed up → ~/.gitconfig.backup.2026-08-28T05-40-16Z
 
  Done (Enter)
 

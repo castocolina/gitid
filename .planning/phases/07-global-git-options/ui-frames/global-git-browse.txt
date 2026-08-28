@@ -1,12 +1,12 @@
- gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer     0 ids · ✓ ok
  Global Git › Options
- ▸    ! init.defaultBranch  [main vs master]│  init.defaultBranch
+ ▸ ·  ! init.defaultBranch  [main vs master]│  init.defaultBranch
       now: trunk → main  set, differs from …│  ~ Recommended, not required -- you can leave any
    ☐ ! core.ignorecase                      │ option unchanged. This is advisory, never a compliance
       now:  → false                         │ gate.
    ☐ ! core.autocrlf / core.eol             │
       now: 0 of 2 set → input / lf          │  Until Git 2.28 (July 2020), every new repository's
-      ! user.email (global fallback)        │ default branch was named "master" -- a name inherited
+   ·  ! user.email (global fallback)        │ default branch was named "master" -- a name inherited
       now:  → left unset unless explicitly …│ from Git's early conventions. GitHub, GitLab, and
    ☐ ! user.useConfigOnly                   │ Bitbucket now all default new repositories to "main"
       now:  → true                          │ instead, and many teams have followed suit for their

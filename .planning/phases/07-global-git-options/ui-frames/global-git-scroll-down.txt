@@ -1,4 +1,4 @@
- gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer     0 ids · ✓ ok
  Global Git › Options
    ☐ ! init.defaultBranch  [main vs master] │  diff.colorMoved
       now:  → main                          │  ~ Recommended, not required -- you can leave any
@@ -6,7 +6,7 @@
       now:  → false                         │ gate.
    ☐ ! core.autocrlf / core.eol             │
       now: 0 of 2 set → input / lf          │  Highlights moved blocks of code distinctly from
-      ! user.email (global fallback)        │ genuine additions/deletions in colorized diffs,
+   ·  ! user.email (global fallback)        │ genuine additions/deletions in colorized diffs,
       now:  → left unset unless explicitly …│ striping each moved block.
    ☐ ! user.useConfigOnly                   │   Your git: 2.55.0 — diff.colorMoved zebra is
       now:  → true                          │ available

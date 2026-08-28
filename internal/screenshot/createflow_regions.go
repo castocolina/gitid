@@ -470,19 +470,21 @@ func extractHeader(lines []string) string {
 	}
 	header := lines[0]
 	plain := stripANSI(header)
-	// status starts after the last nav-tab "Doctor " entry + trailing spaces
-	markerIdx := strings.LastIndex(plain, "Doctor ")
+	// status starts after the last nav-tab "Fixer " entry + trailing spaces
+	// (08-01-PLAN.md Task 1's TabID 4->5 split retired the single "Doctor"
+	// tab in favor of "Health"/"Fixer" — "Fixer" is now the last nav tab).
+	markerIdx := strings.LastIndex(plain, "Fixer ")
 	if markerIdx < 0 {
 		return header
 	}
-	after := plain[markerIdx+len("Doctor "):]
+	after := plain[markerIdx+len("Fixer "):]
 	statusIdx := strings.IndexFunc(after, func(r rune) bool { return r != ' ' })
 	if statusIdx < 0 {
 		// no status — return full header
 		return header
 	}
 	// truncate at the status start (in ANSI-preserved raw line)
-	rawEnd := ansiOffsetToRaw(header, markerIdx+len("Doctor ")+statusIdx)
+	rawEnd := ansiOffsetToRaw(header, markerIdx+len("Fixer ")+statusIdx)
 	if rawEnd < 0 || rawEnd >= len(header) {
 		return header
 	}
@@ -728,19 +730,21 @@ func extractHeaderStatus(lines []string) string {
 	plain := stripANSI(header)
 	// The status summary ("N ids · ✓ ok" or "N ids · ! M ✗ K") always appears
 	// after a run of spaces following the last nav-tab entry. Find the last
-	// "· [N] Doctor " or "Doctor " occurrence and take what follows.
-	markerIdx := strings.LastIndex(plain, "Doctor ")
+	// "· [N] Fixer " or "Fixer " occurrence and take what follows ("Fixer" is
+	// the last nav tab since 08-01-PLAN.md Task 1's TabID 4->5 split retired
+	// the single "Doctor" tab).
+	markerIdx := strings.LastIndex(plain, "Fixer ")
 	if markerIdx < 0 {
 		return header
 	}
-	// find the non-space content after "Doctor " (account for padding)
-	after := plain[markerIdx+len("Doctor "):]
+	// find the non-space content after "Fixer " (account for padding)
+	after := plain[markerIdx+len("Fixer "):]
 	statusIdx := strings.IndexFunc(after, func(r rune) bool { return r != ' ' })
 	if statusIdx < 0 {
 		return ""
 	}
 	// map back to ANSI-preserved position
-	rawStart := ansiOffsetToRaw(header, markerIdx+len("Doctor ")+statusIdx)
+	rawStart := ansiOffsetToRaw(header, markerIdx+len("Fixer ")+statusIdx)
 	if rawStart < 0 || rawStart >= len(header) {
 		return header[markerIdx:]
 	}

@@ -63,6 +63,11 @@ func coherenceForAccount(deps doctor.Deps, acct identity.Account) []doctor.Findi
 			SuggestedFix: "run 'gitid identity add' to recreate the missing artifacts",
 			Fix:          nil, // report-only; user must re-run create
 			IdentityName: acct.Name,
+			// D-01: this finding can describe an SSH-side gap
+			// ("ssh-host-block") or a Git-side gap ("gitconfig-includeif-
+			// block"/"fragment-file"); incompleteTarget resolves which
+			// domain the missing piece(s) belong to.
+			Target: incompleteTarget(acct.Incomplete),
 		})
 		// Continue with any checks that can still run (e.g. KeyPath existence if set).
 	}
@@ -80,6 +85,7 @@ func coherenceForAccount(deps doctor.Deps, acct identity.Account) []doctor.Findi
 				SuggestedFix: "run 'gitid identity add' to recreate, or remove the orphaned SSH Host block",
 				Fix:          nil, // report-only (D-03)
 				IdentityName: acct.Name,
+				Target:       "SSH",
 			})
 		}
 	}
@@ -97,6 +103,7 @@ func coherenceForAccount(deps doctor.Deps, acct identity.Account) []doctor.Findi
 				SuggestedFix: "run 'gitid identity add' to recreate the fragment",
 				Fix:          nil, // report-only (D-03)
 				IdentityName: acct.Name,
+				Target:       "Git",
 			})
 		}
 	}
@@ -149,6 +156,7 @@ func coherenceForAccount(deps doctor.Deps, acct identity.Account) []doctor.Findi
 						"re-run 'gitid identity add --name %s' (will repair the Host block)", acct.Name),
 					Fix:          fix,
 					IdentityName: acct.Name,
+					Target:       "SSH",
 				})
 			}
 		}
@@ -178,6 +186,7 @@ func coherenceForAccount(deps doctor.Deps, acct identity.Account) []doctor.Findi
 					"git config --file %s gpg.format ssh", acct.FragmentPath),
 				Fix:          nil, // locked-value override is report-only (D-17)
 				IdentityName: acct.Name,
+				Target:       "Git",
 			})
 			// If gpg.format is wrong, skip allowed_signers check — it isn't a signing
 			// identity in the expected configuration.
@@ -226,10 +235,38 @@ func coherenceForAccount(deps doctor.Deps, acct identity.Account) []doctor.Findi
 				"correct the email in ~/.ssh/allowed_signers to exactly match '%s'", acct.GitEmail),
 			Fix:          fix,
 			IdentityName: acct.Name,
+			// D-01: allowed_signers is a ~/.ssh/-domain artifact even though
+			// it enables git signing — routes to SSH per D-01's "tool-level
+			// findings route per tool" rule (the file the fix touches lives
+			// under ~/.ssh/, not ~/.gitconfig).
+			Target: "SSH",
 		})
 	}
 
 	return findings
+}
+
+// incompleteTarget resolves the D-01 Target for an Incomplete finding from
+// acct.Incomplete's comma-joined missing-piece markers (Reconstruct's
+// "ssh-host-block" / "gitconfig-includeif-block" / "fragment-file"
+// vocabulary, identity/loader.go). A missing SSH Host block is an SSH-domain
+// gap; a missing gitconfig includeIf block or fragment file is a Git-domain
+// gap. When both sides are missing (a genuinely incomplete identity with
+// neither artifact yet), Git wins — the Coherence Git section is where a
+// brand-new identity's setup gap is diagnosed first in the frozen field
+// manifest's ordering (SSH section lists structural block presence; the
+// combined "incomplete" state is fundamentally about the Git side never
+// having been created).
+func incompleteTarget(incomplete string) string {
+	hasSSHGap := strings.Contains(incomplete, "ssh-host-block")
+	hasGitGap := strings.Contains(incomplete, "gitconfig-includeif-block") || strings.Contains(incomplete, "fragment-file")
+	if hasGitGap {
+		return "Git"
+	}
+	if hasSSHGap {
+		return "SSH"
+	}
+	return "Git" // unrecognized marker: default to Git rather than leave empty
 }
 
 // allowedSignersMissingFindingWithFix returns the "no entry for <email>" Coherence
@@ -247,6 +284,9 @@ func allowedSignersMissingFindingWithFix(deps doctor.Deps, acct identity.Account
 			acct.Name),
 		SuggestedFix: "add the line manually or re-run 'gitid identity add'",
 		Fix:          fix,
+		// D-01: allowed_signers lives under ~/.ssh/ — SSH per the "tool-level
+		// findings route per tool" rule, matching the mismatch variant above.
+		Target: "SSH",
 	}
 }
 

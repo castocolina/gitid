@@ -135,6 +135,10 @@ func checkGitconfigPath(deps doctor.Deps, path string) []doctor.Finding {
 			Title:        fmt.Sprintf("%s: %04o (expected %04o)", path, got, modeGitconfig),
 			Explanation:  explanation,
 			SuggestedFix: fix,
+			// D-01: this is the ONE FamilyPerms finding about ~/.gitconfig
+			// (every other Perms finding is SSH-domain) — the family
+			// default is "SSH", so this call site must override it.
+			Target: "Git",
 			Fix: &doctor.FixDescriptor{
 				Summary: fix,
 				Fn: func() error {
