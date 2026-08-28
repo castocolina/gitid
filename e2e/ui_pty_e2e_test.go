@@ -385,7 +385,7 @@ func uiReady(t *testing.T, s *ptySession) {
 
 // TestUIPTY_RealShellBoots is the D-15 smoke proof: a bare `gitid` invocation
 // on a real TTY launches the REAL approved app shell (the tuikit chrome with
-// its four numbered nav tabs), driven by the real Backend composition root in
+// its five numbered nav tabs), driven by the real Backend composition root in
 // cmd/gitid/wiring.go — not the retired 0.0.1 POC tui/ package.
 //
 // It is deliberately minimal. The per-screen create-flow PTY suite (form,
@@ -407,8 +407,10 @@ func TestUIPTY_RealShellBoots(t *testing.T) {
 
 	uiReady(t, s)
 
-	// The approved chrome renders all four numbered nav tabs (SHELL-01).
-	for _, tab := range []string{"Identities", "Global SSH", "Global Git", "Doctor"} {
+	// The approved chrome renders all five numbered nav tabs (SHELL-01,
+	// 08-01-PLAN.md Task 1's TabID 4->5 split retired the single "Doctor"
+	// tab in favor of "Health"/"Fixer").
+	for _, tab := range []string{"Identities", "Global SSH", "Global Git", "Health", "Fixer"} {
 		last, ok := s.waitFor(8*time.Second, func(text string) bool {
 			return strings.Contains(text, tab)
 		})

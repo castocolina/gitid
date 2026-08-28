@@ -595,11 +595,11 @@ func extractGitScreenHeaderStatus(lines []string) string {
 		return ""
 	}
 	header := lines[0]
-	idx := strings.LastIndex(header, "Doctor")
+	idx := strings.LastIndex(header, "Fixer")
 	if idx < 0 {
 		return ""
 	}
-	return strings.TrimSpace(header[idx+len("Doctor"):])
+	return strings.TrimSpace(header[idx+len("Fixer"):])
 }
 
 // extractGitScreenFormFields returns the git-form's user.name/user.email

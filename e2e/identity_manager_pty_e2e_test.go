@@ -1123,11 +1123,11 @@ func extractIdentManagerHeaderStatus(lines []string) string {
 		return ""
 	}
 	header := lines[0]
-	idx := strings.LastIndex(header, "Doctor")
+	idx := strings.LastIndex(header, "Fixer")
 	if idx < 0 {
 		return ""
 	}
-	return strings.TrimSpace(header[idx+len("Doctor"):])
+	return strings.TrimSpace(header[idx+len("Fixer"):])
 }
 
 func extractIdentManagerDetail(lines []string) string {

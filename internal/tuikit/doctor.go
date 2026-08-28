@@ -1,25 +1,16 @@
 package tuikit
 
-// doctor.go is the Go mirror of
-// .planning/design/mockup-src/src/demo/screens/Doctor.tsx per
-// 02-REDESIGN-SPEC.md §5 — the Doctor absorbs the Fixer (FIX-02, no fifth
-// tab). First entry auto-runs the scan; findings group `SSH ·
-// <identity|global>` then `Git · …`, severity-ordered, with the LOCKED
-// severity contract (~ info cyan · ! warning yellow · ✗ error AND critical
-// red — the word disambiguates, NEVER ✗ for a warning). `f` fixes the
-// selected finding and `F` walks EVERY fixable finding through the SAME
-// per-fix ceremony with a `k / n fixed` counter — never a silent batch.
-// Each success removes the finding LIVE, decrements the header chip, and
-// heals identity states.
+// doctor.go holds the helpers SHARED by the Health tab (health_screen.go,
+// read-only) and the Fixer tab (fixer_screen.go, the fix-ceremony half) —
+// 08-01-PLAN.md Task 2's split of the former single Doctor tab (FIX-02,
+// 02-REDESIGN-SPEC.md §5) into two real, distinct tabs driven by the same
+// findings source. Findings group `SSH · <identity|global>` then `Git · …`,
+// severity-ordered, with the LOCKED severity contract (~ info cyan !
+// warning yellow ✗ error AND critical red — the word disambiguates, NEVER ✗
+// for a warning).
 
 import (
-	"fmt"
 	"sort"
-	"strings"
-	"time"
-
-	tea "charm.land/bubbletea/v2"
-	lipgloss "charm.land/lipgloss/v2"
 )
 
 // doctorScanMsg completes the brief scanning state.
@@ -29,35 +20,6 @@ type doctorScanMsg struct{}
 type doctorBatch struct {
 	queue []string
 	total int
-}
-
-// doctorModel is the Doctor tab child model.
-type doctorModel struct {
-	scanning   bool
-	selectedID string
-	fixing     bool
-	batch      *doctorBatch
-	ceremony   ceremonyModel
-}
-
-// activate auto-runs the first scan — the view must show value
-// immediately; later visits are instant.
-func (m doctorModel) activate(s DemoState) (screenModel, tea.Cmd) {
-	if !s.Scanned {
-		m.scanning = true
-		return m, tea.Tick(600*time.Millisecond, func(time.Time) tea.Msg { return doctorScanMsg{} })
-	}
-	m.scanning = false
-	return m, nil
-}
-
-// handleMsg finishes the scan.
-func (m doctorModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
-	if _, ok := msg.(doctorScanMsg); ok && m.scanning {
-		m.scanning = false
-		return keyResult{model: m, actions: []Action{MarkScanned{}}}
-	}
-	return keyResult{model: m}
 }
 
 // severityRank orders findings critical > error > warning > info.
@@ -124,10 +86,12 @@ func groupFindings(ordered []DemoFinding) []doctorGroup {
 	return groups
 }
 
-// selectedFinding resolves the selected finding (falls back to the first).
-func (m doctorModel) selectedFinding(ordered []DemoFinding) (DemoFinding, int, bool) {
+// selectFinding resolves the finding matching id within ordered (falls back
+// to the first). Extracted as a free function (was a doctorModel method)
+// since both healthModel and fixerModel need it and neither owns the other.
+func selectFinding(ordered []DemoFinding, id string) (DemoFinding, int, bool) {
 	for i, f := range ordered {
-		if f.ID == m.selectedID {
+		if f.ID == id {
 			return f, i, true
 		}
 	}
@@ -146,242 +110,6 @@ func fixableFindings(ordered []DemoFinding) []DemoFinding {
 		}
 	}
 	return out
-}
-
-// handleKey implements the Doctor key model.
-func (m doctorModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
-	key := msg.String()
-	ordered := orderedFindings(s)
-
-	if m.fixing {
-		sel, _, ok := m.selectedFinding(ordered)
-		if !ok {
-			m.fixing = false
-			m.batch = nil
-			return keyResult{model: m, handled: true}
-		}
-		var outcome ceremonyOutcome
-		m.ceremony, outcome = m.ceremony.handleKey(msg)
-		switch outcome {
-		case ceremonyCancelled:
-			// Esc cancels this fix AND the remainder of a Fix-all walk.
-			m.fixing = false
-			m.batch = nil
-		case ceremonyFinished:
-			plan := PlanFor(sel)
-			action := FixFinding{ID: sel.ID, Backup: NewBackupPath(plan.File)}
-			if m.batch != nil {
-				queue := m.batch.queue[:0]
-				for _, id := range m.batch.queue {
-					if id != sel.ID {
-						queue = append(queue, id)
-					}
-				}
-				m.batch.queue = queue
-				if len(queue) > 0 {
-					// Stay in fixing mode — the NEXT ceremony renders for the
-					// next finding (never a silent batch).
-					m.selectedID = queue[0]
-					for _, f := range ordered {
-						if f.ID == queue[0] {
-							m.ceremony = fixCeremonyFor(f)
-						}
-					}
-					return keyResult{model: m, handled: true, note: plan.Result, actions: []Action{action}}
-				}
-				m.batch = nil
-			}
-			m.fixing = false
-			m.selectedID = ""
-			return keyResult{model: m, handled: true, note: plan.Result, actions: []Action{action}}
-		case ceremonyNone, ceremonyConfirmed:
-		}
-		return keyResult{model: m, handled: true}
-	}
-
-	if m.scanning {
-		return keyResult{model: m}
-	}
-
-	switch key {
-	case "up", "down":
-		_, idx, ok := m.selectedFinding(ordered)
-		if !ok {
-			return keyResult{model: m, handled: true}
-		}
-		if key == "down" && idx < len(ordered)-1 {
-			idx++
-		}
-		if key == "up" && idx > 0 {
-			idx--
-		}
-		m.selectedID = ordered[idx].ID
-		return keyResult{model: m, handled: true}
-	case "f":
-		sel, _, ok := m.selectedFinding(ordered)
-		if ok && sel.SuggestedFix != "" {
-			m.selectedID = sel.ID
-			m.ceremony = fixCeremonyFor(sel)
-			m.fixing = true
-		}
-		return keyResult{model: m, handled: true}
-	case "F":
-		fixable := fixableFindings(ordered)
-		if len(fixable) > 0 {
-			ids := make([]string, 0, len(fixable))
-			for _, f := range fixable {
-				ids = append(ids, f.ID)
-			}
-			m.batch = &doctorBatch{queue: ids, total: len(ids)}
-			m.selectedID = ids[0]
-			m.ceremony = fixCeremonyFor(fixable[0])
-			m.fixing = true
-		}
-		return keyResult{model: m, handled: true}
-	}
-	return keyResult{model: m}
-}
-
-// handleClick implements mouseTarget: a left click on a finding row (either
-// of its two lines) selects that finding. It walks the same groupFindings
-// layout the view renders — one group-label line, then two lines per
-// finding — so hit-testing cannot drift from the drawn list. The detail
-// pane's `f · Fix this…` button dispatches f, and an open fix ceremony's
-// buttons click through the shared ceremony zones. Group labels and the
-// scanning state are inert.
-func (m doctorModel) handleClick(x, y, width, height int, s DemoState) keyResult {
-	if m.scanning {
-		return keyResult{model: m}
-	}
-	if m.fixing {
-		body := m.view(s, width, height).body
-		if next, key, ok := ceremonyClickKey(m.ceremony, body, x, y); ok {
-			m.ceremony = next
-			return m.handleKey(key, s)
-		}
-		return keyResult{model: m}
-	}
-	if x >= masterListWidth(width) {
-		if hitNeedle(m.view(s, width, height).body, x, y, " f · Fix this… ") {
-			return m.handleKey(mustKey("f"), s)
-		}
-		return keyResult{model: m}
-	}
-	line := 0
-	for _, group := range groupFindings(orderedFindings(s)) {
-		line++ // the group's faint label line
-		for _, f := range group.findings {
-			if y == line || y == line+1 {
-				m.selectedID = f.ID
-				return keyResult{model: m, handled: true}
-			}
-			line += 2
-		}
-	}
-	return keyResult{model: m}
-}
-
-// view implements screenModel.
-func (m doctorModel) view(s DemoState, width, height int) screenView {
-	ordered := orderedFindings(s)
-	sel, selIdx, hasSel := m.selectedFinding(ordered)
-	fixable := fixableFindings(ordered)
-
-	if m.scanning {
-		return screenView{
-			body:   "\n " + styleFaint.Render("… running doctor scan…"),
-			status: "Scanning ~/.ssh/config, ~/.gitconfig, fragments, keys, allowed_signers…",
-		}
-	}
-
-	status := fmt.Sprintf("%d finding%s — Health only diagnoses; a fix runs right here, always previewed + confirmed + backed up.",
-		len(ordered), pluralS(len(ordered)))
-	tone := "info"
-	for _, f := range ordered {
-		if f.Severity != SeverityInfo {
-			tone = "warning"
-		}
-	}
-
-	// All green: scanned, zero findings.
-	if s.Scanned && len(ordered) == 0 {
-		body := "\n " + styleHealthy.Render("✓ "+FixerNothingToFixSSH) + "\n " + styleHealthy.Render("✓ "+FixerNothingToFixGit)
-		return screenView{body: body, status: status, statusTone: "success"}
-	}
-
-	var crumbs []string
-	var actions []FooterAction
-	if m.fixing && hasSel {
-		crumbs = []string{"Fix", sel.Title}
-		actions = []FooterAction{{Key: "Esc", Label: "cancel fix"}}
-	} else {
-		actions = []FooterAction{{Key: "↑↓", Label: "select finding"}}
-		if hasSel && sel.SuggestedFix != "" {
-			actions = append(actions, FooterAction{Key: "f", Label: "fix this"})
-		}
-		if len(fixable) > 1 {
-			actions = append(actions, FooterAction{Key: "F", Label: fmt.Sprintf("fix all (%d)", len(fixable))})
-		}
-	}
-
-	listWidth := masterListWidth(width)
-	detailWidth := width - listWidth - masterDetailGutter
-
-	var rows []string
-	for _, group := range groupFindings(ordered) {
-		rows = append(rows, " "+styleFaint.Render(group.label))
-		for _, f := range group.findings {
-			marker := "  "
-			title := styleBold.Render(f.Title)
-			if hasSel && f.ID == ordered[selIdx].ID {
-				marker = styleBold.Render("▸ ")
-				title = styleSelected.Render(f.Title)
-			}
-			fixNote := "info only"
-			if f.SuggestedFix != "" {
-				fixNote = "fixable"
-			}
-			rows = append(rows, truncLine(" "+marker+severityLabel(f.Severity)+" "+title, listWidth))
-			rows = append(rows, truncLine("     "+styleFaint.Render(f.Family+" · "+fixNote), listWidth))
-		}
-	}
-	list := strings.Join(rows, "\n")
-	if m.fixing {
-		// Same dim treatment as the Identities sidebar while a form pane is
-		// open (web: opacity 0.75 during the fix ceremony, L3).
-		list = dimPane(list)
-	}
-
-	var d strings.Builder
-	if m.batch != nil && m.fixing {
-		fixed := m.batch.total - len(m.batch.queue)
-		d.WriteString(" " + styleInfo.Render(fmt.Sprintf("Fix all — %d / %d fixed; each change still previews its own diff and backup before writing.", fixed, m.batch.total)) + "\n")
-	}
-	if m.fixing {
-		d.WriteString(m.ceremony.view(detailWidth))
-	} else if hasSel {
-		d.WriteString(" " + severityLabel(sel.Severity) + "  " + styleBold.Render(sel.Title) + "\n")
-		chips := " " + styleFaint.Render("["+sel.Family+"]")
-		if sel.Identity != "" {
-			chips += " " + styleFaint.Render("["+sel.Identity+"]")
-		}
-		d.WriteString(chips + "\n\n")
-		d.WriteString(" " + sel.Explanation + "\n\n")
-		if sel.SuggestedFix != "" {
-			d.WriteString(" " + styleInfo.Render("~ Suggested fix: "+sel.SuggestedFix) + "\n")
-			d.WriteString(" " + styleSelected.Render(" f · Fix this… ") + "\n")
-		} else {
-			d.WriteString(" " + styleInfo.Render("~ Informational only — nothing to fix.") + "\n")
-		}
-	}
-	// Wrap to the pane width, then clip with a VISIBLE cue — finding
-	// explanations must never be silently cut mid-sentence (H3).
-	bodyRows := frameBodyRows(height)
-	detailPane := fitPane(lipgloss.NewStyle().Width(detailWidth).Render(d.String()), bodyRows)
-
-	body := joinMasterDetail(list, listWidth, detailPane, bodyRows)
-	return screenView{body: body, crumbs: crumbs, status: status, statusTone: tone,
-		actions: actions, capturesKeys: m.fixing}
 }
 
 // pluralS returns "s" for counts other than 1.

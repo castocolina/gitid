@@ -1,4 +1,4 @@
- gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  2 ids · ! 0 ✗ 2
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  2 ids · ! 4 ✗ 4
  Global SSH › Storage & preview
   Options   Storage & preview
  STORE-01 — where gitid-managed SSH config  │  Resulting config — Include + owned file
@@ -15,7 +15,7 @@ is backed-up and reversible (STORE-03).     │ ┊ Host personal.github.com    
                                             │ ┊   Hostname ssh.github.com                          ┊
   Migrate layout… (Enter)                   │ ┊   Port 443                                         ┊
                                             │ ┊   User git                                         ┊
-                                            │ ┊   IdentityFile /tmp/h401123042/.ssh/id_ed25519_pe… ┊
+                                            │ ┊   IdentityFile /tmp/h4233582761/.ssh/id_ed25519_p… ┊
                                             │ ┊   IdentitiesOnly yes                               ┊
                                             │ ┊ # END gitid managed: personal                      ┊
                                             │ ┊ # BEGIN gitid managed: work                        ┊

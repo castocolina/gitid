@@ -1,6 +1,7 @@
- gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer     0 ids · ✓ ok
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  0 ids · ! 0 ✗ 2
  Global SSH › Options
   Options   Storage & preview
+ ! The doctor found 1 SSH finding beyond these global options.  Open Health (4)
    ☐ ! StrictHostKeyChecking  [Medium]      │  IdentitiesOnly
       now: no → accept-new                  │  ~ Recommended, not required -- you can leave any
       ✓ ForwardAgent  [High]                │ option unchanged. This is advisory, never a compliance
@@ -23,8 +24,7 @@
                                             │ ssh to ONLY the IdentityFile(s) listed for that host -
                                             │ this is why every gitid-managed Host block
                                             │ (recipes/ssh-config.recipe) already sets it per-
-                                            │ identity. This screen recommends also stating it
-                                            │  … (+4 more lines)
+                                            │  … (+5 more lines)
  4 of 6 options need action — Recommended, not required -- you can leave any option unchanged. Thi…
  ↑↓ select option · ←→ Options / Storage · space toggle
  Enter activate · Esc back · ? help · Ctrl+P palette · q quit

@@ -1,5 +1,6 @@
- gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer     0 ids · ✓ ok
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  0 ids · ! 0 ✗ 1
  Global Git › Options
+ ! The doctor found 1 Git finding beyond this baseline.  Open Health (4)
  ▸ ·  ! init.defaultBranch  [main vs master]│  init.defaultBranch
       now: trunk → main  set, differs from …│  ~ Recommended, not required -- you can leave any
    ☐ ! core.ignorecase                      │ option unchanged. This is advisory, never a compliance
@@ -23,8 +24,7 @@
    ☐ ! merge.conflictstyle                  │ brand-new repository.
       now:  → zdiff3                        │
    ☐ ! diff.colorMoved                      │ This is a naming convention, not a security or
-      now:  → zebra                         │ correctness fix -- it is included here because it is
-                                            │  … (+9 more lines)
+      now:  → zebra                         │  … (+10 more lines)
  10 baseline options not set — Recommended, not required -- you can leave any option unchanged. Th…
  ↑↓ select option · space toggle · ←→ switch view
  Enter activate · Esc back · ? help · Ctrl+P palette · q quit

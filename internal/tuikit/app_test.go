@@ -1,6 +1,7 @@
 package tuikit
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -112,6 +113,33 @@ func TestTabsAndPaletteReachAllPrimaryViews(t *testing.T) {
 	for _, e := range paletteEntries {
 		if !strings.Contains(view, e.label) {
 			t.Errorf("palette missing %q", e.label)
+		}
+	}
+}
+
+// TestNewScreensExhaustiveSwitchOverTabID closes newScreens's own coverage
+// gap (08-01-PLAN.md Task 3): asserts newScreens returns exactly one
+// screenModel of the correct concrete type per TabID value, in TabID order —
+// no existing test iterated every TabID against its returned screen array.
+func TestNewScreensExhaustiveSwitchOverTabID(t *testing.T) {
+	screens := newScreens(stubBackend{}, DemoState{})
+	want := []struct {
+		tab  TabID
+		kind string
+	}{
+		{TabIdentities, fmt.Sprintf("%T", identitiesModel{})},
+		{TabGlobalSSH, fmt.Sprintf("%T", globalSSHModel{})},
+		{TabGlobalGit, fmt.Sprintf("%T", globalGitModel{})},
+		{TabHealth, fmt.Sprintf("%T", healthModel{})},
+		{TabFixer, fmt.Sprintf("%T", fixerModel{})},
+	}
+	if len(screens) != len(want) {
+		t.Fatalf("newScreens returned %d screens, want %d", len(screens), len(want))
+	}
+	for _, w := range want {
+		got := fmt.Sprintf("%T", screens[w.tab])
+		if got != w.kind {
+			t.Errorf("screens[%v] = %s, want %s", w.tab, got, w.kind)
 		}
 	}
 }

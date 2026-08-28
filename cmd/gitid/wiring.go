@@ -3581,10 +3581,18 @@ func buildDoctorDeps(home string) doctor.Deps {
 		},
 		AddWiring: doctorAddWiring(allowedSignersPath),
 
-		// Check function fields — Task 1 wires only CheckCoherence (the
-		// tracer's "one real finding"). Task 2 replaces this block with all
-		// 9 families wired.
-		CheckCoherence: checks.CheckCoherence,
+		// Check function fields — all 9 families wired to their real
+		// internal/doctor/checks function (08-01-PLAN.md Task 2; Task 1
+		// proved only CheckCoherence, the tracer's "one real finding").
+		CheckDeps:       checks.CheckDeps,
+		CheckPerms:      checks.CheckPermissions,
+		CheckCoherence:  checks.CheckCoherence,
+		CheckOrphans:    checks.CheckOrphans,
+		CheckSigning:    checks.CheckSigning,
+		CheckAgent:      checks.CheckAgent,
+		CheckBaseline:   checks.CheckBaseline,
+		CheckOverlap:    checks.CheckOverlap,
+		CheckRedundancy: checks.CheckRedundancy,
 	}
 }
 

@@ -102,7 +102,7 @@ func newRootCmd() *cobra.Command {
 	registerFlatAliases(root, specs)
 	root.AddCommand(newSSHCmd())
 	root.AddCommand(newGitCmd())
-	root.AddCommand(newReservedNounCmd("health", "Show identity/config health (arrives in Phase 8)", "Phase 8 (Health + Fixer)"))
+	root.AddCommand(newHealthCmd())
 	root.AddCommand(newReservedNounCmd("fix", "Apply suggested health fixes (arrives in Phase 8)", "Phase 8 (Health + Fixer)"))
 
 	return root

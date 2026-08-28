@@ -90,8 +90,15 @@ func coherenceForAccount(deps doctor.Deps, acct identity.Account) []doctor.Findi
 		}
 	}
 
-	// Check 2: includeIf fragment existence (DOC-03).
-	if acct.FragmentPath != "" {
+	// Check 2: includeIf fragment existence (DOC-03). Skipped when the
+	// Incomplete branch above already reported this exact gap
+	// ("fragment-file", set by identity.Reconstruct's own readFrag/Missing
+	// check) — otherwise a single missing fragment file produces TWO
+	// Coherence findings for the identical root cause (08-01-PLAN.md Task 1
+	// "never zero, never two" tracer contract, caught by manual real-fixture
+	// verification: internal/identity/loader.go's readFrag already proves
+	// the fragment is missing before this function ever runs).
+	if acct.FragmentPath != "" && !strings.Contains(acct.Incomplete, "fragment-file") {
 		_, err := deps.Stat(acct.FragmentPath) //nolint:gosec // acct.FragmentPath is a trusted gitid-managed path (G304)
 		if err != nil && os.IsNotExist(err) {
 			findings = append(findings, doctor.Finding{

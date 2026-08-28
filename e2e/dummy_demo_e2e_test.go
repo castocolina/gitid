@@ -184,7 +184,7 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 
 	// ---- launch: header tabs + breadcrumb + sidebar + legend ----
 	mustSee(t, s, "[1] Identities", "launch: header nav tabs (D4 bracketed format)")
-	mustSee(t, s, "[4] Doctor", "launch: header nav tabs (D4 bracketed format)")
+	mustSee(t, s, "[4] Health", "launch: header nav tabs (D4 bracketed format)")
 	mustSee(t, s, "personal", "launch: seeded sidebar row")
 	mustSee(t, s, "S ssh · G git", "launch: sidebar legend line")
 	mustSee(t, s, "8 ids", "launch: live health chip")
@@ -204,9 +204,9 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 	mustSee(t, s, "main vs master", "tab 3: highlight chip")
 
 	s.sendKey([]byte("4"), keystrokeDelay)
-	// Doctor-BODY-specific proof (the "Doctor" header tab label is always
+	// Health-BODY-specific proof (the "Health" header tab label is always
 	// present, so it can never fail): the post-scan status line.
-	mustSee(t, s, "Health only diagnoses", "tab 4: doctor status line after auto-scan")
+	mustSee(t, s, "read-only diagnostics", "tab 4: health status line after auto-scan")
 	// Auto-scan runs on first entry, then findings render grouped.
 	mustSee(t, s, "Private key is world-readable", "tab 4: finding title after auto-scan")
 
@@ -245,16 +245,16 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // Done
 	mustSee(t, s, "9 ids", "wizard: header chip id count incremented live")
 
-	// ---- doctor: fix the selected finding through the ceremony ----
-	s.sendKey([]byte("4"), keystrokeDelay)
-	mustSee(t, s, "Private key is world-readable", "doctor: findings render instantly on revisit")
+	// ---- fixer: fix the selected finding through the ceremony ----
+	s.sendKey([]byte("5"), keystrokeDelay)
+	mustSee(t, s, "Private key is world-readable", "fixer: findings render instantly on revisit")
 	s.sendKey([]byte("f"), keystrokeDelay)
-	mustSee(t, s, "Fix: Private key is world-readable", "doctor: fix ceremony opens")
+	mustSee(t, s, "Fix: Private key is world-readable", "fixer: fix ceremony opens")
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // confirm fix
-	mustSee(t, s, "Backed up →", "doctor: fix receipt")
+	mustSee(t, s, "Backed up →", "fixer: fix receipt")
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // done
-	mustNotSee(t, s, "Private key is world-readable", "doctor: fixed finding disappears live")
-	mustSee(t, s, "✗ 2", "doctor: header chip error count decremented live")
+	mustNotSee(t, s, "Private key is world-readable", "fixer: fixed finding disappears live")
+	mustSee(t, s, "✗ 2", "fixer: header chip error count decremented live")
 
 	// ---- help overlay ----
 	s.sendKey([]byte("?"), keystrokeDelay)
@@ -303,9 +303,9 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 }
 
 // TestDummyDemo_MouseAndGitApply covers review batch 3 over the real PTY:
-// (a) one real SGR mouse click on the `4 Doctor` header tab (press+release
+// (a) one real SGR mouse click on the `4 Health` header tab (press+release
 // escape sequences, 1-based coords located in the DECODED frame — never
-// hardcoded columns) switches to the Doctor body, and (b) a Global Git
+// hardcoded columns) switches to the Health body, and (b) a Global Git
 // apply walk: tab 3 → space-toggle the selected row → `a` → ceremony
 // heading → Enter → receipt → Enter → applied status.
 func TestDummyDemo_MouseAndGitApply(t *testing.T) {
@@ -321,12 +321,12 @@ func TestDummyDemo_MouseAndGitApply(t *testing.T) {
 	s := startPTYAt(t, cmd, dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
-	// ---- (a) real mouse click on the `[4] Doctor` header tab (D4,
+	// ---- (a) real mouse click on the `[4] Health` header tab (D4,
 	// checkpoint-2 contract: the bracketed `[N] Label` nav format) ----
 	var col, row int // 1-based SGR coordinates of the tab label's `4`
 	last, ok := s.waitFor(8*time.Second, func(text string) bool {
 		for y, line := range strings.Split(text, "\n") {
-			if idx := strings.Index(line, "[4] Doctor"); idx >= 0 {
+			if idx := strings.Index(line, "[4] Health"); idx >= 0 {
 				col = len([]rune(line[:idx])) + 2 // +1 for the `[`, +1 for 1-based
 				row = y + 1
 				return true
@@ -335,11 +335,11 @@ func TestDummyDemo_MouseAndGitApply(t *testing.T) {
 		return false
 	})
 	if !ok {
-		t.Fatalf("mouse: `[4] Doctor` tab label never rendered. Last frame:\n%s", last)
+		t.Fatalf("mouse: `[4] Health` tab label never rendered. Last frame:\n%s", last)
 	}
 	s.sendKey([]byte(fmt.Sprintf("\x1b[<0;%d;%dM", col, row)), keystrokeDelay) // SGR press
 	s.sendKey([]byte(fmt.Sprintf("\x1b[<0;%d;%dm", col, row)), keystrokeDelay) // SGR release
-	mustSee(t, s, "Health only diagnoses", "mouse: Doctor body after clicking the header tab")
+	mustSee(t, s, "read-only diagnostics", "mouse: Health body after clicking the header tab")
 
 	// ---- (b) Global Git apply walk ----
 	// D-15/R-1 (07-CONTEXT.md, carried forward from 06-D-15): the selection

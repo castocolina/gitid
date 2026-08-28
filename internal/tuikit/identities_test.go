@@ -136,7 +136,7 @@ func TestDetailShowsSSHFirstAndNeverFabricatesGit(t *testing.T) {
 	if !strings.Contains(pane, "Global baseline (inherited") || !strings.Contains(pane, "Edit in Global Git (3)") {
 		t.Error("read-only global baseline strip missing (GITUI-01)")
 	}
-	if !strings.Contains(pane, "same data the Doctor shows (4)") {
+	if !strings.Contains(pane, "same data Health shows (4)") {
 		t.Error("findings sub-panel heading missing")
 	}
 }

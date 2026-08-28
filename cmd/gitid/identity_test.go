@@ -70,8 +70,7 @@ func TestNoDuplicateFullyQualifiedCommandPaths(t *testing.T) {
 func TestReservedNounGroupsReturnPhaseNamedErrors(t *testing.T) {
 	root := newRootCmd()
 	cases := map[string]string{
-		"health": "Phase 8",
-		"fix":    "Phase 8",
+		"fix": "Phase 8",
 	}
 	for use, wantPhase := range cases {
 		cmd, _, err := root.Find([]string{use})

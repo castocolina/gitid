@@ -1,11 +1,11 @@
- gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer     0 ids · ✓ ok
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  0 ids · ! 0 ✗ 1
  Global Git › Options
 ✓ 1 of 11 baseline options applied to ~/.gitconfig. Global user.email was left alone, as always -- e
 advisory: merge.conflictstyle is below the git version gate — wrote "diff3" instead of "zdiff3"
 advisory: merge.conflictstyle was applied but the effective value is "diff3" — a later setting in yo
 Wrote → ~/.gitconfig
 Wrote → ~/.gitconfig.d/00-baseline
-Backed up → ~/.gitconfig.backup.2026-08-28T05-40-36Z
+Backed up → ~/.gitconfig.backup.2026-08-28T07-01-21Z
 
  Done (Enter)
 

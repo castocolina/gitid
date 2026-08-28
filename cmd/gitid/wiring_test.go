@@ -4334,3 +4334,129 @@ func TestGlobalGitOptionStatesWrapsProbeFailure(t *testing.T) {
 		t.Errorf("wrapped error = %q, want %q", got, want)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// 08-01-PLAN.md Task 3 — pipeline-convergence guard tests
+// ---------------------------------------------------------------------------
+
+// TestDoctorFindingsAlwaysHaveTarget is the D-01 guard test: drives real
+// check functions (via a real fixture home hitting Permissions, Baseline,
+// and Redundancy) and asserts every doctor.Finding's Target resolves to
+// exactly "SSH" or "Git" — never empty, whether set explicitly at the
+// checks/*.go literal or via doctor.defaultTargetForFamily.
+func TestDoctorFindingsAlwaysHaveTarget(t *testing.T) {
+	home := t.TempDir()
+	// Loose ~/.ssh permissions -> Permissions (SSH, default-targeted).
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o755); err != nil { //nolint:gosec // deliberately loose — this fixture asserts CheckPermissions flags it (G301)
+		t.Fatalf("seeding .ssh: %v", err)
+	}
+	// Two "Host *" stanzas -> Redundancy (SSH, explicit).
+	writeFile(t, filepath.Join(home, ".ssh", "config"), "Host *\nIdentitiesOnly yes\n\nHost *\nIdentitiesOnly yes\n")
+	// No baseline [include] block -> Baseline (Git, default-targeted).
+	writeFile(t, filepath.Join(home, ".gitconfig"), "[user]\n\tname = someone\n")
+
+	findings := doctorFindings(home)
+	if len(findings) == 0 {
+		t.Fatal("fixture must produce at least one finding across multiple families")
+	}
+	families := map[string]bool{}
+	for _, f := range findings {
+		families[f.Family] = true
+		if f.Section != "SSH" && f.Section != "Git" {
+			t.Errorf("finding %q (family %s) has Target/Section %q, want exactly \"SSH\" or \"Git\"", f.Title, f.Family, f.Section)
+		}
+	}
+	for _, want := range []string{"Permissions", "Baseline", "Redundancy"} {
+		if !families[want] {
+			t.Errorf("fixture did not exercise family %q — findings: %+v", want, findings)
+		}
+	}
+}
+
+// TestCoherenceMissingFragmentReportsExactlyOnce is the two-pipeline
+// convergence regression test (08-01-PLAN.md Task 1's "never zero, never
+// two" tracer contract): a managed identity whose includeIf declares a
+// fragment path that does not exist on disk must surface as EXACTLY ONE
+// Coherence finding, driven end-to-end through doctorFindings — the SOLE
+// findings source realBackend.InitialState() and `gitid health --json`
+// both consume. Caught for real (not hypothesized): CheckCoherence's own
+// Incomplete branch AND its separate fragment-existence check both fired
+// for the identical root cause before internal/doctor/checks/coherence.go's
+// Check 2 was gated on acct.Incomplete already containing "fragment-file".
+func TestCoherenceMissingFragmentReportsExactlyOnce(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
+		t.Fatalf("seeding .ssh: %v", err)
+	}
+	seedGeneratedKey(t, filepath.Join(home, ".ssh", "id_ed25519_fragtest"), "fragtest", "")
+	writeFile(t, filepath.Join(home, ".ssh", "config"), managedBlock("fragtest",
+		sshconfig.RenderHostBlock("fragtest.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_fragtest", "")))
+	writeFile(t, filepath.Join(home, ".gitconfig"), managedBlock("fragtest",
+		"[includeIf \"hasconfig:remote.*.url:fragtest.github.com:**\"]\n\tpath = ~/.gitconfig.d/fragtest\n"))
+	// Deliberately do NOT create ~/.gitconfig.d/fragtest — the fragment file itself is missing.
+
+	findings := doctorFindings(home)
+	var fragmentRelated []string
+	for _, f := range findings {
+		if f.Identity == "fragtest" && f.Family == "Coherence" {
+			fragmentRelated = append(fragmentRelated, f.Title)
+		}
+	}
+	if len(fragmentRelated) != 1 {
+		t.Errorf("Coherence findings for the missing-fragment identity = %d (%v), want exactly 1", len(fragmentRelated), fragmentRelated)
+	}
+}
+
+// TestMGR07TwoSignalsResolveFromConvergedSource proves MGR-07's per-identity
+// Manager badge is genuinely TWO signals, both correct against the
+// converged doctor.Run(deps) source (08-01-PLAN.md Task 1's own analysis):
+// row.State (the glyph, via collapseState — inventory-derived, reads only
+// identity.IdentityHealth, never state.Findings) stays whatever the
+// identity's own SSH/Git artifact completeness implies; FindingsFor's count
+// (the N-flag) reflects the CONVERGED finding count for that identity,
+// which is allowed to differ from a narrower legacy count — this test
+// asserts the CORRECT converged count, not parity with any prior pipeline.
+func TestMGR07TwoSignalsResolveFromConvergedSource(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
+		t.Fatalf("seeding .ssh: %v", err)
+	}
+	seedGeneratedKey(t, filepath.Join(home, ".ssh", "id_ed25519_mgr07"), "mgr07", "")
+	writeFile(t, filepath.Join(home, ".ssh", "config"), managedBlock("mgr07",
+		sshconfig.RenderHostBlock("mgr07.github.com", "ssh.github.com", 443, "~/.ssh/id_ed25519_mgr07", "")))
+	writeFile(t, filepath.Join(home, ".gitconfig"), managedBlock("mgr07",
+		"[includeIf \"hasconfig:remote.*.url:mgr07.github.com:**\"]\n\tpath = ~/.gitconfig.d/mgr07\n"))
+	// Fragment file deliberately absent, same as the convergence test above —
+	// this identity is genuinely incomplete, so its glyph must say so.
+
+	b := newBackendForHome(home)
+	state := b.InitialState()
+
+	var row tuikit.DemoIdentity
+	found := false
+	for _, id := range state.Identities {
+		if id.Name == "mgr07" {
+			row, found = id, true
+		}
+	}
+	if !found {
+		t.Fatalf("InitialState().Identities missing %q: %+v", "mgr07", state.Identities)
+	}
+	if row.State == "complete" {
+		t.Errorf("row.State = %q, want a non-complete state — the fragment file is missing", row.State)
+	}
+
+	flagCount := len(tuikit.FindingsFor(state, "mgr07"))
+	var wantFlagCount int
+	for _, f := range state.Findings {
+		if f.Identity == "mgr07" {
+			wantFlagCount++
+		}
+	}
+	if flagCount != wantFlagCount {
+		t.Errorf("FindingsFor(state, %q) = %d, want %d (every converged finding scoped to this identity)", "mgr07", flagCount, wantFlagCount)
+	}
+	if flagCount == 0 {
+		t.Error("flag count = 0, want at least the missing-fragment Coherence finding")
+	}
+}
