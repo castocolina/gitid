@@ -544,6 +544,9 @@ func ScreenSpecRegistry() []ScreenSpec {
 	// 06-07-PLAN.md Task 1: consume the Phase 6 Global SSH registry alongside
 	// the existing three, without disturbing any of them (four-way merged).
 	specs = append(specs, globalSSHSpecs()...)
+	// 07-06-PLAN.md Task 1: consume the Phase 7 Global Git registry alongside
+	// the existing four, without disturbing any of them (five-way merged).
+	specs = append(specs, globalGitSpecs()...)
 	return specs
 }
 
@@ -686,7 +689,11 @@ func validDecisionRef(ref string) bool {
 		// STORE-01/STORE-03 storage-layout decisions. DLV- remains a valid
 		// shared requirements literal for the DLV-04 real-vs-frozen-dummy
 		// comparison class (the same literal Phase 5's registry already uses).
-		strings.HasPrefix(ref, "GSSH-D-") || strings.HasPrefix(ref, "STORE-")
+		strings.HasPrefix(ref, "GSSH-D-") || strings.HasPrefix(ref, "STORE-") ||
+		// 07-06-PLAN.md Task 1 (Phase 7 registration): the disambiguating
+		// GGIT-D- prefix for 07-CONTEXT.md decisions, the SAME pattern as
+		// GSSH-D- for Phase 6.
+		strings.HasPrefix(ref, "GGIT-D-")
 }
 
 // ValidateScreenSpecs checks the registry for structural correctness:
@@ -1195,7 +1202,9 @@ func CaptureCreateFlowScreens(backend tuikit.Backend) (map[string]string, error)
 		// SAME reason git-screen specs are excluded here (see comment above).
 		// 06-07-PLAN.md Task 1: Global SSH specs (CaptureGlobalSSHScreens) are
 		// likewise captured separately against their own seeded HOME.
-		if !spec.ApplicableLive || isGitScreenID(spec.ScreenID) || isIdentityManagerScreenID(spec.ScreenID) || isGlobalSSHScreenID(spec.ScreenID) {
+		// 07-06-PLAN.md Task 1: Global Git specs (CaptureGlobalGitScreens) are
+		// likewise captured separately against their own seeded HOME.
+		if !spec.ApplicableLive || isGitScreenID(spec.ScreenID) || isIdentityManagerScreenID(spec.ScreenID) || isGlobalSSHScreenID(spec.ScreenID) || isGlobalGitScreenID(spec.ScreenID) {
 			continue
 		}
 		text, ok := out[spec.ScreenID]
@@ -1780,12 +1789,129 @@ func CaptureGlobalSSHScreens(backend tuikit.Backend) (map[string]string, error) 
 	return out, nil
 }
 
+// CaptureGlobalGitScreens drives the Global Git Options and apply ceremony
+// through their approval states and captures the rendered text at each one,
+// indexed by ScreenID. This is a second in-process capture pass (alongside
+// CaptureGlobalSSHScreens, both called independently by
+// createflow_packet.go) — the real backend's live probe results against a
+// sandbox-seeded ~/.gitconfig; the dummy's frozen GlobalGitOptions fixture.
+//
+// The states captured (per 07-06-PLAN.md Task 1):
+//   - ggit-options-list — the Options sub-tab in browse mode (default entry).
+//   - ggit-options-scrolled — the Options list scrolled, rendering the cue.
+//   - ggit-options-with-selection — a row toggled on (init.defaultBranch).
+//   - ggit-apply-preview — the apply ceremony at its pre-write state A.
+//
+// Three states are NON-APPLICABLE in this in-process gate, evidenced instead
+// by a real PTY frame from plan 07-04:
+//   - ggit-options-differs-row — needs a sandbox HOME whose git config was
+//     seeded with a value that CONFLICTS with the recommended one, a
+//     different seed than the single fixture HOME this capture pass shares
+//     for every other state. Evidence: ui-frames/global-git-differs.txt.
+//   - ggit-options-probe-error — needs a broken/missing git binary; the
+//     dummy's fixture backend structurally cannot fail a probe it never
+//     runs (the live-non-applicability case). Evidence:
+//     ui-frames/global-git-probe-failure.txt.
+//   - ggit-apply-receipt — the real journal-backed write (runGlobalGitApply,
+//     plan 07-01) has completed — NOT capturable in-process. Evidence:
+//     ui-frames/global-git-apply-confirm.txt.
+//
+// backend must satisfy tuikit.GlobalGitPlanner (both real cmd/gitid and
+// dummytui.NewFixtureBackend do). The real backend's option states run the
+// D-03 git-config probe against the seeded fixture home; the dummy returns
+// its frozen fixture rows.
+// ---------------------------------------------------------------------------
+
+// globalGitApp boots a fresh tuikit.App around backend at the fixed capture
+// geometry and activates the Global Git tab — the SAME '3' ActivationKey a
+// real user presses (cmd/gitid/app.go's setTab(TabGlobalGit)).
+func globalGitApp(backend tuikit.Backend) tea.Model {
+	var model tea.Model = tuikit.NewApp(backend)
+	model = step(model, tea.WindowSizeMsg{Width: CaptureWidth, Height: CaptureHeight})
+	return keyRune(model, '3')
+}
+
+// CaptureGlobalGitScreens implements the doc comment above.
+func CaptureGlobalGitScreens(backend tuikit.Backend) (map[string]string, error) {
+	out := make(map[string]string, 6)
+	capture := func(m tea.Model) string { return normalizeTimestamps(anyView(m)) }
+
+	// ggit-options-list: the Options sub-tab in browse mode (default entry).
+	browse := globalGitApp(backend)
+	out["ggit-options-list"] = capture(browse)
+
+	// ggit-options-scrolled: scroll down to render the scroll cue below.
+	scrolled := browse
+	for i := 0; i < 8; i++ {
+		scrolled = keyDown(scrolled)
+	}
+	out["ggit-options-scrolled"] = capture(scrolled)
+
+	// ggit-options-with-selection: toggle init.defaultBranch (it's the first
+	// row, already focused on entry).
+	selected := globalGitApp(backend)
+	selected = keyRune(selected, ' ')
+	out["ggit-options-with-selection"] = capture(selected)
+
+	// ggit-options-differs-row and ggit-options-probe-error are NOT captured
+	// here: both require a differently-seeded sandbox HOME (a conflicting
+	// git-config value, or a broken/missing git binary respectively) than the
+	// single fixture HOME every other in-process Global Git capture in this
+	// function shares. Both specs are registered non-applicable on BOTH
+	// surfaces (ApplicableLive: false, ApplicableApprovedTUI: false) —
+	// evidence for each lives in a real PTY frame from plan 07-04 instead of
+	// a hollow in-process frame (see globalGitSpecs' NonApplicability records).
+
+	// ggit-apply-preview: toggle init.defaultBranch then press 'a' to open
+	// the apply ceremony at its pre-write state A.
+	apply := globalGitApp(backend)
+	apply = keyRune(apply, ' ')
+	apply = keyRune(apply, 'a')
+	out["ggit-apply-preview"] = capture(apply)
+
+	for _, spec := range globalGitSpecs() {
+		// Specs non-applicable on BOTH surfaces (the receipt state, the
+		// differs-row state, and the probe-error state) need conditions this
+		// in-process gate never produces; nothing is captured for them, by
+		// design — never a hollow frame.
+		if !spec.ApplicableLive && !spec.ApplicableApprovedTUI {
+			continue
+		}
+		text, ok := out[spec.ScreenID]
+		if !ok || strings.TrimSpace(text) == "" {
+			return nil, fmt.Errorf("screenshot: CaptureGlobalGitScreens: required frame %q is missing or empty", spec.ScreenID)
+		}
+	}
+
+	// A fixture/home bug that leaves the apply ceremony stuck in browse mode
+	// would pass the non-emptiness loop above; assert the ceremony actually
+	// opened.
+	if out["ggit-apply-preview"] == out["ggit-options-list"] {
+		return nil, fmt.Errorf("screenshot: CaptureGlobalGitScreens: ggit-apply-preview captured the same frame as ggit-options-list — the apply ceremony never opened")
+	}
+
+	return out, nil
+}
+
 // isGlobalSSHScreenID reports whether id is one of the Phase 6 Global SSH
 // checkpoint IDs registered here — used to exclude them from
 // CaptureCreateFlowScreens' completeness check (they are captured separately;
 // see CaptureGlobalSSHScreens' doc comment).
 func isGlobalSSHScreenID(id string) bool {
 	for _, spec := range globalSSHSpecs() {
+		if spec.ScreenID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// isGlobalGitScreenID reports whether id is one of the Phase 7 Global Git
+// checkpoint IDs registered here — used to exclude them from
+// CaptureCreateFlowScreens' completeness check (they are captured separately;
+// see CaptureGlobalGitScreens' doc comment).
+func isGlobalGitScreenID(id string) bool {
+	for _, spec := range globalGitSpecs() {
 		if spec.ScreenID == id {
 			return true
 		}
@@ -1979,6 +2105,192 @@ func globalSSHSpecs() []ScreenSpec {
 			ApplicableApprovedTUI: false,
 			NonApplicability:      receiptNA("STORE-03", storageReceiptReason),
 			RequiredRegions:       []RegionName{RegionGSSStorageCeremony},
+		},
+	}
+}
+
+// globalGitSpecs returns the Phase 7 Global Git checkpoint specs — the SAME
+// vocabulary 07-UI-SPEC.md's Approved Base States table names and 07-04's
+// real-PTY suites drive over real PTYs. ApplicableApprovedHTML is false
+// throughout: per AGENTS.md's BINDING UI Reference rule (recorded in the
+// authority of 07-06-PLAN.md), Phase 2's approved Bubble Tea dummy is the SOLE
+// Phase 7 UI/UX parity target (Phases 3-10), and the historical HTML/MUI
+// artifacts are Phase-2 design history — made EXPLICIT on every spec rather
+// than left to the registry's default (T-06-45).
+//
+// RegionDispositions mirror
+// .planning/design/global-git/visual-divergence-allowlist.txt's classified
+// entries verbatim (kept in sync by
+// TestGlobalGitAllowlistMatchesRegistry in cmd/gitid/gate_visual_regression_test.go).
+func globalGitSpecs() []ScreenSpec {
+	// DLV-4 (never a numbered D-NN): the fixture-vs-live comparison-class
+	// divergence — the real backend reads a seeded fixture home, the dummy's
+	// FixtureBackend always renders its frozen GlobalGitOptions fixture set.
+	// Governed directly by the DLV-04 requirement; the SAME literal the Phase
+	// 6 Global SSH registry uses for the identical class.
+	ggitFixtureClass := "DLV-4"
+	fixtureHeaderStatusDispositionGit := uxRegionDifferenceScoped(RegionHeaderStatus, "identity-count", ggitFixtureClass,
+		"header status shows the identity count, which differs (real's zero-identity seeded Global Git fixture home vs the dummy's 8-identity IdentityManagerRows fixture set)",
+		`contains:"ids"`)
+	// ggitOptionsFixtureDisposition authorizes the whole Options master-detail
+	// body as the D-01/D-03-provenance + D-11/D-12-row-state fixture-vs-live
+	// divergence: the real body carries the live three-tier provenance and
+	// the machine's four-state row renderings while the dummy body carries
+	// its frozen GlobalGitOptions fixture values and its "the demo does not
+	// probe this machine" provenance label (T-06-PROVENANCE). The predicate is
+	// `absent:"not set ("` — the dummy's frozen fixture wraps its explanatory
+	// default in a "not set (<explanation>)" formulation on every row (e.g.
+	// "not set (git's built-in default: …", "not set (OS-dependent: …"); the
+	// real side's live probe against an unconfigured seeded fixture home
+	// renders a bare empty current-value ("now:  → main") instead, so this
+	// substring never appears there — an empirically verified real-vs-dummy
+	// text sample confirmed the ORIGINAL predicate ("(setting or default)")
+	// never appears on EITHER side for a policy-backed row, making it
+	// vacuous; "not set (" is the actually-observed, side-specific marker.
+	ggitOptionsFixtureDisposition := uxRegionDifferenceScoped(RegionGGitOptionsBrowse, "provenance-state-and-rows", ggitFixtureClass,
+		"the real Options body renders the live D-01/D-03 provenance labels and the D-11/D-12 four-state rows against the seeded fixture home; the dummy renders its frozen GlobalGitOptions fixture values and its 'the demo does not probe this machine' provenance — the whole master-detail body is the classified fixture-vs-live divergence (T-06-PROVENANCE)",
+		`absent:"not set ("`)
+	// ggitListFixtureDisposition covers RegionSidebar's extraction on this
+	// surface: its 'content before │' rule captures the OPTION-LIST rows
+	// (this surface has no identity sidebar), which differ exactly as the
+	// ggit-options-browse rows above do.
+	ggitListFixtureDisposition := uxRegionDifferenceScoped(RegionSidebar, "fixture-vs-probe-rows", ggitFixtureClass,
+		"on this surface RegionSidebar's left-of-│ extraction captures the OPTION LIST rows, not an identity sidebar — the real row set describes the live probe while the dummy rows carry its frozen fixture now-values; the list text is what the gate compares, and 'now:' survives on both sides",
+		`contains:"now:"`)
+	// ggitApplyCeremonyDisposition authorizes the baseline apply-ceremony diff
+	// body: the real apply-ceremony diff renders the EnsureGlobalGit
+	// managed block against the seeded home's baseline bytes; the dummy's
+	// frozen GlobalGitApplyPlan diff renders the fixture baseline block.
+	ggitApplyCeremonyDisposition := uxRegionDifferenceScoped(RegionGGitApplyCeremony, "managed-baseline-block-diff", "GGIT-D-06",
+		"the real apply-ceremony diff is the EnsureGlobalGit write target against the seeded fixture home's resolved baseline file; the dummy ceremony renders its frozen GlobalGitApplyPlan fixture diff — the shared 'Write global-git managed block to' prefix anchors both sides",
+		`contains:"Write global-git managed block to"`)
+	// ggitApplyHeadingDisposition is the D-07 resolved-target ceremony heading:
+	// the real side resolves the actual baseline path for the fixture home,
+	// the dummy falls back to its frozen fixture baseline-path string.
+	ggitApplyHeadingDisposition := uxRegionDifferenceScoped(RegionGGitApplyHeading, "resolved-target-file", "GGIT-D-07",
+		"the apply ceremony's heading names the RESOLVED baseline target (D-07) — the real side resolves the fixture home's actual baseline path, the dummy renders its frozen fixture baseline path; the shared 'Write global-git managed block to ' prefix anchors both sides",
+		`contains:"Write global-git managed block to "`)
+
+	// noHTML is the explicit approved-HTML non-applicability record EVERY
+	// Global Git spec carries, stating the standing UI-reference rule by name.
+	noHTML := []SurfaceNonApplicability{uxNonComparable("approved-html", "DLV-4",
+		"AGENTS.md's BINDING UI Reference rule: Phase 2's approved Bubble Tea dummy is the SOLE Phase 7 UI/UX parity target for Phases 3-10; the historical HTML/MUI artifacts are Phase-2 design history and are recorded explicitly NON-APPLICABLE for every Phase 7 comparison")}
+
+	// probeErrorNA records the probe-error state as a live non-applicability:
+	// the dummy's fixture backend structurally cannot fail a probe it never
+	// runs. Evidence lives in the PTY frame from 07-04's test suite.
+	probeErrorNA := []SurfaceNonApplicability{
+		uxNonComparable("live", "GGIT-D-04", "the probe-error state requires a real git probe failure; this in-process, no-subprocess capture path never performs it. Evidence lives in the PTY frame .planning/phases/07-global-git-options/ui-frames/global-git-probe-failure.txt (TestGlobalGit_RealPTYProbeFailureStaysNavigable)"),
+		uxNonComparable("approved-tui", "GGIT-D-04", "the dummy's fixture backend structurally cannot fail a probe it never runs — the probe-error state is reachable on the real binary only"),
+		uxNonComparable("approved-html", "DLV-4", "AGENTS.md's BINDING UI Reference rule: Phase 2's approved Bubble Tea dummy is the SOLE Phase 7 UI/UX parity target for Phases 3-10; the historical HTML/MUI artifacts are Phase-2 design history"),
+	}
+
+	// applyReceiptReason records that the apply receipt state is not capturable
+	// in-process; evidence lives in the PTY frame.
+	applyReceiptReason := "the apply receipt requires the real write (runGlobalGitApply, plan 07-01) to have completed; this in-process, no-subprocess capture path never performs it. Evidence lives in the PTY frame .planning/phases/07-global-git-options/ui-frames/global-git-apply-confirm.txt (TestGlobalGit_RealPTYApplyConfirm)"
+
+	// receiptNA builds the non-applicability records for receipt states:
+	// they need a real write neither side performs in-process.
+	receiptNA := func(decision, reason string) []SurfaceNonApplicability {
+		return append(noHTML,
+			uxNonComparable("live", decision, reason),
+			uxNonComparable("approved-tui", decision, reason),
+		)
+	}
+
+	return []ScreenSpec{
+		{
+			ScreenID:              "ggit-options-list",
+			Interaction:           "Boot the Global Git tab (view 3) on the Options sub-tab in browse mode.",
+			StateMarker:           "init.defaultBranch",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionGGitOptionsBrowse},
+			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDispositionGit, ggitListFixtureDisposition, ggitOptionsFixtureDisposition,
+			},
+		},
+		{
+			ScreenID:              "ggit-options-scrolled",
+			Interaction:           "From the Options list, press Down repeatedly to scroll the list and render the scroll cue below the last visible row.",
+			StateMarker:           "↓ (+",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionGGitOptionsBrowse},
+			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDispositionGit, ggitListFixtureDisposition, ggitOptionsFixtureDisposition,
+			},
+		},
+		{
+			ScreenID:              "ggit-options-with-selection",
+			Interaction:           "From the Options list, press Space to toggle init.defaultBranch (select it) then render the apply action in the footer.",
+			StateMarker:           "☑",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionGGitOptionsBrowse},
+			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDispositionGit, ggitListFixtureDisposition, ggitOptionsFixtureDisposition,
+			},
+		},
+		{
+			ScreenID:              "ggit-options-differs-row",
+			Interaction:           "Seed a sandbox home whose git config differs from the recommended value, then open the Global Git tab to show the differs wording on that row. NOT capturable by this generic in-process capture pass (which uses one fixed sandbox seed shared by every other state) without plumbing a second, differently-seeded HOME through the same no-subprocess technique — see the live non-applicability reason for the PTY frame that carries this evidence instead.",
+			StateMarker:           "differs from",
+			ApplicableLive:        false,
+			ApplicableApprovedTUI: false,
+			NonApplicability: []SurfaceNonApplicability{
+				uxNonComparable("live", "GGIT-D-04", "this state requires a sandbox HOME whose git config was pre-seeded with a conflicting value, distinct from the shared fixture HOME every other in-process Global Git capture uses; this generic capture pass does not plumb a second seed through the same no-subprocess technique. Evidence lives in the PTY frame .planning/phases/07-global-git-options/ui-frames/global-git-differs.txt (TestGlobalGit_RealPTYDiffersRow)"),
+				uxNonComparable("approved-tui", "GGIT-D-04", "the dummy's frozen fixture values never differ from the Policy's recommended values — this state is reachable on the real binary only"),
+				uxNonComparable("approved-html", "DLV-4", "AGENTS.md's BINDING UI Reference rule: Phase 2's approved Bubble Tea dummy is the SOLE Phase 7 UI/UX parity target for Phases 3-10"),
+			},
+			RequiredRegions: []RegionName{RegionGGitOptionsBrowse},
+		},
+		{
+			ScreenID:              "ggit-options-probe-error",
+			Interaction:           "Seed a sandbox home with a malformed git config or missing git binary, then open the Global Git tab to show the probe-error warning note. This is the LIVE NON-APPLICABILITY case (07-06-PLAN.md authority): the dummy's fixture backend structurally cannot fail a probe it never runs.",
+			StateMarker:           "git probe failed",
+			ApplicableLive:        false,
+			ApplicableApprovedTUI: false,
+			NonApplicability:      probeErrorNA,
+			RequiredRegions:       []RegionName{RegionGGitOptionsBrowse},
+		},
+		{
+			ScreenID:              "ggit-apply-preview",
+			Interaction:           "From the Options list, toggle init.defaultBranch, then press 'a' to open the apply ceremony at its pre-write preview.",
+			StateMarker:           "Write global-git managed block to",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionGGitApplyCeremony, RegionGGitApplyHeading},
+			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDispositionGit, ggitApplyCeremonyDisposition, ggitApplyHeadingDisposition,
+				// internal/tuikit/ceremony.go's "Exact change: …" hint is a
+				// STATIC line always rendered on the review pane — the SAME
+				// shared ceremony code the git-screen ceremony uses (see that
+				// spec's own RegionConfirmationPreview disposition above),
+				// so RegionConfirmationPreview (a create-flow-scoped region)
+				// also picks up THIS Global Git apply ceremony's content.
+				// Same reasoning, intentionally BLANKET for the same reason:
+				// "confirmation-preview" is not a valid region name in
+				// .planning/design/global-git/visual-divergence-allowlist.txt's
+				// own schema (only ggit-options-browse, ggit-apply-ceremony,
+				// and ggit-apply-heading are), so there is no allowlist-
+				// sourced predicate to port here.
+				uxRegionDifference(RegionConfirmationPreview, "sentinel-wrapped-preview", "GGIT-D-06",
+					"internal/tuikit/ceremony.go's shared \"Exact change\" hint triggers RegionConfirmationPreview's extraction on this Global Git apply ceremony too; the real preview's production EnsureGlobalGit-composed managed block vs the dummy's frozen fixture diff is the SAME divergence RegionGGitApplyCeremony already classifies"),
+			},
+		},
+		{
+			ScreenID:              "ggit-apply-receipt",
+			Interaction:           "Apply ceremony state B (result receipt): the real write has completed — NOT capturable in-process; see the live/approved-tui non-applicability reasons for the PTY frame that carries this evidence.",
+			StateMarker:           "global git option",
+			ApplicableLive:        false,
+			ApplicableApprovedTUI: false,
+			NonApplicability:      receiptNA("GGIT-D-04", applyReceiptReason),
+			RequiredRegions:       []RegionName{RegionGGitApplyCeremony},
 		},
 	}
 }

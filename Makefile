@@ -559,7 +559,7 @@ screenshot-html:
 ## four-state fixture coverage, allowlist schema, Makefile filter selection,
 ## cross-run determinism, prior-surface stability) run under the filter below.
 gate-visual-regression:
-	go test -tags screenshot -run 'Test(GateVisualRegression|ApprovalCommitRecorded|AllScreensCapturedAndNonEmpty|GlobalSSH|NegativeControl_)' -v ./cmd/gitid/...
+	go test -tags screenshot -run 'Test(GateVisualRegression|ApprovalCommitRecorded|AllScreensCapturedAndNonEmpty|GlobalSSH|GlobalGit|NegativeControl_)' -v ./cmd/gitid/...
 
 ## generate-visual-review-packet: ONE-SHOT explicit publication of a new
 ## content-addressed evidence packet for Task 3 review publication.

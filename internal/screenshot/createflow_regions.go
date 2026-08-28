@@ -200,6 +200,29 @@ const (
 	// button row. Full-width like the apply ceremony; anchor unique to this
 	// ceremony on either surface.
 	RegionGSSStorageCeremony RegionName = "gss-storage-ceremony"
+
+	// RegionGGitOptionsBrowse is the Global Git Options master-detail body
+	// (07-06 registration): the option-row master list (left of the │ divider)
+	// AND its live detail pane (right of the │), from the first pane row
+	// through the last one. Anchor: the detail pane's always-rendered advisory
+	// note ("~ Recommended, not required") inside a │-pane line — present only
+	// on the Options sub-tab, never on the ceremonies, so the region is empty
+	// on every other screen (CR-10: no cross-screen contamination).
+	RegionGGitOptionsBrowse RegionName = "ggit-options-browse"
+
+	// RegionGGitApplyCeremony is the Global Git apply ceremony's preview body
+	// (07-06 registration): from the D-07 heading ("Write global-git managed
+	// block to …") through the confirm/cancel button row. The ceremony
+	// renders full-width (no │ divider), so rightPane returns raw lines; the
+	// heading anchor is unique to this ceremony on either surface.
+	RegionGGitApplyCeremony RegionName = "ggit-apply-ceremony"
+
+	// RegionGGitApplyHeading is the apply ceremony's resolved-target heading
+	// line ONLY (07-06 registration): the D-07 heading whose shared prefix is
+	// "Write global-git managed block to " and whose tail is the RESOLVED
+	// baseline target — a distinct region so the target-file divergence gets
+	// its own narrow disposition.
+	RegionGGitApplyHeading RegionName = "ggit-apply-heading"
 )
 
 // ExtractRegion returns the sub-string of screen that corresponds to region.
@@ -266,6 +289,12 @@ func ExtractRegion(screen string, region RegionName) string {
 		return extractGSSApplyHeading(lines)
 	case RegionGSSStorageCeremony:
 		return extractGSSStorageCeremony(lines)
+	case RegionGGitOptionsBrowse:
+		return extractGGitOptionsBrowse(lines)
+	case RegionGGitApplyCeremony:
+		return extractGGitApplyCeremony(lines)
+	case RegionGGitApplyHeading:
+		return extractGGitApplyHeading(lines)
 	}
 	return ""
 }
@@ -930,13 +959,46 @@ func gssCeremonyBodyAfter(lines []string, heading, endMarker string) string {
 
 // extractGSSOptionsBrowse returns the Options sub-tab master-detail body.
 func extractGSSOptionsBrowse(lines []string) string {
-	// Anchor on the SHORT leading phrase of the detail pane's advisory note:
-	// the full GlobalSSHAdvisoryNote (128 chars) wraps across multiple pane
-	// rows, so a contains-check on the whole note can never match a single
-	// row. "Recommended, not required" survives on the advisory's first wrap
-	// row and appears nowhere else on this surface (the status line that also
-	// embeds it carries no │ and is excluded by gssPaneBodyAfter).
-	return gssPaneBodyAfter(lines, "Recommended, not required")
+	// Anchor on the "Global SSH › Options" breadcrumb, not on the detail
+	// pane's advisory text. "Recommended, not required" was the original
+	// anchor (it survives scroll/focus changes since it's boilerplate on
+	// every advisory row), but 07-06 discovered it is NOT Global-SSH-
+	// specific: plan 07-03's D-02 decision deliberately reuses the SAME
+	// frozen sentence for Global Git's own advisory rows, so once Global
+	// Git entered the registry this extractor started ALSO matching content
+	// inside Global Git frames — 07-06's own <authority> block's CR-10
+	// cross-screen-contamination hazard, materializing on the OTHER side
+	// from where 07-06 first fixed it (extractGGitOptionsBrowse). The
+	// breadcrumb is unique to this screen and present regardless of scroll
+	// or focus state, exactly mirroring extractGGitOptionsBrowse's own fix.
+	crumbIdx := -1
+	for i, line := range lines {
+		if strings.Contains(stripANSI(line), "Global SSH › Options") {
+			crumbIdx = i
+			break
+		}
+	}
+	if crumbIdx < 0 {
+		return ""
+	}
+	start := -1
+	for i := crumbIdx + 1; i < len(lines); i++ {
+		if strings.Contains(stripANSI(lines[i]), "│") {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return ""
+	}
+	var out []string
+	for _, line := range lines[start:] {
+		if !strings.Contains(stripANSI(line), "│") {
+			break
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
 }
 
 // extractGSSStorageBrowse returns the Storage & preview sub-tab master-detail body.
@@ -980,6 +1042,103 @@ func extractGSSStorageCeremony(lines []string) string {
 	return gssCeremonyBodyAfter(lines, "Migrate SSH storage layout", "Migrate (Enter)")
 }
 
+// ggitCeremonyBodyAfter returns every line from the first line containing
+// heading through the line containing endMarker — the full-width ceremony
+// body (no │ divider), bounded below by its own confirm/cancel button row.
+// Returns "" when the heading is absent.
+func ggitCeremonyBodyAfter(lines []string, heading, endMarker string) string {
+	start := -1
+	for i, line := range lines {
+		if strings.Contains(stripANSI(line), heading) {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return ""
+	}
+	var out []string
+	for i, line := range lines[start:] {
+		if i > 0 && strings.Contains(stripANSI(line), endMarker) {
+			break
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+// extractGGitOptionsBrowse returns the Options sub-tab master-detail body.
+func extractGGitOptionsBrowse(lines []string) string {
+	// Anchor on the "Global Git › Options" breadcrumb, not on any row's own
+	// text. A ROW-specific marker (the original approach anchored on
+	// "init.defaultBranch", the first row's key) only survives while that
+	// row's OWN detail happens to render on the right — the moment focus
+	// scrolls past it (07-04's scroll cue state moves focus to a LATER
+	// row), the right pane shows THAT row's detail instead and the marker
+	// never matches, silently returning an empty region. The breadcrumb is
+	// unique to this screen (never appears on Global SSH, avoiding CR-10's
+	// cross-screen contamination hazard the "Recommended, not required"
+	// anchor originally had) and is present on every Global Git Options
+	// state regardless of scroll position or which row is focused.
+	crumbIdx := -1
+	for i, line := range lines {
+		if strings.Contains(stripANSI(line), "Global Git › Options") {
+			crumbIdx = i
+			break
+		}
+	}
+	if crumbIdx < 0 {
+		return ""
+	}
+	// The master-detail body's first │-divided row may be preceded by a
+	// findings-banner line (no │) — skip forward to the first │ line.
+	start := -1
+	for i := crumbIdx + 1; i < len(lines); i++ {
+		if strings.Contains(stripANSI(lines[i]), "│") {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return ""
+	}
+	var out []string
+	for _, line := range lines[start:] {
+		if !strings.Contains(stripANSI(line), "│") {
+			break
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+// extractGGitApplyCeremony returns the apply ceremony's preview body.
+func extractGGitApplyCeremony(lines []string) string {
+	return ggitCeremonyBodyAfter(lines, "Write global-git managed block to", "Apply selected (Enter)")
+}
+
+// extractGGitApplyHeading returns only the apply ceremony's D-07 resolved-
+// target heading line(s) — the line(s) carrying "Write global-git managed block
+// to", truncated to the heading paragraph so the body diff never leaks in.
+func extractGGitApplyHeading(lines []string) string {
+	var out []string
+	for i, line := range lines {
+		plain := stripANSI(line)
+		if !strings.Contains(plain, "Write global-git managed block to") {
+			continue
+		}
+		out = append(out, line)
+		// WR-12: absorb every immediately-following wrapped continuation row
+		// up to (but not including) the "Touches" row — a resolved target
+		// long enough to wrap spans MORE than one row past the heading.
+		for j := i + 1; j < len(lines) && !strings.Contains(stripANSI(lines[j]), "Touches"); j++ {
+			out = append(out, lines[j])
+		}
+		break
+	}
+	return strings.Join(out, "\n")
+}
+
 // AllRegionNames returns all defined RegionNames for allowlist schema validation.
 func AllRegionNames() []RegionName {
 	return []RegionName{
@@ -1011,6 +1170,9 @@ func AllRegionNames() []RegionName {
 		RegionGSSApplyCeremony,
 		RegionGSSApplyHeading,
 		RegionGSSStorageCeremony,
+		RegionGGitOptionsBrowse,
+		RegionGGitApplyCeremony,
+		RegionGGitApplyHeading,
 	}
 }
 

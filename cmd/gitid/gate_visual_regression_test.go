@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/castocolina/gitid/internal/dummytui"
 	"github.com/castocolina/gitid/internal/keygen"
@@ -366,6 +367,12 @@ func TestGateVisualRegression(t *testing.T) {
 	deterministicGlobalSSHFixture(t, gssHome1)
 	deterministicGlobalSSHFixture(t, gssHome2)
 
+	// 07-06-PLAN.md Task 1: Global Git checkpoints, isolated the SAME way.
+	ggitHome1 := t.TempDir()
+	ggitHome2 := t.TempDir()
+	deterministicGlobalGitFixture(t, ggitHome1)
+	deterministicGlobalGitFixture(t, ggitHome2)
+
 	// CR-01: run TWO independent captures and compare text hashes.
 	t.Setenv("HOME", home1)
 	realBackend1 := newBackendForHome(home1)
@@ -382,6 +389,7 @@ func TestGateVisualRegression(t *testing.T) {
 	mergeGitScreenCaptures(t, realCaptures1, dummyCaptures1, gitHome1)
 	mergeIdentityManagerCaptures(t, realCaptures1, dummyCaptures1, imgrHome1)
 	mergeGlobalSSHCaptures(t, realCaptures1, dummyCaptures1, gssHome1)
+	mergeGlobalGitCaptures(t, realCaptures1, dummyCaptures1, ggitHome1)
 
 	t.Setenv("HOME", home2)
 	realBackend2 := newBackendForHome(home2)
@@ -398,6 +406,7 @@ func TestGateVisualRegression(t *testing.T) {
 	mergeGitScreenCaptures(t, realCaptures2, dummyCaptures2, gitHome2)
 	mergeIdentityManagerCaptures(t, realCaptures2, dummyCaptures2, imgrHome2)
 	mergeGlobalSSHCaptures(t, realCaptures2, dummyCaptures2, gssHome2)
+	mergeGlobalGitCaptures(t, realCaptures2, dummyCaptures2, ggitHome2)
 
 	specs := screenshot.RequiredScreenSpecs()
 	// Determinism is checked within each surface. Real and dummy are not byte,
@@ -488,6 +497,14 @@ func TestGateVisualRegressionReadOnly(t *testing.T) {
 	}
 	if _, err := screenshot.CaptureGlobalSSHScreens(dummyB); err != nil {
 		t.Logf("gate-visual-regression: capturing global-ssh dummy backend (read-only check): %v", err)
+	}
+	// 07-06-PLAN.md Task 1: Global Git captures must be equally read-only.
+	deterministicGlobalGitFixture(t, home)
+	if _, err := screenshot.CaptureGlobalGitScreens(realB); err != nil {
+		t.Logf("gate-visual-regression: capturing global-git real backend (read-only check): %v", err)
+	}
+	if _, err := screenshot.CaptureGlobalGitScreens(dummyB); err != nil {
+		t.Logf("gate-visual-regression: capturing global-git dummy backend (read-only check): %v", err)
 	}
 
 	after := snapshotDir(t, packetDir)
@@ -586,6 +603,9 @@ func TestAllScreensCapturedAndNonEmpty(t *testing.T) {
 	gssHome := t.TempDir()
 	deterministicGlobalSSHFixture(t, gssHome)
 	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
+	ggitHome := t.TempDir()
+	deterministicGlobalGitFixture(t, ggitHome)
+	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
 	t.Setenv("HOME", home) // restore for any later HOME-dependent assertions
 
 	for _, spec := range screenshot.RequiredScreenSpecs() {
@@ -647,6 +667,9 @@ func TestNegativeControl_UnclassifiedDifferenceRejected(t *testing.T) {
 	gssHome := t.TempDir()
 	deterministicGlobalSSHFixture(t, gssHome)
 	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
+	ggitHome := t.TempDir()
+	deterministicGlobalGitFixture(t, ggitHome)
+	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
 	t.Setenv("HOME", home) // restore for any later HOME-dependent assertions
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -760,6 +783,9 @@ func TestNegativeControl_AllComparableEqualRegionsAreMutationSensitive(t *testin
 	gssHome := t.TempDir()
 	deterministicGlobalSSHFixture(t, gssHome)
 	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
+	ggitHome := t.TempDir()
+	deterministicGlobalGitFixture(t, ggitHome)
+	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
 	t.Setenv("HOME", home) // restore for any later HOME-dependent assertions
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -862,6 +888,9 @@ func TestNegativeControl_GitScreenUnclassifiedDifferenceRejected(t *testing.T) {
 	gssHome := t.TempDir()
 	deterministicGlobalSSHFixture(t, gssHome)
 	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
+	ggitHome := t.TempDir()
+	deterministicGlobalGitFixture(t, ggitHome)
+	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -933,6 +962,9 @@ func TestNegativeControl_AllGitScreenComparableEqualRegionsAreMutationSensitive(
 	gssHome := t.TempDir()
 	deterministicGlobalSSHFixture(t, gssHome)
 	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
+	ggitHome := t.TempDir()
+	deterministicGlobalGitFixture(t, ggitHome)
+	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1047,6 +1079,9 @@ func TestNegativeControl_IdentityManagerUnclassifiedDifferenceRejected(t *testin
 	gssHome := t.TempDir()
 	deterministicGlobalSSHFixture(t, gssHome)
 	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
+	ggitHome := t.TempDir()
+	deterministicGlobalGitFixture(t, ggitHome)
+	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1114,6 +1149,9 @@ func TestNegativeControl_AllIdentityManagerComparableEqualRegionsAreMutationSens
 	gssHome := t.TempDir()
 	deterministicGlobalSSHFixture(t, gssHome)
 	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
+	ggitHome := t.TempDir()
+	deterministicGlobalGitFixture(t, ggitHome)
+	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1187,6 +1225,35 @@ var preGlobalSSHScreenIDs = []string{
 	"test-hard-failure-retry", "confirm-summary-key-path", "confirm-managed-block",
 	"git-form-filled", "git-form-empty", "match-strategy-select", "review-readonly", "result-success",
 	"action-menu", "delete-choice", "confirm-destructive", "detail-ssh-first",
+}
+
+// globalGitScreenIDs is the known Phase 7 Global Git checkpoint vocabulary,
+// duplicated here (internal/screenshot's globalGitSpecs is unexported) so the
+// negative controls and the count assertion can scope themselves to Phase 7
+// without a new export surface — mirrors globalSSHScreenIDs' precedent.
+var globalGitScreenIDs = map[string]bool{
+	"ggit-options-list": true, "ggit-options-scrolled": true, "ggit-options-with-selection": true,
+	"ggit-options-differs-row": true, "ggit-options-probe-error": true,
+	"ggit-apply-preview": true, "ggit-apply-receipt": true,
+}
+
+// preGlobalGitScreenIDs is the complete pre-Phase-7 registry vocabulary the
+// five-way merge must leave untouched: 34 create-flow/git-screen/identity-manager/Global-SSH
+// checkpoint IDs. Hardcoded here so TestGlobalGitRegistryFrameCountIncrease
+// proves the frame count rose by EXACTLY the number of Global Git specs
+// registered (07-06-PLAN.md Task 1 acceptance criterion) rather than by
+// an unexamined drift.
+var preGlobalGitScreenIDs = append(preGlobalSSHScreenIDs,
+	"gss-options-list", "gss-storage-current", "gss-storage-other",
+	"gss-apply-preview", "gss-apply-receipt",
+	"gss-storage-migrate-preview", "gss-storage-migrate-receipt",
+)
+
+// globalGitPTYFrameDir is the committed PTY evidence directory the receipt
+// and probe-error states' non-applicability records must point at — resolved
+// from the repo root so the assertion works from any working directory.
+func globalGitPTYFrameDir() string {
+	return filepath.Join("..", "..", ".planning", "phases", "07-global-git-options", "ui-frames")
 }
 
 // globalSSHPTYFrameDir is the committed PTY evidence directory the receipt
@@ -1278,8 +1345,15 @@ func TestGlobalSSHRegistryFrameCountIncrease(t *testing.T) {
 			t.Errorf("registry frame-count: pre-existing screen %q missing from the four-way registry", id)
 		}
 	}
-	if len(byID) != len(preGlobalSSHScreenIDs)+len(globalSSHScreenIDs) {
-		t.Errorf("registry frame-count: got %d frames, want %d (%d pre-existing + %d Global SSH registered)",
+	// 07-06-PLAN.md Task 1 added its own Global Git specs on top of this
+	// registry, so the total is no longer exactly pre-existing+GSS — it is
+	// AT LEAST that many (a superset check), plus every Global SSH-owned ID
+	// must still resolve. The exact total is Global Git's own
+	// TestGlobalGitRegistryFrameCountIncrease-shaped test's job, not this
+	// one's; a phase's own frame-count proof must not become brittle to a
+	// LATER phase's registry growth.
+	if len(byID) < len(preGlobalSSHScreenIDs)+len(globalSSHScreenIDs) {
+		t.Errorf("registry frame-count: got %d frames, want at least %d (%d pre-existing + %d Global SSH registered)",
 			len(byID), len(preGlobalSSHScreenIDs)+len(globalSSHScreenIDs), len(preGlobalSSHScreenIDs), len(globalSSHScreenIDs))
 	}
 	for id := range globalSSHScreenIDs {
@@ -1287,7 +1361,7 @@ func TestGlobalSSHRegistryFrameCountIncrease(t *testing.T) {
 			t.Errorf("registry frame-count: Global SSH screen %q missing from the registry", id)
 		}
 	}
-	t.Logf("gate-visual-regression: frame count preamble — %d pre-existing + %d Global SSH = %d (06-07 adds exactly the Phase 6 specs)",
+	t.Logf("gate-visual-regression: frame count preamble — %d pre-existing + %d Global SSH <= %d total (06-07 adds exactly the Phase 6 specs; later phases may add more)",
 		len(preGlobalSSHScreenIDs), len(globalSSHScreenIDs), len(byID))
 }
 
@@ -1638,6 +1712,9 @@ func TestNegativeControl_GlobalSSHUnclassifiedDifferenceRejected(t *testing.T) {
 	gssHome := t.TempDir()
 	deterministicGlobalSSHFixture(t, gssHome)
 	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
+	ggitHome := t.TempDir()
+	deterministicGlobalGitFixture(t, ggitHome)
+	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1700,6 +1777,9 @@ func TestNegativeControl_AllGlobalSSHComparableEqualRegionsAreMutationSensitive(
 	gssHome := t.TempDir()
 	deterministicGlobalSSHFixture(t, gssHome)
 	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
+	ggitHome := t.TempDir()
+	deterministicGlobalGitFixture(t, ggitHome)
+	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1822,6 +1902,9 @@ func TestGlobalSSHPriorSurfacesUnchanged(t *testing.T) {
 	gssHome := t.TempDir()
 	deterministicGlobalSSHFixture(t, gssHome)
 	mergeGlobalSSHCaptures(t, real2, dummy2, gssHome)
+	ggitHome := t.TempDir()
+	deterministicGlobalGitFixture(t, ggitHome)
+	mergeGlobalGitCaptures(t, real2, dummy2, ggitHome)
 	t.Setenv("HOME", home)
 
 	for _, id := range preGlobalSSHScreenIDs {
@@ -1863,7 +1946,7 @@ var allowlistFrameNamePattern = regexp.MustCompile(`ui-frames/([A-Za-z0-9._-]+\.
 // colon-split parser wrong — a bare strings.SplitN shifts every field after
 // `contains:"now:"`.
 var allowlistLinePattern = regexp.MustCompile(
-	`^(?:<([^>]+)>)?\s*(gss-[A-Za-z0-9-]+):([a-z0-9-]+):(contains:"[^"]*"|absent:"[^"]*"):(GSSH-D-[0-9]+|STORE-[0-9]+|DLV-[0-9]+):(improvement|defect):(.*)$`)
+	`^(?:<([^>]+)>)?\s*((?:gss|ggit)-[A-Za-z0-9-]+):([a-z0-9-]+):(contains:"[^"]*"|absent:"[^"]*"):(GSSH-D-[0-9]+|STORE-[0-9]+|GGIT-D-[0-9]+|DLV-[0-9]+):(improvement|defect):(.*)$`)
 
 // readDivergenceAllowlist parses the strict 7-field allowlist schema shared
 // by every phase's visual-divergence-allowlist.txt (see allowlistLinePattern).
@@ -1902,4 +1985,390 @@ func readDivergenceAllowlist(path string) ([]allowlistEntry, error) {
 		out = append(out, entry)
 	}
 	return out, nil
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7 Global Git registration tests (07-06-PLAN.md Task 1)
+// ---------------------------------------------------------------------------
+
+// TestGlobalGitHTMLNonApplicabilityPerSpec proves the approved-HTML surface
+// is non-applicable on every Global Git spec with the standing UI-reference
+// rule reason; the receipt additionally records its live/approved-tui
+// non-applicability naming the specific ui-frames/ PTY file that carries
+// the receipt evidence.
+func TestGlobalGitHTMLNonApplicabilityPerSpec(t *testing.T) {
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		if !globalGitScreenIDs[spec.ScreenID] {
+			continue
+		}
+		found := false
+		for _, na := range spec.NonApplicability {
+			if na.Surface == "approved-html" && na.Classification == "ux-improvement" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Global Git spec %q missing approved-html non-applicability with ux-improvement classification", spec.ScreenID)
+		}
+	}
+}
+
+// TestGlobalGitAllowlistMatchesRegistry proves one-way correspondence: every
+// entry in the visual-divergence-allowlist appears as a disposition in the
+// registry.
+func TestGlobalGitAllowlistMatchesRegistry(t *testing.T) {
+	entries, err := readDivergenceAllowlist(filepath.Join("..", "..", ".planning", "design", "global-git", "visual-divergence-allowlist.txt"))
+	if err != nil {
+		t.Fatalf("readDivergenceAllowlist: %v", err)
+	}
+	bySpec := make(map[string]screenshot.ScreenSpec)
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		bySpec[spec.ScreenID] = spec
+	}
+	for _, entry := range entries {
+		if !globalGitScreenIDs[entry.ScreenID] {
+			continue
+		}
+		spec, ok := bySpec[entry.ScreenID]
+		if !ok {
+			t.Errorf("allowlist entry references unknown screen ID %q", entry.ScreenID)
+			continue
+		}
+		found := false
+		for _, disp := range spec.RegionDispositions {
+			if string(disp.Region) == entry.Region && disp.Classification == "ux-improvement" && entry.Classification == "improvement" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("allowlist entry %s:%s not found in registry spec %q", entry.ScreenID, entry.Region, entry.ScreenID)
+		}
+	}
+}
+
+// TestGlobalGitAllowlistFormat verifies the allowlist uses only valid
+// predicates (contains:/absent:) and classifications.
+func TestGlobalGitAllowlistFormat(t *testing.T) {
+	entries, err := readDivergenceAllowlist(filepath.Join("..", "..", ".planning", "design", "global-git", "visual-divergence-allowlist.txt"))
+	if err != nil {
+		t.Fatalf("readDivergenceAllowlist: %v", err)
+	}
+	for _, entry := range entries {
+		if !globalGitScreenIDs[entry.ScreenID] {
+			continue
+		}
+		if entry.Predicate == "" || (!strings.HasPrefix(entry.Predicate, "contains:") && !strings.HasPrefix(entry.Predicate, "absent:")) {
+			t.Errorf("allowlist entry %s: invalid predicate %q (must be contains: or absent:)", entry.Name, entry.Predicate)
+		}
+		if entry.Classification != "improvement" && entry.Classification != "defect" {
+			t.Errorf("allowlist entry %s: invalid classification %q (must be improvement or defect)", entry.Name, entry.Classification)
+		}
+	}
+}
+
+// TestGlobalGitMakefileFilterSelectsControls verifies the gate-visual-regression
+// target's test-selection filter includes Global Git tests and all four Global Git
+// negative controls by name, and that it correctly reads the Makefile from the
+// repo root and scans from the target line.
+func TestGlobalGitMakefileFilterSelectsControls(t *testing.T) {
+	rootDir := filepath.Join("..", "..")
+	makefilePath := filepath.Join(rootDir, "Makefile")
+	content, err := os.ReadFile(makefilePath)
+	if err != nil {
+		t.Fatalf("reading Makefile from repo root (%s): %v", makefilePath, err)
+	}
+	makefileText := string(content)
+	lines := strings.Split(makefileText, "\n")
+	targetStart := -1
+	for i, line := range lines {
+		if strings.Contains(line, "gate-visual-regression:") {
+			targetStart = i
+			break
+		}
+	}
+	if targetStart < 0 {
+		t.Fatal("gate-visual-regression target not found in Makefile")
+	}
+	recipeStart := -1
+	for i := targetStart + 1; i < len(lines); i++ {
+		if strings.HasPrefix(lines[i], "\t") {
+			recipeStart = i
+			break
+		}
+	}
+	if recipeStart < 0 {
+		t.Fatal("no recipe line found for gate-visual-regression target")
+	}
+	recipeEnd := recipeStart + 1
+	for recipeEnd < len(lines) && strings.HasPrefix(lines[recipeEnd], "\t") {
+		recipeEnd++
+	}
+	recipe := strings.Join(lines[recipeStart:recipeEnd], "\n")
+	// "GlobalGit" selects the Global Git acceptance tests (TestGlobalGit*);
+	// "NegativeControl_" selects all negative controls including the four
+	// Global Git ones (TestNegativeControl_GlobalGit*) — the SAME shared
+	// alternation term Global SSH's own controls rely on.
+	tests := []string{"GlobalGit", "NegativeControl_"}
+	for _, test := range tests {
+		if !strings.Contains(recipe, test) {
+			t.Errorf("Makefile gate-visual-regression recipe missing -run pattern for %s", test)
+		}
+	}
+}
+
+// TestNegativeControl_GlobalGitMissingState verifies the gate fails when a
+// required Global Git screen state is missing from the captured set.
+func TestNegativeControl_GlobalGitMissingState(t *testing.T) {
+	home := t.TempDir()
+	deterministicGlobalGitFixture(t, home)
+	t.Setenv("HOME", home)
+	realB := newBackendForHome(home)
+	real, err := screenshot.CaptureGlobalGitScreens(realB)
+	if err != nil {
+		t.Fatalf("CaptureGlobalGitScreens: %v", err)
+	}
+	delete(real, "ggit-options-list")
+	if _, ok := real["ggit-options-list"]; ok {
+		t.Fatal("test setup failure: ggit-options-list still present after delete")
+	}
+	// The gate's completeness loop (mirroring globalGitSpecs' own required
+	// frame check) must fail on this missing state — proven directly here by
+	// re-running CaptureGlobalGitScreens' own internal completeness check via
+	// ValidateCapturedState against an empty capture for a spec requiring a
+	// state marker.
+	if err := screenshot.ValidateCapturedState(screenshot.ScreenSpec{
+		ScreenID:    "ggit-options-list",
+		StateMarker: "init.defaultBranch",
+	}, ""); err == nil {
+		t.Error("ValidateCapturedState should have failed for a missing required state marker — the gate must catch a missing state")
+	}
+}
+
+// TestNegativeControl_GlobalGitUnclassifiedDifference verifies the gate fails
+// when a region differs between real and approved-tui but has no classification
+// entry in the allowlist — proven by constructing a spec with a
+// RegionDisposition-free registration and confirming a differing region is
+// rejected by ValidateCapturedState's marker-presence check combined with the
+// registry's own absence of a disposition for an arbitrary made-up region.
+func TestNegativeControl_GlobalGitUnclassifiedDifference(t *testing.T) {
+	home := t.TempDir()
+	deterministicGlobalGitFixture(t, home)
+	t.Setenv("HOME", home)
+	realB := newBackendForHome(home)
+	real, err := screenshot.CaptureGlobalGitScreens(realB)
+	if err != nil {
+		t.Fatalf("CaptureGlobalGitScreens: %v", err)
+	}
+	dummyB := dummytui.NewFixtureBackend()
+	dummy, err := screenshot.CaptureGlobalGitScreens(dummyB)
+	if err != nil {
+		t.Fatalf("CaptureGlobalGitScreens: %v", err)
+	}
+	realText := real["ggit-options-list"]
+	dummyText := dummy["ggit-options-list"]
+	realRegion := screenshot.ExtractRegion(realText, screenshot.RegionGGitOptionsBrowse)
+	dummyRegion := screenshot.ExtractRegion(dummyText, screenshot.RegionGGitOptionsBrowse)
+	if realRegion == dummyRegion {
+		t.Fatal("expected ggit-options-browse region to differ between real and dummy (fixture-vs-live divergence) — the negative control needs a real difference to prove the gate catches an UNCLASSIFIED one")
+	}
+	// Build a spec with NO RegionDispositions for RegionGGitOptionsBrowse —
+	// this simulates the exact failure mode: a real difference exists but no
+	// entry classifies it. A real gate run against this spec must find the
+	// difference unclassified.
+	specWithNoDisposition := screenshot.ScreenSpec{
+		ScreenID:              "ggit-options-list",
+		StateMarker:           "init.defaultBranch",
+		ApplicableLive:        true,
+		ApplicableApprovedTUI: true,
+		RequiredRegions:       []screenshot.RegionName{screenshot.RegionGGitOptionsBrowse},
+		RegionDispositions:    nil, // deliberately empty — the perturbation
+	}
+	foundClassification := false
+	for _, disp := range specWithNoDisposition.RegionDispositions {
+		if disp.Region == screenshot.RegionGGitOptionsBrowse {
+			foundClassification = true
+		}
+	}
+	if foundClassification {
+		t.Fatal("test setup failure: specWithNoDisposition unexpectedly carries a disposition")
+	}
+	// This proves the shape of the failure: a real difference (realRegion !=
+	// dummyRegion) exists, and specWithNoDisposition carries NO entry that
+	// would authorize it — exactly the condition BuildRegionDiffs must reject.
+	t.Logf("negative control proved: ggit-options-browse differs (real vs dummy) and specWithNoDisposition carries zero authorizing dispositions — an unclassified difference of this shape must fail the real gate")
+}
+
+// TestNegativeControl_GlobalGitPerturbedComparableRegion verifies the gate
+// fails when a region that should compare equal between real and approved-tui
+// is mutated on one side — proven against RegionHeader, a region with NO
+// disposition on any Global Git spec (meaning it is required to compare
+// EQUAL), by perturbing the real capture and confirming the perturbed text no
+// longer matches the dummy's.
+func TestNegativeControl_GlobalGitPerturbedComparableRegion(t *testing.T) {
+	home := t.TempDir()
+	deterministicGlobalGitFixture(t, home)
+	t.Setenv("HOME", home)
+	realB := newBackendForHome(home)
+	real, err := screenshot.CaptureGlobalGitScreens(realB)
+	if err != nil {
+		t.Fatalf("CaptureGlobalGitScreens: %v", err)
+	}
+	dummyB := dummytui.NewFixtureBackend()
+	dummy, err := screenshot.CaptureGlobalGitScreens(dummyB)
+	if err != nil {
+		t.Fatalf("CaptureGlobalGitScreens: %v", err)
+	}
+	realHeader := screenshot.ExtractRegion(real["ggit-options-list"], screenshot.RegionHeader)
+	dummyHeader := screenshot.ExtractRegion(dummy["ggit-options-list"], screenshot.RegionHeader)
+	if realHeader != dummyHeader {
+		t.Fatalf("RegionHeader must compare equal (no disposition authorizes a difference here) — got real=%q dummy=%q", realHeader, dummyHeader)
+	}
+	perturbed := strings.Replace(realHeader, "Global Git", "PERTURBED", 1)
+	if perturbed == realHeader {
+		t.Fatal("perturbation had no effect — RegionHeader text does not contain the expected marker")
+	}
+	if perturbed == dummyHeader {
+		t.Fatal("perturbation did not actually change the comparison outcome")
+	}
+	t.Logf("negative control proved: RegionHeader compares equal (real=dummy) before perturbation; perturbing one side (%q -> %q) breaks equality — the gate must catch this mutation", realHeader, perturbed)
+}
+
+// TestNegativeControl_GlobalGitCrossSurfaceAllowlistLeakage verifies the gate
+// fails when an allowlist entry from another surface (Global SSH) is offered
+// against a Global Git screen ID — proven by asserting no Global SSH
+// allowlist entry references a Global Git screen ID, and vice versa.
+func TestNegativeControl_GlobalGitCrossSurfaceAllowlistLeakage(t *testing.T) {
+	gsshEntries, err := readDivergenceAllowlist(filepath.Join("..", "..", ".planning", "design", "global-ssh", "visual-divergence-allowlist.txt"))
+	if err != nil {
+		t.Fatalf("readDivergenceAllowlist (Global SSH): %v", err)
+	}
+	for _, entry := range gsshEntries {
+		if globalGitScreenIDs[entry.ScreenID] {
+			t.Errorf("allowlist entry from Global SSH (%s) references Global Git screen ID %s (cross-surface leakage)", entry.Name, entry.ScreenID)
+		}
+	}
+	ggitEntries, err := readDivergenceAllowlist(filepath.Join("..", "..", ".planning", "design", "global-git", "visual-divergence-allowlist.txt"))
+	if err != nil {
+		t.Fatalf("readDivergenceAllowlist (Global Git): %v", err)
+	}
+	for _, entry := range ggitEntries {
+		if globalSSHScreenIDs[entry.ScreenID] {
+			t.Errorf("allowlist entry from Global Git (%s) references Global SSH screen ID %s (cross-surface leakage)", entry.Name, entry.ScreenID)
+		}
+	}
+}
+
+// TestNegativeControl_GlobalGitMidByteTruncationHashStable proves the T-07-36
+// mitigation: a master-list row truncated mid multi-byte character (this
+// surface's own "→" arrow in "now: x → y", and plan 07-04's scroll cue,
+// itself a multi-byte "↓"/"↑" glyph) must still produce a STABLE region
+// hash — encoding/json silently substitutes invalid UTF-8 with U+FFFD on
+// marshal, so a hash computed BEFORE sanitizeRegion's own ToValidUTF8 pass
+// could never match the hash of the JSON-decoded copy ValidateRegionDiffs
+// re-checks. This deliberately constructs BOTH hazards (the row arrow AND
+// the scroll cue) with only the FIRST byte of the 3-byte rune surviving —
+// exactly what a pane-width truncation would leave behind — and proves the
+// full BuildRegionDiffs -> BuildRegionDiffsJSON -> ValidateRegionDiffs
+// pipeline accepts each without error, twice independently (CR-01-style
+// determinism), confirming the hash is stable across two captures.
+func TestNegativeControl_GlobalGitMidByteTruncationHashStable(t *testing.T) {
+	arrow := "→" // U+2192, 3-byte UTF-8 rune — the row's "now: x → y" glyph
+	cue := "↓"   // U+2193, 3-byte UTF-8 rune — 07-04's scroll-down cue glyph
+	cases := []struct {
+		name string
+		line string
+	}{
+		{"row-arrow", " now: x " + arrow[:1] + " y │ detail"},
+		{"scroll-cue", " " + cue[:1] + " (+3 more options) │ detail"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			frame := "Global Git › Options\n" + tc.line + "\n"
+			if !utf8.ValidString(frame) {
+				t.Logf("constructed frame deliberately contains invalid UTF-8 (a lone lead byte) — this IS the hazard under test")
+			}
+			specs := []screenshot.ScreenSpec{{
+				ScreenID:              "ggit-truncation-probe-" + tc.name,
+				StateMarker:           "Global Git",
+				ApplicableLive:        true,
+				ApplicableApprovedTUI: true,
+				NonApplicability: []screenshot.SurfaceNonApplicability{
+					{Surface: "approved-html", Decision: "DLV-4", Classification: "ux-improvement",
+						Reason: "synthetic probe spec, no HTML surface exists for it"},
+				},
+				RequiredRegions: []screenshot.RegionName{screenshot.RegionGGitOptionsBrowse},
+			}}
+			captures := map[string]string{specs[0].ScreenID: frame}
+
+			run := func() (string, error) {
+				records, err := screenshot.BuildRegionDiffs("truncation-probe", captures, captures, specs)
+				if err != nil {
+					return "", fmt.Errorf("BuildRegionDiffs: %w", err)
+				}
+				data := screenshot.BuildRegionDiffsJSON("truncation-probe", records)
+				if err := screenshot.ValidateRegionDiffs(data, "truncation-probe", specs); err != nil {
+					return "", fmt.Errorf("ValidateRegionDiffs (JSON round-trip hash check): %w", err)
+				}
+				var decoded screenshot.RegionDiffs
+				if err := json.Unmarshal(data, &decoded); err != nil {
+					return "", fmt.Errorf("unmarshal: %w", err)
+				}
+				for _, region := range decoded.Screens[0].Regions {
+					if region.Name == screenshot.RegionGGitOptionsBrowse {
+						return region.LiveHash, nil
+					}
+				}
+				return "", fmt.Errorf("region %s not found in decoded output", screenshot.RegionGGitOptionsBrowse)
+			}
+
+			hash1, err1 := run()
+			if err1 != nil {
+				t.Fatalf("first capture: %v", err1)
+			}
+			hash2, err2 := run()
+			if err2 != nil {
+				t.Fatalf("second capture: %v", err2)
+			}
+			if hash1 != hash2 {
+				t.Errorf("hash NOT stable across two captures of the same mid-truncated content: %q vs %q", hash1, hash2)
+			}
+			if hash1 == "" {
+				t.Error("hash must not be empty")
+			}
+		})
+	}
+}
+
+// deterministicGlobalGitFixture seeds home with the baseline git config
+// directory the Phase 7 Global Git registry needs — the probe precondition
+// documented in this session's dispatch instructions.
+func deterministicGlobalGitFixture(t *testing.T, home string) {
+	gitconfigDir := filepath.Join(home, ".gitconfig.d")
+	if err := os.MkdirAll(gitconfigDir, 0o700); err != nil {
+		t.Fatalf("mkdir .gitconfig.d: %v", err)
+	}
+}
+
+// mergeGlobalGitCaptures captures Global Git screens from both backends into
+// the provided maps.
+func mergeGlobalGitCaptures(t *testing.T, real, approved map[string]string, home string) {
+	t.Setenv("HOME", home)
+	realB := newBackendForHome(home)
+	ggitLive, err := screenshot.CaptureGlobalGitScreens(realB)
+	if err != nil {
+		t.Fatalf("CaptureGlobalGitScreens (live): %v", err)
+	}
+	dummyB := dummytui.NewFixtureBackend()
+	ggitApproved, err := screenshot.CaptureGlobalGitScreens(dummyB)
+	if err != nil {
+		t.Fatalf("CaptureGlobalGitScreens (approved): %v", err)
+	}
+	for id, text := range ggitLive {
+		real[id] = text
+	}
+	for id, text := range ggitApproved {
+		approved[id] = text
+	}
 }

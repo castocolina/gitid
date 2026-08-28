@@ -98,6 +98,23 @@ func makeTestCaptures(t *testing.T) (map[string]string, map[string]string) {
 	for id, text := range gssApproved {
 		approved[id] = text
 	}
+	// 07-06-PLAN.md Task 1: Global Git captures merged the SAME way the
+	// previous three, immediately above — RequiredScreenSpecs() is now a
+	// FIVE-way merged registry.
+	ggitLive, err := screenshot.CaptureGlobalGitScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureGlobalGitScreens (live): %v", err)
+	}
+	ggitApproved, err := screenshot.CaptureGlobalGitScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureGlobalGitScreens (approved): %v", err)
+	}
+	for id, text := range ggitLive {
+		live[id] = text
+	}
+	for id, text := range ggitApproved {
+		approved[id] = text
+	}
 	return live, approved
 }
 

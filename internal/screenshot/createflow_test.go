@@ -58,6 +58,15 @@ func captureCombined(t *testing.T, backend tuikit.Backend) map[string]string {
 	for id, text := range gssOut {
 		out[id] = text
 	}
+	// 07-06-PLAN.md Task 1: Global Git captures merged the SAME way (the
+	// shared registry is now five-way merged).
+	ggitOut, err := screenshot.CaptureGlobalGitScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureGlobalGitScreens: %v", err)
+	}
+	for id, text := range ggitOut {
+		out[id] = text
+	}
 	return out
 }
 
@@ -681,6 +690,15 @@ func TestCaptureCreateFlowScreensFailsOnMissingRequiredFrame(t *testing.T) {
 		t.Fatalf("CaptureGlobalSSHScreens with valid backend must not fail: %v", gerr2)
 	}
 	for id, text := range gssCaptures {
+		captures[id] = text
+	}
+	// 07-06-PLAN.md Task 1: Global Git captures merged the SAME way (the
+	// registry is now five-way merged).
+	ggitCaptures, gerr3 := screenshot.CaptureGlobalGitScreens(backend)
+	if gerr3 != nil {
+		t.Fatalf("CaptureGlobalGitScreens with valid backend must not fail: %v", gerr3)
+	}
+	for id, text := range ggitCaptures {
 		captures[id] = text
 	}
 	// Verify all required frames are present.

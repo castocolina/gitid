@@ -1,0 +1,87 @@
+# Global Git visual-divergence allowlist (Phase 7, 07-06-PLAN.md Task 1)
+#
+# Consumed by cmd/gitid/gate_visual_regression_test.go's in-process capture
+# gate (07-06 Task 1), which registers the Phase 7 Global Git checkpoints
+# alongside the existing create-flow / git-screen / identity-manager / Global
+# SSH registries in the SHARED internal/screenshot RequiredScreenSpecs inventory.
+# The REAL cmd/gitid backend renders from a seeded fixture home; the
+# cmd/gitid-dummy FixtureBackend renders its frozen demo data. Every
+# divergence between the two surfaces below is classified and documented —
+# every other comparable region must be byte-identical.
+#
+# STRICT SCHEMA — each entry must be EXACTLY:
+#   <T-07-NAME> <screen-id>:<region>:<predicate>:<decision>:<classification>:<reason>
+#
+# where:
+#   screen-id       one of the eight Phase 7 Global Git checkpoint IDs
+#                   registered in internal/screenshot's globalGitSpecs():
+#                   ggit-options-list | ggit-options-scrolled |
+#                   ggit-options-with-selection | ggit-options-differs-row |
+#                   ggit-options-probe-error | ggit-apply-preview |
+#                   ggit-apply-receipt
+#   region          one of the shared registry region names (the Global Git
+#                   registrations add ggit-options-browse, ggit-apply-ceremony,
+#                   ggit-apply-heading)
+#   predicate       "contains:<quoted-text>" | "absent:<quoted-text>" — the
+#                   CR-04/CR-10 specific-needle grammar. A broad predicate
+#                   that would match unrelated text is a defect in the gate.
+#   decision        a scoped Phase 7 identifier: GGIT-D-NN (07-CONTEXT.md's
+#                   D-NN decisions, disambiguated from other phases), or DLV-
+#                   (the shared DLV-04 real-vs-frozen-dummy comparison-class
+#                   literal). Bare D-/T-, CTX-D-/UI-D-, GSSH-D-, and STORE-
+#                   refs are NOT valid here (cross-registry leakage).
+#   classification  improvement | defect — every entry states which it is.
+#   reason          non-empty human-readable explanation.
+#
+# VALIDATION RULES (enforced by cmd/gitid/gate_visual_regression_test.go):
+#   - TestGlobalGitAllowlistMatchesRegistry proves a byte 1:1 correspondence
+#     between these entries and the code dispositions in globalGitSpecs()
+#     (both directions): removing an entry, or widening a registry predicate,
+#     fails the gate.
+#   - TestGlobalGitAllowlistFormat rejects any entry lacking a needle-form
+#     predicate or a classification.
+#   - TestGlobalGitHTMLNonApplicabilityPerSpec proves the approved-HTML
+#     surface is non-applicable on every Global Git spec with the standing
+#     UI-reference rule reason; the receipts additionally record their live /
+#     approved-tui non-applicability naming the specific ui-frames/ PTY file
+#     that carries the receipt evidence instead of a hollow in-process frame.
+#
+# Blank lines and lines starting with # are ignored.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# DLV-4 — fixture-vs-live comparison class (real backend reads a seeded
+# fixture home; the dummy's FixtureBackend always renders its frozen
+# GlobalGitOptions fixture set). The real side is the more accurate render, so
+# every entry below classifies as an improvement.
+# ---------------------------------------------------------------------------
+
+<T-07-OPTIONS-HEADER> ggit-options-list:header-status:contains:"ids":DLV-4:improvement:header status shows the identity count, which differs (real's zero-identity seeded Global Git fixture home vs the dummy's 8-identity IdentityManagerRows fixture set) — both sides carry the "ids" marker
+
+<T-07-OPTIONS-LIST-ROWS> ggit-options-list:sidebar:contains:"now:":DLV-4:improvement:on this surface RegionSidebar's left-of-│ extraction captures the OPTION LIST rows, not an identity sidebar — the real row set describes the live probe (D-03) while the dummy rows carry the frozen GlobalGitOptions now-values; the list content is the fixture-vs-live divergence and "now:" survives on both sides
+
+<T-07-PROVENANCE> ggit-options-list:ggit-options-browse:absent:"not set (":DLV-4:improvement:the real Options body renders the live D-01/D-03 three-tier provenance labels and the D-11/D-12 row states against the seeded fixture home; the dummy renders its frozen GlobalGitOptions fixture values (whose "(setting or default)" text appears on non-policy-backed rows — the real side's policy-backed rows render either now-value or error, never "(setting or default)") and its "the demo does not probe this machine" provenance — the whole master-detail body is the classified fixture-vs-live divergence (T-07-PROVENANCE, described in 07-01..07-05 summaries and 07-UI-SPEC's approved base states)
+
+<T-07-OPTIONS-SCROLL-HEADER> ggit-options-scrolled:header-status:contains:"ids":DLV-4:improvement:header status identity count differs (zero-identity real fixture home vs the dummy's 8 fixtures) — both carry "ids"
+
+<T-07-OPTIONS-SCROLL-ROWS> ggit-options-scrolled:sidebar:contains:"now:":DLV-4:improvement:on this surface RegionSidebar's left-of-│ extraction captures the OPTION LIST rows scrolled — the real row set describes the live probe while the dummy rows carry the frozen fixture now-values; the list content is the fixture-vs-live divergence and "now:" survives on both sides
+
+<T-07-PROVENANCE-SCROLL> ggit-options-scrolled:ggit-options-browse:absent:"not set (":DLV-4:improvement:the real Options body renders the live D-01/D-03 three-tier provenance labels and the D-11/D-12 row states against the seeded fixture home at any scroll offset; the dummy renders its frozen GlobalGitOptions fixture values and its provenance — the whole master-detail body is the classified fixture-vs-live divergence at any window position
+
+<T-07-OPTIONS-SELECTION-HEADER> ggit-options-with-selection:header-status:contains:"ids":DLV-4:improvement:header status identity count differs (zero-identity real fixture home vs the dummy's 8 fixtures) — both carry "ids"
+
+<T-07-OPTIONS-SELECTION-ROWS> ggit-options-with-selection:sidebar:contains:"now:":DLV-4:improvement:on this surface RegionSidebar's left-of-│ extraction captures the OPTION LIST rows with a selection marked — the real row set describes the live probe with the real selection state while the dummy rows carry the frozen fixture now-values with the fixture selection state; the list content is the fixture-vs-live divergence and "now:" survives on both sides
+
+<T-07-PROVENANCE-SELECTION> ggit-options-with-selection:ggit-options-browse:absent:"not set (":DLV-4:improvement:the real Options body renders the live D-01/D-03 provenance labels and the D-11/D-12 row states with the real selection rendered (init.defaultBranch is now checked); the dummy renders its frozen fixture values and provenance with the fixture selection rendered — the whole master-detail body is the classified fixture-vs-live divergence
+
+# ---------------------------------------------------------------------------
+# GGIT-D-06 / GGIT-D-07 — the apply ceremony's D-06 managed-block diff and
+# D-07 resolved-target heading (the plan 07-01 recorded divergences this gate
+# must classify).
+# ---------------------------------------------------------------------------
+
+<T-07-GLOBALBLOCK> ggit-apply-preview:ggit-apply-ceremony:contains:"Write global-git managed block to":GGIT-D-06:improvement:the real apply-ceremony diff is the EnsureGlobalGit write target (07-01): the managed block header, the baseline keys in Policy declaration order, and the closing sentinel — the dummy's frozen GlobalGitApplyPlan fixture diff renders its frozen fixture baseline diff. The shared "Write global-git managed block to" prefix anchors both sides
+
+<T-07-CEREMONYTARGET> ggit-apply-preview:ggit-apply-heading:contains:"Write global-git managed block to ":GGIT-D-07:improvement:the apply ceremony's heading names the RESOLVED baseline target (D-07): the real side resolves the fixture home's actual baseline path, the dummy falls back to its frozen fixture baseline-path string — the shared frozen "Write global-git managed block to " prefix anchors both sides
+
+<T-07-APPLY-HEADER> ggit-apply-preview:header-status:contains:"ids":DLV-4:improvement:header status identity count differs (zero-identity real fixture home vs the dummy's 8 fixtures) — both carry "ids"
