@@ -1374,9 +1374,15 @@ func (b *realBackend) runGitFallbackAuthorApply(name, email string, p lifecycleP
 
 	// plan — reject a malformed non-empty email BY NAME before any file is
 	// read. An empty email is valid (unset). The name has no format constraint.
+	// Uses gitconfig.ValidateEmail — the SAME stricter check a per-identity
+	// email gets (code review finding: an ad-hoc "@"-only check here would
+	// accept a comma-smuggled value this package's own CR-18 hardening
+	// exists specifically to reject).
 	record(stages[0])
-	if email != "" && !strings.Contains(email, "@") {
-		return res, fmt.Errorf("gitid: malformed fallback email %q", email)
+	if email != "" {
+		if err := gitconfig.ValidateEmail(email); err != nil {
+			return res, fmt.Errorf("gitid: malformed fallback email: %w", err)
+		}
 	}
 
 	existing, readErr := os.ReadFile(b.gitconfigPath) //nolint:gosec // trusted gitid-managed path

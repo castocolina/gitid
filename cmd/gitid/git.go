@@ -341,7 +341,17 @@ func validateGitApplyTokens(b *realBackend, tokens []string) ([]string, error) {
 	for i, policy := range policies {
 		view, has := byKey[policy.Key]
 		if !has {
-			view = tuikit.GlobalGitOptionView{Key: policy.Key, PolicyBacked: true, HasWritableMember: len(policy.Members) > 0}
+			// Fail closed (code review finding): a policy key genuinely
+			// missing from the live probe results has no real
+			// classification to trust. ProbeError set here makes
+			// Selectable() return false rather than defaulting to the
+			// zero-value NeedsAction state, which would otherwise accept
+			// a token this CLI has no actual evidence for. Currently
+			// unreachable — globalgit.Statuses always returns exactly one
+			// row per Policy entry — but this keeps that invariant from
+			// silently becoming a selectable-by-default trap if it's ever
+			// broken by a future partial-probe optimization.
+			view = tuikit.GlobalGitOptionView{Key: policy.Key, PolicyBacked: true, HasWritableMember: len(policy.Members) > 0, ProbeError: "row missing from probe results"}
 		}
 		if !view.Selectable() {
 			return nil, fmt.Errorf("gitid: refusing to apply %q: row is %s", tokens[i], gitRowStateName(view))

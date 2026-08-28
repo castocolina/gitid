@@ -73,15 +73,21 @@ func GitVersionAtLeast(major, minor int) bool {
 	if err != nil {
 		return true // optimistic fallback: assume modern git
 	}
-	gMajor, gMinor := gitVersionParts(v)
+	gMajor, gMinor := GitVersionParts(v)
 	if gMajor != major {
 		return gMajor > major
 	}
 	return gMinor >= minor
 }
 
-// gitVersionParts parses a "major.minor" token into its numeric components.
-func gitVersionParts(v string) (major, minor int) {
+// GitVersionParts parses a "major.minor" token into its numeric components.
+// This is the ONE git-version-string parser in the module (code review
+// finding: internal/globalgit/version.go previously carried its own
+// divergent copy, risking GitVersionAtLeast and globalgit.VersionGate
+// reaching different gate conclusions for the identical machine on an
+// unusual version token) — every caller needing major/minor from a git
+// version string goes through this function.
+func GitVersionParts(v string) (major, minor int) {
 	parts := strings.SplitN(v, ".", 3)
 	if len(parts) > 0 {
 		_, _ = fmt.Sscanf(parts[0], "%d", &major)

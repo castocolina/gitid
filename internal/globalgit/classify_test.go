@@ -106,6 +106,70 @@ func TestClassify_SetByUser_SetButDiffers(t *testing.T) {
 	}
 }
 
+// TestClassify_SetByGitid_WhenOriginSpelledDifferentlyButSamePath is a code
+// review regression test: sourceClassFor's origin-vs-baselineFilePath
+// comparison previously used a literal string match only, which a genuinely
+// unreachable "covers tilde-expanded paths" fallback branch claimed to
+// handle but never actually did (byte-identical to the branch above it).
+// The fix compares via filepath.Clean, so a differently-spelled-but-
+// identical path (a doubled separator here, standing in for the tilde-vs-
+// absolute or trailing-slash spellings git's own --show-origin and this
+// project's own path resolution can produce) still resolves to SourceSetByGitid.
+func TestClassify_SetByGitid_WhenOriginSpelledDifferentlyButSamePath(t *testing.T) {
+	policy, _ := PolicyFor("init.defaultBranch")
+	managedPath := "/home/u/.gitconfig.d/00-baseline"
+	differentlySpelledSamePath := "/home/u//.gitconfig.d/00-baseline" // doubled separator, same real path
+	effective := map[string]EffectiveEntry{
+		"init.defaultbranch": {Value: "main", Scope: "global", Origin: differentlySpelledSamePath},
+	}
+	inFile := map[string]EffectiveEntry{
+		"init.defaultbranch": {Value: "main"},
+	}
+
+	rows, err := Classify([]OptionPolicy{policy}, effective, inFile, managedPath)
+	if err != nil {
+		t.Fatalf("Classify: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	if rows[0].Source != SourceSetByGitid {
+		t.Errorf("Source = %v, want SourceSetByGitid (origin resolves to the same real path as baselineFilePath)", rows[0].Source)
+	}
+}
+
+// TestClassify_SetByUser_EvenWhenKeyAlsoPresentInBaselineFile guards the fix
+// above against over-correcting: a key present in BOTH the baseline file and
+// the user's own separate file, where the user's file wins per git's
+// last-wins include order, must stay SourceSetByUser — the fix must compare
+// the EFFECTIVE origin's real path, never fall back to "is the key present
+// in the baseline file at all" as a substitute signal (that would misclassify
+// exactly this ordinary set-but-differs case as gitid-set).
+func TestClassify_SetByUser_EvenWhenKeyAlsoPresentInBaselineFile(t *testing.T) {
+	policy, _ := PolicyFor("init.defaultBranch")
+	managedPath := "/home/u/.gitconfig.d/00-baseline"
+	effective := map[string]EffectiveEntry{
+		// Effective origin is the USER's own file — it wins.
+		"init.defaultbranch": {Value: "trunk", Scope: "global", Origin: "/home/u/.gitconfig"},
+	}
+	inFile := map[string]EffectiveEntry{
+		// The key is ALSO present in the baseline file (gitid's own floor
+		// value), but does not win.
+		"init.defaultbranch": {Value: "main"},
+	}
+
+	rows, err := Classify([]OptionPolicy{policy}, effective, inFile, managedPath)
+	if err != nil {
+		t.Fatalf("Classify: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	if rows[0].Source != SourceSetByUser {
+		t.Errorf("Source = %v, want SourceSetByUser (the user's own file is the effective origin, even though the key also exists in the baseline file)", rows[0].Source)
+	}
+}
+
 // TestClassify_ProbeError_EffectiveFails_InFileUnaffected verifies that an
 // effective-probe failure leaves a row whose evidence is in-file-only unaffected
 // (i.e. the row carries the probe error and makes no state claim).

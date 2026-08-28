@@ -36,7 +36,7 @@ func WriteFragment(fragmentPath, name, email, signingKeyPath string, signing boo
 	if err := validateValue("user.name", name); err != nil {
 		return err
 	}
-	if err := validateEmail(email); err != nil {
+	if err := ValidateEmail(email); err != nil {
 		return err
 	}
 	if signing {
@@ -139,15 +139,20 @@ func validateValue(key, value string) error {
 	return nil
 }
 
-// validateEmail applies validateValue plus a minimal shape check so a clearly
-// malformed address never reaches the fragment.
+// ValidateEmail applies validateValue plus a minimal shape check so a clearly
+// malformed address never reaches the fragment. Exported (code review
+// finding) so the global fallback-author path — EnsureGitFallbackAuthor in
+// fallbackauthor.go, and cmd/gitid's own pre-write checks in lifecycle.go/
+// wiring.go, which previously each carried their own weaker ad-hoc
+// "@"-only check — can apply the SAME rules a per-identity email gets, on a
+// value that reaches the same class of downstream destination.
 //
 // CR-18: a bare comma is rejected too. ssh-keygen(1)'s allowed_signers format
 // treats the PRINCIPALS field as a comma-separated list, so an email like
 // "victim@corp.test,*" would smuggle in an attacker-chosen second principal
 // downstream at internal/keygen.AllowedSignersLine (the load-bearing write-time
 // hard gate). This is the earliest defense-in-depth gate in the pipeline.
-func validateEmail(email string) error {
+func ValidateEmail(email string) error {
 	if err := validateValue("user.email", email); err != nil {
 		return err
 	}

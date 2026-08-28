@@ -2,7 +2,6 @@ package globalgit
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/castocolina/gitid/internal/deps"
@@ -96,29 +95,19 @@ func RealGateForRow(p OptionPolicy) (GateOutcome, string) {
 	return VersionGate(v, p)
 }
 
+// versionLess compares two git version strings by major.minor, delegating
+// to deps.GitVersionParts — the ONE git-version-string parser in the module
+// (code review finding: this file previously carried its own divergent
+// parser, copied from globalssh's OpenSSH version parser without adapting
+// its "p"/"P" suffix-stripping, which is an OpenSSH convention ("9.6p1")
+// that git version strings never use — dead weight for this domain, and a
+// real risk that GitVersionAtLeast and this gate could disagree about the
+// SAME machine on an unusual version token).
 func versionLess(got, minimum string) bool {
-	gMaj, gMin := versionParts(got)
-	mMaj, mMin := versionParts(minimum)
+	gMaj, gMin := deps.GitVersionParts(got)
+	mMaj, mMin := deps.GitVersionParts(minimum)
 	if gMaj != mMaj {
 		return gMaj < mMaj
 	}
 	return gMin < mMin
-}
-
-func versionParts(v string) (major, minor int) {
-	trimmed := v
-	for _, p := range []string{"p", "P", ".g"} {
-		if i := strings.Index(trimmed, p); i >= 0 && i > 0 {
-			trimmed = trimmed[:i]
-			break
-		}
-	}
-	parts := strings.Split(trimmed, ".")
-	if len(parts) > 0 {
-		major, _ = strconv.Atoi(parts[0])
-	}
-	if len(parts) > 1 {
-		minor, _ = strconv.Atoi(parts[1])
-	}
-	return major, minor
 }

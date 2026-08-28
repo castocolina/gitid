@@ -1558,9 +1558,12 @@ const globalSSHSimInconclusiveNote = "simulation inconclusive — gitid could no
 // set through the real constructor and renders the provenance LABEL here —
 // tuikit must never learn the source-class enum.
 //
-// globalgit.Statuses never returns an error for a probe failure (it degrades
-// per-row to StateUnclaimed with ProbeError set), so this method's only error
-// path is a construction failure.
+// globalgit.Statuses itself never returns an error for a probe failure (it
+// degrades per-row to a ProbeError-carrying row). THIS method turns that
+// per-row degradation into a hard error when the first row carries one
+// (below), so the caller sees one uniform "probe failed" error regardless
+// of whether the failure originated in Statuses' own construction or in the
+// probe it ran — driving globalgit.go's optionsErr advisory path either way.
 func (b *realBackend) GlobalGitOptionStates() ([]tuikit.GlobalGitOptionView, error) {
 	if b.initErr != nil {
 		return nil, fmt.Errorf("git probe failed: %w", b.initErr)
@@ -1818,8 +1821,13 @@ func (b *realBackend) GitFallbackAuthorPlan(name, email string) (tuikit.GitFallb
 	if b.initErr != nil {
 		return tuikit.GitFallbackAuthorPlanView{}, b.initErr
 	}
-	if email != "" && !strings.Contains(email, "@") {
-		return tuikit.GitFallbackAuthorPlanView{}, fmt.Errorf("gitid: malformed fallback email %q", email)
+	// Uses gitconfig.ValidateEmail — the SAME stricter check the write path
+	// (lifecycle.go's runGitFallbackAuthorApply) applies, so the preview
+	// can never accept a value the actual write would then reject.
+	if email != "" {
+		if err := gitconfig.ValidateEmail(email); err != nil {
+			return tuikit.GitFallbackAuthorPlanView{}, fmt.Errorf("gitid: malformed fallback email: %w", err)
+		}
 	}
 	existing, err := os.ReadFile(b.gitconfigPath) //nolint:gosec // trusted gitid-managed path
 	if err != nil && !os.IsNotExist(err) {

@@ -37,8 +37,18 @@ func EnsureGitFallbackAuthor(existing []byte, name, email string) ([]byte, error
 	if err := validateValue("user.name", name); err != nil {
 		return nil, fmt.Errorf("gitconfig: EnsureGitFallbackAuthor: %w", err)
 	}
-	if err := validateValue("user.email", email); err != nil {
-		return nil, fmt.Errorf("gitconfig: EnsureGitFallbackAuthor: %w", err)
+	// A non-empty email gets the SAME stricter shape check a per-identity
+	// email gets (code review finding: this write site previously only
+	// applied the generic validateValue, weaker than ValidateEmail's
+	// additional "@"-presence and comma/space rejection — a defense-in-
+	// depth gap given this exact value class is the one CR-18 hardened
+	// elsewhere in this package). Empty is the D-04 "unset" signal and
+	// skips the shape check, matching every caller's own empty-is-valid
+	// convention.
+	if email != "" {
+		if err := ValidateEmail(email); err != nil {
+			return nil, fmt.Errorf("gitconfig: EnsureGitFallbackAuthor: %w", err)
+		}
 	}
 
 	if name == "" && email == "" {

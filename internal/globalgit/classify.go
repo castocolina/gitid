@@ -1,6 +1,7 @@
 package globalgit
 
 import (
+	"path/filepath"
 	"strings"
 )
 
@@ -156,14 +157,14 @@ func Classify(
 func ClassifyWithErrors(
 	policies []OptionPolicy,
 	effective map[string]EffectiveEntry,
-	inFile map[string]EffectiveEntry,
+	_ map[string]EffectiveEntry, // inFile: retained for API/caller stability; classifyOne no longer needs the map itself now that sourceClassFor compares paths directly (code review fix) — only inFileProbeErr's error signal still matters.
 	baselineFilePath string,
 	effectiveProbeErr string,
 	inFileProbeErr string,
 ) ([]OptionRow, error) {
 	rows := make([]OptionRow, 0, len(policies))
 	for _, policy := range policies {
-		row := classifyOne(policy, effective, inFile, baselineFilePath, effectiveProbeErr, inFileProbeErr)
+		row := classifyOne(policy, effective, baselineFilePath, effectiveProbeErr, inFileProbeErr)
 		rows = append(rows, row)
 	}
 	return rows, nil
@@ -185,7 +186,6 @@ func ClassifyWithErrors(
 func classifyOne(
 	policy OptionPolicy,
 	effective map[string]EffectiveEntry,
-	inFile map[string]EffectiveEntry,
 	baselineFilePath string,
 	effectiveProbeErr string,
 	inFileProbeErr string,
@@ -231,7 +231,6 @@ func classifyOne(
 		row.GitDefault = member.GitDefault
 		lk := strings.ToLower(member.Key)
 		effEntry, effPresent := effective[lk]
-		_, inFilePresent := inFile[lk]
 
 		if !effPresent {
 			// Not set anywhere — needs action, source unset.
@@ -242,7 +241,7 @@ func classifyOne(
 
 		row.CurrentValue = effEntry.Value
 		row.EffectiveOrigin = effEntry.Origin
-		row.Source = sourceClassFor(effEntry, baselineFilePath, inFilePresent)
+		row.Source = sourceClassFor(effEntry, baselineFilePath)
 
 		if strings.EqualFold(effEntry.Value, member.Recommended) {
 			row.State = StateAlreadySet
@@ -274,7 +273,6 @@ func classifyOne(
 	for _, member := range policy.Members {
 		lk := strings.ToLower(member.Key)
 		effEntry, effPresent := effective[lk]
-		_, inFilePresent := inFile[lk]
 		if !effPresent {
 			continue
 		}
@@ -285,7 +283,7 @@ func classifyOne(
 		if row.GitDefault == "" {
 			row.GitDefault = member.GitDefault
 		}
-		memberSource := sourceClassFor(effEntry, baselineFilePath, inFilePresent)
+		memberSource := sourceClassFor(effEntry, baselineFilePath)
 		switch memberSource {
 		case SourceUnchangeable:
 			source = SourceUnchangeable
@@ -325,7 +323,7 @@ func classifyOne(
 // "standard input" are all scopes gitid cannot change, and the caller must
 // never be told they are "set by gitid" because the path comparison would be
 // meaningless.
-func sourceClassFor(entry EffectiveEntry, baselineFilePath string, inFilePresent bool) SourceClass {
+func sourceClassFor(entry EffectiveEntry, baselineFilePath string) SourceClass {
 	// Non-file origin: gitid cannot change this scope.
 	if !looksLikeFilePath(entry.Origin) {
 		return SourceUnchangeable
@@ -334,13 +332,21 @@ func sourceClassFor(entry EffectiveEntry, baselineFilePath string, inFilePresent
 	if entry.Scope == "system" {
 		return SourceUnchangeable
 	}
-	// Origin matches the gitid-managed baseline file.
-	if entry.Origin == baselineFilePath {
-		return SourceSetByGitid
-	}
-	// Also treat as set-by-gitid when the key is in the baseline file AND
-	// the effective origin resolves there (covers tilde-expanded paths).
-	if inFilePresent && entry.Origin == baselineFilePath {
+	// Origin matches the gitid-managed baseline file. Compared via
+	// filepath.Clean so a tilde-expanded/symlink-differing spelling of the
+	// SAME path (e.g. baselineFilePath resolved through a different $HOME
+	// representation than git's own --show-origin report) still matches —
+	// code review found the original literal-only comparison made a SECOND
+	// "covers tilde-expanded paths" branch below it byte-identical to this
+	// one and therefore dead code, never actually implementing what its own
+	// comment claimed. That second branch is deliberately NOT replaced with
+	// an inFilePresent-only fallback: inFilePresent means the key exists
+	// SOMEWHERE in the baseline file's own content, which is also true in
+	// the ordinary set-but-differs case (gitid's floor value is present in
+	// baseline, but the user's OWN separate file wins per git's last-wins
+	// include order) — falling back to inFilePresent alone would misclassify
+	// that differs case as SourceSetByGitid instead of SourceSetByUser.
+	if filepath.Clean(entry.Origin) == filepath.Clean(baselineFilePath) {
 		return SourceSetByGitid
 	}
 	return SourceSetByUser

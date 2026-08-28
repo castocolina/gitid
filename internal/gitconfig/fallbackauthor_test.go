@@ -70,6 +70,27 @@ func TestEnsureGitFallbackAuthor_EmailOnly(t *testing.T) {
 	}
 }
 
+// TestEnsureGitFallbackAuthor_RejectsCommaInEmail is a code review regression
+// test: this write site previously only applied the generic validateValue
+// (newlines and a literal "[remote" token), weaker than ValidateEmail's
+// additional CR-18 comma rejection — the SAME defense-in-depth gate
+// TestWriteFragment_RejectsCommaInEmail already proves for a per-identity
+// email, now applied to the global fallback-author email too.
+func TestEnsureGitFallbackAuthor_RejectsCommaInEmail(t *testing.T) {
+	if _, err := EnsureGitFallbackAuthor(recipeShapedGitconfig(), "Pat", "victim@corp.test,*"); err == nil {
+		t.Error("expected EnsureGitFallbackAuthor to reject a comma-containing email (CR-18)")
+	}
+}
+
+// TestEnsureGitFallbackAuthor_EmptyEmailStillValid guards the fix above
+// against over-correcting: an empty email is the D-04 "unset" signal (a
+// name-only apply) and must NOT be rejected by the stricter shape check.
+func TestEnsureGitFallbackAuthor_EmptyEmailStillValid(t *testing.T) {
+	if _, err := EnsureGitFallbackAuthor(recipeShapedGitconfig(), "Pat", ""); err != nil {
+		t.Errorf("EnsureGitFallbackAuthor with an empty email must not be rejected: %v", err)
+	}
+}
+
 func TestEnsureGitFallbackAuthor_BothEmptyRemoves(t *testing.T) {
 	seeded, err := EnsureGitFallbackAuthor(recipeShapedGitconfig(), "Pat Example", "pat@example.com")
 	if err != nil {
