@@ -52,7 +52,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Git Configuration Screen** - Per-identity git fragment + `includeIf` + `allowed_signers`, review → confirm → write (completed 2026-08-25)
 - [x] **Phase 5: Identity Manager** - State-taxonomy list, SSH-first detail, clone / new-key / rotate / delete-choice, app view set (completed 2026-08-26)
 - [x] **Phase 6: Global SSH Options** - Danger-aware, explained SSH config options; advisory + fixable (completed 2026-08-27)
-- [ ] **Phase 7: Global Git Options** - Baseline git config (main/master, eol, case, email) + recipe defaults, explained
+- [x] **Phase 7: Global Git Options** - Baseline git config (main/master, eol, case, email) + recipe defaults, explained (completed 2026-08-28)
 - [ ] **Phase 8: Health + Fixer** - Two-section (SSH + Git) health with redundancy/contradiction detection and in-place fixes
 - [ ] **Phase 9: Upload / Credentials Assist** - Auto-upload the `.pub` (auth + signing) when `gh`/`glab` authenticated; manual fallback
 - [ ] **Phase 10: Linux Validation + Release Pipeline** - End-to-end Linux validation + tagged, checksummed release artifacts

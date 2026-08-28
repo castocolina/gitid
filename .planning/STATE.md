@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: TUI-First Redesign
-current_phase: 07
-current_phase_name: Global Git Options
+current_phase: 08
+current_phase_name: Health + Fixer
 status: planning
-stopped_at: Phase 6 complete, ready to plan Phase 07
-last_updated: "2026-08-27T11:25:27.282Z"
-last_activity: 2026-08-27
-last_activity_desc: Phase 6 complete, transitioned to Phase 07
-state_head: 494799c02456bb5e5516c2868ac8a2a58f5a1501
+stopped_at: Phase 7 (Global Git Options) complete — all 9 closeout checklist items evidenced; ready to plan Phase 08
+last_updated: "2026-08-28T02:00:00.000Z"
+last_activity: 2026-08-28
+last_activity_desc: Phase 7 complete (6 waves executed via cross-AI, closeout checklist items 6-9 run and their findings fixed); transitioned to Phase 08
+state_head: 540b6ed
 progress:
   total_phases: 10
-  completed_phases: 6
-  total_plans: 61
-  completed_plans: 60
-  percent: 60
+  completed_phases: 7
+  total_plans: 67
+  completed_plans: 66
+  percent: 70
 ---
 
 # Project State
@@ -29,12 +29,15 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 ## Current Position
 
-Phase: 07 — Global Git Options
-Plan: Not started
-Plan: 03-08 (wave 7) — COMPLETE. Four-field SSH form, strict validation, effective collision checks, verified key pairs, complete ssh -G proof. See 03-08-SUMMARY.md.
-Plan: 03-07 (wave 6) — COMPLETE. Hermetic staging, automatic stage-2 chaining, async commit ceremony, rollback-capable confirmed SSH writes, and fail-closed store gate. See 03-07-SUMMARY.md.
-Status: Ready to plan
-Last activity: 2026-08-27 — Phase 6 complete, transitioned to Phase 07
+Phase: 08 — Health + Fixer
+Status: Ready to plan (discuss-phase not yet run for Phase 8; check whether 08-CONTEXT.md already exists from an earlier batch discussion pass before re-running it)
+Last activity: 2026-08-28 — Phase 7 (Global Git Options) COMPLETE: all 6 waves executed (cross-AI dispatch per ONESHOT Rule 12, with orchestrator hand-recovery on infra-level crashes — banned /tmp writes, a transient network error), 07-06 closed GGIT-01 in REQUIREMENTS.md after a fully green exit battery, and the 9-item Per-Phase Checklist's remaining items (6 code review, 7 verify-work, 8 UI review, 9 UAT audit) were run in parallel by three independent review agents plus the standing UAT audit — each surfaced one real, distinct finding (a BLOCKER selection-desync bug, a test-rigor gap in two negative controls, and a UI defect class regression), all fixed with regression tests verified to catch the original bug. See 07-01 through 07-06 SUMMARY.md, 07-VERIFICATION.md, 07-UI-REVIEW.md, and review-packet/MANIFEST.md.
+
+### Phase 7 (COMPLETE) — historical record
+
+Phase: 07 (global-git-options) — COMPLETE (6 plans/waves; GGIT-01 closed in REQUIREMENTS.md)
+Status: All 9 Per-Phase Checklist items evidenced — see .planning/phases/07-global-git-options/{07-CONTEXT.md, 07-UI-SPEC.md, 07-REVIEWS.md (0 cycle-1 HIGH remaining), 07-0{1..6}-SUMMARY.md, 07-VERIFICATION.md (passed, 9/9), 07-UI-REVIEW.md (21/24, both findings fixed), review-packet/MANIFEST.md}.
+Last activity: 2026-08-28 — closeout checklist items 6-9 completed and their findings fixed (see commits a7a3112, 4f5f136, c185ba7, 540b6ed on gsd/phase-07-global-git-options).
 
 ### Phase 2 (COMPLETE) — historical record
 
