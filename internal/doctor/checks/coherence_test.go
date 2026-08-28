@@ -349,6 +349,119 @@ func TestCoherenceAllPass(t *testing.T) {
 	}
 }
 
+// boolPtr returns a pointer to b — HostBlockFacts.IdentitiesOnly needs a
+// *bool so "unset" (nil) is never conflated with "explicitly no" (false).
+func boolPtr(b bool) *bool { return &b }
+
+// TestCoherenceHandWrittenIdentitiesOnlyContradiction: a hand-written (no
+// ManagedBlockName) Host stanza with explicit IdentitiesOnly no + a non-empty
+// IdentityFile produces exactly one error finding, distinct from the
+// existing managed-block-only IdentitiesOnly check.
+func TestCoherenceHandWrittenIdentitiesOnlyContradiction(t *testing.T) {
+	d := doctor.Deps{
+		Stat:          cohStat(),
+		SSHConfigPath: "/home/u/.ssh/config",
+		AllHostBlocks: []sshconfig.HostBlockFacts{
+			{
+				Pattern:        "clientb.github.com",
+				IdentitiesOnly: boolPtr(false),
+				IdentityFile:   "~/.ssh/id_ed25519_clientb",
+				LineNumber:     5,
+				// ManagedBlockName empty — hand-written.
+			},
+		},
+	}
+
+	findings := checks.CheckCoherence(d)
+
+	var found int
+	for _, f := range findings {
+		if f.Severity == doctor.SeverityError && f.Family == doctor.FamilyCoherence &&
+			cohContains(f.Title, "IdentitiesOnly no contradicts") {
+			found++
+			if f.Target != "SSH" {
+				t.Errorf("Target = %q, want SSH", f.Target)
+			}
+			if f.Rewrite == nil {
+				t.Fatal("finding must carry a Rewrite descriptor (D-09 surgical rewrite target)")
+			}
+			if f.Rewrite.HostPattern != "clientb.github.com" || f.Rewrite.Directive != "IdentitiesOnly" || f.Rewrite.NewValue != "yes" {
+				t.Errorf("Rewrite = %+v, want {clientb.github.com IdentitiesOnly yes}", f.Rewrite)
+			}
+		}
+	}
+	if found != 1 {
+		t.Fatalf("expected exactly 1 hand-written contradiction finding, got %d: %v", found, cohTitles(findings))
+	}
+}
+
+// TestCoherenceHandWrittenIdentitiesOnly_ManagedBlockSkipped proves the new
+// check never double-reports a gitid-managed stanza: coherenceForAccount's
+// existing Check 3 already covers that case.
+func TestCoherenceHandWrittenIdentitiesOnly_ManagedBlockSkipped(t *testing.T) {
+	d := doctor.Deps{
+		Stat:          cohStat(),
+		SSHConfigPath: "/home/u/.ssh/config",
+		AllHostBlocks: []sshconfig.HostBlockFacts{
+			{
+				Pattern:          "work.github.com",
+				IdentitiesOnly:   boolPtr(false),
+				IdentityFile:     "~/.ssh/id_ed25519_work",
+				ManagedBlockName: "work", // gitid-managed
+			},
+		},
+	}
+
+	findings := checks.CheckCoherence(d)
+
+	for _, f := range findings {
+		if cohContains(f.Title, "IdentitiesOnly no contradicts") {
+			t.Errorf("the hand-written check must skip a gitid-managed stanza, got: %v", cohTitles(findings))
+		}
+	}
+}
+
+// TestCoherenceHandWrittenIdentitiesOnly_UnsetNeverFlagged proves an unset
+// (nil) IdentitiesOnly is never conflated with an explicit "no".
+func TestCoherenceHandWrittenIdentitiesOnly_UnsetNeverFlagged(t *testing.T) {
+	d := doctor.Deps{
+		Stat:          cohStat(),
+		SSHConfigPath: "/home/u/.ssh/config",
+		AllHostBlocks: []sshconfig.HostBlockFacts{
+			{Pattern: "bare.example.com", IdentitiesOnly: nil, IdentityFile: "~/.ssh/id_ed25519_bare"},
+		},
+	}
+
+	findings := checks.CheckCoherence(d)
+
+	for _, f := range findings {
+		if cohContains(f.Title, "IdentitiesOnly no contradicts") {
+			t.Errorf("an unset IdentitiesOnly must never be flagged, got: %v", cohTitles(findings))
+		}
+	}
+}
+
+// TestCoherenceHandWrittenIdentitiesOnly_NoIdentityFileNeverFlagged proves a
+// hand-written stanza with IdentitiesOnly no but NO IdentityFile is not a
+// contradiction (there is nothing to fall back past).
+func TestCoherenceHandWrittenIdentitiesOnly_NoIdentityFileNeverFlagged(t *testing.T) {
+	d := doctor.Deps{
+		Stat:          cohStat(),
+		SSHConfigPath: "/home/u/.ssh/config",
+		AllHostBlocks: []sshconfig.HostBlockFacts{
+			{Pattern: "noidfile.example.com", IdentitiesOnly: boolPtr(false), IdentityFile: ""},
+		},
+	}
+
+	findings := checks.CheckCoherence(d)
+
+	for _, f := range findings {
+		if cohContains(f.Title, "IdentitiesOnly no contradicts") {
+			t.Errorf("a stanza with no IdentityFile must never be flagged, got: %v", cohTitles(findings))
+		}
+	}
+}
+
 // cohContains reports whether s contains substr.
 func cohContains(s, sub string) bool {
 	if len(sub) == 0 {

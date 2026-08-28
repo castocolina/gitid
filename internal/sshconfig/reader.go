@@ -99,6 +99,117 @@ func ParseAllHostIdentityFiles(content []byte) []string {
 	return result
 }
 
+// HostBlockFacts is one Host stanza's doctor-relevant facts, parsed from the
+// raw config bytes — gitid-managed AND hand-written (08-02: the hand-written
+// IdentitiesOnly-contradiction check's data source). The explicit
+// IdentitiesOnly state is a *bool precisely so "unset" (nil) is never
+// conflated with "explicitly no" — the contradiction check must only flag a
+// block that EXPLICITLY says no. LineNumber is the 1-indexed line of the
+// IdentitiesOnly directive (the D-09 surgical rewrite target; 0 when absent).
+type HostBlockFacts struct {
+	Pattern          string
+	IdentitiesOnly   *bool
+	IdentityFile     string
+	ManagedBlockName string
+	LineNumber       int
+}
+
+// ParseAllHostBlocks parses content (bytes of ~/.ssh/config) and returns facts
+// for EVERY Host stanza — gitid-managed AND hand-written — using the SAME
+// kevinburke/ssh_config traversal ParseAllHostIdentityFiles uses (D-12),
+// extended with each stanza's explicit IdentitiesOnly state, IdentityFile
+// value, managed-block membership (the sentinel block name when the stanza
+// lives inside one, "" for a hand-written stanza), and the IdentitiesOnly
+// directive's line number. The implicit `Host *` the parser injects for an
+// empty file is skipped (Pitfall A guard).
+func ParseAllHostBlocks(content []byte) []HostBlockFacts {
+	cfg, err := ssh_config.Decode(strings.NewReader(string(content)))
+	if err != nil {
+		return nil
+	}
+	managed := managedBlockLineMap(content)
+	lines := strings.SplitAfter(string(content), "\n")
+	var out []HostBlockFacts
+	for _, host := range cfg.Hosts {
+		// Skip the implicit Host * the parser injects for an empty file
+		// (Pitfall A guard), and skip zero-pattern stanzas defensively.
+		if len(host.Patterns) == 1 && host.Patterns[0].String() == "*" {
+			continue
+		}
+		if len(host.Patterns) == 0 {
+			continue
+		}
+		facts := HostBlockFacts{Pattern: host.Patterns[0].String()}
+		firstKVLine := 0
+		for _, node := range host.Nodes {
+			kv, ok := node.(*ssh_config.KV)
+			if !ok {
+				continue
+			}
+			line := kv.Pos().Line
+			if line > 0 && (firstKVLine == 0 || line < firstKVLine) {
+				firstKVLine = line
+			}
+			switch strings.ToLower(kv.Key) {
+			case "identitiesonly":
+				v := strings.EqualFold(kv.Value, "yes")
+				facts.IdentitiesOnly = &v
+				facts.LineNumber = line
+			case "identityfile":
+				facts.IdentityFile = kv.Value
+			}
+		}
+		if firstKVLine > 0 {
+			facts.ManagedBlockName = managed[hostLineNumber(lines, firstKVLine)]
+		}
+		out = append(out, facts)
+	}
+	return out
+}
+
+// managedBlockLineMap scans content's lines (1-indexed) and marks every line
+// inside a complete `# BEGIN gitid managed: <name>` … `# END gitid managed:
+// <name>` sentinel pair (markers inclusive) with that block's name. Lines
+// outside any complete pair are absent from the map.
+func managedBlockLineMap(content []byte) map[int]string {
+	m := make(map[int]string)
+	lines := strings.Split(string(content), "\n")
+	beginIdx := -1
+	name := ""
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case beginIdx == -1 && strings.HasPrefix(trimmed, filewriter.BeginPrefix):
+			beginIdx = i + 1
+			name = strings.TrimPrefix(trimmed, filewriter.BeginPrefix)
+			m[beginIdx] = name
+		case beginIdx != -1 && strings.HasPrefix(trimmed, filewriter.EndPrefix):
+			if strings.TrimPrefix(trimmed, filewriter.EndPrefix) == name {
+				for l := beginIdx + 1; l <= i+1; l++ {
+					m[l] = name
+				}
+				beginIdx = -1
+				name = ""
+			}
+		}
+	}
+	return m
+}
+
+// hostLineNumber locates the stanza header line for the stanza whose first
+// directive sits on firstKVLine (1-indexed) by scanning the raw lines
+// backwards for the nearest Host/Match header — the stanza's own header by
+// construction, since stanza headers are the only such lines between it and
+// the previous stanza's directives.
+func hostLineNumber(lines []string, firstKVLine int) int {
+	for i := firstKVLine - 2; i >= 0; i-- {
+		if isStanzaHeader(strings.TrimRight(lines[i], "\n\r")) {
+			return i + 1
+		}
+	}
+	return 0
+}
+
 // HostStanza is one Host block's alias pattern plus its Hostname value —
 // the minimal shape identity.ProviderKeyForHost needs to resolve a stanza to
 // a provider key, without cmd/gitid having to import the raw

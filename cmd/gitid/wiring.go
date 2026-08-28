@@ -3520,6 +3520,7 @@ func buildDoctorDeps(home string) doctor.Deps {
 	}
 
 	allSSHHostIDFiles := sshconfig.ParseAllHostIdentityFiles(sshBytes)
+	allHostBlocks := sshconfig.ParseAllHostBlocks(sshBytes)
 
 	return doctor.Deps{
 		// Read fields.
@@ -3558,6 +3559,7 @@ func buildDoctorDeps(home string) doctor.Deps {
 		SSHManagedBlockNames:       sshBlockNames,
 		GitconfigManagedBlockNames: gcBlockNames,
 		AllSSHHostIdentityFiles:    allSSHHostIDFiles,
+		AllHostBlocks:              allHostBlocks,
 
 		// Fix fields (D-01: doctor core never calls os.Chmod/filewriter
 		// directly — every mutation is injected from here).

@@ -52,6 +52,15 @@ prompt.
 - Core logic lives in a UI-free package and is built test-first (TDD).
 - Never write to a user's `~/.ssh/config` or `~/.gitconfig` without a
   timestamped backup, idempotent managed blocks, and explicit confirmation.
+- **D-09 scoped exception (Phase 8, Fixer only):** the Fixer — and only the
+  Fixer, via `internal/sshconfig.ApplyVerifiedHostDirective`'s full ceremony
+  (true diff preview, typed confirm, timestamped backup, mandatory
+  parse-render-re-parse + `ssh -G` re-verification, automatic restore on any
+  mismatch) — may rewrite exactly ONE existing directive's VALUE on a
+  hand-written (non-gitid-managed) `Host` stanza. This is a narrow, explicit
+  carve-out for the flagship `IdentitiesOnly no -> yes` contradiction fix; it
+  does not relax the managed-blocks-only rule above for any other write path
+  in this codebase.
 - Code exploration: use the `codegraph_explore` MCP tool before any
   Grep/Read loop. Run `codegraph index || codegraph init -i` once at task
   start to refresh the index. Fall back to `rg` (not `grep`) + Read only if

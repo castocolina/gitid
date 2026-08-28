@@ -7,6 +7,7 @@ import (
 
 	"github.com/castocolina/gitid/internal/doctor"
 	"github.com/castocolina/gitid/internal/identity"
+	"github.com/castocolina/gitid/internal/sshconfig"
 )
 
 // CheckCoherence checks that every managed identity's artifacts exist and resolve
@@ -38,6 +39,8 @@ func CheckCoherence(deps doctor.Deps) []doctor.Finding {
 	for _, acct := range deps.Identities {
 		findings = append(findings, coherenceForAccount(deps, acct)...)
 	}
+
+	findings = append(findings, checkHandWrittenIdentitiesOnly(deps)...)
 
 	return findings
 }
@@ -376,4 +379,61 @@ func findSignerLine(content, email string) (found bool, firstField string) {
 		return true, caseFoldPrincipal
 	}
 	return false, ""
+}
+
+// checkHandWrittenIdentitiesOnly detects the D-09 flagship contradiction on a
+// HAND-WRITTEN (non-gitid-managed) Host stanza: an explicit `IdentitiesOnly
+// no` alongside a non-empty `IdentityFile`. This is a genuinely NEW check,
+// distinct from coherenceForAccount's Check 3 above (which only covers
+// gitid-MANAGED Host blocks via deps.ManagedHosts, keyed by reconstructed
+// identity name) — a hand-written stanza has no identity.Account and no
+// ManagedHosts entry, so it is otherwise invisible to Coherence.
+//
+// Every stanza whose ManagedBlockName is non-empty (gitid-managed) is
+// skipped here — coherenceForAccount's Check 3 already handles that case,
+// and double-reporting the same managed block would violate the "never
+// zero, never two" contract (08-01's Task 1 tracer precedent).
+//
+// "Unset" IdentitiesOnly (the *bool is nil) is never conflated with
+// "explicitly no": only IdentitiesOnly != nil && !*IdentitiesOnly trips this
+// check, matching the plan's explicit instruction.
+func checkHandWrittenIdentitiesOnly(deps doctor.Deps) []doctor.Finding {
+	var findings []doctor.Finding
+	for _, hb := range deps.AllHostBlocks {
+		if hb.ManagedBlockName != "" {
+			continue // gitid-managed — coherenceForAccount's Check 3 already covers it
+		}
+		if hb.IdentitiesOnly == nil || *hb.IdentitiesOnly || hb.IdentityFile == "" {
+			continue
+		}
+		var fix *doctor.FixDescriptor
+		if deps.SSHConfigPath != "" {
+			hostPattern := hb.Pattern
+			sshConfigPath := deps.SSHConfigPath
+			fix = &doctor.FixDescriptor{
+				Summary: fmt.Sprintf("set IdentitiesOnly yes on hand-written Host %q", hostPattern),
+				Fn: func() error {
+					_, err := sshconfig.ApplyVerifiedHostDirective(sshConfigPath, hostPattern, "IdentitiesOnly", "yes")
+					return err
+				},
+			}
+		}
+		findings = append(findings, doctor.Finding{
+			Family:   doctor.FamilyCoherence,
+			Severity: doctor.SeverityError,
+			Title:    fmt.Sprintf("IdentitiesOnly no contradicts an explicit IdentityFile on Host %q", hb.Pattern),
+			Explanation: fmt.Sprintf(
+				"Host %s sets IdentitiesOnly no while also naming IdentityFile %s -- ssh may still offer every other key it knows before falling back to the one explicitly configured.",
+				hb.Pattern, hb.IdentityFile),
+			SuggestedFix: fmt.Sprintf("Set IdentitiesOnly yes on the %s Host block -- available on the Fixer screen.", hb.Pattern),
+			Fix:          fix,
+			Target:       "SSH",
+			Rewrite: &doctor.FixRewrite{
+				HostPattern: hb.Pattern,
+				Directive:   "IdentitiesOnly",
+				NewValue:    "yes",
+			},
+		})
+	}
+	return findings
 }

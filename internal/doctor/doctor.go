@@ -115,6 +115,24 @@ type Finding struct {
 	// fallback returns "" for those families by design, so a missed literal
 	// fails the D-01 guard test loudly instead of silently defaulting.
 	Target string
+	// Rewrite, when non-nil, describes the D-09 surgical single-directive
+	// rewrite this finding's Fix performs (the ONE carve-out from gitid's
+	// managed-blocks-only write rule). The cmd layer reads it to render the
+	// REAL before/after diff (Backend.FixPlanFor) and to render the typed
+	// confirm target — without it, a finding would have to embed its rewrite
+	// parameters in prose to be re-derivable from a tuikit.DemoFinding. Nil
+	// for every finding that does not perform a surgical rewrite.
+	Rewrite *FixRewrite
+}
+
+// FixRewrite describes one D-09 surgical single-directive rewrite: the Host
+// stanza pattern, the directive name, and the new value. Populated by the
+// hand-written IdentitiesOnly-contradiction check; consumed by the cmd layer
+// (realBackend.FixPlanFor and the apply path).
+type FixRewrite struct {
+	HostPattern string
+	Directive   string
+	NewValue    string
 }
 
 // CheckFn is the type of a per-family check function. All seven check
@@ -222,6 +240,13 @@ type Deps struct {
 	// ~/.ssh/config — gitid-managed AND hand-written. Used by CheckOrphans for
 	// the D-12 unused-key cross-reference (Plan 03).
 	AllSSHHostIdentityFiles []string
+	// AllHostBlocks is every Host stanza's doctor-relevant facts — gitid-managed
+	// AND hand-written — parsed from the raw ~/.ssh/config bytes by
+	// sshconfig.ParseAllHostBlocks. Used by CheckCoherence's hand-written
+	// IdentitiesOnly-contradiction check (D-09): deps.ManagedHosts only covers
+	// gitid's own managed blocks and deps.Identities only covers reconstructed
+	// identities, so neither can see a hand-written stanza.
+	AllHostBlocks []sshconfig.HostBlockFacts
 
 	// Fix fields (cmd layer injects; doctor core never calls directly, D-01).
 	FixPerm     func(path string, mode os.FileMode) error
