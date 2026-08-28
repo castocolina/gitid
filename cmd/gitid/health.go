@@ -33,13 +33,30 @@ func newHealthCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			findings := doctorFindings(home)
+			findings := suppressParseErrorFindings(doctorFindings(home))
 			if jsonOut {
 				return writeJSON(cmd.OutOrStdout(), findings)
 			}
 			return printHealthFindings(cmd.OutOrStdout(), findings)
 		},
 	})
+}
+
+func suppressParseErrorFindings(findings []tuikit.DemoFinding) []tuikit.DemoFinding {
+	blocked := make(map[string]bool)
+	for _, finding := range findings {
+		if finding.Family == "Files" && finding.Severity == tuikit.SeverityCritical {
+			blocked[finding.Section] = true
+		}
+	}
+	filtered := make([]tuikit.DemoFinding, 0, len(findings))
+	for _, finding := range findings {
+		if blocked[finding.Section] && finding.Family != "Files" {
+			continue
+		}
+		filtered = append(filtered, finding)
+	}
+	return filtered
 }
 
 // printHealthFindings renders one line per finding: severity, family,

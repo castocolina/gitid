@@ -98,9 +98,40 @@ func (m healthModel) handleClick(x, y, width, _ int, s DemoState) keyResult {
 	return keyResult{model: m}
 }
 
+func parseErrorFinding(findings []DemoFinding) (DemoFinding, bool) {
+	for _, finding := range findings {
+		if finding.Family == "Files" && finding.Severity == SeverityCritical {
+			return finding, true
+		}
+	}
+	return DemoFinding{}, false
+}
+
+func parseErrorScreenView(finding DemoFinding) screenView {
+	file, raw, snippet := finding.Title, finding.Explanation, ""
+	if finding.ParseError != nil {
+		file = finding.ParseError.File
+		raw = finding.ParseError.Raw
+		snippet = finding.ParseError.Snippet
+	}
+	body := "\n " + styleError.Render("✗ critical Files — configuration parse error") + "\n\n" +
+		" File: " + file + "\n" +
+		" Raw error: " + raw + "\n" +
+		" Snippet: " + snippet + "\n" +
+		" Checks paused until this configuration parses again."
+	return screenView{
+		body:       body,
+		status:     "Configuration parse error — checks paused for this section.",
+		statusTone: "error",
+	}
+}
+
 // view implements screenModel.
 func (m healthModel) view(s DemoState, width, height int) screenView {
 	ordered := orderedFindings(s)
+	if finding, ok := parseErrorFinding(ordered); ok {
+		return parseErrorScreenView(finding)
+	}
 	sel, selIdx, hasSel := selectFinding(ordered, m.selectedID)
 
 	if m.scanning {

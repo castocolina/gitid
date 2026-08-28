@@ -81,7 +81,15 @@ type DemoFinding struct {
 	// identifiers, so it cannot reuse that type directly). Backend.FixPlanFor
 	// reads it to render the real before/after diff and the typed-confirm
 	// target. Nil for every finding that does not perform a surgical rewrite.
-	Rewrite *FixRewriteTarget
+	Rewrite    *FixRewriteTarget
+	ParseError *ParseErrorView
+}
+
+// ParseErrorView carries parse-error details without importing doctor.
+type ParseErrorView struct {
+	File    string
+	Raw     string
+	Snippet string
 }
 
 // FixRewriteTarget is the tuikit-local mirror of doctor.FixRewrite: the Host

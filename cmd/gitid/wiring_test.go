@@ -4460,6 +4460,26 @@ func TestMGR07TwoSignalsResolveFromConvergedSource(t *testing.T) {
 	}
 }
 
+func TestDoctorDepsExcludeArchivedKeyPaths(t *testing.T) {
+	home := t.TempDir()
+	sshDir := filepath.Join(home, ".ssh")
+	archiveDir := sshconfig.ArchiveDir(sshDir)
+	if err := os.MkdirAll(archiveDir, 0o700); err != nil {
+		t.Fatalf("seeding archive directory: %v", err)
+	}
+	archivedKey := filepath.Join(archiveDir, "id_ed25519_retired")
+	writeFile(t, archivedKey, "retired key")
+
+	deps := buildDoctorDeps(home)
+	deps.KeyPaths = append(deps.KeyPaths, archivedKey)
+	deps.KeyPaths = filterReservedDoctorKeyPaths(deps.KeyPaths, deps.SSHDir)
+	for _, path := range deps.KeyPaths {
+		if path == archivedKey {
+			t.Fatalf("Deps.KeyPaths retained archive path %q", archivedKey)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // 08-02-PLAN.md Task 2 — the D-09 flagship fix-in-place, real end-to-end
 // ---------------------------------------------------------------------------

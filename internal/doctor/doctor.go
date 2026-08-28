@@ -28,7 +28,9 @@ const (
 	SeverityWarning
 	// SeverityError means broken — authentication or config resolution will fail.
 	SeverityError
-	// SeverityCritical means key/secret exposure — immediate action required.
+	// SeverityCritical means either key/secret exposure (Permissions family) or a
+	// config file that failed to parse entirely (Files family) — both are
+	// immediate-action, exit-code-3 conditions.
 	SeverityCritical
 )
 
@@ -72,6 +74,7 @@ const (
 	// AND gitid's managed _global block (UAT G-4 / SSH-03 / DOC-08).
 	// Severity is always SeverityWarning; Fix is always nil (advisory-only).
 	FamilyRedundancy Family = "Redundancy"
+	FamilyFiles      Family = "Files"
 )
 
 // FixDescriptor carries metadata and the callable for an auto-fixable finding.
@@ -122,7 +125,15 @@ type Finding struct {
 	// confirm target — without it, a finding would have to embed its rewrite
 	// parameters in prose to be re-derivable from a tuikit.DemoFinding. Nil
 	// for every finding that does not perform a surgical rewrite.
-	Rewrite *FixRewrite
+	Rewrite    *FixRewrite
+	ParseError *ParseError
+}
+
+// ParseError carries the file-specific details of a critical Files finding.
+type ParseError struct {
+	File    string
+	Raw     string
+	Snippet string
 }
 
 // FixRewrite describes one D-09 surgical single-directive rewrite: the Host
@@ -213,6 +224,8 @@ type Deps struct {
 	BaselineFilePath string
 	// GitignorePath is the absolute path to ~/.gitignore_global.
 	GitignorePath string
+	// GitConfigPaths contains ~/.gitconfig and every fragment to validate.
+	GitConfigPaths []string
 
 	// Key and pub-key paths to check. These are the gitid-managed private key
 	// paths (0600 targets) and their .pub counterparts (0644 targets). The cmd
@@ -278,6 +291,9 @@ type Deps struct {
 	// Advisory-only: SeverityWarning, Fix nil, never blocks doctor or any write flow.
 	// Called last in Run — appended after CheckOverlap (nil-guarded).
 	CheckRedundancy CheckFn
+	// CheckFiles detects missing or unparseable SSH/Git configuration files.
+	// Called after CheckRedundancy so FamilyFiles remains last in display order.
+	CheckFiles CheckFn
 }
 
 // Run calls all check families in the fixed UI-SPEC order and returns the
@@ -307,6 +323,7 @@ func Run(deps Deps) []Finding {
 		deps.CheckBaseline,
 		deps.CheckOverlap,
 		deps.CheckRedundancy,
+		deps.CheckFiles,
 	} {
 		if fn == nil {
 			continue
@@ -413,5 +430,6 @@ func Families() []Family {
 		FamilyBaseline,
 		FamilyOverlap,
 		FamilyRedundancy,
+		FamilyFiles,
 	}
 }

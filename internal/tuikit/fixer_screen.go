@@ -199,6 +199,9 @@ func (m fixerModel) handleClick(x, y, width, height int, rawState DemoState) key
 
 // view implements screenModel.
 func (m fixerModel) view(rawState DemoState, width, height int) screenView {
+	if finding, ok := parseErrorFinding(orderedFindings(rawState)); ok {
+		return parseErrorScreenView(finding)
+	}
 	s := fixableState(rawState)
 	ordered := orderedFindings(s)
 	sel, selIdx, hasSel := selectFinding(ordered, m.selectedID)

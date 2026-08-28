@@ -3557,6 +3557,7 @@ func buildDoctorDeps(home string) doctor.Deps {
 			pubKeyPaths = append(pubKeyPaths, a.PubPath)
 		}
 	}
+	keyPaths = filterReservedDoctorKeyPaths(keyPaths, sshDir)
 
 	managedHosts, _ := sshconfig.ParseManagedHosts(sshBytes)
 	sshBlockNames := make([]string, 0, len(managedHosts))
@@ -3572,6 +3573,14 @@ func buildDoctorDeps(home string) doctor.Deps {
 
 	allSSHHostIDFiles := sshconfig.ParseAllHostIdentityFiles(sshBytes)
 	allHostBlocks := sshconfig.ParseAllHostBlocks(sshBytes)
+	gitConfigPaths := []string{gitconfigPath}
+	if entries, err := os.ReadDir(filepath.Join(home, ".gitconfig.d")); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				gitConfigPaths = append(gitConfigPaths, filepath.Join(home, ".gitconfig.d", entry.Name()))
+			}
+		}
+	}
 
 	return doctor.Deps{
 		// Read fields.
@@ -3601,6 +3610,7 @@ func buildDoctorDeps(home string) doctor.Deps {
 		AllowedSignersPath: allowedSignersPath,
 		BaselineFilePath:   baselineFilePath,
 		GitignorePath:      gitignorePath,
+		GitConfigPaths:     gitConfigPaths,
 
 		KeyPaths:    keyPaths,
 		PubKeyPaths: pubKeyPaths,
@@ -3646,7 +3656,19 @@ func buildDoctorDeps(home string) doctor.Deps {
 		CheckBaseline:   checks.CheckBaseline,
 		CheckOverlap:    checks.CheckOverlap,
 		CheckRedundancy: checks.CheckRedundancy,
+		CheckFiles:      checks.CheckFiles,
 	}
+}
+
+func filterReservedDoctorKeyPaths(keyPaths []string, sshDir string) []string {
+	filtered := make([]string, 0, len(keyPaths))
+	for _, path := range keyPaths {
+		if sshconfig.IsReservedPath(sshDir, path) {
+			continue
+		}
+		filtered = append(filtered, path)
+	}
+	return filtered
 }
 
 // runDoctorSSHAdd runs `ssh-add -l` via arg-slice exec (no shell, G204-clean)
@@ -3799,6 +3821,10 @@ func runDoctorAndConvert(deps doctor.Deps) (raw []doctor.Finding, converted []tu
 				NewValue:    f.Rewrite.NewValue,
 			}
 		}
+		var parseError *tuikit.ParseErrorView
+		if f.ParseError != nil {
+			parseError = &tuikit.ParseErrorView{File: f.ParseError.File, Raw: f.ParseError.Raw, Snippet: f.ParseError.Snippet}
+		}
 		converted = append(converted, tuikit.DemoFinding{
 			HealthFinding: tuikit.HealthFinding{
 				ID:           id,
@@ -3809,8 +3835,9 @@ func runDoctorAndConvert(deps doctor.Deps) (raw []doctor.Finding, converted []tu
 				SuggestedFix: f.SuggestedFix,
 				Severity:     tuikit.HealthSeverity(f.Severity.String()),
 			},
-			Identity: f.IdentityName,
-			Rewrite:  rewrite,
+			Identity:   f.IdentityName,
+			Rewrite:    rewrite,
+			ParseError: parseError,
 		})
 	}
 	return raw, converted

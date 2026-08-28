@@ -152,10 +152,10 @@ func TestRunCallsAllFamilies(t *testing.T) {
 	}
 }
 
-// TestFamiliesFixedOrder verifies that Families() returns the 9 family
+// TestFamiliesFixedOrder verifies that Families() returns the 10 family
 // constants in the UI-SPEC fixed order: Dependencies, Permissions, Coherence,
-// Orphans, Signing, Agent, Baseline, Overlap, Redundancy.
-// FamilyRedundancy is LAST (advisory section, DOC-08 / UAT G-4).
+// Orphans, Signing, Agent, Baseline, Overlap, Redundancy, Files.
+// FamilyFiles is last because a critical parse finding replaces its section's list.
 func TestFamiliesFixedOrder(t *testing.T) {
 	want := []doctor.Family{
 		doctor.FamilyDeps,
@@ -167,6 +167,7 @@ func TestFamiliesFixedOrder(t *testing.T) {
 		doctor.FamilyBaseline,
 		doctor.FamilyOverlap,
 		doctor.FamilyRedundancy,
+		doctor.FamilyFiles,
 	}
 	got := doctor.Families()
 	if len(got) != len(want) {
@@ -179,16 +180,24 @@ func TestFamiliesFixedOrder(t *testing.T) {
 	}
 }
 
-// TestFamiliesRedundancyIsLast verifies that FamilyRedundancy is the very last
-// entry in Families() (advisory section, never blocks structural checks).
-func TestFamiliesRedundancyIsLast(t *testing.T) {
+// TestFamiliesFilesIsLast verifies that FamilyFiles follows FamilyRedundancy in
+// the display order, as required for the parse-error section replacement.
+func TestExitCodeCriticalBothTiers(t *testing.T) {
+	for _, family := range []doctor.Family{doctor.FamilyFiles, doctor.FamilyPerms} {
+		if got := doctor.ExitCode([]doctor.Finding{{Family: family, Severity: doctor.SeverityCritical}}); got != 3 {
+			t.Errorf("ExitCode(%s critical) = %d, want 3", family, got)
+		}
+	}
+}
+
+func TestFamiliesFilesIsLast(t *testing.T) {
 	fams := doctor.Families()
 	if len(fams) == 0 {
 		t.Fatal("Families() must not be empty")
 	}
 	last := fams[len(fams)-1]
-	if last != doctor.FamilyRedundancy {
-		t.Errorf("Families() last entry must be FamilyRedundancy; got %q", last)
+	if last != doctor.FamilyFiles {
+		t.Errorf("Families() last entry must be FamilyFiles; got %q", last)
 	}
 }
 

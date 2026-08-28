@@ -37,8 +37,8 @@ func orphStat(presentPaths ...string) func(string) (os.FileInfo, error) {
 	}
 }
 
-// TestOrphanFragment: a fragment file exists on disk but no gitconfig includeIf managed
-// block claims its identity name → Orphans warning with [fix].
+// TestOrphanFragment: an SSH Host block with no gitconfig includeIf partner is
+// informational and never offered for removal.
 func TestOrphanFragment(t *testing.T) {
 	fragPath := "/home/u/.gitconfig.d/stale"
 	d := doctor.Deps{
@@ -72,20 +72,23 @@ func TestOrphanFragment(t *testing.T) {
 		if f.Family != doctor.FamilyOrphans {
 			t.Errorf("finding family = %q, want %q", f.Family, doctor.FamilyOrphans)
 		}
-		if f.Severity == doctor.SeverityWarning {
+		if f.Severity == doctor.SeverityInfo {
 			found = true
-			if f.Fix == nil {
-				t.Error("orphaned block finding must carry a Fix descriptor ([fix] D-11)")
+			if f.Fix != nil {
+				t.Error("SSH-only block finding must not carry a destructive Fix descriptor")
+			}
+			if !orphContains(f.Explanation, "created SSH-only") || !orphContains(f.Explanation, "removed intentionally") {
+				t.Errorf("explanation must cover both possible histories, got %q", f.Explanation)
 			}
 		}
 	}
 	if !found {
-		t.Errorf("expected warning-severity Orphans finding, got: %v", orphTitles(findings))
+		t.Errorf("expected info-severity Orphans finding, got: %v", orphTitles(findings))
 	}
 }
 
-// TestOrphanAliasHostNoInclude: a managed SSH Host block name exists but no matching
-// gitconfig includeIf block claims it → Orphans warning with [fix].
+// TestOrphanAliasHostNoInclude: a managed SSH Host block with no matching
+// gitconfig includeIf is an informational report-only finding.
 func TestOrphanAliasHostNoInclude(t *testing.T) {
 	d := doctor.Deps{
 		Stat:       orphStat(), // nothing on disk
@@ -107,15 +110,15 @@ func TestOrphanAliasHostNoInclude(t *testing.T) {
 	}
 	var found bool
 	for _, f := range findings {
-		if f.Severity == doctor.SeverityWarning && orphContains(f.Title, "old") {
+		if f.Severity == doctor.SeverityInfo && orphContains(f.Title, "old") {
 			found = true
-			if f.Fix == nil {
-				t.Error("orphaned SSH block finding must carry a Fix descriptor (D-11)")
+			if f.Fix != nil {
+				t.Error("SSH-only block finding must not carry a destructive Fix descriptor")
 			}
 		}
 	}
 	if !found {
-		t.Errorf("expected orphaned block finding mentioning 'old', got: %v", orphTitles(findings))
+		t.Errorf("expected info-only SSH block finding mentioning 'old', got: %v", orphTitles(findings))
 	}
 }
 

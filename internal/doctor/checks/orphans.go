@@ -16,9 +16,9 @@ import (
 // Three classes of orphans are detected:
 //
 //  1. SSH Host block name in SSHManagedBlockNames with no matching name in
-//     GitconfigManagedBlockNames → orphaned SSH managed block → warning + Fix
-//     (managed-block orphan removal, D-11). Fix.Fn calls deps.RemoveBlock with
-//     deps.SSHConfigPath and the block name.
+//     GitconfigManagedBlockNames → SSH-only block → info, report-only. The
+//     block may have been created SSH-only or may intentionally retain SSH
+//     after its Git identity was removed.
 //
 //  2. Gitconfig managed block name in GitconfigManagedBlockNames with no matching
 //     name in SSHManagedBlockNames → orphaned gitconfig fragment block → warning + Fix
@@ -31,11 +31,10 @@ import (
 //     (D-03/D-13 report-only, honest wording). Guarded against missing pub files
 //     (Pitfall 7).
 //
-// Note: Classes 1 and 2 intentionally include accounts that Reconstruct marks as
-// Incomplete (one-sided managed blocks). When an SSH block exists with no gitconfig
-// counterpart — whether the gitconfig block was never created or was deleted — the
-// SSH block is an orphan that should be removed. Coherence reports the missing-wiring
-// angle; Orphans reports the removable-block angle. Both can apply to the same identity.
+// Note: Class 1 intentionally reports a one-sided SSH block without inferring its
+// history. An on-disk block cannot reveal whether it was created SSH-only or its Git
+// counterpart was deliberately removed, so it is always informational and never offered
+// for removal. Class 2 remains a removable orphan when its SSH counterpart is absent.
 //
 // The function never reads known_hosts (D-14) and never imports internal/filewriter (D-01).
 func CheckOrphans(deps doctor.Deps) []doctor.Finding {
@@ -48,7 +47,8 @@ func CheckOrphans(deps doctor.Deps) []doctor.Finding {
 	sshNames := sliceToSet(deps.SSHManagedBlockNames)
 
 	// Class 1: SSH block names that have no matching gitconfig managed block.
-	// Fix.Fn calls deps.RemoveBlock on SSHConfigPath with the block name (when wired).
+	// This state is informational only because a healthy SSH-only block must not
+	// be removed based on an unknowable history.
 	for _, name := range deps.SSHManagedBlockNames {
 		// Reserved non-identity wiring (the gitid-owned Include line) has no
 		// gitconfig counterpart by design — it is NOT an orphan. Skip it, or
@@ -60,29 +60,14 @@ func CheckOrphans(deps doctor.Deps) []doctor.Finding {
 			continue
 		}
 		if !gcNames[name] {
-			// This SSH Host block has no gitconfig partner — orphaned block.
-			n := name // capture for closure (avoid loop-variable aliasing)
-			sshConfigPath := deps.SSHConfigPath
-			removeBlock := deps.RemoveBlock
-			// Build Fix only when RemoveBlock is wired; otherwise report-only.
-			var fix *doctor.FixDescriptor
-			if removeBlock != nil && sshConfigPath != "" {
-				fix = &doctor.FixDescriptor{
-					Summary: fmt.Sprintf("remove orphaned SSH Host block %q", n),
-					Fn: func() error {
-						return removeBlock(sshConfigPath, n)
-					},
-				}
-			}
 			findings = append(findings, doctor.Finding{
-				Family:      doctor.FamilyOrphans,
-				Severity:    doctor.SeverityWarning,
-				Title:       fmt.Sprintf("SSH Host block %q: no gitconfig includeIf", n),
-				Explanation: fmt.Sprintf("A gitid-managed SSH Host block %q exists but no gitconfig includeIf block claims it.", n),
-				SuggestedFix: fmt.Sprintf(
-					"remove the orphaned SSH Host block %q  (gitid will confirm before removing)", n),
-				Fix:    fix,
-				Target: "SSH",
+				Family:       doctor.FamilyOrphans,
+				Severity:     doctor.SeverityInfo,
+				Title:        fmt.Sprintf("SSH Host block %q: no gitconfig includeIf", name),
+				Explanation:  fmt.Sprintf("This SSH block %q has no matching Git identity — created SSH-only, or its Git side was removed intentionally.", name),
+				SuggestedFix: "Informational only, no action offered.",
+				Fix:          nil,
+				Target:       "SSH",
 			})
 		}
 	}
