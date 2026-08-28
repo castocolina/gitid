@@ -541,3 +541,156 @@ const (
 	// FixerNothingToFixGit is the healthy-empty Git section summary.
 	FixerNothingToFixGit = "Git -- 0 fixable problems. Every includeIf target exists, every allowed_signers email matches."
 )
+
+// ---------------------------------------------------------------------------
+// Upload / Credentials Assist (Phase 9, D-08) frozen copy.
+//
+// Every constant below is drafted in 09-UI-SPEC.md's Copywriting Contract
+// (checker-approved 2026-08-28) and is byte-exact against that table. Two
+// scoped deviations from the DRAFT strings are recorded there and apply
+// here: (1) the `☐`/`☑` glyph is NOT baked into the checkbox label
+// constants — the render composes the existing glyphCheckOff/glyphCheckOn
+// constants (theme.go) with the label, mirroring the existing demo-failure
+// toggle at identities.go:4211-4215, so there is never a second,
+// independent copy of the glyph pair; (2) `<Provider>`/`<tool>`/`<host>`
+// placeholders become `%s` format verbs, matching every other `*Fmt`
+// constant in this file.
+//
+// Authority split (R21, 09-01-PLAN.md cross-AI review): TestFrozenUploadCopy
+// (upload_copy_test.go) is the AUTHORITATIVE, byte-exact contract for these
+// values. `make gate-copy-freeze` is a SECONDARY source-presence guard —
+// it only proves a string appears SOMEWHERE under the scanned roots (a
+// comment or a dead declaration would satisfy it too), so a green gate
+// alone must never be read as proof of the value.
+//
+// Amendment rule for operational copy (R22): if a later wave (3 or 8)
+// discovers that real gh/glab behavior makes one of the operational
+// remediation sentences below inaccurate, the correct response is a
+// REVIEWED amendment — edit the constant, update TestFrozenUploadCopy, and
+// update the gate-copy-freeze entry, recording the amendment plus the
+// observed provider behavior in that plan's SUMMARY — never rendering
+// different text at a call site, and never leaving inaccurate guidance in
+// place because the string is "frozen."
+const (
+	// UploadCheckboxLabelReadyFmt is the D-01 scenario-1 checkbox label
+	// (tool present, authenticated — pre-checked). 09-UI-SPEC.md
+	// Copywriting Contract row `UploadCheckboxLabelReady`.
+	UploadCheckboxLabelReadyFmt = "Register with %s automatically (auth + signing)"
+	// UploadCheckboxLabelUnauthFmt is the D-01 scenario-2 checkbox label
+	// (tool present, not authenticated — unchecked but toggleable).
+	// 09-UI-SPEC.md Copywriting Contract row `UploadCheckboxLabelUnauth`.
+	UploadCheckboxLabelUnauthFmt = "Register with %s automatically — not logged in to %s; run \"%s auth login\" first, or check anyway"
+	// UploadCheckboxLabelDisabledFmt is the D-01 scenario-3 checkbox label
+	// (no matching CLI — disabled). 09-UI-SPEC.md Copywriting Contract row
+	// `UploadCheckboxLabelDisabled`.
+	UploadCheckboxLabelDisabledFmt = "Auto-registration unavailable — %s has no gh/glab match here. Manual steps are shown after create."
+	// UploadRunningLineFmt is the D-02 announce-and-do line, one per
+	// attempted registration. The %s argument MUST be the literal string
+	// uploader.CommandPreview/buildArgs produced — never a hand-typed
+	// approximation (UP-02/UP-03 shown==run, structural).
+	// 09-UI-SPEC.md Copywriting Contract row `UploadRunningLineFmt`.
+	UploadRunningLineFmt = "Running: %s"
+	// UploadResultOKFmt is the D-16 per-key success result row. The %s
+	// argument is one of UploadRegistrationLabelAuth/Signing/Combined.
+	// 09-UI-SPEC.md Copywriting Contract row `UploadResultOK`.
+	UploadResultOKFmt = "✓ %s key registered"
+	// UploadResultSkippedFmt is the D-15 idempotent-dedupe result row.
+	// 09-UI-SPEC.md Copywriting Contract row `UploadResultSkipped`.
+	UploadResultSkippedFmt = "✓ %s key already registered (skipped)"
+	// UploadResultFailedFmt is the D-16 per-type failure result row. The
+	// second %s is the classified reason (scope error, cross-account
+	// conflict, or the raw trimmed CLI output as last resort).
+	// 09-UI-SPEC.md Copywriting Contract row `UploadResultFailed`.
+	UploadResultFailedFmt = "✗ %s key registration failed: %s"
+	// UploadScopeRemediationAuthFmt is the D-14 scope-error remediation for
+	// the authentication-key registration. 09-UI-SPEC.md Copywriting
+	// Contract row `UploadScopeRemediationAuth`.
+	UploadScopeRemediationAuthFmt = "insufficient scope — run \"gh auth refresh -h %s -s admin:public_key\", then retry from the Identity Manager"
+	// UploadScopeRemediationSigningFmt is the D-14 scope-error remediation
+	// for the signing-key registration. 09-UI-SPEC.md Copywriting Contract
+	// row `UploadScopeRemediationSigning`.
+	UploadScopeRemediationSigningFmt = "insufficient scope — run \"gh auth refresh -h %s -s admin:ssh_signing_key\", then retry from the Identity Manager"
+	// UploadCrossAccountConflict is the D-15 glab-only cross-account
+	// conflict finding — NEVER silently classified as success (GitLab
+	// fingerprints are globally unique). 09-UI-SPEC.md Copywriting Contract
+	// row `UploadCrossAccountConflict`.
+	UploadCrossAccountConflict = "GitLab rejected this key — it is already registered to a DIFFERENT account. If that's expected, remove it there first; otherwise check \"glab auth status\"."
+	// UploadInventoryDegradedFmt is the D-15 inventory-read-failure notice
+	// — degrades to plain upload, NEVER gates (D-11). 09-UI-SPEC.md
+	// Copywriting Contract row `UploadInventoryDegraded`.
+	UploadInventoryDegradedFmt = "Could not check %s for existing keys — uploading anyway; duplicates are handled safely."
+	// UploadDryRunNote is the D-06 --dry-run trailing note — the SAME
+	// announcing-shape lines render, this note replaces per-key-results.
+	// 09-UI-SPEC.md Copywriting Contract row `UploadDryRunNote`.
+	UploadDryRunNote = "--dry-run: the command(s) above were shown, not run."
+	// UploadManualHeading precedes the existing, byte-identical
+	// internal/upload.Instructions(provider) block. 09-UI-SPEC.md
+	// Copywriting Contract row `UploadManualHeading`.
+	UploadManualHeading = "Auto-registration wasn't available. Register it yourself:"
+	// UploadKeyTitleFmt is the D-07 machine-scoped key title
+	// ("gitid: <name> @ <hostname>"). Deliberately EXCLUDED from
+	// gate-copy-freeze's frozen-string list (Makefile) — its rendered
+	// output varies per machine, matching the four existing dynamic-text
+	// exclusion precedents. 09-UI-SPEC.md Copywriting Contract row
+	// `UploadKeyTitleFmt`.
+	UploadKeyTitleFmt = "gitid: %s @ %s"
+	// UploadSkippedByFlagNote is the D-06 --no-upload opt-out note,
+	// immediately followed by the manual-fallback block. 09-UI-SPEC.md
+	// Copywriting Contract row "--no-upload opt-out note".
+	UploadSkippedByFlagNote = "Auto-upload skipped (--no-upload)."
+	// UploadAlreadyCompleteFmt closes 09-UI-SPEC.md's "zero-one-many" UI
+	// Consideration row, left to planner discretion: when the D-15
+	// inventory reports every registration already present (both GitHub
+	// types, or GitLab's single combined registration), the section
+	// renders this ONE collapsed line instead of repeating
+	// UploadResultSkippedFmt once per type.
+	UploadAlreadyCompleteFmt = "✓ Already registered with %s — nothing to do."
+	// UploadRegistrationLabelAuth is one of the three %s values
+	// UploadResultOKFmt/UploadResultSkippedFmt/UploadResultFailedFmt
+	// interpolate — gh's authentication-key registration.
+	UploadRegistrationLabelAuth = "Authentication"
+	// UploadRegistrationLabelSigning is gh's signing-key registration
+	// label — the sibling of UploadRegistrationLabelAuth.
+	UploadRegistrationLabelSigning = "Signing"
+	// UploadRegistrationLabelCombined is glab's single
+	// auth_and_signing registration label (D-12).
+	UploadRegistrationLabelCombined = "Key"
+
+	// RotateDeleteOfferHeadingFmt is the D-04 interactive old-key delete
+	// offer's heading, replacing keyCeremonyGraceHintFmt as the sole
+	// message on the path where the offer applies. 09-UI-SPEC.md
+	// Copywriting Contract row `RotateDeleteOfferHeading`.
+	RotateDeleteOfferHeadingFmt = "Remove the old key from %s?"
+	// RotateDeleteOfferBodyFmt names the old key (D-07 machine-scoped
+	// title) and states it remains valid until removed. 09-UI-SPEC.md
+	// Copywriting Contract row `RotateDeleteOfferBody`.
+	RotateDeleteOfferBodyFmt = "The old key (\"gitid: %s @ %s\") still authenticates there until you remove it. Delete it now?"
+	// RotateDeleteOfferChoiceDeleteFmt is the offer's destructive choice —
+	// never default-focused (D-04's non-destructive-by-default posture).
+	// 09-UI-SPEC.md Copywriting Contract row `RotateDeleteOfferChoiceDelete`.
+	RotateDeleteOfferChoiceDeleteFmt = "[ Delete old key from %s ]"
+	// RotateDeleteOfferChoiceLeave is the offer's default-focused,
+	// non-destructive choice (D-04). 09-UI-SPEC.md Copywriting Contract row
+	// `RotateDeleteOfferChoiceLeave`.
+	RotateDeleteOfferChoiceLeave = "[ Leave it — I'll remove it myself ]"
+	// RotateDeleteOfferResultRemovedFmt is the D-04 offer's accepted-path
+	// result line. 09-UI-SPEC.md Copywriting Contract row
+	// `RotateDeleteOfferResult` (removed half).
+	RotateDeleteOfferResultRemovedFmt = "✓ Old key removed from %s."
+	// RotateDeleteOfferResultLeftFmt is the D-04 offer's declined-path
+	// result line, naming the manual delete command/URL. 09-UI-SPEC.md
+	// Copywriting Contract row `RotateDeleteOfferResult` (left-in-place
+	// half).
+	RotateDeleteOfferResultLeftFmt = "Left in place — remove it yourself: %s"
+
+	// IdentityManagerActionRegisterKey is the action-menu's fifth row
+	// (D-08/D-09 Phase 9 amendment, identity-manager/FIELDS.md
+	// action_register_key) — joins IdentityManagerAction{ViewDetail,
+	// Clone,NewKey,Delete} above.
+	IdentityManagerActionRegisterKey = "Register key (u)"
+	// RegisterKeyModalHeadingFmt is the D-08 "copy modal" heading — the
+	// manual re-trigger surface for a key-unused/key-used-ssh-only
+	// identity. 09-UI-SPEC.md Copywriting Contract row "Identity Manager
+	// copy-modal heading".
+	RegisterKeyModalHeadingFmt = "Register %s's key with %s"
+)
