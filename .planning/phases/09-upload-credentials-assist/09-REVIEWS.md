@@ -1,7 +1,7 @@
 ---
 phase: 9
 reviewers: [xai-grok, codex, codex-sol]
-reviewed_at: 2026-08-28T20:20:53Z
+reviewed_at: 2026-08-28T21:06:35Z
 plans_reviewed: [09-01-PLAN.md, 09-02-PLAN.md, 09-03-PLAN.md, 09-04-PLAN.md, 09-05-PLAN.md, 09-06-PLAN.md, 09-07-PLAN.md, 09-08-PLAN.md]
 models:
   xai-grok: "xai/grok-4.6 (reasoning=low)"
@@ -13,623 +13,388 @@ model_sources:
   codex-sol: "pinned"
 ---
 
-# Cross-AI Plan Review — Phase 9
+# Cross-AI Plan Review — Phase 9 (Cycle 2)
 
-> **Note on reviewer roster:** `review.default_reviewers` configures `codex-sol` (model
-> `openai/gpt-5.6-sol-fast`) and `xai-grok` (opencode, model `xai/grok-4.6`). `codex-sol`
-> failed at invocation — the pinned model is rejected by this Codex CLI's ChatGPT-account
-> authentication (`"The 'openai/gpt-5.6-sol-fast' model is not supported when using Codex
-> with a ChatGPT account."`, confirmed reproducible independent of the `openai/` prefix).
-> Its section below is the diagnostic stub, not a review. To still deliver a genuine
-> cross-AI review, the plain `codex` lane was invoked with its default banner-resolved
-> model (`gpt-5.6-sol`) as a substitute for the broken instance; both `xai-grok` and
-> `codex` completed full source-grounded reviews and are weighted at full consensus below.
-> Recommend fixing `review.reviewer_instances.codex-sol.model` (drop `-fast`, and possibly
-> the `openai/` prefix) for future runs.
+> **Note on reviewer roster:** as in cycle 1, `review.default_reviewers` configures
+> `codex-sol` (model `openai/gpt-5.6-sol-fast`) and `xai-grok` (opencode, model
+> `xai/grok-4.6`). `codex-sol` again failed at invocation — the pinned model is rejected
+> by this Codex CLI's ChatGPT-account authentication (`"The 'openai/gpt-5.6-sol-fast'
+> model is not supported when using Codex with a ChatGPT account."`). Its section below
+> is the diagnostic stub, not a review — this is the same known, expected/acceptable
+> substitution as cycle 1 (`review.reviewer_instances.codex-sol.model` still needs
+> fixing — drop `-fast` and/or the `openai/` prefix — but that is out of scope for this
+> review cycle). The plain `codex` lane was invoked as substitute, using its
+> default banner-resolved model (`gpt-5.6-sol`). Both `xai-grok` and `codex` completed
+> full source-grounded reviews of the CURRENT plan set (post-revision commit `a28ccbb`)
+> and are weighted at full consensus below.
 
 ## Consensus Summary
 
-Both reviewers independently traced the actual e2e harness code (`e2e/harness_test.go`,
-`e2e/create_flow_pty_e2e_test.go`, `internal/uploader/uploader.go`, `Makefile`,
-`.planning/ONESHOT.md:128-141`) rather than reviewing plan text in isolation, and both
-converged on the same root defect from different angles.
+Both reviewers independently re-verified the eight cycle-1 findings against the CURRENT
+`09-0X-PLAN.md` files and the live codebase (not against the revision's commit-message
+prose), and **both confirm all 8 cycle-1 findings — including the ambient-PATH-leak
+HIGH — are now backed by concrete, executor-followable plan content**: named
+constructors (`e2eEnv`, `ProviderDenyDir`), named tests (`TestE2EEnvHidesRealProviderCLIs`,
+`TestEveryE2EChildEnvIsHermetic`, `TestUploadKeysHonoursPerRegistrationTitles`,
+`TestUploadKeyRefusesAPrivateKeyRenamedAsPub`, `TestRegisterKeyExitContract`, etc.),
+explicit file:line locations in the plans, and (where relevant) confirmation that the
+underlying code defect the finding described still exists pre-execution — i.e. the plan
+now specifies the fix rather than merely asserting it happened. `xai-grok` additionally
+verified the live code still has the leak (`e2e/create_flow_pty_e2e_test.go:59-64` still
+prepends fake SSH onto ambient PATH), confirming the guard test's target defect is real,
+not hypothetical, and that the plan-level fix is not yet applied to code (expected —
+execution has not started).
 
-**Both reviewers agree the plan set is well-architected** — the wave ordering (contract →
-tracer → engine → wizard → CLI → manager → UI gates → real-account validation), the
-UI/backend separation, the deletion-safety defaults, and 09-08's overall protocol shape
-(disposable key, prefixed titles, ID-scoped deletion, final sweep) all match the codebase's
-existing patterns and ONESHOT.md's policy intent.
+**Both reviewers independently converge on the same fresh, cycle-2-introduced concern:**
+Plan 09-08's real-account "product" validation phase (Phase P) creates an identity with
+upload suppressed (`create --no-upload`) and then explicitly runs `gitid register-key` —
+this proves the compiled-binary CLI path and the manual re-registration verb, but it does
+**not** exercise the default, autonomous upload-on-create trigger that UP-03 is meant to
+validate. `codex` rates this a fresh HIGH (closure claims coverage it does not have);
+`xai-grok` rates it MEDIUM (the design gap is real but correctable with an additional
+phase, not a redesign). This is the single most consequential disagreement between the
+two reviewers and should be resolved before this phase is considered execution-ready.
 
-**Both reviewers also agree on the phase's central blocking risk: waves 2–7 do not
-hermetically prevent unattended e2e/PTY tests from resolving the developer's real,
-authenticated `gh` binary.** `newRealCreateFlowCmd` (`e2e/create_flow_pty_e2e_test.go:59-64`)
-builds its test-process `PATH` as `<fakeSSHDir>:<original PATH>` — the real system `PATH`,
-and therefore any real `gh`/`glab` on it, remains resolvable. 09-02's plan only prepends a
-fake-`gh` directory in the *new* tracer test; existing PTY tests such as
-`TestCreateFlow_TestStagePass` are not required to add the shim. Once 09-02 wires the real
-`buildUploaderDeps` (`exec.LookPath` + `exec.Command`) into the create flow's autonomous
-upload trigger, pressing Enter in any of those *existing, unmodified* tests can reach a real
-GitHub/GitLab account during a routine, unattended `make test-e2e` run — exactly the failure
-mode ONESHOT.md's External Account Policy confines to the opt-in 09-08 test. The same gap
-recurs in 09-05 (CLI e2e) and 09-07 (new PTY gates), since neither requires the pre-existing
-suite to adopt the shim.
+`codex` additionally raised two new HIGH concerns not caught by `xai-grok`: (1) Phase P's
+use of `SandboxHome` (temporary `HOME`) risks hiding the developer's real, already
+authenticated `gh` CLI session, since `gh`'s config normally lives under the real `HOME`
+and the plan does not preserve/pass through `GH_CONFIG_DIR` or another explicit
+read-only auth source; and (2) `UploadEligibility` passes SSH-alias hostnames (e.g.
+`ssh.github.com`, `personal.github.com`) directly to `gh auth status --hostname <input>`,
+where a real GitHub session is normally keyed to the canonical `github.com`, so a
+correctly configured identity could be misreported as unauthenticated. `xai-grok` did not
+independently flag either of these — treat both as open until a third pass confirms or
+refutes them against the plan text and the `SandboxHome`/`ProviderForHostname`
+implementations.
 
 ### Agreed Strengths
-- 09-08's protocol closely tracks ONESHOT.md's verbatim policy: blocking human checkpoint,
-  pre-flight `gh auth status --hostname github.com` with skip-not-fail on missing
-  auth/scope, disposable key generated via the project's own keygen into `t.TempDir()` (never
-  `~/.ssh`), `gitid-e2e:<run-id>:<purpose>` title prefix, deletion strictly by recorded ID
-  after a prefix re-confirm, a final prefix sweep, GitLab left untouched, and a dedicated
-  build tag/Make target kept out of `test`/`test-e2e`/`lint` (modeled on the existing
-  `smoke-network-test` precedent).
-- A blocked/unauthenticated run records honest SKIP evidence rather than substituting a mock
-  — both reviewers confirm this matches ONESHOT.md's explicit prohibition.
-- Deletion-safety defaults across the phase (default-to-no, exact machine-title match,
-  delete by confirmed ID without re-resolving) are consistently fail-closed.
-- Argument-slice (never shell-string) subprocess construction is maintained throughout.
+
+- The eight-wave ordering (contract → tracer → engine → full wizard → CLI → manager → UI
+  gates → real-account validation) remains coherent and unchanged by the revision.
+- The suite-wide `e2eEnv` hermetic-boundary fix is grounded in the actual current
+  environment-construction sites in the e2e package, not scoped only to new tests.
+- Content-based `.pub` validation (via `Deps.ReadFile` + `ssh.ParseAuthorizedKey` +
+  private-key-PEM rejection) closes the convention-only gap cleanly, with a regression
+  test using a real private key renamed with a `.pub` suffix.
+- `register-key`'s exit-code contract is now unambiguous (zero for any success/partial
+  success/already-complete/ineligible/dry-run; non-zero only when every attempted
+  registration failed), resolving the cycle-1 D-03 ambiguity.
+- UP-03 closure is now correctly three-valued (EXECUTED closes it; SKIPPED/BLOCKED leave
+  it open), with a mechanical read-back preventing a closed checkbox from coexisting with
+  a blocked/skipped marker.
 
 ### Agreed Concerns
 
-- **HIGH — Ambient-PATH leak lets waves 2–7's pre-existing/unmodified e2e tests reach a
-  real, authenticated `gh`/`glab` once autonomous upload is wired (09-02 onward).**
-  `e2e/create_flow_pty_e2e_test.go:59-64`'s `newRealCreateFlowCmd` appends the fake-SSH dir
-  to the *original* `PATH` rather than replacing it; 09-02/09-05/09-07 only add shims to
-  their own new tests, not to the existing suite that inherits the new upload trigger. This
-  is the phase's dominant safety risk and both reviewers rate it HIGH / overall-phase risk
-  HIGH until fixed. **Fix (both reviewers converge on this):** in 09-02, make the e2e harness
-  construct a `PATH` containing only shim/isolated directories (fake `gh` + fake `glab` +
-  fake `ssh`, or a `LookPath`-blocking wrapper) for every upload-capable PTY/CLI process,
-  suite-wide — not opt-in per new test — plus a negative test asserting no real-CLI exec
-  occurs when the shims are absent.
-- **MEDIUM (codex: HIGH) — `UploadKeys`'s single `title string` parameter cannot satisfy
-  09-08's per-purpose title requirement.** ONESHOT.md requires
-  `gitid-e2e:<run-id>:<purpose>` with a distinct `<purpose>` per registration kind
-  (authentication vs. signing), but 09-03's planned engine signature
-  (`09-03-PLAN.md:140-146`) takes one title for the whole batch. codex rates this a hard
-  blocker against 09-08's stated protocol; xai-grok flags the same mismatch as a MEDIUM
-  policy-compliance gap and calls out that D-07's product-mode `KeyTitle` must not silently
-  override the policy-mode custom prefix. Either way, 09-03's API needs a per-registration
-  title before 09-08 can execute as specified.
-- **MEDIUM — Resource-ID capture is by post-hoc inventory/title lookup, not IDs literally
-  "returned" by the upload call.** `gh ssh-key add` does not emit a machine-readable ID in
-  its stdout; both reviewers independently traced this to the same conclusion and agree the
-  plan's mechanism (inventory lookup scoped to the exact run-prefix, then delete-by-ID) is
-  an acceptable-but-inexact reading of ONESHOT.md's "record the exact returned resource ID"
-  — recommend making the checkpoint/summary language describe the real mechanism rather than
-  implying a direct returned-ID capture.
+- **MEDIUM/HIGH (split) — Plan 09-08's real-account Phase P does not exercise
+  create-time autonomous upload**, only the compiled binary's manual `register-key`
+  verb after upload was explicitly suppressed at creation. Both reviewers agree this is
+  a real coverage gap relative to what UP-03 claims to validate; they diverge only on
+  severity (`codex`: HIGH — "overstates coverage"; `xai-grok`: MEDIUM — "design gap,
+  correctable with an optional Phase P2 running `gitid create` without `--no-upload`").
+- **MEDIUM — 09-02's `files_modified` list for the e2e hermetic migration may be
+  incomplete** relative to the live tree. `xai-grok` names two specific gaps:
+  `e2e/global_ssh_storage_pty_e2e_test.go` (via `newRealCreateFlowCmd`) and
+  `e2e/install_e2e_test.go` (`cmd.Env = os.Environ()`). Both reviewers agree the
+  source-scan test (`TestEveryE2EChildEnvIsHermetic`) is the real backstop and must be
+  implemented as genuine assignment analysis (e.g. go/ast), not a hardcoded filename
+  list or a naive `grep e2eEnv` — a naive string-presence check would not catch
+  `create_flow_pty_e2e_test.go`'s existing `os.Environ()`-based construction.
 
 ### Divergent Views
 
-- **codex raises two additional HIGH findings xai-grok does not surface at HIGH:**
-  1. **09-08 doesn't exercise the compiled autonomous product path.** The plan calls
-     `uploader.UploadKeys` directly rather than driving the compiled `gitid` binary through
-     `buildUploaderDeps`/CLI/TUI/eligibility/orchestration, so it validates the uploader
-     engine in isolation, not the "autonomous upload path... proven once against a real
-     GitHub account" claim in the plan's own success criteria. codex recommends running the
-     compiled binary under the dedicated tag/target instead.
-  2. **Scope verification in 09-08 is underspecified** ("a scope-revealing read" without a
-     named command/parsing rule for confirming both `admin:public_key` and
-     `admin:ssh_signing_key`). xai-grok raises the identical gap but at MEDIUM, recommending
-     `gh api user` + `gh api user/ssh_signing_keys` or parsing `gh auth status -t`'s scope
-     line.
-  Given one reviewer (codex) treats these as execution-blocking and the other (xai-grok)
-  treats the scope gap as a fixable MEDIUM, both should be resolved before 09-08 executes —
-  the divergence is in severity, not in whether the gap exists.
-- **codex additionally flags `.pub`-suffix-only validation as insufficient for the plan's
-  ASVS V5 "public-key-only" invariant** (a private key renamed with a `.pub` suffix would
-  pass `requirePubPath`), recommending content-based validation (reject private-key PEM
-  markers). xai-grok does not raise this as a distinct finding.
-- **codex flags a possible double-delete in 09-08** (`t.Cleanup` registered immediately after
-  ID recording, then an explicit delete later in the same test — unless the cleanup closure
-  tracks already-removed IDs, cleanup runs twice). xai-grok does not raise this.
-- **codex flags that a blocked/skipped real-account run should not be allowed to fully close
-  UP-03** — the plan's closure language permits marking UP-03 closed on a blocked run, which
-  codex reads as contradicting the plan's own "required evidence" framing. xai-grok does not
-  raise this as a distinct concern.
-- **xai-grok raises a provider-hostname-matching gap not surfaced by codex as a named
-  severity:** `ProviderForHostname`'s substring match (`strings.Contains(host, "github")`)
-  would misclassify a host like `github.example.com` as GitHub, contradicting D-13's
-  main-domain-only autonomous-behavior rule. (codex independently raises the same
-  `ProviderForHostname` substring concern under 09-02 at MEDIUM, so this is really agreement
-  with different framing rather than a true divergence — noted here because the two reviews
-  discuss it under different headings.)
+- **Overall risk rating:** `codex` rates the revised plan set overall **HIGH** risk
+  (driven by the three fresh concerns above, especially the SandboxHome/auth-hostname
+  pair it alone identified). `xai-grok` rates it overall **MEDIUM** ("blocking design is
+  in the plans; remaining risk is executor miss + 09-08 product-path vs create
+  autonomy"). Reconcile by weight of evidence: the Phase-P-autonomy gap is corroborated
+  by both and should be treated as a real, unresolved concern; the `SandboxHome`/
+  auth-hostname findings are `codex`-only and need independent verification (they were
+  not contradicted by `xai-grok`, but `xai-grok`'s review does not mention `HOME`
+  sandboxing or the `AuthHostname` distinction at all, so absence is not confirmation).
+- `codex` frames the ambient-PATH fix as fully "concrete enough for execution"; `xai-grok`
+  frames the same fix as "specified" but flags execution-quality risk in the source-scan
+  implementation (assignment analysis vs string grep) more explicitly, plus two
+  additional e2e files it believes 09-02's file list misses. Both are actionable
+  refinements to 09-02 rather than a disagreement about whether the design is sound.
+
+---
+
+## Codex Review (codex-sol)
+
+codex review failed or returned empty output. stderr:
+OpenAI Codex v0.149.1
+--------
+workdir: /Users/ramon/git/personal/ssh-git-config
+model: openai/gpt-5.6-sol-fast
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: low
+reasoning summaries: none
+session id: 01a04a2d-f47b-7b72-87a1-5ff153261f4c
+--------
+[full prompt echo omitted — see cycle-1 09-REVIEWS.md for the identical stub shape]
+--------
+ERROR: {"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'openai/gpt-5.6-sol-fast' model is not supported when using Codex with a ChatGPT account."}}
+ERROR: {"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'openai/gpt-5.6-sol-fast' model is not supported when using Codex with a ChatGPT account."}}
+
+---
+
+## Codex Review (codex, substitute for codex-sol)
+
+# Cross-AI Plan Review — Cycle 2
+
+## Summary
+
+The revision materially resolves the cycle-1 findings. The ambient-PATH fix, provider routing, bounded async execution, per-registration titles, content-based public-key validation, delete-ID validation, exact scope checking, idempotent cleanup bookkeeping, and conditional UP-03 closure are all expressed as concrete tasks with named tests and acceptance criteria.
+
+However, the fresh pass found three significant issues in Plan 09-08 and one provider-auth bug in Plan 09-02. Most importantly, the real-account "product" phase runs `register-key` after suppressing upload during creation, so it does not actually prove UP-03's autonomous trigger. Additionally, sandboxing `HOME` can hide the real `gh` authentication configuration, and provider auth is probed using SSH aliases such as `ssh.github.com` rather than the canonical CLI auth host `github.com`.
+
+Overall risk remains **HIGH** until those issues are corrected.
+
+## Cycle-1 Finding Verification
+
+### 1. HIGH — ambient PATH could reach real `gh`/`glab`
+
+**Status: RESOLVED in plan**
+
+The existing code confirms the original vulnerability: `newRealCreateFlowCmd` prepends fake SSH to the ambient PATH, leaving real provider CLIs reachable ([create_flow_pty_e2e_test.go](/Users/ramon/git/personal/ssh-git-config/e2e/create_flow_pty_e2e_test.go:52)). There are numerous other hand-built child environments across the e2e package, including CLI, PTY, dummy, and debug tests.
+
+The revised plan now specifies:
+
+- Fail-closed `gh` and `glab` deny shims with logging ([09-02-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-02-PLAN.md:550)).
+- One `e2eEnv` constructor ordering caller shims, deny shims, then ambient PATH ([09-02-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-02-PLAN.md:561)).
+- Migration of every enumerated child-environment construction site ([09-02-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-02-PLAN.md:581)).
+- A runtime resolution test, `TestE2EEnvHidesRealProviderCLIs` ([09-02-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-02-PLAN.md:594)).
+- A build-tag-aware source scan, `TestEveryE2EChildEnvIsHermetic`, which must fail with the offending file and line for an unmigrated `.Env` assignment ([09-02-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-02-PLAN.md:604)).
+- A negative demonstration requiring a temporary hand-written environment assignment to make the guard fail ([09-02-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-02-PLAN.md:683)).
+- A pre-existing-flow regression control proving a test with no fake provider CLI still resolves only the deny shim.
+
+This is concrete enough for execution and directly covers the current source's many `.Env` construction sites.
+
+### 2. Per-registration titles
+
+**Status: RESOLVED**
+
+The revised engine API now has:
+
+- `RegistrationRequest{Registration, Title}` ([09-03-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-03-PLAN.md:170)).
+- `UploadKey` taking one request ([09-03-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-03-PLAN.md:175)).
+- `UploadKeys` taking `[]RegistrationRequest`, with no batch-wide title and no title derivation or override ([09-03-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-03-PLAN.md:183)).
+- Tests for distinct titles and for preventing product-title substitution.
+- A signature-level reflection assertion, avoiding comment-sensitive source scanning.
+
+Plan 09-08 Phase N then supplies exact, distinct policy titles for authentication and signing and verifies them in real provider inventory ([09-08-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-08-PLAN.md:334)).
+
+### 3. Real-account validation bypassed the compiled product
+
+**Status: PARTIALLY RESOLVED**
+
+The revision introduces two concrete phases:
+
+- Phase P builds and invokes the compiled `gitid` binary and asserts exit code, announced commands, and result rows ([09-08-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-08-PLAN.md:306)).
+- Phase N directly exercises the engine with exact per-registration policy titles ([09-08-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-08-PLAN.md:334)).
+- A scoped source check must prove Phase P invokes the built binary and neither constructs `uploader.Deps` nor calls the engine directly ([09-08-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-08-PLAN.md:401)).
+
+That resolves the engine-only problem, but Phase P runs `create --no-upload` followed by explicit `register-key`. It therefore proves the compiled manual re-registration path, not the default autonomous create trigger. This remains a new HIGH concern below.
+
+### 4. Scope verification was underspecified
+
+**Status: RESOLVED**
+
+Plan 09-08 now names the exact command:
+
+```text
+gh auth status --hostname github.com
+```
+
+It requires parsing the reported `Token scopes:` line into a set and checking exact membership of both required scopes ([09-08-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-08-PLAN.md:270)).
+
+Acceptance additionally requires account-free table tests proving:
+
+- Substring-containing fake scope names are rejected.
+- Either single required scope is insufficient.
+- The exact pair succeeds.
+- No token-revealing flag appears in the preflight argv ([09-08-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-08-PLAN.md:403)).
+
+### 5. `.pub` suffix did not prove public-key content
+
+**Status: RESOLVED**
+
+The current uploader indeed enforces this only by convention ([uploader.go](/Users/ramon/git/personal/ssh-git-config/internal/uploader/uploader.go:119)).
+
+The revised plan requires:
+
+- Reading through injected `Deps.ReadFile`.
+- Rejecting private-key PEM markers.
+- Parsing as an OpenSSH authorized-key line.
+- Running all validation before `RunCmd` ([09-03-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-03-PLAN.md:198)).
+- A regression using a real generated private key renamed with a `.pub` suffix.
+- A positive valid-public-key control.
+- Zero subprocess invocations for every invalid-content case.
+
+This is concrete and closes the ASVS V5 gap.
+
+### 6. Delete accepted an arbitrary provider ID
+
+**Status: RESOLVED**
+
+Plan 09-03 now requires numeric-only resource IDs, rejecting empty, whitespace-bearing, dash-leading, and non-numeric values before building argv or invoking a subprocess. It also introduces `DeleteRecordedKey`, which retains the inventory entry's ID/title binding.
+
+The tests explicitly require zero `RunCmd` calls for malformed IDs and verify that `DeleteRecordedKey` passes the recorded ID. This is a meaningful strengthening over argument-slice safety alone.
+
+### 7. Provider routing, hostname matching, and blocking I/O
+
+**Status: RESOLVED in plan, with one new functional flaw**
+
+The current source still has first-found routing and a bare auth probe ([uploader.go](/Users/ramon/git/personal/ssh-git-config/internal/uploader/uploader.go:83), [uploader.go](/Users/ramon/git/personal/ssh-git-config/internal/uploader/uploader.go:107)).
+
+The revision concretely replaces it with:
+
+- Exact-or-dot-suffix main-domain matching, including normalization and negative cases such as `github.example.com` and `github.com.evil.net` ([09-02-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-02-PLAN.md:229)).
+- Provider-specific `DetectFor`, never cross-routing to the other CLI ([09-02-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-02-PLAN.md:245)).
+- `AuthCheck` with an explicit hostname ([09-02-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-02-PLAN.md:251)).
+- `exec.CommandContext` with a configurable timeout ([09-02-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-02-PLAN.md:372)).
+- Async `tea.Cmd` eligibility, never provider I/O in `View` ([09-02-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-02-PLAN.md:283)).
+- Memoization, stale-message rejection, timeout tests, and a source check preventing render-path probing.
+
+The general finding is resolved, but the canonical auth-host issue described below must be corrected.
+
+### 8. Double cleanup and false UP-03 closure
+
+**Status: RESOLVED**
+
+Plan 09-08 now specifies:
+
+- An outstanding-ID map as the single cleanup source of truth.
+- Immediate insertion once an ID is learned.
+- Removal after successful explicit deletion.
+- `t.Cleanup` operating only on IDs still outstanding.
+- Account-free bookkeeping tests for both full explicit cleanup and early failure ([09-08-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-08-PLAN.md:352), [09-08-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-08-PLAN.md:404)).
+
+UP-03 closure is now explicitly three-valued:
+
+- EXECUTED → close.
+- SKIPPED → remain open.
+- BLOCKED → remain open ([09-08-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-08-PLAN.md:449)).
+
+Acceptance requires a mechanical read-back preventing a closed checkbox from coexisting with a blocked/skipped marker ([09-08-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-08-PLAN.md:513)).
+
+## Strengths
+
+- The eight-wave ordering is coherent: contract → tracer → engine → full wizard → CLI → manager → UI gates → real-account validation.
+- The e2e isolation correction is suite-wide and grounded in the actual current environment assignments, rather than limited to new tests.
+- The plan preserves `internal/tuikit`'s backend-free boundary and uses DTO conversion at the composition root.
+- Shown-command-equals-run-command remains structural through one argv builder.
+- Inventory failures consistently degrade to upload rather than becoming gates.
+- GitLab's duplicate/cross-account behavior is intentionally distinguished from GitHub's benign duplicate behavior.
+- Remote deletion defaults to leave, resolves a fresh machine-scoped target, and retains the confirmed ID across a failed retry.
+- `register-key` now has an unambiguous exit contract: zero for any success, partial success, already complete, ineligible/manual fallback, or dry run; non-zero only when work was attempted and every attempt failed ([09-05-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-05-PLAN.md:230), [09-05-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-05-PLAN.md:289)).
+- Frame provenance, registry-to-frame correspondence, negative controls, and honest handling of an unavailable specialist UI critique are unusually strong review mechanisms.
+
+## Concerns
+
+- **HIGH — Phase P does not prove autonomous upload.** It deliberately creates with upload suppressed, then invokes `gitid register-key` ([09-08-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-08-PLAN.md:306)). That proves compiled wiring and the explicit rerun verb, but bypasses the default autonomous trigger whose real-provider validation is supposed to close UP-03. Calling this authoritative UP-03 evidence overstates coverage.
+
+- **HIGH — sandbox `HOME` can hide the real `gh` authentication session.** `SandboxHome` sets the process-wide `HOME` to a temporary directory ([harness_test.go](/Users/ramon/git/personal/ssh-git-config/e2e/harness_test.go:39)). Plan 09-08 then runs the compiled binary under that temporary HOME while expecting its child `gh` to use the developer's real authenticated configuration. The plan does not preserve `GH_CONFIG_DIR`, the original config directory, or another explicit read-only auth source. This may cause the required run to skip as unauthenticated even after the user authorized it.
+
+- **HIGH — auth probing uses the SSH/alias hostname instead of the canonical provider auth host.** `ProviderForHostname` deliberately accepts `ssh.github.com` and other subdomains, but `UploadEligibility` passes that same input to `gh auth status --hostname <input>` and memoizes the result per provider ([09-02-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-02-PLAN.md:390)). A GitHub session normally belongs to `github.com`, not `ssh.github.com` or `personal.github.com`. Valid identities can therefore appear unauthenticated. The provider mapper should return both provider and canonical auth host.
+
+- **MEDIUM — `e2eEnv` does not validate its caller prefixes.** The constructor puts arbitrary caller-provided directories before the deny shims ([09-02-PLAN.md](/Users/ramon/git/personal/ssh-git-config/.planning/phases/09-upload-credentials-assist/09-02-PLAN.md:561)). The source guard proves callers use `e2eEnv`, but not that they avoid passing an ambient/system directory as a prefix. A future call such as `e2eEnv(t, home, os.Getenv("PATH"))` could bypass the deny layer while satisfying the source scan.
+
+- **MEDIUM — "final sweep always runs" is not fully established for early failures.** The plan registers `t.Cleanup`, but the described final sweep remains in the main test body. A fatal assertion before that point invokes cleanup later but may bypass the read-only final sweep. Cleanup should itself end with the sweep, or both explicit and deferred paths should call one idempotent cleanup-and-sweep coordinator.
+
+- **LOW — Plan 09-02 is very large.** It combines the tracer, a suite-wide environment migration, full shim expansion, and PTY proof. The two-commit boundary helps, but execution risk remains high because the plan estimates 145k tokens and touches more than twenty files.
+
+## Suggestions
+
+- Change real-account Phase P to run a headless compiled create/write verb with autonomous upload enabled. Use a disposable identity and temporary HOME, then assert both registrations and output. Keep `register-key` as a separate compiled smoke test if desired, but do not use it as UP-03's only product evidence.
+- Capture the original GitHub CLI config location before sandboxing HOME and pass it read-only to Phase P, for example via an explicitly resolved `GH_CONFIG_DIR`. Add a preflight proving the child `gh` invoked by the compiled binary sees the same authenticated account.
+- Make provider resolution return a structured value such as `{Provider, Tool, AuthHostname}`. Map every GitHub host/alias to `AuthHostname: "github.com"` and every GitLab host/alias to `"gitlab.com"`.
+- Have `e2eEnv` resolve `gh` and `glab` after composing PATH and fail immediately unless each resolved binary lies inside the deny directory or an explicitly registered fake-provider directory.
+- Move the final inventory sweep into the shared idempotent cleanup coordinator so it runs from both the normal path and `t.Cleanup`.
+- Consider splitting 09-02 into a tracer plan and a hermetic-harness migration plan, with the harness migration executed first.
+
+## Risk Assessment
+
+**Overall risk: HIGH.**
+
+The cycle-1 findings are substantially and concretely repaired. The remaining HIGH rating comes from fresh execution-path issues: the required real-account test does not exercise the autonomous trigger it is meant to validate, its temporary HOME may make real `gh` authentication unavailable, and alias hostnames can be passed incorrectly to `gh auth status --hostname`. These are correctable without redesigning the phase, but they should be fixed before execution or convergence is not yet achieved.
 
 ---
 
 ## OpenCode Review (xai-grok)
 
-Verifying plan claims against the repo: ONESHOT policy, uploader/e2e shims, and Makefile gates.
-# Phase 9 Cross-AI Plan Review
+Verifying cycle-1 fixes against current PLAN.md files and the live codebase.
+# Phase 9 Plan Review — Cycle 2
 
-Verified against the live tree (`internal/uploader/uploader.go`, `e2e/harness_test.go`, `e2e/create_flow_pty_e2e_test.go`, `cmd/gitid/main_test.go`, `Makefile`, `.planning/ONESHOT.md:128-141`). Plans are generally well-grounded in research (archived `copy.go`, `Detect` first-found bug, `placeOverlay` gone, `identityVerb` grammar). The load-bearing risk is **real `gh` on PATH leaking into waves 2–7**, not 09-08's protocol text.
-
----
-
-### SPECIAL FOCUS
-
-#### 1. 09-08 vs ONESHOT Phase 9 External Account Policy
-
-**Match (strong):** blocking human checkpoint; pre-flight `gh auth status --hostname github.com` + skip (not fail) if unauth/scope missing; disposable key in `t.TempDir()` via project keygen; titles `gitid-e2e:<run-id>:<purpose>`; record IDs; delete only recorded IDs after prefix re-confirm; final prefix sweep; GitLab untouched; distinct `realaccount` tag + `verify-upload-real-account` modeled on `smoke-network-test` (`Makefile:595-605`, `//go:build smoke` in `cmd/gitid/smoke_network_test.go:1-11`); blocked path still commits the test and records evidence without substituting a mock.
-
-**Gaps vs the verbatim policy:**
-
-| Policy clause | Plan | Verdict |
-|---|---|---|
-| Verify `gh auth status` **and required scopes** before every upload | Task 2 step 1: "scope-revealing read" — unspecified command | **MEDIUM** — pin e.g. `gh api user` + `gh api user/ssh_signing_keys` (or parse `Token scopes:` from `gh auth status -t`) and name the missing scope in `t.Skip` |
-| Record **returned** resource IDs | IDs taken from **inventory title match** after add | **MEDIUM** — `gh ssh-key add` stdout is typically `Added SSH key.` (`e2e/harness_test.go:365`), not an ID. Inventory-by-title is the only practical capture; say so and constrain that lookup to the run prefix, not a full-account scan used as a delete selector |
-| Cleanup never by broad inventory | Delete by recorded ID after prefix re-confirm; sweep asserts zero prefix leftovers | **OK** if sweep is read-only |
-| No mock if blocked | Skip + REQUIREMENTS note | **OK** |
-
-Product titles are `gitid: <name> @ <host>` (`09-03` `KeyTitle`); the e2e path must pass **custom** run-prefixed titles into `UploadKeys`, not `KeyTitle`. Plan 09-08 step 4 says that; keep it as an acceptance criterion so D-07 does not overwrite the policy prefix.
-
-#### 2. Waves 1–7: stub vs real account
-
-| Wave | Guard | Real-account risk |
-|---|---|---|
-| 09-01 | Design/copy only | None |
-| 09-02 unit | Fake `Deps` | None |
-| 09-02 PTY | `FakeGHDir` prepended **only in new tests** | **HIGH** — see below |
-| 09-03 | Fake `Deps` only | None |
-| 09-04 | Fake `Deps`; PTY "tracer still holds" | Inherits 09-02 PATH leak |
-| 09-05 CLI e2e | Explicit shims + sandbox HOME | OK **if** PATH prepend is exclusive |
-| 09-06 | TUI unit + fake backend | Low |
-| 09-07 PTY | Shims "inside sandboxed HOME" | **HIGH** unless PATH **replaces** system PATH |
-
-**HIGH — existing create-flow PTY will hit real `gh` after 09-02.**
-
-`newRealCreateFlowCmd` today:
-
-```59:64:e2e/create_flow_pty_e2e_test.go
-func newRealCreateFlowCmd(...) {
-	env := append(os.Environ(), "HOME="+home, "TERM=xterm-256color")
-	if fakeSSHDir != "" {
-		env = append(env, "PATH="+fakeSSHDir+":"+os.Getenv("PATH"))
-	}
-```
-
-System `PATH` still contains real `gh`. After 09-02, `UploadEligibility` + checked checkbox + Enter on step 1 calls `RunUpload` → `exec.LookPath("gh")` → real account. Existing tests (`TestCreateFlow_TestStagePass`, etc.) are **not** required to prepend `FakeGHDir` or strip `gh`. 09-02 Task 3 only extends the helper for **new** tests.
-
-`FakeGHDir`'s unknown-subcommand branch is `exit 0` (`e2e/harness_test.go:386-388`). Until Task 2 lands, a live `gh api` from a half-wired binary is not shimmed.
-
-**Concrete guard the plans do not require:** for every `e2e` / `make test-e2e` process after 09-02: `PATH=<shim dirs only>` **or** `LookPath` that cannot see the developer's `gh`, plus a negative test that `ReadFakeCLILog` is empty / no network when shims are absent and `gh` is renamed off PATH. Sandboxed `HOME` does **not** isolate `gh` OAuth (`hosts.yml` lives under the **real** user config when the binary on PATH is real `gh`).
-
-09-02 "Done" text ("Running the real binary with an authenticated `gh` … performs a real `gh ssh-key add`") must not be an executor instruction; only 09-08 may do that.
-
-#### 3. "Safe by default" without a mechanism
-
-| Claim | Mechanism in plan? | Evidence |
-|---|---|---|
-| Waves 1–7 never touch a real account | PATH shim in **some** tests | Incomplete — see PATH prepend |
-| 09-08 never in CI | Distinct tag + not a Make prereq | Matches `smoke-network-test` — **OK** if grep/acceptance hold |
-| Upload never gates | `UploadRunMsg` on all errors | Planned tests — **OK** |
-| `.pub` only | `requirePubPath` + PTY argv ends `.pub` | **OK**; 09-02 tracer still uses `(string, error)` `UploadKey` with convention-only (`uploader.go:131-132`) until 09-03 |
-| Dry-run read-only | Zero `ssh-key add` | Inventory/auth reads still run — plan admits this; matrix must say so |
-| Delete only confirmed ID | D-04 no re-resolve | **OK** |
-| No env opt-out | D-06 | Fine for product; **not** a test isolation mechanism |
+Verified against live tree: `e2e/create_flow_pty_e2e_test.go:59-64` still prepends fake SSH onto ambient PATH; `os.Environ()` env construction remains at the sites 09-02 lists. Cycle-1 HIGH is **not yet code**, but the **revised plans specify a buildable suite-wide fix**. Residual risk is execution completeness (missed env sites, source-scan quality), not missing design.
 
 ---
 
-### 09-01 — design contract + copy freeze
+## 1. Summary
 
-**Summary.** Right first wave: FIELDS/APPROVAL/`u` claim/`design.go`/`gate-copy-freeze` before render. Grounded in `design.go` freeze pattern and WR-13 (`Makefile` comments outside recipes).
-
-**Strengths**
-- Glyphs stay in `glyphCheckOff`/`glyphCheckOn` (`identities.go` ~4211), not labels.
-- `UploadKeyTitleFmt` excluded from freeze — matches dynamic-prefix pattern.
-- Does not resurrect archived `copy.go`.
-
-**Concerns**
-- **MEDIUM:** Task 1 says checkbox is a **Tab-ring focus slot**; 09-02 later resolves A1 the same way. 09-01 Notes must not freeze "`u` only" if 09-02 rebases focus.
-- **LOW:** `grep -vc '^#' internal/dummytui/doc.go` is a weak verify if `doc.go` is comment-only.
-
-**Risk:** **LOW**
+The revision made cycle-1 findings **executable**: 09-02 Task 2 specifies `ProviderDenyDir` + `e2eEnv` PATH order, two guard tests, and `TestCreateFlow_ExistingPTYCannotReachRealProviderCLI`; 09-03 specifies `RegistrationRequest`, content-based `requirePublicKey`, and `DeleteRecordedKey`; 09-05 pins `register-key` exit codes; 09-08 specifies compiled-binary Phase P, policy-title Phase N, exact scope parse, outstanding-ID cleanup, and UP-03 gated on EXECUTED. Live code still leaks PATH (`create_flow_pty_e2e_test.go:61-64`). New issues: 09-02 `files_modified` omits some e2e files that assign `cmd.Env`; 09-08 Phase P proves `register-key`, not create-time autonomy; 09-05 must_haves still claim dry-run "executes no provider command." Overall risk **MEDIUM** (was HIGH): blocking design is in the plans; remaining risk is executor miss + 09-08 product-path vs create autonomy.
 
 ---
 
-### 09-02 — tracer
+## 2. Cycle-1 Finding Verification
 
-**Summary.** Correct tracer: `DetectFor`, hostname `AuthCheck`, Backend methods, `testUpload`, nil-guard, PATH shims, one PTY. Matches live `Detect` first-found (`uploader.go:89-105`) and bare `AuthCheck` (`uploader.go:111-112`).
+| # | Finding | Status | Evidence |
+|---|---------|--------|----------|
+| 1 | **HIGH — ambient PATH leak** | **RESOLVED in plan** (not in code yet) | `09-02-PLAN.md:548-619` — `ProviderDenyDir`, `e2eEnv` PATH = prefixes + deny + ambient; migrate listed sites; `TestE2EEnvHidesRealProviderCLIs` (`:595-603`); `TestEveryE2EChildEnvIsHermetic` source scan with file:line fail (`:604-618`); `TestCreateFlow_ExistingPTYCannotReachRealProviderCLI` (`09-02-PLAN.md:761-775`). Guard would catch a missed `cmd.Env = append(os.Environ()…)` **if** the scan treats that assignment as env construction. Live leak still `e2e/create_flow_pty_e2e_test.go:59-64`. |
+| 2 | **MEDIUM — `UploadKeys` single title** | **RESOLVED** | `09-03-PLAN.md:138-139,170-191` — `RegistrationRequest{Registration, Title}`; `UploadKeys(..., []RegistrationRequest, ...)`; `TestUploadKeysHonoursPerRegistrationTitles`; reflect signature check (`09-03-PLAN.md` acceptance, R4). |
+| 3 | **MEDIUM — ID not returned by `ssh-key add`** | **RESOLVED** | `09-08-PLAN.md:323-332` — inventory lookup after add; checkpoint text (`09-08-PLAN.md` Task 1) forbids "ID GitHub returns." |
+| 4 | **HIGH — 09-08 not compiled product path** | **RESOLVED** (see residual) | `09-08-PLAN.md:306-321` Phase P: `BuildBinary` + `gitid register-key`; source check scoped to Phase P helper; Phase N separate (`:334-345`). |
+| 5 | **Scope verification underspecified** | **RESOLVED** | `09-08-PLAN.md:272-285` — `gh auth status --hostname github.com`, `Token scopes:` → set, exact `admin:public_key` and `admin:ssh_signing_key`; table test (`:403`). |
+| 6 | **`.pub` suffix ≠ public key** | **RESOLVED** | `09-03-PLAN.md:140,198-208` — suffix filter + `Deps.ReadFile` + PEM reject + `ssh.ParseAuthorizedKey`; `TestUploadKeyRefusesAPrivateKeyRenamedAsPub`. |
+| 7 | **`t.Cleanup` double-delete** | **RESOLVED** | `09-08-PLAN.md:352-368` outstanding map; fake-deleter unit test (`:404`). |
+| 8 | **Blocked run must not close UP-03** | **RESOLVED** | `09-08-PLAN.md` Task 3 EXECUTED/SKIPPED/BLOCKED; mechanical read-back of checkbox vs blocker. |
 
-**Strengths**
-- Deletes `Detect` instead of leaving a footgun.
-- Checkbox at `wizardFocusManualPath + 1` avoids shifting `wizardFocusKeySource` (`identities.go:149-151`).
-- `stagedKeyFor` share is the right anti-pattern.
-- Shim argv log is the process-boundary half of shown==run.
+**Also requested:**
 
-**Concerns**
-- **HIGH:** PATH leak into existing PTY (above). Fix in this wave: default create-flow PATH must not include real `gh`/`glab`.
-- **MEDIUM:** `ProviderForHostname` duplicates `upload.Instructions` substring match (`upload.go:31-34`). `github.example.com` would look like GitHub — D-13 wants main-domain only. Prefer suffix/host equality (`github.com`, `ssh.github.com`) not `strings.Contains`.
-- **MEDIUM:** Tracer uploads **authentication only**; autonomy "done" claim overstates vs UP-01 two registrations (deferred to 09-04 — OK if wording stays "one type").
-- **LOW:** Fixture `Ready` for any hostname containing `github` will diverge from live eligibility; 09-07 must classify it.
-
-**Risk:** **HIGH** until PATH isolation is a must-have for **all** e2e, not only new tests.
-
----
-
-### 09-03 — engine
-
-**Summary.** Right package-local expansion: D-16/D-12/D-15/D-14/V5. `GLabKeyTypeForAuth = "auth"` (`uploader.go:80`) is a real defect to close.
-
-**Strengths**
-- `UploadKeys` continue-on-failure at the engine.
-- `TitleMatchesThisMachine` exact match (D-07).
-- `TestNoSecondSSHKeyAddArgvBuilder`.
-- Inventory errors → nil slice + error (cannot look like empty account).
-- Classifiers return kinds, not copy.
-
-**Concerns**
-- **MEDIUM:** `DeleteKey` ID from provider JSON into argv — arg slice is fine; still validate ID is numeric/`[0-9]+` so a title cannot be passed as ID.
-- **LOW:** Confirm `gh ssh-key delete --yes` / `glab -y` on the machine as planned; flags drift.
-
-**Risk:** **LOW–MEDIUM**
+- **`register-key` vs D-03:** **RESOLVED** — `09-05-PLAN.md:36` and Task 2 behavior: write verbs stay exit 0; `register-key` non-zero only if every *attempted* registration failed; `TestRegisterKeyExitContract`.
+- **`ProviderForHostname` / async eligibility:** **RESOLVED** — `09-02-PLAN.md` Task 1: DNS-label equality + `.<domain>` suffix; `UploadEligibility` → `tea.Cmd`; memo per provider key; `TestUploaderDepsRunCmdIsTimeBounded`. Live `internal/uploader` still has first-found `Detect` until 09-02 runs.
 
 ---
 
-### 09-04 — wizard section complete
+## 3. Strengths
 
-**Summary.** Delivers ROADMAP criterion 3 and UP-01 fallback; D-17 confirmation without a new `tester` probe is correct (`internal/tester` Outcome at `tester.go`).
-
-**Strengths**
-- One `toggleUploadCheckbox` for four affordances.
-- `AlreadyComplete` / inventory degrade / never-error `UploadRunMsg`.
-- `TestNoPersistedUploadState` for D-18.
-
-**Concerns**
-- **MEDIUM:** D-17 "unconfirmed" as uploaded + Reason — easy to miss in CLI printer (09-05).
-- **LOW:** Worst-case row budget vs 5-line GitHub `Instructions` (`upload.go:36-41`) — overflow viewport is necessary, not optional.
-
-**Risk:** **MEDIUM** (control-flow + frame), not account-safety if 09-02 PATH is fixed.
+- Deny-shim ahead of ambient PATH (not wholesale PATH wipe) matches `FakeGitShimDir` + real `git` (`e2e/harness_test.go` pattern).
+- Three-layer hermetic proof: runtime resolve, source scan, pre-existing PTY control.
+- Engine vs product split in 09-08 is honest about D-07 vs ONESHOT naming.
+- Content-based pub-key check matches `internal/keygen` authorized-key parse.
+- Shared `runUploadFor` + copy-freeze + never-gates auto-advance stay coherent across waves.
 
 ---
 
-### 09-05 — CLI
+## 4. Concerns
 
-**Summary.** `register-key` vs archived `copy` is the right reading of `TestNewRootCmdArchivedPOCCommandsAreGone` (`main_test.go:53-56`). Shared `runUploadFor` is the only way TUI/CLI stay aligned.
+- **MEDIUM — 09-02 file list incomplete vs live env sites.** Task 2 `files_modified` (`09-02-PLAN.md:520`) omits `e2e/global_ssh_storage_pty_e2e_test.go` (uses `newRealCreateFlowCmd`) and `e2e/install_e2e_test.go` (`cmd.Env = os.Environ()` at `:40`). Install is allowlisted; storage PTY is covered **only if** `newRealCreateFlowCmd` is migrated. Executor grepping only `files_modified` could miss `global_ssh_pty_e2e_test.go`. The source-scan test is the backstop — it must not be implemented as a hardcoded filename list.
 
-**Strengths**
-- Does not edit the archived-command test.
-- `--no-upload` help as one constant on four verbs.
-- Exit code isolated from upload (D-03).
-- Headless e2e against shims.
+- **MEDIUM — Phase P ≠ create-time autonomy.** `09-08-PLAN.md:306-311` creates with upload **suppressed**, then `register-key`. That is the compiled CLI path, not "Enter on create wizard / `gitid create` auto-upload." UP-03 wording is create-time autonomy. Residual coverage gap: real-account proof of **default** upload on create is still shim-only (09-02/09-05 e2e).
 
-**Concerns**
-- **MEDIUM:** `register` alias vs `{"add"}` archived — `register-key`/`register` is fine; do not add root `copy`.
-- **LOW:** Dry-run still running inventory/auth — document as reads.
+- **LOW — 09-05 must_haves vs R11.** `09-05-PLAN.md:34` still says dry-run "executes no provider command at all"; Task 2/3 correctly allow auth/inventory reads (`:91-93` R11). Executor could implement the must_have and fail R11 tests.
 
-**Risk:** **LOW** if CLI e2e PATH is shim-only.
+- **LOW — Deny shim vs "disabled".** `09-02-PLAN.md:576-579` says deny ⇒ "tool present, not authenticated." That is `Unauth`, not `Disabled`. 09-07 documents this (`TestCreateFlow_UploadCheckboxDisabledState`); keep 09-02 SUMMARY from claiming Disabled coverage via deny.
+
+- **LOW — Source-scan fragility.** `TestEveryE2EChildEnvIsHermetic` must treat `cmd.Env = env` where `env` is not an `e2eEnv(...)` call as a fail. A naive `grep e2eEnv` would not catch `create_flow_pty_e2e_test.go:61`. Plan says fail with file:line (`:607-608`); executor must implement assignment analysis, not string presence.
 
 ---
 
-### 09-06 — manager + D-04
+## 5. Suggestions
 
-**Summary.** `identPane` + `actionMenuRows = 4` (`identities.go:58`, `% actionMenuRows` at 2314/2318) is the real desync. Lazy inventory for delete ID matches D-18.
-
-**Strengths**
-- Default-leave + Enter-from-default must not delete.
-- Exact title match vs other machines.
-- Commit does not re-resolve ID.
-- Repair omits offer.
-
-**Concerns**
-- **HIGH (product, not CI):** D-04 is remotely destructive; interaction tests are the guard — keep them.
-- **MEDIUM:** Same-key clone omit depends on `ReuseKeyPath` still meaning "no new key".
-
-**Risk:** **MEDIUM**
+- Add `e2e/global_ssh_storage_pty_e2e_test.go` and `e2e/global_ssh_pty_e2e_test.go` to 09-02 Task 2 files (or state "all `newRealCreateFlowCmd` callers inherit via the helper").
+- Align 09-05 must_haves dry-run sentence with R11.
+- In 09-08 SUMMARY, state UP-03 real-account evidence is **register-key product path**, not create-default autonomy; optional extra Phase P2 `gitid create` without `--no-upload` if that is required to close UP-03 strictly.
+- Implement hermetic scan on `Cmd.Env` assignments (go/ast), not comment/string filtered grep only.
 
 ---
 
-### 09-07 — UI gates
+## 6. Risk Assessment
 
-**Summary.** Right close for DLV-04/06 and D-09; shared-renderer CR-15 named with FIELDS backstop.
+**MEDIUM**
 
-**Strengths**
-- Four negative controls + allowlist↔code sync.
-- `uxRegionDifferenceScoped` (CR-04).
-- Distinct `-run` prefix `UploadVisual`.
-
-**Concerns**
-- **HIGH:** Same PATH leak as 09-02 for every new PTY unless PATH is replaced.
-- **MEDIUM:** `agent-ui-ux-designer` in an autonomous wave is an orchestrator/human step; do not fake REVIEW.md.
-
-**Risk:** **MEDIUM–HIGH** (account leak), **LOW** for gate design.
-
----
-
-### 09-08 — real account + closure
-
-**Summary.** Protocol and opt-in isolation match ONESHOT and the `smoke` precedent. `autonomous: false` + blocking checkpoint is required (ONESHOT rule 9).
-
-**Strengths**
-- Tag ≠ `e2e`; target not a prereq of `test`/`test-e2e`/`lint`.
-- `t.Cleanup` after IDs recorded.
-- Before/after count of **non-prefixed** keys.
-- Honest SKIP; REQUIREMENTS must not claim the run if blocked.
-- ROADMAP Goal/criteria byte-unchanged.
-
-**Concerns**
-- **MEDIUM:** ID capture via inventory (above).
-- **MEDIUM:** Scope probe underspecified.
-- **LOW:** `make verify-upload-real-account` must `t.Skip` → exit 0 when unauth (Go skip is exit 0 — good).
-
-**Risk:** **MEDIUM** (policy nits), **LOW** for CI mutation **if** tag isolation is implemented as specified.
-
----
-
-### Suggestions (do before execute)
-
-1. **09-02 (blocking):** All e2e after upload wiring: `PATH` = fake-ssh + fake-gh/glab + busybox-minimal **only**, or `LookPath` wrapper. Add `TestCreateFlow_ExistingPTYDoesNotInvokeRealGH` (empty argv log / no `gh` exec) on current `TestCreateFlow_TestStagePass` PATH.
-2. **09-08:** Specify scope probe; constrain ID lookup to `gitid-e2e:<run-id>:`; assert `UploadKeys` titles are that prefix, not `KeyTitle`.
-3. **09-02 `ProviderForHostname`:** Match hosts, not `contains("github")`.
-4. Strike "real `gh ssh-key add`" from 09-02 Done; reserve for 09-08.
-5. Tighten `FakeGHDir` default `*)` from `exit 0` to fail closed for unknown verbs until modes exist.
-
-### Overall risk: **HIGH**
-
-Justification: 09-08's policy write-up is close to exact; waves 1–7 **intend** shims but **do not enforce** them on the existing PTY helper that **keeps system PATH**. Once 09-02 wires live `buildUploaderDeps` (`exec.LookPath` + `exec.Command`), unattended `make test-e2e` on a machine with authenticated `gh` can mutate a real GitHub account — the failure mode ONESHOT confines to 09-08. Fix PATH isolation in 09-02 and the rest of the phase is **MEDIUM** (D-04, ID capture, hostname matching) rather than an account-safety incident.
-
----
-
-## Codex Review
-
-### Overall assessment
-
-The eight-plan sequence is thoughtfully decomposed and unusually strong on UI contracts, dependency ordering, provider-command seams, and deletion safety. However, it is not ready to execute. Two HIGH-risk gaps remain:
-
-1. Waves 2–7 do not hermetically prevent pre-existing PTY tests from resolving the developer's real `gh`/`glab`.
-2. Plan 09-08 does not actually validate the compiled autonomous product path, and its per-purpose title requirement is incompatible with the planned `UploadKeys` API.
-
-Overall risk: **HIGH** until those issues are corrected.
-
----
-
-### 09-01 — Design contract and frozen copy
-
-**Summary.** The plan establishes the design and copy contracts before runtime implementation, matching the repository's design-first process. Its scope is appropriate and it does not introduce external-account risk.
-
-**Strengths**
-- It correctly updates the current shared-renderer architecture rather than relying on the obsolete overlay model. The live manager uses an `identPane` enum and explicit dispatch/render switches at `internal/tuikit/identities.go:41-56`, not an overlay helper.
-- Freezing upload copy in `internal/tuikit/design.go` respects the existing UI/backend separation: `internal/tuikit/views.go:6-20` explicitly prohibits imports from `uploader` and requires DTO conversion in the composition root.
-- The planned action-menu amendment anticipates a real source defect: the current menu count is independently hard-coded as four at `internal/tuikit/identities.go:58`.
-- Keeping checkbox glyphs outside label constants follows the existing composed-glyph rendering approach and avoids two sources of checkbox truth.
-
-**Concerns**
-- **LOW** — The Makefile literal-presence gate is weaker than the byte-exact Go test. A `grep -F` gate only proves that a string appears somewhere in the scanned roots; a comment or dead declaration could satisfy it. The byte-exact table test is the real contract. The plan should not describe both controls as equally strong.
-- **LOW** — Copy-frozen operational error text may become expensive to improve. Scope classifiers and provider diagnostics are not yet implemented, but their complete user-facing sentences are frozen in Wave 1. Later discoveries may require another documented design amendment.
-
-**Suggestions**
-- Treat `TestFrozenUploadCopy` as the authoritative copy contract and the Makefile check as a secondary source-presence guard.
-- Add an explicit rule allowing a reviewed amendment if real `gh`/`glab` behavior discovered in Waves 3 or 8 makes remediation text inaccurate.
-
-**Risk assessment:** **LOW.** It is design-only, well ordered, and does not touch external accounts.
-
----
-
-### 09-02 — GitHub tracer and PTY wiring
-
-**Summary.** The tracer-first architecture is strong, but the plan's "every automated test uses shims" safety claim is not enforced across the existing PTY suite. This is a blocking safety defect.
-
-**Strengths**
-- Replacing first-found detection with provider-specific lookup addresses the current source behavior. `internal/uploader/uploader.go:89-105` currently searches tools in priority order rather than routing by provider.
-- Adding a real-constructor nil guard follows an established mechanism: `cmd/gitid/wiring_test.go:98-115` reflects over every injected function field.
-- The proposed TUI DTO boundary matches `internal/tuikit/views.go:6-20`.
-- The state-machine insertion is correctly grounded in the existing async test methods at `internal/tuikit/backend.go:416-424`.
-- The new tracer test itself explicitly prepends fake `gh` and records argv, which is the right process-boundary proof.
-
-**Concerns**
-- **HIGH** — Pre-existing create-flow PTY tests can reach the real `gh`. The current helper preserves the ambient system path:
-  - `newRealCreateFlowCmd` appends `PATH=<fakeSSH>:<original PATH>` at `e2e/create_flow_pty_e2e_test.go:59-64`.
-  - Existing tests such as `TestCreateFlow_TestStagePass` use only `FakeSSHDir` at `e2e/create_flow_pty_e2e_test.go:253-268`.
-  - Those tests press Enter on the test step, which this plan changes into autonomous upload.
-  - The default provider is GitHub-like, while the fake directory contains only `ssh`, so a real authenticated `gh` later in the original `PATH` remains resolvable.
-
-  Updating the helper to accept variadic prefixes, as 09-02 proposes at `.planning/phases/09-upload-credentials-assist/09-02-PLAN.md:461-464`, does not make every existing caller pass a fake provider CLI. This directly contradicts the plan's claim that all automated tests are offline-shimmed at `09-02-PLAN.md:575`.
-- **MEDIUM** — `ProviderForHostname` uses an over-broad substring predicate. The plan specifies "contains `github`/`gitlab`," but D-13 limits autonomous behavior to the main domains. A hostname such as `notgithub.example` would qualify. SSH aliases such as `personal.github.com` require suffix-aware matching, not unrestricted substring matching.
-- **MEDIUM** — Eligibility performs synchronous subprocess calls from the render path. The plan says `UploadEligibility` is sync and may be evaluated during rendering. `gh auth status` can be slow or hung; Bubble Tea rendering must not block on an external process. There is also no timeout in the planned `Deps.RunCmd` signature.
-
-**Suggestions**
-- Make provider isolation global and fail-closed: build a provider-shim directory containing both `gh` and `glab` for every unattended PTY test; default both shims to "tool absent" or unauthenticated; ensure `newRealCreateFlowCmd` constructs a controlled `PATH` where real provider CLIs are unreachable; add a suite-level source or runtime guard asserting every real-binary upload-capable PTY command receives the provider shim directory.
-- Match `github.com`/`gitlab.com` on a DNS-label boundary, such as exact match or `strings.HasSuffix(host, ".github.com")`.
-- Probe eligibility asynchronously and cache it in model state. Add command timeouts to all provider subprocess calls.
-
-**Risk assessment:** **HIGH.** Without a hermetic PATH guard, routine `make test-e2e` can mutate a real account.
-
----
-
-### 09-03 — Uploader engine, inventory, classification, deletion
-
-**Summary.** The engine decomposition is generally sound and testable, but two security claims are stronger than the proposed mechanisms, and the API shape conflicts with the real-account policy planned for Wave 8.
-
-**Strengths**
-- Independent per-registration outcomes properly model GitHub partial success.
-- Correcting GitLab to `auth_and_signing` aligns with the project's one-key authentication-and-signing recipe at `recipes/README.md:24-29`.
-- Full JSON parsing and normalized key comparison centralize provider behavior rather than duplicating it across TUI and CLI.
-- Exact machine-scoped title matching is a good prerequisite for the rotate delete offer.
-- Argument arrays preserve the current no-shell design in `internal/uploader/uploader.go:164-185`.
-
-**Concerns**
-- **HIGH** — `UploadKeys` accepts only one title for all registrations. The planned signature is `UploadKeys(tool, toolPath, pubPath, title string, regs, deps)` at `.planning/phases/09-upload-credentials-assist/09-03-PLAN.md:140-146`. Plan 09-08 requires distinct exact titles `gitid-e2e:<run-id>:<purpose>` where purpose is the registration kind. A single title parameter cannot produce separate authentication and signing titles.
-- **MEDIUM** — `.pub` suffix validation does not establish the "public-key-only" invariant. `requirePubPath` merely checks `strings.HasSuffix(path, ".pub")` at `09-03-PLAN.md:147-150`. A private key copied or symlinked under a `.pub` name would pass. This is insufficient for the plan's critical ASVS V5 claim.
-- **MEDIUM** — `DeleteKey` is a destructive primitive with no intrinsic ID/title binding. The function accepts an arbitrary ID. Call-site confirmation is necessary, but the engine API makes accidental unsafe reuse easy.
-- **LOW** — Source-scanning for a second argv builder is brittle. Lexical adjacency tests can miss a dynamically constructed duplicate or fail on harmless formatting.
-
-**Suggestions**
-- Change the upload batch API to accept per-registration requests (`{Registration, Title}` pairs).
-- Parse and validate public-key content before execution, using an authorized-key parser; reject private-key PEM markers and malformed public keys.
-- Expose a safer deletion operation accepting the recorded `ExistingKey` or a confirmed `{ID, expectedTitlePrefix}` tuple.
-- Keep shown-vs-run tests based on recorded argv rather than relying mainly on source scans.
-
-**Risk assessment:** **MEDIUM-HIGH.** Core architecture is good, but the title API blocks exact policy compliance and the public-key guard is too weak.
-
----
-
-### 09-04 — Complete wizard upload behavior
-
-**Summary.** This plan covers most functional branches and correctly centralizes dedupe and failure handling. Its main risks are blocking I/O, unclear upload timing, and overcomplicated error recovery.
-
-**Strengths**
-- Inventory failure explicitly degrades to upload rather than gating creation.
-- Missing-registration calculation is centralized in the uploader engine, preventing CLI/TUI drift.
-- Manual fallback reuses `internal/upload.Instructions`, whose current GitHub and GitLab branches are at `internal/upload/upload.go:31-54`.
-- Reusing the existing tester classification is correct: `PASS`, `ReachableNotUploaded`, and `Failure` already exist at `internal/tester/tester.go:10-23`.
-- The no-persisted-upload-state snapshot directly tests D-18.
-
-**Concerns**
-- **MEDIUM** — Provider I/O still has no timeout. Inventory and uploads occur inside a `tea.Cmd`, which avoids blocking Update, but a hung `gh`/`glab` can leave the wizard stuck indefinitely.
-- **MEDIUM** — The plan says "announce before run," but a single `UploadRunMsg` returned after execution cannot visibly render an announcing state before the subprocess completes. The tracer stores commands in the final result. A true announcing state requires an initial message/update followed by the execution command.
-- **MEDIUM** — Confirmation semantics are underspecified. Post-upload inventory includes the initial dedupe read plus one or two confirmation reads. Tests that assert "exactly one confirmation read" need explicit phase-aware recording to avoid counting the pre-upload inventory.
-- **LOW** — Catching panics to keep creation moving may conceal programming defects. Expected provider errors should be converted to result rows; arbitrary panics should not silently become operational warnings.
-
-**Suggestions**
-- Add `context.Context` or an injected timeout-aware runner to every provider operation.
-- Model announce and completion as two messages: `UploadStartedMsg` first, then `UploadRunMsg`.
-- Tag or separately record inventory phases in tests.
-- Recover only at the outer application boundary if the repository has an established panic policy; do not normalize programmer panics as provider failures.
-
-**Risk assessment:** **MEDIUM.** Behavior coverage is strong, but the async UX contract and timeout handling need refinement.
-
----
-
-### 09-05 — CLI parity and autonomous write-verb upload
-
-**Summary.** The shared orchestration and shared verb specification fit the source architecture well. The same ambient-PATH safety issue from 09-02 also affects this wave and must be fixed before enabling default autonomous upload in all write verbs.
-
-**Strengths**
-- The proposed `identityVerb` integration uses the real one-spec/two-command mechanism at `cmd/gitid/identity.go:17-27` and `cmd/gitid/identity.go:61-95`.
-- Missing-name behavior correctly reuses `depthResolver`, whose three headless/TTY outcomes are already implemented at `cmd/gitid/identity.go:101-155`.
-- Not resurrecting archived `copy` is consistent with the current command surface.
-- One orchestration and one printer is the right way to maintain CLI/TUI parity.
-- The planned e2e tests explicitly use provider shims and check `.pub` argv.
-
-**Concerns**
-- **HIGH** — Existing CLI tests are not comprehensively isolated from real provider CLIs. Adding autonomous upload to create, clone, rotate, and new-key means any existing test that constructs the real backend with a GitHub/GitLab account can probe or upload through ambient `PATH`. The plan only promises shims for its newly added e2e cases.
-- **MEDIUM** — `register-key` always exits zero even when its sole requested operation failed. "Upload never gates the primary operation" is sensible for create/rotate, but `register-key` has no other primary operation. Always returning zero makes scripting unable to distinguish success from failure.
-- **MEDIUM** — `--dry-run` may still contact the provider. The plan permits auth and inventory reads at `09-05-PLAN.md:242-249`. That is read-only, but the help text "executes nothing" can be read as no subprocess or network activity.
-
-**Suggestions**
-- Install fail-closed `gh` and `glab` shims at the test harness level, not test by test.
-- Give `register-key` a nonzero exit for failed registration, or explicitly define a distinct "primary operation succeeded but upload degraded" exit contract. The "never gates" rule should remain for create/rotate/clone/new-key.
-- Make dry-run documentation explicit: local/provider reads may occur, but no remote mutation occurs.
-
-**Risk assessment:** **HIGH** until ambient provider access is eliminated; otherwise **MEDIUM**.
-
----
-
-### 09-06 — Identity Manager, ceremonies, remote delete offer
-
-**Summary.** The UI integration follows the current source architecture and the remote deletion ceremony is carefully fail-closed. The main remaining issue is synchronous network work on the UI thread.
-
-**Strengths**
-- Adding `paneRegisterKey` after existing enum values avoids shifting current pane IDs; the current enum ends at `paneKeyCeremony` at `internal/tuikit/identities.go:43-56`.
-- Deriving menu length fixes the real independent-count defect at `internal/tuikit/identities.go:58`.
-- Async message guards mirror the established pane/pending pattern rather than allowing stale results to land in another pane.
-- The delete offer defaults to leave, requires an explicit selection move, exact-matches the machine-scoped title, and deletes the stored ID without re-resolving it.
-- Falling back to the existing grace hint on inventory error is appropriately fail-closed.
-
-**Concerns**
-- **MEDIUM** — `RotateDeleteOffer` is specified as synchronous while it performs a fresh provider inventory read. Calling it as the result pane is entered can freeze Bubble Tea on network or CLI delay.
-- **MEDIUM** — Delete failure cleanup/retry behavior is incomplete. The plan says render failure text, but does not specify whether the confirmed ID remains available for retry or whether leaving the pane loses the only safe target reference.
-- **LOW** — The modal opens and immediately mutates remotely on `u`. This is user-authorized because opening is explicit opt-in, but the action-menu label should clearly communicate immediate execution.
-
-**Suggestions**
-- Make offer resolution a `tea.Cmd` with loading, success, and unavailable messages.
-- Preserve the confirmed `{ID, title, prefix}` tuple after a failed deletion so a retry deletes the same reviewed target.
-- Use copy such as "Register key now" if immediate execution is intended.
-
-**Risk assessment:** **MEDIUM.** Deletion safety is strong; UI responsiveness and retry semantics need tightening.
-
----
-
-### 09-07 — PTY and visual-regression gates
-
-**Summary.** The visual and PTY coverage is comprehensive and correctly acknowledges the shared-renderer blind spot. It does not, however, repair the missing suite-wide provider isolation.
-
-**Strengths**
-- It adds raw-keystroke coverage for ready, unauthenticated, disabled, omitted, partial-scope, already-complete, modal, and delete-offer states.
-- It explicitly backstops the shared-renderer limitation with contract-derived assertions.
-- Scoped allowlist predicates and four negative controls make the visual gate meaningfully falsifiable.
-- It requires both real and dummy compiled PTY sessions, consistent with the existing `make test-e2e` contract at `Makefile:443-463`.
-
-**Concerns**
-- **HIGH** — New tests use shims, but the full e2e suite still contains old upload-capable tests using only fake SSH and ambient provider CLIs. The plan's threat claim that every PTY test prepends provider shims is therefore not established.
-- **MEDIUM** — Approved frames are copied manually from a gitignored directory. Without a provenance hash or deterministic promotion tool, it is possible to commit a frame from a different run than the passing test.
-- **LOW** — Eight registered screens versus twelve new PTY tests needs an explicit mapping. The plan asks the summary to provide it, but a machine-checked registry-to-test mapping would be stronger.
-
-**Suggestions**
-- Add a mandatory suite-wide provider-shim guard in this wave if it was not fixed in 09-02.
-- Generate frame metadata containing source commit, test name, shim mode, and content hash; promote frames via one reproducible command.
-- Add a test that every `uploadVisualSpecs()` screen ID maps to at least one committed PTY frame.
-
-**Risk assessment:** **HIGH** while the ambient-PATH leak remains; otherwise **LOW-MEDIUM**.
-
----
-
-### 09-08 — Real-account validation and closure
-
-**Summary.** The plan captures most of the external-account policy — human authorization, opt-in tag, disposable key, prefixed titles, recorded IDs, ID-scoped deletion, and final sweep — but it does not match the policy exactly and does not validate the product path it claims to validate.
-
-**Strengths**
-- The human checkpoint explicitly describes the two temporary registrations and cleanup at `.planning/phases/09-upload-credentials-assist/09-08-PLAN.md:90-134`.
-- The proposed test uses a distinct build tag and isolated Make target at `09-08-PLAN.md:151-152` and `09-08-PLAN.md:200-205`.
-- Cleanup re-reads inventory, locates the recorded ID, confirms its prefix, then deletes by that ID at `09-08-PLAN.md:176-193`. That matches the safe interpretation of `.planning/ONESHOT.md:130-140`.
-- A missing auth/scope condition is explicitly recorded as a skip/block with no mock substitute.
-- The final sweep checks the exact current-run prefix, not all `gitid-e2e` resources.
-
-**Concerns**
-- **HIGH** — It does not test the compiled autonomous gitid path. The plan says this proves the autonomous product path, but registration is performed by calling `uploader.UploadKeys` directly at `09-08-PLAN.md:171-175`. It bypasses compiled CLI/TUI wiring, `buildUploaderDeps`, provider eligibility, autonomous trigger logic, shared orchestration, CLI output, and post-upload product control flow. This is an uploader integration test, not a real-account e2e of gitid.
-- **HIGH** — The exact per-purpose title policy is incompatible with the planned engine API. The policy requires `gitid-e2e:<run-id>:<purpose>` at `.planning/ONESHOT.md:130-133`, and 09-08 promises different purposes at `09-08-PLAN.md:162-166`. But 09-03 defines one `title string` for all registrations at `09-03-PLAN.md:140-146`.
-- **HIGH** — Scope verification is vague and not exact. "Attempting a scope-revealing read" at `09-08-PLAN.md:156-161` does not define which command proves both `admin:public_key` and `admin:ssh_signing_key`. A successful read endpoint may need only read scope and does not prove upload authorization.
-- **MEDIUM** — `t.Cleanup` plus explicit cleanup can double-delete. Cleanup is registered at `09-08-PLAN.md:176-180`, then deletion is performed explicitly at `09-08-PLAN.md:185-191`. Unless the cleanup closure tracks which IDs were already removed, it will run again after the test and attempt a second deletion.
-- **MEDIUM** — The authorization checkpoint claims IDs "GitHub returns," but `gh ssh-key add` output is not specified to return them. The actual mechanism is a subsequent inventory lookup. The checkpoint and summary should describe that accurately.
-- **MEDIUM** — A blocked real-account run can still close UP-03. Plan 09-08 permits marking UP-03 closed while noting that required real-account validation was blocked at `09-08-PLAN.md:248-262`. That conflicts with the plan's own objective that this validation is required evidence. It should remain implemented-but-unvalidated or explicitly waived, not fully closed.
-
-**Suggestions**
-- Run the compiled product under the dedicated tag/target: generate a disposable identity/key in a temporary HOME, invoke `gitid register-key <identity>` (or the relevant compiled headless create flow), capture stdout and verify the announced commands, record IDs through inventory only after the compiled binary returns, clean up through a dedicated test cleanup helper.
-- Modify the engine to accept a distinct title per registration.
-- Define exact scope preflight — for example, parsing the authenticated token's reported scope list and requiring both exact names before upload. Record the command and raw redacted evidence.
-- Implement idempotent cleanup state: keep a set of outstanding recorded IDs, remove an ID from the set after successful explicit deletion, have `t.Cleanup` process only outstanding IDs, always run the final prefix sweep.
-- If auth/scope is unavailable, record `BLOCKED/SKIP`, execute no mock, and leave real-account validation and final UP-03 verification open.
-
-**Risk assessment:** **HIGH.** The safety structure is promising, but the test does not validate the claimed product path and cannot currently satisfy the exact title policy.
-
----
-
-### Cross-plan strengths
-- The wave ordering is coherent: contract → tracer → engine → full wizard → CLI → manager → UI gates → real-account validation.
-- The source architecture is generally respected across shared CLI verbs (`cmd/gitid/identity.go:17-95`), UI/backend separation (`internal/tuikit/views.go:6-20`), injected backend seams (`internal/tuikit/backend.go:416-424`), current pane architecture (`internal/tuikit/identities.go:41-56`), and existing provider instruction copy (`internal/upload/upload.go:31-54`).
-- The plans consistently use argument slices rather than a shell.
-- Remote deletion is designed to default to no, exact-match the machine title, and use a confirmed ID.
-- The dedicated real-account tag/target is the correct isolation strategy for Wave 8.
-
-### Required corrections before execution
-1. Make all Waves 2–7 tests hermetic with respect to both `gh` and `glab`; never append an uncontrolled original PATH that can expose real provider CLIs.
-2. Add provider subprocess timeouts.
-3. Make provider matching suffix/boundary-aware.
-4. Replace suffix-only `.pub` checking with public-key content validation.
-5. Change batch upload to accept per-registration titles.
-6. Make 09-08 run the compiled gitid path.
-7. Define exact scope verification and recorded blocked evidence.
-8. Make real-account cleanup idempotent and preserve the final prefix sweep.
-9. Do not close required real-account validation as complete when it was blocked.
-
-### Final risk assessment
-**HIGH.** The implementation architecture is mostly strong, but the current plans could allow routine e2e tests to touch a real account, and the dedicated real-account plan does not yet prove the product behavior or satisfy the exact naming protocol. These are plan-review blockers, not implementation polish.
-
----
-
-## Codex Review (codex-sol) — FAILED, diagnostic stub only
-
-This instance's configured model (`openai/gpt-5.6-sol-fast`) was rejected by the Codex CLI's
-ChatGPT-account authentication and produced no review:
-
-```
-ERROR: {"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The
-'openai/gpt-5.6-sol-fast' model is not supported when using Codex with a ChatGPT account."}}
-```
-
-Reproduced independently of the `openai/` prefix (bare `gpt-5.6-sol-fast` fails identically).
-The plain `codex` lane's default banner-resolved model (`gpt-5.6-sol`, no `-fast` suffix)
-succeeded — see the "Codex Review" section above, which was run as a substitute to still
-deliver a genuine second cross-AI opinion. No findings from this failed instance are included
-in the consensus above.
+Cycle-1 HIGH is specified with constructors, tests, and a failure mode that would catch a missed `cmd.Env` **if implemented as specified**. Code still leaks PATH today. Remaining MEDIUM items are list completeness, create-vs-register-key evidence, and scan implementation quality — not missing threat models. Do not raise overall HIGH unless the executor ships 09-02 without the source-scan test actually failing on `append(os.Environ(), … PATH=…)`.
 
 ---
