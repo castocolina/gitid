@@ -203,3 +203,38 @@ guarantee); the phase also carries a runtime-checked complement for the dummy it
 02-11 Task 1).
 
 **APPROVED:** 2026-07-06 by Pepe
+
+## Phase 9 amendment addendum (D-08 / D-09)
+
+Recorded per the exercised design-amendment discipline (Phases 6-8: scoped
+`FIELDS.md` commits + APPROVAL addendum before code), applied to Phase 9
+(Upload / Credentials Assist) — the one surface `09-CONTEXT.md` D-08 calls
+out as having "no frozen contract exists for upload."
+
+1. **What was amended.** `.planning/design/create-flow/FIELDS.md` gained
+   field `#6 auto_upload_checkbox` on `ssh-form-filled` and `#4` on
+   `ssh-form-blank-prefix`, plus two NEW states — `create-flow /
+   upload-announcing` and `create-flow / upload-results`.
+   `.planning/design/identity-manager/FIELDS.md` gained action-menu row `#5
+   action_register_key` and a NEW state, `identity-manager /
+   register-key-modal`. All amendments are under D-08 (`09-CONTEXT.md`
+   "Design surface" section).
+2. **Authoring contract.** `09-UI-SPEC.md` is the authoring contract for
+   these states — the shared upload-section component spec, its
+   Copywriting Contract, and its FIELDS.md amendment targets — and was
+   checker-approved 2026-08-28 (gsd-ui-checker, Dimensions 1-6 all PASS).
+3. **D-09 capture obligation.** Phase 9's own UI wave mints FRESH approved
+   captures for exactly these amended screens, which become the
+   visual-regression baseline; this is delivered by plan 09-07, not by this
+   addendum.
+4. **Recorded deviation from D-09's literal step ordering.** D-09
+   sequences "dummytui + mockup demo states" (step 3) BEFORE the render
+   rework (step 5), but Phase 3's consolidation put `cmd/gitid-dummy` on a
+   `FixtureBackend` that renders through the SAME `internal/tuikit` code as
+   `cmd/gitid` (`09-RESEARCH.md` "Substrate Reality Check" #5; STATE.md's
+   Phase-4 CR-15 finding). A dummy demo state therefore CANNOT exist before
+   the shared renderer does. Phase 9 preserves D-09's substance — FIELDS.md
+   amendments first (this plan, 09-01), fresh approved captures minted for
+   exactly the amended screens and used as the visual-regression baseline
+   (09-07), parity critique before phase close (09-07) — while collapsing
+   steps 3 and 5, which the current architecture makes inseparable.

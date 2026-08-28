@@ -151,9 +151,17 @@ mutually distinct and distinct from the reserved keys.
 | `a` | identity-manager | intra-surface `ScreenDef.Keys` | → `action-menu` |
 | `c` | identity-manager | intra-surface `ScreenDef.Keys` | → `clone-name-prompt` |
 | `d` | identity-manager | intra-surface `ScreenDef.Keys` | → `delete-choice` |
+| `u` | create-flow + identity-manager | intra-surface `ScreenDef.Keys` | toggle the auto-upload checkbox (create wizard step 0) / → `register-key-modal` (identity-manager) |
 | `Enter` | (all) | reserved | activate / open detail / confirm |
 | `Esc` | (all) | reserved | back / cancel / pop modal |
 | `q` `?` `/` `j` `k` arrows | (all) | reserved | quit / help / filter / move |
+
+- **`u` scoping constraint (Phase 9 D-08/D-09 amendment):** on create wizard
+  step 0 the four SSH fields are live text inputs, so `u` is a hotkey ONLY
+  while focus is not on a text-editing slot; while a text field is focused,
+  `u` types a literal `u` exactly as it does today. The checkbox row itself
+  is always reachable by Tab and by click (checkpoint-2 D8), so the hotkey
+  is a shortcut, not the only affordance.
 
 - **route() precedence (deterministic):** on a given active surface a key resolves in the
   order **intra-surface `ScreenDef.Keys` → keyless `LaunchKey` (`LaunchFrom` == active

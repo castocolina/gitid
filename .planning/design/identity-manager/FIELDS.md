@@ -18,8 +18,9 @@ identity-manager is the **nav root** — the primary surface on number key `1`
 HIGH-2), replacing the 02-02 placeholder. Every screen's `htmlRoute` is
 `/identity-manager/<screen>`; every route title and TUI breadcrumb is
 `identity-manager/<screen>`. Intra-surface `ScreenDef.Keys` allocate `a`
-(→ action-menu), `c` (→ clone-name-prompt), and `d` (→ delete-choice) from
-the 02-UX-DIRECTION.md §2 key-allocation table (the single authority) —
+(→ action-menu), `c` (→ clone-name-prompt), `d` (→ delete-choice), and `u`
+(→ register-key-modal, D-08/D-09 Phase 9 amendment) from the
+02-UX-DIRECTION.md §2 key-allocation table (the single authority) —
 never `n`/`g`, which are create-flow's and git-screen's own LaunchKeys.
 
 ---
@@ -70,6 +71,20 @@ detail screen.
 | 2 | `action_clone` | "Clone (c)" | 2nd | ✓ | ✓ | → clone-name-prompt |
 | 3 | `action_new_key` | "Generate new key" | 3rd | ✓ | ✓ | MGR-05 (referenced, not a separate named state in §4(3)) |
 | 4 | `action_delete` | "Delete (d)" | 4th | ✓ | ✓ | → delete-choice |
+| 5 | `action_register_key` | "Register key (u)" | 5th | n/a | ✓ | → register-key-modal; new key `u` claimed in `02-UX-DIRECTION.md` §2 (D-08/D-09 Phase 9 amendment) |
+
+## identity-manager / register-key-modal
+
+**Goal:** the manual re-trigger surface for an identity that landed on
+`ReachableNotUploaded` and was never auto-uploaded (D-08's "copy modal").
+Reached from the action-menu's `action_register_key` row.
+
+| # | Field | Label | Order | HTML present | TUI present | Notes |
+|---|-------|-------|-------|---------------|--------------|-------|
+| 1 | `modal_heading` | `"Register <name>'s key with <Provider>"` | 1st | n/a | ✓ | the frozen `RegisterKeyModalHeadingFmt` |
+| 2 | `upload_running_line` × 1-2 | `"Running: <exact command>"` | 2nd | n/a | ✓ | same shared upload-section render as create-flow's `upload-announcing` |
+| 3 | `upload_result_row` × 1-2 | result rows | 3rd | n/a | ✓ | same shared upload-section render as create-flow's `upload-results` |
+| 4 | `upload_manual_fallback` | `UploadManualHeading` + `internal/upload.Instructions(provider)` | conditional, after result rows | n/a | ✓ | conditional; the D-01 checkbox is OMITTED here — opening the modal IS the explicit opt-in, so it announces-and-runs immediately when the provider matches and the tool is authenticated, and jumps straight to the manual-fallback state otherwise |
 
 ## identity-manager / clone-name-prompt
 

@@ -16,4 +16,12 @@
 // "structure, not key type" caveat). The live demo seeds exclusively from
 // these values so both media render the same canonical configuration.
 // See .planning/design/REFERENCE-INDEX.md for the full reference map.
+//
+// Key allocation: 02-UX-DIRECTION.md §2's key-allocation table is the
+// single source of truth for every ActivationKey/LaunchKey/intra-surface
+// ScreenDef.Keys claim in both the mockup and the real TUI; this file
+// mirrors it per that table's own "claim a free key HERE first, then
+// mirror this table in internal/dummytui/doc.go" rule. Phase 9 (D-08/D-09)
+// claims `u`: create-flow's step-0 auto-upload checkbox toggle and
+// identity-manager's action-menu → register-key-modal row.
 package dummytui

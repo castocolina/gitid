@@ -49,6 +49,9 @@ human-readable companion.
 | 3 | `real_hostname` | "Real hostname" | 3rd | ✓ | ✓ | "ssh.github.com" |
 | 4 | `port` | "Port" | 4th, default 443 | ✓ | ✓ | 443 |
 | 5 | `live_preview` | live `Host` block preview | right pane | ✓ | ✓ | exact recipe-accurate text, incl. `IdentitiesOnly yes` |
+| 6 | `auto_upload_checkbox` | "Register with `<Provider>` automatically" | last row of the SSH form, after Port | n/a¹ | ✓ | D-08 amendment (09-UI-SPEC.md): (a) renders only when `Provider` matches `github`/`gitlab` (D-13 main-domain scope); (b) three visual states per D-01 (checked+enabled / unchecked+enabled / disabled); (c) a real Tab-ring focus slot with a `u` mnemonic (see 02-UX-DIRECTION.md §2's key-allocation table and 09-02's focus-order decision) — `u` is a shortcut, not the only affordance, the checkbox row is always Tab- and click-reachable; (d) one row, never wrapping — the disabled/hint reason is inline on the SAME row (09-UI-SPEC.md "Focal points", first bullet) |
+
+¹ HTML present is `n/a` — the HTML mockup has no upload surface (Phase 9 has no Phase-2 HTML precedent), same convention `create-flow / reuse-key-vs-generate` uses for TUI-only states.
 
 ## create-flow / ssh-form-blank-prefix
 
@@ -60,6 +63,9 @@ suffix (SSHUI-01, SSHUI-03).
 | 1 | `alias_prefix` | "Alias prefix" | 1st | ✓ | ✓ | blank |
 | 2 | `ssh_host` | "SSH Host" | 2nd | ✓ | ✓ | "github.com" — the provider host verbatim, not "<blank>.github.com" |
 | 3 | `wysiwyg_note` | explanatory copy on the blank-prefix rule | below the field | ✓ | ✓ | |
+| 4 | `auto_upload_checkbox` | "Register with `<Provider>` automatically" | last row of the SSH form, after Port | n/a¹ | ✓ | D-08 amendment (09-UI-SPEC.md): (a) renders only when `Provider` matches `github`/`gitlab` (D-13 main-domain scope); (b) three visual states per D-01 (checked+enabled / unchecked+enabled / disabled); (c) a real Tab-ring focus slot with a `u` mnemonic (see 02-UX-DIRECTION.md §2's key-allocation table and 09-02's focus-order decision) — `u` is a shortcut, not the only affordance, the checkbox row is always Tab- and click-reachable; (d) one row, never wrapping — the disabled/hint reason is inline on the SAME row (09-UI-SPEC.md "Focal points", first bullet) |
+
+¹ HTML present is `n/a` — the HTML mockup has no upload surface (Phase 9 has no Phase-2 HTML precedent), same convention `create-flow / reuse-key-vs-generate` uses for TUI-only states.
 
 ## create-flow / reuse-key-vs-generate
 
@@ -92,6 +98,28 @@ suffix (SSHUI-01, SSHUI-03).
 | 1 | `test_command` | exact command run | 1st | ✓ | ✓ | `ssh -T -F <tmp> ...` against throwaway config |
 | 2 | `test_output` | real command output | 2nd | ✓ | ✓ | GitHub auth-success banner |
 | 3 | `tmp_file_note` | "runs against a throwaway temp file — live config untouched" | below output | ✓ | ✓ | SSHUI-04 |
+
+## create-flow / upload-announcing
+
+**Goal:** the `testUpload` sub-beat announces every command it is about to run,
+exactly as it will run it (D-02 announce-and-do; UP-02/UP-03 shown==run).
+Reached automatically between the existing `test-stage1-direct` state's
+command staging and its own probe.
+
+| # | Field | Label | Order | HTML present | TUI present | Notes |
+|---|-------|-------|-------|---------------|--------------|-------|
+| 1 | `upload_running_line` × 1-2 | `"Running: <exact command>"` | one row per attempted registration | n/a | ✓ | gh shows up to 2 lines, glab shows 1; the literal string `uploader.CommandPreview` produced, never a hand-typed approximation |
+
+## create-flow / upload-results
+
+**Goal:** per-registration outcome rows, then the conditional manual-fallback
+block, then auto-advance into the existing `test-stage1-direct` state
+unchanged (D-02: no prompt, no cancel timer).
+
+| # | Field | Label | Order | HTML present | TUI present | Notes |
+|---|-------|-------|-------|---------------|--------------|-------|
+| 1 | `upload_result_row` × 1-2 | `"✓ <type> key registered"` / `"✓ <type> key already registered (skipped)"` / `"✗ <type> key registration failed: <reason>"` | one row per announced command | n/a | ✓ | mirrors the `upload_running_line` count |
+| 2 | `upload_manual_fallback` | `UploadManualHeading` + `internal/upload.Instructions(provider)` | conditional, after result rows | n/a | ✓ | conditional — the byte-identical `internal/upload.Instructions(provider)` block under the frozen `UploadManualHeading` |
 
 ## create-flow / test-stage2-by-alias
 
