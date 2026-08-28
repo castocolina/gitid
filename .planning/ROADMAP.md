@@ -360,8 +360,42 @@ Plans:
    review compares it with `cmd/gitid-dummy` and classifies every difference as an
    improvement or a defect. (DLV-04, DLV-06)
 
-**Plans**: TBD
+**Plans**: 8 plans in 8 sequential waves (LEARNINGS L11 — the whole-module pre-commit hooks make parallel executors block each other's commits)
 **UI hint**: yes
+
+Plans:
+
+**Wave 1**
+
+- [ ] 08-01-PLAN.md — TRACER: two-pipeline convergence (doctor.Run() replaces identity.Problem as the sole findings source), Finding.Target field, TabID 4→5 split, Health/Fixer tabs wired to real data, minimal `gitid health --json` (HLTH-01, HLTH-03, HLTH-06, FIX-02, DLV-06)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 08-02-PLAN.md — The flagship fix-in-place pipeline: hand-written IdentitiesOnly+IdentityFile contradiction check, the D-09 surgical single-directive rewrite primitive, D-10 verification loop, D-11 typed confirm, D-13 re-run-all-after-fix, D-14 convergence alarm, `gitid fix` CLI (HLTH-04, FIX-01)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 08-03-PLAN.md — D-06 tolerance fixes (Orphans Class-1 downgrade, reserved-path registry for Deps.KeyPaths) closing the false-positive-loop precedent, plus HLTH-02's Files-family parse gates and the parse-error render frame (HLTH-02, HLTH-06)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 08-04-PLAN.md — Baseline-family new checks: the global-gitignore pair fix (dormant Phase 7 substrate) and the "set, differs" informational hard cap (HLTH-03, HLTH-04, FIX-01)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 08-05-PLAN.md — Remaining Coherence-family new checks reusing Phase 6/7 probes verbatim: shadowed-option, author-resolution, directive-above-block, and the includeIf-missing-fragment Family reconciliation (HLTH-03, HLTH-04, HLTH-06)
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [ ] 08-06-PLAN.md — Render-layer completion: Health's negatively-asserted read-only gate, the Fixer's complete fixable set, D-04's per-identity health deep-link from the Identity Manager, D-16's batch queue-halt message (HLTH-01, HLTH-05, FIX-01, FIX-02)
+
+**Wave 7** *(blocked on Wave 6)*
+
+- [ ] 08-07-PLAN.md — CLI parity completion: the hidden `doctor` alias + `doctor --fix` shim, a versioned JSON envelope, tiered exit codes, parity-matrix rows, headless CLI e2e (FIX-01, HLTH-05)
+
+**Wave 8** *(blocked on Wave 7)*
+
+- [ ] 08-08-PLAN.md — DLV-04/DLV-06 UI-wave gates: raw-keystroke PTY e2e per screen state, the visual-regression gate with a classified divergence allowlist, the cross-AI review packet, and REQUIREMENTS.md closure (HLTH-01..06, FIX-01, FIX-02, DLV-04, DLV-06)
 
 ### Phase 9: Upload / Credentials Assist
 
@@ -407,6 +441,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Identity Manager | 9/9 | Complete    | 2026-08-26 |
 | 6. Global SSH Options | 7/7 | Complete    | 2026-08-27 |
 | 7. Global Git Options | 0/TBD | Not started | - |
-| 8. Health + Fixer | 0/TBD | Not started | - |
+| 8. Health + Fixer | 0/8 | Planned | - |
 | 9. Upload / Credentials Assist | 0/TBD | Not started | - |
 | 10. Linux Validation + Release Pipeline | 0/TBD | Not started | - |
