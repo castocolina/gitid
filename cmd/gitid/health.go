@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/castocolina/gitid/internal/doctor"
 	"github.com/castocolina/gitid/internal/tuikit"
 )
 
@@ -41,18 +42,7 @@ func newHealthCmd() *cobra.Command {
 			fs.StringVar(&identityName, "identity", "", "scope findings to one identity's own SSH + Git findings (D-04); global findings are excluded from the scoped view")
 		},
 		run: func(cmd *cobra.Command, _ []string) error {
-			home, err := resolveHomeForCLI()
-			if err != nil {
-				return err
-			}
-			findings := suppressParseErrorFindings(doctorFindings(home))
-			if identityName != "" {
-				findings = findingsForIdentity(findings, identityName)
-			}
-			if jsonOut {
-				return writeJSON(cmd.OutOrStdout(), findings)
-			}
-			return printHealthFindings(cmd.OutOrStdout(), findings)
+			return runHealth(cmd.OutOrStdout(), identityName, jsonOut)
 		},
 	})
 	//nolint:errcheck // completion registration failure is non-fatal (cobra ignores it gracefully)
@@ -75,6 +65,54 @@ func newHealthCmd() *cobra.Command {
 // findings (Finding.IdentityName) — global (empty-Identity) findings are
 // excluded, the same choice the TUI deep-link's healthModel.findings makes
 // via tuikit.FindingsFor.
+// runHealth is the shared health command body used by both `gitid health`
+// and the hidden `gitid doctor` compatibility alias.
+func runHealth(out io.Writer, identityName string, jsonOut bool) error {
+	home, err := resolveHomeForCLI()
+	if err != nil {
+		return err
+	}
+	raw, findings := runDoctorAndConvert(buildDoctorDeps(home))
+	allRaw := raw
+	raw, findings = suppressParseErrorFindingPairs(raw, findings)
+	if identityName != "" {
+		_, findings = findingsForIdentityPairs(raw, findings, identityName)
+	}
+	if jsonOut {
+		return writeJSON(out, healthDocument{Schema: healthSchema, Findings: findings})
+	}
+	if err := printHealthFindings(out, findings); err != nil {
+		return err
+	}
+	return healthFinish(doctor.ExitCode(allRaw))
+}
+
+const healthSchema = "gitid.health/v1"
+
+type healthDocument struct {
+	Schema   string               `json:"schema"`
+	Findings []tuikit.DemoFinding `json:"findings"`
+}
+
+func healthFinish(code int) error {
+	if code == 0 {
+		return nil
+	}
+	return &exitCodeError{code: code}
+}
+
+func findingsForIdentityPairs(raw []doctor.Finding, findings []tuikit.DemoFinding, identityName string) ([]doctor.Finding, []tuikit.DemoFinding) {
+	filteredRaw := make([]doctor.Finding, 0, len(raw))
+	filteredFindings := make([]tuikit.DemoFinding, 0, len(findings))
+	for i, f := range raw {
+		if f.IdentityName == identityName {
+			filteredRaw = append(filteredRaw, f)
+			filteredFindings = append(filteredFindings, findings[i])
+		}
+	}
+	return filteredRaw, filteredFindings
+}
+
 func findingsForIdentity(findings []tuikit.DemoFinding, identityName string) []tuikit.DemoFinding {
 	out := make([]tuikit.DemoFinding, 0, len(findings))
 	for _, f := range findings {
@@ -83,6 +121,25 @@ func findingsForIdentity(findings []tuikit.DemoFinding, identityName string) []t
 		}
 	}
 	return out
+}
+
+func suppressParseErrorFindingPairs(raw []doctor.Finding, findings []tuikit.DemoFinding) ([]doctor.Finding, []tuikit.DemoFinding) {
+	blocked := make(map[string]bool)
+	for _, finding := range raw {
+		if finding.Family == doctor.FamilyFiles && finding.Severity == doctor.SeverityCritical {
+			blocked[finding.Target] = true
+		}
+	}
+	filteredRaw := make([]doctor.Finding, 0, len(raw))
+	filteredFindings := make([]tuikit.DemoFinding, 0, len(findings))
+	for i, finding := range raw {
+		if blocked[finding.Target] && finding.Family != doctor.FamilyFiles {
+			continue
+		}
+		filteredRaw = append(filteredRaw, finding)
+		filteredFindings = append(filteredFindings, findings[i])
+	}
+	return filteredRaw, filteredFindings
 }
 
 func suppressParseErrorFindings(findings []tuikit.DemoFinding) []tuikit.DemoFinding {

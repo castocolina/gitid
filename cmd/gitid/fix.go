@@ -54,7 +54,7 @@ func newFixCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runFix(cmd.OutOrStdout(), cmd.InOrStdin(), home, yes, dryRun)
+			return runFixCommand(cmd.OutOrStdout(), cmd.InOrStdin(), home, yes, dryRun)
 		},
 	})
 }
@@ -67,6 +67,16 @@ func scanForFix(home string) ([]doctor.Finding, []tuikit.DemoFinding) {
 		return fixScanOverride(home)
 	}
 	return runDoctorAndConvert(buildDoctorDeps(home))
+}
+
+// runFixCommand applies the health exit-status contract to the command path.
+func runFixCommand(out io.Writer, in io.Reader, home string, yes, dryRun bool) error {
+	err := runFix(out, in, home, yes, dryRun)
+	if err != nil {
+		return err
+	}
+	raw, _ := scanForFix(home)
+	return healthFinish(doctor.ExitCode(raw))
 }
 
 // runFix is the testable body of `gitid fix`.

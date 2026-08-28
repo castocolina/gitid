@@ -51,7 +51,7 @@ func TestNewRootCmdArchivedPOCCommandsAreGone(t *testing.T) {
 	// the noun form (`gitid identity rotate`) and its flat alias, so it is no
 	// longer an archived command but a real, intentionally-registered one.
 	archived := [][]string{
-		{"baseline"}, {"doctor"}, {"adopt"},
+		{"baseline"}, {"adopt"},
 		{"copy"}, {"host"}, {"add"}, {"match"}, {"upload"},
 	}
 	for _, path := range archived {
@@ -74,7 +74,7 @@ func TestNewRootCmdSurfaceIsPhase5CLI(t *testing.T) {
 
 	want := map[string]bool{
 		"debug": true, "completion": true, "help": true,
-		"identity": true, "ssh": true, "git": true, "health": true, "fix": true,
+		"identity": true, "ssh": true, "git": true, "health": true, "fix": true, "doctor": true,
 		"list": true, "show": true, "delete": true,
 		"create": true, "clone": true, "new-key": true, "rotate": true,
 	}

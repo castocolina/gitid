@@ -1761,7 +1761,8 @@ func reservedNoun(cmd *cobra.Command) bool {
 // (completion / help / debug) that the matrix explicitly documents as never
 // required to appear in a row.
 func parityToolingExcluded(path string) bool {
-	return strings.HasPrefix(path, "gitid completion ") ||
+	return path == "gitid doctor" ||
+		strings.HasPrefix(path, "gitid completion ") ||
 		strings.HasPrefix(path, "gitid completion") ||
 		strings.HasPrefix(path, "gitid help ") ||
 		strings.HasPrefix(path, "gitid help") ||

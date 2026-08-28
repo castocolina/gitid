@@ -104,6 +104,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newGitCmd())
 	root.AddCommand(newHealthCmd())
 	root.AddCommand(newFixCmd())
+	root.AddCommand(newDoctorAliasCmd())
 
 	return root
 }

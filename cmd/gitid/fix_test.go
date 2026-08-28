@@ -228,6 +228,13 @@ func syntheticFinding(f doctor.Finding) ([]doctor.Finding, []tuikit.DemoFinding)
 // fixScanOverride since no real check currently produces an
 // Interactive-without-Fn finding (SetupBaseline is nil in the real wiring,
 // 08-01-SUMMARY.md).
+func TestFixExitCode(t *testing.T) {
+	findings := []doctor.Finding{{Family: doctor.FamilyCoherence, Severity: doctor.SeverityError, Title: "report-only"}}
+	if got := exitStatusOf(healthFinish(doctor.ExitCode(findings))); got != 2 {
+		t.Errorf("fix exit code = %d, want 2", got)
+	}
+}
+
 func TestFixCmdInteractiveFixAppliedNoNilFnPanic(t *testing.T) {
 	var interactiveCalled bool
 	var gotAssumeYes bool

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/castocolina/gitid/internal/doctor"
 	"github.com/castocolina/gitid/internal/tuikit"
 )
 
@@ -18,13 +19,10 @@ func TestBaselineGitignoreRealWiring(t *testing.T) {
 	root := newRootCmd()
 	root.SetArgs([]string{"health", "--json"})
 	root.SetOut(&output)
-	if err := root.Execute(); err != nil {
-		t.Fatalf("health --json: %v", err)
+	if code := exitStatusOf(root.Execute()); code != 0 {
+		t.Fatalf("health --json exit = %d, want 0", code)
 	}
-	var findings []tuikit.DemoFinding
-	if err := json.Unmarshal(output.Bytes(), &findings); err != nil {
-		t.Fatalf("decoding health output: %v\n%s", err, output.String())
-	}
+	findings := decodeHealthFindings(t, output.Bytes())
 	var found bool
 	for _, finding := range findings {
 		if finding.Title == "core.excludesfile and global gitignore are not configured" {
@@ -54,13 +52,10 @@ func TestSetDiffersRealWiring(t *testing.T) {
 	root := newRootCmd()
 	root.SetArgs([]string{"health", "--json"})
 	root.SetOut(&output)
-	if err := root.Execute(); err != nil {
-		t.Fatalf("health --json: %v", err)
+	if code := exitStatusOf(root.Execute()); code != 0 {
+		t.Fatalf("health --json exit = %d, want 0", code)
 	}
-	var findings []tuikit.DemoFinding
-	if err := json.Unmarshal(output.Bytes(), &findings); err != nil {
-		t.Fatalf("decoding health output: %v", err)
-	}
+	findings := decodeHealthFindings(t, output.Bytes())
 	for _, finding := range findings {
 		if finding.Title == "init.defaultBranch: trunk (differs from recommendation)" {
 			if finding.Severity != tuikit.SeverityInfo {
@@ -138,8 +133,8 @@ func TestHealthIdentityFlagScopesAndExcludesGlobal(t *testing.T) {
 	root := newRootCmd()
 	root.SetArgs([]string{"health", "--identity", "orphan"})
 	root.SetOut(&output)
-	if err := root.Execute(); err != nil {
-		t.Fatalf("health --identity orphan: %v", err)
+	if code := exitStatusOf(root.Execute()); code != 2 {
+		t.Fatalf("health --identity orphan exit = %d, want 2", code)
 	}
 	got := output.String()
 	if !strings.Contains(got, "orphan") && !strings.Contains(got, "IdentityFile") {
@@ -167,6 +162,60 @@ func TestHealthIdentityCompletionListsRealIdentities(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "work") {
 		t.Errorf("health --identity completion missing %q:\n%s", "work", buf.String())
+	}
+}
+
+func decodeHealthFindings(t *testing.T, raw []byte) []tuikit.DemoFinding {
+	t.Helper()
+	var doc healthDocument
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("decoding health output: %v\n%s", err, raw)
+	}
+	if doc.Schema != healthSchema {
+		t.Fatalf("schema = %q, want %q", doc.Schema, healthSchema)
+	}
+	return doc.Findings
+}
+
+func TestHealthJSONEnvelope(t *testing.T) {
+	findings := []tuikit.DemoFinding{{HealthFinding: tuikit.HealthFinding{Title: "finding"}}}
+	var output bytes.Buffer
+	if err := writeJSON(&output, healthDocument{Schema: healthSchema, Findings: findings}); err != nil {
+		t.Fatalf("writeJSON: %v", err)
+	}
+	got := decodeHealthFindings(t, output.Bytes())
+	if len(got) != 1 || got[0].Title != "finding" {
+		t.Fatalf("findings = %+v", got)
+	}
+}
+
+func TestHealthExitCode(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  []doctor.Finding
+		want int
+	}{
+		{"none", nil, 0},
+		{"warning", []doctor.Finding{{Severity: doctor.SeverityWarning}}, 1},
+		{"error", []doctor.Finding{{Severity: doctor.SeverityError}}, 2},
+		{"critical", []doctor.Finding{{Severity: doctor.SeverityCritical}}, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := exitStatusOf(healthFinish(doctor.ExitCode(tc.raw))); got != tc.want {
+				t.Errorf("exit code = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestExitCodeCriticalBothTiers(t *testing.T) {
+	for _, finding := range []doctor.Finding{
+		{Family: doctor.FamilyFiles, Severity: doctor.SeverityCritical},
+		{Family: doctor.FamilyPerms, Severity: doctor.SeverityCritical},
+	} {
+		if got := doctor.ExitCode([]doctor.Finding{finding}); got != 3 {
+			t.Errorf("%s critical exit = %d, want 3", finding.Family, got)
+		}
 	}
 }
 
