@@ -6,6 +6,7 @@ import (
 
 	"github.com/castocolina/gitid/internal/doctor"
 	"github.com/castocolina/gitid/internal/gitconfig"
+	"github.com/castocolina/gitid/internal/identity"
 	"github.com/castocolina/gitid/internal/sshconfig"
 )
 
@@ -74,12 +75,31 @@ func CheckOrphans(deps doctor.Deps) []doctor.Finding {
 
 	// Class 2: gitconfig block names that have no matching SSH Host block.
 	// Fix.Fn calls deps.RemoveBlock on GitconfigPath with the block name (when wired).
+	//
+	// Pitfall 6 dedup (08-05-PLAN.md Task 3): an identity already reported as
+	// Incomplete by CheckCoherence (a missing fragment file, missing SSH
+	// block, or missing gitconfig includeIf block — see coherence.go's
+	// Incomplete branch) must not ALSO surface here as a "no SSH Host block"
+	// orphan for the identical root identity. Both findings would fire for
+	// the frozen git-includeif-missing-fragment scenario (identity "legacy":
+	// includeIf present, fragment file missing, no SSH counterpart) without
+	// this guard — verified via TestMissingFragmentNoDuplicate, which runs
+	// the real doctor.Run() path. Coherence's Incomplete finding is kept as
+	// the authoritative "what's wrong with this identity" signal (it names
+	// the actual missing artifact); Orphans' "no SSH partner" signal is
+	// suppressed for that identity because it becomes noise once the
+	// identity is already known to be broken, not a second, independent
+	// health condition.
+	incompleteIdentities := sliceToSet(incompleteIdentityNames(deps.Identities))
 	for _, name := range deps.GitconfigManagedBlockNames {
 		// Reserved non-identity wiring (e.g. baseline-include) has no SSH Host
 		// block by design — it is NOT an orphan. Skip it, or its removal fix
 		// would delete the legitimate baseline include and fight the Baseline
 		// check's restore in an endless loop.
 		if gitconfig.IsReservedBlockName(name) {
+			continue
+		}
+		if incompleteIdentities[name] {
 			continue
 		}
 		if !sshNames[name] {
@@ -153,4 +173,17 @@ func sliceToSet(ss []string) map[string]bool {
 		m[s] = true
 	}
 	return m
+}
+
+// incompleteIdentityNames returns the names of every identity.Account whose
+// Incomplete marker is non-empty — CheckCoherence has already reported a
+// finding for each of these (08-05-PLAN.md Task 3's dedup guard).
+func incompleteIdentityNames(accounts []identity.Account) []string {
+	var names []string
+	for _, acct := range accounts {
+		if acct.Incomplete != "" {
+			names = append(names, acct.Name)
+		}
+	}
+	return names
 }

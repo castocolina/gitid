@@ -3621,6 +3621,8 @@ func buildDoctorDeps(home string) doctor.Deps {
 		GitconfigManagedBlockNames: gcBlockNames,
 		AllSSHHostIdentityFiles:    allSSHHostIDFiles,
 		AllHostBlocks:              allHostBlocks,
+		GlobalSSHShadowCheck:       buildGlobalSSHShadowCheck(home, sshConfigPath),
+		AuthorResolutionCheck:      buildAuthorResolutionCheck(home, gitconfigPath),
 
 		// Fix fields (D-01: doctor core never calls os.Chmod/filewriter
 		// directly — every mutation is injected from here).
@@ -3658,6 +3660,132 @@ func buildDoctorDeps(home string) doctor.Deps {
 		CheckOverlap:    checks.CheckOverlap,
 		CheckRedundancy: checks.CheckRedundancy,
 		CheckFiles:      checks.CheckFiles,
+	}
+}
+
+// buildGlobalSSHShadowCheck returns the doctor.Deps.GlobalSSHShadowCheck
+// closure: it resolves where gitid's global "Host *" managed block actually
+// lives on THIS machine (in-file or the Include'd config.d/gitid.config,
+// auto-detected the SAME way (*realBackend).storage() detects it —
+// sshconfig.Adopt with AdoptSentinelBearing, falling back to the canonical
+// config.d path — a read-only doctor check has no need for storage()'s
+// write-time needsIncludeLine/includeLayout fields), collects the
+// non-per-alias policy keys gitid has actually WRITTEN into that block (a
+// key gitid never applied is "not configured", never "shadowed"), and runs
+// internal/globalssh.Verify (Phase 6's own D-04 post-write probe, reused
+// unchanged) against those keys.
+func buildGlobalSSHShadowCheck(home, sshConfigPath string) func() globalssh.ShadowResult {
+	return func() globalssh.ShadowResult {
+		targetPath := resolveGlobalSSHTargetPath(home, sshConfigPath)
+		keys := appliedGlobalSSHKeys(targetPath)
+		if len(keys) == 0 {
+			return globalssh.ShadowResult{}
+		}
+		return globalssh.Verify(globalssh.BuildProbeDeps(sshConfigPath), keys)
+	}
+}
+
+// resolveGlobalSSHTargetPath locates the file gitid's global "Host *"
+// managed block currently lives in, mirroring (*realBackend).storage()'s own
+// detection order (steps 1-2 only — an adopted sentinel-bearing target, then
+// the canonical config.d/gitid.config path): a doctor check only needs to
+// know where to LOOK for the block, never storage()'s write-time layout
+// decision for a machine that has none yet.
+func resolveGlobalSSHTargetPath(home, sshConfigPath string) string {
+	if adopted, err := sshconfig.Adopt(sshConfigPath, sshconfig.AdoptSentinelBearing, "", sshconfig.RealAdoptDeps()); err == nil && adopted.TargetPath != "" {
+		return adopted.TargetPath
+	}
+	canonical := filepath.Join(home, ".ssh", "config.d", gitidConfigFileName)
+	if fileExists(canonical) {
+		return canonical
+	}
+	return sshConfigPath
+}
+
+// appliedGlobalSSHKeys returns every non-per-alias globalssh.Policy key that
+// is currently WRITTEN into gitid's "global-ssh" (or the pre-D-08 "_global")
+// managed block at targetPath. This is a thin selector over the block's own
+// raw lines — PolicyFor/Verify remain the sole source of truth for
+// recommendation values and shadow-detection logic; this only decides which
+// keys are worth asking them about.
+func appliedGlobalSSHKeys(targetPath string) []string {
+	content, err := os.ReadFile(targetPath) //nolint:gosec // targetPath is a trusted gitid-managed path (G304)
+	if err != nil {
+		return nil
+	}
+	var body string
+	for _, b := range filewriter.ListBlocks(content) {
+		if b.Name == sshconfig.GlobalBlockName || b.Name == sshconfig.LegacyGlobalBlockName {
+			body = b.Body
+			break
+		}
+	}
+	if body == "" {
+		return nil
+	}
+	present := make(map[string]bool)
+	for _, line := range strings.Split(body, "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) >= 1 {
+			present[strings.ToLower(fields[0])] = true
+		}
+	}
+	var keys []string
+	for _, p := range globalssh.Policy {
+		if p.Scope != "global" {
+			continue
+		}
+		if present[strings.ToLower(p.Key)] {
+			keys = append(keys, p.Key)
+		}
+	}
+	return keys
+}
+
+// buildAuthorResolutionCheck returns the doctor.Deps.AuthorResolutionCheck
+// closure: for one identity name, it looks up that identity's own includeIf
+// record (internal/gitconfig.ParseManagedIncludeIf), resolves a real,
+// currently-existing directory matching its gitdir: pattern (findGitWorkTree,
+// the SAME helper cmd/gitid/lifecycle.go's fallbackMatchedDir already uses),
+// picks a representative unmatched directory (the SAME b.home /
+// b.fragmentDir fallback cmd/gitid/lifecycle.go's
+// appendFallbackAuthorAdvisories already uses, reproduced here because
+// buildDoctorDeps is a free function with no *realBackend receiver), and
+// runs internal/globalgit.VerifyAuthorResolution (Phase 7's own D-06
+// post-write probe, reused unchanged).
+func buildAuthorResolutionCheck(home, gitconfigPath string) func(identityName string) (globalgit.AuthorResolution, bool, error) {
+	fragmentDir := filepath.Join(home, ".gitconfig.d")
+	return func(identityName string) (globalgit.AuthorResolution, bool, error) {
+		content, err := os.ReadFile(gitconfigPath) //nolint:gosec // gitconfigPath is a trusted gitid-managed path (G304)
+		if err != nil {
+			return globalgit.AuthorResolution{}, false, nil //nolint:nilerr // unreadable gitconfig -- graceful no-finding, matches MatchedNotVerifiable
+		}
+		info, ok := gitconfig.ParseManagedIncludeIf(content)[identityName]
+		if !ok {
+			return globalgit.AuthorResolution{}, false, nil
+		}
+		var matchedDir string
+		for _, m := range info.Matches {
+			if m.Kind != gitconfig.MatchGitdir {
+				continue
+			}
+			if found := findGitWorkTree(expandTildeForHome(m.Value, home)); found != "" {
+				matchedDir = found
+				break
+			}
+		}
+		if matchedDir == "" {
+			return globalgit.AuthorResolution{}, false, nil
+		}
+		unmatchedDir := home
+		if _, err := os.Stat(fragmentDir); err == nil {
+			unmatchedDir = fragmentDir
+		}
+		res, err := globalgit.VerifyAuthorResolution(globalgit.BuildProbeDeps(unmatchedDir), matchedDir, unmatchedDir)
+		if err != nil {
+			return globalgit.AuthorResolution{}, false, nil //nolint:nilerr // probe failure -- graceful no-finding, never a false positive
+		}
+		return res, res.MatchedOutcome == globalgit.MatchedVerified, nil
 	}
 }
 

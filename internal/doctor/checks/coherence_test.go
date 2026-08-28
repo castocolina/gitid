@@ -8,6 +8,8 @@ import (
 
 	"github.com/castocolina/gitid/internal/doctor"
 	"github.com/castocolina/gitid/internal/doctor/checks"
+	"github.com/castocolina/gitid/internal/globalgit"
+	"github.com/castocolina/gitid/internal/globalssh"
 	"github.com/castocolina/gitid/internal/identity"
 	"github.com/castocolina/gitid/internal/sshconfig"
 )
@@ -482,4 +484,250 @@ func cohTitles(findings []doctor.Finding) []string {
 		out[i] = f.Title
 	}
 	return out
+}
+
+// --- Task 1: shadowed-option check (08-05-PLAN.md) ---
+
+// TestCheckCoherenceShadowed: a nameable shadow finding produces one
+// Coherence/SSH warning naming the file:line, Fix nil.
+func TestCheckCoherenceShadowed(t *testing.T) {
+	d := doctor.Deps{
+		Stat: cohStat(),
+		GlobalSSHShadowCheck: func() globalssh.ShadowResult {
+			return globalssh.ShadowResult{Findings: []globalssh.ShadowFinding{
+				{Key: "ForwardAgent", WantValue: "no", GotValue: "yes", ShadowedByFile: "/home/u/.ssh/config", ShadowedByLine: 4},
+			}}
+		},
+	}
+	findings := checks.CheckCoherence(d)
+	var got *doctor.Finding
+	for i := range findings {
+		if cohContains(findings[i].Title, "ForwardAgent") {
+			got = &findings[i]
+		}
+	}
+	if got == nil {
+		t.Fatalf("missing shadowed-option finding, got: %v", cohTitles(findings))
+	}
+	if got.Severity != doctor.SeverityWarning {
+		t.Errorf("Severity = %v, want SeverityWarning", got.Severity)
+	}
+	if got.Family != doctor.FamilyCoherence || got.Target != "SSH" {
+		t.Errorf("Family/Target = %v/%v, want Coherence/SSH", got.Family, got.Target)
+	}
+	if got.Fix != nil {
+		t.Error("Fix should be nil (report-only)")
+	}
+	if !cohContains(got.SuggestedFix, "/home/u/.ssh/config:4") {
+		t.Errorf("SuggestedFix = %q, want it to name the file:line", got.SuggestedFix)
+	}
+	if cohContains(got.SuggestedFix, "available on the Fixer screen") {
+		t.Error("SuggestedFix must not claim Fixer-screen availability when Fix is nil")
+	}
+}
+
+// TestCheckCoherenceShadowedUnnameable: a shadow finding with no
+// ShadowedByFile still produces a finding, honestly worded.
+func TestCheckCoherenceShadowedUnnameable(t *testing.T) {
+	d := doctor.Deps{
+		Stat: cohStat(),
+		GlobalSSHShadowCheck: func() globalssh.ShadowResult {
+			return globalssh.ShadowResult{Findings: []globalssh.ShadowFinding{
+				{Key: "HashKnownHosts", WantValue: "yes", GotValue: "no"},
+			}}
+		},
+	}
+	findings := checks.CheckCoherence(d)
+	var got *doctor.Finding
+	for i := range findings {
+		if cohContains(findings[i].Title, "HashKnownHosts") {
+			got = &findings[i]
+		}
+	}
+	if got == nil {
+		t.Fatal("missing shadowed-option finding")
+	}
+	if !cohContains(got.SuggestedFix, "source unnameable") {
+		t.Errorf("SuggestedFix = %q, want it to admit the source is unnameable", got.SuggestedFix)
+	}
+}
+
+// TestCheckCoherenceShadowedInconclusive: an inconclusive shadow check
+// degrades to no finding, never a false positive.
+func TestCheckCoherenceShadowedInconclusive(t *testing.T) {
+	d := doctor.Deps{
+		Stat: cohStat(),
+		GlobalSSHShadowCheck: func() globalssh.ShadowResult {
+			return globalssh.ShadowResult{Inconclusive: true, Reason: "probe timed out"}
+		},
+	}
+	findings := checks.CheckCoherence(d)
+	for _, f := range findings {
+		if f.Family == doctor.FamilyCoherence && cohContains(f.Title, "shadowed") {
+			t.Errorf("inconclusive shadow check must never produce a finding, got: %v", cohTitles(findings))
+		}
+	}
+}
+
+// TestCheckCoherenceShadowedNilDeps: a nil GlobalSSHShadowCheck produces no
+// findings and no panic.
+func TestCheckCoherenceShadowedNilDeps(t *testing.T) {
+	d := doctor.Deps{Stat: cohStat()}
+	findings := checks.CheckCoherence(d)
+	if len(findings) != 0 {
+		t.Errorf("nil GlobalSSHShadowCheck: got %d findings, want 0", len(findings))
+	}
+}
+
+// --- Task 1: directive-above-managed-block check ---
+
+// TestCheckCoherenceDirectiveAbove: a hand-written stanza before gitid's
+// first managed block produces one Coherence/SSH warning, Fix nil.
+func TestCheckCoherenceDirectiveAbove(t *testing.T) {
+	d := doctor.Deps{
+		Stat: cohStat(),
+		AllHostBlocks: []sshconfig.HostBlockFacts{
+			{Pattern: "handwritten.example.com", ManagedBlockName: ""},
+			{Pattern: "work", ManagedBlockName: "work"},
+		},
+	}
+	findings := checks.CheckCoherence(d)
+	var got *doctor.Finding
+	for i := range findings {
+		if cohContains(findings[i].Title, "handwritten.example.com") {
+			got = &findings[i]
+		}
+	}
+	if got == nil {
+		t.Fatalf("missing directive-above-block finding, got: %v", cohTitles(findings))
+	}
+	if got.Severity != doctor.SeverityWarning || got.Family != doctor.FamilyCoherence || got.Target != "SSH" {
+		t.Errorf("got Severity=%v Family=%v Target=%v, want Warning/Coherence/SSH", got.Severity, got.Family, got.Target)
+	}
+	if got.Fix != nil {
+		t.Error("Fix should be nil (report-only, D-09)")
+	}
+}
+
+// TestCheckCoherenceDirectiveAbove_AfterManagedNeverFlagged: a hand-written
+// stanza AFTER the first managed block is not "above" it and must not be
+// flagged.
+func TestCheckCoherenceDirectiveAbove_AfterManagedNeverFlagged(t *testing.T) {
+	d := doctor.Deps{
+		Stat: cohStat(),
+		AllHostBlocks: []sshconfig.HostBlockFacts{
+			{Pattern: "work", ManagedBlockName: "work"},
+			{Pattern: "handwritten.example.com", ManagedBlockName: ""},
+		},
+	}
+	findings := checks.CheckCoherence(d)
+	for _, f := range findings {
+		if cohContains(f.Title, "handwritten.example.com") {
+			t.Errorf("a hand-written stanza after a managed block must not be flagged, got: %v", cohTitles(findings))
+		}
+	}
+}
+
+// TestCheckCoherenceDirectiveAbove_AllManagedNeverFlagged: an all-managed
+// config (no hand-written stanzas at all) produces no directive-above
+// findings.
+func TestCheckCoherenceDirectiveAbove_AllManagedNeverFlagged(t *testing.T) {
+	d := doctor.Deps{
+		Stat: cohStat(),
+		AllHostBlocks: []sshconfig.HostBlockFacts{
+			{Pattern: "work", ManagedBlockName: "work"},
+			{Pattern: "*", ManagedBlockName: "global-ssh"},
+		},
+	}
+	findings := checks.CheckCoherence(d)
+	for _, f := range findings {
+		if f.Family == doctor.FamilyCoherence && cohContains(f.Title, "precedes gitid's managed") {
+			t.Errorf("an all-managed config must never produce a directive-above finding, got: %v", cohTitles(findings))
+		}
+	}
+}
+
+// --- Task 2: author-resolution check ---
+
+// TestCheckCoherenceAuthorResolution: a mismatched matched-directory
+// resolution produces one Coherence/Git error, scoped to the identity.
+func TestCheckCoherenceAuthorResolution(t *testing.T) {
+	d := doctor.Deps{
+		Stat:       cohStat(),
+		Identities: []identity.Account{{Name: "work", GitName: "Work Name", GitEmail: "work@example.com"}},
+		AuthorResolutionCheck: func(identityName string) (globalgit.AuthorResolution, bool, error) {
+			if identityName != "work" {
+				return globalgit.AuthorResolution{}, false, nil
+			}
+			return globalgit.AuthorResolution{
+				MatchedOutcome: globalgit.MatchedVerified,
+				Matched: globalgit.DirectoryResolution{
+					Name:  globalgit.AuthorKeyResolution{Value: "Wrong Name"},
+					Email: globalgit.AuthorKeyResolution{Value: "work@example.com"},
+				},
+			}, true, nil
+		},
+	}
+	findings := checks.CheckCoherence(d)
+	var got *doctor.Finding
+	for i := range findings {
+		if cohContains(findings[i].Title, "author resolution does not match") {
+			got = &findings[i]
+		}
+	}
+	if got == nil {
+		t.Fatalf("missing author-resolution finding, got: %v", cohTitles(findings))
+	}
+	if got.Severity != doctor.SeverityError || got.Family != doctor.FamilyCoherence || got.Target != "Git" {
+		t.Errorf("got Severity=%v Family=%v Target=%v, want Error/Coherence/Git", got.Severity, got.Family, got.Target)
+	}
+	if got.IdentityName != "work" {
+		t.Errorf("IdentityName = %q, want %q", got.IdentityName, "work")
+	}
+	if got.Fix != nil {
+		t.Error("Fix should be nil (report-only)")
+	}
+}
+
+// TestCheckCoherenceAuthorResolution_HealthyNeverFlagged: a matching
+// resolution produces no finding for that identity.
+func TestCheckCoherenceAuthorResolution_HealthyNeverFlagged(t *testing.T) {
+	d := doctor.Deps{
+		Stat:       cohStat(),
+		Identities: []identity.Account{{Name: "work", GitName: "Work Name", GitEmail: "work@example.com"}},
+		AuthorResolutionCheck: func(string) (globalgit.AuthorResolution, bool, error) {
+			return globalgit.AuthorResolution{
+				MatchedOutcome: globalgit.MatchedVerified,
+				Matched: globalgit.DirectoryResolution{
+					Name:  globalgit.AuthorKeyResolution{Value: "Work Name"},
+					Email: globalgit.AuthorKeyResolution{Value: "work@example.com"},
+				},
+			}, true, nil
+		},
+	}
+	findings := checks.CheckCoherence(d)
+	for _, f := range findings {
+		if cohContains(f.Title, "author resolution does not match") {
+			t.Errorf("a matching resolution must never be flagged, got: %v", cohTitles(findings))
+		}
+	}
+}
+
+// TestCheckCoherenceAuthorResolution_NotVerifiableNeverFlagged: ok=false
+// (MatchedNotVerifiable, or no includeIf on record) is a graceful
+// no-finding state, never a false positive.
+func TestCheckCoherenceAuthorResolution_NotVerifiableNeverFlagged(t *testing.T) {
+	d := doctor.Deps{
+		Stat:       cohStat(),
+		Identities: []identity.Account{{Name: "work", GitName: "Work Name", GitEmail: "work@example.com"}},
+		AuthorResolutionCheck: func(string) (globalgit.AuthorResolution, bool, error) {
+			return globalgit.AuthorResolution{}, false, nil
+		},
+	}
+	findings := checks.CheckCoherence(d)
+	for _, f := range findings {
+		if cohContains(f.Title, "author resolution does not match") {
+			t.Errorf("MatchedNotVerifiable must never be flagged, got: %v", cohTitles(findings))
+		}
+	}
 }

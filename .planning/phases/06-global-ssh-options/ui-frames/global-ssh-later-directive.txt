@@ -1,12 +1,12 @@
- gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  0 ids · ! 1 ✗ 1
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  0 ids · ! 2 ✗ 1
  Global SSH › Options
   Options   Storage & preview
 ✓ 1 of 4 recommended options applied to Host *. The rest were left unchanged, as chosen.
 
 Wrote → ~/.ssh/config.d/gitid.config
 Wrote → ~/.ssh/config
-Backed up → ~/.ssh/config.bak.1787917295597511000
-Backed up → ~/.ssh/config.d/gitid.config.bak.1787917295642800000
+Backed up → ~/.ssh/config.bak.1787922269448193000
+Backed up → ~/.ssh/config.d/gitid.config.bak.1787922269495452000
 
  Done (Enter)
 

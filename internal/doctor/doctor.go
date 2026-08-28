@@ -13,6 +13,8 @@ import (
 
 	"github.com/castocolina/gitid/internal/deps"
 	"github.com/castocolina/gitid/internal/gitconfig"
+	"github.com/castocolina/gitid/internal/globalgit"
+	"github.com/castocolina/gitid/internal/globalssh"
 	"github.com/castocolina/gitid/internal/identity"
 	"github.com/castocolina/gitid/internal/sshconfig"
 )
@@ -261,6 +263,21 @@ type Deps struct {
 	// gitid's own managed blocks and deps.Identities only covers reconstructed
 	// identities, so neither can see a hand-written stanza.
 	AllHostBlocks []sshconfig.HostBlockFacts
+
+	// GlobalSSHShadowCheck runs the D-04 post-write shadow-verification probe
+	// (internal/globalssh.Verify — Phase 6's own probe, reused unchanged) for
+	// every non-per-alias policy key gitid has actually applied to the global
+	// `Host *` block, comparing against the LIVE machine's effective
+	// resolution. Nil when SSH shadow-checking is not wired (05-05, HLTH-03).
+	GlobalSSHShadowCheck func() globalssh.ShadowResult
+	// AuthorResolutionCheck runs the D-06 post-write author-resolution probe
+	// (internal/globalgit.VerifyAuthorResolution — Phase 7's own probe,
+	// reused unchanged) for one managed identity's matched gitdir: directory
+	// against a representative unmatched directory. ok=false means
+	// MatchedNotVerifiable (no testable matched directory on this machine) or
+	// that the identity has no includeIf on record — a graceful no-finding
+	// state, never a false positive (05-05, HLTH-06).
+	AuthorResolutionCheck func(identityName string) (res globalgit.AuthorResolution, ok bool, err error)
 
 	// Fix fields (cmd layer injects; doctor core never calls directly, D-01).
 	FixPerm         func(path string, mode os.FileMode) error

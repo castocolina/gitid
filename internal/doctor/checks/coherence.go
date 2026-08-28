@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/castocolina/gitid/internal/doctor"
+	"github.com/castocolina/gitid/internal/globalgit"
 	"github.com/castocolina/gitid/internal/identity"
 	"github.com/castocolina/gitid/internal/sshconfig"
 )
@@ -41,6 +42,9 @@ func CheckCoherence(deps doctor.Deps) []doctor.Finding {
 	}
 
 	findings = append(findings, checkHandWrittenIdentitiesOnly(deps)...)
+	findings = append(findings, checkShadowedGlobalOptions(deps)...)
+	findings = append(findings, checkDirectiveAboveManagedBlock(deps)...)
+	findings = append(findings, checkAuthorResolution(deps)...)
 
 	return findings
 }
@@ -433,6 +437,160 @@ func checkHandWrittenIdentitiesOnly(deps doctor.Deps) []doctor.Finding {
 				Directive:   "IdentitiesOnly",
 				NewValue:    "yes",
 			},
+		})
+	}
+	return findings
+}
+
+// checkShadowedGlobalOptions detects a global `Host *` option gitid applied
+// that is nonetheless shadowed by an earlier hand-written directive on the
+// live machine (D-05's Coherence/SSH shadowed-option row, HLTH-03). It
+// reuses internal/globalssh.Verify -- the SAME D-04 post-write probe the
+// Global SSH apply ceremony already runs (cmd/gitid/lifecycle.go's
+// runGlobalSSHApply) -- unchanged; no shadow-detection logic is
+// reimplemented here.
+//
+// deps.GlobalSSHShadowCheck already scopes the keys checked to only those
+// gitid has actually WRITTEN into its own managed block (a key gitid never
+// applied is simply "not configured", never "shadowed").
+//
+// globalssh.Verify's own doc comment records that it never sets
+// ShadowedByFile/ShadowedByLine (it has no access to the config graph on the
+// live-machine post-write path) -- exactly the same limitation
+// cmd/gitid/lifecycle.go's runGlobalSSHApply already documents and degrades
+// gracefully for. This check mirrors that precedent rather than inventing a
+// second, graph-aware naming path: when the shadowing source cannot be
+// named, the SuggestedFix says so honestly instead of promising a file:line
+// this probe cannot provide.
+func checkShadowedGlobalOptions(deps doctor.Deps) []doctor.Finding {
+	if deps.GlobalSSHShadowCheck == nil {
+		return nil
+	}
+	result := deps.GlobalSSHShadowCheck()
+	if result.Inconclusive {
+		// Phase 6's own never-block precedent: an unreadable probe is
+		// advisory-worthy at most, never a false positive here.
+		return nil
+	}
+	var findings []doctor.Finding
+	for _, f := range result.Findings {
+		var suggested string
+		if f.ShadowedByFile != "" {
+			suggested = fmt.Sprintf(
+				"%s is shadowed by an earlier directive at %s:%d -- advisory only; not offered as a fix.",
+				f.Key, f.ShadowedByFile, f.ShadowedByLine)
+		} else {
+			suggested = fmt.Sprintf(
+				"%s is shadowed by an earlier directive (source unnameable) -- advisory only; not offered as a fix.",
+				f.Key)
+		}
+		findings = append(findings, doctor.Finding{
+			Family:   doctor.FamilyCoherence,
+			Severity: doctor.SeverityWarning,
+			Title:    fmt.Sprintf("%s is shadowed by an earlier SSH directive", f.Key),
+			Explanation: fmt.Sprintf(
+				"gitid applied %s=%s to the global Host * block, but this machine's effective resolution reports %q -- an earlier directive is taking precedence.",
+				f.Key, f.WantValue, f.GotValue),
+			SuggestedFix: suggested,
+			Fix:          nil, // report-only -- see SuggestedFix wording above
+			Target:       "SSH",
+		})
+	}
+	return findings
+}
+
+// checkDirectiveAboveManagedBlock detects a hand-written Host stanza that
+// appears, in file order, before ANY of gitid's managed SSH Host blocks
+// (D-05's Coherence/SSH row: user content above a managed block, D-09). It
+// reuses deps.AllHostBlocks -- the SAME sshconfig.ParseAllHostBlocks scan
+// checkHandWrittenIdentitiesOnly already depends on -- rather than adding a
+// second raw scanner.
+//
+// Scope (a deliberate, documented interpretation -- 08-05-PLAN.md's own
+// estimate flagged this task "confidence: low"): every gitid-managed Host
+// block, per-identity or global, has its "Host ..." header line INSIDE the
+// sentinel-delimited body (internal/sshconfig/renderer.go's RenderHostBlock,
+// internal/sshconfig/globals.go's renderGlobalBody both emit the Host line
+// as the block's own first line) -- so there is structurally never a
+// hand-written directive positioned "inside the same stanza, above the
+// sentinel" for a gitid-managed block; that scenario cannot occur. What CAN
+// occur, and is the condition this check flags, is a hand-written Host
+// stanza sitting entirely before gitid's FIRST managed block in file order:
+// its directives are read first by ssh, and D-09 forbids gitid from ever
+// touching hand-written content outside the ApplyVerifiedHostDirective
+// ceremony. Only stanzas before the first managed block are flagged (not
+// every hand-written stanza that precedes some later managed block), to
+// report exactly the "predates gitid's management entirely" condition D-09
+// names, without multiplying warnings across every managed block a given
+// hand-written stanza happens to precede.
+func checkDirectiveAboveManagedBlock(deps doctor.Deps) []doctor.Finding {
+	var findings []doctor.Finding
+	sawManaged := false
+	for _, hb := range deps.AllHostBlocks {
+		if hb.ManagedBlockName != "" {
+			sawManaged = true
+			continue
+		}
+		if sawManaged {
+			continue // this hand-written stanza follows a managed block -- not "above" it
+		}
+		findings = append(findings, doctor.Finding{
+			Family:   doctor.FamilyCoherence,
+			Severity: doctor.SeverityWarning,
+			Title:    fmt.Sprintf("Host %q precedes gitid's managed SSH block(s)", hb.Pattern),
+			Explanation: fmt.Sprintf(
+				"A hand-written Host stanza (%q) appears before gitid's managed Host block(s) in ~/.ssh/config -- its directives are read first by ssh for any host it also matches.",
+				hb.Pattern),
+			SuggestedFix: "user content above a managed block is left untouched by design -- not offered as a fix.",
+			Fix:          nil,
+			Target:       "SSH",
+		})
+	}
+	return findings
+}
+
+// checkAuthorResolution re-verifies, per managed identity, that git actually
+// resolves user.name/user.email to that identity's own fragment from a
+// directory matching its gitdir: pattern (D-05's Coherence/Git row, HLTH-06;
+// D-06's post-write invariant). It reuses
+// internal/globalgit.VerifyAuthorResolution -- the SAME probe
+// cmd/gitid/lifecycle.go's appendFallbackAuthorAdvisories already runs after
+// every global-git fallback-author write -- unchanged; no directory-matching
+// or git-config-resolution logic is reimplemented here.
+//
+// deps.AuthorResolutionCheck returns ok=false for MatchedNotVerifiable (no
+// testable matched directory on this machine for that identity) or an
+// identity with no recorded includeIf -- both graceful no-finding states,
+// never a false positive (D-06).
+func checkAuthorResolution(deps doctor.Deps) []doctor.Finding {
+	if deps.AuthorResolutionCheck == nil {
+		return nil
+	}
+	var findings []doctor.Finding
+	for _, acct := range deps.Identities {
+		if acct.Name == "" {
+			continue
+		}
+		res, ok, err := deps.AuthorResolutionCheck(acct.Name)
+		if err != nil || !ok || res.MatchedOutcome != globalgit.MatchedVerified {
+			continue
+		}
+		mismatchName := res.Matched.Name.Value != "" && res.Matched.Name.Value != acct.GitName
+		mismatchEmail := res.Matched.Email.Value != "" && res.Matched.Email.Value != acct.GitEmail
+		if !mismatchName && !mismatchEmail {
+			continue
+		}
+		findings = append(findings, doctor.Finding{
+			Family:   doctor.FamilyCoherence,
+			Severity: doctor.SeverityError,
+			Title:    fmt.Sprintf("identity %q: author resolution does not match its fragment", acct.Name),
+			Explanation: fmt.Sprintf(
+				"From a directory matching %q's gitdir: pattern, git resolved user.name=%q user.email=%q -- includeIf precedence may be violated.",
+				acct.Name, res.Matched.Name.Value, res.Matched.Email.Value),
+			SuggestedFix: "repair via the Global Git screen or re-run 'gitid identity add' -- not offered as a fix.",
+			Fix:          nil,
+			IdentityName: acct.Name,
+			Target:       "Git",
 		})
 	}
 	return findings

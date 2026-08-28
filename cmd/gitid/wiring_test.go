@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -4702,5 +4703,154 @@ func TestPersistFixFindingConvergenceAlarm(t *testing.T) {
 	}
 	if !stillAlarmed {
 		t.Error("a withdrawn fix must stay withdrawn across subsequent Persist(FixFinding) calls this session, even once the real fix would have converged")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 08-05-PLAN.md — Coherence-family real wiring: resolveGlobalSSHTargetPath,
+// appliedGlobalSSHKeys, buildGlobalSSHShadowCheck, buildAuthorResolutionCheck
+// ---------------------------------------------------------------------------
+
+// TestResolveGlobalSSHTargetPath_FreshHome: no global-ssh block anywhere yet
+// falls back to sshConfigPath itself (the fresh-home first-run state — must
+// never error or panic).
+func TestResolveGlobalSSHTargetPath_FreshHome(t *testing.T) {
+	home := t.TempDir()
+	sshConfigPath := filepath.Join(home, ".ssh", "config")
+	if got := resolveGlobalSSHTargetPath(home, sshConfigPath); got != sshConfigPath {
+		t.Errorf("resolveGlobalSSHTargetPath (fresh home) = %q, want %q", got, sshConfigPath)
+	}
+}
+
+// TestResolveGlobalSSHTargetPath_InFile: an in-file global-ssh block
+// resolves to sshConfigPath itself.
+func TestResolveGlobalSSHTargetPath_InFile(t *testing.T) {
+	home := t.TempDir()
+	sshConfigPath := filepath.Join(home, ".ssh", "config")
+	if err := os.MkdirAll(filepath.Dir(sshConfigPath), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := "IgnoreUnknown UseKeychain\n\nHost *\n  ForwardAgent no\n"
+	content := filewriter.ReplaceBlock(nil, sshconfig.GlobalBlockName, body)
+	writeFile(t, sshConfigPath, string(content))
+
+	if got := resolveGlobalSSHTargetPath(home, sshConfigPath); got != sshConfigPath {
+		t.Errorf("resolveGlobalSSHTargetPath (in-file) = %q, want %q", got, sshConfigPath)
+	}
+}
+
+// TestResolveGlobalSSHTargetPath_IncludeLayout: a config.d/gitid.config
+// carrying the global-ssh block, Included from sshConfigPath, resolves to
+// the config.d file — not sshConfigPath.
+func TestResolveGlobalSSHTargetPath_IncludeLayout(t *testing.T) {
+	home := t.TempDir()
+	sshConfigPath := filepath.Join(home, ".ssh", "config")
+	includeDir := filepath.Join(home, ".ssh", "config.d")
+	targetPath := filepath.Join(includeDir, gitidConfigFileName)
+	if err := os.MkdirAll(includeDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := "IgnoreUnknown UseKeychain\n\nHost *\n  ForwardAgent no\n"
+	content := filewriter.ReplaceBlock(nil, sshconfig.GlobalBlockName, body)
+	writeFile(t, targetPath, string(content))
+	writeFile(t, sshConfigPath, "Include "+includeDir+"/*\n")
+
+	if got := resolveGlobalSSHTargetPath(home, sshConfigPath); got != targetPath {
+		t.Errorf("resolveGlobalSSHTargetPath (include layout) = %q, want %q", got, targetPath)
+	}
+}
+
+// TestAppliedGlobalSSHKeysRealWiring: only the non-per-alias policy keys
+// actually WRITTEN into the block are returned — an unrecognized directive
+// is ignored, and a key gitid never applied is absent.
+func TestAppliedGlobalSSHKeysRealWiring(t *testing.T) {
+	home := t.TempDir()
+	targetPath := filepath.Join(home, ".ssh", "config")
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := "IgnoreUnknown UseKeychain\n\nHost *\n  ForwardAgent no\n  HashKnownHosts yes\n  SomeUnknownDirective x\n"
+	content := filewriter.ReplaceBlock(nil, sshconfig.GlobalBlockName, body)
+	writeFile(t, targetPath, string(content))
+
+	keys := appliedGlobalSSHKeys(targetPath)
+	want := map[string]bool{"ForwardAgent": true, "HashKnownHosts": true}
+	if len(keys) != len(want) {
+		t.Fatalf("appliedGlobalSSHKeys = %v, want exactly %v", keys, want)
+	}
+	for _, k := range keys {
+		if !want[k] {
+			t.Errorf("unexpected key %q in appliedGlobalSSHKeys result %v", k, keys)
+		}
+	}
+}
+
+// TestAppliedGlobalSSHKeysRealWiring_NoBlock: a fresh home with no
+// global-ssh block returns no keys, never an error/panic.
+func TestAppliedGlobalSSHKeysRealWiring_NoBlock(t *testing.T) {
+	home := t.TempDir()
+	targetPath := filepath.Join(home, ".ssh", "config")
+	if keys := appliedGlobalSSHKeys(targetPath); len(keys) != 0 {
+		t.Errorf("appliedGlobalSSHKeys (missing file) = %v, want none", keys)
+	}
+}
+
+// TestGlobalSSHShadowCheckRealWiring_FreshHome: the doctor.Deps closure
+// built by buildGlobalSSHShadowCheck must degrade gracefully (no findings,
+// no panic, no probe attempted) on a totally fresh home with no global-ssh
+// block at all — the fresh-home first-run severity contract this whole
+// phase exists to uphold (Wave 3's standing lesson).
+func TestGlobalSSHShadowCheckRealWiring_FreshHome(t *testing.T) {
+	home := t.TempDir()
+	sshConfigPath := filepath.Join(home, ".ssh", "config")
+	check := buildGlobalSSHShadowCheck(home, sshConfigPath)
+	result := check()
+	if result.Inconclusive {
+		t.Errorf("fresh home must not be Inconclusive, got reason: %q", result.Reason)
+	}
+	if len(result.Findings) != 0 {
+		t.Errorf("fresh home must produce no shadow findings, got: %+v", result.Findings)
+	}
+}
+
+// TestAuthorResolutionCheckRealWiring: a real gitconfig + real git work tree
+// + real fragment (seedIncludeIf's own fixture, shared with the fallback
+// author tests) produces a MatchedVerified resolution whose values equal the
+// fragment's own user.name/user.email — a healthy round trip through the
+// REAL internal/globalgit.VerifyAuthorResolution probe, not a fake.
+func TestAuthorResolutionCheckRealWiring(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("no git binary in PATH: %v", err)
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	seedIncludeIf(t, home)
+
+	check := buildAuthorResolutionCheck(home, filepath.Join(home, ".gitconfig"))
+	res, ok, err := check("work")
+	if err != nil {
+		t.Fatalf("AuthorResolutionCheck: %v", err)
+	}
+	if !ok || res.MatchedOutcome != globalgit.MatchedVerified {
+		t.Fatalf("ok=%v MatchedOutcome=%v, want ok=true MatchedVerified", ok, res.MatchedOutcome)
+	}
+	if res.Matched.Name.Value != "Work User" {
+		t.Errorf("Matched.Name.Value = %q, want %q", res.Matched.Name.Value, "Work User")
+	}
+	if res.Matched.Email.Value != "work@example.com" {
+		t.Errorf("Matched.Email.Value = %q, want %q", res.Matched.Email.Value, "work@example.com")
+	}
+}
+
+// TestAuthorResolutionCheckRealWiring_UnknownIdentity: an identity name with
+// no includeIf on record returns ok=false, never an error/panic.
+func TestAuthorResolutionCheckRealWiring_UnknownIdentity(t *testing.T) {
+	home := t.TempDir()
+	writeFile(t, filepath.Join(home, ".gitconfig"), "[user]\n\tname = Nobody\n")
+	check := buildAuthorResolutionCheck(home, filepath.Join(home, ".gitconfig"))
+	_, ok, err := check("no-such-identity")
+	if err != nil || ok {
+		t.Errorf("unknown identity: ok=%v err=%v, want ok=false err=nil", ok, err)
 	}
 }

@@ -472,3 +472,49 @@ func orphTitles(findings []doctor.Finding) []string {
 	}
 	return out
 }
+
+// TestMissingFragmentNoDuplicate resolves 08-RESEARCH.md's Pitfall 6: the
+// frozen dummy fixture "git-includeif-missing-fragment"
+// (internal/dummytui/data.go:392) is tagged Family: "Orphans", but D-05's
+// table glosses it as "Coherence / Git". Reading orphans.go's Class 2 and
+// coherence.go's Check 2/Incomplete branch side by side (08-05-PLAN.md Task
+// 3) shows the fragment-existence detection lives ENTIRELY in Coherence
+// (identity.Reconstruct marks Incomplete="...fragment-file..." when the
+// fragment is missing, and coherenceForAccount reports it) — orphans.go has
+// no fragment-existence logic at all. D-05's "Coherence / Git" label is
+// therefore the resolved, correct answer; the frozen fixture's "Orphans"
+// label is a stale dummy-data artifact, not a claim about the real engine.
+//
+// Without the dedup guard added in orphans.go's Class 2 loop, this exact
+// scenario (identity "legacy": includeIf present, fragment file missing, NO
+// SSH Host block either) would ALSO trip Orphans' "no SSH Host block"
+// finding for the same identity — a second, redundant finding for the
+// identical root cause. This test runs the REAL doctor.Run() path (both
+// CheckCoherence and CheckOrphans wired) and asserts EXACTLY ONE finding for
+// "legacy".
+func TestMissingFragmentNoDuplicate(t *testing.T) {
+	d := doctor.Deps{
+		Stat: orphStat(), // fragment file does NOT exist
+		Identities: []identity.Account{
+			{Name: "legacy", FragmentPath: "/home/u/.gitconfig.d/legacy", Incomplete: "fragment-file"},
+		},
+		GitconfigManagedBlockNames: []string{"legacy"},
+		SSHManagedBlockNames:       []string{}, // no SSH counterpart either
+		CheckCoherence:             checks.CheckCoherence,
+		CheckOrphans:               checks.CheckOrphans,
+	}
+	findings := doctor.Run(d)
+
+	var matching []doctor.Finding
+	for _, f := range findings {
+		if f.IdentityName == "legacy" || orphContains(f.Title, "legacy") {
+			matching = append(matching, f)
+		}
+	}
+	if len(matching) != 1 {
+		t.Fatalf("got %d findings for identity %q, want exactly 1: %v", len(matching), "legacy", orphTitles(matching))
+	}
+	if matching[0].Family != doctor.FamilyCoherence {
+		t.Errorf("Family = %v, want %v (the resolved Pitfall 6 answer — coherence.go, not orphans.go)", matching[0].Family, doctor.FamilyCoherence)
+	}
+}

@@ -1,4 +1,4 @@
- gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  0 ids · ! 1 ✗ 2
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  0 ids · ! 2 ✗ 2
  Global SSH › Options
   Options   Storage & preview
 Write Host * managed block to ~/.ssh/config.d/gitid.config

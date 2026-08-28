@@ -1,7 +1,7 @@
- gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  0 ids · ! 1 ✗ 2
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  0 ids · ! 2 ✗ 2
  Global SSH › Options
   Options   Storage & preview
- ! The doctor found 1 SSH finding beyond these global options.  Open Health (4)
+ ! The doctor found 2 SSH findings beyond these global options.  Open Health (4)
    ☐ ! StrictHostKeyChecking  [Medium]      │  AddKeysToAgent
       now: no → accept-new                  │  ~ Recommended, not required -- you can leave any
       ✓ ForwardAgent  [High]                │ option unchanged. This is advisory, never a compliance
