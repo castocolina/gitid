@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Global Git › Options
+✓ 1 of 11 baseline options applied to ~/.gitconfig. Global user.email was left alone, as always -- e
+
+Wrote → ~/.gitconfig
+Wrote → ~/.gitconfig.d/00-baseline
+Backed up → ~/.gitconfig.bak.1787871790204198000
+
+ Done (Enter)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 1 global git option applied.
+ Tab/←→ Cancel / Confirm · Enter confirm
+ Esc back · Ctrl+P palette

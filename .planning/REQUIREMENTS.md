@@ -260,7 +260,7 @@ These are first-class, enforced requirements — the user's core process ask.
 
 ## J. Global Git Options (GGIT)
 
-- [ ] **GGIT-01** (Baseline + defaults): A global-git-options screen manages the
+- [x] **GGIT-01** (Baseline + defaults): A global-git-options screen manages the
   shared config: `init.defaultBranch` (highlight **main vs master** since distros
   still default to master), `core.ignorecase` (false), `core.autocrlf`/eol (line-feed
   policy), global `user.email`, plus recipe defaults (`push.autoSetupRemote`,
@@ -502,7 +502,7 @@ row below records each one's **home** phase.
 | MGR-07 | Phase 5 | Complete |
 | MGR-08 | Phase 5 | Complete |
 | GSSH-01 | Phase 6 | Complete |
-| GGIT-01 | Phase 7 | Pending |
+| GGIT-01 | Phase 7 | Complete |
 | HLTH-01 | Phase 8 | Pending |
 | HLTH-02 | Phase 8 | Pending |
 | HLTH-03 | Phase 8 | Pending |

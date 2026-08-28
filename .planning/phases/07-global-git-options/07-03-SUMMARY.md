@@ -27,13 +27,37 @@ The `merge.conflictstyle` recommendation was stale at `diff3` in four places —
 
 `TestGlobalGitFixturePolicyParity` (in `cmd/gitid/wiring_test.go`, mirroring the SSH side's own parity test) walks `internal/globalgit.Policy` and `internal/tuikit.GlobalGitOptions` together, asserting row identity, order, and recommended value agree — 12/12 rows pass. New copy: the case-sensitivity caveat (appended to `core.ignorecase`'s detail explanation), `GlobalGitConflictStyleGateNote` (the STATIC half of the hard-gate explanation, deliberately separate from the pre-existing dynamic `VersionNote` line so it stays freezable — a new `GateNotMet bool` field carries the distinction), the D-07 cross-warning as two static constants (rendered on the `user.useConfigOnly` row's own detail pane when selected with the fallback pair half-set), the guessed-name warning (rendered on the fallback-author row's own detail pane, independent of `useConfigOnly`'s selection), and `GlobalGitResultTail` (the apply ceremony's result message now substitutes real selected/pending counts, mirroring `globalssh.go`'s `chosen`/`pending` shape, with only the static tail frozen). `gate-copy-freeze`'s search path now includes `internal/globalgit`, every new static string is registered, and three new dynamic exclusions (git-version line, bundle aggregate, applied/selected counts) are proven not-frozen. A no-colour test confirms all four states remain distinguishable by glyph and word with ANSI stripped. `TestRunGlobalGitApply_LeavesFallbackAuthorBlockUntouched` proves the baseline apply ceremony never touches the separate fallback-author block, converting `GlobalGitResultTail`'s claim into a checked invariant.
 
+## The complete twelve-row policy table as implemented
+
+The authoritative row table, transcribed from `internal/globalgit.Policy` (the 
+frozen §4.5 display order, pinned 12/12 against `internal/tuikit.GlobalGitOptions` 
+by `TestGlobalGitFixturePolicyParity`). The CLI-token column is the frozen R-5 
+argv vocabulary plan 07-05 freezes against; the member-key column is what git 
+reports in `--list` (lower-cased); the fallback-author row carries no token and no 
+members because it is owned by plan 07-02's separate verb.
+
+| Row | CLI token (R-5) | Member config key(s) | Recommended | Min git | Gate kind | Hard-gate fallback |
+|---|---|---|---|---|---|---|
+| `init.defaultBranch` | `init.defaultBranch` | `init.defaultbranch` | `main` | 2.28 | informational | — |
+| `core.ignorecase` | `core.ignorecase` | `core.ignorecase` | `false` | — | — | — |
+| `core.autocrlf / core.eol` | `core.lineEndings` | `core.autocrlf`, `core.eol` | `input / lf` | — | — | — |
+| `user.email (global fallback)` | none | none — 07-02's own verb | left unset unless opted in | — | — | — |
+| `user.useConfigOnly` | `user.useConfigOnly` | `user.useconfigonly` | `true` | — | — | — |
+| `push.autoSetupRemote` | `push.autoSetupRemote` | `push.autosetupremote` | `true` | 2.37 | informational | — |
+| `pull.rebase` | `pull.rebase` | `pull.rebase` | `true` | — | — | — |
+| `fetch.prune` | `fetch.prune` | `fetch.prune` | `true` | — | — | — |
+| `alias (8 shortcuts)` | `alias` | the 8 recipe aliases | `st, co, br, ci, df, lg, unstage, last` | — | — | — |
+| `color (ui/branch/diff/status)` | `color` | the 4 color keys | `auto for all four` | — | — | — |
+| `merge.conflictstyle` | `merge.conflictstyle` | `merge.conflictstyle` | `zdiff3` | 2.35 | **hard** | `diff3` |
+| `diff.colorMoved` | `diff.colorMoved` | `diff.colormoved` | `zebra` | 2.15 | informational | — |
+
 ## Deviations
 
 **Two cross-AI runtime failures on Task 3's "new copy" portion, both recovered by the orchestrator — the second recovery done as a substantial direct hand-implementation rather than a third relaunch:**
 
-1. **First attempt** stalled — the agent repeated the exact same log lines (checking `GlobalGit.tsx` for a hardcoded row count) for 20+ minutes with zero `out.log` growth. The orchestrator killed it, confirmed the salvageable uncommitted work (the corrections + `useConfigOnly` row addition) built and tested cleanly, and committed it as `1c910d5`.
+- **D-07-03-1 — First attempt**: the agent stalled — it repeated the exact same log lines (checking `GlobalGit.tsx` for a hardcoded row count) for 20+ minutes with zero `out.log` growth. The orchestrator killed it, confirmed the salvageable uncommitted work (the corrections + `useConfigOnly` row addition) built and tested cleanly, and committed it as `1c910d5`.
 
-2. **Second attempt** (a scoped continuation) crashed on a banned `/tmp` scratch-write while investigating whether `git config --show-origin` reports line numbers (relevant to the "five provenance labels... mirroring Phase 6's own registered set... with its line" phrasing in the plan). It had made zero implementation progress — pure exploration. The orchestrator answered the underlying question directly (`git config --show-origin --get` returns only `file:<path>` — no line number, unlike SSH's parsed-config line tracking) and, given two consecutive failures on this exact remaining scope, implemented the rest of Task 3 directly rather than risking a third relaunch: the parity test, all new copy, the `GateNotMet` field and its wiring-site computation, the gate extension with its three proven exclusions, the no-colour test, and the baseline-untouched lifecycle test. This is documented as a deviation from the plan's cross-AI-first default, made deliberately after the evidence (two failures, zero progress on the specific remaining piece) crossed the threshold this session has used throughout the phase.
+- **D-07-03-2 — Second attempt**: a scoped continuation crashed on a banned `/tmp` scratch-write while investigating whether `git config --show-origin` reports line numbers (relevant to the "five provenance labels... mirroring Phase 6's own registered set... with its line" phrasing in the plan). It had made zero implementation progress — pure exploration. The orchestrator answered the underlying question directly (`git config --show-origin --get` returns only `file:<path>` — no line number, unlike SSH's parsed-config line tracking) and, given two consecutive failures on this exact remaining scope, implemented the rest of Task 3 directly rather than risking a third relaunch: the parity test, all new copy, the `GateNotMet` field and its wiring-site computation, the gate extension with its three proven exclusions, the no-colour test, and the baseline-untouched lifecycle test. This is documented as a deviation from the plan's cross-AI-first default, made deliberately after the evidence (two failures, zero progress on the specific remaining piece) crossed the threshold this session has used throughout the phase.
 
 **One self-caught bug during the gate-copy-freeze extension, fixed on the spot and left in the commit message as evidence the technique works**: the first draft of the third dynamic exclusion (`counts_dyn="baseline options applied to"`) used a single literal string assignment — the exact D-13 self-matching trap the plan's `<authority>` block warns about, where the check's OWN literal value in the Makefile makes the `grep -qF` against the Makefile find a match (itself) and report a false FAIL. Caught immediately by running the gate, fixed with the same two-part runtime-concatenation technique already used for the other three exclusions (`counts_dyn="baseline options applied"; counts_dyn="$counts_dyn to"`).
 
@@ -69,6 +93,12 @@ After each proof, the Makefile was reverted (`git diff --stat Makefile` confirme
     ok   D-09 exclusion (dynamic bundle aggregate count not frozen)
     ok   result-message exclusion (dynamic applied/selected counts not frozen)
 ```
+
+## Review
+
+- **R-5 (cycle 1 MEDIUM — "`options apply` key identity")**: the CLI token is a THIRD identifier, frozen on the policy row (display key / member key / CLI token). The token column is the only argv a `gitid git options apply` accepts; a member key or a lower-cased spelling is refused naming its owning token. Pinned by the unique / shell-safe / token-set-matches-authority-table tests (`TestGlobalGitTokenSetMatchesAuthorityTable`), with the acceptance side exercised end to end by 07-05's `TestGitOptionsApplyAcceptedTokensEqualPolicyTokens` / `TestGitOptionsApplyRefusesMemberKeysNamingOwningToken`.
+- **R-6 (cycle 1 MEDIUM — "`core.pager` dropped")**: the deferred pager key is preserved, never added, and is not a row — the additive R-2 merge keeps an adopted block's `core.pager` line across every apply. Pinned by the pager-preservation test proving `core.pager` survives a full twelve-row apply on an adopted block.
+- **R-7 (cycle 1 MEDIUM — "confirm `./...` after delete")**: the `ScanConflicts` / `BaselineKeySet` / orphaned `Conflict` type deletion is verified by the compiler, not by a grep — a full `go build ./...` + `go vet ./...` + `go test ./...` pass in the same commit (the archived POC is untouched and invisible to the Go toolchain). Pinned by that same-commit build/test pass plus the post-deletion `rg` confirming no symbol reference remains.
 
 ## The bundle-collision D-06/D-09 proof (real `git` binary, quoted output — from Task 2's commit)
 

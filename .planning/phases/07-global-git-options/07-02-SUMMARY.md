@@ -153,10 +153,10 @@ The six existing D9 copy constants (`GlobalGitEmailFallbackHelper`, `Advisory`, 
 
 ## Deviations
 
-- **R-4 / findGitWorkTree**: `includeIf gitdir:` matching only fires inside a repository. The verify stage's first draft `os.Stat`'d the pattern directory itself (`~/git/work`), which exists but is not a repo, so the matched half would have been unverifiable even when a child repo was present. `findGitWorkTree` now returns the directory if it is a git work tree, or a direct child that is. Pinned by `TestRunGitFallbackAuthorApply_VerifyNoPrecedenceAdvisory`.
-- **Task 2/3 seam split**: the plan listed `GitFallbackAuthorPlanner` under Task 3's files, but Task 2's conversion site and compile-time assertion need the interface to exist. The interface, noop, and view DTOs landed in Task 2's commit (`a6c1d83`); Task 3 embedded the interface in `Backend`, wired the pane, and implemented the dummy/stub. The real backend still does not embed the noop (reflection test in `wiring_test.go`).
-- **`MatchedNotVerifiable` advisory on machines with no managed identity**: the verify stage appends `"advisory: matched-identity author resolution could not be verified on this machine"` when no gitdir match exists. That is the plan's required unverifiable outcome, not a pass.
-- **No compensating baseline-file creation (R-4)**: git silently ignores a missing include target (quoted above). The ceremony therefore writes exactly one file, as designed.
+- **D-07-02-1 — R-4 / findGitWorkTree**: `includeIf gitdir:` matching only fires inside a repository. The verify stage's first draft `os.Stat`'d the pattern directory itself (`~/git/work`), which exists but is not a repo, so the matched half would have been unverifiable even when a child repo was present. `findGitWorkTree` now returns the directory if it is a git work tree, or a direct child that is. Pinned by `TestRunGitFallbackAuthorApply_VerifyNoPrecedenceAdvisory`.
+- **D-07-02-2 — Task 2/3 seam split**: the plan listed `GitFallbackAuthorPlanner` under Task 3's files, but Task 2's conversion site and compile-time assertion need the interface to exist. The interface, noop, and view DTOs landed in Task 2's commit (`a6c1d83`); Task 3 embedded the interface in `Backend`, wired the pane, and implemented the dummy/stub. The real backend still does not embed the noop (reflection test in `wiring_test.go`).
+- **D-07-02-3 — `MatchedNotVerifiable` advisory on machines with no managed identity**: the verify stage appends `"advisory: matched-identity author resolution could not be verified on this machine"` when no gitdir match exists. That is the plan's required unverifiable outcome, not a pass.
+- **D-07-02-4 — No compensating baseline-file creation (R-4)**: git silently ignores a missing include target (quoted above). The ceremony therefore writes exactly one file, as designed.
 
 ## Review
 

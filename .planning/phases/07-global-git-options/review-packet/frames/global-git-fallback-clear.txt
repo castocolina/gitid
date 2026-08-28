@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Global Git › Options
+✓ Global fallback user.email set — used only where no identity matches; identity fragments still win
+advisory: matched-identity author resolution could not be verified on this machine
+advisory: unmatched-directory author resolved from (unset) instead of the fallback block
+Wrote → ~/.gitconfig
+Backed up → ~/.gitconfig.bak.1787871817201858000
+
+ Done (Enter)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Global fallback user.email set — used only where no identity matches; identity fragments still wi…
+ Tab/←→ Cancel / Confirm · Enter confirm
+ Esc back · Ctrl+P palette

@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Global Git › Options
+ ▸    ! init.defaultBranch  [main vs master]│  init.defaultBranch
+      now: master → main  set, differs from…│  ~ Recommended, not required -- you can leave any
+   ☐ ! core.ignorecase                      │ option unchanged. This is advisory, never a compliance
+      now:  → false                         │ gate.
+   ☐ ! core.autocrlf / core.eol             │
+      now: 0 of 2 set → input / lf          │  Until Git 2.28 (July 2020), every new repository's
+      ! user.email (global fallback)        │ default branch was named "master" -- a name inherited
+      now:  → left unset unless explicitly …│ from Git's early conventions. GitHub, GitLab, and
+   ☐ ! user.useConfigOnly                   │ Bitbucket now all default new repositories to "main"
+      now:  → true                          │ instead, and many teams have followed suit for their
+   ☐ ! push.autoSetupRemote                 │ own local defaults.
+      now:  → true                          │
+   ☐ ! pull.rebase                          │ Setting init.defaultBranch = main only affects
+      now:  → true                          │ repositories created AFTER this is set -- it never
+   ☐ ! fetch.prune                          │ renames an existing "master" branch in a repository
+      now:  → true                          │ you already have. If you clone or work in a repository
+   ☐ ! alias (8 shortcuts)                  │ whose default branch is still "master" (many older
+      now: 0 of 8 set → st, co, br, ci, df,…│ projects have not renamed it), that repository's
+   ☐ ! color (ui/branch/diff/status)        │ branch is completely unaffected; this setting only
+      now: 0 of 4 set → auto for all four   │ decides what "git init" names the FIRST branch of a
+   ☐ ! merge.conflictstyle                  │ brand-new repository.
+      now:  → zdiff3                        │
+   ☐ ! diff.colorMoved                      │ This is a naming convention, not a security or
+      now:  → zebra                         │ correctness fix -- it is included here because it is
+                                            │  … (+9 more lines)
+ 10 baseline options not set — Recommended, not required -- you can leave any option unchanged. Th…
+ ↑↓ select option · space toggle · ←→ switch view
+ Enter activate · Esc back · ? help · Ctrl+P palette · q quit

@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Global Git › Options
+Write global-git managed block to ~/.gitconfig
+Touches ~/.gitconfig · ~/.gitconfig.d/00-baseline
+Backup → ~/.gitconfig.bak.<timestamp>
+  (written first — restore it to undo)
+user.useConfigOnly is selected but the fallback author has no name set — a commit with no
+matching identity will hard-fail instead of falling back, because only the email half is
+configured.
+Exact change: PgUp/PgDn scroll · v focus · ←/→ columns
+╭╌ Exact change — everything else preserved verbatim ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮
+┊ + # BEGIN gitid managed: global-git                                                        ┊
+┊ + [user]                                                                                   ┊
+┊ +     useConfigOnly = true                                                                 ┊
+┊ + # END gitid managed: global-git                                                          ┊
+╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+Nothing has changed yet
+
+ Cancel (Esc)   Apply selected (Enter)
+
+
+
+
+
+
+
+
+ 11 baseline options not set — Recommended, not required -- you can leave any option unchanged. Th…
+ Tab/←→ Cancel / Confirm · Enter confirm
+ Esc back · Ctrl+P palette

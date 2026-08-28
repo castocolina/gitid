@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Doctor                 0 ids · ✓ ok
+ Global Git › Options
+ ! git probe failed: effective: globalgit: effective probe: git config --show-origin --show-scope --
+
+ The option states could not be read from this machine.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Baseline applied. user.email stays untouched — identities own their author.
+ ↑↓ select option · ←→ switch view
+ Enter activate · Esc back · ? help · Ctrl+P palette · q quit
