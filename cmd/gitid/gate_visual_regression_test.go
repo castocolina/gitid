@@ -2152,87 +2152,126 @@ func TestNegativeControl_GlobalGitMissingState(t *testing.T) {
 // RegionDisposition-free registration and confirming a differing region is
 // rejected by ValidateCapturedState's marker-presence check combined with the
 // registry's own absence of a disposition for an arbitrary made-up region.
+// TestNegativeControl_GlobalGitUnclassifiedDifference proves the REAL gate
+// (BuildRegionDiffs -> ValidateRegionDiffs, the exact path
+// TestGateVisualRegression drives) rejects a genuine unclassified
+// difference — not merely asserting the preconditions for one exist (verify-
+// work finding: the prior version only logged an unverified claim that "the
+// real gate" would reject it, weaker than its own Phase 4/5/6 sibling tests
+// in this file, which all call the validator and assert it errors).
+// Mirrors TestNegativeControl_GitScreenUnclassifiedDifferenceRejected's
+// shape: build the FULL real classified diff set, strip the classification
+// off an already-known-divergent Global Git region, and assert
+// ValidateRegionDiffs then fails on the mutated evidence.
 func TestNegativeControl_GlobalGitUnclassifiedDifference(t *testing.T) {
 	home := t.TempDir()
-	deterministicGlobalGitFixture(t, home)
+	deterministicReusableKeyFixture(t, home)
 	t.Setenv("HOME", home)
 	realB := newBackendForHome(home)
-	real, err := screenshot.CaptureGlobalGitScreens(realB)
+	realCaptures, err := screenshot.CaptureCreateFlowScreens(realB)
 	if err != nil {
-		t.Fatalf("CaptureGlobalGitScreens: %v", err)
+		t.Fatalf("capturing real backend: %v", err)
 	}
 	dummyB := dummytui.NewFixtureBackend()
-	dummy, err := screenshot.CaptureGlobalGitScreens(dummyB)
+	dummyCaptures, err := screenshot.CaptureCreateFlowScreens(dummyB)
 	if err != nil {
-		t.Fatalf("CaptureGlobalGitScreens: %v", err)
+		t.Fatalf("capturing dummy backend: %v", err)
 	}
-	realText := real["ggit-options-list"]
-	dummyText := dummy["ggit-options-list"]
-	realRegion := screenshot.ExtractRegion(realText, screenshot.RegionGGitOptionsBrowse)
-	dummyRegion := screenshot.ExtractRegion(dummyText, screenshot.RegionGGitOptionsBrowse)
-	if realRegion == dummyRegion {
-		t.Fatal("expected ggit-options-browse region to differ between real and dummy (fixture-vs-live divergence) — the negative control needs a real difference to prove the gate catches an UNCLASSIFIED one")
+	gitHome := t.TempDir()
+	deterministicGitIdentityFixture(t, gitHome)
+	mergeGitScreenCaptures(t, realCaptures, dummyCaptures, gitHome)
+	imgrHome := t.TempDir()
+	deterministicIdentityManagerFixture(t, imgrHome)
+	mergeIdentityManagerCaptures(t, realCaptures, dummyCaptures, imgrHome)
+	gssHome := t.TempDir()
+	deterministicGlobalSSHFixture(t, gssHome)
+	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
+	ggitHome := t.TempDir()
+	deterministicGlobalGitFixture(t, ggitHome)
+	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
+	t.Setenv("HOME", home)
+
+	specs := screenshot.RequiredScreenSpecs()
+	records, err := screenshot.BuildRegionDiffs("negative-control", realCaptures, dummyCaptures, specs)
+	if err != nil {
+		t.Fatalf("building classified region evidence: %v", err)
 	}
-	// Build a spec with NO RegionDispositions for RegionGGitOptionsBrowse —
-	// this simulates the exact failure mode: a real difference exists but no
-	// entry classifies it. A real gate run against this spec must find the
-	// difference unclassified.
-	specWithNoDisposition := screenshot.ScreenSpec{
-		ScreenID:              "ggit-options-list",
-		StateMarker:           "init.defaultBranch",
-		ApplicableLive:        true,
-		ApplicableApprovedTUI: true,
-		RequiredRegions:       []screenshot.RegionName{screenshot.RegionGGitOptionsBrowse},
-		RegionDispositions:    nil, // deliberately empty — the perturbation
-	}
-	foundClassification := false
-	for _, disp := range specWithNoDisposition.RegionDispositions {
-		if disp.Region == screenshot.RegionGGitOptionsBrowse {
-			foundClassification = true
+	mutated := false
+	for i := range records {
+		if !globalGitScreenIDs[records[i].ScreenID] {
+			continue // scope this control to Phase 7 Global Git records only
+		}
+		for j := range records[i].Regions {
+			region := &records[i].Regions[j]
+			if !region.Comparable || !region.Equal {
+				region.Classification = ""
+				mutated = true
+				break
+			}
+		}
+		if mutated {
+			break
 		}
 	}
-	if foundClassification {
-		t.Fatal("test setup failure: specWithNoDisposition unexpectedly carries a disposition")
+	if !mutated {
+		t.Fatal("negative-control: no classified Global Git difference was available to mutate")
 	}
-	// This proves the shape of the failure: a real difference (realRegion !=
-	// dummyRegion) exists, and specWithNoDisposition carries NO entry that
-	// would authorize it — exactly the condition BuildRegionDiffs must reject.
-	t.Logf("negative control proved: ggit-options-browse differs (real vs dummy) and specWithNoDisposition carries zero authorizing dispositions — an unclassified difference of this shape must fail the real gate")
+	data, err := json.Marshal(screenshot.RegionDiffs{Version: "test", SourceCommit: "negative-control", GeneratedAt: "test", Screens: records})
+	if err != nil {
+		t.Fatalf("marshaling mutated region evidence: %v", err)
+	}
+	if err := screenshot.ValidateRegionDiffs(data, "negative-control", specs); err == nil {
+		t.Fatal("negative-control: ValidateRegionDiffs must reject a classified Global Git difference whose classification was stripped")
+	}
 }
 
-// TestNegativeControl_GlobalGitPerturbedComparableRegion verifies the gate
-// fails when a region that should compare equal between real and approved-tui
-// is mutated on one side — proven against RegionHeader, a region with NO
-// disposition on any Global Git spec (meaning it is required to compare
-// EQUAL), by perturbing the real capture and confirming the perturbed text no
-// longer matches the dummy's.
+// TestNegativeControl_GlobalGitPerturbedComparableRegion verifies the REAL
+// gate (ValidateRegionDiffs, the exact path TestGateVisualRegression drives)
+// fails when a region that currently compares equal between real and
+// approved-tui is perturbed on one side — proven exhaustively, across EVERY
+// comparable currently-equal Global Git region, not a single spot-check
+// (verify-work finding: the prior version only confirmed real=dummy before
+// perturbation and logged an unverified claim that the gate would catch a
+// mutation, never actually calling ValidateRegionDiffs). Mirrors
+// TestNegativeControl_AllGitScreenComparableEqualRegionsAreMutationSensitive's
+// shape via the SAME shared exhaustive helper this file's other three
+// surfaces already use, scoped to globalGitScreenIDs.
 func TestNegativeControl_GlobalGitPerturbedComparableRegion(t *testing.T) {
 	home := t.TempDir()
-	deterministicGlobalGitFixture(t, home)
+	deterministicReusableKeyFixture(t, home)
 	t.Setenv("HOME", home)
 	realB := newBackendForHome(home)
-	real, err := screenshot.CaptureGlobalGitScreens(realB)
+	realCaptures, err := screenshot.CaptureCreateFlowScreens(realB)
 	if err != nil {
-		t.Fatalf("CaptureGlobalGitScreens: %v", err)
+		t.Fatalf("capturing real backend: %v", err)
 	}
 	dummyB := dummytui.NewFixtureBackend()
-	dummy, err := screenshot.CaptureGlobalGitScreens(dummyB)
+	dummyCaptures, err := screenshot.CaptureCreateFlowScreens(dummyB)
 	if err != nil {
-		t.Fatalf("CaptureGlobalGitScreens: %v", err)
+		t.Fatalf("capturing dummy backend: %v", err)
 	}
-	realHeader := screenshot.ExtractRegion(real["ggit-options-list"], screenshot.RegionHeader)
-	dummyHeader := screenshot.ExtractRegion(dummy["ggit-options-list"], screenshot.RegionHeader)
-	if realHeader != dummyHeader {
-		t.Fatalf("RegionHeader must compare equal (no disposition authorizes a difference here) — got real=%q dummy=%q", realHeader, dummyHeader)
+	gitHome := t.TempDir()
+	deterministicGitIdentityFixture(t, gitHome)
+	mergeGitScreenCaptures(t, realCaptures, dummyCaptures, gitHome)
+	imgrHome := t.TempDir()
+	deterministicIdentityManagerFixture(t, imgrHome)
+	mergeIdentityManagerCaptures(t, realCaptures, dummyCaptures, imgrHome)
+	gssHome := t.TempDir()
+	deterministicGlobalSSHFixture(t, gssHome)
+	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
+	ggitHome := t.TempDir()
+	deterministicGlobalGitFixture(t, ggitHome)
+	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
+	t.Setenv("HOME", home)
+
+	specs := screenshot.RequiredScreenSpecs()
+	records, err := screenshot.BuildRegionDiffs("negative-control", realCaptures, dummyCaptures, specs)
+	if err != nil {
+		t.Fatalf("building classified region evidence: %v", err)
 	}
-	perturbed := strings.Replace(realHeader, "Global Git", "PERTURBED", 1)
-	if perturbed == realHeader {
-		t.Fatal("perturbation had no effect — RegionHeader text does not contain the expected marker")
-	}
-	if perturbed == dummyHeader {
-		t.Fatal("perturbation did not actually change the comparison outcome")
-	}
-	t.Logf("negative control proved: RegionHeader compares equal (real=dummy) before perturbation; perturbing one side (%q -> %q) breaks equality — the gate must catch this mutation", realHeader, perturbed)
+	assertAllComparableEqualRegionsAreMutationSensitive(t, specs, records, func(screenID string) bool {
+		return globalGitScreenIDs[screenID]
+	})
 }
 
 // TestNegativeControl_GlobalGitCrossSurfaceAllowlistLeakage verifies the gate
