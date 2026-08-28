@@ -411,8 +411,42 @@ Plans:
    it with `cmd/gitid-dummy` and classifies every difference as an improvement or
    a defect. (DLV-04, DLV-06)
 
-**Plans**: TBD
+**Plans**: 8 plans (8 waves)
 **UI hint**: yes
+
+Plans:
+
+**Wave 1**
+
+- [ ] 09-01-PLAN.md — D-08 design-contract amendments (create-flow + identity-manager FIELDS.md, APPROVAL addendum, the `u` key claim) and the frozen upload copy block registered in `gate-copy-freeze` (UP-01, UP-03)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 09-02-PLAN.md — TRACER: one GitHub authentication-key upload wired end-to-end — `DetectFor`, `buildUploaderDeps` + nil-guard, the Backend seam, the `testUpload` sub-beat, the step-0 checkbox, the fixture, and a raw-keystroke PTY proof (UP-02, UP-03)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 09-03-PLAN.md — `internal/uploader` engine completion: the D-16 per-registration result, D-12's combined GitLab usage type, D-15's provider inventory and delete call, D-14's failure classifiers, D-07's machine-scoped title, and the ASVS V5 `.pub`-only invariant (UP-01, UP-02, UP-03)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 09-04-PLAN.md — the complete wizard upload section: all four checkbox states, the inventory-driven missing-type diff, classified reasons, the byte-identical manual fallback, D-17's post-upload confirmation, and D-18's no-persisted-state assertion (UP-01, UP-02, UP-03)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 09-05-PLAN.md — CLI surface: the ONE shared orchestration and outcome printer, the `register-key` verb, `--no-upload` on the four write verbs, parity-matrix rows, and headless e2e (UP-01, UP-02, UP-03)
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [ ] 09-06-PLAN.md — Identity Manager: the `paneRegisterKey` modal, the action-menu fifth row with the row-count desync fix, the rotate/repair upload beat, and D-04's interactive old-key delete offer (UP-01, UP-03)
+
+**Wave 7** *(blocked on Wave 6)*
+
+- [ ] 09-07-PLAN.md — DLV-04/DLV-06 UI-wave gates: raw-keystroke PTY coverage per new state, D-09's fresh approved frames, the visual-regression registry with classified divergences and four negative controls, and the paired real-vs-dummy PTY comparison (UP-01, UP-02, UP-03)
+
+**Wave 8** *(blocked on Wave 7)*
+
+- [ ] 09-08-PLAN.md — the ONESHOT-policy real-account GitHub validation (opt-in, disposable prefixed keys, ID-scoped cleanup, final sweep) plus UP-01/UP-02/UP-03 closure (UP-01, UP-02, UP-03)
 
 ### Phase 10: Linux Validation + Release Pipeline
 
@@ -442,5 +476,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Global SSH Options | 7/7 | Complete    | 2026-08-27 |
 | 7. Global Git Options | 0/TBD | Not started | - |
 | 8. Health + Fixer | 0/8 | Planned | - |
-| 9. Upload / Credentials Assist | 0/TBD | Not started | - |
+| 9. Upload / Credentials Assist | 0/8 | Planned | - |
 | 10. Linux Validation + Release Pipeline | 0/TBD | Not started | - |
