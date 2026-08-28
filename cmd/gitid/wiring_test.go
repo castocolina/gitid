@@ -4460,19 +4460,30 @@ func TestMGR07TwoSignalsResolveFromConvergedSource(t *testing.T) {
 	}
 }
 
+// TestFixExcludesfileRealWiring proves fixExcludesfile's real implementation
+// patches core.excludesfile into the baseline FRAGMENT (never gitconfigPath
+// directly — see fixExcludesfile's own doc comment for the two connected
+// bugs this shape fixes) and writes the managed gitignore pattern file.
+// Starting from a home with NO existing "baseline" block at all exercises
+// fixExcludesfile's defensive fallback (prepend a fresh [core] section) —
+// the common case (an existing block missing only this one key) is covered
+// by TestBaselineGitignoreFixPreservesOtherBaselineSettings in fix_test.go.
 func TestFixExcludesfileRealWiring(t *testing.T) {
 	home := t.TempDir()
-	gitconfigPath := filepath.Join(home, ".gitconfig")
+	baselineFilePath := filepath.Join(home, ".gitconfig.d", "00-baseline")
 	gitignorePath := filepath.Join(home, ".gitignore_global")
-	if err := fixExcludesfile(gitconfigPath)(gitignorePath); err != nil {
+	if err := fixExcludesfile(baselineFilePath)(gitignorePath); err != nil {
 		t.Fatalf("FixExcludesfile: %v", err)
 	}
-	value, err := gitconfig.RunGitConfigGet(gitconfigPath, "core.excludesfile")
+	value, err := gitconfig.RunGitConfigGet(baselineFilePath, "core.excludesfile")
 	if err != nil {
 		t.Fatalf("reading core.excludesfile: %v", err)
 	}
 	if value != gitignorePath {
 		t.Errorf("core.excludesfile = %q, want %q", value, gitignorePath)
+	}
+	if fragment := readFile(t, baselineFilePath); !strings.Contains(fragment, "# BEGIN gitid managed: baseline") {
+		t.Errorf("core.excludesfile must land inside the managed \"baseline\" block, got:\n%s", fragment)
 	}
 	content := readFile(t, gitignorePath)
 	for _, pattern := range gitconfig.DefaultGitignorePatterns() {

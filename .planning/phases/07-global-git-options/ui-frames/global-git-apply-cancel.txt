@@ -1,6 +1,6 @@
- gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  0 ids · ! 0 ✗ 1
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  0 ids · ! 1 ✗ 1
  Global Git › Options
- ! The doctor found 1 Git finding beyond this baseline.  Open Health (4)
+ ! The doctor found 2 Git findings beyond this baseline.  Open Health (4)
  ▸ ☑ ! init.defaultBranch  [main vs master] │  init.defaultBranch
       now:  → main                          │  ~ Recommended, not required -- you can leave any
    ☐ ! core.ignorecase                      │ option unchanged. This is advisory, never a compliance

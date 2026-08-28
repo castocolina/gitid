@@ -3694,6 +3694,9 @@ func fixExcludesfile(baselineFilePath string) func(path string) error {
 			return fmt.Errorf("doctor: writing global gitignore: %w", err)
 		}
 
+		if err := filewriter.EnsureDir(filepath.Dir(baselineFilePath), 0o700); err != nil {
+			return fmt.Errorf("doctor: ensuring %s: %w", filepath.Dir(baselineFilePath), err)
+		}
 		content, rerr := os.ReadFile(baselineFilePath) //nolint:gosec // baselineFilePath is a trusted gitid-managed path (G304)
 		if rerr != nil && !os.IsNotExist(rerr) {
 			return fmt.Errorf("doctor: reading %s: %w", baselineFilePath, rerr)

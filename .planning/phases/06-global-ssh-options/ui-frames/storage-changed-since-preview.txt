@@ -1,4 +1,4 @@
- gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  2 ids · ! 4 ✗ 4
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  2 ids · ! 3 ✗ 4
  Global SSH › Storage & preview
   Options   Storage & preview
 ✗ Configuration changed since the preview was opened — re-open the preview to migrate.
