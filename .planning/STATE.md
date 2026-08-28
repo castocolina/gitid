@@ -5,10 +5,10 @@ milestone_name: TUI-First Redesign
 current_phase: 08
 current_phase_name: Health + Fixer
 status: executing
-stopped_at: Phase 8 (Health + Fixer) Wave 1 of 8 complete and merged; starting Wave 2
-last_updated: "2026-08-28T03:24:00.000Z"
+stopped_at: Phase 8 (Health + Fixer) Wave 2 of 8 complete and merged; starting Wave 3
+last_updated: "2026-08-28T05:12:00.000Z"
 last_activity: 2026-08-28
-last_activity_desc: Phase 8 Wave 1 (08-01, doctor.Run() convergence + Health/Fixer split + gitid health CLI) implemented via orchestrator hand-recovery after the cross-AI executor crashed on a banned /tmp-write wall; merged into gsd/phase-08-health-fixer at 2eff716. Full gate battery (build/race-test/lint/gate-visual-regression/make test/make test-e2e) independently re-verified green on the merged tree. 7 waves remain.
+last_activity_desc: Phase 8 Wave 2 (08-02, flagship fix-in-place — D-09 hand-written IdentitiesOnly contradiction check + surgical rewrite primitive, D-10 verification loop, D-13/D-14 re-scan+convergence-alarm wired into Persist, Backend.FixPlanFor seam, gitid fix CLI) implemented via orchestrator hand-recovery after the cross-AI executor crashed on the same /tmp-write wall as Wave 1; merged into gsd/phase-08-health-fixer at 08f4167. Found and fixed 2 real bugs via genuine empirical testing (a stale-Deps D-13 re-scan bug; a test-fixture-design gap where an unparseable-but-tolerated corruption didn't trigger the round-trip-stability check). Full gate battery (build/race-test 2074 passed/lint/gate-visual-regression/make test/make test-e2e 597.9s) independently re-verified green on the merged tree. 6 waves remain.
 state_head: 540b6ed
 progress:
   total_phases: 10
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 ## Current Position
 
 Phase: 08 — Health + Fixer
-Status: Wave 1 of 8 COMPLETE and merged; starting Wave 2 (08-02: flagship fix-in-place — hand-written-directive contradiction check, D-09 surgical rewrite, D-10 verification loop, D-11 confirm, D-13 re-run-all, D-14 convergence alarm, `gitid fix` CLI)
-Last activity: 2026-08-28 — Wave 1 (08-01) done via orchestrator hand-recovery: `internal/doctor.Run(deps)` is now the sole findings source for Health/Fixer/CLI; `TabID` split 4→5 with real, structurally distinct Health (read-only) and Fixer (fix-ceremony) screens; all 9 check families wired; `gitid health --json` created (Task 1's own plan text said to but never did). Found and fixed a real double-report bug in `internal/doctor/checks/coherence.go` via genuine fixture testing. Fixed 4 rounds of stale "Doctor"→"Health"/"Fixer" text, each caught by a real `make test-e2e` failure, never a static sweep alone. Merged to `gsd/phase-08-health-fixer` at `2eff716`; full gate battery (build, `go test -race` 2046 passed, lint 0 issues, `gate-visual-regression`, `make test`, `make test-e2e` 603.9s) independently re-verified green on the merged tree by the orchestrator. See `08-01-SUMMARY.md`. 7 waves remain (08-02 through 08-08); see `08-REVIEWS.md` for the cross-AI review these plans already incorporate.
+Status: Wave 2 of 8 COMPLETE and merged; starting Wave 3 (08-03: D-06 tolerance fixes + HLTH-02 parse gates)
+Last activity: 2026-08-28 — Wave 2 (08-02) done via orchestrator hand-recovery (same pattern as Wave 1 — the cross-AI executor crashed on the same /tmp-write wall): the Fixer can now surgically rewrite exactly ONE hand-written directive (`IdentitiesOnly no -> yes` on a non-gitid-managed Host stanza) through a full ceremony — real diff, typed confirm, timestamped backup, mandatory parse-render-re-parse + real `ssh -G` re-verification, auto-restore on any mismatch (`internal/sshconfig.RewriteHostDirective`/`ApplyVerifiedHostDirective`). Every fix (not only the flagship) now re-runs the full doctor scan and replaces `state.Findings`; a finding that survives its own successful fix becomes a session-scoped convergence-alarm finding, withdrawn from re-offer. `gitid fix [--yes] [--dry-run]` applies the same real path, capped by a `maxPasses` backstop. Found and fixed 2 real bugs empirically: a D-13 re-scan reusing stale pre-fix `doctor.Deps` (caught by a failing integration test before the fix), and a verification-failure test whose corruption was silently tolerated by the parser (needed a genuine NUL byte to trigger). Also discovered (not a bug — working as designed) that `CheckBaseline`'s `Fn`-only fallback never converges when `SetupBaseline` is nil, correctly halted by `maxPasses`. Merged to `gsd/phase-08-health-fixer` at `08f4167`; full gate battery (build, `go test -race` 2074 passed, lint 0 issues, `gate-visual-regression`, `make test`, `make test-e2e` 597.9s) independently re-verified green on the merged tree. See `08-02-SUMMARY.md`. 6 waves remain (08-03 through 08-08); see `08-REVIEWS.md` for the cross-AI review these plans already incorporate.
 
 ### Phase 7 (COMPLETE) — historical record
 
