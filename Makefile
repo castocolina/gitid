@@ -294,6 +294,23 @@ test: gate-copy-freeze
 ## those comment lines) would silently swallow the entire D-13 check with the
 ## gate still reporting success. Keeping the explanation OUT of the
 ## continued recipe removes that trap entirely.
+##
+## Phase 9 (09-UI-SPEC.md's Copywriting Contract, D-08) registers the
+## internal/tuikit/design.go Upload/RotateDeleteOffer copy block below. The
+## grep roots already cover internal/tuikit, where design.go declares them,
+## so no root change was needed. `UploadKeyTitleFmt` ("gitid: %s @ %s") is
+## deliberately EXCLUDED — its rendered output varies per machine (the local
+## short hostname, D-07), matching the four existing per-machine/dynamic-text
+## exclusion precedents below (D-13's OpenSSH prefix, 07-03's git-version
+## prefix, D-09's bundle aggregate, the applied/selected counts); a fifth
+## runtime-assembled exclusion check proves it stays out.
+##
+## IMPORTANT: this gate is a SECONDARY source-presence guard — `grep -rqF`
+## only proves a string appears SOMEWHERE under the scanned roots (a comment
+## or a dead declaration would satisfy it too). `TestFrozenUploadCopy`
+## (internal/tuikit/upload_copy_test.go) is the AUTHORITATIVE byte-exact
+## contract for the Phase 9 strings below; a green gate here is not proof of
+## the value (R21, 09-01-PLAN.md cross-AI review).
 gate-copy-freeze:
 	@echo "==> gate-copy-freeze: 02-STYLE-SPEC.md §6 frozen copy"
 	@fail=0; \
@@ -353,7 +370,33 @@ gate-copy-freeze:
 		'user.useConfigOnly is selected but the fallback author has no email set' \
 		'The fallback email is set but the fallback name is empty' \
 		'Global user.email was left alone, as always -- each identity'\''s commits use their own includeIf fragment.' \
-		' — your value differs, so yours wins'; \
+		' — your value differs, so yours wins' \
+		'Register with %s automatically (auth + signing)' \
+		'Register with %s automatically — not logged in to %s; run \"%s auth login\" first, or check anyway' \
+		'Auto-registration unavailable — %s has no gh/glab match here. Manual steps are shown after create.' \
+		'Running: %s' \
+		'✓ %s key registered' \
+		'✓ %s key already registered (skipped)' \
+		'✗ %s key registration failed: %s' \
+		'insufficient scope — run \"gh auth refresh -h %s -s admin:public_key\", then retry from the Identity Manager' \
+		'insufficient scope — run \"gh auth refresh -h %s -s admin:ssh_signing_key\", then retry from the Identity Manager' \
+		'GitLab rejected this key — it is already registered to a DIFFERENT account. If that'\''s expected, remove it there first; otherwise check \"glab auth status\".' \
+		'Could not check %s for existing keys — uploading anyway; duplicates are handled safely.' \
+		'--dry-run: the command(s) above were shown, not run.' \
+		'Auto-registration wasn'\''t available. Register it yourself:' \
+		'Auto-upload skipped (--no-upload).' \
+		'✓ Already registered with %s — nothing to do.' \
+		'Authentication' \
+		'Signing' \
+		'Key' \
+		'Remove the old key from %s?' \
+		'The old key (\"gitid: %s @ %s\") still authenticates there until you remove it. Delete it now?' \
+		'[ Delete old key from %s ]' \
+		'[ Leave it — I'\''ll remove it myself ]' \
+		'✓ Old key removed from %s.' \
+		'Left in place — remove it yourself: %s' \
+		'Register key (u)' \
+		'Register %s'\''s key with %s'; \
 	do \
 		if grep -rqF -- "$$s" internal/tuikit internal/identity cmd/gitid internal/globalssh internal/globalgit; then \
 			echo "    ok   $$s"; \
@@ -392,6 +435,13 @@ gate-copy-freeze:
 		exit 1; \
 	else \
 		echo "    ok   result-message exclusion (dynamic applied/selected counts not frozen)"; \
+	fi; \
+	keytitle_dyn="'gitid: %s"; keytitle_dyn="$$keytitle_dyn @ %s'"; \
+	if grep -qF -- "$$keytitle_dyn" Makefile; then \
+		echo "    FAIL  dynamic key-title format (UploadKeyTitleFmt, D-07) must stay out of the frozen list — its rendered output varies per machine"; \
+		exit 1; \
+	else \
+		echo "    ok   D-07 exclusion (dynamic key-title format not frozen)"; \
 	fi
 
 ## build: compile the gitid binary.
