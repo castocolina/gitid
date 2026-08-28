@@ -373,6 +373,12 @@ func TestGateVisualRegression(t *testing.T) {
 	deterministicGlobalGitFixture(t, ggitHome1)
 	deterministicGlobalGitFixture(t, ggitHome2)
 
+	// 08-08-PLAN.md Task 2: Health/Fixer checkpoints, isolated the SAME way.
+	hfHome1 := t.TempDir()
+	hfHome2 := t.TempDir()
+	deterministicHealthFixerFixture(t, hfHome1)
+	deterministicHealthFixerFixture(t, hfHome2)
+
 	// CR-01: run TWO independent captures and compare text hashes.
 	t.Setenv("HOME", home1)
 	realBackend1 := newBackendForHome(home1)
@@ -390,6 +396,7 @@ func TestGateVisualRegression(t *testing.T) {
 	mergeIdentityManagerCaptures(t, realCaptures1, dummyCaptures1, imgrHome1)
 	mergeGlobalSSHCaptures(t, realCaptures1, dummyCaptures1, gssHome1)
 	mergeGlobalGitCaptures(t, realCaptures1, dummyCaptures1, ggitHome1)
+	mergeHealthFixerCaptures(t, realCaptures1, dummyCaptures1, hfHome1)
 
 	t.Setenv("HOME", home2)
 	realBackend2 := newBackendForHome(home2)
@@ -407,6 +414,7 @@ func TestGateVisualRegression(t *testing.T) {
 	mergeIdentityManagerCaptures(t, realCaptures2, dummyCaptures2, imgrHome2)
 	mergeGlobalSSHCaptures(t, realCaptures2, dummyCaptures2, gssHome2)
 	mergeGlobalGitCaptures(t, realCaptures2, dummyCaptures2, ggitHome2)
+	mergeHealthFixerCaptures(t, realCaptures2, dummyCaptures2, hfHome2)
 
 	specs := screenshot.RequiredScreenSpecs()
 	// Determinism is checked within each surface. Real and dummy are not byte,
@@ -606,6 +614,9 @@ func TestAllScreensCapturedAndNonEmpty(t *testing.T) {
 	ggitHome := t.TempDir()
 	deterministicGlobalGitFixture(t, ggitHome)
 	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
+	hfHome := t.TempDir()
+	deterministicHealthFixerFixture(t, hfHome)
+	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
 	t.Setenv("HOME", home) // restore for any later HOME-dependent assertions
 
 	for _, spec := range screenshot.RequiredScreenSpecs() {
@@ -670,6 +681,9 @@ func TestNegativeControl_UnclassifiedDifferenceRejected(t *testing.T) {
 	ggitHome := t.TempDir()
 	deterministicGlobalGitFixture(t, ggitHome)
 	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
+	hfHome := t.TempDir()
+	deterministicHealthFixerFixture(t, hfHome)
+	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
 	t.Setenv("HOME", home) // restore for any later HOME-dependent assertions
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -786,6 +800,9 @@ func TestNegativeControl_AllComparableEqualRegionsAreMutationSensitive(t *testin
 	ggitHome := t.TempDir()
 	deterministicGlobalGitFixture(t, ggitHome)
 	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
+	hfHome := t.TempDir()
+	deterministicHealthFixerFixture(t, hfHome)
+	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
 	t.Setenv("HOME", home) // restore for any later HOME-dependent assertions
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -891,6 +908,9 @@ func TestNegativeControl_GitScreenUnclassifiedDifferenceRejected(t *testing.T) {
 	ggitHome := t.TempDir()
 	deterministicGlobalGitFixture(t, ggitHome)
 	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
+	hfHome := t.TempDir()
+	deterministicHealthFixerFixture(t, hfHome)
+	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -965,6 +985,9 @@ func TestNegativeControl_AllGitScreenComparableEqualRegionsAreMutationSensitive(
 	ggitHome := t.TempDir()
 	deterministicGlobalGitFixture(t, ggitHome)
 	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
+	hfHome := t.TempDir()
+	deterministicHealthFixerFixture(t, hfHome)
+	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1082,6 +1105,9 @@ func TestNegativeControl_IdentityManagerUnclassifiedDifferenceRejected(t *testin
 	ggitHome := t.TempDir()
 	deterministicGlobalGitFixture(t, ggitHome)
 	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
+	hfHome := t.TempDir()
+	deterministicHealthFixerFixture(t, hfHome)
+	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1152,6 +1178,9 @@ func TestNegativeControl_AllIdentityManagerComparableEqualRegionsAreMutationSens
 	ggitHome := t.TempDir()
 	deterministicGlobalGitFixture(t, ggitHome)
 	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
+	hfHome := t.TempDir()
+	deterministicHealthFixerFixture(t, hfHome)
+	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1715,6 +1744,9 @@ func TestNegativeControl_GlobalSSHUnclassifiedDifferenceRejected(t *testing.T) {
 	ggitHome := t.TempDir()
 	deterministicGlobalGitFixture(t, ggitHome)
 	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
+	hfHome := t.TempDir()
+	deterministicHealthFixerFixture(t, hfHome)
+	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1780,6 +1812,9 @@ func TestNegativeControl_AllGlobalSSHComparableEqualRegionsAreMutationSensitive(
 	ggitHome := t.TempDir()
 	deterministicGlobalGitFixture(t, ggitHome)
 	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
+	hfHome := t.TempDir()
+	deterministicHealthFixerFixture(t, hfHome)
+	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1946,7 +1981,7 @@ var allowlistFrameNamePattern = regexp.MustCompile(`ui-frames/([A-Za-z0-9._-]+\.
 // colon-split parser wrong — a bare strings.SplitN shifts every field after
 // `contains:"now:"`.
 var allowlistLinePattern = regexp.MustCompile(
-	`^(?:<([^>]+)>)?\s*((?:gss|ggit)-[A-Za-z0-9-]+):([a-z0-9-]+):(contains:"[^"]*"|absent:"[^"]*"):(GSSH-D-[0-9]+|STORE-[0-9]+|GGIT-D-[0-9]+|DLV-[0-9]+):(improvement|defect):(.*)$`)
+	`^(?:<([^>]+)>)?\s*((?:gss|ggit|health|fixer)-[A-Za-z0-9-]+):([a-z0-9-]+):(contains:"[^"]*"|absent:"[^"]*"):(GSSH-D-[0-9]+|STORE-[0-9]+|GGIT-D-[0-9]+|DLV-[0-9]+):(improvement|defect):(.*)$`)
 
 // readDivergenceAllowlist parses the strict 7-field allowlist schema shared
 // by every phase's visual-divergence-allowlist.txt (see allowlistLinePattern).
@@ -2189,6 +2224,9 @@ func TestNegativeControl_GlobalGitUnclassifiedDifference(t *testing.T) {
 	ggitHome := t.TempDir()
 	deterministicGlobalGitFixture(t, ggitHome)
 	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
+	hfHome := t.TempDir()
+	deterministicHealthFixerFixture(t, hfHome)
+	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -2262,6 +2300,9 @@ func TestNegativeControl_GlobalGitPerturbedComparableRegion(t *testing.T) {
 	ggitHome := t.TempDir()
 	deterministicGlobalGitFixture(t, ggitHome)
 	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
+	hfHome := t.TempDir()
+	deterministicHealthFixerFixture(t, hfHome)
+	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -2409,5 +2450,338 @@ func mergeGlobalGitCaptures(t *testing.T, real, approved map[string]string, home
 	}
 	for id, text := range ggitApproved {
 		approved[id] = text
+	}
+}
+
+// deterministicHealthFixerFixture seeds home with a hand-written SSH Host
+// block carrying the D-09 IdentitiesOnly/IdentityFile contradiction — the
+// SAME flagship fixable finding e2e/health_fixer_pty_e2e_test.go's
+// seedHealthFixerFlagship seeds (08-08 Task 1), reproduced directly here
+// (cmd/gitid, not e2e) since deterministicHealthFixerFixture needs a REAL,
+// deterministic finding for health-findings/fixer-list/
+// fixer-ceremony-preview to have real content to capture and compare — an
+// empty home would leave RegionHealthBody/RegionFixerBody empty on the
+// live side (CR-05).
+func deterministicHealthFixerFixture(t *testing.T, home string) {
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatalf("deterministicHealthFixerFixture: mkdir .ssh: %v", err)
+	}
+	config := filepath.Join(sshDir, "config")
+	content := "# hand-written header\n" +
+		"Host clientb.github.com\n" +
+		"\tHostName ssh.github.com\n" +
+		"\tIdentitiesOnly no # deliberately loose\n" +
+		"\tIdentityFile ~/.ssh/id_ed25519_clientb\n"
+	if err := os.WriteFile(config, []byte(content), 0o600); err != nil { //nolint:gosec // hermetic sandbox HOME fixture (G306)
+		t.Fatalf("deterministicHealthFixerFixture: WriteFile config: %v", err)
+	}
+}
+
+// mergeHealthFixerCaptures captures Health/Fixer screens from both backends
+// into the provided maps.
+func mergeHealthFixerCaptures(t *testing.T, real, approved map[string]string, home string) {
+	t.Setenv("HOME", home)
+	realB := newBackendForHome(home)
+	hfLive, err := screenshot.CaptureHealthFixerScreens(realB)
+	if err != nil {
+		t.Fatalf("CaptureHealthFixerScreens (live): %v", err)
+	}
+	dummyB := dummytui.NewFixtureBackend()
+	hfApproved, err := screenshot.CaptureHealthFixerScreens(dummyB)
+	if err != nil {
+		t.Fatalf("CaptureHealthFixerScreens (approved): %v", err)
+	}
+	for id, text := range hfLive {
+		real[id] = text
+	}
+	for id, text := range hfApproved {
+		approved[id] = text
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8 Health/Fixer registration tests (08-08-PLAN.md Task 2, DLV-04)
+// ---------------------------------------------------------------------------
+
+// healthFixerScreenIDs is the known Phase 8 Health/Fixer checkpoint
+// vocabulary, duplicated here (internal/screenshot's healthFixerSpecs is
+// unexported) so the negative controls and the allowlist tests can scope
+// themselves to Phase 8 without a new export surface — mirrors
+// globalGitScreenIDs' precedent.
+var healthFixerScreenIDs = map[string]bool{
+	"health-findings": true, "fixer-list": true, "fixer-ceremony-preview": true,
+}
+
+// TestHealthFixerHTMLNonApplicabilityPerSpec proves the approved-HTML
+// surface is non-applicable on every Health/Fixer spec with the standing
+// UI-reference rule reason.
+func TestHealthFixerHTMLNonApplicabilityPerSpec(t *testing.T) {
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		if !healthFixerScreenIDs[spec.ScreenID] {
+			continue
+		}
+		found := false
+		for _, na := range spec.NonApplicability {
+			if na.Surface == "approved-html" && na.Classification == "ux-improvement" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Health/Fixer spec %q missing approved-html non-applicability with ux-improvement classification", spec.ScreenID)
+		}
+	}
+}
+
+// TestHealthFixerAllowlistMatchesRegistry proves one-way correspondence:
+// every entry in the visual-divergence-allowlist appears as a disposition
+// in the registry.
+func TestHealthFixerAllowlistMatchesRegistry(t *testing.T) {
+	entries, err := readDivergenceAllowlist(filepath.Join("..", "..", ".planning", "design", "health-fixer", "visual-divergence-allowlist.txt"))
+	if err != nil {
+		t.Fatalf("readDivergenceAllowlist: %v", err)
+	}
+	bySpec := make(map[string]screenshot.ScreenSpec)
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		bySpec[spec.ScreenID] = spec
+	}
+	for _, entry := range entries {
+		if !healthFixerScreenIDs[entry.ScreenID] {
+			continue
+		}
+		spec, ok := bySpec[entry.ScreenID]
+		if !ok {
+			t.Errorf("allowlist entry references unknown screen ID %q", entry.ScreenID)
+			continue
+		}
+		found := false
+		for _, disp := range spec.RegionDispositions {
+			if string(disp.Region) == entry.Region && disp.Classification == "ux-improvement" && entry.Classification == "improvement" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("allowlist entry %s:%s not found in registry spec %q", entry.ScreenID, entry.Region, entry.ScreenID)
+		}
+	}
+}
+
+// TestHealthFixerAllowlistFormat verifies the allowlist uses only valid
+// predicates (contains:/absent:) and classifications.
+func TestHealthFixerAllowlistFormat(t *testing.T) {
+	entries, err := readDivergenceAllowlist(filepath.Join("..", "..", ".planning", "design", "health-fixer", "visual-divergence-allowlist.txt"))
+	if err != nil {
+		t.Fatalf("readDivergenceAllowlist: %v", err)
+	}
+	for _, entry := range entries {
+		if !healthFixerScreenIDs[entry.ScreenID] {
+			continue
+		}
+		if entry.Predicate == "" || (!strings.HasPrefix(entry.Predicate, "contains:") && !strings.HasPrefix(entry.Predicate, "absent:")) {
+			t.Errorf("allowlist entry %s: invalid predicate %q (must be contains: or absent:)", entry.Name, entry.Predicate)
+		}
+		if entry.Classification != "improvement" && entry.Classification != "defect" {
+			t.Errorf("allowlist entry %s: invalid classification %q (must be improvement or defect)", entry.Name, entry.Classification)
+		}
+	}
+}
+
+// TestHealthFixerMakefileFilterSelectsControls verifies the
+// gate-visual-regression target's test-selection filter includes Health/Fixer
+// tests and all Health/Fixer negative controls by name.
+func TestHealthFixerMakefileFilterSelectsControls(t *testing.T) {
+	rootDir := filepath.Join("..", "..")
+	makefilePath := filepath.Join(rootDir, "Makefile")
+	content, err := os.ReadFile(makefilePath)
+	if err != nil {
+		t.Fatalf("reading Makefile from repo root (%s): %v", makefilePath, err)
+	}
+	makefileText := string(content)
+	lines := strings.Split(makefileText, "\n")
+	targetStart := -1
+	for i, line := range lines {
+		if strings.Contains(line, "gate-visual-regression:") {
+			targetStart = i
+			break
+		}
+	}
+	if targetStart < 0 {
+		t.Fatal("gate-visual-regression target not found in Makefile")
+	}
+	recipeStart := -1
+	for i := targetStart + 1; i < len(lines); i++ {
+		if strings.HasPrefix(lines[i], "\t") {
+			recipeStart = i
+			break
+		}
+	}
+	if recipeStart < 0 {
+		t.Fatal("no recipe line found for gate-visual-regression target")
+	}
+	recipeEnd := recipeStart + 1
+	for recipeEnd < len(lines) && strings.HasPrefix(lines[recipeEnd], "\t") {
+		recipeEnd++
+	}
+	recipe := strings.Join(lines[recipeStart:recipeEnd], "\n")
+	// "HealthFixer" selects the Health/Fixer acceptance tests
+	// (TestHealthFixer*); "NegativeControl_" selects all negative controls
+	// including the Health/Fixer ones (TestNegativeControl_HealthFixer*) —
+	// the SAME shared alternation term every other surface's controls rely
+	// on.
+	tests := []string{"HealthFixer", "NegativeControl_"}
+	for _, test := range tests {
+		if !strings.Contains(recipe, test) {
+			t.Errorf("Makefile gate-visual-regression recipe missing -run pattern for %s", test)
+		}
+	}
+}
+
+// buildHealthFixerCaptures constructs the full merged real/dummy capture
+// maps every Health/Fixer negative control needs, so each control drives the
+// SAME real gate path (BuildRegionDiffs -> ValidateRegionDiffs) the routine
+// gate itself uses rather than asserting preconditions in isolation.
+func buildHealthFixerCaptures(t *testing.T) (real, dummy map[string]string) {
+	t.Helper()
+	home := t.TempDir()
+	deterministicReusableKeyFixture(t, home)
+	t.Setenv("HOME", home)
+	realB := newBackendForHome(home)
+	realCaptures, err := screenshot.CaptureCreateFlowScreens(realB)
+	if err != nil {
+		t.Fatalf("capturing real backend: %v", err)
+	}
+	dummyB := dummytui.NewFixtureBackend()
+	dummyCaptures, err := screenshot.CaptureCreateFlowScreens(dummyB)
+	if err != nil {
+		t.Fatalf("capturing dummy backend: %v", err)
+	}
+	gitHome := t.TempDir()
+	deterministicGitIdentityFixture(t, gitHome)
+	mergeGitScreenCaptures(t, realCaptures, dummyCaptures, gitHome)
+	imgrHome := t.TempDir()
+	deterministicIdentityManagerFixture(t, imgrHome)
+	mergeIdentityManagerCaptures(t, realCaptures, dummyCaptures, imgrHome)
+	gssHome := t.TempDir()
+	deterministicGlobalSSHFixture(t, gssHome)
+	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
+	ggitHome := t.TempDir()
+	deterministicGlobalGitFixture(t, ggitHome)
+	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
+	hfHome := t.TempDir()
+	deterministicHealthFixerFixture(t, hfHome)
+	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
+	t.Setenv("HOME", home)
+	return realCaptures, dummyCaptures
+}
+
+// TestNegativeControl_HealthFixerMissingState verifies the gate fails when a
+// required Health/Fixer screen state is missing from the captured set.
+func TestNegativeControl_HealthFixerMissingState(t *testing.T) {
+	home := t.TempDir()
+	deterministicHealthFixerFixture(t, home)
+	t.Setenv("HOME", home)
+	realB := newBackendForHome(home)
+	real, err := screenshot.CaptureHealthFixerScreens(realB)
+	if err != nil {
+		t.Fatalf("CaptureHealthFixerScreens: %v", err)
+	}
+	delete(real, "health-findings")
+	if _, ok := real["health-findings"]; ok {
+		t.Fatal("test setup failure: health-findings still present after delete")
+	}
+	if err := screenshot.ValidateCapturedState(screenshot.ScreenSpec{
+		ScreenID:    "health-findings",
+		StateMarker: "Suggested fix:",
+	}, ""); err == nil {
+		t.Error("ValidateCapturedState should have failed for a missing required state marker — the gate must catch a missing state")
+	}
+}
+
+// TestNegativeControl_HealthFixerUnclassifiedDifference proves the REAL gate
+// (BuildRegionDiffs -> ValidateRegionDiffs, the exact path
+// TestGateVisualRegression drives) rejects a genuine unclassified
+// difference: build the FULL real classified diff set, strip the
+// classification off an already-known-divergent Health/Fixer region, and
+// assert ValidateRegionDiffs then fails on the mutated evidence.
+func TestNegativeControl_HealthFixerUnclassifiedDifference(t *testing.T) {
+	realCaptures, dummyCaptures := buildHealthFixerCaptures(t)
+	specs := screenshot.RequiredScreenSpecs()
+	records, err := screenshot.BuildRegionDiffs("negative-control", realCaptures, dummyCaptures, specs)
+	if err != nil {
+		t.Fatalf("building classified region evidence: %v", err)
+	}
+	mutated := false
+	for i := range records {
+		if !healthFixerScreenIDs[records[i].ScreenID] {
+			continue // scope this control to Phase 8 Health/Fixer records only
+		}
+		for j := range records[i].Regions {
+			region := &records[i].Regions[j]
+			if !region.Comparable || !region.Equal {
+				region.Classification = ""
+				mutated = true
+				break
+			}
+		}
+		if mutated {
+			break
+		}
+	}
+	if !mutated {
+		t.Fatal("negative-control: no classified Health/Fixer difference was available to mutate")
+	}
+	data, err := json.Marshal(screenshot.RegionDiffs{Version: "test", SourceCommit: "negative-control", GeneratedAt: "test", Screens: records})
+	if err != nil {
+		t.Fatalf("marshaling mutated region evidence: %v", err)
+	}
+	if err := screenshot.ValidateRegionDiffs(data, "negative-control", specs); err == nil {
+		t.Fatal("negative-control: ValidateRegionDiffs must reject a classified Health/Fixer difference whose classification was stripped")
+	}
+}
+
+// TestNegativeControl_HealthFixerPerturbedComparableRegion verifies the REAL
+// gate fails when a region that currently compares equal between real and
+// approved-tui is perturbed on one side — proven exhaustively, across every
+// comparable currently-equal Health/Fixer region.
+func TestNegativeControl_HealthFixerPerturbedComparableRegion(t *testing.T) {
+	realCaptures, dummyCaptures := buildHealthFixerCaptures(t)
+	specs := screenshot.RequiredScreenSpecs()
+	records, err := screenshot.BuildRegionDiffs("negative-control", realCaptures, dummyCaptures, specs)
+	if err != nil {
+		t.Fatalf("building classified region evidence: %v", err)
+	}
+	assertAllComparableEqualRegionsAreMutationSensitive(t, specs, records, func(screenID string) bool {
+		return healthFixerScreenIDs[screenID]
+	})
+}
+
+// TestNegativeControl_HealthFixerCrossSurfaceAllowlistLeakage verifies the
+// gate fails when an allowlist entry from another surface (Global Git) is
+// offered against a Health/Fixer screen ID — proven by asserting no Global
+// Git allowlist entry's region+predicate accidentally satisfies a
+// Health/Fixer disposition, and vice versa (mirrors
+// TestNegativeControl_GlobalGitCrossSurfaceAllowlistLeakage's own leakage
+// check, scoped to the two newest surfaces sharing the same DLV-4 decision
+// literal — the case most likely to accidentally cross-match).
+func TestNegativeControl_HealthFixerCrossSurfaceAllowlistLeakage(t *testing.T) {
+	ggitEntries, err := readDivergenceAllowlist(filepath.Join("..", "..", ".planning", "design", "global-git", "visual-divergence-allowlist.txt"))
+	if err != nil {
+		t.Fatalf("readDivergenceAllowlist (global-git): %v", err)
+	}
+	for _, entry := range ggitEntries {
+		if healthFixerScreenIDs[entry.ScreenID] {
+			t.Errorf("Global Git allowlist entry %q names a Health/Fixer screen ID — cross-registry leakage", entry.Name)
+		}
+	}
+	hfEntries, err := readDivergenceAllowlist(filepath.Join("..", "..", ".planning", "design", "health-fixer", "visual-divergence-allowlist.txt"))
+	if err != nil {
+		t.Fatalf("readDivergenceAllowlist (health-fixer): %v", err)
+	}
+	for _, entry := range hfEntries {
+		if globalGitScreenIDs[entry.ScreenID] {
+			t.Errorf("Health/Fixer allowlist entry %q names a Global Git screen ID — cross-registry leakage", entry.Name)
+		}
 	}
 }

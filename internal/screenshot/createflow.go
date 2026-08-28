@@ -547,6 +547,10 @@ func ScreenSpecRegistry() []ScreenSpec {
 	// 07-06-PLAN.md Task 1: consume the Phase 7 Global Git registry alongside
 	// the existing four, without disturbing any of them (five-way merged).
 	specs = append(specs, globalGitSpecs()...)
+	// 08-08-PLAN.md Task 2: consume the Phase 8 Health/Fixer registry
+	// alongside the existing five, without disturbing any of them
+	// (six-way merged).
+	specs = append(specs, healthFixerSpecs()...)
 	return specs
 }
 
@@ -1204,7 +1208,9 @@ func CaptureCreateFlowScreens(backend tuikit.Backend) (map[string]string, error)
 		// likewise captured separately against their own seeded HOME.
 		// 07-06-PLAN.md Task 1: Global Git specs (CaptureGlobalGitScreens) are
 		// likewise captured separately against their own seeded HOME.
-		if !spec.ApplicableLive || isGitScreenID(spec.ScreenID) || isIdentityManagerScreenID(spec.ScreenID) || isGlobalSSHScreenID(spec.ScreenID) || isGlobalGitScreenID(spec.ScreenID) {
+		// 08-08-PLAN.md Task 2: Health/Fixer specs (CaptureHealthFixerScreens)
+		// are likewise captured separately against their own seeded HOME.
+		if !spec.ApplicableLive || isGitScreenID(spec.ScreenID) || isIdentityManagerScreenID(spec.ScreenID) || isGlobalSSHScreenID(spec.ScreenID) || isGlobalGitScreenID(spec.ScreenID) || isHealthFixerScreenID(spec.ScreenID) {
 			continue
 		}
 		text, ok := out[spec.ScreenID]
@@ -1891,6 +1897,190 @@ func CaptureGlobalGitScreens(backend tuikit.Backend) (map[string]string, error) 
 	}
 
 	return out, nil
+}
+
+// ---------------------------------------------------------------------------
+// Health/Fixer regions (08-08-PLAN.md Task 2, DLV-04). CaptureHealthFixerScreens
+// mirrors CaptureGlobalGitScreens' self-contained pattern exactly: a
+// dedicated capture function driving the shared tuikit render stack over
+// health/fixer's own seeded home, merged into the shared registry by
+// mergeHealthFixerCaptures in cmd/gitid/gate_visual_regression_test.go —
+// never threaded into CaptureCreateFlowScreens' own home (isHealthFixerScreenID
+// excludes these IDs from that completeness check, the same reason every
+// other later-phase surface is excluded there).
+// ---------------------------------------------------------------------------
+
+// healthFixerApp boots a fresh tuikit.App around backend at the fixed capture
+// geometry and activates tabKey — '4' for Health, '5' for Fixer (the SAME
+// keys a real user presses; app.go's setTab dispatch).
+func healthFixerApp(backend tuikit.Backend, tabKey rune) tea.Model {
+	var model tea.Model = tuikit.NewApp(backend)
+	model = step(model, tea.WindowSizeMsg{Width: CaptureWidth, Height: CaptureHeight})
+	return keyRune(model, tabKey)
+}
+
+// CaptureHealthFixerScreens captures the Health and Fixer tabs' screen
+// states over backend's own seeded home. Covers: health-findings (the
+// findings list with its always-visible inline detail pane, HLTH-01/HLTH-02
+// — Known Divergence #1's finding-detail state), fixer-list (the fixable
+// list with its detail pane), and fixer-ceremony-preview (state A of the
+// compressed 2-state fix ceremony, Known Divergence #2).
+//
+// health-all-green/fixer-nothing-to-fix and the batch-walk state are NOT
+// captured here: both require either a genuinely-clean real scan (this
+// package's fixture deliberately seeds real findings so health-findings has
+// content to compare) or a real Persist write mid-walk that this
+// no-subprocess, in-process capture path never performs — the SAME class of
+// gap CaptureGlobalGitScreens' own doc comment records for its
+// probe-error/differs-row states. Evidence for the full state set lives in
+// e2e/health_fixer_pty_e2e_test.go's real-PTY suite (08-08 Task 1) instead.
+func CaptureHealthFixerScreens(backend tuikit.Backend) (map[string]string, error) {
+	out := make(map[string]string, 3)
+	capture := func(m tea.Model) string { return normalizeTimestamps(anyView(m)) }
+
+	// health-findings: Health tab after its real scan.
+	health := healthFixerApp(backend, '4')
+	out["health-findings"] = capture(health)
+
+	// fixer-list: Fixer tab after its real scan.
+	fixerList := healthFixerApp(backend, '5')
+	out["fixer-list"] = capture(fixerList)
+
+	// fixer-ceremony-preview: press 'f' to open a fixable finding's ceremony
+	// at its pre-write state A. Selects the SECOND fixable row (one Down
+	// first, safely clamped/no-op when only one row exists — the real
+	// side's single-finding fixture) rather than the first: the dummy's
+	// frozen fixture set's first-row finding (a long key path) makes the
+	// ceremony's "Backup → …" line wrap across two rendered lines, and
+	// timestampPattern (createflow.go) cannot normalize a timestamp split by
+	// a hard line-wrap — a genuine CR-01 non-determinism, not a real
+	// divergence. The second row's shorter target path fits on one line.
+	preCeremony := keyDown(fixerList)
+	ceremony := keyRune(preCeremony, 'f')
+	out["fixer-ceremony-preview"] = capture(ceremony)
+
+	for _, spec := range healthFixerSpecs() {
+		if !spec.ApplicableLive && !spec.ApplicableApprovedTUI {
+			continue
+		}
+		text, ok := out[spec.ScreenID]
+		if !ok || strings.TrimSpace(text) == "" {
+			return nil, fmt.Errorf("screenshot: CaptureHealthFixerScreens: required frame %q is missing or empty", spec.ScreenID)
+		}
+	}
+
+	// A fixture/home bug that leaves the fix ceremony stuck on the list
+	// would pass the non-emptiness loop above; assert it actually opened.
+	if out["fixer-ceremony-preview"] == out["fixer-list"] {
+		return nil, fmt.Errorf("screenshot: CaptureHealthFixerScreens: fixer-ceremony-preview captured the same frame as fixer-list — the fix ceremony never opened")
+	}
+
+	return out, nil
+}
+
+// isHealthFixerScreenID reports whether id is one of the Phase 8 Health/Fixer
+// checkpoint IDs registered here — used to exclude them from
+// CaptureCreateFlowScreens' completeness check (they are captured separately;
+// see CaptureHealthFixerScreens' doc comment).
+func isHealthFixerScreenID(id string) bool {
+	for _, spec := range healthFixerSpecs() {
+		if spec.ScreenID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// healthFixerSpecs returns the Phase 8 Health/Fixer checkpoint specs — the
+// SAME vocabulary 08-UI-SPEC.md's Approved Base States table names and
+// 08-08's real-PTY suite (e2e/health_fixer_pty_e2e_test.go) drives over real
+// PTYs. ApplicableApprovedHTML is false throughout, for the SAME reason
+// every later-phase surface's specs record it explicitly (T-06-45): Phase
+// 2's approved Bubble Tea dummy is the SOLE UI/UX parity target for Phases
+// 3-10, and the historical HTML/MUI artifacts are Phase-2 design history.
+//
+// RegionDispositions mirror
+// .planning/design/health-fixer/visual-divergence-allowlist.txt's classified
+// entries verbatim (kept in sync by TestHealthFixerAllowlistMatchesRegistry
+// in cmd/gitid/gate_visual_regression_test.go).
+//
+// Known Divergence #1 (the tab split: TabDoctor -> TabHealth+TabFixer) and
+// Known Divergence #2 (the compressed 2-state ceremony vs. FIELDS.md's
+// nominal 4-screen chain) are NOT represented as RegionDisposition entries
+// here — both are divergences between the CURRENT shared tuikit code (which
+// both cmd/gitid and cmd/gitid-dummy render identically, since both consume
+// the SAME internal/tuikit package) and the HISTORICAL Phase-2 design
+// mockup source. This gate compares real-vs-dummy, both of which already
+// implement the current, corrected shape identically — so neither
+// divergence produces an actual real/dummy region mismatch to allowlist.
+// They are pre-approved, resolved decisions recorded in 08-UI-SPEC.md and
+// the allowlist file's own header comment, not open findings this gate
+// needs to detect.
+func healthFixerSpecs() []ScreenSpec {
+	// hfFixtureClass is the DLV-04 fixture-vs-live comparison class every
+	// other later-phase surface's registry uses for the SAME class of
+	// divergence: the real backend renders real doctor.Run(deps) findings
+	// against a seeded fixture home; the dummy renders its frozen
+	// DemoFinding fixture set (internal/dummytui/data.go).
+	hfFixtureClass := "DLV-4"
+
+	noHTML := []SurfaceNonApplicability{uxNonComparable("approved-html", hfFixtureClass,
+		"AGENTS.md's BINDING UI Reference rule: Phase 2's approved Bubble Tea dummy is the SOLE Phase 8 UI/UX parity target for Phases 3-10; the historical HTML/MUI artifacts are Phase-2 design history and are recorded explicitly NON-APPLICABLE for every Phase 8 comparison")}
+
+	healthBodyDisposition := uxRegionDifferenceScoped(RegionHealthBody, "fixture-vs-live-findings", hfFixtureClass,
+		"the real Health body renders the live doctor.Run(deps) findings against the seeded fixture home; the dummy renders its frozen DemoFinding fixture set (internal/dummytui/data.go) — the whole findings list + detail pane is the classified fixture-vs-live divergence, and the shared 'Suggested fix:' label survives on both sides for any finding carrying one",
+		`contains:"Suggested fix:"`)
+	fixerBodyDisposition := uxRegionDifferenceScoped(RegionFixerBody, "fixture-vs-live-findings", hfFixtureClass,
+		"the real Fixer body renders the live fixable subset of doctor.Run(deps)'s findings against the seeded fixture home; the dummy renders its frozen fixable DemoFinding fixture set — the shared 'f · Fix this…' affordance survives on both sides",
+		`contains:"f · Fix this…"`)
+	fixerCeremonyDisposition := uxRegionDifferenceScoped(RegionFixerCeremony, "fixture-vs-live-diff", hfFixtureClass,
+		"the real fix ceremony's diff previews the first REAL fixable finding's actual before/after lines against the seeded fixture home; the dummy previews its frozen fixture finding's diff — the shared ceremony chrome (heading prefix, confirm/cancel buttons) survives on both sides",
+		`contains:"Fix: "`)
+	fixtureHeaderStatusDispositionHF := uxRegionDifferenceScoped(RegionHeaderStatus, "identity-count", hfFixtureClass,
+		"header status shows the identity count, which differs (real's single-identity seeded Health/Fixer fixture home vs the dummy's 8-identity IdentityManagerRows fixture set) — both sides carry the shared 'ids' marker",
+		`contains:"ids"`)
+	keybarDispositionHF := uxRegionDifferenceScoped(RegionKeybar, "finding-count-and-list", hfFixtureClass,
+		"the keybar region's last three lines include the status/count line naming how many findings were scanned, which differs (real's single seeded fixture finding vs the dummy's frozen multi-finding fixture set) — both sides share the 'Esc' key hint",
+		`contains:"Esc"`)
+	sidebarDispositionHF := uxRegionDifferenceScoped(RegionSidebar, "fixture-vs-live-rows", hfFixtureClass,
+		"on this surface RegionSidebar's left-of-│ extraction captures the FINDINGS LIST rows, not an identity sidebar — the real row set describes the live doctor.Run(deps) scan against the seeded fixture home while the dummy rows carry the frozen DemoFinding fixture set; the list content is the fixture-vs-live divergence and 'fixable' survives on both sides",
+		`contains:"fixable"`)
+	breadcrumbDispositionHF := uxRegionDifferenceScoped(RegionBreadcrumb, "finding-title", hfFixtureClass,
+		"the ceremony's breadcrumb names the selected finding's title (\"Fixer › Fix › <title>\"), which differs between the real seeded fixture finding and the dummy's frozen fixture finding — the shared 'Fixer › Fix ›' prefix anchors both sides",
+		`contains:"Fixer › Fix"`)
+
+	return []ScreenSpec{
+		{
+			ScreenID:              "health-findings",
+			Interaction:           "Boot the Health tab (view 4) after its real scan.",
+			StateMarker:           "Suggested fix:",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionHealthBody},
+			RegionDispositions:    []RegionDisposition{healthBodyDisposition, fixtureHeaderStatusDispositionHF, keybarDispositionHF, sidebarDispositionHF},
+		},
+		{
+			ScreenID:              "fixer-list",
+			Interaction:           "Boot the Fixer tab (view 5) after its real scan.",
+			StateMarker:           "f · Fix this…",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionFixerBody},
+			RegionDispositions:    []RegionDisposition{fixerBodyDisposition, fixtureHeaderStatusDispositionHF, keybarDispositionHF, sidebarDispositionHF},
+		},
+		{
+			ScreenID:              "fixer-ceremony-preview",
+			Interaction:           "From the Fixer list, press Down then f to open the second fixable finding's fix ceremony at its pre-write state A (the second row avoids a fixture-specific backup-path line-wrap on the dummy's first row — see CaptureHealthFixerScreens' doc comment).",
+			StateMarker:           "Fix: ",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionFixerCeremony},
+			RegionDispositions:    []RegionDisposition{fixerCeremonyDisposition, fixtureHeaderStatusDispositionHF, keybarDispositionHF, sidebarDispositionHF, breadcrumbDispositionHF},
+		},
+	}
 }
 
 // isGlobalSSHScreenID reports whether id is one of the Phase 6 Global SSH

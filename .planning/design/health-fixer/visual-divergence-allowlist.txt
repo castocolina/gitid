@@ -1,0 +1,100 @@
+# Health/Fixer visual-divergence allowlist (Phase 8, 08-08-PLAN.md Task 2)
+#
+# Consumed by cmd/gitid/gate_visual_regression_test.go's in-process capture
+# gate (08-08 Task 2), which registers the Phase 8 Health/Fixer checkpoints
+# alongside the existing create-flow / git-screen / identity-manager / Global
+# SSH / Global Git registries in the SHARED internal/screenshot
+# RequiredScreenSpecs inventory. The REAL cmd/gitid backend renders from a
+# seeded fixture home (a single hand-written IdentitiesOnly/IdentityFile
+# contradiction, deterministicHealthFixerFixture); the cmd/gitid-dummy
+# FixtureBackend renders its frozen DemoFinding fixture set
+# (internal/dummytui/data.go). Every divergence between the two surfaces
+# below is classified and documented — every other comparable region must be
+# byte-identical.
+#
+# STRICT SCHEMA — each entry must be EXACTLY:
+#   <T-08-NAME> <screen-id>:<region>:<predicate>:<decision>:<classification>:<reason>
+#
+# where:
+#   screen-id       one of the three Phase 8 Health/Fixer checkpoint IDs
+#                   registered in internal/screenshot's healthFixerSpecs():
+#                   health-findings | fixer-list | fixer-ceremony-preview
+#   region          one of the shared registry region names (the Health/Fixer
+#                   registrations add health-body, fixer-body, fixer-ceremony)
+#                   plus the four cross-surface regions every registration
+#                   also carries: header-status, keybar, sidebar, breadcrumb
+#   predicate       "contains:<quoted-text>" | "absent:<quoted-text>" — the
+#                   CR-04/CR-10 specific-needle grammar. A broad predicate
+#                   that would match unrelated text is a defect in the gate.
+#   decision        DLV-4 (the shared DLV-04 real-vs-frozen-dummy
+#                   comparison-class literal every other later-phase surface
+#                   uses for the SAME class of divergence). Bare D-/T-,
+#                   CTX-D-/UI-D-, GSSH-D-/STORE-, and GGIT-D- refs are NOT
+#                   valid here (cross-registry leakage).
+#   classification  improvement | defect — every entry states which it is.
+#   reason          non-empty human-readable explanation.
+#
+# VALIDATION RULES (enforced by cmd/gitid/gate_visual_regression_test.go):
+#   - TestHealthFixerAllowlistMatchesRegistry proves a byte 1:1
+#     correspondence between these entries and the code dispositions in
+#     healthFixerSpecs() (both directions): removing an entry, or widening a
+#     registry predicate, fails the gate.
+#   - TestHealthFixerAllowlistFormat rejects any entry lacking a needle-form
+#     predicate or a classification.
+#   - TestHealthFixerHTMLNonApplicabilityPerSpec proves the approved-HTML
+#     surface is non-applicable on every Health/Fixer spec with the standing
+#     UI-reference rule reason.
+#
+# Blank lines and lines starting with # are ignored.
+# ---------------------------------------------------------------------------
+#
+# ⚠ Known Divergence #1 (the tab split: TabDoctor -> TabHealth+TabFixer) and
+# Known Divergence #2 (the compressed 2-state ceremony vs. FIELDS.md's
+# nominal 4-screen v→x→y→z chain), both documented in 08-UI-SPEC.md, are
+# NOT represented as RegionDisposition rows below. Both are divergences
+# between the CURRENT shared internal/tuikit code (rendered IDENTICALLY by
+# BOTH cmd/gitid and cmd/gitid-dummy, since both consume the same package)
+# and the HISTORICAL Phase-2 design mockup source
+# (.planning/design/mockup-src/). This gate compares real-vs-dummy, and both
+# sides already implement the current, corrected tab-split/compressed-
+# ceremony shape identically — so neither divergence produces an actual
+# real/dummy region mismatch for this gate to detect or allowlist. They are
+# pre-approved, resolved decisions recorded in 08-UI-SPEC.md's own "Known
+# Divergence" sections (08-UI-SPEC.md is the binding record; this comment
+# only cross-references it), not open findings this routine gate needs to
+# catch — a mockup-vs-current-code comparison is a DIFFERENT audit than the
+# one this file governs.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# DLV-4 — fixture-vs-live comparison class (real backend reads a seeded
+# fixture home; the dummy's FixtureBackend always renders its frozen
+# DemoFinding fixture set). The real side is the more accurate render, so
+# every entry below classifies as an improvement.
+# ---------------------------------------------------------------------------
+
+<T-08-HEALTH-BODY> health-findings:health-body:contains:"Suggested fix:":DLV-4:improvement:the real Health body renders the live doctor.Run(deps) findings against the seeded fixture home; the dummy renders its frozen DemoFinding fixture set — the whole findings list + detail pane is the classified fixture-vs-live divergence, and the shared "Suggested fix:" label survives on both sides
+
+<T-08-HEALTH-HEADER> health-findings:header-status:contains:"ids":DLV-4:improvement:header status shows the identity count, which differs (real's single-identity seeded Health/Fixer fixture home vs the dummy's 8-identity IdentityManagerRows fixture set) — both sides carry the "ids" marker
+
+<T-08-HEALTH-KEYBAR> health-findings:keybar:contains:"Esc":DLV-4:improvement:the keybar region's last three lines include the status/count line naming how many findings were scanned, which differs (real's single seeded fixture finding vs the dummy's frozen multi-finding fixture set) — both sides share the "Esc" key hint
+
+<T-08-HEALTH-SIDEBAR> health-findings:sidebar:contains:"fixable":DLV-4:improvement:on this surface RegionSidebar's left-of-│ extraction captures the FINDINGS LIST rows, not an identity sidebar — the real row set describes the live doctor.Run(deps) scan against the seeded fixture home while the dummy rows carry the frozen DemoFinding fixture set; the list content is the fixture-vs-live divergence and "fixable" survives on both sides
+
+<T-08-FIXER-LIST-BODY> fixer-list:fixer-body:contains:"f · Fix this…":DLV-4:improvement:the real Fixer body renders the live fixable subset of doctor.Run(deps)'s findings against the seeded fixture home; the dummy renders its frozen fixable DemoFinding fixture set — the shared "f · Fix this…" affordance survives on both sides
+
+<T-08-FIXER-LIST-HEADER> fixer-list:header-status:contains:"ids":DLV-4:improvement:header status shows the identity count, which differs (real's single-identity seeded Health/Fixer fixture home vs the dummy's 8-identity IdentityManagerRows fixture set) — both sides carry the "ids" marker
+
+<T-08-FIXER-LIST-KEYBAR> fixer-list:keybar:contains:"Esc":DLV-4:improvement:the keybar region's last three lines include the status/count line naming how many findings were scanned, which differs (real's single seeded fixture finding vs the dummy's frozen multi-finding fixture set) — both sides share the "Esc" key hint
+
+<T-08-FIXER-LIST-SIDEBAR> fixer-list:sidebar:contains:"fixable":DLV-4:improvement:on this surface RegionSidebar's left-of-│ extraction captures the FINDINGS LIST rows, not an identity sidebar — the real row set describes the live doctor.Run(deps) scan against the seeded fixture home while the dummy rows carry the frozen DemoFinding fixture set; the list content is the fixture-vs-live divergence and "fixable" survives on both sides
+
+<T-08-FIXER-CEREMONY-DIFF> fixer-ceremony-preview:fixer-ceremony:contains:"Fix: ":DLV-4:improvement:the real fix ceremony's diff previews the second REAL fixable finding's actual before/after lines against the seeded fixture home; the dummy previews its frozen fixture finding's diff — the shared ceremony chrome (heading prefix, confirm/cancel buttons) survives on both sides
+
+<T-08-FIXER-CEREMONY-HEADER> fixer-ceremony-preview:header-status:contains:"ids":DLV-4:improvement:header status shows the identity count, which differs (real's single-identity seeded Health/Fixer fixture home vs the dummy's 8-identity IdentityManagerRows fixture set) — both sides carry the "ids" marker
+
+<T-08-FIXER-CEREMONY-KEYBAR> fixer-ceremony-preview:keybar:contains:"Esc":DLV-4:improvement:the keybar region's last three lines include the ceremony's own footer hint, which differs in surrounding context between the real seeded fixture and the dummy's frozen fixture — both sides share the "Esc" key hint
+
+<T-08-FIXER-CEREMONY-SIDEBAR> fixer-ceremony-preview:sidebar:contains:"fixable":DLV-4:improvement:on this surface RegionSidebar's left-of-│ extraction captures the FINDINGS LIST rows still visible behind the ceremony pane, not an identity sidebar — the real row set describes the live scan while the dummy rows carry the frozen fixture set; the list content is the fixture-vs-live divergence and "fixable" survives on both sides
+
+<T-08-FIXER-CEREMONY-BREADCRUMB> fixer-ceremony-preview:breadcrumb:contains:"Fixer › Fix":DLV-4:improvement:the ceremony's breadcrumb names the selected finding's title ("Fixer › Fix › <title>"), which differs between the real seeded fixture finding and the dummy's frozen fixture finding — the shared "Fixer › Fix ›" prefix anchors both sides

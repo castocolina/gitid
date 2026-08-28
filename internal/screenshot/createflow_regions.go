@@ -223,6 +223,26 @@ const (
 	// baseline target — a distinct region so the target-file divergence gets
 	// its own narrow disposition.
 	RegionGGitApplyHeading RegionName = "ggit-apply-heading"
+
+	// RegionHealthBody is the Health tab's master-detail body (08-08
+	// registration): the findings list (left of the │ divider) AND its
+	// always-visible inline detail pane (right of the │, Known Divergence
+	// #1's finding-detail state). Anchor: the "Health" breadcrumb line —
+	// unique to this tab, never rendered on Fixer or any other tab.
+	RegionHealthBody RegionName = "health-body"
+
+	// RegionFixerBody is the Fixer tab's master-detail body in list mode
+	// (08-08 registration): the fixable-findings list plus its detail pane
+	// (the "f · Fix this…" affordance and the batch-fix note). Anchor: the
+	// "Fixer" breadcrumb line with NO trailing " › " crumb — present only in
+	// list mode, never while a fix ceremony is open.
+	RegionFixerBody RegionName = "fixer-body"
+
+	// RegionFixerCeremony is the Fixer tab's fix ceremony (08-08
+	// registration, Known Divergence #2's compressed 2-state ceremony):
+	// from the "Fix: <title>" heading through the confirm/cancel button
+	// row. Full-width (no │ divider) like the other ceremony regions.
+	RegionFixerCeremony RegionName = "fixer-ceremony"
 )
 
 // ExtractRegion returns the sub-string of screen that corresponds to region.
@@ -295,6 +315,12 @@ func ExtractRegion(screen string, region RegionName) string {
 		return extractGGitApplyCeremony(lines)
 	case RegionGGitApplyHeading:
 		return extractGGitApplyHeading(lines)
+	case RegionHealthBody:
+		return extractHealthBody(lines)
+	case RegionFixerBody:
+		return extractFixerBody(lines)
+	case RegionFixerCeremony:
+		return extractFixerCeremony(lines)
 	}
 	return ""
 }
@@ -1143,6 +1169,87 @@ func extractGGitApplyHeading(lines []string) string {
 	return strings.Join(out, "\n")
 }
 
+// extractHealthBody returns the Health tab's master-detail body: the
+// findings list plus its inline detail pane. Anchored on the "Health"
+// breadcrumb line (exact match after stripping ANSI/whitespace — the
+// breadcrumb is its own dedicated line, never mixed with finding text), then
+// scans forward to the first │-divided line and collects every consecutive
+// │ line after it (08-08 registration).
+func extractHealthBody(lines []string) string {
+	crumbIdx := -1
+	for i, line := range lines {
+		if strings.TrimSpace(stripANSI(line)) == "Health" {
+			crumbIdx = i
+			break
+		}
+	}
+	if crumbIdx < 0 {
+		return ""
+	}
+	start := -1
+	for i := crumbIdx + 1; i < len(lines); i++ {
+		if strings.Contains(stripANSI(lines[i]), "│") {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return ""
+	}
+	var out []string
+	for _, line := range lines[start:] {
+		if !strings.Contains(stripANSI(line), "│") {
+			break
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+// extractFixerBody returns the Fixer tab's master-detail body in LIST mode
+// only: anchored on the "Fixer" breadcrumb with no trailing " › " crumb (a
+// ceremony's breadcrumb is "Fixer › Fix › <title>", which this exact match
+// deliberately excludes — the ceremony body is RegionFixerCeremony's own
+// region, never this one).
+func extractFixerBody(lines []string) string {
+	crumbIdx := -1
+	for i, line := range lines {
+		if strings.TrimSpace(stripANSI(line)) == "Fixer" {
+			crumbIdx = i
+			break
+		}
+	}
+	if crumbIdx < 0 {
+		return ""
+	}
+	start := -1
+	for i := crumbIdx + 1; i < len(lines); i++ {
+		if strings.Contains(stripANSI(lines[i]), "│") {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return ""
+	}
+	var out []string
+	for _, line := range lines[start:] {
+		if !strings.Contains(stripANSI(line), "│") {
+			break
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+// extractFixerCeremony returns the fix ceremony's body: from the "Fix: "
+// heading (fixCeremonyFor's own Heading prefix, constant across every
+// finding) through the "Cancel (Esc)" button label (ceremony.go's
+// cancelLabel(), rendered once per ceremony regardless of state A/B).
+func extractFixerCeremony(lines []string) string {
+	return ggitCeremonyBodyAfter(lines, "Fix: ", "Cancel (Esc)")
+}
+
 // AllRegionNames returns all defined RegionNames for allowlist schema validation.
 func AllRegionNames() []RegionName {
 	return []RegionName{
@@ -1177,6 +1284,9 @@ func AllRegionNames() []RegionName {
 		RegionGGitOptionsBrowse,
 		RegionGGitApplyCeremony,
 		RegionGGitApplyHeading,
+		RegionHealthBody,
+		RegionFixerBody,
+		RegionFixerCeremony,
 	}
 }
 
