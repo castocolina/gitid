@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: TUI-First Redesign
-current_phase: 09
-current_phase_name: Upload / Credentials Assist
+current_phase: 9
+current_phase_name: upload-credentials-assist
 status: executing
 stopped_at: Phase 8 (Health + Fixer) COMPLETE, all 9 checklist items evidenced; starting Phase 9 (Upload / Credentials Assist)
-last_updated: "2026-08-28T19:00:00.000Z"
+last_updated: "2026-08-28T21:19:12.334Z"
 last_activity: 2026-08-28
-last_activity_desc: Phase 8 closeout finished — CR-01 (Critical: Fixable signal was SuggestedFix!="" instead of Fix!=nil, letting report-only findings show a fake fix ceremony) and WR-01 (nonsensical batch-halt banner on a single non-batch fix failure) fixed with regression tests; DLV-06 PTY gap closed via a real chflags-uchg-forced OS failure through the compiled binary (TestHealthFixer_RealPTYFixerBatchWalkHalt). All gates re-verified green (go test -race 2157 passed, lint 0 issues, gate-visual-regression PASS, test-e2e PASS 676s). Committed as cbb5279 (fixes) + 6881319 (review artifacts + HIGH-concerns resolution appended to 08-REVIEWS.md). Phase 8 is now genuinely complete; advancing to Phase 9.
-state_head: 6881319
+last_activity_desc: "Phase 8 closeout finished — CR-01 (Critical: Fixable signal was SuggestedFix!=\"\" instead of Fix!=nil, letting report-only findings show a fake fix ceremony) and WR-01 (nonsensical batch-halt banner on a single non-batch fix failure) fixed with regression tests; DLV-06 PTY gap closed via a real chflags-uchg-forced OS failure through the compiled binary (TestHealthFixer_RealPTYFixerBatchWalkHalt). All gates re-verified green (go test -race 2157 passed, lint 0 issues, gate-visual-regression PASS, test-e2e PASS 676s). Committed as cbb5279 (fixes) + 6881319 (review artifacts + HIGH-concerns resolution appended to 08-REVIEWS.md). Phase 8 is now genuinely complete; advancing to Phase 9."
+state_head: 3303348f38ff63f68f14a5155c3f4762028f669b
 progress:
   total_phases: 10
   completed_phases: 8
-  total_plans: 67
+  total_plans: 83
   completed_plans: 66
-  percent: 80
+  percent: 70
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 ## Current Position
 
-Phase: 09 — Upload / Credentials Assist
+Phase: 9 (upload-credentials-assist) — READY TO EXECUTE
 Status: Starting. Not yet discussed/planned.
 Last activity: 2026-08-28 — Phase 8 closed out fully (see historical record below); Phase 9 kickoff next via `/gsd-plan-review-convergence 9`.
 
