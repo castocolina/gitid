@@ -307,6 +307,14 @@ element): the focused/selected list row only — **never** used to color the
 severity taxonomy itself (that is glyph + word + role, matching the
 project's NO_COLOR-legible contract).
 
+**Color dominance (TUI-adapted 60/30/10):** default foreground/background
+carries the overwhelming majority of rendered characters on every screen —
+plain finding text, labels, and structural chrome. The four severity roles
+(Info/Warning/Error/Healthy) together are the secondary layer, applied only
+to glyphs, state words, and the specific lines they gate. Accent (the
+focused-row highlight) is the smallest layer: at most one row at a time,
+never a whole-screen treatment.
+
 **Explicit note on Health's read-only posture:** Health NEVER renders
 `styleSelected`/`styleBold` on an action button — there is no button to
 render. The negative assertion (`health/FIELDS.md`: "no confirm/backup/
