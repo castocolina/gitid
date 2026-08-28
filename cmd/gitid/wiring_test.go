@@ -4460,6 +4460,28 @@ func TestMGR07TwoSignalsResolveFromConvergedSource(t *testing.T) {
 	}
 }
 
+func TestFixExcludesfileRealWiring(t *testing.T) {
+	home := t.TempDir()
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+	gitignorePath := filepath.Join(home, ".gitignore_global")
+	if err := fixExcludesfile(gitconfigPath)(gitignorePath); err != nil {
+		t.Fatalf("FixExcludesfile: %v", err)
+	}
+	value, err := gitconfig.RunGitConfigGet(gitconfigPath, "core.excludesfile")
+	if err != nil {
+		t.Fatalf("reading core.excludesfile: %v", err)
+	}
+	if value != gitignorePath {
+		t.Errorf("core.excludesfile = %q, want %q", value, gitignorePath)
+	}
+	content := readFile(t, gitignorePath)
+	for _, pattern := range gitconfig.DefaultGitignorePatterns() {
+		if !strings.Contains(content, pattern) {
+			t.Errorf("global gitignore missing %q", pattern)
+		}
+	}
+}
+
 func TestDoctorDepsExcludeArchivedKeyPaths(t *testing.T) {
 	home := t.TempDir()
 	sshDir := filepath.Join(home, ".ssh")

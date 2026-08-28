@@ -19,6 +19,27 @@ import (
 	"github.com/castocolina/gitid/internal/tuikit"
 )
 
+func TestBaselineGitignoreFixViaCLI(t *testing.T) {
+	home := t.TempDir()
+	seedInstalledBaseline(t, home)
+	if err := runFix(io.Discard, strings.NewReader(""), home, true, false); err != nil {
+		t.Fatalf("runFix(--yes): %v", err)
+	}
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+	gitignorePath := filepath.Join(home, ".gitignore_global")
+	value, err := gitconfig.RunGitConfigGet(gitconfigPath, "core.excludesfile")
+	if err != nil {
+		t.Fatalf("reading core.excludesfile: %v", err)
+	}
+	if value != gitignorePath {
+		t.Errorf("core.excludesfile = %q, want %q", value, gitignorePath)
+	}
+	content := readFile(t, gitignorePath)
+	if !strings.Contains(content, "# BEGIN gitid managed: gitignore") {
+		t.Errorf("missing managed gitignore block:\n%s", content)
+	}
+}
+
 func TestFixCmdDryRunWritesNothing(t *testing.T) {
 	home := t.TempDir()
 	configPath := seedFlagshipFixture(t, home)
@@ -51,6 +72,9 @@ func TestFixCmdDryRunNoFixableFindings(t *testing.T) {
 	// documented, genuinely non-convergent no-op — irrelevant to what this
 	// test asserts).
 	seedInstalledBaseline(t, home)
+	if err := fixExcludesfile(filepath.Join(home, ".gitconfig"))(filepath.Join(home, ".gitignore_global")); err != nil {
+		t.Fatalf("seeding gitignore pair: %v", err)
+	}
 
 	var out bytes.Buffer
 	if err := runFix(&out, strings.NewReader(""), home, false, true); err != nil {

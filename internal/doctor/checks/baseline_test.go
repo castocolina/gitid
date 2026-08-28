@@ -1,11 +1,13 @@
 package checks
 
 import (
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/castocolina/gitid/internal/doctor"
 	"github.com/castocolina/gitid/internal/gitconfig"
+	"github.com/castocolina/gitid/internal/globalgit"
 )
 
 // fakeBaselineDeps returns a doctor.Deps with the provided ReadBaselineState
@@ -23,6 +25,18 @@ func fakeBaselineDeps(readFn func(gc, bf, gi string) (gitconfig.BaselineState, e
 			return nil
 		},
 		ReadBaselineState: readFn,
+		RunGitConfigGet: func(_, key string) (string, error) {
+			if key == "core.excludesfile" {
+				return "~/.gitignore_global", nil
+			}
+			return "", nil
+		},
+		FixExcludesfile: func(string) error {
+			return nil
+		},
+		Stat: func(string) (os.FileInfo, error) {
+			return nil, nil
+		},
 	}
 }
 
@@ -52,35 +66,67 @@ func TestBaselineAllPass(t *testing.T) {
 	}
 }
 
-// TestBaselineExcludesfile verifies that an unset or missing excludesfile produces an error finding.
-func TestBaselineExcludesfile(t *testing.T) {
-	// State where excludesfile is not set.
+func TestCheckBaselineGitignorePair(t *testing.T) {
+	tests := []struct {
+		name    string
+		state   gitconfig.BaselineState
+		value   string
+		want    doctor.Severity
+		wantFix bool
+	}{
+		{name: "unset with no managed patterns", state: gitconfig.BaselineState{Installed: true, BaselineKeys: map[string]string{}}, want: doctor.SeverityWarning, wantFix: true},
+		{name: "set with missing patterns", state: func() gitconfig.BaselineState { s := fullyInstalledState(); s.GitignorePatterns = nil; return s }(), value: "~/.gitignore_global", want: doctor.SeverityError, wantFix: true},
+		{name: "correct pair", state: fullyInstalledState(), value: "~/.gitignore_global"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := fakeBaselineDeps(func(_, _, _ string) (gitconfig.BaselineState, error) { return tt.state, nil })
+			d.RunGitConfigGet = func(_, _ string) (string, error) { return tt.value, nil }
+			findings := CheckBaseline(d)
+			var got *doctor.Finding
+			for i := range findings {
+				if strings.Contains(findings[i].Title, "excludesfile") {
+					got = &findings[i]
+					break
+				}
+			}
+			if tt.want == 0 {
+				if got != nil {
+					t.Fatalf("unexpected gitignore finding: %+v", *got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatal("missing gitignore finding")
+			}
+			if got.Severity != tt.want {
+				t.Errorf("Severity = %v, want %v", got.Severity, tt.want)
+			}
+			if got.Target != "Git" {
+				t.Errorf("Target = %q, want Git", got.Target)
+			}
+			if (got.Fix != nil) != tt.wantFix {
+				t.Errorf("Fix present = %v, want %v", got.Fix != nil, tt.wantFix)
+			}
+		})
+	}
+}
+
+func TestFixExcludesfileCallsInjectedEffect(t *testing.T) {
 	state := fullyInstalledState()
-	delete(state.BaselineKeys, "core.excludesfile")
-
-	d := fakeBaselineDeps(func(_, _, _ string) (gitconfig.BaselineState, error) {
-		return state, nil
-	})
-	findings := CheckBaseline(d)
-
-	var ef *doctor.Finding
-	for i, f := range findings {
-		if strings.Contains(f.Title, "excludesfile") {
-			ef = &findings[i]
-			break
-		}
+	state.GitignorePatterns = nil
+	d := fakeBaselineDeps(func(_, _, _ string) (gitconfig.BaselineState, error) { return state, nil })
+	calledPath := ""
+	d.FixExcludesfile = func(path string) error { calledPath = path; return nil }
+	finding := CheckBaseline(d)[0]
+	if finding.Fix == nil {
+		t.Fatal("Fix is nil")
 	}
-	if ef == nil {
-		t.Fatalf("CheckBaseline with excludesfile unset: no finding mentioning 'excludesfile'; got %v", findings)
+	if err := finding.Fix.Fn(); err != nil {
+		t.Fatalf("Fix.Fn: %v", err)
 	}
-	if ef.Severity != doctor.SeverityError {
-		t.Errorf("excludesfile finding.Severity = %v, want SeverityError", ef.Severity)
-	}
-	if ef.Family != doctor.FamilyBaseline {
-		t.Errorf("excludesfile finding.Family = %q, want %q", ef.Family, doctor.FamilyBaseline)
-	}
-	if !strings.Contains(ef.SuggestedFix, "gitid baseline setup") {
-		t.Errorf("excludesfile finding.SuggestedFix = %q, want it to mention 'gitid baseline setup'", ef.SuggestedFix)
+	if calledPath != d.GitignorePath {
+		t.Errorf("FixExcludesfile path = %q, want %q", calledPath, d.GitignorePath)
 	}
 }
 
@@ -118,34 +164,60 @@ func TestBaselineIncludeMissing(t *testing.T) {
 	}
 }
 
-// TestBaselineIgnoreCaseDrift verifies that core.ignorecase=true produces a warning finding.
-func TestBaselineIgnoreCaseDrift(t *testing.T) {
+func TestCheckBaselineSetDiffers(t *testing.T) {
 	state := fullyInstalledState()
-	state.BaselineKeys["core.ignorecase"] = "true"
-
-	d := fakeBaselineDeps(func(_, _, _ string) (gitconfig.BaselineState, error) {
-		return state, nil
-	})
+	d := fakeBaselineDeps(func(_, _, _ string) (gitconfig.BaselineState, error) { return state, nil })
+	d.RunGitConfigGet = func(_, key string) (string, error) {
+		if key == "init.defaultBranch" {
+			return "trunk", nil
+		}
+		return "", nil
+	}
 	findings := CheckBaseline(d)
-
-	var icF *doctor.Finding
-	for i, f := range findings {
-		if strings.Contains(f.Title, "ignorecase") {
-			icF = &findings[i]
+	var got *doctor.Finding
+	for i := range findings {
+		if strings.Contains(findings[i].Title, "init.defaultBranch") {
+			got = &findings[i]
 			break
 		}
 	}
-	if icF == nil {
-		t.Fatalf("CheckBaseline with ignorecase=true: no finding mentioning 'ignorecase'; got %v", findings)
+	if got == nil {
+		t.Fatal("missing set-differs finding")
 	}
-	if icF.Severity != doctor.SeverityWarning {
-		t.Errorf("ignorecase drift finding.Severity = %v, want SeverityWarning", icF.Severity)
+	if got.Severity != doctor.SeverityInfo {
+		t.Errorf("Severity = %v, want SeverityInfo", got.Severity)
 	}
-	if icF.Family != doctor.FamilyBaseline {
-		t.Errorf("ignorecase drift finding.Family = %q, want %q", icF.Family, doctor.FamilyBaseline)
+	if got.Fix != nil {
+		t.Errorf("Fix = %+v, want nil", got.Fix)
 	}
-	if !strings.Contains(icF.SuggestedFix, "ignorecase false") {
-		t.Errorf("ignorecase drift finding.SuggestedFix = %q, want it to mention setting ignorecase false", icF.SuggestedFix)
+}
+
+func TestSeverityNeverEscalates(t *testing.T) {
+	for _, policy := range globalgit.Policy {
+		for _, member := range policy.Members {
+			t.Run(member.Key, func(t *testing.T) {
+				value := member.Recommended + "-user-choice"
+				d := fakeBaselineDeps(func(_, _, _ string) (gitconfig.BaselineState, error) { return fullyInstalledState(), nil })
+				d.RunGitConfigGet = func(_, key string) (string, error) {
+					if key == member.Key {
+						return value, nil
+					}
+					return "", nil
+				}
+				var found bool
+				for _, finding := range setDiffersFindings(d) {
+					if finding.Title == member.Key+": "+value+" (differs from recommendation)" {
+						found = true
+						if finding.Severity != doctor.SeverityInfo {
+							t.Fatalf("Severity = %v, want SeverityInfo", finding.Severity)
+						}
+					}
+				}
+				if !found {
+					t.Fatalf("missing set-differs finding for %q", member.Key)
+				}
+			})
+		}
 	}
 }
 
@@ -162,7 +234,7 @@ func TestBaselineCuratedExcludes(t *testing.T) {
 
 	var cF *doctor.Finding
 	for i, f := range findings {
-		if strings.Contains(f.Title, "curated") || strings.Contains(f.Title, "gitignore") {
+		if strings.Contains(f.Title, "curated") {
 			cF = &findings[i]
 			break
 		}

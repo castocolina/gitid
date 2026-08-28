@@ -3642,7 +3642,8 @@ func buildDoctorDeps(home string) doctor.Deps {
 			}
 			return nil
 		},
-		AddWiring: doctorAddWiring(allowedSignersPath),
+		AddWiring:       doctorAddWiring(allowedSignersPath),
+		FixExcludesfile: fixExcludesfile(gitconfigPath),
 
 		// Check function fields — all 9 families wired to their real
 		// internal/doctor/checks function (08-01-PLAN.md Task 2; Task 1
@@ -3657,6 +3658,19 @@ func buildDoctorDeps(home string) doctor.Deps {
 		CheckOverlap:    checks.CheckOverlap,
 		CheckRedundancy: checks.CheckRedundancy,
 		CheckFiles:      checks.CheckFiles,
+	}
+}
+
+func fixExcludesfile(gitconfigPath string) func(path string) error {
+	return func(path string) error {
+		if _, err := gitconfig.WriteGlobalGitignore(path, gitconfig.DefaultGitignorePatterns()); err != nil {
+			return fmt.Errorf("doctor: writing global gitignore: %w", err)
+		}
+		cmd := exec.Command("git", "config", "--file", gitconfigPath, "core.excludesfile", path) //nolint:gosec // arg-slice form; paths are resolved from the trusted home
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("doctor: setting core.excludesfile: %w: %s", err, strings.TrimSpace(string(output)))
+		}
+		return nil
 	}
 }
 

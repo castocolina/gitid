@@ -184,9 +184,10 @@ type CheckFn func(Deps) []Finding
 //
 // Fix fields (injected, D-01 — doctor never calls os.Chmod or filewriter directly):
 //
-//	FixPerm      — chmod a path to a target mode
-//	RemoveBlock  — remove a sentinel-delimited managed block from a file
-//	AddWiring    — re-add a missing wiring line (allowed_signers, IdentitiesOnly)
+//	FixPerm          — chmod a path to a target mode
+//	FixExcludesfile  — set core.excludesfile and write the managed global gitignore
+//	RemoveBlock      — remove a sentinel-delimited managed block from a file
+//	AddWiring        — re-add a missing wiring line (allowed_signers, IdentitiesOnly)
 //
 // Check function fields (wired by cmd layer from internal/doctor/checks):
 //
@@ -262,9 +263,10 @@ type Deps struct {
 	AllHostBlocks []sshconfig.HostBlockFacts
 
 	// Fix fields (cmd layer injects; doctor core never calls directly, D-01).
-	FixPerm     func(path string, mode os.FileMode) error
-	RemoveBlock func(path, name string) error
-	AddWiring   func(path, name, line string) error
+	FixPerm         func(path string, mode os.FileMode) error
+	FixExcludesfile func(path string) error
+	RemoveBlock     func(path, name string) error
+	AddWiring       func(path, name, line string) error
 	// SetupBaseline runs the full `gitid baseline setup` flow (fragment + gitignore
 	// + include, atomically, with prompts unless assumeYes). Wired by the cmd layer
 	// so the baseline-missing finding's Interactive fix restores a COMPLETE baseline
