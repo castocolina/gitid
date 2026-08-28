@@ -160,10 +160,11 @@ simultaneously.
   deliberately absent — the Yes/No choice row must default-focus "No"
   (leave the old key) per D-04's non-destructive-by-default posture, never
   default to the delete option.
-- Identity Manager's copy-modal — primary focus: reuse `placeOverlay`
-  pixel-for-pixel; this is new content in an existing, already-approved
-  modal pattern, not a new visual surface — any deviation from the existing
-  `action-menu`/`clone-name-prompt` modal geometry is a defect, not a
+- Identity Manager's copy-modal — primary focus: this is a new `identPane`
+  value (`paneRegisterKey`), matching the exact shape of the existing
+  `paneClone`/`paneDeleteScope` panes (same `handleKey`/`view` switch-case
+  pattern) — not a call into any overlay-composition helper. Any deviation
+  from the existing pane rendering/geometry convention is a defect, not a
   design choice.
 
 ---
@@ -178,7 +179,7 @@ simultaneously.
 | `testUpload` result rows | 1 row per attempted command (max 2) | glyph + word + short reason, same shape as `renderStageOutcome`'s existing PASS/warning rows | new |
 | Manual-fallback block | up to 5 rows (GitHub's `Instructions` text), 2 rows (GitLab's) | reuses `internal/upload.Instructions` verbatim — already sized for the CLI, verify it still fits the wizard pane at PTY e2e time; truncate with the existing viewport "+N more" cue (07-UI-SPEC precedent) if not | existing string, new render slot |
 | Rotate delete-offer (D-04) | fits inside the existing key-ceremony pane's result-screen row budget, appended below `keyCeremonyGraceHintFmt`'s existing hint | new sub-beat, ~3 rows (question + old-key identifier + Yes/No choice row) | new |
-| Identity Manager copy-modal (new) | same modal-overlay budget as the existing `action-menu`/`clone-name-prompt` modals | reuses `placeOverlay`, unchanged geometry | existing pattern, new content |
+| Identity Manager copy-modal (new) | same pane budget as the existing `paneClone`/`paneDeleteScope` panes | new `identPane` value (`paneRegisterKey`), same `handleKey`/`view` switch-case shape, unchanged geometry | existing pattern, new content |
 
 ---
 
@@ -280,7 +281,10 @@ the frozen contract) — every row below is DRAFT unless marked CITED
 
 Concrete diffs the planner must apply, in the D-08 approved sequence
 (this document is step 1; steps 2-6 are dummytui/mockup states, capture,
-`tui/copy.go` rework, backend + PTY e2e — not this document's job).
+new CLI wiring (`tui/copy.go` was archived in Phase 3 alongside `cmd/gitid
+copy` — per 09-RESEARCH.md's Substrate Reality Check, this phase builds a
+new upload-section component and CLI verb, not a rework of removed code),
+backend + PTY e2e — not this document's job).
 
 **`.planning/design/create-flow/FIELDS.md`:**
 - Amend `create-flow / ssh-form-filled` (and `-blank-prefix`): add field
@@ -346,7 +350,7 @@ State coverage for Phase 9, using the project's standard checklist.
 | Create wizard / `omitted` | no matching provider — zero new rows | new branch, degenerate case |
 | Rotate/repair key-ceremony pane / `testUpload` (same states as create) | same component, second/third call site | reused, new wiring |
 | Rotate result screen / `RotateDeleteOffer` (D-04) | interactive old-key removal ceremony | new sub-beat, new render branch |
-| Identity Manager / `register-key-modal` (D-08's "copy modal") | manual re-trigger for `key-unused`/`key-used-ssh-only` identities | new modal, reuses `placeOverlay` |
+| Identity Manager / `register-key-modal` (D-08's "copy modal") | manual re-trigger for `key-unused`/`key-used-ssh-only` identities | new `identPane` value (`paneRegisterKey`), same shape as `paneClone`/`paneDeleteScope` |
 | Identity Manager / `action-menu` (amended) | +1 row, `action_register_key` | amendment to an existing screen |
 | `gitid copy --upload-keys` (CLI) | same announce/result copy, plain stdout | no TUI render, upgraded internals only |
 
