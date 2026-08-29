@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -18,9 +19,14 @@ import (
 // the uploader package's decision functions directly. The positive half
 // (upload_run.go DOES contain the real calls) is covered by
 // TestRunUploadDoesNotCallProviderCommandsOutsideATeaCmd in wiring_test.go;
-// this test is the negative half specific to wiring.go, proving the
-// extraction is durable — a future direct uploader.UploadKeys call
-// reintroduced into wiring.go fails here.
+// this test is the negative half, proving the extraction is durable — a
+// future direct uploader.UploadKeys/Inventory/MissingRegistrations call
+// reintroduced into wiring.go, OR into any OTHER file in package main
+// (identity_upload.go today, or a file a later plan adds), fails here.
+//
+// WR-09: this used to scan wiring.go only. Walking every *.go file in the
+// package (excluding upload_run.go itself and test files) closes the gap
+// the review flagged — the invariant is package-wide, not one-filename.
 func TestRunUploadForIsTheOnlyOrchestration(t *testing.T) {
 	src, err := os.ReadFile("wiring.go") //nolint:gosec // package-local source file (G304)
 	if err != nil {
@@ -29,22 +35,40 @@ func TestRunUploadForIsTheOnlyOrchestration(t *testing.T) {
 	if !strings.Contains(string(src), "planUpload(req)") && !strings.Contains(string(src), "runUploadFor(") {
 		t.Fatal("wiring.go's RunUpload no longer calls into upload_run.go's shared orchestration")
 	}
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "wiring.go", src, 0)
-	if err != nil {
-		t.Fatalf("parsing wiring.go: %v", err)
+	entries, globErr := filepath.Glob("*.go")
+	if globErr != nil {
+		t.Fatalf("globbing package files: %v", globErr)
 	}
-	ast.Inspect(file, func(n ast.Node) bool {
-		sel, ok := n.(*ast.SelectorExpr)
-		if !ok {
+	scanned := 0
+	for _, filename := range entries {
+		if filename == "upload_run.go" || strings.HasSuffix(filename, "_test.go") {
+			continue
+		}
+		fset := token.NewFileSet()
+		fileSrc, rerr := os.ReadFile(filename) //nolint:gosec // package-local source file (G304)
+		if rerr != nil {
+			t.Fatalf("reading %s: %v", filename, rerr)
+		}
+		file, perr := parser.ParseFile(fset, filename, fileSrc, 0)
+		if perr != nil {
+			t.Fatalf("parsing %s: %v", filename, perr)
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			pkg, ok := sel.X.(*ast.Ident)
+			if ok && pkg.Name == "uploader" && (sel.Sel.Name == "UploadKeys" || sel.Sel.Name == "Inventory" || sel.Sel.Name == "MissingRegistrations") {
+				t.Errorf("%s calls uploader.%s directly — the decision logic must live only in upload_run.go", filename, sel.Sel.Name)
+			}
 			return true
-		}
-		pkg, ok := sel.X.(*ast.Ident)
-		if ok && pkg.Name == "uploader" && (sel.Sel.Name == "UploadKeys" || sel.Sel.Name == "Inventory" || sel.Sel.Name == "MissingRegistrations") {
-			t.Errorf("wiring.go calls uploader.%s directly — the decision logic must live only in upload_run.go", sel.Sel.Name)
-		}
-		return true
-	})
+		})
+		scanned++
+	}
+	if scanned == 0 {
+		t.Fatal("scanned zero package files — the glob is vacuously passing")
+	}
 }
 
 // TestPrintUploadOutcomeUsesOnlyFrozenCopy is a source-level check over

@@ -5563,9 +5563,17 @@ func TestRunUploadUsesPerRegistrationRequests(t *testing.T) {
 // View()/Update() implementation) cannot reach these calls at all: it does
 // not import internal/uploader (views.go's no-backend-import rule), so that
 // half of R3 is a compile-time guarantee, not something this test needs to
-// scan for. This asserts the other half: wiring.go contains ZERO
-// occurrences of the three guarded calls — the decision logic was not
-// duplicated back into it after the extraction.
+// scan for. This asserts the other half: EVERY *.go file in package main
+// except upload_run.go itself (and test files) contains ZERO occurrences of
+// the two guarded calls — the decision logic was not duplicated back into
+// wiring.go, or into any OTHER file in the package, after the extraction.
+//
+// WR-09: this used to hard-code assertNoGuardedCalls("wiring.go") only. The
+// invariant it protects is package-wide ("Inventory/UploadKeys are called
+// only from upload_run.go"), but scanning one filename left every other
+// file in package main — identity_upload.go today, any file a later plan
+// adds — free to call them with this guard staying green. Walking the
+// package directory closes that gap.
 func TestRunUploadDoesNotCallProviderCommandsOutsideATeaCmd(t *testing.T) {
 	// AuthCheck is deliberately NOT guarded here: UploadEligibility's own
 	// (unchanged, pre-existing) AuthCheck call is a separate concern this
@@ -5593,7 +5601,21 @@ func TestRunUploadDoesNotCallProviderCommandsOutsideATeaCmd(t *testing.T) {
 			return true
 		})
 	}
-	assertNoGuardedCalls("wiring.go")
+	entries, globErr := filepath.Glob("*.go")
+	if globErr != nil {
+		t.Fatalf("globbing package files: %v", globErr)
+	}
+	scanned := 0
+	for _, f := range entries {
+		if f == "upload_run.go" || strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		assertNoGuardedCalls(f)
+		scanned++
+	}
+	if scanned == 0 {
+		t.Fatal("scanned zero package files — the glob is vacuously passing")
+	}
 
 	// Positive control: upload_run.go must actually contain the calls
 	// somewhere, so this test cannot vacuously pass if the logic were
