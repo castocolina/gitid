@@ -2,6 +2,7 @@ package uploader
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -46,17 +47,57 @@ func TestInventoryGHConcatenatesPaginatedPages(t *testing.T) {
 	}
 }
 
+// TestInventoryGLabReadsListOnce is the WR-10 single-page shape: a page
+// short of glabPerPage (30) stops the loop after exactly one call, and the
+// call carries the verified --page/--per-page pagination flags.
 func TestInventoryGLabReadsListOnce(t *testing.T) {
 	calls := 0
 	got, err := Inventory(ToolGLab, "glab", Deps{RunCmd: func(_ string, args ...string) (string, int, error) {
 		calls++
-		if !reflect.DeepEqual(args, []string{"ssh-key", "list", "-F", "json"}) {
+		if !reflect.DeepEqual(args, []string{"ssh-key", "list", "-F", "json", "--per-page", "30", "--page", "1"}) {
 			t.Errorf("args=%v", args)
 		}
 		return `[{"id":2,"title":"both","key":"ssh-ed25519 AAAA both"}]`, 0, nil
 	}})
 	if err != nil || calls != 1 || got[0].Registration != RegistrationCombined {
 		t.Fatalf("got=%+v err=%v calls=%d", got, err, calls)
+	}
+}
+
+// TestInventoryGLabPaginatesUntilAShortPage is the WR-10 regression: an
+// account with exactly glabPerPage (30) keys on the first page must not be
+// silently truncated — Inventory must request page 2 and concatenate it,
+// stopping only once a page returns fewer than glabPerPage records.
+func TestInventoryGLabPaginatesUntilAShortPage(t *testing.T) {
+	fullPage := make([]string, glabPerPage)
+	for i := range fullPage {
+		fullPage[i] = fmt.Sprintf(`{"id":%d,"title":"k%d","key":"ssh-ed25519 AAAA%d"}`, i+1, i+1, i+1)
+	}
+	pageOneJSON := "[" + strings.Join(fullPage, ",") + "]"
+	pageTwoJSON := `[{"id":31,"title":"k31","key":"ssh-ed25519 AAAA31"}]`
+
+	var calls [][]string
+	got, err := Inventory(ToolGLab, "glab", Deps{RunCmd: func(_ string, args ...string) (string, int, error) {
+		calls = append(calls, append([]string(nil), args...))
+		if len(calls) == 1 {
+			return pageOneJSON, 0, nil
+		}
+		return pageTwoJSON, 0, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("calls=%v, want exactly 2 (page 1 full, page 2 short stops the loop)", calls)
+	}
+	if !reflect.DeepEqual(calls[0], []string{"ssh-key", "list", "-F", "json", "--per-page", "30", "--page", "1"}) {
+		t.Errorf("first call args=%v", calls[0])
+	}
+	if !reflect.DeepEqual(calls[1], []string{"ssh-key", "list", "-F", "json", "--per-page", "30", "--page", "2"}) {
+		t.Errorf("second call args=%v", calls[1])
+	}
+	if len(got) != glabPerPage+1 || got[glabPerPage].ID != "31" {
+		t.Fatalf("got %d entries, want %d (page 1 + page 2's single entry, ID 31 last)", len(got), glabPerPage+1)
 	}
 }
 

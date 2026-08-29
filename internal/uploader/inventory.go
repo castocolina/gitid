@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 )
 
@@ -45,15 +46,51 @@ func Inventory(tool Tool, toolPath string, deps Deps) ([]ExistingKey, error) {
 		}
 		return append(auth, signing...), nil
 	case ToolGLab:
-		// glab's ssh-key list has no --paginate flag threaded through here
-		// yet: WR-01 flags glab as truncation-prone too, but the exact
-		// page-iteration flag surface (--per-page / --page) needs
-		// verification against a real glab invocation before it is
-		// hardcoded — an unverified guess risks silently breaking every
-		// glab inventory read, which is worse than today's known limit.
-		return inventoryFor(tool, toolPath, deps, []string{"ssh-key", "list", "-F", "json"}, RegistrationCombined)
+		// WR-10: `glab ssh-key list` has no gh-style `--paginate` all-pages
+		// flag; verified against a real `glab ssh-key list --help` (v1.114.0):
+		// it exposes `-p/--page` (default 1) and `-P/--per-page` (default
+		// 30), the same REST-style page params gh's default (unpaginated)
+		// call would use. Iterate --page until a page returns fewer than
+		// glabPerPage records — the same "every D-04/D-15/D-16 decision
+		// reads this list as exhaustive" reasoning WR-01 already established
+		// for gh's --paginate applies here: a truncated glab inventory makes
+		// MissingRegistrations re-upload a key the account already has, and
+		// the resulting "already taken" response gets misclassified as
+		// FailureCrossAccountConflict — a false claim the key belongs to
+		// another account.
+		return glabInventory(tool, toolPath, deps)
 	default:
 		return nil, fmt.Errorf("uploader: unknown tool %d", tool)
+	}
+}
+
+// glabPerPage is the page size WR-10's fix requests from `glab ssh-key
+// list`. It matches glab's own default (`-P/--per-page`, default 30) — an
+// explicit value rather than relying on the default so a future glab
+// release changing its default cannot silently change gitid's stop
+// condition (a page shorter than glabPerPage means "no more records").
+const glabPerPage = 30
+
+// glabInventory reads glab's ssh-key list one page at a time, via -p/--page
+// and -P/--per-page (verified against a real `glab ssh-key list --help`,
+// v1.114.0 — glab has no `gh api --paginate`-style all-pages flag), and
+// concatenates every page. It stops as soon as a page returns fewer than
+// glabPerPage records — the REST-pagination convention every provider here
+// follows — rather than looping until an empty page, so an account with
+// exactly N*glabPerPage keys costs one extra, cheap, correctly-empty call
+// instead of silently under-counting by relying on an off-by-one guess.
+func glabInventory(tool Tool, toolPath string, deps Deps) ([]ExistingKey, error) {
+	var all []ExistingKey
+	for page := 1; ; page++ {
+		args := []string{"ssh-key", "list", "-F", "json", "--per-page", strconv.Itoa(glabPerPage), "--page", strconv.Itoa(page)}
+		keys, err := inventoryFor(tool, toolPath, deps, args, RegistrationCombined)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, keys...)
+		if len(keys) < glabPerPage {
+			return all, nil
+		}
 	}
 }
 
