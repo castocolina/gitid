@@ -137,13 +137,55 @@ detail-ssh-first:detail:contains:"SSH — shown first, always":DLV-6:the real se
 # identity-name divergences every other identity-manager checkpoint already
 # classifies, plus the SAME UP-4 upload-command-path divergence the
 # create-flow registry classifies for its own upload-checkbox-ready/
-# upload-results screens. rotate-delete-offer is registered but NOT
-# capturable in this in-process gate (both surfaces NON-APPLICABLE — the D-04
-# offer requires a completed key-rotation commit; see uploadVisualSpecs' own
-# doc comment) and carries no comparable dispositions here.
+# upload-results screens.
+#
+# The breadcrumb row below is used ONLY by the in-process visual gate
+# (internal/screenshot), which compares raw unnormalized captured text —
+# the real fixture's identity name ("imgr") and the dummy's ("personal")
+# genuinely differ there. 09-07-PLAN.md Task 3's real compiled-binary PTY
+# comparison (TestRegisterKeyModal_CompiledRealVsLiveDummyPTY) normalizes
+# identity tokens to a shared "<identity>" placeholder BEFORE comparing
+# (normalizeIdentManagerCheckpoint, the same normalization every other
+# identity-manager PTY checkpoint already applies), so the breadcrumb never
+# actually diverges at THAT comparison level — the PTY test's own "unused
+# entry" staleness check deliberately excludes this one region for exactly
+# that reason, documented at its call site.
+#
+# rotate-delete-offer was recorded here (Task 2) as NOT capturable in the
+# in-process gate — true, and still true: ApplicableLive/ApplicableApprovedTUI
+# are both false for that ScreenSpec, so this fast synthetic gate never
+# drives it. Task 3 corrects the FOLLOW-ON claim that it therefore "carries
+# no comparable dispositions" — it is fully comparable through the REAL
+# compiled-binary PTY harness (TestRegisterKeyModal_CompiledRealVsLiveDummyPTY's
+# "rotate-delete-offer" subtest), which drives an actual key-rotation commit
+# on both binaries and compares the resulting D-04 offer screen. Its rows
+# below are backed by BOTH a code-side disposition (declared but never
+# exercised by the in-process gate, solely so TestUploadVisualAllowlistMatchesRegistry's
+# byte-sync check has something to match against) and this real PTY test.
 # ---------------------------------------------------------------------------
 register-key-modal:sidebar:absent:"clientB":UP-4:real sidebar carries only the checkpoint's own seeded identities; dummy sidebar lists the full 8-identity IdentityManagerRows fixture set
 register-key-modal:header-status:contains:"ids":UP-4:header status shows the identity count, which differs (real's small seeded set vs dummy's 8 fixtures)
 register-key-modal:breadcrumb:contains:"Register key":UP-4:the breadcrumb ("Identities › <identity> › Register key") embeds the selected identity's name, which differs between the real fixture ("imgr") and the dummy fixture ("personal") by construction
 register-key-modal:upload-section:contains:"ssh-key add":UP-4:the real upload command names a real generated key's temp-directory path and the PATH-resolved gh/glab binary; the dummy renders its frozen "/usr/local/bin/gh ..." command shape — both sides share the "ssh-key add" invocation and its --title/--type arguments
 register-key-modal:connectivity-output:contains:"ssh-key add":UP-4:RegionConnectivityOutput's own generic "Running" trigger also matches the upload beat's announce line on the register-key pane — the SAME command-path divergence upload-section already classifies
+rotate-delete-offer:sidebar:absent:"clientB":UP-4:real sidebar carries only the checkpoint's own seeded identity; dummy sidebar lists the full 8-identity IdentityManagerRows fixture set
+rotate-delete-offer:header-status:contains:"ids":UP-4:header status shows the identity count, which differs (real's small seeded set vs dummy's 8 fixtures)
+rotate-delete-offer:upload-section:contains:"ssh-key add":UP-4:the D-04 offer's key ceremony chains the SAME upload beat rotate-result already runs (09-06-PLAN.md Task 2); the real command names a real generated key's temp-directory path and the PATH-resolved gh binary, the dummy renders its frozen "/usr/local/bin/gh ..." command shape — both sides share the "ssh-key add" invocation
+rotate-delete-offer:connectivity-output:contains:"ssh-key add":UP-4:RegionConnectivityOutput's own generic "Running" trigger also matches the upload beat's announce line on the rotate-delete-offer screen — the SAME command-path divergence upload-section already classifies
+
+# ---------------------------------------------------------------------------
+# NOTE (09-07-PLAN.md Task 3): 09-06-PLAN.md Task 2 chained the SAME upload
+# beat onto EVERY successful key-ceremony commit (rotate AND repair), so
+# rotate-result/repair-result ALSO render upload-section/connectivity-output
+# content once this task's new region coverage exists. Deliberately NOT
+# classified here: these two checkpoints' own fixture (FakeSSHDir "denied",
+# no gh shim at all) never settles the chained upload to a fixed outcome
+# within a bounded real-PTY wait — found to take an unpredictable,
+# sometimes 20s+ duration under -race, making any wait here inherently
+# flaky. compareIdentManagerCheckpointSkipping deliberately excludes
+# upload-section/connectivity-output for rotate-result/repair-result in
+# e2e/identity_manager_pty_e2e_test.go for exactly this reason — their
+# purpose is the key-ceremony receipt, not the upload beat, which
+# register-key-modal/rotate-delete-offer already cover thoroughly with real
+# gh="ok"/"delete-ok" fixtures and stable waits.
+# ---------------------------------------------------------------------------

@@ -2847,6 +2847,27 @@ func uploadVisualSpecs() []ScreenSpec {
 					"same reasoning as the live surface above: the dummy's own RotateDeleteOffer fixture is reachable only after its own KeyCeremonyPlan/CommitRotate sequence completes, which this in-process gate does not drive"),
 			),
 			RequiredRegions: []RegionName{RegionUploadSection},
+			// RegionDispositions here are NEVER exercised by THIS in-process
+			// gate (ApplicableLive/ApplicableApprovedTUI are both false
+			// above) — they exist solely so TestUploadVisualAllowlistMatchesRegistry
+			// can byte-sync against the Phase 9 rotate-delete-offer rows
+			// e2e/identity_manager_pty_e2e_test.go's
+			// TestRegisterKeyModal_CompiledRealVsLiveDummyPTY registers in
+			// .planning/design/identity-manager/visual-divergence-allowlist.txt
+			// (09-07-PLAN.md Task 3) — that REAL, compiled-binary PTY
+			// comparison is the actual enforcement mechanism for this
+			// checkpoint; this in-process gate structurally cannot drive
+			// it (see NonApplicability above).
+			RegionDispositions: []RegionDisposition{
+				uxRegionDifferenceScoped(RegionSidebar, "sidebar-state", upFixtureClass,
+					"real sidebar carries only the checkpoint's own seeded identity; dummy sidebar lists the full 8-identity IdentityManagerRows fixture set",
+					`absent:"clientB"`),
+				uxRegionDifferenceScoped(RegionHeaderStatus, "identity-count", upFixtureClass,
+					"header status shows the identity count, which differs (real's small seeded set vs dummy's 8 fixtures)",
+					`contains:"ids"`),
+				uploadCommandDisposition,
+				registerKeyConnectivityOverlapDisposition,
+			},
 		},
 	}
 }

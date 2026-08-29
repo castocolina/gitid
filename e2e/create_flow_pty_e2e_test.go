@@ -661,6 +661,253 @@ func TestCreateFlow_UploadAlreadyCompleteCollapsesToOneLine(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// 09-07-PLAN.md Task 3 — the paired compiled real-vs-dummy PTY comparison
+// for the create-flow wizard's upload checkpoints. The wizard's step-0/1
+// screens render through the SAME internal/tuikit identitiesModel
+// master-detail chrome the identity-manager uses (renderWizard is a method
+// on identitiesModel, not a separate app) — so this reuses the identity-
+// manager PTY comparison's region TYPE and extraction functions verbatim
+// (identManagerRegion, extractIdentManagerRegion,
+// identManagerPredicateSatisfied, normalizeIdentManagerCheckpoint) rather
+// than re-deriving a parallel region system, only swapping in a loader
+// scoped to THIS file's own allowlist and checkpoint vocabulary.
+//
+// createFlowAllowlistCheckpoints is deliberately narrow: unlike the
+// identity-manager allowlist (already fully PTY-compared before this
+// plan), .planning/design/create-flow/visual-divergence-allowlist.txt
+// carries ~15 checkpoints from Phase 3 (03-06-PLAN.md) that were NEVER
+// driven through a paired real-vs-dummy PTY comparison — only through the
+// in-process visual gate. Re-deriving a full PTY harness for all of them is
+// out of this task's scope (UP-01/UP-02/UP-03); loadCreateFlowAllowlist
+// therefore SKIPS (not fatally rejects) any line whose checkpoint is
+// outside this set, so this loader can safely share the file with those
+// pre-existing, PTY-uncompared rows.
+// ---------------------------------------------------------------------------
+
+var createFlowAllowlistCheckpoints = map[string]bool{
+	"upload-checkbox-ready": true, "upload-results": true,
+}
+
+// createFlowAllowlistEntry mirrors identManagerAllowlistEntry, scoped to
+// this file's own allowlist.
+type createFlowAllowlistEntry struct {
+	Checkpoint  string
+	Region      identManagerRegion
+	Predicate   string
+	DecisionRef string
+	Reason      string
+	used        bool
+}
+
+// loadCreateFlowAllowlist parses
+// .planning/design/create-flow/visual-divergence-allowlist.txt, returning
+// only the rows whose checkpoint is in createFlowAllowlistCheckpoints — see
+// this section's doc comment for why the other ~15 pre-existing checkpoints
+// are silently skipped rather than validated.
+func loadCreateFlowAllowlist(t *testing.T) []*createFlowAllowlistEntry {
+	t.Helper()
+	path := filepath.Join(repoRoot(t), ".planning", "design", "create-flow", "visual-divergence-allowlist.txt")
+	data, err := os.ReadFile(path) //nolint:gosec // fixed repo-relative path (G304)
+	if err != nil {
+		t.Fatalf("loadCreateFlowAllowlist: reading %s: %v", path, err)
+	}
+	validRegions := map[identManagerRegion]bool{
+		identRegionSidebar: true, identRegionHeaderStatus: true,
+		identRegionUploadSection: true, identRegionConnectivityOutput: true,
+	}
+	seen := make(map[string]bool)
+	var entries []*createFlowAllowlistEntry
+	for lineNum, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := splitIdentManagerAllowlistLine(line) // shared strict-schema splitter (identity_manager_pty_e2e_test.go)
+		if len(parts) != 5 {
+			continue // not a well-formed 5-field row — outside this loader's concern (see doc comment)
+		}
+		checkpoint := strings.TrimSpace(parts[0])
+		if !createFlowAllowlistCheckpoints[checkpoint] {
+			continue
+		}
+		region := identManagerRegion(strings.TrimSpace(parts[1]))
+		predicate := strings.TrimSpace(parts[2])
+		decisionRef := strings.TrimSpace(parts[3])
+		reason := strings.TrimSpace(parts[4])
+		if !validRegions[region] {
+			t.Fatalf("create-flow allowlist line %d: unknown region %q for checkpoint %q", lineNum+1, region, checkpoint)
+		}
+		if predicate == "differs" || (!strings.HasPrefix(predicate, "contains:") && !strings.HasPrefix(predicate, "absent:")) {
+			t.Fatalf("create-flow allowlist line %d: invalid predicate %q (must be 'contains:<text>' or 'absent:<text>')", lineNum+1, predicate)
+		}
+		if !identManagerDecisionRefPattern.MatchString(decisionRef) {
+			t.Fatalf("create-flow allowlist line %d: decision-ref %q must match identManagerDecisionRefPattern", lineNum+1, decisionRef)
+		}
+		if reason == "" {
+			t.Fatalf("create-flow allowlist line %d: blank reason", lineNum+1)
+		}
+		key := checkpoint + ":" + string(region)
+		if seen[key] {
+			t.Fatalf("create-flow allowlist line %d: duplicate entry for checkpoint %q region %q", lineNum+1, checkpoint, region)
+		}
+		seen[key] = true
+		entries = append(entries, &createFlowAllowlistEntry{
+			Checkpoint: checkpoint, Region: region, Predicate: predicate, DecisionRef: decisionRef, Reason: reason,
+		})
+	}
+	return entries
+}
+
+// compareCreateFlowCheckpoint mirrors compareIdentManagerCheckpoint, reusing
+// its region extraction/normalization/predicate functions verbatim (see
+// this section's doc comment).
+func compareCreateFlowCheckpoint(t errorRecorder, checkpoint string, realFrame, dummyFrame string, allowlist []*createFlowAllowlistEntry) {
+	t.Helper()
+	comparable := 0
+	for _, region := range []identManagerRegion{identRegionSidebar, identRegionHeaderStatus, identRegionUploadSection, identRegionConnectivityOutput} {
+		realRegion := extractIdentManagerRegion(realFrame, region)
+		dummyRegion := extractIdentManagerRegion(dummyFrame, region)
+		if strings.TrimSpace(realRegion) == "" && strings.TrimSpace(dummyRegion) == "" {
+			continue
+		}
+		comparable++
+		if normalizeIdentManagerCheckpoint(realRegion) == normalizeIdentManagerCheckpoint(dummyRegion) {
+			continue
+		}
+		var matched *createFlowAllowlistEntry
+		for _, entry := range allowlist {
+			if entry.Checkpoint == checkpoint && entry.Region == region {
+				matched = entry
+				break
+			}
+		}
+		if matched == nil {
+			t.Errorf("create-flow semantic gate: %s/%s diverges with NO allowlist classification (DLV-04 requires ux-improvement or defect for every difference)\n--- real ---\n%s\n--- dummy ---\n%s",
+				checkpoint, region, realRegion, dummyRegion)
+			continue
+		}
+		predicateOK := false
+		switch {
+		case strings.HasPrefix(matched.Predicate, "contains:"):
+			needle := strings.Trim(strings.TrimPrefix(matched.Predicate, "contains:"), `"`)
+			predicateOK = strings.Contains(realRegion, needle) && strings.Contains(dummyRegion, needle)
+		case strings.HasPrefix(matched.Predicate, "absent:"):
+			needle := strings.Trim(strings.TrimPrefix(matched.Predicate, "absent:"), `"`)
+			predicateOK = strings.Contains(realRegion, needle) != strings.Contains(dummyRegion, needle)
+		}
+		if !predicateOK {
+			t.Errorf("create-flow semantic gate: %s/%s allowlist entry %q does not match the observed divergence\n--- real ---\n%s\n--- dummy ---\n%s",
+				checkpoint, region, matched.Predicate, realRegion, dummyRegion)
+			continue
+		}
+		matched.used = true
+	}
+	if comparable == 0 {
+		t.Fatalf("create-flow semantic gate: checkpoint %q produced NO comparable region on either side — checkpoint script bug, not a real absence", checkpoint)
+	}
+}
+
+// newDummyCreateFlowCmd builds the exec.Cmd for a live cmd/gitid-dummy PTY
+// session at the create-flow wizard's entry screen — mirrors the inline
+// pattern this file's own "compact includeIf preview" subtest already
+// proves works (dummyCmd built directly, e2eEnv-backed).
+func newDummyCreateFlowCmd(t *testing.T, ctx context.Context, bin, home string) *exec.Cmd {
+	t.Helper()
+	cmd := exec.CommandContext(ctx, bin) //nolint:gosec // bin from BuildDummyBinary; no user input
+	env, _ := e2eEnv(t, home)
+	cmd.Env = append(env, "TERM=xterm-256color")
+	return cmd
+}
+
+// TestUploadSection_CompiledRealVsLiveDummyPTY drives the create-flow
+// wizard's upload checkpoints (upload-checkbox-ready, upload-results —
+// registered as "the identical resolved state" by
+// internal/screenshot/createflow.go's uploadVisualSpecs, so this drives ONE
+// shared PTY flow and compares its single captured frame pair against BOTH
+// checkpoint labels; see the subtest's own doc comment for why a second,
+// independently-timed real run proved racy) through two real PTY sessions —
+// the compiled cmd/gitid binary and the compiled cmd/gitid-dummy binary —
+// comparing NORMALIZED semantic checkpoints (never raw terminal bytes),
+// following the SAME pattern as TestIdentityManager_CompiledRealVsLiveDummyPTY
+// (09-07-PLAN.md Task 3, UP-01/UP-02/UP-03).
+//
+// SHARED-RENDERER LIMITATION (STATE.md's Phase-4 CR-15 finding, restated
+// here per this plan's own requirement): both binaries render the wizard's
+// upload checkpoints through the SAME internal/tuikit identities.go
+// renderWizard code — cmd/gitid injects a real Backend, cmd/gitid-dummy
+// injects internal/dummytui.FixtureBackend. This paired comparison
+// therefore catches wiring/content differences between the two Backend
+// implementations, never a defect INSIDE the shared renderer itself. The
+// independent backstop is 09-07-PLAN.md Task 1's per-state PTY suite
+// (TestCreateFlow_UploadPartialScopeShowsBothRows,
+// TestCreateFlow_UploadAlreadyCompleteCollapsesToOneLine, and their
+// siblings) plus the FIELDS.md-manifest-derived assertions, both of which
+// derive their expectations from 09-UI-SPEC.md rather than from the other
+// binary.
+//
+// Both PTY sessions — real AND dummy — build their environment through
+// e2eEnv (review R1): the real session via newRealCreateFlowCmd's variadic
+// shim form, the dummy session via newDummyCreateFlowCmd (which itself
+// calls e2eEnv), so neither side can resolve a real gh/glab even though the
+// dummy never actually shells out.
+func TestUploadSection_CompiledRealVsLiveDummyPTY(t *testing.T) {
+	allowlist := loadCreateFlowAllowlist(t)
+	realBin := BuildBinary(t)
+	dummyBin := BuildDummyBinary(t)
+
+	t.Run("upload-checkbox-ready+upload-results", func(t *testing.T) {
+		realHome := SandboxHome(t)
+		// "upload-checkbox-ready" and "upload-results" are registered
+		// (internal/screenshot/createflow.go's uploadVisualSpecs' own doc
+		// comment) as "the identical resolved state" — a SINGLE flow,
+		// captured ONCE, compared against BOTH checkpoint labels below.
+		// Driving the flow twice (once per checkpoint) was tried and found
+		// genuinely racy: the wizard auto-continues into the connectivity
+		// test stages the instant the upload beat resolves, and that async
+		// progress keeps scrolling the fixed-size viewport — a second,
+		// independently-timed real PTY run does not reliably land on the
+		// SAME transient screen the first one did, occasionally capturing a
+		// frame where the "Running:"/"ssh-key add" content has already
+		// scrolled off. One shared capture removes that race entirely.
+		fakeSSH := FakeSSHDir(t, "pass")
+		fakeGH, _ := FakeGHDir(t, "ok")
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, fakeSSH, fakeGH), dummyTermWidth, dummyTermHeight)
+		defer real.close(t)
+		openCreateWizard(t, real)
+		mustSee(t, real, "Register with GitHub automatically", "real: the ready checkbox row renders (checked by default)")
+		real.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSee(t, real, "Step 2/4", "real: step 0 -> step 1")
+		real.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSeeSlow(t, real, "Running:", "real: the upload beat's announce line renders")
+		realFrame := real.snapshot()
+
+		dummyHome := SandboxHome(t)
+		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer dcancel()
+		dummy := startPTYAt(t, newDummyCreateFlowCmd(t, dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
+		defer dummy.close(t)
+		openCreateWizard(t, dummy)
+		mustSee(t, dummy, "Register with GitHub automatically", "dummy: the ready checkbox row renders (checked by default)")
+		dummy.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSee(t, dummy, "Step 2/4", "dummy: step 0 -> step 1")
+		dummy.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSeeSlow(t, dummy, "Running:", "dummy: the upload beat's announce line renders")
+		dummyFrame := dummy.snapshot()
+
+		compareCreateFlowCheckpoint(t, "upload-checkbox-ready", realFrame, dummyFrame, allowlist)
+		compareCreateFlowCheckpoint(t, "upload-results", realFrame, dummyFrame, allowlist)
+	})
+
+	for _, entry := range allowlist {
+		if !entry.used {
+			t.Errorf("create-flow allowlist entry %s/%s (%s) was never triggered by any checkpoint comparison — remove the stale entry", entry.Checkpoint, entry.Region, entry.DecisionRef)
+		}
+	}
+}
+
 // TestCreateFlow_ExistingPTYCannotReachRealProviderCLI exists because the
 // cross-AI review found the pre-existing create-flow PTY helper leaked the
 // ambient PATH. It must fail if a future change reconstructs an
