@@ -704,11 +704,22 @@ type UploadResultRow struct {
 // named seams later plans fill (D-15 inventory-read failure, the manual
 // instructions text, and a --no-upload-style skip) — declared now so no
 // later plan reshapes this struct's field set.
+//
+// Skipped vs SkippedByFlag (WR-02): Skipped means autonomy DID NOT APPLY
+// here — planUpload sets it for two DERIVED terminal states that were never
+// a user choice: the provider is not gated (Omitted) or no matching
+// provider CLI is on PATH (Disabled, which also carries ManualFallback).
+// SkippedByFlag means the OPPOSITE: the user explicitly passed --no-upload,
+// the one state where "Auto-upload skipped (--no-upload)." is actually
+// true. The two must never share a rendering condition — a self-hosted
+// GHE/GitLab create (Omitted, Skipped=true, SkippedByFlag=false) must never
+// tell the user they passed a flag they did not pass.
 type UploadRunView struct {
 	Rows              []UploadResultRow
 	InventoryDegraded bool
 	ManualFallback    string
 	Skipped           bool
+	SkippedByFlag     bool
 	AlreadyComplete   bool
 	// ProviderName is the display name (e.g. "GitHub") the degraded and
 	// already-complete notes format themselves with. The wizard's own

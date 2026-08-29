@@ -246,12 +246,17 @@ func (b *realBackend) runUploadFor(req uploadRequest) (view tuikit.UploadRunView
 // to the wizard's own upload section: every string emitted here is a
 // reference to an internal/tuikit frozen Upload* constant, never CLI-local
 // wording (09-UI-SPEC.md's shown==run contract extended to the CLI surface).
-// It writes nothing at all for the omitted state (view is the zero value).
+// It writes nothing at all for the true zero value (register-key's not-
+// gated path, which never builds a view). The Skipped=true derived states
+// (provider not gated, or no CLI on PATH) are NOT the zero value — they
+// write ManualFallback when present but, per WR-02, never the
+// UploadSkippedByFlagNote line: that line is gated on SkippedByFlag alone,
+// which is set ONLY when the user actually passed --no-upload.
 func printUploadOutcome(w io.Writer, view tuikit.UploadRunView) {
 	if view.InventoryDegraded {
 		fmt.Fprintln(w, fmt.Sprintf(tuikit.UploadInventoryDegradedFmt, view.ProviderName)) //nolint:errcheck // best-effort stdout
 	}
-	if view.Skipped {
+	if view.SkippedByFlag {
 		fmt.Fprintln(w, tuikit.UploadSkippedByFlagNote) //nolint:errcheck // best-effort stdout
 	}
 	for _, row := range view.Rows {

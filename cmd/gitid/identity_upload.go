@@ -163,9 +163,12 @@ func runIdentityRegisterKey(cmd *cobra.Command, args []string, flags identityReg
 // unconditionally once the key material exists.
 func runUploadStep(w io.Writer, b *realBackend, req uploadRequest, noUpload, dryRun bool) {
 	if noUpload {
-		fmt.Fprintln(w, tuikit.UploadSkippedByFlagNote)   //nolint:errcheck // best-effort stdout
-		fmt.Fprintln(w, tuikit.UploadManualHeading)       //nolint:errcheck // best-effort stdout
-		fmt.Fprint(w, b.UploadInstructions(req.Hostname)) //nolint:errcheck // best-effort stdout
+		// WR-02: route through printUploadOutcome (SkippedByFlag=true) rather
+		// than printing directly, so the --no-upload note has exactly ONE
+		// rendering site — the same site planUpload's Skipped-but-not-by-flag
+		// states (Omitted/Disabled) deliberately do NOT trigger it.
+		view := tuikit.UploadRunView{SkippedByFlag: true, ManualFallback: b.UploadInstructions(req.Hostname)}
+		printUploadOutcome(w, view)
 		return
 	}
 	if dryRun {

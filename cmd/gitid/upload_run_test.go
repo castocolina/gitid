@@ -94,10 +94,11 @@ func TestPrintUploadOutcomeUsesOnlyFrozenCopy(t *testing.T) {
 // zero bytes.
 func TestPrintUploadOutcomeRendersEachSection(t *testing.T) {
 	tests := []struct {
-		name string
-		view tuikit.UploadRunView
-		want []string
-		zero bool
+		name        string
+		view        tuikit.UploadRunView
+		want        []string
+		mustNotWant []string
+		zero        bool
 	}{
 		{
 			name: "success",
@@ -127,12 +128,33 @@ func TestPrintUploadOutcomeRendersEachSection(t *testing.T) {
 			want: []string{"Could not check GitHub for existing keys"},
 		},
 		{
-			name: "skipped",
-			view: tuikit.UploadRunView{Skipped: true, ManualFallback: "manual steps here"},
+			// The actual --no-upload flag path (runUploadStep's noUpload
+			// branch) — the ONLY shape that legitimately prints the frozen
+			// "Auto-upload skipped (--no-upload)." note.
+			name: "skipped by flag",
+			view: tuikit.UploadRunView{SkippedByFlag: true, ManualFallback: "manual steps here"},
 			want: []string{tuikit.UploadSkippedByFlagNote, tuikit.UploadManualHeading, "manual steps here"},
 		},
 		{
-			name: "omitted",
+			// WR-02 regression: planUpload's Disabled derived state (no
+			// matching provider CLI on PATH) sets Skipped, NOT SkippedByFlag
+			// — no --no-upload flag was ever passed here, so the note must
+			// NOT render, even though the manual-fallback block still does.
+			name:        "disabled (no CLI on PATH) — not a flag skip",
+			view:        tuikit.UploadRunView{Skipped: true, ManualFallback: "manual steps here"},
+			want:        []string{tuikit.UploadManualHeading, "manual steps here"},
+			mustNotWant: []string{tuikit.UploadSkippedByFlagNote},
+		},
+		{
+			// WR-02 regression, Omitted sub-case: a self-hosted GHE/GitLab
+			// create sets Skipped with no ManualFallback either — the note
+			// must not render, and neither must anything else.
+			name: "omitted (provider not gated) — not a flag skip",
+			view: tuikit.UploadRunView{Skipped: true},
+			zero: true,
+		},
+		{
+			name: "true zero value (register-key's not-gated path)",
 			view: tuikit.UploadRunView{},
 			zero: true,
 		},
@@ -153,6 +175,11 @@ func TestPrintUploadOutcomeRendersEachSection(t *testing.T) {
 					t.Errorf("printUploadOutcome(%s) = %q, want it to contain %q", tt.name, got, want)
 				}
 			}
+			for _, mustNot := range tt.mustNotWant {
+				if strings.Contains(got, mustNot) {
+					t.Errorf("printUploadOutcome(%s) = %q, must NOT contain %q", tt.name, got, mustNot)
+				}
+			}
 		})
 	}
 }
@@ -161,6 +188,33 @@ func TestPrintUploadOutcomeRendersEachSection(t *testing.T) {
 // through the printer and asserts the same frozen strings the wizard's
 // renderUploadRun would emit for the identical rows are present — the
 // outcome-parity contract asserted rather than assumed.
+// TestSelfHostedCreateNeverPrintsTheNoUploadFlagNote is the WR-02
+// end-to-end regression: planUpload's real Omitted terminal view (a
+// self-hosted GHE/GitLab hostname, D-13's explicitly supported degrade
+// path — no --no-upload flag involved at all) must never render "Auto-
+// upload skipped (--no-upload)." when printed exactly as create/clone/
+// rotate/new-key print it.
+func TestSelfHostedCreateNeverPrintsTheNoUploadFlagNote(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	plan, terminal := b.planUpload(uploadRequest{Identity: "acme", Hostname: "git.self-hosted.example.com", PubPath: "/does/not/matter.pub"})
+	if terminal == nil {
+		t.Fatal("setup: a self-hosted hostname must resolve to a terminal (Omitted) view")
+	}
+	if !terminal.Skipped {
+		t.Fatalf("setup: want the Omitted view to set Skipped, got %+v", terminal)
+	}
+	if terminal.SkippedByFlag {
+		t.Fatalf("setup: planUpload must never set SkippedByFlag — that is runUploadStep's noUpload branch only, got %+v", terminal)
+	}
+	_ = plan
+	var buf bytes.Buffer
+	printUploadOutcome(&buf, *terminal)
+	if strings.Contains(buf.String(), tuikit.UploadSkippedByFlagNote) {
+		t.Errorf("printUploadOutcome(self-hosted Omitted view) = %q, must NOT contain the --no-upload note — no flag was passed", buf.String())
+	}
+}
+
 func TestPrintUploadOutcomeMatchesTheWizardSection(t *testing.T) {
 	view := tuikit.UploadRunView{ProviderName: "GitHub", Rows: []tuikit.UploadResultRow{
 		{Label: tuikit.UploadRegistrationLabelAuth, Command: "gh ssh-key add ~/.ssh/id_ed25519_acme.pub --type authentication", Outcome: tuikit.UploadRowUploaded},
