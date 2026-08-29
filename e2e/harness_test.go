@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/build/constraint"
@@ -818,34 +819,110 @@ func TestEveryE2EChildEnvIsHermetic(t *testing.T) {
 	}
 }
 
-// FakeGHDir writes a mode-switching fake gh script and sets GITID_FAKE_GH_MODE.
-// The caller prepends the returned dir to PATH via cmd.Env.
+// ---------------------------------------------------------------------------
+// The full Phase 9 provider-CLI shim mode set (09-02-PLAN.md Task 2 Part B).
 //
-// Modes:
+// Both scripts stay static string literals — never interpolated from a test
+// value (the existing G204-clean discipline every shim in this file
+// follows). All variation goes through the GITID_FAKE_GH_MODE /
+// GITID_FAKE_GLAB_MODE env switch plus GITID_FAKE_GH_LOG / GITID_FAKE_GLAB_LOG
+// (the argv-recording log path) and GITID_FAKE_GH_INVENTORY_FILE /
+// GITID_FAKE_GLAB_INVENTORY_FILE (a sibling data file the script `cat`s for
+// the inventory modes — keeping the script itself a fixed literal while
+// still letting a test point the inventory at a real .pub it generated).
+// ---------------------------------------------------------------------------
+
+// FakeGHDir writes the full-mode-set fake gh script and sets
+// GITID_FAKE_GH_MODE. The caller prepends the returned dir to PATH via
+// e2eEnv's pathPrefixes. Returns the shim directory and the log file path
+// every invocation's argv is recorded to (ReadFakeCLILog reads it back).
 //
-//	ok        — auth status exit 0; ssh-key add prints "Added SSH key." and exits 0
-//	auth-fail — auth status exits 1 (not authenticated)
+// Dispatches on $1 (auth|ssh-key|api) and, for ssh-key, on $2 (add|list|
+// delete). FIRST action on every invocation: log the argv (when
+// GITID_FAKE_GH_LOG is set). LAST resort: an unrecognized verb records its
+// argv, prints a distinctive unhandled marker, and exits non-zero (fail
+// CLOSED, so a half-wired product call surfaces as a visible test failure
+// instead of a silent success).
+//
+// Modes: ok, auth-fail, scope-fail-signing, scope-fail-all, duplicate,
+// inventory-both, inventory-auth-only, inventory-fail, delete-ok — see the
+// script's own case statement below for the exact behavior of each.
 //
 // Script is a static literal — never constructed from user input (G204-clean).
-func FakeGHDir(t *testing.T, mode string) string {
+func FakeGHDir(t *testing.T, mode string) (dir string, logPath string) {
 	t.Helper()
-	dir := t.TempDir()
+	dir = t.TempDir()
+	logPath = filepath.Join(t.TempDir(), "gh.log")
 	const script = "#!/bin/sh\n" +
+		"if [ -n \"$GITID_FAKE_GH_LOG\" ]; then printf '%s\\n' \"$*\" >> \"$GITID_FAKE_GH_LOG\"; fi\n" +
 		"case \"$1\" in\n" +
 		"  auth)\n" +
 		"    case \"$GITID_FAKE_GH_MODE\" in\n" +
-		"      ok) exit 0 ;;\n" +
+		"      ok|scope-fail-signing|scope-fail-all|duplicate|inventory-both|inventory-auth-only|inventory-fail|delete-ok) exit 0 ;;\n" +
 		"      *) echo \"error: not logged into github.com\"; exit 1 ;;\n" +
 		"    esac\n" +
 		"    ;;\n" +
 		"  ssh-key)\n" +
+		"    case \"$2\" in\n" +
+		"      add)\n" +
+		"        case \"$GITID_FAKE_GH_MODE\" in\n" +
+		"          ok|inventory-both|inventory-auth-only|inventory-fail|delete-ok)\n" +
+		"            echo \"Added SSH key.\"; exit 0 ;;\n" +
+		"          scope-fail-signing)\n" +
+		"            if echo \"$*\" | grep -q -- '--type authentication'; then\n" +
+		"              echo \"Added SSH key.\"; exit 0\n" +
+		"            fi\n" +
+		"            echo \"error: insufficient scope (missing admin:ssh_signing_key)\" >&2; exit 1 ;;\n" +
+		"          scope-fail-all)\n" +
+		"            echo \"error: insufficient scope (missing admin:public_key)\" >&2; exit 1 ;;\n" +
+		"          duplicate)\n" +
+		"            echo \"! Key already exists on your account\"; exit 0 ;;\n" +
+		"          *) echo \"error: not authenticated\" >&2; exit 1 ;;\n" +
+		"        esac\n" +
+		"        ;;\n" +
+		"      delete)\n" +
+		"        case \"$GITID_FAKE_GH_MODE\" in\n" +
+		"          delete-ok) exit 0 ;;\n" +
+		"          *) echo \"error: not authenticated\" >&2; exit 1 ;;\n" +
+		"        esac\n" +
+		"        ;;\n" +
+		"      list)\n" +
+		"        exit 0\n" +
+		"        ;;\n" +
+		"      *)\n" +
+		"        echo \"gitid-e2e-unhandled-verb: gh ssh-key $2\" >&2; exit 3 ;;\n" +
+		"    esac\n" +
+		"    ;;\n" +
+		"  api)\n" +
 		"    case \"$GITID_FAKE_GH_MODE\" in\n" +
-		"      ok) echo \"Added SSH key.\"; exit 0 ;;\n" +
-		"      *) echo \"error: not authenticated\"; exit 1 ;;\n" +
+		"      inventory-fail)\n" +
+		"        echo \"error: could not read inventory\" >&2; exit 1 ;;\n" +
+		"      inventory-both)\n" +
+		"        if [ -n \"$GITID_FAKE_GH_INVENTORY_FILE\" ] && [ -r \"$GITID_FAKE_GH_INVENTORY_FILE\" ]; then\n" +
+		"          cat \"$GITID_FAKE_GH_INVENTORY_FILE\"\n" +
+		"        else\n" +
+		"          echo '[]'\n" +
+		"        fi\n" +
+		"        exit 0 ;;\n" +
+		"      inventory-auth-only)\n" +
+		"        case \"$2\" in\n" +
+		"          user/keys)\n" +
+		"            if [ -n \"$GITID_FAKE_GH_INVENTORY_FILE\" ] && [ -r \"$GITID_FAKE_GH_INVENTORY_FILE\" ]; then\n" +
+		"              cat \"$GITID_FAKE_GH_INVENTORY_FILE\"\n" +
+		"            else\n" +
+		"              echo '[]'\n" +
+		"            fi\n" +
+		"            ;;\n" +
+		"          *) echo '[]' ;;\n" +
+		"        esac\n" +
+		"        exit 0 ;;\n" +
+		"      *)\n" +
+		"        echo '[]'; exit 0 ;;\n" +
 		"    esac\n" +
 		"    ;;\n" +
 		"  *)\n" +
-		"    exit 0\n" +
+		"    echo \"gitid-e2e-unhandled-verb: gh $1\" >&2\n" +
+		"    exit 3\n" +
 		"    ;;\n" +
 		"esac\n"
 	scriptPath := filepath.Join(dir, "gh")
@@ -853,37 +930,89 @@ func FakeGHDir(t *testing.T, mode string) string {
 		t.Fatalf("FakeGHDir: writing fake gh: %v", err)
 	}
 	t.Setenv("GITID_FAKE_GH_MODE", mode)
-	return dir
+	t.Setenv("GITID_FAKE_GH_LOG", logPath)
+	return dir, logPath
 }
 
-// FakeGLabDir writes a mode-switching fake glab script and sets GITID_FAKE_GLAB_MODE.
-// The caller prepends the returned dir to PATH via cmd.Env.
+// FakeGHInventoryFile points the "inventory-both"/"inventory-auth-only"
+// fake-gh modes' `api` verb at a fixed JSON fixture file — the mechanism
+// that lets a test drive the inventory response with a REAL .pub-derived
+// key blob it generated, while fakeGHScript's own body stays a static
+// literal (it only ever `cat`s a path named by an env var).
+func FakeGHInventoryFile(t *testing.T, jsonBody string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "gh-inventory.json")
+	if err := os.WriteFile(path, []byte(jsonBody), 0o600); err != nil {
+		t.Fatalf("FakeGHInventoryFile: %v", err)
+	}
+	t.Setenv("GITID_FAKE_GH_INVENTORY_FILE", path)
+	return path
+}
+
+// FakeGLabDir writes the full-mode-set fake glab script and sets
+// GITID_FAKE_GLAB_MODE. The caller prepends the returned dir to PATH via
+// e2eEnv's pathPrefixes. Returns the shim directory and the log file path
+// every invocation's argv is recorded to (ReadFakeCLILog reads it back).
 //
-// Modes:
+// Mirrors FakeGHDir's structure and fail-closed unknown-verb branch.
 //
-//	ok        — auth status exit 0; ssh-key add exits 0
-//	auth-fail — auth status exits 1 (not authenticated)
+// Modes: ok, auth-fail, taken, inventory-present, inventory-empty,
+// inventory-fail, delete-ok — see the script's own case statement below for
+// the exact behavior of each.
 //
 // Script is a static literal — never constructed from user input (G204-clean).
-func FakeGLabDir(t *testing.T, mode string) string {
+func FakeGLabDir(t *testing.T, mode string) (dir string, logPath string) {
 	t.Helper()
-	dir := t.TempDir()
+	dir = t.TempDir()
+	logPath = filepath.Join(t.TempDir(), "glab.log")
 	const script = "#!/bin/sh\n" +
+		"if [ -n \"$GITID_FAKE_GLAB_LOG\" ]; then printf '%s\\n' \"$*\" >> \"$GITID_FAKE_GLAB_LOG\"; fi\n" +
 		"case \"$1\" in\n" +
 		"  auth)\n" +
 		"    case \"$GITID_FAKE_GLAB_MODE\" in\n" +
-		"      ok) exit 0 ;;\n" +
+		"      ok|taken|inventory-present|inventory-empty|inventory-fail|delete-ok) exit 0 ;;\n" +
 		"      *) echo \"error: not authenticated to gitlab.com\"; exit 1 ;;\n" +
 		"    esac\n" +
 		"    ;;\n" +
 		"  ssh-key)\n" +
-		"    case \"$GITID_FAKE_GLAB_MODE\" in\n" +
-		"      ok) echo \"Added SSH key.\"; exit 0 ;;\n" +
-		"      *) echo \"error: not authenticated\"; exit 1 ;;\n" +
+		"    case \"$2\" in\n" +
+		"      add)\n" +
+		"        case \"$GITID_FAKE_GLAB_MODE\" in\n" +
+		"          ok|inventory-present|inventory-empty|inventory-fail|delete-ok)\n" +
+		"            echo \"Added SSH key.\"; exit 0 ;;\n" +
+		"          taken)\n" +
+		"            echo \"error: Fingerprint has already been taken\" >&2; exit 1 ;;\n" +
+		"          *) echo \"error: not authenticated\" >&2; exit 1 ;;\n" +
+		"        esac\n" +
+		"        ;;\n" +
+		"      delete)\n" +
+		"        case \"$GITID_FAKE_GLAB_MODE\" in\n" +
+		"          delete-ok) exit 0 ;;\n" +
+		"          *) echo \"error: not authenticated\" >&2; exit 1 ;;\n" +
+		"        esac\n" +
+		"        ;;\n" +
+		"      list)\n" +
+		"        case \"$GITID_FAKE_GLAB_MODE\" in\n" +
+		"          inventory-present)\n" +
+		"            if [ -n \"$GITID_FAKE_GLAB_INVENTORY_FILE\" ] && [ -r \"$GITID_FAKE_GLAB_INVENTORY_FILE\" ]; then\n" +
+		"              cat \"$GITID_FAKE_GLAB_INVENTORY_FILE\"\n" +
+		"            else\n" +
+		"              echo '[]'\n" +
+		"            fi\n" +
+		"            exit 0 ;;\n" +
+		"          inventory-fail)\n" +
+		"            echo \"error: could not read inventory\" >&2; exit 1 ;;\n" +
+		"          *)\n" +
+		"            echo '[]'; exit 0 ;;\n" +
+		"        esac\n" +
+		"        ;;\n" +
+		"      *)\n" +
+		"        echo \"gitid-e2e-unhandled-verb: glab ssh-key $2\" >&2; exit 3 ;;\n" +
 		"    esac\n" +
 		"    ;;\n" +
 		"  *)\n" +
-		"    exit 0\n" +
+		"    echo \"gitid-e2e-unhandled-verb: glab $1\" >&2\n" +
+		"    exit 3\n" +
 		"    ;;\n" +
 		"esac\n"
 	scriptPath := filepath.Join(dir, "glab")
@@ -891,7 +1020,41 @@ func FakeGLabDir(t *testing.T, mode string) string {
 		t.Fatalf("FakeGLabDir: writing fake glab: %v", err)
 	}
 	t.Setenv("GITID_FAKE_GLAB_MODE", mode)
-	return dir
+	t.Setenv("GITID_FAKE_GLAB_LOG", logPath)
+	return dir, logPath
+}
+
+// FakeGLabInventoryFile is FakeGHInventoryFile's glab-mode sibling, for the
+// "inventory-present" fake-glab mode's `ssh-key list -F json` output.
+func FakeGLabInventoryFile(t *testing.T, jsonBody string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "glab-inventory.json")
+	if err := os.WriteFile(path, []byte(jsonBody), 0o600); err != nil {
+		t.Fatalf("FakeGLabInventoryFile: %v", err)
+	}
+	t.Setenv("GITID_FAKE_GLAB_INVENTORY_FILE", path)
+	return path
+}
+
+// ReadFakeCLILog returns one entry per shim invocation, in order — each
+// entry the space-joined argv (the shim's own $* — its OWN path is never
+// included, unlike ReadProviderDenyLog's $0 $* shape, since the fake-gh/glab
+// log's consumers assert on the uploader-package argv shape directly).
+// A missing log file returns an empty slice, not an error.
+func ReadFakeCLILog(t *testing.T, logPath string) []string {
+	t.Helper()
+	data, err := os.ReadFile(logPath) //nolint:gosec // test-owned log path under t.TempDir() (G304)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		t.Fatalf("ReadFakeCLILog: %v", err)
+	}
+	trimmed := strings.TrimRight(string(data), "\n")
+	if trimmed == "" {
+		return nil
+	}
+	return strings.Split(trimmed, "\n")
 }
 
 // FakeGitDir writes a mode-switching fake git script and sets GITID_FAKE_GIT_MODE.
@@ -989,6 +1152,153 @@ func TestFakeGitShimDelegatesOverridesVersionAndFailsSubcommand(t *testing.T) {
 	}
 	if !strings.Contains(string(failed), "fake git: rev-parse failed") {
 		t.Fatalf("configured failing subcommand output = %q", failed)
+	}
+}
+
+// runFakeCLI runs the shim at binPath with e2eEnv's hermetic base plus
+// extraEnv appended (the mode/log/inventory-file overrides each test case
+// supplies), returning combined output and the exit code (-1 on a
+// non-ExitError failure). Routing even a test-owned shim invocation through
+// e2eEnv keeps the package's "every .Env assignment traces to e2eEnv" rule
+// exceptionless rather than growing the documented-allowlist surface for a
+// callee that could easily just call it directly.
+func runFakeCLI(t *testing.T, binPath string, extraEnv []string, args ...string) (out string, code int) {
+	t.Helper()
+	cmd := exec.Command(binPath, args...) //nolint:gosec // binPath is the test-owned fake-CLI script (G204)
+	env, _ := e2eEnv(t, t.TempDir())
+	cmd.Env = append(env, extraEnv...)
+	outBytes, err := cmd.CombinedOutput()
+	if err == nil {
+		return string(outBytes), 0
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return string(outBytes), exitErr.ExitCode()
+	}
+	t.Fatalf("runFakeCLI: %v", err)
+	return "", -1
+}
+
+// TestFakeGHShimModesBehaveAsDocumented exercises every fake-gh mode
+// FakeGHDir documents, asserting the exit code, an output substring, and
+// that the invocation was recorded to the log — including the fail-closed
+// unknown-verb branch.
+func TestFakeGHShimModesBehaveAsDocumented(t *testing.T) {
+	cases := []struct {
+		name       string
+		mode       string
+		args       []string
+		wantCode   int
+		wantOutput string
+	}{
+		{"ok/auth", "ok", []string{"auth", "status", "--hostname", "github.com"}, 0, ""},
+		{"ok/ssh-key-add", "ok", []string{"ssh-key", "add", "k.pub", "--title", "t", "--type", "authentication"}, 0, "Added SSH key."},
+		{"auth-fail/auth", "auth-fail", []string{"auth", "status", "--hostname", "github.com"}, 1, "not logged into github.com"},
+		{"scope-fail-signing/auth-ok", "scope-fail-signing", []string{"ssh-key", "add", "k.pub", "--title", "t", "--type", "authentication"}, 0, "Added SSH key."},
+		{"scope-fail-signing/signing-fails", "scope-fail-signing", []string{"ssh-key", "add", "k.pub", "--title", "t", "--type", "signing"}, 1, "admin:ssh_signing_key"},
+		{"scope-fail-all", "scope-fail-all", []string{"ssh-key", "add", "k.pub", "--title", "t", "--type", "authentication"}, 1, "admin:public_key"},
+		{"duplicate", "duplicate", []string{"ssh-key", "add", "k.pub", "--title", "t", "--type", "authentication"}, 0, "already exists"},
+		{"inventory-both/keys", "inventory-both", []string{"api", "user/keys"}, 0, ""},
+		{"inventory-both/signing-keys", "inventory-both", []string{"api", "user/ssh_signing_keys"}, 0, ""},
+		{"inventory-auth-only/signing-empty", "inventory-auth-only", []string{"api", "user/ssh_signing_keys"}, 0, "[]"},
+		{"inventory-fail", "inventory-fail", []string{"api", "user/keys"}, 1, "could not read inventory"},
+		{"delete-ok", "delete-ok", []string{"ssh-key", "delete", "12345"}, 0, ""},
+		{"unknown-verb", "ok", []string{"totally-unrecognized"}, 3, "gitid-e2e-unhandled-verb: gh totally-unrecognized"},
+		{"unknown-ssh-key-verb", "ok", []string{"ssh-key", "frobnicate"}, 3, "gitid-e2e-unhandled-verb: gh ssh-key frobnicate"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir, logPath := FakeGHDir(t, c.mode)
+			bin := filepath.Join(dir, "gh")
+			extraEnv := []string{
+				"GITID_FAKE_GH_MODE=" + c.mode,
+				"GITID_FAKE_GH_LOG=" + logPath,
+				"GITID_FAKE_GH_INVENTORY_FILE=" + os.Getenv("GITID_FAKE_GH_INVENTORY_FILE"),
+			}
+			out, code := runFakeCLI(t, bin, extraEnv, c.args...)
+			if code != c.wantCode {
+				t.Errorf("exit code = %d, want %d (output: %q)", code, c.wantCode, out)
+			}
+			if c.wantOutput != "" && !strings.Contains(out, c.wantOutput) {
+				t.Errorf("output = %q, want substring %q", out, c.wantOutput)
+			}
+			log := ReadFakeCLILog(t, logPath)
+			if len(log) != 1 {
+				t.Fatalf("log recorded %d invocations, want 1: %v", len(log), log)
+			}
+			if log[0] != strings.Join(c.args, " ") {
+				t.Errorf("logged argv = %q, want %q", log[0], strings.Join(c.args, " "))
+			}
+		})
+	}
+}
+
+// TestFakeGLabShimModesBehaveAsDocumented is TestFakeGHShimModesBehaveAsDocumented's
+// glab-mode sibling.
+func TestFakeGLabShimModesBehaveAsDocumented(t *testing.T) {
+	cases := []struct {
+		name       string
+		mode       string
+		args       []string
+		wantCode   int
+		wantOutput string
+	}{
+		{"ok/auth", "ok", []string{"auth", "status", "--hostname", "gitlab.com"}, 0, ""},
+		{"ok/ssh-key-add", "ok", []string{"ssh-key", "add", "k.pub", "-t", "t", "--usage-type", "auth"}, 0, "Added SSH key."},
+		{"auth-fail/auth", "auth-fail", []string{"auth", "status", "--hostname", "gitlab.com"}, 1, "not authenticated to gitlab.com"},
+		{"taken", "taken", []string{"ssh-key", "add", "k.pub", "-t", "t", "--usage-type", "auth"}, 1, "already been taken"},
+		{"inventory-present", "inventory-present", []string{"ssh-key", "list", "-F", "json"}, 0, ""},
+		{"inventory-empty", "inventory-empty", []string{"ssh-key", "list", "-F", "json"}, 0, "[]"},
+		{"inventory-fail", "inventory-fail", []string{"ssh-key", "list", "-F", "json"}, 1, "could not read inventory"},
+		{"delete-ok", "delete-ok", []string{"ssh-key", "delete", "12345"}, 0, ""},
+		{"unknown-verb", "ok", []string{"totally-unrecognized"}, 3, "gitid-e2e-unhandled-verb: glab totally-unrecognized"},
+		{"unknown-ssh-key-verb", "ok", []string{"ssh-key", "frobnicate"}, 3, "gitid-e2e-unhandled-verb: glab ssh-key frobnicate"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir, logPath := FakeGLabDir(t, c.mode)
+			bin := filepath.Join(dir, "glab")
+			extraEnv := []string{
+				"GITID_FAKE_GLAB_MODE=" + c.mode,
+				"GITID_FAKE_GLAB_LOG=" + logPath,
+				"GITID_FAKE_GLAB_INVENTORY_FILE=" + os.Getenv("GITID_FAKE_GLAB_INVENTORY_FILE"),
+			}
+			out, code := runFakeCLI(t, bin, extraEnv, c.args...)
+			if code != c.wantCode {
+				t.Errorf("exit code = %d, want %d (output: %q)", code, c.wantCode, out)
+			}
+			if c.wantOutput != "" && !strings.Contains(out, c.wantOutput) {
+				t.Errorf("output = %q, want substring %q", out, c.wantOutput)
+			}
+			log := ReadFakeCLILog(t, logPath)
+			if len(log) != 1 {
+				t.Fatalf("log recorded %d invocations, want 1: %v", len(log), log)
+			}
+			if log[0] != strings.Join(c.args, " ") {
+				t.Errorf("logged argv = %q, want %q", log[0], strings.Join(c.args, " "))
+			}
+		})
+	}
+}
+
+// TestFakeGHInventoryFileFeedsAPIVerb proves the inventory-file mechanism:
+// FakeGHInventoryFile's content is what the "inventory-both" mode's `api
+// user/keys` verb echoes back verbatim.
+func TestFakeGHInventoryFileFeedsAPIVerb(t *testing.T) {
+	dir, logPath := FakeGHDir(t, "inventory-both")
+	bin := filepath.Join(dir, "gh")
+	invPath := FakeGHInventoryFile(t, `[{"key":"ssh-ed25519 AAAAFAKE fixture@gitid"}]`)
+	extraEnv := []string{
+		"GITID_FAKE_GH_MODE=inventory-both",
+		"GITID_FAKE_GH_LOG=" + logPath,
+		"GITID_FAKE_GH_INVENTORY_FILE=" + invPath,
+	}
+	out, code := runFakeCLI(t, bin, extraEnv, "api", "user/keys")
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0: %s", code, out)
+	}
+	if !strings.Contains(out, "ssh-ed25519 AAAAFAKE fixture@gitid") {
+		t.Errorf("output = %q, want the inventory fixture content echoed back", out)
 	}
 }
 
