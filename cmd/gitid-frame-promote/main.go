@@ -84,10 +84,37 @@ func run() error {
 		return fmt.Errorf("resolving source commit: %w", err)
 	}
 
-	entries := append([]promotionEntry(nil), phase9Frames...)
+	rows, err := promoteFrames(srcDir, dstDir, phase9Frames, commit, func(format string, a ...any) { fmt.Printf(format, a...) })
+	if err != nil {
+		return err
+	}
+
+	if err := writeProvenance(filepath.Join(dstDir, "README.md"), rows); err != nil {
+		return fmt.Errorf("writing PROVENANCE table: %w", err)
+	}
+	fmt.Printf("promoted %d frame(s); provenance written to %s\n", len(rows), filepath.Join(dstDir, "README.md"))
+	return nil
+}
+
+// promoteFrames copies every entry's captured frame from srcDir into dstDir
+// and returns each promoted row for the PROVENANCE table, or an error
+// naming every missing capture. progress is called once per promoted frame
+// (nil is fine — tests pass nil to stay silent).
+//
+// WR-13: read and validate EVERY source frame before writing anything. The
+// old version wrote each tracked baseline as it went and only checked for
+// missing captures after the loop finished — so a partial capture run (one
+// PTY test skipped, one source frame absent) rewrote SOME approved
+// baselines while leaving the rest at their previous commit's content, and
+// the caller never regenerated README.md at all: a baseline directory whose
+// frames and provenance table disagree, and whose non-rewritten frames can
+// be mistaken for having come from THIS run. Nothing is written to dstDir
+// until every entry has a real source file in srcDir.
+func promoteFrames(srcDir, dstDir string, frames []promotionEntry, commit string, progress func(format string, a ...any)) ([]string, error) {
+	entries := append([]promotionEntry(nil), frames...)
 	sort.Slice(entries, func(i, j int) bool { return entries[i].stateID < entries[j].stateID })
 
-	var rows []string
+	contents := make(map[string][]byte, len(entries))
 	var missing []string
 	for _, e := range entries {
 		srcPath := filepath.Join(srcDir, e.frame+".txt")
@@ -96,24 +123,27 @@ func run() error {
 			missing = append(missing, e.frame)
 			continue
 		}
+		contents[e.frame] = content
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("missing captures in %s (run the PTY suite first): %v", srcDir, missing)
+	}
+
+	var rows []string
+	for _, e := range entries {
+		content := contents[e.frame]
 		dstPath := filepath.Join(dstDir, e.frame+".txt")
 		if err := os.WriteFile(dstPath, content, 0o644); err != nil { //nolint:gosec // tracked repo file, not a secret
-			return fmt.Errorf("writing %s: %w", dstPath, err)
+			return nil, fmt.Errorf("writing %s: %w", dstPath, err)
 		}
 		sum := sha256.Sum256(content)
 		rows = append(rows, fmt.Sprintf("| %s | %s.txt | %s | %s | %s | %s | %s |",
 			e.stateID, e.frame, e.test, e.shimMode, e.geometry, commit, hex.EncodeToString(sum[:])))
-		fmt.Printf("promoted %-45s <- tmp/ui-frames/%s.txt\n", e.frame+".txt", e.frame)
+		if progress != nil {
+			progress("promoted %-45s <- tmp/ui-frames/%s.txt\n", e.frame+".txt", e.frame)
+		}
 	}
-	if len(missing) > 0 {
-		return fmt.Errorf("missing captures in %s (run the PTY suite first): %v", srcDir, missing)
-	}
-
-	if err := writeProvenance(filepath.Join(dstDir, "README.md"), rows); err != nil {
-		return fmt.Errorf("writing PROVENANCE table: %w", err)
-	}
-	fmt.Printf("promoted %d frame(s); provenance written to %s\n", len(rows), filepath.Join(dstDir, "README.md"))
-	return nil
+	return rows, nil
 }
 
 func writeProvenance(path string, rows []string) error {
