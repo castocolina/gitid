@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func actionMenuRowCount() int { return len(actionMenuLabels()) }
@@ -220,5 +222,164 @@ func TestRegisterKeyPaneMatchesSiblingPaneGeometry(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(rv.status), "runs on open") && !strings.Contains(strings.ToLower(rv.status), "registration runs") {
 		t.Errorf("status = %q, want it to state that registration runs on open (R13)", rv.status)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Task 2: the rotate/repair key-ceremony's own upload beat (09-06-PLAN.md).
+// ---------------------------------------------------------------------------
+
+// openKeyCeremonyAtReviewForIdentity selects the identity `downs` rows below
+// the default selection, then drives the SAME action-menu -> "Generate new
+// key" -> stage1 -> stage2 -> review sequence openKeyCeremonyAtReview uses,
+// so a repair-mode identity (clientB, key-missing) can be reached too.
+func openKeyCeremonyAtReviewForIdentity(t *testing.T, b Backend, downs int) App {
+	t.Helper()
+	a := NewApp(b)
+	for i := 0; i < downs; i++ {
+		a, _ = press(t, a, "down")
+	}
+	a = pressSeq(t, a, "a", "down", "down", "enter", "enter", "enter")
+	m := identModel(t, a)
+	if m.pane != paneKeyCeremony || m.keyCeremonyPhase != "review" {
+		t.Fatalf("key ceremony = pane %v phase %q, want review", m.pane, m.keyCeremonyPhase)
+	}
+	return a
+}
+
+// confirmKeyCeremony presses Enter to confirm the review screen and runs the
+// resulting commit command through Update, mirroring pressAndRun for the
+// two-cmd case (commit dispatch, then the upload dispatch this task adds).
+func confirmKeyCeremony(t *testing.T, a App) (App, tea.Cmd) {
+	t.Helper()
+	next, cmd := press(t, a, "enter")
+	if cmd == nil {
+		t.Fatal("confirm must dispatch the commit")
+	}
+	msg := cmd()
+	model, followUp := next.Update(msg)
+	out, ok := model.(App)
+	if !ok {
+		t.Fatalf("Update(commit msg) returned %T, want App", model)
+	}
+	return out, followUp
+}
+
+func TestRotateCeremonyRunsTheUploadBeatAfterCommitSucceeds(t *testing.T) {
+	a := openKeyCeremonyAtReview(t, stubBackend{})
+	a, uploadCmd := confirmKeyCeremony(t, a)
+	m := identModel(t, a)
+	if m.keyCeremonyPhase != "upload" {
+		t.Fatalf("phase after a successful commit = %q, want %q", m.keyCeremonyPhase, "upload")
+	}
+	if !m.keyCeremonyUploadPending {
+		t.Fatal("keyCeremonyUploadPending must be set once the commit succeeds")
+	}
+	if !strings.Contains(stripANSI(m.keyCeremony.view(deleteChoiceNoteWidth)), "Key ceremony completed.") {
+		t.Fatal("the ceremony's own result screen must already be visible -- upload never gates it")
+	}
+	if uploadCmd == nil {
+		t.Fatal("a successful commit must dispatch the upload beat (RunUploadForIdentity)")
+	}
+	msg := uploadCmd()
+	model, _ := a.Update(msg)
+	next := model.(App)
+	m = identModel(t, next)
+	if m.keyCeremonyUploadPending {
+		t.Fatal("keyCeremonyUploadPending must clear once UploadRunMsg arrives")
+	}
+	if !uploadRunHasContent(m.keyCeremonyUploadRun) {
+		t.Fatal("keyCeremonyUploadRun must hold the delivered view")
+	}
+	rendered := stripANSI(m.keyCeremony.view(deleteChoiceNoteWidth))
+	if !strings.Contains(rendered, "Key ceremony completed.") {
+		t.Fatal("the result screen must remain visible after the upload beat completes")
+	}
+}
+
+func TestRepairCeremonyRunsTheUploadBeat(t *testing.T) {
+	// clientB (index 6 in stubIdentityRows) is the key-missing fixture row,
+	// which KeyActionFor routes to KeyCeremonyModeRepair.
+	a := openKeyCeremonyAtReviewForIdentity(t, stubBackend{}, 6)
+	if m := identModel(t, a); m.keyCeremonyMode != KeyCeremonyModeRepair {
+		t.Fatalf("keyCeremonyMode = %q, want repair", m.keyCeremonyMode)
+	}
+	a, uploadCmd := confirmKeyCeremony(t, a)
+	if uploadCmd == nil {
+		t.Fatal("a successful repair commit must dispatch the upload beat too")
+	}
+	if m := identModel(t, a); !m.keyCeremonyUploadPending {
+		t.Fatal("keyCeremonyUploadPending must be set after a successful repair commit")
+	}
+}
+
+func TestKeyCeremonyUploadFailureStillAdvances(t *testing.T) {
+	views := []UploadRunView{
+		{Rows: []UploadResultRow{{Label: "Authentication", Outcome: UploadRowUploaded}}},
+		{Rows: []UploadResultRow{{Label: "Authentication", Outcome: UploadRowFailed, Reason: "boom"}}},
+		{Rows: []UploadResultRow{
+			{Label: "Authentication", Outcome: UploadRowUploaded},
+			{Label: "Signing", Outcome: UploadRowFailed, Reason: "scope"},
+		}},
+		{InventoryDegraded: true, ProviderName: "GitHub"},
+		{AlreadyComplete: true, ProviderName: "GitHub"},
+		{Skipped: true},
+	}
+	for i, view := range views {
+		t.Run(fmt.Sprintf("outcome-%d", i), func(t *testing.T) {
+			a := openKeyCeremonyAtReview(t, stubBackend{})
+			a, _ = confirmKeyCeremony(t, a)
+			model, _ := a.Update(UploadRunMsg{View: view})
+			next := model.(App)
+			m := identModel(t, next)
+			if m.keyCeremonyUploadPending {
+				t.Fatal("upload pending must clear regardless of outcome shape")
+			}
+			rendered := stripANSI(m.keyCeremony.view(deleteChoiceNoteWidth))
+			if !strings.Contains(rendered, "Key ceremony completed.") {
+				t.Fatalf("outcome %d must not gate the ceremony's own result screen:\n%s", i, rendered)
+			}
+		})
+	}
+}
+
+func TestKeyCeremonyUploadUsesTheSharedRenderer(t *testing.T) {
+	view := UploadRunView{Rows: []UploadResultRow{{Label: "Authentication", Command: "gh ssh-key add x.pub", Outcome: UploadRowUploaded}}}
+	a := openKeyCeremonyAtReview(t, stubBackend{})
+	a, _ = confirmKeyCeremony(t, a)
+	model, _ := a.Update(UploadRunMsg{View: view})
+	next := identModel(t, model.(App))
+	s := Seed()
+	sel, _ := next.selectedIdentity(s)
+	rendered := stripANSI(next.renderKeyCeremony(sel))
+	if !strings.Contains(rendered, "gh ssh-key add x.pub") {
+		t.Fatalf("key-ceremony render must include the shared upload section, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "Authentication key registered") {
+		t.Fatalf("key-ceremony render must include the same frozen result-row string renderUploadSection produces, got:\n%s", rendered)
+	}
+}
+
+func TestSameKeyCloneOmitsTheUploadSection(t *testing.T) {
+	pre := ClonePrefillView{SourceName: "personal", CloneName: "clone2", AliasPrefix: "clone2", Hostname: "ssh.github.com", Port: "443", ReuseKeyPath: "~/.ssh/id_ed25519_personal"}
+	w := newWizardPrefilled(stubBackend{}, pre)
+	w, cmd := w.checkUploadEligibility()
+	if cmd != nil {
+		t.Fatal("a same-key clone must not dispatch an eligibility probe -- there is nothing new to upload")
+	}
+	if w.uploadRowVisible() {
+		t.Fatal("a same-key clone must not show the upload checkbox row")
+	}
+}
+
+func TestNewKeyCloneRunsTheUploadSection(t *testing.T) {
+	pre := ClonePrefillView{SourceName: "personal", CloneName: "clone3", AliasPrefix: "clone3", Hostname: "ssh.github.com", Port: "443"}
+	w := newWizardPrefilled(stubBackend{}, pre)
+	if w.reuseKeyPath() != "" {
+		t.Fatal("setup: prefill must not carry a reuse key path")
+	}
+	_, cmd := w.checkUploadEligibility()
+	if cmd == nil {
+		t.Fatal("a new-key clone must dispatch the SAME eligibility probe the create wizard runs")
 	}
 }

@@ -1526,6 +1526,18 @@ func (w wizardModel) uploadRowVisible() bool {
 // no subprocess work ever runs on the render path. Returns the (possibly
 // unchanged) wizard plus a nil cmd when no new probe is needed.
 func (w wizardModel) checkUploadEligibility() (wizardModel, tea.Cmd) {
+	// 09-06-PLAN.md Task 2 / 09-UI-SPEC.md clone rows: a same-key clone
+	// (reuseKeyPath non-empty) reuses the SOURCE identity's already-staged
+	// key — that key is already registered with the provider, so there is
+	// nothing new to upload. This is an explicit early return, not an
+	// accident of the provider check, so a future change that starts
+	// generating a fresh key on the same-key clone path fails a test here
+	// rather than silently re-uploading a key the provider already has.
+	if w.reuseKeyPath() != "" {
+		w.uploadEligibility = UploadEligibilityView{}
+		w.uploadEligibilityHost = w.form.providerHost()
+		return w, nil
+	}
 	host := w.form.providerHost()
 	wantKey := wizardProviderKeyForHostname(host)
 	haveKey := wizardProviderKeyForHostname(w.uploadEligibilityHost)
@@ -2100,6 +2112,19 @@ type identitiesModel struct {
 	// state — both are the same zero value otherwise, and the pane must not
 	// render manual-fallback copy while the probe is still in flight.
 	registerKeyPlanLoaded bool
+
+	// keyCeremonyUploadPending gates the key-ceremony's own upload beat
+	// (09-06-PLAN.md Task 2, the component's third call site): set when
+	// CommitRotate/CommitNewKey succeeds and RunUploadForIdentity is
+	// dispatched, cleared when the matching UploadRunMsg arrives. Upload
+	// NEVER gates the ceremony — commitSucceeded already ran and the
+	// note/Action already fired by the time this is set; the upload beat
+	// renders alongside the existing result screen, never blocking it.
+	keyCeremonyUploadPending bool
+	// keyCeremonyUploadRun is the key-ceremony's own upload result,
+	// rendered through the SAME renderUploadSection the wizard and the
+	// register-key pane use (D-03: one component, three call sites).
+	keyCeremonyUploadRun UploadRunView
 }
 
 // newIdentitiesModel starts on the first row of the Backend's initial
@@ -2195,14 +2220,34 @@ func (m identitiesModel) handleMsg(msg tea.Msg, s DemoState) keyResult {
 		}
 		m.keyCeremony = m.keyCeremony.commitSucceeded(commit.Backups)
 		backup := firstBackup(commit.Backups)
+		// Task 2 (D-03/D-05): the upload beat runs here — the FIRST point in
+		// the ceremony where the new key material genuinely exists (rotate
+		// and repair both generate and commit the key atomically in
+		// CommitRotate/CommitNewKey; there is no pre-commit staging like the
+		// create wizard's). "upload" joins the keyCeremonyPhase state
+		// machine as the ceremony's own bookkeeping for this in-flight beat;
+		// renderKeyCeremony's default case already renders the SAME result
+		// screen for any phase past stage2, so the ceremony's own next beat
+		// (the result screen the user is already looking at) is never
+		// blocked — upload completes visibly alongside it, never gating it.
+		m.keyCeremonyPhase = "upload"
+		m.keyCeremonyUploadPending = true
+		m.keyCeremonyUploadRun = UploadRunView{}
+		uploadCmd := m.backend.RunUploadForIdentity(m.selected)
 		if commit.Mode == KeyCeremonyModeRotate {
-			return keyResult{model: m, note: `Identity "` + m.selected + `" key rotated.`, actions: []Action{RotateIdentity{
+			return keyResult{model: m, cmd: uploadCmd, note: `Identity "` + m.selected + `" key rotated.`, actions: []Action{RotateIdentity{
 				Name: m.selected, Backup: backup, ArchivedKeyPath: commit.ArchivedKeyPath,
 			}}}
 		}
-		return keyResult{model: m, note: `Identity "` + m.selected + `" key repaired.`, actions: []Action{NewKey{
+		return keyResult{model: m, cmd: uploadCmd, note: `Identity "` + m.selected + `" key repaired.`, actions: []Action{NewKey{
 			Name: m.selected, Backup: backup,
 		}}}
+	}
+	if run, ok := msg.(UploadRunMsg); ok && m.pane == paneKeyCeremony && m.keyCeremonyUploadPending {
+		m.keyCeremonyUploadPending = false
+		m.keyCeremonyUploadRun = run.View
+		m.keyCeremonyPhase = "review"
+		return keyResult{model: m}
 	}
 	if commit, ok := msg.(DeleteCommitMsg); ok && m.pane == paneDelete && m.deleteCommitPending {
 		m.deleteCommitPending = false
@@ -2523,6 +2568,8 @@ func (m identitiesModel) openKeyCeremony(sel DemoIdentity) identitiesModel {
 	m.keyCeremonyErr = ""
 	m.keyCeremonyPhase = "stage1"
 	m.keyCeremony = keyCeremonyFor(plan, m.keyCeremonyResult)
+	m.keyCeremonyUploadPending = false
+	m.keyCeremonyUploadRun = UploadRunView{}
 	m.pane = paneKeyCeremony
 	return m
 }
@@ -2662,7 +2709,7 @@ func (m identitiesModel) handleKeyCeremonyKey(msg tea.KeyMsg, s DemoState) keyRe
 	return keyResult{model: m, handled: true}
 }
 
-// actionMenuLabels is the approved four-row order (FIELDS.md action-menu).
+// actionMenuLabels is the approved five-row order (FIELDS.md action-menu).
 func actionMenuLabels() []string {
 	return []string{
 		IdentityManagerActionViewDetail,
@@ -2673,7 +2720,7 @@ func actionMenuLabels() []string {
 	}
 }
 
-// renderActions renders the four-row action menu; the focused row is reverse
+// renderActions renders the action menu (row count derived from actionMenuLabels); the focused row is reverse
 // video. A KeyActionFor error renders inline beneath the rows.
 func (m identitiesModel) renderActions(sel DemoIdentity) string {
 	var b strings.Builder
@@ -2744,7 +2791,16 @@ func (m identitiesModel) renderKeyCeremony(sel DemoIdentity) string {
 			renderStageNotTested(m.keyCeremonyStage1, deleteChoiceNoteWidth) +
 			" " + styleSelected.Render(" Run stage 2 (Enter) ")
 	default:
-		return m.keyCeremony.view(deleteChoiceNoteWidth)
+		body := m.keyCeremony.view(deleteChoiceNoteWidth)
+		// Task 2 (D-03): the upload beat renders ALONGSIDE the result screen
+		// the user is already looking at, never in place of it — upload
+		// never gates the ceremony (09-06-PLAN.md). uploadRunHasContent is
+		// false before the beat's UploadRunMsg arrives, so the in-flight
+		// window shows exactly today's frozen result screen with no new copy.
+		if uploadRunHasContent(m.keyCeremonyUploadRun) {
+			body += "\n" + renderUploadSection(m.keyCeremonyUploadRun, providerDisplayNameForHostname(m.keyCeremonyPlan.ProviderHost), deleteChoiceNoteWidth)
+		}
+		return body
 	}
 }
 
