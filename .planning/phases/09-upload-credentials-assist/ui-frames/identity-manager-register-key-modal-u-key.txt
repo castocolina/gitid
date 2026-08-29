@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  1 ids · ! 2 ✗ 2
+ Identities › acme › Register key
+S ssh · G git  ✓ ok ! attn ✗ broken │  Register acme's key with GitHub
+▸ ✓ acme 1⚑                   S✓ G✓ │
+                                    │  Checking eligibility…
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+ Esc returns to the identity detail without writing anything — registration runs on open.
+
+ Esc back · Ctrl+P palette

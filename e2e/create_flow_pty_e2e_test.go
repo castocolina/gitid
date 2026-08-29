@@ -408,6 +408,259 @@ func TestCreateFlow_UploadOmittedForUnknownProvider(t *testing.T) {
 	s.close(t)
 }
 
+// TestCreateFlow_UploadCheckboxUnauthState drives the real binary with the
+// fake gh in its "auth-fail" mode (D-01 scenario 2): the checkbox row must
+// render UNCHECKED with the login-hint label, on one physical line, and
+// pressing its toggle key must still be able to check it (D-01 explicitly
+// permits checking an unauthenticated row — the D-17 post-upload
+// confirmation is what actually gates on a real registration).
+//
+// identities.go's renderUploadCheckboxRow deliberately hard-truncates this
+// row via ansi.Truncate at a fixed 60 columns ("The upload checkbox must
+// remain one physical line in the 100x30 wizard" — identities.go's own
+// comment on that call) rather than letting the outer pane's natural
+// word-wrap flow it onto a continuation line. UploadCheckboxLabelUnauthFmt's
+// full interpolated text is longer than 60 columns, so only its prefix
+// through "...not logged in to gith[ub.com...]" is ever visible on screen —
+// the "run gh auth login"/"or check anyway" suffix is truncated away by
+// this pre-existing, documented design choice. This test asserts the
+// PREFIX that is actually guaranteed visible, not the full copy string.
+func TestCreateFlow_UploadCheckboxUnauthState(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+	fakeGH, _ := FakeGHDir(t, "auth-fail")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH, fakeGH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	openCreateWizard(t, s)
+	mustSee(t, s, "Register with GitHub automatically — not logged in to", "the unauth checkbox label's visible prefix renders")
+
+	// Focal point: the row does not wrap onto a second physical line —
+	// assert the visible prefix is present on ONE line of the raw frame.
+	frame := s.snapshot()
+	found := false
+	for _, line := range strings.Split(frame, "\n") {
+		if strings.Contains(line, "Register with GitHub automatically — not logged in to") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("unauth checkbox row wrapped across physical lines, want one line:\n%s", frame)
+	}
+
+	mustSee(t, s, "☐ Register with GitHub automatically", "the unauth row starts unchecked")
+	tabKeys(s, 4) // prefix -> host -> hostname -> port -> checkbox
+	s.sendKey([]byte(" "), keystrokeDelay)
+	mustSee(t, s, "☑ Register with GitHub automatically", "D-01 scenario 2: an unauthenticated row can still be checked — Space reaching the checkbox row and flipping it proves Tab focus landed there")
+
+	saveFrame(t, "create-flow-upload-checkbox-unauth", s)
+}
+
+// TestCreateFlow_UploadCheckboxDisabledState supplies NO provider shim at
+// all (only the fake-ssh directory) — e2eEnv's fail-closed deny shim
+// (ProviderDenyDir) is therefore the ONLY `gh` the child process can
+// resolve. The deny shim always answers "tool present, exits non-zero" for
+// every subcommand (including `auth status`), so this state is actually the
+// UNAUTH shape (tool found, not authenticated) rather than the
+// genuinely-tool-absent DISABLED shape (D-01 scenario 3) — DetectFor only
+// reports AuthToolNotFound when exec.LookPath itself fails, which never
+// happens here since the deny shim's `gh` file exists on PATH. The
+// genuinely-tool-absent DISABLED state is covered instead by the unit test
+// plan 09-04 Task 1 added, which drives Backend.UploadEligibility's
+// AuthToolNotFound branch directly — this PTY harness has no way to make
+// exec.LookPath("gh") fail on a real machine without risking a false
+// negative on a developer machine that happens to have gh installed.
+//
+// Because the deny shim produces UNAUTH (not the genuinely tool-absent
+// DISABLED shape), toggling the row here behaves like
+// TestCreateFlow_UploadCheckboxUnauthState's row — D-01 scenario 2's
+// explicit "check anyway" permission applies, not scenario 3's toggle
+// refusal (toggleUploadCheckbox only refuses for Disabled/Omitted). This
+// test asserts the row's REAL toggle behavior, not the DISABLED-shaped
+// refusal the plan's name suggests, since that state cannot actually be
+// produced by this harness.
+func TestCreateFlow_UploadCheckboxDisabledState(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	openCreateWizard(t, s)
+	mustSee(t, s, "Register with GitHub automatically — not logged in to", "the deny shim deterministically produces the unauth shape")
+	mustSee(t, s, "☐ Register with GitHub automatically", "the row starts unchecked")
+
+	tabKeys(s, 4)
+	s.sendKey([]byte(" "), keystrokeDelay)
+	mustSee(t, s, "☑ Register with GitHub automatically", "toggling the deny-shim (unauth-shaped) row checks it, mirroring D-01 scenario 2")
+
+	saveFrame(t, "create-flow-upload-checkbox-disabled", s)
+}
+
+// TestCreateFlow_UploadCheckboxTabAndClickReachable proves SSHUI-02's mouse
+// contract extends to the D-01 checkbox row: it is reachable both by Tab
+// from Port AND by a raw mouse click, mirroring
+// TestCreateFlow_MouseFieldFocus's byte-level click injection.
+//
+// Unlike the labeled text-field rows (which render a "▸" glyph on their
+// focused row), the checkbox row's focused state is styleSelected's
+// reverse-video styling with NO added glyph — invisible once the PTY
+// harness strips ANSI codes for snapshot(). Reachability is proven
+// structurally instead: for the Tab path, pressing Space only toggles the
+// CURRENTLY FOCUSED control, so observing the ☑/☐ glyph flip proves Tab
+// landed focus on the checkbox. For the mouse path, handleWizardClick's
+// hitUploadCheckboxRow branch toggles the checkbox AS PART OF the click
+// itself (unlike a plain text-field click, which only moves focus) — so
+// the click alone, with no follow-up Space, is what proves the click
+// reached it.
+func TestCreateFlow_UploadCheckboxTabAndClickReachable(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+	fakeGH, _ := FakeGHDir(t, "ok")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH, fakeGH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	openCreateWizard(t, s)
+	mustSee(t, s, "☑ Register with GitHub automatically", "the ready checkbox row renders pre-checked")
+
+	tabKeys(s, 3) // prefix -> host -> hostname -> port
+	mustSee(t, s, "▸ Port", "focus reached Port via Tab")
+	tabKeys(s, 1) // port -> checkbox
+	s.sendKey([]byte(" "), keystrokeDelay)
+	mustSee(t, s, "☐ Register with GitHub automatically", "Tab reached the checkbox row: Space toggled it off")
+
+	clickLabelRow(t, s, "Register with GitHub automatically")
+	mustSee(t, s, "☑ Register with GitHub automatically", "a raw mouse click reached the checkbox row and toggled it back on (click-to-toggle, not click-to-focus)")
+
+	saveFrame(t, "create-flow-upload-checkbox-tab-and-click", s)
+}
+
+// TestCreateFlow_UploadManualFallbackWhenUnauthenticated leaves the D-01
+// checkbox unchecked on an unauthenticated row: the flow must proceed
+// exactly as an omitted/declined upload does — the frozen manual heading
+// and GitHub's two-registration instructions render, the flow still reaches
+// the Git step, and no ADDITIONAL provider subprocess runs beyond the D-01
+// eligibility probe's own "auth status" call that already ran once to
+// resolve the checkbox's unauth label when the wizard opened.
+func TestCreateFlow_UploadManualFallbackWhenUnauthenticated(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+	fakeGH, ghLog := FakeGHDir(t, "auth-fail")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH, fakeGH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	openCreateWizard(t, s)
+	mustSee(t, s, "Register with GitHub automatically — not logged in to", "the checkbox renders unauth, unchecked by default")
+	// Clear the eligibility probe's own "auth status" call from the log
+	// boundary — the assertion below proves declining the checkbox itself
+	// invokes no FURTHER provider subprocess, not that the probe never ran.
+	if err := os.WriteFile(ghLog, nil, 0o600); err != nil { //nolint:gosec // test-owned fake-gh log under t.TempDir() (G306)
+		t.Fatalf("clearing pre-decline fake-gh log: %v", err)
+	}
+
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Step 2/4", "step 0 -> step 1 with the checkbox left unchecked")
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Hi user!", "a declined upload never gates the existing stage-1 flow")
+	mustSee(t, s, "Next: Git identity", "a declined upload still permits the auto-chained stage-2 proof")
+	mustNotSee(t, s, "Running:", "a declined upload never announces a provider command")
+
+	if log := ReadFakeCLILog(t, ghLog); len(log) != 0 {
+		t.Errorf("declining the checkbox invoked fake gh after the probe: %v; want zero further provider subprocesses", log)
+	}
+}
+
+// TestCreateFlow_UploadPartialScopeShowsBothRows drives the fake gh in its
+// scope-fail-signing mode: the authentication registration succeeds and the
+// signing registration fails with a scope error, and D-16 requires BOTH
+// result rows to render — one success, one carrying the signing
+// remediation text — never a collapsed single line.
+func TestCreateFlow_UploadPartialScopeShowsBothRows(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+	fakeGH, _ := FakeGHDir(t, "scope-fail-signing")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH, fakeGH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	openCreateWizard(t, s)
+	mustSee(t, s, "Register with GitHub automatically", "the ready checkbox row renders (checked by default)")
+
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Step 2/4", "step 0 -> step 1")
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Authentication key registered", "the authentication registration succeeded")
+	mustSee(t, s, "admin:ssh_signing_key", "the signing registration's scope-remediation text renders")
+	saveFrame(t, "create-flow-upload-partial-scope", s)
+}
+
+// TestCreateFlow_UploadAlreadyCompleteCollapsesToOneLine seeds a reused,
+// already-registered key: the fake gh's inventory-both mode reports the
+// staged key's OWN public-key blob for both the authentication and signing
+// registrations (D-15's dedupe read matches on the key blob, not the
+// title), so D-16's zero-one-many rule collapses the section to a single
+// "already registered" line and issues no ssh-key add invocation.
+func TestCreateFlow_UploadAlreadyCompleteCollapsesToOneLine(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatalf("seeding ~/.ssh: %v", err)
+	}
+	reusePath := filepath.Join(sshDir, "id_ed25519_a_reused")
+	reusePubLine := seedEncryptedKeyFixture(t, reusePath, "reused", "")
+
+	fakeGH, ghLog := FakeGHDir(t, "inventory-both")
+	FakeGHInventoryFile(t, fmt.Sprintf(`[{"id":1,"title":"gitid: acme @ prior-machine","key":%q}]`, strings.TrimRight(reusePubLine, "\n")))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH, fakeGH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	openCreateWizard(t, s)
+	mustSee(t, s, "Register with", "the D-01 upload checkbox row has settled")
+
+	tabKeys(s, 5) // prefix -> host -> hostname -> port -> checkbox -> Generate/Reuse toggle
+	mustSee(t, s, "Generate a new key", "the D-10 key-source toggle rendered")
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+	mustSee(t, s, "id_ed25519_a_reused", "the picker lists the seeded reuse fixture (sorted first)")
+
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // step0Valid resolves via the reuse selection
+	mustSee(t, s, "Step 2/4", "step 0 -> step 1 with the reuse selection resolved")
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Already registered with GitHub", "D-16's collapsed already-complete line renders")
+	mustNotSee(t, s, "Authentication key registered", "an already-complete upload never renders a per-type success row")
+	saveFrame(t, "create-flow-upload-already-complete", s)
+
+	for _, entry := range ReadFakeCLILog(t, ghLog) {
+		if strings.Contains(entry, "ssh-key add") {
+			t.Errorf("already-complete upload issued an add invocation: %q", entry)
+		}
+	}
+}
+
 // TestCreateFlow_ExistingPTYCannotReachRealProviderCLI exists because the
 // cross-AI review found the pre-existing create-flow PTY helper leaked the
 // ambient PATH. It must fail if a future change reconstructs an

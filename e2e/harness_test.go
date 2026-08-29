@@ -848,6 +848,12 @@ func TestEveryE2EChildEnvIsHermetic(t *testing.T) {
 // inventory-both, inventory-auth-only, inventory-fail, delete-ok — see the
 // script's own case statement below for the exact behavior of each.
 //
+// delete-ok's `api` verb (09-06/09-07's D-04 delete-offer tests) also
+// serves FakeGHInventoryFile's fixture, exactly like inventory-both — the
+// D-04 offer needs BOTH a matching inventory read (to resolve the old
+// key's provider ID via uploader.FindByTitle) AND a successful delete in
+// the SAME session, and no other single mode combines both.
+//
 // Script is a static literal — never constructed from user input (G204-clean).
 func FakeGHDir(t *testing.T, mode string) (dir string, logPath string) {
 	t.Helper()
@@ -897,7 +903,7 @@ func FakeGHDir(t *testing.T, mode string) (dir string, logPath string) {
 		"    case \"$GITID_FAKE_GH_MODE\" in\n" +
 		"      inventory-fail)\n" +
 		"        echo \"error: could not read inventory\" >&2; exit 1 ;;\n" +
-		"      inventory-both)\n" +
+		"      inventory-both|delete-ok)\n" +
 		"        if [ -n \"$GITID_FAKE_GH_INVENTORY_FILE\" ] && [ -r \"$GITID_FAKE_GH_INVENTORY_FILE\" ]; then\n" +
 		"          cat \"$GITID_FAKE_GH_INVENTORY_FILE\"\n" +
 		"        else\n" +

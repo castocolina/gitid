@@ -2785,3 +2785,82 @@ func TestNegativeControl_HealthFixerCrossSurfaceAllowlistLeakage(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Phase 9 (upload-credentials-assist) — 09-07-PLAN.md Task 1, review R14:
+// frame provenance. Every committed Phase 9 PTY frame must carry a
+// PROVENANCE.md row whose recorded SHA-256 matches the file's actual content
+// (a hand-edited or wrong-run frame is caught), and every provenance row
+// must name a frame that actually exists (a stale row naming a deleted
+// frame is caught) — both directions, so neither side can drift silently.
+// ---------------------------------------------------------------------------
+
+var uploadFrameProvenanceRowPattern = regexp.MustCompile(`^\| [^|]+ \| (\S+\.txt) \| [^|]+ \| [^|]+ \| [^|]+ \| [^|]+ \| ([0-9a-f]{64}) \|$`)
+
+// readUploadFrameProvenance parses README.md's "## Provenance" markdown
+// table into filename -> recorded-SHA-256 pairs.
+func readUploadFrameProvenance(path string) (map[string]string, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // fixed repo-relative path (G304)
+	if err != nil {
+		return nil, err
+	}
+	rows := map[string]string{}
+	for _, line := range strings.Split(string(data), "\n") {
+		m := uploadFrameProvenanceRowPattern.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		rows[m[1]] = m[2]
+	}
+	return rows, nil
+}
+
+// TestUploadFrameProvenanceMatches verifies, in both directions, that
+// .planning/phases/09-upload-credentials-assist/ui-frames/README.md's
+// provenance table and the committed .txt frames in that directory agree:
+// every provenance row's recorded SHA-256 equals the named frame's actual
+// content hash, and every committed frame has a provenance row naming it.
+func TestUploadFrameProvenanceMatches(t *testing.T) {
+	dir := filepath.Join("..", "..", ".planning", "phases", "09-upload-credentials-assist", "ui-frames")
+	rows, err := readUploadFrameProvenance(filepath.Join(dir, "README.md"))
+	if err != nil {
+		t.Fatalf("readUploadFrameProvenance: %v", err)
+	}
+	if len(rows) == 0 {
+		t.Fatal("no provenance rows parsed from README.md — the table format or the promotion tool has drifted")
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("os.ReadDir(%s): %v", dir, err)
+	}
+	frames := map[string]bool{}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".txt") {
+			continue
+		}
+		frames[e.Name()] = true
+	}
+
+	for name, wantHash := range rows {
+		if !frames[name] {
+			t.Errorf("provenance row names %q, but no such frame is committed in %s", name, dir)
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(dir, name)) //nolint:gosec // fixed repo-relative path (G304)
+		if err != nil {
+			t.Errorf("reading committed frame %q: %v", name, err)
+			continue
+		}
+		sum := sha256.Sum256(content)
+		gotHash := fmt.Sprintf("%x", sum)
+		if gotHash != wantHash {
+			t.Errorf("frame %q: provenance SHA-256 = %s, actual content SHA-256 = %s (frame was edited or re-promoted from a different run without updating the table)", name, wantHash, gotHash)
+		}
+	}
+	for name := range frames {
+		if _, ok := rows[name]; !ok {
+			t.Errorf("committed frame %q has no provenance row in README.md — re-run `go run ./cmd/gitid-frame-promote`", name)
+		}
+	}
+}

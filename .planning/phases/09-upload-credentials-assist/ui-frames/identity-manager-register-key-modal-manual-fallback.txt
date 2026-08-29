@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  1 ids · ! 2 ✗ 2
+ Identities › acme › Register key
+S ssh · G git  ✓ ok ! attn ✗ broken │  Register acme's key with GitHub
+▸ ✓ acme 1⚑                   S✓ G✓ │
+                                    │  Auto-registration wasn't available. Register it yourself:
+                                    │ Upload your public key to GitHub (TWO separate registrations
+                                    │ of the SAME key):
+                                    │   1. Open https://github.com/settings/ssh/new
+                                    │   2. Authentication key: paste the .pub, set "Key type" =
+                                    │ Authentication key, Add SSH key.
+                                    │   3. Open https://github.com/settings/ssh/new again.
+                                    │   4. Signing key: paste the SAME .pub, set "Key type" =
+                                    │ Signing key, Add SSH key.
+                                    │ GitHub requires the key registered twice — once for
+                                    │ authentication, once for signing.
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+ Esc returns to the identity detail without writing anything — registration runs on open.
+
+ Esc back · Ctrl+P palette

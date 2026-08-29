@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  0 ids · ! 2 ✗ 1
+ Identities › New identity › Test connection
+S ssh · G git  ✓ ok ! attn ✗ broken │  Step 2/4 · Test connection ● ● ○ ○
+                                    │  Shift+←/→ jump sections · forward needs a valid step
+                                    │  Running:
+                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestCreateFlo
+                                    │ w_UploadPartialScopeShowsBothRows613772938/003/gh ssh-key add
+                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/gitid-stage-
+                                    │ 4145015717/id_ed25519_acme.pub --title gitid: acme @ Ramons-
+                                    │ MacBook-Pro --type authentication
+                                    │  Running:
+                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestCreateFlo
+                                    │ w_UploadPartialScopeShowsBothRows613772938/003/gh ssh-key add
+                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/gitid-stage-
+                                    │ 4145015717/id_ed25519_acme.pub --title gitid: acme @ Ramons-
+                                    │ MacBook-Pro --type signing
+                                    │  ✓ Authentication key registered
+                                    │  ✗ Signing key registration failed: insufficient scope — run
+                                    │ "gh auth refresh -h github.com -s admin:ssh_signing_key", then
+                                    │ retry from the Identity Manager
+                                    │  Demo failure control — locked (nothing left to simulate)
+                                    │  ✓ Hi user! You've successfully authenticated, but GitHub doe
+                                    │  … running ssh…
+                                    │  Proof viewport: PgUp/PgDn scroll · v focus · ←/→ columns
+                                    │ Stage 1 command:
+                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestCreat
+                                    │ Stage 1 output:
+ Esc returns to the identity detail without writing anything.
+
+ Esc back · Ctrl+P palette

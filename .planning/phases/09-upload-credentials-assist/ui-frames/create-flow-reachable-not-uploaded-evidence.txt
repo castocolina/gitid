@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  0 ids · ! 2 ✗ 1
+ Identities › New identity › Test connection
+S ssh · G git  ✓ ok ! attn ✗ broken │  Step 2/4 · Test connection ● ● ○ ○
+                                    │  Shift+←/→ jump sections · forward needs a valid step
+                                    │  Demo failure control — locked (nothing left to simulate)
+                                    │  Completed test stages; exact captured proof follows.
+                                    │  git@ssh.github.com: Permission denied (publickey).
+                                    │
+                                    │  No -i here on purpose: the config must supply the key; that
+                                    │ is exactly what this stage proves.
+                                    │  git@ssh.github.com: Permission denied (publickey).
+                                    │
+                                    │  ! Reachable — key not uploaded yet
+                                    │  Press c to copy the .pub, then add it at
+                                    │ github.com/settings/keys
+                                    │   Next: Git identity (Enter)
+                                    │  Proof viewport focused: PgUp/PgDn and ←/→ scroll
+                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestCreat
+                                    │ Stage 2 resolution output:
+                                    │ user git
+                                    │ hostname ssh.github.com
+                                    │ port 443
+                                    │ identitiesonly yes
+                                    │ identityfile /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000g
+                                    │ ↓ lines 15–20 of 20  PgDn↓ PgUp↑
+                                    │
+                                    │
+ Esc returns to the identity detail without writing anything.
+ Enter next: Git identity · c copy public key
+ Esc back · Ctrl+P palette

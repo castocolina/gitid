@@ -28,6 +28,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/castocolina/gitid/internal/uploader"
 )
 
 // untouchedGitOnlyDeletePaths are the artifacts D-10 says a Git-only delete
@@ -836,6 +838,264 @@ func TestIdentityManager_KeyCeremonyRepair(t *testing.T) {
 	if entries, err := os.ReadDir(archiveDir); err == nil && len(entries) > 0 {
 		t.Errorf("repair must never archive anything, found entries under %s: %v", archiveDir, entries)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// D-08: the register-key modal (09-06-PLAN.md Task 1, 09-07-PLAN.md Task 1).
+// ---------------------------------------------------------------------------
+
+// openRegisterKeyModalViaActionMenu opens the action menu and activates its
+// fifth row ("Register key (u)", index 4) — the derived-row-count sibling
+// of openKeyCeremonyViaActionMenu.
+func openRegisterKeyModalViaActionMenu(t *testing.T, s *ptySession) {
+	t.Helper()
+	s.sendKey([]byte("a"), keystrokeDelay)
+	mustSee(t, s, "Actions", "action menu opens")
+	for range 4 {
+		s.sendKey(dummyKeyDown, keystrokeDelay)
+	}
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // activate "Register key"
+}
+
+// TestIdentityManager_RegisterKeyModalRuns opens the register-key pane via
+// the action menu's fifth row and asserts the frozen modal heading, the
+// upload beat's announce line, and its result rows — D-02: opening the
+// pane IS the opt-in, so registration runs with no further keystroke.
+func TestIdentityManager_RegisterKeyModalRuns(t *testing.T) {
+	home := SandboxHome(t)
+	seedMinimalIdentity(t, home, "acme")
+	// seedMinimalIdentity's stub .pub is not a real, parseable public key
+	// (uploader rejects it as invalid content) — overwrite with a real
+	// generated key pair, mirroring the create-flow tests' own fixture
+	// pattern, since this test drives a REAL upload.
+	seedEncryptedKeyFixture(t, filepath.Join(home, ".ssh", "id_ed25519_acme"), "acme", "")
+	bin := BuildBinary(t)
+	fakeGH, _ := FakeGHDir(t, "ok")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeGH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	uiReady(t, s)
+	mustSee(t, s, "acme", "sidebar renders the seeded identity")
+	openRegisterKeyModalViaActionMenu(t, s)
+
+	mustSee(t, s, "Register acme's key with GitHub", "the frozen RegisterKeyModalHeadingFmt heading renders")
+	mustSee(t, s, "Running:", "the upload beat's announce line renders")
+	mustSee(t, s, "Authentication key registered", "the authentication result row renders")
+	mustSee(t, s, "Signing key registered", "the signing result row renders")
+	saveFrame(t, "identity-manager-register-key-modal-runs", s)
+
+	s.sendKey(dummyKeyEsc, keystrokeDelay)
+	mustNotSee(t, s, "Register acme's key with GitHub", "Esc closes the register-key pane")
+}
+
+// TestIdentityManager_RegisterKeyModalManualFallback opens the same pane
+// with the fake gh unauthenticated: the manual-fallback instructions block
+// renders instead of a run, and no ssh-key add invocation is ever recorded
+// (the eligibility probe's own auth-status call is expected and is not what
+// this test asserts is absent).
+func TestIdentityManager_RegisterKeyModalManualFallback(t *testing.T) {
+	home := SandboxHome(t)
+	seedMinimalIdentity(t, home, "acme")
+	bin := BuildBinary(t)
+	fakeGH, ghLog := FakeGHDir(t, "auth-fail")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeGH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	uiReady(t, s)
+	mustSee(t, s, "acme", "sidebar renders the seeded identity")
+	openRegisterKeyModalViaActionMenu(t, s)
+
+	mustSee(t, s, "Auto-registration wasn't available. Register it yourself:", "the frozen manual-fallback heading renders")
+	mustSee(t, s, "github.com/settings/ssh/new", "the GitHub manual instructions render")
+	saveFrame(t, "identity-manager-register-key-modal-manual-fallback", s)
+
+	for _, entry := range ReadFakeCLILog(t, ghLog) {
+		if strings.Contains(entry, "ssh-key add") {
+			t.Errorf("manual-fallback path issued an add invocation: %q", entry)
+		}
+	}
+}
+
+// TestIdentityManager_RegisterKeyModalOpensWithU proves `u` on the detail
+// pane opens the same register-key pane directly, without the action menu.
+func TestIdentityManager_RegisterKeyModalOpensWithU(t *testing.T) {
+	home := SandboxHome(t)
+	seedMinimalIdentity(t, home, "acme")
+	// See TestIdentityManager_RegisterKeyModalRuns's comment: a real key is
+	// needed since opening the pane drives a real upload attempt.
+	seedEncryptedKeyFixture(t, filepath.Join(home, ".ssh", "id_ed25519_acme"), "acme", "")
+	bin := BuildBinary(t)
+	fakeGH, _ := FakeGHDir(t, "ok")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeGH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	uiReady(t, s)
+	mustSee(t, s, "acme", "sidebar renders the seeded identity")
+	s.sendKey([]byte("u"), keystrokeDelay)
+	mustSee(t, s, "Register acme's key with GitHub", "the `u` shortcut opens the same register-key pane")
+	saveFrame(t, "identity-manager-register-key-modal-u-key", s)
+}
+
+// ---------------------------------------------------------------------------
+// D-04: the interactive old-key delete offer (09-06-PLAN.md Task 3,
+// 09-07-PLAN.md Task 1).
+// ---------------------------------------------------------------------------
+
+// seedRotateDeleteOfferFixture seeds a rotate-ready "acme" identity (the
+// SAME recipe-shape fixture TestIdentityManager_KeyCeremonyRotate uses) and
+// returns this machine's D-07 machine-scoped title for "acme" — the exact
+// string the fake gh's inventory fixture must carry for the offer to
+// resolve Available.
+func seedRotateDeleteOfferFixture(t *testing.T, home string) string {
+	t.Helper()
+	seedGitPTYIdentity(t, home, "acme")
+	seedRecipeShapeSSHConfig(t, home, "acme")
+	hostname, err := os.Hostname()
+	if err != nil {
+		t.Fatalf("os.Hostname: %v", err)
+	}
+	return uploader.KeyTitle("acme", hostname)
+}
+
+// driveRotateToResultScreen opens the key ceremony via the action menu,
+// confirms it (async CommitRotate), and waits for the receipt — the common
+// setup every rotate-delete-offer test shares.
+func driveRotateToResultScreen(t *testing.T, s *ptySession) {
+	t.Helper()
+	openKeyCeremonyViaActionMenu(t, s)
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // confirm — async CommitRotate
+	mustSee(t, s, "Key ceremony completed.", "rotate: the receipt renders after the real write completes")
+}
+
+// mustSeeSlow is mustSee with a longer timeout, for an assertion that must
+// wait out the upload beat's real D-17 post-upload confirmation retry
+// (uploadConfirmRetryInterval, a real 2s sleep the fake gh's static
+// inventory fixture always fails to converge against, since it never
+// reflects what was "added") PLUS the chained D-04 delete-offer probe that
+// only dispatches once that beat resolves — comfortably longer than
+// mustSee's default 8s budget covers.
+func mustSeeSlow(t *testing.T, s *ptySession, substr, context string) {
+	t.Helper()
+	last, ok := s.waitFor(20*time.Second, func(text string) bool {
+		return strings.Contains(text, substr)
+	})
+	if !ok {
+		t.Fatalf("%s: %q never appeared. Last frame:\n%s", context, substr, last)
+	}
+}
+
+// TestIdentityManager_RotateDeleteOfferDefaultsToLeave drives a rotate to
+// its result screen with the gh shim in the delete-ok-plus-inventory mode:
+// asserts the offer's heading, the old key's machine-scoped title, and that
+// the leave option is the default-focused one; pressing Enter from that
+// default must render the left-in-place message and the unchanged grace
+// hint, and must never issue a delete invocation.
+func TestIdentityManager_RotateDeleteOfferDefaultsToLeave(t *testing.T) {
+	home := ShortSandboxHome(t)
+	title := seedRotateDeleteOfferFixture(t, home)
+	bin := BuildBinary(t)
+	fakeSSHDir := FakeSSHDir(t, "denied")
+	fakeGH, ghLog := FakeGHDir(t, "delete-ok")
+	FakeGHInventoryFile(t, fmt.Sprintf(`[{"id":555,"title":%q,"key":"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5STUB old@gitid"}]`, title))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSHDir, fakeGH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	uiReady(t, s)
+	mustSee(t, s, "acme", "sidebar renders the seeded identity")
+	driveRotateToResultScreen(t, s)
+
+	mustSeeSlow(t, s, "Remove the old key from GitHub?", "the D-04 offer heading renders")
+	mustSee(t, s, title, "the old key's machine-scoped title renders")
+	mustSee(t, s, "Leave it", "the leave option renders")
+	saveFrame(t, "identity-manager-rotate-delete-offer-default", s)
+
+	s.sendKey(dummyKeyEnter, keystrokeDelay) // default focus = leave
+	mustSee(t, s, "Left in place", "choosing the default (leave) renders the left-in-place message")
+	mustSee(t, s, "The old key stays valid at", "the existing D-08 grace hint still renders unchanged")
+
+	for _, entry := range ReadFakeCLILog(t, ghLog) {
+		if strings.Contains(entry, "ssh-key delete") {
+			t.Errorf("Enter from the default (leave) focus must never delete: %q", entry)
+		}
+	}
+}
+
+// TestIdentityManager_RotateDeleteOfferDeletesOnExplicitChoice is the same
+// flow, but moves to the delete option before Enter: asserts the removed
+// message and exactly one recorded delete invocation carrying the resolved
+// ID (D-04's explicit-move-plus-Enter requirement — never a single default
+// keystroke).
+func TestIdentityManager_RotateDeleteOfferDeletesOnExplicitChoice(t *testing.T) {
+	home := ShortSandboxHome(t)
+	title := seedRotateDeleteOfferFixture(t, home)
+	bin := BuildBinary(t)
+	fakeSSHDir := FakeSSHDir(t, "denied")
+	fakeGH, ghLog := FakeGHDir(t, "delete-ok")
+	FakeGHInventoryFile(t, fmt.Sprintf(`[{"id":555,"title":%q,"key":"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5STUB old@gitid"}]`, title))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSHDir, fakeGH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	uiReady(t, s)
+	mustSee(t, s, "acme", "sidebar renders the seeded identity")
+	driveRotateToResultScreen(t, s)
+	mustSeeSlow(t, s, "Remove the old key from GitHub?", "the D-04 offer heading renders")
+
+	s.sendKey(dummyKeyDown, keystrokeDelay) // move to the delete option
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Old key removed from GitHub", "the removed message renders")
+	saveFrame(t, "identity-manager-rotate-delete-offer-delete", s)
+
+	deleteCalls := 0
+	for _, entry := range ReadFakeCLILog(t, ghLog) {
+		if strings.Contains(entry, "ssh-key delete") {
+			deleteCalls++
+			if !strings.Contains(entry, "555") {
+				t.Errorf("delete invocation = %q, want it to carry the resolved ID 555", entry)
+			}
+		}
+	}
+	if deleteCalls != 1 {
+		t.Errorf("delete invocations = %d, want exactly 1", deleteCalls)
+	}
+}
+
+// TestIdentityManager_RotateDeleteOfferAbsentWhenInventoryFails drives the
+// gh shim in inventory-fail mode: the offer must not render and the
+// existing frozen grace-hint sentence must be shown instead, unchanged.
+func TestIdentityManager_RotateDeleteOfferAbsentWhenInventoryFails(t *testing.T) {
+	home := ShortSandboxHome(t)
+	seedRotateDeleteOfferFixture(t, home)
+	bin := BuildBinary(t)
+	fakeSSHDir := FakeSSHDir(t, "denied")
+	fakeGH, _ := FakeGHDir(t, "inventory-fail")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSHDir, fakeGH), dummyTermWidth, dummyTermHeight)
+	defer s.close(t)
+
+	uiReady(t, s)
+	mustSee(t, s, "acme", "sidebar renders the seeded identity")
+	driveRotateToResultScreen(t, s)
+
+	mustSee(t, s, "The old key stays valid at", "the frozen grace-hint sentence renders")
+	mustNotSee(t, s, "Remove the old key from", "the offer must not render when the inventory read fails")
+	saveFrame(t, "identity-manager-rotate-delete-offer-absent", s)
 }
 
 // ---------------------------------------------------------------------------

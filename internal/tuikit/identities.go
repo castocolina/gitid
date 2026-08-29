@@ -2908,18 +2908,50 @@ func (m identitiesModel) renderKeyCeremony(sel DemoIdentity) string {
 		// never gates the ceremony (09-06-PLAN.md). uploadRunHasContent is
 		// false before the beat's UploadRunMsg arrives, so the in-flight
 		// window shows exactly today's frozen result screen with no new copy.
-		if uploadRunHasContent(m.keyCeremonyUploadRun) {
-			body += "\n" + renderUploadSection(m.keyCeremonyUploadRun, providerDisplayNameForHostname(m.keyCeremonyPlan.ProviderHost), deleteChoiceNoteWidth)
-		}
-		// D-04 (Task 3): the delete-offer sub-beat renders below the upload
-		// beat, only for a rotate whose offer resolved Available — an
-		// unavailable/repair/pending offer leaves the existing frozen
-		// grace-window hint (already part of m.keyCeremony.view above) as
-		// the only guidance, exactly as it renders today.
+		var tail strings.Builder
+		// D-04 (Task 3): the delete-offer sub-beat, when available, renders
+		// FIRST — ahead of the upload beat's own announce/result content.
+		// It demands an actual decision from the user, while the upload
+		// beat's "Running: <command>" lines are purely retrospective
+		// (already summarized by its own ✓/✗ result rows) — when the
+		// combined content cannot all fit and the overflow backstop below
+		// clips the tail, it is the LESS critical, already-redundant upload
+		// announce content that gets cut, never the actionable offer.
 		if m.keyCeremonyMode == KeyCeremonyModeRotate && m.rotateDeleteOffer.Available {
-			body += "\n" + m.renderRotateDeleteOffer()
+			tail.WriteString(m.renderRotateDeleteOffer())
 		}
-		return body
+		if uploadRunHasContent(m.keyCeremonyUploadRun) {
+			tail.WriteString(renderUploadSection(m.keyCeremonyUploadRun, providerDisplayNameForHostname(m.keyCeremonyPlan.ProviderHost), deleteChoiceNoteWidth))
+		}
+		if tail.Len() == 0 {
+			return body
+		}
+		// Overflow backstop (discovered by 09-07-PLAN.md Task 1's real PTY
+		// coverage: a REAL rotate's receipt already lists 6+ written paths
+		// and 3 backups before the upload beat's own long provider command
+		// lines even start, routinely exceeding frameBodyRows(30) once the
+		// delete offer is appended too — silently clipping the offer off
+		// the visible frame with no indication anything was cut). Mirrors
+		// renderUploadSection's OWN existing manual-fallback overflow
+		// backstop (ExactTextViewport bounded to the remaining row budget)
+		// rather than inventing a second mechanism.
+		rendered := strings.Count(body, "\n")
+		budget := frameBodyRows(minFrameHeight) - rendered - 1
+		// The tail's OWN long lines (a full "gh ssh-key add <path> --title
+		// ..." command easily runs 100+ columns) get word-wrapped by the
+		// OUTER pane rendering into several PHYSICAL rows apiece — a naive
+		// count of tail's own "\n"-separated LOGICAL lines drastically
+		// undercounts the real row cost and lets genuinely-overflowing
+		// content sail past this check. Word-wrap at the SAME width the
+		// outer pane uses FIRST, then count the wrapped output's real rows.
+		tailText := strings.TrimSuffix(tail.String(), "\n")
+		wrapped := lipgloss.NewStyle().Width(deleteChoiceNoteWidth).Render(tailText)
+		tailLines := strings.Count(wrapped, "\n") + 1
+		if budget > 0 && tailLines > budget {
+			v := ExactTextViewport{Text: wrapped, VisibleLines: budget, Width: maxInt(20, deleteChoiceNoteWidth-4)}
+			return body + "\n" + v.Clamp().View() + "\n"
+		}
+		return body + "\n" + tail.String()
 	}
 }
 

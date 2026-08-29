@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  1 ids · ! 2 ✗ 1
+ Identities › acme › Key
+S ssh · G git  ✓ ok ! attn ✗ broken │ ✓ Key ceremony completed.
+▸ ✓ acme                      S✓ G✓ │  ! Reachable — key not uploaded yet
+                                    │  The old key stays valid at github during this window — upload
+                                    │ the new key, verify it, then remove the old one there.
+                                    │
+                                    │ Wrote → ~/.ssh/config
+                                    │ Wrote → ~/.gitconfig
+                                    │ Wrote → ~/.ssh/allowed_signers
+                                    │ Wrote → ~/.gitconfig.d/acme
+                                    │ Wrote → ~/.ssh/id_ed25519_acme
+                                    │ Wrote → ~/.ssh/id_ed25519_acme.pub
+                                    │ Backed up → ~/.ssh/config.bak.1788010161981106000
+                                    │ Backed up → ~/.gitconfig.bak.1788010162022030000
+                                    │ Backed up → ~/.ssh/allowed_signers.bak.1788010162130452000
+                                    │
+                                    │  Done (Enter)
+                                    │  Remove the old key from GitHub?
+                                    │  The old key ("gitid: acme @ Ramons-MacBook-Pro") still
+                                    │ authenticates there until you remove it. Delete it now?
+                                    │  ✓ Old key removed from GitHub.
+                                    │  Running:
+                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestIdent
+                                    │ anager_RotateDeleteOfferDeletesOnExplicitChoice195518497/0
+                                    │ h ssh-key add /tmp/h2472293408/.ssh/id_ed25519_acme.pub --
+                                    │ title gitid: acme @ Ramons-MacBook-Pro --type authenticati
+ Esc returns to the identity detail without writing anything.
+
+ Esc back · Ctrl+P palette

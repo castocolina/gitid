@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  1 ids · ! 2 ✗ 2
+ Identities › acme › Register key
+S ssh · G git  ✓ ok ! attn ✗ broken │  Register acme's key with GitHub
+▸ ✓ acme 1⚑                   S✓ G✓ │
+                                    │  Running:
+                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestIdentityM
+                                    │ anager_RegisterKeyModalRuns254881639/002/gh ssh-key add
+                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestIdentityM
+                                    │ anager_RegisterKeyModalRuns254881639/001/.ssh/id_ed25519_acme.
+                                    │ pub --title gitid: acme @ Ramons-MacBook-Pro --type
+                                    │ authentication
+                                    │  Running:
+                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestIdentityM
+                                    │ anager_RegisterKeyModalRuns254881639/002/gh ssh-key add
+                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestIdentityM
+                                    │ anager_RegisterKeyModalRuns254881639/001/.ssh/id_ed25519_acme.
+                                    │ pub --title gitid: acme @ Ramons-MacBook-Pro --type signing
+                                    │  ✓ Authentication key registered
+                                    │  ✓ Signing key registered
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+                                    │
+ Esc returns to the identity detail without writing anything — registration runs on open.
+
+ Esc back · Ctrl+P palette
