@@ -115,6 +115,23 @@ func makeTestCaptures(t *testing.T) (map[string]string, map[string]string) {
 	for id, text := range ggitApproved {
 		approved[id] = text
 	}
+	// 08-08-PLAN.md Task 2: Health/Fixer captures merged the SAME way the
+	// previous four, immediately above — RequiredScreenSpecs() is now a
+	// SIX-way merged registry.
+	hfLive, err := screenshot.CaptureHealthFixerScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureHealthFixerScreens (live): %v", err)
+	}
+	hfApproved, err := screenshot.CaptureHealthFixerScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureHealthFixerScreens (approved): %v", err)
+	}
+	for id, text := range hfLive {
+		live[id] = text
+	}
+	for id, text := range hfApproved {
+		approved[id] = text
+	}
 	return live, approved
 }
 

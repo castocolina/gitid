@@ -67,6 +67,18 @@ func captureCombined(t *testing.T, backend tuikit.Backend) map[string]string {
 	for id, text := range ggitOut {
 		out[id] = text
 	}
+	// 08-08-PLAN.md Task 2: Health/Fixer captures merged the SAME way (the
+	// shared registry is now six-way merged) — this helper predates that
+	// plan's CaptureHealthFixerScreens and was never updated to include it,
+	// so health-findings/fixer-list/fixer-ceremony-preview were silently
+	// absent from every RequiredScreenSpecs check this file runs.
+	hfOut, err := screenshot.CaptureHealthFixerScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureHealthFixerScreens: %v", err)
+	}
+	for id, text := range hfOut {
+		out[id] = text
+	}
 	return out
 }
 
@@ -699,6 +711,15 @@ func TestCaptureCreateFlowScreensFailsOnMissingRequiredFrame(t *testing.T) {
 		t.Fatalf("CaptureGlobalGitScreens with valid backend must not fail: %v", gerr3)
 	}
 	for id, text := range ggitCaptures {
+		captures[id] = text
+	}
+	// 08-08-PLAN.md Task 2: Health/Fixer captures merged the SAME way (the
+	// registry is now six-way merged).
+	hfCaptures, herr := screenshot.CaptureHealthFixerScreens(backend)
+	if herr != nil {
+		t.Fatalf("CaptureHealthFixerScreens with valid backend must not fail: %v", herr)
+	}
+	for id, text := range hfCaptures {
 		captures[id] = text
 	}
 	// Verify all required frames are present.

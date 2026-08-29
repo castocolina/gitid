@@ -1201,7 +1201,21 @@ func CaptureCreateFlowScreens(backend tuikit.Backend) (map[string]string, error)
 	// message path the real backend uses, without invoking SSH.
 	failure := freshWizard(backend)
 	failure = keyEnter(failure)
-	failure, _ = stepAndPendingCmd(failure, tea.KeyPressMsg{Code: tea.KeyEnter})
+	var failureStage1Cmd tea.Cmd
+	failure, failureStage1Cmd = stepAndPendingCmd(failure, tea.KeyPressMsg{Code: tea.KeyEnter})
+	// Same D-01 upload auto-advance hop as the stage-1/stage-2 capture above
+	// (Enter from testIdle enters testUpload, not testRunning1, whenever the
+	// checkbox auto-checked on a Ready eligibility answer) — deliver it
+	// first so the model actually reaches testRunning1 before the injected
+	// WizardStageMsg below, or the message is a no-op against a model still
+	// parked in testUpload and "connectivity-output" never renders.
+	if failureStage1Cmd != nil {
+		if uploadMsg := failureStage1Cmd(); uploadMsg != nil {
+			if _, isUploadRun := uploadMsg.(tuikit.UploadRunMsg); isUploadRun {
+				failure, _ = stepAndPendingCmd(failure, uploadMsg)
+			}
+		}
+	}
 	failure = step(failure, tuikit.WizardStageMsg{
 		Stage: 1,
 		Result: tuikit.TestResultView{
