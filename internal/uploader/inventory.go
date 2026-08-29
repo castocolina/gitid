@@ -219,7 +219,20 @@ func FindByTitle(existing []ExistingKey, title string) (ExistingKey, bool) {
 // disambiguate), the old key cannot be identified safely and
 // OldKeyCandidates returns nil: the caller must refuse rather than guess
 // which record is safe to delete.
+//
+// WR-01: the exclusion above only protects the destructive decision when
+// currentBlob and every candidate's blob can actually be COMPARED. A blank
+// currentBlob (the account's .pub read succeeded but was empty/truncated)
+// or a blank candidate blob (a provider/CLI field rename that omits "key")
+// makes NormalizeKeyBlob return "", which used to either skip the exclusion
+// entirely or let a single all-blank record pass the "exactly one distinct
+// blob" check — both silently re-open the exact CR-01 defect this function
+// exists to close. "I could not read the key material" must never be
+// treated as "they do not match": both cases now refuse (return nil).
 func OldKeyCandidates(existing []ExistingKey, title, currentBlob string) []ExistingKey {
+	if currentBlob == "" {
+		return nil // cannot prove which record is the NEW key — refuse
+	}
 	var candidates []ExistingKey
 	blobs := make(map[string]bool)
 	for _, rec := range existing {
@@ -227,7 +240,10 @@ func OldKeyCandidates(existing []ExistingKey, title, currentBlob string) []Exist
 			continue
 		}
 		blob := NormalizeKeyBlob(rec.Key)
-		if currentBlob != "" && blob == currentBlob {
+		if blob == "" {
+			return nil // a record we cannot compare makes the whole set unsafe
+		}
+		if blob == currentBlob {
 			continue // this is the key we just registered — never offer it
 		}
 		candidates = append(candidates, rec)

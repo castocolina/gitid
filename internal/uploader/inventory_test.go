@@ -229,3 +229,35 @@ func TestOldKeyCandidatesReturnsNilWhenNothingRemains(t *testing.T) {
 		t.Fatalf("got=%+v, want nil (nothing left to remove)", got)
 	}
 }
+
+// TestOldKeyCandidatesRefusesOnBlankCurrentBlob is the WR-01 regression,
+// fail-open direction 1: a blank currentBlob (the account's .pub read
+// succeeded but returned empty/truncated content) must never be treated as
+// "match nothing, exclude nothing" — that silently re-opens CR-01, since the
+// sole surviving title match would then be the just-registered NEW key,
+// returned as if it were "the unambiguous old key".
+func TestOldKeyCandidatesRefusesOnBlankCurrentBlob(t *testing.T) {
+	existing := []ExistingKey{
+		{ID: "1", Title: "gitid: acme @ mbp", Key: "ssh-ed25519 AAAAnew", Registration: RegistrationAuthentication},
+	}
+	got := OldKeyCandidates(existing, "gitid: acme @ mbp", "")
+	if got != nil {
+		t.Fatalf("got=%+v, want nil: a blank currentBlob means we cannot prove which record is the new key", got)
+	}
+}
+
+// TestOldKeyCandidatesRefusesOnBlankRecordBlob is the WR-01 regression,
+// fail-open direction 2: every rec.Key normalizing to "" (a provider/CLI
+// JSON field rename or API version that omits "key") must never pass the
+// "exactly one distinct blob" ambiguity check — an all-blank set used to
+// look like a single distinct blob and return the just-registered key as
+// safe to delete.
+func TestOldKeyCandidatesRefusesOnBlankRecordBlob(t *testing.T) {
+	existing := []ExistingKey{
+		{ID: "1", Title: "gitid: acme @ mbp", Key: "", Registration: RegistrationAuthentication},
+	}
+	got := OldKeyCandidates(existing, "gitid: acme @ mbp", NormalizeKeyBlob("ssh-ed25519 AAAAnew"))
+	if got != nil {
+		t.Fatalf("got=%+v, want nil: a record whose key blob cannot be read makes the whole set unsafe to act on", got)
+	}
+}
