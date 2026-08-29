@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -97,52 +98,80 @@ func TestRegisterKeyMissingNameRoutesThroughDepthResolver(t *testing.T) {
 	}
 }
 
-// TestRegisterKeyDryRunExecutesNoUpload asserts zero recorded ssh-key add
-// invocations and that the frozen dry-run note is printed.
+// fakeGHOnPath writes a minimal, static fake "gh" script into a fresh temp
+// dir, prepends it to PATH (t.Setenv, auto-restored), and returns the log
+// file every invocation's argv is appended to. It answers `api ...` with an
+// empty inventory (`[]`) and exits 0 for anything else — enough for
+// planUpload's tool-detection (LookPath only) and D-15 dedupe read (two
+// `api` calls) to resolve deterministically, entirely locally, with zero
+// real network access. This mirrors the exact PATH-prepend technique
+// backendWithFakeSSH (wiring_storage_test.go) already uses for a fake ssh
+// binary; buildUploaderDeps' RunCmd resolves toolPath via a real
+// exec.LookPath, so pointing PATH at this script is what makes the REAL
+// entry point safe to drive end-to-end without touching a real gh/glab.
+func fakeGHOnPath(t *testing.T) (logPath string) {
+	t.Helper()
+	dir := t.TempDir()
+	logPath = filepath.Join(t.TempDir(), "gh.log")
+	script := "#!/bin/sh\n" +
+		"printf '%s\\n' \"$*\" >> " + shellQuoteForTest(logPath) + "\n" +
+		"case \"$1\" in\n" +
+		"  api) echo '[]'; exit 0 ;;\n" +
+		"  *) exit 0 ;;\n" +
+		"esac\n"
+	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o700); err != nil { //nolint:gosec // test fixture (G306)
+		t.Fatalf("fakeGHOnPath: writing fake gh: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return logPath
+}
+
+// shellQuoteForTest single-quotes path for safe interpolation into the
+// static shell script fakeGHOnPath writes (t.TempDir() paths never contain
+// a single quote in practice, but this keeps the script correct even if one
+// did).
+func shellQuoteForTest(path string) string {
+	return "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
+}
+
+// TestRegisterKeyDryRunExecutesNoUpload is the WR-10 regression: the
+// previous version of this test never called runIdentityRegisterKey with
+// DryRun: true — it called b.planUpload directly and then re-implemented
+// the production dry-run branch (the "Running: " + tuikit.UploadDryRunNote
+// printing) inside the test body, asserting on its own writes. Deleting the
+// entire `if flags.DryRun` block from identity_upload.go left that version
+// green. This drives the REAL entry point end-to-end (with a local fake gh
+// on PATH — see fakeGHOnPath — so no real provider CLI is ever touched) and
+// asserts on cmd.OutOrStdout(), which only carries the frozen note if the
+// production code actually printed it.
 func TestRegisterKeyDryRunExecutesNoUpload(t *testing.T) {
 	home := t.TempDir()
 	seedRegisterKeyAccount(t, home, "acme")
 	t.Setenv("HOME", home)
+	logPath := fakeGHOnPath(t)
 
-	b := newBackendForHome(home)
-	var recorded []string
-	b.uploaderDeps.LookPath = func(name string) (string, error) { return "/usr/local/bin/" + name, nil }
-	b.uploaderDeps.ReadFile = func(string) ([]byte, error) { return []byte("ssh-ed25519 AAAAstub acme@gitid\n"), nil }
-	b.uploaderDeps.RunCmd = func(name string, args ...string) (string, int, error) {
-		recorded = append(recorded, strings.Join(append([]string{name}, args...), " "))
-		switch {
-		case len(args) >= 2 && args[0] == "auth" && args[1] == "status":
-			return "", 0, nil
-		case len(args) >= 2 && args[0] == "api":
-			return "[]", 0, nil
-		}
-		return "", 0, nil
-	}
-
-	var out bytes.Buffer
 	cmd := &cobra.Command{}
+	var out bytes.Buffer
 	cmd.SetOut(&out)
-	acct, ok := b.findAccount("acme")
-	if !ok {
-		t.Fatal("setup: findAccount(acme) not found")
+	if err := runIdentityRegisterKey(cmd, []string{"acme"}, identityRegisterKeyFlags{DryRun: true}, false, false); err != nil {
+		t.Fatalf("register-key --dry-run: %v", err)
 	}
-	req := uploadRequestForAccount(acct, b.home)
-	plan, terminal := b.planUpload(req)
-	if terminal != nil {
-		t.Fatalf("setup: planUpload returned a terminal view unexpectedly: %+v", terminal)
-	}
-	for _, c := range plan.commands {
-		out.WriteString("Running: " + c + "\n")
-	}
-	out.WriteString(tuikit.UploadDryRunNote + "\n")
 
-	for _, r := range recorded {
-		if strings.Contains(r, "ssh-key add") {
-			t.Errorf("dry run recorded a ssh-key add invocation: %q", r)
-		}
+	got := out.String()
+	if !strings.Contains(got, tuikit.UploadDryRunNote) {
+		t.Errorf("dry run output missing the frozen dry-run note; got:\n%s", got)
 	}
-	if !strings.Contains(out.String(), tuikit.UploadDryRunNote) {
-		t.Error("dry run output missing the frozen dry-run note")
+	if !strings.Contains(got, "gh ssh-key add") {
+		t.Errorf("dry run output missing the announced-but-not-run command preview; got:\n%s", got)
+	}
+	logged, rerr := os.ReadFile(logPath) //nolint:gosec // test-controlled path (G304)
+	if rerr != nil {
+		t.Fatalf("reading fake gh log: %v", rerr)
+	}
+	for _, line := range strings.Split(string(logged), "\n") {
+		if strings.Contains(line, "ssh-key add") {
+			t.Errorf("dry run recorded a REAL ssh-key add invocation: %q", line)
+		}
 	}
 }
 
