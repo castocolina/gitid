@@ -462,20 +462,38 @@ func (FixtureBackend) UploadEligibility(hostname string) tea.Cmd {
 }
 
 // RunUpload "runs" the autonomous upload beat: a brief tick (mirroring
-// TestStage1/TestStage2's fixtureStageDelay), then one UploadRowUploaded
-// result whose Command is built through uploader.CommandPreview-shaped text
-// against a fixed fake tool path — never a real gh/glab lookup — so the
-// demo shows a real command SHAPE without ever touching a real PATH.
+// TestStage1/TestStage2's fixtureStageDelay), then a fixed result driven by
+// the hostname — never a real gh/glab lookup — so the demo shows every
+// D-16 result shape deterministically: github shows both registrations
+// uploaded, gitlab shows one combined row, and a seeded "partial." fixture
+// host shows a real partial-failure pair with the signing remediation
+// reason, exercising the same render branch the real scope-error case does.
 func (b FixtureBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
-	command := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title %s --type authentication",
-		spec.KeyPath, fmt.Sprintf(tuikit.UploadKeyTitleFmt, spec.Identity, "demo-machine"))
+	title := fmt.Sprintf(tuikit.UploadKeyTitleFmt, spec.Identity, "demo-machine")
+	authCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title %s --type authentication", spec.KeyPath, title)
+	signCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title %s --type signing", spec.KeyPath, title)
+	glabCmd := fmt.Sprintf("/usr/local/bin/glab ssh-key add %s.pub -t %s --usage-type auth_and_signing", spec.KeyPath, title)
+
+	var view tuikit.UploadRunView
+	switch {
+	case strings.Contains(spec.Hostname, "partial"):
+		view = tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{
+			{Registration: tuikit.UploadRegistrationAuthentication, Label: tuikit.UploadRegistrationLabelAuth, Command: authCmd, Outcome: tuikit.UploadRowUploaded},
+			{Registration: tuikit.UploadRegistrationSigning, Label: tuikit.UploadRegistrationLabelSigning, Command: signCmd, Outcome: tuikit.UploadRowFailed,
+				Reason: fmt.Sprintf(tuikit.UploadScopeRemediationSigningFmt, "github.com")},
+		}}
+	case strings.Contains(spec.Hostname, "gitlab"):
+		view = tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{
+			{Registration: tuikit.UploadRegistrationCombined, Label: tuikit.UploadRegistrationLabelCombined, Command: glabCmd, Outcome: tuikit.UploadRowUploaded},
+		}}
+	default:
+		view = tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{
+			{Registration: tuikit.UploadRegistrationAuthentication, Label: tuikit.UploadRegistrationLabelAuth, Command: authCmd, Outcome: tuikit.UploadRowUploaded},
+			{Registration: tuikit.UploadRegistrationSigning, Label: tuikit.UploadRegistrationLabelSigning, Command: signCmd, Outcome: tuikit.UploadRowUploaded},
+		}}
+	}
 	return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
-		return tuikit.UploadRunMsg{View: tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{{
-			Registration: tuikit.UploadRegistrationAuthentication,
-			Label:        tuikit.UploadRegistrationLabelAuth,
-			Command:      command,
-			Outcome:      tuikit.UploadRowUploaded,
-		}}}}
+		return tuikit.UploadRunMsg{View: view}
 	})
 }
 

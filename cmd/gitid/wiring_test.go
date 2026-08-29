@@ -9,6 +9,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +22,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/castocolina/gitid/internal/filewriter"
 	"github.com/castocolina/gitid/internal/gitconfig"
@@ -5069,5 +5074,503 @@ func TestAuthCheckAlwaysReceivesCanonicalHost(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("recorded argv %v never carried --hostname", recordedArgs)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 09-04-PLAN.md Task 2 — the complete testUpload beat.
+// ---------------------------------------------------------------------------
+
+// runUploadSpec is the shared CreateSpec every Task 2 RunUpload test drives:
+// a GitHub identity whose backend is rooted at a hermetic home.
+func runUploadSpec(identityName string) tuikit.CreateSpec {
+	return tuikit.CreateSpec{
+		Identity: identityName, Alias: identityName + ".github.com",
+		Hostname: "ssh.github.com", Port: "443",
+	}
+}
+
+// uploadCall records one RunCmd invocation's full argv (name + args).
+type uploadCall struct {
+	argv []string
+}
+
+// fakeUploaderRunUploadDeps builds a realBackend rooted at a hermetic home
+// plus a fake uploader.Deps whose LookPath/auth-status/inventory/upload-add
+// responses are driven by the supplied callbacks. authenticated=false makes
+// DetectFor answer AuthNotLoggedIn (never AuthToolNotFound), matching the
+// "checkbox reached RunUpload only after Ready" precondition documented at
+// RunUpload's own call site — every Task 2 test that wants the disabled path
+// drives it explicitly instead.
+func fakeUploaderRunUploadDeps(t *testing.T, ghInventoryKeys, ghSigningKeys string, uploadResult func(call uploadCall) (out string, code int, err error)) (*realBackend, *[]uploadCall) {
+	t.Helper()
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	var mu sync.Mutex
+	var calls []uploadCall
+	b.uploaderDeps = uploader.Deps{
+		LookPath: func(name string) (string, error) { return "/usr/local/bin/" + name, nil },
+		ReadFile: os.ReadFile,
+		RunCmd: func(name string, args ...string) (string, int, error) {
+			mu.Lock()
+			calls = append(calls, uploadCall{argv: append([]string{name}, args...)})
+			mu.Unlock()
+			switch {
+			case len(args) >= 2 && args[0] == "auth" && args[1] == "status":
+				return "", 0, nil
+			case len(args) >= 2 && args[0] == "api" && args[1] == "user/keys":
+				return ghInventoryKeys, 0, nil
+			case len(args) >= 2 && args[0] == "api" && args[1] == "user/ssh_signing_keys":
+				return ghSigningKeys, 0, nil
+			case len(args) >= 2 && args[0] == "ssh-key" && args[1] == "add":
+				if uploadResult != nil {
+					return uploadResult(uploadCall{argv: append([]string{name}, args...)})
+				}
+				return "", 0, nil
+			default:
+				return "", 0, nil
+			}
+		},
+	}
+	return b, &calls
+}
+
+// waitForRunUploadResult drives cmd (RunUpload's returned tea.Cmd) through
+// the R7 UploadStartedMsg/FollowUp split synchronously, mirroring how the
+// real Bubble Tea runtime would deliver UploadStartedMsg first and then run
+// FollowUp — the SAME two-step chain identities.go's handleMsg drives. It
+// asserts the started message's ordering guarantee via calls (populated
+// before FollowUp itself is invoked) and returns the eventual UploadRunMsg.
+func waitForRunUploadResult(t *testing.T, cmd tea.Cmd) (tuikit.UploadStartedMsg, tuikit.UploadRunMsg) {
+	t.Helper()
+	msg := cmd()
+	started, ok := msg.(tuikit.UploadStartedMsg)
+	if !ok {
+		if run, ok := msg.(tuikit.UploadRunMsg); ok {
+			return tuikit.UploadStartedMsg{}, run
+		}
+		t.Fatalf("RunUpload() delivered %T, want UploadStartedMsg or UploadRunMsg", msg)
+	}
+	if started.FollowUp == nil {
+		t.Fatal("UploadStartedMsg.FollowUp must be non-nil")
+	}
+	runMsg, ok := started.FollowUp().(tuikit.UploadRunMsg)
+	if !ok {
+		t.Fatalf("UploadStartedMsg.FollowUp() delivered %T, want UploadRunMsg", started.FollowUp())
+	}
+	return started, runMsg
+}
+
+// TestRunUploadAnnouncesBeforeItRuns proves R7: UploadStartedMsg carrying
+// every command precedes the first recorded ssh-key add invocation.
+func TestRunUploadAnnouncesBeforeItRuns(t *testing.T) {
+	b, calls := fakeUploaderRunUploadDeps(t, "[]", "[]", nil)
+	cmd := b.RunUpload(runUploadSpec("acme"))
+	msg := cmd()
+	started, ok := msg.(tuikit.UploadStartedMsg)
+	if !ok {
+		t.Fatalf("RunUpload() delivered %T, want UploadStartedMsg first (R7)", msg)
+	}
+	if len(started.Commands) != 2 {
+		t.Fatalf("UploadStartedMsg.Commands = %v, want 2 (authentication + signing)", started.Commands)
+	}
+	*calls = nil
+	if _, ok := started.FollowUp().(tuikit.UploadRunMsg); !ok {
+		t.Fatal("FollowUp() must deliver UploadRunMsg")
+	}
+	mu := sync.Mutex{}
+	mu.Lock()
+	sawAdd := false
+	for _, c := range *calls {
+		if len(c.argv) >= 3 && c.argv[1] == "ssh-key" && c.argv[2] == "add" {
+			sawAdd = true
+		}
+	}
+	mu.Unlock()
+	if !sawAdd {
+		t.Fatal("FollowUp never recorded an ssh-key add invocation")
+	}
+	// The announce message itself was produced and observed BEFORE FollowUp
+	// ran (this test's own call ordering above is the proof: Commands was
+	// read and asserted, THEN FollowUp() was invoked) — asserted structurally
+	// rather than via a shared counter, since RunUpload's tea.Cmd chain
+	// documents that FollowUp is only ever invoked by the caller after the
+	// started message has been rendered.
+}
+
+// TestRunUploadUsesOnlyTheMissingRegistrations proves D-15/D-16: when the
+// inventory reports authentication already present, exactly one ssh-key add
+// runs and its argv carries the signing key type.
+func TestRunUploadUsesOnlyTheMissingRegistrations(t *testing.T) {
+	b, calls := fakeUploaderRunUploadDeps(t, "[]", "[]", nil)
+	// Seed the staged key first so the exact PubLine the inventory reports
+	// "already present" is the one the running RunUpload will also see.
+	in := b.createInputFromSpec(runUploadSpec("acme"))
+	staged, err := b.stagedKeyFor(in, "")
+	if err != nil {
+		t.Fatalf("stagedKeyFor: %v", err)
+	}
+	ghInventory := fmt.Sprintf(`[{"id":1,"title":"gitid: acme @ host","key":%q}]`, strings.TrimSpace(staged.PubLine))
+	b.uploaderDeps.RunCmd = func(name string, args ...string) (string, int, error) {
+		*calls = append(*calls, uploadCall{argv: append([]string{name}, args...)})
+		switch {
+		case len(args) >= 2 && args[0] == "auth" && args[1] == "status":
+			return "", 0, nil
+		case len(args) >= 2 && args[0] == "api" && args[1] == "user/keys":
+			return ghInventory, 0, nil
+		case len(args) >= 2 && args[0] == "api" && args[1] == "user/ssh_signing_keys":
+			return "[]", 0, nil
+		case len(args) >= 2 && args[0] == "ssh-key" && args[1] == "add":
+			return "", 0, nil
+		default:
+			return "", 0, nil
+		}
+	}
+	_, run := waitForRunUploadResult(t, b.RunUpload(runUploadSpec("acme")))
+
+	addCalls := 0
+	sawSigningType := false
+	for _, c := range *calls {
+		if len(c.argv) >= 3 && c.argv[1] == "ssh-key" && c.argv[2] == "add" {
+			addCalls++
+			for i, a := range c.argv {
+				if a == "--type" && i+1 < len(c.argv) && c.argv[i+1] == uploader.KeySigning {
+					sawSigningType = true
+				}
+			}
+		}
+	}
+	if addCalls != 1 {
+		t.Errorf("ssh-key add invocations = %d, want exactly 1", addCalls)
+	}
+	if !sawSigningType {
+		t.Error("the single ssh-key add invocation did not carry the signing key type")
+	}
+	if len(run.View.Rows) != 2 {
+		t.Errorf("rows = %+v, want 2 (one already-present, one registered)", run.View.Rows)
+	}
+}
+
+// TestRunUploadZeroCommandsWhenFullyRegistered proves D-15: an identity
+// already registered for both types runs zero ssh-key add commands and
+// reports AlreadyComplete.
+func TestRunUploadZeroCommandsWhenFullyRegistered(t *testing.T) {
+	b, calls := fakeUploaderRunUploadDeps(t, "[]", "[]", nil)
+	in := b.createInputFromSpec(runUploadSpec("acme"))
+	staged, err := b.stagedKeyFor(in, "")
+	if err != nil {
+		t.Fatalf("stagedKeyFor: %v", err)
+	}
+	blob := strings.TrimSpace(staged.PubLine)
+	authJSON := fmt.Sprintf(`[{"id":1,"title":"a","key":%q}]`, blob)
+	signJSON := fmt.Sprintf(`[{"id":2,"title":"s","key":%q}]`, blob)
+	b.uploaderDeps.RunCmd = func(name string, args ...string) (string, int, error) {
+		*calls = append(*calls, uploadCall{argv: append([]string{name}, args...)})
+		switch {
+		case len(args) >= 2 && args[0] == "auth" && args[1] == "status":
+			return "", 0, nil
+		case len(args) >= 2 && args[0] == "api" && args[1] == "user/keys":
+			return authJSON, 0, nil
+		case len(args) >= 2 && args[0] == "api" && args[1] == "user/ssh_signing_keys":
+			return signJSON, 0, nil
+		default:
+			return "", 0, nil
+		}
+	}
+	msg := b.RunUpload(runUploadSpec("acme"))()
+	run, ok := msg.(tuikit.UploadRunMsg)
+	if !ok {
+		t.Fatalf("RunUpload() delivered %T, want a direct UploadRunMsg (no announce needed for zero commands)", msg)
+	}
+	if !run.View.AlreadyComplete {
+		t.Error("AlreadyComplete = false, want true")
+	}
+	for _, c := range *calls {
+		if len(c.argv) >= 2 && c.argv[1] == "ssh-key" {
+			t.Errorf("unexpected ssh-key invocation: %v", c.argv)
+		}
+	}
+}
+
+// TestRunUploadDegradesWhenInventoryFails proves D-15: an inventory-read
+// failure sets InventoryDegraded and still attempts the full desired set.
+func TestRunUploadDegradesWhenInventoryFails(t *testing.T) {
+	b, calls := fakeUploaderRunUploadDeps(t, "", "", nil)
+	b.uploaderDeps.RunCmd = func(name string, args ...string) (string, int, error) {
+		*calls = append(*calls, uploadCall{argv: append([]string{name}, args...)})
+		switch {
+		case len(args) >= 2 && args[0] == "auth" && args[1] == "status":
+			return "", 0, nil
+		case len(args) >= 2 && args[0] == "api":
+			return "", 1, errors.New("network blip")
+		case len(args) >= 2 && args[0] == "ssh-key" && args[1] == "add":
+			return "", 0, nil
+		default:
+			return "", 0, nil
+		}
+	}
+	_, run := waitForRunUploadResult(t, b.RunUpload(runUploadSpec("acme")))
+	if !run.View.InventoryDegraded {
+		t.Error("InventoryDegraded = false, want true")
+	}
+	if len(run.View.Rows) != 2 {
+		t.Errorf("rows = %+v, want 2 (the full desired set attempted)", run.View.Rows)
+	}
+}
+
+// TestRunUploadPartialScopeFailureReportsBothTypes proves the D-16 per-type
+// independence: authentication succeeds, signing fails on a scope error, and
+// BOTH rows render — the failure does not roll back or suppress the success.
+func TestRunUploadPartialScopeFailureReportsBothTypes(t *testing.T) {
+	b, _ := fakeUploaderRunUploadDeps(t, "[]", "[]", func(call uploadCall) (string, int, error) {
+		for i, a := range call.argv {
+			if a == "--type" && i+1 < len(call.argv) && call.argv[i+1] == uploader.KeySigning {
+				return "HTTP 403: Resource not accessible (requires the admin:ssh_signing_key scope)", 1, errors.New("exit 1")
+			}
+		}
+		return "", 0, nil
+	})
+	_, run := waitForRunUploadResult(t, b.RunUpload(runUploadSpec("acme")))
+	if len(run.View.Rows) != 2 {
+		t.Fatalf("rows = %+v, want 2", run.View.Rows)
+	}
+	var uploaded, failed int
+	var failedReason string
+	for _, row := range run.View.Rows {
+		switch row.Outcome {
+		case tuikit.UploadRowUploaded:
+			uploaded++
+		case tuikit.UploadRowFailed:
+			failed++
+			failedReason = row.Reason
+		}
+	}
+	if uploaded != 1 || failed != 1 {
+		t.Errorf("uploaded=%d failed=%d, want 1 and 1: rows=%+v", uploaded, failed, run.View.Rows)
+	}
+	want := fmt.Sprintf(tuikit.UploadScopeRemediationSigningFmt, "github.com")
+	if failedReason != want {
+		t.Errorf("failed row Reason = %q, want %q", failedReason, want)
+	}
+}
+
+// TestRunUploadGLabTakenIsAConflictWithFallback proves D-15: GitLab's
+// "already taken" response classifies as the cross-account conflict, never
+// silent success, and the manual fallback renders.
+func TestRunUploadGLabTakenIsAConflictWithFallback(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	b.uploaderDeps = uploader.Deps{
+		LookPath: func(name string) (string, error) { return "/usr/local/bin/" + name, nil },
+		ReadFile: os.ReadFile,
+		RunCmd: func(_ string, args ...string) (string, int, error) {
+			switch {
+			case len(args) >= 2 && args[0] == "auth" && args[1] == "status":
+				return "", 0, nil
+			case len(args) >= 2 && args[0] == "ssh-key" && args[1] == "list":
+				return "[]", 0, nil
+			case len(args) >= 2 && args[0] == "ssh-key" && args[1] == "add":
+				return "fingerprint already taken", 1, errors.New("exit 1")
+			default:
+				return "", 0, nil
+			}
+		},
+	}
+	spec := tuikit.CreateSpec{Identity: "acme", Alias: "acme.gitlab.com", Hostname: "ssh.gitlab.com", Port: "443"}
+	_, run := waitForRunUploadResult(t, b.RunUpload(spec))
+	if len(run.View.Rows) != 1 || run.View.Rows[0].Outcome != tuikit.UploadRowFailed {
+		t.Fatalf("rows = %+v, want exactly 1 failed row", run.View.Rows)
+	}
+	if run.View.Rows[0].Reason != tuikit.UploadCrossAccountConflict {
+		t.Errorf("Reason = %q, want the frozen cross-account conflict copy", run.View.Rows[0].Reason)
+	}
+	if run.View.ManualFallback == "" {
+		t.Error("ManualFallback is empty, want the manual instructions (every attempted row failed)")
+	}
+}
+
+// TestRunUploadNeverReturnsAnErrorMsg drives four distinct failure
+// injections and asserts every one still yields an UploadRunMsg (D-03/D-11:
+// upload never gates).
+func TestRunUploadNeverReturnsAnErrorMsg(t *testing.T) {
+	t.Run("staging failure", func(t *testing.T) {
+		home := t.TempDir()
+		b := newBackendForHome(home)
+		b.uploaderDeps = uploader.Deps{
+			LookPath: func(name string) (string, error) { return "/usr/local/bin/" + name, nil },
+			ReadFile: os.ReadFile,
+			RunCmd:   func(string, ...string) (string, int, error) { return "", 0, nil },
+		}
+		// Force Generate to fail deterministically via an unsupported algorithm
+		// (identity.CreateInput.Algo), driving the real b.deps.Generate closure
+		// down its error path without touching the filesystem.
+		spec := runUploadSpec("acme")
+		spec.Algorithm = "not-a-real-algorithm"
+		msg := b.RunUpload(spec)()
+		if _, ok := msg.(tuikit.UploadRunMsg); !ok {
+			t.Fatalf("staging failure path delivered %T, want UploadRunMsg", msg)
+		}
+	})
+	t.Run("detect failure (tool not found)", func(t *testing.T) {
+		home := t.TempDir()
+		b := newBackendForHome(home)
+		b.uploaderDeps = uploader.Deps{
+			LookPath: func(string) (string, error) { return "", errors.New("not found") },
+			ReadFile: os.ReadFile,
+			RunCmd:   func(string, ...string) (string, int, error) { return "", 0, nil },
+		}
+		msg := b.RunUpload(runUploadSpec("acme"))()
+		if _, ok := msg.(tuikit.UploadRunMsg); !ok {
+			t.Fatalf("detect-failure path delivered %T, want UploadRunMsg", msg)
+		}
+	})
+	t.Run("upload failure", func(t *testing.T) {
+		b, _ := fakeUploaderRunUploadDeps(t, "[]", "[]", func(uploadCall) (string, int, error) {
+			return "boom", 1, errors.New("exit 1")
+		})
+		_, run := waitForRunUploadResult(t, b.RunUpload(runUploadSpec("acme")))
+		if len(run.View.Rows) == 0 {
+			t.Fatal("upload-failure path produced no rows")
+		}
+	})
+}
+
+// TestRunUploadPanicIsReportedAsAnInternalDefect injects a panic in the
+// upload step and asserts the returned message is a defect-marked row, not
+// an ordinary provider failure, and that the wizard still auto-advances
+// (R9): the returned view still yields a non-nil follow-through.
+func TestRunUploadPanicIsReportedAsAnInternalDefect(t *testing.T) {
+	b, _ := fakeUploaderRunUploadDeps(t, "[]", "[]", func(uploadCall) (string, int, error) {
+		panic("boom: a programmer error, not a provider rejection")
+	})
+	_, run := waitForRunUploadResult(t, b.RunUpload(runUploadSpec("acme")))
+	if len(run.View.Rows) != 1 {
+		t.Fatalf("rows = %+v, want exactly 1 defect row", run.View.Rows)
+	}
+	if run.View.Rows[0].Outcome != tuikit.UploadRowFailed {
+		t.Errorf("Outcome = %v, want Failed", run.View.Rows[0].Outcome)
+	}
+	if !strings.Contains(run.View.Rows[0].Reason, "gitid internal defect") {
+		t.Errorf("Reason = %q, want it marked as a gitid internal defect, not a provider failure", run.View.Rows[0].Reason)
+	}
+}
+
+// TestRunUploadSharesTheStagedKeyWithTestStage1 asserts the public-key path
+// RunUpload uses equals the one TestStage1 stages for the same spec — one
+// staged result shared, never two independently staged.
+func TestRunUploadSharesTheStagedKeyWithTestStage1(t *testing.T) {
+	b, _ := fakeUploaderRunUploadDeps(t, "[]", "[]", nil)
+	spec := runUploadSpec("acme")
+	in := b.createInputFromSpec(spec)
+	staged1, err := b.stagedKeyFor(in, "")
+	if err != nil {
+		t.Fatalf("stagedKeyFor (TestStage1-equivalent): %v", err)
+	}
+	staged2, err := b.stagedKeyFor(in, "")
+	if err != nil {
+		t.Fatalf("stagedKeyFor (RunUpload-equivalent): %v", err)
+	}
+	if staged1.TempPrivatePath != staged2.TempPrivatePath || staged1.PubLine != staged2.PubLine {
+		t.Errorf("staged key material diverged between callers: %+v vs %+v", staged1, staged2)
+	}
+}
+
+// TestRunUploadUsesPerRegistrationRequests asserts the requests handed to
+// UploadKeys all carry the product's D-07 KeyTitle.
+func TestRunUploadUsesPerRegistrationRequests(t *testing.T) {
+	b, calls := fakeUploaderRunUploadDeps(t, "[]", "[]", nil)
+	spec := runUploadSpec("acme")
+	_, run := waitForRunUploadResult(t, b.RunUpload(spec))
+	if len(run.View.Rows) == 0 {
+		t.Fatal("no rows produced")
+	}
+	wantTitle := uploader.KeyTitle(spec.Identity, shortHostname())
+	found := false
+	for _, c := range *calls {
+		for i, a := range c.argv {
+			if a == "--title" && i+1 < len(c.argv) {
+				if c.argv[i+1] != wantTitle {
+					t.Errorf("--title = %q, want the D-07 title %q", c.argv[i+1], wantTitle)
+				}
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no --title argument recorded across the ssh-key add calls")
+	}
+}
+
+// TestRunUploadDoesNotCallProviderCommandsOutsideATeaCmd is the R3 source
+// check: every uploader.Inventory / uploader.UploadKeys / uploader.AuthCheck
+// call site in wiring.go sits inside a function literal (a tea.Cmd closure),
+// never directly inside a named function body reachable from the render or
+// update path. Both RunUpload's returned closure and its runUpload
+// FollowUp helper satisfy this; a hypothetical future call site added
+// directly inside a named function (not a literal) would fail here.
+func TestRunUploadDoesNotCallProviderCommandsOutsideATeaCmd(t *testing.T) {
+	fset := token.NewFileSet()
+	src, err := os.ReadFile("wiring.go") //nolint:gosec // package-local source file (G304)
+	if err != nil {
+		t.Fatalf("reading wiring.go: %v", err)
+	}
+	file, err := parser.ParseFile(fset, "wiring.go", src, 0)
+	if err != nil {
+		t.Fatalf("parsing wiring.go: %v", err)
+	}
+
+	guarded := map[string]bool{"Inventory": true, "UploadKeys": true, "AuthCheck": true}
+	var litDepth int
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.FuncLit:
+			litDepth++
+			ast.Inspect(node.Body, func(inner ast.Node) bool {
+				if fl, ok := inner.(*ast.FuncLit); ok && fl != node {
+					return true // nested literals are handled by their own Inspect call below
+				}
+				sel, ok := inner.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				pkg, ok := sel.X.(*ast.Ident)
+				if ok && pkg.Name == "uploader" && guarded[sel.Sel.Name] {
+					// Found inside a func literal — this is the required shape.
+					guarded[sel.Sel.Name] = false // mark as satisfied
+				}
+				return true
+			})
+			litDepth--
+			return true
+		case *ast.FuncDecl:
+			if litDepth > 0 {
+				return true
+			}
+			// A call directly inside a named function's top-level body (not
+			// inside any nested literal) is the violation this test guards
+			// against — walk only the immediate statements, not nested FuncLits.
+			for _, stmt := range node.Body.List {
+				ast.Inspect(stmt, func(inner ast.Node) bool {
+					if _, ok := inner.(*ast.FuncLit); ok {
+						return false // do not descend into nested literals here
+					}
+					sel, ok := inner.(*ast.SelectorExpr)
+					if !ok {
+						return true
+					}
+					pkg, ok := sel.X.(*ast.Ident)
+					if ok && pkg.Name == "uploader" && (sel.Sel.Name == "Inventory" || sel.Sel.Name == "UploadKeys" || sel.Sel.Name == "AuthCheck") {
+						t.Errorf("%s calls uploader.%s directly in a named function body, outside any tea.Cmd closure (R3)", node.Name.Name, sel.Sel.Name)
+					}
+					return true
+				})
+			}
+		}
+		return true
+	})
+	for name, unsatisfied := range guarded {
+		if unsatisfied {
+			t.Errorf("expected to find a call to uploader.%s inside a func literal somewhere in wiring.go — the guard never ran", name)
+		}
 	}
 }

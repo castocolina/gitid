@@ -14,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/castocolina/gitid/internal/upload"
 )
 
 // openWizardUploadReady opens the create wizard ("n") and runs the
@@ -412,6 +414,115 @@ func TestOmittedUploadStateRemovesTheFocusSlot(t *testing.T) {
 	}
 	if got := stepAdvance(order, sshFieldPort, 1); got != wizardFocusKeySource {
 		t.Errorf("Tab from Port = %d, want KeySource %d", got, wizardFocusKeySource)
+	}
+}
+
+// --------------------------------------------------------------------------
+// 09-04-PLAN.md Task 2 — result rows, manual fallback, row budget, auto-advance.
+// --------------------------------------------------------------------------
+
+// TestUploadResultRowsRenderGlyphAndWord asserts each of the three outcomes
+// carries its glyph AND its word — the project's NO_COLOR-legible contract.
+func TestUploadResultRowsRenderGlyphAndWord(t *testing.T) {
+	run := UploadRunView{Rows: []UploadResultRow{
+		{Label: UploadRegistrationLabelAuth, Outcome: UploadRowUploaded},
+		{Label: UploadRegistrationLabelSigning, Outcome: UploadRowAlreadyPresent},
+		{Label: UploadRegistrationLabelCombined, Outcome: UploadRowFailed, Reason: "insufficient scope"},
+	}}
+	got := stripANSI(renderUploadRun(run, "GitHub", 100))
+	for _, want := range []string{
+		"✓ " + UploadRegistrationLabelAuth + " key registered",
+		"✓ " + UploadRegistrationLabelSigning + " key already registered (skipped)",
+		"✗ " + UploadRegistrationLabelCombined + " key registration failed: insufficient scope",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("renderUploadRun output = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
+// TestManualFallbackIsByteIdenticalToInstructions compares the rendered
+// manual-fallback block against upload.Instructions output, asserting exact
+// equality after stripping the heading — UP-02/UP-03's shown==run contract.
+func TestManualFallbackIsByteIdenticalToInstructions(t *testing.T) {
+	for _, provider := range []string{"github.com", "gitlab.com"} {
+		instructions := upload.Instructions(provider)
+		run := UploadRunView{ManualFallback: instructions}
+		got := stripANSI(renderUploadRun(run, provider, 100))
+		if !strings.HasPrefix(got, " "+UploadManualHeading+"\n") {
+			t.Fatalf("rendered fallback = %q, want it to start with the frozen heading", got)
+		}
+		body := strings.TrimPrefix(got, " "+UploadManualHeading+"\n")
+		if body != instructions {
+			t.Errorf("fallback body = %q, want byte-identical to upload.Instructions(%q) = %q", body, provider, instructions)
+		}
+	}
+}
+
+// TestUploadSectionFitsTheFrameInTheWorstCase asserts the worst realistic
+// case (two announce lines + two result rows + the GitHub instructions
+// block) fits frameBodyRows(30), and separately exercises the overflow
+// branch with a deliberately oversized fallback block.
+func TestUploadSectionFitsTheFrameInTheWorstCase(t *testing.T) {
+	run := UploadRunView{
+		Rows: []UploadResultRow{
+			{Label: UploadRegistrationLabelAuth, Command: "gh ssh-key add ~/.ssh/id_ed25519_acme.pub --title t --type authentication", Outcome: UploadRowUploaded},
+			{Label: UploadRegistrationLabelSigning, Command: "gh ssh-key add ~/.ssh/id_ed25519_acme.pub --title t --type signing", Outcome: UploadRowFailed, Reason: "insufficient scope"},
+		},
+		ManualFallback: upload.Instructions("github.com"),
+	}
+	rendered := renderUploadRun(run, "GitHub", 100)
+	lines := strings.Count(rendered, "\n")
+	if lines > frameBodyRows(minFrameHeight) {
+		t.Errorf("rendered upload section = %d lines, want at most %d (frameBodyRows(30))", lines, frameBodyRows(minFrameHeight))
+	}
+
+	// Overflow branch: an artificially oversized fallback must still stay
+	// within the same budget by routing through the bounded viewport.
+	oversizedRun := UploadRunView{ManualFallback: strings.Repeat("a very long manual instruction line\n", 40)}
+	oversized := renderUploadRun(oversizedRun, "GitHub", 100)
+	if got := strings.Count(oversized, "\n"); got > frameBodyRows(minFrameHeight) {
+		t.Errorf("oversized fallback rendered %d lines, want the viewport to cap it at %d", got, frameBodyRows(minFrameHeight))
+	}
+}
+
+// TestEveryUploadTerminalStateAutoAdvances covers success, partial failure,
+// total failure, degraded, already-complete, and skipped: every one yields
+// testRunning1 plus a non-nil command once UploadRunMsg arrives.
+func TestEveryUploadTerminalStateAutoAdvances(t *testing.T) {
+	cases := []struct {
+		name string
+		view UploadRunView
+	}{
+		{"success", UploadRunView{Rows: []UploadResultRow{{Outcome: UploadRowUploaded}}}},
+		{"partial failure", UploadRunView{Rows: []UploadResultRow{{Outcome: UploadRowUploaded}, {Outcome: UploadRowFailed}}}},
+		{"total failure", UploadRunView{Rows: []UploadResultRow{{Outcome: UploadRowFailed}}, ManualFallback: "x"}},
+		{"degraded", UploadRunView{Rows: []UploadResultRow{{Outcome: UploadRowUploaded}}, InventoryDegraded: true}},
+		{"already-complete", UploadRunView{AlreadyComplete: true}},
+		{"skipped", UploadRunView{Skipped: true}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := openWizardAtTestStep(t)
+			a, cmd := press(t, a, "enter") // testIdle -> testUpload, dispatches RunUpload
+			if cmd == nil {
+				t.Fatal("setup: enter must dispatch a non-nil cmd")
+			}
+			cmd() // drain the (possibly UploadStartedMsg-shaped) setup dispatch
+
+			model, nextCmd := a.Update(UploadRunMsg{View: tc.view})
+			next, ok := model.(App)
+			if !ok {
+				t.Fatalf("Update(UploadRunMsg) returned %T, want App", model)
+			}
+			m := identModel(t, next)
+			if m.wizard.testPhase != testRunning1 {
+				t.Errorf("testPhase = %q, want testRunning1", m.wizard.testPhase)
+			}
+			if nextCmd == nil {
+				t.Fatal("UploadRunMsg handler must dispatch a non-nil cmd (TestStage1)")
+			}
+		})
 	}
 }
 

@@ -1157,6 +1157,10 @@ type wizardModel struct {
 	uploadEligibilityHost string
 	uploadChecked         bool
 	uploadRun             UploadRunView
+	// uploadStarted holds the R7 announce-first command list: the commands
+	// UploadStartedMsg carried, rendered while testPhase == testUpload and
+	// the follow-up upload command has not yet answered.
+	uploadStarted []string
 }
 
 // newWizardBase builds the wizard's shared shell — every field newWizard AND
@@ -2206,11 +2210,19 @@ func (m identitiesModel) handleMsg(msg tea.Msg, s DemoState) keyResult {
 		}
 		return keyResult{model: m}
 	}
+	if started, ok := msg.(UploadStartedMsg); ok && m.wizard.testPhase == testUpload {
+		// R7: the announce lines must be observable BEFORE any ssh-key add
+		// invocation. This message arrives first; FollowUp (the actual
+		// upload) is dispatched only after this render, never before.
+		m.wizard.uploadStarted = started.Commands
+		return keyResult{model: m, cmd: started.FollowUp}
+	}
 	if run, ok := msg.(UploadRunMsg); ok && m.wizard.testPhase == testUpload {
 		// D-02: no prompt, no cancel timer, no actionable key — the upload
 		// beat renders its result row(s) and auto-advances into the
 		// EXISTING testRunning1 -> TestStage1 gate with NO user keystroke.
 		m.wizard.uploadRun = run.View
+		m.wizard.uploadStarted = nil
 		m.wizard.testPhase = testRunning1
 		return keyResult{model: m, cmd: m.wizard.backend.TestStage1(m.wizard.spec())}
 	}
@@ -4164,15 +4176,38 @@ func wizardChordHint(step int) string {
 // all when uploadRowVisible is false (the omitted shape: no row, not an
 // empty placeholder) — the row simply appears once the async eligibility
 // answer lands (checkUploadEligibility, called from Update, never View).
-// renderUploadRun renders D-02's completed announce-and-do rows. It is
+
+// uploadRunHasContent reports whether run carries anything worth a row:
+// per-key results, the collapsed already-complete line, the inventory-
+// degraded notice, or the manual-fallback block.
+func uploadRunHasContent(run UploadRunView) bool {
+	return len(run.Rows) > 0 || run.AlreadyComplete || run.InventoryDegraded || run.ManualFallback != ""
+}
+
+// renderUploadRun renders D-02's completed announce-and-do rows plus every
+// later-plan addition: the D-15 inventory-degraded notice, the D-16
+// AlreadyComplete collapse, and the manual-fallback block. It is
 // deliberately separate from the transient testUpload branch in
 // renderWizard: UploadRunMsg immediately changes testPhase to testRunning1
 // and starts the existing stage-1 command, so the rows must remain visible
 // while that command runs instead of disappearing with the phase change.
-func renderUploadRun(run UploadRunView) string {
+//
+// 09-UI-SPEC.md's overflow backstop: when the combined rows would exceed
+// the pane's remaining row budget, the manual-fallback block routes through
+// the same bounded viewport mechanism the wizard's proof text uses rather
+// than pushing the frame's fixed 100x30 geometry.
+func renderUploadRun(run UploadRunView, providerName string, width int) string {
 	var b strings.Builder
+	if run.InventoryDegraded {
+		b.WriteString(" " + styleWarning.Render(fmt.Sprintf(UploadInventoryDegradedFmt, providerName)) + "\n")
+	}
+	if run.AlreadyComplete {
+		b.WriteString(" " + styleHealthy.Render(fmt.Sprintf(UploadAlreadyCompleteFmt, providerName)) + "\n")
+	}
 	for _, row := range run.Rows {
-		b.WriteString(" " + styleFaint.Render(fmt.Sprintf(UploadRunningLineFmt, row.Command)) + "\n")
+		if row.Command != "" {
+			b.WriteString(" " + styleFaint.Render(fmt.Sprintf(UploadRunningLineFmt, row.Command)) + "\n")
+		}
 	}
 	for _, row := range run.Rows {
 		switch row.Outcome {
@@ -4182,6 +4217,22 @@ func renderUploadRun(run UploadRunView) string {
 			b.WriteString(" " + styleHealthy.Render(fmt.Sprintf(UploadResultSkippedFmt, row.Label)) + "\n")
 		case UploadRowFailed:
 			b.WriteString(" " + styleError.Render(fmt.Sprintf(UploadResultFailedFmt, row.Label, row.Reason)) + "\n")
+		}
+	}
+	if run.ManualFallback != "" {
+		b.WriteString(" " + styleBold.Render(UploadManualHeading) + "\n")
+		fallback := run.ManualFallback
+		rendered := strings.Count(b.String(), "\n")
+		budget := frameBodyRows(minFrameHeight) - rendered - 2
+		fallbackLines := strings.Count(fallback, "\n") + 1
+		if budget > 0 && fallbackLines > budget {
+			v := ExactTextViewport{Text: strings.TrimSuffix(fallback, "\n"), VisibleLines: budget, Width: maxInt(20, width-4)}
+			b.WriteString(v.Clamp().View() + "\n")
+		} else {
+			b.WriteString(fallback)
+			if !strings.HasSuffix(fallback, "\n") {
+				b.WriteString("\n")
+			}
 		}
 	}
 	return b.String()
@@ -4442,21 +4493,23 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 		b.WriteString(renderHostBlockPreview(m.backend, w.form.sshHost(), w.form.hostname.Value(), w.form.port.Value(), w.keyPath(), width))
 	case 1:
 		if w.testPhase == testUpload {
-			// D-02: this transient pre-result beat has no prompt, cancel timer,
-			// or actionable key. The completed upload rows render below while
-			// the existing stage-1 command runs (renderUploadRun), so the
-			// announce/result remains observable after UploadRunMsg immediately
-			// auto-advances testPhase to testRunning1.
+			// R7: the announce lines are observable HERE, before the follow-up
+			// upload command has even started — UploadStartedMsg arrives before
+			// any ssh-key add invocation, so this render is the only place the
+			// user ever sees "Running: <command>" as a live state.
+			for _, cmd := range w.uploadStarted {
+				b.WriteString(" " + styleFaint.Render(fmt.Sprintf(UploadRunningLineFmt, cmd)) + "\n")
+			}
 			return b.String()
 		}
 		// Keep the announce/result visible while stage 1 and stage 2 run,
-		// then reclaim its two rows once the completed stage-2 evidence and
-		// Next button need the fixed 100x30 pane budget. The upload result
-		// was already observable during the autonomous beat; keeping it on
-		// the final proof screen would push the existing gate's action below
-		// the viewport.
-		if len(w.uploadRun.Rows) > 0 && w.testPhase != testStage2 {
-			b.WriteString(renderUploadRun(w.uploadRun))
+		// then reclaim its rows once the completed stage-2 evidence and Next
+		// button need the fixed 100x30 pane budget. The upload result was
+		// already observable during the autonomous beat; keeping it on the
+		// final proof screen would push the existing gate's action below the
+		// viewport.
+		if uploadRunHasContent(w.uploadRun) && w.testPhase != testStage2 {
+			b.WriteString(renderUploadRun(w.uploadRun, w.uploadEligibility.ProviderName, width))
 		}
 		if w.proof.Text != "" {
 			b.WriteString(" " + styleFaint.Render("Demo failure control — locked (nothing left to simulate)") + "\n")

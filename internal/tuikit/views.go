@@ -1,5 +1,7 @@
 package tuikit
 
+import tea "charm.land/bubbletea/v2"
+
 // views.go defines the tuikit-LOCAL view DTOs every Backend method
 // signature speaks.
 //
@@ -707,6 +709,15 @@ type UploadRunView struct {
 	InventoryDegraded bool
 	ManualFallback    string
 	Skipped           bool
+	AlreadyComplete   bool
+}
+
+// UploadStartedMsg is delivered before any provider registration command runs.
+// FollowUp executes only after the model has rendered Commands, preserving
+// D-02's announce-before-run contract.
+type UploadStartedMsg struct {
+	Commands []string
+	FollowUp tea.Cmd
 }
 
 // UploadRunMsg completes the asynchronous upload beat Backend.RunUpload

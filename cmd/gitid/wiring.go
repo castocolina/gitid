@@ -1327,117 +1327,176 @@ func shortHostname() string {
 	return h
 }
 
-// RunUpload dispatches the confirmed autonomous upload beat: it stages the
-// key through the SAME b.stagedKeyFor cache TestStage1 uses (never a second
-// key-material read), builds the shown-and-run command through
-// uploader.CommandPreview/UploadKey (one buildArgs, so shown==run is
-// structural), and runs the upload. It NEVER returns an error that could
-// stop the wizard (D-03/D-11): every failure — staging, detect, auth,
-// upload — is reported as a failed UploadResultRow inside the delivered
-// UploadRunMsg.
-func toUploadRunView(results []uploader.RegistrationResult) tuikit.UploadRunView {
-	rows := make([]tuikit.UploadResultRow, 0, len(results))
-	for _, result := range results {
-		row := tuikit.UploadResultRow{Command: result.Command}
-		switch result.Registration {
-		case uploader.RegistrationAuthentication:
-			row.Registration = tuikit.UploadRegistrationAuthentication
-			row.Label = tuikit.UploadRegistrationLabelAuth
-		case uploader.RegistrationSigning:
-			row.Registration = tuikit.UploadRegistrationSigning
-			row.Label = tuikit.UploadRegistrationLabelSigning
-		case uploader.RegistrationCombined:
-			row.Registration = tuikit.UploadRegistrationCombined
-			row.Label = tuikit.UploadRegistrationLabelCombined
-		}
-		switch result.Outcome {
-		case uploader.OutcomeUploaded:
-			row.Outcome = tuikit.UploadRowUploaded
-		case uploader.OutcomeAlreadyPresent:
-			row.Outcome = tuikit.UploadRowAlreadyPresent
-		default:
-			row.Outcome = tuikit.UploadRowFailed
-			row.Reason = result.Output
-			if row.Reason == "" && result.Err != nil {
-				row.Reason = result.Err.Error()
-			}
-		}
-		rows = append(rows, row)
+// RunUpload dispatches the confirmed autonomous upload beat. The existing
+// stage-1/stage-2 gate performs D-17's ssh -T verification immediately after
+// this command auto-advances the wizard, so no duplicate probe belongs here.
+func toUploadResultRow(tool uploader.Tool, result uploader.RegistrationResult, providerHost, home string) tuikit.UploadResultRow {
+	row := tuikit.UploadResultRow{Command: result.Command}
+	switch result.Registration {
+	case uploader.RegistrationAuthentication:
+		row.Registration, row.Label = tuikit.UploadRegistrationAuthentication, tuikit.UploadRegistrationLabelAuth
+	case uploader.RegistrationSigning:
+		row.Registration, row.Label = tuikit.UploadRegistrationSigning, tuikit.UploadRegistrationLabelSigning
+	case uploader.RegistrationCombined:
+		row.Registration, row.Label = tuikit.UploadRegistrationCombined, tuikit.UploadRegistrationLabelCombined
 	}
-	return tuikit.UploadRunView{Rows: rows}
+	switch result.Outcome {
+	case uploader.OutcomeUploaded:
+		if uploader.ClassifyGHDuplicate(result) {
+			row.Outcome = tuikit.UploadRowAlreadyPresent
+		} else {
+			row.Outcome = tuikit.UploadRowUploaded
+		}
+	case uploader.OutcomeAlreadyPresent:
+		row.Outcome = tuikit.UploadRowAlreadyPresent
+	default:
+		row.Outcome = tuikit.UploadRowFailed
+		switch uploader.ClassifyUploadFailure(tool, result.Registration, result) {
+		case uploader.FailureScopeAuth:
+			row.Reason = fmt.Sprintf(tuikit.UploadScopeRemediationAuthFmt, providerHost)
+		case uploader.FailureScopeSigning:
+			row.Reason = fmt.Sprintf(tuikit.UploadScopeRemediationSigningFmt, providerHost)
+		case uploader.FailureCrossAccountConflict:
+			row.Reason = tuikit.UploadCrossAccountConflict
+		default:
+			raw := result.Output
+			if raw == "" && result.Err != nil {
+				raw = result.Err.Error()
+			}
+			row.Reason = uploader.RedactCLIOutput(raw, home, 58)
+		}
+	}
+	return row
+}
+
+func uploadFailureView(reason, provider string) tuikit.UploadRunView {
+	return tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{{
+		Registration: tuikit.UploadRegistrationAuthentication,
+		Label:        tuikit.UploadRegistrationLabelAuth,
+		Outcome:      tuikit.UploadRowFailed,
+		Reason:       reason,
+	}}, ManualFallback: upload.Instructions(provider)}
+}
+
+func desiredRegistrations(tool uploader.Tool) []uploader.Registration {
+	if tool == uploader.ToolGLab {
+		return []uploader.Registration{uploader.RegistrationCombined}
+	}
+	return []uploader.Registration{uploader.RegistrationAuthentication, uploader.RegistrationSigning}
 }
 
 func (b *realBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
-	return func() tea.Msg {
-		provider, _ := uploader.ProviderForHostname(spec.Hostname)
+	return func() (msg tea.Msg) {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				// Expected provider errors become ordinary result rows above. This
+				// branch keeps a gitid programming defect visible while preserving
+				// the never-gates guarantee; laundering it as a provider rejection
+				// would hide the defect the recover is intended to surface.
+				msg = tuikit.UploadRunMsg{View: uploadFailureView("gitid internal defect: "+uploader.RedactCLIOutput(fmt.Sprint(recovered), b.home, 58), spec.Hostname)}
+			}
+		}()
+
+		// D-13: Omitted (provider not gated) and Disabled (no matching CLI on
+		// PATH) both skip autonomy entirely. Unauth is deliberately NOT
+		// resolved here a second time (the checked path reached RunUpload
+		// only after UploadEligibility's async, memoized canonical-host auth
+		// probe already answered; rechecking would double provider traffic
+		// and could disagree with the one operation the user approved) — an
+		// unauthenticated attempt simply fails naturally inside UploadKeys
+		// and is classified by ClassifyUploadFailure below.
+		provider, canonicalHost := uploader.ProviderForHostname(spec.Hostname)
 		if provider == "" {
-			// D-13: not a gated provider — nothing to run. The wizard only
-			// reaches this method when the checkbox was checked, which
-			// itself requires a non-omitted eligibility answer, but this
-			// stays a safe no-op degrade rather than an assumption.
+			// Omitted: the section is absent entirely, so no fallback either.
 			return tuikit.UploadRunMsg{View: tuikit.UploadRunView{Skipped: true}}
+		}
+		tool, toolPath, status := uploader.DetectFor(provider, b.uploaderDeps)
+		if status == uploader.AuthToolNotFound {
+			return tuikit.UploadRunMsg{View: tuikit.UploadRunView{Skipped: true, ManualFallback: upload.Instructions(spec.Hostname)}}
 		}
 
 		in := b.createInputFromSpec(spec)
 		staged, err := b.stagedKeyFor(in, spec.ReuseKeyPath)
 		if err != nil {
-			return tuikit.UploadRunMsg{View: tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{{
-				Registration: tuikit.UploadRegistrationAuthentication,
-				Label:        tuikit.UploadRegistrationLabelAuth,
-				Outcome:      tuikit.UploadRowFailed,
-				Reason:       err.Error(),
-			}}}}
+			return tuikit.UploadRunMsg{View: uploadFailureView(err.Error(), spec.Hostname)}
 		}
-		// SECURITY (T-09-02-02/ASVS V5): the key-file operand is taken from
-		// the staged result's PUBLIC-key field — never a private-key field,
-		// never a string-appended suffix.
 		pubPath := staged.FinalPubPath
 		if staged.PrivPEM != nil {
-			// Freshly generated (not reused) key: FinalPubPath is only the
-			// EVENTUAL ~/.ssh destination — nothing is written there until
-			// the wizard's confirmed commit persists it (CR-02/CR-08: the
-			// real ~/.ssh stays untouched until explicit consent). Uploader's
-			// ASVS V5 content validation (09-03-PLAN.md Task 1) needs a real
-			// file to read, so stage a temp .pub sibling next to the
-			// already-staged temp private key — the same hermetic staging
-			// directory TestStage1 already trusts for TempPrivatePath —
-			// rather than reading a file that does not exist yet.
 			tempPub := staged.TempPrivatePath + ".pub"
 			if !b.deps.PubExists(tempPub) {
 				if werr := b.deps.WritePub(tempPub, staged.PubLine); werr != nil {
-					return tuikit.UploadRunMsg{View: tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{{
-						Registration: tuikit.UploadRegistrationAuthentication,
-						Label:        tuikit.UploadRegistrationLabelAuth,
-						Outcome:      tuikit.UploadRowFailed,
-						Reason:       werr.Error(),
-					}}}}
+					return tuikit.UploadRunMsg{View: uploadFailureView(werr.Error(), spec.Hostname)}
 				}
 			}
 			pubPath = tempPub
 		}
-
-		tool, toolPath, status := uploader.DetectFor(provider, b.uploaderDeps)
-		if status == uploader.AuthToolNotFound {
-			return tuikit.UploadRunMsg{View: tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{{
-				Registration: tuikit.UploadRegistrationAuthentication,
-				Label:        tuikit.UploadRegistrationLabelAuth,
-				Outcome:      tuikit.UploadRowFailed,
-				Reason:       fmt.Sprintf("%s not found on PATH", providerToolName(provider)),
-			}}}}
+		pubBytes, err := b.uploaderDeps.ReadFile(pubPath)
+		if err != nil {
+			return tuikit.UploadRunMsg{View: uploadFailureView(err.Error(), spec.Hostname)}
+		}
+		pubLine := string(pubBytes)
+		wanted := desiredRegistrations(tool)
+		existing, err := uploader.Inventory(tool, toolPath, b.uploaderDeps)
+		degraded := err != nil
+		missing := wanted
+		if !degraded {
+			missing = uploader.MissingRegistrations(existing, pubLine, wanted)
+		}
+		if len(missing) == 0 {
+			return tuikit.UploadRunMsg{View: tuikit.UploadRunView{AlreadyComplete: true}}
 		}
 
-		// The checked path reached RunUpload only after UploadEligibility's
-		// async, memoized canonical-host auth probe answered Ready. Do not
-		// issue a second `auth status` here: the probe is the authority for
-		// this wizard beat, and rechecking would double its provider traffic
-		// (and make the PTY's observed eligibility command differ from the
-		// one operation the user approved). DetectFor still resolves the
-		// command path for CommandPreview/UploadKey, but never probes auth.
-
 		title := uploader.KeyTitle(spec.Identity, shortHostname())
-		results := uploader.UploadKeys(tool, toolPath, pubPath,
-			uploader.RegistrationRequestsWithTitle(title, uploader.RegistrationAuthentication), b.uploaderDeps)
-		return tuikit.UploadRunMsg{View: toUploadRunView(results)}
+		reqs := uploader.RegistrationRequestsWithTitle(title, missing...)
+		commands := make([]string, 0, len(reqs))
+		for _, req := range reqs {
+			keyType, typeErr := req.Registration.KeyTypeFor(tool)
+			if typeErr != nil {
+				return tuikit.UploadRunMsg{View: uploadFailureView(typeErr.Error(), spec.Hostname)}
+			}
+			commands = append(commands, uploader.CommandPreview(tool, toolPath, pubPath, req.Title, keyType))
+		}
+		// D-02 requires an observable announce before the first ssh-key add;
+		// a terminal message could only arrive after the subprocess returned.
+		return tuikit.UploadStartedMsg{Commands: commands, FollowUp: b.runUpload(spec, tool, toolPath, pubPath, pubLine, wanted, existing, degraded, canonicalHost, reqs)}
+	}
+}
+
+func (b *realBackend) runUpload(spec tuikit.CreateSpec, tool uploader.Tool, toolPath, pubPath, pubLine string, wanted []uploader.Registration, existing []uploader.ExistingKey, degraded bool, canonicalHost string, reqs []uploader.RegistrationRequest) tea.Cmd {
+	return func() (msg tea.Msg) {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				msg = tuikit.UploadRunMsg{View: uploadFailureView("gitid internal defect: "+uploader.RedactCLIOutput(fmt.Sprint(recovered), b.home, 58), spec.Hostname)}
+			}
+		}()
+		results := uploader.UploadKeys(tool, toolPath, pubPath, reqs, b.uploaderDeps)
+		byRegistration := make(map[uploader.Registration]tuikit.UploadResultRow, len(results))
+		for _, result := range results {
+			byRegistration[result.Registration] = toUploadResultRow(tool, result, canonicalHost, b.home)
+		}
+		rows := make([]tuikit.UploadResultRow, 0, len(wanted))
+		for _, registration := range wanted {
+			if row, ok := byRegistration[registration]; ok {
+				rows = append(rows, row)
+				continue
+			}
+			if !degraded && uploader.HasRegistration(existing, pubLine, registration) {
+				rows = append(rows, toUploadResultRow(tool, uploader.RegistrationResult{Registration: registration, Outcome: uploader.OutcomeAlreadyPresent}, canonicalHost, b.home))
+			}
+		}
+		view := tuikit.UploadRunView{Rows: rows, InventoryDegraded: degraded}
+		allFailed := len(results) > 0
+		for _, row := range results {
+			if row.Outcome != uploader.OutcomeFailed {
+				allFailed = false
+			}
+		}
+		if allFailed {
+			// A partial success has a per-row remediation; repeating the full
+			// instruction block would consume five rows without adding action.
+			view.ManualFallback = upload.Instructions(spec.Hostname)
+		}
+		return tuikit.UploadRunMsg{View: view}
 	}
 }
 
