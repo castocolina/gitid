@@ -7,6 +7,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -5573,4 +5575,261 @@ func TestRunUploadDoesNotCallProviderCommandsOutsideATeaCmd(t *testing.T) {
 			t.Errorf("expected to find a call to uploader.%s inside a func literal somewhere in wiring.go — the guard never ran", name)
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// 09-04-PLAN.md Task 3 — D-17 post-upload confirmation, D-18 no persisted state.
+// ---------------------------------------------------------------------------
+
+// phaseAwareUploadBackend builds a realBackend whose fake uploader.Deps
+// records each Inventory() INVOCATION (not each of GH's two underlying
+// RunCmd calls) TOGETHER WITH the backend's own currentUploadPhase() at
+// call time (R8's mechanism: the backend sets uploadPhase on itself
+// immediately before each Inventory call; the fake reads it back through
+// the SAME backend value the test holds — no production behavior changes).
+// The pre-upload dedupe read always reports nothing present (so both
+// registrations are attempted). confirmationMisses controls how many
+// CONFIRMATION-phase Inventory() invocations report the key as still
+// absent before a later one reports it present; confirmReadFails makes
+// every confirmation-phase invocation fail instead.
+func phaseAwareUploadBackend(t *testing.T, confirmationMisses int, confirmReadFails bool) (*realBackend, *[]string) {
+	t.Helper()
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	b.uploadConfirmSleep = func(time.Duration) {} // no real sleep in tests
+
+	// Stage the key up front so the fake's inventory JSON can carry the
+	// EXACT PubLine RunUpload will itself compute for the same spec.
+	in := b.createInputFromSpec(runUploadSpec("acme"))
+	staged, err := b.stagedKeyFor(in, "")
+	if err != nil {
+		t.Fatalf("stagedKeyFor: %v", err)
+	}
+	presentJSON := fmt.Sprintf(`[{"id":1,"title":"gitid: acme @ host","key":%q}]`, strings.TrimSpace(staged.PubLine))
+
+	var mu sync.Mutex
+	var phases []string
+	confirmationInvocations := 0
+	var inFlightConfirmationCall bool
+	b.uploaderDeps = uploader.Deps{
+		LookPath: func(name string) (string, error) { return "/usr/local/bin/" + name, nil },
+		ReadFile: os.ReadFile,
+		RunCmd: func(_ string, args ...string) (string, int, error) {
+			switch {
+			case len(args) >= 2 && args[0] == "auth" && args[1] == "status":
+				return "", 0, nil
+			case len(args) >= 2 && args[0] == "api" && args[1] == "user/keys":
+				// GH's Inventory() always reads user/keys FIRST — record
+				// the phase and decide this invocation's outcome exactly
+				// once, here, then reuse the decision for the paired
+				// user/ssh_signing_keys call below.
+				phase := b.currentUploadPhase()
+				mu.Lock()
+				phases = append(phases, phase)
+				mu.Unlock()
+				inFlightConfirmationCall = phase == uploadPhaseConfirmation
+				if inFlightConfirmationCall {
+					confirmationInvocations++
+					if confirmReadFails {
+						return "", 1, errors.New("network blip")
+					}
+					if confirmationInvocations <= confirmationMisses {
+						return "[]", 0, nil
+					}
+					return presentJSON, 0, nil
+				}
+				return "[]", 0, nil // dedupe phase: nothing present yet
+			case len(args) >= 2 && args[0] == "api" && args[1] == "user/ssh_signing_keys":
+				if inFlightConfirmationCall {
+					if confirmReadFails {
+						return "", 1, errors.New("network blip")
+					}
+					if confirmationInvocations <= confirmationMisses {
+						return "[]", 0, nil
+					}
+					return presentJSON, 0, nil
+				}
+				return "[]", 0, nil
+			case len(args) >= 2 && args[0] == "ssh-key" && args[1] == "add":
+				return "", 0, nil
+			default:
+				return "", 0, nil
+			}
+		},
+	}
+	return b, &phases
+}
+
+// countPhase counts how many recorded invocations belong to phase.
+func countPhase(phases []string, phase string) int {
+	n := 0
+	for _, p := range phases {
+		if p == phase {
+			n++
+		}
+	}
+	return n
+}
+
+// TestPostUploadConfirmationRetriesExactlyOnce proves D-17/R8: a fake whose
+// inventory returns the missing registration on the first two confirmation
+// reads records exactly 2 confirmation-phase reads (never 3), exactly 1
+// dedupe-phase read, and the resulting row is still an uploaded outcome
+// carrying an unconfirmed reason.
+func TestPostUploadConfirmationRetriesExactlyOnce(t *testing.T) {
+	b, phases := phaseAwareUploadBackend(t, 2, false)
+	_, run := waitForRunUploadResult(t, b.RunUpload(runUploadSpec("acme")))
+
+	confirmCount := countPhase(*phases, uploadPhaseConfirmation)
+	dedupeCount := countPhase(*phases, uploadPhaseDedupe)
+	if confirmCount != 2 {
+		t.Errorf("confirmation-phase reads = %d, want exactly 2 (one bounded retry)", confirmCount)
+	}
+	if dedupeCount != 1 {
+		t.Errorf("dedupe-phase reads = %d, want exactly 1", dedupeCount)
+	}
+	foundUnconfirmed := false
+	for _, row := range run.View.Rows {
+		if strings.Contains(row.Reason, "not yet visible") {
+			foundUnconfirmed = true
+			if row.Outcome != tuikit.UploadRowUploaded {
+				t.Errorf("unconfirmed row Outcome = %v, want UploadRowUploaded (a successful upload, not a failure)", row.Outcome)
+			}
+		}
+	}
+	if !foundUnconfirmed {
+		t.Errorf("no row carries the unconfirmed reason; rows=%+v", run.View.Rows)
+	}
+}
+
+// TestPostUploadConfirmationSucceedsOnFirstRead proves the happy path:
+// exactly 1 confirmation-phase read, exactly 1 dedupe-phase read, and no
+// row carries an unconfirmed reason.
+func TestPostUploadConfirmationSucceedsOnFirstRead(t *testing.T) {
+	b, phases := phaseAwareUploadBackend(t, 0, false)
+	_, run := waitForRunUploadResult(t, b.RunUpload(runUploadSpec("acme")))
+
+	confirmCount := countPhase(*phases, uploadPhaseConfirmation)
+	dedupeCount := countPhase(*phases, uploadPhaseDedupe)
+	if confirmCount != 1 {
+		t.Errorf("confirmation-phase reads = %d, want exactly 1", confirmCount)
+	}
+	if dedupeCount != 1 {
+		t.Errorf("dedupe-phase reads = %d, want exactly 1", dedupeCount)
+	}
+	for _, row := range run.View.Rows {
+		if strings.Contains(row.Reason, "not yet visible") {
+			t.Errorf("row carries an unconfirmed reason on the first-read-success path: %+v", row)
+		}
+	}
+}
+
+// TestConfirmationFailureDegradesInsteadOfGating proves a confirmation read
+// error sets InventoryDegraded, records exactly 1 confirmation-phase read
+// (never retried a second time on a FAILING read), and the returned message
+// still auto-advances the wizard (a plain UploadRunMsg).
+func TestConfirmationFailureDegradesInsteadOfGating(t *testing.T) {
+	b, phases := phaseAwareUploadBackend(t, 0, true)
+	msg := b.RunUpload(runUploadSpec("acme"))()
+	started, ok := msg.(tuikit.UploadStartedMsg)
+	if !ok {
+		t.Fatalf("RunUpload() delivered %T, want UploadStartedMsg", msg)
+	}
+	run, ok := started.FollowUp().(tuikit.UploadRunMsg)
+	if !ok {
+		t.Fatalf("FollowUp() delivered %T, want UploadRunMsg (never gates)", started.FollowUp())
+	}
+	if !run.View.InventoryDegraded {
+		t.Error("InventoryDegraded = false, want true (the confirmation read failed)")
+	}
+	confirmCount := countPhase(*phases, uploadPhaseConfirmation)
+	if confirmCount != 1 {
+		t.Errorf("confirmation-phase reads = %d, want exactly 1 (a failing read is never retried)", confirmCount)
+	}
+}
+
+// TestUploadRowOutcomeStillHasExactlyThreeValues asserts no fourth outcome
+// value was added for the D-17 unconfirmed case — it stays informational
+// text on the existing Uploaded/AlreadyPresent outcome.
+func TestUploadRowOutcomeStillHasExactlyThreeValues(t *testing.T) {
+	// tuikit.UploadRowFailed is declared last in the const block (views.go);
+	// if a fourth value existed it would be the next iota after it.
+	if tuikit.UploadRowFailed != 2 {
+		t.Fatalf("UploadRowFailed = %d, want 2 (the third and last of exactly 3 values: 0,1,2)", tuikit.UploadRowFailed)
+	}
+}
+
+// TestNoPersistedUploadState is the mechanical D-18 enforcement: a full
+// RunUpload against a seeded temporary HOME, snapshotting the RECURSIVE
+// path+content-hash listing of the whole HOME before and after, asserts
+// byte-identical equality — no new file, no new field in any written
+// artifact. A future plan that quietly caches an upload receipt fails here
+// by name.
+func TestNoPersistedUploadState(t *testing.T) {
+	home := t.TempDir()
+	seedSSHDir(t, home)
+	b := newBackendForHome(home)
+	b.uploadConfirmSleep = func(time.Duration) {}
+	b.uploaderDeps = uploader.Deps{
+		LookPath: func(name string) (string, error) { return "/usr/local/bin/" + name, nil },
+		ReadFile: os.ReadFile,
+		RunCmd: func(_ string, args ...string) (string, int, error) {
+			switch {
+			case len(args) >= 2 && args[0] == "auth" && args[1] == "status":
+				return "", 0, nil
+			case len(args) >= 2 && args[0] == "api":
+				return "[]", 0, nil
+			case len(args) >= 2 && args[0] == "ssh-key" && args[1] == "add":
+				return "", 0, nil
+			default:
+				return "", 0, nil
+			}
+		},
+	}
+
+	before := snapshotHomeRecursive(t, home)
+	_, run := waitForRunUploadResult(t, b.RunUpload(runUploadSpec("acme")))
+	if len(run.View.Rows) == 0 {
+		t.Fatal("setup: RunUpload produced no rows")
+	}
+	after := snapshotHomeRecursive(t, home)
+
+	if !reflect.DeepEqual(before, after) {
+		t.Errorf("HOME changed across RunUpload (D-18 violation):\nbefore=%v\nafter=%v", before, after)
+	}
+}
+
+// snapshotHomeRecursive walks home recursively and returns a map from each
+// relative path to its content SHA-256 hash (directories map to an empty
+// sentinel hash) — the byte-preserving proof TestNoPersistedUploadState
+// needs. The backend's OS-temp-rooted staging directory (stagingDir) is
+// deliberately OUTSIDE home and is not part of this snapshot, matching the
+// CR-02 contract that staging never touches the real HOME.
+func snapshotHomeRecursive(t *testing.T, home string) map[string]string {
+	t.Helper()
+	out := make(map[string]string)
+	err := filepath.WalkDir(home, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, rerr := filepath.Rel(home, path)
+		if rerr != nil {
+			return rerr
+		}
+		if d.IsDir() {
+			out[rel] = "<dir>"
+			return nil
+		}
+		data, rerr := os.ReadFile(path) //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+		if rerr != nil {
+			return rerr
+		}
+		sum := sha256.Sum256(data)
+		out[rel] = hex.EncodeToString(sum[:])
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("snapshotHomeRecursive(%s): %v", home, err)
+	}
+	return out
 }

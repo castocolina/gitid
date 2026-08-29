@@ -213,7 +213,54 @@ type realBackend struct {
 	// fake uploader.Deps to drive UploadEligibility/RunUpload without a real
 	// gh/glab on PATH, mirroring how b.deps itself is test-overridable.
 	uploaderDeps uploader.Deps
+
+	// uploadConfirmSleep is a test-only override for the D-17 post-upload
+	// confirmation retry's bounded wait — nil means the real
+	// uploadConfirmRetryInterval, following the archiveClockNow precedent
+	// (above) so the unit test can drive the interval to zero instead of
+	// sleeping in real time.
+	uploadConfirmSleep func(time.Duration)
+
+	// uploadPhase is a TEST-VISIBLE marker (R8, 09-04-PLAN.md) set
+	// immediately before every uploader.Inventory call RunUpload issues —
+	// "dedupe" for the pre-upload missing-type diff, "confirmation" for the
+	// D-17 post-upload read(s). It exists SOLELY so a test's fake RunCmd
+	// closure (which captures the *realBackend) can record which phase each
+	// invocation belongs to; production code never reads this field. Guarded
+	// by its own mutex since it is written from the upload tea.Cmd goroutine
+	// and read from a test fake that may run on the same goroutine.
+	uploadPhase   string
+	uploadPhaseMu sync.Mutex
 }
+
+// setUploadPhase and currentUploadPhase implement the R8 phase marker above.
+func (b *realBackend) setUploadPhase(phase string) {
+	b.uploadPhaseMu.Lock()
+	b.uploadPhase = phase
+	b.uploadPhaseMu.Unlock()
+}
+
+func (b *realBackend) currentUploadPhase() string {
+	b.uploadPhaseMu.Lock()
+	defer b.uploadPhaseMu.Unlock()
+	return b.uploadPhase
+}
+
+// confirmSleep honors the test-only uploadConfirmSleep override (nil means
+// a real time.Sleep for uploadConfirmRetryInterval).
+func (b *realBackend) confirmSleep() {
+	if b.uploadConfirmSleep != nil {
+		b.uploadConfirmSleep(uploadConfirmRetryInterval)
+		return
+	}
+	time.Sleep(uploadConfirmRetryInterval)
+}
+
+// uploadConfirmRetryInterval is the production D-17 post-upload confirmation
+// retry wait: chosen to comfortably absorb ordinary GitHub/GitLab API
+// read-after-write propagation lag (typically well under a second in
+// practice) without making the wizard feel stalled during its single retry.
+var uploadConfirmRetryInterval = 2 * time.Second
 
 // compile-time proof the real composition root satisfies the seam.
 var _ tuikit.Backend = (*realBackend)(nil)
@@ -1369,6 +1416,88 @@ func toUploadResultRow(tool uploader.Tool, result uploader.RegistrationResult, p
 	return row
 }
 
+// uploadPhaseDedupe / uploadPhaseConfirmation are the R8 phase markers
+// realBackend.uploadPhase is set to immediately before each of RunUpload's
+// two uploader.Inventory call sites — the pre-upload missing-type diff and
+// the D-17 post-upload confirmation read(s), respectively. A test fake's
+// RunCmd closure reads currentUploadPhase() to attribute each recorded
+// invocation to the correct phase, so "exactly one confirmation retry" can
+// be proven without conflating it with the unrelated dedupe read.
+const (
+	uploadPhaseDedupe       = "dedupe"
+	uploadPhaseConfirmation = "confirmation"
+)
+
+// uploadUnconfirmedReasonFmt marks a row whose registration the provider
+// accepted (Uploaded/AlreadyPresent) but whose post-upload confirmation
+// read still could not see after the one bounded retry (D-17). This is
+// NOT a failure: turning it into one would misreport a successful upload
+// as rejected. It stays informational text on the SAME UploadRowUploaded/
+// UploadRowAlreadyPresent outcome — no fourth UploadRowOutcome value exists
+// for this case.
+const uploadUnconfirmedReasonFmt = "accepted but not yet visible in %s's inventory — this can lag briefly after upload; re-run gitid's test to confirm"
+
+// confirmUpload implements D-17's post-upload verification: one inventory
+// read to confirm every registration this run reported as Uploaded or
+// AlreadyPresent is actually present, with exactly one bounded retry when
+// it is not. It never gates and never retries a FAILING READ itself a
+// second time — only a registration that is legitimately still missing
+// after a successful read gets the one retry.
+func (b *realBackend) confirmUpload(tool uploader.Tool, toolPath, pubLine, providerHost string, wanted []uploader.Registration, rows []tuikit.UploadResultRow) ([]tuikit.UploadResultRow, bool) {
+	toConfirm := make(map[uploader.Registration]int, len(wanted))
+	for i, registration := range wanted {
+		if i >= len(rows) {
+			continue
+		}
+		if rows[i].Outcome == tuikit.UploadRowUploaded || rows[i].Outcome == tuikit.UploadRowAlreadyPresent {
+			toConfirm[registration] = i
+		}
+	}
+	if len(toConfirm) == 0 {
+		return rows, false
+	}
+
+	read := func() (map[uploader.Registration]bool, bool) {
+		b.setUploadPhase(uploadPhaseConfirmation)
+		existing, err := uploader.Inventory(tool, toolPath, b.uploaderDeps)
+		if err != nil {
+			return nil, true
+		}
+		present := make(map[uploader.Registration]bool, len(toConfirm))
+		for registration := range toConfirm {
+			present[registration] = uploader.HasRegistration(existing, pubLine, registration)
+		}
+		return present, false
+	}
+
+	present, degraded := read()
+	if degraded {
+		return rows, true
+	}
+	var stillMissing []uploader.Registration
+	for registration, ok := range present {
+		if !ok {
+			stillMissing = append(stillMissing, registration)
+		}
+	}
+	if len(stillMissing) > 0 {
+		b.confirmSleep()
+		second, degraded2 := read()
+		if degraded2 {
+			return rows, true
+		}
+		for _, registration := range stillMissing {
+			present[registration] = second[registration]
+		}
+	}
+	for registration, idx := range toConfirm {
+		if !present[registration] {
+			rows[idx].Reason = fmt.Sprintf(uploadUnconfirmedReasonFmt, providerHost)
+		}
+	}
+	return rows, false
+}
+
 func uploadFailureView(reason, provider string) tuikit.UploadRunView {
 	return tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{{
 		Registration: tuikit.UploadRegistrationAuthentication,
@@ -1436,6 +1565,7 @@ func (b *realBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
 		}
 		pubLine := string(pubBytes)
 		wanted := desiredRegistrations(tool)
+		b.setUploadPhase(uploadPhaseDedupe)
 		existing, err := uploader.Inventory(tool, toolPath, b.uploaderDeps)
 		degraded := err != nil
 		missing := wanted
@@ -1484,7 +1614,17 @@ func (b *realBackend) runUpload(spec tuikit.CreateSpec, tool uploader.Tool, tool
 				rows = append(rows, toUploadResultRow(tool, uploader.RegistrationResult{Registration: registration, Outcome: uploader.OutcomeAlreadyPresent}, canonicalHost, b.home))
 			}
 		}
-		view := tuikit.UploadRunView{Rows: rows, InventoryDegraded: degraded}
+		// D-17: confirm every accepted registration actually landed, with
+		// exactly one bounded retry — the ssh -T half of D-17's verification
+		// is the wizard's EXISTING stage-1/stage-2 gate, which runs
+		// immediately after this command's UploadRunMsg auto-advances the
+		// wizard (that ordering is WHY D-05 places upload before the test
+		// loop); no new probe belongs here, only the inventory confirmation
+		// ssh -T structurally cannot see (the signing registration has no
+		// ssh -T-observable side effect).
+		rows, confirmDegraded := b.confirmUpload(tool, toolPath, pubLine, canonicalHost, wanted, rows)
+
+		view := tuikit.UploadRunView{Rows: rows, InventoryDegraded: degraded || confirmDegraded}
 		allFailed := len(results) > 0
 		for _, row := range results {
 			if row.Outcome != uploader.OutcomeFailed {
