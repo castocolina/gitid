@@ -283,8 +283,13 @@ func TestCreateFlow_TestStagePass(t *testing.T) {
 // exactly like PASS does).
 // TestCreateFlow_UploadAutonomousGitHubTracer is Phase 9's real-PTY tracer:
 // the compiled binary, driven by raw keystrokes only, probes the fake gh,
-// announces and runs ONE authentication-key registration with no extra Enter,
-// renders its result, then reaches the existing stage-1 gate unchanged.
+// announces and runs BOTH GitHub registrations (authentication + signing,
+// D-16, completed by 09-04-PLAN.md's Task 2) with no extra Enter, renders
+// both results, then reaches the existing stage-1 gate unchanged. The fake
+// gh's "ok" mode always answers an empty inventory (`api ... -> []`), so
+// D-17's post-upload confirmation never converges and its one bounded retry
+// always fires — this is the realistic worst case for invocation count, not
+// a defect.
 func TestCreateFlow_UploadAutonomousGitHubTracer(t *testing.T) {
 	home := SandboxHome(t)
 	bin := BuildBinary(t)
@@ -307,6 +312,7 @@ func TestCreateFlow_UploadAutonomousGitHubTracer(t *testing.T) {
 	mustSee(t, s, "Running:", "upload beat announces the exact command")
 	mustSee(t, s, "ssh-key add", "upload announce names the gh ssh-key add argv")
 	mustSee(t, s, "Authentication key registered", "upload beat renders the successful authentication result row")
+	mustSee(t, s, "Signing key registered", "upload beat renders the successful signing result row (D-16, both GitHub registrations)")
 	saveFrame(t, "create-flow-upload-autonomous-github", s)
 	mustSee(t, s, "Hi user!", "UploadRunMsg auto-advanced into the existing stage-1 probe with no second Enter")
 	mustNotSee(t, s, "Retry (Enter)", "the successful upload beat exposes no prompt-shaped retry affordance")
@@ -318,19 +324,43 @@ func TestCreateFlow_UploadAutonomousGitHubTracer(t *testing.T) {
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 	mustSee(t, s, "Step 3/4", "the existing two-stage gate remains intact after autonomous upload")
 
+	// 09-04-PLAN.md's Task 2 (D-16, both GitHub registrations) and Task 3
+	// (D-17 post-upload confirmation with one bounded retry) legitimately
+	// grew the fake-gh call count beyond the tracer's original "auth status
+	// + one ssh-key add": auth status (1) + the pre-upload D-15 dedupe read
+	// (uploader.Inventory issues TWO `api` calls: user/keys +
+	// user/ssh_signing_keys) + ssh-key add x2 (authentication + signing) +
+	// the D-17 confirmation read (another Inventory = 2 `api` calls) + its
+	// one bounded retry (2 more, since the "ok" fixture's `api` verb always
+	// answers an empty inventory, so confirmation can never converge) = 9.
 	log := ReadFakeCLILog(t, ghLog)
-	if len(log) != 2 {
-		t.Fatalf("fake gh logged %d invocations, want exactly auth status + ssh-key add: %v", len(log), log)
+	if len(log) != 9 {
+		t.Fatalf("fake gh logged %d invocations, want exactly 9 (auth status, 2 dedupe reads, 2 ssh-key add, 4 confirmation reads): %v", len(log), log)
 	}
 	if !strings.Contains(log[0], "auth status --hostname github.com") {
 		t.Errorf("first fake-gh argv = %q, want canonical auth status", log[0])
 	}
-	if !strings.Contains(log[1], "ssh-key add") || !strings.Contains(log[1], "--type authentication") {
-		t.Errorf("second fake-gh argv = %q, want ssh-key add with --type authentication", log[1])
+	apiCalls, addCalls := 0, 0
+	for _, entry := range log {
+		switch {
+		case strings.Contains(entry, "api user/keys") || strings.Contains(entry, "api user/ssh_signing_keys"):
+			apiCalls++
+		case strings.Contains(entry, "ssh-key add"):
+			addCalls++
+			if !strings.Contains(entry, "--type authentication") && !strings.Contains(entry, "--type signing") {
+				t.Errorf("ssh-key add argv = %q, want --type authentication or --type signing", entry)
+			}
+			argv := strings.Fields(entry)
+			if len(argv) < 3 || !strings.HasSuffix(argv[2], ".pub") {
+				t.Errorf("ssh-key add argv = %q, want its key-file operand (argv[2]) to end in .pub", entry)
+			}
+		}
 	}
-	argv := strings.Fields(log[1])
-	if len(argv) < 3 || !strings.HasSuffix(argv[2], ".pub") {
-		t.Errorf("ssh-key add argv = %q, want its key-file operand (argv[2]) to end in .pub", log[1])
+	if apiCalls != 6 {
+		t.Errorf("api user/keys + user/ssh_signing_keys invocations = %d, want exactly 6 (dedupe x2 + confirmation x2 + retry x2)", apiCalls)
+	}
+	if addCalls != 2 {
+		t.Errorf("ssh-key add invocations = %d, want exactly 2 (authentication + signing)", addCalls)
 	}
 	s.close(t)
 }
