@@ -151,17 +151,26 @@ func isMainDomainOrSubdomain(host, mainDomain string) bool {
 	return host == mainDomain || strings.HasSuffix(host, "."+mainDomain)
 }
 
-// DetectFor resolves only the CLI corresponding to provider.
-func DetectFor(provider string, deps Deps) (tool Tool, toolPath string, status AuthStatus) {
+// DetectFor resolves only the CLI corresponding to provider. It reports
+// ONLY whether a matching tool was found on PATH — it never probes
+// authentication (that is AuthCheck's job, a separate real subprocess call
+// every caller already makes on its own). WR-15: this used to return
+// (tool, toolPath, status AuthStatus) and always answer AuthNotLoggedIn for
+// a found tool, regardless of its real auth state — a signature that lied
+// to any caller trusting the third value for anything beyond
+// AuthToolNotFound. found (a plain bool) makes the "unresolved auth"
+// semantics explicit instead of borrowing an AuthStatus value that was
+// never actually probed.
+func DetectFor(provider string, deps Deps) (tool Tool, toolPath string, found bool) {
 	name := map[string]string{"github": "gh", "gitlab": "glab"}[provider]
 	if name == "" {
-		return 0, "", AuthToolNotFound
+		return 0, "", false
 	}
 	p, err := deps.LookPath(name)
 	if err != nil {
-		return 0, "", AuthToolNotFound
+		return 0, "", false
 	}
-	return toolForName(name), p, AuthNotLoggedIn
+	return toolForName(name), p, true
 }
 
 // AuthCheck reports toolPath's authentication status for canonicalHost.

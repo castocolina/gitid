@@ -5099,11 +5099,11 @@ type uploadCall struct {
 
 // fakeUploaderRunUploadDeps builds a realBackend rooted at a hermetic home
 // plus a fake uploader.Deps whose LookPath/auth-status/inventory/upload-add
-// responses are driven by the supplied callbacks. authenticated=false makes
-// DetectFor answer AuthNotLoggedIn (never AuthToolNotFound), matching the
-// "checkbox reached RunUpload only after Ready" precondition documented at
-// RunUpload's own call site — every Task 2 test that wants the disabled path
-// drives it explicitly instead.
+// responses are driven by the supplied callbacks. LookPath always resolving
+// a path makes DetectFor answer found=true (never the not-found/Disabled
+// path), matching the "checkbox reached RunUpload only after Ready"
+// precondition documented at RunUpload's own call site — every Task 2 test
+// that wants the disabled path drives it explicitly instead.
 func fakeUploaderRunUploadDeps(t *testing.T, ghInventoryKeys, ghSigningKeys string, uploadResult func(call uploadCall) (out string, code int, err error)) (*realBackend, *[]uploadCall) {
 	t.Helper()
 	home := t.TempDir()

@@ -1339,16 +1339,13 @@ func (b *realBackend) UploadEligibility(hostname string) tea.Cmd {
 			ToolName:     providerToolName(provider),
 			Hostname:     canonicalHost,
 		}
-		_, toolPath, status := uploader.DetectFor(provider, b.uploaderDeps)
-		switch status {
-		case uploader.AuthToolNotFound:
+		_, toolPath, found := uploader.DetectFor(provider, b.uploaderDeps)
+		if !found {
 			view.State = tuikit.UploadEligibilityDisabled
-		default:
-			if uploader.AuthCheck(toolPath, b.uploaderDeps, canonicalHost) == uploader.AuthAuthenticated {
-				view.State = tuikit.UploadEligibilityReady
-			} else {
-				view.State = tuikit.UploadEligibilityUnauth
-			}
+		} else if uploader.AuthCheck(toolPath, b.uploaderDeps, canonicalHost) == uploader.AuthAuthenticated {
+			view.State = tuikit.UploadEligibilityReady
+		} else {
+			view.State = tuikit.UploadEligibilityUnauth
 		}
 
 		if b.uploadEligibilityMemo == nil {
@@ -1501,16 +1498,13 @@ func (b *realBackend) RegisterKeyPlan(name string) tea.Cmd {
 			ToolName:     providerToolName(provider),
 			Hostname:     canonicalHost,
 		}
-		_, toolPath, status := uploader.DetectFor(provider, b.uploaderDeps)
-		switch status {
-		case uploader.AuthToolNotFound:
+		_, toolPath, found := uploader.DetectFor(provider, b.uploaderDeps)
+		if !found {
 			view.State = tuikit.UploadEligibilityDisabled
-		default:
-			if uploader.AuthCheck(toolPath, b.uploaderDeps, canonicalHost) == uploader.AuthAuthenticated {
-				view.State = tuikit.UploadEligibilityReady
-			} else {
-				view.State = tuikit.UploadEligibilityUnauth
-			}
+		} else if uploader.AuthCheck(toolPath, b.uploaderDeps, canonicalHost) == uploader.AuthAuthenticated {
+			view.State = tuikit.UploadEligibilityReady
+		} else {
+			view.State = tuikit.UploadEligibilityUnauth
 		}
 		return tuikit.RegisterKeyPlanMsg{Name: name, View: view}
 	}
@@ -1580,8 +1574,8 @@ func (b *realBackend) CommitRotateDeleteOldKey(name, keyID string) tea.Cmd {
 		if provider == "" {
 			return tuikit.RotateDeleteCommitMsg{Err: "provider not eligible for autonomous key management"}
 		}
-		tool, toolPath, status := uploader.DetectFor(provider, b.uploaderDeps)
-		if status == uploader.AuthToolNotFound {
+		tool, toolPath, found := uploader.DetectFor(provider, b.uploaderDeps)
+		if !found {
 			return tuikit.RotateDeleteCommitMsg{Err: fmt.Sprintf("%s CLI not found on PATH", providerToolName(provider))}
 		}
 		candidates, derr := decodeDeleteCandidates(keyID)

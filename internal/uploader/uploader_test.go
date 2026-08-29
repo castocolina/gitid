@@ -130,8 +130,8 @@ func TestProviderForHostnameMatchesHostBoundaries(t *testing.T) {
 
 // TestDetectForNeverCrossRoutes is D-11's never-cross-route regression: a
 // fake reporting glab present+authenticated and gh absent must still make
-// DetectFor("github", ...) answer AuthToolNotFound, and glab must never
-// appear in the recorded LookPath calls.
+// DetectFor("github", ...) answer found=false, and glab must never appear
+// in the recorded LookPath calls.
 func TestDetectForNeverCrossRoutes(t *testing.T) {
 	var lookedUp []string
 	deps := Deps{
@@ -145,9 +145,9 @@ func TestDetectForNeverCrossRoutes(t *testing.T) {
 		RunCmd: func(_ string, _ ...string) (string, int, error) { return "", 0, nil },
 	}
 
-	tool, path, status := DetectFor("github", deps)
-	if status != AuthToolNotFound {
-		t.Errorf("DetectFor(github): status = %d, want AuthToolNotFound(%d)", status, AuthToolNotFound)
+	tool, path, found := DetectFor("github", deps)
+	if found {
+		t.Errorf("DetectFor(github): found = %v, want false", found)
 	}
 	if tool != 0 || path != "" {
 		t.Errorf("DetectFor(github): tool=%d path=%q, want zero values on not-found", tool, path)
@@ -171,12 +171,35 @@ func TestDetectForUnknownProviderNeverProbes(t *testing.T) {
 		RunCmd: func(_ string, _ ...string) (string, int, error) { return "", 0, nil },
 	}
 
-	_, _, status := DetectFor("", deps)
-	if status != AuthToolNotFound {
-		t.Errorf("DetectFor(\"\"): status = %d, want AuthToolNotFound(%d)", status, AuthToolNotFound)
+	_, _, found := DetectFor("", deps)
+	if found {
+		t.Errorf("DetectFor(\"\"): found = %v, want false", found)
 	}
 	if len(lookedUp) != 0 {
 		t.Errorf("DetectFor(\"\") must not call LookPath; recorded calls: %v", lookedUp)
+	}
+}
+
+// TestDetectForReportsFoundWithoutProbingAuth is the WR-15 regression:
+// DetectFor's third return value must be a plain found bool, never an
+// AuthStatus borrowed from a probe it never actually ran — a found tool
+// answers found=true regardless of whatever RunCmd would say about its
+// auth state, because DetectFor must never call RunCmd at all.
+func TestDetectForReportsFoundWithoutProbingAuth(t *testing.T) {
+	ranRunCmd := false
+	deps := Deps{
+		LookPath: func(string) (string, error) { return "/fake/gh", nil },
+		RunCmd:   func(string, ...string) (string, int, error) { ranRunCmd = true; return "", 1, nil },
+	}
+	tool, path, found := DetectFor("github", deps)
+	if !found {
+		t.Fatal("found = false, want true — the tool IS on PATH")
+	}
+	if tool != ToolGH || path != "/fake/gh" {
+		t.Errorf("tool=%d path=%q, want ToolGH and /fake/gh", tool, path)
+	}
+	if ranRunCmd {
+		t.Error("DetectFor called RunCmd — it must never probe authentication, only PATH presence")
 	}
 }
 

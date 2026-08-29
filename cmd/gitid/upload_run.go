@@ -136,8 +136,8 @@ func (b *realBackend) planUpload(req uploadRequest) (plan uploadPlan, terminal *
 		return uploadPlan{}, &view
 	}
 	providerName := providerDisplayName(provider)
-	tool, toolPath, status := uploader.DetectFor(provider, b.uploaderDeps)
-	if status == uploader.AuthToolNotFound {
+	tool, toolPath, found := uploader.DetectFor(provider, b.uploaderDeps)
+	if !found {
 		view := tuikit.UploadRunView{Skipped: true, ManualFallback: upload.Instructions(req.Hostname), ProviderName: providerName}
 		return uploadPlan{}, &view
 	}
@@ -427,8 +427,8 @@ func (b *realBackend) rotateDeleteOfferFor(name string) tuikit.RotateDeleteOffer
 	if provider == "" {
 		return tuikit.RotateDeleteOfferView{Unavailable: "provider not eligible for autonomous key management"}
 	}
-	tool, toolPath, status := uploader.DetectFor(provider, b.uploaderDeps)
-	if status == uploader.AuthToolNotFound {
+	tool, toolPath, found := uploader.DetectFor(provider, b.uploaderDeps)
+	if !found {
 		return tuikit.RotateDeleteOfferView{Unavailable: fmt.Sprintf("%s CLI not found on PATH", providerToolName(provider))}
 	}
 	if uploader.AuthCheck(toolPath, b.uploaderDeps, canonicalHost) != uploader.AuthAuthenticated {
