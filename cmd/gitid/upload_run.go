@@ -443,6 +443,21 @@ func (b *realBackend) rotateDeleteOfferFor(name string) tuikit.RotateDeleteOffer
 		return tuikit.RotateDeleteOfferView{Unavailable: "could not read the current public key"}
 	}
 	currentBlob := uploader.NormalizeKeyBlob(string(currentPub))
+	// CR-02 belt-and-braces: refuse the offer unless the NEW key is fully
+	// registered — every registration type desired for this tool must
+	// already carry the current pub's blob in the freshly-read inventory.
+	// The model-side gate (uploadSucceeded in identities.go) is the cheap
+	// fix; this is the backend's own independent check, so a caller that
+	// ever dispatches RotateDeleteOffer without going through that gate
+	// (a future code path, a test, a bug) cannot resurrect CR-02: without
+	// this, a failed/partial new-key registration leaves only the OLD key
+	// in the inventory, which OldKeyCandidates would otherwise resolve as
+	// a clean, unambiguous — and wrong — deletion target.
+	for _, reg := range desiredRegistrations(tool) {
+		if !uploader.HasRegistration(existing, string(currentPub), reg) {
+			return tuikit.RotateDeleteOfferView{Unavailable: "the new key is not fully registered yet — not offering to remove the old one"}
+		}
+	}
 	title := uploader.KeyTitle(name, shortHostname())
 	candidates := uploader.OldKeyCandidates(existing, title, currentBlob)
 	if len(candidates) == 0 {

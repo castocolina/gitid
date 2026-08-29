@@ -6085,10 +6085,25 @@ func TestRotateDeleteOfferMatchesOnlyThisMachinesTitle(t *testing.T) {
 func TestRotateDeleteOfferReadsInventoryFreshAtResultTime(t *testing.T) {
 	home := t.TempDir()
 	b := seedRotateDeleteFixture(t, home)
+	acct, ok := b.findAccount("personal")
+	if !ok {
+		t.Fatal("setup: findAccount(personal)")
+	}
+	currentPub, rerr := os.ReadFile(expandTildeForHome(acct.PubPath, home)) //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+	if rerr != nil {
+		t.Fatalf("setup: reading the seeded public key: %v", rerr)
+	}
 	thisTitle := uploader.KeyTitle("personal", shortHostname())
-	authJSON := fmt.Sprintf(`[{"id":7,"title":%q,"key":"ssh-ed25519 AAAA"}]`, thisTitle)
+	// CR-02 belt-and-braces: rotateDeleteOfferFor now refuses the offer
+	// unless the current (just re-registered) key is present under EVERY
+	// registration a GitHub rotate desires — so id 8/9 (the current pub,
+	// under auth and signing) must be present alongside the unambiguous
+	// old key (id 7) for this test to still exercise "Available" freshness.
+	authJSON := fmt.Sprintf(`[{"id":7,"title":%q,"key":"ssh-ed25519 AAAA"},{"id":8,"title":%q,"key":%q}]`,
+		thisTitle, thisTitle, strings.TrimSpace(string(currentPub)))
+	signingJSON := fmt.Sprintf(`[{"id":9,"title":%q,"key":%q}]`, thisTitle, strings.TrimSpace(string(currentPub)))
 	var calls []string
-	b.uploaderDeps = ghInventoryDeps(b.uploaderDeps, &calls, authJSON, `[]`)
+	b.uploaderDeps = ghInventoryDeps(b.uploaderDeps, &calls, authJSON, signingJSON)
 
 	first := b.rotateDeleteOfferFor("personal")
 	if !first.Available || !strings.Contains(first.KeyDetail, "7") {
@@ -6128,8 +6143,14 @@ func TestRotateDeleteOfferExcludesTheJustRegisteredKeySharingTitle(t *testing.T)
 	// after RunUploadForIdentity registered it.
 	authJSON := fmt.Sprintf(`[{"id":1,"title":%q,"key":"ssh-ed25519 AAAAoldkeynotcurrent"},{"id":2,"title":%q,"key":%q}]`,
 		thisTitle, thisTitle, strings.TrimSpace(string(currentPub)))
+	// CR-02 belt-and-braces: also register the current key under Signing
+	// (id 3) — rotateDeleteOfferFor now refuses unless the new key is
+	// present under EVERY registration a GitHub rotate desires, not just
+	// Authentication. id 3 shares currentPub's blob, so OldKeyCandidates
+	// still excludes it and the "exactly one old blob" invariant holds.
+	signingJSON := fmt.Sprintf(`[{"id":3,"title":%q,"key":%q}]`, thisTitle, strings.TrimSpace(string(currentPub)))
 	var calls []string
-	b.uploaderDeps = ghInventoryDeps(b.uploaderDeps, &calls, authJSON, `[]`)
+	b.uploaderDeps = ghInventoryDeps(b.uploaderDeps, &calls, authJSON, signingJSON)
 
 	view := b.rotateDeleteOfferFor("personal")
 	if !view.Available {
@@ -6143,6 +6164,68 @@ func TestRotateDeleteOfferExcludesTheJustRegisteredKeySharingTitle(t *testing.T)
 	}
 	if !strings.Contains(view.KeyDetail, "1") {
 		t.Errorf("KeyDetail = %q, want it to identify old key ID 1 for the user's confirmation", view.KeyDetail)
+	}
+}
+
+// TestRotateDeleteOfferRefusesWhenTheNewKeyIsNotFullyRegistered is the CR-02
+// (iteration 2) belt-and-braces regression: rotateDeleteOfferFor's own
+// backend-layer check, independent of the model-side uploadSucceeded gate.
+// When the new key's registration failed (or only partially succeeded —
+// e.g. authentication registered but signing did not), the inventory does
+// not carry the current pub under every registration a GitHub rotate
+// desires. The offer must refuse (Unavailable), never resolve to the OLD
+// key as a clean candidate — accepting it would delete the account's only
+// remaining working credential.
+func TestRotateDeleteOfferRefusesWhenTheNewKeyIsNotFullyRegistered(t *testing.T) {
+	home := t.TempDir()
+	b := seedRotateDeleteFixture(t, home)
+	thisTitle := uploader.KeyTitle("personal", shortHostname())
+	// Only the OLD key is present — exactly the shape a failed new-key
+	// registration produces. Title-only matching (pre-CR-02) would resolve
+	// this as a clean, unambiguous "old key" candidate.
+	authJSON := fmt.Sprintf(`[{"id":1,"title":%q,"key":"ssh-ed25519 AAAAoldkeynotcurrent"}]`, thisTitle)
+	var calls []string
+	b.uploaderDeps = ghInventoryDeps(b.uploaderDeps, &calls, authJSON, `[]`)
+
+	view := b.rotateDeleteOfferFor("personal")
+	if view.Available {
+		t.Fatalf("want Unavailable: the new key is not registered at all, so the sole inventory record must never be offered for deletion, got %+v", view)
+	}
+	if view.KeyID != "" {
+		t.Errorf("KeyID = %q, want empty when refusing on an unproven new-key registration", view.KeyID)
+	}
+}
+
+// TestRotateDeleteOfferRefusesOnPartialRegistration is
+// TestRotateDeleteOfferRefusesWhenTheNewKeyIsNotFullyRegistered's sibling
+// for a PARTIAL success: the new key registered for Authentication but not
+// Signing (a plausible GitHub scope-limited failure). Every desired
+// registration must carry the current key, or the offer refuses.
+func TestRotateDeleteOfferRefusesOnPartialRegistration(t *testing.T) {
+	home := t.TempDir()
+	b := seedRotateDeleteFixture(t, home)
+	acct, ok := b.findAccount("personal")
+	if !ok {
+		t.Fatal("setup: findAccount(personal)")
+	}
+	currentPub, rerr := os.ReadFile(expandTildeForHome(acct.PubPath, home)) //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+	if rerr != nil {
+		t.Fatalf("setup: reading the seeded public key: %v", rerr)
+	}
+	thisTitle := uploader.KeyTitle("personal", shortHostname())
+	// Authentication carries the OLD key (id 1) and the NEW key (id 2,
+	// current pub) — a clean exclusion on its own. Signing carries ONLY
+	// the old key's registration namespace is untouched by the failed
+	// signing-key upload, so the current pub never appears there.
+	authJSON := fmt.Sprintf(`[{"id":1,"title":%q,"key":"ssh-ed25519 AAAAoldkeynotcurrent"},{"id":2,"title":%q,"key":%q}]`,
+		thisTitle, thisTitle, strings.TrimSpace(string(currentPub)))
+	signingJSON := `[]`
+	var calls []string
+	b.uploaderDeps = ghInventoryDeps(b.uploaderDeps, &calls, authJSON, signingJSON)
+
+	view := b.rotateDeleteOfferFor("personal")
+	if view.Available {
+		t.Fatalf("want Unavailable: the new key is only partially registered (signing missing), got %+v", view)
 	}
 }
 

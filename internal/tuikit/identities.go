@@ -2277,7 +2277,15 @@ func (m identitiesModel) handleMsg(msg tea.Msg, s DemoState) keyResult {
 		// wizard's own sequential R7 announce-then-run idiom. Repair never
 		// gets an offer: there is no old REMOTE key to remove for an
 		// identity whose provider registration was never lost.
-		if m.keyCeremonyMode == KeyCeremonyModeRotate {
+		//
+		// CR-02: gate on uploadSucceeded(run.View) — when the new key's
+		// registration failed (or was never attempted), the provider
+		// inventory holds only the OLD key under the shared D-07 title,
+		// which OldKeyCandidates then resolves as a clean, unambiguous
+		// "old key" candidate. Offering to delete it in that state would
+		// remove the account's ONLY remaining working key. The old key is
+		// left in place; the upload beat's own ✗ row already explains why.
+		if m.keyCeremonyMode == KeyCeremonyModeRotate && uploadSucceeded(run.View) {
 			m.rotateDeleteOfferPending = true
 			m.rotateDeleteOffer = RotateDeleteOfferView{}
 			return keyResult{model: m, cmd: m.backend.RotateDeleteOffer(m.selected)}
@@ -4584,6 +4592,30 @@ func (m identitiesModel) renderRegisterKey(sel DemoIdentity, width int) string {
 
 func uploadRunHasContent(run UploadRunView) bool {
 	return len(run.Rows) > 0 || run.AlreadyComplete || run.InventoryDegraded || run.ManualFallback != ""
+}
+
+// uploadSucceeded reports whether the D-05 upload beat actually placed the
+// new key on the provider (CR-02): the D-04 rotate delete offer must never
+// be dispatched off the back of a failed, skipped, or otherwise unproven
+// registration, since accepting the offer removes the OLD key — the only
+// working credential left when the new one never registered. AlreadyComplete
+// (D-16's collapse) counts as success; otherwise every row run carries must
+// be UploadRowUploaded or UploadRowAlreadyPresent, and a run with no rows at
+// all (Omitted, Disabled, or --no-upload — no evidence either way) is
+// treated as NOT succeeded, never as vacuously true.
+func uploadSucceeded(run UploadRunView) bool {
+	if run.AlreadyComplete {
+		return true
+	}
+	if len(run.Rows) == 0 {
+		return false
+	}
+	for _, row := range run.Rows {
+		if row.Outcome != UploadRowUploaded && row.Outcome != UploadRowAlreadyPresent {
+			return false
+		}
+	}
+	return true
 }
 
 // renderUploadSection renders D-02's completed announce-and-do rows plus every

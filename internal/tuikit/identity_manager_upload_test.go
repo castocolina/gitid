@@ -344,6 +344,76 @@ func TestKeyCeremonyUploadFailureStillAdvances(t *testing.T) {
 	}
 }
 
+// TestRotateDeleteOfferNotDispatchedOnFailedUpload is the CR-02 (iteration
+// 2) regression: the D-04 delete offer must never be dispatched when the
+// new key's registration did not fully succeed. Accepting the offer in
+// that state would remove the OLD key — the account's only remaining
+// working credential, since a failed/partial registration leaves the
+// provider inventory holding only the old key under the shared D-07 title,
+// which OldKeyCandidates then resolves as a clean, unambiguous — and
+// wrong — deletion target.
+func TestRotateDeleteOfferNotDispatchedOnFailedUpload(t *testing.T) {
+	unprovenViews := []UploadRunView{
+		{Rows: []UploadResultRow{{Label: "Authentication", Outcome: UploadRowFailed, Reason: "boom"}}},
+		{Rows: []UploadResultRow{
+			{Label: "Authentication", Outcome: UploadRowUploaded},
+			{Label: "Signing", Outcome: UploadRowFailed, Reason: "scope"},
+		}},
+		{InventoryDegraded: true, ProviderName: "GitHub"},
+		{Skipped: true},
+		{}, // no rows, no AlreadyComplete: zero evidence of registration
+	}
+	for i, view := range unprovenViews {
+		t.Run(fmt.Sprintf("view-%d", i), func(t *testing.T) {
+			a := openKeyCeremonyAtReview(t, stubBackend{})
+			a, uploadCmd := confirmKeyCeremony(t, a)
+			if uploadCmd == nil {
+				t.Fatal("setup: a successful rotate commit must dispatch the upload beat")
+			}
+			model, offerCmd := a.Update(UploadRunMsg{View: view})
+			if offerCmd != nil {
+				t.Fatalf("view %d: a failed/unproven upload must never dispatch the delete-offer probe", i)
+			}
+			m := identModel(t, model.(App))
+			if m.rotateDeleteOfferPending {
+				t.Fatalf("view %d: rotateDeleteOfferPending must stay false when the upload did not succeed", i)
+			}
+		})
+	}
+}
+
+// TestRotateDeleteOfferDispatchedOnSuccessfulUpload proves the CR-02 gate is
+// not overzealous: a genuinely successful upload (every row Uploaded/
+// AlreadyPresent, or AlreadyComplete) must still dispatch the offer exactly
+// as before.
+func TestRotateDeleteOfferDispatchedOnSuccessfulUpload(t *testing.T) {
+	provenViews := []UploadRunView{
+		{Rows: []UploadResultRow{{Label: "Authentication", Outcome: UploadRowUploaded}}},
+		{Rows: []UploadResultRow{
+			{Label: "Authentication", Outcome: UploadRowUploaded},
+			{Label: "Signing", Outcome: UploadRowAlreadyPresent},
+		}},
+		{AlreadyComplete: true, ProviderName: "GitHub"},
+	}
+	for i, view := range provenViews {
+		t.Run(fmt.Sprintf("view-%d", i), func(t *testing.T) {
+			a := openKeyCeremonyAtReview(t, stubBackend{})
+			a, uploadCmd := confirmKeyCeremony(t, a)
+			if uploadCmd == nil {
+				t.Fatal("setup: a successful rotate commit must dispatch the upload beat")
+			}
+			model, offerCmd := a.Update(UploadRunMsg{View: view})
+			if offerCmd == nil {
+				t.Fatalf("view %d: a successful upload must still dispatch the delete-offer probe", i)
+			}
+			m := identModel(t, model.(App))
+			if !m.rotateDeleteOfferPending {
+				t.Fatalf("view %d: rotateDeleteOfferPending must be set for a successful upload", i)
+			}
+		})
+	}
+}
+
 func TestKeyCeremonyUploadUsesTheSharedRenderer(t *testing.T) {
 	view := UploadRunView{Rows: []UploadResultRow{{Label: "Authentication", Command: "gh ssh-key add x.pub", Outcome: UploadRowUploaded}}}
 	a := openKeyCeremonyAtReview(t, stubBackend{})
