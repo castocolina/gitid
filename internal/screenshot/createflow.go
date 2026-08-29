@@ -2744,6 +2744,25 @@ func uploadVisualSpecs() []ScreenSpec {
 	registerKeyConnectivityOverlapDisposition := uxRegionDifferenceScoped(RegionConnectivityOutput, "fixture-vs-live-command-path", upFixtureClass,
 		"RegionConnectivityOutput's own generic \"Running\" trigger also matches the upload beat's announce line on the register-key pane — the SAME command-path divergence RegionUploadSection's own disposition classifies",
 		`contains:"ssh-key add"`)
+	// rotateDeleteOfferUploadDisposition/rotateDeleteOfferConnectivityDisposition
+	// are the rotate-delete-offer-specific variants: CR-01's new KeyDetail
+	// line (09-REVIEW-FIX.md) pushes a realistic rotate's tail past
+	// frameBodyRows(30), so renderKeyCeremony's overflow backstop
+	// deterministically trims the upload beat's own already-redundant
+	// announce lines on the REAL side, while the dummy's frozen fixture
+	// never models that overflow — the real pane shows no "ssh-key add"
+	// text at all. Predicate flipped from contains: to absent: to match
+	// this observed (and reproducible) real/dummy asymmetry; kept as
+	// separate dispositions from uploadCommandDisposition/
+	// registerKeyConnectivityOverlapDisposition above because
+	// register-key-modal's own screens are unaffected (no overflow there)
+	// and still correctly use contains:.
+	rotateDeleteOfferUploadDisposition := uxRegionDifferenceScoped(RegionUploadSection, "fixture-vs-live-command-path", upFixtureClass,
+		"CR-01's KeyDetail line pushes a realistic rotate's tail past the frame budget, so the overflow backstop trims the upload beat's announce lines on the real side first (by design); the dummy's frozen fixture never models that overflow",
+		`absent:"ssh-key add"`)
+	rotateDeleteOfferConnectivityDisposition := uxRegionDifferenceScoped(RegionConnectivityOutput, "fixture-vs-live-command-path", upFixtureClass,
+		"RegionConnectivityOutput's own generic \"Running\" trigger also matches the upload beat's announce line on the rotate-delete-offer screen — the SAME overflow-driven absence rotateDeleteOfferUploadDisposition classifies",
+		`absent:"ssh-key add"`)
 
 	dispIM := []RegionDisposition{
 		uxRegionDifferenceScoped(RegionSidebar, "sidebar-state", upFixtureClass,
@@ -2891,8 +2910,8 @@ func uploadVisualSpecs() []ScreenSpec {
 				uxRegionDifferenceScoped(RegionHeaderStatus, "identity-count", upFixtureClass,
 					"header status shows the identity count, which differs (real's small seeded set vs dummy's 8 fixtures)",
 					`contains:"ids"`),
-				uploadCommandDisposition,
-				registerKeyConnectivityOverlapDisposition,
+				rotateDeleteOfferUploadDisposition,
+				rotateDeleteOfferConnectivityDisposition,
 			},
 		},
 	}
