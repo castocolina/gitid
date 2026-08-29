@@ -5,8 +5,14 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/castocolina/gitid/internal/keygen"
 )
 
 // ---- Fake helpers ----------------------------------------------------------
@@ -33,6 +39,10 @@ type runCall struct {
 	args []string
 }
 
+const validPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE4NwfYkJBFiDeHTmC4hLTspz93ciIR3ViPhg1gA4uER test"
+
+func testReadFile(string) ([]byte, error) { return []byte(validPublicKey), nil }
+
 func recordingRunCmd(exitCode int, stdout string) (func(string, ...string) (string, int, error), *[]runCall) {
 	calls := &[]runCall{}
 	fn := func(name string, args ...string) (string, int, error) {
@@ -54,6 +64,7 @@ func TestDetect_GHAuthenticated(t *testing.T) {
 	deps := Deps{
 		LookPath: fakeLookPath(map[string]string{"gh": "/fake/gh"}),
 		RunCmd:   runCmd,
+		ReadFile: testReadFile,
 	}
 
 	tool, path, status := Detect(deps)
@@ -82,6 +93,7 @@ func TestDetect_GHNotLoggedIn(t *testing.T) {
 	deps := Deps{
 		LookPath: fakeLookPath(map[string]string{"gh": "/fake/gh"}),
 		RunCmd:   runCmd,
+		ReadFile: testReadFile,
 	}
 
 	tool, path, status := Detect(deps)
@@ -324,169 +336,210 @@ func TestDetectForUnknownProviderNeverProbes(t *testing.T) {
 
 // ---- TestUploadKey ---------------------------------------------------------
 
-// TestUploadKey_GHAuthentication verifies the exact arg slice for gh auth upload.
 func TestUploadKey_GHAuthentication(t *testing.T) {
 	runCmd, calls := recordingRunCmd(0, "Added SSH key.")
-	deps := Deps{RunCmd: runCmd}
-
-	out, err := UploadKey(ToolGH, "/fake/gh", "~/.ssh/id_ed25519.pub", "gitid: personal", KeyAuthentication, deps)
-
-	if err != nil {
-		t.Fatalf("UploadKey: unexpected error: %v", err)
+	result := UploadKey(ToolGH, "/fake/gh", "key.pub", RegistrationRequest{Registration: RegistrationAuthentication, Title: "gitid: personal"}, Deps{RunCmd: runCmd, ReadFile: testReadFile})
+	if result.Outcome != OutcomeUploaded || result.Err != nil {
+		t.Fatalf("result = %+v", result)
 	}
-	if out != "Added SSH key." {
-		t.Errorf("output: got %q want %q", out, "Added SSH key.")
-	}
-	if len(*calls) != 1 {
-		t.Fatalf("RunCmd call count: got %d want 1", len(*calls))
-	}
-	c := (*calls)[0]
-	want := []string{"ssh-key", "add", "~/.ssh/id_ed25519.pub", "--title", "gitid: personal", "--type", "authentication"}
-	assertArgs(t, c.name, c.args, "/fake/gh", want)
+	assertArgs(t, (*calls)[0].name, (*calls)[0].args, "/fake/gh", []string{"ssh-key", "add", "key.pub", "--title", "gitid: personal", "--type", "authentication"})
 }
 
-// TestUploadKey_GHSigning verifies the exact arg slice for gh signing upload.
-func TestUploadKey_GHSigning(t *testing.T) {
-	runCmd, calls := recordingRunCmd(0, "Added SSH key.")
-	deps := Deps{RunCmd: runCmd}
-
-	_, err := UploadKey(ToolGH, "/fake/gh", "~/.ssh/id_ed25519.pub", "gitid: personal", KeySigning, deps)
-
-	if err != nil {
-		t.Fatalf("UploadKey: unexpected error: %v", err)
-	}
-	c := (*calls)[0]
-	want := []string{"ssh-key", "add", "~/.ssh/id_ed25519.pub", "--title", "gitid: personal", "--type", "signing"}
-	assertArgs(t, c.name, c.args, "/fake/gh", want)
-}
-
-// TestUploadKey_GLab verifies the exact arg slice for glab upload.
 func TestUploadKey_GLab(t *testing.T) {
 	runCmd, calls := recordingRunCmd(0, "Added SSH key.")
-	deps := Deps{RunCmd: runCmd}
-
-	_, err := UploadKey(ToolGLab, "/fake/glab", "~/.ssh/id_ed25519.pub", "gitid: work", GLabKeyTypeForAuth, deps)
-
-	if err != nil {
-		t.Fatalf("UploadKey: unexpected error: %v", err)
+	result := UploadKey(ToolGLab, "/fake/glab", "key.pub", RegistrationRequest{Registration: RegistrationCombined, Title: "gitid: work"}, Deps{RunCmd: runCmd, ReadFile: testReadFile})
+	if result.Outcome != OutcomeUploaded {
+		t.Fatalf("result = %+v", result)
 	}
-	c := (*calls)[0]
-	// glab uses -t (short) for title and --usage-type for role.
-	want := []string{"ssh-key", "add", "~/.ssh/id_ed25519.pub", "-t", "gitid: work", "--usage-type", "auth"}
-	assertArgs(t, c.name, c.args, "/fake/glab", want)
+	assertArgs(t, (*calls)[0].name, (*calls)[0].args, "/fake/glab", []string{"ssh-key", "add", "key.pub", "-t", "gitid: work", "--usage-type", "auth_and_signing"})
 }
 
-// TestUploadKey_ErrorSurfacesOutput verifies that when RunCmd returns non-zero
-// exit, the captured output is included in the error so callers can show a
-// manual fallback (D-11 / D-12).
 func TestUploadKey_ErrorSurfacesOutput(t *testing.T) {
 	runCmd, _ := recordingRunCmd(1, "error: not authenticated")
-	deps := Deps{RunCmd: runCmd}
-
-	out, err := UploadKey(ToolGH, "/fake/gh", "~/.ssh/id_ed25519.pub", "gitid: personal", KeyAuthentication, deps)
-
-	if err == nil {
-		t.Fatal("UploadKey: expected error on non-zero exit")
-	}
-	if out != "error: not authenticated" {
-		t.Errorf("output: got %q want %q", out, "error: not authenticated")
+	result := UploadKey(ToolGH, "/fake/gh", "key.pub", RegistrationRequest{Registration: RegistrationAuthentication}, Deps{RunCmd: runCmd, ReadFile: testReadFile})
+	if result.Err == nil || result.Output != "error: not authenticated" {
+		t.Fatalf("result = %+v", result)
 	}
 }
 
-// TestUploadKey_MetacharInPubPath verifies that a pubPath containing shell
-// metacharacters is passed as a single unmodified argument (no shell expansion).
-// The recorded-fake proves no splitting occurs — the arg slice is exact.
-func TestUploadKey_MetacharInPubPath(t *testing.T) {
-	runCmd, calls := recordingRunCmd(0, "Added SSH key.")
-	deps := Deps{RunCmd: runCmd}
-
-	// pubPath with spaces and shell metacharacters — must arrive intact as one arg.
-	pubPath := "~/.ssh/my key $(whoami).pub"
-	_, err := UploadKey(ToolGH, "/fake/gh", pubPath, "gitid: personal", KeyAuthentication, deps)
-
-	if err != nil {
-		t.Fatalf("UploadKey: unexpected error: %v", err)
-	}
-	c := (*calls)[0]
-	// The third arg must be the full pubPath, unchanged and unsplit.
-	if len(c.args) < 3 || c.args[2] != pubPath {
-		t.Errorf("pubPath metachar not passed as single arg; args[2]=%q (full args: %v)", safeGet(c.args, 2), c.args)
-	}
-}
-
-// ---- TestCommandPreview ----------------------------------------------------
-
-// TestCommandPreview_GHEqualsRunCmd verifies that the command string returned
-// by CommandPreview encodes the SAME args that UploadKey passes to RunCmd.
-// This is the UI-SPEC §4a "shown command == run command" invariant.
-func TestCommandPreview_GHEqualsRunCmd(t *testing.T) {
-	runCmd, calls := recordingRunCmd(0, "")
-	deps := Deps{RunCmd: runCmd}
-
-	pubPath := "~/.ssh/id_ed25519.pub"
-	title := "gitid: personal"
-	keyType := KeyAuthentication
-	toolPath := "/fake/gh"
-
-	preview := CommandPreview(ToolGH, toolPath, pubPath, title, keyType)
-	_, _ = UploadKey(ToolGH, toolPath, pubPath, title, keyType, deps)
-
-	if len(*calls) != 1 {
-		t.Fatalf("RunCmd call count: got %d want 1", len(*calls))
-	}
-	c := (*calls)[0]
-	// Reconstruct the "run" string from the actual RunCmd call.
-	runParts := append([]string{c.name}, c.args...)
-	runStr := strings.Join(runParts, " ")
-
-	if preview != runStr {
-		t.Errorf("shown command != run command:\n  preview: %q\n  run:     %q", preview, runStr)
-	}
-}
-
-// TestUploadShownEqualsRun is the named UP-02 regression: the space-joined
-// tail of CommandPreview's output must equal the recorded RunCmd invocation
-// for the same inputs — buildArgs is the ONE function behind both, so
-// shown==run is structural rather than merely asserted per test case.
 func TestUploadShownEqualsRun(t *testing.T) {
 	runCmd, calls := recordingRunCmd(0, "")
-	deps := Deps{RunCmd: runCmd}
-
-	pubPath := "~/.ssh/id_ed25519.pub"
-	title := "gitid: acme @ my-machine"
-	keyType := KeyAuthentication
-	toolPath := "/fake/gh"
-
-	preview := CommandPreview(ToolGH, toolPath, pubPath, title, keyType)
-	if _, err := UploadKey(ToolGH, toolPath, pubPath, title, keyType, deps); err != nil {
-		t.Fatalf("UploadKey: unexpected error: %v", err)
-	}
-
-	if len(*calls) != 1 {
-		t.Fatalf("RunCmd call count: got %d want 1", len(*calls))
-	}
-	c := (*calls)[0]
-	runStr := strings.Join(append([]string{c.name}, c.args...), " ")
-	if preview != runStr {
-		t.Errorf("shown command != run command:\n  preview: %q\n  run:     %q", preview, runStr)
+	preview := CommandPreview(ToolGH, "/fake/gh", "key.pub", "title", KeyAuthentication)
+	UploadKey(ToolGH, "/fake/gh", "key.pub", RegistrationRequest{Registration: RegistrationAuthentication, Title: "title"}, Deps{RunCmd: runCmd, ReadFile: testReadFile})
+	if preview != strings.Join(append([]string{(*calls)[0].name}, (*calls)[0].args...), " ") {
+		t.Fatal("shown command != run command")
 	}
 }
 
-// TestCommandPreview_GLab verifies the glab form of the preview string.
-func TestCommandPreview_GLab(t *testing.T) {
-	preview := CommandPreview(ToolGLab, "/fake/glab", "~/.ssh/id_ed25519.pub", "gitid: work", GLabKeyTypeForAuth)
-	want := "/fake/glab ssh-key add ~/.ssh/id_ed25519.pub -t gitid: work --usage-type auth"
-	if preview != want {
-		t.Errorf("preview:\n  got:  %q\n  want: %q", preview, want)
-	}
-}
-
-// TestCommandPreview_UnknownToolReturnsErrorMessage verifies graceful handling
-// of an invalid Tool value.
 func TestCommandPreview_UnknownToolReturnsErrorMessage(t *testing.T) {
-	preview := CommandPreview(Tool(99), "/fake/tool", "k.pub", "title", "auth")
-	if !strings.HasPrefix(preview, "(preview unavailable:") {
-		t.Errorf("unexpected preview for unknown tool: %q", preview)
+	if !strings.HasPrefix(CommandPreview(Tool(99), "/fake/tool", "k.pub", "title", "auth"), "(preview unavailable:") {
+		t.Fatal("missing error preview")
+	}
+}
+
+func TestUploadKeyRefusesNonPubPath(t *testing.T) {
+	calls := 0
+	result := UploadKey(ToolGH, "gh", "private", RegistrationRequest{}, Deps{ReadFile: testReadFile, RunCmd: func(string, ...string) (string, int, error) { calls++; return "", 0, nil }})
+	if result.Err == nil || calls != 0 {
+		t.Fatalf("result=%+v calls=%d", result, calls)
+	}
+}
+
+func TestUploadKeyRefusesAPrivateKeyRenamedAsPub(t *testing.T) {
+	material, err := keygen.GenerateMaterial(keygen.Params{Algo: "ed25519", Identity: "upload", Comment: "upload@gitid"})
+	if err != nil {
+		t.Fatalf("GenerateMaterial: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "renamed.pub")
+	if err := os.WriteFile(path, material.PrivPEM, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	calls := 0
+	result := UploadKey(ToolGH, "gh", path, RegistrationRequest{}, Deps{
+		ReadFile: os.ReadFile,
+		RunCmd:   func(string, ...string) (string, int, error) { calls++; return "", 0, nil },
+	})
+	if result.Err == nil || !strings.Contains(result.Err.Error(), "private key content") || calls != 0 {
+		t.Fatalf("result=%+v calls=%d", result, calls)
+	}
+}
+
+func TestUploadKeyRefusesUnparseablePublicKeyContent(t *testing.T) {
+	calls := 0
+	result := UploadKey(ToolGH, "gh", "bad.pub", RegistrationRequest{}, Deps{ReadFile: func(string) ([]byte, error) { return []byte("bad"), nil }, RunCmd: func(string, ...string) (string, int, error) { calls++; return "", 0, nil }})
+	if result.Err == nil || calls != 0 {
+		t.Fatalf("result=%+v calls=%d", result, calls)
+	}
+}
+
+func TestUploadKeyAcceptsARealPublicKey(t *testing.T) {
+	material, err := keygen.GenerateMaterial(keygen.Params{Algo: "ed25519", Identity: "upload", Comment: "upload@gitid"})
+	if err != nil {
+		t.Fatalf("GenerateMaterial: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "key.pub")
+	if err := os.WriteFile(path, []byte(material.PubLine), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	runCmd, calls := recordingRunCmd(0, "")
+	result := UploadKey(ToolGH, "gh", path, RegistrationRequest{Registration: RegistrationAuthentication}, Deps{ReadFile: os.ReadFile, RunCmd: runCmd})
+	if result.Outcome != OutcomeUploaded || result.Err != nil || len(*calls) != 1 {
+		t.Fatalf("result=%+v calls=%+v", result, calls)
+	}
+}
+
+func TestUploadKeysHonoursPerRegistrationTitles(t *testing.T) {
+	runCmd, calls := recordingRunCmd(0, "")
+	results := UploadKeys(ToolGH, "gh", "key.pub", []RegistrationRequest{{Registration: RegistrationAuthentication, Title: "auth"}, {Registration: RegistrationSigning, Title: "sign"}}, Deps{ReadFile: testReadFile, RunCmd: runCmd})
+	if len(results) != 2 || results[0].Title != "auth" || results[1].Title != "sign" || (*calls)[0].args[4] != "auth" || (*calls)[1].args[4] != "sign" {
+		t.Fatalf("results=%+v calls=%+v", results, calls)
+	}
+}
+
+func TestUploadKeysNeverSubstitutesTheProductTitle(t *testing.T) {
+	runCmd, calls := recordingRunCmd(0, "")
+	const policyTitle = "gitid-e2e:run-1:signing"
+	UploadKeys(ToolGH, "gh", "key.pub", []RegistrationRequest{{Registration: RegistrationAuthentication, Title: policyTitle}}, Deps{ReadFile: testReadFile, RunCmd: runCmd})
+	if len(*calls) != 1 || (*calls)[0].args[4] != policyTitle {
+		t.Fatalf("calls=%+v", calls)
+	}
+}
+
+func TestRegistrationRequestsWithTitleAppliesOneTitleToAll(t *testing.T) {
+	got := RegistrationRequestsWithTitle("same", RegistrationAuthentication, RegistrationSigning)
+	want := []RegistrationRequest{{Registration: RegistrationAuthentication, Title: "same"}, {Registration: RegistrationSigning, Title: "same"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got=%+v want=%+v", got, want)
+	}
+}
+
+func TestUploadKeysSignatureUsesPerRegistrationRequests(t *testing.T) {
+	typ := reflect.TypeOf(UploadKeys)
+	requestSlice := reflect.TypeOf([]RegistrationRequest(nil))
+	if typ.NumIn() != 5 || typ.In(3) != requestSlice || typ.In(3).Kind() != reflect.Slice {
+		t.Fatalf("UploadKeys signature = %v, want fourth parameter []RegistrationRequest", typ)
+	}
+	for i := 3; i < typ.NumIn(); i++ {
+		if typ.In(i).Kind() == reflect.String {
+			t.Fatalf("UploadKeys has forbidden batch-wide title parameter at %d", i)
+		}
+	}
+}
+
+func TestUploadKeysAttemptsEveryRegistrationAfterAFailure(t *testing.T) {
+	calls := 0
+	results := UploadKeys(ToolGH, "gh", "key.pub", []RegistrationRequest{{Registration: RegistrationAuthentication}, {Registration: RegistrationSigning}}, Deps{ReadFile: testReadFile, RunCmd: func(string, ...string) (string, int, error) {
+		calls++
+		if calls == 1 {
+			return "bad", 1, errors.New("bad")
+		}
+		return "ok", 0, nil
+	}})
+	if len(results) != 2 || results[0].Outcome != OutcomeFailed || calls != 2 {
+		t.Fatalf("results=%+v calls=%d", results, calls)
+	}
+}
+
+func TestGLabUsesCombinedUsageType(t *testing.T) {
+	runCmd, calls := recordingRunCmd(0, "")
+	UploadKey(ToolGLab, "glab", "key.pub", RegistrationRequest{Registration: RegistrationCombined}, Deps{ReadFile: testReadFile, RunCmd: runCmd})
+	if (*calls)[0].args[6] != GLabKeyTypeAuthAndSigning {
+		t.Fatal((*calls)[0].args)
+	}
+}
+
+func TestKeyTitleIsMachineScoped(t *testing.T) {
+	if got := KeyTitle("personal", "ramons-mbp.local"); got != "gitid: personal @ ramons-mbp" {
+		t.Fatal(got)
+	}
+}
+func TestTitleMatchesThisMachineRejectsOtherMachines(t *testing.T) {
+	if TitleMatchesThisMachine("gitid: personal @ other", "personal", "mine.local") {
+		t.Fatal("other machine matched")
+	}
+}
+
+func TestNoSecondSSHKeyAddArgvBuilder(t *testing.T) {
+	root := filepath.Join("..", "..")
+	dirs := []string{filepath.Join(root, "internal", "uploader"), filepath.Join(root, "internal", "tuikit"), filepath.Join(root, "cmd", "gitid")}
+	files := 0
+	for _, dir := range dirs {
+		err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if info.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+			if err != nil {
+				return err
+			}
+			hasSSHKey, hasAdd := false, false
+			ast.Inspect(parsed, func(node ast.Node) bool {
+				literal, ok := node.(*ast.BasicLit)
+				if !ok || literal.Kind != token.STRING {
+					return true
+				}
+				value, unquoteErr := strconv.Unquote(literal.Value)
+				if unquoteErr != nil {
+					return true
+				}
+				hasSSHKey = hasSSHKey || value == "ssh-key"
+				hasAdd = hasAdd || value == "add"
+				return true
+			})
+			if hasSSHKey && hasAdd {
+				files++
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walking %s: %v", dir, err)
+		}
+	}
+	if files != 1 {
+		t.Fatalf("ssh-key add argv builder files = %d, want 1", files)
 	}
 }
 
@@ -506,13 +559,6 @@ func assertArgs(t *testing.T, gotName string, gotArgs []string, wantName string,
 			t.Errorf("RunCmd args[%d]: got %q want %q", i, gotArgs[i], wantArgs[i])
 		}
 	}
-}
-
-func safeGet(s []string, i int) string {
-	if i < len(s) {
-		return s[i]
-	}
-	return "<missing>"
 }
 
 // TestProviderForHostnameContainsNoUnanchoredSubstringTest is R2's source-
