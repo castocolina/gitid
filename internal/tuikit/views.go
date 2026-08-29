@@ -753,9 +753,19 @@ type RegisterKeyPlanMsg struct {
 // all and the caller falls back to the existing frozen grace-window hint —
 // an inventory-read failure, no matching key, or a non-qualifying provider
 // all take this path (fail CLOSED on the destructive offer, never fail
-// open). KeyID is the FRESH, machine-scoped-exact-match provider ID the
-// confirmed delete will remove — resolved once, at result-screen time,
-// never re-resolved after the user reviews it (D-04, review R12).
+// open). KeyID is the FRESH, machine-scoped-exact-match provider ID(s) the
+// confirmed delete will remove — resolved once, at result-screen time, never
+// re-resolved after the user reviews it (D-04, review R12). Because
+// internal/tuikit never imports internal/uploader (this file's no-backend-
+// import rule), KeyID is an OPAQUE string the backend encodes and decodes on
+// its own: it may carry more than one provider registration (GitHub records
+// a separate authentication AND signing entry for the same physical key, so
+// a rotate's delete offer legitimately deletes more than one), and tuikit
+// never parses it — it only round-trips the value through
+// CommitRotateDeleteOldKey unread. KeyDetail is the SEPARATE, human-readable
+// counterpart: the reviewed ID(s) plus a short key-blob suffix, rendered so
+// the confirmation identifies the exact target(s) rather than only the
+// title the old and new keys share (CR-01).
 type RotateDeleteOfferView struct {
 	Available    bool
 	ProviderName string
@@ -767,6 +777,7 @@ type RotateDeleteOfferView struct {
 	MachineName   string
 	KeyTitle      string
 	KeyID         string
+	KeyDetail     string
 	ManualCommand string
 	Unavailable   string
 }

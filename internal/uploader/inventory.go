@@ -94,13 +94,18 @@ func MissingRegistrations(existing []ExistingKey, pubLine string, want []Registr
 	return missing
 }
 
-// DeleteKey removes one numeric provider resource ID. A title or path must never
-// be accepted where an ID is expected.
-func DeleteKey(tool Tool, toolPath, id string, deps Deps) (string, error) {
+// DeleteKey removes one numeric provider resource ID from reg's namespace. A
+// title or path must never be accepted where an ID is expected. reg selects
+// the delete endpoint: GitHub's authentication and signing key registrations
+// are separate REST resources (/user/keys/{id} vs /user/ssh_signing_keys/{id})
+// with independent, freely-colliding ID spaces, so the caller MUST know which
+// namespace id belongs to — an id that is valid for one namespace can name a
+// completely unrelated resource in the other.
+func DeleteKey(tool Tool, toolPath string, reg Registration, id string, deps Deps) (string, error) {
 	if !isAllDigits(id) {
 		return "", fmt.Errorf("uploader: refusing invalid provider key ID %q", id)
 	}
-	args, err := deleteArgs(tool, id)
+	args, err := deleteArgs(tool, reg, id)
 	if err != nil {
 		return "", err
 	}
@@ -112,24 +117,36 @@ func DeleteKey(tool Tool, toolPath, id string, deps Deps) (string, error) {
 }
 
 // DeleteRecordedKey is the preferred delete entry point because it carries the
-// inventory record's ID and title together; DeleteKey remains the low-level primitive.
+// inventory record's ID, title, AND registration namespace together;
+// DeleteKey remains the low-level primitive. Threading rec.Registration
+// through is load-bearing (see DeleteKey's doc comment) — deleting by ID
+// alone risks addressing the wrong provider resource.
 func DeleteRecordedKey(tool Tool, toolPath string, rec ExistingKey, deps Deps) (string, error) {
-	return DeleteKey(tool, toolPath, rec.ID, deps)
+	return DeleteKey(tool, toolPath, rec.Registration, rec.ID, deps)
 }
 
-// DeleteCommandPreview renders the exact argv DeleteKey runs.
-func DeleteCommandPreview(tool Tool, toolPath, id string) string {
-	args, err := deleteArgs(tool, id)
+// DeleteCommandPreview renders the exact argv DeleteKey runs for reg.
+func DeleteCommandPreview(tool Tool, reg Registration, toolPath, id string) string {
+	args, err := deleteArgs(tool, reg, id)
 	if err != nil {
 		return fmt.Sprintf("(preview unavailable: %s)", err)
 	}
 	return strings.Join(append([]string{toolPath}, args...), " ")
 }
 
-func deleteArgs(tool Tool, id string) ([]string, error) {
+// deleteArgs renders the delete argv scoped to reg's namespace. See DeleteKey's
+// doc comment for why a single fixed `gh ssh-key delete <id>` call is wrong.
+func deleteArgs(tool Tool, reg Registration, id string) ([]string, error) {
 	switch tool {
 	case ToolGH:
-		return []string{"ssh-key", "delete", id, "--yes"}, nil
+		switch reg {
+		case RegistrationAuthentication:
+			return []string{"api", "-X", "DELETE", "user/keys/" + id}, nil
+		case RegistrationSigning:
+			return []string{"api", "-X", "DELETE", "user/ssh_signing_keys/" + id}, nil
+		default:
+			return nil, fmt.Errorf("uploader: unsupported delete registration %d for %s", reg, toolName(tool))
+		}
 	case ToolGLab:
 		return []string{"ssh-key", "delete", id}, nil
 	default:
@@ -137,7 +154,10 @@ func deleteArgs(tool Tool, id string) ([]string, error) {
 	}
 }
 
-// FindByTitle finds an exact, machine-scoped title match.
+// FindByTitle finds an exact, machine-scoped title match. It is a general
+// lookup helper — for a destructive delete decision, prefer OldKeyCandidates,
+// which additionally excludes the key that was just (re-)registered and
+// refuses to guess when a title is shared by more than one distinct old key.
 func FindByTitle(existing []ExistingKey, title string) (ExistingKey, bool) {
 	for _, key := range existing {
 		if key.Title == title {
@@ -145,4 +165,38 @@ func FindByTitle(existing []ExistingKey, title string) (ExistingKey, bool) {
 		}
 	}
 	return ExistingKey{}, false
+}
+
+// OldKeyCandidates returns every ExistingKey record that unambiguously
+// represents the OLD key on this machine for a D-04 rotate delete offer:
+// title-matching, EXCLUDING any record whose key blob equals currentBlob —
+// the key that was just (re-)registered under the identical title moments
+// earlier by the SAME rotate ceremony (planUpload runs before this offer
+// resolves, so the new key is already inventoried under the same title).
+// GitHub records one entry PER registration type (authentication + signing)
+// for the same physical key, so more than one candidate is expected and
+// correct — but only when every surviving candidate shares exactly one
+// distinct key blob. If candidates span more than one distinct blob (a prior
+// rotation left its own title collision, or the inventory otherwise cannot
+// disambiguate), the old key cannot be identified safely and
+// OldKeyCandidates returns nil: the caller must refuse rather than guess
+// which record is safe to delete.
+func OldKeyCandidates(existing []ExistingKey, title, currentBlob string) []ExistingKey {
+	var candidates []ExistingKey
+	blobs := make(map[string]bool)
+	for _, rec := range existing {
+		if rec.Title != title {
+			continue
+		}
+		blob := NormalizeKeyBlob(rec.Key)
+		if currentBlob != "" && blob == currentBlob {
+			continue // this is the key we just registered — never offer it
+		}
+		candidates = append(candidates, rec)
+		blobs[blob] = true
+	}
+	if len(candidates) == 0 || len(blobs) != 1 {
+		return nil
+	}
+	return candidates
 }

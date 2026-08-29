@@ -40,8 +40,10 @@ package main
 // uploadRequestForAccount are the two thin adapters.
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/castocolina/gitid/internal/identity"
 	"github.com/castocolina/gitid/internal/tuikit"
@@ -364,17 +366,25 @@ func (b *realBackend) confirmUpload(tool uploader.Tool, toolPath, pubLine, provi
 // render path (R3), and never cached across calls: D-04's Open Question 2 is
 // resolved lazily, at result-screen time, because an eager resolution during
 // KeyCeremonyPlan would cache an ID captured before the user even confirmed
-// the rotate. Matching is by EXACT title equality against THIS machine's
-// title (uploader.KeyTitle + uploader.FindByTitle) — never a substring or a
-// name-only match — because D-07's whole point is that a rotate on one
-// machine must never offer to delete a DIFFERENT machine's still-in-use key.
-// Every failure path (unknown identity, non-qualifying provider, tool
-// absent/unauthenticated, inventory error, no match) returns an
-// Available=false view with a reason; it never returns an error the caller
-// must special-case. This lives here, not in wiring.go, so the ONE
-// uploader.Inventory call this beat makes stays inside the shared
-// decision-logic file the wiring_test.go/upload_run_test.go AST checks
-// guard (R3's "decision logic lives only in upload_run.go" rule).
+// the rotate. Matching starts from EXACT title equality against THIS
+// machine's title (uploader.KeyTitle) — never a substring or a name-only
+// match — because D-07's whole point is that a rotate on one machine must
+// never offer to delete a DIFFERENT machine's still-in-use key. Title
+// equality alone is NOT enough to identify the target, though: the rotate
+// ceremony chains CommitRotate -> RunUploadForIdentity -> this offer, and
+// RunUploadForIdentity registers the NEW key under the exact same title
+// moments earlier — so at offer time the inventory contains at least two
+// records with that title. uploader.OldKeyCandidates resolves the ambiguity
+// by reading the account's CURRENT public key and excluding whatever record
+// matches its blob (CR-01); it refuses (returns nil, surfaced here as
+// Unavailable) rather than guess when what remains still spans more than one
+// distinct old key. Every failure path (unknown identity, non-qualifying
+// provider, tool absent/unauthenticated, inventory error, no unambiguous
+// match) returns an Available=false view with a reason; it never returns an
+// error the caller must special-case. This lives here, not in wiring.go, so
+// the ONE uploader.Inventory call this beat makes stays inside the shared
+// decision-logic file the wiring_test.go/upload_run_test.go AST checks guard
+// (R3's "decision logic lives only in upload_run.go" rule).
 func (b *realBackend) rotateDeleteOfferFor(name string) tuikit.RotateDeleteOfferView {
 	acct, ok := b.findAccount(name)
 	if !ok {
@@ -395,18 +405,101 @@ func (b *realBackend) rotateDeleteOfferFor(name string) tuikit.RotateDeleteOffer
 	if err != nil {
 		return tuikit.RotateDeleteOfferView{Unavailable: "could not read the existing key inventory"}
 	}
+	currentPub, rerr := b.uploaderDeps.ReadFile(expandTildeForHome(acct.PubPath, b.home))
+	if rerr != nil {
+		return tuikit.RotateDeleteOfferView{Unavailable: "could not read the current public key"}
+	}
+	currentBlob := uploader.NormalizeKeyBlob(string(currentPub))
 	title := uploader.KeyTitle(name, shortHostname())
-	found, ok := uploader.FindByTitle(existing, title)
-	if !ok {
-		return tuikit.RotateDeleteOfferView{Unavailable: "no matching old key found on this machine"}
+	candidates := uploader.OldKeyCandidates(existing, title, currentBlob)
+	if len(candidates) == 0 {
+		return tuikit.RotateDeleteOfferView{Unavailable: "no unambiguous old key found on this machine"}
+	}
+	encoded, eerr := encodeDeleteCandidates(candidates)
+	if eerr != nil {
+		return tuikit.RotateDeleteOfferView{Unavailable: "could not prepare the delete offer"}
 	}
 	return tuikit.RotateDeleteOfferView{
 		Available:     true,
 		ProviderName:  providerDisplayName(provider),
 		IdentityName:  name,
 		MachineName:   shortHostname(),
-		KeyTitle:      found.Title,
-		KeyID:         found.ID,
-		ManualCommand: uploader.DeleteCommandPreview(tool, toolPath, found.ID),
+		KeyTitle:      title,
+		KeyID:         encoded,
+		KeyDetail:     deleteCandidatesDetail(candidates),
+		ManualCommand: deleteCandidatesManualCommand(tool, toolPath, candidates),
 	}
+}
+
+// deleteCandidate is the {ID, Registration} pair uploader.OldKeyCandidates
+// resolves for one D-04 rotate delete offer. It is encoded into
+// tuikit.RotateDeleteOfferView.KeyID as an opaque JSON string: tuikit is a
+// UI-free package that never imports internal/uploader (views.go's
+// no-backend-import rule), so the Registration enum cannot cross that
+// boundary as a typed value. tuikit round-trips the encoded string through
+// rotateDeleteOffer.KeyID / rotateDeleteConfirmedID unread; it is decoded
+// back only here (for the preview) and in CommitRotateDeleteOldKey
+// (wiring.go), the two backend-layer sites that already import uploader.
+type deleteCandidate struct {
+	ID           string                `json:"id"`
+	Registration uploader.Registration `json:"registration"`
+}
+
+// encodeDeleteCandidates renders candidates as the opaque KeyID payload
+// CommitRotateDeleteOldKey decodes back with decodeDeleteCandidates.
+func encodeDeleteCandidates(candidates []uploader.ExistingKey) (string, error) {
+	out := make([]deleteCandidate, len(candidates))
+	for i, c := range candidates {
+		out[i] = deleteCandidate{ID: c.ID, Registration: c.Registration}
+	}
+	data, err := json.Marshal(out)
+	if err != nil {
+		return "", fmt.Errorf("uploader: encoding delete candidates: %w", err)
+	}
+	return string(data), nil
+}
+
+// decodeDeleteCandidates reverses encodeDeleteCandidates. Called from
+// wiring.go's CommitRotateDeleteOldKey with the SAME encoded value the offer
+// produced and the user reviewed (review R12: never re-resolved).
+func decodeDeleteCandidates(encoded string) ([]deleteCandidate, error) {
+	var out []deleteCandidate
+	if err := json.Unmarshal([]byte(encoded), &out); err != nil {
+		return nil, fmt.Errorf("uploader: decoding delete candidates: %w", err)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("uploader: empty delete-candidate set")
+	}
+	return out, nil
+}
+
+// deleteCandidatesManualCommand renders one copy-pasteable preview line per
+// candidate (CR-02: a rotated GitHub key can carry two registrations, and
+// the manual fallback must show both, not only the first one deleted).
+func deleteCandidatesManualCommand(tool uploader.Tool, toolPath string, candidates []uploader.ExistingKey) string {
+	previews := make([]string, len(candidates))
+	for i, c := range candidates {
+		previews[i] = uploader.DeleteCommandPreview(tool, c.Registration, toolPath, c.ID)
+	}
+	return strings.Join(previews, "\n")
+}
+
+// deleteCandidatesDetail renders the human-readable ID(s) plus a short
+// key-blob suffix so the D-04 confirmation identifies the SPECIFIC record(s)
+// under review (CR-01) — the title alone is shared by the key that was just
+// registered, so the title can never be the thing the user confirms against.
+// candidates are guaranteed (by uploader.OldKeyCandidates) to share exactly
+// one key blob, so the suffix is computed once from the first candidate.
+func deleteCandidatesDetail(candidates []uploader.ExistingKey) string {
+	ids := make([]string, len(candidates))
+	for i, c := range candidates {
+		ids[i] = c.ID
+	}
+	blob := uploader.NormalizeKeyBlob(candidates[0].Key)
+	suffix := blob
+	const tailLen = 12
+	if len(blob) > tailLen {
+		suffix = "…" + blob[len(blob)-tailLen:]
+	}
+	return fmt.Sprintf("ID %s — %s", strings.Join(ids, ", "), suffix)
 }

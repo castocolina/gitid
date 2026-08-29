@@ -5859,10 +5859,15 @@ func seedRotateDeleteFixture(t *testing.T, home string) *realBackend {
 // ghInventoryDeps builds a uploader.Deps whose gh calls answer: LookPath ->
 // a fake gh path, "auth status" -> authenticated (exit 0), "api user/keys"
 // -> authKeysJSON, "api user/ssh_signing_keys" -> signingKeysJSON. Any other
-// invocation is recorded in *calls but answers empty/success.
-func ghInventoryDeps(calls *[]string, authKeysJSON, signingKeysJSON string) uploader.Deps {
+// invocation is recorded in *calls but answers empty/success. ReadFile is
+// preserved from orig (the backend's real os.ReadFile wiring) because
+// rotateDeleteOfferFor (CR-01) reads the account's CURRENT public key to
+// exclude it from the delete candidates — a test that swaps out the whole
+// uploader.Deps but drops ReadFile would nil-panic on that read.
+func ghInventoryDeps(orig uploader.Deps, calls *[]string, authKeysJSON, signingKeysJSON string) uploader.Deps {
 	return uploader.Deps{
 		LookPath: func(name string) (string, error) { return "/fake/" + name, nil },
+		ReadFile: orig.ReadFile,
 		RunCmd: func(name string, args ...string) (string, int, error) {
 			argv := strings.Join(append([]string{name}, args...), " ")
 			*calls = append(*calls, argv)
@@ -5890,7 +5895,7 @@ func TestRotateDeleteOfferMatchesOnlyThisMachinesTitle(t *testing.T) {
 	otherMachineTitle := uploader.KeyTitle("personal", "some-other-laptop")
 	authJSON := fmt.Sprintf(`[{"id":42,"title":%q,"key":"ssh-ed25519 AAAA"}]`, otherMachineTitle)
 	var calls []string
-	b.uploaderDeps = ghInventoryDeps(&calls, authJSON, `[]`)
+	b.uploaderDeps = ghInventoryDeps(b.uploaderDeps, &calls, authJSON, `[]`)
 
 	view := b.rotateDeleteOfferFor("personal")
 	if view.Available {
@@ -5911,11 +5916,11 @@ func TestRotateDeleteOfferReadsInventoryFreshAtResultTime(t *testing.T) {
 	thisTitle := uploader.KeyTitle("personal", shortHostname())
 	authJSON := fmt.Sprintf(`[{"id":7,"title":%q,"key":"ssh-ed25519 AAAA"}]`, thisTitle)
 	var calls []string
-	b.uploaderDeps = ghInventoryDeps(&calls, authJSON, `[]`)
+	b.uploaderDeps = ghInventoryDeps(b.uploaderDeps, &calls, authJSON, `[]`)
 
 	first := b.rotateDeleteOfferFor("personal")
-	if !first.Available || first.KeyID != "7" {
-		t.Fatalf("first call: want Available with KeyID 7, got %+v", first)
+	if !first.Available || !strings.Contains(first.KeyDetail, "7") {
+		t.Fatalf("first call: want Available identifying ID 7 in KeyDetail, got %+v", first)
 	}
 	firstCallCount := len(calls)
 	second := b.rotateDeleteOfferFor("personal")
@@ -5927,9 +5932,52 @@ func TestRotateDeleteOfferReadsInventoryFreshAtResultTime(t *testing.T) {
 	}
 }
 
+// TestRotateDeleteOfferExcludesTheJustRegisteredKeySharingTitle is the CR-01
+// regression: RunUploadForIdentity registers the NEW key under the exact
+// same D-07 title moments before this offer resolves, so a title-only match
+// (the pre-fix behavior) could target either key. The offer must resolve to
+// the OLD key's ID only, by excluding whatever inventory record's blob
+// matches the account's CURRENT (just re-registered) public key.
+func TestRotateDeleteOfferExcludesTheJustRegisteredKeySharingTitle(t *testing.T) {
+	home := t.TempDir()
+	b := seedRotateDeleteFixture(t, home)
+	acct, ok := b.findAccount("personal")
+	if !ok {
+		t.Fatal("setup: findAccount(personal)")
+	}
+	currentPub, rerr := os.ReadFile(expandTildeForHome(acct.PubPath, home)) //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+	if rerr != nil {
+		t.Fatalf("setup: reading the seeded public key: %v", rerr)
+	}
+	thisTitle := uploader.KeyTitle("personal", shortHostname())
+	// Two records share thisTitle: id 1 is the OLD key (a different blob);
+	// id 2 is the NEW key — its "key" field is the account's REAL current
+	// public key, exactly as the provider inventory would report it moments
+	// after RunUploadForIdentity registered it.
+	authJSON := fmt.Sprintf(`[{"id":1,"title":%q,"key":"ssh-ed25519 AAAAoldkeynotcurrent"},{"id":2,"title":%q,"key":%q}]`,
+		thisTitle, thisTitle, strings.TrimSpace(string(currentPub)))
+	var calls []string
+	b.uploaderDeps = ghInventoryDeps(b.uploaderDeps, &calls, authJSON, `[]`)
+
+	view := b.rotateDeleteOfferFor("personal")
+	if !view.Available {
+		t.Fatalf("want Available (an unambiguous old key exists), got %+v", view)
+	}
+	if strings.Contains(view.KeyID, `"id":"2"`) {
+		t.Fatalf("the offer's KeyID encodes the JUST-REGISTERED key (id 2) — it must be excluded: %+v", view)
+	}
+	if !strings.Contains(view.KeyID, `"id":"1"`) {
+		t.Fatalf("the offer's KeyID must encode ONLY the old key (id 1), got %+v", view)
+	}
+	if !strings.Contains(view.KeyDetail, "1") {
+		t.Errorf("KeyDetail = %q, want it to identify old key ID 1 for the user's confirmation", view.KeyDetail)
+	}
+}
+
 // TestCommitRotateDeleteOldKeyDeletesExactlyTheConfirmedID asserts one
-// recorded delete invocation whose argv carries the passed ID, and no
-// re-resolution (inventory) read during the commit.
+// recorded delete invocation whose argv carries the confirmed ID through the
+// registration-scoped authentication endpoint (CR-02), and no re-resolution
+// (inventory) read during the commit.
 func TestCommitRotateDeleteOldKeyDeletesExactlyTheConfirmedID(t *testing.T) {
 	home := t.TempDir()
 	b := seedRotateDeleteFixture(t, home)
@@ -5942,8 +5990,14 @@ func TestCommitRotateDeleteOldKeyDeletesExactlyTheConfirmedID(t *testing.T) {
 			return "", 0, nil
 		},
 	}
+	encoded, eerr := encodeDeleteCandidates([]uploader.ExistingKey{
+		{ID: "999", Registration: uploader.RegistrationAuthentication},
+	})
+	if eerr != nil {
+		t.Fatalf("setup: encodeDeleteCandidates: %v", eerr)
+	}
 
-	cmd := b.CommitRotateDeleteOldKey("personal", "999")
+	cmd := b.CommitRotateDeleteOldKey("personal", encoded)
 	if cmd == nil {
 		t.Fatal("CommitRotateDeleteOldKey must return a non-nil tea.Cmd (R3: never synchronous)")
 	}
@@ -5957,17 +6011,99 @@ func TestCommitRotateDeleteOldKeyDeletesExactlyTheConfirmedID(t *testing.T) {
 	deleteCalls := 0
 	inventoryCalls := 0
 	for _, c := range calls {
-		if strings.Contains(c, "ssh-key delete 999") {
+		if strings.Contains(c, "user/keys/999") {
 			deleteCalls++
+		}
+		if strings.Contains(c, "user/ssh_signing_keys") {
+			t.Errorf("an authentication-registration delete must never address the signing namespace: %v", calls)
 		}
 		if strings.Contains(c, "api user/keys") || strings.Contains(c, "api user/ssh_signing_keys") {
 			inventoryCalls++
 		}
 	}
 	if deleteCalls != 1 {
-		t.Errorf("delete calls = %d, want exactly 1 carrying the confirmed ID 999: %v", deleteCalls, calls)
+		t.Errorf("delete calls = %d, want exactly 1 addressing user/keys/999: %v", deleteCalls, calls)
 	}
 	if inventoryCalls != 0 {
 		t.Errorf("inventory calls during commit = %d, want 0 — CommitRotateDeleteOldKey must never re-resolve: %v", inventoryCalls, calls)
+	}
+}
+
+// TestCommitRotateDeleteOldKeyDeletesEveryRegistration is the CR-02 happy-
+// path regression: a rotated GitHub key carries both an authentication AND
+// a signing registration under the same title, and the commit must remove
+// BOTH — one success is not "the old key is gone".
+func TestCommitRotateDeleteOldKeyDeletesEveryRegistration(t *testing.T) {
+	home := t.TempDir()
+	b := seedRotateDeleteFixture(t, home)
+	var calls []string
+	b.uploaderDeps = uploader.Deps{
+		LookPath: func(name string) (string, error) { return "/fake/" + name, nil },
+		RunCmd: func(name string, args ...string) (string, int, error) {
+			argv := strings.Join(append([]string{name}, args...), " ")
+			calls = append(calls, argv)
+			return "", 0, nil
+		},
+	}
+	encoded, eerr := encodeDeleteCandidates([]uploader.ExistingKey{
+		{ID: "42", Registration: uploader.RegistrationAuthentication},
+		{ID: "108", Registration: uploader.RegistrationSigning},
+	})
+	if eerr != nil {
+		t.Fatalf("setup: encodeDeleteCandidates: %v", eerr)
+	}
+
+	msg, ok := b.CommitRotateDeleteOldKey("personal", encoded)().(tuikit.RotateDeleteCommitMsg)
+	if !ok {
+		t.Fatalf("delivered wrong message type")
+	}
+	if msg.Err != "" {
+		t.Fatalf("commit failed: %s", msg.Err)
+	}
+	authDeleted, signDeleted := false, false
+	for _, c := range calls {
+		if strings.Contains(c, "user/keys/42") {
+			authDeleted = true
+		}
+		if strings.Contains(c, "user/ssh_signing_keys/108") {
+			signDeleted = true
+		}
+	}
+	if !authDeleted || !signDeleted {
+		t.Fatalf("want BOTH the authentication (42) and signing (108) registrations deleted, got calls=%v", calls)
+	}
+}
+
+// TestCommitRotateDeleteOldKeyReportsPartialFailure asserts the commit does
+// NOT claim success (empty Err) when one of several registrations fails to
+// delete — the D-04 "✓ Old key removed" copy must never be reachable while
+// a registration is still live.
+func TestCommitRotateDeleteOldKeyReportsPartialFailure(t *testing.T) {
+	home := t.TempDir()
+	b := seedRotateDeleteFixture(t, home)
+	b.uploaderDeps = uploader.Deps{
+		LookPath: func(name string) (string, error) { return "/fake/" + name, nil },
+		RunCmd: func(name string, args ...string) (string, int, error) {
+			argv := strings.Join(append([]string{name}, args...), " ")
+			if strings.Contains(argv, "user/ssh_signing_keys/108") {
+				return "not found", 1, fmt.Errorf("exit 1")
+			}
+			return "", 0, nil
+		},
+	}
+	encoded, eerr := encodeDeleteCandidates([]uploader.ExistingKey{
+		{ID: "42", Registration: uploader.RegistrationAuthentication},
+		{ID: "108", Registration: uploader.RegistrationSigning},
+	})
+	if eerr != nil {
+		t.Fatalf("setup: encodeDeleteCandidates: %v", eerr)
+	}
+
+	msg, ok := b.CommitRotateDeleteOldKey("personal", encoded)().(tuikit.RotateDeleteCommitMsg)
+	if !ok {
+		t.Fatalf("delivered wrong message type")
+	}
+	if msg.Err == "" {
+		t.Fatal("a partial failure must not report success (empty Err) — the signing registration is still live")
 	}
 }

@@ -2967,6 +2967,13 @@ func (m identitiesModel) renderRotateDeleteOffer() string {
 	var b strings.Builder
 	b.WriteString(" " + styleWarning.Render(fmt.Sprintf(RotateDeleteOfferHeadingFmt, offer.ProviderName)) + "\n")
 	b.WriteString(" " + styleWarning.Render(fmt.Sprintf(RotateDeleteOfferBodyFmt, offer.IdentityName, offer.MachineName)) + "\n")
+	if offer.KeyDetail != "" {
+		// CR-01: the old and new keys share an identical D-07 title — this
+		// is the ONLY place the confirmation identifies the specific
+		// record(s) under review, so the user is never asked to confirm a
+		// destructive action by a string the new key shares too.
+		b.WriteString(" " + styleFaint.Render(offer.KeyDetail) + "\n")
+	}
 	if m.rotateDeleteResolved {
 		b.WriteString(" " + m.rotateDeleteResult + "\n")
 		return b.String()

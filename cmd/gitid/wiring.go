@@ -1549,10 +1549,18 @@ func (b *realBackend) RotateDeleteOffer(name string) tea.Cmd {
 
 // CommitRotateDeleteOldKey is the ONE remotely-destructive call this phase
 // makes — reachable only from a confirmed choice on the D-04 offer, never
-// autonomously. It deletes EXACTLY keyID, the ID the offer displayed and the
-// user reviewed; it does NOT re-resolve the identity's current inventory,
-// because re-resolving after confirmation would let a provider-side change
-// between display and confirm redirect the deletion to a different key.
+// autonomously. keyID is the opaque candidate set upload_run.go's
+// rotateDeleteOfferFor encoded and the user reviewed (via KeyDetail); it is
+// decoded back into its {ID, Registration} pairs here and NOT re-resolved
+// from a fresh inventory read, because re-resolving after confirmation would
+// let a provider-side change between display and confirm redirect the
+// deletion to a different key (review R12). Every candidate is deleted
+// through its OWN registration-scoped endpoint (CR-02: GitHub's
+// authentication and signing key IDs are independent namespaces) and success
+// is claimed only once EVERY candidate is gone — a rotated GitHub key
+// legitimately carries both an authentication and a signing registration, so
+// stopping after the first success would leave the old key still able to
+// authenticate or sign while gitid reports it fully removed.
 func (b *realBackend) CommitRotateDeleteOldKey(name, keyID string) tea.Cmd {
 	return func() tea.Msg {
 		acct, ok := b.findAccount(name)
@@ -1567,8 +1575,18 @@ func (b *realBackend) CommitRotateDeleteOldKey(name, keyID string) tea.Cmd {
 		if status == uploader.AuthToolNotFound {
 			return tuikit.RotateDeleteCommitMsg{Err: fmt.Sprintf("%s CLI not found on PATH", providerToolName(provider))}
 		}
-		if _, err := uploader.DeleteKey(tool, toolPath, keyID, b.uploaderDeps); err != nil {
-			return tuikit.RotateDeleteCommitMsg{Err: uploader.RedactCLIOutput(err.Error(), b.home, 58)}
+		candidates, derr := decodeDeleteCandidates(keyID)
+		if derr != nil {
+			return tuikit.RotateDeleteCommitMsg{Err: "could not resolve the confirmed delete target"}
+		}
+		var failed []string
+		for _, c := range candidates {
+			if _, err := uploader.DeleteKey(tool, toolPath, c.Registration, c.ID, b.uploaderDeps); err != nil {
+				failed = append(failed, uploader.RedactCLIOutput(err.Error(), b.home, 58))
+			}
+		}
+		if len(failed) > 0 {
+			return tuikit.RotateDeleteCommitMsg{Err: strings.Join(failed, "; ")}
 		}
 		return tuikit.RotateDeleteCommitMsg{}
 	}
