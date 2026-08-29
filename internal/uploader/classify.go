@@ -24,7 +24,12 @@ const (
 )
 
 var (
-	ghTokenPattern   = regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9]{20,}\b`)
+	// WR-04: the classic-token alternation (ghp_/gho_/ghu_/ghs_/ghr_) does
+	// NOT match GitHub's fine-grained personal access tokens
+	// (github_pat_...) — "gh" followed by "i" in "github_" is not in
+	// [pousr], so the most common modern token shape slipped through
+	// RedactCLIOutput's "defence in depth" into a user-visible reason row.
+	ghTokenPattern   = regexp.MustCompile(`\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b`)
 	glabTokenPattern = regexp.MustCompile(`\bglpat-[A-Za-z0-9_-]{20,}\b`)
 )
 

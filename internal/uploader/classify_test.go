@@ -55,6 +55,19 @@ func TestRedactCLIOutputRemovesTokenShapes(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// TestRedactCLIOutputRemovesFineGrainedPAT is the WR-04 regression: the
+// classic-token alternation (ghp_/gho_/ghu_/ghs_/ghr_) never matched
+// GitHub's fine-grained personal access tokens (github_pat_...) — the most
+// common modern token shape — because "gh" followed by "i" in "github_" is
+// not in [pousr].
+func TestRedactCLIOutputRemovesFineGrainedPAT(t *testing.T) {
+	pat := "github_pat_11ABCDEFG0abcdefghijklmnop_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY"
+	got := RedactCLIOutput("word "+pat, "", 200)
+	if strings.Contains(got, pat) || !strings.Contains(got, "word") {
+		t.Fatalf("fine-grained PAT was not redacted: %q", got)
+	}
+}
 func TestRedactCLIOutputReplacesHomePath(t *testing.T) {
 	if got := RedactCLIOutput("/Users/me/file", "/Users/me", 100); strings.Contains(got, "/Users/me") {
 		t.Fatal(got)
