@@ -2091,6 +2091,29 @@ type identitiesModel struct {
 	keyCeremonyStage1 TestResultView
 	keyCeremonyStage2 TestResultView
 
+	// D-04 (Task 3, 09-06-PLAN.md): the interactive old-key delete offer,
+	// rotate-only. rotateDeleteOfferPending/rotateDeleteOffer mirror the
+	// register-key pane's own async-plan shape (RotateDeleteOffer ->
+	// RotateDeleteOfferMsg). rotateDeleteChoiceFocus is the two-option
+	// choice row (0 = leave, the default per D-04's non-destructive-by-
+	// default posture; 1 = delete). rotateDeleteResolved is true once the
+	// offer's outcome is final (leave chosen, or a delete SUCCEEDED) — while
+	// false, the ceremony's own "Done (Enter)" control stays intercepted so
+	// a stray Enter cannot both dismiss the offer's warning AND close the
+	// ceremony in one keystroke. rotateDeleteCommitPending gates the
+	// CommitRotateDeleteOldKey reply. rotateDeleteConfirmedID/Title retain
+	// the EXACT reviewed target across a FAILED delete (review R12) so a
+	// retry deletes the same key with no intervening inventory read; both
+	// are cleared when the ceremony's result screen is left (ceremonyFinished).
+	rotateDeleteOfferPending   bool
+	rotateDeleteOffer          RotateDeleteOfferView
+	rotateDeleteChoiceFocus    int
+	rotateDeleteResolved       bool
+	rotateDeleteResult         string
+	rotateDeleteCommitPending  bool
+	rotateDeleteConfirmedID    string
+	rotateDeleteConfirmedTitle string
+
 	// registerKeyName is the identity the register-key pane (D-08, paneRegisterKey)
 	// is open for — set by openRegisterKey and used to discard any
 	// RegisterKeyPlanMsg/UploadRunMsg that arrives after the user navigates away.
@@ -2247,6 +2270,40 @@ func (m identitiesModel) handleMsg(msg tea.Msg, s DemoState) keyResult {
 		m.keyCeremonyUploadPending = false
 		m.keyCeremonyUploadRun = run.View
 		m.keyCeremonyPhase = "review"
+		// D-04 (Task 3): the delete-offer probe is dispatched right after
+		// the upload beat resolves — chained, not batched with it, so the
+		// test harness (and the real runtime alike) only ever has ONE
+		// provider-facing command in flight per message, mirroring the
+		// wizard's own sequential R7 announce-then-run idiom. Repair never
+		// gets an offer: there is no old REMOTE key to remove for an
+		// identity whose provider registration was never lost.
+		if m.keyCeremonyMode == KeyCeremonyModeRotate {
+			m.rotateDeleteOfferPending = true
+			m.rotateDeleteOffer = RotateDeleteOfferView{}
+			return keyResult{model: m, cmd: m.backend.RotateDeleteOffer(m.selected)}
+		}
+		return keyResult{model: m}
+	}
+	if offer, ok := msg.(RotateDeleteOfferMsg); ok && m.pane == paneKeyCeremony && m.rotateDeleteOfferPending && offer.Name == m.selected {
+		m.rotateDeleteOfferPending = false
+		m.rotateDeleteOffer = offer.View
+		m.rotateDeleteChoiceFocus = 0
+		return keyResult{model: m}
+	}
+	if commit, ok := msg.(RotateDeleteCommitMsg); ok && m.pane == paneKeyCeremony && m.rotateDeleteCommitPending {
+		m.rotateDeleteCommitPending = false
+		if commit.Err != "" {
+			// R12: retain the confirmed {ID, title} pair (already stored when
+			// the delete was dispatched) so a retry deletes the SAME
+			// reviewed target without re-resolving it. rotateDeleteResolved
+			// stays false: the choice row remains actionable on "delete".
+			m.rotateDeleteResult = "✗ " + commit.Err + " — press Enter on Delete to retry."
+			return keyResult{model: m}
+		}
+		m.rotateDeleteResult = fmt.Sprintf(RotateDeleteOfferResultRemovedFmt, m.rotateDeleteOffer.ProviderName)
+		m.rotateDeleteResolved = true
+		m.rotateDeleteConfirmedID = ""
+		m.rotateDeleteConfirmedTitle = ""
 		return keyResult{model: m}
 	}
 	if commit, ok := msg.(DeleteCommitMsg); ok && m.pane == paneDelete && m.deleteCommitPending {
@@ -2570,6 +2627,14 @@ func (m identitiesModel) openKeyCeremony(sel DemoIdentity) identitiesModel {
 	m.keyCeremony = keyCeremonyFor(plan, m.keyCeremonyResult)
 	m.keyCeremonyUploadPending = false
 	m.keyCeremonyUploadRun = UploadRunView{}
+	m.rotateDeleteOfferPending = false
+	m.rotateDeleteOffer = RotateDeleteOfferView{}
+	m.rotateDeleteChoiceFocus = 0
+	m.rotateDeleteResolved = false
+	m.rotateDeleteResult = ""
+	m.rotateDeleteCommitPending = false
+	m.rotateDeleteConfirmedID = ""
+	m.rotateDeleteConfirmedTitle = ""
 	m.pane = paneKeyCeremony
 	return m
 }
@@ -2693,6 +2758,45 @@ func (m identitiesModel) handleKeyCeremonyKey(msg tea.KeyMsg, s DemoState) keyRe
 	if m.keyCommitPending {
 		return keyResult{model: m, handled: true}
 	}
+	// D-04 (Task 3): while a rotate's delete offer is available and not yet
+	// resolved, it OWNS the key input — this intercepts BEFORE delegating
+	// to the shared ceremonyModel, because the underlying ceremony is
+	// already `done` at this point (commitSucceeded already ran) and its
+	// own handleKey treats every key but Enter as inert and Enter as
+	// closing the ceremony. Without this interception, a stray Enter meant
+	// to activate the choice row would instead close the whole ceremony.
+	if m.keyCeremonyMode == KeyCeremonyModeRotate && m.rotateDeleteOffer.Available && !m.rotateDeleteResolved {
+		switch msg.String() {
+		case "up", "down", "left", "right", "tab", "shift+tab":
+			m.rotateDeleteChoiceFocus = 1 - m.rotateDeleteChoiceFocus
+			return keyResult{model: m, handled: true}
+		case "enter":
+			if m.rotateDeleteCommitPending {
+				return keyResult{model: m, handled: true}
+			}
+			if m.rotateDeleteChoiceFocus == 0 {
+				// Leave it: the non-destructive default. No provider call.
+				m.rotateDeleteResult = fmt.Sprintf(RotateDeleteOfferResultLeftFmt, m.rotateDeleteOffer.ManualCommand)
+				m.rotateDeleteResolved = true
+				return keyResult{model: m, handled: true}
+			}
+			if m.rotateDeleteConfirmedID == "" {
+				// The FIRST confirmed delete: retain the exact reviewed
+				// target NOW, before dispatch, so a failure can retry it
+				// without re-resolving (review R12) — every subsequent
+				// dispatch (including this one) reuses this retained
+				// value, never m.rotateDeleteOffer.KeyID directly, so the
+				// retry path is provably the same code as the first
+				// attempt rather than a special case.
+				m.rotateDeleteConfirmedID = m.rotateDeleteOffer.KeyID
+				m.rotateDeleteConfirmedTitle = m.rotateDeleteOffer.KeyTitle
+			}
+			m.rotateDeleteCommitPending = true
+			m.rotateDeleteResult = ""
+			return keyResult{model: m, handled: true, cmd: m.backend.CommitRotateDeleteOldKey(sel.Name, m.rotateDeleteConfirmedID)}
+		}
+		return keyResult{model: m, handled: true}
+	}
 	var outcome ceremonyOutcome
 	m.keyCeremony, outcome = m.keyCeremony.handleKey(msg)
 	switch outcome {
@@ -2705,6 +2809,13 @@ func (m identitiesModel) handleKeyCeremonyKey(msg tea.KeyMsg, s DemoState) keyRe
 		}
 		return keyResult{model: m, handled: true, cmd: m.backend.CommitNewKey(sel.Name)}
 	case ceremonyFinished:
+		// D-04: leaving the result screen discards the retained confirmed
+		// target — a later rotate resolves a fresh offer, never a stale one.
+		m.rotateDeleteOffer = RotateDeleteOfferView{}
+		m.rotateDeleteConfirmedID = ""
+		m.rotateDeleteConfirmedTitle = ""
+		m.rotateDeleteResolved = false
+		m.rotateDeleteResult = ""
 	}
 	return keyResult{model: m, handled: true}
 }
@@ -2800,8 +2911,53 @@ func (m identitiesModel) renderKeyCeremony(sel DemoIdentity) string {
 		if uploadRunHasContent(m.keyCeremonyUploadRun) {
 			body += "\n" + renderUploadSection(m.keyCeremonyUploadRun, providerDisplayNameForHostname(m.keyCeremonyPlan.ProviderHost), deleteChoiceNoteWidth)
 		}
+		// D-04 (Task 3): the delete-offer sub-beat renders below the upload
+		// beat, only for a rotate whose offer resolved Available — an
+		// unavailable/repair/pending offer leaves the existing frozen
+		// grace-window hint (already part of m.keyCeremony.view above) as
+		// the only guidance, exactly as it renders today.
+		if m.keyCeremonyMode == KeyCeremonyModeRotate && m.rotateDeleteOffer.Available {
+			body += "\n" + m.renderRotateDeleteOffer()
+		}
 		return body
 	}
+}
+
+// renderRotateDeleteOffer renders D-04's interactive old-key delete offer:
+// a warning-tier heading and body (NOT the destructive-red typed-confirm
+// class — 09-UI-SPEC.md is explicit that this tier is deliberate, since a
+// re-add trivially undoes a wrongly-deleted key), then either the two-option
+// choice row (mirroring paneDeleteScope's radio-glyph idiom, but WITHOUT
+// paneDeleteScope's reverse-video-error treatment on the delete option) or,
+// once resolved, the outcome line.
+func (m identitiesModel) renderRotateDeleteOffer() string {
+	offer := m.rotateDeleteOffer
+	var b strings.Builder
+	b.WriteString(" " + styleWarning.Render(fmt.Sprintf(RotateDeleteOfferHeadingFmt, offer.ProviderName)) + "\n")
+	b.WriteString(" " + styleWarning.Render(fmt.Sprintf(RotateDeleteOfferBodyFmt, offer.IdentityName, offer.MachineName)) + "\n")
+	if m.rotateDeleteResolved {
+		b.WriteString(" " + m.rotateDeleteResult + "\n")
+		return b.String()
+	}
+	if m.rotateDeleteCommitPending {
+		b.WriteString(" " + styleFaint.Render("Removing…") + "\n")
+		return b.String()
+	}
+	leaveLabel := RotateDeleteOfferChoiceLeave
+	deleteLabel := fmt.Sprintf(RotateDeleteOfferChoiceDeleteFmt, offer.ProviderName)
+	leaveLine := glyphRadioOff + " " + leaveLabel
+	deleteLine := glyphRadioOff + " " + deleteLabel
+	if m.rotateDeleteChoiceFocus == 0 {
+		leaveLine = glyphRadioOn + " " + styleSelected.Render(leaveLabel)
+	} else {
+		deleteLine = glyphRadioOn + " " + styleSelected.Render(deleteLabel)
+	}
+	b.WriteString("  " + leaveLine + "\n")
+	b.WriteString("  " + deleteLine + "\n")
+	if m.rotateDeleteResult != "" {
+		b.WriteString(" " + styleError.Render(m.rotateDeleteResult) + "\n")
+	}
+	return b.String()
 }
 
 // fixCeremonyFor builds the compressed per-finding fix ceremony from its

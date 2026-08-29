@@ -1528,6 +1528,52 @@ func (b *realBackend) RunUploadForIdentity(name string) tea.Cmd {
 	}
 }
 
+// RotateDeleteOffer resolves D-04's interactive old-key delete offer for an
+// EXISTING identity via a FRESH provider inventory read — never on the
+// render path (R3), and never cached across calls: D-04's Open Question 2 is
+// resolved lazily, at result-screen time, because an eager resolution during
+// KeyCeremonyPlan would cache an ID captured before the user even confirmed
+// the rotate. Matching is by EXACT title equality against THIS machine's
+// title (uploader.KeyTitle + uploader.FindByTitle) — never a substring or a
+// name-only match — because D-07's whole point is that a rotate on one
+// machine must never offer to delete a DIFFERENT machine's still-in-use key.
+// Every failure path (unknown identity, non-qualifying provider, tool
+// absent/unauthenticated, inventory error, no match) returns an
+// Available=false view with a reason; it never returns an error the caller
+// must special-case.
+func (b *realBackend) RotateDeleteOffer(name string) tea.Cmd {
+	return func() tea.Msg {
+		return tuikit.RotateDeleteOfferMsg{Name: name, View: b.rotateDeleteOfferFor(name)}
+	}
+}
+
+// CommitRotateDeleteOldKey is the ONE remotely-destructive call this phase
+// makes — reachable only from a confirmed choice on the D-04 offer, never
+// autonomously. It deletes EXACTLY keyID, the ID the offer displayed and the
+// user reviewed; it does NOT re-resolve the identity's current inventory,
+// because re-resolving after confirmation would let a provider-side change
+// between display and confirm redirect the deletion to a different key.
+func (b *realBackend) CommitRotateDeleteOldKey(name, keyID string) tea.Cmd {
+	return func() tea.Msg {
+		acct, ok := b.findAccount(name)
+		if !ok {
+			return tuikit.RotateDeleteCommitMsg{Err: fmt.Sprintf("identity %q not found", name)}
+		}
+		provider, _ := uploader.ProviderForHostname(acct.Hostname)
+		if provider == "" {
+			return tuikit.RotateDeleteCommitMsg{Err: "provider not eligible for autonomous key management"}
+		}
+		tool, toolPath, status := uploader.DetectFor(provider, b.uploaderDeps)
+		if status == uploader.AuthToolNotFound {
+			return tuikit.RotateDeleteCommitMsg{Err: fmt.Sprintf("%s CLI not found on PATH", providerToolName(provider))}
+		}
+		if _, err := uploader.DeleteKey(tool, toolPath, keyID, b.uploaderDeps); err != nil {
+			return tuikit.RotateDeleteCommitMsg{Err: uploader.RedactCLIOutput(err.Error(), b.home, 58)}
+		}
+		return tuikit.RotateDeleteCommitMsg{}
+	}
+}
+
 // UploadInstructions returns the manual-fallback text, byte-identical to
 // internal/upload.Instructions(provider) — this method exists so
 // internal/tuikit never imports internal/upload directly (09-UI-SPEC.md's

@@ -497,6 +497,37 @@ func (b FixtureBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
 	})
 }
 
+// RotateDeleteOffer answers the D-04 demo shape deterministically: a github
+// fixture identity gets an available offer naming a demo old key, everything
+// else (gitlab, unknown, non-gated) is unavailable with a reason.
+func (FixtureBackend) RotateDeleteOffer(name string) tea.Cmd {
+	host := identityManagerSSHHost(name)
+	return func() tea.Msg {
+		switch {
+		case strings.Contains(host, "github"):
+			return tuikit.RotateDeleteOfferMsg{Name: name, View: tuikit.RotateDeleteOfferView{
+				Available:     true,
+				ProviderName:  "GitHub",
+				IdentityName:  name,
+				MachineName:   "demo-machine",
+				KeyTitle:      fmt.Sprintf(tuikit.UploadKeyTitleFmt, name, "demo-machine"),
+				KeyID:         "1234567",
+				ManualCommand: "/usr/local/bin/gh ssh-key delete 1234567 --yes",
+			}}
+		default:
+			return tuikit.RotateDeleteOfferMsg{Name: name, View: tuikit.RotateDeleteOfferView{Unavailable: "no matching old key found on this machine"}}
+		}
+	}
+}
+
+// CommitRotateDeleteOldKey "deletes" the demo old key deterministically —
+// always succeeds, mirroring RunUploadForIdentity's brief-tick demo shape.
+func (FixtureBackend) CommitRotateDeleteOldKey(string, string) tea.Cmd {
+	return func() tea.Msg {
+		return tuikit.RotateDeleteCommitMsg{}
+	}
+}
+
 // UploadInstructions returns fixed demo prose — the real backend's
 // byte-identical internal/upload.Instructions(provider) is out of reach
 // here by the ALLOWLIST rule above.

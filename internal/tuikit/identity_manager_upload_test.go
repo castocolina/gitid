@@ -3,6 +3,7 @@ package tuikit
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -370,6 +371,244 @@ func TestSameKeyCloneOmitsTheUploadSection(t *testing.T) {
 	if w.uploadRowVisible() {
 		t.Fatal("a same-key clone must not show the upload checkbox row")
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Task 3: D-04, the interactive old-key delete offer (09-06-PLAN.md).
+// ---------------------------------------------------------------------------
+
+// atRotateDeleteOffer drives a full rotate through commit success, the
+// upload beat, and the delete-offer probe, landing with the offer resolved
+// Available and the choice row at its default focus.
+func atRotateDeleteOffer(t *testing.T, b Backend) App {
+	t.Helper()
+	a := openKeyCeremonyAtReview(t, b)
+	a, uploadCmd := confirmKeyCeremony(t, a)
+	if uploadCmd == nil {
+		t.Fatal("setup: a successful rotate commit must dispatch the upload beat")
+	}
+	model, offerCmd := a.Update(uploadCmd())
+	a = model.(App)
+	if offerCmd == nil {
+		t.Fatal("setup: the upload beat's completion must dispatch the delete-offer probe (rotate mode)")
+	}
+	model, _ = a.Update(offerCmd())
+	a = model.(App)
+	if m := identModel(t, a); !m.rotateDeleteOffer.Available {
+		t.Fatalf("setup: offer must be available, got %+v", m.rotateDeleteOffer)
+	}
+	return a
+}
+
+func TestRotateDeleteOfferDefaultsToLeave(t *testing.T) {
+	a := atRotateDeleteOffer(t, stubBackend{})
+	if m := identModel(t, a); m.rotateDeleteChoiceFocus != 0 {
+		t.Fatalf("rotateDeleteChoiceFocus = %d, want 0 (leave)", m.rotateDeleteChoiceFocus)
+	}
+}
+
+func TestRotateDeleteOfferEnterFromDefaultDoesNotDelete(t *testing.T) {
+	var calls []string
+	sb := stubBackend{rotateDeleteCalls: &calls}
+	a := atRotateDeleteOffer(t, sb)
+	a = pressAndRun(t, a, "enter")
+	if len(calls) != 0 {
+		t.Fatalf("Enter from the default (leave) focus must not delete, got calls=%v", calls)
+	}
+	m := identModel(t, a)
+	if !m.rotateDeleteResolved {
+		t.Fatal("choosing leave must resolve the offer")
+	}
+	if !strings.Contains(m.rotateDeleteResult, "Left in place") {
+		t.Fatalf("rotateDeleteResult = %q, want the left-in-place message", m.rotateDeleteResult)
+	}
+}
+
+func TestRotateDeleteOfferDeleteRequiresAnExplicitMove(t *testing.T) {
+	var calls []string
+	sb := stubBackend{rotateDeleteCalls: &calls}
+	a := atRotateDeleteOffer(t, sb)
+	a = pressSeq(t, a, "down")
+	if m := identModel(t, a); m.rotateDeleteChoiceFocus != 1 {
+		t.Fatalf("after one down, focus = %d, want 1 (delete)", m.rotateDeleteChoiceFocus)
+	}
+	displayedID := identModel(t, a).rotateDeleteOffer.KeyID
+	a = pressAndRun(t, a, "enter")
+	if len(calls) != 1 {
+		t.Fatalf("exactly one delete dispatch expected, got %v", calls)
+	}
+	if calls[0] != displayedID {
+		t.Fatalf("delete dispatched with ID %q, want the displayed ID %q", calls[0], displayedID)
+	}
+	if m := identModel(t, a); !m.rotateDeleteResolved || !strings.Contains(m.rotateDeleteResult, "removed") {
+		t.Fatalf("a successful delete must resolve the offer with the removed message, got resolved=%v result=%q", m.rotateDeleteResolved, m.rotateDeleteResult)
+	}
+}
+
+func TestRotateDeleteOfferAbsentAfterRepair(t *testing.T) {
+	var calls []string
+	sb := stubBackend{rotateDeleteCalls: &calls}
+	// clientB (index 6) is the key-missing fixture row -> repair mode.
+	a := openKeyCeremonyAtReviewForIdentity(t, sb, 6)
+	a, uploadCmd := confirmKeyCeremony(t, a)
+	if uploadCmd == nil {
+		t.Fatal("setup: a successful repair commit must still dispatch the upload beat")
+	}
+	model, offerCmd := a.Update(uploadCmd())
+	a = model.(App)
+	if offerCmd != nil {
+		t.Fatal("repair must never dispatch the delete-offer probe -- there is no old remote key to remove")
+	}
+	m := identModel(t, a)
+	if m.rotateDeleteOffer.Available {
+		t.Fatal("repair must never show the delete offer")
+	}
+	rendered := stripANSI(m.renderKeyCeremony(mustSelected(t, a)))
+	if strings.Contains(rendered, "Remove the old key from") {
+		t.Fatalf("repair result screen must not render the offer heading:\n%s", rendered)
+	}
+}
+
+func TestRotateDeleteOfferAbsentWhenInventoryFails(t *testing.T) {
+	sb := stubBackend{rotateDeleteOfferFn: func(name string) tea.Cmd {
+		return func() tea.Msg {
+			return RotateDeleteOfferMsg{Name: name, View: RotateDeleteOfferView{Unavailable: "could not read the existing key inventory"}}
+		}
+	}}
+	a := openKeyCeremonyAtReview(t, sb)
+	a, uploadCmd := confirmKeyCeremony(t, a)
+	model, offerCmd := a.Update(uploadCmd())
+	a = model.(App)
+	if offerCmd != nil {
+		model, _ = a.Update(offerCmd())
+		a = model.(App)
+	}
+	m := identModel(t, a)
+	rendered := stripANSI(m.renderKeyCeremony(mustSelected(t, a)))
+	if !strings.Contains(rendered, "The old key stays valid at") {
+		t.Fatalf("an unavailable offer must fall back to the existing frozen grace hint:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "Remove the old key from") {
+		t.Fatalf("an unavailable offer must render no offer rows:\n%s", rendered)
+	}
+}
+
+// TestRotateDeleteOfferIsNotTheTypedConfirmClass asserts, at the source
+// level, that the D-04 offer path never constructs a ceremonyConfig with
+// Destructive set — the plan's own acceptance criterion, since a rendered
+// substring check is too easy to false-positive on legitimate copy (the
+// upload beat's own "--type authentication" command text, for instance).
+func TestRotateDeleteOfferIsNotTheTypedConfirmClass(t *testing.T) {
+	a := atRotateDeleteOffer(t, stubBackend{})
+	rendered := stripANSI(identModel(t, a).renderKeyCeremony(mustSelected(t, a)))
+	if !strings.Contains(rendered, "[ Leave it") || !strings.Contains(rendered, "[ Delete old key from") {
+		t.Fatalf("the offer's two-option choice row must render, got:\n%s", rendered)
+	}
+	src, err := os.ReadFile("identities.go")
+	if err != nil {
+		t.Fatalf("reading identities.go: %v", err)
+	}
+	if strings.Contains(string(src), "Destructive:") &&
+		strings.Contains(string(src), "renderRotateDeleteOffer") {
+		start := strings.Index(string(src), "func (m identitiesModel) renderRotateDeleteOffer")
+		end := strings.Index(string(src)[start:], "\n}\n")
+		if start >= 0 && strings.Contains(string(src)[start:start+end], "Destructive:") {
+			t.Fatal("renderRotateDeleteOffer must not construct a ceremonyConfig with Destructive set")
+		}
+	}
+}
+
+func TestRotateDeleteOfferResolvesAsynchronously(t *testing.T) {
+	a := openKeyCeremonyAtReview(t, stubBackend{})
+	a, uploadCmd := confirmKeyCeremony(t, a)
+	model, offerCmd := a.Update(uploadCmd())
+	a = model.(App)
+	before := stripANSI(identModel(t, a).renderKeyCeremony(mustSelected(t, a)))
+	if offerCmd == nil {
+		t.Fatal("reaching the result screen (post-upload) must dispatch RotateDeleteOffer as a command")
+	}
+	if strings.Contains(before, "Remove the old key from") {
+		t.Fatalf("the pre-message screen must not render any offer rows before RotateDeleteOfferMsg arrives:\n%s", before)
+	}
+	model, _ = a.Update(offerCmd())
+	after := stripANSI(identModel(t, model.(App)).renderKeyCeremony(mustSelected(t, model.(App))))
+	if !strings.Contains(after, "Remove the old key from") {
+		t.Fatalf("once RotateDeleteOfferMsg arrives, the offer must render:\n%s", after)
+	}
+}
+
+func TestRotateDeleteFailureRetriesTheSameConfirmedTarget(t *testing.T) {
+	var calls []string
+	sb := stubBackend{rotateDeleteCalls: &calls, rotateDeleteCommitErr: "network error"}
+	a := atRotateDeleteOffer(t, sb)
+	a = pressSeq(t, a, "down")
+	a = pressAndRun(t, a, "enter")
+	if len(calls) != 1 {
+		t.Fatalf("first delete attempt: want 1 call, got %v", calls)
+	}
+	m := identModel(t, a)
+	if m.rotateDeleteResolved {
+		t.Fatal("a FAILED delete must not resolve the offer -- the choice row stays actionable for a retry")
+	}
+	if m.rotateDeleteChoiceFocus != 1 {
+		t.Fatalf("focus after a failed delete = %d, want 1 (delete) so Enter retries directly", m.rotateDeleteChoiceFocus)
+	}
+	_ = pressAndRun(t, a, "enter")
+	if len(calls) != 2 {
+		t.Fatalf("retry: want 2 total calls, got %v", calls)
+	}
+	if calls[0] != calls[1] {
+		t.Fatalf("retry must delete the SAME confirmed ID: first=%q second=%q", calls[0], calls[1])
+	}
+}
+
+func TestRotateDeleteConfirmedTargetIsDiscardedOnLeavingTheScreen(t *testing.T) {
+	var calls []string
+	sb := stubBackend{rotateDeleteCalls: &calls, rotateDeleteCommitErr: "network error"}
+	a := atRotateDeleteOffer(t, sb)
+	a = pressSeq(t, a, "down")
+	a = pressAndRun(t, a, "enter")
+	if len(calls) != 1 {
+		t.Fatalf("setup: want 1 failed call, got %v", calls)
+	}
+	if m := identModel(t, a); m.rotateDeleteConfirmedID == "" {
+		t.Fatal("setup: a failed delete must retain the confirmed ID")
+	}
+	// Move focus back to "leave" and resolve the offer that way (a user
+	// giving up on the retry after a failure), then press Enter once more
+	// on the now-free ceremony "Done" control to leave the result screen.
+	a = pressSeq(t, a, "up")
+	a = pressAndRun(t, a, "enter")
+	if m := identModel(t, a); !m.rotateDeleteResolved {
+		t.Fatal("setup: choosing leave must resolve the offer even after a prior failed delete")
+	}
+	a = pressAndRun(t, a, "enter")
+	final := identModel(t, a)
+	if final.rotateDeleteConfirmedID != "" || final.rotateDeleteConfirmedTitle != "" {
+		t.Fatalf("leaving the result screen must discard the retained confirmed pair, got id=%q title=%q", final.rotateDeleteConfirmedID, final.rotateDeleteConfirmedTitle)
+	}
+}
+
+// TestRotateDeleteOfferFitsTheFrameBudget asserts the rotate result screen,
+// WITH the three extra offer rows (heading, body, choice row) present,
+// still fits the fixed 100x30 frame's body-row budget.
+func TestRotateDeleteOfferFitsTheFrameBudget(t *testing.T) {
+	a := atRotateDeleteOffer(t, stubBackend{})
+	sv := identModel(t, a).view(Seed(), minFrameWidth, minFrameHeight)
+	lines := strings.Count(stripANSI(sv.body), "\n") + 1
+	if budget := frameBodyRows(minFrameHeight); lines > budget {
+		t.Fatalf("rendered pane is %d lines, want <= frameBodyRows(minFrameHeight) = %d:\n%s", lines, budget, stripANSI(sv.body))
+	}
+}
+
+func mustSelected(t *testing.T, a App) DemoIdentity {
+	t.Helper()
+	m := identModel(t, a)
+	sel, ok := m.selectedIdentity(Seed())
+	if !ok {
+		t.Fatal("no selected identity")
+	}
+	return sel
 }
 
 func TestNewKeyCloneRunsTheUploadSection(t *testing.T) {

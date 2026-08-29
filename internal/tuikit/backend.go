@@ -566,6 +566,28 @@ type Backend interface {
 	// every failure is reported as a failed UploadResultRow inside the
 	// delivered view (D-03/D-11 — upload never gates).
 	RunUploadForIdentity(name string) tea.Cmd
+
+	// RotateDeleteOffer resolves D-04's interactive old-key delete offer
+	// for the named identity — RESOLVED ASYNCHRONOUSLY (R3), never on the
+	// render path: it performs a FRESH provider inventory read, precisely
+	// the kind of network-backed CLI call that must never block the Bubble
+	// Tea loop at the moment the user reaches the rotate result screen (the
+	// same reasoning UploadEligibility already established). An internal
+	// failure (inventory error, no match, non-qualifying provider) fails
+	// CLOSED by returning an Available=false view with a reason, never by
+	// surfacing an error the caller must special-case — this method may
+	// NEVER be converted to a synchronous shape.
+	RotateDeleteOffer(name string) tea.Cmd
+
+	// CommitRotateDeleteOldKey is the ONE remotely-destructive call in this
+	// phase — reachable ONLY from a confirmed choice on the D-04 offer,
+	// never autonomously. It deletes exactly the given keyID (the ID the
+	// user reviewed on the offer) and MUST NOT re-resolve it: re-resolving
+	// after the user has confirmed would let a provider-side change between
+	// display and confirm redirect the deletion (review R12's retry rule
+	// depends on this). Async, like every other provider-I/O seam; this
+	// method may NEVER be converted to a synchronous shape.
+	CommitRotateDeleteOldKey(name, keyID string) tea.Cmd
 }
 
 // WizardStageMsg completes a create-wizard test stage. Backends deliver it

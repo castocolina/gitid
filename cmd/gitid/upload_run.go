@@ -358,3 +358,55 @@ func (b *realBackend) confirmUpload(tool uploader.Tool, toolPath, pubLine, provi
 	}
 	return rows, false
 }
+
+// rotateDeleteOfferFor resolves D-04's interactive old-key delete offer for
+// an EXISTING identity via a FRESH provider inventory read — never on the
+// render path (R3), and never cached across calls: D-04's Open Question 2 is
+// resolved lazily, at result-screen time, because an eager resolution during
+// KeyCeremonyPlan would cache an ID captured before the user even confirmed
+// the rotate. Matching is by EXACT title equality against THIS machine's
+// title (uploader.KeyTitle + uploader.FindByTitle) — never a substring or a
+// name-only match — because D-07's whole point is that a rotate on one
+// machine must never offer to delete a DIFFERENT machine's still-in-use key.
+// Every failure path (unknown identity, non-qualifying provider, tool
+// absent/unauthenticated, inventory error, no match) returns an
+// Available=false view with a reason; it never returns an error the caller
+// must special-case. This lives here, not in wiring.go, so the ONE
+// uploader.Inventory call this beat makes stays inside the shared
+// decision-logic file the wiring_test.go/upload_run_test.go AST checks
+// guard (R3's "decision logic lives only in upload_run.go" rule).
+func (b *realBackend) rotateDeleteOfferFor(name string) tuikit.RotateDeleteOfferView {
+	acct, ok := b.findAccount(name)
+	if !ok {
+		return tuikit.RotateDeleteOfferView{Unavailable: fmt.Sprintf("identity %q not found", name)}
+	}
+	provider, canonicalHost := uploader.ProviderForHostname(acct.Hostname)
+	if provider == "" {
+		return tuikit.RotateDeleteOfferView{Unavailable: "provider not eligible for autonomous key management"}
+	}
+	tool, toolPath, status := uploader.DetectFor(provider, b.uploaderDeps)
+	if status == uploader.AuthToolNotFound {
+		return tuikit.RotateDeleteOfferView{Unavailable: fmt.Sprintf("%s CLI not found on PATH", providerToolName(provider))}
+	}
+	if uploader.AuthCheck(toolPath, b.uploaderDeps, canonicalHost) != uploader.AuthAuthenticated {
+		return tuikit.RotateDeleteOfferView{Unavailable: fmt.Sprintf("not authenticated with %s", providerDisplayName(provider))}
+	}
+	existing, err := uploader.Inventory(tool, toolPath, b.uploaderDeps)
+	if err != nil {
+		return tuikit.RotateDeleteOfferView{Unavailable: "could not read the existing key inventory"}
+	}
+	title := uploader.KeyTitle(name, shortHostname())
+	found, ok := uploader.FindByTitle(existing, title)
+	if !ok {
+		return tuikit.RotateDeleteOfferView{Unavailable: "no matching old key found on this machine"}
+	}
+	return tuikit.RotateDeleteOfferView{
+		Available:     true,
+		ProviderName:  providerDisplayName(provider),
+		IdentityName:  name,
+		MachineName:   shortHostname(),
+		KeyTitle:      found.Title,
+		KeyID:         found.ID,
+		ManualCommand: uploader.DeleteCommandPreview(tool, toolPath, found.ID),
+	}
+}

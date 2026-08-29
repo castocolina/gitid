@@ -5831,3 +5831,143 @@ func snapshotHomeRecursive(t *testing.T, home string) map[string]string {
 	}
 	return out
 }
+
+// ---------------------------------------------------------------------------
+// 09-06 Task 3 — D-04's interactive old-key delete offer, backend seam.
+// ---------------------------------------------------------------------------
+
+// seedRotateDeleteFixture creates a real "personal"/github.com identity
+// through the SAME CommitCreate path every other backend test uses, so
+// b.findAccount("personal") resolves a real, tilde-expanded Account.
+func seedRotateDeleteFixture(t *testing.T, home string) *realBackend {
+	t.Helper()
+	seedSSHDir(t, home)
+	b := newBackendForHome(home)
+	id := tuikit.DemoIdentity{
+		Name: "personal", SSHHost: "personal.github.com", Hostname: "ssh.github.com",
+		Port: 443, KeyPath: "~/.ssh/id_ed25519_personal", Provider: "github.com",
+		State: "complete", GitName: "Personal Identity", GitEmail: "you@personal.example",
+		MatchStrategy: "gitdir", GitConfigured: true,
+	}
+	unlockStoreForIdentity(t, b, id)
+	if msg := runCommitCreate(t, b, id); msg.Err != "" {
+		t.Fatalf("seed CommitCreate: %s", msg.Err)
+	}
+	return b
+}
+
+// ghInventoryDeps builds a uploader.Deps whose gh calls answer: LookPath ->
+// a fake gh path, "auth status" -> authenticated (exit 0), "api user/keys"
+// -> authKeysJSON, "api user/ssh_signing_keys" -> signingKeysJSON. Any other
+// invocation is recorded in *calls but answers empty/success.
+func ghInventoryDeps(calls *[]string, authKeysJSON, signingKeysJSON string) uploader.Deps {
+	return uploader.Deps{
+		LookPath: func(name string) (string, error) { return "/fake/" + name, nil },
+		RunCmd: func(name string, args ...string) (string, int, error) {
+			argv := strings.Join(append([]string{name}, args...), " ")
+			*calls = append(*calls, argv)
+			switch {
+			case strings.Contains(argv, "auth status"):
+				return "", 0, nil
+			case strings.Contains(argv, "api user/keys"):
+				return authKeysJSON, 0, nil
+			case strings.Contains(argv, "api user/ssh_signing_keys"):
+				return signingKeysJSON, 0, nil
+			default:
+				return "", 0, nil
+			}
+		},
+	}
+}
+
+// TestRotateDeleteOfferMatchesOnlyThisMachinesTitle is the D-07 regression:
+// an inventory entry titled for the SAME identity but a DIFFERENT machine
+// must never be offered for deletion — only an EXACT title match against
+// THIS machine's title (uploader.KeyTitle(name, shortHostname())) qualifies.
+func TestRotateDeleteOfferMatchesOnlyThisMachinesTitle(t *testing.T) {
+	home := t.TempDir()
+	b := seedRotateDeleteFixture(t, home)
+	otherMachineTitle := uploader.KeyTitle("personal", "some-other-laptop")
+	authJSON := fmt.Sprintf(`[{"id":42,"title":%q,"key":"ssh-ed25519 AAAA"}]`, otherMachineTitle)
+	var calls []string
+	b.uploaderDeps = ghInventoryDeps(&calls, authJSON, `[]`)
+
+	view := b.rotateDeleteOfferFor("personal")
+	if view.Available {
+		t.Fatalf("a different-machine title match must never be offered, got %+v", view)
+	}
+	if view.KeyID != "" {
+		t.Errorf("KeyID = %q, want empty when unavailable", view.KeyID)
+	}
+}
+
+// TestRotateDeleteOfferReadsInventoryFreshAtResultTime asserts the inventory
+// read happens INSIDE the RotateDeleteOffer call, not cached from an earlier
+// point (D-04's Open Question 2: resolved lazily, never during
+// KeyCeremonyPlan) — calling it twice must read twice.
+func TestRotateDeleteOfferReadsInventoryFreshAtResultTime(t *testing.T) {
+	home := t.TempDir()
+	b := seedRotateDeleteFixture(t, home)
+	thisTitle := uploader.KeyTitle("personal", shortHostname())
+	authJSON := fmt.Sprintf(`[{"id":7,"title":%q,"key":"ssh-ed25519 AAAA"}]`, thisTitle)
+	var calls []string
+	b.uploaderDeps = ghInventoryDeps(&calls, authJSON, `[]`)
+
+	first := b.rotateDeleteOfferFor("personal")
+	if !first.Available || first.KeyID != "7" {
+		t.Fatalf("first call: want Available with KeyID 7, got %+v", first)
+	}
+	firstCallCount := len(calls)
+	second := b.rotateDeleteOfferFor("personal")
+	if !second.Available {
+		t.Fatalf("second call: want Available, got %+v", second)
+	}
+	if len(calls) == firstCallCount {
+		t.Fatal("a second RotateDeleteOffer call recorded no new provider calls — the inventory read must run FRESH every time, never cached")
+	}
+}
+
+// TestCommitRotateDeleteOldKeyDeletesExactlyTheConfirmedID asserts one
+// recorded delete invocation whose argv carries the passed ID, and no
+// re-resolution (inventory) read during the commit.
+func TestCommitRotateDeleteOldKeyDeletesExactlyTheConfirmedID(t *testing.T) {
+	home := t.TempDir()
+	b := seedRotateDeleteFixture(t, home)
+	var calls []string
+	b.uploaderDeps = uploader.Deps{
+		LookPath: func(name string) (string, error) { return "/fake/" + name, nil },
+		RunCmd: func(name string, args ...string) (string, int, error) {
+			argv := strings.Join(append([]string{name}, args...), " ")
+			calls = append(calls, argv)
+			return "", 0, nil
+		},
+	}
+
+	cmd := b.CommitRotateDeleteOldKey("personal", "999")
+	if cmd == nil {
+		t.Fatal("CommitRotateDeleteOldKey must return a non-nil tea.Cmd (R3: never synchronous)")
+	}
+	msg, ok := cmd().(tuikit.RotateDeleteCommitMsg)
+	if !ok {
+		t.Fatalf("CommitRotateDeleteOldKey() delivered %T, want tuikit.RotateDeleteCommitMsg", cmd())
+	}
+	if msg.Err != "" {
+		t.Fatalf("commit failed: %s", msg.Err)
+	}
+	deleteCalls := 0
+	inventoryCalls := 0
+	for _, c := range calls {
+		if strings.Contains(c, "ssh-key delete 999") {
+			deleteCalls++
+		}
+		if strings.Contains(c, "api user/keys") || strings.Contains(c, "api user/ssh_signing_keys") {
+			inventoryCalls++
+		}
+	}
+	if deleteCalls != 1 {
+		t.Errorf("delete calls = %d, want exactly 1 carrying the confirmed ID 999: %v", deleteCalls, calls)
+	}
+	if inventoryCalls != 0 {
+		t.Errorf("inventory calls during commit = %d, want 0 — CommitRotateDeleteOldKey must never re-resolve: %v", inventoryCalls, calls)
+	}
+}

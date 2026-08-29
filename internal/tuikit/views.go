@@ -746,3 +746,46 @@ type RegisterKeyPlanMsg struct {
 	View UploadEligibilityView
 	Err  error
 }
+
+// RotateDeleteOfferView is D-04's answer to "can the old remote key be
+// offered for removal right now, and if so, what is it": Available=false
+// plus a populated Unavailable reason means the offer does not render at
+// all and the caller falls back to the existing frozen grace-window hint —
+// an inventory-read failure, no matching key, or a non-qualifying provider
+// all take this path (fail CLOSED on the destructive offer, never fail
+// open). KeyID is the FRESH, machine-scoped-exact-match provider ID the
+// confirmed delete will remove — resolved once, at result-screen time,
+// never re-resolved after the user reviews it (D-04, review R12).
+type RotateDeleteOfferView struct {
+	Available    bool
+	ProviderName string
+	// IdentityName/MachineName are KeyTitle's two components, carried
+	// separately so the D-04 body format (RotateDeleteOfferBodyFmt, whose
+	// two %s verbs are the identity name and the machine name) can
+	// interpolate them directly rather than re-parsing the assembled title.
+	IdentityName  string
+	MachineName   string
+	KeyTitle      string
+	KeyID         string
+	ManualCommand string
+	Unavailable   string
+}
+
+// RotateDeleteOfferMsg completes the asynchronous D-04 offer probe
+// Backend.RotateDeleteOffer dispatches when the rotate result screen is
+// reached. Name carries the identity the probe was resolved for so a reply
+// arriving after the user has navigated away can be discarded, mirroring
+// RegisterKeyPlanMsg's stale-guard shape.
+type RotateDeleteOfferMsg struct {
+	Name string
+	View RotateDeleteOfferView
+}
+
+// RotateDeleteCommitMsg completes the ONE remotely-destructive call this
+// phase makes, Backend.CommitRotateDeleteOldKey. A non-empty Err means the
+// delete failed and (per review R12) the confirmed target must remain
+// available on the model for exactly one retry — this message alone never
+// decides retention; the caller keeps or clears the confirmed pair.
+type RotateDeleteCommitMsg struct {
+	Err string
+}

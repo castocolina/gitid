@@ -212,6 +212,17 @@ type stubBackend struct {
 	// App.checkFixBatchHalt would wrongly halt on every subsequent
 	// dispatch once fixPersistErr is set once.
 	lastPersistErr *error
+	// D-04 delete-offer overrides (Task 3, 09-06-PLAN.md): rotateDeleteOfferFn
+	// overrides RotateDeleteOffer's default github/not-github answer for a
+	// test that needs a specific shape (a different-machine title match
+	// miss, an inventory failure, a repair-mode absence). rotateDeleteCalls
+	// is a pointer box (mirroring storageCall above) recording every keyID
+	// CommitRotateDeleteOldKey was called with, in order, so a retry test
+	// can assert the SAME id was used with no intervening inventory read.
+	// rotateDeleteCommitErr makes the commit fail deterministically.
+	rotateDeleteOfferFn   func(name string) tea.Cmd
+	rotateDeleteCalls     *[]string
+	rotateDeleteCommitErr string
 }
 
 // storageCommitCall is the last CommitSSHStorage (layout, token) pair a
@@ -583,6 +594,50 @@ func (stubBackend) RegisterKeyPlan(name string) tea.Cmd {
 			}}
 		}
 		return RegisterKeyPlanMsg{Name: name, View: UploadEligibilityView{State: UploadEligibilityOmitted}}
+	}
+}
+
+// RotateDeleteOffer answers Available for any github fixture identity,
+// Unavailable otherwise — test cases override with a custom stubBackend
+// field when they need a specific shape (a different-machine title, an
+// inventory failure, etc.) via rotateDeleteOfferFn.
+func (b stubBackend) RotateDeleteOffer(name string) tea.Cmd {
+	if b.rotateDeleteOfferFn != nil {
+		return b.rotateDeleteOfferFn(name)
+	}
+	return func() tea.Msg {
+		host := ""
+		for _, row := range stubIdentityRows {
+			if row.Name == name {
+				host = row.SSHHost
+				break
+			}
+		}
+		if strings.Contains(host, "github") {
+			return RotateDeleteOfferMsg{Name: name, View: RotateDeleteOfferView{
+				Available: true, ProviderName: "GitHub",
+				IdentityName: name, MachineName: "this-machine",
+				KeyTitle: "gitid: " + name + " @ this-machine", KeyID: "999",
+				ManualCommand: "gh ssh-key delete 999 --yes",
+			}}
+		}
+		return RotateDeleteOfferMsg{Name: name, View: RotateDeleteOfferView{Unavailable: "no matching old key found on this machine"}}
+	}
+}
+
+// CommitRotateDeleteOldKey succeeds deterministically unless a test injects
+// rotateDeleteCommitErr, recording the (name, keyID) pair it was called
+// with so a test can assert the retry semantics (R12) without a second
+// inventory read having happened.
+func (b stubBackend) CommitRotateDeleteOldKey(_, keyID string) tea.Cmd {
+	return func() tea.Msg {
+		if b.rotateDeleteCalls != nil {
+			*b.rotateDeleteCalls = append(*b.rotateDeleteCalls, keyID)
+		}
+		if b.rotateDeleteCommitErr != "" {
+			return RotateDeleteCommitMsg{Err: b.rotateDeleteCommitErr}
+		}
+		return RotateDeleteCommitMsg{}
 	}
 }
 
