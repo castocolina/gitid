@@ -294,12 +294,11 @@ func saveFrame(t *testing.T, name string, s *ptySession) {
 // newPTYCmd constructs an exec.Cmd for the gitid binary (no-args = TUI mode)
 // with the given sandboxed HOME and any extra environment entries.
 // The binary path comes from BuildBinary — never from user input (G204 clean).
-func newPTYCmd(ctx context.Context, bin, home string, extraEnv ...string) *exec.Cmd {
+func newPTYCmd(t *testing.T, ctx context.Context, bin, home string, extraEnv ...string) *exec.Cmd {
+	t.Helper()
 	cmd := exec.CommandContext(ctx, bin) //nolint:gosec // bin from BuildBinary; no user input
-	cmd.Env = append(
-		append(os.Environ(), "HOME="+home, "TERM=xterm-256color"),
-		extraEnv...,
-	)
+	env, _ := e2eEnv(t, home)
+	cmd.Env = append(append(env, "TERM=xterm-256color"), extraEnv...)
 	return cmd
 }
 
@@ -402,7 +401,7 @@ func TestUIPTY_RealShellBoots(t *testing.T) {
 	// 100x30 is the approved design's minimum geometry (D-04 capture geometry):
 	// the tuikit shell refuses to render smaller and prints a resize hint
 	// instead, so the smoke test must open the PTY at the real size.
-	s := startPTYAt(t, newPTYCmd(ctx, bin, home), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newPTYCmd(t, ctx, bin, home), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	uiReady(t, s)

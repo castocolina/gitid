@@ -148,7 +148,7 @@ func startStoragePTY(t *testing.T, home, fakeSSHDir string) *ptySession {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	t.Cleanup(cancel)
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, BuildBinary(t), home, fakeSSHDir), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, BuildBinary(t), home, fakeSSHDir), dummyTermWidth, dummyTermHeight)
 	t.Cleanup(func() { s.close(t) })
 	uiReady(t, s)
 	s.sendKey([]byte("2"), keystrokeDelay)

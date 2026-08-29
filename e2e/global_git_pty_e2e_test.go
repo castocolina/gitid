@@ -34,13 +34,11 @@ func seedGlobalGitHome(t *testing.T, home, mainConfig, baseline string) (string,
 	return mainPath, baselinePath
 }
 
-func newGlobalGitCmd(ctx context.Context, bin, home, fakeGitDir string) *exec.Cmd {
+func newGlobalGitCmd(t *testing.T, ctx context.Context, bin, home, fakeGitDir string) *exec.Cmd {
+	t.Helper()
 	cmd := exec.CommandContext(ctx, bin)
-	env := append(os.Environ(), "HOME="+home, "TERM=xterm-256color")
-	if fakeGitDir != "" {
-		env = append(env, "PATH="+fakeGitDir+":"+os.Getenv("PATH"))
-	}
-	cmd.Env = env
+	env, _ := e2eEnv(t, home, fakeGitDir)
+	cmd.Env = append(env, "TERM=xterm-256color")
 	return cmd
 }
 
@@ -48,7 +46,7 @@ func startGlobalGitPTY(t *testing.T, home, fakeGitDir string) *ptySession {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	t.Cleanup(cancel)
-	s := startPTYAt(t, newGlobalGitCmd(ctx, BuildBinary(t), home, fakeGitDir), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newGlobalGitCmd(t, ctx, BuildBinary(t), home, fakeGitDir), dummyTermWidth, dummyTermHeight)
 	t.Cleanup(func() { s.close(t) })
 	uiReady(t, s)
 	s.sendKey([]byte("3"), keystrokeDelay)
@@ -219,7 +217,7 @@ func startGlobalGitPTYExpectingProbeFailure(t *testing.T, home, fakeGitDir strin
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	t.Cleanup(cancel)
-	s := startPTYAt(t, newGlobalGitCmd(ctx, BuildBinary(t), home, fakeGitDir), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newGlobalGitCmd(t, ctx, BuildBinary(t), home, fakeGitDir), dummyTermWidth, dummyTermHeight)
 	t.Cleanup(func() { s.close(t) })
 	uiReady(t, s)
 	s.sendKey([]byte("3"), keystrokeDelay)

@@ -163,7 +163,7 @@ func TestGitConfiguration_RealPTYCompleteEditFlow(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	closed := false
 	defer func() {
 		if !closed {
@@ -250,7 +250,7 @@ func TestGitConfiguration_RealPTYSSHOnlyCompletionFlow(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	closed := false
 	defer func() {
 		if !closed {
@@ -340,7 +340,7 @@ func TestGitConfiguration_RealPTYWriteFailureRollback(t *testing.T) {
 	bin := BuildBinary(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	closed := false
 	defer func() {
 		if !closed {
@@ -396,7 +396,7 @@ func TestGitConfiguration_RealPTYMouseFieldFocus(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	openStandaloneGitForm(t, s)
@@ -506,9 +506,11 @@ func allGitScreenRegions() []gitScreenRegion {
 // LIVE cmd/gitid-dummy binary — the SAME internal/tuikit render stack the
 // real binary uses, injected with dummytui.FixtureBackend instead of a real
 // Backend (D-12).
-func newDummyCmd(ctx context.Context, bin, home string) *exec.Cmd {
+func newDummyCmd(t *testing.T, ctx context.Context, bin, home string) *exec.Cmd {
+	t.Helper()
 	cmd := exec.CommandContext(ctx, bin) //nolint:gosec // bin from BuildDummyBinary; no user input
-	cmd.Env = append(os.Environ(), "HOME="+home, "TERM=xterm-256color")
+	env, _ := e2eEnv(t, home)
+	cmd.Env = append(env, "TERM=xterm-256color")
 	return cmd
 }
 
@@ -945,7 +947,7 @@ func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		seedGitPTYIdentity(t, realHome, "acme")
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		real := startPTYAt(t, newRealCreateFlowCmd(ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
+		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
 		defer real.close(t)
 		openStandaloneGitForm(t, real)
 		mustSee(t, real, "editing existing fragment", "real: edit-mode Configure-Git opens")
@@ -953,7 +955,7 @@ func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		dummyHome := SandboxHome(t)
 		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer dcancel()
-		dummy := startPTYAt(t, newDummyCmd(dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
+		dummy := startPTYAt(t, newDummyCmd(t, dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
 		defer dummy.close(t)
 		openDummyGitFormEditMode(t, dummy)
 		mustSee(t, dummy, "editing existing fragment", "dummy: edit-mode Configure-Git opens")
@@ -967,7 +969,7 @@ func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		removeGitSide(t, realHome, "work")
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		real := startPTYAt(t, newRealCreateFlowCmd(ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
+		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
 		defer real.close(t)
 		openStandaloneGitForm(t, real)
 		mustSee(t, real, "completes this identity", "real: SSH-only Configure-Git opens")
@@ -975,7 +977,7 @@ func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		dummyHome := SandboxHome(t)
 		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer dcancel()
-		dummy := startPTYAt(t, newDummyCmd(dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
+		dummy := startPTYAt(t, newDummyCmd(t, dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
 		defer dummy.close(t)
 		openDummyGitFormSSHOnly(t, dummy)
 		mustSee(t, dummy, "completes this identity", "dummy: SSH-only Configure-Git opens")
@@ -988,7 +990,7 @@ func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		seedGitPTYIdentity(t, realHome, "acme")
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		real := startPTYAt(t, newRealCreateFlowCmd(ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
+		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
 		defer real.close(t)
 		openStandaloneGitForm(t, real)
 		mustSee(t, real, "editing existing fragment", "real: Configure-Git opens")
@@ -999,7 +1001,7 @@ func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		dummyHome := SandboxHome(t)
 		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer dcancel()
-		dummy := startPTYAt(t, newDummyCmd(dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
+		dummy := startPTYAt(t, newDummyCmd(t, dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
 		defer dummy.close(t)
 		openDummyGitFormEditMode(t, dummy)
 		mustSee(t, dummy, "editing existing fragment", "dummy: Configure-Git opens")
@@ -1015,7 +1017,7 @@ func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		seedGitPTYIdentity(t, realHome, "acme")
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		real := startPTYAt(t, newRealCreateFlowCmd(ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
+		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
 		defer real.close(t)
 		openStandaloneGitForm(t, real)
 		mustSee(t, real, "editing existing fragment", "real: Configure-Git opens")
@@ -1025,7 +1027,7 @@ func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		dummyHome := SandboxHome(t)
 		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer dcancel()
-		dummy := startPTYAt(t, newDummyCmd(dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
+		dummy := startPTYAt(t, newDummyCmd(t, dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
 		defer dummy.close(t)
 		openDummyGitFormEditMode(t, dummy)
 		mustSee(t, dummy, "editing existing fragment", "dummy: Configure-Git opens")
@@ -1040,7 +1042,7 @@ func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		seedGitPTYIdentity(t, realHome, "acme")
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		real := startPTYAt(t, newRealCreateFlowCmd(ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
+		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
 		defer real.close(t)
 		openStandaloneGitForm(t, real)
 		mustSee(t, real, "editing existing fragment", "real: Configure-Git opens")
@@ -1052,7 +1054,7 @@ func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		dummyHome := SandboxHome(t)
 		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer dcancel()
-		dummy := startPTYAt(t, newDummyCmd(dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
+		dummy := startPTYAt(t, newDummyCmd(t, dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
 		defer dummy.close(t)
 		openDummyGitFormEditMode(t, dummy)
 		mustSee(t, dummy, "editing existing fragment", "dummy: Configure-Git opens")

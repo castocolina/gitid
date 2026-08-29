@@ -29,7 +29,8 @@ func runHealthCLI(t *testing.T, ctx context.Context, bin, home string, args ...s
 	cmd := exec.CommandContext(ctx, bin, args...) //nolint:gosec // bin from BuildBinary; fixed test literals
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
-	cmd.Env = append(os.Environ(), "HOME="+home)
+	env, _ := e2eEnv(t, home)
+	cmd.Env = env
 	err := cmd.Run()
 	if err == nil {
 		return out.Bytes(), 0

@@ -50,18 +50,19 @@ import (
 var wizardKeyRight = []byte{0x1b, 0x5b, 0x43}
 
 // newRealCreateFlowCmd builds the exec.Cmd for a create-flow PTY test: the
-// REAL gitid binary, a sandboxed HOME, and — when fakeSSHDir is non-empty —
-// that directory prepended to PATH so the real process execs the fake `ssh`
-// (D-22) instead of the system one. TERM is pinned the same way every other
-// PTY e2e test in this package pins it (dummy_demo_e2e_test.go), which is
-// proven to still hold under the project's TERM=dumb/SSH_AUTH_SOCK= CI
-// reproduction (L1/L3) because the LAST TERM= entry in cmd.Env wins.
-func newRealCreateFlowCmd(ctx context.Context, bin, home, fakeSSHDir string) *exec.Cmd {
+// REAL gitid binary, a sandboxed HOME, and any shimDirs (fake ssh, fake gh,
+// fake glab, ...) prepended to PATH ahead of e2eEnv's fail-closed provider
+// deny shim (review R1) — so a caller-supplied fake `gh`/`glab` wins when
+// supplied, and the deny shim wins (never the developer's real tool)
+// otherwise. TERM is pinned the same way every other PTY e2e test in this
+// package pins it (dummy_demo_e2e_test.go), which is proven to still hold
+// under the project's TERM=dumb/SSH_AUTH_SOCK= CI reproduction (L1/L3)
+// because the LAST TERM= entry in cmd.Env wins.
+func newRealCreateFlowCmd(t *testing.T, ctx context.Context, bin, home string, shimDirs ...string) *exec.Cmd {
+	t.Helper()
 	cmd := exec.CommandContext(ctx, bin) //nolint:gosec // bin from BuildBinary; no user input
-	env := append(os.Environ(), "HOME="+home, "TERM=xterm-256color")
-	if fakeSSHDir != "" {
-		env = append(env, "PATH="+fakeSSHDir+":"+os.Getenv("PATH"))
-	}
+	env, _ := e2eEnv(t, home, shimDirs...)
+	env = append(env, "TERM=xterm-256color")
 	cmd.Env = env
 	return cmd
 }
@@ -195,7 +196,7 @@ func TestCreateFlow_AlgorithmAvailability(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	openCreateWizard(t, s)
@@ -223,7 +224,7 @@ func TestCreateFlow_SSHFormAliasCollision(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	openCreateWizard(t, s)
@@ -258,7 +259,7 @@ func TestCreateFlow_TestStagePass(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	openCreateWizard(t, s)
@@ -288,7 +289,7 @@ func TestCreateFlow_TestStageReachableNotUploaded(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	openCreateWizard(t, s)
@@ -323,7 +324,7 @@ func TestCreateFlow_TestStageFailureRetry(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	openCreateWizard(t, s)
@@ -359,7 +360,7 @@ func TestCreateFlow_GitConfigurationDefaultTracer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	closed := false
 	defer func() {
 		if !closed {
@@ -505,7 +506,7 @@ func TestCreateFlow_ReuseExistingEncryptedKeyClosesL2Seam(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	closed := false
 	defer func() {
 		if !closed {
@@ -609,7 +610,7 @@ func TestCreateFlow_HostPreviewScrollable(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	openCreateWizard(t, s)
@@ -640,7 +641,7 @@ func TestCreateFlow_DistinctStageCaptures(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	openCreateWizard(t, s)
@@ -671,7 +672,7 @@ func TestCreateFlow_ExactStageProof(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	openCreateWizard(t, s)
@@ -697,7 +698,7 @@ func TestCreateFlow_Stage2RendersExactRawSSHOutput(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	openCreateWizard(t, s)
@@ -730,7 +731,7 @@ func TestCreateFlow_ReuseManualPath(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	openCreateWizard(t, s)
@@ -765,7 +766,7 @@ func TestCreateFlow_GitStepContinueHint(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	openCreateWizard(t, s)
@@ -801,7 +802,7 @@ func TestCreateFlow_CompletedStage1ProofViewport(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	openCreateWizard(t, s)
@@ -838,7 +839,7 @@ func TestCreateFlow_CompletedStage2ProofViewport(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	openCreateWizard(t, s)
@@ -867,7 +868,7 @@ func TestCreateFlow_CompletedStageExactProofViewport(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	openCreateWizard(t, s)
@@ -914,7 +915,7 @@ func TestCreateFlow_ConfirmationExactViewport(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	openCreateWizard(t, s)
@@ -983,7 +984,7 @@ func TestCreateFlow_ReachableNotUploadedEvidence(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	openCreateWizard(t, s)
@@ -1012,7 +1013,7 @@ func TestCreateFlow_HardFailureRetryEvidence(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	openCreateWizard(t, s)
@@ -1042,7 +1043,7 @@ func TestCreateFlow_GitStepUsesFormValidityReason(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	openCreateWizard(t, s)
@@ -1080,7 +1081,7 @@ func TestCreateFlow_MouseFieldFocus(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 
 	openCreateWizard(t, s)
@@ -1145,7 +1146,7 @@ func TestCreateFlow_PTYReviewCorrections(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, delayedResolutionSSHDir(t)), dummyTermWidth, dummyTermHeight)
+		s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, delayedResolutionSSHDir(t)), dummyTermWidth, dummyTermHeight)
 		defer s.close(t)
 		openCreateWizard(t, s)
 		s.sendKey(dummyKeyEnter, keystrokeDelay)
@@ -1173,7 +1174,7 @@ func TestCreateFlow_PTYReviewCorrections(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, FakeSSHDir(t, "denied")), dummyTermWidth, dummyTermHeight)
+		s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, FakeSSHDir(t, "denied")), dummyTermWidth, dummyTermHeight)
 		defer s.close(t)
 		openCreateWizard(t, s)
 		s.sendKey(dummyKeyEnter, keystrokeDelay)
@@ -1200,7 +1201,7 @@ func TestCreateFlow_PTYReviewCorrections(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, FakeSSHDir(t, "pass")), dummyTermWidth, dummyTermHeight)
+		s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, FakeSSHDir(t, "pass")), dummyTermWidth, dummyTermHeight)
 		defer s.close(t)
 		openCreateWizard(t, s)
 		s.sendKey(dummyKeyEnter, keystrokeDelay)
@@ -1219,7 +1220,8 @@ func TestCreateFlow_PTYReviewCorrections(t *testing.T) {
 		dummyCtx, dummyCancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer dummyCancel()
 		dummyCmd := exec.CommandContext(dummyCtx, dummyBin) //nolint:gosec // binary is built by BuildDummyBinary
-		dummyCmd.Env = append(os.Environ(), "HOME="+dummyHome, "TERM=xterm-256color")
+		dummyEnv, _ := e2eEnv(t, dummyHome)
+		dummyCmd.Env = append(dummyEnv, "TERM=xterm-256color")
 		dummy := startPTYAt(t, dummyCmd, dummyTermWidth, dummyTermHeight)
 		defer dummy.close(t)
 		openCreateWizard(t, dummy)

@@ -42,7 +42,7 @@ func startGlobalSSHPTY(t *testing.T, home, mode string) *ptySession {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	t.Cleanup(cancel)
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, BuildBinary(t), home, FakeSSHDir(t, mode)), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, BuildBinary(t), home, FakeSSHDir(t, mode)), dummyTermWidth, dummyTermHeight)
 	t.Cleanup(func() { s.close(t) })
 	uiReady(t, s)
 	s.sendKey([]byte("2"), keystrokeDelay)

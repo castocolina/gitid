@@ -68,10 +68,7 @@ func runSSHCLI(t *testing.T, ctx context.Context, bin, home, fakeSSH string, arg
 	cmd := exec.CommandContext(ctx, bin, args...) //nolint:gosec // bin from BuildBinary; fixed test literals
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
-	env := append(os.Environ(), "HOME="+home)
-	if fakeSSH != "" {
-		env = append(env, "PATH="+fakeSSH+":"+os.Getenv("PATH"))
-	}
+	env, _ := e2eEnv(t, home, fakeSSH)
 	cmd.Env = env
 	err := cmd.Run()
 	if err == nil {

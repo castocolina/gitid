@@ -88,7 +88,8 @@ func runIdentityListJSON(t *testing.T, ctx context.Context, bin, home string) []
 	cmd := exec.CommandContext(ctx, bin, "identity", "list", "--json") //nolint:gosec // bin from BuildBinary; fixed args
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	cmd.Env = append(os.Environ(), "HOME="+home)
+	env, _ := e2eEnv(t, home)
+	cmd.Env = env
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("gitid identity list --json failed: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
 	}
@@ -454,10 +455,7 @@ func runIdentityCLI(t *testing.T, ctx context.Context, bin, home, fakeSSH string
 	cmd := exec.CommandContext(ctx, bin, args...) //nolint:gosec // bin from BuildBinary; fixed test literals
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	env := append(os.Environ(), "HOME="+home)
-	if fakeSSH != "" {
-		env = append(env, "PATH="+fakeSSH+":"+os.Getenv("PATH"))
-	}
+	env, _ := e2eEnv(t, home, fakeSSH)
 	cmd.Env = env
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("gitid %s failed: %v\nstdout:\n%s\nstderr:\n%s", strings.Join(args, " "), err, stdout.String(), stderr.String())
@@ -470,7 +468,8 @@ func runIdentityCLI(t *testing.T, ctx context.Context, bin, home, fakeSSH string
 func runIdentityCLIFailure(t *testing.T, ctx context.Context, bin, home, fakeSSH string, args ...string) []byte {
 	t.Helper()
 	cmd := exec.CommandContext(ctx, bin, args...) //nolint:gosec // bin from BuildBinary; fixed test literals
-	cmd.Env = append(os.Environ(), "HOME="+home, "PATH="+fakeSSH+":"+os.Getenv("PATH"))
+	env, _ := e2eEnv(t, home, fakeSSH)
+	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("gitid %s succeeded, want failure\noutput:\n%s", strings.Join(args, " "), out)
@@ -540,7 +539,7 @@ func jsonByName(t *testing.T, ctx context.Context, bin, home string) map[string]
 func openActionMenu(t *testing.T, bin, home, fakeSSH string) (*ptySession, func()) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	uiReady(t, s)
 	mustSee(t, s, "acme", "seeded identity appears in the TUI")
 	s.sendKey([]byte("a"), keystrokeDelay)
@@ -575,7 +574,7 @@ func driveCloneCeremony(t *testing.T, bin, home, fakeSSH string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 	uiReady(t, s)
 	mustSee(t, s, "acme", "clone source appears in the TUI")
@@ -601,7 +600,7 @@ func driveDeleteCeremony(t *testing.T, bin, home, scope string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	s := startPTYAt(t, newRealCreateFlowCmd(ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
 	uiReady(t, s)
 	mustSee(t, s, "acme", "delete target appears in the TUI")

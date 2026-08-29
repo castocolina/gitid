@@ -98,7 +98,7 @@ func startHealthFixerPTYWithEnv(t *testing.T, home string, extraEnv ...string) *
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	t.Cleanup(cancel)
-	s := startPTYAt(t, newPTYCmd(ctx, BuildBinary(t), home, extraEnv...), dummyTermWidth, dummyTermHeight)
+	s := startPTYAt(t, newPTYCmd(t, ctx, BuildBinary(t), home, extraEnv...), dummyTermWidth, dummyTermHeight)
 	t.Cleanup(func() { s.close(t) })
 	uiReady(t, s)
 	return s

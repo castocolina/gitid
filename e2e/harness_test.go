@@ -4,6 +4,10 @@ package e2e
 
 import (
 	"fmt"
+	"go/ast"
+	"go/build/constraint"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -354,6 +358,463 @@ func TestFakeSSHDirGlobalSSHProbesReadTheirConfig(t *testing.T) {
 	}
 	if !strings.Contains(string(version), "OpenSSH_9.9p2") {
 		t.Fatalf("global SSH version probe = %q, want OpenSSH version", version)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// The hermetic provider boundary (review R1, 09-02-PLAN.md Task 2 Part A).
+//
+// Wiring Phase 9's autonomous upload into the create flow means every e2e
+// child capable of running a gitid binary is now capable of a REAL remote
+// account mutation if it can resolve a real, authenticated `gh`/`glab` on
+// PATH. Before this task, `newRealCreateFlowCmd` (and ~15 other
+// environment-construction sites across this package) built PATH as
+// "<caller's fake dirs>:<ambient PATH>" — the ambient PATH, and therefore
+// any real gh/glab on it, stayed resolvable. e2eEnv is the ONE constructor
+// every e2e child environment must now come from: it always inserts
+// ProviderDenyDir ahead of the ambient PATH, so exec.LookPath("gh")/("glab")
+// inside any e2e child resolves to a test-owned, fail-closed script — never
+// the developer's real tool — regardless of what the caller supplies.
+// ---------------------------------------------------------------------------
+
+// e2eT is the minimal *testing.T surface ProviderDenyDir/e2eEnv need. It
+// exists so TestE2EEnvRejectsAmbientPathAsPrefix can substitute a
+// recordingT that captures a Fatalf call instead of aborting the test via
+// runtime.Goexit, letting that guard test assert e2eEnv actually rejects an
+// unsafe pathPrefix rather than merely trusting it does. *testing.T
+// satisfies this interface, so every production call site is unaffected.
+type e2eT interface {
+	Helper()
+	TempDir() string
+	Fatalf(format string, args ...any)
+}
+
+// providerDenyScript is the shared body for both the gh and glab deny
+// shims: log the attempt (when GITID_E2E_DENY_LOG is set), print a
+// distinctive block marker naming itself, and exit non-zero. Never
+// contacts a network; never reads a real provider configuration directory.
+// A static string literal — never constructed from user input (G204-clean),
+// mirroring every other shim in this file.
+const providerDenyScript = "#!/bin/sh\n" +
+	"if [ -n \"$GITID_E2E_DENY_LOG\" ]; then\n" +
+	"  printf '%s %s\\n' \"$0\" \"$*\" >> \"$GITID_E2E_DENY_LOG\"\n" +
+	"fi\n" +
+	"echo \"gitid-e2e-hermetic-boundary: refusing $(basename \"$0\") — this is the test-owned deny shim, not a real provider CLI\" >&2\n" +
+	"exit 17\n"
+
+// ProviderDenyDir writes fail-closed `gh` and `glab` scripts into a fresh
+// t.TempDir() and returns that directory plus the path of the log file
+// every invocation is recorded to. Both scripts are the SAME static literal
+// body (providerDenyScript) with a different filename — they never contact
+// a network and never read a real provider configuration directory.
+func ProviderDenyDir(t e2eT) (dir string, denyLog string) {
+	t.Helper()
+	dir = t.TempDir()
+	denyLog = filepath.Join(t.TempDir(), "deny.log")
+	for _, name := range []string{"gh", "glab"} {
+		scriptPath := filepath.Join(dir, name)
+		if err := os.WriteFile(scriptPath, []byte(providerDenyScript), 0o700); err != nil { //nolint:gosec // test-only static script (G306)
+			t.Fatalf("ProviderDenyDir: writing deny shim %s: %v", name, err)
+		}
+	}
+	return dir, denyLog
+}
+
+// ReadProviderDenyLog returns one entry per deny-shim invocation, in order,
+// each entry the space-joined argv the shim recorded (its own path first).
+// A missing log file (nothing was ever denied) returns an empty slice, not
+// an error — the common, expected case for a hermetic test run.
+func ReadProviderDenyLog(t *testing.T, denyLog string) []string {
+	t.Helper()
+	data, err := os.ReadFile(denyLog) //nolint:gosec // test-owned log path under t.TempDir() (G304)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		t.Fatalf("ReadProviderDenyLog: %v", err)
+	}
+	trimmed := strings.TrimRight(string(data), "\n")
+	if trimmed == "" {
+		return nil
+	}
+	return strings.Split(trimmed, "\n")
+}
+
+// e2eAllowedAmbientPathSites documents the ONLY functions permitted to build
+// a command environment outside e2eEnv — each entry paired with the reason
+// TestEveryE2EChildEnvIsHermetic accepts it. Both listed functions invoke a
+// build toolchain (`go build`/`make install`), never a gitid binary, so
+// neither can reach a real gh/glab through the product's own resolution
+// path. Read by the source-level guard test below; keep in sync with any
+// change to BuildBinary/BuildDummyBinary/TestInstall_MakeInstallOutput.
+var e2eAllowedAmbientPathSites = map[string]string{
+	"BuildBinary":                   "invokes `go build`, never a gitid binary — needs the real toolchain PATH and the real HOME to resolve GOPATH",
+	"BuildDummyBinary":              "invokes `go build`, never a gitid binary — same reason as BuildBinary",
+	"TestInstall_MakeInstallOutput": "invokes `make install`, never a gitid binary — asserts the Makefile's own echoed install-path/PATH-hint text",
+}
+
+// e2eAmbientPathSubstrings are real-PATH indicators e2eEnv refuses to see
+// among its caller-supplied pathPrefixes — the check that keeps a caller
+// from smuggling the real, ambient PATH back in front of the deny shim by
+// passing it (or an entry from it) as a "prefix". Kept short and portable:
+// these are directories a real gh/glab install commonly lives in on the
+// developer's machine, PLUS the literal ambient PATH value itself.
+func ambientPathSentinelHit(prefix string) (hit string, found bool) {
+	ambient := os.Getenv("PATH")
+	if ambient != "" && prefix == ambient {
+		return ambient, true
+	}
+	for _, entry := range filepath.SplitList(ambient) {
+		if entry == "" {
+			continue
+		}
+		for _, part := range filepath.SplitList(prefix) {
+			if part == entry {
+				return entry, true
+			}
+		}
+	}
+	return "", false
+}
+
+// e2eEnv is the ONE constructor every e2e child-process environment must
+// come from (review R1). It builds the child environment from the ambient
+// environment plus HOME=home, and sets PATH to the concatenation, in this
+// order: the caller's pathPrefixes (fake ssh, fake gh, fake glab, fake git,
+// whatever the test needs), then ProviderDenyDir's directory, then the
+// ambient PATH. It also exports GITID_E2E_DENY_LOG so the deny shims record
+// any attempt.
+//
+// The guarantee this ordering buys: the ONLY gh/glab any e2e child can
+// resolve is a test-owned script under t.TempDir() — either the caller's
+// deliberate fake (if pathPrefixes supplies one ahead of the deny dir), or
+// the deny shim. A real, authenticated gh on the developer's machine
+// becomes unreachable to exec.LookPath inside the child, while ssh,
+// ssh-keygen, ssh-add, and git keep resolving exactly as they do today
+// (os/exec keeps the LAST value for a duplicated env key, so appending the
+// composed PATH after the rest of the ambient environment is sufficient —
+// the same mechanism create_flow_pty_e2e_test.go's TERM= comment already
+// documents).
+//
+// The quieter second benefit: every pre-existing PTY test now observes a
+// DETERMINISTIC provider-eligibility state (the deny shim answers "tool
+// present, not authenticated") instead of a state that depended on whether
+// the developer happened to have gh installed and logged in.
+//
+// e2eEnv validates pathPrefixes: any prefix equal to the ambient PATH
+// itself, or containing one of the ambient PATH's own real entries, fails
+// the test loudly via t.Fatalf rather than silently composing a PATH that
+// defeats the deny shim.
+func e2eEnv(t e2eT, home string, pathPrefixes ...string) (env []string, denyLog string) {
+	t.Helper()
+	for _, prefix := range pathPrefixes {
+		if prefix == "" {
+			continue
+		}
+		if hit, found := ambientPathSentinelHit(prefix); found {
+			t.Fatalf("e2eEnv: pathPrefix %q contains the ambient PATH entry %q — this would smuggle a real gh/glab back in front of the deny shim; pass only test-owned shim directories", prefix, hit)
+			return nil, ""
+		}
+	}
+
+	denyDir, denyLog := ProviderDenyDir(t)
+
+	pathParts := make([]string, 0, len(pathPrefixes)+2)
+	for _, prefix := range pathPrefixes {
+		if prefix != "" {
+			pathParts = append(pathParts, prefix)
+		}
+	}
+	pathParts = append(pathParts, denyDir, os.Getenv("PATH"))
+
+	env = append(os.Environ(),
+		"HOME="+home,
+		"PATH="+strings.Join(pathParts, string(os.PathListSeparator)),
+		"GITID_E2E_DENY_LOG="+denyLog,
+	)
+	return env, denyLog
+}
+
+// envValue extracts the LAST value of key from an os/exec-shaped
+// KEY=VALUE environment slice — mirroring os/exec's own "last duplicate
+// wins" resolution, so a test inspecting an e2eEnv-built slice sees exactly
+// what the child process would.
+func envValue(env []string, key string) (string, bool) {
+	prefix := key + "="
+	value, found := "", false
+	for _, kv := range env {
+		if strings.HasPrefix(kv, prefix) {
+			value = strings.TrimPrefix(kv, prefix)
+			found = true
+		}
+	}
+	return value, found
+}
+
+// lookPathIn resolves name under pathEnv (a colon/semicolon-joined PATH
+// value, PathListSeparator-split) WITHOUT touching the current process's
+// own PATH — so a test can ask "what would this child process resolve"
+// without a global, restore-requiring t.Setenv("PATH", ...) side effect.
+func lookPathIn(pathEnv, name string) (string, bool) {
+	for _, dir := range filepath.SplitList(pathEnv) {
+		if dir == "" {
+			continue
+		}
+		candidate := filepath.Join(dir, name)
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+			return candidate, true
+		}
+	}
+	return "", false
+}
+
+// isUnderTempDir reports whether p is inside a Go-test-owned temp
+// directory (os.TempDir(), which t.TempDir() and os.MkdirTemp("", ...)
+// both create under) — the check TestE2EEnvHidesRealProviderCLIs uses to
+// prove a resolved gh/glab is test-owned rather than a real system/user
+// install.
+func isUnderTempDir(p string) bool {
+	tmp := os.TempDir()
+	resolvedTmp, err := filepath.EvalSymlinks(tmp)
+	if err != nil {
+		resolvedTmp = tmp
+	}
+	resolvedP, err := filepath.EvalSymlinks(filepath.Dir(p))
+	if err != nil {
+		resolvedP = filepath.Dir(p)
+	}
+	rel, err := filepath.Rel(resolvedTmp, resolvedP)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// TestE2EEnvRejectsAmbientPathAsPrefix proves e2eEnv fails loudly (not
+// silently) when a caller passes the ambient PATH, or a PATH-joined string
+// containing one of the ambient PATH's own real entries, as a pathPrefix —
+// the control that keeps a caller from smuggling the real PATH back in
+// front of the deny shim.
+func TestE2EEnvRejectsAmbientPathAsPrefix(t *testing.T) {
+	ambient := os.Getenv("PATH")
+	if ambient == "" {
+		t.Skip("ambient PATH is empty in this environment; nothing to smuggle")
+	}
+	entries := filepath.SplitList(ambient)
+	if len(entries) == 0 {
+		t.Skip("ambient PATH has no entries")
+	}
+
+	rt := &recordingT{T: t}
+	e2eEnv(rt, t.TempDir(), ambient)
+	if !rt.fatalCalled {
+		t.Fatal("e2eEnv must t.Fatalf when a pathPrefix equals the ambient PATH verbatim")
+	}
+
+	rt2 := &recordingT{T: t}
+	e2eEnv(rt2, t.TempDir(), entries[0]+string(os.PathListSeparator)+"/some/fake/dir")
+	if !rt2.fatalCalled {
+		t.Fatal("e2eEnv must t.Fatalf when a pathPrefix CONTAINS an ambient PATH entry")
+	}
+
+	// A genuinely test-owned prefix must NOT trip the guard.
+	rt3 := &recordingT{T: t}
+	safeDir, _ := ProviderDenyDir(t)
+	e2eEnv(rt3, t.TempDir(), safeDir)
+	if rt3.fatalCalled {
+		t.Fatal("e2eEnv must not reject a genuinely test-owned pathPrefix")
+	}
+}
+
+// recordingT wraps *testing.T so a test can assert a HELPER called
+// t.Fatalf without the outer test itself failing — Fatalf normally calls
+// runtime.Goexit, so this override records the call and returns instead
+// (only safe because e2eEnv never does meaningful work after the Fatalf
+// call site it's guarding here; used ONLY by
+// TestE2EEnvRejectsAmbientPathAsPrefix, never by production code).
+type recordingT struct {
+	*testing.T
+	fatalCalled bool
+}
+
+func (r *recordingT) Fatalf(format string, args ...any) {
+	r.fatalCalled = true
+	r.Logf("(expected) e2eEnv rejected an unsafe pathPrefix: "+format, args...)
+}
+
+// TestE2EEnvHidesRealProviderCLIs is the R1 runtime proof: under an
+// e2eEnv-built PATH, both gh and glab resolve inside a test-owned temporary
+// directory, executing either yields a non-zero exit plus the block marker,
+// and the deny log records exactly one line per invocation. It also proves
+// the test itself is meaningful (not vacuously true) by resolving gh under
+// the AMBIENT PATH too: if a real one exists there, the two resolutions
+// must differ; if none exists, that half is explicitly skipped rather than
+// silently passing.
+func TestE2EEnvHidesRealProviderCLIs(t *testing.T) {
+	env, denyLog := e2eEnv(t, t.TempDir())
+	pathEnv, ok := envValue(env, "PATH")
+	if !ok {
+		t.Fatal("e2eEnv-built env carries no PATH entry")
+	}
+
+	for _, name := range []string{"gh", "glab"} {
+		resolved, found := lookPathIn(pathEnv, name)
+		if !found {
+			t.Fatalf("%s did not resolve under the e2eEnv-built PATH at all — the deny shim must always be present", name)
+		}
+		if !isUnderTempDir(resolved) {
+			t.Errorf("%s resolved to %q, want a path inside a test-owned temp directory (%s)", name, resolved, os.TempDir())
+		}
+
+		cmd := exec.Command(resolved, "auth", "status") //nolint:gosec // resolved is the test-owned deny shim (G204)
+		cmd.Env = env
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			t.Errorf("%s (deny shim) must exit non-zero, got success; output: %s", name, out)
+		}
+		if !strings.Contains(string(out), "gitid-e2e-hermetic-boundary") {
+			t.Errorf("%s (deny shim) output missing the block marker: %s", name, out)
+		}
+
+		if ambientResolved, ambientFound := exec.LookPath(name); ambientFound == nil {
+			if ambientResolved == resolved {
+				t.Errorf("%s resolved IDENTICALLY under e2eEnv and the ambient PATH — the deny shim is not actually shadowing anything", name)
+			}
+		} else {
+			t.Logf("%s: no real install on the ambient PATH — skipping the differs-from-ambient half of this proof for %s", name, name)
+		}
+	}
+
+	log := ReadProviderDenyLog(t, denyLog)
+	if len(log) != 2 {
+		t.Fatalf("deny log recorded %d invocations, want 2 (one gh, one glab):\n%v", len(log), log)
+	}
+}
+
+// fileHasE2EBuildTag reports whether file's build constraints select the
+// "e2e" tag — read from the file's own //go:build (or legacy // +build)
+// line(s) via go/build/constraint, never assumed from a hard-coded
+// filename list. A file whose constraint does NOT select "e2e" (a future
+// opt-in surface such as plan 09-08's real-account test, gated behind its
+// own different tag) is out of scope for TestEveryE2EChildEnvIsHermetic by
+// construction.
+func fileHasE2EBuildTag(t *testing.T, path string, src []byte) bool {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, src, parser.ParseComments|parser.PackageClauseOnly)
+	if err != nil {
+		t.Fatalf("fileHasE2EBuildTag: parsing %s: %v", path, err)
+	}
+	for _, cg := range file.Comments {
+		for _, c := range cg.List {
+			if !constraint.IsGoBuild(c.Text) && !constraint.IsPlusBuild(c.Text) {
+				continue
+			}
+			expr, perr := constraint.Parse(c.Text)
+			if perr != nil {
+				continue
+			}
+			if expr.Eval(func(tag string) bool { return tag == "e2e" }) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// TestEveryE2EChildEnvIsHermetic is the R1 source-level guard: a scan over
+// every "e2e"-tagged .go file in this package finds every assignment to a
+// command's environment field (`*.Env = ...`) and asserts each one is
+// produced by e2eEnv, failing with the offending file and line number for
+// any that is not — unless its enclosing function is in
+// e2eAllowedAmbientPathSites.
+//
+// Implemented via go/parser + go/ast (walking *ast.AssignStmt targets whose
+// LHS is a SelectorExpr named "Env"), NOT a grep/string-presence check: a
+// naive text search for "e2eEnv" would miss an existing
+// `cmd.Env = os.Environ()` assignment that happens to also appear near the
+// string "e2eEnv" in a comment, and would miss a `cmd.Env = append(...)`
+// construction entirely. AST-level detection is what makes this guard
+// trustworthy rather than decorative.
+func TestEveryE2EChildEnvIsHermetic(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("reading e2e/: %v", err)
+	}
+
+	checkedAny := false
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") {
+			continue
+		}
+		src, rerr := os.ReadFile(name) //nolint:gosec // package-local .go files from os.ReadDir (G304)
+		if rerr != nil {
+			t.Fatalf("reading %s: %v", name, rerr)
+		}
+		if !fileHasE2EBuildTag(t, name, src) {
+			continue
+		}
+		checkedAny = true
+
+		fset := token.NewFileSet()
+		file, perr := parser.ParseFile(fset, name, src, 0)
+		if perr != nil {
+			t.Fatalf("parsing %s: %v", name, perr)
+		}
+
+		// Pass 1: which top-level functions call e2eEnv anywhere in their
+		// own body — the marker every legitimate `.Env = ...` assignment's
+		// enclosing function must carry (directly, e.g.
+		// `env, _ := e2eEnv(t, home, shim)` followed by `cmd.Env = env`, or
+		// transitively through a same-file helper that itself calls
+		// e2eEnv, since that helper is scanned as its own function too).
+		callsE2EEnv := map[string]bool{}
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "e2eEnv" {
+					callsE2EEnv[fn.Name.Name] = true
+				}
+				return true
+			})
+		}
+
+		var currentFunc string
+		ast.Inspect(file, func(n ast.Node) bool {
+			if fn, ok := n.(*ast.FuncDecl); ok {
+				currentFunc = fn.Name.Name
+			}
+			assign, ok := n.(*ast.AssignStmt)
+			if !ok {
+				return true
+			}
+			for _, lhs := range assign.Lhs {
+				sel, ok := lhs.(*ast.SelectorExpr)
+				if !ok || sel.Sel.Name != "Env" {
+					continue
+				}
+				if _, allowed := e2eAllowedAmbientPathSites[currentFunc]; allowed {
+					continue
+				}
+				if callsE2EEnv[currentFunc] {
+					continue
+				}
+				pos := fset.Position(assign.Pos())
+				t.Errorf("%s:%d: %s assigns .Env without routing through e2eEnv — every e2e child environment must come from e2eEnv (review R1)", pos.Filename, pos.Line, currentFunc)
+			}
+			return true
+		})
+	}
+	if !checkedAny {
+		t.Fatal("TestEveryE2EChildEnvIsHermetic found no e2e-tagged .go file to scan — the guard would be vacuous")
 	}
 }
 

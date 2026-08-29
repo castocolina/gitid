@@ -26,7 +26,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -172,7 +171,8 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, bin) //nolint:gosec // bin from BuildDummyBinary; no user input
-	cmd.Env = append(os.Environ(), "HOME="+home, "TERM=xterm-256color")
+	env, _ := e2eEnv(t, home)
+	cmd.Env = append(env, "TERM=xterm-256color")
 
 	s := startPTYAt(t, cmd, dummyTermWidth, dummyTermHeight)
 	closed := false
@@ -316,7 +316,8 @@ func TestDummyDemo_MouseAndGitApply(t *testing.T) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, bin) //nolint:gosec // bin from BuildDummyBinary; no user input
-	cmd.Env = append(os.Environ(), "HOME="+home, "TERM=xterm-256color")
+	env, _ := e2eEnv(t, home)
+	cmd.Env = append(env, "TERM=xterm-256color")
 
 	s := startPTYAt(t, cmd, dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -373,7 +374,8 @@ func TestDummyDemo_ShiftChordRawBytes(t *testing.T) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, bin) //nolint:gosec // bin from BuildDummyBinary; no user input
-	cmd.Env = append(os.Environ(), "HOME="+home, "TERM=xterm-256color")
+	env, _ := e2eEnv(t, home)
+	cmd.Env = append(env, "TERM=xterm-256color")
 
 	s := startPTYAt(t, cmd, dummyTermWidth, dummyTermHeight)
 	closed := false

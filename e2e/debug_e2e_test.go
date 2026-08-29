@@ -17,7 +17,6 @@ package e2e
 import (
 	"bytes"
 	"context"
-	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -43,7 +42,8 @@ func TestDebugCaps_RealWiring(t *testing.T) {
 	cmd := exec.CommandContext(ctx, bin, "debug", "caps") //nolint:gosec // bin from BuildBinary; fixed args
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	cmd.Env = append(os.Environ(), "HOME="+home)
+	env, _ := e2eEnv(t, home)
+	cmd.Env = env
 
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("gitid debug caps failed: %v\nstdout: %s\nstderr: %s",
