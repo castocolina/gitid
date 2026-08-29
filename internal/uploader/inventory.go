@@ -169,7 +169,7 @@ func DeleteCommandPreview(tool Tool, reg Registration, toolPath, id string) stri
 	if err != nil {
 		return fmt.Sprintf("(preview unavailable: %s)", err)
 	}
-	return strings.Join(append([]string{toolPath}, args...), " ")
+	return previewLine(toolPath, args)
 }
 
 // deleteArgs renders the delete argv scoped to reg's namespace. See DeleteKey's

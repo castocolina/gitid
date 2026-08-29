@@ -282,7 +282,34 @@ func CommandPreview(tool Tool, toolPath, pubPath, title, keyType string) string 
 	if err != nil {
 		return fmt.Sprintf("(preview unavailable: %s)", err)
 	}
-	return strings.Join(append([]string{toolPath}, args...), " ")
+	return previewLine(toolPath, args)
+}
+
+// shellQuote quotes s for safe copy-paste into a POSIX shell, only when
+// needed — an argument with no shell-special characters is left bare so
+// the common case (a plain path or flag) stays readable.
+func shellQuote(s string) string {
+	if s != "" && !strings.ContainsAny(s, " \t\"'\\$`") {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// previewLine renders toolPath+args as a single shell-safe, copy-pasteable
+// command line — used ONLY for the manual-fallback / D-04 delete-offer
+// preview a user might copy and re-run; the argv gitid actually executes
+// (deps.RunCmd(toolPath, args...)) never goes through a shell and is
+// unaffected by this quoting. WR-18: the D-07 title always contains spaces
+// ("gitid: <identity> @ <machine>"), so an unquoted preview pasted into a
+// shell ran a DIFFERENT command (extra stray operands) than the one gitid
+// actually ran.
+func previewLine(toolPath string, args []string) string {
+	parts := make([]string, 0, len(args)+1)
+	parts = append(parts, shellQuote(toolPath))
+	for _, a := range args {
+		parts = append(parts, shellQuote(a))
+	}
+	return strings.Join(parts, " ")
 }
 
 func buildArgs(tool Tool, pubPath, title, keyType string) ([]string, error) {

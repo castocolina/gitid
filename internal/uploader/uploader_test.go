@@ -246,6 +246,33 @@ func TestCommandPreview_UnknownToolReturnsErrorMessage(t *testing.T) {
 	}
 }
 
+// TestCommandPreviewQuotesTheD07TitleForSafeCopyPaste is the WR-18
+// regression: strings.Join with no shell quoting produced a preview line
+// that, when pasted into a shell, ran a DIFFERENT command than the one
+// gitid actually executed — the D-07 title always contains spaces
+// ("gitid: <identity> @ <machine>"), so "--title gitid: acme @ mbp" split
+// into four stray shell operands instead of one argument. The rendered
+// preview must single-quote the title so a copy-paste re-run is faithful.
+func TestCommandPreviewQuotesTheD07TitleForSafeCopyPaste(t *testing.T) {
+	got := CommandPreview(ToolGH, "/usr/local/bin/gh", "/path/key.pub", "gitid: acme @ mbp", KeyAuthentication)
+	want := `/usr/local/bin/gh ssh-key add /path/key.pub --title 'gitid: acme @ mbp' --type authentication`
+	if got != want {
+		t.Errorf("CommandPreview() = %q, want %q", got, want)
+	}
+}
+
+// TestDeleteCommandPreviewLeavesPlainArgsUnquoted is the companion positive
+// control: an id (or any argument) with no shell-special characters stays
+// bare, so the common case remains readable rather than quoting everything
+// unconditionally.
+func TestDeleteCommandPreviewLeavesPlainArgsUnquoted(t *testing.T) {
+	got := DeleteCommandPreview(ToolGH, RegistrationAuthentication, "/usr/local/bin/gh", "42")
+	want := "/usr/local/bin/gh api -X DELETE user/keys/42"
+	if got != want {
+		t.Errorf("DeleteCommandPreview() = %q, want %q", got, want)
+	}
+}
+
 func TestUploadKeyRefusesNonPubPath(t *testing.T) {
 	calls := 0
 	result := uploadKey(ToolGH, "gh", "private", RegistrationRequest{}, Deps{ReadFile: testReadFile, RunCmd: func(string, ...string) (string, int, error) { calls++; return "", 0, nil }})
