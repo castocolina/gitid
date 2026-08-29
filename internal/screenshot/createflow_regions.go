@@ -1298,7 +1298,7 @@ func extractUploadSection(lines []string) string {
 	uploadMarkers := []string{
 		"gh ssh-key add", "glab ssh-key add",
 		"Auto-registration", "key registered", "registration failed",
-		"already registered", "not logged in to",
+		"already registered",
 	}
 	start := -1
 	for i, line := range lines {

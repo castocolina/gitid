@@ -2802,7 +2802,23 @@ func uploadVisualSpecs() []ScreenSpec {
 			ApplicableApprovedTUI: false,
 			NonApplicability: append(noHTML, uxNonComparable("approved-tui", upFixtureClass,
 				"captured for both backends via uploadProbeBackend, but held non-comparable: the checkbox label survives identically, but the surrounding fixture-vs-live layout (identity count, key catalog, host preview) would otherwise require dispositions unrelated to this state's own purpose — D-09's approval lives in Task 1's committed PTY frame create-flow-upload-checkbox-unauth.txt (TestCreateFlow_UploadCheckboxUnauthState)")),
-			RequiredRegions: []RegionName{RegionUploadSection},
+			// WR-12: this spec used to require RegionUploadSection, satisfied
+			// only because extractUploadSection's marker list included "not
+			// logged in to" — a substring of the D-01 checkbox's OWN label,
+			// which caused RegionUploadSection to falsely match on ORDINARY
+			// step-0 screens that merely render the checkbox in the Unauth
+			// state (never having run, or been declined). Per
+			// extractUploadSection's own doc comment, RegionUploadSection is
+			// scoped to "the announce/result/fallback text that appears only
+			// once the beat has actually run or been explicitly declined" —
+			// an offered-but-undecided checkbox is neither. The checkbox row
+			// IS still covered: renderUploadCheckboxRow's own doc comment
+			// places it "as the last row of the SSH form, immediately after
+			// Port", inside extractFormFields' [Shift+→ hint, Key toggle)
+			// window — RegionFormFields is the semantically correct region
+			// for this screen's own purpose (verifying the checkbox renders)
+			// and still requires the StateMarker text to be present.
+			RequiredRegions: []RegionName{RegionFormFields},
 		},
 		{
 			ScreenID:              "upload-checkbox-disabled",

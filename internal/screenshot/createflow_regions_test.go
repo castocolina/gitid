@@ -55,3 +55,48 @@ func TestExtractGSSApplyHeadingSingleLineNoWrap(t *testing.T) {
 		t.Errorf("extractGSSApplyHeading() = %q, want %q", got, want)
 	}
 }
+
+// TestExtractUploadSectionExcludesTheUnauthCheckboxLabel is the 09-REVIEW.md
+// WR-12 regression: extractUploadSection's own doc comment says it
+// deliberately excludes "Register with " (the D-01 checkbox's OWN label,
+// rendered on every gated step-0 screen) because anchoring on it would
+// collide with every pre-existing step-0 spec that has no disposition for
+// it — but the marker list still included "not logged in to", which is a
+// substring of that SAME label (UploadCheckboxLabelUnauthFmt = "Register
+// with %s automatically — not logged in to %s; ..."). Any step-0 screen in
+// the unauth state anchored RegionUploadSection on the ordinary form body,
+// exactly the collision the comment claims to avoid.
+func TestExtractUploadSectionExcludesTheUnauthCheckboxLabel(t *testing.T) {
+	lines := []string{
+		"some earlier form line",
+		`☐ Register with GitHub automatically — not logged in to github.com; run "gh auth login" first, or check anyway`,
+		"a later, ordinary form line",
+	}
+	got := extractUploadSection(lines)
+	if got != "" {
+		t.Errorf("extractUploadSection matched the D-01 unauth checkbox's OWN label; got:\n%q", got)
+	}
+}
+
+// TestExtractUploadSectionStillMatchesRealUploadBeatContent is the positive
+// control for the WR-12 fix: dropping "not logged in to" must not disable
+// the region entirely — a real announce/result screen (the beat that
+// actually ran) must still be found via its OTHER markers.
+func TestExtractUploadSectionStillMatchesRealUploadBeatContent(t *testing.T) {
+	lines := []string{
+		"some earlier form line",
+		"Running:",
+		"gh ssh-key add /path/key.pub --title gitid: acme @ mbp --type authentication",
+		"✓ Authentication key registered",
+	}
+	got := extractUploadSection(lines)
+	if got == "" {
+		t.Fatal("extractUploadSection found nothing for real upload-beat content")
+	}
+	if !strings.Contains(got, "gh ssh-key add") {
+		t.Errorf("got=%q, want it to include the announced command", got)
+	}
+	if !strings.Contains(got, "Authentication key registered") {
+		t.Errorf("got=%q, want it to include the result row", got)
+	}
+}
