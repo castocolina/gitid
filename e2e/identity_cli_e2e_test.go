@@ -947,7 +947,7 @@ func TestIdentityCLI_RegisterKeyDryRunExecutesNothing(t *testing.T) {
 		if strings.Contains(entry, "ssh-key add") {
 			t.Errorf("dry run recorded a ssh-key add invocation: %q", entry)
 		}
-		if strings.Contains(entry, "auth status") || strings.Contains(entry, "api user/") {
+		if strings.Contains(entry, "auth status") || strings.Contains(entry, "user/keys") || strings.Contains(entry, "user/ssh_signing_keys") {
 			sawReadOnlyProbe = true
 		}
 	}
