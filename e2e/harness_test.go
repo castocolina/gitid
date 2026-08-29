@@ -882,11 +882,19 @@ func FakeGHDir(t *testing.T, mode string) (dir string, logPath string) {
 		// rotateDeleteOfferFor (which reads FRESH inventory and requires
 		// the CURRENT key's blob to already be registered) can never be
 		// satisfied by a static fixture that never reflects an "add".
+		// WR-02 (iteration 3): record the REAL --title ($5 — argv is
+		// always ["ssh-key","add",pubPath,"--title",title,"--type",type],
+		// see uploader.go's deleteArgs sibling), never a synthetic one. A
+		// rotate's new key is registered under the SAME D-07 title as the
+		// old key — that collision is the entire premise of CR-01's blob
+		// exclusion; a fixture that gives the new key a different title
+		// would let the title filter (not the exclusion) disambiguate
+		// them, silently proving nothing about CR-01's actual logic.
 		"            if [ -n \"$GITID_FAKE_GH_KEYS_AUTH_FILE\" ] && echo \"$*\" | grep -q -- '--type authentication'; then\n" +
-		"              printf '{\"id\":9001,\"title\":\"fake-added-auth\",\"key\":\"%s\"}\\n' \"$(cat \"$3\" 2>/dev/null)\" >> \"$GITID_FAKE_GH_KEYS_AUTH_FILE\"\n" +
+		"              printf '{\"id\":9001,\"title\":\"%s\",\"key\":\"%s\"}\\n' \"$5\" \"$(cat \"$3\" 2>/dev/null)\" >> \"$GITID_FAKE_GH_KEYS_AUTH_FILE\"\n" +
 		"            fi\n" +
 		"            if [ -n \"$GITID_FAKE_GH_KEYS_SIGNING_FILE\" ] && echo \"$*\" | grep -q -- '--type signing'; then\n" +
-		"              printf '{\"id\":9002,\"title\":\"fake-added-signing\",\"key\":\"%s\"}\\n' \"$(cat \"$3\" 2>/dev/null)\" >> \"$GITID_FAKE_GH_KEYS_SIGNING_FILE\"\n" +
+		"              printf '{\"id\":9002,\"title\":\"%s\",\"key\":\"%s\"}\\n' \"$5\" \"$(cat \"$3\" 2>/dev/null)\" >> \"$GITID_FAKE_GH_KEYS_SIGNING_FILE\"\n" +
 		"            fi\n" +
 		"            echo \"Added SSH key.\"; exit 0 ;;\n" +
 		"          scope-fail-signing)\n" +
