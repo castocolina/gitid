@@ -347,7 +347,11 @@ func TestUploadCheckboxRendersAllFourStates(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := renderUploadCheckboxRow(tt.view, false, false, 200)
+			// WR-06: 60 is the ONLY width the real wizard caller
+			// (wizardModel.renderUploadCheckboxRow) ever passes — a test
+			// run at 200 could not catch the frozen labels' hard mid-word
+			// truncation at the production width.
+			got := renderUploadCheckboxRow(tt.view, false, false, 60)
 			if tt.want == "" && got != "" {
 				t.Errorf("renderUploadCheckboxRow() = %q, want empty", got)
 			}
@@ -374,9 +378,34 @@ func TestUploadCheckboxIsLegibleWithoutColor(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := stripANSI(renderUploadCheckboxRow(tt.view, false, false, 200))
+			// WR-06: same production-width rationale as the test above.
+			got := stripANSI(renderUploadCheckboxRow(tt.view, false, false, 60))
 			if !strings.Contains(got, tt.want) {
 				t.Errorf("stripANSI(renderUploadCheckboxRow()) = %q, want it to contain %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestUploadCheckboxTruncationMarksWhatWasCut is the WR-06 regression:
+// renderUploadCheckboxRow's frozen unauth/disabled labels are longer than
+// the production width (60) — a hard cut with no visual cue silently
+// dropped the actionable half of the sentence. A truncated row must now
+// end with an explicit "…" marker so the user can tell the line was cut,
+// rather than reading it as a complete (if odd) sentence.
+func TestUploadCheckboxTruncationMarksWhatWasCut(t *testing.T) {
+	tests := []struct {
+		name string
+		view UploadEligibilityView
+	}{
+		{"unauth", UploadEligibilityView{State: UploadEligibilityUnauth, ProviderName: "GitLab", ToolName: "glab", Hostname: "gitlab.com"}},
+		{"disabled", UploadEligibilityView{State: UploadEligibilityDisabled, ProviderName: "GitHub"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stripANSI(renderUploadCheckboxRow(tt.view, false, false, 60))
+			if !strings.HasSuffix(got, "…") {
+				t.Errorf("renderUploadCheckboxRow() = %q, want it to end with the truncation marker \"…\" at the production width", got)
 			}
 		})
 	}

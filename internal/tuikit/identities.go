@@ -4643,8 +4643,15 @@ func renderUploadCheckboxRow(view UploadEligibilityView, checked, focused bool, 
 	if focused {
 		line = styleSelected.Render(line)
 	}
-	// The upload checkbox must remain one physical line in the 100x30 wizard.
-	return ansi.Truncate(line, width, "")
+	// The upload checkbox must remain one physical line in the 100x30
+	// wizard. WR-06: the frozen unauth/disabled labels are longer than the
+	// production width (60) this row always renders at — an unmarked
+	// mid-word cut gave no visual cue that the actionable half of the
+	// sentence (the "run \"<tool> auth login\"" guidance) was missing.
+	// Truncating with an explicit "…" tail at least signals that something
+	// was cut; shortening the frozen copy itself would need a design.go
+	// R22 amendment, which is out of scope for a targeted fix.
+	return ansi.Truncate(line, width, "…")
 }
 
 func (w wizardModel) renderUploadCheckboxRow() string {
