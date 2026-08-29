@@ -505,14 +505,30 @@ func (FixtureBackend) RotateDeleteOffer(name string) tea.Cmd {
 	return func() tea.Msg {
 		switch {
 		case strings.Contains(host, "github"):
+			// WR-05: this fixture used to advertise the fixed, namespace-
+			// blind "gh ssh-key delete <id> --yes" argv CR-02 established as
+			// WRONG (GitHub's authentication and signing key registrations
+			// are separate REST resources with independently colliding ID
+			// spaces — a delete must be scoped per Registration). The dummy
+			// backend is this project's design/screenshot source of truth,
+			// so it must model the SAME shapes the real backend now
+			// produces: KeyID is the opaque per-registration JSON payload
+			// encodeDeleteCandidates emits (cmd/gitid/upload_run.go),
+			// KeyDetail carries the reviewed IDs plus a blob suffix
+			// (deleteCandidatesDetail), and ManualCommand previews BOTH
+			// registration-scoped delete commands, one per line
+			// (deleteCandidatesManualCommand / uploader.DeleteCommandPreview)
+			// — a rotated GitHub key always carries two registrations.
 			return tuikit.RotateDeleteOfferMsg{Name: name, View: tuikit.RotateDeleteOfferView{
-				Available:     true,
-				ProviderName:  "GitHub",
-				IdentityName:  name,
-				MachineName:   "demo-machine",
-				KeyTitle:      fmt.Sprintf(tuikit.UploadKeyTitleFmt, name, "demo-machine"),
-				KeyID:         "1234567",
-				ManualCommand: "/usr/local/bin/gh ssh-key delete 1234567 --yes",
+				Available:    true,
+				ProviderName: "GitHub",
+				IdentityName: name,
+				MachineName:  "demo-machine",
+				KeyTitle:     fmt.Sprintf(tuikit.UploadKeyTitleFmt, name, "demo-machine"),
+				KeyID:        `[{"id":"1234567","registration":0},{"id":"7654321","registration":1}]`,
+				KeyDetail:    "ID 1234567, 7654321 — …AAAIDEMOKEY",
+				ManualCommand: "/usr/local/bin/gh api -X DELETE user/keys/1234567\n" +
+					"/usr/local/bin/gh api -X DELETE user/ssh_signing_keys/7654321",
 			}}
 		default:
 			return tuikit.RotateDeleteOfferMsg{Name: name, View: tuikit.RotateDeleteOfferView{Unavailable: "no matching old key found on this machine"}}
