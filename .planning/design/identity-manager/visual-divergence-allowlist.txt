@@ -129,3 +129,21 @@ repair-result:detail:contains:"Key ceremony completed.":D-5:the real repair rece
 # the dummy's findings remain its own frozen demo data.
 # ---------------------------------------------------------------------------
 detail-ssh-first:detail:contains:"SSH — shown first, always":DLV-6:the real seedSSHOnlyIdentity fixture (no explicit Port) renders the honest absence marker per observedPort; the dummy's frozen "work" fixture carries a recipe-shape Hostname/Port pair — different fixture literal values, same field structure/order/labels; the Findings count also differs because MGR-07 findings are now real per-identity health on the real side, still frozen demo data on the dummy side
+
+# ---------------------------------------------------------------------------
+# UP-4 — Phase 9 register-key-modal checkpoint (09-07-PLAN.md Task 2, D-08).
+# The register-key pane's default-selected identity ("imgr" real / "personal"
+# dummy) drives the same sidebar/header-status/breadcrumb identity-count and
+# identity-name divergences every other identity-manager checkpoint already
+# classifies, plus the SAME UP-4 upload-command-path divergence the
+# create-flow registry classifies for its own upload-checkbox-ready/
+# upload-results screens. rotate-delete-offer is registered but NOT
+# capturable in this in-process gate (both surfaces NON-APPLICABLE — the D-04
+# offer requires a completed key-rotation commit; see uploadVisualSpecs' own
+# doc comment) and carries no comparable dispositions here.
+# ---------------------------------------------------------------------------
+register-key-modal:sidebar:absent:"clientB":UP-4:real sidebar carries only the checkpoint's own seeded identities; dummy sidebar lists the full 8-identity IdentityManagerRows fixture set
+register-key-modal:header-status:contains:"ids":UP-4:header status shows the identity count, which differs (real's small seeded set vs dummy's 8 fixtures)
+register-key-modal:breadcrumb:contains:"Register key":UP-4:the breadcrumb ("Identities › <identity> › Register key") embeds the selected identity's name, which differs between the real fixture ("imgr") and the dummy fixture ("personal") by construction
+register-key-modal:upload-section:contains:"ssh-key add":UP-4:the real upload command names a real generated key's temp-directory path and the PATH-resolved gh/glab binary; the dummy renders its frozen "/usr/local/bin/gh ..." command shape — both sides share the "ssh-key add" invocation and its --title/--type arguments
+register-key-modal:connectivity-output:contains:"ssh-key add":UP-4:RegionConnectivityOutput's own generic "Running" trigger also matches the upload beat's announce line on the register-key pane — the SAME command-path divergence upload-section already classifies

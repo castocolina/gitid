@@ -120,3 +120,28 @@ test-stage2-by-alias:connectivity-output:contains:"identityfile":D-02:stage-2 re
 # the fixed dummy sample, the live viewport is scrollable and may initially show
 # the BEGIN sentinel while the remaining managed block is available on paging.
 confirm-write:confirmation-preview:contains:"# BEGIN gitid managed:":D-05:real confirmation previews the auto-detected write plan through the focusable exact-change viewport
+
+# ---------------------------------------------------------------------------
+# UP-4 — Phase 9 upload-surface checkpoints (09-07-PLAN.md Task 2,
+# UP-01/UP-02/UP-03). The wizard's checked D-01 checkbox successfully
+# triggers the upload beat: the real command names a real generated key's
+# temp-directory path and the PATH-resolved gh/glab binary, while the dummy
+# renders its frozen "/usr/local/bin/gh ..." command shape — both sides
+# share the "ssh-key add" invocation and its --title/--type arguments.
+# RegionConnectivityOutput's own generic "Running" trigger also matches the
+# upload beat's announce line on these screens (the SAME divergence, seen
+# through a second, pre-existing region). Sidebar/header-status carry the
+# SAME DLV-4 fixture-vs-live identity-count divergence every other surface's
+# registry already classifies. upload-checkbox-unauth/disabled/manual-
+# fallback are live-only (no dummy-fixture counterpart — see
+# uploadVisualSpecs' own doc comment in internal/screenshot/createflow.go)
+# and carry no comparable dispositions here.
+# ---------------------------------------------------------------------------
+upload-checkbox-ready:upload-section:contains:"ssh-key add":UP-4:the real upload command names a real generated key's temp-directory path and the PATH-resolved gh/glab binary; the dummy renders its frozen "/usr/local/bin/gh ..." command shape — both sides share the "ssh-key add" invocation and its --title/--type arguments
+upload-checkbox-ready:connectivity-output:contains:"ssh-key add":UP-4:RegionConnectivityOutput's own generic "Running" trigger also matches the upload beat's announce line on this screen — the SAME command-path divergence upload-section already classifies
+upload-checkbox-ready:sidebar:absent:"clientB":UP-4:real sidebar carries only the checkpoint's own seeded identities; dummy sidebar lists the full 8-identity IdentityManagerRows fixture set
+upload-checkbox-ready:header-status:contains:"ids":UP-4:header status shows the identity count, which differs (real's small seeded set vs dummy's 8 fixtures)
+upload-results:upload-section:contains:"ssh-key add":UP-4:the real upload command names a real generated key's temp-directory path and the PATH-resolved gh/glab binary; the dummy renders its frozen "/usr/local/bin/gh ..." command shape — both sides share the "ssh-key add" invocation and its --title/--type arguments
+upload-results:connectivity-output:contains:"ssh-key add":UP-4:RegionConnectivityOutput's own generic "Running" trigger also matches the upload beat's announce line on this screen — the SAME command-path divergence upload-section already classifies
+upload-results:sidebar:absent:"clientB":UP-4:real sidebar carries only the checkpoint's own seeded identities; dummy sidebar lists the full 8-identity IdentityManagerRows fixture set
+upload-results:header-status:contains:"ids":UP-4:header status shows the identity count, which differs (real's small seeded set vs dummy's 8 fixtures)

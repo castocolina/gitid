@@ -25,6 +25,7 @@ import (
 	"github.com/castocolina/gitid/internal/keygen"
 	"github.com/castocolina/gitid/internal/screenshot"
 	"github.com/castocolina/gitid/internal/tuikit"
+	"github.com/castocolina/gitid/internal/uploader"
 )
 
 // approvalCommitFull is the full SHA of the Phase-2 design approval commit (CR-03).
@@ -397,6 +398,9 @@ func TestGateVisualRegression(t *testing.T) {
 	mergeGlobalSSHCaptures(t, realCaptures1, dummyCaptures1, gssHome1)
 	mergeGlobalGitCaptures(t, realCaptures1, dummyCaptures1, ggitHome1)
 	mergeHealthFixerCaptures(t, realCaptures1, dummyCaptures1, hfHome1)
+	upHome1 := t.TempDir()
+	deterministicUploadFixture(t, upHome1)
+	mergeUploadCaptures(t, realCaptures1, dummyCaptures1, upHome1)
 
 	t.Setenv("HOME", home2)
 	realBackend2 := newBackendForHome(home2)
@@ -415,6 +419,9 @@ func TestGateVisualRegression(t *testing.T) {
 	mergeGlobalSSHCaptures(t, realCaptures2, dummyCaptures2, gssHome2)
 	mergeGlobalGitCaptures(t, realCaptures2, dummyCaptures2, ggitHome2)
 	mergeHealthFixerCaptures(t, realCaptures2, dummyCaptures2, hfHome2)
+	upHome2 := t.TempDir()
+	deterministicUploadFixture(t, upHome2)
+	mergeUploadCaptures(t, realCaptures2, dummyCaptures2, upHome2)
 
 	specs := screenshot.RequiredScreenSpecs()
 	// Determinism is checked within each surface. Real and dummy are not byte,
@@ -617,6 +624,9 @@ func TestAllScreensCapturedAndNonEmpty(t *testing.T) {
 	hfHome := t.TempDir()
 	deterministicHealthFixerFixture(t, hfHome)
 	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
+	upHome := t.TempDir()
+	deterministicUploadFixture(t, upHome)
+	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
 	t.Setenv("HOME", home) // restore for any later HOME-dependent assertions
 
 	for _, spec := range screenshot.RequiredScreenSpecs() {
@@ -684,6 +694,9 @@ func TestNegativeControl_UnclassifiedDifferenceRejected(t *testing.T) {
 	hfHome := t.TempDir()
 	deterministicHealthFixerFixture(t, hfHome)
 	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
+	upHome := t.TempDir()
+	deterministicUploadFixture(t, upHome)
+	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
 	t.Setenv("HOME", home) // restore for any later HOME-dependent assertions
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -803,6 +816,9 @@ func TestNegativeControl_AllComparableEqualRegionsAreMutationSensitive(t *testin
 	hfHome := t.TempDir()
 	deterministicHealthFixerFixture(t, hfHome)
 	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
+	upHome := t.TempDir()
+	deterministicUploadFixture(t, upHome)
+	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
 	t.Setenv("HOME", home) // restore for any later HOME-dependent assertions
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -911,6 +927,9 @@ func TestNegativeControl_GitScreenUnclassifiedDifferenceRejected(t *testing.T) {
 	hfHome := t.TempDir()
 	deterministicHealthFixerFixture(t, hfHome)
 	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
+	upHome := t.TempDir()
+	deterministicUploadFixture(t, upHome)
+	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -988,6 +1007,9 @@ func TestNegativeControl_AllGitScreenComparableEqualRegionsAreMutationSensitive(
 	hfHome := t.TempDir()
 	deterministicHealthFixerFixture(t, hfHome)
 	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
+	upHome := t.TempDir()
+	deterministicUploadFixture(t, upHome)
+	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1108,6 +1130,9 @@ func TestNegativeControl_IdentityManagerUnclassifiedDifferenceRejected(t *testin
 	hfHome := t.TempDir()
 	deterministicHealthFixerFixture(t, hfHome)
 	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
+	upHome := t.TempDir()
+	deterministicUploadFixture(t, upHome)
+	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1181,6 +1206,9 @@ func TestNegativeControl_AllIdentityManagerComparableEqualRegionsAreMutationSens
 	hfHome := t.TempDir()
 	deterministicHealthFixerFixture(t, hfHome)
 	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
+	upHome := t.TempDir()
+	deterministicUploadFixture(t, upHome)
+	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1747,6 +1775,9 @@ func TestNegativeControl_GlobalSSHUnclassifiedDifferenceRejected(t *testing.T) {
 	hfHome := t.TempDir()
 	deterministicHealthFixerFixture(t, hfHome)
 	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
+	upHome := t.TempDir()
+	deterministicUploadFixture(t, upHome)
+	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1815,6 +1846,9 @@ func TestNegativeControl_AllGlobalSSHComparableEqualRegionsAreMutationSensitive(
 	hfHome := t.TempDir()
 	deterministicHealthFixerFixture(t, hfHome)
 	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
+	upHome := t.TempDir()
+	deterministicUploadFixture(t, upHome)
+	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -2227,6 +2261,9 @@ func TestNegativeControl_GlobalGitUnclassifiedDifference(t *testing.T) {
 	hfHome := t.TempDir()
 	deterministicHealthFixerFixture(t, hfHome)
 	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
+	upHome := t.TempDir()
+	deterministicUploadFixture(t, upHome)
+	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -2303,6 +2340,9 @@ func TestNegativeControl_GlobalGitPerturbedComparableRegion(t *testing.T) {
 	hfHome := t.TempDir()
 	deterministicHealthFixerFixture(t, hfHome)
 	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
+	upHome := t.TempDir()
+	deterministicUploadFixture(t, upHome)
+	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -2672,6 +2712,9 @@ func buildHealthFixerCaptures(t *testing.T) (real, dummy map[string]string) {
 	hfHome := t.TempDir()
 	deterministicHealthFixerFixture(t, hfHome)
 	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
+	upHome := t.TempDir()
+	deterministicUploadFixture(t, upHome)
+	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
 	t.Setenv("HOME", home)
 	return realCaptures, dummyCaptures
 }
@@ -2861,6 +2904,525 @@ func TestUploadFrameProvenanceMatches(t *testing.T) {
 	for name := range frames {
 		if _, ok := rows[name]; !ok {
 			t.Errorf("committed frame %q has no provenance row in README.md — re-run `go run ./cmd/gitid-frame-promote`", name)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Phase 9 upload-surface registration (09-07-PLAN.md Task 2): the eight
+// upload-surface checkpoints registered in screenshot.uploadVisualSpecs(),
+// mirroring the Phase 8 Health/Fixer registration section above.
+// ---------------------------------------------------------------------------
+
+// uploadScreenIDs is the known Phase 9 upload-surface checkpoint vocabulary,
+// duplicated here (internal/screenshot's uploadVisualSpecs is unexported) so
+// the negative controls and the allowlist tests can scope themselves to
+// Phase 9 without a new export surface — mirrors healthFixerScreenIDs'
+// precedent.
+var uploadScreenIDs = map[string]bool{
+	"upload-checkbox-ready": true, "upload-results": true,
+	"upload-checkbox-unauth": true, "upload-checkbox-disabled": true,
+	"upload-manual-fallback": true, "register-key-modal": true, "rotate-delete-offer": true,
+}
+
+// gateUploadDeps builds a deterministic uploader.Deps whose gh always
+// resolves, authenticates, and succeeds — the "gh ok" shape the
+// upload-checkbox-ready/announcing/results/register-key-modal states need.
+// The unauth/disabled states are produced by screenshot.CaptureUploadScreens'
+// own uploadProbeBackend wrapper instead (it overrides UploadEligibility
+// directly, bypassing uploaderDeps entirely), so this helper never needs an
+// "auth-fail" or "not-found" mode.
+func gateUploadDeps() uploader.Deps {
+	return uploader.Deps{
+		LookPath: func(name string) (string, error) { return "/fake/" + name, nil },
+		ReadFile: os.ReadFile,
+		RunCmd: func(name string, args ...string) (string, int, error) {
+			argv := strings.Join(append([]string{name}, args...), " ")
+			switch {
+			case strings.Contains(argv, "auth status"):
+				return "", 0, nil
+			case strings.Contains(argv, "api user/keys"), strings.Contains(argv, "api user/ssh_signing_keys"):
+				return "[]", 0, nil
+			default:
+				return "", 0, nil
+			}
+		},
+	}
+}
+
+// deterministicUploadFixture seeds home with the SAME "imgr" github-hosted
+// identity deterministicIdentityManagerFixture already establishes — reused
+// directly rather than duplicated, since the Phase 9 upload surface needs
+// exactly the same shape (one github.com-eligible identity, a real ~/.ssh
+// present for the wizard's own key-generation/staging) both the create-flow
+// wizard states and the register-key-modal state need from ONE seeded home.
+func deterministicUploadFixture(t *testing.T, home string) {
+	t.Helper()
+	deterministicIdentityManagerFixture(t, home)
+	// deterministicIdentityManagerFixture's own key files are unparseable
+	// STUB content ("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5STUB ...") — fine for
+	// the identity-manager registry's own screens (none of them read key
+	// CONTENT), but uploader.requirePublicKey validates the actual key
+	// bytes via ssh.ParseAuthorizedKey before any upload attempt, so the
+	// Phase 9 upload path needs a REAL parseable key at "imgr"'s path.
+	mat := deterministicReusableKeyMaterial()
+	pubPath := filepath.Join(home, ".ssh", "id_ed25519_imgr.pub")
+	if err := os.WriteFile(pubPath, []byte(mat.pubLine), 0o644); err != nil { //nolint:gosec // hermetic sandbox HOME fixture (G306)
+		t.Fatalf("deterministicUploadFixture: writing real pubkey over %s: %v", pubPath, err)
+	}
+}
+
+// mergeUploadCaptures captures the eight Phase 9 upload-surface checkpoints
+// (09-07-PLAN.md Task 2, screenshot.CaptureUploadScreens) for both the real
+// backend (seeded from uploadHome via deterministicUploadFixture, with
+// uploaderDeps swapped to gateUploadDeps' deterministic "gh ok" shape) and
+// the dummy backend, merging each into the caller's realCaptures/
+// dummyCaptures maps — mirrors mergeHealthFixerCaptures exactly.
+func mergeUploadCaptures(t *testing.T, realCaptures, dummyCaptures map[string]string, uploadHome string) {
+	t.Helper()
+	restoreHome := os.Getenv("HOME")
+	t.Setenv("HOME", uploadHome)
+	realB := newBackendForHome(uploadHome)
+	realB.uploaderDeps = gateUploadDeps()
+	upLive, err := screenshot.CaptureUploadScreens(realB)
+	if err != nil {
+		t.Fatalf("CaptureUploadScreens (live): %v", err)
+	}
+	dummyB := dummytui.NewFixtureBackend()
+	upApproved, err := screenshot.CaptureUploadScreens(dummyB)
+	if err != nil {
+		t.Fatalf("CaptureUploadScreens (approved): %v", err)
+	}
+	t.Setenv("HOME", restoreHome)
+	// The register-key pane's upload command names the real generated
+	// key's absolute path under uploadHome (a fresh t.TempDir() per call,
+	// unlike a form field's literal "~/.ssh/..." text) — normalize it the
+	// SAME way normalizeDisposableHome already does for create-flow's own
+	// disposable-home captures (CR-01: otherwise two runs' t.TempDir()
+	// paths differ even though nothing else about the capture changed).
+	upLive = normalizeDisposableHome(upLive, uploadHome)
+	for id, text := range upLive {
+		realCaptures[id] = text
+	}
+	for id, text := range upApproved {
+		dummyCaptures[id] = text
+	}
+}
+
+// simpleAllowlistLinePattern parses the OLDER, simpler 5-field schema
+// create-flow's and identity-manager's own visual-divergence-allowlist.txt
+// files use (screen-id:region:predicate:decision-ref:reason, plan 03-09/
+// 05-09) — a DIFFERENT, less strict schema than allowlistLinePattern above
+// (which is scoped to the newer gss-/ggit-/health-/fixer- prefixed 6-7
+// field schema those three files adopted starting Phase 6). Phase 9's own
+// screen IDs (upload-checkbox-ready, register-key-modal, ...) are appended
+// to the TWO older files, in THEIR schema, so they need this parser instead
+// of readDivergenceAllowlist.
+var simpleAllowlistLinePattern = regexp.MustCompile(
+	`^([a-z0-9-]+):([a-z0-9-]+):(contains:"[^"]*"|absent:"[^"]*"):([A-Za-z0-9-]+):(.*)$`)
+
+type simpleAllowlistEntry struct {
+	ScreenID, Region, Predicate, Decision, Reason string
+}
+
+// readSimpleDivergenceAllowlist parses the 5-field schema (see
+// simpleAllowlistLinePattern). Blank lines and #-comments are ignored; a
+// line matching neither is silently skipped (create-flow's file interleaves
+// long free-form prose comment blocks that are not machine-parseable rows,
+// unlike the stricter later-phase files).
+func readSimpleDivergenceAllowlist(path string) ([]simpleAllowlistEntry, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // fixed repo-relative path (G304)
+	if err != nil {
+		return nil, err
+	}
+	var out []simpleAllowlistEntry
+	for _, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		m := simpleAllowlistLinePattern.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		out = append(out, simpleAllowlistEntry{
+			ScreenID: m[1], Region: m[2], Predicate: m[3], Decision: m[4], Reason: strings.TrimSpace(m[5]),
+		})
+	}
+	return out, nil
+}
+
+// TestUploadVisualAllowlistMatchesRegistry proves one-way correspondence:
+// every Phase 9 row in BOTH the create-flow and identity-manager allowlists
+// appears as a (region, predicate) disposition in the registry.
+func TestUploadVisualAllowlistMatchesRegistry(t *testing.T) {
+	bySpec := make(map[string]screenshot.ScreenSpec)
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		bySpec[spec.ScreenID] = spec
+	}
+	for _, allowlistPath := range []string{
+		filepath.Join("..", "..", ".planning", "design", "create-flow", "visual-divergence-allowlist.txt"),
+		filepath.Join("..", "..", ".planning", "design", "identity-manager", "visual-divergence-allowlist.txt"),
+	} {
+		entries, err := readSimpleDivergenceAllowlist(allowlistPath)
+		if err != nil {
+			t.Fatalf("readSimpleDivergenceAllowlist(%s): %v", allowlistPath, err)
+		}
+		for _, entry := range entries {
+			if !uploadScreenIDs[entry.ScreenID] {
+				continue
+			}
+			spec, ok := bySpec[entry.ScreenID]
+			if !ok {
+				t.Errorf("allowlist entry references unknown screen ID %q", entry.ScreenID)
+				continue
+			}
+			found := false
+			for _, disp := range spec.RegionDispositions {
+				if string(disp.Region) == entry.Region && disp.Predicate == entry.Predicate {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("allowlist entry %s:%s (predicate %s) not found in registry spec %q", entry.ScreenID, entry.Region, entry.Predicate, entry.ScreenID)
+			}
+		}
+	}
+}
+
+// TestUploadVisualAllowlistFormat verifies the Phase 9 allowlist rows use
+// only valid predicates (contains:/absent:).
+func TestUploadVisualAllowlistFormat(t *testing.T) {
+	for _, allowlistPath := range []string{
+		filepath.Join("..", "..", ".planning", "design", "create-flow", "visual-divergence-allowlist.txt"),
+		filepath.Join("..", "..", ".planning", "design", "identity-manager", "visual-divergence-allowlist.txt"),
+	} {
+		entries, err := readSimpleDivergenceAllowlist(allowlistPath)
+		if err != nil {
+			t.Fatalf("readSimpleDivergenceAllowlist(%s): %v", allowlistPath, err)
+		}
+		for _, entry := range entries {
+			if !uploadScreenIDs[entry.ScreenID] {
+				continue
+			}
+			if entry.Predicate == "" || (!strings.HasPrefix(entry.Predicate, "contains:") && !strings.HasPrefix(entry.Predicate, "absent:")) {
+				t.Errorf("allowlist entry %s:%s: invalid predicate %q (must be contains: or absent:)", entry.ScreenID, entry.Region, entry.Predicate)
+			}
+		}
+	}
+}
+
+// uploadScreenToFrames maps each registered Phase 9 ScreenID to the
+// committed PTY frame state ID(s) (Task 1's ui-frames/README.md "State ID"
+// column) that carry its D-09 approval evidence. "upload-checkbox-ready"
+// and "upload-results" share the identical underlying frame — RunUpload
+// resolves synchronously in this architecture (no observable "still
+// announcing, not yet resolved" transient a PTY session or this in-process
+// capture can catch mid-flight, confirmed empirically) — the SAME real PTY
+// frame shows the announce lines AND the resolved result rows together;
+// "upload-checkbox-ready" additionally covers the Tab-and-click
+// reachability variant. "upload-manual-fallback" here maps to Task 1's
+// scope-remediation partial-failure frame — a DIFFERENT concrete scenario
+// than this registry's own in-process capture (which reaches the
+// manual-fallback heading via a DECLINED checkbox instead, a simpler script
+// shareable identically across both the real and dummy backends); both are
+// genuine instances of the same "manual fallback guidance renders" concept,
+// documented here rather than left implicit.
+var uploadScreenToFrames = map[string][]string{
+	"upload-checkbox-ready":    {"upload-checkbox-ready", "upload-checkbox-tab-and-click"},
+	"upload-results":           {"upload-checkbox-ready", "upload-already-complete"},
+	"upload-checkbox-unauth":   {"upload-checkbox-unauth"},
+	"upload-checkbox-disabled": {"upload-checkbox-disabled", "upload-omitted"},
+	"upload-manual-fallback":   {"upload-manual-fallback"},
+	"register-key-modal":       {"register-key-modal", "register-key-modal-u-key", "register-key-modal-manual-fallback"},
+	"rotate-delete-offer":      {"rotate-delete-offer-default", "rotate-delete-offer-delete", "rotate-delete-offer-absent"},
+}
+
+// uploadFrameProvenanceStateIDPattern captures the "State ID" column
+// (column 1) of ui-frames/README.md's provenance table — the vocabulary
+// uploadScreenToFrames' values use, distinct from the "Frame" column
+// (the .txt filename) readUploadFrameProvenance (Task 1) already parses.
+var uploadFrameProvenanceStateIDPattern = regexp.MustCompile(`^\| (\S+) \| \S+\.txt \| `)
+
+// readUploadFrameProvenanceStateIDs returns the set of "State ID" values
+// from ui-frames/README.md's provenance table.
+func readUploadFrameProvenanceStateIDs(path string) (map[string]bool, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // fixed repo-relative path (G304)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, line := range strings.Split(string(data), "\n") {
+		m := uploadFrameProvenanceStateIDPattern.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		out[m[1]] = true
+	}
+	return out, nil
+}
+
+// TestUploadVisualSpecsHaveCommittedFrames (R14) proves the eight registered
+// Phase 9 ScreenIDs and Task 1's thirteen committed PTY frames' State IDs
+// correspond in both directions via uploadScreenToFrames: every registered
+// ScreenID maps to at least one committed frame's State ID, and every
+// committed frame's State ID maps back to a registered ScreenID.
+func TestUploadVisualSpecsHaveCommittedFrames(t *testing.T) {
+	dir := filepath.Join("..", "..", ".planning", "phases", "09-upload-credentials-assist", "ui-frames")
+	stateIDs, err := readUploadFrameProvenanceStateIDs(filepath.Join(dir, "README.md"))
+	if err != nil {
+		t.Fatalf("readUploadFrameProvenanceStateIDs: %v", err)
+	}
+	if len(stateIDs) == 0 {
+		t.Fatal("no State IDs parsed from README.md's provenance table — the table format has drifted")
+	}
+
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		if !uploadScreenIDs[spec.ScreenID] {
+			continue
+		}
+		frames, ok := uploadScreenToFrames[spec.ScreenID]
+		if !ok || len(frames) == 0 {
+			t.Errorf("registered upload ScreenID %q maps to no committed frame in uploadScreenToFrames", spec.ScreenID)
+			continue
+		}
+		for _, frame := range frames {
+			if !stateIDs[frame] {
+				t.Errorf("uploadScreenToFrames maps %q -> %q, but no such State ID is committed in %s/README.md", spec.ScreenID, frame, dir)
+			}
+		}
+	}
+	mapped := map[string]bool{}
+	for _, frames := range uploadScreenToFrames {
+		for _, f := range frames {
+			mapped[f] = true
+		}
+	}
+	for stateID := range stateIDs {
+		if !mapped[stateID] {
+			t.Errorf("committed frame State ID %q has no entry in uploadScreenToFrames — every committed frame must map back to a registered ScreenID", stateID)
+		}
+	}
+}
+
+// TestUploadVisualNoUnscopedDispositions asserts every Phase 9
+// RegionDisposition uses uxRegionDifferenceScoped (a non-empty Predicate),
+// never the unscoped form — the plan's explicit requirement.
+func TestUploadVisualNoUnscopedDispositions(t *testing.T) {
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		if !uploadScreenIDs[spec.ScreenID] {
+			continue
+		}
+		for _, disp := range spec.RegionDispositions {
+			if disp.Predicate == "" {
+				t.Errorf("upload spec %q region %q has an unscoped disposition (empty Predicate) — every Phase 9 disposition must use uxRegionDifferenceScoped", spec.ScreenID, disp.Region)
+			}
+		}
+	}
+}
+
+// TestUploadMakefileFilterSelectsControls verifies the gate-visual-regression
+// target's test-selection filter includes the Phase 9 acceptance tests and
+// all Phase 9 negative controls by name.
+func TestUploadMakefileFilterSelectsControls(t *testing.T) {
+	rootDir := filepath.Join("..", "..")
+	makefilePath := filepath.Join(rootDir, "Makefile")
+	content, err := os.ReadFile(makefilePath)
+	if err != nil {
+		t.Fatalf("reading Makefile from repo root (%s): %v", makefilePath, err)
+	}
+	makefileText := string(content)
+	lines := strings.Split(makefileText, "\n")
+	targetStart := -1
+	for i, line := range lines {
+		if strings.Contains(line, "gate-visual-regression:") {
+			targetStart = i
+			break
+		}
+	}
+	if targetStart < 0 {
+		t.Fatal("gate-visual-regression target not found in Makefile")
+	}
+	recipeStart := -1
+	for i := targetStart + 1; i < len(lines); i++ {
+		if strings.HasPrefix(lines[i], "\t") {
+			recipeStart = i
+			break
+		}
+	}
+	if recipeStart < 0 {
+		t.Fatal("no recipe line found for gate-visual-regression target")
+	}
+	recipeEnd := recipeStart + 1
+	for recipeEnd < len(lines) && strings.HasPrefix(lines[recipeEnd], "\t") {
+		recipeEnd++
+	}
+	recipe := strings.Join(lines[recipeStart:recipeEnd], "\n")
+	for _, test := range []string{"UploadVisual", "NegativeControl_"} {
+		if !strings.Contains(recipe, test) {
+			t.Errorf("Makefile gate-visual-regression recipe missing -run pattern for %s", test)
+		}
+	}
+	// This filter change must NOT sweep in the unrelated TestRunUpload/
+	// TestNoUpload behavioral tests under the screenshot tag (a distinct
+	// "UploadVisual" prefix, not a bare "Upload" alternation, achieves
+	// this — assert the recipe never uses the bare, over-broad form).
+	if strings.Contains(recipe, "|Upload|") || strings.Contains(recipe, "Test(Upload|") {
+		t.Error("Makefile gate-visual-regression recipe uses a bare \"Upload\" alternation that would also select TestRunUpload/TestNoUpload — use the distinct \"UploadVisual\" prefix instead")
+	}
+}
+
+// buildUploadCaptures constructs the full merged real/dummy capture maps
+// every Phase 9 negative control needs, mirroring buildHealthFixerCaptures
+// exactly (chaining every prior surface's merge, then adding Phase 9's own).
+func buildUploadCaptures(t *testing.T) (real, dummy map[string]string) {
+	t.Helper()
+	home := t.TempDir()
+	deterministicReusableKeyFixture(t, home)
+	t.Setenv("HOME", home)
+	realB := newBackendForHome(home)
+	realCaptures, err := screenshot.CaptureCreateFlowScreens(realB)
+	if err != nil {
+		t.Fatalf("capturing real backend: %v", err)
+	}
+	dummyB := dummytui.NewFixtureBackend()
+	dummyCaptures, err := screenshot.CaptureCreateFlowScreens(dummyB)
+	if err != nil {
+		t.Fatalf("capturing dummy backend: %v", err)
+	}
+	gitHome := t.TempDir()
+	deterministicGitIdentityFixture(t, gitHome)
+	mergeGitScreenCaptures(t, realCaptures, dummyCaptures, gitHome)
+	imgrHome := t.TempDir()
+	deterministicIdentityManagerFixture(t, imgrHome)
+	mergeIdentityManagerCaptures(t, realCaptures, dummyCaptures, imgrHome)
+	gssHome := t.TempDir()
+	deterministicGlobalSSHFixture(t, gssHome)
+	mergeGlobalSSHCaptures(t, realCaptures, dummyCaptures, gssHome)
+	ggitHome := t.TempDir()
+	deterministicGlobalGitFixture(t, ggitHome)
+	mergeGlobalGitCaptures(t, realCaptures, dummyCaptures, ggitHome)
+	hfHome := t.TempDir()
+	deterministicHealthFixerFixture(t, hfHome)
+	mergeHealthFixerCaptures(t, realCaptures, dummyCaptures, hfHome)
+	upHome := t.TempDir()
+	deterministicUploadFixture(t, upHome)
+	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
+	t.Setenv("HOME", home)
+	return realCaptures, dummyCaptures
+}
+
+// TestNegativeControl_UploadVisualMissingState verifies the gate fails when
+// a required Phase 9 upload screen state is missing from the captured set.
+func TestNegativeControl_UploadVisualMissingState(t *testing.T) {
+	home := t.TempDir()
+	deterministicUploadFixture(t, home)
+	t.Setenv("HOME", home)
+	realB := newBackendForHome(home)
+	realB.uploaderDeps = gateUploadDeps()
+	real, err := screenshot.CaptureUploadScreens(realB)
+	if err != nil {
+		t.Fatalf("CaptureUploadScreens: %v", err)
+	}
+	delete(real, "upload-results")
+	if _, ok := real["upload-results"]; ok {
+		t.Fatal("test setup failure: upload-results still present after delete")
+	}
+	if err := screenshot.ValidateCapturedState(screenshot.ScreenSpec{
+		ScreenID:    "upload-results",
+		StateMarker: "key registered",
+	}, ""); err == nil {
+		t.Error("ValidateCapturedState should have failed for a missing required state marker — the gate must catch a missing state")
+	}
+}
+
+// TestNegativeControl_UploadVisualUnclassifiedDifference proves the REAL
+// gate (BuildRegionDiffs -> ValidateRegionDiffs) rejects a genuine
+// unclassified difference: build the FULL real classified diff set, strip
+// the classification off an already-known-divergent Phase 9 region, and
+// assert ValidateRegionDiffs then fails on the mutated evidence.
+func TestNegativeControl_UploadVisualUnclassifiedDifference(t *testing.T) {
+	realCaptures, dummyCaptures := buildUploadCaptures(t)
+	specs := screenshot.RequiredScreenSpecs()
+	records, err := screenshot.BuildRegionDiffs("negative-control", realCaptures, dummyCaptures, specs)
+	if err != nil {
+		t.Fatalf("building classified region evidence: %v", err)
+	}
+	mutated := false
+	for i := range records {
+		if !uploadScreenIDs[records[i].ScreenID] {
+			continue // scope this control to Phase 9 upload records only
+		}
+		for j := range records[i].Regions {
+			region := &records[i].Regions[j]
+			if !region.Comparable || !region.Equal {
+				region.Classification = ""
+				mutated = true
+				break
+			}
+		}
+		if mutated {
+			break
+		}
+	}
+	if !mutated {
+		t.Fatal("negative-control: no classified Phase 9 difference was available to mutate")
+	}
+	data, err := json.Marshal(screenshot.RegionDiffs{Version: "test", SourceCommit: "negative-control", GeneratedAt: "test", Screens: records})
+	if err != nil {
+		t.Fatalf("marshaling mutated region evidence: %v", err)
+	}
+	if err := screenshot.ValidateRegionDiffs(data, "negative-control", specs); err == nil {
+		t.Fatal("negative-control: ValidateRegionDiffs must reject a classified Phase 9 difference whose classification was stripped")
+	}
+}
+
+// TestNegativeControl_UploadVisualPerturbedComparableRegion verifies the
+// REAL gate fails when a region that currently compares equal between real
+// and approved-tui is perturbed on one side — proven exhaustively, across
+// every comparable currently-equal Phase 9 region.
+func TestNegativeControl_UploadVisualPerturbedComparableRegion(t *testing.T) {
+	realCaptures, dummyCaptures := buildUploadCaptures(t)
+	specs := screenshot.RequiredScreenSpecs()
+	records, err := screenshot.BuildRegionDiffs("negative-control", realCaptures, dummyCaptures, specs)
+	if err != nil {
+		t.Fatalf("building classified region evidence: %v", err)
+	}
+	assertAllComparableEqualRegionsAreMutationSensitive(t, specs, records, func(screenID string) bool {
+		return uploadScreenIDs[screenID]
+	})
+}
+
+// TestNegativeControl_UploadVisualCrossSurfaceAllowlistLeakage verifies the
+// gate fails when an allowlist entry from another surface (Health/Fixer) is
+// offered against a Phase 9 upload screen ID — proven by asserting no
+// Health/Fixer allowlist entry's region+predicate accidentally satisfies a
+// Phase 9 disposition, and vice versa (mirrors
+// TestNegativeControl_HealthFixerCrossSurfaceAllowlistLeakage's own leakage
+// check).
+func TestNegativeControl_UploadVisualCrossSurfaceAllowlistLeakage(t *testing.T) {
+	hfEntries, err := readDivergenceAllowlist(filepath.Join("..", "..", ".planning", "design", "health-fixer", "visual-divergence-allowlist.txt"))
+	if err != nil {
+		t.Fatalf("readDivergenceAllowlist (health-fixer): %v", err)
+	}
+	for _, entry := range hfEntries {
+		if uploadScreenIDs[entry.ScreenID] {
+			t.Errorf("Health/Fixer allowlist entry %q names a Phase 9 upload screen ID — cross-registry leakage", entry.Name)
+		}
+	}
+	for _, allowlistPath := range []string{
+		filepath.Join("..", "..", ".planning", "design", "create-flow", "visual-divergence-allowlist.txt"),
+		filepath.Join("..", "..", ".planning", "design", "identity-manager", "visual-divergence-allowlist.txt"),
+	} {
+		upEntries, err := readSimpleDivergenceAllowlist(allowlistPath)
+		if err != nil {
+			t.Fatalf("readSimpleDivergenceAllowlist(%s): %v", allowlistPath, err)
+		}
+		for _, entry := range upEntries {
+			if uploadScreenIDs[entry.ScreenID] && healthFixerScreenIDs[entry.ScreenID] {
+				t.Errorf("upload-surface allowlist entry %s:%s names a Health/Fixer screen ID — cross-registry leakage", entry.ScreenID, entry.Region)
+			}
 		}
 	}
 }

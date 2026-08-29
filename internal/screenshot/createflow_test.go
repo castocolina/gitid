@@ -79,6 +79,15 @@ func captureCombined(t *testing.T, backend tuikit.Backend) map[string]string {
 	for id, text := range hfOut {
 		out[id] = text
 	}
+	// 09-07-PLAN.md Task 2: Phase 9 upload-surface captures merged the SAME
+	// way (the shared registry is now seven-way merged).
+	upOut, err := screenshot.CaptureUploadScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureUploadScreens: %v", err)
+	}
+	for id, text := range upOut {
+		out[id] = text
+	}
 	return out
 }
 
@@ -720,6 +729,15 @@ func TestCaptureCreateFlowScreensFailsOnMissingRequiredFrame(t *testing.T) {
 		t.Fatalf("CaptureHealthFixerScreens with valid backend must not fail: %v", herr)
 	}
 	for id, text := range hfCaptures {
+		captures[id] = text
+	}
+	// 09-07-PLAN.md Task 2: Phase 9 upload-surface captures merged the SAME
+	// way (the registry is now seven-way merged).
+	upCaptures, uerr := screenshot.CaptureUploadScreens(backend)
+	if uerr != nil {
+		t.Fatalf("CaptureUploadScreens with valid backend must not fail: %v", uerr)
+	}
+	for id, text := range upCaptures {
 		captures[id] = text
 	}
 	// Verify all required frames are present.

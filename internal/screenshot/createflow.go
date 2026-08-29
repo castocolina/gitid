@@ -342,6 +342,16 @@ func ScreenSpecRegistry() []ScreenSpec {
 				uxRegionDifference(RegionConnectivityOutput, "connectivity-output", "D-02", "The live capture uses the current backend outcome while the approved TUI uses a frozen fixture."),
 				uxRegionDifference(RegionHeaderStatus, "fixture-header-status", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),
 				uxRegionDifference(RegionSidebar, "fixture-sidebar", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),
+				// 09-07-PLAN.md Task 2 discovery: this screen's script
+				// auto-checks the D-01 checkbox and reaches testUpload before
+				// stage 1 (see CaptureCreateFlowScreens' own D-02 comment), so
+				// the upload beat's "Running: <command>" lines render on this
+				// frame too — the SAME UP-4 fixture-vs-live command-path
+				// divergence uploadVisualSpecs' own upload-results spec
+				// classifies.
+				uxRegionDifferenceScoped(RegionUploadSection, "fixture-vs-live-command-path", "UP-4",
+					"the real upload command names spec.KeyPath as constructed by this wizard's own key-generation step; the dummy renders its frozen \"/usr/local/bin/gh ...\" command shape — both sides share the \"ssh-key add\" invocation and its --title/--type arguments",
+					`contains:"ssh-key add"`),
 			},
 		},
 		{
@@ -395,6 +405,12 @@ func ScreenSpecRegistry() []ScreenSpec {
 				// "gscreen"/"gscreenssh" fixture identities.
 				uxRegionDifference(RegionGitPreview, "gitdir-default", "CTX-D-02",
 					"the real binary derives the gitdir default as \"~/git/<identity>/\" per D-02; the dummy's frozen includeIf preview fixture predates this derivation and shows the pre-Phase-4 \"~/<identity>/\" sample path"),
+				// 09-07-PLAN.md Task 2 discovery: same reasoning as
+				// test-stage1-direct above — this screen is reached AFTER the
+				// upload beat auto-ran on step 1, so its content persists here too.
+				uxRegionDifferenceScoped(RegionUploadSection, "fixture-vs-live-command-path", "UP-4",
+					"the real upload command names spec.KeyPath as constructed by this wizard's own key-generation step; the dummy renders its frozen \"/usr/local/bin/gh ...\" command shape — both sides share the \"ssh-key add\" invocation and its --title/--type arguments",
+					`contains:"ssh-key add"`),
 			},
 		},
 		{
@@ -410,6 +426,12 @@ func ScreenSpecRegistry() []ScreenSpec {
 				uxRegionDifference(RegionConfirmationPreview, "confirmation-preview", "D-05", "The Phase 3 pre-write ceremony differs from the approved fixture preview."),
 				uxRegionDifference(RegionHeaderStatus, "fixture-header-status", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),
 				uxRegionDifference(RegionSidebar, "fixture-sidebar", "D-16", "The live disposable home starts empty while the approved fixture contains identities."),
+				// 09-07-PLAN.md Task 2 discovery: same reasoning as
+				// test-stage1-direct above — this screen is reached AFTER the
+				// upload beat auto-ran on step 1, so its content persists here too.
+				uxRegionDifferenceScoped(RegionUploadSection, "fixture-vs-live-command-path", "UP-4",
+					"the real upload command names spec.KeyPath as constructed by this wizard's own key-generation step; the dummy renders its frozen \"/usr/local/bin/gh ...\" command shape — both sides share the \"ssh-key add\" invocation and its --title/--type arguments",
+					`contains:"ssh-key add"`),
 			},
 		},
 		{
@@ -551,6 +573,10 @@ func ScreenSpecRegistry() []ScreenSpec {
 	// alongside the existing five, without disturbing any of them
 	// (six-way merged).
 	specs = append(specs, healthFixerSpecs()...)
+	// 09-07-PLAN.md Task 2: consume the Phase 9 upload-surface registry
+	// alongside the existing six, without disturbing any of them
+	// (seven-way merged).
+	specs = append(specs, uploadVisualSpecs()...)
 	return specs
 }
 
@@ -697,7 +723,14 @@ func validDecisionRef(ref string) bool {
 		// 07-06-PLAN.md Task 1 (Phase 7 registration): the disambiguating
 		// GGIT-D- prefix for 07-CONTEXT.md decisions, the SAME pattern as
 		// GSSH-D- for Phase 6.
-		strings.HasPrefix(ref, "GGIT-D-")
+		strings.HasPrefix(ref, "GGIT-D-") ||
+		// 09-07-PLAN.md Task 2 (Phase 9 registration): UP-4 names the DLV-4-
+		// shaped fixture-vs-live/dummy-vs-real comparison-mechanism class for
+		// the upload surface (mirrors DLV-4/GSSH-D-/GGIT-D-'s own precedent —
+		// this is a property of the comparison mechanism itself, not a
+		// numbered 09-CONTEXT.md decision, so it does not collide with any
+		// bare D-NN there).
+		strings.HasPrefix(ref, "UP-")
 }
 
 // ValidateScreenSpecs checks the registry for structural correctness:
@@ -1003,6 +1036,79 @@ func (o offlineCaptureBackend) TestStage1(spec tuikit.CreateSpec) tea.Cmd {
 	}
 }
 
+// UploadEligibility is overridden with a deterministic, machine-independent
+// answer — mirroring dummytui.FixtureBackend.UploadEligibility's OWN
+// hostname branching exactly (github->Ready, gitlab->Unauth, else->Omitted).
+// Before Phase 9's RegionUploadSection existed, every pre-existing
+// create-flow spec's real capture ran the checkbox's REAL eligibility probe
+// unmodified — resolving Ready/Unauth/Disabled based on whichever gh/glab
+// state happens to be true on the machine running the gate, a pre-existing
+// latent non-determinism CR-01's own intra-run check could never catch
+// (both runs of a single test execute on the SAME machine). RegionUploadSection
+// makes that machine-dependent content visible to region comparison for the
+// FIRST time, so it must be pinned deterministically here — matching the
+// dummy's own default shape means every PRE-Phase-9 create-flow spec's
+// captured checkbox content becomes byte-identical between real and dummy,
+// needing no new disposition at all. Phase 9's OWN specs
+// (uploadVisualSpecs' upload-checkbox-unauth/disabled) reach their
+// alternate states via CaptureUploadScreens' OWN, more specific
+// uploadProbeBackend wrapper instead — this override never runs there,
+// since mergeUploadCaptures passes newBackendForHome's raw *realBackend
+// directly, not offlineCaptureBackend-wrapped.
+func (o offlineCaptureBackend) UploadEligibility(hostname string) tea.Cmd {
+	return func() tea.Msg {
+		switch {
+		case strings.Contains(hostname, "github"):
+			return tuikit.UploadEligibilityMsg{Hostname: hostname, View: tuikit.UploadEligibilityView{
+				State: tuikit.UploadEligibilityReady, ProviderName: "GitHub", ToolName: "gh", Hostname: "github.com",
+			}}
+		case strings.Contains(hostname, "gitlab"):
+			return tuikit.UploadEligibilityMsg{Hostname: hostname, View: tuikit.UploadEligibilityView{
+				State: tuikit.UploadEligibilityUnauth, ProviderName: "GitLab", ToolName: "glab", Hostname: "gitlab.com",
+			}}
+		default:
+			return tuikit.UploadEligibilityMsg{Hostname: hostname, View: tuikit.UploadEligibilityView{State: tuikit.UploadEligibilityOmitted}}
+		}
+	}
+}
+
+// RunUpload is overridden with a deterministic, machine-independent result
+// — mirroring dummytui.FixtureBackend.RunUpload's OWN fixed command shape
+// and hostname-driven outcome exactly (github -> both registrations
+// uploaded, gitlab -> one combined row, "partial" -> the scope-remediation
+// partial-failure pair), for the SAME reason UploadEligibility above is
+// overridden: without this, any pre-existing create-flow spec whose script
+// reaches testUpload (the checkbox auto-checks Ready via the override
+// above) would invoke the REAL backend's uploaderDeps (real exec.LookPath),
+// resolving differently depending on whether gh/glab happens to be
+// installed on the machine running the gate.
+func (o offlineCaptureBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
+	title := fmt.Sprintf(tuikit.UploadKeyTitleFmt, spec.Identity, "demo-machine")
+	authCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title %s --type authentication", spec.KeyPath, title)
+	signCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title %s --type signing", spec.KeyPath, title)
+	glabCmd := fmt.Sprintf("/usr/local/bin/glab ssh-key add %s.pub -t %s --usage-type auth_and_signing", spec.KeyPath, title)
+
+	var view tuikit.UploadRunView
+	switch {
+	case strings.Contains(spec.Hostname, "partial"):
+		view = tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{
+			{Registration: tuikit.UploadRegistrationAuthentication, Label: tuikit.UploadRegistrationLabelAuth, Command: authCmd, Outcome: tuikit.UploadRowUploaded},
+			{Registration: tuikit.UploadRegistrationSigning, Label: tuikit.UploadRegistrationLabelSigning, Command: signCmd, Outcome: tuikit.UploadRowFailed,
+				Reason: fmt.Sprintf(tuikit.UploadScopeRemediationSigningFmt, "github.com")},
+		}}
+	case strings.Contains(spec.Hostname, "gitlab"):
+		view = tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{
+			{Registration: tuikit.UploadRegistrationCombined, Label: tuikit.UploadRegistrationLabelCombined, Command: glabCmd, Outcome: tuikit.UploadRowUploaded},
+		}}
+	default:
+		view = tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{
+			{Registration: tuikit.UploadRegistrationAuthentication, Label: tuikit.UploadRegistrationLabelAuth, Command: authCmd, Outcome: tuikit.UploadRowUploaded},
+			{Registration: tuikit.UploadRegistrationSigning, Label: tuikit.UploadRegistrationLabelSigning, Command: signCmd, Outcome: tuikit.UploadRowUploaded},
+		}}
+	}
+	return func() tea.Msg { return tuikit.UploadRunMsg{View: view} }
+}
+
 func (o offlineCaptureBackend) TestStage2(spec tuikit.CreateSpec) tea.Cmd {
 	return func() tea.Msg {
 		return tuikit.WizardStageMsg{
@@ -1246,7 +1352,7 @@ func CaptureCreateFlowScreens(backend tuikit.Backend) (map[string]string, error)
 		// likewise captured separately against their own seeded HOME.
 		// 08-08-PLAN.md Task 2: Health/Fixer specs (CaptureHealthFixerScreens)
 		// are likewise captured separately against their own seeded HOME.
-		if !spec.ApplicableLive || isGitScreenID(spec.ScreenID) || isIdentityManagerScreenID(spec.ScreenID) || isGlobalSSHScreenID(spec.ScreenID) || isGlobalGitScreenID(spec.ScreenID) || isHealthFixerScreenID(spec.ScreenID) {
+		if !spec.ApplicableLive || isGitScreenID(spec.ScreenID) || isIdentityManagerScreenID(spec.ScreenID) || isGlobalSSHScreenID(spec.ScreenID) || isGlobalGitScreenID(spec.ScreenID) || isHealthFixerScreenID(spec.ScreenID) || isUploadScreenID(spec.ScreenID) {
 			continue
 		}
 		text, ok := out[spec.ScreenID]
@@ -2518,5 +2624,376 @@ func globalGitSpecs() []ScreenSpec {
 			NonApplicability:      receiptNA("GGIT-D-04", applyReceiptReason),
 			RequiredRegions:       []RegionName{RegionGGitApplyCeremony},
 		},
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Upload / D-08 register-key checkpoints (09-07-PLAN.md Task 2, UP-01/UP-02/
+// UP-03). CaptureUploadScreens drives the create-flow wizard's step-2 "Test
+// connection" pane and the identity-manager's register-key pane in-process —
+// EIGHT Phase 9 states, mirroring the Phase 8 healthFixerSpecs() pattern:
+//
+//   - upload-checkbox-ready    Step 1 (Test connection), Enter from testIdle
+//                              enters testUpload and RunUpload resolves —
+//                              the checked D-01 checkbox successfully
+//                              triggering the upload beat. RunUpload
+//                              resolves synchronously in this architecture
+//                              (its tea.Cmd computes command text AND
+//                              outcome together — captured directly with
+//                              step() rather than stepAndPendingCmd/
+//                              CaptureCreateFlowScreens' own CR-02
+//                              intermediate-capture technique: there is no
+//                              observable "announcing, not yet resolved"
+//                              transient a PTY session (or this in-process
+//                              capture) can catch mid-flight, confirmed by
+//                              inspecting the pending-cmd state directly —
+//                              it renders no announce content at all until
+//                              the cmd resolves). "upload-results" is the
+//                              SAME resolved state, registered as its own
+//                              screen ID with its own disposition entry.
+//   - upload-results           The identical resolved state as
+//                              upload-checkbox-ready — the ✓/✗ result rows.
+//   - upload-checkbox-unauth   Live-only: the real backend's uploaderDeps
+//                              answers an unauthenticated `gh` (LookPath ok,
+//                              `auth status` non-zero). The dummy
+//                              FixtureBackend has no equivalent seam (it
+//                              branches by HOSTNAME only, never by an
+//                              auth-status concept dummytui's no-backend
+//                              ALLOWLIST forbids importing) — NOT applicable
+//                              to the approved-tui surface; D-09's approval
+//                              for this state lives in Task 1's committed PTY
+//                              frame instead
+//                              (create-flow-upload-checkbox-unauth.txt).
+//   - upload-checkbox-disabled Live-only, same reasoning: uploaderDeps'
+//                              LookPath fails for BOTH gh and glab (the
+//                              genuinely tool-absent DISABLED shape Task 1's
+//                              own PTY suite doc comment notes a real PTY
+//                              harness cannot safely produce — this
+//                              in-process capture CAN, since it controls the
+//                              seam directly).
+//   - upload-manual-fallback   The D-01 checkbox declined (toggled off) on
+//                              step 0, then advanced — renders the manual
+//                              fallback instructions instead of running any
+//                              provider command. Reachable identically on
+//                              both surfaces (no hostname/auth-deps
+//                              divergence involved).
+//   - register-key-modal       Identity-manager surface: the default-
+//                              selected identity, 'u' opens the D-08
+//                              register-key pane, which auto-runs.
+//   - rotate-delete-offer      NON-APPLICABLE in this in-process gate — the
+//                              D-04 offer requires a completed key-rotation
+//                              commit (a real cryptographic write) this
+//                              no-subprocess capture path never performs,
+//                              mirroring Phase 6's own gss-apply-receipt/
+//                              Phase 7's ggit-apply-receipt precedent (and
+//                              Phase 5's original rotate-result/repair-result
+//                              exclusion). Evidence lives in the PTY frame
+//                              .planning/phases/09-upload-credentials-assist/
+//                              ui-frames/identity-manager-rotate-delete-
+//                              offer-default.txt
+//                              (TestIdentityManager_RotateDeleteOfferDefaultsToLeave).
+// ---------------------------------------------------------------------------
+
+// uploadWizardApp boots a fresh create-flow wizard around backend at the
+// fixed capture geometry, wrapped with offlineCaptureBackend — the SAME
+// wrapping CaptureCreateFlowScreens applies (deterministic TestStage1/
+// TestStage2 AND, per Phase 9's own additions above, deterministic
+// UploadEligibility/RunUpload) so this capture never blocks on or varies
+// with a real SSH/gh/glab probe.
+func uploadWizardApp(backend tuikit.Backend) tea.Model {
+	return freshWizard(offlineCaptureBackend{backend})
+}
+
+// uploadIdentityManagerApp boots the identity-manager root around backend at
+// the fixed capture geometry, mirroring identityManagerApp exactly.
+func uploadIdentityManagerApp(backend tuikit.Backend) tea.Model {
+	var model tea.Model = tuikit.NewApp(backend)
+	model = step(model, tea.WindowSizeMsg{Width: CaptureWidth, Height: CaptureHeight})
+	return model
+}
+
+// uploadVisualSpecs returns the Phase 9 upload-surface checkpoint specs.
+// RegionDispositions mirror
+// .planning/design/create-flow/visual-divergence-allowlist.txt and
+// .planning/design/identity-manager/visual-divergence-allowlist.txt's Phase 9
+// rows verbatim (kept in sync by TestUploadVisualAllowlistMatchesRegistry).
+func uploadVisualSpecs() []ScreenSpec {
+	upFixtureClass := "UP-4"
+
+	noHTML := []SurfaceNonApplicability{uxNonComparable("approved-html", upFixtureClass,
+		"AGENTS.md's BINDING UI Reference rule: Phase 2's approved Bubble Tea dummy is the SOLE Phase 9 UI/UX parity target for Phases 3-10; the historical HTML/MUI artifacts are Phase-2 design history and are recorded explicitly NON-APPLICABLE for every Phase 9 comparison")}
+
+	// uploadCommandDisposition covers the "Running: <command>" announce
+	// lines: the real command names a real generated key's temp-directory
+	// path and gh's PATH-resolved location; the dummy names its frozen
+	// "/usr/local/bin/gh ...~/.ssh/id_ed25519_<name>.pub" shape. Both sides
+	// share the literal "ssh-key add" fragment and the --type/--title
+	// argument shape.
+	uploadCommandDisposition := uxRegionDifferenceScoped(RegionUploadSection, "fixture-vs-live-command-path", upFixtureClass,
+		"the real upload command names a real generated key's temp-directory path and the PATH-resolved gh/glab binary; the dummy renders its frozen \"/usr/local/bin/gh ...\" command shape — both sides share the \"ssh-key add\" invocation and its --title/--type arguments",
+		`contains:"ssh-key add"`)
+	// extractConnectivityOutput's own generic "Running"/"ssh -" triggers
+	// (createflow_regions.go) also fire on the upload beat's "Running:
+	// <gh/glab command>" announce line — the SAME fixture-vs-live command
+	// path divergence, just visible through a second, pre-existing region.
+	connectivityOverlapDisposition := uxRegionDifferenceScoped(RegionConnectivityOutput, "fixture-vs-live-command-path", upFixtureClass,
+		"RegionConnectivityOutput's own generic \"Running\" trigger also matches the upload beat's announce line on this screen — the SAME command-path divergence RegionUploadSection's own disposition classifies",
+		`contains:"ssh-key add"`)
+	// registerKeyConnectivityOverlapDisposition is the identity-manager
+	// pane's own variant of the overlap above.
+	registerKeyConnectivityOverlapDisposition := uxRegionDifferenceScoped(RegionConnectivityOutput, "fixture-vs-live-command-path", upFixtureClass,
+		"RegionConnectivityOutput's own generic \"Running\" trigger also matches the upload beat's announce line on the register-key pane — the SAME command-path divergence RegionUploadSection's own disposition classifies",
+		`contains:"ssh-key add"`)
+
+	dispIM := []RegionDisposition{
+		uxRegionDifferenceScoped(RegionSidebar, "sidebar-state", upFixtureClass,
+			"real sidebar carries only the checkpoint's own seeded identities; dummy sidebar lists the full 8-identity IdentityManagerRows fixture set",
+			`absent:"clientB"`),
+		uxRegionDifferenceScoped(RegionHeaderStatus, "identity-count", upFixtureClass,
+			"header status shows the identity count, which differs (real's small seeded set vs dummy's 8 fixtures)",
+			`contains:"ids"`),
+		uxRegionDifferenceScoped(RegionBreadcrumb, "identity-name", upFixtureClass,
+			"the breadcrumb (\"Identities › <identity> › Register key\") embeds the selected identity's name, which differs between the real fixture (\"imgr\") and the dummy fixture (\"personal\") by construction",
+			`contains:"Register key"`),
+	}
+
+	// dispCF covers the SAME identity-count fixture-vs-live divergence on
+	// the create-flow wizard surface: deterministicUploadFixture seeds a
+	// small real identity set (via deterministicIdentityManagerFixture,
+	// reused for a real ~/.ssh) while the dummy carries its frozen
+	// 8-identity fixture — the wizard's own breadcrumb ("New identity") is
+	// a generic literal with no embedded identity name, so it needs no
+	// disposition of its own.
+	dispCF := []RegionDisposition{
+		uxRegionDifferenceScoped(RegionSidebar, "sidebar-state", upFixtureClass,
+			"real sidebar carries only the checkpoint's own seeded identities; dummy sidebar lists the full 8-identity IdentityManagerRows fixture set",
+			`absent:"clientB"`),
+		uxRegionDifferenceScoped(RegionHeaderStatus, "identity-count", upFixtureClass,
+			"header status shows the identity count, which differs (real's small seeded set vs dummy's 8 fixtures)",
+			`contains:"ids"`),
+	}
+
+	return []ScreenSpec{
+		{
+			ScreenID:              "upload-checkbox-ready",
+			Interaction:           "The checked D-01 checkbox successfully triggers the upload beat: same script as upload-results (see CaptureUploadScreens' doc comment for why they share one capture).",
+			StateMarker:           "Authentication key registered",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionUploadSection},
+			RegionDispositions:    append(append([]RegionDisposition{}, dispCF...), uploadCommandDisposition, connectivityOverlapDisposition),
+		},
+		{
+			ScreenID:              "upload-results",
+			Interaction:           "The identical resolved state as upload-checkbox-ready (see CaptureUploadScreens' doc comment).",
+			StateMarker:           "key registered",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionUploadSection},
+			RegionDispositions:    append(append([]RegionDisposition{}, dispCF...), uploadCommandDisposition, connectivityOverlapDisposition),
+		},
+		{
+			ScreenID:              "upload-checkbox-unauth",
+			Interaction:           "Live-only: eligibility forced Unauth via uploadProbeBackend — captured for BOTH backends (so it's always present in the merged output), but held non-comparable since the surrounding fixture-vs-live layout differences would otherwise need a growing, brittle set of dispositions unrelated to this state's own purpose.",
+			StateMarker:           "not logged in to",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: false,
+			NonApplicability: append(noHTML, uxNonComparable("approved-tui", upFixtureClass,
+				"captured for both backends via uploadProbeBackend, but held non-comparable: the checkbox label survives identically, but the surrounding fixture-vs-live layout (identity count, key catalog, host preview) would otherwise require dispositions unrelated to this state's own purpose — D-09's approval lives in Task 1's committed PTY frame create-flow-upload-checkbox-unauth.txt (TestCreateFlow_UploadCheckboxUnauthState)")),
+			RequiredRegions: []RegionName{RegionUploadSection},
+		},
+		{
+			ScreenID:              "upload-checkbox-disabled",
+			Interaction:           "Live-only: eligibility forced Disabled via uploadProbeBackend — captured for BOTH backends, held non-comparable for the same reason as upload-checkbox-unauth.",
+			StateMarker:           "Auto-registration unavailable",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: false,
+			NonApplicability: append(noHTML, uxNonComparable("approved-tui", upFixtureClass,
+				"captured for both backends via uploadProbeBackend, but held non-comparable — see upload-checkbox-unauth's own reasoning. D-09's approval lives in this in-process capture alone; Task 1's PTY suite documents why a real PTY harness cannot safely produce the genuinely tool-absent DISABLED shape (TestCreateFlow_UploadCheckboxDisabledState's own doc comment)")),
+			RequiredRegions: []RegionName{RegionUploadSection},
+		},
+		{
+			ScreenID:              "upload-manual-fallback",
+			Interaction:           "Live-only: identity-manager register-key pane with eligibility forced Unauth via uploadProbeBackend — captured for BOTH backends, held non-comparable for the same reason as upload-checkbox-unauth.",
+			StateMarker:           "manually",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: false,
+			NonApplicability: append(noHTML, uxNonComparable("approved-tui", upFixtureClass,
+				"captured for both backends via uploadProbeBackend, but held non-comparable — see upload-checkbox-unauth's own reasoning. D-09's approval lives in Task 1's committed PTY frame create-flow-upload-partial-scope.txt (a different concrete scenario reaching the same manual-guidance concept — see uploadScreenToFrames' own doc comment in gate_visual_regression_test.go)")),
+			RequiredRegions: []RegionName{RegionUploadSection},
+		},
+		{
+			ScreenID:              "register-key-modal",
+			Interaction:           "From the identity-manager's default-selected identity, press 'u' to open the D-08 register-key pane, which auto-runs.",
+			StateMarker:           "Register",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionUploadSection},
+			RegionDispositions:    append(append([]RegionDisposition{}, dispIM...), uploadCommandDisposition, registerKeyConnectivityOverlapDisposition),
+		},
+		{
+			ScreenID:              "rotate-delete-offer",
+			Interaction:           "NOT capturable in-process: the D-04 offer requires a completed key-rotation commit (a real cryptographic write). See uploadVisualSpecs' doc comment.",
+			StateMarker:           "Remove the old key from",
+			ApplicableLive:        false,
+			ApplicableApprovedTUI: false,
+			NonApplicability: append(noHTML,
+				uxNonComparable("live", upFixtureClass,
+					"the D-04 offer requires a completed key-rotation commit (CommitRotate's real cryptographic write) this no-subprocess in-process gate never performs. Evidence lives in the PTY frame .planning/phases/09-upload-credentials-assist/ui-frames/identity-manager-rotate-delete-offer-default.txt (TestIdentityManager_RotateDeleteOfferDefaultsToLeave)"),
+				uxNonComparable("approved-tui", upFixtureClass,
+					"same reasoning as the live surface above: the dummy's own RotateDeleteOffer fixture is reachable only after its own KeyCeremonyPlan/CommitRotate sequence completes, which this in-process gate does not drive"),
+			),
+			RequiredRegions: []RegionName{RegionUploadSection},
+		},
+	}
+}
+
+// isUploadScreenID reports whether id is one of the eight Phase 9
+// upload-surface checkpoint IDs registered here — used to exclude them from
+// CaptureCreateFlowScreens' completeness check (they are captured
+// separately; see CaptureUploadScreens' doc comment).
+func isUploadScreenID(id string) bool {
+	for _, spec := range uploadVisualSpecs() {
+		if spec.ScreenID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// CaptureUploadScreens captures the Phase 9 upload-surface checkpoints
+// described in uploadVisualSpecs' doc comment. backend must answer
+// eligibility Ready for its default fixture host (both newBackendForHome
+// with a "gh ok"-shaped uploaderDeps and dummytui.NewFixtureBackend satisfy
+// this for their respective default identities).
+func CaptureUploadScreens(backend tuikit.Backend) (map[string]string, error) {
+	out := make(map[string]string, 8)
+	capture := func(m tea.Model) string { return normalizeTimestamps(anyView(m)) }
+
+	// upload-results / upload-checkbox-ready: step 0 -> step 1, then Enter
+	// from testIdle enters testUpload and returns RunUpload's cmd. D-02
+	// auto-chains UploadRunMsg's own handler straight into TestStage1 with
+	// no further keystroke — step()'s full recursive chase would run that
+	// ENTIRE chain (upload -> stage1 -> stage2) synchronously in one call,
+	// settling on the FINAL post-stage2 state with no intermediate render
+	// (unlike a real PTY session, where each real subprocess call takes
+	// real wall-clock time and the screen re-renders at each intermediate
+	// Update — confirmed empirically: a naive step()-only capture landed on
+	// stage-2's completed content, upload's own "Running:"/result rows
+	// nowhere in it). stepAndPendingCmd (the SAME CR-02 intermediate-
+	// capture technique CaptureCreateFlowScreens' own test-stage1-direct
+	// uses) delivers exactly ONE message at a time, so capturing right
+	// after UploadRunMsg is delivered — but BEFORE its own auto-chained
+	// TestStage1 cmd fires — reaches the genuine "upload resolved" state.
+	// "upload-checkbox-ready" reuses the SAME resolved capture as
+	// "upload-results" (mirroring CaptureCreateFlowScreens' own
+	// "test-stage1-direct"/"test-stage1-pass" precedent of assigning one
+	// capture to two keys): the checked checkbox's OWN pre-run state
+	// renders no distinguishable RegionUploadSection content of its own
+	// (its label text is ordinary step-0 form body shared with every
+	// pre-Phase-9 create-flow spec, not upload-beat content — see
+	// extractUploadSection's doc comment), so "ready" here means what Task
+	// 1's own promoted PTY frame for this State ID actually shows: the
+	// checked checkbox having successfully triggered the upload dispatch.
+	m := uploadWizardApp(backend)
+	m = keyEnter(m) // step 0 -> step 1
+	var uploadCmd tea.Cmd
+	m, uploadCmd = stepAndPendingCmd(m, tea.KeyPressMsg{Code: tea.KeyEnter}) // testIdle -> testUpload
+	if uploadCmd == nil {
+		return nil, fmt.Errorf("screenshot: CaptureUploadScreens: expected a pending upload cmd from testIdle -> testUpload, got nil")
+	}
+	uploadMsg := uploadCmd()
+	if uploadMsg == nil {
+		return nil, fmt.Errorf("screenshot: CaptureUploadScreens: the pending upload cmd resolved to a nil message")
+	}
+	m, _ = stepAndPendingCmd(m, uploadMsg) // deliver UploadRunMsg; do NOT fire its auto-chained TestStage1 cmd
+	out["upload-results"] = capture(m)
+	out["upload-checkbox-ready"] = out["upload-results"]
+
+	// upload-checkbox-unauth / upload-checkbox-disabled: eligibility forced
+	// via a canned UploadEligibility answer (uploadProbeBackend, below) —
+	// the in-process gate's way to reach these states without a real
+	// gh/glab on the machine running the gate. Applied IDENTICALLY to
+	// whichever backend is passed in (real or dummy): the override fully
+	// replaces UploadEligibility's answer regardless of the underlying
+	// backend, so both surfaces render through the SAME shared tuikit code
+	// against the SAME forced state — genuinely comparable, not merely
+	// live-only.
+	//
+	// uploadProbeBackend must be the OUTERMOST wrapper here (embedding
+	// offlineCaptureBackend, not the reverse) so ITS UploadEligibility
+	// override — not offlineCaptureBackend's own deterministic-Ready
+	// override — wins Go's embedded-method resolution.
+	probeApp := func(state tuikit.UploadEligibilityState) tea.Model {
+		return freshWizard(uploadProbeBackend{Backend: offlineCaptureBackend{backend}, state: state})
+	}
+	out["upload-checkbox-unauth"] = capture(probeApp(tuikit.UploadEligibilityUnauth))
+	out["upload-checkbox-disabled"] = capture(probeApp(tuikit.UploadEligibilityDisabled))
+
+	// upload-manual-fallback: identity-manager surface, register-key pane,
+	// eligibility forced Unauth the SAME way, applied identically to
+	// whichever backend is passed in. renderRegisterKey shows the frozen
+	// UploadManualHeading whenever the plan's State is not Ready.
+	if n := len(backend.InitialState().Identities); n > 0 {
+		fallback := uploadIdentityManagerApp(uploadProbeBackend{Backend: backend, state: tuikit.UploadEligibilityUnauth})
+		fallback = keyRune(fallback, 'u')
+		out["upload-manual-fallback"] = capture(fallback)
+	}
+
+	// register-key-modal: identity-manager surface, default-selected
+	// identity, 'u' opens the D-08 pane, which auto-runs on open.
+	if n := len(backend.InitialState().Identities); n > 0 {
+		reg := uploadIdentityManagerApp(backend)
+		reg = keyRune(reg, 'u')
+		out["register-key-modal"] = capture(reg)
+	}
+
+	for _, spec := range uploadVisualSpecs() {
+		if !spec.ApplicableLive && !spec.ApplicableApprovedTUI {
+			continue
+		}
+		text, ok := out[spec.ScreenID]
+		if !ok || strings.TrimSpace(text) == "" {
+			return nil, fmt.Errorf("screenshot: CaptureUploadScreens: required frame %q is missing or empty", spec.ScreenID)
+		}
+	}
+	return out, nil
+}
+
+// uploadProbeBackend wraps a tuikit.Backend and replaces UploadEligibility
+// with a canned answer — mirroring offlineCaptureBackend's own
+// wrap-and-override pattern (above) for TestStage1/TestStage2. This is the
+// in-process gate's ONLY way to reach the UNAUTH/DISABLED checkbox states
+// without a real gh/glab on the machine running the gate: it swaps the
+// ANSWER directly, at the tuikit.Backend interface boundary, rather than
+// reaching into a specific backend's own exec-detection seam (which would
+// require an import cmd/gitid cannot offer to internal/screenshot, or a
+// cross-package interface only the real backend could satisfy).
+type uploadProbeBackend struct {
+	tuikit.Backend
+	state tuikit.UploadEligibilityState
+}
+
+func (u uploadProbeBackend) UploadEligibility(hostname string) tea.Cmd {
+	return func() tea.Msg {
+		return tuikit.UploadEligibilityMsg{Hostname: hostname, View: tuikit.UploadEligibilityView{
+			State: u.state, ProviderName: "GitHub", ToolName: "gh", Hostname: "github.com",
+		}}
+	}
+}
+
+// RegisterKeyPlan is the identity-manager register-key pane's own
+// eligibility probe (D-08) — overridden the same way UploadEligibility is
+// above, for upload-manual-fallback: renderRegisterKey shows the frozen
+// UploadManualHeading whenever the plan's State is not Ready, which is
+// otherwise unreachable in-process without a real gh/glab.
+func (u uploadProbeBackend) RegisterKeyPlan(name string) tea.Cmd {
+	return func() tea.Msg {
+		return tuikit.RegisterKeyPlanMsg{Name: name, View: tuikit.UploadEligibilityView{
+			State: u.state, ProviderName: "GitHub", ToolName: "gh", Hostname: "github.com",
+		}}
 	}
 }

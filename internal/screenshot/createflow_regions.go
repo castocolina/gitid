@@ -243,6 +243,36 @@ const (
 	// from the "Fix: <title>" heading through the confirm/cancel button
 	// row. Full-width (no │ divider) like the other ceremony regions.
 	RegionFixerCeremony RegionName = "fixer-ceremony"
+
+	// RegionUploadSection is the D-08/UP-02/UP-03 upload beat's own content
+	// (09-07-PLAN.md Task 2): the "Running: <command>" announce lines, the
+	// ✓/✗ per-registration result rows, and the manual-fallback heading and
+	// instructions. It appears on TWO surfaces — the create-flow wizard's
+	// step-2 "Test connection" pane (rendered via wizardModel's
+	// renderTestScreen) and the identity-manager's register-key pane
+	// (renderRegisterKey) — both call the SAME shared renderUploadSection
+	// helper (internal/tuikit/identities.go), so one extractor covers both.
+	//
+	// Anchor: the first right-of-"│" line containing one of the upload
+	// beat's own distinctive markers ("gh ssh-key add"/"glab ssh-key add",
+	// "Register with " (the manual-fallback prompt heading), "Auto-
+	// registration" (the declined/unavailable fallback heading), "key
+	// registered", "registration failed", or "already registered"). These
+	// markers are deliberately NOT the generic "Running"/"Reachable"/
+	// "authenticated" words RegionConnectivityOutput already anchors on
+	// (extractConnectivityOutput, above) — reusing those would make
+	// RegionUploadSection silently overlap the SSH connectivity-test
+	// region on the SAME screen (both regions can render on the wizard's
+	// step-2 pane). When the match lands on the wrapped command line, the
+	// extraction rewinds one line to also include its own immediately
+	// preceding lone "Running:" label line, so the frozen label survives in
+	// the extracted text. The region ends at the first Host-block/Stage-1
+	// preview box ("╭╌") or the end of the frame, whichever comes first —
+	// verified against Task 1's real captured frames
+	// (.planning/phases/09-upload-credentials-assist/ui-frames/
+	// create-flow-upload-autonomous-github.txt and
+	// identity-manager-register-key-modal-runs.txt) before finalizing.
+	RegionUploadSection RegionName = "upload-section"
 )
 
 // ExtractRegion returns the sub-string of screen that corresponds to region.
@@ -321,6 +351,8 @@ func ExtractRegion(screen string, region RegionName) string {
 		return extractFixerBody(lines)
 	case RegionFixerCeremony:
 		return extractFixerCeremony(lines)
+	case RegionUploadSection:
+		return extractUploadSection(lines)
 	}
 	return ""
 }
@@ -1250,6 +1282,56 @@ func extractFixerCeremony(lines []string) string {
 	return ggitCeremonyBodyAfter(lines, "Fix: ", "Cancel (Esc)")
 }
 
+// extractUploadSection returns the upload beat's own content (see
+// RegionUploadSection's doc comment for the anchor rationale and the
+// overlap-avoidance reasoning versus RegionConnectivityOutput).
+func extractUploadSection(lines []string) string {
+	// Deliberately excludes "Register with " (the D-01 checkbox's OWN label
+	// text, rendered on step 0 whenever a gated host resolves) — that text
+	// is part of the ordinary form body on EVERY create-flow step-0 screen
+	// (ssh-form-filled, reuse-key-vs-generate, ...), not just Phase 9's own
+	// specs; anchoring on it here would make RegionUploadSection collide
+	// with every pre-existing step-0 spec that has no disposition for it.
+	// RegionUploadSection is scoped to the upload BEAT's own content — the
+	// announce/result/fallback text that appears only once the beat has
+	// actually run or been explicitly declined.
+	uploadMarkers := []string{
+		"gh ssh-key add", "glab ssh-key add",
+		"Auto-registration", "key registered", "registration failed",
+		"already registered", "not logged in to",
+	}
+	start := -1
+	for i, line := range lines {
+		plain := stripANSI(rightPane(line))
+		for _, marker := range uploadMarkers {
+			if strings.Contains(plain, marker) {
+				start = i
+				break
+			}
+		}
+		if start >= 0 {
+			break
+		}
+	}
+	if start < 0 {
+		return ""
+	}
+	// Rewind over an immediately preceding lone "Running:" label line so the
+	// frozen announce label survives in the extracted text.
+	if start > 0 && strings.TrimSpace(stripANSI(rightPane(lines[start-1]))) == "Running:" {
+		start--
+	}
+	var out []string
+	for _, line := range lines[start:] {
+		plain := stripANSI(line)
+		if strings.Contains(plain, "╭╌") {
+			break
+		}
+		out = append(out, rightPane(line))
+	}
+	return strings.Join(out, "\n")
+}
+
 // AllRegionNames returns all defined RegionNames for allowlist schema validation.
 func AllRegionNames() []RegionName {
 	return []RegionName{
@@ -1287,6 +1369,7 @@ func AllRegionNames() []RegionName {
 		RegionHealthBody,
 		RegionFixerBody,
 		RegionFixerCeremony,
+		RegionUploadSection,
 	}
 }
 

@@ -132,6 +132,23 @@ func makeTestCaptures(t *testing.T) (map[string]string, map[string]string) {
 	for id, text := range hfApproved {
 		approved[id] = text
 	}
+	// 09-07-PLAN.md Task 2: Phase 9 upload-surface captures merged the SAME
+	// way the previous six, immediately above — RequiredScreenSpecs() is
+	// now a SEVEN-way merged registry.
+	upLive, err := screenshot.CaptureUploadScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureUploadScreens (live): %v", err)
+	}
+	upApproved, err := screenshot.CaptureUploadScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureUploadScreens (approved): %v", err)
+	}
+	for id, text := range upLive {
+		live[id] = text
+	}
+	for id, text := range upApproved {
+		approved[id] = text
+	}
 	return live, approved
 }
 

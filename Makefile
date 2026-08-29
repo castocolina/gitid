@@ -626,8 +626,31 @@ screenshot-html:
 ## TestNegativeControl_HealthFixerPerturbedComparableRegion,
 ## TestNegativeControl_HealthFixerCrossSurfaceAllowlistLeakage) plus the
 ## TestHealthFixer* acceptance tests run under the filter below.
+##
+## Phase 9 (09-07-PLAN.md Task 2, UP-01/UP-02/UP-03): RequiredScreenSpecs is
+## now an EIGHT-way merged registry — the seven above PLUS eight upload-
+## surface checkpoints spanning TWO existing surfaces (the create-flow
+## wizard's step-2 "Test connection" pane and the identity-manager's
+## register-key pane), captured via CaptureUploadScreens against its own
+## seeded HOME (deterministicUploadFixture/mergeUploadCaptures), with its
+## real-side uploaderDeps swapped to a deterministic "gh ok" fake so the
+## announce/result states resolve without a real gh/glab on the machine
+## running the gate. rotate-delete-offer is registered but NON-APPLICABLE in
+## this in-process gate (both ApplicableLive/ApplicableApprovedTUI false) —
+## the D-04 offer requires a completed key-rotation commit this no-subprocess
+## capture path never performs, mirroring gss-apply-receipt/ggit-apply-
+## receipt's own precedent; its evidence lives in the PTY frame
+## .planning/phases/09-upload-credentials-assist/ui-frames/
+## identity-manager-rotate-delete-offer-default.txt instead. Classified
+## against .planning/design/create-flow/visual-divergence-allowlist.txt and
+## .planning/design/identity-manager/visual-divergence-allowlist.txt's Phase
+## 9 rows (kept in sync by TestUploadVisualAllowlistMatchesRegistry); the
+## four Phase 9 negative controls (TestNegativeControl_UploadVisualMissingState,
+## ...UnclassifiedDifference, ...PerturbedComparableRegion,
+## ...CrossSurfaceAllowlistLeakage) plus the TestUploadVisual* acceptance
+## tests run under the filter below.
 gate-visual-regression:
-	go test -tags screenshot -run 'Test(GateVisualRegression|ApprovalCommitRecorded|AllScreensCapturedAndNonEmpty|GlobalSSH|GlobalGit|HealthFixer|NegativeControl_)' -v ./cmd/gitid/...
+	go test -tags screenshot -run 'Test(GateVisualRegression|ApprovalCommitRecorded|AllScreensCapturedAndNonEmpty|GlobalSSH|GlobalGit|HealthFixer|UploadVisual|UploadFrameProvenanceMatches|NegativeControl_)' -v ./cmd/gitid/...
 
 ## generate-visual-review-packet: ONE-SHOT explicit publication of a new
 ## content-addressed evidence packet for Task 3 review publication.
