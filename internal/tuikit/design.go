@@ -610,6 +610,17 @@ const (
 	// for the signing-key registration. 09-UI-SPEC.md Copywriting Contract
 	// row `UploadScopeRemediationSigning`.
 	UploadScopeRemediationSigningFmt = "insufficient scope — run \"gh auth refresh -h %s -s admin:ssh_signing_key\", then retry from the Identity Manager"
+	// UploadNotAuthenticatedFmt is the WR-03 remediation for a registration
+	// attempt that failed because the provider CLI session was not
+	// authenticated (uploader.FailureNotAuthenticated) — the D-01 scenario-2
+	// "check anyway" path the UI invites the user into. Not originally in
+	// 09-UI-SPEC.md's Copywriting Contract table (FailureNotAuthenticated
+	// was classified but never rendered, falling through to a raw,
+	// truncated CLI line instead); follows the same "<problem> — run
+	// <command>, then retry from the Identity Manager" shape as the two
+	// scope-remediation siblings above. First %s is the CLI tool name
+	// ("gh"/"glab"), second is the provider hostname.
+	UploadNotAuthenticatedFmt = "not authenticated — run \"%s auth login -h %s\", then retry from the Identity Manager"
 	// UploadCrossAccountConflict is the D-15 glab-only cross-account
 	// conflict finding — NEVER silently classified as success (GitLab
 	// fingerprints are globally unique). 09-UI-SPEC.md Copywriting Contract

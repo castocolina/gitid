@@ -1405,6 +1405,12 @@ func toUploadResultRow(tool uploader.Tool, result uploader.RegistrationResult, p
 			row.Reason = fmt.Sprintf(tuikit.UploadScopeRemediationSigningFmt, providerHost)
 		case uploader.FailureCrossAccountConflict:
 			row.Reason = tuikit.UploadCrossAccountConflict
+		case uploader.FailureNotAuthenticated:
+			// WR-03: previously fell through to the raw-CLI-output default
+			// below, showing the user a truncated CLI line instead of the
+			// "run gh auth login" guidance the D-01 scenario-2 "check
+			// anyway" path was designed to give.
+			row.Reason = fmt.Sprintf(tuikit.UploadNotAuthenticatedFmt, uploader.ToolName(tool), providerHost)
 		default:
 			raw := result.Output
 			if raw == "" && result.Err != nil {

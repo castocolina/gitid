@@ -5356,6 +5356,31 @@ func TestRunUploadPartialScopeFailureReportsBothTypes(t *testing.T) {
 	}
 }
 
+// TestRunUploadNotAuthenticatedRendersRemediationCopy is the WR-03
+// regression: a registration attempt that fails with a "not authenticated"
+// CLI message (the D-01 scenario-2 "check anyway" path — the checkbox was
+// unauthenticated but the user proceeded) must render the "run gh auth
+// login" remediation copy, never the previous fall-through to a raw,
+// truncated CLI line.
+func TestRunUploadNotAuthenticatedRendersRemediationCopy(t *testing.T) {
+	b, _ := fakeUploaderRunUploadDeps(t, "[]", "[]", func(uploadCall) (string, int, error) {
+		return "error: not logged in to github.com", 1, errors.New("exit 1")
+	})
+	_, run := waitForRunUploadResult(t, b.RunUpload(runUploadSpec("acme")))
+	if len(run.View.Rows) == 0 {
+		t.Fatal("setup: RunUpload produced no rows")
+	}
+	want := fmt.Sprintf(tuikit.UploadNotAuthenticatedFmt, "gh", "github.com")
+	for _, row := range run.View.Rows {
+		if row.Outcome != tuikit.UploadRowFailed {
+			t.Fatalf("row outcome = %v, want Failed: %+v", row.Outcome, row)
+		}
+		if row.Reason != want {
+			t.Errorf("Reason = %q, want the frozen not-authenticated remediation copy %q", row.Reason, want)
+		}
+	}
+}
+
 // TestRunUploadGLabTakenIsAConflictWithFallback proves D-15: GitLab's
 // "already taken" response classifies as the cross-account conflict, never
 // silent success, and the manual fallback renders.

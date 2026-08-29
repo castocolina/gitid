@@ -16,6 +16,26 @@ func TestClassifyScopeFailuresByScopeIdentifier(t *testing.T) {
 		}
 	}
 }
+
+// TestClassifyNotAuthenticatedForBothProviders is the WR-03 regression:
+// ClassifyUploadFailure must resolve FailureNotAuthenticated for either
+// provider's "not logged in"/"not authenticated" CLI output, so
+// toUploadResultRow's consumer switch has something real to map to
+// remediation copy instead of falling through to the raw CLI line.
+func TestClassifyNotAuthenticatedForBothProviders(t *testing.T) {
+	for _, tc := range []struct {
+		tool   Tool
+		output string
+	}{
+		{ToolGH, "error: not logged in to github.com"},
+		{ToolGLab, "error: not authenticated to gitlab.com"},
+	} {
+		got := ClassifyUploadFailure(tc.tool, RegistrationAuthentication, RegistrationResult{Outcome: OutcomeFailed, Output: tc.output})
+		if got != FailureNotAuthenticated {
+			t.Errorf("tool=%v output=%q: got %v, want FailureNotAuthenticated", tc.tool, tc.output, got)
+		}
+	}
+}
 func TestClassifyGLabAlreadyTakenIsAConflictNotSuccess(t *testing.T) {
 	res := RegistrationResult{Outcome: OutcomeFailed, Output: "fingerprint already taken"}
 	if got := ClassifyUploadFailure(ToolGLab, RegistrationCombined, res); got != FailureCrossAccountConflict || ClassifyGHDuplicate(res) {
