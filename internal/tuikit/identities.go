@@ -3234,7 +3234,7 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 		// while a text field owns focus it must type a literal `u` instead
 		// of flipping the checkbox out from under the user's typing.
 		if key == "space" && w.focus == wizardFocusUploadCheckbox {
-			w.uploadChecked = !w.uploadChecked
+			w = w.toggleUploadCheckbox()
 			m.wizard = w
 			return keyResult{model: m, handled: true}
 		}
@@ -3244,7 +3244,7 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 			// typing a path containing the letter "u" (e.g.
 			// "/manual/id_ed25519_manual") is never intercepted as the
 			// checkbox hotkey.
-			w.uploadChecked = !w.uploadChecked
+			w = w.toggleUploadCheckbox()
 			m.wizard = w
 			return keyResult{model: m, handled: true}
 		}
@@ -3284,7 +3284,7 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 		case "left", "right":
 			switch w.focus {
 			case wizardFocusUploadCheckbox: // D-01: left/right also toggles, mirroring wizardFocusKeySource
-				w.uploadChecked = !w.uploadChecked
+				w = w.toggleUploadCheckbox()
 				m.wizard = w
 				return keyResult{model: m, handled: true}
 			case wizardFocusKeySource: // D-10: generate ↔ reuse toggle
@@ -3872,7 +3872,7 @@ func (m identitiesModel) handleWizardClick(body string, x, y int, s DemoState) k
 	case 0:
 		if hitUploadCheckboxRow(body, x, y) {
 			w.focus = wizardFocusUploadCheckbox
-			w.uploadChecked = !w.uploadChecked
+			w = w.toggleUploadCheckbox()
 			m.wizard = w
 			return keyResult{model: m, handled: true}
 		}
@@ -4187,30 +4187,44 @@ func renderUploadRun(run UploadRunView) string {
 	return b.String()
 }
 
+func renderUploadCheckboxRow(view UploadEligibilityView, checked, focused bool, width int) string {
+	if view.State == UploadEligibilityOmitted {
+		return ""
+	}
+	check := glyphCheckOff
+	if checked {
+		check = glyphCheckOn
+	}
+	label := ""
+	switch view.State {
+	case UploadEligibilityReady:
+		label = fmt.Sprintf(UploadCheckboxLabelReadyFmt, view.ProviderName)
+	case UploadEligibilityUnauth:
+		label = styleWarning.Render(fmt.Sprintf(UploadCheckboxLabelUnauthFmt, view.ProviderName, view.Hostname, view.ToolName))
+	case UploadEligibilityDisabled:
+		label = styleFaint.Render(styleWarning.Render(fmt.Sprintf(UploadCheckboxLabelDisabledFmt, view.ProviderName)))
+	}
+	line := check + " " + label
+	if focused {
+		line = styleSelected.Render(line)
+	}
+	// The upload checkbox must remain one physical line in the 100x30 wizard.
+	return ansi.Truncate(line, width, "")
+}
+
 func (w wizardModel) renderUploadCheckboxRow() string {
 	if !w.uploadRowVisible() {
 		return ""
 	}
-	marker := "  "
-	if w.focus == wizardFocusUploadCheckbox {
-		marker = styleBold.Render("▸ ")
+	return " " + renderUploadCheckboxRow(w.uploadEligibility, w.uploadChecked, w.focus == wizardFocusUploadCheckbox, 60) + "\n"
+}
+
+func (w wizardModel) toggleUploadCheckbox() wizardModel {
+	if w.uploadEligibility.State == UploadEligibilityDisabled || w.uploadEligibility.State == UploadEligibilityOmitted {
+		return w
 	}
-	check := glyphCheckOff
-	if w.uploadChecked {
-		check = glyphCheckOn
-	}
-	var label string
-	switch w.uploadEligibility.State {
-	case UploadEligibilityReady:
-		label = fmt.Sprintf(UploadCheckboxLabelReadyFmt, w.uploadEligibility.ProviderName)
-	case UploadEligibilityUnauth:
-		label = fmt.Sprintf(UploadCheckboxLabelUnauthFmt, w.uploadEligibility.ProviderName, w.uploadEligibility.Hostname, w.uploadEligibility.ToolName)
-	case UploadEligibilityDisabled:
-		label = fmt.Sprintf(UploadCheckboxLabelDisabledFmt, w.uploadEligibility.ProviderName)
-	default:
-		return ""
-	}
-	return " " + marker + check + " " + label + "\n"
+	w.uploadChecked = !w.uploadChecked
+	return w
 }
 
 // renderKeyBody renders the D-10 key-source choice and whichever body

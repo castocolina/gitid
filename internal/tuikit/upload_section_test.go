@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 // openWizardUploadReady opens the create wizard ("n") and runs the
@@ -330,6 +332,89 @@ func TestUploadEligibilityIsResolvedInUpdateNotView(t *testing.T) {
 // TestStaleUploadEligibilityMsgIsDiscarded delivers a message whose
 // Hostname does not match the wizard's current probe host and asserts the
 // cached view is left unchanged.
+func TestUploadCheckboxRendersAllFourStates(t *testing.T) {
+	tests := []struct {
+		name string
+		view UploadEligibilityView
+		want string
+	}{
+		{"ready", UploadEligibilityView{State: UploadEligibilityReady, ProviderName: "GitHub"}, "Register with GitHub automatically"},
+		{"unauth", UploadEligibilityView{State: UploadEligibilityUnauth, ProviderName: "GitLab", ToolName: "glab", Hostname: "gitlab.com"}, "not logged in"},
+		{"disabled", UploadEligibilityView{State: UploadEligibilityDisabled, ProviderName: "GitHub"}, "Auto-registration unavailable"},
+		{"omitted", UploadEligibilityView{State: UploadEligibilityOmitted}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := renderUploadCheckboxRow(tt.view, false, false, 200)
+			if tt.want == "" && got != "" {
+				t.Errorf("renderUploadCheckboxRow() = %q, want empty", got)
+			}
+			if tt.want != "" && !strings.Contains(got, tt.want) {
+				t.Errorf("renderUploadCheckboxRow() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestUploadCheckboxIsLegibleWithoutColor proves each visible state's
+// distinguishing words survive with SGR color stripped (frame_test.go's
+// stripANSI, the project's existing no-color assertion helper) — the
+// UI-SPEC's non-negotiable glyph-plus-word rule, not a color-only signal.
+func TestUploadCheckboxIsLegibleWithoutColor(t *testing.T) {
+	tests := []struct {
+		name string
+		view UploadEligibilityView
+		want string
+	}{
+		{"ready", UploadEligibilityView{State: UploadEligibilityReady, ProviderName: "GitHub"}, "Register with GitHub automatically"},
+		{"unauth", UploadEligibilityView{State: UploadEligibilityUnauth, ProviderName: "GitLab", ToolName: "glab", Hostname: "gitlab.com"}, "not logged in"},
+		{"disabled", UploadEligibilityView{State: UploadEligibilityDisabled, ProviderName: "GitHub"}, "Auto-registration unavailable"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stripANSI(renderUploadCheckboxRow(tt.view, false, false, 200))
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("stripANSI(renderUploadCheckboxRow()) = %q, want it to contain %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUploadCheckboxRowIsExactlyOnePhysicalLine(t *testing.T) {
+	for _, view := range []UploadEligibilityView{
+		{State: UploadEligibilityReady, ProviderName: strings.Repeat("GitHub", 20)},
+		{State: UploadEligibilityUnauth, ProviderName: strings.Repeat("GitLab", 20), ToolName: strings.Repeat("glab", 20), Hostname: strings.Repeat("gitlab.", 20)},
+		{State: UploadEligibilityDisabled, ProviderName: strings.Repeat("GitHub", 20)},
+	} {
+		got := renderUploadCheckboxRow(view, false, false, 60)
+		if strings.Contains(got, "\n") || len([]rune(ansi.Strip(got))) > 60 {
+			t.Errorf("row = %q, want one line no wider than 60", got)
+		}
+	}
+}
+
+func TestDisabledUploadCheckboxCannotBeToggled(t *testing.T) {
+	w := wizardModel{uploadEligibility: UploadEligibilityView{State: UploadEligibilityDisabled}}
+	for range []string{"space", "u", "right", "click"} {
+		w = w.toggleUploadCheckbox()
+		if w.uploadChecked {
+			t.Fatal("disabled checkbox became checked")
+		}
+	}
+}
+
+func TestOmittedUploadStateRemovesTheFocusSlot(t *testing.T) {
+	order := wizardStep0FocusOrder(keySourceGenerate, false)
+	for _, focus := range order {
+		if focus == wizardFocusUploadCheckbox {
+			t.Fatal("omitted state includes upload focus slot")
+		}
+	}
+	if got := stepAdvance(order, sshFieldPort, 1); got != wizardFocusKeySource {
+		t.Errorf("Tab from Port = %d, want KeySource %d", got, wizardFocusKeySource)
+	}
+}
+
 func TestStaleUploadEligibilityMsgIsDiscarded(t *testing.T) {
 	a := openWizardUploadReady(t)
 	m := identModel(t, a)

@@ -433,10 +433,10 @@ func (FixtureBackend) CommitNewKey(string) tea.Cmd {
 //
 // The demo must render IDENTICALLY on every machine, or the visual-
 // regression gate becomes noise — so UploadEligibility never probes a real
-// PATH: it deliberately, frozen-ly answers Ready for any hostname
-// containing "github" (the demo's happy path) and Omitted otherwise. The
-// real binary's machine-dependent answer is a classified divergence plan
-// 09-07 registers, not a bug in this fixture.
+// PATH. Its fixed GitHub, GitLab, and omitted answers demonstrate three
+// states; disabled is exercised by tests and the no-CLI PTY case. The real
+// binary's machine-dependent answer is a classified divergence plan 09-07
+// registers, not a bug in this fixture.
 //
 // UploadInstructions returns fixed prose rather than importing
 // internal/upload — dummytui's ALLOWLIST (nobackend_test.go) forbids
@@ -446,12 +446,18 @@ func (FixtureBackend) CommitNewKey(string) tea.Cmd {
 // UploadEligibility answers the frozen demo shape described above.
 func (FixtureBackend) UploadEligibility(hostname string) tea.Cmd {
 	return func() tea.Msg {
-		if strings.Contains(hostname, "github") {
+		switch {
+		case strings.Contains(hostname, "github"):
 			return tuikit.UploadEligibilityMsg{Hostname: hostname, View: tuikit.UploadEligibilityView{
 				State: tuikit.UploadEligibilityReady, ProviderName: "GitHub", ToolName: "gh", Hostname: "github.com",
 			}}
+		case strings.Contains(hostname, "gitlab"):
+			return tuikit.UploadEligibilityMsg{Hostname: hostname, View: tuikit.UploadEligibilityView{
+				State: tuikit.UploadEligibilityUnauth, ProviderName: "GitLab", ToolName: "glab", Hostname: "gitlab.com",
+			}}
+		default:
+			return tuikit.UploadEligibilityMsg{Hostname: hostname, View: tuikit.UploadEligibilityView{State: tuikit.UploadEligibilityOmitted}}
 		}
-		return tuikit.UploadEligibilityMsg{Hostname: hostname, View: tuikit.UploadEligibilityView{State: tuikit.UploadEligibilityOmitted}}
 	}
 }
 

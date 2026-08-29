@@ -616,7 +616,8 @@ const (
 	// UploadEligibilityOmitted means the identity's provider host is not
 	// one of D-13's gated main domains (github.com/gitlab.com or a
 	// subdomain) — the checkbox row does not render at all, and no
-	// provider subprocess is ever invoked to answer this.
+	// provider subprocess is ever invoked to answer this. Omitted must not
+	// render an empty row because even a blank row consumes the 100x30 budget.
 	UploadEligibilityOmitted UploadEligibilityState = iota
 	// UploadEligibilityDisabled means the provider is gated, but neither
 	// gh nor glab (whichever matches) was found on PATH.
