@@ -207,6 +207,18 @@ type realBackend struct {
 	// it is read/written independently of every other field above.
 	uploadEligibilityMemo   map[string]tuikit.UploadEligibilityView
 	uploadEligibilityMemoMu sync.Mutex
+	// uploadEligibilityLocks holds one *sync.Mutex per provider key. WR-17:
+	// the check-then-set critical section (09-04's fix for a duplicate-probe
+	// race) used to be made atomic by holding uploadEligibilityMemoMu across
+	// the ENTIRE probe, including DetectFor+AuthCheck's real subprocess
+	// calls (up to providerCommandTimeout each) — so a slow/hung "gh auth
+	// status" blocked an unrelated "glab" probe for the full timeout, even
+	// though the two share no real resource. Locking per-provider (guarded
+	// by uploadEligibilityMemoMu only for the brief get-or-create/map-access
+	// steps, never across a subprocess call) keeps same-provider calls
+	// serialized — the property TestUploadEligibilityMemoizesConcurrentProviderProbes
+	// asserts — while different providers run fully concurrently.
+	uploadEligibilityLocks map[string]*sync.Mutex
 
 	// uploaderDeps is the real gh/glab exec wiring (buildUploaderDeps()).
 	// Set once in newBackendForHome; tests may overwrite it directly with a
@@ -1326,12 +1338,17 @@ func (b *realBackend) UploadEligibility(hostname string) tea.Cmd {
 			}}
 		}
 
-		b.uploadEligibilityMemoMu.Lock()
-		defer b.uploadEligibilityMemoMu.Unlock()
-		if b.uploadEligibilityMemo != nil {
-			if cached, ok := b.uploadEligibilityMemo[provider]; ok {
-				return tuikit.UploadEligibilityMsg{Hostname: hostname, View: cached}
-			}
+		// WR-17: the per-provider lock — NOT uploadEligibilityMemoMu — is
+		// what serializes concurrent same-provider callers across the real
+		// probe. It is held for this whole function's remainder, but it is
+		// scoped to provider ALONE, so an unrelated provider's probe never
+		// waits behind it.
+		providerLock := b.eligibilityLockFor(provider)
+		providerLock.Lock()
+		defer providerLock.Unlock()
+
+		if cached, ok := b.eligibilityMemoGet(provider); ok {
+			return tuikit.UploadEligibilityMsg{Hostname: hostname, View: cached}
 		}
 
 		view := tuikit.UploadEligibilityView{
@@ -1348,12 +1365,51 @@ func (b *realBackend) UploadEligibility(hostname string) tea.Cmd {
 			view.State = tuikit.UploadEligibilityUnauth
 		}
 
-		if b.uploadEligibilityMemo == nil {
-			b.uploadEligibilityMemo = make(map[string]tuikit.UploadEligibilityView)
-		}
-		b.uploadEligibilityMemo[provider] = view
+		b.eligibilityMemoSet(provider, view)
 		return tuikit.UploadEligibilityMsg{Hostname: hostname, View: view}
 	}
+}
+
+// eligibilityLockFor returns provider's dedicated mutex, creating it under
+// uploadEligibilityMemoMu if this is the first call for that provider. The
+// outer mutex is held only for this brief map access, never across the
+// caller's actual probe.
+func (b *realBackend) eligibilityLockFor(provider string) *sync.Mutex {
+	b.uploadEligibilityMemoMu.Lock()
+	defer b.uploadEligibilityMemoMu.Unlock()
+	if b.uploadEligibilityLocks == nil {
+		b.uploadEligibilityLocks = make(map[string]*sync.Mutex)
+	}
+	lock, ok := b.uploadEligibilityLocks[provider]
+	if !ok {
+		lock = &sync.Mutex{}
+		b.uploadEligibilityLocks[provider] = lock
+	}
+	return lock
+}
+
+// eligibilityMemoGet and eligibilityMemoSet are the memo map's only
+// accessors — each holds uploadEligibilityMemoMu only for the duration of
+// the map operation itself, never across a subprocess call. Callers must
+// already hold provider's own eligibilityLockFor lock to keep the overall
+// check-then-set sequence atomic per provider.
+func (b *realBackend) eligibilityMemoGet(provider string) (tuikit.UploadEligibilityView, bool) {
+	b.uploadEligibilityMemoMu.Lock()
+	defer b.uploadEligibilityMemoMu.Unlock()
+	if b.uploadEligibilityMemo == nil {
+		return tuikit.UploadEligibilityView{}, false
+	}
+	view, ok := b.uploadEligibilityMemo[provider]
+	return view, ok
+}
+
+func (b *realBackend) eligibilityMemoSet(provider string, view tuikit.UploadEligibilityView) {
+	b.uploadEligibilityMemoMu.Lock()
+	defer b.uploadEligibilityMemoMu.Unlock()
+	if b.uploadEligibilityMemo == nil {
+		b.uploadEligibilityMemo = make(map[string]tuikit.UploadEligibilityView)
+	}
+	b.uploadEligibilityMemo[provider] = view
 }
 
 // shortHostname returns the local machine's hostname truncated at the first

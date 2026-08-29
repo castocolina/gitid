@@ -5044,6 +5044,56 @@ func TestUploadEligibilityMemoizesConcurrentProviderProbes(t *testing.T) {
 	}
 }
 
+// TestUploadEligibilityDifferentProvidersDoNotBlockEachOther is the WR-17
+// regression: the check-then-set critical section used to be made atomic
+// by holding ONE mutex across the ENTIRE probe (DetectFor + AuthCheck's
+// real subprocess calls, up to providerCommandTimeout each), so a
+// slow/hung "gh auth status" blocked an unrelated "glab" probe for the
+// full timeout even though the two providers share no real resource. This
+// blocks the github probe indefinitely (never releases it within the
+// test) and asserts the gitlab probe still completes promptly.
+func TestUploadEligibilityDifferentProvidersDoNotBlockEachOther(t *testing.T) {
+	b := newBackendForHome(t.TempDir())
+
+	releaseGH := make(chan struct{})
+	b.uploaderDeps = uploader.Deps{
+		LookPath: func(name string) (string, error) {
+			if name == "gh" {
+				<-releaseGH
+			}
+			return "/fake/" + name, nil
+		},
+		RunCmd: func(string, ...string) (string, int, error) { return "", 0, nil },
+	}
+	defer close(releaseGH) // never leak the blocked goroutine past this test
+
+	ghDone := make(chan struct{})
+	go func() {
+		b.UploadEligibility("github.com")()
+		close(ghDone)
+	}()
+	time.Sleep(50 * time.Millisecond) // let the github probe actually enter LookPath and block
+
+	glabDone := make(chan struct{})
+	go func() {
+		b.UploadEligibility("gitlab.com")()
+		close(glabDone)
+	}()
+
+	select {
+	case <-glabDone:
+		// gitlab completed while github remains blocked — the fix holds.
+	case <-time.After(2 * time.Second):
+		t.Fatal("the gitlab probe did not complete within 2s — it is blocked behind the unrelated, still-pending github probe")
+	}
+
+	select {
+	case <-ghDone:
+		t.Fatal("setup broken: the github probe completed before its release channel was closed")
+	default:
+	}
+}
+
 func TestAuthCheckAlwaysReceivesCanonicalHost(t *testing.T) {
 	b := newBackendForHome(t.TempDir())
 
