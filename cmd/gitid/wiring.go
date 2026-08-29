@@ -1396,6 +1396,29 @@ func (b *realBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
 		// the staged result's PUBLIC-key field — never a private-key field,
 		// never a string-appended suffix.
 		pubPath := staged.FinalPubPath
+		if staged.PrivPEM != nil {
+			// Freshly generated (not reused) key: FinalPubPath is only the
+			// EVENTUAL ~/.ssh destination — nothing is written there until
+			// the wizard's confirmed commit persists it (CR-02/CR-08: the
+			// real ~/.ssh stays untouched until explicit consent). Uploader's
+			// ASVS V5 content validation (09-03-PLAN.md Task 1) needs a real
+			// file to read, so stage a temp .pub sibling next to the
+			// already-staged temp private key — the same hermetic staging
+			// directory TestStage1 already trusts for TempPrivatePath —
+			// rather than reading a file that does not exist yet.
+			tempPub := staged.TempPrivatePath + ".pub"
+			if !b.deps.PubExists(tempPub) {
+				if werr := b.deps.WritePub(tempPub, staged.PubLine); werr != nil {
+					return tuikit.UploadRunMsg{View: tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{{
+						Registration: tuikit.UploadRegistrationAuthentication,
+						Label:        tuikit.UploadRegistrationLabelAuth,
+						Outcome:      tuikit.UploadRowFailed,
+						Reason:       werr.Error(),
+					}}}}
+				}
+			}
+			pubPath = tempPub
+		}
 
 		tool, toolPath, status := uploader.DetectFor(provider, b.uploaderDeps)
 		if status == uploader.AuthToolNotFound {
