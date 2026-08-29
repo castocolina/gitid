@@ -1280,13 +1280,12 @@ func (b *realBackend) UploadEligibility(hostname string) tea.Cmd {
 		}
 
 		b.uploadEligibilityMemoMu.Lock()
+		defer b.uploadEligibilityMemoMu.Unlock()
 		if b.uploadEligibilityMemo != nil {
 			if cached, ok := b.uploadEligibilityMemo[provider]; ok {
-				b.uploadEligibilityMemoMu.Unlock()
 				return tuikit.UploadEligibilityMsg{Hostname: hostname, View: cached}
 			}
 		}
-		b.uploadEligibilityMemoMu.Unlock()
 
 		view := tuikit.UploadEligibilityView{
 			ProviderName: providerDisplayName(provider),
@@ -1305,13 +1304,10 @@ func (b *realBackend) UploadEligibility(hostname string) tea.Cmd {
 			}
 		}
 
-		b.uploadEligibilityMemoMu.Lock()
 		if b.uploadEligibilityMemo == nil {
 			b.uploadEligibilityMemo = make(map[string]tuikit.UploadEligibilityView)
 		}
 		b.uploadEligibilityMemo[provider] = view
-		b.uploadEligibilityMemoMu.Unlock()
-
 		return tuikit.UploadEligibilityMsg{Hostname: hostname, View: view}
 	}
 }

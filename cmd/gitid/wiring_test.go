@@ -4995,6 +4995,48 @@ func TestUploadEligibilityIsAsyncAndMemoized(t *testing.T) {
 // web domain, never per SSH endpoint, and this project's alt-SSH recipe
 // (ssh.github.com, port 443) makes that divergence the common case for real
 // identities, not an edge case.
+func TestUploadEligibilityMemoizesConcurrentProviderProbes(t *testing.T) {
+	b := newBackendForHome(t.TempDir())
+
+	var mu sync.Mutex
+	lookPathCalls := 0
+	releaseLookPath := make(chan struct{})
+	b.uploaderDeps = uploader.Deps{
+		LookPath: func(name string) (string, error) {
+			mu.Lock()
+			lookPathCalls++
+			mu.Unlock()
+			<-releaseLookPath
+			return "/fake/" + name, nil
+		},
+		RunCmd: func(string, ...string) (string, int, error) {
+			return "", 0, nil
+		},
+	}
+
+	const callers = 8
+	var wg sync.WaitGroup
+	wg.Add(callers)
+	for range callers {
+		go func() {
+			defer wg.Done()
+			if _, ok := b.UploadEligibility("ssh.github.com")().(tuikit.UploadEligibilityMsg); !ok {
+				t.Errorf("UploadEligibility delivered a non-eligibility message")
+			}
+		}()
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	close(releaseLookPath)
+	wg.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if lookPathCalls != 1 {
+		t.Errorf("concurrent LookPath calls = %d, want 1 (one provider probe per process)", lookPathCalls)
+	}
+}
+
 func TestAuthCheckAlwaysReceivesCanonicalHost(t *testing.T) {
 	b := newBackendForHome(t.TempDir())
 
