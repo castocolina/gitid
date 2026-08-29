@@ -429,14 +429,14 @@ func TestUploadResultRowsRenderGlyphAndWord(t *testing.T) {
 		{Label: UploadRegistrationLabelSigning, Outcome: UploadRowAlreadyPresent},
 		{Label: UploadRegistrationLabelCombined, Outcome: UploadRowFailed, Reason: "insufficient scope"},
 	}}
-	got := stripANSI(renderUploadRun(run, "GitHub", 100))
+	got := stripANSI(renderUploadSection(run, "GitHub", 100))
 	for _, want := range []string{
 		"✓ " + UploadRegistrationLabelAuth + " key registered",
 		"✓ " + UploadRegistrationLabelSigning + " key already registered (skipped)",
 		"✗ " + UploadRegistrationLabelCombined + " key registration failed: insufficient scope",
 	} {
 		if !strings.Contains(got, want) {
-			t.Errorf("renderUploadRun output = %q, want it to contain %q", got, want)
+			t.Errorf("renderUploadSection output = %q, want it to contain %q", got, want)
 		}
 	}
 }
@@ -448,7 +448,7 @@ func TestManualFallbackIsByteIdenticalToInstructions(t *testing.T) {
 	for _, provider := range []string{"github.com", "gitlab.com"} {
 		instructions := upload.Instructions(provider)
 		run := UploadRunView{ManualFallback: instructions}
-		got := stripANSI(renderUploadRun(run, provider, 100))
+		got := stripANSI(renderUploadSection(run, provider, 100))
 		if !strings.HasPrefix(got, " "+UploadManualHeading+"\n") {
 			t.Fatalf("rendered fallback = %q, want it to start with the frozen heading", got)
 		}
@@ -471,7 +471,7 @@ func TestUploadSectionFitsTheFrameInTheWorstCase(t *testing.T) {
 		},
 		ManualFallback: upload.Instructions("github.com"),
 	}
-	rendered := renderUploadRun(run, "GitHub", 100)
+	rendered := renderUploadSection(run, "GitHub", 100)
 	lines := strings.Count(rendered, "\n")
 	if lines > frameBodyRows(minFrameHeight) {
 		t.Errorf("rendered upload section = %d lines, want at most %d (frameBodyRows(30))", lines, frameBodyRows(minFrameHeight))
@@ -480,7 +480,7 @@ func TestUploadSectionFitsTheFrameInTheWorstCase(t *testing.T) {
 	// Overflow branch: an artificially oversized fallback must still stay
 	// within the same budget by routing through the bounded viewport.
 	oversizedRun := UploadRunView{ManualFallback: strings.Repeat("a very long manual instruction line\n", 40)}
-	oversized := renderUploadRun(oversizedRun, "GitHub", 100)
+	oversized := renderUploadSection(oversizedRun, "GitHub", 100)
 	if got := strings.Count(oversized, "\n"); got > frameBodyRows(minFrameHeight) {
 		t.Errorf("oversized fallback rendered %d lines, want the viewport to cap it at %d", got, frameBodyRows(minFrameHeight))
 	}

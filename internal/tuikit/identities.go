@@ -4306,7 +4306,7 @@ func (m identitiesModel) renderRegisterKey(sel DemoIdentity, width int) string {
 		return b.String()
 	}
 	if uploadRunHasContent(m.registerKeyRun) {
-		b.WriteString(renderUploadRun(m.registerKeyRun, m.registerKeyPlan.ProviderName, width))
+		b.WriteString(renderUploadSection(m.registerKeyRun, m.registerKeyPlan.ProviderName, width))
 		return b.String()
 	}
 	b.WriteString(" " + styleFaint.Render("Registering…") + "\n")
@@ -4317,7 +4317,7 @@ func uploadRunHasContent(run UploadRunView) bool {
 	return len(run.Rows) > 0 || run.AlreadyComplete || run.InventoryDegraded || run.ManualFallback != ""
 }
 
-// renderUploadRun renders D-02's completed announce-and-do rows plus every
+// renderUploadSection renders D-02's completed announce-and-do rows plus every
 // later-plan addition: the D-15 inventory-degraded notice, the D-16
 // AlreadyComplete collapse, and the manual-fallback block. It is
 // deliberately separate from the transient testUpload branch in
@@ -4329,7 +4329,7 @@ func uploadRunHasContent(run UploadRunView) bool {
 // the pane's remaining row budget, the manual-fallback block routes through
 // the same bounded viewport mechanism the wizard's proof text uses rather
 // than pushing the frame's fixed 100x30 geometry.
-func renderUploadRun(run UploadRunView, providerName string, width int) string {
+func renderUploadSection(run UploadRunView, providerName string, width int) string {
 	var b strings.Builder
 	if run.InventoryDegraded {
 		b.WriteString(" " + styleWarning.Render(fmt.Sprintf(UploadInventoryDegradedFmt, providerName)) + "\n")
@@ -4642,7 +4642,7 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 		// final proof screen would push the existing gate's action below the
 		// viewport.
 		if uploadRunHasContent(w.uploadRun) && w.testPhase != testStage2 {
-			b.WriteString(renderUploadRun(w.uploadRun, w.uploadEligibility.ProviderName, width))
+			b.WriteString(renderUploadSection(w.uploadRun, w.uploadEligibility.ProviderName, width))
 		}
 		if w.proof.Text != "" {
 			b.WriteString(" " + styleFaint.Render("Demo failure control — locked (nothing left to simulate)") + "\n")
