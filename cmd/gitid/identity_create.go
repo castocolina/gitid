@@ -471,12 +471,35 @@ func runCreateDryRun(cmd *cobra.Command, b *realBackend, in identity.CreateInput
 	// planUpload to read — the same temp-sibling pattern
 	// uploadRequestFromSpec uses for the TUI wizard's generate path
 	// (CR-02/CR-08: the real ~/.ssh stays untouched either way).
+	//
+	// CR-01 (iteration 2): staged.TempPrivatePath is only a safe staging-dir
+	// temp path on the GENERATE path (staged.PrivPEM != nil). On the REUSE
+	// path (identity.StageReuse) TempPrivatePath IS the user's real key
+	// path, so deriving a ".pub" sibling from it and writing that sibling
+	// unconditionally would create a real file under ~/.ssh with no
+	// confirmation and no backup — exactly what this dry run promises not
+	// to do. Only stage a temp .pub for the generate path; for reuse, only
+	// preview against the real .pub if it ALREADY exists on disk (never
+	// synthesize it here) — mirroring uploadRequestFromSpec's identical,
+	// already-safe `staged.PrivPEM != nil` guard (upload_run.go).
 	if staged.PubLine != "" {
-		tempPub := staged.TempPrivatePath + ".pub"
-		if !b.deps.PubExists(tempPub) {
-			_ = b.deps.WritePub(tempPub, staged.PubLine) //nolint:errcheck // best-effort dry-run preview; a write failure here just skips the upload preview
+		pubPath := staged.FinalPubPath
+		if staged.PrivPEM != nil { // generated: a temp sibling in the staging dir only
+			tempPub := staged.TempPrivatePath + ".pub"
+			pubPath = tempPub
+			if !b.deps.PubExists(tempPub) {
+				// WR-08: honor the "a write failure here just skips the
+				// upload preview" comment for real, instead of ignoring the
+				// error and letting the preview report a bogus registration
+				// failure for a local file-write problem.
+				if werr := b.deps.WritePub(tempPub, staged.PubLine); werr != nil {
+					pubPath = ""
+				}
+			}
 		}
-		runUploadStep(cmd.OutOrStdout(), b, uploadRequest{Identity: in.Name, Hostname: in.Hostname, PubPath: tempPub}, noUpload, true)
+		if pubPath != "" && b.deps.PubExists(pubPath) {
+			runUploadStep(cmd.OutOrStdout(), b, uploadRequest{Identity: in.Name, Hostname: in.Hostname, PubPath: pubPath}, noUpload, true)
+		}
 	}
 
 	// The dry-run contract row: the staging directory is cleaned up and

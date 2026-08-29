@@ -1202,6 +1202,49 @@ func TestIdentityCloneRecordingDoubleInvokedExactlyOnce(t *testing.T) {
 	}
 }
 
+// TestIdentityCloneDryRunReuseWithMissingPubWritesNothingUnderHome is the
+// CR-01 (iteration 2) regression: `identity clone` reuses the source's key
+// by DEFAULT (no --new-key needed), and the source's real .pub sibling may
+// be absent on disk (a hand-imported key gitid never wrote the .pub for).
+// runCreateDryRun's upload-preview block used to derive that missing .pub
+// from staged.TempPrivatePath — which for the REUSE path IS the user's real
+// key path, not a staging-dir temp file — and write it straight into
+// ~/.ssh with no confirmation and no backup. The fixed code must only
+// preview the upload when the real .pub ALREADY exists; it must never
+// synthesize it. Assert the ~/.ssh (and the whole HOME) file listing is
+// byte-identical before and after.
+func TestIdentityCloneDryRunReuseWithMissingPubWritesNothingUnderHome(t *testing.T) {
+	seamGuard(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedDeleteFixture(t, home, "work")
+	// Remove the source identity's real .pub sibling to reproduce the exact
+	// shape CR-01 flags: ensurePubReadOnly derives the line in memory
+	// without writing it back (identity.StageReuse's read-only contract).
+	if err := os.Remove(filepath.Join(home, ".ssh", "id_ed25519_work.pub")); err != nil {
+		t.Fatalf("removing seeded .pub to simulate a missing sibling: %v", err)
+	}
+	before := homeFileListing(t, home)
+
+	cliConnectivityTest = func(_ *realBackend, _ string) tester.Result {
+		return tester.Result{Outcome: tester.PASS}
+	}
+
+	cmd, out, _ := cliTestCmd()
+	// NoUpload: true — this test is about the ~/.ssh write CR-01 flags, not
+	// the upload preview's own network path (no fake gh/glab installed here).
+	if err := runIdentityClone(cmd, "work", identityCloneFlags{Name: "work-clone", DryRun: true, NoUpload: true}, false, false); err != nil {
+		t.Fatalf("identity clone --dry-run: %v", err)
+	}
+	if !strings.Contains(out.String(), "would create \"work-clone\"") {
+		t.Errorf("expected the dry-run preview; output:\n%s", out.String())
+	}
+	after := homeFileListing(t, home)
+	if strings.Join(before, "\n") != strings.Join(after, "\n") {
+		t.Fatalf("CR-01: clone --dry-run wrote into HOME for a reused key with no .pub sibling:\nbefore: %v\nafter:  %v", before, after)
+	}
+}
+
 // TestCloneCeremonyInputsFingerprintsMatchTestStage proves the store gate a
 // headless clone consults is the same fingerprint TestStage1/2 record: empty
 // Algo and a display-form reuse path would pass both stages and still be
