@@ -5819,6 +5819,55 @@ func TestConfirmationFailureDegradesInsteadOfGating(t *testing.T) {
 	}
 }
 
+// TestConfirmUploadKeysOnTheRowsOwnRegistrationNotPositionalIndex is the
+// WR-11 regression: confirmUpload used to build toConfirm by zipping
+// wanted[i] with rows[i] positionally — an invariant nowhere asserted and
+// easy to break. This drives confirmUpload directly with rows in the
+// OPPOSITE order desiredRegistrations(ToolGH) produces (signing first,
+// authentication second) and an inventory where ONLY authentication is
+// actually present: the old positional code would zip wanted[0]=
+// Authentication onto rows[0] (which is really Signing) and wanted[1]=
+// Signing onto rows[1] (which is really Authentication) — stamping the
+// "not yet visible" reason on the WRONG row in both directions. Keying on
+// each row's own Registration must get both right regardless of order.
+func TestConfirmUploadKeysOnTheRowsOwnRegistrationNotPositionalIndex(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	b.uploadConfirmSleep = func(time.Duration) {} // no real sleep in a unit test
+	pubLine := "ssh-ed25519 AAAAtest acme@gitid"
+	b.uploaderDeps = uploader.Deps{
+		LookPath: func(name string) (string, error) { return "/fake/" + name, nil },
+		RunCmd: func(_ string, args ...string) (string, int, error) {
+			switch {
+			case len(args) > 0 && args[len(args)-1] == "user/keys":
+				return `[{"id":"1","title":"gitid: acme @ mbp","key":"ssh-ed25519 AAAAtest acme@gitid"}]`, 0, nil
+			case len(args) > 0 && args[len(args)-1] == "user/ssh_signing_keys":
+				return `[]`, 0, nil
+			default:
+				return "", 0, nil
+			}
+		},
+	}
+
+	// Deliberately reversed relative to desiredRegistrations(ToolGH)
+	// ([Authentication, Signing]): rows[0] is Signing, rows[1] is
+	// Authentication.
+	rows := []tuikit.UploadResultRow{
+		{Registration: tuikit.UploadRegistrationSigning, Outcome: tuikit.UploadRowUploaded},
+		{Registration: tuikit.UploadRegistrationAuthentication, Outcome: tuikit.UploadRowUploaded},
+	}
+	got, degraded := b.confirmUpload(uploader.ToolGH, "gh", pubLine, "github.com", rows)
+	if degraded {
+		t.Fatal("confirmUpload reported degraded unexpectedly")
+	}
+	if got[0].Reason == "" {
+		t.Errorf("rows[0] (Signing, NOT in inventory) has no unconfirmed reason: %+v", got[0])
+	}
+	if got[1].Reason != "" {
+		t.Errorf("rows[1] (Authentication, IS in inventory) was WRONGLY stamped unconfirmed: %+v", got[1])
+	}
+}
+
 // TestUploadRowOutcomeStillHasExactlyThreeValues asserts no fourth outcome
 // value was added for the D-17 unconfirmed case — it stays informational
 // text on the existing Uploaded/AlreadyPresent outcome.

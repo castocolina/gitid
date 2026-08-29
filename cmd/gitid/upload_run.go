@@ -214,7 +214,7 @@ func (b *realBackend) executeUpload(hostname string, plan uploadPlan) (view tuik
 	// (CLI rotate/new-key); no new probe belongs here, only the inventory
 	// confirmation ssh -T structurally cannot see (the signing registration
 	// has no ssh -T-observable side effect).
-	rows, confirmDegraded := b.confirmUpload(plan.tool, plan.toolPath, plan.pubLine, plan.canonicalHost, plan.wanted, rows)
+	rows, confirmDegraded := b.confirmUpload(plan.tool, plan.toolPath, plan.pubLine, plan.canonicalHost, rows)
 
 	view = tuikit.UploadRunView{Rows: rows, InventoryDegraded: plan.degraded || confirmDegraded, ProviderName: plan.providerName}
 	allFailed := len(results) > 0
@@ -314,14 +314,22 @@ const uploadUnconfirmedReasonFmt = "accepted but not yet visible in %s's invento
 // it is not. It never gates and never retries a FAILING READ itself a
 // second time — only a registration that is legitimately still missing
 // after a successful read gets the one retry.
-func (b *realBackend) confirmUpload(tool uploader.Tool, toolPath, pubLine, providerHost string, wanted []uploader.Registration, rows []tuikit.UploadResultRow) ([]tuikit.UploadResultRow, bool) {
-	toConfirm := make(map[uploader.Registration]int, len(wanted))
-	for i, registration := range wanted {
-		if i >= len(rows) {
-			continue
-		}
+func (b *realBackend) confirmUpload(tool uploader.Tool, toolPath, pubLine, providerHost string, rows []tuikit.UploadResultRow) ([]tuikit.UploadResultRow, bool) {
+	// WR-11: key toConfirm on the ROW's OWN Registration (registrationOf),
+	// never on wanted[i]'s positional alignment with rows[i]. That alignment
+	// held only because executeUpload happens to append exactly one row per
+	// plan.wanted entry in order — an invariant nowhere asserted, and easy
+	// to break (a future early-continue in the row loop, a per-type filter,
+	// or a wanted list with an entry UploadKeys does not answer for). When
+	// it breaks, the old `i >= len(rows)` guard silently skipped entries and
+	// the positional toConfirm[registration] = i silently mis-attributed
+	// them: the D-17 confirmation would check the WRONG registration's
+	// presence and stamp the "accepted but not yet visible" reason on the
+	// wrong row.
+	toConfirm := make(map[uploader.Registration]int, len(rows))
+	for i := range rows {
 		if rows[i].Outcome == tuikit.UploadRowUploaded || rows[i].Outcome == tuikit.UploadRowAlreadyPresent {
-			toConfirm[registration] = i
+			toConfirm[registrationOf(rows[i])] = i
 		}
 	}
 	if len(toConfirm) == 0 {
@@ -367,6 +375,23 @@ func (b *realBackend) confirmUpload(tool uploader.Tool, toolPath, pubLine, provi
 		}
 	}
 	return rows, false
+}
+
+// registrationOf maps a rendered row's tuikit.UploadRegistration back to the
+// uploader.Registration confirmUpload's provider-facing lookups need. The
+// two enums are separate types by design (tuikit never imports uploader,
+// per views.go's no-backend-import rule) but toUploadResultRow (wiring.go)
+// assigns them with the SAME ordering (Authentication, Signing, Combined) —
+// that function is the forward direction; this is the reverse.
+func registrationOf(row tuikit.UploadResultRow) uploader.Registration {
+	switch row.Registration {
+	case tuikit.UploadRegistrationSigning:
+		return uploader.RegistrationSigning
+	case tuikit.UploadRegistrationCombined:
+		return uploader.RegistrationCombined
+	default:
+		return uploader.RegistrationAuthentication
+	}
 }
 
 // rotateDeleteOfferFor resolves D-04's interactive old-key delete offer for
