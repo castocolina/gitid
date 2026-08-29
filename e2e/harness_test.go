@@ -911,8 +911,12 @@ func FakeGHDir(t *testing.T, mode string) (dir string, logPath string) {
 		"        fi\n" +
 		"        exit 0 ;;\n" +
 		"      inventory-auth-only)\n" +
-		"        case \"$2\" in\n" +
-		"          user/keys)\n" +
+		// WR-01: uploader.Inventory now issues `gh api --paginate user/keys`,
+		// so the endpoint token is no longer positionally $2 — match it
+		// anywhere in "$*" instead (still never matches user/ssh_signing_keys,
+		// since that path does not contain the literal substring "user/keys").
+		"        case \"$*\" in\n" +
+		"          *user/keys*)\n" +
 		"            if [ -n \"$GITID_FAKE_GH_INVENTORY_FILE\" ] && [ -r \"$GITID_FAKE_GH_INVENTORY_FILE\" ]; then\n" +
 		"              cat \"$GITID_FAKE_GH_INVENTORY_FILE\"\n" +
 		"            else\n" +

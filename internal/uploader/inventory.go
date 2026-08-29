@@ -5,7 +5,9 @@ package uploader
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 )
 
@@ -27,16 +29,28 @@ type providerKey struct {
 func Inventory(tool Tool, toolPath string, deps Deps) ([]ExistingKey, error) {
 	switch tool {
 	case ToolGH:
-		auth, err := inventoryFor(tool, toolPath, deps, []string{"api", "user/keys"}, RegistrationAuthentication)
+		// --paginate: gh api's REST default page size is 30, and every
+		// D-04/D-15/D-16/D-17 decision reads this list as if it were
+		// complete. Without it, an account with more than 30 keys reports
+		// registrations as missing that already exist, the D-17
+		// confirmation never converges, and D-04's delete offer reports "no
+		// matching old key found" for a key that is right there (WR-01).
+		auth, err := inventoryFor(tool, toolPath, deps, []string{"api", "--paginate", "user/keys"}, RegistrationAuthentication)
 		if err != nil {
 			return nil, err
 		}
-		signing, err := inventoryFor(tool, toolPath, deps, []string{"api", "user/ssh_signing_keys"}, RegistrationSigning)
+		signing, err := inventoryFor(tool, toolPath, deps, []string{"api", "--paginate", "user/ssh_signing_keys"}, RegistrationSigning)
 		if err != nil {
 			return nil, err
 		}
 		return append(auth, signing...), nil
 	case ToolGLab:
+		// glab's ssh-key list has no --paginate flag threaded through here
+		// yet: WR-01 flags glab as truncation-prone too, but the exact
+		// page-iteration flag surface (--per-page / --page) needs
+		// verification against a real glab invocation before it is
+		// hardcoded — an unverified guess risks silently breaking every
+		// glab inventory read, which is worse than today's known limit.
 		return inventoryFor(tool, toolPath, deps, []string{"ssh-key", "list", "-F", "json"}, RegistrationCombined)
 	default:
 		return nil, fmt.Errorf("uploader: unknown tool %d", tool)
@@ -48,15 +62,39 @@ func inventoryFor(tool Tool, toolPath string, deps Deps, args []string, reg Regi
 	if err != nil || code != 0 {
 		return nil, fmt.Errorf("uploader: %s %s failed: %w", toolName(tool), strings.Join(args, " "), wrapRunErr(err))
 	}
-	var entries []providerKey
-	if err := json.Unmarshal([]byte(out), &entries); err != nil {
-		return nil, fmt.Errorf("uploader: parsing %s: %w", strings.Join(args, " "), err)
+	entries, perr := decodeProviderKeyPages(out)
+	if perr != nil {
+		return nil, fmt.Errorf("uploader: parsing %s: %w", strings.Join(args, " "), perr)
 	}
 	keys := make([]ExistingKey, 0, len(entries))
 	for _, entry := range entries {
 		keys = append(keys, ExistingKey{ID: entry.ID.String(), Title: entry.Title, Key: entry.Key, Registration: reg})
 	}
 	return keys, nil
+}
+
+// decodeProviderKeyPages parses out as one or more concatenated top-level
+// JSON array documents — the shape `gh api --paginate` produces for a
+// paginated REST list: each page's JSON array is written back-to-back with
+// no separator, which json.Unmarshal cannot parse in a single call.
+// json.Decoder decodes sequential top-level JSON values from a stream, so
+// looping Decode until io.EOF reassembles every page into one flat list. A
+// single-page response (glab's "-F json", or a gh --paginate response that
+// happened to fit in one page) decodes in exactly one iteration.
+func decodeProviderKeyPages(out string) ([]providerKey, error) {
+	dec := json.NewDecoder(strings.NewReader(out))
+	var all []providerKey
+	for {
+		var page []providerKey
+		if err := dec.Decode(&page); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, err
+		}
+		all = append(all, page...)
+	}
+	return all, nil
 }
 
 // NormalizeKeyBlob drops the comment because the key, not its machine-scoped

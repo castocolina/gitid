@@ -20,8 +20,29 @@ func TestInventoryGHReadsBothEndpointsAndTagsRegistrations(t *testing.T) {
 	if err != nil || len(got) != 2 || got[0].Registration != RegistrationAuthentication || got[1].Registration != RegistrationSigning {
 		t.Fatalf("got=%+v err=%v", got, err)
 	}
-	if !reflect.DeepEqual(calls, [][]string{{"api", "user/keys"}, {"api", "user/ssh_signing_keys"}}) {
+	if !reflect.DeepEqual(calls, [][]string{{"api", "--paginate", "user/keys"}, {"api", "--paginate", "user/ssh_signing_keys"}}) {
 		t.Fatalf("calls=%v", calls)
+	}
+}
+
+// TestInventoryGHConcatenatesPaginatedPages is the WR-01 regression: `gh api
+// --paginate` writes one JSON array per page back-to-back with no
+// separator, and every key across every page must end up in the flat
+// result — not just the first page's 30-key REST default.
+func TestInventoryGHConcatenatesPaginatedPages(t *testing.T) {
+	pageOne := `[{"id":1,"title":"a","key":"ssh-ed25519 AAAA a"}]`
+	pageTwo := `[{"id":2,"title":"b","key":"ssh-ed25519 AAAA b"}]`
+	got, err := Inventory(ToolGH, "gh", Deps{RunCmd: func(_ string, args ...string) (string, int, error) {
+		if len(args) > 0 && args[len(args)-1] == "user/keys" {
+			return pageOne + pageTwo, 0, nil
+		}
+		return "[]", 0, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].ID != "1" || got[1].ID != "2" {
+		t.Fatalf("got=%+v, want both concatenated pages' entries", got)
 	}
 }
 

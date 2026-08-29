@@ -1044,7 +1044,9 @@ func TestIdentityManager_RotateDeleteOfferDefaultsToLeave(t *testing.T) {
 	mustSee(t, s, "The old key stays valid at", "the existing D-08 grace hint still renders unchanged")
 
 	for _, entry := range ReadFakeCLILog(t, ghLog) {
-		if strings.Contains(entry, "ssh-key delete") {
+		// CR-02: the delete call is `gh api -X DELETE user/keys/<id>` (or
+		// .../ssh_signing_keys/<id>), never `gh ssh-key delete <id>`.
+		if strings.Contains(entry, "-X DELETE") {
 			t.Errorf("Enter from the default (leave) focus must never delete: %q", entry)
 		}
 	}
@@ -1052,9 +1054,16 @@ func TestIdentityManager_RotateDeleteOfferDefaultsToLeave(t *testing.T) {
 
 // TestIdentityManager_RotateDeleteOfferDeletesOnExplicitChoice is the same
 // flow, but moves to the delete option before Enter: asserts the removed
-// message and exactly one recorded delete invocation carrying the resolved
-// ID (D-04's explicit-move-plus-Enter requirement — never a single default
-// keystroke).
+// message and, since the fixture's inventory answers identically for both
+// the authentication and signing endpoints (delete-ok mode never branches
+// on which `api` path was requested), exactly TWO recorded delete
+// invocations carrying the resolved ID 555 — one per registration
+// namespace (CR-02: GitHub tracks a separate authentication and signing
+// registration for the same physical key, and both must be removed, never
+// only the first) — each addressing its OWN REST resource
+// (user/keys/555 vs user/ssh_signing_keys/555), never the SAME one twice
+// (D-04's explicit-move-plus-Enter requirement — never a single default
+// keystroke — still applies to triggering the delete at all).
 func TestIdentityManager_RotateDeleteOfferDeletesOnExplicitChoice(t *testing.T) {
 	home := ShortSandboxHome(t)
 	title := seedRotateDeleteOfferFixture(t, home)
@@ -1078,17 +1087,22 @@ func TestIdentityManager_RotateDeleteOfferDeletesOnExplicitChoice(t *testing.T) 
 	mustSee(t, s, "Old key removed from GitHub", "the removed message renders")
 	saveFrame(t, "identity-manager-rotate-delete-offer-delete", s)
 
-	deleteCalls := 0
+	authDeletes, signDeletes := 0, 0
 	for _, entry := range ReadFakeCLILog(t, ghLog) {
-		if strings.Contains(entry, "ssh-key delete") {
-			deleteCalls++
-			if !strings.Contains(entry, "555") {
-				t.Errorf("delete invocation = %q, want it to carry the resolved ID 555", entry)
-			}
+		switch {
+		case strings.Contains(entry, "-X DELETE") && strings.Contains(entry, "user/keys/555"):
+			authDeletes++
+		case strings.Contains(entry, "-X DELETE") && strings.Contains(entry, "user/ssh_signing_keys/555"):
+			signDeletes++
+		case strings.Contains(entry, "-X DELETE"):
+			t.Errorf("unexpected delete invocation: %q", entry)
 		}
 	}
-	if deleteCalls != 1 {
-		t.Errorf("delete invocations = %d, want exactly 1", deleteCalls)
+	if authDeletes != 1 {
+		t.Errorf("authentication delete invocations = %d, want exactly 1 addressing user/keys/555", authDeletes)
+	}
+	if signDeletes != 1 {
+		t.Errorf("signing delete invocations = %d, want exactly 1 addressing user/ssh_signing_keys/555", signDeletes)
 	}
 }
 

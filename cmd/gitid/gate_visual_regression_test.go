@@ -2941,7 +2941,7 @@ func gateUploadDeps() uploader.Deps {
 			switch {
 			case strings.Contains(argv, "auth status"):
 				return "", 0, nil
-			case strings.Contains(argv, "api user/keys"), strings.Contains(argv, "api user/ssh_signing_keys"):
+			case strings.Contains(argv, "user/keys"), strings.Contains(argv, "user/ssh_signing_keys"):
 				return "[]", 0, nil
 			default:
 				return "", 0, nil

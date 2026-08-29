@@ -5120,9 +5120,9 @@ func fakeUploaderRunUploadDeps(t *testing.T, ghInventoryKeys, ghSigningKeys stri
 			switch {
 			case len(args) >= 2 && args[0] == "auth" && args[1] == "status":
 				return "", 0, nil
-			case len(args) >= 2 && args[0] == "api" && args[1] == "user/keys":
+			case len(args) >= 2 && args[0] == "api" && args[len(args)-1] == "user/keys":
 				return ghInventoryKeys, 0, nil
-			case len(args) >= 2 && args[0] == "api" && args[1] == "user/ssh_signing_keys":
+			case len(args) >= 2 && args[0] == "api" && args[len(args)-1] == "user/ssh_signing_keys":
 				return ghSigningKeys, 0, nil
 			case len(args) >= 2 && args[0] == "ssh-key" && args[1] == "add":
 				if uploadResult != nil {
@@ -5218,9 +5218,9 @@ func TestRunUploadUsesOnlyTheMissingRegistrations(t *testing.T) {
 		switch {
 		case len(args) >= 2 && args[0] == "auth" && args[1] == "status":
 			return "", 0, nil
-		case len(args) >= 2 && args[0] == "api" && args[1] == "user/keys":
+		case len(args) >= 2 && args[0] == "api" && args[len(args)-1] == "user/keys":
 			return ghInventory, 0, nil
-		case len(args) >= 2 && args[0] == "api" && args[1] == "user/ssh_signing_keys":
+		case len(args) >= 2 && args[0] == "api" && args[len(args)-1] == "user/ssh_signing_keys":
 			return "[]", 0, nil
 		case len(args) >= 2 && args[0] == "ssh-key" && args[1] == "add":
 			return "", 0, nil
@@ -5271,9 +5271,9 @@ func TestRunUploadZeroCommandsWhenFullyRegistered(t *testing.T) {
 		switch {
 		case len(args) >= 2 && args[0] == "auth" && args[1] == "status":
 			return "", 0, nil
-		case len(args) >= 2 && args[0] == "api" && args[1] == "user/keys":
+		case len(args) >= 2 && args[0] == "api" && args[len(args)-1] == "user/keys":
 			return authJSON, 0, nil
-		case len(args) >= 2 && args[0] == "api" && args[1] == "user/ssh_signing_keys":
+		case len(args) >= 2 && args[0] == "api" && args[len(args)-1] == "user/ssh_signing_keys":
 			return signJSON, 0, nil
 		default:
 			return "", 0, nil
@@ -5616,7 +5616,7 @@ func phaseAwareUploadBackend(t *testing.T, confirmationMisses int, confirmReadFa
 			switch {
 			case len(args) >= 2 && args[0] == "auth" && args[1] == "status":
 				return "", 0, nil
-			case len(args) >= 2 && args[0] == "api" && args[1] == "user/keys":
+			case len(args) >= 2 && args[0] == "api" && args[len(args)-1] == "user/keys":
 				// GH's Inventory() always reads user/keys FIRST — record
 				// the phase and decide this invocation's outcome exactly
 				// once, here, then reuse the decision for the paired
@@ -5637,7 +5637,7 @@ func phaseAwareUploadBackend(t *testing.T, confirmationMisses int, confirmReadFa
 					return presentJSON, 0, nil
 				}
 				return "[]", 0, nil // dedupe phase: nothing present yet
-			case len(args) >= 2 && args[0] == "api" && args[1] == "user/ssh_signing_keys":
+			case len(args) >= 2 && args[0] == "api" && args[len(args)-1] == "user/ssh_signing_keys":
 				if inFlightConfirmationCall {
 					if confirmReadFails {
 						return "", 1, errors.New("network blip")
@@ -5874,9 +5874,9 @@ func ghInventoryDeps(orig uploader.Deps, calls *[]string, authKeysJSON, signingK
 			switch {
 			case strings.Contains(argv, "auth status"):
 				return "", 0, nil
-			case strings.Contains(argv, "api user/keys"):
+			case strings.Contains(argv, "user/keys"):
 				return authKeysJSON, 0, nil
-			case strings.Contains(argv, "api user/ssh_signing_keys"):
+			case strings.Contains(argv, "user/ssh_signing_keys"):
 				return signingKeysJSON, 0, nil
 			default:
 				return "", 0, nil
@@ -6017,7 +6017,10 @@ func TestCommitRotateDeleteOldKeyDeletesExactlyTheConfirmedID(t *testing.T) {
 		if strings.Contains(c, "user/ssh_signing_keys") {
 			t.Errorf("an authentication-registration delete must never address the signing namespace: %v", calls)
 		}
-		if strings.Contains(c, "api user/keys") || strings.Contains(c, "api user/ssh_signing_keys") {
+		// WR-01's --paginate is unique to the Inventory read (deleteArgs
+		// never emits it), so it is the reliable "this was an inventory
+		// call" signal now that both call shapes share "user/keys".
+		if strings.Contains(c, "--paginate") {
 			inventoryCalls++
 		}
 	}

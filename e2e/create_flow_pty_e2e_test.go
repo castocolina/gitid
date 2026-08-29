@@ -343,7 +343,7 @@ func TestCreateFlow_UploadAutonomousGitHubTracer(t *testing.T) {
 	apiCalls, addCalls := 0, 0
 	for _, entry := range log {
 		switch {
-		case strings.Contains(entry, "api user/keys") || strings.Contains(entry, "api user/ssh_signing_keys"):
+		case strings.Contains(entry, "user/keys") || strings.Contains(entry, "user/ssh_signing_keys"):
 			apiCalls++
 		case strings.Contains(entry, "ssh-key add"):
 			addCalls++
