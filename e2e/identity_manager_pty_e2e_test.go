@@ -1024,6 +1024,11 @@ func TestIdentityManager_RotateDeleteOfferDefaultsToLeave(t *testing.T) {
 	fakeSSHDir := FakeSSHDir(t, "denied")
 	fakeGH, ghLog := FakeGHDir(t, "delete-ok")
 	FakeGHInventoryFile(t, fmt.Sprintf(`[{"id":555,"title":%q,"key":"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5STUB old@gitid"}]`, title))
+	// CR-02: the D-04 offer's belt-and-braces check requires the freshly
+	// rotated key to already be registered in a fresh inventory read —
+	// track this test's real "ssh-key add" calls so the subsequent read
+	// reflects them, matching real GitHub.
+	FakeGHTrackAddedKeys(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -1071,6 +1076,11 @@ func TestIdentityManager_RotateDeleteOfferDeletesOnExplicitChoice(t *testing.T) 
 	fakeSSHDir := FakeSSHDir(t, "denied")
 	fakeGH, ghLog := FakeGHDir(t, "delete-ok")
 	FakeGHInventoryFile(t, fmt.Sprintf(`[{"id":555,"title":%q,"key":"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5STUB old@gitid"}]`, title))
+	// CR-02: the D-04 offer's belt-and-braces check requires the freshly
+	// rotated key to already be registered in a fresh inventory read —
+	// track this test's real "ssh-key add" calls so the subsequent read
+	// reflects them, matching real GitHub.
+	FakeGHTrackAddedKeys(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -2135,6 +2145,11 @@ func TestRegisterKeyModal_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		fakeSSHDir := FakeSSHDir(t, "denied")
 		fakeGH, _ := FakeGHDir(t, "delete-ok")
 		FakeGHInventoryFile(t, fmt.Sprintf(`[{"id":555,"title":%q,"key":"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5STUB old@gitid"}]`, title))
+		// CR-02: the D-04 offer's belt-and-braces check requires the freshly
+		// rotated key to already be registered in a fresh inventory read —
+		// track this test's real "ssh-key add" calls so the subsequent read
+		// reflects them, matching real GitHub.
+		FakeGHTrackAddedKeys(t)
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, fakeSSHDir, fakeGH), dummyTermWidth, dummyTermHeight)

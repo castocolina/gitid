@@ -873,6 +873,21 @@ func FakeGHDir(t *testing.T, mode string) (dir string, logPath string) {
 		"      add)\n" +
 		"        case \"$GITID_FAKE_GH_MODE\" in\n" +
 		"          ok|inventory-both|inventory-auth-only|inventory-fail|delete-ok)\n" +
+		// FakeGHTrackAddedKeys (opt-in, env unset by default so every other
+		// test's behavior is byte-identical to before): record the REAL
+		// pubkey blob this "add" call was given, keyed by --type, so a
+		// LATER inventory read (below) can report it as genuinely present —
+		// mirroring real GitHub, where an added key becomes visible on the
+		// next read. Without this, CR-02's belt-and-braces check in
+		// rotateDeleteOfferFor (which reads FRESH inventory and requires
+		// the CURRENT key's blob to already be registered) can never be
+		// satisfied by a static fixture that never reflects an "add".
+		"            if [ -n \"$GITID_FAKE_GH_KEYS_AUTH_FILE\" ] && echo \"$*\" | grep -q -- '--type authentication'; then\n" +
+		"              printf '{\"id\":9001,\"title\":\"fake-added-auth\",\"key\":\"%s\"}\\n' \"$(cat \"$3\" 2>/dev/null)\" >> \"$GITID_FAKE_GH_KEYS_AUTH_FILE\"\n" +
+		"            fi\n" +
+		"            if [ -n \"$GITID_FAKE_GH_KEYS_SIGNING_FILE\" ] && echo \"$*\" | grep -q -- '--type signing'; then\n" +
+		"              printf '{\"id\":9002,\"title\":\"fake-added-signing\",\"key\":\"%s\"}\\n' \"$(cat \"$3\" 2>/dev/null)\" >> \"$GITID_FAKE_GH_KEYS_SIGNING_FILE\"\n" +
+		"            fi\n" +
 		"            echo \"Added SSH key.\"; exit 0 ;;\n" +
 		"          scope-fail-signing)\n" +
 		"            if echo \"$*\" | grep -q -- '--type authentication'; then\n" +
@@ -905,9 +920,29 @@ func FakeGHDir(t *testing.T, mode string) (dir string, logPath string) {
 		"        echo \"error: could not read inventory\" >&2; exit 1 ;;\n" +
 		"      inventory-both|delete-ok)\n" +
 		"        if [ -n \"$GITID_FAKE_GH_INVENTORY_FILE\" ] && [ -r \"$GITID_FAKE_GH_INVENTORY_FILE\" ]; then\n" +
-		"          cat \"$GITID_FAKE_GH_INVENTORY_FILE\"\n" +
+		"          base=$(cat \"$GITID_FAKE_GH_INVENTORY_FILE\")\n" +
 		"        else\n" +
-		"          echo '[]'\n" +
+		"          base='[]'\n" +
+		"        fi\n" +
+		// FakeGHTrackAddedKeys' read side: merge whichever added-keys file
+		// matches the endpoint being queried into the static base fixture.
+		// extra_file stays empty (no-op, byte-identical output to before)
+		// unless the test opted in via FakeGHTrackAddedKeys.
+		"        case \"$*\" in\n" +
+		"          *user/ssh_signing_keys*) extra_file=\"$GITID_FAKE_GH_KEYS_SIGNING_FILE\" ;;\n" +
+		"          *) extra_file=\"$GITID_FAKE_GH_KEYS_AUTH_FILE\" ;;\n" +
+		"        esac\n" +
+		"        extra=\"\"\n" +
+		"        if [ -n \"$extra_file\" ] && [ -s \"$extra_file\" ]; then\n" +
+		"          extra=$(paste -sd, \"$extra_file\")\n" +
+		"        fi\n" +
+		"        base_inner=$(printf '%s' \"$base\" | sed -e 's/^\\[//' -e 's/\\]$//')\n" +
+		"        if [ -n \"$base_inner\" ] && [ -n \"$extra\" ]; then\n" +
+		"          printf '[%s,%s]\\n' \"$base_inner\" \"$extra\"\n" +
+		"        elif [ -n \"$extra\" ]; then\n" +
+		"          printf '[%s]\\n' \"$extra\"\n" +
+		"        else\n" +
+		"          printf '%s\\n' \"$base\"\n" +
 		"        fi\n" +
 		"        exit 0 ;;\n" +
 		"      inventory-auth-only)\n" +
@@ -957,6 +992,31 @@ func FakeGHInventoryFile(t *testing.T, jsonBody string) string {
 	}
 	t.Setenv("GITID_FAKE_GH_INVENTORY_FILE", path)
 	return path
+}
+
+// FakeGHTrackAddedKeys makes FakeGHDir's "ssh-key add" verb (inventory-both/
+// delete-ok modes) append each added key's REAL blob to a per-registration-
+// type state file, and makes the "api" inventory-read verb merge those
+// additions into its response — so a test that drives a REAL key rotation
+// through the fake gh shim can observe the NEW key as genuinely present in
+// a SUBSEQUENT inventory read, matching real GitHub's behavior (an added
+// key becomes visible on the next list/read). Without this, CR-02's
+// belt-and-braces check in cmd/gitid's rotateDeleteOfferFor — which reads
+// FRESH inventory and refuses the D-04 delete offer unless the CURRENT
+// key's blob is already registered for every desired registration — can
+// never be satisfied by a static inventory fixture that never reflects an
+// "add", by design (the check exists specifically to catch a registration
+// that never actually completed; a stateless fixture looks identical to
+// that failure mode unless it is made stateful here instead).
+//
+// Opt-in and env-unset by default: a test that never calls this sees
+// byte-identical fake-gh behavior to before this helper existed.
+func FakeGHTrackAddedKeys(t *testing.T) {
+	t.Helper()
+	authFile := filepath.Join(t.TempDir(), "gh-added-auth.ndjson")
+	signingFile := filepath.Join(t.TempDir(), "gh-added-signing.ndjson")
+	t.Setenv("GITID_FAKE_GH_KEYS_AUTH_FILE", authFile)
+	t.Setenv("GITID_FAKE_GH_KEYS_SIGNING_FILE", signingFile)
 }
 
 // FakeGLabDir writes the full-mode-set fake glab script and sets
