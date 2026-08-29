@@ -53,9 +53,8 @@ const (
 	paneFix
 	paneActions
 	paneKeyCeremony
+	paneRegisterKey
 )
-
-const actionMenuRows = 4
 
 // wizardProviders are the create wizard's provider suggestions.
 var wizardProviders = []string{"github.com", "gitlab.com", "bitbucket.org"}
@@ -1476,6 +1475,22 @@ func (w wizardModel) gitSpec() GitSpec {
 // dispatch a NEW Backend.UploadEligibility probe, without ever calling
 // exec.LookPath or a subprocess itself (R3: eligibility resolution stays
 // off the render path AND off this pure gate).
+// providerDisplayNameForHostname mirrors wizardProviderKeyForHostname's gate
+// but returns the display form ("GitHub"/"GitLab") the register-key pane's
+// heading renders BEFORE the async plan answers — the heading must not wait
+// on Backend.RegisterKeyPlan just to name the provider it is registering
+// with, since D-13's gate is a pure function of the identity's own SSH host.
+func providerDisplayNameForHostname(hostname string) string {
+	switch wizardProviderKeyForHostname(hostname) {
+	case "github":
+		return "GitHub"
+	case "gitlab":
+		return "GitLab"
+	default:
+		return ""
+	}
+}
+
 func wizardProviderKeyForHostname(hostname string) string {
 	host := strings.ToLower(strings.TrimSpace(hostname))
 	host = strings.TrimSuffix(host, ".")
@@ -2063,6 +2078,28 @@ type identitiesModel struct {
 	keyCeremonyPhase  string
 	keyCeremonyStage1 TestResultView
 	keyCeremonyStage2 TestResultView
+
+	// registerKeyName is the identity the register-key pane (D-08, paneRegisterKey)
+	// is open for — set by openRegisterKey and used to discard any
+	// RegisterKeyPlanMsg/UploadRunMsg that arrives after the user navigates away.
+	registerKeyName string
+	// registerKeyPlan is the async eligibility answer for registerKeyName,
+	// resolved off the render path (R3) via Backend.RegisterKeyPlan.
+	registerKeyPlan UploadEligibilityView
+	// registerKeyErr carries a RegisterKeyPlanMsg failure — fail-closed: no
+	// upload command is ever dispatched while this is set.
+	registerKeyErr string
+	// registerKeyPending gates the follow-up UploadRunMsg: only a message
+	// that arrives while this is true (and the pane/name still match) is
+	// applied, mirroring the existing KeyCommitMsg stale-guard idiom.
+	registerKeyPending bool
+	// registerKeyRun is the completed upload result for registerKeyName.
+	registerKeyRun UploadRunView
+	// registerKeyPlanLoaded distinguishes "the async plan probe has not
+	// answered yet" from a genuinely-resolved UploadEligibilityOmitted
+	// state — both are the same zero value otherwise, and the pane must not
+	// render manual-fallback copy while the probe is still in flight.
+	registerKeyPlanLoaded bool
 }
 
 // newIdentitiesModel starts on the first row of the Backend's initial
@@ -2196,6 +2233,25 @@ func (m identitiesModel) handleMsg(msg tea.Msg, s DemoState) keyResult {
 		return keyResult{model: m, note: note,
 			actions: []Action{DeleteIdentity{Name: deleted, Scope: scope, Backup: firstBackup(commit.Backups)}}}
 	}
+	if plan, ok := msg.(RegisterKeyPlanMsg); ok && m.pane == paneRegisterKey && m.registerKeyName == plan.Name {
+		m.registerKeyPlanLoaded = true
+		if plan.Err != nil {
+			m.registerKeyErr = plan.Err.Error()
+			return keyResult{model: m}
+		}
+		m.registerKeyErr = ""
+		m.registerKeyPlan = plan.View
+		if plan.View.State == UploadEligibilityReady {
+			m.registerKeyPending = true
+			return keyResult{model: m, cmd: m.backend.RunUploadForIdentity(plan.Name)}
+		}
+		return keyResult{model: m}
+	}
+	if run, ok := msg.(UploadRunMsg); ok && m.pane == paneRegisterKey && m.registerKeyPending {
+		m.registerKeyPending = false
+		m.registerKeyRun = run.View
+		return keyResult{model: m}
+	}
 	if m.pane != paneCreate {
 		return keyResult{model: m}
 	}
@@ -2299,6 +2355,8 @@ func (m identitiesModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		return m.handleActionsKey(msg, s)
 	case paneKeyCeremony:
 		return m.handleKeyCeremonyKey(msg, s)
+	case paneRegisterKey:
+		return m.handleRegisterKeyKey(msg, s)
 	}
 	return keyResult{model: m}
 }
@@ -2357,6 +2415,13 @@ func (m identitiesModel) handleDetailKey(msg tea.KeyMsg, s DemoState) keyResult 
 		}
 		m = m.openDeleteChoice(sel)
 		return keyResult{model: m, handled: true}
+	case "u":
+		if !ok {
+			return keyResult{model: m, handled: true}
+		}
+		var cmd tea.Cmd
+		m, cmd = m.openRegisterKey(sel)
+		return keyResult{model: m, handled: true, cmd: cmd}
 	case "h":
 		if !ok {
 			return keyResult{model: m, handled: true}
@@ -2462,26 +2527,59 @@ func (m identitiesModel) openKeyCeremony(sel DemoIdentity) identitiesModel {
 	return m
 }
 
-// handleActionsKey drives the four-row action menu.
+// openRegisterKey opens the register-key pane (D-08) for sel and dispatches
+// the async plan probe (R3: never resolved on the render path). Both the
+// detail shortcut (`u`) and the action-menu register-key row call this.
+func (m identitiesModel) openRegisterKey(sel DemoIdentity) (identitiesModel, tea.Cmd) {
+	m.pane = paneRegisterKey
+	m.registerKeyName = sel.Name
+	m.registerKeyPlan = UploadEligibilityView{}
+	m.registerKeyErr = ""
+	m.registerKeyPending = false
+	m.registerKeyRun = UploadRunView{}
+	m.registerKeyPlanLoaded = false
+	return m, m.backend.RegisterKeyPlan(sel.Name)
+}
+
+// handleRegisterKeyKey drives the register-key pane. It handles only Esc —
+// the pane's plan/run resolve asynchronously with no other user keystroke
+// (R13: registration runs on open).
+func (m identitiesModel) handleRegisterKeyKey(msg tea.KeyMsg, _ DemoState) keyResult {
+	switch msg.String() {
+	case "esc":
+		m.pane = paneDetail
+		return keyResult{model: m, handled: true}
+	}
+	return keyResult{model: m, handled: true}
+}
+
+// handleActionsKey drives the action menu, whose row COUNT is derived from
+// len(actionMenuLabels()) — never a separately-maintained constant
+// (09-RESEARCH.md Pitfall 3: a hand-maintained count and the label list are
+// exactly the kind of parallel value that desyncs when one is edited and
+// the other is not; adding the register-key row this way makes that
+// impossible).
 func (m identitiesModel) handleActionsKey(msg tea.KeyMsg, s DemoState) keyResult {
 	sel, ok := m.selectedIdentity(s)
+	rows := len(actionMenuLabels())
 	switch msg.String() {
 	case "esc":
 		m.pane = paneDetail
 		m.actionsErr = ""
 		return keyResult{model: m, handled: true}
 	case "down", "tab":
-		m.actionsFocus = (m.actionsFocus + 1) % actionMenuRows
+		m.actionsFocus = (m.actionsFocus + 1) % rows
 		m.actionsErr = ""
 		return keyResult{model: m, handled: true}
 	case "up", "shift+tab":
-		m.actionsFocus = (m.actionsFocus + actionMenuRows - 1) % actionMenuRows
+		m.actionsFocus = (m.actionsFocus + rows - 1) % rows
 		m.actionsErr = ""
 		return keyResult{model: m, handled: true}
 	case "enter":
 		if !ok {
 			return keyResult{model: m, handled: true}
 		}
+		var cmd tea.Cmd
 		switch m.actionsFocus {
 		case 0:
 			m.pane = paneDetail
@@ -2492,8 +2590,10 @@ func (m identitiesModel) handleActionsKey(msg tea.KeyMsg, s DemoState) keyResult
 			m = m.openKeyCeremony(sel)
 		case 3:
 			m = m.openDeleteChoice(sel)
+		case 4:
+			m, cmd = m.openRegisterKey(sel)
 		}
-		return keyResult{model: m, handled: true}
+		return keyResult{model: m, cmd: cmd, handled: true}
 	}
 	return keyResult{model: m, handled: true}
 }
@@ -2569,6 +2669,7 @@ func actionMenuLabels() []string {
 		IdentityManagerActionClone,
 		IdentityManagerActionNewKey,
 		IdentityManagerActionDelete,
+		IdentityManagerActionRegisterKey,
 	}
 }
 
@@ -4180,6 +4281,38 @@ func wizardChordHint(step int) string {
 // uploadRunHasContent reports whether run carries anything worth a row:
 // per-key results, the collapsed already-complete line, the inventory-
 // degraded notice, or the manual-fallback block.
+// renderRegisterKey renders the D-08 register-key pane: the heading is a
+// pure function of sel's own SSH host (never waits on the async plan), then
+// the error / manual-fallback / running-or-result body per the resolved
+// eligibility state.
+func (m identitiesModel) renderRegisterKey(sel DemoIdentity, width int) string {
+	provider := providerDisplayNameForHostname(sel.SSHHost)
+	if provider == "" && m.registerKeyPlan.ProviderName != "" {
+		provider = m.registerKeyPlan.ProviderName
+	}
+	var b strings.Builder
+	b.WriteString(" " + styleBold.Render(fmt.Sprintf(RegisterKeyModalHeadingFmt, sel.Name, provider)) + "\n\n")
+	if m.registerKeyErr != "" {
+		b.WriteString(" " + styleError.Render("✗ "+m.registerKeyErr) + "\n")
+		return b.String()
+	}
+	if !m.registerKeyPlanLoaded {
+		b.WriteString(" " + styleFaint.Render("Checking eligibility…") + "\n")
+		return b.String()
+	}
+	if m.registerKeyPlan.State != UploadEligibilityReady {
+		b.WriteString(" " + styleBold.Render(UploadManualHeading) + "\n")
+		b.WriteString(m.backend.UploadInstructions(sel.SSHHost))
+		return b.String()
+	}
+	if uploadRunHasContent(m.registerKeyRun) {
+		b.WriteString(renderUploadRun(m.registerKeyRun, m.registerKeyPlan.ProviderName, width))
+		return b.String()
+	}
+	b.WriteString(" " + styleFaint.Render("Registering…") + "\n")
+	return b.String()
+}
+
 func uploadRunHasContent(run UploadRunView) bool {
 	return len(run.Rows) > 0 || run.AlreadyComplete || run.InventoryDegraded || run.ManualFallback != ""
 }
@@ -4817,6 +4950,10 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 		pane = m.renderKeyCeremony(sel)
 		crumbs = []string{sel.Name, "Key"}
 		status = "Esc returns to the identity detail without writing anything."
+	case paneRegisterKey:
+		pane = m.renderRegisterKey(sel, detailWidth)
+		crumbs = []string{sel.Name, "Register key"}
+		status = "Esc returns to the identity detail without writing anything — registration runs on open."
 	}
 
 	sidebar := m.renderSidebar(s, sbWidth, m.pane != paneDetail)

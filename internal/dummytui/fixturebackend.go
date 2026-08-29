@@ -504,6 +504,66 @@ func (FixtureBackend) UploadInstructions(provider string) string {
 	return "Upload your public key to " + provider + " manually — see its SSH key settings page."
 }
 
+// identityManagerSSHHost resolves name's fixture SSHHost from
+// IdentityManagerRows, or "" if name is unknown — the same lookup
+// RegisterKeyPlan and RunUploadForIdentity both need.
+func identityManagerSSHHost(name string) string {
+	for _, row := range IdentityManagerRows {
+		if row.Name == name {
+			return row.SSHHost
+		}
+	}
+	return ""
+}
+
+// RegisterKeyPlan answers the D-08 register-key pane's eligibility probe
+// with the same frozen demo shape UploadEligibility uses, keyed by the
+// identity's fixture SSHHost rather than a form's live hostname.
+func (FixtureBackend) RegisterKeyPlan(name string) tea.Cmd {
+	host := identityManagerSSHHost(name)
+	return func() tea.Msg {
+		switch {
+		case strings.Contains(host, "github"):
+			return tuikit.RegisterKeyPlanMsg{Name: name, View: tuikit.UploadEligibilityView{
+				State: tuikit.UploadEligibilityReady, ProviderName: "GitHub", ToolName: "gh", Hostname: "github.com",
+			}}
+		case strings.Contains(host, "gitlab"):
+			return tuikit.RegisterKeyPlanMsg{Name: name, View: tuikit.UploadEligibilityView{
+				State: tuikit.UploadEligibilityUnauth, ProviderName: "GitLab", ToolName: "glab", Hostname: "gitlab.com",
+			}}
+		default:
+			return tuikit.RegisterKeyPlanMsg{Name: name, View: tuikit.UploadEligibilityView{State: tuikit.UploadEligibilityOmitted}}
+		}
+	}
+}
+
+// RunUploadForIdentity "runs" the D-08 pane's upload beat for the named
+// identity's own key, mirroring RunUpload's brief-tick, hostname-driven
+// demo shape.
+func (b FixtureBackend) RunUploadForIdentity(name string) tea.Cmd {
+	host := identityManagerSSHHost(name)
+	title := fmt.Sprintf(tuikit.UploadKeyTitleFmt, name, "demo-machine")
+	keyPath := "~/.ssh/id_ed25519_" + name
+	authCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title %s --type authentication", keyPath, title)
+	signCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title %s --type signing", keyPath, title)
+	glabCmd := fmt.Sprintf("/usr/local/bin/glab ssh-key add %s.pub -t %s --usage-type auth_and_signing", keyPath, title)
+
+	var view tuikit.UploadRunView
+	if strings.Contains(host, "gitlab") {
+		view = tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{
+			{Registration: tuikit.UploadRegistrationCombined, Label: tuikit.UploadRegistrationLabelCombined, Command: glabCmd, Outcome: tuikit.UploadRowUploaded},
+		}}
+	} else {
+		view = tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{
+			{Registration: tuikit.UploadRegistrationAuthentication, Label: tuikit.UploadRegistrationLabelAuth, Command: authCmd, Outcome: tuikit.UploadRowUploaded},
+			{Registration: tuikit.UploadRegistrationSigning, Label: tuikit.UploadRegistrationLabelSigning, Command: signCmd, Outcome: tuikit.UploadRowUploaded},
+		}}
+	}
+	return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
+		return tuikit.UploadRunMsg{View: view}
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Global SSH options (plan 06-01) — the Options sub-tab seam, projected from
 // the frozen fixture so the demo's rendering stays byte-identical.

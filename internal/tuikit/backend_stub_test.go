@@ -568,6 +568,35 @@ func (stubBackend) UploadInstructions(provider string) string {
 	return "Upload your public key to " + provider + " manually."
 }
 
+func (stubBackend) RegisterKeyPlan(name string) tea.Cmd {
+	return func() tea.Msg {
+		host := ""
+		for _, row := range stubIdentityRows {
+			if row.Name == name {
+				host = row.SSHHost
+				break
+			}
+		}
+		if strings.Contains(host, "github") {
+			return RegisterKeyPlanMsg{Name: name, View: UploadEligibilityView{
+				State: UploadEligibilityReady, ProviderName: "GitHub", ToolName: "gh", Hostname: "github.com",
+			}}
+		}
+		return RegisterKeyPlanMsg{Name: name, View: UploadEligibilityView{State: UploadEligibilityOmitted}}
+	}
+}
+
+func (b stubBackend) RunUploadForIdentity(name string) tea.Cmd {
+	return func() tea.Msg {
+		return UploadRunMsg{View: UploadRunView{Rows: []UploadResultRow{{
+			Registration: UploadRegistrationAuthentication,
+			Label:        UploadRegistrationLabelAuth,
+			Command:      "gh ssh-key add ~/.ssh/id_ed25519_" + name + ".pub --title gitid: " + name + " --type authentication",
+			Outcome:      UploadRowUploaded,
+		}}}}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Global SSH (plan 06-01) — the Options-sub-tab seam.
 // ---------------------------------------------------------------------------

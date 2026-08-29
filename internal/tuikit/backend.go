@@ -551,6 +551,21 @@ type Backend interface {
 	// internal/upload and never carries a second copy of the instruction
 	// text (09-UI-SPEC.md requires byte-identical reuse).
 	UploadInstructions(provider string) string
+
+	// RegisterKeyPlan resolves the D-08 register-key pane's eligibility
+	// answer for the named identity — RESOLVED ASYNCHRONOUSLY (R3), never on
+	// the render path, mirroring UploadEligibility. The delivered
+	// RegisterKeyPlanMsg carries name so a reply arriving after the pane has
+	// moved to a different identity can be discarded.
+	RegisterKeyPlan(name string) tea.Cmd
+
+	// RunUploadForIdentity dispatches the confirmed autonomous upload beat
+	// for the named (already-existing) identity's own key off the update
+	// loop — async, like RunUpload — and MUST eventually deliver an
+	// UploadRunMsg. It never returns an error that could stop the pane:
+	// every failure is reported as a failed UploadResultRow inside the
+	// delivered view (D-03/D-11 — upload never gates).
+	RunUploadForIdentity(name string) tea.Cmd
 }
 
 // WizardStageMsg completes a create-wizard test stage. Backends deliver it

@@ -1468,6 +1468,66 @@ func (b *realBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
 	}
 }
 
+// RegisterKeyPlan resolves the D-08 register-key pane's eligibility answer
+// for an EXISTING identity, looked up by name from the same b.accounts()
+// list every other identity seam reads (findAccount) — the async logic
+// otherwise mirrors UploadEligibility exactly (R3, R18), just keyed by
+// identity name instead of a live form hostname, so there is no separate
+// per-provider memo here: a register-key probe is a one-shot pane open, not
+// a per-keystroke wizard re-check.
+func (b *realBackend) RegisterKeyPlan(name string) tea.Cmd {
+	return func() tea.Msg {
+		acct, ok := b.findAccount(name)
+		if !ok {
+			return tuikit.RegisterKeyPlanMsg{Name: name, Err: fmt.Errorf("identity %q not found", name)}
+		}
+		provider, canonicalHost := uploader.ProviderForHostname(acct.Hostname)
+		if provider == "" {
+			return tuikit.RegisterKeyPlanMsg{Name: name, View: tuikit.UploadEligibilityView{
+				State: tuikit.UploadEligibilityOmitted,
+			}}
+		}
+		view := tuikit.UploadEligibilityView{
+			ProviderName: providerDisplayName(provider),
+			ToolName:     providerToolName(provider),
+			Hostname:     canonicalHost,
+		}
+		_, toolPath, status := uploader.DetectFor(provider, b.uploaderDeps)
+		switch status {
+		case uploader.AuthToolNotFound:
+			view.State = tuikit.UploadEligibilityDisabled
+		default:
+			if uploader.AuthCheck(toolPath, b.uploaderDeps, canonicalHost) == uploader.AuthAuthenticated {
+				view.State = tuikit.UploadEligibilityReady
+			} else {
+				view.State = tuikit.UploadEligibilityUnauth
+			}
+		}
+		return tuikit.RegisterKeyPlanMsg{Name: name, View: view}
+	}
+}
+
+// RunUploadForIdentity dispatches the D-08 pane's confirmed upload beat for
+// an EXISTING identity's own already-on-disk key. It composes the SAME
+// upload_run.go orchestration the CLI's register-key verb uses
+// (uploadRequestForAccount + runUploadFor) — there is exactly one
+// implementation of the upload decision logic, and this method contains
+// none of it, mirroring RunUpload's own doc comment.
+func (b *realBackend) RunUploadForIdentity(name string) tea.Cmd {
+	return func() (msg tea.Msg) {
+		acct, ok := b.findAccount(name)
+		if !ok {
+			return tuikit.UploadRunMsg{View: uploadFailureView(fmt.Sprintf("identity %q not found", name), "")}
+		}
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				msg = tuikit.UploadRunMsg{View: uploadFailureView("gitid internal defect: "+uploader.RedactCLIOutput(fmt.Sprint(recovered), b.home, 58), acct.Hostname)}
+			}
+		}()
+		return tuikit.UploadRunMsg{View: b.runUploadFor(uploadRequestForAccount(acct, b.home))}
+	}
+}
+
 // UploadInstructions returns the manual-fallback text, byte-identical to
 // internal/upload.Instructions(provider) — this method exists so
 // internal/tuikit never imports internal/upload directly (09-UI-SPEC.md's

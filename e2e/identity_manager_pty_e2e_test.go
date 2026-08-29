@@ -317,10 +317,11 @@ var identityManagerFieldSubstrings = map[string]string{
 	"git_section_absent_note": "Git not configured — no fabricated values shown.",
 	"per_identity_health":     "Findings (",
 	// action-menu
-	"action_view_detail": "View SSH-first detail",
-	"action_clone":       "Clone (c)",
-	"action_new_key":     "Generate new key",
-	"action_delete":      "Delete (d)",
+	"action_view_detail":  "View SSH-first detail",
+	"action_clone":        "Clone (c)",
+	"action_new_key":      "Generate new key",
+	"action_delete":       "Delete (d)",
+	"action_register_key": "Register key (u)",
 	// delete-choice
 	"delete_choice_git_only":   "Delete Git identity only",
 	"delete_choice_everything": "Delete everything (SSH + Git + key)",

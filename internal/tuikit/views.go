@@ -734,3 +734,15 @@ type UploadStartedMsg struct {
 type UploadRunMsg struct {
 	View UploadRunView
 }
+
+// RegisterKeyPlanMsg completes the asynchronous eligibility probe
+// Backend.RegisterKeyPlan dispatches for the D-08 register-key pane. Name
+// carries the identity the probe was resolved for, so a reply arriving
+// after the user has navigated to a different identity can be discarded
+// (mirrors the existing KeyCommitMsg stale-guard idiom). A non-nil Err
+// fails closed: the pane renders the error and never dispatches an upload.
+type RegisterKeyPlanMsg struct {
+	Name string
+	View UploadEligibilityView
+	Err  error
+}
