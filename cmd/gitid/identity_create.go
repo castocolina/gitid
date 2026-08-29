@@ -59,6 +59,7 @@ type identityCreateFlags struct {
 	ForceSSH  bool
 	Yes       bool
 	DryRun    bool
+	NoUpload  bool
 }
 
 // newIdentityCreateVerb builds the `create` verb spec.
@@ -90,6 +91,7 @@ func newIdentityCreateVerb() identityVerb {
 			fs.BoolVar(&flags.ForceSSH, "force-ssh", false, "write the machine-global insteadOf rewrite so HTTPS clone URLs for this provider resolve over SSH (default: off — same toggle the TUI exposes)")
 			fs.BoolVar(&flags.Yes, "yes", false, "skip the confirmation prompt; the timestamped backup is still taken unconditionally")
 			fs.BoolVar(&flags.DryRun, "dry-run", false, "run both connectivity stages, print the artifact previews, and exit 0 without writing")
+			fs.BoolVar(&flags.NoUpload, "no-upload", false, noUploadFlagHelp)
 		},
 		run: func(cmd *cobra.Command, _ []string) error {
 			return runIdentityCreate(cmd, flags, isTTY(os.Stdin.Fd()), isTTY(os.Stdout.Fd()))
@@ -140,7 +142,7 @@ func runIdentityCreate(cmd *cobra.Command, flags identityCreateFlags, stdinTTY, 
 	if err != nil {
 		return err
 	}
-	return runCreateCeremony(cmd, b, in, id, flags.Yes, flags.DryRun, stdinTTY, stdoutTTY)
+	return runCreateCeremony(cmd, b, in, id, flags.Yes, flags.DryRun, flags.NoUpload, stdinTTY, stdoutTTY)
 }
 
 // createInputFromCreateFlags derives the CreateInput + DemoIdentity a create
@@ -342,9 +344,9 @@ var commitCreateInto = func(b *realBackend, in identity.CreateInput, staged iden
 // the two connectivity stages, the store gate, the lifecycle write, and the
 // backup receipt. A dry run runs the stages, prints outcomes + previews,
 // cleans up the staged key, and stops.
-func runCreateCeremony(cmd *cobra.Command, b *realBackend, in identity.CreateInput, id tuikit.DemoIdentity, yes, dryRun bool, stdinTTY, stdoutTTY bool) error {
+func runCreateCeremony(cmd *cobra.Command, b *realBackend, in identity.CreateInput, id tuikit.DemoIdentity, yes, dryRun, noUpload bool, stdinTTY, stdoutTTY bool) error {
 	if dryRun {
-		return runCreateDryRun(cmd, b, in, id)
+		return runCreateDryRun(cmd, b, in, id, noUpload)
 	}
 
 	policy, err := confirmationPolicyFrom(cmd, "create "+in.Name, stdinTTY, stdoutTTY, yes, func(string) (bool, error) {
@@ -390,6 +392,13 @@ func runCreateCeremony(cmd *cobra.Command, b *realBackend, in identity.CreateInp
 		fmt.Fprintf(cmd.OutOrStdout(), "backed up -> %s\n", b.displayPath(bak)) //nolint:errcheck // best-effort stdout
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "created %q (alias %s)\n", in.Name, in.Alias) //nolint:errcheck // best-effort stdout
+
+	// D-03/D-11: the upload step never alters this function's control flow
+	// or its returned error — the exit code is decided solely by the
+	// PRIMARY operation (create's own write, already committed above).
+	// staged.FinalPubPath now exists on disk: commitCreateInto just wrote
+	// it, so runUploadFor can read it directly with no further staging.
+	runUploadStep(cmd.OutOrStdout(), b, uploadRequest{Identity: in.Name, Hostname: in.Hostname, PubPath: staged.FinalPubPath}, noUpload, false)
 	return nil
 }
 
@@ -412,7 +421,7 @@ func createPreviewLine(in identity.CreateInput, stage1, stage2 tuikit.WizardStag
 // outcomes and the four artifact previews, cleans up the staged key, and
 // exits 0 having written nothing under ~/.ssh or ~/.gitconfig. The staging
 // directory is left clean (the per-verb dry-run contract row for create/clone).
-func runCreateDryRun(cmd *cobra.Command, b *realBackend, in identity.CreateInput, id tuikit.DemoIdentity) error {
+func runCreateDryRun(cmd *cobra.Command, b *realBackend, in identity.CreateInput, id tuikit.DemoIdentity, noUpload bool) error {
 	msg1, msg2, err := cliPreWriteGate(b, in, id)
 	if err != nil {
 		return err
@@ -455,6 +464,19 @@ func runCreateDryRun(cmd *cobra.Command, b *realBackend, in identity.CreateInput
 		if line, lerr := keygen.AllowedSignersLine(in.GitEmail, staged.PubLine); lerr == nil {
 			fmt.Fprintf(cmd.OutOrStdout(), "  allowed_signers:\n  %s\n", line) //nolint:errcheck // best-effort stdout
 		}
+	}
+
+	// R11/D-06: the upload preview is ADDITIONAL dry-run output, printed
+	// BEFORE cleanup so a real (staged, never-final) .pub file exists for
+	// planUpload to read — the same temp-sibling pattern
+	// uploadRequestFromSpec uses for the TUI wizard's generate path
+	// (CR-02/CR-08: the real ~/.ssh stays untouched either way).
+	if staged.PubLine != "" {
+		tempPub := staged.TempPrivatePath + ".pub"
+		if !b.deps.PubExists(tempPub) {
+			_ = b.deps.WritePub(tempPub, staged.PubLine) //nolint:errcheck // best-effort dry-run preview; a write failure here just skips the upload preview
+		}
+		runUploadStep(cmd.OutOrStdout(), b, uploadRequest{Identity: in.Name, Hostname: in.Hostname, PubPath: tempPub}, noUpload, true)
 	}
 
 	// The dry-run contract row: the staging directory is cleaned up and

@@ -942,7 +942,12 @@ func TestIdentityKeyVerbDryRunNoYesWritesNothing(t *testing.T) {
 			}
 
 			cmd, out, _ := cliTestCmd()
-			if err := runIdentityKeyVerb(cmd, "work", verb, identityKeyFlags{DryRun: true}, false, false); err != nil {
+			// NoUpload: true — this test asserts the dry run writes nothing
+			// under HOME; it is not about the 09-05-PLAN.md Task 3 upload
+			// preview, which would otherwise reach the REAL uploaderDeps
+			// (no fake installed here) and shell out to a real gh/glab if
+			// one happens to be on this machine's PATH.
+			if err := runIdentityKeyVerb(cmd, "work", verb, identityKeyFlags{DryRun: true, NoUpload: true}, false, false); err != nil {
 				t.Fatalf("dry run without --yes must exit zero: %v", err)
 			}
 			if !strings.Contains(out.String(), "dry run: would "+verb) {
@@ -1096,7 +1101,13 @@ func TestIdentityRotateAndRepairRecordingDoubleInvokedExactlyOnce(t *testing.T) 
 			}
 
 			cmd, _, _ := cliTestCmd()
-			if err := runIdentityKeyVerb(cmd, "work", verb, identityKeyFlags{Yes: true}, false, false); err != nil {
+			// NoUpload: true — seedDeleteFixture leaves a REAL key on disk,
+			// so without this the 09-05-PLAN.md Task 3 upload step would
+			// reach the REAL uploaderDeps (no fake installed here) and
+			// shell out to a real gh/glab if one happens to be on this
+			// machine's PATH; this test is about the lifecycle recording
+			// double, not upload.
+			if err := runIdentityKeyVerb(cmd, "work", verb, identityKeyFlags{Yes: true, NoUpload: true}, false, false); err != nil {
 				t.Fatalf("%s --yes: %v", verb, err)
 			}
 			if calls != 1 {
@@ -1129,7 +1140,7 @@ func TestIdentityCreateRecordingDoubleInvokedExactlyOnce(t *testing.T) {
 
 	cmd, out, _ := cliTestCmd()
 	err := runIdentityCreate(cmd, identityCreateFlags{
-		Name: "work", Provider: "github.com", GitName: "Work Worker", GitEmail: "work@example.com", Yes: true,
+		Name: "work", Provider: "github.com", GitName: "Work Worker", GitEmail: "work@example.com", Yes: true, NoUpload: true,
 	}, false, false)
 	if err != nil {
 		t.Fatalf("identity create --yes: %v", err)
@@ -1165,7 +1176,7 @@ func TestIdentityCloneRecordingDoubleInvokedExactlyOnce(t *testing.T) {
 	}
 
 	cmd, out, _ := cliTestCmd()
-	err := runIdentityClone(cmd, "work", identityCloneFlags{Name: "work-clone", Yes: true}, false, false)
+	err := runIdentityClone(cmd, "work", identityCloneFlags{Name: "work-clone", Yes: true, NoUpload: true}, false, false)
 	if err != nil {
 		t.Fatalf("identity clone work --name work-clone --yes: %v", err)
 	}
@@ -1418,7 +1429,7 @@ func TestIdentityCreateDryRunPrintsGateOutcomesAndPreviews(t *testing.T) {
 
 	cmd, out, _ := cliTestCmd()
 	err := runIdentityCreate(cmd, identityCreateFlags{
-		Name: "work", Provider: "github.com", GitName: "Work Worker", GitEmail: "work@example.com", DryRun: true,
+		Name: "work", Provider: "github.com", GitName: "Work Worker", GitEmail: "work@example.com", DryRun: true, NoUpload: true,
 	}, false, false)
 	if err != nil {
 		t.Fatalf("identity create --dry-run: %v", err)
@@ -1455,7 +1466,7 @@ func TestIdentityCloneDryRunPrintsGateOutcomesAndPreviews(t *testing.T) {
 	}
 
 	cmd, out, _ := cliTestCmd()
-	err := runIdentityClone(cmd, "work", identityCloneFlags{Name: "work-clone", DryRun: true}, false, false)
+	err := runIdentityClone(cmd, "work", identityCloneFlags{Name: "work-clone", DryRun: true, NoUpload: true}, false, false)
 	if err != nil {
 		t.Fatalf("identity clone --dry-run: %v", err)
 	}
@@ -1885,7 +1896,7 @@ func TestParityMatrixRequirementCoverage(t *testing.T) {
 // every write verb plus the reads list and show.
 func TestParityMatrixDryRunContractTable(t *testing.T) {
 	_, dryRunVerbs := parseParityMatrix(t)
-	want := map[string]bool{"create": true, "clone": true, "rotate": true, "new-key": true, "delete": true, "list": true, "show": true, "ssh options apply": true, "ssh storage migrate": true}
+	want := map[string]bool{"create": true, "clone": true, "rotate": true, "new-key": true, "register-key": true, "delete": true, "list": true, "show": true, "ssh options apply": true, "ssh storage migrate": true}
 	got := map[string]bool{}
 	for _, cell := range dryRunVerbs {
 		for _, tok := range strings.Split(cell, ",") {

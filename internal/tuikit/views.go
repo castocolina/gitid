@@ -710,6 +710,14 @@ type UploadRunView struct {
 	ManualFallback    string
 	Skipped           bool
 	AlreadyComplete   bool
+	// ProviderName is the display name (e.g. "GitHub") the degraded and
+	// already-complete notes format themselves with. The wizard's own
+	// render path (identities.go) reads its provider name from the
+	// separate uploadEligibility field it already carries; this field
+	// exists so a caller with ONLY a UploadRunView in hand — the CLI's
+	// printUploadOutcome (09-05-PLAN.md Task 1) — can render the same two
+	// frozen lines without a second source of truth.
+	ProviderName string
 }
 
 // UploadStartedMsg is delivered before any provider registration command runs.

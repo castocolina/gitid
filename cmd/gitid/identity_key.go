@@ -25,8 +25,9 @@ import (
 
 // identityKeyFlags carries the rotate/new-key flags as a plain struct.
 type identityKeyFlags struct {
-	Yes    bool
-	DryRun bool
+	Yes      bool
+	DryRun   bool
+	NoUpload bool
 }
 
 // newIdentityRotateVerb builds the `rotate <name>` verb spec.
@@ -40,6 +41,7 @@ func newIdentityRotateVerb() identityVerb {
 		bindFlags: func(fs *pflag.FlagSet) {
 			fs.BoolVar(&flags.Yes, "yes", false, "skip the confirmation prompt; the timestamped backup and the key archive are still taken unconditionally")
 			fs.BoolVar(&flags.DryRun, "dry-run", false, "print the ceremony plan, test the CURRENT key, and exit 0 without generating or writing anything")
+			fs.BoolVar(&flags.NoUpload, "no-upload", false, noUploadFlagHelp)
 		},
 		run: func(cmd *cobra.Command, args []string) error {
 			return runIdentityKeyVerb(cmd, args[0], "rotate", flags, termIsStdinTTY(), termIsStdoutTTY())
@@ -58,6 +60,7 @@ func newIdentityNewKeyVerb() identityVerb {
 		bindFlags: func(fs *pflag.FlagSet) {
 			fs.BoolVar(&flags.Yes, "yes", false, "skip the confirmation prompt; the timestamped backup is still taken unconditionally")
 			fs.BoolVar(&flags.DryRun, "dry-run", false, "print the ceremony plan, test the CURRENT key, and exit 0 without generating or writing anything")
+			fs.BoolVar(&flags.NoUpload, "no-upload", false, noUploadFlagHelp)
 		},
 		run: func(cmd *cobra.Command, args []string) error {
 			return runIdentityKeyVerb(cmd, args[0], "new-key", flags, termIsStdinTTY(), termIsStdoutTTY())
@@ -102,7 +105,7 @@ func runIdentityKeyVerb(cmd *cobra.Command, name, verb string, flags identityKey
 			return err
 		}
 		b := newBackendForHome(home)
-		return printKeyCeremonyDryRun(cmd.OutOrStdout(), b, name, verb)
+		return printKeyCeremonyDryRun(cmd.OutOrStdout(), b, name, verb, flags.NoUpload)
 	}
 
 	// The authorization gate runs BEFORE a backend is even built or a policy
@@ -150,6 +153,17 @@ func runIdentityKeyVerb(cmd *cobra.Command, name, verb string, flags identityKey
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s took effect for %q\n", verb, name) //nolint:errcheck // best-effort stdout
 
+	// D-05/D-03/D-11: the upload step runs AFTER the key material exists
+	// (the lifecycle write above just committed it) and BEFORE the
+	// post-write re-test below — mirroring the wizard's own ordering (D-05
+	// places upload before the test loop so a fresh key can genuinely pass
+	// on the first probe) — and it never alters this function's control
+	// flow or its returned error: the exit code is decided solely by the
+	// re-test outcome, exactly as it would be with the upload disabled.
+	if acct, found := b.findAccount(name); found {
+		runUploadStep(cmd.OutOrStdout(), b, uploadRequestForAccount(acct, b.home), flags.NoUpload, false)
+	}
+
 	// The process exit code is driven by the post-write re-test outcome
 	// (D-02): a hard Failure names the outcome and exits non-zero; PASS and
 	// reachable-not-uploaded are both accepted landing states (a fresh key is
@@ -167,7 +181,7 @@ func runIdentityKeyVerb(cmd *cobra.Command, name, verb string, flags identityKey
 // (review R2-13). It generates NO key material, stages nothing, archives
 // nothing, and writes nothing. The output names what was actually tested and
 // carries the frozen caveat sentence.
-func printKeyCeremonyDryRun(w io.Writer, b *realBackend, name, verb string) error {
+func printKeyCeremonyDryRun(w io.Writer, b *realBackend, name, verb string, noUpload bool) error {
 	acct, found := b.findAccount(name)
 	if !found {
 		return fmt.Errorf("gitid: no such identity: %q", name)
@@ -195,6 +209,14 @@ func printKeyCeremonyDryRun(w io.Writer, b *realBackend, name, verb string) erro
 	}
 	// R2-13: the caveat is part of the output, not just the docs.
 	fmt.Fprintf(w, "  %s\n", rotateDryRunCaveat) //nolint:errcheck // best-effort stdout
+
+	// R11/D-06: the upload preview is ADDITIONAL dry-run output. rotate/
+	// new-key's dry run generates no new key, so the preview is against the
+	// identity's CURRENT public key (the only real .pub file that exists
+	// pre-write) when one is present.
+	if fileExists(acct.PubPath) {
+		runUploadStep(w, b, uploadRequestForAccount(acct, b.home), noUpload, true)
+	}
 	return nil
 }
 

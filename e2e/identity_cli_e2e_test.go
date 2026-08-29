@@ -821,3 +821,197 @@ func TestIdentityCLI_PostWriteReTestFailureExitsNonZero(t *testing.T) {
 		t.Fatal("post-write re-test failure did not exercise a landed rotation")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// 09-05-PLAN.md Task 3 — headless CLI upload, against the fake gh shims.
+// Every case here builds its child environment through e2eEnv (plan 09-02
+// Task 2), passing the fake ssh/gh directories as PATH prefixes — no case
+// composes a PATH of its own (R1). TestEveryE2EChildEnvIsHermetic enforces
+// this mechanically.
+// ---------------------------------------------------------------------------
+
+// runIdentityUploadCLI runs args against home with BOTH a fake ssh and a
+// fake gh directory as e2eEnv PATH prefixes, returning combined stdout.
+// Unlike runIdentityCLI (one prefix), this plan's upload cases always need
+// two fake CLIs on PATH.
+func runIdentityUploadCLI(t *testing.T, ctx context.Context, bin, home, fakeSSH, fakeGH string, wantExit0 bool, args ...string) string {
+	t.Helper()
+	cmd := exec.CommandContext(ctx, bin, args...) //nolint:gosec // bin from BuildBinary; fixed test literals
+	env, _ := e2eEnv(t, home, fakeSSH, fakeGH)
+	cmd.Env = env
+	out, err := cmd.CombinedOutput()
+	if wantExit0 && err != nil {
+		t.Fatalf("gitid %s failed: %v\noutput:\n%s", strings.Join(args, " "), err, out)
+	}
+	if !wantExit0 && err == nil {
+		t.Fatalf("gitid %s succeeded, want a non-zero exit\noutput:\n%s", strings.Join(args, " "), out)
+	}
+	return string(out)
+}
+
+// TestIdentityCLI_CreateUploadsAutonomously asserts a headless `gitid create`
+// against an authenticated fake gh registers the key autonomously: exit 0,
+// the announce line and result rows in stdout, and the recorded argv log
+// showing one auth probe with the hostname flag plus the ssh-key add
+// invocation(s) whose key-file operand ends in .pub.
+func TestIdentityCLI_CreateUploadsAutonomously(t *testing.T) {
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+	fakeGH, ghLog := FakeGHDir(t, "ok")
+	home := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	out := runIdentityUploadCLI(t, ctx, bin, home, fakeSSH, fakeGH, true,
+		"create", "--name", "acme", "--provider", "github.com",
+		"--git-name", "Acme User", "--git-email", "acme@example.com", "--yes")
+
+	if !strings.Contains(out, "Running:") || !strings.Contains(out, "key registered") {
+		t.Fatalf("expected the announce line and a result row in output:\n%s", out)
+	}
+	// Unlike the TUI wizard's checkbox (which resolves eligibility via a
+	// separate, memoized UploadEligibility auth probe before RunUpload ever
+	// runs), the CLI's derived-autonomous-upload path has no checkbox to
+	// gate — runUploadFor goes straight to detection, the inventory dedupe
+	// read, and the upload itself, so no "auth status" entry is expected
+	// here.
+	log := ReadFakeCLILog(t, ghLog)
+	sawAdd := false
+	for _, entry := range log {
+		if strings.Contains(entry, "ssh-key add") {
+			sawAdd = true
+			argv := strings.Fields(entry)
+			if len(argv) < 3 || !strings.HasSuffix(argv[2], ".pub") {
+				t.Errorf("ssh-key add argv = %q, want its key-file operand to end in .pub", entry)
+			}
+		}
+	}
+	if !sawAdd {
+		t.Errorf("expected at least one ssh-key add invocation; log=%v", log)
+	}
+}
+
+// TestIdentityCLI_CreateNoUploadSkips asserts `--no-upload` on create exits
+// 0, prints the skip note and the manual instructions, and records ZERO
+// entries in the fake gh's argv log.
+func TestIdentityCLI_CreateNoUploadSkips(t *testing.T) {
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+	fakeGH, ghLog := FakeGHDir(t, "ok")
+	home := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	out := runIdentityUploadCLI(t, ctx, bin, home, fakeSSH, fakeGH, true,
+		"create", "--name", "acme", "--provider", "github.com",
+		"--git-name", "Acme User", "--git-email", "acme@example.com", "--yes", "--no-upload")
+
+	if !strings.Contains(out, "Auto-upload skipped (--no-upload).") {
+		t.Errorf("missing the frozen skip note; output:\n%s", out)
+	}
+	if !strings.Contains(out, "Auto-registration wasn't available") && !strings.Contains(out, "Upload your public key") {
+		t.Errorf("missing the manual instructions block; output:\n%s", out)
+	}
+	if log := ReadFakeCLILog(t, ghLog); len(log) != 0 {
+		t.Errorf("fake gh logged %d invocations with --no-upload, want 0: %v", len(log), log)
+	}
+}
+
+// TestIdentityCLI_RegisterKeyDryRunExecutesNothing seeds a real identity,
+// runs `register-key --dry-run`, and asserts exit 0, the previews and the
+// dry-run note in stdout, no ssh-key add entry in the argv log, AND that
+// the argv log DOES contain the read-only probes the help text and the
+// matrix name (R11) — the documented and observed behavior agree in both
+// directions.
+func TestIdentityCLI_RegisterKeyDryRunExecutesNothing(t *testing.T) {
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+	fakeGH, ghLog := FakeGHDir(t, "ok")
+	home := t.TempDir()
+	seedGitPTYIdentity(t, home, "acme")
+	seedParseableKey(t, home, "acme")
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	out := runIdentityUploadCLI(t, ctx, bin, home, fakeSSH, fakeGH, true, "register-key", "acme", "--dry-run")
+
+	if !strings.Contains(out, "Running:") {
+		t.Errorf("missing the command preview; output:\n%s", out)
+	}
+	if !strings.Contains(out, "--dry-run: the command(s) above were shown, not run.") {
+		t.Errorf("missing the frozen dry-run note; output:\n%s", out)
+	}
+	log := ReadFakeCLILog(t, ghLog)
+	sawReadOnlyProbe := false
+	for _, entry := range log {
+		if strings.Contains(entry, "ssh-key add") {
+			t.Errorf("dry run recorded a ssh-key add invocation: %q", entry)
+		}
+		if strings.Contains(entry, "auth status") || strings.Contains(entry, "api user/") {
+			sawReadOnlyProbe = true
+		}
+	}
+	if !sawReadOnlyProbe {
+		t.Errorf("expected at least one read-only probe (auth status or inventory read) in the argv log; log=%v", log)
+	}
+}
+
+// TestIdentityCLI_CreateSucceedsWhenUploadFails asserts ROADMAP success
+// criterion 3 at the process level: an unauthenticated fake gh still lets
+// `create` exit 0, prints the manual-fallback block, and the identity's
+// files are still written to disk.
+func TestIdentityCLI_CreateSucceedsWhenUploadFails(t *testing.T) {
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+	fakeGH, _ := FakeGHDir(t, "auth-fail")
+	home := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	out := runIdentityUploadCLI(t, ctx, bin, home, fakeSSH, fakeGH, true,
+		"create", "--name", "acme", "--provider", "github.com",
+		"--git-name", "Acme User", "--git-email", "acme@example.com", "--yes")
+
+	if !strings.Contains(out, "created \"acme\"") {
+		t.Errorf("create did not report success; output:\n%s", out)
+	}
+	if !strings.Contains(out, "Auto-registration wasn't available") && !strings.Contains(out, "Upload your public key") {
+		t.Errorf("missing the manual-fallback block; output:\n%s", out)
+	}
+	// The default storage layout writes the managed Host block to
+	// ~/.ssh/config.d/gitid.config (Included from ~/.ssh/config), not
+	// directly into ~/.ssh/config.
+	sshConfig, err := os.ReadFile(filepath.Join(home, ".ssh", "config.d", "gitid.config"))
+	if err != nil || !strings.Contains(string(sshConfig), "acme.github.com") {
+		t.Errorf("the SSH Host block was not written despite the upload failure: err=%v content=%s", err, sshConfig)
+	}
+	fragment, err := os.ReadFile(filepath.Join(home, ".gitconfig.d", "acme"))
+	if err != nil || len(fragment) == 0 {
+		t.Errorf("the Git fragment was not written despite the upload failure: err=%v", err)
+	}
+}
+
+// TestIdentityCLI_RegisterKeyPartialScopeReportsBothTypes drives the fake
+// gh's signing-scope-failure mode against a real, already-existing
+// identity: exit 0 (partial success, not total failure — R10), and two
+// distinct result lines, one success and one carrying the signing
+// remediation text.
+func TestIdentityCLI_RegisterKeyPartialScopeReportsBothTypes(t *testing.T) {
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+	fakeGH, _ := FakeGHDir(t, "scope-fail-signing")
+	home := t.TempDir()
+	seedGitPTYIdentity(t, home, "acme")
+	seedParseableKey(t, home, "acme")
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	out := runIdentityUploadCLI(t, ctx, bin, home, fakeSSH, fakeGH, true, "register-key", "acme")
+
+	if !strings.Contains(out, "Authentication key registered") {
+		t.Errorf("missing the successful authentication result row; output:\n%s", out)
+	}
+	if !strings.Contains(out, "Signing key registration failed") {
+		t.Errorf("missing the failed signing result row; output:\n%s", out)
+	}
+}

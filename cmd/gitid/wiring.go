@@ -1416,88 +1416,6 @@ func toUploadResultRow(tool uploader.Tool, result uploader.RegistrationResult, p
 	return row
 }
 
-// uploadPhaseDedupe / uploadPhaseConfirmation are the R8 phase markers
-// realBackend.uploadPhase is set to immediately before each of RunUpload's
-// two uploader.Inventory call sites — the pre-upload missing-type diff and
-// the D-17 post-upload confirmation read(s), respectively. A test fake's
-// RunCmd closure reads currentUploadPhase() to attribute each recorded
-// invocation to the correct phase, so "exactly one confirmation retry" can
-// be proven without conflating it with the unrelated dedupe read.
-const (
-	uploadPhaseDedupe       = "dedupe"
-	uploadPhaseConfirmation = "confirmation"
-)
-
-// uploadUnconfirmedReasonFmt marks a row whose registration the provider
-// accepted (Uploaded/AlreadyPresent) but whose post-upload confirmation
-// read still could not see after the one bounded retry (D-17). This is
-// NOT a failure: turning it into one would misreport a successful upload
-// as rejected. It stays informational text on the SAME UploadRowUploaded/
-// UploadRowAlreadyPresent outcome — no fourth UploadRowOutcome value exists
-// for this case.
-const uploadUnconfirmedReasonFmt = "accepted but not yet visible in %s's inventory — this can lag briefly after upload; re-run gitid's test to confirm"
-
-// confirmUpload implements D-17's post-upload verification: one inventory
-// read to confirm every registration this run reported as Uploaded or
-// AlreadyPresent is actually present, with exactly one bounded retry when
-// it is not. It never gates and never retries a FAILING READ itself a
-// second time — only a registration that is legitimately still missing
-// after a successful read gets the one retry.
-func (b *realBackend) confirmUpload(tool uploader.Tool, toolPath, pubLine, providerHost string, wanted []uploader.Registration, rows []tuikit.UploadResultRow) ([]tuikit.UploadResultRow, bool) {
-	toConfirm := make(map[uploader.Registration]int, len(wanted))
-	for i, registration := range wanted {
-		if i >= len(rows) {
-			continue
-		}
-		if rows[i].Outcome == tuikit.UploadRowUploaded || rows[i].Outcome == tuikit.UploadRowAlreadyPresent {
-			toConfirm[registration] = i
-		}
-	}
-	if len(toConfirm) == 0 {
-		return rows, false
-	}
-
-	read := func() (map[uploader.Registration]bool, bool) {
-		b.setUploadPhase(uploadPhaseConfirmation)
-		existing, err := uploader.Inventory(tool, toolPath, b.uploaderDeps)
-		if err != nil {
-			return nil, true
-		}
-		present := make(map[uploader.Registration]bool, len(toConfirm))
-		for registration := range toConfirm {
-			present[registration] = uploader.HasRegistration(existing, pubLine, registration)
-		}
-		return present, false
-	}
-
-	present, degraded := read()
-	if degraded {
-		return rows, true
-	}
-	var stillMissing []uploader.Registration
-	for registration, ok := range present {
-		if !ok {
-			stillMissing = append(stillMissing, registration)
-		}
-	}
-	if len(stillMissing) > 0 {
-		b.confirmSleep()
-		second, degraded2 := read()
-		if degraded2 {
-			return rows, true
-		}
-		for _, registration := range stillMissing {
-			present[registration] = second[registration]
-		}
-	}
-	for registration, idx := range toConfirm {
-		if !present[registration] {
-			rows[idx].Reason = fmt.Sprintf(uploadUnconfirmedReasonFmt, providerHost)
-		}
-	}
-	return rows, false
-}
-
 func uploadFailureView(reason, provider string) tuikit.UploadRunView {
 	return tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{{
 		Registration: tuikit.UploadRegistrationAuthentication,
@@ -1514,6 +1432,17 @@ func desiredRegistrations(tool uploader.Tool) []uploader.Registration {
 	return []uploader.Registration{uploader.RegistrationAuthentication, uploader.RegistrationSigning}
 }
 
+// RunUpload composes upload_run.go's planUpload/executeUpload with the
+// observable announce-before-run gap R7 requires: planUpload's read-only
+// decision steps (including the pre-upload inventory read) run first and
+// their commands are rendered via UploadStartedMsg BEFORE executeUpload's
+// FollowUp actually runs anything — a terminal message could only ever
+// arrive after the subprocess returned, so the gap must live in HOW this
+// method sequences the two functions, not inside either one. The CLI's
+// runUploadFor (upload_run.go) calls the SAME two functions back-to-back
+// with no gap, since a one-shot process has no live rendering loop to show
+// an intermediate state to. There is exactly one implementation of the
+// decision logic (upload_run.go); this method contains none of it.
 func (b *realBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
 	return func() (msg tea.Msg) {
 		defer func() {
@@ -1525,118 +1454,17 @@ func (b *realBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
 				msg = tuikit.UploadRunMsg{View: uploadFailureView("gitid internal defect: "+uploader.RedactCLIOutput(fmt.Sprint(recovered), b.home, 58), spec.Hostname)}
 			}
 		}()
-
-		// D-13: Omitted (provider not gated) and Disabled (no matching CLI on
-		// PATH) both skip autonomy entirely. Unauth is deliberately NOT
-		// resolved here a second time (the checked path reached RunUpload
-		// only after UploadEligibility's async, memoized canonical-host auth
-		// probe already answered; rechecking would double provider traffic
-		// and could disagree with the one operation the user approved) — an
-		// unauthenticated attempt simply fails naturally inside UploadKeys
-		// and is classified by ClassifyUploadFailure below.
-		provider, canonicalHost := uploader.ProviderForHostname(spec.Hostname)
-		if provider == "" {
-			// Omitted: the section is absent entirely, so no fallback either.
-			return tuikit.UploadRunMsg{View: tuikit.UploadRunView{Skipped: true}}
-		}
-		tool, toolPath, status := uploader.DetectFor(provider, b.uploaderDeps)
-		if status == uploader.AuthToolNotFound {
-			return tuikit.UploadRunMsg{View: tuikit.UploadRunView{Skipped: true, ManualFallback: upload.Instructions(spec.Hostname)}}
-		}
-
-		in := b.createInputFromSpec(spec)
-		staged, err := b.stagedKeyFor(in, spec.ReuseKeyPath)
+		req, err := b.uploadRequestFromSpec(spec)
 		if err != nil {
 			return tuikit.UploadRunMsg{View: uploadFailureView(err.Error(), spec.Hostname)}
 		}
-		pubPath := staged.FinalPubPath
-		if staged.PrivPEM != nil {
-			tempPub := staged.TempPrivatePath + ".pub"
-			if !b.deps.PubExists(tempPub) {
-				if werr := b.deps.WritePub(tempPub, staged.PubLine); werr != nil {
-					return tuikit.UploadRunMsg{View: uploadFailureView(werr.Error(), spec.Hostname)}
-				}
-			}
-			pubPath = tempPub
+		plan, terminal := b.planUpload(req)
+		if terminal != nil {
+			return tuikit.UploadRunMsg{View: *terminal}
 		}
-		pubBytes, err := b.uploaderDeps.ReadFile(pubPath)
-		if err != nil {
-			return tuikit.UploadRunMsg{View: uploadFailureView(err.Error(), spec.Hostname)}
-		}
-		pubLine := string(pubBytes)
-		wanted := desiredRegistrations(tool)
-		b.setUploadPhase(uploadPhaseDedupe)
-		existing, err := uploader.Inventory(tool, toolPath, b.uploaderDeps)
-		degraded := err != nil
-		missing := wanted
-		if !degraded {
-			missing = uploader.MissingRegistrations(existing, pubLine, wanted)
-		}
-		if len(missing) == 0 {
-			return tuikit.UploadRunMsg{View: tuikit.UploadRunView{AlreadyComplete: true}}
-		}
-
-		title := uploader.KeyTitle(spec.Identity, shortHostname())
-		reqs := uploader.RegistrationRequestsWithTitle(title, missing...)
-		commands := make([]string, 0, len(reqs))
-		for _, req := range reqs {
-			keyType, typeErr := req.Registration.KeyTypeFor(tool)
-			if typeErr != nil {
-				return tuikit.UploadRunMsg{View: uploadFailureView(typeErr.Error(), spec.Hostname)}
-			}
-			commands = append(commands, uploader.CommandPreview(tool, toolPath, pubPath, req.Title, keyType))
-		}
-		// D-02 requires an observable announce before the first ssh-key add;
-		// a terminal message could only arrive after the subprocess returned.
-		return tuikit.UploadStartedMsg{Commands: commands, FollowUp: b.runUpload(spec, tool, toolPath, pubPath, pubLine, wanted, existing, degraded, canonicalHost, reqs)}
-	}
-}
-
-func (b *realBackend) runUpload(spec tuikit.CreateSpec, tool uploader.Tool, toolPath, pubPath, pubLine string, wanted []uploader.Registration, existing []uploader.ExistingKey, degraded bool, canonicalHost string, reqs []uploader.RegistrationRequest) tea.Cmd {
-	return func() (msg tea.Msg) {
-		defer func() {
-			if recovered := recover(); recovered != nil {
-				msg = tuikit.UploadRunMsg{View: uploadFailureView("gitid internal defect: "+uploader.RedactCLIOutput(fmt.Sprint(recovered), b.home, 58), spec.Hostname)}
-			}
-		}()
-		results := uploader.UploadKeys(tool, toolPath, pubPath, reqs, b.uploaderDeps)
-		byRegistration := make(map[uploader.Registration]tuikit.UploadResultRow, len(results))
-		for _, result := range results {
-			byRegistration[result.Registration] = toUploadResultRow(tool, result, canonicalHost, b.home)
-		}
-		rows := make([]tuikit.UploadResultRow, 0, len(wanted))
-		for _, registration := range wanted {
-			if row, ok := byRegistration[registration]; ok {
-				rows = append(rows, row)
-				continue
-			}
-			if !degraded && uploader.HasRegistration(existing, pubLine, registration) {
-				rows = append(rows, toUploadResultRow(tool, uploader.RegistrationResult{Registration: registration, Outcome: uploader.OutcomeAlreadyPresent}, canonicalHost, b.home))
-			}
-		}
-		// D-17: confirm every accepted registration actually landed, with
-		// exactly one bounded retry — the ssh -T half of D-17's verification
-		// is the wizard's EXISTING stage-1/stage-2 gate, which runs
-		// immediately after this command's UploadRunMsg auto-advances the
-		// wizard (that ordering is WHY D-05 places upload before the test
-		// loop); no new probe belongs here, only the inventory confirmation
-		// ssh -T structurally cannot see (the signing registration has no
-		// ssh -T-observable side effect).
-		rows, confirmDegraded := b.confirmUpload(tool, toolPath, pubLine, canonicalHost, wanted, rows)
-
-		view := tuikit.UploadRunView{Rows: rows, InventoryDegraded: degraded || confirmDegraded}
-		allFailed := len(results) > 0
-		for _, row := range results {
-			if row.Outcome != uploader.OutcomeFailed {
-				allFailed = false
-			}
-		}
-		if allFailed {
-			// A partial success has a per-row remediation; repeating the full
-			// instruction block would consume five rows without adding action.
-			view.ManualFallback = upload.Instructions(spec.Hostname)
-		}
-		return tuikit.UploadRunMsg{View: view}
+		return tuikit.UploadStartedMsg{Commands: plan.commands, FollowUp: func() tea.Msg {
+			return tuikit.UploadRunMsg{View: b.executeUpload(spec.Hostname, plan)}
+		}}
 	}
 }
 

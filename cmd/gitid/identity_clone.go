@@ -23,10 +23,11 @@ import (
 
 // identityCloneFlags carries the clone verb's flags as a plain struct.
 type identityCloneFlags struct {
-	Name   string
-	NewKey bool
-	Yes    bool
-	DryRun bool
+	Name     string
+	NewKey   bool
+	Yes      bool
+	DryRun   bool
+	NoUpload bool
 }
 
 // cloneRequiredFlags is the one flag an `identity clone` invocation must
@@ -46,6 +47,7 @@ func newIdentityCloneVerb() identityVerb {
 			fs.BoolVar(&flags.NewKey, "new-key", false, "generate a fresh key for the clone instead of reusing the source's key")
 			fs.BoolVar(&flags.Yes, "yes", false, "skip the confirmation prompt; the timestamped backup is still taken unconditionally")
 			fs.BoolVar(&flags.DryRun, "dry-run", false, "run both connectivity stages, print the artifact previews, and exit 0 without writing")
+			fs.BoolVar(&flags.NoUpload, "no-upload", false, noUploadFlagHelp)
 		},
 		run: func(cmd *cobra.Command, args []string) error {
 			return runIdentityClone(cmd, args[0], flags, termIsStdinTTY(), termIsStdoutTTY())
@@ -97,7 +99,7 @@ func runIdentityClone(cmd *cobra.Command, source string, flags identityCloneFlag
 	if err != nil {
 		return err
 	}
-	return runCreateCeremony(cmd, b, in, id, flags.Yes, flags.DryRun, stdinTTY, stdoutTTY)
+	return runCreateCeremony(cmd, b, in, id, flags.Yes, flags.DryRun, flags.NoUpload, stdinTTY, stdoutTTY)
 }
 
 // cloneCeremonyInputs re-derives the clone's CreateInput + DemoIdentity for a

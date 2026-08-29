@@ -77,6 +77,10 @@ func TestNewRootCmdSurfaceIsPhase5CLI(t *testing.T) {
 		"identity": true, "ssh": true, "git": true, "health": true, "fix": true, "doctor": true,
 		"list": true, "show": true, "delete": true,
 		"create": true, "clone": true, "new-key": true, "rotate": true,
+		// 09-05-PLAN.md (UP-02, UP-03): the manual re-run surface for the
+		// autonomous provider-key registration plan 09-04 built — see
+		// TestNewRootCmdArchivedPOCCommandsAreGone, deliberately untouched.
+		"register-key": true,
 	}
 	for _, cmd := range root.Commands() {
 		if !want[cmd.Name()] {

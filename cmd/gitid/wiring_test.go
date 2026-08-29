@@ -5504,75 +5504,73 @@ func TestRunUploadUsesPerRegistrationRequests(t *testing.T) {
 }
 
 // TestRunUploadDoesNotCallProviderCommandsOutsideATeaCmd is the R3 source
-// check: every uploader.Inventory / uploader.UploadKeys / uploader.AuthCheck
-// call site in wiring.go sits inside a function literal (a tea.Cmd closure),
-// never directly inside a named function body reachable from the render or
-// update path. Both RunUpload's returned closure and its runUpload
-// FollowUp helper satisfy this; a hypothetical future call site added
-// directly inside a named function (not a literal) would fail here.
+// check, updated for 09-05-PLAN.md Task 1's extraction: the decision logic
+// (uploader.Inventory / uploader.UploadKeys / uploader.AuthCheck) now lives
+// in upload_run.go's planUpload/executeUpload, called either from
+// RunUpload's tea.Cmd chain (wiring.go) or from runUploadFor's synchronous
+// CLI entry point (upload_run.go) — internal/tuikit (the TUI's actual
+// View()/Update() implementation) cannot reach these calls at all: it does
+// not import internal/uploader (views.go's no-backend-import rule), so that
+// half of R3 is a compile-time guarantee, not something this test needs to
+// scan for. This asserts the other half: wiring.go contains ZERO
+// occurrences of the three guarded calls — the decision logic was not
+// duplicated back into it after the extraction.
 func TestRunUploadDoesNotCallProviderCommandsOutsideATeaCmd(t *testing.T) {
-	fset := token.NewFileSet()
-	src, err := os.ReadFile("wiring.go") //nolint:gosec // package-local source file (G304)
-	if err != nil {
-		t.Fatalf("reading wiring.go: %v", err)
-	}
-	file, err := parser.ParseFile(fset, "wiring.go", src, 0)
-	if err != nil {
-		t.Fatalf("parsing wiring.go: %v", err)
-	}
-
-	guarded := map[string]bool{"Inventory": true, "UploadKeys": true, "AuthCheck": true}
-	var litDepth int
-	ast.Inspect(file, func(n ast.Node) bool {
-		switch node := n.(type) {
-		case *ast.FuncLit:
-			litDepth++
-			ast.Inspect(node.Body, func(inner ast.Node) bool {
-				if fl, ok := inner.(*ast.FuncLit); ok && fl != node {
-					return true // nested literals are handled by their own Inspect call below
-				}
-				sel, ok := inner.(*ast.SelectorExpr)
-				if !ok {
-					return true
-				}
-				pkg, ok := sel.X.(*ast.Ident)
-				if ok && pkg.Name == "uploader" && guarded[sel.Sel.Name] {
-					// Found inside a func literal — this is the required shape.
-					guarded[sel.Sel.Name] = false // mark as satisfied
-				}
+	// AuthCheck is deliberately NOT guarded here: UploadEligibility's own
+	// (unchanged, pre-existing) AuthCheck call is a separate concern this
+	// wave does not touch — it already sits inside its own tea.Cmd closure.
+	guarded := map[string]bool{"Inventory": true, "UploadKeys": true}
+	assertNoGuardedCalls := func(filename string) {
+		fset := token.NewFileSet()
+		src, err := os.ReadFile(filename) //nolint:gosec // package-local source file (G304)
+		if err != nil {
+			t.Fatalf("reading %s: %v", filename, err)
+		}
+		file, err := parser.ParseFile(fset, filename, src, 0)
+		if err != nil {
+			t.Fatalf("parsing %s: %v", filename, err)
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok {
 				return true
-			})
-			litDepth--
+			}
+			pkg, ok := sel.X.(*ast.Ident)
+			if ok && pkg.Name == "uploader" && guarded[sel.Sel.Name] {
+				t.Errorf("%s calls uploader.%s — the decision logic must live only in upload_run.go (R3)", filename, sel.Sel.Name)
+			}
 			return true
-		case *ast.FuncDecl:
-			if litDepth > 0 {
-				return true
-			}
-			// A call directly inside a named function's top-level body (not
-			// inside any nested literal) is the violation this test guards
-			// against — walk only the immediate statements, not nested FuncLits.
-			for _, stmt := range node.Body.List {
-				ast.Inspect(stmt, func(inner ast.Node) bool {
-					if _, ok := inner.(*ast.FuncLit); ok {
-						return false // do not descend into nested literals here
-					}
-					sel, ok := inner.(*ast.SelectorExpr)
-					if !ok {
-						return true
-					}
-					pkg, ok := sel.X.(*ast.Ident)
-					if ok && pkg.Name == "uploader" && (sel.Sel.Name == "Inventory" || sel.Sel.Name == "UploadKeys" || sel.Sel.Name == "AuthCheck") {
-						t.Errorf("%s calls uploader.%s directly in a named function body, outside any tea.Cmd closure (R3)", node.Name.Name, sel.Sel.Name)
-					}
-					return true
-				})
-			}
+		})
+	}
+	assertNoGuardedCalls("wiring.go")
+
+	// Positive control: upload_run.go must actually contain the calls
+	// somewhere, so this test cannot vacuously pass if the logic were
+	// deleted entirely rather than relocated.
+	fset := token.NewFileSet()
+	src, err := os.ReadFile("upload_run.go") //nolint:gosec // package-local source file (G304)
+	if err != nil {
+		t.Fatalf("reading upload_run.go: %v", err)
+	}
+	file, err := parser.ParseFile(fset, "upload_run.go", src, 0)
+	if err != nil {
+		t.Fatalf("parsing upload_run.go: %v", err)
+	}
+	found := map[string]bool{}
+	ast.Inspect(file, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		pkg, ok := sel.X.(*ast.Ident)
+		if ok && pkg.Name == "uploader" && guarded[sel.Sel.Name] {
+			found[sel.Sel.Name] = true
 		}
 		return true
 	})
-	for name, unsatisfied := range guarded {
-		if unsatisfied {
-			t.Errorf("expected to find a call to uploader.%s inside a func literal somewhere in wiring.go — the guard never ran", name)
+	for name := range guarded {
+		if !found[name] {
+			t.Errorf("expected upload_run.go to call uploader.%s somewhere — the guard never ran", name)
 		}
 	}
 }

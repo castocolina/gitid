@@ -67,6 +67,7 @@ func identityVerbSpecs() []identityVerb {
 		newIdentityRotateVerb(),
 		newIdentityNewKeyVerb(),
 		newIdentityDeleteVerb(),
+		newIdentityRegisterKeyVerb(),
 	}
 }
 
