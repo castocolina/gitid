@@ -22,16 +22,6 @@ type notFoundError struct{ name string }
 
 func (e *notFoundError) Error() string { return e.name + ": executable file not found in $PATH" }
 
-// lookPathOnly returns a Deps.LookPath that finds the named binary at fakeDir.
-func fakeLookPath(found map[string]string) func(string) (string, error) {
-	return func(name string) (string, error) {
-		if p, ok := found[name]; ok {
-			return p, nil
-		}
-		return "", &notFoundError{name: name}
-	}
-}
-
 // recordingRunCmd returns a RunCmd that records every call and returns the
 // configured exit code. exitCode 0 => success; non-zero => error.
 type runCall struct {
@@ -53,150 +43,6 @@ func recordingRunCmd(exitCode int, stdout string) (func(string, ...string) (stri
 		return stdout, 0, nil
 	}
 	return fn, calls
-}
-
-// ---- TestDetect ------------------------------------------------------------
-
-// TestDetect_GHAuthenticated verifies that when gh is on PATH and auth status
-// returns exit 0, Detect returns (ToolGH, path, AuthAuthenticated).
-func TestDetect_GHAuthenticated(t *testing.T) {
-	runCmd, calls := recordingRunCmd(0, "")
-	deps := Deps{
-		LookPath: fakeLookPath(map[string]string{"gh": "/fake/gh"}),
-		RunCmd:   runCmd,
-		ReadFile: testReadFile,
-	}
-
-	tool, path, status := Detect(deps)
-
-	if tool != ToolGH {
-		t.Errorf("tool: got %d want ToolGH(%d)", tool, ToolGH)
-	}
-	if path != "/fake/gh" {
-		t.Errorf("path: got %q want /fake/gh", path)
-	}
-	if status != AuthAuthenticated {
-		t.Errorf("status: got %d want AuthAuthenticated(%d)", status, AuthAuthenticated)
-	}
-	if len(*calls) != 1 {
-		t.Fatalf("RunCmd call count: got %d want 1", len(*calls))
-	}
-	if (*calls)[0].name != "/fake/gh" || (*calls)[0].args[0] != "auth" {
-		t.Errorf("RunCmd called with wrong args: %+v", (*calls)[0])
-	}
-}
-
-// TestDetect_GHNotLoggedIn verifies that when gh is on PATH but auth status
-// returns a non-zero exit, Detect returns (ToolGH, path, AuthNotLoggedIn).
-func TestDetect_GHNotLoggedIn(t *testing.T) {
-	runCmd, _ := recordingRunCmd(1, "")
-	deps := Deps{
-		LookPath: fakeLookPath(map[string]string{"gh": "/fake/gh"}),
-		RunCmd:   runCmd,
-		ReadFile: testReadFile,
-	}
-
-	tool, path, status := Detect(deps)
-
-	if tool != ToolGH {
-		t.Errorf("tool: got %d want ToolGH(%d)", tool, ToolGH)
-	}
-	if path != "/fake/gh" {
-		t.Errorf("path: got %q want /fake/gh", path)
-	}
-	if status != AuthNotLoggedIn {
-		t.Errorf("status: got %d want AuthNotLoggedIn(%d)", status, AuthNotLoggedIn)
-	}
-}
-
-// TestDetect_GLAbAuthenticated verifies that when gh is absent but glab is on
-// PATH and authenticated, Detect returns (ToolGLab, path, AuthAuthenticated).
-func TestDetect_GLabAuthenticated(t *testing.T) {
-	runCmd, _ := recordingRunCmd(0, "")
-	deps := Deps{
-		LookPath: fakeLookPath(map[string]string{"glab": "/fake/glab"}),
-		RunCmd:   runCmd,
-	}
-
-	tool, path, status := Detect(deps)
-
-	if tool != ToolGLab {
-		t.Errorf("tool: got %d want ToolGLab(%d)", tool, ToolGLab)
-	}
-	if path != "/fake/glab" {
-		t.Errorf("path: got %q want /fake/glab", path)
-	}
-	if status != AuthAuthenticated {
-		t.Errorf("status: got %d want AuthAuthenticated(%d)", status, AuthAuthenticated)
-	}
-}
-
-// TestDetect_NeitherPresent verifies that when neither gh nor glab is on PATH,
-// Detect returns ("", "", AuthToolNotFound).
-func TestDetect_NeitherPresent(t *testing.T) {
-	runCmd, calls := recordingRunCmd(0, "")
-	deps := Deps{
-		LookPath: fakeLookPath(map[string]string{}),
-		RunCmd:   runCmd,
-	}
-
-	tool, path, status := Detect(deps)
-
-	if status != AuthToolNotFound {
-		t.Errorf("status: got %d want AuthToolNotFound(%d)", status, AuthToolNotFound)
-	}
-	if path != "" {
-		t.Errorf("path: got %q want empty", path)
-	}
-	if tool != 0 {
-		t.Errorf("tool: got %d want 0", tool)
-	}
-	if len(*calls) != 0 {
-		t.Errorf("RunCmd should not be called when no tool found; got %d calls", len(*calls))
-	}
-}
-
-// TestDetect_GHPreferredOverGLab verifies that when both gh and glab are on
-// PATH and authenticated, Detect returns gh (deterministic order).
-func TestDetect_GHPreferredOverGLab(t *testing.T) {
-	runCmd, _ := recordingRunCmd(0, "")
-	deps := Deps{
-		LookPath: fakeLookPath(map[string]string{
-			"gh":   "/fake/gh",
-			"glab": "/fake/glab",
-		}),
-		RunCmd: runCmd,
-	}
-
-	tool, path, status := Detect(deps)
-
-	if tool != ToolGH {
-		t.Errorf("tool: got %d want ToolGH(%d) — gh must be preferred over glab", tool, ToolGH)
-	}
-	if path != "/fake/gh" {
-		t.Errorf("path: got %q want /fake/gh", path)
-	}
-	if status != AuthAuthenticated {
-		t.Errorf("status: got %d want AuthAuthenticated(%d)", status, AuthAuthenticated)
-	}
-}
-
-// TestDetect_AuthToolNotFound is the legacy stub test preserved for regression:
-// when LookPath finds nothing, status must be AuthToolNotFound.
-func TestDetect_AuthToolNotFound(t *testing.T) {
-	deps := Deps{
-		LookPath: func(_ string) (string, error) {
-			return "", &notFoundError{name: "gh"}
-		},
-		RunCmd: func(_ string, _ ...string) (string, int, error) {
-			return "", 0, nil
-		},
-	}
-
-	_, _, status := Detect(deps)
-	if status != AuthToolNotFound {
-		t.Errorf("Detect: got status %d want AuthToolNotFound(%d)", status, AuthToolNotFound)
-	}
 }
 
 // ---- TestAuthCheck ---------------------------------------------------------
@@ -338,7 +184,7 @@ func TestDetectForUnknownProviderNeverProbes(t *testing.T) {
 
 func TestUploadKey_GHAuthentication(t *testing.T) {
 	runCmd, calls := recordingRunCmd(0, "Added SSH key.")
-	result := UploadKey(ToolGH, "/fake/gh", "key.pub", RegistrationRequest{Registration: RegistrationAuthentication, Title: "gitid: personal"}, Deps{RunCmd: runCmd, ReadFile: testReadFile})
+	result := uploadKey(ToolGH, "/fake/gh", "key.pub", RegistrationRequest{Registration: RegistrationAuthentication, Title: "gitid: personal"}, Deps{RunCmd: runCmd, ReadFile: testReadFile})
 	if result.Outcome != OutcomeUploaded || result.Err != nil {
 		t.Fatalf("result = %+v", result)
 	}
@@ -347,7 +193,7 @@ func TestUploadKey_GHAuthentication(t *testing.T) {
 
 func TestUploadKey_GLab(t *testing.T) {
 	runCmd, calls := recordingRunCmd(0, "Added SSH key.")
-	result := UploadKey(ToolGLab, "/fake/glab", "key.pub", RegistrationRequest{Registration: RegistrationCombined, Title: "gitid: work"}, Deps{RunCmd: runCmd, ReadFile: testReadFile})
+	result := uploadKey(ToolGLab, "/fake/glab", "key.pub", RegistrationRequest{Registration: RegistrationCombined, Title: "gitid: work"}, Deps{RunCmd: runCmd, ReadFile: testReadFile})
 	if result.Outcome != OutcomeUploaded {
 		t.Fatalf("result = %+v", result)
 	}
@@ -356,7 +202,7 @@ func TestUploadKey_GLab(t *testing.T) {
 
 func TestUploadKey_ErrorSurfacesOutput(t *testing.T) {
 	runCmd, _ := recordingRunCmd(1, "error: not authenticated")
-	result := UploadKey(ToolGH, "/fake/gh", "key.pub", RegistrationRequest{Registration: RegistrationAuthentication}, Deps{RunCmd: runCmd, ReadFile: testReadFile})
+	result := uploadKey(ToolGH, "/fake/gh", "key.pub", RegistrationRequest{Registration: RegistrationAuthentication}, Deps{RunCmd: runCmd, ReadFile: testReadFile})
 	if result.Err == nil || result.Output != "error: not authenticated" {
 		t.Fatalf("result = %+v", result)
 	}
@@ -365,7 +211,7 @@ func TestUploadKey_ErrorSurfacesOutput(t *testing.T) {
 func TestUploadShownEqualsRun(t *testing.T) {
 	runCmd, calls := recordingRunCmd(0, "")
 	preview := CommandPreview(ToolGH, "/fake/gh", "key.pub", "title", KeyAuthentication)
-	UploadKey(ToolGH, "/fake/gh", "key.pub", RegistrationRequest{Registration: RegistrationAuthentication, Title: "title"}, Deps{RunCmd: runCmd, ReadFile: testReadFile})
+	uploadKey(ToolGH, "/fake/gh", "key.pub", RegistrationRequest{Registration: RegistrationAuthentication, Title: "title"}, Deps{RunCmd: runCmd, ReadFile: testReadFile})
 	if preview != strings.Join(append([]string{(*calls)[0].name}, (*calls)[0].args...), " ") {
 		t.Fatal("shown command != run command")
 	}
@@ -379,7 +225,7 @@ func TestCommandPreview_UnknownToolReturnsErrorMessage(t *testing.T) {
 
 func TestUploadKeyRefusesNonPubPath(t *testing.T) {
 	calls := 0
-	result := UploadKey(ToolGH, "gh", "private", RegistrationRequest{}, Deps{ReadFile: testReadFile, RunCmd: func(string, ...string) (string, int, error) { calls++; return "", 0, nil }})
+	result := uploadKey(ToolGH, "gh", "private", RegistrationRequest{}, Deps{ReadFile: testReadFile, RunCmd: func(string, ...string) (string, int, error) { calls++; return "", 0, nil }})
 	if result.Err == nil || calls != 0 {
 		t.Fatalf("result=%+v calls=%d", result, calls)
 	}
@@ -395,7 +241,7 @@ func TestUploadKeyRefusesAPrivateKeyRenamedAsPub(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	calls := 0
-	result := UploadKey(ToolGH, "gh", path, RegistrationRequest{}, Deps{
+	result := uploadKey(ToolGH, "gh", path, RegistrationRequest{}, Deps{
 		ReadFile: os.ReadFile,
 		RunCmd:   func(string, ...string) (string, int, error) { calls++; return "", 0, nil },
 	})
@@ -406,7 +252,7 @@ func TestUploadKeyRefusesAPrivateKeyRenamedAsPub(t *testing.T) {
 
 func TestUploadKeyRefusesUnparseablePublicKeyContent(t *testing.T) {
 	calls := 0
-	result := UploadKey(ToolGH, "gh", "bad.pub", RegistrationRequest{}, Deps{ReadFile: func(string) ([]byte, error) { return []byte("bad"), nil }, RunCmd: func(string, ...string) (string, int, error) { calls++; return "", 0, nil }})
+	result := uploadKey(ToolGH, "gh", "bad.pub", RegistrationRequest{}, Deps{ReadFile: func(string) ([]byte, error) { return []byte("bad"), nil }, RunCmd: func(string, ...string) (string, int, error) { calls++; return "", 0, nil }})
 	if result.Err == nil || calls != 0 {
 		t.Fatalf("result=%+v calls=%d", result, calls)
 	}
@@ -422,7 +268,7 @@ func TestUploadKeyAcceptsARealPublicKey(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	runCmd, calls := recordingRunCmd(0, "")
-	result := UploadKey(ToolGH, "gh", path, RegistrationRequest{Registration: RegistrationAuthentication}, Deps{ReadFile: os.ReadFile, RunCmd: runCmd})
+	result := uploadKey(ToolGH, "gh", path, RegistrationRequest{Registration: RegistrationAuthentication}, Deps{ReadFile: os.ReadFile, RunCmd: runCmd})
 	if result.Outcome != OutcomeUploaded || result.Err != nil || len(*calls) != 1 {
 		t.Fatalf("result=%+v calls=%+v", result, calls)
 	}
@@ -482,7 +328,7 @@ func TestUploadKeysAttemptsEveryRegistrationAfterAFailure(t *testing.T) {
 
 func TestGLabUsesCombinedUsageType(t *testing.T) {
 	runCmd, calls := recordingRunCmd(0, "")
-	UploadKey(ToolGLab, "glab", "key.pub", RegistrationRequest{Registration: RegistrationCombined}, Deps{ReadFile: testReadFile, RunCmd: runCmd})
+	uploadKey(ToolGLab, "glab", "key.pub", RegistrationRequest{Registration: RegistrationCombined}, Deps{ReadFile: testReadFile, RunCmd: runCmd})
 	if (*calls)[0].args[6] != GLabKeyTypeAuthAndSigning {
 		t.Fatal((*calls)[0].args)
 	}
@@ -494,7 +340,7 @@ func TestKeyTitleIsMachineScoped(t *testing.T) {
 	}
 }
 func TestTitleMatchesThisMachineRejectsOtherMachines(t *testing.T) {
-	if TitleMatchesThisMachine("gitid: personal @ other", "personal", "mine.local") {
+	if titleMatchesThisMachine("gitid: personal @ other", "personal", "mine.local") {
 		t.Fatal("other machine matched")
 	}
 }

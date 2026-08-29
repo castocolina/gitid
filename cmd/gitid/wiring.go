@@ -1590,7 +1590,12 @@ func (b *realBackend) CommitRotateDeleteOldKey(name, keyID string) tea.Cmd {
 		}
 		var failed []string
 		for _, c := range candidates {
-			if _, err := uploader.DeleteKey(tool, toolPath, c.Registration, c.ID, b.uploaderDeps); err != nil {
+			// WR-14: DeleteRecordedKey (not the lower-level DeleteKey) is the
+			// preferred entry point — it exists specifically to carry a
+			// record's ID and Registration together rather than as two loose
+			// arguments a caller could mismatch.
+			rec := uploader.ExistingKey{ID: c.ID, Registration: c.Registration}
+			if _, err := uploader.DeleteRecordedKey(tool, toolPath, rec, b.uploaderDeps); err != nil {
 				failed = append(failed, uploader.RedactCLIOutput(err.Error(), b.home, 58))
 			}
 		}

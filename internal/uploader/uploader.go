@@ -151,22 +151,6 @@ func isMainDomainOrSubdomain(host, mainDomain string) bool {
 	return host == mainDomain || strings.HasSuffix(host, "."+mainDomain)
 }
 
-// Detect selects the first available authenticated provider CLI.
-func Detect(deps Deps) (tool Tool, toolPath string, status AuthStatus) {
-	for _, name := range []string{"gh", "glab"} {
-		p, err := deps.LookPath(name)
-		if err != nil {
-			continue
-		}
-		_, code, _ := deps.RunCmd(p, "auth", "status")
-		if code == 0 {
-			return toolForName(name), p, AuthAuthenticated
-		}
-		return toolForName(name), p, AuthNotLoggedIn
-	}
-	return 0, "", AuthToolNotFound
-}
-
 // DetectFor resolves only the CLI corresponding to provider.
 func DetectFor(provider string, deps Deps) (tool Tool, toolPath string, status AuthStatus) {
 	name := map[string]string{"github": "gh", "gitlab": "glab"}[provider]
@@ -189,8 +173,10 @@ func AuthCheck(toolPath string, deps Deps, canonicalHost string) AuthStatus {
 	return AuthNotLoggedIn
 }
 
-// UploadKey validates and uploads one public-key registration.
-func UploadKey(tool Tool, toolPath, pubPath string, req RegistrationRequest, deps Deps) RegistrationResult {
+// uploadKey validates and uploads one public-key registration. Unexported
+// (WR-14): only UploadKeys calls it in production; the single-request
+// granularity is exercised directly by this package's own tests.
+func uploadKey(tool Tool, toolPath, pubPath string, req RegistrationRequest, deps Deps) RegistrationResult {
 	result := RegistrationResult{Registration: req.Registration, Title: req.Title, Outcome: OutcomeFailed}
 	if err := requirePublicKey(pubPath, deps); err != nil {
 		result.Err = err
@@ -223,7 +209,7 @@ func UploadKey(tool Tool, toolPath, pubPath string, req RegistrationRequest, dep
 func UploadKeys(tool Tool, toolPath, pubPath string, reqs []RegistrationRequest, deps Deps) []RegistrationResult {
 	results := make([]RegistrationResult, 0, len(reqs))
 	for _, req := range reqs {
-		results = append(results, UploadKey(tool, toolPath, pubPath, req, deps))
+		results = append(results, uploadKey(tool, toolPath, pubPath, req, deps))
 	}
 	return results
 }
@@ -273,12 +259,15 @@ func KeyTitle(identityName, machineHostname string) string {
 	return fmt.Sprintf("gitid: %s @ %s", identityName, machine)
 }
 
-// TitleMatchesThisMachine permits only this machine's exact D-07 title.
-func TitleMatchesThisMachine(title, identityName, machineHostname string) bool {
+// titleMatchesThisMachine permits only this machine's exact D-07 title.
+// Unexported (WR-14): no production caller — rotateDeleteOfferFor's D-07
+// scoping goes through uploader.OldKeyCandidates' own title-equality check
+// directly, never through this helper.
+func titleMatchesThisMachine(title, identityName, machineHostname string) bool {
 	return title == KeyTitle(identityName, machineHostname)
 }
 
-// CommandPreview renders exactly the argv that UploadKey and UploadKeys run.
+// CommandPreview renders exactly the argv uploadKey and UploadKeys run.
 func CommandPreview(tool Tool, toolPath, pubPath, title, keyType string) string {
 	args, err := buildArgs(tool, pubPath, title, keyType)
 	if err != nil {
@@ -318,10 +307,9 @@ func toolName(t Tool) string {
 // ToolName returns the CLI name for t.
 func ToolName(t Tool) string { return toolName(t) }
 
+// trimOutput removes trailing newlines from CLI output. Unexported (WR-14):
+// the exported TrimOutput wrapper had no caller anywhere, production or test.
 func trimOutput(s string) string { return strings.TrimRight(s, "\n") }
-
-// TrimOutput removes trailing newlines from CLI output.
-func TrimOutput(s string) string { return trimOutput(s) }
 
 func wrapRunErr(runErr error) error {
 	if runErr != nil {
