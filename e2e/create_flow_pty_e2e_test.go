@@ -666,9 +666,16 @@ func TestCreateFlow_ReuseExistingEncryptedKeyClosesL2Seam(t *testing.T) {
 
 	openCreateWizard(t, s)
 
-	// Tab from Alias prefix (focus 1) to the Generate/Reuse toggle (focus 5):
-	// SSH Host, Real hostname, Port, then the toggle itself — 4 Tabs.
-	tabKeys(s, 4)
+	// The D-01 upload checkbox row appears only once the async
+	// Backend.UploadEligibility probe resolves (uploadRowVisible), which
+	// races against key delivery — wait for it to settle before tabbing so
+	// the focus-order tab count below is deterministic.
+	mustSee(t, s, "Register with", "the D-01 upload checkbox row has settled")
+
+	// Tab from Alias prefix (focus 1) to the Generate/Reuse toggle (focus 6):
+	// SSH Host, Real hostname, Port, the D-01 upload checkbox, then the
+	// toggle itself — 5 Tabs.
+	tabKeys(s, 5)
 	mustSee(t, s, "Generate a new key", "the D-10 key-source toggle rendered")
 
 	// D-10: flip to reuse — reuseIdx resets to 0, i.e. the sorted-FIRST
@@ -886,8 +893,14 @@ func TestCreateFlow_ReuseManualPath(t *testing.T) {
 
 	openCreateWizard(t, s)
 
-	// Tab to the key-source toggle (4 Tabs from Alias prefix: Host, Hostname, Port, Source).
-	tabKeys(s, 4)
+	// The D-01 upload checkbox row appears only once the async
+	// Backend.UploadEligibility probe resolves (uploadRowVisible), which
+	// races against key delivery — wait for it to settle before tabbing so
+	// the focus-order tab count below is deterministic.
+	mustSee(t, s, "Register with", "the D-01 upload checkbox row has settled")
+
+	// Tab to the key-source toggle (5 Tabs from Alias prefix: Host, Hostname, Port, the D-01 upload checkbox, Source).
+	tabKeys(s, 5)
 	mustSee(t, s, "Generate a new key", "D-10 key-source toggle visible")
 
 	// Flip to reuse mode (right arrow on the key-source toggle).
@@ -896,8 +909,8 @@ func TestCreateFlow_ReuseManualPath(t *testing.T) {
 	// With no scanned keys, the manual-path row is immediately at reuseIdx=0.
 	mustSee(t, s, "Enter a path manually", "manual-path row visible (no scanned keys in sandbox)")
 
-	// Tab from key-source (focus 4) to picker body (focus 5), then to manual
-	// path text input (focus 6).
+	// Tab from key-source (focus 5) to picker body (focus 6), then to manual
+	// path text input (focus 7).
 	tabKeys(s, 2)
 	// Type the manual key path character by character.
 	for _, b := range []byte(manualKeyPath) {

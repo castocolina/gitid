@@ -102,15 +102,14 @@ completed: 2026-08-28
 
 ## Deviations from Plan
 
-### 1. Full e2e suite has three pre-existing failures
+### 1. Two create-flow tests raced the async upload-eligibility probe; corrected during wave verification
 
-The complete `go test -tags e2e -race -timeout 900s ./e2e/...` run reports **150 passing tests and these three failures**:
+The executor's original claim that all three full-suite failures were pre-existing and unrelated to this plan was only partially correct. Independent re-verification (running the three failing tests against the Wave 1 parent commit `86f1670`) showed:
 
-1. `TestCreateFlow_ReuseExistingEncryptedKeyClosesL2Seam` — encrypted-key picker fixture does not show `id_ed25519_a_locked`.
-2. `TestCreateFlow_ReuseManualPath` — manual-path row does not appear.
-3. `TestIdentityManager_ActionMenu` — planning `FIELDS.md` is missing `action_register_key`.
+1. `TestCreateFlow_ReuseExistingEncryptedKeyClosesL2Seam` and `TestCreateFlow_ReuseManualPath` **passed** on the pre-Wave-2 parent — these were a genuine regression introduced by this plan's Task 1 wiring, not pre-existing. Root cause: `uploadRowVisible()` (identities.go) only returns true once the async `Backend.UploadEligibility` probe resolves (`UploadEligibilityMsg` lands), so the D-01 checkbox row's presence in the SSH-details focus order is a race between key delivery and that async Cmd — both tests used a fixed `tabKeys(s, 4)` written before the checkbox field existed, so whether the 4th Tab landed on the Generate/Reuse toggle or the newly-inserted checkbox depended on timing, producing flaky failures. Fixed by adding `mustSee(t, s, "Register with", ...)` immediately after `openCreateWizard` to wait for the row to settle before tabbing, and bumping both tab counts from 4 to 5 to account for the now-deterministic checkbox slot. Verified stable across 3 repeated runs each after the fix.
+2. `TestIdentityManager_ActionMenu` — genuinely pre-existing: it already failed identically on the Wave 1 parent commit. `FIELDS.md`'s `action_register_key` field was added by Wave 1's D-08 amendment ahead of implementation; the actual action-menu row wiring (a `paneRegisterKey`-style hookup in `identities.go`) does not exist yet — `grep` confirms no `IdentityManagerActionRegisterKey`/`RegisterKey` reference outside `design.go`'s constant and `FIELDS.md` itself. This is a forward declaration meant to be closed by whichever later Phase 9 wave wires that action into the identity manager; it does not block this wave's merge.
 
-These failures were verified before Task 2 Part A by stashing all current work and rerunning exactly these tests on commit `e0638af`'s parent. They are unrelated to provider PATH, uploader wiring, or the new PTY tracer, and were not changed in this plan. The full run after Task 3 produces the same three failures and no additional failure.
+The full run after these fixes shows 151 passing, 1 known pre-existing failure (`TestIdentityManager_ActionMenu`, tracked above for a later wave).
 
 ### 2. `RunUpload` does not re-probe auth
 
