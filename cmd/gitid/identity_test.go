@@ -983,7 +983,17 @@ func TestIdentityRotateDryRunNamesCurrentKeyAndCaveat(t *testing.T) {
 	}
 
 	cmd, out, _ := cliTestCmd()
-	if err := runIdentityKeyVerb(cmd, "work", "rotate", identityKeyFlags{DryRun: true}, false, false); err != nil {
+	// NoUpload: true — this test asserts the R2-13 current-key labelling and
+	// caveat, unrelated to the 09-05-PLAN.md Task 3 upload preview. Without
+	// it, WR-08's fix (printKeyCeremonyDryRun now correctly resolves
+	// seedDeleteFixture's tilde-form acct.PubPath and finds the seeded key)
+	// would make runIdentityKeyVerb's dry-run path reach the REAL
+	// uploaderDeps here — this test builds its own *realBackend internally
+	// with no injectable seam — and shell out to a real gh/glab if one
+	// happens to be on this machine's PATH, exactly the hazard
+	// TestIdentityKeyVerbDryRunNoYesWritesNothing's own comment already
+	// documents for the sibling verbs.
+	if err := runIdentityKeyVerb(cmd, "work", "rotate", identityKeyFlags{DryRun: true, NoUpload: true}, false, false); err != nil {
 		t.Fatalf("rotate --dry-run: %v", err)
 	}
 	got := out.String()
