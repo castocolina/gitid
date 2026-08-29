@@ -424,6 +424,35 @@ func TestRotateDeleteOfferEnterFromDefaultDoesNotDelete(t *testing.T) {
 	}
 }
 
+// TestRotateDeleteOfferEscLeavesWithoutDeleting is the WR-07 regression:
+// before this fix, every key but arrows/tab/enter (including esc) hit the
+// pane's trailing `handled: true` and was silently swallowed — the rotate
+// is already committed by the time this offer renders, so a user who did
+// not want to answer the destructive question had no way out at all. Esc
+// must resolve to the SAME non-destructive "leave it" answer the default
+// choice row does, from EITHER focus position, and must never dispatch a
+// delete.
+func TestRotateDeleteOfferEscLeavesWithoutDeleting(t *testing.T) {
+	var calls []string
+	sb := stubBackend{rotateDeleteCalls: &calls}
+	a := atRotateDeleteOffer(t, sb)
+	a = pressSeq(t, a, "down") // move to the delete option first
+	if m := identModel(t, a); m.rotateDeleteChoiceFocus != 1 {
+		t.Fatalf("setup: focus = %d, want 1 (delete)", m.rotateDeleteChoiceFocus)
+	}
+	a = pressAndRun(t, a, "esc")
+	if len(calls) != 0 {
+		t.Fatalf("esc must never dispatch a delete, got calls=%v", calls)
+	}
+	m := identModel(t, a)
+	if !m.rotateDeleteResolved {
+		t.Fatal("esc must resolve the offer (a way out of the pane)")
+	}
+	if !strings.Contains(m.rotateDeleteResult, "Left in place") {
+		t.Fatalf("rotateDeleteResult = %q, want the left-in-place message", m.rotateDeleteResult)
+	}
+}
+
 func TestRotateDeleteOfferDeleteRequiresAnExplicitMove(t *testing.T) {
 	var calls []string
 	sb := stubBackend{rotateDeleteCalls: &calls}

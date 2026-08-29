@@ -2770,6 +2770,24 @@ func (m identitiesModel) handleKeyCeremonyKey(msg tea.KeyMsg, s DemoState) keyRe
 		case "up", "down", "left", "right", "tab", "shift+tab":
 			m.rotateDeleteChoiceFocus = 1 - m.rotateDeleteChoiceFocus
 			return keyResult{model: m, handled: true}
+		case "esc":
+			// WR-07: without this case, every key but the arrows/tab/enter
+			// above hit the trailing `return handled: true` below and was
+			// swallowed — including esc. The rotate is already committed by
+			// the time this offer renders, so a user who does not want to
+			// answer the destructive question had NO way out of the pane,
+			// contradicting the phase's "upload/offer never gates"
+			// non-negotiable (a soft gate is still a gate). Esc resolves to
+			// the SAME non-destructive "leave it" answer the default choice
+			// row does — never a delete. Guarded by the same
+			// rotateDeleteCommitPending check "enter" uses below: a delete
+			// already in flight cannot be un-dispatched by leaving the pane.
+			if m.rotateDeleteCommitPending {
+				return keyResult{model: m, handled: true}
+			}
+			m.rotateDeleteResult = fmt.Sprintf(RotateDeleteOfferResultLeftFmt, m.rotateDeleteOffer.ManualCommand)
+			m.rotateDeleteResolved = true
+			return keyResult{model: m, handled: true}
 		case "enter":
 			if m.rotateDeleteCommitPending {
 				return keyResult{model: m, handled: true}
