@@ -497,6 +497,7 @@ var providerCommandTimeout = 20 * time.Second
 func buildUploaderDeps() uploader.Deps {
 	return uploader.Deps{
 		LookPath: exec.LookPath,
+		ReadFile: os.ReadFile,
 		RunCmd: func(name string, args ...string) (string, int, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), providerCommandTimeout)
 			defer cancel()
@@ -1338,6 +1339,38 @@ func shortHostname() string {
 // stop the wizard (D-03/D-11): every failure — staging, detect, auth,
 // upload — is reported as a failed UploadResultRow inside the delivered
 // UploadRunMsg.
+func toUploadRunView(results []uploader.RegistrationResult) tuikit.UploadRunView {
+	rows := make([]tuikit.UploadResultRow, 0, len(results))
+	for _, result := range results {
+		row := tuikit.UploadResultRow{Command: result.Command}
+		switch result.Registration {
+		case uploader.RegistrationAuthentication:
+			row.Registration = tuikit.UploadRegistrationAuthentication
+			row.Label = tuikit.UploadRegistrationLabelAuth
+		case uploader.RegistrationSigning:
+			row.Registration = tuikit.UploadRegistrationSigning
+			row.Label = tuikit.UploadRegistrationLabelSigning
+		case uploader.RegistrationCombined:
+			row.Registration = tuikit.UploadRegistrationCombined
+			row.Label = tuikit.UploadRegistrationLabelCombined
+		}
+		switch result.Outcome {
+		case uploader.OutcomeUploaded:
+			row.Outcome = tuikit.UploadRowUploaded
+		case uploader.OutcomeAlreadyPresent:
+			row.Outcome = tuikit.UploadRowAlreadyPresent
+		default:
+			row.Outcome = tuikit.UploadRowFailed
+			row.Reason = result.Output
+			if row.Reason == "" && result.Err != nil {
+				row.Reason = result.Err.Error()
+			}
+		}
+		rows = append(rows, row)
+	}
+	return tuikit.UploadRunView{Rows: rows}
+}
+
 func (b *realBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
 	return func() tea.Msg {
 		provider, _ := uploader.ProviderForHostname(spec.Hostname)
@@ -1382,25 +1415,10 @@ func (b *realBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
 		// one operation the user approved). DetectFor still resolves the
 		// command path for CommandPreview/UploadKey, but never probes auth.
 
-		title := fmt.Sprintf(tuikit.UploadKeyTitleFmt, spec.Identity, shortHostname())
-		command := uploader.CommandPreview(tool, toolPath, pubPath, title, uploader.KeyAuthentication)
-		out, upErr := uploader.UploadKey(tool, toolPath, pubPath, title, uploader.KeyAuthentication, b.uploaderDeps)
-		row := tuikit.UploadResultRow{
-			Registration: tuikit.UploadRegistrationAuthentication,
-			Label:        tuikit.UploadRegistrationLabelAuth,
-			Command:      command,
-		}
-		if upErr != nil {
-			row.Outcome = tuikit.UploadRowFailed
-			reason := out
-			if reason == "" {
-				reason = upErr.Error()
-			}
-			row.Reason = reason
-		} else {
-			row.Outcome = tuikit.UploadRowUploaded
-		}
-		return tuikit.UploadRunMsg{View: tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{row}}}
+		title := uploader.KeyTitle(spec.Identity, shortHostname())
+		results := uploader.UploadKeys(tool, toolPath, pubPath,
+			uploader.RegistrationRequestsWithTitle(title, uploader.RegistrationAuthentication), b.uploaderDeps)
+		return tuikit.UploadRunMsg{View: toUploadRunView(results)}
 	}
 }
 
