@@ -1108,9 +1108,31 @@ func CaptureCreateFlowScreens(backend tuikit.Backend) (map[string]string, error)
 	m = freshWizard(backend)
 	m = keyEnter(m) // step 0 -> step 1 (test connection screen shown, testPhase=testIdle)
 
-	// Enter from testIdle → testRunning1 + TestStage1 cmd returned.
+	// Enter from testIdle → testRunning1 + TestStage1 cmd returned — UNLESS
+	// the D-01 checkbox auto-checked (FixtureBackend.UploadEligibility
+	// answers Ready for any github.com-implying host, which this fresh
+	// wizard's default hostname is), in which case Enter instead enters
+	// testUpload and returns the RunUpload cmd (Phase 9 UP-02/UP-03). Detect
+	// that one extra hop and deliver its UploadRunMsg first — the same
+	// no-user-keystroke auto-advance into testRunning1 the real wizard does
+	// (D-02) — before falling through to the stage-1 protocol below.
 	var stage1Cmd tea.Cmd
 	m, stage1Cmd = stepAndPendingCmd(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if stage1Cmd != nil {
+		if uploadMsg := stage1Cmd(); uploadMsg != nil {
+			if _, isUploadRun := uploadMsg.(tuikit.UploadRunMsg); isUploadRun {
+				m, stage1Cmd = stepAndPendingCmd(m, uploadMsg)
+			} else {
+				// Not an upload hop — restore the original cmd so the
+				// stage-1 delivery below still sees it (stage1Cmd() was
+				// called once above purely to inspect the message type; a
+				// tea.Cmd is a plain closure, safe to invoke more than
+				// once here since offlineCaptureBackend's stage cmds are
+				// pure and side-effect-free).
+				stage1Cmd = func() tea.Msg { return uploadMsg }
+			}
+		}
+	}
 	if stage1Cmd != nil {
 		// Deliver the stage-1 result (fires TestStage2 cmd as side effect).
 		var stage2Cmd tea.Cmd
