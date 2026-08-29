@@ -4164,6 +4164,29 @@ func wizardChordHint(step int) string {
 // all when uploadRowVisible is false (the omitted shape: no row, not an
 // empty placeholder) — the row simply appears once the async eligibility
 // answer lands (checkUploadEligibility, called from Update, never View).
+// renderUploadRun renders D-02's completed announce-and-do rows. It is
+// deliberately separate from the transient testUpload branch in
+// renderWizard: UploadRunMsg immediately changes testPhase to testRunning1
+// and starts the existing stage-1 command, so the rows must remain visible
+// while that command runs instead of disappearing with the phase change.
+func renderUploadRun(run UploadRunView) string {
+	var b strings.Builder
+	for _, row := range run.Rows {
+		b.WriteString(" " + styleFaint.Render(fmt.Sprintf(UploadRunningLineFmt, row.Command)) + "\n")
+	}
+	for _, row := range run.Rows {
+		switch row.Outcome {
+		case UploadRowUploaded:
+			b.WriteString(" " + styleHealthy.Render(fmt.Sprintf(UploadResultOKFmt, row.Label)) + "\n")
+		case UploadRowAlreadyPresent:
+			b.WriteString(" " + styleHealthy.Render(fmt.Sprintf(UploadResultSkippedFmt, row.Label)) + "\n")
+		case UploadRowFailed:
+			b.WriteString(" " + styleError.Render(fmt.Sprintf(UploadResultFailedFmt, row.Label, row.Reason)) + "\n")
+		}
+	}
+	return b.String()
+}
+
 func (w wizardModel) renderUploadCheckboxRow() string {
 	if !w.uploadRowVisible() {
 		return ""
@@ -4405,26 +4428,21 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 		b.WriteString(renderHostBlockPreview(m.backend, w.form.sshHost(), w.form.hostname.Value(), w.form.port.Value(), w.keyPath(), width))
 	case 1:
 		if w.testPhase == testUpload {
-			// D-02: announce-and-do — one Running: line per attempted
-			// registration, using the SAME faint command styling
-			// renderStageOutcome/PreviewBlock use, then (once uploadRun.Rows
-			// is populated) one result row per registration. No prompt, no
-			// actionable key here (wizardFooter returns nil for this
-			// phase) — the beat auto-advances on its own.
-			for _, row := range w.uploadRun.Rows {
-				b.WriteString(" " + styleFaint.Render(fmt.Sprintf(UploadRunningLineFmt, row.Command)) + "\n")
-			}
-			for _, row := range w.uploadRun.Rows {
-				switch row.Outcome {
-				case UploadRowUploaded:
-					b.WriteString(" " + styleHealthy.Render(fmt.Sprintf(UploadResultOKFmt, row.Label)) + "\n")
-				case UploadRowAlreadyPresent:
-					b.WriteString(" " + styleHealthy.Render(fmt.Sprintf(UploadResultSkippedFmt, row.Label)) + "\n")
-				case UploadRowFailed:
-					b.WriteString(" " + styleError.Render(fmt.Sprintf(UploadResultFailedFmt, row.Label, row.Reason)) + "\n")
-				}
-			}
+			// D-02: this transient pre-result beat has no prompt, cancel timer,
+			// or actionable key. The completed upload rows render below while
+			// the existing stage-1 command runs (renderUploadRun), so the
+			// announce/result remains observable after UploadRunMsg immediately
+			// auto-advances testPhase to testRunning1.
 			return b.String()
+		}
+		// Keep the announce/result visible while stage 1 and stage 2 run,
+		// then reclaim its two rows once the completed stage-2 evidence and
+		// Next button need the fixed 100x30 pane budget. The upload result
+		// was already observable during the autonomous beat; keeping it on
+		// the final proof screen would push the existing gate's action below
+		// the viewport.
+		if len(w.uploadRun.Rows) > 0 && w.testPhase != testStage2 {
+			b.WriteString(renderUploadRun(w.uploadRun))
 		}
 		if w.proof.Text != "" {
 			b.WriteString(" " + styleFaint.Render("Demo failure control — locked (nothing left to simulate)") + "\n")

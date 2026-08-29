@@ -281,6 +281,156 @@ func TestCreateFlow_TestStagePass(t *testing.T) {
 // state on BOTH stages — never the red hard-failure treatment — and D-04
 // still chains stage 2 on Enter after this outcome (it unlocks the store
 // exactly like PASS does).
+// TestCreateFlow_UploadAutonomousGitHubTracer is Phase 9's real-PTY tracer:
+// the compiled binary, driven by raw keystrokes only, probes the fake gh,
+// announces and runs ONE authentication-key registration with no extra Enter,
+// renders its result, then reaches the existing stage-1 gate unchanged.
+func TestCreateFlow_UploadAutonomousGitHubTracer(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+	fakeGH, ghLog := FakeGHDir(t, "ok")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH, fakeGH), dummyTermWidth, dummyTermHeight)
+
+	openCreateWizard(t, s)
+	mustSee(t, s, "Register with GitHub automatically", "step 0: fake gh eligibility renders the pre-checked auto-upload row")
+
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Step 2/4", "step 0 -> step 1")
+
+	// ONE test-step Enter: RunUpload announces/runs/reports, then UploadRunMsg
+	// auto-advances to the existing TestStage1 command (D-02, no prompt).
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Running:", "upload beat announces the exact command")
+	mustSee(t, s, "ssh-key add", "upload announce names the gh ssh-key add argv")
+	mustSee(t, s, "Authentication key registered", "upload beat renders the successful authentication result row")
+	saveFrame(t, "create-flow-upload-autonomous-github", s)
+	mustSee(t, s, "Hi user!", "UploadRunMsg auto-advanced into the existing stage-1 probe with no second Enter")
+	mustNotSee(t, s, "Retry (Enter)", "the successful upload beat exposes no prompt-shaped retry affordance")
+	mustSee(t, s, "Next: Git identity", "the auto-chained stage 2 completed before the existing gate advances")
+
+	// The 100x30 stage-2 proof replaces the transient upload rows by the
+	// time the auto-chain settles; the earlier mustSee assertions and the
+	// saved upload-beat frame prove the announce/result were visible.
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Step 3/4", "the existing two-stage gate remains intact after autonomous upload")
+
+	log := ReadFakeCLILog(t, ghLog)
+	if len(log) != 2 {
+		t.Fatalf("fake gh logged %d invocations, want exactly auth status + ssh-key add: %v", len(log), log)
+	}
+	if !strings.Contains(log[0], "auth status --hostname github.com") {
+		t.Errorf("first fake-gh argv = %q, want canonical auth status", log[0])
+	}
+	if !strings.Contains(log[1], "ssh-key add") || !strings.Contains(log[1], "--type authentication") {
+		t.Errorf("second fake-gh argv = %q, want ssh-key add with --type authentication", log[1])
+	}
+	argv := strings.Fields(log[1])
+	if len(argv) < 3 || !strings.HasSuffix(argv[2], ".pub") {
+		t.Errorf("ssh-key add argv = %q, want its key-file operand (argv[2]) to end in .pub", log[1])
+	}
+	s.close(t)
+}
+
+// TestCreateFlow_UploadOmittedForUnknownProvider proves D-13 at the real
+// process boundary: a host that CONTAINS the provider name but is not a
+// github.com/gitlab.com domain/subdomain never renders the checkbox and
+// never invokes gh.
+func TestCreateFlow_UploadOmittedForUnknownProvider(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+	fakeGH, ghLog := FakeGHDir(t, "ok")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH, fakeGH), dummyTermWidth, dummyTermHeight)
+
+	openCreateWizard(t, s)
+	// The wizard's provider gate follows the SSH Host alias suffix, so first
+	// focus that editable text field (click-to-focus is also part of the
+	// form contract) and replace acme.github.com with an alias whose suffix
+	// is example.com even though the full string contains "github".
+	clickLabelRow(t, s, "SSH Host (alias)")
+	for range "acme.github.com" {
+		s.sendKey([]byte{0x7f}, keystrokeDelay)
+	}
+	s.sendKey([]byte("acme.github.example.com"), keystrokeDelay)
+	mustNotSee(t, s, "Register with GitHub automatically", "github.example.com-shaped host is omitted, never auto-upload eligible")
+	// Opening the wizard deliberately probes its default GitHub fixture
+	// before the user edits the Host row. Clear that known pre-edit probe
+	// from the fake's recording boundary; the assertion below proves the
+	// provider-name-containing, non-matching host itself causes ZERO calls.
+	if err := os.WriteFile(ghLog, nil, 0o600); err != nil { //nolint:gosec // test-owned fake-gh log under t.TempDir() (G306)
+		t.Fatalf("clearing pre-edit fake-gh log: %v", err)
+	}
+
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Step 2/4", "unknown provider still permits the ordinary test step")
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Hi user!", "unknown provider reaches stage 1 without an upload invocation")
+	if log := ReadFakeCLILog(t, ghLog); len(log) != 0 {
+		t.Errorf("unknown provider invoked fake gh: %v; want zero provider subprocesses", log)
+	}
+	s.close(t)
+}
+
+// TestCreateFlow_ExistingPTYCannotReachRealProviderCLI exists because the
+// cross-AI review found the pre-existing create-flow PTY helper leaked the
+// ambient PATH. It must fail if a future change reconstructs an
+// ambient-PATH child environment on this path; it is NOT enough to assert
+// merely that the flow completed.
+func TestCreateFlow_ExistingPTYCannotReachRealProviderCLI(t *testing.T) {
+	home := SandboxHome(t)
+	bin := BuildBinary(t)
+	fakeSSH := FakeSSHDir(t, "pass")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	cmd := newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH)
+	denyLog, ok := envValue(cmd.Env, "GITID_E2E_DENY_LOG")
+	if !ok {
+		t.Fatal("newRealCreateFlowCmd's e2eEnv-built child environment carries no deny log")
+	}
+	pathEnv, ok := envValue(cmd.Env, "PATH")
+	if !ok {
+		t.Fatal("newRealCreateFlowCmd's e2eEnv-built child environment carries no PATH")
+	}
+	ghPath, found := lookPathIn(pathEnv, "gh")
+	if !found || !isUnderTempDir(ghPath) {
+		t.Fatalf("gh under the pre-existing PTY helper PATH = %q (found=%v), want a test-owned deny shim", ghPath, found)
+	}
+
+	s := startPTYAt(t, cmd, dummyTermWidth, dummyTermHeight)
+	openCreateWizard(t, s)
+	mustSee(t, s, "not logged in", "deny shim deterministically produces the unauth eligibility state")
+
+	// Explicitly opt into the (otherwise unchecked) unauth row so the flow
+	// reaches RunUpload and proves that its provider invocation is denied,
+	// never sent to a developer's real gh account.
+	for range 4 { // prefix -> host -> hostname -> port -> checkbox
+		s.sendKey([]byte("\t"), keystrokeDelay)
+	}
+	s.sendKey([]byte(" "), keystrokeDelay)
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Step 2/4", "step 0 -> step 1")
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Hi user!", "blocked upload never gates the existing stage-1 flow")
+	mustSee(t, s, "Next: Git identity", "blocked upload still permits the auto-chained stage-2 proof")
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Step 3/4", "blocked upload still preserves the existing gate")
+
+	for _, entry := range ReadProviderDenyLog(t, denyLog) {
+		if !strings.Contains(entry, "gh") {
+			t.Errorf("deny log entry = %q, want only an invocation of the test-owned gh deny shim", entry)
+		}
+	}
+	s.close(t)
+}
+
 func TestCreateFlow_TestStageReachableNotUploaded(t *testing.T) {
 	home := SandboxHome(t)
 	bin := BuildBinary(t)

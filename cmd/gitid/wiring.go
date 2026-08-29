@@ -1340,7 +1340,7 @@ func shortHostname() string {
 // UploadRunMsg.
 func (b *realBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
 	return func() tea.Msg {
-		provider, canonicalHost := uploader.ProviderForHostname(spec.Hostname)
+		provider, _ := uploader.ProviderForHostname(spec.Hostname)
 		if provider == "" {
 			// D-13: not a gated provider — nothing to run. The wizard only
 			// reaches this method when the checkbox was checked, which
@@ -1373,14 +1373,14 @@ func (b *realBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
 				Reason:       fmt.Sprintf("%s not found on PATH", providerToolName(provider)),
 			}}}}
 		}
-		if uploader.AuthCheck(toolPath, b.uploaderDeps, canonicalHost) != uploader.AuthAuthenticated {
-			return tuikit.UploadRunMsg{View: tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{{
-				Registration: tuikit.UploadRegistrationAuthentication,
-				Label:        tuikit.UploadRegistrationLabelAuth,
-				Outcome:      tuikit.UploadRowFailed,
-				Reason:       fmt.Sprintf("not authenticated to %s", canonicalHost),
-			}}}}
-		}
+
+		// The checked path reached RunUpload only after UploadEligibility's
+		// async, memoized canonical-host auth probe answered Ready. Do not
+		// issue a second `auth status` here: the probe is the authority for
+		// this wizard beat, and rechecking would double its provider traffic
+		// (and make the PTY's observed eligibility command differ from the
+		// one operation the user approved). DetectFor still resolves the
+		// command path for CommandPreview/UploadKey, but never probes auth.
 
 		title := fmt.Sprintf(tuikit.UploadKeyTitleFmt, spec.Identity, shortHostname())
 		command := uploader.CommandPreview(tool, toolPath, pubPath, title, uploader.KeyAuthentication)
