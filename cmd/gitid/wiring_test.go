@@ -5482,6 +5482,32 @@ func TestRunUploadPanicIsReportedAsAnInternalDefect(t *testing.T) {
 	}
 }
 
+// TestRunUploadStagingFailureRedactsHomePath is the WR-05 regression:
+// uploadRequestFromSpec's staging error (here, StageReuse failing to derive
+// a public key for a nonexistent reuse key) must be routed through
+// RedactCLIOutput exactly like every other RunUpload failure path — never
+// handed to uploadFailureView raw. RedactCLIOutput's two guarantees both
+// matter here: the real absolute HOME path must never leak, and the line
+// must stay within the SAME bounded width (58) every other failure path
+// uses, never an unbounded raw os error inside the fixed-size frame.
+func TestRunUploadStagingFailureRedactsHomePath(t *testing.T) {
+	b, _ := fakeUploaderRunUploadDeps(t, "[]", "[]", nil)
+	spec := runUploadSpec("acme")
+	spec.ReuseKeyPath = "~/.ssh/does-not-exist-" + t.Name()
+
+	_, run := waitForRunUploadResult(t, b.RunUpload(spec))
+	if len(run.View.Rows) != 1 || run.View.Rows[0].Outcome != tuikit.UploadRowFailed {
+		t.Fatalf("rows = %+v, want exactly 1 failed row", run.View.Rows)
+	}
+	reason := run.View.Rows[0].Reason
+	if strings.Contains(reason, b.home) {
+		t.Errorf("Reason = %q, leaks the real HOME path %q", reason, b.home)
+	}
+	if len([]rune(reason)) > 58 {
+		t.Errorf("Reason = %q (%d runes), want it bounded to 58 like every other RedactCLIOutput call site", reason, len([]rune(reason)))
+	}
+}
+
 // TestRunUploadSharesTheStagedKeyWithTestStage1 asserts the public-key path
 // RunUpload uses equals the one TestStage1 stages for the same spec — one
 // staged result shared, never two independently staged.

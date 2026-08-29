@@ -215,6 +215,32 @@ func TestSelfHostedCreateNeverPrintsTheNoUploadFlagNote(t *testing.T) {
 	}
 }
 
+// TestPlanUploadReadFileFailureRedactsHomePath is the WR-05 regression:
+// planUpload's own ReadFile failure (a missing/unreadable public-key file)
+// embeds the real absolute HOME path in the raw os error — the exact
+// leakage RedactCLIOutput exists to prevent — and must be redacted before
+// reaching uploadFailureView, not handed through raw.
+func TestPlanUploadReadFileFailureRedactsHomePath(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	req := uploadRequest{Identity: "acme", Hostname: "ssh.github.com", PubPath: home + "/.ssh/does-not-exist.pub"}
+
+	_, terminal := b.planUpload(req)
+	if terminal == nil {
+		t.Fatal("setup: a missing pub key file must resolve to a terminal failure view")
+	}
+	if len(terminal.Rows) != 1 || terminal.Rows[0].Outcome != tuikit.UploadRowFailed {
+		t.Fatalf("rows = %+v, want exactly 1 failed row", terminal.Rows)
+	}
+	reason := terminal.Rows[0].Reason
+	if strings.Contains(reason, home) {
+		t.Errorf("Reason = %q, leaks the real HOME path %q", reason, home)
+	}
+	if !strings.Contains(reason, "~") {
+		t.Errorf("Reason = %q, want the redacted home marker \"~\"", reason)
+	}
+}
+
 func TestPrintUploadOutcomeMatchesTheWizardSection(t *testing.T) {
 	view := tuikit.UploadRunView{ProviderName: "GitHub", Rows: []tuikit.UploadResultRow{
 		{Label: tuikit.UploadRegistrationLabelAuth, Command: "gh ssh-key add ~/.ssh/id_ed25519_acme.pub --type authentication", Outcome: tuikit.UploadRowUploaded},

@@ -1462,7 +1462,10 @@ func (b *realBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
 		}()
 		req, err := b.uploadRequestFromSpec(spec)
 		if err != nil {
-			return tuikit.UploadRunMsg{View: uploadFailureView(err.Error(), spec.Hostname)}
+			// WR-05: uploadRequestFromSpec's staging errors embed the
+			// staging temp dir's absolute path — redact exactly like the
+			// classified-CLI-output and recovered-panic paths already do.
+			return tuikit.UploadRunMsg{View: uploadFailureView(uploader.RedactCLIOutput(err.Error(), b.home, 58), spec.Hostname)}
 		}
 		plan, terminal := b.planUpload(req)
 		if terminal != nil {

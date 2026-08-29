@@ -144,7 +144,10 @@ func (b *realBackend) planUpload(req uploadRequest) (plan uploadPlan, terminal *
 
 	pubBytes, err := b.uploaderDeps.ReadFile(req.PubPath)
 	if err != nil {
-		view := uploadFailureView(err.Error(), req.Hostname)
+		// WR-05: a ReadFile failure embeds the absolute path (real ~/.ssh or
+		// the staging temp dir) — the exact home-path leakage RedactCLIOutput
+		// exists to prevent, and unbounded in length inside a fixed frame.
+		view := uploadFailureView(uploader.RedactCLIOutput(err.Error(), b.home, 58), req.Hostname)
 		return uploadPlan{}, &view
 	}
 	pubLine := string(pubBytes)
