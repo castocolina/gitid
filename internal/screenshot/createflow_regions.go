@@ -1295,9 +1295,21 @@ func extractUploadSection(lines []string) string {
 	// RegionUploadSection is scoped to the upload BEAT's own content — the
 	// announce/result/fallback text that appears only once the beat has
 	// actually run or been explicitly declined.
+	// WR-03: the bare "Auto-registration" prefix was narrowed to the full
+	// UploadManualHeading phrase, for the same reason WR-12 dropped "not
+	// logged in to" — "Auto-registration" alone is ALSO the first word of
+	// the D-01 checkbox's own DISABLED label (UploadCheckboxLabelDisabledFmt
+	// = "Auto-registration unavailable — …", design.go), which survives the
+	// width-60 truncation and would anchor this region on the ordinary
+	// step-0 form body instead of the upload beat's own manual-fallback
+	// content. UploadManualHeading itself is "Auto-registration wasn't
+	// available. Register it yourself:" — a distinct phrase from the
+	// checkbox's "unavailable" wording, so matching the longer phrase keeps
+	// the real manual-fallback anchor (upload-manual-fallback and every
+	// other Disabled-eligibility upload-section screen) working.
 	uploadMarkers := []string{
 		"gh ssh-key add", "glab ssh-key add",
-		"Auto-registration", "key registered", "registration failed",
+		"Auto-registration wasn't available", "key registered", "registration failed",
 		"already registered",
 	}
 	start := -1

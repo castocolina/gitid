@@ -2828,7 +2828,17 @@ func uploadVisualSpecs() []ScreenSpec {
 			ApplicableApprovedTUI: false,
 			NonApplicability: append(noHTML, uxNonComparable("approved-tui", upFixtureClass,
 				"captured for both backends via uploadProbeBackend, but held non-comparable — see upload-checkbox-unauth's own reasoning. D-09's approval lives in this in-process capture alone; Task 1's PTY suite documents why a real PTY harness cannot safely produce the genuinely tool-absent DISABLED shape (TestCreateFlow_UploadCheckboxDisabledState's own doc comment)")),
-			RequiredRegions: []RegionName{RegionUploadSection},
+			// WR-03: this used to require RegionUploadSection, satisfied only
+			// because extractUploadSection's marker list included
+			// "Auto-registration" — the first word of the D-01 checkbox's OWN
+			// DISABLED label, which caused RegionUploadSection to falsely
+			// match on ORDINARY step-0 screens that merely render the
+			// checkbox in the Disabled state (never having run — there is
+			// nothing TO run here). Same fix, same reasoning as
+			// upload-checkbox-unauth's own RequiredRegions comment just
+			// above: the checkbox row is covered by RegionFormFields, and
+			// this spec's StateMarker still requires the label text present.
+			RequiredRegions: []RegionName{RegionFormFields},
 		},
 		{
 			ScreenID:              "upload-manual-fallback",
