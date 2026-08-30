@@ -54,7 +54,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: Global SSH Options** - Danger-aware, explained SSH config options; advisory + fixable (completed 2026-08-27)
 - [x] **Phase 7: Global Git Options** - Baseline git config (main/master, eol, case, email) + recipe defaults, explained (completed 2026-08-28)
 - [x] **Phase 8: Health + Fixer** - Two-section (SSH + Git) health with redundancy/contradiction detection and in-place fixes (completed 2026-08-28)
-- [ ] **Phase 9: Upload / Credentials Assist** - Auto-upload the `.pub` (auth + signing) when `gh`/`glab` authenticated; manual fallback
+- [x] **Phase 9: Upload / Credentials Assist** - Auto-upload the `.pub` (auth + signing) when `gh`/`glab` authenticated; manual fallback (completed 2026-08-30)
 - [ ] **Phase 10: Linux Validation + Release Pipeline** - End-to-end Linux validation + tagged, checksummed release artifacts
 
 ## Phase Details
@@ -411,42 +411,42 @@ Plans:
    it with `cmd/gitid-dummy` and classifies every difference as an improvement or
    a defect. (DLV-04, DLV-06)
 
-**Plans**: 8 plans (8 waves)
+**Plans**: 8 plans (8 sequential waves; delivered 2026-08-30)
 **UI hint**: yes
 
 Plans:
 
 **Wave 1**
 
-- [ ] 09-01-PLAN.md — D-08 design-contract amendments (create-flow + identity-manager FIELDS.md, APPROVAL addendum, the `u` key claim) and the frozen upload copy block registered in `gate-copy-freeze` (UP-01, UP-03)
+- [x] 09-01-PLAN.md — D-08 design-contract amendments (create-flow + identity-manager FIELDS.md, APPROVAL addendum, the `u` key claim) and the frozen upload copy block registered in `gate-copy-freeze` (UP-01, UP-03)
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 09-02-PLAN.md — TRACER: one GitHub authentication-key upload wired end-to-end — `DetectFor`, boundary-matched `ProviderForHostname`, `buildUploaderDeps` + nil-guard + bounded runner, the async Backend seam, the `testUpload` sub-beat, the step-0 checkbox, the fixture, a raw-keystroke PTY proof, AND the suite-wide hermetic provider-PATH boundary that stops any e2e run from reaching a real `gh`/`glab` (UP-02, UP-03)
+- [x] 09-02-PLAN.md — TRACER: one GitHub authentication-key upload wired end-to-end — `DetectFor`, boundary-matched `ProviderForHostname`, `buildUploaderDeps` + nil-guard + bounded runner, the async Backend seam, the `testUpload` sub-beat, the step-0 checkbox, the fixture, a raw-keystroke PTY proof, AND the suite-wide hermetic provider-PATH boundary that stops any e2e run from reaching a real `gh`/`glab` (UP-02, UP-03)
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 09-03-PLAN.md — `internal/uploader` engine completion: the D-16 per-registration result, D-12's combined GitLab usage type, D-15's provider inventory and validated delete call, D-14's failure classifiers, D-07's machine-scoped title, per-registration upload titles, and the ASVS V5 public-key-only invariant enforced by CONTENT rather than by filename suffix (UP-01, UP-02, UP-03)
+- [x] 09-03-PLAN.md — `internal/uploader` engine completion: the D-16 per-registration result, D-12's combined GitLab usage type, D-15's provider inventory and validated delete call, D-14's failure classifiers, D-07's machine-scoped title, per-registration upload titles, and the ASVS V5 public-key-only invariant enforced by CONTENT rather than by filename suffix (UP-01, UP-02, UP-03)
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 09-04-PLAN.md — the complete wizard upload section: all four checkbox states, the inventory-driven missing-type diff, classified reasons, the byte-identical manual fallback, D-17's post-upload confirmation, and D-18's no-persisted-state assertion (UP-01, UP-02, UP-03)
+- [x] 09-04-PLAN.md — the complete wizard upload section: all four checkbox states, the inventory-driven missing-type diff, classified reasons, the byte-identical manual fallback, D-17's post-upload confirmation, and D-18's no-persisted-state assertion (UP-01, UP-02, UP-03)
 
 **Wave 5** *(blocked on Wave 4)*
 
-- [ ] 09-05-PLAN.md — CLI surface: the ONE shared orchestration and outcome printer, the `register-key` verb, `--no-upload` on the four write verbs, parity-matrix rows, and headless e2e (UP-01, UP-02, UP-03)
+- [x] 09-05-PLAN.md — CLI surface: the ONE shared orchestration and outcome printer, the `register-key` verb, `--no-upload` on the four write verbs, parity-matrix rows, and headless e2e (UP-01, UP-02, UP-03)
 
 **Wave 6** *(blocked on Wave 5)*
 
-- [ ] 09-06-PLAN.md — Identity Manager: the `paneRegisterKey` modal, the action-menu fifth row with the row-count desync fix, the rotate/repair upload beat, and D-04's interactive old-key delete offer (UP-01, UP-03)
+- [x] 09-06-PLAN.md — Identity Manager: the `paneRegisterKey` modal, the action-menu fifth row with the row-count desync fix, the rotate/repair upload beat, and D-04's interactive old-key delete offer (UP-01, UP-03)
 
 **Wave 7** *(blocked on Wave 6)*
 
-- [ ] 09-07-PLAN.md — DLV-04/DLV-06 UI-wave gates: raw-keystroke PTY coverage per new state, D-09's fresh approved frames, the visual-regression registry with classified divergences and four negative controls, and the paired real-vs-dummy PTY comparison (UP-01, UP-02, UP-03)
+- [x] 09-07-PLAN.md — DLV-04/DLV-06 UI-wave gates: raw-keystroke PTY coverage per new state, D-09's fresh approved frames, the visual-regression registry with classified divergences and four negative controls, and the paired real-vs-dummy PTY comparison (UP-01, UP-02, UP-03)
 
 **Wave 8** *(blocked on Wave 7)*
 
-- [ ] 09-08-PLAN.md — the ONESHOT-policy real-account GitHub validation (opt-in, disposable prefixed keys, ID-scoped cleanup, final sweep) plus UP-01/UP-02/UP-03 closure (UP-01, UP-02, UP-03)
+- [x] 09-08-PLAN.md — the ONESHOT-policy real-account GitHub validation (opt-in, disposable prefixed keys, ID-scoped cleanup, final sweep) plus UP-01/UP-02/UP-03 closure (UP-01, UP-02, UP-03)
 
 ### Phase 10: Linux Validation + Release Pipeline
 
@@ -476,5 +476,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Global SSH Options | 7/7 | Complete    | 2026-08-27 |
 | 7. Global Git Options | 0/TBD | Not started | - |
 | 8. Health + Fixer | 0/8 | Planned | - |
-| 9. Upload / Credentials Assist | 0/8 | Planned | - |
+| 9. Upload / Credentials Assist | 8/8 | Complete | 2026-08-30 |
 | 10. Linux Validation + Release Pipeline | 0/TBD | Not started | - |

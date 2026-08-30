@@ -52,7 +52,7 @@
 #   demo-web       (Re)launch the web design mockup dev server (Vite) on the
 #                   dedicated $(DEMO_WEB_PORT) and open it.
 
-.PHONY: setup-env build build-cross install uninstall test lint lint-tagged fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files gate-visual-regression smoke-network-test demo-web
+.PHONY: setup-env build build-cross install uninstall test lint lint-tagged fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files gate-visual-regression smoke-network-test verify-upload-real-account demo-web
 
 # Binary output directory.
 BIN_DIR := bin
@@ -215,7 +215,7 @@ fmt:
 ## so that is where the package's real `go test` coverage belongs -- `lint`
 ## stays fast (vet + static analysis only) while the tests still execute in
 ## an unconditional gate, satisfying "somewhere in make lint or make test".
-KNOWN_BUILD_TAGS := screenshot smoke e2e
+KNOWN_BUILD_TAGS := screenshot smoke e2e realaccount
 lint-tagged:
 	@echo "==> lint-tagged: guarding against a new ungated //go:build tag (CR-13)"
 	@found_tags=$$(find . -name '*.go' -not -path './.planning/*' -print0 \
@@ -230,6 +230,7 @@ lint-tagged:
 	go vet -tags screenshot ./...
 	go vet -tags smoke ./...
 	go vet -tags e2e ./...
+	go vet -tags realaccount ./...
 	$(GOLANGCI_LINT) run --build-tags screenshot ./internal/screenshot/...
 
 ## lint: run golangci-lint against all packages.
@@ -676,6 +677,14 @@ generate-visual-review-packet:
 ## from every other gate.
 smoke-network-test:
 	go test -tags smoke -run TestSmokeNetworkConnectivity -v ./cmd/gitid/...
+
+## verify-upload-real-account: ONESHOT.md Phase 9 External Account Policy
+## validation. LOCAL/UAT convenience only — never a prerequisite of `make test`,
+## `make test-e2e`, `make lint`, or CI. The test is opt-in under the separate
+## realaccount build tag and auto-skips rather than fails if gh authentication or
+## either required upload scope is unavailable.
+verify-upload-real-account:
+	go test -tags realaccount -run '^TestRealAccountGitHubUploadRoundTrip$$' -v ./e2e/...
 
 ## gate-no-backend-files: fail if any file changed on this branch since it
 ## diverged from main falls outside the Phase 2 design-only allowlist

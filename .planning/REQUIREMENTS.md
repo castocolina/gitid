@@ -300,17 +300,23 @@ These are first-class, enforced requirements — the user's core process ask.
 ## M. Upload / Credentials (UP)
 
 - [x] **UP-01** (Auth + signing instructions): concrete steps to add the `.pub` for
-  authentication and signing (GitHub = two registrations; GitLab = one). *(built —
-  `internal/upload`.)*
+  authentication and signing (GitHub = two registrations; GitLab = one). *(wired —
+  wizard manual-fallback slot, Identity Manager register-key modal, CLI outcome printer,
+  and real-provider per-registration title evidence in 09-08.)*
 
 - [x] **UP-02** (Assisted upload): `gh`/`glab` detect + prompt + upload; shown command
   == run command; absent/unauth falls back to manual, never gates create/copy.
-  *(built — `internal/uploader`.)*
+  *(wired — shared `buildArgs`-backed shown==run contract, `DetectFor` never-cross-route
+  routing, `ProviderForHostname` boundary gate, and never-gates evidence in 09-02..09-08.)*
 
-- [ ] **UP-03** (Auto-upload when possible): When `gh`/`glab` is authenticated and a
+- [x] **UP-03** (Auto-upload when possible): When `gh`/`glab` is authenticated and a
   valid identity exists, credential upload runs **autonomously** (no stop); the shown
   command equals the run command. Otherwise it falls back to a manual step. Not a
-  mandatory checkpoint.
+  mandatory checkpoint. *(executed — wizard `testUpload` sub-beat, register-key modal and
+  CLI verb, PTY evidence, and compiled-binary real-account validation on GitHub account
+  `castocolina`, run `20260830t035232-94f43a07`; all four disposable registrations were
+  resolved by run-scoped inventory lookup, deleted by recorded ID after scope re-confirmation,
+  and the final sweep found zero remaining entries.)*
 
 ## N. TUI Shell & CLI Parity (SHELL)
 
@@ -511,9 +517,9 @@ row below records each one's **home** phase.
 | HLTH-06 | Phase 8 | Complete |
 | FIX-01 | Phase 8 | Complete |
 | FIX-02 | Phase 8 | Complete |
-| UP-01 | Phase 9 | Pending |
-| UP-02 | Phase 9 | Pending |
-| UP-03 | Phase 9 | Pending |
+| UP-01 | Phase 9 | Complete |
+| UP-02 | Phase 9 | Complete |
+| UP-03 | Phase 9 | Complete |
 | SHELL-01 | Phase 5 | Complete |
 | SHELL-02 | Phase 5 | Complete |
 | SHELL-03 | Phase 5 | Complete |

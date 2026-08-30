@@ -1,4 +1,4 @@
-//go:build e2e
+//go:build e2e || realaccount
 
 package e2e
 
