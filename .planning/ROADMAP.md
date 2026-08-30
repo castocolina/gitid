@@ -461,7 +461,11 @@ Plans:
   1. A real-account validation run, following the same disposable-key/idempotent-cleanup/final-sweep protocol Wave 8 established for GitHub, executes against a real GitLab account and closes UP-04 with recorded evidence. (UP-04)
   2. The run is opt-in, behind its own build tag, never a prerequisite of any routine gate (`make test`/`make lint`/`make test-e2e`/CI). (UP-04)
 
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 09.1-01-PLAN.md — (wave 1) authorize the real-GitLab contact, then land the read-only end-to-end tracer: the `realaccountgitlab`-tagged test file, its full Makefile wiring, the exact-scope preflight proven live, and the LIFO cleanup machinery with account-free unit tests (UP-04)
+- [ ] 09.1-02-PLAN.md — (wave 2) the single disposable-key round trip against the real GitLab account through the compiled binary, plus the ONESHOT GitLab policy addendum and UP-04's outcome-conditional closure (UP-04)
 
 ### Phase 9.2: Global Git Ignore Management
 
@@ -514,7 +518,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. Global Git Options | 0/TBD | Not started | - |
 | 8. Health + Fixer | 0/8 | Planned | - |
 | 9. Upload / Credentials Assist | 8/8 | Complete | 2026-08-30 |
-| 9.1. GitLab Real-Account Validation | 0/TBD | Not started | - |
+| 9.1. GitLab Real-Account Validation | 0/2 | Planned | - |
 | 9.2. Global Git Ignore Management | 0/TBD | Not started | - |
 | 9.3. Release CI/CD + Installer | 0/TBD | Not started | - |
 | 10. Linux Validation + Release Pipeline | 0/TBD | Not started | - |
