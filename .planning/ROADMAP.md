@@ -55,6 +55,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 7: Global Git Options** - Baseline git config (main/master, eol, case, email) + recipe defaults, explained (completed 2026-08-28)
 - [x] **Phase 8: Health + Fixer** - Two-section (SSH + Git) health with redundancy/contradiction detection and in-place fixes (completed 2026-08-28)
 - [x] **Phase 9: Upload / Credentials Assist** - Auto-upload the `.pub` (auth + signing) when `gh`/`glab` authenticated; manual fallback (completed 2026-08-30)
+- [ ] **Phase 9.1: GitLab Real-Account Validation** - Prove the GitLab upload/delete path against a real, authenticated GitLab account, mirroring Wave 8's disposable-key protocol for GitHub
+- [ ] **Phase 9.2: Global Git Ignore Management** - A TUI view for managing a curated global gitignore (common tmp/venv/env patterns), reviewable before write
+- [ ] **Phase 9.3: Release CI/CD + Installer** - Tagged-release CI publishing checksummed binaries, plus a curl\|bash install script
 - [ ] **Phase 10: Linux Validation + Release Pipeline** - End-to-end Linux validation + tagged, checksummed release artifacts
 
 ## Phase Details
@@ -448,23 +451,57 @@ Plans:
 
 - [x] 09-08-PLAN.md — the ONESHOT-policy real-account GitHub validation (opt-in, disposable prefixed keys, ID-scoped cleanup, final sweep) plus UP-01/UP-02/UP-03 closure (UP-01, UP-02, UP-03)
 
+### Phase 9.1: GitLab Real-Account Validation
+
+**Goal**: The GitLab upload/delete path is proven against a real, authenticated GitLab account — not just offline `glab` PATH shims.
+**Depends on**: Phase 9 (GitHub real-account protocol proven in Wave 8, to be mirrored here)
+**Requirements**: UP-04
+**Success Criteria** (what must be TRUE):
+
+  1. A real-account validation run, following the same disposable-key/idempotent-cleanup/final-sweep protocol Wave 8 established for GitHub, executes against a real GitLab account and closes UP-04 with recorded evidence. (UP-04)
+  2. The run is opt-in, behind its own build tag, never a prerequisite of any routine gate (`make test`/`make lint`/`make test-e2e`/CI). (UP-04)
+
+**Plans**: TBD
+
+### Phase 9.2: Global Git Ignore Management
+
+**Goal**: A TUI view lets the user manage a global gitignore file with a curated, reviewable set of common ignore patterns.
+**Depends on**: Phase 9 (whole product complete)
+**Requirements**: GIGN-01
+**Success Criteria** (what must be TRUE):
+
+  1. A TUI surface lists a curated set of common ignore patterns (tmp/venv directories, `.env`/`.env.*` with `!.env.example` negation, and similar common patterns) and lets the user review and toggle each before writing to the global ignore file (`core.excludesFile`). (GIGN-01)
+  2. Nothing is written without explicit review/confirmation, matching every other gitid write path's discipline. (GIGN-01)
+
+**Plans**: TBD
+
+### Phase 9.3: Release CI/CD + Installer
+
+**Goal**: Tagged releases publish versioned, checksummed binaries, and a hosted curl\|bash script installs the right one for the caller's OS/arch.
+**Depends on**: Phase 9 (whole product complete)
+**Requirements**: BUILD-03, BUILD-05
+**Success Criteria** (what must be TRUE):
+
+  1. On a version tag, CI publishes the built binaries to GitHub Releases with SHA-256 checksums; the binary reports its build-stamped version (`gitid --version`). (BUILD-03)
+  2. A hosted install script detects the caller's OS/arch, downloads the matching released binary, verifies its checksum, and installs it to `PATH`. (BUILD-05)
+
+**Plans**: TBD
+
 ### Phase 10: Linux Validation + Release Pipeline
 
-**Goal**: The whole app is validated end-to-end on a mainstream Linux distro (alongside macOS), and tagged releases publish versioned, checksummed binaries.
-**Depends on**: Phase 9 (whole product complete)
-**Requirements**: PLAT-03, BUILD-03
+**Goal**: The whole app is validated end-to-end on a mainstream Linux distro, alongside macOS.
+**Depends on**: Phase 9.3 (release pipeline validates the same build matrix this phase exercises on Linux)
+**Requirements**: PLAT-03
 **Success Criteria** (what must be TRUE):
 
   1. The full create → test → store → manage → health flow is validated **end-to-end on at least one mainstream Linux distro** (in addition to macOS); portability gaps are fixed or logged as accepted limitations. (PLAT-03)
-  2. On a version tag, CI publishes the built binaries (darwin amd64/arm64, linux amd64) to **GitHub Releases with SHA-256 checksums**. (BUILD-03)
-  3. The binary reports its build-stamped version (`gitid --version`, ldflags). (BUILD-03)
 
 **Plans**: TBD
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 9.1 → 9.2 → 9.3 → 10
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -477,4 +514,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. Global Git Options | 0/TBD | Not started | - |
 | 8. Health + Fixer | 0/8 | Planned | - |
 | 9. Upload / Credentials Assist | 8/8 | Complete | 2026-08-30 |
+| 9.1. GitLab Real-Account Validation | 0/TBD | Not started | - |
+| 9.2. Global Git Ignore Management | 0/TBD | Not started | - |
+| 9.3. Release CI/CD + Installer | 0/TBD | Not started | - |
 | 10. Linux Validation + Release Pipeline | 0/TBD | Not started | - |

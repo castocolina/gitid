@@ -318,6 +318,14 @@ These are first-class, enforced requirements — the user's core process ask.
   resolved by run-scoped inventory lookup, deleted by recorded ID after scope re-confirmation,
   and the final sweep found zero remaining entries.)*
 
+- [ ] **UP-04** (GitLab real-account validation): the same real-account disposable-key
+  protocol Phase 9 (Wave 8) proved for GitHub is proven against a real, authenticated
+  GitLab account — creating, resolving, and deleting disposable keys via `glab`,
+  confirming both the compiled `register-key` path and the engine's per-registration-
+  title API against the live provider, with the same idempotent cleanup and final sweep
+  guarantees. GitLab upload/delete logic is currently proven only against offline `glab`
+  PATH shims (UP-01/UP-02/UP-03's evidence), never against a real account.
+
 ## N. TUI Shell & CLI Parity (SHELL)
 
 - [x] **SHELL-01** (Integrated app): a single Bubble Tea v2 app — header + identity
@@ -372,6 +380,23 @@ These are first-class, enforced requirements — the user's core process ask.
 - [x] **BUILD-04** (Reproducible dev bootstrap): `make setup-env` on a fresh macOS or
   Linux clone reproduces the CI toolchain (golangci-lint, gosec, pre-commit, hooks).
   *(TOOL-02 substrate; verify on both OSes.)*
+
+- [ ] **BUILD-05** (curl-and-bash installer): a hosted install script (`curl ... | sh`
+  style) that detects the caller's OS/arch, downloads the matching released binary from
+  GitHub Releases, verifies its SHA-256 checksum against the release's published
+  checksums (BUILD-03), and installs it to a sensible location on `PATH`. Depends on
+  BUILD-03 existing first — there is nothing to install until tagged releases publish
+  checksummed binaries.
+
+## Q. Global Git Ignore Management (GIGN)
+
+- [ ] **GIGN-01** (Global gitignore view): a TUI surface for managing a global git
+  ignore file (`core.excludesFile`) with a curated set of common, frequently-forgotten
+  patterns — local tmp/venv directories (`.venv/`, `venv/`), local env files (`.env`,
+  `.env.*`) with a negation exception for committed examples (`!.env.example`), and
+  similar common directory/extension patterns — reviewable and toggleable per pattern
+  before writing, mirroring the review-before-write discipline every other gitid write
+  path already follows (CLAUDE.md's confirmation rule).
 
 ## Out of Scope
 
@@ -520,6 +545,7 @@ row below records each one's **home** phase.
 | UP-01 | Phase 9 | Complete |
 | UP-02 | Phase 9 | Complete |
 | UP-03 | Phase 9 | Complete |
+| UP-04 | Phase 9.1 | Pending |
 | SHELL-01 | Phase 5 | Complete |
 | SHELL-02 | Phase 5 | Complete |
 | SHELL-03 | Phase 5 | Complete |
@@ -528,5 +554,7 @@ row below records each one's **home** phase.
 | PLAT-03 | Phase 10 | Pending |
 | BUILD-01 | Phase 1 | Complete |
 | BUILD-02 | Phase 1 | Complete |
-| BUILD-03 | Phase 10 | Pending |
+| BUILD-03 | Phase 9.3 | Pending |
 | BUILD-04 | Phase 1 | Complete |
+| BUILD-05 | Phase 9.3 | Pending |
+| GIGN-01 | Phase 9.2 | Pending |
