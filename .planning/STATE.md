@@ -5,15 +5,15 @@ milestone_name: TUI-First Redesign
 current_phase: 9
 current_phase_name: upload-credentials-assist
 status: executing
-stopped_at: Phase 9.1 context gathered
-last_updated: "2026-08-30T11:31:18.626Z"
+stopped_at: Phase 9.2 context gathered
+last_updated: "2026-08-30T21:11:48.001Z"
 last_activity: 2026-08-28
 last_activity_desc: "Phase 8 closeout finished — CR-01 (Critical: Fixable signal was SuggestedFix!=\"\" instead of Fix!=nil, letting report-only findings show a fake fix ceremony) and WR-01 (nonsensical batch-halt banner on a single non-batch fix failure) fixed with regression tests; DLV-06 PTY gap closed via a real chflags-uchg-forced OS failure through the compiled binary (TestHealthFixer_RealPTYFixerBatchWalkHalt). All gates re-verified green (go test -race 2157 passed, lint 0 issues, gate-visual-regression PASS, test-e2e PASS 676s). Committed as cbb5279 (fixes) + 6881319 (review artifacts + HIGH-concerns resolution appended to 08-REVIEWS.md). Phase 8 is now genuinely complete; advancing to Phase 9."
-state_head: bc0f9a2b22385037cdf42d497675d73d404c9ea0
+state_head: 8964ce2fe83138bb93fd9fd8c8ea05336670108e
 progress:
   total_phases: 13
   completed_phases: 7
-  total_plans: 83
+  total_plans: 85
   completed_plans: 82
   percent: 54
 ---
@@ -275,9 +275,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-30T11:31:18.094Z
-Stopped at: Phase 9.1 context gathered
-Resume file: .planning/phases/09.1-gitlab-real-account-validation/09.1-CONTEXT.md
+Last session: 2026-08-30T21:11:47.203Z
+Stopped at: Phase 9.2 context gathered
+Resume file: .planning/phases/09.2-global-git-ignore-management/09.2-CONTEXT.md
 Wave structure: W1 = 03-01 + 03-02 (DONE) -> W2 = 03-03 (DONE) -> W3 = 03-04 (DONE) -> W4 = 03-05 (DONE) -> W5 = 03-06 (Tasks 1+2 DONE, Task 3 PARTIAL — orchestrator review owed)
 **All remaining waves run SEQUENTIALLY (one executor at a time) per LEARNINGS L11** — the pre-commit hooks lint the whole module, so a parallel executor's mid-refactor tree blocks every other commit. Do NOT run plans in parallel inside this Go module again.
 
