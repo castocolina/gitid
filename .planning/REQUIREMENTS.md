@@ -294,8 +294,14 @@ These are first-class, enforced requirements — the user's core process ask.
   explanation + suggested fix, applied only with confirmation and backup. *(doctor
   fix engine built — re-home into the health screen.)*
 
-- [x] **FIX-02** (Two-section fixer UX): The fixer presents SSH and Git problems in
-  the health screen's two sections and fixes them in place.
+- [~] **FIX-02** (Two-section fixer UX): The fixer presents SSH and Git problems in
+  the health screen's two sections and fixes them in place. *(Reopened in Phase 9.4
+  per UXP-05: a direct user audit found the standalone Fixer tab's finding count
+  reads as contradicting Doctor/Health's count for the same scan — Fixer only lists
+  auto-fixable findings while Health shows all findings, with no visible
+  cross-reference. Phase 9.4 merges Fixer back into a single combined "Doctor"
+  screen with inline fix, reversing this split rather than patching around it —
+  see UXP-05.)*
 
 ## M. Upload / Credentials (UP)
 
@@ -424,17 +430,22 @@ These are first-class, enforced requirements — the user's core process ask.
   existing D4 checkpoint-2 contract) is visually distinguishable from
   top-level main-menu navigation, so a user does not mistake local sub-tab
   navigation for main-menu navigation.
-- [ ] **UXP-05** (Doctor/Fixer finding-count parity): the Fixer screen never
-  presents a finding count that reads as contradicting Doctor/Health's count
-  from the same scan. Today Fixer's list is intentionally narrowed to only
-  auto-fixable findings (`internal/tuikit/fixer_screen.go`'s
-  `fixableState`/`fixableFindings`, filtering on the `Fixable` bit) while
-  Health shows every finding including advisory-only ones — this scoping is
-  correct, but Fixer's own screen must surface the "N of M doctor findings
-  are auto-fixable" relationship explicitly, mirroring the existing
-  cross-reference banner pattern already used on the Global SSH/Global Git
-  Options screens ("The doctor found N findings beyond these... Open Health
-  (N)").
+- [ ] **UXP-05** (Doctor/Fixer count parity — merge Fixer into Doctor):
+  reopens FIX-02. A direct user audit found the standalone Fixer tab's
+  finding count reads as contradicting Doctor/Health's count for the same
+  scan (Fixer narrows to only auto-fixable findings via
+  `internal/tuikit/fixer_screen.go`'s `fixableState`/`fixableFindings`, while
+  Health shows every finding including advisory-only ones, with no visible
+  cross-reference between the two). Rather than patching the split with a
+  cross-reference banner, this requirement reverses Phase 8's FIX-02 split:
+  the two tabs merge back into a single combined screen — renamed **Doctor**
+  — that lists every finding (Health's full scope) with an inline `f · Fix
+  this…` / `F · Fix all` action (Fixer's ceremony), matching the original
+  mockup's `Doctor.tsx` shape. The main menu goes from 5 tabs to 4
+  ([1] Identities [2] Global SSH [3] Global Git [4] Doctor). Every fix still
+  goes through the SAME preview + typed-confirm + backup ceremony as before —
+  only the "the diagnostic tab has zero fix keybindings wired" isolation
+  property is removed, not the write-confirmation discipline itself.
 
 ## Out of Scope
 

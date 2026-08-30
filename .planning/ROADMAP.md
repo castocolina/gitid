@@ -503,7 +503,7 @@ Plans:
   2. A non-selectable options row renders with the same visual pattern (checkbox-column placeholder) across Global SSH and Global Git, and the reason it is non-selectable is visible on the row, not only inferable. (UXP-02)
   3. The selectable-row toggle indicator is visually more prominent than the current glyph. (UXP-03)
   4. A screen with local sub-tabs (e.g. Global SSH's Options/Storage & preview) is visually distinguishable from top-level main-menu navigation. (UXP-04)
-  5. The Fixer screen surfaces its "N of M doctor findings are auto-fixable" relationship explicitly, using the same cross-reference banner pattern already present on the Global SSH/Global Git Options screens. (UXP-05)
+  5. Health and Fixer are merged back into a single "Doctor" tab (reversing Phase 8's FIX-02 split) that lists every finding and offers inline fix/fix-all, so no separate screen's finding count can read as contradicting another's; the write-confirmation ceremony (preview + typed-confirm + backup) is unchanged. (UXP-05)
 
 **Plans**: TBD
 
