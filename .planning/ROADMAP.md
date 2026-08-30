@@ -59,6 +59,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 9.2: Global Git Ignore Management** - A TUI view for managing a curated global gitignore (common tmp/venv/env patterns), reviewable before write
 - [ ] **Phase 9.3: Release CI/CD + Installer** - Tagged-release CI publishing checksummed binaries, plus a curl\|bash install script
 - [ ] **Phase 9.4: TUI UX Consistency & Doctor/Fixer Parity** - Fix focus/read-only/toggle/submenu-affordance inconsistencies and Doctor-vs-Fixer count discoverability found in a user audit of Global SSH, Global Git, and Fixer
+- [ ] **Phase 9.5: Full SSH/Git Properties Browser** - A TUI surface for browsing the full set of SSH/Git config properties on the machine, beyond gitid's curated policy tables
 - [ ] **Phase 10: Linux Validation + Release Pipeline** - End-to-end Linux validation + tagged, checksummed release artifacts
 
 ## Phase Details
@@ -507,6 +508,17 @@ Plans:
 
 **Plans**: TBD
 
+### Phase 9.5: Full SSH/Git Properties Browser
+
+**Goal**: The user can browse the full set of SSH and Git configuration properties resolved on their machine, beyond gitid's curated policy tables, to understand what's actually in effect even where gitid has no opinion.
+**Depends on**: Phase 9 (whole product complete)
+**Requirements**: PROP-01
+**Success Criteria** (what must be TRUE):
+
+  1. A TUI surface lists SSH/Git configuration properties beyond gitid's curated `OptionPolicy` tables, sourced from a live read of the machine's actual resolved configuration. (PROP-01)
+
+**Plans**: TBD
+
 ### Phase 10: Linux Validation + Release Pipeline
 
 **Goal**: The whole app is validated end-to-end on a mainstream Linux distro, alongside macOS.
@@ -521,7 +533,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 9.1 → 9.2 → 9.3 → 9.4 → 10
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 9.1 → 9.2 → 9.3 → 9.4 → 9.5 → 10
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -538,4 +550,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9.2. Global Git Ignore Management | 0/TBD | Not started | - |
 | 9.3. Release CI/CD + Installer | 0/TBD | Not started | - |
 | 9.4. TUI UX Consistency & Doctor/Fixer Parity | 0/TBD | Not started | - |
+| 9.5. Full SSH/Git Properties Browser | 0/TBD | Not started | - |
 | 10. Linux Validation + Release Pipeline | 0/TBD | Not started | - |

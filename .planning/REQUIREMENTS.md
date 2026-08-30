@@ -447,6 +447,21 @@ These are first-class, enforced requirements — the user's core process ask.
   only the "the diagnostic tab has zero fix keybindings wired" isolation
   property is removed, not the write-confirmation discipline itself.
 
+## S. Full SSH/Git Properties Browser (PROP)
+
+- [ ] **PROP-01** (Full properties browser): a TUI surface lets the user
+  browse the FULL set of SSH and Git configuration properties on their
+  machine — not just gitid's curated `OptionPolicy` tables
+  (`internal/globalssh`/`internal/globalgit`'s GSSH-01/GGIT-01 dangerous-by-
+  default subset) — for visibility into what SSH/Git actually resolve on
+  this machine beyond what gitid has opinions about. Deferred out of Phase
+  9.4 at the user's request ("algo como 9.5") after confirming today's
+  Global SSH/Global Git screens only show a fixed policy table, not a live
+  enumeration of every directive/key. Scope (read-only vs actionable, which
+  properties are safe/meaningful to surface, how to avoid overwhelming the
+  user with unfamiliar keys) is intentionally undecided pending this
+  phase's own discussion.
+
 ## Out of Scope
 
 - **Shippable Web UI** — the HTML/React/`mui` mockups are **design + review
@@ -612,3 +627,4 @@ row below records each one's **home** phase.
 | UXP-03 | Phase 9.4 | Pending |
 | UXP-04 | Phase 9.4 | Pending |
 | UXP-05 | Phase 9.4 | Pending |
+| PROP-01 | Phase 9.5 | Pending |
