@@ -52,7 +52,7 @@
 #   demo-web       (Re)launch the web design mockup dev server (Vite) on the
 #                   dedicated $(DEMO_WEB_PORT) and open it.
 
-.PHONY: setup-env build build-cross install uninstall test lint lint-tagged fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files gate-visual-regression smoke-network-test verify-upload-real-account demo-web
+.PHONY: setup-env build build-cross run install uninstall test lint lint-tagged fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files gate-visual-regression smoke-network-test verify-upload-real-account demo-web
 
 # Binary output directory.
 BIN_DIR := bin
@@ -463,6 +463,12 @@ build-cross:
 	GOOS=darwin  GOARCH=arm64 go build -o $(BIN_DIR)/gitid-darwin-arm64 ./cmd/gitid
 	GOOS=linux   GOARCH=amd64 go build -o $(BIN_DIR)/gitid-linux-amd64  ./cmd/gitid
 	GOOS=linux   GOARCH=arm64 go build -o $(BIN_DIR)/gitid-linux-arm64  ./cmd/gitid
+
+## run: build (if needed) and run the gitid binary locally.
+## Depends on build so bin/gitid is always current before launch. Extra args
+## can be passed via ARGS, e.g. `make run ARGS="doctor"`.
+run: build
+	$(BINARY) $(ARGS)
 
 ## install: install gitid to $GOPATH/bin and report the install path + PATH status.
 install:
