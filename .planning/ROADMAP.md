@@ -58,6 +58,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 9.1: GitLab Real-Account Validation** - Prove the GitLab upload/delete path against a real, authenticated GitLab account, mirroring Wave 8's disposable-key protocol for GitHub
 - [ ] **Phase 9.2: Global Git Ignore Management** - A TUI view for managing a curated global gitignore (common tmp/venv/env patterns), reviewable before write
 - [ ] **Phase 9.3: Release CI/CD + Installer** - Tagged-release CI publishing checksummed binaries, plus a curl\|bash install script
+- [ ] **Phase 9.4: TUI UX Consistency & Doctor/Fixer Parity** - Fix focus/read-only/toggle/submenu-affordance inconsistencies and Doctor-vs-Fixer count discoverability found in a user audit of Global SSH, Global Git, and Fixer
 - [ ] **Phase 10: Linux Validation + Release Pipeline** - End-to-end Linux validation + tagged, checksummed release artifacts
 
 ## Phase Details
@@ -491,6 +492,21 @@ Plans:
 
 **Plans**: TBD
 
+### Phase 9.4: TUI UX Consistency & Doctor/Fixer Parity
+
+**Goal**: Fix the focus, read-only-affordance, toggle-visibility, submenu-discoverability, and Doctor/Fixer count-parity inconsistencies found in a direct user audit of the Global SSH, Global Git, and Fixer screens.
+**Depends on**: Phase 9 (whole product complete)
+**Requirements**: UXP-01, UXP-02, UXP-03, UXP-04, UXP-05
+**Success Criteria** (what must be TRUE):
+
+  1. Global SSH's Options screen focuses a row on activation by the same rule Global Git's Options screen already uses (reset on every activation), with no construction-time hardcoded row surviving re-activation. (UXP-01)
+  2. A non-selectable options row renders with the same visual pattern (checkbox-column placeholder) across Global SSH and Global Git, and the reason it is non-selectable is visible on the row, not only inferable. (UXP-02)
+  3. The selectable-row toggle indicator is visually more prominent than the current glyph. (UXP-03)
+  4. A screen with local sub-tabs (e.g. Global SSH's Options/Storage & preview) is visually distinguishable from top-level main-menu navigation. (UXP-04)
+  5. The Fixer screen surfaces its "N of M doctor findings are auto-fixable" relationship explicitly, using the same cross-reference banner pattern already present on the Global SSH/Global Git Options screens. (UXP-05)
+
+**Plans**: TBD
+
 ### Phase 10: Linux Validation + Release Pipeline
 
 **Goal**: The whole app is validated end-to-end on a mainstream Linux distro, alongside macOS.
@@ -505,7 +521,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 9.1 → 9.2 → 9.3 → 10
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 9.1 → 9.2 → 9.3 → 9.4 → 10
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -521,4 +537,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9.1. GitLab Real-Account Validation | 0/2 | Planned | - |
 | 9.2. Global Git Ignore Management | 0/TBD | Not started | - |
 | 9.3. Release CI/CD + Installer | 0/TBD | Not started | - |
+| 9.4. TUI UX Consistency & Doctor/Fixer Parity | 0/TBD | Not started | - |
 | 10. Linux Validation + Release Pipeline | 0/TBD | Not started | - |

@@ -398,6 +398,44 @@ These are first-class, enforced requirements — the user's core process ask.
   before writing, mirroring the review-before-write discipline every other gitid write
   path already follows (CLAUDE.md's confirmation rule).
 
+## R. TUI UX Consistency & Doctor/Fixer Parity (UXP)
+
+- [ ] **UXP-01** (Consistent initial row focus): a screen's options/rows list
+  focuses a row on activation by a single, consistent rule across screens —
+  today Global Git's Options screen resets to the first row on every
+  activation (`internal/tuikit/globalgit.go`'s `activate()`) while Global
+  SSH's Options screen keeps a construction-time hardcoded row
+  (`internal/tuikit/globalssh.go`'s `newGlobalSSHModel`'s `detailKey:
+  "IdentitiesOnly"`) that `activate()` never resets — so entering the SSH
+  screen highlights a middle row with no visible reason why.
+- [ ] **UXP-02** (Discoverable read-only rationale): every options-list row's
+  selectable/read-only affordance renders with a consistent visual pattern
+  across screens (Global SSH vs Global Git currently diverge in whether a
+  non-selectable row reserves the checkbox column), and the reason a
+  specific row is not selectable (already matches the recommendation, or
+  differs and a write would be a no-op) is visible to the user, not just
+  inferred from the glyph.
+- [ ] **UXP-03** (Stronger toggle affordance): the selectable-row
+  toggle/checkbox indicator is visually more prominent than the current
+  glyph, so on/off state is clearly perceptible at a glance.
+- [ ] **UXP-04** (Submenu visual distinction): a screen with its own
+  sub-tabs (e.g. Global SSH's `Options` / `Storage & preview`, where local
+  ←/→ already means "switch sub-tab" rather than "switch main tab" per the
+  existing D4 checkpoint-2 contract) is visually distinguishable from
+  top-level main-menu navigation, so a user does not mistake local sub-tab
+  navigation for main-menu navigation.
+- [ ] **UXP-05** (Doctor/Fixer finding-count parity): the Fixer screen never
+  presents a finding count that reads as contradicting Doctor/Health's count
+  from the same scan. Today Fixer's list is intentionally narrowed to only
+  auto-fixable findings (`internal/tuikit/fixer_screen.go`'s
+  `fixableState`/`fixableFindings`, filtering on the `Fixable` bit) while
+  Health shows every finding including advisory-only ones — this scoping is
+  correct, but Fixer's own screen must surface the "N of M doctor findings
+  are auto-fixable" relationship explicitly, mirroring the existing
+  cross-reference banner pattern already used on the Global SSH/Global Git
+  Options screens ("The doctor found N findings beyond these... Open Health
+  (N)").
+
 ## Out of Scope
 
 - **Shippable Web UI** — the HTML/React/`mui` mockups are **design + review
@@ -558,3 +596,8 @@ row below records each one's **home** phase.
 | BUILD-04 | Phase 1 | Complete |
 | BUILD-05 | Phase 9.3 | Pending |
 | GIGN-01 | Phase 9.2 | Pending |
+| UXP-01 | Phase 9.4 | Pending |
+| UXP-02 | Phase 9.4 | Pending |
+| UXP-03 | Phase 9.4 | Pending |
+| UXP-04 | Phase 9.4 | Pending |
+| UXP-05 | Phase 9.4 | Pending |
