@@ -43,6 +43,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/castocolina/gitid/internal/identity"
@@ -87,12 +88,36 @@ func (b *realBackend) uploadRequestFromSpec(spec tuikit.CreateSpec) (uploadReque
 		return uploadRequest{}, err
 	}
 	pubPath := staged.FinalPubPath
-	if staged.PrivPEM != nil {
+	switch {
+	case staged.PrivPEM != nil:
 		tempPub := staged.TempPrivatePath + ".pub"
 		if !b.deps.PubExists(tempPub) {
 			if werr := b.deps.WritePub(tempPub, staged.PubLine); werr != nil {
 				return uploadRequest{}, werr
 			}
+		}
+		pubPath = tempPub
+	case pubPath == "" || !b.deps.PubExists(pubPath):
+		// WR-14 (review iteration 3): the reuse path's FinalPubPath is NOT
+		// guaranteed to exist -- identity.StageReuse derives PubLine in
+		// memory without writing it when the .pub is absent (a hand-imported
+		// key with no matching .pub is a perfectly valid configuration;
+		// ensurePubReadOnly explicitly supports this). Without this branch,
+		// planUpload/executeUpload would try to read a file that is not
+		// there and report "reading public key ..." registration failures
+		// for a valid setup. CR-01's lesson applies here too: for reuse,
+		// TempPrivatePath == FinalPrivatePath (the user's REAL key), so the
+		// derived line must NEVER be written there -- stage it as a
+		// throwaway sibling in the SAME session staging directory the
+		// generate path (and both connectivity test stages) already use,
+		// never touching ~/.ssh before the wizard's confirmed commit.
+		stageDir, serr := b.stagingDir()
+		if serr != nil {
+			return uploadRequest{}, serr
+		}
+		tempPub := filepath.Join(stageDir, filepath.Base(staged.FinalPrivatePath)+".pub")
+		if werr := b.deps.WritePub(tempPub, staged.PubLine); werr != nil {
+			return uploadRequest{}, werr
 		}
 		pubPath = tempPub
 	}

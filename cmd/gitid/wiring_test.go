@@ -5303,6 +5303,55 @@ func TestRunUploadUsesOnlyTheMissingRegistrations(t *testing.T) {
 	}
 }
 
+// TestRunUploadReusePathWithMissingPubSucceeds is the WR-14 (review
+// iteration 3) regression: a wizard reuse of a hand-imported key with no
+// matching .pub sibling is a perfectly valid configuration (ensurePubReadOnly
+// explicitly derives the line in memory for exactly this case) and must
+// still register successfully -- never a "reading public key" registration
+// failure. The derived line must also never be written to the REAL ~/.ssh
+// sibling before the wizard's confirmed commit (CR-01's lesson: for reuse,
+// TempPrivatePath == FinalPrivatePath, the user's real key).
+func TestRunUploadReusePathWithMissingPubSucceeds(t *testing.T) {
+	b, calls := fakeUploaderRunUploadDeps(t, "[]", "[]", nil)
+	seedSSHDir(t, b.home)
+	keyPath := filepath.Join(b.home, ".ssh", "id_ed25519_acme")
+	seedGeneratedKey(t, keyPath, "acme", "")
+	if err := os.Remove(keyPath + ".pub"); err != nil {
+		t.Fatalf("removing seeded .pub to simulate a missing sibling: %v", err)
+	}
+
+	spec := tuikit.CreateSpec{Identity: "acme", Alias: "acme.github.com", Hostname: "ssh.github.com", Port: "443", ReuseKeyPath: keyPath}
+	_, run := waitForRunUploadResult(t, b.RunUpload(spec))
+
+	if len(run.View.Rows) == 0 {
+		t.Fatal("want at least one result row")
+	}
+	for _, row := range run.View.Rows {
+		if row.Outcome == tuikit.UploadRowFailed {
+			t.Fatalf("row %+v failed -- reuse with a missing .pub must still succeed, not report a registration failure (reason: %s)", row, row.Reason)
+		}
+	}
+
+	if _, err := os.Stat(keyPath + ".pub"); err == nil {
+		t.Error("the derived .pub must NEVER be written to the real ~/.ssh sibling before the wizard's confirmed commit (CR-01)")
+	}
+
+	sawAdd := false
+	for _, c := range *calls {
+		if len(c.argv) >= 3 && c.argv[1] == "ssh-key" && c.argv[2] == "add" {
+			sawAdd = true
+			for _, a := range c.argv {
+				if strings.Contains(a, filepath.Join(".ssh", "id_ed25519_acme.pub")) {
+					t.Errorf("ssh-key add argv must never reference the real ~/.ssh pub path, got %v", c.argv)
+				}
+			}
+		}
+	}
+	if !sawAdd {
+		t.Fatal("setup: want at least one ssh-key add invocation")
+	}
+}
+
 // TestRunUploadZeroCommandsWhenFullyRegistered proves D-15: an identity
 // already registered for both types runs zero ssh-key add commands and
 // reports AlreadyComplete.
