@@ -5515,7 +5515,19 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 			// doc comment for why a single shared predicate matters here.
 			actions = []FooterAction{{Key: "c", Label: "copy public key"}}
 		}
-		status = "Esc returns to the identity detail without writing anything — registration runs on open."
+		// D2 (260831-3a9): the status line used to be a single sentence
+		// pairing "without writing anything" with "registration runs on
+		// open" in EVERY state, including states where nothing had run yet
+		// (or ever would, on a probe error) — self-contradicting and false.
+		// Split per the SAME discrimination renderRegisterKey uses: the
+		// "ran" variant only when a registration actually ran or is
+		// running, otherwise "nothing ran" — this is what makes both
+		// sentences provably true in every state.
+		if m.registerKeyPending || uploadRunHasContent(m.registerKeyRun) {
+			status = RegisterKeyStatusRan
+		} else {
+			status = RegisterKeyStatusNothingRan
+		}
 	}
 
 	sidebar := m.renderSidebar(s, sbWidth, m.pane != paneDetail)

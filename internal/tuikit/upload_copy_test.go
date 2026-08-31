@@ -44,7 +44,7 @@ func TestFrozenUploadCopy(t *testing.T) {
 		{"RotateDeleteOfferChoiceLeave", RotateDeleteOfferChoiceLeave, "[ Leave it — I'll remove it myself ]"},
 		{"RotateDeleteOfferResultRemovedFmt", RotateDeleteOfferResultRemovedFmt, "✓ Old key removed from %s."},
 		{"RotateDeleteOfferResultLeftFmt", RotateDeleteOfferResultLeftFmt, "Left in place — remove it yourself: %s"},
-		{"IdentityManagerActionRegisterKey", IdentityManagerActionRegisterKey, "Register key (u)"},
+		{"IdentityManagerActionRegisterKey", IdentityManagerActionRegisterKey, "Register key with provider now (u)"},
 		{"RegisterKeyModalHeadingFmt", RegisterKeyModalHeadingFmt, "Register %s's key with %s"},
 	}
 

@@ -323,7 +323,7 @@ var identityManagerFieldSubstrings = map[string]string{
 	"action_clone":        "Clone (c)",
 	"action_new_key":      "Generate new key",
 	"action_delete":       "Delete (d)",
-	"action_register_key": "Register key (u)",
+	"action_register_key": "Register key with provider now (u)",
 	// delete-choice
 	"delete_choice_git_only":   "Delete Git identity only",
 	"delete_choice_everything": "Delete everything (SSH + Git + key)",
@@ -861,8 +861,10 @@ func TestIdentityManager_KeyCeremonyRepair(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // openRegisterKeyModalViaActionMenu opens the action menu and activates its
-// fifth row ("Register key (u)", index 4) — the derived-row-count sibling
-// of openKeyCeremonyViaActionMenu.
+// fifth row ("Register key with provider now (u)", index 4 — D2, 260831-3a9
+// reworded this row so the immediate provider mutation it triggers is
+// legible before it is pressed) — the derived-row-count sibling of
+// openKeyCeremonyViaActionMenu.
 func openRegisterKeyModalViaActionMenu(t *testing.T, s *ptySession) {
 	t.Helper()
 	s.sendKey([]byte("a"), keystrokeDelay)

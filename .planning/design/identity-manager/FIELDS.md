@@ -71,7 +71,7 @@ detail screen.
 | 2 | `action_clone` | "Clone (c)" | 2nd | ✓ | ✓ | → clone-name-prompt |
 | 3 | `action_new_key` | "Generate new key" | 3rd | ✓ | ✓ | MGR-05 (referenced, not a separate named state in §4(3)) |
 | 4 | `action_delete` | "Delete (d)" | 4th | ✓ | ✓ | → delete-choice |
-| 5 | `action_register_key` | "Register key (u)" | 5th | n/a | ✓ | → register-key-modal; new key `u` claimed in `02-UX-DIRECTION.md` §2 (D-08/D-09 Phase 9 amendment) |
+| 5 | `action_register_key` | "Register key with provider now (u)" | 5th | n/a | ✓ | → register-key-modal; new key `u` claimed in `02-UX-DIRECTION.md` §2 (D-08/D-09 Phase 9 amendment; label amended by D2, 260831-3a9, to disclose the immediate provider mutation before the row is pressed) |
 
 ## identity-manager / register-key-modal
 

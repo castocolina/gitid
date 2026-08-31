@@ -396,7 +396,7 @@ gate-copy-freeze:
 		'[ Leave it — I'\''ll remove it myself ]' \
 		'✓ Old key removed from %s.' \
 		'Left in place — remove it yourself: %s' \
-		'Register key (u)' \
+		'Register key with provider now (u)' \
 		'Register %s'\''s key with %s'; \
 	do \
 		if grep -rqF -- "$$s" internal/tuikit internal/identity cmd/gitid internal/globalssh internal/globalgit; then \

@@ -340,11 +340,17 @@ func TestRegisterKeyPaneMatchesSiblingPaneGeometry(t *testing.T) {
 	if len(rv.actions) != 0 {
 		t.Errorf("footer actions = %v, want the Esc-only (empty extra-actions) shape", rv.actions)
 	}
-	if !strings.Contains(rv.status, "Esc returns to the identity detail without writing anything") {
-		t.Errorf("status = %q, want the sibling Esc sentence", rv.status)
+	// D2 (260831-3a9) legitimately amends this assertion: the not-yet-loaded
+	// state (no registration has run or is running) now reads the
+	// "nothing was registered" status variant instead of the old single
+	// sentence shared with every other state (which paired "without
+	// writing anything" with the false claim "registration runs on open"
+	// here, where nothing had run yet). See RegisterKeyStatusNothingRan.
+	if !strings.Contains(rv.status, "Esc closes") {
+		t.Errorf("status = %q, want the Esc-closes sentence", rv.status)
 	}
-	if !strings.Contains(strings.ToLower(rv.status), "runs on open") && !strings.Contains(strings.ToLower(rv.status), "registration runs") {
-		t.Errorf("status = %q, want it to state that registration runs on open (R13)", rv.status)
+	if !strings.Contains(rv.status, "nothing was registered") {
+		t.Errorf("status = %q, want the nothing-was-registered variant (nothing has run in this state)", rv.status)
 	}
 }
 
@@ -599,6 +605,99 @@ func TestRegisterKeyCopyHintAndBindingShareOnePredicate(t *testing.T) {
 			bound := rec.copiedPath != ""
 			if hinted != bound {
 				t.Errorf("state %s: hint offered=%v, binding fired=%v -- they must agree", tt.name, hinted, bound)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// D2 (260831-3a9): the register-key pane's status line must never claim a
+// registration ran when it did not, and the two frozen status variants must
+// never both appear at once (the self-contradiction this fix closes).
+// ---------------------------------------------------------------------------
+
+// TestRegisterKeyStatusNothingRanInPreRunStates is D2 Test 1: the
+// not-yet-loaded, probe-error, and pre-run manual-fallback states must all
+// read the "nothing was registered" variant, never claiming a registration
+// ran.
+func TestRegisterKeyStatusNothingRanInPreRunStates(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(t *testing.T, b Backend) (identitiesModel, DemoState, DemoIdentity)
+	}{
+		{"not-yet-loaded", registerKeyNotYetLoaded},
+		{"probe-error", registerKeyAtProbeError},
+		{"manual-fallback", registerKeyAtManualFallback},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			m, s, _ := tt.setup(t, stubBackend{})
+			rv := m.view(s, minFrameWidth, minFrameHeight)
+			if strings.Contains(rv.status, "registration ran") {
+				t.Errorf("status = %q, must not claim a registration ran in state %s", rv.status, tt.name)
+			}
+			if !strings.Contains(rv.status, "nothing was registered") {
+				t.Errorf("status = %q, want the nothing-was-registered variant in state %s", rv.status, tt.name)
+			}
+		})
+	}
+}
+
+// TestRegisterKeyStatusRanWhenPendingOrComplete is D2 Test 2: the in-flight
+// (registerKeyPending) and completed-run states must read the
+// "registration ran when this opened" variant.
+func TestRegisterKeyStatusRanWhenPendingOrComplete(t *testing.T) {
+	s := Seed()
+	m := newIdentitiesModel(stubBackend{}, s)
+	sel, ok := m.selectedIdentity(s)
+	if !ok {
+		t.Fatal("seed has no selected identity")
+	}
+	m, _ = m.openRegisterKey(sel)
+	res := m.handleMsg(RegisterKeyPlanMsg{
+		Name: sel.Name,
+		View: UploadEligibilityView{State: UploadEligibilityReady, ProviderName: "GitHub", ToolName: "gh", Hostname: "github.com"},
+	}, s)
+	pending, ok := res.model.(identitiesModel)
+	if !ok {
+		t.Fatalf("handleMsg returned %T, want identitiesModel", res.model)
+	}
+	if !pending.registerKeyPending {
+		t.Fatal("setup: a Ready plan must set registerKeyPending")
+	}
+	pendingStatus := pending.view(s, minFrameWidth, minFrameHeight).status
+	if !strings.Contains(pendingStatus, "registration ran") {
+		t.Errorf("pending status = %q, want the registration-ran variant", pendingStatus)
+	}
+
+	complete, s2, _ := registerKeyAtSuccessfulRun(t, stubBackend{})
+	completeStatus := complete.view(s2, minFrameWidth, minFrameHeight).status
+	if !strings.Contains(completeStatus, "registration ran") {
+		t.Errorf("completed-run status = %q, want the registration-ran variant", completeStatus)
+	}
+}
+
+// TestRegisterKeyStatusNeverSelfContradicts is D2 Test 3, pinned
+// negatively: no register-key status line, in ANY state, may contain both
+// "without writing anything" and "registration runs on open" -- the exact
+// self-contradiction this fix closes.
+func TestRegisterKeyStatusNeverSelfContradicts(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(t *testing.T, b Backend) (identitiesModel, DemoState, DemoIdentity)
+	}{
+		{"not-yet-loaded", registerKeyNotYetLoaded},
+		{"probe-error", registerKeyAtProbeError},
+		{"manual-fallback", registerKeyAtManualFallback},
+		{"post-run-manual-fallback", registerKeyAtPostRunManualFallback},
+		{"successful-run", registerKeyAtSuccessfulRun},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			m, s, _ := tt.setup(t, stubBackend{})
+			status := m.view(s, minFrameWidth, minFrameHeight).status
+			if strings.Contains(status, "without writing anything") && strings.Contains(status, "registration runs on open") {
+				t.Errorf("status = %q, must never pair both sentences in the same render (state %s)", status, tt.name)
 			}
 		})
 	}

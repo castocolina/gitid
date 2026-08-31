@@ -300,7 +300,9 @@ backend + PTY e2e — not this document's job).
 
 **`.planning/design/identity-manager/FIELDS.md`:**
 - NEW state: `identity-manager / register-key-modal` — reached from the
-  action-menu (new row `action_register_key`, "Register key (u)") for any
+  action-menu (new row `action_register_key`, "Register key with provider
+  now (u)" — amended by D2, 260831-3a9, from the original draft label) for
+  any
   identity currently in `key-unused` or `key-used-ssh-only` state; renders
   the SAME shared upload-section (checkbox omitted here — this is an
   explicit manual re-trigger, always announces-and-runs immediately on

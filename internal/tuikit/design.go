@@ -713,10 +713,31 @@ const (
 	// (D-08/D-09 Phase 9 amendment, identity-manager/FIELDS.md
 	// action_register_key) — joins IdentityManagerAction{ViewDetail,
 	// Clone,NewKey,Delete} above.
-	IdentityManagerActionRegisterKey = "Register key (u)"
+	//
+	// D2 amendment (260831-3a9, deliberate 09-UI-SPEC.md Copywriting
+	// Contract divergence — the project's D-09 precedent for a scoped
+	// frozen-copy amendment): reworded from the shorter pre-D2 label so the
+	// immediate `gh`/`glab` provider mutation this row triggers is legible
+	// BEFORE it is pressed (D-08's no-confirm contract, "opening the modal
+	// IS the opt-in", is unchanged — this only names what the opt-in does).
+	IdentityManagerActionRegisterKey = "Register key with provider now (u)"
 	// RegisterKeyModalHeadingFmt is the D-08 "copy modal" heading — the
 	// manual re-trigger surface for a key-unused/key-used-ssh-only
 	// identity. 09-UI-SPEC.md Copywriting Contract row "Identity Manager
 	// copy-modal heading".
 	RegisterKeyModalHeadingFmt = "Register %s's key with %s"
+	// RegisterKeyStatusRan is the D2 (260831-3a9) status-line variant for
+	// every register-key pane state where a registration actually ran or
+	// is running: registerKeyPending, or a completed run
+	// (uploadRunHasContent). Replaces the single self-contradicting status
+	// line ("without writing anything ... registration runs on open") that
+	// used to render in every state regardless of whether a registration
+	// had actually run.
+	RegisterKeyStatusRan = "Esc closes — registration ran when this opened; no local files were changed."
+	// RegisterKeyStatusNothingRan is the D2 (260831-3a9) status-line variant
+	// for every register-key pane state where nothing has run: the
+	// not-yet-loaded probe, a probe error, and the pre-run manual-fallback
+	// state. Never paired with RegisterKeyStatusRan's "registration ran"
+	// claim in the same render.
+	RegisterKeyStatusNothingRan = "Esc closes — nothing was registered."
 )
