@@ -5430,7 +5430,25 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 		actions = []FooterAction{{Key: "↑↓/Tab", Label: "move"}, {Key: "Enter", Label: "activate"}}
 		status = "Esc returns to the identity detail without writing anything."
 	case paneKeyCeremony:
-		pane = m.renderKeyCeremony(sel)
+		// WR-03 (review iteration 5): renderKeyCeremony's OWN internal
+		// overflow-backstop budget math (see its doc comment) is exact only
+		// in the common case — a receipt-heavy rotate/repair ceremony can
+		// still overrun frameBodyRows by a few rows before this wrap
+		// existed (budget <= 2), and the base case (no upload/offer tail at
+		// all) returns the receipt completely UNBOUNDED. Unlike Health,
+		// Fixer, Global SSH and Global Git, this screen had no outer
+		// fitPane safety net at all. Scoped to paneKeyCeremony specifically
+		// (not every pane state this view() renders) — the demonstrated
+		// defect is renderKeyCeremony's own math, and this project's other
+		// per-pane ceremonies (e.g. paneDelete's deleteCerem.view, which
+		// carries its OWN independently-scrollable "Exact change" preview
+		// viewport) are out of THIS finding's scope; a screen-wide wrap
+		// was tried first but reverted after the deep verification pass
+		// caught it silently reshaping deleteCerem's rendering under
+		// long-HOME-path conditions (internal/screenshot's real-vs-dummy
+		// visual-regression gate), which is a materially different,
+		// unverified change this round does not cover.
+		pane = fitPane(lipgloss.NewStyle().Width(detailWidth).Render(m.renderKeyCeremony(sel)), frameBodyRows(height))
 		crumbs = []string{sel.Name, "Key"}
 		status = "Esc returns to the identity detail without writing anything."
 	case paneRegisterKey:
@@ -5443,22 +5461,8 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 	// Word-wrap the pane at the detail width so long spec copy flows to
 	// continuation lines instead of being hard-truncated by the frame; the
 	// shared full-height divider separates master from detail (H2).
-	//
-	// WR-03 (review iteration 5): fitPane is the SAME safety net every
-	// other master-detail screen already applies at this exact point
-	// (health_screen.go, fixer_screen.go, globalssh.go, globalgit.go) — the
-	// Identities screen was the one master-detail screen missing it. Every
-	// individual pane render (renderKeyCeremony's own overflow backstop
-	// included) tries to stay within budget on its own, but that budget
-	// math is only exact in the common case; a receipt-heavy key ceremony
-	// can still overrun it by a few rows before this wrap existed, and
-	// joinMasterDetail's lipgloss.JoinHorizontal pads the shorter column up
-	// but never clips the taller one, so an overrun here pushed the
-	// frame's status/footer rows off the terminal with no visible
-	// indication. fitPane is a no-op whenever content already fits.
 	body = joinMasterDetail(sidebar, sbWidth,
-		fitPane(lipgloss.NewStyle().Width(detailWidth).Render(pane), frameBodyRows(height)),
-		frameBodyRows(height))
+		lipgloss.NewStyle().Width(detailWidth).Render(pane), frameBodyRows(height))
 	return screenView{body: body, crumbs: crumbs, status: status, statusTone: "info",
 		actions: actions, capturesKeys: m.paneCapturesKeys()}
 }
