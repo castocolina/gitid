@@ -90,7 +90,7 @@ func newIdentityCreateVerb() identityVerb {
 			// unrelated to gitid.
 			fs.BoolVar(&flags.ForceSSH, "force-ssh", false, "write the machine-global insteadOf rewrite so HTTPS clone URLs for this provider resolve over SSH (default: off — same toggle the TUI exposes)")
 			fs.BoolVar(&flags.Yes, "yes", false, "skip the confirmation prompt; the timestamped backup is still taken unconditionally")
-			fs.BoolVar(&flags.DryRun, "dry-run", false, "run both connectivity stages, print the artifact previews, and exit 0 without writing")
+			fs.BoolVar(&flags.DryRun, "dry-run", false, dryRunCreateCloneFlagHelp)
 			fs.BoolVar(&flags.NoUpload, "no-upload", false, noUploadFlagHelp)
 		},
 		run: func(cmd *cobra.Command, _ []string) error {

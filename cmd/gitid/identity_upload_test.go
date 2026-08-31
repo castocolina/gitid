@@ -253,6 +253,50 @@ func TestRegisterKeyExitContract(t *testing.T) {
 // 09-05-PLAN.md Task 3 — --no-upload plus derived autonomous upload.
 // ---------------------------------------------------------------------------
 
+// TestDryRunFlagTextIsPinnedAcrossWriteVerbs is the WR-06 (review iteration
+// 3) sibling of TestNoUploadFlagIsBoundOnAllFourWriteVerbs: create/clone
+// share one --dry-run help string and rotate/new-key share another (the two
+// pairs describe genuinely different dry-run behavior, so a single
+// four-way-identical string like noUploadFlagHelp is not the right shape
+// here) — but within each pair the text must be byte-identical, and all
+// four must disclose the Phase 9 upload preview's read-only provider probes
+// (register-key's own --dry-run already did; the other four understated
+// what a dry run does until this fix).
+func TestDryRunFlagTextIsPinnedAcrossWriteVerbs(t *testing.T) {
+	root := newRootCmd()
+	usage := func(path ...string) string {
+		t.Helper()
+		cmd, _, err := root.Find(path)
+		if err != nil {
+			t.Fatalf("resolving %v: %v", path, err)
+		}
+		f := cmd.Flags().Lookup("dry-run")
+		if f == nil {
+			t.Fatalf("%v does not bind --dry-run", path)
+		}
+		return f.Usage
+	}
+	create := usage("create")
+	clone := usage("clone")
+	rotate := usage("rotate")
+	newKey := usage("new-key")
+
+	if create != clone {
+		t.Errorf("create/clone --dry-run usage differs: %q vs %q", create, clone)
+	}
+	if rotate != newKey {
+		t.Errorf("rotate/new-key --dry-run usage differs: %q vs %q", rotate, newKey)
+	}
+	for _, tt := range []struct {
+		verb  string
+		usage string
+	}{{"create", create}, {"clone", clone}, {"rotate", rotate}, {"new-key", newKey}} {
+		if !strings.Contains(tt.usage, "read-only probes") {
+			t.Errorf("%s --dry-run usage must disclose the read-only provider probes, got %q", tt.verb, tt.usage)
+		}
+	}
+}
+
 // TestNoUploadFlagIsBoundOnAllFourWriteVerbs asserts --no-upload is present
 // on create, clone, rotate, and new-key with byte-identical usage text — the
 // anti-drift assertion the shared noUploadFlagHelp constant exists to make

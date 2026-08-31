@@ -46,7 +46,7 @@ func newIdentityCloneVerb() identityVerb {
 			fs.StringVar(&flags.Name, "name", "", "clone name (must differ from the source; default suggests <source>-clone)")
 			fs.BoolVar(&flags.NewKey, "new-key", false, "generate a fresh key for the clone instead of reusing the source's key")
 			fs.BoolVar(&flags.Yes, "yes", false, "skip the confirmation prompt; the timestamped backup is still taken unconditionally")
-			fs.BoolVar(&flags.DryRun, "dry-run", false, "run both connectivity stages, print the artifact previews, and exit 0 without writing")
+			fs.BoolVar(&flags.DryRun, "dry-run", false, dryRunCreateCloneFlagHelp)
 			fs.BoolVar(&flags.NoUpload, "no-upload", false, noUploadFlagHelp)
 		},
 		run: func(cmd *cobra.Command, args []string) error {

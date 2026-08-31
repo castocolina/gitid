@@ -30,6 +30,26 @@ import (
 // byte-identical usage text across all four.
 const noUploadFlagHelp = "skip the autonomous provider key registration this operation would otherwise attempt; the primary operation still runs and its exit code is unaffected either way"
 
+// dryRunProbeClause (WR-06, review iteration 3) is appended to every write
+// verb's --dry-run help below, mirroring register-key's own R11 "precise
+// about scope" clause just above: the Phase 9 upload preview added to all
+// four write verbs' dry runs calls planUpload, which runs `gh auth status`
+// plus paginated key-inventory reads (or the glab equivalent) — real,
+// read-only network calls the flag help did not previously mention. Only
+// register-key's own --dry-run documented this; the other four understated
+// what a dry run does.
+const dryRunProbeClause = "; the provider auth-status check and key-inventory read may still run as read-only probes"
+
+// dryRunCreateCloneFlagHelp is shared by create and clone's bindFlags so the
+// two cannot drift — TestDryRunFlagTextIsPinnedAcrossWriteVerbs asserts
+// byte-identical usage text between them.
+const dryRunCreateCloneFlagHelp = "run both connectivity stages, print the artifact previews, and exit 0 without writing" + dryRunProbeClause
+
+// dryRunKeyVerbFlagHelp is shared by rotate and new-key's bindFlags so the
+// two cannot drift — TestDryRunFlagTextIsPinnedAcrossWriteVerbs asserts
+// byte-identical usage text between them.
+const dryRunKeyVerbFlagHelp = "print the ceremony plan, test the CURRENT key, and exit 0 without generating or writing anything" + dryRunProbeClause
+
 // identityRegisterKeyFlags carries the register-key verb's flags.
 type identityRegisterKeyFlags struct {
 	DryRun bool

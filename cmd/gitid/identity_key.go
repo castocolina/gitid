@@ -40,7 +40,7 @@ func newIdentityRotateVerb() identityVerb {
 		args:    cobra.ExactArgs(1),
 		bindFlags: func(fs *pflag.FlagSet) {
 			fs.BoolVar(&flags.Yes, "yes", false, "skip the confirmation prompt; the timestamped backup and the key archive are still taken unconditionally")
-			fs.BoolVar(&flags.DryRun, "dry-run", false, "print the ceremony plan, test the CURRENT key, and exit 0 without generating or writing anything")
+			fs.BoolVar(&flags.DryRun, "dry-run", false, dryRunKeyVerbFlagHelp)
 			fs.BoolVar(&flags.NoUpload, "no-upload", false, noUploadFlagHelp)
 		},
 		run: func(cmd *cobra.Command, args []string) error {
@@ -59,7 +59,7 @@ func newIdentityNewKeyVerb() identityVerb {
 		args:    cobra.ExactArgs(1),
 		bindFlags: func(fs *pflag.FlagSet) {
 			fs.BoolVar(&flags.Yes, "yes", false, "skip the confirmation prompt; the timestamped backup is still taken unconditionally")
-			fs.BoolVar(&flags.DryRun, "dry-run", false, "print the ceremony plan, test the CURRENT key, and exit 0 without generating or writing anything")
+			fs.BoolVar(&flags.DryRun, "dry-run", false, dryRunKeyVerbFlagHelp)
 			fs.BoolVar(&flags.NoUpload, "no-upload", false, noUploadFlagHelp)
 		},
 		run: func(cmd *cobra.Command, args []string) error {
