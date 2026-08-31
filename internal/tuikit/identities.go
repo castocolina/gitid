@@ -2266,7 +2266,12 @@ func (m identitiesModel) handleMsg(msg tea.Msg, s DemoState) keyResult {
 			Name: m.selected, Backup: backup,
 		}}}
 	}
-	if run, ok := msg.(UploadRunMsg); ok && m.pane == paneKeyCeremony && m.keyCeremonyUploadPending {
+	// WR-01: guard on run.Name == m.selected, mirroring RegisterKeyPlanMsg's
+	// stale-guard idiom -- the upload beat is multi-second and its command
+	// is not cancellable, so a PREVIOUS identity's late reply can otherwise
+	// arrive while a DIFFERENT identity's ceremony is mid-flight and get
+	// consumed as that identity's result.
+	if run, ok := msg.(UploadRunMsg); ok && m.pane == paneKeyCeremony && m.keyCeremonyUploadPending && run.Name == m.selected {
 		m.keyCeremonyUploadPending = false
 		m.keyCeremonyUploadRun = run.View
 		m.keyCeremonyPhase = "review"
@@ -2357,7 +2362,9 @@ func (m identitiesModel) handleMsg(msg tea.Msg, s DemoState) keyResult {
 		}
 		return keyResult{model: m}
 	}
-	if run, ok := msg.(UploadRunMsg); ok && m.pane == paneRegisterKey && m.registerKeyPending {
+	// WR-01: guard on run.Name == m.registerKeyName -- see the paneKeyCeremony
+	// guard above for the race this closes.
+	if run, ok := msg.(UploadRunMsg); ok && m.pane == paneRegisterKey && m.registerKeyPending && run.Name == m.registerKeyName {
 		m.registerKeyPending = false
 		m.registerKeyRun = run.View
 		return keyResult{model: m}

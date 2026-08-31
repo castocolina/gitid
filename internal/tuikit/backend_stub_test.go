@@ -566,7 +566,7 @@ func (stubBackend) UploadEligibility(hostname string) tea.Cmd {
 
 func (b stubBackend) RunUpload(spec CreateSpec) tea.Cmd {
 	return func() tea.Msg {
-		return UploadRunMsg{View: UploadRunView{Rows: []UploadResultRow{{
+		return UploadRunMsg{Name: spec.Identity, View: UploadRunView{Rows: []UploadResultRow{{
 			Registration: UploadRegistrationAuthentication,
 			Label:        UploadRegistrationLabelAuth,
 			Command:      "gh ssh-key add " + spec.KeyPath + ".pub --title gitid: " + spec.Identity + " --type authentication",
@@ -643,7 +643,7 @@ func (b stubBackend) CommitRotateDeleteOldKey(_, keyID string) tea.Cmd {
 
 func (b stubBackend) RunUploadForIdentity(name string) tea.Cmd {
 	return func() tea.Msg {
-		return UploadRunMsg{View: UploadRunView{Rows: []UploadResultRow{{
+		return UploadRunMsg{Name: name, View: UploadRunView{Rows: []UploadResultRow{{
 			Registration: UploadRegistrationAuthentication,
 			Label:        UploadRegistrationLabelAuth,
 			Command:      "gh ssh-key add ~/.ssh/id_ed25519_" + name + ".pub --title gitid: " + name + " --type authentication",

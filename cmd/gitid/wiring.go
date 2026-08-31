@@ -1510,7 +1510,7 @@ func (b *realBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
 				// branch keeps a gitid programming defect visible while preserving
 				// the never-gates guarantee; laundering it as a provider rejection
 				// would hide the defect the recover is intended to surface.
-				msg = tuikit.UploadRunMsg{View: uploadFailureView("gitid internal defect: "+uploader.RedactCLIOutput(fmt.Sprint(recovered), b.home, 58), spec.Hostname)}
+				msg = tuikit.UploadRunMsg{Name: spec.Identity, View: uploadFailureView("gitid internal defect: "+uploader.RedactCLIOutput(fmt.Sprint(recovered), b.home, 58), spec.Hostname)}
 			}
 		}()
 		req, err := b.uploadRequestFromSpec(spec)
@@ -1518,14 +1518,14 @@ func (b *realBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
 			// WR-05: uploadRequestFromSpec's staging errors embed the
 			// staging temp dir's absolute path — redact exactly like the
 			// classified-CLI-output and recovered-panic paths already do.
-			return tuikit.UploadRunMsg{View: uploadFailureView(uploader.RedactCLIOutput(err.Error(), b.home, 58), spec.Hostname)}
+			return tuikit.UploadRunMsg{Name: spec.Identity, View: uploadFailureView(uploader.RedactCLIOutput(err.Error(), b.home, 58), spec.Hostname)}
 		}
 		plan, terminal := b.planUpload(req)
 		if terminal != nil {
-			return tuikit.UploadRunMsg{View: *terminal}
+			return tuikit.UploadRunMsg{Name: spec.Identity, View: *terminal}
 		}
 		return tuikit.UploadStartedMsg{Commands: plan.commands, FollowUp: func() tea.Msg {
-			return tuikit.UploadRunMsg{View: b.executeUpload(spec.Hostname, plan)}
+			return tuikit.UploadRunMsg{Name: spec.Identity, View: b.executeUpload(spec.Hostname, plan)}
 		}}
 	}
 }
@@ -1576,14 +1576,14 @@ func (b *realBackend) RunUploadForIdentity(name string) tea.Cmd {
 	return func() (msg tea.Msg) {
 		acct, ok := b.findAccount(name)
 		if !ok {
-			return tuikit.UploadRunMsg{View: uploadFailureView(fmt.Sprintf("identity %q not found", name), "")}
+			return tuikit.UploadRunMsg{Name: name, View: uploadFailureView(fmt.Sprintf("identity %q not found", name), "")}
 		}
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				msg = tuikit.UploadRunMsg{View: uploadFailureView("gitid internal defect: "+uploader.RedactCLIOutput(fmt.Sprint(recovered), b.home, 58), acct.Hostname)}
+				msg = tuikit.UploadRunMsg{Name: name, View: uploadFailureView("gitid internal defect: "+uploader.RedactCLIOutput(fmt.Sprint(recovered), b.home, 58), acct.Hostname)}
 			}
 		}()
-		return tuikit.UploadRunMsg{View: b.runUploadFor(uploadRequestForAccount(acct, b.home))}
+		return tuikit.UploadRunMsg{Name: name, View: b.runUploadFor(uploadRequestForAccount(acct, b.home))}
 	}
 }
 

@@ -174,6 +174,65 @@ func TestStaleRegisterKeyPlanMsgIsDiscarded(t *testing.T) {
 	}
 }
 
+// TestStaleUploadRunMsgFromDifferentIdentityIsDiscardedInKeyCeremony is the
+// WR-01 regression (review iteration 3): a stale UploadRunMsg from a
+// PREVIOUS identity's still-in-flight upload beat must never be consumed as
+// the CURRENT identity's ceremony result. openKeyCeremony resets
+// keyCeremonyUploadPending when a new ceremony opens, but it cannot cancel
+// the in-flight command from the OLD ceremony -- its reply can still arrive
+// later, while keyCeremonyUploadPending is true again for a DIFFERENT
+// identity. Before the fix, the pane+pending guard alone could not tell the
+// two apart and would dispatch RotateDeleteOffer on the wrong identity's
+// evidence (the same defect class CR-02 closed, reached by a different
+// route).
+func TestStaleUploadRunMsgFromDifferentIdentityIsDiscardedInKeyCeremony(t *testing.T) {
+	s := Seed()
+	m := newIdentitiesModel(stubBackend{}, s)
+	m.pane = paneKeyCeremony
+	m.keyCeremonyMode = KeyCeremonyModeRotate
+	m.keyCeremonyUploadPending = true
+	m.selected = "work" // identity B: the ceremony currently in flight
+
+	// Identity A's ("personal") late reply arrives while B is pending.
+	res := m.handleMsg(UploadRunMsg{Name: "personal", View: UploadRunView{
+		Rows: []UploadResultRow{{Outcome: UploadRowUploaded}},
+	}}, s)
+	next := res.model.(identitiesModel)
+
+	if res.cmd != nil {
+		t.Fatal("a stale reply from a different identity must not dispatch RotateDeleteOffer")
+	}
+	if !next.keyCeremonyUploadPending {
+		t.Fatal("a stale reply must not clear keyCeremonyUploadPending -- B's real reply is still expected")
+	}
+	if uploadRunHasContent(next.keyCeremonyUploadRun) {
+		t.Fatal("a stale reply from a different identity must not populate keyCeremonyUploadRun")
+	}
+}
+
+// TestStaleUploadRunMsgFromDifferentIdentityIsDiscardedInRegisterKeyPane is
+// WR-01's second consequence: pressing "u" on identity A then B must never
+// let A's late upload result be displayed as B's.
+func TestStaleUploadRunMsgFromDifferentIdentityIsDiscardedInRegisterKeyPane(t *testing.T) {
+	s := Seed()
+	m := newIdentitiesModel(stubBackend{}, s)
+	m.pane = paneRegisterKey
+	m.registerKeyPending = true
+	m.registerKeyName = "work"
+
+	res := m.handleMsg(UploadRunMsg{Name: "personal", View: UploadRunView{
+		Rows: []UploadResultRow{{Outcome: UploadRowUploaded}},
+	}}, s)
+	next := res.model.(identitiesModel)
+
+	if !next.registerKeyPending {
+		t.Fatal("a stale reply from a different identity must not clear registerKeyPending -- work's real reply is still expected")
+	}
+	if uploadRunHasContent(next.registerKeyRun) {
+		t.Fatal("a stale reply from a different identity must not populate registerKeyRun")
+	}
+}
+
 func TestRegisterKeyPaneEscReturnsToDetail(t *testing.T) {
 	s := Seed()
 	m := newIdentitiesModel(stubBackend{}, s)
@@ -330,7 +389,7 @@ func TestKeyCeremonyUploadFailureStillAdvances(t *testing.T) {
 		t.Run(fmt.Sprintf("outcome-%d", i), func(t *testing.T) {
 			a := openKeyCeremonyAtReview(t, stubBackend{})
 			a, _ = confirmKeyCeremony(t, a)
-			model, _ := a.Update(UploadRunMsg{View: view})
+			model, _ := a.Update(UploadRunMsg{Name: "personal", View: view})
 			next := model.(App)
 			m := identModel(t, next)
 			if m.keyCeremonyUploadPending {
@@ -370,7 +429,7 @@ func TestRotateDeleteOfferNotDispatchedOnFailedUpload(t *testing.T) {
 			if uploadCmd == nil {
 				t.Fatal("setup: a successful rotate commit must dispatch the upload beat")
 			}
-			model, offerCmd := a.Update(UploadRunMsg{View: view})
+			model, offerCmd := a.Update(UploadRunMsg{Name: "personal", View: view})
 			if offerCmd != nil {
 				t.Fatalf("view %d: a failed/unproven upload must never dispatch the delete-offer probe", i)
 			}
@@ -402,7 +461,7 @@ func TestRotateDeleteOfferDispatchedOnSuccessfulUpload(t *testing.T) {
 			if uploadCmd == nil {
 				t.Fatal("setup: a successful rotate commit must dispatch the upload beat")
 			}
-			model, offerCmd := a.Update(UploadRunMsg{View: view})
+			model, offerCmd := a.Update(UploadRunMsg{Name: "personal", View: view})
 			if offerCmd == nil {
 				t.Fatalf("view %d: a successful upload must still dispatch the delete-offer probe", i)
 			}
@@ -418,7 +477,7 @@ func TestKeyCeremonyUploadUsesTheSharedRenderer(t *testing.T) {
 	view := UploadRunView{Rows: []UploadResultRow{{Label: "Authentication", Command: "gh ssh-key add x.pub", Outcome: UploadRowUploaded}}}
 	a := openKeyCeremonyAtReview(t, stubBackend{})
 	a, _ = confirmKeyCeremony(t, a)
-	model, _ := a.Update(UploadRunMsg{View: view})
+	model, _ := a.Update(UploadRunMsg{Name: "personal", View: view})
 	next := identModel(t, model.(App))
 	s := Seed()
 	sel, _ := next.selectedIdentity(s)

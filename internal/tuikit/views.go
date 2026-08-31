@@ -739,10 +739,19 @@ type UploadStartedMsg struct {
 	FollowUp tea.Cmd
 }
 
-// UploadRunMsg completes the asynchronous upload beat Backend.RunUpload
-// dispatches — the wizard renders View's rows, then auto-advances into the
-// existing test-stage gate with no user keystroke (D-02).
+// UploadRunMsg completes the asynchronous upload beat Backend.RunUpload/
+// Backend.RunUploadForIdentity dispatches — the wizard renders View's rows,
+// then auto-advances into the existing test-stage gate with no user
+// keystroke (D-02). Name is the identity this run is about ("" for the
+// create wizard, since no identity exists yet) — it lets a consumer discard
+// a stale reply from a DIFFERENT identity's still-in-flight upload beat
+// (WR-01, review iteration 3): the beat is multi-second, and an in-flight
+// command cannot be cancelled when the user navigates away, so a reply
+// outliving its originating pane state is a real, not hypothetical, race.
+// Mirrors the existing RegisterKeyPlanMsg.Name / UploadEligibilityMsg.Hostname
+// stale-guard idiom.
 type UploadRunMsg struct {
+	Name string
 	View UploadRunView
 }
 
