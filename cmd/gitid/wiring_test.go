@@ -6567,3 +6567,308 @@ func TestGlobalGitIgnoreStateWiring(t *testing.T) {
 		}
 	})
 }
+
+func seedGitIgnoreFile(t *testing.T, home, foreignBefore, managed, foreignAfter string) {
+	t.Helper()
+	body := foreignBefore
+	if managed != "" {
+		body += filewriter.BeginPrefix + "gitignore\n" + managed
+		if !strings.HasSuffix(managed, "\n") {
+			body += "\n"
+		}
+		body += filewriter.EndPrefix + "gitignore\n"
+	}
+	body += foreignAfter
+	path := filepath.Join(home, ".gitignore_global")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil { //nolint:gosec // test path
+		t.Fatalf("writing gitignore: %v", err)
+	}
+}
+
+func commitGitIgnore(t *testing.T, b *realBackend, content, token string) tuikit.GlobalGitIgnoreCommitMsg {
+	t.Helper()
+	msg := b.CommitGlobalGitIgnore(content, token)()
+	got, ok := msg.(tuikit.GlobalGitIgnoreCommitMsg)
+	if !ok {
+		t.Fatalf("CommitGlobalGitIgnore returned %T, want GlobalGitIgnoreCommitMsg", msg)
+	}
+	return got
+}
+
+func TestGlobalGitIgnoreStateDefaultContent(t *testing.T) {
+	home := t.TempDir()
+	seedManagedBaseline(t, home, "excludesfile = ~/.gitignore_global")
+	view, err := newBackendForHome(home).GlobalGitIgnoreState()
+	if err != nil {
+		t.Fatalf("GlobalGitIgnoreState: %v", err)
+	}
+	if view.Content == "" {
+		t.Error("Content must be non-empty (default seed when the file is absent)")
+	}
+	want := gitconfig.RenderGitignoreBlock(gitconfig.DefaultGitignorePatterns())
+	if view.DefaultContent != want {
+		t.Errorf("DefaultContent = %q, want the curated seed %q", view.DefaultContent, want)
+	}
+	if view.Path == "" {
+		t.Error("Path must be the home-derived target")
+	}
+}
+
+func TestGlobalGitIgnoreApplyPlanWiredIsSingleTarget(t *testing.T) {
+	home := t.TempDir()
+	seedManagedBaseline(t, home, "excludesfile = ~/.gitignore_global")
+	b := newBackendForHome(home)
+	plan, err := b.GlobalGitIgnoreApplyPlan(".DS_Store")
+	if err != nil {
+		t.Fatalf("GlobalGitIgnoreApplyPlan: %v", err)
+	}
+	if len(plan.Targets) != 1 {
+		t.Fatalf("wired plan targets = %v, want exactly one (the gitignore file)", plan.Targets)
+	}
+	if !strings.Contains(plan.Targets[0], ".gitignore_global") {
+		t.Errorf("single target = %q, want the gitignore file", plan.Targets[0])
+	}
+}
+
+func TestGlobalGitIgnoreApplyPlanUnsetIsTwoTarget(t *testing.T) {
+	home := t.TempDir()
+	seedManagedBaseline(t, home, "")
+	seedGitIgnoreFile(t, home, "# foreign before\n", "*.bak\n", "# foreign after\n")
+	b := newBackendForHome(home)
+	plan, err := b.GlobalGitIgnoreApplyPlan(gitconfig.RenderGitignoreBlock(gitconfig.DefaultGitignorePatterns()))
+	if err != nil {
+		t.Fatalf("GlobalGitIgnoreApplyPlan: %v", err)
+	}
+	if len(plan.Targets) != 2 {
+		t.Fatalf("unset-key plan targets = %v, want two (gitignore + baseline fragment)", plan.Targets)
+	}
+	joined := strings.Join(plan.Targets, " ")
+	if !strings.Contains(joined, ".gitignore_global") || !strings.Contains(joined, "00-baseline") {
+		t.Errorf("two-target plan must name both files, got %v", plan.Targets)
+	}
+	if len(plan.Backups) != 2 {
+		t.Errorf("both pre-existing differing files must promise a backup, got %v", plan.Backups)
+	}
+	if !strings.Contains(plan.Diff, "excludesfile") {
+		t.Errorf("two-target diff must show the excludesfile change, got:\n%s", plan.Diff)
+	}
+}
+
+func TestGlobalGitIgnoreCommitWiresExcludesfileWhenUnset(t *testing.T) {
+	home := t.TempDir()
+	seedManagedBaseline(t, home, "")
+	foreignBefore := "# foreign before\n*.secret\n"
+	foreignAfter := "# foreign after\n"
+	seedGitIgnoreFile(t, home, foreignBefore, "*.bak\n", foreignAfter)
+	baselinePath := filepath.Join(home, ".gitconfig.d", "00-baseline")
+	beforeBody := readFile(t, baselinePath)
+
+	b := newBackendForHome(home)
+	content := gitconfig.RenderGitignoreBlock(gitconfig.DefaultGitignorePatterns())
+	plan, err := b.GlobalGitIgnoreApplyPlan(content)
+	if err != nil {
+		t.Fatalf("GlobalGitIgnoreApplyPlan: %v", err)
+	}
+	msg := commitGitIgnore(t, b, content, plan.PlanToken)
+	if msg.Err != "" {
+		t.Fatalf("commit error: %s", msg.Err)
+	}
+
+	after := readFile(t, baselinePath)
+	shape, ierr := gitconfig.InspectManagedBlockFile([]byte(after), "baseline")
+	if ierr != nil {
+		t.Fatalf("inspecting written baseline: %v", ierr)
+	}
+	if !strings.Contains(shape.Body, "excludesfile = ~/.gitignore_global") {
+		t.Errorf("managed block must carry the excludesfile line, body:\n%s", shape.Body)
+	}
+	if !strings.Contains(shape.Body, "ignorecase = false") {
+		t.Errorf("other baseline lines must survive, body:\n%s", shape.Body)
+	}
+	gitignore := readFile(t, filepath.Join(home, ".gitignore_global"))
+	if !strings.Contains(gitignore, foreignBefore) || !strings.Contains(gitignore, foreignAfter) {
+		t.Errorf("foreign gitignore content must survive, got:\n%s", gitignore)
+	}
+	_ = beforeBody
+}
+
+func TestGlobalGitIgnoreApplyPlanNoBaselineBlock(t *testing.T) {
+	home := t.TempDir()
+	before := snapshotHomeRecursive(t, home)
+	b := newBackendForHome(home)
+	_, err := b.GlobalGitIgnoreApplyPlan(".DS_Store")
+	if err == nil {
+		t.Fatal("ApplyPlan must error when no managed baseline block exists")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "baseline") {
+		t.Errorf("error must name the missing baseline, got %q", err)
+	}
+	after := snapshotHomeRecursive(t, home)
+	if !reflect.DeepEqual(before, after) {
+		t.Errorf("no-baseline ApplyPlan must not change any file; before=%v after=%v", before, after)
+	}
+}
+
+func TestGlobalGitIgnoreDuplicateBaselineBlockRefused(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".gitconfig.d")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	first := filewriter.BeginPrefix + "baseline\n[core]\n\tignorecase = false\n" + filewriter.EndPrefix + "baseline\n"
+	second := filewriter.BeginPrefix + "baseline\n[core]\n\texcludesfile = ~/.gitignore_global\n" + filewriter.EndPrefix + "baseline\n"
+	if err := os.WriteFile(filepath.Join(dir, "00-baseline"), []byte(first+second), 0o644); err != nil { //nolint:gosec // test path
+		t.Fatalf("writing duplicate baseline: %v", err)
+	}
+	b := newBackendForHome(home)
+	before := snapshotHomeRecursive(t, home)
+
+	_, stateErr := b.GlobalGitIgnoreState()
+	if stateErr == nil {
+		t.Fatal("GlobalGitIgnoreState must refuse a duplicate baseline block")
+	}
+	_, planErr := b.GlobalGitIgnoreApplyPlan(".DS_Store")
+	if planErr == nil {
+		t.Fatal("GlobalGitIgnoreApplyPlan must refuse a duplicate baseline block")
+	}
+	msg := commitGitIgnore(t, b, ".DS_Store", "minted-before-duplicate")
+	if msg.Err == "" {
+		t.Fatal("CommitGlobalGitIgnore must refuse a duplicate baseline block")
+	}
+	after := snapshotHomeRecursive(t, home)
+	if !reflect.DeepEqual(before, after) {
+		t.Errorf("duplicate-block refusal must leave every file unchanged; before=%v after=%v", before, after)
+	}
+}
+
+func TestGlobalGitIgnoreOrphanBeginRefused(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".gitconfig.d")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	orphan := filewriter.BeginPrefix + "baseline\n[core]\n\tignorecase = false\n"
+	if err := os.WriteFile(filepath.Join(dir, "00-baseline"), []byte(orphan), 0o644); err != nil { //nolint:gosec // test path
+		t.Fatalf("writing orphan BEGIN: %v", err)
+	}
+	b := newBackendForHome(home)
+	before := snapshotHomeRecursive(t, home)
+	if _, err := b.GlobalGitIgnoreState(); err == nil {
+		t.Fatal("State must refuse an orphan BEGIN")
+	}
+	if _, err := b.GlobalGitIgnoreApplyPlan(".DS_Store"); err == nil {
+		t.Fatal("ApplyPlan must refuse an orphan BEGIN")
+	}
+	msg := commitGitIgnore(t, b, ".DS_Store", "stale")
+	if msg.Err == "" {
+		t.Fatal("Commit must refuse an orphan BEGIN")
+	}
+	after := snapshotHomeRecursive(t, home)
+	if !reflect.DeepEqual(before, after) {
+		t.Errorf("orphan-BEGIN refusal must leave every file unchanged")
+	}
+}
+
+func TestGlobalGitIgnoreRollbackRestoresPreexistingBaseline(t *testing.T) {
+	home := t.TempDir()
+	seedManagedBaseline(t, home, "")
+	seedGitIgnoreFile(t, home, "# before\n", "*.bak\n", "# after\n")
+	b := newBackendForHome(home)
+	b.failCommitAt = func(step string) error {
+		if step == "gitignore-write" {
+			return fmt.Errorf("injected gitignore write failure")
+		}
+		return nil
+	}
+	targets := []string{
+		filepath.Join(home, ".gitignore_global"),
+		filepath.Join(home, ".gitconfig.d", "00-baseline"),
+	}
+	before := snapshotPaths(t, targets)
+	content := gitconfig.RenderGitignoreBlock(gitconfig.DefaultGitignorePatterns())
+	plan, err := b.GlobalGitIgnoreApplyPlan(content)
+	if err != nil {
+		t.Fatalf("ApplyPlan: %v", err)
+	}
+	msg := commitGitIgnore(t, b, content, plan.PlanToken)
+	if msg.Err == "" {
+		t.Fatal("commit must surface the injected failure")
+	}
+	if !strings.Contains(msg.Err, "injected gitignore write failure") {
+		t.Errorf("error must name the original failure, got %q", msg.Err)
+	}
+	if len(msg.Restored) == 0 && !strings.Contains(strings.ToLower(msg.Err), "restor") {
+		t.Errorf("rollback must say the baseline fragment was restored, err=%q restored=%v", msg.Err, msg.Restored)
+	}
+	assertUnchanged(t, before, snapshotPaths(t, targets))
+}
+
+func TestGlobalGitIgnoreRollbackRemovesCreatedFile(t *testing.T) {
+	home := t.TempDir()
+	created := filepath.Join(home, ".gitignore_global")
+	if err := os.WriteFile(created, []byte("half-applied\n"), 0o644); err != nil { //nolint:gosec // test path
+		t.Fatalf("seeding created file: %v", err)
+	}
+	b := newBackendForHome(home)
+	restored, err := undoGitIgnoreWrite(b, gitIgnoreRollback{path: created, existed: false})
+	if err != nil {
+		t.Fatalf("undoGitIgnoreWrite: %v", err)
+	}
+	if len(restored) != 1 {
+		t.Errorf("restored = %v, want the created path named", restored)
+	}
+	if _, err := os.Stat(created); err == nil {
+		t.Error("newly created first target must be removed, not restored from a backup that does not exist")
+	}
+}
+
+func TestGlobalGitIgnoreChangedSincePreviewRefuses(t *testing.T) {
+	home := t.TempDir()
+	seedManagedBaseline(t, home, "excludesfile = ~/.gitignore_global")
+	seedGitIgnoreFile(t, home, "", ".DS_Store\n", "")
+	b := newBackendForHome(home)
+	plan, err := b.GlobalGitIgnoreApplyPlan(".DS_Store")
+	if err != nil {
+		t.Fatalf("ApplyPlan: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".gitignore_global"), []byte(".DS_Store\n# external\n"), 0o644); err != nil { //nolint:gosec // test path
+		t.Fatalf("external edit: %v", err)
+	}
+	before := snapshotHomeRecursive(t, home)
+	msg := commitGitIgnore(t, b, ".DS_Store", plan.PlanToken)
+	if !msg.ChangedSincePreview {
+		t.Error("commit must report ChangedSincePreview")
+	}
+	if msg.Err == "" {
+		t.Error("changed-since-preview must carry an error")
+	}
+	after := snapshotHomeRecursive(t, home)
+	if !reflect.DeepEqual(before, after) {
+		t.Errorf("changed-since-preview must write nothing; before=%v after=%v", before, after)
+	}
+}
+
+func TestGlobalGitIgnoreTokenCoversBaselineFragment(t *testing.T) {
+	home := t.TempDir()
+	seedManagedBaseline(t, home, "excludesfile = ~/.gitignore_global")
+	seedGitIgnoreFile(t, home, "", ".DS_Store\n", "")
+	b := newBackendForHome(home)
+	plan, err := b.GlobalGitIgnoreApplyPlan(".DS_Store")
+	if err != nil {
+		t.Fatalf("ApplyPlan: %v", err)
+	}
+	baselinePath := filepath.Join(home, ".gitconfig.d", "00-baseline")
+	rewritten := strings.Replace(readFile(t, baselinePath), "excludesfile = ~/.gitignore_global", "excludesfile = ~/other", 1)
+	if err := os.WriteFile(baselinePath, []byte(rewritten), 0o644); err != nil { //nolint:gosec // test path
+		t.Fatalf("rewriting baseline: %v", err)
+	}
+	before := snapshotHomeRecursive(t, home)
+	msg := commitGitIgnore(t, b, ".DS_Store", plan.PlanToken)
+	if !msg.ChangedSincePreview {
+		t.Error("token must cover the baseline fragment even on the single-target path")
+	}
+	after := snapshotHomeRecursive(t, home)
+	if !reflect.DeepEqual(before, after) {
+		t.Errorf("baseline-fragment mutation must refuse the write; before=%v after=%v", before, after)
+	}
+}

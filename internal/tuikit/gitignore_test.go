@@ -86,6 +86,39 @@ func TestGitIgnoreNoBaselineBlockFailsClosed(t *testing.T) {
 	}
 }
 
+func TestGitIgnoreKeyUnsetShowsTwoTargetNoteAndCeremony(t *testing.T) {
+	plan := GlobalGitIgnoreApplyPlanView{
+		Targets: []string{"~/.gitignore_global", "~/.gitconfig.d/00-baseline"},
+		Backups: []string{
+			"~/.gitignore_global.bak.<timestamp>",
+			"~/.gitconfig.d/00-baseline.bak.<timestamp>",
+		},
+		Diff: "+ excludesfile",
+	}
+	b := stubBackend{
+		gignState: GlobalGitIgnoreView{
+			Path:    "~/.gitignore_global",
+			Content: ".DS_Store",
+			Managed: true,
+			Wiring:  GitIgnoreKeyUnset,
+		},
+		gignApplyPlan: plan,
+	}
+	a := gignApp(t, b)
+	body := appView(a)
+	if !strings.Contains(body, GitIgnoreTwoTargetNote) {
+		t.Errorf("pane must say the write will also set core.excludesfile, got:\n%s", body)
+	}
+	a, _ = press(t, a, "a")
+	m := gignModel(t, a)
+	if !m.ceremonyOpen {
+		t.Fatal("apply must open the ceremony when the key is unset")
+	}
+	if got := strings.Join(m.ceremony.cfg.Targets, ","); got != strings.Join(plan.Targets, ",") {
+		t.Errorf("ceremony targets = %q, want both files %q", got, plan.Targets)
+	}
+}
+
 func TestGitIgnoreDifferentFileStillOffersApply(t *testing.T) {
 	b := stubBackend{
 		gignState: GlobalGitIgnoreView{

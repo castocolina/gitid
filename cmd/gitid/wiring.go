@@ -2491,9 +2491,14 @@ func (b *realBackend) GlobalGitIgnoreState() (tuikit.GlobalGitIgnoreView, error)
 	return view, nil
 }
 
-// GlobalGitIgnoreApplyPlan normalizes content, re-inspects the current file,
-// composes the candidate with ComposeGlobalGitignore, and returns a plan
-// token that is the hash of the preimage bytes just read.
+// GlobalGitIgnoreApplyPlan normalizes content, re-inspects both the gitignore
+// file and the baseline fragment, and returns a plan whose token hashes every
+// preimage the plan READ. When core.excludesfile is unset it is a two-target
+// plan: the gitignore file plus the baseline fragment, composed with the same
+// patchExcludesfileInBaselineBody helper the doctor fix uses. When the key
+// already points at the managed target or at a different file the plan stays
+// single-target. A missing or malformed baseline block fails closed — no
+// ceremony, no write.
 func (b *realBackend) GlobalGitIgnoreApplyPlan(content string) (tuikit.GlobalGitIgnoreApplyPlanView, error) {
 	if b.initErr != nil {
 		return tuikit.GlobalGitIgnoreApplyPlanView{}, b.initErr
@@ -2514,6 +2519,10 @@ func (b *realBackend) GlobalGitIgnoreApplyPlan(content string) (tuikit.GlobalGit
 	if berr != nil {
 		return tuikit.GlobalGitIgnoreApplyPlanView{}, berr
 	}
+	wiring, _ := b.classifyGitIgnoreWiring(baselineBytes)
+	if wiring == tuikit.GitIgnoreNoBaselineBlock {
+		return tuikit.GlobalGitIgnoreApplyPlanView{}, fmt.Errorf("no gitid-managed Git baseline configuration was found — open the Fixer to set that up before this screen can wire core.excludesfile")
+	}
 	candidate := gitconfig.ComposeGlobalGitignore(existing, lines)
 	view := tuikit.GlobalGitIgnoreApplyPlanView{
 		Targets:   []string{b.displayPath(path)},
@@ -2523,13 +2532,60 @@ func (b *realBackend) GlobalGitIgnoreApplyPlan(content string) (tuikit.GlobalGit
 	if fileExists(path) && !bytes.Equal(existing, candidate) {
 		view.Backups = []string{b.displayPath(path) + backupSuffixPreview}
 	}
+	if wiring == tuikit.GitIgnoreKeyUnset {
+		shape, _ := gitconfig.InspectManagedBlockFile(baselineBytes, "baseline")
+		newBody := patchExcludesfileInBaselineBody(shape.Body, "~/.gitignore_global")
+		baselineCandidate := filewriter.ReplaceBlock(baselineBytes, "baseline", newBody)
+		baselinePath := b.baselineTargetPath()
+		view.Targets = append(view.Targets, b.displayPath(baselinePath))
+		if fileExists(baselinePath) && !bytes.Equal(baselineBytes, baselineCandidate) {
+			view.Backups = append(view.Backups, b.displayPath(baselinePath)+backupSuffixPreview)
+		}
+		view.Diff = view.Diff + "\n" + globalsTextDiff(string(baselineBytes), string(baselineCandidate))
+	}
 	return view, nil
 }
 
-// CommitGlobalGitIgnore is a single-block write whose rollback is
-// filewriter's own timestamped backup — no new lifecycle verb. Under txMu
-// it re-normalizes, re-reads, and refuses to write when the plan token no
-// longer matches the current preimage.
+// gitIgnoreRollback records one write so a failed pair can be undone.
+// existed, not the backup path, decides the undo shape: filewriter.Write
+// returns an empty backup only when the target did not pre-exist, so
+// branching on a non-empty backup would leave a brand-new file behind.
+type gitIgnoreRollback struct {
+	path     string
+	preimage []byte
+	existed  bool
+}
+
+func undoGitIgnoreWrite(b *realBackend, rec gitIgnoreRollback) ([]string, error) {
+	display := b.displayPath(rec.path)
+	if rec.existed {
+		if err := filewriter.WriteNoBackup(rec.path, rec.preimage, deleteGitconfigMode); err != nil {
+			return nil, fmt.Errorf("restoring %s: %w", display, err)
+		}
+		return []string{display}, nil
+	}
+	if err := os.Remove(rec.path); err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("removing newly created %s: %w", display, err)
+	}
+	return []string{display}, nil
+}
+
+func (b *realBackend) injectGitIgnoreStep(step string) error {
+	if b.failCommitAt == nil {
+		return nil
+	}
+	return b.failCommitAt(step)
+}
+
+// CommitGlobalGitIgnore writes the gitignore managed block and, when
+// core.excludesfile is unset, the matching key inside the managed baseline
+// block — both under txMu, both covered by the plan token. Order: the
+// baseline fragment FIRST, then the gitignore file. Each write records
+// {path, preimage, existed} before mutating; if the second write fails the
+// first is undone from that record (restored from the captured bytes when
+// it pre-existed, removed when this transaction created it). A token
+// mismatch, a missing baseline block, or a malformed fragment refuses
+// without writing.
 func (b *realBackend) CommitGlobalGitIgnore(content, planToken string) tea.Cmd {
 	return func() tea.Msg {
 		if b.initErr != nil {
@@ -2558,6 +2614,66 @@ func (b *realBackend) CommitGlobalGitIgnore(content, planToken string) tea.Cmd {
 				Err:                 b.displayMessage("this file changed since you last reviewed it"),
 				ChangedSincePreview: true,
 			}
+		}
+		wiring, _ := b.classifyGitIgnoreWiring(baselineBytes)
+		if wiring == tuikit.GitIgnoreNoBaselineBlock {
+			return tuikit.GlobalGitIgnoreCommitMsg{
+				Err: b.displayMessage("no gitid-managed Git baseline configuration was found — open the Fixer to set that up before this screen can wire core.excludesfile"),
+			}
+		}
+
+		var backups []string
+		failPair := func(cause error, rec gitIgnoreRollback) tuikit.GlobalGitIgnoreCommitMsg {
+			restored, undoErr := undoGitIgnoreWrite(b, rec)
+			errText := b.displayMessage(cause.Error())
+			if undoErr != nil {
+				errText += "; undo failed: " + b.displayMessage(undoErr.Error())
+			} else {
+				errText += "; restored " + strings.Join(restored, ", ")
+			}
+			return tuikit.GlobalGitIgnoreCommitMsg{Err: errText, Restored: restored}
+		}
+
+		if wiring == tuikit.GitIgnoreKeyUnset {
+			baselinePath := b.baselineTargetPath()
+			shape, ierr := gitconfig.InspectManagedBlockFile(baselineBytes, "baseline")
+			if ierr != nil {
+				return tuikit.GlobalGitIgnoreCommitMsg{Err: b.displayMessage(ierr.Error())}
+			}
+			newBody := patchExcludesfileInBaselineBody(shape.Body, "~/.gitignore_global")
+			composed := filewriter.ReplaceBlock(baselineBytes, "baseline", newBody)
+			rec := gitIgnoreRollback{
+				path:     baselinePath,
+				preimage: append([]byte{}, baselineBytes...),
+				existed:  fileExists(baselinePath),
+			}
+			if ferr := b.injectGitIgnoreStep("baseline-write"); ferr != nil {
+				return tuikit.GlobalGitIgnoreCommitMsg{Err: b.displayMessage(ferr.Error())}
+			}
+			if !bytes.Equal(baselineBytes, composed) {
+				bbak, werr := filewriter.Write(baselinePath, composed, deleteGitconfigMode)
+				if werr != nil {
+					return tuikit.GlobalGitIgnoreCommitMsg{Err: b.displayMessage(werr.Error())}
+				}
+				if bbak != "" {
+					backups = append(backups, b.displayPath(bbak))
+				}
+			}
+			if ferr := b.injectGitIgnoreStep("gitignore-write"); ferr != nil {
+				return failPair(ferr, rec)
+			}
+			gbak, werr := gitconfig.WriteGlobalGitignore(path, lines)
+			if werr != nil {
+				return failPair(werr, rec)
+			}
+			if gbak != "" {
+				backups = append(backups, b.displayPath(gbak))
+			}
+			return tuikit.GlobalGitIgnoreCommitMsg{Backups: backups}
+		}
+
+		if ferr := b.injectGitIgnoreStep("gitignore-write"); ferr != nil {
+			return tuikit.GlobalGitIgnoreCommitMsg{Err: b.displayMessage(ferr.Error())}
 		}
 		backup, werr := gitconfig.WriteGlobalGitignore(path, lines)
 		if werr != nil {
