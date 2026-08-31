@@ -549,7 +549,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Global SSH Options | 7/7 | Complete    | 2026-08-27 |
 | 7. Global Git Options | 0/TBD | Not started | - |
 | 8. Health + Fixer | 8/8 | Complete    | 2026-08-30 |
-| 9. Upload / Credentials Assist | 8/8 | Complete | 2026-08-30 |
+| 9. Upload / Credentials Assist | 8/8 | Complete    | 2026-08-30 |
 | 9.1. GitLab Real-Account Validation | 0/2 | Planned | - |
 | 9.2. Global Git Ignore Management | 0/TBD | Not started | - |
 | 9.3. Release CI/CD + Installer | 0/TBD | Not started | - |

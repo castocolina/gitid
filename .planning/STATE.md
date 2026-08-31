@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: TUI-First Redesign
-current_phase: 09
-current_phase_name: Upload / Credentials Assist
+current_phase: 09.1
+current_phase_name: GitLab Real-Account Validation
 status: planning
-stopped_at: Phase 08 complete, ready to plan Phase 09
-last_updated: "2026-08-31T07:12:33.806Z"
-last_activity: 2026-08-30
-last_activity_desc: Phase 08 complete, transitioned to Phase 09
-state_head: 0ad0ed7547fc9efd7265240e1645308bb45ef152
+stopped_at: Phase 9 complete, ready to plan Phase 09.1
+last_updated: "2026-08-31T07:25:30.306Z"
+last_activity: 2026-08-31
+last_activity_desc: Phase 9 complete, transitioned to Phase 09.1
+state_head: 55f1f5fd05cb9fbc0e0417ef284a22e85070f238
 progress:
   total_phases: 15
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 85
   completed_plans: 82
-  percent: 53
+  percent: 60
 ---
 
 # Project State
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 ## Current Position
 
-Phase: 09 — Upload / Credentials Assist
+Phase: 09.1 — GitLab Real-Account Validation
 Status: Ready to plan
-Last activity: 2026-08-30 — Phase 08 complete, transitioned to Phase 09
+Last activity: 2026-08-31 — Phase 9 complete, transitioned to Phase 09.1
 
 ### Phase 8 (COMPLETE) — historical record
 
@@ -59,7 +59,7 @@ Progress: [░░░░░░░░░░] 0% (30/32 plans complete — Phase 2:
 
 **Velocity:** reset for v1.0 (prior POC velocity archived under 0.0.1).
 
-- Total plans completed: 66
+- Total plans completed: 74
 - Average duration: — min
 - Total execution time: 0 hours
 
@@ -75,7 +75,7 @@ Progress: [░░░░░░░░░░] 0% (30/32 plans complete — Phase 2:
 | 6 | 7 | - | - |
 | 07 | 0 | - | - |
 | 08 | 8 | - | - |
-| 09 | 0 | - | - |
+| 9 | 8 | - | - |
 | 10 | 0 | - | - |
 
 *Updated after each plan completion*
@@ -277,7 +277,7 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-08-31T00:11:15.240Z
-Stopped at: Phase 08 complete, ready to plan Phase 09
+Stopped at: Phase 9 complete, ready to plan Phase 09.1
 Resume file: .planning/phases/09.5-full-ssh-git-properties-browser/09.5-CONTEXT.md
 Wave structure: W1 = 03-01 + 03-02 (DONE) -> W2 = 03-03 (DONE) -> W3 = 03-04 (DONE) -> W4 = 03-05 (DONE) -> W5 = 03-06 (Tasks 1+2 DONE, Task 3 PARTIAL — orchestrator review owed)
 **All remaining waves run SEQUENTIALLY (one executor at a time) per LEARNINGS L11** — the pre-commit hooks lint the whole module, so a parallel executor's mid-refactor tree blocks every other commit. Do NOT run plans in parallel inside this Go module again.
