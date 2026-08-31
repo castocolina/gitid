@@ -616,16 +616,30 @@ func (b FixtureBackend) RunUploadForIdentity(name string) tea.Cmd {
 	signCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title '%s' --type signing", keyPath, title)
 	glabCmd := fmt.Sprintf("/usr/local/bin/glab ssh-key add %s.pub -t '%s' --usage-type auth_and_signing", keyPath, title)
 
+	// WR-02 (review iteration 5): mirror RegisterKeyPlan's three-way branch
+	// rather than falling through to the GitHub success shape for anything
+	// that is not gitlab — that included the empty string a provider-less
+	// identity's host resolves to (identityManagerSSHHost returns "" for a
+	// row with no SSHHost, e.g. "opensource"/git-only and "archived"/key-
+	// unused), fabricating a registration for an identity with no provider
+	// at all. The real backend's planUpload D-13 gate returns
+	// Skipped=true/no rows for provider == "" and renders nothing
+	// (uploadRunHasContent is false for that view) — match it here so the
+	// dummy, this project's design/screenshot source of truth, does not
+	// structurally diverge from what the real backend does.
 	var view tuikit.UploadRunView
-	if strings.Contains(host, "gitlab") {
+	switch {
+	case strings.Contains(host, "gitlab"):
 		view = tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{
 			{Registration: tuikit.UploadRegistrationCombined, Label: tuikit.UploadRegistrationLabelCombined, Command: glabCmd, Outcome: tuikit.UploadRowUploaded},
 		}}
-	} else {
+	case strings.Contains(host, "github"):
 		view = tuikit.UploadRunView{Rows: []tuikit.UploadResultRow{
 			{Registration: tuikit.UploadRegistrationAuthentication, Label: tuikit.UploadRegistrationLabelAuth, Command: authCmd, Outcome: tuikit.UploadRowUploaded},
 			{Registration: tuikit.UploadRegistrationSigning, Label: tuikit.UploadRegistrationLabelSigning, Command: signCmd, Outcome: tuikit.UploadRowUploaded},
 		}}
+	default:
+		view = tuikit.UploadRunView{Skipped: true}
 	}
 	return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
 		return tuikit.UploadRunMsg{Name: name, View: view}
