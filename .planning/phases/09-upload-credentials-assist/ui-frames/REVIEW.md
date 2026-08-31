@@ -3,20 +3,73 @@
 09-07-PLAN.md Task 3 (DLV-04/DLV-06). This packet closes the phase's
 real-vs-dummy comparison and per-Focal-point judgement obligations.
 
-## Parity critique — PENDING
+## Parity critique
 
-The `agent-ui-ux-designer` critique (D-09 step 3, review R15) is an
-orchestrator/human-initiated step and cannot be summoned from inside this
-autonomous execution wave. **No critique has been run.** This section
-records that fact explicitly rather than fabricating one — per R15's own
-instruction, a fabricated review packet is worse than a missing one, because
-the missing one is visible.
+The `agent-ui-ux-designer` critique (D-09 step 3, review R15) HAS now run
+against the committed frames in this directory compared to `09-UI-SPEC.md`,
+closing D-09's parity-critique obligation. It found 5 real defects (D1-D5)
+and 5 UX improvements (I1-I5). All 5 defects are FIXED below, by commit SHA
+(quick task `260831-3a9`); all 5 improvements were deliberately NOT
+implemented in this pass — a later reader must not mistake this section for
+a claim that everything the critique found was fixed.
 
-D-09's parity-critique obligation stays **OPEN**. To close it, a
-human/interactive session must run the `agent-ui-ux-designer` subagent
-against the committed frames below (`.planning/phases/09-upload-credentials-assist/ui-frames/*.txt`)
-compared to `09-UI-SPEC.md`, and fold its findings into this section with the
-same improvement-or-defect classification the rest of this document uses.
+### Defects (5, all FIXED)
+
+- **D1 — the register-key manual-fallback modal was a dead end.**
+  Instructions to paste the `.pub` key with no way to copy it, unlike the
+  create-flow's equivalent state (which has offered "c copy public key"
+  since Phase 3). Fixed in `ad64789`: a `registerKeyCopyable()` predicate
+  gates BOTH the footer hint and the "c" key binding, so the pane can never
+  show a hint without a binding or the reverse.
+- **D2 — the modal's footer contradicted itself, and the action-menu row
+  hid its own mutation.** The status line paired "without writing
+  anything" with "registration runs on open" in every state, including
+  states where nothing had run or ever would; the action-menu row
+  ("Register key (u)") did not disclose the immediate `gh`/`glab` provider
+  mutation it triggers before it is pressed. Fixed in `06b74c1`: the status
+  line now splits per state (registration ran vs. nothing was registered),
+  and the row was renamed to "Register key with provider now (u)" — a
+  deliberate, documented 09-UI-SPEC.md Copywriting Contract amendment (the
+  project's D-09 precedent for a scoped frozen-copy divergence). The
+  "opening the modal IS the opt-in" behavior itself is unchanged
+  (deferred-items.md item 1's ratified contract).
+- **D3 — `create-flow-upload-checkbox-disabled.txt` shows the UNAUTH
+  label, and this REVIEW.md cited it as evidence of the disabled state.**
+  Docs-only correction, fixed in `6335687`: the Per-Focal-point judgement
+  table now names `TestUploadCheckboxRowIsExactlyOnePhysicalLine`
+  (`internal/tuikit/upload_section_test.go:415`) as the real DISABLED-state
+  evidence, and no longer offers the mislabeled frame as such.
+- **D4 — the rotate delete-offer's live confirmation choice had no visible
+  affordance, and a stale `Done (Enter)` misattributed the one visible
+  Enter.** While the offer was live and unresolved, the frame showed
+  `Done (Enter)` above the still-unanswered question, with no visible
+  navigate/confirm hint for the choice row itself. Fixed in `d7ad2ee`: a
+  `rotateDeleteOfferLive()` predicate now gates both a new
+  `↑↓/Tab choose · Enter confirm` footer action and an opt-in `hideDone`
+  suppression on a LOCAL copy of the shared ceremony model — every other
+  ceremony's "Done (Enter)" rendering is unchanged
+  (`ceremony_test.go` unmodified).
+- **D5 — committed reference frames predated `c3af8b9`'s ellipsis fix and
+  no longer matched HEAD.** Fixed in `2bac4a1`: all 13 tracked frames
+  re-promoted from a cleared capture directory by `cmd/gitid-frame-promote`
+  alone, absorbing both the ellipsis fix and the D1/D2/D4 render changes;
+  `TestUploadFrameProvenanceMatches` passes in both directions.
+
+### Improvements (5, deliberately NOT implemented — deferred)
+
+Per ONESHOT.md rule 11, these are carried to the user's post-milestone
+manual UX review rather than resolved here. Recorded verbatim as the
+critique found them:
+
+- **I1** — upload/connectivity results share one undifferentiated glyph
+  list, no group label
+- **I2** — the upload beat renders above the key-generation event that
+  caused it, temporally inverted
+- **I3** — wrapped continuation lines outdent one column, breaking
+  numbered-list structure in the manual-fallback modal
+- **I4** — a resolved delete-offer leaves the already-answered question
+  visible on screen alongside its result
+- **I5** — inconsistent truncation marker: some cuts use "…", one doesn't
 
 ## Per-screen classified differences
 
