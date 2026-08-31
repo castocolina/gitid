@@ -62,6 +62,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/castocolina/gitid/internal/tuikit"
 	"github.com/castocolina/gitid/internal/uploader"
 )
 
@@ -361,15 +362,87 @@ func newRealAccountGLabRunID(t *testing.T) string {
 // own acceptance criteria require `git diff --stat e2e/harness_test.go` to
 // stay empty, so the smallest fix that keeps that file untouched is this
 // self-contained, GLab-marked duplicate (review cycle 1 finding, recorded
-// in 09.1-01-SUMMARY.md Deviations). BuildBinary is NOT duplicated here:
-// wave 1 declares no compiled-binary driver — the compiled-binary driver
-// plan 09.1-02 adds is reserved and out of scope for this wave — so it is
-// never needed in this file.
+// in 09.1-01-SUMMARY.md Deviations). Wave 1 declared no compiled-binary
+// driver, so BuildBinary was not needed then; plan 09.1-02 (this wave) DOES
+// need it — see glabBuildBinary below, the same class of local duplicate for
+// the same reason.
 func glabSandboxHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	return home
+}
+
+var (
+	glabBuildOnce sync.Once
+	glabBinPath   string
+	glabBuildErr  error
+	// glabBuildRealHome is captured at package init time — before any test
+	// can call t.Setenv("HOME", ...) — exactly mirroring harness_test.go's
+	// own realHome package var, under a distinct, GLab-marked name so the
+	// two never collide when both realaccount and realaccountgitlab tags
+	// are active together (e.g. under `go vet -tags=realaccount,realaccountgitlab`).
+	glabBuildRealHome = os.Getenv("HOME")
+)
+
+// glabRepoRoot walks up from the test working directory until it finds a
+// directory containing go.mod. Local, GLab-marked duplicate of
+// harness_test.go's repoRoot, for the same reason glabSandboxHome exists.
+func glabRepoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("glabRepoRoot: Getwd: %v", err)
+	}
+	for {
+		if _, statErr := os.Stat(filepath.Join(dir, "go.mod")); statErr == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatalf("glabRepoRoot: go.mod not found walking up from %s", dir)
+		}
+		dir = parent
+	}
+}
+
+// glabBuildBinary is a deliberate, GLab-marked LOCAL duplicate of
+// harness_test.go's BuildBinary — FIRST DECLARED HERE in plan 09.1-02, the
+// first wave that needs a compiled-binary driver. harness_test.go's own
+// build constraint (e2e || realaccount) excludes it under -tags
+// realaccountgitlab alone (exactly what `make verify-upload-real-account-gitlab`
+// runs), and this plan's own acceptance criteria forbid modifying
+// harness_test.go, so the smallest fix that keeps that file untouched is
+// this self-contained duplicate (same discipline as glabSandboxHome).
+func glabBuildBinary(t *testing.T) string {
+	t.Helper()
+	glabBuildOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "gitid-e2e-gitlab-*")
+		if err != nil {
+			glabBuildErr = err
+			return
+		}
+		bin := filepath.Join(dir, "gitid")
+		cmd := exec.Command("go", "build", "-o", bin, "./cmd/gitid") //nolint:gosec // static go build invocation, no user input
+		cmd.Dir = glabRepoRoot(t)
+		// Restore the original HOME so `go build` derives GOPATH from the
+		// real home (not from a sandbox), matching harness_test.go's own
+		// BuildBinary rationale.
+		cmd.Env = append(os.Environ(), "HOME="+glabBuildRealHome)
+		if combined, berr := cmd.CombinedOutput(); berr != nil {
+			glabBuildErr = fmt.Errorf("%w\n%s", berr, combined)
+			_ = os.RemoveAll(dir)
+			return
+		}
+		glabBinPath = bin
+	})
+	if glabBuildErr != nil {
+		t.Fatalf("glabBuildBinary: go build failed: %v", glabBuildErr)
+	}
+	if glabBinPath == "" {
+		t.Fatal("glabBuildBinary: binary path is empty after build")
+	}
+	return glabBinPath
 }
 
 // countUnscopedGLab returns the number of entries whose Title does NOT
@@ -409,19 +482,104 @@ func realAccountGLabUploaderDeps(home, glabConfigDir, realHome, realGLabPath, wr
 			if err == nil {
 				return string(out), 0, nil
 			}
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				return string(out), exitErr.ExitCode(), fmt.Errorf("%w: %s", err, uploader.RedactCLIOutput(string(out), realHome, 240))
-			}
-			return string(out), 2, err
+			// internal/uploader only branches on "code != 0" (never on the
+			// specific numeric value) to decide success/failure, so a fixed
+			// sentinel on any subprocess error is behaviorally identical to
+			// extracting the real process exit code here. Deliberately not
+			// spelled via Go's exec.ExitError/.ExitCode() extraction (review
+			// cycle 1, MEDIUM-2's exit-0-only-and-no-allowlist discipline for
+			// this file's compiled-binary drivers extends to every exit-code
+			// read in this file, including this pre-existing engine-Deps
+			// plumbing carried forward from wave 1).
+			return string(out), 1, fmt.Errorf("%w: %s", err, uploader.RedactCLIOutput(string(out), realHome, 240))
 		},
 	}
 }
 
-// TestRealAccountGitLabUploadRoundTrip is this wave's READ-ONLY slice,
-// which plan 09.1-02 expands in place (it is the final test, not a
-// scaffold — see the file-level doc comment). It performs zero mutation:
-// preflight, run-scoping, a baseline inventory read, and a read-only final
-// sweep registered in the LIFO position wave 2's mutation will rely on.
+// redactGLabOutputLines applies uploader.RedactCLIOutput to each non-empty
+// line of raw INDEPENDENTLY. uploader.RedactCLIOutput's own documented
+// contract (internal/uploader/classify.go) returns only the FIRST
+// meaningful line of whatever string it is given — a single call against a
+// multi-line productOutput blob would silently discard every line after the
+// first, which is exactly the mistake this run's own first draft made
+// before being caught during evidence review (see 09.1-02-SUMMARY.md
+// Deviations). Every line still passes through the shared redaction
+// function unmodified; this helper duplicates none of its token-matching
+// regexes.
+func redactGLabOutputLines(raw, homeDir string, maxWidth int) string {
+	var redacted []string
+	for _, line := range strings.Split(raw, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		redacted = append(redacted, uploader.RedactCLIOutput(line, homeDir, maxWidth))
+	}
+	return strings.Join(redacted, " | ")
+}
+
+// runRealGLabBinary is the compiled-binary driver — FIRST DECLARED HERE in
+// plan 09.1-02 (wave 1 reserves but never declares this name; review cycle
+// 1, MEDIUM-1). It mirrors e2e/upload_real_account_e2e_test.go's
+// runRealBinary byte-for-byte in its exit handling: it records the argv,
+// runs under a 90s timeout with the real-session product env, captures
+// CombinedOutput, and fatals on ANY non-zero exit — never a relaxed or
+// exit-code-inspecting variant.
+//
+// Exit-status contract, pinned (review cycle 1, MEDIUM-2). register-key's
+// own published contract (cmd/gitid/identity_upload.go:146-169) returns an
+// error only when at least one registration was ATTEMPTED and EVERY
+// attempted registration failed. GitLab has exactly one registration
+// (D-01), so this run attempts exactly one: attempted == 1, and a non-zero
+// exit means failed == 1 — the single registration this whole phase exists
+// to validate did not happen. There is no partial-success case for a
+// one-row run, so this function fatals on any non-zero exit rather than
+// inspecting the code. Do NOT write a second driver, a non-zero-tolerant
+// variant, or an exit-code allowlist here.
+func runRealGLabBinary(t *testing.T, home, glabConfigDir, realHome, realGLabPath, wrapperDir, binary string, recorder *glabArgvRecorder, args ...string) string {
+	t.Helper()
+	recorder.add(binary, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binary, args...) //nolint:gosec // binary came from BuildBinary and args are test-owned values
+	cmd.Env = realAccountGLabProductEnv(home, glabConfigDir, realHome, realGLabPath, wrapperDir)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compiled gitid %s failed: %v\noutput:\n%s", strings.Join(args, " "), err, out)
+	}
+	return string(out)
+}
+
+// runGLabProductPhase — FIRST DECLARED HERE in plan 09.1-02 (same reservation
+// as runRealGLabBinary above). It runs, in order: a headless create with
+// upload suppressed (so identity creation and registration stay separately
+// observable), then register-key, then reads the sandbox public key. It
+// deliberately contains NO engine invocation and constructs no
+// uploader.Deps — the compiled binary's own wiring, eligibility resolution,
+// orchestration, and printing are precisely what this whole phase exists to
+// validate (T-09.1-10).
+func runGLabProductPhase(t *testing.T, binary, home, glabConfigDir, realHome, realGLabPath, wrapperDir, identityName string, recorder *glabArgvRecorder) (string, string, string) {
+	t.Helper()
+	runRealGLabBinary(t, home, glabConfigDir, realHome, realGLabPath, wrapperDir, binary, recorder,
+		"create", "--name", identityName, "--provider", "gitlab.com",
+		"--git-name", "gitid e2e", "--git-email", "gitid-e2e@example.invalid", "--yes", "--no-upload")
+	output := runRealGLabBinary(t, home, glabConfigDir, realHome, realGLabPath, wrapperDir, binary, recorder, "register-key", identityName)
+	pubPath := filepath.Join(home, ".ssh", "id_ed25519_"+identityName+".pub")
+	pub, err := os.ReadFile(pubPath) //nolint:gosec // test-owned sandbox public key
+	if err != nil {
+		t.Fatalf("reading product-phase sandbox public key: %v", err)
+	}
+	return output, pubPath, string(pub)
+}
+
+// TestRealAccountGitLabUploadRoundTrip is the final test (not a scaffold —
+// see the file-level doc comment). Wave 1 (09.1-01) shipped its read-only
+// slice: preflight, run-scoping, a baseline inventory read, and the
+// read-only final sweep registered in the LIFO position this wave's
+// mutation relies on. Plan 09.1-02 (this wave) expands it in place with the
+// single real mutation: one disposable key registered through the compiled
+// binary, its resource ID resolved by run-scoped inventory lookup, an
+// explicit delete after scope re-confirmation, then the wave-1 sweep fires
+// last (LIFO) to confirm a clean account state.
 func TestRealAccountGitLabUploadRoundTrip(t *testing.T) {
 	ambient := glabAmbientEnvMap()
 	realHome := ambient["HOME"]
@@ -480,7 +638,71 @@ func TestRealAccountGitLabUploadRoundTrip(t *testing.T) {
 	}
 	baselineUnscoped = countUnscopedGLab(baseline, productScope)
 	baselineRecorded = true
-	t.Logf("real-account baseline: unscoped-count=%d run-scope=%q (this wave performs no mutation)", baselineUnscoped, productScope)
+	t.Logf("real-account baseline: unscoped-count=%d run-scope=%q", baselineUnscoped, productScope)
+
+	// The single real mutation this phase exists to perform. Register the
+	// outstanding-ID drain's t.Cleanup SECOND, the moment the first ID is
+	// resolved, so LIFO runs it before the wave-1 sweep registered above.
+	outstanding := &outstandingGLabRemoteKeys{}
+	cleanupRegistered := false
+	record := func(entry uploader.ExistingKey, scope string) {
+		if !strings.Contains(entry.Title, scope) {
+			t.Fatalf("refusing to record inventory entry ID %s whose title %q lacks run scope %q", entry.ID, entry.Title, scope)
+		}
+		outstanding.add(entry, scope)
+		t.Logf("resolved resource ID by run-scoped inventory lookup: registration=%s id=%s title=%q", glabRegistrationLabel(entry.Registration), entry.ID, entry.Title)
+		if !cleanupRegistered {
+			cleanupRegistered = true
+			t.Cleanup(func() {
+				drainOutstandingGLabRemoteKeys(uploader.ToolGLab, glabPath, deps, outstanding, t.Errorf)
+			})
+		}
+	}
+
+	binary := glabBuildBinary(t)
+	productOutput, productPubPath, productPub := runGLabProductPhase(t, binary, home, glabConfigDir, realHome, realGLabPath, wrapperDir, productScope, recorder)
+	t.Logf("real-account register-key output (redacted, per-line): %s", redactGLabOutputLines(productOutput, realHome, 2000))
+	if !strings.Contains(productOutput, "Running:") {
+		t.Fatalf("compiled register-key output did not announce its command: %s", productOutput)
+	}
+	// The success row is composed from the product's own constants, never a
+	// hand-typed literal — a future change to either constant fails this
+	// test instead of silently drifting. register-key's exit status is
+	// already the exit-0-only contract runRealGLabBinary enforced above:
+	// runRealGLabBinary would have fataled if it were anything else, so
+	// reaching this line IS the assertion that it exited 0.
+	wantSuccessRow := fmt.Sprintf(tuikit.UploadResultOKFmt, tuikit.UploadRegistrationLabelCombined)
+	if !strings.Contains(productOutput, wantSuccessRow) {
+		t.Fatalf("compiled register-key output did not contain the GitLab combined success row %q: %s", wantSuccessRow, productOutput)
+	}
+	productPrivatePath := strings.TrimSuffix(productPubPath, ".pub")
+	recorder.assertNoPath(t, productPrivatePath)
+
+	// Capture the resource ID by a run-scoped inventory lookup — glab ssh-key
+	// add prints a human confirmation, not a machine-readable ID; the lookup
+	// is how the ID is obtained, used only to learn the ID.
+	inventory, err := uploader.Inventory(uploader.ToolGLab, glabPath, deps)
+	if err != nil {
+		t.Fatalf("reading product-phase inventory for run-scoped ID lookup: %v", err)
+	}
+	productEntry := glabExactScopedEntry(t, inventory, uploader.RegistrationCombined, productScope)
+	record(productEntry, productScope)
+	if !uploader.HasRegistration(inventory, productPub, uploader.RegistrationCombined) {
+		t.Fatal("product-phase inventory did not confirm the combined registration for the compiled product key")
+	}
+
+	// Explicit deletion by recorded ID only, re-confirming scope immediately
+	// before each delete. This loop already handles any number of
+	// outstanding entries; here it simply iterates once.
+	for _, recorded := range outstanding.snapshot() {
+		if err := deleteRecordedGLabRemoteKey(uploader.ToolGLab, glabPath, deps, outstanding, recorded); err != nil {
+			t.Fatalf("explicit deletion of recorded ID %s failed: %v", recorded.entry.ID, err)
+		}
+		t.Logf("deleted recorded resource ID after scope re-confirmation: registration=%s id=%s", glabRegistrationLabel(recorded.entry.Registration), recorded.entry.ID)
+	}
+	// The drain (registered second) fires first and finds an empty map; the
+	// wave-1 sweep (registered first) fires last and asserts zero run-scoped
+	// entries remain plus an unchanged unscoped count.
 }
 
 // --- Cleanup bookkeeping machinery (Task 3) ---
@@ -855,5 +1077,28 @@ func TestRealAccountGitLabCleanupOrderingIsLIFOSweepLast(t *testing.T) {
 	}
 	if got, want := strings.Join(order, ","), "outstanding,sweep"; got != want {
 		t.Fatalf("cleanup execution order = %q, want %q", got, want)
+	}
+}
+
+// TestRedactGLabOutputLinesRedactsEveryLine proves the fix for the logging
+// defect this task's own evidence review caught: uploader.RedactCLIOutput
+// alone returns only the FIRST non-empty line of whatever string it is
+// given, so a single call against a multi-line register-key output would
+// silently drop everything after the "Running: ..." announcement line —
+// including the actual success row. This test drives the same real,
+// two-line shape the real run produced (redacted here, not the real
+// account's title/path), confirming every line survives and is
+// independently redacted.
+func TestRedactGLabOutputLinesRedactsEveryLine(t *testing.T) {
+	raw := "Running: /home/dev/bin/glab ssh-key add /home/dev/.ssh/id_ed25519_gitid-e2e-x.pub -t 'gitid: gitid-e2e-x @ host' --usage-type auth_and_signing\n\n✓ Key key registered\n"
+	got := redactGLabOutputLines(raw, "/home/dev", 240)
+	if !strings.Contains(got, "~/bin/glab") {
+		t.Fatalf("redactGLabOutputLines did not redact the home path in the Running line: %q", got)
+	}
+	if !strings.Contains(got, "✓ Key key registered") {
+		t.Fatalf("redactGLabOutputLines dropped the success row (the exact defect this test guards against): %q", got)
+	}
+	if strings.Contains(got, "\n") {
+		t.Fatalf("redactGLabOutputLines must join lines with a separator, never a raw newline: %q", got)
 	}
 }
