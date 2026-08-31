@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -302,9 +303,22 @@ func TestHealthFixer_RealPTYFixerBatchWalk(t *testing.T) {
 // than a stubbed one (08-08-VERIFICATION.md's DLV-06 gap: the halt-on-
 // failure path was previously proven only at the unit level,
 // TestBatchWalkHalt, never through a real compiled-binary PTY session).
+// chflags has no portable Linux equivalent that works unprivileged (chattr
+// +i needs CAP_LINUX_IMMUTABLE, unavailable on ubuntu-latest CI runners), so
+// this skips cleanly on non-Darwin/BSD platforms or when chflags is absent
+// from PATH -- the D-16 halt invariant stays proven at the unit level
+// (TestBatchWalkHalt, internal/tuikit/fixer_screen_test.go) everywhere, and
+// through the real compiled binary on Darwin (see 08-VERIFICATION.md
+// re-verification's accepted-deviation note).
 // t.Cleanup lifts the flag so t.TempDir()'s own removal doesn't fail.
 func makeImmutable(t *testing.T, path string) {
 	t.Helper()
+	if runtime.GOOS != "darwin" {
+		t.Skipf("chflags uchg is macOS/BSD-only; skipping D-16 real-PTY halt coverage on %s (proven at unit level by TestBatchWalkHalt)", runtime.GOOS)
+	}
+	if _, err := exec.LookPath("chflags"); err != nil {
+		t.Skipf("chflags not found in PATH; skipping D-16 real-PTY halt coverage (proven at unit level by TestBatchWalkHalt): %v", err)
+	}
 	if err := exec.Command("chflags", "uchg", path).Run(); err != nil { //nolint:gosec // fixed args, test-only, no shell (G204)
 		t.Fatalf("chflags uchg %s: %v", path, err)
 	}
