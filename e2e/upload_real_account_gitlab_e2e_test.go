@@ -221,24 +221,40 @@ type glabTokenSelf struct {
 // personal_access_tokens/self`, captured via cmd.Output() with stderr
 // collected separately so a glab update-check banner or API warning on
 // stderr can never corrupt the decode — against the pinned glabTokenSelf
-// contract. It trims everything before the first '{' (tolerating a leading
-// banner line that reached stdout anyway) and decodes with
-// json.NewDecoder(...).Decode, not json.Unmarshal, so trailing bytes after
-// the JSON object do not fail the parse (Decode reads exactly one JSON
-// value and ignores what follows; Unmarshal would reject the trailing
-// bytes). Returns ok=false when: the decode errors (including a top-level
-// JSON array, which cannot decode into this object contract); the scopes
-// slice is nil or empty; Revoked is non-nil and true; or Active is non-nil
-// and false. An object that OMITS revoked/active entirely is accepted (when
-// scopes are sufficient) — this is exactly the case the pointer-typed
-// fields exist for.
+// contract. It trims everything before the first JSON-opening byte
+// (tolerating a leading banner line that reached stdout anyway), rejecting
+// outright a top-level array rather than skipping past its opening
+// bracket, and decodes with json.NewDecoder(...).Decode, not
+// json.Unmarshal, so trailing bytes after the JSON object do not fail the
+// parse (Decode reads exactly one JSON value and ignores what follows;
+// Unmarshal would reject the trailing bytes). Returns ok=false when: the
+// decode errors (including a top-level JSON array, which cannot decode
+// into this object contract); the scopes slice is nil or empty; Revoked is
+// non-nil and true; or Active is non-nil and false. An object that OMITS
+// revoked/active entirely is accepted (when scopes are sufficient) — this
+// is exactly the case the pointer-typed fields exist for.
 func parseGLabTokenScopes(output string) ([]string, bool) {
-	idx := strings.IndexByte(output, '{')
+	// Find whichever JSON-opening byte appears first: '{' (a single object,
+	// the pinned contract) or '[' (a top-level array, which the contract
+	// explicitly rejects). Searching for '{' alone is NOT sufficient here:
+	// a top-level array wrapping a single object -- `[{"scopes":["api"]}]`
+	// -- contains a '{' too, at index 1, and trimming to THAT byte would
+	// decode the array's lone element as if it were a top-level object,
+	// silently accepting the exact shape the pinned contract forbids. This
+	// bug was caught live by this task's own account-free table test
+	// before the parser shipped (09.1-01-SUMMARY.md Deviations) -- exactly
+	// the empirical "test before implementation" discipline CLAUDE.md
+	// requires.
+	idx := strings.IndexAny(output, "{[")
 	if idx < 0 {
 		return nil, false
 	}
+	trimmed := output[idx:]
+	if trimmed[0] == '[' {
+		return nil, false
+	}
 	var v glabTokenSelf
-	if err := json.NewDecoder(strings.NewReader(output[idx:])).Decode(&v); err != nil {
+	if err := json.NewDecoder(strings.NewReader(trimmed)).Decode(&v); err != nil {
 		return nil, false
 	}
 	if v.Revoked != nil && *v.Revoked {
@@ -465,4 +481,379 @@ func TestRealAccountGitLabUploadRoundTrip(t *testing.T) {
 	baselineUnscoped = countUnscopedGLab(baseline, productScope)
 	baselineRecorded = true
 	t.Logf("real-account baseline: unscoped-count=%d run-scope=%q (this wave performs no mutation)", baselineUnscoped, productScope)
+}
+
+// --- Cleanup bookkeeping machinery (Task 3) ---
+//
+// Nothing below this point contacts GitLab — every test in this section is
+// account-free and exercises the mechanism against a fake uploader.Deps.
+// This machinery is what makes wave 2's single real mutation safe to
+// authorize at all: the outstanding-ID map is the single source of truth,
+// deletion is by recorded ID after a scope re-confirmation and only through
+// uploader.DeleteRecordedKey's guarded entry point, and the drain is
+// idempotent. Reproduced from e2e/upload_real_account_e2e_test.go's
+// reviewed (Wave 8 R19/R20), tool-agnostic mechanism, under the GLab-marked
+// names Task 2 established.
+
+type recordedGLabRemoteKey struct {
+	entry uploader.ExistingKey
+	scope string
+}
+
+// outstandingGLabRemoteKeys is a mutex-protected map — the SINGLE SOURCE OF
+// TRUTH for what still needs deleting — keyed by glabRemoteKeyMapID. This is
+// what makes the explicit-deletion path and the t.Cleanup drain path
+// compose instead of double-deleting (Wave 8's R19 finding).
+type outstandingGLabRemoteKeys struct {
+	mu      sync.Mutex
+	entries map[string]recordedGLabRemoteKey
+}
+
+func glabRemoteKeyMapID(entry uploader.ExistingKey) string {
+	return fmt.Sprintf("%d:%s", entry.Registration, entry.ID)
+}
+
+func (o *outstandingGLabRemoteKeys) add(entry uploader.ExistingKey, scope string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.entries == nil {
+		o.entries = make(map[string]recordedGLabRemoteKey)
+	}
+	o.entries[glabRemoteKeyMapID(entry)] = recordedGLabRemoteKey{entry: entry, scope: scope}
+}
+
+func (o *outstandingGLabRemoteKeys) remove(entry uploader.ExistingKey) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	delete(o.entries, glabRemoteKeyMapID(entry))
+}
+
+func (o *outstandingGLabRemoteKeys) snapshot() []recordedGLabRemoteKey {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	out := make([]recordedGLabRemoteKey, 0, len(o.entries))
+	for _, entry := range o.entries {
+		out = append(out, entry)
+	}
+	return out
+}
+
+func findRecordedGLabInventoryEntry(entries []uploader.ExistingKey, recorded recordedGLabRemoteKey) (uploader.ExistingKey, bool) {
+	for _, entry := range entries {
+		if entry.ID == recorded.entry.ID && entry.Registration == recorded.entry.Registration {
+			return entry, true
+		}
+	}
+	return uploader.ExistingKey{}, false
+}
+
+// isGLabAlreadyAbsent reports an already-absent delete response as success,
+// not failure.
+//
+// KNOWN UNVERIFIED GAP (review cycle 1, LOW). These two markers were ported
+// from the GitHub sibling (e2e/upload_real_account_e2e_test.go's
+// isAlreadyAbsent), which chose them against GitHub's own error wording.
+// Nobody has ever seen GitLab's actual wording for "delete a stale/missing
+// SSH key ID" — this gap is NOT closed by this plan. FAIL-CLOSED DIRECTION:
+// a GitLab wording this predicate does not recognise is classified as a
+// REAL deletion failure, surfaced by the drain's reporter and by the final
+// read-only sweep, never silently swallowed. Do not widen the matching by
+// guessing additional GitLab-specific phrasings here; 09.1-02 Task 2
+// captures the real wording if a live run ever produces one, and closing
+// this gap is a follow-up with evidence, not a plan-time guess.
+func isGLabAlreadyAbsent(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "404") || strings.Contains(text, "not found")
+}
+
+// deleteRecordedGLabRemoteKey re-reads the inventory, re-confirms the
+// recorded ID still carries its recorded scope, and only then deletes
+// through uploader.DeleteRecordedKey — never by title alone, never by a
+// broad query.
+func deleteRecordedGLabRemoteKey(tool uploader.Tool, toolPath string, deps uploader.Deps, outstanding *outstandingGLabRemoteKeys, recorded recordedGLabRemoteKey) error {
+	inventory, err := uploader.Inventory(tool, toolPath, deps)
+	if err != nil {
+		return fmt.Errorf("re-reading inventory before deleting recorded ID %s: %w", recorded.entry.ID, err)
+	}
+	current, found := findRecordedGLabInventoryEntry(inventory, recorded)
+	if !found {
+		outstanding.remove(recorded.entry)
+		return nil
+	}
+	if !strings.Contains(current.Title, recorded.scope) {
+		return fmt.Errorf("refusing to delete recorded ID %s: current title %q no longer carries run scope %q", current.ID, current.Title, recorded.scope)
+	}
+	if _, err := uploader.DeleteRecordedKey(tool, toolPath, current, deps); err != nil {
+		if isGLabAlreadyAbsent(err) {
+			outstanding.remove(recorded.entry)
+			return nil
+		}
+		return fmt.Errorf("deleting recorded ID %s after scope re-confirmation: %w", current.ID, err)
+	}
+	outstanding.remove(recorded.entry)
+	return nil
+}
+
+// drainOutstandingGLabRemoteKeys iterates ONLY over IDs still present in
+// the map, reporting failures through report rather than fataling.
+func drainOutstandingGLabRemoteKeys(tool uploader.Tool, toolPath string, deps uploader.Deps, outstanding *outstandingGLabRemoteKeys, report func(string, ...any)) {
+	for _, recorded := range outstanding.snapshot() {
+		if err := deleteRecordedGLabRemoteKey(tool, toolPath, deps, outstanding, recorded); err != nil {
+			report("real-account cleanup failed for recorded ID %s: %v", recorded.entry.ID, err)
+		}
+	}
+}
+
+func glabEntriesWithScope(entries []uploader.ExistingKey, registration uploader.Registration, scope string) []uploader.ExistingKey {
+	var matches []uploader.ExistingKey
+	for _, entry := range entries {
+		if entry.Registration == registration && strings.Contains(entry.Title, scope) {
+			matches = append(matches, entry)
+		}
+	}
+	return matches
+}
+
+// glabExactScopedEntry fatals unless EXACTLY one entry matches — the guard
+// against acting on a same-titled stranger.
+func glabExactScopedEntry(t *testing.T, entries []uploader.ExistingKey, registration uploader.Registration, scope string) uploader.ExistingKey {
+	t.Helper()
+	matches := glabEntriesWithScope(entries, registration, scope)
+	if len(matches) != 1 {
+		t.Fatalf("run-scoped inventory lookup for %s scope %q found %d entries, want exactly 1: %#v", glabRegistrationLabel(registration), scope, len(matches), matches)
+	}
+	return matches[0]
+}
+
+// glabRegistrationLabel returns "combined" for GitLab's only registration
+// shape. Unlike the GitHub sibling's registrationLabel, this deliberately
+// has no signing/authentication branch — GitLab has exactly one
+// registration type (D-01/D-02).
+func glabRegistrationLabel(registration uploader.Registration) string {
+	if registration == uploader.RegistrationCombined {
+		return "combined"
+	}
+	return "unknown"
+}
+
+// --- Account-free test doubles ---
+
+// fakeGLabInventoryRecord mirrors internal/uploader/inventory.go's
+// unexported providerKey wire shape (id/title/key) so fakeGLabCleanupDeps
+// can produce JSON the production glabInventory/decodeProviderKeyPages path
+// decodes exactly as it would decode real `glab ssh-key list -F json`
+// output. ID is json.Number (not string) because GitLab's real API returns
+// numeric IDs as unquoted JSON numbers, matching providerKey's own field
+// type — confirmed this session that json.Marshal emits json.Number
+// unquoted, exactly the shape decodeProviderKeyPages expects.
+type fakeGLabInventoryRecord struct {
+	ID    json.Number `json:"id"`
+	Title string      `json:"title"`
+	Key   string      `json:"key"`
+}
+
+func fakeGLabInventoryEntries(entries []uploader.ExistingKey) []fakeGLabInventoryRecord {
+	records := make([]fakeGLabInventoryRecord, 0, len(entries))
+	for _, entry := range entries {
+		records = append(records, fakeGLabInventoryRecord{ID: json.Number(entry.ID), Title: entry.Title, Key: entry.Key})
+	}
+	return records
+}
+
+// fakeGLabCleanupDeps returns an account-free uploader.Deps whose RunCmd
+// answers `ssh-key list` with entries (always the same fixed set — this
+// double tests bookkeeping ordering/idempotency, not inventory mutation)
+// and `ssh-key delete <id>` by incrementing deleteCalls[id]. If id equals
+// alreadyAbsentID, the delete reports a 404-shaped error so
+// isGLabAlreadyAbsent's branch is exercised through the real drain path,
+// not asserted in isolation.
+func fakeGLabCleanupDeps(t *testing.T, entries []uploader.ExistingKey, deleteCalls map[string]int, alreadyAbsentID string) uploader.Deps {
+	t.Helper()
+	var mu sync.Mutex
+	return uploader.Deps{
+		LookPath: func(name string) (string, error) { return "/fake/glab", nil },
+		ReadFile: os.ReadFile,
+		RunCmd: func(_ string, args ...string) (string, int, error) {
+			if len(args) >= 2 && args[0] == "ssh-key" && args[1] == "list" {
+				payload, err := json.Marshal(fakeGLabInventoryEntries(entries))
+				if err != nil {
+					t.Fatalf("marshaling fake GitLab inventory: %v", err)
+				}
+				return string(payload), 0, nil
+			}
+			if len(args) >= 3 && args[0] == "ssh-key" && args[1] == "delete" {
+				id := args[2]
+				mu.Lock()
+				deleteCalls[id]++
+				mu.Unlock()
+				if alreadyAbsentID != "" && id == alreadyAbsentID {
+					return "", 1, fmt.Errorf("glab: 404 Not Found")
+				}
+				return "", 0, nil
+			}
+			return "", 1, fmt.Errorf("fake glab: unexpected argv %v", args)
+		},
+	}
+}
+
+// TestRealAccountGitLabResolvesRealGLabConfigDir table-tests
+// resolveRealGLabConfigDir's three-way priority order plus the empty-value
+// fall-through, confirmed against this session's live macOS capture
+// (09.1-01-SUMMARY.md Deviations).
+func TestRealAccountGitLabResolvesRealGLabConfigDir(t *testing.T) {
+	wantDefault := filepath.Join("/home/test", ".config", "glab-cli")
+	if runtime.GOOS == "darwin" {
+		wantDefault = filepath.Join("/home/test", "Library", "Application Support", "glab-cli")
+	}
+	tests := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{name: "GLAB_CONFIG_DIR wins", env: map[string]string{"GLAB_CONFIG_DIR": "/credential/glab", "XDG_CONFIG_HOME": "/xdg", "HOME": "/home/test"}, want: "/credential/glab"},
+		{name: "XDG_CONFIG_HOME second", env: map[string]string{"XDG_CONFIG_HOME": "/xdg", "HOME": "/home/test"}, want: filepath.Join("/xdg", "glab-cli")},
+		{name: "HOME fallback uses the OS-native default", env: map[string]string{"HOME": "/home/test"}, want: wantDefault},
+		{name: "empty GLAB_CONFIG_DIR falls through to XDG_CONFIG_HOME", env: map[string]string{"GLAB_CONFIG_DIR": "  ", "XDG_CONFIG_HOME": "/xdg", "HOME": "/home/test"}, want: filepath.Join("/xdg", "glab-cli")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := resolveRealGLabConfigDir(test.env); got != test.want {
+				t.Fatalf("resolveRealGLabConfigDir() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+// TestRealAccountGitLabScopeCheckRequiresExactMember drives the SAME
+// parseGLabTokenScopes/missingRequiredGLabScopes pair the live preflight
+// calls (review cycle 1, HIGH-2's noise/liveness cases), against synthetic
+// personal_access_tokens/self JSON responses.
+func TestRealAccountGitLabScopeCheckRequiresExactMember(t *testing.T) {
+	tests := []struct {
+		name   string
+		output string
+		accept bool
+	}{
+		{name: "exact api member alone", output: `{"scopes": ["api"]}`, accept: true},
+		{name: "exact api member alongside others", output: `{"scopes": ["read_user", "api", "read_repository"]}`, accept: true},
+		{name: "unknown extra attributes are ignored by the three-field struct", output: `{"id": 42, "name": "gitid-e2e", "scopes": ["api"], "created_at": "2024-01-01T00:00:00Z", "user_id": 7, "expires_at": null, "granular_scopes": null}`, accept: true},
+		{name: "leading banner line before the JSON object", output: "A new version of glab is available!\n" + `{"scopes": ["api"]}`, accept: true},
+		{name: "trailing bytes after the JSON object", output: `{"scopes": ["api"]}` + "\nsome trailing banner text", accept: true},
+		{name: "omitted revoked and active attributes accepted when scopes are sufficient", output: `{"scopes": ["api"]}`, accept: true},
+		{name: "substring-only scope is rejected, not accepted", output: `{"scopes": ["apiv2"]}`, accept: false},
+		{name: "missing api entirely", output: `{"scopes": ["read_api"]}`, accept: false},
+		{name: "empty scopes array", output: `{"scopes": []}`, accept: false},
+		{name: "no scopes attribute at all", output: `{"revoked": false, "active": true}`, accept: false},
+		{name: "top-level JSON array instead of an object", output: `[{"scopes": ["api"]}]`, accept: false},
+		{name: "output is not valid JSON at all", output: `not json at all`, accept: false},
+		{name: "revoked token is rejected", output: `{"scopes": ["api"], "revoked": true}`, accept: false},
+		{name: "inactive token is rejected", output: `{"scopes": ["api"], "active": false}`, accept: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			scopes, ok := parseGLabTokenScopes(test.output)
+			accepted := ok && len(missingRequiredGLabScopes(scopes)) == 0
+			if accepted != test.accept {
+				t.Fatalf("parseGLabTokenScopes(%q) accepted=%t, want %t (scopes=%v ok=%t)", test.output, accepted, test.accept, scopes, ok)
+			}
+		})
+	}
+}
+
+// TestRealAccountGitLabCleanupBookkeepingIsIdempotent proves, with a fake
+// deleter counting calls per ID, that a fully-explicit-deletion path leaves
+// the outstanding map empty (the drain performs ZERO deletions), an
+// early-failure path leaves exactly the undeleted IDs for the drain (each
+// deleted exactly once), and a deleter reporting the entry already absent
+// removes the ID without being treated as an error.
+func TestRealAccountGitLabCleanupBookkeepingIsIdempotent(t *testing.T) {
+	first := uploader.ExistingKey{ID: "101", Registration: uploader.RegistrationCombined, Title: "gitid: gitid-e2e-test @ host"}
+	second := uploader.ExistingKey{ID: "202", Registration: uploader.RegistrationCombined, Title: "gitid: gitid-e2e-test @ host"}
+	entries := []uploader.ExistingKey{first, second}
+
+	for _, test := range []struct {
+		name            string
+		explicitFirst   bool
+		explicitSecond  bool
+		alreadyAbsentID string
+		wantDrainCalls  map[string]int
+	}{
+		{
+			name:           "fully explicit deletion path performs zero drain deletions",
+			explicitFirst:  true,
+			explicitSecond: true,
+			wantDrainCalls: map[string]int{},
+		},
+		{
+			name:           "early-failure path leaves remaining IDs, each deleted exactly once by the drain",
+			explicitFirst:  true,
+			wantDrainCalls: map[string]int{"202": 1},
+		},
+		{
+			name:            "already-absent report during the drain removes the ID and is not an error",
+			explicitFirst:   true,
+			alreadyAbsentID: "202",
+			wantDrainCalls:  map[string]int{"202": 1},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			outstanding := &outstandingGLabRemoteKeys{}
+			outstanding.add(first, "gitid-e2e-test")
+			outstanding.add(second, "gitid-e2e-test")
+
+			explicitCalls := map[string]int{}
+			explicitDeps := fakeGLabCleanupDeps(t, entries, explicitCalls, "")
+			if test.explicitFirst {
+				if err := deleteRecordedGLabRemoteKey(uploader.ToolGLab, "/fake/glab", explicitDeps, outstanding, recordedGLabRemoteKey{entry: first, scope: "gitid-e2e-test"}); err != nil {
+					t.Fatalf("explicit delete of first failed: %v", err)
+				}
+			}
+			if test.explicitSecond {
+				if err := deleteRecordedGLabRemoteKey(uploader.ToolGLab, "/fake/glab", explicitDeps, outstanding, recordedGLabRemoteKey{entry: second, scope: "gitid-e2e-test"}); err != nil {
+					t.Fatalf("explicit delete of second failed: %v", err)
+				}
+			}
+
+			drainCalls := map[string]int{}
+			reportedErrors := 0
+			drainDeps := fakeGLabCleanupDeps(t, entries, drainCalls, test.alreadyAbsentID)
+			drainOutstandingGLabRemoteKeys(uploader.ToolGLab, "/fake/glab", drainDeps, outstanding, func(string, ...any) { reportedErrors++ })
+
+			if reportedErrors != 0 {
+				t.Fatalf("drain reported %d unexpected error(s)", reportedErrors)
+			}
+			if len(drainCalls) != len(test.wantDrainCalls) {
+				t.Fatalf("drain delete call set = %v, want %v", drainCalls, test.wantDrainCalls)
+			}
+			for id, want := range test.wantDrainCalls {
+				if got := drainCalls[id]; got != want {
+					t.Fatalf("drain delete calls for id %s = %d, want %d", id, got, want)
+				}
+			}
+			if got := len(outstanding.snapshot()); got != 0 {
+				t.Fatalf("outstanding map not empty after drain: %d entries remain", got)
+			}
+		})
+	}
+}
+
+// TestRealAccountGitLabCleanupOrderingIsLIFOSweepLast asserts the LIFO
+// t.Cleanup ordering directly (registration order, not prose): the
+// outstanding-ID closure's marker must appear before the sweep's marker in
+// the recorded execution slice.
+func TestRealAccountGitLabCleanupOrderingIsLIFOSweepLast(t *testing.T) {
+	var order []string
+	passed := t.Run("ordering", func(t *testing.T) {
+		t.Cleanup(func() { order = append(order, "sweep") })
+		t.Cleanup(func() { order = append(order, "outstanding") })
+	})
+	if !passed {
+		t.Fatal("cleanup ordering subtest failed")
+	}
+	if got, want := strings.Join(order, ","), "outstanding,sweep"; got != want {
+		t.Fatalf("cleanup execution order = %q, want %q", got, want)
+	}
 }
