@@ -594,13 +594,21 @@ func (FixtureBackend) RegisterKeyPlan(name string) tea.Cmd {
 // RunUploadForIdentity "runs" the D-08 pane's upload beat for the named
 // identity's own key, mirroring RunUpload's brief-tick, hostname-driven
 // demo shape.
+//
+// WR-02 (review iteration 4, half of iteration-3's WR-05): the D-07 title
+// always contains spaces ("gitid: <identity> @ <machine>"), so an unquoted
+// preview pasted into a shell would run a DIFFERENT command than the one
+// gitid actually runs — the same reasoning RunUpload's own doc comment
+// already carries. This method feeds the D-08 register-key pane (the exact
+// register-key-modal surface the iteration-3 finding named), so it must
+// match RunUpload's hardcoded-quoted shape.
 func (b FixtureBackend) RunUploadForIdentity(name string) tea.Cmd {
 	host := identityManagerSSHHost(name)
 	title := fmt.Sprintf(tuikit.UploadKeyTitleFmt, name, "demo-machine")
 	keyPath := "~/.ssh/id_ed25519_" + name
-	authCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title %s --type authentication", keyPath, title)
-	signCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title %s --type signing", keyPath, title)
-	glabCmd := fmt.Sprintf("/usr/local/bin/glab ssh-key add %s.pub -t %s --usage-type auth_and_signing", keyPath, title)
+	authCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title '%s' --type authentication", keyPath, title)
+	signCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title '%s' --type signing", keyPath, title)
+	glabCmd := fmt.Sprintf("/usr/local/bin/glab ssh-key add %s.pub -t '%s' --usage-type auth_and_signing", keyPath, title)
 
 	var view tuikit.UploadRunView
 	if strings.Contains(host, "gitlab") {
