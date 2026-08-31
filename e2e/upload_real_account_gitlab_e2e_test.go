@@ -544,7 +544,7 @@ func runRealGLabBinary(t *testing.T, home, glabConfigDir, realHome, realGLabPath
 	cmd.Env = realAccountGLabProductEnv(home, glabConfigDir, realHome, realGLabPath, wrapperDir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("compiled gitid %s failed: %v\noutput:\n%s", strings.Join(args, " "), err, out)
+		t.Fatalf("compiled gitid %s failed: %v\noutput:\n%s", strings.Join(args, " "), err, redactGLabOutputLines(string(out), realHome, 2000))
 	}
 	return string(out)
 }
@@ -626,8 +626,8 @@ func TestRealAccountGitLabUploadRoundTrip(t *testing.T) {
 		if len(remaining) != 0 {
 			t.Errorf("real-account final read-only sweep found %d remaining run-scoped entries: %#v", len(remaining), remaining)
 		}
-		if baselineRecorded && countUnscopedGLab(inventory, productScope) != baselineUnscoped {
-			t.Errorf("pre-existing unscoped inventory count changed: before=%d after=%d", baselineUnscoped, countUnscopedGLab(inventory, productScope))
+		if unscopedNow := countUnscopedGLab(inventory, productScope); baselineRecorded && unscopedNow != baselineUnscoped {
+			t.Errorf("pre-existing unscoped inventory count changed: before=%d after=%d", baselineUnscoped, unscopedNow)
 		}
 		t.Logf("real-account final sweep: remaining=%d product-scope=%q", len(remaining), productScope)
 	})
@@ -663,7 +663,7 @@ func TestRealAccountGitLabUploadRoundTrip(t *testing.T) {
 	productOutput, productPubPath, productPub := runGLabProductPhase(t, binary, home, glabConfigDir, realHome, realGLabPath, wrapperDir, productScope, recorder)
 	t.Logf("real-account register-key output (redacted, per-line): %s", redactGLabOutputLines(productOutput, realHome, 2000))
 	if !strings.Contains(productOutput, "Running:") {
-		t.Fatalf("compiled register-key output did not announce its command: %s", productOutput)
+		t.Fatalf("compiled register-key output did not announce its command: %s", redactGLabOutputLines(productOutput, realHome, 2000))
 	}
 	// The success row is composed from the product's own constants, never a
 	// hand-typed literal — a future change to either constant fails this
@@ -673,7 +673,7 @@ func TestRealAccountGitLabUploadRoundTrip(t *testing.T) {
 	// reaching this line IS the assertion that it exited 0.
 	wantSuccessRow := fmt.Sprintf(tuikit.UploadResultOKFmt, tuikit.UploadRegistrationLabelCombined)
 	if !strings.Contains(productOutput, wantSuccessRow) {
-		t.Fatalf("compiled register-key output did not contain the GitLab combined success row %q: %s", wantSuccessRow, productOutput)
+		t.Fatalf("compiled register-key output did not contain the GitLab combined success row %q: %s", wantSuccessRow, redactGLabOutputLines(productOutput, realHome, 2000))
 	}
 	productPrivatePath := strings.TrimSuffix(productPubPath, ".pub")
 	recorder.assertNoPath(t, productPrivatePath)
