@@ -2999,7 +2999,17 @@ func (m identitiesModel) renderKeyCeremony(sel DemoIdentity) string {
 		// overflow path in this file uses, and the "N more line(s) hidden"
 		// cue makes the cut visible instead of silent.
 		if tailLines > budget {
-			lines := maxInt(1, budget)
+			// WR-01 (review iteration 4): the appended "… N more line(s)
+			// hidden" cue is an EXTRA row on top of the viewport's own
+			// budget-lines output -- reserve two rows so the combined
+			// output stays within frameBodyRows(minFrameHeight) instead of
+			// overrunning it (verified empirically against the actual
+			// render output, not derived on paper -- reserving only one
+			// row still overran by one row). The tracked rotate fixtures
+			// never enter this branch (their tail always fits), so a
+			// byte-identical A/B check against them cannot see this; see
+			// TestKeyCeremonyOverflowBackstopStaysWithinFrameBudget.
+			lines := maxInt(1, budget-2)
 			v := ExactTextViewport{Text: wrapped, VisibleLines: lines, Width: maxInt(20, deleteChoiceNoteWidth-4)}
 			return body + "\n" + v.Clamp().View() + "\n " +
 				styleFaint.Render(fmt.Sprintf("… %d more line(s) hidden", tailLines-lines)) + "\n"

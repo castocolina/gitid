@@ -759,6 +759,47 @@ func TestRotateDeleteOfferFitsTheFrameBudget(t *testing.T) {
 	}
 }
 
+// TestKeyCeremonyOverflowBackstopStaysWithinFrameBudget is the WR-01
+// regression (review iteration 4): renderKeyCeremony's overflow backstop
+// computes `budget := frameBodyRows(minFrameHeight) - rendered - 1` and
+// clamps the tail's viewport to exactly `budget` VisibleLines, then appends
+// an EXTRA "… N more line(s) hidden" cue row on top -- one row past the
+// budget the backstop exists to enforce. The tracked rotate fixtures never
+// reach this branch (their tail always fits), so a byte-identical A/B check
+// against them cannot see the defect; this test forces genuinely long tail
+// content (real "gh ssh-key add ..." command lines routinely run 100+
+// columns, wrapping into several physical rows apiece) so tailLines exceeds
+// a still-POSITIVE budget.
+func TestKeyCeremonyOverflowBackstopStaysWithinFrameBudget(t *testing.T) {
+	a := openKeyCeremonyAtReview(t, stubBackend{})
+	a, _ = confirmKeyCeremony(t, a)
+
+	longCmd := "/usr/local/bin/gh ssh-key add ~/.ssh/id_ed25519_personal.pub --title 'gitid: personal @ a-genuinely-long-demo-machine-hostname-used-to-force-overflow' --type authentication"
+	view := UploadRunView{Rows: []UploadResultRow{
+		{Label: "Authentication", Command: longCmd, Outcome: UploadRowUploaded},
+		{Label: "Signing", Command: longCmd, Outcome: UploadRowUploaded},
+	}}
+	model, offerCmd := a.Update(UploadRunMsg{Name: "personal", View: view})
+	a = model.(App)
+	if offerCmd == nil {
+		t.Fatal("setup: a successful rotate upload must dispatch the delete-offer probe")
+	}
+	manualCmd := strings.Repeat(longCmd+"\n", 5) + longCmd
+	model, _ = a.Update(RotateDeleteOfferMsg{Name: "personal", View: RotateDeleteOfferView{
+		Available: true, ProviderName: "GitHub", IdentityName: "personal", MachineName: "demo-machine",
+		KeyTitle: "gitid: personal @ demo-machine", KeyID: "1", KeyDetail: "ID 1",
+		ManualCommand: manualCmd,
+	}})
+	a = model.(App)
+
+	m := identModel(t, a)
+	rendered := stripANSI(m.renderKeyCeremony(mustSelected(t, a)))
+	lines := strings.Count(rendered, "\n") + 1
+	if budget := frameBodyRows(minFrameHeight); lines > budget {
+		t.Fatalf("rendered pane is %d lines, want <= frameBodyRows(minFrameHeight) = %d:\n%s", lines, budget, rendered)
+	}
+}
+
 func mustSelected(t *testing.T, a App) DemoIdentity {
 	t.Helper()
 	m := identModel(t, a)
