@@ -185,6 +185,7 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 	// ---- launch: header tabs + breadcrumb + sidebar + legend ----
 	mustSee(t, s, "[1] Identities", "launch: header nav tabs (D4 bracketed format)")
 	mustSee(t, s, "[4] Health", "launch: header nav tabs (D4 bracketed format)")
+	mustSee(t, s, "[6]", "launch: header nav tabs includes key 6 for Global Git Ignore")
 	mustSee(t, s, "personal", "launch: seeded sidebar row")
 	mustSee(t, s, "S ssh · G git", "launch: sidebar legend line")
 	mustSee(t, s, "8 ids", "launch: live health chip")
@@ -209,6 +210,12 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 	mustSee(t, s, "read-only diagnostics", "tab 4: health status line after auto-scan")
 	// Auto-scan runs on first entry, then findings render grouped.
 	mustSee(t, s, "Private key is world-readable", "tab 4: finding title after auto-scan")
+
+	s.sendKey([]byte("5"), keystrokeDelay)
+	mustSee(t, s, "Fixer", "tab 5: breadcrumb")
+
+	s.sendKey([]byte("6"), keystrokeDelay)
+	mustSee(t, s, "Global Git Ignore", "tab 6: breadcrumb")
 
 	// ---- create wizard: full walk ----
 	s.sendKey([]byte("1"), keystrokeDelay)
