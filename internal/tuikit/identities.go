@@ -3627,7 +3627,7 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 		if w.step == 0 {
 			// Step 0 back means leaving the wizard — Esc parity.
 			m.pane = paneDetail
-			return keyResult{model: m, handled: true}
+			return keyResult{model: m, handled: true, note: wizardAbandonUploadNote(w.uploadRun)}
 		}
 		m.wizard = w.stepBack()
 		return keyResult{model: m, handled: true}
@@ -3668,7 +3668,7 @@ func (m identitiesModel) handleWizardKey(msg tea.KeyMsg, s DemoState) keyResult 
 		switch key {
 		case "esc":
 			m.pane = paneDetail
-			return keyResult{model: m, handled: true}
+			return keyResult{model: m, handled: true, note: wizardAbandonUploadNote(w.uploadRun)}
 		case "enter":
 			w = w.resolveCollisionTarget(s)
 			valid, _ := w.step0Valid(s)
@@ -4643,6 +4643,46 @@ func uploadSucceeded(run UploadRunView) bool {
 		}
 	}
 	return true
+}
+
+// extractUploadedTitle scans a rendered "gh/glab ... ssh-key add ... --title
+// '<title>' ..." (or "-t '<title>'") command line for the D-07 title gitid
+// actually registered the key under. It relies on the title being the ONLY
+// quoted argument previewLine/shellQuote produce for this argv shape (the
+// D-07 title always contains spaces; the key path and flags normally do
+// not), so the segment between the first pair of single quotes is the
+// title. Returns "" if no quoted segment is found, rather than guessing.
+func extractUploadedTitle(command string) string {
+	parts := strings.SplitN(command, "'", 3)
+	if len(parts) < 3 {
+		return ""
+	}
+	return parts[1]
+}
+
+// wizardAbandonUploadNote is WR-13's cheap mitigation (review iteration 3):
+// the D-05 upload beat can register a NEW key with the provider at wizard
+// step 1 before the identity itself is ever committed; abandoning the
+// wizard afterward destroys the staged private key (deps.Cleanup) with no
+// removal path (D-04 is rotate-only), silently orphaning the provider
+// registration. A full fix (warn before commit, or offer removal) needs a
+// PLAN/ROADMAP-level follow-up; this is the interim safety net: on
+// abandon, if the upload beat genuinely registered at least one NEW key
+// (UploadRowUploaded — never AlreadyPresent, which predates this session
+// and is not something THIS wizard orphaned), surface a note carrying the
+// D-07 title so the user can find and remove it manually. "" when nothing
+// new was registered (Failed/Skipped/Omitted/AlreadyPresent all report "").
+func wizardAbandonUploadNote(run UploadRunView) string {
+	for _, row := range run.Rows {
+		if row.Outcome != UploadRowUploaded {
+			continue
+		}
+		if title := extractUploadedTitle(row.Command); title != "" {
+			return fmt.Sprintf("Note: a key was registered with the provider under the title %q before you left this wizard — remove it manually if you no longer want it.", title)
+		}
+		return "Note: a key was registered with the provider before you left this wizard — remove it manually if you no longer want it."
+	}
+	return ""
 }
 
 // renderUploadSection renders D-02's completed announce-and-do rows plus every

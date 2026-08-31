@@ -599,6 +599,64 @@ func TestEveryUploadTerminalStateAutoAdvances(t *testing.T) {
 	}
 }
 
+// TestWizardAbandonAfterSuccessfulUploadEmitsRemovalNote is the WR-13 cheap
+// mitigation (review iteration 3): the D-05 upload beat can register a NEW
+// key with the provider before the identity is ever committed; abandoning
+// the wizard afterward destroys the staged private key with no removal
+// path. Stepping back to step 0 and leaving must surface a note carrying
+// the D-07 title so the user can find and remove the orphaned key.
+func TestWizardAbandonAfterSuccessfulUploadEmitsRemovalNote(t *testing.T) {
+	a := openWizardAtTestStep(t)
+	a, cmd := press(t, a, "enter") // testIdle -> testUpload, dispatches RunUpload
+	if cmd == nil {
+		t.Fatal("setup: enter must dispatch a non-nil cmd")
+	}
+	cmd() // drain the (possibly UploadStartedMsg-shaped) announce dispatch
+
+	view := UploadRunView{Rows: []UploadResultRow{
+		{Label: "Authentication", Command: "/usr/local/bin/gh ssh-key add k.pub --title 'gitid: acme @ MacBook-Pro' --type authentication", Outcome: UploadRowUploaded},
+	}}
+	model, _ := a.Update(UploadRunMsg{View: view})
+	a, ok := model.(App)
+	if !ok {
+		t.Fatalf("Update(UploadRunMsg) returned %T, want App", model)
+	}
+	if m := identModel(t, a); m.wizard.step != 1 {
+		t.Fatalf("setup: wizard.step = %d, want 1 (still on Test connection after the upload beat)", m.wizard.step)
+	}
+
+	a, _ = press(t, a, "shift+left") // step 1 -> step 0
+	if m := identModel(t, a); m.wizard.step != 0 {
+		t.Fatalf("setup: wizard.step = %d, want 0 before abandoning", m.wizard.step)
+	}
+
+	a, _ = press(t, a, "esc") // step 0 -> leave the wizard (Esc parity with Shift+←)
+	if m := identModel(t, a); m.pane != paneDetail {
+		t.Fatalf("pane after abandoning = %v, want paneDetail", m.pane)
+	}
+	rendered := stripANSI(appView(a))
+	if !strings.Contains(rendered, "gitid: acme @ MacBook-Pro") {
+		t.Fatalf("abandoning after a successful upload must surface the D-07 title, got:\n%s", rendered)
+	}
+}
+
+// TestWizardAbandonWithoutUploadEmitsNoRemovalNote is the negative control:
+// abandoning the wizard with nothing genuinely registered (upload never ran,
+// failed, or only found an already-present key) must not claim a key was
+// registered.
+func TestWizardAbandonWithoutUploadEmitsNoRemovalNote(t *testing.T) {
+	a := identitiesApp()
+	a, _ = press(t, a, "n") // open the wizard, upload never dispatched
+	if m := identModel(t, a); m.wizard.step != 0 {
+		t.Fatalf("setup: wizard.step = %d, want 0", m.wizard.step)
+	}
+	a, _ = press(t, a, "esc")
+	rendered := stripANSI(appView(a))
+	if strings.Contains(rendered, "was registered with the provider") {
+		t.Fatalf("abandoning without a successful upload must not claim a key was registered, got:\n%s", rendered)
+	}
+}
+
 func TestStaleUploadEligibilityMsgIsDiscarded(t *testing.T) {
 	a := openWizardUploadReady(t)
 	m := identModel(t, a)
