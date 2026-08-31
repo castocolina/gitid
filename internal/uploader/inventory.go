@@ -71,6 +71,17 @@ func Inventory(tool Tool, toolPath string, deps Deps) ([]ExistingKey, error) {
 // condition (a page shorter than glabPerPage means "no more records").
 const glabPerPage = 30
 
+// glabMaxPages (WR-07, review iteration 3) bounds glabInventory's loop —
+// 1200 keys, far beyond any real account. The only termination condition
+// otherwise is a short page; any endpoint that returns a full page
+// regardless of --page (an older glab that silently ignores the unknown
+// flag, a corporate proxy, a glab alias, a future flag rename) would spin
+// forever inside a tea.Cmd goroutine with no cancellation, hanging the TUI
+// with no visible cause. Hitting the cap degrades honestly (a non-gating
+// D-15 inventory error, same as any other Inventory failure) instead of
+// spinning.
+const glabMaxPages = 40
+
 // glabInventory reads glab's ssh-key list one page at a time, via -p/--page
 // and -P/--per-page (verified against a real `glab ssh-key list --help`,
 // v1.114.0 — glab has no `gh api --paginate`-style all-pages flag), and
@@ -81,7 +92,7 @@ const glabPerPage = 30
 // instead of silently under-counting by relying on an off-by-one guess.
 func glabInventory(tool Tool, toolPath string, deps Deps) ([]ExistingKey, error) {
 	var all []ExistingKey
-	for page := 1; ; page++ {
+	for page := 1; page <= glabMaxPages; page++ {
 		args := []string{"ssh-key", "list", "-F", "json", "--per-page", strconv.Itoa(glabPerPage), "--page", strconv.Itoa(page)}
 		keys, err := inventoryFor(tool, toolPath, deps, args, RegistrationCombined)
 		if err != nil {
@@ -92,6 +103,7 @@ func glabInventory(tool Tool, toolPath string, deps Deps) ([]ExistingKey, error)
 			return all, nil
 		}
 	}
+	return nil, fmt.Errorf("uploader: glab ssh-key list did not terminate after %d pages", glabMaxPages)
 }
 
 func inventoryFor(tool Tool, toolPath string, deps Deps, args []string, reg Registration) ([]ExistingKey, error) {

@@ -101,6 +101,37 @@ func TestInventoryGLabPaginatesUntilAShortPage(t *testing.T) {
 	}
 }
 
+// TestInventoryGLabTerminatesWhenProviderIgnoresPageCap is the WR-07 (review
+// iteration 3) regression: a fake RunCmd that returns a full page
+// unconditionally (mirroring a glab that silently ignores --page) must not
+// hang glabInventory forever -- the loop must bail out after glabMaxPages
+// and return a non-gating error instead of spinning.
+func TestInventoryGLabTerminatesWhenProviderIgnoresPageCap(t *testing.T) {
+	fullPage := make([]string, glabPerPage)
+	for i := range fullPage {
+		fullPage[i] = fmt.Sprintf(`{"id":%d,"title":"k%d","key":"ssh-ed25519 AAAA%d"}`, i+1, i+1, i+1)
+	}
+	pageJSON := "[" + strings.Join(fullPage, ",") + "]"
+
+	calls := 0
+	got, err := Inventory(ToolGLab, "glab", Deps{RunCmd: func(_ string, _ ...string) (string, int, error) {
+		calls++
+		return pageJSON, 0, nil // always a full page — never a short one
+	}})
+	if got != nil {
+		t.Errorf("got=%v, want nil once the page cap is hit", got)
+	}
+	if err == nil {
+		t.Fatal("want a non-nil error once glabMaxPages is exceeded, got nil (the call never terminated on its own)")
+	}
+	if !strings.Contains(err.Error(), "did not terminate") {
+		t.Errorf("err=%q, want it to name the page-cap termination reason", err.Error())
+	}
+	if calls != glabMaxPages {
+		t.Errorf("calls=%d, want exactly glabMaxPages (%d) — the loop must stop AT the cap, not run one extra call past it", calls, glabMaxPages)
+	}
+}
+
 func TestInventoryReturnsErrorOnNonZeroExit(t *testing.T) {
 	got, err := Inventory(ToolGH, "gh", Deps{RunCmd: func(string, ...string) (string, int, error) { return "", 1, errors.New("bad") }})
 	if err == nil || got != nil {
