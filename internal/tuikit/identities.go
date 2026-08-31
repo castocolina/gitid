@@ -2998,10 +2998,16 @@ func (m identitiesModel) renderKeyCeremony(sel DemoIdentity) string {
 		// and 3 backups before the upload beat's own long provider command
 		// lines even start, routinely exceeding frameBodyRows(30) once the
 		// delete offer is appended too — silently clipping the offer off
-		// the visible frame with no indication anything was cut). Mirrors
-		// renderUploadSection's OWN existing manual-fallback overflow
-		// backstop (ExactTextViewport bounded to the remaining row budget)
-		// rather than inventing a second mechanism.
+		// the visible frame with no indication anything was cut). WR-04
+		// (review iteration 5) moved this off ExactTextViewport (a
+		// scrollable component misused here for a one-shot clip — see
+		// fitPane's call site below) onto fitPane, this file's shared
+		// non-scrollable clip-with-a-visible-cue helper; WR-03 additionally
+		// wraps the WHOLE master-detail body in the SAME helper at this
+		// screen's top-level view() as a second, outer safety net for the
+		// cases this local backstop cannot cover on its own (budget <= 2,
+		// and the tail.Len() == 0 base case above, which returns body
+		// completely unbounded).
 		rendered := strings.Count(body, "\n")
 		budget := frameBodyRows(minFrameHeight) - rendered - 1
 		// The tail's OWN long lines (a full "gh ssh-key add <path> --title
