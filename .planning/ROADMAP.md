@@ -484,9 +484,9 @@ Plans:
 
 Plans:
 
-- [ ] 09.2-01-PLAN.md — (wave 1) tracer: a 6th top-level nav entry that reads the managed `~/.gitignore_global` block and carries it through the shared review ceremony to a backed-up write, wired in both binaries and proven over a real PTY (GIGN-01)
-- [ ] 09.2-02-PLAN.md — (wave 2) extend the one curated catalog to the venv/env/`!.env.example` seed under comment-header groups, and make doctor plus its excludesfile fix tolerate — and never revert — a user-edited block (GIGN-01)
-- [ ] 09.2-03-PLAN.md — (wave 3) replace the read-only body with the pre-loaded editable text area plus Reset to defaults, prove edit→review→write over a real PTY, capture the phase frames, and close GIGN-01 (GIGN-01)
+- [ ] 09.2-01-PLAN.md — (wave 1) tracer: a 6th top-level nav entry that reads the managed `~/.gitignore_global` block, refuses a malformed or unwired machine, and carries one preview-pinned candidate through the shared review ceremony to a backed-up write of the FULL `core.excludesFile` pair — wired in both binaries and proven over a real PTY (GIGN-01)
+- [ ] 09.2-02-PLAN.md — (wave 2) extend the one curated catalog to the venv/env/`!.env.example` seed under comment-header groups, and make doctor's five-branch pair check plus its excludesfile fix tolerate — and never revert — a user-edited block while still catching an unset key, a wrong target, a dangling pointer and an empty block (GIGN-01)
+- [ ] 09.2-03-PLAN.md — (wave 3) replace the read-only body with the pre-loaded editable text area plus Reset to defaults, prove edit→review→write and a typed-sentinel refusal over a real PTY, register the screen in `RequiredScreenSpecs`, capture the phase frames, and close GIGN-01 behind the phase's UI-SPEC/UI-REVIEW artifacts (GIGN-01)
 
 ### Phase 9.3: Release CI/CD + Installer
 
