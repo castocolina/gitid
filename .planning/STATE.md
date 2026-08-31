@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: TUI-First Redesign
-current_phase: 9
-current_phase_name: upload-credentials-assist
-status: executing
-stopped_at: Phase 9.5 context gathered
-last_updated: "2026-08-31T00:11:16.196Z"
-last_activity: 2026-08-28
-last_activity_desc: "Phase 8 closeout finished — CR-01 (Critical: Fixable signal was SuggestedFix!=\"\" instead of Fix!=nil, letting report-only findings show a fake fix ceremony) and WR-01 (nonsensical batch-halt banner on a single non-batch fix failure) fixed with regression tests; DLV-06 PTY gap closed via a real chflags-uchg-forced OS failure through the compiled binary (TestHealthFixer_RealPTYFixerBatchWalkHalt). All gates re-verified green (go test -race 2157 passed, lint 0 issues, gate-visual-regression PASS, test-e2e PASS 676s). Committed as cbb5279 (fixes) + 6881319 (review artifacts + HIGH-concerns resolution appended to 08-REVIEWS.md). Phase 8 is now genuinely complete; advancing to Phase 9."
-state_head: b296e28bbc831fdf4a2fd731db11e6c7387802a7
+current_phase: 09
+current_phase_name: Upload / Credentials Assist
+status: planning
+stopped_at: Phase 08 complete, ready to plan Phase 09
+last_updated: "2026-08-31T01:01:15.923Z"
+last_activity: 2026-08-30
+last_activity_desc: Phase 08 complete, transitioned to Phase 09
+state_head: d2bb287208bdb300a19160883616f11369b329b7
 progress:
   total_phases: 15
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 85
   completed_plans: 82
-  percent: 47
+  percent: 53
 ---
 
 # Project State
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 ## Current Position
 
-Phase: 9 (upload-credentials-assist) — READY TO EXECUTE
-Status: Starting. Not yet discussed/planned.
-Last activity: 2026-08-28 — Phase 8 closed out fully (see historical record below); Phase 9 kickoff next via `/gsd-plan-review-convergence 9`.
+Phase: 09 — Upload / Credentials Assist
+Status: Ready to plan
+Last activity: 2026-08-30 — Phase 08 complete, transitioned to Phase 09
 
 ### Phase 8 (COMPLETE) — historical record
 
@@ -49,7 +49,7 @@ Last activity: 2026-08-28 — closeout checklist items 6-9 completed and their f
 ### Phase 2 (COMPLETE) — historical record
 
 Phase: 02 (design-all-mockups-checkpoint-1) — COMPLETE (all 15 plans done; ★ DLV-08 approval recorded)
-Plan: 02-12 (wave 9, the single DLV-08 human checkpoint) — COMPLETE. The user approved both live demos and supplied the approver name; `.planning/design/APPROVAL.md` now carries `**APPROVED:** 2026-07-06 by Pepe` (Status: APPROVED, all §A-F/E2/E3 items ticked). See 02-12-SUMMARY.md for the checkpoint record (first presentation → 11-question feedback round → binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract → 02-15 route-back + F1-F10 review fix pass → micro-fix d6438bd → approval).
+Plan: Not started
 Status: 02-15 (wave 8) operationalized the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract (D1–D9 + affordance audit) in BOTH demos, byte-for-byte: D1 single-row color-only fields (02-14's rounded box deleted), D2 always-expanded match-strategy/algorithm radios, D3 terminal-glyph checkbox/radio on the web, D4 bracketed main-nav format (`[N] Label`, moved off the wizard stepper) + a new ActiveNavDimmed/activeNavDimmed state + a top-level plain-arrow view switch, D5 the wizard stepper reverted to `Step n/4 · <label> ● ○ ○ ○`, D6 one-row git-step buttons, D7 ONE hoisted Shift+←/→ chord gate reaching every step including the previously-dead review ceremony (proven with a new raw-byte PTY e2e injecting real xterm CSI sequences), D8 click-to-focus on every form row, and D9 Global Git's user.email promoted to an editable, opt-in global-fallback field with its own dedicated write ceremony (a documented, scoped recipes/ divergence). 02-STYLE-SPEC.md + both FIELDS.md companions rewritten in lockstep; the full exit-gate battery is green (go test -race, the no-backend allowlist, the extended copy-freeze grep, make test/lint/test-e2e/gate-no-backend-files, pnpm typecheck+build) — see 02-15-SUMMARY.md. The two ORCHESTRATOR-run exit gates (a fresh agent-ui-ux-designer critique of both live demos + a fresh-context code review against 02-15's must_haves/acceptance_criteria) have since RUN and their findings (F1-F10 + one record-only item) are fixed — see 02-15-SUMMARY.md "Review findings resolution (post-plan fix pass)" and commits a335d80/f62c99e. Next is 02-12 (wave 9, the single DLV-08 approval checkpoint), unblocked.
 Last activity: 2026-07-06 -- Completed 02-12 (★ DLV-08): user approval recorded as `**APPROVED:** 2026-07-06 by Pepe`; Phase 2 COMPLETE — the approved live demos + 02-REDESIGN-SPEC.md/02-STYLE-SPEC.md/02-DESIGN-DECISIONS-CHECKPOINT-2.md + per-surface FIELDS.md are the binding design reference; Phases 3-9 backend work is UNBLOCKED
 
@@ -59,7 +59,7 @@ Progress: [░░░░░░░░░░] 0% (30/32 plans complete — Phase 2:
 
 **Velocity:** reset for v1.0 (prior POC velocity archived under 0.0.1).
 
-- Total plans completed: 58
+- Total plans completed: 66
 - Average duration: — min
 - Total execution time: 0 hours
 
@@ -74,7 +74,7 @@ Progress: [░░░░░░░░░░] 0% (30/32 plans complete — Phase 2:
 | 5 | 9 | - | - |
 | 6 | 7 | - | - |
 | 07 | 0 | - | - |
-| 08 | 0 | - | - |
+| 08 | 8 | - | - |
 | 09 | 0 | - | - |
 | 10 | 0 | - | - |
 
@@ -276,7 +276,7 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-08-31T00:11:15.240Z
-Stopped at: Phase 9.5 context gathered
+Stopped at: Phase 08 complete, ready to plan Phase 09
 Resume file: .planning/phases/09.5-full-ssh-git-properties-browser/09.5-CONTEXT.md
 Wave structure: W1 = 03-01 + 03-02 (DONE) -> W2 = 03-03 (DONE) -> W3 = 03-04 (DONE) -> W4 = 03-05 (DONE) -> W5 = 03-06 (Tasks 1+2 DONE, Task 3 PARTIAL — orchestrator review owed)
 **All remaining waves run SEQUENTIALLY (one executor at a time) per LEARNINGS L11** — the pre-commit hooks lint the whole module, so a parallel executor's mid-refactor tree blocks every other commit. Do NOT run plans in parallel inside this Go module again.
