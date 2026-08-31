@@ -349,6 +349,262 @@ func TestRegisterKeyPaneMatchesSiblingPaneGeometry(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// D1 (260831-3a9): the register-key manual-fallback modal must not be a
+// dead end -- "c" copies the public key, gated by the SAME predicate that
+// drives the footer hint (registerKeyCopyable).
+// ---------------------------------------------------------------------------
+
+// registerKeyAtManualFallback opens the register-key pane and resolves the
+// plan to the pre-run manual-fallback state (D1 Tests 1/2/3/6).
+func registerKeyAtManualFallback(t *testing.T, b Backend) (identitiesModel, DemoState, DemoIdentity) {
+	t.Helper()
+	s := Seed()
+	m := newIdentitiesModel(b, s)
+	sel, ok := m.selectedIdentity(s)
+	if !ok {
+		t.Fatal("seed has no selected identity")
+	}
+	m, _ = m.openRegisterKey(sel)
+	res := m.handleMsg(RegisterKeyPlanMsg{
+		Name: sel.Name,
+		View: UploadEligibilityView{State: UploadEligibilityUnauth, ProviderName: "GitHub", Hostname: "github.com"},
+	}, s)
+	next, ok := res.model.(identitiesModel)
+	if !ok {
+		t.Fatalf("handleMsg returned %T, want identitiesModel", res.model)
+	}
+	return next, s, sel
+}
+
+// registerKeyAtPostRunManualFallback resolves a Ready plan through to a
+// completed run whose OWN result carries a manual-fallback block (D1 Test 4).
+func registerKeyAtPostRunManualFallback(t *testing.T, b Backend) (identitiesModel, DemoState, DemoIdentity) {
+	t.Helper()
+	s := Seed()
+	m := newIdentitiesModel(b, s)
+	sel, ok := m.selectedIdentity(s)
+	if !ok {
+		t.Fatal("seed has no selected identity")
+	}
+	m, _ = m.openRegisterKey(sel)
+	res := m.handleMsg(RegisterKeyPlanMsg{
+		Name: sel.Name,
+		View: UploadEligibilityView{State: UploadEligibilityReady, ProviderName: "GitHub", ToolName: "gh", Hostname: "github.com"},
+	}, s)
+	m, ok = res.model.(identitiesModel)
+	if !ok {
+		t.Fatalf("handleMsg returned %T, want identitiesModel", res.model)
+	}
+	res = m.handleMsg(UploadRunMsg{Name: sel.Name, View: UploadRunView{
+		ManualFallback: "gh ssh-key add ~/.ssh/id_ed25519_personal.pub --title 'gitid: personal'",
+	}}, s)
+	next, ok := res.model.(identitiesModel)
+	if !ok {
+		t.Fatalf("handleMsg returned %T, want identitiesModel", res.model)
+	}
+	return next, s, sel
+}
+
+// registerKeyAtSuccessfulRun resolves a Ready plan through to a completed,
+// successful run carrying no manual fallback -- D1 Test 5's third negative
+// state (there is nothing to paste, so "c" must be inert).
+func registerKeyAtSuccessfulRun(t *testing.T, b Backend) (identitiesModel, DemoState, DemoIdentity) {
+	t.Helper()
+	s := Seed()
+	m := newIdentitiesModel(b, s)
+	sel, ok := m.selectedIdentity(s)
+	if !ok {
+		t.Fatal("seed has no selected identity")
+	}
+	m, _ = m.openRegisterKey(sel)
+	res := m.handleMsg(RegisterKeyPlanMsg{
+		Name: sel.Name,
+		View: UploadEligibilityView{State: UploadEligibilityReady, ProviderName: "GitHub", ToolName: "gh", Hostname: "github.com"},
+	}, s)
+	m, ok = res.model.(identitiesModel)
+	if !ok {
+		t.Fatalf("handleMsg returned %T, want identitiesModel", res.model)
+	}
+	res = m.handleMsg(UploadRunMsg{Name: sel.Name, View: UploadRunView{Rows: []UploadResultRow{
+		{Label: "Authentication", Command: "gh ssh-key add", Outcome: UploadRowUploaded},
+	}}}, s)
+	next, ok := res.model.(identitiesModel)
+	if !ok {
+		t.Fatalf("handleMsg returned %T, want identitiesModel", res.model)
+	}
+	return next, s, sel
+}
+
+// registerKeyAtProbeError resolves the register-key pane to the fail-closed
+// probe-error state (D1 Test 5's second negative state).
+func registerKeyAtProbeError(t *testing.T, b Backend) (identitiesModel, DemoState, DemoIdentity) {
+	t.Helper()
+	s := Seed()
+	m := newIdentitiesModel(b, s)
+	sel, ok := m.selectedIdentity(s)
+	if !ok {
+		t.Fatal("seed has no selected identity")
+	}
+	m, _ = m.openRegisterKey(sel)
+	res := m.handleMsg(RegisterKeyPlanMsg{Name: sel.Name, Err: errors.New("probe failed")}, s)
+	next, ok := res.model.(identitiesModel)
+	if !ok {
+		t.Fatalf("handleMsg returned %T, want identitiesModel", res.model)
+	}
+	return next, s, sel
+}
+
+// registerKeyNotYetLoaded is the freshly-opened pane, before the async plan
+// has resolved at all (D1 Test 5's first negative state).
+func registerKeyNotYetLoaded(t *testing.T, b Backend) (identitiesModel, DemoState, DemoIdentity) {
+	t.Helper()
+	s := Seed()
+	m := newIdentitiesModel(b, s)
+	sel, ok := m.selectedIdentity(s)
+	if !ok {
+		t.Fatal("seed has no selected identity")
+	}
+	m, _ = m.openRegisterKey(sel)
+	return m, s, sel
+}
+
+// TestRegisterKeyCopyActionOfferedInManualFallback is D1 Test 1: the
+// pre-run manual-fallback state (the dead end this fix closes) must offer
+// a "c copy public key" footer action.
+func TestRegisterKeyCopyActionOfferedInManualFallback(t *testing.T) {
+	m, s, sel := registerKeyAtManualFallback(t, stubBackend{})
+	rv := m.view(s, minFrameWidth, minFrameHeight)
+	found := false
+	for _, a := range rv.actions {
+		if a.Key == "c" && a.Label == "copy public key" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("actions = %v, want a {c, copy public key} action in the manual-fallback state (identity %s)", rv.actions, sel.Name)
+	}
+}
+
+// TestRegisterKeyCCopiesPublicKeyFromManualFallback is D1 Test 2: pressing
+// "c" from the manual-fallback state calls Backend.CopyPublicKey exactly
+// once and surfaces the backend's returned note.
+func TestRegisterKeyCCopiesPublicKeyFromManualFallback(t *testing.T) {
+	rec := &recordingCopyBackend{}
+	m, s, _ := registerKeyAtManualFallback(t, rec)
+	res := m.handleRegisterKeyKey(pressKey("c"), s)
+	if rec.copiedPath == "" {
+		t.Fatal("CopyPublicKey was not called")
+	}
+	if res.note == "" {
+		t.Error("keyResult.note must surface the backend's returned note")
+	}
+}
+
+// TestRegisterKeyCCopySeamReceivesOnlyThePubPath is D1 Test 3 (security):
+// the seam must receive the .pub path, never the private key path, mirroring
+// TestCopyPubSeamReceivesOnlyThePubPath's proof for the create wizard.
+func TestRegisterKeyCCopySeamReceivesOnlyThePubPath(t *testing.T) {
+	rec := &recordingCopyBackend{}
+	m, s, _ := registerKeyAtManualFallback(t, rec)
+	_ = m.handleRegisterKeyKey(pressKey("c"), s)
+	want := "~/.ssh/id_ed25519_personal.pub"
+	if rec.copiedPath != want {
+		t.Errorf("CopyPublicKey called with %q, want %q (the .pub path, never the private key)", rec.copiedPath, want)
+	}
+}
+
+// TestRegisterKeyCopyActionOfferedAfterPostRunManualFallback is D1 Test 4:
+// a completed run whose own result carries a manual-fallback block must
+// also offer and honor "c".
+func TestRegisterKeyCopyActionOfferedAfterPostRunManualFallback(t *testing.T) {
+	rec := &recordingCopyBackend{}
+	m, s, _ := registerKeyAtPostRunManualFallback(t, rec)
+	rv := m.view(s, minFrameWidth, minFrameHeight)
+	found := false
+	for _, a := range rv.actions {
+		if a.Key == "c" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("actions = %v, want a c action after a run whose result carries ManualFallback", rv.actions)
+	}
+	res := m.handleRegisterKeyKey(pressKey("c"), s)
+	if rec.copiedPath == "" {
+		t.Fatal("c must copy the public key from the post-run manual-fallback state too")
+	}
+	if res.note == "" {
+		t.Error("keyResult.note must surface the backend's returned note")
+	}
+}
+
+// TestRegisterKeyCopyActionAbsentInNegativeStates is D1 Test 5: in the
+// not-yet-loaded, probe-error, and successful-run states there is nothing
+// to paste, so "c" must offer no footer action and be inert.
+func TestRegisterKeyCopyActionAbsentInNegativeStates(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(t *testing.T, b Backend) (identitiesModel, DemoState, DemoIdentity)
+	}{
+		{"not-yet-loaded", registerKeyNotYetLoaded},
+		{"probe-error", registerKeyAtProbeError},
+		{"successful-run", registerKeyAtSuccessfulRun},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := &recordingCopyBackend{}
+			m, s, _ := tt.setup(t, rec)
+			rv := m.view(s, minFrameWidth, minFrameHeight)
+			for _, a := range rv.actions {
+				if a.Key == "c" {
+					t.Errorf("actions = %v, want no c action in state %s", rv.actions, tt.name)
+				}
+			}
+			_ = m.handleRegisterKeyKey(pressKey("c"), s)
+			if rec.copiedPath != "" {
+				t.Errorf("c must be inert in state %s, but CopyPublicKey was called with %q", tt.name, rec.copiedPath)
+			}
+		})
+	}
+}
+
+// TestRegisterKeyCopyHintAndBindingShareOnePredicate is D1 Test 6, the
+// anti-drift proof: across every register-key state, "the c action is
+// offered in the footer" and "the c keystroke is handled non-inertly" must
+// always agree -- a hint without a binding (or the reverse) is the exact
+// defect class this fix closes.
+func TestRegisterKeyCopyHintAndBindingShareOnePredicate(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(t *testing.T, b Backend) (identitiesModel, DemoState, DemoIdentity)
+	}{
+		{"not-yet-loaded", registerKeyNotYetLoaded},
+		{"probe-error", registerKeyAtProbeError},
+		{"manual-fallback", registerKeyAtManualFallback},
+		{"post-run-manual-fallback", registerKeyAtPostRunManualFallback},
+		{"successful-run", registerKeyAtSuccessfulRun},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := &recordingCopyBackend{}
+			m, s, _ := tt.setup(t, rec)
+			rv := m.view(s, minFrameWidth, minFrameHeight)
+			hinted := false
+			for _, a := range rv.actions {
+				if a.Key == "c" {
+					hinted = true
+				}
+			}
+			_ = m.handleRegisterKeyKey(pressKey("c"), s)
+			bound := rec.copiedPath != ""
+			if hinted != bound {
+				t.Errorf("state %s: hint offered=%v, binding fired=%v -- they must agree", tt.name, hinted, bound)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Task 2: the rotate/repair key-ceremony's own upload beat (09-06-PLAN.md).
 // ---------------------------------------------------------------------------
 

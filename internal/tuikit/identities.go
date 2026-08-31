@@ -2678,18 +2678,73 @@ func (m identitiesModel) openRegisterKey(sel DemoIdentity) (identitiesModel, tea
 	return m, m.backend.RegisterKeyPlan(sel.Name)
 }
 
-// handleRegisterKeyKey drives the register-key pane. It handles only Esc —
-// the pane's plan/run resolve asynchronously with no other user keystroke
-// (R13: registration runs on open).
-func (m identitiesModel) handleRegisterKeyKey(msg tea.KeyMsg, _ DemoState) keyResult {
+// handleRegisterKeyKey drives the register-key pane. It handles Esc always,
+// and "c" (D1, 260831-3a9) exactly when registerKeyCopyable() holds — the
+// pane's plan/run otherwise resolve asynchronously with no other user
+// keystroke (R13: registration runs on open).
+func (m identitiesModel) handleRegisterKeyKey(msg tea.KeyMsg, s DemoState) keyResult {
 	switch msg.String() {
 	case "esc":
 		pending := m.registerKeyPending
 		name := m.registerKeyName
 		m.pane = paneDetail
 		return keyResult{model: m, handled: true, note: registerKeyAbandonNote(pending, name)}
+	case "c":
+		if !m.registerKeyCopyable() {
+			return keyResult{model: m, handled: true}
+		}
+		sel, ok := m.selectedIdentity(s)
+		if !ok {
+			return keyResult{model: m, handled: true}
+		}
+		path, ok := registerKeyPubPath(sel)
+		if !ok {
+			return keyResult{model: m, handled: true}
+		}
+		// D1: mirrors the create wizard's own "c" copy call site
+		// (identities.go's step-1 handler, `w.backend.CopyPublicKey`) — the
+		// identity detail pane's own "c" is unrelated (it opens the CLONE
+		// prompt), so that is NOT the pattern being followed here.
+		note, err := m.backend.CopyPublicKey(path)
+		if err != nil {
+			note = "Could not copy the public key: " + err.Error()
+		}
+		return keyResult{model: m, handled: true, note: note}
 	}
 	return keyResult{model: m, handled: true}
+}
+
+// registerKeyCopyable reports whether the register-key pane currently has a
+// public key worth copying — D1 (260831-3a9): before this fix, the pre-run
+// manual-fallback state ("paste your key by hand") offered no way to copy
+// the key it was telling the user to paste, a dead end. True exactly when
+// the plan has resolved (never mid-probe, never on a probe error) AND
+// either the plan itself is not Ready (manual fallback before any run), or
+// a completed run's own result still carries a manual-fallback block. This
+// SAME predicate gates both the footer hint (view()) and the "c" key
+// binding (handleRegisterKeyKey) — a hint without a binding, or the
+// reverse, is exactly the defect class being fixed.
+func (m identitiesModel) registerKeyCopyable() bool {
+	if m.registerKeyErr != "" || !m.registerKeyPlanLoaded {
+		return false
+	}
+	return m.registerKeyPlan.State != UploadEligibilityReady || m.registerKeyRun.ManualFallback != ""
+}
+
+// registerKeyPubPath resolves the .pub path to hand to CopyPublicKey — never
+// the private key path. Prefers sel.PublicKeyPath when set; otherwise
+// derives it from sel.KeyPath, but only when KeyPath is itself non-empty —
+// an empty KeyPath must never reduce to the bare literal ".pub" (the exact
+// degenerate case identities_test.go already guards against for
+// ConfigureGit.PublicKeyPath).
+func registerKeyPubPath(sel DemoIdentity) (string, bool) {
+	if sel.PublicKeyPath != "" {
+		return sel.PublicKeyPath, true
+	}
+	if sel.KeyPath != "" {
+		return sel.KeyPath + ".pub", true
+	}
+	return "", false
 }
 
 // registerKeyAbandonNote is the WR-05 sub-defect fix (review iteration 5):
@@ -5454,6 +5509,12 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 	case paneRegisterKey:
 		pane = m.renderRegisterKey(sel, detailWidth)
 		crumbs = []string{sel.Name, "Register key"}
+		if m.registerKeyCopyable() {
+			// D1 (260831-3a9): the SAME predicate that gates the "c" key
+			// binding in handleRegisterKeyKey — see registerKeyCopyable's
+			// doc comment for why a single shared predicate matters here.
+			actions = []FooterAction{{Key: "c", Label: "copy public key"}}
+		}
 		status = "Esc returns to the identity detail without writing anything — registration runs on open."
 	}
 
