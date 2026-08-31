@@ -76,7 +76,7 @@ func renderSeededFrame(crumbs []string, actions []FooterAction) string {
 func TestRenderFrameShowsNumberedTabsAndReservedFooter(t *testing.T) {
 	plain := stripANSI(renderSeededFrame(nil, nil))
 
-	for _, want := range []string{"[1] Identities", "[2] Global SSH", "[3] Global Git", "[4] Health", "[5] Fixer"} {
+	for _, want := range []string{"[1] Identities", "[2] SSH", "[3] Git", "[4] Health", "[5] Fixer", "[6] Ignore"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("frame missing numbered tab %q", want)
 		}
@@ -200,7 +200,7 @@ func TestRenderFrameActiveTabAccentBackground(t *testing.T) {
 	// SGR 1;97;44), replacing the old flat monochrome reverse-video invert
 	// that did not clearly say "I am at 1/2/3/4".
 	raw := RenderFrame(100, 30, Seed(), TabGlobalGit, nil, "Ready.", "info", nil, false, "")
-	if !strings.Contains(raw, "\x1b[1;97;44m [3] Global Git ") {
+	if !strings.Contains(raw, "\x1b[1;97;44m [3] Git ") {
 		t.Error("active tab must render through Theme.ActiveNav (bold + bright-white on the blue accent background, SGR 1;97;44)")
 	}
 	if strings.Contains(raw, "\x1b[1;97;44m [1] Identities ") {
@@ -683,6 +683,66 @@ func TestSeverityLabelLockedContract(t *testing.T) {
 	for _, tc := range cases {
 		if got := stripANSI(severityLabel(tc.severity)); got != tc.want {
 			t.Errorf("severityLabel(%s) = %q, want %q (locked glyph+word contract)", tc.severity, got, tc.want)
+		}
+	}
+}
+
+func TestRenderHeaderSixSegmentsFitAtMinWidth(t *testing.T) {
+	plain := stripANSI(renderHeader(minFrameWidth, Seed(), TabIdentities, false))
+	for _, want := range []string{"[1] Identities", "[2] SSH", "[3] Git", "[4] Health", "[5] Fixer", "[6] Ignore", "8 ids"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("header at minFrameWidth missing %q; got %q", want, plain)
+		}
+	}
+}
+
+func TestHeaderColumnBudgetFromHeaderTabText(t *testing.T) {
+	segmentSum := 0
+	for i := 0; i < len(tabNavLabels); i++ {
+		segmentSum += ansi.StringWidth(headerTabText(i))
+	}
+	if segmentSum != 69 {
+		t.Errorf("sum of headerTabText widths = %d, want 69", segmentSum)
+	}
+	brandWidth := ansi.StringWidth(" " + headerBrand + "  ")
+	total := brandWidth + segmentSum + 5*ansi.StringWidth(headerTabSeparator)
+	if total != 82 {
+		t.Errorf("brand + segments + separators = %d, want 82 (brand=%d)", total, brandWidth)
+	}
+	remaining := minFrameWidth - total
+	if remaining < 16 {
+		t.Errorf("columns left for the health chip = %d, want at least 16", remaining)
+	}
+}
+
+func TestHeaderTabAtRoundTrips(t *testing.T) {
+	cursor := ansi.StringWidth(" " + headerBrand + "  ")
+	for i := 0; i < len(tabNavLabels); i++ {
+		w := ansi.StringWidth(headerTabText(i))
+		mid := cursor + w/2
+		got, ok := headerTabAt(mid)
+		if !ok || got != TabID(i) {
+			t.Errorf("column %d (tab %d) → (%v, %v), want (%v, true)", mid, i, got, ok, TabID(i))
+		}
+		cursor += w + ansi.StringWidth(headerTabSeparator)
+	}
+	if tab, ok := headerTabAt(minFrameWidth - 2); ok {
+		t.Errorf("chip column resolved to tab %v, want no tab", tab)
+	}
+}
+
+func TestBreadcrumbKeepsFullLabels(t *testing.T) {
+	for tab, full := range map[TabID]string{
+		TabIdentities: "Identities",
+		TabGlobalSSH:  "Global SSH",
+		TabGlobalGit:  "Global Git",
+		TabHealth:     "Health",
+		TabFixer:      "Fixer",
+		TabGitIgnore:  "Global Git Ignore",
+	} {
+		plain := stripANSI(RenderFrame(minFrameWidth, minFrameHeight, Seed(), tab, nil, "Ready.", "info", nil, false, "body"))
+		if !strings.Contains(plain, full) {
+			t.Errorf("breadcrumb for tab %v missing full label %q; got:\n%s", tab, full, plain)
 		}
 	}
 }

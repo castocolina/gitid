@@ -561,6 +561,48 @@ type GlobalGitApplyPlanView struct {
 	Diff    string
 }
 
+// GlobalGitIgnoreWiring is the four-state enum of how core.excludesfile
+// relates to the managed ~/.gitignore_global this screen owns.
+type GlobalGitIgnoreWiring int
+
+const (
+	// GitIgnoreWiredAtManaged means core.excludesfile points at the managed file.
+	GitIgnoreWiredAtManaged GlobalGitIgnoreWiring = iota
+	// GitIgnoreKeyUnset means the key is missing from the managed baseline block.
+	GitIgnoreKeyUnset
+	// GitIgnorePointsElsewhere means the key points at a different file.
+	GitIgnorePointsElsewhere
+	// GitIgnoreNoBaselineBlock means no gitid-managed baseline block exists.
+	GitIgnoreNoBaselineBlock
+)
+
+// GlobalGitIgnoreView is the Global Git Ignore pane's live state.
+type GlobalGitIgnoreView struct {
+	Path           string
+	Content        string
+	Managed        bool
+	DefaultContent string
+	ExcludesFile   string
+	Wiring         GlobalGitIgnoreWiring
+}
+
+// GlobalGitIgnoreApplyPlanView is the confirmed-apply preview: targets,
+// promised backups, the canonicalized diff, and the plan token.
+type GlobalGitIgnoreApplyPlanView struct {
+	Targets   []string
+	Backups   []string
+	Diff      string
+	PlanToken string
+}
+
+// GlobalGitIgnoreCommitMsg completes an asynchronous global-gitignore write.
+type GlobalGitIgnoreCommitMsg struct {
+	Backups             []string
+	Restored            []string
+	Err                 string
+	ChangedSincePreview bool
+}
+
 // GlobalGitCommitMsg completes an asynchronous global-git apply commit —
 // delivered from the tea.Cmd Backend.CommitGlobalGit returns. Restored stays
 // explicit so a failed receipt can never claim nothing changed when restoration

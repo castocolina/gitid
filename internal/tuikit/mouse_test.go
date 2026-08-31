@@ -50,13 +50,17 @@ func clickCell(t *testing.T, a App, needle string, maxCols, fromY int) App {
 
 func TestMouseHeaderTabLabelsSwitchTabs(t *testing.T) {
 	a := NewApp(stubBackend{})
-	a = clickCell(t, a, "[2] Global SSH", 0, 0)
+	a = clickCell(t, a, "[2] SSH", 0, 0)
 	if a.tab != TabGlobalSSH {
-		t.Fatalf("tab = %v after clicking the Global SSH label, want Global SSH", a.tab)
+		t.Fatalf("tab = %v after clicking the SSH label, want Global SSH", a.tab)
 	}
-	a = clickCell(t, a, "[3] Global Git", 0, 0)
+	a = clickCell(t, a, "[3] Git", 0, 0)
 	if a.tab != TabGlobalGit {
-		t.Fatalf("tab = %v after clicking the Global Git label, want Global Git", a.tab)
+		t.Fatalf("tab = %v after clicking the Git label, want Global Git", a.tab)
+	}
+	a = clickCell(t, a, "[6] Ignore", 0, 0)
+	if a.tab != TabGitIgnore {
+		t.Fatalf("tab = %v after clicking the Ignore label, want Git Ignore", a.tab)
 	}
 	a = clickCell(t, a, "[1] Identities", 0, 0)
 	if a.tab != TabIdentities {

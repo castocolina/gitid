@@ -10,6 +10,13 @@ import (
 	"github.com/castocolina/gitid/internal/filewriter"
 )
 
+// ManagedBlockShape is the healthy-file classification InspectManagedBlockFile
+// returns: no block, or exactly one complete block of the requested name.
+type ManagedBlockShape struct {
+	Managed bool
+	Body    string
+}
+
 // BaselineState holds the reconstructed managed baseline across all three
 // managed surfaces. It is a value type (no pointer), following the FragmentInfo
 // / IncludeIfInfo precedent in reader.go.
@@ -465,18 +472,139 @@ func WriteBaselineFile(baselineFilePath string, cfg BaselineConfig, rewrites []U
 	return backupPath, nil
 }
 
+// NormalizeGitignoreLines splits content on newlines (tolerating carriage
+// returns), right-trims each line, drops the trailing run of empty lines, and
+// keeps interior blanks and comment lines. A trimmed line that starts with a
+// managed-block sentinel prefix filewriter owns is refused with an error that
+// names the offending line number — a nested sentinel would corrupt block
+// parsing (T-09.2-01).
+func NormalizeGitignoreLines(content string) ([]string, error) {
+	normalized := strings.ReplaceAll(content, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	raw := strings.Split(normalized, "\n")
+	lines := make([]string, 0, len(raw))
+	for i, line := range raw {
+		trimmed := strings.TrimRight(line, " \t")
+		if strings.HasPrefix(trimmed, filewriter.BeginPrefix) || strings.HasPrefix(trimmed, filewriter.EndPrefix) {
+			return nil, fmt.Errorf("line %d looks like a gitid managed-block sentinel and cannot be part of gitignore content", i+1)
+		}
+		lines = append(lines, trimmed)
+	}
+	for len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines, nil
+}
+
+// ComposeGlobalGitignore is the ONE place the gitignore managed block is
+// composed. Any caller that needs to show a candidate file must call this and
+// nothing else, so the review preview and the commit can never diverge.
+func ComposeGlobalGitignore(existing []byte, patterns []string) []byte {
+	return filewriter.ReplaceBlock(existing, "gitignore", RenderGitignoreBlock(patterns))
+}
+
+// InspectManagedBlockFile scans content for the managed BEGIN and END sentinels
+// of blockName and classifies the file before anything treats it as readable or
+// writable. Healthy cases (no block; exactly one complete block of that name)
+// return the block's body and a Managed flag. Each of the five malformed
+// shapes — orphan BEGIN, standalone END, nested BEGIN, mismatched END name,
+// and a second complete block of the requested name — returns an error naming
+// the offending line number and telling the user the file must be repaired by
+// hand. Blocks of OTHER names are foreign content and are neither counted nor
+// validated.
+//
+// The function is name-parameterized rather than gitignore-specific because
+// the same write-divergence hazard exists on the baseline fragment: indexBlocks
+// keeps the LAST duplicate while replaceBlockWith claims the FIRST. Failing
+// closed on the file's SHAPE before either the read or the write is the fix;
+// replaceBlockWith's selection rule is the shared core behind every write path
+// and is out of this phase's scope to flip.
+func InspectManagedBlockFile(content []byte, blockName string) (ManagedBlockShape, error) {
+	normalized := bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n"))
+	lines := strings.Split(string(normalized), "\n")
+	if len(lines) == 1 && lines[0] == "" && len(content) == 0 {
+		return ManagedBlockShape{}, nil
+	}
+
+	openAt := -1
+	openName := ""
+	var found *ManagedBlockShape
+
+	for i, line := range lines {
+		trimmed := strings.TrimRight(line, "\r")
+		lineNo := i + 1
+		switch {
+		case strings.HasPrefix(trimmed, filewriter.BeginPrefix):
+			name := strings.TrimPrefix(trimmed, filewriter.BeginPrefix)
+			if openAt != -1 {
+				if name == blockName && openName == blockName {
+					return ManagedBlockShape{}, fmt.Errorf("line %d: nested BEGIN sentinel — repair the file by hand before gitid will touch it", lineNo)
+				}
+				continue
+			}
+			openAt = i
+			openName = name
+		case strings.HasPrefix(trimmed, filewriter.EndPrefix):
+			name := strings.TrimPrefix(trimmed, filewriter.EndPrefix)
+			if openAt == -1 {
+				if name == blockName {
+					return ManagedBlockShape{}, fmt.Errorf("line %d: standalone END sentinel — repair the file by hand before gitid will touch it", lineNo)
+				}
+				continue
+			}
+			if name != openName {
+				if openName == blockName && name == blockName {
+					return ManagedBlockShape{}, fmt.Errorf("line %d: END sentinel name does not match its open BEGIN — repair the file by hand before gitid will touch it", lineNo)
+				}
+				if openName == blockName && name != blockName {
+					continue
+				}
+				if openName != blockName && name == blockName {
+					return ManagedBlockShape{}, fmt.Errorf("line %d: END sentinel name does not match its open BEGIN — repair the file by hand before gitid will touch it", lineNo)
+				}
+				continue
+			}
+			if openName == blockName {
+				if found != nil {
+					return ManagedBlockShape{}, fmt.Errorf("line %d: two complete %q blocks in one file — repair the file by hand before gitid will touch it", lineNo, blockName)
+				}
+				body := strings.Join(lines[openAt+1:i], "\n")
+				body = strings.TrimRight(body, "\n")
+				found = &ManagedBlockShape{Managed: true, Body: body}
+			}
+			openAt = -1
+			openName = ""
+		}
+	}
+	if openAt != -1 && openName == blockName {
+		return ManagedBlockShape{}, fmt.Errorf("line %d: orphan BEGIN sentinel with no END — repair the file by hand before gitid will touch it", openAt+1)
+	}
+	if found == nil {
+		return ManagedBlockShape{}, nil
+	}
+	return *found, nil
+}
+
+// InspectGitignoreFile is the gitignore-named convenience wrapper over
+// InspectManagedBlockFile. It adds no behavior of its own.
+func InspectGitignoreFile(content []byte) (ManagedBlockShape, error) {
+	return InspectManagedBlockFile(content, "gitignore")
+}
+
 // WriteGlobalGitignore composes the gitignore managed block into gitignorePath
 // through the filewriter chokepoint. Foreign content outside the managed block
 // is preserved verbatim (D-09). It returns the backup path (empty when the file
 // is new). When the composed content is byte-identical to the existing file, the
 // write is skipped and an empty backup path is returned (SC-2 idempotency).
+// Callers that need to show a candidate file must call ComposeGlobalGitignore
+// (the same composition this function uses) and nothing else.
 func WriteGlobalGitignore(gitignorePath string, patterns []string) (string, error) {
 	existing, err := os.ReadFile(gitignorePath) //nolint:gosec // gitignorePath is a trusted gitid-managed path
 	if err != nil && !os.IsNotExist(err) {
 		return "", fmt.Errorf("reading %s: %w", gitignorePath, err)
 	}
 
-	composed := filewriter.ReplaceBlock(existing, "gitignore", RenderGitignoreBlock(patterns))
+	composed := ComposeGlobalGitignore(existing, patterns)
 
 	// SC-2 idempotency: skip write (and backup) when content is unchanged.
 	if bytes.Equal(composed, existing) {

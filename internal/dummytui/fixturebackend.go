@@ -61,6 +61,7 @@ var _ tuikit.IdentityPlanner = FixtureBackend{}
 var _ tuikit.SSHStoragePlanner = FixtureBackend{}
 var _ tuikit.GlobalGitPlanner = FixtureBackend{}
 var _ tuikit.GitFallbackAuthorPlanner = FixtureBackend{}
+var _ tuikit.GlobalGitIgnorePlanner = FixtureBackend{}
 
 // ---------------------------------------------------------------------------
 // Data
@@ -754,6 +755,55 @@ func (FixtureBackend) CommitGlobalGit([]string) tea.Cmd {
 // fields start unset, matching the recipes default.
 func (FixtureBackend) GitFallbackAuthorState() (tuikit.GitFallbackAuthorView, error) {
 	return tuikit.GitFallbackAuthorView{}, nil
+}
+
+const fixtureGitIgnoreContent = ".DS_Store\n*.log\n*.bak"
+
+// fixtureGitIgnoreDefaultContent mirrors production's
+// gitconfig.RenderGitignoreBlock(gitconfig.DefaultGitignorePatterns()) as a
+// frozen literal — the demo package must not import internal/gitconfig (see
+// TestNoBackendAllowlist), so this is a hand-kept copy of that render, not a
+// live call. Keep in sync with gitconfig.DefaultGitignorePatterns.
+const fixtureGitIgnoreDefaultContent = ".DS_Store\n" +
+	"Thumbs.db\n" +
+	"*.log\n" +
+	"*.bak\n" +
+	"*.tmp\n" +
+	"*.swp\n" +
+	"*.swo\n" +
+	".idea/\n" +
+	".vscode/\n" +
+	"node_modules/\n" +
+	"__pycache__/\n" +
+	"*.pyc\n" +
+	".env"
+
+// GlobalGitIgnoreState returns frozen fixture content with DefaultContent
+// equal to the curated seed — the contract plan 09.2-03's Reset action
+// depends on. Wiring is "wired at the managed target".
+func (FixtureBackend) GlobalGitIgnoreState() (tuikit.GlobalGitIgnoreView, error) {
+	return tuikit.GlobalGitIgnoreView{
+		Path:           "~/.gitignore_global",
+		Content:        fixtureGitIgnoreContent,
+		Managed:        true,
+		DefaultContent: fixtureGitIgnoreDefaultContent,
+		ExcludesFile:   "~/.gitignore_global",
+		Wiring:         tuikit.GitIgnoreWiredAtManaged,
+	}, nil
+}
+
+// GlobalGitIgnoreApplyPlan is deliberately EMPTY for the demo: the ceremony
+// falls back to its own copy, exactly like GlobalGitApplyPlan already does.
+func (FixtureBackend) GlobalGitIgnoreApplyPlan(string) (tuikit.GlobalGitIgnoreApplyPlanView, error) {
+	return tuikit.GlobalGitIgnoreApplyPlanView{}, nil
+}
+
+// CommitGlobalGitIgnore keeps the approved dummy apply flow in memory — it
+// never touches HOME.
+func (FixtureBackend) CommitGlobalGitIgnore(string, string) tea.Cmd {
+	return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
+		return tuikit.GlobalGitIgnoreCommitMsg{}
+	})
 }
 
 // GitFallbackAuthorPlan is the demo apply preview: the frozen ~/.gitconfig

@@ -190,6 +190,15 @@ type stubBackend struct {
 	fallbackCommitMsg GitFallbackAuthorCommitMsg
 	fallbackCommitFn  func(name, email string) tea.Cmd
 	gitCommitFn       func(keys []string) tea.Cmd
+	// Global-gitignore seam overrides (zero values keep a wired-at-managed
+	// empty view so existing tests stay green).
+	gignState       GlobalGitIgnoreView
+	gignStateErr    error
+	gignStateFn     func() (GlobalGitIgnoreView, error)
+	gignApplyPlan   GlobalGitIgnoreApplyPlanView
+	gignApplyPlanFn func(content string) (GlobalGitIgnoreApplyPlanView, error)
+	gignCommitMsg   GlobalGitIgnoreCommitMsg
+	gignCommitFn    func(content, planToken string) tea.Cmd
 	// Storage-migration seam overrides (zero values keep the fixture
 	// preview helpers so existing Storage sub-tab tests stay green).
 	sshStorageView   SSHStorageMigrationView
@@ -823,6 +832,30 @@ func (b stubBackend) CommitGlobalGit(keys []string) tea.Cmd {
 		return b.gitCommitFn(keys)
 	}
 	return func() tea.Msg { return b.gitCommitMsg }
+}
+
+func (b stubBackend) GlobalGitIgnoreState() (GlobalGitIgnoreView, error) {
+	if b.gignStateFn != nil {
+		return b.gignStateFn()
+	}
+	if b.gignStateErr != nil {
+		return GlobalGitIgnoreView{}, b.gignStateErr
+	}
+	return b.gignState, nil
+}
+
+func (b stubBackend) GlobalGitIgnoreApplyPlan(content string) (GlobalGitIgnoreApplyPlanView, error) {
+	if b.gignApplyPlanFn != nil {
+		return b.gignApplyPlanFn(content)
+	}
+	return b.gignApplyPlan, nil
+}
+
+func (b stubBackend) CommitGlobalGitIgnore(content, planToken string) tea.Cmd {
+	if b.gignCommitFn != nil {
+		return b.gignCommitFn(content, planToken)
+	}
+	return func() tea.Msg { return b.gignCommitMsg }
 }
 
 func (b stubBackend) GitFallbackAuthorState() (GitFallbackAuthorView, error) {

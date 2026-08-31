@@ -24,6 +24,7 @@ package main
 //     (SSHUI-04).
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -2382,6 +2383,189 @@ func (b *realBackend) CommitGlobalGit(keys []string) tea.Cmd {
 		}
 		if err != nil {
 			msg.Err = b.displayMessage(err.Error())
+		}
+		return msg
+	}
+}
+
+func (b *realBackend) gitignorePath() string {
+	return filepath.Join(b.home, ".gitignore_global")
+}
+
+func (b *realBackend) gitignoreSeed() string {
+	return gitconfig.RenderGitignoreBlock(gitconfig.DefaultGitignorePatterns())
+}
+
+func gitIgnorePreimageToken(gitignore, baseline []byte) string {
+	sum := sha256.Sum256(append(append([]byte{}, gitignore...), baseline...))
+	return hex.EncodeToString(sum[:])
+}
+
+func (b *realBackend) inspectBaselineFragment() ([]byte, error) {
+	path := b.baselineTargetPath()
+	content, err := os.ReadFile(path) //nolint:gosec // trusted gitid-managed path (G304)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	if _, ierr := gitconfig.InspectManagedBlockFile(content, "baseline"); ierr != nil {
+		return content, ierr
+	}
+	return content, nil
+}
+
+func (b *realBackend) classifyGitIgnoreWiring(baselineBytes []byte) (tuikit.GlobalGitIgnoreWiring, string) {
+	shape, ierr := gitconfig.InspectManagedBlockFile(baselineBytes, "baseline")
+	if ierr != nil || !shape.Managed {
+		return tuikit.GitIgnoreNoBaselineBlock, ""
+	}
+	keys := parseExcludesfileFromBody(shape.Body)
+	value := keys["core.excludesfile"]
+	if value == "" {
+		return tuikit.GitIgnoreKeyUnset, ""
+	}
+	if expandTildeForHome(value, b.home) == b.gitignorePath() {
+		return tuikit.GitIgnoreWiredAtManaged, value
+	}
+	return tuikit.GitIgnorePointsElsewhere, value
+}
+
+func parseExcludesfileFromBody(body string) map[string]string {
+	result := map[string]string{}
+	section := ""
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "\t") && strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			section = strings.ToLower(trimmed[1 : len(trimmed)-1])
+			continue
+		}
+		if eq := strings.Index(trimmed, "="); eq != -1 && section != "" {
+			key := strings.ToLower(section + "." + strings.TrimSpace(trimmed[:eq]))
+			result[key] = strings.TrimSpace(trimmed[eq+1:])
+		}
+	}
+	return result
+}
+
+// GlobalGitIgnoreState reads ~/.gitignore_global and the baseline fragment
+// through InspectManagedBlockFile so a malformed or duplicate block is
+// refused before anything is treated as content. Path comparison uses
+// expandTildeForHome(value, b.home) — never a raw == and never
+// os.UserHomeDir() — because RenderBaselineBlock writes the literal tilde
+// form `excludesfile = ~/.gitignore_global`.
+func (b *realBackend) GlobalGitIgnoreState() (tuikit.GlobalGitIgnoreView, error) {
+	if b.initErr != nil {
+		return tuikit.GlobalGitIgnoreView{}, b.initErr
+	}
+	path := b.gitignorePath()
+	seed := b.gitignoreSeed()
+	view := tuikit.GlobalGitIgnoreView{
+		Path:           b.displayPath(path),
+		DefaultContent: seed,
+		Content:        seed,
+	}
+	existing, err := os.ReadFile(path) //nolint:gosec // trusted gitid-managed path (G304)
+	if err != nil && !os.IsNotExist(err) {
+		return view, err
+	}
+	if err == nil {
+		shape, ierr := gitconfig.InspectGitignoreFile(existing)
+		if ierr != nil {
+			return view, ierr
+		}
+		if shape.Managed {
+			view.Content = shape.Body
+			view.Managed = true
+		}
+	}
+	baselineBytes, berr := b.inspectBaselineFragment()
+	if berr != nil {
+		return view, berr
+	}
+	view.Wiring, view.ExcludesFile = b.classifyGitIgnoreWiring(baselineBytes)
+	if view.ExcludesFile != "" {
+		view.ExcludesFile = b.displayPath(expandTildeForHome(view.ExcludesFile, b.home))
+		if strings.HasPrefix(view.ExcludesFile, b.home) {
+			view.ExcludesFile = b.displayPath(view.ExcludesFile)
+		}
+	}
+	return view, nil
+}
+
+// GlobalGitIgnoreApplyPlan normalizes content, re-inspects the current file,
+// composes the candidate with ComposeGlobalGitignore, and returns a plan
+// token that is the hash of the preimage bytes just read.
+func (b *realBackend) GlobalGitIgnoreApplyPlan(content string) (tuikit.GlobalGitIgnoreApplyPlanView, error) {
+	if b.initErr != nil {
+		return tuikit.GlobalGitIgnoreApplyPlanView{}, b.initErr
+	}
+	lines, nerr := gitconfig.NormalizeGitignoreLines(content)
+	if nerr != nil {
+		return tuikit.GlobalGitIgnoreApplyPlanView{}, nerr
+	}
+	path := b.gitignorePath()
+	existing, err := os.ReadFile(path) //nolint:gosec // trusted gitid-managed path (G304)
+	if err != nil && !os.IsNotExist(err) {
+		return tuikit.GlobalGitIgnoreApplyPlanView{}, err
+	}
+	if _, ierr := gitconfig.InspectGitignoreFile(existing); ierr != nil {
+		return tuikit.GlobalGitIgnoreApplyPlanView{}, ierr
+	}
+	baselineBytes, berr := b.inspectBaselineFragment()
+	if berr != nil {
+		return tuikit.GlobalGitIgnoreApplyPlanView{}, berr
+	}
+	candidate := gitconfig.ComposeGlobalGitignore(existing, lines)
+	view := tuikit.GlobalGitIgnoreApplyPlanView{
+		Targets:   []string{b.displayPath(path)},
+		Diff:      globalsTextDiff(string(existing), string(candidate)),
+		PlanToken: gitIgnorePreimageToken(existing, baselineBytes),
+	}
+	if fileExists(path) && !bytes.Equal(existing, candidate) {
+		view.Backups = []string{b.displayPath(path) + backupSuffixPreview}
+	}
+	return view, nil
+}
+
+// CommitGlobalGitIgnore is a single-block write whose rollback is
+// filewriter's own timestamped backup — no new lifecycle verb. Under txMu
+// it re-normalizes, re-reads, and refuses to write when the plan token no
+// longer matches the current preimage.
+func (b *realBackend) CommitGlobalGitIgnore(content, planToken string) tea.Cmd {
+	return func() tea.Msg {
+		if b.initErr != nil {
+			return tuikit.GlobalGitIgnoreCommitMsg{Err: b.displayMessage(b.initErr.Error())}
+		}
+		b.txMu.Lock()
+		defer b.txMu.Unlock()
+		lines, nerr := gitconfig.NormalizeGitignoreLines(content)
+		if nerr != nil {
+			return tuikit.GlobalGitIgnoreCommitMsg{Err: b.displayMessage(nerr.Error())}
+		}
+		path := b.gitignorePath()
+		existing, err := os.ReadFile(path) //nolint:gosec // trusted gitid-managed path (G304)
+		if err != nil && !os.IsNotExist(err) {
+			return tuikit.GlobalGitIgnoreCommitMsg{Err: b.displayMessage(err.Error())}
+		}
+		if _, ierr := gitconfig.InspectGitignoreFile(existing); ierr != nil {
+			return tuikit.GlobalGitIgnoreCommitMsg{Err: b.displayMessage(ierr.Error())}
+		}
+		baselineBytes, berr := b.inspectBaselineFragment()
+		if berr != nil {
+			return tuikit.GlobalGitIgnoreCommitMsg{Err: b.displayMessage(berr.Error())}
+		}
+		if gitIgnorePreimageToken(existing, baselineBytes) != planToken {
+			return tuikit.GlobalGitIgnoreCommitMsg{
+				Err:                 b.displayMessage("this file changed since you last reviewed it"),
+				ChangedSincePreview: true,
+			}
+		}
+		backup, werr := gitconfig.WriteGlobalGitignore(path, lines)
+		if werr != nil {
+			return tuikit.GlobalGitIgnoreCommitMsg{Err: b.displayMessage(werr.Error())}
+		}
+		msg := tuikit.GlobalGitIgnoreCommitMsg{}
+		if backup != "" {
+			msg.Backups = []string{b.displayPath(backup)}
 		}
 		return msg
 	}

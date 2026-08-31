@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/castocolina/gitid/internal/filewriter"
 )
 
 // ── Task 1: renderer tests ──────────────────────────────────────────────────
@@ -786,4 +788,233 @@ func TestWriteBaselineInclude(t *testing.T) {
 			t.Errorf("baseline-include block moved on second write: first=%d second=%d", firstBeginPos, secondBeginPos)
 		}
 	})
+}
+
+// ── Plan 09.2-01: NormalizeGitignoreLines / ComposeGlobalGitignore / InspectManagedBlockFile ──
+
+func TestNormalizeGitignoreLines(t *testing.T) {
+	t.Run("CRLF trailing spaces and trailing blank run", func(t *testing.T) {
+		in := ".DS_Store  \r\n\r\n*.log   \r\n\r\n\r\n"
+		got, err := NormalizeGitignoreLines(in)
+		if err != nil {
+			t.Fatalf("NormalizeGitignoreLines: %v", err)
+		}
+		want := []string{".DS_Store", "", "*.log"}
+		if len(got) != len(want) {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("line %d = %q, want %q", i, got[i], want[i])
+			}
+		}
+	})
+
+	t.Run("sentinel prefix is refused with line number", func(t *testing.T) {
+		in := ".DS_Store\n# BEGIN gitid managed: nested\n*.log\n"
+		_, err := NormalizeGitignoreLines(in)
+		if err == nil {
+			t.Fatal("expected error for a nested BEGIN sentinel")
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, "2") {
+			t.Errorf("error must name the offending line number, got %q", msg)
+		}
+		if !strings.Contains(strings.ToLower(msg), "begin") && !strings.Contains(strings.ToLower(msg), "sentinel") && !strings.Contains(strings.ToLower(msg), "marker") {
+			t.Errorf("error must name the sentinel, got %q", msg)
+		}
+	})
+
+	t.Run("round trip DefaultGitignorePatterns", func(t *testing.T) {
+		rendered := RenderGitignoreBlock(DefaultGitignorePatterns())
+		got, err := NormalizeGitignoreLines(rendered)
+		if err != nil {
+			t.Fatalf("NormalizeGitignoreLines: %v", err)
+		}
+		want := DefaultGitignorePatterns()
+		if len(got) != len(want) {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("line %d = %q, want %q", i, got[i], want[i])
+			}
+		}
+	})
+}
+
+func TestComposeGlobalGitignore(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".gitignore_global")
+	existing := []byte("# foreign before\n*.secret\n")
+	if err := os.WriteFile(path, existing, 0o644); err != nil { //nolint:gosec // test path
+		t.Fatalf("seeding: %v", err)
+	}
+	patterns := DefaultGitignorePatterns()
+	composed := ComposeGlobalGitignore(existing, patterns)
+	if _, err := WriteGlobalGitignore(path, patterns); err != nil {
+		t.Fatalf("WriteGlobalGitignore: %v", err)
+	}
+	written, err := os.ReadFile(path) //nolint:gosec // test path
+	if err != nil {
+		t.Fatalf("reading written file: %v", err)
+	}
+	if !bytes.Equal(composed, written) {
+		t.Errorf("ComposeGlobalGitignore diverged from WriteGlobalGitignore.\ncomposed:\n%s\nwritten:\n%s", composed, written)
+	}
+}
+
+func managedBlock(name, body string) string {
+	return filewriter.BeginPrefix + name + "\n" + body + "\n" + filewriter.EndPrefix + name + "\n"
+}
+
+func TestInspectManagedBlockFile(t *testing.T) {
+	t.Run("empty content is healthy with no managed block", func(t *testing.T) {
+		shape, err := InspectManagedBlockFile(nil, "gitignore")
+		if err != nil {
+			t.Fatalf("empty content: %v", err)
+		}
+		if shape.Managed {
+			t.Error("empty content must report Managed=false")
+		}
+		if shape.Body != "" {
+			t.Errorf("empty content body = %q, want empty", shape.Body)
+		}
+	})
+
+	t.Run("one complete block surrounded by foreign lines", func(t *testing.T) {
+		content := []byte("# foreign before\n" + managedBlock("gitignore", ".DS_Store\n*.log") + "# foreign after\n")
+		shape, err := InspectManagedBlockFile(content, "gitignore")
+		if err != nil {
+			t.Fatalf("healthy file: %v", err)
+		}
+		if !shape.Managed {
+			t.Error("one complete block must report Managed=true")
+		}
+		if !strings.Contains(shape.Body, ".DS_Store") || !strings.Contains(shape.Body, "*.log") {
+			t.Errorf("body = %q, want the managed-block body", shape.Body)
+		}
+		if strings.Contains(shape.Body, "foreign") {
+			t.Errorf("body must not include foreign lines, got %q", shape.Body)
+		}
+	})
+
+	t.Run("five malformed shapes", func(t *testing.T) {
+		cases := []struct {
+			name    string
+			content string
+		}{
+			{"orphan BEGIN", filewriter.BeginPrefix + "gitignore\n.DS_Store\n"},
+			{"standalone END", filewriter.EndPrefix + "gitignore\n"},
+			{"nested BEGIN", managedBlock("gitignore", filewriter.BeginPrefix+"gitignore\n.DS_Store")},
+			{"mismatched END name", filewriter.BeginPrefix + "gitignore\n.DS_Store\n" + filewriter.EndPrefix + "other\n"},
+			{"duplicate complete blocks", managedBlock("gitignore", ".DS_Store") + managedBlock("gitignore", "*.log")},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				_, err := InspectManagedBlockFile([]byte(tc.content), "gitignore")
+				if err == nil {
+					t.Fatalf("expected error for %s", tc.name)
+				}
+				msg := err.Error()
+				if !strings.ContainsAny(msg, "0123456789") {
+					t.Errorf("error must name an offending line number, got %q", msg)
+				}
+				if !strings.Contains(strings.ToLower(msg), "repair") && !strings.Contains(strings.ToLower(msg), "hand") {
+					t.Errorf("error must say the file must be repaired by hand, got %q", msg)
+				}
+			})
+		}
+	})
+
+	t.Run("duplicate baseline blocks are refused", func(t *testing.T) {
+		content := managedBlock("baseline", "\texcludesfile = ~/.gitignore_global") +
+			managedBlock("baseline", "\texcludesfile = ~/other")
+		_, err := InspectManagedBlockFile([]byte(content), "baseline")
+		if err == nil {
+			t.Fatal("two complete baseline blocks must be refused")
+		}
+		if !strings.Contains(strings.ToLower(err.Error()), "two") && !strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+			t.Errorf("error must name the duplicate, got %q", err)
+		}
+	})
+
+	t.Run("mixed names are healthy for each requested name", func(t *testing.T) {
+		content := []byte(managedBlock("gitignore", ".DS_Store") + managedBlock("baseline", "[core]\n\tignorecase = false"))
+		gign, err := InspectManagedBlockFile(content, "gitignore")
+		if err != nil {
+			t.Fatalf("gitignore: %v", err)
+		}
+		if !gign.Managed {
+			t.Error("gitignore half must be healthy")
+		}
+		base, err := InspectManagedBlockFile(content, "baseline")
+		if err != nil {
+			t.Fatalf("baseline: %v", err)
+		}
+		if !base.Managed {
+			t.Error("baseline half must be healthy")
+		}
+	})
+}
+
+func TestInspectGitignoreFile(t *testing.T) {
+	healthy := []byte("# foreign\n" + managedBlock("gitignore", ".DS_Store") + "# after\n")
+	want, err := InspectManagedBlockFile(healthy, "gitignore")
+	if err != nil {
+		t.Fatalf("InspectManagedBlockFile: %v", err)
+	}
+	got, err := InspectGitignoreFile(healthy)
+	if err != nil {
+		t.Fatalf("InspectGitignoreFile: %v", err)
+	}
+	if got != want {
+		t.Errorf("InspectGitignoreFile = %+v, want %+v (must be a one-line wrapper)", got, want)
+	}
+
+	malformed := []byte(filewriter.BeginPrefix + "gitignore\n.DS_Store\n")
+	_, wantErr := InspectManagedBlockFile(malformed, "gitignore")
+	_, gotErr := InspectGitignoreFile(malformed)
+	if wantErr == nil || gotErr == nil {
+		t.Fatal("both wrappers must refuse an orphan BEGIN")
+	}
+	if wantErr.Error() != gotErr.Error() {
+		t.Errorf("wrapper error = %q, want %q", gotErr, wantErr)
+	}
+}
+
+// TestInspectManagedBlockFile_NestedOtherNameIsParserBehaviorRecord documents
+// (does not change) the shared scanner: a complete url-rewrites pair nested
+// inside a complete baseline block is HEALTHY for "baseline" because
+// listBlocksWith tracks one open block regardless of name and only closes on
+// a name-matching END. ReplaceBlock rewrites that same span, so read and
+// write agree — this is why the inspector stays requested-name-scoped.
+func TestInspectManagedBlockFile_NestedOtherNameIsParserBehaviorRecord(t *testing.T) {
+	nested := filewriter.BeginPrefix + "url-rewrites\n" +
+		`[url "git@github.com:"]` + "\n\tinsteadOf = https://github.com/\n" +
+		filewriter.EndPrefix + "url-rewrites"
+	body := "[core]\n\tignorecase = false\n" + nested + "\n"
+	content := []byte("# foreign before\n" + managedBlock("baseline", body) + "# foreign after\n")
+
+	shape, err := InspectManagedBlockFile(content, "baseline")
+	if err != nil {
+		t.Fatalf("nested other-name pair must be healthy for baseline: %v", err)
+	}
+	if !shape.Managed {
+		t.Fatal("expected exactly one healthy baseline block")
+	}
+	if !strings.Contains(shape.Body, filewriter.BeginPrefix+"url-rewrites") {
+		t.Errorf("body must carry the nested marker lines verbatim, got %q", shape.Body)
+	}
+
+	rewritten := filewriter.ReplaceBlock(content, "baseline", "[core]\n\tignorecase = true")
+	if !strings.Contains(string(rewritten), "# foreign before") || !strings.Contains(string(rewritten), "# foreign after") {
+		t.Error("ReplaceBlock must leave foreign content outside the reported span")
+	}
+	if strings.Contains(string(rewritten), "url-rewrites") {
+		t.Error("ReplaceBlock must rewrite the same span the inspector reported, replacing the nested pair with the rest of the body")
+	}
+	if strings.Contains(string(rewritten), "ignorecase = false") {
+		t.Error("the original body must be replaced")
+	}
 }

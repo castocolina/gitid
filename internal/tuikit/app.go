@@ -2,16 +2,16 @@ package tuikit
 
 // app.go is the root Bubble Tea v2 model of the live gitid-dummy demo —
 // the Go mirror of .planning/design/mockup-src/src/demo/DemoApp.tsx:
-// four primary views in the persistent header nav (1 Identities ·
-// 2 Global SSH · 3 Global Git · 4 Doctor — the Fixer is a consequence
-// inside Doctor, FIX-02), contextual-only footer, live master-detail
-// everywhere, no vim keys, `?` help with the full 8-state legend,
-// `Ctrl+P` palette, and a real `q` quit prompt (unlike the browser demo,
-// q here actually exits). All data is dummy and in-memory (DemoState).
+// six primary views in the persistent header nav (1 Identities ·
+// 2 SSH · 3 Git · 4 Health · 5 Fixer · 6 Ignore), contextual-only
+// footer, live master-detail everywhere, no vim keys, `?` help with the
+// full 8-state legend, `Ctrl+P` palette, and a real `q` quit prompt
+// (unlike the browser demo, q here actually exits). All data is dummy
+// and in-memory (DemoState).
 //
 // Key-routing precedence mirrors DemoApp.tsx: open overlay consumes keys
 // first → the active screen's local handler (forms/ceremonies own their
-// keys) → globals (1..4 tabs, ? help, ctrl+p palette, q quit prompt).
+// keys) → globals (1..6 tabs, ? help, ctrl+p palette, q quit prompt).
 
 import (
 	"strings"
@@ -80,7 +80,7 @@ const (
 // adapted to the terminal (q really quits; the palette lists views and
 // actions — there are no browser reference routes here).
 var helpKeys = [][2]string{
-	{"1 · 2 · 3 · 4 · 5", "Switch view: Identities / Global SSH / Global Git / Health / Fixer"},
+	{"1-6", "Switch view: Identities / SSH / Git / Health / Fixer / Ignore"},
 	{"↑ ↓", "Move the selection — the detail pane updates live"},
 	{"← →", "Switch sub-tabs (e.g. Options / Storage on Global SSH)"},
 	{"Enter", "Activate the focused control / primary action of the pane"},
@@ -128,6 +128,7 @@ var paletteEntries = []paletteEntry{
 	{label: "3 · Global Git options", tab: TabGlobalGit},
 	{label: "4 · Health", tab: TabHealth},
 	{label: "5 · Fixer", tab: TabFixer},
+	{label: "6 · Global Git Ignore", tab: TabGitIgnore},
 	{label: "? · Help / key map / state legend", help: true},
 }
 
@@ -143,7 +144,7 @@ type App struct {
 	overlay overlayKind
 	palette textinput.Model
 	note    string
-	screens [5]screenModel
+	screens [6]screenModel
 	// initCmd is the initial tab's activation command — the activation
 	// itself already ran in NewApp (Init's value receiver cannot retain
 	// the activated screen model, so activating there would lose it).
@@ -451,11 +452,11 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Globals last.
 	switch key {
-	case "1", "2", "3", "4", "5":
+	case "1", "2", "3", "4", "5", "6":
 		next, cmd := a.setTab(TabID(int(key[0] - '1')))
 		return next, cmd
 	case "left":
-		// D4 (checkpoint-2 contract): plain ←/→ switch views 1..5 at the
+		// D4 (checkpoint-2 contract): plain ←/→ switch views 1..6 at the
 		// TOP LEVEL ONLY — reached here exactly because the active screen's
 		// own handler returned unhandled (capturing panes and Global SSH's
 		// ←/→ sub-tabs already consumed the key above and never reach this
@@ -466,7 +467,7 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	case "right":
-		if a.tab < TabFixer {
+		if a.tab < TabGitIgnore {
 			next, cmd := a.setTab(a.tab + 1)
 			return next, cmd
 		}
@@ -703,13 +704,14 @@ func padRight(s string, width int) string {
 // the Backend; the Global SSH and Global Git models need the backend for
 // their live options read and apply commit, the other two are pure
 // DemoState renderers.
-func newScreens(b Backend, initial DemoState) [5]screenModel {
-	return [5]screenModel{
+func newScreens(b Backend, initial DemoState) [6]screenModel {
+	return [6]screenModel{
 		newIdentitiesModel(b, initial),
 		newGlobalSSHModel(b),
 		newGlobalGitModel(b),
 		newHealthModel(),
 		newFixerModel(b),
+		newGitIgnoreModel(b),
 	}
 }
 

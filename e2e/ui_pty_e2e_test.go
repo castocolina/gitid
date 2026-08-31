@@ -409,7 +409,7 @@ func TestUIPTY_RealShellBoots(t *testing.T) {
 	// The approved chrome renders all five numbered nav tabs (SHELL-01,
 	// 08-01-PLAN.md Task 1's TabID 4->5 split retired the single "Doctor"
 	// tab in favor of "Health"/"Fixer").
-	for _, tab := range []string{"Identities", "Global SSH", "Global Git", "Health", "Fixer"} {
+	for _, tab := range []string{"Identities", "SSH", "Git", "Health", "Fixer", "Ignore"} {
 		last, ok := s.waitFor(8*time.Second, func(text string) bool {
 			return strings.Contains(text, tab)
 		})

@@ -55,24 +55,29 @@ const masterDetailGutter = 2
 // frameBodyRows is how many body rows RenderFrame gives a view at height.
 func frameBodyRows(height int) int { return height - frameBodyTop - frameChromeBelow }
 
-// TabID indexes the five primary views. Health and Fixer are separate,
+// TabID indexes the six primary views. Health and Fixer are separate,
 // independently-reachable tabs (08-01-PLAN.md Task 1 — the SHELL-01/FIX-02
 // "Fixer lives inside Doctor" design is superseded: Phase 8's Health screen
 // is read-only diagnosis and the Fixer screen owns the write ceremony,
-// each its own tab).
+// each its own tab). TabGitIgnore is the sixth top-level view (09.2-01).
 type TabID int
 
-// The five primary views, in header order.
+// The six primary views, in header order.
 const (
 	TabIdentities TabID = iota
 	TabGlobalSSH
 	TabGlobalGit
 	TabHealth
 	TabFixer
+	TabGitIgnore
 )
 
-// tabLabels are the nav tab labels, indexed by TabID.
-var tabLabels = [...]string{"Identities", "Global SSH", "Global Git", "Health", "Fixer"}
+// tabLabels are the FULL labels used by the breadcrumb line, indexed by TabID.
+var tabLabels = [...]string{"Identities", "Global SSH", "Global Git", "Health", "Fixer", "Global Git Ignore"}
+
+// tabNavLabels are the SHORT labels the header strip and its hit-test share,
+// so the rendered header and headerTabAt can never disagree.
+var tabNavLabels = [...]string{"Identities", "SSH", "Git", "Health", "Fixer", "Ignore"}
 
 // FooterAction is one contextual footer hint (key + label).
 type FooterAction struct {
@@ -232,7 +237,7 @@ const (
 // bracketed `[N] Label` format (D4, checkpoint-2 contract); the bracket
 // format previously lived on the wizard stepper (superseded by D5's revert).
 func headerTabText(i int) string {
-	return fmt.Sprintf(" [%d] %s ", i+1, tabLabels[i])
+	return fmt.Sprintf(" [%d] %s ", i+1, tabNavLabels[i])
 }
 
 // renderHeader renders the single header row: brand · numbered flat tabs ·
@@ -245,8 +250,8 @@ func headerTabText(i int) string {
 // keys renders Theme.DisabledNav (faint); otherwise plain
 // (02-STYLE-SPEC.md "dim-states").
 func renderHeader(width int, s DemoState, active TabID, capturesKeys bool) string {
-	segments := make([]string, 0, len(tabLabels))
-	for i := range tabLabels {
+	segments := make([]string, 0, len(tabNavLabels))
+	for i := range tabNavLabels {
 		text := headerTabText(i)
 		switch {
 		case TabID(i) == active && capturesKeys:
@@ -272,7 +277,7 @@ func renderHeader(width int, s DemoState, active TabID, capturesKeys bool) strin
 // deriving each span from the same segment strings renderHeader renders.
 func headerTabAt(x int) (TabID, bool) {
 	cursor := ansi.StringWidth(" " + headerBrand + "  ")
-	for i := range tabLabels {
+	for i := range tabNavLabels {
 		w := ansi.StringWidth(headerTabText(i))
 		if x >= cursor && x < cursor+w {
 			return TabID(i), true

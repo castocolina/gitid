@@ -401,6 +401,34 @@ const (
 	GlobalGitResultTail = "Global user.email was left alone, as always -- each identity's commits use their own includeIf fragment."
 )
 
+// Global Git Ignore screen copy (09.2-01 / 09.2-UI-SPEC.md copywriting table).
+const (
+	GitIgnoreHeading                    = "Global Git Ignore"
+	GitIgnoreWiringWired                = "✓ Wired — core.excludesfile points at this file; Git reads it."
+	GitIgnoreWiringKeyUnset             = "! core.excludesfile is not set — Git does not read any global ignore file yet. Confirming here will set it."
+	GitIgnoreWiringNoBaseline           = "! No gitid-managed Git baseline configuration was found on this machine — open the Fixer to set that up before this screen can wire core.excludesfile."
+	GitIgnoreNoManagedBlock             = "No managed block found yet in ~/.gitignore_global — showing the curated defaults below. Nothing has been written."
+	GitIgnoreTwoTargetNote              = "This write will also set core.excludesfile in your Git baseline, since it is not set yet."
+	GitIgnoreReceiptSingleTarget        = "Global gitignore written to ~/.gitignore_global."
+	GitIgnoreReceiptTwoTarget           = "Global gitignore written to ~/.gitignore_global. core.excludesfile was also set to point at this file."
+	GitIgnoreReceiptNoBackup            = "No backup was needed — the content was unchanged or the file is new."
+	GitIgnoreReceiptChangedSincePreview = "This file changed since you last reviewed it — press a to review the current content again before writing."
+	GitIgnoreCeremonyHeading            = "Review your global gitignore before writing."
+	GitIgnoreApplyLabel                 = "Review & write"
+)
+
+// GitIgnoreWiringPointsElsewhere formats the "points at a different file"
+// wiring sentence. otherPath is the display path gitid actually read.
+func GitIgnoreWiringPointsElsewhere(otherPath string) string {
+	return "! core.excludesfile points at " + otherPath + " instead of this file — that choice is left alone; writing here only affects the file below."
+}
+
+// GitIgnoreReceiptWrongTarget formats the wrong-target success receipt.
+// otherPath is the display path gitid actually read.
+func GitIgnoreReceiptWrongTarget(otherPath string) string {
+	return "Global gitignore written to ~/.gitignore_global. core.excludesfile still points at " + otherPath + ", so Git is not reading this file — that setting was left as you configured it."
+}
+
 // GlobalGitBaselineStripText is the read-only inherited global-baseline
 // strip rendered on per-identity Git surfaces (GITUI-01 kept intact) —
 // values interpolated from recipeFixtures.ts's globalGitDefaults.

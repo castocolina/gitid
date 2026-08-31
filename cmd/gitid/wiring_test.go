@@ -948,7 +948,7 @@ func TestDemoBannerOnlyDoctorIsUnwired(t *testing.T) {
 	b := newBackendForHome(t.TempDir())
 	for _, tab := range []tuikit.TabID{
 		tuikit.TabIdentities, tuikit.TabGlobalSSH, tuikit.TabGlobalGit,
-		tuikit.TabHealth, tuikit.TabFixer,
+		tuikit.TabHealth, tuikit.TabFixer, tuikit.TabGitIgnore,
 	} {
 		if b.DemoBanner(tab) {
 			t.Errorf("tab %v is wired to live data and must not carry the demo banner", tab)
@@ -6509,4 +6509,61 @@ func TestCommitRotateDeleteOldKeyRemainingKeyIDDropsSucceededCandidates(t *testi
 	if len(retryCalls) != 1 || !strings.Contains(retryCalls[0], "user/ssh_signing_keys/108") {
 		t.Fatalf("retry calls = %v, want exactly one call addressing user/ssh_signing_keys/108", retryCalls)
 	}
+}
+
+func seedManagedBaseline(t *testing.T, home, excludesfileLine string) {
+	t.Helper()
+	dir := filepath.Join(home, ".gitconfig.d")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir baseline dir: %v", err)
+	}
+	body := "[core]\n\tignorecase = false\n"
+	if excludesfileLine != "" {
+		body += "\t" + excludesfileLine + "\n"
+	}
+	content := filewriter.BeginPrefix + "baseline\n" + body + filewriter.EndPrefix + "baseline\n"
+	if err := os.WriteFile(filepath.Join(dir, "00-baseline"), []byte(content), 0o644); err != nil { //nolint:gosec // test path
+		t.Fatalf("writing baseline fragment: %v", err)
+	}
+}
+
+func TestGlobalGitIgnoreStateWiring(t *testing.T) {
+	t.Run("literal tilde form is wired at the managed target", func(t *testing.T) {
+		home := t.TempDir()
+		seedManagedBaseline(t, home, "excludesfile = ~/.gitignore_global")
+		view, err := newBackendForHome(home).GlobalGitIgnoreState()
+		if err != nil {
+			t.Fatalf("GlobalGitIgnoreState: %v", err)
+		}
+		if view.Wiring != tuikit.GitIgnoreWiredAtManaged {
+			t.Errorf("tilde form wiring = %v, want GitIgnoreWiredAtManaged (not points-elsewhere)", view.Wiring)
+		}
+	})
+
+	t.Run("absolute form is also wired at the managed target", func(t *testing.T) {
+		home := t.TempDir()
+		seedManagedBaseline(t, home, "excludesfile = "+filepath.Join(home, ".gitignore_global"))
+		view, err := newBackendForHome(home).GlobalGitIgnoreState()
+		if err != nil {
+			t.Fatalf("GlobalGitIgnoreState: %v", err)
+		}
+		if view.Wiring != tuikit.GitIgnoreWiredAtManaged {
+			t.Errorf("absolute form wiring = %v, want GitIgnoreWiredAtManaged", view.Wiring)
+		}
+	})
+
+	t.Run("a genuinely different path is points at a different file", func(t *testing.T) {
+		home := t.TempDir()
+		seedManagedBaseline(t, home, "excludesfile = ~/my-own-ignore")
+		view, err := newBackendForHome(home).GlobalGitIgnoreState()
+		if err != nil {
+			t.Fatalf("GlobalGitIgnoreState: %v", err)
+		}
+		if view.Wiring != tuikit.GitIgnorePointsElsewhere {
+			t.Errorf("different path wiring = %v, want GitIgnorePointsElsewhere", view.Wiring)
+		}
+		if view.ExcludesFile == "" {
+			t.Error("ExcludesFile must carry the value gitid actually read")
+		}
+	})
 }

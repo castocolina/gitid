@@ -187,6 +187,48 @@ func (NoopGlobalGitPlanner) CommitGlobalGit([]string) tea.Cmd {
 
 var _ GlobalGitPlanner = NoopGlobalGitPlanner{}
 
+// ErrGlobalGitIgnorePlannerNotImplemented is the sentinel
+// NoopGlobalGitIgnorePlanner returns from every method. Fixtures and test
+// stubs embed the noop and override only the methods they exercise; a missing
+// real implementation must be a compile error, not this sentinel at runtime.
+var ErrGlobalGitIgnorePlannerNotImplemented = errors.New("global git ignore planner not implemented")
+
+// GlobalGitIgnorePlanner is the Phase 9.2 global-gitignore seam: the live
+// state read, the apply-preview write plan, and the asynchronous apply
+// commit. The THREE methods are the whole seam — no speculative surface.
+type GlobalGitIgnorePlanner interface {
+	GlobalGitIgnoreState() (GlobalGitIgnoreView, error)
+	GlobalGitIgnoreApplyPlan(content string) (GlobalGitIgnoreApplyPlanView, error)
+	CommitGlobalGitIgnore(content, planToken string) tea.Cmd
+}
+
+// NoopGlobalGitIgnorePlanner implements every GlobalGitIgnorePlanner method
+// with a zero-value view plus ErrGlobalGitIgnorePlannerNotImplemented (and a
+// command delivering that error for the commit seam). Fixtures and test stubs
+// embed it and override only what they exercise. The REAL backend must NOT
+// embed it — a missing real implementation must be a compile error, pinned
+// by the compile-time assertion in cmd/gitid/wiring.go.
+type NoopGlobalGitIgnorePlanner struct{}
+
+// GlobalGitIgnoreState implements GlobalGitIgnorePlanner.
+func (NoopGlobalGitIgnorePlanner) GlobalGitIgnoreState() (GlobalGitIgnoreView, error) {
+	return GlobalGitIgnoreView{}, ErrGlobalGitIgnorePlannerNotImplemented
+}
+
+// GlobalGitIgnoreApplyPlan implements GlobalGitIgnorePlanner.
+func (NoopGlobalGitIgnorePlanner) GlobalGitIgnoreApplyPlan(string) (GlobalGitIgnoreApplyPlanView, error) {
+	return GlobalGitIgnoreApplyPlanView{}, ErrGlobalGitIgnorePlannerNotImplemented
+}
+
+// CommitGlobalGitIgnore implements GlobalGitIgnorePlanner.
+func (NoopGlobalGitIgnorePlanner) CommitGlobalGitIgnore(string, string) tea.Cmd {
+	return func() tea.Msg {
+		return GlobalGitIgnoreCommitMsg{Err: ErrGlobalGitIgnorePlannerNotImplemented.Error()}
+	}
+}
+
+var _ GlobalGitIgnorePlanner = NoopGlobalGitIgnorePlanner{}
+
 // ErrGitFallbackAuthorPlannerNotImplemented is the sentinel
 // NoopGitFallbackAuthorPlanner returns from every method. Fixtures and test
 // stubs embed the noop and override only the methods they exercise; a missing
@@ -323,6 +365,10 @@ type Backend interface {
 	// catalogue and its write, this one owns the layout and its migration.
 	// The real backend must NOT embed NoopSSHStoragePlanner.
 	SSHStoragePlanner
+	// GlobalGitIgnorePlanner: plan 09.2-01's Global Git Ignore seam. The
+	// real backend must NOT embed NoopGlobalGitIgnorePlanner — a missing
+	// real implementation must be a compile error.
+	GlobalGitIgnorePlanner
 
 	// ----- Data -------------------------------------------------------
 

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/tuikit"
 )
 
@@ -69,5 +70,16 @@ func TestRunUploadForIdentityQuotesTitle(t *testing.T) {
 		if !strings.Contains(row.Command, quoted) {
 			t.Errorf("row.Command = %q, want the title shell-quoted as %q", row.Command, quoted)
 		}
+	}
+}
+
+func TestFixtureBackendGlobalGitIgnore(t *testing.T) {
+	view, err := FixtureBackend{}.GlobalGitIgnoreState()
+	if err != nil {
+		t.Fatalf("GlobalGitIgnoreState: %v", err)
+	}
+	want := gitconfig.RenderGitignoreBlock(gitconfig.DefaultGitignorePatterns())
+	if view.DefaultContent != want {
+		t.Errorf("DefaultContent = %q, want %q", view.DefaultContent, want)
 	}
 }

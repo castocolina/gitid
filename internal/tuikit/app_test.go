@@ -27,7 +27,7 @@ func appView(a App) string {
 func TestNewAppRendersTheFrame(t *testing.T) {
 	a := NewApp(stubBackend{})
 	view := appView(a)
-	for _, want := range []string{"gitid", "[1] Identities", "[2] Global SSH", "[3] Global Git", "[4] Health", "[5] Fixer", "8 ids"} {
+	for _, want := range []string{"gitid", "[1] Identities", "[2] SSH", "[3] Git", "[4] Health", "[5] Fixer", "[6] Ignore", "8 ids"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("initial frame missing %q", want)
 		}
@@ -91,12 +91,11 @@ func TestNumberKeysSwitchTabs(t *testing.T) {
 	}
 }
 
-// TestTabsAndPaletteReachAllPrimaryViews pins SHELL-02 against the 5-tab
-// shell (08-01-PLAN.md Task 1's TabID split): number keys 1–5 switch the
-// five primary views, and the palette offers those five plus Help (six
-// entries).
+// TestTabsAndPaletteReachAllPrimaryViews pins SHELL-02 against the 6-tab
+// shell (09.2-01-PLAN.md Task 1): number keys 1–6 switch the six primary
+// views, and the palette offers those six plus Help (seven entries).
 func TestTabsAndPaletteReachAllPrimaryViews(t *testing.T) {
-	want := []TabID{TabIdentities, TabGlobalSSH, TabGlobalGit, TabHealth, TabFixer}
+	want := []TabID{TabIdentities, TabGlobalSSH, TabGlobalGit, TabHealth, TabFixer, TabGitIgnore}
 	a := NewApp(stubBackend{})
 	for i, tab := range want {
 		key := string(rune('1' + i))
@@ -105,8 +104,8 @@ func TestTabsAndPaletteReachAllPrimaryViews(t *testing.T) {
 			t.Errorf("key %s → tab %v, want %v", key, a.tab, tab)
 		}
 	}
-	if len(paletteEntries) != 6 {
-		t.Errorf("palette entries = %d, want 6 (five views + help)", len(paletteEntries))
+	if len(paletteEntries) != 7 {
+		t.Errorf("palette entries = %d, want 7 (six views + help)", len(paletteEntries))
 	}
 	a, _ = press(t, a, "ctrl+p")
 	view := appView(a)
@@ -132,6 +131,7 @@ func TestNewScreensExhaustiveSwitchOverTabID(t *testing.T) {
 		{TabGlobalGit, fmt.Sprintf("%T", globalGitModel{})},
 		{TabHealth, fmt.Sprintf("%T", healthModel{})},
 		{TabFixer, fmt.Sprintf("%T", fixerModel{})},
+		{TabGitIgnore, fmt.Sprintf("%T", gitIgnoreModel{})},
 	}
 	if len(screens) != len(want) {
 		t.Fatalf("newScreens returned %d screens, want %d", len(screens), len(want))
