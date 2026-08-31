@@ -3,8 +3,10 @@
 package e2e
 
 // upload_real_account_e2e_test.go implements ONESHOT.md's Phase 9 External
-// Account Policy. It is the repository's only real-account surface and is
-// opt-in through the distinct realaccount build tag. It deliberately does not
+// Account Policy. It is the repository's GitHub real-account surface (its
+// GitLab counterpart is e2e/upload_real_account_gitlab_e2e_test.go, under
+// the separate realaccountgitlab build tag) and is opt-in through the
+// distinct realaccount build tag. It deliberately does not
 // use e2eEnv: every normal e2e child must resolve a test-owned provider shim,
 // while this narrowly-scoped validation must reach the developer's already
 // authenticated GitHub CLI. Task 1 authorized the Phase P naming deviation:

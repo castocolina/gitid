@@ -52,7 +52,7 @@
 #   demo-web       (Re)launch the web design mockup dev server (Vite) on the
 #                   dedicated $(DEMO_WEB_PORT) and open it.
 
-.PHONY: setup-env build build-cross run install uninstall test lint lint-tagged fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files gate-visual-regression smoke-network-test verify-upload-real-account demo-web
+.PHONY: setup-env build build-cross run install uninstall test lint lint-tagged fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files gate-visual-regression smoke-network-test verify-upload-real-account verify-upload-real-account-gitlab demo-web
 
 # Binary output directory.
 BIN_DIR := bin
@@ -215,7 +215,7 @@ fmt:
 ## so that is where the package's real `go test` coverage belongs -- `lint`
 ## stays fast (vet + static analysis only) while the tests still execute in
 ## an unconditional gate, satisfying "somewhere in make lint or make test".
-KNOWN_BUILD_TAGS := screenshot smoke e2e realaccount
+KNOWN_BUILD_TAGS := screenshot smoke e2e realaccount realaccountgitlab
 lint-tagged:
 	@echo "==> lint-tagged: guarding against a new ungated //go:build tag (CR-13)"
 	@found_tags=$$(find . -name '*.go' -not -path './.planning/*' -print0 \
@@ -231,6 +231,7 @@ lint-tagged:
 	go vet -tags smoke ./...
 	go vet -tags e2e ./...
 	go vet -tags realaccount ./...
+	go vet -tags realaccountgitlab ./...
 	$(GOLANGCI_LINT) run --build-tags screenshot ./internal/screenshot/...
 
 ## lint: run golangci-lint against all packages.
@@ -691,6 +692,15 @@ smoke-network-test:
 ## either required upload scope is unavailable.
 verify-upload-real-account:
 	go test -tags realaccount -run '^TestRealAccountGitHubUploadRoundTrip$$' -v ./e2e/...
+
+## GitLab variant of the target above (Phase 9.1): ONESHOT.md Phase 9 External
+## Account Policy validation against a real, authenticated glab session.
+## LOCAL/UAT convenience only — never a prerequisite of `make test`,
+## `make test-e2e`, `make lint`, or CI. The test is opt-in under the separate
+## realaccountgitlab build tag and auto-skips rather than fails if glab
+## authentication or the required upload scope/capability is unavailable.
+verify-upload-real-account-gitlab:
+	go test -tags realaccountgitlab -run '^TestRealAccountGitLabUploadRoundTrip$$' -v ./e2e/...
 
 ## gate-no-backend-files: fail if any file changed on this branch since it
 ## diverged from main falls outside the Phase 2 design-only allowlist
