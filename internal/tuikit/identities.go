@@ -2995,25 +2995,31 @@ func (m identitiesModel) renderKeyCeremony(sel DemoIdentity) string {
 		// routinely does per 09-07-PLAN.md Task 1's PTY coverage) skip
 		// clamping entirely — the whole unclamped tail got appended,
 		// overflowing the fixed 100x30 frame with no truncation indicator
-		// instead of being bounded. maxInt(1, budget) guarantees at least one
-		// line renders through the SAME bounded viewport every other
-		// overflow path in this file uses, and the "N more line(s) hidden"
-		// cue makes the cut visible instead of silent.
+		// instead of being bounded.
+		//
+		// WR-04 (review iteration 5): this used to borrow ExactTextViewport
+		// — a SCROLLABLE, focusable component never wired to any key
+		// handler here — for what is really a one-shot, non-scrollable
+		// clip. That produced three compounding defects: (1) the viewport
+		// renders its OWN "↓ lines N–M of T  PgDn↓ PgUp↑" cue, stacked with
+		// this function's separate "… N more line(s) hidden" cue, one of
+		// which is a lie (PgDn/PgUp do nothing here); (2) the viewport
+		// reserves its own last row for that cue, so only VisibleLines-1
+		// content rows actually render while the hidden-count math assumed
+		// VisibleLines, under-reporting by exactly one; (3) the viewport
+		// horizontally slices to Width-4 with its own cue suppressed,
+		// silently truncating the last 4 columns of any full-width line —
+		// invisible, in a backstop whose whole purpose is visible clipping.
+		// fitPane (frame.go) is this file's existing helper for exactly
+		// this shape: clip to N rows, append ONE visible cue, no phantom
+		// navigation affordance, no cross-axis truncation. budget itself
+		// can be zero or negative here (the receipt above may already fill
+		// or exceed the frame) — fitPane's own `maxLines < 2` guard would
+		// return the pane UNCLIPPED in that case, so floor budget at 2
+		// (the minimum fitPane can actually enforce) rather than pass a
+		// non-clamping value through.
 		if tailLines > budget {
-			// WR-01 (review iteration 4): the appended "… N more line(s)
-			// hidden" cue is an EXTRA row on top of the viewport's own
-			// budget-lines output -- reserve two rows so the combined
-			// output stays within frameBodyRows(minFrameHeight) instead of
-			// overrunning it (verified empirically against the actual
-			// render output, not derived on paper -- reserving only one
-			// row still overran by one row). The tracked rotate fixtures
-			// never enter this branch (their tail always fits), so a
-			// byte-identical A/B check against them cannot see this; see
-			// TestKeyCeremonyOverflowBackstopStaysWithinFrameBudget.
-			lines := maxInt(1, budget-2)
-			v := ExactTextViewport{Text: wrapped, VisibleLines: lines, Width: maxInt(20, deleteChoiceNoteWidth-4)}
-			return body + "\n" + v.Clamp().View() + "\n " +
-				styleFaint.Render(fmt.Sprintf("… %d more line(s) hidden", tailLines-lines)) + "\n"
+			return body + "\n" + fitPane(wrapped, maxInt(2, budget))
 		}
 		return body + "\n" + tail.String()
 	}
@@ -5407,8 +5413,22 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 	// Word-wrap the pane at the detail width so long spec copy flows to
 	// continuation lines instead of being hard-truncated by the frame; the
 	// shared full-height divider separates master from detail (H2).
+	//
+	// WR-03 (review iteration 5): fitPane is the SAME safety net every
+	// other master-detail screen already applies at this exact point
+	// (health_screen.go, fixer_screen.go, globalssh.go, globalgit.go) — the
+	// Identities screen was the one master-detail screen missing it. Every
+	// individual pane render (renderKeyCeremony's own overflow backstop
+	// included) tries to stay within budget on its own, but that budget
+	// math is only exact in the common case; a receipt-heavy key ceremony
+	// can still overrun it by a few rows before this wrap existed, and
+	// joinMasterDetail's lipgloss.JoinHorizontal pads the shorter column up
+	// but never clips the taller one, so an overrun here pushed the
+	// frame's status/footer rows off the terminal with no visible
+	// indication. fitPane is a no-op whenever content already fits.
 	body = joinMasterDetail(sidebar, sbWidth,
-		lipgloss.NewStyle().Width(detailWidth).Render(pane), frameBodyRows(height))
+		fitPane(lipgloss.NewStyle().Width(detailWidth).Render(pane), frameBodyRows(height)),
+		frameBodyRows(height))
 	return screenView{body: body, crumbs: crumbs, status: status, statusTone: "info",
 		actions: actions, capturesKeys: m.paneCapturesKeys()}
 }

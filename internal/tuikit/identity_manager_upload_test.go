@@ -845,6 +845,46 @@ func TestKeyCeremonyOverflowBackstopStaysWithinFrameBudget(t *testing.T) {
 	}
 }
 
+// TestKeyCeremonyOverflowBackstopClampsWholePaneWhenReceiptAloneOverflows is
+// the WR-03 regression (review iteration 5): renderKeyCeremony's own
+// budget := frameBodyRows(minFrameHeight) - rendered - 1 arithmetic is exact
+// only while budget >= 3 — below that the maxInt(1, budget-2) floor takes
+// over and the combined output can overrun the frame by up to 3 rows, and
+// the base case (if tail.Len() == 0 { return body }) returns the receipt
+// completely UNBOUNDED, so a long receipt overflows the frame even with no
+// upload/offer tail at all. Nothing downstream rescued this: unlike Health,
+// Fixer, Global SSH and Global Git, the Identities screen never called
+// fitPane on its master-detail body. Force the receipt ALONE (before any
+// tail) well past the frame's row budget by injecting long Targets/Backups
+// directly into the ceremony's receipt state, then assert the TOP-LEVEL
+// view()'s rendered body — the same call path every other screen's overflow
+// safety net protects — stays within frameBodyRows(minFrameHeight).
+func TestKeyCeremonyOverflowBackstopClampsWholePaneWhenReceiptAloneOverflows(t *testing.T) {
+	a := openKeyCeremonyAtReview(t, stubBackend{})
+	a, _ = confirmKeyCeremony(t, a)
+
+	m := identModel(t, a)
+	if !m.keyCeremony.done {
+		t.Fatal("setup: a successful commit must leave the ceremony in its receipt (done) state")
+	}
+	// receiptListMaxLines caps EACH list at 6 entries, but does not wrap
+	// them — a long single-logical-line entry becomes several PHYSICAL rows
+	// once the outer pane word-wraps it at the frame's width. 6 long entries
+	// per list (12 total) comfortably exceeds frameBodyRows(minFrameHeight).
+	var long []string
+	for i := 0; i < 6; i++ {
+		long = append(long, strings.Repeat("a-very-long-receipt-path-segment/", 6)+fmt.Sprintf("%d", i))
+	}
+	m.keyCeremony.cfg.Targets = long
+	m.keyCeremony.cfg.Backups = long
+
+	sv := m.view(Seed(), minFrameWidth, minFrameHeight)
+	lines := strings.Count(stripANSI(sv.body), "\n") + 1
+	if budget := frameBodyRows(minFrameHeight); lines > budget {
+		t.Fatalf("rendered pane is %d lines, want <= frameBodyRows(minFrameHeight) = %d:\n%s", lines, budget, stripANSI(sv.body))
+	}
+}
+
 // shellQuoteForTest mirrors internal/uploader's unexported shellQuote
 // (internal/tuikit cannot import internal/uploader -- the no-backend-import
 // rule) closely enough to build realistic previewLine-shaped command
