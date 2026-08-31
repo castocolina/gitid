@@ -11,20 +11,20 @@ S ssh · G git  ✓ ok ! attn ✗ broken │ ✓ Key ceremony completed.
                                     │ Wrote → ~/.gitconfig.d/acme
                                     │ Wrote → ~/.ssh/id_ed25519_acme
                                     │ Wrote → ~/.ssh/id_ed25519_acme.pub
-                                    │ Backed up → ~/.ssh/config.bak.1788010153289195000
-                                    │ Backed up → ~/.gitconfig.bak.1788010153332212000
-                                    │ Backed up → ~/.ssh/allowed_signers.bak.1788010153426987000
+                                    │ Backed up → ~/.ssh/config.bak.1788159365523204000
+                                    │ Backed up → ~/.gitconfig.bak.1788159365567059000
+                                    │ Backed up → ~/.ssh/allowed_signers.bak.1788159365682703000
                                     │
-                                    │  Done (Enter)
                                     │  Remove the old key from GitHub?
-                                    │  The old key ("gitid: acme @ Ramons-MacBook-Pro") still
-                                    │ authenticates there until you remove it. Delete it now?
+                                    │  The old key ("gitid: acme @ MacBookPro") still authenticates
+                                    │ there until you remove it. Delete it now?
+                                    │  ID 555, 555 — …ZDI1NTE5STUB
                                     │   ● [ Leave it — I'll remove it myself ]
                                     │   ○ [ Delete old key from GitHub ]
                                     │  Running:
-                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestIdent
-                                    │ anager_RotateDeleteOfferDefaultsToLeave2490684076/002/gh s
-                                    │ key add /tmp/h3181474252/.ssh/id_ed25519_acme.pub --title
+                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestIdentityM
+                                    │ anager_RotateDeleteOfferDefaultsToLeave1488191885/002/gh ssh-
+                                    │  … (+2 more lines)
  Identity "acme" key rotated.
-
+ ↑↓/Tab choose · Enter confirm
  Esc back · Ctrl+P palette

@@ -25,6 +25,6 @@ S ssh · G git  ✓ ok ! attn ✗ broken │  Register acme's key with GitHub
                                     │
                                     │
                                     │
- Esc returns to the identity detail without writing anything — registration runs on open.
+ Esc closes — nothing was registered.
 
  Esc back · Ctrl+P palette

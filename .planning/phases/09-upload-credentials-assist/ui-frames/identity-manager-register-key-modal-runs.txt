@@ -4,27 +4,27 @@ S ssh · G git  ✓ ok ! attn ✗ broken │  Register acme's key with GitHub
 ▸ ✓ acme 1⚑                   S✓ G✓ │
                                     │  Running:
                                     │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestIdentityM
-                                    │ anager_RegisterKeyModalRuns254881639/002/gh ssh-key add
+                                    │ anager_RegisterKeyModalRuns1258666576/002/gh ssh-key add
                                     │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestIdentityM
-                                    │ anager_RegisterKeyModalRuns254881639/001/.ssh/id_ed25519_acme.
-                                    │ pub --title gitid: acme @ Ramons-MacBook-Pro --type
-                                    │ authentication
+                                    │ anager_RegisterKeyModalRuns1258666576/001/.ssh/id_ed25519_acme
+                                    │ .pub --title 'gitid: acme @ MacBookPro' --type authentication
                                     │  Running:
                                     │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestIdentityM
-                                    │ anager_RegisterKeyModalRuns254881639/002/gh ssh-key add
+                                    │ anager_RegisterKeyModalRuns1258666576/002/gh ssh-key add
                                     │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestIdentityM
-                                    │ anager_RegisterKeyModalRuns254881639/001/.ssh/id_ed25519_acme.
-                                    │ pub --title gitid: acme @ Ramons-MacBook-Pro --type signing
+                                    │ anager_RegisterKeyModalRuns1258666576/001/.ssh/id_ed25519_acme
+                                    │ .pub --title 'gitid: acme @ MacBookPro' --type signing
                                     │  ✓ Authentication key registered
+                                    │    accepted but not yet visible in github.com's inventory —
+                                    │ this can lag briefly after upload; re-run gitid's test to
+                                    │ confirm
                                     │  ✓ Signing key registered
+                                    │    accepted but not yet visible in github.com's inventory —
+                                    │ this can lag briefly after upload; re-run gitid's test to
+                                    │ confirm
                                     │
                                     │
                                     │
-                                    │
-                                    │
-                                    │
-                                    │
-                                    │
- Esc returns to the identity detail without writing anything — registration runs on open.
+ Esc closes — registration ran when this opened; no local files were changed.
 
  Esc back · Ctrl+P palette

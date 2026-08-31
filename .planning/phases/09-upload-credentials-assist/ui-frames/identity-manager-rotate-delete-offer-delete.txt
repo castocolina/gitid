@@ -11,20 +11,20 @@ S ssh · G git  ✓ ok ! attn ✗ broken │ ✓ Key ceremony completed.
                                     │ Wrote → ~/.gitconfig.d/acme
                                     │ Wrote → ~/.ssh/id_ed25519_acme
                                     │ Wrote → ~/.ssh/id_ed25519_acme.pub
-                                    │ Backed up → ~/.ssh/config.bak.1788010161981106000
-                                    │ Backed up → ~/.gitconfig.bak.1788010162022030000
-                                    │ Backed up → ~/.ssh/allowed_signers.bak.1788010162130452000
+                                    │ Backed up → ~/.ssh/config.bak.1788159372472629000
+                                    │ Backed up → ~/.gitconfig.bak.1788159372518369000
+                                    │ Backed up → ~/.ssh/allowed_signers.bak.1788159372669378000
                                     │
                                     │  Done (Enter)
                                     │  Remove the old key from GitHub?
-                                    │  The old key ("gitid: acme @ Ramons-MacBook-Pro") still
-                                    │ authenticates there until you remove it. Delete it now?
+                                    │  The old key ("gitid: acme @ MacBookPro") still authenticates
+                                    │ there until you remove it. Delete it now?
+                                    │  ID 555, 555 — …ZDI1NTE5STUB
                                     │  ✓ Old key removed from GitHub.
                                     │  Running:
-                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestIdent
-                                    │ anager_RotateDeleteOfferDeletesOnExplicitChoice195518497/0
-                                    │ h ssh-key add /tmp/h2472293408/.ssh/id_ed25519_acme.pub --
-                                    │ title gitid: acme @ Ramons-MacBook-Pro --type authenticati
+                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestIdentityM
+                                    │ anager_RotateDeleteOfferDeletesOnExplicitChoice423520506/002/g
+                                    │  … (+2 more lines)
  Esc returns to the identity detail without writing anything.
 
  Esc back · Ctrl+P palette

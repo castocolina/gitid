@@ -1,4 +1,4 @@
- gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  0 ids · ! 2 ✗ 1
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  0 ids · ! 1 ✗ 1
  Identities › New identity › SSH details
 S ssh · G git  ✓ ok ! attn ✗ broken │  Step 1/4 · SSH details ● ○ ○ ○
                                     │  Shift+→ next section · Shift+← exits the wizard
@@ -8,7 +8,7 @@ S ssh · G git  ✓ ok ! attn ✗ broken │  Step 1/4 · SSH details ● ○ �
                                     │      Auto-joined: <prefix>.<provider> — editable
                                     │    Real hostname   [ssh.github.com]
                                     │    Port            [443]
-                                    │  ☑ Register with GitHub automatically — not logged in to gith
+                                    │  ☑ Register with GitHub automatically — not logged in to git…
                                     │    Key (←/→ change)  ● Generate a new key   ○ Reuse an
                                     │ existing key
                                     │      ● ed25519 — ★ recommended

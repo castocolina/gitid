@@ -11,9 +11,9 @@ S ssh · G git  ✓ ok ! attn ✗ broken │ ✓ Key ceremony completed.
                                     │ Wrote → ~/.gitconfig.d/acme
                                     │ Wrote → ~/.ssh/id_ed25519_acme
                                     │ Wrote → ~/.ssh/id_ed25519_acme.pub
-                                    │ Backed up → ~/.ssh/config.bak.1788010171363396000
-                                    │ Backed up → ~/.gitconfig.bak.1788010171407129000
-                                    │ Backed up → ~/.ssh/allowed_signers.bak.1788010171550792000
+                                    │ Backed up → ~/.ssh/config.bak.1788159379570161000
+                                    │ Backed up → ~/.gitconfig.bak.1788159379614227000
+                                    │ Backed up → ~/.ssh/allowed_signers.bak.1788159379729351000
                                     │
                                     │  Done (Enter)
                                     │

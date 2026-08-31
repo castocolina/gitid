@@ -53,7 +53,7 @@ var phase9Frames = []promotionEntry{
 	{"upload-checkbox-tab-and-click", "create-flow-upload-checkbox-tab-and-click", "TestCreateFlow_UploadCheckboxTabAndClickReachable", "gh ok", "100x30"},
 	{"upload-manual-fallback", "create-flow-upload-partial-scope", "TestCreateFlow_UploadPartialScopeShowsBothRows", "gh scope-fail-signing", "100x30"},
 	{"upload-already-complete", "create-flow-upload-already-complete", "TestCreateFlow_UploadAlreadyCompleteCollapsesToOneLine", "gh inventory-both", "100x30"},
-	{"upload-omitted", "create-flow-reachable-not-uploaded-evidence", "TestCreateFlow_TestStageReachableNotUploaded", "fake ssh denied, no gh", "100x30"},
+	{"upload-omitted", "create-flow-reachable-not-uploaded-evidence", "TestCreateFlow_ReachableNotUploadedEvidence", "fake ssh denied, no gh", "100x30"},
 	{"register-key-modal", "identity-manager-register-key-modal-runs", "TestIdentityManager_RegisterKeyModalRuns", "gh ok", "100x30"},
 	{"register-key-modal-manual-fallback", "identity-manager-register-key-modal-manual-fallback", "TestIdentityManager_RegisterKeyModalManualFallback", "gh auth-fail", "100x30"},
 	{"register-key-modal-u-key", "identity-manager-register-key-modal-u-key", "TestIdentityManager_RegisterKeyModalOpensWithU", "gh ok", "100x30"},

@@ -1,30 +1,30 @@
- gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  0 ids · ! 2 ✗ 1
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  0 ids · ! 1 ✗ 1
  Identities › New identity › Test connection
 S ssh · G git  ✓ ok ! attn ✗ broken │  Step 2/4 · Test connection ● ● ○ ○
                                     │  Shift+←/→ jump sections · forward needs a valid step
                                     │  Running:
                                     │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestCreateFlo
-                                    │ w_UploadPartialScopeShowsBothRows613772938/003/gh ssh-key add
+                                    │ w_UploadPartialScopeShowsBothRows2812343482/003/gh ssh-key add
                                     │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/gitid-stage-
-                                    │ 4145015717/id_ed25519_acme.pub --title gitid: acme @ Ramons-
-                                    │ MacBook-Pro --type authentication
+                                    │ 2167703867/id_ed25519_acme.pub --title 'gitid: acme @
+                                    │ MacBookPro' --type authentication
                                     │  Running:
                                     │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestCreateFlo
-                                    │ w_UploadPartialScopeShowsBothRows613772938/003/gh ssh-key add
+                                    │ w_UploadPartialScopeShowsBothRows2812343482/003/gh ssh-key add
                                     │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/gitid-stage-
-                                    │ 4145015717/id_ed25519_acme.pub --title gitid: acme @ Ramons-
-                                    │ MacBook-Pro --type signing
+                                    │ 2167703867/id_ed25519_acme.pub --title 'gitid: acme @
+                                    │ MacBookPro' --type signing
                                     │  ✓ Authentication key registered
+                                    │    accepted but not yet visible in github.com's inventory —
+                                    │ this can lag briefly after upload; re-run gitid's test to
+                                    │ confirm
                                     │  ✗ Signing key registration failed: insufficient scope — run
                                     │ "gh auth refresh -h github.com -s admin:ssh_signing_key", then
                                     │ retry from the Identity Manager
-                                    │  Demo failure control — locked (nothing left to simulate)
-                                    │  ✓ Hi user! You've successfully authenticated, but GitHub doe
-                                    │  … running ssh…
-                                    │  Proof viewport: PgUp/PgDn scroll · v focus · ←/→ columns
-                                    │ Stage 1 command:
-                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestCreat
-                                    │ Stage 1 output:
+                                    │  Key ~/.ssh/id_ed25519_acme generated (ed25519).
+                                    │  A throwaway config is used — ~/.ssh/config untouched.
+                                    │  ☐ Demo failure control — locked (nothing left to simulate)
+                                    │ ╭╌ Stage 1 — key DIRECT against the provider (TEST-01) ╌╌╮
  Esc returns to the identity detail without writing anything.
 
  Esc back · Ctrl+P palette

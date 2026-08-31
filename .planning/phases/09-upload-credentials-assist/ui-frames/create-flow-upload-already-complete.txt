@@ -1,18 +1,18 @@
- gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  0 ids · ! 2 ✗ 1
+ gitid   [1] Identities · [2] Global SSH · [3] Global Git · [4] Health · [5] Fixer  0 ids · ! 1 ✗ 1
  Identities › New identity › Test connection
 S ssh · G git  ✓ ok ! attn ✗ broken │  Step 2/4 · Test connection ● ● ○ ○
                                     │  Shift+←/→ jump sections · forward needs a valid step
                                     │  ✓ Already registered with GitHub — nothing to do.
-                                    │  Key .../id_ed25519_a_reused generated (ed25519).
-                                    │  A throwaway config is used — ~/.ssh/config untouched.
-                                    │  ☐ Demo failure control — locked (nothing left to simulate)
-                                    │ ╭╌ Stage 1 — key DIRECT against the provider (TEST-01) ╌╌╮
-                                    │ ┊ $                                                      ┊
-                                    │ ┊ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestC ┊
-                                    │ ┊ r…                                                     ┊
-                                    │ ┊                                                        ┊
-                                    │ ╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+                                    │  Demo failure control — locked (nothing left to simulate)
+                                    │  ✓ Hi user! You've successfully authenticated, but GitHub doe
                                     │  … running ssh…
+                                    │  Proof viewport: PgUp/PgDn scroll · v focus · ←/→ columns
+                                    │ Stage 1 command:
+                                    │ /var/folders/5w/2d0vm3b96_qdc9q9x1_m59tw0000gn/T/TestCreat
+                                    │ Stage 1 output:
+                                    │ Hi user! You've successfully authenticated, but GitHub doe
+                                    │
+                                    │ → cols 1–58 of 498  ←→scroll
                                     │
                                     │
                                     │
