@@ -500,7 +500,7 @@ func (b FixtureBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
 		}}
 	}
 	return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
-		return tuikit.UploadRunMsg{View: view}
+		return tuikit.UploadRunMsg{Name: spec.Identity, View: view}
 	})
 }
 
@@ -614,7 +614,7 @@ func (b FixtureBackend) RunUploadForIdentity(name string) tea.Cmd {
 		}}
 	}
 	return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
-		return tuikit.UploadRunMsg{View: view}
+		return tuikit.UploadRunMsg{Name: name, View: view}
 	})
 }
 

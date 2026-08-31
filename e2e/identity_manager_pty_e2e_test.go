@@ -2135,6 +2135,13 @@ func TestRegisterKeyModal_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		openRegisterKeyModalViaActionMenu(t, dummy)
 		mustSee(t, dummy, "Register personal's key with GitHub", "dummy: the frozen modal heading renders")
 		mustSee(t, dummy, "Running:", "dummy: the upload beat's announce line renders")
+		// CR-01 anti-drift guard: the previous fix pass's UploadRunMsg.Name
+		// stale-guard (WR-01, iteration 3) silently discards every fixture
+		// reply because FixtureBackend never set Name — the dummy pane hung
+		// on "Registering…" forever with no failing assertion, since the
+		// prior assertions only ever checked the announce line. Assert the
+		// RESULT row explicitly so a dropped fixture reply fails loudly.
+		mustSee(t, dummy, "Authentication key registered", "dummy: the upload beat's result row renders (CR-01 anti-drift guard)")
 
 		compareIdentManagerCheckpointSkipping(t, "register-key-modal", real.snapshot(), dummy.snapshot(), allowlist, map[identManagerRegion]bool{identRegionDetail: true})
 	})

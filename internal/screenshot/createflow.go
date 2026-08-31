@@ -1110,7 +1110,7 @@ func (o offlineCaptureBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
 			{Registration: tuikit.UploadRegistrationSigning, Label: tuikit.UploadRegistrationLabelSigning, Command: signCmd, Outcome: tuikit.UploadRowUploaded},
 		}}
 	}
-	return func() tea.Msg { return tuikit.UploadRunMsg{View: view} }
+	return func() tea.Msg { return tuikit.UploadRunMsg{Name: spec.Identity, View: view} }
 }
 
 func (o offlineCaptureBackend) TestStage2(spec tuikit.CreateSpec) tea.Cmd {
