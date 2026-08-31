@@ -107,14 +107,14 @@
         "cli": "codex",
         "model": "gpt-5.6-sol"
       },
-      "xai-grok": {
+      "opencode-grok": {
         "cli": "opencode",
         "model": "xai/grok-4.6"
       }
     },
     "default_reviewers": [
       "codex-sol",
-      "xai-grok"
+      "opencode-grok"
     ]
   },
   "effort": {
