@@ -529,6 +529,51 @@ func atRotateDeleteOffer(t *testing.T, b Backend) App {
 	return a
 }
 
+// TestRotateDeleteCommitMsgStaleReplyDiscarded is the WR-01 regression
+// (review iteration 5): RotateDeleteCommitMsg carried no Name field at all
+// before this fix, so the consumer guarded on pane + pending only — a reply
+// belonging to a DIFFERENT identity's in-flight delete would be consumed
+// here, rewriting rotateDeleteConfirmedID (the ID set the NEXT destructive
+// retry sends) with a value that names the WRONG provider account's key. A
+// stale-named reply must now be discarded entirely: rotateDeleteCommitPending
+// stays true, rotateDeleteResult stays unset, and rotateDeleteConfirmedID is
+// left exactly as the genuine dispatch set it.
+func TestRotateDeleteCommitMsgStaleReplyDiscarded(t *testing.T) {
+	a := atRotateDeleteOffer(t, stubBackend{})
+	a = pressSeq(t, a, "down") // move to the delete option
+	a, cmd := press(t, a, "enter")
+	if cmd == nil {
+		t.Fatal("setup: choosing delete must dispatch CommitRotateDeleteOldKey")
+	}
+	before := identModel(t, a)
+	if !before.rotateDeleteCommitPending {
+		t.Fatal("setup: choosing delete must set rotateDeleteCommitPending")
+	}
+	if before.rotateDeleteConfirmedID == "" {
+		t.Fatal("setup: choosing delete must retain the confirmed ID before dispatch (R12)")
+	}
+
+	// A reply naming a DIFFERENT identity than the one currently selected —
+	// exactly what a stale async reply from a PREVIOUS ceremony (the user
+	// having since navigated to a different identity) looks like.
+	stale := RotateDeleteCommitMsg{Name: "work", Err: "network error", RemainingKeyID: "999-from-a-different-identity"}
+	model, _ := a.Update(stale)
+	after, ok := model.(App)
+	if !ok {
+		t.Fatalf("Update(stale RotateDeleteCommitMsg) returned %T, want App", model)
+	}
+	m := identModel(t, after)
+	if !m.rotateDeleteCommitPending {
+		t.Fatal("a stale-named reply must not clear rotateDeleteCommitPending")
+	}
+	if m.rotateDeleteResult != "" {
+		t.Fatalf("a stale-named reply must not set rotateDeleteResult, got %q", m.rotateDeleteResult)
+	}
+	if m.rotateDeleteConfirmedID != before.rotateDeleteConfirmedID {
+		t.Fatalf("a stale-named reply must not rewrite rotateDeleteConfirmedID: got %q, want unchanged %q", m.rotateDeleteConfirmedID, before.rotateDeleteConfirmedID)
+	}
+}
+
 func TestRotateDeleteOfferDefaultsToLeave(t *testing.T) {
 	a := atRotateDeleteOffer(t, stubBackend{})
 	if m := identModel(t, a); m.rotateDeleteChoiceFocus != 0 {

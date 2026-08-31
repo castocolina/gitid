@@ -629,7 +629,7 @@ func (b stubBackend) RotateDeleteOffer(name string) tea.Cmd {
 // rotateDeleteCommitErr, recording the (name, keyID) pair it was called
 // with so a test can assert the retry semantics (R12) without a second
 // inventory read having happened.
-func (b stubBackend) CommitRotateDeleteOldKey(_, keyID string) tea.Cmd {
+func (b stubBackend) CommitRotateDeleteOldKey(name, keyID string) tea.Cmd {
 	return func() tea.Msg {
 		if b.rotateDeleteCalls != nil {
 			*b.rotateDeleteCalls = append(*b.rotateDeleteCalls, keyID)
@@ -639,9 +639,9 @@ func (b stubBackend) CommitRotateDeleteOldKey(_, keyID string) tea.Cmd {
 			// success/failure, so RemainingKeyID mirrors keyID unchanged --
 			// the correct simulation of "nothing succeeded, retry the same
 			// target", matching this stub's existing single-candidate tests.
-			return RotateDeleteCommitMsg{Err: b.rotateDeleteCommitErr, RemainingKeyID: keyID}
+			return RotateDeleteCommitMsg{Name: name, Err: b.rotateDeleteCommitErr, RemainingKeyID: keyID}
 		}
-		return RotateDeleteCommitMsg{}
+		return RotateDeleteCommitMsg{Name: name}
 	}
 }
 

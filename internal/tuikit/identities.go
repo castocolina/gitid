@@ -2303,7 +2303,8 @@ func (m identitiesModel) handleMsg(msg tea.Msg, s DemoState) keyResult {
 		m.rotateDeleteChoiceFocus = 0
 		return keyResult{model: m}
 	}
-	if commit, ok := msg.(RotateDeleteCommitMsg); ok && m.pane == paneKeyCeremony && m.rotateDeleteCommitPending {
+	if commit, ok := msg.(RotateDeleteCommitMsg); ok && m.pane == paneKeyCeremony &&
+		m.rotateDeleteCommitPending && commit.Name == m.selected {
 		m.rotateDeleteCommitPending = false
 		if commit.Err != "" {
 			// R12: retain the confirmed {ID, title} pair (already stored when

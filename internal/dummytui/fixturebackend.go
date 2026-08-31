@@ -545,9 +545,15 @@ func (FixtureBackend) RotateDeleteOffer(name string) tea.Cmd {
 
 // CommitRotateDeleteOldKey "deletes" the demo old key deterministically —
 // always succeeds, mirroring RunUploadForIdentity's brief-tick demo shape.
-func (FixtureBackend) CommitRotateDeleteOldKey(string, string) tea.Cmd {
+//
+// WR-01 (review iteration 5): Name must be set on the reply, mirroring the
+// stale-guard shape RunUploadForIdentity's UploadRunMsg already carries — a
+// dropped fixture reply here silently hangs the D-04 delete offer with no
+// failing assertion (the exact CR-01 regression shape from the prior fix
+// pass, now closed for this message too).
+func (FixtureBackend) CommitRotateDeleteOldKey(name, _ string) tea.Cmd {
 	return func() tea.Msg {
-		return tuikit.RotateDeleteCommitMsg{}
+		return tuikit.RotateDeleteCommitMsg{Name: name}
 	}
 }
 

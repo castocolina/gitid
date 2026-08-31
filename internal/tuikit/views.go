@@ -823,6 +823,18 @@ type RotateDeleteOfferMsg struct {
 // available on the model for exactly one retry — this message alone never
 // decides retention; the caller keeps or clears the confirmed pair.
 //
+// Name (WR-01, review iteration 5) carries the identity this delete was
+// dispatched for, mirroring the stale-guard shape every other Phase-9 async
+// reply already carries (RegisterKeyPlanMsg.Name, RotateDeleteOfferMsg.Name,
+// UploadRunMsg.Name). This is the MOST consequential message in the phase
+// to leave unguarded: a stale reply does not merely display stale text — it
+// rewrites rotateDeleteConfirmedID, the ID set the NEXT destructive retry
+// sends. Reachability was defensive-only at the time this was found (a
+// key-swallowing branch elsewhere made the pending window practically
+// uninterruptible), but that invariant was accidental, not stated — the
+// same shape as the UploadRunMsg race review iteration 3 already treated as
+// real.
+//
 // RemainingKeyID (WR-09, review iteration 3) is the SAME opaque encoding
 // rotateDeleteConfirmedID already carries, narrowed to only the candidates
 // that did NOT delete successfully — never the full original set. A rotated
@@ -835,6 +847,7 @@ type RotateDeleteOfferMsg struct {
 // success path clears the confirmed pair entirely and never reads this
 // field.
 type RotateDeleteCommitMsg struct {
+	Name           string
 	Err            string
 	RemainingKeyID string
 }

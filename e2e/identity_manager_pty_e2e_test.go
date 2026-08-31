@@ -2179,6 +2179,19 @@ func TestRegisterKeyModal_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		mustSee(t, dummy, "Leave it", "dummy: the leave option renders")
 
 		compareIdentManagerCheckpointSkipping(t, "rotate-delete-offer", real.snapshot(), dummy.snapshot(), allowlist, map[identManagerRegion]bool{identRegionDetail: true})
+
+		// WR-01 anti-drift guard (review iteration 5): the previous fix
+		// pass's UploadRunMsg.Name stale-guard regression (CR-01, iteration
+		// 3) silently discarded every fixture reply because FixtureBackend
+		// never set Name — this subtest's assertions above only ever
+		// checked the OFFER heading, never the delete COMMIT result, so an
+		// identical regression on RotateDeleteCommitMsg.Name (WR-01,
+		// iteration 5) would hang the dummy leg on "Removing…" forever with
+		// no failing assertion. Explicitly move to the delete option and
+		// confirm, then assert the removal result row renders.
+		dummy.sendKey(dummyKeyDown, keystrokeDelay) // move to the delete option
+		dummy.sendKey(dummyKeyEnter, keystrokeDelay)
+		mustSee(t, dummy, "Old key removed from GitHub", "dummy: the removal result row renders (WR-01 anti-drift guard)")
 	})
 
 	newCheckpoints := map[string]bool{"register-key-modal": true, "rotate-delete-offer": true}
