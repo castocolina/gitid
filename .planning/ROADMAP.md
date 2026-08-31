@@ -59,7 +59,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 9.2: Global Git Ignore Management** - A TUI view for managing a curated global gitignore (common tmp/venv/env patterns), reviewable before write
 - [ ] **Phase 9.3: Release CI/CD + Installer** - Tagged-release CI publishing checksummed binaries, plus a curl\|bash install script
 - [ ] **Phase 9.4: TUI UX Consistency & Doctor/Fixer Parity** - Fix focus/read-only/toggle/submenu-affordance inconsistencies and Doctor-vs-Fixer count discoverability found in a user audit of Global SSH, Global Git, and Fixer
-- [ ] **Phase 9.5: Full SSH/Git Properties Browser** - A TUI surface for browsing the full set of SSH/Git config properties on the machine, beyond gitid's curated policy tables
+- [ ] **Phase 9.5: Full SSH/Git Properties Browser & Custom Key Entry** - Browse the full set of SSH/Git config properties beyond gitid's curated policy tables, plus add a custom global key (free-form for Git, directive-validated for SSH)
 - [ ] **Phase 10: Linux Validation + Release Pipeline** - End-to-end Linux validation + tagged, checksummed release artifacts
 
 ## Phase Details
@@ -508,14 +508,17 @@ Plans:
 
 **Plans**: TBD
 
-### Phase 9.5: Full SSH/Git Properties Browser
+### Phase 9.5: Full SSH/Git Properties Browser & Custom Key Entry
 
-**Goal**: The user can browse the full set of SSH and Git configuration properties resolved on their machine, beyond gitid's curated policy tables, to understand what's actually in effect even where gitid has no opinion.
+**Goal**: The user can browse the full set of SSH and Git configuration properties resolved on their machine, beyond gitid's curated policy tables, and add a custom global key on either side.
 **Depends on**: Phase 9 (whole product complete)
-**Requirements**: PROP-01
+**Requirements**: PROP-01, PROP-02, PROP-03, PROP-04
 **Success Criteria** (what must be TRUE):
 
-  1. A TUI surface lists SSH/Git configuration properties beyond gitid's curated `OptionPolicy` tables, sourced from a live read of the machine's actual resolved configuration. (PROP-01)
+  1. A new Global SSH sub-tab lists every SSH directive `ssh -G` resolves (the full, bounded set), as a flat type-to-filter list. (PROP-01)
+  2. A new Global Git sub-tab lists every git config key actually set across all scopes, with its origin file, as a flat type-to-filter list. (PROP-02)
+  3. From the Git properties browser, the user can add an arbitrary global key=value pair, free-form, through the standard review-before-write ceremony. (PROP-03)
+  4. From the SSH properties browser, the user can add a custom global SSH directive, but its name is validated against OpenSSH's known-directive list plus the existing prove-before-write `ssh -G` verification before any write. (PROP-04)
 
 **Plans**: TBD
 

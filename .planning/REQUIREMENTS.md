@@ -447,20 +447,38 @@ These are first-class, enforced requirements — the user's core process ask.
   only the "the diagnostic tab has zero fix keybindings wired" isolation
   property is removed, not the write-confirmation discipline itself.
 
-## S. Full SSH/Git Properties Browser (PROP)
+## S. Full SSH/Git Properties Browser & Custom Key Entry (PROP)
 
-- [ ] **PROP-01** (Full properties browser): a TUI surface lets the user
-  browse the FULL set of SSH and Git configuration properties on their
-  machine — not just gitid's curated `OptionPolicy` tables
-  (`internal/globalssh`/`internal/globalgit`'s GSSH-01/GGIT-01 dangerous-by-
-  default subset) — for visibility into what SSH/Git actually resolve on
-  this machine beyond what gitid has opinions about. Deferred out of Phase
-  9.4 at the user's request ("algo como 9.5") after confirming today's
-  Global SSH/Global Git screens only show a fixed policy table, not a live
-  enumeration of every directive/key. Scope (read-only vs actionable, which
-  properties are safe/meaningful to surface, how to avoid overwhelming the
-  user with unfamiliar keys) is intentionally undecided pending this
-  phase's own discussion.
+- [ ] **PROP-01** (Full SSH directive browser): a new sub-tab on the Global
+  SSH screen lists EVERY SSH directive `ssh -G <host>` resolves (the full,
+  bounded ~90-directive set, set or default) — not just gitid's curated
+  `OptionPolicy` table (GSSH-01's dangerous-by-default subset) — as a flat,
+  type-to-filter scrollable list.
+- [ ] **PROP-02** (Full Git set-keys browser): a new sub-tab on the Global
+  Git screen lists every git config key actually SET across all scopes
+  (global/system/local), sourced from `git config --list --show-origin`,
+  with its origin file — not a catalog of all possible keys (git's key
+  space is open-ended and has no such catalog), honestly scoped to "what is
+  set," as a flat, type-to-filter scrollable list.
+- [ ] **PROP-03** (Custom Git key entry): from the Git properties browser,
+  the user can add an arbitrary global `key = value` pair, free-form (no
+  directive-name validation — an unrecognized git key is harmless, git
+  ignores keys nothing reads), through the same review-before-write
+  ceremony every other gitid write path uses.
+- [ ] **PROP-04** (Custom SSH directive entry, validated): from the SSH
+  properties browser, the user can add an arbitrary global SSH directive,
+  but the entered directive NAME is validated against OpenSSH's known-
+  directive list before the write proceeds (an unrecognized SSH directive
+  can be a hard parse error that breaks `~/.ssh/config` for every host, a
+  materially higher blast radius than an unknown git key) — plus the
+  existing prove-before-write `ssh -G` verification gitid already uses
+  elsewhere, so a bad entry is caught before it is ever written for real.
+
+Deferred out of Phase 9.4 at the user's request ("algo como 9.5") after
+confirming today's Global SSH/Global Git screens only show a fixed policy
+table, not a live enumeration of every directive/key. Scope grew during this
+phase's own discussion from "browse only" to "browse + add a custom key,"
+after the user raised the point directly.
 
 ## Out of Scope
 
@@ -628,3 +646,6 @@ row below records each one's **home** phase.
 | UXP-04 | Phase 9.4 | Pending |
 | UXP-05 | Phase 9.4 | Pending |
 | PROP-01 | Phase 9.5 | Pending |
+| PROP-02 | Phase 9.5 | Pending |
+| PROP-03 | Phase 9.5 | Pending |
+| PROP-04 | Phase 9.5 | Pending |
