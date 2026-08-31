@@ -55,7 +55,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 7: Global Git Options** - Baseline git config (main/master, eol, case, email) + recipe defaults, explained (completed 2026-08-28)
 - [x] **Phase 8: Health + Fixer** - Two-section (SSH + Git) health with redundancy/contradiction detection and in-place fixes (completed 2026-08-28)
 - [x] **Phase 9: Upload / Credentials Assist** - Auto-upload the `.pub` (auth + signing) when `gh`/`glab` authenticated; manual fallback (completed 2026-08-30)
-- [ ] **Phase 9.1: GitLab Real-Account Validation** - Prove the GitLab upload/delete path against a real, authenticated GitLab account, mirroring Wave 8's disposable-key protocol for GitHub
+- [x] **Phase 9.1: GitLab Real-Account Validation** - Prove the GitLab upload/delete path against a real, authenticated GitLab account, mirroring Wave 8's disposable-key protocol for GitHub
 - [ ] **Phase 9.2: Global Git Ignore Management** - A TUI view for managing a curated global gitignore (common tmp/venv/env patterns), reviewable before write
 - [ ] **Phase 9.3: Release CI/CD + Installer** - Tagged-release CI publishing checksummed binaries, plus a curl\|bash install script
 - [ ] **Phase 9.4: TUI UX Consistency & Doctor/Fixer Parity** - Fix focus/read-only/toggle/submenu-affordance inconsistencies and Doctor-vs-Fixer count discoverability found in a user audit of Global SSH, Global Git, and Fixer
@@ -467,8 +467,8 @@ Plans:
 
 Plans:
 
-- [ ] 09.1-01-PLAN.md — (wave 1) authorize the real-GitLab contact, then land the read-only end-to-end tracer: the `realaccountgitlab`-tagged test file, its full Makefile wiring, the exact-scope preflight proven live, and the LIFO cleanup machinery with account-free unit tests (UP-04)
-- [ ] 09.1-02-PLAN.md — (wave 2) the single disposable-key round trip against the real GitLab account through the compiled binary, plus the ONESHOT GitLab policy addendum and UP-04's outcome-conditional closure (UP-04)
+- [x] 09.1-01-PLAN.md — (wave 1) authorize the real-GitLab contact, then land the read-only end-to-end tracer: the `realaccountgitlab`-tagged test file, its full Makefile wiring, the exact-scope preflight proven live, and the LIFO cleanup machinery with account-free unit tests (UP-04)
+- [x] 09.1-02-PLAN.md — (wave 2) the single disposable-key round trip against the real GitLab account through the compiled binary, plus the ONESHOT GitLab policy addendum and UP-04's outcome-conditional closure (UP-04)
 
 ### Phase 9.2: Global Git Ignore Management
 
@@ -550,7 +550,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. Global Git Options | 0/TBD | Not started | - |
 | 8. Health + Fixer | 8/8 | Complete    | 2026-08-30 |
 | 9. Upload / Credentials Assist | 8/8 | Complete    | 2026-08-30 |
-| 9.1. GitLab Real-Account Validation | 0/2 | Planned | - |
+| 9.1. GitLab Real-Account Validation | 2/2 | Complete | 2026-08-31 |
 | 9.2. Global Git Ignore Management | 0/TBD | Not started | - |
 | 9.3. Release CI/CD + Installer | 0/TBD | Not started | - |
 | 9.4. TUI UX Consistency & Doctor/Fixer Parity | 0/TBD | Not started | - |

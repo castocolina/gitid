@@ -140,6 +140,38 @@ explicit confirmation. If GitHub authentication or scope is unavailable,
 record the blocked evidence and stop; do not silently substitute a mock for the
 required real-account validation.
 
+## Phase 9.1 GitLab External Account Policy
+
+The user has authorized GitLab real-account SSH-key validation for phase 9.1.
+Before every registration, verify `glab auth status --hostname gitlab.com`
+reports an authenticated session, then verify `glab api
+personal_access_tokens/self` reports `api` as an EXACT member (never a
+substring match) of the returned `scopes` array; skip with the missing
+precondition named rather than proceeding on an unverified or insufficiently
+scoped session. Generate a disposable public key only, and register exactly
+one GitLab key under GitLab's single combined registration
+(`RegistrationCombined` / `--usage-type auth_and_signing`) — GitLab has no
+per-registration-type split the way GitHub does, so there is only ever one
+registration per run. Run-scoping travels through the disposable IDENTITY
+NAME (`gitid-e2e-<run-id>`) embedded in the product's frozen D-07 `KeyTitle`
+format (`gitid: <name> @ <machine>`), NOT through this document's GitHub
+section's literal `gitid-e2e:<run-id>:<purpose>` title format — D-07's title
+format is frozen product behavior, and emitting the policy's literal format
+would require a test-only product seam D-06 forbids. Because `glab ssh-key
+add` prints a human confirmation and no machine-readable ID, the resource ID
+is resolved by a run-scoped inventory lookup performed immediately after
+registration, matching on the run's exact scoping string — never claimed as
+returned by the add call itself, and never used for anything other than
+learning the ID. Cleanup must delete only that recorded ID after
+re-confirming it still carries the run's exact scoping string; never select
+or delete by a broad inventory query. Run a final read-only inventory sweep
+that confirms zero entries carrying the current run's scoping string remain,
+and that the count of pre-existing (unscoped) keys is unchanged. Existing
+keys and any external-account action outside this protocol still require
+explicit confirmation. If GitLab authentication or the required `api` scope
+is unavailable, record the blocked evidence and stop; do not silently
+substitute a mock for the required real-account validation.
+
 ## Milestone Close
 
 After Phase 10, run cross-phase integration checks and the full test, lint, and

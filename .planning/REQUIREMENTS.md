@@ -324,13 +324,24 @@ These are first-class, enforced requirements — the user's core process ask.
   resolved by run-scoped inventory lookup, deleted by recorded ID after scope re-confirmation,
   and the final sweep found zero remaining entries.)*
 
-- [ ] **UP-04** (GitLab real-account validation): the same real-account disposable-key
+- [x] **UP-04** (GitLab real-account validation): the same real-account disposable-key
   protocol Phase 9 (Wave 8) proved for GitHub is proven against a real, authenticated
   GitLab account — creating, resolving, and deleting disposable keys via `glab`,
   confirming both the compiled `register-key` path and the engine's per-registration-
   title API against the live provider, with the same idempotent cleanup and final sweep
   guarantees. GitLab upload/delete logic is currently proven only against offline `glab`
   PATH shims (UP-01/UP-02/UP-03's evidence), never against a real account.
+  *(EXECUTED — compiled-binary real-account validation on GitLab account `casto.dev`,
+  run `gitid-e2e-20260831t124959-d72bde68`: the single disposable key was resolved by
+  run-scoped inventory lookup (id `21497184`), deleted by recorded ID after scope
+  re-confirmation, and the final sweep found zero remaining run-scoped entries with the
+  pre-existing key count unchanged (3 before, 3 after). This requirement's literal text
+  asks for a "per-registration-title API" proof separate from the compiled path — CONTEXT.md
+  D-02, the later and more specific locked decision, descopes that second phase: GitLab
+  has exactly one registration type (`RegistrationCombined`) and one delete namespace,
+  so there is no per-registration-title surface to prove separately from the single
+  compiled-binary run above. D-02 governs; UP-04 closes on this single-phase evidence.
+  See `09.1-02-SUMMARY.md`.)*
 
 ## N. TUI Shell & CLI Parity (SHELL)
 
@@ -627,7 +638,7 @@ row below records each one's **home** phase.
 | UP-01 | Phase 9 | Complete |
 | UP-02 | Phase 9 | Complete |
 | UP-03 | Phase 9 | Complete |
-| UP-04 | Phase 9.1 | Pending |
+| UP-04 | Phase 9.1 | Complete |
 | SHELL-01 | Phase 5 | Complete |
 | SHELL-02 | Phase 5 | Complete |
 | SHELL-03 | Phase 5 | Complete |
