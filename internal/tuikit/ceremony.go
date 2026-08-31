@@ -128,6 +128,14 @@ type ceremonyModel struct {
 	typed     textinput.Model
 	focus     ceremonyFocus
 	preview   ExactTextViewport
+	// hideDone opts a single render OUT of the receipt state's shared
+	// "Done (Enter)" label (D4, 260831-3a9). Defaults to false so every
+	// ceremony renders unchanged; the only caller that sets it is
+	// renderKeyCeremony, and only on a LOCAL copy, only while the D-04
+	// rotate delete-offer is live and unresolved (its own "Enter confirm"
+	// footer action is the one Enter affordance that should be visible in
+	// that window).
+	hideDone bool
 }
 
 // newCeremony builds a ceremony in state A. For destructive ceremonies the
@@ -354,7 +362,9 @@ func (c ceremonyModel) view(width int) string {
 		b.WriteString("\n")
 		b.WriteString(renderReceiptList("Wrote → ", c.cfg.Targets, receiptListMaxLines))
 		b.WriteString(renderReceiptList("Backed up → ", c.cfg.Backups, receiptListMaxLines))
-		b.WriteString("\n" + styleSelected.Render(" Done (Enter) "))
+		if !c.hideDone {
+			b.WriteString("\n" + styleSelected.Render(" Done (Enter) "))
+		}
 		return b.String()
 	}
 	if c.pending {

@@ -1414,3 +1414,123 @@ func TestNewKeyCloneRunsTheUploadSection(t *testing.T) {
 		t.Fatal("a new-key clone must dispatch the SAME eligibility probe the create wizard runs")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// D4 (260831-3a9): the live rotate delete-offer must show visible
+// navigate/confirm key affordances, and the shared ceremony's own
+// "Done (Enter)" label must be suppressed while it is live and unresolved
+// -- one unambiguous Enter at a time.
+// ---------------------------------------------------------------------------
+
+// TestRotateDeleteOfferLiveShowsChooseConfirmActions is D4 Test 1: while the
+// offer is live and unresolved, view()'s actions must contain both the
+// choose and confirm footer hints.
+func TestRotateDeleteOfferLiveShowsChooseConfirmActions(t *testing.T) {
+	a := atRotateDeleteOffer(t, stubBackend{})
+	rv := identModel(t, a).view(Seed(), minFrameWidth, minFrameHeight)
+	var haveChoose, haveConfirm bool
+	for _, act := range rv.actions {
+		if act.Key == "↑↓/Tab" && act.Label == "choose" {
+			haveChoose = true
+		}
+		if act.Key == "Enter" && act.Label == "confirm" {
+			haveConfirm = true
+		}
+	}
+	if !haveChoose || !haveConfirm {
+		t.Fatalf("actions = %v, want both {↑↓/Tab, choose} and {Enter, confirm} while the offer is live", rv.actions)
+	}
+}
+
+// TestRotateDeleteOfferLiveHidesDoneLabel is D4 Test 2: while the offer is
+// live and unresolved, the rendered frame must not contain "Done (Enter)"
+// -- there must be exactly one unambiguous Enter affordance (confirm),
+// never two competing ones.
+func TestRotateDeleteOfferLiveHidesDoneLabel(t *testing.T) {
+	a := atRotateDeleteOffer(t, stubBackend{})
+	m := identModel(t, a)
+	rendered := stripANSI(m.renderKeyCeremony(mustSelected(t, a)))
+	if strings.Contains(rendered, "Done (Enter)") {
+		t.Fatalf("rendered pane must not show Done (Enter) while the offer is live:\n%s", rendered)
+	}
+}
+
+// TestRotateDeleteOfferResolvedRestoresDoneLabel is D4 Test 3: after the
+// offer resolves (either answer), "Done (Enter)" must render again and the
+// choose/confirm actions must be gone.
+func TestRotateDeleteOfferResolvedRestoresDoneLabel(t *testing.T) {
+	a := atRotateDeleteOffer(t, stubBackend{})
+	a = pressAndRun(t, a, "enter") // default focus (leave) resolves the offer
+	m := identModel(t, a)
+	if !m.rotateDeleteResolved {
+		t.Fatal("setup: enter from the default focus must resolve the offer")
+	}
+	rendered := stripANSI(m.renderKeyCeremony(mustSelected(t, a)))
+	if !strings.Contains(rendered, "Done (Enter)") {
+		t.Fatalf("Done (Enter) must be visible again once the offer resolves:\n%s", rendered)
+	}
+	rv := m.view(Seed(), minFrameWidth, minFrameHeight)
+	for _, act := range rv.actions {
+		if act.Key == "↑↓/Tab" || (act.Key == "Enter" && act.Label == "confirm") {
+			t.Errorf("actions = %v, want the choose/confirm actions gone once the offer resolves", rv.actions)
+		}
+	}
+}
+
+// TestRotateDeleteOfferAbsentRendersDoneAsToday is D4 Test 4: a non-rotate
+// ceremony (repair mode), and a rotate ceremony whose offer is unavailable,
+// must both render "Done (Enter)" exactly as before this fix and add no
+// choose/confirm actions.
+func TestRotateDeleteOfferAbsentRendersDoneAsToday(t *testing.T) {
+	t.Run("repair-mode (non-rotate)", func(t *testing.T) {
+		var calls []string
+		sb := stubBackend{rotateDeleteCalls: &calls}
+		// clientB (index 6) is the key-missing fixture row -> repair mode.
+		a := openKeyCeremonyAtReviewForIdentity(t, sb, 6)
+		a, uploadCmd := confirmKeyCeremony(t, a)
+		if uploadCmd != nil {
+			model, _ := a.Update(uploadCmd())
+			a = model.(App)
+		}
+		m := identModel(t, a)
+		rendered := stripANSI(m.renderKeyCeremony(mustSelected(t, a)))
+		if !strings.Contains(rendered, "Done (Enter)") {
+			t.Fatalf("repair mode must render Done (Enter) as today:\n%s", rendered)
+		}
+		rv := m.view(Seed(), minFrameWidth, minFrameHeight)
+		for _, act := range rv.actions {
+			if act.Key == "↑↓/Tab" || (act.Key == "Enter" && act.Label == "confirm") {
+				t.Errorf("actions = %v, want no choose/confirm actions in repair mode", rv.actions)
+			}
+		}
+	})
+	t.Run("rotate, offer unavailable", func(t *testing.T) {
+		sb := stubBackend{rotateDeleteOfferFn: func(name string) tea.Cmd {
+			return func() tea.Msg {
+				return RotateDeleteOfferMsg{Name: name, View: RotateDeleteOfferView{Unavailable: "could not read the existing key inventory"}}
+			}
+		}}
+		a := openKeyCeremonyAtReview(t, sb)
+		a, uploadCmd := confirmKeyCeremony(t, a)
+		model, offerCmd := a.Update(uploadCmd())
+		a = model.(App)
+		if offerCmd != nil {
+			model, _ = a.Update(offerCmd())
+			a = model.(App)
+		}
+		m := identModel(t, a)
+		if m.rotateDeleteOffer.Available {
+			t.Fatal("setup: offer must be unavailable")
+		}
+		rendered := stripANSI(m.renderKeyCeremony(mustSelected(t, a)))
+		if !strings.Contains(rendered, "Done (Enter)") {
+			t.Fatalf("an unavailable offer must render Done (Enter) as today:\n%s", rendered)
+		}
+		rv := m.view(Seed(), minFrameWidth, minFrameHeight)
+		for _, act := range rv.actions {
+			if act.Key == "↑↓/Tab" || (act.Key == "Enter" && act.Label == "confirm") {
+				t.Errorf("actions = %v, want no choose/confirm actions when the offer is unavailable", rv.actions)
+			}
+		}
+	})
+}

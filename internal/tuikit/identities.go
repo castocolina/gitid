@@ -2869,7 +2869,7 @@ func (m identitiesModel) handleKeyCeremonyKey(msg tea.KeyMsg, s DemoState) keyRe
 	// own handleKey treats every key but Enter as inert and Enter as
 	// closing the ceremony. Without this interception, a stray Enter meant
 	// to activate the choice row would instead close the whole ceremony.
-	if m.keyCeremonyMode == KeyCeremonyModeRotate && m.rotateDeleteOffer.Available && !m.rotateDeleteResolved {
+	if m.rotateDeleteOfferLive() {
 		switch msg.String() {
 		case "up", "down", "left", "right", "tab", "shift+tab":
 			m.rotateDeleteChoiceFocus = 1 - m.rotateDeleteChoiceFocus
@@ -3024,7 +3024,19 @@ func (m identitiesModel) renderKeyCeremony(sel DemoIdentity) string {
 			renderStageNotTested(m.keyCeremonyStage1, deleteChoiceNoteWidth) +
 			" " + styleSelected.Render(" Run stage 2 (Enter) ")
 	default:
-		body := m.keyCeremony.view(deleteChoiceNoteWidth)
+		// D4 (260831-3a9): suppress the shared ceremonyModel's own
+		// "Done (Enter)" label while the rotate delete-offer is live and
+		// unresolved — the offer's own "Enter confirm" footer action
+		// (view()'s paneKeyCeremony case) is the ONE Enter affordance that
+		// should be visible in that window; two competing Enters is the
+		// exact defect this closes. Mutates a LOCAL copy of m.keyCeremony,
+		// never m itself, so every other ceremony (and this one once the
+		// offer resolves) renders byte-identically — ceremony_test.go's
+		// existing "Done (Enter)" assertions for every OTHER ceremony stay
+		// unmodified and unaffected.
+		kc := m.keyCeremony
+		kc.hideDone = m.rotateDeleteOfferLive()
+		body := kc.view(deleteChoiceNoteWidth)
 		// Task 2 (D-03): the upload beat renders ALONGSIDE the result screen
 		// the user is already looking at, never in place of it — upload
 		// never gates the ceremony (09-06-PLAN.md). uploadRunHasContent is
@@ -3108,6 +3120,18 @@ func (m identitiesModel) renderKeyCeremony(sel DemoIdentity) string {
 		}
 		return body + "\n" + tail.String()
 	}
+}
+
+// rotateDeleteOfferLive reports whether the D-04 rotate delete-offer is
+// currently live and unresolved — it OWNS the key input in this window
+// (handleKeyCeremonyKey), demands a visible navigate/confirm affordance
+// (view()'s paneKeyCeremony footer, D4 260831-3a9), and suppresses the
+// shared ceremonyModel's "Done (Enter)" label so there is exactly one
+// unambiguous Enter affordance on screen at a time (renderKeyCeremony).
+// Extracted to one predicate, used in all three places, so the condition is
+// never written a second (drifting) time.
+func (m identitiesModel) rotateDeleteOfferLive() bool {
+	return m.keyCeremonyMode == KeyCeremonyModeRotate && m.rotateDeleteOffer.Available && !m.rotateDeleteResolved
 }
 
 // renderRotateDeleteOffer renders D-04's interactive old-key delete offer:
@@ -5505,6 +5529,18 @@ func (m identitiesModel) view(s DemoState, width, height int) screenView {
 		// unverified change this round does not cover.
 		pane = fitPane(lipgloss.NewStyle().Width(detailWidth).Render(m.renderKeyCeremony(sel)), frameBodyRows(height))
 		crumbs = []string{sel.Name, "Key"}
+		if m.rotateDeleteOfferLive() {
+			// D4 (260831-3a9): the SAME predicate that gates the key
+			// interception in handleKeyCeremonyKey and the hideDone flag
+			// in renderKeyCeremony — see rotateDeleteOfferLive's doc
+			// comment. Contextual footer chrome, costs zero body rows
+			// (ceremonyFooterActions' own doc comment makes the same point
+			// for the shared write-ceremony footer), which matters here
+			// since this pane already carries a documented overflow
+			// backstop. "↑↓/Tab" matches this file's established token for
+			// a two-option choice row (paneDeleteScope's own hint).
+			actions = []FooterAction{{Key: "↑↓/Tab", Label: "choose"}, {Key: "Enter", Label: "confirm"}}
+		}
 		status = "Esc returns to the identity detail without writing anything."
 	case paneRegisterKey:
 		pane = m.renderRegisterKey(sel, detailWidth)
