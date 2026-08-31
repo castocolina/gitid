@@ -6,10 +6,10 @@ current_phase: 09
 current_phase_name: Upload / Credentials Assist
 status: planning
 stopped_at: Phase 08 complete, ready to plan Phase 09
-last_updated: "2026-08-31T01:01:15.923Z"
+last_updated: "2026-08-31T07:12:33.806Z"
 last_activity: 2026-08-30
 last_activity_desc: Phase 08 complete, transitioned to Phase 09
-state_head: d2bb287208bdb300a19160883616f11369b329b7
+state_head: 0ad0ed7547fc9efd7265240e1645308bb45ef152
 progress:
   total_phases: 15
   completed_phases: 8
@@ -264,6 +264,7 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260705-f9t | Add `make demo-web` target: relaunch the web mockup Vite dev server on dedicated port 45173 and open the browser | 2026-07-05 | 9ecfbb4 | [260705-f9t-add-make-target-to-relaunch-the-web-mock](./quick/260705-f9t-add-make-target-to-relaunch-the-web-mock/) |
+| 260831-3a9 | Fix 5 UX-critique defects (D1-D5) in Phase 9 upload/register-key/rotate-delete screens; re-promote stale PTY frames; close REVIEW.md's parity-critique obligation | 2026-08-31 | 0ad0ed7 | [260831-3a9-fix-5-ux-critique-defects-d1-d5-in-phase](./quick/260831-3a9-fix-5-ux-critique-defects-d1-d5-in-phase/) |
 
 ## Deferred Items
 
