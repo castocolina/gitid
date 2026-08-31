@@ -477,10 +477,16 @@ Plans:
 **Requirements**: GIGN-01
 **Success Criteria** (what must be TRUE):
 
-  1. A TUI surface lists a curated set of common ignore patterns (tmp/venv directories, `.env`/`.env.*` with `!.env.example` negation, and similar common patterns) and lets the user review and toggle each before writing to the global ignore file (`core.excludesFile`). (GIGN-01)
+  1. A TUI surface pre-loads a curated set of common ignore patterns (tmp/venv directories, `.env`/`.env.*` with `!.env.example` negation, and similar common patterns) and lets the user review and freely edit them — with a Reset to defaults action — before writing to the global ignore file (`core.excludesFile`). (GIGN-01) — *the original "toggle each" wording is superseded by 09.2-CONTEXT.md D-02/D-03: the user chose a pre-loaded, freely editable text block over per-pattern toggle rows, which also removes any enforced coupling between the `.env` family lines.*
   2. Nothing is written without explicit review/confirmation, matching every other gitid write path's discipline. (GIGN-01)
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+
+- [ ] 09.2-01-PLAN.md — (wave 1) tracer: a 6th top-level nav entry that reads the managed `~/.gitignore_global` block and carries it through the shared review ceremony to a backed-up write, wired in both binaries and proven over a real PTY (GIGN-01)
+- [ ] 09.2-02-PLAN.md — (wave 2) extend the one curated catalog to the venv/env/`!.env.example` seed under comment-header groups, and make doctor plus its excludesfile fix tolerate — and never revert — a user-edited block (GIGN-01)
+- [ ] 09.2-03-PLAN.md — (wave 3) replace the read-only body with the pre-loaded editable text area plus Reset to defaults, prove edit→review→write over a real PTY, capture the phase frames, and close GIGN-01 (GIGN-01)
 
 ### Phase 9.3: Release CI/CD + Installer
 
