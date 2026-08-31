@@ -800,6 +800,96 @@ func TestKeyCeremonyOverflowBackstopStaysWithinFrameBudget(t *testing.T) {
 	}
 }
 
+// shellQuoteForTest mirrors internal/uploader's unexported shellQuote
+// (internal/tuikit cannot import internal/uploader -- the no-backend-import
+// rule) closely enough to build realistic previewLine-shaped command
+// strings for extractUploadedTitle's test table below: quote only when the
+// argument contains a shell-special character, and escape an embedded
+// single quote as quote-backslash-quote-quote.
+func shellQuoteForTest(s string) string {
+	if s != "" && !strings.ContainsAny(s, " \t\"'\\$`") {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// TestExtractUploadedTitle is the WR-03 regression (review iteration 4):
+// extractUploadedTitle used to take the text between the FIRST pair of
+// single quotes in the rendered command line, which is wrong whenever an
+// EARLIER argument is quoted too -- buildArgs places pubPath (and the tool
+// path) BEFORE --title/-t, and shellQuote quotes ANY argument containing a
+// shell-special character, not just the title. This asserts the fix parses
+// by FLAG POSITION (the operand immediately following --title or -t)
+// instead, across every shape the review named plus the trailing
+// --type/--usage-type flag that follows the title in the real argv (a
+// naive whitespace-split of "everything after --title" would swallow that
+// trailing flag into the returned title).
+func TestExtractUploadedTitle(t *testing.T) {
+	title := "gitid: personal @ demo-machine"
+	quotedTitle := shellQuoteForTest(title)
+
+	cases := []struct {
+		name    string
+		command string
+		want    string
+	}{
+		{
+			name: "plain gh command, no earlier quoting",
+			command: "/usr/local/bin/gh ssh-key add " + shellQuoteForTest("~/.ssh/id_ed25519_personal.pub") +
+				" --title " + quotedTitle + " --type authentication",
+			want: title,
+		},
+		{
+			name: "plain glab command, -t flag",
+			command: "/usr/local/bin/glab ssh-key add " + shellQuoteForTest("~/.ssh/id_ed25519_personal.pub") +
+				" -t " + quotedTitle + " --usage-type auth_and_signing",
+			want: title,
+		},
+		{
+			// A $HOME containing a space -- a routine macOS/Windows account
+			// name -- means shellQuote quotes the pub path TOO, and it
+			// appears before --title. A quote-position parser returns the
+			// pub path instead of the title; this must still return the
+			// title.
+			name: "spaced $HOME quotes the pub path before --title",
+			command: "/usr/local/bin/gh ssh-key add " + shellQuoteForTest("/Users/John Smith/.ssh/id_ed25519_work.pub") +
+				" --title " + quotedTitle + " --type authentication",
+			want: title,
+		},
+		{
+			// An identity name containing a single quote makes shellQuote
+			// escape it as '\''. A quote-position parser (SplitN on "'")
+			// returns the truncated prefix before the FIRST escaped quote;
+			// this must return the full, correctly unescaped title.
+			name: "identity name with an apostrophe",
+			command: "/usr/local/bin/gh ssh-key add " + shellQuoteForTest("~/.ssh/id_ed25519_o'brien.pub") +
+				" --title " + shellQuoteForTest("gitid: o'brien @ demo-machine") + " --type authentication",
+			want: "gitid: o'brien @ demo-machine",
+		},
+		{
+			// A toolPath containing a space (a Homebrew prefix under a
+			// spaced HOME) is ALSO quoted, and previewLine emits it FIRST
+			// (before every argv element, including the pub path).
+			name: "spaced toolPath quoted before every other argument",
+			command: shellQuoteForTest("/Users/John Smith/.local/bin/gh") + " ssh-key add " +
+				shellQuoteForTest("~/.ssh/id_ed25519_personal.pub") + " --title " + quotedTitle + " --type authentication",
+			want: title,
+		},
+		{
+			name:    "no --title/-t present at all",
+			command: "/usr/local/bin/gh ssh-key add ~/.ssh/id_ed25519_personal.pub --type authentication",
+			want:    "",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := extractUploadedTitle(c.command); got != c.want {
+				t.Errorf("extractUploadedTitle(%q) = %q, want %q", c.command, got, c.want)
+			}
+		})
+	}
+}
+
 func mustSelected(t *testing.T, a App) DemoIdentity {
 	t.Helper()
 	m := identModel(t, a)

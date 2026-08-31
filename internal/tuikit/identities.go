@@ -4657,17 +4657,59 @@ func uploadSucceeded(run UploadRunView) bool {
 
 // extractUploadedTitle scans a rendered "gh/glab ... ssh-key add ... --title
 // '<title>' ..." (or "-t '<title>'") command line for the D-07 title gitid
-// actually registered the key under. It relies on the title being the ONLY
-// quoted argument previewLine/shellQuote produce for this argv shape (the
-// D-07 title always contains spaces; the key path and flags normally do
-// not), so the segment between the first pair of single quotes is the
-// title. Returns "" if no quoted segment is found, rather than guessing.
+// actually registered the key under.
+//
+// WR-03 (review iteration 4): this used to take the text between the FIRST
+// pair of single quotes, on the assumption that the title is the ONLY
+// quoted argument. That assumption does not hold: buildArgs places pubPath
+// (and previewLine's own toolPath) BEFORE --title/-t, and shellQuote quotes
+// ANY argument containing a shell-special character -- a $HOME with a space
+// (a routine macOS/Windows account name) or a spaced Homebrew prefix both
+// quote an EARLIER argument, so a quote-position parser reports THAT
+// argument as the title instead. This parses by FLAG POSITION (the operand
+// immediately following --title or -t) instead, which is unaffected by
+// what came before it, and correctly unescapes shellQuote's embedded-quote
+// escape (a single quote, backslash, single quote, single quote) rather
+// than truncating at the first escaped quote. Returns "" if no --title/-t
+// operand is found, rather than guessing.
 func extractUploadedTitle(command string) string {
-	parts := strings.SplitN(command, "'", 3)
-	if len(parts) < 3 {
-		return ""
+	for _, flag := range []string{"--title ", "-t "} {
+		idx := strings.Index(command, flag)
+		if idx < 0 {
+			continue
+		}
+		rest := command[idx+len(flag):]
+		if rest == "" {
+			continue
+		}
+		if rest[0] != '\'' {
+			// Unquoted operand (shellQuote left it bare -- no shell-special
+			// characters): the next whitespace-delimited field is the
+			// whole title.
+			if sp := strings.IndexByte(rest, ' '); sp >= 0 {
+				return rest[:sp]
+			}
+			return rest
+		}
+		// Quoted operand: scan for the matching closing quote, honoring
+		// shellQuote's embedded-quote escape (quote, backslash, quote,
+		// quote) rather than stopping at the first quote found.
+		var b strings.Builder
+		for i := 1; i < len(rest); i++ {
+			if rest[i] != '\'' {
+				b.WriteByte(rest[i])
+				continue
+			}
+			if strings.HasPrefix(rest[i:], `'\''`) {
+				b.WriteByte('\'')
+				i += 3
+				continue
+			}
+			return b.String()
+		}
+		return b.String()
 	}
-	return parts[1]
+	return ""
 }
 
 // wizardAbandonUploadNote is WR-13's cheap mitigation (review iteration 3):
