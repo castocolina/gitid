@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -138,6 +139,17 @@ func TestPrintUploadOutcomeRendersEachSection(t *testing.T) {
 				{Label: tuikit.UploadRegistrationLabelSigning, Outcome: tuikit.UploadRowFailed, Reason: "insufficient scope"},
 			}},
 			want: []string{"Authentication key registered", "Signing key registration failed: insufficient scope"},
+		},
+		{
+			// CR-01 (review iteration 5): D-17's post-upload confirmation
+			// reason must render for an Uploaded/AlreadyPresent row, not be
+			// silently discarded — printUploadOutcome used to switch on
+			// Outcome and read Reason only in the UploadRowFailed case.
+			name: "accepted but not yet confirmed",
+			view: tuikit.UploadRunView{ProviderName: "GitHub", Rows: []tuikit.UploadResultRow{
+				{Label: tuikit.UploadRegistrationLabelAuth, Outcome: tuikit.UploadRowUploaded, Reason: fmt.Sprintf(tuikit.UploadUnconfirmedReasonFmt, "github.com")},
+			}},
+			want: []string{"Authentication key registered", fmt.Sprintf(tuikit.UploadUnconfirmedReasonFmt, "github.com")},
 		},
 		{
 			name: "already-complete",

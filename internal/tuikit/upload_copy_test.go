@@ -25,6 +25,7 @@ func TestFrozenUploadCopy(t *testing.T) {
 		{"UploadResultOKFmt", UploadResultOKFmt, "✓ %s key registered"},
 		{"UploadResultSkippedFmt", UploadResultSkippedFmt, "✓ %s key already registered (skipped)"},
 		{"UploadResultFailedFmt", UploadResultFailedFmt, "✗ %s key registration failed: %s"},
+		{"UploadUnconfirmedReasonFmt", UploadUnconfirmedReasonFmt, "accepted but not yet visible in %s's inventory — this can lag briefly after upload; re-run gitid's test to confirm"},
 		{"UploadScopeRemediationAuthFmt", UploadScopeRemediationAuthFmt, "insufficient scope — run \"gh auth refresh -h %s -s admin:public_key\", then retry from the Identity Manager"},
 		{"UploadScopeRemediationSigningFmt", UploadScopeRemediationSigningFmt, "insufficient scope — run \"gh auth refresh -h %s -s admin:ssh_signing_key\", then retry from the Identity Manager"},
 		{"UploadCrossAccountConflict", UploadCrossAccountConflict, "GitLab rejected this key — it is already registered to a DIFFERENT account. If that's expected, remove it there first; otherwise check \"glab auth status\"."},
@@ -47,7 +48,7 @@ func TestFrozenUploadCopy(t *testing.T) {
 		{"RegisterKeyModalHeadingFmt", RegisterKeyModalHeadingFmt, "Register %s's key with %s"},
 	}
 
-	const wantCount = 27
+	const wantCount = 28
 	if len(cases) != wantCount {
 		t.Fatalf("TestFrozenUploadCopy covers %d constants, want %d — a row was forgotten or double-counted", len(cases), wantCount)
 	}

@@ -299,8 +299,18 @@ func printUploadOutcome(w io.Writer, view tuikit.UploadRunView) {
 		switch row.Outcome {
 		case tuikit.UploadRowUploaded:
 			fmt.Fprintln(w, fmt.Sprintf(tuikit.UploadResultOKFmt, row.Label)) //nolint:errcheck // best-effort stdout
+			// CR-01: D-17's post-upload confirmation reason (see the
+			// mirrored fix in internal/tuikit/identities.go's
+			// renderUploadSection) — never a failure, so it renders on its
+			// own line below the row's success line, not in place of it.
+			if row.Reason != "" {
+				fmt.Fprintln(w, "  "+row.Reason) //nolint:errcheck // best-effort stdout
+			}
 		case tuikit.UploadRowAlreadyPresent:
 			fmt.Fprintln(w, fmt.Sprintf(tuikit.UploadResultSkippedFmt, row.Label)) //nolint:errcheck // best-effort stdout
+			if row.Reason != "" {
+				fmt.Fprintln(w, "  "+row.Reason) //nolint:errcheck // best-effort stdout
+			}
 		case tuikit.UploadRowFailed:
 			fmt.Fprintln(w, fmt.Sprintf(tuikit.UploadResultFailedFmt, row.Label, row.Reason)) //nolint:errcheck // best-effort stdout
 		}
@@ -323,15 +333,6 @@ const (
 	uploadPhaseDedupe       = "dedupe"
 	uploadPhaseConfirmation = "confirmation"
 )
-
-// uploadUnconfirmedReasonFmt marks a row whose registration the provider
-// accepted (Uploaded/AlreadyPresent) but whose post-upload confirmation
-// read still could not see after the one bounded retry (D-17). This is
-// NOT a failure: turning it into one would misreport a successful upload
-// as rejected. It stays informational text on the SAME UploadRowUploaded/
-// UploadRowAlreadyPresent outcome — no fourth UploadRowOutcome value exists
-// for this case.
-const uploadUnconfirmedReasonFmt = "accepted but not yet visible in %s's inventory — this can lag briefly after upload; re-run gitid's test to confirm"
 
 // confirmUpload implements D-17's post-upload verification: one inventory
 // read to confirm every registration this run reported as Uploaded or
@@ -396,7 +397,7 @@ func (b *realBackend) confirmUpload(tool uploader.Tool, toolPath, pubLine, provi
 	}
 	for registration, idx := range toConfirm {
 		if !present[registration] {
-			rows[idx].Reason = fmt.Sprintf(uploadUnconfirmedReasonFmt, providerHost)
+			rows[idx].Reason = fmt.Sprintf(tuikit.UploadUnconfirmedReasonFmt, providerHost)
 		}
 	}
 	return rows, false

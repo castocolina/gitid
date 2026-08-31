@@ -689,8 +689,13 @@ const (
 )
 
 // UploadResultRow is one registration's shown-and-run record: the label,
-// the exact command that was run (shown==run, UP-02), the outcome, and — on
-// failure — the classified reason text.
+// the exact command that was run (shown==run, UP-02), the outcome, and the
+// reason text — on a UploadRowFailed outcome, the classified failure
+// reason; on UploadRowUploaded/UploadRowAlreadyPresent, an OPTIONAL D-17
+// post-upload confirmation note (UploadUnconfirmedReasonFmt) set when the
+// registration was accepted but gitid's own re-check still could not see it
+// (CR-01, review iteration 5) — never a failure, so it is rendered as an
+// extra continuation row, not in place of the row's own success line.
 type UploadResultRow struct {
 	Registration UploadRegistration
 	Label        string

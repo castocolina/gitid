@@ -471,6 +471,47 @@ func TestUploadResultRowsRenderGlyphAndWord(t *testing.T) {
 	}
 }
 
+// TestUploadResultRowsRenderConfirmationReason is the CR-01 regression
+// (review iteration 5): D-17's post-upload confirmation writes
+// UploadUnconfirmedReasonFmt onto a row's Reason field even when its
+// Outcome stays UploadRowUploaded/UploadRowAlreadyPresent (never a failure —
+// see the constant's own doc comment), but renderUploadSection used to read
+// Reason only inside the UploadRowFailed branch. A registration gitid's own
+// re-check could not confirm rendered as a bare "✓ … key registered" with
+// no indication anything was wrong. Both non-failed outcomes must now render
+// the reason as an extra, visibly-styled continuation row.
+func TestUploadResultRowsRenderConfirmationReason(t *testing.T) {
+	unconfirmed := fmt.Sprintf(UploadUnconfirmedReasonFmt, "github.com")
+	run := UploadRunView{Rows: []UploadResultRow{
+		{Label: UploadRegistrationLabelAuth, Outcome: UploadRowUploaded, Reason: unconfirmed},
+		{Label: UploadRegistrationLabelSigning, Outcome: UploadRowAlreadyPresent, Reason: unconfirmed},
+	}}
+	got := stripANSI(renderUploadSection(run, "GitHub", 100))
+	if n := strings.Count(got, unconfirmed); n != 2 {
+		t.Fatalf("renderUploadSection output contains the unconfirmed reason %d times, want 2 (once per affected row):\n%s", n, got)
+	}
+	if !strings.Contains(got, "✓ "+UploadRegistrationLabelAuth+" key registered") {
+		t.Errorf("renderUploadSection output = %q, want the Uploaded row's own success line still present", got)
+	}
+	if !strings.Contains(got, "✓ "+UploadRegistrationLabelSigning+" key already registered (skipped)") {
+		t.Errorf("renderUploadSection output = %q, want the AlreadyPresent row's own success line still present", got)
+	}
+}
+
+// TestUploadResultRowsOmitReasonRowWhenConfirmed proves the new continuation
+// row is conditional on Reason being non-empty — the common confirmed case
+// (D-17's second read DID see the key) must not grow an extra blank/faint
+// row for every successful registration.
+func TestUploadResultRowsOmitReasonRowWhenConfirmed(t *testing.T) {
+	run := UploadRunView{Rows: []UploadResultRow{
+		{Label: UploadRegistrationLabelAuth, Outcome: UploadRowUploaded},
+	}}
+	got := renderUploadSection(run, "GitHub", 100)
+	if lines := strings.Count(got, "\n"); lines != 1 {
+		t.Errorf("renderUploadSection(confirmed, no Reason) = %d lines, want exactly 1 (no continuation row)", lines)
+	}
+}
+
 // TestManualFallbackIsByteIdenticalToInstructions compares the rendered
 // manual-fallback block against upload.Instructions output, asserting exact
 // equality after stripping the heading — UP-02/UP-03's shown==run contract.

@@ -4766,8 +4766,22 @@ func renderUploadSection(run UploadRunView, providerName string, width int) stri
 		switch row.Outcome {
 		case UploadRowUploaded:
 			b.WriteString(" " + styleHealthy.Render(fmt.Sprintf(UploadResultOKFmt, row.Label)) + "\n")
+			// CR-01 (review iteration 5): D-17's post-upload confirmation
+			// stamps Reason on a successful row too (never a failure — see
+			// UploadUnconfirmedReasonFmt's own doc comment) when its own
+			// re-check still could not see the registration after the one
+			// bounded retry. Rendering it as a faint continuation row is
+			// what actually surfaces that result — the Reason field used to
+			// be read only in the UploadRowFailed branch, so this outcome
+			// silently discarded it.
+			if row.Reason != "" {
+				b.WriteString("   " + styleWarning.Render(row.Reason) + "\n")
+			}
 		case UploadRowAlreadyPresent:
 			b.WriteString(" " + styleHealthy.Render(fmt.Sprintf(UploadResultSkippedFmt, row.Label)) + "\n")
+			if row.Reason != "" {
+				b.WriteString("   " + styleWarning.Render(row.Reason) + "\n")
+			}
 		case UploadRowFailed:
 			b.WriteString(" " + styleError.Render(fmt.Sprintf(UploadResultFailedFmt, row.Label, row.Reason)) + "\n")
 		}

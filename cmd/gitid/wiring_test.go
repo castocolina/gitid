@@ -5872,6 +5872,31 @@ func TestPostUploadConfirmationRetriesExactlyOnce(t *testing.T) {
 	}
 }
 
+// TestPostUploadConfirmationUnconfirmedReasonIsActuallyRendered is the CR-01
+// regression (review iteration 5): the previous coverage
+// (TestPostUploadConfirmationRetriesExactlyOnce) only asserted the reason
+// landed on the STRUCT FIELD, never that either renderer actually shows it —
+// exactly the gap that let D-17's whole confirmation result go unrendered
+// for three prior review rounds. This drives the SAME still-missing-after-
+// retry scenario through printUploadOutcome (the CLI renderer) and asserts
+// the rendered TEXT — not just row.Reason — contains the phrase.
+func TestPostUploadConfirmationUnconfirmedReasonIsActuallyRendered(t *testing.T) {
+	b, _ := phaseAwareUploadBackend(t, 2, false)
+	_, run := waitForRunUploadResult(t, b.RunUpload(runUploadSpec("acme")))
+
+	var buf bytes.Buffer
+	printUploadOutcome(&buf, run.View)
+	rendered := buf.String()
+	if !strings.Contains(rendered, "accepted but not yet visible") {
+		t.Fatalf("printUploadOutcome output does not contain the unconfirmed-reason phrase, want it rendered (not just stamped on the struct field):\n%s", rendered)
+	}
+	// The row's own success line must still be present alongside the reason
+	// — this is informational text on a SUCCESSFUL outcome, never a failure.
+	if !strings.Contains(rendered, "key registered") {
+		t.Errorf("printUploadOutcome output = %q, want the row's own success line still present", rendered)
+	}
+}
+
 // TestPostUploadConfirmationSucceedsOnFirstRead proves the happy path:
 // exactly 1 confirmation-phase read, exactly 1 dedupe-phase read, and no
 // row carries an unconfirmed reason.

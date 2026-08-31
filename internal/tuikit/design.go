@@ -602,6 +602,21 @@ const (
 	// conflict, or the raw trimmed CLI output as last resort).
 	// 09-UI-SPEC.md Copywriting Contract row `UploadResultFailed`.
 	UploadResultFailedFmt = "✗ %s key registration failed: %s"
+	// UploadUnconfirmedReasonFmt is D-17's post-upload confirmation note
+	// (CR-01, review iteration 5): marks a row whose registration the
+	// provider ACCEPTED (Uploaded/AlreadyPresent) but whose post-upload
+	// confirmation read still could not see after the one bounded retry.
+	// This is NOT a failure — turning it into one would misreport a
+	// successful upload as rejected — so it renders as an extra faint
+	// continuation row under the row's own UploadResultOKFmt/
+	// UploadResultSkippedFmt line, never in place of it. Originally a
+	// cmd/gitid-local constant that neither renderer ever read; moved here
+	// and wired into both renderUploadSection (TUI) and printUploadOutcome
+	// (CLI) as part of the CR-01 fix so the "shown == run" contract covers
+	// it (upload_copy_test.go). Not in 09-UI-SPEC.md's original Copywriting
+	// Contract table — added by this fix, same precedent as
+	// UploadNotAuthenticatedFmt above.
+	UploadUnconfirmedReasonFmt = "accepted but not yet visible in %s's inventory — this can lag briefly after upload; re-run gitid's test to confirm"
 	// UploadScopeRemediationAuthFmt is the D-14 scope-error remediation for
 	// the authentication-key registration. 09-UI-SPEC.md Copywriting
 	// Contract row `UploadScopeRemediationAuth`.
