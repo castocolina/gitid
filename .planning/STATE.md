@@ -4,12 +4,12 @@ milestone: v1.0
 milestone_name: TUI-First Redesign
 current_phase: 09.1
 current_phase_name: GitLab Real-Account Validation
-status: planning
+status: executing
 stopped_at: Phase 9 complete, ready to plan Phase 09.1
-last_updated: "2026-08-31T07:25:30.306Z"
+last_updated: "2026-08-31T11:31:46.676Z"
 last_activity: 2026-08-31
-last_activity_desc: Phase 9 complete, transitioned to Phase 09.1
-state_head: 55f1f5fd05cb9fbc0e0417ef284a22e85070f238
+last_activity_desc: Phase 09.1 execution started
+state_head: 1ebc916e753dc4e301c59a5f46ebc4326ad496c2
 progress:
   total_phases: 15
   completed_phases: 9
@@ -25,13 +25,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** Managing a Git identity produces coordinated, coherent SSH + Git artifacts that are proven to authenticate and resolve correctly (`ssh -G`) before any file is written, and existing hand-written config is never corrupted.
-**Current focus:** Phase 05 — Identity Manager
+**Current focus:** Phase 09.1 — GitLab Real-Account Validation
 
 ## Current Position
 
-Phase: 09.1 — GitLab Real-Account Validation
-Status: Ready to plan
-Last activity: 2026-08-31 — Phase 9 complete, transitioned to Phase 09.1
+Phase: 09.1 (GitLab Real-Account Validation) — EXECUTING
+Status: Executing Phase 09.1
+Last activity: 2026-08-31 — Phase 09.1 execution started
 
 ### Phase 8 (COMPLETE) — historical record
 
