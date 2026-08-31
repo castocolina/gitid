@@ -2310,6 +2310,15 @@ func (m identitiesModel) handleMsg(msg tea.Msg, s DemoState) keyResult {
 			// the delete was dispatched) so a retry deletes the SAME
 			// reviewed target without re-resolving it. rotateDeleteResolved
 			// stays false: the choice row remains actionable on "delete".
+			//
+			// WR-09: narrow rotateDeleteConfirmedID to commit.RemainingKeyID
+			// -- the candidates that did NOT delete successfully. Re-sending
+			// an already-deleted candidate on retry gets a permanent 404
+			// from the provider, so without this the retry could never
+			// succeed even once every candidate is genuinely gone.
+			if commit.RemainingKeyID != "" {
+				m.rotateDeleteConfirmedID = commit.RemainingKeyID
+			}
 			m.rotateDeleteResult = "✗ " + commit.Err + " — press Enter on Delete to retry."
 			return keyResult{model: m}
 		}

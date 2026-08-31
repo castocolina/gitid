@@ -6365,3 +6365,74 @@ func TestCommitRotateDeleteOldKeyReportsPartialFailure(t *testing.T) {
 		t.Fatal("a partial failure must not report success (empty Err) — the signing registration is still live")
 	}
 }
+
+// TestCommitRotateDeleteOldKeyRemainingKeyIDDropsSucceededCandidates is the
+// WR-09 (review iteration 3) regression: a retry after a partial delete must
+// not re-send a candidate that already succeeded. gh api -X DELETE on an
+// already-gone resource returns 404, so re-sending the full original set
+// makes the retry fail permanently even once the goal state (every
+// candidate gone) is genuinely reached. RemainingKeyID must decode to ONLY
+// the candidate that failed (108, signing) -- never 42 (auth), which this
+// fake RunCmd always accepts.
+func TestCommitRotateDeleteOldKeyRemainingKeyIDDropsSucceededCandidates(t *testing.T) {
+	home := t.TempDir()
+	b := seedRotateDeleteFixture(t, home)
+	b.uploaderDeps = uploader.Deps{
+		LookPath: func(name string) (string, error) { return "/fake/" + name, nil },
+		RunCmd: func(name string, args ...string) (string, int, error) {
+			argv := strings.Join(append([]string{name}, args...), " ")
+			if strings.Contains(argv, "user/ssh_signing_keys/108") {
+				return "not found", 1, fmt.Errorf("exit 1")
+			}
+			return "", 0, nil
+		},
+	}
+	encoded, eerr := encodeDeleteCandidates([]uploader.ExistingKey{
+		{ID: "42", Registration: uploader.RegistrationAuthentication},
+		{ID: "108", Registration: uploader.RegistrationSigning},
+	})
+	if eerr != nil {
+		t.Fatalf("setup: encodeDeleteCandidates: %v", eerr)
+	}
+
+	msg, ok := b.CommitRotateDeleteOldKey("personal", encoded)().(tuikit.RotateDeleteCommitMsg)
+	if !ok {
+		t.Fatalf("delivered wrong message type")
+	}
+	if msg.Err == "" {
+		t.Fatal("setup: want a partial failure")
+	}
+	if msg.RemainingKeyID == "" {
+		t.Fatal("RemainingKeyID must be set on a partial failure")
+	}
+	remaining, derr := decodeDeleteCandidates(msg.RemainingKeyID)
+	if derr != nil {
+		t.Fatalf("RemainingKeyID must decode cleanly: %v", derr)
+	}
+	if len(remaining) != 1 || remaining[0].ID != "108" || remaining[0].Registration != uploader.RegistrationSigning {
+		t.Fatalf("remaining = %+v, want exactly the failed signing candidate (108), never the succeeded auth candidate (42)", remaining)
+	}
+
+	// A retry using ONLY RemainingKeyID must re-attempt just the failed
+	// candidate — never re-send 42, which already succeeded.
+	var retryCalls []string
+	b.uploaderDeps.RunCmd = func(name string, args ...string) (string, int, error) {
+		retryCalls = append(retryCalls, strings.Join(append([]string{name}, args...), " "))
+		return "", 0, nil
+	}
+	retryMsg, ok := b.CommitRotateDeleteOldKey("personal", msg.RemainingKeyID)().(tuikit.RotateDeleteCommitMsg)
+	if !ok {
+		t.Fatalf("delivered wrong message type on retry")
+	}
+	if retryMsg.Err != "" {
+		t.Fatalf("retry with the narrowed candidate set failed: %s", retryMsg.Err)
+	}
+	for _, c := range retryCalls {
+		if strings.Contains(c, "user/keys/42") {
+			t.Errorf("retry must never re-send the already-succeeded candidate (42): %v", retryCalls)
+		}
+	}
+	if len(retryCalls) != 1 || !strings.Contains(retryCalls[0], "user/ssh_signing_keys/108") {
+		t.Fatalf("retry calls = %v, want exactly one call addressing user/ssh_signing_keys/108", retryCalls)
+	}
+}

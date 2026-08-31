@@ -635,7 +635,11 @@ func (b stubBackend) CommitRotateDeleteOldKey(_, keyID string) tea.Cmd {
 			*b.rotateDeleteCalls = append(*b.rotateDeleteCalls, keyID)
 		}
 		if b.rotateDeleteCommitErr != "" {
-			return RotateDeleteCommitMsg{Err: b.rotateDeleteCommitErr}
+			// WR-09: the stub does not model multi-candidate partial
+			// success/failure, so RemainingKeyID mirrors keyID unchanged --
+			// the correct simulation of "nothing succeeded, retry the same
+			// target", matching this stub's existing single-candidate tests.
+			return RotateDeleteCommitMsg{Err: b.rotateDeleteCommitErr, RemainingKeyID: keyID}
 		}
 		return RotateDeleteCommitMsg{}
 	}

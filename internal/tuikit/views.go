@@ -817,6 +817,19 @@ type RotateDeleteOfferMsg struct {
 // delete failed and (per review R12) the confirmed target must remain
 // available on the model for exactly one retry — this message alone never
 // decides retention; the caller keeps or clears the confirmed pair.
+//
+// RemainingKeyID (WR-09, review iteration 3) is the SAME opaque encoding
+// rotateDeleteConfirmedID already carries, narrowed to only the candidates
+// that did NOT delete successfully — never the full original set. A rotated
+// key can carry more than one registration (authentication + signing); when
+// Err is non-empty because only SOME of them failed, re-sending the full
+// original set on retry re-attempts an already-deleted candidate, which the
+// provider now reports as gone (a permanent 404), so the retry can never
+// succeed and the "✓ Old key removed" state becomes unreachable even once
+// the goal state is in fact true. Only meaningful when Err != "" — the
+// success path clears the confirmed pair entirely and never reads this
+// field.
 type RotateDeleteCommitMsg struct {
-	Err string
+	Err            string
+	RemainingKeyID string
 }

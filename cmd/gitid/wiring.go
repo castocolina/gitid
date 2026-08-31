@@ -1624,21 +1624,28 @@ func (b *realBackend) CommitRotateDeleteOldKey(name, keyID string) tea.Cmd {
 	return func() tea.Msg {
 		acct, ok := b.findAccount(name)
 		if !ok {
-			return tuikit.RotateDeleteCommitMsg{Err: fmt.Sprintf("identity %q not found", name)}
+			return tuikit.RotateDeleteCommitMsg{Err: fmt.Sprintf("identity %q not found", name), RemainingKeyID: keyID}
 		}
 		provider, _ := uploader.ProviderForHostname(acct.Hostname)
 		if provider == "" {
-			return tuikit.RotateDeleteCommitMsg{Err: "provider not eligible for autonomous key management"}
+			return tuikit.RotateDeleteCommitMsg{Err: "provider not eligible for autonomous key management", RemainingKeyID: keyID}
 		}
 		tool, toolPath, found := uploader.DetectFor(provider, b.uploaderDeps)
 		if !found {
-			return tuikit.RotateDeleteCommitMsg{Err: fmt.Sprintf("%s CLI not found on PATH", providerToolName(provider))}
+			return tuikit.RotateDeleteCommitMsg{Err: fmt.Sprintf("%s CLI not found on PATH", providerToolName(provider)), RemainingKeyID: keyID}
 		}
 		candidates, derr := decodeDeleteCandidates(keyID)
 		if derr != nil {
-			return tuikit.RotateDeleteCommitMsg{Err: "could not resolve the confirmed delete target"}
+			return tuikit.RotateDeleteCommitMsg{Err: "could not resolve the confirmed delete target", RemainingKeyID: keyID}
 		}
+		// WR-09 (review iteration 3): track which candidates did NOT delete
+		// successfully separately from the human-readable error text, so a
+		// partial failure's retry target can be narrowed to just those --
+		// re-sending an already-deleted candidate gets a permanent 404 from
+		// the provider, making the retry fail forever even once the goal
+		// state (every candidate gone) is genuinely reached.
 		var failed []string
+		var remaining []uploader.ExistingKey
 		for _, c := range candidates {
 			// WR-14: DeleteRecordedKey (not the lower-level DeleteKey) is the
 			// preferred entry point — it exists specifically to carry a
@@ -1647,10 +1654,20 @@ func (b *realBackend) CommitRotateDeleteOldKey(name, keyID string) tea.Cmd {
 			rec := uploader.ExistingKey{ID: c.ID, Registration: c.Registration}
 			if _, err := uploader.DeleteRecordedKey(tool, toolPath, rec, b.uploaderDeps); err != nil {
 				failed = append(failed, uploader.RedactCLIOutput(err.Error(), b.home, 58))
+				remaining = append(remaining, rec)
 			}
 		}
 		if len(failed) > 0 {
-			return tuikit.RotateDeleteCommitMsg{Err: strings.Join(failed, "; ")}
+			remainingKeyID, eerr := encodeDeleteCandidates(remaining)
+			if eerr != nil {
+				// Encoding failure must never silently widen the retry back
+				// to the full original set -- fall back to it explicitly
+				// (the R12-safe default) rather than leaving RemainingKeyID
+				// empty, which decodeDeleteCandidates on the next attempt
+				// would reject as "empty delete-candidate set".
+				remainingKeyID = keyID
+			}
+			return tuikit.RotateDeleteCommitMsg{Err: strings.Join(failed, "; "), RemainingKeyID: remainingKeyID}
 		}
 		return tuikit.RotateDeleteCommitMsg{}
 	}
