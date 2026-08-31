@@ -111,8 +111,23 @@ func inventoryFor(tool Tool, toolPath string, deps Deps, args []string, reg Regi
 	if err != nil || code != 0 {
 		return nil, fmt.Errorf("uploader: %s %s failed: %w", toolName(tool), strings.Join(args, " "), wrapRunErr(err))
 	}
-	entries, perr := decodeProviderKeyPages(out)
+	// WR-12 (review iteration 3): RunCmd returns CombinedOutput
+	// (stdout+stderr merged) — a stderr diagnostic on a SUCCESSFUL call (a
+	// gh deprecation notice, glab's "Using host ..." banner, a proxy
+	// message) precedes the actual JSON payload and used to corrupt the
+	// whole decode, turning a healthy inventory into a D-15 degradation
+	// (now more consequential than before: rotateDeleteOfferFor's
+	// belt-and-braces check treats an inventory error as "refuse the
+	// offer", so a stray banner could silently disable D-04 entirely). Skip
+	// any leading lines that do not look like the start of a JSON value —
+	// never bytes INSIDE a value, only whole lines before the first '['/'{'
+	// — so a healthy payload still decodes despite the noise in front of it.
+	cleaned, discarded := stripLeadingNonJSONLines(out)
+	entries, perr := decodeProviderKeyPages(cleaned)
 	if perr != nil {
+		if discarded != "" {
+			return nil, fmt.Errorf("uploader: parsing %s: %w (discarded non-JSON prefix: %q)", strings.Join(args, " "), perr, discarded)
+		}
 		return nil, fmt.Errorf("uploader: parsing %s: %w", strings.Join(args, " "), perr)
 	}
 	keys := make([]ExistingKey, 0, len(entries))
@@ -120,6 +135,27 @@ func inventoryFor(tool Tool, toolPath string, deps Deps, args []string, reg Regi
 		keys = append(keys, ExistingKey{ID: entry.ID.String(), Title: entry.Title, Key: entry.Key, Registration: reg})
 	}
 	return keys, nil
+}
+
+// stripLeadingNonJSONLines drops whole lines from the start of out up to
+// (not including) the first line that looks like the start of a JSON value
+// — trimmed of leading whitespace, starting with '[' or '{'. It returns the
+// cleaned tail to decode and the discarded prefix (carried into the parse
+// error's message, WR-12, if decoding the cleaned tail still fails — a
+// genuinely malformed payload's error then names what surrounding noise was
+// present instead of a bare "invalid character" with no context). A payload
+// with no such line (out is entirely non-JSON, or empty) is returned
+// unchanged so the existing "invalid character"/"unexpected EOF" errors
+// still fire — this only skips a PREFIX, never bytes inside a value.
+func stripLeadingNonJSONLines(out string) (cleaned, discarded string) {
+	lines := strings.Split(out, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") || strings.HasPrefix(trimmed, "{") {
+			return strings.Join(lines[i:], "\n"), strings.Join(lines[:i], "\n")
+		}
+	}
+	return out, ""
 }
 
 // decodeProviderKeyPages parses out as one or more concatenated top-level

@@ -146,6 +146,45 @@ func TestInventoryReturnsErrorOnUnparseableJSON(t *testing.T) {
 	}
 }
 
+// TestInventorySkipsStderrBannerPrecedingSuccessfulJSON is the WR-12
+// (review iteration 3) regression: RunCmd returns CombinedOutput
+// (stdout+stderr merged), so a stderr diagnostic on a SUCCESSFUL call (a gh
+// deprecation notice, glab's "Using host ..." banner, a corporate proxy
+// message) used to corrupt the whole JSON decode and turn a healthy
+// inventory into a false D-15 degradation. A leading non-JSON line must be
+// skipped so the real payload behind it still decodes.
+func TestInventorySkipsStderrBannerPrecedingSuccessfulJSON(t *testing.T) {
+	banner := "Using host glab.example.com\n" + `[{"id":1,"title":"a","key":"ssh-ed25519 AAAA a"}]`
+	got, err := Inventory(ToolGLab, "glab", Deps{RunCmd: func(string, ...string) (string, int, error) { return banner, 0, nil }})
+	if err != nil {
+		t.Fatalf("a leading stderr banner must not fail a healthy inventory read: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "1" {
+		t.Fatalf("got=%+v, want the real payload behind the banner decoded", got)
+	}
+}
+
+// TestInventoryDiscardedPrefixReachesTheParseError is the negative-control
+// sibling: when the payload behind a banner is STILL malformed (a genuine
+// parse failure, not just noise), the error must name the discarded prefix
+// as diagnostic context instead of a bare "invalid character" with no clue
+// what preceded it.
+func TestInventoryDiscardedPrefixReachesTheParseError(t *testing.T) {
+	banner := "gh: a deprecation notice on stderr\n{not valid json"
+	_, err := Inventory(ToolGH, "gh", Deps{RunCmd: func(_ string, args ...string) (string, int, error) {
+		if len(args) > 0 && args[len(args)-1] == "user/keys" {
+			return banner, 0, nil
+		}
+		return "[]", 0, nil
+	}})
+	if err == nil {
+		t.Fatal("a genuinely malformed payload must still fail")
+	}
+	if !strings.Contains(err.Error(), "deprecation notice") {
+		t.Errorf("err=%q, want the discarded banner text carried into the error for diagnostic context", err.Error())
+	}
+}
+
 func TestNormalizeKeyBlobDropsTheComment(t *testing.T) {
 	if NormalizeKeyBlob("ssh-ed25519 AAAA one") != NormalizeKeyBlob("ssh-ed25519 AAAA two") {
 		t.Fatal("comments affected blob")
