@@ -5,6 +5,7 @@ package tuikit
 // (09-02-PLAN.md Task 1's explicit instruction).
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -512,6 +513,49 @@ func TestUploadSectionFitsTheFrameInTheWorstCase(t *testing.T) {
 	oversized := renderUploadSection(oversizedRun, "GitHub", 100)
 	if got := strings.Count(oversized, "\n"); got > frameBodyRows(minFrameHeight) {
 		t.Errorf("oversized fallback rendered %d lines, want the viewport to cap it at %d", got, frameBodyRows(minFrameHeight))
+	}
+}
+
+// TestUploadSectionClampsFallbackEvenWhenBudgetIsNegative is the WR-08
+// (review iteration 3) regression: when the rows ABOVE the fallback block
+// already fill (or overflow) the frame budget, the old `budget > 0` guard
+// skipped clamping entirely and appended the WHOLE unclamped fallback,
+// silently overflowing the fixed 100x30 frame with no indication anything
+// was cut. The fallback must now be bounded through the SAME viewport the
+// budget>0 branch already used, with a visible "N more line(s) hidden" cue,
+// regardless of how negative budget is.
+func TestUploadSectionClampsFallbackEvenWhenBudgetIsNegative(t *testing.T) {
+	// Pad the rows above the fallback (one announce line + one result line
+	// per Row) far enough that budget = frameBodyRows(30) - rendered - 2 is
+	// NEGATIVE before the fallback's own length is even considered -- the
+	// exact "receipt already filled the frame" shape 09-07-PLAN.md Task 1's
+	// real PTY coverage found. The rows list itself is a SEPARATE, already
+	//-unbounded concern (not what WR-08 fixes); this test isolates the
+	// fallback's OWN contribution by comparing against a rows-only render.
+	var rows []UploadResultRow
+	for i := 0; i < 12; i++ {
+		rows = append(rows, UploadResultRow{
+			Label: UploadRegistrationLabelAuth, Command: fmt.Sprintf("gh ssh-key add k%d.pub", i), Outcome: UploadRowUploaded,
+		})
+	}
+	rowsOnly := renderUploadSection(UploadRunView{Rows: rows}, "GitHub", 100)
+	rowsOnlyLines := strings.Count(rowsOnly, "\n")
+
+	run := UploadRunView{Rows: rows, ManualFallback: upload.Instructions("github.com")}
+	rendered := renderUploadSection(run, "GitHub", 100)
+	lines := strings.Count(rendered, "\n")
+
+	// The fallback's own contribution (heading + clamped content + the
+	// truncation indicator) must stay a handful of lines -- never the full,
+	// dozens-of-lines-long upload.Instructions block -- even though budget
+	// is negative here. Before the fix, the old `budget > 0` guard skipped
+	// clamping entirely in exactly this case and appended the WHOLE
+	// fallback unbounded.
+	if extra := lines - rowsOnlyLines; extra > 5 {
+		t.Fatalf("fallback added %d lines (rows-only = %d, with-fallback = %d) -- want the negative-budget fallback bounded to a handful of lines, not appended in full", extra, rowsOnlyLines, lines)
+	}
+	if !strings.Contains(stripANSI(rendered), "more line(s) hidden") {
+		t.Errorf("rendered output must carry a truncation indicator when the fallback is clamped, got:\n%s", stripANSI(rendered))
 	}
 }
 

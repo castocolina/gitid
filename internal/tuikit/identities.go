@@ -2980,9 +2980,20 @@ func (m identitiesModel) renderKeyCeremony(sel DemoIdentity) string {
 		tailText := strings.TrimSuffix(tail.String(), "\n")
 		wrapped := lipgloss.NewStyle().Width(deleteChoiceNoteWidth).Render(tailText)
 		tailLines := strings.Count(wrapped, "\n") + 1
-		if budget > 0 && tailLines > budget {
-			v := ExactTextViewport{Text: wrapped, VisibleLines: budget, Width: maxInt(20, deleteChoiceNoteWidth-4)}
-			return body + "\n" + v.Clamp().View() + "\n"
+		// WR-08: the `budget > 0` guard used to let a NEGATIVE-or-zero budget
+		// (the receipt above already filled the frame, which a real rotate
+		// routinely does per 09-07-PLAN.md Task 1's PTY coverage) skip
+		// clamping entirely — the whole unclamped tail got appended,
+		// overflowing the fixed 100x30 frame with no truncation indicator
+		// instead of being bounded. maxInt(1, budget) guarantees at least one
+		// line renders through the SAME bounded viewport every other
+		// overflow path in this file uses, and the "N more line(s) hidden"
+		// cue makes the cut visible instead of silent.
+		if tailLines > budget {
+			lines := maxInt(1, budget)
+			v := ExactTextViewport{Text: wrapped, VisibleLines: lines, Width: maxInt(20, deleteChoiceNoteWidth-4)}
+			return body + "\n" + v.Clamp().View() + "\n " +
+				styleFaint.Render(fmt.Sprintf("… %d more line(s) hidden", tailLines-lines)) + "\n"
 		}
 		return body + "\n" + tail.String()
 	}
@@ -4666,9 +4677,14 @@ func renderUploadSection(run UploadRunView, providerName string, width int) stri
 		rendered := strings.Count(b.String(), "\n")
 		budget := frameBodyRows(minFrameHeight) - rendered - 2
 		fallbackLines := strings.Count(fallback, "\n") + 1
-		if budget > 0 && fallbackLines > budget {
-			v := ExactTextViewport{Text: strings.TrimSuffix(fallback, "\n"), VisibleLines: budget, Width: maxInt(20, width-4)}
+		// WR-08: see renderKeyCeremony's identical fix for why the
+		// `budget > 0` guard must not skip clamping when the rows above the
+		// fallback already filled the frame.
+		if fallbackLines > budget {
+			lines := maxInt(1, budget)
+			v := ExactTextViewport{Text: strings.TrimSuffix(fallback, "\n"), VisibleLines: lines, Width: maxInt(20, width-4)}
 			b.WriteString(v.Clamp().View() + "\n")
+			b.WriteString(" " + styleFaint.Render(fmt.Sprintf("… %d more line(s) hidden", fallbackLines-lines)) + "\n")
 		} else {
 			b.WriteString(fallback)
 			if !strings.HasSuffix(fallback, "\n") {
