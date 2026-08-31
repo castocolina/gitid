@@ -5,17 +5,17 @@ milestone_name: TUI-First Redesign
 current_phase: 9
 current_phase_name: upload-credentials-assist
 status: executing
-stopped_at: Phase 9.4 context gathered
-last_updated: "2026-08-30T23:43:29.296Z"
+stopped_at: Phase 9.5 context gathered
+last_updated: "2026-08-31T00:11:16.196Z"
 last_activity: 2026-08-28
 last_activity_desc: "Phase 8 closeout finished — CR-01 (Critical: Fixable signal was SuggestedFix!=\"\" instead of Fix!=nil, letting report-only findings show a fake fix ceremony) and WR-01 (nonsensical batch-halt banner on a single non-batch fix failure) fixed with regression tests; DLV-06 PTY gap closed via a real chflags-uchg-forced OS failure through the compiled binary (TestHealthFixer_RealPTYFixerBatchWalkHalt). All gates re-verified green (go test -race 2157 passed, lint 0 issues, gate-visual-regression PASS, test-e2e PASS 676s). Committed as cbb5279 (fixes) + 6881319 (review artifacts + HIGH-concerns resolution appended to 08-REVIEWS.md). Phase 8 is now genuinely complete; advancing to Phase 9."
-state_head: 25ad72551509f90badce0ea40f026ad231d53f34
+state_head: b296e28bbc831fdf4a2fd731db11e6c7387802a7
 progress:
-  total_phases: 14
+  total_phases: 15
   completed_phases: 7
   total_plans: 85
   completed_plans: 82
-  percent: 50
+  percent: 47
 ---
 
 # Project State
@@ -275,9 +275,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-30T23:43:28.239Z
-Stopped at: Phase 9.4 context gathered
-Resume file: .planning/phases/09.4-tui-ux-consistency-doctor-fixer-parity/09.4-CONTEXT.md
+Last session: 2026-08-31T00:11:15.240Z
+Stopped at: Phase 9.5 context gathered
+Resume file: .planning/phases/09.5-full-ssh-git-properties-browser/09.5-CONTEXT.md
 Wave structure: W1 = 03-01 + 03-02 (DONE) -> W2 = 03-03 (DONE) -> W3 = 03-04 (DONE) -> W4 = 03-05 (DONE) -> W5 = 03-06 (Tasks 1+2 DONE, Task 3 PARTIAL — orchestrator review owed)
 **All remaining waves run SEQUENTIALLY (one executor at a time) per LEARNINGS L11** — the pre-commit hooks lint the whole module, so a parallel executor's mid-refactor tree blocks every other commit. Do NOT run plans in parallel inside this Go module again.
 
