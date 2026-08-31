@@ -1,10 +1,10 @@
 ---
 phase: 09-upload-credentials-assist
-reviewed: 2026-08-31T02:33:51Z
+reviewed: 2026-08-31T04:12:44Z
 depth: standard
-iteration: 4
-supersedes: iteration 3 (2026-08-29T18:35:00Z, backed up at 09-REVIEW.iter2.md)
-head: df0729a
+iteration: 5
+supersedes: iteration 4 (2026-08-31T02:33:51Z, backed up at 09-REVIEW.iter3.md)
+head: 324d7d8
 files_reviewed: 51
 files_reviewed_list:
   - cmd/gitid-frame-promote/main.go
@@ -39,6 +39,7 @@ files_reviewed_list:
   - e2e/ui_pty_e2e_test.go
   - internal/dummytui/doc.go
   - internal/dummytui/fixturebackend.go
+  - internal/dummytui/fixturebackend_test.go
   - internal/screenshot/createflow.go
   - internal/screenshot/createflow_packet_test.go
   - internal/screenshot/createflow_regions.go
@@ -47,665 +48,632 @@ files_reviewed_list:
   - internal/tuikit/backend.go
   - internal/tuikit/backend_stub_test.go
   - internal/tuikit/design.go
+  - internal/tuikit/frame.go
   - internal/tuikit/identities.go
   - internal/tuikit/identity_manager_upload_test.go
   - internal/tuikit/upload_copy_test.go
   - internal/tuikit/upload_section_test.go
   - internal/tuikit/views.go
   - internal/uploader/classify.go
-  - internal/uploader/classify_test.go
   - internal/uploader/inventory.go
   - internal/uploader/inventory_test.go
   - internal/uploader/uploader.go
-  - internal/uploader/uploader_test.go
 findings:
   critical: 1
   warning: 7
-  info: 16
-  total: 24
+  info: 24
+  total: 32
 status: issues_found
 ---
 
-# Phase 9: Code Review Report (re-review, iteration 4 — post-fix-pass verification)
+# Phase 9: Code Review Report (re-review, iteration 5 — third independent look)
 
-**Reviewed:** 2026-08-31T02:33:51Z
+**Reviewed:** 2026-08-31T04:12:44Z
 **Depth:** standard
 **Files Reviewed:** 51
 **Status:** issues_found
 
 ## Summary
 
-Fourth pass, scoped to verifying the iteration-3 fix pass (`6b5bf7b..df0729a`,
-10 fix commits, 20 Go files, +683/-68) and re-assessing everything it left
-open. Each of the 11 "fixed" warnings was checked against the merged source,
-not against the fix report; each of the 14 Info items was re-read; the full
-gate battery was run from scratch.
+Third independent pass over Phase 9 at `324d7d8`, after the second fix pass
+(`cc37af7..303e5a6`) closed iteration 4's `CR-01` plus four of its seven
+warnings.
 
-**Nine of the eleven claimed fixes are genuinely and correctly applied**
-(WR-02, WR-04, WR-06, WR-07, WR-09, WR-12, WR-14, and the two halves of
-WR-08's clamp condition). One — WR-05 — is only half-applied, on the wrong
-half. One — WR-01 — is **correct in the production backend and broken in
-every fixture backend**, and it took the phase's own gate battery red.
-
-**CR-01 is a genuine, bisected regression introduced by the fix pass.**
-`cdc6932` added the `UploadRunMsg.Name` correlation guard to both consumers
-but only set `Name` on the *real* backend's dispatch sites.
-`dummytui.FixtureBackend.RunUpload`/`RunUploadForIdentity` and
-`screenshot.offlineCaptureBackend.RunUpload` still emit `Name: ""`, so every
-fixture reply is now silently discarded by the new guard. Consequences:
-`gitid-dummy`'s D-08 register-key pane hangs on "Registering…" forever, its
-D-04 rotate-delete offer is never dispatched at all, and eleven visual-gate
-tests plus three e2e tests fail. I bisected this across all ten fix commits
-(table in CR-01) — it is red from `cdc6932` onward and green at `6b5bf7b`.
-
-**The fix report's gate claims are not reliable** (WR-04 below). It states
-`TestRegionDiffCoverage` was "pre-existing before this change" and
-"confirmed via A/B stash comparison"; the bisect proves it was introduced by
-the fixer's own first commit. The report's three green gates (`go build`,
-`go test -race ./...`, `make lint`) are all real — but none of the three
-covers `-tags screenshot` or `-tags e2e`, which is exactly where the damage
-landed. Both tagged gates must be part of the fixer's own close-out from now
-on.
-
-**Three genuinely new defects were introduced by the fixes themselves**
-beyond CR-01: WR-01 (WR-08's new truncation cue overruns the very row budget
-the backstop exists to enforce, and contradicts the viewport's own built-in
-cue), WR-02 (WR-05 quoted `RunUpload` but not `RunUploadForIdentity` — the
-`register-key-modal` surface the finding explicitly named), WR-03
-(WR-13's `extractUploadedTitle` reports the *pub path* as the title whenever
-`$HOME` contains a space).
-
-**WR-03/WR-10/WR-11 from iteration 3 are correctly still open.** I verified
-each is a frozen-copy or sequencing-contract decision, not a bug: WR-03's
-"opening the modal IS the explicit opt-in" is a tracked contract in
-`.planning/design/identity-manager/FIELDS.md:87`, and WR-10/WR-11 both
-require a `design.go` R22 amendment. They are carried below as WR-05/WR-06/
-WR-07 with an explicit **do-not-mechanically-fix** marker. They do **not**
-block Phase 9's own goal; CR-01 does.
-
-**None of the 14 Info items warrants promotion.** IN-11 (ambient provider
-tokens reaching e2e children) was the strongest candidate, but `e2eEnv`
-prepends a `ProviderDenyDir` shim and `ambientPathSentinelHit` fails the test
-if a caller smuggles the ambient PATH back in front of it, so a real `gh`
-cannot resolve. It stays Info as defense-in-depth. IN-14 is now partially
-stale (`titleMatchesThisMachine` was unexported with an accurate comment;
-`FindByTitle` gained a redirecting doc comment and a real e2e caller) — only
-`wiring.go:1596`'s stale prose remains. Two new Info items were added.
-
-## Gate battery (run by this reviewer, from a clean tree at df0729a)
+**Every gate in the battery was run by this reviewer, including both tagged
+suites**, and all are green apart from one known-environmental failure:
 
 ```
-go build ./...                                                         # clean
-TERM=dumb SSH_AUTH_SOCK= go test -count=1 -race ./...                  # 2364 passed, 22 pkgs, exit 0
-make lint                                                              # golangci-lint 0 issues (both untagged and screenshot-tagged)
-TERM=dumb SSH_AUTH_SOCK= go test -tags e2e ./e2e/                      # 172 passed, 3 FAILED
-TERM=dumb SSH_AUTH_SOCK= go test -tags screenshot ./internal/screenshot/... ./cmd/gitid/...
-                                                                       # 112 passed, 2 FAILED (screenshot)
-                                                                       # + 9 FAILED (cmd/gitid visual gate)
-                                                                       # 1 of the 2 screenshot failures is environmental (TestCaptureTUI: freeze not on PATH)
+go build ./...                                                        # clean, exit 0
+TERM=dumb SSH_AUTH_SOCK= go test -count=1 -race ./...                 # 2373 passed / 22 pkgs, exit 0
+make lint                                                             # golangci-lint 0 issues (untagged + screenshot-tagged), exit 0
+TERM=dumb SSH_AUTH_SOCK= go test -tags e2e -timeout 40m ./e2e/...     # 175 passed, 0 failed, exit 0
+TERM=dumb SSH_AUTH_SOCK= go test -tags screenshot -timeout 30m \
+    ./internal/screenshot/... ./cmd/gitid/...                         # 832 passed, 1 failed (TestCaptureTUI:
+                                                                      #   "freeze binary not found on PATH" — environmental)
 ```
 
-All 13 non-environmental failures share one root cause: CR-01.
+### Verdict on the second fix pass's specific claims (all independently checked)
 
-## Fix Verification (iteration-3 warnings)
+- **`CR-01` (`UploadRunMsg.Name` on fixture backends) — genuinely fixed, and
+  the guard is not vacuous.** All four `tuikit.Backend` implementations now
+  set `Name` at every dispatch site: `realBackend` (`wiring.go:1513`, `:1521`,
+  `:1525`, `:1528`, `:1579`, `:1583`, `:1586`), `dummytui.FixtureBackend`
+  (`fixturebackend.go:503`, `:625`), `screenshot.offlineCaptureBackend`
+  (`createflow.go:1113`), and `tuikit.stubBackend`
+  (`backend_stub_test.go:569`, `:650`). The only two wrappers,
+  `offlineCaptureBackend` and `uploadProbeBackend`, embed the `tuikit.Backend`
+  *interface* around a concrete backend and do not override
+  `RunUploadForIdentity`, so they inherit the fix rather than needing their
+  own — the fixer's claim holds. The new e2e assertion
+  (`identity_manager_pty_e2e_test.go:2142`) is a real polling `t.Fatalf`
+  (`mustSee`, 8s budget), and `"Authentication key registered"` is emitted
+  only by `renderUploadSection`'s `UploadRowUploaded` branch, which is
+  unreachable unless the `UploadRunMsg` clears the guard — non-vacuous. The
+  key-ceremony half of the same regression is separately, structurally
+  covered: the dummy leg's `"Remove the old key from GitHub?"` assertion can
+  only pass if `handleMsg` consumed the `UploadRunMsg` (`identities.go:2293-
+  2296` is the only dispatch site for `RotateDeleteOffer`). The **real** side
+  has its own independent coverage in
+  `TestIdentityManager_RegisterKeyModalRuns` (`:903-904`).
+- **`budget-2` is arithmetically correct, not a number that happened to make
+  a test pass.** Derivation: the overflow branch returns
+  `body + "\n" + viewport + "\n " + cue + "\n"`; with
+  `rendered = strings.Count(body, "\n")` and `budget = B - rendered - 1`, the
+  returned string's `Count("\n")+1` is `rendered + lines + 3`, i.e.
+  `body_rows + lines + 2` — the `+2` being the cue row and the trailing
+  newline's own row. `lines <= budget - 2` is therefore exact, and the
+  review's suggested `budget-1` was genuinely off by one. The fixer's *number*
+  is right; its comment claiming this could only be found empirically
+  ("not derived on paper") is wrong and unhelpfully mystifies the constant
+  (`IN-21`), and the fix is still incomplete for `budget <= 2` (`WR-03`).
+- **`WR-03` (`extractUploadedTitle`) — correct.** The flag-position scan is
+  immune to earlier quoting; the `'\''` unescape is right (`i += 3` plus the
+  loop's own `i++` advances exactly the 4 bytes of the escape); the
+  no-flag-present case returns `""`. One residual nit at `IN-18`.
+- **`WR-02` (fixture preview quoting) — correct**, and now covered by a real
+  unit test (`internal/dummytui/fixturebackend_test.go`).
+- **`WR-05`/`WR-06`/`WR-07` are correctly still open.** Each was
+  re-verified in source this pass and each genuinely requires an amendment to
+  frozen artifacts (`design.go`'s R22 copy, `FIELDS.md`), not a mechanical
+  edit. They are restated below with the evidence, and one of them
+  (`WR-05`) carries a newly-found, cheaply-fixable sub-defect.
 
-| Finding | Claim | Verdict |
-|---|---|---|
-| WR-01 | `UploadRunMsg.Name` + guards | **Regression** — real backend correct, all three fixture backends left at `Name: ""`. See CR-01. |
-| WR-02 | fixture records real `--title` | **Correct** — `harness_test.go:894,897` use `"$5"`; argv is `["ssh-key","add",pub,"--title",title,…]`, so `$5` is the title. |
-| WR-04 | frame captures routed via `saveFrame` | **Correct** — all three helpers call `saveFrame`; working tree stays clean across a full e2e run. |
-| WR-05 | dummy previews shell-quoted | **Half-applied** — `RunUpload` quoted, `RunUploadForIdentity` (the `register-key-modal` surface) not. See WR-02. |
-| WR-06 | dry-run help discloses probes | **Correct** — `dryRunProbeClause` appended via two shared constants, bound on all four verbs (`identity_create.go:93`, `identity_clone.go:49`, `identity_key.go:43,62`). |
-| WR-07 | `glabInventory` page cap | **Correct** — `glabMaxPages = 40`, loop bounded, named error on exhaustion (`inventory.go:83-107`). |
-| WR-08 | clamp unconditionally | **Correct condition, new overflow** — the `budget > 0` guard is gone at both sites, but the added cue line is unaccounted for in `renderKeyCeremony`'s budget. See WR-01. |
-| WR-09 | `RemainingKeyID` narrows retry | **Correct** — every early-return path carries `RemainingKeyID`, encode-failure falls back to the full set explicitly (`wiring.go:1624-1670`). |
-| WR-12 | strip leading non-JSON | **Correct for the accepted minimum** — `stripLeadingNonJSONLines` (`inventory.go:150-159`); residual noted in IN-15. |
-| WR-13 | abandon note carries D-07 title | **Applied, brittle extraction** — both step-0 exits carry the note; the title parser is wrong for quoted paths. See WR-03. |
-| WR-14 | stage the derived `.pub` | **Correct** — reuse path writes `staged.PubLine` into `stagingDir()` under `filepath.Base(FinalPrivatePath)+".pub"`, never `TempPrivatePath`/`~/.ssh` (`upload_run.go:100-123`). |
+### Why this is not `clean`
+
+One **BLOCKER** that all three prior review rounds missed: **D-17's entire
+post-upload confirmation result is written to a struct field that no renderer
+in the codebase reads.** `confirmUpload` stamps `uploadUnconfirmedReasonFmt`
+onto `rows[idx].Reason` for rows whose outcome is `UploadRowUploaded` /
+`UploadRowAlreadyPresent`, but both presentation paths — the TUI's
+`renderUploadSection` and the CLI's `printUploadOutcome` — read `row.Reason`
+**only** in their `UploadRowFailed` branch. The user is shown a plain
+`"✓ Authentication key registered"` for a registration gitid's own
+verification explicitly could not see, and the deliberate two-second
+`confirmSleep` retry buys nothing observable. This is dead code plus a false
+success claim on the phase's flagship feature.
+
+Seven warnings follow, of which three are the deliberately-deferred
+frozen-copy/design items (`WR-05`/`WR-06`/`WR-07`) and four are new.
 
 ## Narrative Findings (AI reviewer)
 
 ### Critical Issues
 
-#### CR-01 (BLOCKER, new — regression from `cdc6932`): the `UploadRunMsg.Name` stale-guard was added to the consumers but not to any fixture backend, permanently breaking `gitid-dummy`'s D-08 and D-04 surfaces and taking 13 gate tests red
+#### CR-01 (new): D-17's post-upload confirmation result is never rendered — the UI claims "✓ registered" for a registration gitid could not confirm
 
-**File:** `internal/dummytui/fixturebackend.go:503`, `:617`;
-`internal/screenshot/createflow.go:1113`; consumers at
-`internal/tuikit/identities.go:2274`, `:2376`
+**File:** `cmd/gitid/upload_run.go:399` (producer), `:298-307` (CLI renderer),
+`internal/tuikit/identities.go:4765-4774` (TUI renderer),
+`cmd/gitid/upload_run.go:327-334` (the unreachable constant),
+`cmd/gitid/wiring.go:262-275` (the 2s retry sleep it pays for)
 
-**Issue:** `cdc6932` correctly tightened both consumers:
-
-```go
-// identities.go:2274
-if run, ok := msg.(UploadRunMsg); ok && m.pane == paneKeyCeremony && m.keyCeremonyUploadPending && run.Name == m.selected {
-// identities.go:2376
-if run, ok := msg.(UploadRunMsg); ok && m.pane == paneRegisterKey && m.registerKeyPending && run.Name == m.registerKeyName {
-```
-
-and set `Name` at all six real-backend dispatch sites (`wiring.go:1513-1586`).
-It did **not** touch the fixture backends, which still emit:
+`confirmUpload` is D-17's whole reason for existing: after a successful
+registration it re-reads the provider inventory, waits `2 * time.Second`
+(`uploadConfirmRetryInterval`), re-reads once more, and — when a registration
+the provider *accepted* still is not visible — records that fact:
 
 ```go
-// dummytui/fixturebackend.go:617 — RunUploadForIdentity
-return tuikit.UploadRunMsg{View: view}          // Name == ""
-// dummytui/fixturebackend.go:503 — RunUpload
-return tuikit.UploadRunMsg{View: view}          // Name == ""
-// screenshot/createflow.go:1113 — offlineCaptureBackend.RunUpload
-return func() tea.Msg { return tuikit.UploadRunMsg{View: view} }
+// cmd/gitid/upload_run.go:397-401
+for registration, idx := range toConfirm {
+    if !present[registration] {
+        rows[idx].Reason = fmt.Sprintf(uploadUnconfirmedReasonFmt, providerHost)
+    }
+}
 ```
 
-`openRegisterKey` sets `m.registerKeyName = sel.Name` (`identities.go:2671`)
-and the ceremony path dispatches `RunUploadForIdentity(m.selected)`
-(`:2259`); both are non-empty fixture identity names ("personal"/"work").
-`"" == "personal"` is false, so **every fixture `UploadRunMsg` is now
-discarded**. `offlineCaptureBackend` embeds rather than overrides
-`RunUploadForIdentity`, so it inherits the broken fixture path too.
-
-Reachable consequences, all deterministic:
-
-1. `gitid-dummy`'s D-08 register-key pane never leaves
-   `renderRegisterKey`'s `"Registering…"` branch (`identities.go:4612-4617`)
-   — `m.registerKeyRun` is never assigned, so `uploadRunHasContent` stays
-   false forever. This is a shipped demo binary and the project's
-   design/screenshot source of truth.
-2. The D-04 rotate-delete offer is dispatched from *inside* the discarded
-   block (`identities.go:2293-2297`), so the dummy's rotate ceremony never
-   reaches the offer at all, and `keyCeremonyPhase` never advances to
-   `"review"`.
-3. The in-process visual gate loses the `register-key-modal` frame's
-   `upload-section` region in **both** evidence sets.
-
-Bisected across all ten fix commits with
-`go test -tags screenshot ./internal/screenshot/ -run TestRegionDiffCoverage`:
-
-```
-6b5bf7b :: ok       (pre-fix-pass HEAD)
-cdc6932 :: FAIL     <- WR-01 fix
-532a9cc :: FAIL     ... every subsequent fix commit FAIL through dbcaf78
-```
-
-and confirmed at the PTY level: `TestRegisterKeyModal_CompiledRealVsLiveDummyPTY`
-passes at `cdc6932^` (3/3) and fails at HEAD (0/3). Observed failures:
-
-```
-e2e:        TestRegisterKeyModal_CompiledRealVsLiveDummyPTY/register-key-modal
-              -> dummy: "Running:" never appeared
-            TestRegisterKeyModal_CompiledRealVsLiveDummyPTY/rotate-delete-offer
-              -> dummy: "Remove the old key from GitHub?" never appeared
-            TestRegisterKeyModal_CompiledRealVsLiveDummyPTY  (5 stale-allowlist errors)
-screenshot: TestRegionDiffCoverage
-              -> frame "register-key-modal" required region "upload-section" is empty in live evidence
-cmd/gitid:  9 x TestNegativeControl_* (identity-manager, global SSH, global Git, health/fixer, upload)
-              -> frame "register-key-modal" required region "upload-section" is empty in approved-tui evidence
-```
-
-**Fix:** set `Name` at every fixture dispatch site, exactly as the real
-backend does:
+Those rows keep `Outcome == UploadRowUploaded` (or `UploadRowAlreadyPresent`)
+— deliberately, per the constant's own doc comment ("no fourth
+`UploadRowOutcome` value exists for this case"). But **neither renderer reads
+`Reason` for those outcomes**:
 
 ```go
-// internal/dummytui/fixturebackend.go — RunUploadForIdentity
-return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
-    return tuikit.UploadRunMsg{Name: name, View: view}
-})
-
-// internal/dummytui/fixturebackend.go — RunUpload
-return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
-    return tuikit.UploadRunMsg{Name: spec.Identity, View: view}
-})
-
-// internal/screenshot/createflow.go — offlineCaptureBackend.RunUpload
-return func() tea.Msg { return tuikit.UploadRunMsg{Name: spec.Identity, View: view} }
+// internal/tuikit/identities.go:4765-4774 (TUI)
+case UploadRowUploaded:
+    b.WriteString(" " + styleHealthy.Render(fmt.Sprintf(UploadResultOKFmt, row.Label)) + "\n")   // Label only
+case UploadRowAlreadyPresent:
+    b.WriteString(" " + styleHealthy.Render(fmt.Sprintf(UploadResultSkippedFmt, row.Label)) + "\n") // Label only
+case UploadRowFailed:
+    b.WriteString(" " + styleError.Render(fmt.Sprintf(UploadResultFailedFmt, row.Label, row.Reason)) + "\n")
 ```
 
-Then add the anti-drift guard this class of defect needs, because the
-existing dummy assertions only check the *announce* line and never the
-result rows: extend `TestIdentityManager_RegisterKeyModalRuns`' dummy sibling
-(and `TestRegisterKeyModal_CompiledRealVsLiveDummyPTY`'s dummy leg) with
-`mustSee(t, dummy, "Authentication key registered", …)` so a dropped fixture
-reply fails loudly instead of silently degrading to "Registering…". Re-run
-both tagged gates before closing.
+`cmd/gitid/upload_run.go:298-307` (`printUploadOutcome`) has the identical
+three-way switch with the identical omission, and
+`UploadResultOKFmt`/`UploadResultSkippedFmt` (`design.go:596`, `:599`) each
+carry exactly one `%s` verb, so there is nowhere for the text to go even if a
+caller passed it.
+
+Verification that this is not rendered somewhere else: `rg '\.Reason'` over
+the non-test tree returns exactly two `UploadResultRow.Reason` sites — the
+producer at `upload_run.go:399` and the `UploadRowFailed`-only consumer at
+`:305`. `rg 'uploadUnconfirmedReasonFmt|accepted but not yet visible'` returns
+only the constant, its doc comment, and the one assignment: **no test asserts
+it either**, which is why five gates and three review rounds all stayed green
+over it. The string is also absent from `design.go`, where every other
+user-facing Upload* string is frozen and covered by `upload_copy_test.go` —
+another signal it was never wired to a surface.
+
+Consequences, in order of severity:
+
+1. **False success claim.** After a rotate or a create-wizard upload, the user
+   reads `"✓ Signing key registered"` for a registration gitid re-checked
+   twice and could not find. That is precisely the class of unproven claim the
+   project's own `CR-03` note (`identities.go:2633`) calls out as a defect.
+2. **A silent 2-second stall.** Every unconfirmed run pays a real
+   `time.Sleep(2s)` inside the `tea.Cmd` goroutine (`wiring.go:268`) whose
+   only output is discarded. The e2e harness even documents having to raise
+   `mustSee`'s budget to 20s for it (`identity_manager_pty_e2e_test.go:997`).
+3. **Dead code.** `uploadUnconfirmedReasonFmt`, the second `read()`, and
+   `confirmSleep` are unobservable; a future refactor deleting them would
+   change nothing a user or a test can see, which is the definition of an
+   untestable requirement.
+
+**Fix (minimal, no new outcome enum, no frozen-copy break):** render the
+reason as an extra faint continuation row in both renderers when it is set on
+a non-failed row. In `internal/tuikit/identities.go`:
+
+```go
+case UploadRowUploaded:
+    b.WriteString(" " + styleHealthy.Render(fmt.Sprintf(UploadResultOKFmt, row.Label)) + "\n")
+    if row.Reason != "" {
+        b.WriteString("   " + styleWarning.Render(row.Reason) + "\n")
+    }
+case UploadRowAlreadyPresent:
+    b.WriteString(" " + styleHealthy.Render(fmt.Sprintf(UploadResultSkippedFmt, row.Label)) + "\n")
+    if row.Reason != "" {
+        b.WriteString("   " + styleWarning.Render(row.Reason) + "\n")
+    }
+```
+
+and the mirrored two lines in `printUploadOutcome`. Move
+`uploadUnconfirmedReasonFmt` into `internal/tuikit/design.go` beside the other
+frozen `Upload*` copy and add it to `upload_copy_test.go`'s table, so the
+"shown == run" contract covers it. Add a regression test at the
+`confirmUpload` level asserting the rendered output contains the phrase when
+the second inventory read still does not see the key — the assertion that
+would have caught this. Note that the extra rows are inside
+`renderUploadSection`, so they are already accounted for by that function's
+own overflow backstop budget.
 
 ### Warnings
 
-#### WR-01 (new, introduced by `354769e`): WR-08's truncation cue pushes `renderKeyCeremony` one row past the frame budget the backstop exists to enforce, and contradicts the viewport's own built-in cue
+#### WR-01 (new): `RotateDeleteCommitMsg` is the one Phase-9 async reply with no stale-guard — and its payload steers the next remote delete
 
-**File:** `internal/tuikit/identities.go:3001-3007` (`renderKeyCeremony`),
-`:4732-4736` (`renderUploadSection`), vs
-`internal/tuikit/frame.go:806-860` (`ExactTextViewport.View`)
+**File:** `internal/tuikit/views.go:832-835`, `internal/tuikit/identities.go:2306`, `:2319-2321`, `:2838`
 
-**Issue:** Two problems, both from the added cue line.
+Every other async reply this phase added carries the identity it was resolved
+for and is guarded on it — `RegisterKeyPlanMsg.Name` (`identities.go:2360`),
+`RotateDeleteOfferMsg.Name` (`:2300`), and, since the iteration-3 `WR-01` fix,
+`UploadRunMsg.Name` (`:2274`, `:2376`). `RotateDeleteCommitMsg` has **no
+`Name` field at all**:
 
-1. **Budget overrun.** `renderKeyCeremony` computes
-   `budget := frameBodyRows(minFrameHeight) - rendered - 1` (`:2981`) — a
-   single reserved row for the `"\n"` separator — and previously returned
-   `body + "\n" + v.Clamp().View() + "\n"`, i.e. exactly `budget` tail rows,
-   exactly filling the 25-row body. The fix keeps `VisibleLines: budget` and
-   then appends an *additional* row:
+```go
+type RotateDeleteCommitMsg struct {
+    Err            string
+    RemainingKeyID string
+}
+```
 
-   ```go
-   return body + "\n" + v.Clamp().View() + "\n " +
-       styleFaint.Render(fmt.Sprintf("… %d more line(s) hidden", tailLines-lines)) + "\n"
-   ```
+and its handler guards only on pane + pending:
 
-   That is `budget + 1` rows — the frame overflow the backstop was written to
-   prevent, now in the *common* positive-budget path that was previously
-   correct. `renderUploadSection` is unaffected only by accident: its own
-   budget uses `- rendered - 2` (`:4727`), so the second reserved row absorbs
-   the cue. The two sites are now silently asymmetric.
+```go
+// identities.go:2306
+if commit, ok := msg.(RotateDeleteCommitMsg); ok && m.pane == paneKeyCeremony && m.rotateDeleteCommitPending {
+```
 
-2. **Duplicate, disagreeing cue.** `ExactTextViewport.View()` already emits
-   its own truncation cue and *reserves the final row for it*
-   (`frame.go:840-844`: `contentRows = v.VisibleLines - 1` whenever
-   `cueLine != ""`). So the viewport renders `budget-1` content rows plus its
-   own `"↓ lines N–M of T  PgDn↓ PgUp↑"` line. The new external cue is
-   computed as `tailLines - budget`, but the number actually hidden is
-   `tailLines - (budget-1)`. The two cues sit adjacent and disagree by
-   exactly one line.
+This is the *most* consequential message in the phase to leave unguarded,
+because a failure reply does not merely display text — it **rewrites the ID
+set the next destructive call will send**:
 
-The fixer's A/B check found "byte-identical output" precisely because the
-tracked rotate scenarios never enter this branch (`tailLines <= budget`), so
-neither problem has coverage.
+```go
+// identities.go:2319-2321
+if commit.RemainingKeyID != "" {
+    m.rotateDeleteConfirmedID = commit.RemainingKeyID
+}
+```
 
-**Fix:** reserve the cue's row, or drop the redundant cue entirely and rely
-on the viewport's:
+and `m.rotateDeleteConfirmedID` is exactly what the retry hands to the
+provider (`:2838`, `CommitRotateDeleteOldKey(sel.Name, m.rotateDeleteConfirmedID)`).
+A reply belonging to identity A consumed inside identity B's ceremony would
+therefore point B's retry at A's provider key IDs — on a shared `gh`-
+authenticated account, deleting the wrong remote keys.
+
+**Reachability, stated honestly:** today this is defensive, not
+demonstrable. While `rotateDeleteCommitPending` is true the offer branch
+swallows every key including `esc` (`:2809-2811`), so the user cannot leave
+the pane, and `openKeyCeremony` resets the flag (`:2659`); `RunCmd` is
+bounded by `providerCommandTimeout` (`wiring.go:561`), so the pending window
+cannot be stretched indefinitely. The finding is a Warning rather than a
+blocker for that reason. But the invariant that makes it safe is an
+*accidental* one (a key-swallowing branch three hundred lines away), not a
+stated one — exactly the shape of the iteration-3 `WR-01` race that was
+accepted as real for the strictly less dangerous `UploadRunMsg`.
+
+**Fix:** symmetric with the fix already applied to `UploadRunMsg`.
+
+```go
+// views.go
+type RotateDeleteCommitMsg struct {
+    Name           string // the identity this delete was dispatched for
+    Err            string
+    RemainingKeyID string
+}
+// identities.go:2306
+if commit, ok := msg.(RotateDeleteCommitMsg); ok && m.pane == paneKeyCeremony &&
+    m.rotateDeleteCommitPending && commit.Name == m.selected {
+```
+
+Set `Name` at both producers: `cmd/gitid/wiring.go:1627`, `:1631`, `:1635`,
+`:1639`, `:1670`, `:1672` and `internal/dummytui/fixturebackend.go:548-552`.
+**Set it at every producer in the same commit** — this is the identical
+shape as the regression the previous fix pass shipped (guard added to the
+consumer, `Name` never set on the fixture backends), so the fixture and
+`stubBackend` producers must not be left behind. Add an anti-drift assertion
+to the dummy leg of `TestRegisterKeyModal_CompiledRealVsLiveDummyPTY`'s
+`rotate-delete-offer` subtest that the removal *result* row renders, not only
+the offer heading.
+
+#### WR-02 (new): the dummy backend fabricates a successful GitHub registration for identities that have no provider at all
+
+**File:** `internal/dummytui/fixturebackend.go:605-635`, `internal/dummytui/data.go:245-246`
+
+`FixtureBackend.RunUploadForIdentity` branches on the fixture SSH host and
+falls through to the GitHub two-row success for **anything that is not
+gitlab**, including the empty string:
+
+```go
+host := identityManagerSSHHost(name)   // "" for a row with no SSHHost
+...
+if strings.Contains(host, "gitlab") { ... } else {
+    view = ... {Authentication: Uploaded}, {Signing: Uploaded} ...   // fabricated
+}
+```
+
+Two seeded fixture rows have no `SSHHost` at all — `opensource` (`git-only`)
+and `archived` (`key-unused`) (`data.go:245-246`) — and both are reachable
+through the key ceremony, which dispatches `RunUploadForIdentity`
+unconditionally after any successful commit (`identities.go:2259`). The dummy
+therefore renders
+`Running: /usr/local/bin/gh ssh-key add ~/.ssh/id_ed25519_opensource.pub …`
+followed by two green `✓ … key registered` rows for an identity with no
+provider.
+
+The real backend does the opposite: `planUpload`'s D-13 gate returns
+`UploadRunView{Skipped: true}` for `provider == ""` (`upload_run.go:159-162`),
+and `uploadRunHasContent` is false for that view (`identities.go:4630-4632`),
+so the real ceremony renders **nothing**. Its sibling `RegisterKeyPlan`
+already models this correctly (`fixturebackend.go:589`, `Omitted` in the
+default case) — only `RunUploadForIdentity` does not.
+
+This matters more than an ordinary fixture nit because `cmd/gitid-dummy` is
+this project's design/screenshot source of truth and one half of the paired
+real-vs-dummy PTY comparison. The comparison drives `personal`
+(`personal.github.com`), so it structurally cannot see this divergence.
+
+**Fix:** mirror `RegisterKeyPlan`'s three-way branch and return a
+provider-less view for a non-gated host.
+
+```go
+switch {
+case strings.Contains(host, "gitlab"):
+    view = ... combined row ...
+case strings.Contains(host, "github"):
+    view = ... auth + signing rows ...
+default:
+    view = tuikit.UploadRunView{Skipped: true}   // matches planUpload's D-13 gate
+}
+```
+
+#### WR-03 (carried forward from the WR-01 fix, still open): the key-ceremony overflow backstop still overruns the frame whenever `budget <= 2` — the case its own comment says is routine
+
+**File:** `internal/tuikit/identities.go:2980-3016`
+
+The `budget-2` clamp is exact (see the Summary's derivation) **only while
+`budget >= 3`**. Below that the `maxInt(1, …)` floor takes over and the
+arithmetic stops holding:
+
+```go
+lines := maxInt(1, budget-2)   // budget <= 2  =>  lines == 1
+```
+
+giving `body_rows + lines + 2 = body_rows + 3` returned rows. With
+`budget = B - rendered - 1` and `body_rows = rendered + 1`, `budget <= 2`
+means `body_rows >= B - 2`, so the pane returns up to `B + 1` rows — one to
+three rows past `frameBodyRows(minFrameHeight)`.
+
+That is not a hypothetical corner: the backstop's own comment
+(`:2971-2979`) says a real rotate's receipt "already lists 6+ written paths
+and 3 backups before the upload beat's own long provider command lines even
+start, routinely exceeding frameBodyRows(30)" — i.e. `rendered` at or above
+`B = 25`, which is `budget <= 0`. And nothing downstream rescues it: unlike
+Health (`health_screen.go:217`), Fixer (`fixer_screen.go:384`), Global SSH
+(`globalssh.go:950`) and Global Git (`globalgit.go:1044`), the Identities
+screen never calls `fitPane` — it hands the pane straight to
+`joinMasterDetail` (`identities.go:5395`), whose `lipgloss.JoinHorizontal`
+pads the *shorter* column up and never clips the taller one. So an overrun
+here pushes the frame's status/footer rows off the terminal.
+
+The base case is worse still: `if tail.Len() == 0 { return body }`
+(`:2968-2970`) returns the receipt completely unbounded, so a long receipt
+overflows the frame even with no upload beat at all.
+
+**Fix:** clamp the whole pane, not just the tail, and give the Identities
+screen the same `fitPane` safety net every other master-detail screen already
+has:
+
+```go
+// identities.go:5395 — mirrors health_screen.go:217
+body = joinMasterDetail(sidebar, sbWidth,
+    fitPane(lipgloss.NewStyle().Width(detailWidth).Render(pane), frameBodyRows(height)),
+    frameBodyRows(height))
+```
+
+`fitPane` already appends its own visible `"… (+n more lines)"` cue, so the
+result degrades honestly instead of silently. Add a regression test that
+forces `budget <= 0` (a receipt long enough on its own) and asserts the
+rendered `sv.body` is `<= frameBodyRows(minFrameHeight)`; the existing
+`TestKeyCeremonyOverflowBackstopStaysWithinFrameBudget` only exercises the
+positive-budget branch.
+
+#### WR-04 (new): the overflow backstop stacks two disagreeing truncation cues, advertises PgDn/PgUp keys nothing handles, and silently slices 4 columns off every clipped line
+
+**File:** `internal/tuikit/identities.go:3012-3015`, `internal/tuikit/frame.go:806-864`
+
+```go
+lines := maxInt(1, budget-2)
+v := ExactTextViewport{Text: wrapped, VisibleLines: lines, Width: maxInt(20, deleteChoiceNoteWidth-4)}
+return body + "\n" + v.Clamp().View() + "\n " +
+    styleFaint.Render(fmt.Sprintf("… %d more line(s) hidden", tailLines-lines)) + "\n"
+```
+
+Three distinct defects follow from reusing `ExactTextViewport` this way:
+
+1. **Two cues, one of them a lie.** `ExactTextViewport.View()` renders its
+   *own* navigation cue whenever content is hidden below
+   (`frame.go:808-828`): `"↓ lines 7–19 of 19  PgDn↓ PgUp↑"`. That row is then
+   immediately followed by the outer `"… N more line(s) hidden"` row. The
+   viewport built here is a *local variable inside a render function* — it is
+   never stored on the model, and `paneKeyCeremony`'s key handler has no
+   `pgdown`/`pgup` case (the only `ScrollDown` callers in the file are the
+   wizard's `w.proof`, `:3774` and `:3790`). So the pane tells the user to
+   press PgDn and PgDn does nothing.
+2. **Off-by-one hidden count.** Because the viewport reserves its last row for
+   its own cue (`frame.go:833-835`, `contentRows = VisibleLines - 1`), only
+   `lines-1` content rows are actually shown, while the outer cue reports
+   `tailLines - lines` hidden. It always under-reports by exactly one.
+3. **Silent horizontal truncation.** `wrapped` was word-wrapped to
+   `deleteChoiceNoteWidth` (62) at `:2990`, and the viewport then
+   horizontally slices each line to `deleteChoiceNoteWidth-4` (58)
+   (`frame.go:846-851`, `sliceColumns`). Any line that used the full wrap
+   width loses its last 4 columns. The viewport's own horizontal cue is
+   suppressed here (`showHorizontalCue` requires
+   `len(visible) < VisibleLines`, which is false in this branch), so the cut
+   is invisible. A backstop whose entire purpose is "never truncate silently"
+   truncates silently in the other axis.
+
+**Fix:** stop borrowing the scrollable-viewport component for a
+non-scrollable, non-focusable clip. Use `fitPane` (`frame.go:164-175`), which
+is the file's existing helper for exactly this — clip to `n` rows, append one
+visible cue, no phantom navigation affordance:
 
 ```go
 if tailLines > budget {
-    lines := maxInt(1, budget-1)             // reserve the cue's own row
-    v := ExactTextViewport{Text: wrapped, VisibleLines: lines, Width: maxInt(20, deleteChoiceNoteWidth-4)}
-    return body + "\n" + v.Clamp().View() + "\n " +
-        styleFaint.Render(fmt.Sprintf("… %d more line(s) hidden", tailLines-lines)) + "\n"
+    return body + "\n" + fitPane(wrapped, maxInt(2, budget))
 }
 ```
 
-and add a test that renders the branch with a positive budget and asserts
-`strings.Count(out, "\n") + 1 <= frameBodyRows(minFrameHeight)` — the
-invariant the backstop actually owes, which nothing currently pins.
+That also removes the double cue and the off-by-one in one step. If the
+viewport must be kept, at minimum pass `Width: deleteChoiceNoteWidth`
+(matching the wrap width, so nothing is sliced) and compute the cue as
+`tailLines - (lines - 1)`. The same three defects apply to the sibling
+backstop in `renderUploadSection` (`:4784-4788`), which additionally uses a
+*different* formula (`maxInt(1, budget)` against a `budget` that already
+subtracted 2) for the identical viewport-plus-cue shape — see `IN-24`.
 
-#### WR-02 (new, `be319ab` half-applied): the dummy backend's *register-key* preview commands are still unquoted — the exact surface iteration-3's WR-05 named
+#### WR-05 (carried, DEFERRED design decision — plus a new, cheaply-fixable sub-defect): the D-08 register-key pane mutates the provider account on open, and abandoning it mid-flight says nothing
 
-**File:** `internal/dummytui/fixturebackend.go:601-603`
+**File:** `internal/tuikit/identities.go:2669-2677`, `:2360-2372`, `:2683-2689`, `.planning/design/identity-manager/FIELDS.md:87`
 
-**Issue:** WR-05's fix quoted `FixtureBackend.RunUpload` (`:480-482`) and
-`offlineCaptureBackend.RunUpload`, but left the sibling untouched:
+Re-verified in source: `openRegisterKey` dispatches `RegisterKeyPlan`, and the
+plan handler dispatches the upload the instant the probe answers `Ready`
+(`:2368-2370`) — no D-01 checkbox, no confirm step. Two separate assessments:
 
-```go
-func (b FixtureBackend) RunUploadForIdentity(name string) tea.Cmd {
-	title := fmt.Sprintf(tuikit.UploadKeyTitleFmt, name, "demo-machine")
-	...
-	authCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title %s --type authentication", keyPath, title)
-	signCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title %s --type signing", keyPath, title)
-	glabCmd := fmt.Sprintf("/usr/local/bin/glab ssh-key add %s.pub -t %s --usage-type auth_and_signing", keyPath, title)
-```
+**The design decision itself is correctly still open.** `FIELDS.md:87`
+records it as an intentional contract ("opening the modal IS the explicit
+opt-in"), it is restated in `TestIdentityManager_RegisterKeyModalRuns`'s doc
+comment, and changing it means amending `FIELDS.md`, `design.go`'s frozen
+copy, the visual-divergence allowlist and at least three real-binary e2e
+tests. It also does not violate `CLAUDE.md`'s literal confirmation rule, which
+is scoped to the user's local `~/.ssh/config` / `~/.gitconfig`. Route through
+`/gsd-discuss-phase` or a tracked design amendment, as the previous review
+said — not a mechanical fix, and **not blocking Phase 9's own goal**.
 
-`title` is `gitid: personal @ demo-machine` — three spaces. `RunUploadForIdentity`
-is the method that feeds the D-08 register-key pane and the key-ceremony
-upload beat, i.e. the `register-key-modal` frame the iteration-3 finding
-called out by name ("every demo frame and every promoted
-`register-key-modal`/upload screen shows a command that, pasted into a shell,
-does the wrong thing"). The half that was fixed serves the create wizard;
-the half that was named is still broken. The real backend routes both through
-`uploader.previewLine`/`shellQuote` (`uploader.go:291-313`), so the fixture is
-now internally inconsistent as well as wrong.
-
-Note this is currently masked: CR-01 means the dummy never renders these
-commands at all. Fixing CR-01 without fixing this will surface the unquoted
-previews in the promoted frames.
-
-**Fix:** apply the same hardcoded-quoted shape `RunUpload` now uses:
+**But one concrete sub-defect inside it is not a design decision and was
+missed by all three prior rounds.** `handleRegisterKeyKey`'s `esc` case
+returns no note:
 
 ```go
-authCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title '%s' --type authentication", keyPath, title)
-signCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title '%s' --type signing", keyPath, title)
-glabCmd := fmt.Sprintf("/usr/local/bin/glab ssh-key add %s.pub -t '%s' --usage-type auth_and_signing", keyPath, title)
+// identities.go:2683-2689
+case "esc":
+    m.pane = paneDetail
+    return keyResult{model: m, handled: true}
 ```
 
-and re-promote the affected frames after CR-01 is closed.
-
-#### WR-03 (new, introduced by `0dc56e3`): WR-13's abandon note reports the **pub path** as the registered title whenever any earlier argv element needs quoting
-
-**File:** `internal/tuikit/identities.go:4655-4661` (`extractUploadedTitle`),
-`:4675-4686` (`wizardAbandonUploadNote`), vs
-`internal/uploader/uploader.go:291-320`
-
-**Issue:** `extractUploadedTitle` takes the text between the *first* pair of
-single quotes:
+If the user presses Esc while `registerKeyPending` is true, the pane closes,
+the in-flight `gh ssh-key add` runs to completion anyway, and its
+`UploadRunMsg` is discarded by the `m.pane == paneRegisterKey` guard
+(`:2376`). The user is told **nothing** — yet the wizard's byte-for-byte
+identical situation was given a mitigation in the previous fix pass:
+`wizardAbandonUploadNote` (`:4715-4738`), wired at `:3640` and `:3681`. The
+asymmetry is arbitrary and the fix is three lines:
 
 ```go
-func extractUploadedTitle(command string) string {
-	parts := strings.SplitN(command, "'", 3)
-	if len(parts) < 3 { return "" }
-	return parts[1]
-}
+case "esc":
+    m.pane = paneDetail
+    return keyResult{model: m, handled: true, note: registerKeyAbandonNote(m.registerKeyPending, m.registerKeyName)}
 ```
 
-Its doc comment asserts the title is "the ONLY quoted argument … (the key
-path and flags normally do not [contain spaces])". `shellQuote` quotes **any**
-argument containing `space \t " ' \ $` or a backtick
-(`uploader.go:292`), and `buildArgs` places `pubPath` **before**
-`--title title` (`uploader.go:315-320`). So:
+where `registerKeyAbandonNote` returns `""` unless a beat was in flight and
+otherwise says a registration may have completed for that identity. (The
+existing `wizardAbandonUploadNote` cannot be reused verbatim — it keys off
+`run.Rows`, and here the run has not arrived yet — but the copy can be.)
 
-- `$HOME` containing a space (`/Users/John Smith/.ssh/id_ed25519_work.pub`,
-  a routine macOS/Windows account name) → `pubPath` is quoted first and the
-  note tells the user to remove a provider key "under the title
-  `/Users/John Smith/.ssh/id_ed25519_work.pub`" — a title that does not exist.
-- an identity name containing `'` → `shellQuote` escapes it as `'\''`, and
-  `SplitN(…, "'", 3)` returns the truncated prefix (`gitid: o` for
-  `o'brien`).
-- a `toolPath` containing a space (a Homebrew prefix under a spaced HOME,
-  `/Users/John Smith/.local/bin/gh`) → the quoted tool path is returned.
+#### WR-06 (carried, DEFERRED — correctly still open): the multi-line `ManualCommand` is interpolated into a single-line sentence
 
-This is the *one* piece of information the mitigation exists to deliver: the
-user has an orphaned remote key and this note is the only pointer to it.
-Emitting a confidently-wrong title is worse than the generic fallback the
-function already has.
+**File:** `cmd/gitid/upload_run.go:552-558`, `internal/tuikit/design.go:695`, `internal/tuikit/identities.go:2812`, `:2821`
 
-**Fix:** parse by flag position, not by quote position, and fall back to the
-generic sentence rather than to a wrong string:
+Re-verified: `deleteCandidatesManualCommand` joins one preview per candidate
+with `"\n"` (`upload_run.go:555-558`), and a rotated GitHub key always has two
+(authentication + signing, separate REST namespaces). Both "leave it" result
+paths interpolate that whole multi-line string into
+`RotateDeleteOfferResultLeftFmt`'s single `%s`:
 
 ```go
-// extractUploadedTitle returns the operand following --title (gh) or -t (glab).
-func extractUploadedTitle(command string) string {
-	fields := strings.Fields(command)
-	for i, f := range fields {
-		if (f == "--title" || f == "-t") && i+1 < len(fields) {
-			return strings.Trim(strings.Join(fields[i+1:], " "), "'")
-		}
-	}
-	return ""
-}
+// identities.go:2812 (esc) and :2821 (Enter on "Leave it")
+m.rotateDeleteResult = fmt.Sprintf(RotateDeleteOfferResultLeftFmt, m.rotateDeleteOffer.ManualCommand)
 ```
 
-Better still, carry the title on `UploadResultRow` (the backend already
-computes it via `uploader.KeyTitle`) instead of re-parsing a rendered
-display string at all — the row is the correct carrier and removes the
-quoting coupling entirely. Add a regression whose `row.Command` has a quoted
-pub path preceding the title.
+The embedded newline splits the frozen sentence across rows mid-clause.
 
-#### WR-04 (new): the fix report asserts a gate result that the bisect disproves, and its close-out never ran the two tagged gates where the damage landed
+**Correctly deferred:** the fix is either an R22 frozen-copy amendment in
+`design.go` (render the commands as an indented block under the sentence) or
+a producer change to join with `" && "`. Both are deliberate copy/rendering
+decisions. File as a tracked design/backlog item; **not blocking Phase 9's own
+goal.**
 
-**File:** `.planning/phases/09-upload-credentials-assist/09-REVIEW-FIX.md:29-33`,
-`:62`
+#### WR-07 (carried, DEFERRED — correctly still open): the upload checkbox's actionable copy is truncated away at the only width production uses
 
-**Issue:** The report's WR-05 entry states:
+**File:** `internal/tuikit/identities.go:4820-4828`, `:4835`, `internal/tuikit/design.go:582`, `:586`
 
-> two pre-existing unrelated failures — `TestCaptureTUI`, environmental, and
-> `TestRegionDiffCoverage`, pre-existing before this change — confirmed via
-> A/B stash comparison
+Re-verified: `renderUploadCheckboxRow` is always called at `width = 60`
+(`:4835`) and ends in `ansi.Truncate(line, width, "…")` (`:4828`). The frozen
+unauth/disabled labels are longer than 60 columns, so the actionable half —
+the `run "<tool> auth login"` remediation — is the part that gets cut. The
+previous pass's mitigation added the `"…"` marker so the cut is at least
+visible, which is the right interim step but not the fix.
 
-`TestRegionDiffCoverage` was **not** pre-existing. It is green at `6b5bf7b`
-(the pre-fix-pass HEAD) and red from `cdc6932` onward — the fixer's own first
-commit, five commits before the one the claim is attached to. The A/B stash
-comparison was performed against `be319ab`'s file only, which cannot detect a
-break introduced by an earlier commit in the same pass; the conclusion drawn
-from it ("pre-existing", therefore ignorable) is unsupported.
-
-The report's three green gates are all genuine and I reproduced them, but
-none of them covers `-tags screenshot` or `-tags e2e`:
-
-```
-go build ./...                                        # true
-TERM=dumb SSH_AUTH_SOCK= go test -count=1 -race ./... # true (untagged only)
-make lint                                             # true
-```
-
-That gap is exactly how 13 red tests shipped as `status: partial`. The
-project's own memory note *review-gate-race-vs-executor-nonrace* records this
-same failure mode for executors; it now applies to the fixer.
-
-**Fix:** correct the WR-05 entry, and make the fixer's close-out battery
-mandatory and complete:
-
-```
-go build ./...
-TERM=dumb SSH_AUTH_SOCK= go test -count=1 -race ./...
-TERM=dumb SSH_AUTH_SOCK= go test -tags screenshot ./internal/screenshot/... ./cmd/gitid/...
-TERM=dumb SSH_AUTH_SOCK= go test -tags e2e ./e2e/...
-make lint
-```
-
-Treat "pre-existing" as a claim requiring a bisect against the pass's *base*
-commit, never against a single stashed file.
-
----
-
-The three findings below are **deferred by design decision, not defects to
-fix mechanically.** They were correctly skipped by the fix pass and they do
-not block Phase 9's own goal (upload/credentials-assist working correctly).
-A fixer should route them to `/gsd-discuss-phase` or a tracked design
-amendment, and must not attempt a code change. They are recorded as Warnings
-only so they stay visible until they are filed.
-
-#### WR-05 (carried from iteration 3 WR-03 — DEFERRED, do not mechanically fix): the D-08 register-key pane performs a real remote mutation on open, with no confirmation and no cancel
-
-**File:** `internal/tuikit/identities.go:2528-2534`, `:2650-2662`,
-`:2360-2370`, `:2665-2675`
-
-**Issue:** Unchanged and confirmed still present. Pressing `u` opens
-`paneRegisterKey`, whose resolved plan dispatches `RunUploadForIdentity`
-unconditionally — a real `gh/glab ssh-key add` — with no preview-and-confirm
-beat, and `handleRegisterKeyKey` accepts only `esc`, which does not cancel
-the in-flight command.
-
-**Why it stays open:** the sequencing is a *tracked contract*, verified at
-`.planning/design/identity-manager/FIELDS.md:87`:
-
-> the D-01 checkbox is OMITTED here — opening the modal IS the explicit
-> opt-in, so it announces-and-runs immediately when the provider matches and
-> the tool is authenticated
-
-restated in `TestIdentityManager_RegisterKeyModalRuns`' own doc comment
-(`e2e/identity_manager_pty_e2e_test.go:878-879`). It genuinely tensions with
-CLAUDE.md's "only with user confirmation" rule, and the mutation is additive
-and reversible, but changing it means amending FIELDS.md, the frozen copy in
-`design.go`, the visual allowlist, and at least three real-binary e2e tests.
-
-**Fix:** file as a design amendment (ROADMAP/backlog item), not a code change.
-
-#### WR-06 (carried from iteration 3 WR-10 — DEFERRED, do not mechanically fix): the multi-line `ManualCommand` is interpolated into a single-line sentence
-
-**File:** `cmd/gitid/upload_run.go:552-558`, `internal/tuikit/design.go:695`,
-`internal/tuikit/identities.go:2812`, `:2821`
-
-**Issue:** Unchanged. `deleteCandidatesManualCommand` joins one preview per
-candidate with `"\n"`; `RotateDeleteOfferResultLeftFmt = "Left in place —
-remove it yourself: %s"` renders the second command at column 0 with no
-leading space and no context. A rotated GitHub key always has two
-registrations, so the two-line case is the *normal* one.
-
-**Fix:** requires a `design.go` R22 frozen-copy amendment (indented block, or
-`" && "` join). File it; do not patch the format string in isolation.
-
-#### WR-07 (carried from iteration 3 WR-11 — DEFERRED, do not mechanically fix): the upload checkbox's actionable copy is unreadable at the only width production uses
-
-**File:** `internal/tuikit/identities.go:4747`, `:4779-4783`,
-`internal/tuikit/design.go:582`, `:586`
-
-**Issue:** Unchanged and confirmed: `renderUploadCheckboxRow` is called at a
-hardcoded width of 60 (`:4783`), while `UploadCheckboxLabelUnauthFmt` renders
-~106 columns, so the entire remediation clause (`run "gh auth login" first,
-or check anyway`) is truncated away, and `UploadCheckboxLabelDisabledFmt`
-loses `Manual steps are shown after create.`
-
-**Fix:** requires amending frozen copy to fit 60 columns (a copywriting
-decision) or widening the row, both R22 amendments. Still tracked only inside
-review/fix reports — file it as a ROADMAP/backlog item so it stops recurring.
+**Correctly deferred:** shortening the label is an R22 frozen-copy amendment
+(a copywriting decision), and widening the row breaks the wizard's one-line
+row budget. File as a ROADMAP/backlog item; **not blocking Phase 9's own
+goal.**
 
 ### Info
 
 #### IN-01 (carried): `mustSeeSlow`'s rationale is stale after `FakeGHTrackAddedKeys`
-
-**File:** `e2e/identity_manager_pty_e2e_test.go:997-1003`
-
-Still says the fixture "never reflects what was 'added'" — exactly what the
-stateful shim changed for the three tests that opt in. **Fix:** update the
-comment; the 20s budget remains justified by the chained offer probe.
+**File:** `e2e/identity_manager_pty_e2e_test.go:997-1003` — still says the fixture "never reflects what was 'added'", which the stateful shim changed for the three opt-in tests. **Fix:** update the comment; the 20s budget stays justified by the chained offer probe.
 
 #### IN-02 (carried): the fake-gh shim's `api -X DELETE` always succeeds and never mutates its own state
-
-**File:** `e2e/harness_test.go:914,929`
-
-`delete-ok` answers every `api` invocation — including
-`-X DELETE user/keys/555` — with the inventory fixture and exit 0. No test can
-assert "after the delete, the key is gone", and a delete addressing the wrong
-resource still reports success. **Fix:** branch on `-X DELETE`, remove the ID
-from the state file, exit 404-shaped for an unknown ID — which would also give
-WR-09's retry path real coverage.
+**File:** `e2e/harness_test.go:914`, `:929` — no test can assert "after the delete, the key is gone", and a delete addressing the wrong resource still reports success. **Fix:** branch on `-X DELETE`, drop the ID from the state file, exit 404-shaped for an unknown ID. This would also give `IN-16`'s retry path real coverage.
 
 #### IN-03 (carried, now broader): the fake-gh shim reads argv positionally as `$3` and `$5`
-
-**File:** `e2e/harness_test.go:894`, `:897`
-
-`cat "$3"` and `"$5"` both assume `buildArgs` keeps emitting
-`ssh-key add <path> --title <title> --type <type>`. The coupling is now
-load-bearing for CR-01's blob-exclusion coverage and invisible from
-`uploader.buildArgs` (`uploader.go:315-324`). It fails closed, but
-inscrutably. **Fix:** scan `"$@"` for `--title`/the first non-flag operand,
-and add a comment on `buildArgs` naming the shim as a positional consumer.
+**File:** `e2e/harness_test.go:894`, `:897` — both assume `buildArgs` keeps emitting `ssh-key add <path> --title <title> --type <type>` (`internal/uploader/uploader.go:315-324`). Fails closed but inscrutably. **Fix:** scan `"$@"` for `--title`; add a comment on `buildArgs` naming the shim as a positional consumer.
 
 #### IN-04 (carried): frame-promote stamps HEAD as the "source commit" of frames captured earlier
-
-**File:** `cmd/gitid-frame-promote/main.go:82-95`, `:140-141`
-
-`gitHead(root)` is read at promote time; the frames come from a
-`tmp/ui-frames/` capture that may predate HEAD arbitrarily. The SHA-256
-column delivers the stated guarantee; the commit column can misattribute.
-**Fix:** record the commit at capture time, or rename the column to
-"promoted at commit".
+**File:** `cmd/gitid-frame-promote/main.go:82-95`, `:140-141`. **Fix:** record the commit at capture time, or rename the column to "promoted at commit".
 
 #### IN-05 (carried): `deleteArgs` silently ignores `reg` for GitLab
+**File:** `internal/uploader/inventory.go:271-274` — the gh branch errors on an unsupported registration; the glab branch returns `ssh-key delete <id>` for any value, dropping the namespace guard `DeleteKey`'s doc comment calls load-bearing. Harmless today (`desiredRegistrations` only yields `Combined` for glab). **Fix:** error for anything other than `RegistrationCombined`.
 
-**File:** `internal/uploader/inventory.go:273-274`
-
-The gh branch errors on an unsupported registration; the glab branch returns
-`ssh-key delete <id>` for *any* value including `Authentication`/`Signing`.
-Harmless today (`desiredRegistrations` only produces `Combined` for glab) but
-it removes the namespace guard `DeleteKey`'s doc comment calls load-bearing.
-**Fix:** return an error for anything other than `RegistrationCombined`.
-
-#### IN-06 (carried): doc comments detached from the functions they describe
-
-**File:** `internal/tuikit/identities.go:4578-4592`
-
-`renderUploadCheckboxRow`'s and `uploadRunHasContent`'s doc comments still sit
-stacked above `renderRegisterKey`; godoc attributes both to the wrong symbol.
-**Fix:** move each above its own declaration.
+#### IN-06 (carried): two doc comments detached from the functions they describe
+**File:** `internal/tuikit/identities.go:4588-4598` — `renderUploadCheckboxRow`'s and `uploadRunHasContent`'s doc comments are stacked above `renderRegisterKey`; godoc attributes both to the wrong symbol. **Fix:** move each above its own declaration.
 
 #### IN-07 (carried): `uploadFailureView`'s `provider` parameter is a hostname, sometimes empty
-
-**File:** `cmd/gitid/wiring.go:1478-1484`, `:1579`
-
-The not-found branch still passes `""`, rendering `"Upload your public key to
- as both an authentication key and a signing key,"`. **Fix:** rename the
-parameter to `hostname` and skip the manual block when empty.
+**File:** `cmd/gitid/wiring.go:1478-1484`, `:1579` — the not-found branch passes `""`, rendering `"Upload your public key to  as both…"`. **Fix:** rename to `hostname` and skip the manual block when empty.
 
 #### IN-08 (carried): `fmt.Fprintln(w, fmt.Sprintf(...))` instead of `fmt.Fprintf`
-
-**File:** `cmd/gitid/upload_run.go`, `cmd/gitid/identity_upload.go` — 7 sites
-remain. **Fix:** `fmt.Fprintf(w, fmt+"\n", …)`.
+**File:** `cmd/gitid/upload_run.go:292`, `:296`, `:301`, `:303`, `:305`; `cmd/gitid/identity_upload.go:201`. **Fix:** `fmt.Fprintf(w, fmt+"\n", …)`.
 
 #### IN-09 (carried): frame-promote's header documents `PROVENANCE.md`; the tool writes `README.md`, and the registry count disagrees with its comment
-
-**File:** `cmd/gitid-frame-promote/main.go:13`, `:34`, `:46`, `:92-95`
-
-The package comment promises `ui-frames/PROVENANCE.md` while `run()` writes
-`README.md` (the error string still says "writing PROVENANCE table"), and the
-comment says "twelve new PTY tests plus the two pre-existing" (14) for a
-13-row table. **Fix:** align all three.
+**File:** `cmd/gitid-frame-promote/main.go:13`, `:34`, `:46`, `:92-95`. **Fix:** align all three.
 
 #### IN-10 (carried): UTF-8-unsafe byte slice of a frozen format string in a test assertion
-
-**File:** `cmd/gitid/identity_upload_test.go:393`
-
-`tuikit.UploadResultFailedFmt[:5]` slices `"✗ %s key …"` at byte 5, yielding
-`"✗ %"`, which never appears in rendered output; the assertion passes only via
-its `||` fallback. **Fix:** assert on the rendered substring.
+**File:** `cmd/gitid/identity_upload_test.go:393` — `tuikit.UploadResultFailedFmt[:5]` slices `"✗ %s key …"` at byte 5, yielding `"✗ %"`, which never appears in rendered output; the assertion only passes via its `||` fallback. **Fix:** assert on the rendered substring.
 
 #### IN-11 (carried, mitigated): e2e children inherit the ambient environment, including real provider tokens
-
-**File:** `e2e/harness_test.go:509-537`
-
-`e2eEnv` still builds `append(os.Environ(), …)`, so `GH_TOKEN`,
-`GITHUB_TOKEN`, `GH_CONFIG_DIR`, `GLAB_*` reach every child. Re-examined for
-promotion this iteration and deliberately kept at Info: `ProviderDenyDir` is
-prepended to PATH and `ambientPathSentinelHit` hard-fails any caller that
-smuggles the ambient PATH ahead of it, so a real `gh` cannot resolve — the
-tokens are unreachable in practice. **Fix (defense-in-depth):** blank the
-provider-credential variables inside `e2eEnv` so hermeticity does not rest on
-the deny shim alone, given this phase added a real `api -X DELETE` path.
+**File:** `e2e/harness_test.go:509-537` — `e2eEnv` builds `append(os.Environ(), …)`, so `GH_TOKEN`/`GITHUB_TOKEN`/`GH_CONFIG_DIR`/`GLAB_*` reach every child. Kept at Info: `ProviderDenyDir` is prepended to PATH and `ambientPathSentinelHit` hard-fails any caller that smuggles the ambient PATH ahead of it, so a real `gh` cannot resolve. **Fix (defense-in-depth):** blank the provider-credential variables inside `e2eEnv`, given this phase added a real `api -X DELETE` path.
 
 #### IN-12 (carried): `u` is consumed on wizard step 0 even when the checkbox row is not rendered
-
-**File:** `internal/tuikit/identities.go:3654`
-
-The branch checks `w.focus > sshFieldPort` (plus the D-10 manual-path
-exclusion) but not `w.uploadRowVisible()`, so on a non-gated host `u` is
-swallowed with no effect. **Fix:** add `&& w.uploadRowVisible()`.
+**File:** `internal/tuikit/identities.go:3668` — the branch checks `w.focus > sshFieldPort` and the D-10 manual-path exclusion, but not `w.uploadRowVisible()`, so on a non-gated host `u` is swallowed with no effect. **Fix:** add `&& w.uploadRowVisible()`.
 
 #### IN-13 (carried): `TestRegisterKeyExitContract` documents six cases, defines five
+**File:** `cmd/gitid/identity_upload_test.go:201-205` — the comment says "six canned views … a nil error for the first five"; the table has five rows and the dry-run case named in the R10 exit contract is absent. **Fix:** add the row or correct the comment.
 
-**File:** `cmd/gitid/identity_upload_test.go:202-205`
+#### IN-14 (carried): `RotateDeleteOffer`'s doc comment still describes the pre-CR-01 matching
+**File:** `cmd/gitid/wiring.go:1595-1598` — "by EXACT title equality … (`uploader.KeyTitle` + `uploader.FindByTitle`)" documents the behavior `OldKeyCandidates` replaced. **Fix:** point it at `OldKeyCandidates`.
 
-The comment still says "six canned views … a nil error for the first five";
-the table has five rows and the dry-run case named in the R10 exit contract is
-absent. **Fix:** add the row or correct the comment.
+#### IN-15 (carried): `stripLeadingNonJSONLines` only handles a *leading* banner, and a JSON-shaped stderr line is taken as the payload
+**File:** `internal/uploader/inventory.go:150-159` — `RunCmd` returns `CombinedOutput`, whose interleaving is unordered: a stderr line flushed after or inside the JSON still corrupts the decode, and `{"level":"warn",…}` is accepted as the start of the payload. **Fix:** a separated-streams variant on `Deps` for parsing calls is the durable answer; file it rather than extending the line scanner.
 
-#### IN-14 (carried, partially stale): `RotateDeleteOffer`'s doc comment still describes the pre-CR-01 matching
+#### IN-16 (carried): the retry narrowing does not treat "already absent" as success
+**File:** `cmd/gitid/wiring.go:1649-1670` — a candidate that 404s because it was removed out-of-band is recorded in both `failed` and `remaining`, so its retry fails permanently and `"✓ Old key removed"` stays unreachable. **Fix:** classify a not-found delete response as success in the loop so it never enters `remaining`.
 
-**File:** `cmd/gitid/wiring.go:1596`
+#### IN-17 (new): the new `WR-01` regression test can pass vacuously
+**File:** `internal/tuikit/identity_manager_upload_test.go:761-793` — `TestKeyCeremonyOverflowBackstopStaysWithinFrameBudget` asserts only `lines <= budget`; it never asserts that the overflow branch was actually entered. A future change that lets its fixture tail fit turns it into a no-op that still passes. **Fix:** also assert the rendered output contains `"more line(s) hidden"`.
 
-Two thirds of this item are now resolved: `titleMatchesThisMachine` is
-unexported with an accurate "no production caller" note
-(`uploader.go:271-277`), and `FindByTitle` gained a doc comment redirecting
-destructive callers to `OldKeyCandidates` plus a genuine e2e caller
-(`e2e/upload_real_account_e2e_test.go:510,515`). What remains is the stale
-prose at `wiring.go:1596` — "by EXACT title equality … (`uploader.KeyTitle` +
-`uploader.FindByTitle`)" — which documents the behavior CR-01 replaced.
-**Fix:** point it at `OldKeyCandidates`.
+#### IN-18 (new): `extractUploadedTitle`'s `-t ` search is an unanchored substring scan
+**File:** `internal/tuikit/identities.go:4676-4681` — `strings.Index(command, "-t ")` is not anchored to an argument boundary, so any earlier `-t ` (inside a quoted path, or a future flag) would be taken as the title flag. Not reachable with today's `buildArgs` shapes (`--type`/`--usage-type` do not contain `-t `), but it is a silent, guess-shaped failure if it ever is. **Fix:** require the match to be preceded by a space (or split on the quote-aware token boundary) before accepting it.
 
-#### IN-15 (new): `stripLeadingNonJSONLines` only handles a *leading* banner, and a stderr line starting with `{` is taken as the payload
+#### IN-19 (new): the key ceremony commits on `sel.Name` but dispatches, guards, notes and records actions on `m.selected`
+**File:** `internal/tuikit/identities.go:2850`, `:2852`, `:2838` (`sel.Name`) vs `:2259`, `:2261`, `:2265`, `:2274`, `:2296` (`m.selected`) — `selectedIdentity` falls back to the first row when `m.selected` matches nothing (`:2167-2177`), so the two can diverge; the commit would then target one identity while the receipt, the emitted `RotateIdentity`/`NewKey` action and the upload beat all name another. No path today makes `m.selected` name a nonexistent row, so this is latent. **Fix:** use one source consistently — either set `m.selected = sel.Name` in `openKeyCeremony`, or read `sel.Name` throughout the ceremony handler.
 
-**File:** `internal/uploader/inventory.go:150-159`
+#### IN-20 (new): dry-run derives the public path by string concatenation instead of using the staged one
+**File:** `cmd/gitid/identity_create.go:450` — `PublicKeyPath: staged.FinalPrivatePath + ".pub"` where `staged.FinalPubPath` is right there and is what every other site uses. Equal today; a divergence in the staging naming would silently desync the preview from the write. **Fix:** use `staged.FinalPubPath`.
 
-WR-12's fix implements the review's explicitly-accepted minimum, so this is
-not a re-open — just the residual. `RunCmd` returns `CombinedOutput`, whose
-interleaving is not ordered: a stderr line flushed *after* or *inside* the
-JSON still corrupts the decode, and a JSON-shaped stderr log line
-(`{"level":"warn",…}`) is silently accepted as the start of the payload,
-producing a parse error whose discarded-prefix diagnostic is then empty.
-**Fix:** the larger option the review named — a separated-streams variant on
-`Deps` for parsing calls — remains the durable answer; file it rather than
-extending the line-scanner.
+#### IN-21 (new): the `budget-2` comment mystifies a constant that is exactly derivable
+**File:** `internal/tuikit/identities.go:3002-3012` — the comment says the value was "verified empirically against the actual render output, not derived on paper". It *is* derivable (see this report's Summary): the two reserved rows are the cue line and the trailing `"\n"`'s own row. Presenting it as a magic empirical number invites a future maintainer to re-tune it by trial and error. **Fix:** replace the comment with the one-line derivation, and name the two rows.
 
-#### IN-16 (new): WR-09's retry narrowing does not treat "already absent" as success
+#### IN-22 (new): `RedactCLIOutput` misses newer GitLab token prefixes
+**File:** `internal/uploader/classify.go:32-33` — `glabTokenPattern` covers `glpat-` only; GitLab also issues `gldt-` (deploy), `glrt-` (runner) and `glsoat-` (OAuth). Low impact because the function keeps only the first non-empty line, but the pattern is billed as defence in depth. **Fix:** widen to `gl[a-z]{2,6}-[A-Za-z0-9_-]{20,}`.
 
-**File:** `cmd/gitid/wiring.go:1641-1670`
+#### IN-23 (new): the fixture backend has no failure shape for `RunUploadForIdentity`
+**File:** `internal/dummytui/fixturebackend.go:605-635` — `RunUpload` models a `partial.` failure host, but `RunUploadForIdentity` always succeeds, so `CR-02`'s `uploadSucceeded == false` gate (the one that suppresses the D-04 delete offer after a failed registration) has no demo or screenshot coverage at all. **Fix:** add a failing fixture host to `RunUploadForIdentity` mirroring `RunUpload`'s `partial.` branch.
 
-The review offered two remedies and the fixer implemented one
-(`RemainingKeyID`), which correctly fixes the partial-delete retry it was
-raised for. The other half is still open: a candidate that returns 404
-because it was removed out-of-band is recorded in both `failed` and
-`remaining`, so its retry fails permanently and `"✓ Old key removed"` stays
-unreachable. **Fix:** classify a not-found delete response as success in the
-loop so it never enters `remaining`.
+#### IN-24 (new): the two sibling overflow backstops use different arithmetic for the identical viewport-plus-cue shape
+**File:** `internal/tuikit/identities.go:3012` (`maxInt(1, budget-2)`, with `budget = B - rendered - 1`) vs `:4779` and `:4785` (`maxInt(1, budget)`, with `budget = B - rendered - 2`). Both are within budget today, by two different routes, with comments that cross-reference each other as "identical". **Fix:** factor the clip into one helper (see `WR-04`'s `fitPane` suggestion) so there is one formula, not two.
 
 ---
 
 ## Verification commands run
 
 ```
-go build ./...                                                          # clean
-TERM=dumb SSH_AUTH_SOCK= go test -count=1 -race ./...                   # 2364 passed / 22 pkgs
-make lint                                                               # 0 issues (untagged + screenshot)
-TERM=dumb SSH_AUTH_SOCK= go test -tags e2e ./e2e/                       # 172 passed, 3 FAILED (CR-01)
-TERM=dumb SSH_AUTH_SOCK= go test -tags screenshot ./internal/screenshot/... ./cmd/gitid/...
-                                                                        # 11 FAILED (CR-01) + 1 environmental
-git worktree bisect over 6b5bf7b..dbcaf78 x TestRegionDiffCoverage       # green at 6b5bf7b, red from cdc6932
-git worktree at cdc6932^ x TestRegisterKeyModal_CompiledRealVsLiveDummyPTY  # 3 passed (red at HEAD)
+go build ./...                                                        # clean, exit 0
+TERM=dumb SSH_AUTH_SOCK= go test -count=1 -race ./...                 # 2373 passed / 22 pkgs, exit 0
+make lint                                                             # 0 issues (untagged + screenshot-tagged), exit 0
+TERM=dumb SSH_AUTH_SOCK= go test -tags e2e -count=1 -timeout 40m ./e2e/...
+                                                                      # 175 passed, 0 failed, exit 0
+TERM=dumb SSH_AUTH_SOCK= go test -tags screenshot -count=1 -timeout 30m \
+    ./internal/screenshot/... ./cmd/gitid/...                         # 832 passed, 1 failed, exit 0
+                                                                      # TestCaptureTUI: "freeze binary not found on PATH"
+                                                                      # — environmental, unchanged from prior iterations
 ```
+
+Note on the tagged suites: both need a generous `-timeout`. At the default
+10m per-package budget the e2e package aborts mid-suite with
+`panic: test timed out`, on a different test each run — a package-wide
+timeout artifact, not a test failure. `-timeout 40m` / `-timeout 30m`
+complete cleanly.
 
 ---
 
-_Reviewed: 2026-08-31T02:33:51Z_
+_Reviewed: 2026-08-31T04:12:44Z_
 _Reviewer: Claude (gsd-code-reviewer)_
-_Depth: standard — iteration 4 (independent re-review after 09-REVIEW-FIX.md's 10-commit fix pass)_
+_Depth: standard_
+_Iteration: 5 (supersedes iteration 4; prior content preserved at 09-REVIEW.iter3.md)_
