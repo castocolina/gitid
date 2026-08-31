@@ -2684,10 +2684,34 @@ func (m identitiesModel) openRegisterKey(sel DemoIdentity) (identitiesModel, tea
 func (m identitiesModel) handleRegisterKeyKey(msg tea.KeyMsg, _ DemoState) keyResult {
 	switch msg.String() {
 	case "esc":
+		pending := m.registerKeyPending
+		name := m.registerKeyName
 		m.pane = paneDetail
-		return keyResult{model: m, handled: true}
+		return keyResult{model: m, handled: true, note: registerKeyAbandonNote(pending, name)}
 	}
 	return keyResult{model: m, handled: true}
+}
+
+// registerKeyAbandonNote is the WR-05 sub-defect fix (review iteration 5):
+// D-08's register-key pane dispatches the upload beat the instant the
+// eligibility probe answers Ready (openRegisterKey/RegisterKeyPlanMsg —
+// R13, "opening the modal IS the explicit opt-in", intentionally
+// unconfirmed and correctly left alone). But if the user presses Esc WHILE
+// that beat is still in flight (registerKeyPending), the pane closes, the
+// in-flight gh/glab call runs to completion anyway, and its UploadRunMsg is
+// silently discarded by the paneRegisterKey guard — the user is told
+// nothing. The wizard's byte-for-byte identical situation already has a
+// mitigation (wizardAbandonUploadNote, WR-13/review iteration 3); this is
+// its register-key sibling. wizardAbandonUploadNote cannot be reused
+// verbatim — it keys off the FINISHED run's Rows, and here the run has not
+// arrived yet — so this checks only whether a beat was genuinely in flight
+// at the moment of Esc. "" when nothing was running (the common case: the
+// beat already finished, or never started).
+func registerKeyAbandonNote(pending bool, name string) string {
+	if !pending {
+		return ""
+	}
+	return fmt.Sprintf("Note: a key registration for %q may have completed with the provider after you left this pane — check it manually.", name)
 }
 
 // handleActionsKey drives the action menu, whose row COUNT is derived from

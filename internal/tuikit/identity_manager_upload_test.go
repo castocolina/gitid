@@ -87,6 +87,69 @@ func TestRegisterKeyPaneResolvesItsPlanAsynchronously(t *testing.T) {
 	}
 }
 
+// TestRegisterKeyPaneEscWhilePendingSurfacesAbandonNote is the WR-05
+// sub-defect regression (review iteration 5): the D-08 register-key pane's
+// esc handler used to return no note at all, so a user who pressed Esc
+// while the in-flight registration beat was still running got no
+// indication that a `gh`/`glab` call was going to complete anyway after
+// the pane closed — the wizard's byte-for-byte identical situation already
+// has a mitigation (wizardAbandonUploadNote, WR-13/iteration 3); this pane
+// had none.
+func TestRegisterKeyPaneEscWhilePendingSurfacesAbandonNote(t *testing.T) {
+	s := Seed()
+	m := newIdentitiesModel(stubBackend{}, s)
+	sel, ok := m.selectedIdentity(s)
+	if !ok {
+		t.Fatal("seed has no selected identity")
+	}
+	m, _ = m.openRegisterKey(sel)
+	res := m.handleMsg(RegisterKeyPlanMsg{
+		Name: sel.Name,
+		View: UploadEligibilityView{State: UploadEligibilityReady, ProviderName: "GitHub", ToolName: "gh", Hostname: "github.com"},
+	}, s)
+	m, ok = res.model.(identitiesModel)
+	if !ok {
+		t.Fatalf("handleMsg returned %T, want identitiesModel", res.model)
+	}
+	if !m.registerKeyPending {
+		t.Fatal("setup: a Ready plan must set registerKeyPending (R13: registration runs on open)")
+	}
+
+	escRes := m.handleRegisterKeyKey(pressKey("esc"), s)
+	if escRes.note == "" {
+		t.Fatal("Esc while a registration beat is in flight must surface an abandon note, got none")
+	}
+	if !strings.Contains(escRes.note, sel.Name) {
+		t.Errorf("note = %q, want it to name the identity %q", escRes.note, sel.Name)
+	}
+	after, ok := escRes.model.(identitiesModel)
+	if !ok {
+		t.Fatalf("handleRegisterKeyKey returned %T, want identitiesModel", escRes.model)
+	}
+	if after.pane != paneDetail {
+		t.Errorf("pane = %v, want paneDetail (Esc must still leave the pane, note or not)", after.pane)
+	}
+}
+
+// TestRegisterKeyPaneEscWithoutPendingBeatSurfacesNoNote is the negative
+// control: the common case (no registration beat in flight — the plan
+// never arrived yet, or resolved to a non-Ready state) must not grow a
+// spurious note every time the user leaves the pane.
+func TestRegisterKeyPaneEscWithoutPendingBeatSurfacesNoNote(t *testing.T) {
+	s := Seed()
+	m := newIdentitiesModel(stubBackend{}, s)
+	sel, ok := m.selectedIdentity(s)
+	if !ok {
+		t.Fatal("seed has no selected identity")
+	}
+	m, _ = m.openRegisterKey(sel)
+
+	escRes := m.handleRegisterKeyKey(pressKey("esc"), s)
+	if escRes.note != "" {
+		t.Errorf("note = %q, want empty when no registration beat was in flight", escRes.note)
+	}
+}
+
 func TestRegisterKeyPaneRunsImmediatelyWhenPlanIsReady(t *testing.T) {
 	s := Seed()
 	m := newIdentitiesModel(stubBackend{}, s)
