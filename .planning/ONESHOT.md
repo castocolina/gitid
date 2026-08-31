@@ -38,6 +38,7 @@ do not assume any of them ran just because the previous one did:
    screenshot).
 9. `/gsd-audit-uat` — run it yourself. Nothing above triggers it
    automatically; treat it as a required step, not a periodic extra.
+10. Execute `codegraph sync` when enter to new worktree and after every task or wave. Use codegraph_explore MCP tool when available to find symbols in file, prirityze new tools like rg, bat, sd, fx, eza over old ones.
 
 Only close a phase and advance once all nine are evidenced.
 
