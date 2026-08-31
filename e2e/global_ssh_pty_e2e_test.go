@@ -62,16 +62,22 @@ func openGlobalSSHPreview(t *testing.T, s *ptySession) {
 	mustSee(t, s, "Write Host * managed block", "apply opens the one-screen preview")
 }
 
+// captureGlobalSSHFrame snapshots the current frame and saves it via
+// saveFrame's gitignored tmp/ui-frames/ scratch directory.
+//
+// WR-04 (review iteration 3): this used to write straight into the TRACKED
+// .planning/phases/06-global-ssh-options/ui-frames/ directory — the exact
+// defect saveFrame's own WR-12 doc comment (e2e/ui_pty_e2e_test.go)
+// documents and fixes: every run embeds absolute sandbox paths
+// (t.TempDir()), so every run on every machine produced a different file
+// and dirtied the working tree, and any provenance/hash gate over that
+// directory (e.g. cmd/gitid-frame-promote) is unstable there. A genuine
+// baseline update is now a deliberate promotion via gitid-frame-promote,
+// same as phase 9's own convention, never an incidental `make test-e2e` run.
 func captureGlobalSSHFrame(t *testing.T, name string, s *ptySession) string {
 	t.Helper()
 	frame := s.snapshot()
-	path := filepath.Join(repoRoot(t), ".planning", "phases", "06-global-ssh-options", "ui-frames", name+".txt")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("creating phase frame directory: %v", err)
-	}
-	if err := os.WriteFile(path, []byte(frame), 0o644); err != nil {
-		t.Fatalf("writing phase frame: %v", err)
-	}
+	saveFrame(t, name, s)
 	return frame
 }
 

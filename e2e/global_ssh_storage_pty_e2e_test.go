@@ -158,17 +158,14 @@ func startStoragePTY(t *testing.T, home, fakeSSHDir string) *ptySession {
 	return s
 }
 
-// captureStorageFrame saves a frame to the phase's ui-frames/ directory.
+// captureStorageFrame snapshots the current frame and saves it via
+// saveFrame's gitignored tmp/ui-frames/ scratch directory — see
+// captureGlobalSSHFrame's WR-04 doc comment for why this no longer writes
+// into the TRACKED .planning/phases/06-global-ssh-options/ui-frames/.
 func captureStorageFrame(t *testing.T, name string, s *ptySession) string {
 	t.Helper()
 	frame := s.snapshot()
-	path := filepath.Join(repoRoot(t), ".planning", "phases", "06-global-ssh-options", "ui-frames", name+".txt")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // test frame dir
-		t.Fatalf("creating storage frame directory: %v", err)
-	}
-	if err := os.WriteFile(path, []byte(frame), 0o644); err != nil { //nolint:gosec // test frame
-		t.Fatalf("writing storage frame: %v", err)
-	}
+	saveFrame(t, name, s)
 	return frame
 }
 

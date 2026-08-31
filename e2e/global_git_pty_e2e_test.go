@@ -54,16 +54,14 @@ func startGlobalGitPTY(t *testing.T, home, fakeGitDir string) *ptySession {
 	return s
 }
 
+// captureGlobalGitFrame snapshots the current frame and saves it via
+// saveFrame's gitignored tmp/ui-frames/ scratch directory — see
+// captureGlobalSSHFrame's WR-04 doc comment for why this no longer writes
+// into the TRACKED .planning/phases/07-global-git-options/ui-frames/.
 func captureGlobalGitFrame(t *testing.T, name string, s *ptySession) string {
 	t.Helper()
 	frame := s.snapshot()
-	path := filepath.Join(repoRoot(t), ".planning", "phases", "07-global-git-options", "ui-frames", name+".txt")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("creating phase frame directory: %v", err)
-	}
-	if err := os.WriteFile(path, []byte(frame), 0o644); err != nil {
-		t.Fatalf("writing phase frame: %v", err)
-	}
+	saveFrame(t, name, s)
 	return frame
 }
 
