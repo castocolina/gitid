@@ -470,9 +470,16 @@ func (FixtureBackend) UploadEligibility(hostname string) tea.Cmd {
 // reason, exercising the same render branch the real scope-error case does.
 func (b FixtureBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
 	title := fmt.Sprintf(tuikit.UploadKeyTitleFmt, spec.Identity, "demo-machine")
-	authCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title %s --type authentication", spec.KeyPath, title)
-	signCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title %s --type signing", spec.KeyPath, title)
-	glabCmd := fmt.Sprintf("/usr/local/bin/glab ssh-key add %s.pub -t %s --usage-type auth_and_signing", spec.KeyPath, title)
+	// WR-05: the D-07 title always contains spaces ("gitid: <identity> @
+	// <machine>"), so an unquoted preview pasted into a shell would run a
+	// DIFFERENT command than the one gitid actually runs — the exact bug
+	// WR-18 fixed for the real backend's uploader.CommandPreview/previewLine
+	// (internal/uploader/uploader.go). dummytui cannot import internal/uploader
+	// (the nobackend allowlist), so the already-quoted shape is hardcoded here
+	// instead of shared, mirroring what previewLine emits for this argv.
+	authCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title '%s' --type authentication", spec.KeyPath, title)
+	signCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title '%s' --type signing", spec.KeyPath, title)
+	glabCmd := fmt.Sprintf("/usr/local/bin/glab ssh-key add %s.pub -t '%s' --usage-type auth_and_signing", spec.KeyPath, title)
 
 	var view tuikit.UploadRunView
 	switch {

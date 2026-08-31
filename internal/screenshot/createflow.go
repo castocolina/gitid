@@ -1084,9 +1084,13 @@ func (o offlineCaptureBackend) UploadEligibility(hostname string) tea.Cmd {
 // installed on the machine running the gate.
 func (o offlineCaptureBackend) RunUpload(spec tuikit.CreateSpec) tea.Cmd {
 	title := fmt.Sprintf(tuikit.UploadKeyTitleFmt, spec.Identity, "demo-machine")
-	authCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title %s --type authentication", spec.KeyPath, title)
-	signCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title %s --type signing", spec.KeyPath, title)
-	glabCmd := fmt.Sprintf("/usr/local/bin/glab ssh-key add %s.pub -t %s --usage-type auth_and_signing", spec.KeyPath, title)
+	// WR-05: quote the title exactly like dummytui.FixtureBackend.RunUpload
+	// now does (see its doc comment) — this method's own doc comment
+	// requires mirroring that fixture's command shape EXACTLY, and an
+	// unquoted D-07 title (always contains spaces) would desync the two.
+	authCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title '%s' --type authentication", spec.KeyPath, title)
+	signCmd := fmt.Sprintf("/usr/local/bin/gh ssh-key add %s.pub --title '%s' --type signing", spec.KeyPath, title)
+	glabCmd := fmt.Sprintf("/usr/local/bin/glab ssh-key add %s.pub -t '%s' --usage-type auth_and_signing", spec.KeyPath, title)
 
 	var view tuikit.UploadRunView
 	switch {
