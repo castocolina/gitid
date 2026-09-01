@@ -11,10 +11,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/castocolina/gitid/internal/gitconfig"
 )
 
-const (
-	gitIgnoreBaselineMarker = "# BEGIN gitid managed: baseline"
+const gitIgnoreBaselineMarker = "# BEGIN gitid managed: baseline"
+
+var (
+	gitIgnoreLineEnd        = []byte{0x05}
+	gitIgnoreBracketedPaste = []byte("\x1b[200~gitignore-pty-paste-one\ngitignore-pty-paste-two\x1b[201~")
 )
 
 func seedGitIgnoreHome(t *testing.T, home string, foreignBefore, managedBody, foreignAfter, baselineShape string) (string, string) {
@@ -90,6 +95,31 @@ func TestGitIgnore_RealPTYSeedsFromDefaultsWhenAbsent(t *testing.T) {
 			t.Fatalf("defaults frame missing %q:\n%s", want, frame)
 		}
 	}
+}
+
+func seedEditableGitIgnoreHome(t *testing.T, home string, body string) (string, string) {
+	t.Helper()
+	return seedGitIgnoreHome(t, home, "# foreign before\n", body, "# foreign after\n", "# BEGIN gitid managed: baseline\n[core]\n\texcludesfile = ~/.gitignore_global\n# END gitid managed: baseline\n")
+}
+
+func appendGitIgnoreLine(t *testing.T, s *ptySession, line string, seededLines int) {
+	t.Helper()
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	for range seededLines {
+		s.sendKey(dummyKeyDown, keystrokeDelay)
+	}
+	s.sendKey(gitIgnoreLineEnd, keystrokeDelay)
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	s.sendKey([]byte(line), keystrokeDelay)
+	s.sendKey(dummyKeyEsc, keystrokeDelay)
+}
+
+func applyGitIgnoreAndConfirm(t *testing.T, s *ptySession) {
+	t.Helper()
+	s.sendKey([]byte("a"), keystrokeDelay)
+	mustSee(t, s, "Review your global gitignore", "edited content opens review")
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Wrote", "review confirmation writes edited content")
 }
 
 func TestGitIgnore_RealPTYShowsExistingManagedBlock(t *testing.T) {
@@ -365,6 +395,143 @@ func TestGitIgnore_RealPTYRefusesDuplicateBaselineBlock(t *testing.T) {
 	beforeBytes := snapshotGitIgnoreFiles(t, baselinePath)
 	time.Sleep(500 * time.Millisecond)
 	assertGitIgnoreFilesUnchanged(t, beforeBytes, baselinePath)
+}
+
+func TestGitIgnore_RealPTYEditThenWritePersistsUserLine(t *testing.T) {
+	home := SandboxHome(t)
+	gitignorePath, _ := seedEditableGitIgnoreHome(t, home, ".DS_Store\n*.log")
+	s := startGitIgnorePTY(t, home)
+	appendGitIgnoreLine(t, s, "gitignore-user-line", 2)
+	applyGitIgnoreAndConfirm(t, s)
+	frame := captureGitIgnoreFrame(t, "gitignore-edit-write", s)
+	if !strings.Contains(frame, "Wrote") {
+		t.Fatalf("write receipt missing:\n%s", frame)
+	}
+	content := readFileE2E(t, gitignorePath)
+	for _, want := range []string{"# foreign before\n", "gitignore-user-line", "# foreign after\n"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("written gitignore missing %q:\n%s", want, content)
+		}
+	}
+	backups, err := filepath.Glob(gitignorePath + ".bak.*")
+	if err != nil || len(backups) != 1 {
+		t.Fatalf("expected one timestamped backup, got %v (%v)", backups, err)
+	}
+}
+
+func TestGitIgnore_RealPTYEditThenResetDiscardsEdit(t *testing.T) {
+	home := SandboxHome(t)
+	seedEditableGitIgnoreHome(t, home, ".DS_Store\n*.log")
+	s := startGitIgnorePTY(t, home)
+	appendGitIgnoreLine(t, s, "gitignore-reset-marker", 2)
+	s.sendKey([]byte("r"), keystrokeDelay)
+	frame := captureGitIgnoreFrame(t, "gitignore-edit-reset", s)
+	if strings.Contains(frame, "gitignore-reset-marker") || !strings.Contains(frame, ".DS_Store") {
+		t.Fatalf("reset did not restore curated content:\n%s", frame)
+	}
+}
+
+func TestGitIgnore_RealPTYResetAloneWritesNothing(t *testing.T) {
+	home := SandboxHome(t)
+	gitignorePath, _ := seedEditableGitIgnoreHome(t, home, ".DS_Store\n*.log")
+	before := snapshotGitIgnoreFiles(t, gitignorePath)
+	s := startGitIgnorePTY(t, home)
+	s.sendKey([]byte("r"), keystrokeDelay)
+	captureGitIgnoreFrame(t, "gitignore-reset-no-write", s)
+	assertGitIgnoreFilesUnchanged(t, before, gitignorePath)
+	backups, _ := filepath.Glob(gitignorePath + ".bak.*")
+	if len(backups) != 0 {
+		t.Fatalf("reset must not create backups: %v", backups)
+	}
+}
+
+func TestGitIgnore_RealPTYDeletedDefaultStaysDeleted(t *testing.T) {
+	home := SandboxHome(t)
+	lines := []string{".DS_Store", "*.log", ".env", "node_modules/"}
+	deleteIndex := -1
+	for i, line := range lines {
+		if line == ".env" {
+			deleteIndex = i
+		}
+	}
+	if deleteIndex != 2 {
+		t.Fatalf("fixture .env index = %d, want 2", deleteIndex)
+	}
+	curated := false
+	for _, entry := range gitconfig.DefaultGitignoreEntries() {
+		if entry == ".env" {
+			curated = true
+		}
+	}
+	if !curated {
+		t.Fatal(".env must remain a curated default entry")
+	}
+	gitignorePath, _ := seedEditableGitIgnoreHome(t, home, strings.Join(lines, "\n"))
+	s := startGitIgnorePTY(t, home)
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	for i := 0; i < deleteIndex; i++ {
+		s.sendKey(dummyKeyDown, keystrokeDelay)
+	}
+	s.sendKey([]byte("\x1b[H"), keystrokeDelay)
+	s.sendKey([]byte{0x0b}, keystrokeDelay)
+	s.sendKey([]byte{0x7f}, keystrokeDelay)
+	s.sendKey(dummyKeyEsc, keystrokeDelay)
+	applyGitIgnoreAndConfirm(t, s)
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	s.sendKey([]byte("1"), keystrokeDelay)
+	s.sendKey([]byte("6"), keystrokeDelay)
+	mustSee(t, s, "Global Git Ignore", "re-enter ignore screen")
+	frame := captureGitIgnoreFrame(t, "gitignore-deleted-default", s)
+	if strings.Contains(frame, ".env") || strings.Contains(readFileE2E(t, gitignorePath), "\n.env\n") {
+		t.Fatalf("deleted .env survived:\n%s", frame)
+	}
+}
+
+func TestGitIgnore_RealPTYShortcutLettersAreTypedNotTriggered(t *testing.T) {
+	home := SandboxHome(t)
+	seedEditableGitIgnoreHome(t, home, ".DS_Store\n*.log")
+	s := startGitIgnorePTY(t, home)
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	s.sendKey([]byte("rae"), keystrokeDelay)
+	frame := captureGitIgnoreFrame(t, "gitignore-shortcut-letters", s)
+	if !strings.Contains(frame, "rae") || strings.Contains(frame, "Review your global gitignore") {
+		t.Fatalf("shortcut letters were not typed in editor:\n%s", frame)
+	}
+	s.sendKey(dummyKeyEsc, keystrokeDelay)
+}
+
+func TestGitIgnore_RealPTYTypedSentinelIsRefused(t *testing.T) {
+	home := SandboxHome(t)
+	gitignorePath, baselinePath := seedEditableGitIgnoreHome(t, home, ".DS_Store\n*.log")
+	before := snapshotGitIgnoreFiles(t, gitignorePath, baselinePath)
+	s := startGitIgnorePTY(t, home)
+	appendGitIgnoreLine(t, s, "# BEGIN gitid managed: typed-sentinel", 2)
+	s.sendKey([]byte("a"), keystrokeDelay)
+	frame := captureGitIgnoreFrame(t, "gign-error-sentinel-rejected", s)
+	if !strings.Contains(frame, "sentinel") || strings.Contains(frame, "Review your global gitignore") {
+		t.Fatalf("typed sentinel was not refused:\n%s", frame)
+	}
+	assertGitIgnoreFilesUnchanged(t, before, gitignorePath, baselinePath)
+}
+
+func TestGitIgnore_RealPTYBracketedPasteReachesEditor(t *testing.T) {
+	home := SandboxHome(t)
+	gitignorePath, _ := seedEditableGitIgnoreHome(t, home, ".DS_Store\n*.log")
+	s := startGitIgnorePTY(t, home)
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	s.sendKey(gitIgnoreBracketedPaste, keystrokeDelay)
+	frame := captureGitIgnoreFrame(t, "gitignore-bracketed-paste", s)
+	for _, want := range []string{"gitignore-pty-paste-one", "gitignore-pty-paste-two"} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("bracketed paste missing %q:\n%s", want, frame)
+		}
+	}
+	s.sendKey(dummyKeyEsc, keystrokeDelay)
+	applyGitIgnoreAndConfirm(t, s)
+	content := readFileE2E(t, gitignorePath)
+	if !strings.Contains(content, "gitignore-pty-paste-one") || !strings.Contains(content, "gitignore-pty-paste-two") {
+		t.Fatalf("bracketed paste was not persisted:\n%s", content)
+	}
 }
 
 func TestGitIgnore_RealPTYChangedSincePreview(t *testing.T) {
