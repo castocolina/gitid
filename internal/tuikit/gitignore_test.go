@@ -54,6 +54,47 @@ func TestGitIgnoreActivateStoresState(t *testing.T) {
 	}
 }
 
+func TestGitIgnoreEditorSeedsAndResetsCursor(t *testing.T) {
+	b := stubBackend{gignState: GlobalGitIgnoreView{Content: "one\ntwo", DefaultContent: "default"}}
+	a := gignApp(t, b)
+	m := gignModel(t, a)
+	if got := m.editor.Value(); got != "one\ntwo" {
+		t.Fatalf("editor value = %q, want seeded content", got)
+	}
+	if got := m.editor.Line(); got != 0 {
+		t.Fatalf("editor line = %d, want 0", got)
+	}
+	a, _ = press(t, a, "enter")
+	m = gignModel(t, a)
+	if got := m.editor.Line(); got != 0 {
+		t.Fatalf("focused editor line = %d, want 0", got)
+	}
+	a, _ = press(t, a, "esc")
+	a, _ = press(t, a, "r")
+	m = gignModel(t, a)
+	if got := m.editor.Value(); got != "default" || m.editor.Line() != 0 {
+		t.Fatalf("reset editor = %q at line %d, want default at line 0", got, m.editor.Line())
+	}
+}
+
+func TestGitIgnoreEditorTypingAndBlur(t *testing.T) {
+	b := stubBackend{gignState: GlobalGitIgnoreView{Content: "one", DefaultContent: "default"}}
+	a := gignApp(t, b)
+	a, _ = press(t, a, "enter")
+	for _, key := range []string{"r", "a", "e"} {
+		a, _ = press(t, a, key)
+	}
+	m := gignModel(t, a)
+	if m.editor.Value() != "raeone" {
+		t.Fatalf("editor value = %q, want typed letters", m.editor.Value())
+	}
+	a, _ = press(t, a, "esc")
+	m = gignModel(t, a)
+	if m.editing || m.editor.Focused() || m.editor.Value() != "raeone" {
+		t.Fatalf("blurred editor state = editing %v focused %v value %q", m.editing, m.editor.Focused(), m.editor.Value())
+	}
+}
+
 func TestGitIgnoreStateErrorFailsClosed(t *testing.T) {
 	b := stubBackend{gignStateErr: fmt.Errorf("probe failed: disk unreadable")}
 	a := gignApp(t, b)
@@ -475,6 +516,25 @@ func TestGitIgnoreCapturesKeys(t *testing.T) {
 	a, _ = press(t, a, "a")
 	if !gignModel(t, a).view(Seed(), minFrameWidth, minFrameHeight).capturesKeys {
 		t.Error("open ceremony must report capturesKeys true")
+	}
+}
+
+func TestGitIgnoreBrowseFooterUsesEditorCopy(t *testing.T) {
+	b := stubBackend{gignState: GlobalGitIgnoreView{Content: "one", DefaultContent: "default"}}
+	a := gignApp(t, b)
+	v := gignModel(t, a).view(Seed(), minFrameWidth, minFrameHeight)
+	if len(v.actions) != 3 || v.actions[0] != (FooterAction{Key: "Enter", Label: GitIgnoreEditLabel}) ||
+		v.actions[1] != (FooterAction{Key: "r", Label: GitIgnoreResetLabel}) ||
+		v.actions[2] != (FooterAction{Key: "a", Label: GitIgnoreApplyLabel}) {
+		t.Fatalf("browse actions = %#v", v.actions)
+	}
+	if strings.Contains(v.status, "written") {
+		t.Fatalf("browse status must warn about discarded edits, got %q", v.status)
+	}
+	a, _ = press(t, a, "enter")
+	v = gignModel(t, a).view(Seed(), minFrameWidth, minFrameHeight)
+	if len(v.actions) != 1 || v.actions[0] != (FooterAction{Key: "Esc", Label: GitIgnoreDoneEditingLabel}) {
+		t.Fatalf("editing actions = %#v", v.actions)
 	}
 }
 

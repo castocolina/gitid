@@ -3,13 +3,15 @@ package tuikit
 import (
 	"strings"
 
+	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 )
 
-// gitIgnoreModel is the Global Git Ignore tab child model. This plan ships
-// a read-only body plus the review-before-write ceremony; editing arrives
-// in plan 09.2-03.
+// gitIgnoreModel is the Global Git Ignore tab child model. The textarea's
+// default line-previous chord includes ctrl+p, which the app reserves for the
+// command palette before this screen sees it; the arrow key remains the
+// working line-previous binding while editing.
 type gitIgnoreModel struct {
 	backend        Backend
 	state          GlobalGitIgnoreView
@@ -20,19 +22,32 @@ type gitIgnoreModel struct {
 	commitPending  bool
 	appliedContent string
 	appliedToken   string
+	editor         textarea.Model
+	editing        bool
+}
+
+// seedEditor uses MoveToBegin after SetValue because bubbles' multiline insert
+// path leaves the cursor on the final inserted row.
+func (m *gitIgnoreModel) seedEditor(content string) {
+	m.editor.SetValue(content)
+	m.editor.MoveToBegin()
 }
 
 func newGitIgnoreModel(b Backend) gitIgnoreModel {
-	return gitIgnoreModel{backend: b}
+	return gitIgnoreModel{backend: b, editor: textarea.New()}
 }
 
+// activate re-reads the machine and discards unsaved edits on every visit.
 func (m gitIgnoreModel) activate(DemoState) (screenModel, tea.Cmd) {
 	m.stateErr = ""
 	m.applyErr = ""
 	m.ceremonyOpen = false
 	m.commitPending = false
+	m.editing = false
+	m.editor.Blur()
 	view, err := m.backend.GlobalGitIgnoreState()
 	m.state = view
+	m.seedEditor(view.Content)
 	if err != nil {
 		m.stateErr = err.Error()
 	}
@@ -40,6 +55,11 @@ func (m gitIgnoreModel) activate(DemoState) (screenModel, tea.Cmd) {
 }
 
 func (m gitIgnoreModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
+	if m.editing {
+		var cmd tea.Cmd
+		m.editor, cmd = m.editor.Update(msg)
+		return keyResult{model: m, cmd: cmd}
+	}
 	commit, ok := msg.(GlobalGitIgnoreCommitMsg)
 	if !ok || !m.ceremonyOpen || !m.commitPending {
 		return keyResult{model: m}
@@ -105,6 +125,26 @@ func (m gitIgnoreModel) handleKey(msg tea.KeyMsg, _ DemoState) keyResult {
 		return keyResult{model: m, handled: true}
 	}
 
+	if m.editing {
+		if msg.String() == "esc" {
+			m.editing = false
+			m.editor.Blur()
+			return keyResult{model: m, handled: true}
+		}
+		var cmd tea.Cmd
+		m.editor, cmd = m.editor.Update(msg)
+		return keyResult{model: m, handled: true, cmd: cmd}
+	}
+
+	switch msg.String() {
+	case "enter":
+		m.editing = true
+		return keyResult{model: m, handled: true, cmd: m.editor.Focus()}
+	case "r":
+		m.seedEditor(m.state.DefaultContent)
+		return keyResult{model: m, handled: true}
+	}
+
 	if msg.String() != "a" {
 		return keyResult{model: m}
 	}
@@ -115,13 +155,14 @@ func (m gitIgnoreModel) handleKey(msg tea.KeyMsg, _ DemoState) keyResult {
 		m.applyErr = GitIgnoreWiringNoBaseline
 		return keyResult{model: m, handled: true}
 	}
-	plan, planErr := m.backend.GlobalGitIgnoreApplyPlan(m.state.Content)
+	content := m.editor.Value()
+	plan, planErr := m.backend.GlobalGitIgnoreApplyPlan(content)
 	if planErr != nil {
 		m.applyErr = planErr.Error()
 		return keyResult{model: m, handled: true}
 	}
 	m.applyErr = ""
-	m.appliedContent = m.state.Content
+	m.appliedContent = content
 	m.appliedToken = plan.PlanToken
 	m.ceremony = newCeremony(ceremonyConfig{
 		Heading:       GitIgnoreCeremonyHeading,
@@ -164,21 +205,31 @@ func (m gitIgnoreModel) view(_ DemoState, width, height int) screenView {
 	if m.state.Wiring == GitIgnoreKeyUnset {
 		b.WriteString(" " + styleWarning.Render(GitIgnoreTwoTargetNote) + "\n")
 	}
-	body := m.state.Content
-	if body != "" {
-		b.WriteString("\n")
-		b.WriteString(body)
-	}
+	bodyBudget := frameBodyRows(height)
+	m.editor.SetWidth(maxInt(20, width-2))
+	m.editor.SetHeight(maxInt(1, bodyBudget-5))
+	b.WriteString("\n")
+	b.WriteString(m.editor.View())
 	actions := []FooterAction{}
-	if m.stateErr == "" && m.state.Wiring != GitIgnoreNoBaselineBlock {
-		actions = append(actions, FooterAction{Key: "a", Label: GitIgnoreApplyLabel})
+	status := GitIgnoreDiscardedEditsStatus
+	if m.editing {
+		actions = append(actions, FooterAction{Key: "Esc", Label: GitIgnoreDoneEditingLabel})
+	} else {
+		actions = append(actions,
+			FooterAction{Key: "Enter", Label: GitIgnoreEditLabel},
+			FooterAction{Key: "r", Label: GitIgnoreResetLabel},
+		)
+		if m.stateErr == "" && m.state.Wiring != GitIgnoreNoBaselineBlock {
+			actions = append(actions, FooterAction{Key: "a", Label: GitIgnoreApplyLabel})
+		}
 	}
 	wrapped := lipgloss.NewStyle().Width(maxInt(20, width-2)).Render(b.String())
 	return screenView{
-		body:    fitPane(wrapped, frameBodyRows(height)),
-		crumbs:  []string{GitIgnoreHeading},
-		actions: actions,
-		status:  "Content is written as reviewed.",
+		body:         fitPane(wrapped, bodyBudget),
+		crumbs:       []string{GitIgnoreHeading},
+		actions:      actions,
+		status:       status,
+		capturesKeys: m.editing,
 	}
 }
 

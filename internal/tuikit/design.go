@@ -414,7 +414,11 @@ const (
 	GitIgnoreReceiptNoBackup            = "No backup was needed — the content was unchanged or the file is new."
 	GitIgnoreReceiptChangedSincePreview = "This file changed since you last reviewed it — press a to review the current content again before writing."
 	GitIgnoreCeremonyHeading            = "Review your global gitignore before writing."
+	GitIgnoreEditLabel                  = "Edit"
+	GitIgnoreResetLabel                 = "Reset to defaults"
 	GitIgnoreApplyLabel                 = "Review & write"
+	GitIgnoreDoneEditingLabel           = "Done editing"
+	GitIgnoreDiscardedEditsStatus       = "Leaving this screen discards unsaved edits."
 )
 
 // GitIgnoreWiringPointsElsewhere formats the "points at a different file"
