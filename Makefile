@@ -78,6 +78,10 @@ COMMIT  ?= none
 DATE    ?= unknown
 LDFLAGS := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(DATE)
 
+# test-e2e-shard defaults: 1 of 1 (the whole suite) unless CI overrides both.
+E2E_SHARD  ?= 1
+E2E_SHARDS ?= 1
+
 # Linux ships coreutils' sha256sum; stock macOS ships only the Perl shasum.
 # Both emit the identical <64-hex><two spaces><name> line format, so one
 # manifest verifies under either tool (09.3-RESEARCH.md Pitfall 2).
@@ -616,6 +620,19 @@ uninstall:
 ## structurally cannot see.
 test-e2e: build
 	go test -tags e2e -race -timeout 2400s ./e2e/...
+
+## test-e2e-shard: run one round-robin slice of the e2e package's top-level
+## Test functions (E2E_SHARD of E2E_SHARDS, both 1-based) instead of the
+## whole suite in one process. v0.1.0-rc.1 through rc.6 all failed
+## test-e2e on GitHub Actions with a shifting set of failures across the
+## ~950s single-process -race run, never reproducing locally even under a
+## matched core count (GOMAXPROCS=2) — most consistent with cumulative
+## resource contention building up over one long run on a shared runner.
+## Splitting the SAME suite across several shorter, parallel CI jobs
+## reduces both per-job wall time and that cumulative pressure.
+## See scripts/e2e-shard.sh for the partitioning.
+test-e2e-shard: build
+	./scripts/e2e-shard.sh "$(E2E_SHARD)" "$(E2E_SHARDS)" -timeout 900s
 
 ## screenshot-tui: render the Bubble Tea View()-dump golden to a deterministic PNG
 ## via freeze (TOOL-05, DLV-03). Invokes TestCaptureTUI — the concrete runnable

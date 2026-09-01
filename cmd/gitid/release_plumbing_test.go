@@ -111,7 +111,7 @@ func TestWorkflowReleaseJobHasScopedWritePermission(t *testing.T) {
 	if !strings.Contains(release, "contents: write") {
 		t.Fatal("release job missing contents: write")
 	}
-	for _, name := range []string{"build-cross", "check"} {
+	for _, name := range []string{"build-cross", "check", "test-e2e"} {
 		block := jobBlock(t, src, name)
 		if strings.Contains(block, "permissions:") {
 			t.Fatalf("%s job must not declare permissions:", name)
@@ -122,8 +122,11 @@ func TestWorkflowReleaseJobHasScopedWritePermission(t *testing.T) {
 func TestWorkflowReleaseJobWaitsForTheGates(t *testing.T) {
 	src := readRepoFile(t, workflowPath(t))
 	block := jobBlock(t, src, "release")
-	if !strings.Contains(block, "needs: [check, build-cross]") {
-		t.Fatal("release job missing needs: [check, build-cross]")
+	// test-e2e was split out of check into its own sharded job at
+	// v0.1.0-rc.6 (see ci.yml's header comment); release must wait for
+	// all three so a red e2e shard still blocks publication.
+	if !strings.Contains(block, "needs: [check, build-cross, test-e2e]") {
+		t.Fatal("release job missing needs: [check, build-cross, test-e2e]")
 	}
 }
 
