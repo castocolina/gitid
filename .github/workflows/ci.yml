@@ -32,6 +32,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
 
 permissions:
@@ -96,3 +97,73 @@ jobs:
       - name: make test-e2e
         if: ${{ matrix.os != 'macos-15-intel' || github.event_name == 'push' }}
         run: make test-e2e
+
+  # BUILD-03: publish stamped binaries + checksums.txt on a v* tag.
+  # This is the only job in this workflow carrying write permission, and the
+  # grant is job-scoped (D-05). needs: exists so a red gate on the tagged
+  # commit cannot publish a public binary (this phase's resolution of
+  # 09.3-RESEARCH.md Open Question 1, which CONTEXT.md left open). The job
+  # builds its own stamped binaries rather than consuming another job's
+  # outputs, because build-cross's routine artifacts are unstamped and are
+  # produced on a different event (09.3-RESEARCH.md Pitfall 1).
+  release:
+    name: release (ubuntu-latest)
+    runs-on: ubuntu-latest
+    needs: [check, build-cross]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Compute release version metadata
+        id: relver
+        run: |
+          # The release's visibility is decided by the create call, so any
+          # repair applied later means the release was publicly wrong for the
+          # window in between — a prerelease briefly presented as the
+          # repository's latest stable download is exactly the failure a
+          # checksum-verifying installer cannot protect anyone from. Because
+          # the classifier reads the tag, the developer's choice at plan
+          # 09.3-02's checkpoint is expressed in the tag string itself:
+          # choosing a prerelease MEANS choosing a tag with a suffix.
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+          case "${GITHUB_REF_NAME}" in
+            *-*)
+              echo "prerelease=true" >> "$GITHUB_OUTPUT"
+              echo "make_latest=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "prerelease=false" >> "$GITHUB_OUTPUT"
+              echo "make_latest=true" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: make checksums (stamped cross-build + SHA-256 manifest)
+        run: |
+          make checksums \
+            VERSION=${{ steps.relver.outputs.version }} \
+            COMMIT=${{ steps.relver.outputs.commit }} \
+            DATE=${{ steps.relver.outputs.date }}
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          prerelease: ${{ steps.relver.outputs.prerelease }}
+          make_latest: ${{ steps.relver.outputs.make_latest }}
+          files: |
+            bin/gitid-darwin-amd64
+            bin/gitid-darwin-arm64
+            bin/gitid-linux-amd64
+            bin/gitid-linux-arm64
+            bin/checksums.txt
