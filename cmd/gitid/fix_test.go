@@ -128,7 +128,8 @@ func TestFixCmdDryRunNoFixableFindings(t *testing.T) {
 	// documented, genuinely non-convergent no-op — irrelevant to what this
 	// test asserts).
 	seedInstalledBaseline(t, home)
-	if err := fixExcludesfile(filepath.Join(home, ".gitconfig"))(filepath.Join(home, ".gitignore_global")); err != nil {
+	baselineFilePath := filepath.Join(home, ".gitconfig.d", "00-baseline")
+	if err := fixExcludesfile(baselineFilePath)(filepath.Join(home, ".gitignore_global")); err != nil {
 		t.Fatalf("seeding gitignore pair: %v", err)
 	}
 

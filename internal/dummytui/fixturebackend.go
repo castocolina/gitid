@@ -764,19 +764,38 @@ const fixtureGitIgnoreContent = ".DS_Store\n*.log\n*.bak"
 // frozen literal — the demo package must not import internal/gitconfig (see
 // TestNoBackendAllowlist), so this is a hand-kept copy of that render, not a
 // live call. Keep in sync with gitconfig.DefaultGitignorePatterns.
-const fixtureGitIgnoreDefaultContent = ".DS_Store\n" +
+const fixtureGitIgnoreDefaultContent = "# OS artifacts\n" +
+	".DS_Store\n" +
 	"Thumbs.db\n" +
+	"desktop.ini\n" +
+	"# Editors and IDEs\n" +
+	".idea/\n" +
+	".vscode/\n" +
+	"*.swp\n" +
+	"*.swo\n" +
+	"*~\n" +
+	"# Logs, temp and scratch\n" +
 	"*.log\n" +
 	"*.bak\n" +
 	"*.tmp\n" +
-	"*.swp\n" +
-	"*.swo\n" +
-	".idea/\n" +
-	".vscode/\n" +
-	"node_modules/\n" +
+	"tmp/\n" +
+	".tmp/\n" +
+	"# Environment files (committed examples stay tracked)\n" +
+	".env\n" +
+	".env.*\n" +
+	"!.env.example\n" +
+	"# Python\n" +
 	"__pycache__/\n" +
 	"*.pyc\n" +
-	".env"
+	".venv/\n" +
+	"venv/\n" +
+	"# Node\n" +
+	"node_modules/\n" +
+	"# Tooling caches\n" +
+	".direnv/\n" +
+	".pytest_cache/\n" +
+	".mypy_cache/\n" +
+	".ruff_cache/"
 
 // GlobalGitIgnoreState returns frozen fixture content with DefaultContent
 // equal to the curated seed — the contract plan 09.2-03's Reset action

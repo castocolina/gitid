@@ -4710,7 +4710,7 @@ func fixExcludesfile(baselineFilePath string) func(path string) error {
 			// Baseline shape guard AFTER gitignore write. If the gitignore was just created
 			// and the baseline inspection fails, roll back the gitignore.
 			if !gitignorePreexisted {
-				_ = os.Remove(path) //nolint:errcheck,G104 // best-effort removal; don't mask baseline error
+				_ = os.Remove(path) //nolint:errcheck,gosec // best-effort removal; don't mask baseline error
 			}
 			return fmt.Errorf("doctor: re-inspecting %s after gitignore write: %w", baselineFilePath, err)
 		}
@@ -4723,7 +4723,7 @@ func fixExcludesfile(baselineFilePath string) func(path string) error {
 			// Second write failed. Undo the first write (gitignore).
 			if !gitignorePreexisted {
 				// The gitignore was created by this fix; remove it (best-effort).
-				_ = os.Remove(path) //nolint:errcheck,G104 // best-effort removal; don't mask write error
+				_ = os.Remove(path) //nolint:errcheck,gosec // best-effort removal; don't mask write error
 			} else {
 				// The gitignore pre-existed; it should have been backed up by the first Write.
 				// However, WriteGlobalGitignore only produces a backup if the file pre-existed

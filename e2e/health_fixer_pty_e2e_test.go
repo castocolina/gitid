@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/castocolina/gitid/internal/gitconfig"
 )
 
 // startEphemeralSSHAgent spawns a real, throwaway ssh-agent for the duration
@@ -80,13 +82,12 @@ func seedHealthFixerGreen(t *testing.T, home string) {
 	baseline := filepath.Join(gitDir, "00-baseline")
 	writeFileT(t, baseline, "# BEGIN gitid managed: baseline\n[core]\n\tignorecase = false\n\texcludesfile = "+filepath.Join(home, ".gitignore_global")+"\n# END gitid managed: baseline\n")
 	writeFileT(t, filepath.Join(home, ".gitconfig"), "# BEGIN gitid managed: baseline-include\n[include]\n\tpath = "+baseline+"\n# END gitid managed: baseline-include\n")
-	// Every gitconfig.DefaultGitignorePatterns() entry must be present or
-	// CheckBaseline's Check 4 (curated entries) reports a warning -- a truly
-	// clean all-green fixture needs the complete curated set, not a subset.
-	patterns := strings.Join([]string{
-		".DS_Store", "Thumbs.db", "*.log", "*.bak", "*.tmp", "*.swp", "*.swo",
-		".idea/", ".vscode/", "node_modules/", "__pycache__/", "*.pyc", ".env",
-	}, "\n")
+	// Every gitconfig.DefaultGitignoreEntries() entry must be present or
+	// CheckBaseline's Check 4 (curated entries) reports an informational
+	// finding -- a truly clean all-green fixture needs the complete curated
+	// set (comment headers included, matching RenderGitignoreBlock's own
+	// output), not a subset and not the pre-extension 13-entry set.
+	patterns := strings.Join(gitconfig.DefaultGitignorePatterns(), "\n")
 	writeFileT(t, filepath.Join(home, ".gitignore_global"), "# BEGIN gitid managed: gitignore\n"+patterns+"\n# END gitid managed: gitignore\n")
 }
 
