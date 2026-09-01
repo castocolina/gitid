@@ -94,9 +94,6 @@
     "enabled": true,
     "auto_update": true
   },
-  "intel": {
-    "enabled": true
-  },
   "model_overrides": {
     "gsd-planner": "opus",
     "gsd-code-reviewer": "opus"
@@ -106,10 +103,6 @@
       "opencode-plan-review": {
         "cli": "opencode",
         "model": "local-llm-env/my-plan-review"
-      },
-      "codex-sol": {
-        "cli": "codex",
-        "model": "gpt-5.6-sol"
       },
       "opencode-sol": {
         "cli": "opencode",
