@@ -111,9 +111,9 @@
         "cli": "codex",
         "model": "gpt-5.6-sol"
       },
-      "opencode-grok": {
+      "opencode-sol": {
         "cli": "opencode",
-        "model": "xai/grok-4.6"
+        "model": "openai/gpt-5.6-sol"
       }
     },
     "default_reviewers": [
