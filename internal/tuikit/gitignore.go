@@ -201,10 +201,23 @@ func (m gitIgnoreModel) view(_ DemoState, width, height int) screenView {
 	}
 	b.WriteString(" " + m.wiringLine() + "\n")
 	if m.stateErr != "" {
-		b.WriteString(" " + styleWarning.Render("! "+m.stateErr) + "\n")
+		b.WriteString(" " + styleWarning.Render(ensureGitIgnoreGlyph(m.stateErr)) + "\n")
 	}
 	if m.applyErr != "" {
-		b.WriteString(" " + styleError.Render(m.applyErr) + "\n")
+		// The sentinel-rejection message is this screen's ONE styleError
+		// (Error-red) state and already carries its own "✗ " glyph
+		// (GitIgnoreSentinelRejectedMessage). Every other applyErr — e.g. a
+		// malformed-file refusal reached defensively through the apply path
+		// — is a warning, not an error, and must get the SAME glyph
+		// guarantee stateErr gets above; rendering it via styleError with no
+		// glyph would reintroduce the exact NO_COLOR-legibility defect
+		// 09.2-UI-REVIEW.md finding 3 fixed on this screen (09.2-REVIEW.md
+		// WR-05).
+		if strings.HasPrefix(m.applyErr, "✗ ") {
+			b.WriteString(" " + styleError.Render(m.applyErr) + "\n")
+		} else {
+			b.WriteString(" " + styleWarning.Render(ensureGitIgnoreGlyph(m.applyErr)) + "\n")
+		}
 	}
 	if !m.state.Managed && m.stateErr == "" {
 		b.WriteString(" " + styleFaint.Render(GitIgnoreNoManagedBlock) + "\n")
@@ -240,6 +253,21 @@ func (m gitIgnoreModel) view(_ DemoState, width, height int) screenView {
 		status:       status,
 		capturesKeys: m.editing,
 	}
+}
+
+// ensureGitIgnoreGlyph prefixes msg with "! " unless it already begins with
+// a known glyph (a frozen constant that already bakes one in, e.g.
+// GitIgnoreWiringNoBaseline's "! " or GitIgnoreSentinelRejectedMessage's
+// "✗ "). This is the single place that guarantees "every colored state
+// pairs with a glyph AND a word" for stateErr/applyErr regardless of which
+// gitconfig error path produced the text (09.2-REVIEW.md WR-05).
+func ensureGitIgnoreGlyph(msg string) string {
+	for _, glyph := range []string{"✓ ", "! ", "✗ "} {
+		if strings.HasPrefix(msg, glyph) {
+			return msg
+		}
+	}
+	return "! " + msg
 }
 
 func (m gitIgnoreModel) wiringLine() string {

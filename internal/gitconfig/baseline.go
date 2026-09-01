@@ -615,6 +615,17 @@ func ComposeGlobalGitignore(existing []byte, patterns []string) []byte {
 // hand. Blocks of OTHER names are foreign content and are neither counted nor
 // validated.
 //
+// Each returned *ManagedBlockError also carries a ManagedBlockErrorReason so
+// a caller can translate the error into user-facing copy without parsing the
+// diagnostic sentence. The reason categories are coarser than the five
+// shapes above: orphan BEGIN and nested BEGIN both classify as
+// ManagedBlockReasonUnclosedMarker (an END naming a DIFFERENT block while
+// ours is open is treated as foreign and skipped, so ours surfaces as
+// unclosed at end-of-scan rather than as a name mismatch); standalone END
+// and an END naming OUR block while a different block is open both classify
+// as ManagedBlockReasonMismatchedMarker; two complete blocks classifies as
+// ManagedBlockReasonDuplicateBlock.
+//
 // The function is name-parameterized rather than gitignore-specific because
 // the same write-divergence hazard exists on the baseline fragment: indexBlocks
 // keeps the LAST duplicate while replaceBlockWith claims the FIRST. Failing
@@ -657,14 +668,20 @@ func InspectManagedBlockFile(content []byte, blockName string) (ManagedBlockShap
 				continue
 			}
 			if name != openName {
-				if openName == blockName && name == blockName {
-					return ManagedBlockShape{}, newManagedBlockError(lineNo, ManagedBlockReasonMismatchedMarker,
-						"line %d: END sentinel name does not match its open BEGIN — repair the file by hand before gitid will touch it", lineNo)
-				}
-				if openName == blockName && name != blockName {
+				// name != openName makes "openName == blockName && name ==
+				// blockName" impossible (that would require name ==
+				// openName) — that branch was dead code and has been
+				// removed (09.2-REVIEW.md WR-01). The two shapes that
+				// remain: an END naming some OTHER block while ours is
+				// still open is foreign and is skipped, leaving ours to
+				// surface as an orphan/unclosed BEGIN at end-of-scan; an
+				// END naming OUR block while a DIFFERENT block is open is
+				// the one reachable "closing marker that doesn't match its
+				// opening marker" shape.
+				if openName == blockName {
 					continue
 				}
-				if openName != blockName && name == blockName {
+				if name == blockName {
 					return ManagedBlockShape{}, newManagedBlockError(lineNo, ManagedBlockReasonMismatchedMarker,
 						"line %d: END sentinel name does not match its open BEGIN — repair the file by hand before gitid will touch it", lineNo)
 				}

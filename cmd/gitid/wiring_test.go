@@ -6785,13 +6785,86 @@ func TestGlobalGitIgnoreMalformedFileErrorIsTranslated(t *testing.T) {
 	if err == nil {
 		t.Fatal("GlobalGitIgnoreState must refuse an orphan BEGIN")
 	}
-	want := tuikit.GitIgnoreMalformedFileMessage(1, tuikit.GitIgnoreMalformedReasonUnclosedMarker)
+	want := tuikit.GitIgnoreMalformedFileMessage("~/.gitignore_global", 1, tuikit.GitIgnoreMalformedReasonUnclosedMarker)
 	if err.Error() != want {
 		t.Errorf("GlobalGitIgnoreState error = %q, want the frozen copy %q (raw baseline.go diagnostic text must not leak to the UI)", err, want)
 	}
 	if strings.Contains(err.Error(), "repair the file by hand before gitid will touch it") {
 		t.Errorf("error still contains baseline.go's raw developer-facing sentence: %q", err)
 	}
+	// 09.2-REVIEW.md IN-01: translation must not be a dead end for the
+	// structured error — errors.As must still recover it for logs/tests.
+	var mbErr *gitconfig.ManagedBlockError
+	if !errors.As(err, &mbErr) {
+		t.Fatalf("translated error must still unwrap to *gitconfig.ManagedBlockError via errors.As, got %T", err)
+	}
+	if mbErr.Line != 1 {
+		t.Errorf("unwrapped ManagedBlockError.Line = %d, want 1", mbErr.Line)
+	}
+}
+
+// TestGlobalGitIgnoreMalformedBaselineFragmentErrorIsTranslated pins
+// 09.2-REVIEW.md CR-01: a malformed ~/.gitconfig.d baseline fragment must be
+// translated through the SAME frozen-copy boundary as a malformed
+// ~/.gitignore_global — and, critically, must name the BASELINE fragment's
+// own path, never the gitignore file's, so a user is never sent to hand-repair
+// the wrong file.
+func TestGlobalGitIgnoreMalformedBaselineFragmentErrorIsTranslated(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".gitconfig.d")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// An orphan BEGIN sentinel in the baseline fragment, on line 1.
+	orphan := filewriter.BeginPrefix + "baseline\n[core]\n\tignorecase = false\n"
+	if err := os.WriteFile(filepath.Join(dir, "00-baseline"), []byte(orphan), 0o644); err != nil { //nolint:gosec // test path
+		t.Fatalf("writing orphan BEGIN: %v", err)
+	}
+	seedGitIgnoreFile(t, home, "", ".DS_Store\n", "")
+
+	b := newBackendForHome(home)
+
+	t.Run("GlobalGitIgnoreState", func(t *testing.T) {
+		_, err := b.GlobalGitIgnoreState()
+		if err == nil {
+			t.Fatal("GlobalGitIgnoreState must refuse a malformed baseline fragment")
+		}
+		if strings.Contains(err.Error(), ".gitignore_global") {
+			t.Errorf("error must NOT name the gitignore file for a baseline-fragment defect: %q", err)
+		}
+		if !strings.Contains(err.Error(), "00-baseline") {
+			t.Errorf("error must name the baseline fragment's own path, got %q", err)
+		}
+		if strings.Contains(err.Error(), "repair the file by hand before gitid will touch it") {
+			t.Errorf("error still contains baseline.go's raw developer-facing sentence: %q", err)
+		}
+	})
+
+	t.Run("GlobalGitIgnoreApplyPlan", func(t *testing.T) {
+		_, err := b.GlobalGitIgnoreApplyPlan(".DS_Store")
+		if err == nil {
+			t.Fatal("GlobalGitIgnoreApplyPlan must refuse a malformed baseline fragment")
+		}
+		if strings.Contains(err.Error(), ".gitignore_global") {
+			t.Errorf("error must NOT name the gitignore file for a baseline-fragment defect: %q", err)
+		}
+		if strings.Contains(err.Error(), "repair the file by hand before gitid will touch it") {
+			t.Errorf("error still contains baseline.go's raw developer-facing sentence: %q", err)
+		}
+	})
+
+	t.Run("CommitGlobalGitIgnore", func(t *testing.T) {
+		msg := commitGitIgnore(t, b, ".DS_Store", "stale-token")
+		if msg.Err == "" {
+			t.Fatal("CommitGlobalGitIgnore must refuse a malformed baseline fragment")
+		}
+		if strings.Contains(msg.Err, ".gitignore_global") {
+			t.Errorf("error must NOT name the gitignore file for a baseline-fragment defect: %q", msg.Err)
+		}
+		if strings.Contains(msg.Err, "repair the file by hand before gitid will touch it") {
+			t.Errorf("error still contains baseline.go's raw developer-facing sentence: %q", msg.Err)
+		}
+	})
 }
 
 // TestGlobalGitIgnoreApplyPlanSentinelErrorIsTranslated pins the sentinel-

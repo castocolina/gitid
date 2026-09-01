@@ -1362,27 +1362,35 @@ func extractUploadSection(lines []string) string {
 // "core.excludesfile" or ".DS_Store" (the previous approach) also matched
 // unrelated screens that happen to mention the same words (e.g. a Health
 // finding describing the gitignore pair), causing TestGateVisualRegression
-// to flag a spurious cross-screen region diff. No other screen's tab label
-// or breadcrumb equals this string (internal/tuikit/frame.go's tabLabels
-// has exactly one "Global Git Ignore" entry, for TabGitIgnore).
+// to flag a spurious cross-screen region diff.
 //
 // Previously this matched the literal doubled breadcrumb "Global Git Ignore
 // › Global Git Ignore" — that duplication was itself a defect
 // (09.2-UI-REVIEW.md finding 1: gitignore.go passed the tab's own label as
 // an extra crumbs[] segment, so RenderFrame rendered it twice). Now that
 // gitignore.go passes crumbs: []string{}, the breadcrumb line reads
-// "Global Git Ignore" once, so the anchor was updated to match — anchoring
-// on a rendering bug would have made this extractor a regression trap for
-// the fix instead of a check on it.
+// "Global Git Ignore" once — but the bare string is NOT unique across the
+// whole frame: it also appears in the Ctrl+P palette row
+// (internal/tuikit/app.go's renderPalette, rendered on every tab) and in
+// internal/doctor/checks/baseline.go's SuggestedFix prose, which
+// internal/tuikit/health_screen.go and identities.go render verbatim
+// (09.2-REVIEW.md WR-02). gignCrumbIndex below therefore matches the
+// breadcrumb ROW exactly (RenderFrame's fixed "header, crumbLine, body…"
+// layout puts it at index 1), never a substring anywhere in the frame — a
+// palette row or a Health finding can no longer impersonate this screen.
 const gignCrumb = "Global Git Ignore"
 
-// gignCrumbIndex returns the index of the line carrying gignCrumb, or -1 if
-// this frame is not a Global Git Ignore screen at all.
+// gignCrumbRow is the fixed 0-based line index RenderFrame places the
+// breadcrumb at (header is row 0, crumbLine is row 1) — see gignCrumb's
+// doc comment for why this must be an exact row match, not a substring
+// search over the whole frame.
+const gignCrumbRow = 1
+
+// gignCrumbIndex returns gignCrumbRow if that exact line carries gignCrumb,
+// or -1 if this frame is not a Global Git Ignore screen at all.
 func gignCrumbIndex(lines []string) int {
-	for i, line := range lines {
-		if strings.Contains(stripANSI(line), gignCrumb) {
-			return i
-		}
+	if len(lines) > gignCrumbRow && strings.TrimSpace(stripANSI(lines[gignCrumbRow])) == gignCrumb {
+		return gignCrumbRow
 	}
 	return -1
 }

@@ -41,6 +41,58 @@ func TestExtractGSSApplyHeadingAbsorbsWrappedContinuationRow(t *testing.T) {
 	}
 }
 
+// TestExtractGIGNBodyDoesNotFalsePositiveOnOtherScreens is the 09.2-REVIEW.md
+// WR-02 regression: gignCrumbIndex previously matched the bare string
+// "Global Git Ignore" ANYWHERE in the frame via strings.Contains, not just
+// on the breadcrumb row. That string also appears in the Ctrl+P palette row
+// (rendered on every tab) and in internal/doctor/checks/baseline.go's
+// SuggestedFix prose (rendered by the Health and Identities panes) — so a
+// non-gign frame containing either could false-positive into a non-empty
+// gign-body region and break BuildRegionDiffs. The fix anchors on the exact
+// breadcrumb ROW (index 1) instead of a frame-wide substring search.
+func TestExtractGIGNBodyDoesNotFalsePositiveOnOtherScreens(t *testing.T) {
+	t.Run("palette row mentioning the screen name", func(t *testing.T) {
+		lines := []string{
+			" gitid   [1] Identities · [2] SSH · [3] Git · [4] Health · [5] Fixer · [6] Ignore",
+			" Identities",
+			" Ctrl+P palette: 1 Identities · 2 Global SSH · 3 Global Git · 4 Health · 5 Fixer · 6 Global Git Ignore",
+			" some identity list content",
+		}
+		if got := ExtractRegion(strings.Join(lines, "\n"), RegionGIGNBody); got != "" {
+			t.Errorf("gign-body false-positived on a palette row mentioning the screen name: %q", got)
+		}
+	})
+
+	t.Run("Health SuggestedFix prose mentioning the screen name", func(t *testing.T) {
+		lines := []string{
+			" gitid   [1] Identities · [2] SSH · [3] Git · [4] Health · [5] Fixer · [6] Ignore",
+			" Health",
+			" Health",
+			" ~ Suggested fix: use the Global Git Ignore screen to seed the curated defaults",
+		}
+		if got := ExtractRegion(strings.Join(lines, "\n"), RegionGIGNBody); got != "" {
+			t.Errorf("gign-body false-positived on a Health SuggestedFix line mentioning the screen name: %q", got)
+		}
+	})
+
+	t.Run("genuine gign frame still extracts", func(t *testing.T) {
+		lines := []string{
+			" gitid   [1] Identities · [2] SSH · [3] Git · [4] Health · [5] Fixer · [6] Ignore",
+			" Global Git Ignore",
+			" Global Git Ignore",
+			" ~/.gitignore_global",
+			" ✓ Wired — core.excludesfile points at this file; Git reads it.",
+		}
+		got := ExtractRegion(strings.Join(lines, "\n"), RegionGIGNBody)
+		if got == "" {
+			t.Fatal("gign-body must extract from a genuine Global Git Ignore frame")
+		}
+		if !strings.Contains(got, "Wired") {
+			t.Errorf("extracted region missing expected content: %q", got)
+		}
+	})
+}
+
 // TestExtractGSSApplyHeadingSingleLineNoWrap proves the non-wrapped case
 // (heading immediately followed by "Touches") still returns just the one
 // heading line — the fix must not over-absorb when there is no wrap.

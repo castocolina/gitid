@@ -433,20 +433,30 @@ func GitIgnoreWiringPointsElsewhere(otherPath string) string {
 // Malformed file refusal row). A backend translates a structured
 // gitconfig.ManagedBlockError into one of these three phrases — the raw
 // internal diagnostic text must never reach the screen (09.2-UI-REVIEW.md
-// finding 2).
+// finding 2). GitIgnoreMalformedReasonUnspecified is a defensive fallback
+// only — a genuine gitconfig.ManagedBlockError always sets one of the three
+// named reasons above it; this exists so an unrecognized/zero reason value
+// reports as "unspecified" instead of silently mislabeling itself as one of
+// the three known categories (09.2-REVIEW.md IN-02).
 const (
 	GitIgnoreMalformedReasonUnclosedMarker   = "an opening marker with no matching closing marker"
 	GitIgnoreMalformedReasonMismatchedMarker = "a closing marker that doesn't match its opening marker"
 	GitIgnoreMalformedReasonDuplicateBlock   = "two complete gitid blocks in one file"
+	GitIgnoreMalformedReasonUnspecified      = "a malformed gitid marker"
 )
 
 // GitIgnoreMalformedFileMessage formats the frozen malformed-file refusal
-// sentence — no leading glyph, since the screen's stateErr rendering path
-// prepends "! " itself (matching every other warning line on this screen).
-// line is the offending 1-based line number; reason is one of the
+// sentence — no leading glyph; the screen's rendering path is responsible
+// for prefixing a glyph consistently regardless of which field (stateErr or
+// applyErr) carries this text (09.2-REVIEW.md WR-05). displayPath is the
+// HOME-relative path of the file that actually failed to parse — the
+// gitignore file OR the baseline fragment, since InspectManagedBlockFile is
+// shared between them (09.2-REVIEW.md CR-01: a malformed baseline fragment
+// must not be reported under the gitignore file's path). line is the
+// offending 1-based line number; reason is one of the
 // GitIgnoreMalformedReason* constants above.
-func GitIgnoreMalformedFileMessage(line int, reason string) string {
-	return "~/.gitignore_global has a broken gitid marker at line " + strconv.Itoa(line) + " (" + reason + ") — repair the file by hand before this screen can read or write it."
+func GitIgnoreMalformedFileMessage(displayPath string, line int, reason string) string {
+	return displayPath + " has a broken gitid marker at line " + strconv.Itoa(line) + " (" + reason + ") — repair the file by hand before this screen can read or write it."
 }
 
 // GitIgnoreSentinelRejectedMessage formats the frozen sentinel-injection
