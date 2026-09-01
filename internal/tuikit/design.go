@@ -431,16 +431,27 @@ func GitIgnoreWiringPointsElsewhere(otherPath string) string {
 
 // Global Git Ignore malformed-file reason phrases (09.2-UI-SPEC.md's
 // Malformed file refusal row). A backend translates a structured
-// gitconfig.ManagedBlockError into one of these three phrases — the raw
+// gitconfig.ManagedBlockError into one of these four phrases — the raw
 // internal diagnostic text must never reach the screen (09.2-UI-REVIEW.md
-// finding 2). GitIgnoreMalformedReasonUnspecified is a defensive fallback
-// only — a genuine gitconfig.ManagedBlockError always sets one of the three
-// named reasons above it; this exists so an unrecognized/zero reason value
-// reports as "unspecified" instead of silently mislabeling itself as one of
-// the three known categories (09.2-REVIEW.md IN-02).
+// finding 2).
+//
+// GitIgnoreMalformedReasonUnspecified is a defensive fallback only — a
+// genuine gitconfig.ManagedBlockError always sets one of the three named
+// reasons above it; this exists so an unrecognized/zero reason value reports
+// as "unspecified" instead of silently mislabeling itself as one of the
+// three known categories (09.2-REVIEW.md IN-02).
+//
+// GitIgnoreMalformedReasonMismatchedMarker covers TWO distinct shapes
+// classified under the one ManagedBlockReasonMismatchedMarker reason: a
+// standalone END with no opening marker AT ALL, and an END whose name
+// disagrees with the BEGIN it closes (baseline.go's InspectManagedBlockFile
+// doc comment). The phrase is worded to be accurate for both — "a closing
+// marker that doesn't match its opening marker" would misdescribe the
+// standalone-END shape as having SOME opening marker that merely disagrees,
+// when in fact there is none (09.2-REVIEW.md IN-03).
 const (
 	GitIgnoreMalformedReasonUnclosedMarker   = "an opening marker with no matching closing marker"
-	GitIgnoreMalformedReasonMismatchedMarker = "a closing marker that doesn't match its opening marker"
+	GitIgnoreMalformedReasonMismatchedMarker = "a closing marker with no valid matching opening marker"
 	GitIgnoreMalformedReasonDuplicateBlock   = "two complete gitid blocks in one file"
 	GitIgnoreMalformedReasonUnspecified      = "a malformed gitid marker"
 )

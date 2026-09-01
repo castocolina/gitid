@@ -308,6 +308,19 @@ test: gate-copy-freeze
 ## prefix, D-09's bundle aggregate, the applied/selected counts); a fifth
 ## runtime-assembled exclusion check proves it stays out.
 ##
+## 09.2-REVIEW.md WR-07: the Phase 9.2 Global Git Ignore screen's copy
+## (09.2-UI-SPEC.md's Copywriting Contract) was declared in
+## internal/tuikit/design.go across the whole phase but never registered in
+## this gate — the block below closes that gap. The dynamic-message pieces
+## (GitIgnoreMalformedFileMessage, GitIgnoreWiringPointsElsewhere,
+## GitIgnoreReceiptWrongTarget) register their FIXED literal fragments —
+## the interpolated displayPath/otherPath varies per machine/file, matching
+## the existing dynamic-text exclusion precedents above. As WR-07 itself
+## notes, this grep is a SECONDARY source-presence guard (it only proves the
+## string appears SOMEWHERE, including a comment); `TestFrozenGitIgnoreCopy`
+## (internal/tuikit/gitignore_copy_test.go) is the AUTHORITATIVE byte-exact
+## contract.
+##
 ## IMPORTANT: this gate is a SECONDARY source-presence guard — `grep -rqF`
 ## only proves a string appears SOMEWHERE under the scanned roots (a comment
 ## or a dead declaration would satisfy it too). `TestFrozenUploadCopy`
@@ -399,7 +412,33 @@ gate-copy-freeze:
 		'✓ Old key removed from %s.' \
 		'Left in place — remove it yourself: %s' \
 		'Register key with provider now (u)' \
-		'Register %s'\''s key with %s'; \
+		'Register %s'\''s key with %s' \
+		'Global Git Ignore' \
+		'✓ Wired — core.excludesfile points at this file; Git reads it.' \
+		'! core.excludesfile is not set — Git does not read any global ignore file yet. Confirming here will set it.' \
+		'! No gitid-managed Git baseline configuration was found on this machine — open the Fixer to set that up before this screen can wire core.excludesfile.' \
+		'No managed block found yet in ~/.gitignore_global — showing the curated defaults below. Nothing has been written.' \
+		'This write will also set core.excludesfile in your Git baseline, since it is not set yet.' \
+		'Global gitignore written to ~/.gitignore_global.' \
+		'core.excludesfile was also set to point at this file.' \
+		'No backup was needed — the content was unchanged or the file is new.' \
+		'This file changed since you last reviewed it — press a to review the current content again before writing.' \
+		'Review your global gitignore before writing.' \
+		'Reset to defaults' \
+		'Review & write' \
+		'Done editing' \
+		'Leaving this screen discards unsaved edits.' \
+		'an opening marker with no matching closing marker' \
+		'a closing marker with no valid matching opening marker' \
+		'two complete gitid blocks in one file' \
+		'a malformed gitid marker' \
+		' has a broken gitid marker at line ' \
+		' — repair the file by hand before this screen can read or write it.' \
+		'looks like a gitid managed-block marker and can'\''t be part of your content — edit or remove that line before applying.' \
+		'! core.excludesfile points at ' \
+		'instead of this file — that choice is left alone; writing here only affects the file below.' \
+		'core.excludesfile still points at ' \
+		'so Git is not reading this file — that setting was left as you configured it.'; \
 	do \
 		if grep -rqF -- "$$s" internal/tuikit internal/identity cmd/gitid internal/globalssh internal/globalgit; then \
 			echo "    ok   $$s"; \

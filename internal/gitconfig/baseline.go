@@ -685,8 +685,11 @@ func InspectManagedBlockFile(content []byte, blockName string) (ManagedBlockShap
 				// still open is foreign and is skipped, leaving ours to
 				// surface as an orphan/unclosed BEGIN at end-of-scan; an
 				// END naming OUR block while a DIFFERENT block is open is
-				// the one reachable "closing marker that doesn't match its
-				// opening marker" shape.
+				// the one reachable "closing marker with no valid matching
+				// opening marker" shape (ManagedBlockReasonMismatchedMarker;
+				// tuikit.GitIgnoreMalformedReasonMismatchedMarker also
+				// covers the standalone-END shape below, which has no
+				// opening marker at all — 09.2-REVIEW.md IN-03).
 				if openName == blockName {
 					continue
 				}
