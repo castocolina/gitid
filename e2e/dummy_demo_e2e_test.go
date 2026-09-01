@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -35,6 +36,20 @@ import (
 	"github.com/charmbracelet/x/vt"
 	"github.com/creack/pty"
 )
+
+// ciTimeoutMultiplier scales PTY wait budgets up on shared CI runners.
+// v0.1.0-rc.1 and rc.2 both failed make test-e2e on GitHub Actions with a
+// shifting, non-reproducing set of PTY content-assertion misses across all
+// 3 matrix OSes — never a local reproduction, never the same test twice —
+// which is the signature of a runner slower/noisier than local dev
+// hardware rather than a product defect. GITHUB_ACTIONS is set by every
+// Actions runner (https://docs.github.com/actions/learn-github-actions/variables).
+func ciTimeoutMultiplier() time.Duration {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		return 3
+	}
+	return 1
+}
 
 // Dummy-demo terminal geometry: the demo's design minimum (100x30).
 const (
@@ -140,18 +155,17 @@ var (
 	dummyKeyShiftRight = []byte("\x1b[1;2C")
 )
 
-// mustSeeTimeout is mustSee/mustNotSee's poll budget. Tuned against a local
-// dev machine's 8s was routinely blown on shared GitHub Actions runners
-// under -race (v0.1.0-rc.1's CI run: distinct PTY content-assertion misses
-// on all 3 matrix OSes, never the same test twice — a slower-CPU symptom,
-// not a regression). 15s keeps meaningful margin without threatening the
-// 1200s test-e2e suite timeout.
-const mustSeeTimeout = 15 * time.Second
+// mustSeeTimeout is mustSee/mustNotSee's poll budget, before waitFor's own
+// ciTimeoutMultiplier scaling: 8s originally, blown on CI at rc.1; this 15s
+// alone was still blown at rc.2.
+func mustSeeTimeout() time.Duration {
+	return 15 * time.Second
+}
 
 // mustSee polls the decoded frame for substr and fails fatally on timeout.
 func mustSee(t *testing.T, s *ptySession, substr, context string) {
 	t.Helper()
-	last, ok := s.waitFor(mustSeeTimeout, func(text string) bool {
+	last, ok := s.waitFor(mustSeeTimeout(), func(text string) bool {
 		return strings.Contains(text, substr)
 	})
 	if !ok {
@@ -162,7 +176,7 @@ func mustSee(t *testing.T, s *ptySession, substr, context string) {
 // mustNotSee polls until substr disappears from the decoded frame.
 func mustNotSee(t *testing.T, s *ptySession, substr, context string) {
 	t.Helper()
-	last, ok := s.waitFor(mustSeeTimeout, func(text string) bool {
+	last, ok := s.waitFor(mustSeeTimeout(), func(text string) bool {
 		return !strings.Contains(text, substr)
 	})
 	if !ok {

@@ -248,7 +248,17 @@ func (s *ptySession) snapshot() string {
 
 // waitFor polls snapshot() up to timeout, returning true when predicate(text)
 // returns true. It returns the last seen text for diagnostics.
+//
+// timeout is scaled by ciTimeoutMultiplier: v0.1.0-rc.1 and rc.2 both failed
+// make test-e2e on GitHub Actions with a shifting, non-reproducing set of
+// PTY content-assertion misses across all 3 matrix OSes and across dozens
+// of distinct callers of this one function (never the same test twice) —
+// the signature of a shared runner slower/noisier than local dev hardware,
+// not a product defect. Scaling centrally here, instead of at each of the
+// ~30 call sites across this package, is what actually closes every one of
+// them in a single change.
 func (s *ptySession) waitFor(timeout time.Duration, predicate func(string) bool) (last string, ok bool) {
+	timeout *= ciTimeoutMultiplier()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		text := s.snapshot()
