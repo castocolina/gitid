@@ -149,6 +149,23 @@ func makeTestCaptures(t *testing.T) (map[string]string, map[string]string) {
 	for id, text := range upApproved {
 		approved[id] = text
 	}
+	// 09.2-03-PLAN.md Task 3: Global Git Ignore captures merged the SAME
+	// way the previous seven, immediately above — RequiredScreenSpecs() is
+	// now an EIGHT-way merged registry.
+	gignLive, err := screenshot.CaptureGitIgnoreScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureGitIgnoreScreens (live): %v", err)
+	}
+	gignApproved, err := screenshot.CaptureGitIgnoreScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureGitIgnoreScreens (approved): %v", err)
+	}
+	for id, text := range gignLive {
+		live[id] = text
+	}
+	for id, text := range gignApproved {
+		approved[id] = text
+	}
 	return live, approved
 }
 

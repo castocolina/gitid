@@ -273,6 +273,13 @@ const (
 	// create-flow-upload-autonomous-github.txt and
 	// identity-manager-register-key-modal-runs.txt) before finalizing.
 	RegionUploadSection RegionName = "upload-section"
+	// RegionGIGNBody is the Global Git Ignore screen's browse/editor body
+	// (wiring line plus the gitignore content), extracted by matching on
+	// the screen heading or a curated pattern line.
+	RegionGIGNBody RegionName = "gign-body"
+	// RegionGIGNCeremony is the Global Git Ignore review-and-write ceremony
+	// (from its heading through the confirm/receipt state).
+	RegionGIGNCeremony RegionName = "gign-ceremony"
 )
 
 // ExtractRegion returns the sub-string of screen that corresponds to region.
@@ -351,6 +358,10 @@ func ExtractRegion(screen string, region RegionName) string {
 		return extractFixerBody(lines)
 	case RegionFixerCeremony:
 		return extractFixerCeremony(lines)
+	case RegionGIGNBody:
+		return extractGIGNBody(lines)
+	case RegionGIGNCeremony:
+		return extractGIGNCeremony(lines)
 	case RegionUploadSection:
 		return extractUploadSection(lines)
 	}
@@ -1344,6 +1355,62 @@ func extractUploadSection(lines []string) string {
 	return strings.Join(out, "\n")
 }
 
+// gignCrumb is the Global Git Ignore screen's exact breadcrumb text, present
+// on EVERY frame this screen renders (browse/editor and ceremony states
+// alike). It is the anchor both gign region extractors require before
+// matching anything else — anchoring on loose substrings like
+// "core.excludesfile" or ".DS_Store" (the previous approach) also matched
+// unrelated screens that happen to mention the same words (e.g. a Health
+// finding describing the gitignore pair), causing TestGateVisualRegression
+// to flag a spurious cross-screen region diff. No other screen's frame
+// contains this exact string.
+const gignCrumb = "Global Git Ignore › Global Git Ignore"
+
+// gignCrumbIndex returns the index of the line carrying gignCrumb, or -1 if
+// this frame is not a Global Git Ignore screen at all.
+func gignCrumbIndex(lines []string) int {
+	for i, line := range lines {
+		if strings.Contains(stripANSI(line), gignCrumb) {
+			return i
+		}
+	}
+	return -1
+}
+
+// gignIsCeremonyFrame reports whether the text from the gign breadcrumb
+// onward carries one of the ceremony-only markers (the review heading, the
+// in-flight "Writing…" state, or the written receipt) — the browse/editor
+// body never renders any of these.
+func gignIsCeremonyFrame(fromCrumb string) bool {
+	return strings.Contains(fromCrumb, "Review your global gitignore before writing.") ||
+		strings.Contains(fromCrumb, "Global gitignore written") ||
+		strings.Contains(fromCrumb, "Writing…")
+}
+
+func extractGIGNBody(lines []string) string {
+	idx := gignCrumbIndex(lines)
+	if idx < 0 {
+		return ""
+	}
+	fromCrumb := strings.Join(lines[idx:], "\n")
+	if gignIsCeremonyFrame(fromCrumb) {
+		return ""
+	}
+	return fromCrumb
+}
+
+func extractGIGNCeremony(lines []string) string {
+	idx := gignCrumbIndex(lines)
+	if idx < 0 {
+		return ""
+	}
+	fromCrumb := strings.Join(lines[idx:], "\n")
+	if !gignIsCeremonyFrame(fromCrumb) {
+		return ""
+	}
+	return fromCrumb
+}
+
 // AllRegionNames returns all defined RegionNames for allowlist schema validation.
 func AllRegionNames() []RegionName {
 	return []RegionName{
@@ -1382,6 +1449,8 @@ func AllRegionNames() []RegionName {
 		RegionFixerBody,
 		RegionFixerCeremony,
 		RegionUploadSection,
+		RegionGIGNBody,
+		RegionGIGNCeremony,
 	}
 }
 

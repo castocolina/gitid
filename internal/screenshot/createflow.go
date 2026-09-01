@@ -577,6 +577,9 @@ func ScreenSpecRegistry() []ScreenSpec {
 	// alongside the existing six, without disturbing any of them
 	// (seven-way merged).
 	specs = append(specs, uploadVisualSpecs()...)
+	// 09.2-03 Task 3: consume the Global Git Ignore registry without
+	// disturbing the existing surface registries.
+	specs = append(specs, gitIgnoreVisualSpecs()...)
 	return specs
 }
 
@@ -730,7 +733,8 @@ func validDecisionRef(ref string) bool {
 		// this is a property of the comparison mechanism itself, not a
 		// numbered 09-CONTEXT.md decision, so it does not collide with any
 		// bare D-NN there).
-		strings.HasPrefix(ref, "UP-")
+		strings.HasPrefix(ref, "UP-") ||
+		strings.HasPrefix(ref, "GIGN-")
 }
 
 // ValidateScreenSpecs checks the registry for structural correctness:
@@ -1356,7 +1360,7 @@ func CaptureCreateFlowScreens(backend tuikit.Backend) (map[string]string, error)
 		// likewise captured separately against their own seeded HOME.
 		// 08-08-PLAN.md Task 2: Health/Fixer specs (CaptureHealthFixerScreens)
 		// are likewise captured separately against their own seeded HOME.
-		if !spec.ApplicableLive || isGitScreenID(spec.ScreenID) || isIdentityManagerScreenID(spec.ScreenID) || isGlobalSSHScreenID(spec.ScreenID) || isGlobalGitScreenID(spec.ScreenID) || isHealthFixerScreenID(spec.ScreenID) || isUploadScreenID(spec.ScreenID) {
+		if !spec.ApplicableLive || isGitScreenID(spec.ScreenID) || isIdentityManagerScreenID(spec.ScreenID) || isGlobalSSHScreenID(spec.ScreenID) || isGlobalGitScreenID(spec.ScreenID) || isHealthFixerScreenID(spec.ScreenID) || isUploadScreenID(spec.ScreenID) || isGitIgnoreScreenID(spec.ScreenID) {
 			continue
 		}
 		text, ok := out[spec.ScreenID]
@@ -2229,6 +2233,103 @@ func healthFixerSpecs() []ScreenSpec {
 	}
 }
 
+// gitIgnoreVisualSpecs returns the six Global Git Ignore states exercised by
+// the live and approved Bubble Tea applications. The historical HTML mockup
+// has no corresponding screen and is explicitly non-applicable.
+func gitIgnoreVisualSpecs() []ScreenSpec {
+	noHTML := []SurfaceNonApplicability{uxNonComparable("approved-html", "GIGN-01", "Global Git Ignore was introduced after the approved Phase-2 HTML mockup; the approved Bubble Tea dummy is the binding UI reference.")}
+	// fixtureHeaderStatusDispositionGIGN mirrors every other later-phase
+	// registry's own header-status disposition (see healthFixerSpecs'
+	// fixtureHeaderStatusDispositionHF for the identical class of
+	// divergence): the live capture's disposable HOME and the dummy's
+	// frozen 8-identity fixture never carry the same identity count, so the
+	// header's "N ids" segment always differs — both sides still share the
+	// "ids" marker.
+	fixtureHeaderStatusDispositionGIGN := uxRegionDifferenceScoped(RegionHeaderStatus, "identity-count", "GIGN-01",
+		"header status shows the identity count, which differs (the live capture's disposable HOME vs the dummy's 8-identity IdentityManagerRows fixture set) — both sides carry the shared 'ids' marker",
+		`contains:"ids"`)
+	// gignBodyDisposition mirrors healthFixerSpecs' healthBodyDisposition
+	// (the same class of divergence): the live body renders the real
+	// gitignore/baseline content seeded by deterministicGitIgnoreFixture,
+	// while the dummy renders FixtureBackend's frozen fixtureGitIgnoreContent
+	// — different curated pattern subsets. The per-line editor content is
+	// rendered character-cell-styled (each rune carries its own ANSI escape
+	// codes), so a content needle like ".DS_Store" never survives as a
+	// contiguous substring in the captured text; the footer's discard-edits
+	// status line is a single uninterrupted styled span present in every
+	// browse/editor-body state on both sides, so it is the shared anchor.
+	gignBodyDisposition := uxRegionDifferenceScoped(RegionGIGNBody, "fixture-vs-live-content", "GIGN-01",
+		"the real body renders the live gitignore/baseline content seeded for this capture; the dummy renders FixtureBackend's frozen fixture content — the pattern SET is the classified fixture-vs-live divergence, and the shared discard-edits footer status survives on both sides",
+		`contains:"Leaving this screen discards unsaved edits."`)
+	// gignCeremonyDisposition mirrors gignBodyDisposition for the ceremony
+	// region: the diff preview and receipt both echo the differing
+	// live/dummy content, so the shared confirm-button footer hint (a
+	// single uninterrupted styled span present in both the preview and
+	// receipt states) is the anchor instead.
+	gignCeremonyDisposition := uxRegionDifferenceScoped(RegionGIGNCeremony, "fixture-vs-live-content", "GIGN-01",
+		"the real ceremony previews/writes the live gitignore/baseline content seeded for this capture; the dummy previews/writes FixtureBackend's frozen fixture content — the pattern SET is the classified fixture-vs-live divergence, and the shared 'Tab/←→' footer hint survives on both sides",
+		`contains:"Tab/←→"`)
+	dispositions := []RegionDisposition{fixtureHeaderStatusDispositionGIGN, gignBodyDisposition, gignCeremonyDisposition}
+	return []ScreenSpec{
+		{ScreenID: "gign-existing-block", Interaction: "Open Global Git Ignore with an existing managed block.", StateMarker: "Wired — core.excludesfile", ApplicableLive: true, ApplicableApprovedTUI: true, NonApplicability: noHTML, RequiredRegions: []RegionName{RegionGIGNBody}, RegionDispositions: dispositions},
+		{ScreenID: "gign-seeded-defaults", Interaction: "Open Global Git Ignore without a managed block and view the curated defaults.", StateMarker: "No managed block found", ApplicableLive: true, ApplicableApprovedTUI: true, NonApplicability: noHTML, RequiredRegions: []RegionName{RegionGIGNBody}, RegionDispositions: dispositions},
+		{ScreenID: "gign-editing", Interaction: "Enter the editor and capture the focused editable text area.", StateMarker: "Leaving this screen discards unsaved edits.", ApplicableLive: true, ApplicableApprovedTUI: true, NonApplicability: noHTML, RequiredRegions: []RegionName{RegionGIGNBody}, RegionDispositions: dispositions},
+		{ScreenID: "gign-after-reset", Interaction: "Reset the editor to curated defaults.", StateMarker: "Reset to defaults", ApplicableLive: true, ApplicableApprovedTUI: true, NonApplicability: noHTML, RequiredRegions: []RegionName{RegionGIGNBody}, RegionDispositions: dispositions},
+		{ScreenID: "gign-review-ceremony", Interaction: "Review the edited global gitignore before writing.", StateMarker: "Review your global gitignore before writing.", ApplicableLive: true, ApplicableApprovedTUI: true, NonApplicability: noHTML, RequiredRegions: []RegionName{RegionGIGNCeremony}, RegionDispositions: dispositions},
+		{ScreenID: "gign-receipt", Interaction: "Confirm the write and capture the receipt.", StateMarker: "Global gitignore written", ApplicableLive: true, ApplicableApprovedTUI: true, NonApplicability: noHTML, RequiredRegions: []RegionName{RegionGIGNCeremony}, RegionDispositions: dispositions},
+	}
+}
+
+// CaptureGitIgnoreScreens captures the six registered Global Git Ignore states.
+func CaptureGitIgnoreScreens(backend tuikit.Backend) (map[string]string, error) {
+	out := make(map[string]string, 6)
+	capture := func(m tea.Model) string { return normalizeTimestamps(anyView(m)) }
+	app := func() tea.Model {
+		var m tea.Model = tuikit.NewApp(backend)
+		m = step(m, tea.WindowSizeMsg{Width: CaptureWidth, Height: CaptureHeight})
+		return keyRune(m, '6')
+	}
+	browse := app()
+	out["gign-existing-block"] = capture(browse)
+	out["gign-seeded-defaults"] = capture(browse)
+	// Entering edit mode calls textarea.Focus(), which returns a repeating
+	// cursor-blink tea.Cmd (Blink -> blinkMsg -> another Blink, forever by
+	// design). step()'s recursive cmd-drain is unbounded and blows the
+	// stack on that chain, so this ONE keystroke is applied with a single,
+	// non-recursive Update call instead of keyEnter/step. The textarea's
+	// Focus() call already flips its internal focused flag synchronously —
+	// a static capture needs nothing from the blink cmd itself.
+	editingModel, _ := browse.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	editing := editingModel
+	out["gign-editing"] = capture(editing)
+	// The 'r' reset shortcut is only wired in browse mode (gitIgnoreModel's
+	// handleKey routes 'r' to the editor's Update, i.e. types the letter,
+	// while m.editing is true) — reset from browse, not from the focused
+	// editing model.
+	reset := keyRune(browse, 'r')
+	out["gign-after-reset"] = capture(reset)
+	review := keyRune(browse, 'a')
+	out["gign-review-ceremony"] = capture(review)
+	// One Enter confirms: the host sets commitPending and dispatches the
+	// async commit cmd, and step()'s recursive drain resolves that cmd's
+	// one-shot tick synchronously, delivering GlobalGitIgnoreCommitMsg and
+	// landing the ceremony in its receipt (done=true) state. A SECOND Enter
+	// here would be misread as ceremonyModel.handleKey's own "Enter on the
+	// receipt finishes" branch (c.done -> ceremonyFinished), which closes
+	// the ceremony and reverts the capture to the browse view instead of
+	// the receipt — so, unlike the double-Enter pattern other capture
+	// flows use for their own (differently shaped) ceremonies, this one
+	// stops at a single confirm.
+	confirmed := keyEnter(keyTab(review))
+	out["gign-receipt"] = capture(confirmed)
+	for _, spec := range gitIgnoreVisualSpecs() {
+		if strings.TrimSpace(out[spec.ScreenID]) == "" {
+			return nil, fmt.Errorf("screenshot: CaptureGitIgnoreScreens: required frame %q is missing or empty", spec.ScreenID)
+		}
+	}
+	return out, nil
+}
+
 // isGlobalSSHScreenID reports whether id is one of the Phase 6 Global SSH
 // checkpoint IDs registered here — used to exclude them from
 // CaptureCreateFlowScreens' completeness check (they are captured separately;
@@ -2925,6 +3026,15 @@ func uploadVisualSpecs() []ScreenSpec {
 // upload-surface checkpoint IDs registered here — used to exclude them from
 // CaptureCreateFlowScreens' completeness check (they are captured
 // separately; see CaptureUploadScreens' doc comment).
+func isGitIgnoreScreenID(id string) bool {
+	for _, spec := range gitIgnoreVisualSpecs() {
+		if spec.ScreenID == id {
+			return true
+		}
+	}
+	return false
+}
+
 func isUploadScreenID(id string) bool {
 	for _, spec := range uploadVisualSpecs() {
 		if spec.ScreenID == id {

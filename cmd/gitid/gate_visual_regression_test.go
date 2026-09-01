@@ -378,6 +378,10 @@ func TestGateVisualRegression(t *testing.T) {
 	hfHome1 := t.TempDir()
 	hfHome2 := t.TempDir()
 	deterministicHealthFixerFixture(t, hfHome1)
+	gignHome1 := t.TempDir()
+	gignHome2 := t.TempDir()
+	deterministicGitIgnoreFixture(t, gignHome1)
+	deterministicGitIgnoreFixture(t, gignHome2)
 	deterministicHealthFixerFixture(t, hfHome2)
 
 	// CR-01: run TWO independent captures and compare text hashes.
@@ -398,6 +402,7 @@ func TestGateVisualRegression(t *testing.T) {
 	mergeGlobalSSHCaptures(t, realCaptures1, dummyCaptures1, gssHome1)
 	mergeGlobalGitCaptures(t, realCaptures1, dummyCaptures1, ggitHome1)
 	mergeHealthFixerCaptures(t, realCaptures1, dummyCaptures1, hfHome1)
+	mergeGitIgnoreCaptures(t, realCaptures1, dummyCaptures1, gignHome1)
 	upHome1 := t.TempDir()
 	deterministicUploadFixture(t, upHome1)
 	mergeUploadCaptures(t, realCaptures1, dummyCaptures1, upHome1)
@@ -419,6 +424,7 @@ func TestGateVisualRegression(t *testing.T) {
 	mergeGlobalSSHCaptures(t, realCaptures2, dummyCaptures2, gssHome2)
 	mergeGlobalGitCaptures(t, realCaptures2, dummyCaptures2, ggitHome2)
 	mergeHealthFixerCaptures(t, realCaptures2, dummyCaptures2, hfHome2)
+	mergeGitIgnoreCaptures(t, realCaptures2, dummyCaptures2, gignHome2)
 	upHome2 := t.TempDir()
 	deterministicUploadFixture(t, upHome2)
 	mergeUploadCaptures(t, realCaptures2, dummyCaptures2, upHome2)
@@ -627,6 +633,9 @@ func TestAllScreensCapturedAndNonEmpty(t *testing.T) {
 	upHome := t.TempDir()
 	deterministicUploadFixture(t, upHome)
 	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
+	gignHome := t.TempDir()
+	deterministicGitIgnoreFixture(t, gignHome)
+	mergeGitIgnoreCaptures(t, realCaptures, dummyCaptures, gignHome)
 	t.Setenv("HOME", home) // restore for any later HOME-dependent assertions
 
 	for _, spec := range screenshot.RequiredScreenSpecs() {
@@ -697,6 +706,9 @@ func TestNegativeControl_UnclassifiedDifferenceRejected(t *testing.T) {
 	upHome := t.TempDir()
 	deterministicUploadFixture(t, upHome)
 	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
+	gignHome := t.TempDir()
+	deterministicGitIgnoreFixture(t, gignHome)
+	mergeGitIgnoreCaptures(t, realCaptures, dummyCaptures, gignHome)
 	t.Setenv("HOME", home) // restore for any later HOME-dependent assertions
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -819,6 +831,9 @@ func TestNegativeControl_AllComparableEqualRegionsAreMutationSensitive(t *testin
 	upHome := t.TempDir()
 	deterministicUploadFixture(t, upHome)
 	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
+	gignHome := t.TempDir()
+	deterministicGitIgnoreFixture(t, gignHome)
+	mergeGitIgnoreCaptures(t, realCaptures, dummyCaptures, gignHome)
 	t.Setenv("HOME", home) // restore for any later HOME-dependent assertions
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -930,6 +945,9 @@ func TestNegativeControl_GitScreenUnclassifiedDifferenceRejected(t *testing.T) {
 	upHome := t.TempDir()
 	deterministicUploadFixture(t, upHome)
 	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
+	gignHome := t.TempDir()
+	deterministicGitIgnoreFixture(t, gignHome)
+	mergeGitIgnoreCaptures(t, realCaptures, dummyCaptures, gignHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1010,6 +1028,9 @@ func TestNegativeControl_AllGitScreenComparableEqualRegionsAreMutationSensitive(
 	upHome := t.TempDir()
 	deterministicUploadFixture(t, upHome)
 	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
+	gignHome := t.TempDir()
+	deterministicGitIgnoreFixture(t, gignHome)
+	mergeGitIgnoreCaptures(t, realCaptures, dummyCaptures, gignHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1133,6 +1154,9 @@ func TestNegativeControl_IdentityManagerUnclassifiedDifferenceRejected(t *testin
 	upHome := t.TempDir()
 	deterministicUploadFixture(t, upHome)
 	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
+	gignHome := t.TempDir()
+	deterministicGitIgnoreFixture(t, gignHome)
+	mergeGitIgnoreCaptures(t, realCaptures, dummyCaptures, gignHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1209,6 +1233,9 @@ func TestNegativeControl_AllIdentityManagerComparableEqualRegionsAreMutationSens
 	upHome := t.TempDir()
 	deterministicUploadFixture(t, upHome)
 	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
+	gignHome := t.TempDir()
+	deterministicGitIgnoreFixture(t, gignHome)
+	mergeGitIgnoreCaptures(t, realCaptures, dummyCaptures, gignHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1292,6 +1319,11 @@ var globalGitScreenIDs = map[string]bool{
 	"ggit-options-list": true, "ggit-options-scrolled": true, "ggit-options-with-selection": true,
 	"ggit-options-differs-row": true, "ggit-options-probe-error": true,
 	"ggit-apply-preview": true, "ggit-apply-receipt": true,
+}
+
+var gitIgnoreScreenIDs = map[string]bool{
+	"gign-existing-block": true, "gign-seeded-defaults": true, "gign-editing": true,
+	"gign-after-reset": true, "gign-review-ceremony": true, "gign-receipt": true,
 }
 
 // preGlobalGitScreenIDs is the complete pre-Phase-7 registry vocabulary the
@@ -1778,6 +1810,9 @@ func TestNegativeControl_GlobalSSHUnclassifiedDifferenceRejected(t *testing.T) {
 	upHome := t.TempDir()
 	deterministicUploadFixture(t, upHome)
 	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
+	gignHome := t.TempDir()
+	deterministicGitIgnoreFixture(t, gignHome)
+	mergeGitIgnoreCaptures(t, realCaptures, dummyCaptures, gignHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -1849,6 +1884,9 @@ func TestNegativeControl_AllGlobalSSHComparableEqualRegionsAreMutationSensitive(
 	upHome := t.TempDir()
 	deterministicUploadFixture(t, upHome)
 	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
+	gignHome := t.TempDir()
+	deterministicGitIgnoreFixture(t, gignHome)
+	mergeGitIgnoreCaptures(t, realCaptures, dummyCaptures, gignHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -2264,6 +2302,9 @@ func TestNegativeControl_GlobalGitUnclassifiedDifference(t *testing.T) {
 	upHome := t.TempDir()
 	deterministicUploadFixture(t, upHome)
 	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
+	gignHome := t.TempDir()
+	deterministicGitIgnoreFixture(t, gignHome)
+	mergeGitIgnoreCaptures(t, realCaptures, dummyCaptures, gignHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -2343,6 +2384,9 @@ func TestNegativeControl_GlobalGitPerturbedComparableRegion(t *testing.T) {
 	upHome := t.TempDir()
 	deterministicUploadFixture(t, upHome)
 	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
+	gignHome := t.TempDir()
+	deterministicGitIgnoreFixture(t, gignHome)
+	mergeGitIgnoreCaptures(t, realCaptures, dummyCaptures, gignHome)
 	t.Setenv("HOME", home)
 
 	specs := screenshot.RequiredScreenSpecs()
@@ -2715,6 +2759,9 @@ func buildHealthFixerCaptures(t *testing.T) (real, dummy map[string]string) {
 	upHome := t.TempDir()
 	deterministicUploadFixture(t, upHome)
 	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
+	gignHome := t.TempDir()
+	deterministicGitIgnoreFixture(t, gignHome)
+	mergeGitIgnoreCaptures(t, realCaptures, dummyCaptures, gignHome)
 	t.Setenv("HOME", home)
 	return realCaptures, dummyCaptures
 }
@@ -2978,6 +3025,42 @@ func deterministicUploadFixture(t *testing.T, home string) {
 // uploaderDeps swapped to gateUploadDeps' deterministic "gh ok" shape) and
 // the dummy backend, merging each into the caller's realCaptures/
 // dummyCaptures maps — mirrors mergeHealthFixerCaptures exactly.
+func deterministicGitIgnoreFixture(t *testing.T, home string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
+		t.Fatalf("gate-visual-regression: seeding gitignore fixture: %v", err)
+	}
+	writeFile := func(path, content string, mode os.FileMode) {
+		if err := os.WriteFile(path, []byte(content), mode); err != nil {
+			t.Fatalf("gate-visual-regression: writing gitignore fixture %s: %v", path, err)
+		}
+	}
+	writeFile(filepath.Join(home, ".gitignore_global"), "# BEGIN gitid managed: gitignore\n.DS_Store\n*.log\n# END gitid managed: gitignore\n", 0o644)
+	writeFile(filepath.Join(home, ".gitconfig.d", "00-baseline"), "# BEGIN gitid managed: baseline\n[core]\n\texcludesfile = ~/.gitignore_global\n# END gitid managed: baseline\n", 0o644)
+}
+
+func mergeGitIgnoreCaptures(t *testing.T, realCaptures, dummyCaptures map[string]string, home string) {
+	t.Helper()
+	restoreHome := os.Getenv("HOME")
+	t.Setenv("HOME", home)
+	real, err := screenshot.CaptureGitIgnoreScreens(newBackendForHome(home))
+	if err != nil {
+		t.Fatalf("CaptureGitIgnoreScreens (live): %v", err)
+	}
+	t.Setenv("HOME", restoreHome)
+	for id, text := range normalizeDisposableHome(real, home) {
+		realCaptures[id] = text
+	}
+	dummy, err := screenshot.CaptureGitIgnoreScreens(dummytui.NewFixtureBackend())
+	if err != nil {
+		t.Fatalf("CaptureGitIgnoreScreens (approved): %v", err)
+	}
+	for id, text := range dummy {
+		dummyCaptures[id] = text
+	}
+}
+
+// mergeUploadCaptures captures the eight Phase 9 upload-surface checkpoints
 func mergeUploadCaptures(t *testing.T, realCaptures, dummyCaptures map[string]string, uploadHome string) {
 	t.Helper()
 	restoreHome := os.Getenv("HOME")
@@ -3309,6 +3392,9 @@ func buildUploadCaptures(t *testing.T) (real, dummy map[string]string) {
 	upHome := t.TempDir()
 	deterministicUploadFixture(t, upHome)
 	mergeUploadCaptures(t, realCaptures, dummyCaptures, upHome)
+	gignHome := t.TempDir()
+	deterministicGitIgnoreFixture(t, gignHome)
+	mergeGitIgnoreCaptures(t, realCaptures, dummyCaptures, gignHome)
 	t.Setenv("HOME", home)
 	return realCaptures, dummyCaptures
 }

@@ -88,6 +88,13 @@ func captureCombined(t *testing.T, backend tuikit.Backend) map[string]string {
 	for id, text := range upOut {
 		out[id] = text
 	}
+	gignOut, err := screenshot.CaptureGitIgnoreScreens(backend)
+	if err != nil {
+		t.Fatalf("CaptureGitIgnoreScreens: %v", err)
+	}
+	for id, text := range gignOut {
+		out[id] = text
+	}
 	return out
 }
 
@@ -738,6 +745,15 @@ func TestCaptureCreateFlowScreensFailsOnMissingRequiredFrame(t *testing.T) {
 		t.Fatalf("CaptureUploadScreens with valid backend must not fail: %v", uerr)
 	}
 	for id, text := range upCaptures {
+		captures[id] = text
+	}
+	// 09.2-03-PLAN.md Task 3: Global Git Ignore captures merged the SAME
+	// way (the registry is now eight-way merged).
+	gignCaptures, gierr := screenshot.CaptureGitIgnoreScreens(backend)
+	if gierr != nil {
+		t.Fatalf("CaptureGitIgnoreScreens with valid backend must not fail: %v", gierr)
+	}
+	for id, text := range gignCaptures {
 		captures[id] = text
 	}
 	// Verify all required frames are present.
