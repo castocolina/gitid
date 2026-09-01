@@ -449,9 +449,11 @@ func ReadProviderDenyLog(t *testing.T, denyLog string) []string {
 // path. Read by the source-level guard test below; keep in sync with any
 // change to BuildBinary/BuildDummyBinary/TestInstall_MakeInstallOutput.
 var e2eAllowedAmbientPathSites = map[string]string{
-	"BuildBinary":                   "invokes `go build`, never a gitid binary — needs the real toolchain PATH and the real HOME to resolve GOPATH",
-	"BuildDummyBinary":              "invokes `go build`, never a gitid binary — same reason as BuildBinary",
-	"TestInstall_MakeInstallOutput": "invokes `make install`, never a gitid binary — asserts the Makefile's own echoed install-path/PATH-hint text",
+	"BuildBinary":                                "invokes `go build`, never a gitid binary — needs the real toolchain PATH and the real HOME to resolve GOPATH",
+	"BuildDummyBinary":                           "invokes `go build`, never a gitid binary — same reason as BuildBinary",
+	"TestInstall_MakeInstallOutput":              "invokes `make install`, never a gitid binary — asserts the Makefile's own echoed install-path/PATH-hint text",
+	"stampedArtifacts":                           "invokes `make checksums`, never a gitid binary — needs the real toolchain PATH and the real HOME to resolve GOPATH",
+	"TestRelease_UnstampedBuildKeepsDevDefaults": "invokes `make build`, never a gitid binary — same reason as BuildBinary",
 }
 
 // e2eAmbientPathSubstrings are real-PATH indicators e2eEnv refuses to see
