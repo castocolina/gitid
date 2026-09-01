@@ -1005,7 +1005,7 @@ func driveRotateToResultScreen(t *testing.T, s *ptySession) {
 // mustSee's default 8s budget covers.
 func mustSeeSlow(t *testing.T, s *ptySession, substr, context string) {
 	t.Helper()
-	last, ok := s.waitFor(20*time.Second, func(text string) bool {
+	last, ok := s.waitFor(35*time.Second, func(text string) bool {
 		return strings.Contains(text, substr)
 	})
 	if !ok {

@@ -140,10 +140,18 @@ var (
 	dummyKeyShiftRight = []byte("\x1b[1;2C")
 )
 
+// mustSeeTimeout is mustSee/mustNotSee's poll budget. Tuned against a local
+// dev machine's 8s was routinely blown on shared GitHub Actions runners
+// under -race (v0.1.0-rc.1's CI run: distinct PTY content-assertion misses
+// on all 3 matrix OSes, never the same test twice — a slower-CPU symptom,
+// not a regression). 15s keeps meaningful margin without threatening the
+// 1200s test-e2e suite timeout.
+const mustSeeTimeout = 15 * time.Second
+
 // mustSee polls the decoded frame for substr and fails fatally on timeout.
 func mustSee(t *testing.T, s *ptySession, substr, context string) {
 	t.Helper()
-	last, ok := s.waitFor(8*time.Second, func(text string) bool {
+	last, ok := s.waitFor(mustSeeTimeout, func(text string) bool {
 		return strings.Contains(text, substr)
 	})
 	if !ok {
@@ -154,7 +162,7 @@ func mustSee(t *testing.T, s *ptySession, substr, context string) {
 // mustNotSee polls until substr disappears from the decoded frame.
 func mustNotSee(t *testing.T, s *ptySession, substr, context string) {
 	t.Helper()
-	last, ok := s.waitFor(8*time.Second, func(text string) bool {
+	last, ok := s.waitFor(mustSeeTimeout, func(text string) bool {
 		return !strings.Contains(text, substr)
 	})
 	if !ok {
