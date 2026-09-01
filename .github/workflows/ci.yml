@@ -94,8 +94,18 @@ jobs:
       # (PR and push), but only run it on macos-15-intel when the event is a push to
       # main. This gives every PR cross-OS (Linux + Apple Silicon) e2e signal while
       # deferring the third runner's e2e cost to push/main.
+      # TMPDIR=/tmp: macOS runners default TMPDIR to a long per-process
+      # /var/folders/<hash>/T/ path; t.TempDir() (and every fake-binary
+      # helper built on it, e.g. FakeGHDir/FakeSSHDir) honors $TMPDIR, and
+      # a PTY frame later rendering one of those paths can hard-wrap it
+      # across lines on CI in a way that never happens against a local
+      # dev machine's shorter TMPDIR (v0.1.0-rc.4's
+      # TestIdentityManager_KeyCeremonyRotate/Repair failures). No-op on
+      # ubuntu-latest, whose default TMPDIR is already /tmp.
       - name: make test-e2e
         if: ${{ matrix.os != 'macos-15-intel' || github.event_name == 'push' }}
+        env:
+          TMPDIR: /tmp
         run: make test-e2e
 
   # BUILD-03: publish stamped binaries + checksums.txt on a v* tag.

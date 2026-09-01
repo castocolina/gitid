@@ -377,8 +377,15 @@ func seedFragmentCandidate(t *testing.T, home, name string) {
 
 // keystrokeDelay is the inter-keystroke pause. Bubble Tea needs a render cycle
 // between keystrokes, and the vt emulator needs time to receive and process the
-// PTY output. 80ms is conservative enough to avoid timing flake on CI.
-const keystrokeDelay = 80 * time.Millisecond
+// PTY output. 80ms was "conservative enough" on local dev hardware but a flat
+// value can't be: v0.1.0-rc.1 through rc.4 kept failing make test-e2e on
+// GitHub Actions with tests stuck mid-flow (never advancing past a step,
+// not slow to render one) even after every wait/context budget in the
+// package was scaled — a symptom of dropped or coalesced input under
+// -race's CPU overhead on a shared runner, not a rendering delay. Scaled by
+// the same ciTimeoutMultiplier as every other CI-only budget in this
+// package; a var (not a func) so the ~390 existing call sites need no change.
+var keystrokeDelay = 80 * time.Millisecond * ciTimeoutMultiplier()
 
 // uiReady waits for the TUI to render its initial frame (the sidebar header).
 func uiReady(t *testing.T, s *ptySession) {
