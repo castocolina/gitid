@@ -56,7 +56,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 8: Health + Fixer** - Two-section (SSH + Git) health with redundancy/contradiction detection and in-place fixes (completed 2026-08-28)
 - [x] **Phase 9: Upload / Credentials Assist** - Auto-upload the `.pub` (auth + signing) when `gh`/`glab` authenticated; manual fallback (completed 2026-08-30)
 - [x] **Phase 9.1: GitLab Real-Account Validation** - Prove the GitLab upload/delete path against a real, authenticated GitLab account, mirroring Wave 8's disposable-key protocol for GitHub
-- [ ] **Phase 9.2: Global Git Ignore Management** - A TUI view for managing a curated global gitignore (common tmp/venv/env patterns), reviewable before write
+- [x] **Phase 9.2: Global Git Ignore Management** - A TUI view for managing a curated global gitignore (common tmp/venv/env patterns), reviewable before write
 - [ ] **Phase 9.3: Release CI/CD + Installer** - Tagged-release CI publishing checksummed binaries, plus a curl\|bash install script
 - [ ] **Phase 9.4: TUI UX Consistency & Doctor/Fixer Parity** - Fix focus/read-only/toggle/submenu-affordance inconsistencies and Doctor-vs-Fixer count discoverability found in a user audit of Global SSH, Global Git, and Fixer
 - [ ] **Phase 9.5: Full SSH/Git Properties Browser & Custom Key Entry** - Browse the full set of SSH/Git config properties beyond gitid's curated policy tables, plus add a custom global key (free-form for Git, directive-validated for SSH)
@@ -484,9 +484,9 @@ Plans:
 
 Plans:
 
-- [ ] 09.2-01-PLAN.md — (wave 1) tracer: a 6th top-level nav entry that reads the managed `~/.gitignore_global` block, refuses a malformed or unwired machine, and carries one preview-pinned candidate through the shared review ceremony to a backed-up write of the FULL `core.excludesFile` pair — wired in both binaries and proven over a real PTY (GIGN-01)
-- [ ] 09.2-02-PLAN.md — (wave 2) extend the one curated catalog to the venv/env/`!.env.example` seed under comment-header groups, and make doctor's five-branch pair check plus its excludesfile fix tolerate — and never revert — a user-edited block while still catching an unset key, a wrong target, a dangling pointer and an empty block (GIGN-01)
-- [ ] 09.2-03-PLAN.md — (wave 3) replace the read-only body with the pre-loaded editable text area plus Reset to defaults, prove edit→review→write and a typed-sentinel refusal over a real PTY, register the screen in `RequiredScreenSpecs`, capture the phase frames, and close GIGN-01 behind the phase's UI-SPEC/UI-REVIEW artifacts (GIGN-01)
+- [x] 09.2-01-PLAN.md — (wave 1) tracer: a 6th top-level nav entry that reads the managed `~/.gitignore_global` block, refuses a malformed or unwired machine, and carries one preview-pinned candidate through the shared review ceremony to a backed-up write of the FULL `core.excludesFile` pair — wired in both binaries and proven over a real PTY (GIGN-01)
+- [x] 09.2-02-PLAN.md — (wave 2) extend the one curated catalog to the venv/env/`!.env.example` seed under comment-header groups, and make doctor's five-branch pair check plus its excludesfile fix tolerate — and never revert — a user-edited block while still catching an unset key, a wrong target, a dangling pointer and an empty block (GIGN-01)
+- [x] 09.2-03-PLAN.md — (wave 3) replace the read-only body with the pre-loaded editable text area plus Reset to defaults, prove edit→review→write and a typed-sentinel refusal over a real PTY, register the screen in `RequiredScreenSpecs`, capture the phase frames, and close GIGN-01 behind the phase's UI-SPEC/UI-REVIEW artifacts (GIGN-01)
 
 ### Phase 9.3: Release CI/CD + Installer
 
@@ -557,7 +557,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 8. Health + Fixer | 8/8 | Complete    | 2026-08-30 |
 | 9. Upload / Credentials Assist | 8/8 | Complete    | 2026-08-30 |
 | 9.1. GitLab Real-Account Validation | 2/2 | Complete | 2026-08-31 |
-| 9.2. Global Git Ignore Management | 0/TBD | Not started | - |
+| 9.2. Global Git Ignore Management | 3/3 | Complete | 2026-08-31 |
 | 9.3. Release CI/CD + Installer | 0/TBD | Not started | - |
 | 9.4. TUI UX Consistency & Doctor/Fixer Parity | 0/TBD | Not started | - |
 | 9.5. Full SSH/Git Properties Browser | 0/TBD | Not started | - |

@@ -407,7 +407,7 @@ These are first-class, enforced requirements — the user's core process ask.
 
 ## Q. Global Git Ignore Management (GIGN)
 
-- [ ] **GIGN-01** (Global gitignore view): a TUI surface for managing a global git
+- [x] **GIGN-01** (Global gitignore view): a TUI surface for managing a global git
   ignore file (`core.excludesFile`) with a curated set of common, frequently-forgotten
   patterns — local tmp/venv directories (`.venv/`, `venv/`), local env files (`.env`,
   `.env.*`) with a negation exception for committed examples (`!.env.example`), and
@@ -650,7 +650,7 @@ row below records each one's **home** phase.
 | BUILD-03 | Phase 9.3 | Pending |
 | BUILD-04 | Phase 1 | Complete |
 | BUILD-05 | Phase 9.3 | Pending |
-| GIGN-01 | Phase 9.2 | Pending |
+| GIGN-01 | Phase 9.2 | Complete |
 | UXP-01 | Phase 9.4 | Pending |
 | UXP-02 | Phase 9.4 | Pending |
 | UXP-03 | Phase 9.4 | Pending |
