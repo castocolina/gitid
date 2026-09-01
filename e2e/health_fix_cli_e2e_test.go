@@ -45,7 +45,7 @@ func runHealthCLI(t *testing.T, ctx context.Context, bin, home string, args ...s
 
 func TestHealthFixCLIParity(t *testing.T) {
 	bin := BuildBinary(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	home := t.TempDir()
 	sshDir := filepath.Join(home, ".ssh")

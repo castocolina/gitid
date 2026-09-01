@@ -161,7 +161,7 @@ func TestGitConfiguration_RealPTYCompleteEditFlow(t *testing.T) {
 	seedGitPTYIdentity(t, home, "acme")
 	bin := BuildBinary(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	closed := false
@@ -248,7 +248,7 @@ func TestGitConfiguration_RealPTYSSHOnlyCompletionFlow(t *testing.T) {
 	removeGitSide(t, home, "work")
 	bin := BuildBinary(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	closed := false
@@ -338,7 +338,7 @@ func TestGitConfiguration_RealPTYWriteFailureRollback(t *testing.T) {
 	}
 
 	bin := BuildBinary(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	closed := false
@@ -394,7 +394,7 @@ func TestGitConfiguration_RealPTYMouseFieldFocus(t *testing.T) {
 	seedGitPTYIdentity(t, home, "acme")
 	bin := BuildBinary(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -945,7 +945,7 @@ func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
 	t.Run("git-form-filled", func(t *testing.T) {
 		realHome := SandboxHome(t)
 		seedGitPTYIdentity(t, realHome, "acme")
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer cancel()
 		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
 		defer real.close(t)
@@ -953,7 +953,7 @@ func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		mustSee(t, real, "editing existing fragment", "real: edit-mode Configure-Git opens")
 
 		dummyHome := SandboxHome(t)
-		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer dcancel()
 		dummy := startPTYAt(t, newDummyCmd(t, dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
 		defer dummy.close(t)
@@ -967,7 +967,7 @@ func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		realHome := SandboxHome(t)
 		seedGitPTYIdentity(t, realHome, "work")
 		removeGitSide(t, realHome, "work")
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer cancel()
 		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
 		defer real.close(t)
@@ -975,7 +975,7 @@ func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		mustSee(t, real, "completes this identity", "real: SSH-only Configure-Git opens")
 
 		dummyHome := SandboxHome(t)
-		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer dcancel()
 		dummy := startPTYAt(t, newDummyCmd(t, dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
 		defer dummy.close(t)
@@ -988,7 +988,7 @@ func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
 	t.Run("match-strategy-select", func(t *testing.T) {
 		realHome := SandboxHome(t)
 		seedGitPTYIdentity(t, realHome, "acme")
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer cancel()
 		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
 		defer real.close(t)
@@ -999,7 +999,7 @@ func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		mustSee(t, real, "● gitdir (default)", "real: match strategy focused at its default")
 
 		dummyHome := SandboxHome(t)
-		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer dcancel()
 		dummy := startPTYAt(t, newDummyCmd(t, dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
 		defer dummy.close(t)
@@ -1015,7 +1015,7 @@ func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
 	t.Run("review-readonly", func(t *testing.T) {
 		realHome := SandboxHome(t)
 		seedGitPTYIdentity(t, realHome, "acme")
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer cancel()
 		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
 		defer real.close(t)
@@ -1025,7 +1025,7 @@ func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		mustSee(t, real, `Write Git identity for "acme"`, "real: review-readonly reached")
 
 		dummyHome := SandboxHome(t)
-		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer dcancel()
 		dummy := startPTYAt(t, newDummyCmd(t, dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
 		defer dummy.close(t)
@@ -1040,7 +1040,7 @@ func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
 	t.Run("result-success", func(t *testing.T) {
 		realHome := SandboxHome(t)
 		seedGitPTYIdentity(t, realHome, "acme")
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer cancel()
 		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
 		defer real.close(t)
@@ -1052,7 +1052,7 @@ func TestGitConfiguration_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		mustSee(t, real, `Git identity "acme" configured`, "real: result-success reached")
 
 		dummyHome := SandboxHome(t)
-		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer dcancel()
 		dummy := startPTYAt(t, newDummyCmd(t, dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
 		defer dummy.close(t)

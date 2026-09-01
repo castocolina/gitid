@@ -121,7 +121,7 @@ func TestGlobalGitCLI_ListApplyIdempotent(t *testing.T) {
 	// target, while leaving every baseline row unset (needs-action).
 	main, baseline := seedGlobalGitHome(t, home, "[user]\n\tname = Pat\n\temail = pat@example.com\n", "")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	listOut, listCode := runGitCLI(t, ctx, bin, home, "", "git", "options", "list", "--json")
@@ -229,7 +229,7 @@ func TestGlobalGitCLI_ConflictingValueRefused(t *testing.T) {
 	bin := BuildBinary(t)
 	seedGlobalGitHome(t, home, "[init]\n\tdefaultBranch = trunk\n", "")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	out, code := runGitCLI(t, ctx, bin, home, "", "git", "options", "apply", "init.defaultBranch", "--yes", "--json")
@@ -260,7 +260,7 @@ func TestGlobalGitCLI_DryRunNoWrite(t *testing.T) {
 	paths := []string{main, baseline}
 	before := snapshotGitBytes(t, paths)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	out, code := runGitCLI(t, ctx, bin, home, "", "git", "options", "apply", "init.defaultBranch", "--dry-run", "--json")
 	if code != 0 {
@@ -285,7 +285,7 @@ func TestGlobalGitCLI_FallbackShowSetClear(t *testing.T) {
 	bin := BuildBinary(t)
 	seedGlobalGitHome(t, home, "", "")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	show1, code1 := runGitCLI(t, ctx, bin, home, "", "git", "fallback", "show", "--json")
@@ -369,7 +369,7 @@ func TestGlobalGitCLI_BelowGateAdvisoryExitCodes(t *testing.T) {
 	bin := BuildBinary(t)
 	_, baseline := seedGlobalGitHome(t, home, "", "")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	dry, dryCode := runGitCLI(t, ctx, bin, home, shim, "git", "options", "apply", "merge.conflictstyle", "--dry-run", "--json")

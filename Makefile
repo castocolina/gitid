@@ -580,13 +580,20 @@ uninstall:
 ## test-e2e: run end-to-end agent-driven tests (builds binary first).
 ## E2E tests use a hermetic sandbox HOME and a fake ssh script injected on PATH.
 ## Tests are tagged //go:build e2e and are excluded from the normal make test target.
-## Timeout 1800s (raised from 1200s after v0.1.0-rc.1/rc.2's CI-only test-e2e
-## failures — a shifting set of PTY content-assertion misses on GitHub Actions,
-## never reproducing locally, root-caused to per-wait budgets tuned against
-## local dev hardware; e2e/ui_pty_e2e_test.go's ptySession.waitFor now scales
-## every PTY wait 3x under GITHUB_ACTIONS=true, so this ceiling needs matching
-## headroom for the stragglers that actually use it — most tests still pass
-## in their original time, so this budget is rarely approached in practice.
+## Timeout 2400s (raised 900s -> 1200s -> 1800s -> 2400s across v0.1.0-rc.1/
+## rc.2/rc.3's CI-only test-e2e failures). Two independent CI-only budgets
+## were undersized against GitHub Actions' shared runners, never reproducing
+## locally: e2e/ui_pty_e2e_test.go's ptySession.waitFor (PTY content polls)
+## AND every per-test context.WithTimeout(context.Background(), N*time.Second)
+## that bounds the driven subprocess itself — the latter was the dominant
+## ceiling (many failures clustered right under its unscaled 60s). Both now
+## multiply by ciTimeoutMultiplier() (3x under GITHUB_ACTIONS=true), so this
+## Makefile ceiling needs matching headroom for the stragglers that actually
+## use it — most tests still pass in their original time.
+## rc.1 also surfaced one deterministic (not timing) bug: the D-04
+## rotate-delete-offer title embeds os.Hostname(), which is far longer on a
+## GitHub-hosted runner than any local machine and hard-wraps across lines —
+## no timeout fixes that; see mustSeeUnwrapped in identity_manager_pty_e2e_test.go.
 ##
 ## Phase 4 (04-04-PLAN.md Task 2/3, D-12): this target ALSO runs
 ## TestGitConfiguration_CompiledRealVsLiveDummyPTY — the paired compiled PTY
@@ -608,7 +615,7 @@ uninstall:
 ## is what still catches a shared-renderer defect this paired comparison
 ## structurally cannot see.
 test-e2e: build
-	go test -tags e2e -race -timeout 1800s ./e2e/...
+	go test -tags e2e -race -timeout 2400s ./e2e/...
 
 ## screenshot-tui: render the Bubble Tea View()-dump golden to a deterministic PNG
 ## via freeze (TOOL-05, DLV-03). Invokes TestCaptureTUI — the concrete runnable

@@ -194,7 +194,7 @@ func TestCreateFlow_AlgorithmAvailability(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "pass")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -221,7 +221,7 @@ func TestCreateFlow_SSHFormAliasCollision(t *testing.T) {
 	seedMinimalIdentity(t, home, "acme")
 	bin := BuildBinary(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
@@ -256,7 +256,7 @@ func TestCreateFlow_TestStagePass(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "pass")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
@@ -296,7 +296,7 @@ func TestCreateFlow_UploadAutonomousGitHubTracer(t *testing.T) {
 	fakeSSH := FakeSSHDir(t, "pass")
 	fakeGH, ghLog := FakeGHDir(t, "ok")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH, fakeGH), dummyTermWidth, dummyTermHeight)
 
@@ -375,7 +375,7 @@ func TestCreateFlow_UploadOmittedForUnknownProvider(t *testing.T) {
 	fakeSSH := FakeSSHDir(t, "pass")
 	fakeGH, ghLog := FakeGHDir(t, "ok")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH, fakeGH), dummyTermWidth, dummyTermHeight)
 
@@ -431,7 +431,7 @@ func TestCreateFlow_UploadCheckboxUnauthState(t *testing.T) {
 	fakeSSH := FakeSSHDir(t, "pass")
 	fakeGH, _ := FakeGHDir(t, "auth-fail")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH, fakeGH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -489,7 +489,7 @@ func TestCreateFlow_UploadCheckboxDisabledState(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "pass")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -527,7 +527,7 @@ func TestCreateFlow_UploadCheckboxTabAndClickReachable(t *testing.T) {
 	fakeSSH := FakeSSHDir(t, "pass")
 	fakeGH, _ := FakeGHDir(t, "ok")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH, fakeGH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -560,7 +560,7 @@ func TestCreateFlow_UploadManualFallbackWhenUnauthenticated(t *testing.T) {
 	fakeSSH := FakeSSHDir(t, "pass")
 	fakeGH, ghLog := FakeGHDir(t, "auth-fail")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH, fakeGH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -597,7 +597,7 @@ func TestCreateFlow_UploadPartialScopeShowsBothRows(t *testing.T) {
 	fakeSSH := FakeSSHDir(t, "pass")
 	fakeGH, _ := FakeGHDir(t, "scope-fail-signing")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH, fakeGH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -634,7 +634,7 @@ func TestCreateFlow_UploadAlreadyCompleteCollapsesToOneLine(t *testing.T) {
 	fakeGH, ghLog := FakeGHDir(t, "inventory-both")
 	FakeGHInventoryFile(t, fmt.Sprintf(`[{"id":1,"title":"gitid: acme @ prior-machine","key":%q}]`, strings.TrimRight(reusePubLine, "\n")))
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH, fakeGH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -872,7 +872,7 @@ func TestUploadSection_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		// scrolled off. One shared capture removes that race entirely.
 		fakeSSH := FakeSSHDir(t, "pass")
 		fakeGH, _ := FakeGHDir(t, "ok")
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer cancel()
 		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, fakeSSH, fakeGH), dummyTermWidth, dummyTermHeight)
 		defer real.close(t)
@@ -885,7 +885,7 @@ func TestUploadSection_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		realFrame := real.snapshot()
 
 		dummyHome := SandboxHome(t)
-		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer dcancel()
 		dummy := startPTYAt(t, newDummyCreateFlowCmd(t, dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
 		defer dummy.close(t)
@@ -918,7 +918,7 @@ func TestCreateFlow_ExistingPTYCannotReachRealProviderCLI(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "pass")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	cmd := newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH)
 	denyLog, ok := envValue(cmd.Env, "GITID_E2E_DENY_LOG")
@@ -966,7 +966,7 @@ func TestCreateFlow_TestStageReachableNotUploaded(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "denied")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
@@ -1001,7 +1001,7 @@ func TestCreateFlow_TestStageFailureRetry(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "timeout")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
@@ -1037,7 +1037,7 @@ func TestCreateFlow_GitConfigurationDefaultTracer(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "pass")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
@@ -1183,7 +1183,7 @@ func TestCreateFlow_ReuseExistingEncryptedKeyClosesL2Seam(t *testing.T) {
 		t.Fatalf("seeding the unparseable decoy: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
@@ -1294,7 +1294,7 @@ func TestCreateFlow_HostPreviewScrollable(t *testing.T) {
 	home := SandboxHome(t)
 	bin := BuildBinary(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
@@ -1325,7 +1325,7 @@ func TestCreateFlow_DistinctStageCaptures(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "pass")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
@@ -1356,7 +1356,7 @@ func TestCreateFlow_ExactStageProof(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "pass")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
@@ -1383,7 +1383,7 @@ func TestCreateFlow_Stage2RendersExactRawSSHOutput(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "pass")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -1415,7 +1415,7 @@ func TestCreateFlow_ReuseManualPath(t *testing.T) {
 	manualKeyPath := filepath.Join(sshDir, "id_ed25519_manual_test")
 	seedEncryptedKeyFixture(t, manualKeyPath, "manual-test", "") // empty passphrase = plain
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
@@ -1456,7 +1456,7 @@ func TestCreateFlow_GitStepContinueHint(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "pass")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
@@ -1492,7 +1492,7 @@ func TestCreateFlow_CompletedStage1ProofViewport(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "pass")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
@@ -1529,7 +1529,7 @@ func TestCreateFlow_CompletedStage2ProofViewport(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "pass")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
@@ -1559,7 +1559,7 @@ func TestCreateFlow_CompletedStageExactProofViewport(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "pass")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -1606,7 +1606,7 @@ func TestCreateFlow_ConfirmationExactViewport(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "pass")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -1674,7 +1674,7 @@ func TestCreateFlow_ReachableNotUploadedEvidence(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "denied")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
@@ -1703,7 +1703,7 @@ func TestCreateFlow_HardFailureRetryEvidence(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "timeout")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
@@ -1733,7 +1733,7 @@ func TestCreateFlow_GitStepUsesFormValidityReason(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeSSH := FakeSSHDir(t, "pass")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
@@ -1771,7 +1771,7 @@ func TestCreateFlow_MouseFieldFocus(t *testing.T) {
 	home := SandboxHome(t)
 	bin := BuildBinary(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
@@ -1836,7 +1836,7 @@ func TestCreateFlow_PTYReviewCorrections(t *testing.T) {
 	t.Run("running stage", func(t *testing.T) {
 		home := SandboxHome(t)
 		bin := BuildBinary(t)
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer cancel()
 
 		s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, delayedResolutionSSHDir(t)), dummyTermWidth, dummyTermHeight)
@@ -1864,7 +1864,7 @@ func TestCreateFlow_PTYReviewCorrections(t *testing.T) {
 	t.Run("reachable warning", func(t *testing.T) {
 		home := SandboxHome(t)
 		bin := BuildBinary(t)
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer cancel()
 
 		s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, FakeSSHDir(t, "denied")), dummyTermWidth, dummyTermHeight)
@@ -1891,7 +1891,7 @@ func TestCreateFlow_PTYReviewCorrections(t *testing.T) {
 	t.Run("compact includeIf preview", func(t *testing.T) {
 		home := SandboxHome(t)
 		bin := BuildBinary(t)
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer cancel()
 
 		s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, FakeSSHDir(t, "pass")), dummyTermWidth, dummyTermHeight)
@@ -1910,7 +1910,7 @@ func TestCreateFlow_PTYReviewCorrections(t *testing.T) {
 
 		dummyHome := SandboxHome(t)
 		dummyBin := BuildDummyBinary(t)
-		dummyCtx, dummyCancel := context.WithTimeout(context.Background(), 60*time.Second)
+		dummyCtx, dummyCancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer dummyCancel()
 		dummyCmd := exec.CommandContext(dummyCtx, dummyBin) //nolint:gosec // binary is built by BuildDummyBinary
 		dummyEnv, _ := e2eEnv(t, dummyHome)

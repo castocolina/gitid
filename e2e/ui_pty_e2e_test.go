@@ -405,7 +405,7 @@ func TestUIPTY_RealShellBoots(t *testing.T) {
 	home := SandboxHome(t)
 	bin := BuildBinary(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	// 100x30 is the approved design's minimum geometry (D-04 capture geometry):

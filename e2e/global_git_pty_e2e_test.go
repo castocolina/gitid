@@ -44,7 +44,7 @@ func newGlobalGitCmd(t *testing.T, ctx context.Context, bin, home, fakeGitDir st
 
 func startGlobalGitPTY(t *testing.T, home, fakeGitDir string) *ptySession {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	t.Cleanup(cancel)
 	s := startPTYAt(t, newGlobalGitCmd(t, ctx, BuildBinary(t), home, fakeGitDir), dummyTermWidth, dummyTermHeight)
 	t.Cleanup(func() { s.close(t) })
@@ -213,7 +213,7 @@ func TestGlobalGit_RealPTYDiffersRow(t *testing.T) {
 // failure state.
 func startGlobalGitPTYExpectingProbeFailure(t *testing.T, home, fakeGitDir string) *ptySession {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	t.Cleanup(cancel)
 	s := startPTYAt(t, newGlobalGitCmd(t, ctx, BuildBinary(t), home, fakeGitDir), dummyTermWidth, dummyTermHeight)
 	t.Cleanup(func() { s.close(t) })

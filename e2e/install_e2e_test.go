@@ -27,7 +27,7 @@ import (
 func TestInstall_MakeInstallOutput(t *testing.T) {
 	root := repoRoot(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	var stdout, stderr bytes.Buffer

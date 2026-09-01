@@ -146,7 +146,7 @@ func seedStorageMigrateHome(t *testing.T, home string) (configPath, includePath 
 // startStoragePTY navigates to Global SSH tab then Storage sub-tab.
 func startStoragePTY(t *testing.T, home, fakeSSHDir string) *ptySession {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second*ciTimeoutMultiplier())
 	t.Cleanup(cancel)
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, BuildBinary(t), home, fakeSSHDir), dummyTermWidth, dummyTermHeight)
 	t.Cleanup(func() { s.close(t) })

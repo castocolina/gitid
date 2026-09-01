@@ -106,7 +106,7 @@ func TestIdentityCLI_ListShow(t *testing.T) {
 	seedMinimalIdentity(t, home, "complete")
 	seedSSHOnlyIdentity(t, home, "sshonly")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	raw := runIdentityListJSON(t, ctx, bin, home)
@@ -538,7 +538,7 @@ func jsonByName(t *testing.T, ctx context.Context, bin, home string) map[string]
 // approved action menu. The fixture keeps one identity, so it starts selected.
 func openActionMenu(t *testing.T, bin, home, fakeSSH string) (*ptySession, func()) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	uiReady(t, s)
 	mustSee(t, s, "acme", "seeded identity appears in the TUI")
@@ -572,7 +572,7 @@ func driveKeyCeremony(t *testing.T, bin, home, fakeSSH string) {
 // wizard's real stage gate and write ceremony for acme-clone.
 func driveCloneCeremony(t *testing.T, bin, home, fakeSSH string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -598,7 +598,7 @@ func driveCloneCeremony(t *testing.T, bin, home, fakeSSH string) {
 // sequence. The everything scope requires typing the identity name exactly.
 func driveDeleteCeremony(t *testing.T, bin, home, scope string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -641,7 +641,7 @@ func TestIdentityCLI_RotateParity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	runIdentityCLI(t, ctx, bin, homeCLI, fakeSSH, "identity", "rotate", "acme", "--yes")
 
@@ -677,7 +677,7 @@ func TestIdentityCLI_NewKeyParity(t *testing.T) {
 	if err := os.Remove(keyPrivatePath(homeCLI, "acme") + ".pub"); err != nil {
 		t.Fatalf("remove CLI public key: %v", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	runIdentityCLI(t, ctx, bin, homeCLI, fakeSSH, "identity", "new-key", "acme", "--yes")
 
@@ -703,7 +703,7 @@ func TestIdentityCLI_CloneParity(t *testing.T) {
 	homeCLI := t.TempDir()
 	seedGitPTYIdentity(t, homeCLI, "acme")
 	seedParseableKey(t, homeCLI, "acme")
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	runIdentityCLI(t, ctx, bin, homeCLI, fakeSSH, "identity", "clone", "acme", "--name", "acme-clone", "--yes")
 
@@ -727,7 +727,7 @@ func TestIdentityCLI_DeleteGitOnlyParity(t *testing.T) {
 
 	homeCLI := t.TempDir()
 	seedGitPTYIdentity(t, homeCLI, "acme")
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	runIdentityCLI(t, ctx, bin, homeCLI, "", "identity", "delete", "acme", "--git-only", "--yes")
 
@@ -756,7 +756,7 @@ func TestIdentityCLI_DeleteEverythingParity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	runIdentityCLI(t, ctx, bin, homeCLI, "", "identity", "delete", "acme", "--all", "--yes")
 
@@ -807,7 +807,7 @@ func TestIdentityCLI_PostWriteReTestFailureExitsNonZero(t *testing.T) {
 		t.Fatal(err)
 	}
 	fakeSSH := failureAfterFirstConnectionSSH(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	out := runIdentityCLIFailure(t, ctx, bin, home, fakeSSH, "identity", "rotate", "acme", "--yes")
 	if !strings.Contains(string(out), "post-write connectivity re-test failed") {
@@ -859,7 +859,7 @@ func TestIdentityCLI_CreateUploadsAutonomously(t *testing.T) {
 	fakeSSH := FakeSSHDir(t, "pass")
 	fakeGH, ghLog := FakeGHDir(t, "ok")
 	home := t.TempDir()
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	out := runIdentityUploadCLI(t, ctx, bin, home, fakeSSH, fakeGH, true,
@@ -899,7 +899,7 @@ func TestIdentityCLI_CreateNoUploadSkips(t *testing.T) {
 	fakeSSH := FakeSSHDir(t, "pass")
 	fakeGH, ghLog := FakeGHDir(t, "ok")
 	home := t.TempDir()
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	out := runIdentityUploadCLI(t, ctx, bin, home, fakeSSH, fakeGH, true,
@@ -930,7 +930,7 @@ func TestIdentityCLI_RegisterKeyDryRunExecutesNothing(t *testing.T) {
 	home := t.TempDir()
 	seedGitPTYIdentity(t, home, "acme")
 	seedParseableKey(t, home, "acme")
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	out := runIdentityUploadCLI(t, ctx, bin, home, fakeSSH, fakeGH, true, "register-key", "acme", "--dry-run")
@@ -965,7 +965,7 @@ func TestIdentityCLI_CreateSucceedsWhenUploadFails(t *testing.T) {
 	fakeSSH := FakeSSHDir(t, "pass")
 	fakeGH, _ := FakeGHDir(t, "auth-fail")
 	home := t.TempDir()
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	out := runIdentityUploadCLI(t, ctx, bin, home, fakeSSH, fakeGH, true,
@@ -1003,7 +1003,7 @@ func TestIdentityCLI_RegisterKeyPartialScopeReportsBothTypes(t *testing.T) {
 	home := t.TempDir()
 	seedGitPTYIdentity(t, home, "acme")
 	seedParseableKey(t, home, "acme")
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	out := runIdentityUploadCLI(t, ctx, bin, home, fakeSSH, fakeGH, true, "register-key", "acme")

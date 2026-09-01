@@ -106,7 +106,7 @@ func TestGlobalSSHCLI_ListShowApplyIdempotent(t *testing.T) {
 	fake := FakeSSHDir(t, "globalssh")
 	seedGlobalSSHHome(t, home, "none")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	listOut, listCode := runSSHCLI(t, ctx, bin, home, fake, "ssh", "options", "list", "--json")
@@ -190,7 +190,7 @@ func TestGlobalSSHCLI_AdvisoryExitCodes(t *testing.T) {
 	fake := FakeSSHDir(t, "globalssh")
 	seedGlobalSSHHome(t, home, "above")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	out, code := runSSHCLI(t, ctx, bin, home, fake, "ssh", "options", "apply", "StrictHostKeyChecking", "--yes", "--json")
@@ -234,7 +234,7 @@ func TestGlobalSSHCLI_DryRunNoWrite(t *testing.T) {
 		t.Fatalf("read: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	out, code := runSSHCLI(t, ctx, bin, home, fake, "ssh", "options", "apply", "HashKnownHosts", "--dry-run", "--json")
 	if code != 0 {

@@ -47,7 +47,7 @@ func stampedArtifacts(t *testing.T) string {
 	t.Helper()
 	stampedOnce.Do(func() {
 		root := repoRoot(t)
-		ctx, cancel := context.WithTimeout(context.Background(), 600*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 600*time.Second*ciTimeoutMultiplier())
 		defer cancel()
 		cmd := exec.CommandContext(ctx, "make", "checksums",
 			"VERSION="+e2eStampVersion,
@@ -128,7 +128,7 @@ func runInstallScriptCmd(t *testing.T, home, path, baseURL string, piped bool) s
 	if replacePath != "" {
 		env = append(env, "PATH="+replacePath)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	var cmd *exec.Cmd
 	if piped {
@@ -176,7 +176,7 @@ func TestRelease_BuildCrossStampsEveryTarget(t *testing.T) {
 		}
 	}
 	host := hostAsset(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	cmd := exec.CommandContext(ctx, filepath.Join(binDir, host), "--version")
 	out, err := cmd.CombinedOutput()
@@ -191,7 +191,7 @@ func TestRelease_BuildCrossStampsEveryTarget(t *testing.T) {
 
 func TestRelease_UnstampedBuildKeepsDevDefaults(t *testing.T) {
 	root := repoRoot(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "make", "build")
 	cmd.Dir = root
@@ -199,7 +199,7 @@ func TestRelease_UnstampedBuildKeepsDevDefaults(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("make build: %v\n%s", err, out)
 	}
-	verCtx, verCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	verCtx, verCancel := context.WithTimeout(context.Background(), 10*time.Second*ciTimeoutMultiplier())
 	defer verCancel()
 	ver := exec.CommandContext(verCtx, filepath.Join(root, "bin", "gitid"), "--version")
 	out, err := ver.CombinedOutput()
@@ -283,7 +283,7 @@ func TestInstallScript_InstallsVerifiedHostBinary(t *testing.T) {
 	if info.Mode()&0o777 != 0o755 {
 		t.Fatalf("installed mode = %o, want 0755", info.Mode()&0o777)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	out, err := exec.CommandContext(ctx, installed, "--version").CombinedOutput()
 	if err != nil {

@@ -40,7 +40,7 @@ func seedGlobalSSHHome(t *testing.T, home, placement string) string {
 
 func startGlobalSSHPTY(t *testing.T, home, mode string) *ptySession {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	t.Cleanup(cancel)
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, BuildBinary(t), home, FakeSSHDir(t, mode)), dummyTermWidth, dummyTermHeight)
 	t.Cleanup(func() { s.close(t) })

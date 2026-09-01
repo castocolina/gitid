@@ -91,7 +91,7 @@ func TestIdentityManager_DeleteGitOnly(t *testing.T) {
 		t.Fatalf("fixture invalid: seeded SSH config missing expected recipe-shape lines:\n%s", sshConfigBefore)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	closed := false
@@ -161,7 +161,7 @@ func TestIdentityManager_DeleteGitOnly(t *testing.T) {
 	// to RESEARCH.md Pitfall 1: a Reduce-only illusion would show "acme"
 	// healed back to complete on restart, since nothing would have actually
 	// left disk. A real write survives the restart.
-	ctx2, cancel2 := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel2()
 	s2 := startPTYAt(t, newRealCreateFlowCmd(t, ctx2, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	defer s2.close(t)
@@ -186,7 +186,7 @@ func TestIdentityManager_CLIAndTUIProduceByteIdenticalGitconfig(t *testing.T) {
 	homeTUI := SandboxHome(t)
 	seedGitPTYIdentity(t, homeTUI, "acme")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, homeTUI, ""), dummyTermWidth, dummyTermHeight)
 	uiReady(t, s)
@@ -205,7 +205,7 @@ func TestIdentityManager_CLIAndTUIProduceByteIdenticalGitconfig(t *testing.T) {
 	homeCLI := t.TempDir()
 	seedGitPTYIdentity(t, homeCLI, "acme")
 
-	cliCtx, cliCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	cliCtx, cliCancel := context.WithTimeout(context.Background(), 30*time.Second*ciTimeoutMultiplier())
 	defer cliCancel()
 	cliCmd := exec.CommandContext(cliCtx, bin, "identity", "delete", "acme", "--git-only", "--yes") //nolint:gosec // bin from BuildBinary; fixed args
 	cliEnv, _ := e2eEnv(t, homeCLI)
@@ -459,7 +459,7 @@ func TestIdentityManager_ManifestBackstopNegativeControl(t *testing.T) {
 // contract both files must track identically.
 func runManagerIdentityListJSON(t *testing.T, bin, home string) identityListDoc {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	out := runIdentityListJSON(t, ctx, bin, home)
 	var doc identityListDoc
@@ -555,7 +555,7 @@ func TestIdentityManager_ListPopulatedEightTaxonomy(t *testing.T) {
 	// Live compiled-binary proof: select each identity in turn and assert
 	// its OWN detail pane renders exactly its expected collapsed word next
 	// to the expected glyph — the SEVEN reachable row words, never eight.
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -628,7 +628,7 @@ func TestIdentityManager_ListEmpty(t *testing.T) {
 	bin := BuildBinary(t)
 	manifest := parseFieldsManifest(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -663,7 +663,7 @@ func TestIdentityManager_DetailSSHFirst(t *testing.T) {
 	bin := BuildBinary(t)
 	manifest := parseFieldsManifest(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -687,7 +687,7 @@ func TestIdentityManager_ActionMenu(t *testing.T) {
 	bin := BuildBinary(t)
 	manifest := parseFieldsManifest(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -766,7 +766,7 @@ func TestIdentityManager_KeyCeremonyRotate(t *testing.T) {
 		t.Fatalf("reading pre-rotate key: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSHDir), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -827,7 +827,7 @@ func TestIdentityManager_KeyCeremonyRepair(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeSSHDir := FakeSSHDir(t, "denied")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSHDir), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -891,7 +891,7 @@ func TestIdentityManager_RegisterKeyModalRuns(t *testing.T) {
 	fakeGH, _ := FakeGHDir(t, "ok")
 	manifest := parseFieldsManifest(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeGH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -922,7 +922,7 @@ func TestIdentityManager_RegisterKeyModalManualFallback(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeGH, ghLog := FakeGHDir(t, "auth-fail")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeGH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -953,7 +953,7 @@ func TestIdentityManager_RegisterKeyModalOpensWithU(t *testing.T) {
 	bin := BuildBinary(t)
 	fakeGH, _ := FakeGHDir(t, "ok")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeGH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -1013,6 +1013,25 @@ func mustSeeSlow(t *testing.T, s *ptySession, substr, context string) {
 	}
 }
 
+// mustSeeUnwrapped is mustSee for a substring that may legitimately be
+// hard-wrapped across two terminal lines by the renderer (e.g. text built
+// from a variable-length runtime value like os.Hostname()). It strips all
+// whitespace, including line breaks, from both the frame and the needle
+// before comparing, so a mid-string wrap doesn't defeat the match.
+func mustSeeUnwrapped(t *testing.T, s *ptySession, substr, context string) {
+	t.Helper()
+	flatten := func(s string) string {
+		return strings.Join(strings.Fields(s), "")
+	}
+	needle := flatten(substr)
+	last, ok := s.waitFor(mustSeeTimeout(), func(text string) bool {
+		return strings.Contains(flatten(text), needle)
+	})
+	if !ok {
+		t.Fatalf("%s: %q never appeared (wrap-tolerant match). Last frame:\n%s", context, substr, last)
+	}
+}
+
 // TestIdentityManager_RotateDeleteOfferDefaultsToLeave drives a rotate to
 // its result screen with the gh shim in the delete-ok-plus-inventory mode:
 // asserts the offer's heading, the old key's machine-scoped title, and that
@@ -1032,7 +1051,7 @@ func TestIdentityManager_RotateDeleteOfferDefaultsToLeave(t *testing.T) {
 	// reflects them, matching real GitHub.
 	FakeGHTrackAddedKeys(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSHDir, fakeGH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -1042,7 +1061,12 @@ func TestIdentityManager_RotateDeleteOfferDefaultsToLeave(t *testing.T) {
 	driveRotateToResultScreen(t, s)
 
 	mustSeeSlow(t, s, "Remove the old key from GitHub?", "the D-04 offer heading renders")
-	mustSee(t, s, title, "the old key's machine-scoped title renders")
+	// The title embeds os.Hostname(): on GitHub-hosted runners that's a
+	// long generated ID (e.g. "sjc20-cw761-<uuid>-<hash>"), long enough
+	// that the modal word-wraps it across two lines — a plain Contains
+	// against the un-wrapped title then can never match, regardless of
+	// how long mustSee waits. Match wrap-tolerantly instead.
+	mustSeeUnwrapped(t, s, title, "the old key's machine-scoped title renders")
 	mustSee(t, s, "Leave it", "the leave option renders")
 	saveFrame(t, "identity-manager-rotate-delete-offer-default", s)
 
@@ -1084,7 +1108,7 @@ func TestIdentityManager_RotateDeleteOfferDeletesOnExplicitChoice(t *testing.T) 
 	// reflects them, matching real GitHub.
 	FakeGHTrackAddedKeys(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSHDir, fakeGH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -1128,7 +1152,7 @@ func TestIdentityManager_RotateDeleteOfferAbsentWhenInventoryFails(t *testing.T)
 	fakeSSHDir := FakeSSHDir(t, "denied")
 	fakeGH, _ := FakeGHDir(t, "inventory-fail")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, fakeSSHDir, fakeGH), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -1152,7 +1176,7 @@ func TestIdentityManager_MouseCloneAndDeleteChoiceFocus(t *testing.T) {
 	seedMinimalIdentity(t, home, "acme")
 	bin := BuildBinary(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -1224,7 +1248,7 @@ func TestIdentityManager_DeleteEverythingPlantedHits(t *testing.T) {
 	hits := seedDeleteEverythingTargetWithPlantedHits(t, home, target)
 	bin := BuildBinary(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -1286,7 +1310,7 @@ func TestIdentityManager_DeleteEverythingCleanSandbox(t *testing.T) {
 	seedDeleteEverythingTargetClean(t, home, "clean")
 	bin := BuildBinary(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -1319,7 +1343,7 @@ func TestIdentityManager_DeleteEverythingSharedKeyNote(t *testing.T) {
 	first, second := seedSharedKeyIdentities(t, home)
 	bin := BuildBinary(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -1352,7 +1376,7 @@ func TestIdentityManager_DeleteEverythingProviderSurvives(t *testing.T) {
 	first, second := seedTwoIdentitiesSameProviderE2E(t, home)
 	bin := BuildBinary(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)
@@ -1869,7 +1893,7 @@ func TestIdentityManager_CompiledRealVsLiveDummyPTY(t *testing.T) {
 	t.Run("action-menu", func(t *testing.T) {
 		realHome := SandboxHome(t)
 		seedMinimalIdentity(t, realHome, "acme")
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer cancel()
 		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
 		defer real.close(t)
@@ -1879,7 +1903,7 @@ func TestIdentityManager_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		mustSee(t, real, "Actions", "real: action menu opens")
 
 		dummyHome := SandboxHome(t)
-		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer dcancel()
 		dummy := startPTYAt(t, newDummyIdentManagerCmd(t, dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
 		defer dummy.close(t)
@@ -1894,7 +1918,7 @@ func TestIdentityManager_CompiledRealVsLiveDummyPTY(t *testing.T) {
 	t.Run("delete-choice", func(t *testing.T) {
 		realHome := SandboxHome(t)
 		seedMinimalIdentity(t, realHome, "acme")
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer cancel()
 		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
 		defer real.close(t)
@@ -1903,7 +1927,7 @@ func TestIdentityManager_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		mustSee(t, real, "Delete Git identity only", "real: delete-choice opens")
 
 		dummyHome := SandboxHome(t)
-		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer dcancel()
 		dummy := startPTYAt(t, newDummyIdentManagerCmd(t, dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
 		defer dummy.close(t)
@@ -1917,7 +1941,7 @@ func TestIdentityManager_CompiledRealVsLiveDummyPTY(t *testing.T) {
 	t.Run("confirm-destructive", func(t *testing.T) {
 		realHome := SandboxHome(t)
 		seedMinimalIdentity(t, realHome, "acme")
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer cancel()
 		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
 		defer real.close(t)
@@ -1928,7 +1952,7 @@ func TestIdentityManager_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		mustSee(t, real, "This action is irreversible", "real: confirm-destructive opens")
 
 		dummyHome := SandboxHome(t)
-		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer dcancel()
 		dummy := startPTYAt(t, newDummyIdentManagerCmd(t, dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
 		defer dummy.close(t)
@@ -1944,7 +1968,7 @@ func TestIdentityManager_CompiledRealVsLiveDummyPTY(t *testing.T) {
 	t.Run("detail-ssh-first", func(t *testing.T) {
 		realHome := SandboxHome(t)
 		seedSSHOnlyIdentity(t, realHome, "work")
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer cancel()
 		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, ""), dummyTermWidth, dummyTermHeight)
 		defer real.close(t)
@@ -1952,7 +1976,7 @@ func TestIdentityManager_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		mustSee(t, real, "SSH — shown first, always", "real: SSH-first detail renders")
 
 		dummyHome := SandboxHome(t)
-		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer dcancel()
 		dummy := startPTYAt(t, newDummyIdentManagerCmd(t, dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
 		defer dummy.close(t)
@@ -1968,7 +1992,7 @@ func TestIdentityManager_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		seedGitPTYIdentity(t, realHome, "acme")
 		seedRecipeShapeSSHConfig(t, realHome, "acme")
 		fakeSSHDir := FakeSSHDir(t, "denied")
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer cancel()
 		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, fakeSSHDir), dummyTermWidth, dummyTermHeight)
 		defer real.close(t)
@@ -1980,7 +2004,7 @@ func TestIdentityManager_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		realFrame := real.snapshot()
 
 		dummyHome := SandboxHome(t)
-		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer dcancel()
 		dummy := startPTYAt(t, newDummyIdentManagerCmd(t, dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
 		defer dummy.close(t)
@@ -2023,7 +2047,7 @@ func TestIdentityManager_CompiledRealVsLiveDummyPTY(t *testing.T) {
 			}
 		}
 		fakeSSHDir := FakeSSHDir(t, "denied")
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer cancel()
 		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, fakeSSHDir), dummyTermWidth, dummyTermHeight)
 		defer real.close(t)
@@ -2035,7 +2059,7 @@ func TestIdentityManager_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		realFrame := real.snapshot()
 
 		dummyHome := SandboxHome(t)
-		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer dcancel()
 		dummy := startPTYAt(t, newDummyIdentManagerCmd(t, dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
 		defer dummy.close(t)
@@ -2117,7 +2141,7 @@ func TestRegisterKeyModal_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		seedMinimalIdentity(t, realHome, "acme")
 		seedEncryptedKeyFixture(t, filepath.Join(realHome, ".ssh", "id_ed25519_acme"), "acme", "")
 		fakeGH, _ := FakeGHDir(t, "ok")
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer cancel()
 		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, fakeGH), dummyTermWidth, dummyTermHeight)
 		defer real.close(t)
@@ -2128,7 +2152,7 @@ func TestRegisterKeyModal_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		mustSee(t, real, "Running:", "real: the upload beat's announce line renders")
 
 		dummyHome := SandboxHome(t)
-		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer dcancel()
 		dummy := startPTYAt(t, newDummyIdentManagerCmd(t, dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
 		defer dummy.close(t)
@@ -2159,7 +2183,7 @@ func TestRegisterKeyModal_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		// track this test's real "ssh-key add" calls so the subsequent read
 		// reflects them, matching real GitHub.
 		FakeGHTrackAddedKeys(t)
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer cancel()
 		real := startPTYAt(t, newRealCreateFlowCmd(t, ctx, realBin, realHome, fakeSSHDir, fakeGH), dummyTermWidth, dummyTermHeight)
 		defer real.close(t)
@@ -2170,7 +2194,7 @@ func TestRegisterKeyModal_CompiledRealVsLiveDummyPTY(t *testing.T) {
 		mustSee(t, real, "Leave it", "real: the leave option renders")
 
 		dummyHome := SandboxHome(t)
-		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		dctx, dcancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 		defer dcancel()
 		dummy := startPTYAt(t, newDummyIdentManagerCmd(t, dctx, dummyBin, dummyHome), dummyTermWidth, dummyTermHeight)
 		defer dummy.close(t)
@@ -2422,7 +2446,7 @@ func TestIdentityManager_SuccessNeverClaimedWithoutTheWork(t *testing.T) {
 	seedGitPTYIdentity(t, home, "acme")
 	bin := BuildBinary(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, bin, home, ""), dummyTermWidth, dummyTermHeight)
 	defer s.close(t)

@@ -189,7 +189,7 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 	home := SandboxHome(t)
 	bin := BuildDummyBinary(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, bin) //nolint:gosec // bin from BuildDummyBinary; no user input
@@ -341,7 +341,7 @@ func TestDummyDemo_MouseAndGitApply(t *testing.T) {
 	home := SandboxHome(t)
 	bin := BuildDummyBinary(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, bin) //nolint:gosec // bin from BuildDummyBinary; no user input
@@ -399,7 +399,7 @@ func TestDummyDemo_ShiftChordRawBytes(t *testing.T) {
 	home := SandboxHome(t)
 	bin := BuildDummyBinary(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, bin) //nolint:gosec // bin from BuildDummyBinary; no user input

@@ -35,7 +35,7 @@ func TestDebugCaps_RealWiring(t *testing.T) {
 
 	seedMinimalIdentity(t, home, "personal")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second*ciTimeoutMultiplier())
 	defer cancel()
 
 	var stdout, stderr bytes.Buffer

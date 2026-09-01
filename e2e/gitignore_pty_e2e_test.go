@@ -57,7 +57,7 @@ func newGitIgnoreCmd(t *testing.T, ctx context.Context, bin, home string) *exec.
 
 func startGitIgnorePTY(t *testing.T, home string) *ptySession {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	t.Cleanup(cancel)
 	s := startPTYAt(t, newGitIgnoreCmd(t, ctx, BuildBinary(t), home), dummyTermWidth, dummyTermHeight)
 	t.Cleanup(func() { s.close(t) })
