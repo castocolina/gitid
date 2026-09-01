@@ -498,7 +498,12 @@ Plans:
   1. On a version tag, CI publishes the built binaries to GitHub Releases with SHA-256 checksums; the binary reports its build-stamped version (`gitid --version`). (BUILD-03)
   2. A hosted install script detects the caller's OS/arch, downloads the matching released binary, verifies its checksum, and installs it to `PATH`. (BUILD-05)
 
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+
+- [ ] 09.3-01-PLAN.md — (wave 1) tracer: version-stamp `gitid --version` through optional-default ldflags on the EXISTING `build-cross`, add the `checksums` manifest target, and prove the whole chain locally — stamped build → manifest → `scripts/install.sh` download/verify/install → the installed binary reporting its own stamp — then wire the `v*`-tag-scoped `release:` job (job-scoped `contents: write`, `needs:` both routine gates, five published assets) and expand the installer across all four platforms and every refusal path (BUILD-03, BUILD-05)
+- [ ] 09.3-02-PLAN.md — (wave 2) the `sh -n` shell gate wired into `make lint`, the README install documentation, the three stale comments this phase invalidates, then — behind a blocking-human decision on the first public tag — cut the real release and verify it over the real network (five assets, checksums re-verified after download, `--version` matching the tag, `curl | sh` into a throwaway HOME) before closing BUILD-03/BUILD-05 (BUILD-03, BUILD-05)
 
 ### Phase 9.4: TUI UX Consistency & Doctor/Fixer Parity
 
