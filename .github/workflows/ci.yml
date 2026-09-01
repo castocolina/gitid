@@ -21,8 +21,8 @@
 #   - Every `uses:` step is pinned to a full 40-character commit SHA (tags are mutable)
 #     with a trailing `# vX.Y.Z` comment for human readability.
 #   - Least-privilege top-level `permissions: contents: read`. No repository secret is
-#     referenced anywhere — Phase 1 CI needs none (release/tag publishing is BUILD-03,
-#     Phase 10).
+#     referenced anywhere: the `release:` job publishes with the automatically
+#     provided job token under a job-scoped `contents: write` grant (D-05).
 #
 # CI invokes the SAME make targets a human runs locally (single source of truth) — no
 # raw go/golangci-lint commands are inlined here.

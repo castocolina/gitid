@@ -22,7 +22,14 @@
 #                  `-tags screenshot` suite (WR-28, see lint-tagged below).
 #   lint           Run golangci-lint (reads .golangci.yml); hard-fails on any finding (D-04).
 #                  Depends on lint-tagged (WR-28, CR-13) so every isolated build tag's
-#                  static analysis can never be silently skipped again.
+#                  static analysis can never be silently skipped again, and on
+#                  lint-shell so a syntactically broken scripts/*.sh cannot pass.
+#   lint-shell     POSIX `sh -n` parse check over scripts/*.sh. Catches an unterminated
+#                  quote or `case` in a script users pipe into their shell. Not
+#                  shellcheck: `sh -n` is on every host with no addition to setup-env
+#                  or the three CI runners; the behavioral contract is
+#                  e2e/release_e2e_test.go. macOS `sh -n` is bash in POSIX mode and
+#                  does not detect bashisms — the e2e suite covers that.
 #   lint-tagged    `go vet` under EVERY isolated build tag (screenshot, smoke, e2e) plus
 #                  golangci-lint under `screenshot` (WR-28: internal/screenshot was
 #                  previously invisible to both `make lint` and `make test` — no gate ever
@@ -55,7 +62,7 @@
 #   demo-web       (Re)launch the web design mockup dev server (Vite) on the
 #                   dedicated $(DEMO_WEB_PORT) and open it.
 
-.PHONY: setup-env build build-cross checksums run install uninstall test lint lint-tagged fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files gate-visual-regression smoke-network-test verify-upload-real-account verify-upload-real-account-gitlab demo-web
+.PHONY: setup-env build build-cross checksums run install uninstall test lint lint-shell lint-tagged fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files gate-visual-regression smoke-network-test verify-upload-real-account verify-upload-real-account-gitlab demo-web
 
 # Binary output directory.
 BIN_DIR := bin
@@ -253,13 +260,30 @@ lint-tagged:
 	go vet -tags=realaccount,realaccountgitlab ./...
 	$(GOLANGCI_LINT) run --build-tags screenshot ./internal/screenshot/...
 
+## lint-shell: POSIX `sh -n` parse check over scripts/*.sh.
+## Not shellcheck: `sh -n` is a POSIX parse check every host already has, with
+## no addition to setup-env or to the three CI runners. The authoritative
+## behavioral proof is e2e/release_e2e_test.go, which executes the real script
+## — this gate exists to catch the one failure mode that would be catastrophic
+## in a script users pipe into their shell, an unterminated quote or `case`
+## that only manifests at parse time on a stranger's machine. `sh -n` on macOS
+## runs bash in POSIX mode and therefore does not detect bashisms; the e2e
+## suite's real execution is what covers that.
+lint-shell:
+	@echo "==> lint-shell: POSIX parse check on scripts/*.sh"
+	@for f in scripts/*.sh; do \
+		sh -n "$$f" || exit 1; \
+		echo "  ok   $$f"; \
+	done
+
 ## lint: run golangci-lint against all packages.
 ## Hard-fails on any finding — zero tolerance (D-04).
 ## Configuration lives in .golangci.yml.
 ## Depends on lint-tagged (WR-28, CR-13) so every isolated build tag's static
 ## analysis can never be silently skipped again -- a caller running `make
-## lint` directly (not just CI) always exercises all of them.
-lint: lint-tagged
+## lint` directly (not just CI) always exercises all of them. Depends on
+## lint-shell so a syntactically broken installer cannot pass `make lint`.
+lint: lint-tagged lint-shell
 	$(GOLANGCI_LINT) run ./...
 
 ## test: run the TDD harness with race detection and a coverage profile.
@@ -516,6 +540,9 @@ build:
 ## than redundantly on every matrix OS. Output binaries are named
 ## bin/gitid-<os>-<arch>. Optional VERSION/COMMIT/DATE stamp gitid --version
 ## (BUILD-03); a routine invocation with no overrides keeps the dev defaults.
+## The release job invokes this same target (via `make checksums`) with those
+## overrides taken from the tag — the concrete instance of "CI invokes the SAME
+## make targets a human runs locally".
 build-cross:
 	@mkdir -p $(BIN_DIR)
 	GOOS=darwin  GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/gitid-darwin-amd64 ./cmd/gitid
