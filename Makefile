@@ -8,10 +8,13 @@
 #                  install-hooks (completed in plan 01-03; screenshot tooling in 01-05).
 #   build          Compile the gitid binary to bin/gitid.
 #   build-cross    Cross-compile the release build matrix (darwin/amd64, darwin/arm64,
-#                  linux/amd64, linux/arm64 [build-only]) to bin/gitid-<os>-<arch>
-#                  (BUILD-01). Cross-compilation via GOOS/GOARCH is OS-independent, so
-#                  CI runs this ONCE on ubuntu-latest rather than on every matrix runner.
-#                  No release/tag/checksum packaging here — that is BUILD-03, Phase 10.
+#                  linux/amd64, linux/arm64) to bin/gitid-<os>-<arch> (BUILD-01).
+#                  Cross-compilation via GOOS/GOARCH is OS-independent, so CI runs this
+#                  ONCE on ubuntu-latest rather than on every matrix runner. Optional
+#                  VERSION/COMMIT/DATE overrides stamp gitid --version (BUILD-03).
+#   checksums      Cross-build then write bin/checksums.txt with one SHA-256 line per
+#                  published asset, hashed from inside bin/ so each line names the bare
+#                  asset (BUILD-03, D-03).
 #   install        Install gitid to $GOPATH/bin via go install.
 #   uninstall      Remove gitid from $GOPATH/bin.
 #   test           Run the race-enabled test harness with a coverage profile (TDD harness,
@@ -52,11 +55,26 @@
 #   demo-web       (Re)launch the web design mockup dev server (Vite) on the
 #                   dedicated $(DEMO_WEB_PORT) and open it.
 
-.PHONY: setup-env build build-cross run install uninstall test lint lint-tagged fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files gate-visual-regression smoke-network-test verify-upload-real-account verify-upload-real-account-gitlab demo-web
+.PHONY: setup-env build build-cross checksums run install uninstall test lint lint-tagged fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files gate-visual-regression smoke-network-test verify-upload-real-account verify-upload-real-account-gitlab demo-web
 
 # Binary output directory.
 BIN_DIR := bin
 BINARY  := $(BIN_DIR)/gitid
+
+# Optional-default ldflags so a routine `make build` / `make build-cross` keeps
+# producing today's dev-stamped binary and only an explicit override produces a
+# release stamp (D-06, Pattern 1). Invocation:
+#   make build-cross VERSION=1.2.3 COMMIT=abc1234 DATE=2026-08-30
+# The third -X path is main.buildDate, matching the Go identifier — not main.date.
+VERSION ?= 0.0.0-dev
+COMMIT  ?= none
+DATE    ?= unknown
+LDFLAGS := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(DATE)
+
+# Linux ships coreutils' sha256sum; stock macOS ships only the Perl shasum.
+# Both emit the identical <64-hex><two spaces><name> line format, so one
+# manifest verifies under either tool (09.3-RESEARCH.md Pitfall 2).
+SHA256SUM := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo shasum -a 256)
 
 # Keep Go commands and golangci-lint's type checker on the documented toolchain.
 # Go 1.27's standard library is newer than this pinned linter supports.
@@ -489,21 +507,29 @@ gate-copy-freeze:
 ## build: compile the gitid binary.
 build:
 	@mkdir -p $(BIN_DIR)
-	go build -o $(BINARY) ./cmd/gitid
+	go build -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/gitid
 
 ## build-cross: cross-compile the release build matrix reproducibly (BUILD-01).
-## darwin/amd64, darwin/arm64, and linux/amd64 are the gated matrix targets; linux/arm64
-## is included build-only ("if cheap" per D-14) and is NOT part of any CI gate. GOOS/GOARCH
-## cross-compilation is OS-independent (no cgo in this module), so this target is invoked
-## ONCE on a single Linux runner in CI rather than redundantly on every matrix OS. Output
-## binaries are named bin/gitid-<os>-<arch> — no release/tag/checksum packaging here
-## (BUILD-03 is Phase 10, out of scope).
+## darwin/amd64, darwin/arm64, linux/amd64, and linux/arm64 are the published
+## matrix (D-02). GOOS/GOARCH cross-compilation is OS-independent (no cgo in this
+## module), so this target is invoked ONCE on a single Linux runner in CI rather
+## than redundantly on every matrix OS. Output binaries are named
+## bin/gitid-<os>-<arch>. Optional VERSION/COMMIT/DATE stamp gitid --version
+## (BUILD-03); a routine invocation with no overrides keeps the dev defaults.
 build-cross:
 	@mkdir -p $(BIN_DIR)
-	GOOS=darwin  GOARCH=amd64 go build -o $(BIN_DIR)/gitid-darwin-amd64 ./cmd/gitid
-	GOOS=darwin  GOARCH=arm64 go build -o $(BIN_DIR)/gitid-darwin-arm64 ./cmd/gitid
-	GOOS=linux   GOARCH=amd64 go build -o $(BIN_DIR)/gitid-linux-amd64  ./cmd/gitid
-	GOOS=linux   GOARCH=arm64 go build -o $(BIN_DIR)/gitid-linux-arm64  ./cmd/gitid
+	GOOS=darwin  GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/gitid-darwin-amd64 ./cmd/gitid
+	GOOS=darwin  GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/gitid-darwin-arm64 ./cmd/gitid
+	GOOS=linux   GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/gitid-linux-amd64  ./cmd/gitid
+	GOOS=linux   GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/gitid-linux-arm64  ./cmd/gitid
+
+## checksums: stamped cross-build plus SHA-256 manifest (BUILD-03, D-03).
+## Depends on build-cross so one invocation both builds and hashes; hashing from
+## INSIDE $(BIN_DIR) makes each line name the bare published asset rather than
+## bin/<asset>, which is what the installer's anchored grep matches.
+checksums: build-cross
+	cd $(BIN_DIR) && $(SHA256SUM) gitid-darwin-amd64 gitid-darwin-arm64 gitid-linux-amd64 gitid-linux-arm64 > checksums.txt
+	@echo "  checksums: $(BIN_DIR)/checksums.txt"
 
 ## run: build (if needed) and run the gitid binary locally.
 ## Depends on build so bin/gitid is always current before launch. Extra args
@@ -513,7 +539,7 @@ run: build
 
 ## install: install gitid to $GOPATH/bin and report the install path + PATH status.
 install:
-	go install ./cmd/gitid
+	go install -ldflags "$(LDFLAGS)" ./cmd/gitid
 	@INSTALL_PATH="$(GOPATH_BIN)/gitid"; \
 	echo "  installed: $$INSTALL_PATH"; \
 	printf '%s' "$(ORIGINAL_PATH)" | tr ':' '\n' | grep -qxF "$(GOPATH_BIN)" \
@@ -527,16 +553,12 @@ uninstall:
 ## test-e2e: run end-to-end agent-driven tests (builds binary first).
 ## E2E tests use a hermetic sandbox HOME and a fake ssh script injected on PATH.
 ## Tests are tagged //go:build e2e and are excluded from the normal make test target.
-## Timeout 900s (raised from 360s in 05-08-PLAN.md Task 3 / review R3-06).
-## Pre-Phase-5 measurement: 258.8s wall-clock over 34 test functions (~7.6s
-## each) under -race, leaving 101s of headroom before Phase 5 adds anything.
-## This plan adds 5 paired CLI/TUI cases plus a failure case, and plan 05-09
-## adds the per-state PTY suite plus its paired real-versus-dummy case — call
-## it ~24 new functions. PTY cases run slower than the 7.6s average, so budget
-## ~10s each: ~240s of new work on top of 258.8s projects to ~500s. 900s is
-## ~1.8x that projection, which is the headroom a hosted macOS CI runner needs
-## without absorbing a genuine hang (every test still carries its own inner
-## waitFor/close timeouts, so a real hang fails fast well under 900s).
+## Timeout 1200s (raised from 900s in 09.3-01-PLAN.md Task 1).
+## The suite measured ~676s at the Phase 8 close, and this plan adds a stamped
+## four-target cross-build plus a set of subprocess-driven installer cases, so
+## budget ~150s of new work against a ~830s projection — 1200s keeps roughly
+## the same ~1.4x headroom the 900s value was chosen to give, without absorbing
+## a genuine hang (every case still carries its own context timeout).
 ##
 ## Phase 4 (04-04-PLAN.md Task 2/3, D-12): this target ALSO runs
 ## TestGitConfiguration_CompiledRealVsLiveDummyPTY — the paired compiled PTY
@@ -558,7 +580,7 @@ uninstall:
 ## is what still catches a shared-renderer defect this paired comparison
 ## structurally cannot see.
 test-e2e: build
-	go test -tags e2e -race -timeout 900s ./e2e/...
+	go test -tags e2e -race -timeout 1200s ./e2e/...
 
 ## screenshot-tui: render the Bubble Tea View()-dump golden to a deterministic PNG
 ## via freeze (TOOL-05, DLV-03). Invokes TestCaptureTUI — the concrete runnable

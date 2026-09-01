@@ -7,12 +7,50 @@ import (
 	"testing"
 )
 
-// TestVersionNonEmpty verifies the version constant is populated,
+// TestVersionNonEmpty verifies the version var is populated,
 // providing a minimal smoke-test that the package compiles and
-// the basic constant is reachable.
+// the basic stamp is reachable.
 func TestVersionNonEmpty(t *testing.T) {
 	if version == "" {
 		t.Fatal("version must be non-empty")
+	}
+}
+
+func TestComposeVersion(t *testing.T) {
+	got := composeVersion("1.2.3", "abc1234", "2026-08-30")
+	want := "1.2.3 (abc1234, 2026-08-30)"
+	if got != want {
+		t.Fatalf("composeVersion() = %q, want %q", got, want)
+	}
+}
+
+func TestComposeVersionUsesTheDevDefaults(t *testing.T) {
+	got := versionString()
+	want := "0.0.0-dev (none, unknown)"
+	if got != want {
+		t.Fatalf("versionString() = %q, want %q", got, want)
+	}
+}
+
+func TestRootCommandVersionIsTheComposedStamp(t *testing.T) {
+	got := newRootCmd().Version
+	want := versionString()
+	if got != want {
+		t.Fatalf("newRootCmd().Version = %q, want %q", got, want)
+	}
+}
+
+func TestVersionFlagOutput(t *testing.T) {
+	var buf bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetOut(&buf)
+	cmd.SetArgs([]string{"--version"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute(--version): %v", err)
+	}
+	want := "gitid version " + versionString() + "\n"
+	if got := buf.String(); got != want {
+		t.Fatalf("--version output = %q, want %q", got, want)
 	}
 }
 

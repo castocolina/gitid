@@ -13,7 +13,31 @@ import (
 	"github.com/castocolina/gitid/internal/tuikit"
 )
 
-const version = "0.0.0-dev"
+// These three identifiers are vars rather than consts because the Go
+// linker's -X flag can only overwrite a variable's initial value; a const
+// is folded at compile time. The linker reports NO error when -X names a
+// symbol that does not exist, so a mismatch between these names and the
+// Makefile's -X main.<name> paths silently produces an unstamped binary.
+// e2e/release_e2e_test.go is the guard that catches that mismatch.
+var (
+	version   = "0.0.0-dev"
+	commit    = "none"
+	buildDate = "unknown"
+)
+
+func composeVersion(version, commit, buildDate string) string {
+	return fmt.Sprintf("%s (%s, %s)", version, commit, buildDate)
+}
+
+// versionString returns the fully composed stamp assigned to Cobra's Version
+// field. Cobra v1.10.2's built-in defaultVersionTemplate (command.go:2064)
+// already renders `{{DisplayName}} version {{.Version}}`, and Use is already
+// "gitid", so assigning the composed string yields
+// `gitid version 1.2.3 (abc1234, 2026-08-30)` with no custom template
+// (09.3-RESEARCH.md Pattern 2 / Pitfall 4).
+func versionString() string {
+	return composeVersion(version, commit, buildDate)
+}
 
 // noArgsAction handles the no-args case for main(): if isTTY is true, calls
 // run() (the real app shell) and returns 0 on success or 1 on error; if isTTY
@@ -85,7 +109,7 @@ func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "gitid",
 		Short:         "Manage multiple Git identities by coordinating SSH and Git configuration",
-		Version:       version,
+		Version:       versionString(),
 		SilenceUsage:  true,
 		SilenceErrors: false,
 	}
