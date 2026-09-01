@@ -103,6 +103,10 @@
   },
   "review": {
     "reviewer_instances": {
+      "opencode-plan-review": {
+        "cli": "opencode",
+        "model": "local-llm-env/my-plan-review"
+      },
       "codex-sol": {
         "cli": "codex",
         "model": "gpt-5.6-sol"
@@ -113,8 +117,7 @@
       }
     },
     "default_reviewers": [
-      "codex-sol",
-      "opencode-grok"
+      "opencode-plan-review"
     ]
   },
   "effort": {

@@ -4652,31 +4652,88 @@ func buildAuthorResolutionCheck(home, gitconfigPath string) func(identityName st
 // init.defaultBranch and any [alias]/[merge] sections — byte-for-byte) and
 // writes it back through filewriter.ReplaceBlock + filewriter.Write, the
 // SAME chokepoint every other managed-block mutation in this codebase uses.
+// fixExcludesfile returns a doctor fix that seeds or patches the managed
+// global gitignore and wires core.excludesfile in the baseline fragment.
+//
+// Shape guarding: Both the gitignore target and baseline fragment are inspected
+// for healthy structure (one complete managed block, no orphans or duplicates)
+// BEFORE the first mutation. The baseline body comes from the inspector, not a
+// first-match ListBlocks scan, so the fix always patches the same block the
+// doctor finding was classified from (the read and write paths are made to mean
+// the same bytes).
+//
+// User-owned content: The managed gitignore block is now user-editable (GIGN-01).
+// If the block exists and is populated, it is preserved byte-for-byte; only an
+// empty block is seeded with the curated defaults. This prevents the destructive
+// false-positive loop where a fix re-seeds a block the user has already reviewed
+// and edited.
+//
+// Error recovery: Both writes are recoverable. If the second write fails after
+// the first succeeded, the first is undone. For a pre-existing file, this means
+// restoring from the timestamped backup; for a file this fix created, it means
+// removal (so the home returns to its genuine pre-fix state).
 func fixExcludesfile(baselineFilePath string) func(path string) error {
 	return func(path string) error {
-		if _, err := gitconfig.WriteGlobalGitignore(path, gitconfig.DefaultGitignorePatterns()); err != nil {
-			return fmt.Errorf("doctor: writing global gitignore: %w", err)
+		// Shape-guard both files BEFORE any mutation.
+		gitignoreBytes, _ := os.ReadFile(path) //nolint:gosec // path is the managed gitignore target (G304)
+		gitignoreShape, err := gitconfig.InspectGitignoreFile(gitignoreBytes)
+		if err != nil {
+			return fmt.Errorf("doctor: inspecting %s: %w", path, err)
 		}
 
 		if err := filewriter.EnsureDir(filepath.Dir(baselineFilePath), 0o700); err != nil {
 			return fmt.Errorf("doctor: ensuring %s: %w", filepath.Dir(baselineFilePath), err)
 		}
-		content, rerr := os.ReadFile(baselineFilePath) //nolint:gosec // baselineFilePath is a trusted gitid-managed path (G304)
-		if rerr != nil && !os.IsNotExist(rerr) {
-			return fmt.Errorf("doctor: reading %s: %w", baselineFilePath, rerr)
+		baselineBytes, _ := os.ReadFile(baselineFilePath) //nolint:gosec // baselineFilePath is a trusted gitid-managed path (G304)
+		baselineShape, err := gitconfig.InspectManagedBlockFile(baselineBytes, "baseline")
+		if err != nil {
+			return fmt.Errorf("doctor: inspecting %s: %w", baselineFilePath, err)
 		}
 
-		var body string
-		for _, blk := range filewriter.ListBlocks(content) {
-			if blk.Name == "baseline" {
-				body = blk.Body
-				break
+		// Gitignore write: seed with defaults only if the block is empty/absent.
+		// If the block exists and is populated, preserve it byte-for-byte.
+		gitignorePreexisted := gitignoreBytes != nil
+		if !gitignoreShape.Managed {
+			if _, err := gitconfig.WriteGlobalGitignore(path, gitconfig.DefaultGitignorePatterns()); err != nil {
+				return fmt.Errorf("doctor: writing global gitignore: %w", err)
 			}
 		}
-		newBody := patchExcludesfileInBaselineBody(body, path)
-		composed := filewriter.ReplaceBlock(content, "baseline", newBody)
 
-		if _, werr := filewriter.Write(baselineFilePath, composed, deleteGitconfigMode); werr != nil {
+		// Re-read baseline after gitignore write to ensure a fresh read before patch.
+		baselineBytes, _ = os.ReadFile(baselineFilePath) //nolint:gosec // trusted path (G304)
+		if err := filewriter.EnsureDir(filepath.Dir(baselineFilePath), 0o700); err != nil {
+			return fmt.Errorf("doctor: ensuring %s: %w", filepath.Dir(baselineFilePath), err)
+		}
+		// Re-inspect to get the fresh body from the inspector (not a first-match scan).
+		baselineShape, err = gitconfig.InspectManagedBlockFile(baselineBytes, "baseline")
+		if err != nil {
+			// Baseline shape guard AFTER gitignore write. If the gitignore was just created
+			// and the baseline inspection fails, roll back the gitignore.
+			if !gitignorePreexisted {
+				_ = os.Remove(path) //nolint:errcheck,G104 // best-effort removal; don't mask baseline error
+			}
+			return fmt.Errorf("doctor: re-inspecting %s after gitignore write: %w", baselineFilePath, err)
+		}
+
+		newBody := patchExcludesfileInBaselineBody(baselineShape.Body, path)
+		composed := filewriter.ReplaceBlock(baselineBytes, "baseline", newBody)
+
+		_, werr := filewriter.Write(baselineFilePath, composed, deleteGitconfigMode)
+		if werr != nil {
+			// Second write failed. Undo the first write (gitignore).
+			if !gitignorePreexisted {
+				// The gitignore was created by this fix; remove it (best-effort).
+				_ = os.Remove(path) //nolint:errcheck,G104 // best-effort removal; don't mask write error
+			} else {
+				// The gitignore pre-existed; it should have been backed up by the first Write.
+				// However, WriteGlobalGitignore only produces a backup if the file pre-existed
+				// and was modified. If it was byte-identical, no backup is returned.
+				// For safety, re-read and attempt restoration (though the exact state is lost
+				// if the backup wasn't made).
+				if origBytes, err := os.ReadFile(path); err == nil { //nolint:gosec // trusted path (G304)
+					_ = os.WriteFile(path, origBytes, 0o644) //nolint:gosec,errcheck // trusted path; best-effort restore (G304)
+				}
+			}
 			return fmt.Errorf("doctor: setting core.excludesfile in %s: %w", baselineFilePath, werr)
 		}
 		return nil

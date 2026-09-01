@@ -43,14 +43,14 @@ func fakeBaselineDeps(readFn func(gc, bf, gi string) (gitconfig.BaselineState, e
 // fullyInstalledState returns a BaselineState representing a fully-configured
 // baseline (all four D-16 checks pass).
 func fullyInstalledState() gitconfig.BaselineState {
-	patterns := gitconfig.DefaultGitignorePatterns()
+	entries := gitconfig.DefaultGitignoreEntries()
 	return gitconfig.BaselineState{
 		Installed: true,
 		BaselineKeys: map[string]string{
 			"core.excludesfile": "~/.gitignore_global",
 			"core.ignorecase":   "false",
 		},
-		GitignorePatterns: patterns,
+		GitignorePatterns: entries,
 	}
 }
 
@@ -78,12 +78,11 @@ func TestCheckBaselineGitignorePair(t *testing.T) {
 		{name: "unset with no managed patterns", state: gitconfig.BaselineState{Installed: true, BaselineKeys: map[string]string{}}, want: doctor.SeverityWarning, wantFix: true},
 		// A wired excludesfile whose pattern FILE EXISTS but whose content differs
 		// from the curated defaults is Check 4's territory ("curated entries
-		// missing", WARNING) — never Check 2's "points to a missing global
+		// missing", INFO, not auto-fixable) — never Check 2's "points to a missing global
 		// gitignore" ERROR, which is reserved for a genuinely DANGLING pointer
-		// (the file does not exist at all). Conflating the two would misreport
-		// an existing-but-incomplete file as absent (found empirically: this
-		// test originally asserted the WRONG, over-broad ERROR behavior).
-		{name: "set with missing patterns", state: func() gitconfig.BaselineState { s := fullyInstalledState(); s.GitignorePatterns = nil; return s }(), value: "~/.gitignore_global", want: doctor.SeverityWarning, wantFix: false, wantTitleContains: "curated entries missing"},
+		// (the file does not exist at all). When the block is EMPTY (nil), we're in Branch D
+		// and produce a WARNING with a fix.
+		{name: "set with empty block", state: func() gitconfig.BaselineState { s := fullyInstalledState(); s.GitignorePatterns = nil; return s }(), value: "~/.gitignore_global", want: doctor.SeverityWarning, wantFix: true, wantTitleContains: "curated entries missing"},
 		{name: "correct pair", state: fullyInstalledState(), value: "~/.gitignore_global"},
 	}
 	for _, tt := range tests {
@@ -242,11 +241,17 @@ func TestSeverityNeverEscalates(t *testing.T) {
 	}
 }
 
-// TestBaselineCuratedExcludes verifies that a missing curated pattern produces a warning finding.
+// TestBaselineCuratedExcludes verifies that a missing curated pattern produces an informational finding.
 func TestBaselineCuratedExcludes(t *testing.T) {
 	state := fullyInstalledState()
-	// Remove all curated patterns from the state — simulates gitignore block missing entries.
-	state.GitignorePatterns = nil
+	// Keep some patterns but remove others — simulates user-edited block missing entries.
+	state.GitignorePatterns = []string{
+		"Thumbs.db",     // kept
+		".idea/",        // kept
+		"node_modules/", // kept
+		"*.custom",      // personal addition
+		// .DS_Store, *.log, etc. deliberately removed
+	}
 
 	d := fakeBaselineDeps(func(_, _, _ string) (gitconfig.BaselineState, error) {
 		return state, nil
@@ -255,29 +260,27 @@ func TestBaselineCuratedExcludes(t *testing.T) {
 
 	var cF *doctor.Finding
 	for i, f := range findings {
-		if strings.Contains(f.Title, "curated") {
+		if strings.Contains(f.Title, "curated") || strings.Contains(f.Title, "absent") {
 			cF = &findings[i]
 			break
 		}
 	}
 	if cF == nil {
-		t.Fatalf("CheckBaseline with curated excludes missing: no finding mentioning 'curated' or 'gitignore'; got %v", findings)
+		t.Fatalf("CheckBaseline with curated excludes missing: no finding mentioning 'curated' or 'absent'; got %v", findings)
 	}
-	if cF.Severity != doctor.SeverityWarning {
-		t.Errorf("curated excludes finding.Severity = %v, want SeverityWarning", cF.Severity)
+	if cF.Severity != doctor.SeverityInfo {
+		t.Errorf("curated excludes finding.Severity = %v, want SeverityInfo", cF.Severity)
 	}
 	if cF.Family != doctor.FamilyBaseline {
 		t.Errorf("curated excludes finding.Family = %q, want %q", cF.Family, doctor.FamilyBaseline)
 	}
-	// Curated excludes finding is report-only (Fix=nil) because restoring the gitignore
-	// block requires the full curated patterns list, which cannot be safely encoded in
-	// the AddWiring string protocol. The user must run 'gitid baseline setup' to restore.
-	// A no-op func() error { return nil } stub is explicitly NOT used (plan advisory).
+	// Curated excludes finding is informational and report-only (Fix=nil) because the
+	// block is user-owned. The user can restore entries via the Global Git Ignore screen.
 	if cF.Fix != nil {
-		t.Error("curated excludes finding.Fix should be nil (report-only — no safe single-call restore)")
+		t.Error("curated excludes finding.Fix should be nil (informational, user-owned)")
 	}
-	if !strings.Contains(cF.SuggestedFix, "gitid baseline setup") {
-		t.Errorf("curated excludes finding.SuggestedFix = %q, want it to mention 'gitid baseline setup'", cF.SuggestedFix)
+	if !strings.Contains(cF.SuggestedFix, "Global Git Ignore") {
+		t.Errorf("curated excludes finding.SuggestedFix = %q, want it to mention 'Global Git Ignore'", cF.SuggestedFix)
 	}
 }
 
@@ -292,5 +295,366 @@ func TestBaselineNilReadFn(t *testing.T) {
 	findings := CheckBaseline(d)
 	if len(findings) != 0 {
 		t.Errorf("CheckBaseline with nil ReadBaselineState: got %d findings, want 0", len(findings))
+	}
+}
+
+// ── Task 2.09.2: Six-branch pair decision tree tests ───────────────────────
+
+// TestCheckBaseline_BranchA_KeyUnset verifies that when core.excludesfile
+// is unset but baseline is installed, an excludesfile pair warning is produced.
+func TestCheckBaseline_BranchA_KeyUnset(t *testing.T) {
+	state := gitconfig.BaselineState{
+		Installed:         true,
+		BaselineKeys:      map[string]string{}, // excludesfile unset
+		GitignorePatterns: gitconfig.DefaultGitignoreEntries(),
+	}
+	d := fakeBaselineDeps(func(_, _, _ string) (gitconfig.BaselineState, error) {
+		return state, nil
+	})
+	d.RunGitConfigGet = func(_, _ string) (string, error) {
+		return "", nil // key unset
+	}
+	findings := CheckBaseline(d)
+
+	var pairFinding *doctor.Finding
+	for i := range findings {
+		if strings.Contains(findings[i].Title, "excludesfile") && strings.Contains(findings[i].Title, "not configured") {
+			pairFinding = &findings[i]
+			break
+		}
+	}
+
+	if pairFinding == nil {
+		t.Fatal("expected a 'not configured' excludesfile finding for Branch A")
+	}
+	if pairFinding.Severity != doctor.SeverityWarning {
+		t.Errorf("Branch A severity = %v, want Warning", pairFinding.Severity)
+	}
+	if pairFinding.Fix == nil {
+		t.Error("Branch A must have a non-nil Fix descriptor")
+	}
+}
+
+// TestCheckBaseline_BranchB2_WrongTargetMissing verifies that when
+// core.excludesfile points to a DIFFERENT file that does NOT exist,
+// an ERROR is produced with a specific title naming the configured path,
+// and Fix is nil (no retargeting allowed).
+func TestCheckBaseline_BranchB2_WrongTargetMissing(t *testing.T) {
+	customPath := "/some/deleted/custom-ignore"
+	state := gitconfig.BaselineState{
+		Installed: true,
+		BaselineKeys: map[string]string{
+			"core.excludesfile": customPath, // wired to a different path
+		},
+		GitignorePatterns: gitconfig.DefaultGitignoreEntries(),
+	}
+	d := fakeBaselineDeps(func(_, _, _ string) (gitconfig.BaselineState, error) {
+		return state, nil
+	})
+
+	d.Stat = func(checkPath string) (os.FileInfo, error) {
+		if checkPath == customPath {
+			return nil, os.ErrNotExist // the configured file does not exist
+		}
+		return nil, nil // other files exist
+	}
+
+	findings := CheckBaseline(d)
+
+	var errorFinding *doctor.Finding
+	for i := range findings {
+		if findings[i].Severity == doctor.SeverityError && strings.Contains(findings[i].Title, "excludesfile") {
+			errorFinding = &findings[i]
+			break
+		}
+	}
+
+	if errorFinding == nil {
+		t.Fatalf("expected an ERROR excludesfile finding for Branch B2 (missing custom file), got %d findings", len(findings))
+	}
+	// Branch B2's title must NAME the configured path, not the managed target.
+	if !strings.Contains(errorFinding.Title, customPath) {
+		t.Errorf("Branch B2 title must contain the configured path %q, got %q", customPath, errorFinding.Title)
+	}
+	if errorFinding.Fix != nil {
+		t.Error("Branch B2 must have Fix=nil (no silent retargeting allowed)")
+	}
+}
+
+// TestCheckBaseline_BranchB_WrongTargetExists verifies that when
+// core.excludesfile points to a DIFFERENT file that DOES exist,
+// an INFORMATIONAL finding is produced with no executable fix.
+func TestCheckBaseline_BranchB_WrongTargetExists(t *testing.T) {
+	customPath := "/home/test/.config/gitignore"
+	state := gitconfig.BaselineState{
+		Installed: true,
+		BaselineKeys: map[string]string{
+			"core.excludesfile": customPath, // wired to a different path
+		},
+		GitignorePatterns: gitconfig.DefaultGitignoreEntries(),
+	}
+	d := fakeBaselineDeps(func(_, _, _ string) (gitconfig.BaselineState, error) {
+		return state, nil
+	})
+
+	d.Stat = func(checkPath string) (os.FileInfo, error) {
+		if checkPath == customPath {
+			return nil, nil // file exists
+		}
+		return nil, os.ErrNotExist
+	}
+
+	findings := CheckBaseline(d)
+
+	var infoFinding *doctor.Finding
+	for i := range findings {
+		if findings[i].Severity == doctor.SeverityInfo && strings.Contains(findings[i].Title, "excludesfile") {
+			infoFinding = &findings[i]
+			break
+		}
+	}
+
+	if infoFinding == nil {
+		t.Fatal("expected an INFORMATIONAL excludesfile finding for Branch B (existing custom file)")
+	}
+	if infoFinding.Fix != nil {
+		t.Error("Branch B must have Fix=nil (user's deliberate choice)")
+	}
+}
+
+// TestCheckBaseline_BranchC_ManagedTargetMissing verifies that when
+// core.excludesfile points to the MANAGED target but the file does NOT exist,
+// an ERROR is produced with a non-nil Fix.
+func TestCheckBaseline_BranchC_ManagedTargetMissing(t *testing.T) {
+	state := gitconfig.BaselineState{
+		Installed: true,
+		BaselineKeys: map[string]string{
+			"core.excludesfile": "~/.gitignore_global", // managed target
+		},
+		GitignorePatterns: gitconfig.DefaultGitignoreEntries(),
+	}
+	d := fakeBaselineDeps(func(_, _, _ string) (gitconfig.BaselineState, error) {
+		return state, nil
+	})
+
+	d.Stat = func(_ string) (os.FileInfo, error) {
+		return nil, os.ErrNotExist // file missing
+	}
+
+	findings := CheckBaseline(d)
+
+	var errorFinding *doctor.Finding
+	for i := range findings {
+		if findings[i].Severity == doctor.SeverityError && strings.Contains(findings[i].Title, "excludesfile") {
+			errorFinding = &findings[i]
+			break
+		}
+	}
+
+	if errorFinding == nil {
+		t.Fatal("expected an ERROR excludesfile finding for Branch C (missing managed target)")
+	}
+	if errorFinding.Fix == nil {
+		t.Error("Branch C must have a non-nil Fix descriptor")
+	}
+}
+
+// TestCheckBaseline_BranchD_ManagedTargetEmptyBlock verifies that when
+// core.excludesfile points to the managed target, the file exists, but
+// the managed block is empty or absent, a WARNING is produced with a
+// non-nil Fix.
+func TestCheckBaseline_BranchD_ManagedTargetEmptyBlock(t *testing.T) {
+	state := gitconfig.BaselineState{
+		Installed: true,
+		BaselineKeys: map[string]string{
+			"core.excludesfile": "~/.gitignore_global",
+		},
+		GitignorePatterns: []string{}, // no patterns in block
+	}
+	d := fakeBaselineDeps(func(_, _, _ string) (gitconfig.BaselineState, error) {
+		return state, nil
+	})
+
+	d.Stat = func(_ string) (os.FileInfo, error) {
+		return nil, nil // file exists
+	}
+
+	findings := CheckBaseline(d)
+
+	var warningFinding *doctor.Finding
+	for i := range findings {
+		if findings[i].Severity == doctor.SeverityWarning && strings.Contains(findings[i].Title, ".gitignore_global") {
+			warningFinding = &findings[i]
+			break
+		}
+	}
+
+	if warningFinding == nil {
+		t.Fatalf("expected a WARNING .gitignore_global finding for Branch D (empty managed block), got %d findings", len(findings))
+	}
+	if warningFinding.Fix == nil {
+		t.Error("Branch D must have a non-nil Fix descriptor")
+	}
+}
+
+// TestCheckBaseline_BranchE_Configured verifies that when
+// core.excludesfile points to the managed target, the file exists, and
+// the block is populated, NO pair-related finding is produced (Branch E).
+func TestCheckBaseline_BranchE_Configured(t *testing.T) {
+	state := fullyInstalledState()
+	state.BaselineKeys["core.excludesfile"] = "~/.gitignore_global" // ensure it's wired to managed target
+	d := fakeBaselineDeps(func(_, _, _ string) (gitconfig.BaselineState, error) {
+		return state, nil
+	})
+
+	d.Stat = func(_ string) (os.FileInfo, error) {
+		return nil, nil // file exists
+	}
+
+	findings := CheckBaseline(d)
+
+	for _, f := range findings {
+		if strings.Contains(f.Title, "excludesfile") && strings.Contains(f.Title, "not configured") {
+			t.Errorf("Branch E (configured) must not produce a 'not configured' finding, got: %v", f)
+		}
+		if strings.Contains(f.Title, "missing global gitignore") {
+			t.Errorf("Branch E must not produce 'missing global gitignore', got: %v", f)
+		}
+	}
+}
+
+// TestCheckBaseline_EditedBlockIsConfigured verifies that a managed gitignore
+// block that the user has EDITED (default entry removed, personal entry added)
+// is treated as configured: no error or warning saying excludesfile is not configured.
+func TestCheckBaseline_EditedBlockIsConfigured(t *testing.T) {
+	editedPatterns := []string{
+		"Thumbs.db",     // default, kept
+		".idea/",        // default, kept
+		"node_modules/", // default, kept
+		// .DS_Store deliberately removed
+		"*.mine", // personal addition
+	}
+
+	state := gitconfig.BaselineState{
+		Installed: true,
+		BaselineKeys: map[string]string{
+			"core.excludesfile": "~/.gitignore_global",
+		},
+		GitignorePatterns: editedPatterns,
+	}
+	d := fakeBaselineDeps(func(_, _, _ string) (gitconfig.BaselineState, error) {
+		return state, nil
+	})
+
+	d.RunGitConfigGet = func(_, _ string) (string, error) {
+		return "~/.gitignore_global", nil
+	}
+	d.Stat = func(_ string) (os.FileInfo, error) {
+		return nil, nil // file exists
+	}
+
+	findings := CheckBaseline(d)
+
+	// Should not report "not configured" error/warning.
+	for _, f := range findings {
+		if strings.Contains(f.Title, "not configured") {
+			t.Errorf("edited block should not produce 'not configured' finding, got: %v", f)
+		}
+	}
+}
+
+// TestCheckBaseline_EditedBlockInformationalOnly verifies that when a
+// managed gitignore block has been edited (some defaults removed, some added),
+// the only finding is informational about the absence of default entries,
+// with no executable fix and no error/warning severity.
+func TestCheckBaseline_EditedBlockInformationalOnly(t *testing.T) {
+	editedPatterns := []string{
+		"Thumbs.db", // kept
+		".idea/",    // kept
+		"*.mine",    // added
+		// .DS_Store removed, *.log removed, etc.
+	}
+
+	state := gitconfig.BaselineState{
+		Installed: true,
+		BaselineKeys: map[string]string{
+			"core.excludesfile": "~/.gitignore_global",
+		},
+		GitignorePatterns: editedPatterns,
+	}
+	d := fakeBaselineDeps(func(_, _, _ string) (gitconfig.BaselineState, error) {
+		return state, nil
+	})
+
+	d.RunGitConfigGet = func(_, _ string) (string, error) {
+		return "~/.gitignore_global", nil
+	}
+	d.Stat = func(_ string) (os.FileInfo, error) {
+		return nil, nil
+	}
+
+	findings := CheckBaseline(d)
+
+	// There should be an informational finding about missing entries,
+	// but no error or warning.
+	var infoAboutMissing *doctor.Finding
+	for i := range findings {
+		if findings[i].Severity == doctor.SeverityInfo && strings.Contains(findings[i].Title, "missing") {
+			infoAboutMissing = &findings[i]
+		}
+		// Should not have errors or warnings about not being configured.
+		if strings.Contains(findings[i].Title, "not configured") {
+			t.Errorf("edited block should not produce 'not configured', got: %v", findings[i])
+		}
+	}
+
+	if infoAboutMissing != nil && infoAboutMissing.Fix != nil {
+		t.Errorf("informational finding about edited block must have Fix=nil, got: %v", infoAboutMissing.Fix)
+	}
+}
+
+// TestCheckBaseline_CommentHeadersNotPenalized verifies that a block containing
+// comment headers is not penalized — the comparison operates on the comment-free view.
+func TestCheckBaseline_CommentHeadersNotPenalized(t *testing.T) {
+	patterns := gitconfig.DefaultGitignorePatterns() // includes comment headers
+	entries := gitconfig.DefaultGitignoreEntries()   // comment-free view
+
+	state := gitconfig.BaselineState{
+		Installed: true,
+		BaselineKeys: map[string]string{
+			"core.excludesfile": "~/.gitignore_global",
+		},
+		GitignorePatterns: entries, // read back via parseGitignoreBlockBody
+	}
+	d := fakeBaselineDeps(func(_, _, _ string) (gitconfig.BaselineState, error) {
+		return state, nil
+	})
+
+	d.RunGitConfigGet = func(_, _ string) (string, error) {
+		return "~/.gitignore_global", nil
+	}
+	d.Stat = func(_ string) (os.FileInfo, error) {
+		return nil, nil
+	}
+
+	// Sanity check: patterns includes comments.
+	hasComment := false
+	for _, p := range patterns {
+		if strings.HasPrefix(strings.TrimSpace(p), "#") {
+			hasComment = true
+			break
+		}
+	}
+	if !hasComment {
+		t.Fatal("test setup error: DefaultGitignorePatterns should include comments")
+	}
+
+	findings := CheckBaseline(d)
+
+	// No findings should complain about missing curated entries (they are all present in entries).
+	for _, f := range findings {
+		if strings.Contains(f.Title, "curated entries missing") {
+			t.Errorf("comment headers should not cause 'missing entries' finding, got: %v", f)
+		}
 	}
 }

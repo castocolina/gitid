@@ -5,6 +5,7 @@ package checks
 
 import (
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/castocolina/gitid/internal/doctor"
@@ -14,20 +15,22 @@ import (
 
 // CheckBaseline checks the four Phase 3.1 baseline invariants (D-16):
 //
-//  1. core.excludesfile wiring — the key is set in the baseline block.
+//  1. core.excludesfile wiring via a six-branch decision tree per GIGN-01.
 //  2. Baseline [include] resolves — the managed baseline-include block exists
 //     (state.Installed == true).
 //  3. core.ignorecase drift — state.BaselineKeys["core.ignorecase"] must equal
 //     "false" (locked-value carve-out, D-17).
-//  4. Curated excludes present — all DefaultGitignorePatterns are in
-//     state.GitignorePatterns.
+//  4. Curated gitignore entries — informational when the user-edited managed
+//     block omits curated entries (Block is user-owned as of GIGN-01).
 //
-// Severity mapping:
+// The six-branch excludesfile decision tree (Check 2):
 //
-//	excludesfile not wired → error (broken: OS artifacts not excluded)
-//	include block missing  → error + Fix descriptor (auto-fixable re-add, D-02)
-//	ignorecase drift       → warning (degraded, D-17)
-//	curated entries absent → warning + Fix descriptor (auto-fixable restore, D-02)
+//	Branch A: key unset                                  → WARNING with pair fix
+//	Branch B2: key set, NOT the managed target,  missing  → ERROR, no fix
+//	Branch B: key set, NOT the managed target,  exists   → INFO, no fix
+//	Branch C: key set,     the managed target,  missing  → ERROR with pair fix
+//	Branch D: key set,     the managed target,  exists, block empty/absent → WARNING with pair fix
+//	Branch E: key set,     the managed target,  exists, block populated    → (no error)
 //
 // Dep installs are out of scope. The function only reads via injected
 // ReadBaselineState and never writes (D-01).
@@ -92,7 +95,7 @@ func CheckBaseline(d doctor.Deps) []doctor.Finding {
 			SuggestedFix: "run 'gitid baseline setup'",
 			Fix:          fix,
 		})
-		if !matchesDefaultGitignorePatterns(state.GitignorePatterns) {
+		if !blockIsPopulated(state.GitignorePatterns) {
 			findings = append(findings, gitignorePairFinding(d, doctor.SeverityWarning,
 				"core.excludesfile and global gitignore are not configured",
 				"Git has no configured global ignore file. OS/editor artifacts may be committed."))
@@ -101,6 +104,8 @@ func CheckBaseline(d doctor.Deps) []doctor.Finding {
 	}
 
 	// Check 2: core.excludesfile and its managed pattern file are one pair.
+	// Six-branch decision tree per GIGN-01: the managed block is now user-owned,
+	// so the fix must not silently overwrite deliberate user choices.
 	// Read from state.BaselineKeys (parsed directly from the baseline
 	// fragment's own body by ReadBaselineState) — NEVER via a
 	// RunGitConfigGet(d.GitconfigPath, ...) query. `git config --file <path>`
@@ -113,55 +118,83 @@ func CheckBaseline(d doctor.Deps) []doctor.Finding {
 	// EVERY correctly-configured baseline, a false positive of exactly the
 	// class this whole phase exists to close.
 	excludesFile := state.BaselineKeys["core.excludesfile"]
-	gitignorePresent := matchesDefaultGitignorePatterns(state.GitignorePatterns)
 	fileExists := excludesFileExists(d, excludesFile)
+	isManagedTarget := pointsToManagedTarget(d, excludesFile)
+	blockPopulated := blockIsPopulated(state.GitignorePatterns)
+
+	// Branch A: key unset.
 	if excludesFile == "" {
-		if !gitignorePresent {
-			findings = append(findings, gitignorePairFinding(d, doctor.SeverityWarning,
-				"core.excludesfile and global gitignore are not configured",
-				"Git has no configured global ignore file. OS/editor artifacts may be committed."))
+		findings = append(findings, gitignorePairFinding(d, doctor.SeverityWarning,
+			"core.excludesfile and global gitignore are not configured",
+			"Git has no configured global ignore file. OS/editor artifacts may be committed."))
+	} else if !isManagedTarget {
+		// Key is set to a DIFFERENT path (not the managed target).
+		if !fileExists {
+			// Branch B2: wrong target, missing file → ERROR, no fix.
+			findings = append(findings, doctor.Finding{
+				Family:       doctor.FamilyBaseline,
+				Target:       "Git",
+				Severity:     doctor.SeverityError,
+				Title:        "core.excludesfile points to a missing file: " + excludesFile,
+				Explanation:  "Git silently tolerates this dangling excludesfile path. OS/editor artifacts may be committed.",
+				SuggestedFix: "create the file, or use the Global Git Ignore screen to adopt the managed target",
+				Fix:          nil, // deliberate: cannot silently retarget a user-chosen path
+			})
+		} else {
+			// Branch B: wrong target, existing file → INFO, no fix.
+			findings = append(findings, doctor.Finding{
+				Family:       doctor.FamilyBaseline,
+				Target:       "Git",
+				Severity:     doctor.SeverityInfo,
+				Title:        "core.excludesfile: " + excludesFile + " (differs from gitid-managed target)",
+				Explanation:  "This value is a deliberate user choice. Gitid will not override it.",
+				SuggestedFix: "if you want to use the managed global gitignore, change core.excludesfile to the managed target via the Global Git Ignore screen",
+				Fix:          nil,
+			})
 		}
-	} else if !fileExists {
-		// A dangling pointer — the key is wired but the file it names does
-		// not exist at all. Content-incompleteness of an EXISTING file is a
-		// separate, lower-severity concern (Check 4's "curated entries
-		// missing" WARNING below) — conflating the two under this ERROR's
-		// "missing" wording would misreport an existing-but-incomplete file
-		// as absent, a false positive of exactly the class this phase
-		// exists to close.
-		findings = append(findings, gitignorePairFinding(d, doctor.SeverityError,
-			"core.excludesfile points to a missing global gitignore",
-			"Git silently tolerates this dangling excludesfile path, so OS/editor artifacts may be committed."))
+	} else {
+		// Key is set to the MANAGED target.
+		if !fileExists {
+			// Branch C: managed target, missing file → ERROR with fix.
+			findings = append(findings, gitignorePairFinding(d, doctor.SeverityError,
+				"core.excludesfile points to a missing global gitignore",
+				"Git silently tolerates this dangling excludesfile path, so OS/editor artifacts may be committed."))
+		} else if !blockPopulated {
+			// Branch D: managed target, file exists, block empty/absent → WARNING with fix.
+			findings = append(findings, gitignorePairFinding(d, doctor.SeverityWarning,
+				"~/.gitignore_global: curated entries missing",
+				"Git has a configured gitignore file, but the gitid-managed block contains no patterns."))
+		}
+		// Branch E: managed target, file exists, block populated → no error.
 	}
 
 	findings = append(findings, setDiffersFindings(d)...)
 
-	// Check 4: curated gitignore entries.
-	// Build a set of existing patterns for O(1) lookup.
-	existing := make(map[string]bool, len(state.GitignorePatterns))
-	for _, p := range state.GitignorePatterns {
-		existing[p] = true
-	}
-	var missing []string
-	for _, p := range gitconfig.DefaultGitignorePatterns() {
-		if !existing[p] {
-			missing = append(missing, p)
+	// Check 4: curated gitignore entries (GIGN-01 user-owned block).
+	// The managed block is now editable; this check is informational only,
+	// naming what the user removed and how to restore.
+	if blockPopulated {
+		// Only check when the block has content; Branch D above handles empty blocks.
+		existing := make(map[string]bool, len(state.GitignorePatterns))
+		for _, p := range state.GitignorePatterns {
+			existing[p] = true
 		}
-	}
-	if len(missing) > 0 {
-		// The gitignore restore requires passing the full curated patterns list through
-		// the AddWiring dispatcher, which is not supported by the current string-based
-		// payload protocol. Fix=nil is correct here (report-only, D-03) — the user
-		// must run 'gitid baseline setup' to restore the managed gitignore block.
-		// A no-op func() error { return nil } stub is explicitly NOT used (plan advisory).
-		findings = append(findings, doctor.Finding{
-			Family:       doctor.FamilyBaseline,
-			Severity:     doctor.SeverityWarning,
-			Title:        "~/.gitignore_global: curated entries missing",
-			Explanation:  "One or more gitid-managed gitignore patterns are absent. OS/editor artifacts may be committed.",
-			SuggestedFix: "run 'gitid baseline setup' to restore the managed gitignore block",
-			Fix:          nil, // report-only: no safe single-call restore via AddWiring (D-03)
-		})
+		var missing []string
+		for _, p := range gitconfig.DefaultGitignoreEntries() {
+			if !existing[p] {
+				missing = append(missing, p)
+			}
+		}
+		if len(missing) > 0 {
+			findings = append(findings, doctor.Finding{
+				Family:       doctor.FamilyBaseline,
+				Severity:     doctor.SeverityInfo,
+				Title:        "~/.gitignore_global: curated entries absent",
+				Explanation:  "The managed gitignore block is editable and user-owned. These curated entries are currently absent, which is a deliberate user choice.",
+				SuggestedFix: "use the Global Git Ignore screen's Reset action to restore all curated entries",
+				Fix:          nil, // informational, not auto-fixable
+			})
+		}
 	}
 
 	return findings
@@ -198,6 +231,27 @@ func excludesFileExists(d doctor.Deps, path string) bool {
 	return err == nil
 }
 
+func blockIsPopulated(patterns []string) bool {
+	return len(patterns) > 0
+}
+
+func pointsToManagedTarget(d doctor.Deps, configuredPath string) bool {
+	if configuredPath == "" || d.GitignorePath == "" {
+		return false
+	}
+	// Expand tilde against the directory containing the gitignore file.
+	// This works because RenderBaselineBlock writes the literal ~/.gitignore_global
+	// and the live fixture already carries that spelling against an absolute
+	// GitignorePath. We must not compare strings directly; the bare tilde would
+	// never match an absolute path.
+	homeDir := filepath.Dir(d.GitignorePath)
+	configuredExpanded := configuredPath
+	if strings.HasPrefix(configuredPath, "~/") {
+		configuredExpanded = filepath.Join(homeDir, configuredPath[2:])
+	}
+	return configuredExpanded == d.GitignorePath
+}
+
 func gitignorePairFinding(d doctor.Deps, severity doctor.Severity, title, explanation string) doctor.Finding {
 	var fix *doctor.FixDescriptor
 	if d.FixExcludesfile != nil && d.GitignorePath != "" {
@@ -219,17 +273,4 @@ func gitignorePairFinding(d doctor.Deps, severity doctor.Severity, title, explan
 		SuggestedFix: "configure the managed global gitignore",
 		Fix:          fix,
 	}
-}
-
-func matchesDefaultGitignorePatterns(patterns []string) bool {
-	defaults := gitconfig.DefaultGitignorePatterns()
-	if len(patterns) != len(defaults) {
-		return false
-	}
-	for i, pattern := range defaults {
-		if patterns[i] != pattern {
-			return false
-		}
-	}
-	return true
 }

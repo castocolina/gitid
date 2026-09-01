@@ -265,25 +265,74 @@ func DefaultURLRewrites() []URLRewrite {
 	}
 }
 
-// DefaultGitignorePatterns returns the curated gitignore seed list (D-08/SC-2).
-// The first six are SC-2-locked; the remaining are planner discretion (D-Claude).
-// Order is fixed to satisfy the byte-stability contract (Pitfall D).
+// DefaultGitignorePatterns returns the curated gitignore seed list with comment headers,
+// grouped by category for readability. This slice contains both pattern entries and comment
+// lines (those starting with "#" after trimming whitespace). The byte-stability contract
+// (Pitfall D) demands fixed order. For comparison against what ReadBaselineState returns,
+// callers must use DefaultGitignoreEntries, which is the comment-free and blank-free view.
+//
+// The first six patterns (.DS_Store, Thumbs.db, *.log, *.bak, *.tmp, *.swp) are SC-2-locked;
+// the remaining are planner discretion (D-Claude). Project-scoped build output (such as
+// distribution or build directories) is deliberately NOT seeded — a global ignore that hides
+// those would silently un-track them in repositories that legitimately commit them; the
+// content is user-editable now, so anyone who wants them adds them on the screen.
+//
+// Scratch-directory entries (tmp/, .tmp/) are a deliberate, narrower exception to the
+// above rule: the user asked for global scratch-directory ignoring by name in GIGN-01,
+// and a directory of that name is conventionally machine-local scratch, whereas a
+// distribution or build directory is routinely committed.
 func DefaultGitignorePatterns() []string {
 	return []string{
+		"# OS artifacts",
 		".DS_Store",
 		"Thumbs.db",
+		"desktop.ini",
+		"# Editors and IDEs",
+		".idea/",
+		".vscode/",
+		"*.swp",
+		"*.swo",
+		"*~",
+		"# Logs, temp and scratch",
 		"*.log",
 		"*.bak",
 		"*.tmp",
-		"*.swp",
-		"*.swo",
-		".idea/",
-		".vscode/",
-		"node_modules/",
+		"tmp/",
+		".tmp/",
+		"# Environment files (committed examples stay tracked)",
+		".env",
+		".env.*",
+		"!.env.example",
+		"# Python",
 		"__pycache__/",
 		"*.pyc",
-		".env",
+		".venv/",
+		"venv/",
+		"# Node",
+		"node_modules/",
+		"# Tooling caches",
+		".direnv/",
+		".pytest_cache/",
+		".mypy_cache/",
+		".ruff_cache/",
 	}
+}
+
+// DefaultGitignoreEntries returns the ordered subset of DefaultGitignorePatterns
+// with blank lines and comment lines (those whose trimmed form starts with "#") removed.
+// This is the view callers must use when comparing against what ReadBaselineState's
+// GitignorePatterns returns — the two use identical filtering logic (parseGitignoreBlockBody),
+// so they can never disagree about the rendered content.
+func DefaultGitignoreEntries() []string {
+	patterns := DefaultGitignorePatterns()
+	var entries []string
+	for _, p := range patterns {
+		trimmed := strings.TrimSpace(p)
+		if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+			entries = append(entries, trimmed)
+		}
+	}
+	return entries
 }
 
 // RenderBaselineBlock renders the baseline gitconfig block body with fixed

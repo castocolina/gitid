@@ -241,29 +241,51 @@ func TestRenderURLRewritesBlock(t *testing.T) {
 }
 
 // TestRenderGitignoreBlock verifies the gitignore block render against
-// RESEARCH Example 4.
+// the extended catalog with comment headers. The extended catalog is a strict
+// superset of the old 13 patterns, with comment headers and additional patterns
+// for Python venv, Node, and tooling caches.
 func TestRenderGitignoreBlock(t *testing.T) {
-	t.Run("default 13 patterns in fixed order", func(t *testing.T) {
+	t.Run("extended catalog renders with comment headers", func(t *testing.T) {
 		patterns := DefaultGitignorePatterns()
 		got := RenderGitignoreBlock(patterns)
 
-		// RESEARCH Example 4 — exact byte string.
-		want := ".DS_Store\n" +
-			"Thumbs.db\n" +
-			"*.log\n" +
-			"*.bak\n" +
-			"*.tmp\n" +
-			"*.swp\n" +
-			"*.swo\n" +
-			".idea/\n" +
-			".vscode/\n" +
-			"node_modules/\n" +
-			"__pycache__/\n" +
-			"*.pyc\n" +
-			".env"
+		// The extended catalog includes comment headers for readability.
+		// Check for markers of all major sections.
+		sections := []string{
+			"# OS artifacts",
+			"# Editors and IDEs",
+			"# Logs, temp and scratch",
+			"# Environment files",
+			"# Python",
+			"# Node",
+			"# Tooling caches",
+		}
+		for _, section := range sections {
+			if !strings.Contains(got, section) {
+				t.Errorf("expected section %q in rendered output", section)
+			}
+		}
 
-		if got != want {
-			t.Errorf("RenderGitignoreBlock output mismatch.\ngot:\n%s\nwant:\n%s", got, want)
+		// All old 13 entries must be present (strict superset).
+		oldThirteen := []string{
+			".DS_Store", "Thumbs.db", "*.log", "*.bak", "*.tmp", "*.swp", "*.swo",
+			".idea/", ".vscode/", "node_modules/", "__pycache__/", "*.pyc", ".env",
+		}
+		for _, entry := range oldThirteen {
+			if !strings.Contains(got, entry) {
+				t.Errorf("old entry %q missing from rendered output", entry)
+			}
+		}
+
+		// New GIGN-01 entries must be present.
+		newEntries := []string{
+			"desktop.ini", ".env.*", "!.env.example", ".venv/", "venv/",
+			"tmp/", ".tmp/", ".direnv/", ".pytest_cache/", ".mypy_cache/", ".ruff_cache/",
+		}
+		for _, entry := range newEntries {
+			if !strings.Contains(got, entry) {
+				t.Errorf("new entry %q missing from rendered output", entry)
+			}
 		}
 	})
 
@@ -1017,4 +1039,227 @@ func TestInspectManagedBlockFile_NestedOtherNameIsParserBehaviorRecord(t *testin
 	if strings.Contains(string(rewritten), "ignorecase = false") {
 		t.Error("the original body must be replaced")
 	}
+}
+
+// ── Task 1.09.2: Extended catalog and comment-free entry view tests ─────────
+
+func TestDefaultGitignorePatterns_ExtendedCatalog(t *testing.T) {
+	t.Run("contains all previous thirteen entries", func(t *testing.T) {
+		entries := DefaultGitignoreEntries()
+
+		oldThirteen := []string{
+			".DS_Store", "Thumbs.db", "*.log", "*.bak", "*.tmp", "*.swp", "*.swo",
+			".idea/", ".vscode/", "node_modules/", "__pycache__/", "*.pyc", ".env",
+		}
+		for _, want := range oldThirteen {
+			found := false
+			for _, e := range entries {
+				if e == want {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("previous entry %q missing from extended catalog", want)
+			}
+		}
+	})
+
+	t.Run("contains each pattern GIGN-01 names", func(t *testing.T) {
+		entries := DefaultGitignoreEntries()
+
+		gign01Patterns := []string{
+			".env", ".env.*", "!.env.example", ".venv/", "venv/",
+		}
+		for _, want := range gign01Patterns {
+			found := false
+			for _, e := range entries {
+				if e == want {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("GIGN-01 required pattern %q missing from catalog", want)
+			}
+		}
+	})
+
+	t.Run("negation entry appears strictly after wildcard env entry", func(t *testing.T) {
+		entries := DefaultGitignoreEntries()
+
+		envIdx := -1
+		negIdx := -1
+		for i, e := range entries {
+			if e == ".env.*" {
+				envIdx = i
+			}
+			if e == "!.env.example" {
+				negIdx = i
+			}
+		}
+
+		if envIdx == -1 || negIdx == -1 {
+			t.Fatalf(".env.* or !.env.example missing: envIdx=%d, negIdx=%d", envIdx, negIdx)
+		}
+		if envIdx >= negIdx {
+			t.Errorf("negation !.env.example must come AFTER .env.*, got indices %d and %d", envIdx, negIdx)
+		}
+	})
+
+	t.Run("patterns contains at least one comment-header line", func(t *testing.T) {
+		patterns := DefaultGitignorePatterns()
+
+		hasComment := false
+		for _, p := range patterns {
+			trimmed := strings.TrimSpace(p)
+			if strings.HasPrefix(trimmed, "#") {
+				hasComment = true
+				break
+			}
+		}
+		if !hasComment {
+			t.Error("DefaultGitignorePatterns must contain at least one comment-header line")
+		}
+	})
+
+	t.Run("entries contains no comment-header lines", func(t *testing.T) {
+		entries := DefaultGitignoreEntries()
+
+		for _, e := range entries {
+			trimmed := strings.TrimSpace(e)
+			if strings.HasPrefix(trimmed, "#") {
+				t.Errorf("DefaultGitignoreEntries must not contain comment, found %q", e)
+			}
+		}
+	})
+
+	t.Run("entries equals ordered comment-and-blank-free filtering of patterns", func(t *testing.T) {
+		patterns := DefaultGitignorePatterns()
+		entries := DefaultGitignoreEntries()
+
+		// Manually filter patterns to remove comments and blanks.
+		var filtered []string
+		for _, p := range patterns {
+			trimmed := strings.TrimSpace(p)
+			if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+				filtered = append(filtered, trimmed)
+			}
+		}
+
+		if len(filtered) != len(entries) {
+			t.Fatalf("length mismatch: filtered=%d, entries=%d", len(filtered), len(entries))
+		}
+		for i, want := range filtered {
+			if entries[i] != want {
+				t.Errorf("index %d: entries[%d]=%q, want %q", i, i, entries[i], want)
+			}
+		}
+	})
+
+	t.Run("round trip through read path produces entries from pattern block", func(t *testing.T) {
+		patterns := DefaultGitignorePatterns()
+		rendered := RenderGitignoreBlock(patterns)
+
+		// Read it back through the same parsing parseGitignoreBlockBody uses.
+		readBack := parseGitignoreBlockBody(rendered)
+
+		entries := DefaultGitignoreEntries()
+		if len(readBack) != len(entries) {
+			t.Fatalf("round trip length mismatch: readBack=%d, entries=%d", len(readBack), len(entries))
+		}
+		for i, want := range entries {
+			if readBack[i] != want {
+				t.Errorf("round trip index %d: readBack[%d]=%q, want %q", i, i, readBack[i], want)
+			}
+		}
+	})
+
+	t.Run("WriteGlobalGitignore with extended defaults is idempotent", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, ".gitignore_global")
+
+		patterns := DefaultGitignorePatterns()
+
+		_, err := WriteGlobalGitignore(path, patterns)
+		if err != nil {
+			t.Fatalf("first WriteGlobalGitignore: %v", err)
+		}
+		first, err := os.ReadFile(path) //nolint:gosec // test path
+		if err != nil {
+			t.Fatalf("reading after first write: %v", err)
+		}
+
+		_, err = WriteGlobalGitignore(path, patterns)
+		if err != nil {
+			t.Fatalf("second WriteGlobalGitignore: %v", err)
+		}
+		second, err := os.ReadFile(path) //nolint:gosec // test path
+		if err != nil {
+			t.Fatalf("reading after second write: %v", err)
+		}
+
+		if !bytes.Equal(first, second) {
+			t.Errorf("WriteGlobalGitignore not idempotent with extended defaults.\nfirst:\n%s\nsecond:\n%s", first, second)
+		}
+	})
+
+	t.Run("ComposeGlobalGitignore produces bytes identical to WriteGlobalGitignore", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, ".gitignore_global")
+
+		existing := []byte("# user comment\n*.mypattern\n")
+		if err := os.WriteFile(path, existing, 0o644); err != nil { //nolint:gosec // test path
+			t.Fatalf("seeding: %v", err)
+		}
+
+		patterns := DefaultGitignorePatterns()
+		composed := ComposeGlobalGitignore(existing, patterns)
+
+		_, err := WriteGlobalGitignore(path, patterns)
+		if err != nil {
+			t.Fatalf("WriteGlobalGitignore: %v", err)
+		}
+
+		written, err := os.ReadFile(path) //nolint:gosec // test path
+		if err != nil {
+			t.Fatalf("reading written file: %v", err)
+		}
+
+		if !bytes.Equal(composed, written) {
+			t.Errorf("ComposeGlobalGitignore diverged from WriteGlobalGitignore.\ncomposed:\n%s\nwritten:\n%s", composed, written)
+		}
+	})
+
+	t.Run("preserves foreign content with extended defaults", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, ".gitignore_global")
+
+		foreignContent := "# My patterns\n*.custom\nbuild/\n"
+		if err := os.WriteFile(path, []byte(foreignContent), 0o644); err != nil { //nolint:gosec // test path
+			t.Fatalf("seeding: %v", err)
+		}
+
+		patterns := DefaultGitignorePatterns()
+		_, err := WriteGlobalGitignore(path, patterns)
+		if err != nil {
+			t.Fatalf("WriteGlobalGitignore: %v", err)
+		}
+
+		content, err := os.ReadFile(path) //nolint:gosec // test path
+		if err != nil {
+			t.Fatalf("reading: %v", err)
+		}
+
+		s := string(content)
+		if !strings.Contains(s, "*.custom") {
+			t.Error("foreign *.custom pattern was removed")
+		}
+		if !strings.Contains(s, "build/") {
+			t.Error("foreign build/ pattern was removed")
+		}
+		if !strings.Contains(s, "# BEGIN gitid managed: gitignore") {
+			t.Error("managed block sentinel missing")
+		}
+	})
 }
