@@ -247,7 +247,14 @@ func (s *ptySession) snapshot() string {
 }
 
 // waitFor polls snapshot() up to timeout, returning true when predicate(text)
-// returns true. It returns the last seen text for diagnostics.
+// returns true. On failure it returns the LAST snapshot the predicate was
+// actually evaluated against — never a fresh, unchecked one — so a failure
+// message's "Last frame" is trustworthy diagnostic evidence, not a
+// misleading coincidence of exactly when the extra call happened to land.
+// (v0.1.0-rc.5's investigation found the prior version took one final,
+// unvalidated snapshot after the deadline for the failure message, which
+// could show content that would have passed had it been the one checked —
+// making several rc.3-rc.5 "never appeared" diagnoses unreliable.)
 //
 // timeout is scaled by ciTimeoutMultiplier: v0.1.0-rc.1 and rc.2 both failed
 // make test-e2e on GitHub Actions with a shifting, non-reproducing set of
@@ -260,14 +267,16 @@ func (s *ptySession) snapshot() string {
 func (s *ptySession) waitFor(timeout time.Duration, predicate func(string) bool) (last string, ok bool) {
 	timeout *= ciTimeoutMultiplier()
 	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		text := s.snapshot()
-		if predicate(text) {
-			return text, true
+	for {
+		last = s.snapshot()
+		if predicate(last) {
+			return last, true
+		}
+		if !time.Now().Before(deadline) {
+			return last, false
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	return s.snapshot(), false
 }
 
 // saveFrame writes the current emulator snapshot to a scratch ui-frames
