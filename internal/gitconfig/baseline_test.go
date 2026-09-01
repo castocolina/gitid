@@ -952,6 +952,14 @@ func TestInspectManagedBlockFile(t *testing.T) {
 			// unclosed at end-of-scan — it surfaces as the unclosed-marker
 			// reason, not a name mismatch. Documented, not changed here.
 			{"mismatched END name", filewriter.BeginPrefix + "gitignore\n.DS_Store\n" + filewriter.EndPrefix + "other\n", ManagedBlockReasonUnclosedMarker},
+			// The ONE reachable ManagedBlockReasonMismatchedMarker shape
+			// (baseline.go's `openName != blockName && name == blockName`
+			// branch, 09.2-REVIEW.md WR-10 point 3): a DIFFERENT block
+			// ("foreign") is open when an END names OUR block. Before this
+			// case existed, only WR-01's now-deleted dead twin exercised
+			// this reason via the standalone-END shape above — the
+			// genuinely reachable branch had zero coverage.
+			{"END names our block while a different block is open", filewriter.BeginPrefix + "foreign\n" + filewriter.BeginPrefix + "gitignore\n.DS_Store\n" + filewriter.EndPrefix + "gitignore\n", ManagedBlockReasonMismatchedMarker},
 			{"duplicate complete blocks", managedBlock("gitignore", ".DS_Store") + managedBlock("gitignore", "*.log"), ManagedBlockReasonDuplicateBlock},
 		}
 		for _, tc := range cases {

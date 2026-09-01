@@ -519,6 +519,36 @@ func TestGitIgnoreCapturesKeys(t *testing.T) {
 	}
 }
 
+// TestGitIgnoreViewCrumbsAreAlwaysEmpty pins 09.2-UI-REVIEW.md finding 1's
+// fix (09.2-REVIEW.md WR-10 point 5): view() must return crumbs: []string{}
+// on BOTH branches (browse/editor and the ceremony) so RenderFrame's
+// breadcrumb reads "Global Git Ignore" exactly once — passing the tab's own
+// label as an extra crumbs[] segment previously triple-duplicated the
+// heading. Guarded only by re-promotable PTY frames before this unit
+// assertion existed.
+func TestGitIgnoreViewCrumbsAreAlwaysEmpty(t *testing.T) {
+	b := stubBackend{
+		gignState: GlobalGitIgnoreView{
+			Path:    "~/.gitignore_global",
+			Content: ".DS_Store",
+			Managed: true,
+			Wiring:  GitIgnoreWiredAtManaged,
+		},
+		gignApplyPlan: GlobalGitIgnoreApplyPlanView{
+			Targets: []string{"~/.gitignore_global"},
+			Diff:    "+ .DS_Store",
+		},
+	}
+	a := gignApp(t, b)
+	if v := gignModel(t, a).view(Seed(), minFrameWidth, minFrameHeight); len(v.crumbs) != 0 {
+		t.Errorf("browse/editor crumbs = %#v, want an empty slice", v.crumbs)
+	}
+	a, _ = press(t, a, "a")
+	if v := gignModel(t, a).view(Seed(), minFrameWidth, minFrameHeight); len(v.crumbs) != 0 {
+		t.Errorf("ceremony crumbs = %#v, want an empty slice", v.crumbs)
+	}
+}
+
 func TestGitIgnoreBrowseFooterUsesEditorCopy(t *testing.T) {
 	b := stubBackend{gignState: GlobalGitIgnoreView{Content: "one", DefaultContent: "default"}}
 	a := gignApp(t, b)

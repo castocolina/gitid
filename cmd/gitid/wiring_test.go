@@ -6892,6 +6892,54 @@ func TestGlobalGitIgnoreApplyPlanSentinelErrorIsTranslated(t *testing.T) {
 	}
 }
 
+// TestGlobalGitIgnoreCommitSentinelErrorIsTranslated is the CommitGlobalGitIgnore
+// half of 09.2-REVIEW.md WR-10 point 2: CommitGlobalGitIgnore independently
+// re-validates content through gitconfig.NormalizeGitignoreLines (a typed
+// sentinel line could arrive here even after a clean ApplyPlan, on a
+// pasted-then-edited flow) — this leak site (CR-01) must translate that
+// error through the same frozen copy ApplyPlan's sentinel test pins above,
+// not leak the raw diagnostic sentence.
+func TestGlobalGitIgnoreCommitSentinelErrorIsTranslated(t *testing.T) {
+	home := t.TempDir()
+	seedManagedBaseline(t, home, "excludesfile = ~/.gitignore_global")
+	seedGitIgnoreFile(t, home, "", ".DS_Store\n", "")
+	b := newBackendForHome(home)
+	typedContent := ".DS_Store\n" + filewriter.BeginPrefix + "typed-sentinel\n"
+	msg := commitGitIgnore(t, b, typedContent, "irrelevant-token")
+	if msg.Err == "" {
+		t.Fatal("CommitGlobalGitIgnore must refuse a typed sentinel line")
+	}
+	want := tuikit.GitIgnoreSentinelRejectedMessage(2)
+	if msg.Err != want {
+		t.Errorf("CommitGlobalGitIgnore error = %q, want the frozen copy %q", msg.Err, want)
+	}
+}
+
+// TestGlobalGitIgnoreCommitMalformedGitignoreFileErrorIsTranslated is the
+// remaining CommitGlobalGitIgnore leak site from 09.2-REVIEW.md WR-10 point
+// 2 (CR-01): the EXISTING ~/.gitignore_global becoming malformed between
+// preview and confirm (a genuine TOCTOU — the inspect runs before the
+// planToken comparison) must translate through the same frozen copy, naming
+// the GITIGNORE file's own path (not the baseline fragment's).
+func TestGlobalGitIgnoreCommitMalformedGitignoreFileErrorIsTranslated(t *testing.T) {
+	home := t.TempDir()
+	seedManagedBaseline(t, home, "excludesfile = ~/.gitignore_global")
+	// An orphan BEGIN sentinel in the gitignore file itself, on line 1.
+	seedGitIgnoreFile(t, home, filewriter.BeginPrefix+"gitignore\n.DS_Store\n", "", "")
+	b := newBackendForHome(home)
+	msg := commitGitIgnore(t, b, ".DS_Store", "irrelevant-token")
+	if msg.Err == "" {
+		t.Fatal("CommitGlobalGitIgnore must refuse a malformed gitignore file")
+	}
+	want := tuikit.GitIgnoreMalformedFileMessage("~/.gitignore_global", 1, tuikit.GitIgnoreMalformedReasonUnclosedMarker)
+	if msg.Err != want {
+		t.Errorf("CommitGlobalGitIgnore error = %q, want the frozen copy %q", msg.Err, want)
+	}
+	if strings.Contains(msg.Err, "repair the file by hand before gitid will touch it") {
+		t.Errorf("error still contains baseline.go's raw developer-facing sentence: %q", msg.Err)
+	}
+}
+
 func TestGlobalGitIgnoreRollbackRestoresPreexistingBaseline(t *testing.T) {
 	home := t.TempDir()
 	seedManagedBaseline(t, home, "")
