@@ -2,6 +2,7 @@ package gitconfig
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -847,6 +848,22 @@ func TestNormalizeGitignoreLines(t *testing.T) {
 		}
 	})
 
+	t.Run("sentinel prefix error is structured for UI translation", func(t *testing.T) {
+		// The Global Git Ignore screen must not leak this raw diagnostic text
+		// to the user (09.2-UI-REVIEW.md finding 2) — it needs the line
+		// number as data, not parsed out of a sentence, so the UI layer can
+		// render the frozen 09.2-UI-SPEC.md copy instead.
+		in := ".DS_Store\n# BEGIN gitid managed: nested\n*.log\n"
+		_, err := NormalizeGitignoreLines(in)
+		var sentinelErr *SentinelLineError
+		if !errors.As(err, &sentinelErr) {
+			t.Fatalf("NormalizeGitignoreLines error must be a *SentinelLineError, got %T", err)
+		}
+		if sentinelErr.Line != 2 {
+			t.Errorf("Line = %d, want 2", sentinelErr.Line)
+		}
+	})
+
 	t.Run("round trip DefaultGitignorePatterns", func(t *testing.T) {
 		rendered := RenderGitignoreBlock(DefaultGitignorePatterns())
 		got, err := NormalizeGitignoreLines(rendered)
@@ -923,14 +940,19 @@ func TestInspectManagedBlockFile(t *testing.T) {
 
 	t.Run("five malformed shapes", func(t *testing.T) {
 		cases := []struct {
-			name    string
-			content string
+			name       string
+			content    string
+			wantReason ManagedBlockErrorReason
 		}{
-			{"orphan BEGIN", filewriter.BeginPrefix + "gitignore\n.DS_Store\n"},
-			{"standalone END", filewriter.EndPrefix + "gitignore\n"},
-			{"nested BEGIN", managedBlock("gitignore", filewriter.BeginPrefix+"gitignore\n.DS_Store")},
-			{"mismatched END name", filewriter.BeginPrefix + "gitignore\n.DS_Store\n" + filewriter.EndPrefix + "other\n"},
-			{"duplicate complete blocks", managedBlock("gitignore", ".DS_Store") + managedBlock("gitignore", "*.log")},
+			{"orphan BEGIN", filewriter.BeginPrefix + "gitignore\n.DS_Store\n", ManagedBlockReasonUnclosedMarker},
+			{"standalone END", filewriter.EndPrefix + "gitignore\n", ManagedBlockReasonMismatchedMarker},
+			{"nested BEGIN", managedBlock("gitignore", filewriter.BeginPrefix+"gitignore\n.DS_Store"), ManagedBlockReasonUnclosedMarker},
+			// This shape's END names a DIFFERENT block, so the scanner treats
+			// it as foreign and skips it, leaving the original BEGIN
+			// unclosed at end-of-scan — it surfaces as the unclosed-marker
+			// reason, not a name mismatch. Documented, not changed here.
+			{"mismatched END name", filewriter.BeginPrefix + "gitignore\n.DS_Store\n" + filewriter.EndPrefix + "other\n", ManagedBlockReasonUnclosedMarker},
+			{"duplicate complete blocks", managedBlock("gitignore", ".DS_Store") + managedBlock("gitignore", "*.log"), ManagedBlockReasonDuplicateBlock},
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
@@ -944,6 +966,20 @@ func TestInspectManagedBlockFile(t *testing.T) {
 				}
 				if !strings.Contains(strings.ToLower(msg), "repair") && !strings.Contains(strings.ToLower(msg), "hand") {
 					t.Errorf("error must say the file must be repaired by hand, got %q", msg)
+				}
+				// 09.2-UI-REVIEW.md finding 2: the UI layer must be able to
+				// translate this into 09.2-UI-SPEC.md's frozen malformed-file
+				// copy without parsing the diagnostic sentence, so the error
+				// must carry the line number and a reason category as data.
+				var mbErr *ManagedBlockError
+				if !errors.As(err, &mbErr) {
+					t.Fatalf("expected a *ManagedBlockError, got %T", err)
+				}
+				if mbErr.Line == 0 {
+					t.Errorf("Line must be set, got 0")
+				}
+				if mbErr.Reason != tc.wantReason {
+					t.Errorf("Reason = %v, want %v", mbErr.Reason, tc.wantReason)
 				}
 			})
 		}

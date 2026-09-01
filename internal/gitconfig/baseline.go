@@ -17,6 +17,55 @@ type ManagedBlockShape struct {
 	Body    string
 }
 
+// ManagedBlockErrorReason classifies a malformed managed-block shape into one
+// of the reason categories the Global Git Ignore screen's frozen copy uses
+// (09.2-UI-SPEC.md's "Malformed file refusal" row). This package stays
+// UI-free — it never spells out user-facing wording, only the category and
+// the offending line, so a caller can translate without parsing a sentence.
+type ManagedBlockErrorReason int
+
+const (
+	// ManagedBlockReasonUnclosedMarker covers an opening marker with no
+	// matching closing marker (orphan BEGIN, or a second BEGIN of the same
+	// name appearing before the first is closed).
+	ManagedBlockReasonUnclosedMarker ManagedBlockErrorReason = iota
+	// ManagedBlockReasonMismatchedMarker covers a closing marker that
+	// doesn't match its opening marker (a standalone END with no open
+	// marker, or an END whose name disagrees with the BEGIN it closes).
+	ManagedBlockReasonMismatchedMarker
+	// ManagedBlockReasonDuplicateBlock covers two complete blocks of the
+	// same name in one file.
+	ManagedBlockReasonDuplicateBlock
+)
+
+// ManagedBlockError is a structured error from InspectManagedBlockFile (and
+// its InspectGitignoreFile wrapper). Error() preserves the original
+// developer-facing diagnostic text for logs and tests; Line and Reason let a
+// UI layer translate the error into its own frozen, user-facing copy instead
+// of rendering this sentence verbatim.
+type ManagedBlockError struct {
+	Line   int
+	Reason ManagedBlockErrorReason
+	text   string
+}
+
+func (e *ManagedBlockError) Error() string { return e.text }
+
+func newManagedBlockError(line int, reason ManagedBlockErrorReason, format string, args ...any) *ManagedBlockError {
+	return &ManagedBlockError{Line: line, Reason: reason, text: fmt.Sprintf(format, args...)}
+}
+
+// SentinelLineError is NormalizeGitignoreLines's structured error for a
+// user-typed or pasted line that collides with a managed-block sentinel.
+// Error() preserves the original diagnostic text; Line lets a UI layer
+// translate the error into its own frozen, user-facing copy.
+type SentinelLineError struct {
+	Line int
+	text string
+}
+
+func (e *SentinelLineError) Error() string { return e.text }
+
 // BaselineState holds the reconstructed managed baseline across all three
 // managed surfaces. It is a value type (no pointer), following the FragmentInfo
 // / IncludeIfInfo precedent in reader.go.
@@ -535,7 +584,11 @@ func NormalizeGitignoreLines(content string) ([]string, error) {
 	for i, line := range raw {
 		trimmed := strings.TrimRight(line, " \t")
 		if strings.HasPrefix(trimmed, filewriter.BeginPrefix) || strings.HasPrefix(trimmed, filewriter.EndPrefix) {
-			return nil, fmt.Errorf("line %d looks like a gitid managed-block sentinel and cannot be part of gitignore content", i+1)
+			lineNo := i + 1
+			return nil, &SentinelLineError{
+				Line: lineNo,
+				text: fmt.Sprintf("line %d looks like a gitid managed-block sentinel and cannot be part of gitignore content", lineNo),
+			}
 		}
 		lines = append(lines, trimmed)
 	}
@@ -587,7 +640,8 @@ func InspectManagedBlockFile(content []byte, blockName string) (ManagedBlockShap
 			name := strings.TrimPrefix(trimmed, filewriter.BeginPrefix)
 			if openAt != -1 {
 				if name == blockName && openName == blockName {
-					return ManagedBlockShape{}, fmt.Errorf("line %d: nested BEGIN sentinel — repair the file by hand before gitid will touch it", lineNo)
+					return ManagedBlockShape{}, newManagedBlockError(lineNo, ManagedBlockReasonUnclosedMarker,
+						"line %d: nested BEGIN sentinel — repair the file by hand before gitid will touch it", lineNo)
 				}
 				continue
 			}
@@ -597,25 +651,29 @@ func InspectManagedBlockFile(content []byte, blockName string) (ManagedBlockShap
 			name := strings.TrimPrefix(trimmed, filewriter.EndPrefix)
 			if openAt == -1 {
 				if name == blockName {
-					return ManagedBlockShape{}, fmt.Errorf("line %d: standalone END sentinel — repair the file by hand before gitid will touch it", lineNo)
+					return ManagedBlockShape{}, newManagedBlockError(lineNo, ManagedBlockReasonMismatchedMarker,
+						"line %d: standalone END sentinel — repair the file by hand before gitid will touch it", lineNo)
 				}
 				continue
 			}
 			if name != openName {
 				if openName == blockName && name == blockName {
-					return ManagedBlockShape{}, fmt.Errorf("line %d: END sentinel name does not match its open BEGIN — repair the file by hand before gitid will touch it", lineNo)
+					return ManagedBlockShape{}, newManagedBlockError(lineNo, ManagedBlockReasonMismatchedMarker,
+						"line %d: END sentinel name does not match its open BEGIN — repair the file by hand before gitid will touch it", lineNo)
 				}
 				if openName == blockName && name != blockName {
 					continue
 				}
 				if openName != blockName && name == blockName {
-					return ManagedBlockShape{}, fmt.Errorf("line %d: END sentinel name does not match its open BEGIN — repair the file by hand before gitid will touch it", lineNo)
+					return ManagedBlockShape{}, newManagedBlockError(lineNo, ManagedBlockReasonMismatchedMarker,
+						"line %d: END sentinel name does not match its open BEGIN — repair the file by hand before gitid will touch it", lineNo)
 				}
 				continue
 			}
 			if openName == blockName {
 				if found != nil {
-					return ManagedBlockShape{}, fmt.Errorf("line %d: two complete %q blocks in one file — repair the file by hand before gitid will touch it", lineNo, blockName)
+					return ManagedBlockShape{}, newManagedBlockError(lineNo, ManagedBlockReasonDuplicateBlock,
+						"line %d: two complete %q blocks in one file — repair the file by hand before gitid will touch it", lineNo, blockName)
 				}
 				body := strings.Join(lines[openAt+1:i], "\n")
 				body = strings.TrimRight(body, "\n")
@@ -626,7 +684,9 @@ func InspectManagedBlockFile(content []byte, blockName string) (ManagedBlockShap
 		}
 	}
 	if openAt != -1 && openName == blockName {
-		return ManagedBlockShape{}, fmt.Errorf("line %d: orphan BEGIN sentinel with no END — repair the file by hand before gitid will touch it", openAt+1)
+		lineNo := openAt + 1
+		return ManagedBlockShape{}, newManagedBlockError(lineNo, ManagedBlockReasonUnclosedMarker,
+			"line %d: orphan BEGIN sentinel with no END — repair the file by hand before gitid will touch it", lineNo)
 	}
 	if found == nil {
 		return ManagedBlockShape{}, nil

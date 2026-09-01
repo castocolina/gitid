@@ -6769,6 +6769,56 @@ func TestGlobalGitIgnoreOrphanBeginRefused(t *testing.T) {
 	}
 }
 
+// TestGlobalGitIgnoreMalformedFileErrorIsTranslated pins 09.2-UI-REVIEW.md
+// finding 2: GlobalGitIgnoreState must never leak baseline.go's raw
+// fmt.Errorf diagnostic text to the UI — it must return the exact frozen
+// 09.2-UI-SPEC.md copy tuikit.GitIgnoreMalformedFileMessage renders, built
+// from the structured gitconfig.ManagedBlockError's Line and Reason.
+func TestGlobalGitIgnoreMalformedFileErrorIsTranslated(t *testing.T) {
+	home := t.TempDir()
+	seedManagedBaseline(t, home, "excludesfile = ~/.gitignore_global")
+	// An orphan BEGIN sentinel with no matching END, on line 1.
+	seedGitIgnoreFile(t, home, filewriter.BeginPrefix+"gitignore\n.DS_Store\n", "", "")
+
+	b := newBackendForHome(home)
+	_, err := b.GlobalGitIgnoreState()
+	if err == nil {
+		t.Fatal("GlobalGitIgnoreState must refuse an orphan BEGIN")
+	}
+	want := tuikit.GitIgnoreMalformedFileMessage(1, tuikit.GitIgnoreMalformedReasonUnclosedMarker)
+	if err.Error() != want {
+		t.Errorf("GlobalGitIgnoreState error = %q, want the frozen copy %q (raw baseline.go diagnostic text must not leak to the UI)", err, want)
+	}
+	if strings.Contains(err.Error(), "repair the file by hand before gitid will touch it") {
+		t.Errorf("error still contains baseline.go's raw developer-facing sentence: %q", err)
+	}
+}
+
+// TestGlobalGitIgnoreApplyPlanSentinelErrorIsTranslated pins the sentinel-
+// rejection half of 09.2-UI-REVIEW.md finding 2 (and finding 3's glyph):
+// GlobalGitIgnoreApplyPlan must return the exact frozen 09.2-UI-SPEC.md
+// sentinel-rejection copy, not gitconfig.NormalizeGitignoreLines' raw
+// diagnostic sentence.
+func TestGlobalGitIgnoreApplyPlanSentinelErrorIsTranslated(t *testing.T) {
+	home := t.TempDir()
+	seedManagedBaseline(t, home, "excludesfile = ~/.gitignore_global")
+	seedGitIgnoreFile(t, home, "", ".DS_Store\n", "")
+
+	b := newBackendForHome(home)
+	typedContent := ".DS_Store\n" + filewriter.BeginPrefix + "typed-sentinel\n"
+	_, err := b.GlobalGitIgnoreApplyPlan(typedContent)
+	if err == nil {
+		t.Fatal("GlobalGitIgnoreApplyPlan must refuse a typed sentinel line")
+	}
+	want := tuikit.GitIgnoreSentinelRejectedMessage(2)
+	if err.Error() != want {
+		t.Errorf("GlobalGitIgnoreApplyPlan error = %q, want the frozen copy %q", err, want)
+	}
+	if !strings.HasPrefix(err.Error(), "✗ ") {
+		t.Errorf("sentinel-rejection error must carry the ✗ glyph, got %q", err)
+	}
+}
+
 func TestGlobalGitIgnoreRollbackRestoresPreexistingBaseline(t *testing.T) {
 	home := t.TempDir()
 	seedManagedBaseline(t, home, "")

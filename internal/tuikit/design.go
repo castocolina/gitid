@@ -1,5 +1,7 @@
 package tuikit
 
+import "strconv"
+
 // design.go holds the frozen DESIGN vocabulary the render stack draws
 // through — state/severity taxonomies, the option catalogs the Global SSH
 // and Global Git screens enumerate, the key-algorithm catalog, and the
@@ -425,6 +427,34 @@ const (
 // wiring sentence. otherPath is the display path gitid actually read.
 func GitIgnoreWiringPointsElsewhere(otherPath string) string {
 	return "! core.excludesfile points at " + otherPath + " instead of this file — that choice is left alone; writing here only affects the file below."
+}
+
+// Global Git Ignore malformed-file reason phrases (09.2-UI-SPEC.md's
+// Malformed file refusal row). A backend translates a structured
+// gitconfig.ManagedBlockError into one of these three phrases — the raw
+// internal diagnostic text must never reach the screen (09.2-UI-REVIEW.md
+// finding 2).
+const (
+	GitIgnoreMalformedReasonUnclosedMarker   = "an opening marker with no matching closing marker"
+	GitIgnoreMalformedReasonMismatchedMarker = "a closing marker that doesn't match its opening marker"
+	GitIgnoreMalformedReasonDuplicateBlock   = "two complete gitid blocks in one file"
+)
+
+// GitIgnoreMalformedFileMessage formats the frozen malformed-file refusal
+// sentence — no leading glyph, since the screen's stateErr rendering path
+// prepends "! " itself (matching every other warning line on this screen).
+// line is the offending 1-based line number; reason is one of the
+// GitIgnoreMalformedReason* constants above.
+func GitIgnoreMalformedFileMessage(line int, reason string) string {
+	return "~/.gitignore_global has a broken gitid marker at line " + strconv.Itoa(line) + " (" + reason + ") — repair the file by hand before this screen can read or write it."
+}
+
+// GitIgnoreSentinelRejectedMessage formats the frozen sentinel-injection
+// rejection sentence — this screen's ONE styleError (Error-red) state. It is
+// prefixed with a glyph so meaning survives without color, matching every
+// other advisory state on this screen (09.2-UI-REVIEW.md finding 3).
+func GitIgnoreSentinelRejectedMessage(line int) string {
+	return "✗ Line " + strconv.Itoa(line) + " looks like a gitid managed-block marker and can't be part of your content — edit or remove that line before applying."
 }
 
 // GitIgnoreReceiptWrongTarget formats the wrong-target success receipt.

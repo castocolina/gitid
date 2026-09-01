@@ -180,8 +180,15 @@ func (m gitIgnoreModel) handleKey(msg tea.KeyMsg, _ DemoState) keyResult {
 func (m gitIgnoreModel) view(_ DemoState, width, height int) screenView {
 	if m.ceremonyOpen {
 		return screenView{
-			body:         m.ceremony.view(width - 2),
-			crumbs:       []string{GitIgnoreHeading},
+			body: m.ceremony.view(width - 2),
+			// No extra breadcrumb segment: unlike Options-style screens
+			// (globalgit.go, globalssh.go) this is a single-pane screen with
+			// no sub-view, so the breadcrumb reads "Global Git Ignore" once
+			// — RenderFrame already prepends tabLabels[tab] — matching
+			// 09.2-UI-SPEC.md's Screen Identity table (09.2-UI-REVIEW.md
+			// finding 1: passing the tab's own label here triple-duplicated
+			// the heading).
+			crumbs:       []string{},
 			actions:      ceremonyFooterActions(),
 			capturesKeys: true,
 		}
@@ -225,8 +232,10 @@ func (m gitIgnoreModel) view(_ DemoState, width, height int) screenView {
 	}
 	wrapped := lipgloss.NewStyle().Width(maxInt(20, width-2)).Render(b.String())
 	return screenView{
-		body:         fitPane(wrapped, bodyBudget),
-		crumbs:       []string{GitIgnoreHeading},
+		body: fitPane(wrapped, bodyBudget),
+		// No extra breadcrumb segment — see the identical note on the
+		// ceremony branch above (09.2-UI-REVIEW.md finding 1).
+		crumbs:       []string{},
 		actions:      actions,
 		status:       status,
 		capturesKeys: m.editing,

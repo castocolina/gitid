@@ -1362,9 +1362,19 @@ func extractUploadSection(lines []string) string {
 // "core.excludesfile" or ".DS_Store" (the previous approach) also matched
 // unrelated screens that happen to mention the same words (e.g. a Health
 // finding describing the gitignore pair), causing TestGateVisualRegression
-// to flag a spurious cross-screen region diff. No other screen's frame
-// contains this exact string.
-const gignCrumb = "Global Git Ignore › Global Git Ignore"
+// to flag a spurious cross-screen region diff. No other screen's tab label
+// or breadcrumb equals this string (internal/tuikit/frame.go's tabLabels
+// has exactly one "Global Git Ignore" entry, for TabGitIgnore).
+//
+// Previously this matched the literal doubled breadcrumb "Global Git Ignore
+// › Global Git Ignore" — that duplication was itself a defect
+// (09.2-UI-REVIEW.md finding 1: gitignore.go passed the tab's own label as
+// an extra crumbs[] segment, so RenderFrame rendered it twice). Now that
+// gitignore.go passes crumbs: []string{}, the breadcrumb line reads
+// "Global Git Ignore" once, so the anchor was updated to match — anchoring
+// on a rendering bug would have made this extractor a regression trap for
+// the fix instead of a check on it.
+const gignCrumb = "Global Git Ignore"
 
 // gignCrumbIndex returns the index of the line carrying gignCrumb, or -1 if
 // this frame is not a Global Git Ignore screen at all.

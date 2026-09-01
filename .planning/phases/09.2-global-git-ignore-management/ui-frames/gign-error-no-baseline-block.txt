@@ -1,5 +1,5 @@
  gitid   [1] Identities · [2] SSH · [3] Git · [4] Health · [5] Fixer · [6] Ignore   0 ids · ! 1 ✗ 1
- Global Git Ignore › Global Git Ignore
+ Global Git Ignore
  Global Git Ignore
  ~/.gitignore_global
  ! No gitid-managed Git baseline configuration was found on this machine — open the Fixer to set

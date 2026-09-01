@@ -2413,6 +2413,43 @@ func (b *realBackend) inspectBaselineFragment() ([]byte, error) {
 	return content, nil
 }
 
+// gitIgnoreMalformedReasonText maps a gitconfig.ManagedBlockErrorReason to
+// the frozen phrase 09.2-UI-SPEC.md names for it, so the UI layer never
+// invents new reason wording of its own.
+func gitIgnoreMalformedReasonText(reason gitconfig.ManagedBlockErrorReason) string {
+	switch reason {
+	case gitconfig.ManagedBlockReasonMismatchedMarker:
+		return tuikit.GitIgnoreMalformedReasonMismatchedMarker
+	case gitconfig.ManagedBlockReasonDuplicateBlock:
+		return tuikit.GitIgnoreMalformedReasonDuplicateBlock
+	case gitconfig.ManagedBlockReasonUnclosedMarker:
+		return tuikit.GitIgnoreMalformedReasonUnclosedMarker
+	default:
+		return tuikit.GitIgnoreMalformedReasonUnclosedMarker
+	}
+}
+
+// translateGitIgnoreErr is the ONLY place a gitconfig error reaches the
+// Global Git Ignore screen: it rewrites a structured gitconfig.ManagedBlockError
+// or gitconfig.SentinelLineError into the tuikit/design.go frozen copy the
+// screen renders, so the raw internal diagnostic text (baseline.go's
+// fmt.Errorf strings) never leaks to the user (09.2-UI-REVIEW.md finding 2).
+// Any other error passes through unchanged.
+func translateGitIgnoreErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	var mbErr *gitconfig.ManagedBlockError
+	if errors.As(err, &mbErr) {
+		return errors.New(tuikit.GitIgnoreMalformedFileMessage(mbErr.Line, gitIgnoreMalformedReasonText(mbErr.Reason)))
+	}
+	var sentinelErr *gitconfig.SentinelLineError
+	if errors.As(err, &sentinelErr) {
+		return errors.New(tuikit.GitIgnoreSentinelRejectedMessage(sentinelErr.Line))
+	}
+	return err
+}
+
 func (b *realBackend) classifyGitIgnoreWiring(baselineBytes []byte) (tuikit.GlobalGitIgnoreWiring, string) {
 	shape, ierr := gitconfig.InspectManagedBlockFile(baselineBytes, "baseline")
 	if ierr != nil || !shape.Managed {
@@ -2470,7 +2507,7 @@ func (b *realBackend) GlobalGitIgnoreState() (tuikit.GlobalGitIgnoreView, error)
 	if err == nil {
 		shape, ierr := gitconfig.InspectGitignoreFile(existing)
 		if ierr != nil {
-			return view, ierr
+			return view, translateGitIgnoreErr(ierr)
 		}
 		if shape.Managed {
 			view.Content = shape.Body
@@ -2505,7 +2542,7 @@ func (b *realBackend) GlobalGitIgnoreApplyPlan(content string) (tuikit.GlobalGit
 	}
 	lines, nerr := gitconfig.NormalizeGitignoreLines(content)
 	if nerr != nil {
-		return tuikit.GlobalGitIgnoreApplyPlanView{}, nerr
+		return tuikit.GlobalGitIgnoreApplyPlanView{}, translateGitIgnoreErr(nerr)
 	}
 	path := b.gitignorePath()
 	existing, err := os.ReadFile(path) //nolint:gosec // trusted gitid-managed path (G304)
@@ -2513,7 +2550,7 @@ func (b *realBackend) GlobalGitIgnoreApplyPlan(content string) (tuikit.GlobalGit
 		return tuikit.GlobalGitIgnoreApplyPlanView{}, err
 	}
 	if _, ierr := gitconfig.InspectGitignoreFile(existing); ierr != nil {
-		return tuikit.GlobalGitIgnoreApplyPlanView{}, ierr
+		return tuikit.GlobalGitIgnoreApplyPlanView{}, translateGitIgnoreErr(ierr)
 	}
 	baselineBytes, berr := b.inspectBaselineFragment()
 	if berr != nil {

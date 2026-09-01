@@ -1,5 +1,5 @@
  gitid   [1] Identities · [2] SSH · [3] Git · [4] Health · [5] Fixer · [6] Ignore   0 ids · ! 1 ✗ 1
- Global Git Ignore › Global Git Ignore
+ Global Git Ignore
 Review your global gitignore before writing.
 Touches ~/.gitignore_global · ~/.gitconfig.d/00-baseline
 Backup → ~/.gitconfig.d/00-baseline.bak.<timestamp>
