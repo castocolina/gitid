@@ -81,7 +81,7 @@ func ReadGitFallbackAuthor(existing []byte) (name, email string) {
 		if b.Name != GitFallbackAuthorBlockName {
 			continue
 		}
-		parsed := parseGitconfigBlockBody(b.Body)
+		parsed := ParseBlockKeys(b.Body)
 		return parsed["user.name"], parsed["user.email"]
 	}
 	return "", ""

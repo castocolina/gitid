@@ -155,7 +155,7 @@ func ReadBaselineState(gitconfigPath, baselineFilePath, gitignorePath string) (B
 
 	// Parse baseline keys from the baseline block body.
 	if b, ok := baselineBlocks["baseline"]; ok {
-		state.BaselineKeys = parseGitconfigBlockBody(b.Body)
+		state.BaselineKeys = ParseBlockKeys(b.Body)
 	}
 
 	// Parse url-rewrites from the url-rewrites block body.
@@ -191,16 +191,20 @@ func indexBlocks(blocks []filewriter.NamedBlock) map[string]filewriter.NamedBloc
 	return m
 }
 
-// parseGitconfigBlockBody parses a baseline block body (tab-indented gitconfig
-// format) into a lowercase section.key→value map using a simple line scanner.
-// The section header tracks current context; key=value pairs are accumulated
-// under "section.key".
+// ParseBlockKeys parses a managed block body (tab-indented gitconfig format)
+// into a lowercase section.key→value map using a simple line scanner. The
+// section header tracks current context; key=value pairs are accumulated
+// under "section.key". Exported so callers outside this package (cmd/gitid's
+// Global Git Ignore wiring classifier) reuse the ONE scanner instead of
+// maintaining a byte-for-byte duplicate that could silently drift from it on
+// a future fix — quoted values, "#" comments, subsections, etc.
+// (09.2-REVIEW.md IN-04).
 //
 // Section headers are only recognised at indent level zero (no leading tab) so
 // that an alias value like `!f() { x = y; }; f` is never mis-parsed as a
 // section. Key–value splitting uses the first "=" only (strings.Index) so
 // values that contain " = " (e.g. complex aliases) are preserved verbatim.
-func parseGitconfigBlockBody(body string) map[string]string {
+func ParseBlockKeys(body string) map[string]string {
 	result := make(map[string]string)
 	var section string
 	for _, line := range strings.Split(body, "\n") {
@@ -633,11 +637,16 @@ func ComposeGlobalGitignore(existing []byte, patterns []string) []byte {
 // replaceBlockWith's selection rule is the shared core behind every write path
 // and is out of this phase's scope to flip.
 func InspectManagedBlockFile(content []byte, blockName string) (ManagedBlockShape, error) {
-	normalized := bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n"))
-	lines := strings.Split(string(normalized), "\n")
-	if len(lines) == 1 && lines[0] == "" && len(content) == 0 {
+	// len(content) == 0 already implies lines == [""] (strings.Split on an
+	// empty string always yields a one-element slice holding "") — the two
+	// extra conjuncts were always true whenever the third was, so this
+	// collapses to the one check that actually decides anything
+	// (09.2-REVIEW.md IN-05).
+	if len(content) == 0 {
 		return ManagedBlockShape{}, nil
 	}
+	normalized := bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n"))
+	lines := strings.Split(string(normalized), "\n")
 
 	openAt := -1
 	openName := ""

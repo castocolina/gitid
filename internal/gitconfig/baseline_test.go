@@ -665,16 +665,16 @@ func TestReadBaselineState(t *testing.T) {
 
 // ── Review-fix regression tests ─────────────────────────────────────────────
 
-// TestParseGitconfigBlockBody_WR04 verifies that parseGitconfigBlockBody
-// preserves values that contain " = " (WR-04 regression).
-func TestParseGitconfigBlockBody_WR04(t *testing.T) {
+// TestParseBlockKeys_WR04 verifies that ParseBlockKeys preserves values that
+// contain " = " (WR-04 regression).
+func TestParseBlockKeys_WR04(t *testing.T) {
 	t.Run("alias value containing ' = ' is preserved verbatim", func(t *testing.T) {
 		// An alias whose value contains " = " must not be split at the inner " = ".
 		body := "[alias]\n\tfoo = !f() { x = y; }; f\n"
-		got := parseGitconfigBlockBody(body)
+		got := ParseBlockKeys(body)
 		want := "!f() { x = y; }; f"
 		if got["alias.foo"] != want {
-			t.Errorf("parseGitconfigBlockBody: alias.foo = %q, want %q", got["alias.foo"], want)
+			t.Errorf("ParseBlockKeys: alias.foo = %q, want %q", got["alias.foo"], want)
 		}
 	})
 
@@ -682,7 +682,7 @@ func TestParseGitconfigBlockBody_WR04(t *testing.T) {
 		// A tab-indented line that starts with '[' (e.g. a value beginning with a
 		// bracket) must not be misidentified as a section header.
 		body := "[core]\n\tpager = less -FRX\n"
-		got := parseGitconfigBlockBody(body)
+		got := ParseBlockKeys(body)
 		if _, ok := got["core.pager"]; !ok {
 			t.Error("expected core.pager to be present")
 		}
@@ -694,7 +694,7 @@ func TestParseGitconfigBlockBody_WR04(t *testing.T) {
 		if err != nil {
 			t.Fatalf("RenderBaselineBlock: %v", err)
 		}
-		parsed := parseGitconfigBlockBody(rendered)
+		parsed := ParseBlockKeys(rendered)
 		// Spot-check a few keys that must survive the round-trip.
 		for _, key := range []string{"core.ignorecase", "pull.rebase", "alias.lg"} {
 			if _, ok := parsed[key]; !ok {

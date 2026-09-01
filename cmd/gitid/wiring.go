@@ -27,6 +27,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -2396,9 +2397,24 @@ func (b *realBackend) gitignoreSeed() string {
 	return gitconfig.RenderGitignoreBlock(gitconfig.DefaultGitignorePatterns())
 }
 
+// gitIgnorePreimageToken hashes both preimages the ApplyPlan read so
+// CommitGlobalGitIgnore can detect a TOCTOU change to EITHER file before it
+// writes. The two payloads are length-prefixed (not simply concatenated)
+// so the hash cannot collide across the boundary between them — bytes
+// shifted from the tail of gitignore into the head of baseline would
+// otherwise produce the identical digest for two genuinely different pairs
+// of file contents, letting a real change slip past the ChangedSincePreview
+// guard (09.2-REVIEW.md WR-08).
 func gitIgnorePreimageToken(gitignore, baseline []byte) string {
-	sum := sha256.Sum256(append(append([]byte{}, gitignore...), baseline...))
-	return hex.EncodeToString(sum[:])
+	h := sha256.New()
+	var lenBuf [8]byte
+	binary.BigEndian.PutUint64(lenBuf[:], uint64(len(gitignore)))
+	h.Write(lenBuf[:])
+	h.Write(gitignore)
+	binary.BigEndian.PutUint64(lenBuf[:], uint64(len(baseline)))
+	h.Write(lenBuf[:])
+	h.Write(baseline)
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // inspectBaselineFragment reads the managed baseline fragment and refuses a
@@ -2489,7 +2505,12 @@ func (b *realBackend) classifyGitIgnoreWiring(baselineBytes []byte) (tuikit.Glob
 	if ierr != nil || !shape.Managed {
 		return tuikit.GitIgnoreNoBaselineBlock, ""
 	}
-	keys := parseExcludesfileFromBody(shape.Body)
+	// gitconfig.ParseBlockKeys is the ONE section/indent/first-"=" scanner
+	// for a managed block body — this used to be a byte-for-byte duplicate
+	// (parseExcludesfileFromBody) that could silently drift from the
+	// original on a future fix (quoted values, "#" comments, subsections);
+	// exported and reused instead (09.2-REVIEW.md IN-04).
+	keys := gitconfig.ParseBlockKeys(shape.Body)
 	value := keys["core.excludesfile"]
 	if value == "" {
 		return tuikit.GitIgnoreKeyUnset, ""
@@ -2498,23 +2519,6 @@ func (b *realBackend) classifyGitIgnoreWiring(baselineBytes []byte) (tuikit.Glob
 		return tuikit.GitIgnoreWiredAtManaged, value
 	}
 	return tuikit.GitIgnorePointsElsewhere, value
-}
-
-func parseExcludesfileFromBody(body string) map[string]string {
-	result := map[string]string{}
-	section := ""
-	for _, line := range strings.Split(body, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "\t") && strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-			section = strings.ToLower(trimmed[1 : len(trimmed)-1])
-			continue
-		}
-		if eq := strings.Index(trimmed, "="); eq != -1 && section != "" {
-			key := strings.ToLower(section + "." + strings.TrimSpace(trimmed[:eq]))
-			result[key] = strings.TrimSpace(trimmed[eq+1:])
-		}
-	}
-	return result
 }
 
 // GlobalGitIgnoreState reads ~/.gitignore_global and the baseline fragment
@@ -2557,10 +2561,12 @@ func (b *realBackend) GlobalGitIgnoreState() (tuikit.GlobalGitIgnoreView, error)
 	}
 	view.Wiring, view.ExcludesFile = b.classifyGitIgnoreWiring(baselineBytes)
 	if view.ExcludesFile != "" {
+		// displayPath already shortens anything under b.home to its `~/...`
+		// form (or leaves an outside-home path as the absolute path it
+		// received) — its OWN output can never start with the raw b.home
+		// prefix either way, so a second displayPath call here was always a
+		// no-op (09.2-REVIEW.md IN-07).
 		view.ExcludesFile = b.displayPath(expandTildeForHome(view.ExcludesFile, b.home))
-		if strings.HasPrefix(view.ExcludesFile, b.home) {
-			view.ExcludesFile = b.displayPath(view.ExcludesFile)
-		}
 	}
 	return view, nil
 }
@@ -2701,13 +2707,19 @@ func (b *realBackend) CommitGlobalGitIgnore(content, planToken string) tea.Cmd {
 		}
 
 		var backups []string
+		// failPair's Err is the CAUSE only — the successfully-restored-paths
+		// sentence belongs to the view (gitignore.go's handleMsg already
+		// appends "(restored: ...)" from Restored), so appending it here too
+		// would show the same path list twice in the one message that
+		// matters most: a partially failed two-file write
+		// (09.2-REVIEW.md WR-09). "undo failed" stays in Err: unlike a
+		// successful restore, that failure is NOT captured by Restored (it
+		// stays empty/partial in that case) and would otherwise be lost.
 		failPair := func(cause error, rec gitIgnoreRollback) tuikit.GlobalGitIgnoreCommitMsg {
 			restored, undoErr := undoGitIgnoreWrite(b, rec)
 			errText := b.displayMessage(cause.Error())
 			if undoErr != nil {
 				errText += "; undo failed: " + b.displayMessage(undoErr.Error())
-			} else {
-				errText += "; restored " + strings.Join(restored, ", ")
 			}
 			return tuikit.GlobalGitIgnoreCommitMsg{Err: errText, Restored: restored}
 		}
@@ -4721,7 +4733,7 @@ func buildAuthorResolutionCheck(home, gitconfigPath string) func(identityName st
 //     UNMANAGED directive outside any sentinel block. Even writing to
 //     baselineFilePath directly this way would land the key OUTSIDE the
 //     "# BEGIN gitid managed: baseline" ... "# END" markers — invisible to
-//     parseGitconfigBlockBody, which only reads the block's own body — so
+//     gitconfig.ParseBlockKeys, which only reads the block's own body — so
 //     the same non-convergence would recur one file over.
 //
 // The fix therefore patches the block's body in place (inserting or

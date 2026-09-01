@@ -169,10 +169,10 @@ func existingGlobalGitBody(existing []byte) string {
 }
 
 // parseGlobalGitBody parses a managed block body (tab-indented gitconfig
-// format) into a lowercase section.key→value map. It reuses the same logic as
-// parseGitconfigBlockBody in baseline.go. Returns an empty map on empty input.
+// format) into a lowercase section.key→value map. It reuses ParseBlockKeys in
+// baseline.go. Returns an empty map on empty input.
 func parseGlobalGitBody(body string) map[string]string {
-	return parseGitconfigBlockBody(body)
+	return ParseBlockKeys(body)
 }
 
 // renderGlobalGitBody renders the merged key→value map into the frozen section

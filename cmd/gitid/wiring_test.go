@@ -6926,6 +6926,42 @@ func TestGlobalGitIgnoreRollbackRestoresPreexistingBaseline(t *testing.T) {
 	assertUnchanged(t, before, snapshotPaths(t, targets))
 }
 
+// TestGlobalGitIgnoreRollbackErrDoesNotDuplicateRestoredPaths is the
+// 09.2-REVIEW.md WR-09 regression: Err used to append its own
+// "; restored <paths>" sentence AND carry the same paths in the Restored
+// field, so a partially-failed two-file write showed the restored path list
+// twice — once baked into Err, once again when gitignore.go's handleMsg
+// appends "(restored: ...)" from Restored. Err must now be the CAUSE only.
+func TestGlobalGitIgnoreRollbackErrDoesNotDuplicateRestoredPaths(t *testing.T) {
+	home := t.TempDir()
+	seedManagedBaseline(t, home, "")
+	seedGitIgnoreFile(t, home, "# before\n", "*.bak\n", "# after\n")
+	b := newBackendForHome(home)
+	b.failCommitAt = func(step string) error {
+		if step == "gitignore-write" {
+			return fmt.Errorf("injected gitignore write failure")
+		}
+		return nil
+	}
+	content := gitconfig.RenderGitignoreBlock(gitconfig.DefaultGitignorePatterns())
+	plan, err := b.GlobalGitIgnoreApplyPlan(content)
+	if err != nil {
+		t.Fatalf("ApplyPlan: %v", err)
+	}
+	msg := commitGitIgnore(t, b, content, plan.PlanToken)
+	if len(msg.Restored) == 0 {
+		t.Fatal("setup: expected a non-empty Restored list on this failure path")
+	}
+	for _, path := range msg.Restored {
+		if strings.Contains(msg.Err, path) {
+			t.Errorf("Err duplicates a path already carried by Restored (%q); Err must be the cause only, got %q", path, msg.Err)
+		}
+	}
+	if strings.Contains(strings.ToLower(msg.Err), "restored") {
+		t.Errorf("Err must not author its own restored-paths sentence — that belongs to the view, got %q", msg.Err)
+	}
+}
+
 func TestGlobalGitIgnoreRollbackRemovesCreatedFile(t *testing.T) {
 	home := t.TempDir()
 	created := filepath.Join(home, ".gitignore_global")
@@ -6993,5 +7029,26 @@ func TestGlobalGitIgnoreTokenCoversBaselineFragment(t *testing.T) {
 	after := snapshotHomeRecursive(t, home)
 	if !reflect.DeepEqual(before, after) {
 		t.Errorf("baseline-fragment mutation must refuse the write; before=%v after=%v", before, after)
+	}
+}
+
+// TestGitIgnorePreimageTokenIsDomainSeparated is the 09.2-REVIEW.md WR-08
+// regression: a naive sha256(gitignore || baseline) concatenation is
+// ambiguous across the boundary — shifting bytes from the tail of gitignore
+// onto the head of baseline can produce the SAME digest for two genuinely
+// different (gitignore, baseline) pairs, letting a real change slip past the
+// ChangedSincePreview guard. The fix length-prefixes each payload before
+// hashing, so this exact boundary-shift pair must now hash differently.
+func TestGitIgnorePreimageTokenIsDomainSeparated(t *testing.T) {
+	gitignoreA, baselineA := []byte("abc"), []byte("def")
+	gitignoreB, baselineB := []byte("ab"), []byte("cdef")
+	if string(gitignoreA)+string(baselineA) != string(gitignoreB)+string(baselineB) {
+		t.Fatal("setup: the two pairs must concatenate to the identical byte string")
+	}
+	tokenA := gitIgnorePreimageToken(gitignoreA, baselineA)
+	tokenB := gitIgnorePreimageToken(gitignoreB, baselineB)
+	if tokenA == tokenB {
+		t.Errorf("gitIgnorePreimageToken(%q,%q) == gitIgnorePreimageToken(%q,%q) == %q — boundary-shifted pairs must hash differently (WR-08 regressed)",
+			gitignoreA, baselineA, gitignoreB, baselineB, tokenA)
 	}
 }
