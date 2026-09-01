@@ -339,7 +339,26 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
-		return a, nil
+		// Forward the resize to every screen too, mirroring the default:
+		// branch's loop below. Most screens only ever see width/height as
+		// view()'s value-receiver args and have nothing PERSISTED to resize,
+		// so this is a no-op for them (each type-asserts for its own
+		// message and falls through unchanged, same as any other message
+		// this loop forwards). gitIgnoreModel is the one screen that DOES
+		// need this: its editor is a persistent, geometry-sensitive child
+		// component, and only a message reaching the model stored in
+		// a.screens (not a value handed to view() and discarded) can resize
+		// it for keystroke handling (09.2-REVIEW.md WR-03).
+		var cmds []tea.Cmd
+		for i := range a.screens {
+			res := a.screens[i].handleMsg(msg, a.state)
+			a.screens[i] = res.model
+			a.apply(res.actions)
+			if res.cmd != nil {
+				cmds = append(cmds, res.cmd)
+			}
+		}
+		return a, tea.Batch(cmds...)
 	case tea.KeyMsg:
 		return a.handleKey(msg)
 	case tea.MouseClickMsg:

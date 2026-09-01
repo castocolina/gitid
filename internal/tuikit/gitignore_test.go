@@ -538,6 +538,59 @@ func TestGitIgnoreBrowseFooterUsesEditorCopy(t *testing.T) {
 	}
 }
 
+// TestGitIgnoreWindowResizePersistsEditorGeometry is the 09.2-REVIEW.md WR-03
+// regression: before the fix, m.editor.SetWidth/SetHeight only ran inside
+// view()'s value-receiver copy, so the model actually stored in
+// App.screens[TabGitIgnore] (the one handleKey/handleMsg feed keystrokes to)
+// never left textarea.New()'s 40x6 defaults. A real tea.WindowSizeMsg must
+// now resize the PERSISTED model, not just whatever the next view() call
+// renders.
+func TestGitIgnoreWindowResizePersistsEditorGeometry(t *testing.T) {
+	b := stubBackend{gignState: GlobalGitIgnoreView{Content: "one", DefaultContent: "default"}}
+	a := gignApp(t, b)
+	before := gignModel(t, a).editor
+	if before.Width() >= 90 {
+		t.Fatalf("setup: editor already wide before any resize (%d) — test no longer proves anything", before.Width())
+	}
+	model, _ := a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	a, ok := model.(App)
+	if !ok {
+		t.Fatalf("Update(WindowSizeMsg) returned %T, want App", model)
+	}
+	after := gignModel(t, a).editor
+	if after.Width() < 90 {
+		t.Errorf("persisted editor width = %d after a 100-wide resize, want it to track the real terminal width (WR-03 regressed)", after.Width())
+	}
+	if after.Height() <= 1 {
+		t.Errorf("persisted editor height = %d after a 30-row resize, want a real budget, not the 6-row textarea default", after.Height())
+	}
+}
+
+// TestGitIgnoreEditorHeightAccountsForHeaderRows is the 09.2-REVIEW.md WR-04
+// regression: the editor's height budget must shrink when the header above
+// it grows (e.g. a stateErr advisory line appears), not stay pinned to a
+// fixed guess that overflows the pane and gets silently truncated by
+// fitPane.
+func TestGitIgnoreEditorHeightAccountsForHeaderRows(t *testing.T) {
+	// Managed: true so the "No managed block found yet" advisory (gated on
+	// !m.state.Managed && m.stateErr == "") does not confound the
+	// comparison — it would otherwise DISAPPEAR when stateErr is set,
+	// masking the row stateErr itself adds.
+	plain := gitIgnoreModel{state: GlobalGitIgnoreView{Path: "~/.gitignore_global", Managed: true, Wiring: GitIgnoreWiredAtManaged}}
+	withAdvisory := plain
+	withAdvisory.stateErr = "line 3: orphan BEGIN sentinel — repair the file by hand before gitid will touch it"
+
+	const bodyBudget, editorWidth = 20, 96
+	plainHeight := plain.editorHeight(bodyBudget, editorWidth, plain.headerText())
+	advisoryHeight := withAdvisory.editorHeight(bodyBudget, editorWidth, withAdvisory.headerText())
+	if advisoryHeight >= plainHeight {
+		t.Errorf("editorHeight with a stateErr advisory = %d, want less than the no-advisory height %d (the advisory adds a header row)", advisoryHeight, plainHeight)
+	}
+	if plainHeight+advisoryHeight <= 0 {
+		t.Fatalf("editorHeight must always return at least 1, got plain=%d advisory=%d", plainHeight, advisoryHeight)
+	}
+}
+
 func TestGitIgnoreKeySixFromInitialView(t *testing.T) {
 	a, _ := press(t, NewApp(stubBackend{}), "6")
 	if a.ActiveTab() != TabGitIgnore {

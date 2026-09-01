@@ -55,6 +55,22 @@ func (m gitIgnoreModel) activate(DemoState) (screenModel, tea.Cmd) {
 }
 
 func (m gitIgnoreModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
+	// Persist editor geometry on resize (09.2-REVIEW.md WR-03): view() has a
+	// VALUE receiver, so m.editor.SetWidth/SetHeight there only ever mutate
+	// view()'s own throwaway copy — the model actually stored in
+	// App.screens[tab] (the one handleKey/this func's own m.editor.Update
+	// calls below feed keystrokes to) never left textarea.New()'s 40x6
+	// defaults before this fix, so soft-wrap, MoveToBegin, up/down-by-visual-
+	// line, and page-scroll (repositionView) were all computed against the
+	// wrong geometry. App.Update forwards tea.WindowSizeMsg to every screen
+	// (app.go) specifically so this case can size the PERSISTED model.
+	if sz, ok := msg.(tea.WindowSizeMsg); ok {
+		bodyBudget := frameBodyRows(sz.Height)
+		editorWidth := maxInt(20, sz.Width-2)
+		m.editor.SetWidth(editorWidth)
+		m.editor.SetHeight(m.editorHeight(bodyBudget, editorWidth, m.headerText()))
+		return keyResult{model: m}
+	}
 	if m.editing {
 		var cmd tea.Cmd
 		m.editor, cmd = m.editor.Update(msg)
@@ -194,6 +210,53 @@ func (m gitIgnoreModel) view(_ DemoState, width, height int) screenView {
 		}
 	}
 
+	bodyBudget := frameBodyRows(height)
+	editorWidth := maxInt(20, width-2)
+	header := m.headerText()
+	// Re-apply the SAME geometry handleMsg's tea.WindowSizeMsg case already
+	// persisted onto the stored model (WR-03) — width is normally already
+	// correct here (it only changes on resize), but the HEIGHT budget below
+	// is recomputed on every render because header can grow or shrink
+	// between resizes (stateErr/applyErr/the two-target note appear and
+	// disappear without a resize event). Re-applying is idempotent when
+	// nothing changed and is required to avoid the clipping WR-04 describes.
+	m.editor.SetWidth(editorWidth)
+	m.editor.SetHeight(m.editorHeight(bodyBudget, editorWidth, header))
+	var b strings.Builder
+	b.WriteString(header)
+	b.WriteString("\n")
+	b.WriteString(m.editor.View())
+	actions := []FooterAction{}
+	status := GitIgnoreDiscardedEditsStatus
+	if m.editing {
+		actions = append(actions, FooterAction{Key: "Esc", Label: GitIgnoreDoneEditingLabel})
+	} else {
+		actions = append(actions,
+			FooterAction{Key: "Enter", Label: GitIgnoreEditLabel},
+			FooterAction{Key: "r", Label: GitIgnoreResetLabel},
+		)
+		if m.stateErr == "" && m.state.Wiring != GitIgnoreNoBaselineBlock {
+			actions = append(actions, FooterAction{Key: "a", Label: GitIgnoreApplyLabel})
+		}
+	}
+	wrapped := lipgloss.NewStyle().Width(maxInt(20, width-2)).Render(b.String())
+	return screenView{
+		body: fitPane(wrapped, bodyBudget),
+		// No extra breadcrumb segment — see the identical note on the
+		// ceremony branch above (09.2-UI-REVIEW.md finding 1).
+		crumbs:       []string{},
+		actions:      actions,
+		status:       status,
+		capturesKeys: m.editing,
+	}
+}
+
+// headerText renders everything the browse/editor pane shows ABOVE the
+// editor — heading, path, wiring line, and whichever advisories currently
+// apply. Shared by view() (which renders it) and editorHeight (which
+// measures how many rows it consumes) so the two can never disagree about
+// how many rows the header takes (09.2-REVIEW.md WR-04).
+func (m gitIgnoreModel) headerText() string {
 	var b strings.Builder
 	b.WriteString(" " + styleBold.Render(GitIgnoreHeading) + "\n")
 	if m.state.Path != "" {
@@ -225,34 +288,21 @@ func (m gitIgnoreModel) view(_ DemoState, width, height int) screenView {
 	if m.state.Wiring == GitIgnoreKeyUnset {
 		b.WriteString(" " + styleWarning.Render(GitIgnoreTwoTargetNote) + "\n")
 	}
-	bodyBudget := frameBodyRows(height)
-	m.editor.SetWidth(maxInt(20, width-2))
-	m.editor.SetHeight(maxInt(1, bodyBudget-5))
-	b.WriteString("\n")
-	b.WriteString(m.editor.View())
-	actions := []FooterAction{}
-	status := GitIgnoreDiscardedEditsStatus
-	if m.editing {
-		actions = append(actions, FooterAction{Key: "Esc", Label: GitIgnoreDoneEditingLabel})
-	} else {
-		actions = append(actions,
-			FooterAction{Key: "Enter", Label: GitIgnoreEditLabel},
-			FooterAction{Key: "r", Label: GitIgnoreResetLabel},
-		)
-		if m.stateErr == "" && m.state.Wiring != GitIgnoreNoBaselineBlock {
-			actions = append(actions, FooterAction{Key: "a", Label: GitIgnoreApplyLabel})
-		}
-	}
-	wrapped := lipgloss.NewStyle().Width(maxInt(20, width-2)).Render(b.String())
-	return screenView{
-		body: fitPane(wrapped, bodyBudget),
-		// No extra breadcrumb segment — see the identical note on the
-		// ceremony branch above (09.2-UI-REVIEW.md finding 1).
-		crumbs:       []string{},
-		actions:      actions,
-		status:       status,
-		capturesKeys: m.editing,
-	}
+	return b.String()
+}
+
+// editorHeight derives the editor's row budget from the rows the header
+// ACTUALLY consumes at editorWidth, rather than the fixed `bodyBudget-5`
+// guess the previous version used — the header writes between 4 and 8 rows
+// depending on which advisories are showing, and several wrap to two rows at
+// typical widths, so a fixed guess overflows the pane and fitPane silently
+// truncates the bottom of the editor (09.2-REVIEW.md WR-04: every promoted
+// frame showed the symptom, e.g. "… (+3 more lines)"). editorWidth MUST be
+// the same width passed to editor.SetWidth so this measurement matches what
+// the editor itself renders at.
+func (m gitIgnoreModel) editorHeight(bodyBudget, editorWidth int, header string) int {
+	used := lipgloss.Height(lipgloss.NewStyle().Width(editorWidth).Render(header))
+	return maxInt(1, bodyBudget-used-1)
 }
 
 // ensureGitIgnoreGlyph prefixes msg with "! " unless it already begins with
