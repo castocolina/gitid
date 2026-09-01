@@ -157,6 +157,7 @@ func TestGitIgnore_RealPTYCancelWritesNothing(t *testing.T) {
 	s := startGitIgnorePTY(t, home)
 	s.sendKey([]byte("a"), keystrokeDelay)
 	mustSee(t, s, "Review your global gitignore", "apply opens ceremony")
+	captureGitIgnoreFrame(t, "gign-review-ceremony", s)
 	s.sendKey(dummyKeyEsc, keystrokeDelay)
 	mustSee(t, s, "Global Git Ignore", "cancel returns to screen")
 	captureGitIgnoreFrame(t, "gitignore-cancel-writes-nothing", s)

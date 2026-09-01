@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] SSH · [3] Git · [4] Health · [5] Fixer · [6] Ignore   0 ids · ! 1 ✗ 1
+ Global Git Ignore › Global Git Ignore
+Review your global gitignore before writing.
+Touches ~/.gitignore_global · ~/.gitconfig.d/00-baseline
+Backup → ~/.gitconfig.d/00-baseline.bak.<timestamp>
+  (written first — restore it to undo)
+Exact change: PgUp/PgDn scroll · v focus · ←/→ columns
+╭╌ Exact change — everything else preserved verbatim ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮
+┊                                                                                            ┊
+┊ -     ignorecase = false                                                                   ┊
+┊ - # END gitid managed: baseline                                                            ┊
+┊ +     excludesfile = ~/.gitignore_global                                                   ┊
+┊ +     ignorecase = false                                                                   ┊
+┊ + # END gitid managed: baseline                                                            ┊
+┊                                                                                            ┊
+┊                                                                                            ┊
+┊                                                                                            ┊
+┊                                                                                            ┊
+╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+Nothing has changed yet
+
+ Cancel (Esc)   Confirm write (Enter)
+
+
+
+
+
+
+ Tab/←→ Cancel / Confirm · Enter confirm
+ Esc back · Ctrl+P palette

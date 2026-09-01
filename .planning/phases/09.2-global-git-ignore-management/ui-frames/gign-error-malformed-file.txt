@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] SSH · [3] Git · [4] Health · [5] Fixer · [6] Ignore   0 ids · ! 1 ✗ 1
+ Global Git Ignore › Global Git Ignore
+ Global Git Ignore
+ ~/.gitignore_global
+ ✓ Wired — core.excludesfile points at this file; Git reads it.
+ ! line 2: nested BEGIN sentinel — repair the file by hand before gitid will touch it
+
+┃   1 # OS artifacts
+┃   2 .DS_Store
+┃   3 Thumbs.db
+┃   4 desktop.ini
+┃   5 # Editors and IDEs
+┃   6 .idea/
+┃   7 .vscode/
+┃   8 *.swp
+┃   9 *.swo
+┃  10 *~
+┃  11 # Logs, temp and scratch
+┃  12 *.log
+┃  13 *.bak
+┃  14 *.tmp
+┃  15 tmp/
+┃  16 .tmp/
+┃  17 # Environment files (committed examples stay tracked)
+┃  18 .env
+┃  19 .env.*
+┃  20 !.env.example
+ Leaving this screen discards unsaved edits.
+ Enter Edit · r Reset to defaults · ←→ switch view
+ Enter activate · Esc back · ? help · Ctrl+P palette · q quit

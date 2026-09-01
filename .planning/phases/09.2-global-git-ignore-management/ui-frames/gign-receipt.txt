@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] SSH · [3] Git · [4] Health · [5] Fixer · [6] Ignore   0 ids · ! 1 ✗ 1
+ Global Git Ignore › Global Git Ignore
+✓ Global gitignore written to ~/.gitignore_global. core.excludesfile was also set to point at this f
+
+Wrote → ~/.gitignore_global
+Wrote → ~/.gitconfig.d/00-baseline
+Backed up → ~/.gitconfig.d/00-baseline.bak.1788230849063086000
+Backed up → ~/.gitignore_global.bak.1788230849109653000
+
+ Done (Enter)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Global gitignore written to ~/.gitignore_global. core.excludesfile was also set to point at this …
+ Tab/←→ Cancel / Confirm · Enter confirm
+ Esc back · Ctrl+P palette

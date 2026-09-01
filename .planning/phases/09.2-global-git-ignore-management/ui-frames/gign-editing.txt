@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] SSH · [3] Git · [4] Health · [5] Fixer · [6] Ignore   0 ids · ! 1 ✗ 1
+ Global Git Ignore › Global Git Ignore
+ Global Git Ignore
+ ~/.gitignore_global
+ ✓ Wired — core.excludesfile points at this file; Git reads it.
+
+┃   1 rae.DS_Store
+┃   2 *.log
+┃
+┃
+┃
+┃
+┃
+┃
+┃
+┃
+┃
+┃
+┃
+┃
+┃
+┃
+┃
+┃
+┃
+┃
+
+ Leaving this screen discards unsaved edits.
+ Esc Done editing
+ Esc back · Ctrl+P palette
