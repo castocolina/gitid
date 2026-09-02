@@ -176,7 +176,7 @@ func requireFocusedProof(t *testing.T, s *ptySession, markers ...string) {
 		}
 		// The focused viewport updates synchronously in the TUI reducer; this
 		// short pause only gives the PTY decoder time to receive the next frame.
-		s.sendKey([]byte("\x1b[6~"), 10*time.Millisecond)
+		s.sendKey([]byte("\x1b[6~"), keystrokeDelay)
 	}
 	for _, marker := range markers {
 		if !seen[marker] {
@@ -1444,7 +1444,7 @@ func TestCreateFlow_ReuseManualPath(t *testing.T) {
 	tabKeys(s, 2)
 	// Type the manual key path character by character.
 	for _, b := range []byte(manualKeyPath) {
-		s.sendKey([]byte{b}, 10*time.Millisecond)
+		s.sendKey([]byte{b}, keystrokeDelay)
 	}
 	mustSee(t, s, "id_ed25519_manual_test", "manual path input shows the typed path")
 

@@ -54,7 +54,7 @@ asset name in the filter:
 grep ' gitid-linux-amd64$' checksums.txt | sha256sum -c -
 
 # macOS
-grep ' gitid-linux-amd64$' checksums.txt | shasum -a 256 -c -
+grep ' gitid-darwin-amd64$' checksums.txt | shasum -a 256 -c -
 ```
 
 Then `chmod +x` the binary and move it onto PATH.
