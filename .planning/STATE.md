@@ -5,11 +5,11 @@ milestone_name: TUI-First Redesign
 current_phase: 09.4
 current_phase_name: TUI UX Consistency & Doctor/Fixer Parity
 status: planning
-stopped_at: Phase 09.3 complete, ready to plan Phase 09.4
-last_updated: "2026-09-02T00:26:20.622Z"
+stopped_at: Phase 09.4 UI-SPEC approved
+last_updated: "2026-09-02T00:35:54.865Z"
 last_activity: 2026-09-01
 last_activity_desc: Phase 09.3 complete, transitioned to Phase 09.4
-state_head: 62c2f926d859c32eff34c2851587a4383931703f
+state_head: ba318d3ed2beccedbd754fee4438a9dbfadb1edd
 progress:
   total_phases: 15
   completed_phases: 12
@@ -277,9 +277,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-31T00:11:15.240Z
-Stopped at: Phase 09.3 complete, ready to plan Phase 09.4
-Resume file: .planning/phases/09.5-full-ssh-git-properties-browser/09.5-CONTEXT.md
+Last session: 2026-09-02T00:35:53.900Z
+Stopped at: Phase 09.4 UI-SPEC approved
+Resume file: .planning/phases/09.4-tui-ux-consistency-doctor-fixer-parity/09.4-UI-SPEC.md
 Wave structure: W1 = 03-01 + 03-02 (DONE) -> W2 = 03-03 (DONE) -> W3 = 03-04 (DONE) -> W4 = 03-05 (DONE) -> W5 = 03-06 (Tasks 1+2 DONE, Task 3 PARTIAL — orchestrator review owed)
 **All remaining waves run SEQUENTIALLY (one executor at a time) per LEARNINGS L11** — the pre-commit hooks lint the whole module, so a parallel executor's mid-refactor tree blocks every other commit. Do NOT run plans in parallel inside this Go module again.
 
