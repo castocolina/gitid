@@ -48,7 +48,7 @@
     "use_worktrees": true,
     "cross_ai_timeout": 3600,
     "cross_ai_execution": true,
-    "cross_ai_command": "opencode run --model local-llm-env/my-coding -"
+    "cross_ai_command": "/usr/local/bin/opencode run --model local-llm-env/my-coding"
   },
   "ship": {
     "pr_body_sections": [
