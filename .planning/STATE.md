@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: TUI-First Redesign
-current_phase: 9.3
-current_phase_name: Release CI/CD + Installer
-status: executing
-stopped_at: Phase 9 complete, ready to plan Phase 09.1
-last_updated: "2026-09-01T12:24:54.126Z"
-last_activity: 2026-08-31
-last_activity_desc: Phase 09.1 marked complete
-state_head: da350f92892cdeb17682f440ecc5c6ed3bd79247
+current_phase: 09.4
+current_phase_name: TUI UX Consistency & Doctor/Fixer Parity
+status: planning
+stopped_at: Phase 09.3 complete, ready to plan Phase 09.4
+last_updated: "2026-09-02T00:26:20.622Z"
+last_activity: 2026-09-01
+last_activity_desc: Phase 09.3 complete, transitioned to Phase 09.4
+state_head: 62c2f926d859c32eff34c2851587a4383931703f
 progress:
   total_phases: 15
-  completed_phases: 10
+  completed_phases: 12
   total_plans: 90
-  completed_plans: 84
-  percent: 73
+  completed_plans: 89
+  percent: 80
 ---
 
 # Project State
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 ## Current Position
 
-Phase: 9.3 (Release CI/CD + Installer) — READY TO EXECUTE
-Status: Phase 09.1 complete
-Last activity: 2026-08-31 — Phase 09.1 marked complete
+Phase: 09.4 — TUI UX Consistency & Doctor/Fixer Parity
+Status: Ready to plan
+Last activity: 2026-09-01 — Phase 09.3 complete, transitioned to Phase 09.4
 
 ### Phase 8 (COMPLETE) — historical record
 
@@ -59,7 +59,7 @@ Progress: [░░░░░░░░░░] 0% (30/32 plans complete — Phase 2:
 
 **Velocity:** reset for v1.0 (prior POC velocity archived under 0.0.1).
 
-- Total plans completed: 74
+- Total plans completed: 76
 - Average duration: — min
 - Total execution time: 0 hours
 
@@ -77,6 +77,7 @@ Progress: [░░░░░░░░░░] 0% (30/32 plans complete — Phase 2:
 | 08 | 8 | - | - |
 | 9 | 8 | - | - |
 | 10 | 0 | - | - |
+| 09.3 | 2 | - | - |
 
 *Updated after each plan completion*
 | Phase 01-foundations-spikes-ci P01 | 15 | 2 tasks | 8 files |
@@ -277,7 +278,7 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-08-31T00:11:15.240Z
-Stopped at: Phase 9 complete, ready to plan Phase 09.1
+Stopped at: Phase 09.3 complete, ready to plan Phase 09.4
 Resume file: .planning/phases/09.5-full-ssh-git-properties-browser/09.5-CONTEXT.md
 Wave structure: W1 = 03-01 + 03-02 (DONE) -> W2 = 03-03 (DONE) -> W3 = 03-04 (DONE) -> W4 = 03-05 (DONE) -> W5 = 03-06 (Tasks 1+2 DONE, Task 3 PARTIAL — orchestrator review owed)
 **All remaining waves run SEQUENTIALLY (one executor at a time) per LEARNINGS L11** — the pre-commit hooks lint the whole module, so a parallel executor's mid-refactor tree blocks every other commit. Do NOT run plans in parallel inside this Go module again.

@@ -57,7 +57,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 9: Upload / Credentials Assist** - Auto-upload the `.pub` (auth + signing) when `gh`/`glab` authenticated; manual fallback (completed 2026-08-30)
 - [x] **Phase 9.1: GitLab Real-Account Validation** - Prove the GitLab upload/delete path against a real, authenticated GitLab account, mirroring Wave 8's disposable-key protocol for GitHub
 - [x] **Phase 9.2: Global Git Ignore Management** - A TUI view for managing a curated global gitignore (common tmp/venv/env patterns), reviewable before write
-- [ ] **Phase 9.3: Release CI/CD + Installer** - Tagged-release CI publishing checksummed binaries, plus a curl\|bash install script
+- [x] **Phase 9.3: Release CI/CD + Installer** - Tagged-release CI publishing checksummed binaries, plus a curl\|bash install script (completed 2026-09-01)
 - [ ] **Phase 9.4: TUI UX Consistency & Doctor/Fixer Parity** - Fix focus/read-only/toggle/submenu-affordance inconsistencies and Doctor-vs-Fixer count discoverability found in a user audit of Global SSH, Global Git, and Fixer
 - [ ] **Phase 9.5: Full SSH/Git Properties Browser & Custom Key Entry** - Browse the full set of SSH/Git config properties beyond gitid's curated policy tables, plus add a custom global key (free-form for Git, directive-validated for SSH)
 - [ ] **Phase 10: Linux Validation + Release Pipeline** - End-to-end Linux validation + tagged, checksummed release artifacts
@@ -502,8 +502,8 @@ Plans:
 
 Plans:
 
-- [ ] 09.3-01-PLAN.md — (wave 1) tracer: version-stamp `gitid --version` through optional-default ldflags on the EXISTING `build-cross`, add the `checksums` manifest target, and prove the whole chain locally — stamped build → manifest → `scripts/install.sh` download/verify/install → the installed binary reporting its own stamp — then wire the `v*`-tag-scoped `release:` job (job-scoped `contents: write`, `needs:` both routine gates, five published assets, prerelease/latest state classified from the tag AT publication with no post-publish correction) and expand the installer across all four platforms and every refusal path (BUILD-03, BUILD-05)
-- [ ] 09.3-02-PLAN.md — (wave 2) the `sh -n` shell gate wired into `make lint`, the README install documentation (one-liner plus a manual path filtered to the single downloaded asset) and Status refresh, the three stale comments this phase invalidates, then — behind a blocking-human decision on the first public tag, its prerelease-encoding suffix and the ref it is cut from — cut the real release and verify it over the real network (five assets, checksums re-verified after download, `--version` matched against `<tag>^{commit}`, `curl | sh` into a throwaway HOME), never moving a published tag, and close BUILD-03/BUILD-05 strictly per the evidence-to-closure table (BUILD-03, BUILD-05)
+- [x] 09.3-01-PLAN.md — (wave 1) tracer: version-stamp `gitid --version` through optional-default ldflags on the EXISTING `build-cross`, add the `checksums` manifest target, and prove the whole chain locally — stamped build → manifest → `scripts/install.sh` download/verify/install → the installed binary reporting its own stamp — then wire the `v*`-tag-scoped `release:` job (job-scoped `contents: write`, `needs:` both routine gates, five published assets, prerelease/latest state classified from the tag AT publication with no post-publish correction) and expand the installer across all four platforms and every refusal path (BUILD-03, BUILD-05)
+- [x] 09.3-02-PLAN.md — (wave 2) the `sh -n` shell gate wired into `make lint`, the README install documentation (one-liner plus a manual path filtered to the single downloaded asset) and Status refresh, the three stale comments this phase invalidates, then — behind a blocking-human decision on the first public tag, its prerelease-encoding suffix and the ref it is cut from — cut the real release and verify it over the real network (five assets, checksums re-verified after download, `--version` matched against `<tag>^{commit}`, `curl | sh` into a throwaway HOME), never moving a published tag, and close BUILD-03/BUILD-05 strictly per the evidence-to-closure table (BUILD-03, BUILD-05)
 
 ### Phase 9.4: TUI UX Consistency & Doctor/Fixer Parity
 
@@ -563,7 +563,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9. Upload / Credentials Assist | 8/8 | Complete    | 2026-08-30 |
 | 9.1. GitLab Real-Account Validation | 2/2 | Complete | 2026-08-31 |
 | 9.2. Global Git Ignore Management | 3/3 | Complete | 2026-08-31 |
-| 9.3. Release CI/CD + Installer | 0/TBD | Not started | - |
+| 9.3. Release CI/CD + Installer | 2/2 | Complete    | 2026-09-01 |
 | 9.4. TUI UX Consistency & Doctor/Fixer Parity | 0/TBD | Not started | - |
 | 9.5. Full SSH/Git Properties Browser | 0/TBD | Not started | - |
 | 10. Linux Validation + Release Pipeline | 0/TBD | Not started | - |
