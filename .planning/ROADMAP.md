@@ -518,7 +518,16 @@ Plans:
   4. A screen with local sub-tabs (e.g. Global SSH's Options/Storage & preview) is visually distinguishable from top-level main-menu navigation. (UXP-04)
   5. Health and Fixer are merged back into a single "Doctor" tab (reversing Phase 8's FIX-02 split) that lists every finding and offers inline fix/fix-all, so no separate screen's finding count can read as contradicting another's; the write-confirmation ceremony (preview + typed-confirm + backup) is unchanged. (UXP-05)
 
-**Plans**: TBD
+*Note: criterion 5's tab arithmetic was drafted as "5 tabs to 4" against Phase 8's shipped shell. Phase 9.2 has since added a sixth top-level tab (Global Git Ignore), so the shipped math is **6 tabs to 5** — see 09.4-UI-SPEC.md Known Divergence #1, which is binding. Plan 09.4-02 corrects the REQUIREMENTS.md wording in the same commit that lands the merge.*
+
+**Plans**: 4 plans
+
+Plans:
+
+- [ ] 09.4-01-PLAN.md — (wave 1) the one-way `checkpoint:decision` gate for reversing FIX-02, then the compile-atomic Doctor merge tracer: the `TabID` enum 6→5, `App.screens` arity, the number-key/palette/right-arrow plumbing, `checkFixBatchHalt`'s type assertion, all three `TabHealth` routing sites, a merged `doctorModel` in a new `doctor_screen.go` (Health's unfiltered findings scope + Fixer's ceremony machinery verbatim), every compile-forced test call site, plus three regression guards proven RED by source reversion (UXP-05)
+- [ ] 09.4-02-PLAN.md — (wave 2) the stale tab-name sweep across every user-visible surface (including the doctor engine's own SuggestedFix output, the help key map, and the one string frozen by `gate-copy-freeze`), the merged status copy, the REQUIREMENTS/ROADMAP 6→5 correction, the visual-regression `ScreenSpec`/region/allowlist consolidation with its fail-path re-verified, and the rewrite of all eight real-PTY behaviors onto the merged tab's single navigation path (UXP-05)
+- [ ] 09.4-03-PLAN.md — (wave 3) one derived initial-focus rule on both option screens, one uniform checkbox column with a dot placeholder for non-selectable rows and a bracket toggle for selectable ones (with both click needles moved in lockstep), and the strengthened set-but-differs no-op explanation pinned as a full sentence in the copy-freeze gate (UXP-01, UXP-02, UXP-03)
+- [ ] 09.4-04-PLAN.md — (wave 4) the missing `TestSubTabStrip*` scaffold written RED, then the bordered accent-colored sub-tab strip with its row accounting collapsed from four literals to one source and its click hit-test moved with it, the fixed-geometry fit settled by measurement on both sub-tabs, and the Global SSH visual-regression frames re-derived plus proven through a real PTY (UXP-04)
 
 ### Phase 9.5: Full SSH/Git Properties Browser & Custom Key Entry
 
@@ -564,6 +573,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9.1. GitLab Real-Account Validation | 2/2 | Complete | 2026-08-31 |
 | 9.2. Global Git Ignore Management | 3/3 | Complete | 2026-08-31 |
 | 9.3. Release CI/CD + Installer | 2/2 | Complete    | 2026-09-01 |
-| 9.4. TUI UX Consistency & Doctor/Fixer Parity | 0/TBD | Not started | - |
+| 9.4. TUI UX Consistency & Doctor/Fixer Parity | 0/4 | Not started | - |
 | 9.5. Full SSH/Git Properties Browser | 0/TBD | Not started | - |
 | 10. Linux Validation + Release Pipeline | 0/TBD | Not started | - |
