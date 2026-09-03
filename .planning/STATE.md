@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: TUI-First Redesign
-current_phase: 09.4
-current_phase_name: tui-ux-consistency-doctor-fixer-parity
-status: executing
-stopped_at: Phase 09.4 UI-SPEC approved
-last_updated: "2026-09-02T21:06:11.400Z"
-last_activity: 2026-09-01
-last_activity_desc: Phase 09.3 complete, transitioned to Phase 09.4
-state_head: 8886745afa4321b6bf9272131428469342b542a2
+current_phase: 09.5
+current_phase_name: Full SSH/Git Properties Browser & Custom Key Entry
+status: planning
+stopped_at: Phase 09.4 complete, ready to plan Phase 09.5
+last_updated: "2026-09-03T22:33:13.329Z"
+last_activity: 2026-09-03
+last_activity_desc: Phase 09.4 complete, transitioned to Phase 09.5
+state_head: 0035623c5c8b30b8aa17f29652c93098d3dab28b
 progress:
   total_phases: 15
-  completed_phases: 12
+  completed_phases: 13
   total_plans: 94
-  completed_plans: 90
-  percent: 96
+  completed_plans: 93
+  percent: 87
 ---
 
 # Project State
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 ## Current Position
 
-Phase: 09.4 (tui-ux-consistency-doctor-fixer-parity) — IN PROGRESS
-Status: Plan 04 complete (3/5 plans finished; Wave 1 DONE)
-Last activity: 2026-09-03 — 09.4-04 (bordered sub-tab strip) complete, UXP-04 closed
+Phase: 09.5 — Full SSH/Git Properties Browser & Custom Key Entry
+Status: Ready to plan
+Last activity: 2026-09-03 — Phase 09.4 complete, transitioned to Phase 09.5
 
 ### Phase 8 (COMPLETE) — historical record
 
@@ -59,7 +59,7 @@ Progress: [░░░░░░░░░░] 0% (30/32 plans complete — Phase 2:
 
 **Velocity:** reset for v1.0 (prior POC velocity archived under 0.0.1).
 
-- Total plans completed: 76
+- Total plans completed: 80
 - Average duration: — min
 - Total execution time: 0 hours
 
@@ -78,6 +78,7 @@ Progress: [░░░░░░░░░░] 0% (30/32 plans complete — Phase 2:
 | 9 | 8 | - | - |
 | 10 | 0 | - | - |
 | 09.3 | 2 | - | - |
+| 09.4 | 4 | - | - |
 
 *Updated after each plan completion*
 | Phase 01-foundations-spikes-ci P01 | 15 | 2 tasks | 8 files |
@@ -278,7 +279,7 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-09-02T00:35:53.900Z
-Stopped at: Phase 09.4 UI-SPEC approved
+Stopped at: Phase 09.4 complete, ready to plan Phase 09.5
 Resume file: .planning/phases/09.4-tui-ux-consistency-doctor-fixer-parity/09.4-UI-SPEC.md
 Wave structure: W1 = 03-01 + 03-02 (DONE) -> W2 = 03-03 (DONE) -> W3 = 03-04 (DONE) -> W4 = 03-05 (DONE) -> W5 = 03-06 (Tasks 1+2 DONE, Task 3 PARTIAL — orchestrator review owed)
 **All remaining waves run SEQUENTIALLY (one executor at a time) per LEARNINGS L11** — the pre-commit hooks lint the whole module, so a parallel executor's mid-refactor tree blocks every other commit. Do NOT run plans in parallel inside this Go module again.

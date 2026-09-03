@@ -440,7 +440,7 @@ These are first-class, enforced requirements — the user's core process ask.
 
 ## R. TUI UX Consistency & Doctor/Fixer Parity (UXP)
 
-- [ ] **UXP-01** (Consistent initial row focus): a screen's options/rows list
+- [x] **UXP-01** (Consistent initial row focus): a screen's options/rows list
   focuses a row on activation by a single, consistent rule across screens —
   today Global Git's Options screen resets to the first row on every
   activation (`internal/tuikit/globalgit.go`'s `activate()`) while Global
@@ -448,23 +448,27 @@ These are first-class, enforced requirements — the user's core process ask.
   (`internal/tuikit/globalssh.go`'s `newGlobalSSHModel`'s `detailKey:
   "IdentitiesOnly"`) that `activate()` never resets — so entering the SSH
   screen highlights a middle row with no visible reason why.
-- [ ] **UXP-02** (Discoverable read-only rationale): every options-list row's
+
+- [x] **UXP-02** (Discoverable read-only rationale): every options-list row's
   selectable/read-only affordance renders with a consistent visual pattern
   across screens (Global SSH vs Global Git currently diverge in whether a
   non-selectable row reserves the checkbox column), and the reason a
   specific row is not selectable (already matches the recommendation, or
   differs and a write would be a no-op) is visible to the user, not just
   inferred from the glyph.
-- [ ] **UXP-03** (Stronger toggle affordance): the selectable-row
+
+- [x] **UXP-03** (Stronger toggle affordance): the selectable-row
   toggle/checkbox indicator is visually more prominent than the current
   glyph, so on/off state is clearly perceptible at a glance.
-- [ ] **UXP-04** (Submenu visual distinction): a screen with its own
+
+- [x] **UXP-04** (Submenu visual distinction): a screen with its own
   sub-tabs (e.g. Global SSH's `Options` / `Storage & preview`, where local
   ←/→ already means "switch sub-tab" rather than "switch main tab" per the
   existing D4 checkpoint-2 contract) is visually distinguishable from
   top-level main-menu navigation, so a user does not mistake local sub-tab
   navigation for main-menu navigation.
-- [ ] **UXP-05** (Doctor/Fixer count parity — merge Fixer into Doctor):
+
+- [x] **UXP-05** (Doctor/Fixer count parity — merge Fixer into Doctor):
   reopens FIX-02. A direct user audit found the standalone Fixer tab's
   finding count reads as contradicting Doctor/Health's count for the same
   scan (Fixer narrows to only auto-fixable findings via
@@ -491,17 +495,20 @@ These are first-class, enforced requirements — the user's core process ask.
   bounded ~90-directive set, set or default) — not just gitid's curated
   `OptionPolicy` table (GSSH-01's dangerous-by-default subset) — as a flat,
   type-to-filter scrollable list.
+
 - [ ] **PROP-02** (Full Git set-keys browser): a new sub-tab on the Global
   Git screen lists every git config key actually SET across all scopes
   (global/system/local), sourced from `git config --list --show-origin`,
   with its origin file — not a catalog of all possible keys (git's key
   space is open-ended and has no such catalog), honestly scoped to "what is
   set," as a flat, type-to-filter scrollable list.
+
 - [ ] **PROP-03** (Custom Git key entry): from the Git properties browser,
   the user can add an arbitrary global `key = value` pair, free-form (no
   directive-name validation — an unrecognized git key is harmless, git
   ignores keys nothing reads), through the same review-before-write
   ceremony every other gitid write path uses.
+
 - [ ] **PROP-04** (Custom SSH directive entry, validated): from the SSH
   properties browser, the user can add an arbitrary global SSH directive,
   but the entered directive NAME is validated against OpenSSH's known-
@@ -677,11 +684,11 @@ row below records each one's **home** phase.
 | BUILD-04 | Phase 1 | Complete |
 | BUILD-05 | Phase 9.3 | Pending (unblocks on merge to main) |
 | GIGN-01 | Phase 9.2 | Complete |
-| UXP-01 | Phase 9.4 | Pending |
-| UXP-02 | Phase 9.4 | Pending |
-| UXP-03 | Phase 9.4 | Pending |
-| UXP-04 | Phase 9.4 | Pending |
-| UXP-05 | Phase 9.4 | Pending |
+| UXP-01 | Phase 9.4 | Complete |
+| UXP-02 | Phase 9.4 | Complete |
+| UXP-03 | Phase 9.4 | Complete |
+| UXP-04 | Phase 9.4 | Complete |
+| UXP-05 | Phase 9.4 | Complete |
 | PROP-01 | Phase 9.5 | Pending |
 | PROP-02 | Phase 9.5 | Pending |
 | PROP-03 | Phase 9.5 | Pending |
