@@ -2072,3 +2072,40 @@ func TestGlobalSSHOptionsErrorKeysFullyFailOpen(t *testing.T) {
 		t.Error("left must be fully unhandled while an options probe error is active, matching Global Git's fail-open contract")
 	}
 }
+
+// TestGlobalSSHScrollBudgetGrowsWithRealTerminalHeight is the regression
+// for WR-10: gssVisibleRowCount was pinned to frameBodyRows(minFrameHeight)
+// — a constant ~25-row budget — while view() sizes the pane from the REAL
+// height. On a taller terminal the list still windowed to the small
+// budget, leaving blank rows under a "+N more options" cue that a bigger
+// terminal should not need at all. A resize (tea.WindowSizeMsg) must
+// persist the real height on the model and grow the budget from it.
+func TestGlobalSSHScrollBudgetGrowsWithRealTerminalHeight(t *testing.T) {
+	b := stubBackend{sshOptions: gssScrollRows(20)}
+	a, _ := press(t, NewApp(b), "2")
+	before := gssModel(t, a).rowBudgetHeight()
+	if before != minFrameHeight {
+		t.Fatalf("fixture sanity: rowBudgetHeight before any resize = %d, want minFrameHeight (%d)", before, minFrameHeight)
+	}
+	beforeVisible := gssVisibleRowCount(20, before, a.state)
+	if beforeVisible >= 20 {
+		t.Fatalf("fixture sanity: 20 rows must need scrolling at the canonical height, got visible=%d", beforeVisible)
+	}
+
+	model, _ := a.Update(tea.WindowSizeMsg{Width: 100, Height: 60})
+	a, ok := model.(App)
+	if !ok {
+		t.Fatalf("Update(WindowSizeMsg) returned %T, want App", model)
+	}
+	m := gssModel(t, a)
+	if m.lastHeight != 60 {
+		t.Fatalf("lastHeight after resize = %d, want 60", m.lastHeight)
+	}
+	afterVisible := gssVisibleRowCount(20, m.rowBudgetHeight(), a.state)
+	if afterVisible <= beforeVisible {
+		t.Errorf("visible row count must grow on a taller terminal: before=%d after=%d", beforeVisible, afterVisible)
+	}
+	if afterVisible != 20 {
+		t.Errorf("all 20 rows must fit at height=60 with no scrolling needed, got visible=%d", afterVisible)
+	}
+}

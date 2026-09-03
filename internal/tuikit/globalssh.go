@@ -122,6 +122,13 @@ type globalSSHModel struct {
 	// screen-agnostic despite its git* naming — nothing in it references
 	// Global Git specifically).
 	listWindowStart int
+	// lastHeight persists the terminal height from the most recent
+	// tea.WindowSizeMsg (WR-10, 09.4-REVIEW.md independent re-review),
+	// mirroring globalGitModel.lastHeight — gssVisibleRowCount measures the
+	// REAL row budget instead of the canonical minFrameHeight. Zero until
+	// the first resize arrives; rowBudgetHeight falls back to
+	// minFrameHeight in that case.
+	lastHeight int
 }
 
 // newGlobalSSHModel returns a model with an EMPTY selection set (D-15): the
@@ -202,7 +209,22 @@ func (m globalSSHModel) refetchStoragePlan() globalSSHModel {
 // once the backend's commands have answered. The receipt is reachable ONLY
 // from an explicit success; reducer actions are dispatched here, never
 // optimistically.
+// rowBudgetHeight returns the real terminal height once known (WR-10),
+// falling back to the canonical minFrameHeight before the first
+// tea.WindowSizeMsg arrives — matching every existing test that drives this
+// model directly without ever sending one.
+func (m globalSSHModel) rowBudgetHeight() int {
+	if m.lastHeight > 0 {
+		return m.lastHeight
+	}
+	return minFrameHeight
+}
+
 func (m globalSSHModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
+	if sz, ok := msg.(tea.WindowSizeMsg); ok {
+		m.lastHeight = sz.Height
+		return keyResult{model: m}
+	}
 	// BL-04 (09.4-REVIEW.md independent re-review): this branch used to gate
 	// EVERYTHING — including dispatching the ApplySSH reducer action — on
 	// m.mode/m.applyCommitPending. Ctrl+P bypasses the screen's own
@@ -645,7 +667,7 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 				idx--
 			}
 			m.detailKey = options[idx].Key
-			m.listWindowStart = scrollWindowFor(m.listWindowStart, idx, gssVisibleRowCount(len(options), s))
+			m.listWindowStart = scrollWindowFor(m.listWindowStart, idx, gssVisibleRowCount(len(options), m.rowBudgetHeight(), s))
 		} else {
 			if m.storageChoice == StorageSentinel {
 				m.storageChoice = StorageInclude
@@ -736,12 +758,14 @@ func gssOptionsTopLines(s DemoState) int {
 // gssVisibleRowCount computes how many option rows fit inside the body
 // budget WITHOUT overflowing — the Global SSH mirror of gitVisibleRowCount
 // (globalgit.go), using gssOptionsTopLines instead of gitTopLines for the
-// screen's own chrome (strip + optional findings banner). See
-// gitVisibleRowCount's doc comment for the full rationale: a MEASURED
-// budget off the canonical fixed frame height, one line reserved for the
-// scroll cue only when the row set does not already fit.
-func gssVisibleRowCount(totalRows int, s DemoState) int {
-	budget := frameBodyRows(minFrameHeight) - gssOptionsTopLines(s)
+// screen's own chrome (strip + optional findings banner). height is the
+// caller's rowBudgetHeight() — see gitVisibleRowCount's doc comment (WR-10,
+// 09.4-REVIEW.md independent re-review) for the full rationale: a MEASURED
+// budget off the REAL terminal height (falling back to the canonical fixed
+// frame height before the first resize), one line reserved for the scroll
+// cue only when the row set does not already fit.
+func gssVisibleRowCount(totalRows, height int, s DemoState) int {
+	budget := frameBodyRows(height) - gssOptionsTopLines(s)
 	if budget < 1 {
 		budget = 1
 	}
@@ -768,7 +792,7 @@ func gssVisibleRowCount(totalRows int, s DemoState) int {
 // type/gitCueDirection/gitCueLine machinery so the two screens' scrolling
 // behavior can never silently drift apart.
 func (m globalSSHModel) gssComputeScrollWindow(totalRows int, s DemoState) gitScrollWindow {
-	visible := gssVisibleRowCount(totalRows, s)
+	visible := gssVisibleRowCount(totalRows, m.rowBudgetHeight(), s)
 	needsScroll := visible < totalRows
 	windowStart := m.listWindowStart
 	if windowStart < 0 {

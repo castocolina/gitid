@@ -72,6 +72,14 @@ type globalGitModel struct {
 	// ones.
 	pendingFallbackName  string
 	pendingFallbackEmail string
+	// lastHeight persists the terminal height from the most recent
+	// tea.WindowSizeMsg (WR-10, 09.4-REVIEW.md independent re-review) so
+	// gitVisibleRowCount can measure the REAL row budget instead of the
+	// canonical minFrameHeight — a taller terminal was still windowing the
+	// master list to the 30-row budget and leaving blank rows under a
+	// "+N more" cue. Zero until the first resize arrives; rowBudgetHeight
+	// falls back to minFrameHeight in that case.
+	lastHeight int
 	// ceremonyOpen flags the active ceremony. ceremonyKind records WHICH
 	// ceremony it is, set once at open time by the "a" handler that built
 	// it (WR-09, 09.4-REVIEW.md independent re-review) — confirming a
@@ -187,7 +195,22 @@ func (m globalGitModel) activate(DemoState) (screenModel, tea.Cmd) {
 // handleMsg completes the asynchronous apply commit once the backend's command
 // has answered. The receipt is reachable ONLY from an explicit success;
 // reducer actions are dispatched here, never optimistically.
+// rowBudgetHeight returns the real terminal height once known (WR-10),
+// falling back to the canonical minFrameHeight before the first
+// tea.WindowSizeMsg arrives — matching every existing test that drives this
+// model directly without ever sending one.
+func (m globalGitModel) rowBudgetHeight() int {
+	if m.lastHeight > 0 {
+		return m.lastHeight
+	}
+	return minFrameHeight
+}
+
 func (m globalGitModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
+	if sz, ok := msg.(tea.WindowSizeMsg); ok {
+		m.lastHeight = sz.Height
+		return keyResult{model: m}
+	}
 	// BL-04 (09.4-REVIEW.md independent re-review): ceremonyOpen must gate
 	// only the ceremony UI mutation, never the reducer action — Ctrl+P
 	// bypasses this screen's own pending-ceremony guard (intercepted by
@@ -619,7 +642,7 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 			idx--
 		}
 		m.detailKey = options[idx].Key
-		m.listWindowStart = scrollWindowFor(m.listWindowStart, idx, gitVisibleRowCount(len(options), s))
+		m.listWindowStart = scrollWindowFor(m.listWindowStart, idx, gitVisibleRowCount(len(options), m.rowBudgetHeight(), s))
 		return keyResult{model: m, handled: true}
 	case "space":
 		o := options[m.gitDetailIndex(options)]
@@ -717,23 +740,23 @@ const (
 // "re-measure the row budget, don't assume") — it calls frameBodyRows
 // rather than embedding a literal number.
 //
-// It deliberately uses the CANONICAL fixed frame height (minFrameHeight),
-// not a caller-supplied height: 07-UI-SPEC.md's resolved "overflow" row
-// pins this screen's row height and 100x30 frame as UNCHANGED — the
-// scrolling window's budget is a property of that fixed design, not of
-// whatever height a particular render call happens to pass. This also
-// keeps handleKey (which has no width/height parameter to receive) and
-// view/handleClick (which do) computing the identical budget, so the
-// window position handleKey advances can never disagree with what view
-// renders for the very same model.
+// height is the caller's rowBudgetHeight() (WR-10, 09.4-REVIEW.md
+// independent re-review) — the REAL terminal height persisted from the last
+// tea.WindowSizeMsg, falling back to the canonical minFrameHeight before
+// the first resize arrives. This keeps handleKey (which has no
+// width/height parameter of its own, but reads m.lastHeight via
+// rowBudgetHeight()) and view/handleClick computing the identical budget
+// for the SAME model, so the window position handleKey advances can never
+// disagree with what view renders — while still growing the budget on a
+// taller terminal instead of pinning it to the 100x30 canonical frame.
 //
 // When every row already fits inside the raw budget, the full row count is
 // returned and no line is reserved for a cue — byte-identical to the
 // pre-scrolling behavior. Only when the row set does NOT fit does one line
 // get reserved for the cue, shrinking the visible count by the row height's
 // worth of budget.
-func gitVisibleRowCount(totalRows int, s DemoState) int {
-	budget := frameBodyRows(minFrameHeight) - gitTopLines(s)
+func gitVisibleRowCount(totalRows, height int, s DemoState) int {
+	budget := frameBodyRows(height) - gitTopLines(s)
 	if budget < 1 {
 		budget = 1
 	}
@@ -806,7 +829,7 @@ type gitScrollWindow struct {
 // model driven directly in a test (bypassing handleKey's own incremental
 // clamp) still renders and click-hit-tests consistently.
 func (m globalGitModel) gitComputeScrollWindow(totalRows int, s DemoState) gitScrollWindow {
-	visible := gitVisibleRowCount(totalRows, s)
+	visible := gitVisibleRowCount(totalRows, m.rowBudgetHeight(), s)
 	needsScroll := visible < totalRows
 	windowStart := m.listWindowStart
 	if windowStart < 0 {
