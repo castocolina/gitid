@@ -72,6 +72,21 @@ type globalGitModel struct {
 	// ones.
 	pendingFallbackName  string
 	pendingFallbackEmail string
+	// commitRequestToken is incremented at every ceremony confirm (CR-01,
+	// 09.4-REVIEW.md second independent re-review) and captured into the
+	// dispatched command's wrapper message (gitCommitTokenMsg). BL-04's
+	// fix (previous round) stopped dropping a completed write's reducer
+	// action when the ceremony that started it had been abandoned, but
+	// gated the ceremony-UI mutation on a bare applyCommitPending/
+	// fallbackCommitPending boolean with no per-request correlation — so a
+	// STALE message from an abandoned ceremony could be misattributed to a
+	// DIFFERENT, newer ceremony of the same kind that opened afterward and
+	// is genuinely still in flight, corrupting its receipt with the first
+	// ceremony's backup path. Comparing the token in handleMsg closes that
+	// gap without reopening BL-04's — the reducer action still dispatches
+	// unconditionally; only the ceremony-UI mutation additionally requires
+	// the token to match.
+	commitRequestToken int
 	// lastHeight persists the terminal height from the most recent
 	// tea.WindowSizeMsg (WR-10, 09.4-REVIEW.md independent re-review) so
 	// gitVisibleRowCount can measure the REAL row budget instead of the
@@ -200,16 +215,51 @@ func (m globalGitModel) activate(DemoState) (screenModel, tea.Cmd) {
 // tea.WindowSizeMsg arrives — matching every existing test that drives this
 // model directly without ever sending one.
 func (m globalGitModel) rowBudgetHeight() int {
-	if m.lastHeight > 0 {
+	// WR-02 (09.4-REVIEW.md second independent re-review): floor at
+	// minFrameHeight, not just > 0. tea.WindowSizeMsg reaches every
+	// screen's handleMsg (app.go) before App's own too-small guard
+	// (a.width < minFrameWidth || a.height < minFrameHeight) is ever
+	// consulted, so a resize transient (or a host briefly reporting a tiny
+	// height mid-resize) could persist a below-canonical m.lastHeight and
+	// transiently collapse the scroll budget independent of what view()'s
+	// own render arguments are doing.
+	if m.lastHeight >= minFrameHeight {
 		return m.lastHeight
 	}
 	return minFrameHeight
+}
+
+// gitCommitTokenMsg pairs a dispatched commit's real tea.Msg with the token
+// captured at confirm time (CR-01, 09.4-REVIEW.md second independent
+// re-review). wrapGitCommitToken wraps every Commit*'s returned tea.Cmd with
+// one of these so handleMsg can tell a STALE message (from a ceremony that
+// was abandoned and superseded by a newer one of the same kind before its
+// own message arrived) apart from the genuinely current one — without this,
+// gating only on the ceremonyOpen/applyCommitPending booleans (BL-04's fix)
+// cannot distinguish "no ceremony was open" from "a DIFFERENT ceremony is
+// open now", so the stale message's backup path could be misattributed to
+// the new ceremony's receipt.
+type gitCommitTokenMsg struct {
+	token int
+	msg   tea.Msg
+}
+
+func wrapGitCommitToken(token int, cmd tea.Cmd) tea.Cmd {
+	if cmd == nil {
+		return nil
+	}
+	return func() tea.Msg { return gitCommitTokenMsg{token: token, msg: cmd()} }
 }
 
 func (m globalGitModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 	if sz, ok := msg.(tea.WindowSizeMsg); ok {
 		m.lastHeight = sz.Height
 		return keyResult{model: m}
+	}
+	token := -1
+	if wrapped, ok := msg.(gitCommitTokenMsg); ok {
+		token = wrapped.token
+		msg = wrapped.msg
 	}
 	// BL-04 (09.4-REVIEW.md independent re-review): ceremonyOpen must gate
 	// only the ceremony UI mutation, never the reducer action — Ctrl+P
@@ -219,8 +269,12 @@ func (m globalGitModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 	// fallbackCommitPending. A still-in-flight commit's success message must
 	// still refresh App.state even when the ceremony that started it is
 	// gone by the time it arrives — the write already happened on disk.
+	// CR-01 (second independent re-review): additionally require the
+	// message's token to match m.commitRequestToken — a message whose
+	// ceremony was abandoned and then superseded by a NEWER ceremony of the
+	// same kind must not be treated as belonging to that newer one either.
 	if commit, ok := msg.(GlobalGitCommitMsg); ok {
-		ceremonyOpen := m.ceremonyOpen && m.applyCommitPending
+		ceremonyOpen := m.ceremonyOpen && m.applyCommitPending && token == m.commitRequestToken
 		if ceremonyOpen {
 			m.applyCommitPending = false
 		}
@@ -231,8 +285,13 @@ func (m globalGitModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 					message += " (restored: " + strings.Join(commit.Restored, "; ") + ")"
 				}
 				m.ceremony = m.ceremony.commitFailed(message)
+				return keyResult{model: m}
 			}
-			return keyResult{model: m}
+			// WR-01 (second independent re-review): a background write that
+			// fails after its ceremony is gone (abandoned, or superseded by
+			// a newer one) must still surface SOMEWHERE — the ceremony's own
+			// commitFailed above already covers the still-open case.
+			return keyResult{model: m, note: "Background write failed: " + commit.Err}
 		}
 		plural := "s"
 		if len(m.appliedKeys) == 1 {
@@ -251,7 +310,7 @@ func (m globalGitModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 		}
 	}
 	if commit, ok := msg.(GitFallbackAuthorCommitMsg); ok {
-		ceremonyOpen := m.ceremonyOpen && m.fallbackCommitPending
+		ceremonyOpen := m.ceremonyOpen && m.fallbackCommitPending && token == m.commitRequestToken
 		if ceremonyOpen {
 			m.fallbackCommitPending = false
 		}
@@ -262,8 +321,9 @@ func (m globalGitModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 					message += " (restored: " + strings.Join(commit.Restored, "; ") + ")"
 				}
 				m.ceremony = m.ceremony.commitFailed(message)
+				return keyResult{model: m}
 			}
-			return keyResult{model: m}
+			return keyResult{model: m, note: "Background write failed: " + commit.Err}
 		}
 		if ceremonyOpen {
 			m.ceremony = m.ceremony.commitSucceeded(commit.Backups)
@@ -581,16 +641,20 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		case ceremonyCancelled:
 			m.ceremonyOpen = false
 		case ceremonyConfirmed:
+			m.commitRequestToken++
+			token := m.commitRequestToken
 			if m.ceremonyKind == gitCeremonyFallback {
 				m.fallbackCommitPending = true
 				m.pendingFallbackName = m.nameInput.Value()
 				m.pendingFallbackEmail = m.emailInput.Value()
-				return keyResult{model: m, handled: true, cmd: m.backend.CommitGitFallbackAuthor(m.pendingFallbackName, m.pendingFallbackEmail)}
+				cmd := m.backend.CommitGitFallbackAuthor(m.pendingFallbackName, m.pendingFallbackEmail)
+				return keyResult{model: m, handled: true, cmd: wrapGitCommitToken(token, cmd)}
 			}
 			keys := m.gitApplyChosen(m.overlaidGitOptions(s))
 			m.appliedKeys = keys
 			m.applyCommitPending = true
-			return keyResult{model: m, handled: true, cmd: m.backend.CommitGlobalGit(keys)}
+			cmd := m.backend.CommitGlobalGit(keys)
+			return keyResult{model: m, handled: true, cmd: wrapGitCommitToken(token, cmd)}
 		case ceremonyFinished:
 			m.ceremonyOpen = false
 		case ceremonyNone:

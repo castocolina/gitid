@@ -129,6 +129,13 @@ type globalSSHModel struct {
 	// the first resize arrives; rowBudgetHeight falls back to
 	// minFrameHeight in that case.
 	lastHeight int
+	// commitRequestToken is incremented at every ceremony confirm (CR-01,
+	// 09.4-REVIEW.md second independent re-review), mirroring
+	// globalGitModel.commitRequestToken — see that field's doc comment for
+	// the full rationale. Captured into the dispatched command's wrapper
+	// message (gitCommitTokenMsg, shared with Global Git) so handleMsg can
+	// tell a stale message apart from the genuinely current ceremony's own.
+	commitRequestToken int
 }
 
 // newGlobalSSHModel returns a model with an EMPTY selection set (D-15): the
@@ -214,7 +221,10 @@ func (m globalSSHModel) refetchStoragePlan() globalSSHModel {
 // tea.WindowSizeMsg arrives — matching every existing test that drives this
 // model directly without ever sending one.
 func (m globalSSHModel) rowBudgetHeight() int {
-	if m.lastHeight > 0 {
+	// WR-02 (09.4-REVIEW.md second independent re-review): floor at
+	// minFrameHeight, mirroring globalGitModel.rowBudgetHeight — see that
+	// function's doc comment for the full rationale.
+	if m.lastHeight >= minFrameHeight {
 		return m.lastHeight
 	}
 	return minFrameHeight
@@ -224,6 +234,11 @@ func (m globalSSHModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 	if sz, ok := msg.(tea.WindowSizeMsg); ok {
 		m.lastHeight = sz.Height
 		return keyResult{model: m}
+	}
+	token := -1
+	if wrapped, ok := msg.(gitCommitTokenMsg); ok {
+		token = wrapped.token
+		msg = wrapped.msg
 	}
 	// BL-04 (09.4-REVIEW.md independent re-review): this branch used to gate
 	// EVERYTHING — including dispatching the ApplySSH reducer action — on
@@ -238,13 +253,19 @@ func (m globalSSHModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 	// the receipt" from "the write itself succeeded and App.state must
 	// still refresh" — only the former gates ceremony/UI mutation; the
 	// reducer action and note fire on every genuine success regardless.
+	// CR-01 (second independent re-review): additionally require the
+	// message's token to match m.commitRequestToken — a message whose
+	// ceremony was abandoned and then superseded by a NEWER ceremony of the
+	// same kind must not be treated as belonging to that newer one either
+	// (see globalGitModel.commitRequestToken's doc comment for the full
+	// rationale; this is the identical mechanism, shared wrapper type).
 	if commit, ok := msg.(GlobalSSHCommitMsg); ok {
 		// ceremonyOpen is only whether the ceremony UI is still around to
 		// receive the receipt — it must NOT gate the reducer action below.
 		// m.appliedKeys survives activate() (CR-02 resets mode/pending/
 		// ceremony, never appliedKeys), so it is still valid here even after
 		// abandonment.
-		ceremonyOpen := m.mode == gssApplyCeremony && m.applyCommitPending
+		ceremonyOpen := m.mode == gssApplyCeremony && m.applyCommitPending && token == m.commitRequestToken
 		if ceremonyOpen {
 			m.applyCommitPending = false
 		}
@@ -255,8 +276,11 @@ func (m globalSSHModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 					message += " (restored: " + strings.Join(commit.Restored, "; ") + ")"
 				}
 				m.ceremony = m.ceremony.commitFailed(message)
+				return keyResult{model: m}
 			}
-			return keyResult{model: m}
+			// WR-01 (second independent re-review): a background write that
+			// fails after its ceremony is gone must still surface somewhere.
+			return keyResult{model: m, note: "Background write failed: " + commit.Err}
 		}
 		plural := "s"
 		if len(m.appliedKeys) == 1 {
@@ -280,7 +304,7 @@ func (m globalSSHModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 		}
 	}
 	if commit, ok := msg.(SSHStorageCommitMsg); ok {
-		ceremonyOpen := m.mode == gssStorageCeremony && m.storageCommitPending
+		ceremonyOpen := m.mode == gssStorageCeremony && m.storageCommitPending && token == m.commitRequestToken
 		if ceremonyOpen {
 			m.storageCommitPending = false
 		}
@@ -293,8 +317,9 @@ func (m globalSSHModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 					message += " (restored: " + strings.Join(commit.Restored, "; ") + ")"
 				}
 				m.ceremony = m.ceremony.commitFailed(message)
+				return keyResult{model: m}
 			}
-			return keyResult{model: m}
+			return keyResult{model: m, note: "Background write failed: " + commit.Err}
 		}
 		layout := m.storageTargetLayout
 		if ceremonyOpen {
@@ -589,10 +614,13 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		case ceremonyConfirmed:
 			// Dispatch the async commit; the receipt is reached only from the
 			// commit's explicit success (handleMsg), never optimistically.
+			m.commitRequestToken++
+			token := m.commitRequestToken
 			keys := m.applyChosen(m.overlaidOptions(s))
 			m.appliedKeys = keys
 			m.applyCommitPending = true
-			return keyResult{model: m, handled: true, cmd: m.backend.CommitGlobalSSH(keys)}
+			cmd := m.backend.CommitGlobalSSH(keys)
+			return keyResult{model: m, handled: true, cmd: wrapGitCommitToken(token, cmd)}
 		case ceremonyFinished:
 			m.mode = gssBrowse
 		case ceremonyNone:
@@ -614,10 +642,12 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 			// commit's explicit success (handleMsg), never optimistically.
 			// Pass the token from the view the ceremony was OPENED with —
 			// never a freshly fetched one.
+			m.commitRequestToken++
+			token := m.commitRequestToken
 			m.storageTargetLayout = m.storageChoice
 			m.storageCommitPending = true
-			return keyResult{model: m, handled: true,
-				cmd: m.backend.CommitSSHStorage(m.storageChoice, m.storageView.PlanToken)}
+			cmd := m.backend.CommitSSHStorage(m.storageChoice, m.storageView.PlanToken)
+			return keyResult{model: m, handled: true, cmd: wrapGitCommitToken(token, cmd)}
 		case ceremonyFinished:
 			m.mode = gssBrowse
 		case ceremonyNone:

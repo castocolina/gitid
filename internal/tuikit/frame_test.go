@@ -17,6 +17,20 @@ func stripANSI(s string) string {
 	return sgrPattern.ReplaceAllString(s, "")
 }
 
+// unwrapCommitToken strips the CR-01 gitCommitTokenMsg wrapper (globalgit.go
+// / globalssh.go) that Global SSH's and Global Git's Commit* dispatches now
+// wrap every returned tea.Cmd's message in, so tests that call cmd() and
+// type-assert the underlying GlobalSSHCommitMsg/SSHStorageCommitMsg/
+// GlobalGitCommitMsg/GitFallbackAuthorCommitMsg directly keep working
+// unchanged. A message that isn't wrapped (any other screen's own commit
+// messages) passes through untouched.
+func unwrapCommitToken(msg tea.Msg) tea.Msg {
+	if wrapped, ok := msg.(gitCommitTokenMsg); ok {
+		return wrapped.msg
+	}
+	return msg
+}
+
 // pressKey builds a tea.KeyMsg for tests; special names map to key codes,
 // anything else is a single typed character.
 func pressKey(name string) tea.KeyMsg {

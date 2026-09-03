@@ -187,8 +187,11 @@ func TestMouseStorageRadioAndMigrateButton(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("confirmation must dispatch the async CommitSSHStorage command")
 	}
-	msg := cmd().(SSHStorageCommitMsg)
-	model, _ := a.Update(msg)
+	raw := cmd()
+	if _, ok := unwrapCommitToken(raw).(SSHStorageCommitMsg); !ok {
+		t.Fatalf("cmd() = %T, want SSHStorageCommitMsg", unwrapCommitToken(raw))
+	}
+	model, _ := a.Update(raw)
 	a = model.(App)
 	if a.state.SSHStorage != StorageInclude {
 		t.Error("the storage ceremony must dispatch SetSSHStorage after CommitSSHStorage succeeds")

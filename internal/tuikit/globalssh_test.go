@@ -169,13 +169,13 @@ func TestGlobalSSHApplySubsetMarksAppliedAndShowsDeclined(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("confirmation must dispatch the async commit command")
 	}
-	msg, ok := cmd().(GlobalSSHCommitMsg)
-	if !ok {
-		t.Fatalf("commit delivered %T, want GlobalSSHCommitMsg", cmd())
+	raw := cmd()
+	if _, ok := unwrapCommitToken(raw).(GlobalSSHCommitMsg); !ok {
+		t.Fatalf("commit delivered %T, want GlobalSSHCommitMsg", unwrapCommitToken(raw))
 	}
 
 	// The receipt appears ONLY from the commit's explicit success.
-	model, _ := a.Update(msg)
+	model, _ := a.Update(raw)
 	a = model.(App)
 	if !strings.Contains(appView(a), "2 of 3 recommended options applied to Host *.") {
 		t.Error("result message missing")
@@ -259,8 +259,7 @@ func TestGlobalSSHStoragePreviewsSwitchAndMigrateRoundTrips(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("confirmation must dispatch the async CommitSSHStorage command")
 	}
-	msg := cmd().(SSHStorageCommitMsg)
-	model, _ := a.Update(msg)
+	model, _ := a.Update(cmd())
 	a = model.(App)
 	if a.state.SSHStorage != StorageInclude {
 		t.Fatalf("SSHStorage = %q, want include", a.state.SSHStorage)
@@ -274,8 +273,7 @@ func TestGlobalSSHStoragePreviewsSwitchAndMigrateRoundTrips(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("round-trip confirmation must dispatch the async CommitSSHStorage command")
 	}
-	msg = cmd().(SSHStorageCommitMsg)
-	model, _ = a.Update(msg)
+	model, _ = a.Update(cmd())
 	a = model.(App)
 	if a.state.SSHStorage != StorageSentinel {
 		t.Errorf("SSHStorage = %q, want sentinel (round trip)", a.state.SSHStorage)
@@ -475,8 +473,7 @@ func TestGlobalSSHApplyConfirmationIsInFlightNoApplyAction(t *testing.T) {
 		t.Error("a plain key while pending must not emit an apply action")
 	}
 	// The commit's explicit success is what reaches the receipt + applies.
-	msg := confirmed.cmd().(GlobalSSHCommitMsg)
-	success := confirmed.model.(globalSSHModel).handleMsg(msg, state)
+	success := confirmed.model.(globalSSHModel).handleMsg(confirmed.cmd(), state)
 	if len(success.actions) != 1 {
 		t.Fatalf("successful commit delivered %d actions, want one ApplySSH", len(success.actions))
 	}
@@ -513,7 +510,7 @@ func TestGlobalSSHAbandonedApplyStillDispatchesReducerAction(t *testing.T) {
 	if !pendingModel.applyCommitPending {
 		t.Fatal("setup: confirming must set applyCommitPending")
 	}
-	msg := confirmed.cmd().(GlobalSSHCommitMsg)
+	msg := confirmed.cmd()
 
 	// Abandonment: re-entering the screen (e.g. via Ctrl+P then back) runs
 	// activate(), which CR-02 made reset mode/applyCommitPending/ceremony —
@@ -547,8 +544,7 @@ func TestGlobalSSHApplyFailureRendersRetryNoReceiptNoApply(t *testing.T) {
 	a, _ = press(t, a, "space")
 	a, _ = press(t, a, "a")
 	a, cmd := press(t, a, "enter") // confirm
-	msg := cmd().(GlobalSSHCommitMsg)
-	model, _ := a.Update(msg)
+	model, _ := a.Update(cmd())
 	a = model.(App)
 
 	view := appView(a)
@@ -1177,14 +1173,15 @@ func TestGlobalSSHStorageCeremonyInFlightUntilSuccessMsg(t *testing.T) {
 		t.Fatal("confirmation must dispatch the async CommitSSHStorage command")
 	}
 	// Now deliver the success message.
-	msg, ok := cmd().(SSHStorageCommitMsg)
+	raw := cmd()
+	msg, ok := unwrapCommitToken(raw).(SSHStorageCommitMsg)
 	if !ok {
-		t.Fatalf("CommitSSHStorage delivered %T, want SSHStorageCommitMsg", cmd())
+		t.Fatalf("CommitSSHStorage delivered %T, want SSHStorageCommitMsg", unwrapCommitToken(raw))
 	}
 	if msg.Err != "" {
 		t.Fatalf("stub commit errored: %v", msg.Err)
 	}
-	model, _ := a.Update(msg)
+	model, _ := a.Update(raw)
 	a = model.(App)
 	if a.state.SSHStorage != StorageInclude {
 		t.Errorf("SSHStorage must change to Include after success msg: %v", a.state.SSHStorage)
@@ -1207,11 +1204,11 @@ func TestGlobalSSHStorageFailingCommitMsgShowsRetryAndCancel(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("confirmation must dispatch CommitSSHStorage")
 	}
-	msg, ok := cmd().(SSHStorageCommitMsg)
-	if !ok {
-		t.Fatalf("expected SSHStorageCommitMsg, got %T", cmd())
+	raw := cmd()
+	if _, ok := unwrapCommitToken(raw).(SSHStorageCommitMsg); !ok {
+		t.Fatalf("expected SSHStorageCommitMsg, got %T", unwrapCommitToken(raw))
 	}
-	model, _ := a.Update(msg)
+	model, _ := a.Update(raw)
 	a = model.(App)
 	view := appView(a)
 	if !strings.Contains(view, "injected storage failure") {
@@ -1275,12 +1272,12 @@ func TestGlobalSSHStoragePostMigrationRefetchUsesConfirmedLayout(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("confirmation must dispatch the async CommitSSHStorage command")
 	}
-	msg, ok := cmd().(SSHStorageCommitMsg)
-	if !ok {
-		t.Fatalf("cmd() = %T, want SSHStorageCommitMsg", cmd())
+	raw := cmd()
+	if _, ok := unwrapCommitToken(raw).(SSHStorageCommitMsg); !ok {
+		t.Fatalf("cmd() = %T, want SSHStorageCommitMsg", unwrapCommitToken(raw))
 	}
 	callsBeforeCommitMsg := len(calls)
-	model, _ := a.Update(msg)
+	model, _ := a.Update(raw)
 	a = model.(App)
 	_ = a
 
@@ -2107,5 +2104,104 @@ func TestGlobalSSHScrollBudgetGrowsWithRealTerminalHeight(t *testing.T) {
 	}
 	if afterVisible != 20 {
 		t.Errorf("all 20 rows must fit at height=60 with no scrolling needed, got visible=%d", afterVisible)
+	}
+}
+
+// TestSSHStaleCommitMsgNotMisattributedToNewerCeremony is the Global SSH
+// mirror of TestGitStaleCommitMsgNotMisattributedToNewerCeremony
+// (CR-01, 09.4-REVIEW.md second independent re-review) — the review
+// confirmed the identical shape (single applyCommitPending boolean, no
+// per-request correlation) was present unmodified in this file's
+// GlobalSSHCommitMsg handler.
+func TestSSHStaleCommitMsgNotMisattributedToNewerCeremony(t *testing.T) {
+	b := &stubBackend{}
+	m := newGlobalSSHModel(b)
+	state := Seed()
+	activated, _ := m.activate(state)
+	m = activated.(globalSSHModel)
+
+	m.detailKey = "HashKnownHosts"
+	toggled := m.handleKey(pressKey("space"), state)
+	m = toggled.model.(globalSSHModel)
+	opened := m.handleKey(pressKey("a"), state)
+	m = opened.model.(globalSSHModel)
+	confirmed1 := m.handleKey(pressKey("enter"), state)
+	m = confirmed1.model.(globalSSHModel)
+	staleMsg := confirmed1.cmd()
+
+	reactivated, _ := m.activate(state)
+	m = reactivated.(globalSSHModel)
+	if m.mode == gssApplyCeremony || m.applyCommitPending {
+		t.Fatal("setup: activate() must have cleared the ceremony state")
+	}
+
+	m.detailKey = "ForwardAgent"
+	toggled2 := m.handleKey(pressKey("space"), state)
+	m = toggled2.model.(globalSSHModel)
+	opened2 := m.handleKey(pressKey("a"), state)
+	m = opened2.model.(globalSSHModel)
+	confirmed2 := m.handleKey(pressKey("enter"), state)
+	m = confirmed2.model.(globalSSHModel)
+	if !m.applyCommitPending {
+		t.Fatal("setup: confirming ceremony 2 must set applyCommitPending")
+	}
+	ceremony2HeadingBefore := m.ceremony.cfg.Heading
+
+	result := m.handleMsg(staleMsg, state)
+	m = result.model.(globalSSHModel)
+
+	if !m.applyCommitPending {
+		t.Error("CR-01 regressed: a stale message must not clear applyCommitPending for the genuinely in-flight ceremony 2")
+	}
+	if m.ceremony.cfg.Heading != ceremony2HeadingBefore || m.ceremony.done {
+		t.Errorf("CR-01 regressed: a stale message must not mutate ceremony 2's still-pending UI (heading=%q done=%t)",
+			m.ceremony.cfg.Heading, m.ceremony.done)
+	}
+	if len(result.actions) != 1 {
+		t.Fatalf("stale message must still dispatch its own reducer action (BL-04), got %d", len(result.actions))
+	}
+}
+
+// TestSSHRowBudgetHeightFloorsAtMinFrameHeight is the Global SSH mirror of
+// TestGitRowBudgetHeightFloorsAtMinFrameHeight (WR-02, 09.4-REVIEW.md
+// second independent re-review).
+func TestSSHRowBudgetHeightFloorsAtMinFrameHeight(t *testing.T) {
+	m := newGlobalSSHModel(&stubBackend{})
+	res := m.handleMsg(tea.WindowSizeMsg{Width: 100, Height: 5}, Seed())
+	m = res.model.(globalSSHModel)
+	if got := m.rowBudgetHeight(); got != minFrameHeight {
+		t.Errorf("rowBudgetHeight() after a sub-minFrameHeight resize = %d, want the minFrameHeight floor (%d)", got, minFrameHeight)
+	}
+}
+
+// TestSSHAbandonedFailedCommitStillProducesNote is the Global SSH mirror of
+// TestGitAbandonedFailedCommitStillProducesNote (WR-01, 09.4-REVIEW.md
+// second independent re-review).
+func TestSSHAbandonedFailedCommitStillProducesNote(t *testing.T) {
+	b := &stubBackend{}
+	m := newGlobalSSHModel(b)
+	state := Seed()
+	activated, _ := m.activate(state)
+	m = activated.(globalSSHModel)
+	m.detailKey = "HashKnownHosts"
+	toggled := m.handleKey(pressKey("space"), state)
+	m = toggled.model.(globalSSHModel)
+	opened := m.handleKey(pressKey("a"), state)
+	m = opened.model.(globalSSHModel)
+	confirmed := m.handleKey(pressKey("enter"), state)
+	pendingModel := confirmed.model.(globalSSHModel)
+
+	reactivated, _ := pendingModel.activate(state)
+	abandoned := reactivated.(globalSSHModel)
+	if abandoned.mode == gssApplyCeremony || abandoned.applyCommitPending {
+		t.Fatal("setup: activate() must have cleared the ceremony state")
+	}
+
+	result := abandoned.handleMsg(gitCommitTokenMsg{
+		token: pendingModel.commitRequestToken,
+		msg:   GlobalSSHCommitMsg{Err: "disk full"},
+	}, state)
+	if result.note == "" {
+		t.Error("WR-01 regressed: an abandoned commit's failure must still produce a note")
 	}
 }

@@ -375,8 +375,11 @@ func TestGlobalGitCeremonyConfirmYieldsCommitMsg(t *testing.T) {
 		a, _ = press(t, a, "space") // toggle init.defaultBranch
 		a, _ = press(t, a, "a")     // open ceremony
 		a, _ = press(t, a, "enter") // confirm → dispatches CommitGlobalGit
-		// Deliver the commit message from the pending command.
-		a, _ = deliverMsg(t, a, GlobalGitCommitMsg{Backups: []string{backupPath}})
+		// Deliver the commit message from the pending command, carrying the
+		// CURRENT ceremony's request token (CR-01) — not a bare, unwrapped
+		// message, which would read as stale (token -1) and never touch the
+		// ceremony UI.
+		a, _ = deliverMsg(t, a, gitCommitTokenMsg{token: ggitModel(t, a).commitRequestToken, msg: GlobalGitCommitMsg{Backups: []string{backupPath}}})
 		view := appView(a)
 		// Receipt shows success — backup path in the result.
 		if !strings.Contains(view, backupPath) {
@@ -391,11 +394,12 @@ func TestGlobalGitCeremonyConfirmYieldsCommitMsg(t *testing.T) {
 		a, _ = press(t, a, "space") // toggle
 		a, _ = press(t, a, "a")     // open ceremony
 		a, _ = press(t, a, "enter") // confirm
-		// Deliver an error commit message.
-		a, _ = deliverMsg(t, a, GlobalGitCommitMsg{
+		// Deliver an error commit message, carrying the CURRENT ceremony's
+		// request token (CR-01) — see the "success" sub-test above.
+		a, _ = deliverMsg(t, a, gitCommitTokenMsg{token: ggitModel(t, a).commitRequestToken, msg: GlobalGitCommitMsg{
 			Err:      "write failed: disk full",
 			Restored: []string{restoredPath},
-		})
+		}})
 		view := appView(a)
 		if !strings.Contains(view, "write failed") {
 			t.Errorf("receipt must show the error;\nview:\n%s", view)
@@ -755,7 +759,7 @@ func TestGitFallbackCeremonyHeadingAndCommitAreDistinct(t *testing.T) {
 	}
 	_, cmd := press(t, a, "enter")
 	if cmd != nil {
-		msg := cmd()
+		msg := unwrapCommitToken(cmd())
 		if _, ok := msg.(GitFallbackAuthorCommitMsg); !ok {
 			t.Errorf("confirm must dispatch CommitGitFallbackAuthor, got %T", msg)
 		}
@@ -790,7 +794,7 @@ func TestGitFallbackBaselineCeremonyNeverDispatchesFallbackCommit(t *testing.T) 
 	}
 	_, cmd := press(t, a, "enter")
 	if cmd != nil {
-		msg := cmd()
+		msg := unwrapCommitToken(cmd())
 		if _, ok := msg.(GlobalGitCommitMsg); !ok {
 			t.Errorf("confirm must dispatch CommitGlobalGit, got %T", msg)
 		}
@@ -1840,7 +1844,7 @@ func TestGitFallbackAbandonedApplyStillDispatchesReducerAction(t *testing.T) {
 	if pendingModel.pendingFallbackEmail != "new@example.com" || pendingModel.pendingFallbackName != "New Name" {
 		t.Fatalf("setup: pending capture = (%q, %q), want the submitted values", pendingModel.pendingFallbackName, pendingModel.pendingFallbackEmail)
 	}
-	msg := confirmed.cmd().(GitFallbackAuthorCommitMsg)
+	msg := confirmed.cmd()
 
 	reactivated, _ := pendingModel.activate(state)
 	abandoned := reactivated.(globalGitModel)
@@ -1978,5 +1982,124 @@ func TestGlobalGitScrollBudgetGrowsWithRealTerminalHeight(t *testing.T) {
 	}
 	if afterVisible != 20 {
 		t.Errorf("all 20 rows must fit at height=60 with no scrolling needed, got visible=%d", afterVisible)
+	}
+}
+
+// TestGitStaleCommitMsgNotMisattributedToNewerCeremony is the regression
+// for CR-01 (09.4-REVIEW.md second independent re-review): BL-04's fix
+// (previous round) stopped dropping a completed write's reducer action
+// when its ceremony was abandoned, but gated the ceremony-UI mutation on a
+// bare applyCommitPending boolean with no per-request correlation. A STALE
+// message from a first, abandoned ceremony could be misattributed to a
+// second, genuinely in-flight ceremony of the same kind — corrupting its
+// receipt with the FIRST ceremony's backup path. Reproduces the review's
+// exact repro: confirm ceremony 1 (dispatch not yet delivered), abandon via
+// activate(), confirm ceremony 2, then deliver ceremony 1's stale message.
+func TestGitStaleCommitMsgNotMisattributedToNewerCeremony(t *testing.T) {
+	b := stubBackend{}
+	m := newGlobalGitModel(b)
+	state := Seed()
+	activated, _ := m.activate(state)
+	m = activated.(globalGitModel)
+
+	// Ceremony 1: select init.defaultBranch, confirm — dispatch captured
+	// but not yet delivered (mirrors a real async backend command).
+	m.detailKey = "init.defaultBranch"
+	toggled := m.handleKey(pressKey("space"), state)
+	m = toggled.model.(globalGitModel)
+	opened := m.handleKey(pressKey("a"), state)
+	m = opened.model.(globalGitModel)
+	confirmed1 := m.handleKey(pressKey("enter"), state)
+	m = confirmed1.model.(globalGitModel)
+	staleMsg := confirmed1.cmd()
+
+	// Abandon: Ctrl+P-then-back runs activate(), resetting ceremonyOpen/
+	// applyCommitPending (CR-02/WR-01) — the token, deliberately, is NOT
+	// reset (it must survive reactivation for BL-04's own regression test
+	// to keep passing).
+	reactivated, _ := m.activate(state)
+	m = reactivated.(globalGitModel)
+	if m.ceremonyOpen || m.applyCommitPending {
+		t.Fatal("setup: activate() must have cleared the ceremony state")
+	}
+
+	// Ceremony 2: a DIFFERENT option, confirmed — genuinely in flight now.
+	m.detailKey = "diff.colorMoved"
+	toggled2 := m.handleKey(pressKey("space"), state)
+	m = toggled2.model.(globalGitModel)
+	opened2 := m.handleKey(pressKey("a"), state)
+	m = opened2.model.(globalGitModel)
+	confirmed2 := m.handleKey(pressKey("enter"), state)
+	m = confirmed2.model.(globalGitModel)
+	if !m.applyCommitPending {
+		t.Fatal("setup: confirming ceremony 2 must set applyCommitPending")
+	}
+	ceremony2HeadingBefore := m.ceremony.cfg.Heading
+
+	// Deliver ceremony 1's STALE message while ceremony 2 is on screen.
+	result := m.handleMsg(staleMsg, state)
+	m = result.model.(globalGitModel)
+
+	if !m.applyCommitPending {
+		t.Error("CR-01 regressed: a stale message must not clear applyCommitPending for the genuinely in-flight ceremony 2")
+	}
+	if m.ceremony.cfg.Heading != ceremony2HeadingBefore || m.ceremony.done {
+		t.Errorf("CR-01 regressed: a stale message must not mutate ceremony 2's still-pending UI (heading=%q done=%t)",
+			m.ceremony.cfg.Heading, m.ceremony.done)
+	}
+	if len(result.actions) != 1 {
+		t.Fatalf("stale message must still dispatch its own reducer action (BL-04), got %d", len(result.actions))
+	}
+}
+
+// TestGitAbandonedFailedCommitStillProducesNote is the regression for WR-01
+// (09.4-REVIEW.md second independent re-review): when ceremonyOpen is false
+// (abandoned, or a stale/superseded token per CR-01) and the commit failed,
+// handleMsg returned keyResult{model: m} with no note and no actions — a
+// background write failure after the user navigated away was completely
+// silent. Now a note must surface even when the ceremony UI is gone.
+func TestGitAbandonedFailedCommitStillProducesNote(t *testing.T) {
+	b := stubBackend{}
+	m := newGlobalGitModel(b)
+	state := Seed()
+	activated, _ := m.activate(state)
+	m = activated.(globalGitModel)
+	m.detailKey = "init.defaultBranch"
+	toggled := m.handleKey(pressKey("space"), state)
+	m = toggled.model.(globalGitModel)
+	opened := m.handleKey(pressKey("a"), state)
+	m = opened.model.(globalGitModel)
+	confirmed := m.handleKey(pressKey("enter"), state)
+	pendingModel := confirmed.model.(globalGitModel)
+
+	reactivated, _ := pendingModel.activate(state)
+	abandoned := reactivated.(globalGitModel)
+	if abandoned.ceremonyOpen || abandoned.applyCommitPending {
+		t.Fatal("setup: activate() must have cleared the ceremony state")
+	}
+
+	result := abandoned.handleMsg(gitCommitTokenMsg{
+		token: pendingModel.commitRequestToken,
+		msg:   GlobalGitCommitMsg{Err: "disk full"},
+	}, state)
+	if result.note == "" {
+		t.Error("WR-01 regressed: an abandoned commit's failure must still produce a note")
+	}
+}
+
+// TestGitRowBudgetHeightFloorsAtMinFrameHeight is the regression for WR-02
+// (09.4-REVIEW.md second independent re-review): rowBudgetHeight returned
+// m.lastHeight whenever it was > 0, with no floor against the canonical
+// frame bounds. tea.WindowSizeMsg reaches every screen's handleMsg before
+// App's own too-small guard is consulted, so a resize transient (or a host
+// briefly reporting a tiny height mid-resize) could persist a
+// below-minFrameHeight m.lastHeight and transiently collapse the scroll
+// budget independent of what view()'s own render arguments are doing.
+func TestGitRowBudgetHeightFloorsAtMinFrameHeight(t *testing.T) {
+	m := newGlobalGitModel(stubBackend{})
+	res := m.handleMsg(tea.WindowSizeMsg{Width: 100, Height: 5}, Seed())
+	m = res.model.(globalGitModel)
+	if got := m.rowBudgetHeight(); got != minFrameHeight {
+		t.Errorf("rowBudgetHeight() after a sub-minFrameHeight resize = %d, want the minFrameHeight floor (%d)", got, minFrameHeight)
 	}
 }
