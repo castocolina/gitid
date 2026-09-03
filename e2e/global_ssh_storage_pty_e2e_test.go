@@ -583,7 +583,6 @@ func TestGlobalSSHStorage_RealPTYChangedSincePreview(t *testing.T) {
 // correctly. This proves the bordered strip's mouse coordinate math works on
 // both Options (tested in global_ssh_pty_e2e_test.go) and Storage sub-tabs.
 func TestGlobalSSHStorage_RealPTYSubTabStripMouseClick(t *testing.T) {
-	t.Parallel()
 	home := ShortSandboxHome(t)
 	_, _ = seedStorageMigrateHome(t, home)
 	fakeSSHDir := FakeMigrateSSHDir(t)

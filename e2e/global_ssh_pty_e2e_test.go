@@ -412,11 +412,9 @@ func globalSSHSubTabStrip(frame string) string {
 // are inert. This proves the mouse coordinate math works correctly after
 // the strip gained a border (Task 2).
 func TestGlobalSSH_RealPTYSubTabStripMouseClick(t *testing.T) {
-	t.Parallel()
 	home := t.TempDir()
 	seedGlobalSSHHome(t, home, "none")
 	s := startGlobalSSHPTY(t, home, "options")
-	t.Cleanup(func() { s.close(t) })
 
 	// Wait for the bordered strip to render with "Options" and "Storage & preview" visible.
 	frame, ok := s.waitFor(8*time.Second, func(text string) bool {
