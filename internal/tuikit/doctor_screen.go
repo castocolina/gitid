@@ -353,10 +353,19 @@ func (m doctorModel) view(rawState DemoState, width, height int) screenView {
 		status = fmt.Sprintf("%s: %d finding%s — every fix is previewed, confirmed, and backed up before it writes.",
 			m.identityName, len(ordered), pluralS(len(ordered)))
 	}
+	// WR-05: SeverityError and SeverityCritical are red everywhere else in
+	// this codebase (frame.go, design.go: "error AND critical both use ✗
+	// (red)"); this status line must not downgrade them to the warning
+	// (yellow) tone.
 	tone := "info"
 	for _, f := range ordered {
-		if f.Severity != SeverityInfo {
-			tone = "warning"
+		switch f.Severity {
+		case SeverityError, SeverityCritical:
+			tone = "error"
+		case SeverityWarning:
+			if tone == "info" {
+				tone = "warning"
+			}
 		}
 	}
 

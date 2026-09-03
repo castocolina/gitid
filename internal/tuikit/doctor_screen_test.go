@@ -494,6 +494,36 @@ func TestDoctorParseErrorFrameRefusesFixKeys(t *testing.T) {
 	}
 }
 
+// TestDoctorStatusToneIsErrorForErrorAndCriticalFindings is the regression
+// for WR-05: SeverityError and SeverityCritical are red (the "error" tone)
+// everywhere else in this codebase, but the merged Doctor tab's status line
+// downgraded both to the yellow "warning" tone the moment ANY non-info
+// finding was present, contradicting the severity contract the tab exists
+// to communicate.
+func TestDoctorStatusToneIsErrorForErrorAndCriticalFindings(t *testing.T) {
+	cases := []struct {
+		name     string
+		severity HealthSeverity
+		want     string
+	}{
+		{"warning stays warning", SeverityWarning, "warning"},
+		{"error escalates to error tone", SeverityError, "error"},
+		{"critical escalates to error tone", SeverityCritical, "error"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newDoctorModel(stubBackend{})
+			state := DemoState{Scanned: true, Findings: []DemoFinding{
+				{HealthFinding: HealthFinding{ID: "f1", Family: "Test", Section: "SSH", Title: "finding", Severity: tc.severity}},
+			}}
+			view := m.view(state, 100, 30)
+			if view.statusTone != tc.want {
+				t.Errorf("statusTone for a %s finding = %q, want %q", tc.severity, view.statusTone, tc.want)
+			}
+		})
+	}
+}
+
 func TestDoctorBrowseDoesNotShowWriteCeremonyMarkers(t *testing.T) {
 	withFindings := Seed()
 	withFindings.Scanned = true
