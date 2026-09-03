@@ -2160,6 +2160,14 @@ func TestSSHStaleCommitMsgNotMisattributedToNewerCeremony(t *testing.T) {
 	if len(result.actions) != 1 {
 		t.Fatalf("stale message must still dispatch its own reducer action (BL-04), got %d", len(result.actions))
 	}
+	// CR-01 (third independent re-review): the dispatched action must carry
+	// the STALE ceremony's own submitted keys ("HashKnownHosts"), never
+	// m.appliedKeys — which ceremony 2's confirm already overwrote to
+	// ["ForwardAgent"] before this stale message arrived.
+	applySSH, ok := result.actions[0].(ApplySSH)
+	if !ok || len(applySSH.Keys) != 1 || applySSH.Keys[0] != "HashKnownHosts" {
+		t.Errorf("CR-01 regressed: reducer action must carry the stale ceremony's own keys, got %#v", result.actions[0])
+	}
 }
 
 // TestSSHRowBudgetHeightFloorsAtMinFrameHeight is the Global SSH mirror of

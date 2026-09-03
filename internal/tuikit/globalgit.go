@@ -231,24 +231,39 @@ func (m globalGitModel) rowBudgetHeight() int {
 
 // gitCommitTokenMsg pairs a dispatched commit's real tea.Msg with the token
 // captured at confirm time (CR-01, 09.4-REVIEW.md second independent
-// re-review). wrapGitCommitToken wraps every Commit*'s returned tea.Cmd with
-// one of these so handleMsg can tell a STALE message (from a ceremony that
-// was abandoned and superseded by a newer one of the same kind before its
-// own message arrived) apart from the genuinely current one — without this,
-// gating only on the ceremonyOpen/applyCommitPending booleans (BL-04's fix)
-// cannot distinguish "no ceremony was open" from "a DIFFERENT ceremony is
-// open now", so the stale message's backup path could be misattributed to
-// the new ceremony's receipt.
+// re-review) AND a snapshot of exactly what was submitted at THAT confirm
+// (CR-01, third independent re-review). wrapGitCommitToken wraps every
+// Commit*'s returned tea.Cmd with one of these so handleMsg can tell a
+// STALE message (from a ceremony that was abandoned and superseded by a
+// newer one of the same kind before its own message arrived) apart from
+// the genuinely current one, AND so the unconditionally-dispatched reducer
+// Action (BL-04) reads the STALE message's own submitted values —
+// keys/name/email/layout — never m.appliedKeys/m.pendingFallbackName/
+// m.pendingFallbackEmail/m.storageTargetLayout, which are plain model
+// fields that get silently overwritten by a newer same-kind ceremony's own
+// confirm before the stale message arrives. Without the snapshot, the
+// token comparison alone only protected the ceremony UI from
+// misattribution — the reducer action could still commit a NEWER
+// ceremony's values into App.state attributed to an OLDER commit's
+// success.
 type gitCommitTokenMsg struct {
-	token int
-	msg   tea.Msg
+	token  int
+	msg    tea.Msg
+	keys   []string
+	name   string
+	email  string
+	layout SSHStorageLayout
 }
 
-func wrapGitCommitToken(token int, cmd tea.Cmd) tea.Cmd {
+func wrapGitCommitToken(token int, cmd tea.Cmd, snapshot gitCommitTokenMsg) tea.Cmd {
 	if cmd == nil {
 		return nil
 	}
-	return func() tea.Msg { return gitCommitTokenMsg{token: token, msg: cmd()} }
+	return func() tea.Msg {
+		snapshot.token = token
+		snapshot.msg = cmd()
+		return snapshot
+	}
 }
 
 func (m globalGitModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
@@ -257,8 +272,10 @@ func (m globalGitModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 		return keyResult{model: m}
 	}
 	token := -1
+	var snapshot gitCommitTokenMsg
 	if wrapped, ok := msg.(gitCommitTokenMsg); ok {
 		token = wrapped.token
+		snapshot = wrapped
 		msg = wrapped.msg
 	}
 	// BL-04 (09.4-REVIEW.md independent re-review): ceremonyOpen must gate
@@ -293,8 +310,15 @@ func (m globalGitModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 			// commitFailed above already covers the still-open case.
 			return keyResult{model: m, note: "Background write failed: " + commit.Err}
 		}
+		// CR-01 (third independent re-review): read the SUBMITTED keys from
+		// the message's own snapshot, never m.appliedKeys — a newer
+		// same-kind ceremony's confirm overwrites m.appliedKeys before this
+		// (possibly stale) message arrives, which would otherwise commit
+		// the WRONG key set to App.state attributed to THIS commit's
+		// success.
+		keys := snapshot.keys
 		plural := "s"
-		if len(m.appliedKeys) == 1 {
+		if len(keys) == 1 {
 			plural = ""
 		}
 		if ceremonyOpen {
@@ -305,7 +329,7 @@ func (m globalGitModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 		}
 		return keyResult{
 			model:   m,
-			note:    fmt.Sprintf("%d global git option%s applied.", len(m.appliedKeys), plural),
+			note:    fmt.Sprintf("%d global git option%s applied.", len(keys), plural),
 			actions: []Action{ApplyGitBaseline{Backup: firstBackup(commit.Backups)}},
 		}
 	}
@@ -331,15 +355,24 @@ func (m globalGitModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 				m.ceremony = m.ceremony.withResultExtra(strings.Join(commit.Advisories, "\n"))
 			}
 		}
-		// Use the CAPTURED submission, not m.nameInput/m.emailInput —
-		// activate() may have re-seeded both from stale pre-write state
-		// since ceremonyConfirmed (see pendingFallbackName's doc comment).
-		m.currentName = m.pendingFallbackName
-		m.currentEmail = m.pendingFallbackEmail
+		// CR-01 (third independent re-review): read the SUBMITTED name/email
+		// from the message's own snapshot, never m.pendingFallbackName/
+		// m.pendingFallbackEmail — a newer fallback ceremony's confirm
+		// overwrites those fields before this (possibly stale) message
+		// arrives, which would otherwise commit the WRONG name/email pair
+		// to App.state attributed to THIS commit's success. (This
+		// supersedes the older "use the CAPTURED submission, not
+		// m.nameInput/m.emailInput" fix — the pending fields have the same
+		// staleness problem one level up.)
+		name, email := snapshot.name, snapshot.email
+		if ceremonyOpen {
+			m.currentName = name
+			m.currentEmail = email
+		}
 		return keyResult{
 			model:   m,
 			note:    GlobalGitEmailResultMessage,
-			actions: []Action{ApplyGitGlobalEmail{Email: m.pendingFallbackEmail, Name: m.pendingFallbackName, Backup: firstBackup(commit.Backups)}},
+			actions: []Action{ApplyGitGlobalEmail{Email: email, Name: name, Backup: firstBackup(commit.Backups)}},
 		}
 	}
 	return keyResult{model: m}
@@ -648,13 +681,15 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 				m.pendingFallbackName = m.nameInput.Value()
 				m.pendingFallbackEmail = m.emailInput.Value()
 				cmd := m.backend.CommitGitFallbackAuthor(m.pendingFallbackName, m.pendingFallbackEmail)
-				return keyResult{model: m, handled: true, cmd: wrapGitCommitToken(token, cmd)}
+				snapshot := gitCommitTokenMsg{name: m.pendingFallbackName, email: m.pendingFallbackEmail}
+				return keyResult{model: m, handled: true, cmd: wrapGitCommitToken(token, cmd, snapshot)}
 			}
 			keys := m.gitApplyChosen(m.overlaidGitOptions(s))
 			m.appliedKeys = keys
 			m.applyCommitPending = true
 			cmd := m.backend.CommitGlobalGit(keys)
-			return keyResult{model: m, handled: true, cmd: wrapGitCommitToken(token, cmd)}
+			snapshot := gitCommitTokenMsg{keys: keys}
+			return keyResult{model: m, handled: true, cmd: wrapGitCommitToken(token, cmd, snapshot)}
 		case ceremonyFinished:
 			m.ceremonyOpen = false
 		case ceremonyNone:

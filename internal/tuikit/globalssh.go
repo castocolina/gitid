@@ -236,8 +236,10 @@ func (m globalSSHModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 		return keyResult{model: m}
 	}
 	token := -1
+	var snapshot gitCommitTokenMsg
 	if wrapped, ok := msg.(gitCommitTokenMsg); ok {
 		token = wrapped.token
+		snapshot = wrapped
 		msg = wrapped.msg
 	}
 	// BL-04 (09.4-REVIEW.md independent re-review): this branch used to gate
@@ -282,8 +284,15 @@ func (m globalSSHModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 			// fails after its ceremony is gone must still surface somewhere.
 			return keyResult{model: m, note: "Background write failed: " + commit.Err}
 		}
+		// CR-01 (third independent re-review): read the SUBMITTED keys from
+		// the message's own snapshot, never m.appliedKeys — a newer
+		// same-kind ceremony's confirm overwrites m.appliedKeys before this
+		// (possibly stale) message arrives, which would otherwise commit
+		// the WRONG key set to App.state attributed to THIS commit's
+		// success.
+		keys := snapshot.keys
 		plural := "s"
-		if len(m.appliedKeys) == 1 {
+		if len(keys) == 1 {
 			plural = ""
 		}
 		if ceremonyOpen {
@@ -299,8 +308,8 @@ func (m globalSSHModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 		}
 		return keyResult{
 			model:   m,
-			note:    fmt.Sprintf("%d global SSH option%s applied.", len(m.appliedKeys), plural),
-			actions: []Action{ApplySSH{Keys: m.appliedKeys, Backup: firstBackup(commit.Backups)}},
+			note:    fmt.Sprintf("%d global SSH option%s applied.", len(keys), plural),
+			actions: []Action{ApplySSH{Keys: keys, Backup: firstBackup(commit.Backups)}},
 		}
 	}
 	if commit, ok := msg.(SSHStorageCommitMsg); ok {
@@ -321,7 +330,12 @@ func (m globalSSHModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 			}
 			return keyResult{model: m, note: "Background write failed: " + commit.Err}
 		}
-		layout := m.storageTargetLayout
+		// CR-01 (third independent re-review): read the SUBMITTED layout from
+		// the message's own snapshot, never m.storageTargetLayout — a newer
+		// storage ceremony's confirm overwrites m.storageTargetLayout before
+		// this (possibly stale) message arrives, which would otherwise
+		// migrate to the WRONG layout attributed to THIS commit's success.
+		layout := snapshot.layout
 		if ceremonyOpen {
 			m.ceremony = m.ceremony.commitSucceeded(commit.Backups)
 		}
@@ -620,7 +634,8 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 			m.appliedKeys = keys
 			m.applyCommitPending = true
 			cmd := m.backend.CommitGlobalSSH(keys)
-			return keyResult{model: m, handled: true, cmd: wrapGitCommitToken(token, cmd)}
+			snapshot := gitCommitTokenMsg{keys: keys}
+			return keyResult{model: m, handled: true, cmd: wrapGitCommitToken(token, cmd, snapshot)}
 		case ceremonyFinished:
 			m.mode = gssBrowse
 		case ceremonyNone:
@@ -647,7 +662,8 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 			m.storageTargetLayout = m.storageChoice
 			m.storageCommitPending = true
 			cmd := m.backend.CommitSSHStorage(m.storageChoice, m.storageView.PlanToken)
-			return keyResult{model: m, handled: true, cmd: wrapGitCommitToken(token, cmd)}
+			snapshot := gitCommitTokenMsg{layout: m.storageChoice}
+			return keyResult{model: m, handled: true, cmd: wrapGitCommitToken(token, cmd, snapshot)}
 		case ceremonyFinished:
 			m.mode = gssBrowse
 		case ceremonyNone:

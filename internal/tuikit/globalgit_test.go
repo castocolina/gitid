@@ -451,7 +451,11 @@ func TestGlobalGitMouseTabClickBlockedWhileCeremonyOpen(t *testing.T) {
 	// selected key, not a set silently emptied by an activate() that should
 	// never have run.
 	a, _ = press(t, a, "enter")
-	a, _ = deliverMsg(t, a, GlobalGitCommitMsg{Backups: []string{backupPath}})
+	a, _ = deliverMsg(t, a, gitCommitTokenMsg{
+		token: ggitModel(t, a).commitRequestToken,
+		msg:   GlobalGitCommitMsg{Backups: []string{backupPath}},
+		keys:  []string{"init.defaultBranch"},
+	})
 	view := appView(a)
 	if strings.Contains(view, "0 global git options applied") {
 		t.Errorf("confirmed ceremony reported zero applied options — the selection was lost:\n%s", view)
@@ -2002,9 +2006,16 @@ func TestGitStaleCommitMsgNotMisattributedToNewerCeremony(t *testing.T) {
 	activated, _ := m.activate(state)
 	m = activated.(globalGitModel)
 
-	// Ceremony 1: select init.defaultBranch, confirm — dispatch captured
-	// but not yet delivered (mirrors a real async backend command).
+	// Ceremony 1: select TWO options (init.defaultBranch, core.ignorecase),
+	// confirm — dispatch captured but not yet delivered (mirrors a real
+	// async backend command). Deliberately a different COUNT than ceremony
+	// 2's single option below, so the note text (the only observable field
+	// on this path — ApplyGitBaseline carries no Keys field) actually
+	// differs between the two snapshots and can catch a misattribution.
 	m.detailKey = "init.defaultBranch"
+	toggled0 := m.handleKey(pressKey("space"), state)
+	m = toggled0.model.(globalGitModel)
+	m.detailKey = "core.ignorecase"
 	toggled := m.handleKey(pressKey("space"), state)
 	m = toggled.model.(globalGitModel)
 	opened := m.handleKey(pressKey("a"), state)
@@ -2049,6 +2060,14 @@ func TestGitStaleCommitMsgNotMisattributedToNewerCeremony(t *testing.T) {
 	}
 	if len(result.actions) != 1 {
 		t.Fatalf("stale message must still dispatch its own reducer action (BL-04), got %d", len(result.actions))
+	}
+	// CR-01 (third independent re-review): ApplyGitBaseline carries no Keys
+	// field, so the only observable corruption vector on this path is the
+	// note's key count — it must reflect the STALE ceremony 1's own TWO
+	// submitted keys, never m.appliedKeys, which ceremony 2's confirm
+	// already overwrote to a single key (["diff.colorMoved"]).
+	if result.note != "2 global git options applied." {
+		t.Errorf("CR-01 regressed: note must reflect the stale ceremony's own key count, got %q", result.note)
 	}
 }
 
