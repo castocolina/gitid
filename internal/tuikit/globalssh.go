@@ -604,6 +604,13 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 	}
 
 	options := m.overlaidOptions(s)
+	if m.subTab == gssOptions && m.optionsErr != "" {
+		// WR-12 (09.4-REVIEW.md independent re-review): align with Global
+		// Git's error-state key contract — a failed probe is fully
+		// fail-open (no ←/→ special case either), never consuming
+		// navigation keys on a screen that is least able to help.
+		return keyResult{model: m}
+	}
 	if m.subTab == gssOptions && len(options) == 0 {
 		// Advisory / fail-open: no rows to act on, but navigation must still
 		// reach the globals (tabs, ?, q) — never trap the user on this
@@ -1046,8 +1053,17 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 		if m.subTab == gssOptions {
 			if m.optionsErr != "" {
 				// Advisory posture extends to the detection layer: the pane
-				// renders the error note, never a blank body.
-				body = m.subTabStrip() + "\n " + styleWarning.Render("! "+m.optionsErr) + "\n\n " +
+				// renders the error note, never a blank body. WR-12
+				// (09.4-REVIEW.md independent re-review): mirror Global
+				// Git's error branch, which keeps the doctor findings
+				// banner above the warning — this screen's probe-failure
+				// branch previously dropped it exactly when the user is
+				// least able to help themselves.
+				body = m.subTabStrip() + "\n"
+				if banner := findingsBanner(s, "SSH", gssBannerBeyond); banner != "" {
+					body += " " + banner + "\n"
+				}
+				body += " " + styleWarning.Render("! "+m.optionsErr) + "\n\n " +
 					styleFaint.Render("The option states could not be read from this machine.")
 				actions = []FooterAction{{Key: "←→", Label: "Options / Storage"}}
 			} else {

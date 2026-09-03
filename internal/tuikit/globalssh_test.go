@@ -2029,3 +2029,46 @@ func TestGlobalSSHStorageRefetchesOnEveryChoiceMutationSite(t *testing.T) {
 		t.Errorf("Resulting config pane does not render the sentinel preview after the round-trip; got:\n%s", view)
 	}
 }
+
+// TestGlobalSSHOptionsErrorRendersFindingsBanner is the regression for
+// WR-12: Global Git's probe-failure branch renders the doctor findings
+// banner above the error note (globalgit.go); Global SSH's equivalent
+// branch rendered only the warning and explanatory line, dropping the
+// "! The doctor found N SSH findings beyond these global options." banner
+// and its "Open Doctor (4)" link exactly when the screen is least able to
+// help.
+func TestGlobalSSHOptionsErrorRendersFindingsBanner(t *testing.T) {
+	b := &stubBackend{sshOptionsErr: errors.New("probe exploded")}
+	a, _ := press(t, NewApp(b), "2")
+	a.state.Findings = []DemoFinding{
+		{HealthFinding: HealthFinding{Section: "SSH", Title: "some SSH finding"}},
+	}
+	m := gssModel(t, a)
+	view := stripANSI(m.view(a.state, 100, 30).body)
+	if !strings.Contains(view, "The doctor found 1 SSH finding") {
+		t.Errorf("Global SSH's probe-failure branch must render the findings banner, like Global Git's does:\n%s", view)
+	}
+	if !strings.Contains(view, "Open Doctor (4)") {
+		t.Errorf("findings banner must include the Open Doctor link:\n%s", view)
+	}
+}
+
+// TestGlobalSSHOptionsErrorKeysFullyFailOpen is the regression for WR-12's
+// second half: Global Git's optionsErr branch in handleKey returns fully
+// unhandled (`keyResult{model: m}`), letting every key — including ←/→ —
+// reach the top-level tab switcher; Global SSH's equivalent branch special-
+// cased ←/→ into its OWN sub-tab switch and marked it handled, which
+// consumed the key and blocked the top-level ←/→ tab navigation Global
+// Git's contract allows.
+func TestGlobalSSHOptionsErrorKeysFullyFailOpen(t *testing.T) {
+	b := &stubBackend{sshOptionsErr: errors.New("probe exploded")}
+	m := newGlobalSSHModel(b)
+	state := Seed()
+	activated, _ := m.activate(state)
+	m = activated.(globalSSHModel)
+
+	res := m.handleKey(pressKey("left"), state)
+	if res.handled {
+		t.Error("left must be fully unhandled while an options probe error is active, matching Global Git's fail-open contract")
+	}
+}
