@@ -76,7 +76,7 @@ func renderSeededFrame(crumbs []string, actions []FooterAction) string {
 func TestRenderFrameShowsNumberedTabsAndReservedFooter(t *testing.T) {
 	plain := stripANSI(renderSeededFrame(nil, nil))
 
-	for _, want := range []string{"[1] Identities", "[2] SSH", "[3] Git", "[4] Health", "[5] Fixer", "[6] Ignore"} {
+	for _, want := range []string{"[1] Identities", "[2] SSH", "[3] Git", "[4] Doctor", "[5] Ignore"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("frame missing numbered tab %q", want)
 		}
@@ -687,9 +687,9 @@ func TestSeverityLabelLockedContract(t *testing.T) {
 	}
 }
 
-func TestRenderHeaderSixSegmentsFitAtMinWidth(t *testing.T) {
+func TestRenderHeaderFiveSegmentsFitAtMinWidth(t *testing.T) {
 	plain := stripANSI(renderHeader(minFrameWidth, Seed(), TabIdentities, false))
-	for _, want := range []string{"[1] Identities", "[2] SSH", "[3] Git", "[4] Health", "[5] Fixer", "[6] Ignore", "8 ids"} {
+	for _, want := range []string{"[1] Identities", "[2] SSH", "[3] Git", "[4] Doctor", "[5] Ignore", "8 ids"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("header at minFrameWidth missing %q; got %q", want, plain)
 		}
@@ -701,13 +701,13 @@ func TestHeaderColumnBudgetFromHeaderTabText(t *testing.T) {
 	for i := 0; i < len(tabNavLabels); i++ {
 		segmentSum += ansi.StringWidth(headerTabText(i))
 	}
-	if segmentSum != 69 {
-		t.Errorf("sum of headerTabText widths = %d, want 69", segmentSum)
+	if segmentSum != 58 {
+		t.Errorf("sum of headerTabText widths = %d, want 58", segmentSum)
 	}
 	brandWidth := ansi.StringWidth(" " + headerBrand + "  ")
-	total := brandWidth + segmentSum + 5*ansi.StringWidth(headerTabSeparator)
-	if total != 82 {
-		t.Errorf("brand + segments + separators = %d, want 82 (brand=%d)", total, brandWidth)
+	total := brandWidth + segmentSum + 4*ansi.StringWidth(headerTabSeparator)
+	if total != 70 {
+		t.Errorf("brand + segments + separators = %d, want 70 (brand=%d)", total, brandWidth)
 	}
 	remaining := minFrameWidth - total
 	if remaining < 16 {
@@ -736,8 +736,7 @@ func TestBreadcrumbKeepsFullLabels(t *testing.T) {
 		TabIdentities: "Identities",
 		TabGlobalSSH:  "Global SSH",
 		TabGlobalGit:  "Global Git",
-		TabHealth:     "Health",
-		TabFixer:      "Fixer",
+		TabDoctor:     "Doctor",
 		TabGitIgnore:  "Global Git Ignore",
 	} {
 		plain := stripANSI(RenderFrame(minFrameWidth, minFrameHeight, Seed(), tab, nil, "Ready.", "info", nil, false, "body"))

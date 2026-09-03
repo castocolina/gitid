@@ -2553,7 +2553,7 @@ func (m identitiesModel) handleDetailKey(msg tea.KeyMsg, s DemoState) keyResult 
 		if !ok {
 			return keyResult{model: m, handled: true}
 		}
-		return keyResult{model: m, handled: true, healthIdentity: sel.Name}
+		return keyResult{model: m, handled: true, doctorIdentity: sel.Name}
 	case "f":
 		if !ok {
 			return keyResult{model: m, handled: true}

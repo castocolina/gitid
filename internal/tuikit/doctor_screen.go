@@ -1,10 +1,9 @@
 package tuikit
 
-// fixer_screen.go is the Fixer tab child model (08-01-PLAN.md Task 2's full
-// split): the write half of the former single Doctor tab, scoped to
-// fixableFindings(ordered) only and keeping the f/F ceremony-trigger keys —
-// unchanged logic from the pre-split doctorModel, moved here verbatim and
-// scoped to the fixable subset via fixableState.
+// doctor_screen.go is the merged Doctor tab (09.4-01-PLAN.md Task 2):
+// Health's unfiltered findings list plus Fixer's inline write ceremony.
+// Phase 8's FIX-02 split (health_screen.go + fixer_screen.go) is reversed
+// here so one tab cannot report a count that contradicts another.
 
 import (
 	"fmt"
@@ -16,31 +15,31 @@ import (
 )
 
 // fixerSuggestedFixHandoff is the trailing clause every SuggestedFix string
-// carries so Health's read-only detail pane can point the user at the
-// Fixer tab (HLTH-04's own "available on the Fixer screen" hand-off,
-// internal/dummytui/data.go). On the Fixer screen itself the SAME clause
-// is stale -- the user is already here, and the "f · Fix this…" affordance
-// immediately below the suggested-fix line already states the action --
-// so fixerSuggestedFixText strips it before rendering (08-08 UX review
+// carries so a read-only detail pane can point the user at the Fixer tab
+// (HLTH-04's own "available on the Fixer screen" hand-off,
+// internal/dummytui/data.go). On Doctor itself the SAME clause is stale --
+// the user is already here, and the "f · Fix this…" affordance immediately
+// below the suggested-fix line already states the action -- so
+// fixerSuggestedFixText strips it before rendering (08-08 UX review
 // finding F6).
 const fixerSuggestedFixHandoff = " -- available on the Fixer screen."
 
 // fixerSuggestedFixText returns text with the Fixer hand-off clause
-// stripped, for the Fixer tab's own detail pane. Health's detail pane
-// renders the SuggestedFix field unchanged (fixerSuggestedFixHandoff's
-// doc comment).
+// stripped, for Doctor's own fixable-row detail pane.
 func fixerSuggestedFixText(text string) string {
 	return strings.TrimSuffix(text, fixerSuggestedFixHandoff)
 }
 
-// fixerModel is the Fixer tab child model.
-type fixerModel struct {
-	backend    Backend
-	scanning   bool
-	selectedID string
-	fixing     bool
-	batch      *doctorBatch
-	ceremony   ceremonyModel
+// doctorModel is the merged Doctor tab child model: Fixer's complete field
+// set plus Health's per-identity filter.
+type doctorModel struct {
+	backend      Backend
+	scanning     bool
+	selectedID   string
+	identityName string
+	fixing       bool
+	batch        *doctorBatch
+	ceremony     ceremonyModel
 	// pendingFixID/pendingFixName name the fix this handleKey call just
 	// dispatched a FixFinding action for (D-16). Backend.Persist runs
 	// SYNCHRONOUSLY inside App.apply, called right after handleKey returns
@@ -65,14 +64,14 @@ type fixerModel struct {
 	batchFailedName string
 }
 
-// newFixerModel builds the Fixer tab (scan runs on first activation). b is
+// newDoctorModel builds the Doctor tab (scan runs on first activation). b is
 // the injected Backend seam Backend.FixPlanFor routes through (08-02-PLAN.md
 // Task 2) — the real backend renders a true diff from actual file content,
 // FixtureBackend delegates unchanged to the frozen free PlanFor switch.
-func newFixerModel(b Backend) fixerModel { return fixerModel{backend: b} }
+func newDoctorModel(b Backend) doctorModel { return doctorModel{backend: b} }
 
 // haltBatch handles a real Persist failure after a fix ceremony's confirm
-// (08-06-PLAN.md Task 3). It is called on the PRE-dispatch fixerModel
+// (08-06-PLAN.md Task 3). It is called on the PRE-dispatch doctorModel
 // snapshot (the receiver, m, as it stood right before ceremonyFinished's
 // optimistic queue-advance) so m.batch/m.selectedID/m.batchSucceeded
 // already correctly identify the fix that just failed and every fix that
@@ -92,7 +91,7 @@ func newFixerModel(b Backend) fixerModel { return fixerModel{backend: b} }
 // failing outside a batch is not "Fix 1 of 0" (08-08 code review WR-01:
 // that message previously rendered nonsensically, mentioning "this batch"
 // and "0 of 0", for a fix that was never part of one).
-func (m fixerModel) haltBatch(failedName, errMsg string) fixerModel {
+func (m doctorModel) haltBatch(failedName, errMsg string) doctorModel {
 	m.ceremony = m.ceremony.commitFailed(errMsg)
 	if m.batch == nil {
 		return m
@@ -107,18 +106,44 @@ func (m fixerModel) haltBatch(failedName, errMsg string) fixerModel {
 	return m
 }
 
-// fixableState returns s with Findings narrowed to fixableFindings(ordered)
-// only — the Fixer tab's list scope. Every handler below operates on this
-// narrowed state, never the raw App-level state, so Fixer never surfaces an
-// info-only (non-fixable) finding.
-func fixableState(s DemoState) DemoState {
-	s.Findings = fixableFindings(orderedFindings(s))
-	return s
+func (m doctorModel) findings(s DemoState) []DemoFinding {
+	if m.identityName == "" {
+		return orderedFindings(s)
+	}
+	return orderedFindings(DemoState{Findings: FindingsFor(s, m.identityName)})
+}
+
+func parseErrorFinding(findings []DemoFinding) (DemoFinding, bool) {
+	for _, finding := range findings {
+		if finding.Family == "Files" && finding.Severity == SeverityCritical {
+			return finding, true
+		}
+	}
+	return DemoFinding{}, false
+}
+
+func parseErrorScreenView(finding DemoFinding) screenView {
+	file, raw, snippet := finding.Title, finding.Explanation, ""
+	if finding.ParseError != nil {
+		file = finding.ParseError.File
+		raw = finding.ParseError.Raw
+		snippet = finding.ParseError.Snippet
+	}
+	body := "\n " + styleError.Render("✗ critical Files — configuration parse error") + "\n\n" +
+		" File: " + file + "\n" +
+		" Raw error: " + raw + "\n" +
+		" Snippet: " + snippet + "\n" +
+		" Checks paused until this configuration parses again."
+	return screenView{
+		body:       body,
+		status:     "Configuration parse error — checks paused for this section.",
+		statusTone: "error",
+	}
 }
 
 // activate auto-runs the first scan — the view must show value
 // immediately; later visits are instant.
-func (m fixerModel) activate(s DemoState) (screenModel, tea.Cmd) {
+func (m doctorModel) activate(s DemoState) (screenModel, tea.Cmd) {
 	if !s.Scanned {
 		m.scanning = true
 		return m, tea.Tick(600*time.Millisecond, func(time.Time) tea.Msg { return doctorScanMsg{} })
@@ -128,7 +153,7 @@ func (m fixerModel) activate(s DemoState) (screenModel, tea.Cmd) {
 }
 
 // handleMsg finishes the scan.
-func (m fixerModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
+func (m doctorModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 	if _, ok := msg.(doctorScanMsg); ok && m.scanning {
 		m.scanning = false
 		return keyResult{model: m, actions: []Action{MarkScanned{}}}
@@ -136,13 +161,13 @@ func (m fixerModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 	return keyResult{model: m}
 }
 
-// handleKey implements the Fixer key model: navigate, `f` fixes the
-// selected finding, `F` walks EVERY fixable finding through the SAME
-// per-fix ceremony with a `k / n fixed` counter — never a silent batch.
-func (m fixerModel) handleKey(msg tea.KeyMsg, rawState DemoState) keyResult {
-	s := fixableState(rawState)
+// handleKey implements the Doctor key model: navigate, `f` fixes the
+// selected finding when it is Fixable, `F` walks EVERY fixable finding
+// through the SAME per-fix ceremony with a `k / n fixed` counter — never
+// a silent batch. The list is unfiltered; the action gate is not.
+func (m doctorModel) handleKey(msg tea.KeyMsg, rawState DemoState) keyResult {
 	key := msg.String()
-	ordered := orderedFindings(s)
+	ordered := m.findings(rawState)
 
 	if m.fixing {
 		sel, _, ok := selectFinding(ordered, m.selectedID)
@@ -254,8 +279,7 @@ func (m fixerModel) handleKey(msg tea.KeyMsg, rawState DemoState) keyResult {
 // pane's `f · Fix this…` button dispatches f, and an open fix ceremony's
 // buttons click through the shared ceremony zones. Group labels and the
 // scanning state are inert.
-func (m fixerModel) handleClick(x, y, width, height int, rawState DemoState) keyResult {
-	s := fixableState(rawState)
+func (m doctorModel) handleClick(x, y, width, height int, rawState DemoState) keyResult {
 	if m.scanning {
 		return keyResult{model: m}
 	}
@@ -274,7 +298,7 @@ func (m fixerModel) handleClick(x, y, width, height int, rawState DemoState) key
 		return keyResult{model: m}
 	}
 	line := 0
-	for _, group := range groupFindings(orderedFindings(s)) {
+	for _, group := range groupFindings(m.findings(rawState)) {
 		line++ // the group's faint label line
 		for _, f := range group.findings {
 			if y == line || y == line+1 {
@@ -288,12 +312,11 @@ func (m fixerModel) handleClick(x, y, width, height int, rawState DemoState) key
 }
 
 // view implements screenModel.
-func (m fixerModel) view(rawState DemoState, width, height int) screenView {
+func (m doctorModel) view(rawState DemoState, width, height int) screenView {
 	if finding, ok := parseErrorFinding(orderedFindings(rawState)); ok {
 		return parseErrorScreenView(finding)
 	}
-	s := fixableState(rawState)
-	ordered := orderedFindings(s)
+	ordered := m.findings(rawState)
 	sel, selIdx, hasSel := selectFinding(ordered, m.selectedID)
 	fixable := fixableFindings(ordered)
 
@@ -304,8 +327,12 @@ func (m fixerModel) view(rawState DemoState, width, height int) screenView {
 		}
 	}
 
-	status := fmt.Sprintf("%d fixable finding%s — every fix is previewed + confirmed + backed up before it writes.",
+	status := fmt.Sprintf("%d finding%s — every fix is previewed + confirmed + backed up before it writes.",
 		len(ordered), pluralS(len(ordered)))
+	if m.identityName != "" {
+		status = fmt.Sprintf("%s: %d finding%s — every fix is previewed + confirmed + backed up before it writes.",
+			m.identityName, len(ordered), pluralS(len(ordered)))
+	}
 	tone := "info"
 	for _, f := range ordered {
 		if f.Severity != SeverityInfo {
@@ -313,7 +340,7 @@ func (m fixerModel) view(rawState DemoState, width, height int) screenView {
 		}
 	}
 
-	// All green: scanned, zero fixable findings.
+	// All green: scanned, zero findings.
 	if rawState.Scanned && len(ordered) == 0 {
 		body := "\n " + styleHealthy.Render("✓ "+FixerNothingToFixSSH) + "\n " + styleHealthy.Render("✓ "+FixerNothingToFixGit)
 		return screenView{body: body, status: status, statusTone: "success"}
@@ -347,8 +374,12 @@ func (m fixerModel) view(rawState DemoState, width, height int) screenView {
 				marker = styleBold.Render("▸ ")
 				title = styleSelected.Render(f.Title)
 			}
+			fixNote := "info only"
+			if f.Fixable {
+				fixNote = "fixable"
+			}
 			rows = append(rows, truncLine(" "+marker+severityLabel(f.Severity)+" "+title, listWidth))
-			rows = append(rows, truncLine("     "+styleFaint.Render(f.Family+" · fixable"), listWidth))
+			rows = append(rows, truncLine("     "+styleFaint.Render(f.Family+" · "+fixNote), listWidth))
 		}
 	}
 	list := strings.Join(rows, "\n")
@@ -375,8 +406,14 @@ func (m fixerModel) view(rawState DemoState, width, height int) screenView {
 		}
 		d.WriteString(chips + "\n\n")
 		d.WriteString(" " + sel.Explanation + "\n\n")
-		d.WriteString(" " + styleInfo.Render("~ Suggested fix: "+fixerSuggestedFixText(sel.SuggestedFix)) + "\n")
-		d.WriteString(" " + styleSelected.Render(" f · Fix this… ") + "\n")
+		if sel.Fixable {
+			d.WriteString(" " + styleInfo.Render("~ Suggested fix: "+fixerSuggestedFixText(sel.SuggestedFix)) + "\n")
+			d.WriteString(" " + styleSelected.Render(" f · Fix this… ") + "\n")
+		} else if sel.SuggestedFix != "" {
+			d.WriteString(" " + styleInfo.Render("~ Suggested fix: "+sel.SuggestedFix) + "\n")
+		} else {
+			d.WriteString(" " + styleInfo.Render("~ Informational only — nothing to fix.") + "\n")
+		}
 	}
 	// Wrap to the pane width, then clip with a VISIBLE cue — finding
 	// explanations must never be silently cut mid-sentence (H3).

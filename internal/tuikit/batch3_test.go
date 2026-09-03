@@ -196,13 +196,13 @@ func TestMouseStorageRadioAndMigrateButton(t *testing.T) {
 }
 
 func TestMouseDoctorFixThisButtonAndCeremonyCancel(t *testing.T) {
-	a := fixerApp(t)
+	a := doctorApp(t)
 	a = clickCell(t, a, "Fix this…", 0, frameBodyTop)
-	if !fixerDocModel(t, a).fixing {
+	if !docModel(t, a).fixing {
 		t.Fatal("clicking `f · Fix this…` must open the fix ceremony")
 	}
 	a = clickCell(t, a, "Cancel (Esc)", 0, frameBodyTop)
-	if fixerDocModel(t, a).fixing {
+	if docModel(t, a).fixing {
 		t.Error("clicking the fix ceremony's Cancel must close it")
 	}
 }
@@ -457,7 +457,7 @@ func TestReservedFooterHonestInKeyConsumingStates(t *testing.T) {
 			// only policy-backed row in this wave) before applying.
 			return pressSeq(t, NewApp(stubBackend{}), "3", "space", "a")
 		}},
-		{"doctor fix ceremony", func(t *testing.T) App { return pressSeq(t, fixerApp(t), "f") }},
+		{"doctor fix ceremony", func(t *testing.T) App { return pressSeq(t, doctorApp(t), "f") }},
 	}
 	for _, tc := range cases {
 		view := appView(tc.app(t))

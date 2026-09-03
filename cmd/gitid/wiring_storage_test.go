@@ -1079,7 +1079,7 @@ func TestStoragePlanMigrationCalledExactlyOncePerCeremony(t *testing.T) {
 // render doctor.Run(deps)'s converged output rather than fixture data.
 func TestStorageDemoBannerGlobalSSHIsOff(t *testing.T) {
 	b := newBackendForHome(t.TempDir())
-	for _, tab := range []tuikit.TabID{tuikit.TabGlobalSSH, tuikit.TabGlobalGit, tuikit.TabHealth, tuikit.TabFixer} {
+	for _, tab := range []tuikit.TabID{tuikit.TabGlobalSSH, tuikit.TabGlobalGit, tuikit.TabDoctor} {
 		if b.DemoBanner(tab) {
 			t.Errorf("TabID %v: DemoBanner must be false — this tab is wired", tab)
 		}

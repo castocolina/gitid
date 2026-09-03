@@ -19,9 +19,9 @@ func gignModel(t *testing.T, a App) gitIgnoreModel {
 
 func gignApp(t *testing.T, b stubBackend) App {
 	t.Helper()
-	a, _ := press(t, NewApp(b), "6")
+	a, _ := press(t, NewApp(b), "5")
 	if a.ActiveTab() != TabGitIgnore {
-		t.Fatalf("tab = %v after pressing 6, want TabGitIgnore", a.ActiveTab())
+		t.Fatalf("tab = %v after pressing 5, want TabGitIgnore", a.ActiveTab())
 	}
 	return a
 }
@@ -621,21 +621,21 @@ func TestGitIgnoreEditorHeightAccountsForHeaderRows(t *testing.T) {
 	}
 }
 
-func TestGitIgnoreKeySixFromInitialView(t *testing.T) {
-	a, _ := press(t, NewApp(stubBackend{}), "6")
+func TestGitIgnoreKeyFiveFromInitialView(t *testing.T) {
+	a, _ := press(t, NewApp(stubBackend{}), "5")
 	if a.ActiveTab() != TabGitIgnore {
-		t.Errorf("key 6 → tab %v, want TabGitIgnore", a.ActiveTab())
+		t.Errorf("key 5 → tab %v, want TabGitIgnore", a.ActiveTab())
 	}
 }
 
-func TestGitIgnoreRightArrowFromFixer(t *testing.T) {
-	a, _ := press(t, NewApp(stubBackend{}), "5")
-	if a.ActiveTab() != TabFixer {
-		t.Fatalf("setup: key 5 → %v, want TabFixer", a.ActiveTab())
+func TestGitIgnoreRightArrowFromDoctor(t *testing.T) {
+	a, _ := press(t, NewApp(stubBackend{}), "4")
+	if a.ActiveTab() != TabDoctor {
+		t.Fatalf("setup: key 4 → %v, want TabDoctor", a.ActiveTab())
 	}
 	a, _ = press(t, a, "right")
 	if a.ActiveTab() != TabGitIgnore {
-		t.Errorf("right from Fixer → %v, want TabGitIgnore", a.ActiveTab())
+		t.Errorf("right from Doctor → %v, want TabGitIgnore", a.ActiveTab())
 	}
 	a, _ = press(t, a, "right")
 	if a.ActiveTab() != TabGitIgnore {
@@ -643,24 +643,24 @@ func TestGitIgnoreRightArrowFromFixer(t *testing.T) {
 	}
 }
 
-func TestHelpRowFitsSixViews(t *testing.T) {
+func TestHelpRowFitsFiveViews(t *testing.T) {
 	a, _ := press(t, NewApp(stubBackend{}), "?")
 	view := appView(a)
-	if !strings.Contains(view, "1-6") {
-		t.Errorf("help row must use the 1-6 range form, got:\n%s", view)
+	if !strings.Contains(view, "1-5") {
+		t.Errorf("help row must use the 1-5 range form, got:\n%s", view)
 	}
-	if strings.Contains(view, "1 · 2 · 3 · 4 · 5 · 6") {
-		t.Error("help key column must not use the 21-column dotted form")
+	if strings.Contains(view, "1 · 2 · 3 · 4 · 5") {
+		t.Error("help key column must not use the dotted form")
 	}
 	row := ""
 	for _, line := range strings.Split(view, "\n") {
-		if strings.Contains(line, "1-6") {
+		if strings.Contains(line, "1-5") {
 			row = line
 			break
 		}
 	}
 	if row == "" {
-		t.Fatal("help overlay missing the six-view row")
+		t.Fatal("help overlay missing the five-view row")
 	}
 	if !strings.Contains(row, "Ignore") {
 		t.Errorf("help description must name Ignore, got %q", row)
@@ -668,7 +668,7 @@ func TestHelpRowFitsSixViews(t *testing.T) {
 	if w := len([]rune(strings.TrimRight(row, " "))); w > minFrameWidth {
 		t.Errorf("help row width = %d, want <= %d", w, minFrameWidth)
 	}
-	if !strings.HasPrefix(strings.TrimSpace(row), "1-6") {
-		t.Errorf("key column must start with 1-6 untruncated, got %q", row)
+	if !strings.HasPrefix(strings.TrimSpace(row), "1-5") {
+		t.Errorf("key column must start with 1-5 untruncated, got %q", row)
 	}
 }

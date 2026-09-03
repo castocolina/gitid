@@ -2,9 +2,112 @@ package tuikit
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
+
+const (
+	mergedFixableTitle    = "Private key is world-readable"
+	mergedNonFixableTitle = "opensource has no dedicated SSH Host block"
+	mergedCeremonyNeedle  = "Fix: Private key is world-readable"
+)
+
+// TestDoctorMergedListShowsEveryFinding is the Task 2 tracer: ONE App, ONE
+// tab, all THREE merge properties in sequence. Property (a) alone is not a
+// merge proof — today's Health tab already lists every finding — so the
+// conjunction is the thing under test. Failure messages name which of
+// (a)/(b)/(c) failed.
+func TestDoctorMergedListShowsEveryFinding(t *testing.T) {
+	a := doctorApp(t)
+	startTab := a.tab
+
+	ordered := orderedFindings(a.state)
+	fixable := fixableFindings(ordered)
+	if len(fixable) == 0 {
+		t.Fatal("fixture sanity: Seed must include at least one fixable finding")
+	}
+	var nonFixable DemoFinding
+	for _, f := range ordered {
+		if !f.Fixable {
+			nonFixable = f
+			break
+		}
+	}
+	if nonFixable.Title == "" {
+		t.Fatal("fixture sanity: Seed must include at least one non-fixable finding")
+	}
+	if nonFixable.Title != mergedNonFixableTitle {
+		t.Fatalf("fixture sanity: non-fixable title = %q, want %q", nonFixable.Title, mergedNonFixableTitle)
+	}
+	if fixable[0].Title != mergedFixableTitle {
+		t.Fatalf("fixture sanity: first fixable title = %q, want %q", fixable[0].Title, mergedFixableTitle)
+	}
+
+	view := appView(a)
+	wantCount := fmt.Sprintf("%d finding", len(ordered))
+	// List rows truncLine the title; match a distinctive prefix of each
+	// title that survives the master-list width, plus the status count.
+	if !strings.Contains(view, "Private key is world-readable") ||
+		!strings.Contains(view, "opensource has no dedicated SSH") ||
+		!strings.Contains(view, wantCount) {
+		t.Fatalf("(a) merged list must show both findings and status count %q:\n%s", wantCount, view)
+	}
+
+	a, _ = press(t, a, "f")
+	if a.tab != startTab {
+		t.Fatalf("(b) pressing f must stay on the same tab, got %v", a.tab)
+	}
+	view = appView(a)
+	if !strings.Contains(view, mergedCeremonyNeedle) {
+		t.Fatalf("(b) f on the fixable row must open the fix ceremony (want %q):\n%s", mergedCeremonyNeedle, view)
+	}
+	if !ceremonyPending(a) {
+		t.Fatal("(b) f on the fixable row must set pendingFixID / fixing on the merged model")
+	}
+
+	a, _ = press(t, a, "esc")
+	if ceremonyPending(a) {
+		t.Fatal("setup: Esc must cancel the ceremony before (c)")
+	}
+
+	for i := 0; i < len(ordered)-1; i++ {
+		a = pressSeq(t, a, "down")
+	}
+	sel := selectedFinding(a, ordered)
+	if sel.ID != nonFixable.ID {
+		t.Fatalf("setup: selected = %q, want non-fixable %q", sel.ID, nonFixable.ID)
+	}
+
+	a, _ = press(t, a, "f")
+	if a.tab != startTab {
+		t.Fatalf("(c) pressing f must stay on the same tab, got %v", a.tab)
+	}
+	if ceremonyPending(a) {
+		t.Fatal("(c) f on the non-fixable row must leave browse mode — no ceremony, no pendingFixID")
+	}
+	view = appView(a)
+	if strings.Contains(view, "Fix: "+nonFixable.Title) {
+		t.Fatalf("(c) f on the non-fixable row must not open a ceremony:\n%s", view)
+	}
+	if !strings.Contains(view, mergedNonFixableTitle) {
+		t.Fatalf("(c) non-fixable finding must still be listed after f:\n%s", view)
+	}
+}
+
+func ceremonyPending(a App) bool {
+	m, ok := a.screens[a.tab].(doctorModel)
+	return ok && (m.fixing || m.pendingFixID != "")
+}
+
+func selectedFinding(a App, ordered []DemoFinding) DemoFinding {
+	id := ""
+	if m, ok := a.screens[a.tab].(doctorModel); ok {
+		id = m.selectedID
+	}
+	sel, _, _ := selectFinding(ordered, id)
+	return sel
+}
 
 // wave2to5FixableFindings mirrors, in shape and ID naming convention, every
 // fixable (Fix != nil, per doctor.Finding) finding this phase's checks
@@ -130,21 +233,20 @@ func TestFixerCompleteFixableSet(t *testing.T) {
 		}
 	}
 
-	m := newFixerModel(stubBackend{})
+	m := newDoctorModel(stubBackend{})
 	for _, id := range wantFixable {
 		m.selectedID = id
 		view := m.view(state, 100, 30)
 		if !strings.Contains(stripANSI(view.body), " f · Fix this… ") {
-			t.Errorf("Fixer detail pane for %q must show the Fix-this affordance:\n%s", id, view.body)
+			t.Errorf("Doctor detail pane for %q must show the Fix-this affordance:\n%s", id, view.body)
 		}
 	}
 }
 
 // TestFixerSuggestedFixDropsStaleFixerHandoff proves 08-08's UX review
-// finding F6: the Fixer tab's own detail pane never renders the "available
+// finding F6: Doctor's own detail pane never renders the "available
 // on the Fixer screen" hand-off clause SuggestedFix carries for Health's
-// benefit -- it is stale once the user is already standing on the Fixer
-// tab. Health's own detail pane must still render the FULL text unchanged
+// benefit -- it is stale once the user is already standing on Doctor. Health's own detail pane must still render the FULL text unchanged
 // (health_screen_test.go covers that side).
 func TestFixerSuggestedFixDropsStaleFixerHandoff(t *testing.T) {
 	finding := DemoFinding{HealthFinding: HealthFinding{
@@ -154,15 +256,15 @@ func TestFixerSuggestedFixDropsStaleFixerHandoff(t *testing.T) {
 		Fixable:      true,
 	}}
 	state := DemoState{Scanned: true, Findings: []DemoFinding{finding}}
-	m := newFixerModel(stubBackend{})
+	m := newDoctorModel(stubBackend{})
 	m.selectedID = finding.ID
 	view := stripANSI(m.view(state, 100, 30).body)
 	if strings.Contains(view, "available on the Fixer screen") {
-		t.Errorf("Fixer detail pane must not render the stale Fixer hand-off clause:\n%s", view)
+		t.Errorf("Doctor detail pane must not render the stale Fixer hand-off clause:\n%s", view)
 	}
 	for _, want := range []string{"Set IdentitiesOnly yes on the", "clientb.github.com Host block"} {
 		if !strings.Contains(view, want) {
-			t.Errorf("Fixer detail pane must still render the rest of the suggested-fix text (missing %q):\n%s", want, view)
+			t.Errorf("Doctor detail pane must still render the rest of the suggested-fix text (missing %q):\n%s", want, view)
 		}
 	}
 }
@@ -216,23 +318,23 @@ func TestBatchWalkHalt(t *testing.T) {
 	a := NewApp(backend)
 	a.state.Scanned = true
 	a.state.Findings = threeBatchFindings()
-	a, _ = a.setTab(TabFixer)
-	fx, ok := a.screens[TabFixer].(fixerModel)
+	a, _ = a.setTab(TabDoctor)
+	fx, ok := a.screens[TabDoctor].(doctorModel)
 	if !ok {
-		t.Fatalf("screens[TabFixer] is %T, want fixerModel", a.screens[TabFixer])
+		t.Fatalf("screens[TabDoctor] is %T, want doctorModel", a.screens[TabDoctor])
 	}
 	fx.scanning = false
-	a.screens[TabFixer] = fx
+	a.screens[TabDoctor] = fx
 
 	a, _ = press(t, a, "F")
-	fx, _ = a.screens[TabFixer].(fixerModel)
+	fx, _ = a.screens[TabDoctor].(doctorModel)
 	if fx.batch == nil || fx.batch.queue[0] != "fix-1" {
 		t.Fatalf("fixture sanity: batch walk order = %+v, want fix-1 first", fx.batch)
 	}
 
 	// Fix 1: succeeds (not fix-2, the configured failure).
 	a = confirmFix(t, a)
-	fx, _ = a.screens[TabFixer].(fixerModel)
+	fx, _ = a.screens[TabDoctor].(doctorModel)
 	if fx.batchHalt != "" {
 		t.Fatalf("fix 1 must not halt the batch: %q", fx.batchHalt)
 	}
@@ -245,7 +347,7 @@ func TestBatchWalkHalt(t *testing.T) {
 
 	// Fix 2: fails.
 	a = confirmFix(t, a)
-	fx, _ = a.screens[TabFixer].(fixerModel)
+	fx, _ = a.screens[TabDoctor].(doctorModel)
 	if fx.batch != nil {
 		t.Error("batch must be nil once halted — fix 3 must never be attempted")
 	}
@@ -259,14 +361,14 @@ func TestBatchWalkHalt(t *testing.T) {
 	if fx.ceremony.commitErr == "" {
 		t.Error("fix 2's own ceremony must show the retryable failure state (commitErr set)")
 	}
-	view := stripANSI(fx.view(fixableState(a.state), 100, 30).body)
+	view := stripANSI(fx.view(a.state, 100, 30).body)
 	for _, want := range []string{"Fix 2 of 3 failed and was rolled back", "the first 1 fixes already applied stand", "Nothing else in this batch was attempted"} {
 		if !strings.Contains(view, want) {
-			t.Errorf("Fixer view must render the halt message segment %q:\n%s", want, view)
+			t.Errorf("Doctor view must render the halt message segment %q:\n%s", want, view)
 		}
 	}
 	if !strings.Contains(view, "simulated write failure") {
-		t.Errorf("Fixer view must render fix 2's own ceremony failure:\n%s", view)
+		t.Errorf("Doctor view must render fix 2's own ceremony failure:\n%s", view)
 	}
 
 	// Findings state proves fix 1 genuinely applied (Reduce ran for it) and
@@ -303,22 +405,22 @@ func TestSingleFixFailureNoNonsensicalBatchMessage(t *testing.T) {
 	a := NewApp(backend)
 	a.state.Scanned = true
 	a.state.Findings = threeBatchFindings()
-	a, _ = a.setTab(TabFixer)
-	fx, ok := a.screens[TabFixer].(fixerModel)
+	a, _ = a.setTab(TabDoctor)
+	fx, ok := a.screens[TabDoctor].(doctorModel)
 	if !ok {
-		t.Fatalf("screens[TabFixer] is %T, want fixerModel", a.screens[TabFixer])
+		t.Fatalf("screens[TabDoctor] is %T, want doctorModel", a.screens[TabDoctor])
 	}
 	fx.scanning = false
-	a.screens[TabFixer] = fx
+	a.screens[TabDoctor] = fx
 
 	// "f" on the single highest-severity finding — NOT "F" (no batch walk).
 	a, _ = press(t, a, "f")
-	fx, _ = a.screens[TabFixer].(fixerModel)
+	fx, _ = a.screens[TabDoctor].(doctorModel)
 	if fx.batch != nil {
 		t.Fatalf("fixture sanity: single 'f' fix must never start a batch, got %+v", fx.batch)
 	}
 	a = confirmFix(t, a)
-	fx, _ = a.screens[TabFixer].(fixerModel)
+	fx, _ = a.screens[TabDoctor].(doctorModel)
 
 	if fx.batchHalt != "" {
 		t.Errorf("a single, non-batch fix failure must not set the batch-shaped halt message, got %q", fx.batchHalt)
@@ -326,11 +428,110 @@ func TestSingleFixFailureNoNonsensicalBatchMessage(t *testing.T) {
 	if fx.ceremony.commitErr == "" {
 		t.Error("the failed single fix's own ceremony must still show the retryable failure state (commitErr set)")
 	}
-	view := stripANSI(fx.view(fixableState(a.state), 100, 30).body)
+	view := stripANSI(fx.view(a.state, 100, 30).body)
 	if strings.Contains(view, "of 0 failed") || strings.Contains(view, "Fix 1 of 0") {
-		t.Errorf("Fixer view must never render the nonsensical batch-shaped message for a single fix:\n%s", view)
+		t.Errorf("Doctor view must never render the nonsensical batch-shaped message for a single fix:\n%s", view)
 	}
 	if !strings.Contains(view, "simulated single-fix write failure") {
-		t.Errorf("Fixer view must still render the single fix's own ceremony failure:\n%s", view)
+		t.Errorf("Doctor view must still render the single fix's own ceremony failure:\n%s", view)
+	}
+}
+
+func TestParseErrorScreenRequiresFilesFamily(t *testing.T) {
+	files := DemoFinding{HealthFinding: HealthFinding{Family: "Files", Severity: SeverityCritical, Section: "Git", Title: "Git configuration cannot be parsed", Explanation: "bad config"}}
+	if _, ok := parseErrorFinding([]DemoFinding{files}); !ok {
+		t.Fatal("Files-critical finding must select the parse-error frame")
+	}
+	perms := DemoFinding{HealthFinding: HealthFinding{Family: "Permissions", Severity: SeverityCritical, Section: "SSH", Title: "private key exposed"}}
+	if _, ok := parseErrorFinding([]DemoFinding{perms}); ok {
+		t.Fatal("Permissions-critical finding must not select the parse-error frame")
+	}
+}
+
+func TestDoctorParseErrorFrameSuppressesOrdinaryFindings(t *testing.T) {
+	m := newDoctorModel(stubBackend{})
+	state := DemoState{Scanned: true, Findings: []DemoFinding{
+		{HealthFinding: HealthFinding{Family: "Files", Severity: SeverityCritical, Section: "Git", Title: "Git configuration cannot be parsed", Explanation: "bad config"}},
+		{HealthFinding: HealthFinding{Family: "Coherence", Severity: SeverityError, Section: "Git", Title: "misleading derived finding"}},
+	}}
+	view := m.view(state, 100, 30)
+	if !strings.Contains(view.body, "Checks paused") || strings.Contains(view.body, "misleading derived finding") {
+		t.Fatalf("parse-error frame = %q", view.body)
+	}
+}
+
+func TestDoctorBrowseDoesNotShowWriteCeremonyMarkers(t *testing.T) {
+	withFindings := Seed()
+	withFindings.Scanned = true
+	perIdentity := withFindings
+	parseError := DemoState{Scanned: true, Findings: []DemoFinding{{
+		HealthFinding: HealthFinding{Family: "Files", Severity: SeverityCritical, Section: "Git", Title: "Git configuration cannot be parsed", Explanation: "bad config"},
+		Identity:      "legacy",
+	}}}
+	for name, tc := range map[string]struct {
+		model doctorModel
+		state DemoState
+	}{
+		"with-findings": {model: newDoctorModel(stubBackend{}), state: withFindings},
+		"all-green":     {model: newDoctorModel(stubBackend{}), state: DemoState{Scanned: true}},
+		"per-identity":  {model: doctorModel{identityName: "legacy"}, state: perIdentity},
+		"parse-error":   {model: newDoctorModel(stubBackend{}), state: parseError},
+	} {
+		t.Run(name, func(t *testing.T) {
+			view := stripANSI(tc.model.view(tc.state, 100, 30).body)
+			for _, forbidden := range []string{"Apply fix", "Confirm write", "Backed up ->", "Wrote ->"} {
+				if strings.Contains(view, forbidden) {
+					t.Errorf("Doctor browse rendered forbidden write marker %q:\n%s", forbidden, view)
+				}
+			}
+		})
+	}
+}
+
+func TestDoctorNewScreensIsFiveAndDoctorTyped(t *testing.T) {
+	screens := newScreens(stubBackend{}, DemoState{})
+	if len(screens) != 5 {
+		t.Fatalf("newScreens returned %d screens, want 5", len(screens))
+	}
+	if _, ok := screens[TabDoctor].(doctorModel); !ok {
+		t.Fatalf("screens[TabDoctor] is %T, want doctorModel", screens[TabDoctor])
+	}
+}
+
+func TestDoctorIdentityFilterResetsOnOrdinaryReentry(t *testing.T) {
+	a := NewApp(stubBackend{})
+	for identModel(t, a).selected != "clientB" {
+		a = pressSeq(t, a, "down")
+	}
+	a, _ = press(t, a, "h")
+	if a.tab != TabDoctor {
+		t.Fatalf("tab after h = %v, want TabDoctor", a.tab)
+	}
+	if docModel(t, a).identityName != "clientB" {
+		t.Fatalf("identityName after h = %q, want clientB", docModel(t, a).identityName)
+	}
+	model, _ := a.Update(doctorScanMsg{})
+	a = model.(App)
+	view := appView(a)
+	if strings.Contains(view, "Private key is world-readable") {
+		t.Fatalf("deep-link must stay filtered to clientB:\n%s", view)
+	}
+	a, _ = press(t, a, "1")
+	if a.tab != TabIdentities {
+		t.Fatalf("tab after 1 = %v, want TabIdentities", a.tab)
+	}
+	a, _ = press(t, a, "4")
+	if a.tab != TabDoctor {
+		t.Fatalf("tab after 4 = %v, want TabDoctor", a.tab)
+	}
+	if docModel(t, a).identityName != "" {
+		t.Fatalf("ordinary re-entry must clear identityName, got %q", docModel(t, a).identityName)
+	}
+	view = appView(a)
+	if !strings.Contains(view, "Private key is world-readable") {
+		t.Fatalf("ordinary re-entry must show every identity's findings:\n%s", view)
+	}
+	if !strings.Contains(view, "IdentitiesOnly no contradicts") {
+		t.Fatalf("ordinary re-entry must still include clientB's finding:\n%s", view)
 	}
 }

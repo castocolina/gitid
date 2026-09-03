@@ -2,8 +2,8 @@ package tuikit
 
 // app.go is the root Bubble Tea v2 model of the live gitid-dummy demo —
 // the Go mirror of .planning/design/mockup-src/src/demo/DemoApp.tsx:
-// six primary views in the persistent header nav (1 Identities ·
-// 2 SSH · 3 Git · 4 Health · 5 Fixer · 6 Ignore), contextual-only
+// five primary views in the persistent header nav (1 Identities ·
+// 2 SSH · 3 Git · 4 Doctor · 5 Ignore), contextual-only
 // footer, live master-detail everywhere, no vim keys, `?` help with the
 // full 8-state legend, `Ctrl+P` palette, and a real `q` quit prompt
 // (unlike the browser demo, q here actually exits). All data is dummy
@@ -11,7 +11,7 @@ package tuikit
 //
 // Key-routing precedence mirrors DemoApp.tsx: open overlay consumes keys
 // first → the active screen's local handler (forms/ceremonies own their
-// keys) → globals (1..6 tabs, ? help, ctrl+p palette, q quit prompt).
+// keys) → globals (1..5 tabs, ? help, ctrl+p palette, q quit prompt).
 
 import (
 	"strings"
@@ -43,7 +43,7 @@ type keyResult struct {
 	cmd            tea.Cmd
 	handled        bool
 	note           string
-	healthIdentity string
+	doctorIdentity string
 }
 
 // screenModel is the contract every tab's child model implements. Handlers
@@ -80,7 +80,7 @@ const (
 // adapted to the terminal (q really quits; the palette lists views and
 // actions — there are no browser reference routes here).
 var helpKeys = [][2]string{
-	{"1-6", "Switch view: Identities / SSH / Git / Health / Fixer / Ignore"},
+	{"1-5", "Switch view: Identities / SSH / Git / Doctor / Ignore"},
 	{"↑ ↓", "Move the selection — the detail pane updates live"},
 	{"← →", "Switch sub-tabs (e.g. Options / Storage on Global SSH)"},
 	{"Enter", "Activate the focused control / primary action of the pane"},
@@ -126,9 +126,8 @@ var paletteEntries = []paletteEntry{
 	{label: "1 · Identities", tab: TabIdentities},
 	{label: "2 · Global SSH options", tab: TabGlobalSSH},
 	{label: "3 · Global Git options", tab: TabGlobalGit},
-	{label: "4 · Health", tab: TabHealth},
-	{label: "5 · Fixer", tab: TabFixer},
-	{label: "6 · Global Git Ignore", tab: TabGitIgnore},
+	{label: "4 · Doctor", tab: TabDoctor},
+	{label: "5 · Global Git Ignore", tab: TabGitIgnore},
 	{label: "? · Help / key map / state legend", help: true},
 }
 
@@ -144,7 +143,7 @@ type App struct {
 	overlay overlayKind
 	palette textinput.Model
 	note    string
-	screens [6]screenModel
+	screens [5]screenModel
 	// initCmd is the initial tab's activation command — the activation
 	// itself already ran in NewApp (Init's value receiver cannot retain
 	// the activated screen model, so activating there would lose it).
@@ -297,14 +296,14 @@ func (a *App) apply(actions []Action) {
 	}
 }
 
-// checkFixBatchHalt implements D-16: a FixFinding dispatched during a Fixer
+// checkFixBatchHalt implements D-16: a FixFinding dispatched during a Doctor
 // batch walk that fails halts the walk instead of silently advancing.
 // Persist runs SYNCHRONOUSLY inside apply, called right before this from
 // the SAME handleKey/handleClick call — a.backend.PersistError() already
 // reflects the real outcome of the just-dispatched action, no async round
 // trip needed.
 //
-// fixerModel.handleKey optimistically advances its own batch queue
+// doctorModel.handleKey optimistically advances its own batch queue
 // assuming success BEFORE Persist ever runs (a.screens[a.tab] already holds
 // that optimistic model by the time this is called). On failure, that
 // optimistic model is discarded in favor of one built from prevScreen — the
@@ -312,11 +311,11 @@ func (a *App) apply(actions []Action) {
 // fix and the batch state exactly as it stood right before the doomed
 // dispatch.
 func (a *App) checkFixBatchHalt(prevScreen screenModel) {
-	postFixer, ok := a.screens[a.tab].(fixerModel)
+	postFixer, ok := a.screens[a.tab].(doctorModel)
 	if !ok || postFixer.pendingFixID == "" {
 		return
 	}
-	preFixer, wasFixer := prevScreen.(fixerModel)
+	preFixer, wasFixer := prevScreen.(doctorModel)
 	if err := a.backend.PersistError(); err != nil {
 		if wasFixer {
 			a.screens[a.tab] = preFixer.haltBatch(postFixer.pendingFixName, err.Error())
@@ -380,13 +379,32 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
-// setTab switches the active view and runs its activation hook.
+// setTab switches the active view and runs its activation hook. Ordinary
+// routes (numeric keys, palette, header chip, arrow adjacency) always land
+// with a clean identity filter so a prior h-deep-link cannot silently
+// survive (09.4-01 cycle-3).
 func (a App) setTab(t TabID) (App, tea.Cmd) {
 	a.tab = t
 	a.note = ""
+	if doc, ok := a.screens[t].(doctorModel); ok {
+		doc.identityName = ""
+		a.screens[t] = doc
+	}
 	screen, cmd := a.screens[t].activate(a.state)
 	a.screens[t] = screen
 	return a, cmd
+}
+
+// setTabFiltered is the h-deep-link sibling of setTab: it calls setTab
+// (which clears the filter, then activates) and re-seeds Doctor's
+// per-identity filter afterwards so the deep-link filter survives the clear.
+func (a App) setTabFiltered(t TabID, identityName string) (App, tea.Cmd) {
+	next, cmd := a.setTab(t)
+	if doc, ok := next.screens[t].(doctorModel); ok {
+		doc.identityName = identityName
+		next.screens[t] = doc
+	}
+	return next, cmd
 }
 
 // handleKey implements the DemoApp.tsx routing precedence: overlays first,
@@ -450,13 +468,8 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if res.note != "" {
 		a.note = res.note
 	}
-	if res.healthIdentity != "" {
-		health, ok := a.screens[TabHealth].(healthModel)
-		if ok {
-			health.identityName = res.healthIdentity
-			a.screens[TabHealth] = health
-		}
-		next, cmd := a.setTab(TabHealth)
+	if res.doctorIdentity != "" {
+		next, cmd := a.setTabFiltered(TabDoctor, res.doctorIdentity)
 		if res.cmd != nil && cmd != nil {
 			return next, tea.Batch(res.cmd, cmd)
 		}
@@ -471,11 +484,11 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Globals last.
 	switch key {
-	case "1", "2", "3", "4", "5", "6":
+	case "1", "2", "3", "4", "5":
 		next, cmd := a.setTab(TabID(int(key[0] - '1')))
 		return next, cmd
 	case "left":
-		// D4 (checkpoint-2 contract): plain ←/→ switch views 1..6 at the
+		// D4 (checkpoint-2 contract): plain ←/→ switch views 1..5 at the
 		// TOP LEVEL ONLY — reached here exactly because the active screen's
 		// own handler returned unhandled (capturing panes and Global SSH's
 		// ←/→ sub-tabs already consumed the key above and never reach this
@@ -517,7 +530,7 @@ func (a App) handleMouse(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 			return a.setTab(t)
 		}
 		if headerChipAt(a.width, a.state, msg.X) {
-			return a.setTab(TabHealth)
+			return a.setTab(TabDoctor)
 		}
 		return a, nil
 	}
@@ -551,13 +564,8 @@ func (a App) handleMouse(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	if res.note != "" {
 		a.note = res.note
 	}
-	if res.healthIdentity != "" {
-		health, ok := a.screens[TabHealth].(healthModel)
-		if ok {
-			health.identityName = res.healthIdentity
-			a.screens[TabHealth] = health
-		}
-		return a.setTab(TabHealth)
+	if res.doctorIdentity != "" {
+		return a.setTabFiltered(TabDoctor, res.doctorIdentity)
 	}
 	return a, res.cmd
 }
@@ -718,18 +726,15 @@ func padRight(s string, width int) string {
 	return s
 }
 
-// newScreens wires the four tab child models in header order. Only the
-// Identities tab owns create-flow effects, so it is the one screen handed
-// the Backend; the Global SSH and Global Git models need the backend for
-// their live options read and apply commit, the other two are pure
-// DemoState renderers.
-func newScreens(b Backend, initial DemoState) [6]screenModel {
-	return [6]screenModel{
+// newScreens wires the five tab child models in header order. Identities,
+// Global SSH, Global Git, Doctor, and Git Ignore all take the Backend for
+// live reads and write ceremonies.
+func newScreens(b Backend, initial DemoState) [5]screenModel {
+	return [5]screenModel{
 		newIdentitiesModel(b, initial),
 		newGlobalSSHModel(b),
 		newGlobalGitModel(b),
-		newHealthModel(),
-		newFixerModel(b),
+		newDoctorModel(b),
 		newGitIgnoreModel(b),
 	}
 }

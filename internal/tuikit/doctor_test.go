@@ -5,13 +5,12 @@ import (
 	"testing"
 )
 
-// doctorApp returns an App on the Health tab (read-only, ALL findings) with
-// the scan completed.
+// doctorApp returns an App on the merged Doctor tab with the scan completed.
 func doctorApp(t *testing.T) App {
 	t.Helper()
 	a, cmd := press(t, NewApp(stubBackend{}), "4")
 	if cmd == nil {
-		t.Fatal("first Health entry must schedule the auto-scan tick")
+		t.Fatal("first Doctor entry must schedule the auto-scan tick")
 	}
 	if !strings.Contains(appView(a), "running doctor scan…") {
 		t.Fatal("scanning state missing")
@@ -20,37 +19,12 @@ func doctorApp(t *testing.T) App {
 	return model.(App)
 }
 
-// fixerApp returns an App on the Fixer tab (fixableFindings-only, f/F
-// ceremony) with the scan completed.
-func fixerApp(t *testing.T) App {
+// docModel extracts the Doctor tab's doctorModel.
+func docModel(t *testing.T, a App) doctorModel {
 	t.Helper()
-	a, cmd := press(t, NewApp(stubBackend{}), "5")
-	if cmd == nil {
-		t.Fatal("first Fixer entry must schedule the auto-scan tick")
-	}
-	if !strings.Contains(appView(a), "running doctor scan…") {
-		t.Fatal("scanning state missing")
-	}
-	model, _ := a.Update(doctorScanMsg{})
-	return model.(App)
-}
-
-// docModel extracts the Health tab's healthModel.
-func docModel(t *testing.T, a App) healthModel {
-	t.Helper()
-	m, ok := a.screens[TabHealth].(healthModel)
+	m, ok := a.screens[TabDoctor].(doctorModel)
 	if !ok {
-		t.Fatalf("screens[3] is %T, want healthModel", a.screens[TabHealth])
-	}
-	return m
-}
-
-// fixerDocModel extracts the Fixer tab's fixerModel.
-func fixerDocModel(t *testing.T, a App) fixerModel {
-	t.Helper()
-	m, ok := a.screens[TabFixer].(fixerModel)
-	if !ok {
-		t.Fatalf("screens[4] is %T, want fixerModel", a.screens[TabFixer])
+		t.Fatalf("screens[TabDoctor] is %T, want doctorModel", a.screens[TabDoctor])
 	}
 	return m
 }
@@ -110,15 +84,13 @@ func TestDoctorDetailAndInfoOnlyFinding(t *testing.T) {
 	if !strings.Contains(view, "Informational only — nothing to fix.") {
 		t.Error("info-only finding must render the nothing-to-fix alert")
 	}
-	// Health has no f/F ceremony at all — an info-only finding is
-	// structurally unfixable from this tab (Fixer never even lists it).
 	if strings.Contains(view, " f · Fix this… ") {
-		t.Error("Health must never render the Fix-this affordance")
+		t.Error("an info-only finding must not render the Fix-this affordance")
 	}
 }
 
 func TestDoctorFixThisRemovesFindingLive(t *testing.T) {
-	a := fixerApp(t)
+	a := doctorApp(t)
 	countsBefore := CountFindings(a.state)
 
 	// Selected defaults to the first ordered finding: the critical perms.
@@ -146,7 +118,7 @@ func TestDoctorFixThisRemovesFindingLive(t *testing.T) {
 }
 
 func TestDoctorFixAllWalksEveryFixableWithCounter(t *testing.T) {
-	a := fixerApp(t)
+	a := doctorApp(t)
 	fixable := fixableFindings(orderedFindings(a.state))
 	if len(fixable) != 4 {
 		t.Fatalf("fixable = %d, want 4", len(fixable))
@@ -174,7 +146,7 @@ func TestDoctorFixAllWalksEveryFixableWithCounter(t *testing.T) {
 		t.Fatal("second ceremony must render for the next finding")
 	}
 	a, _ = press(t, a, "enter") // no-op until the word is typed
-	if !fixerDocModel(t, a).fixing {
+	if !docModel(t, a).fixing {
 		t.Fatal("destructive batch step must stay gated")
 	}
 	a = typeText(t, a, "clientb.github.com")
@@ -196,7 +168,7 @@ func TestDoctorFixAllWalksEveryFixableWithCounter(t *testing.T) {
 	a, _ = press(t, a, "enter")
 	a, _ = press(t, a, "enter")
 
-	m := fixerDocModel(t, a)
+	m := docModel(t, a)
 	if m.fixing || m.batch != nil {
 		t.Error("batch must end after the last fixable finding")
 	}
@@ -214,12 +186,12 @@ func TestDoctorFixAllWalksEveryFixableWithCounter(t *testing.T) {
 }
 
 func TestDoctorEscCancelsBatchRemainder(t *testing.T) {
-	a := fixerApp(t)
+	a := doctorApp(t)
 	a, _ = press(t, a, "F")
 	a, _ = press(t, a, "enter") // confirm fix 1
 	a, _ = press(t, a, "enter") // done fix 1 → fix 2 ceremony renders
 	a, _ = press(t, a, "esc")   // cancel the remainder
-	m := fixerDocModel(t, a)
+	m := docModel(t, a)
 	if m.fixing || m.batch != nil {
 		t.Error("Esc must cancel the remainder of the batch")
 	}
@@ -245,9 +217,9 @@ func TestDoctorAllGreenRendersBothSummaries(t *testing.T) {
 func TestDoctorListDimsDuringFixCeremony(t *testing.T) {
 	// The findings list dims while the fix ceremony owns the pane (L3 —
 	// web: opacity 0.75), the same treatment as the Identities sidebar.
-	a := fixerApp(t)
+	a := doctorApp(t)
 	a, _ = press(t, a, "f")
-	if !fixerDocModel(t, a).fixing {
+	if !docModel(t, a).fixing {
 		t.Fatal("f must open the fix ceremony")
 	}
 	raw := a.View().Content

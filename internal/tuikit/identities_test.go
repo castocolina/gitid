@@ -153,28 +153,28 @@ func TestIdentityHealthDeepLink(t *testing.T) {
 		a = pressSeq(t, a, "down")
 	}
 	a, _ = press(t, a, "h")
-	if a.tab != TabHealth {
-		t.Fatalf("tab after h = %v, want TabHealth", a.tab)
+	if a.tab != TabDoctor {
+		t.Fatalf("tab after h = %v, want TabDoctor", a.tab)
 	}
-	health, ok := a.screens[TabHealth].(healthModel)
+	health, ok := a.screens[TabDoctor].(doctorModel)
 	if !ok {
-		t.Fatalf("screens[TabHealth] is %T, want healthModel", a.screens[TabHealth])
+		t.Fatalf("screens[TabDoctor] is %T, want doctorModel", a.screens[TabDoctor])
 	}
 	if health.identityName != "clientB" {
-		t.Errorf("healthModel.identityName = %q, want clientB", health.identityName)
+		t.Errorf("doctorModel.identityName = %q, want clientB", health.identityName)
 	}
 	// The scan tick must still complete for the deep-linked tab.
 	model, _ := a.Update(doctorScanMsg{})
 	a = model.(App)
 	view := appView(a)
 	if !strings.Contains(view, "IdentitiesOnly no contradicts an explicit") {
-		t.Errorf("deep-linked Health view must show clientB's own finding:\n%s", view)
+		t.Errorf("deep-linked Doctor view must show clientB's own finding:\n%s", view)
 	}
 	if strings.Contains(view, "Private key is world-readable") {
-		t.Errorf("deep-linked Health view must NOT show a different identity's finding:\n%s", view)
+		t.Errorf("deep-linked Doctor view must NOT show a different identity's finding:\n%s", view)
 	}
 	if !strings.Contains(view, "clientB:") {
-		t.Errorf("deep-linked Health status must name the identity:\n%s", view)
+		t.Errorf("deep-linked Doctor status must name the identity:\n%s", view)
 	}
 }
 

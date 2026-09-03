@@ -1595,8 +1595,8 @@ func TestGlobalGitProbeErrorRendersInlineAdvisoryAndStaysNavigable(t *testing.T)
 		}
 	}
 	a, _ = press(t, a, "right")
-	if a.tab != TabHealth {
-		t.Errorf("right navigation from a probe-error Global Git view selected tab %v, want Health", a.tab)
+	if a.tab != TabDoctor {
+		t.Errorf("right navigation from a probe-error Global Git view selected tab %v, want Doctor", a.tab)
 	}
 }
 

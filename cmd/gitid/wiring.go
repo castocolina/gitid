@@ -859,9 +859,8 @@ func (b *realBackend) InitialState() tuikit.DemoState {
 //   - TabIdentities (plan 03)
 //   - TabGlobalSSH (plan 06-05: both Options and Storage sub-tabs are now live)
 //   - TabGlobalGit (plan 07-04: real option states, ceremonies, and probe error render are live)
-//   - TabHealth, TabFixer (08-01-PLAN.md Task 1: both now render
-//     doctor.Run(deps)'s converged output, never fixture data — the whole
-//     point of this plan is that they are no longer demo data)
+//   - TabDoctor (09.4-01: merged Health + Fixer; both already rendered
+//     doctor.Run(deps)'s converged output as of 08-01-PLAN.md Task 1)
 func (b *realBackend) DemoBanner(tuikit.TabID) bool {
 	return false
 }

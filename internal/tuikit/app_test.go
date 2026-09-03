@@ -27,7 +27,7 @@ func appView(a App) string {
 func TestNewAppRendersTheFrame(t *testing.T) {
 	a := NewApp(stubBackend{})
 	view := appView(a)
-	for _, want := range []string{"gitid", "[1] Identities", "[2] SSH", "[3] Git", "[4] Health", "[5] Fixer", "[6] Ignore", "8 ids"} {
+	for _, want := range []string{"gitid", "[1] Identities", "[2] SSH", "[3] Git", "[4] Doctor", "[5] Ignore", "8 ids"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("initial frame missing %q", want)
 		}
@@ -91,11 +91,11 @@ func TestNumberKeysSwitchTabs(t *testing.T) {
 	}
 }
 
-// TestTabsAndPaletteReachAllPrimaryViews pins SHELL-02 against the 6-tab
-// shell (09.2-01-PLAN.md Task 1): number keys 1–6 switch the six primary
-// views, and the palette offers those six plus Help (seven entries).
+// TestTabsAndPaletteReachAllPrimaryViews pins SHELL-02 against the 5-tab
+// shell (09.4-01): number keys 1–5 switch the five primary views, and the
+// palette offers those five plus Help (six entries).
 func TestTabsAndPaletteReachAllPrimaryViews(t *testing.T) {
-	want := []TabID{TabIdentities, TabGlobalSSH, TabGlobalGit, TabHealth, TabFixer, TabGitIgnore}
+	want := []TabID{TabIdentities, TabGlobalSSH, TabGlobalGit, TabDoctor, TabGitIgnore}
 	a := NewApp(stubBackend{})
 	for i, tab := range want {
 		key := string(rune('1' + i))
@@ -104,8 +104,8 @@ func TestTabsAndPaletteReachAllPrimaryViews(t *testing.T) {
 			t.Errorf("key %s → tab %v, want %v", key, a.tab, tab)
 		}
 	}
-	if len(paletteEntries) != 7 {
-		t.Errorf("palette entries = %d, want 7 (six views + help)", len(paletteEntries))
+	if len(paletteEntries) != 6 {
+		t.Errorf("palette entries = %d, want 6 (five views + help)", len(paletteEntries))
 	}
 	a, _ = press(t, a, "ctrl+p")
 	view := appView(a)
@@ -129,8 +129,7 @@ func TestNewScreensExhaustiveSwitchOverTabID(t *testing.T) {
 		{TabIdentities, fmt.Sprintf("%T", identitiesModel{})},
 		{TabGlobalSSH, fmt.Sprintf("%T", globalSSHModel{})},
 		{TabGlobalGit, fmt.Sprintf("%T", globalGitModel{})},
-		{TabHealth, fmt.Sprintf("%T", healthModel{})},
-		{TabFixer, fmt.Sprintf("%T", fixerModel{})},
+		{TabDoctor, fmt.Sprintf("%T", doctorModel{})},
 		{TabGitIgnore, fmt.Sprintf("%T", gitIgnoreModel{})},
 	}
 	if len(screens) != len(want) {
@@ -214,15 +213,15 @@ func TestPaletteFiltersAndOpensFirstMatch(t *testing.T) {
 		t.Error("palette body missing")
 	}
 
-	for _, r := range "health" {
+	for _, r := range "doctor" {
 		a, _ = press(t, a, string(r))
 	}
 	matches := a.paletteMatches()
-	if len(matches) != 1 || matches[0].tab != TabHealth {
-		t.Fatalf("palette matches for 'health' = %v", matches)
+	if len(matches) != 1 || matches[0].tab != TabDoctor {
+		t.Fatalf("palette matches for 'doctor' = %v", matches)
 	}
 	a, _ = press(t, a, "enter")
-	if a.overlay != overlayNone || a.tab != TabHealth {
+	if a.overlay != overlayNone || a.tab != TabDoctor {
 		t.Errorf("enter must open the first match; overlay=%v tab=%v", a.overlay, a.tab)
 	}
 }

@@ -948,7 +948,7 @@ func TestDemoBannerOnlyDoctorIsUnwired(t *testing.T) {
 	b := newBackendForHome(t.TempDir())
 	for _, tab := range []tuikit.TabID{
 		tuikit.TabIdentities, tuikit.TabGlobalSSH, tuikit.TabGlobalGit,
-		tuikit.TabHealth, tuikit.TabFixer, tuikit.TabGitIgnore,
+		tuikit.TabDoctor, tuikit.TabGitIgnore,
 	} {
 		if b.DemoBanner(tab) {
 			t.Errorf("tab %v is wired to live data and must not carry the demo banner", tab)

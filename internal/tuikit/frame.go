@@ -55,29 +55,28 @@ const masterDetailGutter = 2
 // frameBodyRows is how many body rows RenderFrame gives a view at height.
 func frameBodyRows(height int) int { return height - frameBodyTop - frameChromeBelow }
 
-// TabID indexes the six primary views. Health and Fixer are separate,
-// independently-reachable tabs (08-01-PLAN.md Task 1 — the SHELL-01/FIX-02
-// "Fixer lives inside Doctor" design is superseded: Phase 8's Health screen
-// is read-only diagnosis and the Fixer screen owns the write ceremony,
-// each its own tab). TabGitIgnore is the sixth top-level view (09.2-01).
+// TabID indexes the five primary views. Phase 8's FIX-02 split (Health +
+// Fixer as separate tabs) is reversed by 09.4-01: one Doctor tab lists
+// every finding and carries the inline fix ceremony, so two screens cannot
+// report contradicting counts for the same scan (UXP-05, D-06). TabGitIgnore
+// occupies the slot after Doctor (key 5; was key 6 before the merge).
 type TabID int
 
-// The six primary views, in header order.
+// The five primary views, in header order.
 const (
 	TabIdentities TabID = iota
 	TabGlobalSSH
 	TabGlobalGit
-	TabHealth
-	TabFixer
+	TabDoctor
 	TabGitIgnore
 )
 
 // tabLabels are the FULL labels used by the breadcrumb line, indexed by TabID.
-var tabLabels = [...]string{"Identities", "Global SSH", "Global Git", "Health", "Fixer", "Global Git Ignore"}
+var tabLabels = [...]string{"Identities", "Global SSH", "Global Git", "Doctor", "Global Git Ignore"}
 
 // tabNavLabels are the SHORT labels the header strip and its hit-test share,
 // so the rendered header and headerTabAt can never disagree.
-var tabNavLabels = [...]string{"Identities", "SSH", "Git", "Health", "Fixer", "Ignore"}
+var tabNavLabels = [...]string{"Identities", "SSH", "Git", "Doctor", "Ignore"}
 
 // FooterAction is one contextual footer hint (key + label).
 type FooterAction struct {
