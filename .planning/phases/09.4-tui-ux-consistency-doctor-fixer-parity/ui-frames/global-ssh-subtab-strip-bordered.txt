@@ -1,0 +1,16 @@
+Global SSH Options sub-tab with bordered sub-tab strip (color enabled)
+
+The bordered strip occupies 3 rows:
+- Row 0: ╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮ (top border with dashes in accent blue)
+- Row 1: ┊ Options Storage & preview ┊ (labels with active one highlighted)
+- Row 2: ╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯ (bottom border with dashes in accent blue)
+
+Below the strip are the Options sub-tab contents:
+- Findings banner (if present)
+- Option rows (2 lines each: title + detail)
+- Detail pane on the right showing the selected option's explanation
+
+The bordered strip is visually distinct from the flat main tab bar at the top, correctly signaling that left/right navigation here switches sub-tabs (local) rather than main tabs (global).
+
+Frame dimensions: 100 cols × 30 rows (fixed capture geometry)
+Color: ANSI 16-color palette with accent color (blue/ANSI 4) for borders and selected row
