@@ -2366,14 +2366,17 @@ func globalSSHSpecs() []ScreenSpec {
 	// the machine's four-state row renderings while the dummy body carries
 	// its frozen fixture values and its "the demo does not probe this
 	// machine" provenance label (T-06-PROVENANCE). The predicate is
-	// `absent:` on the dummy's frozen row formulation "not set (OpenSSH
-	// default: ask)" (StrictHostKeyChecking's fixture Current) — present in
-	// the visible pane on the dummy side, never rendered by the real side,
-	// whose bare baseline already says "None" as "now: ask → …" without the
-	// "OpenSSH default: " prefix.
+	// `absent:` on the dummy's "fixture value" marker — the real side renders
+	// actual provenance (three-tier labels including "not set (OpenSSH default: ...)"
+	// for baseline cases), while the fixture always shows "fixture value — the demo
+	// does not probe this machine". After Task 1's first-row-focus fix, the
+	// Provenance field is now visible by default (StrictHostKeyChecking is the first
+	// row), and the "not set (OpenSSH default: ask)" string legitimately appears in
+	// the real-side detail pane when the option is unfilled. The fixture-vs-real
+	// discriminator is the absence of "fixture value" on the real side.
 	gssOptionsFixtureDisposition := uxRegionDifferenceScoped(RegionGSSOptionsBrowse, "provenance-state-and-rows", gssFixtureClass,
-		"the real Options body renders the live D-01/D-03 provenance labels and the D-11/D-12 four-state rows against the seeded fixture home; the dummy renders its frozen GlobalSSHOptions Current values (its \"not set (OpenSSH default: ask)\" StrictHostKeyChecking formulation is the visible-pane needle) and its 'the demo does not probe this machine' provenance — the whole master-detail body is the classified fixture-vs-live divergence (T-06-PROVENANCE)",
-		`absent:"not set (OpenSSH default: ask)"`)
+		"the real Options body renders the live D-01/D-03 provenance labels (including baseline 'not set (OpenSSH default: ...)' when unprovided) and the D-11/D-12 four-state rows; the fixture renders its frozen GlobalSSHOptions and 'fixture value — the demo does not probe this machine' provenance. Task 1's first-row-focus fix surfaces the Provenance field in the detail pane by default; the real baseline provenance legitimately includes the 'not set (OpenSSH default: ask)' catalog reference string. The divergence discriminator is the absence of 'fixture value' marker on the real side — the whole master-detail body is the classified fixture-vs-live divergence (T-06-PROVENANCE)",
+		`absent:"fixture value"`)
 	// gssListFixtureDisposition covers RegionSidebar's extraction on this
 	// surface: its 'content before │' rule captures the OPTION-LIST rows
 	// (this surface has no identity sidebar), which differ exactly as the
