@@ -14,8 +14,8 @@ progress:
   total_phases: 15
   completed_phases: 12
   total_plans: 94
-  completed_plans: 89
-  percent: 80
+  completed_plans: 90
+  percent: 96
 ---
 
 # Project State
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 ## Current Position
 
-Phase: 09.4 (tui-ux-consistency-doctor-fixer-parity) — READY TO EXECUTE
-Status: Ready to execute
-Last activity: 2026-09-01 — Phase 09.3 complete, transitioned to Phase 09.4
+Phase: 09.4 (tui-ux-consistency-doctor-fixer-parity) — IN PROGRESS
+Status: Plan 04 complete (3/5 plans finished; Wave 1 DONE)
+Last activity: 2026-09-03 — 09.4-04 (bordered sub-tab strip) complete, UXP-04 closed
 
 ### Phase 8 (COMPLETE) — historical record
 
