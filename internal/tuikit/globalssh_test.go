@@ -1474,6 +1474,74 @@ func TestSubTabStripClickSwitchesSubTabs(t *testing.T) {
 	}
 }
 
+// TestSubTabStripClickHitTestMatchesRenderedSpans is the regression for
+// WR-01: the old hit-test computed label spans from a hand-written "┊ "
+// prefix offset and len() byte counts, one column to the left of where
+// subTabStrip() actually draws them, and hardcoded the label row as
+// `y == 1`. The symptom: a click on the LAST cell of either label (still
+// visually on the label) missed as inert, while a click on the blank gap
+// BETWEEN the labels (one column left of Storage's real start) wrongly
+// activated Storage. This test clicks coordinates read from the ACTUAL
+// rendered frame — never a recomputed offset — so it can only pass if the
+// hit-test truly matches what subTabStrip() draws.
+func TestSubTabStripClickHitTestMatchesRenderedSpans(t *testing.T) {
+	a := gssApp(t)
+	// Coordinates must be read from the FULL rendered frame (appView),
+	// matching clickCell's convention — handleClick receives Y already
+	// offset by frameBodyTop, so a coordinate computed from the body-only
+	// view (m.view(...).body) would land one screen off from where the
+	// click actually lands.
+	lines := strings.Split(appView(a), "\n")
+	labelRow := -1
+	var plain string
+	for y, line := range lines {
+		p := ansi.Strip(line)
+		if strings.Contains(p, gssTabOptionsLabel) {
+			labelRow, plain = y, p
+			break
+		}
+	}
+	if labelRow < 0 {
+		t.Fatalf("sub-tab strip label row not found in rendered frame:\n%s", appView(a))
+	}
+
+	optIdx := strings.Index(plain, gssTabOptionsLabel)
+	optLastCol := ansi.StringWidth(plain[:optIdx]) + ansi.StringWidth(gssTabOptionsLabel) - 1
+
+	stoIdx := strings.Index(plain, gssTabStorageLabel)
+	if stoIdx < 0 {
+		t.Fatalf("Storage label not found on the strip's label row:\n%s", plain)
+	}
+	stoStartCol := ansi.StringWidth(plain[:stoIdx])
+
+	// Start from Storage so an INERT click (the pre-fix symptom) is
+	// distinguishable from a correct one — asserting "still gssOptions"
+	// from the initial gssOptions state would pass vacuously either way.
+	fromStorage, _ := clickAt(t, a, ansi.StringWidth(plain[:stoIdx])+1, labelRow)
+	if m := gssModel(t, fromStorage); m.subTab != gssStorage {
+		t.Fatalf("setup: clicking the Storage label did not select gssStorage, got %v", m.subTab)
+	}
+
+	// The last cell of the Options label must still switch back to Options
+	// — the off-by-one bug clipped this cell off as inert, which from
+	// gssStorage would visibly stay on gssStorage instead.
+	backToOptions, _ := clickAt(t, fromStorage, optLastCol, labelRow)
+	if m := gssModel(t, backToOptions); m.subTab != gssOptions {
+		t.Errorf("clicking the Options label's LAST cell (col %d) did not select gssOptions, got %v", optLastCol, m.subTab)
+	}
+
+	// The gap column immediately BEFORE Storage's real start (the cell the
+	// old shifted-left math wrongly attributed to Storage) must stay inert
+	// — from gssOptions, it must NOT switch to gssStorage.
+	gapCol := stoStartCol - 1
+	if gapCol > optLastCol { // only meaningful if there is a real gap
+		clicked, _ := clickAt(t, backToOptions, gapCol, labelRow)
+		if m := gssModel(t, clicked); m.subTab != gssOptions {
+			t.Errorf("clicking the gap column %d (before Storage's real start %d) wrongly switched to %v — the hit-test is shifted", gapCol, stoStartCol, m.subTab)
+		}
+	}
+}
+
 // TestSubTabStripFitsFixedGeometryInEveryStripState measures the sub-tab
 // strip's row cost across all five strip-bearing render states and logs
 // the available/used/headroom for each.
@@ -1563,9 +1631,70 @@ func TestSubTabStripFitsFixedGeometryInEveryStripState(t *testing.T) {
 		tightestMargin = headroom4
 	}
 
-	// State 5: Storage sub-tab (same as State 4, already measured)
-	// The apply and storage ceremonies prefix the strip too, but they render
-	// the ceremony body which is already tested for overflow separately.
+	// State 5: apply ceremony.
+	a5 := gssApp(t)
+	m5 := gssModel(t, a5)
+	optionsForCeremony := m5.overlaidOptions(a5.state)
+	if len(optionsForCeremony) == 0 {
+		t.Fatal("no options available to enter the apply ceremony")
+	}
+	m5.chosen = map[string]bool{optionsForCeremony[0].Key: true}
+	a5.screens[TabGlobalSSH] = m5
+	a5, _ = press(t, a5, "a")
+	m5b := gssModel(t, a5)
+	if m5b.mode != gssApplyCeremony {
+		t.Fatalf("expected apply ceremony to open, mode=%d", m5b.mode)
+	}
+	view5 := m5b.view(a5.state, a5.width, a5.height)
+	bodyLines5 := strings.Split(view5.body, "\n")
+	usedRows5 := len(bodyLines5)
+	availRows5 := frameBodyRows(a5.height)
+	headroom5 := availRows5 - usedRows5
+	t.Logf("State 5: Apply ceremony")
+	t.Logf("  Available body rows: %d", availRows5)
+	t.Logf("  Used rows: %d", usedRows5)
+	t.Logf("  Headroom: %d rows", headroom5)
+	if usedRows5 > availRows5 {
+		t.Errorf("State 5 exceeds available rows: used=%d, available=%d", usedRows5, availRows5)
+	}
+	// WR-02 regression: the ceremony body must not re-render the 3-row
+	// bordered sub-tab strip (redundant — the crumb line above the body
+	// already says "Options"/"Storage & preview"), which used to eat 3 of
+	// this state's ~5 spare rows down to a bare margin of 2.
+	if headroom5 < 4 {
+		t.Errorf("State 5 headroom too tight (WR-02 regressed): got %d, want >= 4", headroom5)
+	}
+	if headroom5 < tightestMargin {
+		tightestMargin = headroom5
+	}
+
+	// State 6: storage ceremony.
+	a6 := gssApp(t)
+	a6, _ = press(t, a6, "right")
+	a6, _ = press(t, a6, "down")
+	a6, _ = press(t, a6, "enter")
+	m6 := gssModel(t, a6)
+	if m6.mode != gssStorageCeremony {
+		t.Fatalf("expected storage ceremony to open, mode=%d", m6.mode)
+	}
+	view6 := m6.view(a6.state, a6.width, a6.height)
+	bodyLines6 := strings.Split(view6.body, "\n")
+	usedRows6 := len(bodyLines6)
+	availRows6 := frameBodyRows(a6.height)
+	headroom6 := availRows6 - usedRows6
+	t.Logf("State 6: Storage ceremony")
+	t.Logf("  Available body rows: %d", availRows6)
+	t.Logf("  Used rows: %d", usedRows6)
+	t.Logf("  Headroom: %d rows", headroom6)
+	if usedRows6 > availRows6 {
+		t.Errorf("State 6 exceeds available rows: used=%d, available=%d", usedRows6, availRows6)
+	}
+	if headroom6 < 4 {
+		t.Errorf("State 6 headroom too tight (WR-02 regressed): got %d, want >= 4", headroom6)
+	}
+	if headroom6 < tightestMargin {
+		tightestMargin = headroom6
+	}
 
 	t.Logf("Tightest state headroom: %d rows", tightestMargin)
 	if tightestMargin < 0 {

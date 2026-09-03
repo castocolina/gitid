@@ -698,22 +698,20 @@ func (m globalSSHModel) handleClick(x, y, width, height int, s DemoState) keyRes
 	// Check if the click is on the sub-tab strip (rows 0..gssSubTabStripRows-1).
 	stripRows := gssSubTabStripRows()
 	if y < stripRows {
-		// The strip occupies multiple rows. The labels are on row 1 (the middle row).
-		// Rows 0 (top border) and stripRows-1 (bottom border) are inert.
-		if y == 1 {
-			// Middle row with labels. Calculate label positions.
-			// The strip renders as: "╭─────╮\n┊ Options Storage ┊\n╰─────╯"
-			// The labels start after "┊ " (2 chars) and need to account for the column offset.
-			labelStartX := 2 // "┊ " prefix
-			optStart := labelStartX
-			optEnd := optStart + len(gssTabOptionsLabel)
-			stoStart := optEnd + 1
-			stoEnd := stoStart + len(gssTabStorageLabel)
+		// WR-01: the label row is derived from gssSubTabStripRows (not a
+		// hardcoded 1) and the label spans are read from the ACTUAL rendered
+		// line via hitNeedle/ansi.StringWidth (not `len(...)` byte counts and
+		// a hand-computed "┊ " prefix offset), so the click zones can never
+		// drift from the border layout subTabStrip() actually draws — the
+		// same guarantee every other click zone in this file already has.
+		// Border rows (0 and stripRows-1) stay inert.
+		if y == stripRows/2 {
+			body := m.view(s, width, height).body
 			switch {
-			case x >= optStart && x < optEnd:
+			case hitNeedle(body, x, y, gssTabOptionsLabel):
 				m.subTab = gssOptions
 				return keyResult{model: m, handled: true}
-			case x >= stoStart && x < stoEnd:
+			case hitNeedle(body, x, y, gssTabStorageLabel):
 				m.subTab = gssStorage
 				m.storageChoice = s.SSHStorage
 				return keyResult{model: m, handled: true}
@@ -918,7 +916,13 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 	capturesKeys := false
 	switch m.mode {
 	case gssApplyCeremony, gssStorageCeremony:
-		body = m.subTabStrip() + "\n" + m.ceremony.view(width-2)
+		// WR-02: the crumb line above the body already reads "Options" or
+		// "Storage & preview" (crumb, set above regardless of mode), so
+		// re-rendering the 3-row bordered strip inside the ceremony body
+		// would be redundant chrome eating into the ceremony's already-tight
+		// row budget (minFrameHeight leaves ~5 spare rows for the apply/
+		// storage ceremony; the strip alone consumed 3 of them).
+		body = m.ceremony.view(width - 2)
 		actions = ceremonyFooterActions()
 		capturesKeys = true // the ceremony consumes every plain key
 	case gssBrowse:
