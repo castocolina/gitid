@@ -120,7 +120,6 @@ type globalSSHModel struct {
 func newGlobalSSHModel(b Backend) globalSSHModel {
 	return globalSSHModel{
 		backend:       b,
-		detailKey:     "IdentitiesOnly",
 		chosen:        map[string]bool{},
 		storageChoice: StorageSentinel,
 	}
@@ -141,6 +140,12 @@ func (m globalSSHModel) activate(s DemoState) (screenModel, tea.Cmd) {
 	if err != nil {
 		m.options = nil
 		m.optionsErr = err.Error()
+	}
+	// D-01 / UXP-01: focus the first fetched row on every activation.
+	// A construction-time key would not reset on re-entry, and a hardcoded
+	// first-row literal would re-break if the policy table is reordered.
+	if len(m.options) > 0 {
+		m.detailKey = m.options[0].Key
 	}
 	m = m.refetchStoragePlan()
 	return m, nil

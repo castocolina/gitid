@@ -224,7 +224,7 @@ func TestMouseGlobalSSHCheckboxCellTogglesWithoutSelecting(t *testing.T) {
 	if !m.chosen["StrictHostKeyChecking"] {
 		t.Error("clicking the ☐ cell must check the row (D-15: starting from empty)")
 	}
-	if m.detailKey != "IdentitiesOnly" {
+	if m.detailKey != "StrictHostKeyChecking" {
 		t.Errorf("detailKey = %q — the checkbox click must NOT move the selection", m.detailKey)
 	}
 	// Clicking a checked ☑ must uncheck it.

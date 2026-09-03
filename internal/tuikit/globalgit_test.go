@@ -112,6 +112,60 @@ func TestGlobalGitSelectionStartsEmpty(t *testing.T) {
 	}
 }
 
+// TestGlobalGitActivateFocusesFirstFetchedRow is UXP-01: activate derives
+// detailKey from the first element of the freshly fetched slice, not a
+// hardcoded key. A custom list whose first row is NOT init.defaultBranch
+// is the only way to tell the two rules apart.
+func TestGlobalGitActivateFocusesFirstFetchedRow(t *testing.T) {
+	rows := gitScrollRows(5)
+	m := newGlobalGitModel(stubBackend{gitOptions: rows})
+	next, _ := m.activate(Seed())
+	gm := next.(globalGitModel)
+	if gm.detailKey != rows[0].Key {
+		t.Errorf("detailKey = %q, want first fetched row %q", gm.detailKey, rows[0].Key)
+	}
+}
+
+// TestGlobalGitActivateResetsFocusToFirstRow is UXP-01's re-entry half on
+// Global Git, against a custom list so a leftover hardcoded
+// init.defaultBranch cannot masquerade as the derived rule.
+func TestGlobalGitActivateResetsFocusToFirstRow(t *testing.T) {
+	rows := gitScrollRows(5)
+	a, _ := press(t, NewApp(stubBackend{gitOptions: rows}), "3")
+	a, _ = press(t, a, "down")
+	a, _ = press(t, a, "down")
+	m := ggitModel(t, a)
+	if m.detailKey != rows[2].Key {
+		t.Fatalf("setup: after two downs, detailKey = %q, want %q", m.detailKey, rows[2].Key)
+	}
+	a, _ = press(t, a, "1") // Identities
+	a, _ = press(t, a, "3") // back to Global Git
+	m = ggitModel(t, a)
+	if m.detailKey != rows[0].Key {
+		t.Errorf("detailKey after re-activate = %q, want first fetched row %q", m.detailKey, rows[0].Key)
+	}
+}
+
+// TestGlobalGitRenderOptionsEmptyNoErrorDoesNotPanic is the WR-17 class
+// render-path guard: a Backend may return (empty, nil). handleKey already
+// returns early on len(options)==0, but view indexed options[selIdx]
+// unconditionally — gitDetailIndex returns 0 on a miss, which is out of
+// range for an empty slice. Asserting only that activate survived would
+// pass over the panic.
+func TestGlobalGitRenderOptionsEmptyNoErrorDoesNotPanic(t *testing.T) {
+	b := stubBackend{gitOptions: []GlobalGitOptionView{}}
+	m := newGlobalGitModel(b)
+	next, _ := m.activate(Seed())
+	gm := next.(globalGitModel)
+	sv := gm.view(Seed(), 120, 40)
+	if sv.body == "" {
+		t.Fatal("zero-row view must produce a non-empty empty-state body")
+	}
+	if !strings.Contains(sv.body, "No global Git options to show.") {
+		t.Errorf("empty-no-error options must render the empty-state note, got:\n%s", sv.body)
+	}
+}
+
 // TestGlobalGitActivateResetsSelection asserts that re-activating after a
 // toggle empties the selection — returning to the screen never resurrects a
 // stale selection (R-1, D-15).
@@ -1292,8 +1346,8 @@ func TestGlobalGitReactivateResetsDetailKeyWithListWindow(t *testing.T) {
 	if m.listWindowStart != 0 {
 		t.Errorf("listWindowStart after reactivation = %d, want 0", m.listWindowStart)
 	}
-	if m.detailKey != "init.defaultBranch" {
-		t.Errorf("detailKey after reactivation = %q, want the first row's key — a stale deep selection would be off the reset window with no visible marker", m.detailKey)
+	if m.detailKey != "row00" {
+		t.Errorf("detailKey after reactivation = %q, want the first fetched row's key — a stale deep selection would be off the reset window with no visible marker", m.detailKey)
 	}
 	body := stripANSI(appView(a))
 	if !strings.Contains(body, "▸") {

@@ -97,7 +97,6 @@ type globalGitModel struct {
 func newGlobalGitModel(b Backend) globalGitModel {
 	return globalGitModel{
 		backend:    b,
-		detailKey:  "init.defaultBranch",
 		chosen:     map[string]bool{},
 		nameInput:  newTextInput(""),
 		emailInput: newTextInput(""),
@@ -117,20 +116,23 @@ func newGlobalGitModel(b Backend) globalGitModel {
 func (m globalGitModel) activate(DemoState) (screenModel, tea.Cmd) {
 	m.chosen = map[string]bool{}
 	m.listWindowStart = 0
-	// detailKey must reset alongside listWindowStart: screens are persistent
-	// model instances re-activated in place on every tab switch (app.go), so
-	// a deep-scrolled selection would otherwise survive a tab switch while
-	// listWindowStart does not — leaving the selected row off-window with no
-	// ▸ marker anywhere until several more keypresses let the window catch
-	// up (found in code review: the selection cursor genuinely desyncs from
-	// the visible scroll window after leaving and returning to this screen).
-	m.detailKey = "init.defaultBranch"
 	m.optionsErr = ""
 	options, err := m.backend.GlobalGitOptionStates()
 	m.options = options
 	if err != nil {
 		m.options = nil
 		m.optionsErr = err.Error()
+	}
+	// D-01 / UXP-01: same derived first-row rule as Global SSH. detailKey
+	// must reset alongside listWindowStart: screens are persistent model
+	// instances re-activated in place on every tab switch (app.go), so a
+	// deep-scrolled selection would otherwise survive a tab switch while
+	// listWindowStart does not — leaving the selected row off-window with
+	// no ▸ marker anywhere until several more keypresses let the window
+	// catch up (found in code review: the selection cursor genuinely
+	// desyncs from the visible scroll window after leaving and returning).
+	if len(m.options) > 0 {
+		m.detailKey = m.options[0].Key
 	}
 	state, stateErr := m.backend.GitFallbackAuthorState()
 	if stateErr == nil {
@@ -893,6 +895,27 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 			// rendered as the status line even though nothing was applied
 			// and the real state is unknown. A probe failure has nothing
 			// honest to report as a baseline status; leave it blank.
+			crumbs:  []string{"Options"},
+			actions: []FooterAction{{Key: "↑↓", Label: "select option"}},
+		}
+	}
+
+	// WR-17: a Backend implementation may legitimately return (nil, nil) —
+	// zero rows, no error. handleKey guards len(options)==0 for key routing
+	// and the optionsErr branch above covers fetch failure, but a
+	// zero-row/no-error answer reached here and panicked on
+	// options[selIdx] below (gitDetailIndex returns 0 on no match, and 0
+	// is out of range for an empty slice). globalgit.Statuses always
+	// returns len(Policy) rows today, but NoopGlobalGitPlanner exists
+	// precisely to be substituted.
+	if len(options) == 0 {
+		body := ""
+		if banner := findingsBanner(s, "Git", gitBannerBeyond); banner != "" {
+			body = banner + "\n"
+		}
+		body += " " + styleFaint.Render("No global Git options to show.")
+		return screenView{
+			body:    body,
 			crumbs:  []string{"Options"},
 			actions: []FooterAction{{Key: "↑↓", Label: "select option"}},
 		}

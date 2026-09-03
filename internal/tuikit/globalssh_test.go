@@ -47,18 +47,67 @@ func TestGlobalSSHArrowsSwitchSubTabs(t *testing.T) {
 	}
 }
 
+// TestGlobalSSHActivateFocusesFirstFetchedRow is UXP-01 / D-01: a freshly
+// constructed model, activated once, selects the FIRST row of the fetched
+// option list. The construction-time IdentitiesOnly default (a middle row)
+// is the bug this pins.
+func TestGlobalSSHActivateFocusesFirstFetchedRow(t *testing.T) {
+	rows := []GlobalSSHOptionView{
+		{Key: "HashKnownHosts", CurrentValue: "no", Recommended: "yes", Risk: "Low", OneLiner: "hash", State: GlobalSSHNeedsAction, WritableToHostStar: true},
+		{Key: "ForwardAgent", CurrentValue: "no", Recommended: "no", Risk: "High", OneLiner: "agent", State: GlobalSSHNeedsAction, WritableToHostStar: true},
+		{Key: "StrictHostKeyChecking", CurrentValue: "ask", Recommended: "accept-new", Risk: "Medium", OneLiner: "strict", State: GlobalSSHNeedsAction, WritableToHostStar: true},
+	}
+	m := newGlobalSSHModel(stubBackend{sshOptions: rows})
+	next, _ := m.activate(Seed())
+	sm := next.(globalSSHModel)
+	if sm.detailKey != rows[0].Key {
+		t.Errorf("detailKey = %q, want first fetched row %q", sm.detailKey, rows[0].Key)
+	}
+}
+
+// TestGlobalSSHActivateResetsFocusToFirstRow is UXP-01's re-entry half:
+// navigate down two rows, leave the screen, re-activate — selection is back
+// on the first fetched row. A construction-time-only default would not cover
+// this; activate() must reset from the freshly fetched list. A custom list
+// whose first row is not IdentitiesOnly (or StrictHostKeyChecking) is the
+// only way to tell a derived rule from a leftover hardcoded key.
+func TestGlobalSSHActivateResetsFocusToFirstRow(t *testing.T) {
+	rows := []GlobalSSHOptionView{
+		{Key: "HashKnownHosts", CurrentValue: "no", Recommended: "yes", Risk: "Low", OneLiner: "hash", State: GlobalSSHNeedsAction, WritableToHostStar: true},
+		{Key: "ForwardAgent", CurrentValue: "no", Recommended: "no", Risk: "High", OneLiner: "agent", State: GlobalSSHNeedsAction, WritableToHostStar: true},
+		{Key: "StrictHostKeyChecking", CurrentValue: "ask", Recommended: "accept-new", Risk: "Medium", OneLiner: "strict", State: GlobalSSHNeedsAction, WritableToHostStar: true},
+	}
+	a, _ := press(t, NewApp(stubBackend{sshOptions: rows}), "2")
+	a, _ = press(t, a, "down")
+	a, _ = press(t, a, "down")
+	m := gssModel(t, a)
+	if m.detailKey != rows[2].Key {
+		t.Fatalf("setup: after two downs, detailKey = %q, want %q", m.detailKey, rows[2].Key)
+	}
+	a, _ = press(t, a, "1") // Identities
+	a, _ = press(t, a, "2") // back to Global SSH — re-activates in place
+	m = gssModel(t, a)
+	if m.detailKey != rows[0].Key {
+		t.Errorf("detailKey after re-activate = %q, want first fetched row %q", m.detailKey, rows[0].Key)
+	}
+}
+
 func TestGlobalSSHOptionsMasterDetail(t *testing.T) {
 	a := gssApp(t)
 	view := appView(a)
-	// IdentitiesOnly (the initial detail) shows the full explanation.
 	if !strings.Contains(view, "IdentitiesOnly") {
 		t.Error("IdentitiesOnly row missing")
 	}
-	if !strings.Contains(view, "When IdentitiesOnly is not set") {
-		t.Error("IdentitiesOnly must show the full GSSH-01 explanation")
+	if !strings.Contains(view, "StrictHostKeyChecking") {
+		t.Error("first row StrictHostKeyChecking missing")
 	}
 	if !strings.Contains(regionFlat(a, 45, 100), "This is advisory, never a compliance gate.") {
 		t.Error("advisory note missing (never blocking)")
+	}
+	// IdentitiesOnly is a middle row; navigate to it for the long GSSH-01 explanation.
+	a = pressSeq(t, a, "down", "down", "down")
+	if !strings.Contains(appView(a), "When IdentitiesOnly is not set") {
+		t.Error("IdentitiesOnly must show the full GSSH-01 explanation")
 	}
 	// Moving the selection updates the detail live.
 	a, _ = press(t, a, "up") // IdentitiesOnly(3) → HashKnownHosts(2)
@@ -82,12 +131,11 @@ func TestGlobalSSHApplySubsetMarksAppliedAndShowsDeclined(t *testing.T) {
 
 	// Toggle HashKnownHosts and StrictHostKeyChecking.
 	// List order: StrictHostKeyChecking(0) ForwardAgent(1) HashKnownHosts(2) IdentitiesOnly(3) ...
-	// Starting at IdentitiesOnly: up→HashKnownHosts, space; up→ForwardAgent, skip;
-	// up→StrictHostKeyChecking, space.
-	a, _ = press(t, a, "up") // IdentitiesOnly → HashKnownHosts
+	// Starting at the first row: space on StrictHostKeyChecking; down→ForwardAgent
+	// skip; down→HashKnownHosts, space.
 	a, _ = press(t, a, "space")
-	a, _ = press(t, a, "up") // HashKnownHosts → ForwardAgent (skip)
-	a, _ = press(t, a, "up") // ForwardAgent → StrictHostKeyChecking
+	a, _ = press(t, a, "down") // StrictHostKeyChecking → ForwardAgent (skip)
+	a, _ = press(t, a, "down") // ForwardAgent → HashKnownHosts
 	a, _ = press(t, a, "space")
 	m = gssModel(t, a)
 	keys = m.applyChosen(m.overlaidOptions(a.state))
@@ -159,7 +207,8 @@ func TestGlobalSSHApplySubsetMarksAppliedAndShowsDeclined(t *testing.T) {
 
 func TestGlobalSSHSpaceTogglesChoice(t *testing.T) {
 	a := gssApp(t)
-	a, _ = press(t, a, "up") // IdentitiesOnly is verify-only; HashKnownHosts is writable.
+	a, _ = press(t, a, "down") // StrictHostKeyChecking → ForwardAgent
+	a, _ = press(t, a, "down") // ForwardAgent → HashKnownHosts (writable)
 	// D-15: selection starts empty, so first space must CHECK the option.
 	a, _ = press(t, a, "space")
 	m := gssModel(t, a)
@@ -236,8 +285,7 @@ func TestGlobalSSHStoragePreviewsSwitchAndMigrateRoundTrips(t *testing.T) {
 func TestGlobalSSHApplyTargetsOwnedFileUnderIncludeLayout(t *testing.T) {
 	a := gssApp(t)
 	a.state = Reduce(a.state, SetSSHStorage{Layout: StorageInclude, Backup: "b"})
-	// D-15: selection starts empty; must select something before applying.
-	a, _ = press(t, a, "up") // HashKnownHosts
+	// D-15: selection starts empty; first row is already focused and selectable.
 	a, _ = press(t, a, "space")
 	a, _ = press(t, a, "a")
 	if !strings.Contains(appView(a), "Touches ~/.ssh/config.d/gitid.config") {
@@ -254,8 +302,7 @@ func TestGlobalSSHApplyCeremonyNamesStorageTarget(t *testing.T) {
 	b := &stubBackend{sshApplyPlan: GlobalSSHApplyPlanView{Targets: []string{sentinel}}}
 	a := NewApp(b)
 	a, _ = press(t, a, "2")
-	// D-15: selection starts empty; must select something before pressing "a".
-	a, _ = press(t, a, "up") // HashKnownHosts
+	// D-15: selection starts empty; first row is already focused and selectable.
 	a, _ = press(t, a, "space")
 	a, _ = press(t, a, "a")
 	view := appView(a)
@@ -305,10 +352,11 @@ func TestGlobalSSHSpaceToggleIsCopyOnWrite(t *testing.T) {
 }
 
 func TestGlobalSSHLongExplanationClipsWithVisibleCue(t *testing.T) {
-	// IdentitiesOnly (the initial detail) carries the long GSSH-01
-	// explanation — at 100x30 it cannot fully fit, and the overflow must be
-	// announced, never silently cut mid-sentence (H3).
+	// IdentitiesOnly carries the long GSSH-01 explanation — at 100x30 it
+	// cannot fully fit, and the overflow must be announced, never silently
+	// cut mid-sentence (H3). It is a middle row; navigate to it first.
 	a := gssApp(t)
+	a = pressSeq(t, a, "down", "down", "down")
 	view := appView(a)
 	if !strings.Contains(view, "When IdentitiesOnly is not set") {
 		t.Fatal("IdentitiesOnly explanation missing")
@@ -429,8 +477,7 @@ func TestGlobalSSHApplyFailureRendersRetryNoReceiptNoApply(t *testing.T) {
 	b := &stubBackend{sshCommitMsg: GlobalSSHCommitMsg{Err: "disk on fire"}}
 	a := NewApp(b)
 	a, _ = press(t, a, "2")
-	// D-15: selection starts empty; select HashKnownHosts before applying.
-	a, _ = press(t, a, "up") // HashKnownHosts
+	// D-15: selection starts empty; first row is already focused and selectable.
 	a, _ = press(t, a, "space")
 	a, _ = press(t, a, "a")
 	a, cmd := press(t, a, "enter") // confirm
