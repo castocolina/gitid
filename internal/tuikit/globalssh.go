@@ -619,7 +619,15 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 	return keyResult{model: m}
 }
 
-// subTabStrip renders the [Options] [Storage & preview] strip.
+// gssSubTabStripRows returns the number of rows the sub-tab strip occupies.
+// This is the single source of truth for the strip's height; all consumers
+// (renderOptions, renderStorage, gssOptionsTopLines, handleClick) must derive
+// from this.
+func gssSubTabStripRows() int {
+	return 3 // top border + labels + bottom border
+}
+
+// subTabStrip renders the [Options] [Storage & preview] strip with a border.
 func (m globalSSHModel) subTabStrip() string {
 	options := gssTabOptionsLabel
 	storage := gssTabStorageLabel
@@ -628,27 +636,36 @@ func (m globalSSHModel) subTabStrip() string {
 	} else {
 		storage = styleReverse.Render(storage)
 	}
-	return " " + options + " " + storage
+	label := " " + options + " " + storage
+
+	// Build a bordered box around the labels using dashed border runes in accent color.
+	accentBorder := lipgloss.NewStyle().Foreground(DefaultTheme.Accent)
+	width := lipgloss.Width(label) + 2 // label + 2 for the side borders
+	topBorder := "╭" + strings.Repeat("╌", width) + "╮"
+	labelLine := "┊ " + label + " ┊"
+	bottomBorder := "╰" + strings.Repeat("╌", width) + "╯"
+
+	return accentBorder.Render(topBorder) + "\n" + accentBorder.Render(labelLine) + "\n" + accentBorder.Render(bottomBorder)
 }
 
 // gssOptionsTopLines counts the body lines rendered above the first option
 // row on the Options sub-tab (the sub-tab strip plus the optional findings
 // banner) — shared by renderOptions and handleClick.
 func gssOptionsTopLines(s DemoState) int {
-	lines := 1 // sub-tab strip
+	lines := gssSubTabStripRows() // sub-tab strip (single source)
 	if findingsBanner(s, "SSH", gssBannerBeyond) != "" {
 		lines++
 	}
 	return lines
 }
 
-// handleClick implements mouseTarget: body line 0 is the sub-tab strip,
-// where a click on either label switches sub-tabs; on the Options sub-tab a
-// click on an option row's checkbox glyph TOGGLES it like space (web
-// Checkbox onClick stopPropagation) while a click elsewhere in the row
-// selects it; on the Storage sub-tab a click on a radio row selects that
-// layout and the Migrate button dispatches Enter. Ceremony buttons click
-// through the shared ceremony zones.
+// handleClick implements mouseTarget: the sub-tab strip occupies the first
+// gssSubTabStripRows rows, where a click on either label switches sub-tabs
+// (border rows are inert); on the Options sub-tab a click on an option row's
+// checkbox glyph TOGGLES it like space (web Checkbox onClick stopPropagation)
+// while a click elsewhere in the row selects it; on the Storage sub-tab a
+// click on a radio row selects that layout and the Migrate button dispatches
+// Enter. Ceremony buttons click through the shared ceremony zones.
 func (m globalSSHModel) handleClick(x, y, width, height int, s DemoState) keyResult {
 	if m.mode != gssBrowse {
 		body := m.view(s, width, height).body
@@ -658,20 +675,32 @@ func (m globalSSHModel) handleClick(x, y, width, height int, s DemoState) keyRes
 		}
 		return keyResult{model: m}
 	}
-	if y == 0 { // the sub-tab strip: " " + options label + " " + storage label
-		optStart := 1
-		optEnd := optStart + len(gssTabOptionsLabel)
-		stoStart := optEnd + 1
-		stoEnd := stoStart + len(gssTabStorageLabel)
-		switch {
-		case x >= optStart && x < optEnd:
-			m.subTab = gssOptions
-			return keyResult{model: m, handled: true}
-		case x >= stoStart && x < stoEnd:
-			m.subTab = gssStorage
-			m.storageChoice = s.SSHStorage
-			return keyResult{model: m, handled: true}
+
+	// Check if the click is on the sub-tab strip (rows 0..gssSubTabStripRows-1).
+	stripRows := gssSubTabStripRows()
+	if y < stripRows {
+		// The strip occupies multiple rows. The labels are on row 1 (the middle row).
+		// Rows 0 (top border) and stripRows-1 (bottom border) are inert.
+		if y == 1 {
+			// Middle row with labels. Calculate label positions.
+			// The strip renders as: "╭─────╮\n┊ Options Storage ┊\n╰─────╯"
+			// The labels start after "┊ " (2 chars) and need to account for the column offset.
+			labelStartX := 2 // "┊ " prefix
+			optStart := labelStartX
+			optEnd := optStart + len(gssTabOptionsLabel)
+			stoStart := optEnd + 1
+			stoEnd := stoStart + len(gssTabStorageLabel)
+			switch {
+			case x >= optStart && x < optEnd:
+				m.subTab = gssOptions
+				return keyResult{model: m, handled: true}
+			case x >= stoStart && x < stoEnd:
+				m.subTab = gssStorage
+				m.storageChoice = s.SSHStorage
+				return keyResult{model: m, handled: true}
+			}
 		}
+		// Border rows (0 and stripRows-1) and any other click in the strip area are inert.
 		return keyResult{model: m}
 	}
 	if m.subTab == gssStorage {
@@ -967,7 +996,7 @@ func (m globalSSHModel) renderOptions(s DemoState, options []appliedOption, widt
 func (m globalSSHModel) renderStorage(s DemoState, width, height int) string {
 	leftWidth := masterListWidth(width)
 	rightWidth := width - leftWidth - masterDetailGutter
-	rows := frameBodyRows(height) - 1 // the sub-tab strip line
+	rows := frameBodyRows(height) - gssSubTabStripRows() // account for the sub-tab strip
 
 	current := func(layout SSHStorageLayout) string {
 		if s.SSHStorage == layout {
