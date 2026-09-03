@@ -541,7 +541,15 @@ Plans:
   3. From the Git properties browser, the user can add an arbitrary global key=value pair, free-form, through the standard review-before-write ceremony. (PROP-03)
   4. From the SSH properties browser, the user can add a custom global SSH directive, but its name is validated against OpenSSH's known-directive list plus the existing prove-before-write `ssh -G` verification before any write. (PROP-04)
 
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+
+- [ ] 09.5-01-PLAN.md — (wave 1) TRACER: the SSH `All directives` vertical slice end-to-end — `globalssh.AllDirectives` atop the existing `ssh -G` probe, the `SSHDirectiveView` DTO and one-method `SSHPropertiesBrowser` seam with both implementations, Global SSH's third sub-tab with its flat filterable master-detail body, the frozen copy pinned byte-exactly and registered in the grep gate, and real-PTY proof through the compiled binary (PROP-01)
+- [ ] 09.5-02-PLAN.md — (wave 2) the sub-tab strip extracted into one shared renderer, Global Git's FIRST strip with its Options content re-homed byte-identically and its keyboard/click/row-budget contracts moved in lockstep, then `globalgit.AllSetKeys` through a new seam into the honestly-scoped `Set keys` list with origin and scope, its two distinct empty states, and real-PTY proof (PROP-02)
+- [ ] 09.5-03-PLAN.md — (wave 3) the `customkeys.go` engine with its last-dot key split proven against the real `git` binary and its sentinel name reserved-registered in the same commit, `runCustomGitKeyWrite` as the ONE backed-up rollback-proven writer, and the two-stage free-form custom-key flow proven in a real terminal against the bytes on disk (PROP-03)
+- [ ] 09.5-04-PLAN.md — (wave 4) the combined-output probe seam and `ProveCustomDirective`'s three-way staged-config `ssh -G` classification, `runCustomSSHDirectiveWrite` into the existing `Host *` block with its own non-vacuous post-write re-read, and the three-stage flow whose un-skippable validation gate is proven in a real PTY to leave the config byte-identical on rejection (PROP-04)
+- [ ] 09.5-05-PLAN.md — (wave 5) visual-regression registration for every new render state with its fail path hand-verified, phase-parameterised frame promotion with machine-checked provenance, and the clause-by-clause requirement closeout behind a full gate battery run at close (PROP-01, PROP-02, PROP-03, PROP-04)
 
 ### Phase 10: Linux Validation + Release Pipeline
 
@@ -574,5 +582,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9.2. Global Git Ignore Management | 3/3 | Complete | 2026-08-31 |
 | 9.3. Release CI/CD + Installer | 2/2 | Complete    | 2026-09-01 |
 | 9.4. TUI UX Consistency & Doctor/Fixer Parity | 4/4 | Complete    | 2026-09-03 |
-| 9.5. Full SSH/Git Properties Browser | 0/TBD | Not started | - |
+| 9.5. Full SSH/Git Properties Browser | 0/5 | Planned | - |
 | 10. Linux Validation + Release Pipeline | 0/TBD | Not started | - |
