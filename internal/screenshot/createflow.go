@@ -2208,7 +2208,7 @@ func healthFixerSpecs() []ScreenSpec {
 			ApplicableApprovedTUI: true,
 			NonApplicability:      noHTML,
 			RequiredRegions:       []RegionName{RegionHealthBody},
-			RegionDispositions:    []RegionDisposition{healthBodyDisposition, fixtureHeaderStatusDispositionHF, keybarDispositionHF, sidebarDispositionHF},
+			RegionDispositions:    []RegionDisposition{healthBodyDisposition, fixerBodyDisposition, fixtureHeaderStatusDispositionHF, keybarDispositionHF, sidebarDispositionHF},
 		},
 		{
 			ScreenID:              "fixer-list",
@@ -2218,7 +2218,7 @@ func healthFixerSpecs() []ScreenSpec {
 			ApplicableApprovedTUI: true,
 			NonApplicability:      noHTML,
 			RequiredRegions:       []RegionName{RegionFixerBody},
-			RegionDispositions:    []RegionDisposition{fixerBodyDisposition, fixtureHeaderStatusDispositionHF, keybarDispositionHF, sidebarDispositionHF},
+			RegionDispositions:    []RegionDisposition{fixerBodyDisposition, healthBodyDisposition, fixtureHeaderStatusDispositionHF, keybarDispositionHF, sidebarDispositionHF},
 		},
 		{
 			ScreenID:              "fixer-ceremony-preview",
