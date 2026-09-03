@@ -111,6 +111,17 @@ type globalSSHModel struct {
 	// confirmed, captured at ceremonyConfirmed.
 	storageCommitPending bool
 	storageTargetLayout  SSHStorageLayout
+	// listWindowStart is the index of the first visible ROW in the Options
+	// master list (0-based) — WR-09/09.4-REVIEW.md: this screen rendered
+	// every row unconditionally with no scroll window (unlike Global Git's
+	// gitComputeScrollWindow/gitRowForScreenRow pair), risking silent
+	// truncation past the frame's fixed row budget and a click-row desync
+	// once the policy table grows. Mirrors globalGitModel.listWindowStart
+	// exactly, reusing the same generic gitScrollWindow/gitRowForScreenRow/
+	// scrollWindowFor/gitCueLine machinery (that machinery was already
+	// screen-agnostic despite its git* naming — nothing in it references
+	// Global Git specifically).
+	listWindowStart int
 }
 
 // newGlobalSSHModel returns a model with an EMPTY selection set (D-15): the
@@ -146,6 +157,7 @@ func (m globalSSHModel) activate(s DemoState) (screenModel, tea.Cmd) {
 	m.applyCommitPending = false
 	m.storageCommitPending = false
 	m.ceremony = ceremonyModel{}
+	m.listWindowStart = 0
 	options, err := m.backend.GlobalSSHOptionStates()
 	m.options = options
 	if err != nil {
@@ -591,6 +603,7 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 				idx--
 			}
 			m.detailKey = options[idx].Key
+			m.listWindowStart = scrollWindowFor(m.listWindowStart, idx, gssVisibleRowCount(len(options), s))
 		} else {
 			if m.storageChoice == StorageSentinel {
 				m.storageChoice = StorageInclude
@@ -678,6 +691,69 @@ func gssOptionsTopLines(s DemoState) int {
 	return lines
 }
 
+// gssVisibleRowCount computes how many option rows fit inside the body
+// budget WITHOUT overflowing — the Global SSH mirror of gitVisibleRowCount
+// (globalgit.go), using gssOptionsTopLines instead of gitTopLines for the
+// screen's own chrome (strip + optional findings banner). See
+// gitVisibleRowCount's doc comment for the full rationale: a MEASURED
+// budget off the canonical fixed frame height, one line reserved for the
+// scroll cue only when the row set does not already fit.
+func gssVisibleRowCount(totalRows int, s DemoState) int {
+	budget := frameBodyRows(minFrameHeight) - gssOptionsTopLines(s)
+	if budget < 1 {
+		budget = 1
+	}
+	if totalRows*optionRowLines <= budget {
+		return totalRows
+	}
+	reserved := budget - 1
+	if reserved < 0 {
+		reserved = 0
+	}
+	visible := reserved / optionRowLines
+	if visible < 1 {
+		visible = 1
+	}
+	if visible > totalRows {
+		visible = totalRows
+	}
+	return visible
+}
+
+// gssComputeScrollWindow derives the current scroll window from the model's
+// listWindowStart and the live option count — the Global SSH mirror of
+// gitComputeScrollWindow (globalgit.go), sharing the SAME gitScrollWindow
+// type/gitCueDirection/gitCueLine machinery so the two screens' scrolling
+// behavior can never silently drift apart.
+func (m globalSSHModel) gssComputeScrollWindow(totalRows int, s DemoState) gitScrollWindow {
+	visible := gssVisibleRowCount(totalRows, s)
+	needsScroll := visible < totalRows
+	windowStart := m.listWindowStart
+	if windowStart < 0 {
+		windowStart = 0
+	}
+	maxStart := totalRows - visible
+	if maxStart < 0 {
+		maxStart = 0
+	}
+	if windowStart > maxStart {
+		windowStart = maxStart
+	}
+	w := gitScrollWindow{needsScroll: needsScroll, windowStart: windowStart, visibleRows: visible}
+	if !needsScroll {
+		return w
+	}
+	hiddenBelow := windowStart+visible < totalRows
+	if hiddenBelow {
+		w.cue = gitCueDown
+		w.hiddenCount = totalRows - (windowStart + visible)
+		return w
+	}
+	w.cue = gitCueUp
+	w.hiddenCount = windowStart
+	return w
+}
+
 // handleClick implements mouseTarget: the sub-tab strip occupies the first
 // gssSubTabStripRows rows, where a click on either label switches sub-tabs
 // (border rows are inert); on the Options sub-tab a click on an option row's
@@ -727,8 +803,13 @@ func (m globalSSHModel) handleClick(x, y, width, height int, s DemoState) keyRes
 		return keyResult{model: m}
 	}
 	options := m.overlaidOptions(s)
-	row := (y - gssOptionsTopLines(s)) / optionRowLines
-	if row >= len(options) {
+	// WR-09: the click's row index is computed from the WINDOW START via
+	// the scroll window (not from the screen position alone), mirroring
+	// Global Git's own handleClick — a scroll offset the click handler
+	// doesn't know about would otherwise silently toggle the wrong row.
+	w := m.gssComputeScrollWindow(len(options), s)
+	row, ok := gitRowForScreenRow(w, y-gssOptionsTopLines(s))
+	if !ok || row >= len(options) {
 		return keyResult{model: m}
 	}
 	if options[row].Selectable() && m.clickOnCheckbox(x, y, width, height, s) {
@@ -976,10 +1057,28 @@ func (m globalSSHModel) renderOptions(s DemoState, options []appliedOption, widt
 	detailWidth := width - listWidth - masterDetailGutter
 	rows := frameBodyRows(height) - gssOptionsTopLines(s)
 
-	var listRows []string
 	selIdx := m.detailIndex(options)
-	for i, o := range options {
-		listRows = append(listRows, optionRow(o.GlobalSSHOptionView, m.chosen[o.Key], i == selIdx, o.applied, listWidth))
+	// WR-09: the master list becomes a scrolling window over the row set,
+	// mirroring Global Git's own view (globalgit.go) — when every row fits
+	// inside the computed budget, scrollWin.needsScroll is false and the
+	// loop below covers every row exactly as before (byte-identical, zero
+	// regression); when it does not fit, exactly [windowStart,
+	// windowStart+visibleRows) renders plus one reserved cue line.
+	scrollWin := m.gssComputeScrollWindow(len(options), s)
+	visibleOptions := options
+	if scrollWin.needsScroll {
+		visibleOptions = options[scrollWin.windowStart : scrollWin.windowStart+scrollWin.visibleRows]
+	}
+	var listRows []string
+	if scrollWin.cue == gitCueUp {
+		listRows = append(listRows, gitCueLine(scrollWin))
+	}
+	for i, o := range visibleOptions {
+		absoluteIdx := scrollWin.windowStart + i
+		listRows = append(listRows, optionRow(o.GlobalSSHOptionView, m.chosen[o.Key], absoluteIdx == selIdx, o.applied, listWidth))
+	}
+	if scrollWin.cue == gitCueDown {
+		listRows = append(listRows, gitCueLine(scrollWin))
 	}
 	list := strings.Join(listRows, "\n")
 

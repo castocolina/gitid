@@ -1778,3 +1778,154 @@ func TestSubTabStripRendersBordered(t *testing.T) {
 		t.Errorf("active sub-tab label should be marked with styleReverse (\\x1b[7m) in the bordered strip, got lines: %q", optionsLines[:stripEndLine])
 	}
 }
+
+// gssScrollRows builds n synthetic, selectable SSH option rows for scroll
+// tests — the Global SSH mirror of globalgit_test.go's gitScrollRows —
+// enough to force the master list past the measured body budget. Keys are
+// short and distinct ("row00".."rowNN") so truncLine's width clip never
+// swallows the identifying substring the tests assert on.
+func gssScrollRows(n int) []GlobalSSHOptionView {
+	out := make([]GlobalSSHOptionView, 0, n)
+	for i := 0; i < n; i++ {
+		out = append(out, GlobalSSHOptionView{
+			Key:                fmt.Sprintf("row%02d", i),
+			CurrentValue:       "not set",
+			Recommended:        "x",
+			OneLiner:           "scroll test row",
+			State:              GlobalSSHNeedsAction,
+			WritableToHostStar: true,
+		})
+	}
+	return out
+}
+
+// TestGlobalSSHSmallListNoScrollByteIdentical is the WR-09 regression: this
+// screen used to render every option row unconditionally with no scroll
+// window at all (unlike Global Git's gitComputeScrollWindow), risking
+// silent truncation past the frame's fixed row budget once the policy
+// table grows. This asserts the no-scroll path stays byte-identical for a
+// list that already fits: window start zero, no cue line.
+func TestGlobalSSHSmallListNoScrollByteIdentical(t *testing.T) {
+	b := stubBackend{sshOptions: gssScrollRows(3)}
+	a, _ := press(t, NewApp(b), "2")
+	m := gssModel(t, a)
+	if m.listWindowStart != 0 {
+		t.Errorf("listWindowStart = %d, want 0 for a small list", m.listWindowStart)
+	}
+	view := appView(a)
+	if strings.Contains(view, "more options") {
+		t.Errorf("a small list must render no scroll cue:\n%s", view)
+	}
+}
+
+// TestGlobalSSHFullListFitsComputedBudget renders a fixture large enough to
+// need scrolling at the frame's real geometry and asserts every rendered
+// master-list line count is within the SAME budget gssVisibleRowCount
+// computes — the test derives the budget from the same helper rather than
+// hardcoding a number (plan 02-15's standing lesson).
+func TestGlobalSSHFullListFitsComputedBudget(t *testing.T) {
+	b := stubBackend{sshOptions: gssScrollRows(20)}
+	a, _ := press(t, NewApp(b), "2")
+	m := gssModel(t, a)
+	s := a.state
+	options := m.overlaidOptions(s)
+	w := m.gssComputeScrollWindow(len(options), s)
+	budgetLines := w.visibleRows * optionRowLines
+	if w.needsScroll {
+		budgetLines++ // the reserved cue line
+	}
+	if got := frameBodyRows(minFrameHeight) - gssOptionsTopLines(s); budgetLines > got {
+		t.Errorf("computed render budget %d exceeds frameBodyRows-chrome budget %d", budgetLines, got)
+	}
+}
+
+// TestGlobalSSHScrollDownMovesWindowByOneRowPerStep drives the selection
+// from the first row to the last, one keystroke at a time, and asserts the
+// window start increases by exactly one on each step past the edge and
+// never more.
+func TestGlobalSSHScrollDownMovesWindowByOneRowPerStep(t *testing.T) {
+	const n = 20
+	b := stubBackend{sshOptions: gssScrollRows(n)}
+	a, _ := press(t, NewApp(b), "2")
+	m := gssModel(t, a)
+	if !m.gssComputeScrollWindow(n, a.state).needsScroll {
+		t.Fatal("setup: 20 rows must need scrolling at the fixed frame size")
+	}
+	prevStart := m.listWindowStart
+	for i := 0; i < n-1; i++ {
+		a, _ = press(t, a, "down")
+		m = gssModel(t, a)
+		delta := m.listWindowStart - prevStart
+		if delta < 0 || delta > 1 {
+			t.Fatalf("step %d: listWindowStart moved by %d, want 0 or 1", i, delta)
+		}
+		prevStart = m.listWindowStart
+	}
+}
+
+// TestGlobalSSHScrollUpMovesWindowByOneRowPerStep drives the selection back
+// up from the last row to the first and asserts the window start decreases
+// by exactly one per step past the edge.
+func TestGlobalSSHScrollUpMovesWindowByOneRowPerStep(t *testing.T) {
+	const n = 20
+	b := stubBackend{sshOptions: gssScrollRows(n)}
+	a, _ := press(t, NewApp(b), "2")
+	for i := 0; i < n-1; i++ {
+		a, _ = press(t, a, "down")
+	}
+	m := gssModel(t, a)
+	maxStart := m.listWindowStart
+	if maxStart == 0 {
+		t.Fatal("setup: scrolling to the last row must have advanced the window")
+	}
+	prevStart := maxStart
+	for i := 0; i < n-1; i++ {
+		a, _ = press(t, a, "up")
+		m = gssModel(t, a)
+		delta := prevStart - m.listWindowStart
+		if delta < 0 || delta > 1 {
+			t.Fatalf("step %d: listWindowStart moved by %d, want 0 or 1", i, delta)
+		}
+		prevStart = m.listWindowStart
+	}
+	if m.listWindowStart != 0 {
+		t.Errorf("after returning to the first row, listWindowStart = %d, want 0", m.listWindowStart)
+	}
+}
+
+// TestGlobalSSHScrollClickRowMatchesWindow is the click-side half of WR-09:
+// after scrolling the window down, a click on a rendered row must select
+// the ROW ACTUALLY DRAWN THERE, not the row that would occupy that screen
+// position under window start 0 — the exact click-row desync class this
+// finding warns about.
+func TestGlobalSSHScrollClickRowMatchesWindow(t *testing.T) {
+	const n = 20
+	b := stubBackend{sshOptions: gssScrollRows(n)}
+	a, _ := press(t, NewApp(b), "2")
+	for i := 0; i < 10; i++ {
+		a, _ = press(t, a, "down")
+	}
+	m := gssModel(t, a)
+	if m.listWindowStart == 0 {
+		t.Fatal("setup: scrolling 10 rows down must have advanced the window")
+	}
+	options := m.overlaidOptions(a.state)
+	w := m.gssComputeScrollWindow(len(options), a.state)
+	// The first visible row (screen row 0 of the list, right after any
+	// gitCueUp cue line) must resolve to windowStart, not row 0.
+	topOfListY := gssOptionsTopLines(a.state)
+	if w.cue == gitCueUp {
+		topOfListY++ // the reserved cue line occupies the first list row
+	}
+	// clickAt sends FULL-FRAME coordinates (App.handleMouse's input); the
+	// body-relative offsets above must be shifted by frameBodyTop to match.
+	// x=20 lands well past the "[ ]" checkbox glyph (columns ~3-6) and
+	// inside the row label text — a checkbox-column click would instead
+	// toggle selection without moving m.detailKey, defeating this test.
+	a2, _ := clickAt(t, a, 20, topOfListY+frameBodyTop)
+	m2 := gssModel(t, a2)
+	wantKey := options[w.windowStart].Key
+	if m2.detailKey != wantKey {
+		t.Errorf("clicking the first visible row selected %q, want %q (windowStart=%d)", m2.detailKey, wantKey, w.windowStart)
+	}
+}
