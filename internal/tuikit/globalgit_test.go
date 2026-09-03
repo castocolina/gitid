@@ -579,6 +579,38 @@ func TestGitFallbackEditModeRoutesShortcutIntoField(t *testing.T) {
 	}
 }
 
+// TestGitFieldEditingBlocksBodyClickFromMovingSelection is the BL-03
+// regression (09.4-REVIEW.md independent re-review): handleClick had no
+// fieldEditing guard, so a body click on another master-list row moved
+// m.detailKey away from the fallback row while m.fieldEditing stayed true —
+// the name/email inputs disappeared from view() but every subsequent
+// keystroke kept routing into m.nameInput/m.emailInput. Clicks on a
+// non-fallback row while editing must be inert.
+func TestGitFieldEditingBlocksBodyClickFromMovingSelection(t *testing.T) {
+	a := fallbackRowApp(t, stubBackend{})
+	a, _ = press(t, a, "enter")
+	m := ggitModel(t, a)
+	if !m.fieldEditing {
+		t.Fatal("setup: Enter on the fallback row must start text-editing")
+	}
+	// clickAt sends FULL-FRAME coordinates; body-relative row 0 (the first
+	// master-list row, definitely not the fallback row three rows down) is
+	// offset by frameBodyTop, matching the convention used throughout this
+	// file's other real-click tests.
+	a2, _ := clickAt(t, a, 20, gitTopLines(a.state)+frameBodyTop)
+	m2 := ggitModel(t, a2)
+	if m2.detailKey != GlobalGitEmailFallbackKey {
+		t.Errorf("BL-03 regressed: a body click while editing moved detailKey to %q, want it to stay on %q", m2.detailKey, GlobalGitEmailFallbackKey)
+	}
+	if !m2.fieldEditing {
+		t.Error("fieldEditing must remain true — the click must not silently exit edit mode either")
+	}
+	a3 := typeText(t, a2, "z")
+	if got := ggitModel(t, a3).nameInput.Value(); got != "z" {
+		t.Errorf("nameInput = %q, want the typed letter still routed into the (still-focused, still-rendered) name field", got)
+	}
+}
+
 func TestGitFallbackEmailInlineValidation(t *testing.T) {
 	a := fallbackRowApp(t, stubBackend{})
 	detail := regionFlat(a, 45, 100)
@@ -1770,5 +1802,64 @@ func TestGlobalSSHCeremonyPreviewUsesUnchangedDefaultBudget(t *testing.T) {
 	}
 	if ceremony.preview.VisibleLines != 10 {
 		t.Errorf("Global SSH preview visible lines = %d, want unchanged default 10", ceremony.preview.VisibleLines)
+	}
+}
+
+// TestGitFallbackAbandonedApplyStillDispatchesReducerAction is the BL-04
+// regression (09.4-REVIEW.md independent re-review) for Global Git's
+// fallback-author ceremony: confirm dispatches the async commit with the
+// SUBMITTED name/email captured into pendingFallbackName/Email. Simulate
+// abandonment — re-entering the screen (Ctrl+P -> back) runs activate(),
+// which CR-02 made reset ceremonyOpen/fallbackCommitPending/ceremony AND
+// re-seeds nameInput/emailInput from the backend's still-stale
+// GitFallbackAuthorState() (the write has not landed yet from the backend's
+// point of view). The commit's success message must still dispatch
+// ApplyGitGlobalEmail with the SUBMITTED values, not the stale re-seeded
+// ones now sitting in nameInput/emailInput.
+func TestGitFallbackAbandonedApplyStillDispatchesReducerAction(t *testing.T) {
+	b := stubBackend{
+		fallbackState: GitFallbackAuthorView{Name: "Old Name", Email: "old@example.com"},
+		fallbackCommitFn: func(string, string) tea.Cmd {
+			return func() tea.Msg { return GitFallbackAuthorCommitMsg{Backups: []string{NewBackupPath("~/.gitconfig")}} }
+		},
+	}
+	m := newGlobalGitModel(b)
+	state := Seed()
+	activated, _ := m.activate(state)
+	m = activated.(globalGitModel)
+	m.detailKey = GlobalGitEmailFallbackKey
+	m.nameInput = newTextInput("New Name")
+	m.emailInput = newTextInput("new@example.com")
+	opened := m.handleKey(pressKey("a"), state)
+	m = opened.model.(globalGitModel)
+	confirmed := m.handleKey(pressKey("enter"), state)
+	pendingModel := confirmed.model.(globalGitModel)
+	if !pendingModel.fallbackCommitPending {
+		t.Fatal("setup: confirming must set fallbackCommitPending")
+	}
+	if pendingModel.pendingFallbackEmail != "new@example.com" || pendingModel.pendingFallbackName != "New Name" {
+		t.Fatalf("setup: pending capture = (%q, %q), want the submitted values", pendingModel.pendingFallbackName, pendingModel.pendingFallbackEmail)
+	}
+	msg := confirmed.cmd().(GitFallbackAuthorCommitMsg)
+
+	reactivated, _ := pendingModel.activate(state)
+	abandoned := reactivated.(globalGitModel)
+	if abandoned.ceremonyOpen || abandoned.fallbackCommitPending {
+		t.Fatal("setup: activate() must have cleared the ceremony state")
+	}
+	if abandoned.emailInput.Value() != "old@example.com" {
+		t.Fatal("setup: activate() must have re-seeded emailInput from the stale backend state")
+	}
+
+	success := abandoned.handleMsg(msg, state)
+	if len(success.actions) != 1 {
+		t.Fatalf("BL-04 regressed: abandoned commit delivered %d actions, want one ApplyGitGlobalEmail — the write happened on disk but App.state never refreshed", len(success.actions))
+	}
+	action, isApply := success.actions[0].(ApplyGitGlobalEmail)
+	if !isApply {
+		t.Fatalf("action = %T, want ApplyGitGlobalEmail", success.actions[0])
+	}
+	if action.Email != "new@example.com" || action.Name != "New Name" {
+		t.Errorf("dispatched action = (%q, %q), want the SUBMITTED values (New Name, new@example.com), not activate()'s stale re-seed", action.Name, action.Email)
 	}
 }

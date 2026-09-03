@@ -50,6 +50,18 @@ type globalGitModel struct {
 	// mutually exclusive: confirming one ceremony never dispatches the
 	// other's commit method.
 	fallbackCommitPending bool
+	// pendingFallbackName / pendingFallbackEmail are the EXACT values
+	// submitted to CommitGitFallbackAuthor at ceremonyConfirmed (BL-04,
+	// 09.4-REVIEW.md independent re-review) — handleMsg must dispatch the
+	// reducer action with these, never with m.nameInput.Value()/
+	// m.emailInput.Value() read fresh at message-arrival time: activate()
+	// re-seeds both inputs from the (pre-write, now-stale) backend state on
+	// re-entry, so a Ctrl+P-then-back round-trip while the commit is still
+	// in flight would otherwise silently substitute the OLD values into the
+	// dispatched action, even though the write on disk used the submitted
+	// ones.
+	pendingFallbackName  string
+	pendingFallbackEmail string
 	// ceremonyOpen flags the active ceremony; the D9 fallback ceremony
 	// uses a separate heading check so it can never be confused with the
 	// baseline one.
@@ -159,23 +171,38 @@ func (m globalGitModel) activate(DemoState) (screenModel, tea.Cmd) {
 // has answered. The receipt is reachable ONLY from an explicit success;
 // reducer actions are dispatched here, never optimistically.
 func (m globalGitModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
-	if commit, ok := msg.(GlobalGitCommitMsg); ok && m.ceremonyOpen && m.applyCommitPending {
-		m.applyCommitPending = false
+	// BL-04 (09.4-REVIEW.md independent re-review): ceremonyOpen must gate
+	// only the ceremony UI mutation, never the reducer action — Ctrl+P
+	// bypasses this screen's own pending-ceremony guard (intercepted by
+	// App.handleKey before the screen sees the key) and re-entering via
+	// activate() (CR-02) resets ceremonyOpen/applyCommitPending/
+	// fallbackCommitPending. A still-in-flight commit's success message must
+	// still refresh App.state even when the ceremony that started it is
+	// gone by the time it arrives — the write already happened on disk.
+	if commit, ok := msg.(GlobalGitCommitMsg); ok {
+		ceremonyOpen := m.ceremonyOpen && m.applyCommitPending
+		if ceremonyOpen {
+			m.applyCommitPending = false
+		}
 		if commit.Err != "" {
-			message := commit.Err
-			if len(commit.Restored) > 0 {
-				message += " (restored: " + strings.Join(commit.Restored, "; ") + ")"
+			if ceremonyOpen {
+				message := commit.Err
+				if len(commit.Restored) > 0 {
+					message += " (restored: " + strings.Join(commit.Restored, "; ") + ")"
+				}
+				m.ceremony = m.ceremony.commitFailed(message)
 			}
-			m.ceremony = m.ceremony.commitFailed(message)
 			return keyResult{model: m}
 		}
 		plural := "s"
 		if len(m.appliedKeys) == 1 {
 			plural = ""
 		}
-		m.ceremony = m.ceremony.commitSucceeded(commit.Backups)
-		if len(commit.Advisories) > 0 {
-			m.ceremony = m.ceremony.withResultExtra(strings.Join(commit.Advisories, "\n"))
+		if ceremonyOpen {
+			m.ceremony = m.ceremony.commitSucceeded(commit.Backups)
+			if len(commit.Advisories) > 0 {
+				m.ceremony = m.ceremony.withResultExtra(strings.Join(commit.Advisories, "\n"))
+			}
 		}
 		return keyResult{
 			model:   m,
@@ -183,26 +210,36 @@ func (m globalGitModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 			actions: []Action{ApplyGitBaseline{Backup: firstBackup(commit.Backups)}},
 		}
 	}
-	if commit, ok := msg.(GitFallbackAuthorCommitMsg); ok && m.ceremonyOpen && m.fallbackCommitPending {
-		m.fallbackCommitPending = false
+	if commit, ok := msg.(GitFallbackAuthorCommitMsg); ok {
+		ceremonyOpen := m.ceremonyOpen && m.fallbackCommitPending
+		if ceremonyOpen {
+			m.fallbackCommitPending = false
+		}
 		if commit.Err != "" {
-			message := commit.Err
-			if len(commit.Restored) > 0 {
-				message += " (restored: " + strings.Join(commit.Restored, "; ") + ")"
+			if ceremonyOpen {
+				message := commit.Err
+				if len(commit.Restored) > 0 {
+					message += " (restored: " + strings.Join(commit.Restored, "; ") + ")"
+				}
+				m.ceremony = m.ceremony.commitFailed(message)
 			}
-			m.ceremony = m.ceremony.commitFailed(message)
 			return keyResult{model: m}
 		}
-		m.ceremony = m.ceremony.commitSucceeded(commit.Backups)
-		if len(commit.Advisories) > 0 {
-			m.ceremony = m.ceremony.withResultExtra(strings.Join(commit.Advisories, "\n"))
+		if ceremonyOpen {
+			m.ceremony = m.ceremony.commitSucceeded(commit.Backups)
+			if len(commit.Advisories) > 0 {
+				m.ceremony = m.ceremony.withResultExtra(strings.Join(commit.Advisories, "\n"))
+			}
 		}
-		m.currentName = m.nameInput.Value()
-		m.currentEmail = m.emailInput.Value()
+		// Use the CAPTURED submission, not m.nameInput/m.emailInput —
+		// activate() may have re-seeded both from stale pre-write state
+		// since ceremonyConfirmed (see pendingFallbackName's doc comment).
+		m.currentName = m.pendingFallbackName
+		m.currentEmail = m.pendingFallbackEmail
 		return keyResult{
 			model:   m,
 			note:    GlobalGitEmailResultMessage,
-			actions: []Action{ApplyGitGlobalEmail{Email: m.emailInput.Value(), Name: m.nameInput.Value(), Backup: firstBackup(commit.Backups)}},
+			actions: []Action{ApplyGitGlobalEmail{Email: m.pendingFallbackEmail, Name: m.pendingFallbackName, Backup: firstBackup(commit.Backups)}},
 		}
 	}
 	return keyResult{model: m}
@@ -507,7 +544,9 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 			if m.ceremony.cfg.Heading == GlobalGitEmailCeremonyHeading ||
 				strings.HasPrefix(m.ceremony.cfg.Heading, "Remove global fallback") {
 				m.fallbackCommitPending = true
-				return keyResult{model: m, handled: true, cmd: m.backend.CommitGitFallbackAuthor(m.nameInput.Value(), m.emailInput.Value())}
+				m.pendingFallbackName = m.nameInput.Value()
+				m.pendingFallbackEmail = m.emailInput.Value()
+				return keyResult{model: m, handled: true, cmd: m.backend.CommitGitFallbackAuthor(m.pendingFallbackName, m.pendingFallbackEmail)}
 			}
 			keys := m.gitApplyChosen(m.overlaidGitOptions(s))
 			m.appliedKeys = keys
@@ -826,6 +865,18 @@ func (m globalGitModel) handleClick(x, y, width, height int, s DemoState) keyRes
 			m.ceremony = next
 			return m.handleKey(key, s)
 		}
+		return keyResult{model: m}
+	}
+	// BL-03 (09.4-REVIEW.md independent re-review): handleKey guards the
+	// text-edit state first (m.fieldEditing), but handleClick had no
+	// equivalent guard — a click on another master-list row moved
+	// m.detailKey while m.fieldEditing stayed true, so the fallback
+	// name/email inputs disappeared from view() while every subsequent
+	// keystroke kept routing into them. The pane owns the keys while
+	// editing; a stray body click must not silently move the selection out
+	// from under the focused input (the exact "mouse-driven field focus"
+	// desync class this project has hit twice before, T-07-22).
+	if m.fieldEditing {
 		return keyResult{model: m}
 	}
 	if x >= masterListWidth(width) || y < gitTopLines(s) {

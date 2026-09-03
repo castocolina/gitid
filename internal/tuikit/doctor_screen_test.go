@@ -701,3 +701,47 @@ func TestDoctorCountIsTheOnlyFindingCount(t *testing.T) {
 		t.Fatalf("UXP-05: Doctor status must not report the fixable-only count %q:\n%s", wrong, view)
 	}
 }
+
+// TestDoctorCeremonyFitsFixedGeometry is the BL-02 regression (09.4-REVIEW.md
+// independent re-review): the merged Doctor tab renders the fix ceremony
+// inside the 54-column detail pane (identities.go:5502, doctor_screen.go),
+// not full-width. ceremony.view's shared default (10-line preview) was sized
+// for the full-width Global SSH/Git callers; at 54 columns, the flagship
+// destructive fix's diff wraps into enough physical rows that fitPane clips
+// the LAST lines — exactly the "Cancel (Esc)" / "Apply fix (Enter)" button
+// row — off the ceremony entirely. No visible confirm affordance renders,
+// and ceremonyClickKey (which hit-tests those exact labels against the
+// rendered body) can no longer find them, so mouse confirm/cancel become
+// impossible for the one fix this phase calls flagship.
+func TestDoctorCeremonyFitsFixedGeometry(t *testing.T) {
+	a := doctorApp(t)
+	ordered := orderedFindings(a.state)
+	idx := -1
+	for i, f := range ordered {
+		if f.ID == "ssh-identitiesonly-contradiction" {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		t.Fatal("fixture sanity: Seed must include the ssh-identitiesonly-contradiction flagship finding")
+	}
+	for i := 0; i < idx; i++ {
+		a, _ = press(t, a, "down")
+	}
+	sel := selectedFinding(a, ordered)
+	if !sel.Fixable {
+		t.Fatalf("fixture sanity: %s must be fixable", sel.ID)
+	}
+	a, _ = press(t, a, "f")
+	if !ceremonyPending(a) {
+		t.Fatal("setup: f on the flagship finding must open the fix ceremony")
+	}
+	view := appView(a)
+	if !strings.Contains(view, "Cancel (Esc)") {
+		t.Errorf("BL-02 regressed: the fix ceremony's Cancel button is clipped out of the rendered frame:\n%s", view)
+	}
+	if !strings.Contains(view, "Apply fix (Enter)") {
+		t.Errorf("BL-02 regressed: the fix ceremony's Apply fix button is clipped out of the rendered frame:\n%s", view)
+	}
+}

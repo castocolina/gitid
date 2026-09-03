@@ -488,6 +488,54 @@ func TestGlobalSSHApplyConfirmationIsInFlightNoApplyAction(t *testing.T) {
 	}
 }
 
+// TestGlobalSSHAbandonedApplyStillDispatchesReducerAction is the BL-04
+// regression (09.4-REVIEW.md independent re-review): the write completes on
+// disk regardless of whether the ceremony UI is still around to show its
+// receipt. Confirm an apply (dispatches the async commit), then simulate the
+// abandonment path — Ctrl+P -> another screen -> back, which runs
+// activate() and resets mode/applyCommitPending/ceremony (CR-02) — before
+// the commit's success message arrives. The reducer action (and note) must
+// still fire so App.state refreshes; only the ceremony UI mutation is
+// skipped.
+func TestGlobalSSHAbandonedApplyStillDispatchesReducerAction(t *testing.T) {
+	b := &stubBackend{sshCommitMsg: GlobalSSHCommitMsg{Backups: []string{"~/.ssh/config.bak.1"}}}
+	m := newGlobalSSHModel(b)
+	state := Seed()
+	activated, _ := m.activate(state)
+	m = activated.(globalSSHModel)
+	m.detailKey = "HashKnownHosts"
+	toggled := m.handleKey(pressKey("space"), state)
+	m = toggled.model.(globalSSHModel)
+	opened := m.handleKey(pressKey("a"), state)
+	m = opened.model.(globalSSHModel)
+	confirmed := m.handleKey(pressKey("enter"), state)
+	pendingModel := confirmed.model.(globalSSHModel)
+	if !pendingModel.applyCommitPending {
+		t.Fatal("setup: confirming must set applyCommitPending")
+	}
+	msg := confirmed.cmd().(GlobalSSHCommitMsg)
+
+	// Abandonment: re-entering the screen (e.g. via Ctrl+P then back) runs
+	// activate(), which CR-02 made reset mode/applyCommitPending/ceremony —
+	// but the async commit above is still in flight and will still arrive.
+	reactivated, _ := pendingModel.activate(state)
+	abandoned := reactivated.(globalSSHModel)
+	if abandoned.mode == gssApplyCeremony || abandoned.applyCommitPending {
+		t.Fatal("setup: activate() must have cleared the ceremony state")
+	}
+
+	success := abandoned.handleMsg(msg, state)
+	if len(success.actions) != 1 {
+		t.Fatalf("BL-04 regressed: abandoned commit delivered %d actions, want one ApplySSH — the write happened on disk but App.state never refreshed", len(success.actions))
+	}
+	if _, isApply := success.actions[0].(ApplySSH); !isApply {
+		t.Fatalf("action = %T, want ApplySSH", success.actions[0])
+	}
+	if success.note == "" {
+		t.Error("BL-04 regressed: abandoned commit produced no note")
+	}
+}
+
 // TestGlobalSSHApplyFailureRendersRetryNoReceiptNoApply pins the failed-commit
 // path: the error renders with Retry/Cancel, the receipt is NOT shown, and no
 // ApplySSH action was emitted.
@@ -1927,5 +1975,57 @@ func TestGlobalSSHScrollClickRowMatchesWindow(t *testing.T) {
 	wantKey := options[w.windowStart].Key
 	if m2.detailKey != wantKey {
 		t.Errorf("clicking the first visible row selected %q, want %q (windowStart=%d)", m2.detailKey, wantKey, w.windowStart)
+	}
+}
+
+// mutuallyExclusiveSSHStoragePlanFn mimics the REAL backend's field
+// discipline (cmd/gitid/wiring.go: SentinelPreview is set only for the
+// sentinel layout; MainPreview/OwnedPreview only for the include layout) —
+// unlike fixtureSSHStorageView, which populates all three fields regardless
+// of the requested layout and so cannot detect a missing refetch (BL-01,
+// 09.4-REVIEW.md independent re-review).
+func mutuallyExclusiveSSHStoragePlanFn(layout SSHStorageLayout) (SSHStorageMigrationView, error) {
+	v := SSHStorageMigrationView{
+		CurrentLayout: StorageSentinel,
+		TargetLayout:  layout,
+		PlanToken:     "tok-" + string(layout),
+	}
+	if layout == StorageSentinel {
+		v.SentinelPreview = "SENTINEL-PREVIEW-FOR-" + string(layout)
+	} else {
+		v.MainPreview = "MAIN-PREVIEW-FOR-" + string(layout)
+		v.OwnedPreview = "OWNED-PREVIEW-FOR-" + string(layout)
+	}
+	return v, nil
+}
+
+// TestGlobalSSHStorageRefetchesOnEveryChoiceMutationSite is the BL-01
+// regression: refetchStoragePlan() was wired into only 2 of the 4 sites
+// that mutate m.storageChoice (the keyboard radio toggle and the mouse
+// radio click), leaving the left/right sub-tab switch (both the browse and
+// zero-options branches) and the sub-tab-strip mouse click resetting
+// storageChoice back to s.SSHStorage WITHOUT refetching — so the pane kept
+// rendering the PREVIOUS layout's preview fields, which read as empty once
+// a real (mutually-exclusive-field) backend is used. Drives the exact
+// repro: Storage -> toggle radio to Include (refetch) -> Options -> back to
+// Storage (choice resets to Sentinel) and asserts the resulting pane is
+// NOT empty.
+func TestGlobalSSHStorageRefetchesOnEveryChoiceMutationSite(t *testing.T) {
+	b := &stubBackend{sshStoragePlanFn: mutuallyExclusiveSSHStoragePlanFn}
+	a, _ := press(t, NewApp(b), "2")
+	a, _ = press(t, a, "right") // Options -> Storage (choice = s.SSHStorage = sentinel)
+	a, _ = press(t, a, "down")  // toggle radio -> Include, refetch (existing site)
+	a, _ = press(t, a, "left")  // Storage -> Options
+	a, _ = press(t, a, "right") // Options -> Storage AGAIN: choice resets to sentinel
+	m := gssModel(t, a)
+	if m.storageChoice != StorageSentinel {
+		t.Fatalf("setup: storageChoice = %v, want StorageSentinel after the second right", m.storageChoice)
+	}
+	if m.storageView.SentinelPreview == "" {
+		t.Errorf("BL-01 regressed: storageView.SentinelPreview is empty after switching sub-tabs back to Storage — refetchStoragePlan() was not called on this mutation site")
+	}
+	view := appView(a)
+	if !strings.Contains(view, "SENTINEL-PREVIEW-FOR-sentinel") {
+		t.Errorf("Resulting config pane does not render the sentinel preview after the round-trip; got:\n%s", view)
 	}
 }

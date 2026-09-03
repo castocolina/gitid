@@ -203,27 +203,53 @@ func (m globalSSHModel) refetchStoragePlan() globalSSHModel {
 // from an explicit success; reducer actions are dispatched here, never
 // optimistically.
 func (m globalSSHModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
-	if commit, ok := msg.(GlobalSSHCommitMsg); ok && m.mode == gssApplyCeremony && m.applyCommitPending {
-		m.applyCommitPending = false
+	// BL-04 (09.4-REVIEW.md independent re-review): this branch used to gate
+	// EVERYTHING — including dispatching the ApplySSH reducer action — on
+	// m.mode/m.applyCommitPending. Ctrl+P bypasses the screen's own
+	// pending-ceremony guard (it is intercepted by App.handleKey before the
+	// screen ever sees a key), and re-entering this screen from the palette
+	// runs activate(), which CR-02 made reset those very flags. So a
+	// still-in-flight commit's message arrived after the flags were already
+	// cleared, and the whole branch — including the reducer action — was
+	// silently skipped, even though the write had already landed on disk.
+	// ceremonyOpen distinguishes "the ceremony UI is still here to receive
+	// the receipt" from "the write itself succeeded and App.state must
+	// still refresh" — only the former gates ceremony/UI mutation; the
+	// reducer action and note fire on every genuine success regardless.
+	if commit, ok := msg.(GlobalSSHCommitMsg); ok {
+		// ceremonyOpen is only whether the ceremony UI is still around to
+		// receive the receipt — it must NOT gate the reducer action below.
+		// m.appliedKeys survives activate() (CR-02 resets mode/pending/
+		// ceremony, never appliedKeys), so it is still valid here even after
+		// abandonment.
+		ceremonyOpen := m.mode == gssApplyCeremony && m.applyCommitPending
+		if ceremonyOpen {
+			m.applyCommitPending = false
+		}
 		if commit.Err != "" {
-			message := commit.Err
-			if len(commit.Restored) > 0 {
-				message += " (restored: " + strings.Join(commit.Restored, "; ") + ")"
+			if ceremonyOpen {
+				message := commit.Err
+				if len(commit.Restored) > 0 {
+					message += " (restored: " + strings.Join(commit.Restored, "; ") + ")"
+				}
+				m.ceremony = m.ceremony.commitFailed(message)
 			}
-			m.ceremony = m.ceremony.commitFailed(message)
 			return keyResult{model: m}
 		}
 		plural := "s"
 		if len(m.appliedKeys) == 1 {
 			plural = ""
 		}
-		m.ceremony = m.ceremony.commitSucceeded(commit.Backups)
-		// Append post-write shadow advisories to the receipt (D-04).
-		// The ResultExtra field is the right slot: it is rendered directly
-		// below ResultMessage on the receipt without requiring a new ceremony
-		// field (06-UI-SPEC.md budgets this against the existing field).
-		if len(commit.ShadowAdvisories) > 0 {
-			m.ceremony = m.ceremony.withResultExtra(strings.Join(commit.ShadowAdvisories, "\n"))
+		if ceremonyOpen {
+			m.ceremony = m.ceremony.commitSucceeded(commit.Backups)
+			// Append post-write shadow advisories to the receipt (D-04).
+			// The ResultExtra field is the right slot: it is rendered directly
+			// below ResultMessage on the receipt without requiring a new
+			// ceremony field (06-UI-SPEC.md budgets this against the existing
+			// field).
+			if len(commit.ShadowAdvisories) > 0 {
+				m.ceremony = m.ceremony.withResultExtra(strings.Join(commit.ShadowAdvisories, "\n"))
+			}
 		}
 		return keyResult{
 			model:   m,
@@ -231,20 +257,27 @@ func (m globalSSHModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 			actions: []Action{ApplySSH{Keys: m.appliedKeys, Backup: firstBackup(commit.Backups)}},
 		}
 	}
-	if commit, ok := msg.(SSHStorageCommitMsg); ok && m.mode == gssStorageCeremony && m.storageCommitPending {
-		m.storageCommitPending = false
+	if commit, ok := msg.(SSHStorageCommitMsg); ok {
+		ceremonyOpen := m.mode == gssStorageCeremony && m.storageCommitPending
+		if ceremonyOpen {
+			m.storageCommitPending = false
+		}
 		if commit.Err != "" {
-			message := commit.Err
-			if commit.ConfigChangedSincePreview {
-				message = "Configuration changed since the preview was opened — re-open the preview to migrate."
-			} else if len(commit.Restored) > 0 {
-				message += " (restored: " + strings.Join(commit.Restored, "; ") + ")"
+			if ceremonyOpen {
+				message := commit.Err
+				if commit.ConfigChangedSincePreview {
+					message = "Configuration changed since the preview was opened — re-open the preview to migrate."
+				} else if len(commit.Restored) > 0 {
+					message += " (restored: " + strings.Join(commit.Restored, "; ") + ")"
+				}
+				m.ceremony = m.ceremony.commitFailed(message)
 			}
-			m.ceremony = m.ceremony.commitFailed(message)
 			return keyResult{model: m}
 		}
 		layout := m.storageTargetLayout
-		m.ceremony = m.ceremony.commitSucceeded(commit.Backups)
+		if ceremonyOpen {
+			m.ceremony = m.ceremony.commitSucceeded(commit.Backups)
+		}
 		// WR-18: refetch for the CONFIRMED target layout, not s.SSHStorage —
 		// s is the state captured BEFORE the SetSSHStorage reducer below runs,
 		// so s.SSHStorage is still the OLD (pre-migration) layout. On disk the
@@ -580,6 +613,7 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		case "left", "right":
 			m.subTab = gssStorage
 			m.storageChoice = s.SSHStorage
+			m = m.refetchStoragePlan()
 			return keyResult{model: m, handled: true}
 		}
 		return keyResult{model: m}
@@ -589,6 +623,7 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		if m.subTab == gssOptions {
 			m.subTab = gssStorage
 			m.storageChoice = s.SSHStorage
+			m = m.refetchStoragePlan()
 		} else {
 			m.subTab = gssOptions
 		}
@@ -790,6 +825,7 @@ func (m globalSSHModel) handleClick(x, y, width, height int, s DemoState) keyRes
 			case hitNeedle(body, x, y, gssTabStorageLabel):
 				m.subTab = gssStorage
 				m.storageChoice = s.SSHStorage
+				m = m.refetchStoragePlan()
 				return keyResult{model: m, handled: true}
 			}
 		}

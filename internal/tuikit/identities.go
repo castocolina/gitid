@@ -3185,14 +3185,25 @@ func (m identitiesModel) renderRotateDeleteOffer() string {
 func fixCeremonyFor(b Backend, finding DemoFinding) ceremonyModel {
 	plan := b.FixPlanFor(finding)
 	return newCeremony(ceremonyConfig{
-		Heading:       "Fix: " + finding.Title,
-		Targets:       []string{plan.File},
-		Backups:       []string{NewBackupPath(plan.File)},
-		Preview:       plan.Diff,
-		PreviewDiff:   true,
-		Destructive:   plan.Destructive,
-		ResultMessage: plan.Result,
-		ConfirmLabel:  "Apply fix",
+		Heading:     "Fix: " + finding.Title,
+		Targets:     []string{plan.File},
+		Backups:     []string{NewBackupPath(plan.File)},
+		Preview:     plan.Diff,
+		PreviewDiff: true,
+		// BL-02 (09.4-REVIEW.md independent re-review): both call sites
+		// (identities.go:5502 and the merged Doctor tab's doctor_screen.go)
+		// render this ceremony inside a detailWidth (54-column) detail pane,
+		// not full-width. The shared ceremony.view's default 10-line preview
+		// was sized for the full-width callers and, at 54 columns, wraps
+		// wide diff lines into enough physical rows that fitPane clips the
+		// LAST lines — exactly the Cancel/Confirm button row — off the
+		// destructive flagship fix. deleteCeremonyFor (below) already sets
+		// this same narrower budget for the identical narrow-pane
+		// constraint; this ceremony needs the same discipline.
+		PreviewMaxLines: 6,
+		Destructive:     plan.Destructive,
+		ResultMessage:   plan.Result,
+		ConfirmLabel:    "Apply fix",
 	})
 }
 
