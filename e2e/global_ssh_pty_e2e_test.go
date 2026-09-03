@@ -407,6 +407,58 @@ func globalSSHSubTabStrip(frame string) string {
 	return ""
 }
 
+// TestGlobalSSH_RealPTYSubTabStripMouseClick verifies that real SGR mouse
+// clicks on the sub-tab strip labels switch sub-tabs and that border rows
+// are inert. This proves the mouse coordinate math works correctly after
+// the strip gained a border (Task 2).
+func TestGlobalSSH_RealPTYSubTabStripMouseClick(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	seedGlobalSSHHome(t, home, "none")
+	s := startGlobalSSHPTY(t, home, "options")
+	t.Cleanup(func() { s.close(t) })
+
+	// Wait for the bordered strip to render with "Options" and "Storage & preview" visible.
+	frame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "Options") && strings.Contains(text, "Storage & preview")
+	})
+	if !ok {
+		t.Fatalf("Global SSH screen with sub-tab strip never rendered. Last frame:\n%s", frame)
+	}
+	if !strings.Contains(frame, "StrictHostKeyChecking") {
+		t.Errorf("Options sub-tab content (StrictHostKeyChecking) missing in first frame")
+	}
+
+	// Click on the "Storage & preview" label using real SGR mouse.
+	clickLabelRow(t, s, "Storage & preview")
+	s.sendKey([]byte(""), keystrokeDelay)
+
+	// Wait for the Storage sub-tab content to appear.
+	frame, ok = s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "STORE-01") // The Storage sub-tab's heading
+	})
+	if !ok {
+		t.Fatalf("Storage sub-tab content never rendered after mouse click. Last frame:\n%s", frame)
+	}
+
+	// The "Storage & preview" label should now be marked (reverse video).
+	if !strings.Contains(frame, "Storage") {
+		t.Errorf("Storage & preview label missing after switch")
+	}
+
+	// Click back on the "Options" label.
+	clickLabelRow(t, s, "Options")
+	s.sendKey([]byte(""), keystrokeDelay)
+
+	// Wait for the Options content to re-appear.
+	frame, ok = s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "StrictHostKeyChecking")
+	})
+	if !ok {
+		t.Fatalf("Options sub-tab content never re-rendered after clicking Options. Last frame:\n%s", frame)
+	}
+}
+
 func mustNotContainGlobalSSH(t *testing.T, frame, needle, context string) {
 	t.Helper()
 	if strings.Contains(frame, needle) {

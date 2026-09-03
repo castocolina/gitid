@@ -578,6 +578,50 @@ func TestGlobalSSHStorage_RealPTYChangedSincePreview(t *testing.T) {
 // Helpers
 // ---------------------------------------------------------------------------
 
+// TestGlobalSSHStorage_RealPTYSubTabStripMouseClick verifies that real SGR
+// mouse clicks on the sub-tab strip labels in the Storage tab switch sub-tabs
+// correctly. This proves the bordered strip's mouse coordinate math works on
+// both Options (tested in global_ssh_pty_e2e_test.go) and Storage sub-tabs.
+func TestGlobalSSHStorage_RealPTYSubTabStripMouseClick(t *testing.T) {
+	t.Parallel()
+	home := ShortSandboxHome(t)
+	_, _ = seedStorageMigrateHome(t, home)
+	fakeSSHDir := FakeMigrateSSHDir(t)
+	s := startStoragePTY(t, home, fakeSSHDir)
+
+	// Wait for the bordered strip and Storage sub-tab content to render.
+	frame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "STORE-01") && strings.Contains(text, "Storage & preview")
+	})
+	if !ok {
+		t.Fatalf("Storage sub-tab screen never rendered. Last frame:\n%s", frame)
+	}
+
+	// Click on the "Options" label to switch to Options sub-tab.
+	clickLabelRow(t, s, "Options")
+	s.sendKey([]byte(""), keystrokeDelay)
+
+	// Wait for the Options content to appear (option rows).
+	frame, ok = s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "StrictHostKeyChecking")
+	})
+	if !ok {
+		t.Fatalf("Options sub-tab content never rendered after mouse click. Last frame:\n%s", frame)
+	}
+
+	// Click back on the "Storage & preview" label.
+	clickLabelRow(t, s, "Storage & preview")
+	s.sendKey([]byte(""), keystrokeDelay)
+
+	// Wait for Storage content to re-appear (STORE-01 marker).
+	frame, ok = s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "STORE-01")
+	})
+	if !ok {
+		t.Fatalf("Storage sub-tab content never re-rendered after clicking Storage & preview. Last frame:\n%s", frame)
+	}
+}
+
 // readFileE2E reads a file and returns its content as a string, or "(missing)"
 // when the file does not exist — for diagnostic messages only.
 func readFileE2E(t *testing.T, path string) string {
