@@ -47,8 +47,10 @@ func startGlobalSSHPTYWithEnv(t *testing.T, home, mode string, extraEnv ...strin
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	t.Cleanup(cancel)
+	env, _ := e2eEnv(t, home)
+	env = append(env, extraEnv...)
 	cmd := newRealCreateFlowCmd(t, ctx, BuildBinary(t), home, FakeSSHDir(t, mode))
-	cmd.Env = append(cmd.Env, extraEnv...)
+	cmd.Env = env
 	s := startPTYAt(t, cmd, dummyTermWidth, dummyTermHeight)
 	t.Cleanup(func() { s.close(t) })
 	uiReady(t, s)
