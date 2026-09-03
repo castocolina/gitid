@@ -213,30 +213,30 @@ func TestMouseDoctorFixThisButtonAndCeremonyCancel(t *testing.T) {
 
 func TestMouseGlobalSSHCheckboxCellTogglesWithoutSelecting(t *testing.T) {
 	a, _ := press(t, NewApp(stubBackend{}), "2")
-	// D-15: selection starts empty. First ☐ is StrictHostKeyChecking — click
+	// D-15: selection starts empty. First [ ] is StrictHostKeyChecking — click
 	// to check it, then verify it unchecks.
 	if gssModelOf(t, a).chosen["StrictHostKeyChecking"] {
 		t.Fatal("D-15: StrictHostKeyChecking must NOT start chosen (empty selection)")
 	}
-	// Click the first ☐ (StrictHostKeyChecking) to check it.
-	a = clickCell(t, a, "☐", masterListWidth(a.width), frameBodyTop)
+	// Click the first [ ] (StrictHostKeyChecking) to check it.
+	a = clickCell(t, a, glyphToggleOff, masterListWidth(a.width), frameBodyTop)
 	m := gssModelOf(t, a)
 	if !m.chosen["StrictHostKeyChecking"] {
-		t.Error("clicking the ☐ cell must check the row (D-15: starting from empty)")
+		t.Error("clicking the [ ] cell must check the row (D-15: starting from empty)")
 	}
 	if m.detailKey != "StrictHostKeyChecking" {
 		t.Errorf("detailKey = %q — the checkbox click must NOT move the selection", m.detailKey)
 	}
-	// Clicking a checked ☑ must uncheck it.
-	a = clickCell(t, a, "☑", masterListWidth(a.width), frameBodyTop)
+	// Clicking a checked [✓] must uncheck it.
+	a = clickCell(t, a, glyphToggleOn, masterListWidth(a.width), frameBodyTop)
 	if gssModelOf(t, a).chosen["StrictHostKeyChecking"] {
-		t.Error("clicking the ☑ cell must uncheck the row")
+		t.Error("clicking the [✓] cell must uncheck the row")
 	}
-	// On a fresh screen the first ☐ is StrictHostKeyChecking — clicking it checks it.
+	// On a fresh screen the first [ ] is StrictHostKeyChecking — clicking it checks it.
 	b, _ := press(t, NewApp(stubBackend{}), "2")
-	b = clickCell(t, b, "☐", masterListWidth(b.width), frameBodyTop)
+	b = clickCell(t, b, glyphToggleOff, masterListWidth(b.width), frameBodyTop)
 	if !gssModelOf(t, b).chosen["StrictHostKeyChecking"] {
-		t.Error("clicking the ☐ cell must check the row")
+		t.Error("clicking the [ ] cell must check the row")
 	}
 }
 
@@ -248,10 +248,10 @@ func TestMouseGlobalGitCheckboxCellToggles(t *testing.T) {
 	// it toggles the row WITHOUT moving the detail selection.
 	a, _ = press(t, a, "down")
 	before := gitModelOf(t, a).detailKey
-	a = clickCell(t, a, glyphCheckOff, masterListWidth(a.width), frameBodyTop)
+	a = clickCell(t, a, glyphToggleOff, masterListWidth(a.width), frameBodyTop)
 	m := gitModelOf(t, a)
 	if !m.chosen["init.defaultBranch"] {
-		t.Error("clicking the ☐ cell must check init.defaultBranch")
+		t.Error("clicking the [ ] cell must check init.defaultBranch")
 	}
 	if m.detailKey != before {
 		t.Errorf("detailKey = %q, want unchanged %q — the checkbox click must NOT move the selection", m.detailKey, before)

@@ -240,7 +240,7 @@ func TestGlobalGitNonSelectableRowIsNotTogglable(t *testing.T) {
 	for _, line := range strings.Split(body, "\n") {
 		listCol := strings.SplitN(line, "│", 2)[0]
 		if strings.Contains(listCol, GlobalGitEmailFallbackKey) {
-			if strings.Contains(listCol, glyphCheckOff) || strings.Contains(listCol, glyphCheckOn) {
+			if strings.Contains(listCol, glyphToggleOff) || strings.Contains(listCol, glyphToggleOn) {
 				t.Errorf("non-selectable row must not render a checkbox glyph; got line: %q", listCol)
 			}
 		}
@@ -740,7 +740,7 @@ func TestGitFallbackRowRendersNoCheckboxAndIgnoresToggle(t *testing.T) {
 	for _, line := range strings.Split(appView(a), "\n") {
 		listCol := strings.SplitN(line, "│", 2)[0]
 		if strings.Contains(listCol, GlobalGitEmailFallbackKey) {
-			if strings.Contains(listCol, glyphCheckOff) || strings.Contains(listCol, glyphCheckOn) {
+			if strings.Contains(listCol, glyphToggleOff) || strings.Contains(listCol, glyphToggleOn) {
 				t.Errorf("fallback row must render no checkbox glyph; line: %q", listCol)
 			}
 		}
@@ -773,10 +773,10 @@ func TestGlobalGitCheckboxColumnIsUnchecked(t *testing.T) {
 		listCol := strings.SplitN(line, "│", 2)[0]
 		if strings.Contains(listCol, "init.defaultBranch") {
 			foundDefaultBranch = true
-			if strings.Contains(listCol, glyphCheckOn) {
+			if strings.Contains(listCol, glyphToggleOn) {
 				t.Errorf("init.defaultBranch must start unchecked (R-1); line: %q", listCol)
 			}
-			if !strings.Contains(listCol, glyphCheckOff) {
+			if !strings.Contains(listCol, glyphToggleOff) {
 				t.Errorf("init.defaultBranch must render an unchecked checkbox; line: %q", listCol)
 			}
 		}
@@ -938,7 +938,7 @@ func TestGlobalGitToggleAndClickRespectSelectability(t *testing.T) {
 	for _, line := range strings.Split(body, "\n") {
 		listCol := strings.SplitN(line, "│", 2)[0]
 		for _, o := range b.gitOptions {
-			if strings.Contains(listCol, o.Key) && (strings.Contains(listCol, glyphCheckOff) || strings.Contains(listCol, glyphCheckOn)) {
+			if strings.Contains(listCol, o.Key) && (strings.Contains(listCol, glyphToggleOff) || strings.Contains(listCol, glyphToggleOn)) {
 				t.Errorf("non-selectable row %q renders a checkbox glyph: %q", o.Key, listCol)
 			}
 		}
@@ -976,7 +976,7 @@ func TestGlobalGitDiffersRowRendersWordNotNewGlyph(t *testing.T) {
 	if !strings.Contains(body, "differs") {
 		t.Error("differs row must render the differs WORD")
 	}
-	if strings.Contains(body, glyphCheckOff) || strings.Contains(body, glyphCheckOn) {
+	if strings.Contains(body, glyphToggleOff) || strings.Contains(body, glyphToggleOn) {
 		t.Error("differs row must render no checkbox glyph (D-02)")
 	}
 	// The unclipped line-2 keeps the full Phase 6 frozen sentence, byte-identical.

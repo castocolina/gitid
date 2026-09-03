@@ -19,6 +19,7 @@ import (
 	"image/color"
 
 	lipgloss "charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Theme is the central semantic style contract: one lipgloss.Style per role
@@ -72,7 +73,31 @@ const (
 	glyphCheckOff = "☐"
 	glyphRadioOn  = "●"
 	glyphRadioOff = "○"
+
+	// glyphToggleOn/glyphToggleOff are the Phase 9.4 (UXP-03) bracket-style
+	// toggle for Global SSH/Global Git option rows ONLY — a deliberate,
+	// documented exception to the glyphCheckOn/glyphCheckOff pair above,
+	// because the checkbox glyph was judged too faint at typical terminal
+	// font sizes for this specific always-visible, frequently-scanned list.
+	// Do not use elsewhere without a similar documented decision.
+	glyphToggleOn  = "[✓]"
+	glyphToggleOff = "[ ]"
 )
+
+// optionBoxWidth is the D-03 checkbox-column display width both option
+// screens pad every box variant to, so selectable, non-selectable, and
+// already-applied rows keep their key names aligned.
+const optionBoxWidth = 3
+
+// padDisplay appends spaces until s occupies width display cells. Unlike
+// padRight, this counts ANSI-aware display width, so a styled glyph is
+// padded to the same column as an unstyled one.
+func padDisplay(s string, width int) string {
+	for ansi.StringWidth(s) < width {
+		s += " "
+	}
+	return s
+}
 
 // DefaultTheme is the ANSI-16 role palette every dummytui renderer draws
 // through.

@@ -613,8 +613,11 @@ func TestOptionRowNotApplicableReasonsAreDistinct(t *testing.T) {
 		if r != GlobalSSHReasonPlatform && strings.Contains(text, platform) {
 			t.Fatalf("version/verify reason %v leaked the platform sentence %q", r, platform)
 		}
-		if strings.Contains(text, glyphCheckOn) || strings.Contains(text, glyphCheckOff) {
-			t.Fatalf("not-applicable row for %v must contain neither checkbox glyph", r)
+		if strings.Contains(text, glyphToggleOn) || strings.Contains(text, glyphToggleOff) {
+			t.Fatalf("not-applicable row for %v must contain neither bracket toggle", r)
+		}
+		if !strings.Contains(text, "·") {
+			t.Fatalf("not-applicable row for %v must render the placeholder", r)
 		}
 		if strings.Contains(text, "→") {
 			t.Fatalf("not-applicable row for %v must omit the recommendation arrow", r)
@@ -622,6 +625,154 @@ func TestOptionRowNotApplicableReasonsAreDistinct(t *testing.T) {
 	}
 	if len(seen) != len(reasons) {
 		t.Fatalf("got %d distinct sentences, want %d (one per reason)", len(seen), len(reasons))
+	}
+}
+
+func optionRowPrefixWidth(t *testing.T, rendered, key string) int {
+	t.Helper()
+	first := strings.Split(stripANSI(rendered), "\n")[0]
+	idx := strings.Index(first, key)
+	if idx < 0 {
+		t.Fatalf("key %q not found in option row %q", key, first)
+	}
+	return ansi.StringWidth(first[:idx])
+}
+
+func listColPrefixWidth(t *testing.T, body, key string) int {
+	t.Helper()
+	for _, line := range strings.Split(body, "\n") {
+		listCol := stripANSI(strings.SplitN(line, "│", 2)[0])
+		if idx := strings.Index(listCol, key); idx >= 0 {
+			return ansi.StringWidth(listCol[:idx])
+		}
+	}
+	t.Fatalf("key %q not found in master list", key)
+	return 0
+}
+
+func TestOptionRowCheckboxColumnWidthIsUniform(t *testing.T) {
+	if ansi.StringWidth(glyphToggleOn) != optionBoxWidth || ansi.StringWidth(glyphToggleOff) != optionBoxWidth {
+		t.Fatalf("optionBoxWidth = %d, want ansi.StringWidth of both toggle glyphs (on=%d off=%d)",
+			optionBoxWidth, ansi.StringWidth(glyphToggleOn), ansi.StringWidth(glyphToggleOff))
+	}
+
+	sshSel := GlobalSSHOptionView{Key: "OptKey", State: GlobalSSHNeedsAction, WritableToHostStar: true}
+	sshNA := GlobalSSHOptionView{Key: "OptKey", State: GlobalSSHNotApplicable, NotApplicableReason: GlobalSSHReasonPlatform}
+	sshSet := GlobalSSHOptionView{Key: "OptKey", CurrentValue: "yes", Recommended: "yes", State: GlobalSSHAlreadySet, WritableToHostStar: true}
+
+	got := map[string]int{
+		"ssh-off":     optionRowPrefixWidth(t, optionRow(sshSel, false, false, false, 80), "OptKey"),
+		"ssh-on":      optionRowPrefixWidth(t, optionRow(sshSel, true, false, false, 80), "OptKey"),
+		"ssh-na":      optionRowPrefixWidth(t, optionRow(sshNA, false, false, false, 80), "OptKey"),
+		"ssh-applied": optionRowPrefixWidth(t, optionRow(sshSet, false, false, true, 80), "OptKey"),
+	}
+
+	b := stubBackend{gitOptions: []GlobalGitOptionView{
+		{Key: "gitOff", CurrentValue: "", Recommended: "true", OneLiner: "x", State: GlobalGitNeedsAction, PolicyBacked: true, HasWritableMember: true},
+		{Key: "gitNA", CurrentValue: "", Recommended: "true", OneLiner: "y", State: GlobalGitNotApplicable, PolicyBacked: true, HasWritableMember: true, NotApplicableReason: GlobalGitReasonProbeFailed, ProbeError: "probe failed"},
+		{Key: "gitSet", CurrentValue: "true", Recommended: "true", OneLiner: "z", State: GlobalGitAlreadySet, PolicyBacked: true, HasWritableMember: true},
+	}}
+	a, _ := press(t, NewApp(b), "3")
+	got["git-off"] = listColPrefixWidth(t, appView(a), "gitOff")
+	got["git-na"] = listColPrefixWidth(t, appView(a), "gitNA")
+	got["git-set"] = listColPrefixWidth(t, appView(a), "gitSet")
+	a, _ = press(t, a, "space")
+	got["git-on"] = listColPrefixWidth(t, appView(a), "gitOff")
+
+	var want int
+	for name, w := range got {
+		if want == 0 {
+			want = w
+		}
+		if w != want {
+			t.Errorf("%s prefix width = %d, want uniform %d (all variants: %v)", name, w, want, got)
+		}
+	}
+	box := want - 5 // leading space + marker + tone + name-gutter
+	if box != optionBoxWidth {
+		t.Errorf("inferred checkbox-column width = %d, want optionBoxWidth %d (prefix widths %v)", box, optionBoxWidth, got)
+	}
+}
+
+func optionRowBoxPlain(t *testing.T, rendered string) string {
+	t.Helper()
+	first := strings.Split(stripANSI(rendered), "\n")[0]
+	runes := []rune(first)
+	const prefixCells = 3 // leading space + unselected marker
+	if len(runes) < prefixCells+optionBoxWidth {
+		t.Fatalf("option row too short to hold a checkbox column: %q", first)
+	}
+	return string(runes[prefixCells : prefixCells+optionBoxWidth])
+}
+
+func TestGlobalSSHNonSelectableRowRendersDotPlaceholder(t *testing.T) {
+	o := GlobalSSHOptionView{Key: "UseKeychain", State: GlobalSSHNotApplicable, NotApplicableReason: GlobalSSHReasonPlatform}
+	got := optionRow(o, false, false, false, 80)
+	box := optionRowBoxPlain(t, got)
+	if !strings.Contains(box, "·") {
+		t.Fatalf("non-selectable SSH checkbox column = %q, want the faint-dot placeholder", box)
+	}
+	if strings.Contains(box, glyphToggleOn) || strings.Contains(box, glyphToggleOff) {
+		t.Fatalf("non-selectable SSH checkbox column = %q must not render a bracket toggle", box)
+	}
+	if !strings.Contains(got, styleFaint.Render("·")) {
+		t.Fatalf("non-selectable SSH placeholder must use the faint role; got %q", got)
+	}
+}
+
+func TestOptionRowToggleBracketStates(t *testing.T) {
+	ssh := GlobalSSHOptionView{Key: "HashKnownHosts", CurrentValue: "no", Recommended: "yes", State: GlobalSSHNeedsAction, WritableToHostStar: true}
+	off := optionRow(ssh, false, false, false, 80)
+	on := optionRow(ssh, true, false, false, 80)
+	if !strings.Contains(off, glyphToggleOff) {
+		t.Fatalf("selectable SSH off-state = %q, want %q", off, glyphToggleOff)
+	}
+	if !strings.Contains(on, glyphToggleOn) {
+		t.Fatalf("selectable SSH on-state = %q, want %q", on, glyphToggleOn)
+	}
+	if !strings.Contains(off, styleFaint.Render(glyphToggleOff)) {
+		t.Fatalf("off-state toggle must be faint; got %q", off)
+	}
+	onStyled := styleHealthy.Bold(true).Render(glyphToggleOn)
+	if !strings.Contains(on, onStyled) {
+		t.Fatalf("on-state toggle must be bold+healthy; got %q, want it to contain %q", on, onStyled)
+	}
+
+	b := stubBackend{gitOptions: []GlobalGitOptionView{
+		{Key: "init.defaultBranch", CurrentValue: "master", Recommended: "main", OneLiner: "x", State: GlobalGitNeedsAction, PolicyBacked: true, HasWritableMember: true},
+	}}
+	a, _ := press(t, NewApp(b), "3")
+	gitOff := appView(a)
+	if !strings.Contains(gitOff, glyphToggleOff) {
+		t.Fatalf("selectable Git off-state frame missing %q", glyphToggleOff)
+	}
+	a, _ = press(t, a, "space")
+	gitOn := appView(a)
+	if !strings.Contains(gitOn, glyphToggleOn) {
+		t.Fatalf("selectable Git on-state frame missing %q", glyphToggleOn)
+	}
+}
+
+func TestOptionRowToggleLegibleWithoutColor(t *testing.T) {
+	ssh := GlobalSSHOptionView{Key: "HashKnownHosts", State: GlobalSSHNeedsAction, WritableToHostStar: true}
+	na := GlobalSSHOptionView{Key: "UseKeychain", State: GlobalSSHNotApplicable, NotApplicableReason: GlobalSSHReasonPlatform}
+	plainOff := stripANSI(optionRow(ssh, false, false, false, 80))
+	plainOn := stripANSI(optionRow(ssh, true, false, false, 80))
+	plainNA := stripANSI(optionRow(na, false, false, false, 80))
+	if !strings.Contains(plainOff, glyphToggleOff) {
+		t.Fatalf("NO_COLOR off-state = %q, want bracket %q", plainOff, glyphToggleOff)
+	}
+	if !strings.Contains(plainOn, glyphToggleOn) {
+		t.Fatalf("NO_COLOR on-state = %q, want bracket %q", plainOn, glyphToggleOn)
+	}
+	if strings.Contains(plainOff, glyphToggleOn) || strings.Contains(plainOn, glyphToggleOff) {
+		t.Fatalf("NO_COLOR on/off states must not share a bracket; off=%q on=%q", plainOff, plainOn)
+	}
+	if !strings.Contains(plainNA, "·") {
+		t.Fatalf("NO_COLOR placeholder = %q, want ·", plainNA)
+	}
+	if strings.Contains(plainNA, glyphToggleOn) || strings.Contains(plainNA, glyphToggleOff) {
+		t.Fatalf("NO_COLOR placeholder must not use a bracket toggle; got %q", plainNA)
 	}
 }
 

@@ -695,12 +695,13 @@ func (m globalSSHModel) handleClick(x, y, width, height int, s DemoState) keyRes
 	return keyResult{model: m, handled: true}
 }
 
-// clickOnCheckbox reports whether the click falls on the ☐/☑ checkbox cell
+// clickOnCheckbox reports whether the click falls on the [ ]/[✓] toggle cell
 // of the rendered body line — the glyph span is derived from the drawn row,
 // never from column math.
 func (m globalSSHModel) clickOnCheckbox(x, y, width, height int, s DemoState) bool {
 	body := m.view(s, width, height).body
-	return hitNeedle(body, x, y, glyphCheckOff) || hitNeedle(body, x, y, glyphCheckOn)
+	return hitNeedle(body, x, y, glyphToggleOff) ||
+		hitNeedle(body, x, y, glyphToggleOn)
 }
 
 // handleStorageClick resolves Storage & preview clicks: radio rows select a
@@ -759,14 +760,14 @@ func optionRow(o GlobalSSHOptionView, chosen, selected, applied bool, width int)
 		marker = styleBold.Render("▸ ")
 	}
 	selectable := o.Selectable()
-	box := "   "
+	box := padDisplay(styleFaint.Render("·"), optionBoxWidth)
 	if selectable {
-		box = glyphCheckOff + " "
+		box = padDisplay(styleFaint.Render(glyphToggleOff), optionBoxWidth)
 		if chosen {
-			box = glyphCheckOn + " "
+			box = padDisplay(styleHealthy.Bold(true).Render(glyphToggleOn), optionBoxWidth)
 		}
 	} else if applied {
-		box = "✓ "
+		box = padDisplay("✓", optionBoxWidth)
 	}
 	tone := " "
 	switch o.State {

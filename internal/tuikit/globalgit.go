@@ -840,7 +840,8 @@ func (m globalGitModel) handleClick(x, y, width, height int, s DemoState) keyRes
 	// so the click, the toggle key, and the rendered glyph stay one decision.
 	if o.Selectable() {
 		body := m.view(s, width, height).body
-		if hitNeedle(body, x, y, glyphCheckOff) || hitNeedle(body, x, y, glyphCheckOn) {
+		if hitNeedle(body, x, y, glyphToggleOff) ||
+			hitNeedle(body, x, y, glyphToggleOn) {
 			m.chosen = withToggled(m.chosen, o.Key)
 			return keyResult{model: m, handled: true}
 		}
@@ -949,7 +950,7 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 		if absoluteIdx == selIdx {
 			marker = styleBold.Render("▸ ")
 		}
-		// Checkbox: only selectable rows get a checkbox glyph — driven by the
+		// Checkbox: only selectable rows get a bracket toggle — driven by the
 		// ONE Selectable predicate (needs-action + writable member keys + no
 		// probe error), so a does/render mismatch cannot exist (D-02, D-05).
 		// A non-selectable row still gets a NEUTRAL marker, never a blank
@@ -957,11 +958,11 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 		// NotApplicable case just below: every other row carries a visible
 		// glyph in this column, so leaving it blank reads as a missing or
 		// broken row rather than a deliberately non-interactive one.
-		box := styleFaint.Render("·") + "  "
+		box := padDisplay(styleFaint.Render("·"), optionBoxWidth)
 		if o.Selectable() {
-			box = glyphCheckOff + " "
+			box = padDisplay(styleFaint.Render(glyphToggleOff), optionBoxWidth)
 			if m.chosen[o.Key] {
-				box = glyphCheckOn + " "
+				box = padDisplay(styleHealthy.Bold(true).Render(glyphToggleOn), optionBoxWidth)
 			}
 		}
 		toneGlyph := styleHealthy.Render("✓")

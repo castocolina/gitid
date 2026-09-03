@@ -367,6 +367,21 @@ func TestUploadCheckboxRendersAllFourStates(t *testing.T) {
 // distinguishing words survive with SGR color stripped (frame_test.go's
 // stripANSI, the project's existing no-color assertion helper) — the
 // UI-SPEC's non-negotiable glyph-plus-word rule, not a color-only signal.
+func TestUploadIdentitiesStillUseFrozenCheckboxGlyphs(t *testing.T) {
+	off := renderUploadCheckboxRow(UploadEligibilityView{State: UploadEligibilityReady, ProviderName: "GitHub"}, false, false, 60)
+	on := renderUploadCheckboxRow(UploadEligibilityView{State: UploadEligibilityReady, ProviderName: "GitHub"}, true, false, 60)
+	if !strings.Contains(off, glyphCheckOff) {
+		t.Fatalf("upload checkbox off-state = %q, want frozen %q", off, glyphCheckOff)
+	}
+	if !strings.Contains(on, glyphCheckOn) {
+		t.Fatalf("upload checkbox on-state = %q, want frozen %q", on, glyphCheckOn)
+	}
+	if strings.Contains(off, glyphToggleOff) || strings.Contains(off, glyphToggleOn) ||
+		strings.Contains(on, glyphToggleOff) || strings.Contains(on, glyphToggleOn) {
+		t.Fatalf("upload checkbox must not use the option-row toggle glyphs; off=%q on=%q", off, on)
+	}
+}
+
 func TestUploadCheckboxIsLegibleWithoutColor(t *testing.T) {
 	tests := []struct {
 		name string
