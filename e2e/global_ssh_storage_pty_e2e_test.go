@@ -598,7 +598,6 @@ func TestGlobalSSHStorage_RealPTYSubTabStripMouseClick(t *testing.T) {
 
 	// Click on the "Options" label to switch to Options sub-tab.
 	clickLabelRow(t, s, "Options")
-	s.sendKey([]byte(""), keystrokeDelay)
 
 	// Wait for the Options content to appear (option rows).
 	frame, ok = s.waitFor(8*time.Second, func(text string) bool {
@@ -610,7 +609,6 @@ func TestGlobalSSHStorage_RealPTYSubTabStripMouseClick(t *testing.T) {
 
 	// Click back on the "Storage & preview" label.
 	clickLabelRow(t, s, "Storage & preview")
-	s.sendKey([]byte(""), keystrokeDelay)
 
 	// Wait for Storage content to re-appear (STORE-01 marker).
 	frame, ok = s.waitFor(8*time.Second, func(text string) bool {
