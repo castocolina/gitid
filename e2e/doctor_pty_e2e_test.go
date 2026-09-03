@@ -132,7 +132,13 @@ func TestDoctor_RealPTYFindingsInlineDetailAndIdentity(t *testing.T) {
 	mustSee(t, s, "Suggested fix:", "Doctor renders the selected finding inline detail")
 	mustSee(t, s, "f · Fix this…", "Doctor offers the inline fix action on a fixable finding")
 	s.sendKey(dummyKeyDown, keystrokeDelay)
-	mustSee(t, s, "[", "Doctor navigation preserves an inline finding detail pane")
+	// WR-07: the prior needle here was "[", which also matches the header's
+	// "[1] Identities" nav segments present on every frame regardless of
+	// whether navigation actually preserved the detail pane — a vacuous
+	// assertion. "Suggested fix:" is the detail-pane content itself, so its
+	// continued presence after moving the selection actually proves the
+	// inline detail pane survives navigation.
+	mustSee(t, s, "Suggested fix:", "Doctor navigation preserves an inline finding detail pane")
 }
 
 // TestDoctor_RealPTYAllGreen covers behavior 2: the all-green / nothing-found

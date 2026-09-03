@@ -1422,10 +1422,31 @@ func TestSubTabStripRowAccountingIsSingleSourced(t *testing.T) {
 		t.Errorf("Options: strip label line (row 1) should contain labels, got: %q", labelLine)
 	}
 
-	// gssOptionsTopLines should return >= stripRows.
-	topLines := gssOptionsTopLines(a.state)
-	if topLines < stripRows {
-		t.Errorf("gssOptionsTopLines = %d, want >= %d (strip rows + optional banner)", topLines, stripRows)
+	// gssOptionsTopLines should equal stripRows exactly when no findings
+	// banner is present — a loose ">=" would also pass a hardcoded literal
+	// disconnected from gssSubTabStripRows(), defeating the "single-sourced"
+	// claim in this test's name (WR-07). gssApp(t)'s default stubBackend
+	// state carries SSH findings (so the banner IS present there), so build
+	// a banner-free state explicitly for this check.
+	bannerFreeState := a.state
+	bannerFreeState.Findings = nil
+	topLines := gssOptionsTopLines(bannerFreeState)
+	if topLines != stripRows {
+		t.Errorf("gssOptionsTopLines = %d, want exactly %d (no findings banner present)", topLines, stripRows)
+	}
+
+	// The rendered body's own border-close row must land at exactly
+	// stripRows-1, proving gssSubTabStripRows() is the actual row count the
+	// renderer produced, not just a number the accounting helper repeats.
+	borderCloseRow := -1
+	for i, line := range optionsLines {
+		if strings.Contains(line, "╰") || strings.Contains(line, "╯") {
+			borderCloseRow = i
+			break
+		}
+	}
+	if borderCloseRow != stripRows-1 {
+		t.Errorf("rendered strip's border-close row = %d, want %d (gssSubTabStripRows()-1)", borderCloseRow, stripRows-1)
 	}
 
 	// Switch to Storage sub-tab and verify the strip is present there too.
@@ -1741,15 +1762,19 @@ func TestSubTabStripRendersBordered(t *testing.T) {
 	// The strip should render in the accent color (ANSI 4, blue).
 	// The accent color is proven by the rune presence above; color codes are optional in stripped contexts.
 
-	// The active label should still be marked (styleReverse).
+	// The active label should still be marked with styleReverse (raw ANSI
+	// SGR 7, "\x1b[7m"). WR-07: a plain strings.Contains(line, "Options")
+	// check here would pass even if the reverse styling were lost entirely
+	// — it only proves the label text is present, not that it is marked as
+	// active. Assert the reverse escape actually wraps "Options".
 	activeMarked := false
 	for _, line := range optionsLines[:stripEndLine] {
-		if strings.Contains(line, "Options") {
+		if strings.Contains(line, "\x1b[7m Options \x1b[m") {
 			activeMarked = true
 			break
 		}
 	}
 	if !activeMarked {
-		t.Error("active sub-tab label should still be marked in the bordered strip")
+		t.Errorf("active sub-tab label should be marked with styleReverse (\\x1b[7m) in the bordered strip, got lines: %q", optionsLines[:stripEndLine])
 	}
 }
