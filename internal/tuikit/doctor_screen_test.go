@@ -458,6 +458,42 @@ func TestDoctorParseErrorFrameSuppressesOrdinaryFindings(t *testing.T) {
 	}
 }
 
+// TestDoctorParseErrorFrameRefusesFixKeys is the regression for CR-04:
+// view() hides the findings list and any fix ceremony behind the
+// "Checks paused until this configuration parses again" frame the instant a
+// critical Files parse-error finding is present, but handleKey did not
+// share that check — f/F could still open and drive a REAL, backed-up write
+// with no preview, no confirm affordance, and no receipt ever rendered,
+// directly contradicting the write contract (CLAUDE.md: preview → confirm +
+// backup → re-test).
+func TestDoctorParseErrorFrameRefusesFixKeys(t *testing.T) {
+	b := stubBackend{}
+	m := newDoctorModel(b)
+	state := DemoState{Scanned: true, Findings: []DemoFinding{
+		{HealthFinding: HealthFinding{Family: "Files", Severity: SeverityCritical, Section: "Git", Title: "Git configuration cannot be parsed", Explanation: "bad config"}},
+		{HealthFinding: HealthFinding{ID: "ssh-key-perms-archived", Family: "Permissions", Severity: SeverityCritical, Section: "SSH", Title: "private key exposed", Fixable: true}},
+	}}
+
+	for _, key := range []string{"F", "enter", "enter", "f", "enter"} {
+		res := m.handleKey(pressKey(key), state)
+		next, ok := res.model.(doctorModel)
+		if !ok {
+			t.Fatalf("handleKey(%q) returned %T, want doctorModel", key, res.model)
+		}
+		m = next
+		if len(res.actions) != 0 {
+			t.Fatalf("handleKey(%q) dispatched %v while checks are paused — a fix ceremony was driven behind the parse-error frame with no preview ever rendered", key, res.actions)
+		}
+	}
+	if m.fixing {
+		t.Error("the fix ceremony must never open while a critical Files parse-error finding halts checks")
+	}
+	view := m.view(state, 100, 30)
+	if !strings.Contains(view.body, "Checks paused") {
+		t.Errorf("the parse-error frame must still be what renders after the key sequence:\n%s", view.body)
+	}
+}
+
 func TestDoctorBrowseDoesNotShowWriteCeremonyMarkers(t *testing.T) {
 	withFindings := Seed()
 	withFindings.Scanned = true

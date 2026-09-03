@@ -526,6 +526,18 @@ func (a App) handleMouse(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		return a, nil // the too-small guard screen has no click targets
 	}
 	if msg.Y == 0 { // header row
+		// CR-02: mirror the keyboard's own guard — a screen whose current
+		// view captures plain keys (an open ceremony, a text input) must
+		// not be left by mouse either. The keyboard already can't: handleKey
+		// returns handled:true while capturesKeys is true, so the globals'
+		// tab-switch cases below are never reached. Without this guard, a
+		// mouse click could leave a screen mid-ceremony while activate()
+		// silently cleared the selection under it, so confirming the
+		// still-displayed ceremony would dispatch a write that no longer
+		// matched what was previewed.
+		if a.screens[a.tab].view(a.state, a.width, a.height).capturesKeys {
+			return a, nil
+		}
 		if t, ok := headerTabAt(msg.X); ok {
 			return a.setTab(t)
 		}

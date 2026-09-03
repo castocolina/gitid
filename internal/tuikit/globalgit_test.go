@@ -418,6 +418,42 @@ func deliverMsg(t *testing.T, a App, msg tea.Msg) (App, tea.Cmd) {
 	return next.(App), cmd
 }
 
+// TestGlobalGitMouseTabClickBlockedWhileCeremonyOpen is the regression for
+// CR-02: a mouse click on the header tab bar must not leave a screen whose
+// ceremony is open. The keyboard already can't (handleKey short-circuits
+// with handled:true while a ceremony is open), but App.handleMouse routed
+// header clicks straight to setTab with no such guard — activate() then
+// silently cleared the selection under the still-displayed ceremony, so
+// confirming it afterward dispatched a commit with an EMPTY key set that no
+// longer matched the previewed diff.
+func TestGlobalGitMouseTabClickBlockedWhileCeremonyOpen(t *testing.T) {
+	backupPath := NewBackupPath("~/.gitconfig.d/00-baseline")
+	b := stubBackend{gitCommitMsg: GlobalGitCommitMsg{Backups: []string{backupPath}}}
+	a, _ := press(t, NewApp(b), "3")
+	a, _ = press(t, a, "space") // toggle init.defaultBranch
+	a, _ = press(t, a, "a")     // open ceremony — preview now on screen
+	before := appView(a)
+	if !strings.Contains(before, "Write global-git managed block") {
+		t.Fatalf("setup: expected the apply ceremony preview on screen:\n%s", before)
+	}
+
+	a = clickCell(t, a, "Identities", 0, 0)
+	after := appView(a)
+	if !strings.Contains(after, "Write global-git managed block") {
+		t.Errorf("mouse click on the header tab bar left an open ceremony screen — CR-02 regression:\n%s", after)
+	}
+
+	// Confirming the STILL-open ceremony must still commit the originally
+	// selected key, not a set silently emptied by an activate() that should
+	// never have run.
+	a, _ = press(t, a, "enter")
+	a, _ = deliverMsg(t, a, GlobalGitCommitMsg{Backups: []string{backupPath}})
+	view := appView(a)
+	if strings.Contains(view, "0 global git options applied") {
+		t.Errorf("confirmed ceremony reported zero applied options — the selection was lost:\n%s", view)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Acceptance criterion: cancelling the ceremony.
 // ---------------------------------------------------------------------------

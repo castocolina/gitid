@@ -424,6 +424,24 @@ func TestGlobalSSHOptionsErrorRendersNoteInsteadOfBlankPane(t *testing.T) {
 	}
 }
 
+// TestGlobalSSHOptionsErrorDoesNotTrapNavigation is the regression for CR-01:
+// a failed option probe must not consume every key. Global Git already
+// documents this fail-open contract (07-UI-SPEC.md RESOLVED "error" row);
+// Global SSH must match it rather than swallowing tab switches, help, and
+// quit.
+func TestGlobalSSHOptionsErrorDoesNotTrapNavigation(t *testing.T) {
+	b := &stubBackend{sshOptionsErr: errors.New("probe exploded")}
+	a := NewApp(b)
+	a, _ = press(t, a, "2")
+	if !strings.Contains(appView(a), "Global SSH") {
+		t.Fatalf("setup: expected to land on Global SSH before probing the trap")
+	}
+	a, _ = press(t, a, "1")
+	if strings.Contains(appView(a), "Global SSH") {
+		t.Errorf("pressing 1 after a failed option probe must leave Global SSH, but the tab did not change:\n%s", appView(a))
+	}
+}
+
 // TestGlobalSSHApplyConfirmationIsInFlightNoApplyAction drives the ceremony
 // model directly (mirroring the standalone Git ceremony tests): confirming the
 // apply dispatches the async commit and leaves the ceremony IN FLIGHT with no

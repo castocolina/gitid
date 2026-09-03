@@ -84,8 +84,9 @@ func groupFindings(ordered []DemoFinding) []doctorGroup {
 }
 
 // selectFinding resolves the finding matching id within ordered (falls back
-// to the first). Extracted as a free function so Doctor's list, detail, and
-// ceremony paths share one selection rule.
+// to the first). Extracted as a free function so Doctor's list and detail
+// panes share one lenient selection rule for RENDERING — never for choosing
+// a fix's write target (see exactFinding, CR-01/09.4-REVIEW).
 func selectFinding(ordered []DemoFinding, id string) (DemoFinding, int, bool) {
 	for i, f := range ordered {
 		if f.ID == id {
@@ -96,6 +97,22 @@ func selectFinding(ordered []DemoFinding, id string) (DemoFinding, int, bool) {
 		return ordered[0], 0, true
 	}
 	return DemoFinding{}, -1, false
+}
+
+// exactFinding resolves the finding matching id WITHOUT selectFinding's
+// ordered[0] fallback. CR-03 (09.4-REVIEW): IDs are content-derived with an
+// occurrence counter, so applying one fix can renumber a still-queued
+// sibling out from under m.selectedID between ceremonies. selectFinding
+// would silently substitute a neighbour and report ok==true; the fixing
+// branch must instead detect the miss and halt rather than ever dispatch a
+// write against a finding the user did not just confirm.
+func exactFinding(ordered []DemoFinding, id string) (DemoFinding, bool) {
+	for _, f := range ordered {
+		if f.ID == id {
+			return f, true
+		}
+	}
+	return DemoFinding{}, false
 }
 
 // fixableFindings filters the ordered findings that carry a REAL fix (the

@@ -152,11 +152,33 @@ func (m doctorModel) handleKey(msg tea.KeyMsg, rawState DemoState) keyResult {
 	key := msg.String()
 	ordered := m.findings(rawState)
 
+	// CR-04: view() renders the parse-error screen ("Checks paused until
+	// this configuration parses again") in place of the findings list and
+	// any fix ceremony the moment a critical Files parse-error finding is
+	// present — but that check alone doesn't stop this handler. Without
+	// this guard, f/F could open (or continue driving) a fix ceremony that
+	// is real and backed-up but never rendered: no preview, no confirm
+	// affordance, no receipt, contradicting the write contract (CLAUDE.md:
+	// preview → confirm + backup → re-test). Must match view()'s exact
+	// condition (orderedFindings, unfiltered — a parse error halts
+	// regardless of any identity filter), not m.findings' filtered set.
+	if _, halted := parseErrorFinding(orderedFindings(rawState)); halted {
+		return keyResult{model: m}
+	}
+
 	if m.fixing {
-		sel, _, ok := selectFinding(ordered, m.selectedID)
+		// CR-03: resolve the fix TARGET strictly — never selectFinding's
+		// ordered[0] fallback, which would silently substitute a neighbour
+		// (and report ok==true) once a mid-batch fix renumbers this ID out
+		// from under m.selectedID (IDs are content-derived with an
+		// occurrence counter — cmd/gitid/wiring.go). selectFinding stays
+		// the list/detail pane's lenient rendering rule; only a write
+		// target needs the strict one.
+		sel, ok := exactFinding(ordered, m.selectedID)
 		if !ok {
 			m.fixing = false
 			m.batch = nil
+			m.batchHalt = "The selected finding is no longer present after the last fix — re-run the scan before continuing."
 			return keyResult{model: m, handled: true}
 		}
 		var outcome ceremonyOutcome
@@ -179,22 +201,37 @@ func (m doctorModel) handleKey(msg tea.KeyMsg, rawState DemoState) keyResult {
 			m.pendingFixID = sel.ID
 			m.pendingFixName = sel.Title
 			if m.batch != nil {
-				queue := m.batch.queue[:0]
+				// WR-03: copy on write. m.batch is a pointer the pre-dispatch
+				// snapshot (app.go's checkFixBatchHalt) also points at; the
+				// old in-place `m.batch.queue = queue[:0]...` mutated that
+				// snapshot's queue too, so a halt message built from it would
+				// report the POST-dispatch remaining work, not the state as
+				// it stood right before this dispatch.
+				queue := make([]string, 0, len(m.batch.queue))
 				for _, id := range m.batch.queue {
 					if id != sel.ID {
 						queue = append(queue, id)
 					}
 				}
-				m.batch.queue = queue
+				nextBatch := *m.batch
+				nextBatch.queue = queue
+				m.batch = &nextBatch
 				if len(queue) > 0 {
 					// Stay in fixing mode — the NEXT ceremony renders for the
-					// next finding (never a silent batch).
-					m.selectedID = queue[0]
-					for _, f := range ordered {
-						if f.ID == queue[0] {
-							m.ceremony = fixCeremonyFor(m.backend, f)
-						}
+					// next finding (never a silent batch). WR-04/CR-03: the
+					// same strict resolution — halt rather than leaving a
+					// stale, already-finished ceremony on screen (which the
+					// unguarded range loop below the fold used to do) if the
+					// queued ID no longer exists.
+					nextFinding, ok := exactFinding(ordered, queue[0])
+					if !ok {
+						m.fixing = false
+						m.batch = nil
+						m.batchHalt = "The next queued finding is no longer present — re-run the scan before continuing."
+						return keyResult{model: m, handled: true, note: plan.Result, actions: []Action{action}}
 					}
+					m.selectedID = queue[0]
+					m.ceremony = fixCeremonyFor(m.backend, nextFinding)
 					return keyResult{model: m, handled: true, note: plan.Result, actions: []Action{action}}
 				}
 				m.batch = nil

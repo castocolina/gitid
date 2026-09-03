@@ -135,6 +135,17 @@ func newGlobalSSHModel(b Backend) globalSSHModel {
 func (m globalSSHModel) activate(s DemoState) (screenModel, tea.Cmd) {
 	m.storageChoice = s.SSHStorage
 	m.chosen = map[string]bool{}
+	// CR-02: a screen re-entered from scratch must not resume a ceremony
+	// whose selection this same call just cleared above. The keyboard
+	// cannot reach activate() while a ceremony is open (its handleKey
+	// returns handled:true, short-circuiting the globals), but a mouse
+	// click on the header tab bar bypasses that guard, so this reset is the
+	// state-machine half of the fix — App.handleMouse's capturesKeys guard
+	// is the other half.
+	m.mode = gssBrowse
+	m.applyCommitPending = false
+	m.storageCommitPending = false
+	m.ceremony = ceremonyModel{}
 	options, err := m.backend.GlobalSSHOptionStates()
 	m.options = options
 	if err != nil {
@@ -549,9 +560,17 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 
 	options := m.overlaidOptions(s)
 	if m.subTab == gssOptions && len(options) == 0 {
-		// No rows (the backend could not answer): every row key is inert; the
-		// pane renders the error note.
-		return keyResult{model: m, handled: true}
+		// Advisory / fail-open: no rows to act on, but navigation must still
+		// reach the globals (tabs, ?, q) — never trap the user on this
+		// screen, matching Global Git's fail-open contract for the same
+		// class of failed/empty probe (07-UI-SPEC.md RESOLVED "error" row).
+		switch key {
+		case "left", "right":
+			m.subTab = gssStorage
+			m.storageChoice = s.SSHStorage
+			return keyResult{model: m, handled: true}
+		}
+		return keyResult{model: m}
 	}
 	switch key {
 	case "left", "right":

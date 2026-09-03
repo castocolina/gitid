@@ -233,3 +233,38 @@ func TestDoctorListDimsDuringFixCeremony(t *testing.T) {
 		}
 	}
 }
+
+// TestDoctorFixCeremonyHaltsWhenSelectedFindingVanishes is the regression
+// for CR-03: IDs are content-derived with an occurrence counter, so applying
+// one fix can renumber a still-queued sibling out from under m.selectedID
+// between ceremonies (a real production sequence — see 09.4-REVIEW.md
+// CR-03). selectFinding's lenient "fall back to the first finding" rule
+// would silently substitute a neighbour as the write target and report
+// ok==true; the fixing branch must instead detect the miss and halt loudly,
+// never dispatch FixFinding against a finding the user did not just
+// confirm.
+func TestDoctorFixCeremonyHaltsWhenSelectedFindingVanishes(t *testing.T) {
+	a := doctorApp(t)
+	m := docModel(t, a)
+	m.fixing = true
+	m.selectedID = "renumbered-away"
+	m.batch = &doctorBatch{queue: []string{"renumbered-away"}, total: 1}
+	a.screens[TabDoctor] = m
+
+	next, _ := a.Update(pressKey("enter"))
+	a = next.(App)
+
+	got := docModel(t, a)
+	if got.fixing {
+		t.Error("fixing must stop once the selected finding is no longer present — never silently substitute a neighbour")
+	}
+	if got.batch != nil {
+		t.Error("the batch must be cleared, not silently continued against the wrong finding")
+	}
+	if got.batchHalt == "" {
+		t.Error("a halt message must be recorded rather than silently substituting a neighbour")
+	}
+	if !strings.Contains(appView(a), "no longer present") {
+		t.Errorf("the halt message must render on screen:\n%s", appView(a))
+	}
+}

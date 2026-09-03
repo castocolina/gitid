@@ -117,6 +117,17 @@ func (m globalGitModel) activate(DemoState) (screenModel, tea.Cmd) {
 	m.chosen = map[string]bool{}
 	m.listWindowStart = 0
 	m.optionsErr = ""
+	// CR-02: a screen re-entered from scratch must not resume a ceremony
+	// whose selection this same call just cleared above. The keyboard
+	// cannot reach activate() while a ceremony is open (its handleKey
+	// returns handled:true, short-circuiting the globals), but a mouse
+	// click on the header tab bar bypasses that guard, so this reset is the
+	// state-machine half of the fix — App.handleMouse's capturesKeys guard
+	// is the other half.
+	m.ceremonyOpen = false
+	m.applyCommitPending = false
+	m.fallbackCommitPending = false
+	m.ceremony = ceremonyModel{}
 	options, err := m.backend.GlobalGitOptionStates()
 	m.options = options
 	if err != nil {
