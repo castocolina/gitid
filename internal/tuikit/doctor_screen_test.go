@@ -535,3 +535,105 @@ func TestDoctorIdentityFilterResetsOnOrdinaryReentry(t *testing.T) {
 		t.Fatalf("ordinary re-entry must still include clientB's finding:\n%s", view)
 	}
 }
+
+// TestDoctorBatchHaltSurvivesModelRename is T-09.4-01: checkFixBatchHalt's
+// two type assertions must stay on doctorModel. A stale-but-compiling
+// assertion (ok == false) silently turns the D-16 rollback into a no-op,
+// so this guard asserts the halt MESSAGE TEXT, never merely "no panic".
+func TestDoctorBatchHaltSurvivesModelRename(t *testing.T) {
+	backend := stubBackend{
+		fixPersistErr:  errors.New("simulated write failure"),
+		fixFailID:      "fix-2",
+		lastPersistErr: new(error),
+	}
+	a := NewApp(backend)
+	a.state.Scanned = true
+	a.state.Findings = threeBatchFindings()
+	a, _ = a.setTab(TabDoctor)
+	fx := docModel(t, a)
+	fx.scanning = false
+	a.screens[TabDoctor] = fx
+
+	a, _ = press(t, a, "F")
+	a = confirmFix(t, a)
+	a = confirmFix(t, a)
+
+	view := appView(a)
+	for _, want := range []string{
+		"Fix 2 of 3 failed and was rolled back",
+		"the first 1 fixes already applied stand",
+		"Nothing else in this batch was attempted",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("T-09.4-01: rendered pane must contain the D-16 halt segment %q:\n%s", want, view)
+		}
+	}
+}
+
+// TestDoctorFixGateRespectsFixableBit is T-09.4-02: the merged list widened
+// to every finding, but f/F still gate on the Fixable bit. A non-fixable
+// row stays listed; neither key opens a ceremony against it.
+func TestDoctorFixGateRespectsFixableBit(t *testing.T) {
+	a := doctorApp(t)
+	a = pressSeq(t, a, "down", "down", "down", "down")
+	if docModel(t, a).selectedID != "git-opensource-no-host-block" {
+		t.Fatalf("selected = %q, want git-opensource-no-host-block", docModel(t, a).selectedID)
+	}
+	a, _ = press(t, a, "f")
+	m := docModel(t, a)
+	if m.fixing {
+		t.Fatal("f on a non-fixable finding must leave fixing false")
+	}
+	if m.pendingFixID != "" {
+		t.Fatalf("f on a non-fixable finding must leave pendingFixID empty, got %q", m.pendingFixID)
+	}
+	view := appView(a)
+	if !strings.Contains(view, "opensource has no dedicated SSH") {
+		t.Fatalf("list must still contain the non-fixable finding after f:\n%s", view)
+	}
+
+	a = NewApp(stubBackend{})
+	a.state.Scanned = true
+	a.state.Findings = []DemoFinding{{
+		HealthFinding: HealthFinding{
+			ID: "info-only", Section: "Git", Severity: SeverityInfo, Family: "Orphans",
+			Title: "opensource has no dedicated SSH Host block",
+		},
+	}}
+	a, _ = a.setTab(TabDoctor)
+	fx := docModel(t, a)
+	fx.scanning = false
+	a.screens[TabDoctor] = fx
+	a, _ = press(t, a, "F")
+	fx = docModel(t, a)
+	if fx.batch != nil || fx.fixing {
+		t.Fatalf("F on an all-non-fixable fixture must start no batch, got batch=%+v fixing=%v", fx.batch, fx.fixing)
+	}
+	view = appView(a)
+	if !strings.Contains(view, "opensource has no dedicated SSH") {
+		t.Fatalf("all-non-fixable list must still contain the finding:\n%s", view)
+	}
+}
+
+// TestDoctorCountIsTheOnlyFindingCount is UXP-05: the number Doctor's
+// status line reports equals len(orderedFindings(state)) and is strictly
+// greater than len(fixableFindings(...)) when the fixture has an info-only
+// finding — the two numbers that used to disagree across two tabs now
+// come from one source, and one is the superset.
+func TestDoctorCountIsTheOnlyFindingCount(t *testing.T) {
+	a := doctorApp(t)
+	ordered := orderedFindings(a.state)
+	fixable := fixableFindings(ordered)
+	if len(fixable) >= len(ordered) {
+		t.Fatalf("fixture sanity: need at least one info-only finding, ordered=%d fixable=%d", len(ordered), len(fixable))
+	}
+	view := appView(a)
+	want := fmt.Sprintf("%d finding%s — every fix is previewed", len(ordered), pluralS(len(ordered)))
+	if !strings.Contains(view, want) {
+		t.Fatalf("UXP-05: Doctor status must report the unfiltered count %q:\n%s", want, view)
+	}
+	wrong := fmt.Sprintf("%d finding%s — every fix is previewed", len(fixable), pluralS(len(fixable)))
+	if strings.Contains(view, wrong) {
+		t.Fatalf("UXP-05: Doctor status must not report the fixable-only count %q:\n%s", wrong, view)
+	}
+}
