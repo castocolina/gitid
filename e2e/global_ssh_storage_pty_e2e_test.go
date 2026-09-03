@@ -154,7 +154,12 @@ func startStoragePTY(t *testing.T, home, fakeSSHDir string) *ptySession {
 	s.sendKey([]byte("2"), keystrokeDelay)
 	mustSee(t, s, "Options", "Global SSH tab opens")
 	s.sendKey([]byte("\x1b[C"), keystrokeDelay) // right arrow — Options → Storage sub-tab
-	mustSee(t, s, "Storage & preview", "Storage sub-tab opens")
+	// WR-06 (09.4-REVIEW.md independent re-review): the sub-tab strip
+	// renders BOTH "Options" and "Storage & preview" labels regardless of
+	// which sub-tab is active (globalssh.go), so this needle passed even
+	// before the arrow key was sent. "STORE-01" is the Storage sub-tab's
+	// own heading, present only once that sub-tab has actually opened.
+	mustSee(t, s, "STORE-01", "Storage sub-tab opens")
 	return s
 }
 
@@ -449,24 +454,34 @@ func TestGlobalSSHStorage_RealPTYRoundTrip(t *testing.T) {
 		}
 	}
 
-	// Wait for screen to refresh.
-	time.Sleep(keystrokeDelay * 5)
+	// Wait for the screen to actually refresh to the post-migration state
+	// (WR-07, 09.4-REVIEW.md independent re-review): a fixed time.Sleep in
+	// a harness that otherwise uses waitFor is a guess at how long refresh
+	// takes, not a proof it happened. "— current" is the radio pane's own
+	// marker for whichever layout is now active (renderStorage,
+	// globalssh.go) — waiting for it proves the refresh landed before the
+	// next key is sent.
+	_, ok = s.waitFor(10*time.Second, func(text string) bool {
+		return strings.Contains(text, "— current")
+	})
+	if !ok {
+		t.Fatalf("screen did not refresh to the post-migration state:\n%s", s.snapshot())
+	}
 
 	// --- Second migration: Include → Sentinel ---
-	// After migration, current layout is Include. Select Sentinel (the other radio).
+	// After migration, current layout is Include. Select Sentinel (the
+	// other radio). WR-07: the previous "try the other direction" retry
+	// (a second Down press when the first produced no "Migrate") could
+	// only mask a real hang by silently flipping the radio back to the
+	// CURRENT layout — a migration ceremony with no destination change is
+	// not the second leg of a round trip. Now that the refresh above is
+	// verified before this key is sent, a single Down is deterministic.
 	s.sendKey(dummyKeyDown, keystrokeDelay)
 	_, ok = s.waitFor(8*time.Second, func(text string) bool {
 		return strings.Contains(text, "Migrate")
 	})
 	if !ok {
-		// Try the other direction.
-		s.sendKey(dummyKeyDown, keystrokeDelay)
-		_, ok = s.waitFor(4*time.Second, func(text string) bool {
-			return strings.Contains(text, "Migrate")
-		})
-		if !ok {
-			t.Fatalf("Migrate never appeared for second migration:\n%s", s.snapshot())
-		}
+		t.Fatalf("Migrate never appeared for second migration:\n%s", s.snapshot())
 	}
 
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
@@ -539,13 +554,15 @@ func TestGlobalSSHStorage_RealPTYChangedSincePreview(t *testing.T) {
 	// Confirm — the digest check should detect the external edit.
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 
-	// Wait for an error state.
+	// Wait for the ConfigChangedSincePreview branch's own frozen sentence
+	// (globalssh.go). WR-07 (09.4-REVIEW.md independent re-review):
+	// "Retry" is rendered by ceremony.go for EVERY commit failure — a
+	// permission error, a symlink refusal, or any unrelated I/O failure
+	// all satisfied the old OR-chain, so it never actually proved the
+	// ConfigChangedSincePreview branch ran at all.
+	const changedSincePreviewMessage = "Configuration changed since the preview was opened — re-open the preview to migrate."
 	_, ok = s.waitFor(30*time.Second, func(text string) bool {
-		return strings.Contains(text, "re-open") ||
-			strings.Contains(text, "changed") ||
-			strings.Contains(text, "Retry") ||
-			strings.Contains(text, "Error") ||
-			strings.Contains(text, "error")
+		return strings.Contains(text, changedSincePreviewMessage)
 	})
 	if !ok {
 		t.Fatalf("config-changed-since-preview refusal never rendered:\n%s", s.snapshot())

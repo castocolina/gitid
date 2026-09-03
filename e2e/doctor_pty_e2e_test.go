@@ -126,8 +126,14 @@ func TestDoctor_RealPTYFindingsInlineDetailAndIdentity(t *testing.T) {
 	seedDoctorFlagship(t, home)
 	s := startDoctorPTY(t, home)
 	openDoctor(t, s)
-	mustSee(t, s, "SSH", "Doctor keeps SSH findings in their own section")
-	mustSee(t, s, "Git", "Doctor keeps Git findings in their own section")
+	// WR-06 (09.4-REVIEW.md independent re-review): "SSH"/"Git" alone also
+	// match the " [2] SSH "/" [3] Git " header nav-tab labels rendered on
+	// EVERY frame of every screen (frame.go's tabNavLabels), so both
+	// assertions passed even if Doctor rendered nothing at all. "SSH · "/
+	// "Git · " is groupFindings' own label format (doctor.go), unique to
+	// an actual rendered findings group.
+	mustSee(t, s, "SSH · ", "Doctor keeps SSH findings in their own section")
+	mustSee(t, s, "Git · ", "Doctor keeps Git findings in their own section")
 	mustSee(t, s, "IdentitiesOnly no contradicts", "Doctor renders the real contradiction finding")
 	mustSee(t, s, "Suggested fix:", "Doctor renders the selected finding inline detail")
 	mustSee(t, s, "f · Fix this…", "Doctor offers the inline fix action on a fixable finding")

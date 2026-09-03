@@ -53,7 +53,7 @@ func TestExtractGSSApplyHeadingAbsorbsWrappedContinuationRow(t *testing.T) {
 func TestExtractGIGNBodyDoesNotFalsePositiveOnOtherScreens(t *testing.T) {
 	t.Run("palette row mentioning the screen name", func(t *testing.T) {
 		lines := []string{
-			" gitid   [1] Identities · [2] SSH · [3] Git · [4] Health · [5] Fixer · [6] Ignore",
+			" gitid   [1] Identities · [2] SSH · [3] Git · [4] Doctor · [5] Ignore ",
 			" Identities",
 			" Ctrl+P palette: 1 Identities · 2 Global SSH · 3 Global Git · 4 Health · 5 Fixer · 6 Global Git Ignore",
 			" some identity list content",
@@ -65,7 +65,7 @@ func TestExtractGIGNBodyDoesNotFalsePositiveOnOtherScreens(t *testing.T) {
 
 	t.Run("Health SuggestedFix prose mentioning the screen name", func(t *testing.T) {
 		lines := []string{
-			" gitid   [1] Identities · [2] SSH · [3] Git · [4] Health · [5] Fixer · [6] Ignore",
+			" gitid   [1] Identities · [2] SSH · [3] Git · [4] Doctor · [5] Ignore ",
 			" Health",
 			" Health",
 			" ~ Suggested fix: use the Global Git Ignore screen to seed the curated defaults",
@@ -77,7 +77,7 @@ func TestExtractGIGNBodyDoesNotFalsePositiveOnOtherScreens(t *testing.T) {
 
 	t.Run("genuine gign frame still extracts", func(t *testing.T) {
 		lines := []string{
-			" gitid   [1] Identities · [2] SSH · [3] Git · [4] Health · [5] Fixer · [6] Ignore",
+			" gitid   [1] Identities · [2] SSH · [3] Git · [4] Doctor · [5] Ignore ",
 			" Global Git Ignore",
 			" Global Git Ignore",
 			" ~/.gitignore_global",

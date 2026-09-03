@@ -18,7 +18,6 @@ package screenshot
 // external tools.
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/castocolina/gitid/internal/tuikit"
@@ -538,6 +537,20 @@ func extractConfirmationPreview(lines []string) string {
 // spacing, or styling could never fail the gate.
 var headerNavAnchor = tuikit.LastHeaderNavLabel() + " "
 
+// headerNavMarkerIdx locates headerNavAnchor in a header line's ANSI-stripped
+// text, shared by extractHeader and extractHeaderStatus so their "anchor
+// missing" handling can never disagree again (WR-04, 09.4-REVIEW.md
+// independent re-review: extractHeader still panicked on a missing anchor
+// after extractHeaderStatus's sibling arm was softened to return "" for the
+// identical condition — a truncated or renamed header aborted the entire
+// visual-regression gate with a stack trace instead of a nameable region
+// failure). ok is false whenever the anchor is missing; callers surface
+// that as a nameable empty/unchanged region, never a panic.
+func headerNavMarkerIdx(plain string) (idx int, ok bool) {
+	markerIdx := strings.LastIndex(plain, headerNavAnchor)
+	return markerIdx, markerIdx >= 0
+}
+
 func extractHeader(lines []string) string {
 	if len(lines) == 0 {
 		return ""
@@ -547,11 +560,8 @@ func extractHeader(lines []string) string {
 	// status starts after the merged Doctor nav-tab entry + trailing spaces
 	// (one trailing nav segment plus the chip). Phase 09.4 reversed
 	// 08-01-PLAN.md Task 1's Health/Fixer split.
-	markerIdx := strings.LastIndex(plain, headerNavAnchor)
-	if markerIdx < 0 {
-		if strings.Contains(plain, "[1] Identities") {
-			panic(fmt.Sprintf("header: missing anchor %q in header line %q", headerNavAnchor, plain))
-		}
+	markerIdx, ok := headerNavMarkerIdx(plain)
+	if !ok {
 		return header
 	}
 	after := plain[markerIdx+len(headerNavAnchor):]
@@ -809,11 +819,8 @@ func extractHeaderStatus(lines []string) string {
 	// after a run of spaces following the LAST nav segment (WR-06: derived
 	// from tuikit.LastHeaderNavLabel, never a literal — see extractHeader's
 	// doc comment for why anchoring mid-list left a gap).
-	markerIdx := strings.LastIndex(plain, headerNavAnchor)
-	if markerIdx < 0 {
-		if strings.Contains(plain, "[1] Identities") {
-			panic(fmt.Sprintf("header-status: missing anchor %q in header line %q", headerNavAnchor, plain))
-		}
+	markerIdx, ok := headerNavMarkerIdx(plain)
+	if !ok {
 		return header
 	}
 	after := plain[markerIdx+len(headerNavAnchor):]
@@ -1015,12 +1022,18 @@ func gssPaneBodyAfter(lines []string, marker string) string {
 	return strings.Join(out, "\n")
 }
 
-// gssCeremonyBodyAfter returns every line from the first line containing
+// ceremonyBodyAfter returns every line from the first line containing
 // heading through the line containing endMarker — the full-width ceremony
 // body (no │ divider), bounded below by its own confirm/cancel button row so
 // the status line and footer keybar never leak in. Returns "" when the
 // heading is absent.
-func gssCeremonyBodyAfter(lines []string, heading, endMarker string) string {
+//
+// WR-14 (09.4-REVIEW.md independent re-review): this collapses what were
+// two byte-identical functions (gssCeremonyBodyAfter, ggitCeremonyBodyAfter)
+// into one — Global SSH's and Global Git's apply/storage ceremonies render
+// full-width with no pane divider, so nothing about the extraction logic
+// was ever screen-specific.
+func ceremonyBodyAfter(lines []string, heading, endMarker string) string {
 	start := -1
 	for i, line := range lines {
 		if strings.Contains(stripANSI(line), heading) {
@@ -1092,63 +1105,19 @@ func extractGSSStorageBrowse(lines []string) string {
 
 // extractGSSApplyCeremony returns the apply ceremony's preview body.
 func extractGSSApplyCeremony(lines []string) string {
-	return gssCeremonyBodyAfter(lines, "Write Host * managed block to", "Apply selected (Enter)")
+	return ceremonyBodyAfter(lines, "Write Host * managed block to", "Apply selected (Enter)")
 }
 
 // extractGSSApplyHeading returns only the apply ceremony's D-07 resolved-
 // target heading line(s) — the line(s) carrying "Write Host * managed block
 // to", truncated to the heading paragraph so the body diff never leaks in.
 func extractGSSApplyHeading(lines []string) string {
-	var out []string
-	for i, line := range lines {
-		plain := stripANSI(line)
-		if !strings.Contains(plain, "Write Host * managed block to") {
-			continue
-		}
-		out = append(out, line)
-		// WR-12: absorb every immediately-following wrapped continuation row
-		// up to (but not including) the "Touches" row — a resolved target
-		// long enough to wrap (the common case for a sandbox HOME like
-		// /tmp/h4042748673/.ssh/config.d/gitid.config) spans MORE than one
-		// row past the heading. The previous version appended nothing here
-		// and always returned after the FIRST line, silently dropping the
-		// wrapped tail from the comparison.
-		for j := i + 1; j < len(lines) && !strings.Contains(stripANSI(lines[j]), "Touches"); j++ {
-			out = append(out, lines[j])
-		}
-		break
-	}
-	return strings.Join(out, "\n")
+	return applyHeadingRegion(lines, "Write Host * managed block to")
 }
 
 // extractGSSStorageCeremony returns the storage-migration ceremony's preview body.
 func extractGSSStorageCeremony(lines []string) string {
-	return gssCeremonyBodyAfter(lines, "Migrate SSH storage layout", "Migrate (Enter)")
-}
-
-// ggitCeremonyBodyAfter returns every line from the first line containing
-// heading through the line containing endMarker — the full-width ceremony
-// body (no │ divider), bounded below by its own confirm/cancel button row.
-// Returns "" when the heading is absent.
-func ggitCeremonyBodyAfter(lines []string, heading, endMarker string) string {
-	start := -1
-	for i, line := range lines {
-		if strings.Contains(stripANSI(line), heading) {
-			start = i
-			break
-		}
-	}
-	if start < 0 {
-		return ""
-	}
-	var out []string
-	for i, line := range lines[start:] {
-		if i > 0 && strings.Contains(stripANSI(line), endMarker) {
-			break
-		}
-		out = append(out, line)
-	}
-	return strings.Join(out, "\n")
+	return ceremonyBodyAfter(lines, "Migrate SSH storage layout", "Migrate (Enter)")
 }
 
 // extractGGitOptionsBrowse returns the Options sub-tab master-detail body.
@@ -1198,24 +1167,47 @@ func extractGGitOptionsBrowse(lines []string) string {
 
 // extractGGitApplyCeremony returns the apply ceremony's preview body.
 func extractGGitApplyCeremony(lines []string) string {
-	return ggitCeremonyBodyAfter(lines, "Write global-git managed block to", "Apply selected (Enter)")
+	return ceremonyBodyAfter(lines, "Write global-git managed block to", "Apply selected (Enter)")
 }
 
 // extractGGitApplyHeading returns only the apply ceremony's D-07 resolved-
 // target heading line(s) — the line(s) carrying "Write global-git managed block
 // to", truncated to the heading paragraph so the body diff never leaks in.
 func extractGGitApplyHeading(lines []string) string {
+	return applyHeadingRegion(lines, "Write global-git managed block to")
+}
+
+// maxHeadingContinuation bounds applyHeadingRegion's continuation-row
+// absorption (WR-03, 09.4-REVIEW.md independent re-review). ceremony.go
+// renders the heading with styleBold.Render (not wrap.Render), and
+// RenderFrame truncates — never wraps — body lines, so on a real capture
+// this loop can absorb at most a couple of rows before "Touches" appears.
+// Without a bound, a frame that renders the heading with no "Touches" row
+// at all (a shape the production renderer is not known to produce, but
+// which the loop's own termination condition cannot rule out) would absorb
+// every remaining line of the frame — status line and both footers
+// included — into a region documented as "the heading line ONLY".
+const maxHeadingContinuation = 2
+
+// applyHeadingRegion returns only the apply ceremony's D-07 resolved-target
+// heading line(s) — the line(s) carrying anchor, truncated to the heading
+// paragraph so the ceremony body diff never leaks in. Shared by Global
+// SSH's and Global Git's apply-heading extractors (WR-14: they differed
+// only in their anchor string).
+func applyHeadingRegion(lines []string, anchor string) string {
 	var out []string
 	for i, line := range lines {
-		plain := stripANSI(line)
-		if !strings.Contains(plain, "Write global-git managed block to") {
+		if !strings.Contains(stripANSI(line), anchor) {
 			continue
 		}
 		out = append(out, line)
-		// WR-12: absorb every immediately-following wrapped continuation row
-		// up to (but not including) the "Touches" row — a resolved target
-		// long enough to wrap spans MORE than one row past the heading.
-		for j := i + 1; j < len(lines) && !strings.Contains(stripANSI(lines[j]), "Touches"); j++ {
+		// Absorb every immediately-following wrapped continuation row, up
+		// to maxHeadingContinuation of them, up to (but not including) the
+		// "Touches" row — a resolved target long enough to wrap (the common
+		// case for a sandbox HOME like /tmp/h4042748673/.ssh/config.d/
+		// gitid.config) spans more than one row past the heading.
+		for j := i + 1; j < len(lines) && j <= i+maxHeadingContinuation &&
+			!strings.Contains(stripANSI(lines[j]), "Touches"); j++ {
 			out = append(out, lines[j])
 		}
 		break
@@ -1261,12 +1253,42 @@ func extractDoctorBody(lines []string) string {
 	return strings.Join(out, "\n")
 }
 
-// extractDoctorCeremony returns the fix ceremony's body: from the "Fix: "
-// heading (fixCeremonyFor's own Heading prefix, constant across every
-// finding) through the "Cancel (Esc)" button label (ceremony.go's
+// extractDoctorCeremony returns the fix ceremony's own body: from the
+// "Fix: " heading (fixCeremonyFor's own Heading prefix, constant across
+// every finding) through the "Cancel (Esc)" button label (ceremony.go's
 // cancelLabel(), rendered once per ceremony regardless of state A/B).
+//
+// WR-02 (09.4-REVIEW.md independent re-review): 09.4 merged Health+Fixer
+// into one tab, so unlike the full-width Global SSH/Git ceremonies this one
+// renders inside the RIGHT pane of a two-pane master-detail body
+// (doctorModel.view: joinMasterDetail(list, listWidth, detailPane, ...)) —
+// the dimmed findings list sits to its left on every line. The previous
+// ceremonyBodyAfter-based implementation collected whole frame lines,
+// silently absorbing that findings list into the region: legitimately
+// different between the real backend (fresh sandbox HOME) and the fixture
+// backend (8 seeded identities), producing spurious real-vs-dummy diffs.
+// Extract only the content right of the "│" divider, as every other
+// two-pane extractor in this file does.
 func extractDoctorCeremony(lines []string) string {
-	return ggitCeremonyBodyAfter(lines, "Fix: ", "Cancel (Esc)")
+	start := -1
+	for i, line := range lines {
+		if strings.Contains(stripANSI(rightPane(line)), "Fix: ") {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return ""
+	}
+	var out []string
+	for i, line := range lines[start:] {
+		right := rightPane(line)
+		out = append(out, right)
+		if i > 0 && strings.Contains(stripANSI(right), "Cancel (Esc)") {
+			break
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // extractUploadSection returns the upload beat's own content (see

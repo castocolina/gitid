@@ -439,10 +439,18 @@ func TestGlobalSSH_RealPTYSubTabStripMouseClick(t *testing.T) {
 		t.Fatalf("Storage sub-tab content never rendered after mouse click. Last frame:\n%s", frame)
 	}
 
-	// The "Storage & preview" label should now be marked (reverse video).
-	if !strings.Contains(frame, "Storage") {
-		t.Errorf("Storage & preview label missing after switch")
-	}
+	// WR-06 (09.4-REVIEW.md independent re-review): the sub-tab strip
+	// renders BOTH "Options" and "Storage & preview" labels on EVERY
+	// sub-tab state (globalssh.go), so a plain
+	// strings.Contains(frame, "Storage") proved nothing about the click —
+	// it would pass even if the switch had silently failed. The
+	// terminal-emulator snapshot this test reads is decoded plain text
+	// with no ANSI codes (ptySession.snapshot's own contract), so the
+	// active label's reverse-video styling — which the internal unit test
+	// TestSubTabStripRendersBordered checks via the raw "\x1b[7m" escape —
+	// is not observable here at all. The real proof the click worked is
+	// the Storage sub-tab's own content, already asserted above via the
+	// "STORE-01" waitFor.
 
 	// Click back on the "Options" label.
 	clickLabelRow(t, s, "Options")

@@ -3,6 +3,7 @@ package tuikit
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -435,6 +436,54 @@ func TestSingleFixFailureNoNonsensicalBatchMessage(t *testing.T) {
 	}
 }
 
+// TestBatchWalkDispatchDoesNotMutatePreDispatchSnapshotQueue is the
+// regression for WR-11 (09.4-REVIEW.md independent re-review): the
+// copy-on-write in handleKey's ceremonyFinished branch is a correct
+// hardening, but nothing previously pinned the property it actually
+// protects. app.go's checkFixBatchHalt holds a PRE-dispatch snapshot
+// (`prevScreen := a.screens[a.tab]`, captured before handleKey runs) that
+// must remain an immutable value once handed to it — a later dispatch
+// mutating the SAME backing array/pointer out from under an
+// already-captured snapshot is undefined behavior waiting to happen the
+// moment any caller reads its queue. This drives the exact sequence
+// checkFixBatchHalt itself uses: capture the model BEFORE the second fix's
+// dispatch, run the dispatch, and assert the captured snapshot's
+// batch.queue is byte-for-byte unchanged afterwards.
+func TestBatchWalkDispatchDoesNotMutatePreDispatchSnapshotQueue(t *testing.T) {
+	backend := stubBackend{lastPersistErr: new(error)}
+	a := NewApp(backend)
+	a.state.Scanned = true
+	a.state.Findings = threeBatchFindings()
+	a, _ = a.setTab(TabDoctor)
+	fx, ok := a.screens[TabDoctor].(doctorModel)
+	if !ok {
+		t.Fatalf("screens[TabDoctor] is %T, want doctorModel", a.screens[TabDoctor])
+	}
+	fx.scanning = false
+	a.screens[TabDoctor] = fx
+
+	a, _ = press(t, a, "F")
+
+	// The PRE-dispatch snapshot for fix 1's confirmation — exactly what
+	// app.go's checkFixBatchHalt captures as prevScreen before handleKey
+	// runs for the confirmFix below.
+	preDispatch, ok := a.screens[TabDoctor].(doctorModel)
+	if !ok {
+		t.Fatalf("screens[TabDoctor] is %T, want doctorModel", a.screens[TabDoctor])
+	}
+	if preDispatch.batch == nil || len(preDispatch.batch.queue) != 3 {
+		t.Fatalf("fixture sanity: pre-dispatch batch queue = %+v, want all 3 fixes still queued", preDispatch.batch)
+	}
+	preQueueSnapshot := append([]string(nil), preDispatch.batch.queue...)
+
+	a = confirmFix(t, a) // fix 1's dispatch — the mutation under test
+
+	if !slices.Equal(preDispatch.batch.queue, preQueueSnapshot) {
+		t.Errorf("pre-dispatch snapshot's batch.queue mutated by a later dispatch: before=%v after=%v",
+			preQueueSnapshot, preDispatch.batch.queue)
+	}
+}
+
 func TestParseErrorScreenRequiresFilesFamily(t *testing.T) {
 	files := DemoFinding{HealthFinding: HealthFinding{Family: "Files", Severity: SeverityCritical, Section: "Git", Title: "Git configuration cannot be parsed", Explanation: "bad config"}}
 	if _, ok := parseErrorFinding([]DemoFinding{files}); !ok {
@@ -503,22 +552,40 @@ func TestDoctorParseErrorFrameRefusesFixKeys(t *testing.T) {
 func TestDoctorStatusToneIsErrorForErrorAndCriticalFindings(t *testing.T) {
 	cases := []struct {
 		name     string
-		severity HealthSeverity
+		findings []DemoFinding
 		want     string
 	}{
-		{"warning stays warning", SeverityWarning, "warning"},
-		{"error escalates to error tone", SeverityError, "error"},
-		{"critical escalates to error tone", SeverityCritical, "error"},
+		{"warning stays warning", []DemoFinding{
+			{HealthFinding: HealthFinding{ID: "f1", Family: "Test", Section: "SSH", Title: "finding", Severity: SeverityWarning}},
+		}, "warning"},
+		{"error escalates to error tone", []DemoFinding{
+			{HealthFinding: HealthFinding{ID: "f1", Family: "Test", Section: "SSH", Title: "finding", Severity: SeverityError}},
+		}, "error"},
+		{"critical escalates to error tone", []DemoFinding{
+			{HealthFinding: HealthFinding{ID: "f1", Family: "Test", Section: "SSH", Title: "finding", Severity: SeverityCritical}},
+		}, "error"},
+		// WR-08 (09.4-REVIEW.md independent re-review): every other case
+		// above has exactly ONE finding, so a naive `case Warning: tone =
+		// "warning"` implementation (with no non-downgrade guard at all)
+		// passes all three. The fix's actual mechanism is the guard that
+		// refuses to downgrade tone from "error" back to "warning" once an
+		// error/critical finding has already set it
+		// (doctor_screen.go: `if tone == "info" { tone = "warning" }` only
+		// fires when tone is still "info"). That only matters when a
+		// WARNING finding is ordered AFTER an ERROR/CRITICAL one in
+		// m.findings' severity-sorted output — untested until now.
+		{"warning after error stays error tone (non-downgrade)", []DemoFinding{
+			{HealthFinding: HealthFinding{ID: "f1", Family: "Test", Section: "SSH", Title: "the error", Severity: SeverityError}},
+			{HealthFinding: HealthFinding{ID: "f2", Family: "Test", Section: "SSH", Title: "the warning", Severity: SeverityWarning}},
+		}, "error"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			m := newDoctorModel(stubBackend{})
-			state := DemoState{Scanned: true, Findings: []DemoFinding{
-				{HealthFinding: HealthFinding{ID: "f1", Family: "Test", Section: "SSH", Title: "finding", Severity: tc.severity}},
-			}}
+			state := DemoState{Scanned: true, Findings: tc.findings}
 			view := m.view(state, 100, 30)
 			if view.statusTone != tc.want {
-				t.Errorf("statusTone for a %s finding = %q, want %q", tc.severity, view.statusTone, tc.want)
+				t.Errorf("statusTone = %q, want %q", view.statusTone, tc.want)
 			}
 		})
 	}

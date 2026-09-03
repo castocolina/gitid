@@ -212,11 +212,19 @@ func (m doctorModel) handleKey(msg tea.KeyMsg, rawState DemoState) keyResult {
 			m.pendingFixName = sel.Title
 			if m.batch != nil {
 				// WR-03: copy on write. m.batch is a pointer the pre-dispatch
-				// snapshot (app.go's checkFixBatchHalt) also points at; the
-				// old in-place `m.batch.queue = queue[:0]...` mutated that
-				// snapshot's queue too, so a halt message built from it would
-				// report the POST-dispatch remaining work, not the state as
-				// it stood right before this dispatch.
+				// snapshot (app.go's checkFixBatchHalt) also points at.
+				// WR-11 (09.4-REVIEW.md independent re-review) corrects this
+				// comment's original claim: haltBatch reads only
+				// m.batch.total and len(m.batchSucceeded), never queue, so
+				// an in-place queue mutation could NOT have produced a
+				// wrong-looking halt MESSAGE the way the original wording
+				// implied. The real property this preserves is narrower but
+				// still required: the pre-dispatch snapshot must remain an
+				// immutable value once handed to app.go — a later dispatch
+				// mutating the SAME backing array/pointer out from under an
+				// already-returned snapshot is undefined behavior waiting to
+				// happen the moment any future caller (halt or otherwise)
+				// reads queue from it.
 				queue := make([]string, 0, len(m.batch.queue))
 				for _, id := range m.batch.queue {
 					if id != sel.ID {
