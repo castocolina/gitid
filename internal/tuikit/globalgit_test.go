@@ -1863,3 +1863,84 @@ func TestGitFallbackAbandonedApplyStillDispatchesReducerAction(t *testing.T) {
 		t.Errorf("dispatched action = (%q, %q), want the SUBMITTED values (New Name, new@example.com), not activate()'s stale re-seed", action.Name, action.Email)
 	}
 }
+
+// TestGitFallbackDispatchUsesCeremonyKindNotHeadingText is the regression
+// for WR-09 (09.4-REVIEW.md independent re-review): confirming a ceremony
+// used to decide which backend commit method to call by matching
+// m.ceremony.cfg.Heading against GlobalGitEmailCeremonyHeading /
+// "Remove global fallback" — a user-facing display string. baselineCeremonyFor
+// already builds ITS heading dynamically ("Write global-git managed block to
+// " + targets[0]); the moment fallbackCeremonyFor's heading is made dynamic
+// too (following that same precedent, as every other ceremony in this file
+// does), the old string match would silently fall through to
+// CommitGlobalGit — writing the baseline managed block instead of the
+// fallback author. Simulate that by opening the fallback ceremony normally
+// and then mutating its heading to something the old match would miss,
+// proving dispatch no longer depends on the heading text at all.
+func TestGitFallbackDispatchUsesCeremonyKindNotHeadingText(t *testing.T) {
+	var fallbackCalled, baselineCalled bool
+	b := stubBackend{
+		fallbackState: GitFallbackAuthorView{Email: "pat@example.com"},
+		fallbackCommitFn: func(string, string) tea.Cmd {
+			fallbackCalled = true
+			return func() tea.Msg { return GitFallbackAuthorCommitMsg{} }
+		},
+		gitCommitFn: func([]string) tea.Cmd {
+			baselineCalled = true
+			return func() tea.Msg { return GlobalGitCommitMsg{} }
+		},
+	}
+	a := fallbackRowApp(t, b)
+	a, _ = press(t, a, "a")
+
+	m := ggitModel(t, a)
+	if m.ceremonyKind != gitCeremonyFallback {
+		t.Fatalf("ceremonyKind after opening the fallback ceremony = %v, want gitCeremonyFallback", m.ceremonyKind)
+	}
+	// Simulate a future dynamic heading — the old code matched against
+	// exactly GlobalGitEmailCeremonyHeading or a "Remove global fallback"
+	// prefix, so ANY other heading text proves the fix if dispatch is
+	// still correct.
+	m.ceremony.cfg.Heading = "Write fallback author to ~/.gitconfig.d/00-fallback.gitconfig"
+	a.screens[TabGlobalGit] = m
+
+	_, cmd := press(t, a, "enter")
+	if cmd != nil {
+		cmd()
+	}
+	if !fallbackCalled {
+		t.Error("confirming a fallback ceremony with a non-matching heading must still dispatch CommitGitFallbackAuthor")
+	}
+	if baselineCalled {
+		t.Error("confirming a fallback ceremony with a non-matching heading must never fall through to CommitGlobalGit")
+	}
+}
+
+// TestGitFallbackTabShowsVisibleFocusChangeOutsideEditMode is the
+// regression for WR-15: outside edit mode, Tab moved m.fieldFocus but the
+// render only distinguished focus when m.fieldEditing was also true, so
+// pressing Tab produced no visible change — the user could only discover
+// which field moved by pressing Enter. It also proves focusFallbackField()
+// runs on this path, keeping the underlying textinput Focus() state in
+// sync with fieldFocus ahead of the next Enter.
+func TestGitFallbackTabShowsVisibleFocusChangeOutsideEditMode(t *testing.T) {
+	a := fallbackRowApp(t, stubBackend{fallbackState: GitFallbackAuthorView{Name: "Pat", Email: "pat@example.com"}})
+	m := ggitModel(t, a)
+	if m.fieldEditing {
+		t.Fatal("fixture sanity: must start outside edit mode")
+	}
+	before := stripANSI(m.view(a.state, 100, 30).body)
+
+	a, _ = press(t, a, "tab")
+	m = ggitModel(t, a)
+	if m.fieldEditing {
+		t.Fatal("Tab outside edit mode must not enter edit mode")
+	}
+	if !m.emailInput.Focused() {
+		t.Error("focusFallbackField must run on the non-editing Tab path too, keeping textinput focus in sync")
+	}
+	after := stripANSI(m.view(a.state, 100, 30).body)
+	if before == after {
+		t.Errorf("Tab outside edit mode produced no visible change in the rendered fallback fields:\n%s", after)
+	}
+}

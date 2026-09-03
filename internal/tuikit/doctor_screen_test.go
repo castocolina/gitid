@@ -745,3 +745,87 @@ func TestDoctorCeremonyFitsFixedGeometry(t *testing.T) {
 		t.Errorf("BL-02 regressed: the fix ceremony's Apply fix button is clipped out of the rendered frame:\n%s", view)
 	}
 }
+
+// TestDoctorActivateClearsFixState is the regression for WR-01:
+// doctorModel.activate only touched m.scanning, unlike
+// globalSSHModel.activate/globalGitModel.activate (both given explicit
+// CR-02 resets). A halted batch's "Fix N of M failed…" banner, and an open
+// fix ceremony, survived a tab switch away and back, describing work that
+// was already over.
+func TestDoctorActivateClearsFixState(t *testing.T) {
+	backend := stubBackend{
+		fixPersistErr:  errors.New("simulated write failure"),
+		fixFailID:      "fix-2",
+		lastPersistErr: new(error),
+	}
+	a := NewApp(backend)
+	a.state.Scanned = true
+	a.state.Findings = threeBatchFindings()
+	a, _ = a.setTab(TabDoctor)
+	fx, ok := a.screens[TabDoctor].(doctorModel)
+	if !ok {
+		t.Fatalf("screens[TabDoctor] is %T, want doctorModel", a.screens[TabDoctor])
+	}
+	fx.scanning = false
+	a.screens[TabDoctor] = fx
+
+	a, _ = press(t, a, "F")
+	a = confirmFix(t, a) // fix 1 succeeds
+	a = confirmFix(t, a) // fix 2 fails and halts the batch
+
+	fx, _ = a.screens[TabDoctor].(doctorModel)
+	if fx.batchHalt == "" {
+		t.Fatal("fixture sanity: batch must be halted before re-activation")
+	}
+
+	reactivated, _ := fx.activate(a.state)
+	next, ok := reactivated.(doctorModel)
+	if !ok {
+		t.Fatalf("activate returned %T, want doctorModel", reactivated)
+	}
+	if next.fixing {
+		t.Error("activate must clear fixing — no ceremony should survive a tab switch")
+	}
+	if next.batch != nil {
+		t.Error("activate must clear batch")
+	}
+	if next.batchHalt != "" || next.batchFailedName != "" || next.batchSucceeded != nil {
+		t.Errorf("activate must clear halt residue: batchHalt=%q batchFailedName=%q batchSucceeded=%v",
+			next.batchHalt, next.batchFailedName, next.batchSucceeded)
+	}
+	if next.pendingFixID != "" || next.pendingFixName != "" {
+		t.Errorf("activate must clear pending-fix residue: pendingFixID=%q pendingFixName=%q",
+			next.pendingFixID, next.pendingFixName)
+	}
+	view := stripANSI(next.view(a.state, 100, 30).body)
+	if strings.Contains(view, "failed and was rolled back") {
+		t.Errorf("re-activated Doctor view must not show the stale halt banner:\n%s", view)
+	}
+}
+
+// TestDoctorParseErrorFrameRefusesClicks is the regression for WR-13:
+// handleKey was given CR-04's parse-error guard, but handleClick was not.
+// A click at coordinates that would otherwise hit a rendered finding row
+// silently mutated m.selectedID for a list view() is not showing (the
+// frame renders "Checks paused until this configuration parses again"
+// instead).
+func TestDoctorParseErrorFrameRefusesClicks(t *testing.T) {
+	b := stubBackend{}
+	m := newDoctorModel(b)
+	state := DemoState{Scanned: true, Findings: []DemoFinding{
+		{HealthFinding: HealthFinding{Family: "Files", Severity: SeverityCritical, Section: "Git", Title: "Git configuration cannot be parsed", Explanation: "bad config"}},
+		{HealthFinding: HealthFinding{ID: "ssh-key-perms-archived", Family: "Permissions", Severity: SeverityCritical, Section: "SSH", Title: "private key exposed", Fixable: true}},
+	}}
+
+	res := m.handleClick(5, 2, 100, 30, state)
+	next, ok := res.model.(doctorModel)
+	if !ok {
+		t.Fatalf("handleClick returned %T, want doctorModel", res.model)
+	}
+	if next.selectedID != "" {
+		t.Errorf("a click behind the parse-error frame must not select a finding, got selectedID=%q", next.selectedID)
+	}
+	if res.handled {
+		t.Error("a click behind the parse-error frame must not report handled")
+	}
+}

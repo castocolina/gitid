@@ -24,6 +24,16 @@ import (
 )
 
 // globalGitModel is the Global Git tab child model.
+// gitCeremonyKind discriminates which ceremony m.ceremony is — set once at
+// open time, never re-derived from display text (WR-09).
+type gitCeremonyKind int
+
+const (
+	gitCeremonyNone gitCeremonyKind = iota
+	gitCeremonyBaseline
+	gitCeremonyFallback
+)
+
 type globalGitModel struct {
 	// backend is the injected options/commit seam. The model fetches the
 	// option states on activation and never renders fixture data for a row
@@ -62,10 +72,17 @@ type globalGitModel struct {
 	// ones.
 	pendingFallbackName  string
 	pendingFallbackEmail string
-	// ceremonyOpen flags the active ceremony; the D9 fallback ceremony
-	// uses a separate heading check so it can never be confused with the
-	// baseline one.
+	// ceremonyOpen flags the active ceremony. ceremonyKind records WHICH
+	// ceremony it is, set once at open time by the "a" handler that built
+	// it (WR-09, 09.4-REVIEW.md independent re-review) — confirming a
+	// ceremony must dispatch the write it was opened as, never re-derive
+	// that from the ceremony's user-facing Heading string. Heading is
+	// display text: baselineCeremonyFor already builds a dynamic one
+	// (":424"), and the moment fallbackCeremonyFor's is made dynamic too
+	// (matching every other ceremony in this file), a string match here
+	// would silently fall through to the wrong commit method.
 	ceremonyOpen bool
+	ceremonyKind gitCeremonyKind
 	ceremony     ceremonyModel
 	// nameInput / emailInput are the D-04 two-field fallback pair —
 	// independently editable, independently applicable. Seeded from
@@ -541,8 +558,7 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		case ceremonyCancelled:
 			m.ceremonyOpen = false
 		case ceremonyConfirmed:
-			if m.ceremony.cfg.Heading == GlobalGitEmailCeremonyHeading ||
-				strings.HasPrefix(m.ceremony.cfg.Heading, "Remove global fallback") {
+			if m.ceremonyKind == gitCeremonyFallback {
 				m.fallbackCommitPending = true
 				m.pendingFallbackName = m.nameInput.Value()
 				m.pendingFallbackEmail = m.emailInput.Value()
@@ -618,7 +634,11 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		return keyResult{model: m, handled: true}
 	case "tab":
 		if m.detailKey == GlobalGitEmailFallbackKey {
+			// WR-15: keep the textinput's own Focus() state in sync with
+			// fieldFocus even outside edit mode, so it is already correct
+			// the moment Enter starts editing — not one Tab behind it.
 			m.fieldFocus = 1 - m.fieldFocus
+			m.focusFallbackField()
 			return keyResult{model: m, handled: true}
 		}
 		return keyResult{model: m}
@@ -640,6 +660,7 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 			}
 			m.ceremony = cer
 			m.ceremonyOpen = true
+			m.ceremonyKind = gitCeremonyFallback
 			return keyResult{model: m, handled: true}
 		}
 		chosen := m.gitApplyChosen(options)
@@ -657,6 +678,7 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 			}
 			m.ceremony = cer
 			m.ceremonyOpen = true
+			m.ceremonyKind = gitCeremonyBaseline
 		}
 		return keyResult{model: m, handled: true}
 	}
@@ -1058,8 +1080,10 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 	if detail.Key == GlobalGitEmailFallbackKey {
 		nameFocused := m.fieldFocus == 0 && m.fieldEditing
 		emailFocused := m.fieldFocus == 1 && m.fieldEditing
-		d.WriteString(formFieldLine(GlobalGitNameFallbackKey, m.nameInput, nameFocused, false) + "\n")
-		d.WriteString(formFieldLine(GlobalGitEmailFallbackKey, m.emailInput, emailFocused, false))
+		nameSelected := m.fieldFocus == 0 && !m.fieldEditing
+		emailSelected := m.fieldFocus == 1 && !m.fieldEditing
+		d.WriteString(gitFallbackFieldLine(GlobalGitNameFallbackKey, m.nameInput, nameFocused, nameSelected) + "\n")
+		d.WriteString(gitFallbackFieldLine(GlobalGitEmailFallbackKey, m.emailInput, emailFocused, emailSelected))
 		if !m.emailValid() {
 			d.WriteString("  " + styleError.Render("needs @"))
 		}
@@ -1152,6 +1176,23 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 		actions = append(actions, FooterAction{Key: "a", Label: "set global fallback author"})
 	}
 	return screenView{body: body, crumbs: []string{"Options"}, status: status, statusTone: tone, actions: actions}
+}
+
+// gitFallbackFieldLine renders one Global Git fallback name/email row with
+// two distinct focus states (WR-15, 09.4-REVIEW.md independent re-review):
+// "editing" is formFieldLine's existing bright focused box; "selected" is
+// Tab having moved fieldFocus here without Enter starting edit mode yet —
+// previously rendered identically to the unselected row, so pressing Tab
+// produced no visible change at all.
+func gitFallbackFieldLine(label string, input textinput.Model, editing, selected bool) string {
+	if editing {
+		return formFieldLine(label, input, true, false)
+	}
+	if selected {
+		name := styleBold.Render(padRight(label, 16))
+		return " " + styleFaint.Render("▸ ") + name + DefaultTheme.FieldBlurred.Render("["+input.Value()+"]")
+	}
+	return formFieldLine(label, input, false, false)
 }
 
 func (m *globalGitModel) focusFallbackField() {

@@ -127,6 +127,16 @@ func parseErrorScreenView(finding DemoFinding) screenView {
 // activate auto-runs the first scan — the view must show value
 // immediately; later visits are instant.
 func (m doctorModel) activate(s DemoState) (screenModel, tea.Cmd) {
+	// WR-01: clear all fix/batch residue on every re-entry, mirroring the
+	// CR-02 reset globalSSHModel/globalGitModel already have. Without this,
+	// a halted batch's "Fix N of M failed…" banner (and any still-open fix
+	// ceremony) survives a tab switch away and back, describing work that
+	// is over.
+	m.fixing = false
+	m.ceremony = ceremonyModel{}
+	m.batch = nil
+	m.batchHalt, m.batchFailedName, m.batchSucceeded = "", "", nil
+	m.pendingFixID, m.pendingFixName = "", ""
 	if !s.Scanned {
 		m.scanning = true
 		return m, tea.Tick(600*time.Millisecond, func(time.Time) tea.Msg { return doctorScanMsg{} })
@@ -300,6 +310,13 @@ func (m doctorModel) handleKey(msg tea.KeyMsg, rawState DemoState) keyResult {
 // buttons click through the shared ceremony zones. Group labels and the
 // scanning state are inert.
 func (m doctorModel) handleClick(x, y, width, height int, rawState DemoState) keyResult {
+	// WR-13: mirror handleKey's CR-04 guard — a parse-error halt renders
+	// "Checks paused until this configuration parses again" instead of the
+	// findings list, and a click must not silently mutate m.selectedID (or
+	// drive the ceremony) for a list that view() is not showing.
+	if _, halted := parseErrorFinding(orderedFindings(rawState)); halted {
+		return keyResult{model: m}
+	}
 	if m.scanning {
 		return keyResult{model: m}
 	}
