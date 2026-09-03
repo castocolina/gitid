@@ -1,21 +1,30 @@
-Global SSH Options sub-tab with bordered sub-tab strip (NO_COLOR=1)
-
-The bordered strip occupies 3 rows:
-- Row 0: ╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮ (top border with dashes, no color codes)
-- Row 1: ┊ Options Storage & preview ┊ (labels with active one highlighted by text attributes, not color)
-- Row 2: ╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯ (bottom border with dashes, no color codes)
-
-Below the strip are the Options sub-tab contents:
-- Findings banner (if present)
-- Option rows (2 lines each: title + detail)
-- Detail pane on the right showing the selected option's explanation
-
-The bordered strip remains visually distinct from the flat main tab bar even without color:
-- The border SHAPE (╭╌╮ / ┊ / ╰╌╯) clearly marks this as a nested control
-- The active label is still distinguished by text attributes (bold/reverse), not just color
-- The dashed runes (╌) provide visual separation
-
-This proves the strip design meets the NO_COLOR legibility requirement: the border shape and text attributes carry all semantic meaning; color is additive only.
-
-Frame dimensions: 100 cols × 30 rows (fixed capture geometry)
-Color: Disabled (NO_COLOR=1)
+ gitid   [1] Identities · [2] SSH · [3] Git · [4] Doctor · [5] Ignore               0 ids · ! 3 ✗ 2
+ Global SSH › Options
+╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮
+┊   Options   Storage & preview  ┊
+╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+ ! The doctor found 3 SSH findings beyond these global options.  Open Doctor (4)
+ ▸ ·  · StrictHostKeyChecking  [Medium]     │  StrictHostKeyChecking
+      not applicable (OpenSSH version could…│  ~ Recommended, not required -- you can leave any
+   ·  · ForwardAgent  [High]                │ option unchanged. This is advisory, never a compliance
+      not applicable (could not be probed)  │ gate.
+   ·  · HashKnownHosts  [Low]       │
+      not applicable (could not be probed)  │  accept-new pins first-seen keys and hard-fails on a
+   ·  · IdentitiesOnly  [High]              │ changed key; it requires OpenSSH 7.6 or newer.
+      not applicable (nothing on this machi…│  the probe did not answer — see the advisory note
+   ·  · AddKeysToAgent  [Low]               │  OpenSSH version could not be read; run ssh -V to
+      not applicable (could not be probed)  │ check compatibility
+   [ ]! UseKeychain  [Low]                  │  ! exit status 2
+      now:  → yes                   │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+ 1 of 6 options need action — Recommended, not required -- you can leave any option unchanged. Thi…
+ ↑↓ select option · ←→ Options / Storage · space toggle
+ Enter activate · Esc back · ? help · Ctrl+P palette · q quit
