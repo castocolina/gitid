@@ -106,6 +106,34 @@ func TestGlobalGit_RealPTYBrowse(t *testing.T) {
 	}
 }
 
+func TestGlobalGit_RealPTYOptionFocusPlaceholderAndColumns(t *testing.T) {
+	home := ShortSandboxHome(t)
+	seedGlobalGitHome(t, home, "", "")
+	s := startGlobalGitPTY(t, home, "")
+
+	frame := waitForFocusedOption(t, s, "init.defaultBranch", "initial activation focuses the first fetched Git row")
+	assertOptionColumnsAligned(t, frame,
+		"init.defaultBranch", "core.ignorecase", "core.autocrlf / core.eol",
+		"user.email (global fallback)", "user.useConfigOnly", "push.autoSetupRemote",
+		"pull.rebase", "fetch.prune", "alias (8 shortcuts)",
+		"color (ui/branch/diff/status)", "merge.conflictstyle", "diff.colorMoved")
+	naLine, ok := optionListLine(frame, "user.email (global fallback)")
+	naPrefix := ""
+	if ok {
+		naPrefix = naLine[:strings.Index(naLine, "user.email (global fallback)")]
+	}
+	if !ok || !strings.Contains(naPrefix, "·") || strings.Contains(naPrefix, "[") {
+		t.Fatalf("non-selectable Git row must carry the dot placeholder and no bracket toggle; line=%q", naLine)
+	}
+
+	moveGlobalGitRow(t, s, 2)
+	waitForFocusedOption(t, s, "core.autocrlf / core.eol", "setup moves Git focus away from the first row")
+	s.sendKey([]byte("1"), keystrokeDelay)
+	mustSee(t, s, "Identities", "leaving Global Git reaches another main tab")
+	s.sendKey([]byte("3"), keystrokeDelay)
+	waitForFocusedOption(t, s, "init.defaultBranch", "re-entering Global Git resets focus to the first fetched row")
+}
+
 // TestGlobalGit_RealPTYScrollBothDirections proves the boundary is stable
 // under the REAL 12-row D-08 policy table: gitVisibleRowCount deliberately
 // computes its budget from the canonical minFrameHeight (30, matching

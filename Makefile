@@ -410,8 +410,8 @@ gate-copy-freeze:
 		'gitid cannot change this' \
 		'not set (OpenSSH default: ' \
 		'set outside your config' \
-		'set, differs from recommendation — your choice' \
-		'set, differs from recommendation — set outside your config' \
+		'set, differs — yours, would be a no-op here' \
+		'set, differs — external, would be a no-op here' \
 		'safe by default' \
 		'not applicable (macOS-only setting)' \
 		'not applicable (OpenSSH too old for accept-new)' \

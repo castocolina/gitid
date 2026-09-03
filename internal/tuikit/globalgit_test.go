@@ -984,9 +984,15 @@ func TestGlobalGitDiffersRowRendersWordNotNewGlyph(t *testing.T) {
 	if !strings.Contains(line2, GlobalSSHWordDiffersUser) {
 		t.Errorf("unclipped differs line-2 = %q, want the frozen sentence %q", line2, GlobalSSHWordDiffersUser)
 	}
+	if !strings.Contains(line2, "would be a no-op") {
+		t.Errorf("unclipped differs line-2 = %q, want the no-op explanation", line2)
+	}
 	line2Outside := globalGitRowLine2(GlobalGitOptionView{State: GlobalGitSetButDiffers, CurrentValue: "true", Recommended: "false", AttributedToUser: false})
 	if !strings.Contains(line2Outside, GlobalSSHWordDiffersOutside) {
 		t.Errorf("unclipped external differs line-2 = %q, want %q", line2Outside, GlobalSSHWordDiffersOutside)
+	}
+	if !strings.Contains(line2Outside, "would be a no-op") {
+		t.Errorf("unclipped external differs line-2 = %q, want the no-op explanation", line2Outside)
 	}
 }
 

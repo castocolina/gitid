@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,15 +40,91 @@ func seedGlobalSSHHome(t *testing.T, home, placement string) string {
 }
 
 func startGlobalSSHPTY(t *testing.T, home, mode string) *ptySession {
+	return startGlobalSSHPTYWithEnv(t, home, mode)
+}
+
+func startGlobalSSHPTYWithEnv(t *testing.T, home, mode string, extraEnv ...string) *ptySession {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	t.Cleanup(cancel)
-	s := startPTYAt(t, newRealCreateFlowCmd(t, ctx, BuildBinary(t), home, FakeSSHDir(t, mode)), dummyTermWidth, dummyTermHeight)
+	cmd := newRealCreateFlowCmd(t, ctx, BuildBinary(t), home, FakeSSHDir(t, mode))
+	cmd.Env = append(cmd.Env, extraEnv...)
+	s := startPTYAt(t, cmd, dummyTermWidth, dummyTermHeight)
 	t.Cleanup(func() { s.close(t) })
 	uiReady(t, s)
 	s.sendKey([]byte("2"), keystrokeDelay)
 	mustSee(t, s, "Options", "Global SSH options opens")
 	return s
+}
+
+func optionListLine(frame, label string) (string, bool) {
+	for _, line := range strings.Split(frame, "\n") {
+		list := strings.SplitN(line, "│", 2)[0]
+		if strings.Contains(list, label) {
+			return list, true
+		}
+	}
+	return "", false
+}
+
+func waitForFocusedOption(t *testing.T, s *ptySession, label, context string) string {
+	t.Helper()
+	last, ok := s.waitFor(8*time.Second, func(frame string) bool {
+		line, found := optionListLine(frame, label)
+		return found && strings.Contains(line, "▸")
+	})
+	if !ok {
+		t.Fatalf("%s: option %q never became focused. Last frame:\n%s", context, label, last)
+	}
+	return last
+}
+
+func assertOptionColumnsAligned(t *testing.T, frame string, labels ...string) {
+	t.Helper()
+	want := -1
+	for _, label := range labels {
+		line, ok := optionListLine(frame, label)
+		if !ok {
+			t.Fatalf("option %q missing while checking checkbox-column alignment:\n%s", label, frame)
+		}
+		col := len([]rune(line[:strings.Index(line, label)]))
+		if want < 0 {
+			want = col
+		}
+		if col != want {
+			t.Errorf("option %q starts at column %d, want uniform column %d; line=%q", label, col, want, line)
+		}
+	}
+}
+
+// clickOptionToggle follows clickLabelRow's decoded-frame technique but aims
+// at the rendered bracket cell rather than the label. Coordinates are always
+// derived from the current frame; no terminal cell is hardcoded.
+func clickOptionToggle(t *testing.T, s *ptySession, label string) {
+	t.Helper()
+	var col, row int
+	last, ok := s.waitFor(8*time.Second, func(frame string) bool {
+		for y, line := range strings.Split(frame, "\n") {
+			list := strings.SplitN(line, "│", 2)[0]
+			labelIdx := strings.Index(list, label)
+			if labelIdx < 0 {
+				continue
+			}
+			boxIdx := strings.LastIndex(list[:labelIdx], "[ ]")
+			if boxIdx < 0 {
+				return false
+			}
+			col = len([]rune(list[:boxIdx])) + 2 // inside the bracket, in 1-based SGR coordinates
+			row = y + 1
+			return true
+		}
+		return false
+	})
+	if !ok {
+		t.Fatalf("clickOptionToggle: off toggle for %q never rendered. Last frame:\n%s", label, last)
+	}
+	s.sendKey([]byte(fmt.Sprintf("\x1b[<0;%d;%dM", col, row)), keystrokeDelay)
+	s.sendKey([]byte(fmt.Sprintf("\x1b[<0;%d;%dm", col, row)), keystrokeDelay)
 }
 
 func openGlobalSSHPreview(t *testing.T, s *ptySession) {
@@ -102,6 +179,58 @@ func TestGlobalSSH_RealPTYBrowse(t *testing.T) {
 	if globalSSHSubTabStrip(after) != beforeStrip {
 		t.Fatalf("sub-tab strip changed after list movement:\nbefore=%q\nafter=%q", beforeStrip, globalSSHSubTabStrip(after))
 	}
+}
+
+func TestGlobalSSH_RealPTYOptionAffordancesAndMouseToggle(t *testing.T) {
+	home := ShortSandboxHome(t)
+	seedGlobalSSHHome(t, home, "none")
+	s := startGlobalSSHPTY(t, home, "globalssh")
+
+	frame := waitForFocusedOption(t, s, "StrictHostKeyChecking", "initial activation focuses the first fetched SSH row")
+	assertOptionColumnsAligned(t, frame, "StrictHostKeyChecking", "ForwardAgent", "HashKnownHosts", "IdentitiesOnly", "AddKeysToAgent", "UseKeychain")
+	naLine, ok := optionListLine(frame, "IdentitiesOnly")
+	naPrefix := ""
+	if ok {
+		naPrefix = naLine[:strings.Index(naLine, "IdentitiesOnly")]
+	}
+	if !ok || !strings.Contains(naPrefix, "·") || strings.Contains(naPrefix, "[") {
+		t.Fatalf("non-selectable SSH row must carry the dot placeholder and no bracket toggle; line=%q", naLine)
+	}
+
+	s.sendKey(dummyKeyDown, keystrokeDelay)
+	s.sendKey(dummyKeyDown, keystrokeDelay)
+	waitForFocusedOption(t, s, "HashKnownHosts", "setup moves SSH focus away from the first row")
+	s.sendKey([]byte("1"), keystrokeDelay)
+	mustSee(t, s, "Identities", "leaving Global SSH reaches another main tab")
+	s.sendKey([]byte("2"), keystrokeDelay)
+	waitForFocusedOption(t, s, "StrictHostKeyChecking", "re-entering Global SSH resets focus to the first fetched row")
+
+	// Keep detail focus on another row while a raw SGR click toggles the first
+	// row's bracket cell. This proves the click does not also select its row.
+	s.sendKey(dummyKeyDown, keystrokeDelay)
+	waitForFocusedOption(t, s, "ForwardAgent", "mouse-toggle setup keeps detail on the second row")
+	clickOptionToggle(t, s, "StrictHostKeyChecking")
+	after := waitForFocusedOption(t, s, "ForwardAgent", "raw SGR toggle must not move detail selection")
+	strictLine, ok := optionListLine(after, "StrictHostKeyChecking")
+	if !ok || !strings.Contains(strictLine, "[✓]") {
+		t.Fatalf("real raw SGR click did not flip StrictHostKeyChecking to [✓]; line=%q\n%s", strictLine, after)
+	}
+}
+
+func TestGlobalSSH_RealPTYOptionAffordancesNoColor(t *testing.T) {
+	home := ShortSandboxHome(t)
+	seedGlobalSSHHome(t, home, "none")
+	s := startGlobalSSHPTYWithEnv(t, home, "globalssh", "NO_COLOR=1")
+
+	s.sendKey([]byte(" "), keystrokeDelay)
+	last, ok := s.waitFor(8*time.Second, func(frame string) bool {
+		return strings.Contains(frame, "[✓]") && strings.Contains(frame, "[ ]") && strings.Contains(frame, "·")
+	})
+	if !ok {
+		t.Fatalf("NO_COLOR frame never showed mutually distinct on/off/placeholder shapes. Last frame:\n%s", last)
+	}
+	assertOptionColumnsAligned(t, last, "StrictHostKeyChecking", "ForwardAgent", "HashKnownHosts", "IdentitiesOnly", "AddKeysToAgent", "UseKeychain")
+	captureGlobalSSHFrame(t, "global-ssh-option-affordances-no-color", s)
 }
 
 func TestGlobalSSH_RealPTYEmptySelectionGuard(t *testing.T) {

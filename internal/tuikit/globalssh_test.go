@@ -535,21 +535,38 @@ func TestOptionRowNeedsActionAndDiffersShareWarningGlyph(t *testing.T) {
 }
 
 func TestOptionRowDiffersAttribution(t *testing.T) {
+	const (
+		wantUser    = "set, differs — yours, would be a no-op here"
+		wantOutside = "set, differs — external, would be a no-op here"
+	)
 	user := optionRow(GlobalSSHOptionView{Key: "ForwardAgent", CurrentValue: "yes", Recommended: "no", State: GlobalSSHDiffers, AttributedToUser: true, WritableToHostStar: true}, false, false, false, 100)
 	outside := optionRow(GlobalSSHOptionView{Key: "ForwardAgent", CurrentValue: "yes", Recommended: "no", State: GlobalSSHDiffers, AttributedToUser: false, WritableToHostStar: true}, false, false, false, 100)
-	u2 := strings.Split(stripANSI(user), "\n")[1]
-	o2 := strings.Split(stripANSI(outside), "\n")[1]
+	userLines := strings.Split(stripANSI(user), "\n")
+	outsideLines := strings.Split(stripANSI(outside), "\n")
+	if len(userLines) != optionRowLines || len(outsideLines) != optionRowLines {
+		t.Fatalf("differs rows must remain %d lines; user=%d outside=%d", optionRowLines, len(userLines), len(outsideLines))
+	}
+	u2 := userLines[1]
+	o2 := outsideLines[1]
 	if u2 == o2 {
 		t.Fatalf("attributed and non-attributed differs line-2 must differ; both %q", u2)
 	}
-	if !strings.Contains(u2, "your choice") {
-		t.Fatalf("user-attributed line-2 = %q, want the user-attribution wording", u2)
+	if GlobalSSHWordDiffersUser != wantUser {
+		t.Fatalf("user-attributed differs sentence = %q, want %q", GlobalSSHWordDiffersUser, wantUser)
 	}
-	if strings.Contains(o2, "your choice") {
-		t.Fatalf("non-attributed line-2 = %q must not contain the user-attribution wording", o2)
+	if GlobalSSHWordDiffersOutside != wantOutside {
+		t.Fatalf("outside-attributed differs sentence = %q, want %q", GlobalSSHWordDiffersOutside, wantOutside)
 	}
-	if !strings.Contains(o2, GlobalSSHWordDiffersOutside) {
-		t.Fatalf("non-attributed line-2 = %q, want %q", o2, GlobalSSHWordDiffersOutside)
+	for name, line := range map[string]string{
+		"user":    optionRowLine2(GlobalSSHOptionView{CurrentValue: "accept-new", Recommended: "ask", State: GlobalSSHDiffers, AttributedToUser: true}),
+		"outside": optionRowLine2(GlobalSSHOptionView{CurrentValue: "accept-new", Recommended: "ask", State: GlobalSSHDiffers}),
+	} {
+		if !strings.Contains(line, "would be a no-op") {
+			t.Errorf("%s differs line = %q, want the no-op explanation", name, line)
+		}
+		if width := ansi.StringWidth(line); width > 100 {
+			t.Errorf("%s longest composed differs line width = %d, want <= 100: %q", name, width, line)
+		}
 	}
 }
 

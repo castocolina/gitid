@@ -238,9 +238,9 @@ const GlobalSSHAdvisoryNote = "Recommended, not required -- you can leave any op
 // phrasing, and the four not-applicable reason sentences (D-11/D-13).
 const (
 	// GlobalSSHWordDiffersUser is the D-12 line-2 word when gitid parsed the value.
-	GlobalSSHWordDiffersUser = "set, differs from recommendation — your choice"
+	GlobalSSHWordDiffersUser = "set, differs — yours, would be a no-op here"
 	// GlobalSSHWordDiffersOutside is the D-12 line-2 word when the value came from outside gitid's files.
-	GlobalSSHWordDiffersOutside = "set, differs from recommendation — set outside your config"
+	GlobalSSHWordDiffersOutside = "set, differs — external, would be a no-op here"
 	// GlobalSSHWordAlreadySet is the line-2 word when the value was set somewhere and equals the recommendation.
 	GlobalSSHWordAlreadySet = "already set"
 	// GlobalSSHWordSafeByDefault is the line-2 word when OpenSSH's own default already equals the recommendation.
