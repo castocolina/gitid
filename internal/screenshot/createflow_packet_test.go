@@ -115,16 +115,16 @@ func makeTestCaptures(t *testing.T) (map[string]string, map[string]string) {
 	for id, text := range ggitApproved {
 		approved[id] = text
 	}
-	// 08-08-PLAN.md Task 2: Health/Fixer captures merged the SAME way the
-	// previous four, immediately above — RequiredScreenSpecs() is now a
+	// 08-08-PLAN.md Task 2 / 09.4-02: Doctor captures merged the SAME way
+	// the previous four, immediately above — RequiredScreenSpecs() is now a
 	// SIX-way merged registry.
-	hfLive, err := screenshot.CaptureHealthFixerScreens(backend)
+	hfLive, err := screenshot.CaptureDoctorScreens(backend)
 	if err != nil {
-		t.Fatalf("CaptureHealthFixerScreens (live): %v", err)
+		t.Fatalf("CaptureDoctorScreens (live): %v", err)
 	}
-	hfApproved, err := screenshot.CaptureHealthFixerScreens(backend)
+	hfApproved, err := screenshot.CaptureDoctorScreens(backend)
 	if err != nil {
-		t.Fatalf("CaptureHealthFixerScreens (approved): %v", err)
+		t.Fatalf("CaptureDoctorScreens (approved): %v", err)
 	}
 	for id, text := range hfLive {
 		live[id] = text

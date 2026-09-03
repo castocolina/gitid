@@ -731,23 +731,20 @@ screenshot-html:
 ## four-state fixture coverage, allowlist schema, Makefile filter selection,
 ## cross-run determinism, prior-surface stability) run under the filter below.
 ##
-## Phase 8 (08-08-PLAN.md Task 2, DLV-04): RequiredScreenSpecs is now a
-## SEVEN-way merged registry — the six above PLUS three Phase 8 Health/Fixer
-## checkpoints (health-findings, fixer-list, fixer-ceremony-preview; captured
-## via CaptureHealthFixerScreens/mergeHealthFixerCaptures against their OWN
-## deterministicHealthFixerFixture seeded HOME, the same isolation reason as
-## every later-phase surface). Known Divergence #1 (the tab split) and #2
-## (the compressed 2-state ceremony) are NOT allowlist rows here — both are
-## divergences against the HISTORICAL Phase-2 mockup, not between real and
-## dummy (which share the current tuikit code identically); see the
-## allowlist file's own header comment. Classified against
+## Phase 8 (08-08-PLAN.md Task 2 / 09.4-02, DLV-04): RequiredScreenSpecs is now a
+## SEVEN-way merged registry — the six above PLUS three Doctor checkpoints
+## (doctor-findings, doctor-selected, doctor-ceremony-preview; captured
+## via CaptureDoctorScreens/mergeDoctorCaptures against their OWN
+## seeded fixture HOME, the same isolation reason as
+## every later-phase surface). Classified against
 ## .planning/design/health-fixer/visual-divergence-allowlist.txt (kept in
-## sync by TestHealthFixerAllowlistMatchesRegistry); the four Phase 8
-## negative controls (TestNegativeControl_HealthFixerMissingState,
-## TestNegativeControl_HealthFixerUnclassifiedDifference,
-## TestNegativeControl_HealthFixerPerturbedComparableRegion,
-## TestNegativeControl_HealthFixerCrossSurfaceAllowlistLeakage) plus the
-## TestHealthFixer* acceptance tests run under the filter below.
+## sync by TestDoctorAllowlistMatchesRegistry); the four Doctor
+## negative controls (TestNegativeControl_DoctorMissingState,
+## TestNegativeControl_DoctorUnclassifiedDifference,
+## TestNegativeControl_DoctorPerturbedComparableRegion,
+## TestNegativeControl_DoctorCrossSurfaceAllowlistLeakage) plus the
+## TestDoctorAllowlist*/TestDoctorHTML*/TestDoctorMakefile* acceptance
+## tests run under the filter below.
 ##
 ## Phase 9 (09-07-PLAN.md Task 2, UP-01/UP-02/UP-03): RequiredScreenSpecs is
 ## now an EIGHT-way merged registry — the seven above PLUS eight upload-
@@ -772,7 +769,7 @@ screenshot-html:
 ## ...CrossSurfaceAllowlistLeakage) plus the TestUploadVisual* acceptance
 ## tests run under the filter below.
 gate-visual-regression:
-	go test -tags screenshot -run 'Test(GateVisualRegression|ApprovalCommitRecorded|AllScreensCapturedAndNonEmpty|GlobalSSH|GlobalGit|HealthFixer|UploadVisual|UploadFrameProvenanceMatches|NegativeControl_)' -v ./cmd/gitid/...
+	go test -tags screenshot -run 'Test(GateVisualRegression|ApprovalCommitRecorded|AllScreensCapturedAndNonEmpty|GlobalSSH|GlobalGit|DoctorAllowlist|DoctorHTML|DoctorMakefile|UploadVisual|UploadFrameProvenanceMatches|NegativeControl_)' -v ./cmd/gitid/...
 
 ## generate-visual-review-packet: ONE-SHOT explicit publication of a new
 ## content-addressed evidence packet for Task 3 review publication.

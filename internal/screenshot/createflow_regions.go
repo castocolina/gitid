@@ -225,25 +225,19 @@ const (
 	// its own narrow disposition.
 	RegionGGitApplyHeading RegionName = "ggit-apply-heading"
 
-	// RegionHealthBody is the Health tab's master-detail body (08-08
-	// registration): the findings list (left of the │ divider) AND its
-	// always-visible inline detail pane (right of the │, Known Divergence
-	// #1's finding-detail state). Anchor: the "Health" breadcrumb line —
-	// unique to this tab, never rendered on Fixer or any other tab.
-	RegionHealthBody RegionName = "health-body"
+	// RegionDoctorBody is the merged Doctor tab's master-detail body
+	// (09.4-02 consolidation of the former health-body + fixer-body): the
+	// unfiltered findings list (left of the │ divider) AND its always-visible
+	// inline detail pane (right of the │). Anchor: the exact "Doctor"
+	// breadcrumb line with no trailing " › " crumb — present only in list
+	// mode, never while a fix ceremony is open.
+	RegionDoctorBody RegionName = "doctor-body"
 
-	// RegionFixerBody is the Fixer tab's master-detail body in list mode
-	// (08-08 registration): the fixable-findings list plus its detail pane
-	// (the "f · Fix this…" affordance and the batch-fix note). Anchor: the
-	// "Fixer" breadcrumb line with NO trailing " › " crumb — present only in
-	// list mode, never while a fix ceremony is open.
-	RegionFixerBody RegionName = "fixer-body"
-
-	// RegionFixerCeremony is the Fixer tab's fix ceremony (08-08
-	// registration, Known Divergence #2's compressed 2-state ceremony):
-	// from the "Fix: <title>" heading through the confirm/cancel button
-	// row. Full-width (no │ divider) like the other ceremony regions.
-	RegionFixerCeremony RegionName = "fixer-ceremony"
+	// RegionDoctorCeremony is the Doctor tab's inline fix ceremony
+	// (09.4-02 consolidation of the former fixer-ceremony): from the
+	// "Fix: <title>" heading through the confirm/cancel button row.
+	// Full-width (no │ divider) like the other ceremony regions.
+	RegionDoctorCeremony RegionName = "doctor-ceremony"
 
 	// RegionUploadSection is the D-08/UP-02/UP-03 upload beat's own content
 	// (09-07-PLAN.md Task 2): the "Running: <command>" announce lines, the
@@ -353,12 +347,10 @@ func ExtractRegion(screen string, region RegionName) string {
 		return extractGGitApplyCeremony(lines)
 	case RegionGGitApplyHeading:
 		return extractGGitApplyHeading(lines)
-	case RegionHealthBody:
-		return extractHealthBody(lines)
-	case RegionFixerBody:
-		return extractFixerBody(lines)
-	case RegionFixerCeremony:
-		return extractFixerCeremony(lines)
+	case RegionDoctorBody:
+		return extractDoctorBody(lines)
+	case RegionDoctorCeremony:
+		return extractDoctorCeremony(lines)
 	case RegionGIGNBody:
 		return extractGIGNBody(lines)
 	case RegionGIGNCeremony:
@@ -1218,14 +1210,14 @@ func extractGGitApplyHeading(lines []string) string {
 	return strings.Join(out, "\n")
 }
 
-// extractHealthBody returns the merged Doctor tab's master-detail body: the
+// extractDoctorBody returns the merged Doctor tab's master-detail body: the
 // findings list plus its inline detail pane. Anchored on the "Doctor"
 // breadcrumb line (exact match after stripping ANSI/whitespace — the
 // breadcrumb is its own dedicated line, never mixed with finding text), then
 // scans forward to the first │-divided line and collects every consecutive
-// │ line after it (08-08 registration). Ceremony frames ("Doctor › Fix ›
-// …") are excluded by the exact match; they belong to RegionFixerCeremony.
-func extractHealthBody(lines []string) string {
+// │ line after it. Ceremony frames ("Doctor › Fix › …") are excluded by
+// the exact match; they belong to RegionDoctorCeremony.
+func extractDoctorBody(lines []string) string {
 	crumbIdx := -1
 	for i, line := range lines {
 		if strings.TrimSpace(stripANSI(line)) == "Doctor" {
@@ -1256,47 +1248,11 @@ func extractHealthBody(lines []string) string {
 	return strings.Join(out, "\n")
 }
 
-// extractFixerBody returns the merged Doctor tab's master-detail body in
-// LIST mode only: anchored on the "Doctor" breadcrumb with no trailing
-// " › " crumb (a ceremony's breadcrumb is "Doctor › Fix › <title>", which
-// this exact match deliberately excludes — the ceremony body is
-// RegionFixerCeremony's own region, never this one).
-func extractFixerBody(lines []string) string {
-	crumbIdx := -1
-	for i, line := range lines {
-		if strings.TrimSpace(stripANSI(line)) == "Doctor" {
-			crumbIdx = i
-			break
-		}
-	}
-	if crumbIdx < 0 {
-		return ""
-	}
-	start := -1
-	for i := crumbIdx + 1; i < len(lines); i++ {
-		if strings.Contains(stripANSI(lines[i]), "│") {
-			start = i
-			break
-		}
-	}
-	if start < 0 {
-		return ""
-	}
-	var out []string
-	for _, line := range lines[start:] {
-		if !strings.Contains(stripANSI(line), "│") {
-			break
-		}
-		out = append(out, line)
-	}
-	return strings.Join(out, "\n")
-}
-
-// extractFixerCeremony returns the fix ceremony's body: from the "Fix: "
+// extractDoctorCeremony returns the fix ceremony's body: from the "Fix: "
 // heading (fixCeremonyFor's own Heading prefix, constant across every
 // finding) through the "Cancel (Esc)" button label (ceremony.go's
 // cancelLabel(), rendered once per ceremony regardless of state A/B).
-func extractFixerCeremony(lines []string) string {
+func extractDoctorCeremony(lines []string) string {
 	return ggitCeremonyBodyAfter(lines, "Fix: ", "Cancel (Esc)")
 }
 
@@ -1470,9 +1426,8 @@ func AllRegionNames() []RegionName {
 		RegionGGitOptionsBrowse,
 		RegionGGitApplyCeremony,
 		RegionGGitApplyHeading,
-		RegionHealthBody,
-		RegionFixerBody,
-		RegionFixerCeremony,
+		RegionDoctorBody,
+		RegionDoctorCeremony,
 		RegionUploadSection,
 		RegionGIGNBody,
 		RegionGIGNCeremony,
