@@ -19,7 +19,7 @@ import (
 
 // startEphemeralSSHAgent spawns a real, throwaway ssh-agent for the duration
 // of one test -- with zero identities seeded, a truly-zero-finding
-// health-all-green/nothing-to-fix state requires CheckAgent's own
+// all-green/nothing-found state requires CheckAgent's own
 // "ssh-agent: not reachable" report-only warning to genuinely NOT fire,
 // which only happens when a real agent is reachable (this project's own
 // SSH_AUTH_SOCK= test convention otherwise makes that warning unavoidable).
@@ -51,7 +51,7 @@ func startEphemeralSSHAgent(t *testing.T) (sockEnv string) {
 	return "SSH_AUTH_SOCK=" + sock
 }
 
-func seedHealthFixerFlagship(t *testing.T, home string) string {
+func seedDoctorFlagship(t *testing.T, home string) string {
 	t.Helper()
 	sshDir := filepath.Join(home, ".ssh")
 	if err := os.MkdirAll(sshDir, 0o700); err != nil {
@@ -65,7 +65,7 @@ func seedHealthFixerFlagship(t *testing.T, home string) string {
 	return config
 }
 
-func seedHealthFixerGreen(t *testing.T, home string) {
+func seedDoctorGreen(t *testing.T, home string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
 		t.Fatalf("creating SSH directory: %v", err)
@@ -91,12 +91,12 @@ func seedHealthFixerGreen(t *testing.T, home string) {
 	writeFileT(t, filepath.Join(home, ".gitignore_global"), "# BEGIN gitid managed: gitignore\n"+patterns+"\n# END gitid managed: gitignore\n")
 }
 
-func startHealthFixerPTY(t *testing.T, home string) *ptySession {
+func startDoctorPTY(t *testing.T, home string) *ptySession {
 	t.Helper()
-	return startHealthFixerPTYWithEnv(t, home)
+	return startDoctorPTYWithEnv(t, home)
 }
 
-func startHealthFixerPTYWithEnv(t *testing.T, home string, extraEnv ...string) *ptySession {
+func startDoctorPTYWithEnv(t *testing.T, home string, extraEnv ...string) *ptySession {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
 	t.Cleanup(cancel)
@@ -106,62 +106,63 @@ func startHealthFixerPTYWithEnv(t *testing.T, home string, extraEnv ...string) *
 	return s
 }
 
-func openHealth(t *testing.T, s *ptySession) {
+func openDoctor(t *testing.T, s *ptySession) {
 	t.Helper()
 	s.sendKey([]byte("4"), keystrokeDelay)
 	mustSee(t, s, "every fix is previewed", "key 4 opens Doctor after its real scan")
 }
 
-func openFixer(t *testing.T, s *ptySession) {
-	t.Helper()
-	// Merged Doctor tab: the fix keys act in place, so the former Fixer
-	// key (5) is no longer a second tab switch.
-	openHealth(t, s)
-}
-
-func typeFixerConfirm(s *ptySession) {
+func typeDoctorConfirm(s *ptySession) {
 	for _, r := range "clientb.github.com" {
 		s.sendKey([]byte(string(r)), keystrokeDelay)
 	}
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 }
 
-func TestHealthFixer_RealPTYHealthFindingsInlineDetailAndIdentity(t *testing.T) {
+// TestDoctor_RealPTYFindingsInlineDetailAndIdentity covers behavior 1:
+// findings list with inline detail and per-identity scoping.
+func TestDoctor_RealPTYFindingsInlineDetailAndIdentity(t *testing.T) {
 	home := SandboxHome(t)
-	seedHealthFixerFlagship(t, home)
-	s := startHealthFixerPTY(t, home)
-	openHealth(t, s)
-	mustSee(t, s, "SSH", "Health keeps SSH findings in their own section")
-	mustSee(t, s, "Git", "Health keeps Git findings in their own section")
-	mustSee(t, s, "IdentitiesOnly no contradicts", "Health renders the real contradiction finding")
-	mustSee(t, s, "Suggested fix:", "Health renders the selected finding inline detail")
+	seedDoctorFlagship(t, home)
+	s := startDoctorPTY(t, home)
+	openDoctor(t, s)
+	mustSee(t, s, "SSH", "Doctor keeps SSH findings in their own section")
+	mustSee(t, s, "Git", "Doctor keeps Git findings in their own section")
+	mustSee(t, s, "IdentitiesOnly no contradicts", "Doctor renders the real contradiction finding")
+	mustSee(t, s, "Suggested fix:", "Doctor renders the selected finding inline detail")
 	mustSee(t, s, "f · Fix this…", "Doctor offers the inline fix action on a fixable finding")
 	s.sendKey(dummyKeyDown, keystrokeDelay)
-	mustSee(t, s, "[", "Health navigation preserves an inline finding detail pane")
+	mustSee(t, s, "[", "Doctor navigation preserves an inline finding detail pane")
 }
 
-func TestHealthFixer_RealPTYHealthAllGreen(t *testing.T) {
+// TestDoctor_RealPTYAllGreen covers behavior 2: the all-green / nothing-found
+// state, with a real agent so CheckAgent does not fire its report-only warning.
+func TestDoctor_RealPTYAllGreen(t *testing.T) {
 	home := SandboxHome(t)
-	seedHealthFixerGreen(t, home)
+	seedDoctorGreen(t, home)
 	sockEnv := startEphemeralSSHAgent(t)
-	s := startHealthFixerPTYWithEnv(t, home, sockEnv)
-	openHealth(t, s)
-	mustSee(t, s, "SSH -- 0 fixable problems", "all-green Health reports SSH clean")
-	mustSee(t, s, "Git -- 0 fixable problems", "all-green Health reports Git clean")
+	s := startDoctorPTYWithEnv(t, home, sockEnv)
+	openDoctor(t, s)
+	mustSee(t, s, "SSH -- 0 fixable problems", "all-green Doctor reports SSH clean")
+	mustSee(t, s, "Git -- 0 fixable problems", "all-green Doctor reports Git clean")
 }
 
-func TestHealthFixer_RealPTYPerIdentityHealth(t *testing.T) {
+// TestDoctor_RealPTYPerIdentity covers behavior 3: the per-identity deep-link
+// path — a global scan still names the affected identity on the finding.
+func TestDoctor_RealPTYPerIdentity(t *testing.T) {
 	home := SandboxHome(t)
 	seedMinimalIdentity(t, home, "legacy")
 	if err := os.Remove(filepath.Join(home, ".gitconfig.d", "legacy")); err != nil {
 		t.Fatalf("removing legacy fragment: %v", err)
 	}
-	s := startHealthFixerPTY(t, home)
-	openHealth(t, s)
-	mustSee(t, s, "legacy", "global Health finding identifies the affected identity")
+	s := startDoctorPTY(t, home)
+	openDoctor(t, s)
+	mustSee(t, s, "legacy", "global Doctor finding identifies the affected identity")
 }
 
-func TestHealthFixer_RealPTYParseError(t *testing.T) {
+// TestDoctor_RealPTYParseError covers behavior 4: the configuration
+// parse-error state pauses only the affected checks.
+func TestDoctor_RealPTYParseError(t *testing.T) {
 	home := SandboxHome(t)
 	if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
 		t.Fatalf("creating Git config directory: %v", err)
@@ -172,26 +173,28 @@ func TestHealthFixer_RealPTYParseError(t *testing.T) {
 	if err := os.Chmod(broken, 0o600); err != nil {
 		t.Fatalf("securing broken fragment permissions: %v", err)
 	}
-	s := startHealthFixerPTY(t, home)
+	s := startDoctorPTY(t, home)
 	s.sendKey([]byte("4"), keystrokeDelay)
-	mustSee(t, s, "configuration parse error", "Health renders the Files parse-error frame")
+	mustSee(t, s, "configuration parse error", "Doctor renders the Files parse-error frame")
 	mustSee(t, s, "Checks paused until this configuration parses again.", "parse error pauses only the affected checks")
 	mustSee(t, s, "Raw error:", "parse error surfaces the real parser output")
 }
 
-func TestHealthFixer_RealPTYFixerCeremonyWritesAndBacksUp(t *testing.T) {
+// TestDoctor_RealPTYCeremonyWritesAndBacksUp covers behavior 5: a single
+// fix that writes and creates its backup, driven in place on the merged tab.
+func TestDoctor_RealPTYCeremonyWritesAndBacksUp(t *testing.T) {
 	home := SandboxHome(t)
-	config := seedHealthFixerFlagship(t, home)
+	config := seedDoctorFlagship(t, home)
 	before := readFileE2E(t, config)
-	s := startHealthFixerPTY(t, home)
-	openFixer(t, s)
-	mustSee(t, s, "IdentitiesOnly no contradicts", "Fixer lists the real fixable contradiction")
+	s := startDoctorPTY(t, home)
+	openDoctor(t, s)
+	mustSee(t, s, "IdentitiesOnly no contradicts", "Doctor lists the real fixable contradiction")
 	s.sendKey([]byte("f"), keystrokeDelay)
 	mustSee(t, s, "IdentitiesOnly no # deliberately loose", "ceremony state A previews the real before line")
 	mustSee(t, s, "IdentitiesOnly yes # deliberately loose", "ceremony state A previews the real after line")
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 	mustSee(t, s, "Type the Host name \"clientb.github.com\"", "ceremony requires the exact typed host confirmation")
-	typeFixerConfirm(s)
+	typeDoctorConfirm(s)
 	mustSee(t, s, "IdentitiesOnly set to yes on Host clientb.github.com", "ceremony state B reports the real applied result")
 	mustSee(t, s, "Backed up →", "result receipt names the real backup")
 	// The receipt above is shown OPTIMISTICALLY (fixCeremonyFor's own
@@ -213,7 +216,7 @@ func TestHealthFixer_RealPTYFixerCeremonyWritesAndBacksUp(t *testing.T) {
 	}
 }
 
-// seedHealthFixerBatch seeds two REAL, independently managed identities
+// seedDoctorBatch seeds two REAL, independently managed identities
 // (reusing this project's own seedTwoIdentitiesSameProviderE2E building
 // blocks -- NOT two seedMinimalIdentity calls, which each os.WriteFile the
 // whole ~/.ssh/config and ~/.gitconfig and would silently clobber each
@@ -221,7 +224,7 @@ func TestHealthFixer_RealPTYFixerCeremonyWritesAndBacksUp(t *testing.T) {
 // independent, non-destructive Permissions/Critical fixable findings
 // (chmod 0600) -- so the F batch walk has a real 2-item queue to
 // auto-advance through end to end against the real binary.
-func seedHealthFixerBatch(t *testing.T, home string) (keyAlpha, keyBravo string) {
+func seedDoctorBatch(t *testing.T, home string) (keyAlpha, keyBravo string) {
 	t.Helper()
 	first, second := "alpha", "bravo"
 	writeStubKeyPair(t, home, first)
@@ -240,7 +243,7 @@ func seedHealthFixerBatch(t *testing.T, home string) (keyAlpha, keyBravo string)
 	writeFileT(t, filepath.Join(home, ".gitconfig"), gitconfig)
 
 	if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
-		t.Fatalf("seedHealthFixerBatch: MkdirAll .gitconfig.d: %v", err)
+		t.Fatalf("seedDoctorBatch: MkdirAll .gitconfig.d: %v", err)
 	}
 	writeFileT(t, filepath.Join(home, ".gitconfig.d", first), plainFragment(first))
 	writeFileT(t, filepath.Join(home, ".gitconfig.d", second), plainFragment(second))
@@ -266,19 +269,20 @@ func confirmNonDestructiveFix(s *ptySession) {
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 }
 
-// TestHealthFixer_RealPTYFixerBatchWalk proves the F batch walk auto-chains
-// real fix ceremonies against the real binary: it deliberately does NOT
-// assert the fixture reaches a global "nothing to fix" state, because
-// seedMinimalIdentity's two identities carry their own unrelated fixable
-// findings (baseline wiring, allowed_signers, agent-not-loaded) that this
-// test's two Permissions/Critical findings (the highest severity in the
-// queue, so guaranteed to walk first) do not touch -- the real permission
-// byte check below is the authoritative proof both real fixes applied.
-func TestHealthFixer_RealPTYFixerBatchWalk(t *testing.T) {
+// TestDoctor_RealPTYBatchWalk covers behavior 6: the Fix-all batch walk
+// auto-chains real fix ceremonies against the real binary. It deliberately
+// does NOT assert the fixture reaches a global "nothing to fix" state,
+// because seedMinimalIdentity's two identities carry their own unrelated
+// fixable findings (baseline wiring, allowed_signers, agent-not-loaded)
+// that this test's two Permissions/Critical findings (the highest severity
+// in the queue, so guaranteed to walk first) do not touch -- the real
+// permission byte check below is the authoritative proof both real fixes
+// applied.
+func TestDoctor_RealPTYBatchWalk(t *testing.T) {
 	home := SandboxHome(t)
-	keyAlpha, keyBravo := seedHealthFixerBatch(t, home)
-	s := startHealthFixerPTY(t, home)
-	openFixer(t, s)
+	keyAlpha, keyBravo := seedDoctorBatch(t, home)
+	s := startDoctorPTY(t, home)
+	openDoctor(t, s)
 	s.sendKey([]byte("F"), keystrokeDelay)
 	mustSee(t, s, "Fix all", "F starts the real batch walk over the fixable queue")
 	confirmNonDestructiveFix(s)
@@ -309,7 +313,7 @@ func TestHealthFixer_RealPTYFixerBatchWalk(t *testing.T) {
 // +i needs CAP_LINUX_IMMUTABLE, unavailable on ubuntu-latest CI runners), so
 // this skips cleanly on non-Darwin/BSD platforms or when chflags is absent
 // from PATH -- the D-16 halt invariant stays proven at the unit level
-// (TestBatchWalkHalt, internal/tuikit/fixer_screen_test.go) everywhere, and
+// (TestBatchWalkHalt, internal/tuikit/doctor_screen_test.go) everywhere, and
 // through the real compiled binary on Darwin (see 08-VERIFICATION.md
 // re-verification's accepted-deviation note).
 // t.Cleanup lifts the flag so t.TempDir()'s own removal doesn't fail.
@@ -329,20 +333,20 @@ func makeImmutable(t *testing.T, path string) {
 	})
 }
 
-// TestHealthFixer_RealPTYFixerBatchWalkHalt proves the D-16 batch-walk
-// halt-on-failure path against the REAL compiled binary: fix-1 (alpha's
-// key) succeeds normally; fix-2 (bravo's key, made immutable via chflags
-// uchg so its real chmod(2) genuinely fails with EPERM) halts the batch,
-// naming the failure and the already-applied count, and the queue is
-// cleared -- proven by returning to the fixer list (not silently paused)
-// and by bravo's permission bits being UNCHANGED (the failed chmod never
-// took effect).
-func TestHealthFixer_RealPTYFixerBatchWalkHalt(t *testing.T) {
+// TestDoctor_RealPTYBatchWalkHalt covers behavior 7: the Fix-all batch walk
+// HALTING on a real, injected write failure (T-09.4-01 / D-16 / DLV-06).
+// Fix-1 (alpha's key) succeeds normally; fix-2 (bravo's key, made immutable
+// via chflags uchg so its real chmod(2) genuinely fails with EPERM) halts
+// the batch, naming the failure and the already-applied count, and the
+// queue is cleared -- proven by a positive strings.Contains on the
+// rollback message text taken from the rendered PTY frame, and by bravo's
+// permission bits being UNCHANGED (the failed chmod never took effect).
+func TestDoctor_RealPTYBatchWalkHalt(t *testing.T) {
 	home := SandboxHome(t)
-	keyAlpha, keyBravo := seedHealthFixerBatch(t, home)
+	keyAlpha, keyBravo := seedDoctorBatch(t, home)
 	makeImmutable(t, keyBravo)
-	s := startHealthFixerPTY(t, home)
-	openFixer(t, s)
+	s := startDoctorPTY(t, home)
+	openDoctor(t, s)
 	s.sendKey([]byte("F"), keystrokeDelay)
 	mustSee(t, s, "Fix all", "F starts the real batch walk over the fixable queue")
 	confirmNonDestructiveFix(s)
@@ -352,6 +356,17 @@ func TestHealthFixer_RealPTYFixerBatchWalkHalt(t *testing.T) {
 	mustSee(t, s, "failed and was rolled back", "the real chmod failure halts the batch with the D-16 message")
 	mustSee(t, s, "Nothing else in this batch was attempted", "the halt message states the queue stopped")
 	mustSee(t, s, "operation not permitted", "the ceremony's own failure state names the real OS error")
+
+	frame := s.snapshot()
+	if !strings.Contains(frame, "Fix 2 of") {
+		t.Fatalf("batch-halt frame missing rollback ordinal %q\nframe:\n%s", "Fix 2 of", frame)
+	}
+	if !strings.Contains(frame, "failed and was rolled back") {
+		t.Fatalf("batch-halt frame missing rollback text %q\nframe:\n%s", "failed and was rolled back", frame)
+	}
+	if !strings.Contains(frame, "Nothing else in this batch was attempted") {
+		t.Fatalf("batch-halt frame missing halt-queue text %q\nframe:\n%s", "Nothing else in this batch was attempted", frame)
+	}
 
 	alphaInfo, err := os.Stat(keyAlpha)
 	if err != nil {
@@ -369,12 +384,21 @@ func TestHealthFixer_RealPTYFixerBatchWalkHalt(t *testing.T) {
 	}
 }
 
-func TestHealthFixer_RealPTYFixerNothingToFix(t *testing.T) {
+// TestDoctor_RealPTYNothingToFix covers behavior 8: on the merged screen
+// the list shows every finding, so a report-only (non-fixable) finding IS
+// listed while no fix affordance is offered — the count-parity outcome
+// UXP-05 exists to produce. The green SSH/Git fixture plus an unreachable
+// agent yields CheckAgent's report-only "ssh-agent: not reachable" warning
+// and nothing fixable.
+func TestDoctor_RealPTYNothingToFix(t *testing.T) {
 	home := SandboxHome(t)
-	seedHealthFixerGreen(t, home)
-	sockEnv := startEphemeralSSHAgent(t)
-	s := startHealthFixerPTYWithEnv(t, home, sockEnv)
-	openFixer(t, s)
-	mustSee(t, s, "SSH -- 0 fixable problems", "nothing-to-fix reports SSH clean")
-	mustSee(t, s, "Git -- 0 fixable problems", "nothing-to-fix reports Git clean")
+	seedDoctorGreen(t, home)
+	// Force CheckAgent's report-only warning: e2eEnv inherits the parent
+	// process's SSH_AUTH_SOCK, so an empty extraEnv value must win.
+	s := startDoctorPTYWithEnv(t, home, "SSH_AUTH_SOCK=")
+	openDoctor(t, s)
+	mustSee(t, s, "ssh-agent: not reachable", "merged list still shows the report-only Agent finding")
+	mustSee(t, s, "info only", "the listed finding is marked informational, not fixable")
+	mustNotSee(t, s, "f · Fix this…", "no fix affordance is offered on a report-only finding")
+	mustNotSee(t, s, "fix this", "the footer does not offer f on a non-fixable selection")
 }
