@@ -152,3 +152,29 @@ func TestExtractUploadSectionStillMatchesRealUploadBeatContent(t *testing.T) {
 		t.Errorf("got=%q, want it to include the result row", got)
 	}
 }
+
+// TestExtractHeaderKeepsLastNavSegmentOutOfStatusRegion is the regression
+// for WR-06: the header/header-status split used to anchor mid-list (a
+// literal "Doctor "/"Fixer " label), leaving the LAST nav tab ("[5] Ignore")
+// inside RegionHeaderStatus — the region every registry allowlists as a
+// fixture-vs-live divergence. A regression in that last tab's label,
+// spacing, or styling could never fail the byte-compared gate. The anchor
+// must now be derived from the actual last label (tuikit.LastHeaderNavLabel)
+// so every nav segment, including the last one, stays inside the
+// byte-compared RegionHeader.
+func TestExtractHeaderKeepsLastNavSegmentOutOfStatusRegion(t *testing.T) {
+	lines := []string{
+		" gitid   [1] Identities · [2] SSH · [3] Git · [4] Doctor · [5] Ignore               3 ids · ✓ ok",
+	}
+	header := extractHeader(lines)
+	if !strings.Contains(header, "[5] Ignore") {
+		t.Errorf("extractHeader must include the last nav segment [5] Ignore, got %q", header)
+	}
+	status := extractHeaderStatus(lines)
+	if strings.Contains(status, "[5] Ignore") {
+		t.Errorf("extractHeaderStatus must NOT include [5] Ignore — it belongs to the byte-compared header, not the allowlisted status region; got %q", status)
+	}
+	if !strings.Contains(status, "3 ids") {
+		t.Errorf("extractHeaderStatus must still capture the status summary; got %q", status)
+	}
+}

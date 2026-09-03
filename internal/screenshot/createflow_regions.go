@@ -20,6 +20,8 @@ package screenshot
 import (
 	"fmt"
 	"strings"
+
+	"github.com/castocolina/gitid/internal/tuikit"
 )
 
 // RegionName identifies a named sub-region of a create-flow wizard screen.
@@ -526,7 +528,15 @@ func extractConfirmationPreview(lines []string) string {
 // ("N ids · ✓ ok" / "N ids · ! M ✗ K"). The status is covered by
 // RegionHeaderStatus. This makes RegionHeader byte-identical between real
 // and dummy backends (the nav tabs are pure chrome, not backend state).
-const headerNavAnchor = "Doctor "
+//
+// WR-06 (09.4-REVIEW.md): anchored on the LAST nav segment (derived from
+// tuikit.LastHeaderNavLabel, never a literal) so every nav segment stays
+// inside this byte-compared region. A mid-list anchor (the previous
+// "Doctor "/"Fixer " literals) left the final segment inside
+// RegionHeaderStatus instead, which every registry allowlists as a
+// fixture-vs-live divergence — a regression in that last tab's label,
+// spacing, or styling could never fail the gate.
+var headerNavAnchor = tuikit.LastHeaderNavLabel() + " "
 
 func extractHeader(lines []string) string {
 	if len(lines) == 0 {
@@ -796,9 +806,9 @@ func extractHeaderStatus(lines []string) string {
 	header := lines[0]
 	plain := stripANSI(header)
 	// The status summary ("N ids · ✓ ok" or "N ids · ! M ✗ K") always appears
-	// after a run of spaces following the merged Doctor nav-tab. Anchoring
-	// on Doctor (second-to-last label) preserves "one trailing nav segment
-	// plus the chip" so third-party allowlists keep holding (T-09.4-07).
+	// after a run of spaces following the LAST nav segment (WR-06: derived
+	// from tuikit.LastHeaderNavLabel, never a literal — see extractHeader's
+	// doc comment for why anchoring mid-list left a gap).
 	markerIdx := strings.LastIndex(plain, headerNavAnchor)
 	if markerIdx < 0 {
 		if strings.Contains(plain, "[1] Identities") {
@@ -809,7 +819,10 @@ func extractHeaderStatus(lines []string) string {
 	after := plain[markerIdx+len(headerNavAnchor):]
 	statusIdx := strings.IndexFunc(after, func(r rune) bool { return r != ' ' })
 	if statusIdx < 0 {
-		panic(fmt.Sprintf("header-status: missing status after anchor %q in header line %q", headerNavAnchor, plain))
+		// WR-06: a narrow-frame capture with no status text following the
+		// anchor is a real, nameable condition — surface it as an empty
+		// region rather than crashing the whole capture run with a panic.
+		return ""
 	}
 	rawStart := ansiOffsetToRaw(header, markerIdx+len(headerNavAnchor)+statusIdx)
 	if rawStart < 0 || rawStart >= len(header) {

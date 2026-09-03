@@ -239,6 +239,18 @@ func headerTabText(i int) string {
 	return fmt.Sprintf(" [%d] %s ", i+1, tabNavLabels[i])
 }
 
+// LastHeaderNavLabel is the last nav tab's plain label (currently "Ignore").
+// Exported so internal/screenshot's header/header-status region split can
+// anchor on the actual LAST segment rather than a literal that goes stale
+// the next time a tab is renamed or appended — the exact class of drift
+// WR-06 (09.4-REVIEW.md) found: an anchor mid-list left the final nav
+// segment outside the byte-compared header region and inside the
+// allowlisted status region, where a regression in it could never fail the
+// visual-regression gate.
+func LastHeaderNavLabel() string {
+	return tabNavLabels[len(tabNavLabels)-1]
+}
+
 // renderHeader renders the single header row: brand · numbered flat tabs ·
 // health chip. Four nav states (D4): the ACTIVE tab with no pane capturing
 // keys renders Theme.ActiveNav (the shared accent as a BACKGROUND — bold +
