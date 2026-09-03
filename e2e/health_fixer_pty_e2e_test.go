@@ -109,13 +109,14 @@ func startHealthFixerPTYWithEnv(t *testing.T, home string, extraEnv ...string) *
 func openHealth(t *testing.T, s *ptySession) {
 	t.Helper()
 	s.sendKey([]byte("4"), keystrokeDelay)
-	mustSee(t, s, "read-only diagnostics", "key 4 opens Health after its real scan")
+	mustSee(t, s, "every fix is previewed", "key 4 opens Doctor after its real scan")
 }
 
 func openFixer(t *testing.T, s *ptySession) {
 	t.Helper()
-	s.sendKey([]byte("5"), keystrokeDelay)
-	mustSee(t, s, "every fix is previewed", "key 5 opens Fixer after its real scan")
+	// Merged Doctor tab: the fix keys act in place, so the former Fixer
+	// key (5) is no longer a second tab switch.
+	openHealth(t, s)
 }
 
 func typeFixerConfirm(s *ptySession) {
@@ -134,7 +135,7 @@ func TestHealthFixer_RealPTYHealthFindingsInlineDetailAndIdentity(t *testing.T) 
 	mustSee(t, s, "Git", "Health keeps Git findings in their own section")
 	mustSee(t, s, "IdentitiesOnly no contradicts", "Health renders the real contradiction finding")
 	mustSee(t, s, "Suggested fix:", "Health renders the selected finding inline detail")
-	mustSee(t, s, "Switch to Fixer to apply this.", "Health remains read-only")
+	mustSee(t, s, "f · Fix this…", "Doctor offers the inline fix action on a fixable finding")
 	s.sendKey(dummyKeyDown, keystrokeDelay)
 	mustSee(t, s, "[", "Health navigation preserves an inline finding detail pane")
 }

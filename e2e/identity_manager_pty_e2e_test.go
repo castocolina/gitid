@@ -1454,16 +1454,19 @@ func extractIdentManagerSidebar(lines []string) string {
 	return strings.Join(out, "\n")
 }
 
-func extractIdentManagerHeaderStatus(lines []string) string {
+const identManagerHeaderStatusAnchor = "Doctor"
+
+func extractIdentManagerHeaderStatus(t errorRecorder, lines []string) string {
+	t.Helper()
 	if len(lines) == 0 {
-		return ""
+		t.Fatalf("header-status: missing anchor %q in header line %q", identManagerHeaderStatusAnchor, "")
 	}
 	header := lines[0]
-	idx := strings.LastIndex(header, "Fixer")
+	idx := strings.LastIndex(header, identManagerHeaderStatusAnchor)
 	if idx < 0 {
-		return ""
+		t.Fatalf("header-status: missing anchor %q in header line %q", identManagerHeaderStatusAnchor, header)
 	}
-	return strings.TrimSpace(header[idx+len("Fixer"):])
+	return strings.TrimSpace(header[idx+len(identManagerHeaderStatusAnchor):])
 }
 
 func extractIdentManagerDetail(lines []string) string {
@@ -1561,13 +1564,14 @@ func extractIdentManagerConnectivityOutput(lines []string) string {
 	return extractIdentManagerBeatFrom(lines, []string{"Running:"})
 }
 
-func extractIdentManagerRegion(frame string, region identManagerRegion) string {
+func extractIdentManagerRegion(t errorRecorder, frame string, region identManagerRegion) string {
+	t.Helper()
 	lines := strings.Split(frame, "\n")
 	switch region {
 	case identRegionSidebar:
 		return extractIdentManagerSidebar(lines)
 	case identRegionHeaderStatus:
-		return extractIdentManagerHeaderStatus(lines)
+		return extractIdentManagerHeaderStatus(t, lines)
 	case identRegionDetail:
 		return extractIdentManagerDetail(lines)
 	case identRegionBreadcrumb:
@@ -1832,8 +1836,8 @@ func compareIdentManagerCheckpointSkipping(t errorRecorder, checkpoint string, r
 		if skip[region] {
 			continue
 		}
-		realRegion := extractIdentManagerRegion(realFrame, region)
-		dummyRegion := extractIdentManagerRegion(dummyFrame, region)
+		realRegion := extractIdentManagerRegion(t, realFrame, region)
+		dummyRegion := extractIdentManagerRegion(t, dummyFrame, region)
 		if strings.TrimSpace(realRegion) == "" && strings.TrimSpace(dummyRegion) == "" {
 			continue
 		}

@@ -2061,8 +2061,8 @@ func CaptureGlobalGitScreens(backend tuikit.Backend) (map[string]string, error) 
 // ---------------------------------------------------------------------------
 
 // healthFixerApp boots a fresh tuikit.App around backend at the fixed capture
-// geometry and activates tabKey — '4' for Health, '5' for Fixer (the SAME
-// keys a real user presses; app.go's setTab dispatch).
+// geometry and activates tabKey — '4' for the merged Doctor tab (the SAME
+// key a real user presses; app.go's setTab dispatch).
 func healthFixerApp(backend tuikit.Backend, tabKey rune) tea.Model {
 	var model tea.Model = tuikit.NewApp(backend)
 	model = step(model, tea.WindowSizeMsg{Width: CaptureWidth, Height: CaptureHeight})
@@ -2088,12 +2088,12 @@ func CaptureHealthFixerScreens(backend tuikit.Backend) (map[string]string, error
 	out := make(map[string]string, 3)
 	capture := func(m tea.Model) string { return normalizeTimestamps(anyView(m)) }
 
-	// health-findings: Health tab after its real scan.
+	// health-findings: merged Doctor tab after its real scan.
 	health := healthFixerApp(backend, '4')
 	out["health-findings"] = capture(health)
 
-	// fixer-list: Fixer tab after its real scan.
-	fixerList := healthFixerApp(backend, '5')
+	// fixer-list: the same merged Doctor tab (fix keys act in place).
+	fixerList := healthFixerApp(backend, '4')
 	out["fixer-list"] = capture(fixerList)
 
 	// fixer-ceremony-preview: press 'f' to open a fixable finding's ceremony
@@ -2197,7 +2197,7 @@ func healthFixerSpecs() []ScreenSpec {
 		`contains:"fixable"`)
 	breadcrumbDispositionHF := uxRegionDifferenceScoped(RegionBreadcrumb, "finding-title", hfFixtureClass,
 		"the ceremony's breadcrumb names the selected finding's title (\"Fixer › Fix › <title>\"), which differs between the real seeded fixture finding and the dummy's frozen fixture finding — the shared 'Fixer › Fix ›' prefix anchors both sides",
-		`contains:"Fixer › Fix"`)
+		`contains:"Doctor › Fix"`)
 
 	return []ScreenSpec{
 		{
@@ -2287,7 +2287,7 @@ func CaptureGitIgnoreScreens(backend tuikit.Backend) (map[string]string, error) 
 	app := func() tea.Model {
 		var m tea.Model = tuikit.NewApp(backend)
 		m = step(m, tea.WindowSizeMsg{Width: CaptureWidth, Height: CaptureHeight})
-		return keyRune(m, '6')
+		return keyRune(m, '5')
 	}
 	browse := app()
 	out["gign-existing-block"] = capture(browse)

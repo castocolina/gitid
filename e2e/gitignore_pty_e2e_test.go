@@ -62,7 +62,7 @@ func startGitIgnorePTY(t *testing.T, home string) *ptySession {
 	s := startPTYAt(t, newGitIgnoreCmd(t, ctx, BuildBinary(t), home), dummyTermWidth, dummyTermHeight)
 	t.Cleanup(func() { s.close(t) })
 	uiReady(t, s)
-	s.sendKey([]byte("6"), keystrokeDelay)
+	s.sendKey([]byte("5"), keystrokeDelay)
 	mustSee(t, s, "Global Git Ignore", "GitIgnore screen opens")
 	return s
 }
@@ -480,7 +480,7 @@ func TestGitIgnore_RealPTYDeletedDefaultStaysDeleted(t *testing.T) {
 	applyGitIgnoreAndConfirm(t, s)
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 	s.sendKey([]byte("1"), keystrokeDelay)
-	s.sendKey([]byte("6"), keystrokeDelay)
+	s.sendKey([]byte("5"), keystrokeDelay)
 	mustSee(t, s, "Global Git Ignore", "re-enter ignore screen")
 	frame := captureGitIgnoreFrame(t, "gitignore-deleted-default", s)
 	if strings.Contains(frame, ".env") || strings.Contains(readFileE2E(t, gitignorePath), "\n.env\n") {

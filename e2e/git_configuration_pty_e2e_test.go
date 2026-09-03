@@ -590,18 +590,23 @@ func extractGitScreenSidebar(lines []string) string {
 	return strings.Join(out, "\n")
 }
 
+const gitScreenHeaderStatusAnchor = "Doctor"
+
 // extractGitScreenHeaderStatus returns the header line's trailing status
-// chip ("N ids · <health>"), the portion after the last nav-tab label.
-func extractGitScreenHeaderStatus(lines []string) string {
+// chip ("N ids · <health>"), the portion after the merged Doctor nav-tab
+// label (one trailing nav segment plus the chip). A missing anchor is a
+// hard test failure, never an empty skip (T-09.4-07).
+func extractGitScreenHeaderStatus(t *testing.T, lines []string) string {
+	t.Helper()
 	if len(lines) == 0 {
-		return ""
+		t.Fatalf("header-status: missing anchor %q in header line %q", gitScreenHeaderStatusAnchor, "")
 	}
 	header := lines[0]
-	idx := strings.LastIndex(header, "Fixer")
+	idx := strings.LastIndex(header, gitScreenHeaderStatusAnchor)
 	if idx < 0 {
-		return ""
+		t.Fatalf("header-status: missing anchor %q in header line %q", gitScreenHeaderStatusAnchor, header)
 	}
-	return strings.TrimSpace(header[idx+len("Fixer"):])
+	return strings.TrimSpace(header[idx+len(gitScreenHeaderStatusAnchor):])
 }
 
 // extractGitScreenFormFields returns the git-form's user.name/user.email
@@ -692,13 +697,14 @@ func extractGitScreenCeremony(lines []string) string {
 }
 
 // extractGitScreenRegion dispatches to the named region's extractor.
-func extractGitScreenRegion(frame string, region gitScreenRegion) string {
+func extractGitScreenRegion(t *testing.T, frame string, region gitScreenRegion) string {
+	t.Helper()
 	lines := strings.Split(frame, "\n")
 	switch region {
 	case gitRegionSidebar:
 		return extractGitScreenSidebar(lines)
 	case gitRegionHeaderStatus:
-		return extractGitScreenHeaderStatus(lines)
+		return extractGitScreenHeaderStatus(t, lines)
 	case gitRegionFormFields:
 		return extractGitScreenFormFields(lines)
 	case gitRegionStrategy:
@@ -894,8 +900,8 @@ func compareGitScreenCheckpoint(t *testing.T, checkpoint string, realFrame, dumm
 	t.Helper()
 	comparable := 0
 	for _, region := range allGitScreenRegions() {
-		realRegion := extractGitScreenRegion(realFrame, region)
-		dummyRegion := extractGitScreenRegion(dummyFrame, region)
+		realRegion := extractGitScreenRegion(t, realFrame, region)
+		dummyRegion := extractGitScreenRegion(t, dummyFrame, region)
 		if strings.TrimSpace(realRegion) == "" && strings.TrimSpace(dummyRegion) == "" {
 			continue // region not applicable to this checkpoint's pane on either side
 		}

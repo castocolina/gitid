@@ -18,6 +18,7 @@ package screenshot
 // external tools.
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -533,27 +534,29 @@ func extractConfirmationPreview(lines []string) string {
 // ("N ids · ✓ ok" / "N ids · ! M ✗ K"). The status is covered by
 // RegionHeaderStatus. This makes RegionHeader byte-identical between real
 // and dummy backends (the nav tabs are pure chrome, not backend state).
+const headerNavAnchor = "Doctor "
+
 func extractHeader(lines []string) string {
 	if len(lines) == 0 {
 		return ""
 	}
 	header := lines[0]
 	plain := stripANSI(header)
-	// status starts after the last nav-tab "Fixer " entry + trailing spaces
-	// (08-01-PLAN.md Task 1's TabID 4->5 split retired the single "Doctor"
-	// tab in favor of "Health"/"Fixer" — "Fixer" is now the last nav tab).
-	markerIdx := strings.LastIndex(plain, "Fixer ")
+	// status starts after the merged Doctor nav-tab entry + trailing spaces
+	// (one trailing nav segment plus the chip). Phase 09.4 reversed
+	// 08-01-PLAN.md Task 1's Health/Fixer split.
+	markerIdx := strings.LastIndex(plain, headerNavAnchor)
 	if markerIdx < 0 {
-		return header
+		panic(fmt.Sprintf("header: missing anchor %q in header line %q", headerNavAnchor, plain))
 	}
-	after := plain[markerIdx+len("Fixer "):]
+	after := plain[markerIdx+len(headerNavAnchor):]
 	statusIdx := strings.IndexFunc(after, func(r rune) bool { return r != ' ' })
 	if statusIdx < 0 {
 		// no status — return full header
 		return header
 	}
 	// truncate at the status start (in ANSI-preserved raw line)
-	rawEnd := ansiOffsetToRaw(header, markerIdx+len("Fixer ")+statusIdx)
+	rawEnd := ansiOffsetToRaw(header, markerIdx+len(headerNavAnchor)+statusIdx)
 	if rawEnd < 0 || rawEnd >= len(header) {
 		return header
 	}
@@ -798,22 +801,19 @@ func extractHeaderStatus(lines []string) string {
 	header := lines[0]
 	plain := stripANSI(header)
 	// The status summary ("N ids · ✓ ok" or "N ids · ! M ✗ K") always appears
-	// after a run of spaces following the last nav-tab entry. Find the last
-	// "· [N] Fixer " or "Fixer " occurrence and take what follows ("Fixer" is
-	// the last nav tab since 08-01-PLAN.md Task 1's TabID 4->5 split retired
-	// the single "Doctor" tab).
-	markerIdx := strings.LastIndex(plain, "Fixer ")
+	// after a run of spaces following the merged Doctor nav-tab. Anchoring
+	// on Doctor (second-to-last label) preserves "one trailing nav segment
+	// plus the chip" so third-party allowlists keep holding (T-09.4-07).
+	markerIdx := strings.LastIndex(plain, headerNavAnchor)
 	if markerIdx < 0 {
-		return header
+		panic(fmt.Sprintf("header-status: missing anchor %q in header line %q", headerNavAnchor, plain))
 	}
-	// find the non-space content after "Fixer " (account for padding)
-	after := plain[markerIdx+len("Fixer "):]
+	after := plain[markerIdx+len(headerNavAnchor):]
 	statusIdx := strings.IndexFunc(after, func(r rune) bool { return r != ' ' })
 	if statusIdx < 0 {
-		return ""
+		panic(fmt.Sprintf("header-status: missing status after anchor %q in header line %q", headerNavAnchor, plain))
 	}
-	// map back to ANSI-preserved position
-	rawStart := ansiOffsetToRaw(header, markerIdx+len("Fixer ")+statusIdx)
+	rawStart := ansiOffsetToRaw(header, markerIdx+len(headerNavAnchor)+statusIdx)
 	if rawStart < 0 || rawStart >= len(header) {
 		return header[markerIdx:]
 	}
@@ -1212,16 +1212,17 @@ func extractGGitApplyHeading(lines []string) string {
 	return strings.Join(out, "\n")
 }
 
-// extractHealthBody returns the Health tab's master-detail body: the
-// findings list plus its inline detail pane. Anchored on the "Health"
+// extractHealthBody returns the merged Doctor tab's master-detail body: the
+// findings list plus its inline detail pane. Anchored on the "Doctor"
 // breadcrumb line (exact match after stripping ANSI/whitespace — the
 // breadcrumb is its own dedicated line, never mixed with finding text), then
 // scans forward to the first │-divided line and collects every consecutive
-// │ line after it (08-08 registration).
+// │ line after it (08-08 registration). Ceremony frames ("Doctor › Fix ›
+// …") are excluded by the exact match; they belong to RegionFixerCeremony.
 func extractHealthBody(lines []string) string {
 	crumbIdx := -1
 	for i, line := range lines {
-		if strings.TrimSpace(stripANSI(line)) == "Health" {
+		if strings.TrimSpace(stripANSI(line)) == "Doctor" {
 			crumbIdx = i
 			break
 		}
@@ -1249,15 +1250,15 @@ func extractHealthBody(lines []string) string {
 	return strings.Join(out, "\n")
 }
 
-// extractFixerBody returns the Fixer tab's master-detail body in LIST mode
-// only: anchored on the "Fixer" breadcrumb with no trailing " › " crumb (a
-// ceremony's breadcrumb is "Fixer › Fix › <title>", which this exact match
-// deliberately excludes — the ceremony body is RegionFixerCeremony's own
-// region, never this one).
+// extractFixerBody returns the merged Doctor tab's master-detail body in
+// LIST mode only: anchored on the "Doctor" breadcrumb with no trailing
+// " › " crumb (a ceremony's breadcrumb is "Doctor › Fix › <title>", which
+// this exact match deliberately excludes — the ceremony body is
+// RegionFixerCeremony's own region, never this one).
 func extractFixerBody(lines []string) string {
 	crumbIdx := -1
 	for i, line := range lines {
-		if strings.TrimSpace(stripANSI(line)) == "Fixer" {
+		if strings.TrimSpace(stripANSI(line)) == "Doctor" {
 			crumbIdx = i
 			break
 		}

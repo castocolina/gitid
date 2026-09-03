@@ -766,8 +766,8 @@ func compareCreateFlowCheckpoint(t errorRecorder, checkpoint string, realFrame, 
 	t.Helper()
 	comparable := 0
 	for _, region := range []identManagerRegion{identRegionSidebar, identRegionHeaderStatus, identRegionUploadSection, identRegionConnectivityOutput} {
-		realRegion := extractIdentManagerRegion(realFrame, region)
-		dummyRegion := extractIdentManagerRegion(dummyFrame, region)
+		realRegion := extractIdentManagerRegion(t, realFrame, region)
+		dummyRegion := extractIdentManagerRegion(t, dummyFrame, region)
 		if strings.TrimSpace(realRegion) == "" && strings.TrimSpace(dummyRegion) == "" {
 			continue
 		}

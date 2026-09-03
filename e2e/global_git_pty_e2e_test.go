@@ -233,7 +233,7 @@ func TestGlobalGit_RealPTYProbeFailureStaysNavigable(t *testing.T) {
 		t.Fatalf("probe failure left option rows visible:\n%s", frame)
 	}
 	s.sendKey([]byte{0x1b, 0x5b, 0x43}, keystrokeDelay)
-	mustSee(t, s, "Health", "plain right arrow leaves failed Global Git screen")
+	mustSee(t, s, "Doctor", "plain right arrow leaves failed Global Git screen")
 }
 
 func TestGlobalGit_RealPTYFallbackPairSet(t *testing.T) {
