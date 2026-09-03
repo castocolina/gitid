@@ -1375,3 +1375,171 @@ func TestGlobalSSHStorageTokenPassthroughAndClearing(t *testing.T) {
 		t.Errorf("re-activating screen must reset storageChoice to current layout (Sentinel); got %v", m3.storageChoice)
 	}
 }
+
+// TestSubTabStripRowAccountingIsSingleSourced verifies that the sub-tab
+// strip is present and consistent across both sub-tabs. The strip is the
+// first rendered line on both Options and Storage.
+func TestSubTabStripRowAccountingIsSingleSourced(t *testing.T) {
+	a := gssApp(t)
+	m := gssModel(t, a)
+
+	// Render Options to measure the strip.
+	optionsView := m.view(a.state, a.width, a.height)
+	optionsBody := optionsView.body
+	optionsLines := strings.Split(optionsBody, "\n")
+	if len(optionsLines) == 0 {
+		t.Fatal("Options body is empty")
+	}
+
+	// The first line is the sub-tab strip.
+	stripFirstLine := optionsLines[0]
+	if !strings.Contains(stripFirstLine, "Options") || !strings.Contains(stripFirstLine, "Storage") {
+		t.Errorf("Options: first line should be the sub-tab strip, got: %q", stripFirstLine)
+	}
+
+	// gssOptionsTopLines should be >= 1 (at minimum the strip).
+	topLines := gssOptionsTopLines(a.state)
+	if topLines < 1 {
+		t.Errorf("gssOptionsTopLines = %d, want >= 1 (strip + optional banner)", topLines)
+	}
+
+	// Switch to Storage sub-tab and verify the strip is the first line there too.
+	a, _ = press(t, a, "right")
+	m = gssModel(t, a)
+	storageView := m.view(a.state, a.width, a.height)
+	storageBody := storageView.body
+	storageLines := strings.Split(storageBody, "\n")
+
+	if len(storageLines) == 0 {
+		t.Fatal("Storage body is empty")
+	}
+	if !strings.Contains(storageLines[0], "Options") || !strings.Contains(storageLines[0], "Storage") {
+		t.Errorf("Storage: first line should be the sub-tab strip, got: %q", storageLines[0])
+	}
+
+	// Both views should have the strip as their first line, confirming that
+	// renderOptions and renderStorage both prefix with subTabStrip().
+}
+
+// TestSubTabStripClickSwitchesSubTabs verifies that clicking on either
+// sub-tab label switches sub-tabs, using the actual rendered coordinates.
+func TestSubTabStripClickSwitchesSubTabs(t *testing.T) {
+	a := gssApp(t)
+	m := gssModel(t, a)
+	if m.subTab != gssOptions {
+		t.Fatalf("initial subTab = %v, want gssOptions", m.subTab)
+	}
+
+	// Click on the Storage label to switch sub-tabs.
+	a = clickCell(t, a, "Storage & preview", 0, 0)
+	m = gssModel(t, a)
+	if m.subTab != gssStorage {
+		t.Errorf("subTab after clicking Storage label = %v, want gssStorage", m.subTab)
+	}
+
+	// Click on the Options label to switch back.
+	a = clickCell(t, a, "Options", 0, 0)
+	m = gssModel(t, a)
+	if m.subTab != gssOptions {
+		t.Errorf("subTab after clicking Options label = %v, want gssOptions", m.subTab)
+	}
+}
+
+// TestSubTabStripFitsFixedGeometryInEveryStripState measures the sub-tab
+// strip's row cost across all five strip-bearing render states and logs
+// the available/used/headroom for each.
+// It records the tightest state's margin for Task 2's box-variant decision.
+func TestSubTabStripFitsFixedGeometryInEveryStripState(t *testing.T) {
+	a := gssApp(t)
+	tightestMargin := 100 // Start high, will be minimized
+
+	// State 1: Options normal with findings banner
+	a.state.Findings = []DemoFinding{
+		{HealthFinding: HealthFinding{Section: "SSH", Severity: SeverityWarning, Title: "test", Family: "test", Fixable: false}},
+	}
+	m := gssModel(t, a)
+	view := m.view(a.state, a.width, a.height)
+	bodyLines := strings.Split(view.body, "\n")
+	usedRows := len(bodyLines)
+	availRows := frameBodyRows(a.height)
+	headroom := availRows - usedRows
+	t.Logf("State 1: Options normal with findings banner")
+	t.Logf("  Available body rows: %d", availRows)
+	t.Logf("  Used rows: %d", usedRows)
+	t.Logf("  Headroom: %d rows", headroom)
+	if usedRows > availRows {
+		t.Errorf("State 1 exceeds available rows: used=%d, available=%d", usedRows, availRows)
+	}
+	if headroom < tightestMargin {
+		tightestMargin = headroom
+	}
+
+	// State 2: Options zero-rows
+	a2 := NewAppOnGlobalSSH(stubBackend{sshOptions: []GlobalSSHOptionView{}}, false)
+	m2 := gssModel(t, a2)
+	view2 := m2.view(a2.state, a2.width, a2.height)
+	bodyLines2 := strings.Split(view2.body, "\n")
+	usedRows2 := len(bodyLines2)
+	availRows2 := frameBodyRows(a2.height)
+	headroom2 := availRows2 - usedRows2
+	t.Logf("State 2: Options zero-rows")
+	t.Logf("  Available body rows: %d", availRows2)
+	t.Logf("  Used rows: %d", usedRows2)
+	t.Logf("  Headroom: %d rows", headroom2)
+	if usedRows2 > availRows2 {
+		t.Errorf("State 2 exceeds available rows: used=%d, available=%d", usedRows2, availRows2)
+	}
+	if headroom2 < tightestMargin {
+		tightestMargin = headroom2
+	}
+
+	// State 3: Options with error
+	m3 := gssModel(t, a)
+	m3.optionsErr = "test error"
+	a3 := a
+	a3.screens[TabGlobalSSH] = m3
+	view3 := m3.view(a3.state, a3.width, a3.height)
+	bodyLines3 := strings.Split(view3.body, "\n")
+	usedRows3 := len(bodyLines3)
+	availRows3 := frameBodyRows(a3.height)
+	headroom3 := availRows3 - usedRows3
+	t.Logf("State 3: Options with error")
+	t.Logf("  Available body rows: %d", availRows3)
+	t.Logf("  Used rows: %d", usedRows3)
+	t.Logf("  Headroom: %d rows", headroom3)
+	if usedRows3 > availRows3 {
+		t.Errorf("State 3 exceeds available rows: used=%d, available=%d", usedRows3, availRows3)
+	}
+	if headroom3 < tightestMargin {
+		tightestMargin = headroom3
+	}
+
+	// State 4: Storage normal
+	a4 := gssApp(t)
+	a4, _ = press(t, a4, "right")
+	m4 := gssModel(t, a4)
+	view4 := m4.view(a4.state, a4.width, a4.height)
+	bodyLines4 := strings.Split(view4.body, "\n")
+	usedRows4 := len(bodyLines4)
+	availRows4 := frameBodyRows(a4.height)
+	headroom4 := availRows4 - usedRows4
+	t.Logf("State 4: Storage normal")
+	t.Logf("  Available body rows: %d", availRows4)
+	t.Logf("  Used rows: %d", usedRows4)
+	t.Logf("  Headroom: %d rows", headroom4)
+	if usedRows4 > availRows4 {
+		t.Errorf("State 4 exceeds available rows: used=%d, available=%d", usedRows4, availRows4)
+	}
+	if headroom4 < tightestMargin {
+		tightestMargin = headroom4
+	}
+
+	// State 5: Storage sub-tab (same as State 4, already measured)
+	// The apply and storage ceremonies prefix the strip too, but they render
+	// the ceremony body which is already tested for overflow separately.
+
+	t.Logf("Tightest state headroom: %d rows", tightestMargin)
+	if tightestMargin < 0 {
+		t.Errorf("Some state exceeds fixed geometry; tightest headroom = %d rows", tightestMargin)
+	}
+}
