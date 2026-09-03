@@ -228,11 +228,9 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 
 	s.sendKey([]byte("4"), keystrokeDelay)
 	// Doctor-BODY-specific proof (the "Doctor" header tab label is always
-	// present, so it can never fail): the post-scan status line. Task 2
-	// keeps the ported ceremony screen's wording ("every fix is previewed");
-	// Plan 02 Task 1 later replaces it with UI-SPEC's merged copy, at which
-	// point this assertion moves a second time.
-	mustSee(t, s, "every fix is previewed", "tab 4: doctor status line after auto-scan")
+	// present, so it can never fail): the post-scan status line from the
+	// UI-SPEC Copywriting Contract.
+	mustSee(t, s, "every fix is previewed, confirmed, and backed up before it writes.", "tab 4: doctor status line after auto-scan")
 	// Auto-scan runs on first entry, then findings render grouped.
 	mustSee(t, s, "Private key is world-readable", "tab 4: finding title after auto-scan")
 
@@ -369,7 +367,7 @@ func TestDummyDemo_MouseAndGitApply(t *testing.T) {
 	}
 	s.sendKey([]byte(fmt.Sprintf("\x1b[<0;%d;%dM", col, row)), keystrokeDelay) // SGR press
 	s.sendKey([]byte(fmt.Sprintf("\x1b[<0;%d;%dm", col, row)), keystrokeDelay) // SGR release
-	mustSee(t, s, "every fix is previewed", "mouse: Doctor body after clicking the header tab")
+	mustSee(t, s, "every fix is previewed, confirmed, and backed up before it writes.", "mouse: Doctor body after clicking the header tab")
 
 	// ---- (b) Global Git apply walk ----
 	// D-15/R-1 (07-CONTEXT.md, carried forward from 06-D-15): the selection

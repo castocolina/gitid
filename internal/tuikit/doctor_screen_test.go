@@ -135,7 +135,7 @@ func wave2to5FixableFindings() []DemoFinding {
 		{HealthFinding: HealthFinding{
 			ID: "ssh-identitiesonly-contradiction", Section: "SSH", Severity: SeverityError, Family: "Coherence",
 			Title:        "IdentitiesOnly no contradicts an explicit IdentityFile",
-			SuggestedFix: "Set IdentitiesOnly yes on the clientb.github.com Host block -- available on the Fixer screen.",
+			SuggestedFix: "Set IdentitiesOnly yes on the clientb.github.com Host block.",
 			Fixable:      true,
 		}},
 		{HealthFinding: HealthFinding{
@@ -147,7 +147,7 @@ func wave2to5FixableFindings() []DemoFinding {
 		{HealthFinding: HealthFinding{
 			ID: "ssh-key-perms-archived", Section: "SSH", Severity: SeverityCritical, Family: "Permissions",
 			Title:        "Private key is world-readable",
-			SuggestedFix: "chmod 0600 ~/.ssh/id_ed25519_archived -- available on the Fixer screen.",
+			SuggestedFix: "chmod 0600 ~/.ssh/id_ed25519_archived.",
 			Fixable:      true,
 		}},
 		{HealthFinding: HealthFinding{
@@ -243,16 +243,14 @@ func TestFixerCompleteFixableSet(t *testing.T) {
 	}
 }
 
-// TestFixerSuggestedFixDropsStaleFixerHandoff proves 08-08's UX review
-// finding F6: Doctor's own detail pane never renders the "available
-// on the Fixer screen" hand-off clause SuggestedFix carries for Health's
-// benefit -- it is stale once the user is already standing on Doctor. Health's own detail pane must still render the FULL text unchanged
-// (health_screen_test.go covers that side).
-func TestFixerSuggestedFixDropsStaleFixerHandoff(t *testing.T) {
+// TestDoctorSuggestedFixRendersDirectly proves the merged screen renders
+// sel.SuggestedFix as-is: producers no longer append a hand-off clause
+// pointing at a removed tab, so there is nothing to strip.
+func TestDoctorSuggestedFixRendersDirectly(t *testing.T) {
 	finding := DemoFinding{HealthFinding: HealthFinding{
 		ID: "ssh-identitiesonly-contradiction", Section: "SSH", Severity: SeverityError, Family: "Coherence",
 		Title:        "IdentitiesOnly no contradicts an explicit IdentityFile",
-		SuggestedFix: "Set IdentitiesOnly yes on the clientb.github.com Host block -- available on the Fixer screen.",
+		SuggestedFix: "Set IdentitiesOnly yes on the clientb.github.com Host block.",
 		Fixable:      true,
 	}}
 	state := DemoState{Scanned: true, Findings: []DemoFinding{finding}}
@@ -260,11 +258,11 @@ func TestFixerSuggestedFixDropsStaleFixerHandoff(t *testing.T) {
 	m.selectedID = finding.ID
 	view := stripANSI(m.view(state, 100, 30).body)
 	if strings.Contains(view, "available on the Fixer screen") {
-		t.Errorf("Doctor detail pane must not render the stale Fixer hand-off clause:\n%s", view)
+		t.Errorf("Doctor detail pane must not render a stale Fixer hand-off clause:\n%s", view)
 	}
 	for _, want := range []string{"Set IdentitiesOnly yes on the", "clientb.github.com Host block"} {
 		if !strings.Contains(view, want) {
-			t.Errorf("Doctor detail pane must still render the rest of the suggested-fix text (missing %q):\n%s", want, view)
+			t.Errorf("Doctor detail pane must render SuggestedFix directly (missing %q):\n%s", want, view)
 		}
 	}
 }
@@ -276,17 +274,17 @@ func threeBatchFindings() []DemoFinding {
 	return []DemoFinding{
 		{HealthFinding: HealthFinding{
 			ID: "fix-1", Section: "SSH", Severity: SeverityCritical, Family: "Permissions",
-			Title: "Fix One", SuggestedFix: "chmod 0600 ~/.ssh/id_ed25519_one -- available on the Fixer screen.",
+			Title: "Fix One", SuggestedFix: "chmod 0600 ~/.ssh/id_ed25519_one.",
 			Fixable: true,
 		}},
 		{HealthFinding: HealthFinding{
 			ID: "fix-2", Section: "SSH", Severity: SeverityError, Family: "Coherence",
-			Title: "Fix Two", SuggestedFix: "repair Fix Two -- available on the Fixer screen.",
+			Title: "Fix Two", SuggestedFix: "repair Fix Two.",
 			Fixable: true,
 		}},
 		{HealthFinding: HealthFinding{
 			ID: "fix-3", Section: "Git", Severity: SeverityWarning, Family: "Orphans",
-			Title: "Fix Three", SuggestedFix: "repair Fix Three -- available on the Fixer screen.",
+			Title: "Fix Three", SuggestedFix: "repair Fix Three.",
 			Fixable: true,
 		}},
 	}

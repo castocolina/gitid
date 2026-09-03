@@ -391,8 +391,9 @@ type Backend interface {
 
 	// PersistError reports the error the LAST Persist call failed with, or
 	// nil. App.handleKey consults it immediately after Persist runs (D-16):
-	// a FixFinding dispatched during a Fixer batch walk that fails halts
-	// the walk instead of silently advancing (fixer_screen.go's haltBatch).
+	// a FixFinding dispatched during a Doctor batch walk that fails
+	// halts the walk instead of silently advancing (doctor_screen.go's
+	// haltBatch).
 	// The dummy always returns nil (Reduce never fails); the real binary
 	// records the last commit's error and returns it here (unchanged from
 	// its pre-existing realBackend.PersistError()).

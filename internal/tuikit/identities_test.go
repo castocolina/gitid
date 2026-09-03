@@ -136,13 +136,13 @@ func TestDetailShowsSSHFirstAndNeverFabricatesGit(t *testing.T) {
 	if !strings.Contains(pane, "Global baseline (inherited") || !strings.Contains(pane, "Edit in Global Git (3)") {
 		t.Error("read-only global baseline strip missing (GITUI-01)")
 	}
-	if !strings.Contains(pane, "same data Health shows (4)") {
+	if !strings.Contains(pane, "same data Doctor shows (4)") {
 		t.Error("findings sub-panel heading missing")
 	}
 }
 
 // TestIdentityHealthDeepLink proves D-04's per-identity health entry point:
-// pressing h on an Identity Manager row switches to the Health tab scoped
+// pressing h on an Identity Manager row switches to the Doctor tab scoped
 // to exactly that identity's own findings (via store.FindingsFor), and the
 // deep-link's status line names the identity.
 func TestIdentityHealthDeepLink(t *testing.T) {

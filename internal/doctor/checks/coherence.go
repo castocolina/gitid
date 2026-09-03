@@ -429,7 +429,7 @@ func checkHandWrittenIdentitiesOnly(deps doctor.Deps) []doctor.Finding {
 			Explanation: fmt.Sprintf(
 				"Host %s sets IdentitiesOnly no while also naming IdentityFile %s -- ssh may still offer every other key it knows before falling back to the one explicitly configured.",
 				hb.Pattern, hb.IdentityFile),
-			SuggestedFix: fmt.Sprintf("Set IdentitiesOnly yes on the %s Host block -- available on the Fixer screen.", hb.Pattern),
+			SuggestedFix: fmt.Sprintf("Set IdentitiesOnly yes on the %s Host block.", hb.Pattern),
 			Fix:          fix,
 			Target:       "SSH",
 			Rewrite: &doctor.FixRewrite{

@@ -462,7 +462,7 @@ gate-copy-freeze:
 		'Global Git Ignore' \
 		'✓ Wired — core.excludesfile points at this file; Git reads it.' \
 		'! core.excludesfile is not set — Git does not read any global ignore file yet. Confirming here will set it.' \
-		'! No gitid-managed Git baseline configuration was found on this machine — open the Fixer to set that up before this screen can wire core.excludesfile.' \
+		'! No gitid-managed Git baseline configuration was found on this machine — open the Doctor to set that up before this screen can wire core.excludesfile.' \
 		'No managed block found yet in ~/.gitignore_global — showing the curated defaults below. Nothing has been written.' \
 		'This write will also set core.excludesfile in your Git baseline, since it is not set yet.' \
 		'Global gitignore written to ~/.gitignore_global.' \

@@ -2,10 +2,9 @@
 // the ONE source of truth for the approved, frozen design (D-17). It holds
 // the Bubble Tea v2 root model, the semantic Theme, the shell frame
 // (numbered header nav with a live health chip, breadcrumb/active-area,
-// contextual footer), the four primary screens (1 Identities · 2 Global
-// SSH · 3 Global Git · 4 Doctor, where the Fixer is a consequence inside
-// Doctor per FIX-02), the create wizard, and the shared 2-state mutation
-// ceremony.
+// contextual footer), the five primary screens (1 Identities · 2 Global
+// SSH · 3 Global Git · 4 Doctor · 5 Global Git Ignore), the create
+// wizard, and the shared 2-state mutation ceremony.
 //
 // BOTH binaries render through this package:
 //

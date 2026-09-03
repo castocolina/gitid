@@ -823,7 +823,7 @@ func countForeignProviderRefs(b *realBackend, providerKey string) (int, error) {
 // identity.BuildInventory's IdentityHealth exactly as before (MGR-07) — it
 // never reads state.Findings. Findings themselves are computed ONCE, by
 // doctorFindings(b.home) — internal/doctor.Run(deps)'s converged output —
-// the SOLE findings source for the Health/Fixer tabs and `gitid health
+// the SOLE findings source for the Doctor tab and `gitid health
 // --json` (08-01-PLAN.md's binding architecture decision). The retired
 // identity.Problem-to-DemoFinding synthesis this replaced produced a SECOND,
 // independent findings stream that could disagree with doctor.Run's own
@@ -859,8 +859,8 @@ func (b *realBackend) InitialState() tuikit.DemoState {
 //   - TabIdentities (plan 03)
 //   - TabGlobalSSH (plan 06-05: both Options and Storage sub-tabs are now live)
 //   - TabGlobalGit (plan 07-04: real option states, ceremonies, and probe error render are live)
-//   - TabDoctor (09.4-01: merged Health + Fixer; both already rendered
-//     doctor.Run(deps)'s converged output as of 08-01-PLAN.md Task 1)
+//   - TabDoctor (09.4-01: merged findings + inline fix ceremony; already
+//     rendered doctor.Run(deps)'s converged output as of 08-01-PLAN.md Task 1)
 func (b *realBackend) DemoBanner(tuikit.TabID) bool {
 	return false
 }
@@ -4432,13 +4432,13 @@ func (b *realBackend) keyOwners() map[string]string {
 }
 
 // ---------------------------------------------------------------------------
-// doctor.Deps — the Phase 8 Health/Fixer/CLI findings source
+// doctor.Deps — the Phase 8 Doctor/CLI findings source
 // ---------------------------------------------------------------------------
 
 // buildDoctorDeps wires a real internal/doctor.Deps from home. It is the
 // SHARED constructor realBackend.InitialState() (via doctorFindings) and
 // `gitid health --json` (cmd/gitid/health.go) both call — one construction
-// site, so the TUI Health/Fixer tabs and the CLI can never disagree about
+// site, so the TUI Doctor tab and the CLI can never disagree about
 // what doctor.Run(deps) sees (08-01-PLAN.md Task 1's "one source, three
 // consumers" contract).
 //
@@ -4972,7 +4972,7 @@ func doctorAddWiring(allowedSignersPath string) func(path, name, line string) er
 // doctorFindings converts internal/doctor.Run(deps)'s output into
 // []tuikit.DemoFinding. This is the D-01/08-01-PLAN.md Task 1 architecture
 // decision's ONLY conversion site: internal/doctor.Run(deps) is the SOLE
-// findings source for both TUI tabs (Health, Fixer) and `gitid health
+// findings source for the TUI Doctor tab and `gitid health
 // --json` — identity.BuildInventory's Problem taxonomy is an INPUT to
 // doctor.Deps (via Identities/ManagedHosts/KeyPaths above), never a second,
 // independently-rendered output. This function — and any Family/Severity
@@ -5146,7 +5146,7 @@ func applyConvergenceAlarms(b *realBackend, findings []tuikit.DemoFinding) []tui
 					Family:  f.Family,
 					Title:   f.Title,
 					Explanation: fmt.Sprintf(
-						"%s did not resolve after its own fix reported success -- this fix has been withdrawn from the Fixer; re-run Health after investigating manually.",
+						"%s did not resolve after its own fix reported success -- this fix has been withdrawn from Doctor; re-run Doctor after investigating manually.",
 						f.Title),
 					Severity: tuikit.SeverityError,
 					// SuggestedFix left empty so this renders as an unfixable

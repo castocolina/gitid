@@ -4594,7 +4594,7 @@ func (m identitiesModel) renderDetail(s DemoState, sel DemoIdentity) string {
 	b.WriteString(baselineStrip(s) + "\n")
 
 	findings := FindingsFor(s, sel.Name)
-	b.WriteString("\n" + sectionHeader(fmt.Sprintf("Findings (%d) — same data Health shows (4)", len(findings))) + "\n")
+	b.WriteString("\n" + sectionHeader(fmt.Sprintf("Findings (%d) — same data Doctor shows (4)", len(findings))) + "\n")
 	if len(findings) == 0 {
 		b.WriteString("   " + styleHealthy.Render(`✓ No findings for "`+sel.Name+`".`) + "\n")
 	} else {
@@ -4605,7 +4605,7 @@ func (m identitiesModel) renderDetail(s DemoState, sel DemoIdentity) string {
 			}
 			b.WriteString("   " + severityLabel(f.Severity) + "  " + f.Title + "  " + fix + "\n")
 		}
-		b.WriteString("   " + styleFocusLink.Render("h · Open Health for "+sel.Name) + "\n")
+		b.WriteString("   " + styleFocusLink.Render("h · Open Doctor for "+sel.Name) + "\n")
 	}
 	return b.String()
 }

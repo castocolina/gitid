@@ -475,8 +475,11 @@ These are first-class, enforced requirements — the user's core process ask.
   the two tabs merge back into a single combined screen — renamed **Doctor**
   — that lists every finding (Health's full scope) with an inline `f · Fix
   this…` / `F · Fix all` action (Fixer's ceremony), matching the original
-  mockup's `Doctor.tsx` shape. The main menu goes from 5 tabs to 4
-  ([1] Identities [2] Global SSH [3] Global Git [4] Doctor). Every fix still
+   mockup's `Doctor.tsx` shape. The main menu goes from 6 tabs to 5
+   ([1] Identities [2] Global SSH [3] Global Git [4] Doctor [5] Global Git
+   Ignore) — Phase 9.2 added Global Git Ignore after UXP-05 was drafted as
+   5-to-4 against Phase 8's shell; see 09.4-UI-SPEC.md Known Divergence #1.
+   Every fix still
   goes through the SAME preview + typed-confirm + backup ceremony as before —
   only the "the diagnostic tab has zero fix keybindings wired" isolation
   property is removed, not the write-confirmation discipline itself.

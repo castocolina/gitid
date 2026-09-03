@@ -92,7 +92,7 @@ func filesFinding(deps doctor.Deps, path, target string, err error) doctor.Findi
 		Severity:     doctor.SeverityCritical,
 		Title:        fmt.Sprintf("%s configuration cannot be parsed", target),
 		Explanation:  fmt.Sprintf("%s: %s. Checks for this section are paused until it parses again.", path, raw),
-		SuggestedFix: "Correct the parse error, then run Health again.",
+		SuggestedFix: "Correct the parse error, then run Doctor again.",
 		Target:       target,
 		ParseError:   &doctor.ParseError{File: path, Raw: raw, Snippet: snippet},
 	}

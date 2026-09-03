@@ -1,13 +1,10 @@
 package tuikit
 
-// doctor.go holds the helpers SHARED by the Health tab (health_screen.go,
-// read-only) and the Fixer tab (fixer_screen.go, the fix-ceremony half) —
-// 08-01-PLAN.md Task 2's split of the former single Doctor tab (FIX-02,
-// 02-REDESIGN-SPEC.md §5) into two real, distinct tabs driven by the same
-// findings source. Findings group `SSH · <identity|global>` then `Git · …`,
-// severity-ordered, with the LOCKED severity contract (~ info cyan !
-// warning yellow ✗ error AND critical red — the word disambiguates, NEVER ✗
-// for a warning).
+// doctor.go holds the helpers the merged Doctor tab consumes: findings
+// grouping (`SSH · <identity|global>` then `Git · …`), severity ordering,
+// and the LOCKED severity contract (~ info cyan ! warning yellow ✗ error
+// AND critical red — the word disambiguates, NEVER ✗ for a warning). The
+// file's code is shared presentation logic, not a second screen.
 
 import (
 	"sort"
@@ -87,8 +84,8 @@ func groupFindings(ordered []DemoFinding) []doctorGroup {
 }
 
 // selectFinding resolves the finding matching id within ordered (falls back
-// to the first). Extracted as a free function (was a doctorModel method)
-// since both healthModel and fixerModel need it and neither owns the other.
+// to the first). Extracted as a free function so Doctor's list, detail, and
+// ceremony paths share one selection rule.
 func selectFinding(ordered []DemoFinding, id string) (DemoFinding, int, bool) {
 	for i, f := range ordered {
 		if f.ID == id {

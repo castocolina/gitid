@@ -110,8 +110,8 @@ type Finding struct {
 	// Set by per-family check functions that iterate deps.Identities.
 	// Used by the TUI to derive per-identity sidebar badge severity (D-08).
 	IdentityName string
-	// Target is the D-01 section this finding belongs to on the Health/Fixer
-	// screens and the CLI: always "SSH" or "Git", never a third "System"
+	// Target is the D-01 section this finding belongs to on the Doctor
+	// screen and the CLI: always "SSH" or "Git", never a third "System"
 	// sub-label. Single-domain families (every Finding they emit is always
 	// about the same file domain) leave Target unset on the literal and let
 	// Run resolve it via defaultTargetForFamily. Families that mix SSH and
@@ -328,7 +328,7 @@ type Deps struct {
 // see defaultTargetForFamily's own doc comment) keeps that value unchanged;
 // every other Finding's empty Target is resolved from its Family via
 // defaultTargetForFamily. This resolution happens ONCE, here, so every
-// consumer (the Health/Fixer TUI screens, gitid health --json, the
+// consumer (the Doctor TUI screen, gitid health --json, the
 // HLTH-05/MGR-07 per-identity slice) sees the same Target.
 func Run(deps Deps) []Finding {
 	var all []Finding

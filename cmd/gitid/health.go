@@ -2,10 +2,11 @@ package main
 
 // health.go is the minimal `gitid health [--json]` command (08-01-PLAN.md
 // Task 1/2): it calls the SAME buildDoctorDeps(home) + doctor.Run(deps) +
-// doctorFindings(home) construction the TUI's Health/Fixer tabs consume via
-// realBackend.InitialState() — one source, three consumers. The --json
-// shape here is a PROVISIONAL flat array for this tracer/split wave only;
-// Wave 7 (08-07 Task 2) supersedes it with this project's versioned-envelope
+// doctorFindings(home) construction the TUI's Doctor tab consumes via
+// realBackend.InitialState() — one source, three consumers (Doctor, this
+// CLI verb, and the hidden `gitid doctor` alias). The --json shape here is
+// a PROVISIONAL flat array for this tracer/split wave only; Wave 7
+// (08-07 Task 2) supersedes it with this project's versioned-envelope
 // convention (matching the `gitid ssh`/`gitid git` JSON commands). Do not
 // treat this array shape as a stable contract.
 
@@ -26,10 +27,10 @@ import (
 // existing identity-noun completion pattern). Per D-04's Claude's-discretion
 // note, global (empty-IdentityName) findings are EXCLUDED entirely from the
 // scoped view — the same choice internal/tuikit/identities.go's TUI deep-link
-// makes (health_screen.go's healthModel.findings scopes via
-// tuikit.FindingsFor, which only matches DemoFinding.Identity == name and
-// therefore never includes a global finding either); documented here so the
-// TUI and the CLI stay consistent per D-04's requirement.
+// makes (doctorModel.findings scopes via tuikit.FindingsFor, which only
+// matches DemoFinding.Identity == name and therefore never includes a
+// global finding either); documented here so the TUI and the CLI stay
+// consistent per D-04's requirement.
 func newHealthCmd() *cobra.Command {
 	var jsonOut bool
 	var identityName string
@@ -63,7 +64,7 @@ func newHealthCmd() *cobra.Command {
 
 // findingsForIdentity filters findings to exactly identityName's own
 // findings (Finding.IdentityName) — global (empty-Identity) findings are
-// excluded, the same choice the TUI deep-link's healthModel.findings makes
+// excluded, the same choice the TUI deep-link's doctorModel.findings makes
 // via tuikit.FindingsFor.
 // runHealth is the shared health command body used by both `gitid health`
 // and the hidden `gitid doctor` compatibility alias.

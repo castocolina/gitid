@@ -744,7 +744,7 @@ func findingsBanner(s DemoState, section, beyond string) string {
 		plural = ""
 	}
 	return " " + styleWarning.Render(fmt.Sprintf("! The doctor found %d %s finding%s beyond %s.", n, section, plural, beyond)) +
-		"  " + styleFocusLink.Render("Open Health (4)")
+		"  " + styleFocusLink.Render("Open Doctor (4)")
 }
 
 // optionRow renders one master-list option row (2 lines).

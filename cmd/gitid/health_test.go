@@ -70,7 +70,7 @@ func TestSetDiffersRealWiring(t *testing.T) {
 // TestHealthIdentityFlagScopesAndExcludesGlobal proves D-04's `gitid health
 // --identity NAME` filters via Finding.IdentityName to exactly that
 // identity's own findings, and — matching the TUI deep-link's documented
-// choice (internal/tuikit/health_screen.go's healthModel.findings, which
+// choice (internal/tuikit/doctor_screen.go's doctorModel.findings, which
 // scopes via tuikit.FindingsFor) — EXCLUDES global (empty-IdentityName)
 // findings entirely from the scoped view.
 func TestHealthIdentityFlagScopesAndExcludesGlobal(t *testing.T) {

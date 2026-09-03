@@ -3,8 +3,8 @@
 // interactive web demo at .planning/design/mockup-src/src/demo/ 1:1 per
 // 02-REDESIGN-SPEC.md: numbered header nav tabs with a live health chip,
 // live master-detail Identities with the 4-pane-state create wizard,
-// Global SSH (Options + STORE-01 Storage sub-tabs), Global Git, and a
-// Doctor that absorbs the Fixer (FIX-02) — all driving a pure reducer
+// Global SSH (Options + STORE-01 Storage sub-tabs), Global Git, Doctor,
+// and Global Git Ignore — all driving a pure reducer
 // (store.go) over dummy, in-memory state. NO backend package is imported
 // and nothing on disk is ever read or written; every "write" is a reducer
 // transition staged through the shared 2-state mutation ceremony.

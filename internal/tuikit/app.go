@@ -87,7 +87,7 @@ var helpKeys = [][2]string{
 	{"Esc", "Back out one level (form → detail, modal → cancel). Never destructive"},
 	{"Tab / Shift+Tab", "Move between fields and buttons in a form"},
 	{"n · e · g · c · d", "Identities: new / edit SSH / configure Git / clone / delete"},
-	{"f · F", "Fixer: fix the selected finding / fix all (each still previews)"},
+	{"f · F", "Doctor: fix the selected finding / fix all (each still previews)"},
 	{"Ctrl+P", "Command palette — views and actions"},
 	{"?", "This help"},
 	{"q", "Quit gitid (asks first)"},

@@ -518,7 +518,7 @@ Plans:
   4. A screen with local sub-tabs (e.g. Global SSH's Options/Storage & preview) is visually distinguishable from top-level main-menu navigation. (UXP-04)
   5. Health and Fixer are merged back into a single "Doctor" tab (reversing Phase 8's FIX-02 split) that lists every finding and offers inline fix/fix-all, so no separate screen's finding count can read as contradicting another's; the write-confirmation ceremony (preview + typed-confirm + backup) is unchanged. (UXP-05)
 
-*Note: criterion 5's tab arithmetic was drafted as "5 tabs to 4" against Phase 8's shipped shell. Phase 9.2 has since added a sixth top-level tab (Global Git Ignore), so the shipped math is **6 tabs to 5** — see 09.4-UI-SPEC.md Known Divergence #1, which is binding. Plan 09.4-02 corrects the REQUIREMENTS.md wording in the same commit that lands the merge.*
+*Note: criterion 5's tab arithmetic was drafted as "5 tabs to 4" against Phase 8's shipped shell. Phase 9.2 has since added a sixth top-level tab (Global Git Ignore), so the shipped math is **6 tabs to 5** — see 09.4-UI-SPEC.md Known Divergence #1, which is binding. REQUIREMENTS.md UXP-05 now states the same 6-to-5 arithmetic.*
 
 **Plans**: 4 plans
 

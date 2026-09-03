@@ -1,9 +1,8 @@
 package tuikit
 
-// doctor_screen.go is the merged Doctor tab (09.4-01-PLAN.md Task 2):
-// Health's unfiltered findings list plus Fixer's inline write ceremony.
-// Phase 8's FIX-02 split (health_screen.go + fixer_screen.go) is reversed
-// here so one tab cannot report a count that contradicts another.
+// doctor_screen.go is the merged Doctor tab: the unfiltered findings list
+// plus the inline write ceremony. Phase 8's FIX-02 split is reversed here
+// so one tab cannot report a count that contradicts another.
 
 import (
 	"fmt"
@@ -14,24 +13,8 @@ import (
 	lipgloss "charm.land/lipgloss/v2"
 )
 
-// fixerSuggestedFixHandoff is the trailing clause every SuggestedFix string
-// carries so a read-only detail pane can point the user at the Fixer tab
-// (HLTH-04's own "available on the Fixer screen" hand-off,
-// internal/dummytui/data.go). On Doctor itself the SAME clause is stale --
-// the user is already here, and the "f · Fix this…" affordance immediately
-// below the suggested-fix line already states the action -- so
-// fixerSuggestedFixText strips it before rendering (08-08 UX review
-// finding F6).
-const fixerSuggestedFixHandoff = " -- available on the Fixer screen."
-
-// fixerSuggestedFixText returns text with the Fixer hand-off clause
-// stripped, for Doctor's own fixable-row detail pane.
-func fixerSuggestedFixText(text string) string {
-	return strings.TrimSuffix(text, fixerSuggestedFixHandoff)
-}
-
-// doctorModel is the merged Doctor tab child model: Fixer's complete field
-// set plus Health's per-identity filter.
+// doctorModel is the merged Doctor tab child model: unfiltered findings
+// list plus the inline write ceremony.
 type doctorModel struct {
 	backend      Backend
 	scanning     bool
@@ -327,10 +310,10 @@ func (m doctorModel) view(rawState DemoState, width, height int) screenView {
 		}
 	}
 
-	status := fmt.Sprintf("%d finding%s — every fix is previewed + confirmed + backed up before it writes.",
+	status := fmt.Sprintf("%d finding%s — every fix is previewed, confirmed, and backed up before it writes.",
 		len(ordered), pluralS(len(ordered)))
 	if m.identityName != "" {
-		status = fmt.Sprintf("%s: %d finding%s — every fix is previewed + confirmed + backed up before it writes.",
+		status = fmt.Sprintf("%s: %d finding%s — every fix is previewed, confirmed, and backed up before it writes.",
 			m.identityName, len(ordered), pluralS(len(ordered)))
 	}
 	tone := "info"
@@ -407,7 +390,7 @@ func (m doctorModel) view(rawState DemoState, width, height int) screenView {
 		d.WriteString(chips + "\n\n")
 		d.WriteString(" " + sel.Explanation + "\n\n")
 		if sel.Fixable {
-			d.WriteString(" " + styleInfo.Render("~ Suggested fix: "+fixerSuggestedFixText(sel.SuggestedFix)) + "\n")
+			d.WriteString(" " + styleInfo.Render("~ Suggested fix: "+sel.SuggestedFix) + "\n")
 			d.WriteString(" " + styleSelected.Render(" f · Fix this… ") + "\n")
 		} else if sel.SuggestedFix != "" {
 			d.WriteString(" " + styleInfo.Render("~ Suggested fix: "+sel.SuggestedFix) + "\n")

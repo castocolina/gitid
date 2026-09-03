@@ -408,7 +408,7 @@ const (
 	GitIgnoreHeading                    = "Global Git Ignore"
 	GitIgnoreWiringWired                = "✓ Wired — core.excludesfile points at this file; Git reads it."
 	GitIgnoreWiringKeyUnset             = "! core.excludesfile is not set — Git does not read any global ignore file yet. Confirming here will set it."
-	GitIgnoreWiringNoBaseline           = "! No gitid-managed Git baseline configuration was found on this machine — open the Fixer to set that up before this screen can wire core.excludesfile."
+	GitIgnoreWiringNoBaseline           = "! No gitid-managed Git baseline configuration was found on this machine — open the Doctor to set that up before this screen can wire core.excludesfile."
 	GitIgnoreNoManagedBlock             = "No managed block found yet in ~/.gitignore_global — showing the curated defaults below. Nothing has been written."
 	GitIgnoreTwoTargetNote              = "This write will also set core.excludesfile in your Git baseline, since it is not set yet."
 	GitIgnoreReceiptSingleTarget        = "Global gitignore written to ~/.gitignore_global."
@@ -539,8 +539,8 @@ const GlobalGitFullManagedBlockText = GlobalGitSentinelBegin + `
 ` + GlobalGitSentinelEnd
 
 // ---------------------------------------------------------------------------
-// Health severities (HLTH-*). Health is READ-ONLY: it diagnoses, it never
-// mutates.
+// Health severities (HLTH-*). These labels classify doctor findings; they
+// do not describe a separate read-only tab.
 // ---------------------------------------------------------------------------
 
 // HealthSeverity mirrors recipeFixtures.ts's HealthSeverity — the four
