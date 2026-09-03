@@ -547,7 +547,10 @@ func extractHeader(lines []string) string {
 	// 08-01-PLAN.md Task 1's Health/Fixer split.
 	markerIdx := strings.LastIndex(plain, headerNavAnchor)
 	if markerIdx < 0 {
-		panic(fmt.Sprintf("header: missing anchor %q in header line %q", headerNavAnchor, plain))
+		if strings.Contains(plain, "[1] Identities") {
+			panic(fmt.Sprintf("header: missing anchor %q in header line %q", headerNavAnchor, plain))
+		}
+		return header
 	}
 	after := plain[markerIdx+len(headerNavAnchor):]
 	statusIdx := strings.IndexFunc(after, func(r rune) bool { return r != ' ' })
@@ -806,7 +809,10 @@ func extractHeaderStatus(lines []string) string {
 	// plus the chip" so third-party allowlists keep holding (T-09.4-07).
 	markerIdx := strings.LastIndex(plain, headerNavAnchor)
 	if markerIdx < 0 {
-		panic(fmt.Sprintf("header-status: missing anchor %q in header line %q", headerNavAnchor, plain))
+		if strings.Contains(plain, "[1] Identities") {
+			panic(fmt.Sprintf("header-status: missing anchor %q in header line %q", headerNavAnchor, plain))
+		}
+		return header
 	}
 	after := plain[markerIdx+len(headerNavAnchor):]
 	statusIdx := strings.IndexFunc(after, func(r rune) bool { return r != ' ' })
