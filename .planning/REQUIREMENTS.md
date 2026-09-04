@@ -408,6 +408,11 @@ These are first-class, enforced requirements — the user's core process ask.
   suffix), a real `curl` download from the published release URL verifies against
   `checksums.txt`, and the downloaded `gitid-darwin-amd64 --version` reports
   `0.1.0-rc.9 (dde93d9, 2026-09-01)` matching the tag's peeled commit exactly.
+  **Re-opened by Phase 10:** Phase 10 (10-CONTEXT.md D-05..D-16, see ROADMAP.md)
+  replaces this raw-binary pipeline with a goreleaser-driven one (tar.gz archives,
+  provenance attestation, Homebrew tap) — this row's Phase-9.3 verification remains
+  historically accurate for the pipeline that existed then; BUILD-03 is re-verified
+  against the new release.yml/`.goreleaser.yaml` pipeline as part of Phase 10 closeout.
 
 - [x] **BUILD-04** (Reproducible dev bootstrap): `make setup-env` on a fresh macOS or
   Linux clone reproduces the CI toolchain (golangci-lint, gosec, pre-commit, hooks).
@@ -680,7 +685,7 @@ row below records each one's **home** phase.
 | PLAT-03 | Phase 10 | Pending |
 | BUILD-01 | Phase 1 | Complete |
 | BUILD-02 | Phase 1 | Complete (deviation: test-e2e out of CI, Phase 9.3) |
-| BUILD-03 | Phase 9.3 | Complete |
+| BUILD-03 | Phase 9.3, re-opened Phase 10 | Complete (Phase 9.3 pipeline); re-verified against Phase 10's goreleaser pipeline |
 | BUILD-04 | Phase 1 | Complete |
 | BUILD-05 | Phase 9.3 | Pending (unblocks on merge to main) |
 | GIGN-01 | Phase 9.2 | Complete |
