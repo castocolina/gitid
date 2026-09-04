@@ -203,6 +203,25 @@ func RenderCustomKeysBlock(entries []CustomKey) (string, error) {
 	return strings.TrimRight(b.String(), "\n"), nil
 }
 
+// gitKeysEqual reports whether two dotted git config keys name the SAME
+// key, per git-config(1)'s CONFIGURATION FILE rule: section and variable
+// names are case-INSENSITIVE, but a SUBSECTION is case-SENSITIVE (WR-05).
+// A naive strings.EqualFold over the whole dotted key is wrong for the
+// middle segment: "http.https://Example.com.sslVerify" and
+// "http.https://example.com.sslVerify" are two genuinely DIFFERENT git
+// keys, not the same key spelled two ways. A key that fails SplitGitKey
+// compares unequal to everything (SplitGitKey is re-validated by every
+// caller before this function is reached, so this is a defensive default,
+// never the deciding branch in practice).
+func gitKeysEqual(a, b string) bool {
+	secA, subA, varA, errA := SplitGitKey(a)
+	secB, subB, varB, errB := SplitGitKey(b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	return strings.EqualFold(secA, secB) && subA == subB && strings.EqualFold(varA, varB)
+}
+
 // EnsureCustomGitKey upserts key=value into the custom-git-keys managed
 // block, mirroring EnsureGlobalGit's shape. The key and value are validated
 // FIRST — SplitGitKey for the key's syntax (D-G), validateCustomValue (this
@@ -211,13 +230,14 @@ func RenderCustomKeysBlock(entries []CustomKey) (string, error) {
 // make the rendered line unparseable or silently truncated by git, and
 // leading/trailing whitespace would be silently stripped) — so a malformed
 // key or an unrenderable value is rejected before any text is composed. The
-// current block is then parsed, the entry
-// is upserted case-insensitively by key (git lower-cases keys in --list
-// output), and the merged entries are rendered and composed through
-// filewriter.ReplaceBlock — the ONE managed-block chokepoint. Foreign
-// content outside the block, and every other managed block in existing
-// (including the curated global-git block), is preserved verbatim by that
-// chokepoint; this function does not re-implement that guarantee.
+// current block is then parsed, the entry is upserted via gitKeysEqual
+// (WR-05: section/variable case-insensitive, subsection case-sensitive —
+// NOT a blanket case-insensitive fold over the whole dotted key), and the
+// merged entries are rendered and composed through filewriter.ReplaceBlock
+// — the ONE managed-block chokepoint. Foreign content outside the block,
+// and every other managed block in existing (including the curated
+// global-git block), is preserved verbatim by that chokepoint; this
+// function does not re-implement that guarantee.
 //
 // Re-calling with an unchanged key/value renders byte-identical output to
 // existing's current custom-git-keys block, so a caller's byte-equality
@@ -235,7 +255,7 @@ func EnsureCustomGitKey(existing []byte, key, value string) ([]byte, error) {
 	entries := ParseCustomKeysBlock(existing)
 	upserted := false
 	for i, e := range entries {
-		if strings.EqualFold(e.Key, key) {
+		if gitKeysEqual(e.Key, key) {
 			entries[i].Value = value
 			upserted = true
 			break

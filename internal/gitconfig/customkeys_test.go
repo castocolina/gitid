@@ -244,6 +244,34 @@ func TestEnsureCustomGitKeyUpsertsSameKey(t *testing.T) {
 	}
 }
 
+// TestEnsureCustomGitKeyTreatsDifferentlyCasedSubsectionsAsDistinctKeys is
+// the WR-05 regression: git config sections and variables are
+// case-INSENSITIVE, but SUBSECTIONS are case-SENSITIVE (git-config(1),
+// CONFIGURATION FILE) — so "http.https://Example.com.sslVerify" and
+// "http.https://example.com.sslVerify" are two genuinely DIFFERENT git
+// keys. EnsureCustomGitKey's upsert must not merge them.
+func TestEnsureCustomGitKeyTreatsDifferentlyCasedSubsectionsAsDistinctKeys(t *testing.T) {
+	afterFirst, err := EnsureCustomGitKey(nil, "http.https://Example.com.sslVerify", "true")
+	if err != nil {
+		t.Fatalf("first EnsureCustomGitKey: unexpected error: %v", err)
+	}
+	afterSecond, err := EnsureCustomGitKey(afterFirst, "http.https://example.com.sslVerify", "false")
+	if err != nil {
+		t.Fatalf("second EnsureCustomGitKey: unexpected error: %v", err)
+	}
+
+	result := string(afterSecond)
+	if !strings.Contains(result, `"https://Example.com"`) {
+		t.Errorf("first (differently-cased) subsection was overwritten instead of preserved, got:\n%s", result)
+	}
+	if !strings.Contains(result, `"https://example.com"`) {
+		t.Errorf("second subsection missing, got:\n%s", result)
+	}
+	if strings.Count(result, "sslVerify") != 2 {
+		t.Errorf("expected TWO distinct sslVerify entries (case-sensitive subsections), got:\n%s", result)
+	}
+}
+
 // TestEnsureCustomGitKeyIsIdempotent verifies re-composing with an unchanged
 // key/value produces bytes identical to the input (SC-1) — the caller's
 // byte-equality check can then skip the write and take no backup.
