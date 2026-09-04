@@ -484,7 +484,15 @@ gate-copy-freeze:
 		'! core.excludesfile points at ' \
 		'instead of this file — that choice is left alone; writing here only affects the file below.' \
 		'core.excludesfile still points at ' \
-		'so Git is not reading this file — that setting was left as you configured it.'; \
+		'so Git is not reading this file — that setting was left as you configured it.' \
+		'All directives' \
+		'Type to filter…' \
+		'%d of %d shown' \
+		'! The SSH configuration could not be resolved.' \
+		'ssh -G could not be run against this host — re-enter the screen to retry.' \
+		'No directives match \"%s\".' \
+		'Also tracked as a recommended option — see the Options tab for gitid'\''s guidance.' \
+		'Resolved via ssh -G — reflects Include/Match precedence already applied.'; \
 	do \
 		if grep -rqF -- "$$s" internal/tuikit internal/identity cmd/gitid internal/globalssh internal/globalgit; then \
 			echo "    ok   $$s"; \

@@ -225,6 +225,154 @@ func TestGlobalSSH_RealPTYAllDirectivesBrowse(t *testing.T) {
 	captureGlobalSSHFrame(t, "global-ssh-all-directives-browse", s)
 }
 
+// TestGlobalSSH_RealPTYAllDirectivesFilter is plan 09.5-01 Task 3's real-
+// terminal proof of the filter + D-B keyboard-capture contract: an in-
+// package model test cannot show that app.go's `1`..`5` main-tab globals
+// were genuinely bypassed while the filter is focused — only a real PTY
+// session, where a digit key either reaches the filter textinput or reaches
+// app.go, can. Typing a digit while focused must land IN the filter text
+// (proven by the narrowed-to-zero match state carrying the digit); after
+// `esc` blurs (without clearing), the same digit must switch main tabs.
+func TestGlobalSSH_RealPTYAllDirectivesFilter(t *testing.T) {
+	home := ShortSandboxHome(t)
+	seedGlobalSSHHome(t, home, "none")
+	s := startGlobalSSHPTY(t, home, "globalssh")
+
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+	mustSee(t, s, "Global SSH › All directives", "two right-presses reach the properties sub-tab")
+
+	s.sendKey([]byte("/"), keystrokeDelay)
+	for _, r := range "strict" {
+		s.sendKey([]byte(string(r)), keystrokeDelay)
+	}
+	narrowed, ok := s.waitFor(8*time.Second, func(frame string) bool {
+		return strings.Contains(frame, "1 of 27 shown")
+	})
+	if !ok {
+		t.Fatalf("filter %q never narrowed to the expected 1 of 27 match count. Last frame:\n%s", "strict", narrowed)
+	}
+	if !strings.Contains(narrowed, "stricthostkeychecking") {
+		t.Fatalf("filtered list must still show the matching row:\n%s", narrowed)
+	}
+	if strings.Contains(narrowed, "forwardagent") {
+		t.Fatalf("filtered list must hide non-matching rows:\n%s", narrowed)
+	}
+	captureGlobalSSHFrame(t, "global-ssh-all-directives-filter-narrowed", s)
+
+	// D-B proof, part 1: a digit typed while the filter is focused must
+	// reach the filter text, NOT app.go's `1`..`5` main-tab globals. If the
+	// digit had switched tabs instead, the frame would show "Identities"
+	// and the filter text would still read "strict" (unmodified). Instead
+	// the filter narrows to a filter text of "strict1", which matches NO
+	// directive — a state that could only be reached if the digit landed
+	// in the field.
+	s.sendKey([]byte("1"), keystrokeDelay)
+	noMatch, ok := s.waitFor(8*time.Second, func(frame string) bool {
+		return strings.Contains(frame, `No directives match "strict1".`)
+	})
+	if !ok {
+		t.Fatalf("digit typed into the focused filter did not land in the field (main tabs may have switched instead). Last frame:\n%s", noMatch)
+	}
+	// The persistent header always names every main tab ("[1] Identities ·
+	// [2] SSH · ..."), so the real proof that app.go's globals were
+	// bypassed is the breadcrumb: it must still read "Global SSH", not have
+	// switched to the Identity Manager screen.
+	if !strings.Contains(noMatch, "Global SSH") {
+		t.Fatalf("a digit reaching app.go would have switched main tabs away from Global SSH:\n%s", noMatch)
+	}
+	captureGlobalSSHFrame(t, "global-ssh-all-directives-filter-digit-captured", s)
+
+	// D-B proof, part 2: esc blurs WITHOUT clearing the filter text.
+	s.sendKey(dummyKeyEsc, keystrokeDelay)
+
+	// The same digit now reaches app.go's globals because the filter no
+	// longer captures keys, switching to the Identities main tab. The
+	// header always names every main tab, so the real proof is the
+	// breadcrumb: "Global SSH" must be GONE now that the main tab switched.
+	s.sendKey([]byte("1"), keystrokeDelay)
+	afterBlur, ok := s.waitFor(8*time.Second, func(frame string) bool {
+		return !strings.Contains(frame, "Global SSH")
+	})
+	if !ok {
+		t.Fatalf("digit did not switch main tabs after esc blurred the filter — still on Global SSH:\n%s", afterBlur)
+	}
+	if !strings.Contains(afterBlur, "Identities") {
+		t.Fatalf("expected the Identities main tab after the post-blur digit:\n%s", afterBlur)
+	}
+}
+
+// TestGlobalSSH_RealPTYAllDirectivesProbeFailure proves the properties
+// sub-tab's fail-open contract through the compiled binary: when the
+// wildcard-only `ssh -G` probe `AllDirectives` -> `effective(deps)` runs
+// fails entirely, the frozen probe-failed warning renders AND a main-tab
+// key still leaves the screen — mirroring the Options sub-tab's own
+// long-established `optionsErr` contract. The existing
+// `globalssh-inconclusive` fixture mode cannot exercise this: it only fails
+// the ISOLATED shadow-check call `shadow.go` makes with a real `-F <config>`
+// during the apply-preview flow, never the wildcard-only probe `activate()`
+// runs on entry — so this test uses the new `globalssh-probe-unresolvable`
+// fixture mode (harness_test.go), which fails every `-G` resolution
+// unconditionally.
+func TestGlobalSSH_RealPTYAllDirectivesProbeFailure(t *testing.T) {
+	home := ShortSandboxHome(t)
+	seedGlobalSSHHome(t, home, "none")
+	s := startGlobalSSHPTY(t, home, "globalssh-probe-unresolvable")
+
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+	frame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "The SSH configuration could not be resolved.")
+	})
+	if !ok {
+		t.Fatalf("probe-failed heading never rendered on the properties sub-tab. Last frame:\n%s", frame)
+	}
+	if !strings.Contains(frame, "ssh -G could not be run against this host — re-enter the screen to retry.") {
+		t.Fatalf("probe-failed body line missing:\n%s", frame)
+	}
+	captureGlobalSSHFrame(t, "global-ssh-all-directives-probe-failure", s)
+
+	// Fail-open: a main-tab key still leaves the screen even while the
+	// properties sub-tab is stuck in its error state.
+	s.sendKey([]byte("1"), keystrokeDelay)
+	after, ok := s.waitFor(8*time.Second, func(f string) bool {
+		return !strings.Contains(f, "Global SSH")
+	})
+	if !ok {
+		t.Fatalf("main-tab key did not leave the failed properties sub-tab (fail-open broken):\n%s", after)
+	}
+	if !strings.Contains(after, "Identities") {
+		t.Fatalf("expected the Identities main tab after leaving the failed screen:\n%s", after)
+	}
+}
+
+// TestGlobalSSH_RealPTYAllDirectivesLabelMouseClick proves the sub-tab
+// strip's mouse coordinate math still works after the strip grew a third
+// label (Task 1). Keyboard ←/→ coverage is separate (see
+// TestGlobalSSHArrowsCycleThreeSubTabsInOppositeDirections and this file's
+// TestGlobalSSH_RealPTYAllDirectivesBrowse) and does not exercise this
+// regression risk — click-coordinate drift after a strip label change is a
+// distinct failure mode from keyboard cycling. Coordinates are always
+// derived from the currently rendered frame via clickLabelRow, never
+// hardcoded.
+func TestGlobalSSH_RealPTYAllDirectivesLabelMouseClick(t *testing.T) {
+	home := ShortSandboxHome(t)
+	seedGlobalSSHHome(t, home, "none")
+	s := startGlobalSSHPTY(t, home, "globalssh")
+
+	clickLabelRow(t, s, "All directives")
+	frame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "Global SSH › All directives")
+	})
+	if !ok {
+		t.Fatalf("clicking the All directives label never switched to the properties sub-tab. Last frame:\n%s", frame)
+	}
+	if !strings.Contains(frame, "of 27 shown") {
+		t.Fatalf("properties body did not render after the mouse click:\n%s", frame)
+	}
+	captureGlobalSSHFrame(t, "global-ssh-all-directives-label-click", s)
+}
+
 func TestGlobalSSH_RealPTYOptionAffordancesAndMouseToggle(t *testing.T) {
 	home := ShortSandboxHome(t)
 	seedGlobalSSHHome(t, home, "none")

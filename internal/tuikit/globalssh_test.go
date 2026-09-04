@@ -1580,6 +1580,23 @@ func TestSubTabStripClickSwitchesSubTabs(t *testing.T) {
 	if m.subTab != gssOptions {
 		t.Errorf("subTab after clicking Options label = %v, want gssOptions", m.subTab)
 	}
+
+	// Click on the third "All directives" label (PROP-01, plan 09.5-01
+	// Task 3) — the fourth two-sub-tab-assumption site (handleClick's strip
+	// hit-test) proven directly, complementing the real-PTY SGR click
+	// coverage in TestGlobalSSH_RealPTYAllDirectivesLabelMouseClick.
+	a = clickCell(t, a, gssTabPropertiesLabel, 0, 0)
+	m = gssModel(t, a)
+	if m.subTab != gssProperties {
+		t.Errorf("subTab after clicking the All directives label = %v, want gssProperties", m.subTab)
+	}
+
+	// And back to Options, proving the click is not a one-way trip.
+	a = clickCell(t, a, "Options", 0, 0)
+	m = gssModel(t, a)
+	if m.subTab != gssOptions {
+		t.Errorf("subTab after clicking Options label from Properties = %v, want gssOptions", m.subTab)
+	}
 }
 
 // TestSubTabStripClickHitTestMatchesRenderedSpans is the regression for

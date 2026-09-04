@@ -207,13 +207,29 @@ func FakeSSHDir(t *testing.T, mode string) string {
 		"    is_resolution=1\n" +
 		"  fi\n" +
 		"done\n" +
-		"if [ \"$GITID_FAKE_SSH_MODE\" = \"globalssh\" ] || [ \"$GITID_FAKE_SSH_MODE\" = \"globalssh-inconclusive\" ]; then\n" +
+		"if [ \"$GITID_FAKE_SSH_MODE\" = \"globalssh\" ] || [ \"$GITID_FAKE_SSH_MODE\" = \"globalssh-inconclusive\" ] || [ \"$GITID_FAKE_SSH_MODE\" = \"globalssh-probe-unresolvable\" ]; then\n" +
 		"  if [ \"$1\" = \"-V\" ]; then\n" +
 		"    echo \"OpenSSH_9.9p2, LibreSSL 3.3.6\" >&2\n" +
 		"    exit 0\n" +
 		"  fi\n" +
 		"  if [ \"$is_resolution\" != \"1\" ]; then\n" +
 		"    echo \"fake ssh: unsupported global SSH probe\" >&2\n" +
+		"    exit 2\n" +
+		"  fi\n" +
+		// PROP-01 (plan 09.5-01, Task 3): a new unconditional-failure mode for
+		// the WILDCARD-ONLY probe `AllDirectives` -> `effective(deps)` runs
+		// (`ssh -G <ProbeHost>` with NO `-F`). The existing
+		// `globalssh-inconclusive` mode only fails the ISOLATED shadow-check
+		// call `shadow.go` makes with a REAL `-F <config>` -- that call only
+		// happens inside the apply-preview flow, never during `activate()`,
+		// so it cannot force the top-level `directivesErr` / `optionsErr`
+		// fail-open state this mode exists to prove. This mode fails EVERY
+		// `-G` resolution unconditionally, failing BOTH the Options AND the
+		// Properties sub-tab probes the same way a real `ssh` failure would
+		// (they share the same `effective(deps)` call), matching the
+		// Options sub-tab's own established `optionsErr` contract.
+		"  if [ \"$GITID_FAKE_SSH_MODE\" = \"globalssh-probe-unresolvable\" ]; then\n" +
+		"    echo \"fake ssh: global SSH probe unresolvable\" >&2\n" +
 		"    exit 2\n" +
 		"  fi\n" +
 		"  if [ \"$GITID_FAKE_SSH_MODE\" = \"globalssh-inconclusive\" ] && [ -n \"$config_path\" ] && [ \"$config_path\" != \"/dev/null\" ]; then\n" +
