@@ -284,24 +284,40 @@ func ResolveDirectiveValue(deps Deps, name, value string) (string, error) {
 	return v, nil
 }
 
-// stageDirectiveConfig builds the throwaway config's full text: the current
-// global block body (which already contains its own `Host *` line whenever
-// a block exists on disk) followed by the candidate `name value` line,
-// indented like every other directive inside the wildcard stanza. When
-// currentGlobalBody is empty (no block written yet) or does not already
-// carry a `Host *` line, one is prepended so the candidate line still lands
-// inside a wildcard stanza rather than at file scope.
+// stageDirectiveConfig builds the throwaway config's full text: the
+// candidate `name value` line FIRST, then the current global block body
+// (which already contains its own `Host *` line whenever a block exists on
+// disk).
+//
+// WR-02 (09.5-REVIEW.md round 2): the candidate line MUST come first.
+// ssh_config resolution is first-value-wins (ssh_config(5): "the first
+// obtained value for each parameter is used"), and a directive line that
+// appears BEFORE any `Host`/`Match` pattern applies unconditionally — as if
+// under an implicit `Host *` — so placing the candidate ahead of the
+// existing body's own `Host *` block does not change what it matches, only
+// its precedence. Before this fix the candidate was appended AFTER the
+// existing body: for any directive name the block already set, the
+// EXISTING value won ssh_config's first-match-wins resolution, so the
+// staged probe (and stage 2's rendered "real result") showed the value
+// being REPLACED, not the value being written — while the actual write
+// (`merged.set(k, v)` in EnsureGlobals) replaces the value in place
+// correctly. Staging the candidate first makes the staged probe resolve the
+// value the write will actually produce.
+//
+// When currentGlobalBody is empty (no block written yet) or does not
+// already carry a `Host *` line, one is prepended so the candidate line
+// still lands inside a wildcard stanza rather than at file scope.
 func stageDirectiveConfig(currentGlobalBody, name, value string) string {
 	body := strings.TrimRight(currentGlobalBody, "\n")
 	var b strings.Builder
 	if !hasHostStarLine(body) {
 		b.WriteString("Host *\n")
 	}
+	fmt.Fprintf(&b, "  %s %s\n", name, value)
 	if body != "" {
 		b.WriteString(body)
 		b.WriteString("\n")
 	}
-	fmt.Fprintf(&b, "  %s %s\n", name, value)
 	return b.String()
 }
 

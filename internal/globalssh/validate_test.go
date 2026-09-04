@@ -186,6 +186,70 @@ func TestProveCustomDirectiveStagesAThrowawayConfigAndNeverTouchesTheRealOne(t *
 	}
 }
 
+// TestStageDirectiveConfigPlacesCandidateBeforeExistingBodySoItWins is the
+// WR-02 regression: when the existing body already sets the SAME directive
+// name the candidate is replacing, the candidate line must appear BEFORE
+// the existing body in the staged text — ssh_config resolution is
+// first-value-wins, so a candidate staged AFTER the existing value would
+// resolve to the value being REPLACED, not the value being written, making
+// the staged probe (and stage 2's "real result" render) lie about what the
+// confirmed write will actually produce.
+func TestStageDirectiveConfigPlacesCandidateBeforeExistingBodySoItWins(t *testing.T) {
+	staged := stageDirectiveConfig(existingGlobalBodyFixture, "StrictHostKeyChecking", "yes")
+	candidateIdx := strings.Index(staged, "StrictHostKeyChecking yes")
+	existingIdx := strings.Index(staged, "StrictHostKeyChecking accept-new")
+	if candidateIdx == -1 {
+		t.Fatalf("staged config missing the candidate line, got:\n%s", staged)
+	}
+	if existingIdx == -1 {
+		t.Fatalf("staged config missing the pre-existing value it is replacing, got:\n%s", staged)
+	}
+	if candidateIdx >= existingIdx {
+		t.Errorf("candidate line at offset %d must come BEFORE the existing value at offset %d (first-match-wins) — got:\n%s", candidateIdx, existingIdx, staged)
+	}
+}
+
+// TestProveCustomDirectiveResolvesTheCandidateValueNotTheReplacedOne is the
+// WR-02 end-to-end regression against the real staged probe: when the
+// existing body already sets StrictHostKeyChecking to accept-new and the
+// candidate replaces it with yes, the staged proof's Output must resolve
+// StrictHostKeyChecking to the CANDIDATE's canonicalised value (true, ssh
+// -G's resolution of yes), not the value being replaced.
+func TestProveCustomDirectiveResolvesTheCandidateValueNotTheReplacedOne(t *testing.T) {
+	// The fake seam here plays the role of a real ssh -G: it parses the
+	// staged file itself and resolves StrictHostKeyChecking by the SAME
+	// first-value-wins rule real OpenSSH applies, so this test proves the
+	// STAGING order is correct without requiring a real ssh binary.
+	wrapped := func(_ context.Context, args ...string) (string, error) {
+		for i, a := range args {
+			if a == "-F" && i+1 < len(args) {
+				staged, rerr := os.ReadFile(args[i+1]) //nolint:gosec // test reads its own staged temp file
+				if rerr != nil {
+					t.Fatalf("reading staged config: %v", rerr)
+				}
+				for _, line := range strings.Split(string(staged), "\n") {
+					fields := strings.Fields(line)
+					if len(fields) == 2 && strings.EqualFold(fields[0], "StrictHostKeyChecking") {
+						resolved := fields[1]
+						if resolved == "yes" {
+							resolved = "true" // mimic ssh -G's own yes -> true canonicalisation
+						}
+						return "stricthostkeychecking " + resolved + "\n", nil
+					}
+				}
+			}
+		}
+		return "", nil
+	}
+	proof, err := ProveCustomDirective(Deps{RunSSHGCombined: wrapped}, existingGlobalBodyFixture, "StrictHostKeyChecking", "yes")
+	if err != nil {
+		t.Fatalf("ProveCustomDirective: %v", err)
+	}
+	if !strings.Contains(proof.Output, "stricthostkeychecking true") {
+		t.Errorf("proof.Output = %q, want it to resolve to the CANDIDATE value (true), not the pre-existing accept-new", proof.Output)
+	}
+}
+
 // TestValidateDirectiveNameRejectsEmptyWhitespaceMultiTokenAndStructuralKeywords
 // verifies CR-02's name-syntax guard: an empty name, a whitespace-only name,
 // a multi-token name, and each structural keyword (Host/Match/Include/
