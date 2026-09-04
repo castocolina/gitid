@@ -513,9 +513,16 @@ func TestGlobalGit_RealPTYSetKeysBrowse(t *testing.T) {
 	if seededKeyCount < 2 {
 		t.Fatalf("expected at least 2 seeded keys visible in the frame, found %d:\n%s", seededKeyCount, frame)
 	}
-	gitconfigPath := filepath.Join(home, ".gitconfig")
-	if !strings.Contains(frame, gitconfigPath) {
-		t.Fatalf("selected row's detail pane must show the origin file path %q:\n%s", gitconfigPath, frame)
+	// 09.5-REVIEW.md round 2 WR-05: AllGitSetKeys now scrubs Origin through
+	// displayPath before it reaches the TUI (the same "~"-relative
+	// convention displayBaselineTargetPath already applies elsewhere in
+	// this file, e.g. baselineDisplay below) — so the detail pane shows the
+	// scrubbed "~/.gitconfig" display path, never the raw sandbox HOME
+	// path. Asserting the raw path here would fail against the corrected,
+	// intentional scrub.
+	const gitconfigDisplay = "~/.gitconfig"
+	if !strings.Contains(frame, gitconfigDisplay) {
+		t.Fatalf("selected row's detail pane must show the scrubbed origin file path %q:\n%s", gitconfigDisplay, frame)
 	}
 	captureGlobalGitFrame(t, "global-git-set-keys-browse", s)
 
