@@ -1306,9 +1306,15 @@ func extractSubTabStrip(lines []string) string {
 		// found empirically (TestGateVisualRegression flagged an unrelated
 		// "ssh-form-filled" divergence before this content check was added).
 		// The strip's label line is the ONLY "┊" line anywhere in the
-		// registry that ALSO carries "Options" plus one of its two sibling
-		// labels — require both, never the border glyph alone.
-		if !strings.Contains(plain, "Options") {
+		// registry that ALSO carries the Options label plus one of its two
+		// sibling labels — require both, never the border glyph alone.
+		// WR-06 (09.5-REVIEW.md round 3): this guard used to restate
+		// "Options" as a bare literal — the ONE label the round-2 WR-11 fix
+		// left unpromoted — so renaming the Options sub-tab would silently
+		// make this function return "" for every frame. Derived from
+		// tuikit's frozen constant now, matching the three sibling labels
+		// below.
+		if !strings.Contains(plain, tuikit.PropsOptionsSubTabLabel) {
 			continue
 		}
 		// WR-11 (09.5-REVIEW.md round 2): the three sibling labels are

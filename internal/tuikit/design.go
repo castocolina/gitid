@@ -833,6 +833,15 @@ const (
 // function, so TestFrozenPropertiesCopy can assert both the literal
 // constant AND its formatted result.
 const (
+	// PropsOptionsSubTabLabel is the FIRST sub-tab label on BOTH the Global
+	// SSH and Global Git screens (WR-06, 09.5-REVIEW.md round 3): the round-2
+	// WR-11 fix promoted the OTHER sibling labels (below) to frozen
+	// constants so extractSubTabStrip's comparison expressions never restate
+	// them, but left this one — the extractor's own FIRST, MANDATORY guard —
+	// as a bare literal. gssTabOptionsLabel/ggitTabOptionsLabel derive from
+	// this constant (padding added around it), never restating the text a
+	// second time, closing the one label WR-11 skipped.
+	PropsOptionsSubTabLabel = "Options"
 	// PropsSSHSubTabLabel is Global SSH's third sub-tab label — deliberately
 	// NOT "All properties"/"All options" (09.5-UI-SPEC.md "Ground truth":
 	// the single most load-bearing decision in that document). Task 1's

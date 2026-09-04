@@ -57,7 +57,10 @@ const (
 // (with a one-space lead and a one-space gap) and handleClick hit-tests
 // against the same strings, so the spans can never drift.
 const (
-	gssTabOptionsLabel = " Options "
+	// gssTabOptionsLabel derives from design.go's frozen
+	// PropsOptionsSubTabLabel constant (padding added around it) — ONE
+	// source for the label text, never restated (WR-06, round 3).
+	gssTabOptionsLabel = " " + PropsOptionsSubTabLabel + " "
 	// gssTabStorageLabel derives from design.go's frozen
 	// PropsSSHStorageSubTabLabel constant (padding added around it) — ONE
 	// source for the label text, never restated (WR-11).

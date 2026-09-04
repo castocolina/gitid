@@ -58,7 +58,10 @@ const (
 // the label text, never restated — the SAME discipline gssTabPropertiesLabel
 // already follows for Global SSH's third label.
 const (
-	ggitTabOptionsLabel = " Options "
+	// ggitTabOptionsLabel derives from design.go's frozen
+	// PropsOptionsSubTabLabel constant (padding added around it) — ONE
+	// source for the label text, never restated (WR-06, round 3).
+	ggitTabOptionsLabel = " " + PropsOptionsSubTabLabel + " "
 	ggitTabSetKeysLabel = " " + PropsGitSubTabLabel + " "
 )
 

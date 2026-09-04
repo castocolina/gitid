@@ -180,9 +180,16 @@ func TestExtractSubTabStripDerivesSiblingLabelsFromFrozenConstants(t *testing.T)
 		"tuikit.PropsSSHSubTabLabel",
 		"tuikit.PropsSSHStorageSubTabLabel",
 		"tuikit.PropsGitSubTabLabel",
+		// WR-06 (09.5-REVIEW.md round 3): the WR-11 fix's own MANDATORY
+		// guard — the first check extractSubTabStrip runs before any of the
+		// three sibling labels — was left restating "Options" as a literal,
+		// so renaming the Options sub-tab would silently make
+		// extractSubTabStrip return "" for every frame, exactly the failure
+		// mode WR-11 was raised to prevent, on the one label the fix skipped.
+		"tuikit.PropsOptionsSubTabLabel",
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("createflow_regions.go must reference %s, not a restated literal (WR-11)", want)
+			t.Errorf("createflow_regions.go must reference %s, not a restated literal (WR-11/WR-06)", want)
 		}
 	}
 	// The literals still appear legitimately in doc comments elsewhere in
@@ -192,9 +199,10 @@ func TestExtractSubTabStripDerivesSiblingLabelsFromFrozenConstants(t *testing.T)
 		`strings.Contains(plain, "All directives")`,
 		`strings.Contains(plain, "Storage & preview")`,
 		`strings.Contains(plain, "Set keys")`,
+		`strings.Contains(plain, "Options")`,
 	} {
 		if strings.Contains(body, forbidden) {
-			t.Errorf("createflow_regions.go must not restate %s — derive it from the frozen tuikit constant instead (WR-11)", forbidden)
+			t.Errorf("createflow_regions.go must not restate %s — derive it from the frozen tuikit constant instead (WR-11/WR-06)", forbidden)
 		}
 	}
 }
@@ -207,7 +215,7 @@ func TestExtractSubTabStripMatchesTheProductionRenderedLabels(t *testing.T) {
 	for _, label := range []string{tuikit.PropsSSHSubTabLabel, tuikit.PropsSSHStorageSubTabLabel, tuikit.PropsGitSubTabLabel} {
 		lines := []string{
 			"╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮",
-			"┊ Options │ " + label + " ┊",
+			"┊ " + tuikit.PropsOptionsSubTabLabel + " │ " + label + " ┊",
 			"╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯",
 		}
 		got := extractSubTabStrip(lines)
