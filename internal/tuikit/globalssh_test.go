@@ -2527,3 +2527,504 @@ func TestPropertiesFitsFixedGeometry(t *testing.T) {
 	zeroRows := gssPropertiesApp(t, stubBackend{})
 	check("zero-rows-no-error empty state", zeroRows)
 }
+
+// ---------------------------------------------------------------------------
+// PROP-04 (09.5-04): the three-stage custom SSH directive flow — reachable
+// via "n" on the "All directives" sub-tab. Stage 2 (validate + prove) is the
+// phase's focal point: the ceremony is reachable ONLY from an OK: true
+// staged-config proof.
+// ---------------------------------------------------------------------------
+
+// collapseWhitespace strips ANSI and collapses every run of whitespace
+// (including the newlines lipgloss's word-wrap inserts at the pane width)
+// to a single space — so a frozen sentence's WORDS, not its literal
+// mid-sentence line break, are what a Contains assertion pins.
+func collapseWhitespace(s string) string {
+	return strings.Join(strings.Fields(stripANSI(s)), " ")
+}
+
+// TestCustomDirectiveFormOpensAndCaptures asserts "n" opens the
+// custom-directive form on the "All directives" sub-tab, Tab moves focus
+// between the two fields, and typed characters reach the FOCUSED field
+// (never swallowed as this screen's reserved single-letter shortcuts).
+// Esc then closes the form without submitting.
+func TestCustomDirectiveFormOpensAndCaptures(t *testing.T) {
+	a := gssPropertiesApp(t, stubBackend{})
+	a, _ = press(t, a, "n")
+	m := gssModel(t, a)
+	if m.mode != gssCustomDirectiveForm {
+		t.Fatalf("\"n\" must open the custom-directive form, mode=%v", m.mode)
+	}
+	if m.customDirectiveFieldFocus != 0 {
+		t.Errorf("customDirectiveFieldFocus after opening = %d, want 0 (name field)", m.customDirectiveFieldFocus)
+	}
+	if !m.customDirectiveNameInput.Focused() {
+		t.Error("opening the form must focus the name input")
+	}
+	if !m.view(Seed(), minFrameWidth, minFrameHeight).capturesKeys {
+		t.Error("the open form must report capturesKeys true")
+	}
+
+	a = typeText(t, a, "TCPKeepAlive")
+	m = gssModel(t, a)
+	if m.customDirectiveNameInput.Value() != "TCPKeepAlive" {
+		t.Errorf("customDirectiveNameInput = %q, want %q — typed text must reach the focused name field", m.customDirectiveNameInput.Value(), "TCPKeepAlive")
+	}
+
+	a, _ = press(t, a, "tab")
+	m = gssModel(t, a)
+	if m.customDirectiveFieldFocus != 1 {
+		t.Errorf("customDirectiveFieldFocus after Tab = %d, want 1 (value field)", m.customDirectiveFieldFocus)
+	}
+	if !m.customDirectiveValueInput.Focused() {
+		t.Error("Tab must move Bubble Tea focus onto the value input")
+	}
+
+	a = typeText(t, a, "yes")
+	m = gssModel(t, a)
+	if m.customDirectiveValueInput.Value() != "yes" {
+		t.Errorf("customDirectiveValueInput = %q, want %q", m.customDirectiveValueInput.Value(), "yes")
+	}
+
+	a, _ = press(t, a, "esc")
+	m = gssModel(t, a)
+	if m.mode != gssBrowse {
+		t.Errorf("Esc must close the custom-directive form without submitting, mode=%v", m.mode)
+	}
+}
+
+// TestCustomDirectiveSubmitEntersValidateStageNotCeremony asserts submitting
+// (Enter on the value field) dispatches the validation command and renders
+// the in-flight name-check copy — the ceremony stays closed and no plan is
+// fetched yet (D-H's un-skippable gate starts here).
+func TestCustomDirectiveSubmitEntersValidateStageNotCeremony(t *testing.T) {
+	var validateCalls int
+	b := stubBackend{
+		sshDirectiveValidateFn: func(_, _ string) tea.Cmd {
+			validateCalls++
+			// Never resolves in this test — proves the in-flight render
+			// alone, without a plan fetch happening.
+			return func() tea.Msg { return nil }
+		},
+	}
+	a := gssPropertiesApp(t, b)
+	a, _ = press(t, a, "n")
+	a = typeText(t, a, "TCPKeepAlive")
+	a, _ = press(t, a, "tab")
+	a = typeText(t, a, "yes")
+	a, cmd := press(t, a, "enter")
+
+	if validateCalls != 1 {
+		t.Fatalf("ValidateCustomSSHDirective called %d times, want exactly 1", validateCalls)
+	}
+	if cmd == nil {
+		t.Fatal("submitting must dispatch the async validate command")
+	}
+	m := gssModel(t, a)
+	if m.mode != gssCustomDirectiveValidate {
+		t.Fatalf("submit must enter stage 2 (gssCustomDirectiveValidate), mode=%v", m.mode)
+	}
+	if m.mode == gssCustomDirectiveCeremony {
+		t.Fatal("submit must NOT open the ceremony before a proof arrives")
+	}
+	want := fmt.Sprintf(PropsSSHNameCheckFmt, "TCPKeepAlive")
+	view := appView(a)
+	if !strings.Contains(view, want) {
+		t.Errorf("in-flight render missing %q;\nview:\n%s", want, view)
+	}
+}
+
+// TestCustomDirectiveUnknownNameStopsAtStageTwo is the phase's focal point:
+// a proof with UnknownName: true renders the frozen unrecognised-directive
+// sentence naming the entered name, and the ceremony NEVER opens.
+func TestCustomDirectiveUnknownNameStopsAtStageTwo(t *testing.T) {
+	b := stubBackend{
+		sshDirectiveValidateFn: func(_, _ string) tea.Cmd {
+			return func() tea.Msg {
+				return SSHCustomDirectiveProofMsg{Proof: SSHDirectiveProofView{
+					UnknownName: true,
+					Command:     "ssh -F /tmp/staged -G gitid-probe.invalid",
+					Output:      "/tmp/staged: line 2: Bad configuration option: notarealdirective",
+				}}
+			}
+		},
+	}
+	a := gssPropertiesApp(t, b)
+	a, _ = press(t, a, "n")
+	a = typeText(t, a, "NotARealDirective")
+	a, _ = press(t, a, "tab")
+	a = typeText(t, a, "yes")
+	a, cmd := press(t, a, "enter")
+	if cmd == nil {
+		t.Fatal("submit must dispatch the validate command")
+	}
+	a, _ = deliverMsg(t, a, cmd())
+
+	m := gssModel(t, a)
+	if m.mode == gssCustomDirectiveCeremony {
+		t.Fatal("an UnknownName proof must NEVER open the ceremony")
+	}
+	want := fmt.Sprintf(PropsSSHUnknownDirectiveFmt, "NotARealDirective")
+	view := appView(a)
+	if !strings.Contains(view, want) {
+		t.Errorf("view must show the frozen unrecognised-directive sentence %q;\nview:\n%s", want, view)
+	}
+}
+
+// TestCustomDirectiveBadValueStopsAtStageTwo asserts a proof with OK: false
+// and UnknownName: false renders the frozen value-rejection sentence
+// carrying the REAL command output verbatim, and the ceremony never opens.
+func TestCustomDirectiveBadValueStopsAtStageTwo(t *testing.T) {
+	const realOutput = "/tmp/staged: line 3: garbage bad-value at end of line"
+	b := stubBackend{
+		sshDirectiveValidateFn: func(_, _ string) tea.Cmd {
+			return func() tea.Msg {
+				return SSHCustomDirectiveProofMsg{Proof: SSHDirectiveProofView{
+					OK:      false,
+					Command: "ssh -F /tmp/staged -G gitid-probe.invalid",
+					Output:  realOutput,
+				}}
+			}
+		},
+	}
+	a := gssPropertiesApp(t, b)
+	a, _ = press(t, a, "n")
+	a = typeText(t, a, "ServerAliveCountMax")
+	a, _ = press(t, a, "tab")
+	a = typeText(t, a, "not-a-number")
+	a, cmd := press(t, a, "enter")
+	a, _ = deliverMsg(t, a, cmd())
+
+	m := gssModel(t, a)
+	if m.mode == gssCustomDirectiveCeremony {
+		t.Fatal("a known-name value rejection must NEVER open the ceremony")
+	}
+	want := fmt.Sprintf(PropsSSHProofRejectedFmt, realOutput)
+	view := appView(a)
+	// Wrapped by lipgloss at the pane width — collapse whitespace/newlines
+	// before comparing so a mid-sentence wrap point never fails a
+	// byte-exact-content assertion (the frozen sentence's WORDS, not its
+	// literal line breaks, are the pinned contract).
+	if !strings.Contains(collapseWhitespace(view), collapseWhitespace(want)) {
+		t.Errorf("view must show the frozen value-rejection sentence carrying the REAL output verbatim %q;\nview:\n%s", want, view)
+	}
+}
+
+// TestCustomDirectivePreexistingConfigErrorIsNotBlamedOnTheEntry asserts a
+// proof with PreexistingError: true renders the frozen pre-existing-problem
+// sentence naming the OTHER directive, never claiming the user's entry
+// itself is invalid.
+func TestCustomDirectivePreexistingConfigErrorIsNotBlamedOnTheEntry(t *testing.T) {
+	b := stubBackend{
+		sshDirectiveValidateFn: func(_, _ string) tea.Cmd {
+			return func() tea.Msg {
+				return SSHCustomDirectiveProofMsg{Proof: SSHDirectiveProofView{
+					PreexistingError: true,
+					OffendingName:    "somebrokendirective",
+					Command:          "ssh -F /tmp/staged -G gitid-probe.invalid",
+					Output:           "/tmp/staged: line 1: Bad configuration option: somebrokendirective",
+				}}
+			}
+		},
+	}
+	a := gssPropertiesApp(t, b)
+	a, _ = press(t, a, "n")
+	a = typeText(t, a, "TCPKeepAlive")
+	a, _ = press(t, a, "tab")
+	a = typeText(t, a, "yes")
+	a, cmd := press(t, a, "enter")
+	a, _ = deliverMsg(t, a, cmd())
+
+	m := gssModel(t, a)
+	if m.mode == gssCustomDirectiveCeremony {
+		t.Fatal("a PreexistingError proof must NEVER open the ceremony")
+	}
+	want := fmt.Sprintf(PropsSSHPreexistingConfigErrorFmt, "somebrokendirective")
+	view := appView(a)
+	if !strings.Contains(collapseWhitespace(view), collapseWhitespace(want)) {
+		t.Errorf("view must show the frozen pre-existing-problem sentence naming the OTHER directive %q;\nview:\n%s", want, view)
+	}
+	if strings.Contains(view, fmt.Sprintf(PropsSSHUnknownDirectiveFmt, "TCPKeepAlive")) {
+		t.Error("a pre-existing problem with a DIFFERENT directive must never be rendered as blaming the entered one")
+	}
+}
+
+// TestCustomDirectiveAcceptedProofOpensCeremony asserts a proof with
+// OK: true renders the accepted beat with the exact command and its real
+// output, then opens the ceremony carrying the backend's REAL plan: the
+// frozen heading, the diff, and the frozen confirm label.
+func TestCustomDirectiveAcceptedProofOpensCeremony(t *testing.T) {
+	const resolvedTarget = "~/.ssh/config"
+	backupPath := NewBackupPath(resolvedTarget)
+	const cmdLine = "ssh -F /tmp/staged -G gitid-probe.invalid"
+	const output = "tcpkeepalive yes"
+	b := stubBackend{
+		sshDirectiveValidateFn: func(_, _ string) tea.Cmd {
+			return func() tea.Msg {
+				return SSHCustomDirectiveProofMsg{Proof: SSHDirectiveProofView{
+					OK:      true,
+					Command: cmdLine,
+					Output:  output,
+				}}
+			}
+		},
+		sshDirectivePlan: SSHCustomDirectivePlanView{
+			Targets: []string{resolvedTarget},
+			Backups: []string{backupPath},
+			Diff:    "+ TCPKeepAlive yes",
+		},
+	}
+	a := gssPropertiesApp(t, b)
+	a, _ = press(t, a, "n")
+	a = typeText(t, a, "TCPKeepAlive")
+	a, _ = press(t, a, "tab")
+	a = typeText(t, a, "yes")
+	a, cmd := press(t, a, "enter")
+	a, _ = deliverMsg(t, a, cmd())
+
+	m := gssModel(t, a)
+	if m.mode != gssCustomDirectiveCeremony {
+		t.Fatalf("an OK: true proof must open the ceremony, mode=%v", m.mode)
+	}
+	view := appView(a)
+	wantHeading := fmt.Sprintf(PropsSSHCustomCeremonyHeadingFmt, resolvedTarget)
+	if !strings.Contains(view, wantHeading) {
+		t.Errorf("ceremony must show the frozen heading %q;\nview:\n%s", wantHeading, view)
+	}
+	if !strings.Contains(view, "TCPKeepAlive yes") {
+		t.Errorf("ceremony preview must contain the REAL diff from CustomSSHDirectivePlan;\nview:\n%s", view)
+	}
+	if !strings.Contains(view, backupPath) {
+		t.Errorf("ceremony must show the REAL backup path;\nview:\n%s", view)
+	}
+	if !strings.Contains(view, "Write (Enter)") {
+		t.Errorf("ceremony must show the frozen \"Write\" confirm label;\nview:\n%s", view)
+	}
+}
+
+// TestCustomDirectiveAcceptedProofPlanErrorRendersInlineNoCeremony asserts
+// that when the proof is OK: true but the subsequent CustomSSHDirectivePlan
+// call errors, the error renders inline on stage 2 and the ceremony is NOT
+// opened — mirrors baselineCeremonyFor/fallbackCeremonyFor/
+// customKeyCeremonyFor's identical "plan errors render inline" rule.
+func TestCustomDirectiveAcceptedProofPlanErrorRendersInlineNoCeremony(t *testing.T) {
+	wantErr := "plan seam error"
+	b := stubBackend{
+		sshDirectiveValidateFn: func(_, _ string) tea.Cmd {
+			return func() tea.Msg {
+				return SSHCustomDirectiveProofMsg{Proof: SSHDirectiveProofView{OK: true}}
+			}
+		},
+		sshDirectivePlanFn: func(string, string) (SSHCustomDirectivePlanView, error) {
+			return SSHCustomDirectivePlanView{}, fmt.Errorf("%s", wantErr)
+		},
+	}
+	a := gssPropertiesApp(t, b)
+	a, _ = press(t, a, "n")
+	a = typeText(t, a, "TCPKeepAlive")
+	a, _ = press(t, a, "tab")
+	a = typeText(t, a, "yes")
+	a, cmd := press(t, a, "enter")
+	a, _ = deliverMsg(t, a, cmd())
+
+	m := gssModel(t, a)
+	if m.mode == gssCustomDirectiveCeremony {
+		t.Fatal("a plan-stage error must never open the ceremony, even after an OK: true proof")
+	}
+	view := appView(a)
+	if !strings.Contains(view, wantErr) {
+		t.Errorf("view must render the plan error inline;\nview:\n%s", view)
+	}
+}
+
+// TestCustomDirectiveValidationErrorFailsClosed asserts a proof message
+// carrying a TRANSPORT-level error renders the failure and does NOT open
+// the ceremony — an unproven directive is never written (D-H).
+func TestCustomDirectiveValidationErrorFailsClosed(t *testing.T) {
+	const transportErr = "globalssh: staged directive proof could not run: exec: \"ssh\": executable file not found in $PATH"
+	b := stubBackend{
+		sshDirectiveValidateFn: func(_, _ string) tea.Cmd {
+			return func() tea.Msg { return SSHCustomDirectiveProofMsg{Err: transportErr} }
+		},
+	}
+	a := gssPropertiesApp(t, b)
+	a, _ = press(t, a, "n")
+	a = typeText(t, a, "TCPKeepAlive")
+	a, _ = press(t, a, "tab")
+	a = typeText(t, a, "yes")
+	a, cmd := press(t, a, "enter")
+	a, _ = deliverMsg(t, a, cmd())
+
+	m := gssModel(t, a)
+	if m.mode == gssCustomDirectiveCeremony {
+		t.Fatal("a transport-level validation error must NEVER open the ceremony")
+	}
+	view := appView(a)
+	if !strings.Contains(view, transportErr) {
+		t.Errorf("view must render the transport error;\nview:\n%s", view)
+	}
+}
+
+// TestCustomDirectiveConfirmDispatchesCommitOnce asserts confirming the
+// custom-directive ceremony calls backend.CommitCustomSSHDirective exactly
+// once with the EXACT submitted name/value through the existing
+// token-wrapping helper; the receipt appears only on an empty-error commit
+// message, and a stale-token message does not mutate the current receipt.
+func TestCustomDirectiveConfirmDispatchesCommitOnce(t *testing.T) {
+	var calls int
+	var gotName, gotValue string
+	backupPath := NewBackupPath("~/.ssh/config")
+	b := stubBackend{
+		sshDirectiveValidateFn: func(_, _ string) tea.Cmd {
+			return func() tea.Msg {
+				return SSHCustomDirectiveProofMsg{Proof: SSHDirectiveProofView{OK: true}}
+			}
+		},
+		sshDirectivePlan: SSHCustomDirectivePlanView{Targets: []string{"~/.ssh/config"}, Diff: "+ TCPKeepAlive yes"},
+		sshDirectiveCommitFn: func(name, value string) tea.Cmd {
+			calls++
+			gotName, gotValue = name, value
+			return func() tea.Msg { return SSHCustomDirectiveCommitMsg{Backups: []string{backupPath}} }
+		},
+	}
+	a := gssPropertiesApp(t, b)
+	a, _ = press(t, a, "n")
+	a = typeText(t, a, "TCPKeepAlive")
+	a, _ = press(t, a, "tab")
+	a = typeText(t, a, "yes")
+	a, cmd := press(t, a, "enter") // submit → dispatches validate
+	a, _ = deliverMsg(t, a, cmd())
+	a, confirmCmd := press(t, a, "enter") // confirm → dispatches CommitCustomSSHDirective
+
+	if calls != 1 {
+		t.Fatalf("CommitCustomSSHDirective called %d times, want exactly 1", calls)
+	}
+	if gotName != "TCPKeepAlive" || gotValue != "yes" {
+		t.Errorf("CommitCustomSSHDirective called with (%q, %q), want (\"TCPKeepAlive\", \"yes\")", gotName, gotValue)
+	}
+	if confirmCmd == nil {
+		t.Fatal("confirm must dispatch the async commit command")
+	}
+
+	m := gssModel(t, a)
+	a, _ = deliverMsg(t, a, gitCommitTokenMsg{
+		token:             m.commitRequestToken,
+		msg:               SSHCustomDirectiveCommitMsg{Backups: []string{backupPath}},
+		sshDirectiveName:  "TCPKeepAlive",
+		sshDirectiveValue: "yes",
+	})
+	view := appView(a)
+	wantReceipt := fmt.Sprintf(PropsSSHCustomReceiptFmt, "TCPKeepAlive", "yes")
+	if !strings.Contains(view, wantReceipt) {
+		t.Errorf("receipt must show the frozen success message %q;\nview:\n%s", wantReceipt, view)
+	}
+	if !strings.Contains(view, backupPath) {
+		t.Errorf("receipt must show the real backup path;\nview:\n%s", view)
+	}
+
+	// A STALE message (from ceremony 1, abandoned before its own answer
+	// arrived) must not corrupt ceremony 2's still-pending UI — mirrors
+	// TestCustomKeyStaleCommitMessageIsNotMisattributed's exact contract
+	// (CR-01), driven directly at the model level for the same reason that
+	// test is: the abandon-and-supersede sequence needs handleKey/handleMsg
+	// control the App-level press()/deliverMsg() helpers don't expose.
+	staleCalls := 0
+	sb := stubBackend{
+		sshDirectiveValidateFn: func(string, string) tea.Cmd {
+			return func() tea.Msg { return SSHCustomDirectiveProofMsg{Proof: SSHDirectiveProofView{OK: true}} }
+		},
+		sshDirectivePlan: SSHCustomDirectivePlanView{Targets: []string{"~/.ssh/config"}, Diff: "+ x y"},
+		sshDirectiveCommitFn: func(string, string) tea.Cmd {
+			staleCalls++
+			return func() tea.Msg { return SSHCustomDirectiveCommitMsg{Backups: []string{"~/.ssh/config.backup"}} }
+		},
+	}
+	state := Seed()
+	mm := newGlobalSSHModel(sb)
+	activated, _ := mm.activate(state)
+	mm = activated.(globalSSHModel)
+	mm.subTab = gssProperties
+
+	// Ceremony 1: "First" / "one", confirmed — dispatch captured but not
+	// yet delivered.
+	opened1 := mm.handleKey(pressKey("n"), state)
+	mm = opened1.model.(globalSSHModel)
+	mm.customDirectiveNameInput.SetValue("First")
+	mm.customDirectiveValueInput.SetValue("one")
+	mm.customDirectiveFieldFocus = 1
+	submitted1 := mm.handleKey(pressKey("enter"), state)
+	mm = submitted1.model.(globalSSHModel)
+	proofResult1 := mm.handleMsg(submitted1.cmd(), state)
+	mm = proofResult1.model.(globalSSHModel)
+	if mm.mode != gssCustomDirectiveCeremony {
+		t.Fatal("setup: an OK: true proof for ceremony 1 must open its ceremony")
+	}
+	confirmed1 := mm.handleKey(pressKey("enter"), state)
+	mm = confirmed1.model.(globalSSHModel)
+	staleMsg := confirmed1.cmd()
+	if !mm.customDirectiveCommitPending {
+		t.Fatal("setup: confirming ceremony 1 must set customDirectiveCommitPending")
+	}
+
+	// Abandon ceremony 1 (re-activating the screen, as Ctrl+P-then-back
+	// does; the token survives).
+	reactivated, _ := mm.activate(state)
+	mm = reactivated.(globalSSHModel)
+	mm.subTab = gssProperties
+	if mm.mode == gssCustomDirectiveCeremony || mm.customDirectiveCommitPending {
+		t.Fatal("setup: activate() must have cleared the ceremony state")
+	}
+
+	// Ceremony 2: a DIFFERENT name/value, confirmed — genuinely in flight.
+	opened2 := mm.handleKey(pressKey("n"), state)
+	mm = opened2.model.(globalSSHModel)
+	mm.customDirectiveNameInput.SetValue("Second")
+	mm.customDirectiveValueInput.SetValue("two")
+	mm.customDirectiveFieldFocus = 1
+	submitted2 := mm.handleKey(pressKey("enter"), state)
+	mm = submitted2.model.(globalSSHModel)
+	proofResult2 := mm.handleMsg(submitted2.cmd(), state)
+	mm = proofResult2.model.(globalSSHModel)
+	confirmed2 := mm.handleKey(pressKey("enter"), state)
+	mm = confirmed2.model.(globalSSHModel)
+	if !mm.customDirectiveCommitPending {
+		t.Fatal("setup: confirming ceremony 2 must set customDirectiveCommitPending")
+	}
+	ceremony2HeadingBefore := mm.ceremony.cfg.Heading
+
+	// Deliver ceremony 1's STALE message while ceremony 2 is still pending.
+	result := mm.handleMsg(staleMsg, state)
+	mm = result.model.(globalSSHModel)
+
+	if !mm.customDirectiveCommitPending {
+		t.Error("CR-01: a stale message must not clear customDirectiveCommitPending for the genuinely in-flight ceremony 2")
+	}
+	if mm.ceremony.cfg.Heading != ceremony2HeadingBefore || mm.ceremony.done {
+		t.Errorf("CR-01: a stale message must not mutate ceremony 2's still-pending UI (heading=%q done=%t)",
+			mm.ceremony.cfg.Heading, mm.ceremony.done)
+	}
+	// WR-01: the stale message still surfaces its OWN (ceremony 1's) note.
+	wantNote := fmt.Sprintf(PropsSSHCustomReceiptFmt, "First", "one")
+	if result.note != wantNote {
+		t.Errorf("stale message's own note = %q, want %q (ceremony 1's submitted name/value, not ceremony 2's)", result.note, wantNote)
+	}
+}
+
+// TestAllDirectivesFooterAdvertisesAddCustomDirective asserts the "n" action
+// appears in the footer ONLY on the "All directives" sub-tab.
+func TestAllDirectivesFooterAdvertisesAddCustomDirective(t *testing.T) {
+	propertiesView := appView(gssPropertiesApp(t, stubBackend{}))
+	if !strings.Contains(propertiesView, PropsAddCustomDirectiveLabel) {
+		t.Errorf("the All directives footer must advertise %q;\nview:\n%s", PropsAddCustomDirectiveLabel, propertiesView)
+	}
+
+	optionsView := appView(pressSeq(t, NewApp(stubBackend{}), "2"))
+	if strings.Contains(optionsView, PropsAddCustomDirectiveLabel) {
+		t.Errorf("the Options sub-tab footer must NOT advertise %q;\nview:\n%s", PropsAddCustomDirectiveLabel, optionsView)
+	}
+
+	storageView := appView(pressSeq(t, NewApp(stubBackend{}), "2", "right"))
+	if strings.Contains(storageView, PropsAddCustomDirectiveLabel) {
+		t.Errorf("the Storage sub-tab footer must NOT advertise %q;\nview:\n%s", PropsAddCustomDirectiveLabel, storageView)
+	}
+}

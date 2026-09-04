@@ -659,3 +659,161 @@ func mustNotContainGlobalSSH(t *testing.T, frame, needle, context string) {
 		t.Fatalf("%s unexpectedly contains %q:\n%s", context, needle, frame)
 	}
 }
+
+// typeIntoField sends each rune of text as an individual keystroke — the
+// SAME technique TestGlobalSSH_RealPTYAllDirectivesFilter already uses to
+// prove a real terminal routes typed characters into a focused input.
+func typeIntoField(s *ptySession, text string) {
+	for _, r := range text {
+		s.sendKey([]byte(string(r)), keystrokeDelay)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// PROP-04 (09.5-04) Task 3: the custom SSH directive flow's un-skippable
+// validation gate, proven in a REAL terminal against the REAL compiled
+// binary and a fixture `ssh` that genuinely exits 255 with a genuine
+// `Bad configuration option:` diagnostic for an unrecognized directive name
+// — never a mocked/hardcoded acceptance inside the TUI itself.
+// ---------------------------------------------------------------------------
+
+// TestGlobalSSH_RealPTYCustomDirectiveRejectedNameNeverWrites is
+// 09.5-UI-SPEC.md's named focal point (T-09.5-20): reach "All directives",
+// press "n", type a directive name the fixture rejects, submit, assert the
+// frozen unrecognised-directive sentence appears, assert NO ceremony
+// heading and no confirm affordance is present anywhere in the frame, and
+// then read the managed target file from disk and assert it is
+// BYTE-IDENTICAL to before — a frame assertion alone does not satisfy this
+// focal point; the file must be shown unchanged.
+func TestGlobalSSH_RealPTYCustomDirectiveRejectedNameNeverWrites(t *testing.T) {
+	home := SandboxHome(t)
+	seedGlobalSSHHome(t, home, "none")
+	target := filepath.Join(home, ".ssh", "config.d", "gitid.config")
+	before, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("reading target before the attempt: %v", err)
+	}
+
+	s := startGlobalSSHPTY(t, home, "globalssh")
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+	mustSee(t, s, "Global SSH › All directives", "two right-presses reach the properties sub-tab")
+
+	s.sendKey([]byte("n"), keystrokeDelay)
+	mustSee(t, s, "Add custom directive", "n opens the custom-directive form")
+
+	typeIntoField(s, "NotARealDirective")
+	s.sendKey([]byte("\t"), keystrokeDelay)
+	typeIntoField(s, "yes")
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+
+	rejected, ok := s.waitFor(8*time.Second, func(frame string) bool {
+		return strings.Contains(frame, "is not a recognized SSH directive")
+	})
+	if !ok {
+		t.Fatalf("the frozen unrecognised-directive sentence never rendered. Last frame:\n%s", rejected)
+	}
+	if !strings.Contains(rejected, `'NotARealDirective' is not a recognized SSH directive`) {
+		t.Fatalf("rejection sentence must name the entered directive:\n%s", rejected)
+	}
+	mustNotContainGlobalSSH(t, rejected, "Write custom SSH directive to", "rejected-name state")
+	mustNotContainGlobalSSH(t, rejected, "Write (Enter)", "rejected-name state")
+	captureGlobalSSHFrame(t, "global-ssh-custom-directive-rejected-name", s)
+
+	after, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("reading target after the attempt: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("a rejected directive name must leave the managed target BYTE-IDENTICAL to before:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+// TestGlobalSSH_RealPTYCustomDirectiveWrite walks the accepted path: apply a
+// curated option first (so the write is a genuine MERGE into an already-
+// populated managed block, not a fresh one), then type a directive name the
+// fixture accepts, walk the proof beat, confirm, assert the receipt, and
+// then read the managed target from disk and assert the directive is
+// present INSIDE the existing `global-ssh` sentinel pair, that the ordered
+// policy key applied earlier is still there, that only one `Host *` managed
+// block exists, and that a timestamped backup file was created.
+func TestGlobalSSH_RealPTYCustomDirectiveWrite(t *testing.T) {
+	home := SandboxHome(t)
+	seedGlobalSSHHome(t, home, "none")
+	target := filepath.Join(home, ".ssh", "config.d", "gitid.config")
+
+	s := startGlobalSSHPTY(t, home, "globalssh")
+	openGlobalSSHPreview(t, s)
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Wrote →", "curated apply reaches its receipt")
+	// The receipt itself is still the OPEN ceremony (its "Done" state) — a
+	// second Enter dismisses it back to the browser, mirroring how a real
+	// user leaves the apply receipt before navigating elsewhere.
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Options", "dismissing the receipt returns to the Options sub-tab")
+
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+	mustSee(t, s, "Global SSH › All directives", "two right-presses reach the properties sub-tab")
+
+	s.sendKey([]byte("n"), keystrokeDelay)
+	mustSee(t, s, "Add custom directive", "n opens the custom-directive form")
+
+	typeIntoField(s, "TCPKeepAlive")
+	s.sendKey([]byte("\t"), keystrokeDelay)
+	typeIntoField(s, "yes")
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+
+	ceremony, ok := s.waitFor(8*time.Second, func(frame string) bool {
+		return strings.Contains(frame, "Write custom SSH directive to")
+	})
+	if !ok {
+		t.Fatalf("the custom-directive ceremony never opened for an accepted name. Last frame:\n%s", ceremony)
+	}
+	if !strings.Contains(ceremony, "TCPKeepAlive") {
+		t.Fatalf("ceremony preview must show the submitted directive:\n%s", ceremony)
+	}
+	captureGlobalSSHFrame(t, "global-ssh-custom-directive-ceremony", s)
+
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	receipt, ok := s.waitFor(8*time.Second, func(frame string) bool {
+		return strings.Contains(frame, "TCPKeepAlive yes written.")
+	})
+	if !ok {
+		t.Fatalf("the frozen receipt never rendered. Last frame:\n%s", receipt)
+	}
+	captureGlobalSSHFrame(t, "global-ssh-custom-directive-write-receipt", s)
+
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("reading written target: %v", err)
+	}
+	body := string(content)
+	if !strings.Contains(body, "# BEGIN gitid managed: global-ssh") || !strings.Contains(body, "# END gitid managed: global-ssh") {
+		t.Fatalf("written target missing the global-ssh managed block sentinels:\n%s", body)
+	}
+	if strings.Count(body, "Host *") != 1 {
+		t.Fatalf("written target must carry exactly one `Host *` managed block, got %d:\n%s", strings.Count(body, "Host *"), body)
+	}
+	if !strings.Contains(body, "StrictHostKeyChecking accept-new") {
+		t.Fatalf("the ordered policy key applied earlier must still be present:\n%s", body)
+	}
+	if !strings.Contains(body, "TCPKeepAlive yes") {
+		t.Fatalf("the custom directive must be present inside the managed block:\n%s", body)
+	}
+	beginIdx := strings.Index(body, "# BEGIN gitid managed: global-ssh")
+	endIdx := strings.Index(body, "# END gitid managed: global-ssh")
+	tcpIdx := strings.Index(body, "TCPKeepAlive yes")
+	if beginIdx < 0 || endIdx < 0 || tcpIdx < beginIdx || tcpIdx > endIdx {
+		t.Fatalf("the custom directive must land INSIDE the global-ssh sentinel pair:\n%s", body)
+	}
+
+	matches, err := filepath.Glob(target + ".bak.*")
+	if err != nil {
+		t.Fatalf("globbing target backups: %v", err)
+	}
+	if len(matches) < 1 {
+		t.Fatalf("expected at least one timestamped backup file, found none")
+	}
+	t.Logf("backup file(s) created: %v", matches)
+}

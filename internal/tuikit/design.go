@@ -908,4 +908,38 @@ const (
 	// copy-freeze gate, the same static/dynamic split the GitIgnore
 	// malformed-file message already uses.
 	PropsGitKeyInvalidFmt = "That key/value can't be written: %s"
+	// PropsAddCustomDirectiveLabel is the "All directives" sub-tab's `n`
+	// footer-action label (Phase 9.5 plan 09.5-04, PROP-04) — mirrors
+	// PropsAddCustomKeyLabel's `n` = "new" convention on the SSH screen.
+	PropsAddCustomDirectiveLabel = "Add custom directive"
+	// PropsSSHNameCheckFmt is stage 2's in-flight copy while the name-check
+	// beat is running, carrying the entered candidate name.
+	PropsSSHNameCheckFmt = "Checking '%s' against OpenSSH's known-directive list…"
+	// PropsSSHUnknownDirectiveFmt is stage 2's stopping sentence when the
+	// staged probe's `Bad configuration option:` diagnostic names THIS
+	// candidate's own directive — D-H's un-skippable name gate.
+	PropsSSHUnknownDirectiveFmt = "'%s' is not a recognized SSH directive — nothing was written."
+	// PropsSSHProofRejectedFmt is stage 2's stopping sentence for a
+	// recognized name whose VALUE the staged probe rejected — %s is the
+	// REAL command's error output, TEST-01's exact-output discipline, never
+	// a paraphrase.
+	PropsSSHProofRejectedFmt = "ssh -G rejected this value: %s — nothing was written."
+	// PropsSSHCustomCeremonyHeadingFmt is the custom-directive write
+	// ceremony's heading, naming the resolved target the block is written
+	// to — Claude's discretion (09.5-UI-SPEC.md's Copywriting Contract has
+	// no row for this): mirrors PropsGitCustomCeremonyHeadingFmt's exact
+	// shape, adapted to "SSH directive" in place of "Git key".
+	PropsSSHCustomCeremonyHeadingFmt = "Write custom SSH directive to %s"
+	// PropsSSHCustomReceiptFmt is the custom-directive write ceremony's
+	// success receipt — Claude's discretion (09.5-UI-SPEC.md's Copywriting
+	// Contract has no row for this): mirrors PropsGitCustomReceiptFmt's
+	// shape, adapted to SSH's space-separated `name value` syntax (never
+	// Git's `key = value` syntax).
+	PropsSSHCustomReceiptFmt = "%s %s written."
+	// PropsSSHPreexistingConfigErrorFmt is stage 2's stopping sentence for
+	// D-I's third outcome (PreexistingError) — Claude's discretion
+	// (09.5-UI-SPEC.md's two-outcome copy table does not cover this case):
+	// names the OTHER, already-broken directive so the failure is never
+	// blamed on the entry the user just submitted.
+	PropsSSHPreexistingConfigErrorFmt = "'%s' already has a problem in your current configuration — unrelated to what you just entered. Nothing was written."
 )

@@ -251,14 +251,62 @@ func FakeSSHDir(t *testing.T, mode string) string {
 		"  identities_set=0\n" +
 		"  addkeys_set=0\n" +
 		"  usekeychain_set=0\n" +
+		// Phase 9.5 plan 09.5-04 (PROP-04), Task 3: the FIXED allow-list of
+		// SSH directive names this fixture recognizes — the union of the six
+		// curated Options-policy keys (above) and the ~21 extra ones the
+		// fixed printf block below already answers, plus two more real
+		// OpenSSH directives (serveralivecountmax, tcpkeepalive) reserved for
+		// the "accepted" custom-directive test. Anything NOT in this list,
+		// scanned inside a `Host *` stanza, makes the compiled binary's
+		// rejection path real: a genuine exit-255 + `Bad configuration
+		// option:` diagnostic — never a hardcoded acceptance in the TUI
+		// itself.
+		"  known_directive() {\n" +
+		"    lower=$(printf '%s' \"$1\" | tr 'A-Z' 'a-z')\n" +
+		"    case \"$lower\" in\n" +
+		"      stricthostkeychecking|forwardagent|hashknownhosts|identitiesonly|addkeystoagent|usekeychain) return 0 ;;\n" +
+		"      addressfamily|batchmode|canonicalizehostname|checkhostip|ciphers|clearallforwardings) return 0 ;;\n" +
+		"      compression|connectionattempts|connecttimeout|controlmaster|dynamicforward|escapechar) return 0 ;;\n" +
+		"      exitonforwardfailure|gatewayports|hostbasedauthentication|loglevel|pubkeyauthentication) return 0 ;;\n" +
+		"      serveraliveinterval|streamlocalbindmask|userknownhostsfile|visualhostkey) return 0 ;;\n" +
+		"      serveralivecountmax|tcpkeepalive) return 0 ;;\n" +
+		// ignoreunknown is genuinely present in EVERY gitid-generated global-ssh
+		// managed block (globalssh.go's managedHostStar: "IgnoreUnknown
+		// UseKeychain") — it must be allow-listed or every staged-config proof
+		// against an already-populated block would spuriously report a
+		// PreexistingError on gitid's OWN generated line.
+		"      ignoreunknown) return 0 ;;\n" +
+		"      *) return 1 ;;\n" +
+		"    esac\n" +
+		"  }\n" +
+		"  bad_directive=\"\"\n" +
+		"  bad_line=0\n" +
+		"  bad_path=\"\"\n" +
 		"  scan_global_ssh_config() {\n" +
 		"    scan_path=\"$1\"\n" +
 		"    [ -r \"$scan_path\" ] || return\n" +
 		"    scan_host=1\n" +
+		"    scan_lineno=0\n" +
 		"    while read -r scan_key scan_value scan_rest; do\n" +
+		"      scan_lineno=$((scan_lineno + 1))\n" +
 		"      [ -n \"$scan_key\" ] || continue\n" +
 		"      case \"$scan_key\" in\n" +
-		"        #*) continue ;;\n" +
+		// Rule 1 bug fix (Phase 9.5 plan 09.5-04, PROP-04, discovered via
+		// TestGlobalSSH_RealPTYCustomDirectiveWrite): an UNESCAPED `#*)`
+		// case-pattern is itself a shell COMMENT starting at that `#` — the
+		// shell tokenizer treats `#` as a comment lead-in whenever it opens
+		// an unquoted word, including a case pattern, so `#*) continue ;;`
+		// silently consumed the REST of that source line (the pattern AND
+		// its `continue` action never existed as parsed code) and every
+		// scanned comment line fell through to the default arm instead.
+		// This was latent and harmless before this plan (the default arm
+		// had no action), but plan 09.5-04's new unknown-directive `*)`
+		// catch-all turned it into a false-positive `Bad configuration
+		// option: #` rejection the first time a real comment line (e.g. a
+		// `# BEGIN gitid managed: ...` sentinel) reached this scan with
+		// scan_host=1. `\#*)` escapes the leading `#` so it is a quoted
+		// case pattern character, not a comment lead-in.
+		"        \\#*) continue ;;\n" +
 		"        Host|host) [ \"$scan_value\" = \"*\" ] && scan_host=1 || scan_host=0 ;;\n" +
 		"        Include|include) inc=\"$scan_value\"; inc=\"${inc#\\\"}\"; inc=\"${inc%\\\"}\"; for include_path in $inc; do scan_global_ssh_config \"$include_path\"; done ;;\n" +
 		"        StrictHostKeyChecking|stricthostkeychecking) if [ \"$scan_host\" = \"1\" ] && [ \"$strict_set\" = \"0\" ]; then strict=\"$scan_value\"; strict_set=1; fi ;;\n" +
@@ -267,10 +315,16 @@ func FakeSSHDir(t *testing.T, mode string) string {
 		"        IdentitiesOnly|identitiesonly) if [ \"$scan_host\" = \"1\" ] && [ \"$identities_set\" = \"0\" ]; then identities=\"$scan_value\"; identities_set=1; fi ;;\n" +
 		"        AddKeysToAgent|addkeystoagent) if [ \"$scan_host\" = \"1\" ] && [ \"$addkeys_set\" = \"0\" ]; then addkeys=\"$scan_value\"; addkeys_set=1; fi ;;\n" +
 		"        UseKeychain|usekeychain) if [ \"$scan_host\" = \"1\" ] && [ \"$usekeychain_set\" = \"0\" ]; then usekeychain=\"$scan_value\"; usekeychain_set=1; fi ;;\n" +
+		"        *) if [ \"$scan_host\" = \"1\" ] && [ -z \"$bad_directive\" ] && ! known_directive \"$scan_key\"; then bad_directive=$(printf '%s' \"$scan_key\" | tr 'A-Z' 'a-z'); bad_line=\"$scan_lineno\"; bad_path=\"$scan_path\"; fi ;;\n" +
 		"      esac\n" +
 		"    done < \"$scan_path\"\n" +
 		"  }\n" +
 		"  scan_global_ssh_config \"$config_path\"\n" +
+		"  if [ -n \"$bad_directive\" ]; then\n" +
+		"    echo \"$bad_path: line $bad_line: Bad configuration option: $bad_directive\" >&2\n" +
+		"    echo \"$bad_path: terminating, 1 bad configuration options\" >&2\n" +
+		"    exit 255\n" +
+		"  fi\n" +
 		"  printf 'stricthostkeychecking %s\\nforwardagent %s\\nhashknownhosts %s\\nidentitiesonly %s\\naddkeystoagent %s\\nusekeychain %s\\n' \"$strict\" \"$forward\" \"$hash\" \"$identities\" \"$addkeys\" \"$usekeychain\"\n" +
 		// PROP-01 (plan 09.5-01): a "full directive set" test against this
 		// fixture would be vacuous with only the six curated policy lines

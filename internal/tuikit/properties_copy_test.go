@@ -41,9 +41,16 @@ func TestFrozenPropertiesCopy(t *testing.T) {
 		{"PropsGitCustomCeremonyHeadingFmt(...)", fmt.Sprintf(PropsGitCustomCeremonyHeadingFmt, "~/.gitconfig.d/00-baseline"), "Write custom Git key to ~/.gitconfig.d/00-baseline"},
 		{"PropsGitCustomReceiptFmt(...)", fmt.Sprintf(PropsGitCustomReceiptFmt, "core.pager", "less -FRX"), "core.pager = less -FRX written."},
 		{"PropsGitKeyInvalidFmt(...)", fmt.Sprintf(PropsGitKeyInvalidFmt, "no dot in key"), "That key/value can't be written: no dot in key"},
+		{"PropsAddCustomDirectiveLabel", PropsAddCustomDirectiveLabel, "Add custom directive"},
+		{"PropsSSHNameCheckFmt(...)", fmt.Sprintf(PropsSSHNameCheckFmt, "TCPKeepAlive"), "Checking 'TCPKeepAlive' against OpenSSH's known-directive list…"},
+		{"PropsSSHUnknownDirectiveFmt(...)", fmt.Sprintf(PropsSSHUnknownDirectiveFmt, "NotARealDirective"), "'NotARealDirective' is not a recognized SSH directive — nothing was written."},
+		{"PropsSSHProofRejectedFmt(...)", fmt.Sprintf(PropsSSHProofRejectedFmt, "Bad configuration option value"), "ssh -G rejected this value: Bad configuration option value — nothing was written."},
+		{"PropsSSHCustomCeremonyHeadingFmt(...)", fmt.Sprintf(PropsSSHCustomCeremonyHeadingFmt, "~/.ssh/config"), "Write custom SSH directive to ~/.ssh/config"},
+		{"PropsSSHCustomReceiptFmt(...)", fmt.Sprintf(PropsSSHCustomReceiptFmt, "TCPKeepAlive", "yes"), "TCPKeepAlive yes written."},
+		{"PropsSSHPreexistingConfigErrorFmt(...)", fmt.Sprintf(PropsSSHPreexistingConfigErrorFmt, "SomeOtherDirective"), "'SomeOtherDirective' already has a problem in your current configuration — unrelated to what you just entered. Nothing was written."},
 	}
 
-	const wantCount = 17
+	const wantCount = 24
 	if len(cases) != wantCount {
 		t.Fatalf("TestFrozenPropertiesCopy covers %d constants, want %d — a row was forgotten or double-counted", len(cases), wantCount)
 	}

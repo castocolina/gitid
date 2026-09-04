@@ -40,6 +40,17 @@ const (
 	gssBrowse gssMode = iota
 	gssApplyCeremony
 	gssStorageCeremony
+	// gssCustomDirectiveForm is stage 1 (Phase 9.5 plan 09.5-04, PROP-04):
+	// the 2-field name/value entry form, mirroring plan 09.5-03's Git
+	// custom-key form.
+	gssCustomDirectiveForm
+	// gssCustomDirectiveValidate is stage 2: the async staged-config
+	// ssh -G validate+prove dispatch and its in-flight/stopping render —
+	// the ONLY genuinely new render this plan adds (D-H/D-I).
+	gssCustomDirectiveValidate
+	// gssCustomDirectiveCeremony is stage 3: the standard non-destructive
+	// Async apply ceremony, reached ONLY from a stage-2 OK:true proof.
+	gssCustomDirectiveCeremony
 )
 
 // Sub-tab strip composition — subTabStrip renders exactly these labels
@@ -166,6 +177,41 @@ type globalSSHModel struct {
 	// message (gitCommitTokenMsg, shared with Global Git) so handleMsg can
 	// tell a stale message apart from the genuinely current ceremony's own.
 	commitRequestToken int
+	// customDirectiveNameInput / customDirectiveValueInput are stage 1's
+	// free-form name/value pair — mirrors globalGitModel.customKeyInput /
+	// customValueInput exactly (Phase 9.5 plan 09.5-04, PROP-04).
+	customDirectiveNameInput  textinput.Model
+	customDirectiveValueInput textinput.Model
+	// customDirectiveFieldFocus is 0 = name, 1 = value — the SAME 0/1
+	// convention every other 2-field form in this codebase uses.
+	customDirectiveFieldFocus int
+	// customDirectiveProofPending is true from the moment
+	// ValidateCustomSSHDirective is dispatched until its
+	// SSHCustomDirectiveProofMsg answer arrives — while true, stage 2's keys
+	// are inert (mirrors every other in-flight state on this screen).
+	customDirectiveProofPending bool
+	// customDirectiveProof is the LAST stage-2 proof result, rendered by
+	// renderCustomDirectiveValidate whenever the proof stopped short of
+	// OK: true (an OK: true proof transitions mode directly to the
+	// ceremony in the SAME handleMsg call, so this field is never read for
+	// that outcome).
+	customDirectiveProof SSHDirectiveProofView
+	// customDirectiveValidateErr carries a TRANSPORT-level stage-2 failure
+	// (SSHCustomDirectiveProofMsg.Err) — an unproven directive that fails
+	// closed, distinct from a completed-but-rejected classification.
+	customDirectiveValidateErr string
+	// pendingDirectiveName / pendingDirectiveValue are the EXACT name/value
+	// pair submitted to ValidateCustomSSHDirective and, on an OK: true
+	// proof, to CustomSSHDirectivePlan and CommitCustomSSHDirective —
+	// mirrors globalGitModel.pendingCustomKey / pendingCustomValue.
+	pendingDirectiveName  string
+	pendingDirectiveValue string
+	// customDirectiveCommitPending gates the custom-directive ceremony's
+	// receipt: CommitCustomSSHDirective is dispatched only from
+	// ceremonyConfirmed, and the receipt is reachable only from
+	// SSHCustomDirectiveCommitMsg's explicit success (mirrors
+	// applyCommitPending/storageCommitPending above).
+	customDirectiveCommitPending bool
 }
 
 // newGlobalSSHModel returns a model with an EMPTY selection set (D-15): the
@@ -214,6 +260,19 @@ func (m globalSSHModel) activate(s DemoState) (screenModel, tea.Cmd) {
 	m.storageCommitPending = false
 	m.ceremony = ceremonyModel{}
 	m.listWindowStart = 0
+	// Phase 9.5 plan 09.5-04 (PROP-04): every custom-directive form/proof/
+	// commit field resets on entry, mirroring the CR-02 reset above — a
+	// screen re-entered from scratch must never resume a stale stage 1/2/3
+	// state a previous visit left behind.
+	m.customDirectiveNameInput = newTextInput("")
+	m.customDirectiveValueInput = newTextInput("")
+	m.customDirectiveFieldFocus = 0
+	m.customDirectiveProofPending = false
+	m.customDirectiveProof = SSHDirectiveProofView{}
+	m.customDirectiveValidateErr = ""
+	m.pendingDirectiveName = ""
+	m.pendingDirectiveValue = ""
+	m.customDirectiveCommitPending = false
 	options, err := m.backend.GlobalSSHOptionStates()
 	m.options = options
 	if err != nil {
@@ -421,6 +480,84 @@ func (m globalSSHModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 			model:   m,
 			note:    "SSH storage layout migrated to " + string(layout) + ".",
 			actions: []Action{SetSSHStorage{Layout: layout, Backup: firstBackup(commit.Backups)}},
+		}
+	}
+	// Phase 9.5 plan 09.5-04 (PROP-04): stage 2's async validate+prove
+	// answer. Guarded by mode AND the in-flight flag together — the mode
+	// check alone would still accept a message after the user has already
+	// left stage 2 back to the form or the browser via Esc, and the
+	// in-flight flag alone would still accept a message after this SAME
+	// stage 2 has already consumed its one answer (there is no token here:
+	// unlike the ceremony's commit dispatch, keys are fully inert while
+	// customDirectiveProofPending is true, so a second dispatch from the
+	// SAME stage 2 visit is structurally impossible).
+	if proof, ok := msg.(SSHCustomDirectiveProofMsg); ok {
+		if m.mode != gssCustomDirectiveValidate || !m.customDirectiveProofPending {
+			return keyResult{model: m}
+		}
+		m.customDirectiveProofPending = false
+		if proof.Err != "" {
+			// D-H: an unproven directive fails CLOSED — a transport-level
+			// failure renders the failure and does NOT open the ceremony.
+			m.customDirectiveValidateErr = proof.Err
+			return keyResult{model: m}
+		}
+		m.customDirectiveProof = proof.Proof
+		if !proof.Proof.OK {
+			// UnknownName / PreexistingError / a known-name value rejection
+			// (D-I) — every one of these STOPS here. renderCustomDirectiveValidate
+			// renders the frozen sentence for whichever outcome this is; the
+			// ceremony is never opened.
+			return keyResult{model: m}
+		}
+		// OK: true is the ONLY transition that reaches the ceremony (D-H).
+		// The plan is fetched synchronously in this SAME handleMsg call — if
+		// it errors, the error renders inline on stage 2 and the ceremony is
+		// STILL not opened.
+		plan, planErr := m.backend.CustomSSHDirectivePlan(m.pendingDirectiveName, m.pendingDirectiveValue)
+		if planErr != nil {
+			m.customDirectiveValidateErr = planErr.Error()
+			return keyResult{model: m}
+		}
+		m.ceremony = m.customDirectiveCeremonyFor(m.pendingDirectiveName, m.pendingDirectiveValue, plan)
+		m.mode = gssCustomDirectiveCeremony
+		return keyResult{model: m}
+	}
+	// Phase 9.5 plan 09.5-04 (PROP-04): the custom-directive write commit —
+	// mirrors GlobalSSHCommitMsg's handling immediately above, including
+	// the CR-01/CR-02 ceremonyOpen + token guard and the WR-01 background-
+	// failure note.
+	if commit, ok := msg.(SSHCustomDirectiveCommitMsg); ok {
+		ceremonyOpen := m.mode == gssCustomDirectiveCeremony && m.customDirectiveCommitPending && token == m.commitRequestToken
+		if ceremonyOpen {
+			m.customDirectiveCommitPending = false
+		}
+		if commit.Err != "" {
+			if ceremonyOpen {
+				message := commit.Err
+				if len(commit.Restored) > 0 {
+					message += " (restored: " + strings.Join(commit.Restored, "; ") + ")"
+				}
+				m.ceremony = m.ceremony.commitFailed(message)
+				return keyResult{model: m}
+			}
+			return keyResult{model: m, note: "Background write failed: " + commit.Err}
+		}
+		// CR-01 (third independent re-review): read the SUBMITTED name/value
+		// from the message's own snapshot, never m.pendingDirectiveName/
+		// m.pendingDirectiveValue — a newer same-kind ceremony's confirm
+		// overwrites those fields before this (possibly stale) message
+		// arrives.
+		name, value := snapshot.sshDirectiveName, snapshot.sshDirectiveValue
+		if ceremonyOpen {
+			m.ceremony = m.ceremony.commitSucceeded(commit.Backups)
+			if len(commit.Advisories) > 0 {
+				m.ceremony = m.ceremony.withResultExtra(strings.Join(commit.Advisories, "\n"))
+			}
+		}
+		return keyResult{
+			model: m,
+			note:  fmt.Sprintf(PropsSSHCustomReceiptFmt, name, value),
 		}
 	}
 	return keyResult{model: m}
@@ -697,6 +834,41 @@ func (m globalSSHModel) storageCeremonyFor(view SSHStorageMigrationView) ceremon
 	})
 }
 
+// customDirectiveCeremonyFor builds the custom-directive write ceremony
+// (Phase 9.5 plan 09.5-04, PROP-04) from an ALREADY-VALIDATED plan view —
+// the caller (handleMsg's SSHCustomDirectiveProofMsg branch) has already
+// received an OK: true staged-config proof AND called
+// m.backend.CustomSSHDirectivePlan(name, value) successfully, so this
+// helper never itself errors. Reuses ceremonyModel UNMODIFIED, mirroring
+// globalgit.go's customKeyCeremonyFor exactly: the SAME Async: true,
+// non-destructive apply shape GSSH-01/GGIT-01 already use — never the
+// typed-confirm escalation reserved for FIX-01's existing-value rewrite.
+func (m globalSSHModel) customDirectiveCeremonyFor(name, value string, plan SSHCustomDirectivePlanView) ceremonyModel {
+	targets := plan.Targets
+	if len(targets) == 0 {
+		// The backend's plan always resolves the storage target; this
+		// fallback keeps the ceremony buildable for a stub that answers an
+		// empty plan.
+		targets = []string{"~/.ssh/config"}
+	}
+	backups := plan.Backups
+	resolvedTarget := targets[0]
+	preview := plan.Diff
+	if preview == "" {
+		preview = "+ " + name + " " + value
+	}
+	return newCeremony(ceremonyConfig{
+		Heading:       fmt.Sprintf(PropsSSHCustomCeremonyHeadingFmt, resolvedTarget),
+		Targets:       targets,
+		Backups:       backups,
+		Preview:       preview,
+		PreviewDiff:   true,
+		ConfirmLabel:  "Write",
+		ResultMessage: fmt.Sprintf(PropsSSHCustomReceiptFmt, name, value),
+		Async:         true,
+	})
+}
+
 // gssNextSubTab returns the sub-tab the → key cycles to: Options → Storage &
 // preview → All directives → Options (09.5-UI-SPEC.md).
 func gssNextSubTab(cur gssSubTab) gssSubTab {
@@ -782,6 +954,99 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		case ceremonyFinished:
 			m.mode = gssBrowse
 		case ceremonyNone:
+		}
+		return keyResult{model: m, handled: true}
+	}
+
+	// Phase 9.5 plan 09.5-04 (PROP-04) stage 3: the custom-directive
+	// ceremony's key routing — mirrors the two ceremony blocks above
+	// exactly, dispatching CommitCustomSSHDirective through the SAME
+	// commitRequestToken/wrapGitCommitToken machinery (no parallel
+	// completion path).
+	if m.mode == gssCustomDirectiveCeremony {
+		if m.customDirectiveCommitPending {
+			// In flight: keys are inert until the commit result arrives.
+			return keyResult{model: m, handled: true}
+		}
+		var outcome ceremonyOutcome
+		m.ceremony, outcome = m.ceremony.handleKey(msg)
+		switch outcome {
+		case ceremonyCancelled:
+			m.mode = gssBrowse
+		case ceremonyConfirmed:
+			m.commitRequestToken++
+			token := m.commitRequestToken
+			name := m.pendingDirectiveName
+			value := m.pendingDirectiveValue
+			m.customDirectiveCommitPending = true
+			cmd := m.backend.CommitCustomSSHDirective(name, value)
+			snapshot := gitCommitTokenMsg{sshDirectiveName: name, sshDirectiveValue: value}
+			return keyResult{model: m, handled: true, cmd: wrapGitCommitToken(token, cmd, snapshot)}
+		case ceremonyFinished:
+			m.mode = gssBrowse
+		case ceremonyNone:
+		}
+		return keyResult{model: m, handled: true}
+	}
+
+	// Phase 9.5 plan 09.5-04 (PROP-04) stage 1: while the custom-directive
+	// form is open, it owns the keyboard exactly like plan 09.5-03's Git
+	// custom-key form (globalgit.go) — Tab moves focus between the two
+	// fields, Enter on the VALUE field (focus index 1) submits, Esc closes
+	// the form without submitting, and every other key routes through
+	// updateInput to the focused field. Enter on the NAME field (focus
+	// index 0) does NOT submit — it only exists as a Tab target.
+	if m.mode == gssCustomDirectiveForm {
+		switch key {
+		case "esc":
+			m.mode = gssBrowse
+			m.customDirectiveNameInput.Blur()
+			m.customDirectiveValueInput.Blur()
+			return keyResult{model: m, handled: true}
+		case "tab":
+			m.customDirectiveFieldFocus = 1 - m.customDirectiveFieldFocus
+			m.focusCustomDirectiveField()
+			return keyResult{model: m, handled: true}
+		case "enter":
+			if m.customDirectiveFieldFocus != 1 {
+				m.customDirectiveFieldFocus = 1
+				m.focusCustomDirectiveField()
+				return keyResult{model: m, handled: true}
+			}
+			name := m.customDirectiveNameInput.Value()
+			value := m.customDirectiveValueInput.Value()
+			m.pendingDirectiveName = name
+			m.pendingDirectiveValue = value
+			m.customDirectiveProofPending = true
+			m.customDirectiveValidateErr = ""
+			m.customDirectiveProof = SSHDirectiveProofView{}
+			m.mode = gssCustomDirectiveValidate
+			m.customDirectiveNameInput.Blur()
+			m.customDirectiveValueInput.Blur()
+			cmd := m.backend.ValidateCustomSSHDirective(name, value)
+			return keyResult{model: m, handled: true, cmd: cmd}
+		default:
+			if m.customDirectiveFieldFocus == 0 {
+				m.customDirectiveNameInput, _ = updateInput(m.customDirectiveNameInput, msg)
+			} else {
+				m.customDirectiveValueInput, _ = updateInput(m.customDirectiveValueInput, msg)
+			}
+			return keyResult{model: m, handled: true}
+		}
+	}
+
+	// Phase 9.5 plan 09.5-04 (PROP-04) stage 2: while validating/proving,
+	// every key is inert during the in-flight probe (matching every other
+	// in-flight state on this screen); once stopped at one of D-I's
+	// stopping outcomes, Esc returns to the browser — there is NO key that
+	// reaches the ceremony from here (D-H's un-skippable gate).
+	if m.mode == gssCustomDirectiveValidate {
+		if m.customDirectiveProofPending {
+			return keyResult{model: m, handled: true}
+		}
+		if key == "esc" {
+			m.mode = gssBrowse
+			return keyResult{model: m, handled: true}
 		}
 		return keyResult{model: m, handled: true}
 	}
@@ -900,6 +1165,19 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		}
 		m.filterFocused = true
 		m.filter.Focus()
+		return keyResult{model: m, handled: true}
+	case "n":
+		// Phase 9.5 plan 09.5-04 (PROP-04): opens stage 1's custom-directive
+		// form — mirrors the "/" filter case immediately above, gated to
+		// the SAME sub-tab and fail-closed on a failed directives probe.
+		if m.subTab != gssProperties || m.directivesErr != "" {
+			return keyResult{model: m}
+		}
+		m.mode = gssCustomDirectiveForm
+		m.customDirectiveFieldFocus = 0
+		m.customDirectiveNameInput = newTextInput("")
+		m.customDirectiveValueInput = newTextInput("")
+		m.focusCustomDirectiveField()
 		return keyResult{model: m, handled: true}
 	case "space":
 		if m.subTab == gssOptions {
@@ -1311,16 +1589,35 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 	var actions []FooterAction
 	capturesKeys := false
 	switch m.mode {
-	case gssApplyCeremony, gssStorageCeremony:
+	case gssApplyCeremony, gssStorageCeremony, gssCustomDirectiveCeremony:
 		// WR-02: the crumb line above the body already reads "Options" or
 		// "Storage & preview" (crumb, set above regardless of mode), so
 		// re-rendering the 3-row bordered strip inside the ceremony body
 		// would be redundant chrome eating into the ceremony's already-tight
 		// row budget (minFrameHeight leaves ~5 spare rows for the apply/
-		// storage ceremony; the strip alone consumed 3 of them).
+		// storage ceremony; the strip alone consumed 3 of them). The
+		// custom-directive ceremony (Phase 9.5 plan 09.5-04, PROP-04)
+		// shares this SAME branch — m.subTab stays gssProperties throughout
+		// stages 1-3, so crumb (set above, unconditionally on m.subTab)
+		// already reads "All directives" correctly here too.
 		body = m.ceremony.view(width - 2)
 		actions = ceremonyFooterActions()
 		capturesKeys = true // the ceremony consumes every plain key
+	case gssCustomDirectiveForm:
+		// Phase 9.5 plan 09.5-04 (PROP-04) stage 1.
+		body = m.renderCustomDirectiveForm(width)
+		actions = []FooterAction{
+			{Key: "Tab", Label: "next field"},
+			{Key: "Enter", Label: "check & write"},
+			{Key: "Esc", Label: "cancel"},
+		}
+		capturesKeys = true
+	case gssCustomDirectiveValidate:
+		// Phase 9.5 plan 09.5-04 (PROP-04) stage 2 — the ONLY genuinely new
+		// render this plan adds.
+		body = m.renderCustomDirectiveValidate(width)
+		actions = []FooterAction{{Key: "Esc", Label: "back"}}
+		capturesKeys = true
 	case gssBrowse:
 		switch m.subTab {
 		case gssOptions:
@@ -1368,6 +1665,7 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 				actions = append(actions,
 					FooterAction{Key: "↑↓", Label: "select"},
 					FooterAction{Key: "/", Label: "filter"},
+					FooterAction{Key: "n", Label: PropsAddCustomDirectiveLabel},
 				)
 			}
 			capturesKeys = m.filterFocused
@@ -1684,4 +1982,86 @@ func (m globalSSHModel) renderProperties(width, height int) string {
 	detailPane := fitPane(lipgloss.NewStyle().Width(detailWidth).Render(d.String()), rows)
 
 	return body + joinMasterDetail(list, listWidth, detailPane, rows)
+}
+
+// renderCustomDirectiveForm renders stage 1's 2-field name/value entry form
+// (Phase 9.5 plan 09.5-04, PROP-04) — mirrors globalgit.go's
+// renderCustomKeyForm exactly, reusing the SAME gitFallbackFieldLine
+// row renderer.
+func (m globalSSHModel) renderCustomDirectiveForm(width int) string {
+	var d strings.Builder
+	d.WriteString(m.subTabStrip() + "\n")
+	d.WriteString(" " + styleBold.Render(PropsAddCustomDirectiveLabel) + "\n\n")
+	d.WriteString(gitFallbackFieldLine("Directive", m.customDirectiveNameInput, m.customDirectiveFieldFocus == 0, false) + "\n")
+	d.WriteString(gitFallbackFieldLine("Value", m.customDirectiveValueInput, m.customDirectiveFieldFocus == 1, false) + "\n")
+	return lipgloss.NewStyle().Width(width).Render(d.String())
+}
+
+// renderCustomDirectiveValidate renders stage 2 — the ONLY genuinely new
+// render this plan adds (Phase 9.5 plan 09.5-04, PROP-04). Renders TWO
+// sequential beats from the ONE staged-config proof (D-I): the name-check
+// outcome first, then — only when the name passed — the ssh -G proof
+// showing the exact command and its real output, through the SAME "shown ==
+// run" render shape identities.go's create-flow test stages use
+// (PreviewBlock("$ "+cmd) followed by the real output as faint evidence).
+// An OK: true proof never reaches this function — handleMsg transitions
+// m.mode to gssCustomDirectiveCeremony in the SAME call that receives it, so
+// this render only ever needs to cover the in-flight state and D-I's four
+// stopping outcomes (transport error, UnknownName, PreexistingError, a
+// known-name value rejection).
+func (m globalSSHModel) renderCustomDirectiveValidate(width int) string {
+	var d strings.Builder
+	d.WriteString(m.subTabStrip() + "\n")
+	d.WriteString(" " + styleBold.Render(PropsAddCustomDirectiveLabel) + "\n\n")
+	if m.customDirectiveProofPending {
+		d.WriteString(" " + fmt.Sprintf(PropsSSHNameCheckFmt, m.pendingDirectiveName) + "\n")
+		return lipgloss.NewStyle().Width(width).Render(d.String())
+	}
+	if m.customDirectiveValidateErr != "" {
+		// A transport-level failure — the probe itself could not run. D-H:
+		// an unproven directive fails CLOSED, never written.
+		d.WriteString(" " + styleError.Render("✗ "+m.customDirectiveValidateErr) + "\n")
+		d.WriteString(" " + styleFaint.Render("Nothing was written.") + "\n")
+		return lipgloss.NewStyle().Width(width).Render(d.String())
+	}
+	proof := m.customDirectiveProof
+	if proof.UnknownName {
+		// Beat 1 only — the name itself failed, so there is no ssh -G value
+		// proof to show (D-I: "only if the name passed").
+		d.WriteString(" " + styleWarning.Render(fmt.Sprintf(PropsSSHUnknownDirectiveFmt, m.pendingDirectiveName)) + "\n")
+		return lipgloss.NewStyle().Width(width).Render(d.String())
+	}
+	// Beat 1: the name check passed.
+	d.WriteString(" " + styleHealthy.Render("✓ '"+m.pendingDirectiveName+"' is a recognized SSH directive.") + "\n")
+	// Beat 2: the ssh -G proof against the staged throwaway config —
+	// TEST-01's "shown == run" contract, reused verbatim rather than
+	// inventing a new render.
+	d.WriteString(PreviewBlock("ssh -G proof (staged, throwaway config)", "$ "+proof.Command, false, width, 2) + "\n")
+	d.WriteString(lipgloss.NewStyle().Width(width).Render(" "+styleFaint.Render(proof.Output)) + "\n")
+	switch {
+	case proof.PreexistingError:
+		// D-I's third outcome: a DIFFERENT directive already had a problem
+		// in the current global block — never blamed on the entry just
+		// submitted.
+		d.WriteString(" " + styleWarning.Render(fmt.Sprintf(PropsSSHPreexistingConfigErrorFmt, proof.OffendingName)) + "\n")
+	default:
+		// D-I's fourth outcome: the name is recognized but the VALUE was
+		// rejected. PropsSSHProofRejectedFmt itself carries the verbatim
+		// output (TEST-01's exact-output discipline).
+		d.WriteString(" " + styleWarning.Render(fmt.Sprintf(PropsSSHProofRejectedFmt, proof.Output)) + "\n")
+	}
+	return lipgloss.NewStyle().Width(width).Render(d.String())
+}
+
+// focusCustomDirectiveField mirrors focusCustomKeyField's exact shape
+// (globalgit.go) for the PROP-04 (09.5-04) custom-directive name/value pair
+// — customDirectiveFieldFocus uses the SAME 0/1 convention.
+func (m *globalSSHModel) focusCustomDirectiveField() {
+	if m.customDirectiveFieldFocus == 0 {
+		m.customDirectiveNameInput.Focus()
+		m.customDirectiveValueInput.Blur()
+		return
+	}
+	m.customDirectiveNameInput.Blur()
+	m.customDirectiveValueInput.Focus()
 }

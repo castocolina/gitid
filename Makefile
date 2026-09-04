@@ -501,7 +501,14 @@ gate-copy-freeze:
 		'Add custom key' \
 		'Write custom Git key to %s' \
 		'%s = %s written.' \
-		'That key/value can'\''t be written: %s'; \
+		'That key/value can'\''t be written: %s' \
+		'Add custom directive' \
+		'Checking '\''%s'\'' against OpenSSH'\''s known-directive list…' \
+		''\''%s'\'' is not a recognized SSH directive — nothing was written.' \
+		'ssh -G rejected this value: %s — nothing was written.' \
+		'Write custom SSH directive to %s' \
+		'%s %s written.' \
+		''\''%s'\'' already has a problem in your current configuration — unrelated to what you just entered. Nothing was written.'; \
 	do \
 		if grep -rqF -- "$$s" internal/tuikit internal/identity cmd/gitid internal/globalssh internal/globalgit; then \
 			echo "    ok   $$s"; \

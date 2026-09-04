@@ -412,6 +412,13 @@ type gitCommitTokenMsg struct {
 	// ceremony's own mirror of keys/name/email above.
 	customKey   string
 	customValue string
+	// sshDirectiveName / sshDirectiveValue snapshot the EXACT pair submitted
+	// to CommitCustomSSHDirective at ceremonyConfirmed (Phase 9.5 plan
+	// 09.5-04, PROP-04) — the custom-SSH-directive ceremony's own mirror of
+	// customKey/customValue above, sharing this SAME wrapper type since
+	// globalssh.go's handleMsg unwraps it identically.
+	sshDirectiveName  string
+	sshDirectiveValue string
 }
 
 func wrapGitCommitToken(token int, cmd tea.Cmd, snapshot gitCommitTokenMsg) tea.Cmd {
