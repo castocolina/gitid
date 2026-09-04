@@ -276,6 +276,57 @@ const (
 	// RegionGIGNCeremony is the Global Git Ignore review-and-write ceremony
 	// (from its heading through the confirm/receipt state).
 	RegionGIGNCeremony RegionName = "gign-ceremony"
+
+	// RegionSubTabStrip is the bordered sub-tab strip (D-D, 09.5-02) — the
+	// ONE shared 3-line box renderSubTabStrip (frame.go) renders for every
+	// screen with a sub-tab strip. Anchor: the "┊ " content marker, which a
+	// package-wide grep confirms is unique to this box's middle line (no
+	// other rendered element in internal/tuikit uses this glyph). Registered
+	// only on the Phase 9.5 (09.5-05-PLAN.md Task 1) specs that need standing
+	// coverage of the strip itself — the pre-existing gss-options-list/
+	// ggit-options-list specs are left unmodified (CR-10: no cross-screen
+	// contamination, and no risk to their own already-registered coverage).
+	RegionSubTabStrip RegionName = "sub-tab-strip"
+
+	// RegionGSSPropertiesBrowse is the Global SSH "All directives" sub-tab's
+	// whole master-detail body (09.5-05-PLAN.md Task 1, PROP-01 standing
+	// guard): the directive-row master list (left of the │ divider) and its
+	// detail pane (right of the │), from the first pane row through the
+	// last one. Anchor: the "Global SSH › All directives" breadcrumb, unique
+	// to this screen and present regardless of filter/scroll state — the
+	// SAME breadcrumb-anchor technique extractGSSOptionsBrowse already uses.
+	RegionGSSPropertiesBrowse RegionName = "gss-properties-browse"
+
+	// RegionGSSCustomDirective is the Global SSH custom-directive stage-1
+	// form and stage-2 validate body (09.5-05-PLAN.md Task 1, PROP-04
+	// standing guard): from the frozen "Add custom directive" label through
+	// the end of the frame (footer included — its FooterAction hints are
+	// static text, identical in shape between real and dummy for a given
+	// ScreenID, so including them costs nothing and needs no separate
+	// region). Both stage 1 and stage 2 render this same label at the top
+	// of their body (globalssh.go's renderCustomDirectiveForm/
+	// renderCustomDirectiveValidate), so one extractor covers both states.
+	RegionGSSCustomDirective RegionName = "gss-custom-directive"
+
+	// RegionGGitSetKeysBrowse is the Global Git "Set keys" sub-tab's whole
+	// master-detail body (09.5-05-PLAN.md Task 1, PROP-02 standing guard):
+	// the key-row master list and its detail pane, from the first pane row
+	// through the last one. Anchor: the "Global Git › Set keys" breadcrumb,
+	// unique to this screen and present regardless of filter/scroll state —
+	// mirrors extractGGitOptionsBrowse's own breadcrumb-anchor technique.
+	RegionGGitSetKeysBrowse RegionName = "ggit-set-keys-browse"
+
+	// RegionGGitCustomKeyCeremony is the Global Git custom-key write
+	// ceremony's preview body (09.5-05-PLAN.md Task 1, PROP-03 standing
+	// guard): from the "Write custom Git key to" heading prefix through the
+	// end of the frame. The ceremony renders full-width (no │ divider,
+	// globalgit.go's view() ceremonyOpen branch does not re-render the
+	// strip — the SAME WR-02 space-saving exclusion the apply ceremony
+	// already uses), so this mirrors RegionGSSCustomDirective's
+	// anchor-to-end shape rather than RegionGGitApplyCeremony's
+	// heading-to-button-row shape (the confirm-button label differs by
+	// ceremony kind and is not worth pinning here).
+	RegionGGitCustomKeyCeremony RegionName = "ggit-custom-key-ceremony"
 )
 
 // ExtractRegion returns the sub-string of screen that corresponds to region.
@@ -358,6 +409,16 @@ func ExtractRegion(screen string, region RegionName) string {
 		return extractGIGNCeremony(lines)
 	case RegionUploadSection:
 		return extractUploadSection(lines)
+	case RegionSubTabStrip:
+		return extractSubTabStrip(lines)
+	case RegionGSSPropertiesBrowse:
+		return extractGSSPropertiesBrowse(lines)
+	case RegionGSSCustomDirective:
+		return extractGSSCustomDirective(lines)
+	case RegionGGitSetKeysBrowse:
+		return extractGGitSetKeysBrowse(lines)
+	case RegionGGitCustomKeyCeremony:
+		return extractGGitCustomKeyCeremony(lines)
 	}
 	return ""
 }
@@ -753,8 +814,16 @@ func extractConnectivityOutput(lines []string) string {
 		// extractConnectivityOutput swallow the REST of a git-form-demo
 		// capture, which has no "Esc returns" line to close the region,
 		// producing spurious real-vs-dummy divergence on an unrelated
-		// screen/region pair).
-		if !inOutput && (strings.Contains(rpPlain, "ssh -") ||
+		// screen/region pair). 09.5-05-PLAN.md Task 1 discovered a SECOND
+		// instance of the same class: PropsSSHSourceLine ("Resolved via
+		// ssh -G — reflects Include/Match precedence already applied.",
+		// design.go) — the Global SSH "All directives" detail pane's
+		// provenance line, present on every gss-properties-* screen — also
+		// contains "ssh -" mid-sentence, swallowing the rest of THOSE
+		// frames the identical way. Excluded by the same narrowing
+		// technique (a specific known false-positive phrase), never a
+		// broader marker change.
+		if !inOutput && !strings.Contains(rpPlain, "Resolved via ssh -G") && (strings.Contains(rpPlain, "ssh -") ||
 			strings.Contains(rpPlain, "Running") ||
 			strings.Contains(rpPlain, "Reachable") ||
 			strings.Contains(rpPlain, "Permission denied") ||
@@ -1215,6 +1284,150 @@ func applyHeadingRegion(lines []string, anchor string) string {
 	return strings.Join(out, "\n")
 }
 
+// ---------------------------------------------------------------------------
+// Phase 9.5 regions (09.5-05-PLAN.md Task 1): the "All directives" / "Set
+// keys" browsers and the custom-entry form/validate/ceremony bodies.
+// ---------------------------------------------------------------------------
+
+// extractSubTabStrip returns the 3-line bordered sub-tab strip box —
+// renderSubTabStrip's top border, label line, and bottom border — anchored
+// on the "┊ " content marker unique to the label line (see RegionSubTabStrip's
+// doc comment). Returns "" when the strip is not rendered on this frame
+// (e.g. a ceremony body that intentionally skips re-rendering it, WR-02).
+func extractSubTabStrip(lines []string) string {
+	for i, line := range lines {
+		plain := stripANSI(line)
+		if !strings.Contains(plain, "┊") {
+			continue
+		}
+		// frame.go's previewDashedBorder (PreviewBlock, e.g. the create-flow
+		// wizard's "Live Host-block preview" box) uses the IDENTICAL border
+		// glyph set (╭╌…╮ / ┊…┊ / ╰╌…╯) for a structurally unrelated box —
+		// found empirically (TestGateVisualRegression flagged an unrelated
+		// "ssh-form-filled" divergence before this content check was added).
+		// The strip's label line is the ONLY "┊" line anywhere in the
+		// registry that ALSO carries "Options" plus one of its two sibling
+		// labels — require both, never the border glyph alone.
+		if !strings.Contains(plain, "Options") {
+			continue
+		}
+		if !strings.Contains(plain, "All directives") && !strings.Contains(plain, "Storage & preview") && !strings.Contains(plain, "Set keys") {
+			continue
+		}
+		var out []string
+		if i > 0 {
+			out = append(out, lines[i-1])
+		}
+		out = append(out, line)
+		if i+1 < len(lines) {
+			out = append(out, lines[i+1])
+		}
+		return strings.Join(out, "\n")
+	}
+	return ""
+}
+
+// bodyFromAnchorToEnd returns every line from the first line containing
+// anchor through the end of the frame — used for full-width, no-divider
+// content whose natural boundary is simply "the rest of what this state
+// renders" (Phase 9.5's custom-entry form/validate/ceremony bodies, none of
+// which share a screen with any other divergence-bearing content, so
+// absorbing the footer costs nothing — CR-10's cross-screen-contamination
+// guard is about a DIFFERENT screen's content leaking in, not our own
+// footer). Returns "" when anchor is absent.
+func bodyFromAnchorToEnd(lines []string, anchor string) string {
+	for i, line := range lines {
+		if strings.Contains(stripANSI(line), anchor) {
+			return strings.Join(lines[i:], "\n")
+		}
+	}
+	return ""
+}
+
+// extractGSSPropertiesBrowse returns the "All directives" sub-tab's
+// master-detail body — mirrors extractGSSOptionsBrowse exactly, anchored on
+// the "Global SSH › All directives" breadcrumb instead.
+func extractGSSPropertiesBrowse(lines []string) string {
+	crumbIdx := -1
+	for i, line := range lines {
+		if strings.Contains(stripANSI(line), "Global SSH › All directives") {
+			crumbIdx = i
+			break
+		}
+	}
+	if crumbIdx < 0 {
+		return ""
+	}
+	start := -1
+	for i := crumbIdx + 1; i < len(lines); i++ {
+		if strings.Contains(stripANSI(lines[i]), "│") {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return ""
+	}
+	var out []string
+	for _, line := range lines[start:] {
+		if !strings.Contains(stripANSI(line), "│") {
+			break
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+// extractGSSCustomDirective returns the custom-directive stage-1 form /
+// stage-2 validate body — see RegionGSSCustomDirective's doc comment.
+func extractGSSCustomDirective(lines []string) string {
+	return bodyFromAnchorToEnd(lines, tuikit.PropsAddCustomDirectiveLabel)
+}
+
+// extractGGitSetKeysBrowse returns the "Set keys" sub-tab's master-detail
+// body — mirrors extractGGitOptionsBrowse exactly, anchored on the
+// "Global Git › Set keys" breadcrumb instead.
+func extractGGitSetKeysBrowse(lines []string) string {
+	crumbIdx := -1
+	for i, line := range lines {
+		if strings.Contains(stripANSI(line), "Global Git › Set keys") {
+			crumbIdx = i
+			break
+		}
+	}
+	if crumbIdx < 0 {
+		return ""
+	}
+	start := -1
+	for i := crumbIdx + 1; i < len(lines); i++ {
+		if strings.Contains(stripANSI(lines[i]), "│") {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return ""
+	}
+	var out []string
+	for _, line := range lines[start:] {
+		if !strings.Contains(stripANSI(line), "│") {
+			break
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+// extractGGitCustomKeyCeremony returns the custom-key write ceremony's
+// preview body — see RegionGGitCustomKeyCeremony's doc comment. The shared
+// prefix of PropsGitCustomCeremonyHeadingFmt (without its trailing "%s"
+// target) is the anchor, mirroring extractGGitApplyCeremony's own
+// shared-prefix anchor technique.
+func extractGGitCustomKeyCeremony(lines []string) string {
+	anchor := strings.TrimSuffix(tuikit.PropsGitCustomCeremonyHeadingFmt, "%s")
+	return bodyFromAnchorToEnd(lines, anchor)
+}
+
 // extractDoctorBody returns the merged Doctor tab's master-detail body: the
 // findings list plus its inline detail pane. Anchored on the "Doctor"
 // breadcrumb line (exact match after stripping ANSI/whitespace — the
@@ -1466,6 +1679,11 @@ func AllRegionNames() []RegionName {
 		RegionUploadSection,
 		RegionGIGNBody,
 		RegionGIGNCeremony,
+		RegionSubTabStrip,
+		RegionGSSPropertiesBrowse,
+		RegionGSSCustomDirective,
+		RegionGGitSetKeysBrowse,
+		RegionGGitCustomKeyCeremony,
 	}
 }
 

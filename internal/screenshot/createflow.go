@@ -1921,6 +1921,47 @@ func CaptureGlobalSSHScreens(backend tuikit.Backend) (map[string]string, error) 
 	migrate = keyEnter(migrate)
 	out["gss-storage-migrate-preview"] = capture(migrate)
 
+	// gss-properties-list: the "All directives" sub-tab in browse mode —
+	// two → presses from the default Options sub-tab (Options → Storage →
+	// All directives), 09.5-05-PLAN.md Task 1.
+	props := globalSSHApp(backend)
+	props = keyRight(props)
+	props = keyRight(props)
+	out["gss-properties-list"] = capture(props)
+
+	// gss-properties-filter: from the properties list, focus the filter (/)
+	// and type "strict" — narrows to the single stricthostkeychecking row
+	// (D-B/D-C's keyboard-capture and reset-on-change contracts).
+	filterProps := keyRune(props, '/')
+	for _, r := range "strict" {
+		filterProps = keyRune(filterProps, r)
+	}
+	out["gss-properties-filter"] = capture(filterProps)
+
+	// gss-properties-custom-form: from the properties list, press 'n' to
+	// open stage 1's 2-field name/value entry form (PROP-04).
+	customForm := keyRune(props, 'n')
+	out["gss-properties-custom-form"] = capture(customForm)
+
+	// gss-properties-custom-invalid: submit an unrecognized directive name
+	// — D-H's un-skippable name gate stops at stage 2 with the UnknownName
+	// sentence, the phase's named focal point. "NotARealDirective" is
+	// genuinely unrecognized by the REAL locally installed OpenSSH (never a
+	// hardcoded keyword list gitid maintains) AND is the dummy's own frozen
+	// rejection sentinel (fixtureRejectedSSHDirectiveName in
+	// internal/dummytui/fixturebackend.go) — the SAME name drives both
+	// surfaces to the identical stopping outcome.
+	invalidDirective := customForm
+	for _, r := range "NotARealDirective" {
+		invalidDirective = keyRune(invalidDirective, r)
+	}
+	invalidDirective = keyTab(invalidDirective)
+	for _, r := range "yes" {
+		invalidDirective = keyRune(invalidDirective, r)
+	}
+	invalidDirective = keyEnter(invalidDirective)
+	out["gss-properties-custom-invalid"] = capture(invalidDirective)
+
 	for _, spec := range globalSSHSpecs() {
 		// The two receipt states are registered non-applicable on BOTH
 		// surfaces (they need a real write neither side performs in-process);
@@ -1941,6 +1982,15 @@ func CaptureGlobalSSHScreens(backend tuikit.Backend) (map[string]string, error) 
 	}
 	if out["gss-apply-preview"] == out["gss-options-list"] {
 		return nil, fmt.Errorf("screenshot: CaptureGlobalSSHScreens: gss-apply-preview captured the same frame as gss-options-list — the apply ceremony never opened")
+	}
+	if out["gss-properties-filter"] == out["gss-properties-list"] {
+		return nil, fmt.Errorf("screenshot: CaptureGlobalSSHScreens: gss-properties-filter captured the same frame as gss-properties-list — the filter never narrowed the list")
+	}
+	if out["gss-properties-custom-form"] == out["gss-properties-list"] {
+		return nil, fmt.Errorf("screenshot: CaptureGlobalSSHScreens: gss-properties-custom-form captured the same frame as gss-properties-list — the custom-directive form never opened")
+	}
+	if out["gss-properties-custom-invalid"] == out["gss-properties-custom-form"] {
+		return nil, fmt.Errorf("screenshot: CaptureGlobalSSHScreens: gss-properties-custom-invalid captured the same frame as gss-properties-custom-form — the un-skippable name gate never stopped stage 2")
 	}
 	return out, nil
 }
@@ -2025,6 +2075,27 @@ func CaptureGlobalGitScreens(backend tuikit.Backend) (map[string]string, error) 
 	apply = keyRune(apply, 'a')
 	out["ggit-apply-preview"] = capture(apply)
 
+	// ggit-set-keys-list: the "Set keys" sub-tab in browse mode — one →
+	// press from the default Options sub-tab, 09.5-05-PLAN.md Task 1.
+	setKeys := globalGitApp(backend)
+	setKeys = keyRight(setKeys)
+	out["ggit-set-keys-list"] = capture(setKeys)
+
+	// ggit-custom-key-ceremony-preview: from the Set keys sub-tab, press
+	// 'n' to open the free-form custom-key form, type "demo.probe" into
+	// the Key field, Tab to Value, type "1", Enter — CustomGitKeyPlan
+	// resolves synchronously (not a tea.Cmd) and the standard
+	// non-destructive ceremony opens at its pre-write preview immediately,
+	// no async tick to drain.
+	customKeyCeremony := keyRune(setKeys, 'n')
+	for _, r := range "demo.probe" {
+		customKeyCeremony = keyRune(customKeyCeremony, r)
+	}
+	customKeyCeremony = keyTab(customKeyCeremony)
+	customKeyCeremony = keyRune(customKeyCeremony, '1')
+	customKeyCeremony = keyEnter(customKeyCeremony)
+	out["ggit-custom-key-ceremony-preview"] = capture(customKeyCeremony)
+
 	for _, spec := range globalGitSpecs() {
 		// Specs non-applicable on BOTH surfaces (the receipt state, the
 		// differs-row state, and the probe-error state) need conditions this
@@ -2044,6 +2115,12 @@ func CaptureGlobalGitScreens(backend tuikit.Backend) (map[string]string, error) 
 	// opened.
 	if out["ggit-apply-preview"] == out["ggit-options-list"] {
 		return nil, fmt.Errorf("screenshot: CaptureGlobalGitScreens: ggit-apply-preview captured the same frame as ggit-options-list — the apply ceremony never opened")
+	}
+	if out["ggit-set-keys-list"] == out["ggit-options-list"] {
+		return nil, fmt.Errorf("screenshot: CaptureGlobalGitScreens: ggit-set-keys-list captured the same frame as ggit-options-list — the sub-tab never switched")
+	}
+	if out["ggit-custom-key-ceremony-preview"] == out["ggit-set-keys-list"] {
+		return nil, fmt.Errorf("screenshot: CaptureGlobalGitScreens: ggit-custom-key-ceremony-preview captured the same frame as ggit-set-keys-list — the custom-key ceremony never opened")
 	}
 
 	return out, nil
@@ -2425,6 +2502,60 @@ func globalSSHSpecs() []ScreenSpec {
 		"the real storage-migration ceremony diff is PlanMigration's actual STORE-03 plan for the seeded machine; the dummy renders its frozen fixture diff — the shared heading anchors the authorized divergence",
 		`contains:"Migrate SSH storage layout"`)
 
+	// gssPropertiesFixtureDisposition (09.5-05-PLAN.md Task 1, PROP-01
+	// standing guard) authorizes the whole "All directives" master-detail
+	// body — in its UNFILTERED landing state — as the SAME DLV-4
+	// fixture-vs-live divergence class every other Global SSH body already
+	// carries: the real side is globalssh.AllDirectives' live ssh -G
+	// resolution (the full ~90-directive set for the seeded fixture home),
+	// the dummy renders FixtureBackend's frozen 22-row AllSSHDirectives()
+	// slice. On landing (no navigation yet) row 0 is selected — the
+	// alphabetically-FIRST key on each side, which is NOT the same literal
+	// key on both sides ("addkeystoagent" real vs "addressfamily" dummy),
+	// so a single-directive-name anchor like "stricthostkeychecking" is
+	// NOT guaranteed visible here (it sorts well past the visible ~20-row
+	// window on the real side, confirmed empirically via the gate's own
+	// failure trace during authoring — see 09.5-05-SUMMARY.md's Deviations
+	// section). The shared, reliable anchor instead is the windowed list's
+	// own overflow cue (gitCueLine's "↓ (+N more options)" — the SAME
+	// shared cue helper the Global Git Options list also reuses, per its
+	// own "more options" wording): BOTH sides' item counts (~90 real vs 22
+	// dummy) exceed the ~20-row visible window, so both emit this cue.
+	gssPropertiesFixtureDisposition := uxRegionDifferenceScoped(RegionGSSPropertiesBrowse, "fixture-vs-live-directive-set", gssFixtureClass,
+		"the real 'All directives' body renders globalssh.AllDirectives' live ssh -G resolution for the seeded fixture home (the full, bounded directive set); the dummy renders FixtureBackend's frozen 22-row AllSSHDirectives() slice — the directive SET (and consequently which key lands in the row-0 default selection) is the classified fixture-vs-live divergence; 'more options)' (the shared gitCueLine overflow cue, present because both the real ~90-item and dummy 22-item lists exceed the visible ~20-row window) survives on both sides regardless of which specific rows are visible",
+		`contains:"more options)"`)
+	// gssPropertiesFilterFixtureDisposition governs the FILTERED state
+	// (gss-properties-filter): typing "strict" narrows BOTH sides' lists to
+	// exactly the one stricthostkeychecking match (no scroll overflow), so
+	// unlike the unfiltered list above, "stricthostkeychecking" IS the
+	// correct, directly-visible anchor here — the filter deterministically
+	// pins selection to it regardless of the real vs dummy item-count
+	// denominator.
+	gssPropertiesFilterFixtureDisposition := uxRegionDifferenceScoped(RegionGSSPropertiesBrowse, "fixture-vs-live-directive-set", gssFixtureClass,
+		"the SAME fixture-vs-live directive-set divergence as the unfiltered 'All directives' list, now narrowed by the filter text 'strict' — both sides resolve to exactly the stricthostkeychecking row (the anchor), but the live-vs-fixture match-count denominator (the real ~90-directive set vs the dummy's 22-row fixture) still differs",
+		`contains:"stricthostkeychecking"`)
+	// gssPropertiesListSidebarDisposition authorizes RegionSidebar's
+	// generic "content left of the │ divider" extraction on the UNFILTERED
+	// properties master-list rows — the SAME fixture-vs-live directive-set
+	// divergence as gssPropertiesFixtureDisposition above, captured via a
+	// different region because the master-list column sits left of the
+	// divider (the same architectural pattern gss-options-list already
+	// carries via gssListFixtureDisposition). Uses the SAME overflow-cue
+	// anchor as gssPropertiesFixtureDisposition, for the SAME reason: row 0
+	// selects a different literal key on each side, so only the shared
+	// scroll cue is guaranteed present on both.
+	gssPropertiesListSidebarDisposition := uxRegionDifferenceScoped(RegionSidebar, "fixture-vs-live-directive-set", gssFixtureClass,
+		"on this surface RegionSidebar's left-of-│ extraction captures the master DIRECTIVE LIST rows, not an identity sidebar — the real row set is globalssh.AllDirectives' live ssh -G resolution while the dummy rows carry the frozen 22-row AllSSHDirectives() fixture; the list content (and default row-0 selection) is the same classified fixture-vs-live divergence, and 'more options)' (the shared gitCueLine overflow cue, present because both lists exceed the visible window) survives on both sides",
+		`contains:"more options)"`)
+	// gssPropertiesFilterSidebarDisposition mirrors
+	// gssPropertiesFilterFixtureDisposition for RegionSidebar: the filtered
+	// master list narrows to exactly the one stricthostkeychecking row on
+	// both sides (no scroll overflow), so the direct key-name anchor is
+	// correct here, unlike the unfiltered sidebar disposition above.
+	gssPropertiesFilterSidebarDisposition := uxRegionDifferenceScoped(RegionSidebar, "fixture-vs-live-directive-set", gssFixtureClass,
+		"the SAME sidebar-region divergence as gssPropertiesListSidebarDisposition, narrowed by the filter text 'strict' — both sides resolve to exactly the stricthostkeychecking row (the anchor) in the master-list column left of the divider, with no scroll overflow on either side",
+		`contains:"stricthostkeychecking"`)
+
 	// noHTML is the explicit approved-HTML non-applicability record EVERY
 	// Global SSH spec carries, stating the standing UI-reference rule by name
 	// rather than leaving HTML parity to the registry's default (T-06-45).
@@ -2527,6 +2658,69 @@ func globalSSHSpecs() []ScreenSpec {
 			NonApplicability:      receiptNA("STORE-03", storageReceiptReason),
 			RequiredRegions:       []RegionName{RegionGSSStorageCeremony},
 		},
+		// -------------------------------------------------------------------
+		// Phase 9.5 (09.5-05-PLAN.md Task 1): the "All directives" browser
+		// (PROP-01, plan 09.5-01) and the custom-directive entry flow
+		// (PROP-04, plan 09.5-04) — registered here for the first time; no
+		// prior plan in this phase registered a standing visual-regression
+		// guard for either.
+		// -------------------------------------------------------------------
+		{
+			ScreenID:    "gss-properties-list",
+			Interaction: "Boot the Global SSH tab on the Options sub-tab, then press → twice (Options → Storage & preview → All directives) to land on the third sub-tab in browse mode.",
+			// StateMarker is "more options)" (the gitCueLine overflow cue),
+			// NOT "stricthostkeychecking": on landing (no navigation), row 0
+			// selects the alphabetically-first key, which differs by literal
+			// value between the real ~90-item and dummy 22-item lists, and
+			// "stricthostkeychecking" sorts past the visible ~20-row window
+			// on the real side — verified absent from the real capture
+			// during authoring (see 09.5-05-SUMMARY.md Deviations). Both
+			// lists overflow the visible window, so both emit the cue.
+			StateMarker:           "more options)",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionHeaderStatus, RegionSubTabStrip, RegionGSSPropertiesBrowse},
+			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDisposition, gssPropertiesFixtureDisposition, gssPropertiesListSidebarDisposition,
+			},
+		},
+		{
+			ScreenID:              "gss-properties-filter",
+			Interaction:           "From the All directives sub-tab, press / to focus the filter, then type \"strict\" — narrows the list to the single stricthostkeychecking row.",
+			StateMarker:           "/ strict",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionHeaderStatus, RegionSubTabStrip, RegionGSSPropertiesBrowse},
+			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDisposition, gssPropertiesFilterFixtureDisposition, gssPropertiesFilterSidebarDisposition,
+			},
+		},
+		{
+			ScreenID:              "gss-properties-custom-form",
+			Interaction:           "From the All directives sub-tab, press n to open stage 1's 2-field name/value entry form (PROP-04).",
+			StateMarker:           tuikit.PropsAddCustomDirectiveLabel,
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionHeaderStatus, RegionSubTabStrip, RegionGSSCustomDirective},
+			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDisposition,
+			},
+		},
+		{
+			ScreenID:              "gss-properties-custom-invalid",
+			Interaction:           "From the custom-directive form, type \"NotARealDirective\" into the Directive field, Tab to Value, type \"yes\", Enter — D-H's un-skippable name gate stops at stage 2 with the UnknownName sentence, never opening the ceremony. \"NotARealDirective\" is genuinely unrecognized by the REAL locally installed OpenSSH (never a hardcoded keyword list gitid maintains) AND is the dummy's own frozen rejection sentinel (fixtureRejectedSSHDirectiveName) — the SAME name drives both surfaces to the identical stopping outcome.",
+			StateMarker:           fmt.Sprintf(tuikit.PropsSSHUnknownDirectiveFmt, "NotARealDirective"),
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionHeaderStatus, RegionSubTabStrip, RegionGSSCustomDirective},
+			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDisposition,
+			},
+		},
 	}
 }
 
@@ -2591,6 +2785,43 @@ func globalGitSpecs() []ScreenSpec {
 	ggitApplyHeadingDisposition := uxRegionDifferenceScoped(RegionGGitApplyHeading, "resolved-target-file", "GGIT-D-07",
 		"the apply ceremony's heading names the RESOLVED baseline target (D-07) — the real side resolves the fixture home's actual baseline path, the dummy renders its frozen fixture baseline path; the shared 'Write global-git managed block to ' prefix anchors both sides",
 		`contains:"Write global-git managed block to "`)
+
+	// ggitSetKeysFixtureDisposition (09.5-05-PLAN.md Task 1, PROP-02
+	// standing guard) authorizes the whole "Set keys" master-detail body as
+	// the SAME DLV-4 fixture-vs-live divergence class every other Global
+	// Git body already carries: the real side is globalgit.AllSetKeys' live
+	// `git config --list --show-origin --show-scope` resolution for the
+	// seeded fixture home (the deterministicGlobalGitFixture "alias.co"
+	// probe key plus whatever the local machine's system scope leaks), the
+	// dummy renders FixtureBackend's frozen 20-row AllGitSetKeys() slice.
+	// "alias.co" is the shared anchor: the deterministic fixture seeds this
+	// EXACT key/value pair, and the dummy's own frozen fixture carries the
+	// identical "alias.co"="checkout" entry independently — present on both
+	// sides regardless of which other keys diverge (the system-scope leak
+	// documented in 09.5-02-SUMMARY.md, the sort order, etc.).
+	ggitSetKeysFixtureDisposition := uxRegionDifferenceScoped(RegionGGitSetKeysBrowse, "fixture-vs-live-key-set", ggitFixtureClass,
+		"the real 'Set keys' body renders globalgit.AllSetKeys' live probe for the seeded fixture home (the deterministic 'alias.co' probe key, plus any system-scope leak this machine carries); the dummy renders FixtureBackend's frozen 20-row AllGitSetKeys() slice — the key SET is the classified fixture-vs-live divergence, and 'alias.co' (seeded into the real fixture home AND present in the dummy's own frozen fixture with the identical 'checkout' value) survives on both sides",
+		`contains:"alias.co"`)
+	// ggitSetKeysSidebarDisposition authorizes RegionSidebar's generic
+	// "content left of the │ divider" extraction on the Set keys master-
+	// detail rows — the SAME fixture-vs-live key-set divergence as
+	// ggitSetKeysFixtureDisposition above, captured via a different region
+	// because the master-list column sits left of the divider (the same
+	// architectural pattern ggit-options-list already carries via
+	// ggitListFixtureDisposition). "alias.co" is the shared anchor row on
+	// both sides of the divider, same as the detail-pane disposition.
+	ggitSetKeysSidebarDisposition := uxRegionDifferenceScoped(RegionSidebar, "fixture-vs-live-key-set", ggitFixtureClass,
+		"on this surface RegionSidebar's left-of-│ extraction captures the master SET-KEYS LIST rows, not an identity sidebar — the real row set is globalgit.AllSetKeys' live probe while the dummy rows carry the frozen 20-row AllGitSetKeys() fixture; the list content is the same classified fixture-vs-live divergence and 'alias.co' survives on both sides",
+		`contains:"alias.co"`)
+	// ggitCustomKeyCeremonyDisposition authorizes the custom-key ceremony's
+	// preview body: the real diff composes against the seeded fixture
+	// home's actual baseline file (D-F's new custom-git-keys managed
+	// block); the dummy renders its frozen canned diff. The shared "Write
+	// custom Git key to" prefix anchors both sides, mirroring
+	// ggitApplyCeremonyDisposition's own shared-prefix technique.
+	ggitCustomKeyCeremonyDisposition := uxRegionDifferenceScoped(RegionGGitCustomKeyCeremony, "custom-key-diff", ggitFixtureClass,
+		"the real custom-key ceremony diff is EnsureCustomGitKey's actual compose against the seeded fixture home's resolved baseline file (D-F, 09.5-03); the dummy renders its frozen canned diff — the shared 'Write custom Git key to' prefix anchors both sides",
+		`contains:"Write custom Git key to"`)
 
 	// noHTML is the explicit approved-HTML non-applicability record EVERY
 	// Global Git spec carries, stating the standing UI-reference rule by name.
@@ -2712,6 +2943,51 @@ func globalGitSpecs() []ScreenSpec {
 			ApplicableApprovedTUI: false,
 			NonApplicability:      receiptNA("GGIT-D-04", applyReceiptReason),
 			RequiredRegions:       []RegionName{RegionGGitApplyCeremony},
+		},
+		// -------------------------------------------------------------------
+		// Phase 9.5 (09.5-05-PLAN.md Task 1): the "Set keys" browser
+		// (PROP-02, plan 09.5-02 — including its own net-new sub-tab strip,
+		// D-D) and the custom-key ceremony preview (PROP-03, plan 09.5-03)
+		// — registered here for the first time; no prior plan in this phase
+		// registered a standing visual-regression guard for either.
+		// -------------------------------------------------------------------
+		{
+			ScreenID:              "ggit-set-keys-list",
+			Interaction:           "Boot the Global Git tab on the Options sub-tab, then press → once (Options → Set keys) to land on the second sub-tab in browse mode.",
+			StateMarker:           "alias.co",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionHeaderStatus, RegionSubTabStrip, RegionGGitSetKeysBrowse},
+			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDispositionGit, ggitSetKeysFixtureDisposition, ggitSetKeysSidebarDisposition,
+			},
+		},
+		{
+			ScreenID:              "ggit-custom-key-ceremony-preview",
+			Interaction:           "From the Set keys sub-tab, press n to open the free-form custom-key form, type \"demo.probe\" into the Key field, Tab to Value, type \"1\", Enter — CustomGitKeyPlan resolves synchronously and the standard non-destructive ceremony opens at its pre-write preview.",
+			StateMarker:           "Write custom Git key to",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionHeaderStatus, RegionGGitCustomKeyCeremony},
+			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDispositionGit, ggitCustomKeyCeremonyDisposition,
+				// internal/tuikit/ceremony.go's shared "Exact change: …" hint
+				// (the SAME static review-pane line ggit-apply-preview's own
+				// RegionConfirmationPreview disposition above already
+				// classifies) also renders on this custom-key ceremony —
+				// it uses the identical shared ceremony code. Same reasoning,
+				// intentionally BLANKET for the same reason: "confirmation-
+				// preview" is not a valid region name in
+				// .planning/design/global-git/visual-divergence-allowlist.txt's
+				// own schema (only ggit-options-browse, ggit-apply-ceremony,
+				// ggit-apply-heading, ggit-set-keys-browse, and
+				// ggit-custom-key-ceremony are), so there is no
+				// allowlist-sourced predicate to port here.
+				uxRegionDifference(RegionConfirmationPreview, "sentinel-wrapped-preview", ggitFixtureClass,
+					"internal/tuikit/ceremony.go's shared \"Exact change\" hint triggers RegionConfirmationPreview's extraction on this Global Git custom-key ceremony too; the real preview's production EnsureCustomGitKey-composed diff vs the dummy's frozen canned diff is the SAME divergence RegionGGitCustomKeyCeremony already classifies"),
+			},
 		},
 	}
 }

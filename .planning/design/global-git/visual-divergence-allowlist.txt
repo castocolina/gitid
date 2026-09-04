@@ -13,12 +13,15 @@
 #   <T-07-NAME> <screen-id>:<region>:<predicate>:<decision>:<classification>:<reason>
 #
 # where:
-#   screen-id       one of the eight Phase 7 Global Git checkpoint IDs
-#                   registered in internal/screenshot's globalGitSpecs():
+#   screen-id       one of the Phase 7 Global Git checkpoint IDs, or one of
+#                   the two Phase 9.5 IDs (09.5-05-PLAN.md Task 1) added on
+#                   top of them, registered in internal/screenshot's
+#                   globalGitSpecs():
 #                   ggit-options-list | ggit-options-scrolled |
 #                   ggit-options-with-selection | ggit-options-differs-row |
 #                   ggit-options-probe-error | ggit-apply-preview |
-#                   ggit-apply-receipt
+#                   ggit-apply-receipt |
+#                   ggit-set-keys-list | ggit-custom-key-ceremony-preview
 #   region          one of the shared registry region names (the Global Git
 #                   registrations add ggit-options-browse, ggit-apply-ceremony,
 #                   ggit-apply-heading)
@@ -85,3 +88,29 @@
 <T-07-CEREMONYTARGET> ggit-apply-preview:ggit-apply-heading:contains:"Write global-git managed block to ":GGIT-D-07:improvement:the apply ceremony's heading names the RESOLVED baseline target (D-07): the real side resolves the fixture home's actual baseline path, the dummy falls back to its frozen fixture baseline-path string — the shared frozen "Write global-git managed block to " prefix anchors both sides
 
 <T-07-APPLY-HEADER> ggit-apply-preview:header-status:contains:"ids":DLV-4:improvement:header status identity count differs (zero-identity real fixture home vs the dummy's 8 fixtures) — both carry "ids"
+
+# ---------------------------------------------------------------------------
+# Phase 9.5 (09.5-05-PLAN.md Task 1) — the "Set keys" browser (PROP-02,
+# including its own net-new sub-tab strip, D-D) and the custom-key ceremony
+# preview (PROP-03) standing visual-regression guard. Same DLV-4
+# fixture-vs-live comparison class as every entry above: the real body
+# renders globalgit.AllSetKeys' live probe for the seeded fixture home
+# (deterministicGlobalGitFixture now also seeds ONE deterministic probe key,
+# [alias] co = checkout, so the "populated" state does not depend on this
+# machine's own system-scope git config leak — see deterministicGlobalGit
+# Fixture's doc comment in cmd/gitid/gate_visual_regression_test.go), the
+# dummy renders FixtureBackend's frozen 20-row AllGitSetKeys() slice.
+# "alias.co" is the shared anchor — the deterministic fixture seeds this
+# EXACT key, and the dummy's own frozen fixture carries the identical
+# "alias.co"="checkout" entry independently.
+# ---------------------------------------------------------------------------
+
+<T-07-SET-KEYS-HEADER> ggit-set-keys-list:header-status:contains:"ids":DLV-4:improvement:header status identity count differs (zero-identity real fixture home vs the dummy's 8 fixtures) — both carry "ids"
+
+<T-07-SET-KEYS-BROWSE> ggit-set-keys-list:ggit-set-keys-browse:contains:"alias.co":DLV-4:improvement:the real "Set keys" body renders globalgit.AllSetKeys' live probe for the seeded fixture home (the deterministic "alias.co" probe key plus any system-scope leak this machine carries); the dummy renders FixtureBackend's frozen 20-row AllGitSetKeys() slice — the key SET is the classified fixture-vs-live divergence, and "alias.co" (seeded into the real fixture home AND present in the dummy's own frozen fixture with the identical "checkout" value) survives on both sides
+
+<T-07-SET-KEYS-LIST-ROWS> ggit-set-keys-list:sidebar:contains:"alias.co":DLV-4:improvement:on this surface RegionSidebar's left-of-│ extraction captures the master SET-KEYS LIST rows, not an identity sidebar — the real row set is globalgit.AllSetKeys' live probe while the dummy rows carry the frozen 20-row AllGitSetKeys() fixture; the list content is the same classified fixture-vs-live divergence and "alias.co" survives on both sides
+
+<T-07-CUSTOM-KEY-CEREMONY-HEADER> ggit-custom-key-ceremony-preview:header-status:contains:"ids":DLV-4:improvement:header status identity count differs (zero-identity real fixture home vs the dummy's 8 fixtures) — both carry "ids"
+
+<T-07-CUSTOM-KEY-CEREMONY-DIFF> ggit-custom-key-ceremony-preview:ggit-custom-key-ceremony:contains:"Write custom Git key to":DLV-4:improvement:the real custom-key ceremony diff is EnsureCustomGitKey's actual compose against the seeded fixture home's resolved baseline file (D-F, 09.5-03); the dummy renders its frozen canned diff — the shared "Write custom Git key to" prefix anchors both sides

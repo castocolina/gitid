@@ -13,12 +13,16 @@
 #   <T-06-NAME> <screen-id>:<region>:<predicate>:<decision>:<classification>:<reason>
 #
 # where:
-#   screen-id       one of the seven Phase 6 Global SSH checkpoint IDs
-#                   registered in internal/screenshot's globalSSHSpecs():
+#   screen-id       one of the Phase 6 Global SSH checkpoint IDs, or one of
+#                   the four Phase 9.5 IDs (09.5-05-PLAN.md Task 1) added on
+#                   top of them, registered in internal/screenshot's
+#                   globalSSHSpecs():
 #                   gss-options-list | gss-storage-current |
 #                   gss-storage-other | gss-apply-preview |
 #                   gss-apply-receipt | gss-storage-migrate-preview |
-#                   gss-storage-migrate-receipt
+#                   gss-storage-migrate-receipt |
+#                   gss-properties-list | gss-properties-filter |
+#                   gss-properties-custom-form | gss-properties-custom-invalid
 #   region          one of the shared registry region names (the Global SSH
 #                   registrations add gss-options-browse, gss-storage-browse,
 #                   gss-apply-ceremony, gss-apply-heading, gss-storage-ceremony)
@@ -94,3 +98,39 @@
 <T-06-STORAGE-MIGRATE-HEADER> gss-storage-migrate-preview:header-status:contains:"ids":DLV-4:improvement:header status identity count differs (zero-identity real fixture home vs the dummy's 8 fixtures) — both carry "ids"
 
 <T-06-STORAGE-MIGRATE-DIFF> gss-storage-migrate-preview:gss-storage-ceremony:contains:"Migrate SSH storage layout":STORE-03:improvement:the real storage-migration ceremony diff is PlanMigration's actual STORE-03 plan for the seeded machine; the dummy renders its frozen fixture diff — the shared "Migrate SSH storage layout" heading anchors the authorized divergence
+
+# ---------------------------------------------------------------------------
+# Phase 9.5 (09.5-05-PLAN.md Task 1) — the "All directives" browser (PROP-01)
+# and the custom-directive entry flow (PROP-04) standing visual-regression
+# guard. Same DLV-4 fixture-vs-live comparison class as every entry above:
+# the real body renders globalssh.AllDirectives' live ssh -G resolution for
+# the seeded fixture home, the dummy renders FixtureBackend's frozen 22-row
+# AllSSHDirectives() slice. On the UNFILTERED list (gss-properties-list) the
+# shared anchor is "more options)" (the gitCueLine overflow cue): landing
+# with no navigation selects row 0, the alphabetically-first key, which is a
+# DIFFERENT literal key on each side, so "stricthostkeychecking" is not
+# reliably visible there — confirmed empirically during authoring (see
+# 09.5-05-SUMMARY.md Deviations). On the FILTERED list
+# (gss-properties-filter) the filter text "strict" narrows both sides to
+# exactly the stricthostkeychecking row, so THAT screen correctly anchors on
+# "stricthostkeychecking" directly. The custom-directive form/validate states
+# (gss-properties-custom-form, gss-properties-custom-invalid) are driven by
+# the SAME typed script on both surfaces and carry NO body disposition —
+# only the standard header-status identity-count divergence.
+# ---------------------------------------------------------------------------
+
+<T-06-PROPERTIES-HEADER> gss-properties-list:header-status:contains:"ids":DLV-4:improvement:header status identity count differs (zero-identity real fixture home vs the dummy's 8 fixtures) — both carry "ids"
+
+<T-06-PROPERTIES-BROWSE> gss-properties-list:gss-properties-browse:contains:"more options)":DLV-4:improvement:the real "All directives" body renders globalssh.AllDirectives' live ssh -G resolution for the seeded fixture home (the full ~90-directive set); the dummy renders FixtureBackend's frozen 22-row AllSSHDirectives() slice — the directive SET (and consequently which key lands in the row-0 default selection) is the classified fixture-vs-live divergence; "more options)" (the shared gitCueLine overflow cue, present because both the real ~90-item and dummy 22-item lists exceed the visible ~20-row window) survives on both sides
+
+<T-06-PROPERTIES-LIST-ROWS> gss-properties-list:sidebar:contains:"more options)":DLV-4:improvement:on this surface RegionSidebar's left-of-│ extraction captures the master DIRECTIVE LIST rows, not an identity sidebar — the real row set is globalssh.AllDirectives' live ssh -G resolution while the dummy rows carry the frozen 22-row AllSSHDirectives() fixture; the list content (and default row-0 selection) is the same classified fixture-vs-live divergence, and "more options)" (the shared gitCueLine overflow cue) survives on both sides
+
+<T-06-PROPERTIES-FILTER-HEADER> gss-properties-filter:header-status:contains:"ids":DLV-4:improvement:header status identity count differs (zero-identity real fixture home vs the dummy's 8 fixtures) — both carry "ids"
+
+<T-06-PROPERTIES-FILTER-BROWSE> gss-properties-filter:gss-properties-browse:contains:"stricthostkeychecking":DLV-4:improvement:the SAME fixture-vs-live directive-set divergence as the unfiltered "All directives" list, narrowed by the filter text "strict" — both sides resolve to exactly the stricthostkeychecking row (the anchor), but the live-vs-fixture match-count denominator (the real ~90-directive set vs the dummy's 22-row fixture) still differs
+
+<T-06-PROPERTIES-FILTER-ROWS> gss-properties-filter:sidebar:contains:"stricthostkeychecking":DLV-4:improvement:the SAME sidebar-region divergence as T-06-PROPERTIES-LIST-ROWS, narrowed by the filter text "strict" — both sides resolve to exactly the stricthostkeychecking row (the anchor) in the master-list column left of the divider
+
+<T-06-PROPERTIES-CUSTOM-FORM-HEADER> gss-properties-custom-form:header-status:contains:"ids":DLV-4:improvement:header status identity count differs (zero-identity real fixture home vs the dummy's 8 fixtures) — both carry "ids"
+
+<T-06-PROPERTIES-CUSTOM-INVALID-HEADER> gss-properties-custom-invalid:header-status:contains:"ids":DLV-4:improvement:header status identity count differs (zero-identity real fixture home vs the dummy's 8 fixtures) — both carry "ids"

@@ -1292,6 +1292,10 @@ var globalSSHScreenIDs = map[string]bool{
 	"gss-options-list": true, "gss-storage-current": true, "gss-storage-other": true,
 	"gss-apply-preview": true, "gss-apply-receipt": true,
 	"gss-storage-migrate-preview": true, "gss-storage-migrate-receipt": true,
+	// 09.5-05-PLAN.md Task 1: the "All directives" browser (PROP-01) and
+	// custom-directive entry flow (PROP-04) states.
+	"gss-properties-list": true, "gss-properties-filter": true,
+	"gss-properties-custom-form": true, "gss-properties-custom-invalid": true,
 }
 
 // preGlobalSSHScreenIDs is the complete pre-Phase-6 registry vocabulary the
@@ -1319,6 +1323,10 @@ var globalGitScreenIDs = map[string]bool{
 	"ggit-options-list": true, "ggit-options-scrolled": true, "ggit-options-with-selection": true,
 	"ggit-options-differs-row": true, "ggit-options-probe-error": true,
 	"ggit-apply-preview": true, "ggit-apply-receipt": true,
+	// 09.5-05-PLAN.md Task 1: the "Set keys" browser (PROP-02, including its
+	// own net-new sub-tab strip, D-D) and the custom-key ceremony preview
+	// (PROP-03) states.
+	"ggit-set-keys-list": true, "ggit-custom-key-ceremony-preview": true,
 }
 
 var gitIgnoreScreenIDs = map[string]bool{
@@ -2508,22 +2516,50 @@ func TestNegativeControl_GlobalGitMidByteTruncationHashStable(t *testing.T) {
 // deterministicGlobalGitFixture seeds home with the baseline git config
 // directory the Phase 7 Global Git registry needs — the probe precondition
 // documented in this session's dispatch instructions.
+//
+// 09.5-05-PLAN.md Task 1: also seeds ONE deterministic "Set keys" probe
+// entry ([alias] co = checkout in home/.gitconfig) so the Phase 9.5
+// ggit-set-keys-list state has a genuinely SET, non-curated key to render —
+// a 09.5-02-SUMMARY.md-documented finding is that a genuinely empty git
+// configuration is not achievable in this sandbox (the system scope leaks
+// credential.helper), so relying on that leak alone for a "populated"
+// standing-guard state would be environment-dependent, not deterministic.
+// "alias.co" is deliberately NOT one of GGIT-01's curated Policy keys
+// (internal/globalgit/policy.go) — it cannot perturb any Options sub-tab
+// row — and its value ("checkout") is chosen to match FixtureBackend's own
+// frozen AllGitSetKeys() "alias.co"="checkout" entry exactly, giving both
+// the real and dummy captures a shared, always-present anchor.
 func deterministicGlobalGitFixture(t *testing.T, home string) {
 	gitconfigDir := filepath.Join(home, ".gitconfig.d")
 	if err := os.MkdirAll(gitconfigDir, 0o700); err != nil {
 		t.Fatalf("mkdir .gitconfig.d: %v", err)
 	}
+	gitconfig := "[alias]\n\tco = checkout\n"
+	if err := os.WriteFile(filepath.Join(home, ".gitconfig"), []byte(gitconfig), 0o600); err != nil {
+		t.Fatalf("gate-visual-regression: writing global-git fixture ~/.gitconfig: %v", err)
+	}
 }
 
 // mergeGlobalGitCaptures captures Global Git screens from both backends into
 // the provided maps.
+//
+// 09.5-05-PLAN.md Task 1: normalizes the LIVE capture via
+// normalizeDisposableHome, mirroring mergeGlobalSSHCaptures's own call
+// exactly — previously unneeded (no pre-Phase-9.5 Global Git region showed
+// an absolute filesystem path), but the new "Set keys" detail pane renders
+// git config --show-origin's literal origin path (the seeded fixture home's
+// own ~/.gitconfig), which is CR-01 non-deterministic across the two t.
+// TempDir() runs TestGateVisualRegression drives without this normalization
+// pass (proven: TestGateVisualRegression failed with a genuine hash
+// mismatch before this fix was added).
 func mergeGlobalGitCaptures(t *testing.T, real, approved map[string]string, home string) {
 	t.Setenv("HOME", home)
 	realB := newBackendForHome(home)
-	ggitLive, err := screenshot.CaptureGlobalGitScreens(realB)
+	rawGgitLive, err := screenshot.CaptureGlobalGitScreens(realB)
 	if err != nil {
 		t.Fatalf("CaptureGlobalGitScreens (live): %v", err)
 	}
+	ggitLive := normalizeDisposableHome(rawGgitLive, home)
 	dummyB := dummytui.NewFixtureBackend()
 	ggitApproved, err := screenshot.CaptureGlobalGitScreens(dummyB)
 	if err != nil {
