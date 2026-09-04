@@ -85,6 +85,10 @@ func TestSplitGitKeyRejectsMalformedKeys(t *testing.T) {
 		{"subsection containing double quote", `mytool.su"b.key`},
 		{"subsection containing backslash", `mytool.su\b.key`},
 		{"subsection containing newline", "mytool.su\nb.key"},
+		{"subsection containing NBSP (CR-01)", "http.a\u00a0b.sslVerify"},
+		{"subsection containing TAB (CR-01)", "http.a\tb.sslVerify"},
+		{"subsection containing ZWSP (CR-01)", "http.a\u200bb.sslVerify"},
+		{"subsection containing DEL (CR-01)", "http.a\x7fb.sslVerify"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/castocolina/gitid/internal/filewriter"
 )
@@ -33,14 +34,40 @@ const CustomGitKeysBlockName = "custom-git-keys"
 // characters or '-'.
 var gitConfigNameRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*$`)
 
-// forbiddenSubsectionCharRE matches a double quote, backslash, or newline/
-// carriage-return character anywhere in a candidate subsection — any of
-// these would corrupt the `[section "subsection"]` header this package
-// renders. This is a KEY-SYNTAX guard (RESEARCH Pitfall 3), distinct from
-// the VALUE injection guard (validateValue, fragment.go) — the value's
-// injection guard has exactly one call site, named in this file's own
-// doc comments; this regex is not a second copy of it.
-var forbiddenSubsectionCharRE = regexp.MustCompile(`["\\\n\r]`)
+// validateSubsection rejects any rune the header renderer cannot represent
+// losslessly (CR-01 round 2). The renderer escapes ONLY `"` and `\` — the two
+// characters git's own subsection grammar recognises as escapes — so any
+// other non-printable rune (TAB, DEL, NBSP U+00A0, ZWSP, or any other rune
+// `unicode.IsPrint` rejects) must be refused here too, not left to reach the
+// renderer. Before this fix the renderer used %q (strconv.Quote), which
+// escapes EVERY non-printable rune with a `\xNN`/`\uNNNN` sequence git's
+// grammar does not understand — those unknown escapes collapse to their bare
+// character on read, silently mis-filing the key under a different name and,
+// because ParseCustomKeysBlock reads the mangled subsection back verbatim
+// (no unescaping), permanently bricking every future write to this block
+// (see this file's package-level CR-01 round-2 notes). This is a KEY-SYNTAX
+// guard (RESEARCH Pitfall 3), distinct from the VALUE injection guard
+// (validateValue, fragment.go) — the value's injection guard has exactly one
+// call site, named in this file's own doc comments; this is not a second
+// copy of it.
+// subsectionEscaper escapes exactly the two characters git's subsection
+// grammar recognises as escapes (`\"` and `\\`) — nothing else. validateSubsection
+// rejects every other unescapable rune before this escaper ever runs, so the
+// escaped text this produces is always losslessly reversible by git's own
+// parser (and by ParseCustomKeysBlock's plain strings.Trim(..., `"`), which
+// performs no unescaping — see CR-01 round-2 notes above validateSubsection).
+var subsectionEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`)
+
+func validateSubsection(sub string) error {
+	for _, r := range sub {
+		if r == '"' || r == '\\' || !unicode.IsPrint(r) {
+			return fmt.Errorf(
+				"gitconfig: subsection %q contains %q, which git's subsection grammar cannot "+
+					"represent — the key would be silently written under a different name", sub, r)
+		}
+	}
+	return nil
+}
 
 // forbiddenCustomValueCharRE matches characters that are structural in git's
 // config-file grammar and would make the rendered line unparseable (a double
@@ -70,6 +97,21 @@ func validateCustomValue(key, value string) error {
 	return nil
 }
 
+// ValidateCustomKeyValue is the exported wrapper around validateCustomValue
+// (WR-07). runCustomSSHDirectiveWrite validates both the name and the value
+// at its plan stage, before any write; runCustomGitKeyWrite's plan stage
+// validated only the key (via SplitGitKey), leaving a malformed value
+// undetected until EnsureCustomGitKey at the write stage — by which point
+// Write 1 (the [include] floor into ~/.gitconfig) may already have executed
+// and taken a timestamped backup, forcing a rollback of a write that should
+// never have been attempted. Callers outside this package that need to
+// validate a custom git value before composing anything (the plan stage,
+// the TUI preview) call this rather than duplicating validateCustomValue's
+// character/whitespace rules.
+func ValidateCustomKeyValue(key, value string) error {
+	return validateCustomValue(key, value)
+}
+
 // CustomKey is one free-form git config key=value pair accumulated in the
 // custom-git-keys managed block.
 type CustomKey struct {
@@ -86,10 +128,13 @@ type CustomKey struct {
 // "https://example.com", variable "sslVerify").
 //
 // The section and variable must each match gitConfigNameRE. The subsection
-// must not contain a double quote, backslash, or newline/carriage return —
-// any of those would corrupt the `[section "subsection"]` header this
-// package renders. Every rejection names the offending part so a silent
-// mis-file (RESEARCH Pitfall 3) is never mistaken for success.
+// is checked by validateSubsection: it must not contain a double quote,
+// backslash, or any non-printable rune (control character, TAB, DEL, NBSP,
+// ZWSP, …) — any of those would corrupt the `[section "subsection"]` header
+// this package renders, or (CR-01 round 2) render as an escape sequence
+// git's own subsection grammar cannot represent. Every rejection names the
+// offending part so a silent mis-file (RESEARCH Pitfall 3) is never mistaken
+// for success.
 func SplitGitKey(key string) (section, subsection, variable string, err error) {
 	lastDot := strings.LastIndexByte(key, '.')
 	if lastDot == -1 {
@@ -111,8 +156,8 @@ func SplitGitKey(key string) (section, subsection, variable string, err error) {
 	if !gitConfigNameRE.MatchString(section) {
 		return "", "", "", fmt.Errorf("gitconfig: section name %q is invalid — must start with a letter and contain only letters, digits, or '-'", section)
 	}
-	if forbiddenSubsectionCharRE.MatchString(subsection) {
-		return "", "", "", fmt.Errorf("gitconfig: subsection %q must not contain a double quote, backslash, or newline", subsection)
+	if err := validateSubsection(subsection); err != nil {
+		return "", "", "", err
 	}
 
 	return section, subsection, variable, nil
@@ -194,7 +239,16 @@ func RenderCustomKeysBlock(entries []CustomKey) (string, error) {
 			return "", fmt.Errorf("gitconfig: RenderCustomKeysBlock: %w", err)
 		}
 		if subsection != "" {
-			fmt.Fprintf(&b, "[%s %q]\n", section, subsection)
+			// CR-01 round 2: never use %q (strconv.Quote) here — it escapes
+			// every rune unicode.IsPrint rejects, using \xNN/\uNNNN
+			// sequences git's subsection grammar does not understand (git
+			// recognises only \" and \\). validateSubsection above already
+			// guarantees subsection contains neither '"' nor '\\' unescaped
+			// on its own, so this replacer only ever has to escape those
+			// two — it can never introduce an escape ParseCustomKeysBlock's
+			// unescape-free read-back cannot undo.
+			escaped := subsectionEscaper.Replace(subsection)
+			fmt.Fprintf(&b, "[%s \"%s\"]\n", section, escaped)
 		} else {
 			fmt.Fprintf(&b, "[%s]\n", section)
 		}
