@@ -10,6 +10,7 @@ package main
 // completely as any later step (review R3-01).
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -1966,14 +1967,32 @@ func TestRunCustomSSHDirectiveWriteFloorsTheIncludeLineWhenNeeded(t *testing.T) 
 	}
 }
 
+// fakeResolveDeps returns a globalssh.Deps whose RunSSHG answers a canned
+// resolved-options line for ResolveDirectiveValue's staged probe — the seam
+// customDirectiveVerifyAdvisories now uses (WR-01) to canonicalise the
+// candidate value the SAME way ssh -G canonicalises the machine's actual
+// configuration, so the comparison is resolved-vs-resolved rather than
+// typed-vs-resolved.
+func fakeResolveDeps(resolvedLine string) globalssh.Deps {
+	return globalssh.Deps{
+		RunSSHG: func(_ context.Context, _ ...string) (string, error) {
+			return resolvedLine, nil
+		},
+	}
+}
+
 // TestCustomDirectiveVerifyAdvisoriesUsesExactCaseSensitiveComparison is the
 // WR-08(a) regression: the resolved-value comparison must be EXACT
 // (case-sensitive) — strings.EqualFold treats two genuinely different
 // values (a path, a cipher list, a ProxyCommand argument) as equal whenever
 // they differ only in case, silently swallowing a real shadowing mismatch.
+// The fake resolver here echoes the candidate value back UNCHANGED (a path
+// directive is not case-canonicalised by ssh -G), so this stays a genuine
+// case-only mismatch even after the WR-01 resolved-vs-resolved fix.
 func TestCustomDirectiveVerifyAdvisoriesUsesExactCaseSensitiveComparison(t *testing.T) {
 	directives := []globalssh.Directive{{Key: "userknownhostsfile", Value: "~/a"}}
-	advisories := customDirectiveVerifyAdvisories("UserKnownHostsFile", "~/A", directives)
+	deps := fakeResolveDeps("userknownhostsfile ~/A\n")
+	advisories := customDirectiveVerifyAdvisories(deps, "UserKnownHostsFile", "~/A", directives)
 	found := false
 	for _, a := range advisories {
 		if strings.Contains(a, "UserKnownHostsFile") {
@@ -1990,9 +2009,29 @@ func TestCustomDirectiveVerifyAdvisoriesUsesExactCaseSensitiveComparison(t *test
 // comparison, not a broken one.
 func TestCustomDirectiveVerifyAdvisoriesDoesNotFireOnAnExactMatch(t *testing.T) {
 	directives := []globalssh.Directive{{Key: "userknownhostsfile", Value: "~/a"}}
-	advisories := customDirectiveVerifyAdvisories("UserKnownHostsFile", "~/a", directives)
+	deps := fakeResolveDeps("userknownhostsfile ~/a\n")
+	advisories := customDirectiveVerifyAdvisories(deps, "UserKnownHostsFile", "~/a", directives)
 	if len(advisories) != 0 {
 		t.Errorf("advisories = %v, want none for an exact match", advisories)
+	}
+}
+
+// TestCustomDirectiveVerifyAdvisoriesDoesNotFireFalselyOnACanonicalisedValue
+// is the WR-01 regression: `ssh -G` canonicalises many values on read
+// (`yes` -> `true`, a leading zero stripped, quotes stripped, +/-/^
+// list-modifier expansion). Comparing the caller's raw TYPED value ("yes")
+// against the machine's RESOLVED value ("true") is comparing two different
+// representations of the SAME successful write — before this fix, that
+// comparison fired a false "may be shadowed" advisory on every canonicalised
+// value even though nothing was actually wrong. Resolving the candidate
+// through the SAME ssh -G canonicalisation (fakeResolveDeps mimics `yes` ->
+// `true`) before comparing must produce NO advisory here.
+func TestCustomDirectiveVerifyAdvisoriesDoesNotFireFalselyOnACanonicalisedValue(t *testing.T) {
+	directives := []globalssh.Directive{{Key: "stricthostkeychecking", Value: "true"}}
+	deps := fakeResolveDeps("stricthostkeychecking true\n")
+	advisories := customDirectiveVerifyAdvisories(deps, "StrictHostKeyChecking", "yes", directives)
+	if len(advisories) != 0 {
+		t.Errorf("advisories = %v, want none — %q resolves to %q on BOTH sides of the comparison, this is a successful write, not a shadowed one", advisories, "yes", "true")
 	}
 }
 
@@ -2003,7 +2042,7 @@ func TestCustomDirectiveVerifyAdvisoriesDoesNotFireOnAnExactMatch(t *testing.T) 
 // be found" advisory — that would be a false alarm on a write that landed
 // exactly as intended.
 func TestCustomDirectiveVerifyAdvisoriesSuppressesNotFoundForStructuralNames(t *testing.T) {
-	advisories := customDirectiveVerifyAdvisories("Host", "evil.example", nil)
+	advisories := customDirectiveVerifyAdvisories(globalssh.Deps{}, "Host", "evil.example", nil)
 	for _, a := range advisories {
 		if strings.Contains(a, "could not be found") {
 			t.Errorf("advisories = %v, want the not-found advisory suppressed for a structural name (WR-08(b) regressed)", advisories)
@@ -2015,7 +2054,7 @@ func TestCustomDirectiveVerifyAdvisoriesSuppressesNotFoundForStructuralNames(t *
 // verifies the sibling non-suppression case: an ordinary (non-structural)
 // name absent from the resolved set still fires the advisory.
 func TestCustomDirectiveVerifyAdvisoriesStillFiresNotFoundForOrdinaryNames(t *testing.T) {
-	advisories := customDirectiveVerifyAdvisories("StreamLocalBindMask", "0177", nil)
+	advisories := customDirectiveVerifyAdvisories(globalssh.Deps{}, "StreamLocalBindMask", "0177", nil)
 	found := false
 	for _, a := range advisories {
 		if strings.Contains(a, "could not be found") {

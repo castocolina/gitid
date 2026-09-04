@@ -228,6 +228,62 @@ func ProveCustomDirective(deps Deps, currentGlobalBody, name, value string) (Dir
 	return proof, nil
 }
 
+// ResolveDirectiveValue stages name/value ALONE — an isolated `Host *\n
+// <name> <value>\n` config, deliberately NOT mixed with any existing
+// directive body — and returns the CANONICALISED value the locally
+// installed OpenSSH resolves it to (WR-01, 09.5-REVIEW.md round 2). This is
+// the exact canonicalisation `ssh -G` applies to the machine's live
+// configuration: `yes` becomes `true`, a leading zero on a numeric value is
+// stripped, quotes around a path are stripped, and a `+`/`-`/`^`
+// list-modifier expands into the full resolved list. Comparing a caller's
+// raw TYPED value against a machine's RESOLVED value (as
+// customDirectiveVerifyAdvisories used to) means EVERY one of those
+// canonicalisations makes an honest, successful write look like a broken,
+// shadowed one. Resolving BOTH sides of the comparison through the SAME ssh
+// -G pass — the candidate value here, and the machine's actual resolved
+// value via AllDirectives — makes the comparison apples-to-apples.
+//
+// The isolated staging (no existing body) is deliberate: this function
+// answers "what does OpenSSH resolve THIS value to", not "what does the
+// whole machine resolve to" — mixing in unrelated directives could let an
+// unrelated shadowing rule change the answer for a key that is not actually
+// in question here.
+func ResolveDirectiveValue(deps Deps, name, value string) (string, error) {
+	if deps.RunSSHG == nil {
+		return "", errors.New("globalssh: RunSSHG seam is not wired — refusing to resolve a directive value")
+	}
+
+	tmpDir, err := os.MkdirTemp("", "gitid-directive-resolve-*")
+	if err != nil {
+		return "", fmt.Errorf("globalssh: creating staged directive-resolve directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	if err := os.Chmod(tmpDir, 0o700); err != nil { //nolint:gosec // explicitly setting restrictive mode 0700 for OpenSSH compatibility
+		return "", fmt.Errorf("globalssh: setting staged directive-resolve directory mode: %w", err)
+	}
+
+	stagedPath := filepath.Join(tmpDir, "staged_ssh_config")
+	stagedContent := stageDirectiveConfig("", name, value)
+	if err := os.WriteFile(stagedPath, []byte(stagedContent), 0o600); err != nil {
+		return "", fmt.Errorf("globalssh: writing staged directive-resolve config: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+	defer cancel()
+	out, runErr := deps.RunSSHG(ctx, "-F", stagedPath, "-G", ProbeHost)
+	if runErr != nil {
+		return "", fmt.Errorf("globalssh: staged directive resolve could not run: %w", runErr)
+	}
+
+	resolved := parseResolvedOptions(out)
+	v, ok := resolved[strings.ToLower(name)]
+	if !ok {
+		return "", fmt.Errorf("globalssh: resolved directive set has no key %q", name)
+	}
+	return v, nil
+}
+
 // stageDirectiveConfig builds the throwaway config's full text: the current
 // global block body (which already contains its own `Host *` line whenever
 // a block exists on disk) followed by the candidate `name value` line,

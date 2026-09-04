@@ -1728,7 +1728,8 @@ func (b *realBackend) runCustomSSHDirectiveWrite(name, value string, p lifecycle
 	if err := inject("custom-ssh-directive-verify"); err != nil {
 		return fail(fmt.Errorf("post-write re-verification failed — the written directive may have made the configuration unparseable: %w", err))
 	}
-	directives, derr := globalssh.AllDirectives(globalssh.BuildProbeDeps(b.sshConfigPath))
+	probeDeps := globalssh.BuildProbeDeps(b.sshConfigPath)
+	directives, derr := globalssh.AllDirectives(probeDeps)
 	if derr != nil {
 		// WR-07: AllDirectives failing is exactly the symptom of the write
 		// having made the live config unparseable — at which point EVERY
@@ -1740,20 +1741,34 @@ func (b *realBackend) runCustomSSHDirectiveWrite(name, value string, p lifecycle
 		// read before the next `git fetch` fails.
 		return fail(fmt.Errorf("post-write re-verification failed — the written directive may have made the configuration unparseable: %w", derr))
 	}
-	res.Advisories = append(res.Advisories, customDirectiveVerifyAdvisories(name, value, directives)...)
+	res.Advisories = append(res.Advisories, customDirectiveVerifyAdvisories(probeDeps, name, value, directives)...)
 
 	return res, nil
 }
 
 // customDirectiveVerifyAdvisories computes the post-write advisories for a
 // just-written custom SSH directive, given the resolved directive set
-// AllDirectives just re-read. Extracted as a pure function so WR-08's two
-// bugs can be regression-tested WITHOUT depending on the real machine's own
-// ssh -G resolution:
+// AllDirectives just re-read. Extracted as a pure function so this
+// function's bugs can be regression-tested WITHOUT depending on the real
+// machine's own ssh -G resolution (the deps parameter is a plain injectable
+// struct of function fields, so a test can supply a fake resolver):
 //
 //   - the value comparison is EXACT (case-sensitive) — strings.EqualFold
 //     would treat two genuinely different values (a path, a cipher list, a
 //     ProxyCommand argument) as equal whenever they differ only in case;
+//   - WR-01 (09.5-REVIEW.md round 2): the comparison is RESOLVED-vs-RESOLVED,
+//     never typed-vs-resolved. `ssh -G` canonicalises the machine's actual
+//     configuration — `yes` becomes `true`, a leading zero is stripped,
+//     quotes are stripped, a `+`/`-`/`^` list-modifier expands — so
+//     comparing the caller's raw TYPED value directly against d.Value (the
+//     already-resolved value from AllDirectives) fired a false "may be
+//     shadowed" advisory on EVERY canonicalised value, even a fully
+//     successful write. globalssh.ResolveDirectiveValue resolves the
+//     candidate through the SAME ssh -G canonicalisation before comparing.
+//     If that resolution itself fails (the probe could not run), the
+//     mismatch check is skipped entirely rather than falling back to the
+//     typed-vs-resolved comparison that caused this bug — a missing
+//     advisory is safer than a false one;
 //   - the "not found in the resolved set" advisory is suppressed for a
 //     structural directive name (globalssh.IsStructuralDirectiveName) —
 //     ssh -G never echoes Host/Match/Include/IgnoreUnknown back in its
@@ -1762,7 +1777,7 @@ func (b *realBackend) runCustomSSHDirectiveWrite(name, value string, p lifecycle
 //     write path today (CR-02's ValidateDirectiveName already rejects a
 //     structural name before this stage), kept as defense-in-depth for any
 //     future caller reached without that gate.
-func customDirectiveVerifyAdvisories(name, value string, directives []globalssh.Directive) []string {
+func customDirectiveVerifyAdvisories(deps globalssh.Deps, name, value string, directives []globalssh.Directive) []string {
 	var advisories []string
 	lname := strings.ToLower(name)
 	found := false
@@ -1771,7 +1786,7 @@ func customDirectiveVerifyAdvisories(name, value string, directives []globalssh.
 			continue
 		}
 		found = true
-		if d.Value != strings.TrimSpace(value) {
+		if expected, rerr := globalssh.ResolveDirectiveValue(deps, name, value); rerr == nil && d.Value != expected {
 			advisories = append(advisories, fmt.Sprintf(
 				"advisory: %s was written as %q but resolves to %q — the write may be shadowed by another directive",
 				name, value, d.Value))

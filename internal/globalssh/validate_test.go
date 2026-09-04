@@ -360,3 +360,91 @@ func TestProveCustomDirectiveProbesTheWildcardSentinel(t *testing.T) {
 		t.Errorf("recorded argv %v does not end with -G %s (the same wildcard-only sentinel the browse path uses)", f.lastArgs, ProbeHost)
 	}
 }
+
+// fakeStdoutRunner is the RunSSHG (stdout-only) sibling of fakeCombinedRunner,
+// for ResolveDirectiveValue's tests.
+type fakeStdoutRunner struct {
+	out      string
+	err      error
+	lastArgs []string
+}
+
+func (f *fakeStdoutRunner) run(_ context.Context, args ...string) (string, error) {
+	f.lastArgs = append([]string(nil), args...)
+	return f.out, f.err
+}
+
+// TestResolveDirectiveValueReturnsTheCanonicalisedResolution is the WR-01
+// regression: ResolveDirectiveValue must return what the staged ssh -G probe
+// resolved the candidate value to — the canonicalised form, not the raw
+// input — so a caller comparing it against another resolved value never
+// compares a typed representation against a resolved one.
+func TestResolveDirectiveValueReturnsTheCanonicalisedResolution(t *testing.T) {
+	f := &fakeStdoutRunner{out: "stricthostkeychecking true\n"}
+	got, err := ResolveDirectiveValue(Deps{RunSSHG: f.run}, "StrictHostKeyChecking", "yes")
+	if err != nil {
+		t.Fatalf("ResolveDirectiveValue: %v", err)
+	}
+	if got != "true" {
+		t.Errorf("got %q, want the canonicalised %q (ssh -G resolves yes -> true)", got, "true")
+	}
+	if len(f.lastArgs) < 2 || f.lastArgs[len(f.lastArgs)-2] != "-G" || f.lastArgs[len(f.lastArgs)-1] != ProbeHost {
+		t.Errorf("recorded argv %v does not end with -G %s", f.lastArgs, ProbeHost)
+	}
+}
+
+// TestResolveDirectiveValueStagesInIsolation asserts the staged config
+// carries ONLY the candidate directive — no pre-existing body — so an
+// unrelated directive can never influence this directive's resolution.
+func TestResolveDirectiveValueStagesInIsolation(t *testing.T) {
+	var capturedContent string
+	wrapped := func(_ context.Context, args ...string) (string, error) {
+		// Read the staged file HERE, synchronously, inside the fake seam
+		// invocation — ResolveDirectiveValue removes tmpDir via defer right
+		// after this call returns, so reading it back afterwards would race
+		// the cleanup.
+		for i, a := range args {
+			if a == "-F" && i+1 < len(args) {
+				staged, rerr := os.ReadFile(args[i+1]) //nolint:gosec // path is this test's own fake seam invocation
+				if rerr != nil {
+					t.Fatalf("reading staged config inside the fake seam: %v", rerr)
+				}
+				capturedContent = string(staged)
+			}
+		}
+		return "streamlocalbindmask 0177\n", nil
+	}
+	if _, err := ResolveDirectiveValue(Deps{RunSSHG: wrapped}, "StreamLocalBindMask", "0177"); err != nil {
+		t.Fatalf("ResolveDirectiveValue: %v", err)
+	}
+	if capturedContent == "" {
+		t.Fatal("staged config content was never captured — ResolveDirectiveValue did not pass -F")
+	}
+	if strings.Contains(capturedContent, "ForwardAgent") || strings.Contains(capturedContent, "IdentitiesOnly") {
+		t.Errorf("staged config carries unrelated directives, want ONLY the candidate — staged:\n%s", capturedContent)
+	}
+	if !strings.Contains(capturedContent, "StreamLocalBindMask 0177") {
+		t.Errorf("staged config missing the candidate line, got:\n%s", capturedContent)
+	}
+}
+
+// TestResolveDirectiveValueFailsClosedWhenRunSSHGIsNil mirrors
+// TestProveCustomDirectiveFailsClosedWhenRunSSHGCombinedIsNil for the
+// stdout-only seam.
+func TestResolveDirectiveValueFailsClosedWhenRunSSHGIsNil(t *testing.T) {
+	if _, err := ResolveDirectiveValue(Deps{}, "StrictHostKeyChecking", "yes"); err == nil {
+		t.Fatal("ResolveDirectiveValue with a nil RunSSHG seam: expected a non-nil error, got nil")
+	}
+}
+
+// TestResolveDirectiveValueErrorsWhenTheKeyIsAbsentFromTheResolution covers
+// a structural/rejected candidate whose staged probe succeeds (exit 0) but
+// whose resolved-options output never echoes the candidate's own key back —
+// the caller must see an error, not a silently empty "" value that could be
+// mistaken for a genuine resolved empty string.
+func TestResolveDirectiveValueErrorsWhenTheKeyIsAbsentFromTheResolution(t *testing.T) {
+	f := &fakeStdoutRunner{out: "hashknownhosts no\n"}
+	if _, err := ResolveDirectiveValue(Deps{RunSSHG: f.run}, "StreamLocalBindMask", "0177"); err == nil {
+		t.Fatal("ResolveDirectiveValue: expected an error when the resolved set has no entry for the candidate key")
+	}
+}
