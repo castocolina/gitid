@@ -920,8 +920,12 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 			}
 			if m.ceremonyKind == gitCeremonyCustomKey {
 				m.customKeyCommitPending = true
-				m.pendingCustomKey = m.customKeyInput.Value()
-				m.pendingCustomValue = m.customValueInput.Value()
+				// WR-12: m.pendingCustomKey/Value were already captured at
+				// FORM-SUBMIT time (the customKeyOpen "enter" handler above)
+				// — read ONLY that snapshot here, never
+				// m.customKeyInput.Value()/m.customValueInput.Value(), which
+				// are the model's LIVE fields and may have since diverged
+				// from what the user actually confirmed.
 				cmd := m.backend.CommitCustomGitKey(m.pendingCustomKey, m.pendingCustomValue)
 				snapshot := gitCommitTokenMsg{customKey: m.pendingCustomKey, customValue: m.pendingCustomValue}
 				return keyResult{model: m, handled: true, cmd: wrapGitCommitToken(token, cmd, snapshot)}
@@ -992,6 +996,16 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 			}
 			gitKey := m.customKeyInput.Value()
 			gitValue := m.customValueInput.Value()
+			// WR-12: capture the submitted snapshot HERE, at form-submit
+			// time — alongside m.ceremonyKind below — so ceremonyConfirmed
+			// reads ONLY m.pendingCustomKey/Value, never the model's live
+			// customKeyInput/customValueInput fields. This file's own CR-01
+			// doctrine is "read the SUBMITTED values from the message's own
+			// snapshot, never the live model fields"; the SSH sibling
+			// (globalssh.go) already does this correctly for
+			// pendingDirectiveName/Value.
+			m.pendingCustomKey = gitKey
+			m.pendingCustomValue = gitValue
 			plan, planErr := m.backend.CustomGitKeyPlan(gitKey, gitValue)
 			if planErr != nil {
 				// A preview that cannot be computed renders the error

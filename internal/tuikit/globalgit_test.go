@@ -2747,6 +2747,59 @@ func TestCustomKeyCommitFailureRendersFailureReceipt(t *testing.T) {
 	}
 }
 
+// TestCustomKeyCeremonyConfirmUsesTheSubmittedSnapshotNotTheLiveInputFields
+// is the WR-12 regression: the ceremony's preview is computed at FORM-SUBMIT
+// time from the locally captured gitKey/gitValue; on confirm, the handler
+// must read the SAME submitted snapshot (m.pendingCustomKey/Value, captured
+// at submit) — never the model's live customKeyInput/customValueInput
+// fields, which this file's own CR-01 doctrine says never to trust at
+// confirm time (the SSH sibling, globalssh.go, already reads its own
+// pendingDirectiveName/Value captured at submit). This test directly
+// mutates the live input fields AFTER the ceremony has opened (simulating
+// what a future refactor could make reachable) and asserts the commit still
+// carries the ORIGINALLY SUBMITTED key/value, not the mutated live ones.
+func TestCustomKeyCeremonyConfirmUsesTheSubmittedSnapshotNotTheLiveInputFields(t *testing.T) {
+	var gotKey, gotValue string
+	b := stubBackend{
+		customKeyPlan: GitCustomKeyPlanView{Targets: []string{"~/.gitconfig.d/00-baseline"}},
+		customKeyFn: func(key, value string) tea.Cmd {
+			gotKey, gotValue = key, value
+			return func() tea.Msg { return GitCustomKeyCommitMsg{} }
+		},
+	}
+	m := newGlobalGitModel(b)
+	state := Seed()
+	activated, _ := m.activate(state)
+	m = activated.(globalGitModel)
+	m.subTab = ggitSetKeys
+
+	opened := m.handleKey(pressKey("n"), state)
+	m = opened.model.(globalGitModel)
+	m.customKeyInput.SetValue("core.pager")
+	m.customValueInput.SetValue("less -FRX")
+	m.customFieldFocus = 1
+	submitted := m.handleKey(pressKey("enter"), state)
+	m = submitted.model.(globalGitModel)
+	if !m.ceremonyOpen {
+		t.Fatal("setup: submitting must open the ceremony")
+	}
+
+	// Simulate a live-field mutation AFTER submit but BEFORE confirm — the
+	// bug WR-12 describes as "one refactor away" from reachable.
+	m.customKeyInput.SetValue("core.editor")
+	m.customValueInput.SetValue("vim")
+
+	confirmed := m.handleKey(pressKey("enter"), state)
+	m = confirmed.model.(globalGitModel)
+	if cmd := confirmed.cmd; cmd != nil {
+		cmd()
+	}
+
+	if gotKey != "core.pager" || gotValue != "less -FRX" {
+		t.Errorf("CommitCustomGitKey called with (%q, %q), want the SUBMITTED snapshot (\"core.pager\", \"less -FRX\") — WR-12 regressed (read the live, mutated input fields instead)", gotKey, gotValue)
+	}
+}
+
 // TestCustomKeyStaleCommitMessageIsNotMisattributed is the PROP-03 mirror of
 // TestGitStaleCommitMsgNotMisattributedToNewerCeremony (CR-01): a stale
 // message from an abandoned ceremony 1 must not corrupt ceremony 2's
