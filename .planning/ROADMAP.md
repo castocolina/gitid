@@ -555,12 +555,34 @@ Plans:
 
 **Goal**: The whole app is validated end-to-end on a mainstream Linux distro, alongside macOS.
 **Depends on**: Phase 9.3 (release pipeline validates the same build matrix this phase exercises on Linux)
-**Requirements**: PLAT-03
+**Requirements**: PLAT-03, BUILD-03
 **Success Criteria** (what must be TRUE):
 
   1. The full create → test → store → manage → health flow is validated **end-to-end on at least one mainstream Linux distro** (in addition to macOS); portability gaps are fixed or logged as accepted limitations. (PLAT-03)
+  2. On a version tag, CI publishes checksummed, provenance-attested `tar.gz` release archives via goreleaser, with a build-stamped `gitid --version`, a hardened install script, and a Homebrew tap — replacing Phase 9.3's raw-binary pipeline with the D-05..D-16 shape. (BUILD-03)
 
-**Plans**: TBD
+**Plans**: 6 plans in 4 waves
+**UI hint**: no
+
+Plans:
+
+**Wave 1** — parallel (disjoint files)
+
+- [ ] 10-01-PLAN.md — TRACER: internal/version hybrid resolve (D-09/D-10/D-11), wired through the Makefile, `gitid --version`, `gitid version` (+ `--json`), and an additive TUI help line
+- [ ] 10-02-PLAN.md — Fedora container CI job (D-01/D-02) + a named ssh -V distro-suffix regression case (D-03)
+- [ ] 10-03-PLAN.md — PLATFORM-NOTES.md ledger (D-04) + the Bazzite manual UAT checklist (D-03)
+
+**Wave 2** — release pipeline (blocked on Wave 1)
+
+- [ ] 10-04-PLAN.md — .goreleaser.yaml + make release/release-snapshot (D-05/D-07/D-08/D-13) + release.yml, retiring ci.yml's old release job (D-06)
+
+**Wave 3** — artifact-shape migration (blocked on Wave 2)
+
+- [ ] 10-05-PLAN.md — scripts/install.sh + e2e/release_e2e_test.go rewritten for the D-07 tar.gz archive shape, GITID_VERSION pin, and custom install dir (D-14/D-15)
+
+**Wave 4** — closing documentation (blocked on Wave 3)
+
+- [ ] 10-06-PLAN.md — README.md refresh via the README-crafting skill (D-16)
 
 ## Progress
 
@@ -583,4 +605,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9.3. Release CI/CD + Installer | 2/2 | Complete    | 2026-09-01 |
 | 9.4. TUI UX Consistency & Doctor/Fixer Parity | 4/4 | Complete    | 2026-09-03 |
 | 9.5. Full SSH/Git Properties Browser | 5/5 | Complete    | 2026-09-04 |
-| 10. Linux Validation + Release Pipeline | 0/TBD | Not started | - |
+| 10. Linux Validation + Release Pipeline | 0/6 | Planned | - |
