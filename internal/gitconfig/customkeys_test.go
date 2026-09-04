@@ -89,6 +89,7 @@ func TestSplitGitKeyRejectsMalformedKeys(t *testing.T) {
 		{"subsection containing TAB (CR-01)", "http.a\tb.sslVerify"},
 		{"subsection containing ZWSP (CR-01)", "http.a\u200bb.sslVerify"},
 		{"subsection containing DEL (CR-01)", "http.a\x7fb.sslVerify"},
+		{"empty subsection (WR-01)", "http..sslVerify"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -333,6 +334,55 @@ func TestEnsureCustomGitKeyDropsAnUnrenderableEntryInsteadOfFailingTheWholeWrite
 	}
 	if !strings.Contains(res, "name = New User") {
 		t.Errorf("the newly upserted entry must still be written, got:\n%s", res)
+	}
+}
+
+// TestEnsureCustomGitKeyRejectsEmptySubsection is the WR-01 (09.5-REVIEW.md
+// round 3) regression: "http..sslVerify" splits into section="http",
+// subsection="", variable="sslVerify" — validateSubsection("") passes
+// vacuously, so before this fix the renderer took the subsection=="" branch
+// and silently re-filed the key as the DIFFERENT git key "http.sslVerify".
+// gitKeysEqual then compared the two keys' (section, subsection, variable)
+// tuples EQUAL, so upserting "http..sslVerify" clobbered an unrelated,
+// already-present "http.sslVerify" entry. EnsureCustomGitKey must now refuse
+// the empty-subsection key outright, before anything is composed, and must
+// leave a pre-existing unrelated key completely untouched.
+func TestEnsureCustomGitKeyRejectsEmptySubsection(t *testing.T) {
+	existing, _, err := EnsureCustomGitKey(nil, "http.sslVerify", "true")
+	if err != nil {
+		t.Fatalf("seeding http.sslVerify: unexpected error: %v", err)
+	}
+
+	result, _, err := EnsureCustomGitKey(existing, "http..sslVerify", "false")
+	if err == nil {
+		t.Fatalf("EnsureCustomGitKey(http..sslVerify) must be rejected — an empty subsection would silently re-file the key under http.sslVerify, a DIFFERENT key")
+	}
+	if !strings.Contains(err.Error(), "http..sslVerify") {
+		t.Errorf("error must name the offending key, got: %v", err)
+	}
+
+	// The rejection must be a true no-op: the unrelated pre-existing key's
+	// bytes must be byte-identical to before the rejected call.
+	if result != nil {
+		t.Errorf("EnsureCustomGitKey must return nil bytes on rejection, got:\n%s", result)
+	}
+	if !strings.Contains(string(existing), "sslVerify = true") {
+		t.Fatalf("test invariant broken: seeded http.sslVerify not found in existing bytes:\n%s", existing)
+	}
+}
+
+// TestSplitGitKeyEmptySubsectionErrorNamesTheCollidingKey verifies the
+// SplitGitKey-level error (the same guard EnsureCustomGitKey and
+// RenderCustomKeysBlock both call before composing anything) names the git
+// key the renderer would have silently produced instead — so a caller sees
+// the collision, not just "invalid key".
+func TestSplitGitKeyEmptySubsectionErrorNamesTheCollidingKey(t *testing.T) {
+	_, _, _, err := SplitGitKey("http..sslVerify")
+	if err == nil {
+		t.Fatal("SplitGitKey(http..sslVerify): expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "http.sslVerify") {
+		t.Errorf("error must name the key the renderer would have silently produced (http.sslVerify), got: %v", err)
 	}
 }
 

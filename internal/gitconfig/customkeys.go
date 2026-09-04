@@ -163,6 +163,24 @@ func SplitGitKey(key string) (section, subsection, variable string, err error) {
 	} else {
 		section = sectionPath[:firstDot]
 		subsection = sectionPath[firstDot+1:]
+		// WR-01 (09.5-REVIEW.md round 3): an EMPTY subsection ("http..sslVerify")
+		// must be rejected here, before anything is composed. Left unchecked,
+		// validateSubsection("") passes vacuously (it has no forbidden runes),
+		// RenderCustomKeysBlock then takes the subsection=="" branch and emits
+		// a bare `[http]` header — silently re-filing the key as the DIFFERENT
+		// git key "http.sslVerify" (git treats "http..sslVerify" and
+		// "http.sslVerify" as genuinely distinct keys). gitKeysEqual compounds
+		// this: comparing subA=="" == subB=="" reports the two AS THE SAME
+		// KEY, so upserting "http..sslVerify" would clobber an unrelated,
+		// already-present "http.sslVerify" entry — the exact "silently
+		// written under a different name" failure class the round-2 CR-01 fix
+		// exists to eliminate, reached here through the drop-the-quotes branch
+		// instead of the escaping branch.
+		if subsection == "" {
+			return "", "", "", fmt.Errorf(
+				"gitconfig: %q has an empty subsection — the renderer would file it as %q, "+
+					"a different git key", key, section+"."+variable)
+		}
 	}
 	if !gitConfigNameRE.MatchString(section) {
 		return "", "", "", fmt.Errorf("gitconfig: section name %q is invalid — must start with a letter and contain only letters, digits, or '-'", section)
