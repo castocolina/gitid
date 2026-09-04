@@ -1,0 +1,88 @@
+---
+# gitid release publish — goreleaser-driven (D-05/D-06/D-07/D-08/D-13, Phase 10
+# plan 10-04). Replaces ci.yml's retired `release:` job (Phase 9.3 raw-binary
+# pipeline) in the SAME commit that adds this file, to avoid the two workflows
+# racing/double-publishing onto the same GitHub Release object on the identical
+# `push: tags: v*` event (10-RESEARCH.md Open Question 1).
+#
+# D-08's `--verify-tag` clause: this job only ever runs from a real
+# `push: tags: v*` event against the exact commit GitHub resolved that tag to
+# (no local/forged tag path exists in CI), and `actions/checkout@...
+# fetch-depth: 0` (below) checks out that same resolved commit — together
+# these make a separate tag-verification step redundant; `gh release create
+# --verify-tag` exists to protect a LOCAL release flow against a stale/
+# incorrectly-resolved local tag, a class of risk this server-side,
+# trigger-bound job cannot experience.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  # This job carries elevated, secret-bearing permissions (contents: write,
+  # id-token: write for provenance attestation, attestations: write) — all
+  # JOB-scoped, never workflow-wide (D-06). ci.yml's own top-level permissions
+  # stay contents: read.
+  release:
+    name: release (ubuntu-latest)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # D-10's guardrail — release/version-stamping paths need full tag
+          # history available for `git describe`.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.26.x"
+
+      # REVIEW C-7 FIX: the narrower setup-env-release target, NOT the full
+      # setup-env — this workflow never provisions Chromium/goimports/
+      # pre-commit hooks it does not need, avoiding extra minutes and a
+      # network-flake surface on the one workflow where a failure means a
+      # pushed tag doesn't publish.
+      - name: make setup-env-release (golangci-lint + gosec + goreleaser only)
+        run: make setup-env-release
+
+      - name: make test (-race)
+        run: make test
+
+      - name: make lint (golangci-lint + gosec)
+        run: make lint
+
+      - name: Compute release version metadata
+        id: relver
+        run: |
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: make release (goreleaser publish)
+        run: |
+          make release \
+            VERSION=${{ steps.relver.outputs.version }} \
+            COMMIT=${{ steps.relver.outputs.commit }} \
+            DATE=${{ steps.relver.outputs.date }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+
+      # REVIEW C-8 FIX: attest BOTH the archives and the checksums manifest —
+      # the exact file the installer (D-14/D-15) trusts to validate an
+      # archive's integrity. Attesting only the archives would leave the
+      # manifest that VALIDATES them outside the provenance chain.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*_checksums.txt
