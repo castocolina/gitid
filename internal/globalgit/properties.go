@@ -7,8 +7,18 @@ import "sort"
 // key, its effective value, the scope word git printed (global/system/local/
 // command), and its origin file (or non-file origin string, e.g. "command
 // line"), with the "file:" prefix already stripped.
+//
+// ValueCount is the TOTAL number of physical occurrences this key had across
+// every scope/origin git reported (WR-04, 09.5-REVIEW.md round 2): git
+// config is legitimately multi-valued (a stacked `credential.helper`, an
+// `--add`-built list, `remote.*.fetch`, `include.path`, `safe.directory`).
+// Value/Scope/Origin above still carry only the LAST occurrence (git's own
+// `--get` resolution) — ValueCount > 1 is the honesty signal that other
+// values exist and are not shown, so the screen never implies a stacked key
+// is single-valued.
 type SetKey struct {
 	Key, Value, Scope, Origin string
+	ValueCount                int
 }
 
 // AllSetKeys returns every git config key actually set on the machine
@@ -34,13 +44,13 @@ type SetKey struct {
 // produce byte-identical output — Go map iteration order is not stable, and
 // an unsorted list would make the render (and every downstream golden) flap.
 func AllSetKeys(deps Deps) ([]SetKey, error) {
-	m, err := effectiveProbe(deps)
+	m, counts, err := effectiveProbe(deps)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]SetKey, 0, len(m))
 	for k, e := range m {
-		out = append(out, SetKey{Key: k, Value: e.Value, Scope: e.Scope, Origin: e.Origin})
+		out = append(out, SetKey{Key: k, Value: e.Value, Scope: e.Scope, Origin: e.Origin, ValueCount: counts[k]})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out, nil

@@ -434,6 +434,13 @@ type GitSetKeyView struct {
 	// SSHDirectiveView.PolicyBacked's identical rule. This is what the
 	// properties browser's cross-reference note renders from.
 	PolicyBacked bool
+	// ValueCount is the WR-04 honesty signal (09.5-REVIEW.md round 2): the
+	// total number of physical occurrences this key had across every
+	// scope/origin (globalgit.SetKey.ValueCount). Value/Scope/Origin above
+	// still carry only the LAST occurrence — ValueCount > 1 means other
+	// values exist and are not shown, rendered as
+	// PropsGitMultiValuedNoteFmt in the detail pane.
+	ValueCount int
 }
 
 // SSHStorageMigrationView is the Storage sub-tab's live preview: the resolved

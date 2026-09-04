@@ -68,7 +68,10 @@ func BuildProbeDeps(nonRepoCwd string) Deps {
 
 // effectiveProbe runs `git config --show-origin --show-scope --list -z` from
 // deps.NonRepoCwd (which MUST NOT be inside any git repository — see Deps
-// doc comment and T-07-06) and returns a map of lowercase key → EffectiveEntry.
+// doc comment and T-07-06) and returns a map of lowercase key → EffectiveEntry,
+// plus a second map of lowercase key → total physical occurrence count
+// (WR-04) so a caller that needs to know a key was multi-valued can detect
+// it without a second probe.
 //
 // The -z flag is used because it is the only unambiguous layout for values
 // that may contain tabs, newlines, or equals signs (empirically verified at
@@ -86,15 +89,16 @@ func BuildProbeDeps(nonRepoCwd string) Deps {
 // GIT_CONFIG_NOSYSTEM is deliberately NOT set: the system scope is real and
 // must be visible, because a system-set value is exactly the "set at a scope
 // gitid cannot change" provenance class.
-func effectiveProbe(deps Deps) (map[string]EffectiveEntry, error) {
+func effectiveProbe(deps Deps) (map[string]EffectiveEntry, map[string]int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 	defer cancel()
 	out, err := deps.RunGitConfig(ctx,
 		"config", "--show-origin", "--show-scope", "--list", "-z")
 	if err != nil {
-		return nil, fmt.Errorf("globalgit: effective probe: git config --show-origin --show-scope --list -z: %w", err)
+		return nil, nil, fmt.Errorf("globalgit: effective probe: git config --show-origin --show-scope --list -z: %w", err)
 	}
-	return parseNULRecords(out), nil
+	m, counts := parseNULRecords(out)
+	return m, counts, nil
 }
 
 // inFileProbe runs `git config --file <path> --list -z` WITHOUT --includes,
@@ -121,7 +125,8 @@ func inFileProbe(deps Deps, filePath string) (map[string]EffectiveEntry, error) 
 		}
 		return nil, fmt.Errorf("globalgit: in-file probe: git config --file %s --list -z: %w", filePath, err)
 	}
-	return parseNULRecords(out), nil
+	m, _ := parseNULRecords(out) // physical presence only; occurrence counts are not this probe's concern
+	return m, nil
 }
 
 // isMissingFileErr returns true when the error looks like "git config --file
@@ -157,18 +162,26 @@ func isExitErr(err error, target **exec.ExitError) bool {
 }
 
 // parseNULRecords parses `git config --show-origin --show-scope --list -z`
-// output into a map of lowercase key → EffectiveEntry. The -z record layout
-// is:
+// output into a map of lowercase key → EffectiveEntry, PLUS a second map of
+// lowercase key → the TOTAL number of physical occurrences that key had
+// across every scope/origin in this output (WR-04, 09.5-REVIEW.md round 2).
+// The -z record layout is:
 //
 //	<scope> NUL <origin> NUL <key> LF <value> NUL
 //
-// When a key appears more than once, the LAST record wins (git's own
-// last-wins resolution). The "file:" prefix is stripped from the origin when
+// git config is legitimately multi-valued (a stacked `credential.helper`, an
+// `--add`-built list, `remote.*.fetch`, `include.path`, `safe.directory`):
+// when a key appears more than once, the FIRST map's entry is the LAST
+// record (git's own last-wins resolution for a plain `--get`), but the
+// COUNTS map lets a caller detect that other values existed and were
+// dropped, rather than silently presenting a stacked key as if it were
+// single-valued. The "file:" prefix is stripped from the origin when
 // present.
-func parseNULRecords(out string) map[string]EffectiveEntry {
+func parseNULRecords(out string) (map[string]EffectiveEntry, map[string]int) {
 	result := make(map[string]EffectiveEntry)
+	counts := make(map[string]int)
 	if out == "" {
-		return result
+		return result, counts
 	}
 
 	// Records are NUL-terminated.
@@ -214,7 +227,9 @@ func parseNULRecords(out string) map[string]EffectiveEntry {
 
 		origin = stripFileOrigin(origin)
 
-		// Last-wins: overwrite any earlier entry for the same key.
+		// Last-wins: overwrite any earlier entry for the same key. counts
+		// tracks every occurrence, even the ones the map overwrites.
+		counts[key]++
 		result[key] = EffectiveEntry{
 			Value:  value,
 			Scope:  scope,
@@ -222,7 +237,7 @@ func parseNULRecords(out string) map[string]EffectiveEntry {
 		}
 	}
 
-	return result
+	return result, counts
 }
 
 // stripFileOrigin strips git's "file:" origin prefix when present, leaving

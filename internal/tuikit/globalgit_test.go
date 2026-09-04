@@ -2490,6 +2490,31 @@ func TestSetKeysListRendersOriginAndScope(t *testing.T) {
 	}
 }
 
+// TestSetKeysDetailPaneShowsMultiValuedNote is the WR-04 regression: a key
+// with ValueCount > 1 must render PropsGitMultiValuedNoteFmt in the detail
+// pane so the screen never implies a stacked key (e.g. credential.helper set
+// at both system and global scope) is single-valued. A key with ValueCount
+// 1 must NOT render the note.
+func TestSetKeysDetailPaneShowsMultiValuedNote(t *testing.T) {
+	rows := []GitSetKeyView{
+		{Key: "credential.helper", Value: "cache", Scope: "global", Origin: "/home/user/.gitconfig", ValueCount: 3},
+		{Key: "core.editor", Value: "vim", Scope: "global", Origin: "/home/user/.gitconfig", ValueCount: 1},
+	}
+	a := ggitSetKeysApp(t, stubBackend{gitSetKeys: rows})
+
+	multiDetail := regionFlat(a, masterListWidth(minFrameWidth)+1, minFrameWidth)
+	wantNote := fmt.Sprintf(PropsGitMultiValuedNoteFmt, 3)
+	if !strings.Contains(collapseWhitespace(multiDetail), collapseWhitespace(wantNote)) {
+		t.Errorf("multi-valued key's detail pane must show %q, got:\n%s", wantNote, multiDetail)
+	}
+
+	a = pressSeq(t, a, "down")
+	singleDetail := regionFlat(a, masterListWidth(minFrameWidth)+1, minFrameWidth)
+	if strings.Contains(singleDetail, "values are set for this key") {
+		t.Errorf("single-valued key's detail pane must NOT show the multi-valued note, got:\n%s", singleDetail)
+	}
+}
+
 // TestSetKeysTwoDistinctEmptyStates covers the two distinct empty/error
 // bodies: a probe failure renders the frozen Git probe-failure heading in
 // the warning style, and a successful probe returning genuinely zero keys

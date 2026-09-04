@@ -70,7 +70,7 @@ func TestGlobalgitIsolationContract(t *testing.T) {
 		RunGitConfig: runWithHome(nonRepoDir),
 		NonRepoCwd:   nonRepoDir,
 	}
-	outsideResult, outsideErr := effectiveProbe(depsOutside)
+	outsideResult, _, outsideErr := effectiveProbe(depsOutside)
 	if outsideErr != nil {
 		t.Logf("outside probe failed (may need git user config): %v", outsideErr)
 		// Not fatal — some minimal git environments fail this; record and skip.
@@ -82,7 +82,7 @@ func TestGlobalgitIsolationContract(t *testing.T) {
 		RunGitConfig: runWithHome(repoDir),
 		NonRepoCwd:   repoDir,
 	}
-	insideResult, insideErr := effectiveProbe(depsInside)
+	insideResult, _, insideErr := effectiveProbe(depsInside)
 
 	// The plan's <output> contract: record the observed raw output for SUMMARY.
 	t.Logf("isolation-contract observation:")
@@ -144,7 +144,7 @@ func TestGlobalgitProbeZLayout_RealBinary(t *testing.T) {
 	t.Logf("raw -z output from real git (%d bytes): %q", len(rawOut), rawOut)
 
 	// Confirm our parser handles it.
-	parsed := parseNULRecords(string(rawOut))
+	parsed, _ := parseNULRecords(string(rawOut))
 	t.Logf("parser produced %d keys", len(parsed))
 	if entry, ok := parsed["init.defaultbranch"]; ok {
 		t.Logf("init.defaultbranch = %q (scope=%q origin=%q)", entry.Value, entry.Scope, entry.Origin)

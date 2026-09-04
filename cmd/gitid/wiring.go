@@ -2137,6 +2137,7 @@ func (b *realBackend) AllGitSetKeys() ([]tuikit.GitSetKeyView, error) {
 			Scope:        k.Scope,
 			Origin:       b.displayPath(k.Origin),
 			PolicyBacked: policyBacked,
+			ValueCount:   k.ValueCount,
 		})
 	}
 	return out, nil

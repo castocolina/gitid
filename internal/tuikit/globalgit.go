@@ -1678,6 +1678,14 @@ func (m globalGitModel) renderSetKeys(strip string, width, height int) string {
 	if detail.Scope != "" {
 		d.WriteString(" " + styleFaint.Render(detail.Scope) + "\n")
 	}
+	if detail.ValueCount > 1 {
+		// WR-04: git config is legitimately multi-valued (a stacked
+		// credential.helper, an --add-built list); Value/Scope/Origin above
+		// carry only the LAST occurrence (git's own last-wins resolution).
+		// This is the honesty disclosure so the screen never implies a
+		// stacked key is single-valued.
+		d.WriteString(" " + styleWarning.Render(fmt.Sprintf(PropsGitMultiValuedNoteFmt, detail.ValueCount)) + "\n")
+	}
 	if detail.PolicyBacked {
 		// Informational only: never a second interactive affordance, and the
 		// value is never rendered twice side-by-side (09.5-CONTEXT.md).

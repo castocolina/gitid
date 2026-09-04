@@ -37,7 +37,7 @@ func TestEffectiveProbe_ParsesGoldenNULRecord(t *testing.T) {
 	golden := "global\x00file:/home/user/.gitconfig\x00init.defaultbranch\nmain\x00"
 
 	deps := makeTestDeps(golden, nil)
-	result, err := effectiveProbe(deps)
+	result, _, err := effectiveProbe(deps)
 	if err != nil {
 		t.Fatalf("effectiveProbe: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestEffectiveProbe_ParsesGoldenNULRecord(t *testing.T) {
 func TestEffectiveProbe_FilePrefix_Stripped(t *testing.T) {
 	golden := "global\x00file:/home/alice/.gitconfig\x00core.ignorecase\nfalse\x00"
 	deps := makeTestDeps(golden, nil)
-	result, err := effectiveProbe(deps)
+	result, _, err := effectiveProbe(deps)
 	if err != nil {
 		t.Fatalf("effectiveProbe: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestEffectiveProbe_FilePrefix_Stripped(t *testing.T) {
 func TestEffectiveProbe_NonFileOrigin_PreservedVerbatim(t *testing.T) {
 	golden := "command\x00command line\x00init.defaultbranch\nmain\x00"
 	deps := makeTestDeps(golden, nil)
-	result, err := effectiveProbe(deps)
+	result, _, err := effectiveProbe(deps)
 	if err != nil {
 		t.Fatalf("effectiveProbe: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestEffectiveProbe_ValueWithNewline(t *testing.T) {
 	// Format: scope NUL origin NUL key LF value NUL
 	golden := "global\x00file:/home/user/.gitconfig\x00core.pager\nless -FRX\n--quit-if-one-screen\x00"
 	deps := makeTestDeps(golden, nil)
-	result, err := effectiveProbe(deps)
+	result, _, err := effectiveProbe(deps)
 	if err != nil {
 		t.Fatalf("effectiveProbe: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestEffectiveProbe_ValueWithNewline(t *testing.T) {
 func TestEffectiveProbe_ValueWithTab(t *testing.T) {
 	golden := "global\x00file:/home/user/.gitconfig\x00alias.lg\nlog\t--oneline\x00"
 	deps := makeTestDeps(golden, nil)
-	result, err := effectiveProbe(deps)
+	result, _, err := effectiveProbe(deps)
 	if err != nil {
 		t.Fatalf("effectiveProbe: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestEffectiveProbe_DuplicateKey_LastWins(t *testing.T) {
 	golden := "global\x00file:/a/.gitconfig\x00init.defaultbranch\nmaster\x00" +
 		"global\x00file:/b/.gitconfig\x00init.defaultbranch\nmain\x00"
 	deps := makeTestDeps(golden, nil)
-	result, err := effectiveProbe(deps)
+	result, _, err := effectiveProbe(deps)
 	if err != nil {
 		t.Fatalf("effectiveProbe: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestEffectiveProbe_DuplicateKey_LastWins(t *testing.T) {
 func TestEffectiveProbe_NonZeroExit_ReturnsError(t *testing.T) {
 	probeErr := fmt.Errorf("exit status 1")
 	deps := makeTestDeps("", probeErr)
-	_, err := effectiveProbe(deps)
+	_, _, err := effectiveProbe(deps)
 	if err == nil {
 		t.Fatal("expected error from non-zero probe exit, got nil")
 	}
@@ -239,7 +239,7 @@ func TestEffectiveProbe_RealGitBinary_ZLayoutConfirmed(t *testing.T) {
 		NonRepoCwd: cwd,
 	}
 
-	result, err := effectiveProbe(deps)
+	result, _, err := effectiveProbe(deps)
 	if err != nil {
 		t.Logf("real git effective probe output (for summary): error=%v", err)
 		t.Skipf("real git probe failed (may need git configured): %v", err)

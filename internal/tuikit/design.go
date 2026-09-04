@@ -891,6 +891,14 @@ const (
 	// PropsGitNoFilterMatchFmt is the Git browser's "filter matches
 	// nothing" empty state, carrying the user's filter text.
 	PropsGitNoFilterMatchFmt = "No keys match \"%s\"."
+	// PropsGitMultiValuedNoteFmt is the WR-04 detail-pane note: git config
+	// is legitimately multi-valued (a stacked credential.helper, an --add
+	// list) and `git config --show-origin --show-scope --list` reports
+	// every occurrence, but AllSetKeys keys its result by name — the LAST
+	// occurrence wins and the others are silently absent from the list.
+	// This note is the honesty disclosure so the screen never implies a
+	// single-valued key when it is not (09.5-REVIEW.md round 2, WR-04).
+	PropsGitMultiValuedNoteFmt = "%d values are set for this key — showing the last one applied."
 	// PropsAddCustomKeyLabel is the "Set keys" sub-tab's `n` footer-action
 	// label (Phase 9.5 plan 09.5-03, PROP-03) — reuses the `n` = "new"
 	// convention already established (identities.go's {Key: "n", Label:

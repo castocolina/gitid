@@ -25,12 +25,55 @@ func TestAllSetKeysReturnsEverySetKeyWithProvenance(t *testing.T) {
 		t.Fatalf("AllSetKeys: %v", err)
 	}
 	want := []SetKey{
-		{Key: "core.autocrlf", Value: "input", Scope: "system", Origin: "/etc/gitconfig"},
-		{Key: "core.editor", Value: "vim", Scope: "global", Origin: "/home/user/.gitconfig"},
-		{Key: "user.name", Value: "Local User", Scope: "local", Origin: "/repo/.git/config"},
+		{Key: "core.autocrlf", Value: "input", Scope: "system", Origin: "/etc/gitconfig", ValueCount: 1},
+		{Key: "core.editor", Value: "vim", Scope: "global", Origin: "/home/user/.gitconfig", ValueCount: 1},
+		{Key: "user.name", Value: "Local User", Scope: "local", Origin: "/repo/.git/config", ValueCount: 1},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("AllSetKeys = %#v, want %#v", got, want)
+	}
+}
+
+// TestAllSetKeysMarksMultiValuedKeys is the WR-04 regression: git config is
+// legitimately multi-valued (e.g. credential.helper stacked at system AND
+// global scope) — parseNULRecords keys its map by name, so the LAST
+// occurrence wins, but ValueCount must still report every physical
+// occurrence git printed, so the screen never implies a stacked key is
+// single-valued. A key that appears exactly once must report ValueCount 1
+// (never 0, which would read as "not set").
+func TestAllSetKeysMarksMultiValuedKeys(t *testing.T) {
+	golden := "system\x00file:/usr/local/etc/gitconfig\x00credential.helper\nosxkeychain\x00" +
+		"global\x00file:/home/user/.gitconfig\x00credential.helper\nosxkeychain\x00" +
+		"global\x00file:/home/user/.gitconfig\x00credential.helper\ncache\x00" +
+		"global\x00file:/home/user/.gitconfig\x00core.editor\nvim\x00"
+	deps := Deps{
+		RunGitConfig: func(_ context.Context, _ ...string) (string, error) { return golden, nil },
+		NonRepoCwd:   tempNonRepoCwd,
+	}
+	got, err := AllSetKeys(deps)
+	if err != nil {
+		t.Fatalf("AllSetKeys: %v", err)
+	}
+	byKey := make(map[string]SetKey, len(got))
+	for _, k := range got {
+		byKey[k.Key] = k
+	}
+	cred, ok := byKey["credential.helper"]
+	if !ok {
+		t.Fatal("expected a credential.helper entry")
+	}
+	if cred.ValueCount != 3 {
+		t.Errorf("credential.helper ValueCount = %d, want 3 (three physical occurrences across system+global scope)", cred.ValueCount)
+	}
+	if cred.Value != "cache" {
+		t.Errorf("credential.helper Value = %q, want the LAST occurrence %q (git's own last-wins resolution)", cred.Value, "cache")
+	}
+	editor, ok := byKey["core.editor"]
+	if !ok {
+		t.Fatal("expected a core.editor entry")
+	}
+	if editor.ValueCount != 1 {
+		t.Errorf("core.editor ValueCount = %d, want 1 for a single-occurrence key (never 0, which would read as 'not set')", editor.ValueCount)
 	}
 }
 

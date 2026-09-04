@@ -115,7 +115,11 @@ type OptionRow struct {
 // owns — the classifier compares effective origins against it to decide
 // set-by-gitid provenance. It must not know how the path was resolved.
 func Statuses(deps Deps, baselineFilePath string) ([]OptionRow, error) {
-	effective, effectiveErr := effectiveProbe(deps)
+	// The Options classifier cares only about the single effective value per
+	// key (git's own last-wins resolution) — multi-value occurrence counts
+	// are WR-04's Set-keys-screen concern (properties.go's AllSetKeys), not
+	// this classifier's, so the second return value is discarded here.
+	effective, _, effectiveErr := effectiveProbe(deps)
 	var effectiveErrStr string
 	if effectiveErr != nil {
 		effectiveErrStr = effectiveErr.Error()
