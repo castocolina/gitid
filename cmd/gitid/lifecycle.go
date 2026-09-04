@@ -131,14 +131,15 @@ type lifecycleResult struct {
 // contract MUST be written against this same table; adding a verb means
 // adding a row HERE first.
 var lifecycleStages = map[string][]string{
-	"rotate":            {"test", "plan", "confirm", "backup", "write", "retest"},
-	"repair":            {"test", "plan", "confirm", "backup", "write", "retest"},
-	"delete":            {"plan", "confirm", "backup", "write", "verify"},
-	"global-ssh":        {"plan", "simulate", "confirm", "backup", "write", "verify"},
-	"global-git":        {"plan", "confirm", "backup", "write", "verify"},
-	"global-git-author": {"plan", "confirm", "backup", "write", "verify"},
-	"storage-migrate":   {"plan", "confirm", "backup", "write"},
-	"custom-git-key":    {"plan", "confirm", "backup", "write", "verify"},
+	"rotate":               {"test", "plan", "confirm", "backup", "write", "retest"},
+	"repair":               {"test", "plan", "confirm", "backup", "write", "retest"},
+	"delete":               {"plan", "confirm", "backup", "write", "verify"},
+	"global-ssh":           {"plan", "simulate", "confirm", "backup", "write", "verify"},
+	"global-git":           {"plan", "confirm", "backup", "write", "verify"},
+	"global-git-author":    {"plan", "confirm", "backup", "write", "verify"},
+	"storage-migrate":      {"plan", "confirm", "backup", "write"},
+	"custom-git-key":       {"plan", "confirm", "backup", "write", "verify"},
+	"custom-ssh-directive": {"plan", "confirm", "backup", "write", "verify"},
 }
 
 // errConfirmationUnavailable is returned when a confirmationRequired
@@ -1502,6 +1503,200 @@ func (b *realBackend) runCustomGitKeyWrite(key, value string, p lifecyclePolicy)
 	// carries the standard plan/confirm/backup/write/verify shape every
 	// other apply-style verb in this table uses.
 	record(stages[4])
+
+	return res, nil
+}
+
+// ---------------------------------------------------------------------------
+// runCustomSSHDirectiveWrite — the ONE production writer for a custom SSH
+// directive (Phase 9.5 plan 09.5-04, PROP-04)
+// ---------------------------------------------------------------------------
+
+// runCustomSSHDirectiveWrite is the ONE production writer for a free-form
+// custom SSH directive name=value pair — modelled directly on
+// runGlobalSSHApply's shape (same txMu lock, same dry-run early return
+// BEFORE the confirmation gate, same confirmGate boundary, same
+// newMutationJournal + fail/inject closures, same watchFile on the resolved
+// target before the write, same needsIncludeLine branch watching
+// b.sshConfigPath and recording a newly created b.includeDir, same
+// filewriter.Write with deleteSSHConfigMode) MINUS two things
+// runGlobalSSHApply has that this writer deliberately omits:
+//
+//   - the policy lookup (globalssh.PolicyFor / VersionGate): a custom
+//     directive is by definition OUTSIDE the curated Policy table, so there
+//     is nothing to look up — its name has already been proven against the
+//     locally installed OpenSSH by globalssh.ProveCustomDirective at the
+//     TUI's stage 2, before this function is ever called (D-03/D-H).
+//   - the D-04 shadow simulation (globalssh.BuildGraph/Simulate): both
+//     Simulate and Verify resolve their keys through PolicyFor (shadow.go
+//     line 260 / line 304), so neither can say anything meaningful about an
+//     arbitrary directive — running Simulate here would add a stage that is
+//     green because it silently did nothing. Omitted deliberately; the
+//     stage list above reads plan/confirm/backup/write/verify, never
+//     plan/simulate/confirm/backup/write/verify.
+//
+// The verify stage below is likewise NOT globalssh.Verify — the same
+// PolicyFor skip makes that function blind to a custom key, so this writer
+// re-reads through globalssh.AllDirectives (plan 09.5-01's own full-set
+// read) and compares the resolved value directly. Reusing Verify here is
+// the ONE place on this write path where doing so would produce a silently
+// vacuous pass, so the choice is made explicit here rather than by omission.
+func (b *realBackend) runCustomSSHDirectiveWrite(name, value string, p lifecyclePolicy) (lifecycleResult, error) {
+	b.txMu.Lock()
+	defer b.txMu.Unlock()
+
+	res := lifecycleResult{}
+	record := func(stage string) {
+		if p.Stages != nil {
+			p.Stages(stage)
+		}
+	}
+	stages := lifecycleStages["custom-ssh-directive"]
+
+	if b.initErr != nil {
+		return res, b.initErr
+	}
+
+	// plan — build the EnsureGlobals candidate bytes as a defense-in-depth
+	// backstop (the TUI's CustomSSHDirectivePlan is the primary gate any
+	// caller reaching this function through the normal flow already
+	// consulted): a candidate that would not round-trip parse is rejected
+	// HERE, before any confirmation or write, mirroring
+	// runCustomGitKeyWrite's own plan-stage backstop.
+	record(stages[0])
+	st := b.storage()
+	target := st.targetPath
+	explicit := map[string]string{name: value}
+	existingForPlan, perr := os.ReadFile(target) //nolint:gosec // trusted gitid-managed path
+	if perr != nil && !os.IsNotExist(perr) {
+		return res, perr
+	}
+	if _, err := sshconfig.EnsureGlobals(existingForPlan, explicit, platform.CurrentOS()); err != nil {
+		return res, fmt.Errorf("gitid: building candidate for custom SSH directive write: %w", err)
+	}
+
+	if p.DryRun {
+		// Ordering consequence stated here, matching runGlobalSSHApply: stopping
+		// AFTER the plan stage means a dry run never reaches the confirmation
+		// gate and therefore needs no authorization.
+		return res, nil
+	}
+
+	// confirm — the authorization boundary.
+	record(stages[1])
+	preview := fmt.Sprintf("write custom SSH directive %s %s to the gitid Host * block in %s",
+		name, value, b.displayPath(target))
+	authorized, cerr := b.confirmGate(p, preview)
+	if cerr != nil {
+		return res, cerr
+	}
+	if !authorized {
+		return res, fmt.Errorf("gitid: cancelled custom SSH directive write of %q", name)
+	}
+
+	// backup — unconditional once authorized (D-02). The timestamped backups
+	// are taken by the filewriter-backed write during the write stage below.
+	record(stages[2])
+
+	// write — the backed-up, all-or-nothing transaction.
+	record(stages[3])
+	journal := newMutationJournal(b)
+	fail := func(cause error) (lifecycleResult, error) {
+		outcomes, restoreErr := journal.restore()
+		res.Restored = outcomes
+		wrapped := fmt.Errorf("gitid: writing custom SSH directive: %w", cause)
+		if restoreErr != nil {
+			wrapped = fmt.Errorf("%w; restoration results: %s", wrapped, strings.Join(outcomes, "; "))
+		}
+		return res, wrapped
+	}
+	inject := func(step string) error {
+		if b.failCommitAt == nil {
+			return nil
+		}
+		return b.failCommitAt(step)
+	}
+	if werr := journal.watchFile(target); werr != nil {
+		return res, werr
+	}
+	if st.needsIncludeLine {
+		// WR-04: ~/.ssh/config itself is DISTINCT from the storage target when
+		// the include-dir layout is active — the floored Include line must be
+		// watched or a mid-transaction rollback leaves it behind. Record the
+		// include directory as created when it does not pre-exist, so a
+		// rollback removes it rather than leaving an empty shell.
+		if werr := journal.watchFile(b.sshConfigPath); werr != nil {
+			return res, werr
+		}
+		if _, serr := os.Stat(b.includeDir); os.IsNotExist(serr) {
+			if rerr := journal.recordCreatedDir(b.includeDir); rerr != nil {
+				return res, rerr
+			}
+		}
+		if err := inject("custom-ssh-directive-include-line"); err != nil {
+			return fail(err)
+		}
+		if err := sshconfig.EnsureIncludeDir(b.includeDir); err != nil {
+			return fail(err)
+		}
+		backup, err := sshconfig.EnsureIncludeLine(b.sshConfigPath)
+		if err != nil {
+			return fail(err)
+		}
+		journal.addBackup(backup)
+	}
+	if err := inject("custom-ssh-directive-write"); err != nil {
+		return fail(err)
+	}
+	existing, err := os.ReadFile(target) //nolint:gosec // target is a trusted gitid-managed path supplied in-process
+	if err != nil && !os.IsNotExist(err) {
+		return fail(err)
+	}
+	merged, err := sshconfig.EnsureGlobals(existing, explicit, platform.CurrentOS())
+	if err != nil {
+		return fail(err)
+	}
+	backup, err := filewriter.Write(target, merged, deleteSSHConfigMode)
+	if err != nil {
+		return fail(err)
+	}
+	journal.addBackup(backup)
+
+	res.Backups = append(res.Backups, journal.backups...)
+
+	// verify — a custom-directive-aware re-read via globalssh.AllDirectives,
+	// deliberately NOT globalssh.Verify (its PolicyFor(k) skip at
+	// shadow.go:304 would silently pass without ever looking at this key).
+	// The write has already succeeded and is backed up, so verification here
+	// is informational only — matching runGlobalSSHApply's existing contract.
+	record(stages[4])
+	directives, derr := globalssh.AllDirectives(globalssh.BuildProbeDeps(b.sshConfigPath))
+	if derr != nil {
+		// WR-01: a failed post-write verification must be surfaced, not
+		// silently dropped.
+		res.Advisories = append(res.Advisories,
+			"advisory: post-write verification could not run ("+derr.Error()+") — the directive was written but not re-verified")
+	} else {
+		lname := strings.ToLower(name)
+		found := false
+		for _, d := range directives {
+			if d.Key != lname {
+				continue
+			}
+			found = true
+			if !strings.EqualFold(d.Value, value) {
+				res.Advisories = append(res.Advisories, fmt.Sprintf(
+					"advisory: %s was written as %q but resolves to %q — the write may be shadowed by another directive",
+					name, value, d.Value))
+			}
+			break
+		}
+		if !found {
+			res.Advisories = append(res.Advisories, fmt.Sprintf(
+				"advisory: %s was written but could not be found in the re-read directive set — the write may not be effective",
+				name))
+		}
+	}
 
 	return res, nil
 }

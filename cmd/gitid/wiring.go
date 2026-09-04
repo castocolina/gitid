@@ -2517,6 +2517,117 @@ func (b *realBackend) CommitCustomGitKey(key, value string) tea.Cmd {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// SSHCustomDirectivePlanner (Phase 9.5 plan 09.5-04, PROP-04)
+// ---------------------------------------------------------------------------
+
+// ValidateCustomSSHDirective is the un-skippable stage-2 dispatch (D-03): it
+// reads the CURRENT global block body from the resolved storage target and
+// calls globalssh.ProveCustomDirective — the ENTIRE mechanism behind D-H's
+// known-directive-name requirement — against the SAME per-call
+// globalssh.BuildProbeDeps constructor every other globalssh entry point in
+// this file uses. Every path in the delivered proof is scrubbed through
+// b.displayMessage before it becomes user-facing (the staged temp path is
+// disclosed to the user per TEST-01's exact-command contract, but any
+// occurrence of the real home directory is still shortened for consistency
+// with every other receipt in this binary).
+func (b *realBackend) ValidateCustomSSHDirective(name, value string) tea.Cmd {
+	return func() tea.Msg {
+		if b.initErr != nil {
+			return tuikit.SSHCustomDirectiveProofMsg{Err: b.displayMessage(b.initErr.Error())}
+		}
+		st := b.storage()
+		existing, err := os.ReadFile(st.targetPath) //nolint:gosec // trusted gitid-managed path (G304)
+		if err != nil && !os.IsNotExist(err) {
+			return tuikit.SSHCustomDirectiveProofMsg{Err: b.displayMessage(err.Error())}
+		}
+		body := globalsBodyText(existing)
+		proof, proveErr := globalssh.ProveCustomDirective(globalssh.BuildProbeDeps(b.sshConfigPath), body, name, value)
+		msg := tuikit.SSHCustomDirectiveProofMsg{Proof: tuikit.SSHDirectiveProofView{
+			OK:               proof.OK,
+			UnknownName:      proof.UnknownName,
+			PreexistingError: proof.PreexistingError,
+			OffendingName:    proof.OffendingName,
+			Command:          b.displayMessage(proof.Command),
+			Output:           b.displayMessage(proof.Output),
+		}}
+		if proveErr != nil {
+			msg.Err = b.displayMessage(proveErr.Error())
+		}
+		return msg
+	}
+}
+
+// CustomSSHDirectivePlan is the custom-directive ceremony's preview: it
+// validates name and value BY CALLING sshconfig.EnsureGlobals against the
+// CURRENT global block bytes — the SAME call the curated global-SSH apply
+// already makes (GlobalSSHApplyPlan above), just with a key outside the
+// curated Policy table (D-J) — so a candidate that would not round-trip
+// parse fails HERE, at the plan stage, and the ceremony never opens (the "a
+// preview that cannot be computed renders the error inline and does NOT open
+// the ceremony" rule both Global screens already follow). Targets/Backups
+// are built exactly like GlobalSSHApplyPlan's (a backup entry only for a
+// file that already exists), and the diff is computed via the same
+// globalsTextDiff helper over the SAME globalsBodyText slice (Phase 9.5 plan
+// 09.5-04, PROP-04).
+func (b *realBackend) CustomSSHDirectivePlan(name, value string) (tuikit.SSHCustomDirectivePlanView, error) {
+	if b.initErr != nil {
+		return tuikit.SSHCustomDirectivePlanView{}, b.initErr
+	}
+	st := b.storage()
+	targets := []string{st.targetPath}
+	if st.needsIncludeLine {
+		targets = append(targets, b.sshConfigPath)
+	}
+	view := tuikit.SSHCustomDirectivePlanView{}
+	for _, p := range targets {
+		view.Targets = append(view.Targets, b.displayPath(p))
+		// Only files that ALREADY exist get a backup — filewriter backs up
+		// nothing when it creates a file for the first time, and promising a
+		// backup that will not be taken would be a lie in the ceremony.
+		if fileExists(p) {
+			view.Backups = append(view.Backups, b.displayPath(p)+backupSuffixPreview)
+		}
+	}
+	existing, err := os.ReadFile(st.targetPath) //nolint:gosec // trusted gitid-managed path (G304)
+	if err != nil && !os.IsNotExist(err) {
+		return tuikit.SSHCustomDirectivePlanView{}, err
+	}
+	candidate, err := sshconfig.EnsureGlobals(existing, map[string]string{name: value}, platform.CurrentOS())
+	if err != nil {
+		return tuikit.SSHCustomDirectivePlanView{}, err
+	}
+	view.Diff = globalsTextDiff(globalsBodyText(existing), globalsBodyText(candidate))
+	return view, nil
+}
+
+// CommitCustomSSHDirective is the custom-directive apply async seam,
+// mirroring CommitCustomGitKey exactly: resolve nothing cached, call
+// runCustomSSHDirectiveWrite — the ONE production writer for a custom SSH
+// directive in lifecycle.go, which owns its own txMu locking — and report
+// the result as an SSHCustomDirectiveCommitMsg. The apply-ceremony screen IS
+// the confirmation, so the lifecycle is authorized with
+// confirmationAlreadyObtained (the only layer permitted to assert that
+// value). Every backup/restored/advisory path is scrubbed through
+// b.displayPath / b.displayMessage before it becomes user-facing.
+func (b *realBackend) CommitCustomSSHDirective(name, value string) tea.Cmd {
+	return func() tea.Msg {
+		if b.initErr != nil {
+			return tuikit.SSHCustomDirectiveCommitMsg{Err: b.displayMessage(b.initErr.Error())}
+		}
+		res, err := b.runCustomSSHDirectiveWrite(name, value, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+		msg := tuikit.SSHCustomDirectiveCommitMsg{
+			Backups:    displayPaths(b, res.Backups),
+			Restored:   displayMessages(b, res.Restored),
+			Advisories: displayMessages(b, res.Advisories),
+		}
+		if err != nil {
+			msg.Err = b.displayMessage(err.Error())
+		}
+		return msg
+	}
+}
+
 func (b *realBackend) gitignorePath() string {
 	return filepath.Join(b.home, ".gitignore_global")
 }

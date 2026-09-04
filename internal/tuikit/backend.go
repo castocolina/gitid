@@ -440,6 +440,75 @@ func (NoopGitCustomKeyPlanner) CommitCustomGitKey(string, string) tea.Cmd {
 
 var _ GitCustomKeyPlanner = NoopGitCustomKeyPlanner{}
 
+// ErrSSHCustomDirectivePlannerNotImplemented is the sentinel
+// NoopSSHCustomDirectivePlanner returns. Fixtures and test stubs embed the
+// noop and override only the methods they exercise; a missing real
+// implementation must be a compile error, not this sentinel at runtime.
+var ErrSSHCustomDirectivePlannerNotImplemented = errors.New("SSH custom directive planner not implemented")
+
+// SSHCustomDirectivePlanner is the Phase 9.5 plan 09.5-04 custom-directive
+// WRITE seam (PROP-04): the un-skippable stage-2 validate+prove dispatch,
+// the confirmed-apply preview, and the asynchronous commit for a free-form
+// SSH directive entered from the "All directives" sub-tab. Deliberately kept
+// SEPARATE from SSHPropertiesBrowser — that interface owns the READ (every
+// resolved directive), this one owns the WRITE — the same
+// interface-segregation discipline GitCustomKeyPlanner already follows
+// against GitPropertiesBrowser.
+//
+// This is a THREE-method seam, not two like GitCustomKeyPlanner's write-only
+// pair: SSH's extra blast radius earns an extra visible, un-skippable
+// validation stage between form entry and the write ceremony (D-03), so the
+// plan/commit pair gains a THIRD method that dispatches the staged-config
+// proof as its own asynchronous command — it shells out to the real ssh
+// binary, so it cannot be a synchronous call the way CustomGitKeyPlan is.
+type SSHCustomDirectivePlanner interface {
+	// ValidateCustomSSHDirective dispatches the staged-config `ssh -G`
+	// classification off the update loop and delivers an
+	// SSHCustomDirectiveProofMsg. The ceremony must never open except from a
+	// proof whose OK field is true — this is PROP-04's entire un-skippable
+	// contract (D-03/D-H/D-I).
+	ValidateCustomSSHDirective(name, value string) tea.Cmd
+	// CustomSSHDirectivePlan returns the confirmed-apply preview: the
+	// resolved targets, the promised backup paths, and the diff. Callers
+	// must reach this ONLY after ValidateCustomSSHDirective's proof
+	// reported OK: true — a non-nil error here must fail closed: the screen
+	// renders the error inline and does not open the ceremony.
+	CustomSSHDirectivePlan(name, value string) (SSHCustomDirectivePlanView, error)
+	// CommitCustomSSHDirective dispatches the confirmed custom-directive
+	// write off the update loop and delivers an SSHCustomDirectiveCommitMsg.
+	CommitCustomSSHDirective(name, value string) tea.Cmd
+}
+
+// NoopSSHCustomDirectivePlanner implements every SSHCustomDirectivePlanner
+// method with a zero-value view plus ErrSSHCustomDirectivePlannerNotImplemented
+// (and a command delivering that error for the two async seams). Fixtures
+// and test stubs embed it and override only what they exercise. The REAL
+// backend must NOT embed it — a missing real implementation must be a
+// compile error, pinned by the compile-time assertion in cmd/gitid/wiring.go
+// and a reflection test.
+type NoopSSHCustomDirectivePlanner struct{}
+
+// ValidateCustomSSHDirective implements SSHCustomDirectivePlanner.
+func (NoopSSHCustomDirectivePlanner) ValidateCustomSSHDirective(string, string) tea.Cmd {
+	return func() tea.Msg {
+		return SSHCustomDirectiveProofMsg{Err: ErrSSHCustomDirectivePlannerNotImplemented.Error()}
+	}
+}
+
+// CustomSSHDirectivePlan implements SSHCustomDirectivePlanner.
+func (NoopSSHCustomDirectivePlanner) CustomSSHDirectivePlan(string, string) (SSHCustomDirectivePlanView, error) {
+	return SSHCustomDirectivePlanView{}, ErrSSHCustomDirectivePlannerNotImplemented
+}
+
+// CommitCustomSSHDirective implements SSHCustomDirectivePlanner.
+func (NoopSSHCustomDirectivePlanner) CommitCustomSSHDirective(string, string) tea.Cmd {
+	return func() tea.Msg {
+		return SSHCustomDirectiveCommitMsg{Err: ErrSSHCustomDirectivePlannerNotImplemented.Error()}
+	}
+}
+
+var _ SSHCustomDirectivePlanner = NoopSSHCustomDirectivePlanner{}
+
 // backend.go defines the ONE injected seam this package is built around.
 //
 // tuikit renders the approved, frozen gitid design. It never reads or
@@ -503,6 +572,13 @@ type Backend interface {
 	// implementation must be a compile error, pinned by wiring.go's
 	// compile-time assertion and by a reflection test.
 	GitCustomKeyPlanner
+	// SSHCustomDirectivePlanner: Phase 9.5 plan 09.5-04's custom-directive
+	// WRITE seam (PROP-04). Deliberately separate from SSHPropertiesBrowser —
+	// one interface owns the read, this one owns the write. The real backend
+	// must NOT embed NoopSSHCustomDirectivePlanner — a missing real
+	// implementation must be a compile error, pinned by wiring.go's
+	// compile-time assertion and by a reflection test.
+	SSHCustomDirectivePlanner
 
 	// ----- Data -------------------------------------------------------
 

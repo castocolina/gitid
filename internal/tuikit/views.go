@@ -669,6 +669,72 @@ type GitCustomKeyCommitMsg struct {
 	Err      string
 }
 
+// SSHDirectiveProofView is the render-boundary mirror of
+// globalssh.DirectiveProof (Phase 9.5 plan 09.5-04, PROP-04): the
+// staged-config `ssh -G` classification for one candidate SSH directive
+// name/value pair. Command and Output carry the EXACT command line and its
+// VERBATIM real output — never a paraphrase — because 09.5-UI-SPEC.md's
+// stage-2 render requires showing the exact command, then its real output
+// (TEST-01's contract, reused here rather than invented anew).
+type SSHDirectiveProofView struct {
+	// OK is true only when the staged probe accepted BOTH the candidate's
+	// name and its value.
+	OK bool
+	// UnknownName is true when the candidate's OWN directive name was not
+	// recognized by the locally installed OpenSSH.
+	UnknownName bool
+	// PreexistingError is true when a DIFFERENT directive already had a
+	// problem in the current global block — never blamed on the entry just
+	// submitted (D-I).
+	PreexistingError bool
+	// OffendingName is the lowercased directive name a failing proof named,
+	// populated only when UnknownName or PreexistingError is true.
+	OffendingName string
+	// Command is the exact staged-config `ssh -F <staged> -G <host>`
+	// command line that was run.
+	Command string
+	// Output is the verbatim combined output the staged probe produced.
+	Output string
+}
+
+// SSHCustomDirectiveProofMsg completes the async stage-2 validate+prove
+// dispatch — delivered from the tea.Cmd
+// Backend.ValidateCustomSSHDirective returns. Err carries a TRANSPORT-level
+// failure (the probe itself could not run); a completed classification
+// (accepted, unknown name, pre-existing error, or a known-name value
+// rejection) always arrives with Err empty and the outcome encoded in Proof.
+type SSHCustomDirectiveProofMsg struct {
+	Proof SSHDirectiveProofView
+	Err   string
+}
+
+// SSHCustomDirectivePlanView is the custom-directive ceremony's preview
+// scene: the resolved targets, the promised backup paths (only for a file
+// that already exists), and the diff the ceremony previews — mirroring
+// GlobalSSHApplyPlanView's shape for the one write target class this seam
+// owns (Phase 9.5 plan 09.5-04, PROP-04). Reached ONLY after stage 2's proof
+// returns OK: true.
+type SSHCustomDirectivePlanView struct {
+	Targets []string
+	Backups []string
+	Diff    string
+}
+
+// SSHCustomDirectiveCommitMsg completes an asynchronous custom-directive
+// write commit — delivered from the tea.Cmd
+// Backend.CommitCustomSSHDirective returns. Restored stays explicit so a
+// failed receipt can never claim nothing changed when restoration itself
+// failed, mirroring GlobalSSHCommitMsg's contract. Advisories carries the
+// custom-directive-aware post-write re-verification's notes (the writer
+// re-reads via globalssh.AllDirectives rather than the policy-gated
+// globalssh.Verify, which would silently skip an arbitrary directive).
+type SSHCustomDirectiveCommitMsg struct {
+	Backups    []string
+	Restored   []string
+	Advisories []string
+	Err        string
+}
+
 // GitFallbackAuthorView is the fallback block's current contents — the two
 // fields the D9 pane seeds from on activate (D-04 / 07-UI-SPEC.md partial
 // row). Empty strings mean the key is currently unset.

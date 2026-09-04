@@ -802,6 +802,65 @@ func (FixtureBackend) CommitCustomGitKey(string, string) tea.Cmd {
 	})
 }
 
+// ---------------------------------------------------------------------------
+// SSHCustomDirectivePlanner (plan 09.5-04) — the demo satisfies the seam
+// from a FROZEN classification rule, never the filesystem and never a real
+// ssh invocation (Phase 9.5 plan 09.5-04, PROP-04).
+// ---------------------------------------------------------------------------
+
+// fixtureRejectedSSHDirectiveName is the ONE sentinel name the dummy's
+// ValidateCustomSSHDirective classifies as unrecognized — a frozen,
+// deterministic rule (case-insensitive) so a demo script can drive BOTH the
+// accepted and the rejected stage-2 beat without ever shelling out to ssh.
+const fixtureRejectedSSHDirectiveName = "NotARealDirective"
+
+// ValidateCustomSSHDirective implements tuikit.SSHCustomDirectivePlanner. It
+// classifies purely from the frozen sentinel above: any other name is
+// accepted with a plausible canned command/output pair naming the staged
+// probe TEST-01's contract requires (exact command, real-looking output).
+func (FixtureBackend) ValidateCustomSSHDirective(name, value string) tea.Cmd {
+	return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
+		command := "ssh -F /tmp/gitid-directive-proof/staged_ssh_config -G gitid-probe.invalid"
+		if strings.EqualFold(name, fixtureRejectedSSHDirectiveName) {
+			return tuikit.SSHCustomDirectiveProofMsg{Proof: tuikit.SSHDirectiveProofView{
+				UnknownName:   true,
+				OffendingName: strings.ToLower(name),
+				Command:       command,
+				Output: "/tmp/gitid-directive-proof/staged_ssh_config: line 4: Bad configuration option: " +
+					strings.ToLower(name) + "\n/tmp/gitid-directive-proof/staged_ssh_config: terminating, 1 bad configuration options\n",
+			}}
+		}
+		return tuikit.SSHCustomDirectiveProofMsg{Proof: tuikit.SSHDirectiveProofView{
+			OK:      true,
+			Command: command,
+			Output:  strings.ToLower(name) + " " + value + "\n",
+		}}
+	})
+}
+
+// CustomSSHDirectivePlan implements tuikit.SSHCustomDirectivePlanner — a
+// plausible, deterministic plan view for the custom-directive ceremony. The
+// dummy never touches the filesystem: it composes a fixed diff naming the
+// SAME target the real backend writes (the resolved global-ssh managed
+// block target).
+func (FixtureBackend) CustomSSHDirectivePlan(name, value string) (tuikit.SSHCustomDirectivePlanView, error) {
+	return tuikit.SSHCustomDirectivePlanView{
+		Targets: []string{"~/.ssh/config"},
+		Backups: []string{tuikit.NewBackupPath("~/.ssh/config")},
+		Diff:    "+ " + name + " " + value,
+	}, nil
+}
+
+// CommitCustomSSHDirective keeps the approved dummy custom-directive flow in
+// memory — it never touches HOME, reporting the fixture receipt after the
+// same brief tick the other async fixture commands use.
+func (FixtureBackend) CommitCustomSSHDirective(string, string) tea.Cmd {
+	backup := tuikit.NewBackupPath("~/.ssh/config")
+	return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
+		return tuikit.SSHCustomDirectiveCommitMsg{Backups: []string{backup}}
+	})
+}
+
 // GlobalGitOptionStates projects the frozen GlobalGitOptions fixture into the
 // live view shape: Current/Recommended/OneLiner are the fixture's own values,
 // and the NeedsAction flag becomes the row State. The provenance is a

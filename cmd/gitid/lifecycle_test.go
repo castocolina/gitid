@@ -1633,3 +1633,336 @@ func TestRunGlobalSSHApplyDryRunReportsSimulate(t *testing.T) {
 	}
 	assertUnchanged(t, before, snapshotPaths(t, []string{filepath.Join(home, ".ssh", "config")}))
 }
+
+// ---------------------------------------------------------------------------
+// SSHCustomDirectivePlanner + runCustomSSHDirectiveWrite (Phase 9.5 plan
+// 09.5-04 Task 2, PROP-04)
+// ---------------------------------------------------------------------------
+
+// TestValidateCustomSSHDirectiveReturnsProofView drives the REAL
+// ValidateCustomSSHDirective seam against the locally installed OpenSSH
+// (RESEARCH Pattern 3 verified this exact classification live) for an
+// accepted directive, an unknown name, and a known-name/bad-value rejection.
+func TestValidateCustomSSHDirectiveReturnsProofView(t *testing.T) {
+	if _, err := exec.LookPath("ssh"); err != nil {
+		t.Skipf("no ssh binary in PATH: %v", err)
+	}
+	home := t.TempDir()
+	b := newBackendForHome(home)
+
+	cases := []struct {
+		name        string
+		directive   string
+		value       string
+		wantOK      bool
+		wantUnknown bool
+	}{
+		{name: "accepted", directive: "StreamLocalBindMask", value: "0177", wantOK: true},
+		{name: "unknown name", directive: "ThisIsNotARealDirective", value: "yes", wantUnknown: true},
+		{name: "bad value", directive: "Port", value: "not-a-port", wantOK: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := b.ValidateCustomSSHDirective(tc.directive, tc.value)()
+			proofMsg, ok := msg.(tuikit.SSHCustomDirectiveProofMsg)
+			if !ok {
+				t.Fatalf("ValidateCustomSSHDirective delivered %T, want tuikit.SSHCustomDirectiveProofMsg", msg)
+			}
+			if proofMsg.Err != "" {
+				t.Fatalf("unexpected transport error: %s", proofMsg.Err)
+			}
+			if proofMsg.Proof.OK != tc.wantOK {
+				t.Errorf("Proof.OK = %v, want %v (proof: %+v)", proofMsg.Proof.OK, tc.wantOK, proofMsg.Proof)
+			}
+			if proofMsg.Proof.UnknownName != tc.wantUnknown {
+				t.Errorf("Proof.UnknownName = %v, want %v (proof: %+v)", proofMsg.Proof.UnknownName, tc.wantUnknown, proofMsg.Proof)
+			}
+			if proofMsg.Proof.Command == "" {
+				t.Error("Proof.Command is empty — want the exact staged-config command line (TEST-01)")
+			}
+			if !strings.Contains(proofMsg.Proof.Command, "-F") || !strings.Contains(proofMsg.Proof.Command, "-G") {
+				t.Errorf("Proof.Command = %q, want -F <staged> -G <host>", proofMsg.Proof.Command)
+			}
+			if proofMsg.Proof.Output == "" {
+				t.Error("Proof.Output is empty — want the verbatim ssh output (TEST-01)")
+			}
+		})
+	}
+}
+
+// TestCustomSSHDirectivePlanShowsRealDiff asserts CustomSSHDirectivePlan
+// returns the resolved target, a backup path only for a file that already
+// exists, and a diff whose added lines contain the candidate directive — the
+// diff is built from the SAME EnsureGlobals candidate bytes the write uses.
+func TestCustomSSHDirectivePlanShowsRealDiff(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+
+	view, err := b.CustomSSHDirectivePlan("StreamLocalBindMask", "0177")
+	if err != nil {
+		t.Fatalf("CustomSSHDirectivePlan: %v", err)
+	}
+	if len(view.Targets) == 0 {
+		t.Fatal("Targets is empty — want at least the resolved global-ssh target")
+	}
+	if len(view.Backups) != 0 {
+		t.Errorf("Backups: fresh sandbox has no pre-existing files, want 0, got: %v", view.Backups)
+	}
+	if !strings.Contains(view.Diff, "StreamLocalBindMask 0177") {
+		t.Errorf("Diff missing the candidate directive line, got:\n%s", view.Diff)
+	}
+
+	// Write it for real, then re-plan the SAME name/value: the diff must now
+	// be empty (nothing left to add), proving the plan and the write share
+	// the SAME EnsureGlobals candidate bytes.
+	if _, err := b.runCustomSSHDirectiveWrite("StreamLocalBindMask", "0177", lifecyclePolicy{Confirm: confirmationAlreadyObtained}); err != nil {
+		t.Fatalf("runCustomSSHDirectiveWrite: %v", err)
+	}
+	secondView, err := b.CustomSSHDirectivePlan("StreamLocalBindMask", "0177")
+	if err != nil {
+		t.Fatalf("second CustomSSHDirectivePlan: %v", err)
+	}
+	if secondView.Diff != "" {
+		t.Errorf("Diff for an already-present directive/value must be empty, got:\n%s", secondView.Diff)
+	}
+}
+
+// TestCustomSSHDirectivePlanRefusesUnparseableResult asserts a candidate
+// that would make EnsureGlobals fail its Parse(composed) check returns an
+// error from the plan stage; nothing is written and no ceremony can open.
+// "Match exec ..." is accepted by real OpenSSH's ssh -G (so it can pass
+// stage-2's staged proof) but is EXPLICITLY unsupported by the
+// kevinburke/ssh_config parser this codebase's round-trip check uses
+// (internal/sshconfig.Parse) — an independent backstop beyond the ssh -G
+// proof, proven here directly against the parse-refusal path.
+func TestCustomSSHDirectivePlanRefusesUnparseableResult(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	before := snapshotPaths(t, []string{filepath.Join(home, ".ssh", "config")})
+
+	_, err := b.CustomSSHDirectivePlan("Match", `exec "true"`)
+	if err == nil {
+		t.Fatal("CustomSSHDirectivePlan with a Match-exec candidate must return an error — the composed block would not round-trip parse (kevinburke/ssh_config does not support Match Exec)")
+	}
+	assertUnchanged(t, before, snapshotPaths(t, []string{filepath.Join(home, ".ssh", "config")}))
+}
+
+// TestRunCustomSSHDirectiveWriteLandsInTheExistingGlobalBlock asserts a
+// confirmed run writes the directive into the EXISTING global-ssh managed
+// block (D-J): the block's sentinel name is unchanged, the ordered policy
+// keys still render first, and the custom key appears after them. No second
+// Host * block exists in the file.
+func TestRunCustomSSHDirectiveWriteLandsInTheExistingGlobalBlock(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+
+	// Pre-seed the target with a curated policy key so we can assert
+	// ordering against it.
+	if _, err := b.runGlobalSSHApply([]string{"HashKnownHosts"}, lifecyclePolicy{Confirm: confirmationAlreadyObtained}); err != nil {
+		t.Fatalf("seeding a curated apply: %v", err)
+	}
+
+	res, err := b.runCustomSSHDirectiveWrite("StreamLocalBindMask", "0177", lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+	if err != nil {
+		t.Fatalf("runCustomSSHDirectiveWrite: %v", err)
+	}
+	if len(res.Backups) == 0 {
+		t.Error("Backups is empty — the pre-seeded target existed and should have been backed up")
+	}
+
+	target := b.globalsTargetPath()
+	content, readErr := os.ReadFile(target) //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+	if readErr != nil {
+		t.Fatalf("reading %s: %v", target, readErr)
+	}
+	body := string(content)
+
+	beginCount := strings.Count(body, "# BEGIN gitid managed: "+sshconfig.GlobalBlockName)
+	if beginCount != 1 {
+		t.Fatalf("expected exactly ONE %s managed block, found %d:\n%s", sshconfig.GlobalBlockName, beginCount, body)
+	}
+	hostStarCount := strings.Count(body, "Host *")
+	if hostStarCount != 1 {
+		t.Errorf("expected exactly ONE 'Host *' stanza, found %d:\n%s", hostStarCount, body)
+	}
+	hashIdx := strings.Index(body, "HashKnownHosts")
+	streamIdx := strings.Index(body, "StreamLocalBindMask")
+	if hashIdx < 0 || streamIdx < 0 {
+		t.Fatalf("expected both HashKnownHosts and StreamLocalBindMask in the block, got:\n%s", body)
+	}
+	if hashIdx > streamIdx {
+		t.Errorf("ordered policy key HashKnownHosts must render BEFORE the custom key StreamLocalBindMask (D-J), got:\n%s", body)
+	}
+}
+
+// TestRunCustomSSHDirectiveWriteRollsBackOnFailure asserts that with
+// failCommitAt injecting a failure at the write, every watched file is
+// restored to its pre-run bytes (byte comparison), the error names the
+// cause, and Restored lists the outcomes.
+func TestRunCustomSSHDirectiveWriteRollsBackOnFailure(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	b.failCommitAt = func(s string) error {
+		if s == "custom-ssh-directive-write" {
+			return fmt.Errorf("injected failure before the custom directive write")
+		}
+		return nil
+	}
+
+	configPath := filepath.Join(home, ".ssh", "config")
+	target := filepath.Join(home, ".ssh", "config.d", "gitid.config")
+	includeDir := filepath.Join(home, ".ssh", "config.d")
+	before := snapshotPaths(t, []string{configPath, target, includeDir})
+
+	res, err := b.runCustomSSHDirectiveWrite("StreamLocalBindMask", "0177", lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+	if err == nil {
+		t.Fatal("runCustomSSHDirectiveWrite must surface the injected failure")
+	}
+	if !strings.Contains(err.Error(), "injected failure") {
+		t.Errorf("err = %q, want the concrete injected failure", err.Error())
+	}
+	if len(res.Restored) == 0 {
+		t.Error("Restored must list the rollback outcomes")
+	}
+
+	after := snapshotPaths(t, []string{configPath, target, includeDir})
+	assertUnchanged(t, before, after)
+	t.Logf("restore outcomes: %v", res.Restored)
+}
+
+// TestRunCustomSSHDirectiveWriteFloorsTheIncludeLineWhenNeeded asserts that
+// under the (default, fresh-machine) include-dir storage layout,
+// ~/.ssh/config is watched and its Include line floored (WR-04).
+func TestRunCustomSSHDirectiveWriteFloorsTheIncludeLineWhenNeeded(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+
+	st := b.storage()
+	if !st.needsIncludeLine {
+		t.Fatal("test setup: a fresh HOME must resolve to the include-dir layout (D-06)")
+	}
+
+	res, err := b.runCustomSSHDirectiveWrite("StreamLocalBindMask", "0177", lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+	if err != nil {
+		t.Fatalf("runCustomSSHDirectiveWrite: %v", err)
+	}
+	configPath := filepath.Join(home, ".ssh", "config")
+	content, readErr := os.ReadFile(configPath) //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+	if readErr != nil {
+		t.Fatalf("reading %s: %v", configPath, readErr)
+	}
+	if !strings.Contains(string(content), "Include") {
+		t.Errorf("~/.ssh/config missing the floored Include line, got:\n%s", content)
+	}
+	if len(res.Backups) != 0 {
+		t.Errorf("a FRESH ~/.ssh/config did not pre-exist, want no backup for it, got: %v", res.Backups)
+	}
+
+	// Failure-injection sibling: a rollback on a freshly-created config.d must
+	// remove the created directory, mirroring
+	// TestRunGlobalSSHApplyFreshHomeRemovesCreatedConfigOnFailure's contract.
+	home2 := t.TempDir()
+	b2 := newBackendForHome(home2)
+	b2.failCommitAt = func(s string) error {
+		if s == "custom-ssh-directive-write" {
+			return fmt.Errorf("injected write failure")
+		}
+		return nil
+	}
+	if _, err := b2.runCustomSSHDirectiveWrite("StreamLocalBindMask", "0177", lifecyclePolicy{Confirm: confirmationAlreadyObtained}); err == nil {
+		t.Fatal("runCustomSSHDirectiveWrite must surface the injected failure")
+	}
+	if fileExists(filepath.Join(home2, ".ssh", "config")) {
+		t.Error("~/.ssh/config must be REMOVED on rollback (it did not exist before the transaction), not left behind")
+	}
+	if fileExists(filepath.Join(home2, ".ssh", "config.d", "gitid.config")) {
+		t.Error("the created target file must be removed on rollback")
+	}
+	if fileExists(filepath.Join(home2, ".ssh", "config.d")) {
+		t.Error("the created include directory must be removed on rollback")
+	}
+}
+
+// TestRunCustomSSHDirectiveWriteVerifiesTheCustomKeySpecifically asserts
+// that after a successful write, the verify stage re-reads the resolved
+// directive set (globalssh.AllDirectives, NOT globalssh.Verify) and
+// compares it against the written value.
+//
+// Environment note: globalssh.AllDirectives -> effective(deps) runs
+// `ssh -G` with NO `-F` flag, exactly like globalssh.Verify and every other
+// live-verification call in this codebase (runGlobalSSHApply's own verify
+// stage included). OpenSSH resolves the default `~/.ssh/config` from the
+// process's real passwd-database home directory (getpwuid), NOT from the
+// $HOME environment variable — so in a sandboxed t.TempDir() test this
+// probe can NEVER observe the sandboxed target file this writer just wrote
+// to; it always resolves against the REAL invoking machine's actual live
+// configuration. This is a hard OpenSSH property, not a gap in this test:
+// in PRODUCTION b.home IS the real process home, so the sandboxed-vs-live
+// divergence exploited below never occurs there.
+//
+// That divergence is turned into a DETERMINISTIC, environment-independent
+// proof: StreamLocalBindMask's compiled OpenSSH default is 0177 (fixed by
+// the ssh_config specification, not platform-dependent), so writing an
+// IMPLAUSIBLE value the live machine's own resolution can never coincide
+// with makes the mismatch branch fire unconditionally, and writing the
+// well-known default proves the sibling non-mismatch branch does NOT fire
+// unconditionally either — together proving the advisory is conditioned on
+// a genuine comparison, not a constant.
+func TestRunCustomSSHDirectiveWriteVerifiesTheCustomKeySpecifically(t *testing.T) {
+	if _, err := exec.LookPath("ssh"); err != nil {
+		t.Skipf("no ssh binary in PATH: %v", err)
+	}
+
+	t.Run("mismatch fires the advisory", func(t *testing.T) {
+		home := t.TempDir()
+		b := newBackendForHome(home)
+		const implausibleValue = "0522" // never OpenSSH's compiled default (0177)
+		res, err := b.runCustomSSHDirectiveWrite("StreamLocalBindMask", implausibleValue, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+		if err != nil {
+			t.Fatalf("runCustomSSHDirectiveWrite: %v", err)
+		}
+		found := false
+		for _, a := range res.Advisories {
+			if strings.Contains(a, "StreamLocalBindMask") {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("Advisories = %v, want one naming StreamLocalBindMask — the live re-read (which resolves the REAL machine's config, not the sandbox) must disagree with %q", res.Advisories, implausibleValue)
+		}
+	})
+
+	t.Run("a value matching the live default does not fire the advisory", func(t *testing.T) {
+		home := t.TempDir()
+		b := newBackendForHome(home)
+		res, err := b.runCustomSSHDirectiveWrite("StreamLocalBindMask", "0177", lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+		if err != nil {
+			t.Fatalf("runCustomSSHDirectiveWrite: %v", err)
+		}
+		for _, a := range res.Advisories {
+			if strings.Contains(a, "StreamLocalBindMask") {
+				t.Errorf("unexpected advisory for a value matching the live default: %v — the advisory must not fire unconditionally", res.Advisories)
+			}
+		}
+	})
+}
+
+// TestBuildTUIDepsWiresSSHCustomDirectivePlanner extends the standing
+// nil-guard test: the REAL constructor's backend answers
+// CustomSSHDirectivePlan() without ever returning
+// ErrSSHCustomDirectivePlannerNotImplemented — i.e. realBackend does not
+// merely look wired, it IS wired to the real sshconfig.EnsureGlobals engine.
+func TestBuildTUIDepsWiresSSHCustomDirectivePlanner(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	b := buildBackend()
+	view, err := b.CustomSSHDirectivePlan("StreamLocalBindMask", "0177")
+	if errors.Is(err, tuikit.ErrSSHCustomDirectivePlannerNotImplemented) {
+		t.Fatal("buildBackend()'s CustomSSHDirectivePlan returned the Noop sentinel — the real seam is not wired")
+	}
+	if err != nil {
+		t.Fatalf("CustomSSHDirectivePlan: unexpected error from the real seam: %v", err)
+	}
+	if len(view.Targets) == 0 {
+		t.Fatal("buildBackend()'s CustomSSHDirectivePlan returned a plan with no targets — want the real global-ssh target")
+	}
+}

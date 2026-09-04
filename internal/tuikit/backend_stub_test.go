@@ -214,6 +214,16 @@ type stubBackend struct {
 	customKeyPlanFn func(key, value string) (GitCustomKeyPlanView, error)
 	customKeyCommit GitCustomKeyCommitMsg
 	customKeyFn     func(key, value string) tea.Cmd
+	// Custom-directive seam overrides (plan 09.5-04) — mirrors the
+	// customKey* fields immediately above, plus a THIRD (validate) seam for
+	// the un-skippable stage-2 proof. Do NOT embed
+	// NoopSSHCustomDirectivePlanner — a missing real implementation must be
+	// a compile error, not a silent sentinel.
+	sshDirectiveValidateFn func(name, value string) tea.Cmd
+	sshDirectivePlan       SSHCustomDirectivePlanView
+	sshDirectivePlanFn     func(name, value string) (SSHCustomDirectivePlanView, error)
+	sshDirectiveCommit     SSHCustomDirectiveCommitMsg
+	sshDirectiveCommitFn   func(name, value string) tea.Cmd
 	// Fallback-author seam overrides (zero values keep empty/unset fields
 	// so existing tests stay green). Do NOT embed
 	// NoopGitFallbackAuthorPlanner — a missing real implementation must
@@ -904,6 +914,34 @@ func (b stubBackend) CommitCustomGitKey(key, value string) tea.Cmd {
 		return b.customKeyFn(key, value)
 	}
 	return func() tea.Msg { return b.customKeyCommit }
+}
+
+// ValidateCustomSSHDirective delivers the test override's proof command;
+// the zero value delivers a zero-value SSHCustomDirectiveProofMsg (plan
+// 09.5-04).
+func (b stubBackend) ValidateCustomSSHDirective(name, value string) tea.Cmd {
+	if b.sshDirectiveValidateFn != nil {
+		return b.sshDirectiveValidateFn(name, value)
+	}
+	return func() tea.Msg { return SSHCustomDirectiveProofMsg{} }
+}
+
+// CustomSSHDirectivePlan returns the test override when set; the zero value
+// keeps the ceremony's target/backup fallback (plan 09.5-04).
+func (b stubBackend) CustomSSHDirectivePlan(name, value string) (SSHCustomDirectivePlanView, error) {
+	if b.sshDirectivePlanFn != nil {
+		return b.sshDirectivePlanFn(name, value)
+	}
+	return b.sshDirectivePlan, nil
+}
+
+// CommitCustomSSHDirective delivers the test override's commit message
+// immediately.
+func (b stubBackend) CommitCustomSSHDirective(name, value string) tea.Cmd {
+	if b.sshDirectiveCommitFn != nil {
+		return b.sshDirectiveCommitFn(name, value)
+	}
+	return func() tea.Msg { return b.sshDirectiveCommit }
 }
 
 func (b stubBackend) GlobalGitIgnoreState() (GlobalGitIgnoreView, error) {
