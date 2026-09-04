@@ -1491,9 +1491,16 @@ func (b *realBackend) runCustomGitKeyWrite(key, value string, p lifecyclePolicy)
 	if bfErr != nil && !os.IsNotExist(bfErr) {
 		return fail(bfErr)
 	}
-	mergedBF, mergeErr := gitconfig.EnsureCustomGitKey(existingBF, key, value)
+	mergedBF, skippedEntries, mergeErr := gitconfig.EnsureCustomGitKey(existingBF, key, value)
 	if mergeErr != nil {
 		return fail(mergeErr)
+	}
+	// WR-06: an entry that could not be re-rendered was dropped rather than
+	// failing the whole write — surface it as an advisory on the receipt so
+	// the user can see what silently changed, rather than hiding it.
+	for _, s := range skippedEntries {
+		res.Advisories = append(res.Advisories, fmt.Sprintf(
+			"advisory: an existing custom git key could not be re-written and was dropped: %s", s))
 	}
 	if !bytes.Equal(mergedBF, existingBF) {
 		backupBF, bfWriteErr := filewriter.Write(target, mergedBF, deleteGitconfigMode)

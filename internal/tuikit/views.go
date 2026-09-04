@@ -663,10 +663,15 @@ type GitCustomKeyPlanView struct {
 // delivered from the tea.Cmd Backend.CommitCustomGitKey returns. Restored
 // stays explicit so a failed receipt can never claim nothing changed when
 // restoration itself failed, mirroring GlobalGitCommitMsg's contract.
+// Advisories carries WR-06's skipped-entry notes: an entry that could not be
+// re-rendered (and was therefore dropped rather than failing the whole
+// write) is named here, mirroring SSHCustomDirectiveCommitMsg's own
+// Advisories field.
 type GitCustomKeyCommitMsg struct {
-	Backups  []string
-	Restored []string
-	Err      string
+	Backups    []string
+	Restored   []string
+	Advisories []string
+	Err        string
 }
 
 // SSHDirectiveProofView is the render-boundary mirror of

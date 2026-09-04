@@ -566,6 +566,12 @@ func (m globalGitModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 		key, value := snapshot.customKey, snapshot.customValue
 		if ceremonyOpen {
 			m.ceremony = m.ceremony.commitSucceeded(commit.Backups)
+			if len(commit.Advisories) > 0 {
+				// WR-06: an entry that could not be re-rendered was dropped
+				// rather than failing the whole write — name it, mirroring
+				// the SSH custom-directive ceremony's own advisory render.
+				m.ceremony = m.ceremony.withResultExtra(strings.Join(commit.Advisories, "\n"))
+			}
 		}
 		return keyResult{
 			model: m,

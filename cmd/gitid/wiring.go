@@ -2510,7 +2510,10 @@ func (b *realBackend) CustomGitKeyPlan(key, value string) (tuikit.GitCustomKeyPl
 	if err != nil && !os.IsNotExist(err) {
 		return tuikit.GitCustomKeyPlanView{}, err
 	}
-	candidate, err := gitconfig.EnsureCustomGitKey(existing, key, value)
+	// WR-06: the plan preview does not surface skipped-entry advisories (the
+	// diff itself already shows the candidate landing) — only the confirmed
+	// write's receipt does, via CommitCustomGitKey below.
+	candidate, _, err := gitconfig.EnsureCustomGitKey(existing, key, value)
 	if err != nil {
 		return tuikit.GitCustomKeyPlanView{}, err
 	}
@@ -2556,8 +2559,9 @@ func (b *realBackend) CommitCustomGitKey(key, value string) tea.Cmd {
 		}
 		res, err := b.runCustomGitKeyWrite(key, value, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
 		msg := tuikit.GitCustomKeyCommitMsg{
-			Backups:  displayPaths(b, res.Backups),
-			Restored: displayMessages(b, res.Restored),
+			Backups:    displayPaths(b, res.Backups),
+			Restored:   displayMessages(b, res.Restored),
+			Advisories: displayMessages(b, res.Advisories),
 		}
 		if err != nil {
 			msg.Err = b.displayMessage(err.Error())

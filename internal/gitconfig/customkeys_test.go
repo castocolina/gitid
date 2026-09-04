@@ -142,7 +142,7 @@ func TestEnsureCustomGitKeyRejectsInjectionValues(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := EnsureCustomGitKey(nil, "core.pager", tc.value)
+			_, _, err := EnsureCustomGitKey(nil, "core.pager", tc.value)
 			if err == nil {
 				t.Fatalf("EnsureCustomGitKey with %s value: expected error, got nil", tc.name)
 			}
@@ -172,7 +172,7 @@ func TestEnsureCustomGitKeyRejectsUnparseableGitSyntaxValues(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := EnsureCustomGitKey(nil, "core.pager", tc.value)
+			_, _, err := EnsureCustomGitKey(nil, "core.pager", tc.value)
 			if err == nil {
 				t.Fatalf("EnsureCustomGitKey with %s value %q: expected error, got nil", tc.name, tc.value)
 			}
@@ -198,12 +198,12 @@ func TestEnsureCustomGitKeyPreservesForeignContentAndPriorKeys(t *testing.T) {
 	existing := []byte(foreign +
 		"# BEGIN gitid managed: global-git\n[core]\n\tignorecase = false\n# END gitid managed: global-git\n")
 
-	afterFirst, err := EnsureCustomGitKey(existing, "core.pager", "less -FRX")
+	afterFirst, _, err := EnsureCustomGitKey(existing, "core.pager", "less -FRX")
 	if err != nil {
 		t.Fatalf("first EnsureCustomGitKey: unexpected error: %v", err)
 	}
 
-	afterSecond, err := EnsureCustomGitKey(afterFirst, "mytool.sub.key", "value1")
+	afterSecond, _, err := EnsureCustomGitKey(afterFirst, "mytool.sub.key", "value1")
 	if err != nil {
 		t.Fatalf("second EnsureCustomGitKey: unexpected error: %v", err)
 	}
@@ -226,13 +226,13 @@ func TestEnsureCustomGitKeyPreservesForeignContentAndPriorKeys(t *testing.T) {
 // TestEnsureCustomGitKeyUpsertsSameKey verifies writing the same key with a
 // new value replaces it rather than appending a duplicate, case-insensitively.
 func TestEnsureCustomGitKeyUpsertsSameKey(t *testing.T) {
-	afterFirst, err := EnsureCustomGitKey(nil, "core.pager", "less -FRX")
+	afterFirst, _, err := EnsureCustomGitKey(nil, "core.pager", "less -FRX")
 	if err != nil {
 		t.Fatalf("first EnsureCustomGitKey: unexpected error: %v", err)
 	}
 
 	// Re-write with different casing on the key and a new value.
-	afterSecond, err := EnsureCustomGitKey(afterFirst, "Core.Pager", "cat")
+	afterSecond, _, err := EnsureCustomGitKey(afterFirst, "Core.Pager", "cat")
 	if err != nil {
 		t.Fatalf("second EnsureCustomGitKey: unexpected error: %v", err)
 	}
@@ -256,11 +256,11 @@ func TestEnsureCustomGitKeyUpsertsSameKey(t *testing.T) {
 // "http.https://example.com.sslVerify" are two genuinely DIFFERENT git
 // keys. EnsureCustomGitKey's upsert must not merge them.
 func TestEnsureCustomGitKeyTreatsDifferentlyCasedSubsectionsAsDistinctKeys(t *testing.T) {
-	afterFirst, err := EnsureCustomGitKey(nil, "http.https://Example.com.sslVerify", "true")
+	afterFirst, _, err := EnsureCustomGitKey(nil, "http.https://Example.com.sslVerify", "true")
 	if err != nil {
 		t.Fatalf("first EnsureCustomGitKey: unexpected error: %v", err)
 	}
-	afterSecond, err := EnsureCustomGitKey(afterFirst, "http.https://example.com.sslVerify", "false")
+	afterSecond, _, err := EnsureCustomGitKey(afterFirst, "http.https://example.com.sslVerify", "false")
 	if err != nil {
 		t.Fatalf("second EnsureCustomGitKey: unexpected error: %v", err)
 	}
@@ -281,18 +281,58 @@ func TestEnsureCustomGitKeyTreatsDifferentlyCasedSubsectionsAsDistinctKeys(t *te
 // key/value produces bytes identical to the input (SC-1) — the caller's
 // byte-equality check can then skip the write and take no backup.
 func TestEnsureCustomGitKeyIsIdempotent(t *testing.T) {
-	afterFirst, err := EnsureCustomGitKey(nil, "core.pager", "less -FRX")
+	afterFirst, _, err := EnsureCustomGitKey(nil, "core.pager", "less -FRX")
 	if err != nil {
 		t.Fatalf("first EnsureCustomGitKey: unexpected error: %v", err)
 	}
 
-	afterSecond, err := EnsureCustomGitKey(afterFirst, "core.pager", "less -FRX")
+	afterSecond, _, err := EnsureCustomGitKey(afterFirst, "core.pager", "less -FRX")
 	if err != nil {
 		t.Fatalf("second EnsureCustomGitKey: unexpected error: %v", err)
 	}
 
 	if !bytes.Equal(afterFirst, afterSecond) {
 		t.Errorf("EnsureCustomGitKey is not idempotent:\nfirst:\n%s\nsecond:\n%s", afterFirst, afterSecond)
+	}
+}
+
+// TestEnsureCustomGitKeyDropsAnUnrenderableEntryInsteadOfFailingTheWholeWrite
+// is the WR-06 regression: EnsureCustomGitKey re-renders EVERY parsed entry
+// on every call — before this fix, ONE entry that cannot round-trip
+// (whether from a hand edit, a merge conflict, a stale CR-01-vintage
+// subsection, or a future format change) aborted the ENTIRE write, taking
+// down the whole custom-git-keys feature for every OTHER key too. This
+// existing entry ("core.pager = less #hack") is a value ParseCustomKeysBlock
+// can parse back (its lightweight splitter does not strip comments the way
+// git does) but validateCustomValue rejects on re-render (the '#' would be
+// silently truncated by git). The just-upserted key is validated BEFORE
+// this loop runs, so it is never the one dropped.
+func TestEnsureCustomGitKeyDropsAnUnrenderableEntryInsteadOfFailingTheWholeWrite(t *testing.T) {
+	existing := []byte("# BEGIN gitid managed: custom-git-keys\n" +
+		"[core]\n\tpager = less #hack\n" +
+		"[core]\n\teditor = vim\n" +
+		"# END gitid managed: custom-git-keys\n")
+
+	result, skipped, err := EnsureCustomGitKey(existing, "user.name", "New User")
+	if err != nil {
+		t.Fatalf("EnsureCustomGitKey: unexpected error — one bad entry must not fail the whole write: %v", err)
+	}
+	if len(skipped) != 1 {
+		t.Fatalf("skipped = %v, want exactly 1 (the unrenderable core.pager entry)", skipped)
+	}
+	if !strings.Contains(skipped[0], "core.pager") {
+		t.Errorf("skipped[0] = %q, want it to name core.pager", skipped[0])
+	}
+
+	res := string(result)
+	if strings.Contains(res, "less #hack") {
+		t.Errorf("the unrenderable entry must be DROPPED, not written verbatim, got:\n%s", res)
+	}
+	if !strings.Contains(res, "editor = vim") {
+		t.Errorf("the OTHER valid pre-existing entry must survive, got:\n%s", res)
+	}
+	if !strings.Contains(res, "name = New User") {
+		t.Errorf("the newly upserted entry must still be written, got:\n%s", res)
 	}
 }
 

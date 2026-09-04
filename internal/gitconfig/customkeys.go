@@ -309,12 +309,22 @@ func gitKeysEqual(a, b string) bool {
 // check can skip the write and take no backup (SC-1) — EnsureCustomGitKey
 // itself does not perform that check; matching EnsureGlobalGit's contract,
 // the caller owns it.
-func EnsureCustomGitKey(existing []byte, key, value string) ([]byte, error) {
+//
+// WR-06 (09.5-REVIEW.md round 2): one entry that cannot round-trip re-render
+// (a hand edit, a merge conflict, a stale CR-01-vintage subsection, a future
+// format change) is DROPPED and named in the returned skipped slice, rather
+// than aborting the entire write — this mirrors EnsureGlobalGit's own
+// established policy of dropping a bad adopted value instead of refusing to
+// write ("we must not refuse to write just because it had a quirky value").
+// The upserted key ITSELF still fails closed: SplitGitKey/validateCustomValue
+// run on key/value above, BEFORE any entry is parsed or filtered, so the
+// entry this call just upserted can never be the one the filter below drops.
+func EnsureCustomGitKey(existing []byte, key, value string) ([]byte, []string, error) {
 	if _, _, _, err := SplitGitKey(key); err != nil {
-		return nil, fmt.Errorf("gitconfig: EnsureCustomGitKey: %w", err)
+		return nil, nil, fmt.Errorf("gitconfig: EnsureCustomGitKey: %w", err)
 	}
 	if err := validateCustomValue(key, value); err != nil {
-		return nil, fmt.Errorf("gitconfig: EnsureCustomGitKey: %w", err)
+		return nil, nil, fmt.Errorf("gitconfig: EnsureCustomGitKey: %w", err)
 	}
 
 	entries := ParseCustomKeysBlock(existing)
@@ -330,10 +340,27 @@ func EnsureCustomGitKey(existing []byte, key, value string) ([]byte, error) {
 		entries = append(entries, CustomKey{Key: key, Value: value})
 	}
 
-	body, err := RenderCustomKeysBlock(entries)
-	if err != nil {
-		return nil, fmt.Errorf("gitconfig: EnsureCustomGitKey: %w", err)
+	var skipped []string
+	renderable := make([]CustomKey, 0, len(entries))
+	for _, e := range entries {
+		if _, _, _, err := SplitGitKey(e.Key); err != nil {
+			skipped = append(skipped, fmt.Sprintf("%s (%v)", e.Key, err))
+			continue
+		}
+		if err := validateCustomValue(e.Key, e.Value); err != nil {
+			skipped = append(skipped, fmt.Sprintf("%s (%v)", e.Key, err))
+			continue
+		}
+		renderable = append(renderable, e)
 	}
 
-	return filewriter.ReplaceBlock(existing, CustomGitKeysBlockName, body), nil
+	body, err := RenderCustomKeysBlock(renderable)
+	if err != nil {
+		// renderable was pre-filtered above, so this should be unreachable —
+		// kept as a fail-closed backstop rather than assuming the filter
+		// above is exhaustive.
+		return nil, nil, fmt.Errorf("gitconfig: EnsureCustomGitKey: %w", err)
+	}
+
+	return filewriter.ReplaceBlock(existing, CustomGitKeysBlockName, body), skipped, nil
 }
