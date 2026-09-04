@@ -88,6 +88,17 @@ func validateCustomValue(key, value string) error {
 	if err := validateValue(key, value); err != nil {
 		return err
 	}
+	// WR-09 (09.5-REVIEW.md round 2): reject an empty value explicitly,
+	// matching globalssh.ValidateDirectiveValue's own explicit reasoning for
+	// the SSH sibling — "an empty submission must not silently write a
+	// whitespace-only line and take a backup for nothing". Before this fix
+	// an empty value was accepted (it contains none of
+	// forbiddenCustomValueCharRE's characters and TrimSpace("") == ""), so
+	// EnsureCustomGitKey would compose `variable = ` (a trailing space, no
+	// value), take a backup, and render a receipt reading "key =  written."
+	if value == "" {
+		return fmt.Errorf("gitconfig: %s value must not be empty — an empty submission would silently write a whitespace-only line and take a backup for nothing", key)
+	}
 	if forbiddenCustomValueCharRE.MatchString(value) {
 		return fmt.Errorf("gitconfig: %s value %q must not contain a double quote, backslash, '#' or ';' — git would fail to parse or silently truncate the resulting file", key, value)
 	}

@@ -168,6 +168,7 @@ func TestEnsureCustomGitKeyRejectsUnparseableGitSyntaxValues(t *testing.T) {
 		{"semicolon comment start", "foo ;bar"},
 		{"leading whitespace", " foo"},
 		{"trailing whitespace", "foo "},
+		{"empty (WR-09)", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
