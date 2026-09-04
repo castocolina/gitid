@@ -432,6 +432,10 @@ These are first-class, enforced requirements — the user's core process ask.
   `scripts/install.sh` lives only on the `gsd/phase-09.3-release-ci-cd-installer`
   branch, not `main`. Unblocks the moment this branch merges to `main` — no further
   code change needed.
+  **Re-opened by Phase 10:** Plan 10-05 (10-CONTEXT.md D-14/D-15) rewrites
+  `scripts/install.sh` for the D-07 tar.gz artifact shape (verify-before-extract,
+  `GITID_VERSION` pin, custom install dir) — BUILD-05 is re-verified against that
+  rewrite, not the Phase 9.3 raw-binary version described above.
 
 ## Q. Global Git Ignore Management (GIGN)
 
@@ -687,7 +691,7 @@ row below records each one's **home** phase.
 | BUILD-02 | Phase 1 | Complete (deviation: test-e2e out of CI, Phase 9.3) |
 | BUILD-03 | Phase 9.3, re-opened Phase 10 | Complete (Phase 9.3 pipeline); re-verified against Phase 10's goreleaser pipeline |
 | BUILD-04 | Phase 1 | Complete |
-| BUILD-05 | Phase 9.3 | Pending (unblocks on merge to main) |
+| BUILD-05 | Phase 9.3, re-opened Phase 10 | Pending; re-verified against Phase 10's install.sh rewrite (Plan 10-05) |
 | GIGN-01 | Phase 9.2 | Complete |
 | UXP-01 | Phase 9.4 | Complete |
 | UXP-02 | Phase 9.4 | Complete |

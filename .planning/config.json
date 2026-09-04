@@ -102,7 +102,7 @@
     "reviewer_instances": {
       "opencode-plan-review": {
         "cli": "opencode",
-        "model": "local-llm-env/my-plan-review"
+        "model": "router-env/my-plan-review"
       },
       "opencode-sol": {
         "cli": "opencode",
