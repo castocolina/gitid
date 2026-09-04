@@ -1933,6 +1933,46 @@ func TestRunCustomSSHDirectiveWriteFloorsTheIncludeLineWhenNeeded(t *testing.T) 
 	}
 }
 
+// TestRunCustomSSHDirectiveWriteRollsBackWhenPostWriteVerificationFails is
+// the WR-07 regression: when the post-write re-verification (AllDirectives)
+// cannot run — the symptom of the write having made the live config
+// unparseable, at which point EVERY subsequent ssh/git-over-ssh invocation
+// on the machine would fail too — the transaction must be treated as
+// FAILED (rolled back, error returned), not silently reported as success
+// with a mere advisory note. failCommitAt injects at the SAME
+// "custom-ssh-directive-verify" seam the real AllDirectives call sits
+// behind, deterministically simulating the derr path without depending on
+// the live machine's real ssh -G resolution.
+func TestRunCustomSSHDirectiveWriteRollsBackWhenPostWriteVerificationFails(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	b.failCommitAt = func(s string) error {
+		if s == "custom-ssh-directive-verify" {
+			return fmt.Errorf("injected post-write verification failure")
+		}
+		return nil
+	}
+
+	configPath := filepath.Join(home, ".ssh", "config")
+	target := filepath.Join(home, ".ssh", "config.d", "gitid.config")
+	includeDir := filepath.Join(home, ".ssh", "config.d")
+	before := snapshotPaths(t, []string{configPath, target, includeDir})
+
+	res, err := b.runCustomSSHDirectiveWrite("StreamLocalBindMask", "0177", lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+	if err == nil {
+		t.Fatal("runCustomSSHDirectiveWrite must fail when post-write verification cannot run")
+	}
+	if !strings.Contains(err.Error(), "injected post-write verification failure") {
+		t.Errorf("err = %q, want it to name the concrete verification failure", err.Error())
+	}
+	if len(res.Restored) == 0 {
+		t.Error("Restored must list the rollback outcomes when post-write verification fails")
+	}
+
+	after := snapshotPaths(t, []string{configPath, target, includeDir})
+	assertUnchanged(t, before, after)
+}
+
 // TestRunCustomSSHDirectiveWriteVerifiesTheCustomKeySpecifically asserts
 // that after a successful write, the verify stage re-reads the resolved
 // directive set (globalssh.AllDirectives, NOT globalssh.Verify) and

@@ -1702,35 +1702,40 @@ func (b *realBackend) runCustomSSHDirectiveWrite(name, value string, p lifecycle
 	// verify — a custom-directive-aware re-read via globalssh.AllDirectives,
 	// deliberately NOT globalssh.Verify (its PolicyFor(k) skip at
 	// shadow.go:304 would silently pass without ever looking at this key).
-	// The write has already succeeded and is backed up, so verification here
-	// is informational only — matching runGlobalSSHApply's existing contract.
 	record(stages[4])
+	if err := inject("custom-ssh-directive-verify"); err != nil {
+		return fail(fmt.Errorf("post-write re-verification failed — the written directive may have made the configuration unparseable: %w", err))
+	}
 	directives, derr := globalssh.AllDirectives(globalssh.BuildProbeDeps(b.sshConfigPath))
 	if derr != nil {
-		// WR-01: a failed post-write verification must be surfaced, not
-		// silently dropped.
-		res.Advisories = append(res.Advisories,
-			"advisory: post-write verification could not run ("+derr.Error()+") — the directive was written but not re-verified")
-	} else {
-		lname := strings.ToLower(name)
-		found := false
-		for _, d := range directives {
-			if d.Key != lname {
-				continue
-			}
-			found = true
-			if !strings.EqualFold(d.Value, value) {
-				res.Advisories = append(res.Advisories, fmt.Sprintf(
-					"advisory: %s was written as %q but resolves to %q — the write may be shadowed by another directive",
-					name, value, d.Value))
-			}
-			break
+		// WR-07: AllDirectives failing is exactly the symptom of the write
+		// having made the live config unparseable — at which point EVERY
+		// subsequent ssh/git-over-ssh invocation on the machine would fail
+		// too. This is a directive unvetted against the REAL file (unlike
+		// the curated apply's own advisory-only post-write re-test), so it
+		// must be treated as a FAILED transaction: roll back and report the
+		// error, not silently succeed with an advisory the user may never
+		// read before the next `git fetch` fails.
+		return fail(fmt.Errorf("post-write re-verification failed — the written directive may have made the configuration unparseable: %w", derr))
+	}
+	lname := strings.ToLower(name)
+	found := false
+	for _, d := range directives {
+		if d.Key != lname {
+			continue
 		}
-		if !found {
+		found = true
+		if !strings.EqualFold(d.Value, value) {
 			res.Advisories = append(res.Advisories, fmt.Sprintf(
-				"advisory: %s was written but could not be found in the re-read directive set — the write may not be effective",
-				name))
+				"advisory: %s was written as %q but resolves to %q — the write may be shadowed by another directive",
+				name, value, d.Value))
 		}
+		break
+	}
+	if !found {
+		res.Advisories = append(res.Advisories, fmt.Sprintf(
+			"advisory: %s was written but could not be found in the re-read directive set — the write may not be effective",
+			name))
 	}
 
 	return res, nil
