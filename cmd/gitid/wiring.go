@@ -2460,11 +2460,20 @@ func (b *realBackend) CommitGlobalGit(keys []string) tea.Cmd {
 // plan stage, and the ceremony never opens — the "a preview that cannot be
 // computed renders the error inline and does NOT open the ceremony" rule
 // both Global screens already follow), then builds Targets/Backups from
-// b.gitconfigPath and b.baselineTargetPath() through b.displayPath (a backup
-// entry only for a file that already exists) and the diff via the same
-// globalsTextDiff helper GlobalGitApplyPlan uses. Mirrors GlobalGitApplyPlan's
-// shape exactly, one seam for one write target class (Phase 9.5 plan
-// 09.5-03, PROP-03).
+// b.gitconfigPath and b.baselineTargetPath() through b.displayPath and the
+// diff via the same globalsTextDiff helper GlobalGitApplyPlan uses. Mirrors
+// GlobalGitApplyPlan's shape exactly, one seam for one write target class
+// (Phase 9.5 plan 09.5-03, PROP-03).
+//
+// WR-04: a backup is promised for a target ONLY when that target's composed
+// bytes actually DIFFER from what is on disk — matching
+// runCustomGitKeyWrite's own SC-1 per-write idempotent-skip contract
+// exactly (composing the SAME ComposeBaselineInclude/EnsureCustomGitKey
+// calls the writer makes, not merely "the file exists"). On the common
+// second-and-later custom key, ~/.gitconfig's [include] floor is already
+// present, Write 1 is skipped, and no backup is taken for it — the plan
+// must not promise one either, or the confirm screen and the write
+// ceremony's actual receipt disagree.
 func (b *realBackend) CustomGitKeyPlan(key, value string) (tuikit.GitCustomKeyPlanView, error) {
 	if b.initErr != nil {
 		return tuikit.GitCustomKeyPlanView{}, b.initErr
@@ -2478,14 +2487,27 @@ func (b *realBackend) CustomGitKeyPlan(key, value string) (tuikit.GitCustomKeyPl
 	if err != nil {
 		return tuikit.GitCustomKeyPlanView{}, err
 	}
+
+	existingGC, gcErr := os.ReadFile(b.gitconfigPath) //nolint:gosec // trusted gitid-managed path (G304)
+	if gcErr != nil && !os.IsNotExist(gcErr) {
+		return tuikit.GitCustomKeyPlanView{}, gcErr
+	}
+	composedGC := gitconfig.ComposeBaselineInclude(existingGC, b.displayBaselineTargetPath())
+
 	view := tuikit.GitCustomKeyPlanView{}
-	for _, p := range []string{b.gitconfigPath, target} {
-		view.Targets = append(view.Targets, b.displayPath(p))
-		// Only files that ALREADY exist get a backup — filewriter backs up
-		// nothing when it creates a file for the first time, and promising a
-		// backup that will not be taken would be a lie in the ceremony.
-		if fileExists(p) {
-			view.Backups = append(view.Backups, b.displayPath(p)+backupSuffixPreview)
+	for _, w := range []struct {
+		path             string
+		composed, before []byte
+	}{
+		{b.gitconfigPath, composedGC, existingGC},
+		{target, candidate, existing},
+	} {
+		view.Targets = append(view.Targets, b.displayPath(w.path))
+		// A backup is promised only for a target that ALREADY exists AND
+		// whose composed bytes actually differ from what is on disk — the
+		// SAME condition runCustomGitKeyWrite checks per-write (SC-1).
+		if fileExists(w.path) && !bytes.Equal(w.composed, w.before) {
+			view.Backups = append(view.Backups, b.displayPath(w.path)+backupSuffixPreview)
 		}
 	}
 	view.Diff = globalsTextDiff(string(existing), string(candidate))

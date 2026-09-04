@@ -79,6 +79,41 @@ func TestCustomGitKeyPlanShowsRealDiff(t *testing.T) {
 	}
 }
 
+// TestCustomGitKeyPlanDoesNotPromiseABackupForAWriteTheWriterWillSkip is the
+// WR-04 regression: runCustomGitKeyWrite is SC-1 idempotent per-write —
+// Write 1 (the ~/.gitconfig [include] floor) is skipped, with no backup
+// taken, once the floor is already present. CustomGitKeyPlan must not
+// promise a ~/.gitconfig backup for a SECOND custom key once the floor is
+// already floored — only the baseline file (which genuinely changes) may
+// promise one.
+func TestCustomGitKeyPlanDoesNotPromiseABackupForAWriteTheWriterWillSkip(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("no git binary in PATH: %v", err)
+	}
+	home := t.TempDir()
+	b := newBackendForHome(home)
+
+	// Seed real state: write the FIRST custom key for real. This floors the
+	// [include] block in ~/.gitconfig AND creates the baseline file.
+	if _, err := b.runCustomGitKeyWrite("core.pager", "less -FRX", lifecyclePolicy{Confirm: confirmationAlreadyObtained}); err != nil {
+		t.Fatalf("seeding first runCustomGitKeyWrite: %v", err)
+	}
+
+	// Plan a SECOND, different key. ~/.gitconfig will NOT change (the floor
+	// is already present) — Write 1 will be skipped and take no backup. The
+	// baseline file WILL change — Write 2 takes a backup.
+	view, err := b.CustomGitKeyPlan("core.editor", "vim")
+	if err != nil {
+		t.Fatalf("CustomGitKeyPlan: %v", err)
+	}
+	if len(view.Backups) != 1 {
+		t.Fatalf("Backups: want exactly 1 (baseline only — ~/.gitconfig write will be skipped, SC-1), got %d: %v", len(view.Backups), view.Backups)
+	}
+	if strings.Contains(view.Backups[0], ".gitconfig") && !strings.Contains(view.Backups[0], "00-baseline") {
+		t.Errorf("Backups[0] = %q, want the baseline file, not ~/.gitconfig (its write will be skipped)", view.Backups[0])
+	}
+}
+
 // TestCustomGitKeyPlanRejectsMalformedKeyBeforeAnyWrite asserts a malformed
 // key or an injection-bearing value returns an error from the PLAN stage;
 // nothing is written and no backup is taken.
