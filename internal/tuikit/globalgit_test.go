@@ -2447,6 +2447,20 @@ func ggitSetKeysApp(t *testing.T, b Backend) App {
 	return pressSeq(t, NewApp(b), "3", "right")
 }
 
+// TestSetKeysFilterPlaceholderRendersInFull is the WR-03 regression, the
+// git-side sibling of TestPropertiesFilterPlaceholderRendersInFull:
+// newGitSetKeysFilterInput never called SetWidth, and bubbles/v2's
+// textinput clips its placeholder to the model's width — 0 (the zero value)
+// clips to a SINGLE rune, so the frozen PropsFilterPlaceholder constant
+// never actually appeared on screen; the tracked approved baseline showed
+// the row as "/ T".
+func TestSetKeysFilterPlaceholderRendersInFull(t *testing.T) {
+	view := appView(ggitSetKeysApp(t, stubBackend{gitSetKeys: []GitSetKeyView{{Key: "core.pager", Value: "less"}}}))
+	if !strings.Contains(view, PropsFilterPlaceholder) {
+		t.Errorf("view must render the full frozen placeholder %q, got:\n%s", PropsFilterPlaceholder, view)
+	}
+}
+
 // TestSetKeysListRendersOriginAndScope proves the detail pane for the
 // selected row shows the full value, the origin file path, and the scope
 // word, while the master-list row shows key and value only, truncated with a

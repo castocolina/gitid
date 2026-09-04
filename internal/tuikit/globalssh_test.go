@@ -2325,6 +2325,20 @@ func TestPropertiesFilterNarrowsTheList(t *testing.T) {
 	}
 }
 
+// TestPropertiesFilterPlaceholderRendersInFull is the WR-03 regression:
+// newPropertiesFilterInput never called SetWidth, and bubbles/v2's
+// textinput clips its placeholder to the model's width — 0 (the zero value)
+// clips to a SINGLE rune, so the frozen PropsFilterPlaceholder constant
+// ("Type to filter…") never actually appeared on screen; the tracked
+// approved baselines showed the row as "/ T". The filter row must render
+// the FULL placeholder text, not just its first character.
+func TestPropertiesFilterPlaceholderRendersInFull(t *testing.T) {
+	view := appView(gssPropertiesApp(t, stubBackend{sshDirectives: []SSHDirectiveView{{Key: "loglevel", Value: "INFO"}}}))
+	if !strings.Contains(view, PropsFilterPlaceholder) {
+		t.Errorf("view must render the full frozen placeholder %q, got:\n%s", PropsFilterPlaceholder, view)
+	}
+}
+
 // TestPropertiesFilterResetsSelectionToFirstMatch is D-C: on filter-text
 // change, the selection resets to the FIRST row of the newly filtered set,
 // so a selected-but-invisible row is structurally impossible.

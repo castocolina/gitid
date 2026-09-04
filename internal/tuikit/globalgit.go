@@ -270,6 +270,10 @@ func newGitSetKeysFilterInput() textinput.Model {
 	ti := newTextInput("")
 	ti.Prompt = "/ "
 	ti.Placeholder = PropsFilterPlaceholder
+	// WR-03: bubbles/v2's textinput clips its placeholder to the model's
+	// width; the zero value (no SetWidth call) clips to a single rune, so
+	// the frozen placeholder never actually rendered — the row showed "/ T".
+	ti.SetWidth(lipgloss.Width(PropsFilterPlaceholder) + 1)
 	return ti
 }
 
