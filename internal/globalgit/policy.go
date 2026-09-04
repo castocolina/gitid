@@ -268,6 +268,24 @@ func PolicyForToken(token string) (OptionPolicy, bool) {
 	return OptionPolicy{}, false
 }
 
+// PolicyForMember returns the approved row that manages member as one of its
+// actual git config keys (case-insensitively), and whether it exists. Unlike
+// PolicyFor, which matches the row's DISPLAY key (prose for a bundle row,
+// e.g. "core.autocrlf / core.eol"), this matches the shape a free-form
+// custom git key always takes — a single dotted "section.variable" or
+// "section.subsection.variable" key — so a caller checking whether a custom
+// key COLLIDES with a curated row (CR-01, 09.5-REVIEW.md round 3) must use
+// this, not PolicyFor, or a bundle-row collision (e.g. "core.autocrlf",
+// "alias.st") would go undetected.
+func PolicyForMember(member string) (OptionPolicy, bool) {
+	for _, p := range Policy {
+		if _, ok := p.memberFor(member); ok {
+			return p, true
+		}
+	}
+	return OptionPolicy{}, false
+}
+
 // TokenOwningMember returns the frozen CLI token of the row that manages
 // member as a config key, matched case-insensitively. Used only to name the
 // token a script should have typed when it passed a member key instead.

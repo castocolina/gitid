@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/globalgit"
 )
 
@@ -366,6 +367,62 @@ func TestRunGlobalGitApply_LeavesFallbackAuthorBlockUntouched(t *testing.T) {
 	}
 	if fallbackBefore != fallbackAfter {
 		t.Errorf("fallback-author block changed after a baseline apply:\nbefore:\n%s\nafter:\n%s", fallbackBefore, fallbackAfter)
+	}
+}
+
+// TestRunGlobalGitApply_WarnsWhenNeutralizingExistingCustomKey is the CR-01
+// (09.5-REVIEW.md round 3) second half: CustomGitKeyPlan/runCustomGitKeyWrite
+// now REFUSE to create a new collision, but a custom key that collides with
+// a curated member could already exist (a pre-guard install, or the
+// custom-git-keys block edited by hand). When a curated apply writes a
+// member key that a pre-existing custom key also names, the verify stage
+// must name the collision as an advisory — not silently neutralise it with
+// no signal, which was the whole defect this finding reported.
+func TestRunGlobalGitApply_WarnsWhenNeutralizingExistingCustomKey(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("no git binary in PATH: %v", err)
+	}
+	home := t.TempDir()
+	b := newBackendForHome(home)
+
+	// Seed a pre-existing custom-git-keys block whose key collides with the
+	// curated scalar row init.defaultBranch — simulating a collision this
+	// guard did not create (an older install, or the block edited by hand).
+	baselinePath := b.baselineTargetPath()
+	if mkErr := os.MkdirAll(filepath.Dir(baselinePath), 0o700); mkErr != nil {
+		t.Fatalf("mkdir baseline dir: %v", mkErr)
+	}
+	seeded, _, seedErr := gitconfig.EnsureCustomGitKey(nil, "init.defaultBranch", "trunk")
+	if seedErr != nil {
+		t.Fatalf("seeding custom key: %v", seedErr)
+	}
+	if writeErr := os.WriteFile(baselinePath, seeded, 0o644); writeErr != nil { //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+		t.Fatalf("writing seeded baseline file: %v", writeErr)
+	}
+
+	res, err := b.runGlobalGitApply([]string{"init.defaultBranch"}, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+	if err != nil {
+		t.Fatalf("runGlobalGitApply: %v", err)
+	}
+
+	found := false
+	for _, adv := range res.Advisories {
+		if strings.Contains(adv, "init.defaultBranch") && strings.Contains(adv, "custom") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected an advisory naming the neutralised custom key, got: %v", res.Advisories)
+	}
+
+	// The custom-git-keys block itself must survive untouched — this
+	// ceremony only ever writes the global-git block (D-F).
+	bf, readErr := os.ReadFile(baselinePath) //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+	if readErr != nil {
+		t.Fatalf("reading baseline file: %v", readErr)
+	}
+	if !strings.Contains(string(bf), "# BEGIN gitid managed: custom-git-keys") {
+		t.Errorf("custom-git-keys block missing after a curated apply:\n%s", bf)
 	}
 }
 

@@ -2515,6 +2515,23 @@ func (b *realBackend) CustomGitKeyPlan(key, value string) (tuikit.GitCustomKeyPl
 	if b.initErr != nil {
 		return tuikit.GitCustomKeyPlanView{}, b.initErr
 	}
+	// CR-01 (09.5-REVIEW.md round 3): 09.5-03-PLAN.md line 58's declared
+	// backstop — a custom key that collides with a key the curated
+	// global-git baseline block already manages must not create two
+	// conflicting writers of the same key (custom-git-keys and global-git
+	// are separate managed blocks in the SAME file; git's last-occurrence-
+	// wins resolution then decides the winner by write ORDER, not by any
+	// policy). PolicyForMember matches the MEMBER key shape a free-form
+	// custom key always takes (e.g. "init.defaultBranch" or
+	// "core.autocrlf") — unlike PolicyFor, which matches only the row's
+	// DISPLAY key (prose for a bundle row, e.g. "core.autocrlf / core.eol"),
+	// PolicyFor alone would miss a bundle-row collision entirely.
+	if policy, managed := globalgit.PolicyForMember(key); managed {
+		return tuikit.GitCustomKeyPlanView{}, fmt.Errorf(
+			"gitid: %s is managed by the curated Global Git baseline block (%s) in the same file — "+
+				"writing it as a custom key would create two writers of one key whose precedence "+
+				"depends on block order; change it from the Options sub-tab instead", key, policy.Key)
+	}
 	target := b.baselineTargetPath()
 	existing, err := os.ReadFile(target) //nolint:gosec // trusted gitid-managed path (G304)
 	if err != nil && !os.IsNotExist(err) {

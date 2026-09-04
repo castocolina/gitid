@@ -287,6 +287,15 @@ func gitKeysEqual(a, b string) bool {
 	return strings.EqualFold(secA, secB) && subA == subB && strings.EqualFold(varA, varB)
 }
 
+// GitKeysEqual is the exported wrapper around gitKeysEqual (CR-01 round 3):
+// a caller outside this package that needs to compare two dotted git config
+// keys for identity — case-insensitive section/variable, case-SENSITIVE
+// subsection, per git-config(1) — calls this rather than a naive
+// strings.EqualFold, which is wrong for any key carrying a subsection.
+func GitKeysEqual(a, b string) bool {
+	return gitKeysEqual(a, b)
+}
+
 // EnsureCustomGitKey upserts key=value into the custom-git-keys managed
 // block, mirroring EnsureGlobalGit's shape. The key and value are validated
 // FIRST — SplitGitKey for the key's syntax (D-G), validateCustomValue (this

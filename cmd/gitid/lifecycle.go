@@ -1305,6 +1305,29 @@ func (b *realBackend) runGlobalGitApply(keys []string, p lifecyclePolicy) (lifec
 		}
 	}
 
+	// CR-01 (09.5-REVIEW.md round 3): CustomGitKeyPlan/runCustomGitKeyWrite
+	// now refuse to CREATE a new collision between a custom key and a
+	// curated member, but a colliding custom key could already exist (an
+	// install predating that guard, or the custom-git-keys block edited by
+	// hand) — custom-git-keys and global-git are separate managed blocks in
+	// the SAME file, so this apply's write does not touch or even see the
+	// custom-git-keys block by default. Name the collision explicitly so a
+	// curated apply that silently neutralises a user's custom key is never
+	// reported as an unqualified success. existingBF is the baseline file's
+	// content as read BEFORE this apply's Write 2 — filewriter.ReplaceBlock
+	// preserves every OTHER managed block verbatim, so it still reflects the
+	// custom-git-keys block after Write 2 lands.
+	for _, custom := range gitconfig.ParseCustomKeysBlock(existingBF) {
+		for member := range explicit {
+			if gitconfig.GitKeysEqual(custom.Key, member) {
+				res.Advisories = append(res.Advisories, fmt.Sprintf(
+					"advisory: %s is ALSO set as a custom git key (value %q) in the custom-git-keys block of %s — "+
+						"this curated apply may neutralise it, since git resolves the two blocks by order in the file, not by policy",
+					member, custom.Value, b.displayPath(target)))
+			}
+		}
+	}
+
 	return res, nil
 }
 
@@ -1401,6 +1424,17 @@ func (b *realBackend) runCustomGitKeyWrite(key, value string, p lifecyclePolicy)
 	}
 	if err := gitconfig.ValidateCustomKeyValue(key, value); err != nil {
 		return res, err
+	}
+	// CR-01 (09.5-REVIEW.md round 3) fail-closed backstop, mirroring
+	// CustomGitKeyPlan's own check (wiring.go): a key managed by the
+	// curated global-git baseline block must be refused here too, for any
+	// caller that reaches this writer directly instead of going through the
+	// plan preview.
+	if policy, managed := globalgit.PolicyForMember(key); managed {
+		return res, fmt.Errorf(
+			"gitid: %s is managed by the curated Global Git baseline block (%s) in the same file — "+
+				"writing it as a custom key would create two writers of one key whose precedence "+
+				"depends on block order; change it from the Options sub-tab instead", key, policy.Key)
 	}
 
 	if p.DryRun {

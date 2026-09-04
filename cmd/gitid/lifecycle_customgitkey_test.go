@@ -134,6 +134,53 @@ func TestCustomGitKeyPlanRejectsMalformedKeyBeforeAnyWrite(t *testing.T) {
 	assertUnchanged(t, before, snapshotPaths(t, []string{gitconfigPath, baselinePath}))
 }
 
+// TestCustomGitKeyPlanRejectsPolicyManagedKey is the CR-01 (round 3)
+// regression: 09.5-03-PLAN.md line 58's declared backstop is that a custom
+// key colliding with a key the curated global-git block already manages
+// must not create two conflicting writers of the same key. The plan stage
+// must refuse the key BY NAME, before any write, for both a scalar-row
+// member key and a bundle-row member key (which PolicyFor's DISPLAY-key
+// lookup alone would miss).
+func TestCustomGitKeyPlanRejectsPolicyManagedKey(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+	baselinePath := b.baselineTargetPath()
+	before := snapshotPaths(t, []string{gitconfigPath, baselinePath})
+
+	if _, err := b.CustomGitKeyPlan("init.defaultBranch", "trunk"); err == nil {
+		t.Error("CustomGitKeyPlan(init.defaultBranch) must be rejected: it collides with the curated scalar row")
+	}
+	if _, err := b.CustomGitKeyPlan("core.autocrlf", "true"); err == nil {
+		t.Error("CustomGitKeyPlan(core.autocrlf) must be rejected: it collides with the curated bundle row's member key")
+	}
+	// A genuinely free-form key (not managed by any curated row) must still
+	// be accepted — the guard must not become a blanket refusal.
+	if _, err := b.CustomGitKeyPlan("http.sslVerify", "true"); err != nil {
+		t.Errorf("CustomGitKeyPlan(http.sslVerify) must still succeed for a non-curated key: %v", err)
+	}
+
+	assertUnchanged(t, before, snapshotPaths(t, []string{gitconfigPath, baselinePath}))
+}
+
+// TestRunCustomGitKeyWriteRejectsPolicyManagedKeyAtPlanStage is the
+// fail-closed backstop for CR-01 (round 3): any caller that reaches the
+// writer directly (bypassing CustomGitKeyPlan) must still be refused at the
+// writer's own plan stage, before the confirmation gate, backup, or write.
+func TestRunCustomGitKeyWriteRejectsPolicyManagedKeyAtPlanStage(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+	baselinePath := b.baselineTargetPath()
+	before := snapshotPaths(t, []string{gitconfigPath, baselinePath})
+
+	if _, err := b.runCustomGitKeyWrite("init.defaultBranch", "trunk", lifecyclePolicy{Confirm: confirmationAlreadyObtained}); err == nil {
+		t.Error("runCustomGitKeyWrite(init.defaultBranch) must be rejected at the plan stage")
+	}
+
+	assertUnchanged(t, before, snapshotPaths(t, []string{gitconfigPath, baselinePath}))
+}
+
 // TestRunCustomGitKeyWriteLandsBothWrites asserts a confirmed run writes the
 // [include] floor into ~/.gitconfig and the custom-git-keys block into the
 // baseline file, and returns one backup path per file that pre-existed.

@@ -37,6 +37,56 @@ func TestPolicyFor_UnknownKey(t *testing.T) {
 	}
 }
 
+// TestPolicyForMember_ScalarRow asserts PolicyForMember matches a scalar
+// row's member key (which, for a scalar row, equals the display key) — CR-01
+// round 3: a custom git key is always a single dotted key, so it can only
+// ever collide with a MEMBER key, never a bundle row's prose display key.
+func TestPolicyForMember_ScalarRow(t *testing.T) {
+	p, ok := PolicyForMember("init.defaultBranch")
+	if !ok {
+		t.Fatal("PolicyForMember(init.defaultBranch) returned ok=false")
+	}
+	if p.Key != "init.defaultBranch" {
+		t.Errorf("row.Key = %q, want %q", p.Key, "init.defaultBranch")
+	}
+}
+
+// TestPolicyForMember_BundleRow asserts PolicyForMember matches a MEMBER key
+// of a bundle row even though PolicyFor(the same string) would fail — the
+// bundle row's DISPLAY key is prose ("core.autocrlf / core.eol"), not any
+// single member key.
+func TestPolicyForMember_BundleRow(t *testing.T) {
+	p, ok := PolicyForMember("core.autocrlf")
+	if !ok {
+		t.Fatal("PolicyForMember(core.autocrlf) returned ok=false")
+	}
+	if p.Key != "core.autocrlf / core.eol" {
+		t.Errorf("row.Key = %q, want the bundle row's display key", p.Key)
+	}
+	if _, ok := PolicyFor("core.autocrlf"); ok {
+		t.Fatal("test invariant broken: PolicyFor(core.autocrlf) must NOT match — it only matches DISPLAY keys")
+	}
+
+	if _, ok := PolicyForMember("alias.st"); !ok {
+		t.Error("PolicyForMember(alias.st) should match the alias bundle row's member key")
+	}
+}
+
+// TestPolicyForMember_CaseInsensitive mirrors PolicyFor's own case rule.
+func TestPolicyForMember_CaseInsensitive(t *testing.T) {
+	if _, ok := PolicyForMember("INIT.DEFAULTBRANCH"); !ok {
+		t.Error("PolicyForMember should match case-insensitively")
+	}
+}
+
+// TestPolicyForMember_UnknownKey asserts a key not managed by any row returns
+// ok=false, so a genuinely free-form custom key is never wrongly blocked.
+func TestPolicyForMember_UnknownKey(t *testing.T) {
+	if _, ok := PolicyForMember("http.sslVerify"); ok {
+		t.Error("PolicyForMember should return ok=false for a key no row manages")
+	}
+}
+
 // TestPolicyOrderMatchesAuthorityPinnedTable asserts the ordered row list
 // equals the 07-03-PLAN.md <authority> block's D-08 pinned display order, row
 // for row.
