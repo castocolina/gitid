@@ -3,32 +3,41 @@ package main
 import (
 	"bytes"
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/castocolina/gitid/internal/version"
 )
 
-// TestVersionNonEmpty verifies the version var is populated,
-// providing a minimal smoke-test that the package compiles and
-// the basic stamp is reachable.
-func TestVersionNonEmpty(t *testing.T) {
-	if version == "" {
-		t.Fatal("version must be non-empty")
+// TestVersionStringNonEmpty verifies versionString() is populated, providing
+// a minimal smoke-test that the package compiles and the composed stamp is
+// reachable. Replaces the retired TestVersionNonEmpty (the package-level
+// `version` identifier moved into internal/version — Phase 10, D-09).
+func TestVersionStringNonEmpty(t *testing.T) {
+	if versionString() == "" {
+		t.Fatal("versionString() must be non-empty")
 	}
 }
 
 func TestComposeVersion(t *testing.T) {
-	got := composeVersion("1.2.3", "abc1234", "2026-08-30")
-	want := "1.2.3 (abc1234, 2026-08-30)"
+	got := composeVersion(version.Info{Version: "1.2.3", Commit: "abc1234", BuildDate: "2026-08-30"}, "darwin", "arm64")
+	want := "1.2.3 (abc1234, 2026-08-30, darwin/arm64)"
 	if got != want {
 		t.Fatalf("composeVersion() = %q, want %q", got, want)
 	}
 }
 
-func TestComposeVersionUsesTheDevDefaults(t *testing.T) {
+// TestVersionStringIncludesPlatformSuffix locks in D-11's platform suffix:
+// the composed stamp must always contain "<goos>/<goarch>". Replaces the
+// retired TestComposeVersionUsesTheDevDefaults, whose literal
+// "0.0.0-dev (none, unknown)" assumed a static Makefile default that D-10
+// retires in favor of a live git-describe value.
+func TestVersionStringIncludesPlatformSuffix(t *testing.T) {
 	got := versionString()
-	want := "0.0.0-dev (none, unknown)"
-	if got != want {
-		t.Fatalf("versionString() = %q, want %q", got, want)
+	want := runtime.GOOS + "/" + runtime.GOARCH
+	if !strings.Contains(got, want) {
+		t.Fatalf("versionString() = %q, want it to contain %q", got, want)
 	}
 }
 
