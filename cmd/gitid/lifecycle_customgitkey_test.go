@@ -269,6 +269,53 @@ func TestRunCustomGitKeyWriteRollsBackWhenVerifyDetectsUnparseableFile(t *testin
 	assertUnchanged(t, before, after)
 }
 
+// TestRunCustomGitKeyWriteVerifiesReadBackNotJustSyntax is the WR-08/CR-01
+// regression: "the file parses" (ValidateGitConfigSyntax) is a much weaker
+// claim than "the key I promised is now readable as the value I promised".
+// A hand-edited foreign section AFTER the custom-git-keys block — content
+// the managed-block writer preserves verbatim, per filewriter's own
+// foreign-content-preserved contract — can set the SAME key. git config's
+// last-occurrence-wins resolution then makes the write's own value invisible
+// even though the file as a whole still parses perfectly. The verify stage
+// must catch this by reading the key back through gitconfig.RunGitConfigGet
+// and comparing it against the value just written, and must roll back both
+// writes when the read-back does not match.
+func TestRunCustomGitKeyWriteVerifiesReadBackNotJustSyntax(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("no git binary in PATH: %v", err)
+	}
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+	baselinePath := b.baselineTargetPath()
+
+	if err := os.MkdirAll(filepath.Dir(baselinePath), 0o700); err != nil {
+		t.Fatalf("seeding baseline dir: %v", err)
+	}
+	// Pre-seed the managed block AND a foreign section AFTER it that sets the
+	// SAME key to a different value. ReplaceBlock updates the managed block
+	// in place (preserving its existing position), so the foreign section
+	// stays after it and shadows the confirmed write's value on read-back —
+	// while the file remains perfectly valid git-config syntax throughout.
+	seed := "# BEGIN gitid managed: custom-git-keys\n[core]\n\tpager = old\n# END gitid managed: custom-git-keys\n" +
+		"[core]\n\tpager = shadow-value\n"
+	if err := os.WriteFile(baselinePath, []byte(seed), 0o600); err != nil {
+		t.Fatalf("seeding baseline file: %v", err)
+	}
+	before := snapshotPaths(t, []string{gitconfigPath, baselinePath})
+
+	res, err := b.runCustomGitKeyWrite("core.pager", "new-value", lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+	if err == nil {
+		t.Fatal("runCustomGitKeyWrite must fail when the written key reads back as a DIFFERENT value than what was promised")
+	}
+	if len(res.Restored) == 0 {
+		t.Error("Restored must list the rollback outcomes when the read-back verification fails")
+	}
+
+	after := snapshotPaths(t, []string{gitconfigPath, baselinePath})
+	assertUnchanged(t, before, after)
+}
+
 // TestRunCustomGitKeyWriteRefusesWithoutAuthorization asserts an unauthorized
 // policy returns a cancellation error and writes nothing.
 func TestRunCustomGitKeyWriteRefusesWithoutAuthorization(t *testing.T) {

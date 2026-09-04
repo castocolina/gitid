@@ -1505,18 +1505,33 @@ func (b *realBackend) runCustomGitKeyWrite(key, value string, p lifecyclePolicy)
 
 	res.Backups = append(res.Backups, journal.backups...)
 
-	// verify — CR-01: confirm the just-written baseline file still parses as
-	// valid git-config syntax. EnsureCustomGitKey's own SplitGitKey/
-	// validateCustomValue guards reject the characters that are KNOWN to
-	// corrupt the file, but this is the defense-in-depth backstop for
-	// anything else that could leave the file unparseable (including
+	// verify — CR-01/WR-08: confirm BOTH files Write 1 and Write 2 touched
+	// still parse as valid git-config syntax, then read the key back and
+	// compare it against the value just written. EnsureCustomGitKey's own
+	// SplitGitKey/validateCustomValue guards reject the characters that are
+	// KNOWN to corrupt the file, but this is the defense-in-depth backstop
+	// for anything else that could leave a file unparseable (including
 	// pre-existing foreign content the managed-block writer does not touch)
-	// — the write must never be reported as successful while
-	// ~/.gitconfig.d/00-baseline is a file every git command will then fail
-	// to parse.
+	// — the write must never be reported as successful while either
+	// ~/.gitconfig (Write 1) or ~/.gitconfig.d/00-baseline (Write 2) is a
+	// file every git command will then fail to parse. "The file parses" is
+	// also a much weaker claim than "the key I promised is now readable" —
+	// pre-existing foreign content AFTER the managed block (content
+	// filewriter preserves verbatim by design) can set the same key and
+	// shadow the write's own value under git's last-occurrence-wins
+	// resolution while the file remains perfectly valid syntax throughout
+	// (WR-08). The read-back is run against target directly (the file
+	// EnsureCustomGitKey composed the key into), not through the include
+	// chain, so it observes exactly what this write produced.
 	record(stages[4])
+	if verr := gitconfig.ValidateGitConfigSyntax(b.gitconfigPath); verr != nil {
+		return fail(fmt.Errorf("post-write verification: %s does not parse as valid git-config syntax: %w", b.gitconfigPath, verr))
+	}
 	if verr := gitconfig.ValidateGitConfigSyntax(target); verr != nil {
 		return fail(fmt.Errorf("post-write verification: the written file does not parse as valid git-config syntax: %w", verr))
+	}
+	if got, gerr := gitconfig.RunGitConfigGet(target, key); gerr != nil || got != value {
+		return fail(fmt.Errorf("post-write verification: %s reads back as %q, not %q", key, got, value))
 	}
 
 	return res, nil
