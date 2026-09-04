@@ -317,6 +317,33 @@ func TestRunCustomGitKeyWriteDryRunNeverConfirms(t *testing.T) {
 	assertUnchanged(t, before, snapshotPaths(t, []string{gitconfigPath, baselinePath}))
 }
 
+// TestRunCustomGitKeyWriteRejectsMalformedValueAtPlanStage is the WR-07
+// regression: runCustomGitKeyWrite's OWN plan stage must reject a malformed
+// VALUE — not just a malformed key — before anything is read, backed up, or
+// written, mirroring runCustomSSHDirectiveWrite's plan stage (which validates
+// both ValidateDirectiveName AND ValidateDirectiveValue). Before this fix the
+// plan stage called only gitconfig.SplitGitKey(key); a malformed value was
+// not caught until the write stage's EnsureCustomGitKey call, by which point
+// Write 1 (the [include] floor into ~/.gitconfig) may already have executed
+// and taken a backup for a write that should never have been attempted. A
+// dry run is the cheapest way to prove this: today it stops right after the
+// plan stage, so a dry run for a malformed value must fail — before this fix
+// it silently returned success.
+func TestRunCustomGitKeyWriteRejectsMalformedValueAtPlanStage(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+	baselinePath := b.baselineTargetPath()
+	before := snapshotPaths(t, []string{gitconfigPath, baselinePath})
+
+	_, err := b.runCustomGitKeyWrite("core.pager", `bad"value`, lifecyclePolicy{DryRun: true})
+	if err == nil {
+		t.Fatal("runCustomGitKeyWrite dry run with a malformed value (double quote) must return an error at the plan stage")
+	}
+
+	assertUnchanged(t, before, snapshotPaths(t, []string{gitconfigPath, baselinePath}))
+}
+
 // TestRunCustomGitKeyWriteIsIdempotent asserts a second run with the same key
 // and value writes nothing and returns no backup path (SC-1).
 func TestRunCustomGitKeyWriteIsIdempotent(t *testing.T) {

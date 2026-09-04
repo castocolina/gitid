@@ -1380,19 +1380,26 @@ func (b *realBackend) runCustomGitKeyWrite(key, value string, p lifecyclePolicy)
 		return res, b.initErr
 	}
 
-	// plan — reject a malformed key BY SYNTAX before any write, via
-	// gitconfig.SplitGitKey (the key-syntax half of the guard). The value's
-	// injection guard is enforced by the SINGLE gitconfig.EnsureCustomGitKey
-	// call this function makes below, at the write stage — the plan PREVIEW
-	// (CustomGitKeyPlan, wiring.go) is the primary gate the TUI always
-	// consults before opening the ceremony; this is a defense-in-depth
-	// backstop for any caller that reaches this function directly. Calling
-	// SplitGitKey here (rather than a second EnsureCustomGitKey call) keeps
-	// the composer reached from exactly TWO call sites total in this
-	// directory — the plan preview and this function's own write stage.
+	// plan — reject a malformed key OR value BY SYNTAX before any write, via
+	// gitconfig.SplitGitKey (the key-syntax half of the guard) AND
+	// gitconfig.ValidateCustomKeyValue (WR-07: the value-syntax half,
+	// mirroring runCustomSSHDirectiveWrite's plan stage, which validates
+	// both ValidateDirectiveName AND ValidateDirectiveValue before anything
+	// is read or written). The full injection guard is re-enforced by the
+	// SINGLE gitconfig.EnsureCustomGitKey call this function makes below, at
+	// the write stage — the plan PREVIEW (CustomGitKeyPlan, wiring.go) is
+	// the primary gate the TUI always consults before opening the ceremony;
+	// this is a defense-in-depth backstop for any caller that reaches this
+	// function directly. Validating both here (rather than a second
+	// EnsureCustomGitKey call) keeps the composer reached from exactly TWO
+	// call sites total in this directory — the plan preview and this
+	// function's own write stage.
 	record(stages[0])
 	target := b.baselineTargetPath()
 	if _, _, _, err := gitconfig.SplitGitKey(key); err != nil {
+		return res, err
+	}
+	if err := gitconfig.ValidateCustomKeyValue(key, value); err != nil {
 		return res, err
 	}
 
