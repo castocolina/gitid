@@ -204,6 +204,64 @@ func TestEnsureGlobalsPreservesMultiTokenValues(t *testing.T) {
 	}
 }
 
+// TestEnsureGlobalsPreservesInteriorWhitespaceOnASecondWrite is the CR-02
+// round-2 regression: TestEnsureGlobalsPreservesMultiTokenValues above only
+// proves single-space-separated values survive ONE write — every case there
+// is a Fields-then-Join round trip that happens to be a no-op for
+// single-space input, so it cannot catch a whitespace-collapse bug.
+// parseGlobalBody used to reconstruct a directive's value via
+// strings.Join(strings.Fields(trimmed)[1:], " "), which collapses every run
+// of internal whitespace to a single space — invisible on write 1 (the
+// value is written as typed and proven correct against a real ssh -G), but
+// destructive on write 2: the SECOND EnsureGlobals call that touches this
+// block (any curated Global-SSH apply, any later custom directive, any
+// repair) parses the FIRST write's rendered line back through
+// parseGlobalBody and re-renders it — silently rewriting a TAB-separated
+// argument list or a double-spaced quoted path to a DIFFERENT value the
+// user never confirmed. This asserts the value is BYTE-IDENTICAL across two
+// consecutive EnsureGlobals calls, not merely present as a substring.
+func TestEnsureGlobalsPreservesInteriorWhitespaceOnASecondWrite(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+	}{
+		{"double space in a quoted path", `IdentityFile "/pa  th/id"`},
+		{"tab-separated ProxyCommand arguments", "ProxyCommand /usr/bin/nc\t-X 5 %h %p"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			seed := []byte(managedTestBlock("global-ssh", "Host *\n  "+tc.line+"\n"))
+
+			// Write 1: the candidate is composed for the first time.
+			afterFirst, err := EnsureGlobals(seed, nil, "linux")
+			if err != nil {
+				t.Fatalf("first EnsureGlobals: %v", err)
+			}
+			firstBody := globalBody(t, afterFirst)
+			if !strings.Contains(firstBody, tc.line) {
+				t.Fatalf("write 1: value not intact; want line %q in body:\n%s", tc.line, firstBody)
+			}
+
+			// Write 2: an UNRELATED subsequent write to the same block (here,
+			// the same explicit map again, mirroring a later curated
+			// Global-SSH apply or custom directive touching the block) must
+			// not silently collapse the interior whitespace this second
+			// parse-then-render pass reads back.
+			afterSecond, err := EnsureGlobals(afterFirst, nil, "linux")
+			if err != nil {
+				t.Fatalf("second EnsureGlobals: %v", err)
+			}
+			secondBody := globalBody(t, afterSecond)
+			if !strings.Contains(secondBody, tc.line) {
+				t.Errorf("write 2: interior whitespace was collapsed; want line %q intact, got body:\n%s", tc.line, secondBody)
+			}
+			if !bytes.Equal(afterFirst, afterSecond) {
+				t.Errorf("EnsureGlobals is not idempotent across writes when the value has interior whitespace:\nfirst:\n%s\nsecond:\n%s", afterFirst, afterSecond)
+			}
+		})
+	}
+}
+
 // TestEnsureGlobalsPreservesCommentLines is the comment half of the CR-02
 // fix: a `#` comment line inside the managed block must survive round-trip
 // rather than being silently dropped.

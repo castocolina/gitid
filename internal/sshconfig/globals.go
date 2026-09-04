@@ -230,9 +230,21 @@ func (g *globalMap) addRaw(line string) {
 // tolerating both the two-space hostIndent and the four-space form, and
 // ignoring the `Host *` and `IgnoreUnknown` lines — they are structure,
 // re-rendered below. A `#` comment line is preserved verbatim (as a raw
-// entry) rather than dropped; a directive's value carries every token after
-// the key, not just the first, so a multi-token value (a quoted path with a
-// space, a space-separated argument list) survives round-trip intact (CR-02).
+// entry) rather than dropped.
+//
+// The value is sliced from trimmed directly (trimmed[len(key):], with only
+// LEADING whitespace stripped) — NOT reconstructed via
+// strings.Join(strings.Fields(trimmed)[1:], " "). CR-02 round 2: the
+// Fields-based form collapses every run of internal whitespace to a single
+// space, so a TAB-separated ProxyCommand argument list or a double space
+// inside a quoted IdentityFile path is silently rewritten to a DIFFERENT
+// value on the very next EnsureGlobals call that touches this block (any
+// curated Global-SSH apply, any later custom directive, any repair) — even
+// though the FIRST write, proven via ssh -G at write time, was correct. The
+// value this function returns is therefore byte-identical to what followed
+// the key on the original line, so a directive's value carries every token
+// AND every interior whitespace byte after the key, and survives round-trip
+// intact (CR-02).
 func parseGlobalBody(body string) *globalMap {
 	m := newGlobalMap()
 	for _, line := range strings.Split(body, "\n") {
@@ -248,10 +260,16 @@ func parseGlobalBody(body string) *globalMap {
 		if len(fields) < 2 {
 			continue
 		}
-		if strings.EqualFold(fields[0], "Host") || strings.EqualFold(fields[0], "IgnoreUnknown") {
+		key := fields[0]
+		if strings.EqualFold(key, "Host") || strings.EqualFold(key, "IgnoreUnknown") {
 			continue
 		}
-		m.set(fields[0], strings.Join(fields[1:], " "))
+		// trimmed has no leading whitespace (strings.TrimSpace already
+		// removed it), so trimmed[:len(key)] == key exactly; slicing off
+		// just the key and the whitespace immediately after it preserves
+		// every remaining interior whitespace byte in the value verbatim.
+		value := strings.TrimLeft(trimmed[len(key):], " \t")
+		m.set(key, value)
 	}
 	return m
 }
