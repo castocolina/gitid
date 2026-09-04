@@ -25,6 +25,7 @@ func TestFrozenPropertiesCopy(t *testing.T) {
 		want string
 	}{
 		{"PropsSSHSubTabLabel", PropsSSHSubTabLabel, "All directives"},
+		{"PropsSSHStorageSubTabLabel", PropsSSHStorageSubTabLabel, "Storage & preview"},
 		{"PropsFilterPlaceholder", PropsFilterPlaceholder, "Type to filter…"},
 		{"PropsMatchCountFmt(23, 91)", fmt.Sprintf(PropsMatchCountFmt, 23, 91), "23 of 91 shown"},
 		{"PropsSSHProbeFailedHeading", PropsSSHProbeFailedHeading, "! The SSH configuration could not be resolved."},
@@ -53,7 +54,7 @@ func TestFrozenPropertiesCopy(t *testing.T) {
 		{"PropsSSHRecognizedDirectiveFmt(...)", fmt.Sprintf(PropsSSHRecognizedDirectiveFmt, "TCPKeepAlive"), "✓ 'TCPKeepAlive' is a recognized SSH directive."},
 	}
 
-	const wantCount = 27
+	const wantCount = 28
 	if len(cases) != wantCount {
 		t.Fatalf("TestFrozenPropertiesCopy covers %d constants, want %d — a row was forgotten or double-counted", len(cases), wantCount)
 	}

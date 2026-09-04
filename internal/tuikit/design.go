@@ -839,6 +839,13 @@ const (
 	// gssTabPropertiesLabel derives from this constant (padding added
 	// around it), never restating the text a second time.
 	PropsSSHSubTabLabel = "All directives"
+	// PropsSSHStorageSubTabLabel is Global SSH's second sub-tab label
+	// (STORE-01). WR-11 (09.5-REVIEW.md round 2): promoted alongside
+	// PropsSSHSubTabLabel so every consumer — gssTabStorageLabel's own
+	// derivation, this screen's breadcrumb, and
+	// internal/screenshot/createflow_regions.go's extractSubTabStrip gate —
+	// shares ONE source for the label text, never restates it.
+	PropsSSHStorageSubTabLabel = "Storage & preview"
 	// PropsFilterPlaceholder is the type-to-filter input's placeholder —
 	// deliberately shorter than the app-level palette's own placeholder
 	// (app.go's Ctrl+P palette) because Enter has no "open first match"

@@ -58,7 +58,10 @@ const (
 // against the same strings, so the spans can never drift.
 const (
 	gssTabOptionsLabel = " Options "
-	gssTabStorageLabel = " Storage & preview "
+	// gssTabStorageLabel derives from design.go's frozen
+	// PropsSSHStorageSubTabLabel constant (padding added around it) — ONE
+	// source for the label text, never restated (WR-11).
+	gssTabStorageLabel = " " + PropsSSHStorageSubTabLabel + " "
 	// gssTabPropertiesLabel derives from design.go's frozen
 	// PropsSSHSubTabLabel constant (padding added around it) — ONE source
 	// for the label text, never restated.
@@ -1584,7 +1587,7 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 	crumb := "Options"
 	switch m.subTab {
 	case gssStorage:
-		crumb = "Storage & preview"
+		crumb = PropsSSHStorageSubTabLabel
 	case gssProperties:
 		crumb = PropsSSHSubTabLabel
 	}

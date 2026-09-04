@@ -1311,12 +1311,21 @@ func extractSubTabStrip(lines []string) string {
 		if !strings.Contains(plain, "Options") {
 			continue
 		}
-		if !strings.Contains(plain, "All directives") && !strings.Contains(plain, "Storage & preview") && !strings.Contains(plain, "Set keys") {
+		// WR-11 (09.5-REVIEW.md round 2): the three sibling labels are
+		// derived from tuikit's own frozen constants, never restated as
+		// literals — both TUI files (globalssh.go, globalgit.go) are
+		// required to derive their labels from these SAME constants ("ONE
+		// source for the label text, never restated"); this extractor used
+		// to restate them a second time, so a reworded label would make it
+		// return "" silently rather than tracking the rename.
+		if !strings.Contains(plain, tuikit.PropsSSHSubTabLabel) &&
+			!strings.Contains(plain, tuikit.PropsSSHStorageSubTabLabel) &&
+			!strings.Contains(plain, tuikit.PropsGitSubTabLabel) {
 			continue
 		}
 		var out []string
 		if i > 0 {
-			out = append(out, lines[i-1])
+			out = append(out, lines[i-1]) //nolint:gosec // G602 false positive: i-1 is only reached when the preceding "if i > 0" guard is true
 		}
 		out = append(out, line)
 		if i+1 < len(lines) {
