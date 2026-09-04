@@ -2529,14 +2529,63 @@ func TestNegativeControl_GlobalGitMidByteTruncationHashStable(t *testing.T) {
 // row — and its value ("checkout") is chosen to match FixtureBackend's own
 // frozen AllGitSetKeys() "alias.co"="checkout" entry exactly, giving both
 // the real and dummy captures a shared, always-present anchor.
+// WR-12 (09.5-REVIEW.md round 2): this helper used to os.WriteFile
+// home/.gitconfig UNCONDITIONALLY, truncating whatever a PRIOR fixture in
+// the same shared home had already written there.
+// TestGateVisualRegressionReadOnly runs deterministicGitIdentityFixture
+// (which seeds [user] name/email plus a "# BEGIN gitid managed: gscreen"
+// includeIf block) against the SAME home before calling this helper — the
+// truncating write silently destroyed both mid-test, an invariant
+// deterministicIdentityManagerFixture's own doc comment asserts must never
+// happen ("both fixtures run against SEPARATE, dedicated HOMEs" — true for
+// ITS pairing, but this helper broke it for THIS one). The fix is additive:
+// read whatever is already there and append, so a caller with a fresh
+// dedicated home (the common case — TestGateVisualRegression's own
+// ggitHome1/ggitHome2) sees byte-identical output to before, while a caller
+// sharing a home with an earlier fixture keeps that fixture's content
+// intact.
 func deterministicGlobalGitFixture(t *testing.T, home string) {
 	gitconfigDir := filepath.Join(home, ".gitconfig.d")
 	if err := os.MkdirAll(gitconfigDir, 0o700); err != nil {
 		t.Fatalf("mkdir .gitconfig.d: %v", err)
 	}
-	gitconfig := "[alias]\n\tco = checkout\n"
-	if err := os.WriteFile(filepath.Join(home, ".gitconfig"), []byte(gitconfig), 0o600); err != nil {
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+	existing, readErr := os.ReadFile(gitconfigPath) //nolint:gosec // hermetic t.TempDir()-derived fixture path (G304)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		t.Fatalf("gate-visual-regression: reading existing ~/.gitconfig before appending global-git fixture: %v", readErr)
+	}
+	addition := "[alias]\n\tco = checkout\n"
+	merged := append(append([]byte{}, existing...), []byte(addition)...)
+	if err := os.WriteFile(gitconfigPath, merged, 0o600); err != nil {
 		t.Fatalf("gate-visual-regression: writing global-git fixture ~/.gitconfig: %v", err)
+	}
+}
+
+// TestDeterministicGlobalGitFixtureIsAdditiveNotTruncating is the WR-12
+// regression: seeding a home with deterministicGitIdentityFixture (which
+// writes [user] name/email plus a "# BEGIN gitid managed: gscreen"
+// includeIf block into ~/.gitconfig) and THEN deterministicGlobalGitFixture
+// (over the SAME home, mirroring TestGateVisualRegressionReadOnly's own
+// fixture chain) must leave BOTH fixtures' content intact, not have the
+// second silently truncate the first.
+func TestDeterministicGlobalGitFixtureIsAdditiveNotTruncating(t *testing.T) {
+	home := t.TempDir()
+	deterministicGitIdentityFixture(t, home)
+	deterministicGlobalGitFixture(t, home)
+
+	got, err := os.ReadFile(filepath.Join(home, ".gitconfig")) //nolint:gosec // t.TempDir()-derived test fixture path (G304)
+	if err != nil {
+		t.Fatalf("reading ~/.gitconfig: %v", err)
+	}
+	gitconfig := string(got)
+	if !strings.Contains(gitconfig, "Test User") {
+		t.Errorf("deterministicGitIdentityFixture's [user] name must survive, got:\n%s", gitconfig)
+	}
+	if !strings.Contains(gitconfig, "gitdir:~/git/gscreen/") {
+		t.Errorf("deterministicGitIdentityFixture's includeIf block must survive, got:\n%s", gitconfig)
+	}
+	if !strings.Contains(gitconfig, "co = checkout") {
+		t.Errorf("deterministicGlobalGitFixture's own alias.co entry must still be present, got:\n%s", gitconfig)
 	}
 }
 
