@@ -96,13 +96,26 @@ func TestGlobalGit_RealPTYBrowse(t *testing.T) {
 	seedGlobalGitHome(t, home, "[init]\n\tdefaultBranch = trunk\n", "")
 	s := startGlobalGitPTY(t, home, "")
 	frame := captureGlobalGitFrame(t, "global-git-browse", s)
-	for _, want := range []string{"init.defaultBranch", "trunk", "core.ignorecase", "user.email (global fallback)", "merge.conflictstyle"} {
+	for _, want := range []string{"init.defaultBranch", "trunk", "core.ignorecase", "user.email (global fallback)"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("browse frame missing %q:\n%s", want, frame)
 		}
 	}
 	if strings.Contains(frame, "DEMO DATA") {
 		t.Fatalf("Global Git carries a demo banner:\n%s", frame)
+	}
+	// The sub-tab strip's net +3/+4 rows (09.5-02, Task 1 — this screen's
+	// first strip) shrink the visible list budget below the real 12-row D9
+	// policy table's 24-line height, so the last two rows are no longer
+	// visible without scrolling — reachable via the SAME scroll mechanism
+	// this screen already had (proven independently by
+	// TestGlobalGit_RealPTYScrollBothDirections below). This is content
+	// re-homing, not shrinking: merge.conflictstyle is still fully present,
+	// one scroll away.
+	moveGlobalGitRow(t, s, 11)
+	bottom := captureGlobalGitFrame(t, "global-git-browse-bottom", s)
+	if !strings.Contains(bottom, "merge.conflictstyle") {
+		t.Fatalf("scrolling to the last row must reveal merge.conflictstyle:\n%s", bottom)
 	}
 }
 
@@ -112,11 +125,17 @@ func TestGlobalGit_RealPTYOptionFocusPlaceholderAndColumns(t *testing.T) {
 	s := startGlobalGitPTY(t, home, "")
 
 	frame := waitForFocusedOption(t, s, "init.defaultBranch", "initial activation focuses the first fetched Git row")
+	// The sub-tab strip's net +3/+4 rows (09.5-02, Task 1) shrink the
+	// visible list budget below the real 12-row D9 policy table's 24-line
+	// height, so only the first 10 rows are visible without scrolling —
+	// check alignment over that visible top window here, and over the
+	// remaining two rows (reachable via the same scroll mechanism) further
+	// below.
 	assertOptionColumnsAligned(t, frame,
 		"init.defaultBranch", "core.ignorecase", "core.autocrlf / core.eol",
 		"user.email (global fallback)", "user.useConfigOnly", "push.autoSetupRemote",
 		"pull.rebase", "fetch.prune", "alias (8 shortcuts)",
-		"color (ui/branch/diff/status)", "merge.conflictstyle", "diff.colorMoved")
+		"color (ui/branch/diff/status)")
 	naLine, ok := optionListLine(frame, "user.email (global fallback)")
 	naPrefix := ""
 	if ok {
@@ -132,29 +151,41 @@ func TestGlobalGit_RealPTYOptionFocusPlaceholderAndColumns(t *testing.T) {
 	mustSee(t, s, "Identities", "leaving Global Git reaches another main tab")
 	s.sendKey([]byte("3"), keystrokeDelay)
 	waitForFocusedOption(t, s, "init.defaultBranch", "re-entering Global Git resets focus to the first fetched row")
+
+	moveGlobalGitRow(t, s, 11)
+	scrolled := waitForFocusedOption(t, s, "diff.colorMoved", "scrolling to the last row reveals the remaining columns")
+	assertOptionColumnsAligned(t, scrolled, "merge.conflictstyle", "diff.colorMoved")
 }
 
 // TestGlobalGit_RealPTYScrollBothDirections proves the boundary is stable
-// under the REAL 12-row D-08 policy table: gitVisibleRowCount deliberately
-// computes its budget from the canonical minFrameHeight (30, matching
-// dummyTermWidth/dummyTermHeight — 07-UI-SPEC.md's frozen "overflow" row),
-// and 12 rows × 2 lines = 24 always fits inside that budget (24-25
-// depending on the findings banner) — so no real scroll cue can ever
-// appear against the live 12-row fixture; the click-offset-mapping and cue
-// mechanics themselves are proven separately in
-// internal/tuikit/globalgit_test.go against an inflated stub row count
-// (the only way to force real overflow without violating the frozen frame
-// size or the frozen policy table). This PTY case instead proves the two
-// things a REAL binary run can actually observe: no cue renders at either
-// boundary, and moving to the last row and back to the first is stable.
+// under the REAL 12-row D-08 policy table.
+//
+// DEVIATION (09.5-02, Task 3, discovered running the full e2e suite): before
+// plan 09.5-02's sub-tab strip, gitVisibleRowCount's budget (computed from
+// the canonical minFrameHeight, 30) comfortably fit all 12 rows × 2 lines =
+// 24 without any scroll cue. The strip's net +3/+4 rows (Task 1, MEASURED
+// per TestGlobalGitFitsFixedGeometryWithStrip: available=25 used=25,
+// diff=0 — the WHOLE body fits, using the screen's EXISTING scroll
+// mechanism when the list itself overflows) shrink the list's own budget to
+// 21 lines, which the real 12-row table no longer fits without scrolling.
+// This is content re-homed behind a scrollable window, not shrunk — the
+// same trade-off Global SSH's own "All directives" sub-tab already made for
+// its much larger set. This case now proves the boundary is stable UNDER
+// that scrolling: the last row is reachable going down, the first row is
+// reachable coming back up, and the cue direction flips correctly at each
+// extreme (down-cue at the top boundary, up-cue at the bottom boundary,
+// never both).
 func TestGlobalGit_RealPTYScrollBothDirections(t *testing.T) {
 	home := SandboxHome(t)
 	seedGlobalGitHome(t, home, "", "")
 	s := startGlobalGitPTY(t, home, "")
 	moveGlobalGitRow(t, s, 11)
 	down := captureGlobalGitFrame(t, "global-git-scroll-down", s)
-	if strings.Contains(down, "↑ (+") || strings.Contains(down, "↓ (+") {
-		t.Fatalf("real 12-row fixture fits the frozen budget and must show no scroll cue:\n%s", down)
+	if !strings.Contains(down, "↑ (+2 more options)") {
+		t.Fatalf("scrolling to the last row must show the up-cue for the hidden rows above:\n%s", down)
+	}
+	if strings.Contains(down, "↓ (+") {
+		t.Fatalf("at the bottom boundary, no down-cue should render (nothing left below):\n%s", down)
 	}
 	if !strings.Contains(down, "diff.colorMoved") {
 		t.Fatalf("last row not reachable by keyboard navigation:\n%s", down)
@@ -163,8 +194,11 @@ func TestGlobalGit_RealPTYScrollBothDirections(t *testing.T) {
 		s.sendKey([]byte{0x1b, 0x5b, 0x41}, keystrokeDelay)
 	}
 	up := captureGlobalGitFrame(t, "global-git-scroll-up", s)
-	if strings.Contains(up, "↑ (+") || strings.Contains(up, "↓ (+") {
-		t.Fatalf("returning to the top must still show no scroll cue:\n%s", up)
+	if !strings.Contains(up, "↓ (+2 more options)") {
+		t.Fatalf("scrolling back to the first row must show the down-cue for the hidden rows below:\n%s", up)
+	}
+	if strings.Contains(up, "↑ (+") {
+		t.Fatalf("at the top boundary, no up-cue should render (nothing left above):\n%s", up)
 	}
 	if !strings.Contains(up, "init.defaultBranch") {
 		t.Fatalf("first row not reachable after returning from the bottom:\n%s", up)
@@ -417,5 +451,198 @@ func TestGlobalGit_RealPTYMidTransactionFailureAndRetry(t *testing.T) {
 		if !strings.Contains(content, want) {
 			t.Fatalf("retried write missing %q:\n%s", want, content)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Plan 09.5-02 Task 3 — real-PTY proof of the net-new sub-tab strip and the
+// "Set keys" flat filterable list (PROP-02), mirroring plan 09.5-01's own
+// Task 3 SSH-side precedents (global_ssh_pty_e2e_test.go).
+// ---------------------------------------------------------------------------
+
+// TestGlobalGit_RealPTYSetKeysBrowse is this plan's tracer-equivalent real-
+// terminal proof: the whole PROP-02 stack, wired end to end through the
+// COMPILED binary. Pressing → once from the default Options sub-tab reaches
+// the new "Set keys" sub-tab and shows seeded keys with their origin path;
+// pressing ← returns to Options, proving the re-homing did not lose its
+// existing baseline content.
+func TestGlobalGit_RealPTYSetKeysBrowse(t *testing.T) {
+	home := ShortSandboxHome(t)
+	seedGlobalGitHome(t, home, "[user]\n\tname = Set Keys Tester\n\temail = setkeys@example.com\n[alias]\n\tco = checkout\n", "")
+	s := startGlobalGitPTY(t, home, "")
+
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+	frame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "Global Git › Set keys")
+	})
+	if !ok {
+		t.Fatalf("Set keys sub-tab never rendered after one → press. Last frame:\n%s", frame)
+	}
+	if !strings.Contains(frame, "Set keys") {
+		t.Fatalf("strip must show the honestly-scoped Set keys label:\n%s", frame)
+	}
+
+	seededKeyCount := 0
+	for _, key := range []string{"user.name", "user.email", "alias.co"} {
+		if strings.Contains(frame, key) {
+			seededKeyCount++
+		}
+	}
+	if seededKeyCount < 2 {
+		t.Fatalf("expected at least 2 seeded keys visible in the frame, found %d:\n%s", seededKeyCount, frame)
+	}
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+	if !strings.Contains(frame, gitconfigPath) {
+		t.Fatalf("selected row's detail pane must show the origin file path %q:\n%s", gitconfigPath, frame)
+	}
+	captureGlobalGitFrame(t, "global-git-set-keys-browse", s)
+
+	// The Options sub-tab's own existing content must still be reachable —
+	// the re-homing behind the new strip did not lose it (09.5-UI-SPEC.md's
+	// "Global Git's existing content is re-homed, not rewritten" contract).
+	s.sendKey([]byte{0x1b, 0x5b, 0x44}, keystrokeDelay) // left arrow
+	back, ok := s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "Global Git › Options") && strings.Contains(text, "init.defaultBranch")
+	})
+	if !ok {
+		t.Fatalf("← from Set keys never returned to Options with its baseline content. Last frame:\n%s", back)
+	}
+	captureGlobalGitFrame(t, "global-git-set-keys-back-to-options", s)
+}
+
+// TestGlobalGit_RealPTYSetKeysFilter is this plan's real-terminal proof of
+// the filter + D-B keyboard-capture contract on the Git side, mirroring
+// TestGlobalSSH_RealPTYAllDirectivesFilter: an in-package model test cannot
+// show that app.go's `1`..`5` main-tab globals were genuinely bypassed while
+// the filter is focused — only a real PTY session can.
+func TestGlobalGit_RealPTYSetKeysFilter(t *testing.T) {
+	home := ShortSandboxHome(t)
+	seedGlobalGitHome(t, home, "[user]\n\tname = Filter Tester\n\temail = filtertester@example.com\n[alias]\n\tco = checkout\n", "")
+	s := startGlobalGitPTY(t, home, "")
+
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+	mustSee(t, s, "Global Git › Set keys", "one right-press reaches the Set keys sub-tab")
+
+	s.sendKey([]byte("/"), keystrokeDelay)
+	for _, r := range "user." {
+		s.sendKey([]byte(string(r)), keystrokeDelay)
+	}
+	narrowed, ok := s.waitFor(8*time.Second, func(frame string) bool {
+		return strings.Contains(frame, "user.name") && strings.Contains(frame, "user.email") && !strings.Contains(frame, "alias.co")
+	})
+	if !ok {
+		t.Fatalf("filter %q never narrowed to the user.* keys only. Last frame:\n%s", "user.", narrowed)
+	}
+	if !strings.Contains(narrowed, "shown") {
+		t.Fatalf("filtered list must still show the match-count line:\n%s", narrowed)
+	}
+	captureGlobalGitFrame(t, "global-git-set-keys-filter-narrowed", s)
+
+	// D-B proof, part 1: a digit typed while the filter is focused must
+	// reach the filter text, NOT app.go's `1`..`5` main-tab globals. If the
+	// digit had switched tabs instead, the frame would show "Identities".
+	// Instead the filter narrows to "user.1", matching no key.
+	s.sendKey([]byte("1"), keystrokeDelay)
+	noMatch, ok := s.waitFor(8*time.Second, func(frame string) bool {
+		return strings.Contains(frame, `No keys match "user.1".`)
+	})
+	if !ok {
+		t.Fatalf("digit typed into the focused filter did not land in the field (main tabs may have switched instead). Last frame:\n%s", noMatch)
+	}
+	if !strings.Contains(noMatch, "Global Git") {
+		t.Fatalf("a digit reaching app.go would have switched main tabs away from Global Git:\n%s", noMatch)
+	}
+	captureGlobalGitFrame(t, "global-git-set-keys-filter-digit-captured", s)
+
+	// D-B proof, part 2: esc blurs WITHOUT clearing the filter text, then the
+	// same digit reaches app.go's globals because the filter no longer
+	// captures keys.
+	s.sendKey(dummyKeyEsc, keystrokeDelay)
+	s.sendKey([]byte("1"), keystrokeDelay)
+	afterBlur, ok := s.waitFor(8*time.Second, func(frame string) bool {
+		return !strings.Contains(frame, "Global Git")
+	})
+	if !ok {
+		t.Fatalf("digit did not switch main tabs after esc blurred the filter — still on Global Git:\n%s", afterBlur)
+	}
+	if !strings.Contains(afterBlur, "Identities") {
+		t.Fatalf("expected the Identities main tab after the post-blur digit:\n%s", afterBlur)
+	}
+}
+
+// TestGlobalGit_RealPTYSubTabStripClick proves the sub-tab strip's mouse
+// coordinate math on Global Git's FIRST strip: coordinates are always
+// derived from the currently rendered frame via clickLabelRow, never
+// hardcoded, and the click branch (net-new plumbing, including the moved
+// body-relative y origin) has never been exercised on this screen before
+// this plan — keyboard navigation does not exercise the click path.
+func TestGlobalGit_RealPTYSubTabStripClick(t *testing.T) {
+	home := ShortSandboxHome(t)
+	seedGlobalGitHome(t, home, "[user]\n\tname = Click Tester\n\temail = clicktester@example.com\n", "")
+	s := startGlobalGitPTY(t, home, "")
+
+	clickLabelRow(t, s, "Set keys")
+	toSetKeys, ok := s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "Global Git › Set keys")
+	})
+	if !ok {
+		t.Fatalf("clicking the Set keys label never switched to that sub-tab. Last frame:\n%s", toSetKeys)
+	}
+	if !strings.Contains(toSetKeys, "user.name") {
+		t.Fatalf("Set keys body did not render after the mouse click:\n%s", toSetKeys)
+	}
+	captureGlobalGitFrame(t, "global-git-strip-click-to-set-keys", s)
+
+	clickLabelRow(t, s, "Options")
+	toOptions, ok := s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "Global Git › Options")
+	})
+	if !ok {
+		t.Fatalf("clicking the Options label never switched back to that sub-tab. Last frame:\n%s", toOptions)
+	}
+	if !strings.Contains(toOptions, "init.defaultBranch") {
+		t.Fatalf("Options body did not render after the mouse click:\n%s", toOptions)
+	}
+	captureGlobalGitFrame(t, "global-git-strip-click-to-options", s)
+}
+
+// TestGlobalGit_RealPTYSetKeysProbeFailure proves the Set keys sub-tab's
+// fail-open probe-failure state through the compiled binary, using the SAME
+// FakeGitShimDir(..., "config") fixture TestGlobalGit_RealPTYProbeFailureStaysNavigable
+// already uses for the Options sub-tab — failing every `git config`
+// invocation fails BOTH probes (GlobalGitOptionStates and AllGitSetKeys),
+// since keyboard ←/→ is fail-open-blocked while Options's own optionsErr is
+// active (mirrors Global SSH's identical contract), so the Set keys sub-tab
+// is reached via a raw mouse click on the strip label instead — the same
+// click path TestGlobalGit_RealPTYSubTabStripClick proves independently.
+func TestGlobalGit_RealPTYSetKeysProbeFailure(t *testing.T) {
+	home := ShortSandboxHome(t)
+	seedGlobalGitHome(t, home, "", "")
+	s := startGlobalGitPTYExpectingProbeFailure(t, home, FakeGitShimDir(t, "2.50.0", "config"))
+	mustSee(t, s, "git probe failed:", "Options probe failure names git probe")
+
+	clickLabelRow(t, s, "Set keys")
+	frame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "Git config could not be read.")
+	})
+	if !ok {
+		t.Fatalf("probe-failed heading never rendered on the Set keys sub-tab. Last frame:\n%s", frame)
+	}
+	if !strings.Contains(frame, "git config --list --show-origin failed — re-enter the screen to retry.") {
+		t.Fatalf("probe-failed body line missing:\n%s", frame)
+	}
+	captureGlobalGitFrame(t, "global-git-set-keys-probe-failure", s)
+
+	// Fail-open: a main-tab key still leaves the screen even while the Set
+	// keys sub-tab is stuck in its error state.
+	s.sendKey([]byte("1"), keystrokeDelay)
+	after, ok := s.waitFor(8*time.Second, func(f string) bool {
+		return !strings.Contains(f, "Global Git")
+	})
+	if !ok {
+		t.Fatalf("main-tab key did not leave the failed Set keys sub-tab (fail-open broken):\n%s", after)
+	}
+	if !strings.Contains(after, "Identities") {
+		t.Fatalf("expected the Identities main tab after leaving the failed screen:\n%s", after)
 	}
 }

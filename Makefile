@@ -492,7 +492,12 @@ gate-copy-freeze:
 		'ssh -G could not be run against this host — re-enter the screen to retry.' \
 		'No directives match \"%s\".' \
 		'Also tracked as a recommended option — see the Options tab for gitid'\''s guidance.' \
-		'Resolved via ssh -G — reflects Include/Match precedence already applied.'; \
+		'Resolved via ssh -G — reflects Include/Match precedence already applied.' \
+		'Set keys' \
+		'! Git config could not be read.' \
+		'git config --list --show-origin failed — re-enter the screen to retry.' \
+		'No git config keys are set yet.' \
+		'No keys match \"%s\".'; \
 	do \
 		if grep -rqF -- "$$s" internal/tuikit internal/identity cmd/gitid internal/globalssh internal/globalgit; then \
 			echo "    ok   $$s"; \
