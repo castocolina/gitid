@@ -23,6 +23,7 @@ import (
 
 	"github.com/castocolina/gitid/internal/dummytui"
 	"github.com/castocolina/gitid/internal/screenshot"
+	"github.com/castocolina/gitid/internal/tuikit"
 )
 
 // unmarshalJSON parses JSON bytes into v, used by canonical manifest tests.
@@ -1380,6 +1381,61 @@ func TestRegionClassification(t *testing.T) {
 	data = screenshot.BuildRegionDiffsJSON("test-commit", records)
 	if err := screenshot.ValidateRegionDiffs(data, "test-commit", []screenshot.ScreenSpec{spec}); err == nil {
 		t.Fatal("ValidateRegionDiffs accepted an unequal region without classification")
+	}
+}
+
+// TestBuildRegionDiffsFailsClosedWhenARequiredPhase95RegionIsEmpty is the
+// WR-13 regression: the Phase 9.5 region extractors (extractSubTabStrip,
+// bodyFromAnchorToEnd and its callers extractGSSPropertiesBrowse/
+// extractGGitSetKeysBrowse/extractGGitCustomKeyCeremony) all fail OPEN — a
+// renamed anchor makes them return "" rather than erroring. A gate that
+// merely string-compares live vs. approved would then see "" == "" and
+// silently pass, retiring the region as a standing guard the moment a
+// heading is reworded. This test proves BuildRegionDiffs's OWN required-
+// region emptiness check (createflow_packet.go) already closes that gap: it
+// is fed a REAL RequiredScreenSpecs() spec that lists
+// RegionGGitCustomKeyCeremony as required, with a live capture that is
+// missing the extractor's anchor text entirely (as a rename would produce),
+// and must fail LOUDLY — naming the screen and region — rather than
+// silently accepting an empty/empty match.
+func TestBuildRegionDiffsFailsClosedWhenARequiredPhase95RegionIsEmpty(t *testing.T) {
+	const screenID = "ggit-custom-key-ceremony-preview"
+	var spec screenshot.ScreenSpec
+	found := false
+	for _, s := range screenshot.RequiredScreenSpecs() {
+		if s.ScreenID == screenID {
+			spec, found = s, true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("setup: %q is not in RequiredScreenSpecs() — the fixture this regression test depends on has moved", screenID)
+	}
+
+	// A frame that never mentions the ceremony heading at all — the shape a
+	// rename of PropsGitCustomCeremonyHeadingFmt (or the anchor extraction
+	// logic drifting from it) would produce. extractGGitCustomKeyCeremony
+	// returns "" for this input on BOTH surfaces.
+	brokenAnchorFrame := "shared header\nshared breadcrumb\nsomething entirely unrelated\nEsc returns\n"
+
+	_, err := screenshot.BuildRegionDiffs("test-commit",
+		map[string]string{screenID: brokenAnchorFrame},
+		map[string]string{screenID: brokenAnchorFrame},
+		[]screenshot.ScreenSpec{spec})
+	if err == nil {
+		t.Fatal("BuildRegionDiffs must fail when a RequiredRegions entry extracts empty on BOTH surfaces (WR-13 fail-open regression) — got nil error")
+	}
+	if !strings.Contains(err.Error(), string(screenshot.RegionGGitCustomKeyCeremony)) {
+		t.Errorf("error = %q, want it to name the empty region %q", err.Error(), screenshot.RegionGGitCustomKeyCeremony)
+	}
+
+	// Sanity: the SAME extractor with its real anchor present is non-empty —
+	// proves the failure above is about the missing anchor, not a broken
+	// fixture.
+	anchor := strings.TrimSuffix(tuikit.PropsGitCustomCeremonyHeadingFmt, "%s")
+	workingFrame := "shared header\nshared breadcrumb\n" + anchor + "~/.gitconfig.d/00-baseline\nEsc returns\n"
+	if got := screenshot.ExtractRegion(workingFrame, screenshot.RegionGGitCustomKeyCeremony); strings.TrimSpace(got) == "" {
+		t.Fatalf("setup: ExtractRegion with the real anchor present returned empty — sanity check itself is broken")
 	}
 }
 
