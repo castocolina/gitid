@@ -2,6 +2,7 @@ package globalssh
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -57,6 +58,56 @@ type DirectiveProof struct {
 	Output string
 }
 
+// structuralDirectives are keywords that change the SHAPE of the config
+// rather than set a value. ssh -G accepts them as a directive line (verified
+// live against the real OpenSSH on this machine), so the staged probe alone
+// cannot reject them — but writing one into gitid's own `Host *` managed
+// block breaks the block's single-wildcard-stanza invariant AND is silently
+// dropped by parseGlobalBody (internal/sshconfig/globals.go) on the very
+// next EnsureGlobals write (CR-02).
+var structuralDirectives = map[string]bool{
+	"host": true, "match": true, "include": true, "ignoreunknown": true,
+}
+
+// ValidateDirectiveName rejects any candidate name that is not a single,
+// safe, unquoted OpenSSH directive token (CR-02). This is the ONLY guard
+// standing between a free-form directive name and gitid's own managed
+// `Host *` block — the staged ssh -G probe in ProveCustomDirective accepts
+// an empty name, a whitespace-only name, and every structural keyword
+// (Host/Match/Include/IgnoreUnknown), so none of those can be caught by the
+// probe alone.
+func ValidateDirectiveName(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return errors.New("globalssh: directive name cannot be empty")
+	}
+	if len(strings.Fields(name)) != 1 {
+		return fmt.Errorf("globalssh: directive name %q must be a single token with no whitespace", name)
+	}
+	for _, r := range name {
+		if r <= ' ' || r == 0x7f || r == '#' || r == '=' || r == '"' || r == '\'' || r == '\\' {
+			return fmt.Errorf("globalssh: directive name %q contains a character that is unsafe in an unquoted SSH config token", name)
+		}
+	}
+	if structuralDirectives[strings.ToLower(name)] {
+		return fmt.Errorf("globalssh: %q is a structural directive, not a settable option — gitid's managed Host * block cannot contain it", name)
+	}
+	return nil
+}
+
+// ValidateDirectiveValue rejects a value that would not survive rendering
+// into a single unquoted directive line, or that is empty (CR-02: an empty
+// submission must not silently write a whitespace-only line and take a
+// backup for nothing).
+func ValidateDirectiveValue(value string) error {
+	if strings.ContainsAny(value, "\n\r\x00") {
+		return fmt.Errorf("globalssh: directive value %q must not contain a line break or NUL", value)
+	}
+	if strings.TrimSpace(value) == "" {
+		return errors.New("globalssh: directive value cannot be empty")
+	}
+	return nil
+}
+
 // ProveCustomDirective is the ENTIRE mechanism behind PROP-04's "known SSH
 // directive" requirement (D-H): it stages currentGlobalBody plus the
 // candidate `name value` line into a THROWAWAY temp config, under a fresh
@@ -83,6 +134,17 @@ type DirectiveProof struct {
 // rejected, reported with the real output and no name-related flag set.
 // There is no code path that returns OK: true alongside a non-nil error.
 func ProveCustomDirective(deps Deps, currentGlobalBody, name, value string) (DirectiveProof, error) {
+	// CR-02: fail closed on the name/value shape BEFORE any staged probe
+	// runs. ssh -G accepts an empty name, a whitespace-only name, and every
+	// structural keyword (Host/Match/Include/IgnoreUnknown) — none of those
+	// can be caught by the probe itself, so they must never reach staging.
+	if err := ValidateDirectiveName(name); err != nil {
+		return DirectiveProof{}, err
+	}
+	if err := ValidateDirectiveValue(value); err != nil {
+		return DirectiveProof{}, err
+	}
+
 	tmpDir, err := os.MkdirTemp("", "gitid-directive-proof-*")
 	if err != nil {
 		return DirectiveProof{}, fmt.Errorf("globalssh: creating staged directive-proof directory: %w", err)

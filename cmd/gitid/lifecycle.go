@@ -1565,13 +1565,24 @@ func (b *realBackend) runCustomSSHDirectiveWrite(name, value string, p lifecycle
 		return res, b.initErr
 	}
 
-	// plan — build the EnsureGlobals candidate bytes as a defense-in-depth
-	// backstop (the TUI's CustomSSHDirectivePlan is the primary gate any
-	// caller reaching this function through the normal flow already
-	// consulted): a candidate that would not round-trip parse is rejected
-	// HERE, before any confirmation or write, mirroring
-	// runCustomGitKeyWrite's own plan-stage backstop.
+	// plan — CR-02: reject an invalid name/value BY SYNTAX before any write,
+	// via globalssh.ValidateDirectiveName/ValidateDirectiveValue — a
+	// defense-in-depth backstop mirroring runCustomGitKeyWrite's own
+	// SplitGitKey backstop, for any caller (e.g. a future CLI verb) that
+	// reaches this function without having gone through the TUI's stage-2
+	// globalssh.ProveCustomDirective gate first. Then build the EnsureGlobals
+	// candidate bytes as a second defense-in-depth backstop (the TUI's
+	// CustomSSHDirectivePlan is the primary gate any caller reaching this
+	// function through the normal flow already consulted): a candidate that
+	// would not round-trip parse is rejected HERE too, before any
+	// confirmation or write.
 	record(stages[0])
+	if err := globalssh.ValidateDirectiveName(name); err != nil {
+		return res, err
+	}
+	if err := globalssh.ValidateDirectiveValue(value); err != nil {
+		return res, err
+	}
 	st := b.storage()
 	target := st.targetPath
 	explicit := map[string]string{name: value}

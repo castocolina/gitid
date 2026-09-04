@@ -186,6 +186,98 @@ func TestProveCustomDirectiveStagesAThrowawayConfigAndNeverTouchesTheRealOne(t *
 	}
 }
 
+// TestValidateDirectiveNameRejectsEmptyWhitespaceMultiTokenAndStructuralKeywords
+// verifies CR-02's name-syntax guard: an empty name, a whitespace-only name,
+// a multi-token name, and each structural keyword (Host/Match/Include/
+// IgnoreUnknown, case-insensitively) must be rejected — ssh -G accepts all
+// of these against a staged config (verified live against the real OpenSSH
+// on this machine), so the staged probe alone cannot be trusted to reject
+// them; they must be rejected BEFORE staging.
+func TestValidateDirectiveNameRejectsEmptyWhitespaceMultiTokenAndStructuralKeywords(t *testing.T) {
+	cases := []string{
+		"", "   ", "Foo Bar", "Host", "host", "Match", "MATCH", "Include", "IgnoreUnknown",
+	}
+	for _, name := range cases {
+		t.Run(name, func(t *testing.T) {
+			if err := ValidateDirectiveName(name); err == nil {
+				t.Errorf("ValidateDirectiveName(%q): expected error, got nil", name)
+			}
+		})
+	}
+}
+
+// TestValidateDirectiveNameAcceptsAKnownShapedToken verifies a normal
+// single-token directive name is accepted.
+func TestValidateDirectiveNameAcceptsAKnownShapedToken(t *testing.T) {
+	if err := ValidateDirectiveName("StreamLocalBindMask"); err != nil {
+		t.Errorf("ValidateDirectiveName(StreamLocalBindMask): unexpected error: %v", err)
+	}
+}
+
+// TestValidateDirectiveValueRejectsEmptyAndControlBytes verifies the value
+// guard: empty/whitespace-only, and embedded newline/CR/NUL, are rejected.
+func TestValidateDirectiveValueRejectsEmptyAndControlBytes(t *testing.T) {
+	cases := []string{"", "   ", "bad\nvalue", "bad\rvalue", "bad\x00value"}
+	for _, value := range cases {
+		t.Run(value, func(t *testing.T) {
+			if err := ValidateDirectiveValue(value); err == nil {
+				t.Errorf("ValidateDirectiveValue(%q): expected error, got nil", value)
+			}
+		})
+	}
+}
+
+// TestValidateDirectiveValueAcceptsAnOrdinaryValue verifies a normal value
+// is accepted.
+func TestValidateDirectiveValueAcceptsAnOrdinaryValue(t *testing.T) {
+	if err := ValidateDirectiveValue("accept-new"); err != nil {
+		t.Errorf("ValidateDirectiveValue(accept-new): unexpected error: %v", err)
+	}
+}
+
+// TestProveCustomDirectiveFailsClosedOnAnEmptyNameWithoutStagingAProbe
+// verifies CR-02's central fix: ProveCustomDirective rejects an empty name
+// BEFORE the staged ssh -G probe ever runs — proven by asserting the fake
+// runner is never invoked. Before the fix, this candidate reached ssh -G,
+// which (verified live against the real OpenSSH on this machine) exits 0 on
+// a whitespace-only directive line, so proof.OK would incorrectly be true.
+func TestProveCustomDirectiveFailsClosedOnAnEmptyNameWithoutStagingAProbe(t *testing.T) {
+	f := &fakeCombinedRunner{out: "streamlocalbindmask 0177\n", err: nil}
+	proof, err := ProveCustomDirective(depsWithCombined(f), existingGlobalBodyFixture, "", "somevalue")
+	if err == nil {
+		t.Fatal("ProveCustomDirective with an empty name: expected error, got nil")
+	}
+	if proof.OK {
+		t.Error("proof.OK = true, want false for an empty name")
+	}
+	if f.calls != 0 {
+		t.Errorf("the staged ssh -G probe ran %d time(s) for an empty name — must fail closed BEFORE staging", f.calls)
+	}
+}
+
+// TestProveCustomDirectiveFailsClosedOnAStructuralKeywordNameWithoutStagingAProbe
+// mirrors the above for each structural keyword — verified live against the
+// real OpenSSH on this machine to exit 0 (Host/Match/Include all open a
+// nested stanza or file reference inside gitid's own Host * block, which
+// EnsureGlobals silently drops on its next write).
+func TestProveCustomDirectiveFailsClosedOnAStructuralKeywordNameWithoutStagingAProbe(t *testing.T) {
+	for _, name := range []string{"Host", "Match", "Include", "IgnoreUnknown"} {
+		t.Run(name, func(t *testing.T) {
+			f := &fakeCombinedRunner{out: "ok\n", err: nil}
+			proof, err := ProveCustomDirective(depsWithCombined(f), existingGlobalBodyFixture, name, "evil.example")
+			if err == nil {
+				t.Fatalf("ProveCustomDirective with structural name %q: expected error, got nil", name)
+			}
+			if proof.OK {
+				t.Errorf("proof.OK = true, want false for structural name %q", name)
+			}
+			if f.calls != 0 {
+				t.Errorf("the staged ssh -G probe ran %d time(s) for structural name %q — must fail closed BEFORE staging", f.calls, name)
+			}
+		})
+	}
+}
+
 func TestProveCustomDirectiveProbesTheWildcardSentinel(t *testing.T) {
 	f := &fakeCombinedRunner{out: "streamlocalbindmask 0177\n", err: nil}
 	_, err := ProveCustomDirective(depsWithCombined(f), existingGlobalBodyFixture, "StreamLocalBindMask", "0177")

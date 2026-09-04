@@ -1795,6 +1795,30 @@ func TestRunCustomSSHDirectiveWriteLandsInTheExistingGlobalBlock(t *testing.T) {
 	}
 }
 
+// TestRunCustomSSHDirectiveWriteRejectsInvalidNameBeforeAnyWrite asserts
+// CR-02's defense-in-depth backstop: runCustomSSHDirectiveWrite rejects an
+// empty name and a structural keyword name (Host) at its OWN plan stage,
+// mirroring runCustomGitKeyWrite's SplitGitKey backstop — this matters for
+// any future caller (e.g. a CLI verb) that reaches this function without
+// having gone through the TUI's stage-2 ProveCustomDirective gate first.
+// Nothing is written and no ceremony can open.
+func TestRunCustomSSHDirectiveWriteRejectsInvalidNameBeforeAnyWrite(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	configPath := filepath.Join(home, ".ssh", "config")
+	target := filepath.Join(home, ".ssh", "config.d", "gitid.config")
+	before := snapshotPaths(t, []string{configPath, target})
+
+	if _, err := b.runCustomSSHDirectiveWrite("", "somevalue", lifecyclePolicy{Confirm: confirmationAlreadyObtained}); err == nil {
+		t.Error("runCustomSSHDirectiveWrite with an empty name must return an error")
+	}
+	if _, err := b.runCustomSSHDirectiveWrite("Host", "evil.example", lifecyclePolicy{Confirm: confirmationAlreadyObtained}); err == nil {
+		t.Error("runCustomSSHDirectiveWrite with a structural keyword name (Host) must return an error")
+	}
+
+	assertUnchanged(t, before, snapshotPaths(t, []string{configPath, target}))
+}
+
 // TestRunCustomSSHDirectiveWriteRollsBackOnFailure asserts that with
 // failCommitAt injecting a failure at the write, every watched file is
 // restored to its pre-run bytes (byte comparison), the error names the
