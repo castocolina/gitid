@@ -278,6 +278,37 @@ func TestProveCustomDirectiveFailsClosedOnAStructuralKeywordNameWithoutStagingAP
 	}
 }
 
+// TestProveCustomDirectiveNeverMisclassifiesAMultiTokenNameAsAPreexistingError
+// is the WR-03 regression: a directive name containing whitespace used to
+// reach the staged ssh -G probe, which reports only the FIRST field of a
+// multi-token candidate line (`Bad configuration option: foo` for a staged
+// "Foo Bar <value>" line) — offendingDirectiveName's EqualFold comparison
+// against the WHOLE submitted name then never matched, so the result was
+// misclassified as PreexistingError (a false accusation about the user's
+// own pre-existing config, D-I's whole purpose being to never do that).
+// CR-02's ValidateDirectiveName now rejects a multi-token name BEFORE any
+// staging happens, so this branch is provably unreachable: the fake runner
+// (primed with exactly the misclassifying output a real ssh -G would
+// produce) must never be invoked, and the result must be a plain error, not
+// a PreexistingError classification.
+func TestProveCustomDirectiveNeverMisclassifiesAMultiTokenNameAsAPreexistingError(t *testing.T) {
+	f := &fakeCombinedRunner{
+		out: "/tmp/staged: line 2: Bad configuration option: foo\n" +
+			"/tmp/staged: terminating, 1 bad configuration options\n",
+		err: errors.New("exit status 255"),
+	}
+	proof, err := ProveCustomDirective(depsWithCombined(f), existingGlobalBodyFixture, "Foo Bar", "somevalue")
+	if err == nil {
+		t.Fatal("ProveCustomDirective with a multi-token name: expected error, got nil")
+	}
+	if proof.PreexistingError {
+		t.Error("proof.PreexistingError = true — WR-03 regressed: a multi-token name must never reach the misclassification branch")
+	}
+	if f.calls != 0 {
+		t.Errorf("the staged ssh -G probe ran %d time(s) for a multi-token name — must fail closed BEFORE staging (WR-03)", f.calls)
+	}
+}
+
 func TestProveCustomDirectiveProbesTheWildcardSentinel(t *testing.T) {
 	f := &fakeCombinedRunner{out: "streamlocalbindmask 0177\n", err: nil}
 	_, err := ProveCustomDirective(depsWithCombined(f), existingGlobalBodyFixture, "StreamLocalBindMask", "0177")
