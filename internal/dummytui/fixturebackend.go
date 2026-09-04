@@ -62,6 +62,7 @@ var _ tuikit.SSHStoragePlanner = FixtureBackend{}
 var _ tuikit.GlobalGitPlanner = FixtureBackend{}
 var _ tuikit.GitFallbackAuthorPlanner = FixtureBackend{}
 var _ tuikit.GlobalGitIgnorePlanner = FixtureBackend{}
+var _ tuikit.SSHPropertiesBrowser = FixtureBackend{}
 
 // ---------------------------------------------------------------------------
 // Data
@@ -681,6 +682,44 @@ func (FixtureBackend) GlobalSSHOptionStates() ([]tuikit.GlobalSSHOptionView, err
 		})
 	}
 	return out, nil
+}
+
+// ---------------------------------------------------------------------------
+// SSH properties browser (plan 09.5-01) — the "All directives" sub-tab seam,
+// a frozen, deterministic fixture set deliberately LARGER than the six-row
+// Policy set so the scroll window is exercised on the dummy too.
+// internal/dummytui may never import internal/globalssh (the no-backend
+// import-graph allowlist forbids it), so PolicyBacked is hardcoded true for
+// the one row that matches a live Policy key, rather than computed via
+// globalssh.PolicyFor.
+// ---------------------------------------------------------------------------
+
+// AllSSHDirectives implements tuikit.SSHPropertiesBrowser.
+func (FixtureBackend) AllSSHDirectives() ([]tuikit.SSHDirectiveView, error) {
+	return []tuikit.SSHDirectiveView{
+		{Key: "addressfamily", Value: "any"},
+		{Key: "batchmode", Value: "no"},
+		{Key: "canonicalizehostname", Value: "false"},
+		{Key: "checkhostip", Value: "no"},
+		{Key: "ciphers", Value: "chacha20-poly1305@openssh.com,aes128-ctr"},
+		{Key: "clearallforwardings", Value: "no"},
+		{Key: "compression", Value: "no"},
+		{Key: "connectionattempts", Value: "1"},
+		{Key: "connecttimeout", Value: "none"},
+		{Key: "controlmaster", Value: "false"},
+		{Key: "dynamicforward", Value: "none"},
+		{Key: "escapechar", Value: "~"},
+		{Key: "exitonforwardfailure", Value: "no"},
+		{Key: "gatewayports", Value: "no"},
+		{Key: "hostbasedauthentication", Value: "no"},
+		{Key: "loglevel", Value: "INFO"},
+		{Key: "pubkeyauthentication", Value: "yes"},
+		{Key: "serveraliveinterval", Value: "0"},
+		{Key: "streamlocalbindmask", Value: "0177"},
+		{Key: "stricthostkeychecking", Value: "ask", PolicyBacked: true},
+		{Key: "userknownhostsfile", Value: "~/.ssh/known_hosts ~/.ssh/known_hosts2"},
+		{Key: "visualhostkey", Value: "no"},
+	}, nil
 }
 
 // GlobalSSHApplyPlan is deliberately EMPTY for the demo: the ceremony falls

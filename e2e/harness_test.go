@@ -256,6 +256,16 @@ func FakeSSHDir(t *testing.T, mode string) string {
 		"  }\n" +
 		"  scan_global_ssh_config \"$config_path\"\n" +
 		"  printf 'stricthostkeychecking %s\\nforwardagent %s\\nhashknownhosts %s\\nidentitiesonly %s\\naddkeystoagent %s\\nusekeychain %s\\n' \"$strict\" \"$forward\" \"$hash\" \"$identities\" \"$addkeys\" \"$usekeychain\"\n" +
+		// PROP-01 (plan 09.5-01): a "full directive set" test against this
+		// fixture would be vacuous with only the six curated policy lines
+		// above, so this fixed block of additional lowercase `<key>
+		// <value>` lines (drawn from real `ssh -G` output) makes the
+		// fixture answer the question PROP-01 actually asks — genuinely
+		// MORE than the six-row policy set. These are FIXED (never derived
+		// from config_path) — the six policy lines above remain the only
+		// config-scanning-derived output, byte-identical, so the Options
+		// sub-tab's own tests keep reading them unchanged.
+		"  printf 'addressfamily any\\nbatchmode no\\ncanonicalizehostname false\\ncheckhostip no\\nciphers chacha20-poly1305@openssh.com,aes128-ctr\\nclearallforwardings no\\ncompression no\\nconnectionattempts 1\\nconnecttimeout none\\ncontrolmaster false\\ndynamicforward none\\nescapechar ~\\nexitonforwardfailure no\\ngatewayports no\\nhostbasedauthentication no\\nloglevel INFO\\npubkeyauthentication yes\\nserveraliveinterval 0\\nstreamlocalbindmask 0177\\nuserknownhostsfile ~/.ssh/known_hosts ~/.ssh/known_hosts2\\nvisualhostkey no\\n'\n" +
 		"  exit 0\n" +
 		"fi\n" +
 		"if [ \"$is_resolution\" = \"1\" ]; then\n" +

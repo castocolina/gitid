@@ -47,6 +47,48 @@ func TestGlobalSSHArrowsSwitchSubTabs(t *testing.T) {
 	}
 }
 
+// TestGlobalSSHArrowsCycleThreeSubTabsInOppositeDirections is plan
+// 09.5-01's acceptance criterion: with a THIRD sub-tab, ← and → must move in
+// OPPOSITE directions around the cycle (Options → Storage → All directives →
+// Options for →; the reverse for ←) — with only two sub-tabs the two
+// directions were indistinguishable aliases of the same toggle, which is
+// exactly the bug this test pins as fixed.
+func TestGlobalSSHArrowsCycleThreeSubTabsInOppositeDirections(t *testing.T) {
+	a := gssApp(t)
+	if !strings.Contains(appView(a), "Global SSH › Options") {
+		t.Fatal("setup: must start on Options")
+	}
+
+	// → cycles forward: Options → Storage → All directives → Options.
+	a, _ = press(t, a, "right")
+	if !strings.Contains(appView(a), "Global SSH › Storage & preview") {
+		t.Fatalf("→ from Options must land on Storage, got:\n%s", appView(a))
+	}
+	a, _ = press(t, a, "right")
+	if !strings.Contains(appView(a), "Global SSH › All directives") {
+		t.Fatalf("→ from Storage must land on All directives, got:\n%s", appView(a))
+	}
+	a, _ = press(t, a, "right")
+	if !strings.Contains(appView(a), "Global SSH › Options") {
+		t.Fatalf("→ from All directives must wrap to Options, got:\n%s", appView(a))
+	}
+
+	// ← from Options must land on the THIRD sub-tab (All directives), not
+	// the second (Storage) — the opposite-direction proof.
+	a, _ = press(t, a, "left")
+	if !strings.Contains(appView(a), "Global SSH › All directives") {
+		t.Fatalf("← from Options must land on All directives (not Storage), got:\n%s", appView(a))
+	}
+	a, _ = press(t, a, "left")
+	if !strings.Contains(appView(a), "Global SSH › Storage & preview") {
+		t.Fatalf("← from All directives must land on Storage, got:\n%s", appView(a))
+	}
+	a, _ = press(t, a, "left")
+	if !strings.Contains(appView(a), "Global SSH › Options") {
+		t.Fatalf("← from Storage must wrap to Options, got:\n%s", appView(a))
+	}
+}
+
 // TestGlobalSSHActivateFocusesFirstFetchedRow is UXP-01 / D-01: a freshly
 // constructed model, activated once, selects the FIRST row of the fetched
 // option list. The construction-time IdentitiesOnly default (a middle row)

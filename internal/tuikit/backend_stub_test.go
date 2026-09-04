@@ -157,6 +157,13 @@ type stubBackend struct {
 	// mirroring how it handles GlobalSSHPlanner. A missing real implementation
 	// must be a compile error, not a silent sentinel.
 	NoopSSHStoragePlanner
+	// NoopSSHPropertiesBrowser is embedded for the SAME reason
+	// NoopGlobalSSHPlanner is above: AllSSHDirectives is overridden directly
+	// below (an empty, successful default rather than the Noop sentinel —
+	// most tests never touch the properties sub-tab and should not have to
+	// opt out of a canned error), so the embed is a compile-time safety net
+	// only, never actually reached.
+	NoopSSHPropertiesBrowser
 	gitStepAlwaysDisabled bool
 	gitStepReason         string
 	keyActionErr          error
@@ -172,6 +179,11 @@ type stubBackend struct {
 	sshApplyPlan   GlobalSSHApplyPlanView
 	sshApplyPlanFn func(keys []string) (GlobalSSHApplyPlanView, error)
 	sshCommitMsg   GlobalSSHCommitMsg
+	// SSH properties (plan 09.5-01) seam overrides — zero values keep an
+	// empty, successful default (see the NoopSSHPropertiesBrowser doc
+	// comment above for why this default is a success, not the Noop error).
+	sshDirectives    []SSHDirectiveView
+	sshDirectivesErr error
 	// Global-Git seam overrides (zero values keep the fixture projection from
 	// fixtureGlobalGitOptionViews() below — mirrors the SSH seam pattern).
 	gitOptions     []GlobalGitOptionView
@@ -722,6 +734,16 @@ func (b stubBackend) GlobalSSHApplyPlan(keys []string) (GlobalSSHApplyPlanView, 
 // CommitGlobalSSH delivers the test override's commit message immediately.
 func (b stubBackend) CommitGlobalSSH([]string) tea.Cmd {
 	return func() tea.Msg { return b.sshCommitMsg }
+}
+
+// AllSSHDirectives returns the test override when set, otherwise an empty,
+// successful slice — see the NoopSSHPropertiesBrowser doc comment above for
+// why this default is a success rather than the Noop sentinel.
+func (b stubBackend) AllSSHDirectives() ([]SSHDirectiveView, error) {
+	if b.sshDirectivesErr != nil {
+		return nil, b.sshDirectivesErr
+	}
+	return b.sshDirectives, nil
 }
 
 // fixtureSSHStorageView returns the frozen STORE-01 previews so a zero-value

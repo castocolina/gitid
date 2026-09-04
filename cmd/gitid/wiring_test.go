@@ -77,6 +77,44 @@ func TestRealBackendDoesNotEmbedNoopGitFallbackAuthorPlanner(t *testing.T) {
 	}
 }
 
+// TestRealBackendDoesNotEmbedNoopSSHPropertiesBrowser is plan 09.5-01's L2
+// injected-seam guard for the "All directives" sub-tab (PROP-01), mirroring
+// TestRealBackendDoesNotEmbedNoopGitFallbackAuthorPlanner's shape.
+func TestRealBackendDoesNotEmbedNoopSSHPropertiesBrowser(t *testing.T) {
+	var _ tuikit.SSHPropertiesBrowser = (*realBackend)(nil)
+	rt := reflect.TypeOf(realBackend{})
+	for i := range rt.NumField() {
+		if rt.Field(i).Type == reflect.TypeOf(tuikit.NoopSSHPropertiesBrowser{}) {
+			t.Fatal("realBackend must not embed NoopSSHPropertiesBrowser — a missing real implementation must be a compile error")
+		}
+	}
+}
+
+// TestBuildTUIDepsWiresSSHPropertiesBrowser extends the standing nil-guard
+// test (TestBuildBackendSatisfiesSeam above): the REAL constructor's backend
+// answers AllSSHDirectives() without ever returning
+// ErrSSHPropertiesBrowserNotImplemented — i.e. realBackend does not merely
+// look wired, it IS wired to the real globalssh.AllDirectives engine. This
+// closes the project's documented injected-seam wiring blindspot for the
+// new seam this plan introduces.
+func TestBuildTUIDepsWiresSSHPropertiesBrowser(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	b := buildBackend()
+	views, err := b.AllSSHDirectives()
+	if errors.Is(err, tuikit.ErrSSHPropertiesBrowserNotImplemented) {
+		t.Fatal("buildBackend()'s AllSSHDirectives returned the Noop sentinel — the real seam is not wired")
+	}
+	if err != nil {
+		// A real probe error (no ssh on PATH, etc.) is an acceptable outcome
+		// for this guard — the point is that it is a REAL error from the
+		// real engine, never the not-implemented sentinel above.
+		return
+	}
+	if views == nil {
+		t.Fatal("buildBackend()'s AllSSHDirectives returned (nil, nil) — want a real, non-nil directive set on a machine with ssh installed")
+	}
+}
+
 func TestGitFallbackAuthorVerifySeamIsRealWired(t *testing.T) {
 	b := newBackendForHome(t.TempDir())
 	if b.verifyAuthorResolution != nil {

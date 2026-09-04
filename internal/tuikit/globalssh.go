@@ -29,6 +29,7 @@ type gssSubTab int
 const (
 	gssOptions gssSubTab = iota
 	gssStorage
+	gssProperties
 )
 
 // Global SSH modes.
@@ -46,7 +47,16 @@ const (
 const (
 	gssTabOptionsLabel = " Options "
 	gssTabStorageLabel = " Storage & preview "
+	// gssTabPropertiesLabel is Task 1's literal — Task 2 re-derives this
+	// from design.go's frozen PropsSSHSubTabLabel constant (padding added
+	// around it) rather than restating the text a second time.
+	gssTabPropertiesLabel = " All directives "
 )
+
+// gssFooterCycleLabel is the ←→ footer action's label, naming all three
+// sub-tabs — identical across every gssBrowse-mode branch so the footer
+// never implies a different cycle depending on which sub-tab is active.
+const gssFooterCycleLabel = "Options / Storage / Directives"
 
 // gssBannerBeyond is the findingsBanner tail used on the Options sub-tab —
 // shared by renderOptions and gssOptionsTopLines.
@@ -88,6 +98,13 @@ type globalSSHModel struct {
 	// instead of a blank body (GSSH-01 advisory posture).
 	options    []GlobalSSHOptionView
 	optionsErr string
+	// directives is the live "All directives" sub-tab row set (PROP-01)
+	// fetched from the backend on activation, synchronously, the SAME
+	// pattern activate() already uses for options above; directivesErr
+	// carries the fetch failure the pane renders instead of a blank body,
+	// mirroring optionsErr's advisory posture.
+	directives    []SSHDirectiveView
+	directivesErr string
 	// applyCommitPending gates the apply ceremony's receipt: ApplySSH is
 	// dispatched only from handleMsg once GlobalSSHCommitMsg arrives with an
 	// empty Err, never optimistically on ceremonyFinished (mirrors
@@ -183,6 +200,12 @@ func (m globalSSHModel) activate(s DemoState) (screenModel, tea.Cmd) {
 	// first-row literal would re-break if the policy table is reordered.
 	if len(m.options) > 0 {
 		m.detailKey = m.options[0].Key
+	}
+	directives, derr := m.backend.AllSSHDirectives()
+	m.directives = directives
+	if derr != nil {
+		m.directives = nil
+		m.directivesErr = derr.Error()
 	}
 	m = m.refetchStoragePlan()
 	return m, nil
@@ -611,6 +634,35 @@ func (m globalSSHModel) storageCeremonyFor(view SSHStorageMigrationView) ceremon
 	})
 }
 
+// gssNextSubTab returns the sub-tab the → key cycles to: Options → Storage &
+// preview → All directives → Options (09.5-UI-SPEC.md).
+func gssNextSubTab(cur gssSubTab) gssSubTab {
+	switch cur {
+	case gssOptions:
+		return gssStorage
+	case gssStorage:
+		return gssProperties
+	default: // gssProperties
+		return gssOptions
+	}
+}
+
+// gssPrevSubTab returns the sub-tab the ← key cycles to — the OPPOSITE
+// direction of gssNextSubTab, not an alias of it. With only two sub-tabs the
+// two directions were indistinguishable (both toggled the same pair); with
+// three they are not, and treating them as aliases was the exact bug this
+// function fixes.
+func gssPrevSubTab(cur gssSubTab) gssSubTab {
+	switch cur {
+	case gssOptions:
+		return gssProperties
+	case gssProperties:
+		return gssStorage
+	default: // gssStorage
+		return gssOptions
+	}
+}
+
 // handleKey implements the Global SSH key model.
 func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 	key := msg.String()
@@ -679,6 +731,12 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		// navigation keys on a screen that is least able to help.
 		return keyResult{model: m}
 	}
+	if m.subTab == gssProperties && m.directivesErr != "" {
+		// Fail-open, mirroring the Options sub-tab's own probe-failure
+		// contract immediately above: every navigation key still reaches
+		// the app globals on the screen least able to help.
+		return keyResult{model: m}
+	}
 	if m.subTab == gssOptions && len(options) == 0 {
 		// Advisory / fail-open: no rows to act on, but navigation must still
 		// reach the globals (tabs, ?, q) — never trap the user on this
@@ -686,25 +744,34 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		// class of failed/empty probe (07-UI-SPEC.md RESOLVED "error" row).
 		switch key {
 		case "left", "right":
-			m.subTab = gssStorage
-			m.storageChoice = s.SSHStorage
-			m = m.refetchStoragePlan()
+			if key == "right" {
+				m.subTab = gssNextSubTab(m.subTab)
+			} else {
+				m.subTab = gssPrevSubTab(m.subTab)
+			}
+			if m.subTab == gssStorage {
+				m.storageChoice = s.SSHStorage
+				m = m.refetchStoragePlan()
+			}
 			return keyResult{model: m, handled: true}
 		}
 		return keyResult{model: m}
 	}
 	switch key {
 	case "left", "right":
-		if m.subTab == gssOptions {
-			m.subTab = gssStorage
+		if key == "right" {
+			m.subTab = gssNextSubTab(m.subTab)
+		} else {
+			m.subTab = gssPrevSubTab(m.subTab)
+		}
+		if m.subTab == gssStorage {
 			m.storageChoice = s.SSHStorage
 			m = m.refetchStoragePlan()
-		} else {
-			m.subTab = gssOptions
 		}
 		return keyResult{model: m, handled: true}
 	case "up", "down":
-		if m.subTab == gssOptions {
+		switch m.subTab {
+		case gssOptions:
 			idx := m.detailIndex(options)
 			if key == "down" && idx < len(options)-1 {
 				idx++
@@ -714,7 +781,7 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 			}
 			m.detailKey = options[idx].Key
 			m.listWindowStart = scrollWindowFor(m.listWindowStart, idx, gssVisibleRowCount(len(options), m.rowBudgetHeight(), s))
-		} else {
+		case gssStorage:
 			if m.storageChoice == StorageSentinel {
 				m.storageChoice = StorageInclude
 			} else {
@@ -722,6 +789,11 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 			}
 			// Refetch the storage view for the newly selected layout.
 			m = m.refetchStoragePlan()
+		case gssProperties:
+			// Task 1: no selection movement in the flat list yet (Task 2
+			// adds up/down + scroll-window movement over the filtered
+			// set) — inert but still handled so the key never leaks to
+			// app-level globals.
 		}
 		return keyResult{model: m, handled: true}
 	case "space":
@@ -769,16 +841,21 @@ func gssSubTabStripRows() int {
 	return 3 // top border + labels + bottom border
 }
 
-// subTabStrip renders the [Options] [Storage & preview] strip with a border.
+// subTabStrip renders the [Options] [Storage & preview] [All directives]
+// strip with a border.
 func (m globalSSHModel) subTabStrip() string {
 	options := gssTabOptionsLabel
 	storage := gssTabStorageLabel
-	if m.subTab == gssOptions {
+	properties := gssTabPropertiesLabel
+	switch m.subTab {
+	case gssOptions:
 		options = styleReverse.Render(options)
-	} else {
+	case gssStorage:
 		storage = styleReverse.Render(storage)
+	case gssProperties:
+		properties = styleReverse.Render(properties)
 	}
-	label := " " + options + " " + storage
+	label := " " + options + " " + storage + " " + properties
 
 	// Build a bordered box around the labels using dashed border runes in accent color.
 	accentBorder := lipgloss.NewStyle().Foreground(DefaultTheme.Accent)
@@ -904,6 +981,9 @@ func (m globalSSHModel) handleClick(x, y, width, height int, s DemoState) keyRes
 				m.storageChoice = s.SSHStorage
 				m = m.refetchStoragePlan()
 				return keyResult{model: m, handled: true}
+			case hitNeedle(body, x, y, gssTabPropertiesLabel):
+				m.subTab = gssProperties
+				return keyResult{model: m, handled: true}
 			}
 		}
 		// Border rows (0 and stripRows-1) and any other click in the strip area are inert.
@@ -911,6 +991,12 @@ func (m globalSSHModel) handleClick(x, y, width, height int, s DemoState) keyRes
 	}
 	if m.subTab == gssStorage {
 		return m.handleStorageClick(x, y, width, height, s)
+	}
+	if m.subTab == gssProperties {
+		// Task 1: no click support in the flat list yet (Task 2 adds
+		// filter-aware click hit-testing over the filtered set) — clicks
+		// below the strip are inert.
+		return keyResult{model: m}
 	}
 	if x >= masterListWidth(width) || y < gssOptionsTopLines(s) {
 		return keyResult{model: m}
@@ -1101,8 +1187,11 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 	}
 
 	crumb := "Options"
-	if m.subTab == gssStorage {
+	switch m.subTab {
+	case gssStorage:
 		crumb = "Storage & preview"
+	case gssProperties:
+		crumb = "All directives"
 	}
 
 	var body string
@@ -1120,7 +1209,8 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 		actions = ceremonyFooterActions()
 		capturesKeys = true // the ceremony consumes every plain key
 	case gssBrowse:
-		if m.subTab == gssOptions {
+		switch m.subTab {
+		case gssOptions:
 			if m.optionsErr != "" {
 				// Advisory posture extends to the detection layer: the pane
 				// renders the error note, never a blank body. WR-12
@@ -1135,27 +1225,30 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 				}
 				body += " " + styleWarning.Render("! "+m.optionsErr) + "\n\n " +
 					styleFaint.Render("The option states could not be read from this machine.")
-				actions = []FooterAction{{Key: "←→", Label: "Options / Storage"}}
+				actions = []FooterAction{{Key: "←→", Label: gssFooterCycleLabel}}
 			} else {
 				body = m.renderOptions(s, options, width, height)
 				actions = []FooterAction{
 					{Key: "↑↓", Label: "select option"},
-					{Key: "←→", Label: "Options / Storage"},
+					{Key: "←→", Label: gssFooterCycleLabel},
 					{Key: "space", Label: "toggle"},
 				}
 				if len(chosen) > 0 {
 					actions = append(actions, FooterAction{Key: "a", Label: fmt.Sprintf("apply %d selected", len(chosen))})
 				}
 			}
-		} else {
+		case gssStorage:
 			body = m.renderStorage(s, width, height)
 			actions = []FooterAction{
-				{Key: "←→", Label: "Options / Storage"},
+				{Key: "←→", Label: gssFooterCycleLabel},
 				{Key: "↑↓", Label: "layout"},
 			}
 			if m.storageChoice != s.SSHStorage && m.storageViewErr == "" {
 				actions = append(actions, FooterAction{Key: "Enter", Label: "migrate layout…"})
 			}
+		case gssProperties:
+			body = m.renderProperties(s, width, height)
+			actions = []FooterAction{{Key: "←→", Label: gssFooterCycleLabel}}
 		}
 	}
 	return screenView{body: body, crumbs: []string{crumb}, status: status, statusTone: tone,
@@ -1282,4 +1375,88 @@ func (m globalSSHModel) renderStorage(s DemoState, width, height int) string {
 	right := lipgloss.NewStyle().Width(rightWidth).Render(r.String())
 
 	return m.subTabStrip() + "\n" + joinMasterDetail(left, leftWidth, right, rows)
+}
+
+// gssPropertiesScrollWindow computes the "All directives" list's scroll
+// window — the SAME gitScrollWindow/gitCueLine machinery every other list on
+// this screen reuses, but with ONE line per row (unlike optionRow's 2-line
+// shape): this is the first list on Global SSH that ALWAYS needs the scroll
+// window rather than usually fitting. Task 2 replaces this with the
+// filter-aware equivalent over the filtered set; Task 1 computes it directly
+// over the full m.directives slice.
+func (m globalSSHModel) gssPropertiesScrollWindow(height int) gitScrollWindow {
+	totalRows := len(m.directives)
+	budget := frameBodyRows(height) - gssSubTabStripRows()
+	if budget < 1 {
+		budget = 1
+	}
+	visible := budget
+	needsScroll := visible < totalRows
+	if needsScroll {
+		visible = budget - 1 // reserve one line for the scroll cue
+		if visible < 1 {
+			visible = 1
+		}
+	}
+	if visible > totalRows {
+		visible = totalRows
+	}
+	windowStart := m.listWindowStart
+	if windowStart < 0 {
+		windowStart = 0
+	}
+	maxStart := totalRows - visible
+	if maxStart < 0 {
+		maxStart = 0
+	}
+	if windowStart > maxStart {
+		windowStart = maxStart
+	}
+	w := gitScrollWindow{needsScroll: needsScroll, windowStart: windowStart, visibleRows: visible}
+	if !needsScroll {
+		return w
+	}
+	hiddenBelow := windowStart+visible < totalRows
+	if hiddenBelow {
+		w.cue = gitCueDown
+		w.hiddenCount = totalRows - (windowStart + visible)
+		return w
+	}
+	w.cue = gitCueUp
+	w.hiddenCount = windowStart
+	return w
+}
+
+// renderProperties renders the "All directives" sub-tab's flat list
+// (PROP-01). Task 1 ships a plain one-line-per-directive list — a leading
+// space, the key, then the value, truncated with a visible cue — reusing the
+// existing gitScrollWindow/gitCueLine scroll machinery; Task 2 replaces this
+// with the full filterable master-detail body (filter row, match count,
+// detail pane, and the empty/error states this task's plain list does not
+// yet fully specify).
+func (m globalSSHModel) renderProperties(_ DemoState, width, height int) string {
+	if m.directivesErr != "" {
+		return m.subTabStrip() + "\n " +
+			styleWarning.Render("! "+m.directivesErr) + "\n\n " +
+			styleFaint.Render("The SSH directive set could not be read from this machine.")
+	}
+	// WR-17-class guard (mirrors renderOptions): a Backend implementation
+	// may legitimately return (nil, nil) — zero rows, no error.
+	if len(m.directives) == 0 {
+		return m.subTabStrip() + "\n " + styleFaint.Render("No SSH directives to show.")
+	}
+
+	w := m.gssPropertiesScrollWindow(height)
+	var listRows []string
+	if w.cue == gitCueUp {
+		listRows = append(listRows, gitCueLine(w))
+	}
+	for _, d := range m.directives[w.windowStart : w.windowStart+w.visibleRows] {
+		line := " " + styleBold.Render(d.Key) + "  " + d.Value
+		listRows = append(listRows, truncLine(line, width))
+	}
+	if w.cue == gitCueDown {
+		listRows = append(listRows, gitCueLine(w))
+	}
+	return m.subTabStrip() + "\n" + strings.Join(listRows, "\n")
 }

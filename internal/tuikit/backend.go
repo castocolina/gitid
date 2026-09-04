@@ -324,6 +324,40 @@ func (NoopSSHStoragePlanner) CommitSSHStorage(SSHStorageLayout, string) tea.Cmd 
 
 var _ SSHStoragePlanner = NoopSSHStoragePlanner{}
 
+// ErrSSHPropertiesBrowserNotImplemented is the sentinel
+// NoopSSHPropertiesBrowser returns. Fixtures and test stubs embed the noop
+// and override only the methods they exercise; a missing real
+// implementation must be a compile error, not this sentinel at runtime.
+var ErrSSHPropertiesBrowserNotImplemented = errors.New("SSH properties browser not implemented")
+
+// SSHPropertiesBrowser is the Phase 9.5 "All directives" sub-tab seam
+// (PROP-01): the ONE method that returns every directive `ssh -G` resolves
+// for the Host * wildcard context. Deliberately kept to ONE method — plan
+// 09.5-04 adds the custom-directive WRITE methods as their OWN separate
+// interface, exactly as SSHStoragePlanner is deliberately separate from
+// GlobalSSHPlanner.
+type SSHPropertiesBrowser interface {
+	// AllSSHDirectives returns the full, sorted resolved directive set for
+	// the Host * wildcard context — the "All directives" sub-tab's live
+	// rows. A non-nil error must fail loosely: the pane renders an inline
+	// warning and stays fail-open, never a blank body.
+	AllSSHDirectives() ([]SSHDirectiveView, error)
+}
+
+// NoopSSHPropertiesBrowser implements SSHPropertiesBrowser with
+// ErrSSHPropertiesBrowserNotImplemented. Fixtures and test stubs embed it
+// and override only what they exercise. The REAL backend must NOT embed
+// it — a missing real implementation must be a compile error, pinned by the
+// compile-time assertion in cmd/gitid/wiring.go and a reflection test.
+type NoopSSHPropertiesBrowser struct{}
+
+// AllSSHDirectives implements SSHPropertiesBrowser.
+func (NoopSSHPropertiesBrowser) AllSSHDirectives() ([]SSHDirectiveView, error) {
+	return nil, ErrSSHPropertiesBrowserNotImplemented
+}
+
+var _ SSHPropertiesBrowser = NoopSSHPropertiesBrowser{}
+
 // backend.go defines the ONE injected seam this package is built around.
 //
 // tuikit renders the approved, frozen gitid design. It never reads or
@@ -369,6 +403,12 @@ type Backend interface {
 	// real backend must NOT embed NoopGlobalGitIgnorePlanner — a missing
 	// real implementation must be a compile error.
 	GlobalGitIgnorePlanner
+	// SSHPropertiesBrowser: Phase 9.5 plan 09.5-01's "All directives"
+	// sub-tab seam (PROP-01). The real backend must NOT embed
+	// NoopSSHPropertiesBrowser — a missing real implementation must be a
+	// compile error, pinned by wiring.go's compile-time assertion and by a
+	// reflection test.
+	SSHPropertiesBrowser
 
 	// ----- Data -------------------------------------------------------
 

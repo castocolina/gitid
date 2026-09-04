@@ -402,6 +402,23 @@ type GlobalSSHCommitMsg struct {
 	Err              string
 }
 
+// SSHDirectiveView is one row of the "All directives" sub-tab's flat list
+// (PROP-01): every directive `ssh -G` resolves for the Host * wildcard
+// context, not just gitid's curated six-row Policy subset. Key is the
+// lowercase spelling ssh -G emits (never normalized to gitid's canonical
+// camelCase — that would misrepresent what the machine actually resolved).
+type SSHDirectiveView struct {
+	Key   string
+	Value string
+	// PolicyBacked is answered by the backend at the wiring boundary —
+	// tuikit must never import internal/globalssh to ask PolicyFor itself
+	// (the no-backend import-graph gate forbids it). True only when the
+	// directive's key resolves in the live globalssh.Policy table, mirroring
+	// GlobalGitOptionView.PolicyBacked's identical rule. This is what the
+	// properties browser's cross-reference note renders from.
+	PolicyBacked bool
+}
+
 // SSHStorageMigrationView is the Storage sub-tab's live preview: the resolved
 // current layout, the requested target, the ceremony heading/targets/backups
 // and the resulting-config bytes PlanMigration produced. The three preview

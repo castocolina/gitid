@@ -304,6 +304,13 @@ var _ tuikit.GitFallbackAuthorPlanner = (*realBackend)(nil)
 // planner seam. It must NOT embed NoopSSHStoragePlanner.
 var _ tuikit.SSHStoragePlanner = (*realBackend)(nil)
 
+// plan 09.5-01 seam pin: the real composition root implements the
+// "All directives" sub-tab seam (PROP-01). It must NOT get there by
+// embedding NoopSSHPropertiesBrowser — a reflection test in wiring_test.go
+// asserts the struct carries no such anonymous field, so a missing real
+// implementation stays a compile error, not a silent sentinel.
+var _ tuikit.SSHPropertiesBrowser = (*realBackend)(nil)
+
 // newMigrateDeps is the package-level indirection both SSHStorageMigrationPlan
 // and runSSHStorageMigrate use to construct sshconfig.MigrateDeps. Using a
 // variable rather than an inline call lets tests override it to wrap WriteFile
@@ -2036,6 +2043,33 @@ func (b *realBackend) GlobalSSHOptionStates() ([]tuikit.GlobalSSHOptionView, err
 			}
 		}
 		out = append(out, view)
+	}
+	return out, nil
+}
+
+// AllSSHDirectives is the Phase 9.5 "All directives" sub-tab seam (PROP-01):
+// it runs globalssh.AllDirectives against the SAME per-activation
+// globalssh.BuildProbeDeps constructor GlobalSSHOptionStates already calls,
+// and maps each Directive to a view, resolving PolicyBacked from
+// globalssh.PolicyFor's second return value — PolicyFor matches
+// case-insensitively, so the lowercase `ssh -G` spelling resolves against
+// the Policy table's canonical camelCase keys with no normalisation here.
+func (b *realBackend) AllSSHDirectives() ([]tuikit.SSHDirectiveView, error) {
+	if b.initErr != nil {
+		return nil, b.initErr
+	}
+	directives, err := globalssh.AllDirectives(globalssh.BuildProbeDeps(b.sshConfigPath))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]tuikit.SSHDirectiveView, 0, len(directives))
+	for _, d := range directives {
+		_, policyBacked := globalssh.PolicyFor(d.Key)
+		out = append(out, tuikit.SSHDirectiveView{
+			Key:          d.Key,
+			Value:        d.Value,
+			PolicyBacked: policyBacked,
+		})
 	}
 	return out, nil
 }

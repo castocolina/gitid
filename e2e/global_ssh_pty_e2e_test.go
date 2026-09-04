@@ -184,6 +184,47 @@ func TestGlobalSSH_RealPTYBrowse(t *testing.T) {
 	}
 }
 
+// TestGlobalSSH_RealPTYAllDirectivesBrowse is plan 09.5-01's tracer proof:
+// the whole PROP-01 stack, wired end to end through the COMPILED binary.
+// Task 1's real-terminal proof — an in-package model test cannot tell a
+// real wired constructor from a nil seam. Pressing → twice from the default
+// Options sub-tab reaches the third "All directives" sub-tab and shows a
+// directive set genuinely larger than the six curated policy keys (the fake
+// ssh's `globalssh` mode fixture emits 20 additional lowercase lines beyond
+// the six policy ones — harness_test.go's FakeSSHDir).
+func TestGlobalSSH_RealPTYAllDirectivesBrowse(t *testing.T) {
+	home := ShortSandboxHome(t)
+	seedGlobalSSHHome(t, home, "none")
+	s := startGlobalSSHPTY(t, home, "globalssh")
+
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+	frame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "All directives")
+	})
+	if !ok {
+		t.Fatalf("All directives sub-tab never rendered after two → presses. Last frame:\n%s", frame)
+	}
+	if !strings.Contains(frame, "Global SSH › All directives") {
+		t.Fatalf("breadcrumb must show the All directives sub-tab:\n%s", frame)
+	}
+
+	nonPolicyKeys := []string{
+		"addressfamily", "batchmode", "canonicalizehostname", "checkhostip",
+		"ciphers", "clearallforwardings", "compression", "connectionattempts",
+	}
+	found := 0
+	for _, key := range nonPolicyKeys {
+		if strings.Contains(frame, key) {
+			found++
+		}
+	}
+	if found < 3 {
+		t.Fatalf("expected at least 3 non-policy directive keys visible in the frame, found %d:\n%s", found, frame)
+	}
+	captureGlobalSSHFrame(t, "global-ssh-all-directives-browse", s)
+}
+
 func TestGlobalSSH_RealPTYOptionAffordancesAndMouseToggle(t *testing.T) {
 	home := ShortSandboxHome(t)
 	seedGlobalSSHHome(t, home, "none")
