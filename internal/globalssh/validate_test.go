@@ -206,6 +206,21 @@ func TestValidateDirectiveNameRejectsEmptyWhitespaceMultiTokenAndStructuralKeywo
 	}
 }
 
+// TestIsStructuralDirectiveNameRecognizesTheSameSetValidateDirectiveNameRejects
+// verifies WR-08's suppression seam: IsStructuralDirectiveName reports true
+// for exactly the keywords ValidateDirectiveName rejects as structural
+// (case-insensitively), and false for an ordinary settable directive.
+func TestIsStructuralDirectiveNameRecognizesTheSameSetValidateDirectiveNameRejects(t *testing.T) {
+	for _, name := range []string{"Host", "host", "Match", "MATCH", "Include", "IgnoreUnknown"} {
+		if !IsStructuralDirectiveName(name) {
+			t.Errorf("IsStructuralDirectiveName(%q) = false, want true", name)
+		}
+	}
+	if IsStructuralDirectiveName("StreamLocalBindMask") {
+		t.Error("IsStructuralDirectiveName(StreamLocalBindMask) = true, want false")
+	}
+}
+
 // TestValidateDirectiveNameAcceptsAKnownShapedToken verifies a normal
 // single-token directive name is accepted.
 func TestValidateDirectiveNameAcceptsAKnownShapedToken(t *testing.T) {

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/castocolina/gitid/internal/gitconfig"
+	"github.com/castocolina/gitid/internal/globalssh"
 	"github.com/castocolina/gitid/internal/identity"
 	"github.com/castocolina/gitid/internal/sshconfig"
 	"github.com/castocolina/gitid/internal/tester"
@@ -1930,6 +1931,67 @@ func TestRunCustomSSHDirectiveWriteFloorsTheIncludeLineWhenNeeded(t *testing.T) 
 	}
 	if fileExists(filepath.Join(home2, ".ssh", "config.d")) {
 		t.Error("the created include directory must be removed on rollback")
+	}
+}
+
+// TestCustomDirectiveVerifyAdvisoriesUsesExactCaseSensitiveComparison is the
+// WR-08(a) regression: the resolved-value comparison must be EXACT
+// (case-sensitive) — strings.EqualFold treats two genuinely different
+// values (a path, a cipher list, a ProxyCommand argument) as equal whenever
+// they differ only in case, silently swallowing a real shadowing mismatch.
+func TestCustomDirectiveVerifyAdvisoriesUsesExactCaseSensitiveComparison(t *testing.T) {
+	directives := []globalssh.Directive{{Key: "userknownhostsfile", Value: "~/a"}}
+	advisories := customDirectiveVerifyAdvisories("UserKnownHostsFile", "~/A", directives)
+	found := false
+	for _, a := range advisories {
+		if strings.Contains(a, "UserKnownHostsFile") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("advisories = %v, want a mismatch advisory for a case-only difference (~/A vs ~/a) — WR-08(a) regressed", advisories)
+	}
+}
+
+// TestCustomDirectiveVerifyAdvisoriesDoesNotFireOnAnExactMatch verifies the
+// sibling non-mismatch case does not fire — the fix is a stricter
+// comparison, not a broken one.
+func TestCustomDirectiveVerifyAdvisoriesDoesNotFireOnAnExactMatch(t *testing.T) {
+	directives := []globalssh.Directive{{Key: "userknownhostsfile", Value: "~/a"}}
+	advisories := customDirectiveVerifyAdvisories("UserKnownHostsFile", "~/a", directives)
+	if len(advisories) != 0 {
+		t.Errorf("advisories = %v, want none for an exact match", advisories)
+	}
+}
+
+// TestCustomDirectiveVerifyAdvisoriesSuppressesNotFoundForStructuralNames is
+// the WR-08(b) regression: ssh -G never echoes a structural directive
+// (Host/Match/Include/IgnoreUnknown) back in its resolved-options output, so
+// its absence from the re-read directive set must not fire the "could not
+// be found" advisory — that would be a false alarm on a write that landed
+// exactly as intended.
+func TestCustomDirectiveVerifyAdvisoriesSuppressesNotFoundForStructuralNames(t *testing.T) {
+	advisories := customDirectiveVerifyAdvisories("Host", "evil.example", nil)
+	for _, a := range advisories {
+		if strings.Contains(a, "could not be found") {
+			t.Errorf("advisories = %v, want the not-found advisory suppressed for a structural name (WR-08(b) regressed)", advisories)
+		}
+	}
+}
+
+// TestCustomDirectiveVerifyAdvisoriesStillFiresNotFoundForOrdinaryNames
+// verifies the sibling non-suppression case: an ordinary (non-structural)
+// name absent from the resolved set still fires the advisory.
+func TestCustomDirectiveVerifyAdvisoriesStillFiresNotFoundForOrdinaryNames(t *testing.T) {
+	advisories := customDirectiveVerifyAdvisories("StreamLocalBindMask", "0177", nil)
+	found := false
+	for _, a := range advisories {
+		if strings.Contains(a, "could not be found") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("advisories = %v, want the not-found advisory for an ordinary name absent from the resolved set", advisories)
 	}
 }
 

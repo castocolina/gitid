@@ -1718,6 +1718,30 @@ func (b *realBackend) runCustomSSHDirectiveWrite(name, value string, p lifecycle
 		// read before the next `git fetch` fails.
 		return fail(fmt.Errorf("post-write re-verification failed — the written directive may have made the configuration unparseable: %w", derr))
 	}
+	res.Advisories = append(res.Advisories, customDirectiveVerifyAdvisories(name, value, directives)...)
+
+	return res, nil
+}
+
+// customDirectiveVerifyAdvisories computes the post-write advisories for a
+// just-written custom SSH directive, given the resolved directive set
+// AllDirectives just re-read. Extracted as a pure function so WR-08's two
+// bugs can be regression-tested WITHOUT depending on the real machine's own
+// ssh -G resolution:
+//
+//   - the value comparison is EXACT (case-sensitive) — strings.EqualFold
+//     would treat two genuinely different values (a path, a cipher list, a
+//     ProxyCommand argument) as equal whenever they differ only in case;
+//   - the "not found in the resolved set" advisory is suppressed for a
+//     structural directive name (globalssh.IsStructuralDirectiveName) —
+//     ssh -G never echoes Host/Match/Include/IgnoreUnknown back in its
+//     resolved-options output, so absence from that set proves nothing
+//     about whether such a write landed. Unreachable through the normal
+//     write path today (CR-02's ValidateDirectiveName already rejects a
+//     structural name before this stage), kept as defense-in-depth for any
+//     future caller reached without that gate.
+func customDirectiveVerifyAdvisories(name, value string, directives []globalssh.Directive) []string {
+	var advisories []string
 	lname := strings.ToLower(name)
 	found := false
 	for _, d := range directives {
@@ -1725,20 +1749,19 @@ func (b *realBackend) runCustomSSHDirectiveWrite(name, value string, p lifecycle
 			continue
 		}
 		found = true
-		if !strings.EqualFold(d.Value, value) {
-			res.Advisories = append(res.Advisories, fmt.Sprintf(
+		if d.Value != strings.TrimSpace(value) {
+			advisories = append(advisories, fmt.Sprintf(
 				"advisory: %s was written as %q but resolves to %q — the write may be shadowed by another directive",
 				name, value, d.Value))
 		}
 		break
 	}
-	if !found {
-		res.Advisories = append(res.Advisories, fmt.Sprintf(
+	if !found && !globalssh.IsStructuralDirectiveName(name) {
+		advisories = append(advisories, fmt.Sprintf(
 			"advisory: %s was written but could not be found in the re-read directive set — the write may not be effective",
 			name))
 	}
-
-	return res, nil
+	return advisories
 }
 
 // ---------------------------------------------------------------------------

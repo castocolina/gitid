@@ -69,6 +69,20 @@ var structuralDirectives = map[string]bool{
 	"host": true, "match": true, "include": true, "ignoreunknown": true,
 }
 
+// IsStructuralDirectiveName reports whether name (case-insensitively) is one
+// of the structural keywords ValidateDirectiveName rejects. Exported
+// (09.5-REVIEW.md WR-08) so a caller that already knows a name is
+// structural — today unreachable through the normal write path since
+// ValidateDirectiveName rejects it earlier, but kept as the SAME
+// enumeration for any future caller reached without that gate — can
+// suppress a "not found in the resolved directive set" advisory that would
+// otherwise fire falsely: `ssh -G` never echoes a structural directive back
+// in its resolved-options output, so its ABSENCE from that set proves
+// nothing about whether the write landed.
+func IsStructuralDirectiveName(name string) bool {
+	return structuralDirectives[strings.ToLower(name)]
+}
+
 // ValidateDirectiveName rejects any candidate name that is not a single,
 // safe, unquoted OpenSSH directive token (CR-02). This is the ONLY guard
 // standing between a free-form directive name and gitid's own managed
