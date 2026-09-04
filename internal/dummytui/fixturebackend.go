@@ -746,6 +746,38 @@ func (FixtureBackend) CommitGlobalSSH([]string) tea.Cmd {
 // to today through this seam; cmd/gitid injects a real GlobalGitPlanner.
 // ---------------------------------------------------------------------------
 
+// AllGitSetKeys implements tuikit.GitPropertiesBrowser. internal/dummytui
+// may never import internal/globalgit (the no-backend import-graph gate
+// forbids it), so PolicyBacked is hardcoded true only for the one row that
+// matches a live Policy key ("init.defaultbranch"), rather than computed via
+// globalgit.PolicyFor — mirrors AllSSHDirectives' identical constraint
+// above. Spans two scopes (global, system) and 20 rows to exercise the
+// scroll window on the dummy too.
+func (FixtureBackend) AllGitSetKeys() ([]tuikit.GitSetKeyView, error) {
+	return []tuikit.GitSetKeyView{
+		{Key: "alias.co", Value: "checkout", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "alias.st", Value: "status", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "color.branch", Value: "auto", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "color.diff", Value: "auto", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "color.status", Value: "auto", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "color.ui", Value: "auto", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "core.autocrlf", Value: "input", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "core.editor", Value: "vim", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "core.eol", Value: "lf", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "core.ignorecase", Value: "false", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "core.pager", Value: "less", Scope: "system", Origin: "/etc/gitconfig"},
+		{Key: "diff.colormoved", Value: "default", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "fetch.prune", Value: "true", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "init.defaultbranch", Value: "main", Scope: "global", Origin: "~/.gitconfig", PolicyBacked: true},
+		{Key: "merge.conflictstyle", Value: "zdiff3", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "pull.rebase", Value: "true", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "push.autosetupremote", Value: "true", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "safe.directory", Value: "*", Scope: "system", Origin: "/etc/gitconfig"},
+		{Key: "user.name", Value: "Demo User", Scope: "system", Origin: "/etc/gitconfig"},
+		{Key: "user.useconfigonly", Value: "true", Scope: "global", Origin: "~/.gitconfig"},
+	}, nil
+}
+
 // GlobalGitOptionStates projects the frozen GlobalGitOptions fixture into the
 // live view shape: Current/Recommended/OneLiner are the fixture's own values,
 // and the NeedsAction flag becomes the row State. The provenance is a

@@ -2074,6 +2074,38 @@ func (b *realBackend) AllSSHDirectives() ([]tuikit.SSHDirectiveView, error) {
 	return out, nil
 }
 
+// AllGitSetKeys is the Phase 9.5 plan 09.5-02 "Set keys" sub-tab seam
+// (PROP-02): it runs globalgit.AllSetKeys against the SAME non-repository
+// directory (b.fragmentDir) the existing Options probe (GlobalGitOptionStates)
+// already uses via globalgit.BuildProbeDeps — RESEARCH Pitfall 1: running
+// this probe from any OTHER working directory would fold a repository's
+// local scope into a screen labelled Global. PolicyBacked is resolved from
+// globalgit.PolicyFor's second return value, mirroring AllSSHDirectives'
+// identical PolicyFor lookup. b.initErr is wrapped with the SAME
+// "git probe failed: %w" shape GlobalGitOptionStates uses, so the screen
+// renders one uniform failure regardless of which probe hit it.
+func (b *realBackend) AllGitSetKeys() ([]tuikit.GitSetKeyView, error) {
+	if b.initErr != nil {
+		return nil, fmt.Errorf("git probe failed: %w", b.initErr)
+	}
+	keys, err := globalgit.AllSetKeys(globalgit.BuildProbeDeps(b.fragmentDir))
+	if err != nil {
+		return nil, fmt.Errorf("git probe failed: %w", err)
+	}
+	out := make([]tuikit.GitSetKeyView, 0, len(keys))
+	for _, k := range keys {
+		_, policyBacked := globalgit.PolicyFor(k.Key)
+		out = append(out, tuikit.GitSetKeyView{
+			Key:          k.Key,
+			Value:        k.Value,
+			Scope:        k.Scope,
+			Origin:       k.Origin,
+			PolicyBacked: policyBacked,
+		})
+	}
+	return out, nil
+}
+
 func (b *realBackend) readSSHVersion() platform.SSHVersion {
 	probe := b.probeSSHVersion
 	if probe == nil {

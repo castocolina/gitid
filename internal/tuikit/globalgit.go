@@ -21,6 +21,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // globalGitModel is the Global Git tab child model.
@@ -47,13 +48,13 @@ const (
 // Sub-tab strip composition — renderSubTabStrip (frame.go, D-D) renders
 // exactly these labels (with a one-space lead and a one-space gap) and
 // handleClick hit-tests against the same strings, so the spans can never
-// drift. ggitTabSetKeysLabel is a plain literal in this task; Task 2 wires
-// it to derive from design.go's frozen PropsGitSubTabLabel constant (the
-// SAME "one source for the label text" discipline gssTabPropertiesLabel
-// already follows for Global SSH's third label).
+// drift. ggitTabSetKeysLabel derives from design.go's frozen
+// PropsGitSubTabLabel constant (padding added around it) — ONE source for
+// the label text, never restated — the SAME discipline gssTabPropertiesLabel
+// already follows for Global SSH's third label.
 const (
 	ggitTabOptionsLabel = " Options "
-	ggitTabSetKeysLabel = " Set keys "
+	ggitTabSetKeysLabel = " " + PropsGitSubTabLabel + " "
 )
 
 // ggitFooterCycleLabel is the ←→ footer action's label, naming both
@@ -182,8 +183,29 @@ type globalGitModel struct {
 	// row fits inside the computed body budget; only when the row set
 	// exceeds the budget does it advance, one row at a time, in the
 	// direction of travel as the selection moves outside the visible
-	// window (never a jump-to-center).
+	// window (never a jump-to-center). Shared across the ggitOptions and
+	// ggitSetKeys sub-tabs (09.5-02, Task 2) — mirrors globalSSHModel's
+	// identical one-field-for-every-sub-tab-list reuse.
 	listWindowStart int
+	// setKeys is the live "Set keys" sub-tab row set (PROP-02) fetched from
+	// the backend on activation, synchronously, the SAME pattern activate()
+	// already uses for options above; setKeysErr carries the fetch failure
+	// the pane renders instead of a blank body, mirroring optionsErr's
+	// advisory posture.
+	setKeys    []GitSetKeyView
+	setKeysErr string
+	// filter is the "Set keys" sub-tab's type-to-filter textinput (D-B);
+	// filterFocused mirrors globalSSHModel's identical properties-filter
+	// keyboard-capture contract — while true, handleKey routes every key
+	// but esc into the input and view() reports capturesKeys: true.
+	filter        textinput.Model
+	filterFocused bool
+	// setKeysDetailKey is the selected row's key on the Set keys sub-tab —
+	// kept SEPARATE from detailKey (the Options sub-tab's own selection)
+	// because the two lists' keys live in different casing/scope domains
+	// and are never the same slice, mirroring globalSSHModel's identical
+	// propDetailKey/detailKey split.
+	setKeysDetailKey string
 }
 
 // newGlobalGitModel returns a model with an EMPTY selection set (D-15, R-1):
@@ -199,7 +221,19 @@ func newGlobalGitModel(b Backend) globalGitModel {
 		chosen:     map[string]bool{},
 		nameInput:  newTextInput(""),
 		emailInput: newTextInput(""),
+		filter:     newGitSetKeysFilterInput(),
 	}
+}
+
+// newGitSetKeysFilterInput builds the "Set keys" filter textinput with its
+// frozen prompt/placeholder (09.5-UI-SPEC.md) — a small helper so both the
+// constructor and activate()'s per-entry reset build the SAME shape,
+// mirroring globalssh.go's newPropertiesFilterInput.
+func newGitSetKeysFilterInput() textinput.Model {
+	ti := newTextInput("")
+	ti.Prompt = "/ "
+	ti.Placeholder = PropsFilterPlaceholder
+	return ti
 }
 
 // activate syncs the Options pane rows from the backend and resets the
@@ -255,6 +289,26 @@ func (m globalGitModel) activate(DemoState) (screenModel, tea.Cmd) {
 		m.currentEmail = state.Email
 		m.nameInput = newTextInput(state.Name)
 		m.emailInput = newTextInput(state.Email)
+	}
+	// PROP-02 (09.5-02, Task 2): the "Set keys" sub-tab's row set, fetched
+	// synchronously alongside the Options fetch above — the SAME per-entry
+	// pattern activate() already uses for every other seam on this screen.
+	setKeys, setKeysErr := m.backend.AllGitSetKeys()
+	m.setKeys = setKeys
+	m.setKeysErr = ""
+	if setKeysErr != nil {
+		m.setKeys = nil
+		m.setKeysErr = setKeysErr.Error()
+	}
+	// D-B: the filter resets per-entry, alongside every other per-entry
+	// reset above — a stale filter from a previous visit must never survive
+	// re-entering the screen.
+	m.filter = newGitSetKeysFilterInput()
+	m.filterFocused = false
+	if len(m.setKeys) > 0 {
+		m.setKeysDetailKey = m.setKeys[0].Key
+	} else {
+		m.setKeysDetailKey = ""
 	}
 	return m, nil
 }
@@ -773,6 +827,34 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		}
 	}
 
+	// D-B (09.5-02, Task 2): while the Set keys filter is focused, it owns
+	// the keyboard — every key but esc routes into the input and is
+	// reported handled, mirroring Global SSH's identical gssProperties
+	// filter-capture contract (and this screen's own fieldEditing capture
+	// above): esc blurs WITHOUT clearing; clearing is a separate, explicit
+	// action no other gitid text field conflates with blur either.
+	if m.subTab == ggitSetKeys && m.filterFocused {
+		if key == "esc" {
+			m.filterFocused = false
+			m.filter.Blur()
+			return keyResult{model: m, handled: true}
+		}
+		before := m.filter.Value()
+		m.filter, _ = updateInput(m.filter, msg)
+		if m.filter.Value() != before {
+			// D-C: on filter-text change, reset the selection to the FIRST
+			// row of the newly filtered set — a selected-but-invisible row
+			// must be structurally impossible, not defended against.
+			filtered := m.ggitFilteredKeys()
+			m.setKeysDetailKey = ""
+			if len(filtered) > 0 {
+				m.setKeysDetailKey = filtered[0].Key
+			}
+			m.listWindowStart = 0
+		}
+		return keyResult{model: m, handled: true}
+	}
+
 	options := m.overlaidGitOptions(s)
 	if m.subTab == ggitOptions && m.optionsErr != "" {
 		// A failed probe is advisory/fail-open: no rows or apply action are
@@ -782,6 +864,12 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		// identical gssOptions+optionsErr fail-open contract, so a probe
 		// failure on this sub-tab escapes to the app's top-level tab
 		// switcher exactly as it did before this screen had sub-tabs.
+		return keyResult{model: m}
+	}
+	if m.subTab == ggitSetKeys && m.setKeysErr != "" {
+		// Fail-open, mirroring the Options sub-tab's own probe-failure
+		// contract immediately above: every navigation key still reaches
+		// the app globals on the screen least able to help.
 		return keyResult{model: m}
 	}
 	if m.subTab == ggitOptions && len(options) == 0 {
@@ -807,18 +895,38 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		}
 		return keyResult{model: m, handled: true}
 	case "up", "down":
-		if m.subTab != ggitOptions {
-			return keyResult{model: m, handled: true}
+		switch m.subTab {
+		case ggitOptions:
+			idx := m.gitDetailIndex(options)
+			if key == "down" && idx < len(options)-1 {
+				idx++
+			}
+			if key == "up" && idx > 0 {
+				idx--
+			}
+			m.detailKey = options[idx].Key
+			m.listWindowStart = scrollWindowFor(m.listWindowStart, idx, gitVisibleRowCount(len(options), m.rowBudgetHeight(), s))
+		case ggitSetKeys:
+			filtered := m.ggitFilteredKeys()
+			if len(filtered) > 0 {
+				idx := m.ggitSetKeysDetailIndex(filtered)
+				if key == "down" && idx < len(filtered)-1 {
+					idx++
+				}
+				if key == "up" && idx > 0 {
+					idx--
+				}
+				m.setKeysDetailKey = filtered[idx].Key
+				m.listWindowStart = scrollWindowFor(m.listWindowStart, idx, ggitSetKeysVisibleRowCount(len(filtered), m.rowBudgetHeight()))
+			}
 		}
-		idx := m.gitDetailIndex(options)
-		if key == "down" && idx < len(options)-1 {
-			idx++
+		return keyResult{model: m, handled: true}
+	case "/":
+		if m.subTab != ggitSetKeys || m.setKeysErr != "" {
+			return keyResult{model: m}
 		}
-		if key == "up" && idx > 0 {
-			idx--
-		}
-		m.detailKey = options[idx].Key
-		m.listWindowStart = scrollWindowFor(m.listWindowStart, idx, gitVisibleRowCount(len(options), m.rowBudgetHeight(), s))
+		m.filterFocused = true
+		m.filter.Focus()
 		return keyResult{model: m, handled: true}
 	case "space":
 		if m.subTab != ggitOptions {
@@ -1094,6 +1202,264 @@ func gitRowForScreenRow(w gitScrollWindow, y int) (idx int, ok bool) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// 09.5-02, Task 2: the "Set keys" sub-tab's flat filterable master-detail
+// body (PROP-02) — mirrors globalssh.go's gssProperties* family verbatim,
+// the same shape plan 09.5-01 proved for the SSH side.
+// ---------------------------------------------------------------------------
+
+// ggitSetKeysTopLines counts the body lines rendered above the first row on
+// the "Set keys" sub-tab: the sub-tab strip plus the ONE filter row. No
+// findings banner here — mirrors gssPropertiesTopLines' identical decision
+// (09.5-01-SUMMARY.md): this sub-tab already shows the FULL set of keys
+// actually set, so a "doctor found N findings beyond these options" framing
+// would be self-contradictory.
+func ggitSetKeysTopLines() int {
+	return subTabStripRows() + 1
+}
+
+// ggitFilteredKeys returns the "Set keys" rows matching the current filter
+// value, case-insensitively, against BOTH the key and the value (a user
+// filtering for a path fragment expects the value to be searched too).
+// Every consumer — render, the up/down handler, and the click hit-test —
+// reads this SAME function, so the scroll window and the click row index
+// can never disagree about which row is where.
+func (m globalGitModel) ggitFilteredKeys() []GitSetKeyView {
+	q := strings.ToLower(m.filter.Value())
+	out := make([]GitSetKeyView, 0, len(m.setKeys))
+	for _, k := range m.setKeys {
+		if strings.Contains(strings.ToLower(k.Key), q) || strings.Contains(strings.ToLower(k.Value), q) {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// ggitSetKeysDetailIndex resolves the selected row's index within filtered —
+// the Set-keys-sub-tab mirror of gitDetailIndex above.
+func (m globalGitModel) ggitSetKeysDetailIndex(filtered []GitSetKeyView) int {
+	for i, k := range filtered {
+		if k.Key == m.setKeysDetailKey {
+			return i
+		}
+	}
+	return 0
+}
+
+// ggitSetKeysVisibleRowCount computes how many key rows fit inside the body
+// budget WITHOUT overflowing — the Set-keys mirror of gitVisibleRowCount,
+// but dividing by ONE line per row (this list has no toggle/apply
+// affordance and needs no optionRow-style 2-line sub-budget), mirroring
+// gssPropertiesVisibleRowCount.
+func ggitSetKeysVisibleRowCount(totalRows, height int) int {
+	budget := frameBodyRows(height) - ggitSetKeysTopLines()
+	if budget < 1 {
+		budget = 1
+	}
+	if totalRows <= budget {
+		return totalRows
+	}
+	reserved := budget - 1 // one line reserved for the scroll cue
+	if reserved < 1 {
+		reserved = 1
+	}
+	if reserved > totalRows {
+		reserved = totalRows
+	}
+	return reserved
+}
+
+// ggitSetKeysComputeScrollWindow derives the current scroll window from the
+// model's listWindowStart and the FILTERED row count — the Set-keys mirror
+// of gitComputeScrollWindow, sharing the SAME gitScrollWindow type so this
+// screen's second list can never silently drift from the Options sub-tab's
+// scrolling behavior.
+func (m globalGitModel) ggitSetKeysComputeScrollWindow(totalRows, height int) gitScrollWindow {
+	visible := ggitSetKeysVisibleRowCount(totalRows, height)
+	needsScroll := visible < totalRows
+	windowStart := m.listWindowStart
+	if windowStart < 0 {
+		windowStart = 0
+	}
+	maxStart := totalRows - visible
+	if maxStart < 0 {
+		maxStart = 0
+	}
+	if windowStart > maxStart {
+		windowStart = maxStart
+	}
+	w := gitScrollWindow{needsScroll: needsScroll, windowStart: windowStart, visibleRows: visible}
+	if !needsScroll {
+		return w
+	}
+	hiddenBelow := windowStart+visible < totalRows
+	if hiddenBelow {
+		w.cue = gitCueDown
+		w.hiddenCount = totalRows - (windowStart + visible)
+		return w
+	}
+	w.cue = gitCueUp
+	w.hiddenCount = windowStart
+	return w
+}
+
+// ggitSetKeysRowForScreenRow maps a body-relative screen row (y -
+// ggitSetKeysTopLines()) to the key-row index the user is pointing at,
+// honoring the scroll window and treating the reserved cue line as inert —
+// the ONE-line-per-row mirror of gitRowForScreenRow (which assumes
+// optionRow's 2-line shape and therefore cannot be reused verbatim here),
+// mirroring gssPropertiesRowForScreenRow.
+func ggitSetKeysRowForScreenRow(w gitScrollWindow, y int) (idx int, ok bool) {
+	if !w.needsScroll {
+		return w.windowStart + y, y >= 0 && y < w.visibleRows
+	}
+	switch w.cue {
+	case gitCueUp:
+		if y == 0 {
+			return 0, false // the cue line itself
+		}
+		row := y - 1
+		return w.windowStart + row, row >= 0 && row < w.visibleRows
+	default: // gitCueDown
+		return w.windowStart + y, y >= 0 && y < w.visibleRows
+	}
+}
+
+// setKeysFilterRow renders the filter input's live value on the left and
+// the right-aligned match count on the SAME line (09.5-UI-SPEC.md: exactly
+// ONE row — no separate result-count line), mirroring propertiesFilterRow.
+func (m globalGitModel) setKeysFilterRow(width, matchCount int) string {
+	left := " " + m.filter.View()
+	right := fmt.Sprintf(PropsMatchCountFmt, matchCount, len(m.setKeys))
+	pad := width - ansi.StringWidth(left) - ansi.StringWidth(right) - 1
+	if pad < 1 {
+		pad = 1
+	}
+	return ansi.Truncate(left+strings.Repeat(" ", pad)+styleFaint.Render(right), width, "")
+}
+
+// handleSetKeysClick routes clicks on the "Set keys" sub-tab body (below
+// the shared strip, already dispatched by handleClick) — the Set-keys
+// mirror of Global SSH's handlePropertiesClick verbatim: a click on the
+// filter row focuses the filter, a click on a master-list row selects it,
+// everything else (the error state, the detail pane, out-of-bounds clicks)
+// is inert.
+func (m globalGitModel) handleSetKeysClick(x, y, width, height int) keyResult {
+	if m.setKeysErr != "" {
+		return keyResult{model: m}
+	}
+	if y == subTabStripRows() {
+		m.filterFocused = true
+		m.filter.Focus()
+		return keyResult{model: m, handled: true}
+	}
+	if x >= masterListWidth(width) || y < ggitSetKeysTopLines() {
+		return keyResult{model: m}
+	}
+	filtered := m.ggitFilteredKeys()
+	w := m.ggitSetKeysComputeScrollWindow(len(filtered), height)
+	row, ok := ggitSetKeysRowForScreenRow(w, y-ggitSetKeysTopLines())
+	if !ok || row >= len(filtered) {
+		return keyResult{model: m}
+	}
+	m.setKeysDetailKey = filtered[row].Key
+	return keyResult{model: m, handled: true}
+}
+
+// setKeyRow renders one master-list "Set keys" row: a leading space, the
+// key (padded for column alignment), then the value — ONE line (not
+// optionRow's 2-line shape: this list has no toggle/apply affordance and
+// needs no sub-line budget), truncated with a visible cue. Mirrors
+// propertyRow verbatim, reusing propKeyColumnWidth (screen-agnostic despite
+// its prop* naming — the SAME column width both browsers use).
+func setKeyRow(k GitSetKeyView, selected bool, width int) string {
+	key := styleBold.Render(k.Key)
+	if selected {
+		key = styleSelected.Render(k.Key)
+	}
+	marker := "  "
+	if selected {
+		marker = styleBold.Render("▸ ")
+	}
+	line := " " + marker + padDisplay(key, propKeyColumnWidth) + k.Value
+	return truncLine(line, width)
+}
+
+// renderSetKeys renders the "Set keys" sub-tab's flat, filterable
+// master-detail body (PROP-02): the shared strip, the filter row with its
+// live match count, the one-line-per-key master list (reusing
+// ggitSetKeysComputeScrollWindow/gitCueLine), the detail pane (full key,
+// full unclipped value, the origin path, the scope word, and — only when
+// PolicyBacked — the frozen cross-reference note, reusing plan 09.5-01's
+// PropsCrossReferenceNote constant rather than declaring a Git-specific
+// twin), and the two DISTINCT empty states (probe failure vs. genuinely
+// zero keys set).
+func (m globalGitModel) renderSetKeys(strip string, width, height int) string {
+	if m.setKeysErr != "" {
+		return strip + "\n " +
+			styleWarning.Render(PropsGitProbeFailedHeading) + "\n\n " +
+			styleFaint.Render(PropsGitProbeFailedBody)
+	}
+
+	filtered := m.ggitFilteredKeys()
+	body := strip + "\n" + m.setKeysFilterRow(width, len(filtered)) + "\n"
+
+	// WR-17-class guard (mirrors renderOptions/renderProperties): a Backend
+	// implementation may legitimately return (nil, nil) — zero rows, no
+	// error. This is a DIFFERENT, non-alarming state from a filter matching
+	// nothing below — no `!` prefix, styleFaint not styleWarning.
+	if len(m.setKeys) == 0 {
+		return body + " " + styleFaint.Render(PropsGitNoKeysSet)
+	}
+	if len(filtered) == 0 {
+		return body + " " + styleFaint.Render(fmt.Sprintf(PropsGitNoFilterMatchFmt, m.filter.Value()))
+	}
+
+	listWidth := masterListWidth(width)
+	detailWidth := width - listWidth - masterDetailGutter
+	rows := frameBodyRows(height) - ggitSetKeysTopLines()
+
+	selIdx := m.ggitSetKeysDetailIndex(filtered)
+	w := m.ggitSetKeysComputeScrollWindow(len(filtered), height)
+	visible := filtered
+	if w.needsScroll {
+		visible = filtered[w.windowStart : w.windowStart+w.visibleRows]
+	}
+	var listRows []string
+	if w.cue == gitCueUp {
+		listRows = append(listRows, gitCueLine(w))
+	}
+	for i, k := range visible {
+		absoluteIdx := w.windowStart + i
+		listRows = append(listRows, setKeyRow(k, absoluteIdx == selIdx, listWidth))
+	}
+	if w.cue == gitCueDown {
+		listRows = append(listRows, gitCueLine(w))
+	}
+	list := strings.Join(listRows, "\n")
+
+	detail := filtered[selIdx]
+	var d strings.Builder
+	d.WriteString(" " + styleBold.Render(detail.Key) + "\n\n")
+	d.WriteString(lipgloss.NewStyle().Width(detailWidth).Render(" "+detail.Value) + "\n\n")
+	if detail.Origin != "" {
+		d.WriteString(" " + styleFaint.Render(detail.Origin) + "\n")
+	}
+	if detail.Scope != "" {
+		d.WriteString(" " + styleFaint.Render(detail.Scope) + "\n")
+	}
+	if detail.PolicyBacked {
+		// Informational only: never a second interactive affordance, and the
+		// value is never rendered twice side-by-side (09.5-CONTEXT.md).
+		// Reuses plan 09.5-01's PropsCrossReferenceNote constant verbatim —
+		// no Git-specific twin.
+		d.WriteString(" " + styleFaint.Render(PropsCrossReferenceNote) + "\n")
+	}
+	detailPane := fitPane(lipgloss.NewStyle().Width(detailWidth).Render(d.String()), rows)
+
+	return body + joinMasterDetail(list, listWidth, detailPane, rows)
+}
+
 // handleClick implements mouseTarget: a click on an option row's checkbox
 // glyph TOGGLES it like space (GlobalGit.tsx:127 — Checkbox onClick stops
 // propagation), a click elsewhere in the row selects it, and the ceremony's
@@ -1131,11 +1497,8 @@ func (m globalGitModel) handleClick(x, y, width, height int, s DemoState) keyRes
 		}
 		return keyResult{model: m}
 	}
-	if m.subTab != ggitOptions {
-		// Task 2 adds the Set keys sub-tab's own click routing (mirroring
-		// Global SSH's handlePropertiesClick); this sub-tab renders only a
-		// placeholder body in Task 1, so a click below the strip is inert.
-		return keyResult{model: m}
+	if m.subTab == ggitSetKeys {
+		return m.handleSetKeysClick(x, y, width, height)
 	}
 
 	// BL-03 (09.4-REVIEW.md independent re-review): handleKey guards the
@@ -1229,15 +1592,22 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 	}
 
 	if m.subTab == ggitSetKeys {
-		// Task 1 plumbing only — the Set keys BODY (PROP-02) lands in Task 2.
-		// The strip, the keyboard contract (handleKey), the click contract
-		// (handleClick), and the row budget are all real and final here;
-		// only the row data is a placeholder.
-		body := strip + "\n " + styleFaint.Render("Set keys — added in the next task.")
+		// PROP-02 (09.5-02, Task 2): the real "Set keys" body — flat,
+		// filterable, master-detail, mirroring plan 09.5-01's proven SSH
+		// shape.
+		body := m.renderSetKeys(strip, width, height)
+		actions := []FooterAction{{Key: "←→", Label: ggitFooterCycleLabel}}
+		if m.setKeysErr == "" {
+			actions = append(actions,
+				FooterAction{Key: "↑↓", Label: "select"},
+				FooterAction{Key: "/", Label: "filter"},
+			)
+		}
 		return screenView{
-			body:    body,
-			crumbs:  []string{crumb},
-			actions: []FooterAction{{Key: "←→", Label: ggitFooterCycleLabel}},
+			body:         body,
+			crumbs:       []string{crumb},
+			actions:      actions,
+			capturesKeys: m.filterFocused,
 		}
 	}
 

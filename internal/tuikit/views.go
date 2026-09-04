@@ -419,6 +419,23 @@ type SSHDirectiveView struct {
 	PolicyBacked bool
 }
 
+// GitSetKeyView is one row of the "Set keys" sub-tab's flat list (PROP-02,
+// 09.5-02): a git config key actually SET somewhere on the machine — never a
+// catalogue of possible keys, because git's key space is open-ended and has
+// no such catalogue (D-01/D-02). Key is the lowercase spelling `git config
+// --list` emits. Scope and Origin carry the provenance a user needs to tell
+// a system-wide value from one they set themselves.
+type GitSetKeyView struct {
+	Key, Value, Scope, Origin string
+	// PolicyBacked is answered by the backend at the wiring boundary —
+	// tuikit must never import internal/globalgit to ask PolicyFor itself
+	// (the no-backend import-graph gate forbids it). True only when the
+	// key resolves in the live globalgit.Policy table, mirroring
+	// SSHDirectiveView.PolicyBacked's identical rule. This is what the
+	// properties browser's cross-reference note renders from.
+	PolicyBacked bool
+}
+
 // SSHStorageMigrationView is the Storage sub-tab's live preview: the resolved
 // current layout, the requested target, the ceremony heading/targets/backups
 // and the resulting-config bytes PlanMigration produced. The three preview

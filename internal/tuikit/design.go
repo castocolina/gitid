@@ -866,4 +866,29 @@ const (
 	// PropsSSHSourceLine is the detail pane's provenance line — TEST-02's
 	// existing "ssh -G proof" framing, reused verbatim for this browser.
 	PropsSSHSourceLine = "Resolved via ssh -G — reflects Include/Match precedence already applied."
+	// PropsGitSubTabLabel is Global Git's new sub-tab label (09.5-02,
+	// PROP-02) — deliberately NOT "All keys" (09.5-UI-SPEC.md "Ground
+	// truth"): git's key space is open-ended and `git config --list
+	// --show-origin` can only prove what is actually SET, never a
+	// catalogue of every possible key. ggitTabSetKeysLabel derives from
+	// this constant (padding added around it), never restating the text a
+	// second time.
+	PropsGitSubTabLabel = "Set keys"
+	// PropsGitProbeFailedHeading mirrors Global Git's EXISTING optionsErr
+	// inline-warning pattern (globalgit.go), same tone/prefix, new copy for
+	// the "Set keys" sub-tab's own probe failure.
+	PropsGitProbeFailedHeading = "! Git config could not be read."
+	// PropsGitProbeFailedBody is the probe-failure body line — advisory,
+	// fail-open: navigation stays reachable on this state (mirrors the
+	// Options sub-tab's own probe-failure contract).
+	PropsGitProbeFailedBody = "git config --list --show-origin failed — re-enter the screen to retry."
+	// PropsGitNoKeysSet is the Git list's zero-keys-set empty state — a
+	// DIFFERENT state from PropsGitProbeFailedHeading above: a truthful,
+	// non-alarming statement about a fresh machine (no probe error, no `!`
+	// prefix, styleFaint not styleWarning), never interchangeable with the
+	// probe-failure heading.
+	PropsGitNoKeysSet = "No git config keys are set yet."
+	// PropsGitNoFilterMatchFmt is the Git browser's "filter matches
+	// nothing" empty state, carrying the user's filter text.
+	PropsGitNoFilterMatchFmt = "No keys match \"%s\"."
 )

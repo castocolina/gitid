@@ -2434,3 +2434,101 @@ func TestTopLevelArrowHintSuppressedOnGlobalGit(t *testing.T) {
 		t.Errorf("Global Git's footer must advertise its own sub-tab cycle hint %q:\n%s", ggitFooterCycleLabel, view)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Plan 09.5-02 Task 2 — the "Set keys" flat filterable master-detail body:
+// origin/scope rendering and the two distinct empty/error states.
+// ---------------------------------------------------------------------------
+
+// ggitSetKeysApp opens Global Git and navigates to the "Set keys" sub-tab via
+// one → press from the default Options sub-tab.
+func ggitSetKeysApp(t *testing.T, b Backend) App {
+	t.Helper()
+	return pressSeq(t, NewApp(b), "3", "right")
+}
+
+// TestSetKeysListRendersOriginAndScope proves the detail pane for the
+// selected row shows the full value, the origin file path, and the scope
+// word, while the master-list row shows key and value only, truncated with a
+// visible cue — mirroring TestPropertiesDetailPaneShowsFullValueAndSource.
+func TestSetKeysListRendersOriginAndScope(t *testing.T) {
+	longValue := "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec"
+	rows := []GitSetKeyView{{Key: "user.signingkey", Value: longValue, Scope: "global", Origin: "/home/user/.gitconfig"}}
+	a := ggitSetKeysApp(t, stubBackend{gitSetKeys: rows})
+
+	master := regionFlat(a, 0, masterListWidth(minFrameWidth))
+	if strings.Contains(master, longValue) {
+		t.Errorf("master-list row must NOT show the full value: %q", master)
+	}
+	if !strings.Contains(master, "…") {
+		t.Errorf("master-list row must carry the visible truncation cue: %q", master)
+	}
+
+	detail := regionFlat(a, masterListWidth(minFrameWidth)+1, minFrameWidth)
+	if !strings.Contains(detail, longValue) {
+		t.Errorf("detail pane must show the FULL, unclipped value:\ndetail=%q", detail)
+	}
+	if !strings.Contains(detail, "/home/user/.gitconfig") {
+		t.Errorf("detail pane must show the origin file path:\ndetail=%q", detail)
+	}
+	if !strings.Contains(detail, "global") {
+		t.Errorf("detail pane must show the scope word:\ndetail=%q", detail)
+	}
+}
+
+// TestSetKeysTwoDistinctEmptyStates covers the two distinct empty/error
+// bodies: a probe failure renders the frozen Git probe-failure heading in
+// the warning style, and a successful probe returning genuinely zero keys
+// renders the frozen zero-keys sentence in the faint style with no warning
+// glyph — the two bodies must not be interchangeable.
+func TestSetKeysTwoDistinctEmptyStates(t *testing.T) {
+	t.Run("probe failure", func(t *testing.T) {
+		a := ggitSetKeysApp(t, stubBackend{gitSetKeysErr: errGlobalGitTest})
+		view := appView(a)
+		if !strings.Contains(view, PropsGitProbeFailedHeading) {
+			t.Errorf("probe-failure state missing the frozen heading:\n%s", view)
+		}
+		if !strings.Contains(view, PropsGitProbeFailedBody) {
+			t.Errorf("probe-failure state missing the frozen body:\n%s", view)
+		}
+		if strings.Contains(view, PropsGitNoKeysSet) {
+			t.Errorf("probe-failure state must NOT show the zero-keys sentence:\n%s", view)
+		}
+		// Fail-open: a main-tab digit key still switches tabs.
+		a, _ = press(t, a, "1")
+		if !strings.Contains(appView(a), "[1] Identities") {
+			t.Errorf("probe-failure state must stay fail-open (main tab keys still work):\n%s", appView(a))
+		}
+	})
+
+	t.Run("zero keys set, no error", func(t *testing.T) {
+		a := ggitSetKeysApp(t, stubBackend{gitSetKeys: []GitSetKeyView{}})
+		view := appView(a)
+		if !strings.Contains(view, PropsGitNoKeysSet) {
+			t.Errorf("zero-keys-no-error state missing its faint sentence:\n%s", view)
+		}
+		if strings.Contains(view, PropsGitProbeFailedHeading) {
+			t.Errorf("zero-keys-no-error state must NOT show the probe-failure heading:\n%s", view)
+		}
+		if strings.Contains(view, "!") && strings.Contains(view, PropsGitNoKeysSet) {
+			// The faint sentence itself must not be preceded by a warning
+			// glyph — the two states are visually distinct, not just
+			// textually distinct.
+			idx := strings.Index(view, PropsGitNoKeysSet)
+			if idx >= 2 && view[idx-2] == '!' {
+				t.Errorf("zero-keys-no-error state must not carry a warning glyph:\n%s", view)
+			}
+		}
+	})
+
+	t.Run("filter matches zero rows", func(t *testing.T) {
+		rows := []GitSetKeyView{{Key: "user.name", Value: "Ada"}}
+		a := pressSeq(t, ggitSetKeysApp(t, stubBackend{gitSetKeys: rows}), "/")
+		a = typeText(t, a, "zzz")
+		view := appView(a)
+		want := fmt.Sprintf(PropsGitNoFilterMatchFmt, "zzz")
+		if !strings.Contains(view, want) {
+			t.Errorf("filter-zero-match state missing %q:\n%s", want, view)
+		}
+	})
+}

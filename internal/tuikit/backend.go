@@ -358,6 +358,38 @@ func (NoopSSHPropertiesBrowser) AllSSHDirectives() ([]SSHDirectiveView, error) {
 
 var _ SSHPropertiesBrowser = NoopSSHPropertiesBrowser{}
 
+// ErrGitPropertiesBrowserNotImplemented is the sentinel
+// NoopGitPropertiesBrowser returns. Fixtures and test stubs embed the noop
+// and override only the methods they exercise; a missing real
+// implementation must be a compile error, not this sentinel at runtime.
+var ErrGitPropertiesBrowserNotImplemented = errors.New("git properties browser not implemented")
+
+// GitPropertiesBrowser is the Phase 9.5 "Set keys" sub-tab seam (PROP-02):
+// the ONE method that returns every git config key actually set on the
+// machine. Deliberately kept to ONE method, mirroring SSHPropertiesBrowser —
+// plan 09.5-03 adds the custom-key WRITE methods as their OWN separate
+// interface.
+type GitPropertiesBrowser interface {
+	// AllGitSetKeys returns every git config key actually set, with its
+	// value, scope, and origin. A non-nil error must fail loosely: the pane
+	// renders an inline warning and stays fail-open, never a blank body.
+	AllGitSetKeys() ([]GitSetKeyView, error)
+}
+
+// NoopGitPropertiesBrowser implements GitPropertiesBrowser with
+// ErrGitPropertiesBrowserNotImplemented. Fixtures and test stubs embed it
+// and override only what they exercise. The REAL backend must NOT embed
+// it — a missing real implementation must be a compile error, pinned by the
+// compile-time assertion in cmd/gitid/wiring.go and a reflection test.
+type NoopGitPropertiesBrowser struct{}
+
+// AllGitSetKeys implements GitPropertiesBrowser.
+func (NoopGitPropertiesBrowser) AllGitSetKeys() ([]GitSetKeyView, error) {
+	return nil, ErrGitPropertiesBrowserNotImplemented
+}
+
+var _ GitPropertiesBrowser = NoopGitPropertiesBrowser{}
+
 // backend.go defines the ONE injected seam this package is built around.
 //
 // tuikit renders the approved, frozen gitid design. It never reads or
@@ -409,6 +441,11 @@ type Backend interface {
 	// compile error, pinned by wiring.go's compile-time assertion and by a
 	// reflection test.
 	SSHPropertiesBrowser
+	// GitPropertiesBrowser: Phase 9.5 plan 09.5-02's "Set keys" sub-tab seam
+	// (PROP-02). The real backend must NOT embed NoopGitPropertiesBrowser —
+	// a missing real implementation must be a compile error, pinned by
+	// wiring.go's compile-time assertion and by a reflection test.
+	GitPropertiesBrowser
 
 	// ----- Data -------------------------------------------------------
 

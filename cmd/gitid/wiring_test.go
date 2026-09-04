@@ -115,6 +115,45 @@ func TestBuildTUIDepsWiresSSHPropertiesBrowser(t *testing.T) {
 	}
 }
 
+// TestRealBackendDoesNotEmbedNoopGitPropertiesBrowser is plan 09.5-02's L2
+// injected-seam guard for the "Set keys" sub-tab (PROP-02), mirroring
+// TestRealBackendDoesNotEmbedNoopSSHPropertiesBrowser's shape.
+func TestRealBackendDoesNotEmbedNoopGitPropertiesBrowser(t *testing.T) {
+	var _ tuikit.GitPropertiesBrowser = (*realBackend)(nil)
+	rt := reflect.TypeOf(realBackend{})
+	for i := range rt.NumField() {
+		if rt.Field(i).Type == reflect.TypeOf(tuikit.NoopGitPropertiesBrowser{}) {
+			t.Fatal("realBackend must not embed NoopGitPropertiesBrowser — a missing real implementation must be a compile error")
+		}
+	}
+}
+
+// TestBuildTUIDepsWiresGitPropertiesBrowser extends the standing nil-guard
+// test (TestBuildBackendSatisfiesSeam above): the REAL constructor's backend
+// answers AllGitSetKeys() without ever returning
+// ErrGitPropertiesBrowserNotImplemented — i.e. realBackend does not merely
+// look wired, it IS wired to the real globalgit.AllSetKeys engine. This
+// closes the project's documented injected-seam wiring blindspot for the
+// new seam this plan introduces, mirroring
+// TestBuildTUIDepsWiresSSHPropertiesBrowser's shape.
+func TestBuildTUIDepsWiresGitPropertiesBrowser(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	b := buildBackend()
+	views, err := b.AllGitSetKeys()
+	if errors.Is(err, tuikit.ErrGitPropertiesBrowserNotImplemented) {
+		t.Fatal("buildBackend()'s AllGitSetKeys returned the Noop sentinel — the real seam is not wired")
+	}
+	if err != nil {
+		// A real probe error (no git on PATH, etc.) is an acceptable outcome
+		// for this guard — the point is that it is a REAL error from the
+		// real engine, never the not-implemented sentinel above.
+		return
+	}
+	if views == nil {
+		t.Fatal("buildBackend()'s AllGitSetKeys returned (nil, nil) — want a real, non-nil slice (even if empty, it must not be nil) on a machine with git installed")
+	}
+}
+
 func TestGitFallbackAuthorVerifySeamIsRealWired(t *testing.T) {
 	b := newBackendForHome(t.TempDir())
 	if b.verifyAuthorResolution != nil {

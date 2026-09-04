@@ -164,6 +164,13 @@ type stubBackend struct {
 	// opt out of a canned error), so the embed is a compile-time safety net
 	// only, never actually reached.
 	NoopSSHPropertiesBrowser
+	// NoopGitPropertiesBrowser is embedded for the SAME reason
+	// NoopSSHPropertiesBrowser is above: AllGitSetKeys is overridden directly
+	// below (an empty, successful default rather than the Noop sentinel —
+	// most tests never touch the Set-keys sub-tab and should not have to
+	// opt out of a canned error), so the embed is a compile-time safety net
+	// only, never actually reached.
+	NoopGitPropertiesBrowser
 	gitStepAlwaysDisabled bool
 	gitStepReason         string
 	keyActionErr          error
@@ -184,6 +191,11 @@ type stubBackend struct {
 	// comment above for why this default is a success, not the Noop error).
 	sshDirectives    []SSHDirectiveView
 	sshDirectivesErr error
+	// Git properties (plan 09.5-02) seam overrides — zero values keep an
+	// empty, successful default (see the NoopGitPropertiesBrowser doc
+	// comment above for why this default is a success, not the Noop error).
+	gitSetKeys    []GitSetKeyView
+	gitSetKeysErr error
 	// Global-Git seam overrides (zero values keep the fixture projection from
 	// fixtureGlobalGitOptionViews() below — mirrors the SSH seam pattern).
 	gitOptions     []GlobalGitOptionView
@@ -744,6 +756,16 @@ func (b stubBackend) AllSSHDirectives() ([]SSHDirectiveView, error) {
 		return nil, b.sshDirectivesErr
 	}
 	return b.sshDirectives, nil
+}
+
+// AllGitSetKeys returns the test override when set, otherwise an empty,
+// successful slice — see the NoopGitPropertiesBrowser doc comment above for
+// why this default is a success rather than the Noop sentinel.
+func (b stubBackend) AllGitSetKeys() ([]GitSetKeyView, error) {
+	if b.gitSetKeysErr != nil {
+		return nil, b.gitSetKeysErr
+	}
+	return b.gitSetKeys, nil
 }
 
 // fixtureSSHStorageView returns the frozen STORE-01 previews so a zero-value
