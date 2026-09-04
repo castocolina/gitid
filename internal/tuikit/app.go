@@ -674,10 +674,11 @@ func (a App) render() string {
 	case overlayNone:
 	}
 	// D4 (checkpoint-2 contract): advertise the top-level plain-arrow view
-	// switch on non-capturing states, EXCEPT Global SSH — its own ←/→
-	// already means "Options / Storage" there (that footer hint stays;
-	// top-level arrows never reach the tab switcher from that screen).
-	if a.overlay == overlayNone && !capturesKeys && a.tab != TabGlobalSSH {
+	// switch on non-capturing states, EXCEPT Global SSH and Global Git —
+	// each screen's own ←/→ already means "switch sub-tab" there (that
+	// footer hint stays; top-level arrows never reach the tab switcher from
+	// either screen). Global Git gained its own sub-tab strip in 09.5-02.
+	if a.overlay == overlayNone && !capturesKeys && a.tab != TabGlobalSSH && a.tab != TabGlobalGit {
 		actions = append(actions, FooterAction{Key: "←→", Label: "switch view"})
 	}
 	return RenderFrame(a.width, a.height, a.state, a.tab, crumbs, status, tone, actions, capturesKeys, body)

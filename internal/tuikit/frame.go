@@ -129,6 +129,47 @@ func sectionHeader(text string) string {
 	return " " + styleSection.Render(text)
 }
 
+// subTabStripRows returns the number of rows the bordered sub-tab strip
+// occupies — the SINGLE source of truth for the strip's height, shared by
+// EVERY screen that renders one: Global SSH's own strip (Phase 9.4's UXP-04
+// origin) and Global Git's (09.5-02, its first). All consumers on both
+// screens (renderOptions/renderStorage/renderProperties/gssOptionsTopLines
+// on Global SSH; the equivalent render + gitTopLines helpers on Global Git)
+// must derive from this, never a hardcoded literal (D-D).
+func subTabStripRows() int {
+	return 3 // top border + labels + bottom border
+}
+
+// renderSubTabStrip renders a bordered box containing labels, with the
+// label at index active reverse-video styled to mark it current — the ONE
+// shared bordered sub-tab strip renderer for every screen with a sub-tab
+// strip (D-D, 09.5-02). Extracted verbatim from globalSSHModel.subTabStrip
+// (Phase 9.4's UXP-04 origin, the reference implementation): the same
+// dashed border runes, the same DefaultTheme.Accent foreground, the same
+// styleReverse active-label treatment, and the same one-space lead /
+// one-space gap composition — a move, not a restyle. Do not create a second
+// bordered-strip implementation anywhere in this package (`grep -rc
+// 'strings.Repeat("╌"'` must show exactly one file).
+func renderSubTabStrip(labels []string, active int) string {
+	rendered := make([]string, len(labels))
+	for i, l := range labels {
+		if i == active {
+			rendered[i] = styleReverse.Render(l)
+		} else {
+			rendered[i] = l
+		}
+	}
+	label := " " + strings.Join(rendered, " ")
+
+	accentBorder := lipgloss.NewStyle().Foreground(DefaultTheme.Accent)
+	width := lipgloss.Width(label) + 2 // label + 2 for the side borders
+	topBorder := "╭" + strings.Repeat("╌", width) + "╮"
+	labelLine := "┊ " + label + " ┊"
+	bottomBorder := "╰" + strings.Repeat("╌", width) + "╯"
+
+	return accentBorder.Render(topBorder) + "\n" + accentBorder.Render(labelLine) + "\n" + accentBorder.Render(bottomBorder)
+}
+
 // joinMasterDetail joins a master column and its detail pane with the
 // full-height vertical divider every master-detail screen shares (review
 // batch 2, H2 — the web outlines both panes as Paper cards). The divider

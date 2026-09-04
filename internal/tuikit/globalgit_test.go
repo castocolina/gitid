@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	lipgloss "charm.land/lipgloss/v2"
 )
 
 // ggitApp returns an App on the Global Git tab.
@@ -35,15 +36,26 @@ func TestGlobalGitRendersAllElevenRows(t *testing.T) {
 	if got := len(GlobalGitOptions); got != 12 {
 		t.Fatalf("fixture rows = %d, want 12 (D-08 + D-07)", got)
 	}
-	view := appView(ggitApp(t))
+	// 09.5-02, Task 1: the sub-tab strip's +3 rows shrink the visible-row
+	// budget below all 12 rows fitting in one un-scrolled screenful
+	// (measured: TestGlobalGitFitsFixedGeometryWithStrip) — the pre-existing
+	// scroll-window mechanism (gitComputeScrollWindow) handles this exactly
+	// as designed, so every key is checked reachable across the top view
+	// AND the bottom-scrolled view, not a single un-scrolled screenful.
+	a := ggitApp(t)
+	top := appView(a)
+	for i := 0; i < 11; i++ {
+		a, _ = press(t, a, "down")
+	}
+	bottom := appView(a)
 	for _, key := range []string{
 		"init.defaultBranch", "core.ignorecase", "core.autocrlf / core.eol",
 		"user.email (global fallback)", "user.useConfigOnly", "push.autoSetupRemote", "pull.rebase",
 		"fetch.prune", "alias (8 shortcuts)", "color (ui/branch/diff/status)",
 		"merge.conflictstyle", "diff.colorMoved",
 	} {
-		if !strings.Contains(view, key) {
-			t.Errorf("row %q missing", key)
+		if !strings.Contains(top, key) && !strings.Contains(bottom, key) {
+			t.Errorf("row %q missing from both the top and bottom-scrolled views", key)
 		}
 	}
 }
@@ -1631,8 +1643,12 @@ func TestGlobalGitClickOnNonSelectableRowChecksNothing(t *testing.T) {
 	rows[8].HasWritableMember = false
 	b := stubBackend{gitOptions: rows}
 	a, _ := press(t, NewApp(b), "3")
-	// Scroll so row 8 is the window-start (visually-first) row.
-	for i := 0; i < 18; i++ {
+	// Scroll so row 8 is the window-start (visually-first) row. 17 (not 18)
+	// downs — 09.5-02, Task 1's sub-tab strip cost this screen 3 more
+	// gitTopLines rows, shrinking the visible-row budget by one row, so the
+	// window now reaches windowStart=8 one "down" press earlier than before
+	// the strip was added.
+	for i := 0; i < 17; i++ {
 		a, _ = press(t, a, "down")
 	}
 	m := ggitModel(t, a)
@@ -2120,5 +2136,301 @@ func TestGitRowBudgetHeightFloorsAtMinFrameHeight(t *testing.T) {
 	m = res.model.(globalGitModel)
 	if got := m.rowBudgetHeight(); got != minFrameHeight {
 		t.Errorf("rowBudgetHeight() after a sub-minFrameHeight resize = %d, want the minFrameHeight floor (%d)", got, minFrameHeight)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 09.5-02, Task 1: Global Git's FIRST sub-tab strip.
+// ---------------------------------------------------------------------------
+
+// referenceGlobalGitOptionsBody is a byte-for-byte transcription of
+// globalGitModel.view's pre-09.5-02 body-construction logic (populated,
+// optionsErr, and zero-options branches), captured from
+// `git show f9a04ce:internal/tuikit/globalgit.go` — the commit immediately
+// before this plan's Task 1 change. It exists ONLY so
+// TestGlobalGitOptionsSubTabContentUnchanged can compare against a literal
+// captured from the PRE-CHANGE render, never against a re-render of the new
+// code path (which would be tautological). Do not "simplify" this by calling
+// the live view() — that defeats the entire point of the regression guard.
+func referenceGlobalGitOptionsBody(m globalGitModel, s DemoState, width, height int) string {
+	options := m.overlaidGitOptions(s)
+
+	if m.optionsErr != "" {
+		body := ""
+		if banner := findingsBanner(s, "Git", gitBannerBeyond); banner != "" {
+			body = banner + "\n"
+		}
+		body += " " + styleWarning.Render("! "+m.optionsErr) + "\n\n " +
+			styleFaint.Render("The option states could not be read from this machine.")
+		return body
+	}
+
+	if len(options) == 0 {
+		body := ""
+		if banner := findingsBanner(s, "Git", gitBannerBeyond); banner != "" {
+			body = banner + "\n"
+		}
+		body += " " + styleFaint.Render("No global Git options to show.")
+		return body
+	}
+
+	listWidth := masterListWidth(width)
+	detailWidth := width - listWidth - masterDetailGutter
+	selIdx := m.gitDetailIndex(options)
+	bodyRows := frameBodyRows(height) - gitTopLines(s)
+
+	scrollWin := m.gitComputeScrollWindow(len(options), s)
+	visible := options
+	if scrollWin.needsScroll {
+		visible = options[scrollWin.windowStart : scrollWin.windowStart+scrollWin.visibleRows]
+	}
+
+	var rows []string
+	if scrollWin.cue == gitCueUp {
+		rows = append(rows, gitCueLine(scrollWin))
+	}
+	for i, o := range visible {
+		absoluteIdx := scrollWin.windowStart + i
+		marker := "  "
+		if absoluteIdx == selIdx {
+			marker = styleBold.Render("▸ ")
+		}
+		box := padDisplay(styleFaint.Render("·"), optionBoxWidth)
+		if o.Selectable() {
+			box = padDisplay(styleFaint.Render(glyphToggleOff), optionBoxWidth)
+			if m.chosen[o.Key] {
+				box = padDisplay(styleHealthy.Bold(true).Render(glyphToggleOn), optionBoxWidth)
+			}
+		}
+		toneGlyph := styleHealthy.Render("✓")
+		switch o.State {
+		case GlobalGitNeedsAction, GlobalGitSetButDiffers:
+			toneGlyph = styleWarning.Render("!")
+		case GlobalGitNotApplicable:
+			toneGlyph = styleFaint.Render("·")
+		}
+		name := styleBold.Render(o.Key)
+		if absoluteIdx == selIdx {
+			name = styleSelected.Render(o.Key)
+		}
+		chip := ""
+		if o.Key == "init.defaultBranch" {
+			chip = "  " + styleWarning.Render("[main vs master]")
+		}
+		rows = append(rows, truncLine(" "+marker+box+toneGlyph+" "+name+chip, listWidth))
+		rows = append(rows, truncLine("      "+styleFaint.Render(globalGitRowLine2(o)), listWidth))
+	}
+	if scrollWin.cue == gitCueDown {
+		rows = append(rows, gitCueLine(scrollWin))
+	}
+	list := strings.Join(rows, "\n")
+
+	detail := options[selIdx]
+	var d strings.Builder
+	if detail.Key == GlobalGitEmailFallbackKey {
+		nameFocused := m.fieldFocus == 0 && m.fieldEditing
+		emailFocused := m.fieldFocus == 1 && m.fieldEditing
+		nameSelected := m.fieldFocus == 0 && !m.fieldEditing
+		emailSelected := m.fieldFocus == 1 && !m.fieldEditing
+		d.WriteString(gitFallbackFieldLine(GlobalGitNameFallbackKey, m.nameInput, nameFocused, nameSelected) + "\n")
+		d.WriteString(gitFallbackFieldLine(GlobalGitEmailFallbackKey, m.emailInput, emailFocused, emailSelected))
+		if !m.emailValid() {
+			d.WriteString("  " + styleError.Render("needs @"))
+		}
+		d.WriteString("\n")
+		d.WriteString(helperLine(GlobalGitEmailFallbackHelper, false) + "\n")
+		d.WriteString(helperLine(GlobalGitEmailFallbackAdvisory, false) + "\n")
+		if strings.TrimSpace(m.emailInput.Value()) != "" && strings.TrimSpace(m.nameInput.Value()) == "" {
+			d.WriteString(" " + styleWarning.Render(GlobalGitGuessedNameWarning) + "\n")
+		}
+	} else {
+		explanation := detail.OneLiner
+		switch detail.Key {
+		case "init.defaultBranch":
+			explanation = GlobalGitDetailExplanation
+		case "core.ignorecase":
+			explanation += " " + GlobalGitCaseSensitivityCaveat
+		}
+		d.WriteString(" " + styleBold.Render(detail.Key) + "\n")
+		d.WriteString(" " + styleInfo.Render("~ "+GlobalGitAdvisoryNote) + "\n\n")
+		d.WriteString(" " + explanation + "\n")
+		for _, note := range detail.BundlePerKeyNotes {
+			d.WriteString(" " + styleFaint.Render(note) + "\n")
+		}
+		if detail.GateNotMet {
+			d.WriteString(" " + styleWarning.Render(GlobalGitConflictStyleGateNote) + "\n")
+		}
+		if detail.Key == "user.useConfigOnly" && m.chosen["user.useConfigOnly"] {
+			name, email := strings.TrimSpace(m.nameInput.Value()), strings.TrimSpace(m.emailInput.Value())
+			switch {
+			case email != "" && name == "":
+				d.WriteString(" " + styleWarning.Render(GlobalGitCrossWarningNameMissing) + "\n")
+			case name != "" && email == "":
+				d.WriteString(" " + styleWarning.Render(GlobalGitCrossWarningEmailMissing) + "\n")
+			}
+		}
+		if detail.VersionNote != "" {
+			d.WriteString(" " + styleFaint.Render(" "+detail.VersionNote) + "\n")
+		}
+		if detail.Provenance != "" {
+			d.WriteString(" " + styleFaint.Render(detail.Provenance) + "\n")
+		}
+		if detail.ProbeError != "" {
+			d.WriteString(" " + styleWarning.Render("! "+detail.ProbeError) + "\n")
+		}
+	}
+	detailPane := fitPane(lipgloss.NewStyle().Width(detailWidth).Render(d.String()), bodyRows)
+
+	body := ""
+	if banner := findingsBanner(s, "Git", gitBannerBeyond); banner != "" {
+		body = banner + "\n"
+	}
+	body += joinMasterDetail(list, listWidth, detailPane, bodyRows)
+	return body
+}
+
+// TestGlobalGitOptionsSubTabContentUnchanged asserts that, with the model on
+// ggitOptions, the body BELOW the new sub-tab strip is byte-identical to the
+// pre-strip body for the populated state, the optionsErr state, and the
+// zero-options state — Global Git's existing content is re-homed, not
+// rewritten. The comparison is against referenceGlobalGitOptionsBody, a
+// transcription of the PRE-CHANGE code (see its doc comment), never a
+// re-render of the new code path.
+func TestGlobalGitOptionsSubTabContentUnchanged(t *testing.T) {
+	strip := renderSubTabStrip([]string{ggitTabOptionsLabel, ggitTabSetKeysLabel}, int(ggitOptions))
+	prefix := strip + "\n"
+
+	t.Run("populated", func(t *testing.T) {
+		a := ggitApp(t)
+		m := ggitModel(t, a)
+		got := m.view(a.state, minFrameWidth, minFrameHeight).body
+		want := prefix + referenceGlobalGitOptionsBody(m, a.state, minFrameWidth, minFrameHeight)
+		if got != want {
+			t.Errorf("populated body diverged below the strip:\ngot:\n%s\nwant:\n%s", got, want)
+		}
+	})
+
+	t.Run("optionsErr", func(t *testing.T) {
+		b := stubBackend{gitOptionsErr: errGlobalGitTest}
+		a, _ := press(t, NewApp(b), "3")
+		m := ggitModel(t, a)
+		got := m.view(a.state, minFrameWidth, minFrameHeight).body
+		want := prefix + referenceGlobalGitOptionsBody(m, a.state, minFrameWidth, minFrameHeight)
+		if got != want {
+			t.Errorf("optionsErr body diverged below the strip:\ngot:\n%s\nwant:\n%s", got, want)
+		}
+	})
+
+	t.Run("zero-options", func(t *testing.T) {
+		b := stubBackend{gitOptions: []GlobalGitOptionView{}}
+		m := newGlobalGitModel(b)
+		next, _ := m.activate(Seed())
+		gm := next.(globalGitModel)
+		got := gm.view(Seed(), minFrameWidth, minFrameHeight).body
+		want := prefix + referenceGlobalGitOptionsBody(gm, Seed(), minFrameWidth, minFrameHeight)
+		if got != want {
+			t.Errorf("zero-options body diverged below the strip:\ngot:\n%s\nwant:\n%s", got, want)
+		}
+	})
+}
+
+// TestGlobalGitSubTabSwitching asserts left/right on Global Git move between
+// ggitOptions and ggitSetKeys in opposite directions and are reported
+// handled, so they never reach app.go's main-tab switcher.
+func TestGlobalGitSubTabSwitching(t *testing.T) {
+	a := ggitApp(t)
+	m := ggitModel(t, a)
+	if m.subTab != ggitOptions {
+		t.Fatalf("initial subTab = %v, want ggitOptions", m.subTab)
+	}
+
+	res := m.handleKey(pressKey("right"), a.state)
+	if !res.handled {
+		t.Error("right on Global Git must be reported handled")
+	}
+	m = res.model.(globalGitModel)
+	if m.subTab != ggitSetKeys {
+		t.Errorf("subTab after right = %v, want ggitSetKeys", m.subTab)
+	}
+
+	res = m.handleKey(pressKey("right"), a.state)
+	m = res.model.(globalGitModel)
+	if m.subTab != ggitOptions {
+		t.Errorf("subTab after a second right = %v, want ggitOptions (wraps)", m.subTab)
+	}
+
+	res = m.handleKey(pressKey("left"), a.state)
+	if !res.handled {
+		t.Error("left on Global Git must be reported handled")
+	}
+	m = res.model.(globalGitModel)
+	if m.subTab != ggitSetKeys {
+		t.Errorf("subTab after left from ggitOptions = %v, want ggitSetKeys (wraps the other way)", m.subTab)
+	}
+}
+
+// TestGlobalGitSubTabStripClickSwitches verifies that clicking on either
+// sub-tab label switches sub-tabs, using the actual rendered coordinates —
+// mirroring TestSubTabStripClickSwitchesSubTabs on Global SSH.
+func TestGlobalGitSubTabStripClickSwitches(t *testing.T) {
+	a := ggitApp(t)
+	m := ggitModel(t, a)
+	if m.subTab != ggitOptions {
+		t.Fatalf("initial subTab = %v, want ggitOptions", m.subTab)
+	}
+
+	a = clickCell(t, a, "Set keys", 0, 0)
+	m = ggitModel(t, a)
+	if m.subTab != ggitSetKeys {
+		t.Errorf("subTab after clicking the Set keys label = %v, want ggitSetKeys", m.subTab)
+	}
+
+	a = clickCell(t, a, "Options", 0, 0)
+	m = ggitModel(t, a)
+	if m.subTab != ggitOptions {
+		t.Errorf("subTab after clicking the Options label = %v, want ggitOptions", m.subTab)
+	}
+}
+
+// TestGlobalGitFitsFixedGeometryWithStrip measures the Options sub-tab's
+// body — in its tallest variant (findings banner present, the full baseline
+// list, the D9 fallback-author row included) — against frameBodyRows after
+// the strip's rows, at the fixed 100x30 geometry. Logs available/used/
+// difference so the row-budget decision (three-row box vs. the one-row
+// title-in-top-border fallback) is a MEASURED number, not an assumption
+// (09.5-UI-SPEC.md).
+func TestGlobalGitFitsFixedGeometryWithStrip(t *testing.T) {
+	a := ggitApp(t) // stubBackend{}'s default state carries Git findings (banner present) and the full 12-row GlobalGitOptions catalog (D9 fallback-author row included).
+	m := ggitModel(t, a)
+	view := m.view(a.state, a.width, a.height)
+	usedRows := len(strings.Split(view.body, "\n"))
+	availRows := frameBodyRows(a.height)
+	diff := availRows - usedRows
+	t.Logf("Options sub-tab, tallest variant: available=%d used=%d difference=%d", availRows, usedRows, diff)
+	if usedRows > availRows {
+		t.Errorf("Options sub-tab body exceeds the fixed 100x30 geometry after the strip: used=%d, available=%d", usedRows, availRows)
+	}
+}
+
+// TestTopLevelArrowHintSuppressedOnGlobalGit asserts the app footer no
+// longer appends the top-level ←/→ "switch view" hint while Global Git is
+// active — that key now means "switch sub-tab" on this screen (09.5-02,
+// mirroring the identical exclusion Global SSH has carried since Phase
+// 9.4/UXP-04).
+func TestTopLevelArrowHintSuppressedOnGlobalGit(t *testing.T) {
+	// Doctor (tab 4), not Identities: the Identities screen's own contextual
+	// footer actions are dense enough that footerFit drops the top-level
+	// hint for width, independent of the D4 exclusion this test targets.
+	a, _ := press(t, NewApp(stubBackend{}), "4")
+	if !strings.Contains(appView(a), "switch view") {
+		t.Fatal("setup: Doctor tab must still advertise the top-level switch-view hint")
+	}
+	a, _ = press(t, a, "3") // Global Git
+	view := appView(a)
+	if strings.Contains(view, "switch view") {
+		t.Errorf("Global Git's footer must not advertise the top-level switch-view hint:\n%s", view)
+	}
+	if !strings.Contains(view, ggitFooterCycleLabel) {
+		t.Errorf("Global Git's footer must advertise its own sub-tab cycle hint %q:\n%s", ggitFooterCycleLabel, view)
 	}
 }

@@ -759,3 +759,88 @@ func TestBreadcrumbKeepsFullLabels(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// 09.5-02, Task 1: the shared sub-tab strip renderer (D-D extraction).
+// ---------------------------------------------------------------------------
+
+// TestSharedSubTabStripRendersBorderedBox asserts renderSubTabStrip returns
+// exactly subTabStripRows() lines for both a two-label and a three-label
+// input, bordered with the dashed border runes in the accent color, with
+// ONLY the active label reverse-video styled.
+func TestSharedSubTabStripRendersBorderedBox(t *testing.T) {
+	cases := []struct {
+		name   string
+		labels []string
+		active int
+	}{
+		{"two-label", []string{" Options ", " Set keys "}, 0},
+		{"three-label", []string{" Options ", " Storage & preview ", " All directives "}, 2},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := renderSubTabStrip(c.labels, c.active)
+			lines := strings.Split(got, "\n")
+			if len(lines) != subTabStripRows() {
+				t.Fatalf("renderSubTabStrip(%v, %d) returned %d lines, want subTabStripRows() = %d", c.labels, c.active, len(lines), subTabStripRows())
+			}
+			plain0, plain2 := ansi.Strip(lines[0]), ansi.Strip(lines[2])
+			if !strings.HasPrefix(plain0, "╭") || !strings.HasSuffix(plain0, "╮") {
+				t.Errorf("top border = %q, want ╭...╮", plain0)
+			}
+			if !strings.HasPrefix(plain2, "╰") || !strings.HasSuffix(plain2, "╯") {
+				t.Errorf("bottom border = %q, want ╰...╯", plain2)
+			}
+			if !strings.Contains(lines[0], "╌") {
+				t.Errorf("top border must use the dashed ╌ rune, got %q", lines[0])
+			}
+			// Only the active label is reverse-video (raw SGR 7) styled — a
+			// plain substring-contains check for the label text alone would
+			// pass even if the reverse styling were lost entirely.
+			wantReversed := "\x1b[7m" + c.labels[c.active] + "\x1b[m"
+			if !strings.Contains(lines[1], wantReversed) {
+				t.Errorf("active label %q must be styleReverse-marked in the label row, got: %q", c.labels[c.active], lines[1])
+			}
+			for i, l := range c.labels {
+				if i == c.active {
+					continue
+				}
+				if strings.Contains(lines[1], "\x1b[7m"+l+"\x1b[m") {
+					t.Errorf("inactive label %q must NOT be styleReverse-marked, got: %q", l, lines[1])
+				}
+			}
+		})
+	}
+}
+
+// referenceGlobalSSHSubTabStrips holds the EXACT byte literals
+// globalSSHModel.subTabStrip's pre-09.5-02 code produced for each of its
+// three active-sub-tab states — captured verbatim from a render of the
+// pre-extraction implementation (`git show
+// f9a04ce:internal/tuikit/globalssh.go`, the commit immediately before this
+// plan's Task 1 extraction), NOT reconstructed by re-deriving the dashed
+// border-rune composition here (D-D: that composition call lives in exactly
+// ONE file, frame.go — a second occurrence in test code would defeat that
+// guarantee). This is what makes
+// TestGlobalSSHStripUnchangedAfterExtraction a comparison against a literal
+// captured from the pre-extraction render, not a re-render of the new
+// shared helper on both sides (which would be tautological).
+var referenceGlobalSSHSubTabStrips = map[gssSubTab]string{
+	gssOptions:    "\x1b[34m╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮\x1b[m\n\x1b[34m┊  \x1b[7m Options \x1b[m  Storage & preview   All directives  ┊\x1b[m\n\x1b[34m╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯\x1b[m",
+	gssStorage:    "\x1b[34m╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮\x1b[m\n\x1b[34m┊   Options  \x1b[7m Storage & preview \x1b[m  All directives  ┊\x1b[m\n\x1b[34m╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯\x1b[m",
+	gssProperties: "\x1b[34m╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮\x1b[m\n\x1b[34m┊   Options   Storage & preview  \x1b[7m All directives \x1b[m ┊\x1b[m\n\x1b[34m╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯\x1b[m",
+}
+
+// TestGlobalSSHStripUnchangedAfterExtraction asserts the Global SSH strip's
+// rendered bytes are IDENTICAL before and after the D-D extraction, for each
+// of its three active-sub-tab states.
+func TestGlobalSSHStripUnchangedAfterExtraction(t *testing.T) {
+	for _, subTab := range []gssSubTab{gssOptions, gssStorage, gssProperties} {
+		m := globalSSHModel{subTab: subTab}
+		got := m.subTabStrip()
+		want := referenceGlobalSSHSubTabStrips[subTab]
+		if got != want {
+			t.Errorf("subTab=%v: post-extraction subTabStrip() diverged from the pre-extraction render:\ngot:  %q\nwant: %q", subTab, got, want)
+		}
+	}
+}

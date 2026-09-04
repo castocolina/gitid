@@ -34,11 +34,58 @@ const (
 	gitCeremonyFallback
 )
 
+// Global Git sub-tabs (09.5-02, Task 1) — this screen's FIRST sub-tab strip.
+// ggitOptions carries today's ENTIRE existing content unchanged; ggitSetKeys
+// (PROP-02) lists every git config key actually set on the machine.
+type ggitSubTab int
+
+const (
+	ggitOptions ggitSubTab = iota
+	ggitSetKeys
+)
+
+// Sub-tab strip composition — renderSubTabStrip (frame.go, D-D) renders
+// exactly these labels (with a one-space lead and a one-space gap) and
+// handleClick hit-tests against the same strings, so the spans can never
+// drift. ggitTabSetKeysLabel is a plain literal in this task; Task 2 wires
+// it to derive from design.go's frozen PropsGitSubTabLabel constant (the
+// SAME "one source for the label text" discipline gssTabPropertiesLabel
+// already follows for Global SSH's third label).
+const (
+	ggitTabOptionsLabel = " Options "
+	ggitTabSetKeysLabel = " Set keys "
+)
+
+// ggitFooterCycleLabel is the ←→ footer action's label, naming both
+// sub-tabs — mirrors gssFooterCycleLabel's identical role on Global SSH.
+const ggitFooterCycleLabel = "Options / Set keys"
+
+// ggitNextSubTab returns the sub-tab the → key cycles to: Options → Set
+// keys → Options.
+func ggitNextSubTab(cur ggitSubTab) ggitSubTab {
+	if cur == ggitOptions {
+		return ggitSetKeys
+	}
+	return ggitOptions
+}
+
+// ggitPrevSubTab returns the sub-tab the ← key cycles to. With exactly two
+// sub-tabs both directions toggle the same pair (mirrors gssPrevSubTab's own
+// doc comment about its two-sub-tab era, before Global SSH grew a third) —
+// kept as its own function so a future third Global Git sub-tab does not
+// need to re-derive this split from gssPrevSubTab's history a second time.
+func ggitPrevSubTab(cur ggitSubTab) ggitSubTab {
+	return ggitNextSubTab(cur)
+}
+
 type globalGitModel struct {
 	// backend is the injected options/commit seam. The model fetches the
 	// option states on activation and never renders fixture data for a row
 	// the backend could have answered.
 	backend Backend
+	// subTab is this screen's FIRST sub-tab (09.5-02, Task 1) — ggitOptions
+	// (today's ENTIRE existing content, unchanged) or ggitSetKeys (PROP-02).
+	subTab ggitSubTab
 	// detailKey is the selected option row's key.
 	detailKey string
 	chosen    map[string]bool
@@ -166,6 +213,11 @@ func newGlobalGitModel(b Backend) globalGitModel {
 // as globalSSHModel.activate() already behaves (cited as the precedent for
 // every other Global-* tab).
 func (m globalGitModel) activate(DemoState) (screenModel, tea.Cmd) {
+	// D-01/UXP-01 precedent: every entry to this screen resets to the first
+	// sub-tab, alongside every other per-entry reset below — a screen
+	// re-entered from scratch must not resume wherever a previous visit left
+	// off (09.5-02, Task 1 — this screen's first sub-tab reset).
+	m.subTab = ggitOptions
 	m.chosen = map[string]bool{}
 	m.listWindowStart = 0
 	m.optionsErr = ""
@@ -722,17 +774,42 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 	}
 
 	options := m.overlaidGitOptions(s)
-	if m.optionsErr != "" {
+	if m.subTab == ggitOptions && m.optionsErr != "" {
 		// A failed probe is advisory/fail-open: no rows or apply action are
 		// available, but this screen must not consume navigation keys and
-		// trap the user here (07-UI-SPEC.md RESOLVED "error" row).
+		// trap the user here (07-UI-SPEC.md RESOLVED "error" row) — INCLUDING
+		// the new sub-tab left/right (09.5-02, Task 1): mirrors Global SSH's
+		// identical gssOptions+optionsErr fail-open contract, so a probe
+		// failure on this sub-tab escapes to the app's top-level tab
+		// switcher exactly as it did before this screen had sub-tabs.
 		return keyResult{model: m}
 	}
-	if len(options) == 0 {
+	if m.subTab == ggitOptions && len(options) == 0 {
+		// Advisory/fail-open: no rows to act on, but the sub-tab switch must
+		// still work — mirrors Global SSH's identical zero-options branch.
+		switch key {
+		case "left", "right":
+			if key == "right" {
+				m.subTab = ggitNextSubTab(m.subTab)
+			} else {
+				m.subTab = ggitPrevSubTab(m.subTab)
+			}
+			return keyResult{model: m, handled: true}
+		}
 		return keyResult{model: m, handled: true}
 	}
 	switch key {
+	case "left", "right":
+		if key == "right" {
+			m.subTab = ggitNextSubTab(m.subTab)
+		} else {
+			m.subTab = ggitPrevSubTab(m.subTab)
+		}
+		return keyResult{model: m, handled: true}
 	case "up", "down":
+		if m.subTab != ggitOptions {
+			return keyResult{model: m, handled: true}
+		}
 		idx := m.gitDetailIndex(options)
 		if key == "down" && idx < len(options)-1 {
 			idx++
@@ -744,6 +821,9 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		m.listWindowStart = scrollWindowFor(m.listWindowStart, idx, gitVisibleRowCount(len(options), m.rowBudgetHeight(), s))
 		return keyResult{model: m, handled: true}
 	case "space":
+		if m.subTab != ggitOptions {
+			return keyResult{model: m, handled: true}
+		}
 		o := options[m.gitDetailIndex(options)]
 		// Selectable() is the ONE predicate: a row that cannot be toggled
 		// (including the fallback-author row, which carries no writable member
@@ -755,6 +835,9 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		}
 		return keyResult{model: m, handled: true}
 	case "tab":
+		if m.subTab != ggitOptions {
+			return keyResult{model: m}
+		}
 		if m.detailKey == GlobalGitEmailFallbackKey {
 			// WR-15: keep the textinput's own Focus() state in sync with
 			// fieldFocus even outside edit mode, so it is already correct
@@ -765,6 +848,9 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		}
 		return keyResult{model: m}
 	case "enter":
+		if m.subTab != ggitOptions {
+			return keyResult{model: m}
+		}
 		// D9/D8: Enter on the selected fallback row starts text-editing
 		// the focused field.
 		if m.detailKey == GlobalGitEmailFallbackKey {
@@ -774,6 +860,9 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		}
 		return keyResult{model: m}
 	case "a":
+		if m.subTab != ggitOptions {
+			return keyResult{model: m, handled: true}
+		}
 		if m.detailKey == GlobalGitEmailFallbackKey && m.fallbackApplyOffered() {
 			cer, cerErr := m.fallbackCeremonyFor(m.nameInput.Value(), m.emailInput.Value())
 			if cerErr != nil {
@@ -811,13 +900,21 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 // view and gitTopLines.
 const gitBannerBeyond = "this baseline"
 
-// gitTopLines counts the body lines rendered above the first option row
-// (the optional findings banner) — shared by view and handleClick.
+// gitTopLines counts the body lines rendered above the first option row on
+// the Options sub-tab: the sub-tab strip (net-new, 09.5-02, Task 1 — this
+// screen's first) plus the optional findings banner. Shared by view,
+// handleClick, and gitVisibleRowCount — moving all three together is the
+// single highest-risk edit in 09.5-02's Task 1 (a partial update desyncs the
+// click hit-test from the render). Consumers reading this function are
+// scoped to the ggitOptions sub-tab only; the ggitSetKeys sub-tab gets its
+// own top-lines function (Task 2), mirroring how gssOptionsTopLines and
+// gssPropertiesTopLines are two separate functions on Global SSH.
 func gitTopLines(s DemoState) int {
+	lines := subTabStripRows()
 	if findingsBanner(s, "Git", gitBannerBeyond) != "" {
-		return 1
+		lines++
 	}
-	return 0
+	return lines
 }
 
 // gitCueDownFmt / gitCueUpFmt are the master list's own "+N more" scroll
@@ -1011,6 +1108,36 @@ func (m globalGitModel) handleClick(x, y, width, height int, s DemoState) keyRes
 		}
 		return keyResult{model: m}
 	}
+
+	// Sub-tab strip click routing (09.5-02, Task 1 — this screen's FIRST
+	// strip): rows 0..subTabStripRows()-1 are the strip, mirroring Global
+	// SSH's own handleClick strip branch verbatim. The label row is derived
+	// from subTabStripRows()/2 (never a hardcoded 1) and spans are read from
+	// the ACTUAL rendered line via hitNeedle, so the click zones can never
+	// drift from what renderSubTabStrip actually draws. Border rows stay
+	// inert.
+	stripRows := subTabStripRows()
+	if y < stripRows {
+		if y == stripRows/2 {
+			body := m.view(s, width, height).body
+			switch {
+			case hitNeedle(body, x, y, ggitTabOptionsLabel):
+				m.subTab = ggitOptions
+				return keyResult{model: m, handled: true}
+			case hitNeedle(body, x, y, ggitTabSetKeysLabel):
+				m.subTab = ggitSetKeys
+				return keyResult{model: m, handled: true}
+			}
+		}
+		return keyResult{model: m}
+	}
+	if m.subTab != ggitOptions {
+		// Task 2 adds the Set keys sub-tab's own click routing (mirroring
+		// Global SSH's handlePropertiesClick); this sub-tab renders only a
+		// placeholder body in Task 1, so a click below the strip is inert.
+		return keyResult{model: m}
+	}
+
 	// BL-03 (09.4-REVIEW.md independent re-review): handleKey guards the
 	// text-edit state first (m.fieldEditing), but handleClick had no
 	// equivalent guard — a click on another master-list row moved
@@ -1075,6 +1202,11 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 	}
 
 	if m.ceremonyOpen {
+		// WR-02 precedent (Global SSH, 09.4-REVIEW.md): the crumb line
+		// already names the pane ("Options"), so the ceremony body does NOT
+		// re-render the 3-row bordered strip — redundant chrome eating into
+		// the ceremony's already-tight row budget, the tightest on this
+		// screen. Only reachable from the ggitOptions sub-tab's own "a" key.
 		return screenView{
 			body:         m.ceremony.view(width - 2),
 			crumbs:       []string{"Options"},
@@ -1084,10 +1216,35 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 		}
 	}
 
+	// strip is Global Git's FIRST sub-tab strip (09.5-02, Task 1), drawn by
+	// the SAME shared renderer Global SSH uses (D-D) — rendered at the top
+	// of every non-ceremony body below (populated, optionsErr, zero-options,
+	// and the Set keys placeholder), never omitted from one of them: a
+	// missing strip on any state silently shifts the click hit-test's y
+	// origin out from under gitTopLines' accounting.
+	strip := renderSubTabStrip([]string{ggitTabOptionsLabel, ggitTabSetKeysLabel}, int(m.subTab))
+	crumb := "Options"
+	if m.subTab == ggitSetKeys {
+		crumb = strings.TrimSpace(ggitTabSetKeysLabel)
+	}
+
+	if m.subTab == ggitSetKeys {
+		// Task 1 plumbing only — the Set keys BODY (PROP-02) lands in Task 2.
+		// The strip, the keyboard contract (handleKey), the click contract
+		// (handleClick), and the row budget are all real and final here;
+		// only the row data is a placeholder.
+		body := strip + "\n " + styleFaint.Render("Set keys — added in the next task.")
+		return screenView{
+			body:    body,
+			crumbs:  []string{crumb},
+			actions: []FooterAction{{Key: "←→", Label: ggitFooterCycleLabel}},
+		}
+	}
+
 	if m.optionsErr != "" {
-		body := ""
+		body := strip + "\n"
 		if banner := findingsBanner(s, "Git", gitBannerBeyond); banner != "" {
-			body = banner + "\n"
+			body += banner + "\n"
 		}
 		body += " " + styleWarning.Render("! "+m.optionsErr) + "\n\n " +
 			styleFaint.Render("The option states could not be read from this machine.")
@@ -1102,8 +1259,8 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 			// rendered as the status line even though nothing was applied
 			// and the real state is unknown. A probe failure has nothing
 			// honest to report as a baseline status; leave it blank.
-			crumbs:  []string{"Options"},
-			actions: []FooterAction{{Key: "↑↓", Label: "select option"}},
+			crumbs:  []string{crumb},
+			actions: []FooterAction{{Key: "↑↓", Label: "select option"}, {Key: "←→", Label: ggitFooterCycleLabel}},
 		}
 	}
 
@@ -1116,15 +1273,15 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 	// returns len(Policy) rows today, but NoopGlobalGitPlanner exists
 	// precisely to be substituted.
 	if len(options) == 0 {
-		body := ""
+		body := strip + "\n"
 		if banner := findingsBanner(s, "Git", gitBannerBeyond); banner != "" {
-			body = banner + "\n"
+			body += banner + "\n"
 		}
 		body += " " + styleFaint.Render("No global Git options to show.")
 		return screenView{
 			body:    body,
-			crumbs:  []string{"Options"},
-			actions: []FooterAction{{Key: "↑↓", Label: "select option"}},
+			crumbs:  []string{crumb},
+			actions: []FooterAction{{Key: "↑↓", Label: "select option"}, {Key: "←→", Label: ggitFooterCycleLabel}},
 		}
 	}
 
@@ -1275,21 +1432,21 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 	// explanations must never be silently cut mid-sentence (H3).
 	detailPane := fitPane(lipgloss.NewStyle().Width(detailWidth).Render(d.String()), bodyRows)
 
-	body := ""
+	body := strip + "\n"
 	if banner := findingsBanner(s, "Git", gitBannerBeyond); banner != "" {
-		body = banner + "\n"
+		body += banner + "\n"
 	}
 	body += joinMasterDetail(list, listWidth, detailPane, bodyRows)
 
 	if m.fieldEditing {
-		return screenView{body: body, crumbs: []string{"Options"}, status: status, statusTone: tone,
+		return screenView{body: body, crumbs: []string{crumb}, status: status, statusTone: tone,
 			actions:      []FooterAction{{Key: "Esc/Enter", Label: "done editing"}, {Key: "Tab", Label: "next field"}},
 			capturesKeys: true}
 	}
 	chosen := m.gitApplyChosen(options)
-	actions := []FooterAction{{Key: "↑↓", Label: "select option"}, {Key: "space", Label: "toggle"}}
+	actions := []FooterAction{{Key: "↑↓", Label: "select option"}, {Key: "space", Label: "toggle"}, {Key: "←→", Label: ggitFooterCycleLabel}}
 	if m.detailKey == GlobalGitEmailFallbackKey {
-		actions = []FooterAction{{Key: "↑↓", Label: "select option"}, {Key: "Tab", Label: "next field"}, {Key: "Enter", Label: "edit"}}
+		actions = []FooterAction{{Key: "↑↓", Label: "select option"}, {Key: "Tab", Label: "next field"}, {Key: "Enter", Label: "edit"}, {Key: "←→", Label: ggitFooterCycleLabel}}
 	}
 	switch {
 	case len(chosen) > 0:
@@ -1297,7 +1454,7 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 	case m.detailKey == GlobalGitEmailFallbackKey && m.fallbackApplyOffered():
 		actions = append(actions, FooterAction{Key: "a", Label: "set global fallback author"})
 	}
-	return screenView{body: body, crumbs: []string{"Options"}, status: status, statusTone: tone, actions: actions}
+	return screenView{body: body, crumbs: []string{crumb}, status: status, statusTone: tone, actions: actions}
 }
 
 // gitFallbackFieldLine renders one Global Git fallback name/email row with

@@ -938,38 +938,22 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 	return keyResult{model: m}
 }
 
-// gssSubTabStripRows returns the number of rows the sub-tab strip occupies.
+// gssSubTabStripRows is a one-line alias delegating to the shared
+// subTabStripRows() (frame.go, D-D, 09.5-02 extraction) — kept so Phase
+// 9.4's existing TestSubTabStrip* contract's call surface never changes.
 // This is the single source of truth for the strip's height; all consumers
 // (renderOptions, renderStorage, gssOptionsTopLines, handleClick) must derive
 // from this.
 func gssSubTabStripRows() int {
-	return 3 // top border + labels + bottom border
+	return subTabStripRows()
 }
 
 // subTabStrip renders the [Options] [Storage & preview] [All directives]
-// strip with a border.
+// strip with a border, via the shared renderSubTabStrip (frame.go, D-D,
+// 09.5-02 extraction) — Global SSH supplies its three labels and its active
+// index; the border/style/composition logic lives in exactly one place.
 func (m globalSSHModel) subTabStrip() string {
-	options := gssTabOptionsLabel
-	storage := gssTabStorageLabel
-	properties := gssTabPropertiesLabel
-	switch m.subTab {
-	case gssOptions:
-		options = styleReverse.Render(options)
-	case gssStorage:
-		storage = styleReverse.Render(storage)
-	case gssProperties:
-		properties = styleReverse.Render(properties)
-	}
-	label := " " + options + " " + storage + " " + properties
-
-	// Build a bordered box around the labels using dashed border runes in accent color.
-	accentBorder := lipgloss.NewStyle().Foreground(DefaultTheme.Accent)
-	width := lipgloss.Width(label) + 2 // label + 2 for the side borders
-	topBorder := "╭" + strings.Repeat("╌", width) + "╮"
-	labelLine := "┊ " + label + " ┊"
-	bottomBorder := "╰" + strings.Repeat("╌", width) + "╯"
-
-	return accentBorder.Render(topBorder) + "\n" + accentBorder.Render(labelLine) + "\n" + accentBorder.Render(bottomBorder)
+	return renderSubTabStrip([]string{gssTabOptionsLabel, gssTabStorageLabel, gssTabPropertiesLabel}, int(m.subTab))
 }
 
 // gssOptionsTopLines counts the body lines rendered above the first option
