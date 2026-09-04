@@ -60,6 +60,17 @@ type Deps struct {
 	// GOOS is the platform token (darwin/linux) used for the platform-gated
 	// label and recommendation facts.
 	GOOS string
+	// RunSSHGCombined executes one `ssh -G` probe with the given argument
+	// SLICE and returns its COMBINED stdout+stderr — unlike RunSSHG (stdout
+	// only via cmd.Output()), this seam is the ONLY way to observe OpenSSH's
+	// `Bad configuration option: ` diagnostic, which is written to stderr
+	// (Phase 9.5 plan 09.5-04, PROP-04/D-H). It is bounded by probeTimeout and
+	// never runs through a shell, exactly like RunSSHG. Kept as a SIBLING
+	// field rather than changing RunSSHG's binding: every existing caller
+	// (Statuses, Simulate, Verify, AllDirectives) keeps using the stdout-only
+	// seam unmodified, so no existing keyed Deps{...} literal stops
+	// compiling and no existing behavior changes.
+	RunSSHGCombined func(ctx context.Context, args ...string) (string, error)
 }
 
 // BuildProbeDeps returns production Deps wired to the REAL `ssh` binary and
@@ -92,6 +103,29 @@ func BuildProbeDeps(sshConfigPath string) Deps {
 			out, err := cmd.Output()
 			if ctx.Err() != nil {
 				return string(out), fmt.Errorf("globalssh: ssh -G timed out after %s: %w", probeTimeout, ctx.Err())
+			}
+			return string(out), err
+		},
+		RunSSHGCombined: func(ctx context.Context, args ...string) (string, error) {
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			cmd := exec.CommandContext(ctx, "ssh", args...) //nolint:gosec // arg-slice form, no shell; args are fixed probe flags + a staged temp path + the .invalid constant (G204)
+			// Reproduces RunSSHG's exact hardening: its own process group,
+			// group-SIGKILL on cancel, and a WaitDelay bound — a forking
+			// `Match exec` can hold the pipe open past the deadline on Linux
+			// (T-06-02), and that risk is identical for CombinedOutput().
+			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+			cmd.Cancel = func() error {
+				if cmd.Process != nil {
+					_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) // best-effort group kill
+				}
+				return nil
+			}
+			cmd.WaitDelay = 500 * time.Millisecond
+			out, err := cmd.CombinedOutput()
+			if ctx.Err() != nil {
+				return string(out), fmt.Errorf("globalssh: ssh -G (combined) timed out after %s: %w", probeTimeout, ctx.Err())
 			}
 			return string(out), err
 		},

@@ -1,0 +1,194 @@
+package globalssh
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+)
+
+// badConfigOptionMarker is the exact OpenSSH stderr substring a staged-config
+// `ssh -G` prints when it encounters a directive NAME it does not recognize
+// (RESEARCH Pattern 3, verified live against OpenSSH_9.9p2/LibreSSL 3.3.6):
+//
+//	<path>: line N: Bad configuration option: <lowercased-name>
+//	<path>: terminating, 1 bad configuration options
+//
+// This is the ONLY signal ProveCustomDirective trusts to answer "is this
+// directive name real" — never a static keyword list (D-H).
+const badConfigOptionMarker = "Bad configuration option: "
+
+// DirectiveProof is the staged-config classification result for one
+// candidate SSH directive name=value pair (PROP-04, D-H/D-I). Exactly one of
+// OK, UnknownName, or PreexistingError is true on a call that returns a nil
+// error; all three are false only for a "known name, rejected value" result
+// (D-I's fourth classification, surfaced as a value/syntax rejection rather
+// than a name error).
+//
+// Command and Output carry the RAW command line and the VERBATIM combined
+// output — never a paraphrase — because 09.5-UI-SPEC.md's stage-2 render
+// requires showing the exact command and its real result (TEST-01's
+// "show the exact command, then its real output" contract).
+type DirectiveProof struct {
+	// OK is true when the staged probe accepted BOTH the candidate's name
+	// and its value: ssh -G exited cleanly against the staged config.
+	OK bool
+	// UnknownName is true when the staged probe's `Bad configuration
+	// option: ` diagnostic names THIS candidate's own directive — the name
+	// itself is not recognized by the locally installed OpenSSH.
+	UnknownName bool
+	// PreexistingError is true when the staged probe's `Bad configuration
+	// option: ` diagnostic names a DIFFERENT directive than the candidate —
+	// a problem that already existed in the user's current global block,
+	// which must not be blamed on the entry just submitted (D-I).
+	PreexistingError bool
+	// OffendingName is the lowercased directive name the `Bad configuration
+	// option: ` diagnostic named, populated whenever UnknownName or
+	// PreexistingError is true. Empty otherwise.
+	OffendingName string
+	// Command is the exact `ssh -F <staged> -G <ProbeHost>` command line
+	// that was run — the staged path included, never redacted, so the
+	// rendered command is byte-identical to what actually executed.
+	Command string
+	// Output is the verbatim combined stdout+stderr the staged probe
+	// produced. Never paraphrased.
+	Output string
+}
+
+// ProveCustomDirective is the ENTIRE mechanism behind PROP-04's "known SSH
+// directive" requirement (D-H): it stages currentGlobalBody plus the
+// candidate `name value` line into a THROWAWAY temp config, under a fresh
+// 0700 directory (OpenSSH refuses a group- or world-writable config
+// directory, the same constraint Simulate already handles at
+// shadow.go:218), and runs `ssh -F <staged> -G ProbeHost` through the
+// injected deps.RunSSHGCombined seam — never deps.RunSSHG, which returns
+// stdout only and cannot see the `Bad configuration option: ` diagnostic.
+//
+// The real user config is never opened for writing here: the staged file is
+// written under os.MkdirTemp and removed (via defer) before this function
+// returns, and the ONLY path handed to ssh is that staged path (T-09.5-21).
+//
+// Classification (D-I): the exit outcome is the FIRST-PASS gate — a nil
+// error means the candidate's name AND value were both accepted. A non-nil
+// error with NO combined output at all is treated as a transport-level
+// failure (the probe could not run: a missing binary, a timed-out process
+// that produced nothing) and returns fail-closed: (proof with OK false,
+// a non-nil error). A non-nil error WITH output is classified by the
+// `Bad configuration option: ` substring — present and naming the
+// candidate's own (lowercased) name means UnknownName; present and naming a
+// DIFFERENT name means PreexistingError (a problem that predates this
+// entry); absent entirely means the name is recognized but the VALUE was
+// rejected, reported with the real output and no name-related flag set.
+// There is no code path that returns OK: true alongside a non-nil error.
+func ProveCustomDirective(deps Deps, currentGlobalBody, name, value string) (DirectiveProof, error) {
+	tmpDir, err := os.MkdirTemp("", "gitid-directive-proof-*")
+	if err != nil {
+		return DirectiveProof{}, fmt.Errorf("globalssh: creating staged directive-proof directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	// OpenSSH refuses a group- or world-writable config directory — the same
+	// constraint Simulate already enforces on its mirror root (shadow.go:218).
+	if err := os.Chmod(tmpDir, 0o700); err != nil { //nolint:gosec // explicitly setting restrictive mode 0700 for OpenSSH compatibility
+		return DirectiveProof{}, fmt.Errorf("globalssh: setting staged directive-proof directory mode: %w", err)
+	}
+
+	stagedPath := filepath.Join(tmpDir, "staged_ssh_config")
+	stagedContent := stageDirectiveConfig(currentGlobalBody, name, value)
+	if err := os.WriteFile(stagedPath, []byte(stagedContent), 0o600); err != nil {
+		return DirectiveProof{}, fmt.Errorf("globalssh: writing staged directive-proof config: %w", err)
+	}
+
+	args := []string{"-F", stagedPath, "-G", ProbeHost}
+	cmdString := exec.Command("ssh", args...).String() //nolint:gosec // arg-slice form for display only; not executed here (G204)
+
+	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+	defer cancel()
+	out, runErr := deps.RunSSHGCombined(ctx, args...)
+
+	proof := DirectiveProof{Command: cmdString, Output: out}
+
+	if runErr == nil {
+		proof.OK = true
+		return proof, nil
+	}
+
+	if strings.TrimSpace(out) == "" {
+		// The probe produced no output at all: the binary could not run, a
+		// timeout fired before anything was captured, or some other
+		// transport-level failure. There is nothing here to classify, so
+		// fail CLOSED rather than guess (an unproven directive must never be
+		// treated as accepted, and must never be silently blamed on a name
+		// or value it never got to evaluate).
+		return proof, fmt.Errorf("globalssh: staged directive proof could not run: %w", runErr)
+	}
+
+	offending, hasMarker := offendingDirectiveName(out)
+	if hasMarker {
+		proof.OffendingName = offending
+		if strings.EqualFold(offending, name) {
+			proof.UnknownName = true
+		} else {
+			proof.PreexistingError = true
+		}
+		return proof, nil
+	}
+
+	// The name is recognized (no "Bad configuration option: " diagnostic),
+	// but the staged probe still failed — a value/syntax rejection, reported
+	// with the real output and no name-related flag set (D-I's fourth
+	// outcome).
+	return proof, nil
+}
+
+// stageDirectiveConfig builds the throwaway config's full text: the current
+// global block body (which already contains its own `Host *` line whenever
+// a block exists on disk) followed by the candidate `name value` line,
+// indented like every other directive inside the wildcard stanza. When
+// currentGlobalBody is empty (no block written yet) or does not already
+// carry a `Host *` line, one is prepended so the candidate line still lands
+// inside a wildcard stanza rather than at file scope.
+func stageDirectiveConfig(currentGlobalBody, name, value string) string {
+	body := strings.TrimRight(currentGlobalBody, "\n")
+	var b strings.Builder
+	if !hasHostStarLine(body) {
+		b.WriteString("Host *\n")
+	}
+	if body != "" {
+		b.WriteString(body)
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(&b, "  %s %s\n", name, value)
+	return b.String()
+}
+
+// hasHostStarLine reports whether body already contains a `Host *` line —
+// case-insensitively, tolerating leading whitespace, exactly as OpenSSH
+// itself would recognize the directive.
+func hasHostStarLine(body string) bool {
+	for _, line := range strings.Split(body, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && strings.EqualFold(fields[0], "Host") && fields[1] == "*" {
+			return true
+		}
+	}
+	return false
+}
+
+// offendingDirectiveName extracts the directive name from a
+// `Bad configuration option: <name>` diagnostic line inside out. The second
+// return value is false when the marker is absent, so a caller never
+// confuses an empty extraction with "no marker present".
+func offendingDirectiveName(out string) (string, bool) {
+	idx := strings.Index(out, badConfigOptionMarker)
+	if idx < 0 {
+		return "", false
+	}
+	rest := out[idx+len(badConfigOptionMarker):]
+	if nl := strings.IndexAny(rest, "\r\n"); nl >= 0 {
+		rest = rest[:nl]
+	}
+	return strings.TrimSpace(rest), true
+}

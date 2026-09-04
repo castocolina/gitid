@@ -190,6 +190,25 @@ func TestBuildTUIDepsWiresGitCustomKeyPlanner(t *testing.T) {
 	}
 }
 
+// TestBuildProbeDepsWiresCombinedOutput extends the standing nil-guard
+// pattern (mirroring internal/globalssh's own TestBuildProbeDepsIsRealWired)
+// for the Phase 9.5 plan 09.5-04 seam: the REAL globalssh.BuildProbeDeps
+// constructor must leave RunSSHGCombined non-nil, the same as every other
+// Deps field, or PROP-04's staged-config classifier silently degrades to a
+// permanently-failing probe in production while every unit test (which
+// injects its own fake) keeps passing. This is the project's documented
+// recurring injected-seam wiring blindspot (doctor-injected-seam-wiring-
+// blindspot).
+func TestBuildProbeDepsWiresCombinedOutput(t *testing.T) {
+	deps := globalssh.BuildProbeDeps(filepath.Join(t.TempDir(), "config"))
+	if deps.RunSSHGCombined == nil {
+		t.Fatal("globalssh.BuildProbeDeps left RunSSHGCombined nil (injected-seam wiring blindspot) — PROP-04's staged-config classifier would silently fail closed on every real invocation")
+	}
+	if deps.RunSSHG == nil || deps.ReadConfig == nil || deps.ReadSystemConfig == nil {
+		t.Fatal("globalssh.BuildProbeDeps left a pre-existing seam nil — regression in the real constructor")
+	}
+}
+
 func TestGitFallbackAuthorVerifySeamIsRealWired(t *testing.T) {
 	b := newBackendForHome(t.TempDir())
 	if b.verifyAuthorResolution != nil {
