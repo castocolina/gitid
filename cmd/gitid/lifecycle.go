@@ -1498,11 +1498,19 @@ func (b *realBackend) runCustomGitKeyWrite(key, value string, p lifecyclePolicy)
 
 	res.Backups = append(res.Backups, journal.backups...)
 
-	// verify — no-op stage for this verb (nothing to re-probe beyond what the
-	// write itself already confirmed); kept so the lifecycleStages row
-	// carries the standard plan/confirm/backup/write/verify shape every
-	// other apply-style verb in this table uses.
+	// verify — CR-01: confirm the just-written baseline file still parses as
+	// valid git-config syntax. EnsureCustomGitKey's own SplitGitKey/
+	// validateCustomValue guards reject the characters that are KNOWN to
+	// corrupt the file, but this is the defense-in-depth backstop for
+	// anything else that could leave the file unparseable (including
+	// pre-existing foreign content the managed-block writer does not touch)
+	// — the write must never be reported as successful while
+	// ~/.gitconfig.d/00-baseline is a file every git command will then fail
+	// to parse.
 	record(stages[4])
+	if verr := gitconfig.ValidateGitConfigSyntax(target); verr != nil {
+		return fail(fmt.Errorf("post-write verification: the written file does not parse as valid git-config syntax: %w", verr))
+	}
 
 	return res, nil
 }

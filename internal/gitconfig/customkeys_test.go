@@ -146,6 +146,45 @@ func TestEnsureCustomGitKeyRejectsInjectionValues(t *testing.T) {
 	}
 }
 
+// TestEnsureCustomGitKeyRejectsUnparseableGitSyntaxValues verifies CR-01: a
+// value containing a double quote or backslash makes git's own config-file
+// grammar unparseable (a quote opens a quoted region, a backslash starts an
+// escape sequence), and a value containing '#' or ';' is silently truncated
+// by git as a comment start. All four must be rejected by EnsureCustomGitKey
+// BEFORE any text is composed — this is a render-syntax guard distinct from
+// validateValue's injection guard (newline / "[remote").
+func TestEnsureCustomGitKeyRejectsUnparseableGitSyntaxValues(t *testing.T) {
+	cases := []struct {
+		name  string
+		value string
+	}{
+		{"double quote", `foo"bar`},
+		{"backslash", `C:\path\to`},
+		{"hash comment start", "foo #bar"},
+		{"semicolon comment start", "foo ;bar"},
+		{"leading whitespace", " foo"},
+		{"trailing whitespace", "foo "},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := EnsureCustomGitKey(nil, "core.pager", tc.value)
+			if err == nil {
+				t.Fatalf("EnsureCustomGitKey with %s value %q: expected error, got nil", tc.name, tc.value)
+			}
+		})
+	}
+}
+
+// TestRenderCustomKeysBlockRejectsUnparseableGitSyntaxValues verifies the
+// same CR-01 guard applies at the render call site directly (RenderCustomKeysBlock),
+// not just through the EnsureCustomGitKey upsert path.
+func TestRenderCustomKeysBlockRejectsUnparseableGitSyntaxValues(t *testing.T) {
+	entries := []CustomKey{{Key: "core.pager", Value: `foo"bar`}}
+	if _, err := RenderCustomKeysBlock(entries); err == nil {
+		t.Fatal("RenderCustomKeysBlock with a double-quote-bearing value: expected error, got nil")
+	}
+}
+
 // TestEnsureCustomGitKeyPreservesForeignContentAndPriorKeys verifies adding
 // a second custom key keeps the first, keeps the curated global-git block
 // byte-identical, and keeps any non-gitid content in the file verbatim.

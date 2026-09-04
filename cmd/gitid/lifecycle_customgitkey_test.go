@@ -190,6 +190,50 @@ func TestRunCustomGitKeyWriteRollsBackOnFailure(t *testing.T) {
 	t.Logf("restore outcomes: %v", res.Restored)
 }
 
+// TestRunCustomGitKeyWriteRollsBackWhenVerifyDetectsUnparseableFile asserts
+// CR-01's defense-in-depth verify stage: when the baseline file ALREADY
+// carries foreign content that is not valid git-config syntax (e.g. a
+// hand-edited section missing its closing bracket — content the
+// custom-git-keys block writer does not touch, per filewriter's foreign-
+// content-preserved contract), a confirmed write must not report success.
+// The write itself (composing the new managed block) succeeds structurally,
+// but the file as a WHOLE no longer parses with `git config --list` — the
+// verify stage must catch this, roll back both writes, and return an error,
+// rather than silently reporting success on an unparseable
+// ~/.gitconfig.d/00-baseline.
+func TestRunCustomGitKeyWriteRollsBackWhenVerifyDetectsUnparseableFile(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("no git binary in PATH: %v", err)
+	}
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+	baselinePath := b.baselineTargetPath()
+
+	if err := os.MkdirAll(filepath.Dir(baselinePath), 0o700); err != nil {
+		t.Fatalf("seeding baseline dir: %v", err)
+	}
+	// Foreign, pre-existing content that is NOT valid git-config syntax (an
+	// unterminated section header) — outside any gitid-managed block, so
+	// EnsureCustomGitKey's ReplaceBlock chokepoint preserves it verbatim.
+	brokenForeign := "[core\n\tpager = less\n"
+	if err := os.WriteFile(baselinePath, []byte(brokenForeign), 0o600); err != nil {
+		t.Fatalf("seeding broken baseline file: %v", err)
+	}
+	before := snapshotPaths(t, []string{gitconfigPath, baselinePath})
+
+	res, err := b.runCustomGitKeyWrite("core.pager", "less -FRX", lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+	if err == nil {
+		t.Fatal("runCustomGitKeyWrite must fail when the post-write file does not parse as valid git-config syntax")
+	}
+	if len(res.Restored) == 0 {
+		t.Error("Restored must list the rollback outcomes when verify fails")
+	}
+
+	after := snapshotPaths(t, []string{gitconfigPath, baselinePath})
+	assertUnchanged(t, before, after)
+}
+
 // TestRunCustomGitKeyWriteRefusesWithoutAuthorization asserts an unauthorized
 // policy returns a cancellation error and writes nothing.
 func TestRunCustomGitKeyWriteRefusesWithoutAuthorization(t *testing.T) {

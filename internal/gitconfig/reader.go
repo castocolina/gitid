@@ -1,6 +1,7 @@
 package gitconfig
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -153,6 +154,21 @@ func RunGitConfigGet(file, key string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// ValidateGitConfigSyntax runs `git config --file <path> --list` purely to
+// confirm the file still parses as valid git-config syntax. It is CR-01's
+// defense-in-depth post-write verify seam: a caller that just wrote path
+// calls this before reporting success, and rolls back the write on a
+// non-nil error (git itself refusing to parse the file, e.g.
+// "fatal: bad config line N in file <path>"). The arg-slice form avoids
+// shell injection (gosec G204); path is always a trusted gitid-managed path.
+func ValidateGitConfigSyntax(path string) error {
+	cmd := exec.Command("git", "config", "--file", path, "--list") //nolint:gosec // arg-slice form, no shell; path is a trusted gitid-managed path (G204)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git config --file %s --list: %w: %s", path, err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // RemoveAllowedSignersBlock rewrites path with the gitid managed block for

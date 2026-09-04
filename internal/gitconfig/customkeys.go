@@ -42,6 +42,34 @@ var gitConfigNameRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*$`)
 // doc comments; this regex is not a second copy of it.
 var forbiddenSubsectionCharRE = regexp.MustCompile(`["\\\n\r]`)
 
+// forbiddenCustomValueCharRE matches characters that are structural in git's
+// config-file grammar and would make the rendered line unparseable (a double
+// quote opens a quoted region; a backslash starts an escape sequence) or
+// silently truncate the value ('#' and ';' start a comment). This is a
+// VALUE-RENDER guard (CR-01), distinct from validateValue's injection guard
+// (newline / "[remote"): validateValue alone is not sufficient for a
+// free-form custom key, whose value is rendered UNQUOTED into the file.
+var forbiddenCustomValueCharRE = regexp.MustCompile(`["\\#;]`)
+
+// validateCustomValue applies validateValue's existing injection guard and
+// then CR-01's render-syntax guard: a value containing '"', '\', '#', or ';'
+// would make the rendered `variable = value` line either fail to parse
+// (quote/backslash) or be silently truncated by git as a comment (#/;).
+// Leading/trailing whitespace is rejected too, since git strips it on read —
+// the receipt would then be lying about what was actually written (WR-06).
+func validateCustomValue(key, value string) error {
+	if err := validateValue(key, value); err != nil {
+		return err
+	}
+	if forbiddenCustomValueCharRE.MatchString(value) {
+		return fmt.Errorf("gitconfig: %s value %q must not contain a double quote, backslash, '#' or ';' — git would fail to parse or silently truncate the resulting file", key, value)
+	}
+	if value != strings.TrimSpace(value) {
+		return fmt.Errorf("gitconfig: %s value %q must not have leading or trailing whitespace — git strips it on read", key, value)
+	}
+	return nil
+}
+
 // CustomKey is one free-form git config key=value pair accumulated in the
 // custom-git-keys managed block.
 type CustomKey struct {
@@ -162,7 +190,7 @@ func RenderCustomKeysBlock(entries []CustomKey) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("gitconfig: RenderCustomKeysBlock: %w", err)
 		}
-		if err := validateValue(e.Key, e.Value); err != nil {
+		if err := validateCustomValue(e.Key, e.Value); err != nil {
 			return "", fmt.Errorf("gitconfig: RenderCustomKeysBlock: %w", err)
 		}
 		if subsection != "" {
@@ -177,10 +205,13 @@ func RenderCustomKeysBlock(entries []CustomKey) (string, error) {
 
 // EnsureCustomGitKey upserts key=value into the custom-git-keys managed
 // block, mirroring EnsureGlobalGit's shape. The key and value are validated
-// FIRST — SplitGitKey for the key's syntax (D-G), the package's existing
-// validateValue (fragment.go) for the value's injection guard (RESEARCH
-// Pitfall 4) — so a malformed key or an injection-bearing value is rejected
-// before any text is composed. The current block is then parsed, the entry
+// FIRST — SplitGitKey for the key's syntax (D-G), validateCustomValue (this
+// file, CR-01) for the value's combined injection guard (validateValue,
+// RESEARCH Pitfall 4) AND render-syntax guard (a quote/backslash/#/; would
+// make the rendered line unparseable or silently truncated by git, and
+// leading/trailing whitespace would be silently stripped) — so a malformed
+// key or an unrenderable value is rejected before any text is composed. The
+// current block is then parsed, the entry
 // is upserted case-insensitively by key (git lower-cases keys in --list
 // output), and the merged entries are rendered and composed through
 // filewriter.ReplaceBlock — the ONE managed-block chokepoint. Foreign
@@ -197,7 +228,7 @@ func EnsureCustomGitKey(existing []byte, key, value string) ([]byte, error) {
 	if _, _, _, err := SplitGitKey(key); err != nil {
 		return nil, fmt.Errorf("gitconfig: EnsureCustomGitKey: %w", err)
 	}
-	if err := validateValue(key, value); err != nil {
+	if err := validateCustomValue(key, value); err != nil {
 		return nil, fmt.Errorf("gitconfig: EnsureCustomGitKey: %w", err)
 	}
 
