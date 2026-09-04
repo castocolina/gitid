@@ -1532,9 +1532,11 @@ func (b *realBackend) runCustomGitKeyWrite(key, value string, p lifecyclePolicy)
 //
 //   - the policy lookup (globalssh.PolicyFor / VersionGate): a custom
 //     directive is by definition OUTSIDE the curated Policy table, so there
-//     is nothing to look up — its name has already been proven against the
-//     locally installed OpenSSH by globalssh.ProveCustomDirective at the
-//     TUI's stage 2, before this function is ever called (D-03/D-H).
+//     is nothing to look up — its name is proven against the locally
+//     installed OpenSSH by globalssh.ProveCustomDirective, run once by the
+//     TUI's stage 2 for the interactive preview and RE-RUN by this
+//     function's own plan stage (WR-01) so the gate lives in the writer
+//     itself, not only in the UI state machine (D-03/D-H).
 //   - the D-04 shadow simulation (globalssh.BuildGraph/Simulate): both
 //     Simulate and Verify resolve their keys through PolicyFor (shadow.go
 //     line 260 / line 304), so neither can say anything meaningful about an
@@ -1592,6 +1594,20 @@ func (b *realBackend) runCustomSSHDirectiveWrite(name, value string, p lifecycle
 	}
 	if _, err := sshconfig.EnsureGlobals(existingForPlan, explicit, platform.CurrentOS()); err != nil {
 		return res, fmt.Errorf("gitid: building candidate for custom SSH directive write: %w", err)
+	}
+
+	// WR-01: re-run globalssh.ProveCustomDirective HERE, in the writer
+	// itself, rather than trusting that the caller already ran it. This
+	// function's own doc comment calls it "the ONE production writer" —
+	// today only the TUI reaches it (after its own stage-2 proof), but
+	// nothing on this call path enforces that; the un-skippable proof gate
+	// must live in the writer it protects, not only in the UI state machine.
+	proof, proveErr := globalssh.ProveCustomDirective(globalssh.BuildProbeDeps(b.sshConfigPath), globalsBodyText(existingForPlan), name, value)
+	if proveErr != nil {
+		return res, fmt.Errorf("gitid: proving custom SSH directive: %w", proveErr)
+	}
+	if !proof.OK {
+		return res, fmt.Errorf("gitid: custom SSH directive %q is not proven against the locally installed OpenSSH (offending: %q, output: %s)", name, proof.OffendingName, strings.TrimSpace(proof.Output))
 	}
 
 	if p.DryRun {

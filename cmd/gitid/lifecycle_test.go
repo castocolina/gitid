@@ -1819,6 +1819,32 @@ func TestRunCustomSSHDirectiveWriteRejectsInvalidNameBeforeAnyWrite(t *testing.T
 	assertUnchanged(t, before, snapshotPaths(t, []string{configPath, target}))
 }
 
+// TestRunCustomSSHDirectiveWriteReProvesTheDirectiveAtItsOwnPlanStage
+// asserts WR-01: runCustomSSHDirectiveWrite is declared "the ONE production
+// writer" but must not TRUST that its caller already ran
+// globalssh.ProveCustomDirective — it re-runs the SAME staged-config proof
+// itself, against the real locally installed OpenSSH, and refuses to write
+// an unrecognized directive name even when called with
+// confirmationAlreadyObtained (mirroring a future CLI verb reaching this
+// function directly, with no TUI stage-2 gate ever having run).
+func TestRunCustomSSHDirectiveWriteReProvesTheDirectiveAtItsOwnPlanStage(t *testing.T) {
+	if _, err := exec.LookPath("ssh"); err != nil {
+		t.Skipf("no ssh binary in PATH: %v", err)
+	}
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	configPath := filepath.Join(home, ".ssh", "config")
+	target := filepath.Join(home, ".ssh", "config.d", "gitid.config")
+	before := snapshotPaths(t, []string{configPath, target})
+
+	_, err := b.runCustomSSHDirectiveWrite("ThisIsNotARealDirective", "yes", lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+	if err == nil {
+		t.Fatal("runCustomSSHDirectiveWrite with an unrecognized directive name must return an error — the writer must re-prove it, not trust the caller")
+	}
+
+	assertUnchanged(t, before, snapshotPaths(t, []string{configPath, target}))
+}
+
 // TestRunCustomSSHDirectiveWriteRollsBackOnFailure asserts that with
 // failCommitAt injecting a failure at the write, every watched file is
 // restored to its pre-run bytes (byte comparison), the error names the
