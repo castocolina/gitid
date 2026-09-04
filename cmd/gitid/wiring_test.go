@@ -167,6 +167,24 @@ func TestRealBackendDoesNotEmbedNoopGitCustomKeyPlanner(t *testing.T) {
 	}
 }
 
+// TestRealBackendDoesNotEmbedNoopSSHCustomDirectivePlanner is the 09.5-REVIEW.md
+// WR-11 regression: plans 09.5-01/02/03 each got this exact reflection guard
+// for their own new seam; plan 09.5-04 (SSHCustomDirectivePlanner) — the
+// highest blast-radius seam, the one write path that touches
+// ~/.ssh/config — did not, even though backend.go's own doc comment on
+// SSHCustomDirectivePlanner claims it is "pinned by the compile-time
+// assertion in cmd/gitid/wiring.go and a reflection test". Mirrors
+// TestRealBackendDoesNotEmbedNoopGitCustomKeyPlanner's exact shape.
+func TestRealBackendDoesNotEmbedNoopSSHCustomDirectivePlanner(t *testing.T) {
+	var _ tuikit.SSHCustomDirectivePlanner = (*realBackend)(nil)
+	rt := reflect.TypeOf(realBackend{})
+	for i := range rt.NumField() {
+		if rt.Field(i).Type == reflect.TypeOf(tuikit.NoopSSHCustomDirectivePlanner{}) {
+			t.Fatal("realBackend must not embed NoopSSHCustomDirectivePlanner — a missing real implementation must be a compile error")
+		}
+	}
+}
+
 // TestBuildTUIDepsWiresGitCustomKeyPlanner extends the standing nil-guard
 // test (TestBuildBackendSatisfiesSeam above): the REAL constructor's backend
 // answers CustomGitKeyPlan() without ever returning

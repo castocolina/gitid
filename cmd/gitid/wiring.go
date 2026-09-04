@@ -311,6 +311,33 @@ var _ tuikit.SSHStoragePlanner = (*realBackend)(nil)
 // implementation stays a compile error, not a silent sentinel.
 var _ tuikit.SSHPropertiesBrowser = (*realBackend)(nil)
 
+// plan 09.5-02 seam pin: the real composition root implements the
+// "Set keys" sub-tab seam (PROP-02). It must NOT get there by embedding
+// NoopGitPropertiesBrowser — a reflection test in wiring_test.go
+// (TestRealBackendDoesNotEmbedNoopGitPropertiesBrowser) asserts the struct
+// carries no such anonymous field. Added by 09.5-REVIEW.md WR-11: the
+// backend.go doc comment on GitPropertiesBrowser already claimed this line
+// existed; it did not.
+var _ tuikit.GitPropertiesBrowser = (*realBackend)(nil)
+
+// plan 09.5-03 seam pin: the real composition root implements the
+// custom-Git-key planner seam (PROP-03). It must NOT get there by embedding
+// NoopGitCustomKeyPlanner — a reflection test in wiring_test.go
+// (TestRealBackendDoesNotEmbedNoopGitCustomKeyPlanner) asserts the struct
+// carries no such anonymous field. Added by 09.5-REVIEW.md WR-11.
+var _ tuikit.GitCustomKeyPlanner = (*realBackend)(nil)
+
+// plan 09.5-04 seam pin: the real composition root implements the
+// custom-SSH-directive planner seam (PROP-04) — the highest blast-radius
+// write path this phase adds, the one that touches ~/.ssh/config. It must
+// NOT get there by embedding NoopSSHCustomDirectivePlanner — a reflection
+// test in wiring_test.go (TestRealBackendDoesNotEmbedNoopSSHCustomDirectivePlanner)
+// asserts the struct carries no such anonymous field. Added by
+// 09.5-REVIEW.md WR-11: this was the one Phase 9.5 seam whose doc-comment
+// claim of "pinned by the compile-time assertion... and a reflection test"
+// was false on BOTH counts.
+var _ tuikit.SSHCustomDirectivePlanner = (*realBackend)(nil)
+
 // newMigrateDeps is the package-level indirection both SSHStorageMigrationPlan
 // and runSSHStorageMigrate use to construct sshconfig.MigrateDeps. Using a
 // variable rather than an inline call lets tests override it to wrap WriteFile
