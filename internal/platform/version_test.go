@@ -44,6 +44,20 @@ func TestParseSSHVersion(t *testing.T) {
 			},
 		},
 		{
+			// [VERIFIED: docker run fedora:latest; 10-RESEARCH.md — fedora:latest's
+			// `ssh -V` output carries no distro-portable suffix (unlike Debian/Ubuntu),
+			// closing D-03's "ssh -V distro-suffix parsing" risk item with a named,
+			// traceable regression case for the un-suffixed form.]
+			name: "Fedora, no distro suffix (OpenSSH 10.x)",
+			in:   "OpenSSH_10.2p1, OpenSSL 3.5.7 9 Jun 2026\n",
+			want: SSHVersion{
+				OpenSSHVersion: "10.2p1",
+				SSLFlavor:      "OpenSSL",
+				SSLVersion:     "3.5.7",
+				Raw:            "OpenSSH_10.2p1, OpenSSL 3.5.7 9 Jun 2026",
+			},
+		},
+		{
 			name: "malformed input returns zero-value fields with Raw preserved, no panic",
 			in:   "not a version string at all",
 			want: SSHVersion{Raw: "not a version string at all"},

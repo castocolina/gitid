@@ -90,6 +90,65 @@ jobs:
       - name: make lint (golangci-lint + gosec)
         run: make lint
 
+  # PLAT-03 (D-01/D-02): the automated half of Fedora/Bazzite Linux validation.
+  # fedora:latest ships no Node.js/git/make by default, so `dnf install` MUST
+  # be the first step — before any `uses:` action, since actions/checkout
+  # itself is Node.js-based and cannot run at all inside a bare container
+  # (10-RESEARCH.md Pattern 2/Pitfall 3, empirically verified this phase).
+  # Cadence is push-to-main + release tags only (D-02's cost-tier lever,
+  # reused from Phase 1's D-13) — Ubuntu is already triple-covered per-PR via
+  # the `check` matrix above, so this container job does not need to run on
+  # every pull_request.
+  fedora:
+    name: fedora (container)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    container:
+      image: fedora:latest
+    steps:
+      - name: Install prerequisites (dnf; fedora image ships no node/git/make)
+        run: dnf install -y --setopt=install_weak_deps=False git openssh-clients make nodejs tar gzip
+
+      # REVIEW C-6 FIX: the container runs as root against a checkout
+      # directory the HOST runner's user owns — a UID mismatch that trips
+      # git's "detected dubious ownership in repository" refusal on every
+      # subsequent git invocation, including the Makefile's own
+      # `$(shell git describe ...)` VERSION default (evaluated on every
+      # `make` invocation). Without this, `git describe` fails silently
+      # (empty output, not a build failure) and internal/version.Resolve()'s
+      # buildinfo fallback masks it, defeating the point of this job.
+      - name: Allow git to operate on the runner-owned checkout (root UID mismatch)
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # REVIEW C-6 FIX: the default shallow fetch-depth: 1 fetches no
+          # tags, so `git describe --tags` has nothing to match and silently
+          # falls to `--always`'s bare-SHA form even once safe.directory is
+          # fixed. fetch-depth: 0 matches D-10's own guardrail that
+          # release/version-stamping paths need full tag history; this job's
+          # cadence (push-to-main/tags only, D-02) means the extra clone cost
+          # is not paid on every PR.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: make setup-env (reproduce dev toolchain from a fresh clone)
+        run: make setup-env
+
+      - name: make test (-race)
+        run: make test
+
+      - name: make lint (golangci-lint + gosec)
+        run: make lint
+
+      - name: make test-e2e (PTY e2e works inside containers)
+        run: make test-e2e
+
   # test-e2e is intentionally NOT run in CI (removed at v0.1.0-rc.9, after
   # v0.1.0-rc.1 through rc.8). Eight consecutive release attempts diagnosed
   # and fixed six distinct, real CI-only causes in turn — undersized PTY
