@@ -193,7 +193,7 @@ func funcDisplayScrubCalls(t *testing.T, filename, funcName string) map[string]b
 			if !ok {
 				return true
 			}
-			if sel.Sel.Name == "displayPath" || sel.Sel.Name == "displayMessage" {
+			if sel.Sel.Name == "displayPath" || sel.Sel.Name == "displayMessage" || sel.Sel.Name == "SanitizeDisplayValue" {
 				calls[sel.Sel.Name] = true
 			}
 			return true
@@ -217,6 +217,9 @@ func TestAllGitSetKeysScrubsOriginAndValueAtTheSourceLevel(t *testing.T) {
 	if !calls["displayMessage"] {
 		t.Error("AllGitSetKeys must scrub Value through b.displayMessage (WR-05)")
 	}
+	if !calls["SanitizeDisplayValue"] {
+		t.Error("AllGitSetKeys must scrub Value through tuikit.SanitizeDisplayValue (WR-02, round 3) — an existing git config value is unvalidated machine state and may carry raw ANSI escapes or embedded newlines")
+	}
 }
 
 // TestAllSSHDirectivesScrubsValueAtTheSourceLevel is WR-05's SSH-side
@@ -228,6 +231,9 @@ func TestAllSSHDirectivesScrubsValueAtTheSourceLevel(t *testing.T) {
 	calls := funcDisplayScrubCalls(t, "wiring.go", "AllSSHDirectives")
 	if !calls["displayMessage"] {
 		t.Error("AllSSHDirectives must scrub Value through b.displayMessage (WR-05) — the All-directives browser must not leak a raw HOME-relative resolved path")
+	}
+	if !calls["SanitizeDisplayValue"] {
+		t.Error("AllSSHDirectives must scrub Value through tuikit.SanitizeDisplayValue (WR-02, round 3) — a resolved ssh -G value is unvalidated machine state and may carry raw ANSI escapes or embedded newlines")
 	}
 }
 
@@ -275,6 +281,50 @@ func TestAllGitSetKeysScrubsOriginThroughDisplayPath(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected an alias.co entry from AllGitSetKeys, got: %+v", views)
+	}
+}
+
+// TestAllGitSetKeysScrubsAnEmbeddedNewlineFromARealMultilineValue is the
+// WR-02 (09.5-REVIEW.md round 3) end-to-end regression: `git config --list
+// -z` faithfully returns a legitimate multi-line value verbatim (proven
+// against the real git binary, not a golden literal — CLAUDE.md's
+// hypothesis -> test -> implementation method). Before this fix,
+// AllGitSetKeys returned that '\n' unsanitized, and setKeyRow's single-row
+// rendering would desynchronize the master list's row accounting.
+func TestAllGitSetKeysScrubsAnEmbeddedNewlineFromARealMultilineValue(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("no git binary in PATH: %v", err)
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
+		t.Fatalf("seeding fragment dir: %v", err)
+	}
+	// git config's own CLI writes a multi-line value verbatim when given one
+	// as a single argv token — no shell involved (arg-slice exec.Command).
+	cmd := exec.Command("git", "config", "--global", "alias.multi", "line1\nline2") //nolint:gosec // fixed args, no shell (G204)
+	cmd.Env = append(os.Environ(), "HOME="+home)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("seeding multi-line git config: %v: %s", err, out)
+	}
+
+	b := newBackendForHome(home)
+	views, err := b.AllGitSetKeys()
+	if err != nil {
+		t.Fatalf("AllGitSetKeys: %v", err)
+	}
+	found := false
+	for _, v := range views {
+		if v.Key != "alias.multi" {
+			continue
+		}
+		found = true
+		if strings.Contains(v.Value, "\n") {
+			t.Errorf("Value = %q contains an embedded newline — must be sanitized through tuikit.SanitizeDisplayValue (WR-02, round 3)", v.Value)
+		}
+	}
+	if !found {
+		t.Fatalf("expected an alias.multi entry from AllGitSetKeys, got: %+v", views)
 	}
 }
 

@@ -3104,3 +3104,61 @@ func TestAllDirectivesFooterAdvertisesAddCustomDirective(t *testing.T) {
 		t.Errorf("the Storage sub-tab footer must NOT advertise %q;\nview:\n%s", PropsAddCustomDirectiveLabel, storageView)
 	}
 }
+
+// TestSanitizeDisplayValueStripsControlsAndANSI is the WR-02 (09.5-REVIEW.md
+// round 3) regression: SanitizeDisplayValue is the sanitizer applied to
+// externally-sourced (git config / ssh -G resolved) values before they are
+// interpolated into a single terminal row — setKeyRow, propertyRow, and
+// their detail panes all render exactly ONE row per entry, unlike the
+// multi-line proof pane sanitizeProofOutput serves. It must strip every C0
+// control byte (including '\n' and TAB — a raw newline in a single-row
+// value desynchronizes the master list's one-row-per-item budgeting), DEL,
+// and the C1 control range, while leaving ordinary printable text (including
+// non-ASCII) untouched.
+func TestSanitizeDisplayValueStripsControlsAndANSI(t *testing.T) {
+	c1Control := string(rune(0x81))
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"plain text unchanged", "less -FRX", "less -FRX"},
+		{"ANSI escape stripped", "\x1b[31mRED\x1b[0m", "[31mRED[0m"},
+		{"embedded newline stripped", "line1\nline2", "line1line2"},
+		{"embedded carriage return stripped", "line1\rline2", "line1line2"},
+		{"tab stripped", "a\tb", "ab"},
+		{"DEL stripped", "a\x7fb", "ab"},
+		{"C1 control stripped", "a" + c1Control + "b", "ab"},
+		{"non-ASCII preserved", "café", "café"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := SanitizeDisplayValue(tc.input)
+			if got != tc.want {
+				t.Errorf("SanitizeDisplayValue(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestSetKeyRowNeverEmitsAnEmbeddedNewline is the WR-02 row-desync
+// regression for the Global Git "Set keys" master list: a raw '\n' surviving
+// into a rendered row shifts every subsequent row's scroll/hit-test math and
+// can push the tail of the list past the frame's bodyHeight truncation.
+// setKeyRow must never emit a literal newline for a value that (before
+// sanitization at the wiring boundary) legitimately carries one.
+func TestSetKeyRowNeverEmitsAnEmbeddedNewline(t *testing.T) {
+	row := setKeyRow(GitSetKeyView{Key: "alias.multi", Value: SanitizeDisplayValue("line1\nline2")}, false, 80)
+	if strings.Contains(row, "\n") {
+		t.Errorf("setKeyRow must render exactly one line, got an embedded newline:\n%q", row)
+	}
+}
+
+// TestPropertyRowNeverEmitsAnEmbeddedNewline is propertyRow's identical
+// WR-02 sibling for the Global SSH "All directives" master list.
+func TestPropertyRowNeverEmitsAnEmbeddedNewline(t *testing.T) {
+	row := propertyRow(SSHDirectiveView{Key: "SetEnv", Value: SanitizeDisplayValue("line1\nline2")}, false, 80)
+	if strings.Contains(row, "\n") {
+		t.Errorf("propertyRow must render exactly one line, got an embedded newline:\n%q", row)
+	}
+}

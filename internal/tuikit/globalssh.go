@@ -2026,6 +2026,42 @@ func sanitizeProofOutput(output string) string {
 	return fitPane(b.String(), customDirectiveOutputMaxLines)
 }
 
+// SanitizeDisplayValue strips control bytes/runes from an externally
+// sourced value (a raw `git config` or `ssh -G` resolved value) before it is
+// interpolated into a single terminal row (WR-02, 09.5-REVIEW.md round 3).
+// The two new properties browsers (setKeyRow/propertyRow, and their detail
+// panes) render machine-config values that gitid never wrote and never
+// validated — unlike a custom key/directive VALUE, which is rejected at
+// write time for control characters, an EXISTING value already set on the
+// machine (by another tool, or by hand) can legitimately carry raw ANSI
+// escapes or embedded newlines, and `git config --show-origin --list -z`
+// faithfully returns them verbatim.
+//
+// Unlike sanitizeProofOutput — which deliberately PRESERVES '\n' because the
+// SSH custom-directive proof pane is genuinely multi-line — every consumer
+// of this function renders exactly ONE terminal row per list item; the
+// master-list row-budgeting arithmetic
+// (ggitSetKeysComputeScrollWindow/gssPropertiesRowForScreenRow et al.)
+// assumes one screen row per entry, so a raw '\n' surviving into that row
+// shifts every subsequent row's hit-test/scroll math and can push the tail
+// of the list past RenderFrame's bodyHeight truncation; a raw ANSI escape
+// (CSI, OSC, …) reaches the real terminal verbatim. This strips every C0
+// control byte (0x00-0x1F, including '\n' and TAB), DEL (0x7F), AND the C1
+// control range (U+0080-U+009F) — a strictly tighter filter than
+// sanitizeProofOutput's (IN-02 in the same review round noted
+// sanitizeProofOutput lets C1 through; this function has no established
+// multi-line contract to preserve, so it starts tighter).
+func SanitizeDisplayValue(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
 // renderCustomDirectiveValidate renders stage 2 — the ONLY genuinely new
 // render this plan adds (Phase 9.5 plan 09.5-04, PROP-04). Renders TWO
 // sequential beats from the ONE staged-config proof (D-I): the name-check

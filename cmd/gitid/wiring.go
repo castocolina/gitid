@@ -2097,8 +2097,13 @@ func (b *realBackend) AllSSHDirectives() ([]tuikit.SSHDirectiveView, error) {
 			// WR-05: the resolved value is untrusted terminal-facing text —
 			// identityfile/controlpath/userknownhostsfile resolve to
 			// absolute home paths — scrubbed exactly like every other
-			// user-facing string in this file.
-			Value:        b.displayMessage(d.Value),
+			// user-facing string in this file. WR-02 (round 3): the resolved
+			// value is ALSO unvalidated machine state (never a value gitid
+			// itself wrote or rejected for control characters) — sanitized
+			// through tuikit.SanitizeDisplayValue BEFORE the HOME-shortening
+			// substring replace, so a raw ANSI escape or embedded newline
+			// never reaches propertyRow's single-row rendering.
+			Value:        b.displayMessage(tuikit.SanitizeDisplayValue(d.Value)),
 			PolicyBacked: policyBacked,
 		})
 	}
@@ -2132,8 +2137,14 @@ func (b *realBackend) AllGitSetKeys() ([]tuikit.GitSetKeyView, error) {
 			// file path (/Users/<you>/.gitconfig, /usr/local/etc/gitconfig,
 			// …); Value is the raw resolved config value. Every other
 			// user-facing string in this file routes through
-			// displayPath/displayMessage — these two did not.
-			Value:        b.displayMessage(k.Value),
+			// displayPath/displayMessage — these two did not. WR-02 (round
+			// 3): Value is ALSO unvalidated machine state — a value already
+			// SET on the machine (by another tool, or by hand), never one
+			// gitid wrote or rejected for control characters — sanitized
+			// through tuikit.SanitizeDisplayValue BEFORE the HOME-shortening
+			// substring replace, so a raw ANSI escape or embedded newline
+			// never reaches setKeyRow's single-row rendering.
+			Value:        b.displayMessage(tuikit.SanitizeDisplayValue(k.Value)),
 			Scope:        k.Scope,
 			Origin:       b.displayPath(k.Origin),
 			PolicyBacked: policyBacked,
