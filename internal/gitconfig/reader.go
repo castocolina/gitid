@@ -43,9 +43,12 @@ const BaselineIncludeBlockName = "baseline-include"
 // for the same reason: an unregistered name is one the doctor's orphans fix
 // will delete out from under the next write — fighting the restore in a
 // destructive false-positive loop (project learning L4, T-07-03, T-07-13).
+// CustomGitKeysBlockName is registered for the identical reason (09.5-03-PLAN.md
+// D-F): it is written the moment the first free-form custom git key is
+// confirmed, and must be recognized from that same commit forward.
 func IsReservedBlockName(name string) bool {
 	switch name {
-	case BaselineIncludeBlockName, GlobalGitBlockName, LegacyGlobalGitBlockName, GitFallbackAuthorBlockName:
+	case BaselineIncludeBlockName, GlobalGitBlockName, LegacyGlobalGitBlockName, GitFallbackAuthorBlockName, CustomGitKeysBlockName:
 		return true
 	}
 	provider, ok := strings.CutPrefix(name, providerRewritePrefix)

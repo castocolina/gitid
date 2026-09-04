@@ -113,6 +113,35 @@ func TestParseManagedIncludeIf_ExcludesReservedBaseline(t *testing.T) {
 	}
 }
 
+// TestParseManagedIncludeIf_ExcludesReservedCustomGitKeys verifies that the
+// reserved custom-git-keys block (09.5-03-PLAN.md D-F, PROP-03) is NOT
+// returned as an identity — it is free-form custom Git key wiring, not a
+// managed identity; including it here would make identity discovery treat it
+// as an incomplete/orphaned identity, the same destructive-fix-loop class
+// TestParseManagedIncludeIf_ExcludesReservedBaseline guards above.
+func TestParseManagedIncludeIf_ExcludesReservedCustomGitKeys(t *testing.T) {
+	customBody := "[core]\n\tpager = less -FRX"
+	workBody := "[includeIf \"gitdir:~/git/work/\"]\n\tpath = ~/.gitconfig.d/work"
+
+	content := []byte(
+		filewriter.BeginPrefix + CustomGitKeysBlockName + "\n" + customBody + "\n" +
+			filewriter.EndPrefix + CustomGitKeysBlockName + "\n" +
+			filewriter.BeginPrefix + "work\n" + workBody + "\n" + filewriter.EndPrefix + "work\n",
+	)
+
+	got := ParseManagedIncludeIf(content)
+	if _, ok := got[CustomGitKeysBlockName]; ok {
+		t.Errorf("reserved %q block must be excluded from identity discovery, but it was present",
+			CustomGitKeysBlockName)
+	}
+	if _, ok := got["work"]; !ok {
+		t.Error("real identity 'work' should still be present")
+	}
+	if len(got) != 1 {
+		t.Errorf("expected exactly 1 identity (work), got %d: %v", len(got), got)
+	}
+}
+
 func TestParseManagedIncludeIfExcludesProviderRewrite(t *testing.T) {
 	workBody := "[includeIf \"gitdir:~/git/work/\"]\n\tpath = ~/.gitconfig.d/work"
 	rewriteName, err := ProviderRewriteBlockName("github.com")

@@ -180,6 +180,38 @@ func TestOrphanReservedGitFallbackAuthorNotFlagged(t *testing.T) {
 	}
 }
 
+// TestCustomGitKeysBlockNameIsReserved: the reserved custom-git-keys
+// gitconfig block (09.5-03-PLAN.md D-F, PROP-03) has no SSH Host block by
+// design — a free-form Git key is never mirrored into SSH — and MUST NOT be
+// reported as an orphan. This is the assertion that actually matters (more
+// than the plain IsReservedBlockName check in internal/gitconfig): flagging
+// it here produces a removal [fix] that deletes the managed block the write
+// path just created, fighting the write in the project's documented
+// destructive false-positive loop (L4).
+func TestCustomGitKeysBlockNameIsReserved(t *testing.T) {
+	d := doctor.Deps{
+		Stat:                       orphStat(),
+		Identities:                 []identity.Account{},
+		SSHManagedBlockNames:       []string{},
+		GitconfigManagedBlockNames: []string{gitconfig.CustomGitKeysBlockName},
+		AllSSHHostIdentityFiles:    []string{},
+		KeyPaths:                   []string{},
+		GitconfigPath:              "/home/u/.gitconfig",
+		RemoveBlock:                func(_, _ string) error { return nil },
+	}
+
+	findings := checks.CheckOrphans(d)
+
+	for _, f := range findings {
+		if orphContains(f.Title, gitconfig.CustomGitKeysBlockName) {
+			t.Errorf("reserved %q must not be reported as an orphan, got: %q", gitconfig.CustomGitKeysBlockName, f.Title)
+		}
+	}
+	if len(findings) != 0 {
+		t.Errorf("expected no orphan findings for a lone reserved custom-git-keys block, got: %v", orphTitles(findings))
+	}
+}
+
 // TestOrphanReservedSSHIncludeNotFlagged: the reserved ssh-include SSH managed
 // block has no gitconfig includeIf counterpart by design and MUST NOT be
 // reported as an orphan (Pitfall 4 / project memory "Doctor reserved-block
