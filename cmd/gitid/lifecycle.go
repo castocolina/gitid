@@ -1564,14 +1564,26 @@ func (b *realBackend) runCustomGitKeyWrite(key, value string, p lifecyclePolicy)
 	// (WR-08). The read-back is run against target directly (the file
 	// EnsureCustomGitKey composed the key into), not through the include
 	// chain, so it observes exactly what this write produced.
+	// WR-04 (09.5-REVIEW.md round 3): every verify-stage git invocation below
+	// is pinned to baselineDir (b.fragmentDir, e.g. ~/.gitconfig.d — a
+	// directory gitid itself manages and EnsureDir already guaranteed exists
+	// above, and which is never a git repository), via the *In isolated
+	// variants. Without this pin, `git config --file <path> …` still parses
+	// the process's AMBIENT repository/global/system config at startup even
+	// though --file selects which file is READ — so running gitid from
+	// inside (or beneath) a repository with a malformed .git/config made
+	// this whole verify stage fail and roll back a write that was perfectly
+	// correct, blaming gitid's own managed file for a fault in an unrelated
+	// repository (proven against the real git binary in
+	// gitconfig.TestVerifySeamIsolatedFromAmbientBrokenRepo).
 	record(stages[4])
-	if verr := gitconfig.ValidateGitConfigSyntax(b.gitconfigPath); verr != nil {
+	if verr := gitconfig.ValidateGitConfigSyntaxIn(baselineDir, b.gitconfigPath); verr != nil {
 		return fail(fmt.Errorf("post-write verification: %s does not parse as valid git-config syntax: %w", b.gitconfigPath, verr))
 	}
-	if verr := gitconfig.ValidateGitConfigSyntax(target); verr != nil {
+	if verr := gitconfig.ValidateGitConfigSyntaxIn(baselineDir, target); verr != nil {
 		return fail(fmt.Errorf("post-write verification: the written file does not parse as valid git-config syntax: %w", verr))
 	}
-	if got, gerr := gitconfig.RunGitConfigGet(target, key); gerr != nil || got != value {
+	if got, gerr := gitconfig.RunGitConfigGetIn(baselineDir, target, key); gerr != nil || got != value {
 		return fail(fmt.Errorf("post-write verification: %s reads back as %q, not %q", key, got, value))
 	}
 

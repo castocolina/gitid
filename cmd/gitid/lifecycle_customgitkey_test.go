@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/castocolina/gitid/internal/gitconfig"
 )
 
 // TestCustomGitKeyLifecycleStagesRow asserts the custom-git-key row in
@@ -179,6 +181,68 @@ func TestRunCustomGitKeyWriteRejectsPolicyManagedKeyAtPlanStage(t *testing.T) {
 	}
 
 	assertUnchanged(t, before, snapshotPaths(t, []string{gitconfigPath, baselinePath}))
+}
+
+// TestRunCustomGitKeyWriteVerifyIsolatedFromAmbientBrokenRepo is the WR-04
+// (09.5-REVIEW.md round 3) end-to-end regression: runCustomGitKeyWrite's own
+// verify stage must not roll back a write that was PERFECTLY CORRECT just
+// because the gitid process happens to be running from inside (or beneath) a
+// git repository whose OWN .git/config is malformed. Before the fix, the
+// verify stage's `git config --file …` calls inherited the process cwd and
+// therefore this ambient broken repo, failing "post-write verification" and
+// restoring the write — a false rollback misdiagnosing an unrelated fault as
+// gitid's own file.
+func TestRunCustomGitKeyWriteVerifyIsolatedFromAmbientBrokenRepo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("no git binary in PATH: %v", err)
+	}
+	home := t.TempDir()
+	b := newBackendForHome(home)
+
+	// A REAL repository (git init, then a syntactically invalid line
+	// appended to its OWN .git/config — git only parses .git/config for a
+	// directory it recognises as an actual repository).
+	repoDir := t.TempDir()
+	initCmd := exec.Command("git", "init", "-q", ".") //nolint:gosec // arg-slice form, no shell; fixed args (G204)
+	initCmd.Dir = repoDir
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	gitConfigPath := filepath.Join(repoDir, ".git", "config")
+	existing, readErr := os.ReadFile(gitConfigPath) //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+	if readErr != nil {
+		t.Fatalf("reading fresh .git/config: %v", readErr)
+	}
+	broken := string(existing) + "[core]\n\tthis is not valid\n"
+	if err := os.WriteFile(gitConfigPath, []byte(broken), 0o644); err != nil { //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+		t.Fatalf("writing broken .git/config: %v", err)
+	}
+
+	oldwd, wdErr := os.Getwd()
+	if wdErr != nil {
+		t.Fatalf("os.Getwd: %v", wdErr)
+	}
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("os.Chdir(repoDir): %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restoring cwd: %v", err)
+		}
+	}()
+
+	res, err := b.runCustomGitKeyWrite("core.pager", "less -FRX", lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+	if err != nil {
+		t.Fatalf("runCustomGitKeyWrite must succeed despite the ambient broken repo in cwd, got: %v (restored=%v)", err, res.Restored)
+	}
+	if len(res.Restored) != 0 {
+		t.Errorf("runCustomGitKeyWrite must not roll back a correct write because of an unrelated broken repo in cwd, restored=%v", res.Restored)
+	}
+
+	got, gerr := gitconfig.RunGitConfigGetIn(b.fragmentDir, b.baselineTargetPath(), "core.pager")
+	if gerr != nil || got != "less -FRX" {
+		t.Errorf("core.pager readback = (%q, %v), want (\"less -FRX\", nil)", got, gerr)
+	}
 }
 
 // TestRunCustomGitKeyWriteLandsBothWrites asserts a confirmed run writes the

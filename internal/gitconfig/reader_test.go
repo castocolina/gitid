@@ -2,6 +2,7 @@ package gitconfig
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -463,5 +464,91 @@ func TestRemoveAllowedSignersLine_MissingFile(t *testing.T) {
 	}
 	if backupPath != "" {
 		t.Errorf("expected empty backupPath for missing file, got %q", backupPath)
+	}
+}
+
+// TestVerifySeamIsolatedFromAmbientBrokenRepo is the WR-04 (09.5-REVIEW.md
+// round 3) regression: git parses the ambient repository/global/system
+// config at process startup even for a `--file`-scoped read, so running
+// gitid's post-write verify seam from inside (or beneath) a repository whose
+// OWN .git/config is malformed makes both RunGitConfigGet and
+// ValidateGitConfigSyntax fail — misdiagnosing a fault in an UNRELATED
+// repository as gitid's own managed file being unparseable, and (at the
+// caller, runCustomGitKeyWrite) rolling back a write that was perfectly
+// correct. This test first proves the hazard is REAL against the unpinned
+// functions (CLAUDE.md's hypothesis -> test -> implementation method — a
+// real, observable failure, not an assumed one), then proves the ISOLATED
+// variants (RunGitConfigGetIn / ValidateGitConfigSyntaxIn), run from the
+// EXACT SAME broken-repo cwd, are immune because they pin cmd.Dir to a
+// caller-supplied non-repository directory and neutralise
+// GIT_CONFIG_NOSYSTEM / GIT_CONFIG_GLOBAL.
+func TestVerifySeamIsolatedFromAmbientBrokenRepo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("no git binary in PATH: %v", err)
+	}
+
+	// A REAL repository (git init, not a hand-rolled .git directory — git
+	// only parses .git/config for a directory it recognises as an actual
+	// repository) whose own .git/config picks up a syntactically invalid
+	// line appended after initialization, reproducing the review's exact
+	// proof verbatim.
+	repoDir := t.TempDir()
+	initCmd := exec.Command("git", "init", "-q", ".") //nolint:gosec // arg-slice form, no shell; fixed args (G204)
+	initCmd.Dir = repoDir
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	gitConfigPath := filepath.Join(repoDir, ".git", "config")
+	existing, readErr := os.ReadFile(gitConfigPath) //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+	if readErr != nil {
+		t.Fatalf("reading fresh .git/config: %v", readErr)
+	}
+	broken := string(existing) + "[core]\n\tthis is not valid\n"
+	if err := os.WriteFile(gitConfigPath, []byte(broken), 0o644); err != nil { //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+		t.Fatalf("writing broken .git/config: %v", err)
+	}
+
+	// A perfectly valid, UNRELATED gitid-managed file.
+	goodFile := filepath.Join(t.TempDir(), "good.cfg")
+	if err := os.WriteFile(goodFile, []byte("[core]\n\tpager = less\n"), 0o644); err != nil { //nolint:gosec // hermetic t.TempDir() fixture path (G304)
+		t.Fatalf("writing good.cfg: %v", err)
+	}
+
+	// A genuinely non-repository directory — the isolation target.
+	nonRepoDir := t.TempDir()
+
+	oldwd, wdErr := os.Getwd()
+	if wdErr != nil {
+		t.Fatalf("os.Getwd: %v", wdErr)
+	}
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("os.Chdir(repoDir): %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("restoring cwd: %v", err)
+		}
+	}()
+
+	// Prove the hazard is real: the UNPINNED functions inherit this broken
+	// repo's ambient config and fail on a file that is perfectly valid.
+	if err := ValidateGitConfigSyntax(goodFile); err == nil {
+		t.Fatal("test invariant broken: ValidateGitConfigSyntax from inside a broken repo was expected to fail — the ambient hazard could not be reproduced")
+	}
+	if _, err := RunGitConfigGet(goodFile, "core.pager"); err == nil {
+		t.Fatal("test invariant broken: RunGitConfigGet from inside a broken repo was expected to fail — the ambient hazard could not be reproduced")
+	}
+
+	// The fix: the isolated variants, run from the SAME broken-repo cwd,
+	// must succeed because they pin cmd.Dir away from it.
+	if err := ValidateGitConfigSyntaxIn(nonRepoDir, goodFile); err != nil {
+		t.Errorf("ValidateGitConfigSyntaxIn must be isolated from the ambient broken repo, got: %v", err)
+	}
+	got, gerr := RunGitConfigGetIn(nonRepoDir, goodFile, "core.pager")
+	if gerr != nil {
+		t.Errorf("RunGitConfigGetIn must be isolated from the ambient broken repo, got: %v", gerr)
+	}
+	if got != "less" {
+		t.Errorf("RunGitConfigGetIn value = %q, want %q", got, "less")
 	}
 }

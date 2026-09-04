@@ -147,8 +147,39 @@ func ReadFragment(fragPath string) (FragmentInfo, error) {
 // (exit code 1 from git config). This is the injectable seam for reading a single
 // git config key from a trusted gitid-managed fragment (D-17 locked-value checks).
 // The arg-slice form avoids shell injection (gosec G204).
+//
+// This unpinned form inherits the caller's process working directory and
+// environment — safe for the general-purpose fragment/doctor reads that use
+// it, but NOT for a post-write verify seam run from an unknown cwd (WR-04,
+// 09.5-REVIEW.md round 3); that caller must use RunGitConfigGetIn instead.
 func RunGitConfigGet(file, key string) (string, error) {
+	return RunGitConfigGetIn("", file, key)
+}
+
+// RunGitConfigGetIn is RunGitConfigGet pinned to a caller-supplied
+// non-repository directory and with the ambient global/system config
+// neutralised (WR-04, 09.5-REVIEW.md round 3): `git config --file <file>
+// <key>` still parses the ambient repository/global/system config at
+// process startup even though --file selects which file the KEY is read
+// from — so invoking it from inside (or beneath) a repository whose OWN
+// .git/config is malformed fails the WHOLE invocation, misdiagnosing a
+// fault in an UNRELATED repository as gitid's own managed file being
+// unparseable (proven against the real git binary in this package's
+// TestVerifySeamIsolatedFromAmbientBrokenRepo). nonRepoDir MUST NOT be
+// inside any git repository — the same contract as globalgit.Deps.NonRepoCwd
+// — an empty string leaves cmd.Dir unset (inherits the caller's cwd,
+// matching RunGitConfigGet's prior behavior exactly). GIT_CONFIG_NOSYSTEM
+// and GIT_CONFIG_GLOBAL=<devnull> further neutralise any interference from a
+// broken system/global config; this is verified safe (not a false-pass
+// risk) because a --file-scoped read never absorbs GIT_CONFIG_COUNT/-c
+// overrides or follows include.path without --includes (round-3 review
+// verification, "I verified the good direction as well").
+func RunGitConfigGetIn(nonRepoDir, file, key string) (string, error) {
 	cmd := exec.Command("git", "config", "--file", file, key) //nolint:gosec // arg-slice form, no shell; file and key are trusted gitid-managed paths/keys (G204)
+	if nonRepoDir != "" {
+		cmd.Dir = nonRepoDir
+	}
+	cmd.Env = nonRepoIsolationEnv()
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -163,12 +194,40 @@ func RunGitConfigGet(file, key string) (string, error) {
 // non-nil error (git itself refusing to parse the file, e.g.
 // "fatal: bad config line N in file <path>"). The arg-slice form avoids
 // shell injection (gosec G204); path is always a trusted gitid-managed path.
+//
+// This unpinned form inherits the caller's process working directory —
+// callers that verify from an unknown cwd must use ValidateGitConfigSyntaxIn
+// instead (WR-04, 09.5-REVIEW.md round 3).
 func ValidateGitConfigSyntax(path string) error {
+	return ValidateGitConfigSyntaxIn("", path)
+}
+
+// ValidateGitConfigSyntaxIn is ValidateGitConfigSyntax pinned to a
+// caller-supplied non-repository directory, mirroring RunGitConfigGetIn's
+// isolation exactly (WR-04, 09.5-REVIEW.md round 3) — see that function's
+// doc comment for the full defect this closes. An empty nonRepoDir leaves
+// cmd.Dir unset, matching ValidateGitConfigSyntax's prior behavior exactly.
+func ValidateGitConfigSyntaxIn(nonRepoDir, path string) error {
 	cmd := exec.Command("git", "config", "--file", path, "--list") //nolint:gosec // arg-slice form, no shell; path is a trusted gitid-managed path (G204)
+	if nonRepoDir != "" {
+		cmd.Dir = nonRepoDir
+	}
+	cmd.Env = nonRepoIsolationEnv()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git config --file %s --list: %w: %s", path, err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// nonRepoIsolationEnv returns the process environment with the ambient
+// global/system git config neutralised (WR-04, 09.5-REVIEW.md round 3):
+// GIT_CONFIG_NOSYSTEM=1 stops git from parsing /etc/gitconfig, and
+// GIT_CONFIG_GLOBAL=<os.DevNull> stops it from parsing the user's own
+// ~/.gitconfig — a broken copy of either must never fail a --file-scoped
+// read of an unrelated, perfectly valid gitid-managed file. Cheap to build
+// per-call; these two probes are not hot paths.
+func nonRepoIsolationEnv() []string {
+	return append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
 }
 
 // RemoveAllowedSignersBlock rewrites path with the gitid managed block for
