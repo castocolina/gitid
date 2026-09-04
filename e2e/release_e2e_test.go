@@ -207,9 +207,15 @@ func TestRelease_UnstampedBuildKeepsDevDefaults(t *testing.T) {
 		t.Fatalf("bin/gitid --version: %v\n%s", err, out)
 	}
 	got := strings.TrimSpace(string(out))
-	want := "gitid version 0.0.0-dev (none, unknown)"
-	if got != want {
-		t.Fatalf("unstamped --version = %q, want %q", got, want)
+	// VERSION now defaults to a live `git describe --tags --match "v*"`
+	// value (Phase 10, D-10), non-deterministic across commits/tags — assert
+	// the SHAPE instead of an exact literal. REVIEW C-1: anchor the version
+	// field's first character to [^v] so a leading-`v` regression (the
+	// Makefile's `patsubst v%,%,...` strip silently not taking effect) fails
+	// this test instead of passing under a loose `\S+` match.
+	want := regexp.MustCompile(`^gitid version [^v]\S*? \(none, unknown, (darwin|linux)/(amd64|arm64)\)$`)
+	if !want.MatchString(got) {
+		t.Fatalf("unstamped --version = %q, want match of %s", got, want.String())
 	}
 }
 

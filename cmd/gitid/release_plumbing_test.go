@@ -249,13 +249,19 @@ func TestWorkflowPrereleaseIsDerivedFromTheTag(t *testing.T) {
 	}
 }
 
-func TestLdflagsSymbolsAreDeclaredInMain(t *testing.T) {
+// TestLdflagsSymbolsAreDeclaredInVersionPackage locks the Makefile's -X path
+// to internal/version's exact unexported var names (Phase 10, D-09): the
+// three linker-injectable identifiers moved from cmd/gitid/main.go into
+// internal/version/version.go, and the Makefile's LDFLAGS retargeted from
+// `-X main.<name>=` to `-X github.com/castocolina/gitid/internal/version.
+// <name>=` accordingly. Renamed from TestLdflagsSymbolsAreDeclaredInMain.
+func TestLdflagsSymbolsAreDeclaredInVersionPackage(t *testing.T) {
 	makefile := readRepoFile(t, makefilePath(t))
-	mainSrc := readRepoFile(t, filepath.Join("..", "..", "cmd", "gitid", "main.go"))
-	re := regexp.MustCompile(`-X main\.([A-Za-z_][A-Za-z0-9_]*)=`)
+	versionSrc := readRepoFile(t, filepath.Join("..", "..", "internal", "version", "version.go"))
+	re := regexp.MustCompile(`-X github\.com/castocolina/gitid/internal/version\.([A-Za-z_][A-Za-z0-9_]*)=`)
 	matches := re.FindAllStringSubmatch(makefile, -1)
 	if len(matches) == 0 {
-		t.Fatal("Makefile LDFLAGS has no -X main.<name>=")
+		t.Fatal("Makefile LDFLAGS has no -X github.com/castocolina/gitid/internal/version.<name>=")
 	}
 	seen := map[string]bool{}
 	for _, m := range matches {
@@ -264,9 +270,13 @@ func TestLdflagsSymbolsAreDeclaredInMain(t *testing.T) {
 			continue
 		}
 		seen[name] = true
-		decl := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `\s*=\s*`)
-		if !decl.MatchString(mainSrc) {
-			t.Errorf("-X main.%s= has no matching package-level %s = declaration in cmd/gitid/main.go", name, name)
+		// No `= ` requirement: internal/version's vars are declared with NO
+		// literal default (a grouped `var (name string)` block, D-09) so a
+		// non-empty compiled-in value never masks the debug.ReadBuildInfo()
+		// fallback — just assert the name is declared at package level.
+		decl := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `\s`)
+		if !decl.MatchString(versionSrc) {
+			t.Errorf("-X github.com/castocolina/gitid/internal/version.%s= has no matching package-level %s declaration in internal/version/version.go", name, name)
 		}
 	}
 }

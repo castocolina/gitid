@@ -1717,8 +1717,8 @@ func TestIdentityCloneMissingNameNonInteractiveError(t *testing.T) {
 // walk newRootCmd(), and assert parity in both directions across EVERY noun
 // group — never only `identity`:
 //
-//   - all three tooling exclusions (completion / help / debug) are named in the
-//     matrix's header and never required to appear in a row;
+//   - all four tooling exclusions (completion / help / debug / version) are named
+//     in the matrix's header and never required to appear in a row;
 //   - the command-path resolution, deferred-noun phase agreement, tree
 //     coverage, and dry-run contract-table checks below are each backed by a
 //     negative control so they cannot pass vacuously.
@@ -1822,15 +1822,18 @@ func reservedNoun(cmd *cobra.Command) bool {
 }
 
 // parityToolingExcluded reports whether a fully-qualified path is tooling
-// (completion / help / debug) that the matrix explicitly documents as never
-// required to appear in a row.
+// (completion / help / debug / version) that the matrix explicitly documents
+// as never required to appear in a row. Phase 10, D-11 adds "gitid version"
+// (and its --json flag) to this set — it is a diagnostic readout, exactly
+// like "gitid debug", not a write outcome the matrix tracks.
 func parityToolingExcluded(path string) bool {
 	return path == "gitid doctor" ||
 		strings.HasPrefix(path, "gitid completion ") ||
 		strings.HasPrefix(path, "gitid completion") ||
 		strings.HasPrefix(path, "gitid help ") ||
 		strings.HasPrefix(path, "gitid help") ||
-		strings.HasPrefix(path, "gitid debug")
+		strings.HasPrefix(path, "gitid debug") ||
+		strings.HasPrefix(path, "gitid version")
 }
 
 // checkParityMatrix verifies the matrix against the built command tree in

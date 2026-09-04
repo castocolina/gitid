@@ -5,38 +5,34 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
 	"github.com/castocolina/gitid/internal/tuikit"
+	"github.com/castocolina/gitid/internal/version"
 )
 
-// These three identifiers are vars rather than consts because the Go
-// linker's -X flag can only overwrite a variable's initial value; a const
-// is folded at compile time. The linker reports NO error when -X names a
-// symbol that does not exist, so a mismatch between these names and the
-// Makefile's -X main.<name> paths silently produces an unstamped binary.
-// e2e/release_e2e_test.go is the guard that catches that mismatch.
-var (
-	version   = "0.0.0-dev"
-	commit    = "none"
-	buildDate = "unknown"
-)
-
-func composeVersion(version, commit, buildDate string) string {
-	return fmt.Sprintf("%s (%s, %s)", version, commit, buildDate)
+// composeVersion formats D-11's locked four-part `--version` stamp:
+// "<version> (<commit>, <date>, <goos>/<goarch>)". The platform suffix is
+// new in Phase 10 — the prior two-part format (09.3-RESEARCH.md Pattern 2)
+// lacked it.
+func composeVersion(info version.Info, goos, goarch string) string {
+	return fmt.Sprintf("%s (%s, %s, %s/%s)", info.Version, info.Commit, info.BuildDate, goos, goarch)
 }
 
 // versionString returns the fully composed stamp assigned to Cobra's Version
 // field. Cobra v1.10.2's built-in defaultVersionTemplate (command.go:2064)
 // already renders `{{DisplayName}} version {{.Version}}`, and Use is already
 // "gitid", so assigning the composed string yields
-// `gitid version 1.2.3 (abc1234, 2026-08-30)` with no custom template
-// (09.3-RESEARCH.md Pattern 2 / Pitfall 4).
+// `gitid version 1.2.3 (abc1234, 2026-08-30, darwin/arm64)` with no custom
+// template (09.3-RESEARCH.md Pattern 2 / Pitfall 4). The version metadata
+// itself now comes from internal/version.Resolve() (D-09's hybrid
+// ldflags/debug.ReadBuildInfo() resolution).
 func versionString() string {
-	return composeVersion(version, commit, buildDate)
+	return composeVersion(version.Resolve(), runtime.GOOS, runtime.GOARCH)
 }
 
 // noArgsAction handles the no-args case for main(): if isTTY is true, calls
@@ -65,7 +61,7 @@ func noArgsAction(isTTY bool, run func() error, out io.Writer, errw io.Writer) i
 // approved chrome with live backend state, replacing the retired 0.0.1 POC
 // tui/ package entry point (D-14).
 func runApp() error {
-	_, err := tea.NewProgram(tuikit.NewApp(buildBackend())).Run()
+	_, err := tea.NewProgram(tuikit.NewApp(buildBackend()).WithVersion(versionString())).Run()
 	return err
 }
 
@@ -116,6 +112,10 @@ func newRootCmd() *cobra.Command {
 
 	// D-08: debug/list command surface (KEY-01/PLAT-01/MGR-02 diagnostic readout).
 	root.AddCommand(newDebugCmd())
+
+	// Phase 10, D-11: `gitid version [--json]`, sharing internal/version's
+	// resolution with the --version flag.
+	root.AddCommand(newVersionCmd())
 
 	// D-01: the identity noun group, its flat root-level aliases (built from
 	// the SAME spec values — review R-15), the real ssh noun group (Phase 6),

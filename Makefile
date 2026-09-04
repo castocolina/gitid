@@ -69,14 +69,22 @@ BIN_DIR := bin
 BINARY  := $(BIN_DIR)/gitid
 
 # Optional-default ldflags so a routine `make build` / `make build-cross` keeps
-# producing today's dev-stamped binary and only an explicit override produces a
-# release stamp (D-06, Pattern 1). Invocation:
+# producing a traceable, git-describe-derived dev-stamped binary and only an
+# explicit override produces a release stamp (D-06/D-10, Pattern 1).
+# Invocation:
 #   make build-cross VERSION=1.2.3 COMMIT=abc1234 DATE=2026-08-30
-# The third -X path is main.buildDate, matching the Go identifier — not main.date.
-VERSION ?= 0.0.0-dev
+# VERSION's default is `git describe --tags --match "v*" --always --dirty`
+# with the leading `v` stripped via patsubst (Phase 10 D-10/D-11 REVIEW C-1):
+# `--match "v*"` excludes this repo's non-release tags (`poc-0.0.1`,
+# `backup/*`); the strip keeps the LOCAL default and the release pipeline's
+# `${GITHUB_REF_NAME#v}` computation agreeing byte-for-byte on D-11's
+# no-leading-`v` `--version` format. The three -X paths target
+# internal/version's unexported version/commit/buildDate vars (Phase 10,
+# D-09) — matching Go identifier names, not main.<name> anymore.
+VERSION ?= $(patsubst v%,%,$(shell git describe --tags --match "v*" --always --dirty))
 COMMIT  ?= none
 DATE    ?= unknown
-LDFLAGS := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(DATE)
+LDFLAGS := -X github.com/castocolina/gitid/internal/version.version=$(VERSION) -X github.com/castocolina/gitid/internal/version.commit=$(COMMIT) -X github.com/castocolina/gitid/internal/version.buildDate=$(DATE)
 
 # test-e2e-shard defaults: 1 of 1 (the whole suite) unless CI overrides both.
 E2E_SHARD  ?= 1
