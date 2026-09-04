@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] SSH · [3] Git · [4] Doctor · [5] Ignore               0 ids · ! 2 ✗ 2
+ Global SSH › All directives
+╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮
+┊   Options   Storage & preview   All directives  ┊
+╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+ ! The SSH configuration could not be resolved.
+
+ ssh -G could not be run against this host — re-enter the screen to retry.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 1 of 6 options need action — Recommended, not required -- you can leave any option unchanged. Thi…
+ ←→ Options / Storage / Directives
+ Enter activate · Esc back · ? help · Ctrl+P palette · q quit

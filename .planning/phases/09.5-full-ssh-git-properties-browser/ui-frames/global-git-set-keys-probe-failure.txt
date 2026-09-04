@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] SSH · [3] Git · [4] Doctor · [5] Ignore               0 ids · ! 1 ✗ 1
+ Global Git › Set keys
+╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮
+┊   Options   Set keys  ┊
+╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+ ! Git config could not be read.
+
+ git config --list --show-origin failed — re-enter the screen to retry.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ←→ Options / Set keys
+ Enter activate · Esc back · ? help · Ctrl+P palette · q quit

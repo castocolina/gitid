@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] SSH · [3] Git · [4] Doctor · [5] Ignore               0 ids · ! 1 ✗ 1
+ Global Git › Options
+╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮
+┊   Options   Set keys  ┊
+╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+ ! The doctor found 2 Git findings beyond this baseline.  Open Doctor (4)
+ ▸ [ ]! init.defaultBranch  [main vs master]│  init.defaultBranch
+      now:  → main                          │  ~ Recommended, not required -- you can leave any
+   [ ]! core.ignorecase                     │ option unchanged. This is advisory, never a compliance
+      now:  → false                         │ gate.
+   [ ]! core.autocrlf / core.eol            │
+      now: 0 of 2 set → input / lf          │  Until Git 2.28 (July 2020), every new repository's
+   ·  ! user.email (global fallback)        │ default branch was named "master" -- a name inherited
+      now:  → left unset unless explicitly …│ from Git's early conventions. GitHub, GitLab, and
+   [ ]! user.useConfigOnly                  │ Bitbucket now all default new repositories to "main"
+      now:  → true                          │ instead, and many teams have followed suit for their
+   [ ]! push.autoSetupRemote                │ own local defaults.
+      now:  → true                          │
+   [ ]! pull.rebase                         │ Setting init.defaultBranch = main only affects
+      now:  → true                          │ repositories created AFTER this is set -- it never
+   [ ]! fetch.prune                         │ renames an existing "master" branch in a repository
+      now:  → true                          │ you already have. If you clone or work in a repository
+   [ ]! alias (8 shortcuts)                 │ whose default branch is still "master" (many older
+      now: 0 of 8 set → st, co, br, ci, df,…│ projects have not renamed it), that repository's
+   [ ]! color (ui/branch/diff/status)       │ branch is completely unaffected; this setting only
+      now: 0 of 4 set → auto for all four   │ decides what "git init" names the FIRST branch of a
+ ↓ (+2 more options)                        │  … (+13 more lines)
+ 11 baseline options not set — Recommended, not required -- you can leave any option unchanged. Th…
+ ↑↓ select option · space toggle · ←→ Options / Set keys
+ Enter activate · Esc back · ? help · Ctrl+P palette · q quit

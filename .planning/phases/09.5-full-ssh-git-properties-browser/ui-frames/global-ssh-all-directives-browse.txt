@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] SSH · [3] Git · [4] Doctor · [5] Ignore               0 ids · ! 2 ✗ 2
+ Global SSH › All directives
+╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮
+┊   Options   Storage & preview   All directives  ┊
+╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+ / T                                                                                 27 of 27 shown
+ ▸ addkeystoagent            no             │  addkeystoagent
+   addressfamily             any            │
+   batchmode                 no             │  no
+   canonicalizehostname      false          │
+   checkhostip               no             │  Resolved via ssh -G — reflects Include/Match
+   ciphers                   chacha20-poly1…│ precedence already applied.
+   clearallforwardings       no             │  Also tracked as a recommended option — see the
+   compression               no             │ Options tab for gitid's guidance.
+   connectionattempts        1              │
+   connecttimeout            none           │
+   controlmaster             false          │
+   dynamicforward            none           │
+   escapechar                ~              │
+   exitonforwardfailure      no             │
+   forwardagent              no             │
+   gatewayports              no             │
+   hashknownhosts            no             │
+   hostbasedauthentication   no             │
+   identitiesonly            no             │
+   loglevel                  INFO           │
+ ↓ (+7 more options)                        │
+ 4 of 6 options need action — Recommended, not required -- you can leave any option unchanged. Thi…
+ ←→ Options / Storage / Directives · ↑↓ select · / filter · n Add custom directive
+ Enter activate · Esc back · ? help · Ctrl+P palette · q quit

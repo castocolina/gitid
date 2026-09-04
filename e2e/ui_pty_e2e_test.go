@@ -295,6 +295,17 @@ func (s *ptySession) waitFor(timeout time.Duration, predicate func(string) bool)
 // inspection.
 func saveFrame(t *testing.T, name string, s *ptySession) {
 	t.Helper()
+	saveFrameContent(t, name, s.snapshot())
+}
+
+// saveFrameContent is saveFrame's underlying write, taking the content
+// directly rather than re-snapshotting — shared with captureGlobalGitFrame
+// (global_git_pty_e2e_test.go), which saves a NORMALIZED copy of the
+// snapshot rather than the raw one (09.5-05-PLAN.md Task 2: the Set-keys
+// detail pane's absolute ShortSandboxHome path is not a stable promoted
+// baseline — see normalizeShortSandboxHomePath's doc comment).
+func saveFrameContent(t *testing.T, name, content string) {
+	t.Helper()
 	root := repoRoot(t)
 	dir := filepath.Join(root, "tmp", "ui-frames")
 	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // test-only dir (G306)
@@ -302,7 +313,6 @@ func saveFrame(t *testing.T, name string, s *ptySession) {
 		return
 	}
 	path := filepath.Join(dir, name+".txt")
-	content := s.snapshot()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil { //nolint:gosec // test-only snapshot (G306)
 		t.Logf("saveFrame: WriteFile: %v (non-fatal)", err)
 		return

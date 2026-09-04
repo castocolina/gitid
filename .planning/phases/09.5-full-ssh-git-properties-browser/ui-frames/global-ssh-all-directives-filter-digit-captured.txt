@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] SSH · [3] Git · [4] Doctor · [5] Ignore               0 ids · ! 2 ✗ 2
+ Global SSH › All directives
+╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮
+┊   Options   Storage & preview   All directives  ┊
+╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+ / strict1                                                                            0 of 27 shown
+ No directives match "strict1".
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 4 of 6 options need action — Recommended, not required -- you can leave any option unchanged. Thi…
+ ←→ Options / Storage / Directives · ↑↓ select · / filter · n Add custom directive
+ Esc back · Ctrl+P palette

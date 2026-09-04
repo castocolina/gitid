@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -54,14 +55,35 @@ func startGlobalGitPTY(t *testing.T, home, fakeGitDir string) *ptySession {
 	return s
 }
 
-// captureGlobalGitFrame snapshots the current frame and saves it via
-// saveFrame's gitignored tmp/ui-frames/ scratch directory — see
-// captureGlobalSSHFrame's WR-04 doc comment for why this no longer writes
-// into the TRACKED .planning/phases/07-global-git-options/ui-frames/.
+// shortSandboxHomePattern matches ShortSandboxHome's fixed "/tmp/h<digits>"
+// prefix (harness_test.go) — the ONLY path shape normalizeShortSandboxHomePath
+// ever touches, so it can never mangle unrelated frame content.
+var shortSandboxHomePattern = regexp.MustCompile(`/tmp/h[0-9]+`)
+
+// normalizeShortSandboxHomePath replaces every ShortSandboxHome path prefix
+// in content with a fixed placeholder. Found while reviewing 09.5-05-PLAN.md
+// Task 2's promoted frames (D-K): the Set-keys detail pane's
+// `git config --show-origin` provenance line renders the ShortSandboxHome
+// path verbatim BY DESIGN (D-01's whole point is proving the real origin
+// file path renders) — a per-run, per-machine absolute path is not a stable
+// promoted baseline, so this normalizes the SAVED copy, never the live
+// assertion, which still needs the real path to prove the feature.
+func normalizeShortSandboxHomePath(content string) string {
+	return shortSandboxHomePattern.ReplaceAllString(content, "/tmp/h<sandbox>")
+}
+
+// captureGlobalGitFrame snapshots the current frame and saves a NORMALIZED
+// copy (normalizeShortSandboxHomePath) via the gitignored tmp/ui-frames/
+// scratch directory — see captureGlobalSSHFrame's WR-04 doc comment for why
+// this no longer writes into the TRACKED
+// .planning/phases/07-global-git-options/ui-frames/. The value RETURNED to
+// the caller is the RAW, un-normalized snapshot — every existing in-test
+// assertion (e.g. TestGlobalGit_RealPTYSetKeysBrowse's origin-path check)
+// keeps seeing the real path; only the promoted-baseline COPY is stabilized.
 func captureGlobalGitFrame(t *testing.T, name string, s *ptySession) string {
 	t.Helper()
 	frame := s.snapshot()
-	saveFrame(t, name, s)
+	saveFrameContent(t, name, normalizeShortSandboxHomePath(frame))
 	return frame
 }
 

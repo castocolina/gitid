@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] SSH · [3] Git · [4] Doctor · [5] Ignore               0 ids · ! 2 ✗ 1
+ Global SSH › All directives
+✓ TCPKeepAlive yes written.
+advisory: TCPKeepAlive was written but could not be found in the re-read directive set — the write m
+Wrote → ~/.ssh/config.d/gitid.config
+Backed up → ~/.ssh/config.d/gitid.config.bak.1788524578385399000
+
+ Done (Enter)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ TCPKeepAlive yes written.
+ Tab/←→ Cancel / Confirm · Enter confirm
+ Esc back · Ctrl+P palette

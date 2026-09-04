@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] SSH · [3] Git · [4] Doctor · [5] Ignore               0 ids · ! 1 ✗ 1
+ Global Git › Set keys
+✓ core.pager = less -FRX written.
+
+Wrote → ~/.gitconfig
+Wrote → ~/.gitconfig.d/00-baseline
+Backed up → ~/.gitconfig.bak.1788524469042344000
+
+ Done (Enter)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ core.pager = less -FRX written.
+ Tab/←→ Cancel / Confirm · Enter confirm
+ Esc back · Ctrl+P palette

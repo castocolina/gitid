@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] SSH · [3] Git · [4] Doctor · [5] Ignore               0 ids · ! 1 ✗ 1
+ Global Git › Set keys
+╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮
+┊   Options   Set keys  ┊
+╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+ / T                                                                                   4 of 4 shown
+ ▸ alias.co                  checkout       │  alias.co
+   credential.helper         osxkeychain    │
+   user.email                setkeys@exampl…│  checkout
+   user.name                 Set Keys Tester│
+                                            │  /tmp/h<sandbox>/.gitconfig
+                                            │  global
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+                                            │
+
+ ←→ Options / Set keys · ↑↓ select · / filter · n Add custom key
+ Enter activate · Esc back · ? help · Ctrl+P palette · q quit

@@ -88,3 +88,107 @@ func TestPromoteFramesWritesEveryFrameWhenAllCapturesArePresent(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// 09.5-05-PLAN.md Task 2 (D-K): phase parameterisation. Every test below
+// drives resolvePhase/promoteForPhase — the orchestration layer ABOVE
+// promoteFrames — so promoteFrames's own signature and the two pre-existing
+// tests above stay byte-for-byte unmodified.
+// ---------------------------------------------------------------------------
+
+// seedPhaseFrames writes every entry's frame file into srcDir with
+// placeholder content unique per frame (so a cross-frame mixup would be
+// detectable), for the given entries.
+func seedPhaseFrames(t *testing.T, srcDir string, entries []promotionEntry) {
+	t.Helper()
+	for _, e := range entries {
+		writeFrame(t, srcDir, e.frame, "placeholder content for "+e.frame+"\n")
+	}
+}
+
+// TestPromoteFramesTargetsTheRequestedPhaseDirectory proves that promoting
+// phase "09.5" writes ONLY into that phase's ui-frames directory under the
+// given planning-phases root, and that Phase 9's directory is never created
+// as a side effect.
+func TestPromoteFramesTargetsTheRequestedPhaseDirectory(t *testing.T) {
+	srcDir := t.TempDir()
+	phasesRoot := t.TempDir()
+	seedPhaseFrames(t, srcDir, phase95Frames)
+
+	dstDir, rows, err := promoteForPhase(srcDir, phasesRoot, "09.5", "deadbeef", nil)
+	if err != nil {
+		t.Fatalf("promoteForPhase(09.5): %v", err)
+	}
+	wantDst := filepath.Join(phasesRoot, "09.5-full-ssh-git-properties-browser", "ui-frames")
+	if dstDir != wantDst {
+		t.Errorf("dstDir = %q, want %q", dstDir, wantDst)
+	}
+	if len(rows) != len(phase95Frames) {
+		t.Fatalf("rows = %d, want %d", len(rows), len(phase95Frames))
+	}
+	for _, e := range phase95Frames {
+		if _, statErr := os.Stat(filepath.Join(dstDir, e.frame+".txt")); statErr != nil {
+			t.Errorf("%s.txt was not written under the phase 09.5 directory: %v", e.frame, statErr)
+		}
+	}
+	// Nowhere else: Phase 9's directory must not have been created.
+	phase9Dir := filepath.Join(phasesRoot, "09-upload-credentials-assist")
+	if _, statErr := os.Stat(phase9Dir); statErr == nil {
+		t.Errorf("phase 9 directory %q must not exist — promoting phase 09.5 must write nowhere else", phase9Dir)
+	}
+}
+
+// TestPromoteFramesPhase9DefaultUnchanged proves that the default phase
+// ("09", what main() resolves to with no flag override) still resolves to
+// today's exact Phase 9 destination directory and today's exact phase9Frames
+// list — the parameterisation changed nothing about the existing behavior.
+func TestPromoteFramesPhase9DefaultUnchanged(t *testing.T) {
+	dir, frames, err := resolvePhase(defaultPhase)
+	if err != nil {
+		t.Fatalf("resolvePhase(defaultPhase): %v", err)
+	}
+	if defaultPhase != "09" {
+		t.Fatalf("defaultPhase = %q, want \"09\" — the no-argument invocation must still mean Phase 9", defaultPhase)
+	}
+	wantDir := "09-upload-credentials-assist"
+	if dir != wantDir {
+		t.Errorf("resolvePhase(%q) dir = %q, want %q", defaultPhase, dir, wantDir)
+	}
+	if len(frames) != len(phase9Frames) {
+		t.Fatalf("resolvePhase(%q) returned %d frames, want %d (phase9Frames unchanged)", defaultPhase, len(frames), len(phase9Frames))
+	}
+	for i, e := range frames {
+		if e != phase9Frames[i] {
+			t.Errorf("resolvePhase(%q) frame[%d] = %+v, want %+v (phase9Frames unchanged)", defaultPhase, i, e, phase9Frames[i])
+		}
+	}
+}
+
+// TestPromoteFramesUnknownPhaseFailsClosed proves that an unknown phase
+// identifier is refused by name and nothing is written anywhere — the tool
+// never writes to a directory it was not asked for.
+func TestPromoteFramesUnknownPhaseFailsClosed(t *testing.T) {
+	if _, _, err := resolvePhase("99-does-not-exist"); err == nil {
+		t.Fatal("resolvePhase must refuse an unknown phase identifier")
+	}
+
+	srcDir := t.TempDir()
+	phasesRoot := t.TempDir()
+	dstDir, rows, err := promoteForPhase(srcDir, phasesRoot, "99-does-not-exist", "deadbeef", nil)
+	if err == nil {
+		t.Fatal("promoteForPhase must fail for an unknown phase")
+	}
+	if dstDir != "" {
+		t.Errorf("promoteForPhase returned dstDir=%q on failure, want empty", dstDir)
+	}
+	if rows != nil {
+		t.Errorf("promoteForPhase returned rows=%v on failure, want nil", rows)
+	}
+	entries, readErr := os.ReadDir(phasesRoot)
+	if readErr != nil {
+		t.Fatalf("reading phasesRoot: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Errorf("phasesRoot must stay empty on an unknown-phase refusal, found: %v", entries)
+	}
+}
