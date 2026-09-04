@@ -153,9 +153,30 @@ func deterministicGitIdentityFixture(t *testing.T, home string) {
 // Git side, index 1 — drives detail-ssh-first). Names deliberately avoid
 // collision with the create-flow wizard's own default "acme" prefix and
 // deterministicGitIdentityFixture's "gscreen"/"gscreenssh" (both fixtures
-// run against SEPARATE, dedicated HOMEs, same isolation precedent as
-// git-screen's own fixture — see mergeGitScreenCaptures' doc comment). Every
-// byte here is FIXED, no randomness/timestamps (CR-01).
+// run against SEPARATE, dedicated HOMEs in most call sites, the same
+// isolation precedent as git-screen's own fixture — see
+// mergeGitScreenCaptures' doc comment). Every byte here is FIXED, no
+// randomness/timestamps (CR-01).
+//
+// WR-07 (09.5-REVIEW.md round 3): this helper used to os.WriteFile
+// home/.gitconfig UNCONDITIONALLY, truncating whatever a PRIOR fixture in
+// the same shared home had already written there — the IDENTICAL defect
+// deterministicGlobalGitFixture carried before the round-2 WR-12 fix (see
+// that function's own doc comment), left unfixed on this call chain.
+// TestGateVisualRegressionReadOnly runs deterministicGitIdentityFixture
+// (which seeds [user] name/email plus a "# BEGIN gitid managed: gscreen"
+// includeIf block) against the SAME home, then THIS helper — the truncating
+// write silently destroyed both mid-test, so every capture taken after this
+// point ran against a home whose state was not what the earlier fixture set
+// up. The fix is the SAME additive pattern WR-12 already established: read
+// whatever is already there and append, so a caller with a fresh dedicated
+// home (the common case — every OTHER call site in this file) sees
+// byte-identical output to before, while a caller sharing a home with an
+// earlier fixture (TestGateVisualRegressionReadOnly) keeps that fixture's
+// content intact. The two fixtures' [user] blocks happen to carry the SAME
+// name/email — git tolerates a repeated [user] section (last value wins,
+// and both values are identical here, so the result is idempotent either
+// way); the two DIFFERENT includeIf blocks (gscreen, imgr) both survive.
 func deterministicIdentityManagerFixture(t *testing.T, home string) {
 	t.Helper()
 	sshDir := filepath.Join(home, ".ssh")
@@ -193,11 +214,20 @@ func deterministicIdentityManagerFixture(t *testing.T, home string) {
 		t.Fatalf("gate-visual-regression: writing fixture ssh/config: %v", err)
 	}
 
-	gitconfig := "[user]\n  name = Test User\n  email = test@example.com\n\n" +
+	// WR-07 (round 3): additive, not truncating — read whatever a prior
+	// fixture in this shared home already wrote and append, mirroring
+	// deterministicGlobalGitFixture's own WR-12 fix exactly.
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+	existingGitconfig, gcReadErr := os.ReadFile(gitconfigPath) //nolint:gosec // hermetic t.TempDir()-derived fixture path (G304)
+	if gcReadErr != nil && !os.IsNotExist(gcReadErr) {
+		t.Fatalf("gate-visual-regression: reading existing ~/.gitconfig before appending identity-manager fixture: %v", gcReadErr)
+	}
+	gitconfigAddition := "[user]\n  name = Test User\n  email = test@example.com\n\n" +
 		"# BEGIN gitid managed: imgr\n" +
 		"[includeIf \"gitdir:~/git/imgr/\"]\n  path = ~/.gitconfig.d/imgr\n" +
 		"# END gitid managed: imgr\n"
-	if err := os.WriteFile(filepath.Join(home, ".gitconfig"), []byte(gitconfig), 0o644); err != nil {
+	mergedGitconfig := append(append([]byte{}, existingGitconfig...), []byte(gitconfigAddition)...)
+	if err := os.WriteFile(gitconfigPath, mergedGitconfig, 0o644); err != nil {
 		t.Fatalf("gate-visual-regression: writing fixture .gitconfig: %v", err)
 	}
 
@@ -211,6 +241,36 @@ func deterministicIdentityManagerFixture(t *testing.T, home string) {
 		"# END gitid managed: imgr\n"
 	if err := os.WriteFile(filepath.Join(sshDir, "allowed_signers"), []byte(signers), 0o644); err != nil { //nolint:gosec // hermetic sandbox HOME fixture (G306)
 		t.Fatalf("gate-visual-regression: writing fixture allowed_signers: %v", err)
+	}
+}
+
+// TestDeterministicIdentityManagerFixtureIsAdditiveNotTruncating is the
+// WR-07 (09.5-REVIEW.md round 3) regression, the IDENTICAL shape to
+// TestDeterministicGlobalGitFixtureIsAdditiveNotTruncating (WR-12, round 2):
+// seeding a home with deterministicGitIdentityFixture (which writes [user]
+// name/email plus a "# BEGIN gitid managed: gscreen" includeIf block into
+// ~/.gitconfig) and THEN deterministicIdentityManagerFixture (over the SAME
+// home, mirroring TestGateVisualRegressionReadOnly's own fixture chain) must
+// leave BOTH fixtures' content intact, not have the second silently truncate
+// the first.
+func TestDeterministicIdentityManagerFixtureIsAdditiveNotTruncating(t *testing.T) {
+	home := t.TempDir()
+	deterministicGitIdentityFixture(t, home)
+	deterministicIdentityManagerFixture(t, home)
+
+	got, err := os.ReadFile(filepath.Join(home, ".gitconfig")) //nolint:gosec // t.TempDir()-derived test fixture path (G304)
+	if err != nil {
+		t.Fatalf("reading ~/.gitconfig: %v", err)
+	}
+	gitconfig := string(got)
+	if !strings.Contains(gitconfig, "gitdir:~/git/gscreen/") {
+		t.Errorf("deterministicGitIdentityFixture's gscreen includeIf block must survive, got:\n%s", gitconfig)
+	}
+	if !strings.Contains(gitconfig, "gitdir:~/git/imgr/") {
+		t.Errorf("deterministicIdentityManagerFixture's own imgr includeIf block must still be present, got:\n%s", gitconfig)
+	}
+	if !strings.Contains(gitconfig, "Test User") {
+		t.Errorf("the shared [user] block must survive, got:\n%s", gitconfig)
 	}
 }
 
