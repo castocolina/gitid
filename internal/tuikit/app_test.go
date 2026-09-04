@@ -316,3 +316,44 @@ func TestNewAppPrefilledReuseKeyPopulatesPicker(t *testing.T) {
 		t.Errorf("reuseKeyPath = %q, want the pre-filled source key path", got)
 	}
 }
+
+// TestWithVersionAddsHelpOverlayLine asserts WithVersion(v) is additive: the
+// `?` help overlay gains exactly one extra line naming the version, and every
+// other line stays byte-identical to the zero-value (unversioned) render
+// (Phase 10, D-11 — no visual-regression risk for the 20+ existing callers
+// that never invoke WithVersion).
+func TestWithVersionAddsHelpOverlayLine(t *testing.T) {
+	base := NewApp(stubBackend{})
+	baseHelp := base.renderHelp()
+
+	versioned := base.WithVersion("1.2.3 (abc1234, 2026-07-08, darwin/arm64)")
+	versionedHelp := versioned.renderHelp()
+
+	if strings.Contains(baseHelp, "gitid 1.2.3") {
+		t.Fatal("unversioned renderHelp() must not contain a version line")
+	}
+	if !strings.Contains(versionedHelp, "gitid 1.2.3 (abc1234, 2026-07-08, darwin/arm64)") {
+		t.Fatalf("versioned renderHelp() missing the version line:\n%s", versionedHelp)
+	}
+	// Every line the unversioned render has must still be present verbatim —
+	// WithVersion adds exactly one line, it never mutates existing content.
+	for _, line := range strings.Split(baseHelp, "\n") {
+		if line == "" {
+			continue
+		}
+		if !strings.Contains(versionedHelp, line) {
+			t.Errorf("versioned renderHelp() lost a base line: %q", line)
+		}
+	}
+}
+
+// TestWithVersionDoesNotMutateReceiver asserts WithVersion returns a COPY
+// (value receiver/return) — calling it must never affect the original App's
+// own rendered help output.
+func TestWithVersionDoesNotMutateReceiver(t *testing.T) {
+	base := NewApp(stubBackend{})
+	_ = base.WithVersion("9.9.9 (deadbee, 2001-02-03, linux/amd64)")
+	if strings.Contains(base.renderHelp(), "gitid 9.9.9") {
+		t.Fatal("WithVersion must not mutate its receiver")
+	}
+}

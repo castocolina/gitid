@@ -61,7 +61,7 @@ func noArgsAction(isTTY bool, run func() error, out io.Writer, errw io.Writer) i
 // approved chrome with live backend state, replacing the retired 0.0.1 POC
 // tui/ package entry point (D-14).
 func runApp() error {
-	_, err := tea.NewProgram(tuikit.NewApp(buildBackend())).Run()
+	_, err := tea.NewProgram(tuikit.NewApp(buildBackend()).WithVersion(versionString())).Run()
 	return err
 }
 
@@ -112,6 +112,10 @@ func newRootCmd() *cobra.Command {
 
 	// D-08: debug/list command surface (KEY-01/PLAT-01/MGR-02 diagnostic readout).
 	root.AddCommand(newDebugCmd())
+
+	// Phase 10, D-11: `gitid version [--json]`, sharing internal/version's
+	// resolution with the --version flag.
+	root.AddCommand(newVersionCmd())
 
 	// D-01: the identity noun group, its flat root-level aliases (built from
 	// the SAME spec values — review R-15), the real ssh noun group (Phase 6),

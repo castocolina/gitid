@@ -128,6 +128,8 @@ func TestNewRootCmdSurfaceIsPhase5CLI(t *testing.T) {
 		// autonomous provider-key registration plan 09-04 built — see
 		// TestNewRootCmdArchivedPOCCommandsAreGone, deliberately untouched.
 		"register-key": true,
+		// Phase 10, D-11: `gitid version [--json]`.
+		"version": true,
 	}
 	for _, cmd := range root.Commands() {
 		if !want[cmd.Name()] {

@@ -148,6 +148,23 @@ type App struct {
 	// itself already ran in NewApp (Init's value receiver cannot retain
 	// the activated screen model, so activating there would lose it).
 	initCmd tea.Cmd
+	// version is the build-stamped version line shown in the `?` help
+	// overlay (Phase 10, D-11). Zero value "" for every existing caller —
+	// only cmd/gitid's runApp() calls WithVersion, so every other caller
+	// (cmd/gitid-dummy, the create-flow wizard's own tea.NewProgram call,
+	// every screenshot/PTY-capture entry point) renders renderHelp()
+	// byte-identically to before this field existed.
+	version string
+}
+
+// WithVersion returns a copy of a with its help-overlay version line set to
+// v (Phase 10, D-11). Value receiver/return, matching how NewApp already
+// returns App by value — no signature change to NewApp/NewAppPrefilled/
+// NewAppOnGlobalSSH/NewAppOnGlobalGit, so every existing call site stays
+// untouched.
+func (a App) WithVersion(v string) App {
+	a.version = v
+	return a
 }
 
 // NewApp builds the app around the injected Backend: it seeds the state
@@ -691,6 +708,12 @@ func (a App) renderHelp() string {
 	b.WriteString(" " + styleBold.Render("gitid — keys & state legend") + "\n")
 	b.WriteString(" " + styleFaint.Render("Everything is dummy, in-memory data — actions really change the demo state (lists, badges,") + "\n")
 	b.WriteString(" " + styleFaint.Render("header counts), but nothing on your machine is touched.") + "\n")
+	if a.version != "" {
+		// Phase 10, D-11: additive version line, only rendered when a caller
+		// (cmd/gitid's runApp()) has set it via WithVersion — every other
+		// caller's a.version stays "" and renders byte-identically to before.
+		b.WriteString(" " + styleFaint.Render("gitid "+a.version) + "\n")
+	}
 	for _, row := range helpKeys {
 		b.WriteString("  " + styleBold.Render(padRight(row[0], 18)) + row[1] + "\n")
 	}
