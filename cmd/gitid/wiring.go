@@ -2608,20 +2608,36 @@ func (b *realBackend) ValidateCustomSSHDirective(name, value string) tea.Cmd {
 }
 
 // CustomSSHDirectivePlan is the custom-directive ceremony's preview: it
-// validates name and value BY CALLING sshconfig.EnsureGlobals against the
-// CURRENT global block bytes — the SAME call the curated global-SSH apply
-// already makes (GlobalSSHApplyPlan above), just with a key outside the
-// curated Policy table (D-J) — so a candidate that would not round-trip
-// parse fails HERE, at the plan stage, and the ceremony never opens (the "a
-// preview that cannot be computed renders the error inline and does NOT open
-// the ceremony" rule both Global screens already follow). Targets/Backups
-// are built exactly like GlobalSSHApplyPlan's (a backup entry only for a
-// file that already exists), and the diff is computed via the same
+// validates name and value in TWO layers. First (WR-13), the real
+// globalssh.ValidateDirectiveName/ValidateDirectiveValue guards — the SAME
+// ones runCustomSSHDirectiveWrite's own plan stage calls — reject an empty,
+// whitespace, or structural-keyword (Host/Match/Include/IgnoreUnknown) name
+// before anything is composed: sshconfig.EnsureGlobals alone is NOT a
+// name/value validator, and a structural keyword composes a perfectly
+// parseable (if semantically corrupt) block, so relying on EnsureGlobals's
+// Parse round-trip alone left this stage's advertised fail-closed contract —
+// stated in this function's own doc comment and in
+// SSHCustomDirectivePlanner's interface doc — a no-op for exactly that
+// shape. Second, sshconfig.EnsureGlobals against the CURRENT global block
+// bytes — the SAME call the curated global-SSH apply already makes
+// (GlobalSSHApplyPlan above), just with a key outside the curated Policy
+// table (D-J) — so a candidate that would not round-trip parse ALSO fails
+// HERE, at the plan stage, and the ceremony never opens (the "a preview that
+// cannot be computed renders the error inline and does NOT open the
+// ceremony" rule both Global screens already follow). Targets/Backups are
+// built exactly like GlobalSSHApplyPlan's (a backup entry only for a file
+// that already exists), and the diff is computed via the same
 // globalsTextDiff helper over the SAME globalsBodyText slice (Phase 9.5 plan
 // 09.5-04, PROP-04).
 func (b *realBackend) CustomSSHDirectivePlan(name, value string) (tuikit.SSHCustomDirectivePlanView, error) {
 	if b.initErr != nil {
 		return tuikit.SSHCustomDirectivePlanView{}, b.initErr
+	}
+	if err := globalssh.ValidateDirectiveName(name); err != nil {
+		return tuikit.SSHCustomDirectivePlanView{}, err
+	}
+	if err := globalssh.ValidateDirectiveValue(value); err != nil {
+		return tuikit.SSHCustomDirectivePlanView{}, err
 	}
 	st := b.storage()
 	targets := []string{st.targetPath}

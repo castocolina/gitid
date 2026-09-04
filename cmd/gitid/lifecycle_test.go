@@ -1748,6 +1748,38 @@ func TestCustomSSHDirectivePlanRefusesUnparseableResult(t *testing.T) {
 	assertUnchanged(t, before, snapshotPaths(t, []string{filepath.Join(home, ".ssh", "config")}))
 }
 
+// TestCustomSSHDirectivePlanRejectsStructuralKeywordName is the WR-13
+// regression: CustomSSHDirectivePlan's own doc comment claims "a candidate
+// that would not round-trip parse fails HERE, at the plan stage, and the
+// ceremony never opens", and SSHCustomDirectivePlanner's interface doc
+// claims "a non-nil error here must fail closed" — but the implementation
+// called only sshconfig.EnsureGlobals, which is not a name/value validator.
+// A structural keyword like "Host" as the candidate NAME composes a
+// perfectly parseable (if semantically corrupt) `Host *\n  Host
+// evil.example\n` block, so EnsureGlobals returns no error and the plan
+// stage's advertised fail-closed gate is a no-op for exactly the
+// structural-keyword corruption CR-02 was raised about. This is
+// unexploitable in the normal flow only because runCustomSSHDirectiveWrite
+// re-validates at the write stage — the plan stage itself must ALSO call
+// the real validators, matching its own documented contract.
+func TestCustomSSHDirectivePlanRejectsStructuralKeywordName(t *testing.T) {
+	home := t.TempDir()
+	b := newBackendForHome(home)
+	before := snapshotPaths(t, []string{filepath.Join(home, ".ssh", "config")})
+
+	if _, err := b.CustomSSHDirectivePlan("Host", "evil.example"); err == nil {
+		t.Fatal("CustomSSHDirectivePlan with the structural keyword name \"Host\" must return an error at the plan stage")
+	}
+	if _, err := b.CustomSSHDirectivePlan("Include", "/tmp/x"); err == nil {
+		t.Fatal("CustomSSHDirectivePlan with the structural keyword name \"Include\" must return an error at the plan stage")
+	}
+	if _, err := b.CustomSSHDirectivePlan("", ""); err == nil {
+		t.Fatal("CustomSSHDirectivePlan with an empty name and value must return an error at the plan stage")
+	}
+
+	assertUnchanged(t, before, snapshotPaths(t, []string{filepath.Join(home, ".ssh", "config")}))
+}
+
 // TestRunCustomSSHDirectiveWriteLandsInTheExistingGlobalBlock asserts a
 // confirmed run writes the directive into the EXISTING global-ssh managed
 // block (D-J): the block's sentinel name is unchanged, the ordered policy
