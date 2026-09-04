@@ -1997,6 +1997,28 @@ func (m globalSSHModel) renderCustomDirectiveForm(width int) string {
 	return lipgloss.NewStyle().Width(width).Render(d.String())
 }
 
+// customDirectiveOutputMaxLines bounds proof.Output's rendered height so a
+// pathological multi-line ssh -G diagnostic can never overrun the canonical
+// 30-row frame the whole visual-regression gate is pinned to (WR-14).
+const customDirectiveOutputMaxLines = 8
+
+// sanitizeProofOutput strips every C0 control byte (and DEL) OTHER THAN
+// newline from a verbatim ssh subprocess output, then bounds its line count
+// through fitPane's existing clip-with-cue contract (WR-14). proof.Output is
+// untrusted terminal content — unlike PreviewBlock (used for the command
+// line one row above), it has no line budget and no control-character
+// filtering of its own, so both are applied here, at the ONE call site that
+// renders it, before it ever reaches the frame.
+func sanitizeProofOutput(output string) string {
+	var b strings.Builder
+	for _, r := range output {
+		if r == '\n' || (r >= 0x20 && r != 0x7f) {
+			b.WriteRune(r)
+		}
+	}
+	return fitPane(b.String(), customDirectiveOutputMaxLines)
+}
+
 // renderCustomDirectiveValidate renders stage 2 — the ONLY genuinely new
 // render this plan adds (Phase 9.5 plan 09.5-04, PROP-04). Renders TWO
 // sequential beats from the ONE staged-config proof (D-I): the name-check
@@ -2037,7 +2059,12 @@ func (m globalSSHModel) renderCustomDirectiveValidate(width int) string {
 	// TEST-01's "shown == run" contract, reused verbatim rather than
 	// inventing a new render.
 	d.WriteString(PreviewBlock("ssh -G proof (staged, throwaway config)", "$ "+proof.Command, false, width, 2) + "\n")
-	d.WriteString(lipgloss.NewStyle().Width(width).Render(" "+styleFaint.Render(proof.Output)) + "\n")
+	// WR-14: proof.Output is the verbatim combined output of a real ssh
+	// subprocess — untrusted terminal content. Unlike PreviewBlock above,
+	// this block has no line budget of its own, so it is bounded and
+	// control-character-sanitized HERE before it ever reaches the frame.
+	sanitizedOutput := sanitizeProofOutput(proof.Output)
+	d.WriteString(lipgloss.NewStyle().Width(width).Render(" "+styleFaint.Render(sanitizedOutput)) + "\n")
 	switch {
 	case proof.PreexistingError:
 		// D-I's third outcome: a DIFFERENT directive already had a problem
@@ -2047,8 +2074,9 @@ func (m globalSSHModel) renderCustomDirectiveValidate(width int) string {
 	default:
 		// D-I's fourth outcome: the name is recognized but the VALUE was
 		// rejected. PropsSSHProofRejectedFmt itself carries the verbatim
-		// output (TEST-01's exact-output discipline).
-		d.WriteString(" " + styleWarning.Render(fmt.Sprintf(PropsSSHProofRejectedFmt, proof.Output)) + "\n")
+		// output (TEST-01's exact-output discipline) — sanitized the SAME
+		// way as the block above (WR-14).
+		d.WriteString(" " + styleWarning.Render(fmt.Sprintf(PropsSSHProofRejectedFmt, sanitizedOutput)) + "\n")
 	}
 	return lipgloss.NewStyle().Width(width).Render(d.String())
 }

@@ -2749,6 +2749,46 @@ func TestCustomDirectivePreexistingConfigErrorIsNotBlamedOnTheEntry(t *testing.T
 	}
 }
 
+// TestRenderCustomDirectiveValidateBoundsAndSanitizesRawSSHOutput is the
+// WR-14 regression: proof.Output is the verbatim combined output of a real
+// `ssh` subprocess — unlike every other block on this render, it has no
+// line budget/clip and no control-character filtering, so a multi-line
+// diagnostic (or one carrying raw control bytes) can overrun the canonical
+// 30-row frame and corrupt the layout the whole visual-regression gate is
+// pinned to. Constructs a minimal model directly (no backend/app plumbing
+// needed — renderCustomDirectiveValidate takes only a pane width) with an
+// OK: true proof whose Output has far more lines than any reasonable budget
+// and carries a raw C0 control byte, and asserts the rendered pane is
+// bounded and the control byte never reaches the render.
+func TestRenderCustomDirectiveValidateBoundsAndSanitizesRawSSHOutput(t *testing.T) {
+	var manyLines []string
+	for i := 0; i < 40; i++ {
+		manyLines = append(manyLines, fmt.Sprintf("diagnostic line %d", i))
+	}
+	rawOutput := strings.Join(manyLines, "\n") + "\x07bell-control-byte"
+
+	m := globalSSHModel{
+		pendingDirectiveName: "TCPKeepAlive",
+		customDirectiveProof: SSHDirectiveProofView{
+			OK:      true,
+			Command: "ssh -F /tmp/staged -G gitid-probe.invalid",
+			Output:  rawOutput,
+		},
+	}
+	got := m.renderCustomDirectiveValidate(80)
+
+	if strings.Contains(got, "\x07") {
+		t.Error("rendered pane must not contain a raw C0 control byte (WR-14 regressed)")
+	}
+	lineCount := strings.Count(got, "\n")
+	if lineCount > 30 {
+		t.Errorf("rendered pane has %d lines from a 40-line ssh -G output — want it CLIPPED to a bounded budget (WR-14 regressed), got:\n%s", lineCount, got)
+	}
+	if !strings.Contains(got, "more line") {
+		t.Errorf("rendered pane must carry a visible clip cue (\"… (+n more lines)\") when the output overflows its budget, got:\n%s", got)
+	}
+}
+
 // TestCustomDirectiveAcceptedProofOpensCeremony asserts a proof with
 // OK: true renders the accepted beat with the exact command and its real
 // output, then opens the ceremony carrying the backend's REAL plan: the
