@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/castocolina/gitid/internal/sshconfig"
 )
 
 // badConfigOptionMarker is the exact OpenSSH stderr substring a staged-config
@@ -204,7 +206,7 @@ func ProveCustomDirective(deps Deps, currentGlobalBody, name, value string) (Dir
 	}
 
 	stagedPath := filepath.Join(tmpDir, "staged_ssh_config")
-	stagedContent := stageDirectiveConfig(currentGlobalBody, name, value)
+	stagedContent := stageDirectiveConfigForWrite(deps, currentGlobalBody, name, value)
 	if err := os.WriteFile(stagedPath, []byte(stagedContent), 0o600); err != nil {
 		return DirectiveProof{}, fmt.Errorf("globalssh: writing staged directive-proof config: %w", err)
 	}
@@ -307,6 +309,42 @@ func ResolveDirectiveValue(deps Deps, name, value string) (string, error) {
 	return v, nil
 }
 
+// stageDirectiveConfigForWrite renders the throwaway config's full text the
+// SAME way the real write composes it — via sshconfig.RenderGlobalBodyWithOverlay,
+// the extracted rendering step sshconfig.EnsureGlobals itself uses — instead
+// of hand-assembling `candidate line, then the existing body verbatim`
+// (WR-08/WR-09, 09.5-REVIEW.md round 3). This is ProveCustomDirective's ONLY
+// staging function; ResolveDirectiveValue keeps using the older, deliberately
+// ISOLATED stageDirectiveConfig below (no existing body mixed in — see that
+// function's own doc comment), which this change does not touch.
+//
+// Two defects this closes, both because the composition now runs through the
+// EXACT SAME merge sshconfig.EnsureGlobals(existing, map[string]string{name:
+// value}, goos) performs at write time (runCustomSSHDirectiveWrite,
+// lifecycle.go, builds that identical explicit map):
+//
+//   - WR-08: for a directive OpenSSH ACCUMULATES (IdentityFile,
+//     CertificateFile, LocalForward, RemoteForward, DynamicForward,
+//     PermitRemoteOpen, …), the old hand-assembly put BOTH the candidate and
+//     the existing value in the staged text, so the staged probe resolved
+//     their UNION — over-reporting what the write (which REPLACES via
+//     merged.set) will actually produce. RenderGlobalBodyWithOverlay's
+//     globalMap has no accumulating-name special case: every name is
+//     replaced in place, uniformly, exactly like the real write.
+//   - WR-09: gitid's rendered block always begins with "IgnoreUnknown
+//     UseKeychain" (ssh_config(5): it must be listed EARLY to guard
+//     directives that appear AFTER it). The old hand-assembly put the
+//     candidate line at file scope AHEAD OF the whole existing body
+//     (including its own guard line), so a candidate like "UseKeychain yes"
+//     staged on Linux was reported UnknownName even though the file the
+//     write would actually produce places it after the guard.
+//     RenderGlobalBodyWithOverlay always emits the guard line first,
+//     structurally, so the candidate (composed INTO the body, never ahead of
+//     it) is always staged after the guard, matching the real file exactly.
+func stageDirectiveConfigForWrite(deps Deps, currentGlobalBody, name, value string) string {
+	return sshconfig.RenderGlobalBodyWithOverlay(currentGlobalBody, map[string]string{name: value}, deps.GOOS)
+}
+
 // stageDirectiveConfig builds the throwaway config's full text: the
 // candidate `name value` line FIRST, then the current global block body
 // (which already contains its own `Host *` line whenever a block exists on
@@ -326,6 +364,13 @@ func ResolveDirectiveValue(deps Deps, name, value string) (string, error) {
 // (`merged.set(k, v)` in EnsureGlobals) replaces the value in place
 // correctly. Staging the candidate first makes the staged probe resolve the
 // value the write will actually produce.
+//
+// This function is now used ONLY by ResolveDirectiveValue, which stages
+// name/value in deliberate ISOLATION (currentGlobalBody is always "" at that
+// call site) — see ResolveDirectiveValue's own doc comment for why mixing in
+// unrelated directives there would be wrong. ProveCustomDirective (the
+// staged PROOF for an actual candidate write) uses
+// stageDirectiveConfigForWrite above instead (WR-08/WR-09, round 3).
 //
 // When currentGlobalBody is empty (no block written yet) or does not
 // already carry a `Host *` line, one is prepended so the candidate line

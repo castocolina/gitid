@@ -118,6 +118,51 @@ func TestEnsureGlobalsExplicitOverlayAlwaysWins(t *testing.T) {
 	}
 }
 
+// TestRenderGlobalBodyWithOverlayMatchesEnsureGlobalsExactly is the WR-08/
+// WR-09 (09.5-REVIEW.md round 3) parity regression: RenderGlobalBodyWithOverlay
+// is the extracted "render what the real write will produce" step
+// EnsureGlobals itself uses — a STAGED proof that calls this function must
+// see byte-identical text to what the confirmed write actually composes, for
+// the SAME existing body, explicit overlay, and goos. Proven across a
+// scalar, a bundle-shaped overlay, and darwin's platform-default injection.
+func TestRenderGlobalBodyWithOverlayMatchesEnsureGlobalsExactly(t *testing.T) {
+	cases := []struct {
+		name     string
+		existing string
+		explicit map[string]string
+		goos     string
+	}{
+		{"empty body, linux, no overlay", "", nil, "linux"},
+		{"empty body, darwin (platform defaults apply)", "", nil, "darwin"},
+		{"existing scalar replaced by overlay", "Host *\n  StrictHostKeyChecking accept-new\n", map[string]string{"StrictHostKeyChecking": "yes"}, "linux"},
+		{"unrecognised custom directive appended", "Host *\n  ForwardAgent no\n", map[string]string{"StreamLocalBindMask": "0177"}, "linux"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			seed := []byte(managedTestBlock("global-ssh", tc.existing))
+			composed, err := EnsureGlobals(seed, tc.explicit, tc.goos)
+			if err != nil {
+				t.Fatalf("EnsureGlobals: %v", err)
+			}
+			want := globalBody(t, composed)
+
+			// filewriter.ReplaceBlock trims the trailing newline when it
+			// stores a block's body (an unrelated, separate concern from
+			// render fidelity — every OTHER block-rendering package in this
+			// project trims the same way, e.g. gitconfig.RenderCustomKeysBlock),
+			// so RenderGlobalBodyWithOverlay's raw renderGlobalBody output
+			// carries one trailing '\n' that globalBody's EXTRACTED body
+			// never does. Trimmed here for a fair comparison — the ONE
+			// insignificant difference this asymmetry produces is harmless
+			// for a staged ssh -G probe either way.
+			got := strings.TrimRight(RenderGlobalBodyWithOverlay(tc.existing, tc.explicit, tc.goos), "\n")
+			if got != want {
+				t.Errorf("RenderGlobalBodyWithOverlay diverges from EnsureGlobals's own composed body:\ngot:\n%s\nwant:\n%s", got, want)
+			}
+		})
+	}
+}
+
 // TestEnsureGlobalsAdoptsLegacyBlock pins D-08 adoption: a legacy-named block
 // carrying a directive is renamed to GlobalBlockName, its body survives, and
 // no block remains under the legacy name after the same write.

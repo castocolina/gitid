@@ -463,6 +463,98 @@ func TestProveCustomDirectiveProbesTheWildcardSentinel(t *testing.T) {
 	}
 }
 
+// TestProveCustomDirectiveStagesReplacementNotAccumulationForAMultiValuedName
+// is the WR-08 (09.5-REVIEW.md round 3) end-to-end regression: OpenSSH
+// ACCUMULATES some directive names (IdentityFile, CertificateFile,
+// LocalForward, RemoteForward, DynamicForward, PermitRemoteOpen, …), so the
+// OLD hand-assembled staging ("candidate line, then the existing body
+// verbatim") resolved the UNION of the candidate and the existing value for
+// those names — over-reporting what the write will actually produce. The
+// real write goes through sshconfig.EnsureGlobals's explicit overlay ->
+// merged.set(name, value), which REPLACES the existing value in place for
+// EVERY directive name uniformly. This proves ProveCustomDirective's OWN
+// staged file (captured mid-call, before its defer removes it) carries
+// exactly ONE "IdentityFile" line — the candidate, not the union.
+func TestProveCustomDirectiveStagesReplacementNotAccumulationForAMultiValuedName(t *testing.T) {
+	existingBody := "Host *\n  IdentityFile /tmp/a\n"
+	f := &fakeCombinedRunner{out: "identityfile /tmp/b\n", err: nil}
+	var capturedStagedBody string
+	wrapped := func(ctx context.Context, args ...string) (string, error) {
+		for i, a := range args {
+			if a == "-F" && i+1 < len(args) {
+				body, rerr := os.ReadFile(args[i+1]) //nolint:gosec // test reads its own staged temp file
+				if rerr != nil {
+					t.Fatalf("reading staged config during the call: %v", rerr)
+				}
+				capturedStagedBody = string(body)
+			}
+		}
+		return f.run(ctx, args...)
+	}
+	proof, err := ProveCustomDirective(Deps{RunSSHGCombined: wrapped, GOOS: "linux"}, existingBody, "IdentityFile", "/tmp/b")
+	if err != nil {
+		t.Fatalf("ProveCustomDirective: %v", err)
+	}
+	if !proof.OK {
+		t.Fatalf("expected an accepted proof, got: %+v", proof)
+	}
+	if n := strings.Count(strings.ToLower(capturedStagedBody), "identityfile"); n != 1 {
+		t.Errorf("staged config contains %d IdentityFile lines, want exactly 1 (candidate REPLACES the existing value, matching the real write):\n%s", n, capturedStagedBody)
+	}
+	if strings.Contains(capturedStagedBody, "/tmp/a") {
+		t.Errorf("staged config must not carry the REPLACED value /tmp/a, got:\n%s", capturedStagedBody)
+	}
+}
+
+// TestStageDirectiveConfigForWriteReplacesRatherThanAccumulates is
+// WR-08's direct, white-box proof: the NEW staging helper
+// ProveCustomDirective uses for its "what will the write actually produce"
+// text renders exactly ONE line for an accumulating directive name that
+// already has an existing value — the candidate REPLACES it, matching
+// sshconfig.EnsureGlobals's own merged.set semantics exactly (proven via
+// TestRenderGlobalBodyWithOverlayMatchesEnsureGlobalsExactly in the
+// sshconfig package; this test proves the globalssh-side staging call
+// reaches that same renderer).
+func TestStageDirectiveConfigForWriteReplacesRatherThanAccumulates(t *testing.T) {
+	existingBody := "Host *\n  IdentityFile /tmp/a\n"
+	staged := stageDirectiveConfigForWrite(Deps{GOOS: "linux"}, existingBody, "IdentityFile", "/tmp/b")
+	if n := strings.Count(strings.ToLower(staged), "identityfile"); n != 1 {
+		t.Errorf("staged config contains %d IdentityFile lines, want exactly 1 (the candidate REPLACES the existing value, matching the real write):\n%s", n, staged)
+	}
+	if !strings.Contains(staged, "IdentityFile /tmp/b") {
+		t.Errorf("staged config missing the candidate value, got:\n%s", staged)
+	}
+	if strings.Contains(staged, "/tmp/a") {
+		t.Errorf("staged config must not carry the REPLACED value /tmp/a, got:\n%s", staged)
+	}
+}
+
+// TestStageDirectiveConfigForWritePlacesIgnoreUnknownGuardFirst is the WR-09
+// (09.5-REVIEW.md round 3) regression: gitid's rendered block always begins
+// with "IgnoreUnknown UseKeychain" (sshconfig.renderGlobalBody), and
+// ssh_config(5) documents that IgnoreUnknown must be listed EARLY — "it
+// will not be applied to unknown options that appear before it." The OLD
+// hand-assembled staging put the candidate line at file scope AHEAD of the
+// whole existing body (including its guard line), so a candidate like
+// "UseKeychain yes" staged on Linux was reported UnknownName even though the
+// file the write would actually produce places it AFTER the guard. The new
+// staging helper must place the guard line (part of the canonical render)
+// BEFORE the candidate.
+func TestStageDirectiveConfigForWritePlacesIgnoreUnknownGuardFirst(t *testing.T) {
+	staged := stageDirectiveConfigForWrite(Deps{GOOS: "linux"}, existingGlobalBodyFixture, "UseKeychain", "yes")
+	guardIdx := strings.Index(staged, "IgnoreUnknown UseKeychain")
+	candidateIdx := strings.Index(staged, "UseKeychain yes")
+	if guardIdx == -1 {
+		t.Fatalf("staged config missing the IgnoreUnknown guard line, got:\n%s", staged)
+	}
+	if candidateIdx == -1 {
+		t.Fatalf("staged config missing the candidate line, got:\n%s", staged)
+	}
+	if guardIdx >= candidateIdx {
+		t.Errorf("guard line at offset %d must come BEFORE the candidate at offset %d, got:\n%s", guardIdx, candidateIdx, staged)
+	}
+}
+
 // fakeStdoutRunner is the RunSSHG (stdout-only) sibling of fakeCombinedRunner,
 // for ResolveDirectiveValue's tests.
 type fakeStdoutRunner struct {

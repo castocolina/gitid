@@ -39,6 +39,39 @@ var GlobalHostStarOrder = []string{
 	"UseKeychain",
 }
 
+// RenderGlobalBodyWithOverlay renders exactly the canonical Host * block body
+// EnsureGlobals(existing, explicit, goos) would compose, given the ALREADY-
+// EXTRACTED current body text (ExistingGlobalBody's result) rather than the
+// full file bytes — the parse -> platform-default overlay -> explicit
+// overlay -> render pipeline, factored out of EnsureGlobals so a caller that
+// needs to STAGE what the real write will produce (WR-08/WR-09,
+// 09.5-REVIEW.md round 3: globalssh.ProveCustomDirective's staged proof)
+// can render byte-identical text without hand-assembling a candidate line
+// ahead of the existing body. EnsureGlobals itself now delegates to this
+// function, so there is exactly ONE place this composition logic lives —
+// the staged proof and the real write can never drift apart again.
+func RenderGlobalBodyWithOverlay(currentBody string, explicit map[string]string, goos string) string {
+	merged := parseGlobalBody(currentBody)
+
+	// Overlay platform defaults for ABSENT keys only — existing values always
+	// win (D-06).
+	if platform.SupportsUseKeychain(goos) {
+		if _, ok := merged.lookup("UseKeychain"); !ok {
+			merged.set("UseKeychain", "yes")
+		}
+		if _, ok := merged.lookup("AddKeysToAgent"); !ok {
+			merged.set("AddKeysToAgent", "yes")
+		}
+	}
+	// Overlay the explicit fixes unconditionally — these are the user's
+	// confirmed global-SSH fixes and they always win (D-16).
+	for k, v := range explicit {
+		merged.set(k, v)
+	}
+
+	return renderGlobalBody(merged)
+}
+
 // EnsureGlobals is the ONE entry point that owns the gitid `Host *` managed
 // block (D-06). It reads the current body from the block named GlobalBlockName
 // (or, when absent, from LegacyGlobalBlockName), merges its key/value pairs
@@ -82,25 +115,7 @@ var GlobalHostStarOrder = []string{
 // with a second Parse pass before returning, so a render that would not
 // round-trip is rejected rather than persisted (T-06-06).
 func EnsureGlobals(existing []byte, explicit map[string]string, goos string) ([]byte, error) {
-	merged := parseGlobalBody(ExistingGlobalBody(existing))
-
-	// Overlay platform defaults for ABSENT keys only — existing values always
-	// win (D-06).
-	if platform.SupportsUseKeychain(goos) {
-		if _, ok := merged.lookup("UseKeychain"); !ok {
-			merged.set("UseKeychain", "yes")
-		}
-		if _, ok := merged.lookup("AddKeysToAgent"); !ok {
-			merged.set("AddKeysToAgent", "yes")
-		}
-	}
-	// Overlay the explicit fixes unconditionally — these are the user's
-	// confirmed global-SSH fixes and they always win (D-16).
-	for k, v := range explicit {
-		merged.set(k, v)
-	}
-
-	rendered := renderGlobalBody(merged)
+	rendered := RenderGlobalBodyWithOverlay(ExistingGlobalBody(existing), explicit, goos)
 	composed := filewriter.ReplaceBlock(existing, GlobalBlockName, rendered)
 	composed = filewriter.RemoveBlock(composed, LegacyGlobalBlockName)
 	composed = ensureGlobalsLast(composed, rendered)
