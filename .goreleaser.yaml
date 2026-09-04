@@ -1,0 +1,105 @@
+# gitid release build definition (Phase 10, D-05/D-07/D-08/D-13).
+#
+# Invoked ONLY through `make release` / `make release-snapshot` — never raw
+# in CI YAML (D-05, this repo's own "CI invokes the SAME make targets a human
+# runs locally" discipline). `dist:` is goreleaser's OWN default directory
+# name, kept explicit here for documentation. It is deliberately NOT pointed
+# at `bin/`: the Makefile's own build/build-cross targets write bin/gitid and
+# bin/gitid-<os>-<arch> into that directory, and both `make release`/`make
+# release-snapshot` invoke goreleaser with `--clean`, which deletes its
+# `dist:` directory before every build — pointing `dist:` at `bin` would
+# silently delete the Makefile's own build/build-cross output the moment a
+# release build runs in the same session (REVIEW C-4).
+# goreleaser v2.18.0 requires an explicit `version: 2` config schema key
+# (omitting it silently falls back to a deprecated `version: 0` parse mode
+# with a startup warning — Rule 1 auto-fix, caught during Task 1 verification).
+version: 2
+
+project_name: gitid
+
+dist: dist
+
+# Defense-in-depth alongside the {{.Env.*}} ldflags approach below: closes
+# Pitfall 2 (10-RESEARCH.md) even if a future config path ever reads
+# goreleaser's own internal {{.Version}}, which is computed via its own
+# `git describe --tags --dirty --always` with NO `--match "v*"` filter and
+# would otherwise silently pick up this repo's non-release tags.
+git:
+  ignore_tags:
+    - "poc-*"
+    - "backup/*"
+
+builds:
+  - id: gitid
+    main: ./cmd/gitid
+    binary: gitid
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    # References the SAME {{.Env.VERSION}}/{{.Env.COMMIT}}/{{.Env.DATE}} the
+    # Makefile's own LDFLAGS computes (D-05: no drift between two
+    # independent version descriptions) and the SAME -X path Plan 10-01
+    # wired the Makefile's own LDFLAGS to. D-12's explicit static-link flags
+    # ("-s -w" plus CGO_ENABLED=0 above) are made EXPLICIT here rather than
+    # left accidental.
+    ldflags:
+      - -s -w -X github.com/castocolina/gitid/internal/version.version={{.Env.VERSION}} -X github.com/castocolina/gitid/internal/version.commit={{.Env.COMMIT}} -X github.com/castocolina/gitid/internal/version.buildDate={{.Env.DATE}}
+
+archives:
+  - formats: [tar.gz]
+    files:
+      - LICENSE*
+      - README*
+    # name_template defaults to {{.ProjectName}}_{{.Version}}_{{.Os}}_{{.Arch}}
+    # — matches D-07's literal gitid_<version>_<os>_<arch>.tar.gz with ZERO
+    # override needed.
+
+checksum:
+  algorithm: sha256
+  # name_template defaults to {{.ProjectName}}_{{.Version}}_checksums.txt —
+  # matches D-15's literal naming with ZERO override needed.
+
+release:
+  prerelease: auto
+  # REVIEW C-3 FIX: goreleaser's own default (make_latest: true) would mark
+  # EVERY release "latest" including a prerelease — a prerelease briefly
+  # presented as the repository's latest stable download is exactly the
+  # failure a checksum-verifying installer cannot protect anyone from. This
+  # template ties make_latest to the SAME tag-suffix signal `prerelease:
+  # auto` already reads (goreleaser's own `.Prerelease` template field is the
+  # non-empty prerelease-suffix string off the parsed semver tag), so the two
+  # settings can never disagree by construction. This repo's ENTIRE tag
+  # history to date is 9 consecutive -rc.N prereleases and zero stable
+  # releases, so this is the NORMAL path here, not an edge case.
+  make_latest: "{{ not .Prerelease }}"
+  header: |
+    ## gitid {{ .Version }}
+
+    Safely and auditably manage SSH + Git identity configuration from a
+    single terminal app. See PLATFORM-NOTES.md for per-distro validation
+    status and README.md for install instructions.
+
+brews:
+  # D-13: `brews:` is soft-deprecated in favor of `homebrew_casks:` since
+  # goreleaser v2.10, but D-13 explicitly locks `brews:` — it remains fully
+  # functional through v2.18.0 and is honored literally here (10-RESEARCH.md
+  # Pitfall 4). Revisit only if a future goreleaser major version removes it.
+  - name: gitid
+    repository:
+      owner: castocolina
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/castocolina/gitid"
+    description: "Manage multiple Git identities by coordinating SSH and Git configuration"
+    install: |
+      bin.install "gitid"
+    test: |
+      system "#{bin}/gitid", "--version"

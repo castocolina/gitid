@@ -4,8 +4,15 @@
 #
 # Targets:
 #   setup-env      Install development tools (goimports, golangci-lint, gosec, pre-commit,
-#                  freeze) and provision the pinned Chromium revision; wire git hooks via
-#                  install-hooks (completed in plan 01-03; screenshot tooling in 01-05).
+#                  freeze, goreleaser) and provision the pinned Chromium revision; wire git
+#                  hooks via install-hooks (completed in plan 01-03; screenshot tooling in
+#                  01-05; goreleaser in Phase 10 plan 10-04).
+#   setup-env-release  Narrower bootstrap for release.yml (REVIEW C-7, Phase 10 plan
+#                  10-04): installs ONLY golangci-lint, gosec, and goreleaser — the three
+#                  tools `make test`/`make lint`/`make release` actually need — skipping
+#                  goimports, pre-commit/install-hooks, freeze, and the pinned-Chromium
+#                  provisioning step, none of which release.yml's test+lint+release gate
+#                  requires.
 #   build          Compile the gitid binary to bin/gitid.
 #   build-cross    Cross-compile the release build matrix (darwin/amd64, darwin/arm64,
 #                  linux/amd64, linux/arm64) to bin/gitid-<os>-<arch> (BUILD-01).
@@ -15,6 +22,16 @@
 #   checksums      Cross-build then write bin/checksums.txt with one SHA-256 line per
 #                  published asset, hashed from inside bin/ so each line names the bare
 #                  asset (BUILD-03, D-03).
+#   release        Goreleaser-driven, tag-published release (D-05/D-07/D-08/D-13, Phase
+#                  10 plan 10-04): exports the SAME Makefile-computed VERSION/COMMIT/DATE
+#                  build-cross/build already use into the goreleaser subprocess's
+#                  environment and runs `goreleaser release --clean`. Requires a real
+#                  pushed tag plus GITHUB_TOKEN/HOMEBREW_TAP_GITHUB_TOKEN (release.yml's
+#                  job, never run locally with real secrets).
+#   release-snapshot  Local, zero-secrets dry run of the SAME .goreleaser.yaml (D-05):
+#                  `goreleaser release --snapshot --clean` skips git-tag validation and
+#                  ALL publish steps (release:/brews:), reproducing the D-07 artifact
+#                  shape into dist/ for local verification.
 #   install        Install gitid to $GOPATH/bin via go install.
 #   uninstall      Remove gitid from $GOPATH/bin.
 #   test           Run the race-enabled test harness with a coverage profile (TDD harness,
@@ -62,7 +79,7 @@
 #   demo-web       (Re)launch the web design mockup dev server (Vite) on the
 #                   dedicated $(DEMO_WEB_PORT) and open it.
 
-.PHONY: setup-env build build-cross checksums run install uninstall test lint lint-shell lint-tagged fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files gate-visual-regression smoke-network-test verify-upload-real-account verify-upload-real-account-gitlab demo-web
+.PHONY: setup-env setup-env-release build build-cross checksums release release-snapshot run install uninstall test lint lint-shell lint-tagged fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files gate-visual-regression smoke-network-test verify-upload-real-account verify-upload-real-account-gitlab demo-web
 
 # Binary output directory.
 BIN_DIR := bin
@@ -111,6 +128,12 @@ GOLANGCI_LINT_VERSION := v2.12.2
 # provenance recorded in .planning/design/_spike/GOLDENS.md (01-05 Task 1).
 FREEZE_VERSION := v0.2.2
 
+# goreleaser version to install (pinned — do NOT change without a fresh
+# `git ls-remote --tags` verification, see 10-RESEARCH.md Package Legitimacy
+# Audit). Dev/build tool only, never a runtime dep of the shipped gitid
+# binary (Phase 10 plan 10-04, D-05).
+GORELEASER_VERSION := v2.18.0
+
 # Vendored monospace font + fixed theme for deterministic screenshot-tui rendering
 # (Pitfall 6 — freeze's default font discovery is not CI-deterministic). These are the
 # same values internal/screenshot/tui_capture_test.go passes to freeze's --font.file /
@@ -137,6 +160,7 @@ DEMO_WEB_LOG  := /tmp/gitid-demo-web.log
 # installs both binaries into $(GOPATH_BIN).
 GOLANGCI_LINT := $(GOPATH_BIN)/golangci-lint
 GOIMPORTS     := $(GOPATH_BIN)/goimports
+GORELEASER    := $(GOPATH_BIN)/goreleaser
 
 # Capture the caller's REAL interactive PATH *before* the export below clobbers it.
 # The `install` target must judge PATH membership against what the user's shell will
@@ -168,6 +192,10 @@ export PATH := $(HOME)/.local/bin:$(GOPATH_BIN):$(PATH)
 ##                   go-rod, pre-downloaded into the fixed cache path so a later
 ##                   `make screenshot-html` never pays the download cost (or fails
 ##                   offline) on a fresh clone (T-01-SC2).
+##   goreleaser    — release build/archive/checksum/publish tool, pinned
+##                   @$(GORELEASER_VERSION) (Phase 10 plan 10-04, D-05) — `go install`
+##                   is fine here (unlike golangci-lint, Pitfall 8 precedent); never a
+##                   runtime dep of the shipped gitid binary.
 ##
 ## Git hook wiring (pre-commit install, pre-push install) is completed in plan 01-03
 ## via the install-hooks sub-target below.  setup-env calls install-hooks so that once
@@ -191,9 +219,31 @@ setup-env:
 	go install github.com/charmbracelet/freeze@v0.2.2
 	@echo "==> Provisioning the pinned Chromium revision for screenshot-html (headless, go-rod)"
 	go test -tags screenshot -run TestProvisionPinnedChromium ./internal/screenshot/...
+	@echo "==> Installing goreleaser $(GORELEASER_VERSION) (release build/archive/checksum/publish tool)"
+	go install github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
 	@echo "==> Wiring git hooks"
 	$(MAKE) install-hooks
 	@echo "==> setup-env complete"
+
+## setup-env-release: narrower bootstrap for release.yml (REVIEW C-7, Phase 10 plan
+## 10-04). Installs ONLY golangci-lint, gosec, and goreleaser — the three tools `make
+## test`/`make lint`/`make release` actually need — explicitly SKIPPING goimports,
+## pre-commit/install-hooks, freeze, and the pinned-Chromium provisioning step
+## setup-env's full bootstrap performs. None of those are needed by `make test`/`make
+## lint`/`make release` (golangci-lint's own `--build-tags screenshot` run is static
+## analysis only, never test execution, and `make test`'s own screenshot-tagged line
+## already `-skip`s the Chromium-dependent tests) — downloading Chromium on the one
+## workflow where a failure means a pushed tag doesn't publish adds avoidable minutes
+## and a network-flake failure mode for zero benefit. release.yml calls this target,
+## not the full `make setup-env`.
+setup-env-release:
+	@echo "==> Installing golangci-lint $(GOLANGCI_LINT_VERSION) via official binary installer"
+	curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b "$(GOPATH_BIN)" $(GOLANGCI_LINT_VERSION)
+	@echo "==> Installing gosec (standalone binary)"
+	go install github.com/securego/gosec/v2/cmd/gosec@latest
+	@echo "==> Installing goreleaser $(GORELEASER_VERSION) (release build/archive/checksum/publish tool)"
+	go install github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
+	@echo "==> setup-env-release complete"
 
 ## install-hooks: wire pre-commit and pre-push git hooks.
 ## Installs the pre-commit hook (runs make fmt + make lint on git commit)
@@ -593,6 +643,26 @@ build-cross:
 checksums: build-cross
 	cd $(BIN_DIR) && $(SHA256SUM) gitid-darwin-amd64 gitid-darwin-arm64 gitid-linux-amd64 gitid-linux-arm64 > checksums.txt
 	@echo "  checksums: $(BIN_DIR)/checksums.txt"
+
+## release: goreleaser-driven publish (D-05/D-07/D-08/D-13, Phase 10 plan 10-04).
+## Exports the SAME VERSION/COMMIT/DATE make variables build/build-cross already read
+## into the goreleaser subprocess's environment (D-05: no drift between two independent
+## version descriptions) and runs `goreleaser release --clean`, which reads
+## .goreleaser.yaml, builds the 4-target matrix, archives to tar.gz, writes the
+## checksums manifest, publishes the GitHub Release, and pushes the Homebrew tap
+## formula. Requires a real pushed tag plus GITHUB_TOKEN/HOMEBREW_TAP_GITHUB_TOKEN in
+## the environment — this is release.yml's own job, never run locally with real
+## secrets. `dist:` (goreleaser's own, never `bin/` — REVIEW C-4) is where output lands.
+release:
+	VERSION=$(VERSION) COMMIT=$(COMMIT) DATE=$(DATE) $(GORELEASER) release --clean
+
+## release-snapshot: local, zero-secrets dry run of the SAME .goreleaser.yaml (D-05).
+## `--snapshot` skips git-tag validation and ALL publish steps (release:/brews:) —
+## safe to run with no secrets, no real tag, on any commit. Reproduces the D-07
+## artifact shape (4 platform tar.gz archives + one checksums.txt) into dist/ for
+## local verification; this is the phase's own dry-run verification vehicle.
+release-snapshot:
+	VERSION=$(VERSION) COMMIT=$(COMMIT) DATE=$(DATE) $(GORELEASER) release --snapshot --clean
 
 ## run: build (if needed) and run the gitid binary locally.
 ## Depends on build so bin/gitid is always current before launch. Extra args
