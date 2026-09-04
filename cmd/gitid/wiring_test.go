@@ -154,6 +154,130 @@ func TestBuildTUIDepsWiresGitPropertiesBrowser(t *testing.T) {
 	}
 }
 
+// funcDisplayScrubCalls parses filename and returns the set of
+// display{Path,Message} method names called anywhere inside the named
+// function's body — the same AST-inspection technique
+// TestRunUploadDoesNotCallProviderCommandsOutsideATeaCmd already uses in
+// this file, reused here because WR-05's leak is only reliably observable
+// at the SOURCE level: constructing a real leaking value requires a real
+// `ssh -G`/`git config --show-origin` probe, and this machine's OpenSSH
+// resolves its default config path via the passwd database rather than the
+// $HOME env var (a documented portability quirk — t.Setenv("HOME", ...)
+// does not reliably redirect ssh -G's OWN default-path resolution the way
+// it redirects git or gitid's own file I/O), so a HOME-sandboxed subprocess
+// test would silently pass for the wrong reason whenever the REAL user's
+// resolved value happens not to contain the sandbox path.
+func funcDisplayScrubCalls(t *testing.T, filename, funcName string) map[string]bool {
+	t.Helper()
+	fset := token.NewFileSet()
+	src, err := os.ReadFile(filename) //nolint:gosec // package-local source file (G304)
+	if err != nil {
+		t.Fatalf("reading %s: %v", filename, err)
+	}
+	file, err := parser.ParseFile(fset, filename, src, 0)
+	if err != nil {
+		t.Fatalf("parsing %s: %v", filename, err)
+	}
+	calls := map[string]bool{}
+	ast.Inspect(file, func(n ast.Node) bool {
+		fd, ok := n.(*ast.FuncDecl)
+		if !ok || fd.Name.Name != funcName || fd.Body == nil {
+			return true
+		}
+		ast.Inspect(fd.Body, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			if sel.Sel.Name == "displayPath" || sel.Sel.Name == "displayMessage" {
+				calls[sel.Sel.Name] = true
+			}
+			return true
+		})
+		return true
+	})
+	return calls
+}
+
+// TestAllGitSetKeysScrubsOriginAndValueAtTheSourceLevel is the WR-05
+// regression: every OTHER user-facing string AllGitSetKeys's sibling seams
+// build routes through b.displayPath/b.displayMessage — this seam's Origin
+// (a literal absolute filesystem path from `git config --show-origin`) and
+// Value did not. Asserted at the source level (see funcDisplayScrubCalls's
+// doc comment for why).
+func TestAllGitSetKeysScrubsOriginAndValueAtTheSourceLevel(t *testing.T) {
+	calls := funcDisplayScrubCalls(t, "wiring.go", "AllGitSetKeys")
+	if !calls["displayPath"] {
+		t.Error("AllGitSetKeys must scrub Origin through b.displayPath (WR-05) — the Set-keys detail pane must not leak the raw sandbox/real HOME origin path")
+	}
+	if !calls["displayMessage"] {
+		t.Error("AllGitSetKeys must scrub Value through b.displayMessage (WR-05)")
+	}
+}
+
+// TestAllSSHDirectivesScrubsValueAtTheSourceLevel is WR-05's SSH-side
+// sibling: the SSH browser renders raw RESOLVED directive values, including
+// identityfile/controlpath/userknownhostsfile home paths, without
+// scrubbing. Asserted at the source level (see funcDisplayScrubCalls's doc
+// comment for why).
+func TestAllSSHDirectivesScrubsValueAtTheSourceLevel(t *testing.T) {
+	calls := funcDisplayScrubCalls(t, "wiring.go", "AllSSHDirectives")
+	if !calls["displayMessage"] {
+		t.Error("AllSSHDirectives must scrub Value through b.displayMessage (WR-05) — the All-directives browser must not leak a raw HOME-relative resolved path")
+	}
+}
+
+// TestAllGitSetKeysScrubsOriginThroughDisplayPath is the WR-05 regression:
+// every other user-facing string in this file routes through
+// b.displayPath/b.displayMessage before it becomes user-facing — this seam
+// did not. `git config --show-origin`'s Origin is a LITERAL absolute
+// filesystem path (e.g. /Users/<you>/.gitconfig); the Set-keys detail pane
+// must show it as gitid renders every other path, ~-shortened, not the raw
+// sandbox HOME. Unlike ssh -G (see funcDisplayScrubCalls's doc comment),
+// `git config` genuinely honors the HOME env var for its own default paths,
+// so this is a reliable runtime proof, not just a source-level check.
+func TestAllGitSetKeysScrubsOriginThroughDisplayPath(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("no git binary in PATH: %v", err)
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
+		t.Fatalf("seeding fragment dir: %v", err)
+	}
+	cmd := exec.Command("git", "config", "--global", "alias.co", "checkout") //nolint:gosec // fixed args, no shell (G204)
+	cmd.Env = append(os.Environ(), "HOME="+home)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("seeding git config: %v: %s", err, out)
+	}
+
+	b := newBackendForHome(home)
+	views, err := b.AllGitSetKeys()
+	if err != nil {
+		t.Fatalf("AllGitSetKeys: %v", err)
+	}
+	found := false
+	for _, v := range views {
+		if v.Key != "alias.co" {
+			continue
+		}
+		found = true
+		if strings.Contains(v.Origin, home) {
+			t.Errorf("Origin = %q leaks the raw sandbox HOME %q — want it scrubbed through displayPath (WR-05)", v.Origin, home)
+		}
+		if !strings.HasPrefix(v.Origin, "~") {
+			t.Errorf("Origin = %q, want the displayPath ~-shortened form", v.Origin)
+		}
+	}
+	if !found {
+		t.Fatalf("expected an alias.co entry from AllGitSetKeys, got: %+v", views)
+	}
+}
+
 // TestRealBackendDoesNotEmbedNoopGitCustomKeyPlanner is plan 09.5-03's L2
 // injected-seam guard for the custom-key WRITE seam (PROP-03), mirroring
 // TestRealBackendDoesNotEmbedNoopGitPropertiesBrowser's shape.

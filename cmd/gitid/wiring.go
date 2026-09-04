@@ -2093,8 +2093,12 @@ func (b *realBackend) AllSSHDirectives() ([]tuikit.SSHDirectiveView, error) {
 	for _, d := range directives {
 		_, policyBacked := globalssh.PolicyFor(d.Key)
 		out = append(out, tuikit.SSHDirectiveView{
-			Key:          d.Key,
-			Value:        d.Value,
+			Key: d.Key,
+			// WR-05: the resolved value is untrusted terminal-facing text —
+			// identityfile/controlpath/userknownhostsfile resolve to
+			// absolute home paths — scrubbed exactly like every other
+			// user-facing string in this file.
+			Value:        b.displayMessage(d.Value),
 			PolicyBacked: policyBacked,
 		})
 	}
@@ -2123,10 +2127,15 @@ func (b *realBackend) AllGitSetKeys() ([]tuikit.GitSetKeyView, error) {
 	for _, k := range keys {
 		_, policyBacked := globalgit.PolicyFor(k.Key)
 		out = append(out, tuikit.GitSetKeyView{
-			Key:          k.Key,
-			Value:        k.Value,
+			Key: k.Key,
+			// WR-05: Origin is `git config --show-origin`'s LITERAL absolute
+			// file path (/Users/<you>/.gitconfig, /usr/local/etc/gitconfig,
+			// …); Value is the raw resolved config value. Every other
+			// user-facing string in this file routes through
+			// displayPath/displayMessage — these two did not.
+			Value:        b.displayMessage(k.Value),
 			Scope:        k.Scope,
-			Origin:       k.Origin,
+			Origin:       b.displayPath(k.Origin),
 			PolicyBacked: policyBacked,
 		})
 	}
