@@ -2255,3 +2255,258 @@ func TestSSHAbandonedFailedCommitStillProducesNote(t *testing.T) {
 		t.Error("WR-01 regressed: an abandoned commit's failure must still produce a note")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Plan 09.5-01 Task 2 — the "All directives" flat filterable master-detail
+// body: filter, match count, detail pane, and the three empty/error states.
+// ---------------------------------------------------------------------------
+
+// gssPropertiesApp opens Global SSH and navigates to the "All directives"
+// sub-tab via two → presses from the default Options sub-tab.
+func gssPropertiesApp(t *testing.T, b Backend) App {
+	t.Helper()
+	return pressSeq(t, NewApp(b), "2", "right", "right")
+}
+
+// TestPropertiesFilterNarrowsTheList is 09.5-01 Task 2's core filter
+// behavior: case-insensitive, matching BOTH key and value, narrowing the
+// visible rows and the match-count line.
+func TestPropertiesFilterNarrowsTheList(t *testing.T) {
+	rows := []SSHDirectiveView{
+		{Key: "stricthostkeychecking", Value: "ask"},
+		{Key: "loglevel", Value: "INFO"},
+	}
+	newFiltered := func(query string) string {
+		a := pressSeq(t, gssPropertiesApp(t, stubBackend{sshDirectives: rows}), "/")
+		return appView(typeText(t, a, query))
+	}
+
+	unfiltered := appView(gssPropertiesApp(t, stubBackend{sshDirectives: rows}))
+	if !strings.Contains(unfiltered, "2 of 2 shown") {
+		t.Fatalf("unfiltered match count wrong:\n%s", unfiltered)
+	}
+
+	byKey := newFiltered("strict")
+	if !strings.Contains(byKey, "stricthostkeychecking") {
+		t.Errorf("filtering by key substring must keep the matching row:\n%s", byKey)
+	}
+	if strings.Contains(byKey, "loglevel") {
+		t.Errorf("filtering by key substring must hide the non-matching row:\n%s", byKey)
+	}
+	if !strings.Contains(byKey, "1 of 2 shown") {
+		t.Errorf("match count must show narrowed/total, got:\n%s", byKey)
+	}
+
+	// Case-insensitive VALUE match: "info" (lowercase) must match loglevel's
+	// "INFO" value, per the behavior's "covers BOTH key and value" contract.
+	byValue := newFiltered("info")
+	if !strings.Contains(byValue, "loglevel") {
+		t.Errorf("filtering by value substring (case-insensitive) must keep the matching row:\n%s", byValue)
+	}
+	if strings.Contains(byValue, "stricthostkeychecking") {
+		t.Errorf("filtering by value substring must hide the non-matching row:\n%s", byValue)
+	}
+}
+
+// TestPropertiesFilterResetsSelectionToFirstMatch is D-C: on filter-text
+// change, the selection resets to the FIRST row of the newly filtered set,
+// so a selected-but-invisible row is structurally impossible.
+func TestPropertiesFilterResetsSelectionToFirstMatch(t *testing.T) {
+	rows := []SSHDirectiveView{
+		{Key: "aaa", Value: "1"},
+		{Key: "bbbstrict", Value: "2"},
+		{Key: "cccstrict", Value: "3"},
+	}
+	a := pressSeq(t, gssPropertiesApp(t, stubBackend{sshDirectives: rows}), "down", "down")
+	m := gssModel(t, a)
+	if m.propDetailKey != "cccstrict" {
+		t.Fatalf("setup: expected selection on cccstrict, got %q", m.propDetailKey)
+	}
+
+	a, _ = press(t, a, "/")
+	a = typeText(t, a, "strict")
+	m = gssModel(t, a)
+	if m.propDetailKey != "bbbstrict" {
+		t.Errorf("filter change must reset selection to the first row of the filtered set, got %q", m.propDetailKey)
+	}
+	if m.listWindowStart != 0 {
+		t.Errorf("filter change must reset listWindowStart to 0, got %d", m.listWindowStart)
+	}
+}
+
+// TestPropertiesFilterCapturesKeys is D-B: while the filter is focused, every
+// key but esc routes into the input and is reported handled; esc blurs
+// WITHOUT clearing the text, and after the blur the same digit switches main
+// tabs again.
+func TestPropertiesFilterCapturesKeys(t *testing.T) {
+	rows := []SSHDirectiveView{{Key: "loglevel", Value: "INFO"}}
+	a := pressSeq(t, gssPropertiesApp(t, stubBackend{sshDirectives: rows}), "/")
+	if !strings.Contains(appView(a), "Global SSH › All directives") {
+		t.Fatalf("setup: must be on All directives with the filter focused:\n%s", appView(a))
+	}
+	if !gssModel(t, a).view(Seed(), minFrameWidth, minFrameHeight).capturesKeys {
+		t.Fatal("focused filter must report capturesKeys true")
+	}
+
+	a, _ = press(t, a, "3")
+	if gssModel(t, a).filter.Value() != "3" {
+		t.Fatalf("digit key must be routed into the focused filter, got filter value %q", gssModel(t, a).filter.Value())
+	}
+	if !strings.Contains(appView(a), "Global SSH › All directives") {
+		t.Fatalf("a digit typed into the focused filter must NOT switch main tabs:\n%s", appView(a))
+	}
+
+	a, _ = press(t, a, "esc")
+	m := gssModel(t, a)
+	if m.filterFocused {
+		t.Error("esc must blur the filter")
+	}
+	if m.filter.Value() != "3" {
+		t.Errorf("esc must NOT clear the filter text, got %q", m.filter.Value())
+	}
+	if m.view(Seed(), minFrameWidth, minFrameHeight).capturesKeys {
+		t.Error("blurred filter must report capturesKeys false")
+	}
+
+	a, _ = press(t, a, "3")
+	if strings.Contains(appView(a), "Global SSH") {
+		t.Errorf("after blur, a digit key must switch main tabs away from Global SSH:\n%s", appView(a))
+	}
+}
+
+// TestPropertiesDetailPaneShowsFullValueAndSource proves the detail pane
+// renders the selected row's full, untruncated value plus the frozen
+// ssh -G source line, even when the master-list row itself truncated with a
+// visible cue.
+func TestPropertiesDetailPaneShowsFullValueAndSource(t *testing.T) {
+	longValue := "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec"
+	rows := []SSHDirectiveView{{Key: "identityfile", Value: longValue}}
+	a := gssPropertiesApp(t, stubBackend{sshDirectives: rows})
+
+	master := regionFlat(a, 0, masterListWidth(minFrameWidth))
+	if strings.Contains(master, longValue) {
+		t.Errorf("master-list row must NOT show the full value: %q", master)
+	}
+	if !strings.Contains(master, "…") {
+		t.Errorf("master-list row must carry the visible truncation cue: %q", master)
+	}
+
+	detail := regionFlat(a, masterListWidth(minFrameWidth)+1, minFrameWidth)
+	if !strings.Contains(detail, longValue) {
+		t.Errorf("detail pane must show the FULL, unclipped value:\ndetail=%q", detail)
+	}
+	if !strings.Contains(detail, PropsSSHSourceLine) {
+		t.Errorf("detail pane must show the frozen source line:\ndetail=%q", detail)
+	}
+}
+
+// TestPropertiesCrossReferenceNoteOnlyForPolicyBackedRows proves the frozen
+// cross-reference note renders ONLY for a PolicyBacked row, and that the
+// value is never rendered twice for the same selected key (a long-enough
+// value truncates in the master row, so its untruncated form appears
+// exactly once, in the detail pane).
+func TestPropertiesCrossReferenceNoteOnlyForPolicyBackedRows(t *testing.T) {
+	rows := []SSHDirectiveView{
+		{Key: "stricthostkeychecking", Value: "ask", PolicyBacked: true},
+		{Key: "ciphers", Value: "chacha20-poly1305@openssh.com,aes128-ctr", PolicyBacked: false},
+	}
+	detailRegion := func(a App) string {
+		return regionFlat(a, masterListWidth(minFrameWidth)+1, minFrameWidth)
+	}
+
+	a := gssPropertiesApp(t, stubBackend{sshDirectives: rows})
+	if !strings.Contains(detailRegion(a), PropsCrossReferenceNote) {
+		t.Fatalf("PolicyBacked row's detail pane must show the cross-reference note:\n%s", appView(a))
+	}
+
+	a, _ = press(t, a, "down")
+	view := appView(a)
+	if strings.Contains(detailRegion(a), PropsCrossReferenceNote) {
+		t.Fatalf("non-PolicyBacked row's detail pane must NOT show the cross-reference note:\n%s", view)
+	}
+	if got := strings.Count(view, "chacha20-poly1305@openssh.com,aes128-ctr"); got != 1 {
+		t.Errorf("value must render exactly once (master row truncates), got %d occurrences:\n%s", got, view)
+	}
+}
+
+// TestPropertiesEmptyStates covers the three distinct empty/error bodies:
+// probe failure (fail-open navigation), a filter matching zero rows, and a
+// successful probe returning genuinely zero rows (must not panic indexing
+// an empty slice — the WR-17 defect class).
+func TestPropertiesEmptyStates(t *testing.T) {
+	t.Run("probe failure", func(t *testing.T) {
+		a := gssPropertiesApp(t, stubBackend{sshDirectivesErr: errors.New("boom")})
+		view := appView(a)
+		if !strings.Contains(view, PropsSSHProbeFailedHeading) {
+			t.Errorf("probe-failure state missing the frozen heading:\n%s", view)
+		}
+		if !strings.Contains(view, PropsSSHProbeFailedBody) {
+			t.Errorf("probe-failure state missing the frozen body:\n%s", view)
+		}
+		// Fail-open: a main-tab digit key still switches tabs.
+		a, _ = press(t, a, "1")
+		if !strings.Contains(appView(a), "[1] Identities") {
+			t.Errorf("probe-failure state must stay fail-open (main tab keys still work):\n%s", appView(a))
+		}
+	})
+
+	t.Run("filter matches zero rows", func(t *testing.T) {
+		rows := []SSHDirectiveView{{Key: "loglevel", Value: "INFO"}}
+		a := pressSeq(t, gssPropertiesApp(t, stubBackend{sshDirectives: rows}), "/")
+		a = typeText(t, a, "zzz")
+		view := appView(a)
+		want := fmt.Sprintf(PropsSSHNoFilterMatchFmt, "zzz")
+		if !strings.Contains(view, want) {
+			t.Errorf("filter-zero-match state missing %q:\n%s", want, view)
+		}
+	})
+
+	t.Run("zero directives, no error", func(t *testing.T) {
+		a := gssPropertiesApp(t, stubBackend{})
+		view := appView(a)
+		if !strings.Contains(view, "No SSH directives to show.") {
+			t.Errorf("zero-rows-no-error state missing its faint sentence:\n%s", view)
+		}
+	})
+}
+
+// TestPropertiesFitsFixedGeometry proves the properties body's rendered line
+// count never exceeds frameBodyRows at the fixed 100x30 geometry, for a
+// 91-row directive set, a filtered set, and each of the three empty states —
+// logging available/used/difference for each case (09.5-01 acceptance
+// criterion).
+func TestPropertiesFitsFixedGeometry(t *testing.T) {
+	rows := make([]SSHDirectiveView, 0, 91)
+	for i := range 90 {
+		rows = append(rows, SSHDirectiveView{Key: fmt.Sprintf("directive%02d", i), Value: fmt.Sprintf("value-%02d", i)})
+	}
+	rows = append(rows, SSHDirectiveView{Key: "matchneedle", Value: "unique-match-value"})
+
+	available := frameBodyRows(minFrameHeight)
+	check := func(name string, a App) {
+		t.Helper()
+		body := gssModel(t, a).view(Seed(), minFrameWidth, minFrameHeight).body
+		used := strings.Count(body, "\n") + 1
+		t.Logf("%s: available=%d used=%d diff=%d", name, available, used, available-used)
+		if used > available {
+			t.Errorf("%s: rendered %d body lines, exceeds the %d-row budget", name, used, available)
+		}
+	}
+
+	full := gssPropertiesApp(t, stubBackend{sshDirectives: rows})
+	check("91-row unfiltered list", full)
+
+	filteredOne := pressSeq(t, full, "/")
+	filteredOne = typeText(t, filteredOne, "matchneedle")
+	check("filtered set (1 match)", filteredOne)
+
+	errState := gssPropertiesApp(t, stubBackend{sshDirectivesErr: errors.New("boom")})
+	check("probe-failure empty state", errState)
+
+	zeroMatch := pressSeq(t, gssPropertiesApp(t, stubBackend{sshDirectives: rows}), "/")
+	zeroMatch = typeText(t, zeroMatch, "nonexistent-zzz")
+	check("filter-zero-match empty state", zeroMatch)
+
+	zeroRows := gssPropertiesApp(t, stubBackend{})
+	check("zero-rows-no-error empty state", zeroRows)
+}

@@ -824,3 +824,46 @@ const (
 	// claim in the same render.
 	RegisterKeyStatusNothingRan = "Esc closes — nothing was registered."
 )
+
+// Phase 9.5 properties browser copy (09.5-01, 09.5-UI-SPEC.md Copywriting
+// Contract). STATIC freezable sentences are plain string constants; the two
+// dynamically-interpolated rows keep the "Fmt" suffix naming convention this
+// file already uses (e.g. RotateDeleteOfferResultRemovedFmt above) — a raw
+// printf-style constant, formatted at the call site, not a formatting
+// function, so TestFrozenPropertiesCopy can assert both the literal
+// constant AND its formatted result.
+const (
+	// PropsSSHSubTabLabel is Global SSH's third sub-tab label — deliberately
+	// NOT "All properties"/"All options" (09.5-UI-SPEC.md "Ground truth":
+	// the single most load-bearing decision in that document). Task 1's
+	// gssTabPropertiesLabel derives from this constant (padding added
+	// around it), never restating the text a second time.
+	PropsSSHSubTabLabel = "All directives"
+	// PropsFilterPlaceholder is the type-to-filter input's placeholder —
+	// deliberately shorter than the app-level palette's own placeholder
+	// (app.go's Ctrl+P palette) because Enter has no "open first match"
+	// action on this list; filtering only narrows the visible rows.
+	PropsFilterPlaceholder = "Type to filter…"
+	// PropsMatchCountFmt is the filter row's right-aligned live match count.
+	PropsMatchCountFmt = "%d of %d shown"
+	// PropsSSHProbeFailedHeading mirrors the EXISTING optionsErr inline-
+	// warning pattern (globalssh.go), same tone/prefix, new copy for the
+	// "All directives" sub-tab's own probe failure.
+	PropsSSHProbeFailedHeading = "! The SSH configuration could not be resolved."
+	// PropsSSHProbeFailedBody is the probe-failure body line — advisory,
+	// fail-open: navigation stays reachable on this state (mirrors the
+	// Options sub-tab's own probe-failure contract).
+	PropsSSHProbeFailedBody = "ssh -G could not be run against this host — re-enter the screen to retry."
+	// PropsSSHNoFilterMatchFmt is the SSH browser's "filter matches
+	// nothing" empty state, carrying the user's filter text.
+	PropsSSHNoFilterMatchFmt = "No directives match \"%s\"."
+	// PropsCrossReferenceNote renders in the detail pane ONLY when the
+	// selected row's key ALSO exists in the curated Options/Policy table
+	// (SSHDirectiveView.PolicyBacked) — informational only, never a second
+	// interactive affordance, and the value is never rendered twice
+	// side-by-side (09.5-CONTEXT.md's double-counting concern).
+	PropsCrossReferenceNote = "Also tracked as a recommended option — see the Options tab for gitid's guidance."
+	// PropsSSHSourceLine is the detail pane's provenance line — TEST-02's
+	// existing "ssh -G proof" framing, reused verbatim for this browser.
+	PropsSSHSourceLine = "Resolved via ssh -G — reflects Include/Match precedence already applied."
+)

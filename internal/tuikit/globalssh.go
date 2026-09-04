@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -47,10 +48,10 @@ const (
 const (
 	gssTabOptionsLabel = " Options "
 	gssTabStorageLabel = " Storage & preview "
-	// gssTabPropertiesLabel is Task 1's literal — Task 2 re-derives this
-	// from design.go's frozen PropsSSHSubTabLabel constant (padding added
-	// around it) rather than restating the text a second time.
-	gssTabPropertiesLabel = " All directives "
+	// gssTabPropertiesLabel derives from design.go's frozen
+	// PropsSSHSubTabLabel constant (padding added around it) — ONE source
+	// for the label text, never restated.
+	gssTabPropertiesLabel = " " + PropsSSHSubTabLabel + " "
 )
 
 // gssFooterCycleLabel is the ←→ footer action's label, naming all three
@@ -105,6 +106,18 @@ type globalSSHModel struct {
 	// mirroring optionsErr's advisory posture.
 	directives    []SSHDirectiveView
 	directivesErr string
+	// filter is the "All directives" sub-tab's type-to-filter textinput
+	// (D-B); filterFocused mirrors globalGitModel.fieldEditing's keyboard-
+	// capture contract — while true, handleKey routes every key but esc
+	// into the input and view() reports capturesKeys: true.
+	filter        textinput.Model
+	filterFocused bool
+	// propDetailKey is the selected row's key on the properties sub-tab —
+	// kept SEPARATE from detailKey (the Options sub-tab's own selection)
+	// because the two lists' keys live in different casing domains
+	// (lowercase ssh -G spellings here vs. the Policy table's canonical
+	// camelCase there) and are never the same slice.
+	propDetailKey string
 	// applyCommitPending gates the apply ceremony's receipt: ApplySSH is
 	// dispatched only from handleMsg once GlobalSSHCommitMsg arrives with an
 	// empty Err, never optimistically on ceremonyFinished (mirrors
@@ -164,7 +177,19 @@ func newGlobalSSHModel(b Backend) globalSSHModel {
 		backend:       b,
 		chosen:        map[string]bool{},
 		storageChoice: StorageSentinel,
+		filter:        newPropertiesFilterInput(),
 	}
+}
+
+// newPropertiesFilterInput builds the "All directives" filter textinput
+// with its frozen prompt/placeholder (09.5-UI-SPEC.md) — a small helper so
+// both the constructor and activate()'s per-entry reset build the SAME
+// shape.
+func newPropertiesFilterInput() textinput.Model {
+	ti := newTextInput("")
+	ti.Prompt = "/ "
+	ti.Placeholder = PropsFilterPlaceholder
+	return ti
 }
 
 // activate syncs the storage radio with the live state, fetches the Options
@@ -206,6 +231,16 @@ func (m globalSSHModel) activate(s DemoState) (screenModel, tea.Cmd) {
 	if derr != nil {
 		m.directives = nil
 		m.directivesErr = derr.Error()
+	}
+	// D-B: the filter resets per-entry, alongside every other per-entry
+	// reset above — a stale filter from a previous visit must never survive
+	// re-entering the screen.
+	m.filter = newPropertiesFilterInput()
+	m.filterFocused = false
+	if len(m.directives) > 0 {
+		m.propDetailKey = m.directives[0].Key
+	} else {
+		m.propDetailKey = ""
 	}
 	m = m.refetchStoragePlan()
 	return m, nil
@@ -461,6 +496,34 @@ func (m globalSSHModel) applyChosen(options []appliedOption) []string {
 func (m globalSSHModel) detailIndex(options []appliedOption) int {
 	for i, o := range options {
 		if o.Key == m.detailKey {
+			return i
+		}
+	}
+	return 0
+}
+
+// gssFilteredDirectives returns the "All directives" rows matching the
+// current filter value, case-insensitively, against BOTH the key and the
+// value (a user filtering for a path fragment expects the value to be
+// searched too). Every consumer — render, the up/down handler, and the
+// click hit-test — reads this SAME function, so the scroll window and the
+// click row index can never disagree about which row is where.
+func (m globalSSHModel) gssFilteredDirectives() []SSHDirectiveView {
+	q := strings.ToLower(m.filter.Value())
+	out := make([]SSHDirectiveView, 0, len(m.directives))
+	for _, d := range m.directives {
+		if strings.Contains(strings.ToLower(d.Key), q) || strings.Contains(strings.ToLower(d.Value), q) {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// gssPropertiesDetailIndex resolves the selected directive row's index
+// within filtered — the properties-sub-tab mirror of detailIndex above.
+func (m globalSSHModel) gssPropertiesDetailIndex(filtered []SSHDirectiveView) int {
+	for i, d := range filtered {
+		if d.Key == m.propDetailKey {
 			return i
 		}
 	}
@@ -723,6 +786,33 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		return keyResult{model: m, handled: true}
 	}
 
+	// D-B: while the properties filter is focused, it owns the keyboard —
+	// every key but esc routes into the input and is reported handled,
+	// mirroring globalGitModel.fieldEditing's identical capture contract
+	// (esc blurs WITHOUT clearing; clearing is a separate, explicit action
+	// no other gitid text field conflates with blur either).
+	if m.subTab == gssProperties && m.filterFocused {
+		if key == "esc" {
+			m.filterFocused = false
+			m.filter.Blur()
+			return keyResult{model: m, handled: true}
+		}
+		before := m.filter.Value()
+		m.filter, _ = updateInput(m.filter, msg)
+		if m.filter.Value() != before {
+			// D-C: on filter-text change, reset the selection to the FIRST
+			// row of the newly filtered set — a selected-but-invisible row
+			// must be structurally impossible, not defended against.
+			filtered := m.gssFilteredDirectives()
+			m.propDetailKey = ""
+			if len(filtered) > 0 {
+				m.propDetailKey = filtered[0].Key
+			}
+			m.listWindowStart = 0
+		}
+		return keyResult{model: m, handled: true}
+	}
+
 	options := m.overlaidOptions(s)
 	if m.subTab == gssOptions && m.optionsErr != "" {
 		// WR-12 (09.4-REVIEW.md independent re-review): align with Global
@@ -790,11 +880,26 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 			// Refetch the storage view for the newly selected layout.
 			m = m.refetchStoragePlan()
 		case gssProperties:
-			// Task 1: no selection movement in the flat list yet (Task 2
-			// adds up/down + scroll-window movement over the filtered
-			// set) — inert but still handled so the key never leaks to
-			// app-level globals.
+			filtered := m.gssFilteredDirectives()
+			if len(filtered) > 0 {
+				idx := m.gssPropertiesDetailIndex(filtered)
+				if key == "down" && idx < len(filtered)-1 {
+					idx++
+				}
+				if key == "up" && idx > 0 {
+					idx--
+				}
+				m.propDetailKey = filtered[idx].Key
+				m.listWindowStart = scrollWindowFor(m.listWindowStart, idx, gssPropertiesVisibleRowCount(len(filtered), m.rowBudgetHeight()))
+			}
 		}
+		return keyResult{model: m, handled: true}
+	case "/":
+		if m.subTab != gssProperties || m.directivesErr != "" {
+			return keyResult{model: m}
+		}
+		m.filterFocused = true
+		m.filter.Focus()
 		return keyResult{model: m, handled: true}
 	case "space":
 		if m.subTab == gssOptions {
@@ -993,10 +1098,7 @@ func (m globalSSHModel) handleClick(x, y, width, height int, s DemoState) keyRes
 		return m.handleStorageClick(x, y, width, height, s)
 	}
 	if m.subTab == gssProperties {
-		// Task 1: no click support in the flat list yet (Task 2 adds
-		// filter-aware click hit-testing over the filtered set) — clicks
-		// below the strip are inert.
-		return keyResult{model: m}
+		return m.handlePropertiesClick(x, y, width, height)
 	}
 	if x >= masterListWidth(width) || y < gssOptionsTopLines(s) {
 		return keyResult{model: m}
@@ -1057,6 +1159,33 @@ func (m globalSSHModel) handleStorageClick(x, y, width, height int, s DemoState)
 		return keyResult{model: m.refetchStoragePlan(), handled: true}
 	}
 	return keyResult{model: m}
+}
+
+// handlePropertiesClick resolves "All directives" clicks: a click on the
+// filter row focuses it; a click on a master-list row selects it — reading
+// the SAME gssFilteredDirectives() slice the render and the up/down handler
+// use, so the click row index can never disagree about which row is where
+// (the WR-09 defect class this codebase has already been bitten by).
+func (m globalSSHModel) handlePropertiesClick(x, y, width, height int) keyResult {
+	if m.directivesErr != "" {
+		return keyResult{model: m}
+	}
+	if y == gssSubTabStripRows() {
+		m.filterFocused = true
+		m.filter.Focus()
+		return keyResult{model: m, handled: true}
+	}
+	if x >= masterListWidth(width) || y < gssPropertiesTopLines() {
+		return keyResult{model: m}
+	}
+	filtered := m.gssFilteredDirectives()
+	w := m.gssPropertiesComputeScrollWindow(len(filtered), height)
+	row, ok := gssPropertiesRowForScreenRow(w, y-gssPropertiesTopLines())
+	if !ok || row >= len(filtered) {
+		return keyResult{model: m}
+	}
+	m.propDetailKey = filtered[row].Key
+	return keyResult{model: m, handled: true}
 }
 
 // findingsBanner renders the "doctor found N findings beyond…" banner for
@@ -1191,7 +1320,7 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 	case gssStorage:
 		crumb = "Storage & preview"
 	case gssProperties:
-		crumb = "All directives"
+		crumb = PropsSSHSubTabLabel
 	}
 
 	var body string
@@ -1247,8 +1376,17 @@ func (m globalSSHModel) view(s DemoState, width, height int) screenView {
 				actions = append(actions, FooterAction{Key: "Enter", Label: "migrate layout…"})
 			}
 		case gssProperties:
-			body = m.renderProperties(s, width, height)
-			actions = []FooterAction{{Key: "←→", Label: gssFooterCycleLabel}}
+			body = m.renderProperties(width, height)
+			actions = []FooterAction{
+				{Key: "←→", Label: gssFooterCycleLabel},
+			}
+			if m.directivesErr == "" {
+				actions = append(actions,
+					FooterAction{Key: "↑↓", Label: "select"},
+					FooterAction{Key: "/", Label: "filter"},
+				)
+			}
+			capturesKeys = m.filterFocused
 		}
 	}
 	return screenView{body: body, crumbs: []string{crumb}, status: status, statusTone: tone,
@@ -1377,30 +1515,52 @@ func (m globalSSHModel) renderStorage(s DemoState, width, height int) string {
 	return m.subTabStrip() + "\n" + joinMasterDetail(left, leftWidth, right, rows)
 }
 
-// gssPropertiesScrollWindow computes the "All directives" list's scroll
-// window — the SAME gitScrollWindow/gitCueLine machinery every other list on
-// this screen reuses, but with ONE line per row (unlike optionRow's 2-line
-// shape): this is the first list on Global SSH that ALWAYS needs the scroll
-// window rather than usually fitting. Task 2 replaces this with the
-// filter-aware equivalent over the filtered set; Task 1 computes it directly
-// over the full m.directives slice.
-func (m globalSSHModel) gssPropertiesScrollWindow(height int) gitScrollWindow {
-	totalRows := len(m.directives)
-	budget := frameBodyRows(height) - gssSubTabStripRows()
+// gssPropertiesTopLines counts the body lines rendered above the first
+// directive row on the "All directives" sub-tab: the sub-tab strip plus the
+// ONE filter row. Task 2 decided NOT to render the SSH findings banner here
+// (unlike gssOptionsTopLines) — this sub-tab already shows the FULL resolved
+// directive set, so a "doctor found N findings beyond these options" framing
+// would be self-contradictory (recorded in 09.5-01-SUMMARY.md).
+func gssPropertiesTopLines() int {
+	return gssSubTabStripRows() + 1
+}
+
+// propKeyColumnWidth is the master-list row's key-column display width —
+// pubkeyacceptedalgorithms-class long keys simply push the value right of
+// this column rather than being clipped themselves; truncLine's visible cue
+// on the WHOLE line is what protects the fixed row width.
+const propKeyColumnWidth = 26
+
+// gssPropertiesVisibleRowCount computes how many directive rows fit inside
+// the body budget WITHOUT overflowing — the properties-sub-tab mirror of
+// gssVisibleRowCount, but dividing by ONE line per row (this list has no
+// toggle/apply affordance and needs no optionRow-style 2-line sub-budget).
+func gssPropertiesVisibleRowCount(totalRows, height int) int {
+	budget := frameBodyRows(height) - gssPropertiesTopLines()
 	if budget < 1 {
 		budget = 1
 	}
-	visible := budget
+	if totalRows <= budget {
+		return totalRows
+	}
+	reserved := budget - 1 // one line reserved for the scroll cue
+	if reserved < 1 {
+		reserved = 1
+	}
+	if reserved > totalRows {
+		reserved = totalRows
+	}
+	return reserved
+}
+
+// gssPropertiesComputeScrollWindow derives the current scroll window from
+// the model's listWindowStart and the FILTERED row count — the properties
+// mirror of gssComputeScrollWindow, sharing the SAME gitScrollWindow type so
+// this screen's THIRD list can never silently drift from the other two's
+// scrolling behavior.
+func (m globalSSHModel) gssPropertiesComputeScrollWindow(totalRows, height int) gitScrollWindow {
+	visible := gssPropertiesVisibleRowCount(totalRows, height)
 	needsScroll := visible < totalRows
-	if needsScroll {
-		visible = budget - 1 // reserve one line for the scroll cue
-		if visible < 1 {
-			visible = 1
-		}
-	}
-	if visible > totalRows {
-		visible = totalRows
-	}
 	windowStart := m.listWindowStart
 	if windowStart < 0 {
 		windowStart = 0
@@ -1427,36 +1587,117 @@ func (m globalSSHModel) gssPropertiesScrollWindow(height int) gitScrollWindow {
 	return w
 }
 
-// renderProperties renders the "All directives" sub-tab's flat list
-// (PROP-01). Task 1 ships a plain one-line-per-directive list — a leading
-// space, the key, then the value, truncated with a visible cue — reusing the
-// existing gitScrollWindow/gitCueLine scroll machinery; Task 2 replaces this
-// with the full filterable master-detail body (filter row, match count,
-// detail pane, and the empty/error states this task's plain list does not
-// yet fully specify).
-func (m globalSSHModel) renderProperties(_ DemoState, width, height int) string {
+// gssPropertiesRowForScreenRow maps a body-relative screen row (y -
+// gssPropertiesTopLines()) to the directive-row index the user is pointing
+// at, honoring the scroll window and treating the reserved cue line as
+// inert — the ONE-line-per-row mirror of gitRowForScreenRow, which assumes
+// optionRow's 2-line shape and therefore cannot be reused verbatim here.
+func gssPropertiesRowForScreenRow(w gitScrollWindow, y int) (idx int, ok bool) {
+	if !w.needsScroll {
+		return w.windowStart + y, y >= 0 && y < w.visibleRows
+	}
+	switch w.cue {
+	case gitCueUp:
+		if y == 0 {
+			return 0, false // the cue line itself
+		}
+		row := y - 1
+		return w.windowStart + row, row >= 0 && row < w.visibleRows
+	default: // gitCueDown
+		return w.windowStart + y, y >= 0 && y < w.visibleRows
+	}
+}
+
+// propertiesFilterRow renders the filter input's live value on the left and
+// the right-aligned match count on the SAME line (09.5-UI-SPEC.md: exactly
+// ONE row — no separate result-count line).
+func (m globalSSHModel) propertiesFilterRow(width, matchCount int) string {
+	left := " " + m.filter.View()
+	right := fmt.Sprintf(PropsMatchCountFmt, matchCount, len(m.directives))
+	pad := width - ansi.StringWidth(left) - ansi.StringWidth(right) - 1
+	if pad < 1 {
+		pad = 1
+	}
+	return ansi.Truncate(left+strings.Repeat(" ", pad)+styleFaint.Render(right), width, "")
+}
+
+// propertyRow renders one master-list "All directives" row: a leading
+// space, the key (padded for column alignment), then the value — ONE line
+// (not optionRow's 2-line shape: this list has no toggle/apply affordance
+// and needs no sub-line budget), truncated with a visible cue.
+func propertyRow(d SSHDirectiveView, selected bool, width int) string {
+	key := styleBold.Render(d.Key)
+	if selected {
+		key = styleSelected.Render(d.Key)
+	}
+	marker := "  "
+	if selected {
+		marker = styleBold.Render("▸ ")
+	}
+	line := " " + marker + padDisplay(key, propKeyColumnWidth) + d.Value
+	return truncLine(line, width)
+}
+
+// renderProperties renders the "All directives" sub-tab's flat, filterable
+// master-detail body (PROP-01): the filter row with its live match count,
+// the one-line-per-directive master list (reusing gssPropertiesComputeScrollWindow/
+// gitCueLine), the detail pane (full key, full unclipped value, the frozen
+// source line, and — only when PolicyBacked — the cross-reference note),
+// and the probe-failure / filter-zero-match / zero-rows empty states.
+func (m globalSSHModel) renderProperties(width, height int) string {
 	if m.directivesErr != "" {
 		return m.subTabStrip() + "\n " +
-			styleWarning.Render("! "+m.directivesErr) + "\n\n " +
-			styleFaint.Render("The SSH directive set could not be read from this machine.")
-	}
-	// WR-17-class guard (mirrors renderOptions): a Backend implementation
-	// may legitimately return (nil, nil) — zero rows, no error.
-	if len(m.directives) == 0 {
-		return m.subTabStrip() + "\n " + styleFaint.Render("No SSH directives to show.")
+			styleWarning.Render(PropsSSHProbeFailedHeading) + "\n\n " +
+			styleFaint.Render(PropsSSHProbeFailedBody)
 	}
 
-	w := m.gssPropertiesScrollWindow(height)
+	filtered := m.gssFilteredDirectives()
+	body := m.subTabStrip() + "\n" + m.propertiesFilterRow(width, len(filtered)) + "\n"
+
+	// WR-17-class guard (mirrors renderOptions): a Backend implementation
+	// may legitimately return (nil, nil) — zero rows, no error. This is a
+	// DIFFERENT, non-alarming state from a filter matching nothing below.
+	if len(m.directives) == 0 {
+		return body + " " + styleFaint.Render("No SSH directives to show.")
+	}
+	if len(filtered) == 0 {
+		return body + " " + styleFaint.Render(fmt.Sprintf(PropsSSHNoFilterMatchFmt, m.filter.Value()))
+	}
+
+	listWidth := masterListWidth(width)
+	detailWidth := width - listWidth - masterDetailGutter
+	rows := frameBodyRows(height) - gssPropertiesTopLines()
+
+	selIdx := m.gssPropertiesDetailIndex(filtered)
+	w := m.gssPropertiesComputeScrollWindow(len(filtered), height)
+	visible := filtered
+	if w.needsScroll {
+		visible = filtered[w.windowStart : w.windowStart+w.visibleRows]
+	}
 	var listRows []string
 	if w.cue == gitCueUp {
 		listRows = append(listRows, gitCueLine(w))
 	}
-	for _, d := range m.directives[w.windowStart : w.windowStart+w.visibleRows] {
-		line := " " + styleBold.Render(d.Key) + "  " + d.Value
-		listRows = append(listRows, truncLine(line, width))
+	for i, d := range visible {
+		absoluteIdx := w.windowStart + i
+		listRows = append(listRows, propertyRow(d, absoluteIdx == selIdx, listWidth))
 	}
 	if w.cue == gitCueDown {
 		listRows = append(listRows, gitCueLine(w))
 	}
-	return m.subTabStrip() + "\n" + strings.Join(listRows, "\n")
+	list := strings.Join(listRows, "\n")
+
+	detail := filtered[selIdx]
+	var d strings.Builder
+	d.WriteString(" " + styleBold.Render(detail.Key) + "\n\n")
+	d.WriteString(lipgloss.NewStyle().Width(detailWidth).Render(" "+detail.Value) + "\n\n")
+	d.WriteString(" " + styleFaint.Render(PropsSSHSourceLine) + "\n")
+	if detail.PolicyBacked {
+		// Informational only: never a second interactive affordance, and the
+		// value is never rendered twice side-by-side (09.5-CONTEXT.md).
+		d.WriteString(" " + styleFaint.Render(PropsCrossReferenceNote) + "\n")
+	}
+	detailPane := fitPane(lipgloss.NewStyle().Width(detailWidth).Render(d.String()), rows)
+
+	return body + joinMasterDetail(list, listWidth, detailPane, rows)
 }
