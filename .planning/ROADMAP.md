@@ -582,5 +582,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9.2. Global Git Ignore Management | 3/3 | Complete | 2026-08-31 |
 | 9.3. Release CI/CD + Installer | 2/2 | Complete    | 2026-09-01 |
 | 9.4. TUI UX Consistency & Doctor/Fixer Parity | 4/4 | Complete    | 2026-09-03 |
-| 9.5. Full SSH/Git Properties Browser | 5/5 | Complete | 2026-09-04 |
+| 9.5. Full SSH/Git Properties Browser | 5/5 | Complete    | 2026-09-04 |
 | 10. Linux Validation + Release Pipeline | 0/TBD | Not started | - |

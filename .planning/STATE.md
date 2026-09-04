@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: TUI-First Redesign
-current_phase: 9.5
-current_phase_name: Full SSH/Git Properties Browser & Custom Key Entry
-status: executing
-stopped_at: Phase 09.4 complete, ready to plan Phase 09.5
-last_updated: "2026-09-03T23:23:27.111Z"
-last_activity: 2026-09-03
-last_activity_desc: Phase 09.4 complete, transitioned to Phase 09.5
-state_head: d7c59dead6d3c34aacfb69aa9ab4e66c6589821a
+current_phase: 10
+current_phase_name: Linux Validation + Release Pipeline
+status: planning
+stopped_at: Phase 09.5 complete, ready to plan Phase 10
+last_updated: "2026-09-04T20:55:00.136Z"
+last_activity: 2026-09-04
+last_activity_desc: Phase 09.5 complete, transitioned to Phase 10
+state_head: 1f267e8720449f0810125a803a0fff3b485aa4d6
 progress:
   total_phases: 15
-  completed_phases: 13
-  total_plans: 99
-  completed_plans: 93
-  percent: 87
+  completed_phases: 14
+  total_plans: 98
+  completed_plans: 98
+  percent: 93
 ---
 
 # Project State
@@ -25,13 +25,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** Managing a Git identity produces coordinated, coherent SSH + Git artifacts that are proven to authenticate and resolve correctly (`ssh -G`) before any file is written, and existing hand-written config is never corrupted.
-**Current focus:** Phase 09.1 — GitLab Real-Account Validation
+**Current focus:** Phase 09.5 — Full SSH/Git Properties Browser & Custom Key Entry
 
 ## Current Position
 
-Phase: 9.5 (Full SSH/Git Properties Browser & Custom Key Entry) — READY TO EXECUTE
-Status: Ready to execute
-Last activity: 2026-09-03 — Phase 09.4 complete, transitioned to Phase 09.5
+Phase: 10 — Linux Validation + Release Pipeline
+Status: Ready to plan
+Last activity: 2026-09-04 — Phase 09.5 complete, transitioned to Phase 10
 
 ### Phase 8 (COMPLETE) — historical record
 
@@ -59,7 +59,7 @@ Progress: [░░░░░░░░░░] 0% (30/32 plans complete — Phase 2:
 
 **Velocity:** reset for v1.0 (prior POC velocity archived under 0.0.1).
 
-- Total plans completed: 80
+- Total plans completed: 85
 - Average duration: — min
 - Total execution time: 0 hours
 
@@ -79,6 +79,7 @@ Progress: [░░░░░░░░░░] 0% (30/32 plans complete — Phase 2:
 | 10 | 0 | - | - |
 | 09.3 | 2 | - | - |
 | 09.4 | 4 | - | - |
+| 09.5 | 5 | - | - |
 
 *Updated after each plan completion*
 | Phase 01-foundations-spikes-ci P01 | 15 | 2 tasks | 8 files |
@@ -279,7 +280,7 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-09-02T00:35:53.900Z
-Stopped at: Phase 09.4 complete, ready to plan Phase 09.5
+Stopped at: Phase 09.5 complete, ready to plan Phase 10
 Resume file: .planning/phases/09.4-tui-ux-consistency-doctor-fixer-parity/09.4-UI-SPEC.md
 Wave structure: W1 = 03-01 + 03-02 (DONE) -> W2 = 03-03 (DONE) -> W3 = 03-04 (DONE) -> W4 = 03-05 (DONE) -> W5 = 03-06 (Tasks 1+2 DONE, Task 3 PARTIAL — orchestrator review owed)
 **All remaining waves run SEQUENTIALLY (one executor at a time) per LEARNINGS L11** — the pre-commit hooks lint the whole module, so a parallel executor's mid-refactor tree blocks every other commit. Do NOT run plans in parallel inside this Go module again.
