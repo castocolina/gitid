@@ -646,3 +646,112 @@ func TestGlobalGit_RealPTYSetKeysProbeFailure(t *testing.T) {
 		t.Fatalf("expected the Identities main tab after leaving the failed screen:\n%s", after)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// PROP-03 (09.5-03): free-form custom Git key entry, real terminal proof.
+// Only a real PTY session can prove the raw-keystroke capture contract (Tab/
+// Enter/Esc routing while the form owns the keyboard) genuinely works end to
+// end through the COMPILED binary — an in-package model test drives
+// handleKey directly and cannot catch a wiring gap between the real terminal
+// and app.go's dispatch loop (the SAME rationale every other *_RealPTY* test
+// in this file already documents).
+// ---------------------------------------------------------------------------
+
+// TestGlobalGit_RealPTYCustomKeyWrite drives the full custom-key flow through
+// the compiled binary: open the Set keys sub-tab, press "n", type a
+// well-formed key/value pair, submit into the write ceremony, confirm, and
+// verify BOTH the on-screen receipt AND the real on-disk managed block.
+func TestGlobalGit_RealPTYCustomKeyWrite(t *testing.T) {
+	home := ShortSandboxHome(t)
+	// A pre-existing main config (mirrors TestGlobalGit_RealPTYApplyConfirm's
+	// own seeding) is required for the backup-count assertion below — a file
+	// that never existed has nothing to back up, so an empty seed would make
+	// that assertion vacuous rather than a real proof.
+	main, baseline := seedGlobalGitHome(t, home, "[user]\n\tname = Test User\n", "")
+	s := startGlobalGitPTY(t, home, "")
+
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+	mustSee(t, s, "Global Git › Set keys", "one right-press reaches the Set keys sub-tab")
+	mustSee(t, s, "Add custom key", "Set keys footer advertises the custom-key action")
+
+	s.sendKey([]byte("n"), keystrokeDelay)
+	mustSee(t, s, "Add custom key", "\"n\" opens the custom-key form")
+
+	for _, r := range "core.pager" {
+		s.sendKey([]byte(string(r)), keystrokeDelay)
+	}
+	s.sendKey([]byte("\t"), keystrokeDelay)
+	for _, r := range "less -FRX" {
+		s.sendKey([]byte(string(r)), keystrokeDelay)
+	}
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Write custom Git key to", "submitting a well-formed key/value opens the write ceremony")
+	baselineDisplay := "~/.gitconfig.d/00-baseline"
+	mustSee(t, s, baselineDisplay, "ceremony heading names the resolved baseline target")
+
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "Wrote →", "confirm writes the custom-key managed block")
+	mustSee(t, s, "core.pager = less -FRX written.", "receipt shows the frozen PROP-03 success message")
+	captureGlobalGitFrame(t, "global-git-custom-key-write", s)
+
+	baselineContent := readFileE2E(t, baseline)
+	for _, want := range []string{
+		"# BEGIN gitid managed: custom-git-keys",
+		"[core]",
+		"pager = less -FRX",
+		"# END gitid managed: custom-git-keys",
+	} {
+		if !strings.Contains(baselineContent, want) {
+			t.Fatalf("baseline file missing %q:\n%s", want, baselineContent)
+		}
+	}
+	mainContent := readFileE2E(t, main)
+	if !strings.Contains(mainContent, "# BEGIN gitid managed: baseline-include") {
+		t.Fatalf("main gitconfig missing the baseline-include block that makes the custom key reachable:\n%s", mainContent)
+	}
+	backups, err := filepath.Glob(main + ".bak.*")
+	if err != nil || len(backups) != 1 {
+		t.Fatalf("main config backups = %v, %v; want exactly one (fresh sandbox, first write)", backups, err)
+	}
+}
+
+// TestGlobalGit_RealPTYCustomKeyRejectsMalformedKey proves a malformed key
+// (no dot — SplitGitKey's own D-G requirement) renders the frozen
+// PropsGitKeyInvalidFmt error INLINE on the still-open form, never opens the
+// write ceremony, and leaves every on-disk file byte-identical.
+func TestGlobalGit_RealPTYCustomKeyRejectsMalformedKey(t *testing.T) {
+	home := ShortSandboxHome(t)
+	main, baseline := seedGlobalGitHome(t, home, "[user]\n\tname = Test User\n", "")
+	before := snapshotGlobalGitFiles(t, main, baseline)
+	s := startGlobalGitPTY(t, home, "")
+
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+	mustSee(t, s, "Global Git › Set keys", "one right-press reaches the Set keys sub-tab")
+
+	s.sendKey([]byte("n"), keystrokeDelay)
+	mustSee(t, s, "Add custom key", "\"n\" opens the custom-key form")
+
+	for _, r := range "nodothere" {
+		s.sendKey([]byte(string(r)), keystrokeDelay)
+	}
+	s.sendKey([]byte("\t"), keystrokeDelay)
+	for _, r := range "somevalue" {
+		s.sendKey([]byte(string(r)), keystrokeDelay)
+	}
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	mustSee(t, s, "That key/value can't be written:", "a malformed key renders the frozen inline error")
+
+	frame := captureGlobalGitFrame(t, "global-git-custom-key-malformed", s)
+	if strings.Contains(frame, "Write custom Git key to") {
+		t.Fatalf("a plan-stage rejection must never open the write ceremony:\n%s", frame)
+	}
+	if !strings.Contains(frame, "nodothere") {
+		t.Fatalf("the offending key must still be visible on the still-open form:\n%s", frame)
+	}
+
+	// Esc closes the rejected form; the app must still be reachable and
+	// every file on disk untouched.
+	s.sendKey(dummyKeyEsc, keystrokeDelay)
+	mustSee(t, s, "Global Git › Set keys", "Esc closes the rejected form back to the Set keys list")
+	assertGlobalGitFilesUnchanged(t, before, main, baseline)
+}

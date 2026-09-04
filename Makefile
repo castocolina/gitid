@@ -497,7 +497,11 @@ gate-copy-freeze:
 		'! Git config could not be read.' \
 		'git config --list --show-origin failed — re-enter the screen to retry.' \
 		'No git config keys are set yet.' \
-		'No keys match \"%s\".'; \
+		'No keys match \"%s\".' \
+		'Add custom key' \
+		'Write custom Git key to %s' \
+		'%s = %s written.' \
+		'That key/value can'\''t be written: %s'; \
 	do \
 		if grep -rqF -- "$$s" internal/tuikit internal/identity cmd/gitid internal/globalssh internal/globalgit; then \
 			echo "    ok   $$s"; \

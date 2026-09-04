@@ -2532,3 +2532,314 @@ func TestSetKeysTwoDistinctEmptyStates(t *testing.T) {
 		}
 	})
 }
+
+// ---------------------------------------------------------------------------
+// PROP-03 (09.5-03): free-form custom Git key entry — reachable via "n" on
+// the Set keys sub-tab.
+// ---------------------------------------------------------------------------
+
+// TestCustomKeyFormOpensAndCaptures asserts "n" opens the custom-key form on
+// the Set keys sub-tab, Tab moves focus between the key/value fields, and
+// typed characters reach the FOCUSED field rather than being treated as
+// this screen's reserved single-letter shortcuts (space, a) — the SAME
+// keyboard-capture contract the D9 fallback pair already provides. Esc then
+// closes the form without submitting.
+func TestCustomKeyFormOpensAndCaptures(t *testing.T) {
+	a := ggitSetKeysApp(t, stubBackend{})
+	a, _ = press(t, a, "n")
+	m := ggitModel(t, a)
+	if !m.customKeyOpen {
+		t.Fatal("\"n\" must open the custom-key form")
+	}
+	if m.customFieldFocus != 0 {
+		t.Errorf("customFieldFocus after opening = %d, want 0 (key field)", m.customFieldFocus)
+	}
+	if !m.customKeyInput.Focused() {
+		t.Error("opening the form must focus the key input")
+	}
+
+	a = typeText(t, a, "core.pager")
+	m = ggitModel(t, a)
+	if m.customKeyInput.Value() != "core.pager" {
+		t.Errorf("customKeyInput = %q, want %q — typed text must reach the focused key field, not be swallowed as a shortcut (e.g. \"a\")", m.customKeyInput.Value(), "core.pager")
+	}
+
+	a, _ = press(t, a, "tab")
+	m = ggitModel(t, a)
+	if m.customFieldFocus != 1 {
+		t.Errorf("customFieldFocus after Tab = %d, want 1 (value field)", m.customFieldFocus)
+	}
+	if !m.customValueInput.Focused() {
+		t.Error("Tab must move Bubble Tea focus onto the value input")
+	}
+
+	a = typeText(t, a, "less -FRX")
+	m = ggitModel(t, a)
+	if m.customValueInput.Value() != "less -FRX" {
+		t.Errorf("customValueInput = %q, want %q", m.customValueInput.Value(), "less -FRX")
+	}
+
+	a, _ = press(t, a, "esc")
+	m = ggitModel(t, a)
+	if m.customKeyOpen {
+		t.Error("Esc must close the custom-key form without submitting")
+	}
+}
+
+// TestCustomKeySubmitOpensCeremonyWithRealDiff asserts that submitting a
+// well-formed key/value (Enter on the value field) calls
+// backend.CustomGitKeyPlan and opens the write ceremony carrying the
+// backend's REAL targets/backups/diff — never a hardcoded placeholder.
+func TestCustomKeySubmitOpensCeremonyWithRealDiff(t *testing.T) {
+	const resolvedTarget = "~/.gitconfig.d/00-baseline"
+	backupPath := NewBackupPath(resolvedTarget)
+	b := stubBackend{
+		customKeyPlan: GitCustomKeyPlanView{
+			Targets: []string{"~/.gitconfig", resolvedTarget},
+			Backups: []string{backupPath},
+			Diff:    "+ [core]\n+     pager = less -FRX",
+		},
+	}
+	a := ggitSetKeysApp(t, b)
+	a, _ = press(t, a, "n")
+	a = typeText(t, a, "core.pager")
+	a, _ = press(t, a, "tab")
+	a = typeText(t, a, "less -FRX")
+	a, _ = press(t, a, "enter")
+
+	m := ggitModel(t, a)
+	if m.customKeyOpen {
+		t.Error("submitting must close the free-form form")
+	}
+	if !m.ceremonyOpen || m.ceremonyKind != gitCeremonyCustomKey {
+		t.Fatalf("submitting a valid key/value must open the custom-key ceremony (ceremonyOpen=%t, kind=%v)", m.ceremonyOpen, m.ceremonyKind)
+	}
+	view := appView(a)
+	if !strings.Contains(view, resolvedTarget) {
+		t.Errorf("ceremony heading must contain the REAL resolved target %q;\nview:\n%s", resolvedTarget, view)
+	}
+	if !strings.Contains(view, backupPath) {
+		t.Errorf("ceremony must show the REAL backup path %q;\nview:\n%s", backupPath, view)
+	}
+	if !strings.Contains(view, "pager = less -FRX") {
+		t.Errorf("ceremony preview must contain the REAL diff from CustomGitKeyPlan;\nview:\n%s", view)
+	}
+}
+
+// TestCustomKeyMalformedKeyNeverOpensCeremony asserts a plan-stage rejection
+// (malformed key, or an injection-bearing value) renders PropsGitKeyInvalidFmt
+// inline on the STILL-OPEN form and never opens the ceremony — the same "a
+// preview that cannot be computed renders the error inline, ceremony not
+// opened" rule baselineCeremonyFor/fallbackCeremonyFor already follow.
+func TestCustomKeyMalformedKeyNeverOpensCeremony(t *testing.T) {
+	wantErr := "no dot in key"
+	b := stubBackend{
+		customKeyPlanFn: func(string, string) (GitCustomKeyPlanView, error) {
+			return GitCustomKeyPlanView{}, fmt.Errorf("%s", wantErr)
+		},
+	}
+	a := ggitSetKeysApp(t, b)
+	a, _ = press(t, a, "n")
+	a = typeText(t, a, "nodothere")
+	a, _ = press(t, a, "tab")
+	a = typeText(t, a, "value")
+	a, _ = press(t, a, "enter")
+
+	m := ggitModel(t, a)
+	if m.ceremonyOpen {
+		t.Fatal("a plan-stage rejection must never open the ceremony")
+	}
+	if !m.customKeyOpen {
+		t.Error("the form must stay open so the error is visible next to the offending input")
+	}
+	want := fmt.Sprintf(PropsGitKeyInvalidFmt, wantErr)
+	if m.customKeyFormErr != want {
+		t.Errorf("customKeyFormErr = %q, want %q", m.customKeyFormErr, want)
+	}
+	view := appView(a)
+	if !strings.Contains(view, want) {
+		t.Errorf("view must render the inline error %q;\nview:\n%s", want, view)
+	}
+}
+
+// TestCustomKeyCeremonyConfirmDispatchesCommitOnce asserts confirming the
+// custom-key ceremony calls backend.CommitCustomGitKey exactly once with the
+// submitted key/value, and that delivering the resulting GitCustomKeyCommitMsg
+// (wrapped in gitCommitTokenMsg, mirroring every other ceremony on this
+// screen) renders the frozen receipt.
+func TestCustomKeyCeremonyConfirmDispatchesCommitOnce(t *testing.T) {
+	var calls int
+	var gotKey, gotValue string
+	backupPath := NewBackupPath("~/.gitconfig.d/00-baseline")
+	b := stubBackend{
+		customKeyPlan: GitCustomKeyPlanView{Targets: []string{backupPath}, Diff: "+ core.pager = less"},
+		customKeyFn: func(key, value string) tea.Cmd {
+			calls++
+			gotKey, gotValue = key, value
+			return func() tea.Msg { return GitCustomKeyCommitMsg{Backups: []string{backupPath}} }
+		},
+	}
+	a := ggitSetKeysApp(t, b)
+	a, _ = press(t, a, "n")
+	a = typeText(t, a, "core.pager")
+	a, _ = press(t, a, "tab")
+	a = typeText(t, a, "less -FRX")
+	a, _ = press(t, a, "enter") // submit → opens ceremony
+	a, _ = press(t, a, "enter") // confirm → dispatches CommitCustomGitKey
+
+	if calls != 1 {
+		t.Fatalf("CommitCustomGitKey called %d times, want exactly 1", calls)
+	}
+	if gotKey != "core.pager" || gotValue != "less -FRX" {
+		t.Errorf("CommitCustomGitKey called with (%q, %q), want (\"core.pager\", \"less -FRX\")", gotKey, gotValue)
+	}
+
+	m := ggitModel(t, a)
+	a, _ = deliverMsg(t, a, gitCommitTokenMsg{
+		token:       m.commitRequestToken,
+		msg:         GitCustomKeyCommitMsg{Backups: []string{backupPath}},
+		customKey:   "core.pager",
+		customValue: "less -FRX",
+	})
+	view := appView(a)
+	wantReceipt := fmt.Sprintf(PropsGitCustomReceiptFmt, "core.pager", "less -FRX")
+	if !strings.Contains(view, wantReceipt) {
+		t.Errorf("receipt must show the frozen success message %q;\nview:\n%s", wantReceipt, view)
+	}
+	if !strings.Contains(view, backupPath) {
+		t.Errorf("receipt must show the real backup path;\nview:\n%s", view)
+	}
+}
+
+// TestCustomKeyCommitFailureRendersFailureReceipt asserts a
+// GitCustomKeyCommitMsg carrying Err renders the failure (and any restored
+// paths) on the ceremony, never the success receipt.
+func TestCustomKeyCommitFailureRendersFailureReceipt(t *testing.T) {
+	const restoredPath = "~/.gitconfig.d/00-baseline (restored)"
+	b := stubBackend{
+		customKeyPlan: GitCustomKeyPlanView{Targets: []string{"~/.gitconfig.d/00-baseline"}},
+	}
+	a := ggitSetKeysApp(t, b)
+	a, _ = press(t, a, "n")
+	a = typeText(t, a, "core.pager")
+	a, _ = press(t, a, "tab")
+	a = typeText(t, a, "less -FRX")
+	a, _ = press(t, a, "enter") // submit
+	a, _ = press(t, a, "enter") // confirm
+
+	m := ggitModel(t, a)
+	a, _ = deliverMsg(t, a, gitCommitTokenMsg{
+		token: m.commitRequestToken,
+		msg: GitCustomKeyCommitMsg{
+			Err:      "write failed: disk full",
+			Restored: []string{restoredPath},
+		},
+	})
+	view := appView(a)
+	if !strings.Contains(view, "write failed") {
+		t.Errorf("receipt must show the error;\nview:\n%s", view)
+	}
+	if !strings.Contains(view, "restored") {
+		t.Errorf("receipt must show restored paths;\nview:\n%s", view)
+	}
+	if strings.Contains(view, "written.") {
+		t.Error("error receipt must not show the success message")
+	}
+}
+
+// TestCustomKeyStaleCommitMessageIsNotMisattributed is the PROP-03 mirror of
+// TestGitStaleCommitMsgNotMisattributedToNewerCeremony (CR-01): a stale
+// message from an abandoned ceremony 1 must not corrupt ceremony 2's
+// still-pending UI, even though (WR-01) the stale message's own note is
+// still surfaced.
+func TestCustomKeyStaleCommitMessageIsNotMisattributed(t *testing.T) {
+	b := stubBackend{
+		customKeyPlan: GitCustomKeyPlanView{Targets: []string{"~/.gitconfig.d/00-baseline"}},
+	}
+	m := newGlobalGitModel(b)
+	state := Seed()
+	activated, _ := m.activate(state)
+	m = activated.(globalGitModel)
+	m.subTab = ggitSetKeys
+
+	// Ceremony 1: "core.pager" / "less", confirmed — dispatch captured but
+	// not yet delivered.
+	opened1 := m.handleKey(pressKey("n"), state)
+	m = opened1.model.(globalGitModel)
+	m.customKeyInput.SetValue("core.pager")
+	m.customValueInput.SetValue("less")
+	// Enter on the KEY field (focus index 0) only moves focus to the value
+	// field — it does not submit (mirrors TestCustomKeyFormOpensAndCaptures'
+	// explicit Tab). Focus the value field before the submitting Enter.
+	m.customFieldFocus = 1
+	submitted1 := m.handleKey(pressKey("enter"), state)
+	m = submitted1.model.(globalGitModel)
+	if !m.ceremonyOpen {
+		t.Fatal("setup: submitting ceremony 1 must open it")
+	}
+	confirmed1 := m.handleKey(pressKey("enter"), state)
+	m = confirmed1.model.(globalGitModel)
+	staleMsg := confirmed1.cmd()
+	if !m.customKeyCommitPending {
+		t.Fatal("setup: confirming ceremony 1 must set customKeyCommitPending")
+	}
+
+	// Abandon ceremony 1 (Ctrl+P-then-back runs activate(); token survives).
+	reactivated, _ := m.activate(state)
+	m = reactivated.(globalGitModel)
+	m.subTab = ggitSetKeys
+	if m.ceremonyOpen || m.customKeyCommitPending {
+		t.Fatal("setup: activate() must have cleared the ceremony state")
+	}
+
+	// Ceremony 2: a DIFFERENT key/value, confirmed — genuinely in flight.
+	opened2 := m.handleKey(pressKey("n"), state)
+	m = opened2.model.(globalGitModel)
+	m.customKeyInput.SetValue("core.autocrlf")
+	m.customValueInput.SetValue("input")
+	m.customFieldFocus = 1
+	submitted2 := m.handleKey(pressKey("enter"), state)
+	m = submitted2.model.(globalGitModel)
+	confirmed2 := m.handleKey(pressKey("enter"), state)
+	m = confirmed2.model.(globalGitModel)
+	if !m.customKeyCommitPending {
+		t.Fatal("setup: confirming ceremony 2 must set customKeyCommitPending")
+	}
+	ceremony2HeadingBefore := m.ceremony.cfg.Heading
+
+	// Deliver ceremony 1's STALE message while ceremony 2 is still pending.
+	result := m.handleMsg(staleMsg, state)
+	m = result.model.(globalGitModel)
+
+	if !m.customKeyCommitPending {
+		t.Error("CR-01: a stale message must not clear customKeyCommitPending for the genuinely in-flight ceremony 2")
+	}
+	if m.ceremony.cfg.Heading != ceremony2HeadingBefore || m.ceremony.done {
+		t.Errorf("CR-01: a stale message must not mutate ceremony 2's still-pending UI (heading=%q done=%t)",
+			m.ceremony.cfg.Heading, m.ceremony.done)
+	}
+	// WR-01: the stale message still surfaces its OWN (ceremony 1's) note.
+	wantNote := fmt.Sprintf(PropsGitCustomReceiptFmt, "core.pager", "less")
+	if result.note != wantNote {
+		t.Errorf("stale message's own note = %q, want %q (ceremony 1's submitted key/value, not ceremony 2's)", result.note, wantNote)
+	}
+}
+
+// TestSetKeysFooterAdvertisesAddCustomKey asserts the Set keys sub-tab's
+// footer advertises "n" / "Add custom key" whenever the probe succeeded —
+// mirroring the "/" filter action's identical setKeysErr-gated advertisement.
+func TestSetKeysFooterAdvertisesAddCustomKey(t *testing.T) {
+	a := ggitSetKeysApp(t, stubBackend{})
+	view := appView(a)
+	if !strings.Contains(view, PropsAddCustomKeyLabel) {
+		t.Errorf("Set keys footer must advertise %q;\nview:\n%s", PropsAddCustomKeyLabel, view)
+	}
+
+	// Probe failure: fail-open like every other Set keys action — "n" must
+	// NOT be advertised (mirrors "/" filter's identical omission).
+	a = ggitSetKeysApp(t, stubBackend{gitSetKeysErr: errGlobalGitTest})
+	view = appView(a)
+	if strings.Contains(view, PropsAddCustomKeyLabel) {
+		t.Errorf("Set keys footer must NOT advertise %q on a probe failure;\nview:\n%s", PropsAddCustomKeyLabel, view)
+	}
+}

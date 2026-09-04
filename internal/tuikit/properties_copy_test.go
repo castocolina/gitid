@@ -37,9 +37,13 @@ func TestFrozenPropertiesCopy(t *testing.T) {
 		{"PropsGitProbeFailedBody", PropsGitProbeFailedBody, "git config --list --show-origin failed — re-enter the screen to retry."},
 		{"PropsGitNoKeysSet", PropsGitNoKeysSet, "No git config keys are set yet."},
 		{"PropsGitNoFilterMatchFmt(...)", fmt.Sprintf(PropsGitNoFilterMatchFmt, "stricthost"), `No keys match "stricthost".`},
+		{"PropsAddCustomKeyLabel", PropsAddCustomKeyLabel, "Add custom key"},
+		{"PropsGitCustomCeremonyHeadingFmt(...)", fmt.Sprintf(PropsGitCustomCeremonyHeadingFmt, "~/.gitconfig.d/00-baseline"), "Write custom Git key to ~/.gitconfig.d/00-baseline"},
+		{"PropsGitCustomReceiptFmt(...)", fmt.Sprintf(PropsGitCustomReceiptFmt, "core.pager", "less -FRX"), "core.pager = less -FRX written."},
+		{"PropsGitKeyInvalidFmt(...)", fmt.Sprintf(PropsGitKeyInvalidFmt, "no dot in key"), "That key/value can't be written: no dot in key"},
 	}
 
-	const wantCount = 13
+	const wantCount = 17
 	if len(cases) != wantCount {
 		t.Fatalf("TestFrozenPropertiesCopy covers %d constants, want %d — a row was forgotten or double-counted", len(cases), wantCount)
 	}

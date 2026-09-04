@@ -891,4 +891,21 @@ const (
 	// PropsGitNoFilterMatchFmt is the Git browser's "filter matches
 	// nothing" empty state, carrying the user's filter text.
 	PropsGitNoFilterMatchFmt = "No keys match \"%s\"."
+	// PropsAddCustomKeyLabel is the "Set keys" sub-tab's `n` footer-action
+	// label (Phase 9.5 plan 09.5-03, PROP-03) — reuses the `n` = "new"
+	// convention already established (identities.go's {Key: "n", Label:
+	// "new"}), a NEW affordance on this screen, never a repurposed one.
+	PropsAddCustomKeyLabel = "Add custom key"
+	// PropsGitCustomCeremonyHeadingFmt is the custom-key write ceremony's
+	// heading, naming the resolved target the block is written to.
+	PropsGitCustomCeremonyHeadingFmt = "Write custom Git key to %s"
+	// PropsGitCustomReceiptFmt is the custom-key write ceremony's success
+	// receipt.
+	PropsGitCustomReceiptFmt = "%s = %s written."
+	// PropsGitKeyInvalidFmt wraps the backend's own SplitGitKey/validateValue
+	// error for inline display on the custom-key form — this fixed fragment
+	// is frozen; the interpolated cause is dynamic and excluded from the
+	// copy-freeze gate, the same static/dynamic split the GitIgnore
+	// malformed-file message already uses.
+	PropsGitKeyInvalidFmt = "That key/value can't be written: %s"
 )

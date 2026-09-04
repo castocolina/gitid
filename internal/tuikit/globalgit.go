@@ -33,6 +33,11 @@ const (
 	gitCeremonyNone gitCeremonyKind = iota
 	gitCeremonyBaseline
 	gitCeremonyFallback
+	// gitCeremonyCustomKey is the free-form custom Git key write ceremony
+	// (Phase 9.5 plan 09.5-03, PROP-03) — a THIRD, independent ceremony
+	// instance opened only from the "Set keys" sub-tab's "n" form, never
+	// reachable from the baseline or fallback branches, and vice versa.
+	gitCeremonyCustomKey
 )
 
 // Global Git sub-tabs (09.5-02, Task 1) — this screen's FIRST sub-tab strip.
@@ -206,6 +211,36 @@ type globalGitModel struct {
 	// and are never the same slice, mirroring globalSSHModel's identical
 	// propDetailKey/detailKey split.
 	setKeysDetailKey string
+	// customKeyOpen flags the "Set keys" sub-tab's 2-field custom-key entry
+	// form (Phase 9.5 plan 09.5-03, PROP-03), reachable only via "n". While
+	// open it captures the keyboard exactly like the D9 fallback pair's
+	// fieldEditing — every key but Esc/Enter/Tab reaches the focused input.
+	customKeyOpen bool
+	// customKeyInput / customValueInput are the free-form key=value pair
+	// textinputs — the D9 two-field pattern reused verbatim, its own
+	// independent pair (never shared with nameInput/emailInput).
+	customKeyInput   textinput.Model
+	customValueInput textinput.Model
+	// customFieldFocus is 0 = key, 1 = value — the SAME 0/1 convention
+	// fieldFocus uses for the D9 pair.
+	customFieldFocus int
+	// customKeyFormErr carries the backend's own SplitGitKey/validateValue
+	// rejection (PropsGitKeyInvalidFmt), rendered inline on the form. A
+	// non-empty value means CustomGitKeyPlan failed and the ceremony was
+	// NOT opened — the same "a preview that cannot be computed renders the
+	// error inline" rule both Global screens already follow.
+	customKeyFormErr string
+	// customKeyCommitPending gates the custom-key ceremony's receipt the
+	// SAME way applyCommitPending/fallbackCommitPending gate their own
+	// ceremonies — mutually exclusive with both.
+	customKeyCommitPending bool
+	// pendingCustomKey / pendingCustomValue are the EXACT key/value
+	// submitted to CommitCustomGitKey at ceremonyConfirmed (mirrors
+	// pendingFallbackName/pendingFallbackEmail's staleness-safety
+	// rationale above) — handleMsg must dispatch using the message's own
+	// snapshot, never these fields read fresh, for the identical reason.
+	pendingCustomKey   string
+	pendingCustomValue string
 }
 
 // newGlobalGitModel returns a model with an EMPTY selection set (D-15, R-1):
@@ -217,11 +252,13 @@ type globalGitModel struct {
 // intent rather than a fixture replay.
 func newGlobalGitModel(b Backend) globalGitModel {
 	return globalGitModel{
-		backend:    b,
-		chosen:     map[string]bool{},
-		nameInput:  newTextInput(""),
-		emailInput: newTextInput(""),
-		filter:     newGitSetKeysFilterInput(),
+		backend:          b,
+		chosen:           map[string]bool{},
+		nameInput:        newTextInput(""),
+		emailInput:       newTextInput(""),
+		filter:           newGitSetKeysFilterInput(),
+		customKeyInput:   newTextInput(""),
+		customValueInput: newTextInput(""),
 	}
 }
 
@@ -266,6 +303,17 @@ func (m globalGitModel) activate(DemoState) (screenModel, tea.Cmd) {
 	m.applyCommitPending = false
 	m.fallbackCommitPending = false
 	m.ceremony = ceremonyModel{}
+	// PROP-03 (09.5-03): the custom-key form and its pending state reset
+	// per-entry alongside every other reset above — a screen re-entered
+	// from scratch must not resurrect a stale in-progress custom-key entry.
+	m.customKeyOpen = false
+	m.customKeyInput = newTextInput("")
+	m.customValueInput = newTextInput("")
+	m.customFieldFocus = 0
+	m.customKeyFormErr = ""
+	m.customKeyCommitPending = false
+	m.pendingCustomKey = ""
+	m.pendingCustomValue = ""
 	options, err := m.backend.GlobalGitOptionStates()
 	m.options = options
 	if err != nil {
@@ -359,6 +407,11 @@ type gitCommitTokenMsg struct {
 	name   string
 	email  string
 	layout SSHStorageLayout
+	// customKey / customValue snapshot the EXACT pair submitted to
+	// CommitCustomGitKey at ceremonyConfirmed (PROP-03) — the custom-key
+	// ceremony's own mirror of keys/name/email above.
+	customKey   string
+	customValue string
 }
 
 func wrapGitCommitToken(token int, cmd tea.Cmd, snapshot gitCommitTokenMsg) tea.Cmd {
@@ -479,6 +532,37 @@ func (m globalGitModel) handleMsg(msg tea.Msg, _ DemoState) keyResult {
 			model:   m,
 			note:    GlobalGitEmailResultMessage,
 			actions: []Action{ApplyGitGlobalEmail{Email: email, Name: name, Backup: firstBackup(commit.Backups)}},
+		}
+	}
+	if commit, ok := msg.(GitCustomKeyCommitMsg); ok {
+		// PROP-03 (09.5-03): the custom-key ceremony's completion — routed
+		// through the SAME token-correlated stale-message guard every other
+		// ceremony on this screen uses (CR-01). No parallel completion path.
+		ceremonyOpen := m.ceremonyOpen && m.customKeyCommitPending && token == m.commitRequestToken
+		if ceremonyOpen {
+			m.customKeyCommitPending = false
+		}
+		if commit.Err != "" {
+			if ceremonyOpen {
+				message := commit.Err
+				if len(commit.Restored) > 0 {
+					message += " (restored: " + strings.Join(commit.Restored, "; ") + ")"
+				}
+				m.ceremony = m.ceremony.commitFailed(message)
+				return keyResult{model: m}
+			}
+			return keyResult{model: m, note: "Background write failed: " + commit.Err}
+		}
+		// Read the SUBMITTED key/value from the message's own snapshot,
+		// never m.pendingCustomKey/m.pendingCustomValue — mirrors the
+		// staleness-safety rationale on the fallback-author branch above.
+		key, value := snapshot.customKey, snapshot.customValue
+		if ceremonyOpen {
+			m.ceremony = m.ceremony.commitSucceeded(commit.Backups)
+		}
+		return keyResult{
+			model: m,
+			note:  fmt.Sprintf(PropsGitCustomReceiptFmt, key, value),
 		}
 	}
 	return keyResult{model: m}
@@ -765,12 +849,49 @@ func fallbackPreview(name, email string) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// customKeyCeremonyFor builds the custom-key write ceremony (Phase 9.5 plan
+// 09.5-03, PROP-03) from an ALREADY-VALIDATED plan view — the caller (the
+// form's Enter-on-value-field submit handler) has already called
+// m.backend.CustomGitKeyPlan(key, value) and only reaches here on success,
+// so this helper never itself errors. Reuses ceremonyModel UNMODIFIED
+// (09.5-UI-SPEC.md / CLAUDE.md: no fast path) — this is the SAME
+// Async:true, non-destructive apply shape GGIT-01 uses, never the
+// typed-confirm escalation reserved for rewriting an existing value.
+func (m globalGitModel) customKeyCeremonyFor(key, value string, plan GitCustomKeyPlanView) ceremonyModel {
+	targets := plan.Targets
+	if len(targets) == 0 {
+		// The backend's plan always resolves both targets; this fallback
+		// keeps the ceremony buildable for a stub that answers an empty plan.
+		targets = []string{"~/.gitconfig.d/00-baseline"}
+	}
+	backups := plan.Backups
+	// The "resolved target" the heading names is the LAST target — the
+	// baseline file the custom-git-keys block actually lands in — mirroring
+	// the Preview's own "against the resolved managed block" framing.
+	resolvedTarget := targets[len(targets)-1]
+	preview := plan.Diff
+	if preview == "" {
+		preview = "+ " + key + " = " + value
+	}
+	return newCeremony(ceremonyConfig{
+		Heading:         fmt.Sprintf(PropsGitCustomCeremonyHeadingFmt, resolvedTarget),
+		Targets:         targets,
+		Backups:         backups,
+		Preview:         preview,
+		PreviewDiff:     true,
+		ConfirmLabel:    "Write",
+		ResultMessage:   fmt.Sprintf(PropsGitCustomReceiptFmt, key, value),
+		PreviewMaxLines: len(strings.Split(preview, "\n")),
+		Async:           true,
+	})
+}
+
 // handleKey implements the Global Git key model.
 func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 	key := msg.String()
 
 	if m.ceremonyOpen {
-		if m.applyCommitPending || m.fallbackCommitPending {
+		if m.applyCommitPending || m.fallbackCommitPending || m.customKeyCommitPending {
 			// In flight: keys are inert until the commit result arrives.
 			return keyResult{model: m, handled: true}
 		}
@@ -788,6 +909,14 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 				m.pendingFallbackEmail = m.emailInput.Value()
 				cmd := m.backend.CommitGitFallbackAuthor(m.pendingFallbackName, m.pendingFallbackEmail)
 				snapshot := gitCommitTokenMsg{name: m.pendingFallbackName, email: m.pendingFallbackEmail}
+				return keyResult{model: m, handled: true, cmd: wrapGitCommitToken(token, cmd, snapshot)}
+			}
+			if m.ceremonyKind == gitCeremonyCustomKey {
+				m.customKeyCommitPending = true
+				m.pendingCustomKey = m.customKeyInput.Value()
+				m.pendingCustomValue = m.customValueInput.Value()
+				cmd := m.backend.CommitCustomGitKey(m.pendingCustomKey, m.pendingCustomValue)
+				snapshot := gitCommitTokenMsg{customKey: m.pendingCustomKey, customValue: m.pendingCustomValue}
 				return keyResult{model: m, handled: true, cmd: wrapGitCommitToken(token, cmd, snapshot)}
 			}
 			keys := m.gitApplyChosen(m.overlaidGitOptions(s))
@@ -822,6 +951,62 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 				m.nameInput, _ = updateInput(m.nameInput, msg)
 			} else {
 				m.emailInput, _ = updateInput(m.emailInput, msg)
+			}
+			return keyResult{model: m, handled: true}
+		}
+	}
+
+	// PROP-03 (09.5-03): while the custom-key form is open, it owns the
+	// keyboard exactly like the D9 fallback pair's fieldEditing block above
+	// — Tab moves focus between the two fields, Enter on the VALUE field
+	// (focus index 1) submits, Esc closes the form without submitting, and
+	// every other key routes through updateInput to the focused field.
+	// Enter on the KEY field (focus index 0) does NOT submit — it only
+	// exists as a Tab target, mirroring how the D9 pair's Enter is only
+	// reachable via the row-level "start editing" gesture, never as a
+	// mid-field submit shortcut on the first of two fields.
+	if m.customKeyOpen {
+		switch key {
+		case "esc":
+			m.customKeyOpen = false
+			m.customKeyInput.Blur()
+			m.customValueInput.Blur()
+			m.customKeyFormErr = ""
+			return keyResult{model: m, handled: true}
+		case "tab":
+			m.customFieldFocus = 1 - m.customFieldFocus
+			m.focusCustomKeyField()
+			return keyResult{model: m, handled: true}
+		case "enter":
+			if m.customFieldFocus != 1 {
+				m.customFieldFocus = 1
+				m.focusCustomKeyField()
+				return keyResult{model: m, handled: true}
+			}
+			gitKey := m.customKeyInput.Value()
+			gitValue := m.customValueInput.Value()
+			plan, planErr := m.backend.CustomGitKeyPlan(gitKey, gitValue)
+			if planErr != nil {
+				// A preview that cannot be computed renders the error
+				// inline — the SAME rule both Global screens already
+				// follow (baselineCeremonyFor/fallbackCeremonyFor's own
+				// error handling above) — and the ceremony is NOT opened.
+				m.customKeyFormErr = fmt.Sprintf(PropsGitKeyInvalidFmt, planErr.Error())
+				return keyResult{model: m, handled: true}
+			}
+			m.customKeyFormErr = ""
+			m.ceremony = m.customKeyCeremonyFor(gitKey, gitValue, plan)
+			m.ceremonyOpen = true
+			m.ceremonyKind = gitCeremonyCustomKey
+			m.customKeyOpen = false
+			m.customKeyInput.Blur()
+			m.customValueInput.Blur()
+			return keyResult{model: m, handled: true}
+		default:
+			if m.customFieldFocus == 0 {
+				m.customKeyInput, _ = updateInput(m.customKeyInput, msg)
+			} else {
+				m.customValueInput, _ = updateInput(m.customValueInput, msg)
 			}
 			return keyResult{model: m, handled: true}
 		}
@@ -927,6 +1112,20 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		}
 		m.filterFocused = true
 		m.filter.Focus()
+		return keyResult{model: m, handled: true}
+	case "n":
+		// PROP-03 (09.5-03): "n" opens the free-form custom-key entry form,
+		// reachable only from the Set keys sub-tab (mirrors "/"'s identical
+		// sub-tab + fail-open guard immediately above).
+		if m.subTab != ggitSetKeys || m.setKeysErr != "" {
+			return keyResult{model: m}
+		}
+		m.customKeyOpen = true
+		m.customFieldFocus = 0
+		m.customKeyFormErr = ""
+		m.customKeyInput = newTextInput("")
+		m.customValueInput = newTextInput("")
+		m.focusCustomKeyField()
 		return keyResult{model: m, handled: true}
 	case "space":
 		if m.subTab != ggitOptions {
@@ -1569,10 +1768,19 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 		// already names the pane ("Options"), so the ceremony body does NOT
 		// re-render the 3-row bordered strip — redundant chrome eating into
 		// the ceremony's already-tight row budget, the tightest on this
-		// screen. Only reachable from the ggitOptions sub-tab's own "a" key.
+		// screen. Reachable from the ggitOptions sub-tab's own "a" key, OR
+		// (PROP-03, 09.5-03) from the ggitSetKeys sub-tab's custom-key form
+		// — ceremonyKind (set once at open time, WR-09) picks the correct
+		// crumb rather than re-deriving it from m.subTab, which the form's
+		// own close-before-open transition already left on ggitSetKeys
+		// either way.
+		ceremonyCrumb := "Options"
+		if m.ceremonyKind == gitCeremonyCustomKey {
+			ceremonyCrumb = strings.TrimSpace(ggitTabSetKeysLabel)
+		}
 		return screenView{
 			body:         m.ceremony.view(width - 2),
-			crumbs:       []string{"Options"},
+			crumbs:       []string{ceremonyCrumb},
 			status:       status,
 			actions:      ceremonyFooterActions(),
 			capturesKeys: true,
@@ -1592,6 +1800,23 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 	}
 
 	if m.subTab == ggitSetKeys {
+		// PROP-03 (09.5-03): the custom-key form takes over the ENTIRE body
+		// while open — mirrors how m.fieldEditing's footer branch below
+		// (Options sub-tab) replaces the normal action set wholesale rather
+		// than layering the form on top of the master-detail body.
+		if m.customKeyOpen {
+			body := m.renderCustomKeyForm(strip, width)
+			return screenView{
+				body:   body,
+				crumbs: []string{crumb},
+				actions: []FooterAction{
+					{Key: "Tab", Label: "next field"},
+					{Key: "Enter", Label: "review & write"},
+					{Key: "Esc", Label: "cancel"},
+				},
+				capturesKeys: true,
+			}
+		}
 		// PROP-02 (09.5-02, Task 2): the real "Set keys" body — flat,
 		// filterable, master-detail, mirroring plan 09.5-01's proven SSH
 		// shape.
@@ -1601,6 +1826,10 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 			actions = append(actions,
 				FooterAction{Key: "↑↓", Label: "select"},
 				FooterAction{Key: "/", Label: "filter"},
+				// PROP-03 (09.5-03): "n" opens the free-form custom-key
+				// entry form — advertised here, mirroring "/"'s identical
+				// setKeysErr-gated advertisement immediately above.
+				FooterAction{Key: "n", Label: PropsAddCustomKeyLabel},
 			)
 		}
 		return screenView{
@@ -1827,6 +2056,28 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 	return screenView{body: body, crumbs: []string{crumb}, status: status, statusTone: tone, actions: actions}
 }
 
+// renderCustomKeyForm renders the PROP-03 (09.5-03) free-form custom-key
+// entry form — reachable via "n" on the Set keys sub-tab. Reuses
+// gitFallbackFieldLine VERBATIM (the SAME two-field visual contract the D9
+// fallback pair already uses) with its OWN independent key/value pair,
+// never sharing rendering state with nameInput/emailInput. Unlike the D9
+// pane (which distinguishes a Tab-selected-but-not-editing row from an
+// Enter-activated editing row), this form has no separate pre-edit
+// selection state — opening it via "n" focuses the key field immediately —
+// so the focused field always renders in the "editing" (bright) box, never
+// the intermediate "selected" one.
+func (m globalGitModel) renderCustomKeyForm(strip string, width int) string {
+	var d strings.Builder
+	d.WriteString(strip + "\n")
+	d.WriteString(" " + styleBold.Render(PropsAddCustomKeyLabel) + "\n\n")
+	d.WriteString(gitFallbackFieldLine("Key", m.customKeyInput, m.customFieldFocus == 0, false) + "\n")
+	d.WriteString(gitFallbackFieldLine("Value", m.customValueInput, m.customFieldFocus == 1, false) + "\n")
+	if m.customKeyFormErr != "" {
+		d.WriteString("\n " + styleError.Render(m.customKeyFormErr) + "\n")
+	}
+	return lipgloss.NewStyle().Width(width).Render(d.String())
+}
+
 // gitFallbackFieldLine renders one Global Git fallback name/email row with
 // two distinct focus states (WR-15, 09.4-REVIEW.md independent re-review):
 // "editing" is formFieldLine's existing bright focused box; "selected" is
@@ -1852,4 +2103,17 @@ func (m *globalGitModel) focusFallbackField() {
 	}
 	m.nameInput.Blur()
 	m.emailInput.Focus()
+}
+
+// focusCustomKeyField mirrors focusFallbackField's exact shape for the
+// PROP-03 (09.5-03) custom-key pair — customFieldFocus uses the SAME 0/1
+// convention as fieldFocus.
+func (m *globalGitModel) focusCustomKeyField() {
+	if m.customFieldFocus == 0 {
+		m.customKeyInput.Focus()
+		m.customValueInput.Blur()
+		return
+	}
+	m.customKeyInput.Blur()
+	m.customValueInput.Focus()
 }
