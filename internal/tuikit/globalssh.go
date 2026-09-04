@@ -2021,7 +2021,7 @@ func (m globalSSHModel) renderCustomDirectiveValidate(width int) string {
 		// A transport-level failure — the probe itself could not run. D-H:
 		// an unproven directive fails CLOSED, never written.
 		d.WriteString(" " + styleError.Render("✗ "+m.customDirectiveValidateErr) + "\n")
-		d.WriteString(" " + styleFaint.Render("Nothing was written.") + "\n")
+		d.WriteString(" " + styleFaint.Render(PropsSSHNothingWrittenNote) + "\n")
 		return lipgloss.NewStyle().Width(width).Render(d.String())
 	}
 	proof := m.customDirectiveProof
@@ -2032,7 +2032,7 @@ func (m globalSSHModel) renderCustomDirectiveValidate(width int) string {
 		return lipgloss.NewStyle().Width(width).Render(d.String())
 	}
 	// Beat 1: the name check passed.
-	d.WriteString(" " + styleHealthy.Render("✓ '"+m.pendingDirectiveName+"' is a recognized SSH directive.") + "\n")
+	d.WriteString(" " + styleHealthy.Render(fmt.Sprintf(PropsSSHRecognizedDirectiveFmt, m.pendingDirectiveName)) + "\n")
 	// Beat 2: the ssh -G proof against the staged throwaway config —
 	// TEST-01's "shown == run" contract, reused verbatim rather than
 	// inventing a new render.

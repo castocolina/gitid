@@ -48,9 +48,11 @@ func TestFrozenPropertiesCopy(t *testing.T) {
 		{"PropsSSHCustomCeremonyHeadingFmt(...)", fmt.Sprintf(PropsSSHCustomCeremonyHeadingFmt, "~/.ssh/config"), "Write custom SSH directive to ~/.ssh/config"},
 		{"PropsSSHCustomReceiptFmt(...)", fmt.Sprintf(PropsSSHCustomReceiptFmt, "TCPKeepAlive", "yes"), "TCPKeepAlive yes written."},
 		{"PropsSSHPreexistingConfigErrorFmt(...)", fmt.Sprintf(PropsSSHPreexistingConfigErrorFmt, "SomeOtherDirective"), "'SomeOtherDirective' already has a problem in your current configuration — unrelated to what you just entered. Nothing was written."},
+		{"PropsSSHNothingWrittenNote", PropsSSHNothingWrittenNote, "Nothing was written."},
+		{"PropsSSHRecognizedDirectiveFmt(...)", fmt.Sprintf(PropsSSHRecognizedDirectiveFmt, "TCPKeepAlive"), "✓ 'TCPKeepAlive' is a recognized SSH directive."},
 	}
 
-	const wantCount = 24
+	const wantCount = 26
 	if len(cases) != wantCount {
 		t.Fatalf("TestFrozenPropertiesCopy covers %d constants, want %d — a row was forgotten or double-counted", len(cases), wantCount)
 	}

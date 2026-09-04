@@ -942,4 +942,13 @@ const (
 	// names the OTHER, already-broken directive so the failure is never
 	// blamed on the entry the user just submitted.
 	PropsSSHPreexistingConfigErrorFmt = "'%s' already has a problem in your current configuration — unrelated to what you just entered. Nothing was written."
+	// PropsSSHNothingWrittenNote is stage 2's trailing note under a
+	// transport-level probe failure (WR-09: was an inline literal in
+	// renderCustomDirectiveValidate, invisible to both this file's own
+	// TestFrozenPropertiesCopy and `make gate-copy-freeze`).
+	PropsSSHNothingWrittenNote = "Nothing was written."
+	// PropsSSHRecognizedDirectiveFmt is stage 2's Beat-1 confirmation
+	// sentence once the candidate name has passed the staged proof (WR-09:
+	// was an inline literal in renderCustomDirectiveValidate).
+	PropsSSHRecognizedDirectiveFmt = "✓ '%s' is a recognized SSH directive."
 )
