@@ -490,26 +490,26 @@ These are first-class, enforced requirements — the user's core process ask.
 
 ## S. Full SSH/Git Properties Browser & Custom Key Entry (PROP)
 
-- [ ] **PROP-01** (Full SSH directive browser): a new sub-tab on the Global
+- [x] **PROP-01** (Full SSH directive browser): a new sub-tab on the Global
   SSH screen lists EVERY SSH directive `ssh -G <host>` resolves (the full,
   bounded ~90-directive set, set or default) — not just gitid's curated
   `OptionPolicy` table (GSSH-01's dangerous-by-default subset) — as a flat,
   type-to-filter scrollable list.
 
-- [ ] **PROP-02** (Full Git set-keys browser): a new sub-tab on the Global
+- [x] **PROP-02** (Full Git set-keys browser): a new sub-tab on the Global
   Git screen lists every git config key actually SET across all scopes
   (global/system/local), sourced from `git config --list --show-origin`,
   with its origin file — not a catalog of all possible keys (git's key
   space is open-ended and has no such catalog), honestly scoped to "what is
   set," as a flat, type-to-filter scrollable list.
 
-- [ ] **PROP-03** (Custom Git key entry): from the Git properties browser,
+- [x] **PROP-03** (Custom Git key entry): from the Git properties browser,
   the user can add an arbitrary global `key = value` pair, free-form (no
   directive-name validation — an unrecognized git key is harmless, git
   ignores keys nothing reads), through the same review-before-write
   ceremony every other gitid write path uses.
 
-- [ ] **PROP-04** (Custom SSH directive entry, validated): from the SSH
+- [x] **PROP-04** (Custom SSH directive entry, validated): from the SSH
   properties browser, the user can add an arbitrary global SSH directive,
   but the entered directive NAME is validated against OpenSSH's known-
   directive list before the write proceeds (an unrecognized SSH directive
@@ -689,7 +689,7 @@ row below records each one's **home** phase.
 | UXP-03 | Phase 9.4 | Complete |
 | UXP-04 | Phase 9.4 | Complete |
 | UXP-05 | Phase 9.4 | Complete |
-| PROP-01 | Phase 9.5 | Pending |
-| PROP-02 | Phase 9.5 | Pending |
-| PROP-03 | Phase 9.5 | Pending |
-| PROP-04 | Phase 9.5 | Pending |
+| PROP-01 | Phase 9.5 | Complete (09.5-01: `TestAllDirectivesReturnsEveryResolvedKey` asserts `AllDirectives` returns strictly more rows than the 6-key curated `Policy` table; `TestGlobalSSH_RealPTYAllDirectivesFilter` real-PTY proves the type-to-filter list) |
+| PROP-02 | Phase 9.5 | Complete (09.5-02: `TestAllSetKeysReturnsEverySetKeyWithProvenance` asserts one `SetKey` per record across global/system/local scopes with the origin file path stripped of its `file:` prefix; `TestGlobalGit_RealPTYSetKeysFilter` real-PTY proves the type-to-filter list) |
+| PROP-03 | Phase 9.5 | Complete (09.5-03: `TestGlobalGit_RealPTYCustomKeyWrite` asserts the real on-disk managed-block content after a free-form `key=value` write through the standard review-before-write ceremony; `TestGlobalGit_RealPTYCustomKeyRejectsMalformedKey` proves only key-syntax (dot-form) is checked, never a directive-name allow-list) |
+| PROP-04 | Phase 9.5 | Complete (09.5-04: `TestGlobalSSH_RealPTYCustomDirectiveRejectedNameNeverWrites` asserts an unrecognized directive name leaves the managed target byte-identical (never reaches the write ceremony); `TestGlobalSSH_RealPTYCustomDirectiveWrite` asserts the accepted directive lands in the on-disk managed block after the `ssh -G` prove-before-write verification) |
