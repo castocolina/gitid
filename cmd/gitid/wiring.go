@@ -2454,6 +2454,69 @@ func (b *realBackend) CommitGlobalGit(keys []string) tea.Cmd {
 	}
 }
 
+// CustomGitKeyPlan is the custom-key ceremony's preview: it validates key and
+// value BY CALLING gitconfig.EnsureCustomGitKey against the CURRENT baseline
+// bytes (so a malformed key or an injection-bearing value fails HERE, at the
+// plan stage, and the ceremony never opens — the "a preview that cannot be
+// computed renders the error inline and does NOT open the ceremony" rule
+// both Global screens already follow), then builds Targets/Backups from
+// b.gitconfigPath and b.baselineTargetPath() through b.displayPath (a backup
+// entry only for a file that already exists) and the diff via the same
+// globalsTextDiff helper GlobalGitApplyPlan uses. Mirrors GlobalGitApplyPlan's
+// shape exactly, one seam for one write target class (Phase 9.5 plan
+// 09.5-03, PROP-03).
+func (b *realBackend) CustomGitKeyPlan(key, value string) (tuikit.GitCustomKeyPlanView, error) {
+	if b.initErr != nil {
+		return tuikit.GitCustomKeyPlanView{}, b.initErr
+	}
+	target := b.baselineTargetPath()
+	existing, err := os.ReadFile(target) //nolint:gosec // trusted gitid-managed path (G304)
+	if err != nil && !os.IsNotExist(err) {
+		return tuikit.GitCustomKeyPlanView{}, err
+	}
+	candidate, err := gitconfig.EnsureCustomGitKey(existing, key, value)
+	if err != nil {
+		return tuikit.GitCustomKeyPlanView{}, err
+	}
+	view := tuikit.GitCustomKeyPlanView{}
+	for _, p := range []string{b.gitconfigPath, target} {
+		view.Targets = append(view.Targets, b.displayPath(p))
+		// Only files that ALREADY exist get a backup — filewriter backs up
+		// nothing when it creates a file for the first time, and promising a
+		// backup that will not be taken would be a lie in the ceremony.
+		if fileExists(p) {
+			view.Backups = append(view.Backups, b.displayPath(p)+backupSuffixPreview)
+		}
+	}
+	view.Diff = globalsTextDiff(string(existing), string(candidate))
+	return view, nil
+}
+
+// CommitCustomGitKey is the custom-key apply async seam, mirroring
+// CommitGlobalGit exactly: resolve nothing cached, call runCustomGitKeyWrite —
+// the ONE production writer for a custom git key in lifecycle.go, which owns
+// its own txMu locking — and report the result as a GitCustomKeyCommitMsg.
+// The apply-ceremony screen IS the confirmation, so the lifecycle is
+// authorized with confirmationAlreadyObtained (the only layer permitted to
+// assert that value). Every backup/restored path is scrubbed through
+// b.displayPath / b.displayMessage before it becomes user-facing.
+func (b *realBackend) CommitCustomGitKey(key, value string) tea.Cmd {
+	return func() tea.Msg {
+		if b.initErr != nil {
+			return tuikit.GitCustomKeyCommitMsg{Err: b.displayMessage(b.initErr.Error())}
+		}
+		res, err := b.runCustomGitKeyWrite(key, value, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+		msg := tuikit.GitCustomKeyCommitMsg{
+			Backups:  displayPaths(b, res.Backups),
+			Restored: displayMessages(b, res.Restored),
+		}
+		if err != nil {
+			msg.Err = b.displayMessage(err.Error())
+		}
+		return msg
+	}
+}
+
 func (b *realBackend) gitignorePath() string {
 	return filepath.Join(b.home, ".gitignore_global")
 }

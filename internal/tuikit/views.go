@@ -648,6 +648,27 @@ type GlobalGitCommitMsg struct {
 	Err        string
 }
 
+// GitCustomKeyPlanView is the custom-key ceremony's preview scene: the
+// resolved targets (main config + baseline file), the promised backup paths
+// (only for a file that already exists), and the diff the ceremony
+// previews — mirroring GlobalGitApplyPlanView's shape exactly, one field for
+// one write target class (Phase 9.5 plan 09.5-03, PROP-03).
+type GitCustomKeyPlanView struct {
+	Targets []string
+	Backups []string
+	Diff    string
+}
+
+// GitCustomKeyCommitMsg completes an asynchronous custom-key write commit —
+// delivered from the tea.Cmd Backend.CommitCustomGitKey returns. Restored
+// stays explicit so a failed receipt can never claim nothing changed when
+// restoration itself failed, mirroring GlobalGitCommitMsg's contract.
+type GitCustomKeyCommitMsg struct {
+	Backups  []string
+	Restored []string
+	Err      string
+}
+
 // GitFallbackAuthorView is the fallback block's current contents — the two
 // fields the D9 pane seeds from on activate (D-04 / 07-UI-SPEC.md partial
 // row). Empty strings mean the key is currently unset.

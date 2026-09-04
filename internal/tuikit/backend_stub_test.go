@@ -171,6 +171,10 @@ type stubBackend struct {
 	// opt out of a canned error), so the embed is a compile-time safety net
 	// only, never actually reached.
 	NoopGitPropertiesBrowser
+	// NoopGitCustomKeyPlanner is intentionally NOT embedded: the stub
+	// provides fixture-driven implementations of GitCustomKeyPlanner below,
+	// exactly mirroring how it handles GlobalGitPlanner. A missing real
+	// implementation must be a compile error, not a silent sentinel.
 	gitStepAlwaysDisabled bool
 	gitStepReason         string
 	keyActionErr          error
@@ -203,6 +207,13 @@ type stubBackend struct {
 	gitApplyPlan   GlobalGitApplyPlanView
 	gitApplyPlanFn func(keys []string) (GlobalGitApplyPlanView, error)
 	gitCommitMsg   GlobalGitCommitMsg
+	// Custom-key seam overrides (plan 09.5-03) — zero values keep the
+	// ceremony's target/backup fallback, mirroring the gitApplyPlan/
+	// gitCommitMsg pattern immediately above.
+	customKeyPlan   GitCustomKeyPlanView
+	customKeyPlanFn func(key, value string) (GitCustomKeyPlanView, error)
+	customKeyCommit GitCustomKeyCommitMsg
+	customKeyFn     func(key, value string) tea.Cmd
 	// Fallback-author seam overrides (zero values keep empty/unset fields
 	// so existing tests stay green). Do NOT embed
 	// NoopGitFallbackAuthorPlanner — a missing real implementation must
@@ -876,6 +887,23 @@ func (b stubBackend) CommitGlobalGit(keys []string) tea.Cmd {
 		return b.gitCommitFn(keys)
 	}
 	return func() tea.Msg { return b.gitCommitMsg }
+}
+
+// CustomGitKeyPlan returns the test override when set; the zero value keeps
+// the ceremony's target/backup fallback (plan 09.5-03).
+func (b stubBackend) CustomGitKeyPlan(key, value string) (GitCustomKeyPlanView, error) {
+	if b.customKeyPlanFn != nil {
+		return b.customKeyPlanFn(key, value)
+	}
+	return b.customKeyPlan, nil
+}
+
+// CommitCustomGitKey delivers the test override's commit message immediately.
+func (b stubBackend) CommitCustomGitKey(key, value string) tea.Cmd {
+	if b.customKeyFn != nil {
+		return b.customKeyFn(key, value)
+	}
+	return func() tea.Msg { return b.customKeyCommit }
 }
 
 func (b stubBackend) GlobalGitIgnoreState() (GlobalGitIgnoreView, error) {

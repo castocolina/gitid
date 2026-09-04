@@ -390,6 +390,56 @@ func (NoopGitPropertiesBrowser) AllGitSetKeys() ([]GitSetKeyView, error) {
 
 var _ GitPropertiesBrowser = NoopGitPropertiesBrowser{}
 
+// ErrGitCustomKeyPlannerNotImplemented is the sentinel
+// NoopGitCustomKeyPlanner returns. Fixtures and test stubs embed the noop
+// and override only the methods they exercise; a missing real
+// implementation must be a compile error, not this sentinel at runtime.
+var ErrGitCustomKeyPlannerNotImplemented = errors.New("git custom key planner not implemented")
+
+// GitCustomKeyPlanner is the Phase 9.5 plan 09.5-03 custom-key WRITE seam
+// (PROP-03): the plan preview and the asynchronous commit for a free-form
+// git key=value pair entered from the "Set keys" sub-tab. Deliberately kept
+// SEPARATE from GitPropertiesBrowser — that interface owns the READ (every
+// set key), this one owns the WRITE — the same interface-segregation
+// discipline SSHStoragePlanner already follows against GlobalSSHPlanner: one
+// interface per concern, so a fixture can adopt either without hand-writing
+// the other.
+type GitCustomKeyPlanner interface {
+	// CustomGitKeyPlan returns the confirmed-apply preview for key=value: the
+	// resolved targets, the promised backup paths, and the diff. A non-nil
+	// error must fail closed BEFORE the ceremony opens — a malformed key or
+	// an injection-bearing value is rejected at the plan stage, never at
+	// commit time (the "a preview that cannot be computed renders the error
+	// inline and does NOT open the ceremony" rule both Global screens
+	// already follow).
+	CustomGitKeyPlan(key, value string) (GitCustomKeyPlanView, error)
+	// CommitCustomGitKey dispatches the confirmed custom-key write off the
+	// update loop and delivers a GitCustomKeyCommitMsg.
+	CommitCustomGitKey(key, value string) tea.Cmd
+}
+
+// NoopGitCustomKeyPlanner implements every GitCustomKeyPlanner method with a
+// zero-value view plus ErrGitCustomKeyPlannerNotImplemented (and a command
+// delivering that error for the commit seam). Fixtures and test stubs embed
+// it and override only what they exercise. The REAL backend must NOT embed
+// it — a missing real implementation must be a compile error, pinned by the
+// compile-time assertion in cmd/gitid/wiring.go and a reflection test.
+type NoopGitCustomKeyPlanner struct{}
+
+// CustomGitKeyPlan implements GitCustomKeyPlanner.
+func (NoopGitCustomKeyPlanner) CustomGitKeyPlan(string, string) (GitCustomKeyPlanView, error) {
+	return GitCustomKeyPlanView{}, ErrGitCustomKeyPlannerNotImplemented
+}
+
+// CommitCustomGitKey implements GitCustomKeyPlanner.
+func (NoopGitCustomKeyPlanner) CommitCustomGitKey(string, string) tea.Cmd {
+	return func() tea.Msg {
+		return GitCustomKeyCommitMsg{Err: ErrGitCustomKeyPlannerNotImplemented.Error()}
+	}
+}
+
+var _ GitCustomKeyPlanner = NoopGitCustomKeyPlanner{}
+
 // backend.go defines the ONE injected seam this package is built around.
 //
 // tuikit renders the approved, frozen gitid design. It never reads or
@@ -446,6 +496,13 @@ type Backend interface {
 	// a missing real implementation must be a compile error, pinned by
 	// wiring.go's compile-time assertion and by a reflection test.
 	GitPropertiesBrowser
+	// GitCustomKeyPlanner: Phase 9.5 plan 09.5-03's custom-key WRITE seam
+	// (PROP-03). Deliberately separate from GitPropertiesBrowser — one
+	// interface owns the read, this one owns the write. The real backend
+	// must NOT embed NoopGitCustomKeyPlanner — a missing real
+	// implementation must be a compile error, pinned by wiring.go's
+	// compile-time assertion and by a reflection test.
+	GitCustomKeyPlanner
 
 	// ----- Data -------------------------------------------------------
 

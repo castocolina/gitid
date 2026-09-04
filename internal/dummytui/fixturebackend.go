@@ -778,6 +778,30 @@ func (FixtureBackend) AllGitSetKeys() ([]tuikit.GitSetKeyView, error) {
 	}, nil
 }
 
+// CustomGitKeyPlan implements tuikit.GitCustomKeyPlanner — a plausible,
+// deterministic plan view for the custom-key ceremony. The dummy never
+// touches the filesystem: it composes a fixed diff naming the SAME two
+// targets the real backend writes (the floor include and the baseline
+// file), so the ceremony's copy and layout are exercised identically to the
+// real binary (Phase 9.5 plan 09.5-03, PROP-03).
+func (FixtureBackend) CustomGitKeyPlan(key, value string) (tuikit.GitCustomKeyPlanView, error) {
+	return tuikit.GitCustomKeyPlanView{
+		Targets: []string{"~/.gitconfig", "~/.gitconfig.d/00-baseline"},
+		Backups: []string{tuikit.NewBackupPath("~/.gitconfig.d/00-baseline")},
+		Diff:    "+ [section]\n+     " + key + " = " + value,
+	}, nil
+}
+
+// CommitCustomGitKey keeps the approved dummy custom-key flow in memory — it
+// never touches HOME, reporting the fixture receipt after the same brief
+// tick the other async fixture commands use.
+func (FixtureBackend) CommitCustomGitKey(string, string) tea.Cmd {
+	backup := tuikit.NewBackupPath("~/.gitconfig.d/00-baseline")
+	return tea.Tick(fixtureStageDelay, func(time.Time) tea.Msg {
+		return tuikit.GitCustomKeyCommitMsg{Backups: []string{backup}}
+	})
+}
+
 // GlobalGitOptionStates projects the frozen GlobalGitOptions fixture into the
 // live view shape: Current/Recommended/OneLiner are the fixture's own values,
 // and the NeedsAction flag becomes the row State. The provenance is a

@@ -13,6 +13,7 @@ package main
 // CLI test and the TUI test break together.
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -137,6 +138,7 @@ var lifecycleStages = map[string][]string{
 	"global-git":        {"plan", "confirm", "backup", "write", "verify"},
 	"global-git-author": {"plan", "confirm", "backup", "write", "verify"},
 	"storage-migrate":   {"plan", "confirm", "backup", "write"},
+	"custom-git-key":    {"plan", "confirm", "backup", "write", "verify"},
 }
 
 // errConfirmationUnavailable is returned when a confirmationRequired
@@ -1334,6 +1336,174 @@ func (b *realBackend) gitGateOutcome(policy globalgit.OptionPolicy) globalgit.Ga
 // for use in [include] pointers in ~/.gitconfig and ceremony preview headings.
 func (b *realBackend) displayBaselineTargetPath() string {
 	return "~/.gitconfig.d/00-baseline"
+}
+
+// ---------------------------------------------------------------------------
+// runCustomGitKeyWrite — the ONE production writer for a custom git key
+// (Phase 9.5 plan 09.5-03, PROP-03)
+// ---------------------------------------------------------------------------
+
+// runCustomGitKeyWrite is the ONE production writer for a free-form custom
+// git key=value pair — modelled directly on runGlobalGitApply's shape (same
+// txMu lock, same stage progression, same dry-run early return BEFORE the
+// confirmation gate, same confirmGate boundary, same newMutationJournal +
+// fail/inject closures, same watchFile on both paths before either write,
+// same recordCreatedDir for a missing baseline parent, same Write 1
+// (ComposeBaselineInclude floor into ~/.gitconfig) then Write 2 (the
+// custom-git-keys block into the baseline file)).
+//
+// UNLIKE runGlobalGitApply's R-3 unconditional-backup-once-authorized
+// contract, this ceremony is SC-1 idempotent on BOTH writes: when the
+// composed bytes for a write target equal what is already on disk, that
+// write is skipped and no backup is taken for it — matching
+// WriteBaselineInclude's own idempotent-skip contract (the composition
+// primitive ComposeBaselineInclude was extracted FROM, specifically so a
+// caller could choose either R-3-unconditional or SC-1-idempotent). Write 1
+// is still composed and considered on every call (never omitted outright —
+// a managed block in a file nothing includes is an invisible no-op) but is
+// only actually written to disk when its composed bytes differ from what is
+// already there.
+func (b *realBackend) runCustomGitKeyWrite(key, value string, p lifecyclePolicy) (lifecycleResult, error) {
+	b.txMu.Lock()
+	defer b.txMu.Unlock()
+
+	res := lifecycleResult{}
+	record := func(stage string) {
+		if p.Stages != nil {
+			p.Stages(stage)
+		}
+	}
+	stages := lifecycleStages["custom-git-key"]
+
+	if b.initErr != nil {
+		return res, b.initErr
+	}
+
+	// plan — reject a malformed key BY SYNTAX before any write, via
+	// gitconfig.SplitGitKey (the key-syntax half of the guard). The value's
+	// injection guard is enforced by the SINGLE gitconfig.EnsureCustomGitKey
+	// call this function makes below, at the write stage — the plan PREVIEW
+	// (CustomGitKeyPlan, wiring.go) is the primary gate the TUI always
+	// consults before opening the ceremony; this is a defense-in-depth
+	// backstop for any caller that reaches this function directly. Calling
+	// SplitGitKey here (rather than a second EnsureCustomGitKey call) keeps
+	// the composer reached from exactly TWO call sites total in this
+	// directory — the plan preview and this function's own write stage.
+	record(stages[0])
+	target := b.baselineTargetPath()
+	if _, _, _, err := gitconfig.SplitGitKey(key); err != nil {
+		return res, err
+	}
+
+	if p.DryRun {
+		// Ordering consequence: stopping AFTER the plan stage means a dry run
+		// never reaches the confirmation gate and therefore needs no authorization.
+		return res, nil
+	}
+
+	// confirm — the authorization boundary.
+	record(stages[1])
+	preview := fmt.Sprintf("write custom git key %s = %s to the gitid managed block in %s",
+		key, value, b.displayPath(target))
+	authorized, cerr := b.confirmGate(p, preview)
+	if cerr != nil {
+		return res, cerr
+	}
+	if !authorized {
+		return res, fmt.Errorf("gitid: cancelled custom git key write of %q", key)
+	}
+
+	// backup — taken per-write below, only when that write's composed bytes
+	// differ from what is already on disk (SC-1).
+	record(stages[2])
+
+	// write — the backed-up, all-or-nothing transaction.
+	record(stages[3])
+	journal := newMutationJournal(b)
+	fail := func(cause error) (lifecycleResult, error) {
+		outcomes, restoreErr := journal.restore()
+		res.Restored = outcomes
+		wrapped := fmt.Errorf("gitid: writing custom git key: %w", cause)
+		if restoreErr != nil {
+			wrapped = fmt.Errorf("%w; restoration results: %s", wrapped, strings.Join(outcomes, "; "))
+		}
+		return res, wrapped
+	}
+	inject := func(step string) error {
+		if b.failCommitAt == nil {
+			return nil
+		}
+		return b.failCommitAt(step)
+	}
+
+	// Watch both files before writing either.
+	if werr := journal.watchFile(b.gitconfigPath); werr != nil {
+		return res, werr
+	}
+	if werr := journal.watchFile(target); werr != nil {
+		return res, werr
+	}
+	// Record the baseline file's parent directory when it does not pre-exist,
+	// so a rollback removes it rather than leaving an empty shell.
+	baselineDir := filepath.Dir(target)
+	if _, serr := os.Stat(baselineDir); os.IsNotExist(serr) {
+		if rerr := journal.recordCreatedDir(baselineDir); rerr != nil {
+			return res, rerr
+		}
+	}
+
+	// Write 1: floor the [include] block in the main config — composed on
+	// every call, but only actually written when the composed bytes differ
+	// from what is already there (SC-1).
+	if err := inject("custom-git-key-include-write"); err != nil {
+		return fail(err)
+	}
+	existingGC, gcErr := os.ReadFile(b.gitconfigPath) //nolint:gosec // trusted gitid-managed path
+	if gcErr != nil && !os.IsNotExist(gcErr) {
+		return fail(gcErr)
+	}
+	composedGC := gitconfig.ComposeBaselineInclude(existingGC, b.displayBaselineTargetPath())
+	if !bytes.Equal(composedGC, existingGC) {
+		backupGC, gcWriteErr := filewriter.Write(b.gitconfigPath, composedGC, deleteGitconfigMode)
+		if gcWriteErr != nil {
+			return fail(fmt.Errorf("writing floor include to %s: %w", b.gitconfigPath, gcWriteErr))
+		}
+		journal.addBackup(backupGC)
+	}
+
+	// Write 2: compose the custom-git-keys block into the baseline file —
+	// same SC-1 skip, matching WriteBaselineFile's own idempotency rule.
+	if err := inject("custom-git-key-baseline-write"); err != nil {
+		return fail(err)
+	}
+	if mkErr := filewriter.EnsureDir(baselineDir, 0o700); mkErr != nil {
+		return fail(fmt.Errorf("ensuring baseline dir %s: %w", baselineDir, mkErr))
+	}
+	existingBF, bfErr := os.ReadFile(target) //nolint:gosec // trusted gitid-managed path
+	if bfErr != nil && !os.IsNotExist(bfErr) {
+		return fail(bfErr)
+	}
+	mergedBF, mergeErr := gitconfig.EnsureCustomGitKey(existingBF, key, value)
+	if mergeErr != nil {
+		return fail(mergeErr)
+	}
+	if !bytes.Equal(mergedBF, existingBF) {
+		backupBF, bfWriteErr := filewriter.Write(target, mergedBF, deleteGitconfigMode)
+		if bfWriteErr != nil {
+			return fail(fmt.Errorf("writing custom-git-keys block to %s: %w", target, bfWriteErr))
+		}
+		journal.addBackup(backupBF)
+	}
+
+	res.Backups = append(res.Backups, journal.backups...)
+
+	// verify — no-op stage for this verb (nothing to re-probe beyond what the
+	// write itself already confirmed); kept so the lifecycleStages row
+	// carries the standard plan/confirm/backup/write/verify shape every
+	// other apply-style verb in this table uses.
+	record(stages[4])
+
+	return res, nil
 }
 
 // ---------------------------------------------------------------------------

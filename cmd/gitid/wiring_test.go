@@ -154,6 +154,42 @@ func TestBuildTUIDepsWiresGitPropertiesBrowser(t *testing.T) {
 	}
 }
 
+// TestRealBackendDoesNotEmbedNoopGitCustomKeyPlanner is plan 09.5-03's L2
+// injected-seam guard for the custom-key WRITE seam (PROP-03), mirroring
+// TestRealBackendDoesNotEmbedNoopGitPropertiesBrowser's shape.
+func TestRealBackendDoesNotEmbedNoopGitCustomKeyPlanner(t *testing.T) {
+	var _ tuikit.GitCustomKeyPlanner = (*realBackend)(nil)
+	rt := reflect.TypeOf(realBackend{})
+	for i := range rt.NumField() {
+		if rt.Field(i).Type == reflect.TypeOf(tuikit.NoopGitCustomKeyPlanner{}) {
+			t.Fatal("realBackend must not embed NoopGitCustomKeyPlanner — a missing real implementation must be a compile error")
+		}
+	}
+}
+
+// TestBuildTUIDepsWiresGitCustomKeyPlanner extends the standing nil-guard
+// test (TestBuildBackendSatisfiesSeam above): the REAL constructor's backend
+// answers CustomGitKeyPlan() without ever returning
+// ErrGitCustomKeyPlannerNotImplemented — i.e. realBackend does not merely
+// look wired, it IS wired to the real gitconfig.EnsureCustomGitKey engine.
+// This closes the project's documented injected-seam wiring blindspot for
+// the new seam this plan introduces, mirroring
+// TestBuildTUIDepsWiresGitPropertiesBrowser's shape.
+func TestBuildTUIDepsWiresGitCustomKeyPlanner(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	b := buildBackend()
+	view, err := b.CustomGitKeyPlan("core.pager", "less -FRX")
+	if errors.Is(err, tuikit.ErrGitCustomKeyPlannerNotImplemented) {
+		t.Fatal("buildBackend()'s CustomGitKeyPlan returned the Noop sentinel — the real seam is not wired")
+	}
+	if err != nil {
+		t.Fatalf("CustomGitKeyPlan: unexpected error from the real seam: %v", err)
+	}
+	if len(view.Targets) == 0 {
+		t.Fatal("buildBackend()'s CustomGitKeyPlan returned a plan with no targets — want the real gitconfig/baseline target pair")
+	}
+}
+
 func TestGitFallbackAuthorVerifySeamIsRealWired(t *testing.T) {
 	b := newBackendForHome(t.TempDir())
 	if b.verifyAuthorResolution != nil {
