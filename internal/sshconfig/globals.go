@@ -82,7 +82,7 @@ var GlobalHostStarOrder = []string{
 // with a second Parse pass before returning, so a render that would not
 // round-trip is rejected rather than persisted (T-06-06).
 func EnsureGlobals(existing []byte, explicit map[string]string, goos string) ([]byte, error) {
-	merged := parseGlobalBody(existingGlobalBody(existing))
+	merged := parseGlobalBody(ExistingGlobalBody(existing))
 
 	// Overlay platform defaults for ABSENT keys only — existing values always
 	// win (D-06).
@@ -154,10 +154,14 @@ func globalsBlockIsLast(content []byte) bool {
 	return globalsOff > otherOff
 }
 
-// existingGlobalBody returns the current block body under GlobalBlockName, or
+// ExistingGlobalBody returns the current block body under GlobalBlockName, or
 // — when that block is absent — under LegacyGlobalBlockName. An empty string
-// means "no block yet".
-func existingGlobalBody(content []byte) string {
+// means "no block yet". Exported (09.5-REVIEW.md WR-02) so every caller that
+// needs to know what body EnsureGlobals is about to merge from — including
+// the custom-SSH-directive staged proof, which must stage against the SAME
+// body the write actually merges — shares this ONE resolver rather than each
+// re-implementing (and drifting from) the legacy-block fallback.
+func ExistingGlobalBody(content []byte) string {
 	blocks := filewriter.ListBlocks(content)
 	for _, b := range blocks {
 		if b.Name == GlobalBlockName {

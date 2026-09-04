@@ -7232,3 +7232,28 @@ func TestGitIgnorePreimageTokenIsDomainSeparated(t *testing.T) {
 			gitignoreA, baselineA, gitignoreB, baselineB, tokenA)
 	}
 }
+
+// TestGlobalsBodyTextFallsBackToTheLegacyBlockName is the 09.5-REVIEW.md
+// WR-02 regression: globalsBodyText is the ONE body-extraction helper the
+// custom-SSH-directive stage-2 proof (ValidateCustomSSHDirective) stages
+// against — it must resolve the SAME body sshconfig.EnsureGlobals actually
+// merges from at write time, which falls back to LegacyGlobalBlockName
+// ("_global") when the current-named block (GlobalBlockName, "global-ssh")
+// is absent. Before the fix, globalsBodyText scanned ONLY GlobalBlockName
+// and returned "" on a machine still carrying the legacy block — proving
+// the staged directive against an EMPTY body instead of the legacy
+// directives EnsureGlobals is about to merge with it.
+func TestGlobalsBodyTextFallsBackToTheLegacyBlockName(t *testing.T) {
+	legacyBody := "Host *\n  StrictHostKeyChecking accept-new\n  ForwardAgent no\n"
+	content := []byte("# BEGIN gitid managed: " + sshconfig.LegacyGlobalBlockName + "\n" +
+		legacyBody +
+		"# END gitid managed: " + sshconfig.LegacyGlobalBlockName + "\n")
+
+	got := globalsBodyText(content)
+	if got == "" {
+		t.Fatal("globalsBodyText returned empty for content carrying only the legacy _global block — must fall back to it (WR-02)")
+	}
+	if !strings.Contains(got, "StrictHostKeyChecking accept-new") {
+		t.Errorf("globalsBodyText(legacy-only content) = %q, want it to contain the legacy block's directives", got)
+	}
+}

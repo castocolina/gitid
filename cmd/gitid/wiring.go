@@ -3342,14 +3342,14 @@ func toGlobalSSHOptionState(s globalssh.OptionState) tuikit.GlobalSSHOptionState
 
 // globalsBodyText returns the body of the gitid `Host *` managed block in
 // content (empty when absent) — the /candidate diff is computed over the
-// block that EnsureGlobals actually owns and changes.
+// block that EnsureGlobals actually owns and changes. Delegates to
+// sshconfig.ExistingGlobalBody (WR-02) so this is the SAME body EnsureGlobals
+// itself merges from, including its LegacyGlobalBlockName ("_global")
+// fallback: a caller that stages a proof against this function's result
+// (ValidateCustomSSHDirective) must never see an empty body on a machine
+// that still carries only the legacy-named block.
 func globalsBodyText(content []byte) string {
-	for _, blk := range filewriter.ListBlocks(content) {
-		if blk.Name == sshconfig.GlobalBlockName {
-			return blk.Body
-		}
-	}
-	return ""
+	return sshconfig.ExistingGlobalBody(content)
 }
 
 // globalsTextDiff is a compact +/− line diff of the block body before and
