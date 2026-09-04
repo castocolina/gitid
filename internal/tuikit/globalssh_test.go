@@ -2789,6 +2789,28 @@ func TestRenderCustomDirectiveValidateBoundsAndSanitizesRawSSHOutput(t *testing.
 	}
 }
 
+// TestRenderCustomDirectiveValidateSanitizesInFlightPendingName is the
+// WR-14 round-2 regression: the WR-14 fix above sanitizes proof.Output, but
+// the in-flight (customDirectiveProofPending == true) beat renders
+// m.pendingDirectiveName BEFORE ValidateCustomSSHDirective's proof has come
+// back — i.e. BEFORE ValidateDirectiveName has run on it — so it is the ONE
+// place in this render where user-typed text can reach the frame
+// unfiltered. The two LATER interpolations of pendingDirectiveName (the
+// UnknownName beat and the "recognized" beat) are safe because they are
+// only reachable on a proof that already passed name validation; this
+// in-flight beat is reachable on ANY typed text, including one carrying a
+// raw control byte.
+func TestRenderCustomDirectiveValidateSanitizesInFlightPendingName(t *testing.T) {
+	m := globalSSHModel{
+		pendingDirectiveName:        "TCPKeepAlive\x07bell-control-byte",
+		customDirectiveProofPending: true,
+	}
+	got := m.renderCustomDirectiveValidate(80)
+	if strings.Contains(got, "\x07") {
+		t.Error("rendered in-flight pane must not contain a raw C0 control byte from the unvalidated pending directive name (WR-14 round-2 regressed)")
+	}
+}
+
 // TestCustomDirectiveAcceptedProofOpensCeremony asserts a proof with
 // OK: true renders the accepted beat with the exact command and its real
 // output, then opens the ceremony carrying the backend's REAL plan: the

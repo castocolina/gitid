@@ -2036,7 +2036,14 @@ func (m globalSSHModel) renderCustomDirectiveValidate(width int) string {
 	d.WriteString(m.subTabStrip() + "\n")
 	d.WriteString(" " + styleBold.Render(PropsAddCustomDirectiveLabel) + "\n\n")
 	if m.customDirectiveProofPending {
-		d.WriteString(" " + fmt.Sprintf(PropsSSHNameCheckFmt, m.pendingDirectiveName) + "\n")
+		// WR-14 round 2: this beat renders BEFORE ValidateCustomSSHDirective's
+		// proof comes back — i.e. before ValidateDirectiveName has run on
+		// m.pendingDirectiveName — so it is the ONE interpolation in this
+		// render that is reached with UNVALIDATED, raw user-typed text. Every
+		// other use of m.pendingDirectiveName below is reached only after a
+		// proof already validated the name; this one is not, so it goes
+		// through the same sanitizer WR-14 gave proof.Output.
+		d.WriteString(" " + fmt.Sprintf(PropsSSHNameCheckFmt, sanitizeProofOutput(m.pendingDirectiveName)) + "\n")
 		return lipgloss.NewStyle().Width(width).Render(d.String())
 	}
 	if m.customDirectiveValidateErr != "" {
