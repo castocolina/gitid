@@ -112,12 +112,35 @@ func ValidateDirectiveName(name string) error {
 // into a single unquoted directive line, or that is empty (CR-02: an empty
 // submission must not silently write a whitespace-only line and take a
 // backup for nothing).
+//
+// WR-03 (09.5-REVIEW.md round 3): a '#' preceded by whitespace (or at
+// position 0) is also rejected — OpenSSH treats it as a comment introducer
+// and silently discards everything from it onward (proven against the real
+// OpenSSH 9.9p2 binary: `ServerAliveInterval 60 #note` resolves to just
+// `60`, exit 0, no diagnostic). Before this fix the value was accepted, the
+// staged probe passed, and the write landed verbatim — honestly proven by
+// ProveCustomDirective's resolved-vs-resolved comparison (both sides get
+// truncated identically, so they still match) but NOT by the ceremony's
+// confirm preview and receipt, which display the FULL untruncated text the
+// user typed. An inline '#' with no PRECEDING whitespace (e.g.
+// "FOO=bar#baz") is safe — verified live above (OpenSSH resolves it whole,
+// since a '#' is only special as its OWN whitespace-delimited token) — so
+// this guard is narrower than a blanket '#' rejection, matching the same
+// reasoning the Git sibling already applies for its own '#'/';' guard
+// (forbiddenCustomValueCharRE, customkeys.go).
 func ValidateDirectiveValue(value string) error {
 	if strings.ContainsAny(value, "\n\r\x00") {
 		return fmt.Errorf("globalssh: directive value %q must not contain a line break or NUL", value)
 	}
 	if strings.TrimSpace(value) == "" {
 		return errors.New("globalssh: directive value cannot be empty")
+	}
+	for i, r := range value {
+		if r == '#' && (i == 0 || value[i-1] == ' ' || value[i-1] == '\t') {
+			return fmt.Errorf("globalssh: directive value %q must not contain a whitespace-"+
+				"delimited '#' — OpenSSH treats it as a comment and silently discards the rest "+
+				"of the value, so the receipt would report a value that is not in effect", value)
+		}
 	}
 	return nil
 }

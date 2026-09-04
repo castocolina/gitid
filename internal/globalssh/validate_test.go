@@ -314,6 +314,44 @@ func TestValidateDirectiveValueAcceptsAnOrdinaryValue(t *testing.T) {
 	}
 }
 
+// TestValidateDirectiveValueRejectsWhitespaceDelimitedHash is the WR-03
+// (09.5-REVIEW.md round 3) regression: OpenSSH treats a '#' preceded by
+// whitespace (or at position 0) as a comment introducer and silently
+// discards everything from it onward — proven against the real OpenSSH
+// binary (CLAUDE.md's hypothesis -> test -> implementation method):
+//
+//	$ printf 'Host *\n  ServerAliveInterval 60 #note\n' > p
+//	$ ssh -F p -G gitid-probe.invalid | grep serveraliveinterval
+//	serveraliveinterval 60           <- "#note" silently gone
+//
+// Before this fix, ProveCustomDirective's staged probe (and the post-write
+// resolved-vs-resolved advisory) compared the ALREADY-TRUNCATED resolved
+// values, so the write was honestly proven but the RECEIPT (which shows the
+// full raw "60 #note") was not. An inline '#' with no PRECEDING whitespace
+// (e.g. "FOO=bar#baz") is safe — verified live above (setenv FOO=bar#baz
+// resolves whole) — so the guard is narrower than a blanket '#' rejection.
+func TestValidateDirectiveValueRejectsWhitespaceDelimitedHash(t *testing.T) {
+	rejected := []string{"60 #note", "#note", "60\t#note", "60  #note"}
+	for _, value := range rejected {
+		t.Run(value, func(t *testing.T) {
+			if err := ValidateDirectiveValue(value); err == nil {
+				t.Errorf("ValidateDirectiveValue(%q): expected error (whitespace-delimited '#'), got nil", value)
+			}
+		})
+	}
+}
+
+// TestValidateDirectiveValueAcceptsAnInlineHashWithNoPrecedingWhitespace
+// verifies the guard is narrow: a '#' with no preceding whitespace is part
+// of the value's own text (git-config-style values legitimately embed it,
+// e.g. an env-var assignment), not a comment introducer, and must remain
+// accepted.
+func TestValidateDirectiveValueAcceptsAnInlineHashWithNoPrecedingWhitespace(t *testing.T) {
+	if err := ValidateDirectiveValue("FOO=bar#baz"); err != nil {
+		t.Errorf("ValidateDirectiveValue(FOO=bar#baz): unexpected error: %v", err)
+	}
+}
+
 // TestProveCustomDirectiveFailsClosedOnAnEmptyNameWithoutStagingAProbe
 // verifies CR-02's central fix: ProveCustomDirective rejects an empty name
 // BEFORE the staged ssh -G probe ever runs — proven by asserting the fake
