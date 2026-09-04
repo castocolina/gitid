@@ -89,6 +89,82 @@ func TestPromoteFramesWritesEveryFrameWhenAllCapturesArePresent(t *testing.T) {
 	}
 }
 
+// TestPromoteFramesRemovesStaleFramesNotInTheRegistry is the WR-05
+// (09.5-REVIEW.md round 3) regression: promoteFrames never deleted a stale
+// .txt file left behind in dstDir by a renamed or removed registry entry,
+// contradicting writeProvenance's own claim that re-running "overwrites this
+// table and every frame in this directory". A tracked, orphaned frame with
+// no provenance row is exactly what the round-3 review's WR-05 fix names —
+// it silently survives every future promotion undetected. The removal must
+// happen only AFTER the all-present check (WR-13's own invariant), so a
+// partial capture run still leaves dstDir completely untouched.
+func TestPromoteFramesRemovesStaleFramesNotInTheRegistry(t *testing.T) {
+	srcDir := t.TempDir()
+	dstDir := t.TempDir()
+	frames := []promotionEntry{
+		{stateID: "a", frame: "frame-a", test: "TestA", shimMode: "ok", geometry: "100x30"},
+	}
+	writeFrame(t, srcDir, "frame-a", "content a\n")
+
+	// A stale frame from a REMOVED or RENAMED registry entry, tracked in
+	// dstDir from a prior run, with no corresponding entry in frames.
+	stalePath := filepath.Join(dstDir, "frame-orphan.txt")
+	if err := os.WriteFile(stalePath, []byte("stale content — no longer registered\n"), 0o600); err != nil {
+		t.Fatalf("seeding stale frame: %v", err)
+	}
+	// A non-.txt file in dstDir (e.g. README.md) must never be touched —
+	// promoteFrames only owns the .txt frames, writeProvenance owns README.md
+	// separately.
+	otherPath := filepath.Join(dstDir, "README.md")
+	if err := os.WriteFile(otherPath, []byte("# not a frame\n"), 0o600); err != nil {
+		t.Fatalf("seeding README.md: %v", err)
+	}
+
+	if _, err := promoteFrames(srcDir, dstDir, frames, "deadbeef", nil); err != nil {
+		t.Fatalf("promoteFrames: %v", err)
+	}
+
+	if _, statErr := os.Stat(stalePath); !os.IsNotExist(statErr) {
+		t.Errorf("frame-orphan.txt still exists after promoteFrames (stat err: %v) — a stale frame not in the registry must be removed", statErr)
+	}
+	if _, statErr := os.Stat(otherPath); statErr != nil {
+		t.Errorf("README.md was removed by promoteFrames (stat err: %v) — only .txt frames not in the registry must be removed", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(dstDir, "frame-a.txt")); statErr != nil {
+		t.Errorf("frame-a.txt (a REAL registered frame) was removed: %v", statErr)
+	}
+}
+
+// TestPromoteFramesLeavesStaleFramesOnAPartialCaptureRun is
+// TestPromoteFramesWritesNothingWhenAnyCaptureIsMissing's WR-05 sibling: the
+// stale-frame removal must happen strictly AFTER the all-present check, so a
+// PARTIAL capture run (WR-13's own failure mode) leaves dstDir — including
+// any stale frame already there — completely untouched, exactly like every
+// other write this function makes.
+func TestPromoteFramesLeavesStaleFramesOnAPartialCaptureRun(t *testing.T) {
+	srcDir := t.TempDir()
+	dstDir := t.TempDir()
+	frames := []promotionEntry{
+		{stateID: "a", frame: "frame-a", test: "TestA", shimMode: "ok", geometry: "100x30"},
+		{stateID: "b", frame: "frame-b", test: "TestB", shimMode: "ok", geometry: "100x30"},
+	}
+	// Only "frame-a" exists; "frame-b" is missing (the partial-run shape).
+	writeFrame(t, srcDir, "frame-a", "content a\n")
+
+	stalePath := filepath.Join(dstDir, "frame-orphan.txt")
+	if err := os.WriteFile(stalePath, []byte("stale content\n"), 0o600); err != nil {
+		t.Fatalf("seeding stale frame: %v", err)
+	}
+
+	if _, err := promoteFrames(srcDir, dstDir, frames, "deadbeef", nil); err == nil {
+		t.Fatal("promoteFrames must fail when a capture is missing")
+	}
+
+	if _, statErr := os.Stat(stalePath); statErr != nil {
+		t.Errorf("frame-orphan.txt was removed despite the partial run failing — dstDir must stay untouched on partial capture: %v", statErr)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // 09.5-05-PLAN.md Task 2 (D-K): phase parameterisation. Every test below
 // drives resolvePhase/promoteForPhase — the orchestration layer ABOVE

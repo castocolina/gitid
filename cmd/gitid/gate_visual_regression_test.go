@@ -3047,13 +3047,20 @@ func readUploadFrameProvenance(path string) (map[string]string, error) {
 	return rows, nil
 }
 
-// TestUploadFrameProvenanceMatches verifies, in both directions, that
-// .planning/phases/09-upload-credentials-assist/ui-frames/README.md's
-// provenance table and the committed .txt frames in that directory agree:
-// every provenance row's recorded SHA-256 equals the named frame's actual
-// content hash, and every committed frame has a provenance row naming it.
-func TestUploadFrameProvenanceMatches(t *testing.T) {
-	dir := filepath.Join("..", "..", ".planning", "phases", "09-upload-credentials-assist", "ui-frames")
+// assertFrameProvenanceMatches verifies, in both directions, that
+// .planning/phases/<phaseDir>/ui-frames/README.md's provenance table and the
+// committed .txt frames in that directory agree: every provenance row's
+// recorded SHA-256 equals the named frame's actual content hash, and every
+// committed frame has a provenance row naming it. Factored out (WR-05,
+// 09.5-REVIEW.md round 3) so the gate is not hardcoded to a single phase's
+// directory — cmd/gitid-frame-promote's own package doc claims this test
+// "verifies every row against the committed frame's real hash in both
+// directions" for EVERY phase the tool promotes, which was only true for
+// Phase 9 before this fix; the 17 frames Phase 9.5 promoted (plus its own
+// README table) were entirely ungated.
+func assertFrameProvenanceMatches(t *testing.T, phaseDir string) {
+	t.Helper()
+	dir := filepath.Join("..", "..", ".planning", "phases", phaseDir, "ui-frames")
 	rows, err := readUploadFrameProvenance(filepath.Join(dir, "README.md"))
 	if err != nil {
 		t.Fatalf("readUploadFrameProvenance: %v", err)
@@ -3095,6 +3102,23 @@ func TestUploadFrameProvenanceMatches(t *testing.T) {
 			t.Errorf("committed frame %q has no provenance row in README.md — re-run `go run ./cmd/gitid-frame-promote`", name)
 		}
 	}
+}
+
+// TestUploadFrameProvenanceMatches verifies, in both directions, that
+// .planning/phases/09-upload-credentials-assist/ui-frames/README.md's
+// provenance table and the committed .txt frames in that directory agree.
+func TestUploadFrameProvenanceMatches(t *testing.T) {
+	assertFrameProvenanceMatches(t, "09-upload-credentials-assist")
+}
+
+// TestPhase95FrameProvenanceMatches is WR-05's (09.5-REVIEW.md round 3)
+// sibling gate for Phase 9.5's promoted PTY frames — parameterised the SAME
+// way cmd/gitid-frame-promote's own -phase flag was, so the promotion tool's
+// package doc claim ("verifies every row against the committed frame's real
+// hash in both directions") is true for every phase it can promote, not just
+// the phase the gate was first written for.
+func TestPhase95FrameProvenanceMatches(t *testing.T) {
+	assertFrameProvenanceMatches(t, "09.5-full-ssh-git-properties-browser")
 }
 
 // ---------------------------------------------------------------------------

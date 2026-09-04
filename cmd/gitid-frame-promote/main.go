@@ -271,6 +271,37 @@ func promoteFrames(srcDir, dstDir string, frames []promotionEntry, commit string
 			progress("promoted %-45s <- tmp/ui-frames/%s.txt\n", e.frame+".txt", e.frame)
 		}
 	}
+
+	// WR-05 (09.5-REVIEW.md round 3): remove any .txt in dstDir that is NOT
+	// in this run's frame registry — a renamed or removed registry entry
+	// otherwise leaves an orphan tracked frame behind, with no provenance
+	// row naming it, contradicting writeProvenance's own claim that
+	// re-running "overwrites this table and every frame in this directory".
+	// Deliberately placed AFTER the all-present check and every write above
+	// (WR-13's own invariant): a partial capture run must still leave dstDir
+	// — including any pre-existing stale frame — completely untouched.
+	wanted := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		wanted[e.frame+".txt"] = true
+	}
+	dstEntries, err := os.ReadDir(dstDir)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s to prune stale frames: %w", dstDir, err)
+	}
+	for _, de := range dstEntries {
+		name := de.Name()
+		if de.IsDir() || !strings.HasSuffix(name, ".txt") || wanted[name] {
+			continue
+		}
+		stalePath := filepath.Join(dstDir, name)
+		if err := os.Remove(stalePath); err != nil {
+			return nil, fmt.Errorf("removing stale frame %s: %w", stalePath, err)
+		}
+		if progress != nil {
+			progress("removed  %-45s (no longer in the registry)\n", name)
+		}
+	}
+
 	return rows, nil
 }
 
