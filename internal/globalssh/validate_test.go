@@ -324,6 +324,28 @@ func TestProveCustomDirectiveNeverMisclassifiesAMultiTokenNameAsAPreexistingErro
 	}
 }
 
+// TestProveCustomDirectiveFailsClosedWhenRunSSHGCombinedIsNil is the WR-10
+// regression: Deps is a plain struct of function fields, and the doc on Deps
+// says "every field is non-nil in the real BuildProbeDeps wiring" — but that
+// is a convention, not an enforcement (this project carries a documented
+// RECURRING injected-seam wiring blindspot). A nil RunSSHGCombined must
+// produce the documented fail-closed (DirectiveProof{OK:false}, err), never
+// a panic in a tea.Cmd goroutine.
+func TestProveCustomDirectiveFailsClosedWhenRunSSHGCombinedIsNil(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("ProveCustomDirective panicked with a nil RunSSHGCombined seam: %v — must fail closed instead", r)
+		}
+	}()
+	proof, err := ProveCustomDirective(Deps{GOOS: "linux"}, existingGlobalBodyFixture, "StreamLocalBindMask", "0177")
+	if err == nil {
+		t.Fatal("ProveCustomDirective with a nil RunSSHGCombined seam: expected a non-nil error, got nil")
+	}
+	if proof.OK {
+		t.Error("proof.OK = true, want false for an unwired seam")
+	}
+}
+
 func TestProveCustomDirectiveProbesTheWildcardSentinel(t *testing.T) {
 	f := &fakeCombinedRunner{out: "streamlocalbindmask 0177\n", err: nil}
 	_, err := ProveCustomDirective(depsWithCombined(f), existingGlobalBodyFixture, "StreamLocalBindMask", "0177")

@@ -158,6 +158,15 @@ func ProveCustomDirective(deps Deps, currentGlobalBody, name, value string) (Dir
 	if err := ValidateDirectiveValue(value); err != nil {
 		return DirectiveProof{}, err
 	}
+	// WR-10: Deps is a plain struct of function fields; "every field is
+	// non-nil in the real BuildProbeDeps wiring" is a convention, not an
+	// enforcement, and this project carries a documented RECURRING
+	// injected-seam wiring blindspot. Fail closed here rather than let a
+	// nil deps.RunSSHGCombined panic in what is normally a tea.Cmd
+	// goroutine.
+	if deps.RunSSHGCombined == nil {
+		return DirectiveProof{}, errors.New("globalssh: RunSSHGCombined seam is not wired — refusing to report an unproven directive as accepted")
+	}
 
 	tmpDir, err := os.MkdirTemp("", "gitid-directive-proof-*")
 	if err != nil {
