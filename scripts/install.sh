@@ -117,7 +117,15 @@ else
 	fail "no SHA-256 tool found (need sha256sum or shasum)"
 fi
 
-expected=$(grep -E "^[0-9a-f]{64}  ${asset}\$" "${tmp}/${checksums_name}" | head -n 1 | cut -d ' ' -f 1)
+# WR-02 fix (Phase 10 round-1 review): match the asset name as an exact
+# field, not as a `grep -E` regex. version_num — and therefore ${asset} —
+# is unvalidated user input (GITID_VERSION); splicing it unescaped into an
+# extended-regex pattern let regex metacharacters (parentheses, `.`, `+`,
+# etc.) change matching semantics instead of matching the literal
+# filename. The checksums manifest's `<hash>  <filename>` two-space format
+# makes this an exact-field comparison with no regex involved: awk's
+# default field splitting (any whitespace) yields $1=hash, $2=filename.
+expected=$(awk -v name="$asset" '$2 == name { print $1; exit }' "${tmp}/${checksums_name}")
 if [ -z "$expected" ]; then
 	fail "${checksums_name} has no entry for ${asset} — refusing to install an unverified archive"
 fi

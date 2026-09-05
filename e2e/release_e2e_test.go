@@ -942,7 +942,10 @@ func TestInstallScript_PipedIntoShellStillInstalls(t *testing.T) {
 func TestInstallScript_FallsBackToShasumWhenSha256sumAbsent(t *testing.T) {
 	art := stampedArtifacts(t)
 	hostArchive := hostArchiveName(t, art.version)
-	tools := []string{"curl", "mktemp", "grep", "cut", "head", "chmod", "mkdir", "mv", "rm", "uname", "tar", "shasum"}
+	// WR-02 fix (Phase 10 round-1 review): the checksum-line lookup moved
+	// from `grep -E | head | cut` to `awk` — "grep"/"head" are no longer
+	// required by install.sh's checksum path, "awk" now is.
+	tools := []string{"curl", "mktemp", "awk", "cut", "chmod", "mkdir", "mv", "rm", "uname", "tar", "shasum"}
 	curated := minimalToolPath(t, tools)
 	home := SandboxHome(t)
 	fsrv := startReleaseFixtureServer(t, art.distDir, art.tag)
@@ -1083,6 +1086,83 @@ func TestInstallScript_ResolvesLatestViaGitHubRedirect(t *testing.T) {
 	}
 	if len(gotPaths) != 4 {
 		t.Fatalf("fixture requests = %v, want exactly 4 (latest redirect, tag page, asset, checksums)", gotPaths)
+	}
+}
+
+// TestInstallScript_VersionWithRegexMetacharactersMatchesChecksumExactly
+// (Phase 10 round-1 review WR-02): scripts/install.sh:120's checksum-line
+// lookup spliced the user-controlled ${asset} — which embeds version_num,
+// taken verbatim from GITID_VERSION when set, unvalidated — into a
+// `grep -E` extended-regex pattern unescaped. A version tag containing
+// regex-special characters (the review's own example, "v1.0.0(rc1)")
+// makes the built pattern fail to match the checksums manifest's
+// byte-identical line: confirmed with BOTH GNU grep (Linux, via a
+// throwaway `docker run debian:bookworm-slim`) and BSD grep (macOS, this
+// repo's CI matrix) — an unescaped "(rc1)" group in the extended-regex
+// pattern fails to match the literal text "(rc1)" on either
+// implementation, so the correct, byte-verified checksum entry is
+// invisible to the script. This test crafts a real checksums-manifest
+// entry (correct SHA-256 of a REAL archive, renamed) for such a version
+// and asserts install.sh installs it successfully — today (pre-fix) it
+// instead refuses with "has no entry for", a false-negative refusal of a
+// genuinely valid, verified archive.
+func TestInstallScript_VersionWithRegexMetacharactersMatchesChecksumExactly(t *testing.T) {
+	art := stampedArtifacts(t)
+	hostArchive := hostArchiveName(t, art.version)
+
+	var hostOS, hostArch string
+	for _, p := range publishedPlatforms {
+		if p.os == runtime.GOOS && p.arch == runtime.GOARCH {
+			hostOS, hostArch = p.os, p.arch
+		}
+	}
+
+	// Balanced parens alone are already enough to break the unescaped
+	// grep -E match on both GNU and BSD grep (verified: an unescaped
+	// "(rc1)" capture group fails to match the literal substring "(rc1)")
+	// — deliberately NOT using the review's unbalanced-parens worst case,
+	// which fails for the separate reason of invalid regex syntax. This
+	// isolates the "regex metacharacters change matching semantics"
+	// failure mode WR-02 describes.
+	const weirdTag = "v1.0.0(rc1)"
+	weirdVersion := strings.TrimPrefix(weirdTag, "v")
+	weirdAsset := archiveName(weirdVersion, hostOS, hostArch)
+	weirdChecksums := checksumsName(weirdVersion)
+
+	tmp := t.TempDir()
+	// Reuse the REAL host archive's bytes (renamed) so the SHA-256 in the
+	// crafted manifest is the archive's genuine checksum, not a fabricated
+	// value — the fix must still verify the archive correctly, not merely
+	// "find a line".
+	srcArchive := filepath.Join(art.distDir, hostArchive)
+	body, err := os.ReadFile(srcArchive) //nolint:gosec
+	if err != nil {
+		t.Fatalf("reading host archive: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, weirdAsset), body, 0o644); err != nil { //nolint:gosec
+		t.Fatalf("writing renamed archive: %v", err)
+	}
+	sum := sha256.Sum256(body)
+	hash := hex.EncodeToString(sum[:])
+	manifest := hash + "  " + weirdAsset + "\n"
+	if err := os.WriteFile(filepath.Join(tmp, weirdChecksums), []byte(manifest), 0o644); err != nil { //nolint:gosec
+		t.Fatalf("writing crafted checksums manifest: %v", err)
+	}
+
+	home := SandboxHome(t)
+	fsrv := startReleaseFixtureServer(t, tmp, weirdTag)
+	res := runInstallScript(t, home, os.Getenv("PATH"), fsrv.srv.URL, weirdTag)
+	if res.err != nil {
+		t.Fatalf("install.sh refused a version tag containing regex metacharacters (%q) — this is WR-02's unescaped grep -E bug: %v\nstdout:\n%s\nstderr:\n%s", weirdTag, res.err, res.stdout, res.stderr)
+	}
+	if !strings.Contains(res.stdout, "  verified: SHA-256 "+hash) {
+		t.Fatalf("stdout missing verified line for archive hash %s:\n%s", hash, res.stdout)
+	}
+	installed := filepath.Join(home, ".local", "bin", "gitid")
+	got := fileSHA256(t, installed)
+	want := gitidMemberSHA256(t, srcArchive)
+	if got != want {
+		t.Fatalf("installed SHA-256 %s != archive %q's extracted gitid member %s", got, weirdAsset, want)
 	}
 }
 
