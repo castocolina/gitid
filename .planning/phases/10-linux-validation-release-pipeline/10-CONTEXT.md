@@ -248,5 +248,125 @@ build-stamped `gitid --version`, a hardened install script, and a Homebrew tap
 
 ---
 
+## Addendum: Homebrew deferral, nightly releases, install.sh channels (2026-09-05)
+
+**Status:** Same-day user-directed revision, gathered live in conversation (not
+through an automated discuss-phase run). Phase 10 was already executed and
+merged up through commit `5d11455` and sits in `human_needed` for two pending
+items (Bazzite manual UAT, Homebrew tap creation). This addendum supersedes
+only the parts of D-07/D-13 named below; every other Phase 10 decision above
+stands unchanged.
+
+- **D-17 (Archive format — CONFIRMED, no change):** tar.gz archives stay.
+  Measured on this repo's own binary: `bin/gitid` is 15.2MB uncompressed;
+  goreleaser's tar.gz output in `dist/` is ~3.2-3.4MB per archive — a real
+  ~4.5x bandwidth reduction. D-07 stands exactly as written; this row exists
+  only to record that raw-binary was considered and rejected again.
+
+- **D-18 (D-13 Homebrew tap — DEFERRED, NOT REJECTED):** D-13's decision and
+  rationale (one `castocolina/homebrew-tap` repo, `brews:` stanza,
+  Homebrew-is-the-Bazzite-recommended-channel argument) remain the intended
+  end state and MUST NOT be deleted from `.goreleaser.yaml` or from this
+  document. What changes: the `brews:` publish leg is now **feature-gated**
+  so a real `v*` tag push succeeds even though `castocolina/homebrew-tap` and
+  `HOMEBREW_TAP_GITHUB_TOKEN` do not exist yet. Mechanism (Claude's discretion,
+  resolved): the `release`/`release-nightly` Make targets pass
+  `--skip=homebrew` to `goreleaser release` whenever `HOMEBREW_TAP_GITHUB_TOKEN`
+  is unset/empty; when the secret IS present (post-tap-creation), the flag is
+  omitted and the existing `brews:` stanza publishes exactly as D-13 always
+  intended, with zero config changes required at that point. **Re-enable
+  instructions:** once `castocolina/homebrew-tap` exists and
+  `HOMEBREW_TAP_GITHUB_TOKEN` is set as a repo secret, the gate opens itself —
+  no code change needed; document this one-line reality in README.md's
+  Homebrew section.
+
+- **D-19 (Nightly releases — NEW, REVISED after empirical spike):** The user asked for
+  goreleaser's own native `nightly:` block / `--nightly` flag, explicitly rejecting a
+  hand-rolled tag-resolution script like `castocolina/wezterm-setup`'s. **Empirically
+  verified against the pinned OSS binary this repo actually uses (`goreleaser v2.18.0`,
+  D-05):** `goreleaser release --help` lists no `--nightly` flag, and
+  `goreleaser jsonschema` contains zero occurrences of `nightly` anywhere in the config
+  schema. GoReleaser's nightly-builds feature is a **GoReleaser Pro-only** capability
+  (a separate paid binary/license) — not present in the OSS distribution this project
+  installs via `go install github.com/goreleaser/goreleaser/v2@v2.18.0`. Adopting
+  goreleaser-pro is out of scope for this task (new paid dependency, not evaluated or
+  approved) and is NOT done here. **Resolution:** reuse goreleaser's ORDINARY `release`
+  command (the exact one `release.yml` already calls) against a real, valid-prerelease-
+  semver git tag that the nightly workflow creates fresh each run —
+  `v0.0.0-nightly.<UTC-yyyymmddHHMMSS>.<short-sha>` — rather than any hand-rolled
+  version-parsing/selection engine. The only new logic is "compute a timestamped tag
+  string and `git tag -a` + `git push` it," ordinary git tagging, not a custom
+  release-resolution pipeline; every existing `.goreleaser.yaml` rule (D-07 archive
+  shape, D-08 attestation, `prerelease: auto`, `make_latest: "{{ not .Prerelease }}"`
+  from REVIEW C-3, D-18's homebrew gate) applies unchanged and is reused verbatim — the
+  nightly tag's non-empty prerelease suffix (`nightly.<ts>.<sha>`) makes `.Prerelease`
+  non-empty exactly like an `-rc.N` tag, so it is automatically marked prerelease and
+  never GitHub's "latest," with zero new config. A new `make release-nightly` target
+  creates that tag and invokes `goreleaser release --clean --skip=homebrew,announce`
+  (homebrew ALWAYS skipped for nightly, token present or not — a rolling non-semver-
+  proper nightly must never overwrite the tap's stable formula). To avoid unbounded
+  tag/release accumulation (goreleaser OSS has no `keep_single_release` equivalent —
+  that key is also Pro-only), the same target additionally deletes prior
+  `v0.0.0-nightly.*`-pattern tags/releases via `gh release delete`/`git push --delete`
+  before creating the new one, approximating Pro's "single rolling nightly" behavior
+  with ordinary `gh`/`git` calls, guarded to skip gracefully (log a note, do not fail
+  the build) when `gh` is unavailable or unauthenticated in a local/dev invocation — CI
+  always has both. A new `.github/workflows/nightly.yml` (kept separate from
+  `release.yml` for blast-radius clarity: a scheduled/dispatch trigger touching the SAME
+  job as the tag-triggered publish job invites accidental double-publish drift) runs on
+  `schedule` (daily cron) and `workflow_dispatch`, gated the same way as `release.yml`
+  (`make test` + `make lint` before publish, job-scoped `contents: write` only — no
+  `id-token`/`attestations` needed since nightly skips provenance attestation to keep
+  the workflow narrow). This can never collide with a real `vX.Y.Z` semver tag release
+  (disjoint tag namespace: `v0.0.0-nightly.*` vs. `vMAJOR.MINOR.PATCH[-rc.N]`).
+
+- **D-20 (install.sh channel selection + interactive TTY menu — NEW):**
+  `scripts/install.sh` gains:
+  - `GITID_CHANNEL=stable|nightly` env var (default: unset, meaning today's
+    exact `GITID_VERSION`-pin-or-`/releases/latest`-redirect behavior is
+    preserved byte-for-byte for the existing headless path). `stable`
+    resolves the same as today (latest non-prerelease). `nightly` resolves
+    the latest nightly by querying
+    `https://api.github.com/repos/castocolina/gitid/releases` (curl+API,
+    no `gh` dependency, matching the script's existing curl-and-tar-only
+    constraint) and picking the newest entry whose tag matches the nightly
+    naming pattern — `/releases/latest` cannot resolve a nightly since
+    GitHub marks it prerelease and excludes it from that redirect.
+  - A real, usable-controlling-terminal probe adapted from
+    `castocolina/wezterm-setup`'s proven `tools/install.sh` pattern:
+    `{ : < /dev/tty; } 2>/dev/null` (an actual open-attempt, not
+    `test -t 0` or `[ -e /dev/tty ]` — some containers expose a `/dev/tty`
+    node that exists/is readable but fails to open with ENXIO). When usable
+    AND no `GITID_VERSION`/`GITID_CHANNEL` was given, the script lists the
+    N most recent releases (stable + nightly) fetched from the same
+    `/releases` API call and presents a numbered menu read from `/dev/tty`
+    (`read choice < /dev/tty`), reviving interactivity even though the
+    outer script's own stdin was consumed by the curl pipe. Only wezterm-
+    setup's `/dev/tty`-revival TECHNIQUE is reused — its asset-naming,
+    release shape, and repo-fetch mechanics are NOT (different project,
+    tar.gz not raw-binary+`.sha256`, and gitid's own install.sh already has
+    zero-git-dependency + POSIX-`sh`-only constraints wezterm-setup's
+    bash-only script does not carry).
+  - `install.sh` still never reads from top-level stdin directly (existing
+    header invariant preserved: the menu `read` is scoped to the interactive
+    branch and always reads from the explicit `/dev/tty` fd, never bare
+    stdin) and remains POSIX `sh` (`set -eu`, no bashisms, no `pipefail`).
+
+### Claude's Discretion (this addendum)
+
+- Exact `--skip` flag syntax/value passed to goreleaser for the homebrew gate
+  (single `homebrew` skip ID, per goreleaser v2's skip-ID vocabulary).
+- Nightly workflow cron cadence (daily, off-peak UTC) and file name
+  (`nightly.yml`, separate from `release.yml`).
+- `GITID_CHANNEL` resolution algorithm details (exact GitHub API query/filter
+  for "latest nightly" and "recent N releases for the menu") within the
+  curl-only, no-`gh`, no-`git` constraint.
+- Menu UX copy/format (numbered list, prompt wording) as long as it degrades
+  cleanly to the existing headless behavior whenever no usable `/dev/tty`
+  exists.
+
+---
+
 *Phase: 10-linux-validation-release-pipeline*
 *Context gathered: 2026-07-08*
+*Addendum gathered: 2026-09-05*

@@ -91,6 +91,14 @@ brews:
   # goreleaser v2.10, but D-13 explicitly locks `brews:` — it remains fully
   # functional through v2.18.0 and is honored literally here (10-RESEARCH.md
   # Pitfall 4). Revisit only if a future goreleaser major version removes it.
+  #
+  # D-18 (10-CONTEXT.md addendum, 2026-09-05): this stanza is INTENTIONALLY left
+  # exactly as D-13 specified — DEFERRED, not deleted. castocolina/homebrew-tap
+  # does not exist yet, so the Makefile's `release`/`release-nightly` targets pass
+  # `--skip=homebrew` to goreleaser whenever HOMEBREW_TAP_GITHUB_TOKEN is empty,
+  # rather than editing this file. The day the tap repo exists and the token is
+  # set as a real repo secret, the gate opens itself and this stanza publishes
+  # exactly as originally intended — zero config changes required here.
   - name: gitid
     repository:
       owner: castocolina

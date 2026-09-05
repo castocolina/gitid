@@ -639,11 +639,20 @@ build-cross:
 ## version descriptions) and runs `goreleaser release --clean`, which reads
 ## .goreleaser.yaml, builds the 4-target matrix, archives to tar.gz, writes the
 ## checksums manifest, publishes the GitHub Release, and pushes the Homebrew tap
-## formula. Requires a real pushed tag plus GITHUB_TOKEN/HOMEBREW_TAP_GITHUB_TOKEN in
-## the environment — this is release.yml's own job, never run locally with real
-## secrets. `dist:` (goreleaser's own, never `bin/` — REVIEW C-4) is where output lands.
+## formula. Requires a real pushed tag plus GITHUB_TOKEN in the environment — this is
+## release.yml's own job, never run locally with real secrets. `dist:` (goreleaser's
+## own, never `bin/` — REVIEW C-4) is where output lands.
+##
+## D-18 (10-CONTEXT.md addendum, 2026-09-05): the D-13 Homebrew `brews:` publish leg
+## is GATED, not deleted — castocolina/homebrew-tap does not exist yet (10-VERIFICATION.md
+## human_verification item 2). SKIP_HOMEBREW resolves to `--skip=homebrew` whenever
+## HOMEBREW_TAP_GITHUB_TOKEN is empty/unset, so a real tag push succeeds without the tap
+## repo/PAT; the instant that secret is added as a real repo secret, this same target
+## activates the brews: publish with ZERO code changes (the `.goreleaser.yaml` brews:
+## stanza is untouched — see the comment above it).
+SKIP_HOMEBREW := $(if $(HOMEBREW_TAP_GITHUB_TOKEN),,--skip=homebrew)
 release:
-	VERSION=$(VERSION) COMMIT=$(COMMIT) DATE=$(DATE) $(GORELEASER) release --clean
+	VERSION=$(VERSION) COMMIT=$(COMMIT) DATE=$(DATE) $(GORELEASER) release --clean $(SKIP_HOMEBREW)
 
 ## release-snapshot: local, zero-secrets dry run of the SAME .goreleaser.yaml (D-05).
 ## `--snapshot` skips git-tag validation and ALL publish steps (release:/brews:) —
@@ -652,6 +661,52 @@ release:
 ## local verification; this is the phase's own dry-run verification vehicle.
 release-snapshot:
 	VERSION=$(VERSION) COMMIT=$(COMMIT) DATE=$(DATE) $(GORELEASER) release --snapshot --clean
+
+## release-nightly: D-19 (10-CONTEXT.md addendum, 2026-09-05). GoReleaser's native
+## `--nightly` mode / `nightly:` config is GoReleaser-Pro-only — EMPIRICALLY VERIFIED
+## against this repo's pinned OSS binary (`goreleaser release --help` lists no
+## `--nightly` flag; `goreleaser jsonschema` has zero `nightly` occurrences). Rather
+## than a hand-rolled version-resolution script (explicitly rejected — the user's own
+## castocolina/wezterm-setup does that and was reviewed as the anti-pattern NOT to
+## repeat), this target reuses goreleaser's ORDINARY `release` command against a
+## freshly created, valid-prerelease-semver git tag: the only new logic is computing a
+## timestamped tag string and `git tag`/`git push`ing it — ordinary git tagging, not a
+## release-selection engine. The tag's non-empty prerelease suffix
+## (`nightly.<ts>.<sha>`) makes `.goreleaser.yaml`'s existing `prerelease: auto` /
+## `make_latest: "{{ not .Prerelease }}"` mark it prerelease and never GitHub's
+## "latest", with zero new config. Homebrew is ALWAYS skipped (token present or not) —
+## a rolling nightly must never touch the stable tap formula. Best-effort deletes prior
+## nightly tags/releases first (approximating GoReleaser-Pro's `keep_single_release`,
+## also Pro-only, with ordinary `gh`/`git` calls); a missing/unauthenticated `gh` logs a
+## note and continues rather than failing the build — CI (nightly.yml) always has both.
+NIGHTLY_TAG := v0.0.0-nightly.$(shell date -u +%Y%m%d%H%M%S).$(shell git rev-parse --short HEAD)
+# REVIEW cycle-1 finding #3 (10-REVIEWS.md): nightly binaries must never fall
+# back to the Makefile's placeholder COMMIT/DATE defaults ("none"/"unknown")
+# just because nightly.yml has no metadata-computation step of its own (unlike
+# release.yml). Compute both directly here so `make release-nightly` is
+# correctly stamped no matter what invokes it.
+NIGHTLY_COMMIT := $(shell git rev-parse --short HEAD)
+NIGHTLY_DATE := $(shell date -u +%Y-%m-%d)
+.PHONY: release-nightly
+release-nightly:
+	@if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then \
+		echo "==> release-nightly: pruning prior v0.0.0-nightly.* releases/tags"; \
+		for tag in $$(gh release list --limit 100 --json tagName --jq '.[].tagName' 2>/dev/null | grep '^v0\.0\.0-nightly\.' || true); do \
+			gh release delete "$$tag" --yes --cleanup-tag 2>/dev/null || true; \
+		done; \
+	else \
+		echo "==> release-nightly: gh not available/authenticated — skipping prior-nightly cleanup (best-effort only)"; \
+	fi
+	# Lightweight tag (NOT `git tag -a`/`-m`): an annotated tag creates a tag
+	# OBJECT, which requires a configured committer identity
+	# (user.name/user.email) — a fresh GitHub-hosted runner (nightly.yml) has
+	# none, and `git tag -a` would fail with "empty ident name" on its very
+	# first scheduled run (code-review finding). A lightweight tag is a bare
+	# ref with no object/identity requirement and is exactly as valid a
+	# goreleaser `git describe` target as an annotated one.
+	git tag "$(NIGHTLY_TAG)"
+	git push origin "$(NIGHTLY_TAG)"
+	VERSION=$(patsubst v%,%,$(NIGHTLY_TAG)) COMMIT=$(NIGHTLY_COMMIT) DATE=$(NIGHTLY_DATE) $(GORELEASER) release --clean --skip=homebrew,announce
 
 ## run: build (if needed) and run the gitid binary locally.
 ## Depends on build so bin/gitid is always current before launch. Extra args

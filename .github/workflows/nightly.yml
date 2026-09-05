@@ -1,0 +1,76 @@
+---
+# gitid nightly publish (D-19, 10-CONTEXT.md addendum 2026-09-05). Kept as a
+# SEPARATE workflow from release.yml (rather than merged into it) for
+# blast-radius clarity: a scheduled/dispatch trigger touching the SAME job as
+# the tag-triggered publish job invites accidental double-publish drift. This
+# workflow can never collide with release.yml's job: disjoint tag namespaces
+# (`v0.0.0-nightly.<timestamp>.<sha>`, created fresh by `make release-nightly`
+# below, vs. real `vMAJOR.MINOR.PATCH[-rc.N]` tags release.yml reacts to) and a
+# different trigger entirely (schedule/workflow_dispatch vs. `push: tags:`).
+#
+# GoReleaser's native `--nightly` mode / `nightly:` config block is
+# GoReleaser-Pro-only — EMPIRICALLY VERIFIED against this repo's pinned OSS
+# `goreleaser` binary (v2.18.0): `goreleaser release --help` lists no
+# `--nightly` flag, and `goreleaser jsonschema` has zero `nightly`
+# occurrences anywhere in the config schema. `make release-nightly` (see
+# Makefile) instead reuses goreleaser's ORDINARY `release` command against a
+# freshly created, valid-prerelease-semver tag — no hand-rolled version-
+# resolution logic, just ordinary `git tag`/`git push`, exactly as D-19
+# specifies. Provenance attestation is intentionally skipped here (unlike
+# release.yml) to keep this workflow narrow — nightly builds are a rolling,
+# frequently-superseded convenience artifact, not the audited release
+# artifact release.yml produces.
+
+name: Nightly
+
+on:
+  schedule:
+    # A non-round-number minute avoids the top-of-hour GitHub Actions
+    # scheduling congestion documented in GitHub's own Actions docs.
+    - cron: "17 4 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  # contents: write only — no id-token/attestations (narrower than
+  # release.yml's job; no provenance attestation step here, see header).
+  nightly:
+    name: nightly (ubuntu-latest)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Same guardrail as release.yml — release/tagging paths need full
+          # tag history available for `git describe`/`git tag`.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.26.x"
+
+      # Same narrower bootstrap release.yml uses (REVIEW C-7 precedent) — this
+      # workflow never provisions Chromium/goimports/pre-commit hooks it does
+      # not need.
+      - name: make setup-env-release (golangci-lint incl. embedded gosec + goreleaser only)
+        run: make setup-env-release
+
+      - name: make test (-race)
+        run: make test
+
+      - name: make lint (golangci-lint + gosec)
+        run: make lint
+
+      # release-nightly computes its own COMMIT/DATE/tag internally (Makefile)
+      # rather than relying on a separate metadata step — see Makefile's
+      # release-nightly target comment (10-REVIEWS.md cycle-1 finding #3).
+      # GITHUB_TOKEN covers both goreleaser's own release publish AND the
+      # `gh release`/`git push` prior-nightly-cleanup calls this target makes;
+      # HOMEBREW_TAP_GITHUB_TOKEN is never read here — release-nightly always
+      # passes --skip=homebrew regardless of any token.
+      - name: make release-nightly (goreleaser publish against a fresh nightly tag)
+        run: make release-nightly
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

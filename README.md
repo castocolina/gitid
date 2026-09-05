@@ -88,11 +88,12 @@ manifest from the latest GitHub Release, verifies the SHA-256 **before**
 extracting, and installs to `~/.local/bin/gitid` — no sudo. It refuses to
 install an archive whose checksum does not match.
 
-Two environment variables configure it:
+Environment variables configure it:
 
 | Variable | Effect | Default |
 |----------|--------|---------|
 | `GITID_VERSION` | Pin an exact release tag (e.g. `v1.0.0`, with the `v` prefix) instead of resolving GitHub's latest release | resolves `/releases/latest` |
+| `GITID_CHANNEL` | `stable` (identical to the default) or `nightly` — resolves the newest rolling nightly build instead of the latest stable release | unset (stable) |
 | `GITID_INSTALL_DIR` | Override the install directory | `~/.local/bin` |
 
 ```sh
@@ -108,6 +109,22 @@ reads these variables. Put the assignment on the `sh` side, as above, or
 If the install directory is not on PATH, the installer prints the exact
 `export PATH` line to add.
 
+**Interactive menu:** run the script directly (not piped) with neither
+`GITID_VERSION` nor `GITID_CHANNEL` set, and — when your shell has a real,
+usable controlling terminal — it lists the most recent stable and nightly
+releases and lets you pick one from a numbered menu instead of silently
+defaulting to latest-stable:
+
+```sh
+sh scripts/install.sh
+```
+
+**Nightly builds:** a daily scheduled job (and manual dispatch) publishes a
+rolling prerelease build tagged `v0.0.0-nightly.<timestamp>.<sha>` from the
+tip of `main` (see `.github/workflows/nightly.yml` — it does not trigger on
+every push),
+never uploaded to the Homebrew tap and never marked GitHub's "latest" release.
+
 ### Homebrew tap
 
 ```sh
@@ -116,6 +133,15 @@ brew install castocolina/homebrew-tap/gitid
 
 Works on macOS and on Linux, including Bazzite/Fedora — Homebrew ships
 preinstalled on Universal Blue images and is the documented CLI channel there.
+
+> **Status:** the Homebrew tap publish leg is currently **deferred, not
+> removed** — `castocolina/homebrew-tap` does not exist yet, so releases
+> ship without it (the `curl | sh` installer and manual download both work
+> today). It re-enables itself automatically, with zero code changes, the
+> moment the tap repo exists and a `HOMEBREW_TAP_GITHUB_TOKEN` repository
+> secret (a fine-grained PAT scoped to that repo) is added to this repo's
+> Actions secrets — the release pipeline's `--skip=homebrew` gate only
+> engages when that secret is absent.
 
 ### `go install`
 

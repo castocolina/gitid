@@ -534,6 +534,7 @@ var e2eAllowedAmbientPathSites = map[string]string{
 	"TestInstall_MakeInstallOutput":              "invokes `make install`, never a gitid binary — asserts the Makefile's own echoed install-path/PATH-hint text",
 	"stampedArtifacts":                           "invokes `make release-snapshot`, never a gitid binary — needs the real toolchain PATH and the real HOME to resolve GOPATH",
 	"TestRelease_UnstampedBuildKeepsDevDefaults": "invokes `make build`, never a gitid binary — same reason as BuildBinary",
+	"runScratchGoreleaserRelease":                "invokes the goreleaser binary directly (D-18 homebrew-gate proof), never a gitid binary — needs the real toolchain PATH and the real HOME so `git tag -a` can resolve a real user.name/user.email identity; e2eEnv's sandboxed HOME would have none, and the real ambient environment cannot smuggle a gh/glab resolution into any gitid code path since no gitid binary is ever invoked here",
 }
 
 // e2eAmbientPathSubstrings are real-PATH indicators e2eEnv refuses to see

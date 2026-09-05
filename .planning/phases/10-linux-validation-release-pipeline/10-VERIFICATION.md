@@ -1,18 +1,61 @@
 ---
 phase: 10-linux-validation-release-pipeline
 verified: 2026-09-05T04:10:00Z
+reverified: 2026-09-05T16:00:00Z
 status: human_needed
-score: 8/10 must-haves verified
+score: 8/10 must-haves verified (original); gap-closure (10-07) adds D-18/D-19/D-20, all automated-verified
 behavior_unverified: 0
 overrides_applied: 0
 human_verification:
   - test: "Run the Bazzite manual UAT checklist (.planning/phases/10-linux-validation-release-pipeline/bazzite-uat-checklist.md) on real Bazzite hardware, once per release, and update PLATFORM-NOTES.md's 5 'Pending manual UAT' rows to Verified/Accepted limitation."
     expected: "Each of the 5 rows (SELinux spot-check, /home->/var/home symlink includeIf resolution, real-terminal TUI rendering, wl-clipboard presence, ssh-add no-agent degradation) resolves to a real PASS/FAIL finding, not a placeholder."
-    why_human: "Requires physical/real Bazzite hardware with SELinux enforcement, a real Wayland desktop session, and real terminal emulators (Ptyxis/Konsole) — none of which exist in this (or any) automated CI/agent sandbox. This is explicitly the D-01(ii)/D-03 design: the container CI job proves everything a container CAN exercise; this checklist is the deliberately-human-only residue, by design run once per release, not a one-time phase gate."
-  - test: "Create the castocolina/homebrew-tap GitHub repo, mint a fine-grained PAT scoped to it, add it as the HOMEBREW_TAP_GITHUB_TOKEN secret on the gitid repo, then push a real v* tag and observe release.yml run to completion (GitHub Release created with 5 attested assets, Homebrew formula pushed to the tap repo)."
-    expected: "A live GitHub Release appears with 4 tar.gz archives + 1 checksums.txt, both attested via actions/attest-build-provenance; castocolina/homebrew-tap gets a Formula/gitid.rb commit; `brew install castocolina/homebrew-tap/gitid` installs a working binary reporting the correct stamped version."
-    why_human: "Repo creation and PAT minting both require the user's own GitHub account — an agent cannot create repos or mint secrets on someone else's account (confirmed live: `curl -sI https://github.com/castocolina/homebrew-tap` returns 404 as of this verification — the tap repo genuinely does not exist yet). This is explicitly named as a user_setup item in 10-04-SUMMARY.md's own frontmatter, not glossed over."
+    why_human: "Requires physical/real Bazzite hardware with SELinux enforcement, a real Wayland desktop session, and real terminal emulators (Ptyxis/Konsole) — none of which exist in this (or any) automated CI/agent sandbox. This is explicitly the D-01(ii)/D-03 design: the container CI job proves everything a container CAN exercise; this checklist is the deliberately-human-only residue, by design run once per release, not a one-time phase gate. UNCHANGED by the 2026-09-05 gap-closure (10-07) — out of scope per its own instructions."
 ---
+
+## 2026-09-05 gap-closure addendum (10-07-PLAN.md, D-18/D-19/D-20)
+
+**The Homebrew-tap human_verification item above has been REMOVED, not just
+reworded** — it previously blocked "a real v* tag push" on the tap repo/PAT
+existing; that is no longer true (D-18). The release pipeline now succeeds
+without the tap repo/PAT via `--skip=homebrew` (verified live —
+`e2e/release_homebrew_gate_e2e_test.go`'s
+`TestReleaseHomebrewGate_SkippedNeverEntersHomebrewPipe`/
+`_NotSkippedStillSucceedsLocally`, both passing, run against this repo's
+REAL `.goreleaser.yaml` with a real scratch git tag and the real pinned
+goreleaser v2.18.0 binary — not a synthetic/mocked config). Creating the tap
+repo remains available to the user as an optional future enhancement (see
+10-UAT.md item 2), never again as a release blocker.
+
+Two new items were added and both fully automated-verified (no human
+action needed, see 10-UAT.md items 3/4 for the "first live observation"
+residue, which self-resolves on ordinary future use rather than requiring a
+human to do anything special):
+
+- D-19 nightly release automation (`make release-nightly`,
+  `.github/workflows/nightly.yml`) — GoReleaser's native `nightly:`/`--nightly`
+  mode was found to be GoReleaser-Pro-only (empirically verified: pinned OSS
+  v2.18.0's `goreleaser release --help` lists no `--nightly` flag;
+  `goreleaser jsonschema` has zero `nightly` occurrences). Implemented
+  instead via goreleaser's ordinary `release` command against a freshly
+  created `v0.0.0-nightly.<timestamp>.<sha>` tag.
+- D-20 `scripts/install.sh` `GITID_CHANNEL=stable|nightly` resolution plus a
+  real usable-`/dev/tty`-gated interactive menu, adapted from
+  `castocolina/wezterm-setup`'s proven technique — with one empirically-found
+  and fixed correction: the probe must use `true < /dev/tty`, not `:` (the
+  wezterm-setup bash original), because POSIX classifies `:` as a special
+  builtin and a redirection error on one unconditionally terminates a
+  non-interactive POSIX-conformant shell (reproduced directly against
+  `dash`) — `true` is an ordinary builtin and degrades gracefully instead.
+
+All new code is covered by real, passing tests (not asserted): 6 new
+structural tests (`cmd/gitid/goreleaser_config_test.go`,
+`cmd/gitid/nightly_yml_test.go`), 4 new install.sh e2e tests exercising a
+real fixture server and a real pty
+(`e2e/release_channel_e2e_test.go`), and 2 new e2e tests exercising a REAL
+goreleaser release-mode invocation against this repo's actual config
+(`e2e/release_homebrew_gate_e2e_test.go`). `make test` (-race), `make lint`,
+and `make test-e2e` all re-run clean after this gap-closure (see
+`10-07-SUMMARY.md` for exact commands/output).
 
 # Phase 10: Linux Validation + Release Pipeline Verification Report
 
