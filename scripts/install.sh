@@ -157,6 +157,16 @@ fi
 
 printf '  verified: SHA-256 %s\n' "$actual"
 printf '  installed: %s\n' "$dest"
+# Round-2 code-review IN-01 raised: does a glob metacharacter in
+# $INSTALL_DIR (possibly the user-supplied GITID_INSTALL_DIR) make this
+# `case` pattern match too loosely? No — POSIX shell quoting rules turn OFF
+# glob/wildcard interpretation for a quoted substring of a case pattern, and
+# "${INSTALL_DIR}" here is quoted; only the bare, unquoted `*` on either side
+# is a real wildcard. Verified empirically against bash (macOS's /bin/sh)
+# and dash: a directory containing `*`/`?` is matched LITERALLY, never as a
+# wildcard, so this was never glob-vulnerable. Left as-is rather than
+# rewritten to a manual IFS-split loop, which would add untested complexity
+# for a check that was already correct.
 case ":$PATH:" in
 	*":${INSTALL_DIR}:"*)
 		printf '  PATH: OK (gitid is on PATH)\n'

@@ -221,21 +221,23 @@ setup-env:
 	@echo "==> setup-env complete"
 
 ## setup-env-release: narrower bootstrap for release.yml (REVIEW C-7, Phase 10 plan
-## 10-04). Installs ONLY golangci-lint, gosec, and goreleaser — the three tools `make
-## test`/`make lint`/`make release` actually need — explicitly SKIPPING goimports,
-## pre-commit/install-hooks, freeze, and the pinned-Chromium provisioning step
-## setup-env's full bootstrap performs. None of those are needed by `make test`/`make
-## lint`/`make release` (golangci-lint's own `--build-tags screenshot` run is static
-## analysis only, never test execution, and `make test`'s own screenshot-tagged line
-## already `-skip`s the Chromium-dependent tests) — downloading Chromium on the one
-## workflow where a failure means a pushed tag doesn't publish adds avoidable minutes
-## and a network-flake failure mode for zero benefit. release.yml calls this target,
-## not the full `make setup-env`.
+## 10-04). Installs ONLY golangci-lint (its embedded gosec linter is the real gosec
+## coverage `make lint` uses — no standalone gosec binary is installed here, see
+## round-2 code-review WR-01: a standalone `gosec@latest` install was dead weight in
+## this exact secrets-bearing job, widening its supply-chain surface via an unpinned
+## dependency resolution for zero linting benefit) and goreleaser — the two tools
+## `make test`/`make lint`/`make release` actually need — explicitly SKIPPING
+## goimports, pre-commit/install-hooks, freeze, and the pinned-Chromium provisioning
+## step setup-env's full bootstrap performs. None of those are needed by `make
+## test`/`make lint`/`make release` (golangci-lint's own `--build-tags screenshot` run
+## is static analysis only, never test execution, and `make test`'s own
+## screenshot-tagged line already `-skip`s the Chromium-dependent tests) —
+## downloading Chromium on the one workflow where a failure means a pushed tag
+## doesn't publish adds avoidable minutes and a network-flake failure mode for zero
+## benefit. release.yml calls this target, not the full `make setup-env`.
 setup-env-release:
-	@echo "==> Installing golangci-lint $(GOLANGCI_LINT_VERSION) via official binary installer"
+	@echo "==> Installing golangci-lint $(GOLANGCI_LINT_VERSION) via official binary installer (includes the embedded gosec linter; no standalone gosec binary needed — REVIEW WR-01)"
 	curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b "$(GOPATH_BIN)" $(GOLANGCI_LINT_VERSION)
-	@echo "==> Installing gosec (standalone binary)"
-	go install github.com/securego/gosec/v2/cmd/gosec@latest
 	@echo "==> Installing goreleaser $(GORELEASER_VERSION) (release build/archive/checksum/publish tool)"
 	go install github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
 	@echo "==> setup-env-release complete"
