@@ -146,3 +146,34 @@ func TestBuildCrossStampsEveryTarget(t *testing.T) {
 		t.Fatalf("build-cross has %d go build lines, want at least 4", builds)
 	}
 }
+
+// TestSetupEnvTargetsNeverInstallUnpinnedGosec is the missing regression
+// guard round 3's IN-01/IN-03 findings named: `setup-env-release`'s
+// standalone `gosec@latest` install was removed as dead weight (round 2
+// WR-01, round 3 commit) — golangci-lint's own embedded gosec linter
+// (.golangci.yml) is the real coverage `make lint` uses — but nothing
+// asserted this, which is exactly how the identical line survived
+// untouched in the full `setup-env` target until round 3 caught it. This
+// test extracts each target's own recipe body (bounded by the next `\n## `
+// doc-comment header, mirroring TestBuildCrossStampsEveryTarget's own
+// extraction idiom) and fails if either recipe still shells out to a
+// standalone `gosec` binary.
+func TestSetupEnvTargetsNeverInstallUnpinnedGosec(t *testing.T) {
+	makefile := readRepoFile(t, makefilePath(t))
+	for _, target := range []string{"setup-env", "setup-env-release"} {
+		marker := "\n" + target + ":\n"
+		idx := strings.Index(makefile, marker)
+		if idx < 0 {
+			t.Fatalf("Makefile missing target %q", target)
+		}
+		rest := makefile[idx+len(marker):]
+		end := strings.Index(rest, "\n## ")
+		if end < 0 {
+			end = len(rest)
+		}
+		body := rest[:end]
+		if strings.Contains(body, "cmd/gosec") {
+			t.Errorf("target %q installs a standalone gosec binary — golangci-lint's embedded gosec linter is the real coverage `make lint` uses; a standalone install is unpinned (@latest) dead weight (REVIEW round-2/round-3 WR-01):\n%s", target, body)
+		}
+	}
+}

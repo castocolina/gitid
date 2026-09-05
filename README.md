@@ -96,9 +96,14 @@ Two environment variables configure it:
 | `GITID_INSTALL_DIR` | Override the install directory | `~/.local/bin` |
 
 ```sh
-GITID_VERSION=v1.0.0 GITID_INSTALL_DIR="$HOME/bin" \
-  curl -fsSL https://raw.githubusercontent.com/castocolina/gitid/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/castocolina/gitid/main/scripts/install.sh \
+  | GITID_VERSION=v1.0.0 GITID_INSTALL_DIR="$HOME/bin" sh
 ```
+
+(An env-var prefix before a pipe scopes to the command it precedes only — a
+prefix on the `curl` side would never reach the piped `sh` that actually
+reads these variables. Put the assignment on the `sh` side, as above, or
+`export` the variables into your shell first.)
 
 If the install directory is not on PATH, the installer prints the exact
 `export PATH` line to add.

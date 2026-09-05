@@ -3,25 +3,24 @@
 # pre-commit hooks and future CI call these same targets — single source of truth.
 #
 # Targets:
-#   setup-env      Install development tools (goimports, golangci-lint, gosec, pre-commit,
-#                  freeze, goreleaser) and provision the pinned Chromium revision; wire git
-#                  hooks via install-hooks (completed in plan 01-03; screenshot tooling in
-#                  01-05; goreleaser in Phase 10 plan 10-04).
+#   setup-env      Install development tools (goimports, golangci-lint (its embedded
+#                  gosec linter is the real gosec coverage `make lint` uses — no
+#                  standalone gosec binary is installed, round-3 code-review WR-01),
+#                  pre-commit, freeze, goreleaser) and provision the pinned Chromium
+#                  revision; wire git hooks via install-hooks (completed in plan 01-03;
+#                  screenshot tooling in 01-05; goreleaser in Phase 10 plan 10-04).
 #   setup-env-release  Narrower bootstrap for release.yml (REVIEW C-7, Phase 10 plan
-#                  10-04): installs ONLY golangci-lint, gosec, and goreleaser — the three
-#                  tools `make test`/`make lint`/`make release` actually need — skipping
-#                  goimports, pre-commit/install-hooks, freeze, and the pinned-Chromium
-#                  provisioning step, none of which release.yml's test+lint+release gate
-#                  requires.
+#                  10-04): installs ONLY golangci-lint (again, its embedded gosec linter,
+#                  not a standalone binary) and goreleaser — the two tools `make
+#                  test`/`make lint`/`make release` actually need — skipping goimports,
+#                  pre-commit/install-hooks, freeze, and the pinned-Chromium provisioning
+#                  step, none of which release.yml's test+lint+release gate requires.
 #   build          Compile the gitid binary to bin/gitid.
 #   build-cross    Cross-compile the release build matrix (darwin/amd64, darwin/arm64,
 #                  linux/amd64, linux/arm64) to bin/gitid-<os>-<arch> (BUILD-01).
 #                  Cross-compilation via GOOS/GOARCH is OS-independent, so CI runs this
 #                  ONCE on ubuntu-latest rather than on every matrix runner. Optional
 #                  VERSION/COMMIT/DATE overrides stamp gitid --version (BUILD-03).
-#   checksums      Cross-build then write bin/checksums.txt with one SHA-256 line per
-#                  published asset, hashed from inside bin/ so each line names the bare
-#                  asset (BUILD-03, D-03).
 #   release        Goreleaser-driven, tag-published release (D-05/D-07/D-08/D-13, Phase
 #                  10 plan 10-04): exports the SAME Makefile-computed VERSION/COMMIT/DATE
 #                  build-cross/build already use into the goreleaser subprocess's
@@ -176,8 +175,11 @@ export PATH := $(HOME)/.local/bin:$(GOPATH_BIN):$(PATH)
 ##   golangci-lint — lint aggregator, v2.12.2, installed via the official binary
 ##                   installer (NOT go install — avoids Go-version-mismatch silent breakage,
 ##                   per STACK.md and CLAUDE.md).
-##   gosec         — standalone security linter binary (also embedded in golangci-lint;
-##                   installed separately for direct invocation if needed).
+##   (gosec coverage comes entirely from golangci-lint's own embedded gosec linter,
+##                   enabled in .golangci.yml — no standalone gosec binary is installed;
+##                   removed round 3, WR-01: it was never invoked by any make target,
+##                   CI job, or pre-commit hook, so it was unpinned (`@latest`) dead
+##                   weight widening this repo's supply-chain surface for zero benefit.)
 ##   pre-commit    — git hook runner; hooks point at make targets.
 ##   freeze        — ANSI terminal-output -> PNG renderer for `screenshot-tui`, pinned
 ##                   @v0.2.2 (dev/build tool only — never a runtime dep of the shipped
@@ -198,10 +200,8 @@ export PATH := $(HOME)/.local/bin:$(GOPATH_BIN):$(PATH)
 setup-env:
 	@echo "==> Installing goimports"
 	go install golang.org/x/tools/cmd/goimports@latest
-	@echo "==> Installing golangci-lint $(GOLANGCI_LINT_VERSION) via official binary installer"
+	@echo "==> Installing golangci-lint $(GOLANGCI_LINT_VERSION) via official binary installer (includes the embedded gosec linter; no standalone gosec binary needed — REVIEW round-3 WR-01)"
 	curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b "$(GOPATH_BIN)" $(GOLANGCI_LINT_VERSION)
-	@echo "==> Installing gosec (standalone binary)"
-	go install github.com/securego/gosec/v2/cmd/gosec@latest
 	@echo "==> Installing pre-commit (via uv; bootstrap uv with the Astral installer if missing — not a system package manager)"
 	command -v uv >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR="$$HOME/.local/bin" sh
 	# The Astral installer drops uv in ~/.local/bin, but make exec's the next

@@ -50,7 +50,7 @@ jobs:
       # pre-commit hooks it does not need, avoiding extra minutes and a
       # network-flake surface on the one workflow where a failure means a
       # pushed tag doesn't publish.
-      - name: make setup-env-release (golangci-lint + gosec + goreleaser only)
+      - name: make setup-env-release (golangci-lint incl. embedded gosec + goreleaser only)
         run: make setup-env-release
 
       - name: make test (-race)
