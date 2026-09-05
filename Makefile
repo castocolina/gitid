@@ -79,7 +79,7 @@
 #   demo-web       (Re)launch the web design mockup dev server (Vite) on the
 #                   dedicated $(DEMO_WEB_PORT) and open it.
 
-.PHONY: setup-env setup-env-release build build-cross checksums release release-snapshot run install uninstall test lint lint-shell lint-tagged fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files gate-visual-regression smoke-network-test verify-upload-real-account verify-upload-real-account-gitlab demo-web
+.PHONY: setup-env setup-env-release build build-cross release release-snapshot run install uninstall test lint lint-shell lint-tagged fmt install-hooks test-e2e screenshot-tui screenshot-html gate-no-backend-files gate-visual-regression smoke-network-test verify-upload-real-account verify-upload-real-account-gitlab demo-web
 
 # Binary output directory.
 BIN_DIR := bin
@@ -106,11 +106,6 @@ LDFLAGS := -X github.com/castocolina/gitid/internal/version.version=$(VERSION) -
 # test-e2e-shard defaults: 1 of 1 (the whole suite) unless CI overrides both.
 E2E_SHARD  ?= 1
 E2E_SHARDS ?= 1
-
-# Linux ships coreutils' sha256sum; stock macOS ships only the Perl shasum.
-# Both emit the identical <64-hex><two spaces><name> line format, so one
-# manifest verifies under either tool (09.3-RESEARCH.md Pitfall 2).
-SHA256SUM := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo shasum -a 256)
 
 # Keep Go commands and golangci-lint's type checker on the documented toolchain.
 # Go 1.27's standard library is newer than this pinned linter supports.
@@ -626,23 +621,15 @@ build:
 ## than redundantly on every matrix OS. Output binaries are named
 ## bin/gitid-<os>-<arch>. Optional VERSION/COMMIT/DATE stamp gitid --version
 ## (BUILD-03); a routine invocation with no overrides keeps the dev defaults.
-## The release job invokes this same target (via `make checksums`) with those
-## overrides taken from the tag — the concrete instance of "CI invokes the SAME
-## make targets a human runs locally".
+## This is a local unstamped cross-build convenience only — the actual release
+## build/archive/checksum pipeline is `make release`/`make release-snapshot`
+## (goreleaser, Phase 10 plan 10-04/10-05), not this target.
 build-cross:
 	@mkdir -p $(BIN_DIR)
 	GOOS=darwin  GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/gitid-darwin-amd64 ./cmd/gitid
 	GOOS=darwin  GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/gitid-darwin-arm64 ./cmd/gitid
 	GOOS=linux   GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/gitid-linux-amd64  ./cmd/gitid
 	GOOS=linux   GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/gitid-linux-arm64  ./cmd/gitid
-
-## checksums: stamped cross-build plus SHA-256 manifest (BUILD-03, D-03).
-## Depends on build-cross so one invocation both builds and hashes; hashing from
-## INSIDE $(BIN_DIR) makes each line name the bare published asset rather than
-## bin/<asset>, which is what the installer's anchored grep matches.
-checksums: build-cross
-	cd $(BIN_DIR) && $(SHA256SUM) gitid-darwin-amd64 gitid-darwin-arm64 gitid-linux-amd64 gitid-linux-arm64 > checksums.txt
-	@echo "  checksums: $(BIN_DIR)/checksums.txt"
 
 ## release: goreleaser-driven publish (D-05/D-07/D-08/D-13, Phase 10 plan 10-04).
 ## Exports the SAME VERSION/COMMIT/DATE make variables build/build-cross already read
