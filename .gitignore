@@ -33,3 +33,8 @@ graphify-out/
 .planning/phases/*/.review-diagnostics/
 .planning/research/.cache/
 .planning/state.json
+
+# codegraph rebuild lock/status markers (transient, regenerated per rebuild —
+# distinct from the tracked graph.json/graph.html/GRAPH_REPORT.md snapshot).
+.planning/graphs/.rebuild.lock
+.planning/graphs/.last-build-status.json
