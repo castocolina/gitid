@@ -6,6 +6,26 @@ import (
 	"testing"
 )
 
+// TestCIWorkflowNeverInlinesExpressionsIntoRunScripts (round-1 review
+// IN-01): the ci-cd-script-injection regression guard
+// (TestReleaseWorkflowNeverInlinesExpressionsIntoRunScripts,
+// release_yml_test.go) existed only for release.yml. ci.yml's fedora job
+// runs several run: steps too (dnf install, git config --global --add
+// safe.directory, make test, make lint, make test-e2e) and none inline a
+// ${{ }} expression today — the blast radius here is smaller than
+// release.yml's (ci.yml's top-level permissions stay contents: read, no
+// secret referenced anywhere in the file), which is why this was filed as
+// Info rather than Warning — but the guard is a one-line generalization
+// of an already-written one. Reuses findInlinedRunExpression
+// (release_yml_test.go, same package) rather than duplicating the scan
+// logic.
+func TestCIWorkflowNeverInlinesExpressionsIntoRunScripts(t *testing.T) {
+	src := readRepoFile(t, workflowPath(t))
+	if lineNo, line, found := findInlinedRunExpression(src); found {
+		t.Fatalf("line %d: run: step script inlines a ${{ }} expression directly — route through env: and reference as a shell variable instead (script-injection risk): %s", lineNo, strings.TrimSpace(line))
+	}
+}
+
 // TestFedoraJobExists asserts ci.yml's PLAT-03 fedora container job block is
 // present. workflowPath/jobBlock/readRepoFile are defined in
 // release_plumbing_test.go (same package, no import needed).
