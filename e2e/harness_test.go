@@ -532,7 +532,7 @@ var e2eAllowedAmbientPathSites = map[string]string{
 	"BuildBinary":                                "invokes `go build`, never a gitid binary — needs the real toolchain PATH and the real HOME to resolve GOPATH",
 	"BuildDummyBinary":                           "invokes `go build`, never a gitid binary — same reason as BuildBinary",
 	"TestInstall_MakeInstallOutput":              "invokes `make install`, never a gitid binary — asserts the Makefile's own echoed install-path/PATH-hint text",
-	"stampedArtifacts":                           "invokes `make checksums`, never a gitid binary — needs the real toolchain PATH and the real HOME to resolve GOPATH",
+	"stampedArtifacts":                           "invokes `make release-snapshot`, never a gitid binary — needs the real toolchain PATH and the real HOME to resolve GOPATH",
 	"TestRelease_UnstampedBuildKeepsDevDefaults": "invokes `make build`, never a gitid binary — same reason as BuildBinary",
 }
 
