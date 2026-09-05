@@ -18,7 +18,20 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    # The exclusion pattern below is REQUIRED, not cosmetic (cross-AI
+    # code-review finding, 2026-09-05): `make release-nightly` pushes a
+    # `v0.0.0-nightly.<timestamp>.<sha>` tag from INSIDE nightly.yml's own
+    # job. Without this exclusion, that push also matches `v*` here,
+    # firing a SECOND, independent `goreleaser release` against the exact
+    # same tag — racing nightly.yml's own invocation. GitHub Actions
+    # evaluates tag filter patterns in order within one list, and a `!`
+    # pattern excludes anything a prior pattern in the SAME list matched
+    # (tags: and tags-ignore: cannot be combined in one filter, per GitHub's
+    # own docs) — see release_yml_test.go's
+    # TestReleaseWorkflowExcludesNightlyTags for the regression guard.
+    tags:
+      - 'v*'
+      - '!v0.0.0-nightly.*'
 
 jobs:
   # This job carries elevated, secret-bearing permissions (contents: write,

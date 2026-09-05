@@ -30,6 +30,23 @@ func TestNightlyWorkflowExistsAndTriggers(t *testing.T) {
 	}
 }
 
+// TestNightlyWorkflowHasQueueingConcurrencyGroup is a regression guard for a
+// real cross-AI code-review finding (2026-09-05): an overlapping scheduled
+// run and a manual workflow_dispatch could otherwise race — one pruning
+// prior nightly tags/releases via `gh release delete` while the other
+// publishes against one of those same tags. `cancel-in-progress: false` is
+// required (not just any concurrency group): a nightly publish should be
+// queued, never silently cancelled/dropped.
+func TestNightlyWorkflowHasQueueingConcurrencyGroup(t *testing.T) {
+	src := readRepoFile(t, nightlyWorkflowPath(t))
+	if !strings.Contains(src, "concurrency:") {
+		t.Fatal("nightly.yml missing a concurrency: block — an overlapping scheduled/dispatched run could race")
+	}
+	if !strings.Contains(src, "cancel-in-progress: false") {
+		t.Fatal("nightly.yml's concurrency: block must set cancel-in-progress: false — a nightly publish must be queued, never silently cancelled")
+	}
+}
+
 // TestNightlyWorkflowJobHasExactlyContentsWritePermission asserts the
 // nightly job carries ONLY contents: write — narrower than release.yml's
 // job (no id-token/attestations, since nightly skips provenance attestation

@@ -30,6 +30,16 @@ on:
     - cron: "17 4 * * *"
   workflow_dispatch: {}
 
+# Cross-AI code-review finding (2026-09-05): without this, an overlapping
+# scheduled run and a manual workflow_dispatch could race — one run pruning/
+# deleting prior nightly tags via `gh release delete` while the other is
+# mid-publish against one of those same tags. `cancel-in-progress: false`
+# QUEUES the second run rather than cancelling it: a nightly publish should
+# never be silently dropped, only deferred until the first run finishes.
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
 jobs:
   # contents: write only — no id-token/attestations (narrower than
   # release.yml's job; no provenance attestation step here, see header).

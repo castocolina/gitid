@@ -382,3 +382,100 @@ func TestInstallScript_InvalidChannelRefuses(t *testing.T) {
 		t.Fatal("install.sh installed a binary despite an invalid GITID_CHANNEL — it must refuse before any install")
 	}
 }
+
+// TestInstallScript_MenuExcludesOldAssetShapeReleases is a regression guard
+// for a real cross-AI code-review finding (2026-09-05): the interactive
+// menu must not list a release that never published the new (D-07/D-14)
+// versioned-checksums asset shape this installer expects — selecting one
+// would 404. oldShapeTag is deliberately given a releases-API entry but NO
+// download-directory contents at all (simulating a pre-migration,
+// old-raw-binary-shape release, which this fixture's file server then 404s
+// on), so a correct install.sh must silently skip it from the menu.
+func TestInstallScript_MenuExcludesOldAssetShapeReleases(t *testing.T) {
+	art := stampedArtifacts(t)
+	oldShapeTag := "v0.1.0-rc.1" // present in the release list, but no assets exist for it in this fixture
+	nightlyTag := "v0.0.0-nightly.20260101120000.abc1234"
+	nightlyDir := retagArtifactsDir(t, art, nightlyTag)
+	fx := startReleasesAPIFixtureServer(t, map[string]string{
+		nightlyTag: nightlyDir,
+		art.tag:    art.distDir,
+		// oldShapeTag intentionally omitted from artifactsDirs — no
+		// download directory is populated for it, so any request against
+		// its asset paths 404s via the fixture's underlying file server.
+	}, []releaseEntry{
+		{TagName: oldShapeTag, Prerelease: false}, // newest per this fixture's ordering, but asset-shape-unavailable
+		{TagName: nightlyTag, Prerelease: true},
+		{TagName: art.tag, Prerelease: false},
+	})
+
+	home := t.TempDir()
+	env, _ := e2eEnv(t, home)
+	env = append(env,
+		"GITID_INSTALL_BASE_URL="+fx.srv.URL,
+		"GITID_INSTALL_API_BASE_URL="+fx.srv.URL,
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second*ciTimeoutMultiplier())
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "/bin/sh", "scripts/install.sh")
+	cmd.Dir = repoRoot(t)
+	cmd.Env = env
+
+	ptmx, err := pty.Start(cmd)
+	if err != nil {
+		t.Fatalf("pty.Start: %v", err)
+	}
+	defer func() { _ = ptmx.Close() }()
+
+	var mu sync.Mutex
+	var captureBuf strings.Builder
+	readDone := make(chan struct{})
+	go func() {
+		defer close(readDone)
+		buf := make([]byte, 65536)
+		for {
+			n, rerr := ptmx.Read(buf)
+			if n > 0 {
+				mu.Lock()
+				captureBuf.Write(buf[:n])
+				mu.Unlock()
+			}
+			if rerr != nil {
+				return
+			}
+		}
+	}()
+	snapshot := func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		return captureBuf.String()
+	}
+
+	deadline := time.Now().Add(30 * time.Second * ciTimeoutMultiplier())
+	for !strings.Contains(snapshot(), "Enter choice") {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for the interactive menu prompt; captured so far:\n%s", snapshot())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	menuText := snapshot()
+	if strings.Contains(menuText, oldShapeTag) {
+		t.Fatalf("menu listed %q, a release with no published new-shape assets — it must be filtered out:\n%s", oldShapeTag, menuText)
+	}
+	if !strings.Contains(menuText, nightlyTag) || !strings.Contains(menuText, art.tag) {
+		t.Fatalf("menu is missing an installable release (nightly=%q stable=%q):\n%s", nightlyTag, art.tag, menuText)
+	}
+
+	if _, err := ptmx.Write([]byte("1\n")); err != nil {
+		t.Fatalf("write menu choice to pty: %v", err)
+	}
+	waitErr := cmd.Wait()
+	<-readDone
+	if waitErr != nil {
+		t.Fatalf("install.sh (interactive pty) failed: %v\noutput=%s", waitErr, snapshot())
+	}
+	installed := filepath.Join(home, ".local", "bin", "gitid")
+	if _, statErr := os.Stat(installed); statErr != nil {
+		t.Fatalf("expected %s to exist after interactive install: %v", installed, statErr)
+	}
+}

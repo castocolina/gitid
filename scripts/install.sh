@@ -132,6 +132,21 @@ fetch_release_tags() {
 	grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | awk -F'"' '{ print $4 }'
 }
 
+# asset_shape_available checks whether a candidate tag actually published the
+# NEW (D-07/D-14) versioned checksums manifest
+# (gitid_<version>_checksums.txt) this script downloads — a real, live check
+# rather than a guessed version cutoff. A HEAD request avoids downloading the
+# manifest body just to test existence. This filters the interactive menu
+# (cross-AI code-review finding, 2026-09-05): a pre-migration release
+# published under the OLD raw-binary asset shape
+# (gitid-<os>-<arch>/unversioned checksums.txt) would otherwise appear in
+# the menu and 404 the instant it was selected.
+asset_shape_available() {
+	candidate_tag="$1"
+	candidate_checksums="gitid_${candidate_tag#v}_checksums.txt"
+	curl -fsSL --head -o /dev/null "${GITHUB_ORIGIN}/${REPO}/releases/download/${candidate_tag}/${candidate_checksums}" 2>/dev/null
+}
+
 # Version/tag resolution (REVIEW C-2 FIX / D-20 extension): GITHUB_ORIGIN and
 # API_ORIGIN are the ONLY seams a test fixture server plugs into — every line
 # below runs unconditionally, whether they are the real hosts or a test
@@ -170,9 +185,22 @@ elif [ -z "${GITID_VERSION:-}" ] && [ -z "${GITID_CHANNEL:-}" ] && [ "${GITID_AS
 	# is adapted from.
 	releases_url="${API_ORIGIN}/repos/${REPO}/releases"
 	releases_json=$(curl -fsSL "$releases_url") || fail "could not fetch release list: ${releases_url}"
-	menu_tags=$(printf '%s' "$releases_json" | fetch_release_tags | head -n 10)
+	# Filter to the newest 10 tags that actually published the NEW asset
+	# shape (asset_shape_available) — never assume every listed tag is
+	# installable; a pre-migration (D-07/D-14) release would 404 if chosen.
+	menu_tags=""
+	menu_count=0
+	for candidate in $(printf '%s' "$releases_json" | fetch_release_tags); do
+		if [ "$menu_count" -ge 10 ]; then
+			break
+		fi
+		if asset_shape_available "$candidate"; then
+			menu_tags="${menu_tags}${menu_tags:+ }${candidate}"
+			menu_count=$((menu_count + 1))
+		fi
+	done
 	if [ -z "$menu_tags" ]; then
-		fail "no releases found at ${releases_url}"
+		fail "no installable releases found at ${releases_url} (none published the expected asset shape)"
 	fi
 	printf 'gitid: select a release to install:\n' >&2
 	# Word-splitting $menu_tags into positional params is intentional here

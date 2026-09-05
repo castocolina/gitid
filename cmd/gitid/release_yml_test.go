@@ -144,8 +144,44 @@ func TestFindInlinedRunExpressionCatchesSingleLineRunSteps(t *testing.T) {
 
 func TestReleaseWorkflowIsTagScoped(t *testing.T) {
 	src := readRepoFile(t, releaseWorkflowPath(t))
-	if !strings.Contains(src, "tags: ['v*']") && !strings.Contains(src, `tags: ["v*"]`) {
+	if !strings.Contains(src, "- 'v*'") && !strings.Contains(src, `tags: ['v*']`) && !strings.Contains(src, `tags: ["v*"]`) {
 		t.Fatal("release.yml on: push: is missing a quoted tags glob 'v*'")
+	}
+}
+
+// TestReleaseWorkflowExcludesNightlyTags is a regression guard for a real
+// cross-AI code-review finding (2026-09-05): `make release-nightly` pushes
+// a v0.0.0-nightly.<ts>.<sha> tag from INSIDE nightly.yml's own job. Without
+// an exclusion, that push ALSO matches this workflow's `tags: ['v*']`
+// trigger, firing a second, independent `goreleaser release` invocation
+// racing nightly.yml's own — a real double-publish hazard, not
+// hypothetical. GitHub Actions' `tags:` filter list supports `!`-prefixed
+// exclusion patterns evaluated against earlier matches in the SAME list
+// (tags: and tags-ignore: cannot be combined), so the fix is a second list
+// entry, not a separate key.
+func TestReleaseWorkflowExcludesNightlyTags(t *testing.T) {
+	src := readRepoFile(t, releaseWorkflowPath(t))
+	if !strings.Contains(src, "!v0.0.0-nightly.*") {
+		t.Fatal("release.yml's tags: filter is missing the '!v0.0.0-nightly.*' exclusion pattern — a nightly tag push would double-fire this workflow alongside nightly.yml's own goreleaser invocation")
+	}
+	// Anchors the exclusion INSIDE the same on:push:tags: list as 'v*' —
+	// not some unrelated string match elsewhere in the file.
+	onIdx := strings.Index(src, "on:")
+	if onIdx < 0 {
+		t.Fatal("release.yml missing on: block")
+	}
+	tagsIdx := strings.Index(src[onIdx:], "tags:")
+	if tagsIdx < 0 {
+		t.Fatal("release.yml missing on:push:tags:")
+	}
+	tagsBlockStart := onIdx + tagsIdx
+	end := strings.Index(src[tagsBlockStart:], "\n\n")
+	if end < 0 {
+		end = len(src) - tagsBlockStart
+	}
+	tagsBlock := src[tagsBlockStart : tagsBlockStart+end]
+	if !strings.Contains(tagsBlock, "'v*'") || !strings.Contains(tagsBlock, "!v0.0.0-nightly.*") {
+		t.Fatalf("release.yml's tags: list does not contain BOTH 'v*' and the '!v0.0.0-nightly.*' exclusion in the same list:\n%s", tagsBlock)
 	}
 }
 
