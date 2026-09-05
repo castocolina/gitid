@@ -27,3 +27,9 @@ skills-lock.json
 .planning/phases/*/*-handoff/
 .gsd/
 graphify-out/
+
+# GSD tooling scratch — cross-AI review diagnostics, research cache, and the
+# ephemeral state.json snapshot (STATE.md is the tracked, canonical source).
+.planning/phases/*/.review-diagnostics/
+.planning/research/.cache/
+.planning/state.json
