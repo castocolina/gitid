@@ -15,6 +15,41 @@ func releaseWorkflowPath(t *testing.T) string {
 	return filepath.Join("..", "..", ".github", "workflows", "release.yml")
 }
 
+// TestReleaseWorkflowNeverInlinesExpressionsIntoRunScripts is a security
+// regression guard (gsd-code-reviewer finding, ci-cd-script-injection):
+// a `${{ ... }}` GitHub Actions expression substitutes into a `run:` step's
+// script TEXT before the shell ever parses it. Since this job's version/
+// commit/date values ultimately derive from the pushed tag name
+// (steps.relver.outputs.version, from ${GITHUB_REF_NAME#v}), inlining them
+// directly into a run: script is a classic script-injection vector against
+// a job carrying contents:write/id-token:write/attestations:write. Values
+// MUST be routed through a step's env: block and referenced as ordinary
+// shell variables ($VAR) instead.
+func TestReleaseWorkflowNeverInlinesExpressionsIntoRunScripts(t *testing.T) {
+	src := readRepoFile(t, releaseWorkflowPath(t))
+	lines := strings.Split(src, "\n")
+	inRun := false
+	runIndent := -1
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		indent := len(line) - len(strings.TrimLeft(line, " "))
+		if strings.HasPrefix(trimmed, "run:") {
+			inRun = true
+			runIndent = indent
+			continue
+		}
+		if inRun {
+			// A run: block ends at the first line at or below its own indent
+			// that isn't blank (YAML block-scalar dedent).
+			if trimmed != "" && indent <= runIndent {
+				inRun = false
+			} else if strings.Contains(line, "${{") {
+				t.Fatalf("line %d: run: step script inlines a ${{ }} expression directly — route through env: and reference as a shell variable instead (script-injection risk): %s", i+1, trimmed)
+			}
+		}
+	}
+}
+
 func TestReleaseWorkflowIsTagScoped(t *testing.T) {
 	src := readRepoFile(t, releaseWorkflowPath(t))
 	if !strings.Contains(src, "tags: ['v*']") && !strings.Contains(src, `tags: ["v*"]`) {

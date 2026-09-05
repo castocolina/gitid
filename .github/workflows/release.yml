@@ -66,15 +66,26 @@ jobs:
           echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
+      # SECURITY: VERSION/COMMIT/DATE are passed through env: and referenced as
+      # shell variables ($VERSION/$COMMIT/$DATE), never inlined via ${{ }}
+      # template substitution into the run: script body. ${{ }} expressions
+      # are substituted into the script's TEXT before bash ever parses it, so
+      # inlining an expression that ultimately derives from the pushed tag
+      # name (steps.relver.outputs.version, from ${GITHUB_REF_NAME#v}) is a
+      # classic GitHub Actions script-injection vector: a tag name containing
+      # shell metacharacters could break out and inject arbitrary commands
+      # into this job's contents:write/id-token:write/attestations:write
+      # permissions. Routing through env: makes the value an opaque shell
+      # variable — bash quoting rules apply, template substitution does not.
       - name: make release (goreleaser publish)
         run: |
-          make release \
-            VERSION=${{ steps.relver.outputs.version }} \
-            COMMIT=${{ steps.relver.outputs.commit }} \
-            DATE=${{ steps.relver.outputs.date }}
+          make release VERSION="$VERSION" COMMIT="$COMMIT" DATE="$DATE"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          VERSION: ${{ steps.relver.outputs.version }}
+          COMMIT: ${{ steps.relver.outputs.commit }}
+          DATE: ${{ steps.relver.outputs.date }}
 
       # REVIEW C-8 FIX: attest BOTH the archives and the checksums manifest —
       # the exact file the installer (D-14/D-15) trusts to validate an
