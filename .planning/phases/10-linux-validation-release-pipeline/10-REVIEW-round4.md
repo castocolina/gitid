@@ -43,7 +43,8 @@ status: clean
 **Reviewed:** 2026-09-05
 **Depth:** deep
 **Files Reviewed:** 27 (everything changed since 3ef374bf47c3c9b3b0db5580a7a5fbbb4aab3c4e)
-**Status:** clean — 0 findings of any severity
+**Status:** clean — 0 findings of any severity (full e2e suite, not just the
+release/install subset, independently confirmed green under `-race`)
 
 ## Summary
 
@@ -103,7 +104,15 @@ fix (commit `c10708f`) is the correct, working shape.
 observed. The targeted e2e release/install subset ran clean under `-race`.
 The full non-e2e suite ran clean under `-race`. `go vet` (via `lint-tagged`,
 covering every isolated build tag: `screenshot`, `smoke`, `e2e`,
-`realaccount`, `realaccountgitlab`) is clean.
+`realaccount`, `realaccountgitlab`) is clean. I additionally let the FULL
+`make test-e2e`-equivalent command run to completion in the background
+(`go test -tags e2e -race -timeout 2400s ./e2e/...`, not just the
+release/install subset): `ok  github.com/castocolina/gitid/e2e  1068.337s`,
+exit code 0 — the entire e2e suite (PTY-driven TUI flows, doctor, upload,
+identity-manager, global SSH/git, release/install, everything) passes clean
+under `-race` with no flakes, confirming this phase's changes introduced no
+regression anywhere in the e2e suite, not only in the phase's own new
+release/install tests.
 
 **Round 1/2/3 fix survival, spot-checked directly:**
 - Round 3's IN-01 (stale `checksums` target entry in the Makefile header) —
