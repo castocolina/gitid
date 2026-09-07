@@ -3,7 +3,8 @@
 # pre-commit hooks and future CI call these same targets — single source of truth.
 #
 # Targets:
-#   setup-env      Install development tools (goimports, golangci-lint (its embedded
+#   setup-env      Bootstrap a Go toolchain first, if missing (quick task 260907-eda),
+#                  then install development tools (goimports, golangci-lint (its embedded
 #                  gosec linter is the real gosec coverage `make lint` uses — no
 #                  standalone gosec binary is installed, round-3 code-review WR-01),
 #                  pre-commit, freeze, goreleaser) and provision the pinned Chromium
@@ -110,8 +111,20 @@ E2E_SHARDS ?= 1
 # Go 1.27's standard library is newer than this pinned linter supports.
 export GOTOOLCHAIN := go1.26.4
 
+# Pinned Go version for setup-env's tarball-fallback bootstrap (below), derived from
+# GOTOOLCHAIN so there is only ONE Go version to keep in sync — never a second
+# hardcoded literal that could drift out of sync (quick task 260907-eda).
+GO_BOOTSTRAP_VERSION := $(patsubst go%,%,$(GOTOOLCHAIN))
+
 # Go binary locations.
-GOPATH_BIN := $(shell go env GOPATH)/bin
+# GOPATH_BIN falls back to $(HOME)/go/bin (Go's own documented default GOPATH) when
+# `go` is not yet on PATH. Without this fallback, a from-cold-start `make setup-env`
+# run (no Go toolchain installed yet) computes `go env GOPATH` as empty, so
+# GOPATH_BIN silently collapses to the literal string "/bin" — an unwritable path
+# without root — breaking the golangci-lint installer on that same run. Confirmed
+# empirically during planning of quick task 260907-eda. With `go` present, this is
+# byte-identical to the prior `$(shell go env GOPATH)/bin` value.
+GOPATH_BIN := $(if $(shell command -v go 2>/dev/null),$(shell go env GOPATH)/bin,$(HOME)/go/bin)
 GOFMT      := $(shell GOTOOLCHAIN=$(GOTOOLCHAIN) go env GOROOT)/bin/gofmt
 
 # golangci-lint version to install (pinned — do NOT change without updating STACK.md).
@@ -166,11 +179,27 @@ ORIGINAL_PATH := $(PATH)
 # and make-invoked git hooks — so a fresh clone bootstraps without relying on the
 # caller's interactive PATH (review WR-01). uv installs pre-commit into ~/.local/bin;
 # go install and the golangci-lint installer place binaries in $(GOPATH_BIN).
-export PATH := $(HOME)/.local/bin:$(GOPATH_BIN):$(PATH)
+# $(HOME)/.local/go/bin is where setup-env's own Go-toolchain bootstrap (below)
+# extracts the golang.org/dl tarball fallback when neither an existing `go` nor
+# Homebrew is available. Unlike $(GOPATH_BIN), this is a FIXED path known before the
+# bootstrap step runs, so listing it here is safe even before the directory exists on
+# this particular invocation: each subsequent recipe line runs in a NEW shell that
+# inherits this exported PATH, and a PATH lookup only checks for the binary's
+# existence at the moment a command is dispatched — so it resolves correctly the
+# instant the bootstrap step has finished extracting the tarball, within the SAME
+# `make setup-env` invocation (same class of gap this file already documents for
+# uv/pre-commit above; quick task 260907-eda).
+export PATH := $(HOME)/.local/go/bin:$(HOME)/.local/bin:$(GOPATH_BIN):$(PATH)
 
 ## setup-env: install all development tools and prepare the git hooks.
 ##
 ## Tools installed:
+##   Go toolchain  — bootstrapped FIRST, only when `go` is missing from PATH: installs
+##                   via Homebrew/Linuxbrew when available, otherwise falls back to the
+##                   pinned official golang.org/dl tarball. Never overwrites an existing
+##                   toolchain (CI's actions/setup-go, a prior local install, or a
+##                   version manager) — the whole step is a silent no-op whenever any
+##                   `go` is already on PATH (quick task 260907-eda).
 ##   goimports     — import block formatter (run as standalone + via golangci-lint)
 ##   golangci-lint — lint aggregator, v2.12.2, installed via the official binary
 ##                   installer (NOT go install — avoids Go-version-mismatch silent breakage,
@@ -198,6 +227,30 @@ export PATH := $(HOME)/.local/bin:$(GOPATH_BIN):$(PATH)
 ## via the install-hooks sub-target below.  setup-env calls install-hooks so that once
 ## 01-03 defines it fully, a single `make setup-env` bootstraps a fresh clone end-to-end.
 setup-env:
+	@echo "==> Checking for a Go toolchain"
+	command -v go >/dev/null 2>&1 && echo "go already on PATH ($$(go version)) -- nothing to bootstrap" || { \
+	    echo "go not found on PATH -- this never overwrites an existing toolchain"; \
+	    if command -v brew >/dev/null 2>&1; then \
+	        echo "==> Installing a Go toolchain via Homebrew"; \
+	        brew install go; \
+	    else \
+	        echo "==> No package manager found -- falling back to the pinned go$(GO_BOOTSTRAP_VERSION) golang.org/dl tarball (local-dev safety net; CI always already has go via actions/setup-go)"; \
+	        os=$$(uname -s | tr '[:upper:]' '[:lower:]'); \
+	        case "$$(uname -m)" in \
+	            x86_64|amd64) arch=amd64 ;; \
+	            aarch64|arm64) arch=arm64 ;; \
+	            *) echo "unsupported architecture $$(uname -m) -- install Go manually from https://go.dev/dl/"; exit 1 ;; \
+	        esac; \
+	        tarball="go$(GO_BOOTSTRAP_VERSION).$${os}-$${arch}.tar.gz"; \
+	        tmpdir=$$(mktemp -d); \
+	        curl -sSfL "https://go.dev/dl/$${tarball}" -o "$${tmpdir}/$${tarball}"; \
+	        rm -rf "$$HOME/.local/go"; \
+	        mkdir -p "$$HOME/.local"; \
+	        tar -C "$$HOME/.local" -xzf "$${tmpdir}/$${tarball}"; \
+	        rm -rf "$${tmpdir}"; \
+	        echo "installed go $(GO_BOOTSTRAP_VERSION) to $$HOME/.local/go/bin"; \
+	    fi; \
+	}
 	@echo "==> Installing goimports"
 	go install golang.org/x/tools/cmd/goimports@latest
 	@echo "==> Installing golangci-lint $(GOLANGCI_LINT_VERSION) via official binary installer (includes the embedded gosec linter; no standalone gosec binary needed — REVIEW round-3 WR-01)"

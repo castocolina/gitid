@@ -177,3 +177,51 @@ func TestSetupEnvTargetsNeverInstallUnpinnedGosec(t *testing.T) {
 		}
 	}
 }
+
+// TestSetupEnvBootstrapsGoToolchainBeforeFirstGoInstall locks the fresh-clone
+// bootstrap ordering requirement from quick task 260907-eda: a fresh clone
+// with no `go` on PATH reported `make setup-env` dying with `go: command not
+// found` at the target's very first `go install` line, with no recovery
+// path. This test extracts `setup-env`'s own recipe body (same marker/`\n##
+// ` bounding idiom as TestSetupEnvTargetsNeverInstallUnpinnedGosec and
+// TestBuildCrossStampsEveryTarget) and asserts: (1) it checks for an
+// existing Go toolchain via `command -v go` before doing anything else, (2)
+// that check appears strictly before the target's first `go install` line —
+// otherwise a Go-less machine would already have failed by then, and (3)
+// both the Homebrew fast path and the golang.org/dl tarball fallback are
+// present, so a future edit can never silently drop one of the two install
+// paths.
+func TestSetupEnvBootstrapsGoToolchainBeforeFirstGoInstall(t *testing.T) {
+	makefile := readRepoFile(t, makefilePath(t))
+	marker := "\nsetup-env:\n"
+	idx := strings.Index(makefile, marker)
+	if idx < 0 {
+		t.Fatal("Makefile missing target \"setup-env\"")
+	}
+	rest := makefile[idx+len(marker):]
+	end := strings.Index(rest, "\n## ")
+	if end < 0 {
+		end = len(rest)
+	}
+	body := rest[:end]
+
+	checkIdx := strings.Index(body, "command -v go")
+	if checkIdx < 0 {
+		t.Fatal("setup-env never checks whether a Go toolchain already exists (\"command -v go\" not found) before trying to use one")
+	}
+
+	installIdx := strings.Index(body, "go install")
+	if installIdx < 0 {
+		t.Fatal("setup-env has no \"go install\" line — nothing for the Go-toolchain bootstrap check to run ahead of")
+	}
+	if checkIdx >= installIdx {
+		t.Fatalf("setup-env's \"command -v go\" check (offset %d) comes after its first \"go install\" line (offset %d) — a fresh clone with no go on PATH would already have failed by then", checkIdx, installIdx)
+	}
+
+	if !strings.Contains(body, "brew") {
+		t.Error("setup-env's Go-toolchain bootstrap is missing the Homebrew install path (\"brew\" not found)")
+	}
+	if !strings.Contains(body, "golang.org/dl") && !strings.Contains(body, "go.dev/dl") {
+		t.Error("setup-env's Go-toolchain bootstrap is missing the portable tarball fallback path (neither \"golang.org/dl\" nor \"go.dev/dl\" found)")
+	}
+}
