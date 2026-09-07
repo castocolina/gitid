@@ -1,21 +1,21 @@
 ---
-gsd_state_version: 1.0
+gsd_state_version: "1.0"
 milestone: v1.0
 milestone_name: TUI-First Redesign
 current_phase: 10
-current_phase_name: linux-validation-release-pipeline
+current_phase_name: READY TO EXECUTE; urgent TUI-consistency fixes queued as Phase 9.6 and 9.7
 status: executing
-stopped_at: Phase 09.5 complete, ready to plan Phase 10
-last_updated: "2026-09-04T22:55:28.389Z"
-last_activity: 2026-09-04
-last_activity_desc: Phase 09.5 complete, transitioned to Phase 10
-state_head: 2299a6b2c725e134af5404af7a80bd8adfe31f40
+stopped_at: Phase 9.7 context gathered
+last_updated: "2026-09-07T23:02:55.587Z"
+last_activity: 2026-09-07
+last_activity_desc: Inserted Phase 9.6 (Global Git/SSH Options Consistency Fixes) and Phase 9.7 (New-Identity Wizard Consistency Fixes) after a user UX audit of Options screens and the New-Identity wizard
+state_head: "0bd017bbfa74ada120b6aa83d3b4442a567e2474"
 progress:
-  total_phases: 15
+  total_phases: 17
   completed_phases: 14
-  total_plans: 104
-  completed_plans: 98
-  percent: 93
+  total_plans: 105
+  completed_plans: 105
+  percent: 82
 ---
 
 # Project State
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 ## Current Position
 
-Phase: 10 (linux-validation-release-pipeline) — READY TO EXECUTE
+Phase: 10 (linux-validation-release-pipeline) — READY TO EXECUTE; urgent TUI-consistency fixes queued as Phase 9.6 and 9.7
 Status: Ready to execute
-Last activity: 2026-09-07 - Completed quick task 260907-eda: Add a Go-toolchain bootstrap step to setup-env so a fresh clone with no go on PATH gets one installed automatically
+Last activity: 2026-09-07 - Inserted Phase 9.6 (Global Git/SSH Options Consistency Fixes) and Phase 9.7 (New-Identity Wizard Consistency Fixes) after a user UX audit of Options screens and the New-Identity wizard
 
 ### Phase 8 (COMPLETE) — historical record
 
@@ -53,7 +53,7 @@ Plan: Not started
 Status: 02-15 (wave 8) operationalized the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract (D1–D9 + affordance audit) in BOTH demos, byte-for-byte: D1 single-row color-only fields (02-14's rounded box deleted), D2 always-expanded match-strategy/algorithm radios, D3 terminal-glyph checkbox/radio on the web, D4 bracketed main-nav format (`[N] Label`, moved off the wizard stepper) + a new ActiveNavDimmed/activeNavDimmed state + a top-level plain-arrow view switch, D5 the wizard stepper reverted to `Step n/4 · <label> ● ○ ○ ○`, D6 one-row git-step buttons, D7 ONE hoisted Shift+←/→ chord gate reaching every step including the previously-dead review ceremony (proven with a new raw-byte PTY e2e injecting real xterm CSI sequences), D8 click-to-focus on every form row, and D9 Global Git's user.email promoted to an editable, opt-in global-fallback field with its own dedicated write ceremony (a documented, scoped recipes/ divergence). 02-STYLE-SPEC.md + both FIELDS.md companions rewritten in lockstep; the full exit-gate battery is green (go test -race, the no-backend allowlist, the extended copy-freeze grep, make test/lint/test-e2e/gate-no-backend-files, pnpm typecheck+build) — see 02-15-SUMMARY.md. The two ORCHESTRATOR-run exit gates (a fresh agent-ui-ux-designer critique of both live demos + a fresh-context code review against 02-15's must_haves/acceptance_criteria) have since RUN and their findings (F1-F10 + one record-only item) are fixed — see 02-15-SUMMARY.md "Review findings resolution (post-plan fix pass)" and commits a335d80/f62c99e. Next is 02-12 (wave 9, the single DLV-08 approval checkpoint), unblocked.
 Last activity: 2026-07-06 -- Completed 02-12 (★ DLV-08): user approval recorded as `**APPROVED:** 2026-07-06 by Pepe`; Phase 2 COMPLETE — the approved live demos + 02-REDESIGN-SPEC.md/02-STYLE-SPEC.md/02-DESIGN-DECISIONS-CHECKPOINT-2.md + per-surface FIELDS.md are the binding design reference; Phases 3-9 backend work is UNBLOCKED
 
-Progress: [░░░░░░░░░░] 0% (30/32 plans complete — Phase 2: 15/15; Phase 3: 6/9 plans, Wave 5 of 6 IN PROGRESS — 03-06 not yet counted complete: Task 3's cross-AI review is still owed; Wave 6 (03-07) COMPLETE)
+Progress: [████████░░] 82% (30/32 plans complete — Phase 2: 15/15; Phase 3: 6/9 plans, Wave 5 of 6 IN PROGRESS — 03-06 not yet counted complete: Task 3's cross-AI review is still owed; Wave 6 (03-07) COMPLETE)
 
 ## Performance Metrics
 
@@ -207,6 +207,8 @@ Recent decisions affecting current work:
 ### Roadmap Evolution
 
 - 2026-07-02: Prior build reframed as archived **0.0.1 POC** (never released) under `.planning/archive/0.0.1-poc-product-features-in-tui/`; phase numbering **reset** for the real v1.0. New 10-phase roadmap derived 1:1 from the PRD "Execution Phases" (Phase 0→1 … Phase 9→10). Existing Go packages are reusable substrate, not a behavior contract. Loop vehicle: `.planning/ONESHOT-LOOP-PROMPT.md`.
+- Phase 9.6 inserted after Phase 9: Global Git/SSH Options Consistency Fixes: type-aware rendering, e-to-edit, orange-! clarification, user.email/name duplicate-read-path bug fix (found in user audit of Options/Set-keys screens) (URGENT)
+- Phase 9.7 inserted after Phase 9: New-Identity Wizard Consistency Fixes: Key/Git-identity section grouping, Test-connection color/type + warning persistence, typed log, text-input width/hint consistency (found in same user audit) (URGENT)
 
 ### Pending Todos
 
@@ -280,9 +282,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-02T00:35:53.900Z
-Stopped at: Phase 09.5 complete, ready to plan Phase 10
-Resume file: .planning/phases/09.4-tui-ux-consistency-doctor-fixer-parity/09.4-UI-SPEC.md
+Last session: 2026-09-07T23:02:55.384Z
+Stopped at: Phase 9.7 context gathered
+Resume file: .planning/phases/09.7-new-identity-wizard-consistency-fixes-visual-grouping-for-ke/09.7-CONTEXT.md
 Wave structure: W1 = 03-01 + 03-02 (DONE) -> W2 = 03-03 (DONE) -> W3 = 03-04 (DONE) -> W4 = 03-05 (DONE) -> W5 = 03-06 (Tasks 1+2 DONE, Task 3 PARTIAL — orchestrator review owed)
 **All remaining waves run SEQUENTIALLY (one executor at a time) per LEARNINGS L11** — the pre-commit hooks lint the whole module, so a parallel executor's mid-refactor tree blocks every other commit. Do NOT run plans in parallel inside this Go module again.
 
