@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 Phase: 10 (linux-validation-release-pipeline) — READY TO EXECUTE
 Status: Ready to execute
-Last activity: 2026-09-04 — Phase 09.5 complete, transitioned to Phase 10
+Last activity: 2026-09-07 - Completed quick task 260907-eda: Add a Go-toolchain bootstrap step to setup-env so a fresh clone with no go on PATH gets one installed automatically
 
 ### Phase 8 (COMPLETE) — historical record
 
@@ -268,6 +268,7 @@ None yet.
 |---|-------------|------|--------|-----------|
 | 260705-f9t | Add `make demo-web` target: relaunch the web mockup Vite dev server on dedicated port 45173 and open the browser | 2026-07-05 | 9ecfbb4 | [260705-f9t-add-make-target-to-relaunch-the-web-mock](./quick/260705-f9t-add-make-target-to-relaunch-the-web-mock/) |
 | 260831-3a9 | Fix 5 UX-critique defects (D1-D5) in Phase 9 upload/register-key/rotate-delete screens; re-promote stale PTY frames; close REVIEW.md's parity-critique obligation | 2026-08-31 | 0ad0ed7 | [260831-3a9-fix-5-ux-critique-defects-d1-d5-in-phase](./quick/260831-3a9-fix-5-ux-critique-defects-d1-d5-in-phase/) |
+| 260907-eda | Add a Go-toolchain bootstrap step to setup-env so a fresh clone with no go on PATH gets one installed automatically | 2026-09-07 | 0fdc648 | [260907-eda-add-a-go-toolchain-bootstrap-step-to-set](./quick/260907-eda-add-a-go-toolchain-bootstrap-step-to-set/) |
 
 ## Deferred Items
 
