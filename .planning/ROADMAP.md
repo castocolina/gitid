@@ -455,17 +455,6 @@ Plans:
 
 - [x] 09-08-PLAN.md — the ONESHOT-policy real-account GitHub validation (opt-in, disposable prefixed keys, ID-scoped cleanup, final sweep) plus UP-01/UP-02/UP-03 closure (UP-01, UP-02, UP-03)
 
-### Phase 09.6: Global Git/SSH Options Consistency Fixes: type-aware rendering (bool/enum/text), e-to-edit, clarify the orange ! ambiguity, fix user.email/name duplicate-read-path bug across Options vs Set keys (INSERTED)
-
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
-**Depends on:** Phase 9
-**Plans:** 0 plans
-
-Plans:
-
-- [ ] TBD (run /gsd-plan-phase 09.6 to break down)
-
 ### Phase 09.7: New-Identity Wizard Consistency Fixes: visual grouping for Key section (step 1) and Git identity fields (step 3), Test-connection color/type differentiation and warning persistence, typed log entries, fixed-width + consistent hint behavior for all wizard text inputs (INSERTED)
 
 **Goal:** [Urgent work - to be planned]
@@ -591,16 +580,27 @@ Plans:
 
 *Note: the Global Git / Global SSH `Selectable()` asymmetry for set-but-differs rows (Git never selectable, SSH always selectable) is a documented, deliberate NON-goal of this phase — see 09.6-01-PLAN.md decision PD-4. The 4-state classifier enums in `internal/globalgit/classify.go` and `internal/globalssh/classify.go` are likewise untouched; every fix here is rendering- and read-path-level.*
 
-**Plans**: 5 plans in 5 sequential waves
+**Plans**: 6 plans in 6 sequential waves
 **UI hint**: yes
+
+*Plan-set note (cycle 2, cross-AI review 4a799a8): the phase was restructured from five plans to
+six. Review found that the per-screen editor plans each invented a piece of an architecture with
+no shared contract defined first, and that the override write path as described would have
+written to disk during preview. Plan 09.6-01 is now a dedicated wave-1 contract plan — the
+value-kind vocabulary, the override request type, both option-value seams, one overlay builder
+per screen shared by preview and commit, and a real git ref-name validator — landing before any
+screen grows an editor. Every plan carries `cross_ai: true` per `.planning/ONESHOT.md` rule 12,
+and each plan carries a Review Dispositions Ledger recording how it resolves the findings routed
+to it.*
 
 Plans:
 
-- [ ] 09.6-01-PLAN.md — (wave 1) TRACER: the `StrictHostKeyChecking` vertical slice end-to-end — value-kind classification on all six SSH policy rows, the DTO fields across the no-backend boundary, the inline value cell, the `e` / left-right / Enter / Esc editor guarded ahead of the sub-tab-switch binding, `lifecyclePolicy.Overrides` into `runGlobalSSHApply`, a separate option-value seam mirroring the D9 precedent, plus the orange `!` narrowed to needs-action on BOTH screens with the SSH test that pins today's defect inverted in the same commit, and real-PTY proof through the compiled binary (UXG-01, UXG-02, UXG-05)
-- [ ] 09.6-02-PLAN.md — (wave 2) the twelve-row Global Git classification table locked behind a per-row completeness test, the Git DTO and its inline value cell with the checkbox column provably unchanged, and Global Git's enum editor plus its override write path routed through `WriteValueFor` so a hard-gated value still downgrades to its declared fallback on old git (UXG-01, UXG-05)
-- [ ] 09.6-03-PLAN.md — (wave 3) the free-text half: the fallback-author pair regestured off Enter with a real commit/dismiss split and a pre-edit snapshot, `init.defaultBranch` given the wizard's own `formFieldLine`/`helperLine` editor validated by the existing `internal/gitconfig` entry points, and the editor copy frozen in both gates with real-PTY proof that a dismissed edit leaves the config byte-identical (UXG-01, UXG-05)
-- [ ] 09.6-04-PLAN.md — (wave 4) the three-source exclusion set that actually skips rather than tags (member-key lookup for bundle rows, an explicit pair for the member-less fallback keys), a real-machine test proving the two sub-tabs partition the probe result exactly, and the sub-tab relabel sweeping fourteen files including both gates and five real-PTY cases in one commit (UXG-03, UXG-04)
-- [ ] 09.6-05-PLAN.md — (wave 5) visual-regression registration for every new render state on both screens with each fail path observed and reverted, re-promotion of the PTY evidence the rename invalidated, and clause-by-clause requirement closeout behind a full gate battery run at close (UXG-01, UXG-02, UXG-03, UXG-04, UXG-05)
+- [ ] 09.6-01-PLAN.md — (wave 1) CONTRACT: the value-kind vocabulary across both policy tables, both DTOs and both fixtures with an explicit boundary conversion; the override request type, the two option-value seams embedded in `Backend`, one overlay builder per screen shared by preview and commit, a plan method that provably writes nothing, `WriteRequestedValueFor` so an override can never route around the hard gate, and `gitconfig.ValidateDefaultBranch` pinned against the real `git check-ref-format` binary; plus the orange `!` narrowed to needs-action on BOTH screens with the SSH test that pins today's defect inverted in the same commit (UXG-01, UXG-02, UXG-05)
+- [ ] 09.6-02-PLAN.md — (wave 2) TRACER: the `StrictHostKeyChecking` vertical slice end-to-end — the shared editor state machine with one mutually-exclusive mode enum, the key guard ahead of the sub-tab-switch binding, the inline value cell, edit- and apply-eligibility stated per row state so a staged override on an already-set row is not silently dropped, the explicit conditional dispatch at both named ceremony call sites, the editor copy frozen in both gates, and real-PTY proof through the compiled binary against the bytes on disk (UXG-01, UXG-05)
+- [ ] 09.6-03-PLAN.md — (wave 3) Global Git's enum rows: the inline value cell with the checkbox column provably unchanged, the SHARED editor reused rather than ported, the guard placed ahead of BOTH sub-tab-switch sites including the zero-options branch, and the hard version gate re-proven from this screen's own dispatch path so a cycled `zdiff3` still downgrades on old git (UXG-01, UXG-05)
+- [ ] 09.6-04-PLAN.md — (wave 4) the free-text half plus the reported read-path defect: the Options fallback row re-sourced from `ReadGitFallbackAuthor` so it shows both owned fields on first entry, the fallback pair regestured off Enter with a real commit/dismiss split and a two-field snapshot, `fieldEditing` folded into the one mode enum, and `init.defaultBranch` given the wizard's own `formFieldLine`/`helperLine` editor validated by git's real ref grammar (UXG-01, UXG-05)
+- [ ] 09.6-05-PLAN.md — (wave 5) one key, one home: the raw-key exclusion that skips rather than tags, `ManagedRawGitKeys()` and a real-machine partition proof stated in raw-key space, an externally-set author pair kept visible with its origin on the Options row, `GitSetKeyView.PolicyBacked` removed rather than left permanently false, and the sub-tab relabel enforced by a source-walk absence test rather than a one-off search (UXG-03, UXG-04)
+- [ ] 09.6-06-PLAN.md — (wave 6) visual-regression registration where entry, capture driver and fixture data ship as ONE commit per state with an explicit reachability route and each fail path observed and reverted, re-promotion of the PTY evidence the rename invalidated, and clause-by-clause requirement closeout behind a full gate battery run at close (UXG-01, UXG-02, UXG-03, UXG-04, UXG-05)
 
 ### Phase 10: Linux Validation + Release Pipeline
 

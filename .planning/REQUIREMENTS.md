@@ -575,7 +575,12 @@ explicitly deferred.
   declares no members and is invisible to any member-based lookup. The
   dedicated managed-block reader stays authoritative for the Options row's
   displayed value. Nothing may vanish: the two sub-tabs' key sets must
-  partition the raw probe result exactly.
+  partition the raw probe result exactly, proven in raw-key space rather than
+  by comparing display rows against raw keys. Because the two fallback-author
+  keys leave the general list, the Options fallback row becomes their one home
+  and must show the EFFECTIVE pair, naming the origin file whenever something
+  other than gitid's managed block is what supplies it — a `user.email` set by
+  hand outside gitid stays visible, exactly once.
 
 - [ ] **UXG-04** (Honest general-keys label): once UXG-03's exclusion lands,
   the Global Git general-keys sub-tab is relabelled to reflect that it only
@@ -764,8 +769,8 @@ row below records each one's **home** phase.
 | PROP-02 | Phase 9.5 | Complete (09.5-02: `TestAllSetKeysReturnsEverySetKeyWithProvenance` asserts one `SetKey` per record across global/system/local scopes with the origin file path stripped of its `file:` prefix; `TestGlobalGit_RealPTYSetKeysFilter` real-PTY proves the type-to-filter list) |
 | PROP-03 | Phase 9.5 | Complete (09.5-03: `TestGlobalGit_RealPTYCustomKeyWrite` asserts the real on-disk managed-block content after a free-form `key=value` write through the standard review-before-write ceremony; `TestGlobalGit_RealPTYCustomKeyRejectsMalformedKey` proves only key-syntax (dot-form) is checked, never a directive-name allow-list) |
 | PROP-04 | Phase 9.5 | Complete (09.5-04: `TestGlobalSSH_RealPTYCustomDirectiveRejectedNameNeverWrites` asserts an unrecognized directive name leaves the managed target byte-identical (never reaches the write ceremony); `TestGlobalSSH_RealPTYCustomDirectiveWrite` asserts the accepted directive lands in the on-disk managed block after the `ssh -G` prove-before-write verification) |
-| UXG-01 | Phase 9.6 | Pending (plans 09.6-01, 09.6-02, 09.6-03) |
-| UXG-02 | Phase 9.6 | Pending (plan 09.6-01) |
-| UXG-03 | Phase 9.6 | Pending (plan 09.6-04) |
-| UXG-04 | Phase 9.6 | Pending (plan 09.6-04) |
-| UXG-05 | Phase 9.6 | Pending (plans 09.6-01, 09.6-02, 09.6-03) |
+| UXG-01 | Phase 9.6 | Pending (plans 09.6-01, 09.6-02, 09.6-03, 09.6-04; closed clause-by-clause by 09.6-06) |
+| UXG-02 | Phase 9.6 | Pending (plan 09.6-01; closed clause-by-clause by 09.6-06) |
+| UXG-03 | Phase 9.6 | Pending (plan 09.6-05; closed clause-by-clause by 09.6-06) |
+| UXG-04 | Phase 9.6 | Pending (plan 09.6-05; closed clause-by-clause by 09.6-06) |
+| UXG-05 | Phase 9.6 | Pending (plans 09.6-01, 09.6-02, 09.6-03, 09.6-04; closed clause-by-clause by 09.6-06) |
