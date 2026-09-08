@@ -581,7 +581,7 @@ Plans:
 *Note: the Global Git / Global SSH `Selectable()` asymmetry for set-but-differs rows (Git never selectable, SSH always selectable) is a documented, deliberate NON-goal of this phase — see 09.6-01-PLAN.md decision PD-4. The 4-state classifier enums in `internal/globalgit/classify.go` and `internal/globalssh/classify.go` are likewise untouched; every fix here is rendering- and read-path-level.*
 
 **Plans**: 6 plans in 6 sequential waves
-**UI hint**: yes
+**UI hint**: yes — UI contract: `.planning/phases/09.6-global-git-ssh-options-consistency-fixes-type-aware-renderin/09.6-UI-SPEC.md` (`.planning/ONESHOT.md` Per-Phase Checklist item 2)
 
 *Plan-set note (cycle 2, cross-AI review 4a799a8): the phase was restructured from five plans to
 six. Review found that the per-screen editor plans each invented a piece of an architecture with
@@ -592,6 +592,20 @@ per screen shared by preview and commit, and a real git ref-name validator — l
 screen grows an editor. Every plan carries `cross_ai: true` per `.planning/ONESHOT.md` rule 12,
 and each plan carries a Review Dispositions Ledger recording how it resolves the findings routed
 to it.*
+
+*Plan-set note (cycle 3, cross-AI review a49a50c): the six-plan structure is unchanged; every
+plan was revised in place and each ledger gained a Round 2 section. Cycle 2's three HIGH
+findings are resolved: the mandatory `09.6-UI-SPEC.md` was written (ONESHOT.md item 2 carries no
+exemption clause for a phase with a TUI surface, and this phase changes rendering and
+interaction on two shipped screens); Route-B visual evidence became machine-checkable via a new
+`EvidenceTest` field, a `ValidateScreenSpecs` requirement, a source walk resolving it against
+`e2e/`, and an actual anchored run (09.6-06 PD41); and 09.6-04's "always-reserved helper row"
+parity claim was corrected against the live source — the wizard's `formFieldLine`/`helperLine`
+primitives are genuinely reused and the always-reserved PROPERTY is delivered at the Options
+editor's own call site, while wizard-wide unification stays Phase 9.7's D-07 (09.6-04 PD36).
+Twelve of the fourteen actionable MEDIUM/LOW items were also closed with concrete tests
+(PD31-PD43); the two not taken are recorded as deferrals with reasoning in the plans' Round 2
+ledgers.*
 
 Plans:
 
@@ -656,6 +670,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9.3. Release CI/CD + Installer | 2/2 | Complete    | 2026-09-01 |
 | 9.4. TUI UX Consistency & Doctor/Fixer Parity | 4/4 | Complete    | 2026-09-03 |
 | 9.5. Full SSH/Git Properties Browser | 5/5 | Complete    | 2026-09-04 |
-| 9.6. Global Git/SSH Options Consistency Fixes (INSERTED) | 0/5 | Planned | - |
+| 9.6. Global Git/SSH Options Consistency Fixes (INSERTED) | 0/6 | Planned | - |
 | 9.7. New-Identity Wizard Consistency Fixes (INSERTED) | 0/TBD | Context gathered | - |
 | 10. Linux Validation + Release Pipeline | 0/6 | Planned | - |
