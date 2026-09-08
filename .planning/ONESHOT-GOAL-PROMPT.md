@@ -39,12 +39,9 @@ breaker or a required confirmation before mutating the user's real SSH/Git
 configuration or external account. Do not ask the user to send a
 continuation command at any point between here and milestone close.
 
-Treat verification as an autonomous convergence loop: any failing test,
-review finding, divergent visual artifact, incomplete evidence, or gap report
-must be planned, fixed, re-tested, and independently re-reviewed until clean.
-Do not halt merely because a previous corrective attempt failed; halt only for
-a real safety/authentication/confirmation condition or a demonstrated
-repeated zero-progress tool failure.
+Apply ONESHOT.md rule 10 (the autonomous convergence loop) to every
+verification, review, and audit result — do not halt on a failed corrective
+attempt.
 
 If a `gaps_found` verification result appears at any phase, choose "Run gap
 closure" yourself and continue the convergence loop described in

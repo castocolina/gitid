@@ -60,6 +60,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 9.3: Release CI/CD + Installer** - Tagged-release CI publishing checksummed binaries, plus a curl\|bash install script (completed 2026-09-01)
 - [x] **Phase 9.4: TUI UX Consistency & Doctor/Fixer Parity** - Fix focus/read-only/toggle/submenu-affordance inconsistencies and Doctor-vs-Fixer count discoverability found in a user audit of Global SSH, Global Git, and Fixer (completed 2026-09-03)
 - [x] **Phase 9.5: Full SSH/Git Properties Browser & Custom Key Entry** - Browse the full set of SSH/Git config properties beyond gitid's curated policy tables, plus add a custom global key (free-form for Git, directive-validated for SSH) (completed 2026-09-04)
+- [ ] **Phase 9.6: Global Git/SSH Options Consistency Fixes** (INSERTED) - Type-aware rendering (bool/enum/text), `e`-to-edit, clarify the orange `!` ambiguity, fix the user.email/name duplicate-read-path bug across Options vs Set keys — found in a user audit of the Global Git/SSH Options screens
+- [ ] **Phase 9.7: New-Identity Wizard Consistency Fixes** (INSERTED) - Visual grouping for the Key section (step 1) and Git identity fields (step 3), Test-connection color/type differentiation and warning persistence, typed log entries, fixed-width + consistent hint behavior across wizard text inputs — found in the same audit
 - [ ] **Phase 10: Linux Validation + Release Pipeline** - End-to-end Linux validation + tagged, checksummed release artifacts
 
 ## Phase Details
@@ -453,6 +455,28 @@ Plans:
 
 - [x] 09-08-PLAN.md — the ONESHOT-policy real-account GitHub validation (opt-in, disposable prefixed keys, ID-scoped cleanup, final sweep) plus UP-01/UP-02/UP-03 closure (UP-01, UP-02, UP-03)
 
+### Phase 09.6: Global Git/SSH Options Consistency Fixes: type-aware rendering (bool/enum/text), e-to-edit, clarify the orange ! ambiguity, fix user.email/name duplicate-read-path bug across Options vs Set keys (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 9
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 09.6 to break down)
+
+### Phase 09.7: New-Identity Wizard Consistency Fixes: visual grouping for Key section (step 1) and Git identity fields (step 3), Test-connection color/type differentiation and warning persistence, typed log entries, fixed-width + consistent hint behavior for all wizard text inputs (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 9
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 09.7 to break down)
+
 ### Phase 9.1: GitLab Real-Account Validation
 
 **Goal**: The GitLab upload/delete path is proven against a real, authenticated GitLab account — not just offline `glab` PATH shims.
@@ -587,7 +611,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 9.1 → 9.2 → 9.3 → 9.4 → 9.5 → 10
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 9.1 → 9.2 → 9.3 → 9.4 → 9.5 → 9.6 → 9.7 → 10
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -605,4 +629,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9.3. Release CI/CD + Installer | 2/2 | Complete    | 2026-09-01 |
 | 9.4. TUI UX Consistency & Doctor/Fixer Parity | 4/4 | Complete    | 2026-09-03 |
 | 9.5. Full SSH/Git Properties Browser | 5/5 | Complete    | 2026-09-04 |
+| 9.6. Global Git/SSH Options Consistency Fixes (INSERTED) | 0/TBD | Not started | - |
+| 9.7. New-Identity Wizard Consistency Fixes (INSERTED) | 0/TBD | Context gathered | - |
 | 10. Linux Validation + Release Pipeline | 0/6 | Planned | - |
