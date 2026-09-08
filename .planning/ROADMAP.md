@@ -575,6 +575,33 @@ Plans:
 - [x] 09.5-04-PLAN.md — (wave 4) the combined-output probe seam and `ProveCustomDirective`'s three-way staged-config `ssh -G` classification, `runCustomSSHDirectiveWrite` into the existing `Host *` block with its own non-vacuous post-write re-read, and the three-stage flow whose un-skippable validation gate is proven in a real PTY to leave the config byte-identical on rejection (PROP-04)
 - [x] 09.5-05-PLAN.md — (wave 5) visual-regression registration for every new render state with its fail path hand-verified, phase-parameterised frame promotion with machine-checked provenance, and the clause-by-clause requirement closeout behind a full gate battery run at close (PROP-01, PROP-02, PROP-03, PROP-04)
 
+### Phase 9.6: Global Git/SSH Options Consistency Fixes
+
+**Goal**: An option row on either Global screen renders and edits according to what its value actually is — a toggle where gitid can only apply-or-not, a value plus an arrow-cycle where the value set is closed, a value plus the wizard's own text field where it is free text — with one uniform `e` / Enter / Esc gesture across both screens, an unambiguous warning glyph, and no key ever shown in two places at once.
+**Depends on**: Phase 9.5 (this phase's sub-tab exclusion and relabel act on the properties browser 9.5 shipped)
+**Requirements**: UXG-01, UXG-02, UXG-03, UXG-04, UXG-05
+**Success Criteria** (what must be TRUE):
+
+  1. A closed-value-set row (`StrictHostKeyChecking`, `AddKeysToAgent`, `merge.conflictstyle`, `diff.colorMoved`) shows its resolved value on the row and opens an arrow-cycle selector on `e`; a free-text row (`user.email` global fallback, `init.defaultBranch`) shows its value and opens the New-Identity wizard's own fixed-width field; an apply-or-not row and a multi-key preset row render exactly as they do today. (UXG-01)
+  2. The trigger key, the commit key and the dismiss key are identical across every editable row on both Options screens, and Esc restores the value the row held before editing began rather than merely leaving edit mode. (UXG-01)
+  3. The orange `!` glyph fires only for the needs-action state; a set-but-differs row renders no `!` and keeps its explanatory second line, identically on Global Git and Global SSH. (UXG-02)
+  4. No git config key appears on both the Global Git Options sub-tab and the general-keys sub-tab — bundle member keys and the two fallback-author keys included — and the two sub-tabs' key sets still partition the raw probe result with nothing hidden. (UXG-03)
+  5. The general-keys sub-tab is relabelled to match what it now contains, with the frozen-copy gate, both string constants and all eight pinned assertions moved in one commit. (UXG-04)
+  6. A user-chosen value is staged by Enter and reaches disk only through the existing preview + typed-confirm + timestamped-backup ceremony; the per-alias scope refusal and the hard version gate still apply to an overridden value, and free text is validated by the existing `internal/gitconfig` validators. (UXG-05)
+
+*Note: the Global Git / Global SSH `Selectable()` asymmetry for set-but-differs rows (Git never selectable, SSH always selectable) is a documented, deliberate NON-goal of this phase — see 09.6-01-PLAN.md decision PD-4. The 4-state classifier enums in `internal/globalgit/classify.go` and `internal/globalssh/classify.go` are likewise untouched; every fix here is rendering- and read-path-level.*
+
+**Plans**: 5 plans in 5 sequential waves
+**UI hint**: yes
+
+Plans:
+
+- [ ] 09.6-01-PLAN.md — (wave 1) TRACER: the `StrictHostKeyChecking` vertical slice end-to-end — value-kind classification on all six SSH policy rows, the DTO fields across the no-backend boundary, the inline value cell, the `e` / left-right / Enter / Esc editor guarded ahead of the sub-tab-switch binding, `lifecyclePolicy.Overrides` into `runGlobalSSHApply`, a separate option-value seam mirroring the D9 precedent, plus the orange `!` narrowed to needs-action on BOTH screens with the SSH test that pins today's defect inverted in the same commit, and real-PTY proof through the compiled binary (UXG-01, UXG-02, UXG-05)
+- [ ] 09.6-02-PLAN.md — (wave 2) the twelve-row Global Git classification table locked behind a per-row completeness test, the Git DTO and its inline value cell with the checkbox column provably unchanged, and Global Git's enum editor plus its override write path routed through `WriteValueFor` so a hard-gated value still downgrades to its declared fallback on old git (UXG-01, UXG-05)
+- [ ] 09.6-03-PLAN.md — (wave 3) the free-text half: the fallback-author pair regestured off Enter with a real commit/dismiss split and a pre-edit snapshot, `init.defaultBranch` given the wizard's own `formFieldLine`/`helperLine` editor validated by the existing `internal/gitconfig` entry points, and the editor copy frozen in both gates with real-PTY proof that a dismissed edit leaves the config byte-identical (UXG-01, UXG-05)
+- [ ] 09.6-04-PLAN.md — (wave 4) the three-source exclusion set that actually skips rather than tags (member-key lookup for bundle rows, an explicit pair for the member-less fallback keys), a real-machine test proving the two sub-tabs partition the probe result exactly, and the sub-tab relabel sweeping fourteen files including both gates and five real-PTY cases in one commit (UXG-03, UXG-04)
+- [ ] 09.6-05-PLAN.md — (wave 5) visual-regression registration for every new render state on both screens with each fail path observed and reverted, re-promotion of the PTY evidence the rename invalidated, and clause-by-clause requirement closeout behind a full gate battery run at close (UXG-01, UXG-02, UXG-03, UXG-04, UXG-05)
+
 ### Phase 10: Linux Validation + Release Pipeline
 
 **Goal**: The whole app is validated end-to-end on a mainstream Linux distro, alongside macOS.
@@ -629,6 +656,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9.3. Release CI/CD + Installer | 2/2 | Complete    | 2026-09-01 |
 | 9.4. TUI UX Consistency & Doctor/Fixer Parity | 4/4 | Complete    | 2026-09-03 |
 | 9.5. Full SSH/Git Properties Browser | 5/5 | Complete    | 2026-09-04 |
-| 9.6. Global Git/SSH Options Consistency Fixes (INSERTED) | 0/TBD | Not started | - |
+| 9.6. Global Git/SSH Options Consistency Fixes (INSERTED) | 0/5 | Planned | - |
 | 9.7. New-Identity Wizard Consistency Fixes (INSERTED) | 0/TBD | Context gathered | - |
 | 10. Linux Validation + Release Pipeline | 0/6 | Planned | - |

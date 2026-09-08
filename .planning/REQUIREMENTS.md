@@ -533,6 +533,68 @@ table, not a live enumeration of every directive/key. Scope grew during this
 phase's own discussion from "browse only" to "browse + add a custom key,"
 after the user raised the point directly.
 
+## T. Global Git/SSH Options Consistency (UXG)
+
+Home: Phase 9.6. Raised by a direct user audit of the Global Git and Global
+SSH Options screens, in the same spirit as §R (UXP) — concrete inconsistencies
+a real user hit, not speculative polish. UXG-01 and UXG-05 together are the
+successor to the "general value-override capability" Phase 9.4's D-02
+explicitly deferred.
+
+- [ ] **UXG-01** (Type-aware Options row rendering): an option row renders
+  according to what its value actually IS. A row gitid can only apply-or-not
+  keeps today's checkbox and nothing else. A row whose value comes from a
+  closed, known set (e.g. `StrictHostKeyChecking`, `merge.conflictstyle`,
+  `diff.colorMoved`) additionally shows its resolved current value on the row
+  and opens an arrow-cycle selector on `e`. A row whose value is free text
+  (e.g. the `user.email` global fallback, `init.defaultBranch`) additionally
+  shows its resolved current value and opens the SAME fixed-width field the
+  New-Identity wizard uses (`formFieldLine`/`helperLine`), never a bespoke
+  Options-screen widget. A row that manages several keys as one preset
+  (`core.autocrlf`/`core.eol`, the alias set, the color set) keeps today's
+  checkbox unchanged. The trigger key (`e`), the commit key (Enter) and the
+  dismiss key (Esc) are identical across every editable row on BOTH screens,
+  and Esc genuinely restores the pre-edit value rather than merely leaving
+  edit mode.
+
+- [ ] **UXG-02** (Unambiguous warning glyph): the orange `!` glyph fires
+  ONLY for the needs-action state — unset, where applying gitid's
+  recommendation would be a real write. A row that is set to a different,
+  non-recommended value ("differs", where gitid's block would be a no-op)
+  renders no `!` and keeps its existing explanatory second line. This applies
+  identically to `internal/tuikit/globalgit.go` and
+  `internal/tuikit/globalssh.go`; Global SSH never received the equivalent of
+  the fix Phase 9.4 gave Global Git, so both screens currently share the
+  defect.
+
+- [ ] **UXG-03** (One key, one home): no git config key ever appears on both
+  the Global Git Options sub-tab and the general-keys sub-tab. The general
+  probe's result excludes every key gitid's curated policy table manages —
+  scalar rows AND bundle member keys, which a display-key lookup can never
+  match — plus the two literal fallback-author keys, whose policy row
+  declares no members and is invisible to any member-based lookup. The
+  dedicated managed-block reader stays authoritative for the Options row's
+  displayed value. Nothing may vanish: the two sub-tabs' key sets must
+  partition the raw probe result exactly.
+
+- [ ] **UXG-04** (Honest general-keys label): once UXG-03's exclusion lands,
+  the Global Git general-keys sub-tab is relabelled to reflect that it only
+  ever shows keys gitid's curated table does not manage. The frozen-copy gate
+  entry, both Go string constants, and every unit and real-PTY assertion
+  pinning the old label move in the same commit, because `make test` depends
+  on that gate.
+
+- [ ] **UXG-05** (Value override through the existing ceremony): a value the
+  user chooses on an Options row — cycled from a closed set or typed as free
+  text — can be written without leaving the Options screen. Enter stages the
+  value and selects the row; the value reaches disk ONLY through the row's
+  existing preview + typed-confirm + timestamped-backup apply ceremony, never
+  on Enter. No new write mechanism is introduced: the existing lifecycle
+  writers stay the only ones, the per-alias scope refusal and the
+  `merge.conflictstyle` hard version gate still apply to an overridden value,
+  and every free-text value is validated by the existing `internal/gitconfig`
+  validators rather than a new one.
+
 ## Out of Scope
 
 - **Shippable Web UI** — the HTML/React/`mui` mockups are **design + review
@@ -702,3 +764,8 @@ row below records each one's **home** phase.
 | PROP-02 | Phase 9.5 | Complete (09.5-02: `TestAllSetKeysReturnsEverySetKeyWithProvenance` asserts one `SetKey` per record across global/system/local scopes with the origin file path stripped of its `file:` prefix; `TestGlobalGit_RealPTYSetKeysFilter` real-PTY proves the type-to-filter list) |
 | PROP-03 | Phase 9.5 | Complete (09.5-03: `TestGlobalGit_RealPTYCustomKeyWrite` asserts the real on-disk managed-block content after a free-form `key=value` write through the standard review-before-write ceremony; `TestGlobalGit_RealPTYCustomKeyRejectsMalformedKey` proves only key-syntax (dot-form) is checked, never a directive-name allow-list) |
 | PROP-04 | Phase 9.5 | Complete (09.5-04: `TestGlobalSSH_RealPTYCustomDirectiveRejectedNameNeverWrites` asserts an unrecognized directive name leaves the managed target byte-identical (never reaches the write ceremony); `TestGlobalSSH_RealPTYCustomDirectiveWrite` asserts the accepted directive lands in the on-disk managed block after the `ssh -G` prove-before-write verification) |
+| UXG-01 | Phase 9.6 | Pending (plans 09.6-01, 09.6-02, 09.6-03) |
+| UXG-02 | Phase 9.6 | Pending (plan 09.6-01) |
+| UXG-03 | Phase 9.6 | Pending (plan 09.6-04) |
+| UXG-04 | Phase 9.6 | Pending (plan 09.6-04) |
+| UXG-05 | Phase 9.6 | Pending (plans 09.6-01, 09.6-02, 09.6-03) |
