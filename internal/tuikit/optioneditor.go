@@ -64,11 +64,11 @@ func NewOptionEditor(key string, values []string, currentValue string) *OptionEd
 		}
 	}
 	return &OptionEditor{
-		mode:     OptionEditorModeClosed,
-		key:      key,
-		values:   values,
-		cursor:   cursor,
-		snapshot: currentValue,
+		mode:      OptionEditorModeClosed,
+		key:       key,
+		values:    values,
+		cursor:    cursor,
+		snapshot:  currentValue,
 		textInput: textinput.New(),
 	}
 }

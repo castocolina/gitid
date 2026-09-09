@@ -774,7 +774,7 @@ func TestSharedSubTabStripRendersBorderedBox(t *testing.T) {
 		labels []string
 		active int
 	}{
-		{"two-label", []string{" Options ", " Set keys "}, 0},
+		{"two-label", []string{" Options ", " Other keys "}, 0},
 		{"three-label", []string{" Options ", " Storage & preview ", " All directives "}, 2},
 	}
 	for _, c := range cases {

@@ -342,3 +342,45 @@ func TokenOwningMember(member string) (string, bool) {
 	}
 	return "", false
 }
+
+// ManagedRawGitKeys returns the canonical set of raw git config keys the
+// curated policy table manages, constructed from:
+//  1. Every member key of every policy row (e.g. "core.autocrlf", "alias.st",
+//     "user.useConfigOnly", etc.) — the keys `AllGitSetKeys` must exclude
+//  2. The two fallback-author literal keys: "user.name" and "user.email" from
+//     internal/gitconfig/fallbackauthor.go, which the fallback-author row
+//     (Policy line 154-159) declares zero Members for (they reach the
+//     exclusion via the literal pair, not via member lookups)
+//
+// The result is used by AllGitSetKeys wiring to partition the raw probe
+// result: returned rows + ManagedRawGitKeys() exactly reconstructs the probe
+// output in raw-key space (PD20, Task 1 behavior Test 5).
+//
+// The expected list is pinned here so a future policy row silently missing
+// from it fails by name, not by a mysterious "one key, one home" violation.
+func ManagedRawGitKeys() []string {
+	seen := make(map[string]bool)
+	var result []string
+
+	// Collect all member keys from all policy rows
+	for _, p := range Policy {
+		for _, m := range p.Members {
+			key := strings.ToLower(m.Key)
+			if !seen[key] {
+				seen[key] = true
+				result = append(result, key)
+			}
+		}
+	}
+
+	// Add the fallback-author literals (user.name and user.email)
+	fallbackKeys := []string{"user.name", "user.email"}
+	for _, key := range fallbackKeys {
+		if !seen[key] {
+			seen[key] = true
+			result = append(result, key)
+		}
+	}
+
+	return result
+}

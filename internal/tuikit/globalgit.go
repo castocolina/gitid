@@ -67,9 +67,9 @@ const (
 
 // ggitFooterCycleLabel is the ←→ footer action's label, naming both
 // sub-tabs — mirrors gssFooterCycleLabel's identical role on Global SSH.
-const ggitFooterCycleLabel = "Options / Set keys"
+const ggitFooterCycleLabel = "Options / Other keys"
 
-// ggitNextSubTab returns the sub-tab the → key cycles to: Options → Set
+// ggitNextSubTab returns the sub-tab the → key cycles to: Options → Other
 // keys → Options.
 func ggitNextSubTab(cur ggitSubTab) ggitSubTab {
 	if cur == ggitOptions {
@@ -1880,13 +1880,6 @@ func (m globalGitModel) renderSetKeys(strip string, width, height int) string {
 		// This is the honesty disclosure so the screen never implies a
 		// stacked key is single-valued.
 		d.WriteString(" " + styleWarning.Render(fmt.Sprintf(PropsGitMultiValuedNoteFmt, detail.ValueCount)) + "\n")
-	}
-	if detail.PolicyBacked {
-		// Informational only: never a second interactive affordance, and the
-		// value is never rendered twice side-by-side (09.5-CONTEXT.md).
-		// Reuses plan 09.5-01's PropsCrossReferenceNote constant verbatim —
-		// no Git-specific twin.
-		d.WriteString(" " + styleFaint.Render(PropsCrossReferenceNote) + "\n")
 	}
 	detailPane := fitPane(lipgloss.NewStyle().Width(detailWidth).Render(d.String()), rows)
 

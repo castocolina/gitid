@@ -601,7 +601,7 @@ gate-copy-freeze:
 		'No directives match \"%s\".' \
 		'Also tracked as a recommended option — see the Options tab for gitid'\''s guidance.' \
 		'Resolved via ssh -G — reflects Include/Match precedence already applied.' \
-		'Set keys' \
+		'Other keys' \
 		'! Git config could not be read.' \
 		'git config --list --show-origin failed — re-enter the screen to retry.' \
 		'No git config keys are set yet.' \

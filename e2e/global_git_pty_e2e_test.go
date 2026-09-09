@@ -478,34 +478,38 @@ func TestGlobalGit_RealPTYMidTransactionFailureAndRetry(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // Plan 09.5-02 Task 3 — real-PTY proof of the net-new sub-tab strip and the
-// "Set keys" flat filterable list (PROP-02), mirroring plan 09.5-01's own
+// "Other keys" flat filterable list (PROP-02), mirroring plan 09.5-01's own
 // Task 3 SSH-side precedents (global_ssh_pty_e2e_test.go).
 // ---------------------------------------------------------------------------
 
 // TestGlobalGit_RealPTYSetKeysBrowse is this plan's tracer-equivalent real-
 // terminal proof: the whole PROP-02 stack, wired end to end through the
 // COMPILED binary. Pressing → once from the default Options sub-tab reaches
-// the new "Set keys" sub-tab and shows seeded keys with their origin path;
+// the new "Other keys" sub-tab and shows seeded keys with their origin path;
 // pressing ← returns to Options, proving the re-homing did not lose its
 // existing baseline content.
+// 09.6-05 Task 0: re-seeds browse case to use non-policy keys (core.editor,
+// core.pager, safe.directory) since user.name and user.email will be excluded
+// by Task 1's member-key filter. The test still asserts the original subject:
+// the sub-tab lists seeded keys with their scrubbed origin.
 func TestGlobalGit_RealPTYSetKeysBrowse(t *testing.T) {
 	home := ShortSandboxHome(t)
-	seedGlobalGitHome(t, home, "[user]\n\tname = Set Keys Tester\n\temail = setkeys@example.com\n[alias]\n\tco = checkout\n", "")
+	seedGlobalGitHome(t, home, "[core]\n\teditor = vim\n\tpager = less\n[safe]\n\tdirectory = /home/user/trusted\n", "")
 	s := startGlobalGitPTY(t, home, "")
 
 	s.sendKey(wizardKeyRight, keystrokeDelay)
 	frame, ok := s.waitFor(8*time.Second, func(text string) bool {
-		return strings.Contains(text, "Global Git › Set keys")
+		return strings.Contains(text, "Global Git › Other keys")
 	})
 	if !ok {
-		t.Fatalf("Set keys sub-tab never rendered after one → press. Last frame:\n%s", frame)
+		t.Fatalf("Other keys sub-tab never rendered after one → press. Last frame:\n%s", frame)
 	}
-	if !strings.Contains(frame, "Set keys") {
-		t.Fatalf("strip must show the honestly-scoped Set keys label:\n%s", frame)
+	if !strings.Contains(frame, "Other keys") {
+		t.Fatalf("strip must show the honestly-scoped Other keys label:\n%s", frame)
 	}
 
 	seededKeyCount := 0
-	for _, key := range []string{"user.name", "user.email", "alias.co"} {
+	for _, key := range []string{"core.editor", "core.pager", "safe.directory"} {
 		if strings.Contains(frame, key) {
 			seededKeyCount++
 		}
@@ -534,7 +538,7 @@ func TestGlobalGit_RealPTYSetKeysBrowse(t *testing.T) {
 		return strings.Contains(text, "Global Git › Options") && strings.Contains(text, "init.defaultBranch")
 	})
 	if !ok {
-		t.Fatalf("← from Set keys never returned to Options with its baseline content. Last frame:\n%s", back)
+		t.Fatalf("← from Other keys never returned to Options with its baseline content. Last frame:\n%s", back)
 	}
 	captureGlobalGitFrame(t, "global-git-set-keys-back-to-options", s)
 }
@@ -544,23 +548,28 @@ func TestGlobalGit_RealPTYSetKeysBrowse(t *testing.T) {
 // TestGlobalSSH_RealPTYAllDirectivesFilter: an in-package model test cannot
 // show that app.go's `1`..`5` main-tab globals were genuinely bypassed while
 // the filter is focused — only a real PTY session can.
+// 09.6-05 Task 0: re-seeds filter case to use non-policy keys (core.editor,
+// core.pager, safe.directory) with a "core." prefix that narrows to the first
+// two, since user.* keys will be excluded by Task 1. The test still asserts
+// the original subjects: the filter narrows the list while digits typed into
+// it reach the filter rather than app.go's main-tab globals.
 func TestGlobalGit_RealPTYSetKeysFilter(t *testing.T) {
 	home := ShortSandboxHome(t)
-	seedGlobalGitHome(t, home, "[user]\n\tname = Filter Tester\n\temail = filtertester@example.com\n[alias]\n\tco = checkout\n", "")
+	seedGlobalGitHome(t, home, "[core]\n\teditor = vim\n\tpager = less\n[safe]\n\tdirectory = /home/user/trusted\n", "")
 	s := startGlobalGitPTY(t, home, "")
 
 	s.sendKey(wizardKeyRight, keystrokeDelay)
-	mustSee(t, s, "Global Git › Set keys", "one right-press reaches the Set keys sub-tab")
+	mustSee(t, s, "Global Git › Other keys", "one right-press reaches the Other keys sub-tab")
 
 	s.sendKey([]byte("/"), keystrokeDelay)
-	for _, r := range "user." {
+	for _, r := range "core." {
 		s.sendKey([]byte(string(r)), keystrokeDelay)
 	}
 	narrowed, ok := s.waitFor(8*time.Second, func(frame string) bool {
-		return strings.Contains(frame, "user.name") && strings.Contains(frame, "user.email") && !strings.Contains(frame, "alias.co")
+		return strings.Contains(frame, "core.editor") && strings.Contains(frame, "core.pager") && !strings.Contains(frame, "safe.directory")
 	})
 	if !ok {
-		t.Fatalf("filter %q never narrowed to the user.* keys only. Last frame:\n%s", "user.", narrowed)
+		t.Fatalf("filter %q never narrowed to the core.* keys only. Last frame:\n%s", "core.", narrowed)
 	}
 	if !strings.Contains(narrowed, "shown") {
 		t.Fatalf("filtered list must still show the match-count line:\n%s", narrowed)
@@ -610,15 +619,15 @@ func TestGlobalGit_RealPTYSubTabStripClick(t *testing.T) {
 	seedGlobalGitHome(t, home, "[user]\n\tname = Click Tester\n\temail = clicktester@example.com\n", "")
 	s := startGlobalGitPTY(t, home, "")
 
-	clickLabelRow(t, s, "Set keys")
+	clickLabelRow(t, s, "Other keys")
 	toSetKeys, ok := s.waitFor(8*time.Second, func(text string) bool {
-		return strings.Contains(text, "Global Git › Set keys")
+		return strings.Contains(text, "Global Git › Other keys")
 	})
 	if !ok {
-		t.Fatalf("clicking the Set keys label never switched to that sub-tab. Last frame:\n%s", toSetKeys)
+		t.Fatalf("clicking the Other keys label never switched to that sub-tab. Last frame:\n%s", toSetKeys)
 	}
 	if !strings.Contains(toSetKeys, "user.name") {
-		t.Fatalf("Set keys body did not render after the mouse click:\n%s", toSetKeys)
+		t.Fatalf("Other keys body did not render after the mouse click:\n%s", toSetKeys)
 	}
 	captureGlobalGitFrame(t, "global-git-strip-click-to-set-keys", s)
 
@@ -635,13 +644,13 @@ func TestGlobalGit_RealPTYSubTabStripClick(t *testing.T) {
 	captureGlobalGitFrame(t, "global-git-strip-click-to-options", s)
 }
 
-// TestGlobalGit_RealPTYSetKeysProbeFailure proves the Set keys sub-tab's
+// TestGlobalGit_RealPTYSetKeysProbeFailure proves the Other keys sub-tab's
 // fail-open probe-failure state through the compiled binary, using the SAME
 // FakeGitShimDir(..., "config") fixture TestGlobalGit_RealPTYProbeFailureStaysNavigable
 // already uses for the Options sub-tab — failing every `git config`
 // invocation fails BOTH probes (GlobalGitOptionStates and AllGitSetKeys),
 // since keyboard ←/→ is fail-open-blocked while Options's own optionsErr is
-// active (mirrors Global SSH's identical contract), so the Set keys sub-tab
+// active (mirrors Global SSH's identical contract), so the Other keys sub-tab
 // is reached via a raw mouse click on the strip label instead — the same
 // click path TestGlobalGit_RealPTYSubTabStripClick proves independently.
 func TestGlobalGit_RealPTYSetKeysProbeFailure(t *testing.T) {
@@ -650,12 +659,12 @@ func TestGlobalGit_RealPTYSetKeysProbeFailure(t *testing.T) {
 	s := startGlobalGitPTYExpectingProbeFailure(t, home, FakeGitShimDir(t, "2.50.0", "config"))
 	mustSee(t, s, "git probe failed:", "Options probe failure names git probe")
 
-	clickLabelRow(t, s, "Set keys")
+	clickLabelRow(t, s, "Other keys")
 	frame, ok := s.waitFor(8*time.Second, func(text string) bool {
 		return strings.Contains(text, "Git config could not be read.")
 	})
 	if !ok {
-		t.Fatalf("probe-failed heading never rendered on the Set keys sub-tab. Last frame:\n%s", frame)
+		t.Fatalf("probe-failed heading never rendered on the Other keys sub-tab. Last frame:\n%s", frame)
 	}
 	if !strings.Contains(frame, "git config --list --show-origin failed — re-enter the screen to retry.") {
 		t.Fatalf("probe-failed body line missing:\n%s", frame)
@@ -669,7 +678,7 @@ func TestGlobalGit_RealPTYSetKeysProbeFailure(t *testing.T) {
 		return !strings.Contains(f, "Global Git")
 	})
 	if !ok {
-		t.Fatalf("main-tab key did not leave the failed Set keys sub-tab (fail-open broken):\n%s", after)
+		t.Fatalf("main-tab key did not leave the failed Other keys sub-tab (fail-open broken):\n%s", after)
 	}
 	if !strings.Contains(after, "Identities") {
 		t.Fatalf("expected the Identities main tab after leaving the failed screen:\n%s", after)
@@ -687,7 +696,7 @@ func TestGlobalGit_RealPTYSetKeysProbeFailure(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestGlobalGit_RealPTYCustomKeyWrite drives the full custom-key flow through
-// the compiled binary: open the Set keys sub-tab, press "n", type a
+// the compiled binary: open the Other keys sub-tab, press "n", type a
 // well-formed key/value pair, submit into the write ceremony, confirm, and
 // verify BOTH the on-screen receipt AND the real on-disk managed block.
 func TestGlobalGit_RealPTYCustomKeyWrite(t *testing.T) {
@@ -700,8 +709,8 @@ func TestGlobalGit_RealPTYCustomKeyWrite(t *testing.T) {
 	s := startGlobalGitPTY(t, home, "")
 
 	s.sendKey(wizardKeyRight, keystrokeDelay)
-	mustSee(t, s, "Global Git › Set keys", "one right-press reaches the Set keys sub-tab")
-	mustSee(t, s, "Add custom key", "Set keys footer advertises the custom-key action")
+	mustSee(t, s, "Global Git › Other keys", "one right-press reaches the Other keys sub-tab")
+	mustSee(t, s, "Add custom key", "Other keys footer advertises the custom-key action")
 
 	s.sendKey([]byte("n"), keystrokeDelay)
 	mustSee(t, s, "Add custom key", "\"n\" opens the custom-key form")
@@ -755,7 +764,7 @@ func TestGlobalGit_RealPTYCustomKeyRejectsMalformedKey(t *testing.T) {
 	s := startGlobalGitPTY(t, home, "")
 
 	s.sendKey(wizardKeyRight, keystrokeDelay)
-	mustSee(t, s, "Global Git › Set keys", "one right-press reaches the Set keys sub-tab")
+	mustSee(t, s, "Global Git › Other keys", "one right-press reaches the Other keys sub-tab")
 
 	s.sendKey([]byte("n"), keystrokeDelay)
 	mustSee(t, s, "Add custom key", "\"n\" opens the custom-key form")
@@ -781,7 +790,7 @@ func TestGlobalGit_RealPTYCustomKeyRejectsMalformedKey(t *testing.T) {
 	// Esc closes the rejected form; the app must still be reachable and
 	// every file on disk untouched.
 	s.sendKey(dummyKeyEsc, keystrokeDelay)
-	mustSee(t, s, "Global Git › Set keys", "Esc closes the rejected form back to the Set keys list")
+	mustSee(t, s, "Global Git › Other keys", "Esc closes the rejected form back to the Other keys list")
 	assertGlobalGitFilesUnchanged(t, before, main, baseline)
 }
 
@@ -1112,7 +1121,7 @@ func TestGlobalGit_RealPTYFallbackPairEdit(t *testing.T) {
 func extractRowLine(t *testing.T, frame, key string) string {
 	t.Helper()
 	lines := strings.Split(frame, "\n")
-	for i, line := range lines {
+	for _, line := range lines {
 		if strings.Contains(line, key) {
 			// Return this line (it's the first line of the row)
 			return line

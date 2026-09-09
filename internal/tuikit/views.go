@@ -490,13 +490,6 @@ type SSHDirectiveView struct {
 // a system-wide value from one they set themselves.
 type GitSetKeyView struct {
 	Key, Value, Scope, Origin string
-	// PolicyBacked is answered by the backend at the wiring boundary —
-	// tuikit must never import internal/globalgit to ask PolicyFor itself
-	// (the no-backend import-graph gate forbids it). True only when the
-	// key resolves in the live globalgit.Policy table, mirroring
-	// SSHDirectiveView.PolicyBacked's identical rule. This is what the
-	// properties browser's cross-reference note renders from.
-	PolicyBacked bool
 	// ValueCount is the WR-04 honesty signal (09.5-REVIEW.md round 2): the
 	// total number of physical occurrences this key had across every
 	// scope/origin (globalgit.SetKey.ValueCount). Value/Scope/Origin above
@@ -852,8 +845,21 @@ type SSHCustomDirectiveCommitMsg struct {
 // fields the D9 pane seeds from on activate (D-04 / 07-UI-SPEC.md partial
 // row). Empty strings mean the key is currently unset.
 type GitFallbackAuthorView struct {
+	// Managed fields: what gitid's managed block holds (empty if unset)
 	Name  string
 	Email string
+	// Effective fields: what git config --get resolves to (may differ from managed)
+	EffectiveName  string
+	EffectiveEmail string
+	// Origin fields: file:scope where the effective value comes from
+	NameOrigin  string
+	EmailOrigin string
+	// SuppliedByManaged flags: true if the effective value equals the managed
+	// value AND it comes from gitid's managed file (PD38). Decided by the BLOCK,
+	// not by file identity, so a later entry in the SAME file outside the block
+	// is correctly reported as external.
+	NameSuppliedByManaged  bool
+	EmailSuppliedByManaged bool
 }
 
 // GitFallbackAuthorPlanView is the confirmed-apply preview scene for the

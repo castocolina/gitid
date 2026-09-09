@@ -85,7 +85,7 @@ var phase95Frames = []promotionEntry{
 	{"global-ssh-all-directives-filter-digit-captured", "global-ssh-all-directives-filter-digit-captured", "TestGlobalSSH_RealPTYAllDirectivesFilter", "fake ssh: globalssh", "100x30"},
 	{"global-ssh-all-directives-probe-failure", "global-ssh-all-directives-probe-failure", "TestGlobalSSH_RealPTYAllDirectivesProbeFailure", "fake ssh: globalssh-probe-unresolvable", "100x30"},
 	{"global-ssh-all-directives-label-click", "global-ssh-all-directives-label-click", "TestGlobalSSH_RealPTYAllDirectivesLabelMouseClick", "fake ssh: globalssh", "100x30"},
-	// 09.5-02 (PROP-02): the "Set keys" browser, its filter, its sub-tab
+	// 09.5-02 (PROP-02): the "Other keys" browser, its filter, its sub-tab
 	// strip mouse click, and its probe-failure state.
 	{"global-git-set-keys-browse", "global-git-set-keys-browse", "TestGlobalGit_RealPTYSetKeysBrowse", "real git, no shim", "100x30"},
 	{"global-git-set-keys-back-to-options", "global-git-set-keys-back-to-options", "TestGlobalGit_RealPTYSetKeysBrowse", "real git, no shim", "100x30"},
@@ -131,7 +131,7 @@ var phaseFrames = map[string]struct {
 		dir:   "09.5-full-ssh-git-properties-browser",
 		title: "Phase 9.5 Global SSH/Git properties-browser approved PTY frames",
 		summary: "These are PROP-01..04's approved captures for the \"All directives\" browser,\n" +
-			"the custom-directive entry flow, the \"Set keys\" browser (with its net-new\n" +
+			"the custom-directive entry flow, the \"Other keys\" browser (with its net-new\n" +
 			"sub-tab strip), and the custom Git key entry flow.",
 		frames: phase95Frames,
 	},

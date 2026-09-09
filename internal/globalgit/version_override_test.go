@@ -104,10 +104,10 @@ func TestWriteRequestedValueForText(t *testing.T) {
 // TestWriteRequestedValueForHardGateBelow tests hard-gate fallback behavior.
 func TestWriteRequestedValueForHardGateBelow(t *testing.T) {
 	row := globalgit.OptionPolicy{
-		Gate:       globalgit.GateHard,
-		Kind:       globalgit.OptionValueKindEnum,
-		Fallback:   "diff3",
-		Values:     []string{"merge", "diff3", "zdiff3"},
+		Gate:     globalgit.GateHard,
+		Kind:     globalgit.OptionValueKindEnum,
+		Fallback: "diff3",
+		Values:   []string{"merge", "diff3", "zdiff3"},
 		Members: []globalgit.MemberPolicy{
 			{Key: "merge.conflictstyle", Recommended: "zdiff3"},
 		},

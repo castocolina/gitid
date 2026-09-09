@@ -1383,7 +1383,7 @@ var globalGitScreenIDs = map[string]bool{
 	"ggit-options-list": true, "ggit-options-scrolled": true, "ggit-options-with-selection": true,
 	"ggit-options-differs-row": true, "ggit-options-probe-error": true,
 	"ggit-apply-preview": true, "ggit-apply-receipt": true,
-	// 09.5-05-PLAN.md Task 1: the "Set keys" browser (PROP-02, including its
+	// 09.5-05-PLAN.md Task 1: the "Other keys" browser (PROP-02, including its
 	// own net-new sub-tab strip, D-D) and the custom-key ceremony preview
 	// (PROP-03) states.
 	"ggit-set-keys-list": true, "ggit-custom-key-ceremony-preview": true,
@@ -2577,18 +2577,22 @@ func TestNegativeControl_GlobalGitMidByteTruncationHashStable(t *testing.T) {
 // directory the Phase 7 Global Git registry needs — the probe precondition
 // documented in this session's dispatch instructions.
 //
-// 09.5-05-PLAN.md Task 1: also seeds ONE deterministic "Set keys" probe
-// entry ([alias] co = checkout in home/.gitconfig) so the Phase 9.5
+// 09.6-05 Task 0: re-anchors the shared visual-gate fixture seed from
+// "alias.co" (a member of the curated Policy alias bundle, which Task 1 will
+// exclude) to "core.editor" (a non-policy key under both the display-key and
+// member-key lookups). The fixture seeds ONE deterministic "Other keys" probe
+// entry ([core] editor = vim in home/.gitconfig) so the Phase 9.5
 // ggit-set-keys-list state has a genuinely SET, non-curated key to render —
 // a 09.5-02-SUMMARY.md-documented finding is that a genuinely empty git
 // configuration is not achievable in this sandbox (the system scope leaks
 // credential.helper), so relying on that leak alone for a "populated"
 // standing-guard state would be environment-dependent, not deterministic.
-// "alias.co" is deliberately NOT one of GGIT-01's curated Policy keys
+// "core.editor" is deliberately NOT a member of any GGIT-01 curated Policy key
 // (internal/globalgit/policy.go) — it cannot perturb any Options sub-tab
-// row — and its value ("checkout") is chosen to match FixtureBackend's own
-// frozen AllGitSetKeys() "alias.co"="checkout" entry exactly, giving both
-// the real and dummy captures a shared, always-present anchor.
+// row before or after Task 1's member-key exclusion — and its value ("vim")
+// is chosen to match FixtureBackend's own frozen AllGitSetKeys()
+// "core.editor"="vim" entry exactly, giving both the real and dummy captures
+// a shared, always-present anchor.
 // WR-12 (09.5-REVIEW.md round 2): this helper used to os.WriteFile
 // home/.gitconfig UNCONDITIONALLY, truncating whatever a PRIOR fixture in
 // the same shared home had already written there.
@@ -2614,7 +2618,7 @@ func deterministicGlobalGitFixture(t *testing.T, home string) {
 	if readErr != nil && !os.IsNotExist(readErr) {
 		t.Fatalf("gate-visual-regression: reading existing ~/.gitconfig before appending global-git fixture: %v", readErr)
 	}
-	addition := "[alias]\n\tco = checkout\n"
+	addition := "[core]\n\teditor = vim\n"
 	merged := append(append([]byte{}, existing...), []byte(addition)...)
 	if err := os.WriteFile(gitconfigPath, merged, 0o600); err != nil {
 		t.Fatalf("gate-visual-regression: writing global-git fixture ~/.gitconfig: %v", err)
@@ -2644,8 +2648,8 @@ func TestDeterministicGlobalGitFixtureIsAdditiveNotTruncating(t *testing.T) {
 	if !strings.Contains(gitconfig, "gitdir:~/git/gscreen/") {
 		t.Errorf("deterministicGitIdentityFixture's includeIf block must survive, got:\n%s", gitconfig)
 	}
-	if !strings.Contains(gitconfig, "co = checkout") {
-		t.Errorf("deterministicGlobalGitFixture's own alias.co entry must still be present, got:\n%s", gitconfig)
+	if !strings.Contains(gitconfig, "editor = vim") {
+		t.Errorf("deterministicGlobalGitFixture's own core.editor entry must still be present, got:\n%s", gitconfig)
 	}
 }
 
@@ -2655,7 +2659,7 @@ func TestDeterministicGlobalGitFixtureIsAdditiveNotTruncating(t *testing.T) {
 // 09.5-05-PLAN.md Task 1: normalizes the LIVE capture via
 // normalizeDisposableHome, mirroring mergeGlobalSSHCaptures's own call
 // exactly — previously unneeded (no pre-Phase-9.5 Global Git region showed
-// an absolute filesystem path), but the new "Set keys" detail pane renders
+// an absolute filesystem path), but the new "Other keys" detail pane renders
 // git config --show-origin's literal origin path (the seeded fixture home's
 // own ~/.gitconfig), which is CR-01 non-deterministic across the two t.
 // TempDir() runs TestGateVisualRegression drives without this normalization

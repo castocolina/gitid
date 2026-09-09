@@ -333,18 +333,18 @@ func TestPolicyMemberForCaseInsensitive(t *testing.T) {
 // any single row fails loudly and by name.
 func TestValueKindPerRowClassifications(t *testing.T) {
 	want := map[string]OptionValueKind{
-		"init.defaultBranch":              OptionValueKindText,
-		"core.ignorecase":                 OptionValueKindToggle,
-		"core.autocrlf / core.eol":        OptionValueKindBundle,
-		"user.email (global fallback)":    OptionValueKindText,
-		"user.useConfigOnly":              OptionValueKindToggle,
-		"push.autoSetupRemote":            OptionValueKindToggle,
-		"pull.rebase":                     OptionValueKindToggle,
-		"fetch.prune":                     OptionValueKindToggle,
-		"alias (8 shortcuts)":             OptionValueKindBundle,
-		"color (ui/branch/diff/status)":   OptionValueKindBundle,
-		"merge.conflictstyle":             OptionValueKindEnum,
-		"diff.colorMoved":                 OptionValueKindEnum,
+		"init.defaultBranch":            OptionValueKindText,
+		"core.ignorecase":               OptionValueKindToggle,
+		"core.autocrlf / core.eol":      OptionValueKindBundle,
+		"user.email (global fallback)":  OptionValueKindText,
+		"user.useConfigOnly":            OptionValueKindToggle,
+		"push.autoSetupRemote":          OptionValueKindToggle,
+		"pull.rebase":                   OptionValueKindToggle,
+		"fetch.prune":                   OptionValueKindToggle,
+		"alias (8 shortcuts)":           OptionValueKindBundle,
+		"color (ui/branch/diff/status)": OptionValueKindBundle,
+		"merge.conflictstyle":           OptionValueKindEnum,
+		"diff.colorMoved":               OptionValueKindEnum,
 	}
 	for _, p := range Policy {
 		expected, ok := want[p.Key]
