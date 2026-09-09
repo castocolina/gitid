@@ -156,6 +156,8 @@ type stubBackend struct {
 	// fixture-driven implementations of GlobalGitPlanner below, exactly
 	// mirroring how it handles GlobalSSHPlanner. A missing real implementation
 	// must be a compile error, not a silent sentinel.
+	NoopGlobalSSHOverridePlanner
+	NoopGlobalGitOverridePlanner
 	NoopSSHStoragePlanner
 	// NoopSSHPropertiesBrowser is embedded for the SAME reason
 	// NoopGlobalSSHPlanner is above: AllSSHDirectives is overridden directly
@@ -207,6 +209,20 @@ type stubBackend struct {
 	gitApplyPlan   GlobalGitApplyPlanView
 	gitApplyPlanFn func(keys []string) (GlobalGitApplyPlanView, error)
 	gitCommitMsg   GlobalGitCommitMsg
+	// Global-SSH override seam overrides (plan 09.6-01) — test hooks for the
+	// new staged-override pathway. Do NOT embed NoopGlobalSSHOverridePlanner —
+	// a missing real implementation must be a compile error.
+	sshOverridePlan   GlobalSSHApplyPlanView
+	sshOverridePlanFn func(keys []string, overrides []OverrideRequest) (GlobalSSHApplyPlanView, error)
+	sshOverrideCommit GlobalSSHCommitMsg
+	sshOverrideCommitFn func(keys []string, overrides []OverrideRequest) tea.Cmd
+	// Global-Git override seam overrides (plan 09.6-01) — test hooks for the
+	// new staged-override pathway. Do NOT embed NoopGlobalGitOverridePlanner —
+	// a missing real implementation must be a compile error.
+	gitOverridePlan   GlobalGitApplyPlanView
+	gitOverridePlanFn func(keys []string, overrides []OverrideRequest) (GlobalGitApplyPlanView, error)
+	gitOverrideCommit GlobalGitCommitMsg
+	gitOverrideCommitFn func(keys []string, overrides []OverrideRequest) tea.Cmd
 	// Custom-key seam overrides (plan 09.5-03) — zero values keep the
 	// ceremony's target/backup fallback, mirroring the gitApplyPlan/
 	// gitCommitMsg pattern immediately above.
