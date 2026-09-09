@@ -2117,11 +2117,14 @@ func (b *realBackend) AllSSHDirectives() ([]tuikit.SSHDirectiveView, error) {
 // directory (b.fragmentDir) the existing Options probe (GlobalGitOptionStates)
 // already uses via globalgit.BuildProbeDeps — RESEARCH Pitfall 1: running
 // this probe from any OTHER working directory would fold a repository's
-// local scope into a screen labelled Global. PolicyBacked is resolved from
-// globalgit.PolicyFor's second return value, mirroring AllSSHDirectives'
-// identical PolicyFor lookup. b.initErr is wrapped with the SAME
-// "git probe failed: %w" shape GlobalGitOptionStates uses, so the screen
-// renders one uniform failure regardless of which probe hit it.
+// local scope into a screen labelled Global. b.initErr is wrapped with the
+// SAME "git probe failed: %w" shape GlobalGitOptionStates uses, so the
+// screen renders one uniform failure regardless of which probe hit it.
+//
+// 09.6-05 Task 1: excludes keys the curated policy table manages (members
+// plus fallback-author literals) from the returned rows (PD11, PD20, PD21).
+// The exclusion is a SKIP (never appending for a match), not a tag — one key,
+// one home.
 func (b *realBackend) AllGitSetKeys() ([]tuikit.GitSetKeyView, error) {
 	if b.initErr != nil {
 		return nil, fmt.Errorf("git probe failed: %w", b.initErr)
@@ -2130,9 +2133,19 @@ func (b *realBackend) AllGitSetKeys() ([]tuikit.GitSetKeyView, error) {
 	if err != nil {
 		return nil, fmt.Errorf("git probe failed: %w", err)
 	}
+
+	// Build the managed key set for exclusion (PD20: member keys + fallback-author literals)
+	managedKeys := make(map[string]bool)
+	for _, k := range globalgit.ManagedRawGitKeys() {
+		managedKeys[strings.ToLower(k)] = true
+	}
+
 	out := make([]tuikit.GitSetKeyView, 0, len(keys))
 	for _, k := range keys {
-		_, policyBacked := globalgit.PolicyFor(k.Key)
+		// Skip keys the policy table manages (PD11: skip, not tag)
+		if managedKeys[strings.ToLower(k.Key)] {
+			continue
+		}
 		out = append(out, tuikit.GitSetKeyView{
 			Key: k.Key,
 			// WR-05: Origin is `git config --show-origin`'s LITERAL absolute
@@ -2146,11 +2159,10 @@ func (b *realBackend) AllGitSetKeys() ([]tuikit.GitSetKeyView, error) {
 			// through tuikit.SanitizeDisplayValue BEFORE the HOME-shortening
 			// substring replace, so a raw ANSI escape or embedded newline
 			// never reaches setKeyRow's single-row rendering.
-			Value:        b.displayMessage(tuikit.SanitizeDisplayValue(k.Value)),
-			Scope:        k.Scope,
-			Origin:       b.displayPath(k.Origin),
-			PolicyBacked: policyBacked,
-			ValueCount:   k.ValueCount,
+			Value:      b.displayMessage(tuikit.SanitizeDisplayValue(k.Value)),
+			Scope:      k.Scope,
+			Origin:     b.displayPath(k.Origin),
+			ValueCount: k.ValueCount,
 		})
 	}
 	return out, nil

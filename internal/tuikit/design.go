@@ -873,11 +873,13 @@ const (
 	// PropsSSHNoFilterMatchFmt is the SSH browser's "filter matches
 	// nothing" empty state, carrying the user's filter text.
 	PropsSSHNoFilterMatchFmt = "No directives match \"%s\"."
-	// PropsCrossReferenceNote renders in the detail pane ONLY when the
-	// selected row's key ALSO exists in the curated Options/Policy table
-	// (SSHDirectiveView.PolicyBacked) — informational only, never a second
-	// interactive affordance, and the value is never rendered twice
-	// side-by-side (09.5-CONTEXT.md's double-counting concern).
+	// PropsCrossReferenceNote renders in the detail pane of the Global SSH
+	// directive browser ONLY when the selected row's key ALSO exists in the
+	// curated Policy table (SSHDirectiveView.PolicyBacked). It is informational
+	// only, never a second interactive affordance, and the value is never
+	// rendered twice side-by-side (09.5-CONTEXT.md's double-counting concern).
+	// GitSetKeyView (the "Other keys" sub-tab) does NOT render this note
+	// (09.6-05 Task 1 PD22).
 	PropsCrossReferenceNote = "Also tracked as a recommended option — see the Options tab for gitid's guidance."
 	// PropsSSHSourceLine is the detail pane's provenance line — TEST-02's
 	// existing "ssh -G proof" framing, reused verbatim for this browser.

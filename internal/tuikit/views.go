@@ -490,13 +490,6 @@ type SSHDirectiveView struct {
 // a system-wide value from one they set themselves.
 type GitSetKeyView struct {
 	Key, Value, Scope, Origin string
-	// PolicyBacked is answered by the backend at the wiring boundary —
-	// tuikit must never import internal/globalgit to ask PolicyFor itself
-	// (the no-backend import-graph gate forbids it). True only when the
-	// key resolves in the live globalgit.Policy table, mirroring
-	// SSHDirectiveView.PolicyBacked's identical rule. This is what the
-	// properties browser's cross-reference note renders from.
-	PolicyBacked bool
 	// ValueCount is the WR-04 honesty signal (09.5-REVIEW.md round 2): the
 	// total number of physical occurrences this key had across every
 	// scope/origin (globalgit.SetKey.ValueCount). Value/Scope/Origin above

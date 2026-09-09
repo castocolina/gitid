@@ -765,35 +765,36 @@ func (FixtureBackend) CommitGlobalSSH([]string) tea.Cmd {
 // to today through this seam; cmd/gitid injects a real GlobalGitPlanner.
 // ---------------------------------------------------------------------------
 
-// AllGitSetKeys implements tuikit.GitPropertiesBrowser. internal/dummytui
-// may never import internal/globalgit (the no-backend import-graph gate
-// forbids it), so PolicyBacked is hardcoded true only for the one row that
-// matches a live Policy key ("init.defaultbranch"), rather than computed via
-// globalgit.PolicyFor — mirrors AllSSHDirectives' identical constraint
-// above. Spans two scopes (global, system) and 20 rows to exercise the
-// scroll window on the dummy too.
+// AllGitSetKeys implements tuikit.GitPropertiesBrowser. 09.6-05 Task 1 re-seeds
+// this fixture to twenty rows of non-policy-managed keys, since the exclusion
+// removes all policy-managed rows from the general-keys list. The fixture
+// deliberately spans two scopes (global, system) and 20 rows to exercise the
+// scroll window on the dummy too (PD50). Rows core.editor, core.pager and
+// safe.directory are retained unchanged; the remaining seventeen rows are
+// re-seeded with non-policy git config keys to match the partition that
+// AllGitSetKeys enforces via ManagedRawGitKeys().
 func (FixtureBackend) AllGitSetKeys() ([]tuikit.GitSetKeyView, error) {
 	return []tuikit.GitSetKeyView{
-		{Key: "alias.co", Value: "checkout", Scope: "global", Origin: "~/.gitconfig"},
-		{Key: "alias.st", Value: "status", Scope: "global", Origin: "~/.gitconfig"},
-		{Key: "color.branch", Value: "auto", Scope: "global", Origin: "~/.gitconfig"},
-		{Key: "color.diff", Value: "auto", Scope: "global", Origin: "~/.gitconfig"},
-		{Key: "color.status", Value: "auto", Scope: "global", Origin: "~/.gitconfig"},
-		{Key: "color.ui", Value: "auto", Scope: "global", Origin: "~/.gitconfig"},
-		{Key: "core.autocrlf", Value: "input", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "branch.autosetuprebase", Value: "always", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "branch.autosetupmerge", Value: "true", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "checkout.defaultRemote", Value: "origin", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "column.branch", Value: "auto", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "column.tag", Value: "auto", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "column.ui", Value: "auto", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "credential.helper", Value: "store", Scope: "global", Origin: "~/.gitconfig"},
 		{Key: "core.editor", Value: "vim", Scope: "global", Origin: "~/.gitconfig"},
-		{Key: "core.eol", Value: "lf", Scope: "global", Origin: "~/.gitconfig"},
-		{Key: "core.ignorecase", Value: "false", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "diff.algorithm", Value: "histogram", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "diff.indentHeuristic", Value: "true", Scope: "global", Origin: "~/.gitconfig"},
 		{Key: "core.pager", Value: "less", Scope: "system", Origin: "/etc/gitconfig"},
-		{Key: "diff.colormoved", Value: "default", Scope: "global", Origin: "~/.gitconfig"},
-		{Key: "fetch.prune", Value: "true", Scope: "global", Origin: "~/.gitconfig"},
-		{Key: "init.defaultbranch", Value: "main", Scope: "global", Origin: "~/.gitconfig", PolicyBacked: true},
-		{Key: "merge.conflictstyle", Value: "zdiff3", Scope: "global", Origin: "~/.gitconfig"},
-		{Key: "pull.rebase", Value: "true", Scope: "global", Origin: "~/.gitconfig"},
-		{Key: "push.autosetupremote", Value: "true", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "gc.autodetach", Value: "false", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "gc.reflogExpire", Value: "90 days ago", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "help.autocorrect", Value: "10", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "http.maxRequests", Value: "20", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "i18n.commitEncoding", Value: "UTF-8", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "log.abbrevCommit", Value: "false", Scope: "global", Origin: "~/.gitconfig"},
 		{Key: "safe.directory", Value: "*", Scope: "system", Origin: "/etc/gitconfig"},
-		{Key: "user.name", Value: "Demo User", Scope: "system", Origin: "/etc/gitconfig"},
-		{Key: "user.useconfigonly", Value: "true", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "log.follow", Value: "true", Scope: "global", Origin: "~/.gitconfig"},
+		{Key: "transfer.unpackLimit", Value: "1000", Scope: "global", Origin: "~/.gitconfig"},
 	}, nil
 }
 

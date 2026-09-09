@@ -1881,13 +1881,6 @@ func (m globalGitModel) renderSetKeys(strip string, width, height int) string {
 		// stacked key is single-valued.
 		d.WriteString(" " + styleWarning.Render(fmt.Sprintf(PropsGitMultiValuedNoteFmt, detail.ValueCount)) + "\n")
 	}
-	if detail.PolicyBacked {
-		// Informational only: never a second interactive affordance, and the
-		// value is never rendered twice side-by-side (09.5-CONTEXT.md).
-		// Reuses plan 09.5-01's PropsCrossReferenceNote constant verbatim —
-		// no Git-specific twin.
-		d.WriteString(" " + styleFaint.Render(PropsCrossReferenceNote) + "\n")
-	}
 	detailPane := fitPane(lipgloss.NewStyle().Width(detailWidth).Render(d.String()), rows)
 
 	return body + joinMasterDetail(list, listWidth, detailPane, rows)
