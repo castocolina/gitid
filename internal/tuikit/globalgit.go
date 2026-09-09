@@ -615,6 +615,11 @@ func (m globalGitModel) overlaidGitOptions(s DemoState) []GlobalGitOptionView {
 		if o.Key == GlobalGitEmailFallbackKey {
 			// D9: the fallback row has its OWN dedicated apply ceremony
 			// and must NEVER join the generic baseline overlay.
+			// PD18: the authoritative read is the base, the in-session overlay is the amendment.
+			// Source from the model's authoritative pair (seeded at activate from
+			// GitFallbackAuthorState -> ReadGitFallbackAuthor).
+			entry.CurrentValue = fallbackCurrentLabel(m.currentName, m.currentEmail)
+			// Post-commit overlay: if DemoState has values, they override.
 			if s.GitGlobalName != "" || s.GitGlobalEmail != "" {
 				entry.CurrentValue = fallbackCurrentLabel(s.GitGlobalName, s.GitGlobalEmail)
 			}

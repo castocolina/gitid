@@ -2969,3 +2969,108 @@ func TestSetKeysFooterAdvertisesAddCustomKey(t *testing.T) {
 		t.Errorf("Set keys footer must NOT advertise %q on a probe failure;\nview:\n%s", PropsAddCustomKeyLabel, view)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Task 1: The fallback row displays what ReadGitFallbackAuthor returns
+// ---------------------------------------------------------------------------
+
+// TestGlobalGitFallbackRowShowsBackendSeededPair is the RED test for Task 1:
+// the fallback row's CurrentValue must come from GitFallbackAuthorState
+// (ReadGitFallbackAuthor), not from DemoState, on first entry when DemoState
+// is empty. This is the reported defect: user sees empty while other sub-tab
+// shows a value.
+func TestGlobalGitFallbackRowShowsBackendSeededPair(t *testing.T) {
+	const backendName = "Pat Example"
+	const backendEmail = "pat@example.com"
+
+	// Test with backend returning a pair and DemoState empty (the reported defect case).
+	b := stubBackend{
+		fallbackState: GitFallbackAuthorView{Name: backendName, Email: backendEmail},
+	}
+	m := newGlobalGitModel(b)
+	next, _ := m.activate(Seed())
+	gm := next.(globalGitModel)
+
+	// Get the overlaid options (which applies DemoState on top of backend values).
+	opts := gm.overlaidGitOptions(DemoState{})
+
+	// Find the fallback row in the overlaid options.
+	var fallbackRow GlobalGitOptionView
+	found := false
+	for _, o := range opts {
+		if o.Key == GlobalGitEmailFallbackKey {
+			fallbackRow = o
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Fatal("fallback row not found in overlaid options")
+	}
+
+	// The CurrentValue should show the backend-seeded pair.
+	expected := fallbackCurrentLabel(backendName, backendEmail)
+	if fallbackRow.CurrentValue != expected {
+		t.Errorf("fallback CurrentValue = %q, want %q (the backend-seeded pair)\nThis is the reported defect: the row shows unset while the other sub-tab shows a value",
+			fallbackRow.CurrentValue, expected)
+	}
+}
+
+// TestGlobalGitFallbackRowFallbackCurrentLabel tests all three branches
+// of fallbackCurrentLabel composition.
+func TestGlobalGitFallbackRowFallbackCurrentLabel(t *testing.T) {
+	tests := []struct {
+		name, email, want string
+	}{
+		{"Pat Example", "pat@example.com", "Pat Example <pat@example.com>"},
+		{"Pat Example", "", "Pat Example"},
+		{"", "pat@example.com", "pat@example.com"},
+		{"", "", "unset (recipes default)"},
+	}
+	for _, tt := range tests {
+		got := fallbackCurrentLabel(tt.name, tt.email)
+		if got != tt.want {
+			t.Errorf("fallbackCurrentLabel(%q, %q) = %q, want %q", tt.name, tt.email, got, tt.want)
+		}
+	}
+}
+
+// TestGlobalGitFallbackRowDemoStateOverlay tests that in-session committed
+// values appear as a post-commit overlay on top of the authoritative pair.
+func TestGlobalGitFallbackRowDemoStateOverlay(t *testing.T) {
+	const backendName = "Original Name"
+	const backendEmail = "original@example.com"
+	const newName = "Commited Name"
+	const newEmail = "committed@example.com"
+
+	// Test with backend returning original values and DemoState carrying committed values.
+	b := stubBackend{
+		fallbackState: GitFallbackAuthorView{Name: backendName, Email: backendEmail},
+	}
+	m := newGlobalGitModel(b)
+	next, _ := m.activate(Seed())
+	gm := next.(globalGitModel)
+
+	// Apply DemoState overlay simulating a committed change in this session.
+	opts := gm.overlaidGitOptions(DemoState{
+		GitGlobalName:  newName,
+		GitGlobalEmail: newEmail,
+	})
+
+	// Find the fallback row.
+	var fallbackRow GlobalGitOptionView
+	for _, o := range opts {
+		if o.Key == GlobalGitEmailFallbackKey {
+			fallbackRow = o
+			break
+		}
+	}
+
+	// The CurrentValue should show the in-session committed pair.
+	expected := fallbackCurrentLabel(newName, newEmail)
+	if fallbackRow.CurrentValue != expected {
+		t.Errorf("with DemoState overlay, fallback CurrentValue = %q, want %q",
+			fallbackRow.CurrentValue, expected)
+	}
+}
