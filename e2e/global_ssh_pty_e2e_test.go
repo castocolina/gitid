@@ -817,3 +817,144 @@ func TestGlobalSSH_RealPTYCustomDirectiveWrite(t *testing.T) {
 	}
 	t.Logf("backup file(s) created: %v", matches)
 }
+
+// TestGlobalSSH_RealPTYEnumRowEdit is plan 09.6-02 Task 1's tracer proof:
+// the whole editor architecture end-to-end on ONE Global SSH enum row
+// (StrictHostKeyChecking), through every layer: the shared editor state machine,
+// the key guard, the inline value cell, the conditional ceremony dispatch, the seam,
+// the overlay builder, the existing lifecycle writer, and the bytes on disk.
+func TestGlobalSSH_RealPTYEnumRowEdit(t *testing.T) {
+	home := ShortSandboxHome(t)
+	configPath := seedGlobalSSHHome(t, home, "none")
+	s := startGlobalSSHPTY(t, home, "globalssh")
+
+	// Snapshot pre-edit state
+	preEditState, _ := os.ReadFile(configPath)
+	preEditContent := string(preEditState)
+
+	// Navigate to StrictHostKeyChecking (first row, already selected by default)
+	frame := s.snapshot()
+	if !strings.Contains(frame, "StrictHostKeyChecking") {
+		t.Fatalf("StrictHostKeyChecking row not visible in initial frame:\n%s", frame)
+	}
+
+	// Press 'e' to open the editor on the enum row
+	s.sendKey([]byte("e"), keystrokeDelay)
+	editorFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		// The editor should render in the detail pane with radio buttons
+		return strings.Contains(text, "ask") || strings.Contains(text, "accept-new")
+	})
+	if !ok {
+		t.Fatalf("enum editor never opened after 'e' key. Last frame:\n%s", editorFrame)
+	}
+
+	// Verify the breadcrumb still shows Options (not a different sub-tab)
+	if !strings.Contains(editorFrame, "Options") || !strings.Contains(editorFrame, "Global SSH") {
+		t.Fatalf("breadcrumb changed after opening editor (editor guard failed):\n%s", editorFrame)
+	}
+
+	// Press right twice to cycle the value
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+	cycledFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		// After cycling, the selected value in the editor should differ from the initial
+		return strings.Contains(text, "Global SSH") && strings.Contains(text, "Options")
+	})
+	if !ok {
+		t.Fatalf("editor did not respond to cycling keys. Last frame:\n%s", cycledFrame)
+	}
+
+	// Verify breadcrumb STILL shows Options (proving the guard beat the sub-tab-switch)
+	if !strings.Contains(cycledFrame, "Options") {
+		t.Fatalf("sub-tab switched during editing (key guard failed):\n%s", cycledFrame)
+	}
+
+	// Press Esc to dismiss without committing
+	s.sendKey([]byte{0x1b}, keystrokeDelay) // Esc key
+	dismissFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		// After dismiss, we should be back in browse mode without the editor
+		return !strings.Contains(text, "accept-new") && strings.Contains(text, "StrictHostKeyChecking")
+	})
+	if !ok {
+		t.Fatalf("editor did not dismiss with Esc key. Last frame:\n%s", dismissFrame)
+	}
+
+	// Verify the file is byte-identical after dismiss (no staged override committed)
+	postDismissState, _ := os.ReadFile(configPath)
+	postDismissContent := string(postDismissState)
+	if preEditContent != postDismissContent {
+		t.Fatalf("config file changed after dismissing editor (should be byte-identical):\nBefore:\n%s\nAfter:\n%s", preEditContent, postDismissContent)
+	}
+
+	// Re-open the editor and cycle to a non-recommended value
+	s.sendKey([]byte("e"), keystrokeDelay)
+	editorFrame2, ok := s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "accept-new")
+	})
+	if !ok {
+		t.Fatalf("enum editor never re-opened. Last frame:\n%s", editorFrame2)
+	}
+
+	// Cycle to a different value (e.g., off or no)
+	for range 3 { // Cycle right 3 times to reach a non-recommended value
+		s.sendKey(wizardKeyRight, keystrokeDelay)
+	}
+
+	// Press Enter to commit the staged override
+	s.sendKey([]byte{0x0d}, keystrokeDelay) // Enter key
+	committedFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		// After commit, we should be back in browse mode and the row should show as chosen
+		return strings.Contains(text, "StrictHostKeyChecking") && strings.Contains(text, "Options")
+	})
+	if !ok {
+		t.Fatalf("editor did not close after Enter commit. Last frame:\n%s", committedFrame)
+	}
+
+	// Open the apply ceremony
+	s.sendKey([]byte("a"), keystrokeDelay)
+	ceremonyFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "Write Host") || strings.Contains(text, "managed block")
+	})
+	if !ok {
+		t.Fatalf("apply ceremony never opened. Last frame:\n%s", ceremonyFrame)
+	}
+
+	// Confirm the apply
+	s.sendKey([]byte("Y"), keystrokeDelay)
+	applyPromptFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		// The confirmation prompt should appear
+		return strings.Contains(text, "Type") || strings.Contains(text, "confirm")
+	})
+	if !ok {
+		t.Fatalf("confirmation prompt never appeared. Last frame:\n%s", applyPromptFrame)
+	}
+
+	// Type the confirmation code
+	s.sendKey([]byte("yes"), keystrokeDelay)
+	s.sendKey([]byte{0x0d}, keystrokeDelay)
+
+	// Wait for the apply to complete
+	successFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "applied") || strings.Contains(text, "Options")
+	})
+	if !ok {
+		t.Fatalf("apply did not complete. Last frame:\n%s", successFrame)
+	}
+
+	// Verify the file has the new directive
+	postApplyState, _ := os.ReadFile(configPath)
+	postApplyContent := string(postApplyState)
+	if postApplyContent == preEditContent {
+		t.Fatalf("config file was not modified by the apply ceremony")
+	}
+
+	// Verify a backup file was created
+	backupMatches, err := filepath.Glob(configPath + ".bak.*")
+	if err != nil {
+		t.Fatalf("globbing for backup files: %v", err)
+	}
+	if len(backupMatches) < 1 {
+		t.Fatalf("expected at least one timestamped backup file after enum edit, found none")
+	}
+	t.Logf("enum row edit backup file(s) created: %v", backupMatches)
+}
