@@ -27,6 +27,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/castocolina/gitid/internal/dummytui"
 	"github.com/castocolina/gitid/internal/filewriter"
 	"github.com/castocolina/gitid/internal/gitconfig"
 	"github.com/castocolina/gitid/internal/globalgit"
@@ -7447,5 +7448,95 @@ func TestGlobalsBodyTextFallsBackToTheLegacyBlockName(t *testing.T) {
 	}
 	if !strings.Contains(got, "StrictHostKeyChecking accept-new") {
 		t.Errorf("globalsBodyText(legacy-only content) = %q, want it to contain the legacy block's directives", got)
+	}
+}
+
+
+// TestToOptionValueKindSSH (RED first, plan 09.6-01 Task 1) is a table test
+// covering every SSH value-kind constant plus the zero value.
+func TestToOptionValueKindSSH(t *testing.T) {
+	tests := []struct {
+		in  globalssh.OptionValueKind
+		out tuikit.OptionValueKind
+	}{
+		{globalssh.OptionValueKindToggle, tuikit.OptionValueKindToggle},
+		{globalssh.OptionValueKindEnum, tuikit.OptionValueKindEnum},
+		{globalssh.OptionValueKindText, tuikit.OptionValueKindText},
+		{globalssh.OptionValueKindBundle, tuikit.OptionValueKindBundle},
+		{"", tuikit.OptionValueKindToggle}, // zero value maps to toggle
+	}
+	for _, tc := range tests {
+		got := toOptionValueKindSSH(tc.in)
+		if got != tc.out {
+			t.Errorf("toOptionValueKindSSH(%q) = %q, want %q", tc.in, got, tc.out)
+		}
+	}
+}
+
+// TestToOptionValueKindGit (RED first, plan 09.6-01 Task 1) is a table test
+// covering every Git value-kind constant plus the zero value.
+func TestToOptionValueKindGit(t *testing.T) {
+	tests := []struct {
+		in  globalgit.OptionValueKind
+		out tuikit.OptionValueKind
+	}{
+		{globalgit.OptionValueKindToggle, tuikit.OptionValueKindToggle},
+		{globalgit.OptionValueKindEnum, tuikit.OptionValueKindEnum},
+		{globalgit.OptionValueKindText, tuikit.OptionValueKindText},
+		{globalgit.OptionValueKindBundle, tuikit.OptionValueKindBundle},
+		{"", tuikit.OptionValueKindToggle}, // zero value maps to toggle
+	}
+	for _, tc := range tests {
+		got := toOptionValueKindGit(tc.in)
+		if got != tc.out {
+			t.Errorf("toOptionValueKindGit(%q) = %q, want %q", tc.in, got, tc.out)
+		}
+	}
+}
+
+// TestFixturePolicyConsistency (plan 09.6-01 Task 1 behavior Test 9, PD32):
+// a consistency test that the dummy's per-key value kind and value set match
+// the live policy tables for every key present in both — the two literal tables
+// are allowed to be separate (the no-backend import-graph gate requires it) but
+// are not allowed to DRIFT.
+func TestFixturePolicyConsistency(t *testing.T) {
+	fb := &dummytui.FixtureBackend{}
+
+	// SSH policy consistency
+	sshStates, err := fb.GlobalSSHOptionStates()
+	if err != nil {
+		t.Fatalf("FixtureBackend.GlobalSSHOptionStates failed: %v", err)
+	}
+	for _, view := range sshStates {
+		policy, ok := globalssh.PolicyFor(view.Key)
+		if !ok {
+			t.Fatalf("SSH fixture key %q not found in live policy table", view.Key)
+		}
+		fixtureKind := toOptionValueKindSSH(policy.Kind)
+		if view.Kind != fixtureKind {
+			t.Errorf("SSH key %q: fixture Kind=%q, live policy Kind=%q", view.Key, view.Kind, fixtureKind)
+		}
+		if !reflect.DeepEqual(view.Values, policy.Values) {
+			t.Errorf("SSH key %q: fixture Values=%v, live policy Values=%v", view.Key, view.Values, policy.Values)
+		}
+	}
+
+	// Git policy consistency
+	gitStates, err := fb.GlobalGitOptionStates()
+	if err != nil {
+		t.Fatalf("FixtureBackend.GlobalGitOptionStates failed: %v", err)
+	}
+	for _, view := range gitStates {
+		policy, ok := globalgit.PolicyFor(view.Key)
+		if !ok {
+			t.Fatalf("Git fixture key %q not found in live policy table", view.Key)
+		}
+		fixtureKind := toOptionValueKindGit(policy.Kind)
+		if view.Kind != fixtureKind {
+			t.Errorf("Git key %q: fixture Kind=%q, live policy Kind=%q", view.Key, view.Kind, fixtureKind)
+		}
+		if !reflect.DeepEqual(view.Values, policy.Values) {
+			t.Errorf("Git key %q: fixture Values=%v, live policy Values=%v", view.Key, view.Values, policy.Values)
+		}
 	}
 }

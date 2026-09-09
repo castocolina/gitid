@@ -1500,8 +1500,17 @@ func optionRow(o GlobalSSHOptionView, chosen, selected, applied bool, width int)
 	switch o.State {
 	case GlobalSSHAlreadySet:
 		tone = styleHealthy.Render("✓")
-	case GlobalSSHNeedsAction, GlobalSSHDiffers:
+	case GlobalSSHNeedsAction:
+		// Only needs-action renders the warning glyph (D-05: the `!` is triggered
+		// ONLY by the needs-action state). A differs row renders plain — the
+		// second line carries the explanation (D-06).
 		tone = styleWarning.Render("!")
+	case GlobalSSHDiffers:
+		// Differs renders without the warning glyph (D-06). Use the faint
+		// neutral marker already established by the not-applicable branch,
+		// keeping both renders speaking the same visual language for
+		// "inert, not alarming" (D-05/D-06/D-07).
+		tone = styleFaint.Render("·")
 	case GlobalSSHNotApplicable:
 		// A neutral marker, not a health-tone glyph (D-12 forbids introducing
 		// a new health state): every other row carries a visible tone glyph,

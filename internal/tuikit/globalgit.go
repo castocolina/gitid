@@ -1971,8 +1971,17 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 		}
 		toneGlyph := styleHealthy.Render("✓")
 		switch o.State {
-		case GlobalGitNeedsAction, GlobalGitSetButDiffers:
+		case GlobalGitNeedsAction:
+			// Only needs-action renders the warning glyph (D-05: the `!` is triggered
+			// ONLY by the needs-action state). A differs row renders plain — the
+			// second line carries the explanation (D-06).
 			toneGlyph = styleWarning.Render("!")
+		case GlobalGitSetButDiffers:
+			// Differs renders without the warning glyph (D-06). Use the faint
+			// neutral marker already established by the not-applicable branch,
+			// keeping both renders speaking the same visual language for
+			// "inert, not alarming" (D-05/D-06/D-07).
+			toneGlyph = styleFaint.Render("·")
 		case GlobalGitNotApplicable:
 			// A neutral marker, not a health-tone glyph (mirrors globalssh):
 			// every other row carries a visible tone glyph, so a blank cell

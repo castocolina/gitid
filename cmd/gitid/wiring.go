@@ -2045,7 +2045,7 @@ func (b *realBackend) GlobalSSHOptionStates() ([]tuikit.GlobalSSHOptionView, err
 		policy, _ := globalssh.PolicyFor(st.Key)
 		view := tuikit.GlobalSSHOptionView{
 			Key:                 st.Key,
-			CurrentValue:        st.CurrentValue,
+			CurrentValue:        tuikit.SanitizeDisplayValue(st.CurrentValue), // Sanitize: CurrentValue is the only field carrying bytes gitid did not write (PD45).
 			Provenance:          b.globalSSHProvenanceLabel(st),
 			Recommended:         st.RecommendedValue,
 			Risk:                st.Risk,
@@ -2056,6 +2056,8 @@ func (b *realBackend) GlobalSSHOptionStates() ([]tuikit.GlobalSSHOptionView, err
 			NotApplicableReason: tuikit.GlobalSSHNotApplicableReason(st.NotApplicableReason),
 			AttributedToUser:    st.Source == globalssh.SourceGitidParsed,
 			WritableToHostStar:  policy.WritableToHostStar(),
+			Kind:                toOptionValueKindSSH(policy.Kind),
+			Values:              policy.Values,
 		}
 		if policy.MinOpenSSH != "" {
 			outcome, note := globalssh.VersionGate(sshVersion, policy)
@@ -2290,7 +2292,7 @@ func (b *realBackend) GlobalGitOptionStates() ([]tuikit.GlobalGitOptionView, err
 		policy, _ := globalgit.PolicyFor(row.Key)
 		view := tuikit.GlobalGitOptionView{
 			Key:                 row.Key,
-			CurrentValue:        row.CurrentValue,
+			CurrentValue:        tuikit.SanitizeDisplayValue(row.CurrentValue), // Sanitize: CurrentValue is the only field carrying bytes gitid did not write (PD45).
 			Provenance:          b.globalGitProvenanceLabel(row),
 			Recommended:         row.Recommended,
 			OneLiner:            fixture[row.Key].OneLiner,
@@ -2304,10 +2306,13 @@ func (b *realBackend) GlobalGitOptionStates() ([]tuikit.GlobalGitOptionView, err
 			AttributedToUser:    row.Source == globalgit.SourceSetByUser,
 			VersionNote:         globalGitVersionNote(policy, gitVersion),
 			GateNotMet:          policy.Gate == globalgit.GateHard && globalGitGateOutcome(policy, gitVersion) != globalgit.GateMet,
+			Kind:                toOptionValueKindGit(policy.Kind),
+			Values:              policy.Values,
 		}
 		// Bundle rows' current cell is the D-09 aggregate ("3 of 8 set, 1
 		// differs"), computed from the probes — the detail pane names the
-		// differing members underneath.
+		// differing members underneath. The aggregate is gitid-composed text
+		// and must not be double-processed through SanitizeDisplayValue (PD45).
 		if row.BundleTotal > 1 {
 			view.CurrentValue = bundleAggregateCell(row)
 			view.BundleAggregate = view.CurrentValue
@@ -3444,6 +3449,40 @@ func toGlobalSSHOptionState(s globalssh.OptionState) tuikit.GlobalSSHOptionState
 		return tuikit.GlobalSSHNotApplicable
 	default:
 		return tuikit.GlobalSSHNeedsAction
+	}
+}
+
+// toOptionValueKindSSH converts a SSH policy value kind to the tuikit mirror type.
+// Table-tested by plan 09.6-01 Task 1.
+func toOptionValueKindSSH(k globalssh.OptionValueKind) tuikit.OptionValueKind {
+	switch k {
+	case globalssh.OptionValueKindToggle:
+		return tuikit.OptionValueKindToggle
+	case globalssh.OptionValueKindEnum:
+		return tuikit.OptionValueKindEnum
+	case globalssh.OptionValueKindText:
+		return tuikit.OptionValueKindText
+	case globalssh.OptionValueKindBundle:
+		return tuikit.OptionValueKindBundle
+	default:
+		return tuikit.OptionValueKindToggle // Should never happen
+	}
+}
+
+// toOptionValueKindGit converts a Git policy value kind to the tuikit mirror type.
+// Table-tested by plan 09.6-01 Task 1.
+func toOptionValueKindGit(k globalgit.OptionValueKind) tuikit.OptionValueKind {
+	switch k {
+	case globalgit.OptionValueKindToggle:
+		return tuikit.OptionValueKindToggle
+	case globalgit.OptionValueKindEnum:
+		return tuikit.OptionValueKindEnum
+	case globalgit.OptionValueKindText:
+		return tuikit.OptionValueKindText
+	case globalgit.OptionValueKindBundle:
+		return tuikit.OptionValueKindBundle
+	default:
+		return tuikit.OptionValueKindToggle // Should never happen
 	}
 }
 

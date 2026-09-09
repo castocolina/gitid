@@ -4,6 +4,21 @@ import (
 	"strings"
 )
 
+// OptionValueKind classifies the type of value a policy row manages.
+// This vocabulary is shared by both SSH and Git policy packages with identical names.
+type OptionValueKind string
+
+const (
+	// OptionValueKindToggle is apply-or-not: a boolean option.
+	OptionValueKindToggle OptionValueKind = "toggle"
+	// OptionValueKindEnum is a closed value set: the user may only select from known values.
+	OptionValueKindEnum OptionValueKind = "enum"
+	// OptionValueKindText is free text: any string is accepted (subject to validation).
+	OptionValueKindText OptionValueKind = "text"
+	// OptionValueKindBundle is a multi-key preset: applied as a unit or not at all.
+	OptionValueKindBundle OptionValueKind = "bundle"
+)
+
 // GateKind distinguishes the two ways a git version gate affects a
 // recommendation (D-08, 07-CONTEXT.md).
 type GateKind int
@@ -46,8 +61,9 @@ type MemberPolicy struct {
 // (07-CONTEXT.md D-08): the canonical display key gitid renders, the frozen
 // CLI token (R-5), the row-level display recommendation, the member config
 // keys the row manages with their values, an optional minimum git version,
-// the gate kind distinguishing informational from hard gates, and the fallback
-// value written when the hard gate is not met.
+// the gate kind distinguishing informational from hard gates, the fallback
+// value written when the hard gate is not met, the value kind, and the set
+// of values for enum rows (empty for non-enum rows).
 type OptionPolicy struct {
 	// Key is the canonical DISPLAY key spelling. For three rows it is prose
 	// containing spaces and slashes ("core.autocrlf / core.eol") and therefore
@@ -79,6 +95,15 @@ type OptionPolicy struct {
 	// conflictstyle declares "diff3" — accepted by every git that accepts
 	// "zdiff3".
 	Fallback string
+	// Kind is the value kind classification per PD7 (09.6-CONTEXT.md),
+	// pinned per-row by name in behavior Test 2 of plan 09.6-01 Task 1.
+	Kind OptionValueKind
+	// Values is the set of valid values for enum-kind rows (empty for non-enum rows).
+	Values []string
+	// Validator is an optional validation function for text-kind rows. It is
+	// called by WriteRequestedValueFor to validate a staged text value before
+	// accepting it. For init.defaultBranch, this is ValidateDefaultBranch.
+	Validator func(string) error
 }
 
 // IsFallbackAuthor reports whether this row is the D-04 fallback-author pair —
@@ -121,6 +146,9 @@ const lgFormatString = "log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%
 // All alias and color values are VERBATIM from recipes/gitconfig.recipe's
 // ~/.gitconfig_default example (the 8 aliases including the full lg format
 // string, and the 4 color keys) — never paraphrased.
+//
+// All rows carry an explicit value-kind classification per PD7 (09.6-CONTEXT.md),
+// pinned per-row by name in behavior Test 2 of plan 09.6-01 Task 1.
 var Policy = []OptionPolicy{
 	{
 		Key:         "init.defaultBranch",
@@ -131,6 +159,7 @@ var Policy = []OptionPolicy{
 		},
 		MinVersion: "2.28",
 		Gate:       GateInformational,
+		Kind:       OptionValueKindText,
 	},
 	{
 		Key:         "core.ignorecase",
@@ -141,6 +170,7 @@ var Policy = []OptionPolicy{
 			// the exact probe gitid's "false" recommendation is fighting.
 			{Key: "core.ignorecase", Recommended: "false", GitDefault: "true"},
 		},
+		Kind: OptionValueKindToggle,
 	},
 	{
 		Key:         "core.autocrlf / core.eol",
@@ -150,12 +180,14 @@ var Policy = []OptionPolicy{
 			{Key: "core.autocrlf", Recommended: "input", GitDefault: "false"},
 			{Key: "core.eol", Recommended: "lf", GitDefault: "native", Note: "core.eol is ignored by git while core.autocrlf is input; it is written anyway because it documents intent."},
 		},
+		Kind: OptionValueKindBundle,
 	},
 	{
 		// D-04/D-05: the fallback-author pair has its own dedicated ceremony,
 		// never the baseline managed block. No members, no token (R-5).
 		Key:         "user.email (global fallback)",
 		Recommended: "left unset unless explicitly opted in",
+		Kind:        OptionValueKindText,
 	},
 	//nolint:gosec // G101: the CLI token and recommended values are config identifiers, never credentials
 	{
@@ -165,6 +197,7 @@ var Policy = []OptionPolicy{
 		Members: []MemberPolicy{
 			{Key: "user.useConfigOnly", Recommended: "true", GitDefault: "false"},
 		},
+		Kind: OptionValueKindToggle,
 	},
 	//nolint:gosec // G101: the CLI token and recommended values are config identifiers, never credentials
 	{
@@ -176,6 +209,7 @@ var Policy = []OptionPolicy{
 		},
 		MinVersion: "2.37",
 		Gate:       GateInformational,
+		Kind:       OptionValueKindToggle,
 	},
 	{
 		Key:         "pull.rebase",
@@ -184,6 +218,7 @@ var Policy = []OptionPolicy{
 		Members: []MemberPolicy{
 			{Key: "pull.rebase", Recommended: "true", GitDefault: "false"},
 		},
+		Kind: OptionValueKindToggle,
 	},
 	{
 		Key:         "fetch.prune",
@@ -192,6 +227,7 @@ var Policy = []OptionPolicy{
 		Members: []MemberPolicy{
 			{Key: "fetch.prune", Recommended: "true", GitDefault: "false"},
 		},
+		Kind: OptionValueKindToggle,
 	},
 	{
 		Key:         "alias (8 shortcuts)",
@@ -207,6 +243,7 @@ var Policy = []OptionPolicy{
 			{Key: "alias.unstage", Recommended: "reset HEAD --"},
 			{Key: "alias.last", Recommended: "log -1 HEAD"},
 		},
+		Kind: OptionValueKindBundle,
 	},
 	{
 		Key:         "color (ui/branch/diff/status)",
@@ -218,6 +255,7 @@ var Policy = []OptionPolicy{
 			{Key: "color.diff", Recommended: "auto"},
 			{Key: "color.status", Recommended: "auto"},
 		},
+		Kind: OptionValueKindBundle,
 	},
 	{
 		Key:         "merge.conflictstyle",
@@ -229,6 +267,8 @@ var Policy = []OptionPolicy{
 		MinVersion: "2.35",
 		Gate:       GateHard,
 		Fallback:   "diff3",
+		Kind:       OptionValueKindEnum,
+		Values:     []string{"merge", "diff3", "zdiff3"},
 	},
 	{
 		Key:         "diff.colorMoved",
@@ -239,6 +279,8 @@ var Policy = []OptionPolicy{
 		},
 		MinVersion: "2.15",
 		Gate:       GateInformational,
+		Kind:       OptionValueKindEnum,
+		Values:     []string{"no", "default", "plain", "blocks", "zebra", "dimmed-zebra"},
 	},
 }
 

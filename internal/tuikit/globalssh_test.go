@@ -618,15 +618,25 @@ func TestOptionRowFourStatesAreTwoLines(t *testing.T) {
 	}
 }
 
-func TestOptionRowNeedsActionAndDiffersShareWarningGlyph(t *testing.T) {
+// TestOptionRowNeedsActionHasWarningGlyphDiffersDoesNot (plan 09.6-01 Task 3):
+// a needs-action row renders the warning glyph (D-05), while a differs row
+// renders without it (D-06). Only needs-action triggers the orange `!`.
+func TestOptionRowNeedsActionHasWarningGlyphDiffersDoesNot(t *testing.T) {
 	needs := optionRow(GlobalSSHOptionView{Key: "HashKnownHosts", CurrentValue: "no", Recommended: "yes", State: GlobalSSHNeedsAction, WritableToHostStar: true}, false, false, false, 80)
 	differs := optionRow(GlobalSSHOptionView{Key: "ForwardAgent", CurrentValue: "yes", Recommended: "no", State: GlobalSSHDiffers, AttributedToUser: true, WritableToHostStar: true}, false, false, false, 80)
 	warn := styleWarning.Render("!")
-	if !strings.Contains(needs, warn) || !strings.Contains(differs, warn) {
-		t.Fatal("needs-action and set-but-differs must share the warning glyph and theme role")
+	if !strings.Contains(needs, warn) {
+		t.Fatal("needs-action must contain the warning glyph")
 	}
-	if strings.Contains(needs, styleHealthy.Render("✓")) || strings.Contains(differs, styleHealthy.Render("✓")) {
-		t.Fatal("flagged rows must not use the healthy glyph")
+	if strings.Contains(differs, warn) {
+		t.Fatal("differs must NOT contain the warning glyph (D-06)")
+	}
+	neutral := styleFaint.Render("·")
+	if !strings.Contains(differs, neutral) {
+		t.Fatal("differs must contain the faint neutral marker (D-06)")
+	}
+	if strings.Contains(needs, styleHealthy.Render("✓")) {
+		t.Fatal("needs-action must not use the healthy glyph")
 	}
 	n2 := strings.Split(stripANSI(needs), "\n")[1]
 	d2 := strings.Split(stripANSI(differs), "\n")[1]

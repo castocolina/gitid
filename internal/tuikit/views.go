@@ -59,6 +59,34 @@ const (
 	TestOutcomeFailure
 )
 
+// OptionValueKind classifies the type of value a policy row manages.
+// This vocabulary is mirrored from both globalssh and globalgit policy packages
+// with identical names, but must be redefined here because tuikit may never
+// import either backend package (the no-backend import-graph gate forbids it).
+type OptionValueKind string
+
+const (
+	// OptionValueKindToggle is apply-or-not: a boolean option.
+	OptionValueKindToggle OptionValueKind = "toggle"
+	// OptionValueKindEnum is a closed value set: the user may only select from known values.
+	OptionValueKindEnum OptionValueKind = "enum"
+	// OptionValueKindText is free text: any string is accepted (subject to validation).
+	OptionValueKindText OptionValueKind = "text"
+	// OptionValueKindBundle is a multi-key preset: applied as a unit or not at all.
+	OptionValueKindBundle OptionValueKind = "bundle"
+)
+
+// OverrideRequest carries one staged override value for an options row.
+// It is the ONE shape a staged value travels in from the editor to the
+// overlay builder and plan method. PD17 defines the value-type enum that
+// will later extend this — for now it carries only a key and a requested value.
+type OverrideRequest struct {
+	// Key is the config key being overridden (e.g., "init.defaultBranch").
+	Key string
+	// RequestedValue is the value the user typed or selected.
+	RequestedValue string
+}
+
 // TestResultView is one connectivity test's outcome as the create wizard
 // renders it (TEST-01/TEST-02). It REPLACES every use of tester.Result
 // inside this package.
@@ -349,7 +377,10 @@ const (
 // GlobalSSHOptionView is one Options-sub-tab row as the render stack knows it.
 // Provenance is a rendered LABEL string computed in cmd/gitid/wiring.go —
 // the view deliberately carries no source-class enum. 06-03 owns the exact
-// frozen copy wording for OneLiner/Explanation/VersionNote.
+// frozen copy wording for OneLiner/Explanation/VersionNote. Kind and Values
+// are populated at the wiring boundary (cmd/gitid/wiring.go) from the live
+// globalssh.Policy table via an explicit conversion function, following
+// PD1 (plan 09.6-01 Task 1).
 type GlobalSSHOptionView struct {
 	Key                 string
 	CurrentValue        string
@@ -364,6 +395,8 @@ type GlobalSSHOptionView struct {
 	NotApplicableReason GlobalSSHNotApplicableReason
 	AttributedToUser    bool
 	WritableToHostStar  bool
+	Kind                OptionValueKind
+	Values              []string
 }
 
 // Selectable is the one predicate for the toggle key, the checkbox click,
@@ -530,7 +563,9 @@ const (
 
 // GlobalGitOptionView is one row of the Global Git options pane. Provenance is
 // a rendered LABEL string computed in cmd/gitid/wiring.go — the view
-// deliberately carries no source-class enum.
+// deliberately carries no source-class enum. Kind and Values are populated at
+// the wiring boundary (cmd/gitid/wiring.go) from the live globalgit.Policy
+// table via an explicit conversion function, following PD1 (plan 09.6-01 Task 1).
 type GlobalGitOptionView struct {
 	Key          string
 	CurrentValue string
@@ -577,6 +612,11 @@ type GlobalGitOptionView struct {
 	// separate from VersionNote's dynamic sentence so the static half stays
 	// freezable.
 	GateNotMet bool
+	// Kind is the value kind classification, populated at the wiring boundary
+	// from the policy table. Pinned by task 1 behavior test 6.
+	Kind OptionValueKind
+	// Values is the set of valid values for enum-kind rows (empty for non-enum rows).
+	Values []string
 }
 
 // Selectable reports whether this row can be toggled and have a checkbox
