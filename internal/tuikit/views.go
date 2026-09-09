@@ -409,6 +409,21 @@ func (o GlobalSSHOptionView) Selectable() bool {
 	return o.State == GlobalSSHNeedsAction || o.State == GlobalSSHDiffers
 }
 
+// GetKind satisfies OptionRowView interface (PD26: shared editor).
+func (o GlobalSSHOptionView) GetKind() OptionValueKind {
+	return o.Kind
+}
+
+// GetProbeError satisfies OptionRowView interface (PD26: shared editor).
+func (o GlobalSSHOptionView) GetProbeError() string {
+	return o.ProbeError
+}
+
+// IsWritable satisfies OptionRowView interface (PD26: shared editor).
+func (o GlobalSSHOptionView) IsWritable() bool {
+	return o.WritableToHostStar
+}
+
 // GlobalSSHApplyPlanView is the confirmed-apply preview scene: the resolved
 // targets, the promised backup paths, and the diff the ceremony previews.
 // ShadowWarnings is filled by 06-04's pre-write simulation.
@@ -632,6 +647,22 @@ func (o GlobalGitOptionView) Selectable() bool {
 		return false
 	}
 	return o.State == GlobalGitNeedsAction
+}
+
+// GetKind satisfies OptionRowView interface (PD26: shared editor).
+func (o GlobalGitOptionView) GetKind() OptionValueKind {
+	return o.Kind
+}
+
+// GetProbeError satisfies OptionRowView interface (PD26: shared editor).
+func (o GlobalGitOptionView) GetProbeError() string {
+	return o.ProbeError
+}
+
+// IsWritable satisfies OptionRowView interface (PD26: shared editor).
+// A Git option row is writable if it has a policy-backed writable member.
+func (o GlobalGitOptionView) IsWritable() bool {
+	return o.PolicyBacked && o.HasWritableMember
 }
 
 // GlobalGitApplyPlanView is the confirmed-apply preview scene: the resolved
