@@ -488,9 +488,13 @@ func TestGlobalGit_RealPTYMidTransactionFailureAndRetry(t *testing.T) {
 // the new "Set keys" sub-tab and shows seeded keys with their origin path;
 // pressing ← returns to Options, proving the re-homing did not lose its
 // existing baseline content.
+// 09.6-05 Task 0: re-seeds browse case to use non-policy keys (core.editor,
+// core.pager, safe.directory) since user.name and user.email will be excluded
+// by Task 1's member-key filter. The test still asserts the original subject:
+// the sub-tab lists seeded keys with their scrubbed origin.
 func TestGlobalGit_RealPTYSetKeysBrowse(t *testing.T) {
 	home := ShortSandboxHome(t)
-	seedGlobalGitHome(t, home, "[user]\n\tname = Set Keys Tester\n\temail = setkeys@example.com\n[alias]\n\tco = checkout\n", "")
+	seedGlobalGitHome(t, home, "[core]\n\teditor = vim\n\tpager = less\n[safe]\n\tdirectory = /home/user/trusted\n", "")
 	s := startGlobalGitPTY(t, home, "")
 
 	s.sendKey(wizardKeyRight, keystrokeDelay)
@@ -505,7 +509,7 @@ func TestGlobalGit_RealPTYSetKeysBrowse(t *testing.T) {
 	}
 
 	seededKeyCount := 0
-	for _, key := range []string{"user.name", "user.email", "alias.co"} {
+	for _, key := range []string{"core.editor", "core.pager", "safe.directory"} {
 		if strings.Contains(frame, key) {
 			seededKeyCount++
 		}
@@ -544,23 +548,28 @@ func TestGlobalGit_RealPTYSetKeysBrowse(t *testing.T) {
 // TestGlobalSSH_RealPTYAllDirectivesFilter: an in-package model test cannot
 // show that app.go's `1`..`5` main-tab globals were genuinely bypassed while
 // the filter is focused — only a real PTY session can.
+// 09.6-05 Task 0: re-seeds filter case to use non-policy keys (core.editor,
+// core.pager, safe.directory) with a "core." prefix that narrows to the first
+// two, since user.* keys will be excluded by Task 1. The test still asserts
+// the original subjects: the filter narrows the list while digits typed into
+// it reach the filter rather than app.go's main-tab globals.
 func TestGlobalGit_RealPTYSetKeysFilter(t *testing.T) {
 	home := ShortSandboxHome(t)
-	seedGlobalGitHome(t, home, "[user]\n\tname = Filter Tester\n\temail = filtertester@example.com\n[alias]\n\tco = checkout\n", "")
+	seedGlobalGitHome(t, home, "[core]\n\teditor = vim\n\tpager = less\n[safe]\n\tdirectory = /home/user/trusted\n", "")
 	s := startGlobalGitPTY(t, home, "")
 
 	s.sendKey(wizardKeyRight, keystrokeDelay)
 	mustSee(t, s, "Global Git › Set keys", "one right-press reaches the Set keys sub-tab")
 
 	s.sendKey([]byte("/"), keystrokeDelay)
-	for _, r := range "user." {
+	for _, r := range "core." {
 		s.sendKey([]byte(string(r)), keystrokeDelay)
 	}
 	narrowed, ok := s.waitFor(8*time.Second, func(frame string) bool {
-		return strings.Contains(frame, "user.name") && strings.Contains(frame, "user.email") && !strings.Contains(frame, "alias.co")
+		return strings.Contains(frame, "core.editor") && strings.Contains(frame, "core.pager") && !strings.Contains(frame, "safe.directory")
 	})
 	if !ok {
-		t.Fatalf("filter %q never narrowed to the user.* keys only. Last frame:\n%s", "user.", narrowed)
+		t.Fatalf("filter %q never narrowed to the core.* keys only. Last frame:\n%s", "core.", narrowed)
 	}
 	if !strings.Contains(narrowed, "shown") {
 		t.Fatalf("filtered list must still show the match-count line:\n%s", narrowed)

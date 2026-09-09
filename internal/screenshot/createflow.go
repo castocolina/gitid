@@ -2794,25 +2794,25 @@ func globalGitSpecs() []ScreenSpec {
 	// seeded fixture home (the deterministicGlobalGitFixture "alias.co"
 	// probe key plus whatever the local machine's system scope leaks), the
 	// dummy renders FixtureBackend's frozen 20-row AllGitSetKeys() slice.
-	// "alias.co" is the shared anchor: the deterministic fixture seeds this
+	// "core.editor" is the shared anchor: the deterministic fixture seeds this
 	// EXACT key/value pair, and the dummy's own frozen fixture carries the
-	// identical "alias.co"="checkout" entry independently — present on both
+	// identical "core.editor"="vim" entry independently — present on both
 	// sides regardless of which other keys diverge (the system-scope leak
 	// documented in 09.5-02-SUMMARY.md, the sort order, etc.).
 	ggitSetKeysFixtureDisposition := uxRegionDifferenceScoped(RegionGGitSetKeysBrowse, "fixture-vs-live-key-set", ggitFixtureClass,
-		"the real 'Set keys' body renders globalgit.AllSetKeys' live probe for the seeded fixture home (the deterministic 'alias.co' probe key, plus any system-scope leak this machine carries); the dummy renders FixtureBackend's frozen 20-row AllGitSetKeys() slice — the key SET is the classified fixture-vs-live divergence, and 'alias.co' (seeded into the real fixture home AND present in the dummy's own frozen fixture with the identical 'checkout' value) survives on both sides",
-		`contains:"alias.co"`)
+		"the real 'Set keys' body renders globalgit.AllSetKeys' live probe for the seeded fixture home (the deterministic 'core.editor' probe key, plus any system-scope leak this machine carries); the dummy renders FixtureBackend's frozen 20-row AllGitSetKeys() slice — the key SET is the classified fixture-vs-live divergence, and 'core.editor' (seeded into the real fixture home AND present in the dummy's own frozen fixture with the identical 'vim' value) survives on both sides",
+		`contains:"core.editor"`)
 	// ggitSetKeysSidebarDisposition authorizes RegionSidebar's generic
 	// "content left of the │ divider" extraction on the Set keys master-
 	// detail rows — the SAME fixture-vs-live key-set divergence as
 	// ggitSetKeysFixtureDisposition above, captured via a different region
 	// because the master-list column sits left of the divider (the same
 	// architectural pattern ggit-options-list already carries via
-	// ggitListFixtureDisposition). "alias.co" is the shared anchor row on
+	// ggitListFixtureDisposition). "core.editor" is the shared anchor row on
 	// both sides of the divider, same as the detail-pane disposition.
 	ggitSetKeysSidebarDisposition := uxRegionDifferenceScoped(RegionSidebar, "fixture-vs-live-key-set", ggitFixtureClass,
-		"on this surface RegionSidebar's left-of-│ extraction captures the master SET-KEYS LIST rows, not an identity sidebar — the real row set is globalgit.AllSetKeys' live probe while the dummy rows carry the frozen 20-row AllGitSetKeys() fixture; the list content is the same classified fixture-vs-live divergence and 'alias.co' survives on both sides",
-		`contains:"alias.co"`)
+		"on this surface RegionSidebar's left-of-│ extraction captures the master SET-KEYS LIST rows, not an identity sidebar — the real row set is globalgit.AllSetKeys' live probe while the dummy rows carry the frozen 20-row AllGitSetKeys() fixture; the list content is the same classified fixture-vs-live divergence and 'core.editor' survives on both sides",
+		`contains:"core.editor"`)
 	// ggitCustomKeyCeremonyDisposition authorizes the custom-key ceremony's
 	// preview body: the real diff composes against the seeded fixture
 	// home's actual baseline file (D-F's new custom-git-keys managed
@@ -2954,7 +2954,7 @@ func globalGitSpecs() []ScreenSpec {
 		{
 			ScreenID:              "ggit-set-keys-list",
 			Interaction:           "Boot the Global Git tab on the Options sub-tab, then press → once (Options → Set keys) to land on the second sub-tab in browse mode.",
-			StateMarker:           "alias.co",
+			StateMarker:           "core.editor",
 			ApplicableLive:        true,
 			ApplicableApprovedTUI: true,
 			NonApplicability:      noHTML,

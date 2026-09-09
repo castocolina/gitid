@@ -247,6 +247,10 @@ func TestAllSSHDirectivesScrubsValueAtTheSourceLevel(t *testing.T) {
 // sandbox HOME. Unlike ssh -G (see funcDisplayScrubCalls's doc comment),
 // `git config` genuinely honors the HOME env var for its own default paths,
 // so this is a reliable runtime proof, not just a source-level check.
+// 09.6-05 Task 0: re-anchored to core.editor (non-policy key under both
+// display-key and member-key lookups) to work before and after the exclusion
+// lands. The test still asserts its original subject (WR-05 origin scrubbing)
+// with a non-policy key.
 func TestAllGitSetKeysScrubsOriginThroughDisplayPath(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skipf("no git binary in PATH: %v", err)
@@ -256,7 +260,7 @@ func TestAllGitSetKeysScrubsOriginThroughDisplayPath(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(home, ".gitconfig.d"), 0o700); err != nil {
 		t.Fatalf("seeding fragment dir: %v", err)
 	}
-	cmd := exec.Command("git", "config", "--global", "alias.co", "checkout") //nolint:gosec // fixed args, no shell (G204)
+	cmd := exec.Command("git", "config", "--global", "core.editor", "vim") //nolint:gosec // fixed args, no shell (G204)
 	cmd.Env = append(os.Environ(), "HOME="+home)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("seeding git config: %v: %s", err, out)
@@ -269,7 +273,7 @@ func TestAllGitSetKeysScrubsOriginThroughDisplayPath(t *testing.T) {
 	}
 	found := false
 	for _, v := range views {
-		if v.Key != "alias.co" {
+		if v.Key != "core.editor" {
 			continue
 		}
 		found = true
@@ -281,7 +285,7 @@ func TestAllGitSetKeysScrubsOriginThroughDisplayPath(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("expected an alias.co entry from AllGitSetKeys, got: %+v", views)
+		t.Fatalf("expected a core.editor entry from AllGitSetKeys, got: %+v", views)
 	}
 }
 
