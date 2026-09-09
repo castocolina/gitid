@@ -845,8 +845,21 @@ type SSHCustomDirectiveCommitMsg struct {
 // fields the D9 pane seeds from on activate (D-04 / 07-UI-SPEC.md partial
 // row). Empty strings mean the key is currently unset.
 type GitFallbackAuthorView struct {
+	// Managed fields: what gitid's managed block holds (empty if unset)
 	Name  string
 	Email string
+	// Effective fields: what git config --get resolves to (may differ from managed)
+	EffectiveName  string
+	EffectiveEmail string
+	// Origin fields: file:scope where the effective value comes from
+	NameOrigin  string
+	EmailOrigin string
+	// SuppliedByManaged flags: true if the effective value equals the managed
+	// value AND it comes from gitid's managed file (PD38). Decided by the BLOCK,
+	// not by file identity, so a later entry in the SAME file outside the block
+	// is correctly reported as external.
+	NameSuppliedByManaged  bool
+	EmailSuppliedByManaged bool
 }
 
 // GitFallbackAuthorPlanView is the confirmed-apply preview scene for the

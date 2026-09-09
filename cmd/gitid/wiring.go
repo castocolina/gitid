@@ -3140,18 +3140,69 @@ func (b *realBackend) CommitGlobalGitIgnore(content, planToken string) tea.Cmd {
 	}
 }
 
-// GitFallbackAuthorState reads the current fallback-author pair from the
-// main config via ReadGitFallbackAuthor. Empty strings mean unset.
+// GitFallbackAuthorState resolves the author pair through three projections (PD38):
+// 1. Managed pair: what gitid's managed block holds (from ReadGitFallbackAuthor)
+// 2. Effective pair + origin: what git config --get resolves to (from AllSetKeys)
+// 3. SuppliedByManaged flags: true if managed == effective AND origin is gitid's file
+//
+// The effective pair is computed by probing the SAME non-repository directory
+// (b.fragmentDir) that AllGitSetKeys already uses — RESEARCH Pitfall 1 applies.
 func (b *realBackend) GitFallbackAuthorState() (tuikit.GitFallbackAuthorView, error) {
 	if b.initErr != nil {
 		return tuikit.GitFallbackAuthorView{}, b.initErr
 	}
+
+	// Read the managed block
 	existing, err := os.ReadFile(b.gitconfigPath) //nolint:gosec // trusted gitid-managed path
 	if err != nil && !os.IsNotExist(err) {
 		return tuikit.GitFallbackAuthorView{}, err
 	}
-	name, email := gitconfig.ReadGitFallbackAuthor(existing)
-	return tuikit.GitFallbackAuthorView{Name: name, Email: email}, nil
+	managedName, managedEmail := gitconfig.ReadGitFallbackAuthor(existing)
+
+	// Probe for effective values using AllSetKeys (which includes user.name and user.email)
+	view := tuikit.GitFallbackAuthorView{
+		Name:  managedName,
+		Email: managedEmail,
+	}
+
+	// Get all keys to find the effective author pair
+	keys, err := globalgit.AllSetKeys(globalgit.BuildProbeDeps(b.fragmentDir))
+	if err != nil {
+		// On probe error, return only the managed pair with empty effective
+		return view, nil
+	}
+
+	// Find user.name and user.email in the probe results
+	effectiveName := ""
+	effectiveEmail := ""
+	nameOrigin := ""
+	emailOrigin := ""
+
+	for _, k := range keys {
+		keyLower := strings.ToLower(k.Key)
+		if keyLower == "user.name" {
+			effectiveName = k.Value
+			nameOrigin = b.displayPath(k.Origin)
+		} else if keyLower == "user.email" {
+			effectiveEmail = k.Value
+			emailOrigin = b.displayPath(k.Origin)
+		}
+	}
+
+	view.EffectiveName = effectiveName
+	view.EffectiveEmail = effectiveEmail
+	view.NameOrigin = nameOrigin
+	view.EmailOrigin = emailOrigin
+
+	// Determine SuppliedByManaged: true if managed value equals effective value
+	// AND the origin is gitid's managed config file. Managed-ness is decided by
+	// the BLOCK (ReadGitFallbackAuthor), not by file identity, so a later entry
+	// in the same file outside the block is correctly reported as external.
+	managedConfigPath := b.displayPath(b.gitconfigPath)
+	view.NameSuppliedByManaged = managedName != "" && managedName == effectiveName && nameOrigin == managedConfigPath
+	view.EmailSuppliedByManaged = managedEmail != "" && managedEmail == effectiveEmail && emailOrigin == managedConfigPath
+
+	return view, nil
 }
 
 // GitFallbackAuthorPlan is the fallback-author apply preview: the resolved
