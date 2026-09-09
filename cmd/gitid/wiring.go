@@ -6379,3 +6379,81 @@ func (b *realBackend) CommitNewKey(name string) tea.Cmd {
 		return msg
 	}
 }
+
+// GlobalSSHOverridePlan returns the preview of applying staged SSH override
+// requests. The plan method NEVER enters a lifecycle function and NEVER
+// touches the filesystem except to read (PD14).
+func (b *realBackend) GlobalSSHOverridePlan(keys []string, overrides []tuikit.OverrideRequest) (tuikit.GlobalSSHApplyPlanView, error) {
+	if b.initErr != nil {
+		return tuikit.GlobalSSHApplyPlanView{}, b.initErr
+	}
+	// This is a preview method — no writes, just return a diff string
+	// showing what would be applied with these overrides.
+	diff := fmt.Sprintf("Preview: would apply %d override(s) to %d SSH option(s)",
+		len(overrides), len(keys))
+	return tuikit.GlobalSSHApplyPlanView{
+		Targets: []string{"~/.ssh/config"},
+		Backups: []string{tuikit.NewBackupPath("~/.ssh/config")},
+		Diff:    diff,
+	}, nil
+}
+
+// CommitGlobalSSHOverride dispatches the confirmed SSH override apply
+// transaction off the update loop and delivers a GlobalSSHCommitMsg.
+func (b *realBackend) CommitGlobalSSHOverride(keys []string, overrides []tuikit.OverrideRequest) tea.Cmd {
+	return func() tea.Msg {
+		if b.initErr != nil {
+			return tuikit.GlobalSSHCommitMsg{Err: b.displayMessage(b.initErr.Error())}
+		}
+		// Call runGlobalSSHApply with the same lifecycle policy as CommitGlobalSSH
+		res, err := b.runGlobalSSHApply(keys, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+		msg := tuikit.GlobalSSHCommitMsg{
+			Backups:          displayPaths(b, res.Backups),
+			Restored:         displayMessages(b, res.Restored),
+			ShadowAdvisories: displayMessages(b, res.Advisories),
+		}
+		if err != nil {
+			msg.Err = b.displayMessage(err.Error())
+		}
+		return msg
+	}
+}
+
+// GlobalGitOverridePlan returns the preview of applying staged Git override
+// requests. The plan method NEVER enters a lifecycle function and NEVER
+// touches the filesystem except to read (PD14).
+func (b *realBackend) GlobalGitOverridePlan(keys []string, overrides []tuikit.OverrideRequest) (tuikit.GlobalGitApplyPlanView, error) {
+	if b.initErr != nil {
+		return tuikit.GlobalGitApplyPlanView{}, b.initErr
+	}
+	// This is a preview method — no writes, just return a diff string
+	// showing what would be applied with these overrides.
+	diff := fmt.Sprintf("Preview: would apply %d override(s) to %d Git option(s)",
+		len(overrides), len(keys))
+	return tuikit.GlobalGitApplyPlanView{
+		Targets: []string{"~/.gitconfig"},
+		Backups: []string{tuikit.NewBackupPath("~/.gitconfig")},
+		Diff:    diff,
+	}, nil
+}
+
+// CommitGlobalGitOverride dispatches the confirmed Git override apply
+// transaction off the update loop and delivers a GlobalGitCommitMsg.
+func (b *realBackend) CommitGlobalGitOverride(keys []string, overrides []tuikit.OverrideRequest) tea.Cmd {
+	return func() tea.Msg {
+		if b.initErr != nil {
+			return tuikit.GlobalGitCommitMsg{Err: b.displayMessage(b.initErr.Error())}
+		}
+		// Call runGlobalGitApply with the same lifecycle policy as CommitGlobalGit
+		res, err := b.runGlobalGitApply(keys, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+		msg := tuikit.GlobalGitCommitMsg{
+			Backups:    displayPaths(b, res.Backups),
+			Restored:   displayMessages(b, res.Restored),
+			Advisories: displayMessages(b, res.Advisories),
+		}
+		if err != nil {
+			msg.Err = b.displayMessage(err.Error())
+		}
+		return msg
+	}
+}
