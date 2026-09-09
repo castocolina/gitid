@@ -55,9 +55,11 @@ func TestFrozenPropertiesCopy(t *testing.T) {
 		{"OptionEditorOpenLabel", OptionEditorOpenLabel, "edit"},
 		{"OptionEditorCommitLabel", OptionEditorCommitLabel, "commit"},
 		{"OptionEditorDismissLabel", OptionEditorDismissLabel, "dismiss"},
+		{"GlobalGitDefaultBranchHelperLabel", GlobalGitDefaultBranchHelperLabel, "Git's default branch for new repositories"},
+		{"GlobalGitFallbackAuthorEditorLabel", GlobalGitFallbackAuthorEditorLabel, "Edit author (name and email)"},
 	}
 
-	const wantCount = 31
+	const wantCount = 33
 	if len(cases) != wantCount {
 		t.Fatalf("TestFrozenPropertiesCopy covers %d constants, want %d — a row was forgotten or double-counted", len(cases), wantCount)
 	}
