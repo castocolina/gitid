@@ -675,7 +675,7 @@ func (m globalGitModel) gitApplyChosen(options []GlobalGitOptionView) []string {
 		}
 		// PD16: Include already-set rows with staged overrides (editor path).
 		if _, hasOverride := m.stagedOverrides[o.Key]; hasOverride {
-			if OptionApplyEligibility(o) {
+			if OptionApplyEligibility(o, hasOverride) {
 				keys = append(keys, o.Key)
 			}
 		}

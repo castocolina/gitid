@@ -207,48 +207,73 @@ func (e *OptionEditor) Values() []string {
 	return e.values
 }
 
+// OptionRowView is a common interface for row types that can be edited via the
+// shared OptionEditor. Both GlobalSSHOptionView and GlobalGitOptionView satisfy
+// this interface, allowing the eligibility predicates to work with both screens
+// (PD26: shared editor, reused not ported).
+type OptionRowView interface {
+	// GetKind returns the OptionValueKind classification (enum, text, toggle, bundle).
+	GetKind() OptionValueKind
+	// GetProbeError returns the probe error if any (non-empty means read-only).
+	GetProbeError() string
+	// IsWritable reports whether this row can be written to.
+	IsWritable() bool
+	// IsNotApplicable reports whether the row's state is NotApplicable.
+	IsNotApplicable() bool
+	// IsNeedsAction reports whether the row's state is NeedsAction.
+	IsNeedsAction() bool
+	// IsAlreadySet reports whether the row's state is AlreadySet.
+	IsAlreadySet() bool
+}
+
 // OptionEditEligibility reports whether a row can be edited based on its state
 // and type. An edit-eligible row is:
 // - An enum or text kind (not toggle, not bundle)
 // - In needs-action, already-set, or differs state (not not-applicable)
 // - Carrying no probe error
-// - Writable to the target block (Host * for SSH)
-// (PD16)
-func OptionEditEligibility(o GlobalSSHOptionView) bool {
+// - Writable to the target block (Host * for SSH, PolicyBacked+HasWritableMember for Git)
+// (PD16, PD26)
+func OptionEditEligibility(o OptionRowView) bool {
 	// Bundle and toggle rows have no editors; the checkbox is the only control.
-	if o.Kind == OptionValueKindBundle || o.Kind == OptionValueKindToggle {
+	if o.GetKind() == OptionValueKindBundle || o.GetKind() == OptionValueKindToggle {
 		return false
 	}
 	// Not-applicable rows are read-only.
-	if o.State == GlobalSSHNotApplicable {
+	if o.IsNotApplicable() {
 		return false
 	}
 	// A row carrying a probe error is read-only.
-	if o.ProbeError != "" {
+	if o.GetProbeError() != "" {
 		return false
 	}
 	// A row not writable to the target is read-only.
-	if !o.WritableToHostStar {
+	if !o.IsWritable() {
 		return false
 	}
-	// Enum and text rows in needs-action, already-set, or differs are editable.
-	return o.State == GlobalSSHNeedsAction || o.State == GlobalSSHAlreadySet || o.State == GlobalSSHDiffers
+	return true
 }
 
 // OptionApplyEligibility reports whether a row should be included in an apply
-// set, taking into account any staged overrides (PD16). A row is apply-eligible if:
-// - It would normally be chosen (needs-action or already-set-with-override)
-// - A staged override is present for it
-// (PD16: an already-set row with a staged override still reaches the apply set)
-func OptionApplyEligibility(o GlobalSSHOptionView, hasOverride bool) bool {
-	// needs-action rows are always eligible.
-	if o.State == GlobalSSHNeedsAction {
+// set, taking into account its state and any staged overrides (PD16, PD26).
+// The eligibility rules are:
+// - NeedsAction rows are always eligible (with or without staged override)
+// - AlreadySet rows are eligible ONLY if a staged override exists
+// - Differs and NotApplicable rows are never eligible (even with override)
+func OptionApplyEligibility(o OptionRowView, hasOverride bool) bool {
+	// Not-applicable rows are never eligible.
+	if o.IsNotApplicable() {
+		return false
+	}
+	// Needs-action rows are always eligible.
+	if o.IsNeedsAction() {
 		return true
 	}
-	// already-set rows are eligible ONLY if they have a staged override.
-	if o.State == GlobalSSHAlreadySet && hasOverride {
-		return true
+	// Already-set rows are eligible only if there's a staged override
+	// (writability check happens at edit time; if there's an override,
+	// it means the user successfully edited it).
+	if o.IsAlreadySet() {
+		return hasOverride
 	}
-	// All other states are not eligible.
+	// Differs rows are never eligible (even with override).
 	return false
 }
