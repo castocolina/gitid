@@ -76,6 +76,17 @@ const (
 	OptionValueKindBundle OptionValueKind = "bundle"
 )
 
+// OverrideRequest carries one staged override value for an options row.
+// It is the ONE shape a staged value travels in from the editor to the
+// overlay builder and plan method. PD17 defines the value-type enum that
+// will later extend this — for now it carries only a key and a requested value.
+type OverrideRequest struct {
+	// Key is the config key being overridden (e.g., "init.defaultBranch").
+	Key string
+	// RequestedValue is the value the user typed or selected.
+	RequestedValue string
+}
+
 // TestResultView is one connectivity test's outcome as the create wizard
 // renders it (TEST-01/TEST-02). It REPLACES every use of tester.Result
 // inside this package.

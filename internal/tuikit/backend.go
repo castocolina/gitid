@@ -509,6 +509,96 @@ func (NoopSSHCustomDirectivePlanner) CommitCustomSSHDirective(string, string) te
 
 var _ SSHCustomDirectivePlanner = NoopSSHCustomDirectivePlanner{}
 
+// ErrGlobalSSHOverridePlannerNotImplemented is the sentinel
+// NoopGlobalSSHOverridePlanner returns. Fixtures and test stubs embed the noop
+// and override only what they exercise; a missing real implementation must
+// be a compile error, not this sentinel at runtime.
+var ErrGlobalSSHOverridePlannerNotImplemented = errors.New("global SSH override planner not implemented")
+
+// GlobalSSHOverridePlanner is the Phase 9.6 override request seam for SSH
+// options: a preview method that plans an override write without touching
+// the filesystem, and an async commit method that applies it. The TWO
+// methods form one seam. This seam is deliberately separate from
+// GlobalSSHPlanner — one interface owns the live rows and the apply-chosen
+// ceremony, this one owns the override-staged path.
+type GlobalSSHOverridePlanner interface {
+	// GlobalSSHOverridePlan returns the preview of applying staged override
+	// requests: the resolved targets, promised backups, and the diff of the
+	// candidate write. A non-nil error must fail closed: the confirm screen
+	// renders the error state. This method NEVER enters a lifecycle function,
+	// NEVER asserts a confirmation mode, and NEVER touches the filesystem
+	// except to read (PD14).
+	GlobalSSHOverridePlan(keys []string, overrides []OverrideRequest) (GlobalSSHApplyPlanView, error)
+	// CommitGlobalSSHOverride dispatches the confirmed override apply
+	// transaction off the update loop and delivers a GlobalSSHCommitMsg.
+	CommitGlobalSSHOverride(keys []string, overrides []OverrideRequest) tea.Cmd
+}
+
+// NoopGlobalSSHOverridePlanner implements GlobalSSHOverridePlanner with
+// ErrGlobalSSHOverridePlannerNotImplemented. Fixtures and test stubs embed
+// it and override only what they exercise. The REAL backend must NOT embed
+// it — a missing real implementation must be a compile error.
+type NoopGlobalSSHOverridePlanner struct{}
+
+// GlobalSSHOverridePlan implements GlobalSSHOverridePlanner.
+func (NoopGlobalSSHOverridePlanner) GlobalSSHOverridePlan([]string, []OverrideRequest) (GlobalSSHApplyPlanView, error) {
+	return GlobalSSHApplyPlanView{}, ErrGlobalSSHOverridePlannerNotImplemented
+}
+
+// CommitGlobalSSHOverride implements GlobalSSHOverridePlanner.
+func (NoopGlobalSSHOverridePlanner) CommitGlobalSSHOverride([]string, []OverrideRequest) tea.Cmd {
+	return func() tea.Msg {
+		return GlobalSSHCommitMsg{Err: ErrGlobalSSHOverridePlannerNotImplemented.Error()}
+	}
+}
+
+var _ GlobalSSHOverridePlanner = NoopGlobalSSHOverridePlanner{}
+
+// ErrGlobalGitOverridePlannerNotImplemented is the sentinel
+// NoopGlobalGitOverridePlanner returns. Fixtures and test stubs embed the noop
+// and override only what they exercise; a missing real implementation must
+// be a compile error, not this sentinel at runtime.
+var ErrGlobalGitOverridePlannerNotImplemented = errors.New("global git override planner not implemented")
+
+// GlobalGitOverridePlanner is the Phase 9.6 override request seam for Git
+// options: a preview method that plans an override write without touching
+// the filesystem, and an async commit method that applies it. The TWO
+// methods form one seam. This seam is deliberately separate from
+// GlobalGitPlanner — one interface owns the live rows and the apply-chosen
+// ceremony, this one owns the override-staged path.
+type GlobalGitOverridePlanner interface {
+	// GlobalGitOverridePlan returns the preview of applying staged override
+	// requests: the resolved targets, promised backups, and the diff of the
+	// candidate write. A non-nil error must fail closed: the confirm screen
+	// renders the error state. This method NEVER enters a lifecycle function,
+	// NEVER asserts a confirmation mode, and NEVER touches the filesystem
+	// except to read (PD14).
+	GlobalGitOverridePlan(keys []string, overrides []OverrideRequest) (GlobalGitApplyPlanView, error)
+	// CommitGlobalGitOverride dispatches the confirmed override apply
+	// transaction off the update loop and delivers a GlobalGitCommitMsg.
+	CommitGlobalGitOverride(keys []string, overrides []OverrideRequest) tea.Cmd
+}
+
+// NoopGlobalGitOverridePlanner implements GlobalGitOverridePlanner with
+// ErrGlobalGitOverridePlannerNotImplemented. Fixtures and test stubs embed
+// it and override only what they exercise. The REAL backend must NOT embed
+// it — a missing real implementation must be a compile error.
+type NoopGlobalGitOverridePlanner struct{}
+
+// GlobalGitOverridePlan implements GlobalGitOverridePlanner.
+func (NoopGlobalGitOverridePlanner) GlobalGitOverridePlan([]string, []OverrideRequest) (GlobalGitApplyPlanView, error) {
+	return GlobalGitApplyPlanView{}, ErrGlobalGitOverridePlannerNotImplemented
+}
+
+// CommitGlobalGitOverride implements GlobalGitOverridePlanner.
+func (NoopGlobalGitOverridePlanner) CommitGlobalGitOverride([]string, []OverrideRequest) tea.Cmd {
+	return func() tea.Msg {
+		return GlobalGitCommitMsg{Err: ErrGlobalGitOverridePlannerNotImplemented.Error()}
+	}
+}
+
+var _ GlobalGitOverridePlanner = NoopGlobalGitOverridePlanner{}
+
 // backend.go defines the ONE injected seam this package is built around.
 //
 // tuikit renders the approved, frozen gitid design. It never reads or
@@ -579,6 +669,22 @@ type Backend interface {
 	// implementation must be a compile error, pinned by wiring.go's
 	// compile-time assertion and by a reflection test.
 	SSHCustomDirectivePlanner
+	// GlobalSSHOverridePlanner: Phase 9.6 plan 09.6-01's override request
+	// seam for SSH options. Deliberately separate from GlobalSSHPlanner —
+	// one interface owns the live rows and apply-chosen, this one owns the
+	// override-staged path (PD15). The real backend must NOT embed
+	// NoopGlobalSSHOverridePlanner — a missing real implementation must be a
+	// compile error, pinned by wiring.go's compile-time assertion and by a
+	// reflection test.
+	GlobalSSHOverridePlanner
+	// GlobalGitOverridePlanner: Phase 9.6 plan 09.6-01's override request
+	// seam for Git options. Deliberately separate from GlobalGitPlanner —
+	// one interface owns the live rows and apply-chosen, this one owns the
+	// override-staged path (PD15). The real backend must NOT embed
+	// NoopGlobalGitOverridePlanner — a missing real implementation must be a
+	// compile error, pinned by wiring.go's compile-time assertion and by a
+	// reflection test.
+	GlobalGitOverridePlanner
 
 	// ----- Data -------------------------------------------------------
 

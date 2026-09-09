@@ -100,6 +100,10 @@ type OptionPolicy struct {
 	Kind OptionValueKind
 	// Values is the set of valid values for enum-kind rows (empty for non-enum rows).
 	Values []string
+	// Validator is an optional validation function for text-kind rows. It is
+	// called by WriteRequestedValueFor to validate a staged text value before
+	// accepting it. For init.defaultBranch, this is ValidateDefaultBranch.
+	Validator func(string) error
 }
 
 // IsFallbackAuthor reports whether this row is the D-04 fallback-author pair —

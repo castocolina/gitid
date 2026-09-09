@@ -95,6 +95,87 @@ func RealGateForRow(p OptionPolicy) (GateOutcome, string) {
 	return VersionGate(v, p)
 }
 
+// WriteRequestedValueFor resolves a staged override value for one config key
+// on a given row, respecting gates and type validation. It is the value
+// resolver WriteValueFor delegates into; WriteValueFor keeps its existing
+// signature and call sites unchanged.
+//
+// For a toggle row, it returns the requested value if it is "true" or "false"
+// (case-insensitive), else empty. For an enum row, it returns the requested
+// value if it is in the row's declared value set, else empty. For a text row,
+// it returns the requested value after passing it through the validator for
+// that row (which may reject it). For a bundle row, it always returns the
+// row's declared fallback: bundles are edit-ineligible, so a staged override
+// targeting a bundle is silently converted to the fallback by the overlay
+// builder's bundle refusal gate (PD31), meaning this function is never called
+// for a bundle in normal flow.
+//
+// The gate parameter follows the gate-meeting logic of WriteValueFor: for a
+// hard-gated row that did not meet its gate, this function returns the row's
+// declared fallback regardless of the requested value, exactly like WriteValueFor
+// does. For rows with no gate or an informational gate, the gate outcome is
+// not consulted.
+func WriteRequestedValueFor(row OptionPolicy, key string, requested string, gate GateOutcome) string {
+	// Find the member for this key
+	var member *MemberPolicy
+	for i := range row.Members {
+		if strings.EqualFold(row.Members[i].Key, key) {
+			member = &row.Members[i]
+			break
+		}
+	}
+	if member == nil {
+		return "" // unknown key, let caller handle the refusal
+	}
+
+	// Hard-gated rows below their gate always return the fallback,
+	// regardless of what was requested (matching WriteValueFor's behavior).
+	if row.Gate == GateHard && gate != GateMet {
+		return row.Fallback
+	}
+
+	// Bundle rows always resolve to their fallback. This should not be
+	// reached in normal flow because the overlay builder refuses bundle
+	// overrides before calling this function, but we implement it for
+	// completeness and safety.
+	if row.Kind == OptionValueKindBundle {
+		return row.Fallback
+	}
+
+	// For toggle rows, validate that the requested value is a boolean string.
+	if row.Kind == OptionValueKindToggle {
+		lower := strings.ToLower(strings.TrimSpace(requested))
+		if lower == "true" || lower == "false" {
+			return lower
+		}
+		return "" // invalid boolean, rejected by value set membership test
+	}
+
+	// For enum rows, check membership in the declared value set.
+	if row.Kind == OptionValueKindEnum {
+		for _, val := range row.Values {
+			if val == requested {
+				return requested
+			}
+		}
+		return "" // not a member of the value set, refused
+	}
+
+	// For text rows, apply the row's validator if one exists.
+	// If no validator, accept the value as-is.
+	if row.Kind == OptionValueKindText {
+		if row.Validator != nil {
+			if err := row.Validator(requested); err != nil {
+				return "" // validation failed
+			}
+		}
+		return requested
+	}
+
+	// Fallback: unknown kind, return empty
+	return ""
+}
+
 // versionLess compares two git version strings by major.minor, delegating
 // to deps.GitVersionParts — the ONE git-version-string parser in the module
 // (code review finding: this file previously carried its own divergent

@@ -1256,3 +1256,59 @@ func (b FixtureBackend) ClonePrefill(source, cloneName string, reuseSourceKey bo
 	}
 	return view, nil
 }
+
+// GlobalSSHOverridePlan returns a preview of applying staged SSH override
+// requests. The dummy returns the fixture's planned view with override details.
+func (b FixtureBackend) GlobalSSHOverridePlan(keys []string, overrides []tuikit.OverrideRequest) (tuikit.GlobalSSHApplyPlanView, error) {
+	state, _ := b.GlobalSSHOptionStates()
+	diff := fmt.Sprintf("Applied %d override(s) to %d SSH option(s) (demo)", len(overrides), len(keys))
+	return tuikit.GlobalSSHApplyPlanView{
+		Targets: []string{"~/.ssh/config"},
+		Backups: []string{tuikit.NewBackupPath("~/.ssh/config")},
+		Diff:    diff,
+		RowDiff: []string{fmt.Sprintf("Staged values: %v", len(overrides))},
+		KeyCount: uint(len(keys)),
+		RowCount: uint(len(state)),
+	}, nil
+}
+
+// CommitGlobalSSHOverride dispatches the SSH override apply and returns a
+// command delivering the result message.
+func (b FixtureBackend) CommitGlobalSSHOverride(keys []string, overrides []tuikit.OverrideRequest) tea.Cmd {
+	return func() tea.Msg {
+		return tuikit.GlobalSSHCommitMsg{
+			Backups: []string{tuikit.NewBackupPath("~/.ssh/config")},
+			ShadowAdvisories: []string{
+				fmt.Sprintf("Applied %d override(s) to %d SSH option(s)", len(overrides), len(keys)),
+			},
+		}
+	}
+}
+
+// GlobalGitOverridePlan returns a preview of applying staged Git override
+// requests. The dummy returns the fixture's planned view with override details.
+func (b FixtureBackend) GlobalGitOverridePlan(keys []string, overrides []tuikit.OverrideRequest) (tuikit.GlobalGitApplyPlanView, error) {
+	state, _ := b.GlobalGitOptionStates()
+	diff := fmt.Sprintf("Applied %d override(s) to %d Git option(s) (demo)", len(overrides), len(keys))
+	return tuikit.GlobalGitApplyPlanView{
+		Targets: []string{"~/.gitconfig"},
+		Backups: []string{tuikit.NewBackupPath("~/.gitconfig")},
+		Diff:    diff,
+		RowDiff: []string{fmt.Sprintf("Staged values: %v", len(overrides))},
+		KeyCount: uint(len(keys)),
+		RowCount: uint(len(state)),
+	}, nil
+}
+
+// CommitGlobalGitOverride dispatches the Git override apply and returns a
+// command delivering the result message.
+func (b FixtureBackend) CommitGlobalGitOverride(keys []string, overrides []tuikit.OverrideRequest) tea.Cmd {
+	return func() tea.Msg {
+		return tuikit.GlobalGitCommitMsg{
+			Backups: []string{tuikit.NewBackupPath("~/.gitconfig")},
+			Advisories: []string{
+				fmt.Sprintf("Applied %d override(s) to %d Git option(s)", len(overrides), len(keys)),
+			},
+		}
+	}
+}
