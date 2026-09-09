@@ -85,6 +85,18 @@ const gssBannerBeyond = "these global options"
 // hit-testing.
 const optionRowLines = 2
 
+// optionEditorPassThroughKeys are the keys that the editor guard must NOT
+// swallow — they reach higher-level handlers and must stay reachable even
+// when the editor is open (PD34). ctrl+p is intercepted by App.handleKey
+// at app.go:433 before any screen's handler runs, so it already cannot be
+// swallowed; ctrl+c is handled nowhere in internal/tuikit and must keep
+// reaching whatever handles it today. An editor a user can only leave through
+// one key is a modal trap no other gitid surface is.
+var optionEditorPassThroughKeys = map[string]bool{
+	"ctrl+p": true, // palette (App.handleKey, layer above screens)
+	"ctrl+c": true, // terminal default (not handled in tuikit, must propagate)
+}
+
 // withToggled returns a copy of set with key flipped. Copy-on-write keeps
 // the value-copied models pure: maps are reference types, so toggling in
 // place would mutate every previously returned copy of the model.
@@ -108,6 +120,15 @@ type globalSSHModel struct {
 	// detailKey is the selected option row's key.
 	detailKey string
 	chosen    map[string]bool
+	// stagedOverrides holds override requests keyed by config key.
+	// When an enum row is edited and Enter is pressed, the cycled value
+	// is stored here. This map is consulted by the apply ceremony to
+	// determine routing (PD15): with overrides present, route to the
+	// option-value seam; without, route to the pre-existing planner.
+	stagedOverrides map[string]OverrideRequest
+	// optionEditor is the shared editor state machine for the Options
+	// sub-tab's enum and text rows. Closed by default (PD25).
+	optionEditor *OptionEditor
 	// storageChoice is the STORE-01 radio selection (Storage & preview sub-tab).
 	storageChoice SSHStorageLayout
 	ceremony      ceremonyModel
@@ -226,10 +247,12 @@ type globalSSHModel struct {
 // scripted state, not the real default.
 func newGlobalSSHModel(b Backend) globalSSHModel {
 	return globalSSHModel{
-		backend:       b,
-		chosen:        map[string]bool{},
-		storageChoice: StorageSentinel,
-		filter:        newPropertiesFilterInput(),
+		backend:         b,
+		chosen:          map[string]bool{},
+		stagedOverrides: map[string]OverrideRequest{},
+		optionEditor:    nil, // initialized when needed
+		storageChoice:   StorageSentinel,
+		filter:          newPropertiesFilterInput(),
 	}
 }
 
@@ -632,7 +655,13 @@ func pendingOptions(options []appliedOption) []appliedOption {
 func (m globalSSHModel) applyChosen(options []appliedOption) []string {
 	var keys []string
 	for _, o := range options {
+		// PD16: Include needs-action rows that are chosen.
 		if o.needsAction() && m.chosen[o.Key] {
+			keys = append(keys, o.Key)
+		}
+		// PD16: Also include already-set rows that have a staged override.
+		// An already-set row with an override reaches the apply set.
+		if o.State == GlobalSSHAlreadySet && m.stagedOverrides[o.Key].Key != "" {
 			keys = append(keys, o.Key)
 		}
 	}
@@ -725,17 +754,42 @@ func (m globalSSHModel) applyCeremonyFor(s DemoState) (ceremonyModel, error) {
 	options := m.overlaidOptions(s)
 	pending := pendingOptions(options)
 	chosen := m.applyChosen(options)
+
+	// PD15: Conditional dispatch. If no staged overrides exist in the chosen
+	// set, route to the pre-existing planner. If staged overrides are present,
+	// route to the option-value seam.
+	hasOverrides := len(m.stagedOverrides) > 0
+	var overrides []OverrideRequest
+	if hasOverrides {
+		for _, k := range chosen {
+			if req, ok := m.stagedOverrides[k]; ok {
+				overrides = append(overrides, req)
+			}
+		}
+	}
+
 	var lines []string
 	for _, k := range chosen {
 		for _, o := range options {
 			if o.Key == k {
-				lines = append(lines, "+ "+o.Key+" "+o.Recommended)
+				// Use the STAGED value if an override exists, otherwise the
+				// recommendation (Rule I-3). The preview must name the value
+				// the user chose, never a different value than what they'll confirm.
+				value := o.Recommended
+				if override, ok := m.stagedOverrides[k]; ok {
+					value = override.RequestedValue
+				}
+				lines = append(lines, "+ "+o.Key+" "+value)
 			}
 		}
 	}
 	for _, o := range options {
 		if o.State == GlobalSSHAlreadySet {
-			lines = append(lines, "  "+o.Key+" "+o.Recommended+" (already set)")
+			value := o.Recommended
+			if override, ok := m.stagedOverrides[o.Key]; ok {
+				value = override.RequestedValue
+			}
+			lines = append(lines, "  "+o.Key+" "+value+" (already set)")
 		}
 	}
 	for _, o := range pending {
@@ -744,7 +798,15 @@ func (m globalSSHModel) applyCeremonyFor(s DemoState) (ceremonyModel, error) {
 		}
 	}
 
-	plan, planErr := m.backend.GlobalSSHApplyPlan(chosen)
+	var plan GlobalSSHApplyPlanView
+	var planErr error
+	if hasOverrides && len(overrides) > 0 {
+		// Route to the option-value seam
+		plan, planErr = m.backend.GlobalSSHOverridePlan(chosen, overrides)
+	} else {
+		// Route to the pre-existing planner
+		plan, planErr = m.backend.GlobalSSHApplyPlan(chosen)
+	}
 	if planErr != nil {
 		return ceremonyModel{}, planErr
 	}
@@ -930,7 +992,24 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 			keys := m.applyChosen(m.overlaidOptions(s))
 			m.appliedKeys = keys
 			m.applyCommitPending = true
-			cmd := m.backend.CommitGlobalSSH(keys)
+
+			// PD15: Conditional dispatch. Route to the option-value seam if
+			// staged overrides are present; otherwise route to the pre-existing
+			// planner. The two paths are never both called for one ceremony.
+			var cmd tea.Cmd
+			hasOverrides := len(m.stagedOverrides) > 0
+			if hasOverrides {
+				var overrides []OverrideRequest
+				for _, k := range keys {
+					if req, ok := m.stagedOverrides[k]; ok {
+						overrides = append(overrides, req)
+					}
+				}
+				cmd = m.backend.CommitGlobalSSHOverride(keys, overrides)
+			} else {
+				cmd = m.backend.CommitGlobalSSH(keys)
+			}
+
 			snapshot := gitCommitTokenMsg{keys: keys}
 			return keyResult{model: m, handled: true, cmd: wrapGitCommitToken(token, cmd, snapshot)}
 		case ceremonyFinished:
@@ -1102,6 +1181,48 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		// the app globals on the screen least able to help.
 		return keyResult{model: m}
 	}
+
+	// PD17/PD25: Editor key guard. While an editor is open on the Options
+	// sub-tab, left/right cycle the value set instead of switching sub-tabs,
+	// and every other key is swallowed except the pass-through list (PD34).
+	// This guard sits BEFORE the generic sub-tab-switch case (I-4), mirroring
+	// globalgit.go's fieldEditing block at lines 962-981.
+	if m.subTab == gssOptions && m.optionEditor != nil && m.optionEditor.IsOpen() {
+		switch key {
+		case "esc":
+			// Esc dismisses the editor without staging an override.
+			m.optionEditor.Dismiss()
+			m.optionEditor = nil
+			return keyResult{model: m, handled: true}
+		case "enter":
+			// Enter commits the current value as a staged override.
+			committedValue := m.optionEditor.Commit()
+			optKey := m.optionEditor.Key()
+			m.stagedOverrides[optKey] = OverrideRequest{
+				Key:            optKey,
+				RequestedValue: committedValue,
+			}
+			// Mark the row chosen to include it in the apply set.
+			m.chosen = withToggled(m.chosen, optKey)
+			m.optionEditor = nil
+			return keyResult{model: m, handled: true}
+		case "left", "right":
+			// Cycle the enum value set.
+			if key == "right" {
+				m.optionEditor.CycleRight()
+			} else {
+				m.optionEditor.CycleLeft()
+			}
+			return keyResult{model: m, handled: true}
+		default:
+			// Every other key is swallowed EXCEPT the pass-through list.
+			if optionEditorPassThroughKeys[key] {
+				return keyResult{model: m}
+			}
+			return keyResult{model: m, handled: true}
+		}
+	}
+
 	if m.subTab == gssOptions && len(options) == 0 {
 		// Advisory / fail-open: no rows to act on, but navigation must still
 		// reach the globals (tabs, ?, q) — never trap the user on this
@@ -1197,6 +1318,24 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 			}
 		}
 		return keyResult{model: m, handled: true}
+	case "e":
+		// Edit key: open the editor on an edit-eligible enum or text row on the
+		// Options sub-tab. Non-edit-eligible rows (toggles, bundles, not-applicable,
+		// probe errors, non-writable) do nothing and report key unhandled so other
+		// screen-wide handlers can process it (I-1, I-6).
+		if m.subTab == gssOptions && len(options) > 0 {
+			idx := m.detailIndex(options)
+			if idx >= 0 && idx < len(options) {
+				row := options[idx]
+				if OptionEditEligibility(row) {
+					// Open the enum-cycle editor for this row.
+					m.optionEditor = NewOptionEditor(row.Key, row.Values, row.CurrentValue)
+					m.optionEditor.OpenEnumCycle(row.CurrentValue)
+					return keyResult{model: m, handled: true}
+				}
+			}
+		}
+		return keyResult{model: m}
 	case "a":
 		if m.subTab == gssOptions && len(m.applyChosen(options)) > 0 {
 			cer, cerErr := m.applyCeremonyFor(s)
@@ -1526,9 +1665,21 @@ func optionRow(o GlobalSSHOptionView, chosen, selected, applied bool, width int)
 	if o.Risk != "" {
 		chip = "  " + styleFaint.Render("["+o.Risk+"]")
 	}
-	line1 := " " + marker + box + tone + " " + name + chip
+
+	// PD16 / UI-SPEC Rule L-2: Add an inline value cell for enum rows.
+	// Toggle rows keep today's exact first line (no value cell).
+	// For enum rows with a staged override, mark the value as pending.
+	valueCell := ""
+	if o.Kind == OptionValueKindEnum {
+		valueCell = "  " + styleFaint.Render(o.CurrentValue)
+	}
+
+	line1 := " " + marker + box + tone + " " + name + valueCell + chip
+	// Rule L-2: Elide the value cell first if the line is too long,
+	// never the key, tone glyph, or chip.
+	line1 = truncLine(line1, width)
 	line2 := "      " + styleFaint.Render(optionRowLine2(o))
-	return truncLine(line1, width) + "\n" + truncLine(line2, width)
+	return line1 + "\n" + truncLine(line2, width)
 }
 
 func optionRowLine2(o GlobalSSHOptionView) string {

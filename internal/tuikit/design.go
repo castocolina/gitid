@@ -975,4 +975,26 @@ const (
 	// sentence once the candidate name has passed the staged proof (WR-09:
 	// was an inline literal in renderCustomDirectiveValidate).
 	PropsSSHRecognizedDirectiveFmt = "✓ '%s' is a recognized SSH directive."
+	// OptionEditorOpenLabel is the footer action label for the e key (edit),
+	// opening an enum-cycle or free-text editor on an edit-eligible row
+	// (Phase 9.6 plan 09.6-02, Task 2). Reuses the same short verb Global Git's
+	// fallback-author editor already uses for the equivalent gesture (Task 2's
+	// Claude's-Discretion clause). The footer advertises this action on an
+	// Options row that is edit-eligible (enum or text kind, in needs-action/
+	// already-set/differs state, no probe error, writable to Host *).
+	OptionEditorOpenLabel = "edit"
+	// OptionEditorCommitLabel is the footer action label for Enter while an
+	// enum-cycle or free-text editor is open (Phase 9.6 plan 09.6-02, Task 2).
+	// Pressing Enter stages the cycled/typed value and closes the editor;
+	// the preview ceremony is opened with the `a` key separately. Reuses the
+	// same key/label shape every other footer action on this screen uses (Task 2,
+	// Claude's Discretion).
+	OptionEditorCommitLabel = "commit"
+	// OptionEditorDismissLabel is the footer action label for Esc while an
+	// enum-cycle or free-text editor is open (Phase 9.6 plan 09.6-02, Task 2).
+	// Pressing Esc closes the editor restoring the pre-edit value and clearing
+	// any staged override (PD3, Rule I-2). The label appears in the footer
+	// alongside OptionEditorCommitLabel while the editor is open, mirroring the
+	// browse-mode footer's own key/label pairs.
+	OptionEditorDismissLabel = "dismiss"
 )

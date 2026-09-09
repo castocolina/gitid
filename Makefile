@@ -616,6 +616,9 @@ gate-copy-freeze:
 		'ssh -G rejected this value: %s — nothing was written.' \
 		'Write custom SSH directive to %s' \
 		'%s %s written.' \
+		'edit' \
+		'commit' \
+		'dismiss' \
 		''\''%s'\'' already has a problem in your current configuration — unrelated to what you just entered. Nothing was written.'; \
 	do \
 		if grep -rqF -- "$$s" internal/tuikit internal/identity cmd/gitid internal/globalssh internal/globalgit; then \
