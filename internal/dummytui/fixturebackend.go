@@ -657,8 +657,24 @@ func (b FixtureBackend) RunUploadForIdentity(name string) tea.Cmd {
 // live view shape: Current/Recommended/Risk/OneLiner are the fixture's own
 // values, and the NeedsAction flag becomes the row State. The provenance is a
 // fixture-friendly label — the real backend names the actual file and line;
-// the demo never probes a machine.
+// the demo never probes a machine. Kind and Values are populated from hardcoded
+// fixture data mirroring the live internal/globalssh/policy.go table per PD24/PD32
+// (plan 09.6-01 Task 1).
 func (FixtureBackend) GlobalSSHOptionStates() ([]tuikit.GlobalSSHOptionView, error) {
+	// Hardcoded fixture value-kind classifications mirroring internal/globalssh/policy.go.
+	// Each Key maps to Kind and Values per PD6 (plan 09.6-01-PLAN.md <authority>).
+	fixtureSSHKinds := map[string]struct {
+		kind   tuikit.OptionValueKind
+		values []string
+	}{
+		"StrictHostKeyChecking": {kind: tuikit.OptionValueKindEnum, values: []string{"yes", "accept-new", "ask", "no"}},
+		"ForwardAgent":          {kind: tuikit.OptionValueKindToggle},
+		"HashKnownHosts":        {kind: tuikit.OptionValueKindToggle},
+		"IdentitiesOnly":        {kind: tuikit.OptionValueKindToggle},
+		"AddKeysToAgent":        {kind: tuikit.OptionValueKindEnum, values: []string{"yes", "no", "confirm", "ask"}},
+		"UseKeychain":           {kind: tuikit.OptionValueKindToggle},
+	}
+
 	out := make([]tuikit.GlobalSSHOptionView, 0, len(tuikit.GlobalSSHOptions))
 	for _, o := range tuikit.GlobalSSHOptions {
 		explanation := o.OneLiner
@@ -669,6 +685,7 @@ func (FixtureBackend) GlobalSSHOptionStates() ([]tuikit.GlobalSSHOptionView, err
 		if o.NeedsAction {
 			state = tuikit.GlobalSSHNeedsAction
 		}
+		kindData := fixtureSSHKinds[o.Key]
 		out = append(out, tuikit.GlobalSSHOptionView{
 			Key:                o.Key,
 			CurrentValue:       o.Current,
@@ -679,6 +696,8 @@ func (FixtureBackend) GlobalSSHOptionStates() ([]tuikit.GlobalSSHOptionView, err
 			Explanation:        explanation,
 			State:              state,
 			WritableToHostStar: o.Key != "IdentitiesOnly",
+			Kind:               kindData.kind,
+			Values:             kindData.values,
 		})
 	}
 	return out, nil
@@ -865,14 +884,37 @@ func (FixtureBackend) CommitCustomSSHDirective(string, string) tea.Cmd {
 // live view shape: Current/Recommended/OneLiner are the fixture's own values,
 // and the NeedsAction flag becomes the row State. The provenance is a
 // fixture-friendly label — the real backend names the actual file; the demo
-// never probes a machine.
+// never probes a machine. Kind and Values are populated from hardcoded fixture
+// data mirroring the live internal/globalgit/policy.go table per PD24/PD32
+// (plan 09.6-01 Task 1).
 func (FixtureBackend) GlobalGitOptionStates() ([]tuikit.GlobalGitOptionView, error) {
+	// Hardcoded fixture value-kind classifications mirroring internal/globalgit/policy.go.
+	// Each Key maps to Kind and Values per PD7 (plan 09.6-01-PLAN.md <authority>).
+	fixtureGitKinds := map[string]struct {
+		kind   tuikit.OptionValueKind
+		values []string
+	}{
+		"init.defaultBranch":             {kind: tuikit.OptionValueKindText},
+		"core.ignorecase":                {kind: tuikit.OptionValueKindToggle},
+		"core.autocrlf / core.eol":       {kind: tuikit.OptionValueKindBundle},
+		"user.email (global fallback)":   {kind: tuikit.OptionValueKindText},
+		"user.useConfigOnly":             {kind: tuikit.OptionValueKindToggle},
+		"push.autoSetupRemote":           {kind: tuikit.OptionValueKindToggle},
+		"pull.rebase":                    {kind: tuikit.OptionValueKindToggle},
+		"fetch.prune":                    {kind: tuikit.OptionValueKindToggle},
+		"alias (8 shortcuts)":            {kind: tuikit.OptionValueKindBundle},
+		"color (ui/branch/diff/status)":  {kind: tuikit.OptionValueKindBundle},
+		"merge.conflictstyle":            {kind: tuikit.OptionValueKindEnum, values: []string{"merge", "diff3", "zdiff3"}},
+		"diff.colorMoved":                {kind: tuikit.OptionValueKindEnum, values: []string{"no", "default", "plain", "blocks", "zebra", "dimmed-zebra"}},
+	}
+
 	out := make([]tuikit.GlobalGitOptionView, 0, len(tuikit.GlobalGitOptions))
 	for _, o := range tuikit.GlobalGitOptions {
 		state := tuikit.GlobalGitAlreadySet
 		if o.NeedsAction {
 			state = tuikit.GlobalGitNeedsAction
 		}
+		kindData := fixtureGitKinds[o.Key]
 		out = append(out, tuikit.GlobalGitOptionView{
 			Key:               o.Key,
 			CurrentValue:      o.Current,
@@ -882,6 +924,8 @@ func (FixtureBackend) GlobalGitOptionStates() ([]tuikit.GlobalGitOptionView, err
 			State:             state,
 			PolicyBacked:      o.Key != tuikit.GlobalGitEmailFallbackKey,
 			HasWritableMember: o.Key != tuikit.GlobalGitEmailFallbackKey,
+			Kind:              kindData.kind,
+			Values:            kindData.values,
 		})
 	}
 	return out, nil

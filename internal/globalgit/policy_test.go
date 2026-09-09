@@ -326,3 +326,86 @@ func TestPolicyMemberForCaseInsensitive(t *testing.T) {
 		t.Error("memberFor must refuse unknown member keys")
 	}
 }
+
+// TestValueKindPerRowClassifications (RED first, plan 09.6-01 Task 1 behavior Test 2):
+// every row in globalgit.Policy carries a non-zero value kind, asserted per-row
+// against a literal expected table in the test so a silent reclassification of
+// any single row fails loudly and by name.
+func TestValueKindPerRowClassifications(t *testing.T) {
+	want := map[string]OptionValueKind{
+		"init.defaultBranch":              OptionValueKindText,
+		"core.ignorecase":                 OptionValueKindToggle,
+		"core.autocrlf / core.eol":        OptionValueKindBundle,
+		"user.email (global fallback)":    OptionValueKindText,
+		"user.useConfigOnly":              OptionValueKindToggle,
+		"push.autoSetupRemote":            OptionValueKindToggle,
+		"pull.rebase":                     OptionValueKindToggle,
+		"fetch.prune":                     OptionValueKindToggle,
+		"alias (8 shortcuts)":             OptionValueKindBundle,
+		"color (ui/branch/diff/status)":   OptionValueKindBundle,
+		"merge.conflictstyle":             OptionValueKindEnum,
+		"diff.colorMoved":                 OptionValueKindEnum,
+	}
+	for _, p := range Policy {
+		expected, ok := want[p.Key]
+		if !ok {
+			t.Errorf("test missing expectation for row %q", p.Key)
+			continue
+		}
+		if p.Kind != expected {
+			t.Errorf("row %q Kind=%q, want %q", p.Key, p.Kind, expected)
+		}
+	}
+	if len(Policy) != len(want) {
+		t.Errorf("policy rows = %d, want %d", len(Policy), len(want))
+	}
+}
+
+// TestValueKindEnumHasValues (RED first, plan 09.6-01 Task 1 behavior Test 3):
+// every enum-kind row carries at least two values AND its own Recommended
+// appears among them; every non-enum row carries an empty value list.
+func TestValueKindEnumHasValues(t *testing.T) {
+	for _, p := range Policy {
+		if p.Kind == OptionValueKindEnum {
+			if len(p.Values) < 2 {
+				t.Errorf("%s enum-kind but only %d values declared", p.Key, len(p.Values))
+			}
+			found := false
+			for _, v := range p.Values {
+				if v == p.Recommended {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("%s Recommended %q not in Values %v", p.Key, p.Recommended, p.Values)
+			}
+		} else {
+			if len(p.Values) != 0 {
+				t.Errorf("%s non-enum but has Values %v", p.Key, p.Values)
+			}
+		}
+	}
+}
+
+// TestValueKindBundleAndToggleClassifications (RED first, plan 09.6-01 Task 1 behavior Test 4):
+// every Git row for which IsBundle() reports true is bundle-kind, and no
+// scalar row is; the row for which IsFallbackAuthor() reports true is text-kind.
+func TestValueKindBundleAndToggleClassifications(t *testing.T) {
+	for _, p := range Policy {
+		if p.IsBundle() {
+			if p.Kind != OptionValueKindBundle {
+				t.Errorf("row %q IsBundle()=true but Kind=%q", p.Key, p.Kind)
+			}
+		} else if !p.IsBundle() {
+			if p.Kind == OptionValueKindBundle {
+				t.Errorf("row %q IsBundle()=false but Kind=%q", p.Key, p.Kind)
+			}
+		}
+		if p.IsFallbackAuthor() {
+			if p.Kind != OptionValueKindText {
+				t.Errorf("row %q IsFallbackAuthor()=true but Kind=%q (want text)", p.Key, p.Kind)
+			}
+		}
+	}
+}
