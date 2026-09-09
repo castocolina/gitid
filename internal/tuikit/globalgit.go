@@ -2211,7 +2211,9 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 	var d strings.Builder
 	// PD25: Render the open editor's value list in the DETAIL pane,
 	// in the same slot the fallback-author fields already occupy.
-	if m.optionEditor != nil && m.optionEditor.IsOpen() {
+	// Task 2: only render enum values for enum-cycle mode; fallback-pair/text modes
+	// render in their own sections below.
+	if m.optionEditor != nil && m.optionEditor.IsOpen() && m.optionEditor.Mode() == OptionEditorModeEnumCycle {
 		d.WriteString(" " + styleBold.Render("Edit "+m.optionEditor.Key()) + "\n")
 		d.WriteString(" " + styleInfo.Render("(←/→ change)") + "\n\n")
 		for i, val := range m.optionEditor.Values() {
