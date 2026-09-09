@@ -997,4 +997,14 @@ const (
 	// alongside OptionEditorCommitLabel while the editor is open, mirroring the
 	// browse-mode footer's own key/label pairs.
 	OptionEditorDismissLabel = "dismiss"
+	// GlobalGitDefaultBranchHelperLabel is the helper-row text for the
+	// init.defaultBranch free-text editor (Phase 9.6 plan 09.6-04, Task 3).
+	// Appears below the text input while editing, following the match-strategy
+	// group's stable-hint-zone pattern (identities.go:1042-1047). The text
+	// describes what the row does without trailing period (C-4 fragment style).
+	GlobalGitDefaultBranchHelperLabel = "Git's default branch for new repositories"
+	// GlobalGitFallbackAuthorEditorLabel is the fallback-pair editor's header
+	// (Phase 9.6 plan 09.6-04, Task 3). Replaces the browse-mode detail pane
+	// with the two-field edit interface when the edit key opens the editor.
+	GlobalGitFallbackAuthorEditorLabel = "Edit author (name and email)"
 )

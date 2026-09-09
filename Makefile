@@ -619,6 +619,8 @@ gate-copy-freeze:
 		'edit' \
 		'commit' \
 		'dismiss' \
+		'Git'\''s default branch for new repositories' \
+		'Edit author (name and email)' \
 		''\''%s'\'' already has a problem in your current configuration — unrelated to what you just entered. Nothing was written.'; \
 	do \
 		if grep -rqF -- "$$s" internal/tuikit internal/identity cmd/gitid internal/globalssh internal/globalgit; then \

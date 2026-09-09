@@ -965,6 +965,149 @@ func TestGlobalGit_RealPTYBundleRowHasNoEditor(t *testing.T) {
 	}
 }
 
+// TestGlobalGit_RealPTYFallbackPairEdit proves the fallback-pair editor integration on Global Git,
+// exercising the edit key, the fallback-pair state machine, text input across dual fields,
+// and the apply ceremony with on-disk commit.
+func TestGlobalGit_RealPTYFallbackPairEdit(t *testing.T) {
+	home := ShortSandboxHome(t)
+	main, baseline := seedGlobalGitHome(t, home, "[user]\n\tname = Test User\n", "")
+	s := startGlobalGitPTY(t, home, "")
+
+	// Snapshot pre-edit state
+	preEditState, _ := os.ReadFile(baseline)
+	preEditContent := string(preEditState)
+
+	// Navigate to the first option row (user.name fallback row, row 0)
+	frame := s.snapshot()
+	if !strings.Contains(frame, "user.name") {
+		t.Fatalf("user.name row not visible initially:\n%s", frame)
+	}
+
+	// Press 'e' to open the fallback-pair editor on the user.name row
+	s.sendKey([]byte("e"), keystrokeDelay)
+	editorFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		// The fallback-pair editor should render in the detail pane with both name and email fields
+		return strings.Contains(text, "name") && strings.Contains(text, "email")
+	})
+	if !ok {
+		t.Fatalf("fallback-pair editor never opened after 'e' key. Last frame:\n%s", editorFrame)
+	}
+
+	// Verify the breadcrumb still shows Options (not a different sub-tab)
+	if !strings.Contains(editorFrame, "Options") || !strings.Contains(editorFrame, "Global Git") {
+		t.Fatalf("breadcrumb changed after opening editor (editor guard failed):\n%s", editorFrame)
+	}
+
+	// Type a new name into the name field
+	s.sendKey([]byte("Alice Developer"), keystrokeDelay)
+
+	// Press Tab to move to the email field
+	s.sendKey([]byte{9}, keystrokeDelay) // Tab character
+	s.sendKey([]byte("alice@example.com"), keystrokeDelay)
+
+	// Press Esc to dismiss without committing
+	s.sendKey(dummyKeyEsc, keystrokeDelay)
+	dismissFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		// After dismiss, we should be back in browse mode without the editor
+		return !strings.Contains(text, "name") || !strings.Contains(text, "email")
+	})
+	if !ok {
+		t.Fatalf("editor did not dismiss with Esc key. Last frame:\n%s", dismissFrame)
+	}
+
+	// Verify the file is byte-identical after dismiss (no staged changes committed)
+	postDismissState, _ := os.ReadFile(baseline)
+	postDismissContent := string(postDismissState)
+	if preEditContent != postDismissContent {
+		t.Fatalf("config file changed after dismissing editor (should be byte-identical):\nBefore:\n%s\nAfter:\n%s", preEditContent, postDismissContent)
+	}
+
+	// Re-open the editor for a real commit
+	s.sendKey([]byte("e"), keystrokeDelay)
+	editorFrame2, ok := s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "name") && strings.Contains(text, "email")
+	})
+	if !ok {
+		t.Fatalf("fallback-pair editor never re-opened. Last frame:\n%s", editorFrame2)
+	}
+
+	// Clear and enter new values
+	// First, clear the name field (Ctrl+A, Backspace)
+	s.sendKey([]byte{1}, keystrokeDelay) // Ctrl+A
+	s.sendKey(dummyKeyBackspace, keystrokeDelay)
+	s.sendKey([]byte("Bob Engineer"), keystrokeDelay)
+
+	// Move to email field and enter value
+	s.sendKey([]byte{9}, keystrokeDelay) // Tab
+	s.sendKey([]byte("bob@example.com"), keystrokeDelay)
+
+	// Press Enter to commit the staged override
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	committedFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		// After commit, we should be back in browse mode
+		return strings.Contains(text, "user.name") && strings.Contains(text, "Options")
+	})
+	if !ok {
+		t.Fatalf("editor did not close after Enter commit. Last frame:\n%s", committedFrame)
+	}
+
+	// Open the apply ceremony
+	s.sendKey([]byte("a"), keystrokeDelay)
+	ceremonyFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "Write global-git managed block") || strings.Contains(text, "baseline")
+	})
+	if !ok {
+		t.Fatalf("apply ceremony never opened. Last frame:\n%s", ceremonyFrame)
+	}
+
+	// Press Enter to confirm the apply
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	confirmPromptFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		// The confirmation prompt should appear
+		return strings.Contains(text, "Type") || strings.Contains(text, "confirm")
+	})
+	if !ok {
+		t.Fatalf("confirmation prompt never appeared. Last frame:\n%s", confirmPromptFrame)
+	}
+
+	// Type the confirmation code
+	s.sendKey([]byte("yes"), keystrokeDelay)
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+
+	// Wait for the apply to complete
+	successFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "applied") || strings.Contains(text, "Options")
+	})
+	if !ok {
+		t.Fatalf("apply did not complete. Last frame:\n%s", successFrame)
+	}
+
+	// Verify the file has the new values
+	postApplyState, _ := os.ReadFile(baseline)
+	postApplyContent := string(postApplyState)
+	if postApplyContent == preEditContent {
+		t.Fatalf("config file was not modified by the apply ceremony")
+	}
+
+	// Verify the new author values are in the file
+	if !strings.Contains(postApplyContent, "Bob Engineer") {
+		t.Fatalf("staged name value (Bob Engineer) not found in written config:\n%s", postApplyContent)
+	}
+	if !strings.Contains(postApplyContent, "bob@example.com") {
+		t.Fatalf("staged email value (bob@example.com) not found in written config:\n%s", postApplyContent)
+	}
+
+	// Verify a backup file was created
+	backupMatches, err := filepath.Glob(main + ".bak.*")
+	if err != nil {
+		t.Fatalf("globbing for backup files: %v", err)
+	}
+	if len(backupMatches) < 1 {
+		t.Fatalf("expected at least one timestamped backup file after fallback-pair edit, found none")
+	}
+	t.Logf("fallback-pair edit backup file(s) created: %v", backupMatches)
+}
+
 // extractRowLine is a test helper that finds a row by key and returns its first line
 func extractRowLine(t *testing.T, frame, key string) string {
 	t.Helper()
