@@ -784,3 +784,197 @@ func TestGlobalGit_RealPTYCustomKeyRejectsMalformedKey(t *testing.T) {
 	mustSee(t, s, "Global Git › Set keys", "Esc closes the rejected form back to the Set keys list")
 	assertGlobalGitFilesUnchanged(t, before, main, baseline)
 }
+
+// TestGlobalGit_RealPTYEnumRowEdit proves the enum editor integration on Global Git,
+// exercising the edit key, the shared editor state machine, the conditional apply
+// ceremony dispatch, and the hard-gate substitution on disk for merge.conflictstyle.
+func TestGlobalGit_RealPTYEnumRowEdit(t *testing.T) {
+	home := ShortSandboxHome(t)
+	main, baseline := seedGlobalGitHome(t, home, "[user]\n\tname = Test User\n", "")
+	s := startGlobalGitPTY(t, home, "")
+
+	// Snapshot pre-edit state
+	preEditState, _ := os.ReadFile(baseline)
+	preEditContent := string(preEditState)
+
+	// The merge.conflictstyle row is the last visible row (row 10, 0-indexed)
+	// in the default Options list. Navigate to it.
+	for i := 0; i < 10; i++ {
+		s.sendKey(dummyKeyDown, keystrokeDelay)
+	}
+	frame := s.snapshot()
+	if !strings.Contains(frame, "merge.conflictstyle") {
+		t.Fatalf("merge.conflictstyle row not visible after navigation:\n%s", frame)
+	}
+
+	// Press 'e' to open the editor on the enum row
+	s.sendKey([]byte("e"), keystrokeDelay)
+	editorFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		// The editor should render in the detail pane with the enum values
+		return strings.Contains(text, "merge") || strings.Contains(text, "diff3") || strings.Contains(text, "zdiff3")
+	})
+	if !ok {
+		t.Fatalf("enum editor never opened after 'e' key. Last frame:\n%s", editorFrame)
+	}
+
+	// Verify the breadcrumb still shows Options (not a different sub-tab)
+	if !strings.Contains(editorFrame, "Options") || !strings.Contains(editorFrame, "Global Git") {
+		t.Fatalf("breadcrumb changed after opening editor (editor guard failed):\n%s", editorFrame)
+	}
+
+	// Press right to cycle the value
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+	cycledFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "Global Git") && strings.Contains(text, "Options")
+	})
+	if !ok {
+		t.Fatalf("editor did not respond to cycling keys. Last frame:\n%s", cycledFrame)
+	}
+
+	// Verify breadcrumb STILL shows Options (proving the guard beat the sub-tab-switch)
+	if !strings.Contains(cycledFrame, "Options") {
+		t.Fatalf("sub-tab switched during editing (key guard failed):\n%s", cycledFrame)
+	}
+
+	// Press Esc to dismiss without committing
+	s.sendKey(dummyKeyEsc, keystrokeDelay)
+	dismissFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		// After dismiss, we should be back in browse mode without the editor
+		return !strings.Contains(text, "Edit merge") && strings.Contains(text, "merge.conflictstyle")
+	})
+	if !ok {
+		t.Fatalf("editor did not dismiss with Esc key. Last frame:\n%s", dismissFrame)
+	}
+
+	// Verify the file is byte-identical after dismiss (no staged override committed)
+	postDismissState, _ := os.ReadFile(baseline)
+	postDismissContent := string(postDismissState)
+	if preEditContent != postDismissContent {
+		t.Fatalf("config file changed after dismissing editor (should be byte-identical):\nBefore:\n%s\nAfter:\n%s", preEditContent, postDismissContent)
+	}
+
+	// Re-open the editor and cycle to a non-recommended value
+	s.sendKey([]byte("e"), keystrokeDelay)
+	editorFrame2, ok := s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "zdiff3")
+	})
+	if !ok {
+		t.Fatalf("enum editor never re-opened. Last frame:\n%s", editorFrame2)
+	}
+
+	// Cycle right to reach a different value (aim for zdiff3 from merge)
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+	s.sendKey(wizardKeyRight, keystrokeDelay)
+
+	// Press Enter to commit the staged override
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	committedFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		// After commit, we should be back in browse mode
+		return strings.Contains(text, "merge.conflictstyle") && strings.Contains(text, "Options")
+	})
+	if !ok {
+		t.Fatalf("editor did not close after Enter commit. Last frame:\n%s", committedFrame)
+	}
+
+	// Open the apply ceremony
+	s.sendKey([]byte("a"), keystrokeDelay)
+	ceremonyFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "Write global-git managed block") || strings.Contains(text, "baseline")
+	})
+	if !ok {
+		t.Fatalf("apply ceremony never opened. Last frame:\n%s", ceremonyFrame)
+	}
+
+	// Press Enter to confirm the apply
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	confirmPromptFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		// The confirmation prompt should appear
+		return strings.Contains(text, "Type") || strings.Contains(text, "confirm")
+	})
+	if !ok {
+		t.Fatalf("confirmation prompt never appeared. Last frame:\n%s", confirmPromptFrame)
+	}
+
+	// Type the confirmation code
+	s.sendKey([]byte("yes"), keystrokeDelay)
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
+
+	// Wait for the apply to complete
+	successFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
+		return strings.Contains(text, "applied") || strings.Contains(text, "Options")
+	})
+	if !ok {
+		t.Fatalf("apply did not complete. Last frame:\n%s", successFrame)
+	}
+
+	// Verify the file has the new value
+	postApplyState, _ := os.ReadFile(baseline)
+	postApplyContent := string(postApplyState)
+	if postApplyContent == preEditContent {
+		t.Fatalf("config file was not modified by the apply ceremony")
+	}
+
+	// Verify zdiff3 is in the file
+	if !strings.Contains(postApplyContent, "zdiff3") {
+		t.Fatalf("staged enum value (zdiff3) not found in written config:\n%s", postApplyContent)
+	}
+
+	// Verify a backup file was created
+	backupMatches, err := filepath.Glob(main + ".bak.*")
+	if err != nil {
+		t.Fatalf("globbing for backup files: %v", err)
+	}
+	if len(backupMatches) < 1 {
+		t.Fatalf("expected at least one timestamped backup file after enum edit, found none")
+	}
+	t.Logf("enum row edit backup file(s) created: %v", backupMatches)
+}
+
+// TestGlobalGit_RealPTYBundleRowHasNoEditor proves that bundle rows do not open
+// editors when the edit key is pressed, demonstrating type-aware rendering.
+func TestGlobalGit_RealPTYBundleRowHasNoEditor(t *testing.T) {
+	home := SandboxHome(t)
+	_, _ = seedGlobalGitHome(t, home, "[user]\n\tname = Test User\n", "")
+	s := startGlobalGitPTY(t, home, "")
+
+	// The alias bundle row is at index 8 (0-indexed) in the Options list
+	for i := 0; i < 8; i++ {
+		s.sendKey(dummyKeyDown, keystrokeDelay)
+	}
+	frame := s.snapshot()
+	if !strings.Contains(frame, "alias") {
+		t.Fatalf("alias bundle row not visible after navigation:\n%s", frame)
+	}
+
+	// Capture the row's rendered line before pressing edit
+	beforeEditLine := extractRowLine(t, frame, "alias")
+
+	// Press 'e' on the bundle row — should have no effect
+	s.sendKey([]byte("e"), keystrokeDelay)
+	afterEditFrame := s.snapshot()
+
+	// Verify the row's rendered line is unchanged (no editor opened)
+	afterEditLine := extractRowLine(t, afterEditFrame, "alias")
+	if beforeEditLine != afterEditLine {
+		t.Fatalf("bundle row rendering changed after 'e' key (editor should not open):\nBefore:\n%s\nAfter:\n%s", beforeEditLine, afterEditLine)
+	}
+
+	// Verify no editor detail pane appeared
+	if strings.Contains(afterEditFrame, "Edit alias") {
+		t.Fatalf("editor opened on bundle row (should not):\n%s", afterEditFrame)
+	}
+}
+
+// extractRowLine is a test helper that finds a row by key and returns its first line
+func extractRowLine(t *testing.T, frame, key string) string {
+	t.Helper()
+	lines := strings.Split(frame, "\n")
+	for i, line := range lines {
+		if strings.Contains(line, key) {
+			// Return this line (it's the first line of the row)
+			return line
+		}
+	}
+	t.Fatalf("row with key %q not found in frame:\n%s", key, frame)
+	return ""
+}
