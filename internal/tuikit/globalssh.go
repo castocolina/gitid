@@ -1327,7 +1327,7 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 			idx := m.detailIndex(options)
 			if idx >= 0 && idx < len(options) {
 				row := options[idx]
-				if OptionEditEligibility(row) {
+				if OptionEditEligibility(row.GlobalSSHOptionView) {
 					// Open the enum-cycle editor for this row.
 					m.optionEditor = NewOptionEditor(row.Key, row.Values, row.CurrentValue)
 					m.optionEditor.OpenEnumCycle(row.CurrentValue)
