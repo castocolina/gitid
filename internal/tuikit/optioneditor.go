@@ -41,6 +41,10 @@ type OptionEditor struct {
 	// snapshot is the pre-edit value. Pressing Esc restores this value and
 	// clears any staged override.
 	snapshot string
+	// snapshotName and snapshotEmail are the pre-edit values for fallback-pair mode.
+	// Pressing Esc restores both fields to these snapshots (PD17, PD22).
+	snapshotName  string
+	snapshotEmail string
 	// textInput is the text input model for free-text mode.
 	textInput textinput.Model
 	// error carries an inline validation error message (Rule I-10).
@@ -98,10 +102,14 @@ func (e *OptionEditor) OpenText(currentValue string) {
 }
 
 // OpenFallbackPair opens the editor in fallback-pair mode (for multi-field editing).
-// Currently a placeholder; the free-text mode will be consumed first.
-func (e *OptionEditor) OpenFallbackPair(currentValue string) {
+// It takes snapshots of both the name and email fields. Pressing Esc restores both
+// fields to these snapshots taken at the moment the editor opened (PD22).
+func (e *OptionEditor) OpenFallbackPair(name, email string) {
 	e.mode = OptionEditorModeFallbackPair
-	e.snapshot = currentValue
+	e.snapshotName = name
+	e.snapshotEmail = email
+	// The composite snapshot is for Dismiss() to return a single value.
+	e.snapshot = fallbackCurrentLabel(name, email)
 }
 
 // Close closes the editor and resets to closed mode.
@@ -205,6 +213,12 @@ func (e *OptionEditor) Cursor() int {
 // Values returns the declared value set (for rendering).
 func (e *OptionEditor) Values() []string {
 	return e.values
+}
+
+// FallbackPairSnapshot returns the pre-edit name and email snapshots for fallback-pair mode.
+// These are the values to restore when Esc is pressed.
+func (e *OptionEditor) FallbackPairSnapshot() (name, email string) {
+	return e.snapshotName, e.snapshotEmail
 }
 
 // OptionRowView is a common interface for row types that can be edited via the

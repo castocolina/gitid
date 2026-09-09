@@ -581,10 +581,14 @@ func TestGitFallbackInputsSeededFromStateView(t *testing.T) {
 }
 
 func TestGitFallbackEditModeRoutesShortcutIntoField(t *testing.T) {
+	// PD48 rewrite: changed trigger from Enter to edit key (Task 2 regesture).
+	// The subject — a single-letter screen shortcut typed while editing reaches
+	// the name input instead of opening a ceremony — survives the regesture.
 	a := fallbackRowApp(t, stubBackend{})
-	a, _ = press(t, a, "enter")
-	if !ggitModel(t, a).fieldEditing {
-		t.Fatal("Enter on the selected fallback row must start text-editing")
+	a, _ = press(t, a, "e")
+	m := ggitModel(t, a)
+	if !m.optionEditor.IsOpen() || m.optionEditor.Mode() != OptionEditorModeFallbackPair {
+		t.Fatal("edit key on the selected fallback row must open the fallback-pair editor")
 	}
 	a = typeText(t, a, "a")
 	if got := ggitModel(t, a).nameInput.Value(); got != "a" {
@@ -593,9 +597,14 @@ func TestGitFallbackEditModeRoutesShortcutIntoField(t *testing.T) {
 	if ggitModel(t, a).ceremonyOpen {
 		t.Error("typing a screen shortcut while editing must not open a ceremony")
 	}
+	// PD4 addition: Esc now restores the pre-edit snapshot, not just closes the editor.
 	a, _ = press(t, a, "esc")
-	if ggitModel(t, a).fieldEditing {
-		t.Error("Esc must exit text-editing")
+	m = ggitModel(t, a)
+	if m.optionEditor.IsOpen() {
+		t.Error("Esc must close the editor")
+	}
+	if m.nameInput.Value() != "" {
+		t.Errorf("nameInput = %q after Esc, want restored to empty (pre-edit snapshot)", m.nameInput.Value())
 	}
 }
 
@@ -606,12 +615,15 @@ func TestGitFallbackEditModeRoutesShortcutIntoField(t *testing.T) {
 // the name/email inputs disappeared from view() but every subsequent
 // keystroke kept routing into m.nameInput/m.emailInput. Clicks on a
 // non-fallback row while editing must be inert.
+// PD48 rewrite: changed setup from Enter to edit key (Task 2 regesture).
+// The subject — that a body click while editing leaves the editor open and
+// key input still reaches the name field — survives the regesture.
 func TestGitFieldEditingBlocksBodyClickFromMovingSelection(t *testing.T) {
 	a := fallbackRowApp(t, stubBackend{})
-	a, _ = press(t, a, "enter")
+	a, _ = press(t, a, "e")
 	m := ggitModel(t, a)
-	if !m.fieldEditing {
-		t.Fatal("setup: Enter on the fallback row must start text-editing")
+	if !m.optionEditor.IsOpen() || m.optionEditor.Mode() != OptionEditorModeFallbackPair {
+		t.Fatal("setup: edit key on the fallback row must open the fallback-pair editor")
 	}
 	// clickAt sends FULL-FRAME coordinates; body-relative row 0 (the first
 	// master-list row, definitely not the fallback row three rows down) is
@@ -622,8 +634,8 @@ func TestGitFieldEditingBlocksBodyClickFromMovingSelection(t *testing.T) {
 	if m2.detailKey != GlobalGitEmailFallbackKey {
 		t.Errorf("BL-03 regressed: a body click while editing moved detailKey to %q, want it to stay on %q", m2.detailKey, GlobalGitEmailFallbackKey)
 	}
-	if !m2.fieldEditing {
-		t.Error("fieldEditing must remain true — the click must not silently exit edit mode either")
+	if !m2.optionEditor.IsOpen() || m2.optionEditor.Mode() != OptionEditorModeFallbackPair {
+		t.Error("optionEditor must remain open — the click must not silently exit edit mode either")
 	}
 	a3 := typeText(t, a2, "z")
 	if got := ggitModel(t, a3).nameInput.Value(); got != "z" {
@@ -637,18 +649,25 @@ func TestGitFallbackEmailInlineValidation(t *testing.T) {
 	if strings.Contains(detail, "needs @") {
 		t.Errorf("empty email must not show needs @; detail:\n%s", detail)
 	}
-	a, _ = press(t, a, "tab")
-	a, _ = press(t, a, "enter")
+	// Task 2 rewrite: use edit key instead of Enter to start editing (regesture).
+	a, _ = press(t, a, "e")
+	a, _ = press(t, a, "tab") // Move to email field
 	a = typeText(t, a, "not-an-email")
-	a, _ = press(t, a, "esc")
+	// Check the validation error while still editing.
 	if !strings.Contains(regionFlat(a, 45, 100), "needs @") {
 		t.Error("non-empty malformed email must show needs @")
+	}
+	// After Esc, the email is restored to empty, so no error.
+	a, _ = press(t, a, "esc")
+	if strings.Contains(regionFlat(a, 45, 100), "needs @") {
+		t.Error("after Esc dismisses the edit, the email is restored to empty and no error should show")
 	}
 }
 
 func TestGitFallbackNameNeverValidates(t *testing.T) {
 	a := fallbackRowApp(t, stubBackend{})
-	a, _ = press(t, a, "enter")
+	// Task 2 rewrite: use edit key instead of Enter to start editing (regesture).
+	a, _ = press(t, a, "e")
 	a = typeText(t, a, "!!!")
 	a, _ = press(t, a, "esc")
 	detail := regionFlat(a, 45, 100)
@@ -3072,5 +3091,58 @@ func TestGlobalGitFallbackRowDemoStateOverlay(t *testing.T) {
 	if fallbackRow.CurrentValue != expected {
 		t.Errorf("with DemoState overlay, fallback CurrentValue = %q, want %q",
 			fallbackRow.CurrentValue, expected)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Task 2: Regesture fallback row and free-text editor for init.defaultBranch
+// ---------------------------------------------------------------------------
+
+// TestGlobalGitEditKeyOpensFallbackEditor is Test 1 for Task 2:
+// with the fallback-author row selected and no editor open, the edit key
+// starts editing and focuses the currently focused field.
+func TestGlobalGitEditKeyOpensFallbackEditor(t *testing.T) {
+	b := stubBackend{
+		fallbackState: GitFallbackAuthorView{Name: "Pat Example", Email: "pat@example.com"},
+	}
+	a := fallbackRowApp(t, b)
+	// Before edit key, the optionEditor should be closed (or nil).
+	m := ggitModel(t, a)
+	if m.optionEditor != nil && m.optionEditor.IsOpen() {
+		t.Fatal("optionEditor should not be open on entry")
+	}
+
+	// Press the edit key.
+	a, _ = press(t, a, "e")
+	m = ggitModel(t, a)
+
+	// After edit key, the optionEditor should be open in fallback-pair mode.
+	if m.optionEditor == nil {
+		t.Fatal("optionEditor should be created after edit key")
+	}
+	if !m.optionEditor.IsOpen() {
+		t.Fatal("optionEditor should be open after edit key")
+	}
+	if m.optionEditor.Mode() != OptionEditorModeFallbackPair {
+		t.Errorf("optionEditor mode = %s, want fallback-pair", m.optionEditor.Mode())
+	}
+}
+
+// TestGlobalGitEnterNoLongerStartsEditingFallback is Test 2 for Task 2:
+// with the fallback-author row selected and no editor open, Enter no
+// longer starts editing.
+func TestGlobalGitEnterNoLongerStartsEditingFallback(t *testing.T) {
+	b := stubBackend{
+		fallbackState: GitFallbackAuthorView{Name: "Pat Example", Email: "pat@example.com"},
+	}
+	a := fallbackRowApp(t, b)
+
+	// Press Enter on the fallback row.
+	a, _ = press(t, a, "enter")
+
+	// The editor should NOT open.
+	m := ggitModel(t, a)
+	if m.optionEditor != nil && m.optionEditor.IsOpen() {
+		t.Error("Enter on fallback row should not open an editor")
 	}
 }

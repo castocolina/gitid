@@ -1006,9 +1006,10 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		return keyResult{model: m, handled: true}
 	}
 
-	// D9: while text-editing a fallback field, every key but Esc/Enter/Tab
-	// reaches the input — this screen's single-letter shortcuts (space, a)
-	// would otherwise collide with typing those same letters.
+	// D9: while text-editing a fallback field (legacy fieldEditing mode),
+	// every key but Esc/Enter/Tab reaches the input — this screen's single-letter
+	// shortcuts (space, a) would otherwise collide with typing those same letters.
+	// This remains for backward compat with the old fieldEditing boolean.
 	if m.fieldEditing {
 		switch key {
 		case "esc", "enter":
@@ -1124,42 +1125,108 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		return keyResult{model: m, handled: true}
 	}
 
-	// Editor guard: while the editor is open, it owns certain keys (left/right
-	// for cycling, Esc/Enter for closing). This guard precedes both sub-tab-switch
-	// sites below — the zero-options branch and the generic case (PD17).
+	// Editor guard: while the editor is open, it owns certain keys. This guard
+	// precedes both sub-tab-switch sites below — the zero-options branch and the
+	// generic case (PD17, Task 2). Behavior depends on the editor mode.
 	if m.subTab == ggitOptions && m.optionEditor != nil && m.optionEditor.IsOpen() {
-		switch key {
-		case "left":
-			// Cycle left through the enum values.
-			m.optionEditor.CycleLeft()
-			return keyResult{model: m, handled: true}
-		case "right":
-			// Cycle right through the enum values.
-			m.optionEditor.CycleRight()
-			return keyResult{model: m, handled: true}
-		case "esc":
-			// Esc dismisses the editor without staging an override.
-			m.optionEditor.Dismiss()
-			m.optionEditor = nil
-			return keyResult{model: m, handled: true}
-		case "enter":
-			// Enter commits the current value as a staged override.
-			committedValue := m.optionEditor.Commit()
-			optKey := m.optionEditor.Key()
-			m.stagedOverrides[optKey] = OverrideRequest{
-				Key:            optKey,
-				RequestedValue: committedValue,
+		switch m.optionEditor.Mode() {
+		case OptionEditorModeFallbackPair:
+			// Fallback-pair mode: route keys to the two text input fields.
+			switch key {
+			case "enter":
+				// Enter commits the values and closes the editor (PD3).
+				m.optionEditor.Commit()
+				m.optionEditor.Close()
+				m.nameInput.Blur()
+				m.emailInput.Blur()
+				return keyResult{model: m, handled: true}
+			case "esc":
+				// Esc restores both fields from the pre-edit snapshot (PD3, PD22).
+				snapshotName, snapshotEmail := m.optionEditor.FallbackPairSnapshot()
+				m.nameInput.SetValue(snapshotName)
+				m.emailInput.SetValue(snapshotEmail)
+				m.optionEditor.Close()
+				m.nameInput.Blur()
+				m.emailInput.Blur()
+				return keyResult{model: m, handled: true}
+			case "tab":
+				// Tab moves between the two fields while editing (PD5).
+				m.fieldFocus = 1 - m.fieldFocus
+				m.focusFallbackField()
+				return keyResult{model: m, handled: true}
+			default:
+				// Every other key reaches the focused input.
+				if m.fieldFocus == 0 {
+					m.nameInput, _ = updateInput(m.nameInput, msg)
+				} else {
+					m.emailInput, _ = updateInput(m.emailInput, msg)
+				}
+				return keyResult{model: m, handled: true}
 			}
-			// Mark the row chosen to include it in the apply set.
-			m.chosen = withToggled(m.chosen, optKey)
-			m.optionEditor = nil
-			return keyResult{model: m, handled: true}
+		case OptionEditorModeText:
+			// Free-text mode: route keys to the text input.
+			switch key {
+			case "enter":
+				// Enter commits the value and closes the editor (I-3).
+				m.optionEditor.Commit()
+				m.optionEditor.Close()
+				return keyResult{model: m, handled: true}
+			case "esc":
+				// Esc dismisses without committing (I-2).
+				m.optionEditor.Dismiss()
+				m.optionEditor.Close()
+				return keyResult{model: m, handled: true}
+			case "tab":
+				// Tab is swallowed on single-field editors (I-8b).
+				return keyResult{model: m, handled: true}
+			default:
+				// Every other key reaches the input EXCEPT pass-through keys.
+				if optionEditorPassThroughKeys[key] {
+					return keyResult{model: m}
+				}
+				// Route to the text input field.
+				input := m.optionEditor.TextInput()
+				input, _ = updateInput(input, msg)
+				// The textinput is managed by the editor; this updates it for view rendering.
+				return keyResult{model: m, handled: true}
+			}
+		case OptionEditorModeEnumCycle:
+			// Enum-cycle mode: handle cycling and commit/dismiss.
+			switch key {
+			case "left":
+				// Cycle left through the enum values.
+				m.optionEditor.CycleLeft()
+				return keyResult{model: m, handled: true}
+			case "right":
+				// Cycle right through the enum values.
+				m.optionEditor.CycleRight()
+				return keyResult{model: m, handled: true}
+			case "esc":
+				// Esc dismisses the editor without staging an override.
+				m.optionEditor.Dismiss()
+				m.optionEditor = nil
+				return keyResult{model: m, handled: true}
+			case "enter":
+				// Enter commits the current value as a staged override.
+				committedValue := m.optionEditor.Commit()
+				optKey := m.optionEditor.Key()
+				m.stagedOverrides[optKey] = OverrideRequest{
+					Key:            optKey,
+					RequestedValue: committedValue,
+				}
+				// Mark the row chosen to include it in the apply set.
+				m.chosen = withToggled(m.chosen, optKey)
+				m.optionEditor = nil
+				return keyResult{model: m, handled: true}
+			default:
+				// Every other key is swallowed EXCEPT the pass-through list.
+				if optionEditorPassThroughKeys[key] {
+					return keyResult{model: m}
+				}
+				return keyResult{model: m, handled: true}
+			}
 		default:
-			// Every other key is swallowed EXCEPT the pass-through list.
-			if optionEditorPassThroughKeys[key] {
-				return keyResult{model: m}
-			}
-			return keyResult{model: m, handled: true}
+			// Unknown mode; let it fall through to normal handling.
 		}
 	}
 
@@ -1251,17 +1318,43 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		m.focusCustomKeyField()
 		return keyResult{model: m, handled: true}
 	case "e":
-		// Edit key: opens the enum-cycle editor on edit-eligible enum rows (PD16).
-		// Free-text rows are wired in plan 09.6-04; fallback-author Enter gesture
-		// stays unchanged to avoid inter-plan collision.
+		// Edit key: opens the appropriate editor based on row type (PD16, Task 2).
+		// - Enum rows open an enum-cycle editor
+		// - Text rows open a free-text editor
+		// - The fallback-author row opens a fallback-pair editor
 		if m.subTab != ggitOptions {
 			return keyResult{model: m, handled: true}
 		}
-		o := options[m.gitDetailIndex(options)]
-		if OptionEditEligibility(o) {
-			m.optionEditor = NewOptionEditor(o.Key, o.Values, o.CurrentValue)
-			m.optionEditor.OpenEnumCycle(o.CurrentValue)
+
+		// Special handling for the fallback-author row (D-09).
+		if m.detailKey == GlobalGitEmailFallbackKey {
+			if m.optionEditor == nil {
+				m.optionEditor = NewOptionEditor(GlobalGitEmailFallbackKey, nil, "")
+			}
+			m.optionEditor.OpenFallbackPair(m.currentName, m.currentEmail)
+			// Focus the field so key input reaches it immediately.
+			m.focusFallbackField()
 			return keyResult{model: m, handled: true}
+		}
+
+		// General row handling for enum/text rows.
+		o := options[m.gitDetailIndex(options)]
+		if !OptionEditEligibility(o) {
+			return keyResult{model: m, handled: true}
+		}
+
+		if m.optionEditor == nil {
+			m.optionEditor = NewOptionEditor(o.Key, o.Values, o.CurrentValue)
+		}
+
+		// Open in the appropriate mode based on the row's kind.
+		switch o.Kind {
+		case OptionValueKindEnum:
+			m.optionEditor.OpenEnumCycle(o.CurrentValue)
+		case OptionValueKindText:
+			m.optionEditor.OpenText(o.CurrentValue)
+		default:
+			// Shouldn't reach here if OptionEditEligibility is correct.
 		}
 		return keyResult{model: m, handled: true}
 	case "space":
@@ -1295,13 +1388,9 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		if m.subTab != ggitOptions {
 			return keyResult{model: m}
 		}
-		// D9/D8: Enter on the selected fallback row starts text-editing
-		// the focused field.
-		if m.detailKey == GlobalGitEmailFallbackKey {
-			m.fieldEditing = true
-			m.focusFallbackField()
-			return keyResult{model: m, handled: true}
-		}
+		// D9/D8: Enter on the selected fallback row no longer starts editing.
+		// The edit key opens the fallback-pair editor instead (Task 2, PD3).
+		// The editor guard above handles Enter when an editor is open.
 		return keyResult{model: m}
 	case "a":
 		if m.subTab != ggitOptions {
@@ -1854,7 +1943,8 @@ func (m globalGitModel) handleClick(x, y, width, height int, s DemoState) keyRes
 	// editing; a stray body click must not silently move the selection out
 	// from under the focused input (the exact "mouse-driven field focus"
 	// desync class this project has hit twice before, T-07-22).
-	if m.fieldEditing {
+	// Task 2: also guard against clicks while the shared optionEditor is open.
+	if m.fieldEditing || (m.optionEditor != nil && m.optionEditor.IsOpen()) {
 		return keyResult{model: m}
 	}
 	if x >= masterListWidth(width) || y < gitTopLines(s) {
@@ -2132,10 +2222,12 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 			d.WriteString(" " + marker + styleFaint.Render(val) + "\n")
 		}
 	} else if detail.Key == GlobalGitEmailFallbackKey {
-		nameFocused := m.fieldFocus == 0 && m.fieldEditing
-		emailFocused := m.fieldFocus == 1 && m.fieldEditing
-		nameSelected := m.fieldFocus == 0 && !m.fieldEditing
-		emailSelected := m.fieldFocus == 1 && !m.fieldEditing
+		// Task 2: check optionEditor mode in addition to fieldEditing (for backward compat).
+		isEditingFallback := m.fieldEditing || (m.optionEditor != nil && m.optionEditor.Mode() == OptionEditorModeFallbackPair)
+		nameFocused := m.fieldFocus == 0 && isEditingFallback
+		emailFocused := m.fieldFocus == 1 && isEditingFallback
+		nameSelected := m.fieldFocus == 0 && !isEditingFallback
+		emailSelected := m.fieldFocus == 1 && !isEditingFallback
 		d.WriteString(gitFallbackFieldLine(GlobalGitNameFallbackKey, m.nameInput, nameFocused, nameSelected) + "\n")
 		d.WriteString(gitFallbackFieldLine(GlobalGitEmailFallbackKey, m.emailInput, emailFocused, emailSelected))
 		if !m.emailValid() {
