@@ -424,6 +424,21 @@ func (o GlobalSSHOptionView) IsWritable() bool {
 	return o.WritableToHostStar
 }
 
+// IsNotApplicable satisfies OptionRowView interface (PD26: shared editor).
+func (o GlobalSSHOptionView) IsNotApplicable() bool {
+	return o.State == GlobalSSHNotApplicable
+}
+
+// IsNeedsAction satisfies OptionRowView interface (PD26: shared editor).
+func (o GlobalSSHOptionView) IsNeedsAction() bool {
+	return o.State == GlobalSSHNeedsAction
+}
+
+// IsAlreadySet satisfies OptionRowView interface (PD26: shared editor).
+func (o GlobalSSHOptionView) IsAlreadySet() bool {
+	return o.State == GlobalSSHAlreadySet
+}
+
 // GlobalSSHApplyPlanView is the confirmed-apply preview scene: the resolved
 // targets, the promised backup paths, and the diff the ceremony previews.
 // ShadowWarnings is filled by 06-04's pre-write simulation.
@@ -663,6 +678,21 @@ func (o GlobalGitOptionView) GetProbeError() string {
 // A Git option row is writable if it has a policy-backed writable member.
 func (o GlobalGitOptionView) IsWritable() bool {
 	return o.PolicyBacked && o.HasWritableMember
+}
+
+// IsNotApplicable satisfies OptionRowView interface (PD26: shared editor).
+func (o GlobalGitOptionView) IsNotApplicable() bool {
+	return o.State == GlobalGitNotApplicable
+}
+
+// IsNeedsAction satisfies OptionRowView interface (PD26: shared editor).
+func (o GlobalGitOptionView) IsNeedsAction() bool {
+	return o.State == GlobalGitNeedsAction
+}
+
+// IsAlreadySet satisfies OptionRowView interface (PD26: shared editor).
+func (o GlobalGitOptionView) IsAlreadySet() bool {
+	return o.State == GlobalGitAlreadySet
 }
 
 // GlobalGitApplyPlanView is the confirmed-apply preview scene: the resolved

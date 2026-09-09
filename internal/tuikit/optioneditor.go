@@ -218,6 +218,12 @@ type OptionRowView interface {
 	GetProbeError() string
 	// IsWritable reports whether this row can be written to.
 	IsWritable() bool
+	// IsNotApplicable reports whether the row's state is NotApplicable.
+	IsNotApplicable() bool
+	// IsNeedsAction reports whether the row's state is NeedsAction.
+	IsNeedsAction() bool
+	// IsAlreadySet reports whether the row's state is AlreadySet.
+	IsAlreadySet() bool
 }
 
 // OptionEditEligibility reports whether a row can be edited based on its state
@@ -232,6 +238,10 @@ func OptionEditEligibility(o OptionRowView) bool {
 	if o.GetKind() == OptionValueKindBundle || o.GetKind() == OptionValueKindToggle {
 		return false
 	}
+	// Not-applicable rows are read-only.
+	if o.IsNotApplicable() {
+		return false
+	}
 	// A row carrying a probe error is read-only.
 	if o.GetProbeError() != "" {
 		return false
@@ -240,20 +250,30 @@ func OptionEditEligibility(o OptionRowView) bool {
 	if !o.IsWritable() {
 		return false
 	}
-	// Note: We cannot check State equality here since SSH and Git have different
-	// state enums. The concrete implementations (GlobalSSHOptionView.IsEditEligible,
-	// GlobalGitOptionView.IsEditEligible) handle state-specific logic.
-	// For now, assume all writable non-bundle/toggle rows with no probe error are
-	// editable. The state checks happen at the call site in globalssh.go/globalgit.go.
 	return true
 }
 
 // OptionApplyEligibility reports whether a row should be included in an apply
-// set, taking into account any staged overrides (PD16). This is a simpler predicate
-// that just checks for staged overrides; the screen-specific logic handles state
-// eligibility (PD26).
+// set, taking into account its state and any staged overrides (PD16, PD26).
+// The eligibility rules are:
+// - NeedsAction rows are always eligible (with or without staged override)
+// - AlreadySet rows are eligible ONLY if a staged override exists
+// - Differs and NotApplicable rows are never eligible (even with override)
 func OptionApplyEligibility(o OptionRowView, hasOverride bool) bool {
-	// A row with a staged override is eligible for apply.
-	// (The needs-action check happens in the screen-specific callers)
-	return hasOverride && o.IsWritable()
+	// Not-applicable rows are never eligible.
+	if o.IsNotApplicable() {
+		return false
+	}
+	// Needs-action rows are always eligible.
+	if o.IsNeedsAction() {
+		return true
+	}
+	// Already-set rows are eligible only if there's a staged override
+	// (writability check happens at edit time; if there's an override,
+	// it means the user successfully edited it).
+	if o.IsAlreadySet() {
+		return hasOverride
+	}
+	// Differs rows are never eligible (even with override).
+	return false
 }
