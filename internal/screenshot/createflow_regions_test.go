@@ -158,7 +158,7 @@ func TestExtractUploadSectionStillMatchesRealUploadBeatContent(t *testing.T) {
 
 // TestExtractSubTabStripDerivesSiblingLabelsFromFrozenConstants is the
 // WR-11 regression: extractSubTabStrip used to gate on the LITERAL strings
-// "All directives", "Storage & preview", and "Set keys" — restating text
+// "All directives", "Storage & preview", and "Other keys" — restating text
 // both TUI files (globalssh.go, globalgit.go) are required to derive from
 // tuikit's own frozen design.go constants ("ONE source for the label text,
 // never restated"). If a frozen label is ever reworded, a hardcoded literal
@@ -198,7 +198,7 @@ func TestExtractSubTabStripDerivesSiblingLabelsFromFrozenConstants(t *testing.T)
 	for _, forbidden := range []string{
 		`strings.Contains(plain, "All directives")`,
 		`strings.Contains(plain, "Storage & preview")`,
-		`strings.Contains(plain, "Set keys")`,
+		`strings.Contains(plain, "Other keys")`,
 		`strings.Contains(plain, "Options")`,
 	} {
 		if strings.Contains(body, forbidden) {

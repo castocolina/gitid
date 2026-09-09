@@ -308,10 +308,10 @@ const (
 	// renderCustomDirectiveValidate), so one extractor covers both states.
 	RegionGSSCustomDirective RegionName = "gss-custom-directive"
 
-	// RegionGGitSetKeysBrowse is the Global Git "Set keys" sub-tab's whole
+	// RegionGGitSetKeysBrowse is the Global Git "Other keys" sub-tab's whole
 	// master-detail body (09.5-05-PLAN.md Task 1, PROP-02 standing guard):
 	// the key-row master list and its detail pane, from the first pane row
-	// through the last one. Anchor: the "Global Git › Set keys" breadcrumb,
+	// through the last one. Anchor: the "Global Git › Other keys" breadcrumb,
 	// unique to this screen and present regardless of filter/scroll state —
 	// mirrors extractGGitOptionsBrowse's own breadcrumb-anchor technique.
 	RegionGGitSetKeysBrowse RegionName = "ggit-set-keys-browse"
@@ -1399,13 +1399,13 @@ func extractGSSCustomDirective(lines []string) string {
 	return bodyFromAnchorToEnd(lines, tuikit.PropsAddCustomDirectiveLabel)
 }
 
-// extractGGitSetKeysBrowse returns the "Set keys" sub-tab's master-detail
+// extractGGitSetKeysBrowse returns the "Other keys" sub-tab's master-detail
 // body — mirrors extractGGitOptionsBrowse exactly, anchored on the
-// "Global Git › Set keys" breadcrumb instead.
+// "Global Git › Other keys" breadcrumb instead.
 func extractGGitSetKeysBrowse(lines []string) string {
 	crumbIdx := -1
 	for i, line := range lines {
-		if strings.Contains(stripANSI(line), "Global Git › Set keys") {
+		if strings.Contains(stripANSI(line), "Global Git › Other keys") {
 			crumbIdx = i
 			break
 		}

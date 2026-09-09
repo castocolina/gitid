@@ -9,7 +9,7 @@ import (
 // every Global SSH "All directives" sub-tab (PROP-01 / 09.5-UI-SPEC.md
 // Copywriting Contract) frozen copy constant declared in design.go's
 // "Phase 9.5 properties browser copy" section, PLUS plan 09.5-02's Global
-// Git "Set keys" sub-tab constants (PROP-02) — both sub-tabs share this ONE
+// Git "Other keys" sub-tab constants (PROP-02) — both sub-tabs share this ONE
 // table rather than a second copy test, per the doc comment on
 // PropsGitSubTabLabel etc. `make gate-copy-freeze` is a SECONDARY
 // source-presence guard (a comment or dead declaration would satisfy a plain
@@ -33,7 +33,7 @@ func TestFrozenPropertiesCopy(t *testing.T) {
 		{"PropsSSHNoFilterMatchFmt(...)", fmt.Sprintf(PropsSSHNoFilterMatchFmt, "stricthost"), `No directives match "stricthost".`},
 		{"PropsCrossReferenceNote", PropsCrossReferenceNote, "Also tracked as a recommended option — see the Options tab for gitid's guidance."},
 		{"PropsSSHSourceLine", PropsSSHSourceLine, "Resolved via ssh -G — reflects Include/Match precedence already applied."},
-		{"PropsGitSubTabLabel", PropsGitSubTabLabel, "Set keys"},
+		{"PropsGitSubTabLabel", PropsGitSubTabLabel, "Other keys"},
 		{"PropsGitProbeFailedHeading", PropsGitProbeFailedHeading, "! Git config could not be read."},
 		{"PropsGitProbeFailedBody", PropsGitProbeFailedBody, "git config --list --show-origin failed — re-enter the screen to retry."},
 		{"PropsGitNoKeysSet", PropsGitNoKeysSet, "No git config keys are set yet."},

@@ -345,12 +345,12 @@ func TokenOwningMember(member string) (string, bool) {
 
 // ManagedRawGitKeys returns the canonical set of raw git config keys the
 // curated policy table manages, constructed from:
-// 1. Every member key of every policy row (e.g. "core.autocrlf", "alias.st",
-//    "user.useConfigOnly", etc.) — the keys `AllGitSetKeys` must exclude
-// 2. The two fallback-author literal keys: "user.name" and "user.email" from
-//    internal/gitconfig/fallbackauthor.go, which the fallback-author row
-//    (Policy line 154-159) declares zero Members for (they reach the
-//    exclusion via the literal pair, not via member lookups)
+//  1. Every member key of every policy row (e.g. "core.autocrlf", "alias.st",
+//     "user.useConfigOnly", etc.) — the keys `AllGitSetKeys` must exclude
+//  2. The two fallback-author literal keys: "user.name" and "user.email" from
+//     internal/gitconfig/fallbackauthor.go, which the fallback-author row
+//     (Policy line 154-159) declares zero Members for (they reach the
+//     exclusion via the literal pair, not via member lookups)
 //
 // The result is used by AllGitSetKeys wiring to partition the raw probe
 // result: returned rows + ManagedRawGitKeys() exactly reconstructs the probe

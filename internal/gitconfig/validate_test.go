@@ -9,9 +9,9 @@ import (
 // TestValidateDefaultBranch tests the git ref-name validator.
 func TestValidateDefaultBranch(t *testing.T) {
 	tests := []struct {
-		name      string
+		name       string
 		branchName string
-		wantErr   bool
+		wantErr    bool
 	}{
 		{"valid main", "main", false},
 		{"valid develop", "develop", false},

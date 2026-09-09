@@ -7455,7 +7455,6 @@ func TestGlobalsBodyTextFallsBackToTheLegacyBlockName(t *testing.T) {
 	}
 }
 
-
 // TestToOptionValueKindSSH (RED first, plan 09.6-01 Task 1) is a table test
 // covering every SSH value-kind constant plus the zero value.
 func TestToOptionValueKindSSH(t *testing.T) {

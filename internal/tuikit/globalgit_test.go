@@ -2432,10 +2432,10 @@ func TestGlobalGitSubTabStripClickSwitches(t *testing.T) {
 		t.Fatalf("initial subTab = %v, want ggitOptions", m.subTab)
 	}
 
-	a = clickCell(t, a, "Set keys", 0, 0)
+	a = clickCell(t, a, "Other keys", 0, 0)
 	m = ggitModel(t, a)
 	if m.subTab != ggitSetKeys {
-		t.Errorf("subTab after clicking the Set keys label = %v, want ggitSetKeys", m.subTab)
+		t.Errorf("subTab after clicking the Other keys label = %v, want ggitSetKeys", m.subTab)
 	}
 
 	a = clickCell(t, a, "Options", 0, 0)
@@ -2489,11 +2489,11 @@ func TestTopLevelArrowHintSuppressedOnGlobalGit(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Plan 09.5-02 Task 2 — the "Set keys" flat filterable master-detail body:
+// Plan 09.5-02 Task 2 — the "Other keys" flat filterable master-detail body:
 // origin/scope rendering and the two distinct empty/error states.
 // ---------------------------------------------------------------------------
 
-// ggitSetKeysApp opens Global Git and navigates to the "Set keys" sub-tab via
+// ggitSetKeysApp opens Global Git and navigates to the "Other keys" sub-tab via
 // one → press from the default Options sub-tab.
 func ggitSetKeysApp(t *testing.T, b Backend) App {
 	t.Helper()
@@ -2627,11 +2627,11 @@ func TestSetKeysTwoDistinctEmptyStates(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // PROP-03 (09.5-03): free-form custom Git key entry — reachable via "n" on
-// the Set keys sub-tab.
+// the Other keys sub-tab.
 // ---------------------------------------------------------------------------
 
 // TestCustomKeyFormOpensAndCaptures asserts "n" opens the custom-key form on
-// the Set keys sub-tab, Tab moves focus between the key/value fields, and
+// the Other keys sub-tab, Tab moves focus between the key/value fields, and
 // typed characters reach the FOCUSED field rather than being treated as
 // this screen's reserved single-letter shortcuts (space, a) — the SAME
 // keyboard-capture contract the D9 fallback pair already provides. Esc then
@@ -2970,22 +2970,22 @@ func TestCustomKeyStaleCommitMessageIsNotMisattributed(t *testing.T) {
 	}
 }
 
-// TestSetKeysFooterAdvertisesAddCustomKey asserts the Set keys sub-tab's
+// TestSetKeysFooterAdvertisesAddCustomKey asserts the Other keys sub-tab's
 // footer advertises "n" / "Add custom key" whenever the probe succeeded —
 // mirroring the "/" filter action's identical setKeysErr-gated advertisement.
 func TestSetKeysFooterAdvertisesAddCustomKey(t *testing.T) {
 	a := ggitSetKeysApp(t, stubBackend{})
 	view := appView(a)
 	if !strings.Contains(view, PropsAddCustomKeyLabel) {
-		t.Errorf("Set keys footer must advertise %q;\nview:\n%s", PropsAddCustomKeyLabel, view)
+		t.Errorf("Other keys footer must advertise %q;\nview:\n%s", PropsAddCustomKeyLabel, view)
 	}
 
-	// Probe failure: fail-open like every other Set keys action — "n" must
+	// Probe failure: fail-open like every other Other keys action — "n" must
 	// NOT be advertised (mirrors "/" filter's identical omission).
 	a = ggitSetKeysApp(t, stubBackend{gitSetKeysErr: errGlobalGitTest})
 	view = appView(a)
 	if strings.Contains(view, PropsAddCustomKeyLabel) {
-		t.Errorf("Set keys footer must NOT advertise %q on a probe failure;\nview:\n%s", PropsAddCustomKeyLabel, view)
+		t.Errorf("Other keys footer must NOT advertise %q on a probe failure;\nview:\n%s", PropsAddCustomKeyLabel, view)
 	}
 }
 

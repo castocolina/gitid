@@ -1383,7 +1383,7 @@ var globalGitScreenIDs = map[string]bool{
 	"ggit-options-list": true, "ggit-options-scrolled": true, "ggit-options-with-selection": true,
 	"ggit-options-differs-row": true, "ggit-options-probe-error": true,
 	"ggit-apply-preview": true, "ggit-apply-receipt": true,
-	// 09.5-05-PLAN.md Task 1: the "Set keys" browser (PROP-02, including its
+	// 09.5-05-PLAN.md Task 1: the "Other keys" browser (PROP-02, including its
 	// own net-new sub-tab strip, D-D) and the custom-key ceremony preview
 	// (PROP-03) states.
 	"ggit-set-keys-list": true, "ggit-custom-key-ceremony-preview": true,
@@ -2580,7 +2580,7 @@ func TestNegativeControl_GlobalGitMidByteTruncationHashStable(t *testing.T) {
 // 09.6-05 Task 0: re-anchors the shared visual-gate fixture seed from
 // "alias.co" (a member of the curated Policy alias bundle, which Task 1 will
 // exclude) to "core.editor" (a non-policy key under both the display-key and
-// member-key lookups). The fixture seeds ONE deterministic "Set keys" probe
+// member-key lookups). The fixture seeds ONE deterministic "Other keys" probe
 // entry ([core] editor = vim in home/.gitconfig) so the Phase 9.5
 // ggit-set-keys-list state has a genuinely SET, non-curated key to render —
 // a 09.5-02-SUMMARY.md-documented finding is that a genuinely empty git
@@ -2659,7 +2659,7 @@ func TestDeterministicGlobalGitFixtureIsAdditiveNotTruncating(t *testing.T) {
 // 09.5-05-PLAN.md Task 1: normalizes the LIVE capture via
 // normalizeDisposableHome, mirroring mergeGlobalSSHCaptures's own call
 // exactly — previously unneeded (no pre-Phase-9.5 Global Git region showed
-// an absolute filesystem path), but the new "Set keys" detail pane renders
+// an absolute filesystem path), but the new "Other keys" detail pane renders
 // git config --show-origin's literal origin path (the seeded fixture home's
 // own ~/.gitconfig), which is CR-01 non-deterministic across the two t.
 // TempDir() runs TestGateVisualRegression drives without this normalization

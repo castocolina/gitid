@@ -2953,7 +2953,7 @@ func globalGitSpecs() []ScreenSpec {
 		// -------------------------------------------------------------------
 		{
 			ScreenID:              "ggit-set-keys-list",
-			Interaction:           "Boot the Global Git tab on the Options sub-tab, then press → once (Options → Set keys) to land on the second sub-tab in browse mode.",
+			Interaction:           "Boot the Global Git tab on the Options sub-tab, then press → once (Options → Other keys) to land on the second sub-tab in browse mode.",
 			StateMarker:           "core.editor",
 			ApplicableLive:        true,
 			ApplicableApprovedTUI: true,

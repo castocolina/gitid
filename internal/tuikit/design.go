@@ -884,17 +884,18 @@ const (
 	// PropsSSHSourceLine is the detail pane's provenance line — TEST-02's
 	// existing "ssh -G proof" framing, reused verbatim for this browser.
 	PropsSSHSourceLine = "Resolved via ssh -G — reflects Include/Match precedence already applied."
-	// PropsGitSubTabLabel is Global Git's new sub-tab label (09.5-02,
-	// PROP-02) — deliberately NOT "All keys" (09.5-UI-SPEC.md "Ground
-	// truth"): git's key space is open-ended and `git config --list
-	// --show-origin` can only prove what is actually SET, never a
-	// catalogue of every possible key. ggitTabSetKeysLabel derives from
-	// this constant (padding added around it), never restating the text a
-	// second time.
-	PropsGitSubTabLabel = "Set keys"
+	// PropsGitSubTabLabel is Global Git's sub-tab label (09.5-02 PROP-02,
+	// renamed in 09.6-05 Task 2 PD13). Deliberately NOT "All keys": git's key
+	// space is open-ended and `git config --list --show-origin` can only prove
+	// what is actually SET, never a catalogue of every possible key. After the
+	// policy-managed-key exclusion (09.6-05 Task 1 PD20), this label accurately
+	// describes what this tab shows: the keys gitid does NOT manage.
+	// ggitTabSetKeysLabel derives from this constant (padding added around it),
+	// never restating the text a second time.
+	PropsGitSubTabLabel = "Other keys"
 	// PropsGitProbeFailedHeading mirrors Global Git's EXISTING optionsErr
 	// inline-warning pattern (globalgit.go), same tone/prefix, new copy for
-	// the "Set keys" sub-tab's own probe failure.
+	// the "Other keys" sub-tab's own probe failure.
 	PropsGitProbeFailedHeading = "! Git config could not be read."
 	// PropsGitProbeFailedBody is the probe-failure body line — advisory,
 	// fail-open: navigation stays reachable on this state (mirrors the

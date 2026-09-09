@@ -895,18 +895,18 @@ func (FixtureBackend) GlobalGitOptionStates() ([]tuikit.GlobalGitOptionView, err
 		kind   tuikit.OptionValueKind
 		values []string
 	}{
-		"init.defaultBranch":             {kind: tuikit.OptionValueKindText},
-		"core.ignorecase":                {kind: tuikit.OptionValueKindToggle},
-		"core.autocrlf / core.eol":       {kind: tuikit.OptionValueKindBundle},
-		"user.email (global fallback)":   {kind: tuikit.OptionValueKindText},
-		"user.useConfigOnly":             {kind: tuikit.OptionValueKindToggle},
-		"push.autoSetupRemote":           {kind: tuikit.OptionValueKindToggle},
-		"pull.rebase":                    {kind: tuikit.OptionValueKindToggle},
-		"fetch.prune":                    {kind: tuikit.OptionValueKindToggle},
-		"alias (8 shortcuts)":            {kind: tuikit.OptionValueKindBundle},
-		"color (ui/branch/diff/status)":  {kind: tuikit.OptionValueKindBundle},
-		"merge.conflictstyle":            {kind: tuikit.OptionValueKindEnum, values: []string{"merge", "diff3", "zdiff3"}},
-		"diff.colorMoved":                {kind: tuikit.OptionValueKindEnum, values: []string{"no", "default", "plain", "blocks", "zebra", "dimmed-zebra"}},
+		"init.defaultBranch":            {kind: tuikit.OptionValueKindText},
+		"core.ignorecase":               {kind: tuikit.OptionValueKindToggle},
+		"core.autocrlf / core.eol":      {kind: tuikit.OptionValueKindBundle},
+		"user.email (global fallback)":  {kind: tuikit.OptionValueKindText},
+		"user.useConfigOnly":            {kind: tuikit.OptionValueKindToggle},
+		"push.autoSetupRemote":          {kind: tuikit.OptionValueKindToggle},
+		"pull.rebase":                   {kind: tuikit.OptionValueKindToggle},
+		"fetch.prune":                   {kind: tuikit.OptionValueKindToggle},
+		"alias (8 shortcuts)":           {kind: tuikit.OptionValueKindBundle},
+		"color (ui/branch/diff/status)": {kind: tuikit.OptionValueKindBundle},
+		"merge.conflictstyle":           {kind: tuikit.OptionValueKindEnum, values: []string{"merge", "diff3", "zdiff3"}},
+		"diff.colorMoved":               {kind: tuikit.OptionValueKindEnum, values: []string{"no", "default", "plain", "blocks", "zebra", "dimmed-zebra"}},
 	}
 
 	out := make([]tuikit.GlobalGitOptionView, 0, len(tuikit.GlobalGitOptions))

@@ -67,9 +67,9 @@ const (
 
 // ggitFooterCycleLabel is the ←→ footer action's label, naming both
 // sub-tabs — mirrors gssFooterCycleLabel's identical role on Global SSH.
-const ggitFooterCycleLabel = "Options / Set keys"
+const ggitFooterCycleLabel = "Options / Other keys"
 
-// ggitNextSubTab returns the sub-tab the → key cycles to: Options → Set
+// ggitNextSubTab returns the sub-tab the → key cycles to: Options → Other
 // keys → Options.
 func ggitNextSubTab(cur ggitSubTab) ggitSubTab {
 	if cur == ggitOptions {

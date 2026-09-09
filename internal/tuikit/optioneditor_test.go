@@ -9,10 +9,10 @@ import (
 // a current value absent from the declared set positions the cursor at index 0.
 func TestOptionEditorOpenEnumCycle(t *testing.T) {
 	tests := []struct {
-		name         string
-		key          string
-		values       []string
-		currentValue string
+		name           string
+		key            string
+		values         []string
+		currentValue   string
 		expectedCursor int
 	}{
 		{
@@ -173,80 +173,80 @@ func TestOptionEditEligibility(t *testing.T) {
 		{
 			name: "enum needs-action eligible",
 			view: GlobalSSHOptionView{
-				State:             GlobalSSHNeedsAction,
-				Kind:              OptionValueKindEnum,
+				State:              GlobalSSHNeedsAction,
+				Kind:               OptionValueKindEnum,
 				WritableToHostStar: true,
-				ProbeError:        "",
+				ProbeError:         "",
 			},
 			eligible: true,
 		},
 		{
 			name: "enum already-set eligible",
 			view: GlobalSSHOptionView{
-				State:             GlobalSSHAlreadySet,
-				Kind:              OptionValueKindEnum,
+				State:              GlobalSSHAlreadySet,
+				Kind:               OptionValueKindEnum,
 				WritableToHostStar: true,
-				ProbeError:        "",
+				ProbeError:         "",
 			},
 			eligible: true,
 		},
 		{
 			name: "enum differs eligible",
 			view: GlobalSSHOptionView{
-				State:             GlobalSSHDiffers,
-				Kind:              OptionValueKindEnum,
+				State:              GlobalSSHDiffers,
+				Kind:               OptionValueKindEnum,
 				WritableToHostStar: true,
-				ProbeError:        "",
+				ProbeError:         "",
 			},
 			eligible: true,
 		},
 		{
 			name: "toggle not eligible",
 			view: GlobalSSHOptionView{
-				State:             GlobalSSHNeedsAction,
-				Kind:              OptionValueKindToggle,
+				State:              GlobalSSHNeedsAction,
+				Kind:               OptionValueKindToggle,
 				WritableToHostStar: true,
-				ProbeError:        "",
+				ProbeError:         "",
 			},
 			eligible: false,
 		},
 		{
 			name: "bundle not eligible",
 			view: GlobalSSHOptionView{
-				State:             GlobalSSHNeedsAction,
-				Kind:              OptionValueKindBundle,
+				State:              GlobalSSHNeedsAction,
+				Kind:               OptionValueKindBundle,
 				WritableToHostStar: true,
-				ProbeError:        "",
+				ProbeError:         "",
 			},
 			eligible: false,
 		},
 		{
 			name: "not-applicable not eligible",
 			view: GlobalSSHOptionView{
-				State:             GlobalSSHNotApplicable,
-				Kind:              OptionValueKindEnum,
+				State:              GlobalSSHNotApplicable,
+				Kind:               OptionValueKindEnum,
 				WritableToHostStar: true,
-				ProbeError:        "",
+				ProbeError:         "",
 			},
 			eligible: false,
 		},
 		{
 			name: "probe error not eligible",
 			view: GlobalSSHOptionView{
-				State:             GlobalSSHNeedsAction,
-				Kind:              OptionValueKindEnum,
+				State:              GlobalSSHNeedsAction,
+				Kind:               OptionValueKindEnum,
 				WritableToHostStar: true,
-				ProbeError:        "connection failed",
+				ProbeError:         "connection failed",
 			},
 			eligible: false,
 		},
 		{
 			name: "not writable to host star not eligible",
 			view: GlobalSSHOptionView{
-				State:             GlobalSSHNeedsAction,
-				Kind:              OptionValueKindEnum,
+				State:              GlobalSSHNeedsAction,
+				Kind:               OptionValueKindEnum,
 				WritableToHostStar: false,
-				ProbeError:        "",
+				ProbeError:         "",
 			},
 			eligible: false,
 		},
@@ -331,9 +331,9 @@ func TestOptionApplyEligibility(t *testing.T) {
 // for an out-of-set value, and never appends it to the set.
 func TestOptionEditorExoticCurrentValues(t *testing.T) {
 	tests := []struct {
-		name         string
-		values       []string
-		currentValue string
+		name           string
+		values         []string
+		currentValue   string
 		expectedCursor int
 	}{
 		{
