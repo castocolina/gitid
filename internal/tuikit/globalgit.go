@@ -244,6 +244,15 @@ type globalGitModel struct {
 	// snapshot, never these fields read fresh, for the identical reason.
 	pendingCustomKey   string
 	pendingCustomValue string
+	// stagedOverrides holds override requests keyed by config key.
+	// When an enum row is edited and Enter is pressed, the cycled value
+	// is stored here. This map is consulted by the apply ceremony to
+	// determine routing (PD15): with overrides present, route to the
+	// option-value seam; without, route to the pre-existing planner.
+	stagedOverrides map[string]OverrideRequest
+	// optionEditor is the shared editor state machine for the Options
+	// sub-tab's enum and text rows. Closed by default (PD25).
+	optionEditor *OptionEditor
 }
 
 // newGlobalGitModel returns a model with an EMPTY selection set (D-15, R-1):
@@ -257,6 +266,7 @@ func newGlobalGitModel(b Backend) globalGitModel {
 	return globalGitModel{
 		backend:          b,
 		chosen:           map[string]bool{},
+		stagedOverrides:  map[string]OverrideRequest{},
 		nameInput:        newTextInput(""),
 		emailInput:       newTextInput(""),
 		filter:           newGitSetKeysFilterInput(),
@@ -659,8 +669,15 @@ func gitNeedsAttention(o GlobalGitOptionView) bool {
 func (m globalGitModel) gitApplyChosen(options []GlobalGitOptionView) []string {
 	var keys []string
 	for _, o := range options {
+		// Include rows that are selected via space toggle (checkbox path).
 		if o.Selectable() && m.chosen[o.Key] {
 			keys = append(keys, o.Key)
+		}
+		// PD16: Include already-set rows with staged overrides (editor path).
+		if _, hasOverride := m.stagedOverrides[o.Key]; hasOverride {
+			if OptionApplyEligibility(o) {
+				keys = append(keys, o.Key)
+			}
 		}
 	}
 	return keys
@@ -765,14 +782,30 @@ func (m globalGitModel) fallbackApplyOffered() bool {
 
 // baselineCeremonyFor builds the apply ceremony using the plan view returned
 // by the backend: heading, targets, backups, and preview all come from
-// GlobalGitApplyPlan. The heading is the frozen prefix plus Targets[0] —
-// the resolved include'd baseline path — which is the D-01 allowlisted
-// divergence from the fixture's hardcoded main-config path. The ceremony is
-// ASYNC: confirmation dispatches the backend commit and the receipt is
-// reachable only from that commit's explicit success (ceremony.go's Async
-// contract), exactly like the global-SSH apply ceremony.
+// GlobalGitApplyPlan or GlobalGitOverridePlan depending on whether there
+// are staged overrides (PD15). The heading is the frozen prefix plus
+// Targets[0] — the resolved include'd baseline path — which is the D-01
+// allowlisted divergence from the fixture's hardcoded main-config path.
+// The ceremony is ASYNC: confirmation dispatches the backend commit and the
+// receipt is reachable only from that commit's explicit success (ceremony.go's
+// Async contract), exactly like the global-SSH apply ceremony.
 func (m globalGitModel) baselineCeremonyFor(keys []string, pending int) (ceremonyModel, error) {
-	plan, planErr := m.backend.GlobalGitApplyPlan(keys)
+	// PD15: Conditional dispatch based on staged overrides (editor path).
+	// If no overrides exist, use the pre-existing planner; otherwise use the
+	// override seam to apply the staged values through the hard-gate check.
+	var plan GlobalGitApplyPlanView
+	var planErr error
+	hasOverrides := len(m.stagedOverrides) > 0
+	if hasOverrides {
+		// Convert map to slice for the override plan call.
+		var overrideList []OverrideRequest
+		for _, override := range m.stagedOverrides {
+			overrideList = append(overrideList, override)
+		}
+		plan, planErr = m.backend.GlobalGitOverridePlan(keys, overrideList)
+	} else {
+		plan, planErr = m.backend.GlobalGitApplyPlan(keys)
+	}
 	if planErr != nil {
 		return ceremonyModel{}, planErr
 	}
@@ -946,7 +979,19 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 			keys := m.gitApplyChosen(m.overlaidGitOptions(s))
 			m.appliedKeys = keys
 			m.applyCommitPending = true
-			cmd := m.backend.CommitGlobalGit(keys)
+			// PD15: Conditional dispatch based on staged overrides (editor path).
+			// If overrides exist, dispatch the override seam; otherwise dispatch
+			// the pre-existing planner, keeping the existing commit token wrapping untouched.
+			var cmd tea.Cmd
+			if len(m.stagedOverrides) > 0 {
+				var overrideList []OverrideRequest
+				for _, override := range m.stagedOverrides {
+					overrideList = append(overrideList, override)
+				}
+				cmd = m.backend.CommitGlobalGitOverride(keys, overrideList)
+			} else {
+				cmd = m.backend.CommitGlobalGit(keys)
+			}
 			snapshot := gitCommitTokenMsg{keys: keys}
 			return keyResult{model: m, handled: true, cmd: wrapGitCommitToken(token, cmd, snapshot)}
 		case ceremonyFinished:
@@ -1074,6 +1119,45 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		return keyResult{model: m, handled: true}
 	}
 
+	// Editor guard: while the editor is open, it owns certain keys (left/right
+	// for cycling, Esc/Enter for closing). This guard precedes both sub-tab-switch
+	// sites below — the zero-options branch and the generic case (PD17).
+	if m.subTab == ggitOptions && m.optionEditor != nil && m.optionEditor.IsOpen() {
+		switch key {
+		case "left":
+			// Cycle left through the enum values.
+			m.optionEditor.CycleLeft()
+			return keyResult{model: m, handled: true}
+		case "right":
+			// Cycle right through the enum values.
+			m.optionEditor.CycleRight()
+			return keyResult{model: m, handled: true}
+		case "esc":
+			// Esc dismisses the editor without staging an override.
+			m.optionEditor.Dismiss()
+			m.optionEditor = nil
+			return keyResult{model: m, handled: true}
+		case "enter":
+			// Enter commits the current value as a staged override.
+			committedValue := m.optionEditor.Commit()
+			optKey := m.optionEditor.Key()
+			m.stagedOverrides[optKey] = OverrideRequest{
+				Key:            optKey,
+				RequestedValue: committedValue,
+			}
+			// Mark the row chosen to include it in the apply set.
+			m.chosen = withToggled(m.chosen, optKey)
+			m.optionEditor = nil
+			return keyResult{model: m, handled: true}
+		default:
+			// Every other key is swallowed EXCEPT the pass-through list.
+			if optionEditorPassThroughKeys[key] {
+				return keyResult{model: m}
+			}
+			return keyResult{model: m, handled: true}
+		}
+	}
+
 	options := m.overlaidGitOptions(s)
 	if m.subTab == ggitOptions && m.optionsErr != "" {
 		// A failed probe is advisory/fail-open: no rows or apply action are
@@ -1160,6 +1244,20 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		m.customKeyInput = newTextInput("")
 		m.customValueInput = newTextInput("")
 		m.focusCustomKeyField()
+		return keyResult{model: m, handled: true}
+	case "e":
+		// Edit key: opens the enum-cycle editor on edit-eligible enum rows (PD16).
+		// Free-text rows are wired in plan 09.6-04; fallback-author Enter gesture
+		// stays unchanged to avoid inter-plan collision.
+		if m.subTab != ggitOptions {
+			return keyResult{model: m, handled: true}
+		}
+		o := options[m.gitDetailIndex(options)]
+		if OptionEditEligibility(o) {
+			m.optionEditor = NewOptionEditor(o.Key, o.Values, o.CurrentValue)
+			m.optionEditor.OpenEnumCycle(o.CurrentValue)
+			return keyResult{model: m, handled: true}
+		}
 		return keyResult{model: m, handled: true}
 	case "space":
 		if m.subTab != ggitOptions {
@@ -1992,11 +2090,21 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 		if absoluteIdx == selIdx {
 			name = styleSelected.Render(o.Key)
 		}
+		// PD16 / UI-SPEC Rule L-2: Add an inline value cell for enum and text rows.
+		// Toggle and bundle rows keep today's exact first line (no value cell).
+		valueCell := ""
+		if o.Kind == OptionValueKindEnum || o.Kind == OptionValueKindText {
+			valueCell = "  " + styleFaint.Render(o.CurrentValue)
+		}
 		chip := ""
 		if o.Key == "init.defaultBranch" {
 			chip = "  " + styleWarning.Render("[main vs master]")
 		}
-		rows = append(rows, truncLine(" "+marker+box+toneGlyph+" "+name+chip, listWidth))
+		line1 := " " + marker + box + toneGlyph + " " + name + valueCell + chip
+		// Rule L-2: Elide the value cell first if the line is too long,
+		// never the key, tone glyph, or chip.
+		line1 = truncLine(line1, listWidth)
+		rows = append(rows, line1)
 		rows = append(rows, truncLine("      "+styleFaint.Render(globalGitRowLine2(o)), listWidth))
 	}
 	if scrollWin.cue == gitCueDown {
@@ -2006,7 +2114,19 @@ func (m globalGitModel) view(s DemoState, width, height int) screenView {
 
 	detail := options[selIdx]
 	var d strings.Builder
-	if detail.Key == GlobalGitEmailFallbackKey {
+	// PD25: Render the open editor's value list in the DETAIL pane,
+	// in the same slot the fallback-author fields already occupy.
+	if m.optionEditor != nil && m.optionEditor.IsOpen() {
+		d.WriteString(" " + styleBold.Render("Edit "+m.optionEditor.Key()) + "\n")
+		d.WriteString(" " + styleInfo.Render("(←/→ change)") + "\n\n")
+		for i, val := range m.optionEditor.Values() {
+			marker := "  "
+			if i == m.optionEditor.Cursor() {
+				marker = styleBold.Render("● ")
+			}
+			d.WriteString(" " + marker + styleFaint.Render(val) + "\n")
+		}
+	} else if detail.Key == GlobalGitEmailFallbackKey {
 		nameFocused := m.fieldFocus == 0 && m.fieldEditing
 		emailFocused := m.fieldFocus == 1 && m.fieldEditing
 		nameSelected := m.fieldFocus == 0 && !m.fieldEditing

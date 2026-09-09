@@ -915,9 +915,15 @@ func (FixtureBackend) GlobalGitOptionStates() ([]tuikit.GlobalGitOptionView, err
 			state = tuikit.GlobalGitNeedsAction
 		}
 		kindData := fixtureGitKinds[o.Key]
+		// PD24: Seed enum rows with a current value from their declared set,
+		// so the approved surface renders the same states the real binary does.
+		currentValue := o.Current
+		if kindData.kind == tuikit.OptionValueKindEnum && len(kindData.values) > 0 {
+			currentValue = kindData.values[0]
+		}
 		out = append(out, tuikit.GlobalGitOptionView{
 			Key:               o.Key,
-			CurrentValue:      o.Current,
+			CurrentValue:      currentValue,
 			Provenance:        "fixture value — the demo does not probe this machine",
 			Recommended:       o.Recommended,
 			OneLiner:          o.OneLiner,
