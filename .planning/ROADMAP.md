@@ -671,5 +671,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9.4. TUI UX Consistency & Doctor/Fixer Parity | 4/4 | Complete    | 2026-09-03 |
 | 9.5. Full SSH/Git Properties Browser | 5/5 | Complete    | 2026-09-04 |
 | 9.6. Global Git/SSH Options Consistency Fixes (INSERTED) | 6/6 | Complete | 2026-09-18 |
-| 9.7. New-Identity Wizard Consistency Fixes (INSERTED) | 0/TBD | Context gathered | - |
+| 9.7. New-Identity Wizard Consistency Fixes (INSERTED) | 1/1 | Complete | 2026-09-19 |
 | 10. Linux Validation + Release Pipeline | 0/6 | Planned | - |
