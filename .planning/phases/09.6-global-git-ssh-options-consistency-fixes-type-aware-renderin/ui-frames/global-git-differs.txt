@@ -4,8 +4,8 @@
 ┊   Options   Other keys  ┊
 ╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
  ! The doctor found 2 Git findings beyond this baseline.  Open Doctor (4)
- ▸ [ ]! init.defaultBranch    [main vs mast…│  init.defaultBranch
-      now:  → main                          │  ~ Recommended, not required -- you can leave any
+ ▸ ·  · init.defaultBranch  master  [main v…│  init.defaultBranch
+      now: master → main  set, differs — yo…│  ~ Recommended, not required -- you can leave any
    [ ]! core.ignorecase                     │ option unchanged. This is advisory, never a compliance
       now:  → false                         │ gate.
    [ ]! core.autocrlf / core.eol            │
@@ -25,6 +25,6 @@
    [ ]! color (ui/branch/diff/status)       │ branch is completely unaffected; this setting only
       now: 0 of 4 set → auto for all four   │ decides what "git init" names the FIRST branch of a
  ↓ (+2 more options)                        │  … (+13 more lines)
- 11 baseline options not set — Recommended, not required -- you can leave any option unchanged. Th…
+ 10 baseline options not set — Recommended, not required -- you can leave any option unchanged. Th…
  ↑↓ select option · space toggle · ←→ Options / Other keys
  Enter activate · Esc back · ? help · Ctrl+P palette · q quit

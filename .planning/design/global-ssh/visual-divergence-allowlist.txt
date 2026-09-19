@@ -65,6 +65,8 @@
 
 <T-06-OPTIONS-LIST-ROWS> gss-options-list:sidebar:contains:"now:":DLV-4:improvement:on this surface RegionSidebar's left-of-│ extraction captures the OPTION LIST rows, not an identity sidebar — the real row set describes the live probe (D-01) while the dummy rows carry the frozen GlobalSSHOptions now-values; the list content is the fixture-vs-live divergence and "now:" survives on both sides
 
+<T-06-OPTIONS-KEYBAR> gss-options-list:keybar:contains:"Esc":DLV-4:improvement:the Global SSH Options keybar differs because the real screen exposes the phase's editable-row affordance while the approved dummy retains its frozen detail affordance; both keybars retain the shared Esc navigation hint
+
 <T-06-PROVENANCE> gss-options-list:gss-options-browse:absent:"fixture value":DLV-4:improvement:the real Options body renders the live D-01/D-03 three-tier provenance labels (including baseline "not set (OpenSSH default: ...)" when unprovided), the D-13 OpenSSH-version line, and the D-11/D-12 three/four-state row states; the fixture renders its frozen GlobalSSHOptions and "fixture value — the demo does not probe this machine" provenance. Task 1's first-row-focus fix now surfaces StrictHostKeyChecking's Provenance in the detail pane by default; the real baseline provenance legitimately includes the "not set (OpenSSH default: ask)" catalog reference string. The divergence discriminator is the absence of "fixture value" marker on the real side — the whole master-detail body is the classified fixture-vs-live divergence (T-06-PROVENANCE, described in 06-01..06-03's summaries and 06-UI-SPEC's approved base states)
 
 <T-06-STORAGE-CURRENT-HEADER> gss-storage-current:header-status:contains:"ids":DLV-4:improvement:header status identity count differs (zero-identity real fixture home vs the dummy's 8 fixtures) — both carry "ids"
@@ -73,11 +75,43 @@
 
 <T-06-STORAGE-CURRENT-PREVIEW> gss-storage-current:gss-storage-browse:absent:"Host personal.github.com":DLV-4:improvement:the real resulting-config preview is PlanMigration's compose of the seeded machine bytes for the CURRENT layout (CR-05 fix: requesting a plan for the current layout is a legitimate no-op preview, not an error); the dummy renders its frozen personal/work IncludePreviewOwned/SentinelPreview fixtures, whose "Host personal.github.com" identity the real fixture-rendering never carries
 
+<T-06-STORAGE-CURRENT-KEYBAR> gss-storage-current:keybar:contains:"Esc":DLV-4:improvement:the Global SSH Storage keybar differs because the real screen exposes the phase's editable-row affordance while the approved dummy retains its frozen detail affordance; both keybars retain the shared Esc navigation hint
+
 <T-06-STORAGE-OTHER-HEADER> gss-storage-other:header-status:contains:"ids":DLV-4:improvement:header status identity count differs (zero-identity real fixture home vs the dummy's 8 fixtures) — both carry "ids"
 
 <T-06-STORAGE-OTHER-LEFT> gss-storage-other:sidebar:contains:"STORE-01":DLV-4:improvement:the Storage left pane's radio and current-layout markers render the backend's live layout (real fixture home is Include; the dummy fixture is Sentinel) — identical STORE-01 chrome, radio/current state differs by construction
 
 <T-06-STORAGE-OTHER-PREVIEW> gss-storage-other:gss-storage-browse:absent:"Host personal.github.com":DLV-4:improvement:the real resulting-config preview is PlanMigration's compose of the seeded machine bytes (Include line, zero gitid-managed identities); the dummy renders its frozen personal/work IncludePreviewOwned/SentinelPreview fixtures, whose "Host personal.github.com" identity the real fixture-rendering never carries
+
+<T-06-STORAGE-OTHER-KEYBAR> gss-storage-other:keybar:contains:"Esc":DLV-4:improvement:the Global SSH Storage keybar differs because the real screen exposes the phase's editable-row affordance while the approved dummy retains its frozen detail affordance; both keybars retain the shared Esc navigation hint
+
+<T-06-APPLY-KEYBAR> gss-apply-preview:keybar:contains:"Esc":DLV-4:improvement:the Global SSH apply keybar differs because the real screen exposes the phase's editable-row affordance while the approved dummy retains its frozen detail affordance; both keybars retain the shared Esc navigation hint
+
+<T-06-MIGRATE-KEYBAR> gss-storage-migrate-preview:keybar:contains:"Esc":DLV-4:improvement:the Global SSH migration keybar differs because the real screen exposes the phase's editable-row affordance while the approved dummy retains its frozen detail affordance; both keybars retain the shared Esc navigation hint
+
+<T-06-PROPERTIES-KEYBAR> gss-properties-list:keybar:contains:"Esc":DLV-4:improvement:the Global SSH properties keybar differs because the real screen exposes the phase's editable-row affordance while the approved dummy retains its frozen detail affordance; both keybars retain the shared Esc navigation hint
+
+<T-06-PROPERTIES-FILTER-KEYBAR> gss-properties-filter:keybar:contains:"Esc":DLV-4:improvement:the Global SSH properties keybar differs because the real screen exposes the phase's editable-row affordance while the approved dummy retains its frozen detail affordance; both keybars retain the shared Esc navigation hint
+
+<T-06-PROPERTIES-FORM-KEYBAR> gss-properties-custom-form:keybar:contains:"Esc":DLV-4:improvement:the Global SSH properties keybar differs because the real screen exposes the phase's editable-row affordance while the approved dummy retains its frozen detail affordance; both keybars retain the shared Esc navigation hint
+
+<T-06-PROPERTIES-INVALID-KEYBAR> gss-properties-custom-invalid:keybar:contains:"Esc":DLV-4:improvement:the Global SSH properties keybar differs because the real screen exposes the phase's editable-row affordance while the approved dummy retains its frozen detail affordance; both keybars retain the shared Esc navigation hint
+
+<T-06-DIFFERS-KEYBAR> gss-options-differs-row:keybar:contains:"Esc":DLV-4:improvement:the Global SSH differs-row keybar differs because the real screen exposes the phase's editable-row affordance while the approved dummy retains its frozen detail affordance; both keybars retain the shared Esc navigation hint
+
+<T-06-DIFFERS-HEADER> gss-options-differs-row:header-status:contains:"ids":DLV-4:improvement:the differs-row state shares the seeded real-vs-dummy identity-count header divergence
+
+<T-06-DIFFERS-SIDEBAR> gss-options-differs-row:sidebar:contains:"now:":DLV-4:improvement:the differs-row state shares the fixture-vs-live option-list divergence and the now-value anchor
+
+<T-06-DIFFERS-BODY> gss-options-differs-row:gss-options-browse:absent:"fixture value":DLV-4:improvement:the differs-row state shares the fixture-vs-live Options body divergence and provenance anchor
+
+<T-06-STAGED-KEYBAR> gss-options-staged-apply-preview:keybar:contains:"Esc":DLV-4:improvement:the Global SSH staged-apply keybar differs because the real screen exposes the phase's editable-row affordance while the approved dummy retains its frozen detail affordance; both keybars retain the shared Esc navigation hint
+
+<T-06-STAGED-HEADER> gss-options-staged-apply-preview:header-status:contains:"ids":DLV-4:improvement:the staged-apply state shares the seeded real-vs-dummy identity-count header divergence
+
+<T-06-STAGED-CEREMONY> gss-options-staged-apply-preview:gss-apply-ceremony:contains:"override(s)":DLV-4:improvement:the staged-apply state differs in its real-versus-dummy summary text while both sides retain the override-count anchor
+
+<T-06-STAGED-HEADING> gss-options-staged-apply-preview:gss-apply-heading:contains:"Write Host * managed block to ":GSSH-D-07:improvement:the staged-apply state shares the resolved-target ceremony heading divergence
 
 # ---------------------------------------------------------------------------
 # GSSH-D-06 / GSSH-D-07 — the apply ceremony's D-06 managed-block diff and
@@ -133,4 +167,8 @@
 
 <T-06-PROPERTIES-CUSTOM-FORM-HEADER> gss-properties-custom-form:header-status:contains:"ids":DLV-4:improvement:header status identity count differs (zero-identity real fixture home vs the dummy's 8 fixtures) — both carry "ids"
 
+<T-06-PROPERTIES-CUSTOM-FORM-BODY> gss-properties-custom-form:gss-custom-directive:contains:"Directive":DLV-4:improvement:the custom-directive form carries the real and dummy implementations' distinct field details while sharing the Directive label anchor
+
 <T-06-PROPERTIES-CUSTOM-INVALID-HEADER> gss-properties-custom-invalid:header-status:contains:"ids":DLV-4:improvement:header status identity count differs (zero-identity real fixture home vs the dummy's 8 fixtures) — both carry "ids"
+
+<T-06-PROPERTIES-CUSTOM-INVALID-BODY> gss-properties-custom-invalid:gss-custom-directive:contains:"Directive":DLV-4:improvement:the custom-directive invalid state carries the real and dummy implementations' distinct validation details while sharing the Directive label anchor

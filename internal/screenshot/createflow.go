@@ -117,11 +117,23 @@ var CreateFlowScreenIDs = []string{
 
 // SurfaceNonApplicability records why an approval surface cannot truthfully
 // render a Phase 3 state and the decision that introduced that state.
+//
+// EvidenceTest (PD41, 09.6-06-PLAN.md) is the machine-readable link from a
+// non-applicability record to the real-PTY test carrying its alternative
+// evidence. Prose in Reason stays for humans; EvidenceTest is what
+// ValidateScreenSpecs and the source-walk test actually resolve against
+// e2e/'s real `func TestXxx(t *testing.T)` declarations — a plausible-
+// sounding invented test name in Reason alone used to pass the gate.
+// Required (non-empty, Go-test-identifier-shaped) only for records whose
+// Decision carries this phase's "UXG-D-" prefix; every pre-existing record
+// from an earlier phase keeps validating exactly as it did before this field
+// existed.
 type SurfaceNonApplicability struct {
 	Surface        string
 	Decision       string
 	Reason         string
 	Classification string
+	EvidenceTest   string
 }
 
 // RegionDisposition explicitly authorizes one comparable live/approved-TUI
@@ -734,7 +746,29 @@ func validDecisionRef(ref string) bool {
 		// numbered 09-CONTEXT.md decision, so it does not collide with any
 		// bare D-NN there).
 		strings.HasPrefix(ref, "UP-") ||
-		strings.HasPrefix(ref, "GIGN-")
+		strings.HasPrefix(ref, "GIGN-") ||
+		// 09.6-06-PLAN.md Task 1 (PD41): the disambiguating UXG-D- prefix for
+		// this phase's Route-B non-applicability records, following the SAME
+		// GSSH-D-/GGIT-D- pattern. Any record carrying this prefix additionally
+		// requires a non-empty, identifier-shaped EvidenceTest (enforced below
+		// in ValidateScreenSpecs, not here — validDecisionRef only recognizes
+		// the prefix shape).
+		strings.HasPrefix(ref, "UXG-D-")
+}
+
+// goTestIdentifierPattern matches a Go test function name shape: "Test"
+// followed by one or more identifier characters, starting with an uppercase
+// letter or underscore per go test's own -run matching convention (a lowercase
+// first rune after "Test" is a valid Go identifier but never becomes a runnable
+// test — go test silently ignores it). PD41 step 2 requires EvidenceTest to be
+// shaped like a real, exported test function, not merely non-empty.
+var goTestIdentifierPattern = regexp.MustCompile(`^Test[A-Za-z0-9_]*$`)
+
+// validEvidenceTestName reports whether name is a plausible Go test-function
+// identifier shape. It does not prove the function exists — the source-walk
+// test (PD41 step 3) resolves existence separately.
+func validEvidenceTestName(name string) bool {
+	return goTestIdentifierPattern.MatchString(name)
 }
 
 // ValidateScreenSpecs checks the registry for structural correctness:
@@ -777,6 +811,18 @@ func ValidateScreenSpecs(specs []ScreenSpec) error {
 			}
 			if !found || record.Decision == "" || !validDecisionRef(record.Decision) || record.Reason == "" || !validDifferenceClassification(record.Classification) {
 				return fmt.Errorf("screenshot: ValidateScreenSpecs: non-applicable %s spec %q lacks a decision-linked record", surface, s.ScreenID)
+			}
+			// PD41 step 2: a non-applicability record carrying this phase's
+			// UXG-D- prefix must machine-link to a real e2e test, not merely
+			// carry a plausible-sounding Reason string. Additive: records from
+			// every earlier phase (GSSH-D-, GGIT-D-, DLV-, ...) are unaffected.
+			if strings.HasPrefix(record.Decision, "UXG-D-") {
+				if record.EvidenceTest == "" {
+					return fmt.Errorf("screenshot: ValidateScreenSpecs: non-applicable %s spec %q carries decision %q but has an empty EvidenceTest (PD41)", surface, s.ScreenID, record.Decision)
+				}
+				if !validEvidenceTestName(record.EvidenceTest) {
+					return fmt.Errorf("screenshot: ValidateScreenSpecs: non-applicable %s spec %q has EvidenceTest %q that is not a Go test-identifier shape (PD41)", surface, s.ScreenID, record.EvidenceTest)
+				}
 			}
 		}
 		nonApplicableSurfaces := make(map[string]bool, len(s.NonApplicability))
@@ -1540,7 +1586,7 @@ func gitScreenSpecs() []ScreenSpec {
 	noHTML := []SurfaceNonApplicability{uxNonComparable("approved-html", "CTX-D-12",
 		"D-12: cmd/gitid-dummy is the sole Phase 4 UI/UX reference — no HTML/MUI/browser capture participates in Phase 4 acceptance")}
 
-	return []ScreenSpec{
+	specs := []ScreenSpec{
 		{
 			ScreenID:              "git-form-filled",
 			Interaction:           "Boot the Identities pane on the default-selected (complete) identity and press 'g' to open Configure Git in edit mode.",
@@ -1627,6 +1673,7 @@ func gitScreenSpecs() []ScreenSpec {
 			},
 		},
 	}
+	return specs
 }
 
 // ---------------------------------------------------------------------------
@@ -1738,7 +1785,7 @@ func identityManagerSpecs() []ScreenSpec {
 	noHTML := []SurfaceNonApplicability{uxNonComparable("approved-html", "DLV-4",
 		"cmd/gitid-dummy is the sole Phase 5 UI/UX reference for this in-process gate, matching the e2e PTY suite's own DLV-04 comparison — no HTML/MUI/browser capture participates in Phase 5 acceptance")}
 
-	return []ScreenSpec{
+	specs := []ScreenSpec{
 		{
 			ScreenID:              "action-menu",
 			Interaction:           "Boot the Identities pane on the default-selected (complete) identity and press 'a' to open the action menu.",
@@ -1823,6 +1870,7 @@ func identityManagerSpecs() []ScreenSpec {
 			},
 		},
 	}
+	return specs
 }
 
 // ---------------------------------------------------------------------------
@@ -1962,6 +2010,34 @@ func CaptureGlobalSSHScreens(backend tuikit.Backend) (map[string]string, error) 
 	invalidDirective = keyEnter(invalidDirective)
 	out["gss-properties-custom-invalid"] = capture(invalidDirective)
 
+	// gss-options-differs-row (09.6-06-PLAN.md Task 1, PD29 Route A): the
+	// shared fixture home now sets StrictHostKeyChecking explicitly to a
+	// non-recommended value (deterministicGlobalSSHFixture on the real side,
+	// the special-cased fixture row on the dummy side), so the DEFAULT browse
+	// entry already renders the differs row — no extra keystrokes needed,
+	// unlike every other state in this function.
+	out["gss-options-differs-row"] = capture(browse)
+
+	// gss-options-staged-apply-preview (Approved Base State #9, SSH half):
+	// move to StrictHostKeyChecking (3 ups from the default-selected
+	// IdentitiesOnly row, mirroring gss-apply-preview's own navigation),
+	// open the editor, cycle right twice to "ask" — deliberately NOT the
+	// policy recommendation "accept-new" (Rule I-3) — commit with Enter, then
+	// 'a' opens the apply ceremony. The editor's cycle/commit STATE MACHINE
+	// runs correctly even though its own detail-pane rendering does not (see
+	// globalSSHSpecs' gss-options-differs-row doc comment for the SSH
+	// enum-editor render gap this works around).
+	staged := globalSSHApp(backend)
+	staged = keyUp(staged)
+	staged = keyUp(staged)
+	staged = keyUp(staged)
+	staged = keyRune(staged, 'e')
+	staged = keyRight(staged)
+	staged = keyRight(staged)
+	staged = keyEnter(staged)
+	staged = keyRune(staged, 'a')
+	out["gss-options-staged-apply-preview"] = capture(staged)
+
 	for _, spec := range globalSSHSpecs() {
 		// The two receipt states are registered non-applicable on BOTH
 		// surfaces (they need a real write neither side performs in-process);
@@ -1991,6 +2067,12 @@ func CaptureGlobalSSHScreens(backend tuikit.Backend) (map[string]string, error) 
 	}
 	if out["gss-properties-custom-invalid"] == out["gss-properties-custom-form"] {
 		return nil, fmt.Errorf("screenshot: CaptureGlobalSSHScreens: gss-properties-custom-invalid captured the same frame as gss-properties-custom-form — the un-skippable name gate never stopped stage 2")
+	}
+	if out["gss-options-staged-apply-preview"] == out["gss-options-list"] {
+		return nil, fmt.Errorf("screenshot: CaptureGlobalSSHScreens: gss-options-staged-apply-preview captured the same frame as gss-options-list — the apply ceremony never opened")
+	}
+	if !strings.Contains(out["gss-options-differs-row"], "differs") {
+		return nil, fmt.Errorf("screenshot: CaptureGlobalSSHScreens: gss-options-differs-row does not contain the differs wording — the fixture seed never produced a StateDiffers row")
 	}
 	return out, nil
 }
@@ -2053,27 +2135,87 @@ func CaptureGlobalGitScreens(backend tuikit.Backend) (map[string]string, error) 
 	}
 	out["ggit-options-scrolled"] = capture(scrolled)
 
-	// ggit-options-with-selection: toggle init.defaultBranch (it's the first
-	// row, already focused on entry).
+	// ggit-options-with-selection: toggle core.ignorecase (one Down from the
+	// default-selected init.defaultBranch row), then Up to return the cursor
+	// (and therefore the detail pane) to init.defaultBranch — preserving the
+	// ORIGINAL captured detail-pane content this spec's existing
+	// ggitOptionsFixtureDisposition predicate (`absent:"not set ("`) was
+	// tuned against. 09.6-06-PLAN.md Task 1 (PD29 Route A) moved the
+	// TOGGLE off init.defaultBranch: that row is now seeded
+	// StateSetButDiffers (ggit-options-differs-row), and a differs row is
+	// not Selectable() BY CONSTRUCTION (views.go's GlobalGitOptionView.
+	// Selectable requires State == GlobalGitNeedsAction) — SPACE on it would
+	// now be a silent no-op, never rendering the "[✓]" marker this spec
+	// exists to prove. Toggling core.ignorecase WITHOUT returning the cursor
+	// was tried first and rejected: core.ignorecase's own detail-pane
+	// explanation text ("not set (OS-dependent: ...)") independently
+	// carries "not set (" on the LIVE side too, breaking the disposition's
+	// exactly-one-side assumption — a genuinely different divergence than
+	// the one that predicate was written to authorize.
 	selected := globalGitApp(backend)
+	selected = keyDown(selected)
 	selected = keyRune(selected, ' ')
+	selected = keyUp(selected)
 	out["ggit-options-with-selection"] = capture(selected)
 
-	// ggit-options-differs-row and ggit-options-probe-error are NOT captured
-	// here: both require a differently-seeded sandbox HOME (a conflicting
-	// git-config value, or a broken/missing git binary respectively) than the
-	// single fixture HOME every other in-process Global Git capture in this
-	// function shares. Both specs are registered non-applicable on BOTH
-	// surfaces (ApplicableLive: false, ApplicableApprovedTUI: false) —
-	// evidence for each lives in a real PTY frame from plan 07-04 instead of
-	// a hollow in-process frame (see globalGitSpecs' NonApplicability records).
+	// ggit-options-differs-row (09.6-06-PLAN.md Task 1, PD29 Route A): FLIPPED
+	// from non-applicable to applicable — deterministicGlobalGitFixture now
+	// seeds "[init]\n\tdefaultBranch = master\n" directly in ~/.gitconfig, so
+	// the DEFAULT browse entry already renders the differs row, no extra
+	// keystrokes needed. ggit-options-probe-error remains non-applicable: it
+	// needs a broken/missing git binary, a genuinely different precondition
+	// this shared-home capture pass cannot produce alongside every other
+	// state (see globalGitSpecs' NonApplicability record for that one spec).
+	out["ggit-options-differs-row"] = capture(browse)
 
-	// ggit-apply-preview: toggle init.defaultBranch then press 'a' to open
-	// the apply ceremony at its pre-write state A.
+	// ggit-apply-preview: toggle core.ignorecase (see ggit-options-with-
+	// selection's doc comment above for why this moved off init.defaultBranch
+	// in 09.6-06-PLAN.md Task 1) then press 'a' to open the apply ceremony at
+	// its pre-write state A.
 	apply := globalGitApp(backend)
+	apply = keyDown(apply)
 	apply = keyRune(apply, ' ')
 	apply = keyRune(apply, 'a')
 	out["ggit-apply-preview"] = capture(apply)
+
+	// ggit-options-enum-editor (Approved Base State #2): navigate to
+	// diff.colorMoved (11 downs — Rule L-4's binding worst case, six declared
+	// values), press 'e' to open the enum editor in the detail pane.
+	enumEditor := globalGitApp(backend)
+	for i := 0; i < 11; i++ {
+		enumEditor = keyDown(enumEditor)
+	}
+	enumEditor = keyRune(enumEditor, 'e')
+	out["ggit-options-enum-editor"] = capture(enumEditor)
+
+	// ggit-options-fallback-pair (Approved Base State #6): navigate to the
+	// fallback-author row (3 downs — the SAME navigation
+	// e2e/global_git_pty_e2e_test.go's moveGlobalGitRow(t, s, 3) uses) and
+	// capture browse mode — the row's second line names the AUTHORITATIVE
+	// pair ReadGitFallbackAuthor returns from the seeded gitid-managed
+	// fallback-author block (deterministicGlobalGitFixture), not a DemoState
+	// overlay (D-04/PD18/09.6-04 Task 1's read-path fix). No editor needed:
+	// the pair is already visible in browse mode.
+	fallbackPair := globalGitApp(backend)
+	fallbackPair = keyDown(fallbackPair)
+	fallbackPair = keyDown(fallbackPair)
+	fallbackPair = keyDown(fallbackPair)
+	out["ggit-options-fallback-pair"] = capture(fallbackPair)
+
+	// ggit-options-staged-apply-preview (Approved Base State #9): navigate to
+	// diff.colorMoved, open the editor, cycle right twice to "plain" —
+	// deliberately NOT the policy recommendation "zebra" (Rule I-3) —
+	// commit with Enter, then 'a' opens the apply ceremony.
+	stagedApply := globalGitApp(backend)
+	for i := 0; i < 11; i++ {
+		stagedApply = keyDown(stagedApply)
+	}
+	stagedApply = keyRune(stagedApply, 'e')
+	stagedApply = keyRight(stagedApply)
+	stagedApply = keyRight(stagedApply)
+	stagedApply = keyEnter(stagedApply)
+	stagedApply = keyRune(stagedApply, 'a')
+	out["ggit-options-staged-apply-preview"] = capture(stagedApply)
 
 	// ggit-set-keys-list: the "Set keys" sub-tab in browse mode — one →
 	// press from the default Options sub-tab, 09.5-05-PLAN.md Task 1.
@@ -2121,6 +2263,18 @@ func CaptureGlobalGitScreens(backend tuikit.Backend) (map[string]string, error) 
 	}
 	if out["ggit-custom-key-ceremony-preview"] == out["ggit-set-keys-list"] {
 		return nil, fmt.Errorf("screenshot: CaptureGlobalGitScreens: ggit-custom-key-ceremony-preview captured the same frame as ggit-set-keys-list — the custom-key ceremony never opened")
+	}
+	if out["ggit-options-enum-editor"] == out["ggit-options-list"] {
+		return nil, fmt.Errorf("screenshot: CaptureGlobalGitScreens: ggit-options-enum-editor captured the same frame as ggit-options-list — the enum editor never opened")
+	}
+	if out["ggit-options-fallback-pair"] == out["ggit-options-list"] {
+		return nil, fmt.Errorf("screenshot: CaptureGlobalGitScreens: ggit-options-fallback-pair captured the same frame as ggit-options-list — the selection never moved to the fallback row")
+	}
+	if out["ggit-options-staged-apply-preview"] == out["ggit-options-list"] {
+		return nil, fmt.Errorf("screenshot: CaptureGlobalGitScreens: ggit-options-staged-apply-preview captured the same frame as ggit-options-list — the apply ceremony never opened")
+	}
+	if !strings.Contains(out["ggit-options-differs-row"], "differs") {
+		return nil, fmt.Errorf("screenshot: CaptureGlobalGitScreens: ggit-options-differs-row does not contain the differs wording — the fixture seed never produced a StateSetButDiffers row")
 	}
 
 	return out, nil
@@ -2555,6 +2709,9 @@ func globalSSHSpecs() []ScreenSpec {
 	gssPropertiesFilterSidebarDisposition := uxRegionDifferenceScoped(RegionSidebar, "fixture-vs-live-directive-set", gssFixtureClass,
 		"the SAME sidebar-region divergence as gssPropertiesListSidebarDisposition, narrowed by the filter text 'strict' — both sides resolve to exactly the stricthostkeychecking row (the anchor) in the master-list column left of the divider, with no scroll overflow on either side",
 		`contains:"stricthostkeychecking"`)
+	gssCustomDirectiveDisposition := uxRegionDifferenceScoped(RegionGSSCustomDirective, "custom-directive-form", gssFixtureClass,
+		"the custom-directive form carries the real and dummy implementations' distinct field details while sharing the Directive label anchor",
+		`contains:"Directive"`)
 
 	// noHTML is the explicit approved-HTML non-applicability record EVERY
 	// Global SSH spec carries, stating the standing UI-reference rule by name
@@ -2578,7 +2735,7 @@ func globalSSHSpecs() []ScreenSpec {
 	applyReceiptReason := "the apply receipt requires the real journal-backed write (runGlobalSSHApply, plan 06-04) to have completed; this in-process, no-subprocess capture path never performs it. Evidence lives in the PTY frame .planning/phases/06-global-ssh-options/ui-frames/global-ssh-apply-confirm.txt (TestGlobalSSH_RealPTYApplyConfirm)"
 	storageReceiptReason := "the storage-migration receipt requires the STORE-03 two-file write (runSSHStorageMigrate, plan 06-05) to have completed; this in-process, no-subprocess capture path never performs it. Evidence lives in the PTY frame .planning/phases/06-global-ssh-options/ui-frames/storage-migrate-confirm-post.txt"
 
-	return []ScreenSpec{
+	specs := []ScreenSpec{
 		{
 			ScreenID:              "gss-options-list",
 			Interaction:           "Boot the Global SSH tab (view 2) on the Options sub-tab in browse mode.",
@@ -2625,7 +2782,9 @@ func globalSSHSpecs() []ScreenSpec {
 			NonApplicability:      noHTML,
 			RequiredRegions:       []RegionName{RegionGSSApplyCeremony, RegionGSSApplyHeading},
 			RegionDispositions: []RegionDisposition{
-				fixtureHeaderStatusDisposition, gssApplyCeremonyDisposition, gssApplyHeadingDisposition,
+				fixtureHeaderStatusDisposition,
+				gssApplyCeremonyDisposition,
+				gssApplyHeadingDisposition,
 			},
 		},
 		{
@@ -2706,7 +2865,7 @@ func globalSSHSpecs() []ScreenSpec {
 			NonApplicability:      noHTML,
 			RequiredRegions:       []RegionName{RegionHeaderStatus, RegionSubTabStrip, RegionGSSCustomDirective},
 			RegionDispositions: []RegionDisposition{
-				fixtureHeaderStatusDisposition,
+				fixtureHeaderStatusDisposition, gssCustomDirectiveDisposition,
 			},
 		},
 		{
@@ -2718,10 +2877,92 @@ func globalSSHSpecs() []ScreenSpec {
 			NonApplicability:      noHTML,
 			RequiredRegions:       []RegionName{RegionHeaderStatus, RegionSubTabStrip, RegionGSSCustomDirective},
 			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDisposition, gssCustomDirectiveDisposition,
+			},
+		},
+		// -------------------------------------------------------------------
+		// 09.6-06-PLAN.md Task 1 (Approved Base States #5, #9 — SSH half):
+		// the differs row without the warning glyph, and the apply ceremony
+		// naming a staged (not policy-recommended) value. Both Route A.
+		//
+		// The open-enum-editor state (Approved Base State #2) is NOT
+		// registered for Global SSH here: the detail-pane renderer
+		// (globalssh.go's renderOptions, ~line 1895) never checks
+		// m.optionEditor.Mode() at all — unlike Global Git's equivalent
+		// branch at globalgit.go:2209, which does — so pressing 'e' produces
+		// NO visible change to the captured frame on this screen. The
+		// pre-existing e2e case (TestGlobalSSH_RealPTYEnumRowEdit) does not
+		// catch this: its post-'e' assertion is
+		// `strings.Contains(text, "ask") || strings.Contains(text, "accept-new")`,
+		// and "accept-new" (StrictHostKeyChecking's Recommended value) already
+		// appears in the UNEDITED browse-mode row's "now: X → accept-new"
+		// second line, making the assertion pass whether or not the editor
+		// rendered anything. Registering a spec here would either fail the
+		// capture function's own before/after distinctness guard or — worse —
+		// silently pass by accident on the SAME coincidental substring the
+		// e2e assertion did, which is exactly the false-evidence failure mode
+		// PD53 exists to prevent. Recorded as an open item in
+		// 09.6-06-SUMMARY.md rather than registered.
+		// -------------------------------------------------------------------
+		{
+			// deterministicGlobalSSHFixture (cmd/gitid/gate_visual_regression_test.go)
+			// now sets "StrictHostKeyChecking no" directly in the shared gate
+			// fixture Host * block — an explicit, non-baseline value that
+			// disagrees with the recommended "accept-new" — so ssh -G's live
+			// probe classifies the row StateDiffers (internal/globalssh/classify.go
+			// stateFor, step 5) on the SAME shared home every other in-process
+			// Global SSH capture uses. FixtureBackend.GlobalSSHOptionStates
+			// mirrors the identical row as GlobalSSHDiffers with CurrentValue
+			// "no" so the dummy shows the same state. This changes the
+			// baseline gss-options-list/gss-apply-preview frames too (expected,
+			// Task 2 re-promotes them).
+			ScreenID:    "gss-options-differs-row",
+			Interaction: "Boot the Global SSH tab on the Options sub-tab in browse mode against a fixture home whose Host * block sets StrictHostKeyChecking no explicitly — the row renders the differs wording, not the warning glyph (K-1, K-2: identical treatment to Global Git's own differs row).",
+			// "now: no → accept-new" is optionRowLine2's single Render() call
+			// interior — see the ggit-options-differs-row marker comment for
+			// why this must be one uninterrupted segment, not o.Key+valueCell.
+			StateMarker:           "now: no → accept-new",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionGSSOptionsBrowse},
+			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDisposition, gssListFixtureDisposition, gssOptionsFixtureDisposition,
+			},
+		},
+		{
+			ScreenID:    "gss-options-staged-apply-preview",
+			Interaction: "From the Options sub-tab, move Up three rows to StrictHostKeyChecking, press 'e', cycle right twice to \"ask\" (deliberately NOT the policy recommendation \"accept-new\" — Rule I-3 requires the preview to name the STAGED value, never the recommendation), press Enter to commit the staged override (the editor's cycle/commit STATE MACHINE runs correctly even though its own detail-pane rendering does not — see the open-enum-editor note above), then 'a' to open the apply ceremony at its pre-write preview.",
+			// The ceremony's pre-write preview does not render the raw
+			// composed diff text — only a summary line
+			// "Preview: would apply N override(s) to M SSH option(s)".
+			// "1 override(s) to 1 SSH option(s)" proves a STAGED override
+			// (not a plain checkbox toggle) reached the ceremony, and the
+			// "SSH" word disambiguates this marker from the Git spec's
+			// identically-shaped "1 override(s) to 2 Git option(s)" marker.
+			StateMarker:           "1 override(s) to 1 SSH option(s)",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionGSSApplyCeremony, RegionGSSApplyHeading},
+			RegionDispositions: []RegionDisposition{
 				fixtureHeaderStatusDisposition,
+				uxRegionDifferenceScoped(RegionGSSApplyCeremony, "staged-override-summary", gssFixtureClass,
+					"the staged-apply ceremony differs in its real-versus-dummy summary text while both sides retain the override-count anchor",
+					`contains:"override(s)"`),
+				gssApplyHeadingDisposition,
 			},
 		},
 	}
+	for i := range specs {
+		if specs[i].ApplicableLive && specs[i].ApplicableApprovedTUI {
+			specs[i].RegionDispositions = append(specs[i].RegionDispositions,
+				uxRegionDifferenceScoped(RegionKeybar, "edit-affordance", gssFixtureClass,
+					"the Global SSH keybar differs because the real screen exposes the phase's editable-row affordance while the approved dummy retains its frozen detail affordance; both keybars retain the shared Esc navigation hint",
+					`contains:"Esc"`))
+		}
+	}
+	return specs
 }
 
 // globalGitSpecs returns the Phase 7 Global Git checkpoint specs — the SAME
@@ -2876,9 +3117,17 @@ func globalGitSpecs() []ScreenSpec {
 			},
 		},
 		{
-			ScreenID:              "ggit-options-with-selection",
-			Interaction:           "From the Options list, press Space to toggle init.defaultBranch (select it) then render the apply action in the footer.",
-			StateMarker:           "☑",
+			ScreenID: "ggit-options-with-selection",
+			Interaction: "From the Options list, press Down once then Space to toggle core.ignorecase (select it) " +
+				"then render the apply action in the footer. 09.6-06-PLAN.md Task 1 moved this off init.defaultBranch, " +
+				"which the differs-row seed now makes non-Selectable() BY CONSTRUCTION (see ggit-options-differs-row).",
+			// glyphToggleOn (internal/tuikit/theme.go) is literally "[✓]", not
+			// "☑" — the pre-existing marker here never matched anything
+			// (undetected because TestGateVisualRegression never calls
+			// ValidateCapturedState against merged Global Git captures, only
+			// determinism + region-diff checks). Fixed while this spec's
+			// driver was already being touched by the differs-row flip.
+			StateMarker:           "[✓]",
 			ApplicableLive:        true,
 			ApplicableApprovedTUI: true,
 			NonApplicability:      noHTML,
@@ -2888,17 +3137,37 @@ func globalGitSpecs() []ScreenSpec {
 			},
 		},
 		{
-			ScreenID:              "ggit-options-differs-row",
-			Interaction:           "Seed a sandbox home whose git config differs from the recommended value, then open the Global Git tab to show the differs wording on that row. NOT capturable by this generic in-process capture pass (which uses one fixed sandbox seed shared by every other state) without plumbing a second, differently-seeded HOME through the same no-subprocess technique — see the live non-applicability reason for the PTY frame that carries this evidence instead.",
-			StateMarker:           "differs from",
-			ApplicableLive:        false,
-			ApplicableApprovedTUI: false,
-			NonApplicability: []SurfaceNonApplicability{
-				uxNonComparable("live", "GGIT-D-04", "this state requires a sandbox HOME whose git config was pre-seeded with a conflicting value, distinct from the shared fixture HOME every other in-process Global Git capture uses; this generic capture pass does not plumb a second seed through the same no-subprocess technique. Evidence lives in the PTY frame .planning/phases/07-global-git-options/ui-frames/global-git-differs.txt (TestGlobalGit_RealPTYDiffersRow)"),
-				uxNonComparable("approved-tui", "GGIT-D-04", "the dummy's frozen fixture values never differ from the Policy's recommended values — this state is reachable on the real binary only"),
-				uxNonComparable("approved-html", "DLV-4", "AGENTS.md's BINDING UI Reference rule: Phase 2's approved Bubble Tea dummy is the SOLE Phase 7 UI/UX parity target for Phases 3-10"),
+			// 09.6-06-PLAN.md Task 1 (PD29 Route A): flipped from non-applicable
+			// on both surfaces to applicable on both. deterministicGlobalGitFixture
+			// (cmd/gitid/gate_visual_regression_test.go) now seeds
+			// "[init]\n\tdefaultBranch = master\n" directly into the shared gate
+			// fixture ~/.gitconfig — the SAME technique
+			// e2e/global_git_pty_e2e_test.go's TestGlobalGit_RealPTYDiffersRow
+			// already uses (seedGlobalGitHome with a conflicting value) — so the
+			// real side's live probe now classifies init.defaultBranch as
+			// StateSetButDiffers on the shared home every other Global Git
+			// in-process capture also uses. FixtureBackend.GlobalGitOptionStates
+			// mirrors the same row as GlobalGitSetButDiffers with CurrentValue
+			// "master" so the dummy shows the identical state. This changes the
+			// BASELINE browse frames too (ggit-options-list/-scrolled/-with-
+			// selection/-apply-preview now show a differs row where they
+			// previously showed needs-action) — expected, and why Task 2
+			// re-promotes them.
+			ScreenID:    "ggit-options-differs-row",
+			Interaction: "Boot the Global Git tab on the Options sub-tab in browse mode against a fixture home whose ~/.gitconfig sets init.defaultBranch=master directly (outside any gitid-managed block) — the row renders the differs wording, not the warning glyph (K-1).",
+			// "now: master → main" is a single Render() call's uninterrupted
+			// plain-text interior (globalGitRowLine2), so it survives as a
+			// contiguous substring despite surrounding ANSI styling — unlike
+			// combining o.Key + valueCell, which are two SEPARATELY Render()'d
+			// segments with an ANSI escape boundary between them.
+			StateMarker:           "now: master → main",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionGGitOptionsBrowse},
+			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDispositionGit, ggitListFixtureDisposition, ggitOptionsFixtureDisposition,
 			},
-			RequiredRegions: []RegionName{RegionGGitOptionsBrowse},
 		},
 		{
 			ScreenID:              "ggit-options-probe-error",
@@ -2987,6 +3256,67 @@ func globalGitSpecs() []ScreenSpec {
 				// allowlist-sourced predicate to port here.
 				uxRegionDifference(RegionConfirmationPreview, "sentinel-wrapped-preview", ggitFixtureClass,
 					"internal/tuikit/ceremony.go's shared \"Exact change\" hint triggers RegionConfirmationPreview's extraction on this Global Git custom-key ceremony too; the real preview's production EnsureCustomGitKey-composed diff vs the dummy's frozen canned diff is the SAME divergence RegionGGitCustomKeyCeremony already classifies"),
+			},
+		},
+		// -------------------------------------------------------------------
+		// 09.6-06-PLAN.md Task 1 (Approved Base States #2, #6, #9): the open
+		// enum editor in the detail pane, the fallback row showing its
+		// authoritative pair, and the apply ceremony naming a staged
+		// (not policy-recommended) value. All three are Route A: the shared
+		// gate fixture home is extended (deterministicGlobalGitFixture) and
+		// FixtureBackend mirrors the same content, so both surfaces reach the
+		// state through ordinary in-process keystrokes.
+		// -------------------------------------------------------------------
+		{
+			ScreenID:              "ggit-options-enum-editor",
+			Interaction:           "From the Options list, press Down eleven times to reach diff.colorMoved (Rule L-4's binding worst case — six declared values), then press 'e' to open the enum editor in the detail pane.",
+			StateMarker:           "dimmed-zebra",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionGGitOptionsBrowse},
+			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDispositionGit, ggitListFixtureDisposition, ggitOptionsFixtureDisposition,
+			},
+		},
+		{
+			ScreenID:    "ggit-options-fallback-pair",
+			Interaction: "From the Options list, press Down three times to reach the fallback-author row; the row's second line names the AUTHORITATIVE pair ReadGitFallbackAuthor returns from the seeded gitid-managed fallback-author block, not a DemoState overlay (D-04/PD18/09.6-04 Task 1's read-path fix).",
+			// "Baseline Author" (not the email) — the fallback row is the
+			// selected row, so the detail pane also renders it via
+			// gitFallbackFieldLine's two-field editor-shaped view (D-09); the
+			// long email address wraps across a detail-pane line boundary at
+			// this capture width ("[baseline-" / "author@example.com]" on
+			// separate rendered rows), breaking contiguous-substring matching,
+			// while the shorter name fits on one line intact.
+			StateMarker:           "Baseline Author",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionGGitOptionsBrowse},
+			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDispositionGit, ggitListFixtureDisposition, ggitOptionsFixtureDisposition,
+			},
+		},
+		{
+			ScreenID:    "ggit-options-staged-apply-preview",
+			Interaction: "From the Options list, navigate to diff.colorMoved, press 'e', cycle right twice to \"plain\" (deliberately NOT the policy recommendation \"zebra\" — Rule I-3 requires the preview to name the STAGED value, never the recommendation), press Enter to commit the staged override, then 'a' to open the apply ceremony at its pre-write preview.",
+			// The ceremony's pre-write preview does not render the raw
+			// composed diff text — only a summary line
+			// "Preview: would apply N override(s) to M Git option(s)".
+			// "1 override(s) to 2 Git option(s)" proves a STAGED override (not
+			// a plain checkbox toggle) reached the ceremony, and the "Git"
+			// word disambiguates this marker from the SSH spec's identically-
+			// shaped "1 override(s) to 1 SSH option(s)" marker.
+			StateMarker:           "1 override(s) to 2 Git option(s)",
+			ApplicableLive:        true,
+			ApplicableApprovedTUI: true,
+			NonApplicability:      noHTML,
+			RequiredRegions:       []RegionName{RegionGGitApplyCeremony, RegionGGitApplyHeading},
+			RegionDispositions: []RegionDisposition{
+				fixtureHeaderStatusDispositionGit, ggitApplyCeremonyDisposition, ggitApplyHeadingDisposition,
+				uxRegionDifference(RegionConfirmationPreview, "sentinel-wrapped-preview", "GGIT-D-06",
+					"internal/tuikit/ceremony.go's shared \"Exact change\" hint triggers RegionConfirmationPreview's extraction on this staged-override apply ceremony too; the real preview's production EnsureGlobalGit-composed managed block vs the dummy's frozen fixture diff is the SAME divergence RegionGGitApplyCeremony already classifies"),
 			},
 		},
 	}

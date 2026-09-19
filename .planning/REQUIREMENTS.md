@@ -541,7 +541,7 @@ a real user hit, not speculative polish. UXG-01 and UXG-05 together are the
 successor to the "general value-override capability" Phase 9.4's D-02
 explicitly deferred.
 
-- [ ] **UXG-01** (Type-aware Options row rendering): an option row renders
+- [x] **UXG-01** (Type-aware Options row rendering): an option row renders
   according to what its value actually IS. A row gitid can only apply-or-not
   keeps today's checkbox and nothing else. A row whose value comes from a
   closed, known set (e.g. `StrictHostKeyChecking`, `merge.conflictstyle`,
@@ -557,7 +557,7 @@ explicitly deferred.
   and Esc genuinely restores the pre-edit value rather than merely leaving
   edit mode.
 
-- [ ] **UXG-02** (Unambiguous warning glyph): the orange `!` glyph fires
+- [x] **UXG-02** (Unambiguous warning glyph): the orange `!` glyph fires
   ONLY for the needs-action state — unset, where applying gitid's
   recommendation would be a real write. A row that is set to a different,
   non-recommended value ("differs", where gitid's block would be a no-op)
@@ -567,7 +567,7 @@ explicitly deferred.
   the fix Phase 9.4 gave Global Git, so both screens currently share the
   defect.
 
-- [ ] **UXG-03** (One key, one home): no git config key ever appears on both
+- [x] **UXG-03** (One key, one home): no git config key ever appears on both
   the Global Git Options sub-tab and the general-keys sub-tab. The general
   probe's result excludes every key gitid's curated policy table manages —
   scalar rows AND bundle member keys, which a display-key lookup can never
@@ -582,14 +582,14 @@ explicitly deferred.
   other than gitid's managed block is what supplies it — a `user.email` set by
   hand outside gitid stays visible, exactly once.
 
-- [ ] **UXG-04** (Honest general-keys label): once UXG-03's exclusion lands,
+- [x] **UXG-04** (Honest general-keys label): once UXG-03's exclusion lands,
   the Global Git general-keys sub-tab is relabelled to reflect that it only
   ever shows keys gitid's curated table does not manage. The frozen-copy gate
   entry, both Go string constants, and every unit and real-PTY assertion
   pinning the old label move in the same commit, because `make test` depends
   on that gate.
 
-- [ ] **UXG-05** (Value override through the existing ceremony): a value the
+- [x] **UXG-05** (Value override through the existing ceremony): a value the
   user chooses on an Options row — cycled from a closed set or typed as free
   text — can be written without leaving the Options screen. Enter stages the
   value and selects the row; the value reaches disk ONLY through the row's
@@ -769,8 +769,8 @@ row below records each one's **home** phase.
 | PROP-02 | Phase 9.5 | Complete (09.5-02: `TestAllSetKeysReturnsEverySetKeyWithProvenance` asserts one `SetKey` per record across global/system/local scopes with the origin file path stripped of its `file:` prefix; `TestGlobalGit_RealPTYSetKeysFilter` real-PTY proves the type-to-filter list) |
 | PROP-03 | Phase 9.5 | Complete (09.5-03: `TestGlobalGit_RealPTYCustomKeyWrite` asserts the real on-disk managed-block content after a free-form `key=value` write through the standard review-before-write ceremony; `TestGlobalGit_RealPTYCustomKeyRejectsMalformedKey` proves only key-syntax (dot-form) is checked, never a directive-name allow-list) |
 | PROP-04 | Phase 9.5 | Complete (09.5-04: `TestGlobalSSH_RealPTYCustomDirectiveRejectedNameNeverWrites` asserts an unrecognized directive name leaves the managed target byte-identical (never reaches the write ceremony); `TestGlobalSSH_RealPTYCustomDirectiveWrite` asserts the accepted directive lands in the on-disk managed block after the `ssh -G` prove-before-write verification) |
-| UXG-01 | Phase 9.6 | Pending (plans 09.6-01, 09.6-02, 09.6-03, 09.6-04; closed clause-by-clause by 09.6-06) |
-| UXG-02 | Phase 9.6 | Pending (plan 09.6-01; closed clause-by-clause by 09.6-06) |
-| UXG-03 | Phase 9.6 | Pending (plan 09.6-05; closed clause-by-clause by 09.6-06) |
-| UXG-04 | Phase 9.6 | Pending (plan 09.6-05; closed clause-by-clause by 09.6-06) |
-| UXG-05 | Phase 9.6 | Pending (plans 09.6-01, 09.6-02, 09.6-03, 09.6-04; closed clause-by-clause by 09.6-06) |
+| UXG-01 | Phase 9.6 | Complete (plans 09.6-01, 09.6-02, 09.6-03, 09.6-04, 09.6-05, 09.6-06; clause evidence in 09.6-06-SUMMARY.md) |
+| UXG-02 | Phase 9.6 | Complete (plan 09.6-01; clause evidence in 09.6-06-SUMMARY.md) |
+| UXG-03 | Phase 9.6 | Complete (plan 09.6-05; clause evidence in 09.6-06-SUMMARY.md) |
+| UXG-04 | Phase 9.6 | Complete (plan 09.6-05; clause evidence in 09.6-06-SUMMARY.md) |
+| UXG-05 | Phase 9.6 | Complete (plans 09.6-01, 09.6-02, 09.6-03, 09.6-04; clause evidence in 09.6-06-SUMMARY.md) |
