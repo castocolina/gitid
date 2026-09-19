@@ -82,6 +82,10 @@ type lifecyclePolicy struct {
 	// Stages is a test hook called with every stage name as the function
 	// enters that stage's boundary. nil in production.
 	Stages func(stage string)
+	// Overrides are staged editor values. When set, sshExplicitValues /
+	// gitExplicitValues write RequestedValue instead of the recommended
+	// default. Nil or empty keeps the recommended overlay.
+	Overrides []tuikit.OverrideRequest
 }
 
 // lifecycleResult is what a lifecycle function reports. Backups are the
@@ -802,6 +806,90 @@ func (b *realBackend) verifyDeleteGone(name string, scope identity.DeleteScope) 
 // sshconfig.Migrate owns its own rollback because it alone knows which of its
 // two files it wrote, so runSSHStorageMigrate does NOT open a journal — one
 // restoration authority per transaction.
+func overrideRequested(overrides []tuikit.OverrideRequest, key string) (string, bool) {
+	for _, o := range overrides {
+		if strings.EqualFold(o.Key, key) {
+			return o.RequestedValue, true
+		}
+	}
+	return "", false
+}
+
+func sshExplicitValues(keys []string, overrides []tuikit.OverrideRequest) (map[string]string, error) {
+	explicit := make(map[string]string, len(keys))
+	for _, k := range keys {
+		policy, ok := globalssh.PolicyFor(k)
+		if !ok {
+			return nil, fmt.Errorf("gitid: unknown global SSH option %q", k)
+		}
+		if policy.Scope == "per-alias" {
+			return nil, fmt.Errorf("gitid: option %q cannot be applied to the global Host * block (the recipe scopes it per-alias)", k)
+		}
+		requested, hasOverride := overrideRequested(overrides, k)
+		if !hasOverride {
+			explicit[k] = policy.Recommended
+			continue
+		}
+		switch policy.Kind {
+		case globalssh.OptionValueKindEnum:
+			allowed := false
+			for _, v := range policy.Values {
+				if v == requested {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				return nil, fmt.Errorf("gitid: %q is not a permitted value for %s", requested, k)
+			}
+			explicit[k] = requested
+		case globalssh.OptionValueKindToggle:
+			lower := strings.ToLower(strings.TrimSpace(requested))
+			if lower != "yes" && lower != "no" && lower != "true" && lower != "false" {
+				return nil, fmt.Errorf("gitid: %q is not a permitted value for %s", requested, k)
+			}
+			if lower == "true" {
+				lower = "yes"
+			}
+			if lower == "false" {
+				lower = "no"
+			}
+			explicit[k] = lower
+		default:
+			explicit[k] = requested
+		}
+	}
+	return explicit, nil
+}
+
+func gitExplicitValues(keys []string, overrides []tuikit.OverrideRequest, gateFor func(globalgit.OptionPolicy) globalgit.GateOutcome) (map[string]string, error) {
+	explicit := make(map[string]string, len(keys)*2)
+	for _, k := range keys {
+		policy, ok := globalgit.PolicyFor(k)
+		if !ok {
+			return nil, fmt.Errorf("gitid: unknown global git option %q", k)
+		}
+		gate := gateFor(policy)
+		for _, member := range policy.Members {
+			requested, hasOverride := overrideRequested(overrides, member.Key)
+			if !hasOverride {
+				requested, hasOverride = overrideRequested(overrides, policy.Key)
+			}
+			var written string
+			if hasOverride {
+				written = globalgit.WriteRequestedValueFor(policy, member.Key, requested, gate)
+				if written == "" {
+					return nil, fmt.Errorf("gitid: %q is not a permitted value for %s", requested, member.Key)
+				}
+			} else {
+				written = globalgit.WriteValueFor(policy, member.Key, gate)
+			}
+			explicit[member.Key] = written
+		}
+	}
+	return explicit, nil
+}
+
 func (b *realBackend) runGlobalSSHApply(keys []string, p lifecyclePolicy) (lifecycleResult, error) {
 	b.txMu.Lock()
 	defer b.txMu.Unlock()
@@ -819,17 +907,17 @@ func (b *realBackend) runGlobalSSHApply(keys []string, p lifecyclePolicy) (lifec
 	}
 
 	// plan — reject unwritable keys by name BEFORE building any candidate, and
-	// build the explicit overlay from the D-10 recommended values.
+	// build the explicit overlay from requested overrides or D-10 recommended values.
 	record(stages[0])
-	explicit := make(map[string]string, len(keys))
+	explicit, err := sshExplicitValues(keys, p.Overrides)
+	if err != nil {
+		return res, err
+	}
 	var previewKeys []string
 	for _, k := range keys {
 		policy, ok := globalssh.PolicyFor(k)
 		if !ok {
 			return res, fmt.Errorf("gitid: unknown global SSH option %q", k)
-		}
-		if policy.Scope == "per-alias" {
-			return res, fmt.Errorf("gitid: option %q cannot be applied to the global Host * block (the recipe scopes it per-alias)", k)
 		}
 		if policy.MinOpenSSH != "" {
 			outcome, _ := globalssh.VersionGate(b.readSSHVersion(), policy)
@@ -837,7 +925,6 @@ func (b *realBackend) runGlobalSSHApply(keys []string, p lifecyclePolicy) (lifec
 				return res, fmt.Errorf("gitid: option %q cannot be applied until OpenSSH compatibility is verified (run ssh -V)", k)
 			}
 		}
-		explicit[k] = policy.Recommended
 		previewKeys = append(previewKeys, k)
 	}
 
@@ -1159,25 +1246,20 @@ func (b *realBackend) runGlobalGitApply(keys []string, p lifecyclePolicy) (lifec
 		return res, b.initErr
 	}
 
-	// plan — reject unknown keys BY NAME before building any candidate, and
-	// build the explicit selection from the D-08 recommended values via
-	// WriteValueFor (the ONE place the version gate may change a written
-	// value — merge.conflictstyle writes diff3 instead of zdiff3 on old git).
+	// plan — reject unknown keys BY NAME before building any candidate.
 	record(stages[0])
-	explicit := make(map[string]string, len(keys)*2)
+	explicit, err := gitExplicitValues(keys, p.Overrides, b.gitGateOutcome)
+	if err != nil {
+		return res, err
+	}
 	for _, k := range keys {
 		policy, ok := globalgit.PolicyFor(k)
 		if !ok {
-			return res, fmt.Errorf("gitid: unknown global git option %q", k)
+			continue
 		}
 		gate := b.gitGateOutcome(policy)
 		for _, member := range policy.Members {
-			written := globalgit.WriteValueFor(policy, member.Key, gate)
-			explicit[member.Key] = written
-			// The hard-gated row (merge.conflictstyle) substitutes the
-			// fallback (diff3) when the machine's git is below 2.35;
-			// report that from the plan stage so TUI and CLI share one
-			// advisory (T-07-31).
+			written := explicit[member.Key]
 			if policy.Gate == globalgit.GateHard && gate != globalgit.GateMet && written != "" {
 				res.Advisories = append(res.Advisories,
 					fmt.Sprintf("advisory: %s is below the git version gate — wrote %q instead of %q",

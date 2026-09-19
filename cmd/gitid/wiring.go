@@ -6464,13 +6464,12 @@ func (b *realBackend) GlobalSSHOverridePlan(keys []string, overrides []tuikit.Ov
 
 // CommitGlobalSSHOverride dispatches the confirmed SSH override apply
 // transaction off the update loop and delivers a GlobalSSHCommitMsg.
-func (b *realBackend) CommitGlobalSSHOverride(keys []string, _ []tuikit.OverrideRequest) tea.Cmd {
+func (b *realBackend) CommitGlobalSSHOverride(keys []string, overrides []tuikit.OverrideRequest) tea.Cmd {
 	return func() tea.Msg {
 		if b.initErr != nil {
 			return tuikit.GlobalSSHCommitMsg{Err: b.displayMessage(b.initErr.Error())}
 		}
-		// Call runGlobalSSHApply with the same lifecycle policy as CommitGlobalSSH
-		res, err := b.runGlobalSSHApply(keys, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+		res, err := b.runGlobalSSHApply(keys, lifecyclePolicy{Confirm: confirmationAlreadyObtained, Overrides: overrides})
 		msg := tuikit.GlobalSSHCommitMsg{
 			Backups:          displayPaths(b, res.Backups),
 			Restored:         displayMessages(b, res.Restored),
@@ -6503,13 +6502,12 @@ func (b *realBackend) GlobalGitOverridePlan(keys []string, overrides []tuikit.Ov
 
 // CommitGlobalGitOverride dispatches the confirmed Git override apply
 // transaction off the update loop and delivers a GlobalGitCommitMsg.
-func (b *realBackend) CommitGlobalGitOverride(keys []string, _ []tuikit.OverrideRequest) tea.Cmd {
+func (b *realBackend) CommitGlobalGitOverride(keys []string, overrides []tuikit.OverrideRequest) tea.Cmd {
 	return func() tea.Msg {
 		if b.initErr != nil {
 			return tuikit.GlobalGitCommitMsg{Err: b.displayMessage(b.initErr.Error())}
 		}
-		// Call runGlobalGitApply with the same lifecycle policy as CommitGlobalGit
-		res, err := b.runGlobalGitApply(keys, lifecyclePolicy{Confirm: confirmationAlreadyObtained})
+		res, err := b.runGlobalGitApply(keys, lifecyclePolicy{Confirm: confirmationAlreadyObtained, Overrides: overrides})
 		msg := tuikit.GlobalGitCommitMsg{
 			Backups:    displayPaths(b, res.Backups),
 			Restored:   displayMessages(b, res.Restored),
