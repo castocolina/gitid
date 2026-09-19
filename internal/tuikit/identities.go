@@ -1739,27 +1739,50 @@ func (w wizardModel) stage2Cmd() string {
 	return w.backend.Stage2Command(w.spec())
 }
 
-func (w wizardModel) proofText() string {
-	var b strings.Builder
+type proofKind int
+
+const (
+	proofKindInfo proofKind = iota
+	proofKindSuccess
+	proofKindWarning
+	proofKindError
+)
+
+type proofEntry struct {
+	Kind proofKind
+	Text string
+}
+
+func (w wizardModel) proofEntries() []proofEntry {
+	var out []proofEntry
 	appendResult := func(label string, result TestResultView) {
 		if result.Command == "" {
 			return
 		}
-		b.WriteString(label + " command:\n" + result.Command + "\n")
-		b.WriteString(label + " output:\n" + result.Detail + "\n")
+		out = append(out, proofEntry{Kind: proofKindInfo, Text: label + " command:\n" + result.Command})
+		out = append(out, proofEntry{Kind: proofKindInfo, Text: label + " output:\n" + result.Detail})
 		if result.ResolutionCommand != "" {
-			b.WriteString(label + " resolution command:\n" + result.ResolutionCommand + "\n")
+			out = append(out, proofEntry{Kind: proofKindInfo, Text: label + " resolution command:\n" + result.ResolutionCommand})
 		}
 		if result.ResolutionOutput != "" {
-			b.WriteString(label + " resolution output:\n" + result.ResolutionOutput + "\n")
+			out = append(out, proofEntry{Kind: proofKindInfo, Text: label + " resolution output:\n" + result.ResolutionOutput})
 		}
 	}
-	// Put the latest complete stage first so its proof is immediately useful;
-	// the earlier stage remains in the same immutable transcript below it.
 	appendResult("Stage 2", w.stage2)
 	appendResult("Stage 1", w.stage1)
 	if w.keyUnused() {
-		b.WriteString(stageWarningLine + "\n")
+		out = append(out, proofEntry{Kind: proofKindWarning, Text: stageWarningLine})
+	}
+	return out
+}
+
+func (w wizardModel) proofText() string {
+	var b strings.Builder
+	for _, e := range w.proofEntries() {
+		if e.Kind == proofKindWarning {
+			continue
+		}
+		b.WriteString(e.Text + "\n")
 	}
 	return strings.TrimSuffix(b.String(), "\n")
 }
@@ -1778,7 +1801,8 @@ func (w wizardModel) refreshProof() wizardModel {
 }
 
 func (w wizardModel) renderProof(width int) string {
-	if w.proof.Text == "" {
+	entries := w.proofEntries()
+	if len(entries) == 0 && w.proof.Text == "" {
 		return ""
 	}
 	v := w.proof
@@ -1789,7 +1813,18 @@ func (w wizardModel) renderProof(width int) string {
 	if v.Focused {
 		state = "Proof viewport focused: PgUp/PgDn and ←/→ scroll"
 	}
-	return " " + styleFaint.Render(state) + "\n" + v.View() + "\n"
+	var b strings.Builder
+	b.WriteString(" " + styleFaint.Render(state) + "\n")
+	b.WriteString(v.View() + "\n")
+	if w.step != 1 {
+		for _, e := range entries {
+			if e.Kind != proofKindWarning {
+				continue
+			}
+			b.WriteString(" " + styleWarning.Render(e.Text) + "\n")
+		}
+	}
+	return b.String()
 }
 
 func collisionTargetFor(s DemoState, alias string) (DemoIdentity, bool) {
@@ -5348,6 +5383,9 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 			}
 		}
 	case 2:
+		if w.keyUnused() {
+			b.WriteString(" " + styleWarning.Render(stageWarningLine) + "\n")
+		}
 		b.WriteString(w.git.view(w.form.identityName(), w.keyPath(), w.gitFocus, width, baselineStripCompact(s, width)))
 		// D6 (checkpoint-2 contract): all THREE real buttons (M2) share ONE
 		// row — Back / Skip / Continue — with both frozen hints ALWAYS

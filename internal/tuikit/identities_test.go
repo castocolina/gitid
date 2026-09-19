@@ -4313,6 +4313,54 @@ func TestWizardStep0HasKeyHeader(t *testing.T) {
 	}
 }
 
+func TestProofEntriesAreTyped(t *testing.T) {
+	w := newWizard(stubBackend{})
+	w.stage1 = TestResultView{
+		Outcome: TestOutcomeReachableNotUploaded,
+		Command: "ssh -T git@github.com",
+		Detail:  "Permission denied (publickey).",
+	}
+	entries := w.proofEntries()
+	var sawWarning, sawInfo bool
+	for _, e := range entries {
+		if e.Kind == proofKindWarning && e.Text == stageWarningLine {
+			sawWarning = true
+		}
+		if e.Kind == proofKindInfo && strings.Contains(e.Text, "Stage 1 command") {
+			sawInfo = true
+		}
+	}
+	if !sawWarning {
+		t.Fatal("proofEntries missing typed warning for keyUnused")
+	}
+	if !sawInfo {
+		t.Fatal("proofEntries missing typed info for stage command")
+	}
+}
+
+func TestProofWarningPersistsOnGitStep(t *testing.T) {
+	a := pressSeq(t, NewApp(tableBackend{}), "n")
+	m := identModel(t, a)
+	m.wizard.stage1 = TestResultView{Outcome: TestOutcomeReachableNotUploaded, Command: "ssh", Detail: "denied"}
+	m.wizard.step = 2
+	m.wizard = m.wizard.refreshProof()
+	a.screens[TabIdentities] = m
+	var saw bool
+	for _, e := range m.wizard.proofEntries() {
+		if e.Kind == proofKindWarning && e.Text == stageWarningLine {
+			saw = true
+			break
+		}
+	}
+	if !saw {
+		t.Fatal("proof transcript dropped keyUnused warning after leaving step 1")
+	}
+	got := ansi.Strip(appView(a))
+	if !strings.Contains(got, stageWarningLine) {
+		t.Fatalf("git step must still show persisted warning:\n%s", got)
+	}
+}
+
 func TestWizardNewSSHFormSetsInputWidth(t *testing.T) {
 	form := newSSHForm(stubBackend{}, "acme", "acme.github.com", "ssh.github.com", "443", false)
 	if form.port.Width() != 8 {

@@ -988,6 +988,7 @@ func TestCreateFlow_TestStageReachableNotUploaded(t *testing.T) {
 
 	s.sendKey(dummyKeyEnter, keystrokeDelay) // -> step 2 (Git, demo'd)
 	mustSee(t, s, "Step 3/4", "wizard advances past ReachableNotUploaded (D-01 store gate: PASS or ReachableNotUploaded)")
+	mustSee(t, s, "! Reachable — key not uploaded yet", "D-04: warning persists on the Git step via the proof transcript")
 
 	saveFrame(t, "create-flow-test-stage-reachable-not-uploaded", s)
 }
