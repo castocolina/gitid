@@ -6,9 +6,9 @@ current_phase: 10
 current_phase_name: READY TO EXECUTE; urgent TUI-consistency fixes queued as Phase 9.6 and 9.7
 status: executing
 stopped_at: Phase 9.7 context gathered
-last_updated: "2026-09-07T23:02:55.587Z"
-last_activity: 2026-09-07
-last_activity_desc: Inserted Phase 9.6 (Global Git/SSH Options Consistency Fixes) and Phase 9.7 (New-Identity Wizard Consistency Fixes) after a user UX audit of Options screens and the New-Identity wizard
+last_updated: "2026-09-19T17:30:00.000Z"
+last_activity: 2026-09-19
+last_activity_desc: Completed quick task 260919-jnl: Non-destructive Git/SSH/Ignore apply ceremonies confirm with Enter without typing yes. Keep the exact-change preview. Typed-confirm stays only for destructive rewrites.
 state_head: "0bd017bbfa74ada120b6aa83d3b4442a567e2474"
 progress:
   total_phases: 17
@@ -271,6 +271,7 @@ None yet.
 | 260705-f9t | Add `make demo-web` target: relaunch the web mockup Vite dev server on dedicated port 45173 and open the browser | 2026-07-05 | 9ecfbb4 | [260705-f9t-add-make-target-to-relaunch-the-web-mock](./quick/260705-f9t-add-make-target-to-relaunch-the-web-mock/) |
 | 260831-3a9 | Fix 5 UX-critique defects (D1-D5) in Phase 9 upload/register-key/rotate-delete screens; re-promote stale PTY frames; close REVIEW.md's parity-critique obligation | 2026-08-31 | 0ad0ed7 | [260831-3a9-fix-5-ux-critique-defects-d1-d5-in-phase](./quick/260831-3a9-fix-5-ux-critique-defects-d1-d5-in-phase/) |
 | 260907-eda | Add a Go-toolchain bootstrap step to setup-env so a fresh clone with no go on PATH gets one installed automatically | 2026-09-07 | 0fdc648 | [260907-eda-add-a-go-toolchain-bootstrap-step-to-set](./quick/260907-eda-add-a-go-toolchain-bootstrap-step-to-set/) |
+| 260919-jnl | Non-destructive Git/SSH/Ignore apply ceremonies confirm with Enter without typing yes. Keep the exact-change preview. Typed-confirm stays only for destructive rewrites. | 2026-09-19 | 3dfdb15 | [260919-jnl-non-destructive-git-ssh-ignore-apply-cer](./quick/260919-jnl-non-destructive-git-ssh-ignore-apply-cer/) |
 
 ## Deferred Items
 
