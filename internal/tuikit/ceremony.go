@@ -153,6 +153,16 @@ func newCeremony(cfg ceremonyConfig) ceremonyModel {
 	return ceremonyModel{cfg: cfg, typed: ti, preview: ExactTextViewport{Text: cfg.Preview, VisibleLines: 10, Width: 58}}
 }
 
+// newApplyCeremony is the Git/SSH/Ignore apply constructor: same preview
+// ceremony as newCeremony, but Confirm starts focused so Enter confirms
+// without typing a word (260919-jnl). Destructive ceremonies still use
+// newCeremony so Cancel stays the visual default.
+func newApplyCeremony(cfg ceremonyConfig) ceremonyModel {
+	c := newCeremony(cfg)
+	c.focus = ceremonyFocusConfirm
+	return c
+}
+
 // confirmEnabled reports whether the confirm action is enabled — always
 // for plain writes, only after the typed word matches exactly for
 // destructive ones.

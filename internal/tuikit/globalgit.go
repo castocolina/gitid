@@ -838,7 +838,7 @@ func (m globalGitModel) baselineCeremonyFor(keys []string, pending int) (ceremon
 			note = GlobalGitCrossWarningEmailMissing
 		}
 	}
-	return newCeremony(ceremonyConfig{
+	return newApplyCeremony(ceremonyConfig{
 		Heading: "Write global-git managed block to " + targets[0],
 		Targets: targets,
 		Backups: backups,
@@ -884,7 +884,7 @@ func (m globalGitModel) fallbackCeremonyFor(name, email string) (ceremonyModel, 
 	if plan.Removal {
 		heading = "Remove global fallback author"
 	}
-	return newCeremony(ceremonyConfig{
+	return newApplyCeremony(ceremonyConfig{
 		Heading:       heading,
 		Targets:       targets,
 		Backups:       backups,
@@ -1384,17 +1384,12 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 			return keyResult{model: m, handled: true}
 		}
 		return keyResult{model: m}
-	case "enter":
+	case "enter", "a":
 		if m.subTab != ggitOptions {
+			if key == "a" {
+				return keyResult{model: m, handled: true}
+			}
 			return keyResult{model: m}
-		}
-		// D9/D8: Enter on the selected fallback row no longer starts editing.
-		// The edit key opens the fallback-pair editor instead (Task 2, PD3).
-		// The editor guard above handles Enter when an editor is open.
-		return keyResult{model: m}
-	case "a":
-		if m.subTab != ggitOptions {
-			return keyResult{model: m, handled: true}
 		}
 		if m.detailKey == GlobalGitEmailFallbackKey && m.fallbackApplyOffered() {
 			cer, cerErr := m.fallbackCeremonyFor(m.nameInput.Value(), m.emailInput.Value())

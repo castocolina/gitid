@@ -322,6 +322,35 @@ func TestGlobalSSHStoragePreviewsSwitchAndMigrateRoundTrips(t *testing.T) {
 	}
 }
 
+// TestGlobalSSHOptionsSpaceThenEnterOpensApplyCeremony is the 260919-jnl
+// contract: Space selects a row and Enter opens the apply preview. The
+// ceremony must not demand a typed word; Confirm is focused so a second
+// Enter confirms.
+func TestGlobalSSHOptionsSpaceThenEnterOpensApplyCeremony(t *testing.T) {
+	a := gssApp(t)
+	a, _ = press(t, a, "enter")
+	if gssModel(t, a).mode == gssApplyCeremony {
+		t.Fatal("Enter with an empty selection must not open the apply ceremony")
+	}
+	a, _ = press(t, a, "space")
+	a, _ = press(t, a, "enter")
+	m := gssModel(t, a)
+	if m.mode != gssApplyCeremony {
+		t.Fatalf("Space then Enter must open the apply ceremony, mode=%v", m.mode)
+	}
+	if m.ceremony.cfg.Destructive != nil {
+		t.Fatal("apply ceremony must not require typing a confirm word")
+	}
+	if m.ceremony.focus != ceremonyFocusConfirm {
+		t.Fatalf("apply ceremony focus = %v, want Confirm so Enter confirms", m.ceremony.focus)
+	}
+	a, _ = press(t, a, "enter")
+	m = gssModel(t, a)
+	if !m.applyCommitPending {
+		t.Fatal("Enter on the apply ceremony must confirm without typing yes")
+	}
+}
+
 func TestGlobalSSHApplyTargetsOwnedFileUnderIncludeLayout(t *testing.T) {
 	a := gssApp(t)
 	a.state = Reduce(a.state, SetSSHStorage{Layout: StorageInclude, Backup: "b"})

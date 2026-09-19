@@ -846,7 +846,7 @@ func (m globalSSHModel) applyCeremonyFor(s DemoState) (ceremonyModel, error) {
 	if len(pending)-len(chosen) > 0 {
 		rest = " The rest were left unchanged, as chosen."
 	}
-	return newCeremony(ceremonyConfig{
+	return newApplyCeremony(ceremonyConfig{
 		Heading:       "Write Host * managed block to " + targets[0],
 		Targets:       targets,
 		Backups:       backups,
@@ -1350,6 +1350,16 @@ func (m globalSSHModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 		}
 		return keyResult{model: m, handled: true}
 	case "enter":
+		if m.subTab == gssOptions && len(m.applyChosen(options)) > 0 {
+			cer, cerErr := m.applyCeremonyFor(s)
+			if cerErr != nil {
+				m.optionsErr = cerErr.Error()
+				return keyResult{model: m, handled: true}
+			}
+			m.ceremony = cer
+			m.mode = gssApplyCeremony
+			return keyResult{model: m, handled: true}
+		}
 		if m.subTab == gssStorage && m.storageChoice != s.SSHStorage {
 			if m.storageViewErr != "" {
 				// A preview that cannot be computed renders the error inline

@@ -216,6 +216,35 @@ func TestGlobalGitApplyNotOfferedOnEmptySelection(t *testing.T) {
 	}
 }
 
+// TestGlobalGitOptionsSpaceThenEnterOpensApplyCeremony is the 260919-jnl
+// contract: Space selects a row and Enter opens the apply preview. The
+// ceremony must not demand a typed word; Confirm is focused so a second
+// Enter confirms.
+func TestGlobalGitOptionsSpaceThenEnterOpensApplyCeremony(t *testing.T) {
+	a := ggitApp(t)
+	a, _ = press(t, a, "enter")
+	if ggitModel(t, a).ceremonyOpen {
+		t.Fatal("Enter with an empty selection must not open the apply ceremony")
+	}
+	a, _ = press(t, a, "space")
+	a, _ = press(t, a, "enter")
+	m := ggitModel(t, a)
+	if !m.ceremonyOpen {
+		t.Fatal("Space then Enter must open the apply ceremony")
+	}
+	if m.ceremony.cfg.Destructive != nil {
+		t.Fatal("apply ceremony must not require typing a confirm word")
+	}
+	if m.ceremony.focus != ceremonyFocusConfirm {
+		t.Fatalf("apply ceremony focus = %v, want Confirm so Enter confirms", m.ceremony.focus)
+	}
+	a, _ = press(t, a, "enter")
+	m = ggitModel(t, a)
+	if !m.applyCommitPending {
+		t.Fatal("Enter on the apply ceremony must confirm without typing yes")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Acceptance criterion: policy-backed selectability predicate.
 // ---------------------------------------------------------------------------

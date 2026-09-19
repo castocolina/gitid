@@ -180,7 +180,7 @@ func (m gitIgnoreModel) handleKey(msg tea.KeyMsg, _ DemoState) keyResult {
 	m.applyErr = ""
 	m.appliedContent = content
 	m.appliedToken = plan.PlanToken
-	m.ceremony = newCeremony(ceremonyConfig{
+	m.ceremony = newApplyCeremony(ceremonyConfig{
 		Heading:       GitIgnoreCeremonyHeading,
 		Targets:       plan.Targets,
 		Backups:       plan.Backups,

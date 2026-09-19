@@ -226,6 +226,44 @@ func TestGitIgnoreApplyOpensCeremonyWithPlan(t *testing.T) {
 	}
 }
 
+// TestGitIgnoreApplyCeremonyEnterConfirmsWithoutTypedWord is the 260919-jnl
+// contract: Ignore apply keeps the preview ceremony, Confirm is focused, and
+// Enter confirms without typing yes.
+func TestGitIgnoreApplyCeremonyEnterConfirmsWithoutTypedWord(t *testing.T) {
+	plan := GlobalGitIgnoreApplyPlanView{
+		Targets:   []string{"~/.gitignore_global"},
+		Backups:   []string{"~/.gitignore_global.bak.<timestamp>"},
+		Diff:      "+ *.log",
+		PlanToken: "token-enter",
+	}
+	b := stubBackend{
+		gignState: GlobalGitIgnoreView{
+			Path:    "~/.gitignore_global",
+			Content: ".DS_Store",
+			Managed: true,
+			Wiring:  GitIgnoreWiredAtManaged,
+		},
+		gignApplyPlan: plan,
+	}
+	a := gignApp(t, b)
+	a, _ = press(t, a, "a")
+	m := gignModel(t, a)
+	if !m.ceremonyOpen {
+		t.Fatal("setup: a must open the apply ceremony")
+	}
+	if m.ceremony.cfg.Destructive != nil {
+		t.Fatal("apply ceremony must not require typing a confirm word")
+	}
+	if m.ceremony.focus != ceremonyFocusConfirm {
+		t.Fatalf("apply ceremony focus = %v, want Confirm so Enter confirms", m.ceremony.focus)
+	}
+	a, _ = press(t, a, "enter")
+	m = gignModel(t, a)
+	if !m.commitPending {
+		t.Fatal("Enter on the apply ceremony must confirm without typing yes")
+	}
+}
+
 func TestGitIgnoreApplyPlanErrorFailsClosed(t *testing.T) {
 	commits := 0
 	b := stubBackend{
