@@ -368,6 +368,11 @@ func DefaultGitignorePatterns() []string {
 		".pytest_cache/",
 		".mypy_cache/",
 		".ruff_cache/",
+		"# Agent and graph caches",
+		".planning/graphs/",
+		"graphify-out/",
+		".codegraph/",
+		".gsd/",
 	}
 }
 

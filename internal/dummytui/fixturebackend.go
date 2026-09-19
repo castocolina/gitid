@@ -1054,7 +1054,12 @@ const fixtureGitIgnoreDefaultContent = "# OS artifacts\n" +
 	".direnv/\n" +
 	".pytest_cache/\n" +
 	".mypy_cache/\n" +
-	".ruff_cache/"
+	".ruff_cache/\n" +
+	"# Agent and graph caches\n" +
+	".planning/graphs/\n" +
+	"graphify-out/\n" +
+	".codegraph/\n" +
+	".gsd/"
 
 // GlobalGitIgnoreState returns frozen fixture content with DefaultContent
 // equal to the curated seed — the contract plan 09.2-03's Reset action

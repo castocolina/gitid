@@ -1109,6 +1109,23 @@ func TestDefaultGitignorePatterns_ExtendedCatalog(t *testing.T) {
 		}
 	})
 
+	t.Run("contains agent and graph cache paths", func(t *testing.T) {
+		entries := DefaultGitignoreEntries()
+		want := []string{".planning/graphs/", "graphify-out/", ".codegraph/", ".gsd/"}
+		for _, w := range want {
+			found := false
+			for _, e := range entries {
+				if e == w {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("agent/graph cache pattern %q missing from catalog", w)
+			}
+		}
+	})
+
 	t.Run("contains each pattern GIGN-01 names", func(t *testing.T) {
 		entries := DefaultGitignoreEntries()
 
