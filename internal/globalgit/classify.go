@@ -2,6 +2,7 @@ package globalgit
 
 import (
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -222,9 +223,9 @@ func classifyOne(
 	}
 
 	if len(policy.Members) == 0 {
-		// The fallback-author row: no member key gitid manages through the
-		// baseline block, so no value claim can come from the probes.
-		row.State = StateNeedsAction
+		// Unset IS the recipes default for the fallback-author row
+		// ("left unset unless explicitly opted in") — not a warning.
+		row.State = StateAlreadySet
 		row.Source = SourceUnset
 		return row
 	}
@@ -237,9 +238,13 @@ func classifyOne(
 		effEntry, effPresent := effective[lk]
 
 		if !effPresent {
-			// Not set anywhere — needs action, source unset.
-			row.State = StateNeedsAction
 			row.Source = SourceUnset
+			row.GitDefault = effectiveGitDefault(member)
+			if unsetMatchesRecommendation(member) {
+				row.State = StateAlreadySet
+				return row
+			}
+			row.State = StateNeedsAction
 			return row
 		}
 
@@ -303,6 +308,17 @@ func classifyOne(
 	}
 	if !hasPresent {
 		row.Source = SourceUnset
+		allDefault := true
+		for _, member := range policy.Members {
+			if !unsetMatchesRecommendation(member) {
+				allDefault = false
+				break
+			}
+		}
+		if allDefault && len(policy.Members) > 0 {
+			row.State = StateAlreadySet
+			return row
+		}
 		row.State = StateNeedsAction
 		return row
 	}
@@ -318,6 +334,27 @@ func classifyOne(
 		row.State = StateNeedsAction
 	}
 	return row
+}
+
+func ignorecaseGitDefault() string {
+	switch runtime.GOOS {
+	case "windows", "darwin":
+		return "true"
+	default:
+		return "false"
+	}
+}
+
+func effectiveGitDefault(m MemberPolicy) string {
+	if strings.EqualFold(m.Key, "core.ignorecase") {
+		return ignorecaseGitDefault()
+	}
+	return m.GitDefault
+}
+
+func unsetMatchesRecommendation(m MemberPolicy) bool {
+	def := effectiveGitDefault(m)
+	return def != "" && strings.EqualFold(def, m.Recommended)
 }
 
 // sourceClassFor determines the SourceClass from the effective entry, the

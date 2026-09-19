@@ -53,6 +53,61 @@ func TestClassify_NeedsAction_WhenUnsetEverywhere(t *testing.T) {
 	}
 }
 
+// TestClassify_UnsetMatchingGitDefaultIsAlreadySet: writing the recommendation
+// would be a no-op when git's compiled default already equals it.
+func TestClassify_UnsetMatchingGitDefaultIsAlreadySet(t *testing.T) {
+	policy := OptionPolicy{
+		Key:         "example.toggle",
+		Recommended: "false",
+		Members: []MemberPolicy{
+			{Key: "example.toggle", Recommended: "false", GitDefault: "false"},
+		},
+	}
+	rows, err := Classify([]OptionPolicy{policy}, map[string]EffectiveEntry{}, map[string]EffectiveEntry{}, "/gitid/path")
+	if err != nil {
+		t.Fatalf("Classify: %v", err)
+	}
+	if rows[0].State != StateAlreadySet {
+		t.Errorf("State = %v, want StateAlreadySet when unset default equals recommendation", rows[0].State)
+	}
+	if rows[0].Source != SourceUnset {
+		t.Errorf("Source = %v, want SourceUnset", rows[0].Source)
+	}
+}
+
+func TestClassify_FallbackAuthorUnsetIsAlreadySet(t *testing.T) {
+	policy, ok := PolicyFor("user.email (global fallback)")
+	if !ok {
+		t.Fatal("missing fallback-author policy")
+	}
+	rows, err := Classify([]OptionPolicy{policy}, map[string]EffectiveEntry{}, map[string]EffectiveEntry{}, "/gitid/path")
+	if err != nil {
+		t.Fatalf("Classify: %v", err)
+	}
+	if rows[0].State != StateAlreadySet {
+		t.Errorf("State = %v, want StateAlreadySet — unset IS the recipes default", rows[0].State)
+	}
+}
+
+func TestClassify_IgnorecaseUnsetUsesPlatformDefault(t *testing.T) {
+	policy, _ := PolicyFor("core.ignorecase")
+	rows, err := Classify([]OptionPolicy{policy}, map[string]EffectiveEntry{}, map[string]EffectiveEntry{}, "/gitid/path")
+	if err != nil {
+		t.Fatalf("Classify: %v", err)
+	}
+	wantDefault := ignorecaseGitDefault()
+	if rows[0].GitDefault != wantDefault {
+		t.Errorf("GitDefault = %q, want platform default %q", rows[0].GitDefault, wantDefault)
+	}
+	if wantDefault == policy.Members[0].Recommended {
+		if rows[0].State != StateAlreadySet {
+			t.Errorf("State = %v, want AlreadySet when platform default equals recommended %q", rows[0].State, policy.Members[0].Recommended)
+		}
+	} else if rows[0].State != StateNeedsAction {
+		t.Errorf("State = %v, want NeedsAction when platform default %q differs from recommended", rows[0].State, wantDefault)
+	}
+}
+
 // TestClassify_SetByGitid_WhenOriginMatchesManagedPath verifies that an
 // effective origin equal to the gitid-owned baseline path yields the
 // set-by-gitid source class.
