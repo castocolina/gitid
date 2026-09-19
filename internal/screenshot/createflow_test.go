@@ -964,9 +964,9 @@ func TestEvidenceTestsResolveAgainstBogusNameFailsFirst(t *testing.T) {
 // are required to trust the walk.
 func TestEvidenceTestsResolveAgainstRealName(t *testing.T) {
 	names := resolveE2ETestNames(t)
-	const real = "TestGlobalGit_RealPTYDiffersRow"
-	if !names[real] {
-		t.Fatalf("resolveE2ETestNames failed to resolve %q, a real e2e test function — walk technique or path is broken", real)
+	const evidenceTest = "TestGlobalGit_RealPTYDiffersRow"
+	if !names[evidenceTest] {
+		t.Fatalf("resolveE2ETestNames failed to resolve %q, a real e2e test function — walk technique or path is broken", evidenceTest)
 	}
 }
 
