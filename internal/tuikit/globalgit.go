@@ -1187,7 +1187,7 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 				// Route to the text input field.
 				input := m.optionEditor.TextInput()
 				input, _ = updateInput(input, msg)
-				// The textinput is managed by the editor; this updates it for view rendering.
+				m.optionEditor.SetTextInput(input)
 				return keyResult{model: m, handled: true}
 			}
 		case OptionEditorModeEnumCycle:
@@ -1332,7 +1332,7 @@ func (m globalGitModel) handleKey(msg tea.KeyMsg, s DemoState) keyResult {
 				m.optionEditor = NewOptionEditor(GlobalGitEmailFallbackKey, nil, "")
 			}
 			m.optionEditor.OpenFallbackPair(m.currentName, m.currentEmail)
-			// Focus the field so key input reaches it immediately.
+			m.fieldFocus = 0
 			m.focusFallbackField()
 			return keyResult{model: m, handled: true}
 		}

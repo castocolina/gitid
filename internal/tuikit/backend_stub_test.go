@@ -960,6 +960,34 @@ func (b stubBackend) CommitCustomSSHDirective(name, value string) tea.Cmd {
 	return func() tea.Msg { return b.sshDirectiveCommit }
 }
 
+func (b stubBackend) GlobalSSHOverridePlan(keys []string, overrides []OverrideRequest) (GlobalSSHApplyPlanView, error) {
+	if b.sshOverridePlanFn != nil {
+		return b.sshOverridePlanFn(keys, overrides)
+	}
+	return b.sshOverridePlan, nil
+}
+
+func (b stubBackend) CommitGlobalSSHOverride(keys []string, overrides []OverrideRequest) tea.Cmd {
+	if b.sshOverrideCommitFn != nil {
+		return b.sshOverrideCommitFn(keys, overrides)
+	}
+	return func() tea.Msg { return b.sshOverrideCommit }
+}
+
+func (b stubBackend) GlobalGitOverridePlan(keys []string, overrides []OverrideRequest) (GlobalGitApplyPlanView, error) {
+	if b.gitOverridePlanFn != nil {
+		return b.gitOverridePlanFn(keys, overrides)
+	}
+	return b.gitOverridePlan, nil
+}
+
+func (b stubBackend) CommitGlobalGitOverride(keys []string, overrides []OverrideRequest) tea.Cmd {
+	if b.gitOverrideCommitFn != nil {
+		return b.gitOverrideCommitFn(keys, overrides)
+	}
+	return func() tea.Msg { return b.gitOverrideCommit }
+}
+
 func (b stubBackend) GlobalGitIgnoreState() (GlobalGitIgnoreView, error) {
 	if b.gignStateFn != nil {
 		return b.gignStateFn()

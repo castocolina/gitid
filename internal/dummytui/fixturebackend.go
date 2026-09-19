@@ -1002,6 +1002,7 @@ const (
 	fixtureFallbackAuthorEmail = "baseline-author@example.com"
 )
 
+// GitFallbackAuthorState returns the fixture fallback author pair.
 func (FixtureBackend) GitFallbackAuthorState() (tuikit.GitFallbackAuthorView, error) {
 	return tuikit.GitFallbackAuthorView{
 		Name:                   fixtureFallbackAuthorName,

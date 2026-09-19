@@ -3060,7 +3060,7 @@ func TestGlobalGitFallbackRowFallbackCurrentLabel(t *testing.T) {
 func TestGlobalGitFallbackRowDemoStateOverlay(t *testing.T) {
 	const backendName = "Original Name"
 	const backendEmail = "original@example.com"
-	const newName = "Commited Name"
+	const newName = "Committed Name"
 	const newEmail = "committed@example.com"
 
 	// Test with backend returning original values and DemoState carrying committed values.

@@ -3180,10 +3180,11 @@ func (b *realBackend) GitFallbackAuthorState() (tuikit.GitFallbackAuthorView, er
 
 	for _, k := range keys {
 		keyLower := strings.ToLower(k.Key)
-		if keyLower == "user.name" {
+		switch keyLower {
+		case "user.name":
 			effectiveName = k.Value
 			nameOrigin = b.displayPath(k.Origin)
-		} else if keyLower == "user.email" {
+		case "user.email":
 			effectiveEmail = k.Value
 			emailOrigin = b.displayPath(k.Origin)
 		}
@@ -6463,7 +6464,7 @@ func (b *realBackend) GlobalSSHOverridePlan(keys []string, overrides []tuikit.Ov
 
 // CommitGlobalSSHOverride dispatches the confirmed SSH override apply
 // transaction off the update loop and delivers a GlobalSSHCommitMsg.
-func (b *realBackend) CommitGlobalSSHOverride(keys []string, overrides []tuikit.OverrideRequest) tea.Cmd {
+func (b *realBackend) CommitGlobalSSHOverride(keys []string, _ []tuikit.OverrideRequest) tea.Cmd {
 	return func() tea.Msg {
 		if b.initErr != nil {
 			return tuikit.GlobalSSHCommitMsg{Err: b.displayMessage(b.initErr.Error())}
@@ -6502,7 +6503,7 @@ func (b *realBackend) GlobalGitOverridePlan(keys []string, overrides []tuikit.Ov
 
 // CommitGlobalGitOverride dispatches the confirmed Git override apply
 // transaction off the update loop and delivers a GlobalGitCommitMsg.
-func (b *realBackend) CommitGlobalGitOverride(keys []string, overrides []tuikit.OverrideRequest) tea.Cmd {
+func (b *realBackend) CommitGlobalGitOverride(keys []string, _ []tuikit.OverrideRequest) tea.Cmd {
 	return func() tea.Msg {
 		if b.initErr != nil {
 			return tuikit.GlobalGitCommitMsg{Err: b.displayMessage(b.initErr.Error())}

@@ -870,10 +870,9 @@ func TestGlobalSSH_RealPTYEnumRowEdit(t *testing.T) {
 	}
 
 	// Press Esc to dismiss without committing
-	s.sendKey([]byte{0x1b}, keystrokeDelay) // Esc key
+	s.sendKey(dummyKeyEsc, keystrokeDelay)
 	dismissFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
-		// After dismiss, we should be back in browse mode without the editor
-		return !strings.Contains(text, "accept-new") && strings.Contains(text, "StrictHostKeyChecking")
+		return strings.Contains(text, "StrictHostKeyChecking") && !strings.Contains(text, "Edit StrictHostKeyChecking")
 	})
 	if !ok {
 		t.Fatalf("editor did not dismiss with Esc key. Last frame:\n%s", dismissFrame)

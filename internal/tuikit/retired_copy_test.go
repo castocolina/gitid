@@ -56,7 +56,7 @@ func TestRetiredCopyAbsent(t *testing.T) {
 	// Check each file for retired literals
 	var failures []string
 	for _, filePath := range filesToScan {
-		content, err := os.ReadFile(filePath)
+		content, err := os.ReadFile(filePath) //nolint:gosec // test reads repository files selected by its explicit walk scope
 		if err != nil {
 			t.Fatalf("reading %s: %v", filePath, err)
 		}

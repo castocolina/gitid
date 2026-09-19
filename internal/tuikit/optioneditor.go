@@ -205,6 +205,11 @@ func (e *OptionEditor) TextInput() textinput.Model {
 	return e.textInput
 }
 
+// SetTextInput replaces the text input model after a key was routed into it.
+func (e *OptionEditor) SetTextInput(ti textinput.Model) {
+	e.textInput = ti
+}
+
 // Cursor returns the current cursor position in enum mode.
 func (e *OptionEditor) Cursor() int {
 	return e.cursor

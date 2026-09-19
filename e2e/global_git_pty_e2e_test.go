@@ -325,7 +325,7 @@ func TestGlobalGit_RealPTYFallbackPairSet(t *testing.T) {
 	main, _ := seedGlobalGitHome(t, home, "", "")
 	s := startGlobalGitPTY(t, home, "")
 	moveGlobalGitRow(t, s, 3)
-	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	s.sendKey([]byte("e"), keystrokeDelay)
 	for _, r := range "Fallback User" {
 		s.sendKey([]byte(string(r)), keystrokeDelay)
 	}
@@ -352,7 +352,7 @@ func TestGlobalGit_RealPTYFallbackPairClear(t *testing.T) {
 	main, _ := seedGlobalGitHome(t, home, globalGitAuthorMarker+"\n[user]\n\tname = Old User\n\temail = old@example.com\n# END gitid managed: global-git-author\n", "")
 	s := startGlobalGitPTY(t, home, "")
 	moveGlobalGitRow(t, s, 3)
-	s.sendKey(dummyKeyEnter, keystrokeDelay)
+	s.sendKey([]byte("e"), keystrokeDelay)
 	for range "Old User" {
 		s.sendKey(dummyKeyBackspace, keystrokeDelay)
 	}
@@ -979,20 +979,19 @@ func TestGlobalGit_RealPTYBundleRowHasNoEditor(t *testing.T) {
 // and the apply ceremony with on-disk commit.
 func TestGlobalGit_RealPTYFallbackPairEdit(t *testing.T) {
 	home := ShortSandboxHome(t)
-	main, baseline := seedGlobalGitHome(t, home, "[user]\n\tname = Test User\n", "")
+	main, _ := seedGlobalGitHome(t, home, "[user]\n\tname = Test User\n", "")
 	s := startGlobalGitPTY(t, home, "")
 
-	// Snapshot pre-edit state
-	preEditState, _ := os.ReadFile(baseline)
+	preEditState, _ := os.ReadFile(main)
 	preEditContent := string(preEditState)
 
-	// Navigate to the first option row (user.name fallback row, row 0)
+	moveGlobalGitRow(t, s, 3)
 	frame := s.snapshot()
-	if !strings.Contains(frame, "user.name") {
-		t.Fatalf("user.name row not visible initially:\n%s", frame)
+	if !strings.Contains(frame, "user.email (global fallback)") {
+		t.Fatalf("fallback author row not visible initially:\n%s", frame)
 	}
 
-	// Press 'e' to open the fallback-pair editor on the user.name row
+	// Press 'e' to open the fallback-pair editor (PD3: e, not Enter)
 	s.sendKey([]byte("e"), keystrokeDelay)
 	editorFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
 		// The fallback-pair editor should render in the detail pane with both name and email fields
@@ -1007,25 +1006,24 @@ func TestGlobalGit_RealPTYFallbackPairEdit(t *testing.T) {
 		t.Fatalf("breadcrumb changed after opening editor (editor guard failed):\n%s", editorFrame)
 	}
 
-	// Type a new name into the name field
-	s.sendKey([]byte("Alice Developer"), keystrokeDelay)
-
-	// Press Tab to move to the email field
-	s.sendKey([]byte{9}, keystrokeDelay) // Tab character
-	s.sendKey([]byte("alice@example.com"), keystrokeDelay)
+	for _, r := range "Alice Developer" {
+		s.sendKey([]byte(string(r)), keystrokeDelay)
+	}
+	s.sendKey([]byte{9}, keystrokeDelay)
+	for _, r := range "alice@example.com" {
+		s.sendKey([]byte(string(r)), keystrokeDelay)
+	}
 
 	// Press Esc to dismiss without committing
 	s.sendKey(dummyKeyEsc, keystrokeDelay)
 	dismissFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
-		// After dismiss, we should be back in browse mode without the editor
-		return !strings.Contains(text, "name") || !strings.Contains(text, "email")
+		return strings.Contains(text, "user.email (global fallback)") && !strings.Contains(text, "Alice Developer")
 	})
 	if !ok {
 		t.Fatalf("editor did not dismiss with Esc key. Last frame:\n%s", dismissFrame)
 	}
 
-	// Verify the file is byte-identical after dismiss (no staged changes committed)
-	postDismissState, _ := os.ReadFile(baseline)
+	postDismissState, _ := os.ReadFile(main)
 	postDismissContent := string(postDismissState)
 	if preEditContent != postDismissContent {
 		t.Fatalf("config file changed after dismissing editor (should be byte-identical):\nBefore:\n%s\nAfter:\n%s", preEditContent, postDismissContent)
@@ -1044,26 +1042,19 @@ func TestGlobalGit_RealPTYFallbackPairEdit(t *testing.T) {
 	// First, clear the name field (Ctrl+A, Backspace)
 	s.sendKey([]byte{1}, keystrokeDelay) // Ctrl+A
 	s.sendKey(dummyKeyBackspace, keystrokeDelay)
-	s.sendKey([]byte("Bob Engineer"), keystrokeDelay)
-
-	// Move to email field and enter value
-	s.sendKey([]byte{9}, keystrokeDelay) // Tab
-	s.sendKey([]byte("bob@example.com"), keystrokeDelay)
-
-	// Press Enter to commit the staged override
-	s.sendKey(dummyKeyEnter, keystrokeDelay)
-	committedFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
-		// After commit, we should be back in browse mode
-		return strings.Contains(text, "user.name") && strings.Contains(text, "Options")
-	})
-	if !ok {
-		t.Fatalf("editor did not close after Enter commit. Last frame:\n%s", committedFrame)
+	for _, r := range "Bob Engineer" {
+		s.sendKey([]byte(string(r)), keystrokeDelay)
 	}
 
-	// Open the apply ceremony
+	s.sendKey([]byte{9}, keystrokeDelay) // Tab
+	for _, r := range "bob@example.com" {
+		s.sendKey([]byte(string(r)), keystrokeDelay)
+	}
+
+	s.sendKey(dummyKeyEnter, keystrokeDelay)
 	s.sendKey([]byte("a"), keystrokeDelay)
 	ceremonyFrame, ok := s.waitFor(8*time.Second, func(text string) bool {
-		return strings.Contains(text, "Write global-git managed block") || strings.Contains(text, "baseline")
+		return strings.Contains(text, "Set global fallback") || strings.Contains(text, "Remove global fallback")
 	})
 	if !ok {
 		t.Fatalf("apply ceremony never opened. Last frame:\n%s", ceremonyFrame)
@@ -1091,14 +1082,12 @@ func TestGlobalGit_RealPTYFallbackPairEdit(t *testing.T) {
 		t.Fatalf("apply did not complete. Last frame:\n%s", successFrame)
 	}
 
-	// Verify the file has the new values
-	postApplyState, _ := os.ReadFile(baseline)
+	postApplyState, _ := os.ReadFile(main)
 	postApplyContent := string(postApplyState)
 	if postApplyContent == preEditContent {
 		t.Fatalf("config file was not modified by the apply ceremony")
 	}
 
-	// Verify the new author values are in the file
 	if !strings.Contains(postApplyContent, "Bob Engineer") {
 		t.Fatalf("staged name value (Bob Engineer) not found in written config:\n%s", postApplyContent)
 	}
