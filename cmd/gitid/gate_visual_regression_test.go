@@ -1356,6 +1356,7 @@ var globalSSHScreenIDs = map[string]bool{
 	// custom-directive entry flow (PROP-04) states.
 	"gss-properties-list": true, "gss-properties-filter": true,
 	"gss-properties-custom-form": true, "gss-properties-custom-invalid": true,
+	"gss-options-differs-row": true, "gss-options-staged-apply-preview": true,
 }
 
 // preGlobalSSHScreenIDs is the complete pre-Phase-6 registry vocabulary the
@@ -1442,10 +1443,18 @@ func deterministicGlobalSSHFixture(t *testing.T, home string) {
 		t.Fatalf("gate-visual-regression: seeding global-ssh %s: %v", includeDir, err)
 	}
 
+	// 09.6-06-PLAN.md Task 1 (PD29 Route A): "StrictHostKeyChecking no" is an
+	// explicit, non-baseline value in the user's own Host * block that
+	// disagrees with the recommended "accept-new" — internal/globalssh/
+	// classify.go's stateFor (step 5) classifies it StateDiffers.
+	// Registers gss-options-differs-row (Approved Base State #5) and changes
+	// every OTHER Global SSH browse frame this shared home feeds too
+	// (expected — Task 2 re-promotes them).
 	main := "Include " + filepath.Join(includeDir, "*.config") + "\n\n" +
 		"Host *\n" +
 		"  ForwardAgent yes\n" +
-		"  AddKeysToAgent yes\n"
+		"  AddKeysToAgent yes\n" +
+		"  StrictHostKeyChecking no\n"
 	if err := os.WriteFile(filepath.Join(sshDir, "config"), []byte(main), 0o600); err != nil {
 		t.Fatalf("gate-visual-regression: writing global-ssh fixture ssh/config: %v", err)
 	}
@@ -2618,7 +2627,26 @@ func deterministicGlobalGitFixture(t *testing.T, home string) {
 	if readErr != nil && !os.IsNotExist(readErr) {
 		t.Fatalf("gate-visual-regression: reading existing ~/.gitconfig before appending global-git fixture: %v", readErr)
 	}
-	addition := "[core]\n\teditor = vim\n"
+	// 09.6-06-PLAN.md Task 1 (PD29 Route A) additions to this shared fixture:
+	//   - "[init]\n\tdefaultBranch = master\n" — written directly (outside any
+	//     gitid-managed block), a conflicting explicit value that classifies
+	//     init.defaultBranch as StateSetButDiffers (Recommended is "main") —
+	//     the SAME seeding technique
+	//     e2e/global_git_pty_e2e_test.go's TestGlobalGit_RealPTYDiffersRow
+	//     already uses. Registers ggit-options-differs-row (Approved Base
+	//     State #5) and changes every OTHER Global Git browse frame this
+	//     shared home feeds too (expected — Task 2 re-promotes them).
+	//   - the "global-git-author" gitid-managed fallback-author block —
+	//     ReadGitFallbackAuthor's read path (D-04/D-05) — with a fixed,
+	//     deterministic name/email pair matching
+	//     internal/dummytui/fixturebackend.go's fixtureFallbackAuthorName/
+	//     Email exactly, so both captures show the identical authoritative
+	//     pair on the Options fallback row (Approved Base State #6).
+	addition := "[core]\n\teditor = vim\n" +
+		"[init]\n\tdefaultBranch = master\n" +
+		"# BEGIN gitid managed: global-git-author\n" +
+		"[user]\n\tname = Baseline Author\n\temail = baseline-author@example.com\n" +
+		"# END gitid managed: global-git-author\n"
 	merged := append(append([]byte{}, existing...), []byte(addition)...)
 	if err := os.WriteFile(gitconfigPath, merged, 0o600); err != nil {
 		t.Fatalf("gate-visual-regression: writing global-git fixture ~/.gitconfig: %v", err)

@@ -17,6 +17,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -1942,4 +1943,297 @@ func validRegionDiffs(t *testing.T, source string) []byte {
 		t.Fatalf("marshaling region diffs: %v", err)
 	}
 	return data
+}
+
+// ---------------------------------------------------------------------------
+// 09.6-06-PLAN.md Task 1, PD42 (the fail path is a persistent automated
+// negative control, not a one-off manual perturbation). For every ScreenSpec
+// this phase adds, perturbing the extracted text of each RequiredRegion in
+// memory must make BuildRegionDiffs report the divergence — naming the screen
+// and region, via an error, since an undeclared/unclassified divergence is
+// exactly what BuildRegionDiffs refuses to build — while the UNPERTURBED
+// frame builds cleanly. No source file is edited and nothing is reverted, so
+// this runs on every future commit rather than once (the class of proof
+// PD42 replaces "perturb, observe, revert" execution-time ritual with).
+//
+// Both sides of the comparison use the SAME dummy-backend capture as their
+// baseline (rather than a real-vs-dummy pair): the point of this control is
+// PD42's negative half — "the comparison CAN fail" — which needs only a
+// self-consistent baseline (Equal, no disposition required) to perturb away
+// from. Real-vs-dummy fixture-vs-live divergence is already exercised by
+// TestGateVisualRegression and is orthogonal to this control.
+// ---------------------------------------------------------------------------
+
+// perturbRegionInFrame finds region's extracted text within frame and returns
+// a copy of frame with one letter inside that extracted text flipped to a
+// different letter — a same-length, single-character mutation so the pane's
+// wrapping/truncation is undisturbed. Fails the test if the region extracted
+// nothing (nothing to perturb) or its extracted text does not appear verbatim
+// in frame (would make the mutation unsafe to apply blindly).
+// ansiEscapeSpanPattern matches one ANSI SGR escape sequence
+// ("\x1b[" + parameters + "m") so perturbRegionInFrame can avoid mutating a
+// letter that is part of the ESCAPE CODE (e.g. the terminating "m") rather
+// than displayed content — mutating a code byte either corrupts rendering
+// without changing what normalizeForRegion actually compares (if ANSI is
+// stripped before comparison) or produces a meaningless malformed-escape
+// artifact, neither of which is the "changed content" divergence this
+// control needs to produce.
+var ansiEscapeSpanPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+// perturbRegionInFrame finds region's extracted text within frame and returns
+// a copy of frame with one DISPLAYED-CONTENT letter inside that extracted
+// text flipped to a different letter — a same-length, single-character
+// mutation so the pane's wrapping/truncation is undisturbed, and the letter
+// chosen is guaranteed to sit OUTSIDE every ANSI escape span so the mutation
+// is a real content change, not an escape-code corruption. Fails the test if
+// the region extracted nothing, has no eligible letter, or its extracted text
+// does not appear verbatim in frame (would make the mutation unsafe to apply
+// blindly).
+func perturbRegionInFrame(t *testing.T, frame string, region screenshot.RegionName) string {
+	t.Helper()
+	extracted := screenshot.ExtractRegion(frame, region)
+	if strings.TrimSpace(extracted) == "" {
+		t.Fatalf("perturbRegionInFrame: region %q extracted empty text — nothing to perturb", region)
+	}
+	escapeSpans := ansiEscapeSpanPattern.FindAllStringIndex(extracted, -1)
+	inEscape := func(i int) bool {
+		for _, span := range escapeSpans {
+			if i >= span[0] && i < span[1] {
+				return true
+			}
+		}
+		return false
+	}
+	// Scan from the END: the LAST eligible letter is preferred (over the
+	// first) because several regions' extraction boundaries are anchored on
+	// a LEADING marker string shared with an ADJACENT region (e.g.
+	// ggit-apply-heading's heading text also anchors where
+	// ggit-apply-ceremony's own extraction begins) — mutating a letter near
+	// the start can corrupt that anchor and make the ADJACENT region extract
+	// empty or overlapping content instead of producing the targeted,
+	// isolated divergence this control is testing for.
+	idx := -1
+	for i := len(extracted) - 1; i >= 0; i-- {
+		c := extracted[i]
+		isLetter := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+		if isLetter && !inEscape(i) {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		t.Fatalf("perturbRegionInFrame: region %q's extracted text has no non-escape letter to perturb: %q", region, extracted)
+	}
+	mutated := byte('Z')
+	if extracted[idx] == 'Z' || extracted[idx] == 'z' {
+		mutated = 'Q'
+	}
+	mutatedExtract := extracted[:idx] + string(mutated) + extracted[idx+1:]
+	if !strings.Contains(frame, extracted) {
+		t.Fatalf("perturbRegionInFrame: region %q's extracted text does not appear verbatim in the frame — unsafe to perturb blindly", region)
+	}
+	return strings.Replace(frame, extracted, mutatedExtract, 1)
+}
+
+// negativeControlSpecs names every ScreenSpec THIS PLAN (09.6-06) adds or
+// flips to applicable — the set PD42 requires a persistent negative control
+// for. ggit-options-differs-row and gss-options-differs-row are FLIPS (the
+// ScreenID pre-existed as a non-applicable record); the other four are
+// brand-new ScreenIDs. Both classes get the same control: PD42's own wording
+// ("for every ScreenSpec this phase adds") is the minimum bar, and a flipped
+// spec is functionally new evidence (it was never comparable before).
+var negativeControlSpecs = []string{
+	"ggit-options-differs-row",
+	"ggit-options-enum-editor",
+	"ggit-options-fallback-pair",
+	"ggit-options-staged-apply-preview",
+	"gss-options-differs-row",
+	"gss-options-staged-apply-preview",
+}
+
+func TestVisualRegressionNegativeControl(t *testing.T) {
+	dummyGit, err := screenshot.CaptureGlobalGitScreens(dummytui.NewFixtureBackend())
+	if err != nil {
+		t.Fatalf("CaptureGlobalGitScreens: %v", err)
+	}
+	dummySSH, err := screenshot.CaptureGlobalSSHScreens(dummytui.NewFixtureBackend())
+	if err != nil {
+		t.Fatalf("CaptureGlobalSSHScreens: %v", err)
+	}
+	frames := make(map[string]string, len(dummyGit)+len(dummySSH))
+	for id, text := range dummyGit {
+		frames[id] = text
+	}
+	for id, text := range dummySSH {
+		frames[id] = text
+	}
+
+	byID := make(map[string]screenshot.ScreenSpec)
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		byID[spec.ScreenID] = spec
+	}
+
+	for _, screenID := range negativeControlSpecs {
+		t.Run(screenID, func(t *testing.T) {
+			spec, ok := byID[screenID]
+			if !ok {
+				t.Fatalf("negative control names screen %q, which is not registered", screenID)
+			}
+			frame, ok := frames[screenID]
+			if !ok || strings.TrimSpace(frame) == "" {
+				t.Fatalf("no captured frame for %q — cannot build a negative control", screenID)
+			}
+			if len(spec.RequiredRegions) == 0 {
+				t.Fatalf("spec %q declares no RequiredRegions — nothing to perturb", screenID)
+			}
+
+			// Baseline: real == approved == the SAME captured frame, so every
+			// region is Equal and no disposition is required — must build
+			// cleanly.
+			//
+			// RegionDispositions are DROPPED for this control (bare copy:
+			// same ScreenID/RequiredRegions/applicability/NonApplicability).
+			// Several of this phase's specs carry a BROAD `contains:X`
+			// disposition authorizing the pre-existing real-vs-dummy
+			// fixture divergence in the SAME region (e.g.
+			// ggitApplyCeremonyDisposition's `contains:"Write global-git
+			// managed block to"`) — a predicate that still matches after a
+			// single-letter perturbation elsewhere in that region, so it
+			// would silently AUTHORIZE the injected divergence instead of
+			// rejecting it. PD42 asks whether THIS entry's comparison CAN
+			// fail on an unauthorized change, which is a property of the
+			// region/marker plumbing itself, independent of whatever
+			// disposition happens to already be registered for the
+			// SEPARATE real-vs-dummy divergence class.
+			bare := screenshot.ScreenSpec{
+				ScreenID:               spec.ScreenID,
+				Route:                  spec.Route,
+				StateMarker:            spec.StateMarker,
+				StateMarkers:           spec.StateMarkers,
+				ApplicableLive:         spec.ApplicableLive,
+				ApplicableApprovedTUI:  spec.ApplicableApprovedTUI,
+				ApplicableApprovedHTML: spec.ApplicableApprovedHTML,
+				NonApplicability:       spec.NonApplicability,
+				RequiredRegions:        spec.RequiredRegions,
+			}
+			baseline := map[string]string{screenID: frame}
+			isolated := []screenshot.ScreenSpec{bare}
+			if _, err := screenshot.BuildRegionDiffs("neg-control", baseline, baseline, isolated); err != nil {
+				t.Fatalf("unperturbed baseline for %q must build cleanly: %v", screenID, err)
+			}
+
+			for _, region := range spec.RequiredRegions {
+				t.Run(string(region), func(t *testing.T) {
+					perturbedApproved := perturbRegionInFrame(t, frame, region)
+					approved := map[string]string{screenID: perturbedApproved}
+					_, err := screenshot.BuildRegionDiffs("neg-control", baseline, approved, isolated)
+					if err == nil {
+						t.Fatalf("perturbing region %q of %q must be REJECTED (an undeclared divergence) — the comparison stayed silent", region, screenID)
+					}
+					if !strings.Contains(err.Error(), screenID) {
+						t.Errorf("rejection error must name screen %q, got: %v", screenID, err)
+					}
+					// The error must name SOME region — a perturbation is
+					// rejected by construction (an unauthorized divergence is
+					// what BuildRegionDiffs refuses to build), but it need not
+					// be attributed to THIS exact region name: some region
+					// pairs deliberately OVERLAP in their extracted content
+					// (e.g. the apply-heading region is a subset of the wider
+					// apply-ceremony region's own extraction), and
+					// BuildRegionDiffs reports the FIRST unclassified
+					// divergence it iterates over AllRegionNames(), which may
+					// be the overlapping sibling rather than the region named
+					// here. The screen-ID assertion above already proves the
+					// divergence was caught and attributed to the right
+					// SCREEN; requiring the exact sibling region name would
+					// make this control depend on AllRegionNames()'s
+					// iteration order, which is not this control's contract.
+					if !regexp.MustCompile(`region "[a-z-]+"`).MatchString(err.Error()) {
+						t.Errorf("rejection error must name A region, got: %v", err)
+					}
+				})
+			}
+		})
+	}
+}
+
+// TestValidateRegionDiffsRejectsStaleNonApplicabilityMirrorAfterApplicabilityFlip
+// is PD52's proof (09.6-06-PLAN.md Task 1): when a ScreenSpec's applicability
+// flips from Route B (non-applicable, one surface skipped) to Route A
+// (applicable, both surfaces compared with a real disposition), the
+// packet-side REGION-DIFFS.json record for that screen MUST move with the
+// flip. A stale record — still carrying the old non-comparable/
+// NonApplicability shape while the spec now claims both surfaces applicable —
+// must be rejected by ValidateRegionDiffs, not silently accepted because the
+// region text happens to still hash-match itself.
+//
+// Two named sub-tests, per PD52's positive+negative halves:
+//   - "stale-mirror-rejected": a REGION-DIFFS.json built under the OLD
+//     (Route B) spec is validated against the NEW (Route A, flipped) spec —
+//     must fail with an applicability-mismatch error.
+//   - "flipped-mirror-accepted": a REGION-DIFFS.json built fresh under the
+//     NEW (Route A) spec, from both live and approved-tui evidence, validates
+//     cleanly against that same NEW spec.
+func TestValidateRegionDiffsRejectsStaleNonApplicabilityMirrorAfterApplicabilityFlip(t *testing.T) {
+	const screenID = "flip-proof-row"
+	live := "shared header\nshared breadcrumb\n│ ssh -T flip-proof\n│ flip proof: now: old → new: live detail\nEsc returns\nshared footer 1\nshared footer 2\n"
+	approved := "shared header\nshared breadcrumb\n│ ssh -T flip-proof\n│ flip proof: now: old → new: approved detail\nEsc returns\nshared footer 1\nshared footer 2\n"
+
+	// The OLD spec: Route B — non-applicable on approved-tui, governed by a
+	// pre-flip decision.
+	oldSpec := screenshot.ScreenSpec{
+		ScreenID:        screenID,
+		StateMarker:     "flip proof: now: old → new",
+		StateMarkers:    []string{"flip proof: now: old → new"},
+		ApplicableLive:  true,
+		RequiredRegions: []screenshot.RegionName{screenshot.RegionConnectivityOutput},
+		NonApplicability: []screenshot.SurfaceNonApplicability{
+			{Surface: "approved-tui", Decision: "D-04", Reason: "The approved TUI predates this state.", Classification: "ux-improvement"},
+			{Surface: "approved-html", Decision: "D-04", Reason: "HTML is not a parity target for this state.", Classification: "ux-improvement"},
+		},
+	}
+
+	// The NEW (flipped) spec: Route A — now applicable on both surfaces, with
+	// a real disposition covering the live/approved divergence.
+	newSpec := screenshot.ScreenSpec{
+		ScreenID:              screenID,
+		StateMarker:           "flip proof: now: old → new",
+		StateMarkers:          []string{"flip proof: now: old → new"},
+		ApplicableLive:        true,
+		ApplicableApprovedTUI: true,
+		RequiredRegions:       []screenshot.RegionName{screenshot.RegionConnectivityOutput},
+		RegionDispositions: []screenshot.RegionDisposition{{
+			Region: screenshot.RegionConnectivityOutput, Divergence: "flip-proof-detail", Decision: "UXG-D-01",
+			Reason: "The live and approved-tui detail lines legitimately differ.", Classification: "ux-improvement",
+		}},
+		NonApplicability: []screenshot.SurfaceNonApplicability{
+			{Surface: "approved-html", Decision: "D-04", Reason: "HTML is not a parity target for this state.", Classification: "ux-improvement"},
+		},
+	}
+
+	t.Run("stale-mirror-rejected", func(t *testing.T) {
+		staleRecords, err := screenshot.BuildRegionDiffs("test-commit", map[string]string{screenID: live}, nil, []screenshot.ScreenSpec{oldSpec})
+		if err != nil {
+			t.Fatalf("BuildRegionDiffs under the OLD (Route B) spec: %v", err)
+		}
+		staleData := screenshot.BuildRegionDiffsJSON("test-commit", staleRecords)
+
+		if err := screenshot.ValidateRegionDiffs(staleData, "test-commit", []screenshot.ScreenSpec{newSpec}); err == nil {
+			t.Fatal("ValidateRegionDiffs accepted a stale non-applicability mirror against the flipped (Route A) spec — PD52 requires the packet-side mirror to move with the flip")
+		} else if !strings.Contains(err.Error(), screenID) || !strings.Contains(err.Error(), `/"`) {
+			t.Fatalf("stale-mirror rejection must name screen %q and a region, got: %v", screenID, err)
+		}
+	})
+
+	t.Run("flipped-mirror-accepted", func(t *testing.T) {
+		freshRecords, err := screenshot.BuildRegionDiffs("test-commit", map[string]string{screenID: live}, map[string]string{screenID: approved}, []screenshot.ScreenSpec{newSpec})
+		if err != nil {
+			t.Fatalf("BuildRegionDiffs under the NEW (Route A) spec: %v", err)
+		}
+		freshData := screenshot.BuildRegionDiffsJSON("test-commit", freshRecords)
+
+		if err := screenshot.ValidateRegionDiffs(freshData, "test-commit", []screenshot.ScreenSpec{newSpec}); err != nil {
+			t.Fatalf("ValidateRegionDiffs rejected a correctly-flipped mirror: %v", err)
+		}
+	})
 }

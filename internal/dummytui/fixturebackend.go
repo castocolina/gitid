@@ -685,16 +685,32 @@ func (FixtureBackend) GlobalSSHOptionStates() ([]tuikit.GlobalSSHOptionView, err
 		if o.NeedsAction {
 			state = tuikit.GlobalSSHNeedsAction
 		}
+		currentValue := o.Current
+		attributedToUser := false
+		// 09.6-06-PLAN.md Task 1 (Approved Base State #5, PD29 Route A):
+		// StrictHostKeyChecking mirrors the real side's seeded fixture home
+		// (deterministicGlobalSSHFixture sets "StrictHostKeyChecking no"
+		// directly in ~/.ssh/config's Host * block, outside any
+		// gitid-managed sentinel) — an explicit, non-recommended value, so
+		// this row renders GlobalSSHDiffers on the dummy too. "no" matches
+		// the real side's seeded value exactly, giving both captures a
+		// shared, always-present anchor.
+		if o.Key == "StrictHostKeyChecking" {
+			state = tuikit.GlobalSSHDiffers
+			currentValue = "no"
+			attributedToUser = false // external: set outside any gitid-managed block
+		}
 		kindData := fixtureSSHKinds[o.Key]
 		out = append(out, tuikit.GlobalSSHOptionView{
 			Key:                o.Key,
-			CurrentValue:       o.Current,
+			CurrentValue:       currentValue,
 			Provenance:         "fixture value — the demo does not probe this machine",
 			Recommended:        o.Recommended,
 			Risk:               o.Risk,
 			OneLiner:           o.OneLiner,
 			Explanation:        explanation,
 			State:              state,
+			AttributedToUser:   attributedToUser,
 			WritableToHostStar: o.Key != "IdentitiesOnly",
 			Kind:               kindData.kind,
 			Values:             kindData.values,
@@ -922,6 +938,20 @@ func (FixtureBackend) GlobalGitOptionStates() ([]tuikit.GlobalGitOptionView, err
 		if kindData.kind == tuikit.OptionValueKindEnum && len(kindData.values) > 0 {
 			currentValue = kindData.values[0]
 		}
+		attributedToUser := false
+		// 09.6-06-PLAN.md Task 1 (Approved Base State #5, PD29 Route A):
+		// init.defaultBranch mirrors the real side's seeded fixture home
+		// (deterministicGlobalGitFixture sets "[init]\n\tdefaultBranch = master\n"
+		// directly in ~/.gitconfig, outside any gitid-managed block) — an
+		// explicit, non-recommended value, so this row renders
+		// GlobalGitSetButDiffers on the dummy too. "master" matches the real
+		// side's seeded value exactly, giving both captures a shared,
+		// always-present anchor.
+		if o.Key == "init.defaultBranch" {
+			state = tuikit.GlobalGitSetButDiffers
+			currentValue = "master"
+			attributedToUser = false // external: set outside any gitid-managed block
+		}
 		out = append(out, tuikit.GlobalGitOptionView{
 			Key:               o.Key,
 			CurrentValue:      currentValue,
@@ -929,6 +959,7 @@ func (FixtureBackend) GlobalGitOptionStates() ([]tuikit.GlobalGitOptionView, err
 			Recommended:       o.Recommended,
 			OneLiner:          o.OneLiner,
 			State:             state,
+			AttributedToUser:  attributedToUser,
 			PolicyBacked:      o.Key != tuikit.GlobalGitEmailFallbackKey,
 			HasWritableMember: o.Key != tuikit.GlobalGitEmailFallbackKey,
 			Kind:              kindData.kind,
@@ -958,8 +989,30 @@ func (FixtureBackend) CommitGlobalGit([]string) tea.Cmd {
 
 // GitFallbackAuthorState returns an empty pair — the demo's fallback
 // fields start unset, matching the recipes default.
+// fixtureFallbackAuthorName/Email (09.6-06-PLAN.md Task 1, Approved Base
+// State #6, PD29 Route A) mirror the SAME authoritative pair
+// deterministicGlobalGitFixture (cmd/gitid/gate_visual_regression_test.go)
+// seeds into the real side's gitid-managed "global-git-author" block, so
+// both captures show the identical, deterministic name/email pair on the
+// Options fallback row — proving the row reads the MANAGED pair
+// (D-04/PD18/09.6-04's read-path fix), not a DemoState overlay nothing ever
+// seeds pre-commit.
+const (
+	fixtureFallbackAuthorName  = "Baseline Author"
+	fixtureFallbackAuthorEmail = "baseline-author@example.com"
+)
+
 func (FixtureBackend) GitFallbackAuthorState() (tuikit.GitFallbackAuthorView, error) {
-	return tuikit.GitFallbackAuthorView{}, nil
+	return tuikit.GitFallbackAuthorView{
+		Name:                   fixtureFallbackAuthorName,
+		Email:                  fixtureFallbackAuthorEmail,
+		EffectiveName:          fixtureFallbackAuthorName,
+		EffectiveEmail:         fixtureFallbackAuthorEmail,
+		NameOrigin:             "~/.gitconfig",
+		EmailOrigin:            "~/.gitconfig",
+		NameSuppliedByManaged:  true,
+		EmailSuppliedByManaged: true,
+	}, nil
 }
 
 const fixtureGitIgnoreContent = ".DS_Store\n*.log\n*.bak"

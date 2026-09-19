@@ -10,6 +10,9 @@ package screenshot_test
 //   - cmd/gitid/gate_visual_regression_test.go   (strict schema validation, used-entry check)
 
 import (
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -810,4 +813,181 @@ func TestCandidateToolPreflight(_ *testing.T) {
 	// can verify the exported behavior: the package compiles and the annotation
 	// is present. Full integration is in cmd/gitid-evidence/main_test.go.
 	_ = screenshot.RequiredScreenSpecs() // exercises initialization
+}
+
+// ---------------------------------------------------------------------------
+// 09.6-06-PLAN.md Task 1, PD41 (Route-B evidence is MACHINE-linked to a real
+// test, not named in prose). SurfaceNonApplicability.EvidenceTest is a new
+// field; ValidateScreenSpecs requires it — non-empty and Go-test-identifier-
+// shaped — for any non-applicability record whose Decision carries this
+// phase's "UXG-D-" prefix. Additive: every pre-existing record (GSSH-D-,
+// GGIT-D-, DLV-, ...) keeps validating exactly as it did before this field
+// existed, proven below by re-validating the LIVE registry unchanged.
+// ---------------------------------------------------------------------------
+
+// syntheticUXGSpec builds a minimal, otherwise-valid ScreenSpec whose ONE
+// non-applicability record carries the given decision/reason/evidenceTest,
+// isolating PD41's EvidenceTest requirement from every other ValidateScreenSpecs
+// check (marker uniqueness, required regions, etc.) so a failure here can only
+// be about the field this test exists to pin.
+func syntheticUXGSpec(screenID, decision, evidenceTest string) screenshot.ScreenSpec {
+	return screenshot.ScreenSpec{
+		ScreenID:               screenID,
+		StateMarker:            screenID + "-marker",
+		ApplicableLive:         false,
+		ApplicableApprovedTUI:  false,
+		ApplicableApprovedHTML: false,
+		RequiredRegions:        []screenshot.RegionName{screenshot.RegionGGitOptionsBrowse},
+		NonApplicability: []screenshot.SurfaceNonApplicability{
+			{Surface: "live", Decision: decision, Reason: "synthetic reason for " + screenID, Classification: "ux-improvement", EvidenceTest: evidenceTest},
+			{Surface: "approved-tui", Decision: decision, Reason: "synthetic reason for " + screenID, Classification: "ux-improvement", EvidenceTest: evidenceTest},
+			{Surface: "approved-html", Decision: "DLV-4", Reason: "no HTML surface", Classification: "ux-improvement"},
+		},
+	}
+}
+
+// TestValidateScreenSpecsRejectsUXGRecordMissingEvidenceTest is PD41 step 2's
+// RED-first behavior test: a non-applicability record carrying the "UXG-D-"
+// decision prefix with an EMPTY EvidenceTest must be rejected, naming the
+// screen ID. Written and run RED before ValidateScreenSpecs' EvidenceTest
+// check existed; now GREEN against the implemented validator.
+func TestValidateScreenSpecsRejectsUXGRecordMissingEvidenceTest(t *testing.T) {
+	spec := syntheticUXGSpec("uxg-synthetic-empty-evidence", "UXG-D-01", "")
+	err := screenshot.ValidateScreenSpecs([]screenshot.ScreenSpec{spec})
+	if err == nil {
+		t.Fatal("ValidateScreenSpecs must reject a UXG-D- record with an empty EvidenceTest")
+	}
+	if !strings.Contains(err.Error(), spec.ScreenID) {
+		t.Errorf("error must name the screen ID %q, got: %v", spec.ScreenID, err)
+	}
+}
+
+// TestValidateScreenSpecsRejectsUXGRecordMalformedEvidenceTest proves the
+// SAME rejection fires for a non-empty EvidenceTest that is not shaped like a
+// Go test-function identifier (PD41 step 2 — "matching a Go test-identifier
+// shape", not merely non-empty).
+func TestValidateScreenSpecsRejectsUXGRecordMalformedEvidenceTest(t *testing.T) {
+	cases := []string{
+		"not a test name",             // spaces
+		"testLowercaseT",              // must start with uppercase "Test"
+		"TestHasA Space",              // embedded space
+		"Test-With-Dashes",            // dashes are not valid Go identifier characters
+		"e2e.TestQualifiedButInvalid", // package-qualified — not a bare identifier
+	}
+	for _, evidence := range cases {
+		spec := syntheticUXGSpec("uxg-synthetic-malformed-evidence", "UXG-D-01", evidence)
+		err := screenshot.ValidateScreenSpecs([]screenshot.ScreenSpec{spec})
+		if err == nil {
+			t.Errorf("ValidateScreenSpecs must reject EvidenceTest %q as not a Go test-identifier shape", evidence)
+		}
+	}
+}
+
+// TestValidateScreenSpecsAcceptsUXGRecordWithValidEvidenceTest is the
+// positive half: a UXG-D- record whose EvidenceTest IS a valid Go
+// test-identifier shape passes.
+func TestValidateScreenSpecsAcceptsUXGRecordWithValidEvidenceTest(t *testing.T) {
+	spec := syntheticUXGSpec("uxg-synthetic-valid-evidence", "UXG-D-01", "TestSomeRealPTYCase")
+	if err := screenshot.ValidateScreenSpecs([]screenshot.ScreenSpec{spec}); err != nil {
+		t.Fatalf("ValidateScreenSpecs must accept a UXG-D- record with a valid EvidenceTest: %v", err)
+	}
+}
+
+// TestValidateScreenSpecsUXGRequirementIsAdditive proves the new EvidenceTest
+// requirement does not disturb any PRE-EXISTING record: the full LIVE
+// registry (carrying GSSH-D-, GGIT-D-, DLV-, GIGN-, UP-, ... prefixed records,
+// none of which are required to carry EvidenceTest) must keep validating
+// exactly as it did before this field existed. This phase's own registry adds
+// ZERO live UXG-D- records (every 09.6-06 state closed via Route A or was
+// left an explicit open item — see 09.6-06-SUMMARY.md), so this assertion is
+// necessarily a no-op WALK over the pre-existing vocabulary, not a check of
+// this phase's own non-applicability records.
+func TestValidateScreenSpecsUXGRequirementIsAdditive(t *testing.T) {
+	if err := screenshot.ValidateScreenSpecs(screenshot.RequiredScreenSpecs()); err != nil {
+		t.Fatalf("ValidateScreenSpecs must still accept the live registry unchanged: %v", err)
+	}
+}
+
+// e2eTestFuncPattern matches a top-level Go test function declaration —
+// PD41 step 3's "func TestXxx(t *testing.T)" shape. Deliberately narrow (top
+// level, exact "(t *testing.T)" parameter) so a helper function that merely
+// STARTS with "Test" (a naming convention some non-test helpers in this repo
+// follow) is never mistaken for a runnable test.
+var e2eTestFuncPattern = regexp.MustCompile(`(?m)^func (Test[A-Za-z0-9_]*)\(t \*testing\.T\)`)
+
+// resolveE2ETestNames walks e2e/*.go (relative to this package directory,
+// internal/screenshot) and returns the set of every declared
+// `func TestXxx(t *testing.T)` name — the same source-walk technique plan
+// 09.6-05's PD28 (internal/tuikit/retired_copy_test.go's TestRetiredCopyAbsent)
+// uses for retired literals, applied here to test-function existence instead.
+func resolveE2ETestNames(t *testing.T) map[string]bool {
+	t.Helper()
+	e2eDir := filepath.Join("..", "..", "e2e")
+	entries, err := os.ReadDir(e2eDir)
+	if err != nil {
+		t.Fatalf("resolveE2ETestNames: reading %s: %v", e2eDir, err)
+	}
+	names := make(map[string]bool)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(e2eDir, entry.Name())) //nolint:gosec // fixed relative source-tree path
+		if err != nil {
+			t.Fatalf("resolveE2ETestNames: reading %s: %v", entry.Name(), err)
+		}
+		for _, match := range e2eTestFuncPattern.FindAllStringSubmatch(string(content), -1) {
+			names[match[1]] = true
+		}
+	}
+	return names
+}
+
+// TestEvidenceTestsResolveAgainstBogusNameFailsFirst is PD41 step 3's
+// RED-first proof: resolveE2ETestNames' walk technique correctly REJECTS a
+// deliberately bogus, never-declared test name — run and its failure text
+// recorded in 09.6-06-SUMMARY.md BEFORE any real EvidenceTest name is trusted
+// against it. "A validator nobody watched fail is a validator nobody has
+// tested" (plan Task 1 behavior Test 2).
+func TestEvidenceTestsResolveAgainstBogusNameFailsFirst(t *testing.T) {
+	names := resolveE2ETestNames(t)
+	const bogus = "TestThisNameWasNeverDeclaredAnywhereInE2E_09_6_06"
+	if names[bogus] {
+		t.Fatalf("resolveE2ETestNames unexpectedly resolved a bogus name %q — the walk is not discriminating", bogus)
+	}
+}
+
+// TestEvidenceTestsResolveAgainstRealName proves the walk technique also
+// resolves a REAL, known e2e test — TestGlobalGit_RealPTYDiffersRow, the
+// exact real-PTY case the (pre-flip) Route-B ggit-options-differs-row record
+// used to cite by name only. Both directions (bogus fails, real resolves)
+// are required to trust the walk.
+func TestEvidenceTestsResolveAgainstRealName(t *testing.T) {
+	names := resolveE2ETestNames(t)
+	const real = "TestGlobalGit_RealPTYDiffersRow"
+	if !names[real] {
+		t.Fatalf("resolveE2ETestNames failed to resolve %q, a real e2e test function — walk technique or path is broken", real)
+	}
+}
+
+// TestEvidenceTestsResolveAgainstE2E is PD41 step 3's registry-wide check:
+// every non-empty EvidenceTest anywhere in the LIVE ScreenSpec registry must
+// resolve to a real e2e test function, failing by screen ID and test name
+// otherwise. This phase's own registry registers ZERO live Route-B UXG-D-
+// records (every 09.6-06 state closed via Route A or was left an explicit
+// open item in 09.6-06-SUMMARY.md — see the source-walk note there), so this
+// loop runs zero iterations against THIS phase's records; it still exercises
+// the real walk against whatever EvidenceTest values any FUTURE phase adds.
+func TestEvidenceTestsResolveAgainstE2E(t *testing.T) {
+	names := resolveE2ETestNames(t)
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		for _, record := range spec.NonApplicability {
+			if record.EvidenceTest == "" {
+				continue
+			}
+			if !names[record.EvidenceTest] {
+				t.Errorf("screen %q: EvidenceTest %q does not resolve to a declared e2e test function", spec.ScreenID, record.EvidenceTest)
+			}
+		}
+	}
 }
