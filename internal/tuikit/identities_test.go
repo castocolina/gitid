@@ -4285,3 +4285,40 @@ func TestIdentitiesListStatusHasNoLeftoverMockupCopy(t *testing.T) {
 		t.Errorf("identities list status must not mention mockup-only \"dummy\" copy; got:\n%s", view)
 	}
 }
+
+func TestWizardSSHFormAlwaysReservesHostnameHint(t *testing.T) {
+	form := newSSHForm(stubBackend{}, "acme", "acme.github.com", "ssh.github.com", "443", false)
+	blurred := form.view(sshFieldPrefix, "", "", nil)
+	if !strings.Contains(blurred, "The true SSH endpoint") {
+		t.Fatalf("hostname hint must be reserved while blurred:\n%s", blurred)
+	}
+	if !strings.Contains(blurred, "Default 22; 443 for alt-SSH") {
+		t.Fatalf("port hint must be reserved while blurred:\n%s", blurred)
+	}
+}
+
+func TestWizardGitFormHasAuthorHeader(t *testing.T) {
+	form := newGitForm(stubBackend{}, "acme", "Acme", "you@acme.example", "hasconfig")
+	got := form.view("acme", "~/.ssh/id_ed25519_acme", gitFieldName, 62, "")
+	if !strings.Contains(ansi.Strip(got), "Git identity") {
+		t.Fatalf("git form missing Git identity header:\n%s", got)
+	}
+}
+
+func TestWizardStep0HasKeyHeader(t *testing.T) {
+	a := pressSeq(t, NewApp(tableBackend{}), "n")
+	got := ansi.Strip(appView(a))
+	if !strings.Contains(got, "Key") {
+		t.Fatalf("step 0 missing Key cluster header:\n%s", got)
+	}
+}
+
+func TestWizardNewSSHFormSetsInputWidth(t *testing.T) {
+	form := newSSHForm(stubBackend{}, "acme", "acme.github.com", "ssh.github.com", "443", false)
+	if form.port.Width() != 8 {
+		t.Fatalf("port width = %d, want 8", form.port.Width())
+	}
+	if form.hostname.Width() != 32 {
+		t.Fatalf("hostname width = %d, want 32", form.hostname.Width())
+	}
+}

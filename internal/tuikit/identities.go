@@ -97,6 +97,12 @@ func newTextInput(value string) textinput.Model {
 	return ti
 }
 
+func newWizardTextInput(value string, width int) textinput.Model {
+	ti := newTextInput(value)
+	ti.SetWidth(width)
+	return ti
+}
+
 // updateInput routes a key into an input and reports whether the visible
 // value changed.
 func updateInput(ti textinput.Model, msg tea.KeyMsg) (textinput.Model, bool) {
@@ -248,10 +254,10 @@ type sshForm struct {
 func newSSHForm(b Backend, prefix, host, hostname, port string, lockIdentity bool) sshForm {
 	return sshForm{
 		backend:      b,
-		prefix:       newTextInput(prefix),
-		host:         newTextInput(host),
-		hostname:     newTextInput(hostname),
-		port:         newTextInput(port),
+		prefix:       newWizardTextInput(prefix, 24),
+		host:         newWizardTextInput(host, 32),
+		hostname:     newWizardTextInput(hostname, 32),
+		port:         newWizardTextInput(port, 8),
 		lockIdentity: lockIdentity,
 	}
 }
@@ -544,7 +550,7 @@ func (f sshForm) view(focus int, prefixError, hostHelper string, validation *Val
 	b.WriteString(formFieldLine("Real hostname", f.hostname, focus == sshFieldHostname, false) + "\n")
 	if validation != nil && validation.Field == "hostname" {
 		b.WriteString(helperLine(validation.Message, true) + "\n")
-	} else if focus == sshFieldHostname {
+	} else {
 		b.WriteString(helperLine("The true SSH endpoint", false) + "\n")
 	}
 	portLine := formFieldLine("Port", f.port, focus == sshFieldPort, false)
@@ -565,7 +571,7 @@ func (f sshForm) view(focus int, prefixError, hostHelper string, validation *Val
 	// costs no extra row while blurred, and at most +1 while focused, which
 	// the 100x30 budget still absorbs (the field-contour/hint-zone work
 	// left ~2 rows of headroom at this step).
-	if focus == sshFieldPort && (validation == nil || validation.Field != "port") {
+	if validation == nil || validation.Field != "port" {
 		b.WriteString(helperLine("Default 22; 443 for alt-SSH", false) + "\n")
 	}
 	return b.String()
@@ -822,8 +828,8 @@ func newGitForm(b Backend, identity, name, email, strategy string) gitForm {
 		}
 	}
 	return gitForm{
-		backend: b, name: newTextInput(name), email: newTextInput(email),
-		gitDir: newTextInput("~/git/" + identity + "/"), strategyIdx: idx, forceSSH: true,
+		backend: b, name: newWizardTextInput(name, 28), email: newWizardTextInput(email, 40),
+		gitDir: newWizardTextInput("~/git/"+identity+"/", 32), strategyIdx: idx, forceSSH: true,
 	}
 }
 
@@ -1000,6 +1006,7 @@ func compactIncludeIfPreview(preview string) string {
 // terminal-width adaptation of the web's side-by-side pair).
 func (g gitForm) view(name, keyPath string, focus int, width int, baseline string) string {
 	var b strings.Builder
+	b.WriteString(" " + styleBold.Render("Git identity") + "\n")
 	b.WriteString(formFieldLineFlagged("user.name", g.name, focus == gitFieldName, false,
 		g.fieldCopied(copiedFieldGitName), g.sourceName) + "\n")
 	b.WriteString(formFieldLineFlagged("user.email", g.email, focus == gitFieldEmail, false,
@@ -1751,6 +1758,9 @@ func (w wizardModel) proofText() string {
 	// the earlier stage remains in the same immutable transcript below it.
 	appendResult("Stage 2", w.stage2)
 	appendResult("Stage 1", w.stage1)
+	if w.keyUnused() {
+		b.WriteString(stageWarningLine + "\n")
+	}
 	return strings.TrimSuffix(b.String(), "\n")
 }
 
@@ -5195,6 +5205,7 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 		}
 		b.WriteString(w.form.view(w.focus, prefixError, hostHelper, valErr))
 		b.WriteString(w.renderUploadCheckboxRow())
+		b.WriteString(" " + styleBold.Render("Key") + "\n")
 		b.WriteString(w.renderKeyBody())
 		b.WriteString(renderHostBlockPreview(m.backend, w.form.sshHost(), w.form.hostname.Value(), w.form.port.Value(), w.keyPath(), width))
 	case 1:
@@ -5265,6 +5276,7 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 		// showing the exact throwaway path.
 		b.WriteString(" " + styleInfo.Render("A throwaway config is used — ~/.ssh/config untouched.") + "\n")
 
+		b.WriteString("\n " + styleBold.Render("Demo failure control") + "\n")
 		check := glyphCheckOff
 		if w.simulateFail {
 			check = glyphCheckOn
