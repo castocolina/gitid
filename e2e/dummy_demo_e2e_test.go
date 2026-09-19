@@ -145,6 +145,7 @@ var (
 	dummyKeyEnter     = []byte("\r")
 	dummyKeyEsc       = []byte{0x1b}
 	dummyKeyDown      = []byte{0x1b, 0x5b, 0x42} // ESC [ B
+	dummyKeyRight     = []byte{0x1b, 0x5b, 0x43} // ESC [ C
 	dummyKeyBackspace = []byte{0x7f}
 	// dummyKeyShiftLeft/dummyKeyShiftRight are the RAW xterm CSI-modifier
 	// byte sequences for Shift+←/→ (D7, checkpoint-2 contract) — proof that
@@ -289,7 +290,7 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 	s.sendKey(dummyKeyEsc, keystrokeDelay*3)
 	mustNotSee(t, s, "key-used-ssh-only", "help: Esc closes the overlay")
 
-	// ---- quit: q then Esc stays; q then Enter really exits (code 0) ----
+	// ---- quit: q then Esc stays; q then → then Enter really exits (code 0) ----
 	s.sendKey([]byte("q"), keystrokeDelay)
 	mustSee(t, s, "Quit gitid?", "quit: prompt opens")
 	s.sendKey(dummyKeyEsc, keystrokeDelay*3)
@@ -298,6 +299,7 @@ func TestDummyDemo_LiveWalk(t *testing.T) {
 	waitCh := make(chan error, 1)
 	go func() { waitCh <- s.cmd.Wait() }()
 	s.sendKey([]byte("q"), keystrokeDelay)
+	s.sendKey(dummyKeyRight, keystrokeDelay)
 	s.sendKey(dummyKeyEnter, keystrokeDelay)
 	select {
 	case werr := <-waitCh:

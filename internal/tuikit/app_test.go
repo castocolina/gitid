@@ -193,13 +193,42 @@ func TestQuitPromptEnterQuitsEscStays(t *testing.T) {
 		t.Error("esc must dismiss the quit prompt and stay")
 	}
 
-	// Enter quits for real (unlike the browser demo).
-	_, cmd := press(t, a, "enter")
+	// Stay starts focused: Enter on the focused Stay button stays.
+	a, _ = press(t, a, "q")
+	stayed, cmd := press(t, a, "enter")
+	if cmd != nil {
+		t.Fatal("Enter on focused Stay must not quit")
+	}
+	if stayed.overlay != overlayNone {
+		t.Error("Enter on focused Stay must dismiss the quit prompt")
+	}
+
+	// Arrow to Quit, then Enter quits for real (unlike the browser demo).
+	a, _ = press(t, a, "q")
+	a, _ = press(t, a, "right")
+	_, cmd = press(t, a, "enter")
 	if cmd == nil {
-		t.Fatal("enter on the quit prompt must return a command")
+		t.Fatal("enter on focused Quit must return a command")
 	}
 	if _, ok := cmd().(tea.QuitMsg); !ok {
-		t.Error("enter on the quit prompt must produce tea.Quit")
+		t.Error("enter on focused Quit must produce tea.Quit")
+	}
+}
+
+func TestQuitPromptArrowsMoveFocus(t *testing.T) {
+	a := NewApp(stubBackend{})
+	a, _ = press(t, a, "q")
+	if !a.quitStayFocused {
+		t.Fatal("Stay must start focused")
+	}
+	a, _ = press(t, a, "right")
+	if a.quitStayFocused {
+		t.Fatal("→ must focus Quit")
+	}
+	a, _ = press(t, a, "left")
+	stayed, cmd := press(t, a, "enter")
+	if cmd != nil || stayed.overlay != overlayNone {
+		t.Error("← then Enter must stay")
 	}
 }
 

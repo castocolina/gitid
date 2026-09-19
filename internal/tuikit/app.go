@@ -155,6 +155,10 @@ type App struct {
 	// every screenshot/PTY-capture entry point) renders renderHelp()
 	// byte-identically to before this field existed.
 	version string
+	// quitStayFocused is true when Stay is the focused quit-prompt button.
+	// q always opens with Stay focused so Enter matches the reverse-video
+	// control instead of quitting while Stay looks selected.
+	quitStayFocused bool
 }
 
 // WithVersion returns a copy of a with its help-overlay version line set to
@@ -445,7 +449,15 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case overlayQuit:
 		switch key {
-		case "enter", "y":
+		case "left", "right", "tab", "shift+tab", "up", "down":
+			a.quitStayFocused = !a.quitStayFocused
+		case "enter":
+			if a.quitStayFocused {
+				a.overlay = overlayNone
+				return a, nil
+			}
+			return a, tea.Quit
+		case "y":
 			return a, tea.Quit
 		case "esc":
 			a.overlay = overlayNone
@@ -525,6 +537,7 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.overlay = overlayHelp
 	case "q":
 		a.overlay = overlayQuit
+		a.quitStayFocused = true
 	}
 	return a, nil
 }
@@ -732,7 +745,16 @@ func (a App) renderQuitPrompt() string {
 	var b strings.Builder
 	b.WriteString("\n " + styleBold.Render("Quit gitid?") + "\n\n")
 	b.WriteString(" " + styleFaint.Render("All data is dummy and in-memory — nothing on your machine was touched.") + "\n\n")
-	b.WriteString(" " + styleSelected.Render(" Stay (Esc) ") + " " + styleBold.Render(" Quit (Enter) "))
+	stay := " Stay (Esc) "
+	quit := " Quit (Enter) "
+	if a.quitStayFocused {
+		stay = styleSelected.Render(stay)
+		quit = styleBold.Render(quit)
+	} else {
+		stay = styleBold.Render(stay)
+		quit = styleSelected.Render(quit)
+	}
+	b.WriteString(" " + stay + " " + quit)
 	return b.String()
 }
 
