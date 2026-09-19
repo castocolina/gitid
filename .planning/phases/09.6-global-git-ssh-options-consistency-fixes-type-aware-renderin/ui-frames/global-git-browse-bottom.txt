@@ -1,0 +1,30 @@
+ gitid   [1] Identities · [2] SSH · [3] Git · [4] Doctor · [5] Ignore               0 ids · ! 2 ✗ 1
+ Global Git › Options
+╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮
+┊   Options   Other keys  ┊
+╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+ ! The doctor found 2 Git findings beyond this baseline.  Open Doctor (4)
+ ↑ (+2 more options)                        │  diff.colorMoved
+   [ ]! core.autocrlf / core.eol            │  ~ Recommended, not required -- you can leave any
+      now: 0 of 2 set → input / lf          │ option unchanged. This is advisory, never a compliance
+   ·  ! user.email (global fallback)  unset…│ gate.
+      now: unset (recipes default) → left u…│
+   [ ]! user.useConfigOnly                  │  Highlights moved blocks of code distinctly from
+      now:  → true                          │ genuine additions/deletions in colorized diffs,
+   [ ]! push.autoSetupRemote                │ striping each moved block.
+      now:  → true                          │   Your git: 2.55.0 — diff.colorMoved zebra is
+   [ ]! pull.rebase                         │ available
+      now:  → true                          │  not set (git's built-in default: no)
+   [ ]! fetch.prune                         │
+      now:  → true                          │
+   [ ]! alias (8 shortcuts)                 │
+      now: 0 of 8 set → st, co, br, ci, df,…│
+   [ ]! color (ui/branch/diff/status)       │
+      now: 0 of 4 set → auto for all four   │
+   [ ]! merge.conflictstyle                 │
+      now:  → zdiff3                        │
+ ▸ [ ]! diff.colorMoved                     │
+      now:  → zebra                         │
+ 10 baseline options not set — Recommended, not required -- you can leave any option unchanged. Th…
+ ↑↓ select option · space toggle · ←→ Options / Other keys
+ Enter activate · Esc back · ? help · Ctrl+P palette · q quit

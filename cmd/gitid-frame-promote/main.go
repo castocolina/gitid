@@ -104,6 +104,20 @@ var phase95Frames = []promotionEntry{
 	{"global-ssh-custom-directive-write-receipt", "global-ssh-custom-directive-write-receipt", "TestGlobalSSH_RealPTYCustomDirectiveWrite", "fake ssh: globalssh", "100x30"},
 }
 
+// phase96Frames is the subset of Phase 9.6 evidence that the current real-PTY
+// tests actually capture. The editor and fallback-edit tests exercise the
+// states but do not call their frame-capture helpers, so they are deliberately
+// not represented here until they produce real scratch captures.
+var phase96Frames = []promotionEntry{
+	{"global-git-browse", "global-git-browse", "TestGlobalGit_RealPTYBrowse", "real git, no shim", "100x30"},
+	{"global-git-browse-bottom", "global-git-browse-bottom", "TestGlobalGit_RealPTYBrowse", "real git, no shim", "100x30"},
+	{"global-git-differs", "global-git-differs", "TestGlobalGit_RealPTYDiffersRow", "real git, no shim", "100x30"},
+	{"global-git-other-keys-browse", "global-git-set-keys-browse", "TestGlobalGit_RealPTYSetKeysBrowse", "real git, no shim", "100x30"},
+	{"global-git-other-keys-back-to-options", "global-git-set-keys-back-to-options", "TestGlobalGit_RealPTYSetKeysBrowse", "real git, no shim", "100x30"},
+	{"global-git-other-keys-filter-narrowed", "global-git-set-keys-filter-narrowed", "TestGlobalGit_RealPTYSetKeysFilter", "real git, no shim", "100x30"},
+	{"global-git-other-keys-probe-failure", "global-git-set-keys-probe-failure", "TestGlobalGit_RealPTYSetKeysProbeFailure", "fake git 2.50.0 (config probe broken)", "100x30"},
+}
+
 // defaultPhase is the phase identifier main() resolves to when -phase is not
 // given — "09", so the no-argument invocation stays byte-identical to this
 // tool's pre-parameterisation behavior (D-K's explicit requirement).
@@ -134,6 +148,14 @@ var phaseFrames = map[string]struct {
 			"the custom-directive entry flow, the \"Other keys\" browser (with its net-new\n" +
 			"sub-tab strip), and the custom Git key entry flow.",
 		frames: phase95Frames,
+	},
+	"09.6": {
+		dir:   "09.6-global-git-ssh-options-consistency-fixes-type-aware-renderin",
+		title: "Phase 9.6 Global Git/SSH options consistency approved PTY frames",
+		summary: "These are the Phase 9.6 real-PTY captures for the renamed Other keys\n" +
+			"sub-tab, the differs-row glyph, and the browse states whose rendered copy\n" +
+			"changed during the consistency fixes.",
+		frames: phase96Frames,
 	},
 }
 

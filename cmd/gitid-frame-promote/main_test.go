@@ -1,11 +1,84 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+var retiredFrameLiterals = []string{
+	"Set keys",
+}
+
+// TestPromotedFramesHaveNoRetiredLabel keeps the retired-copy scan scoped to
+// promoted evidence, unlike the source walk which excludes .planning prose.
+func TestPromotedFramesHaveNoRetiredLabel(t *testing.T) {
+	paths, err := filepath.Glob(filepath.Join("..", "..", ".planning", "phases", "*", "ui-frames", "*.txt"))
+	if err != nil {
+		t.Fatalf("glob promoted frames: %v", err)
+	}
+	if len(paths) == 0 {
+		t.Fatal("no promoted evidence frames found")
+	}
+
+	var failures []string
+	for _, path := range paths {
+		data, err := os.ReadFile(path) //nolint:gosec // repository-owned evidence path
+		if err != nil {
+			t.Fatalf("read promoted frame %s: %v", path, err)
+		}
+		for lineNumber, line := range strings.Split(string(data), "\n") {
+			for _, retired := range retiredFrameLiterals {
+				if strings.Contains(line, retired) {
+					failures = append(failures, filepath.ToSlash(path)+":"+fmt.Sprintf("%d", lineNumber+1)+": "+retired)
+				}
+			}
+		}
+	}
+	if len(failures) > 0 {
+		t.Fatalf("retired literals found in promoted frames:\n%s", strings.Join(failures, "\n"))
+	}
+}
+
+// TestPromotionCasesExist prevents the promotion registry from silently
+// retaining a renamed or deleted real-PTY test name.
+func TestPromotionCasesExist(t *testing.T) {
+	root := filepath.Join("..", "..", "e2e")
+	testNamePattern := regexp.MustCompile(`func\s+(Test[A-Za-z0-9_]+)\s*\(`)
+	known := map[string]bool{}
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() || !strings.HasSuffix(info.Name(), "_test.go") {
+			return nil
+		}
+		data, err := os.ReadFile(path) //nolint:gosec // repository-owned e2e source
+		if err != nil {
+			return err
+		}
+		for _, match := range testNamePattern.FindAllStringSubmatch(string(data), -1) {
+			known[match[1]] = true
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk e2e tests: %v", err)
+	}
+
+	var missing []string
+	for _, entry := range phase96Frames {
+		if !known[entry.test] {
+			missing = append(missing, entry.test)
+		}
+	}
+	if len(missing) > 0 {
+		t.Fatalf("Phase 9.6 promotion cases missing from e2e source: %s", strings.Join(missing, ", "))
+	}
+}
 
 // writeFrame writes a source frame file into dir for name.
 func writeFrame(t *testing.T, dir, name, content string) {

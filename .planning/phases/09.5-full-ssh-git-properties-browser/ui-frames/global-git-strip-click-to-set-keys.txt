@@ -1,15 +1,15 @@
- gitid   [1] Identities · [2] SSH · [3] Git · [4] Doctor · [5] Ignore               0 ids · ! 1 ✗ 1
- Global Git › Set keys
-╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮
-┊   Options   Set keys  ┊
-╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
- / T                                                                                   3 of 3 shown
- ▸ credential.helper         osxkeychain    │  credential.helper
-   user.email                clicktester@ex…│
-   user.name                 Click Tester   │  osxkeychain
+ gitid   [1] Identities · [2] SSH · [3] Git · [4] Doctor · [5] Ignore               0 ids · ! 2 ✗ 1
+ Global Git › Other keys
+╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮
+┊   Options   Other keys  ┊
+╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯
+ / Type to filter…                                                                     1 of 1 shown
+ ▸ core.editor               vim            │  core.editor
                                             │
-                                            │  /usr/local/etc/gitconfig
-                                            │  system
+                                            │  vim
+                                            │
+                                            │  ~/.gitconfig
+                                            │  global
                                             │
                                             │
                                             │
@@ -26,5 +26,5 @@
                                             │
                                             │
 
- ←→ Options / Set keys · ↑↓ select · / filter · n Add custom key
+ ←→ Options / Other keys · ↑↓ select · / filter · n Add custom key
  Enter activate · Esc back · ? help · Ctrl+P palette · q quit

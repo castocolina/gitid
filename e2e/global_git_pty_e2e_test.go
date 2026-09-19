@@ -579,10 +579,10 @@ func TestGlobalGit_RealPTYSetKeysFilter(t *testing.T) {
 	// D-B proof, part 1: a digit typed while the filter is focused must
 	// reach the filter text, NOT app.go's `1`..`5` main-tab globals. If the
 	// digit had switched tabs instead, the frame would show "Identities".
-	// Instead the filter narrows to "user.1", matching no key.
+	// Instead the filter narrows to "core.1", matching no key.
 	s.sendKey([]byte("1"), keystrokeDelay)
 	noMatch, ok := s.waitFor(8*time.Second, func(frame string) bool {
-		return strings.Contains(frame, `No keys match "user.1".`)
+		return strings.Contains(frame, `No keys match "core.1".`)
 	})
 	if !ok {
 		t.Fatalf("digit typed into the focused filter did not land in the field (main tabs may have switched instead). Last frame:\n%s", noMatch)
@@ -616,7 +616,7 @@ func TestGlobalGit_RealPTYSetKeysFilter(t *testing.T) {
 // this plan — keyboard navigation does not exercise the click path.
 func TestGlobalGit_RealPTYSubTabStripClick(t *testing.T) {
 	home := ShortSandboxHome(t)
-	seedGlobalGitHome(t, home, "[user]\n\tname = Click Tester\n\temail = clicktester@example.com\n", "")
+	seedGlobalGitHome(t, home, "[core]\n\teditor = vim\n", "")
 	s := startGlobalGitPTY(t, home, "")
 
 	clickLabelRow(t, s, "Other keys")
@@ -626,7 +626,7 @@ func TestGlobalGit_RealPTYSubTabStripClick(t *testing.T) {
 	if !ok {
 		t.Fatalf("clicking the Other keys label never switched to that sub-tab. Last frame:\n%s", toSetKeys)
 	}
-	if !strings.Contains(toSetKeys, "user.name") {
+	if !strings.Contains(toSetKeys, "core.editor") {
 		t.Fatalf("Other keys body did not render after the mouse click:\n%s", toSetKeys)
 	}
 	captureGlobalGitFrame(t, "global-git-strip-click-to-set-keys", s)
