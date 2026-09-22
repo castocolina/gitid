@@ -7873,7 +7873,7 @@ func TestStorageIgnoresProcessHomeIncludeTarget(t *testing.T) {
 	}
 
 	// Verify decoy file is unchanged (not modified, not backed up)
-	decoyContentAfter, err := os.ReadFile(decoyFilePath)
+	decoyContentAfter, err := os.ReadFile(decoyFilePath) //nolint:gosec // decoyFilePath created by test
 	if err != nil {
 		t.Fatalf("reading decoy file after: %v", err)
 	}
