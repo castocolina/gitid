@@ -5,10 +5,10 @@ milestone_name: TUI-First Redesign
 current_phase: 10
 current_phase_name: READY TO EXECUTE; urgent TUI-consistency fixes queued as Phase 9.6 and 9.7
 status: executing
-stopped_at: Phase 9.7 context gathered
-last_updated: "2026-09-19T17:30:00.000Z"
-last_activity: 2026-09-19
-last_activity_desc: Completed quick task 260919-jnl: Non-destructive Git/SSH/Ignore apply ceremonies confirm with Enter without typing yes. Keep the exact-change preview. Typed-confirm stays only for destructive rewrites.
+stopped_at: Phase 10 code-complete, human_needed (Bazzite manual UAT); quick task 260921-t6g completed
+last_updated: "2026-09-21T00:00:00.000Z"
+last_activity: 2026-09-21
+last_activity_desc: Completed quick task 260921-t6g — repinned goreleaser to v2.17.0 to fix CI/Nightly (red since 2026-09-05, goreleaser v2.18.0 requires go>=1.27.0 vs Makefile's pinned GOTOOLCHAIN=go1.26.4), added a regression-guard test. NOTE (2026-09-21): this frontmatter and the narrative body below were found stale on session resume — Phase 9.6 and 9.7 are actually Complete (verified via ROADMAP.md + phase artifacts), and Phase 10 is code/test/review-complete but never formally marked complete (blocked only on the human-only Bazzite hardware UAT). A full STATE.md reconciliation pass is still owed.
 state_head: "0bd017bbfa74ada120b6aa83d3b4442a567e2474"
 progress:
   total_phases: 17
@@ -272,6 +272,7 @@ None yet.
 | 260831-3a9 | Fix 5 UX-critique defects (D1-D5) in Phase 9 upload/register-key/rotate-delete screens; re-promote stale PTY frames; close REVIEW.md's parity-critique obligation | 2026-08-31 | 0ad0ed7 | [260831-3a9-fix-5-ux-critique-defects-d1-d5-in-phase](./quick/260831-3a9-fix-5-ux-critique-defects-d1-d5-in-phase/) |
 | 260907-eda | Add a Go-toolchain bootstrap step to setup-env so a fresh clone with no go on PATH gets one installed automatically | 2026-09-07 | 0fdc648 | [260907-eda-add-a-go-toolchain-bootstrap-step-to-set](./quick/260907-eda-add-a-go-toolchain-bootstrap-step-to-set/) |
 | 260919-jnl | Non-destructive Git/SSH/Ignore apply ceremonies confirm with Enter without typing yes. Keep the exact-change preview. Typed-confirm stays only for destructive rewrites. | 2026-09-19 | 3dfdb15 | [260919-jnl-non-destructive-git-ssh-ignore-apply-cer](./quick/260919-jnl-non-destructive-git-ssh-ignore-apply-cer/) |
+| 260921-t6g | Fix broken CI/Nightly: goreleaser v2.18.0 requires go>=1.27.0 but Makefile exports GOTOOLCHAIN:=go1.26.4; repinned to v2.17.0, added a regression-guard test, swept stale version references | 2026-09-21 | e24ee8c | [260921-t6g-fix-broken-ci-nightly-workflows-goreleas](./quick/260921-t6g-fix-broken-ci-nightly-workflows-goreleas/) |
 
 ## Deferred Items
 
