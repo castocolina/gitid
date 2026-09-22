@@ -8,10 +8,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -657,6 +661,29 @@ func TestGitIncompleteWithoutTerminalNamesMissingArgument(t *testing.T) {
 	}
 }
 
+// goStringLiterals parses path (a Go source file) and returns every string
+// literal found in the AST, unquoted.
+func goStringLiterals(t *testing.T, path string) []string {
+	t.Helper()
+	fset := token.NewFileSet()
+	astFile, err := parser.ParseFile(fset, path, nil, 0)
+	if err != nil {
+		t.Fatalf("parsing %s: %v", path, err)
+	}
+
+	var result []string
+	ast.Inspect(astFile, func(node ast.Node) bool {
+		if basicLit, ok := node.(*ast.BasicLit); ok && basicLit.Kind == token.STRING {
+			unquoted, uerr := strconv.Unquote(basicLit.Value)
+			if uerr == nil {
+				result = append(result, unquoted)
+			}
+		}
+		return true
+	})
+	return result
+}
+
 func TestGitOptionsApplyBelowGateAdvisoryOriginatesFromCeremony(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -670,16 +697,56 @@ func TestGitOptionsApplyBelowGateAdvisoryOriginatesFromCeremony(t *testing.T) {
 		t.Fatal("below-gate apply must produce an advisory from the ceremony")
 	}
 	joined := strings.Join(res.Advisories, "\n")
-	if !strings.Contains(joined, "diff3") {
-		t.Errorf("advisory must name the written fallback value:\n%s", joined)
+
+	// Resolve the policy and verify advisory uses policy-derived values
+	policy, ok := globalgit.PolicyFor("merge.conflictstyle")
+	if !ok {
+		t.Fatal("merge.conflictstyle policy not found")
+	}
+	if policy.Gate != globalgit.GateHard {
+		t.Fatalf("merge.conflictstyle gate = %v, want GateHard", policy.Gate)
+	}
+	if policy.Fallback == "" {
+		t.Fatal("merge.conflictstyle has empty Fallback")
+	}
+	if policy.Recommended == "" {
+		t.Fatal("merge.conflictstyle has empty Recommended")
 	}
 
-	src, rerr := os.ReadFile(filepath.Join(testRepoRoot(t), "cmd", "gitid", "lifecycle.go")) //nolint:gosec // repository source
-	if rerr != nil {
-		t.Fatalf("read lifecycle.go: %v", rerr)
+	// Advisory must contain policy.Key, quoted Fallback, and quoted Recommended
+	if !strings.Contains(joined, policy.Key) {
+		t.Errorf("advisory missing policy key %q", policy.Key)
 	}
-	if !strings.Contains(string(src), "diff3") {
-		t.Error("the substitution advisory must originate in the ceremony, not the CLI layer")
+	quotedFallback := strconv.Quote(policy.Fallback)
+	quotedRecommended := strconv.Quote(policy.Recommended)
+	if !strings.Contains(joined, quotedFallback) {
+		t.Errorf("advisory missing quoted fallback %s (fallback value = %q)\n%s", quotedFallback, policy.Fallback, joined)
+	}
+	if !strings.Contains(joined, quotedRecommended) {
+		t.Errorf("advisory missing quoted recommended %s (recommended value = %q)\n%s", quotedRecommended, policy.Recommended, joined)
+	}
+
+	// Advisory must contain the wording produced by the ceremony (not derived in CLI layer)
+	if !strings.Contains(joined, "below the git version gate") {
+		t.Errorf("advisory must say 'below the git version gate' (ceremony wording):\n%s", joined)
+	}
+
+	// git.go must NOT contain "below the git version gate" as a literal string
+	gitFilePath := filepath.Join(testRepoRoot(t), "cmd", "gitid", "git.go")
+	gitLiterals := goStringLiterals(t, gitFilePath)
+	for _, lit := range gitLiterals {
+		if strings.Contains(lit, "below the git version gate") {
+			t.Error("git.go CLI layer must not contain 'below the git version gate' literal — the advisory must originate in the ceremony")
+		}
+	}
+
+	// lifecycle.go must NOT have a literal equal to policy.Fallback
+	lifecycleFilePath := filepath.Join(testRepoRoot(t), "cmd", "gitid", "lifecycle.go")
+	lifecycleLiterals := goStringLiterals(t, lifecycleFilePath)
+	for _, lit := range lifecycleLiterals {
+		if lit == policy.Fallback {
+			t.Errorf("lifecycle.go must not hardcode policy fallback %q — must derive it from globalgit.PolicyFor (WR-09)", policy.Fallback)
+		}
 	}
 }
 

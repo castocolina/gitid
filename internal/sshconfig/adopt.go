@@ -309,21 +309,6 @@ func expandIncludePathForHome(raw, home string) string {
 	}
 }
 
-// expandIncludePath expands raw into an absolute filesystem path for
-// comparison/globbing, consistently for absolute, `~/`-relative, and
-// bare-relative forms. Bare-relative expansion mirrors OpenSSH/kevinburke's
-// own convention (relative to `~/.ssh/`) purely for a non-nil, informative
-// Expanded value — isAcceptablePathForm is what actually gates adoption.
-//
-// os.UserHomeDir (not os/user.Current, which ignores $HOME on darwin) is used
-// so tests can pin expansion to a hermetic t.TempDir() HOME.
-//
-// This is a thin wrapper for callers that do not own an explicit managed
-// home. For callers that own a managed home, use expandIncludePathForHome.
-func expandIncludePath(raw string) string {
-	return expandIncludePathForHome(raw, processHome())
-}
-
 // Adopt selects a write target for STORE-02 adoption from configPath's
 // detected Include directives, applying the selection rules: a candidate is
 // adoptable only if (a) its path is absolute or `~/.ssh`-relative, (b) it is

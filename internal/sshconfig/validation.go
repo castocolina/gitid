@@ -317,7 +317,3 @@ func aliasCollidesForHome(configPath, home, candidate string, seen map[string]bo
 	}
 	return false, nil
 }
-
-func aliasCollides(configPath, candidate string, seen map[string]bool) (bool, error) {
-	return aliasCollidesForHome(configPath, processHome(), candidate, seen)
-}
