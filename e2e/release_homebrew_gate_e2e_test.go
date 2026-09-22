@@ -14,14 +14,14 @@ package e2e
 // REVIEW cycle-1 finding #4 (10-REVIEWS.md) explicitly asked for ONE
 // unambiguous, observed (not guessed) claim per run. This file's two
 // sub-tests record exactly what was observed on this pinned goreleaser
-// v2.18.0 binary:
+// binary (Makefile GORELEASER_VERSION):
 //   - Run A (--skip=homebrew, alongside announce/validate/publish, which a
 //     scratch tag/no real GitHub remote cannot perform anyway): succeeds,
 //     and dist/homebrew is never created — the homebrew pipe is not entered
 //     at all.
 //   - Run B (same flags MINUS homebrew — i.e. homebrew is NOT skipped):
 //     ALSO succeeds, and DOES write dist/homebrew/Formula/gitid.rb locally
-//     with an empty token. This is the real, observed goreleaser v2.18.0
+//     with an empty token. This is the real, observed pinned-goreleaser
 //     behavior: the brews: pipe's LOCAL formula-render step does not itself
 //     require HOMEBREW_TAP_GITHUB_TOKEN — the token is only consumed by the
 //     PUBLISH step that pushes the rendered formula to the tap repo, which
@@ -159,8 +159,9 @@ func TestReleaseHomebrewGate_SkippedNeverEntersHomebrewPipe(t *testing.T) {
 // TestReleaseHomebrewGate_NotSkippedStillSucceedsLocally records the
 // SECOND observed fact from the same real binary: with homebrew NOT
 // skipped (but publish still skipped, since this sandbox cannot push to a
-// real tap repo), goreleaser v2.18.0 renders the formula file locally with
-// no error even though HOMEBREW_TAP_GITHUB_TOKEN is absent — the token is
+// real tap repo), the pinned goreleaser binary (Makefile GORELEASER_VERSION)
+// renders the formula file locally with no error even though
+// HOMEBREW_TAP_GITHUB_TOKEN is absent — the token is
 // only consumed by the publish-time push, not the local render. See this
 // file's header comment for why this does not weaken D-18's gate: it is
 // what makes --skip=homebrew a defense-in-depth choice rather than the only
@@ -175,6 +176,6 @@ func TestReleaseHomebrewGate_NotSkippedStillSucceedsLocally(t *testing.T) {
 	}
 	formula := filepath.Join(distDir, "homebrew", "Formula", "gitid.rb")
 	if _, statErr := os.Stat(formula); statErr != nil {
-		t.Fatalf("expected %s to exist (goreleaser v2.18.0's local formula-render step runs even with an empty token) — if this now fails, the empirical finding this test records has changed and 10-CONTEXT.md D-18 should be re-checked: %v", formula, statErr)
+		t.Fatalf("expected %s to exist (the pinned goreleaser binary's [Makefile GORELEASER_VERSION] local formula-render step runs even with an empty token) — if this now fails, the empirical finding this test records has changed and 10-CONTEXT.md D-18 should be re-checked: %v", formula, statErr)
 	}
 }

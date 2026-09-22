@@ -10,16 +10,21 @@
 #
 # GoReleaser's native `--nightly` mode / `nightly:` config block is
 # GoReleaser-Pro-only — EMPIRICALLY VERIFIED against this repo's pinned OSS
-# `goreleaser` binary (v2.18.0): `goreleaser release --help` lists no
-# `--nightly` flag, and `goreleaser jsonschema` has zero `nightly`
-# occurrences anywhere in the config schema. `make release-nightly` (see
-# Makefile) instead reuses goreleaser's ORDINARY `release` command against a
-# freshly created, valid-prerelease-semver tag — no hand-rolled version-
-# resolution logic, just ordinary `git tag`/`git push`, exactly as D-19
-# specifies. Provenance attestation is intentionally skipped here (unlike
-# release.yml) to keep this workflow narrow — nightly builds are a rolling,
-# frequently-superseded convenience artifact, not the audited release
-# artifact release.yml produces.
+# `goreleaser` binary (the version pinned as GORELEASER_VERSION in the
+# Makefile): `goreleaser release --help` lists no `--nightly` flag, and
+# `goreleaser jsonschema` has zero `nightly` occurrences anywhere in the
+# config schema. The `--nightly` flag is Pro-only in every OSS release, so
+# repinning to an earlier OSS tag (quick task 260921-t6g, 10-RESEARCH.md
+# addendum 2026-09-21) cannot introduce it — the empirical
+# `--nightly`/`jsonschema` re-check was redone against the newly pinned
+# binary on 2026-09-21 and the finding still holds. `make release-nightly`
+# (see Makefile) instead reuses goreleaser's ORDINARY `release` command
+# against a freshly created, valid-prerelease-semver tag — no hand-rolled
+# version-resolution logic, just ordinary `git tag`/`git push`, exactly as
+# D-19 specifies. Provenance attestation is intentionally skipped here
+# (unlike release.yml) to keep this workflow narrow — nightly builds are a
+# rolling, frequently-superseded convenience artifact, not the audited
+# release artifact release.yml produces.
 
 name: Nightly
 

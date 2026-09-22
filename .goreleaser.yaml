@@ -10,9 +10,10 @@
 # `dist:` directory before every build — pointing `dist:` at `bin` would
 # silently delete the Makefile's own build/build-cross output the moment a
 # release build runs in the same session (REVIEW C-4).
-# goreleaser v2.18.0 requires an explicit `version: 2` config schema key
-# (omitting it silently falls back to a deprecated `version: 0` parse mode
-# with a startup warning — Rule 1 auto-fix, caught during Task 1 verification).
+# The goreleaser v2 line (pinned as GORELEASER_VERSION in the Makefile)
+# requires an explicit `version: 2` config schema key (omitting it silently
+# falls back to a deprecated `version: 0` parse mode with a startup warning
+# — Rule 1 auto-fix, caught during Task 1 verification).
 version: 2
 
 project_name: gitid
