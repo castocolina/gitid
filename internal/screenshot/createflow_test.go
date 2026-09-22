@@ -991,3 +991,31 @@ func TestEvidenceTestsResolveAgainstE2E(t *testing.T) {
 		}
 	}
 }
+
+// TestCaptureGitIgnoreReceiptReachesWrittenState proves the gign-receipt
+// capture lands on the written receipt. The apply ceremony starts with
+// Confirm focused (quick 260919-jnl), so a leading Tab moves focus to Cancel
+// and the next Enter returns to browse, leaving RegionGIGNCeremony empty.
+func TestCaptureGitIgnoreReceiptReachesWrittenState(t *testing.T) {
+	frames, err := screenshot.CaptureGitIgnoreScreens(dummytui.NewFixtureBackend())
+	if err != nil {
+		t.Fatalf("CaptureGitIgnoreScreens: %v", err)
+	}
+	var marker string
+	for _, spec := range screenshot.RequiredScreenSpecs() {
+		if spec.ScreenID == "gign-receipt" {
+			marker = spec.StateMarker
+			break
+		}
+	}
+	if marker == "" {
+		t.Fatal("registry has no gign-receipt spec")
+	}
+	frame := frames["gign-receipt"]
+	if !strings.Contains(screenshot.StripANSIExported(frame), marker) {
+		t.Fatalf("gign-receipt frame lacks StateMarker %q", marker)
+	}
+	if screenshot.ExtractRegion(frame, screenshot.RegionGIGNCeremony) == "" {
+		t.Fatal("RegionGIGNCeremony is empty on the gign-receipt frame")
+	}
+}

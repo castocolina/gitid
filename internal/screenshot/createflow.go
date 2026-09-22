@@ -2522,6 +2522,12 @@ func CaptureGitIgnoreScreens(backend tuikit.Backend) (map[string]string, error) 
 	out["gign-after-reset"] = capture(reset)
 	review := keyRune(browse, 'a')
 	out["gign-review-ceremony"] = capture(review)
+	// Per quick 260919-jnl (commit 3dfdb15), gitignore apply uses
+	// newApplyCeremony, which starts with Confirm focused, so one Enter
+	// confirms. A leading Tab moves focus to Cancel, and Enter then cancels
+	// back to browse — that is the regression this fixes: gign-receipt had
+	// rendered the browse view, and RegionGIGNCeremony was empty.
+	//
 	// One Enter confirms: the host sets commitPending and dispatches the
 	// async commit cmd, and step()'s recursive drain resolves that cmd's
 	// one-shot tick synchronously, delivering GlobalGitIgnoreCommitMsg and
@@ -2532,7 +2538,7 @@ func CaptureGitIgnoreScreens(backend tuikit.Backend) (map[string]string, error) 
 	// the receipt — so, unlike the double-Enter pattern other capture
 	// flows use for their own (differently shaped) ceremonies, this one
 	// stops at a single confirm.
-	confirmed := keyEnter(keyTab(review))
+	confirmed := keyEnter(review)
 	out["gign-receipt"] = capture(confirmed)
 	for _, spec := range gitIgnoreVisualSpecs() {
 		if strings.TrimSpace(out[spec.ScreenID]) == "" {
