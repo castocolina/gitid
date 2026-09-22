@@ -455,6 +455,17 @@ Plans:
 
 - [x] 09-08-PLAN.md — the ONESHOT-policy real-account GitHub validation (opt-in, disposable prefixed keys, ID-scoped cleanup, final sweep) plus UP-01/UP-02/UP-03 closure (UP-01, UP-02, UP-03)
 
+### Phase 09.8: TUI Navigation Model and Field Consistency (INSERTED)
+
+**Goal:** One app-wide, generated keymap (1-5 global jump, Esc back to the main menu, [ ] subviews, Tab/↑↓ fields, ←/→ values only, Enter picker with no second confirm, modeless text, Ctrl+S → single diff-preview confirm) applied to every screen; identical field components everywhere; the Global Git fallback author editable; and default/chosen values that no longer show warnings after the app is reopened (root-cause fixes shared by TUI, CLI and Doctor). See `09.8-CONTEXT.md`.
+**Requirements**: TBD
+**Depends on:** Phase 9
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 09.8 to break down)
+
 ### Phase 09.7: New-Identity Wizard Consistency Fixes: visual grouping for Key section (step 1) and Git identity fields (step 3), Test-connection color/type differentiation and warning persistence, typed log entries, fixed-width + consistent hint behavior for all wizard text inputs (INSERTED)
 
 **Goal:** [Urgent work - to be planned]
