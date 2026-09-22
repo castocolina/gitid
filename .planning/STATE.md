@@ -5,17 +5,17 @@ milestone_name: TUI-First Redesign
 current_phase: 10
 current_phase_name: READY TO EXECUTE; urgent TUI-consistency fixes queued as Phase 9.6 and 9.7
 status: executing
-stopped_at: Phase 10 code-complete, human_needed (Bazzite manual UAT); quick task 260922-brh completed; Phase 9.8 (app-wide TUI key model + field consistency + defaults-warning root causes) agreed with the user, not yet inserted
-last_updated: "2026-09-22T00:00:00.000Z"
+stopped_at: Phase 09.8 context gathered
+last_updated: "2026-09-22T12:31:37.040Z"
 last_activity: 2026-09-22
-last_activity_desc: Completed quick task 260922-brh — fixed red CI (SSH Include home leak, stale diff3 test, fedora gcc). Previously, quick task 260921-t6g repinned goreleaser to v2.17.0 to fix CI/Nightly (red since 2026-09-05, goreleaser v2.18.0 requires go>=1.27.0 vs Makefile's pinned GOTOOLCHAIN=go1.26.4), added a regression-guard test. NOTE (2026-09-21): this frontmatter and the narrative body below were found stale on session resume — Phase 9.6 and 9.7 are actually Complete (verified via ROADMAP.md + phase artifacts), and Phase 10 is code/test/review-complete but never formally marked complete (blocked only on the human-only Bazzite hardware UAT). A full STATE.md reconciliation pass is still owed.
-state_head: "0bd017bbfa74ada120b6aa83d3b4442a567e2474"
+last_activity_desc: "Completed quick task 260922-brh — fixed red CI (SSH Include home leak, stale diff3 test, fedora gcc). Previously, quick task 260921-t6g repinned goreleaser to v2.17.0 to fix CI/Nightly (red since 2026-09-05, goreleaser v2.18.0 requires go>=1.27.0 vs Makefile's pinned GOTOOLCHAIN=go1.26.4), added a regression-guard test. NOTE (2026-09-21): this frontmatter and the narrative body below were found stale on session resume — Phase 9.6 and 9.7 are actually Complete (verified via ROADMAP.md + phase artifacts), and Phase 10 is code/test/review-complete but never formally marked complete (blocked only on the human-only Bazzite hardware UAT). A full STATE.md reconciliation pass is still owed."
+state_head: 00cd84decceca3d71a209778d7dc45d16f992c10
 progress:
-  total_phases: 17
-  completed_phases: 14
-  total_plans: 105
-  completed_plans: 105
-  percent: 82
+  total_phases: 18
+  completed_phases: 16
+  total_plans: 112
+  completed_plans: 112
+  percent: 89
 ---
 
 # Project State
@@ -53,7 +53,7 @@ Plan: Not started
 Status: 02-15 (wave 8) operationalized the binding 02-DESIGN-DECISIONS-CHECKPOINT-2.md contract (D1–D9 + affordance audit) in BOTH demos, byte-for-byte: D1 single-row color-only fields (02-14's rounded box deleted), D2 always-expanded match-strategy/algorithm radios, D3 terminal-glyph checkbox/radio on the web, D4 bracketed main-nav format (`[N] Label`, moved off the wizard stepper) + a new ActiveNavDimmed/activeNavDimmed state + a top-level plain-arrow view switch, D5 the wizard stepper reverted to `Step n/4 · <label> ● ○ ○ ○`, D6 one-row git-step buttons, D7 ONE hoisted Shift+←/→ chord gate reaching every step including the previously-dead review ceremony (proven with a new raw-byte PTY e2e injecting real xterm CSI sequences), D8 click-to-focus on every form row, and D9 Global Git's user.email promoted to an editable, opt-in global-fallback field with its own dedicated write ceremony (a documented, scoped recipes/ divergence). 02-STYLE-SPEC.md + both FIELDS.md companions rewritten in lockstep; the full exit-gate battery is green (go test -race, the no-backend allowlist, the extended copy-freeze grep, make test/lint/test-e2e/gate-no-backend-files, pnpm typecheck+build) — see 02-15-SUMMARY.md. The two ORCHESTRATOR-run exit gates (a fresh agent-ui-ux-designer critique of both live demos + a fresh-context code review against 02-15's must_haves/acceptance_criteria) have since RUN and their findings (F1-F10 + one record-only item) are fixed — see 02-15-SUMMARY.md "Review findings resolution (post-plan fix pass)" and commits a335d80/f62c99e. Next is 02-12 (wave 9, the single DLV-08 approval checkpoint), unblocked.
 Last activity: 2026-07-06 -- Completed 02-12 (★ DLV-08): user approval recorded as `**APPROVED:** 2026-07-06 by Pepe`; Phase 2 COMPLETE — the approved live demos + 02-REDESIGN-SPEC.md/02-STYLE-SPEC.md/02-DESIGN-DECISIONS-CHECKPOINT-2.md + per-surface FIELDS.md are the binding design reference; Phases 3-9 backend work is UNBLOCKED
 
-Progress: [████████░░] 82% (30/32 plans complete — Phase 2: 15/15; Phase 3: 6/9 plans, Wave 5 of 6 IN PROGRESS — 03-06 not yet counted complete: Task 3's cross-AI review is still owed; Wave 6 (03-07) COMPLETE)
+Progress: [█████████░] 89% (30/32 plans complete — Phase 2: 15/15; Phase 3: 6/9 plans, Wave 5 of 6 IN PROGRESS — 03-06 not yet counted complete: Task 3's cross-AI review is still owed; Wave 6 (03-07) COMPLETE)
 
 ## Performance Metrics
 
@@ -209,6 +209,7 @@ Recent decisions affecting current work:
 - 2026-07-02: Prior build reframed as archived **0.0.1 POC** (never released) under `.planning/archive/0.0.1-poc-product-features-in-tui/`; phase numbering **reset** for the real v1.0. New 10-phase roadmap derived 1:1 from the PRD "Execution Phases" (Phase 0→1 … Phase 9→10). Existing Go packages are reusable substrate, not a behavior contract. Loop vehicle: `.planning/ONESHOT-LOOP-PROMPT.md`.
 - Phase 9.6 inserted after Phase 9: Global Git/SSH Options Consistency Fixes: type-aware rendering, e-to-edit, orange-! clarification, user.email/name duplicate-read-path bug fix (found in user audit of Options/Set-keys screens) (URGENT)
 - Phase 9.7 inserted after Phase 9: New-Identity Wizard Consistency Fixes: Key/Git-identity section grouping, Test-connection color/type + warning persistence, typed log, text-input width/hint consistency (found in same user audit) (URGENT)
+- Phase 09.8 inserted after Phase 9.7: One app-wide keymap (1-5 global, Esc back to menu, [ ] subviews, Tab/Up/Down fields, Left/Right values only, Enter picker w/o second confirm, modeless text, Ctrl+S single diff-preview confirm, ? help from keymap); consistent fields; Global Git fallback author editable; root-cause default-value warnings reappearing after reopen (URGENT)
 
 ### Pending Todos
 
@@ -285,9 +286,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-07T23:02:55.384Z
-Stopped at: Phase 9.7 context gathered
-Resume file: .planning/phases/09.7-new-identity-wizard-consistency-fixes-visual-grouping-for-ke/09.7-CONTEXT.md
+Last session: 2026-09-22T12:31:36.842Z
+Stopped at: Phase 09.8 context gathered
+Resume file: .planning/phases/09.8-tui-navigation-model-and-field-consistency/09.8-CONTEXT.md
 Wave structure: W1 = 03-01 + 03-02 (DONE) -> W2 = 03-03 (DONE) -> W3 = 03-04 (DONE) -> W4 = 03-05 (DONE) -> W5 = 03-06 (Tasks 1+2 DONE, Task 3 PARTIAL — orchestrator review owed)
 **All remaining waves run SEQUENTIALLY (one executor at a time) per LEARNINGS L11** — the pre-commit hooks lint the whole module, so a parallel executor's mid-refactor tree blocks every other commit. Do NOT run plans in parallel inside this Go module again.
 
