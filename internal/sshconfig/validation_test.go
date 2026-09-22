@@ -275,3 +275,43 @@ func writeFile(t *testing.T, path, content string) {
 func containsFold(s, sub string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(sub))
 }
+
+// TestAliasCollisionForHomeIgnoresProcessHomeIncludes proves that
+// AliasCollisionForHome resolves Include directives against the given home,
+// not the process $HOME, even when the process home has Include'd files
+// declaring different aliases.
+func TestAliasCollisionForHomeIgnoresProcessHomeIncludes(t *testing.T) {
+	managed := t.TempDir()
+	decoy := t.TempDir()
+	t.Setenv("HOME", decoy)
+
+	// Set up managed home
+	managedConfigPath := filepath.Join(managed, "config")
+	managedIncludedPath := filepath.Join(managed, "managed.config")
+	writeFile(t, managedConfigPath, "Include "+managedIncludedPath+"\n")
+	writeFile(t, managedIncludedPath, "Host managed.github.com\n    Hostname ssh.github.com\n")
+
+	// Set up decoy home (process HOME)
+	decoyConfigPath := filepath.Join(decoy, "config")
+	decoyIncludedPath := filepath.Join(decoy, "decoy.config")
+	writeFile(t, decoyConfigPath, "Include "+decoyIncludedPath+"\n")
+	writeFile(t, decoyIncludedPath, "Host decoy.github.com\n    Hostname ssh.github.com\n")
+
+	// managed.github.com should collide only in managed home
+	managedCollides, err := AliasCollisionForHome(managedConfigPath, managed, "managed.github.com")
+	if err != nil {
+		t.Fatalf("AliasCollisionForHome(managed): %v", err)
+	}
+	if !managedCollides {
+		t.Error("managed.github.com should collide in managed home")
+	}
+
+	// decoy.github.com should NOT collide in managed home (it's in process home, not managed home)
+	decoyCollides, err := AliasCollisionForHome(managedConfigPath, managed, "decoy.github.com")
+	if err != nil {
+		t.Fatalf("AliasCollisionForHome(decoy in managed): %v", err)
+	}
+	if decoyCollides {
+		t.Error("decoy.github.com should NOT collide in managed home (it's in process home)")
+	}
+}

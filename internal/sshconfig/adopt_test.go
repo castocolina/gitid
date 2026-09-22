@@ -315,3 +315,118 @@ func TestAdopt(t *testing.T) {
 		})
 	}
 }
+
+// TestDetectIncludeForHomeExpandsAgainstGivenHome proves that DetectIncludeForHome
+// expands ~/ and bare-relative tokens against the given home, not the process home.
+func TestDetectIncludeForHomeExpandsAgainstGivenHome(t *testing.T) {
+	managed := t.TempDir()
+	decoy := t.TempDir()
+	t.Setenv("HOME", decoy) // process home is decoy
+
+	// Set up managed home
+	managedSSHDir := filepath.Join(managed, ".ssh")
+	mustMkdir(t, managedSSHDir)
+	managedConfigPath := filepath.Join(managedSSHDir, "config")
+
+	// Write config with three Include directives
+	managedConfig := `Include ~/.ssh/config.d/*.config
+Include config.d/other.conf
+Include /etc/ssh/ssh_config
+`
+	mustWriteFile(t, managedConfigPath, managedConfig)
+
+	// Call DetectIncludeForHome with managed home
+	directives, err := DetectIncludeForHome(managedConfigPath, managed)
+	if err != nil {
+		t.Fatalf("DetectIncludeForHome: %v", err)
+	}
+
+	if len(directives) != 3 {
+		t.Fatalf("expected 3 directives, got %d", len(directives))
+	}
+
+	// Check tilde expansion against managed home
+	wantTildeExpanded := filepath.Join(managed, ".ssh", "config.d", "*.config")
+	if directives[0].Expanded != wantTildeExpanded {
+		t.Errorf("tilde expanded = %q, want %q", directives[0].Expanded, wantTildeExpanded)
+	}
+
+	// Check bare-relative expansion against managed home
+	wantBareExpanded := filepath.Join(managed, ".ssh", "config.d", "other.conf")
+	if directives[1].Expanded != wantBareExpanded {
+		t.Errorf("bare-relative expanded = %q, want %q", directives[1].Expanded, wantBareExpanded)
+	}
+
+	// Check absolute stays unchanged
+	if directives[2].Expanded != "/etc/ssh/ssh_config" {
+		t.Errorf("absolute expanded = %q, want /etc/ssh/ssh_config", directives[2].Expanded)
+	}
+}
+
+// TestAdoptForHomeNeverSelectsProcessHomeTarget proves that Adopt with
+// RealAdoptDepsForHome never resolves to a file in the process home.
+func TestAdoptForHomeNeverSelectsProcessHomeTarget(t *testing.T) {
+	managed := t.TempDir()
+	decoy := t.TempDir()
+
+	// Set up decoy (process home)
+	decoySSHConfigDir := filepath.Join(decoy, ".ssh", "config.d")
+	mustMkdir(t, decoySSHConfigDir)
+	decoyGitidConfig := filepath.Join(decoySSHConfigDir, "gitid.config")
+	mustWriteSentinelFile(t, decoyGitidConfig, "global-ssh")
+	decoyConfigPath := filepath.Join(decoy, ".ssh", "config")
+	mustWriteFile(t, decoyConfigPath, "Include ~/.ssh/config.d/*.config\n")
+
+	// Set process HOME to decoy
+	t.Setenv("HOME", decoy)
+
+	// Set up managed home
+	managedSSHDir := filepath.Join(managed, ".ssh")
+	managedSSHConfigDir := filepath.Join(managedSSHDir, "config.d")
+	managedConfigPath := filepath.Join(managedSSHDir, "config")
+
+	// Subcase 1: managed config.d empty
+	t.Run("managed config.d empty", func(t *testing.T) {
+		mustMkdir(t, managedSSHConfigDir)
+		mustWriteFile(t, managedConfigPath, "Include ~/.ssh/config.d/*.config\n")
+
+		result, err := Adopt(managedConfigPath, AdoptSentinelBearing, "", RealAdoptDepsForHome(managed))
+		if err != nil {
+			t.Fatalf("Adopt: %v", err)
+		}
+
+		if result.TargetPath != "" {
+			t.Errorf("TargetPath = %q, want empty", result.TargetPath)
+		}
+		if result.Method != AdoptCreateConfigD {
+			t.Errorf("Method = %v, want AdoptCreateConfigD", result.Method)
+		}
+	})
+
+	// Subcase 2: managed sentinel-bearing gitid.config present
+	t.Run("managed sentinel-bearing gitid.config present", func(t *testing.T) {
+		// Create a clean managed dir
+		managed2 := t.TempDir()
+		managedSSHDir2 := filepath.Join(managed2, ".ssh")
+		managedSSHConfigDir2 := filepath.Join(managedSSHDir2, "config.d")
+		managedConfigPath2 := filepath.Join(managedSSHDir2, "config")
+		managedGitidConfig2 := filepath.Join(managedSSHConfigDir2, "gitid.config")
+
+		mustMkdir(t, managedSSHConfigDir2)
+		mustWriteSentinelFile(t, managedGitidConfig2, "global-ssh")
+		mustWriteFile(t, managedConfigPath2, "Include ~/.ssh/config.d/*.config\n")
+
+		result, err := Adopt(managedConfigPath2, AdoptSentinelBearing, "", RealAdoptDepsForHome(managed2))
+		if err != nil {
+			t.Fatalf("Adopt: %v", err)
+		}
+
+		// Should adopt the managed file, never the decoy
+		if result.TargetPath != managedGitidConfig2 {
+			t.Errorf("TargetPath = %q, want %q", result.TargetPath, managedGitidConfig2)
+		}
+		if result.Method != AdoptSentinelBearing {
+			t.Errorf("Method = %v, want AdoptSentinelBearing", result.Method)
+		}
+	})
+}

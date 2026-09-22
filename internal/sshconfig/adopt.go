@@ -54,15 +54,37 @@ type AdoptDeps struct {
 	// mirroring the sibling gitconfig-fragment adopter's symlink guard).
 	// Wired to os.Lstat in production.
 	Lstat func(path string) (os.FileInfo, error)
+	// Home is the managed home directory that ~/ and bare-relative Include
+	// tokens expand against. Empty means the process home (STORE-01, STORE-02).
+	// Required for any caller that owns an explicit managed home (e.g., cmd/gitid
+	// realBackend). See expandTildeForHome in cmd/gitid/wiring.go for the
+	// WR-35 lesson that this field encodes.
+	Home string
 }
 
 // RealAdoptDeps returns production AdoptDeps wired to the real filesystem —
-// the live constructor for cmd-layer callers.
+// the live constructor for cmd-layer callers that do not own an explicit
+// managed home (legacy path; deprecated).
 func RealAdoptDeps() AdoptDeps {
 	return AdoptDeps{
 		ReadFile: os.ReadFile,
 		Glob:     filepath.Glob,
 		Lstat:    os.Lstat,
+		Home:     "", // use process home
+	}
+}
+
+// RealAdoptDepsForHome returns production AdoptDeps wired to the real
+// filesystem with a managed home. Required for any caller that owns an
+// explicit managed home (STORE-01, STORE-02). The managed home is used
+// for expanding ~/ and bare-relative Include tokens, never the process
+// $HOME (the WR-35 lesson; see expandTildeForHome).
+func RealAdoptDepsForHome(home string) AdoptDeps {
+	return AdoptDeps{
+		ReadFile: os.ReadFile,
+		Glob:     filepath.Glob,
+		Lstat:    os.Lstat,
+		Home:     home,
 	}
 }
 
@@ -74,6 +96,52 @@ type AdoptResult struct {
 	TargetPath string
 	// Method records which selection path produced this result.
 	Method AdoptMethod
+}
+
+// processHome returns the process home directory via os.UserHomeDir,
+// following the project's convention (not os/user.Current, which ignores
+// $HOME on darwin). This is the fallback for callers that do not own an
+// explicit managed home.
+func processHome() string {
+	home, _ := os.UserHomeDir()
+	return home
+}
+
+// DetectIncludeForHome scans configPath's raw text for every `Include`
+// directive line and returns each path token, in file order (first-match-wins
+// order preserved across multiple Include lines), with paths expanded against
+// the given home directory.
+//
+// This is a deliberate pure text scan, NOT ssh_config.Decode — Decode
+// performs real filesystem I/O (glob + read) as a side effect of resolving
+// Include directives (Pitfall 5), which DetectIncludeForHome must not trigger
+// merely to discover directive order/paths; Adopt performs its own controlled,
+// injectable glob resolution instead.
+//
+// A missing configPath returns (nil, nil) — no directive is not an error
+// (STORE-02's no-Include-directive case).
+//
+// The home parameter MUST be the managed home directory that the caller owns
+// (STORE-01, STORE-02). This is required for any caller with an explicit
+// managed home. See expandTildeForHome in cmd/gitid/wiring.go (WR-35).
+func DetectIncludeForHome(configPath, home string) ([]IncludeDirective, error) {
+	content, err := os.ReadFile(configPath) //nolint:gosec // configPath is a trusted gitid-managed path supplied in-process
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("sshconfig: reading %s: %w", configPath, err)
+	}
+
+	var result []IncludeDirective
+	for _, line := range strings.Split(string(content), "\n") {
+		directives, ok := ParseIncludeLineForHome(line, home)
+		if !ok {
+			continue
+		}
+		result = append(result, directives...)
+	}
+	return result, nil
 }
 
 // DetectInclude scans configPath's raw text for every `Include` directive
@@ -88,24 +156,42 @@ type AdoptResult struct {
 //
 // A missing configPath returns (nil, nil) — no directive is not an error
 // (STORE-02's no-Include-directive case).
+//
+// This is a thin wrapper for callers that do not own an explicit managed
+// home. For callers that own a managed home, use DetectIncludeForHome.
 func DetectInclude(configPath string) ([]IncludeDirective, error) {
-	content, err := os.ReadFile(configPath) //nolint:gosec // configPath is a trusted gitid-managed path supplied in-process
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("sshconfig: reading %s: %w", configPath, err)
-	}
+	return DetectIncludeForHome(configPath, processHome())
+}
 
-	var result []IncludeDirective
-	for _, line := range strings.Split(string(content), "\n") {
-		directives, ok := ParseIncludeLine(line)
-		if !ok {
-			continue
-		}
-		result = append(result, directives...)
+// ParseIncludeLineForHome parses a single line of ~/.ssh/config-shaped text
+// and, if it is an `Include` directive line, returns every path token on that
+// line — in order, honouring OpenSSH's full grammar (multiple space-separated
+// globs per line, the `Include=path` equals form, and double-quoted paths
+// containing spaces) — plus true. A non-Include line returns (nil, false).
+//
+// Paths are expanded against the given home directory (STORE-01, STORE-02).
+// This is the single tokenizer DetectIncludeForHome and any other
+// line-at-a-time Include consumer must share — re-tokenising an Include line
+// with strings.Fields loses every token past the first and cannot see the `=`
+// form at all (CR-03).
+//
+// The home parameter MUST be the managed home directory that the caller owns.
+// See expandTildeForHome in cmd/gitid/wiring.go (WR-35).
+func ParseIncludeLineForHome(line, home string) ([]IncludeDirective, bool) {
+	trimmed := strings.TrimSpace(line)
+	rest, ok := includeDirectiveArgs(trimmed)
+	if !ok {
+		return nil, false
 	}
-	return result, nil
+	var result []IncludeDirective
+	for _, tok := range tokenizeIncludeArgs(rest) {
+		result = append(result, IncludeDirective{
+			Raw:      tok.raw,
+			Expanded: expandIncludePathForHome(tok.raw, home),
+			Quoted:   tok.quoted,
+		})
+	}
+	return result, true
 }
 
 // ParseIncludeLine parses a single line of ~/.ssh/config-shaped text and, if
@@ -118,21 +204,11 @@ func DetectInclude(configPath string) ([]IncludeDirective, error) {
 // Include consumer (globalssh's shadow-simulation mirror rewriter) must share
 // — re-tokenising an Include line with strings.Fields loses every token past
 // the first and cannot see the `=` form at all (CR-03).
+//
+// This is a thin wrapper for callers that do not own an explicit managed
+// home. For callers that own a managed home, use ParseIncludeLineForHome.
 func ParseIncludeLine(line string) ([]IncludeDirective, bool) {
-	trimmed := strings.TrimSpace(line)
-	rest, ok := includeDirectiveArgs(trimmed)
-	if !ok {
-		return nil, false
-	}
-	var result []IncludeDirective
-	for _, tok := range tokenizeIncludeArgs(rest) {
-		result = append(result, IncludeDirective{
-			Raw:      tok.raw,
-			Expanded: expandIncludePath(tok.raw),
-			Quoted:   tok.quoted,
-		})
-	}
-	return result, true
+	return ParseIncludeLineForHome(line, processHome())
 }
 
 // includeDirectiveArgs reports whether trimmed is an `Include` directive line
@@ -212,16 +288,17 @@ func isAcceptablePathForm(raw string) bool {
 	return filepath.IsAbs(raw) || strings.HasPrefix(raw, "~/.ssh/")
 }
 
-// expandIncludePath expands raw into an absolute filesystem path for
-// comparison/globbing, consistently for absolute, `~/`-relative, and
-// bare-relative forms. Bare-relative expansion mirrors OpenSSH/kevinburke's
-// own convention (relative to `~/.ssh/`) purely for a non-nil, informative
-// Expanded value — isAcceptablePathForm is what actually gates adoption.
+// expandIncludePathForHome expands raw into an absolute filesystem path for
+// comparison/globbing against the given home directory, consistently for
+// absolute, `~/`-relative, and bare-relative forms. Bare-relative expansion
+// mirrors OpenSSH/kevinburke's own convention (relative to `~/.ssh/`) purely
+// for a non-nil, informative Expanded value — isAcceptablePathForm is what
+// actually gates adoption.
 //
-// os.UserHomeDir (not os/user.Current, which ignores $HOME on darwin) is used
-// so tests can pin expansion to a hermetic t.TempDir() HOME.
-func expandIncludePath(raw string) string {
-	home, _ := os.UserHomeDir()
+// The home parameter MUST be the managed home directory that the caller owns
+// (STORE-01, STORE-02). This is required for any caller with an explicit
+// managed home. See expandTildeForHome in cmd/gitid/wiring.go (WR-35).
+func expandIncludePathForHome(raw, home string) string {
 	switch {
 	case filepath.IsAbs(raw):
 		return raw
@@ -230,6 +307,21 @@ func expandIncludePath(raw string) string {
 	default:
 		return filepath.Join(home, ".ssh", raw)
 	}
+}
+
+// expandIncludePath expands raw into an absolute filesystem path for
+// comparison/globbing, consistently for absolute, `~/`-relative, and
+// bare-relative forms. Bare-relative expansion mirrors OpenSSH/kevinburke's
+// own convention (relative to `~/.ssh/`) purely for a non-nil, informative
+// Expanded value — isAcceptablePathForm is what actually gates adoption.
+//
+// os.UserHomeDir (not os/user.Current, which ignores $HOME on darwin) is used
+// so tests can pin expansion to a hermetic t.TempDir() HOME.
+//
+// This is a thin wrapper for callers that do not own an explicit managed
+// home. For callers that own a managed home, use expandIncludePathForHome.
+func expandIncludePath(raw string) string {
+	return expandIncludePathForHome(raw, processHome())
 }
 
 // Adopt selects a write target for STORE-02 adoption from configPath's
@@ -243,12 +335,22 @@ func expandIncludePath(raw string) string {
 // When method is AdoptCreateConfigD, or when no directive qualifies, Adopt
 // returns AdoptResult{Method: AdoptCreateConfigD} with an empty TargetPath —
 // callers then create the gitid-owned config.d layout instead of adopting.
+//
+// If deps.Home is non-empty, Include tokens are expanded against that home
+// (STORE-01, STORE-02). Otherwise, they are expanded against the process
+// home for backward compatibility.
 func Adopt(configPath string, method AdoptMethod, chosenPath string, deps AdoptDeps) (AdoptResult, error) {
 	if method == AdoptCreateConfigD {
 		return AdoptResult{Method: AdoptCreateConfigD}, nil
 	}
 
-	directives, err := DetectInclude(configPath)
+	var directives []IncludeDirective
+	var err error
+	if deps.Home != "" {
+		directives, err = DetectIncludeForHome(configPath, deps.Home)
+	} else {
+		directives, err = DetectInclude(configPath)
+	}
 	if err != nil {
 		return AdoptResult{}, fmt.Errorf("sshconfig: adopt: %w", err)
 	}

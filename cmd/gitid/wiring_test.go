@@ -7786,3 +7786,231 @@ func TestGitFallbackAuthorState_DisplayContract(t *testing.T) {
 	_ = state.NameOrigin
 	_ = state.EmailOrigin
 }
+
+// seedDecoyProcessHome creates a temporary decoy home directory with a gitid-managed
+// .ssh/config.d/gitid.config file holding two sentinel blocks (global-ssh and decoy identity),
+// then sets the process HOME to that directory.
+func seedDecoyProcessHome(t *testing.T) (decoyHome, decoyFilePath string, decoyBytes []byte) {
+	decoy := t.TempDir()
+	decoySSHConfigDir := filepath.Join(decoy, ".ssh", "config.d")
+	if err := os.MkdirAll(decoySSHConfigDir, 0o700); err != nil {
+		t.Fatalf("mkdir decoy .ssh/config.d: %v", err)
+	}
+
+	// Create a .ssh/config for the decoy with an Include line
+	decoyConfigPath := filepath.Join(decoy, ".ssh", "config")
+	decoyConfig := "Include ~/.ssh/config.d/*.config\n"
+	if err := os.WriteFile(decoyConfigPath, []byte(decoyConfig), 0o600); err != nil {
+		t.Fatalf("writing decoy config: %v", err)
+	}
+
+	// Create gitid.config with two managed blocks
+	decoyFilePath = filepath.Join(decoySSHConfigDir, "gitid.config")
+	var content []byte
+	content = filewriter.ReplaceBlock(content, "global-ssh", "Host *\n  HashKnownHosts yes\n")
+	content = filewriter.ReplaceBlock(content, "decoy", "Host decoy.github.com\n  Hostname ssh.github.com\n  IdentityFile ~/.ssh/decoy\n")
+
+	if err := os.WriteFile(decoyFilePath, content, 0o600); err != nil {
+		t.Fatalf("writing decoy gitid.config: %v", err)
+	}
+
+	t.Setenv("HOME", decoy)
+	return decoy, decoyFilePath, content
+}
+
+// TestStorageIgnoresProcessHomeIncludeTarget proves that b.storage() resolves
+// the Include path against b.home, never against the process $HOME, even when
+// the process HOME has a gitid-managed Include'd file.
+func TestStorageIgnoresProcessHomeIncludeTarget(t *testing.T) {
+	managed := t.TempDir()
+	decoy, decoyFilePath, decoyBytes := seedDecoyProcessHome(t)
+	_ = decoy // used via Setenv
+
+	// Set up managed home with Include layout
+	managedSSHDir := filepath.Join(managed, ".ssh")
+	managedSSHConfigDir := filepath.Join(managedSSHDir, "config.d")
+	managedConfigPath := filepath.Join(managedSSHDir, "config")
+	managedGitidConfig := filepath.Join(managedSSHConfigDir, "gitid.config")
+
+	if err := os.MkdirAll(managedSSHConfigDir, 0o700); err != nil {
+		t.Fatalf("mkdir managed .ssh/config.d: %v", err)
+	}
+
+	// Write managed config with Include
+	if err := os.WriteFile(managedConfigPath, []byte("Include ~/.ssh/config.d/*.config\n"), 0o600); err != nil {
+		t.Fatalf("writing managed config: %v", err)
+	}
+
+	// Create managed home's own gitid-managed file
+	var managedContent []byte
+	managedContent = filewriter.ReplaceBlock(managedContent, "global-ssh", "Host *\n  HashKnownHosts yes\n")
+	if err := os.WriteFile(managedGitidConfig, managedContent, 0o600); err != nil {
+		t.Fatalf("writing managed gitid.config: %v", err)
+	}
+
+	// Build backend for managed home (process HOME is still decoy)
+	b := newBackendForHome(managed)
+
+	// First CommitGlobalSSH
+	cmd := b.CommitGlobalSSH([]string{"HashKnownHosts"})
+	msg := cmd().(tuikit.GlobalSSHCommitMsg)
+	if msg.Err != "" {
+		t.Fatalf("CommitGlobalSSH 1: %v", msg.Err)
+	}
+
+	// Verify storage().targetPath is the managed file, never the decoy
+	storage := b.storage()
+	if storage.targetPath != managedGitidConfig {
+		t.Errorf("storage().targetPath = %q, want %q (managed, not decoy %q)",
+			storage.targetPath, managedGitidConfig, decoyFilePath)
+	}
+
+	// Second CommitGlobalSSH should succeed with no error
+	cmd2 := b.CommitGlobalSSH([]string{"HashKnownHosts"})
+	msg2 := cmd2().(tuikit.GlobalSSHCommitMsg)
+	if msg2.Err != "" {
+		t.Fatalf("CommitGlobalSSH 2: %v", msg2.Err)
+	}
+
+	// Verify decoy file is unchanged (not modified, not backed up)
+	decoyContentAfter, err := os.ReadFile(decoyFilePath)
+	if err != nil {
+		t.Fatalf("reading decoy file after: %v", err)
+	}
+	if !bytes.Equal(decoyBytes, decoyContentAfter) {
+		t.Errorf("decoy file was modified during managed home writes")
+	}
+
+	// Verify no backup sibling appeared in decoy directory
+	entries, err := os.ReadDir(filepath.Dir(decoyFilePath))
+	if err != nil {
+		t.Fatalf("reading decoy config.d: %v", err)
+	}
+	count := 0
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "gitid.config") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("decoy config.d has %d gitid.config* entries, want 1 (no backup)", count)
+	}
+}
+
+// TestBackendIncludeReadsIgnoreProcessHome proves that hasIncludeLine,
+// resolveGlobalSSHTargetPath, and AliasCollision all resolve Include paths
+// against the backend's home, never the process $HOME.
+func TestBackendIncludeReadsIgnoreProcessHome(t *testing.T) {
+	managed := t.TempDir()
+	decoy, decoyFilePath, _ := seedDecoyProcessHome(t)
+	_ = decoy // used via Setenv
+
+	// Set up managed home
+	managedSSHDir := filepath.Join(managed, ".ssh")
+	managedSSHConfigDir := filepath.Join(managedSSHDir, "config.d")
+	managedConfigPath := filepath.Join(managedSSHDir, "config")
+	managedGitidConfig := filepath.Join(managedSSHConfigDir, "gitid.config")
+	managedIncludedPath := filepath.Join(managedSSHConfigDir, "included.config")
+
+	if err := os.MkdirAll(managedSSHConfigDir, 0o700); err != nil {
+		t.Fatalf("mkdir managed .ssh/config.d: %v", err)
+	}
+
+	// Create managed config with Include
+	if err := os.WriteFile(managedConfigPath, []byte("Include ~/.ssh/config.d/*.config\n"), 0o600); err != nil {
+		t.Fatalf("writing managed config: %v", err)
+	}
+
+	// Create managed gitid.config with global-ssh block
+	var managedContent []byte
+	managedContent = filewriter.ReplaceBlock(managedContent, "global-ssh", "Host *\n  HashKnownHosts yes\n")
+	// Also add a custom identity in the included file
+	if err := os.WriteFile(managedGitidConfig, managedContent, 0o600); err != nil {
+		t.Fatalf("writing managed gitid.config: %v", err)
+	}
+
+	// Add an Include'd file with a custom identity in managed home
+	customIdentityConfig := "Host managed.github.com\n  Hostname ssh.github.com\n  IdentityFile ~/.ssh/managed\n"
+	if err := os.WriteFile(managedIncludedPath, []byte(customIdentityConfig), 0o600); err != nil {
+		t.Fatalf("writing managed included.config: %v", err)
+	}
+
+	// Build backend for managed home
+	b := newBackendForHome(managed)
+
+	// Test resolveGlobalSSHTargetPath — should return managed path, not decoy
+	globalTarget := resolveGlobalSSHTargetPath(managed, managedConfigPath)
+	if globalTarget != managedGitidConfig {
+		t.Errorf("resolveGlobalSSHTargetPath = %q, want %q (managed, not decoy %q)",
+			globalTarget, managedGitidConfig, decoyFilePath)
+	}
+
+	// Test AliasCollision — managed alias should collide, decoy alias should not
+	managedCollides, err := b.AliasCollision("managed.github.com")
+	if err != nil {
+		t.Fatalf("AliasCollision(managed): %v", err)
+	}
+	if !managedCollides {
+		t.Error("AliasCollision should find managed.github.com in managed home's Include'd files")
+	}
+
+	// decoy.github.com should NOT collide (it's only in the process home, not managed home)
+	decoyCollides, err := b.AliasCollision("decoy.github.com")
+	if err != nil {
+		t.Fatalf("AliasCollision(decoy): %v", err)
+	}
+	if decoyCollides {
+		t.Error("AliasCollision should NOT find decoy.github.com (it's in process home, not managed home)")
+	}
+}
+
+// TestCmdGitidIncludeDetectionIsHomeAware is an AST guard that fails if any
+// non-_test.go file in cmd/gitid calls the process-home-only versions of
+// sshconfig functions (DetectInclude, ParseIncludeLine, AliasCollision,
+// RealAdoptDeps) instead of their home-aware counterparts.
+func TestCmdGitidIncludeDetectionIsHomeAware(t *testing.T) {
+	repoRoot := testRepoRoot(t)
+	pkgPath := filepath.Join(repoRoot, "cmd", "gitid")
+
+	// Collect all non-_test.go files in the cmd/gitid package
+	entries, err := os.ReadDir(pkgPath)
+	if err != nil {
+		t.Fatalf("reading cmd/gitid: %v", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+
+		filePath := filepath.Join(pkgPath, entry.Name())
+		fset := token.NewFileSet()
+		astFile, err := parser.ParseFile(fset, filePath, nil, 0)
+		if err != nil {
+			t.Fatalf("parsing %s: %v", filePath, err)
+		}
+
+		// Walk the AST looking for sshconfig.{DetectInclude, ParseIncludeLine, AliasCollision, RealAdoptDeps} calls
+		bannedFuncs := map[string]bool{
+			"DetectInclude":    true,
+			"ParseIncludeLine": true,
+			"AliasCollision":   true,
+			"RealAdoptDeps":    true,
+		}
+
+		ast.Inspect(astFile, func(node ast.Node) bool {
+			if callExpr, ok := node.(*ast.CallExpr); ok {
+				if selExpr, ok := callExpr.Fun.(*ast.SelectorExpr); ok {
+					if pkgID, ok := selExpr.X.(*ast.Ident); ok && pkgID.Name == "sshconfig" {
+						if bannedFuncs[selExpr.Sel.Name] {
+							pos := fset.Position(callExpr.Pos())
+							t.Errorf("%s:%d: %s called without home parameter — use the ForHome variant (e.g., DetectIncludeForHome)",
+								entry.Name(), pos.Line, selExpr.Sel.Name)
+						}
+					}
+				}
+			}
+			return true
+		})
+	}
+}

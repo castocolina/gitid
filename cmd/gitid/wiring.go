@@ -1168,7 +1168,8 @@ func (b *realBackend) ValidateHostBlock(alias, hostname, port, identityFile stri
 // Include-aware (a fresh D-06 machine keeps every identity block in
 // config.d/gitid.config, so reading ~/.ssh/config alone would see none), plus
 // every Host pattern in the file, managed AND hand-written: gitid must never
-// write an ambiguous first-match-wins alias.
+// write an ambiguous first-match-wins alias. Include paths resolve against
+// b.home, never the process $HOME (STORE-01, STORE-02).
 func (b *realBackend) AliasCollision(alias string) (bool, error) {
 	if strings.TrimSpace(alias) == "" {
 		return false, nil
@@ -1176,7 +1177,7 @@ func (b *realBackend) AliasCollision(alias string) (bool, error) {
 	if b.initErr != nil {
 		return false, b.initErr
 	}
-	return sshconfig.AliasCollision(b.sshConfigPath, alias)
+	return sshconfig.AliasCollisionForHome(b.sshConfigPath, b.home, alias)
 }
 
 // ScanReusableKeys lists the D-10 reuse candidates found in ~/.ssh. Encrypted
@@ -4688,8 +4689,9 @@ func (b *realBackend) storage() storageLayout {
 	}
 
 	// 1. An existing gitid-owned Include'd target (sentinel-bearing, or the
-	//    canonical config.d/gitid.config) is authoritative.
-	if adopted, err := sshconfig.Adopt(b.sshConfigPath, sshconfig.AdoptSentinelBearing, "", sshconfig.RealAdoptDeps()); err == nil {
+	//    canonical config.d/gitid.config) is authoritative. Include tokens
+	//    resolve against b.home, never the process $HOME (STORE-01, STORE-02).
+	if adopted, err := sshconfig.Adopt(b.sshConfigPath, sshconfig.AdoptSentinelBearing, "", sshconfig.RealAdoptDepsForHome(b.home)); err == nil {
 		if adopted.TargetPath != "" {
 			return storageLayout{targetPath: adopted.TargetPath, includeLayout: true}
 		}
@@ -4719,8 +4721,9 @@ func (b *realBackend) storageTargetPath() string { return b.storage().targetPath
 // hasIncludeLine reports whether ~/.ssh/config already pulls in the gitid-owned
 // config.d directory, resolved through sshconfig's own Include detection rather
 // than a text match, so a hand-edited but equivalent directive still counts.
+// Include tokens resolve against b.home, never the process $HOME (STORE-01, STORE-02).
 func (b *realBackend) hasIncludeLine() bool {
-	directives, err := sshconfig.DetectInclude(b.sshConfigPath)
+	directives, err := sshconfig.DetectIncludeForHome(b.sshConfigPath, b.home)
 	if err != nil {
 		return false
 	}
@@ -5067,7 +5070,7 @@ func buildGlobalSSHShadowCheck(home, sshConfigPath string) func() globalssh.Shad
 // know where to LOOK for the block, never storage()'s write-time layout
 // decision for a machine that has none yet.
 func resolveGlobalSSHTargetPath(home, sshConfigPath string) string {
-	if adopted, err := sshconfig.Adopt(sshConfigPath, sshconfig.AdoptSentinelBearing, "", sshconfig.RealAdoptDeps()); err == nil && adopted.TargetPath != "" {
+	if adopted, err := sshconfig.Adopt(sshConfigPath, sshconfig.AdoptSentinelBearing, "", sshconfig.RealAdoptDepsForHome(home)); err == nil && adopted.TargetPath != "" {
 		return adopted.TargetPath
 	}
 	canonical := filepath.Join(home, ".ssh", "config.d", gitidConfigFileName)

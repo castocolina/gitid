@@ -202,6 +202,23 @@ type HostPattern struct {
 	File    string
 }
 
+// AliasCollisionForHome reports whether candidate is already claimed by an
+// existing Host stanza in configPath or any file its Include directives
+// resolve to. Include paths are expanded against the given home directory
+// (STORE-01, STORE-02).
+//
+// It follows OpenSSH first-match-wins semantics and resolves negated patterns
+// per-stanza: a Host stanza matches candidate only when at least one
+// non-negated pattern matches and no negated pattern in the same stanza
+// matches. A read, parse, symlink, or cyclic Include error is returned as a
+// blocking failure rather than false.
+//
+// The home parameter MUST be the managed home directory that the caller owns.
+// See expandTildeForHome in cmd/gitid/wiring.go (WR-35).
+func AliasCollisionForHome(configPath, home, candidate string) (bool, error) {
+	return aliasCollidesForHome(configPath, home, candidate, nil)
+}
+
 // AliasCollision reports whether candidate is already claimed by an existing
 // Host stanza in configPath or any file its Include directives resolve to.
 // It follows OpenSSH first-match-wins semantics and resolves negated patterns
@@ -209,11 +226,14 @@ type HostPattern struct {
 // non-negated pattern matches and no negated pattern in the same stanza
 // matches. A read, parse, symlink, or cyclic Include error is returned as a
 // blocking failure rather than false.
+//
+// This is a thin wrapper for callers that do not own an explicit managed
+// home. For callers that own a managed home, use AliasCollisionForHome.
 func AliasCollision(configPath, candidate string) (bool, error) {
-	return aliasCollides(configPath, candidate, nil)
+	return AliasCollisionForHome(configPath, processHome(), candidate)
 }
 
-func aliasCollides(configPath, candidate string, seen map[string]bool) (bool, error) {
+func aliasCollidesForHome(configPath, home, candidate string, seen map[string]bool) (bool, error) {
 	if seen == nil {
 		seen = make(map[string]bool)
 	}
@@ -266,7 +286,7 @@ func aliasCollides(configPath, candidate string, seen map[string]bool) (bool, er
 		}
 	}
 
-	directives, err := DetectInclude(abs)
+	directives, err := DetectIncludeForHome(abs, home)
 	if err != nil {
 		return false, fmt.Errorf("sshconfig: detecting includes in %s: %w", abs, err)
 	}
@@ -286,7 +306,7 @@ func aliasCollides(configPath, candidate string, seen map[string]bool) (bool, er
 			if lerr != nil && !os.IsNotExist(lerr) {
 				return false, fmt.Errorf("sshconfig: stat %s: %w", m, lerr)
 			}
-			collides, cerr := aliasCollides(m, candidate, seen)
+			collides, cerr := aliasCollidesForHome(m, home, candidate, seen)
 			if cerr != nil {
 				return false, cerr
 			}
@@ -296,4 +316,8 @@ func aliasCollides(configPath, candidate string, seen map[string]bool) (bool, er
 		}
 	}
 	return false, nil
+}
+
+func aliasCollides(configPath, candidate string, seen map[string]bool) (bool, error) {
+	return aliasCollidesForHome(configPath, processHome(), candidate, seen)
 }
