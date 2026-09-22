@@ -259,6 +259,12 @@ func TestSelfHostedCreateNeverPrintsTheNoUploadFlagNote(t *testing.T) {
 func TestPlanUploadReadFileFailureRedactsHomePath(t *testing.T) {
 	home := t.TempDir()
 	b := newBackendForHome(home)
+	// The premise is "provider CLI detected, then the pub-key read fails".
+	// Without this stub, uploader.DetectFor short-circuits to a Skipped view
+	// with zero rows whenever the host lacks gh (the fedora image), so the
+	// test silently depended on the host's PATH. ReadFile stays real: the
+	// missing-file read and its redaction are what this WR-05 test proves.
+	b.uploaderDeps.LookPath = func(name string) (string, error) { return "/usr/local/bin/" + name, nil }
 	req := uploadRequest{Identity: "acme", Hostname: "ssh.github.com", PubPath: home + "/.ssh/does-not-exist.pub"}
 
 	_, terminal := b.planUpload(req)

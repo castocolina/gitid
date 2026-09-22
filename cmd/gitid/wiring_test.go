@@ -3939,6 +3939,7 @@ func TestKeyActionForDetectsSharedKeyAcrossMixedPathSpelling(t *testing.T) {
 // READ failure as an error rather than as an eerily-small plan: an
 // everything-scope plan whose allowed_signers file cannot be read aborts.
 func TestDeletePlanFailsOnUnreadableScanSource(t *testing.T) {
+	skipUnlessUnreadableFilesEnforced(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	seedDeleteFixture(t, home, "work")

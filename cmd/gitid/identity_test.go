@@ -724,6 +724,7 @@ func TestConfirmDeleteRequiresTypedNameForEverythingScope(t *testing.T) {
 // T-05-38 disclosure the code comment above it claims to satisfy). The fix
 // must refuse the delete outright when the plan cannot be built.
 func TestIdentityDeleteRefusesWhenPlanFails(t *testing.T) {
+	skipUnlessUnreadableFilesEnforced(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	seedDeleteFixture(t, home, "work")

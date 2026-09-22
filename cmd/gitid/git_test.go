@@ -621,6 +621,7 @@ func TestGitFallbackShowMissingFileReportsUnset(t *testing.T) {
 }
 
 func TestGitFallbackShowUnreadableFileIsRefusal(t *testing.T) {
+	skipUnlessUnreadableFilesEnforced(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	path := filepath.Join(home, ".gitconfig")
