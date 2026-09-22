@@ -135,11 +135,25 @@ GOLANGCI_LINT_VERSION := v2.12.2
 # provenance recorded in .planning/design/_spike/GOLDENS.md (01-05 Task 1).
 FREEZE_VERSION := v0.2.2
 
-# goreleaser version to install (pinned — do NOT change without a fresh
-# `git ls-remote --tags` verification, see 10-RESEARCH.md Package Legitimacy
-# Audit). Dev/build tool only, never a runtime dep of the shipped gitid
-# binary (Phase 10 plan 10-04, D-05).
-GORELEASER_VERSION := v2.18.0
+# goreleaser version to install (pinned). Repinned 2026-09-21 (quick task
+# 260921-t6g) from v2.18.0 to v2.17.0: goreleaser 2.18.x+ declares a `go`
+# directive of 1.27.0 or newer in its own go.mod, while this Makefile
+# deliberately exports a 1.26-series GOTOOLCHAIN above (golangci-lint
+# v2.12.2 cannot handle the Go 1.27 standard library) — so the newer line
+# cannot be built here at all, and every workflow calling `make setup-env`/
+# `make setup-env-release` died at this exact bootstrap step from
+# 2026-09-05 onward. v2.17.0 is the newest release whose own `go` directive
+# (1.26.4) the exported GOTOOLCHAIN satisfies exactly. Every candidate
+# tag's `go` directive was read live from the Go module proxy
+# (proxy.golang.org/github.com/goreleaser/goreleaser/v2/@v/<ver>.mod) on
+# 2026-09-21, discharging this pin's fresh-verification policy (originally
+# stated as `git ls-remote --tags`, see 10-RESEARCH.md Package Legitimacy
+# Audit — that verdict is unchanged, see its 2026-09-21 addendum). Do NOT
+# bump this past v2.17.0 without also raising GOTOOLCHAIN in the SAME
+# commit — cmd/gitid/goreleaser_pin_test.go now enforces the constraint
+# mechanically instead of by prose alone. Dev/build tool only, never a
+# runtime dep of the shipped gitid binary (Phase 10 plan 10-04, D-05).
+GORELEASER_VERSION := v2.17.0
 
 # Vendored monospace font + fixed theme for deterministic screenshot-tui rendering
 # (Pitfall 6 — freeze's default font discovery is not CI-deterministic). These are the

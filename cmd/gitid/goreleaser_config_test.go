@@ -90,14 +90,14 @@ func TestGoreleaserConfigBrewsStanzaDeferredNotDeleted(t *testing.T) {
 // TestGoreleaserConfigNeverAddsProOnlyNightlyBlock is a regression guard for
 // D-19's empirically-verified finding: GoReleaser's native `nightly:` config
 // key is GoReleaser-Pro-only and is silently meaningless (or rejected) by the
-// pinned OSS v2.18.0 binary this project actually uses. This file must never
-// gain a `nightly:` top-level key — the real nightly mechanism lives entirely
-// in the Makefile's release-nightly target (a fresh git tag + the ORDINARY
-// `release` command), not in this config file.
+// pinned OSS binary this project actually uses (Makefile GORELEASER_VERSION).
+// This file must never gain a `nightly:` top-level key — the real nightly
+// mechanism lives entirely in the Makefile's release-nightly target (a
+// fresh git tag + the ORDINARY `release` command), not in this config file.
 func TestGoreleaserConfigNeverAddsProOnlyNightlyBlock(t *testing.T) {
 	src := readRepoFile(t, goreleaserConfigPath(t))
 	re := regexp.MustCompile(`(?m)^nightly:`)
 	if re.MatchString(src) {
-		t.Fatal(".goreleaser.yaml must not declare a top-level `nightly:` key — that feature is GoReleaser-Pro-only and unavailable in the pinned OSS v2.18.0 binary (D-19); the real mechanism is the Makefile's release-nightly target")
+		t.Fatal(".goreleaser.yaml must not declare a top-level `nightly:` key — that feature is GoReleaser-Pro-only and unavailable in the pinned OSS goreleaser binary (Makefile GORELEASER_VERSION, D-19); the real mechanism is the Makefile's release-nightly target")
 	}
 }

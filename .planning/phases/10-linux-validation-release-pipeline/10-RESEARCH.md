@@ -128,6 +128,43 @@ dnf install -y --setopt=install_weak_deps=False git openssh-clients make nodejs 
 **Packages removed due to [SLOP] verdict:** none.
 **Packages flagged as suspicious [SUS]:** none.
 
+### Addendum 2026-09-21 — pin corrected downward
+
+Quick task 260921-t6g. `GORELEASER_VERSION` is now pinned to `v2.17.0` (was
+`v2.18.0` above). The 2.18 series declares a `go` directive of 1.27.0 or
+newer in its own `go.mod`, and this repo's Makefile deliberately exports a
+1.26-series `GOTOOLCHAIN` (`go1.26.4`) — golangci-lint v2.12.2 cannot handle
+the Go 1.27 standard library. That mismatch is unbuildable, not merely
+undesirable: `go install github.com/goreleaser/goreleaser/v2@v2.18.0` under
+`GOTOOLCHAIN=go1.26.4` fails outright with `requires go >= 1.27.0 (running
+go 1.26.4)`, so every workflow calling `make setup-env`/`make
+setup-env-release` (CI's `check`/`fedora` jobs, `nightly.yml`,
+`release.yml`) died at the bootstrap step from 2026-09-05 onward.
+
+`go` directives read live from the Go module proxy
+(`proxy.golang.org/github.com/goreleaser/goreleaser/v2/@v/<ver>.mod`) on
+2026-09-21:
+
+| goreleaser | requires |
+|------------|----------|
+| v2.18.2 / v2.18.1 | go 1.27.1 |
+| v2.18.0 | go 1.27.0 |
+| v2.17.1 | go 1.26.5 |
+| **v2.17.0** | **go 1.26.4** |
+| v2.16.0 | go 1.26.3 |
+
+`v2.17.0` is the newest release whose own requirement the exported
+`GOTOOLCHAIN` satisfies exactly.
+
+The legitimacy verdict for `goreleaser/goreleaser/v2` in the table above is
+**unchanged — still Approved**: this is an earlier tag of the same
+first-party upstream module already audited, not a new dependency.
+
+`cmd/gitid/goreleaser_pin_test.go` (`TestGoreleaserPinIsBuildableByPinnedToolchain`)
+now enforces the toolchain constraint mechanically — a future incompatible
+bump of `GORELEASER_VERSION` fails `make test` instead of silently
+reddening CI for weeks, as this one did.
+
 ## Architecture Patterns
 
 ### System Architecture Diagram

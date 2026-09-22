@@ -111,9 +111,10 @@ func TestNightlyWorkflowStepSequence(t *testing.T) {
 
 // TestMakefileReleaseNightlyTargetNeverPassesProOnlyNightlyFlag is a
 // regression guard for D-19's empirical finding: the pinned OSS goreleaser
-// v2.18.0 binary has no --nightly flag (GoReleaser-Pro-only). The
-// release-nightly Makefile target must always pass --skip=homebrew and must
-// NEVER pass a literal --nightly flag to goreleaser.
+// binary (Makefile GORELEASER_VERSION) has no --nightly flag
+// (GoReleaser-Pro-only). The release-nightly Makefile target must always
+// pass --skip=homebrew and must NEVER pass a literal --nightly flag to
+// goreleaser.
 func TestMakefileReleaseNightlyTargetNeverPassesProOnlyNightlyFlag(t *testing.T) {
 	src := readRepoFile(t, makefilePath(t))
 	// Anchored at column 0 so this matches the REAL target line, not the
@@ -139,6 +140,6 @@ func TestMakefileReleaseNightlyTargetNeverPassesProOnlyNightlyFlag(t *testing.T)
 		t.Fatal("Makefile release-nightly target does not unconditionally pass --skip=homebrew")
 	}
 	if strings.Contains(body, "--nightly") {
-		t.Fatal("Makefile release-nightly target passes a literal --nightly flag — this flag does not exist in the pinned OSS goreleaser v2.18.0 binary (GoReleaser-Pro-only, D-19)")
+		t.Fatal("Makefile release-nightly target passes a literal --nightly flag — this flag does not exist in the pinned OSS goreleaser binary (Makefile GORELEASER_VERSION; GoReleaser-Pro-only, D-19)")
 	}
 }
