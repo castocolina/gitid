@@ -157,3 +157,23 @@ func TestFedoraJobRunsTheFullAutomatedSuite(t *testing.T) {
 		}
 	}
 }
+
+// TestFedoraJobInstallsGccForRaceCgo asserts the fedora job's dnf install
+// step includes gcc, which is required for Go's -race detector to enable cgo.
+func TestFedoraJobInstallsGccForRaceCgo(t *testing.T) {
+	src := readRepoFile(t, workflowPath(t))
+	block := jobBlock(t, src, "fedora")
+	dnfIdx := strings.Index(block, "dnf install")
+	if dnfIdx < 0 {
+		t.Fatal("fedora job missing dnf install step")
+	}
+	rest := block[dnfIdx:]
+	// Bound the search to this step: stop at the next "run:" to avoid
+	// matching unrelated lines.
+	if end := strings.Index(rest[1:], "\n        run:"); end >= 0 {
+		rest = rest[:end+1]
+	}
+	if !strings.Contains(rest, "gcc") {
+		t.Fatal("fedora job's dnf install must include gcc (required for -race cgo)")
+	}
+}

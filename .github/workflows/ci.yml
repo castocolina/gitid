@@ -114,8 +114,8 @@ jobs:
     container:
       image: fedora:latest
     steps:
-      - name: Install prerequisites (dnf; fedora image ships no node/git/make)
-        run: dnf install -y --setopt=install_weak_deps=False git openssh-clients make nodejs tar gzip
+      - name: Install prerequisites (dnf; fedora image ships no node/git/make; gcc required for -race cgo)
+        run: dnf install -y --setopt=install_weak_deps=False gcc git openssh-clients make nodejs tar gzip
 
       # REVIEW C-6 FIX: the container runs as root against a checkout
       # directory the HOST runner's user owns — a UID mismatch that trips
