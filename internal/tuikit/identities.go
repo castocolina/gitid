@@ -519,9 +519,9 @@ func formFieldLineFlagged(label string, input textinput.Model, focused, locked, 
 // view renders the shared field set. prefixError (if non-empty) replaces
 // the prefix helper; hostHelper is the auto-join state helper; validation
 // is a field-keyed error surfaced inline on the matching control. Contract
-// helpers (locked fields, prefix WYSIWYG/duplicate, auto-join state)
-// always render; purely descriptive ones render for the focused field
-// only, keeping the pane inside the 30-row frame.
+// helpers (locked fields, prefix WYSIWYG/duplicate, auto-join state) and
+// the D-07 reserved hints (Alias, SSH Host, Real hostname, Port) always
+// render, so the pane never jumps when focus moves.
 func (f sshForm) view(focus int, prefixError, hostHelper string, validation *ValidationError) string {
 	var b strings.Builder
 	b.WriteString(formFieldLine("Alias prefix", f.prefix, focus == sshFieldPrefix, f.lockIdentity) + "\n")
@@ -564,16 +564,15 @@ func (f sshForm) view(focus int, prefixError, hostHelper string, validation *Val
 		// unknown host on 22 and says why rather than inventing an alt-SSH
 		// endpoint it cannot vouch for.
 		portLine += "  " + DefaultTheme.Warning.Render(altSSHHint)
+	default:
+		// The Port hint is the default of the Port row's existing inline
+		// slot (D-21 precedent). It is always present (D-07, no layout
+		// jump, including on port errors) and costs zero rows. The D-21
+		// warning supersedes it, because that warning carries the same
+		// guidance.
+		portLine += "  " + styleFaint.Render("Default 22; 443 for alt-SSH")
 	}
 	b.WriteString(portLine + "\n")
-	// Port had no hint on either side (review-findings F9) — a short,
-	// focused-only helper (matching the Hostname field's pattern above)
-	// costs no extra row while blurred, and at most +1 while focused, which
-	// the 100x30 budget still absorbs (the field-contour/hint-zone work
-	// left ~2 rows of headroom at this step).
-	if validation == nil || validation.Field != "port" {
-		b.WriteString(helperLine("Default 22; 443 for alt-SSH", false) + "\n")
-	}
 	return b.String()
 }
 
@@ -1628,9 +1627,11 @@ func renderHostBlockPreview(b Backend, host, hostname, port, keyPath string, wid
 	// "IdentitiesOnly yes" and the optional "# gitid: provider=..." marker
 	// without clipping at the 100×30 frame budget (UI-REVIEW Critical Pillar 5
 	// finding: maxLines=6 clipped IdentitiesOnly yes for real-backend captures
-	// whose blocks have 7 lines). Verified row-budget safe: at default step-0
-	// focus (sshFieldPrefix), total body rows = stepper(1) + chord(1) +
-	// form(6) + key(6) + preview border+content+border(9) = 23 ≤ 25.
+	// whose blocks have 7 lines). Measured worst case, real binary with
+	// GitHub: stepper 1 + chord 1 + SSH form 7 + upload checkbox 1 +
+	// key-source row 1 + algorithm catalog 5 + preview box 9 = 25 of 25
+	// body rows. TestWizardStep0WorstCaseRowBudgetKeepsFullHostPreview
+	// guards it.
 	return PreviewBlock("Live Host-block preview (written on confirm)",
 		hostBlockText(b, host, hostname, port, keyPath), false, width, 7)
 }
@@ -5037,6 +5038,12 @@ func (w wizardModel) toggleUploadCheckbox() wizardModel {
 // pane's fixed 100×30 budget. Both key-source options render always (D2),
 // side by side, on the SAME line the body section already needed a header
 // for — generate mode therefore costs exactly the same rows it always did.
+//
+// The key-source row must fit ONE physical line at detailWidth 62. It is 60
+// cols with the compacted "(←/→)" hint and 67 with "(←/→ change)", and the
+// long one wrapped mid-label ("Reuse an" / "existing key"). This is the
+// D-08 faint-line compaction. The Git step's match-strategy header keeps
+// "(←/→ change)" because D2 pins it there.
 func (w wizardModel) renderKeyBody() string {
 	var b strings.Builder
 
@@ -5058,7 +5065,7 @@ func (w wizardModel) renderKeyBody() string {
 	}
 	gen := renderChoice("Generate a new key", w.keySource == keySourceGenerate)
 	reuse := renderChoice("Reuse an existing key", w.keySource == keySourceReuse)
-	b.WriteString(" " + marker + styleBold.Render("Key") + " " + styleFaint.Render("(←/→ change)") +
+	b.WriteString(" " + marker + styleBold.Render("Key") + " " + styleFaint.Render("(←/→)") +
 		"  " + gen + "   " + reuse + "\n")
 
 	if w.keySource == keySourceGenerate {
@@ -5240,7 +5247,10 @@ func (m identitiesModel) renderWizard(s DemoState, width int) string {
 		}
 		b.WriteString(w.form.view(w.focus, prefixError, hostHelper, valErr))
 		b.WriteString(w.renderUploadCheckboxRow())
-		b.WriteString(" " + styleBold.Render("Key") + "\n")
+		// The key-source row renders its own bold Key label, and that label is
+		// the Key cluster header (09.7 G-2, 02-STYLE-SPEC §7 ONE combined
+		// header row). A standalone Key row here duplicated it and overflowed
+		// the 25-row step-0 body budget.
 		b.WriteString(w.renderKeyBody())
 		b.WriteString(renderHostBlockPreview(m.backend, w.form.sshHost(), w.form.hostname.Value(), w.form.port.Value(), w.keyPath(), width))
 	case 1:

@@ -65,8 +65,10 @@ const (
 	RegionKeybar RegionName = "keybar"
 
 	// RegionReusePickerEntries is the Key picker candidate list (the rows
-	// between "● Generate a new key   ○ Reuse an existing key" toggle and
-	// the Host-block preview box). On reuse-key-vs-generate, this contains
+	// between the toggle and the Host-block preview box when Reuse is the
+	// selected source). In generate mode those rows are the algorithm
+	// catalog, which RegionKeySection covers, so this region is empty
+	// there. On reuse-key-vs-generate, this contains
 	// dynamically-scanned key entries that differ between backends.
 	RegionReusePickerEntries RegionName = "reuse-picker-entries"
 
@@ -859,8 +861,9 @@ func extractReusePickerEntries(lines []string) string {
 	inPicker := false
 	for _, line := range lines {
 		plain := stripANSI(line)
-		// start after the "Reuse an existing key" toggle line
-		if !inPicker && strings.Contains(plain, "Reuse an") && strings.Contains(plain, "existing key") {
+		// start only when the Reuse radio is the selected one; a
+		// generate-mode toggle also contains the unselected label
+		if !inPicker && strings.Contains(plain, "● Reuse an existing key") {
 			inPicker = true
 			continue
 		}

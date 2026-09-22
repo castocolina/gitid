@@ -2210,6 +2210,85 @@ func TestReusePickerManualPathRow(t *testing.T) {
 // "IdentitiesOnly yes" without ellipsis replacement (UI-REVIEW Critical/HIGH
 // Pillar 5 finding). The stub backend's block is 6 lines; the real backend
 // adds a provider marker making it 7 — maxLines must accommodate both.
+// providerMarkerBackend mirrors internal/sshconfig/renderer.go, which emits
+// "# gitid: provider=<p>" as the LAST line of the Host block: the real-binary
+// 7-line block, not the stub's 6-line one.
+type providerMarkerBackend struct{ stubBackend }
+
+func (providerMarkerBackend) HostBlockPreview(spec CreateSpec) string {
+	return stubBackend{}.HostBlockPreview(spec) + "\n# gitid: provider=github"
+}
+
+// TestWizardStep0WorstCaseRowBudgetKeepsFullHostPreview is the 100x30 guard
+// for the real-binary worst case. The existing stub-backend guard never
+// delivers the async UploadEligibilityMsg, and its 6-line block hid the
+// clipping. Worst-case accounting after the 09.7 D-08 compaction is 25 of 25
+// body rows: stepper 1 + chord hint 1 + SSH form 7 (alias, alias hint, SSH
+// host, SSH host hint, real hostname, hostname hint, port-with-inline-hint) +
+// upload checkbox 1 + key-source row 1 + algorithm catalog 5 + preview box 9
+// (border, 7 lines, border).
+func TestWizardStep0WorstCaseRowBudgetKeepsFullHostPreview(t *testing.T) {
+	a := NewApp(providerMarkerBackend{})
+	model, _ := a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	a, ok := model.(App)
+	if !ok {
+		t.Fatalf("Update returned %T, want App", model)
+	}
+	a = pressAndRun(t, a, "n")
+
+	assertWorstCaseStep0 := func(where string) {
+		t.Helper()
+		lines := strings.Split(ansi.Strip(a.View().Content), "\n")
+		joined := strings.Join(lines, "\n")
+		for _, want := range []string{
+			"Register with GitHub automatically",
+			"IdentitiesOnly yes",
+			"# gitid: provider=github",
+			"The true SSH endpoint",
+			"Blank prefix → SSH Host = the provider host itself",
+			"Auto-joined: <prefix>.<provider> — editable",
+			"Shift+→ next section · Shift+← exits the wizard",
+			"Step 1/4",
+		} {
+			if !strings.Contains(joined, want) {
+				t.Errorf("%s: frame missing %q", where, want)
+			}
+		}
+		if len(lines) != 30 {
+			t.Errorf("%s: frame has %d rows, want exactly 30", where, len(lines))
+		}
+		markerAt := -1
+		for i, line := range lines {
+			if strings.Contains(line, "# gitid: provider=github") {
+				markerAt = i
+				break
+			}
+		}
+		if markerAt < 0 || markerAt+1 >= len(lines) || !strings.Contains(lines[markerAt+1], "╰") {
+			t.Errorf("%s: bottom border ╰ must sit on the line right after the provider marker", where)
+		}
+		var toggleLine, portLine string
+		for _, line := range lines {
+			if strings.Contains(line, "Generate a new key") {
+				toggleLine = line
+			}
+			if strings.Contains(line, "Port") && strings.Contains(line, "Default 22; 443 for alt-SSH") {
+				portLine = line
+			}
+		}
+		if toggleLine == "" || !strings.Contains(toggleLine, "Reuse an existing key") {
+			t.Errorf("%s: Generate and Reuse must share one physical line; got %q", where, toggleLine)
+		}
+		if portLine == "" {
+			t.Errorf("%s: Port and its hint must share one physical line", where)
+		}
+	}
+	assertWorstCaseStep0("initial")
+
+	a = pressSeq(t, a, "tab", "tab", "tab")
+	assertWorstCaseStep0("port focused")
+}
+
 func TestHostPreview100x30ShowsIdentitiesOnlyYes(t *testing.T) {
 	a := NewApp(stubBackend{})
 	// Resize to exactly the design minimum geometry (100×30).

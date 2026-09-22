@@ -1213,9 +1213,9 @@ func TestCreateFlow_ReuseExistingEncryptedKeyClosesL2Seam(t *testing.T) {
 	// scanned candidate (the encrypted "a_locked" fixture) is already
 	// selected; the unparseable "c_garbage" decoy never reaches the list.
 	s.sendKey(wizardKeyRight, keystrokeDelay)
-	// "Reuse an existing key" can wrap across two physical rows at the
-	// fixed 62-col detail-pane width ("...● Reuse an" / "existing key") —
-	// assert the tail, which always renders on one wrapped line.
+	// The key-source toggle now renders on one physical row (quick
+	// 260922-cpl). Asserting the "existing key" tail keeps the check
+	// independent of the header-hint wording.
 	mustSee(t, s, "existing key", "reuse mode selected")
 	mustSee(t, s, "id_ed25519_a_locked", "the picker lists the encrypted fixture")
 	mustSee(t, s, "(encrypted)", "the picker flags the encrypted entry — informational only (D-13)")

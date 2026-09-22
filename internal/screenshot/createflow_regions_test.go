@@ -250,3 +250,31 @@ func TestExtractHeaderKeepsLastNavSegmentOutOfStatusRegion(t *testing.T) {
 		t.Errorf("extractHeaderStatus must still capture the status summary; got %q", status)
 	}
 }
+
+// TestExtractReusePickerEntriesOnlyInReuseMode pins the reuse-picker anchor
+// to the selected Reuse radio. A one-line generate-mode toggle also contains
+// "Reuse an existing key", and anchoring on that substring captures the
+// algorithm catalog as picker entries.
+func TestExtractReusePickerEntriesOnlyInReuseMode(t *testing.T) {
+	generateFrame := strings.Join([]string{
+		"Key (←/→)  ● Generate a new key   ○ Reuse an existing key",
+		"● ed25519 — ★ recommended",
+		"╭╌ Live Host-block preview",
+	}, "\n")
+	reuseFrame := strings.Join([]string{
+		"Key (←/→)  ○ Generate a new key   ● Reuse an existing key",
+		"● id_ed25519_personal  ed25519",
+		"╭╌ Live Host-block preview",
+	}, "\n")
+
+	if got := ExtractRegion(generateFrame, RegionReusePickerEntries); got != "" {
+		t.Errorf("generate mode must not capture picker entries; got:\n%s", got)
+	}
+	got := ExtractRegion(reuseFrame, RegionReusePickerEntries)
+	if !strings.Contains(got, "id_ed25519_personal") {
+		t.Errorf("reuse mode must contain the candidate row; got:\n%s", got)
+	}
+	if strings.Contains(got, "Generate a new key") {
+		t.Errorf("reuse mode must exclude the toggle line; got:\n%s", got)
+	}
+}
